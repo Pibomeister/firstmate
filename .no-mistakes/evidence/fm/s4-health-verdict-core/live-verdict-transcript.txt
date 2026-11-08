@@ -1,0 +1,36 @@
+## 1. Real publisher: fm-heartbeat.sh --write in a lab home
+publisher exit=0
+{
+  "generated_epoch": 1794171214,
+  "published_epoch": 1794171219,
+  "stale_after_secs": 478
+}
+
+## 2. Verdict on the freshly published record
+verdict=ok reason=fresh heartbeat_age=0 lock=live watcher_age=1 monitor=enabled at=1794171219
+
+## 3. generated_epoch ancient (now-100000), published_epoch fresh -> must stay ok (age from publication)
+verdict=ok reason=fresh heartbeat_age=0 lock=live watcher_age=1 monitor=enabled at=1794171220
+
+## 4. Adversarial: generated_epoch fresh, published_epoch older than bound (478 s) -> must be stale
+verdict=stale reason=heartbeat-stale heartbeat_age=509 lock=live watcher_age=2 monitor=enabled at=1794171221
+
+## 5. Dead publisher: last publication just inside bound (age=bound-5) -> not stale yet
+verdict=ok reason=fresh heartbeat_age=474 lock=live watcher_age=2 monitor=enabled at=1794171221
+   ...publisher stays dead; same record, past bound (age=bound+1) -> stale
+verdict=stale reason=heartbeat-stale heartbeat_age=480 lock=live watcher_age=2 monitor=enabled at=1794171221
+
+## 6. Record with no published_epoch (fresh generated_epoch) -> unread, never ok
+verdict=unknown reason=heartbeat-field-unread heartbeat_age=unknown lock=live watcher_age=2 monitor=enabled at=1794171221
+   published_epoch="soon" (non-number)
+verdict=unknown reason=heartbeat-field-unread heartbeat_age=unknown lock=live watcher_age=3 monitor=enabled at=1794171222
+   published_epoch=null
+verdict=unknown reason=heartbeat-field-unread heartbeat_age=unknown lock=live watcher_age=3 monitor=enabled at=1794171222
+
+## 7. Republish with real publisher -> back to ok
+verdict=ok reason=fresh heartbeat_age=0 lock=live watcher_age=7 monitor=enabled at=1794171226
+written: verdict=ok reason=fresh heartbeat_age=0 lock=live watcher_age=7 monitor=enabled at=1794171226
+
+## 8. Read-only: verdict on a home with no state dir
+verdict=unknown reason=heartbeat-missing,lock-unknown,monitor-missing heartbeat_age=unknown lock=unknown watcher_age=unknown monitor=missing at=1794171226
+home unchanged: yes
