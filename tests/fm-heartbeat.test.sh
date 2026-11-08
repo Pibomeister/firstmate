@@ -963,6 +963,39 @@ test_derived_context_is_unknown_without_token_usage() {
   pass "AC-14: the derived reading is unknown, with its reason, when there is no token usage to read"
 }
 
+# The shared context reading reads its window records under FM_HOME, so a run
+# with a state or config directory override must not publish a number taken from
+# the home's own records instead of the overridden ones.
+test_derived_context_is_unknown_under_directory_overrides() {
+  local home alt why
+  why='state or config directory override in use'
+  home=$(make_home derived-override)
+  printf '{"type":"assistant","timestamp":"2026-10-30T11:59:00Z","message":{"usage":{"input_tokens":90000}}}\n' \
+    > "$(task_transcript "$home")"
+  printf 'compact-at-tokens=200000\n' > "$home/config/handoff-trigger"
+  alt="$TMP_ROOT/derived-override-config"
+  mkdir -p "$alt"
+  printf 'compact-at-tokens=100000\n' > "$alt/handoff-trigger"
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z
+  assert_ledger "$home" '.tasks[0].context_left.derived == {percent:55,source:"transcript"}' \
+    "the home's own pin did not give the derived reading"
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z FM_CONFIG_OVERRIDE="$alt"
+  assert_ledger "$home" "
+    .tasks[0].context_left.derived == {unknown:true,reason:\"$why\"}
+    and .tasks[0].context_left.used_tokens == 90000
+  " "a config override published a derived reading from the home's pin"
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z FM_CONFIG_OVERRIDE="$home/config"
+  assert_ledger "$home" '.tasks[0].context_left.derived == {percent:55,source:"transcript"}' \
+    "an override naming the home's own config directory lost the derived reading"
+  alt="$TMP_ROOT/derived-override-state"
+  cp -R "$home/state" "$alt"
+  rm -f "$alt/heartbeat.json"
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z FM_STATE_OVERRIDE="$alt"
+  jq -e ".tasks[0].context_left.derived == {unknown:true,reason:\"$why\"}" "$alt/heartbeat.json" >/dev/null \
+    || fail "a state override published a derived reading from the home's records: $(cat "$alt/heartbeat.json" 2>/dev/null)"
+  pass "AC-14: the derived reading is unknown, with its reason, under a state or config directory override"
+}
+
 test_ledger_schema_and_clean_run
 test_no_mistakes_run_is_parsed_from_real_status
 test_selection_owner_decides_the_run
@@ -997,6 +1030,7 @@ test_stale_bound_is_the_watcher_cycle_plus_the_grace
 test_watcher_publishes_its_cycle_period_not_the_wake_cadence
 test_derived_context_sits_beside_the_footer
 test_derived_context_is_unknown_without_token_usage
+test_derived_context_is_unknown_under_directory_overrides
 
 test_weekly_allowance_reports_model_allowance_left() {
   local home quota
@@ -1026,4 +1060,4 @@ test_weekly_allowance_reports_model_allowance_left() {
 
 test_weekly_allowance_reports_model_allowance_left
 
-printf 'ok - %s tests passed\n' 34
+printf 'ok - %s tests passed\n' 35

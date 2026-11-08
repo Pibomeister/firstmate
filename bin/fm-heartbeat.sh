@@ -47,7 +47,8 @@
 #                       from the harness's own "N% until auto-compact" pane text, else
 #                       unknown; derived is {percent, source} from the shared context
 #                       reading (bin/fm-context-reading-lib.sh) of the transcript, else
-#                       unknown; no window size is ever assumed
+#                       unknown, and always unknown while a state or config directory
+#                       override is in use; no window size is ever assumed
 #   tasks[]           one row per snapshot task id, sorted by id
 #     id
 #     terminal          {backend, target, exists} from snapshot endpoint
@@ -270,9 +271,15 @@ heartbeat_context_json() {  # <label> <transcript-or-empty> [backend] [target] [
   if [ -n "$2" ]; then
     why='transcript had no token usage'
     if [ -n "$tokens" ]; then
-      why='no context window for this session'
-      reading=$(heartbeat_read "$1 derived context" fm_context_reading "$FM_HOME" "$(basename "$2" .jsonl)" "$2" '') || reading=
-      derived=$(printf '%s\n' "$reading" | sed -n 's/^footer=[^ ]* derived=\([0-9][0-9]*\) .*/\1/p')
+      # That reading reads its window records under FM_HOME only, so a state or
+      # config override would give a number from records this run does not use.
+      if [ "$STATE" != "$FM_HOME/state" ] || [ "$CONFIG" != "$FM_HOME/config" ]; then
+        why='state or config directory override in use'
+      else
+        why='no context window for this session'
+        reading=$(heartbeat_read "$1 derived context" fm_context_reading "$FM_HOME" "$(basename "$2" .jsonl)" "$2" '') || reading=
+        derived=$(printf '%s\n' "$reading" | sed -n 's/^footer=[^ ]* derived=\([0-9][0-9]*\) .*/\1/p')
+      fi
     fi
   fi
   jq -n --arg used "$tokens" --arg percent "$percent" --arg derived "$derived" --arg why "$why" '
