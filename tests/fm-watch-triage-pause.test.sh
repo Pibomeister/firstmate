@@ -64,11 +64,13 @@ test_nonterminal_stale_not_working_surfaced() {
 # release (paused: ...) whose idle pane tripped repeated possible-wedge escalations
 # all day. With a live agent behind the paused verb, the first sight still
 # surfaces so firstmate can inspect the inconclusive state; after that the stale
-# is held to the long cadence and re-surfaces once past PAUSE_RESURFACE_SECS
-# (anchored on the pause's own status-file age, so a churny idle pane cannot
-# reset the cadence) for a recheck, so a forgotten pause cannot rot invisibly.
-# The confidently dead endpoint behind the same verb is the opposite case and
-# is pinned in test_dead_paused_escalates_but_captain_held_is_bounded_and_live_gate_surfaces.
+# is held to the long cadence and re-surfaces once past PAUSE_RESURFACE_SECS.
+# Status-file age is the absorb clock so a churny idle pane cannot reset it.
+# The first-alert marker is the repeat throttle, so both must be older than the
+# cadence before a forgotten pause rechecks. Aging only the status file after
+# first sight must stay quiet. The confidently dead endpoint behind the same
+# verb is pinned in
+# test_dead_paused_escalates_but_captain_held_is_bounded_and_live_gate_surfaces.
 test_nonterminal_stale_paused_absorbed_then_resurfaced() {
   local dir state fakebin out drain_out capture_file window key pane_hash sig pid back statusf
   dir=$(make_case nonterminal-stale-paused); state="$dir/state"; fakebin="$dir/fakebin"
@@ -100,17 +102,32 @@ test_nonterminal_stale_paused_absorbed_then_resurfaced() {
   grep -Fx "stale: $window" "$out" >/dev/null || fail "first sight of a live pause did not print the bare stale wake"
   [ "$(cat "$state/.stale-$key" 2>/dev/null || true)" = "$pane_hash" ] || fail "stale suppressor not advanced on paused first sight"
   [ -e "$state/.paused-$key" ] || fail "paused flag not recorded on first sight"
+  [ -e "$state/.paused-resurfaced-$key" ] || fail "first sight did not record the pause re-surface throttle"
   [ ! -e "$state/.stale-since-$key" ] || fail "a paused first sight must not start the wedge timer"
   ack_stopped_cycle "$state" || fail "could not acknowledge the live paused phase-A surface"
 
-  # Phase B: age the pause past the (now normal) threshold by backdating its
-  # status file, re-prime .seen-* to the new signature so the signal scan stays
-  # quiet, keep the same pane hash so the already-seen cadence path owns it, and
-  # confirm it re-surfaces as a paused recheck - never a wedge.
+  # Age the declaration without touching birth identity, so the throttle still
+  # names this same pause. A fresh first-alert marker must keep the recheck quiet.
   back=$(( $(date +%s) - 500 ))
   if [ "$(uname)" = Darwin ]; then touch -mt "$(date -r "$back" '+%Y%m%d%H%M.%S')" "$statusf"
   else touch -m -d "@$back" "$statusf"; fi
   sig=$(seen_sig "$statusf"); printf '%s' "$sig" > "$state/.seen-held_status"
+  : > "$out"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_FAKE_TMUX_CURRENT_COMMAND=grok \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_poll_cycle "$state" "$pid" \
+    || { reap "$pid"; fail "an aged pause with a fresh first-alert marker re-alarmed: $(cat "$out")"; }
+  [ ! -s "$out" ] || { reap "$pid"; fail "an aged pause with a fresh first-alert marker printed a wake: $(cat "$out")"; }
+  [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "an aged pause with a fresh first-alert marker queued a wake"; }
+  reap "$pid"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the live paused absorb stop"
+
+  # Both the unchanged declaration and its first alert must be older than
+  # the 240s cadence for a forgotten wait to get its bounded recheck.
+  set_mtime "$back" "$state/.paused-resurfaced-$key"
   : > "$out"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
     FM_FAKE_TMUX_CURRENT_COMMAND=grok \
