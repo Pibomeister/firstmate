@@ -29,7 +29,12 @@
 # count` over the hour. status_lines_last_hour counts the lines of
 # <home>/state/*.status whose first `[at=<epoch>]` falls in the hour.
 # session_id is fm_session_lock_recorded_session_id
-# (bin/fm-session-lock-lib.sh) of <home>/state, or `-`.
+# (bin/fm-session-lock-lib.sh) of <home>/state, or `-`. sample also appends to
+# <out>/handoff-events.tsv one `<mtime>\t<path>` row for each handoff document
+# (each <home>/data/handoff-*.md and the document named by the doc= line of
+# <home>/state/.order-handoff) whose current modification it has not recorded
+# yet, so each rewrite seen between samples is one modification event. sample
+# refuses a run that is not started or is already finished.
 # finish sets finished_at; the window is [started_at, finished_at]. It writes:
 #   session_ids     the union of the sampled session ids and the ids of the
 #                   <transcript-dir>/<id>.jsonl files modified in the window,
@@ -45,9 +50,13 @@
 #                   (bin/fm-watchdog.sh owns its columns); handoffs/: the
 #                   <watchdog-dir>/handoffs/ files modified in the window.
 #   wake-ledger.tsv the window's wake-ledger rows (bin/fm-wake-ledger.sh rows).
-#   handoff_count   the distinct handoff documents modified in the window, plus
-#                   the distinct watchdog ids with a kept `restart` row in
-#                   phase `done` whose symptom is not `restart-requested`. The
+#   handoff_count   the handoff-document modification events in the window
+#                   (the distinct `<mtime> <path>` pairs sample recorded, plus
+#                   each document's modification at finish), plus each distinct
+#                   watchdog id with a kept `restart` row in phase `done`,
+#                   except one for which a handoff-document modification event
+#                   falls between that id's first `restart` `pending` row (or
+#                   its `done` row when none is kept) and its `done` row. The
 #                   watchdog's own handoff files are not counted.
 #   violations      {kind: undeclared-harness, task, harness} for each live
 #                   task meta whose harness is outside the declared set and,
@@ -155,7 +164,7 @@ prepare_out() {
     OUT="$parent/$(basename -- "$OUT")"
   fi
   case "$OUT/" in "$HOME_DIR"/*) die 2 "--out is inside the soak home: $OUT" ;; esac
-  for p in soak.json load.tsv wake-ledger.tsv transcripts handoffs watchdog watchdog/actions.tsv watchdog/handoffs; do
+  for p in soak.json load.tsv handoff-events.tsv wake-ledger.tsv transcripts handoffs watchdog watchdog/actions.tsv watchdog/handoffs; do
     [ ! -L "$OUT/$p" ] || die 2 "refusing to write through a symlink: $OUT/$p"
   done
 }
@@ -237,10 +246,33 @@ cmd_start() {
       harnesses: $harnesses, session_ids: []}' > "$OUT/soak.json"
 }
 
+# handoff_docs: the soak home's handoff documents, one path per line: each
+# data/handoff-*.md, then the document the order record names.
+handoff_docs() {
+  local doc
+  for doc in "$HOME_DIR"/data/handoff-*.md; do
+    [ -f "$doc" ] && printf '%s\n' "$doc"
+  done
+  doc=
+  [ ! -f "$HOME_DIR/state/.order-handoff" ] || doc=$(sed -n 's/^doc=//p' "$HOME_DIR/state/.order-handoff" | head -n 1)
+  [ -z "$doc" ] || [ ! -f "$doc" ] || printf '%s\n' "$doc"
+}
+
+# handoff_events: one `<mtime>\t<physical path>` line per handoff document as
+# it is now.
+handoff_events() {
+  local doc canon
+  while IFS= read -r doc; do
+    canon=$(canon_file "$doc") || continue
+    printf '%s\t%s\n' "$(mtime "$doc")" "$canon"
+  done < <(handoff_docs)
+}
+
 cmd_sample() {
-  local now since live acks lines session
+  local now since live acks lines session events
   parse '--home --out' "$@"
   [ -f "$OUT/soak.json" ] || die 1 "no soak run is started in $OUT"
+  [ "$(jq -r '.finished_at // empty' "$OUT/soak.json")" = '' ] || die 1 "the soak run in $OUT is already finished"
   now=$(fm_now)
   since=$((now - 3600))
   live=$(live_tasks | awk 'END { print NR }')
@@ -255,6 +287,10 @@ cmd_sample() {
   session=$(fm_session_lock_recorded_session_id "$HOME_DIR/state") || session=-
   case "$session" in *$'\t'*|'') session=- ;; esac
   printf '%s\t%s\t%s\t%s\t%s\n' "$now" "$live" "$acks" "$lines" "$session" >> "$OUT/load.tsv"
+  touch "$OUT/handoff-events.tsv"
+  events=$(handoff_events | awk -F '\t' 'NR == FNR { seen[$0]; next } !($0 in seen) { seen[$0]; print }' \
+    "$OUT/handoff-events.tsv" -)
+  [ -z "$events" ] || printf '%s\n' "$events" >> "$OUT/handoff-events.tsv"
 }
 
 # keep_handoff <source> <name>: copy one handoff document under handoffs/ as
@@ -265,7 +301,7 @@ keep_handoff() {
 }
 
 cmd_finish() {
-  local doc canon id t sessions ids seen='' restarts docs=0 total violations h named
+  local doc canon id t sessions ids seen='' events restarts docs total violations h named
   parse '--home --out --watchdog-dir --transcript-dir' "$@"
   [ -d "$WATCHDOG_DIR" ] || die 2 "the watchdog directory does not exist: $WATCHDOG_DIR"
   [ -d "$TRANSCRIPT_DIR" ] || die 2 "the transcript directory does not exist: $TRANSCRIPT_DIR"
@@ -298,25 +334,25 @@ cmd_finish() {
     ids=$(jq -c --arg id "$id" --arg t "$t" '. + [{id: $id, transcript: $t}]' <<<"$ids")
   done <<<"$sessions"
 
-  # Handoff documents: distinct by physical path.
+  # Handoff documents: kept once by physical path, counted by modification event.
   for doc in "$HOME_DIR"/data/handoff-*.md; do
     [ -f "$doc" ] || continue
     in_window "$(mtime "$doc")" || continue
     canon=$(canon_file "$doc") || continue
     keep_handoff "$doc" "$(basename -- "$doc")"
     seen="$seen$canon"$'\n'
-    docs=$((docs + 1))
   done
   doc=
   [ ! -f "$HOME_DIR/state/.order-handoff" ] || doc=$(sed -n 's/^doc=//p' "$HOME_DIR/state/.order-handoff" | head -n 1)
   if [ -n "$doc" ] && [ -f "$doc" ] && canon=$(canon_file "$doc"); then
     case "$seen" in
       *"$canon"$'\n'*) ;;
-      *)
-        keep_handoff "$doc" "order-$(basename -- "$doc")"
-        in_window "$(mtime "$doc")" && docs=$((docs + 1)) ;;
+      *) keep_handoff "$doc" "order-$(basename -- "$doc")" ;;
     esac
   fi
+  events=$( { [ ! -f "$OUT/handoff-events.tsv" ] || cat "$OUT/handoff-events.tsv"; handoff_events; } |
+    awk -F '\t' -v s="$STARTED" -v n="$NOW" '$1 ~ /^[0-9]+$/ && $1 + 0 >= s + 0 && $1 + 0 <= n + 0' | LC_ALL=C sort -u)
+  docs=$(printf '%s' "$events" | awk 'END { print NR }')
 
   # Watchdog rows and the watchdog's own handoff files.
   mkdir -p "$OUT/watchdog"
@@ -332,8 +368,20 @@ cmd_finish() {
     mkdir -p "$OUT/watchdog/handoffs"
     keep "$doc" "$OUT/watchdog/handoffs/$(basename -- "$doc")"
   done
-  restarts=$(awk -F '\t' '$6 == "restart" && $7 == "done" && $5 != "restart-requested" && !($2 in s) { s[$2]; n++ }
-    END { print n + 0 }' "$OUT/watchdog/actions.tsv")
+  restarts=$(printf '%s\n' "$events" | awk -F '\t' '
+    NR == FNR { if ($1 != "") ev[NR] = $1 + 0; next }
+    $6 == "restart" && $7 == "pending" && !($2 in pending) { pending[$2] = $1 + 0 }
+    $6 == "restart" && $7 == "done" && !($2 in done) { done[$2] = $1 + 0; order[++k] = $2 }
+    END {
+      for (i = 1; i <= k; i++) {
+        id = order[i]
+        from = (id in pending) ? pending[id] : done[id]
+        dropped = 0
+        for (e in ev) if (ev[e] >= from && ev[e] <= done[id]) dropped = 1
+        if (!dropped) n++
+      }
+      print n + 0
+    }' - "$OUT/watchdog/actions.tsv")
 
   # Wake-ledger rows of the window.
   wake_ledger rows "$STARTED" $((NOW + 1)) > "$OUT/wake-ledger.tsv"
