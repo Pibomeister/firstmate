@@ -299,6 +299,36 @@ test_valueless_project_hookspath_still_refuses() {
   pass "a valueless project core.hooksPath still refuses the commit"
 }
 
+test_unresolvable_install_ignores_process_locale() {
+  local repo hooks fakebin real_git
+  repo="$TMP_ROOT/unresolvable-locale"
+  make_repo "$repo"
+  git -C "$repo" config core.hooksPath '~fm-no-such-user-6171/hooks'
+  hooks="$TMP_ROOT/hooks-unresolvable-locale"
+  fakebin=$(fm_fakebin "$TMP_ROOT/locale-git")
+  real_git=$(command -v git)
+  cat >"$fakebin/git" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = -C ] && [ "\${3:-}" = rev-parse ] && [ "\${4:-}" = --is-inside-work-tree ]; then
+  case "\${LC_ALL:-}" in
+    C|C.*|POSIX)
+      printf '%s\\n' "fatal: failed to expand user dir in: '~fm-no-such-user-6171/hooks'" >&2
+      ;;
+    *)
+      printf '%s\\n' "fatal: Benutzerverzeichnis konnte nicht expandiert werden in: '~fm-no-such-user-6171/hooks'" >&2
+      ;;
+  esac
+  exit 128
+fi
+exec $(printf '%q' "$real_git") "\$@"
+SH
+  chmod 700 "$fakebin/git"
+  LC_ALL=en_US.utf8 LANG=en_US.utf8 LANGUAGE=de PATH="$fakebin:$PATH" \
+    "$STRIP" install "$hooks" "$repo" \
+    || fail "install should succeed when the process locale is not C"
+  pass "an unresolvable core.hooksPath install does not depend on the process locale"
+}
+
 write_refusing_pre_push() {  # <path> <marker>
   cat >"$1" <<SH
 #!/usr/bin/env bash
@@ -543,6 +573,7 @@ test_pane_hookspath_does_not_reroute_another_repository
 test_empty_project_hookspath_runs_no_repository_hook
 test_unresolvable_project_hookspath_still_refuses
 test_valueless_project_hookspath_still_refuses
+test_unresolvable_install_ignores_process_locale
 test_repository_pre_push_runs_on_every_override_channel
 test_git_c_override_still_strips_and_chains_commit_hooks
 test_repository_hook_keeps_inherited_git_config
