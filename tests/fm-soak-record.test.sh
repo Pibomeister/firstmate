@@ -7,9 +7,12 @@
 # bin/fm-wake-ledger.sh, status lines of the last hour, the recorded primary
 # session id); finish keeps transcripts, handoff documents, watchdog rows and
 # wake-ledger rows of the window, counts handoffs by the one rule (handoff
-# document modification events plus watchdog restart ids with no such event
-# in their restart episode), and lists harness violations. Every verb leaves the soak
-# home byte-for-byte and mtime-for-mtime unchanged.
+# document modification events plus completed watchdog restart ids, except a
+# restart-requested one with such an event in its restart episode), refuses an
+# --out that contains or sits inside the home, a --home other than the run's,
+# and a session id that is not a plain name as a path, and lists harness
+# violations. Every verb leaves the soak home byte-for-byte and
+# mtime-for-mtime unchanged.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -468,8 +471,92 @@ test_sample_after_finish_is_refused() {
   pass "sample after finish is refused"
 }
 
+
+test_finish_counts_a_document_then_a_frozen_restart() {
+  local home out wd tr json
+  home=$(make_home doc-frozen)
+  out="$TMP_ROOT/doc-frozen-out"; wd="$TMP_ROOT/doc-frozen-watchdog"; tr="$TMP_ROOT/doc-frozen-transcripts"
+  mkdir -p "$wd/handoffs" "$tr"
+  soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  # A full handoff, then a frozen-session restart that no handoff request led
+  # to: the restart is its own handoff, so both count.
+  rewrite_handoff "$home" $((T0 + 100)) "handoff"
+  {
+    printf '%s\tf1\t%s\tprimary\tfrozen\trestart\tpending\ttoken=1\n' $((T0 + 200)) "$home"
+    printf '%s\tf1\t%s\tprimary\tfrozen\trestart\tdone\tpickup verified\n' $((T0 + 210)) "$home"
+  } > "$wd/actions.tsv"
+  soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "$wd" --transcript-dir "$tr" \
+    > /dev/null || fail "finish failed"
+  json=$(jq -c . "$out/soak.json") || fail "soak.json is not JSON after finish"
+  assert_equals 2 "$(jq -r .handoff_count <<<"$json")" "one document then a completed frozen restart"
+  pass "a completed restart whose symptom is not restart-requested always counts"
+}
+
+test_out_that_contains_the_home_is_refused() {
+  local home parent rc before
+  parent="$TMP_ROOT/contain"
+  mkdir -p "$parent"
+  home=$(make_home contain/home)
+  before=$(snapshot "$home")
+  soak "$T0" start --home "$home" --out "$parent" --label baseline --harness claude > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "start refuses an --out that contains the soak home"
+  [ ! -e "$parent/soak.json" ] || fail "a refused start wrote soak.json above the home"
+  ln -s "$parent" "$TMP_ROOT/contain-link"
+  soak "$T0" start --home "$home" --out "$TMP_ROOT/contain-link" --label baseline --harness claude > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "start refuses a symlink to a directory that contains the soak home"
+  soak "$T0" sample --home "$home" --out "$parent" > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "sample refuses an --out that contains the soak home"
+  [ ! -e "$parent/load.tsv" ] || fail "a refused sample wrote load.tsv above the home"
+  assert_home_unchanged "$home" "$before" "an --out that contains the home"
+  pass "an --out that contains the soak home is refused like one inside it"
+}
+
+test_sample_and_finish_refuse_another_home() {
+  local home other out wd tr rc
+  home=$(make_home own)
+  other=$(make_home stranger)
+  out="$TMP_ROOT/own-out"; wd="$TMP_ROOT/own-watchdog"; tr="$TMP_ROOT/own-transcripts"
+  mkdir -p "$wd" "$tr"
+  soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  soak $((T0 + 100)) sample --home "$other" --out "$out" > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "sample refuses a --home that is not the run's home"
+  [ ! -e "$out/load.tsv" ] || fail "a refused sample appended a load row"
+  [ ! -e "$out/handoff-events.tsv" ] || fail "a refused sample recorded handoff events"
+  soak $((T0 + 1000)) finish --home "$other" --out "$out" --watchdog-dir "$wd" --transcript-dir "$tr" > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "finish refuses a --home that is not the run's home"
+  assert_equals '' "$(jq -r '.finished_at // empty' "$out/soak.json")" "a refused finish did not finish the run"
+  [ ! -e "$out/watchdog" ] || fail "a refused finish kept watchdog rows"
+  soak $((T0 + 100)) sample --home "$home" --out "$out" > /dev/null || fail "sample of the run's own home failed"
+  pass "sample and finish refuse a --home other than the one the run started on"
+}
+
+test_unsafe_session_ids_never_become_paths() {
+  local home out wd tr json rc
+  home=$(make_home unsafe)
+  out="$TMP_ROOT/unsafe-out"; wd="$TMP_ROOT/unsafe-watchdog"; tr="$TMP_ROOT/unsafe-transcripts"
+  mkdir -p "$wd" "$tr"
+  soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  printf '../../escape\n' > "$home/state/.lock-session"
+  soak $((T0 + 100)) sample --home "$home" --out "$out" > /dev/null || fail "sample failed"
+  assert_equals '-' "$(cut -f5 "$out/load.tsv")" "an unsafe recorded session id samples as -"
+  # A load row written before this check carries an id that walks out of
+  # transcripts/; a transcript sits where that walk lands.
+  printf '%s\t0\t0\t0\t../escape\n' $((T0 + 200)) >> "$out/load.tsv"
+  printf '{"t":9}\n' > "$TMP_ROOT/escape.jsonl"
+  soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "$wd" --transcript-dir "$tr" > /dev/null 2>&1; rc=$?
+  assert_equals 0 "$rc" "finish skips an unsafe session id rather than failing"
+  json=$(jq -c . "$out/soak.json") || fail "soak.json is not JSON after finish"
+  assert_equals '[]' "$(jq -c .session_ids <<<"$json")" "an unsafe session id is not recorded"
+  [ ! -e "$out/escape.jsonl" ] || fail "an unsafe session id copied a transcript outside transcripts/"
+  pass "a session id that is not a plain name never becomes a path component"
+}
+
 make_fakebin
 fm_test_run \
+  test_finish_counts_a_document_then_a_frozen_restart \
+  test_out_that_contains_the_home_is_refused \
+  test_sample_and_finish_refuse_another_home \
+  test_unsafe_session_ids_never_become_paths \
   test_finish_counts_a_lean_handoff_restart \
   test_finish_counts_each_rewrite_of_one_handoff_document \
   test_finish_counts_a_late_full_handoff_once \
