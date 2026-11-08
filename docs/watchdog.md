@@ -254,5 +254,6 @@ An absent file means dry-run on the owner home alone.
 ## Verification
 
 `tests/fm-watchdog.test.sh` drives every symptom, ladder step, and boundary against real tmux panes on a private socket, real lock holders, and real records, with fake model CLIs.
+`tests/fm-captain-record.test.sh` proves the [captain record](#captain-record) provenance rules against real lock holders and real tmux panes.
 `tests/fm-layer-chain.test.sh` proves the monitor read on each pass and at session start, with a fake service manager.
 `tests/fm-watchdog-live.test.sh` reads real installed Claude Code panes without spending tokens; [`verification/runtime-backends.md`](verification/runtime-backends.md) records its dated results.
