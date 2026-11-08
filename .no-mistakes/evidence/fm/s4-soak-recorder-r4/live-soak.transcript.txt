@@ -1,0 +1,97 @@
+== readable-harnesses
+$ fm-soak-record.sh readable-harnesses
+claude
+exit=0
+== inventory (claude ok, codex unreadable)
+$ fm-soak-record.sh inventory --home <LAB> --harness claude --harness codex
+claude readable
+codex unreadable
+exit=3
+== start refuses unreadable harness
+$ fm-soak-record.sh start --home <LAB> --out <SCR>/out --label baseline --harness claude --harness codex
+claude readable
+codex unreadable
+fm-soak-record: refusing to start: a declared harness is unreadable
+exit=3
+ls: <SCR>/out/soak.json: No such file or directory
+== start refuses --out inside home
+$ fm-soak-record.sh start --home <LAB> --out <LAB>/out --label baseline --harness claude
+fm-soak-record: --out is inside the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.Bh3Xh3/out
+exit=2
+== start refuses --out containing home (S169-1)
+$ fm-soak-record.sh start --home <LAB> --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T --label baseline --harness claude
+fm-soak-record: --out contains the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T
+exit=2
+== start baseline
+$ fm-soak-record.sh start --home <LAB> --out <SCR>/out --label baseline --harness claude
+claude readable
+exit=0
+{
+  "label": "baseline",
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.Bh3Xh3",
+  "revision": "0c4d737b14311c7444661017cd469e8045510b69",
+  "started_at": 1794123728,
+  "harnesses": [
+    "claude"
+  ],
+  "session_ids": []
+}
+
+drain ack command: 
+/Users/eduardopicazo/.no-mistakes/evidence/01M6X139N54Z1B9A5WVK5DH9AF/live-soak.sh: line 22: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Bh3Xh3/state/wake-ledger.tsv: No such file or directory
+ledger rows: 0
+== sample
+$ fm-soak-record.sh sample --home <LAB> --out <SCR>/out
+exit=0
+load.tsv:
+1794123731	0	0	0	sess-live-1
+== sample refuses another home (S169-3)
+$ fm-soak-record.sh sample --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.2oEQgTOWFu --out <SCR>/out
+fm-soak-record: --home is not the home this soak run started on: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.2oEQgTOWFu
+exit=2
+== unsafe session id (S169-4)
+$ fm-soak-record.sh sample --home <LAB> --out <SCR>/out
+exit=0
+1794123731	0	0	0	-
+== finish
+$ fm-soak-record.sh finish --home <LAB> --out <SCR>/out --watchdog-dir <SCR>/watchdog --transcript-dir <SCR>/transcripts
+exit=0
+{
+    "label": "baseline",
+    "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.Bh3Xh3",
+    "revision": "0c4d737b14311c7444661017cd469e8045510b69",
+    "started_at": 1794123728,
+    "harnesses": [
+        "claude"
+    ],
+    "session_ids": [
+        {
+            "id": "sess-live-1",
+            "transcript": "transcripts/sess-live-1.jsonl"
+        },
+        {
+            "id": "sess-live-2",
+            "transcript": "transcripts/sess-live-2.jsonl"
+        }
+    ],
+    "finished_at": 1794123734,
+    "handoff_count": 2,
+    "violations": []
+}
+out tree:
+./handoff-events.tsv
+./handoffs/handoff-primary.md
+./load.tsv
+./soak.json
+./transcripts/sess-live-1.jsonl
+./transcripts/sess-live-2.jsonl
+./wake-ledger.tsv
+./watchdog/actions.tsv
+./watchdog/handoffs/primary-1.md
+home unchanged across sample/finish: yes
+== sample after finish refused
+$ fm-soak-record.sh sample --home <LAB> --out <SCR>/out
+fm-soak-record: the soak run in /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soak-live.oqjqLL/out is already finished
+exit=1
+== post-change finish (activity-sources script absent)
+[{"kind": "activity-sources-unavailable", "harness": "claude"}]

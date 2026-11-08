@@ -1,0 +1,15 @@
+1794123773	1	check	live-one	live soak check one
+1794123773	2	check	live-two	live soak check two
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 92831.1794123773.hwbFX4
+ack: bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 92831.1794123773.hwbFX4
+ack exit=0
+wake-ledger.tsv in home:
+1794123778	ack	92831.1794123773.hwbFX4	2	1,2	["live-one","live-two"]
+1794123778	consumed	92831.1794123773.hwbFX4	2	1,2	["live-one","live-two"]
+fm-wake-ledger count: reference=0 highest=2 span=2 unlisted=0 late=0 count=2
+load.tsv (epoch live acks status sid):
+1794123779	0	2	2	-
+finish exit=0
+out/wake-ledger.tsv:
+1794123778	ack	92831.1794123773.hwbFX4	2	1,2	["live-one","live-two"]
+1794123778	consumed	92831.1794123773.hwbFX4	2	1,2	["live-one","live-two"]

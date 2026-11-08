@@ -1,0 +1,8 @@
+ok - a prune that cannot write its ledger row fails, keeps its wakes, and succeeds on retry
+ok - the ack row carries the removal time, not the lock-acquire time
+ok - a removal whose row extraction fails stops, reports it, and keeps its wakes
+ok - a consumed extraction that fails stops and keeps the claim rows
+ok - a retry after an interrupted removal writes no second row, so the wake counts once
+ok - a direct append reads the clock on every call, never an earlier removal epoch
+ok - the ledger command resolves its home, reads an absent ledger as empty, and refuses bad arguments
+exit=0
