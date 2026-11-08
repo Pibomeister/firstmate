@@ -16,25 +16,30 @@
 # claimed sequences whose queue row the same acknowledgement removed, so a
 # claim whose row an earlier removal already listed is not counted twice.
 # A removal that takes out no sequence number writes no row.
-# All rows one drain run writes under one lock hold share one epoch
-# (fm_wake_ledger_pin_epoch), so an acknowledgement and its consumed rows land
-# in the same window.
+# A row's epoch is the time of the removal it describes: every removal except
+# `consumed` reads fm_now just before its queue change, and a `consumed` row
+# reuses the epoch of the acknowledgement that removed its queue rows, so the
+# two land in the same window.
 #
 # Every writer here runs while its caller holds the wake-queue lock
 # (fm_wake_queue_lock_acquire in bin/fm-wake-lib.sh) and takes no lock of its own.
-# A ledger row that cannot be computed or written is reported on stderr and
-# never undoes or blocks the queue change it describes: the ledger is a count
-# record, not queue authority.
+# A removal and its row are one change (fm_wake_ledger_commit_removal_locked):
+# the row is written first, a row that cannot be computed or written stops the
+# removal, which then fails with a stderr report and leaves its rows in place,
+# and a removal that fails after its row was written takes the row back out.
+# So no wake leaves its file uncounted and none is counted for a removal that
+# did not happen.
 
 FM_WAKE_LEDGER_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)"
 # shellcheck source=bin/fm-clock-lib.sh
 . "$FM_WAKE_LEDGER_LIB_DIR/fm-clock-lib.sh"
 
-# The epoch pinned for the current lock hold; never taken from the environment.
+# The epoch of the latest removal; never taken from the environment.
 _FM_WAKE_LEDGER_EPOCH=
 
 # fm_wake_ledger_pin_epoch: read fm_now once, so every row written until the
-# next pin carries the same epoch. Call it right after taking the queue lock.
+# next pin carries the same epoch. fm_wake_ledger_commit_removal_locked calls it
+# just before each removal other than `consumed`.
 fm_wake_ledger_pin_epoch() {
   _FM_WAKE_LEDGER_EPOCH=$(fm_now) || { _FM_WAKE_LEDGER_EPOCH=; return 1; }
 }
@@ -144,6 +149,66 @@ fm_wake_ledger_record_removal_locked() {
 # fm_wake_ledger_report_unwritten <state-dir> <event>: the one stderr report
 # for a removal whose ledger row could not be computed or written.
 fm_wake_ledger_report_unwritten() {
-  printf 'fm-wake-ledger: the %s row could not be written to %s; the queue change it describes stands\n' \
+  printf 'fm-wake-ledger: the %s row could not be written to %s; the removal it describes did not happen\n' \
     "$2" "$(fm_wake_ledger_path "$1")" >&2
+}
+
+# _fm_wake_ledger_size <ledger>: print the ledger's byte length, or `absent`.
+_fm_wake_ledger_size() {
+  if [ -e "$1" ] || [ -L "$1" ]; then
+    [ -f "$1" ] || return 1
+    wc -c < "$1" | tr -d ' '
+  else
+    printf 'absent\n'
+  fi
+}
+
+# _fm_wake_ledger_restore <ledger> <size>: take the ledger back to the byte
+# length _fm_wake_ledger_size printed, removing it when it was absent.
+_fm_wake_ledger_restore() {
+  local ledger=$1 size=$2 tmp
+  if [ "$size" = absent ]; then
+    rm -f -- "$ledger"
+    return
+  fi
+  [ -f "$ledger" ] || return 1
+  [ "$(wc -c < "$ledger" | tr -d ' ')" != "$size" ] || return 0
+  tmp=$(mktemp "$ledger.restore.XXXXXX") || return 1
+  if head -c "$size" "$ledger" > "$tmp" && mv -f -- "$tmp" "$ledger"; then
+    return 0
+  fi
+  rm -f -- "$tmp"
+  return 1
+}
+
+# fm_wake_ledger_commit_removal_locked <state-dir> <event> <generation> <through> <removed-rows> <seqs-csv> <command> [<arg>...]
+# Make one removal and its ledger row a single change. Write the row for
+# <removed-rows> first (as fm_wake_ledger_record_removal_locked does, with
+# <seqs-csv> empty for every sequence they carry), stamped with the removal
+# time unless <event> is `consumed`; then run <command>, which makes the
+# removal. When the row cannot be written, <command> never runs and the call
+# returns non-zero; when <command> fails, the row is taken back out and its
+# status is returned. Both failures are reported on stderr.
+fm_wake_ledger_commit_removal_locked() {
+  local state=$1 event=$2 generation=$3 through=$4 removed=$5 want=$6 ledger size status
+  shift 6
+  ledger=$(fm_wake_ledger_path "$state")
+  if ! size=$(_fm_wake_ledger_size "$ledger"); then
+    fm_wake_ledger_report_unwritten "$state" "$event"
+    return 1
+  fi
+  if [ "$event" != consumed ] && ! fm_wake_ledger_pin_epoch; then
+    fm_wake_ledger_report_unwritten "$state" "$event"
+    return 1
+  fi
+  if ! fm_wake_ledger_record_removal_locked "$state" "$event" "$generation" "$through" "$removed" "$want"; then
+    _fm_wake_ledger_restore "$ledger" "$size" || :
+    return 1
+  fi
+  "$@" && return 0
+  status=$?
+  _fm_wake_ledger_restore "$ledger" "$size" \
+    || printf 'fm-wake-ledger: the %s row in %s could not be taken back after its removal failed\n' \
+      "$event" "$ledger" >&2
+  return "$status"
 }

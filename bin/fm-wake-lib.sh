@@ -2892,7 +2892,8 @@ _fm_wake_require_ledger() {
 # the wake queue. Removes stale wakes for <target>, signal wakes for the task's
 # status or turn-ended files, and task-specific check wakes. A prune that
 # removes a row appends one `pruned` row to <state>'s wake ledger while it
-# still holds the queue lock.
+# still holds the queue lock; when that row cannot be written the prune
+# removes nothing and fails.
 fm_wake_queue_prune_task() {  # <state> <task-id> [target]
   local state=$1 task=$2 target=${3:-}
   local queue="$state/.wake-queue" lock="$state/.wake-queue.lock" tmp removed=
@@ -2910,14 +2911,17 @@ fm_wake_queue_prune_task() {  # <state> <task-id> [target]
     { print }
   ' "$queue" > "$tmp" || { rm -f "$tmp"; fm_lock_release "$lock"; return 1; }
   _fm_wake_require_ledger || { rm -f "$tmp"; fm_lock_release "$lock"; return 1; }
-  removed=$(_fm_wake_ledger_removed_rows "$queue" "$tmp") \
-    || { removed=; fm_wake_ledger_report_unwritten "$state" pruned; }
-  if ! _fm_atomic_replace "$tmp" "$queue"; then
+  if ! removed=$(_fm_wake_ledger_removed_rows "$queue" "$tmp"); then
+    fm_wake_ledger_report_unwritten "$state" pruned
     rm -f "$tmp"
     fm_lock_release "$lock"
     return 1
   fi
-  [ -z "$removed" ] || fm_wake_ledger_record_removal_locked "$state" pruned - - "$removed" || :
+  if ! fm_wake_ledger_commit_removal_locked "$state" pruned - - "$removed" "" _fm_atomic_replace "$tmp" "$queue"; then
+    rm -f "$tmp"
+    fm_lock_release "$lock"
+    return 1
+  fi
   fm_lock_release "$lock"
 }
 

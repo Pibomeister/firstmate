@@ -23,19 +23,27 @@ drain_at() {
   FM_STATE_OVERRIDE="$state" FM_TEST_SEAM=1 FM_NOW="$now" bash "$DRAIN" "$@"
 }
 
+# present_at <state> <now>: drain once at <now> and set PRESENTED_THROUGH and
+# PRESENTED_GENERATION from the acknowledgement boundary it printed.
+present_at() {
+  local state=$1 now=$2 err
+  err="$state/../drain.err"
+  drain_at "$state" "$now" > /dev/null 2> "$err" || fail "presentation drain failed: $(cat "$err")"
+  PRESENTED_THROUGH=$(sed -n 's/^WAKE_ACK_REQUIRED:.*--ack-through \([0-9][0-9]*\) --recovery-generation [A-Za-z0-9._-][A-Za-z0-9._-]*$/\1/p' "$err")
+  PRESENTED_GENERATION=$(sed -n 's/^WAKE_ACK_REQUIRED:.*--ack-through [0-9][0-9]* --recovery-generation \([A-Za-z0-9._-][A-Za-z0-9._-]*\)$/\1/p' "$err")
+  [ -n "$PRESENTED_THROUGH" ] && [ -n "$PRESENTED_GENERATION" ] \
+    || fail "drain printed no acknowledgement boundary: $(cat "$err")"
+}
+
 # present_and_ack <state> <now>: drain once, then acknowledge exactly what the
 # drain presented, both at <now>.
 present_and_ack() {
-  local state=$1 now=$2 err sequence generation
-  err="$state/../drain.err"
-  drain_at "$state" "$now" > /dev/null 2> "$err" || fail "presentation drain failed: $(cat "$err")"
-  sequence=$(sed -n 's/^WAKE_ACK_REQUIRED:.*--ack-through \([0-9][0-9]*\) --recovery-generation [A-Za-z0-9._-][A-Za-z0-9._-]*$/\1/p' "$err")
-  generation=$(sed -n 's/^WAKE_ACK_REQUIRED:.*--ack-through [0-9][0-9]* --recovery-generation \([A-Za-z0-9._-][A-Za-z0-9._-]*\)$/\1/p' "$err")
-  [ -n "$sequence" ] && [ -n "$generation" ] || fail "drain printed no acknowledgement boundary: $(cat "$err")"
-  drain_at "$state" "$now" --ack-through "$sequence" --recovery-generation "$generation" > /dev/null 2>&1 \
-    || fail "acknowledgement through $sequence failed"
-  ACKED_THROUGH=$sequence
-  ACKED_GENERATION=$generation
+  local state=$1 now=$2
+  present_at "$state" "$now"
+  drain_at "$state" "$now" --ack-through "$PRESENTED_THROUGH" --recovery-generation "$PRESENTED_GENERATION" \
+    > /dev/null 2>&1 || fail "acknowledgement through $PRESENTED_THROUGH failed"
+  ACKED_THROUGH=$PRESENTED_THROUGH
+  ACKED_GENERATION=$PRESENTED_GENERATION
 }
 
 ledger_count() {  # <state> <since> <until>
@@ -245,6 +253,104 @@ test_prune_without_ledger_library_fails_and_keeps_queue() {
   pass "a prune without the ledger library fails and leaves the queue unchanged"
 }
 
+# A ledger that cannot take a row (here a directory in its place) must never
+# let a removal take its wakes out uncounted: each removal path leaves the
+# queue as it was and says so, and the same removal succeeds, with its row,
+# once the ledger is writable again.
+test_unwritable_ledger_keeps_removed_wakes() {
+  local dir state ledger err rc
+  dir=$(make_case unwritable-ledger)
+  state="$dir/state"
+  ledger="$state/wake-ledger.tsv"
+  err="$dir/step.err"
+
+  append_wake "$state" signal one.status "signal: one" || fail "append one failed"
+  append_wake "$state" signal two.status "signal: two" || fail "append two failed"
+  present_at "$state" "$T0"
+  mkdir "$ledger"
+  cp "$state/.wake-queue" "$dir/queue.before"
+  drain_at "$state" "$T0" --ack-through "$PRESENTED_THROUGH" --recovery-generation "$PRESENTED_GENERATION" \
+    > /dev/null 2> "$err"; rc=$?
+  [ "$rc" -ne 0 ] || fail "an acknowledgement whose ledger row could not be written reported success"
+  [ -s "$err" ] || fail "an acknowledgement whose ledger row could not be written printed no error"
+  cmp -s "$state/.wake-queue" "$dir/queue.before" \
+    || fail "an acknowledgement whose ledger row could not be written removed queue rows"
+  rmdir "$ledger"
+  drain_at "$state" "$T0" --ack-through "$PRESENTED_THROUGH" --recovery-generation "$PRESENTED_GENERATION" \
+    > /dev/null 2> "$err" || fail "the repeated acknowledgement failed: $(cat "$err")"
+  [ ! -s "$state/.wake-queue" ] || fail "the repeated acknowledgement left rows queued"
+  awk -F '\t' '$2 == "ack" && $5 == "1,2" { n++ } END { exit n != 1 }' "$ledger" \
+    || fail "the repeated acknowledgement did not write one ack row for 1,2: $(cat "$ledger")"
+  pass "an acknowledgement that cannot write its ledger row fails, keeps its wakes, and succeeds on retry"
+
+  rm -f "$ledger"
+  append_wake "$state" signal three.status "signal: three" || fail "append three failed"
+  printf '%s\t4\tsignal\n' "$T0" >> "$state/.wake-queue"
+  printf '4\n' > "$state/.wake-queue.seq"
+  mkdir "$ledger"
+  drain_at "$state" "$T0" > /dev/null 2> "$err" || fail "a presentation drain failed on an unwritable ledger: $(cat "$err")"
+  grep -q 'could not be retired' "$err" || fail "an unwritten retirement was not reported: $(cat "$err")"
+  awk -F '\t' '$2 == "4" && NF < 5 { found = 1 } END { exit !found }' "$state/.wake-queue" \
+    || fail "a retirement whose ledger row could not be written removed the row"
+  rmdir "$ledger"
+  drain_at "$state" "$T0" > /dev/null 2> "$err" || fail "the repeated presentation drain failed: $(cat "$err")"
+  awk -F '\t' '$2 == "4" && NF < 5 { found = 1 } END { exit found }' "$state/.wake-queue" \
+    || fail "the repeated drain did not retire the row"
+  awk -F '\t' '$2 == "retired" && $5 == "4" { n++ } END { exit n != 1 }' "$ledger" \
+    || fail "the repeated drain did not write one retired row for 4: $(cat "$ledger")"
+  pass "a retirement that cannot write its ledger row keeps the row, reports it, and retires it once the ledger is writable"
+
+  rm -f "$ledger"
+  append_wake "$state" signal task-a.status "signal: $state/task-a.status" || fail "append task-a failed"
+  cp "$state/.wake-queue" "$dir/queue.before"
+  mkdir "$ledger"
+  if prune_at "$state" "$T0" task-a "" 2> "$err"; then
+    fail "a prune whose ledger row could not be written reported success"
+  fi
+  [ -s "$err" ] || fail "a prune whose ledger row could not be written printed no error"
+  cmp -s "$state/.wake-queue" "$dir/queue.before" || fail "a prune whose ledger row could not be written removed queue rows"
+  rmdir "$ledger"
+  prune_at "$state" "$T0" task-a "" 2> "$err" || fail "the repeated prune failed: $(cat "$err")"
+  awk -F '\t' '$2 == "pruned" { n++ } END { exit n != 1 }' "$ledger" \
+    || fail "the repeated prune did not write one pruned row: $(cat "$ledger")"
+  pass "a prune that cannot write its ledger row fails, keeps its wakes, and succeeds on retry"
+}
+
+# The ack row carries the epoch of the removal itself. The drain does work
+# between taking the queue lock and removing the acknowledged rows; here its
+# chmod of the acknowledgement scratch file takes two seconds, so a row stamped
+# at lock time would land before that work ended. This runs on the real clock.
+test_ack_row_epoch_is_the_removal_time() {
+  local dir state ledger shim real_chmod log epoch ended
+  dir=$(make_case removal-epoch)
+  state="$dir/state"
+  ledger="$state/wake-ledger.tsv"
+  shim="$dir/shim"
+  log="$dir/chmod.log"
+  real_chmod=$(command -v chmod) || fail "no chmod on PATH"
+  mkdir -p "$shim"
+  cat > "$shim/chmod" <<EOF
+#!/bin/sh
+case "\$*" in
+  *.wake-queue.ack.*) sleep 2; "$real_chmod" "\$@" || exit \$?; date +%s >> "$log"; exit 0 ;;
+esac
+exec "$real_chmod" "\$@"
+EOF
+  "$real_chmod" 0755 "$shim/chmod"
+  append_wake "$state" signal slow.status "signal: slow" || fail "append slow failed"
+  present_at "$state" "$T0"
+  PATH="$shim:$PATH" FM_STATE_OVERRIDE="$state" bash "$DRAIN" \
+    --ack-through "$PRESENTED_THROUGH" --recovery-generation "$PRESENTED_GENERATION" > /dev/null 2>&1 \
+    || fail "the acknowledgement failed"
+  [ -s "$log" ] || fail "the acknowledgement never ran the slowed chmod, so the case proves nothing"
+  ended=$(head -n 1 "$log")
+  epoch=$(awk -F '\t' '$2 == "ack" { print $1 }' "$ledger")
+  [ -n "$epoch" ] || fail "the acknowledgement wrote no ack row: $(cat "$ledger" 2>/dev/null)"
+  [ "$epoch" -ge "$ended" ] \
+    || fail "the ack row epoch $epoch is before the removal work ended at $ended: it was stamped at lock time"
+  pass "the ack row carries the removal time, not the lock-acquire time"
+}
+
 test_ledger_command_contract() {
   local dir state out rc
   dir="$TMP_ROOT/command"
@@ -275,4 +381,6 @@ test_retired_row_counts_and_unwritten_sequence_does_not
 test_pruned_rows_and_window_edges
 test_branch_claim_pruned_before_ack_counts_once
 test_prune_without_ledger_library_fails_and_keeps_queue
+test_unwritable_ledger_keeps_removed_wakes
+test_ack_row_epoch_is_the_removal_time
 test_ledger_command_contract

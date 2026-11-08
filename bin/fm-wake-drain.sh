@@ -114,7 +114,9 @@ reclaim_stale_branch_grant_locked() {
 # reported and never fatal: the usable rows are still presentable and
 # acknowledgeable, and failing the whole drain would strand them too.
 # A retirement appends one `retired` wake-ledger row naming the retired rows
-# that still carried a sequence number (bin/fm-wake-ledger-lib.sh).
+# that still carried a sequence number (bin/fm-wake-ledger-lib.sh); a row that
+# cannot be written leaves the unusable rows queued and is reported like any
+# other unwritable repair.
 retire_unconsumable_rows_locked() {
   local retired unusable queued kept removed
   [ -f "$FM_WAKE_QUEUE" ] || return 0
@@ -133,16 +135,18 @@ retire_unconsumable_rows_locked() {
       DRAIN_TMP=
       return 0
     fi
-    removed=$(_fm_wake_ledger_removed_rows "$FM_WAKE_QUEUE" "$DRAIN_TMP") \
-      || { removed=; fm_wake_ledger_report_unwritten "$STATE" retired; }
-    if _fm_atomic_replace "$DRAIN_TMP" "$FM_WAKE_QUEUE"; then
+    if ! removed=$(_fm_wake_ledger_removed_rows "$FM_WAKE_QUEUE" "$DRAIN_TMP"); then
+      fm_wake_ledger_report_unwritten "$STATE" retired
+    elif fm_wake_ledger_commit_removal_locked "$STATE" retired "$ACK_GENERATION" "$ACK_THROUGH" "$removed" "" \
+      _fm_atomic_replace "$DRAIN_TMP" "$FM_WAKE_QUEUE"; then
       DRAIN_TMP=
-      fm_wake_ledger_record_removal_locked "$STATE" retired "$ACK_GENERATION" "$ACK_THROUGH" "$removed" || :
       printf 'wake drain: retired %s unusable queue row(s) that carried no sequence to present or acknowledge:\n%s\n' \
         "$retired" "$unusable" >&2
       return 0
     fi
   fi
+  [ -z "$DRAIN_TMP" ] || rm -f -- "$DRAIN_TMP"
+  DRAIN_TMP=
   printf 'wake drain: unusable queue row(s) could not be retired (check that %s is readable and %s is writable); continuing with the rows that remain usable\n' \
     "$FM_WAKE_QUEUE" "$STATE" >&2
 }
@@ -193,7 +197,8 @@ claim_main_rows_locked() {
 # consume_actor_rows_locked <rows-file> <cutoff> [<removed-queue-rows>]: drop
 # the claimed sequences at or below <cutoff> and append one `consumed`
 # wake-ledger row naming those of them whose queue row the same
-# acknowledgement removed (<removed-queue-rows>).
+# acknowledgement removed (<removed-queue-rows>). A row that cannot be written
+# leaves the claim file unchanged and fails.
 consume_actor_rows_locked() {
   local rows=$1 cutoff=$2 key_rows=${3:-} consumed
   if [ ! -e "$rows" ] && [ ! -L "$rows" ]; then
@@ -203,11 +208,13 @@ consume_actor_rows_locked() {
   awk -v cutoff="$cutoff" '$1 ~ /^[0-9]+$/ && $1 > cutoff { print $1 }' "$rows" > "$DRAIN_TMP" || return 1
   consumed=$(awk -v cutoff="$cutoff" '$1 ~ /^[0-9]+$/ && $1 <= cutoff { print $1 }' "$rows" \
     | LC_ALL=C sort -n -u | awk 'NR > 1 { printf "," } { printf "%s", $1 }') || return 1
-  write_rows_file_locked "$rows" "$DRAIN_TMP" || return 1
+  if [ -z "$consumed" ]; then
+    write_rows_file_locked "$rows" "$DRAIN_TMP" || return 1
+  else
+    fm_wake_ledger_commit_removal_locked "$STATE" consumed "$ACK_GENERATION" "$cutoff" "$key_rows" "$consumed" \
+      write_rows_file_locked "$rows" "$DRAIN_TMP" || return 1
+  fi
   DRAIN_TMP=
-  [ -z "$consumed" ] \
-    || fm_wake_ledger_record_removal_locked "$STATE" consumed "$ACK_GENERATION" "$cutoff" "$key_rows" "$consumed" \
-    || :
 }
 
 # A branch-actor drain or ack requires a snapshot to already exist and name at
@@ -845,9 +852,8 @@ trap 'exit 143' TERM
 
 if [ -n "$ACK_THROUGH" ]; then
   fm_wake_queue_lock_acquire || exit 1
-  fm_wake_ledger_pin_epoch || :
 elif fm_lock_acquire_wait_bounded "$FM_WAKE_QUEUE_LOCK" "$PRESENTATION_LOCK_TIMEOUT"; then
-  fm_wake_ledger_pin_epoch || :
+  :
 else
   lock_rc=$?
   if [ "$lock_rc" -eq 124 ]; then
@@ -908,7 +914,6 @@ if [ -n "$ACK_THROUGH" ]; then
     exit 1
   fi
   fm_wake_queue_lock_acquire || exit 1
-  fm_wake_ledger_pin_epoch || :
   DRAIN_LOCK_HELD=true
   DRAIN_TMP=$(mktemp "$STATE/.wake-queue.ack.XXXXXX") || exit 1
   chmod 0600 "$DRAIN_TMP" || exit 1
@@ -962,14 +967,17 @@ if [ -n "$ACK_THROUGH" ]; then
       RECOVERY_ACK_MOVED=true
     fi
   fi
-  ACK_REMOVED_ROWS=$(_fm_wake_ledger_removed_rows "$FM_WAKE_QUEUE" "$DRAIN_TMP") \
-    || { ACK_REMOVED_ROWS=; fm_wake_ledger_report_unwritten "$STATE" ack; }
-  if ! _fm_atomic_replace "$DRAIN_TMP" "$FM_WAKE_QUEUE"; then
+  if ! ACK_REMOVED_ROWS=$(_fm_wake_ledger_removed_rows "$FM_WAKE_QUEUE" "$DRAIN_TMP"); then
+    fm_wake_ledger_report_unwritten "$STATE" ack
+    echo "wake drain: acknowledged wakes could not be consumed safely" >&2
+    exit 1
+  fi
+  if ! fm_wake_ledger_commit_removal_locked "$STATE" ack "$ACK_GENERATION" "$ACK_THROUGH" "$ACK_REMOVED_ROWS" "" \
+    _fm_atomic_replace "$DRAIN_TMP" "$FM_WAKE_QUEUE"; then
     echo "wake drain: acknowledged wakes could not be consumed safely" >&2
     exit 1
   fi
   DRAIN_TMP=
-  fm_wake_ledger_record_removal_locked "$STATE" ack "$ACK_GENERATION" "$ACK_THROUGH" "$ACK_REMOVED_ROWS" || :
   if [ -n "$HANDOFF_ACK" ] && [ "$(cat "$STATE/.supervision-handoff-pending" 2>/dev/null)" = "$HANDOFF_ACK" ]; then
     rm -f "$STATE/.supervision-handoff-pending" || exit 1
   fi
