@@ -811,14 +811,75 @@ cursor_case() {  # <rules-json> [quota-file]
   reset_log
   QUOTA_AXI_FIXTURE="${2:-$CURSOR_POOLS_QUOTA}" TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
 }
-CURSOR_THREE='{"rules":[{"when":"Cursor work.","use":[{"harness":"cursor","model":"composer-2.5"},{"harness":"cursor","model":"claude-opus-5-thinking-high"},{"harness":"cursor","model":"grok-4.7-high"},{"harness":"cursor","model":"mystery-model-9"}]}]}'
+CURSOR_THREE='{"rules":[{"when":"Cursor work.","use":[{"harness":"cursor","model":"composer-2.5"},{"harness":"cursor","model":"claude-opus-5-thinking-high"},{"harness":"cursor","model":"mystery-model-9"}]}]}'
 cursor_case "$CURSOR_THREE"
 assert_contains "$out" 'candidate: cursor:composer-2.5  provider=cursor  scope=pool:auto  remaining=90%  spendPriority=0.9  runway=unknown  -> eligible' "a derived auto pool row ranks by its own remaining percent"
 assert_contains "$out" '  status: clear' "the composer candidate resolves clear on a windows-only snapshot"
 assert_contains "$out" "  profile: --harness 'cursor' --model 'composer-2.5'" "the composer candidate is chosen"
 assert_contains "$out" 'candidate: cursor:claude-opus-5-thinking-high  provider=cursor  scope=pool:api  remaining=2%  spendPriority=-  runway=unknown  -> not eligible: pool:api below the Cursor pool floor 5%' "a named cursor model fails the api pool floor at 2%"
-assert_contains "$out" 'candidate: cursor:grok-4.7-high  provider=cursor  scope=pool:api  remaining=2%  spendPriority=-  runway=unknown  -> not eligible: pool:api below the Cursor pool floor 5%' "a cursor grok model stays on the conservative api pool"
 assert_contains "$out" 'candidate: cursor:mystery-model-9  provider=cursor  scope=all_models  remaining=2%  spendPriority=-  runway=unknown  -> not eligible: all_models below the Cursor pool floor 5%' "an unknown cursor model fails the pool floor on its all_models row"
+
+# Cursor's included pool covers Grok 4.7, Grok 4.6, and Grok 4.5, so those
+# models read the auto pool even when api_usage is exhausted (0% remaining
+# here, auto_usage at 79%).
+CURSOR_GROK_QUOTA="$TMP_ROOT/cursor-grok-quota.json"
+jq '(.providers[] | select(.provider == "cursor") | .windows) =
+    [{"id":"included_usage","percentRemaining":76},{"id":"auto_usage","percentRemaining":79},{"id":"api_usage","percentRemaining":0}]
+  | (.providers[] | select(.provider == "cursor") | .quotaSemantics.effectiveAvailability) =
+    [{"scope":"all_models","status":"known","effectivePercentRemaining":0,"runway":{"status":"exhausted_now"},"selection":{"spendPriority":0}}]' \
+  "$CURSOR_POOLS_QUOTA" > "$CURSOR_GROK_QUOTA"
+for grok_model in grok-4.7-high cursor-grok-4.6-medium cursor-grok-4.5-high; do
+  cursor_case "{\"rules\":[{\"when\":\"Cursor work.\",\"use\":[{\"harness\":\"cursor\",\"model\":\"$grok_model\"}]}]}" "$CURSOR_GROK_QUOTA"
+  assert_contains "$out" "candidate: cursor:$grok_model  provider=cursor  scope=pool:auto  remaining=76%  spendPriority=0.76  runway=unknown  -> eligible" "cursor $grok_model reads the included auto pool with api_usage exhausted"
+  assert_contains "$out" "  profile: --harness 'cursor' --model '$grok_model'" "cursor $grok_model resolves on the included pool"
+done
+cursor_case '{"rules":[{"when":"Cursor work.","use":[{"harness":"cursor","model":"grok-4.8-high"}]}]}' "$CURSOR_GROK_QUOTA"
+assert_contains "$out" 'candidate: cursor:grok-4.8-high  provider=cursor  scope=pool:api' "an unknown future cursor grok model stays on the conservative api pool"
+assert_contains "$out" 'not eligible: runway exhausted_now at pool:api' "an unknown future cursor grok model is blocked when the api pool is exhausted"
+cursor_case '{"rules":[{"when":"Cursor work.","use":[{"harness":"cursor","model":"grok-4.6-high"}]}]}' "$CURSOR_GROK_QUOTA"
+assert_contains "$out" 'candidate: cursor:grok-4.6-high  provider=cursor  scope=pool:api' "an unlisted bare grok-4.6 spelling stays on the conservative api pool"
+
+# AGY reads by group: Flash binds the shared gemini scope, Claude binds
+# claude_gpt, and Argon never binds the shared gemini row.
+AGY_GROUPS_QUOTA="$TMP_ROOT/agy-groups-quota.json"
+jq '(.providers[] | select(.provider == "agy") | .quotaSemantics.effectiveAvailability) = [
+    {"scope":"gemini","status":"known","effectivePercentRemaining":99,"runway":{"status":"through_reset"},"selection":{"spendPriority":1.5627}},
+    {"scope":"claude_gpt","status":"known","effectivePercentRemaining":1,"runway":{"status":"projected_exhaustion"},"selection":{"spendPriority":-1.4871}}]' \
+  "$QUOTA" > "$AGY_GROUPS_QUOTA"
+cursor_case '{"rules":[{"when":"Agy work.","use":[{"harness":"agy","model":"gemini-3.8-flash-high","provider":"agy"}]}]}' "$AGY_GROUPS_QUOTA"
+assert_contains "$out" 'candidate: agy:gemini-3.8-flash-high  provider=agy  scope=gemini  remaining=99%  spendPriority=1.5627  runway=through_reset  -> eligible' "agy Flash binds the shared gemini scope"
+assert_contains "$out" "  profile: --harness 'agy' --model 'gemini-3.8-flash-high'" "agy Flash resolves on the gemini scope"
+cursor_case '{"rules":[{"when":"Agy work.","use":[{"harness":"agy","model":"claude-opus-5-5-high","provider":"agy"}]}]}' "$AGY_GROUPS_QUOTA"
+assert_contains "$out" 'candidate: agy:claude-opus-5-5-high  provider=agy  scope=claude_gpt  remaining=1%  spendPriority=-1.4871  runway=projected_exhaustion  -> eligible' "agy Claude binds the claude_gpt scope, not gemini"
+cursor_case '{"rules":[{"when":"Agy work.","use":[{"harness":"agy","model":"gemini-4-argon-high","provider":"agy"}]}]}' "$AGY_GROUPS_QUOTA"
+assert_contains "$out" 'candidate: agy:gemini-4-argon-high  provider=agy  scope=model:gemini_argon  remaining=-%  spendPriority=-  runway=-  -> eligible, unranked: quota row model:gemini_argon unknown: not rankable: disclosed uncertainty' "agy Argon carries an explicit unknown row instead of the shared gemini row"
+AGY_ARGON_QUOTA="$TMP_ROOT/agy-argon-quota.json"
+jq '(.providers[] | select(.provider == "agy") | .quotaSemantics.effectiveAvailability) += [
+    {"scope":"model:gemini_argon","status":"known","effectivePercentRemaining":0,"runway":{"status":"exhausted_now"},"selection":{"spendPriority":0}}]' \
+  "$AGY_GROUPS_QUOTA" > "$AGY_ARGON_QUOTA"
+cursor_case '{"rules":[{"when":"Agy work.","use":[{"harness":"agy","model":"gemini-4-argon-high","provider":"agy"}]}]}' "$AGY_ARGON_QUOTA"
+assert_contains "$out" 'candidate: agy:gemini-4-argon-high  provider=agy  scope=model:gemini_argon  remaining=0%  spendPriority=-  runway=exhausted_now  -> not eligible: runway exhausted_now at model:gemini_argon' "agy Argon binds its dedicated scope when quota-axi emits one"
+cursor_case '{"rules":[{"when":"Agy work.","use":[{"harness":"agy","model":"gpt-oss-120b-medium","provider":"agy"}]}]}' "$AGY_GROUPS_QUOTA"
+assert_contains "$out" 'candidate: agy:gpt-oss-120b-medium  provider=agy  scope=claude_gpt  remaining=1%  spendPriority=-1.4871  runway=projected_exhaustion  -> eligible' "agy gpt-oss binds the claude_gpt scope"
+cursor_case '{"rules":[{"when":"Agy work.","use":[{"harness":"agy","model":"gemini-4-carbon-high","provider":"agy"}]}]}' "$AGY_GROUPS_QUOTA"
+assert_contains "$out" 'candidate: agy:gemini-4-carbon-high  provider=agy  scope=model:gemini_carbon  remaining=-%  spendPriority=-  runway=-  -> eligible, unranked: quota row model:gemini_carbon unknown: not rankable: disclosed uncertainty' "agy Carbon carries an explicit unknown row instead of the shared gemini row"
+AGY_COLLAPSED_QUOTA="$TMP_ROOT/agy-collapsed-quota.json"
+jq '(.providers[] | select(.provider == "agy") | .quotaSemantics.effectiveAvailability) = [
+    {"scope":"all_models","status":"known","effectivePercentRemaining":0,"runway":{"status":"exhausted_now"},"selection":{"spendPriority":0}},
+    {"scope":"gemini","status":"known","effectivePercentRemaining":99,"runway":{"status":"through_reset"},"selection":{"spendPriority":1.5627}},
+    {"scope":"model:gemini-4-argon-high","status":"known","effectivePercentRemaining":42,"runway":{"status":"through_reset"},"selection":{"spendPriority":0.42}}]' \
+  "$QUOTA" > "$AGY_COLLAPSED_QUOTA"
+cursor_case '{"rules":[{"when":"Agy work.","use":[{"harness":"agy","model":"gemini-3.8-flash-high","provider":"agy"}]}]}' "$AGY_COLLAPSED_QUOTA"
+assert_contains "$out" 'candidate: agy:gemini-3.8-flash-high  provider=agy  scope=gemini  remaining=99%  spendPriority=1.5627  runway=through_reset  -> eligible' "a grouped agy model is not bounded by the collapsed all_models row"
+cursor_case '{"rules":[{"when":"Agy work.","use":[{"harness":"agy","model":"gemini-4-argon-high","provider":"agy"}]}]}' "$AGY_COLLAPSED_QUOTA"
+assert_contains "$out" 'candidate: agy:gemini-4-argon-high  provider=agy  scope=model:gemini-4-argon-high  remaining=42%  spendPriority=0.42  runway=through_reset  -> eligible' "a known exact Argon scope does not gain a fabricated unknown row"
+AGY_SIBLING_QUOTA="$TMP_ROOT/agy-sibling-quota.json"
+jq '(.providers[] | select(.provider == "agy") | .quotaSemantics.effectiveAvailability) = [
+    {"scope":"gemini","status":"known","effectivePercentRemaining":99,"runway":{"status":"through_reset"},"selection":{"spendPriority":1.5627}},
+    {"scope":"model:gemini-4-argon-low","status":"known","effectivePercentRemaining":42,"runway":{"status":"through_reset"},"selection":{"spendPriority":0.42}}]' \
+  "$QUOTA" > "$AGY_SIBLING_QUOTA"
+cursor_case '{"rules":[{"when":"Agy work.","use":[{"harness":"agy","model":"gemini-4-argon-high","provider":"agy"}]}]}' "$AGY_SIBLING_QUOTA"
+assert_contains "$out" 'candidate: agy:gemini-4-argon-high  provider=agy  scope=model:gemini_argon  remaining=-%  spendPriority=-  runway=-  -> eligible, unranked: quota row model:gemini_argon unknown: not rankable: disclosed uncertainty' "a sibling Argon model row does not bind another Argon model"
 
 CURSOR_REAL_POOLS="$TMP_ROOT/cursor-real-pools-quota.json"
 jq '(.providers[] | select(.provider == "cursor") | .quotaSemantics.effectiveAvailability) += [
