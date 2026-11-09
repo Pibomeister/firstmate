@@ -8,6 +8,10 @@
 #   scan                      Observe and print each relay's verdict; no action
 #                             and no state written.
 #   status                    Print the status file the last pass wrote.
+#   render-launchd            Print a macOS LaunchAgent plist that keeps `run`
+#                             alive for this home.
+#   render-systemd            Print a Linux systemd unit that keeps `run`
+#                             alive for this home.
 #
 # Why it exists: a relay process (for example the Grok Bot box's
 # m3-forward.mjs port forwarders into the tailnet) keeps running after the
@@ -21,13 +25,13 @@
 # guard owns them, retire any other respawn path for the same relays.
 #
 # Each pass, per configured relay, in this order:
-#   daemon-down       No process named <daemon> is running. No action: a relay
+#   daemon-down       No top-level process named <daemon> is running. No action: a relay
 #                     cannot work without it. The relay is restarted once the
 #                     daemon is back, by the daemon-restarted rule.
 #   missing           No process runs the relay command. Start it.
 #   duplicate         More than one process runs it. Stop all, start one.
-#   daemon-restarted  The relay process is older than the youngest daemon
-#                     process, so it predates the running daemon. Stop and
+#   daemon-restarted  The relay process is older than the youngest top-level
+#                     daemon process, so it predates the running daemon. Stop and
 #                     start it. This is deterministic and needs no probe.
 #   probe-failed      The relay's probe failed <probe-fails> passes in a row
 #                     while the relay is newer than the daemon. Stop and start.
@@ -41,9 +45,15 @@
 # After the pass's starts it waits <settle-secs>, confirms each started relay is
 # running, and runs its probe; a failed post-start probe begins a new streak.
 #
+# A top-level daemon process is one whose parent is not itself named <daemon>,
+# so helpers the daemon re-executes as itself (such as `tailscaled be-child
+# ssh` for each Tailscale SSH session) never count as a daemon restart.
+#
 # Configuration: $FM_HOME/config/relay-guard, one key=value per line, '#'
-# comments. An unknown key, a dangling probe, a bad relay name, a non-numeric
-# limit, or no relay at all is refused (exit 2) before anything is touched.
+# comments; docs/examples/relay-guard is a starting point for the m3-forward
+# relays. An unknown key, a dangling probe, a relay without a probe, a bad relay
+# name, a non-numeric limit, or no relay at all is refused (exit 2) before
+# anything is touched.
 #   daemon=<name>             Process name of the network daemon, as `ps -o
 #                             comm=` prints it (basename). Default tailscaled.
 #   relay.<name>=<command>    Start command for one relay; <name> is
@@ -55,10 +65,10 @@
 #                             space and the command (an interpreter prefix such
 #                             as `/bin/sh` or `node` may precede it). Run
 #                             `scan` first to confirm existing relays match.
-#   probe.<name>=<command>    Optional reachability probe for that relay, split
+#   probe.<name>=<command>    Required reachability probe for that relay, split
 #                             the same way; exit 0 means the far side answers
-#                             through the relay. Without one, a running relay
-#                             newer than the daemon is ok.
+#                             through the relay, so it must reach the paired
+#                             environment, not only the local listener.
 #   probe-fails=2  probe-timeout-secs=10  max-restarts=3  window-secs=900
 #   backoff-secs=30  settle-secs=2  term-wait-secs=5
 # Stopping sends TERM to the matched pids, waits <term-wait-secs>, then KILLs
@@ -83,8 +93,15 @@
 # relay is not (daemon down, probe failing, capped, backoff, or a start that
 # did not stay running), 2 on a usage or configuration error, 75 when another
 # pass holds the lock, 1 on any other failure. run keeps looping past 3.
-# Requires a procps-style ps that accepts -A, -ww, and -o pid=,args=,etime=,comm=
-# (Linux procps and macOS both do).
+# Requires a procps-style ps that accepts -A, -ww, and
+# -o pid=,ppid=,args=,etime=,comm= (Linux procps and macOS both do).
+#
+# Install: FM_HOME must be absolute. On macOS save render-launchd as
+# ~/Library/LaunchAgents/<label>.plist and launchctl bootstrap gui/$(id -u)
+# it. On Linux save render-systemd as
+# ~/.config/systemd/user/<label>.service, run systemctl --user daemon-reload,
+# then systemctl --user enable --now <label>.service (enable lingering for the
+# user so it runs without a login). <label> is the Label or unit name printed.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -172,6 +189,11 @@ load_config() {
     PROBES[idx]=${p#*=}
   done
   [ "${#NAMES[@]}" -gt 0 ] || die "no relay.<name> entries in $CONF" 2
+  idx=0
+  while [ "$idx" -lt "${#NAMES[@]}" ]; do
+    [ -n "${PROBES[$idx]}" ] || die "relay.${NAMES[$idx]} has no probe.${NAMES[$idx]}" 2
+    idx=$((idx + 1))
+  done
   [ "$PROBE_FAILS" -ge 1 ] || PROBE_FAILS=1
   [ "$PROBE_TIMEOUT" -ge 1 ] || PROBE_TIMEOUT=1
 }
@@ -195,18 +217,28 @@ proc_age() {  # <pid> -> seconds; nonzero when gone
   etime_secs "$et"
 }
 
-# "<pid> <age>" of the youngest process named $DAEMON; nonzero when none.
+# "<pid> <age>" of the youngest top-level process named $DAEMON; nonzero when
+# none. A $DAEMON process whose parent is also $DAEMON is a helper, not a
+# restart.
 daemon_youngest() {
-  local pid et comm best_pid='' best_age='' age
-  while read -r pid et comm; do
-    [ -n "${comm:-}" ] || continue
-    [ "${comm##*/}" = "$DAEMON" ] || continue
+  local pid et best_pid='' best_age='' age
+  while read -r pid et; do
+    [ -n "${et:-}" ] || continue
     age=$(etime_secs "$et")
     if [ -z "$best_age" ] || [ "$age" -lt "$best_age" ]; then
       best_pid=$pid
       best_age=$age
     fi
-  done < <(ps -A -o pid= -o etime= -o comm= 2>/dev/null)
+  done < <(ps -A -o pid= -o ppid= -o etime= -o comm= 2>/dev/null | FM_RG_DAEMON="$DAEMON" awk '
+    {
+      comm = $4
+      for (k = 5; k <= NF; k++) comm = comm " " $k
+      sub(/.*\//, "", comm)
+      if (comm != ENVIRON["FM_RG_DAEMON"]) next
+      named[$1] = 1
+      n++; pid[n] = $1; ppid[n] = $2; et[n] = $3
+    }
+    END { for (k = 1; k <= n; k++) if (!(ppid[k] in named)) print pid[k], et[k] }')
   [ -n "$best_pid" ] || return 1
   printf '%s %s' "$best_pid" "$best_age"
 }
@@ -344,27 +376,25 @@ pass_once() {
     elif ! rage=$(proc_age "${pids[0]}"); then
       reason=missing
       pids=()
-    elif [ "$rage" -gt "$dage" ]; then
+    elif ! dline=$(daemon_youngest); then
+      verdict='daemon-down'
+      detail="no $DAEMON process"
+    elif dage=${dline#* }; [ "$rage" -gt "$dage" ]; then
       reason='daemon-restarted'
       limited=0
       detail="relay age ${rage}s > $DAEMON age ${dage}s"
-    elif [ -n "$probe" ]; then
-      if run_probe "$name" "$probe"; then
-        [ "$ACT" -eq 1 ] && rm -f "$STATE/$name.fails"
-        verdict=ok
-      else
-        fails=$(( $(read_int "$STATE/$name.fails") + 1 ))
-        if [ "$fails" -ge "$PROBE_FAILS" ]; then
-          reason='probe-failed'
-          detail="probe failed $fails of $PROBE_FAILS passes"
-        else
-          [ "$ACT" -eq 1 ] && printf '%s\n' "$fails" > "$STATE/$name.fails"
-          verdict='probe-failing'
-          detail="probe failed $fails of $PROBE_FAILS passes"
-        fi
-      fi
-    else
+    elif run_probe "$name" "$probe"; then
+      [ "$ACT" -eq 1 ] && rm -f "$STATE/$name.fails"
       verdict=ok
+    else
+      fails=$(( $(read_int "$STATE/$name.fails") + 1 ))
+      if [ "$fails" -ge "$PROBE_FAILS" ]; then
+        reason='probe-failed'
+      else
+        [ "$ACT" -eq 1 ] && printf '%s\n' "$fails" > "$STATE/$name.fails"
+        verdict='probe-failing'
+      fi
+      detail="probe failed $fails of $PROBE_FAILS passes"
     fi
     if [ -n "$reason" ]; then
       if [ "$ACT" -eq 0 ]; then
@@ -418,21 +448,16 @@ pass_once() {
         verdict='start-failed'
         detail="$reason; started relay is not running (see $name.log)"
         unhealthy=1
-      elif [ -n "${PROBES[$idx]}" ]; then
-        if run_probe "$name" "${PROBES[$idx]}"; then
-          probe_result=ok
-          verdict=$action
-          detail="$reason; probe ok"
-        else
-          probe_result=fail
-          printf '1\n' > "$STATE/$name.fails"
-          verdict='probe-failing'
-          detail="$reason; started, probe failed"
-          unhealthy=1
-        fi
-      else
+      elif run_probe "$name" "${PROBES[$idx]}"; then
+        probe_result=ok
         verdict=$action
-        detail="$reason; running"
+        detail="$reason; probe ok"
+      else
+        probe_result=fail
+        printf '1\n' > "$STATE/$name.fails"
+        verdict='probe-failing'
+        detail="$reason; started, probe failed"
+        unhealthy=1
       fi
       ledger "$now" "$name" "$action" "$reason" "${started_old[$j]:--}" "${new:--}" "$probe_result"
       status_lines+=("$name"$'\t'"$verdict"$'\t'"$new"$'\t'"$detail")
@@ -448,6 +473,71 @@ pass_once() {
   printf '%s\n' "$header"
   printf '%s\n' "${status_lines[@]}"
   [ "$unhealthy" -eq 0 ] || return 3
+}
+
+canonical_home() {
+  case "$FM_HOME" in /*) ;; *) die "FM_HOME must be absolute to render a unit" 2 ;; esac
+  (cd -P -- "$FM_HOME" && pwd -P) || die "cannot resolve $FM_HOME" 2
+}
+
+unit_label() {  # <canonical-home>
+  local sum _
+  read -r sum _ <<< "$(printf '%s' "$1" | cksum)"
+  printf 'firstmate-relay-guard-%s' "$sum"
+}
+
+xml_escape() {
+  sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' \
+    -e 's/"/\&quot;/g' -e "s/'/\&apos;/g"
+}
+
+systemd_escape() {
+  sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/%/%%/g'
+}
+
+render_launchd() {
+  local home label script
+  home=$(canonical_home) || exit 2
+  label=$(unit_label "$home")
+  script=$(printf '%s' "$SCRIPT_DIR/fm-relay-guard.sh" | xml_escape)
+  home=$(printf '%s' "$home" | xml_escape)
+  cat <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$label</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/bash</string><string>$script</string><string>run</string>
+  </array>
+  <key>EnvironmentVariables</key><dict><key>FM_HOME</key><string>$home</string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+</dict></plist>
+EOF
+}
+
+render_systemd() {
+  local home label script
+  home=$(canonical_home) || exit 2
+  label=$(unit_label "$home")
+  script=$(printf '%s' "$SCRIPT_DIR/fm-relay-guard.sh" | systemd_escape)
+  home=$(printf '%s' "$home" | systemd_escape)
+  cat <<EOF
+[Unit]
+Description=Firstmate relay guard ($label)
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Environment="FM_HOME=$home"
+ExecStart=/bin/bash "$script" run
+Restart=always
+RestartSec=10s
+
+[Install]
+WantedBy=default.target
+EOF
 }
 
 LOCKED=0
@@ -525,10 +615,18 @@ case "$cmd" in
     [ -f "$STATE/status.tsv" ] || die "no status yet at $STATE/status.tsv" 1
     cat "$STATE/status.tsv"
     ;;
+  render-launchd)
+    [ "$#" -eq 0 ] || die "render-launchd takes no arguments" 2
+    render_launchd
+    ;;
+  render-systemd)
+    [ "$#" -eq 0 ] || die "render-systemd takes no arguments" 2
+    render_systemd
+    ;;
   -h|--help|help)
     sed -n '2,/^set -u$/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'
     ;;
   *)
-    die "usage: FM_HOME=<home> fm-relay-guard.sh once|run [--interval <secs>]|scan|status" 2
+    die "usage: FM_HOME=<home> fm-relay-guard.sh once|run [--interval <secs>]|scan|status|render-launchd|render-systemd" 2
     ;;
 esac
