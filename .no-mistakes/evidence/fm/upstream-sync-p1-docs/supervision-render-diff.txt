@@ -1,0 +1,21 @@
+## Rendered supervision instructions: base 8bf13fb9 vs target 04a48efe (lab FM_HOME)
+harness=claude afk=0 supervision-host=off: IDENTICAL (      63 lines)
+harness=claude afk=1 supervision-host=off: IDENTICAL (      63 lines)
+harness=codex afk=0 supervision-host=off: IDENTICAL (      50 lines)
+harness=codex afk=1 supervision-host=off: IDENTICAL (      50 lines)
+harness=claude afk=0 supervision-host=supervision-host: IDENTICAL (      63 lines)
+harness=claude afk=1 supervision-host=supervision-host: IDENTICAL (      63 lines)
+harness=codex afk=0 supervision-host=supervision-host: IDENTICAL (      68 lines)
+harness=codex afk=1 supervision-host=supervision-host: IDENTICAL (      68 lines)
+
+--- sample: codex, supervision-host on, afk=1 (target) lines mentioning checkpoint/handed-back:
+- Ordinary wake: drain and acknowledge the wake, then end the turn. The Stop hook re-arms a persistent watcher. Do not start another foreground checkpoint.
+A bounded checkpoint is a tool call, not a conversation turn.
+When a checkpoint you already started is still running, poll it with `write_stdin` (empty input) until it exits, handle its wake, and do not end the turn while it runs.
+Do not start another `bin/fm-watch-checkpoint.sh` after it exits.
+On a home that runs the supervision host, an away record stops the re-arm: the turn ends with a loud notice that away supervision is not running until the next checkpoint.
+A secondmate home keeps one outside-turn watcher instead of another checkpoint.
+3. Poll a checkpoint only while it is still running.
+4. Ordinary wake: if a running checkpoint prints `signal:`, `stale:`, `check:`, or `heartbeat`, drain queued wakes, handle that wake, acknowledge it, then end the turn.
+   Do not start another foreground checkpoint.
+5. If the checkpoint exits 0 and prints `checkpoint: no actionable wake`, drain queued wakes anyway, process any queued user message now visible to Codex, then end the turn.

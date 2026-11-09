@@ -1,0 +1,7 @@
+## Seed catalog vs worktree bytes at 04a48efe
+MATCH: bin/fm-claude-seed.manifest equals the catalog regenerated from worktree bytes (67 entries)
+
+## Base manifest vs base tree (lines the regen corrected that predate this branch)
+.agents/skills/bootstrap-diagnostics/SKILL.md base-tree-blob=882d0153f69e43e8fd51528cf218dbeddf67d934 base-manifest=f305a13e022afdfc28f218c98ee128678e06ae7e
+.agents/skills/operational-home-layout/SKILL.md base-tree-blob=10085d6c4208a0b5f95e86fb7667f0db6489da9d base-manifest=f2acfe7e647ee196d7971ff7344db40e7e9a0c15
+.agents/skills/session-start-recovery/SKILL.md base-tree-blob=3e158fd94ec144fe3589359432e576615496a396 base-manifest=6b3403b7fcb4b4773bbef6d7da8f8065c63a4f01

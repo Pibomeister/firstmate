@@ -1,0 +1,6 @@
+## Which launchers pass --setting-sources project,local (at 04a48efe)
+bin/fm-claude-trust.sh:34:# `--setting-sources project,local` (firstmate PR 10's minimal worker tool
+bin/fm-live-lab.sh:67:#   primary          window main: claude --setting-sources project,local
+bin/fm-live-lab.sh:573:    primary=(claude --setting-sources "project,local" --model "$model" --effort "$effort" --permission-mode auto)
+bin/fm-watchdog.sh:632:        --setting-sources "" --strict-mcp-config --no-session-persistence --max-budget-usd "$(cfg judge-call-max-usd 0.05)") 2>/dev/null) || rc=$?
+fm-spawn.sh matches: 0

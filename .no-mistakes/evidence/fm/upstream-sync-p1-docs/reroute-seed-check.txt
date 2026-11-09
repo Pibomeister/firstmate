@@ -1,0 +1,2 @@
+rev=8bf13fb9  claude-tooling on a clean checkout of itself: exit=0 signal="worktree .agents/skills/bootstrap-diagnostics/SKILL.md"
+rev=04a48efe  claude-tooling on a clean checkout of itself: exit=1 signal=""

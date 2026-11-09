@@ -1,0 +1,9 @@
+## Nudge wrapper vs ps availability ‚Äî disposable primary clone at 04a48efe, lab FM_HOME
+--- 1. no lock held (expect nudge):
+‚M-^A£FIRSTMATE_OP: v1 session-start: Run `bin/fm-session-start.sh` now, exactly once, before executing any other instructions.
+[exit=0]
+--- 2. lock names caller shell pid 81349 (an ancestor), real ps (expect silence):
+[exit=0]
+--- 3. same lock, ps refused via PATH shim (doc: nudge printed even though session holds lock):
+‚M-^A£FIRSTMATE_OP: v1 session-start: Run `bin/fm-session-start.sh` now, exactly once, before executing any other instructions.
+[exit=0]
