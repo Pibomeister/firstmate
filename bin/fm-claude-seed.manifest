@@ -6,7 +6,7 @@ fm-claude-seed.v1
 028020651b6912a24d0b272f637e5ef9d7801972	.agents/skills/away-quiet-supervision/SKILL.md
 b11f1256bb420df81868e88ac6ee1b51fbc3380e	.agents/skills/bearings/SKILL.md
 987db2d8c03d822f333e30b6176bcbd0049acf82	.agents/skills/bearings/assets/board-template.html
-f305a13e022afdfc28f218c98ee128678e06ae7e	.agents/skills/bootstrap-diagnostics/SKILL.md
+882d0153f69e43e8fd51528cf218dbeddf67d934	.agents/skills/bootstrap-diagnostics/SKILL.md
 afc3c0a8365a0be13936f4d00319e95ceb077deb	.agents/skills/captain-hold-lifecycle/SKILL.md
 d2950993e7c3577f58d2120f748fd0a838030b78	.agents/skills/diagnostic-reasoning/SKILL.md
 de224f571d3cdfb96e5b13fc208fdacfe56a1096	.agents/skills/firstmate-calm
@@ -22,7 +22,7 @@ eda57198865d7df8680e75cb2a263192dcdd24bb	.agents/skills/harness-adapters/referen
 56b81965cb9165f2f6162e2f39574400113bbade	.agents/skills/harness-adapters/references/common/model-and-effort.md
 7d5c5a19ba86ea52d4cb45954dc685f97654ec73	.agents/skills/harness-adapters/references/common/primary-hooks.md
 c0ae106b91cba0482d8a814dc11a321169d44a55	.agents/skills/harness-adapters/references/harness/agy.md
-bb2698836eca308efe83e860254ef40d2606db69	.agents/skills/harness-adapters/references/harness/claude.md
+c30725628cfa58bc1c1785c8213dc4294866146a	.agents/skills/harness-adapters/references/harness/claude.md
 40e2e1e91d20103b09de0448aefe718c92cb9cf9	.agents/skills/harness-adapters/references/harness/codex.md
 1361f1b234171d3b52a0aadf187de06412c02fa6	.agents/skills/harness-adapters/references/harness/commandcode.md
 b7449a292cfa50aea02b9c1d64a7bb8ee9eed4ae	.agents/skills/harness-adapters/references/harness/cortex.md
@@ -38,14 +38,14 @@ b73bb8d9eb5c0cbb0cf17040e56664cac01eb4aa	.agents/skills/harness-adapters/referen
 3a84c2f8b441117b531af599808f45f03a48a80a	.agents/skills/harness-adapters/references/harness/pi.md
 a7bfed42381539fe59ce8ad2b5b2b45878578025	.agents/skills/harness-adapters/references/harness/polytoken.md
 58602fc3d31146859c96acc94eb9faa3a02d6e26	.agents/skills/harness-adapters/references/harness/rovo.md
-f2acfe7e647ee196d7971ff7344db40e7e9a0c15	.agents/skills/operational-home-layout/SKILL.md
+10085d6c4208a0b5f95e86fb7667f0db6489da9d	.agents/skills/operational-home-layout/SKILL.md
 11bf57f318370fe3f480dd373c9d6af4fa75658f	.agents/skills/process-event-sources/SKILL.md
 1080ba6a3df84034a6b17cdfe9948da521082ccf	.agents/skills/project-management/SKILL.md
 eff603d0d9c96f56a66cea717c80e7df1e4b88e5	.agents/skills/quiet/SKILL.md
 9ef029a0a0e6a32919741a5e80ae676d98c8dac2	.agents/skills/quota-array-dispatch/SKILL.md
 de7759e6c1df2c4d45b8441b61e7f8927a8af380	.agents/skills/scout-completion/SKILL.md
 c21ada915aac34e09457c63e6b3e0312dab08b67	.agents/skills/secondmate-provisioning/SKILL.md
-6b3403b7fcb4b4773bbef6d7da8f8065c63a4f01	.agents/skills/session-start-recovery/SKILL.md
+3e158fd94ec144fe3589359432e576615496a396	.agents/skills/session-start-recovery/SKILL.md
 ba9cf258fce57569ef5e6f3fc33793d7b4c53411	.agents/skills/ship-landing/SKILL.md
 5872050963fad9b9ae985efc5b192ab6b41c9456	.agents/skills/stow/SKILL.md
 672c2074209932a8fd09072385477a2c0734a8bb	.agents/skills/stuck-crewmate-recovery/SKILL.md
