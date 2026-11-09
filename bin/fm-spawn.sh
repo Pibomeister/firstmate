@@ -7506,10 +7506,10 @@ EOF
     # probes and the evidence). Neither Codex path is usable on the
     # installed binary: a pane worker's turns are not observable through
     # the app-server protocol, and its lifecycle hooks did not fire for a
-    # firstmate-launched worker. Codex therefore classifies unknown with
-    # an explicit reason rather than falling back to idle, and no busy
-    # wiring is installed. The turn-end NOTIFICATION marker still rides
-    # the launch command via -c notify=[...] and __TURNEND__.
+    # firstmate-launched worker. No busy wiring is installed, and Codex
+    # classifies through fm_busy_codex_native_turn_state instead. The
+    # turn-end marker rides the launch command via -c notify=[...] and
+    # __TURNEND__; that classifier also reads it as idle evidence.
     ;;
   grok*)
     # Parent turn-end wiring only. A secondmate already classifies through the

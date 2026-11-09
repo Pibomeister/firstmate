@@ -8,7 +8,7 @@ These command-line and terminal facts apply to pane-backed sessions; for T3 Code
 
 | Fact | Value |
 |---|---|
-| Busy state | Unknown until a semantic source is live-verified: the app-server turn lifecycle is unreachable for a pane worker, and project lifecycle hooks did not fire for a Firstmate-launched worker. |
+| Busy state | No semantic source is live-verified: the app-server turn lifecycle is unreachable for a pane worker, and project lifecycle hooks did not fire for a Firstmate-launched worker. Until one is, `fm_busy_codex_native_turn_state` in `../../../bin/fm-busy-lib.sh` reads busy from native backend evidence and idle only from Herdr's native idle plus the turn-ended marker, and otherwise classifies unknown. |
 | Exit command | `/quit`; its slash popup needs about one second between text and Enter, which the shared submit path used by the control plane handles. |
 | Interrupt | Single Escape. |
 | Skill invocation | `$<skill>`, for example `$no-mistakes`; `/<skill>` is Claude-only and Codex rejects it as "Unrecognized command". |
