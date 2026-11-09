@@ -778,6 +778,44 @@ See [`wedge-alarm.md`](wedge-alarm.md) for away and quiet alert behavior, channe
 See [`watchdog.md`](watchdog.md) for the watched homes, symptoms, action ladder, restart proof, hard boundaries, model fallback, status file, and every `config/watchdog` key.
 A muse `restart-command` with no approval-off flag gets `--yolo` added by default; the `restart-command` row in [`watchdog.md`](watchdog.md) owns the exact rule.
 
+## Captain self-nudge (`~/.config/firstmate/captain-nudge.json`)
+
+Host-local JSON for `bin/fm-captain-nudge.sh`.
+It is not a file under `FM_HOME/config/`: one host can watch several captains that do not share a home.
+See [`captain-nudge.md`](captain-nudge.md) for behaviour, install, and hard limits, [`captain-nudge-spec.md`](captain-nudge-spec.md) for the JSONL and `NUDGE v1` line, and [`docs/examples/captain-nudge.md`](examples/captain-nudge.md) for per-host copies.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `schema` | `fm-captain-nudge.v1` | Config identity. |
+| `host` | required | Short host token written on every event (`m4`, `dev01`, ...). |
+| `interval_secs` | `300` | `run` loop sleep. |
+| `guard_stale_secs` | `660` | Outer guard restarts the loop when `loop.heartbeat` is older than this. |
+| `idle_min` | `20` | Default idle minutes before a nudge. A captain may override. |
+| `cooldown_min` | `30` | Default minutes between nudges for one captain. |
+| `max_no_progress` | `2` | Consecutive no-progress nudges before `nudge_no_progress` and stop. |
+| `mode` | `act` | `dry-run` logs decisions and never types. |
+| `state_dir` | `~/.local/state/firstmate/captain-nudge` | Heartbeat, pid, and per-captain state. |
+| `jsonl_log` | `<state_dir>/nudge.jsonl` | JSONL event log. |
+| `beacon_log` | `<state_dir>/nudge-beacon.log` | Compact `NUDGE v1` stream; point this at the existing host beacon log when a pane already tails it. |
+| `captains[]` | required | One object per captain on this host. |
+
+Each `captains[]` object:
+
+| Key | Meaning |
+| --- | --- |
+| `id` | Stable captain id (`m4main`, `abaco`, `factory`). |
+| `owner` | Event owner (`firstmate`, `abaco`, `casco`, `regulis`, `goodword`). |
+| `backend` | `orca` or `herdr` (tests may use `fixture`). |
+| `title` | Regex/substring match on the Orca terminal or Herdr pane title when `handle`/`pane` is empty. |
+| `handle` | Orca terminal handle, when known. |
+| `pane` | Herdr pane id (`w1:pG`), when known. |
+| `session` | Optional Herdr session name. |
+| `fm_home` | That captain's firstmate home, for `heartbeat.json` idle and commit progress. |
+| `idle_min` / `cooldown_min` / `max_no_progress` | Optional per-captain overrides. |
+| `open_work.repos` | `owner/name` repos probed with read-only `gh pr list --state open`. |
+| `open_work.queue_file` | Local queue; a `- [ ]` item, an `In flight`/`queued` line, or any non-comment body counts as open work. |
+| `open_work.command` | Optional extra probe; only `gh pr list...` or `gh api graphql` without `mutation` is allowed. |
+
 ## Escalation quiet hours (config/escalation)
 
 The optional local, gitignored `config/escalation` file holds escalation settings, one `key=value` per line.

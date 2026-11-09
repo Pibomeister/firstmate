@@ -1,0 +1,51 @@
+{
+  "schema": "fm-captain-nudge.v1",
+  "host": "m4",
+  "interval_secs": 300,
+  "guard_stale_secs": 660,
+  "idle_min": 20,
+  "cooldown_min": 30,
+  "max_no_progress": 2,
+  "mode": "act",
+  "state_dir": "~/orca/nudge",
+  "jsonl_log": "~/orca/nudge/nudge.jsonl",
+  "beacon_log": "~/orca/beacon/beacon.log",
+  "captains": [
+    {
+      "id": "m4main",
+      "owner": "firstmate",
+      "backend": "orca",
+      "title": "m4main",
+      "handle": "",
+      "fm_home": "~/orca/projects/firstmate",
+      "open_work": {
+        "repos": ["Pibomeister/firstmate"],
+        "queue_file": "~/orca/projects/firstmate/data/backlog.md"
+      }
+    },
+    {
+      "id": "m4ops",
+      "owner": "firstmate",
+      "backend": "orca",
+      "title": "m4ops",
+      "handle": "",
+      "fm_home": "~/orca/projects/firstmate",
+      "open_work": {
+        "repos": ["Pibomeister/firstmate"],
+        "queue_file": "~/orca/projects/firstmate/data/backlog.md"
+      }
+    },
+    {
+      "id": "casco",
+      "owner": "casco",
+      "backend": "orca",
+      "title": "casco",
+      "handle": "",
+      "fm_home": "~/orca/projects/casco",
+      "open_work": {
+        "repos": [],
+        "queue_file": "~/orca/projects/casco/data/backlog.md"
+      }
+    }
+  ]
+}

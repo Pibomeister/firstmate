@@ -7,6 +7,7 @@ It writes a short status file an outside reader can check every 40 minutes or so
 
 The script header owns the commands and files.
 This page owns the behavior, the boundaries, and the `config/watchdog` keys.
+A separate no-AI host-local typer that only sends one fixed idle prompt is [`captain-nudge.md`](captain-nudge.md); it does not replace this watchdog.
 
 ## Where it runs
 
