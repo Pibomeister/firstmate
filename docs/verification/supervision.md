@@ -425,6 +425,8 @@ No live unattended Claude background session ran on the verifying machine: that 
 The pinned-claim output above records the earlier behavior; `tests/fm-branch-supervision.test.sh` now covers refusal of unverified and dead pins, while the Codex restart case in `tests/fm-session-lock-ancestry.test.sh` covers verified claims after re-anchoring.
 Codex session-lock anchoring was verified on 2026-10-26 on macOS.
 A live `codex exec` probe (codex-cli 0.163.0) showed a tool shell carrying equal `CODEX_THREAD_ID` and `CODEX_SESSION_ID` values with the session's native Codex process as its parent; process listings also showed tool shells parented directly by the shared app-server daemon.
+A live `codex exec` probe on 2026-11-09 (codex-cli 0.166.0, macOS) showed that a `Stop` hook process carries neither variable while its parent is the native Codex process, and that the hook payload's `session_id` equals the session id Codex printed, so the turn-end guard takes the thread from the payload.
+`FM_CODEX_STOP_THREAD_LIVE=1 tests/fm-codex-stop-thread-live-e2e.test.sh` refreshes that observation.
 [`bin/fm-session-lock-lib.sh`](../../bin/fm-session-lock-lib.sh) owns the ownership, lifetime, inspection, and stable owner-key rules; [`bin/fm-lock.sh`](../../bin/fm-lock.sh) owns sidecar publication and re-anchoring, and [`bin/fm-lease-lib.sh`](../../bin/fm-lease-lib.sh) owns lease liveness and claim pins.
 The read-only live probe on 2026-10-27 reached the existing 0.164.0 daemon over its Unix control socket without creating, resuming, or changing a thread.
 It completed a WebSocket HTTP Upgrade, initialized a client connection, listed loaded threads, and read one loaded thread with `includeTurns: false`:
