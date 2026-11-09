@@ -180,6 +180,11 @@ out=$(factory "$H2" poll --project "$PROJECT" --interval 0.05)
 printf '%s\n' "$out" > "$TMP_ROOT/null.result"
 assert_equals "$ERR1" "$(awk -F '\t' '/^item: / { print $3 }' "$TMP_ROOT/null.result")" "a null failure code leaves the error text in the error column"
 assert_contains "$(factory "$H2" summary "$TMP_ROOT/null.result")" "$ERR1" "the summary still carries the error text"
+item "$D3" "no timestamp" | jq -c 'del(.occurredAt)' > "$TMP_ROOT/untimed.json"
+attention_body "$(cat "$TMP_ROOT/untimed.json")" > "$FIX/attention.json"
+H2b="$TMP_ROOT/h-untimed"; new_home "$H2b"; configure "$H2b" "$URL"
+factory "$H2b" poll --project "$PROJECT" --interval 0.05 > "$TMP_ROOT/untimed.result"
+assert_contains "$(factory "$H2b" summary "$TMP_ROOT/untimed.result")" "failed at unknown time: no timestamp" "a failure without a time says so"
 pass "a null failure code keeps the error text in the wake"
 
 # --- other kinds and keyless items never count as failures ----------------------
@@ -221,7 +226,33 @@ printf '200 badcursor.json\n' > "$FIX/attention.seq"
 H6="$TMP_ROOT/h-badcursor"; new_home "$H6"; configure "$H6" "$URL"
 out=$(factory "$H6" poll --project "$PROJECT" --interval 0.05)
 assert_contains "$out" "malformed attention cursor" "a malformed cursor stops the watch"
-pass "a poll reads every page, so an older failure past the first page still wakes"
+attention_body "$(item "$D1" "x")" | jq -c '.hasMore = true' > "$FIX/nocursor.json"
+printf '200 nocursor.json\n' > "$FIX/attention.seq"
+out=$(factory "$H6" poll --project "$PROJECT" --interval 0.05)
+assert_contains "$out" "malformed attention cursor" "more pages without a cursor stop the watch rather than end the read"
+# A server that never stops saying hasMore: the read is bounded, and reaching
+# the bound stops the watch loudly instead of silently skipping older failures.
+attention_body "$(item "$D3" "endless")" | jq -c '.hasMore = true | .nextCursor = "c2FtZQ"' > "$FIX/attention.json"
+H7="$TMP_ROOT/h-cap"; new_home "$H7"; configure "$H7" "$URL"
+: > "$FIX/requests.log"
+out=$(factory "$H7" poll --project "$PROJECT" --interval 0.05)
+assert_contains "$out" "status: error" "an inbox past the page bound stops the watch"
+assert_contains "$out" "more than 1000 open automation-failed items" "the diagnostic names the bound"
+assert_equals 20 "$(grep -c '/attention?' "$FIX/requests.log")" "the read stops at exactly 20 pages"
+# An error on a later page discards the whole read: a 503 counts as one failed
+# read, and a refused token ends the watch, with nothing reported from page 1.
+attention "$FIX" "$(item "$D1" "after the outage")"
+printf '200 page1.json\n503\n' > "$FIX/attention.seq"
+H8="$TMP_ROOT/h-page2"; new_home "$H8"; configure "$H8" "$URL"
+out=$(factory "$H8" poll --project "$PROJECT" --interval 0.05)
+assert_contains "$out" "after the outage" "the next full read reports its own oldest failure"
+assert_contains "$out" "condition_polls: 2" "a later-page server error discards the whole read"
+assert_not_contains "$out" "newest failure" "nothing from the partial read is reported"
+printf '200 page1.json\n401\n' > "$FIX/attention.seq"
+out=$(factory "$H8" poll --project "$PROJECT" --interval 0.05)
+assert_contains "$out" "HTTP 401" "a refused later page ends the watch"
+assert_contains "$out" "condition_polls: 1" "a refused later page ends the watch at once"
+pass "a poll reads every page, bounds the read, and treats a later-page error as a failed read"
 
 # --- end to end: one wake per failure, no repeat --------------------------------
 H="$TMP_ROOT/h-e2e"; new_home "$H"

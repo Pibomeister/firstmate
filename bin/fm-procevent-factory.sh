@@ -17,7 +17,8 @@
 # poll       The blocking child the generic runner executes; never run this
 #            in a conversational turn. Every <interval> seconds (default 60) it
 #            reads `GET <url>/web/factory/projects/<id>/attention?kind=automation-failed&view=open&limit=50`,
-#            following `nextCursor` for up to 20 pages, and exits with a
+#            following `nextCursor` for up to 20 pages (more ends the watch
+#            with a diagnostic rather than miss a failure), and exits with a
 #            `status: failed` result once an item appears whose key no earlier
 #            captured result of this source reported. The result carries one
 #            `item:` line (key, failure code, error text, occurredAt) for the
@@ -70,7 +71,7 @@ CONFIG="$FM_HOME/config/factory"
 DEFAULT_INTERVAL=60
 MAX_CONSECUTIVE_READ_FAILURES=3
 READ_TIMEOUT=20
-# Pages of 50 open items read per poll; failures beyond them are not seen.
+# Pages of 50 open items read per poll; an inbox larger than this ends the watch.
 MAX_PAGES=20
 DETAIL_MAX=512
 
@@ -189,10 +190,13 @@ read_failures() {
       | [.key, (.failureCode // "" | tostring), (.detail // .title // "" | tostring), (.occurredAt // "" | tostring)] | @tsv' 2>/dev/null) \
       || emit_error "$POLLS" "Factory at $URL returned a malformed attention response"
     [ -z "$page" ] || ITEMS+="$page"$'\n'
-    next=$(printf '%s' "$HTTP_BODY" | jq -r 'if .hasMore == true then (.nextCursor // "") else "" end' 2>/dev/null)
-    [ -n "$next" ] || return 0
+    [ "$(printf '%s' "$HTTP_BODY" | jq -r '.hasMore == true' 2>/dev/null)" = true ] || return 0
+    next=$(printf '%s' "$HTTP_BODY" | jq -r '.nextCursor // ""' 2>/dev/null)
     [[ "$next" =~ ^[A-Za-z0-9_-]+$ ]] || emit_error "$POLLS" "Factory at $URL returned a malformed attention cursor"
-    [ "$pages" -lt "$MAX_PAGES" ] || return 0
+    # Stopping loudly at the bound, rather than treating it as the end of the
+    # inbox, is what keeps a failure past it from being silently never reported.
+    [ "$pages" -lt "$MAX_PAGES" ] \
+      || emit_error "$POLLS" "Factory at $URL has more than $((MAX_PAGES * 50)) open automation-failed items; the watch stopped rather than miss one (archive old failures, then re-arm)"
     cursor=$next
   done
 }
