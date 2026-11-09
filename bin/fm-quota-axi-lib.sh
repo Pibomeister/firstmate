@@ -33,21 +33,34 @@ FM_QUOTA_PROVIDER_ID_RE='^[a-z0-9]+(-[a-z0-9]+)*\z'
 #                                  or null; schema 5 ignores $lane.
 #   quota_applicable($provider_row; $model)
 #                                  the effective-availability rows that bound a
-#                                  model. Cursor splits its all_models minimum
+#                                  model. AGY reads by group: claude-* and
+#                                  gpt-oss-* bind to the claude_gpt scope,
+#                                  gemini-* to the gemini scope, and
+#                                  gemini-4-argon-* / gemini-4-carbon-* to a
+#                                  dedicated argon / carbon scope when
+#                                  quota-axi emits one (for example
+#                                  model:gemini_argon), else an explicit
+#                                  unknown row, never the shared gemini row.
+#                                  Cursor splits its all_models minimum
 #                                  into pools (auto/composer by auto_usage and
 #                                  included_usage, named API models by
 #                                  api_usage) so api_usage does not bound auto.
-#                                  No Cursor window is confirmed as billing
-#                                  grok-* models (grok_bot is the separate Grok
-#                                  Bot meter), so grok-* takes the conservative
-#                                  api pool unless quota-axi emits pool:grok;
-#                                  an unrecognized model keeps the all_models
-#                                  minimum. A real pool:<name> row from
-#                                  quota-axi wins. Deriving a row from windows,
-#                                  ranked by its own remaining percent, is the
-#                                  fallback for quota-axi builds without pool
-#                                  rows, and needs a known all_models row so
-#                                  stale windows never read as capacity; the
+#                                  Cursor's included pool covers Grok 4.7,
+#                                  Grok 4.6, Grok 4.5, and Composer 2.5
+#                                  (https://cursor.com/docs/account/pricing),
+#                                  so grok-4.7-*, cursor-grok-4.6-*, and
+#                                  cursor-grok-4.5-* take the auto pool;
+#                                  unknown future grok-* ids take the
+#                                  conservative api pool unless quota-axi
+#                                  emits pool:grok (grok_bot is the separate
+#                                  Grok Bot meter); an unrecognized model
+#                                  keeps the all_models minimum. A real
+#                                  pool:<name> row from quota-axi wins.
+#                                  Deriving a row from windows, ranked by its
+#                                  own remaining percent, is the fallback for
+#                                  quota-axi builds without pool rows, and
+#                                  needs a known all_models row so stale
+#                                  windows never read as capacity; the
 #                                  default TOON has no windows, so it stays
 #                                  collapsed until those builds are gone. A
 #                                  Cursor model outside the auto pool has
@@ -80,9 +93,19 @@ FM_QUOTA_ROW_JQ='
   def cursor_pool($model):
     ($model | sub("^model:"; "") | ascii_downcase) as $t |
     if $t == "" or $t == "default" or $t == "auto" or $t == "composer" or ($t | startswith("composer-")) then "auto"
+    elif ($t | test("^(cursor-)?grok-4\\.[567](-|$)")) then "auto"
     elif ($t | test("^(cursor-)?grok-")) then "grok"
     elif ($t | test("^(claude|gpt|gemini|o[0-9])")) then "api"
     else null end;
+  def agy_group($model):
+    (($model // "") | sub("^model:"; "") | ascii_downcase) as $t |
+    if ($t | test("^gemini-4-argon(-|$)")) then "argon"
+    elif ($t | test("^gemini-4-carbon(-|$)")) then "carbon"
+    elif ($t | startswith("gemini-")) then "gemini"
+    elif ($t | startswith("claude-")) or ($t | test("^gpt-oss(-|$)")) then "claude_gpt"
+    else null end;
+  def quota_scope_name($scope):
+    ($scope | ascii_downcase | sub("^(model|product):"; ""));
   def cursor_api_pool_floor: 5;
   def cursor_pool_row($p; $pool):
     ([($p.quotaSemantics.effectiveAvailability // [])[]
@@ -110,7 +133,22 @@ FM_QUOTA_ROW_JQ='
        (($scope | startswith("model:")) or ($scope | startswith("product:"))) and
        ($model_token == ($scope | sub("^(model|product):"; ""))))
     )] as $base |
-    if $p.provider != "cursor" then $base
+    if $p.provider == "agy" then
+      agy_group($model_token) as $group |
+      if $group == null then $base
+      elif $group == "argon" or $group == "carbon" then
+        ([($p.quotaSemantics.effectiveAvailability // [])[]
+          | select((quota_scope_name(.scope) | contains($group)))
+          | select(.scope as $s | ($base | map(.scope) | index($s)) == null)]) as $specific |
+        if ($specific | length) > 0 then $base + $specific
+        else $base + [{scope: ("model:gemini_" + $group), status: "unknown"}]
+        end
+      else
+        $base + [($p.quotaSemantics.effectiveAvailability // [])[]
+          | select(quota_scope_name(.scope) == $group)
+          | select(.scope as $s | ($base | map(.scope) | index($s)) == null)]
+      end
+    elif $p.provider != "cursor" then $base
     else cursor_pool($model_token) as $pool |
       cursor_pool_row($p; $pool) as $pr |
       (if $pr == null then $base
