@@ -1,4 +1,4 @@
-1..23
+1..28
 ok - a state entry that vanishes during the private copy does not stop sample
 ok - a state entry renamed into place during the private copy does not stop sample
 ok - a copy that misses existing home state stops sample
@@ -9,6 +9,11 @@ ok - an --out that contains the soak home is refused like one inside it
 ok - a root --out is refused as containing the soak home
 ok - an order document whose path is a suffix of a data handoff path is kept and counted
 ok - a // spelling of a directory is the same tree to every containment check
+ok - a case alias of a directory is the same tree to every containment check
+ok - an order document that is a case alias of a data handoff document is one handoff
+ok - a case alias of the soak home is the run's home to sample, finish and the watchdog rows
+ok - samples under two spellings of the soak home count one handoff
+ok - a document in the second a requested restart finished is not reused by the next requested restart
 ok - a TMPDIR inside the soak home never receives the private state copy
 ok - sample and finish refuse a --home other than the one the run started on
 ok - a session id that is not a plain name never becomes a path component

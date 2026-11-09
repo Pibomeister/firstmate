@@ -1,0 +1,95 @@
+== readable-harnesses
+claude
+== inventory claude codex
+claude readable
+codex unreadable
+exit=3
+== start with codex (unreadable)
+claude readable
+codex unreadable
+fm-soak-record: refusing to start: a declared harness is unreadable
+exit=3 soak.json exists: no
+== start --out inside home
+fm-soak-record: --out is inside the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.0F1Jkg/data/x
+exit=2
+== start --out containing home (parent)
+fm-soak-record: --out contains the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T
+exit=2
+== start --out /
+fm-soak-record: --out contains the soak home: /
+exit=2
+== start --out under case alias of home: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//FM-LAB.0F1JKG/data/y
+fm-soak-record: --out is inside the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/FM-LAB.0F1JKG/data/y
+exit=2
+== start baseline claude
+claude readable
+exit=0
+{"label":"post-change","home":"/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.0F1Jkg","revision":"b6288085a1a6191f50ae4b5a3eb178208c41424a","started_at":1794228189,"harnesses":["claude"],"session_ids":[]}
+== sample (original spelling)
+exit=0
+1794228190	2	0	2	sess-111
+== sample (case alias spelling /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//FM-LAB.0F1JKG)
+exit=0
+handoff-events.tsv:
+1794228190	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.0F1Jkg/data/handoff-a.md
+== sample with another home
+fm-soak-record: --home is not the home this soak run started on: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.hkBEWDO02E
+exit=2
+== finish with --watchdog-dir inside --out
+fm-soak-record: --watchdog-dir is --out or inside it: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soakw.7UPChK/out/wdin
+exit=2 finished_at=null
+== finish
+exit=0
+{
+  "label": "post-change",
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.0F1Jkg",
+  "revision": "b6288085a1a6191f50ae4b5a3eb178208c41424a",
+  "started_at": 1794228189,
+  "harnesses": [
+    "claude"
+  ],
+  "session_ids": [
+    {
+      "id": "sess-111",
+      "transcript": "transcripts/sess-111.jsonl"
+    },
+    {
+      "id": "sess-222",
+      "transcript": "transcripts/sess-222.jsonl"
+    }
+  ],
+  "finished_at": 1794228194,
+  "handoff_count": 2,
+  "violations": [
+    {
+      "kind": "undeclared-harness",
+      "task": "feat-c",
+      "harness": "codex"
+    },
+    {
+      "kind": "activity-sources-unavailable",
+      "harness": "claude"
+    }
+  ]
+}
+-- out tree
+.
+./handoff-events.tsv
+./handoffs
+./handoffs/handoff-a.md
+./load.tsv
+./soak.json
+./transcripts
+./transcripts/sess-111.jsonl
+./transcripts/sess-222.jsonl
+./wake-ledger.tsv
+./watchdog
+./watchdog/actions.tsv
+./watchdog/handoffs
+./watchdog/handoffs/h1.md
+-- watchdog/actions.tsv
+1794228190	w1	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//FM-LAB.0F1JKG	primary	frozen	restart	done	pickup verified
+== home unchanged since sample/finish: yes
+== sample after finish
+fm-soak-record: the soak run in /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soakw.7UPChK/out is already finished
+exit=1
