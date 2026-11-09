@@ -11,7 +11,8 @@
 # The recorder never writes inside the soak home <home>; it writes only under
 # --out, and refuses an --out that resolves inside <home> or contains it, and a
 # symlink at any path it writes under --out. sample and finish refuse a --home
-# other than the home soak.json records. Every time is fm_now
+# other than the home soak.json records (another spelling of the same
+# directory is the same home, and the recorded spelling is used). Every time is fm_now
 # (bin/fm-clock-lib.sh).
 #
 # readable-harnesses prints one harness per line whose transcripts the
