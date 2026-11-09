@@ -327,16 +327,24 @@ cmd_start() {
       harnesses: $harnesses, session_ids: []}' > "$OUT/soak.json"
 }
 
+# order_doc: the existing document the order record names, or nothing.
+order_doc() {
+  local doc=
+  [ ! -f "$HOME_DIR/state/.order-handoff" ] || doc=$(sed -n 's/^doc=//p' "$HOME_DIR/state/.order-handoff" | head -n 1)
+  [ -z "$doc" ] || [ ! -f "$doc" ] || printf '%s\n' "$doc"
+}
+
 # handoff_docs: the soak home's handoff documents, one path per line: each
 # data/handoff-*.md, then the document the order record names.
 handoff_docs() {
-  local doc
+  local doc order
+  order=$(order_doc)
   for doc in "$HOME_DIR"/data/handoff-*.md; do
-    [ -f "$doc" ] && printf '%s\n' "$doc"
+    [ -f "$doc" ] || continue
+    printf '%s\n' "$doc"
+    [ -z "$order" ] || [ ! "$order" -ef "$doc" ] || order=
   done
-  doc=
-  [ ! -f "$HOME_DIR/state/.order-handoff" ] || doc=$(sed -n 's/^doc=//p' "$HOME_DIR/state/.order-handoff" | head -n 1)
-  [ -z "$doc" ] || [ ! -f "$doc" ] || printf '%s\n' "$doc"
+  [ -z "$order" ] || printf '%s\n' "$order"
 }
 
 # handoff_events: one `<mtime>\t<physical path>` line per handoff document as
@@ -384,7 +392,7 @@ keep_handoff() {
 }
 
 cmd_finish() {
-  local doc canon id t sessions ids seen='' events restarts docs total violations h named
+  local doc order id t sessions ids events restarts docs total violations h named
   parse '--home --out --watchdog-dir --transcript-dir' "$@"
   [ -d "$WATCHDOG_DIR" ] || die 2 "the watchdog directory does not exist: $WATCHDOG_DIR"
   WATCHDOG_DIR=$(canon_dir "$WATCHDOG_DIR") || die 2 "the watchdog directory does not exist: $WATCHDOG_DIR"
@@ -422,21 +430,14 @@ cmd_finish() {
   done <<<"$sessions"
 
   # Handoff documents: kept once by physical path, counted by modification event.
+  order=$(order_doc)
   for doc in "$HOME_DIR"/data/handoff-*.md; do
     [ -f "$doc" ] || continue
     in_window "$(mtime "$doc")" || continue
-    canon=$(canon_file "$doc") || continue
     keep_handoff "$doc" "$(basename -- "$doc")"
-    seen="$seen$canon"$'\n'
+    [ -z "$order" ] || [ ! "$order" -ef "$doc" ] || order=
   done
-  doc=
-  [ ! -f "$HOME_DIR/state/.order-handoff" ] || doc=$(sed -n 's/^doc=//p' "$HOME_DIR/state/.order-handoff" | head -n 1)
-  if [ -n "$doc" ] && [ -f "$doc" ] && canon=$(canon_file "$doc"); then
-    case $'\n'"$seen" in
-      *$'\n'"$canon"$'\n'*) ;;
-      *) keep_handoff "$doc" "order-$(basename -- "$doc")" ;;
-    esac
-  fi
+  [ -z "$order" ] || keep_handoff "$order" "order-$(basename -- "$order")"
   events=$( { [ ! -f "$OUT/handoff-events.tsv" ] || cat "$OUT/handoff-events.tsv"; handoff_events; } |
     awk -F '\t' -v s="$STARTED" -v n="$NOW" '$1 ~ /^[0-9]+$/ && $1 + 0 >= s + 0 && $1 + 0 <= n + 0' | LC_ALL=C sort -u)
   docs=$(printf '%s' "$events" | awk 'END { print NR }')
