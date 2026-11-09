@@ -209,8 +209,8 @@ read_failures() {
 cmd_poll() {
   parse_project_args "$@"
   local failures=0 seen new
-  [[ "$MAX_PAGES" =~ ^[1-9][0-9]*$ ]] || die "FM_FACTORY_MAX_PAGES must be a positive integer"
   POLLS=0
+  [[ "$MAX_PAGES" =~ ^[1-9][0-9]{0,3}$ ]] || emit_error 1 "FM_FACTORY_MAX_PAGES must be a whole number from 1 to 9999"
   load_config || emit_error 1 "$CONFIG_ERROR"
   while :; do
     POLLS=$((POLLS + 1))

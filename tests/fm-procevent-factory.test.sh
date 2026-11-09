@@ -25,11 +25,13 @@ new_home() { mkdir -p "$1/state" "$1/config"; fm_test_track_procevent_home "$1";
 wake_payloads() { awk -F '\t' '{print $5}' "$1/state/.wake-queue" 2>/dev/null; }
 results() { find "$1/state/procevent-inbox" -maxdepth 1 -name "$SOURCE.*.result" 2>/dev/null | wc -l | tr -d ' '; }
 result() { printf '%s/state/procevent-inbox/%s.%s.result\n' "$1" "$SOURCE" "$2"; }
-# Distinct wake keys: reconcile re-queues an unacknowledged result by design and
-# the watcher delivers once per source and sequence, so the key is the wake.
+# Distinct result wakes: reconcile re-queues an unacknowledged result by design
+# and the watcher delivers once per source and sequence, so that key is the
+# wake. Only `procevent:<source>:<sequence>` counts; the runner's own
+# launch-failed or stranded notices for the source carry longer keys.
 wakes() {
-  awk -F '\t' -v k="procevent:$SOURCE:" 'index($4, k) == 1 { print $4 }' "$1/state/.wake-queue" 2>/dev/null \
-    | sort -u | wc -l | tr -d ' '
+  awk -F '\t' -v k="procevent:$SOURCE:" 'index($4, k) == 1 && substr($4, length(k) + 1) ~ /^[0-9]+$/ { print $4 }' \
+    "$1/state/.wake-queue" 2>/dev/null | sort -u | wc -l | tr -d ' '
 }
 # A result counts once both its capture and its wake landed; publication
 # follows capture inside the runner. Reconcile restarts a finished watch.
@@ -261,6 +263,11 @@ printf '200 page1.json\n401\n' > "$FIX/attention.seq"
 out=$(factory "$H8" poll --project "$PROJECT" --interval 0.05)
 assert_contains "$out" "HTTP 401" "a refused later page ends the watch"
 assert_contains "$out" "condition_polls: 1" "a refused later page ends the watch at once"
+for bad in 0 99999 x; do
+  out=$(FM_FACTORY_MAX_PAGES=$bad factory "$H8" poll --project "$PROJECT" --interval 0.05)
+  assert_contains "$out" "status: error" "an invalid page bound ($bad) ends the watch with a result"
+  assert_contains "$out" "FM_FACTORY_MAX_PAGES" "the diagnostic names the invalid page bound ($bad)"
+done
 pass "a poll reads every page, bounds the read, and treats a later-page error as a failed read"
 
 # --- end to end: one wake per failure, no repeat --------------------------------
