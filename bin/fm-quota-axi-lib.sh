@@ -142,11 +142,9 @@ FM_QUOTA_ROW_JQ='
         ($base | map(select(.scope != "all_models" and .scope != "all_products"))) as $group_base |
         if $group == "argon" or $group == "carbon" then
           ([($p.quotaSemantics.effectiveAvailability // [])[]
-            | select((quota_scope_name(.scope) | contains($group)))]) as $specific_all |
-          ([($specific_all[]
-            | select(.scope as $s | ($group_base | map(.scope) | index($s)) == null))]) as $specific |
-          if ($specific_all | length) > 0 then $group_base + $specific
-          else $group_base + [{scope: ("model:gemini_" + $group), status: "unknown"}]
+            | select(quota_scope_name(.scope) as $n | $n == ("gemini_" + $group) or $n == $group)]) as $dedicated |
+          if (($group_base + $dedicated) | length) > 0 then $group_base + $dedicated
+          else [{scope: ("model:gemini_" + $group), status: "unknown"}]
           end
         else
           $group_base + [($p.quotaSemantics.effectiveAvailability // [])[]
