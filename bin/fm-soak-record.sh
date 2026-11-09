@@ -109,14 +109,17 @@ mtime() {
   fi
 }
 
-canon_dir() {  # <dir>: the physical absolute path of an existing directory
-  (CDPATH='' cd -P -- "$1" 2>/dev/null && pwd -P)
+canon_dir() {  # <dir>: the physical absolute path of an existing directory, one leading slash
+  local d
+  d=$(CDPATH='' cd -P -- "$1" 2>/dev/null && pwd -P) || return 1
+  while [ "${d#//}" != "$d" ]; do d=${d#/}; done   # bash keeps a leading // from pwd -P
+  printf '%s\n' "$d"
 }
 
 canon_file() {  # <file>: the physical absolute path of an existing file
   local dir
   dir=$(canon_dir "$(dirname -- "$1")") || return 1
-  printf '%s/%s\n' "$dir" "$(basename -- "$1")"
+  printf '%s/%s\n' "${dir%/}" "$(basename -- "$1")"
 }
 
 within() {  # <path> <dir>: <path> is <dir> or lies inside it; a root <dir> (/ or //) holds every absolute path
@@ -179,7 +182,7 @@ prepare_out() {
     OUT=$(canon_dir "$OUT") || die 2 "--out is not a directory: $OUT"
   else
     parent=$(canon_dir "$(dirname -- "$OUT")") || die 2 "the parent of --out does not exist: $OUT"
-    OUT="$parent/$(basename -- "$OUT")"
+    OUT="${parent%/}/$(basename -- "$OUT")"
   fi
   ! within "$OUT" "$HOME_DIR" || die 2 "--out is inside the soak home: $OUT"
   ! within "$HOME_DIR" "$OUT" || die 2 "--out contains the soak home: $OUT"
@@ -227,17 +230,21 @@ run_inventory() {
 
 STATE_SNAPSHOT=''
 
-# snapshot_state: copy <home>/state once into a private temporary directory,
-# removed on exit. Classifying a task can rewrite files under its state
-# directory (a stale Muse session cache is deleted and rewritten), so
+# snapshot_state: copy <home>/state once into a private temporary directory
+# under --out, removed on exit, and point TMPDIR inside it, so neither this
+# copy nor any temporary file the recorder or its children make can land in the
+# home through an inherited TMPDIR. Classifying a task can rewrite files under
+# its state directory (a stale Muse session cache is deleted and rewritten), so
 # crew_state reads this copy and the home is never written.
 snapshot_state() {
   [ -z "$STATE_SNAPSHOT" ] || return 0
-  STATE_SNAPSHOT=$(mktemp -d "${TMPDIR:-/tmp}/fm-soak-state.XXXXXX") \
+  STATE_SNAPSHOT=$(mktemp -d "$OUT/.fm-soak-state.XXXXXX") \
     || die 1 "cannot create a private copy of the home state"
   trap 'rm -rf "$STATE_SNAPSHOT"' EXIT
-  mkdir "$STATE_SNAPSHOT/state" \
+  mkdir "$STATE_SNAPSHOT/state" "$STATE_SNAPSHOT/tmp" \
     || die 1 "cannot create a private copy of the home state"
+  TMPDIR="$STATE_SNAPSHOT/tmp"
+  export TMPDIR
   if [ -d "$HOME_DIR/state" ]; then
     : > "$STATE_SNAPSHOT/copy-started" \
       || die 1 "cannot create a private copy of the home state"

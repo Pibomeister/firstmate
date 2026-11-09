@@ -525,6 +525,54 @@ test_root_out_is_refused_as_containing_the_home() {
   pass "a root --out is refused as containing the soak home"
 }
 
+# bash keeps a leading // from `pwd -P`, so //<dir> and /<dir> must still be
+# treated as one tree by every containment check and by the home check.
+test_double_slash_spelling_is_one_tree() {
+  local parent home before rc out tr rows
+  mkdir -p "$TMP_ROOT/dslash"
+  parent="$TMP_ROOT/dslash"
+  home=$(make_home dslash/home)
+  before=$(snapshot "$home")
+  soak "$T0" start --home "$home" --out "/$parent" --label baseline --harness claude > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "start refuses --out //<dir> when <dir> contains the soak home"
+  [ ! -e "$parent/soak.json" ] || fail "a refused start wrote soak.json above the home"
+  assert_home_unchanged "$home" "$before" "a // spelling of an --out that contains the home"
+  out="$TMP_ROOT/dslash-out"; tr="$TMP_ROOT/dslash-transcripts"
+  mkdir -p "$tr"
+  soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  soak $((T0 + 100)) sample --home "/$home" --out "$out" > /dev/null 2>&1; rc=$?
+  assert_equals 0 "$rc" "sample accepts the // spelling of the started soak home"
+  mkdir -p "$out/watchdog"
+  printf '%s\trestart\t%s\tw1\tdone\n' $((T0 + 10)) "$home" > "$out/watchdog/actions.tsv"
+  rows=$(cat "$out/watchdog/actions.tsv")
+  soak $((T0 + 1000)) finish --home "$home" --out "/$out" --watchdog-dir "$out/watchdog" --transcript-dir "$tr" > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "finish refuses a --watchdog-dir inside a // spelling of --out"
+  soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "/$out/watchdog" --transcript-dir "$tr" > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "finish refuses a // spelling of a --watchdog-dir inside --out"
+  assert_equals "$rows" "$(cat "$out/watchdog/actions.tsv")" "a refused finish left the staged watchdog rows intact"
+  pass "a // spelling of a directory is the same tree to every containment check"
+}
+
+# The private state copy never lands in the soak home, even when the inherited
+# TMPDIR points inside it.
+test_tmpdir_inside_the_home_is_never_written() {
+  local home out wd tr before
+  home=$(make_home tmpdir-home)
+  out="$TMP_ROOT/tmpdir-out"; wd="$TMP_ROOT/tmpdir-watchdog"; tr="$TMP_ROOT/tmpdir-transcripts"
+  mkdir -p "$home/tmp" "$wd" "$tr"
+  before=$(snapshot "$home")
+  TMPDIR="$home/tmp" soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  assert_home_unchanged "$home" "$before" "start with TMPDIR inside the home"
+  TMPDIR="$home/tmp" soak $((T0 + 100)) sample --home "$home" --out "$out" > /dev/null || fail "sample failed"
+  assert_home_unchanged "$home" "$before" "sample with TMPDIR inside the home"
+  TMPDIR="$home/state" soak $((T0 + 200)) sample --home "$home" --out "$out" > /dev/null || fail "sample failed"
+  assert_home_unchanged "$home" "$before" "sample with TMPDIR at the home state directory"
+  TMPDIR="$home/tmp" soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "$wd" --transcript-dir "$tr" > /dev/null || fail "finish failed"
+  assert_home_unchanged "$home" "$before" "finish with TMPDIR inside the home"
+  assert_equals 2 "$(awk 'END { print NR }' "$out/load.tsv")" "both samples still recorded their load rows"
+  pass "a TMPDIR inside the soak home never receives the private state copy"
+}
+
 test_order_document_at_a_path_suffix_is_kept() {
   local inner json
   mkdir -p "$TMP_ROOT/sfx-inner/data"
@@ -703,6 +751,8 @@ fm_test_run \
   test_out_that_contains_the_home_is_refused \
   test_root_out_is_refused_as_containing_the_home \
   test_order_document_at_a_path_suffix_is_kept \
+  test_double_slash_spelling_is_one_tree \
+  test_tmpdir_inside_the_home_is_never_written \
   test_sample_and_finish_refuse_another_home \
   test_unsafe_session_ids_never_become_paths \
   test_finish_counts_a_lean_handoff_restart \
