@@ -530,7 +530,7 @@ On each tool call and prompt, the trigger publishes the point it resolved to `st
 The trigger runs only in a genuine primary home, including a marked secondmate home, and stays inert in worker worktrees and under other harnesses that load Claude's settings.
 It never writes the handoff or compacts the session.
 
-The same hook enforces the captain-order restart gate at each Stop of a session that is handing off: a fresh start fired in this context cycle, or the session ran `bin/fm-order.sh handoff --doc` (stow, a restart, or `percent-left=0`).
+The same hook enforces the captain-order restart gate at each Stop of a session that is handing off: a fresh start fired in this context cycle, or the session ran `bin/fm-order.sh handoff --doc` (stow, a restart, a deliberate handoff, or `percent-left=0`).
 It blocks such a stop once per turn while the recorded handoff document omits an open captain order, and it never gates an ordinary stop.
 A primary session on a fresh start is also blocked once per turn until `state/.handoff-successor` is newer than the firing and names a successor pid that is alive now, or until a newer `state/.handoff-launch-failed` records a failed launch, so that handoff turn cannot end with no successor and no report; a second mate's stop is not gated this way, because its parent owns the relaunch.
 The handoff record belongs to the session that wrote it, so another session's stop in the same home is never gated by it.
