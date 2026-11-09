@@ -38,8 +38,10 @@
 #      the Stop gate passes, removing any earlier launch-failure record. It
 #      verifies only that live successor pid; the successor confirms the
 #      handoff sha256 at pickup and stops on a mismatch.
-# A launch whose successor never appears or dies during the settle is tried
-# again, up to two attempts in all. When no attempt yields a live successor,
+# A launch whose terminal fails to open or whose successor dies during the
+# settle is tried again, up to two attempts in all. A successor that never
+# appears within the timeout is not retried, because a late start of that
+# terminal would leave two successors. When no attempt yields a live successor,
 # or the launch is refused after the handoff document was given, it writes
 # state/.handoff-launch-failed (at= attempts= backend= handoff= reason=),
 # which releases the Stop gate, prints the escalation (tell the captain, keep
@@ -357,7 +359,7 @@ while [ -z "$SUCC_PID" ] && [ "$ATTEMPTS" -lt "$MAX_ATTEMPTS" ]; do
   done
   if [ -z "$SUCC_PID" ]; then
     LAST_FAILURE="the successor never appeared within ${TIMEOUT}s on backend $BACKEND"
-    continue
+    break
   fi
   # A harness that dies at start (a bad flag, a login prompt that exits) is no
   # successor: it must still be alive after the settle.

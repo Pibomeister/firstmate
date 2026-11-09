@@ -31,8 +31,9 @@ chmod +x "$FAKEBIN/claude"
 
 # Fake orca: run the --command it was handed, with the fake harness on
 # PATH, detached like a real new terminal. FM_FAKE_ORCA_MODE=noop accepts
-# the create and launches nothing; first-noop does that only on the first
-# create. Each create appends one line to $FM_FAKE_ORCA_CMD.
+# the create and launches nothing; first-fail fails only the first create;
+# late starts the command 3s after the create. Each create appends one line
+# to $FM_FAKE_ORCA_CMD.
 cat > "$FAKEBIN/orca" <<'EOF'
 #!/usr/bin/env bash
 here=$(cd "$(dirname "$0")" && pwd)
@@ -45,10 +46,14 @@ while [ $# -gt 0 ]; do
 done
 printf '%s\n' "$cmd" >> "$FM_FAKE_ORCA_CMD"
 [ "${FM_FAKE_ORCA_MODE:-launch}" = noop ] && { printf '{"terminal":"term_fake"}\n'; exit 0; }
-if [ "${FM_FAKE_ORCA_MODE:-launch}" = first-noop ] && [ "$(grep -c '' "$FM_FAKE_ORCA_CMD")" -le 1 ]; then
-  printf '{"terminal":"term_fake"}\n'; exit 0
+if [ "${FM_FAKE_ORCA_MODE:-launch}" = first-fail ] && [ "$(grep -c '' "$FM_FAKE_ORCA_CMD")" -le 1 ]; then
+  exit 1
 fi
 [ -n "$cmd" ] || exit 1
+if [ "${FM_FAKE_ORCA_MODE:-launch}" = late ]; then
+  FM_LATE_CMD=$cmd PATH="$here:$PATH" bash -c 'sleep 3; exec bash -c "$FM_LATE_CMD"' >/dev/null 2>&1 &
+  printf '{"terminal":"term_fake"}\n'; exit 0
+fi
 PATH="$here:$PATH" bash -c "$cmd" >/dev/null 2>&1 &
 printf '{"terminal":"term_fake"}\n'
 EOF
@@ -149,9 +154,9 @@ test_successor_never_appears_records_nothing() {
   [ "$rc" -ne 0 ] || fail "a successor that never appears must fail the launch: $out"
   assert_contains "$out" "never appeared" "the failure says the successor never appeared"
   [ ! -e "$LAB/state/.handoff-successor" ] || fail "no successor record may be written when nobody appeared"
-  assert_equals 2 "$(grep -c '' "$TMP_ROOT/orca-cmd")" "the launcher tries twice before it gives up"
+  assert_equals 1 "$(grep -c '' "$TMP_ROOT/orca-cmd")" "a successor that never appears is not launched again"
   [ -f "$failed" ] || fail "a final launch failure must be recorded for the stop gate"
-  assert_contains "$(cat "$failed")" "attempts=2" "the failure record names the attempts"
+  assert_contains "$(cat "$failed")" "attempts=1" "the failure record names the attempts"
   assert_contains "$(cat "$failed")" "handoff=$LAB/data/handoff.md" "the failure record names the handoff"
   assert_contains "$out" "tell the captain" "the failure escalates to the captain"
   assert_contains "$out" "keep working" "the failure keeps the session working on auto-compaction"
@@ -164,22 +169,41 @@ test_successor_never_appears_records_nothing() {
   [ ! -e "$LAB/state/.handoff-successor" ] || fail "a successor that died at start must never be recorded"
   [ -f "$failed" ] || fail "a successor that died at start must record the launch failure"
   kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
-  pass "a successor that never appears or dies at start fails after two attempts and records the failure"
+  pass "a successor that never appears fails at once, one that dies at start fails, and both record the failure"
 }
 
-test_a_second_attempt_recovers_a_launch_that_never_appeared() {
+test_a_late_successor_is_never_joined_by_a_second() {
+  local out rc pid n live
+  reset_lab
+  rc=0
+  out=$(run_launcher FM_FAKE_ORCA_MODE=late FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=1 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a successor that appears only after the timeout fails the launch: $out"
+  n=0
+  live=''
+  while [ -z "$live" ] && [ "$n" -lt 60 ]; do
+    sleep 0.1; n=$((n + 1))
+    live=$(pgrep -f "$LAB/data/handoff.md" 2>/dev/null | tr '\n' ' ')
+  done
+  assert_equals 1 "$(grep -c '' "$TMP_ROOT/orca-cmd")" "a late successor is never joined by a second terminal"
+  for pid in $live; do kill "$pid" 2>/dev/null; done
+  pkill -f "$LAB/data/handoff.md" 2>/dev/null
+  kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
+  pass "a launch whose successor starts late opens only one terminal"
+}
+
+test_a_second_attempt_recovers_a_terminal_that_failed_to_open() {
   local out rc
   reset_lab
   rc=0
-  out=$(run_launcher FM_FAKE_ORCA_MODE=first-noop FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=1 2>&1) || rc=$?
-  [ "$rc" -eq 0 ] || fail "a second attempt must recover a first launch that never appeared (rc=$rc): $out"
+  out=$(run_launcher FM_FAKE_ORCA_MODE=first-fail FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=2 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "a second attempt must recover a terminal that failed to open (rc=$rc): $out"
   assert_contains "$out" "attempt 2" "the launch reports that it needed a second attempt"
   SUCC_PID=$(sed -n 's/^pid=//p' "$LAB/state/.handoff-successor")
   kill -0 "$SUCC_PID" 2>/dev/null || fail "the recorded successor pid must be alive"
   [ ! -e "$LAB/state/.handoff-launch-failed" ] || fail "a recovered launch records no failure"
   kill "$SUCC_PID" 2>/dev/null; SUCC_PID=''
   kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
-  pass "a second attempt recovers a first launch whose successor never appeared"
+  pass "a second attempt recovers a first terminal that failed to open"
 }
 
 test_await_predecessor_is_bounded() {
@@ -255,6 +279,7 @@ test_success_path_records_a_live_successor
 test_stale_record_naming_the_current_session_still_launches
 test_unknown_backend_refuses_rather_than_guess
 test_successor_never_appears_records_nothing
-test_a_second_attempt_recovers_a_launch_that_never_appeared
+test_a_late_successor_is_never_joined_by_a_second
+test_a_second_attempt_recovers_a_terminal_that_failed_to_open
 test_await_predecessor_is_bounded
 test_end_predecessor_skips_unless_safe

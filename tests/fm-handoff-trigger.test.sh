@@ -782,9 +782,9 @@ test_legacy_marker_and_launch_failure() {
   pass "a legacy marker gates as a handoff, and a fresh launch-failure record releases the stop"
 }
 
-# end_lab_predecessor <session> <transcript> <after-stop-shell>: run the Stop
-# hook inside a fake Claude harness that holds the session lock, then run the
-# given shell and idle. Prints the fake harness pid.
+# end_lab_predecessor <session> <transcript> <after-stop-shell> [before-stop-shell]:
+# run the Stop hook inside a fake Claude harness that holds the session lock,
+# then run the given shell and idle. Prints the fake harness pid.
 end_lab_predecessor() {
   local fakebin="$TMP_ROOT/fake-harness"
   mkdir -p "$fakebin"
@@ -792,11 +792,12 @@ end_lab_predecessor() {
   (
     export HOOK CLAUDE_HOME PRIMARY ROOT TMP_ROOT
     export FM_TEST_SEAM=1 FM_HANDOFF_END_SETTLE_SECS=2 FM_HANDOFF_END_WAIT_SECS=5
-    export END_SESSION=$1 END_TRANSCRIPT=$2 END_AFTER=$3
+    export END_SESSION=$1 END_TRANSCRIPT=$2 END_AFTER=$3 END_BEFORE=${4:-:}
     export -f run_hook
     # shellcheck disable=SC2016 # The fake harness shell expands these.
     exec "$fakebin/claude" -c '
       printf "%s\n" "$$" > "$PRIMARY/state/.lock"
+      eval "$END_BEFORE"
       rc=0
       run_hook "$PRIMARY" "$END_SESSION" "$END_TRANSCRIPT" Stop >/dev/null 2>"$TMP_ROOT/end-stop.err" || rc=$?
       printf "%s\n" "$rc" > "$TMP_ROOT/end-stop.rc"
@@ -863,6 +864,53 @@ test_handoff_stop_ends_the_idle_predecessor() {
   pass "a fresh start ends the idle old session once its successor is live; a new prompt or a capture keeps it"
 }
 
+# H1 on the deliberate path: a session that recorded its handoff document with
+# bin/fm-order.sh handoff --doc and then launched a live successor is ended by
+# the stop that ends its turn, with no trigger firing. A successor record older
+# than the handoff document record belongs to an earlier handoff and ends nothing.
+test_deliberate_handoff_stop_ends_the_idle_predecessor() {
+  local t="$TMP_ROOT/t-deliberate" end="$PRIMARY/state/.handoff-end" doc="$PRIMARY/data/deliberate-handoff.md" succ pred n
+  reset_lab
+  rm -rf "$PRIMARY/data/orders" "$end" "$PRIMARY/state/.lock-session" "$PRIMARY/state/.handoff-successor" "$TMP_ROOT/end-stop.rc"
+  mkdir -p "$PRIMARY/data"
+  printf 'percent-left=0\n' > "$PRIMARY/config/handoff-trigger"
+  printf '# Handoff\n' > "$doc"
+  transcript "$t" 10000
+  sleep 60 &
+  succ=$!
+  export DELIB_DOC=$doc DELIB_SUCC=$succ
+  # shellcheck disable=SC2016 # The fake harness shell expands these.
+  pred=$(end_lab_predecessor s-deliberate "$t" ':' '
+    FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handoff --doc "$DELIB_DOC" >/dev/null
+    sleep 1
+    printf "pid=%s\nhandoff=%s\n" "$DELIB_SUCC" "$DELIB_DOC" > "$PRIMARY/state/.handoff-successor"')
+  wait_for_file "$end" 150 || fail "a deliberate handoff with a live successor recorded must end the old session"
+  assert_equals 0 "$(cat "$TMP_ROOT/end-stop.rc")" "the deliberate handoff stop itself passes"
+  assert_contains "$(cat "$end")" "pred=$pred" "the record names the old session"
+  assert_contains "$(cat "$end")" "result=ended" "the old session was ended"
+  n=0
+  while kill -0 "$pred" 2>/dev/null && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+  ! kill -0 "$pred" 2>/dev/null || fail "the old session must be gone"
+  kill -0 "$succ" 2>/dev/null || fail "the successor must survive"
+
+  rm -f "$end" "$TMP_ROOT/end-stop.rc" "$PRIMARY/state/.order-handoff"
+  # shellcheck disable=SC2016 # The fake harness shell expands these.
+  pred=$(end_lab_predecessor s-deliberate "$t" ':' '
+    printf "pid=%s\nhandoff=%s\n" "$DELIB_SUCC" "$DELIB_DOC" > "$PRIMARY/state/.handoff-successor"
+    sleep 1
+    FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handoff --doc "$DELIB_DOC" >/dev/null')
+  wait_for_file "$TMP_ROOT/end-stop.rc" 100 || fail "the stale-successor stop never ran"
+  assert_equals 0 "$(cat "$TMP_ROOT/end-stop.rc")" "a handoff with only an older successor record still passes its stop"
+  sleep 4
+  [ ! -e "$end" ] || fail "a successor record older than the handoff document must not end the session: $(cat "$end")"
+  kill -0 "$pred" 2>/dev/null || fail "a session whose successor record predates its handoff must stay alive"
+  kill "$pred" "$succ" 2>/dev/null; wait "$pred" "$succ" 2>/dev/null
+  unset DELIB_DOC DELIB_SUCC
+  rm -rf "$PRIMARY/data/orders" "$doc" "$end" "$PRIMARY/state/.lock" "$PRIMARY/state/.order-handoff" \
+    "$PRIMARY/state/.handoff-successor" "$PRIMARY/config/handoff-trigger" "$TMP_ROOT/end-stop.rc"
+  pass "a deliberate handoff ends the idle old session once a newer live successor is recorded"
+}
+
 test_handoff_gates_the_stop_until_a_recorded_successor_is_alive
 test_secondmate_handoff_escalates_to_its_parent
 test_threshold_default_15
@@ -871,6 +919,7 @@ test_fresh_start_after_n_compactions
 test_fresh_start_on_high_context_after_compaction
 test_legacy_marker_and_launch_failure
 test_handoff_stop_ends_the_idle_predecessor
+test_deliberate_handoff_stop_ends_the_idle_predecessor
 test_threshold_configurable
 test_fires_once_per_context_cycle
 test_rearms_after_compaction

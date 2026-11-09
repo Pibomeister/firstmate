@@ -111,9 +111,10 @@
 # stop a human `/quit` or a crash, and it does not run for a non-Claude
 # primary; bin/fm-order.sh owns the gate and its limits.
 #
-# ONE LIVE PANE. When a primary's stop passes with a fresh-start firing, a live
-# successor recorded, the order gate clear, and this session holding the
-# session lock, the hook detaches
+# ONE LIVE PANE. When a primary's stop passes with the order gate clear, this
+# session holding the session lock, and either a fresh-start firing with a live
+# successor recorded, or a deliberate handoff (`handing-off`) whose live
+# successor record is newer than state/.order-handoff, the hook detaches
 # `bin/fm-handoff-launch.sh --end-predecessor <lock pid> <transcript> <bytes>`,
 # which ends this session after a quiet settle unless the transcript shows a
 # new turn; that script's header owns the checks. The successor waits for that
@@ -258,12 +259,19 @@ if [ "$EVENT" = Stop ]; then
   fi
   # Successor gate: only a fresh-start firing in this cycle owes a successor; a
   # handoff recorded for stow does not, and a second mate asks its parent for a
-  # relaunch instead.
-  [ -n "$HANDOFF_MARKER" ] || exit 0
+  # relaunch instead. A deliberate handoff whose live successor was recorded
+  # after its handoff document still ends this session.
   ! fm_root_is_secondmate_home "$FM_ROOT" || exit 0
   LAUNCH="$STATE/.handoff-successor"
   SUCC_PID=$(sed -n 's/^pid=//p' "$LAUNCH" 2>/dev/null | tail -1)
   case "$SUCC_PID" in '' | *[!0-9]*) SUCC_PID= ;; esac
+  if [ -z "$HANDOFF_MARKER" ]; then
+    if [ -n "$SUCC_PID" ] && [ -f "$LAUNCH" ] && [ "$LAUNCH" -nt "$STATE/.order-handoff" ] &&
+      kill -0 "$SUCC_PID" 2>/dev/null; then
+      end_predecessor "$SUCC_PID"
+    fi
+    exit 0
+  fi
   if [ ! -f "$LAUNCH" ] || [ "$MARKER" -nt "$LAUNCH" ] || [ -z "$SUCC_PID" ] ||
     ! kill -0 "$SUCC_PID" 2>/dev/null; then
     [ "$ACTIVE" != true ] || exit 0
