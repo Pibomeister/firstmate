@@ -75,8 +75,10 @@
 # survivors; it never signals a process the relay match did not select.
 # A started relay runs detached (setsid where available, nohup, stdin from
 # /dev/null) with output appended to state/relay-guard/<name>.log, so it
-# outlives this command; under systemd keep the service's default cgroup kill
-# so stopping the guard unit stops the relays it owns.
+# outlives this command. The rendered units keep relays alive across a guard
+# stop or restart (systemd KillMode=process, launchd AbandonProcessGroup) and
+# carry the rendering shell's PATH, so relay and probe commands resolve as they
+# do when the guard runs by hand.
 #
 # Files under $FM_HOME/state/relay-guard/:
 #   status.tsv     Rewritten atomically each pass: a '# fm-relay-guard v1'
@@ -496,11 +498,12 @@ systemd_escape() {
 }
 
 render_launchd() {
-  local home label script
+  local home label script path
   home=$(canonical_home) || exit 2
   label=$(unit_label "$home")
   script=$(printf '%s' "$SCRIPT_DIR/fm-relay-guard.sh" | xml_escape)
   home=$(printf '%s' "$home" | xml_escape)
+  path=$(printf '%s' "$PATH" | xml_escape)
   cat <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -509,20 +512,25 @@ render_launchd() {
   <key>ProgramArguments</key><array>
     <string>/bin/bash</string><string>$script</string><string>run</string>
   </array>
-  <key>EnvironmentVariables</key><dict><key>FM_HOME</key><string>$home</string></dict>
+  <key>EnvironmentVariables</key><dict>
+    <key>FM_HOME</key><string>$home</string>
+    <key>PATH</key><string>$path</string>
+  </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
+  <key>AbandonProcessGroup</key><true/>
   <key>ThrottleInterval</key><integer>10</integer>
 </dict></plist>
 EOF
 }
 
 render_systemd() {
-  local home label script
+  local home label script path
   home=$(canonical_home) || exit 2
   label=$(unit_label "$home")
   script=$(printf '%s' "$SCRIPT_DIR/fm-relay-guard.sh" | systemd_escape)
   home=$(printf '%s' "$home" | systemd_escape)
+  path=$(printf '%s' "$PATH" | systemd_escape)
   cat <<EOF
 [Unit]
 Description=Firstmate relay guard ($label)
@@ -531,9 +539,11 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 Environment="FM_HOME=$home"
+Environment="PATH=$path"
 ExecStart=/bin/bash "$script" run
 Restart=always
 RestartSec=10s
+KillMode=process
 
 [Install]
 WantedBy=default.target

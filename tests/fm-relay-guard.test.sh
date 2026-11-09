@@ -290,8 +290,10 @@ test_rendered_units_run_the_guard() {
   label=$(printf '%s\n' "$unit" | sed -n 's/^Description=Firstmate relay guard (\(.*\))$/\1/p')
   case "$label" in firstmate-relay-guard-*) ;; *) fail "systemd unit has no guard label: $unit" ;; esac
   assert_equals "/bin/bash \"$ROOT/bin/fm-relay-guard.sh\" run" "$(printf '%s\n' "$unit" | sed -n 's/^ExecStart=//p')"
-  assert_equals "\"FM_HOME=$home\"" "$(printf '%s\n' "$unit" | sed -n 's/^Environment=//p')"
+  assert_equals "\"FM_HOME=$home\"" "$(printf '%s\n' "$unit" | sed -n 's/^Environment="FM_HOME/"FM_HOME/p')"
+  assert_equals "\"PATH=$PATH\"" "$(printf '%s\n' "$unit" | sed -n 's/^Environment="PATH/"PATH/p')"
   assert_equals "always" "$(printf '%s\n' "$unit" | sed -n 's/^Restart=//p')"
+  assert_equals "process" "$(printf '%s\n' "$unit" | sed -n 's/^KillMode=//p')"
   if command -v systemd-analyze >/dev/null 2>&1; then
     printf '%s\n' "$unit" > "$W/$label.service"
     systemd-analyze --user verify "$W/$label.service" >/dev/null 2>&1 || fail "systemd-analyze rejected the unit"
@@ -305,6 +307,8 @@ test_rendered_units_run_the_guard() {
     assert_equals "run" "$(plutil -extract ProgramArguments.2 raw -o - "$W/$label.plist")"
     assert_equals "$home" "$(plutil -extract EnvironmentVariables.FM_HOME raw -o - "$W/$label.plist")"
     assert_equals "true" "$(plutil -extract KeepAlive raw -o - "$W/$label.plist")"
+    assert_equals "true" "$(plutil -extract AbandonProcessGroup raw -o - "$W/$label.plist")"
+    assert_equals "$PATH" "$(plutil -extract EnvironmentVariables.PATH raw -o - "$W/$label.plist")"
   fi
   FM_HOME=relative bash "$GUARD" render-systemd >/dev/null 2>&1
   [ "$?" -eq 2 ] || fail "a relative FM_HOME should be refused"
