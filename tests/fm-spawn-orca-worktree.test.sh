@@ -1857,23 +1857,23 @@ test_orca_claude_relaunch_keeps_the_record_on_a_scaffolding_branch() {
   pass "an Orca relaunch keeps the recorded branch while the local copy is still on a branch outside its prefix"
 }
 
-test_orca_claude_relaunch_refuses_a_copy_on_the_base_branch() {
-  local before brief_before
+test_orca_claude_relaunch_keeps_the_record_on_a_base_branch() {
+  local brief
   orca_claude_live_case claude-base
-  [ -n "$STANDIN" ] || { pass "SKIP: Orca Claude base-branch refusal (no agent stand-in survives here)"; return 0; }
+  [ -n "$STANDIN" ] || { pass "SKIP: Orca Claude base branch (no agent stand-in survives here)"; return 0; }
+  brief="$HOME_DIR/data/$TASK/brief.md"
   echo "branch=fm/$TASK" >> "$HOME_DIR/state/$TASK.meta"
   echo "base_branch=release" >> "$HOME_DIR/state/$TASK.meta"
+  echo "Ship branch: fm/$TASK" >> "$brief"
   git -C "$WT" checkout -q -b release
-  before=$(cat "$HOME_DIR/state/$TASK.meta")
-  brief_before=$(cat "$HOME_DIR/data/$TASK/brief.md")
   orca_claude_control_relaunch
   orca_claude_cleanup
-  expect_code 1 "$STATUS" "a copy on the base branch must refuse"$'\n'"$OUT"
-  assert_contains "$OUT" "base branch" "the refusal must name the base branch"
-  [ ! -e "$CASE_DIR/terminal-closed" ] || fail "the refusal must come before the agent is stopped"
-  [ "$(cat "$HOME_DIR/state/$TASK.meta")" = "$before" ] || fail "the refusal must leave the task record unchanged"
-  [ "$(cat "$HOME_DIR/data/$TASK/brief.md")" = "$brief_before" ] || fail "the refusal must leave the instructions unchanged"
-  pass "an Orca relaunch refuses, before stopping anything, a local copy that sits on the base branch"
+  expect_code 0 "$STATUS" "a relaunch from a base branch outside the recorded prefix must proceed on the recorded branch"$'\n'"$OUT"
+  [ "$(orca_meta_field branch)" = "fm/$TASK" ] || fail "a base branch must keep the recorded branch, got '$(orca_meta_field branch)'"
+  assert_contains "$(cat "$brief")" "Ship branch: fm/$TASK" "the instructions must keep the recorded branch"
+  assert_not_contains "$(cat "$HOME_DIR/state/$TASK.control-relaunch")" 'branch_correction=' \
+    "a base branch outside the prefix is not a correction"
+  pass "an Orca relaunch keeps the recorded branch while the local copy sits on a base branch outside its prefix"
 }
 
 test_orca_source_preserves_values_without_utf8_locale
@@ -1905,7 +1905,7 @@ test_orca_relaunch_takes_values_from_the_scoped_source
 test_orca_claude_relaunch_closes_the_live_terminal_and_respawns
 test_orca_claude_relaunch_refuses_when_an_agent_survives_the_close
 test_orca_claude_relaunch_follows_the_copy_branch
-test_orca_claude_relaunch_refuses_a_copy_on_the_base_branch
+test_orca_claude_relaunch_keeps_the_record_on_a_base_branch
 test_orca_claude_relaunch_keeps_the_record_on_a_scaffolding_branch
 
 echo "# all fm-spawn-orca-worktree tests passed"

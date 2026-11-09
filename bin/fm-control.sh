@@ -141,8 +141,7 @@
 #              branch's prefix checked out continues on the copy's branch,
 #              while any other branch keeps the record: the record,
 #              the instructions, and the progress note name it, and the
-#              journal records `branch_correction=`. A copy on a base branch
-#              refuses before the old agent stops.
+#              journal records `branch_correction=`.
 #              Records a durable checkpoint and that note, exits the old agent,
 #              then delegates the launch to its single owner,
 #              bin/fm-spawn.sh --relaunch. A failure before publication keeps
@@ -1494,8 +1493,7 @@ resolve_relaunch_profile() {
 # naming another one, and fm-spawn's resync would refuse that mismatch only
 # after the old agent stopped, so this runs while the agent is untouched. It
 # keeps the record when HEAD is detached, unreadable, or already the recorded
-# branch; refuses a copy on a base branch (the recorded base, origin's default,
-# main, or master); and corrects the record only to a branch under the
+# branch, and corrects the record only to a branch under the
 # recorded branch's own prefix (`fm/` for `fm/<id>`), so the scaffolding branch
 # a fresh Orca or pooled worktree starts on, before the worker switches to its
 # ship branch, keeps the record. A correction sets RELAUNCH_BRANCH_FROM and
@@ -1504,24 +1502,16 @@ resolve_relaunch_profile() {
 RELAUNCH_BRANCH_FROM=
 RELAUNCH_BRANCH_TO=
 relaunch_branch_check() {
-  local recorded copy base origin_default
+  local recorded copy
   [ "$KIND" = ship ] || return 0
   recorded=$(fm_meta_get "$META" branch)
   [ -n "$recorded" ] || recorded="fm/$ID"
   copy=$(git -C "$WT" symbolic-ref -q --short HEAD 2>/dev/null) || return 0
   [ -n "$copy" ] && [ "$copy" != "$recorded" ] || return 0
-  base=$(fm_meta_get "$META" base_branch)
-  origin_default=$(git -C "$WT" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || true)
-  origin_default=${origin_default#origin/}
-  if [ "$copy" = main ] || [ "$copy" = master ] || [ "$copy" = "$base" ] || [ "$copy" = "$origin_default" ]; then
-    die "task $ID records branch $recorded, but its local copy has the base branch $copy checked out; refusing to relaunch a ship onto a base branch, and the running agent was not touched"
-  fi
   case "$recorded" in
     */*) case "$copy" in "${recorded%%/*}/"?*) ;; *) return 0 ;; esac ;;
     *) return 0 ;;
   esac
-  git check-ref-format --branch "$copy" >/dev/null 2>&1 \
-    || die "task $ID's local copy has '$copy' checked out, which is not a valid branch name; refusing to relaunch, and the running agent was not touched"
   RELAUNCH_BRANCH_FROM=$recorded
   RELAUNCH_BRANCH_TO=$copy
   echo "notice: task $ID records branch $recorded, but its local copy has $copy checked out; the relaunch continues on $copy and records the correction" >&2
