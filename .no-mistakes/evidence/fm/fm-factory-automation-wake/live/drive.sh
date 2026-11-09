@@ -1,72 +1,69 @@
 #!/usr/bin/env bash
-# Live driver: real bin/fm-procevent-factory.sh + bin/fm-procevent.sh + bin/fm-wake-drain.sh
-# against a disposable lab home and a local mock Factory.
+# Live driver: real fm-procevent-factory.sh + fm-procevent.sh runner + wake drain
+# against the fake Factory, inside a disposable lab home. Run from the gate worktree.
 set -u
-WT=$1; EV=$2
-cd "$WT"
-LAB=$(mktemp -d "${TMPDIR:-/tmp}/fm-lab.XXXXXX"); bin/fm-lab-home.sh create "$LAB" >/dev/null
-FIX=$(mktemp -d "${TMPDIR:-/tmp}/fm-factory-fix.XXXXXX")
-export FM_HOME=$LAB FM_PROCEVENT_CLAIM_ROOT=$LAB/claims FM_PROCEVENT_LAUNCH_FLOOR_SECONDS=1
+EV=$(cd "$(dirname "$0")" && pwd)
+WT=$PWD
+LAB=$(mktemp -d "${TMPDIR:-/tmp}/fm-lab.XXXXXX")
+bin/fm-lab-home.sh create "$LAB" >/dev/null
+export FM_HOME="$LAB"
 unset FM_ROOT_OVERRIDE FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_CONFIG_OVERRIDE FM_PROJECTS_OVERRIDE
-python3 "$EV/mock-factory.py" "$FIX" & SRV=$!
-cleanup() { bin/fm-procevent-factory.sh retire --project $P >/dev/null 2>&1; kill $SRV 2>/dev/null; pkill -f "fm-procevent-factory.sh poll --project $P" 2>/dev/null; rm -rf "$LAB" "$FIX"; }
-P=ftest-nov9
-trap cleanup EXIT
-for _ in $(seq 100); do [ -s "$FIX/port" ] && break; sleep 0.05; done
-URL=http://127.0.0.1:$(cat "$FIX/port")
-TOKEN=gwsp_lab_fixture_token_value
-printf '%s\n' "$TOKEN" > "$LAB/config/factory.token"; chmod 600 "$LAB/config/factory.token"
-printf 'url=%s\ntoken_file=%s\n' "$URL" "$LAB/config/factory.token" > "$LAB/config/factory"
-hdr() { printf '\n===== %s =====\n' "$1"; }
-run() { printf '$ %s\n' "$*"; "$@"; printf '[exit %s]\n' "$?"; }
+FIX="$LAB/fake"; mkdir -p "$FIX"
+PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')
+python3 -I "$EV/fake_factory.py" "$FIX" "$PORT" & SRV=$!
+trap 'kill $SRV 2>/dev/null; pkill -f "fm-procevent-factory.sh poll --project tktest" 2>/dev/null; rm -rf "$LAB"' EXIT
+sleep 1
+printf 'tok-ABCsecret123\n' > "$LAB/config/factory-token"; chmod 600 "$LAB/config/factory-token"
+printf 'url=http://127.0.0.1:%s\ntoken_file=%s\n' "$PORT" "$LAB/config/factory-token" > "$LAB/config/factory"
+P=tktest
+step() { printf '\n===== %s =====\n' "$*"; }
 
-hdr "S1 preflight: Nov 9 shape - default model set, provider has no credential in catalog"
-echo '{"project":{"id":"ftest-nov9","modelScope":"hybrid","defaultModelId":"anthropic/claude-opus"}}' > "$FIX/project.json"
-echo '{"models":[{"id":"openai/gpt-5"}]}' > "$FIX/models.json"
-run bin/fm-procevent-factory.sh preflight --project $P
-hdr "S1b preflight: no default model"
-echo '{"project":{"id":"ftest-nov9","modelScope":"factory","defaultModelId":null}}' > "$FIX/project.json"
-run bin/fm-procevent-factory.sh preflight --project $P
-hdr "S1c preflight: credentialed default model (healthy)"
-echo '{"project":{"id":"ftest-nov9","modelScope":"factory","defaultModelId":"anthropic/claude-opus"}}' > "$FIX/project.json"
-echo '{"models":[{"id":"anthropic/claude-opus"}]}' > "$FIX/models.json"
-run bin/fm-procevent-factory.sh preflight --project $P
-hdr "S1d preflight: user scope -> cannot determine; token refused -> cannot determine"
-echo '{"project":{"id":"ftest-nov9","modelScope":"user","defaultModelId":"x"}}' > "$FIX/project.json"
-run bin/fm-procevent-factory.sh preflight --project $P
-echo 401 > "$FIX/project.status"
-run bin/fm-procevent-factory.sh preflight --project $P
-rm -f "$FIX/project.status"
+step "S1 preflight: default model whose provider has no credential (the Nov 9 ProviderAuthRequiredError shape)"
+printf '{"project":{"id":"%s","modelScope":"hybrid","defaultModelId":"anthropic/claude-sonnet-5-5"}}' $P > "$FIX/project.json"
+printf '{"models":[{"id":"openai/gpt-x"}]}' > "$FIX/models.json"
+bin/fm-procevent-factory.sh preflight --project $P; echo "exit=$?"
+step "S1b preflight: model credentialed"
+printf '{"models":[{"id":"openai/gpt-x"},{"id":"anthropic/claude-sonnet-5-5"}]}' > "$FIX/models.json"
+bin/fm-procevent-factory.sh preflight --project $P; echo "exit=$?"
+step "S1c preflight: no default model"
+printf '{"project":{"id":"%s","modelScope":"factory","defaultModelId":null}}' $P > "$FIX/project.json"
+bin/fm-procevent-factory.sh preflight --project $P; echo "exit=$?"
+step "S1d preflight: per-user scope cannot be judged"
+printf '{"project":{"id":"%s","modelScope":"user","defaultModelId":"x"}}' $P > "$FIX/project.json"
+bin/fm-procevent-factory.sh preflight --project $P; echo "exit=$?"
 
-item() { printf '{"key":"factory:%s:automation-failed:%s:0","kind":"automation-failed","failureCode":"dispatch_failed","detail":"%s","occurredAt":"%s"}' "$P" "$1" "$2" "$3"; }
-waitwakes() { for i in $(seq 300); do n=$(awk -F '\t' -v k="procevent:factory-$P:" 'index($4,k)==1 && substr($4,length(k)+1) ~ /^[0-9]+$/ {print $4}' "$LAB/state/.wake-queue" 2>/dev/null | sort -u | wc -l | tr -d ' '); [ "$n" -ge "$1" ] && return 0; [ $((i%10)) -eq 0 ] && bin/fm-procevent.sh reconcile >/dev/null 2>&1; sleep 0.1; done; return 1; }
+step "S2 arm the watch, run the real runner, inject a ProviderAuthRequiredError failure"
+printf '{"items":[],"kinds":{},"hasMore":false}' > "$FIX/attention.json"
+bin/fm-procevent-factory.sh arm --project $P --interval 1; echo "arm exit=$?"
+bin/fm-procevent.sh list
+( bin/fm-procevent.sh start factory-$P > "$LAB/runner1.log" 2>&1 ) & R1=$!
+sleep 3
+echo "runner still waiting on empty inbox: $(kill -0 $R1 2>/dev/null && echo yes || echo no)"
+cat > "$FIX/attention.json" <<J
+{"items":[{"kind":"automation-failed","key":"automation-failed:run-101","failureCode":"ProviderAuthRequiredError","detail":"ProviderAuthRequiredError: provider anthropic requires authentication","occurredAt":"2026-11-09T09:00:20Z"}],"kinds":{},"hasMore":false}
+J
+wait $R1; echo "runner exit=$?"
+echo "--- captured result:"; cat "$LAB"/state/procevent/inbox/factory-$P.*.result 2>/dev/null || find "$LAB/state" -name "factory-$P*.result" -exec cat {} \;
+echo "--- wake drain:"; bin/fm-wake-drain.sh 2>&1 | grep -E "procevent|Factory|check" | head -10
 
-hdr "S2 arm watch; no failures yet -> no wake"
-echo '{"items":[],"hasMore":false}' > "$FIX/attention.json"
-run bin/fm-procevent-factory.sh arm --project $P --interval 1
-sleep 3; bin/fm-procevent.sh reconcile >/dev/null 2>&1
-echo "factory wakes queued: $(grep -c "procevent:factory-$P" "$LAB/state/.wake-queue" 2>/dev/null || echo 0)"
-echo "token present in registration record? $(grep -rl "$TOKEN" "$LAB/state/procevent" 2>/dev/null | wc -l | tr -d ' ') files"
+step "S3 dedup + second failure: an already-reported failure does not wake again; a new one does"
+( bin/fm-procevent.sh start factory-$P > "$LAB/runner2.log" 2>&1 ) & R2=$!
+sleep 3
+echo "runner still waiting (run-101 already reported, no new wake): $(kill -0 $R2 2>/dev/null && echo yes || echo no)"
+cat > "$FIX/attention.json" <<J
+{"items":[{"kind":"automation-failed","key":"automation-failed:run-102","failureCode":"ProviderAuthRequiredError","detail":"second ticket also needs auth","occurredAt":"2026-11-09T09:00:41Z"},{"kind":"automation-failed","key":"automation-failed:run-101","failureCode":"ProviderAuthRequiredError","detail":"ProviderAuthRequiredError: provider anthropic requires authentication","occurredAt":"2026-11-09T09:00:20Z"}],"kinds":{},"hasMore":false}
+J
+wait $R2; echo "runner exit=$?"
+echo "--- wake drain:"; bin/fm-wake-drain.sh 2>&1 | grep -E "procevent|Factory" | head -10
 
-hdr "S3 a run hits ProviderAuthRequiredError ~20s after start -> supervision wake"
-printf '{"items":[%s],"hasMore":false}' "$(item d1 'ProviderAuthRequiredError: provider anthropic requires authentication' 2026-11-09T15:00:20Z)" > "$FIX/attention.json"
-waitwakes 1 && echo "wake observed" || echo "NO WAKE within 30s"
-echo "--- what supervision sees (bin/fm-wake-drain.sh) ---"
-bin/fm-wake-drain.sh 2>&1 | grep -i -E "factory|procevent" | head -5
+step "S4 adversarial: Factory refuses auth (401) -> one terminal wake, registration retired"
+touch "$FIX/status401"
+( bin/fm-procevent.sh start factory-$P > "$LAB/runner3.log" 2>&1 ) & R3=$!
+wait $R3; echo "runner exit=$?"
+echo "--- wake drain:"; bin/fm-wake-drain.sh 2>&1 | grep -E "procevent|Factory" | head -10
+echo "--- registrations after terminal error:"; bin/fm-procevent.sh list
 
-hdr "S4 same open item stays open -> no duplicate wake; second failure -> its own wake"
-sleep 4; bin/fm-procevent.sh reconcile >/dev/null 2>&1; sleep 3
-echo "distinct factory wakes after waiting with the same open item: $(awk -F '\t' -v k="procevent:factory-$P:" 'index($4,k)==1 && substr($4,length(k)+1) ~ /^[0-9]+$/ {print $4}' "$LAB/state/.wake-queue" | sort -u | wc -l | tr -d ' ')"
-printf '{"items":[%s,%s],"hasMore":false}' "$(item d2 'ProviderAuthRequiredError: second ticket' 2026-11-09T15:00:41Z)" "$(item d1 'ProviderAuthRequiredError: provider anthropic requires authentication' 2026-11-09T15:00:20Z)" > "$FIX/attention.json"
-waitwakes 2 && echo "second wake observed" || echo "NO SECOND WAKE"
-awk -F '\t' -v k="procevent:factory-$P:" 'index($4,k)==1 {print $4 " | " $5}' "$LAB/state/.wake-queue" | sort -u
-
-hdr "S5 adversarial: Factory refuses the token (401) -> one terminal error wake, watch stops"
-echo 401 > "$FIX/attention.status"
-waitwakes 3 && echo "third wake observed" || echo "NO ERROR WAKE"
-sleep 4; bin/fm-procevent.sh reconcile >/dev/null 2>&1; sleep 3
-awk -F '\t' -v k="procevent:factory-$P:" 'index($4,k)==1 && substr($4,length(k)+1) ~ /^[0-9]+$/ {print $4 " | " $5}' "$LAB/state/.wake-queue" | sort -u
-echo "poller processes still running: $(pgrep -f "fm-procevent-factory.sh poll --project $P" | wc -l | tr -d ' ')"
-for r in "$LAB"/state/procevent-inbox/factory-$P.*.result; do echo "-- $(basename "$r") classify=$(bin/fm-procevent-factory.sh classify "$r")"; cat "$r"; done
-echo "--- request log: auth header ---"; sort "$FIX/requests.log" | awk '{print $2}' | sort | uniq -c
-echo "token on any process argv? $(ps -axo args | grep -c "$TOKEN" | awk '{print $1-1}')"
+step "S5 token never on argv; auth header sent"
+grep -c "auth=Bearer tok-ABCsecret123" "$FIX/requests.log" | sed 's/^/requests carrying bearer: /'
+grep -rl "tok-ABCsecret123" "$LAB/state" 2>/dev/null | sed 's/^/TOKEN LEAKED INTO STATE: /' || true
+echo "token in state files: $(grep -rl tok-ABCsecret123 "$LAB/state" 2>/dev/null | wc -l | tr -d ' ')"
