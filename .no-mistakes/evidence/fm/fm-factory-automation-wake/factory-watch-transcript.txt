@@ -1,58 +1,32 @@
-# Live Factory watch in disposable lab home (stub Factory on 127.0.0.1:18765)
+### Scenario 2: arm the watch while the inbox is empty
+registered: factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 (factory)
+armed: factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31
+interval: 1s
+exit=0
+results after 3s with empty inbox: 0
 
-## Captured results (one per failure / terminal stop)
-### factory-test-proj.1.result
-factory: factory-test-proj
-status: failed
-project: test-proj
-item: automation-failed:run-GW-101	ProviderAuthRequiredError	ProviderAuthRequiredError: No credential configured for provider anthropic^[[31m\tin project test-proj	2026-11-09T09:00:20.000Z
-condition_polls: 32
+### a run fails ~20s after start: Factory raises automation-failed (ProviderAuthRequiredError)
+wake landed
 
-### factory-test-proj.2.result
-factory: factory-test-proj
+--- captured result ---
+factory: factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31
 status: failed
-project: test-proj
-item: automation-failed:run-GW-102	ProviderAuthRequiredError	ProviderAuthRequiredError on run GW-102	2026-11-09T09:00:21.000Z
-condition_polls: 19
-
-### factory-test-proj.3.result
-factory: factory-test-proj
-status: failed
-project: test-proj
-item: automation-failed:run-GW-103	ProviderAuthRequiredError	ProviderAuthRequiredError on run GW-103	2026-11-09T09:00:22.000Z
+project: 0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31
+item: automation-failed:run_01	ProviderAuthRequiredError	ProviderAuthRequiredError: provider anthropic requires authentication for model anthropic/claude-sonnet-5-5	2026-11-09T09:00:21Z
 condition_polls: 1
 
-### factory-test-proj.4.result
-factory: factory-test-proj
-status: failed
-project: test-proj
-item: automation-failed:run-GW-104	ProviderAuthRequiredError	ProviderAuthRequiredError on run GW-104	2026-11-09T09:00:23.000Z
-condition_polls: 1
+--- wake queue payload ---
+procevent:factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31:1 | check: procevent factory factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 1 - Factory automation failed at 2026-11-09T09:00:21Z: ProviderAuthRequiredError: provider anthropic requires authentication for model anthropic/claude-sonnet-5-5
 
-### factory-test-proj.5.result
-factory: factory-test-proj
-status: error
-project: test-proj
-detail: Factory at http://127.0.0.1:18765 unreachable: 3 consecutive failed reads; last: curl: (7) Failed to connect to 127.0.0.1 port 18765 after 0 ms: Couldn't connect to server
-condition_polls: 34
-
-### factory-test-proj.6.result
-factory: factory-test-proj
-status: error
-project: test-proj
-detail: Factory at http://127.0.0.1:18765 refused the attention read: HTTP 401 (check config/factory token_file)
-condition_polls: 1
-
-## Requests the stub Factory received (auth header shows token delivered as header only)
-  84 /web/factory/projects/test-proj/attention?kind=automation-failed&view=open&limit=50 auth=Bearer <lab-token>
-  34 /web/factory/projects/test-proj/attention?kind=automation-failed&view=open&limit=50&before=4 auth=Bearer <lab-token>
-  34 /web/factory/projects/test-proj/attention?kind=automation-failed&view=open&limit=50&before=2 auth=Bearer <lab-token>
-   3 /web/factory/projects/test-proj auth=Bearer <lab-token>
-   2 /web/config/models?factoryId=test-proj auth=Bearer <lab-token>
-   1 /web/factory/projects/userscope auth=Bearer <lab-token>
-   1 /web/factory/projects/test-proj/attention?kind=automation-failed&view=open&limit=50 auth=Bearer wrongtok
-   1 /web/factory/projects/test-proj auth=Bearer wrongtok
-   1 /web/factory/projects/nomodel auth=Bearer <lab-token>
-   1 /web/factory/projects/hybrid-ok auth=Bearer <lab-token>
-   1 /web/factory/projects/ghost auth=Bearer <lab-token>
-   1 /web/config/models?factoryId=hybrid-ok auth=Bearer <lab-token>
+--- what firstmate sees on drain (fm-wake-drain.sh) ---
+1794254297	1	check	procevent:factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31:1	check: procevent factory factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 1 - Factory automation failed at 2026-11-09T09:00:21Z: ProviderAuthRequiredError: provider anthropic requires authentication for model anthropic/claude-sonnet-5-5
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 15749.1794254297.KJLA9W
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 process-event source(s) registered, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 1s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  After draining queued wakes, watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.

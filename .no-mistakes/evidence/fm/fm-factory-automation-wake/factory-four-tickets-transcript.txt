@@ -1,0 +1,17 @@
+### Scenario 3: all four tickets fail (newest first in inbox; run_01 already reported)
+4 distinct wakes
+distinct result wakes after extra 9s of polling: 4
+captured results: 4
+--- item keys per result ---
+factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31.1.result: item: automation-failed:run_01
+factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31.2.result: item: automation-failed:run_02
+factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31.3.result: item: automation-failed:run_03
+factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31.4.result: item: automation-failed:run_04
+--- wake payloads ---
+check: procevent factory factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 1 - Factory automation failed at 2026-11-09T09:00:21Z: ProviderAuthRequiredError: provider anthropic requires authentication for model anthropic/claude-sonnet-5-5
+check: procevent factory factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 2 - Factory automation failed at 2026-11-09T09:00:22Z: ProviderAuthRequiredError (ticket 2)
+check: procevent factory factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 3 - Factory automation failed at 2026-11-09T09:00:23Z: ProviderAuthRequiredError (ticket 3)
+check: procevent factory factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 4 - Factory automation failed at 2026-11-09T09:00:24Z: ProviderAuthRequiredError (ticket 4)
+
+classify on result 4: failed
+terminal exit (failure keeps watch armed)=1

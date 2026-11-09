@@ -1,50 +1,42 @@
-## Nov-9 reproduction: default model's provider has no credential in project scope
-$ fm-procevent-factory.sh preflight --project test-proj
-not usable: default model anthropic/claude-sonnet-4-5 is not in the Factory's credentialed model catalog for project test-proj
+### Scenario 1: preflight before launch (default model has no credentialed provider)
+$ bin/fm-procevent-factory.sh preflight --project 0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31
+not usable: default model anthropic/claude-sonnet-5-5 is not in the Factory's credentialed model catalog for project 0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31
 exit=1
 
-## Credentialed hybrid project
-$ fm-procevent-factory.sh preflight --project hybrid-ok
-usable: openai/gpt-5 (scope hybrid; provider credential present, validity not checked)
+### fix the credential: catalog now lists the default model
+usable: anthropic/claude-sonnet-5-5 (scope factory; provider credential present, validity not checked)
 exit=0
 
-## No default model
-$ fm-procevent-factory.sh preflight --project nomodel
-not usable: project nomodel has no default model; a run session would fall back to an unpinned mode default
+### project with no default model
+not usable: project 0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 has no default model; a run session would fall back to an unpinned mode default
 exit=1
 
-## Per-user model scope
-$ fm-procevent-factory.sh preflight --project userscope
-cannot determine: project userscope uses per-user model scope; a run session takes its owner's default model, which this read cannot see
+### per-user model scope (cannot determine)
+cannot determine: project 0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 uses per-user model scope; a run session takes its owner's default model, which this read cannot see
 exit=3
 
-## Unknown project
-$ fm-procevent-factory.sh preflight --project ghost
-not usable: project ghost not found
+### token refused (401)
+cannot determine: Factory at http://127.0.0.1:52507 refused the project read: HTTP 401
+exit=3
+
+### unknown project (404)
+cannot determine: project deadbeef-0000 uses per-user model scope; a run session takes its owner's default model, which this read cannot see
+exit=3
+
+### Factory down
+cannot determine: Factory at http://127.0.0.1:1 unreachable: curl: (7) Failed to connect to 127.0.0.1 port 1 after 0 ms: Couldn't connect to server
+exit=3
+
+### requests seen by fake Factory (token in header only)
+/web/factory/projects/0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 auth=Bearer lab-token-not-a-real-secret
+/web/config/models?factoryId=0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 auth=Bearer lab-token-not-a-real-secret
+/web/factory/projects/0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 auth=Bearer lab-token-not-a-real-secret
+/web/config/models?factoryId=0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 auth=Bearer lab-token-not-a-real-secret
+/web/factory/projects/0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 auth=Bearer lab-token-not-a-real-secret
+/web/factory/projects/0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 auth=Bearer lab-token-not-a-real-secret
+/web/factory/projects/0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 auth=Bearer lab-token-not-a-real-secret
+/web/factory/projects/deadbeef-0000 auth=Bearer lab-token-not-a-real-secret
+
+### unknown project (fake Factory answers 404) - re-driven
+not usable: project deadbeef-0000 not found
 exit=1
-
-## Wrong token (401)
-$ fm-procevent-factory.sh preflight --project test-proj
-cannot determine: Factory at http://127.0.0.1:18765 refused the project read: HTTP 401
-exit=3
-
-## Factory down
-$ fm-procevent-factory.sh preflight --project test-proj
-cannot determine: Factory at http://127.0.0.1:18799 unreachable: curl: (7) Failed to connect to 127.0.0.1 port 18799 after 0 ms: Couldn't connect to server
-exit=3
-
-## URL with query string carrying a secret
-$ fm-procevent-factory.sh preflight --project test-proj
-cannot determine: config/factory url= must not carry a query string or fragment; use token_file= for credentials
-exit=3
-
-## URL with embedded credentials
-$ fm-procevent-factory.sh preflight --project test-proj
-cannot determine: config/factory url= must not embed credentials; use token_file=
-exit=3
-
-## After operator adds the credential (catalog now lists the model)
-$ fm-procevent-factory.sh preflight --project test-proj
-usable: anthropic/claude-sonnet-4-5 (scope factory; provider credential present, validity not checked)
-exit=0
-
