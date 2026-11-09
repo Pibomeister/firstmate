@@ -1,0 +1,46 @@
+## S1: grace unset, cycle 15 -> stale_after_secs null
+rc=0
+{
+  "generated": "2026-11-09T18:53:02Z",
+  "generated_epoch": 1794250382,
+  "published_epoch": 1794250389,
+  "stale_after_secs": null,
+  "failure": null,
+  "primary_context": {
+    "used_tokens": {
+      "unknown": true,
+      "reason": "transcript had no token usage"
+    },
+    "remaining": {
+      "unknown": true,
+      "reason": "harness showed no context text in its pane"
+    },
+    "derived": {
+      "unknown": true,
+      "reason": "no readable transcript"
+    }
+  }
+}
+wall: start=1794250382 end=1794250389
+
+## S2: grace 60, cycle 15, default timeouts -> 15+60+411 = 486
+rc=0
+{
+  "generated_epoch": 1794250389,
+  "published_epoch": 1794250393,
+  "stale_after_secs": 486
+}
+
+## S3: grace 0 is valid -> 15+0+411 = 426
+426
+
+## S4: grace 60 but no cycle period (not launched by watcher) -> null
+null
+
+## S5: unusable grace value -> null; junk cycle -> null
+null
+null
+
+## S6: custom caps DEADLINE=30 SNAPSHOT=50 READ=2 NM=4 QUOTA=7 DISCOVERY=20, cycle 10 grace 5
+expected 10+5+(50+20+7+17*(4+1)+30+3)=10+5+195=210
+210

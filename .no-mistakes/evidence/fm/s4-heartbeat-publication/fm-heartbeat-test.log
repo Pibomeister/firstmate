@@ -28,11 +28,167 @@ ok - TERM during a task read publishes the whole task list with unknown markers
 ok - the next run removes what a SIGKILLed run left
 ok - a watcher poll does not wait for a slow heartbeat
 ok - the watcher keeps polling with one detached heartbeat in flight, which still publishes
+/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70SK20GPGA945NNA8Q6WHEX/bin/fm-nm-run-lib.sh: line 44: 42208 Killed: 9               "$have_timeout" -k 1 "$timeout_secs" "$@" 0<&0
+ok - AC-14: a bounded read whose child or grandchild ignores TERM is killed one second after its bound
+ok - AC-14: the watcher launches a publication every cycle whatever its loop work, and stops with the watcher
+ok - AC-14: zero-padded timeouts read as decimal in the run cap, and all-zero ones fall back to the defaults
 ok - AC-14: the stale bound is the watcher cycle period plus the grace plus the run cap, and null while either is missing
 ok - AC-14: a busy healthy home near the caps stays within its bound, measured from the publication stamp
 ok - AC-14: the watcher's heartbeat bound uses its cycle period, never the wake heartbeat cadence
 ok - AC-14: context_left carries the footer and the derived percentage side by side
 ok - AC-14: the derived reading is unknown, with its reason, when there is no token usage to read
 ok - AC-14: the derived reading is unknown, with its reason, under a state or config directory override
-ok - heartbeat publishes weekly model allowance left and leaves a miss unknown
-ok - 36 tests passed
+not ok - weekly model allowance was not published: {
+  "schema": "fm-heartbeat.v1",
+  "generated": "2026-11-09T18:48:50Z",
+  "generated_epoch": 1794250130,
+  "published_epoch": 1794250146,
+  "fm_home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-heartbeat.abwo2Q/weekly",
+  "stale_after_secs": null,
+  "snapshot": {
+    "ok": true,
+    "schema": "fm-fleet-snapshot.v1",
+    "generated": "2026-11-09T18:48:50Z",
+    "failure": null
+  },
+  "primary": {
+    "terminal": {
+      "backend": {
+        "unknown": true,
+        "reason": "no supervisor backend discovered"
+      },
+      "target": {
+        "unknown": true,
+        "reason": "no supervisor target discovered"
+      },
+      "present": {
+        "unknown": true,
+        "reason": "no supervisor endpoint discovered"
+      }
+    },
+    "session": {
+      "trusted_id": {
+        "unknown": true,
+        "reason": "no session recorded"
+      },
+      "anchor_pid": {
+        "unknown": true,
+        "reason": "no lock anchor read"
+      },
+      "recorded": false
+    },
+    "writer": {
+      "anchor_pid": 42339,
+      "session_id": {
+        "unknown": true,
+        "reason": "writer has no trusted session id"
+      }
+    },
+    "last_turn": {
+      "unknown": true,
+      "reason": "no transcript found"
+    },
+    "unread_inbox_age_seconds": null,
+    "composer_state": "unknown",
+    "context_left": {
+      "used_tokens": {
+        "unknown": true,
+        "reason": "transcript had no token usage"
+      },
+      "remaining": {
+        "unknown": true,
+        "reason": "harness showed no context text in its pane"
+      },
+      "derived": {
+        "unknown": true,
+        "reason": "no readable transcript"
+      }
+    }
+  },
+  "tasks": [
+    {
+      "id": "hb-task",
+      "terminal": {
+        "backend": "tmux",
+        "target": "fmtest:hb",
+        "exists": false
+      },
+      "session": {
+        "unknown": true,
+        "reason": "no readable session for this harness and worktree"
+      },
+      "last_turn": {
+        "unknown": true,
+        "reason": "no transcript found"
+      },
+      "composer_state": "unknown",
+      "context_left": {
+        "used_tokens": {
+          "unknown": true,
+          "reason": "transcript had no token usage"
+        },
+        "remaining": {
+          "unknown": true,
+          "reason": "harness showed no context text in its pane"
+        },
+        "derived": {
+          "unknown": true,
+          "reason": "no readable transcript"
+        }
+      },
+      "stage": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "backend target gone: fmtest:hb"
+      },
+      "last_commit": {
+        "sha": "c18e8e82969dbfa5f6eb173481b7bd17c048f6fe",
+        "branch": "fm/hb-task"
+      },
+      "last_push": {
+        "unknown": true,
+        "reason": "no local no-mistakes or origin ref for the branch"
+      },
+      "pr_head": null,
+      "no_mistakes_run": null,
+      "last_output_time": {
+        "unknown": true,
+        "reason": "no terminal or transcript activity read since this spawn"
+      },
+      "open_asks": {
+        "decisions": [],
+        "inbox_unhandled": {
+          "unknown": true,
+          "reason": "no readable inbox directory"
+        }
+      }
+    }
+  ],
+  "weekly_allowance": {
+    "status": "ok",
+    "windows": [
+      {
+        "provider": "anthropic",
+        "id": "seven_day",
+        "percent_remaining": 8
+      },
+      {
+        "provider": "openai",
+        "id": "weekly",
+        "percent_remaining": 40
+      }
+    ]
+  },
+  "ready_pr_discovery": {
+    "schema": "fm-ready-pr-discovery.v1",
+    "generated_epoch": 1794250130,
+    "runs": [],
+    "unreadable": [],
+    "warnings": []
+  },
+  "failure": {
+    "reason": "primary writer session timed out after 3s",
+    "count": 1
+  }
+}
+bash tests/fm-heartbeat.test.sh  49.92s user 91.79s system 29% cpu 8:07.19 total

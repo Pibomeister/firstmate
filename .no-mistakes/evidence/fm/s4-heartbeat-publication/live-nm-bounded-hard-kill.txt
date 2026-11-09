@@ -1,0 +1,14 @@
+## S9: fm_nm_bounded 2s bound on a child and grandchild that ignore TERM
+timeout binary: /opt/homebrew/bin/timeout
+child-started
+bin/fm-nm-run-lib.sh: line 44:  1148 Killed: 9               "$have_timeout" -k 1 "$timeout_secs" "$@" 0<&0
+rc=137
+elapsed=3s (bound 2s + 1s kill slack)
+leftover stubborn processes: 0; leftover sleep 30: 686
+
+## S9b: same, with uniquely tagged sleeps to count survivors
+child-started
+bin/fm-nm-run-lib.sh: line 44: 46599 Killed: 9               "$have_timeout" -k 1 "$timeout_secs" "$@" 0<&0
+rc=137
+elapsed=4s
+surviving tagged child/grandchild: 0

@@ -1,0 +1,29 @@
+## S7: footer + derived side by side (primary, real tmux pane in lab socket, transcript 150000 used of 200000 window)
+rc=0
+{
+  "session": {
+    "trusted_id": "sess-lab",
+    "anchor_pid": {
+      "unknown": true,
+      "reason": "no lock anchor read"
+    },
+    "recorded": true
+  },
+  "terminal": {
+    "backend": "tmux",
+    "target": "%0",
+    "present": true
+  },
+  "context_left": {
+    "used_tokens": 150000,
+    "remaining": {
+      "percent": 12,
+      "source": "terminal"
+    },
+    "derived": {
+      "percent": 25,
+      "source": "transcript"
+    }
+  },
+  "failure": null
+}
