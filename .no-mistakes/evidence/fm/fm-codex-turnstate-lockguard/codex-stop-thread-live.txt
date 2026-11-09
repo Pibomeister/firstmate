@@ -1,0 +1,3 @@
+# codex-cli 0.167.0 probe: session_id=01a1c13e-d9da-75f3-90b0-1b5927049225 env_pair=| trusted=01a1c13e-d9da-75f3-90b0-1b5927049225 
+ok - codex-cli 0.167.0: a Stop hook's payload session_id is the thread, trusted through Codex ancestry
+rc=0

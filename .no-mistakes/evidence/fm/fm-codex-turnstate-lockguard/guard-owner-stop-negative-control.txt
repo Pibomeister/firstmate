@@ -1,0 +1,4 @@
+not ok - the owning daemon-served session's Stop was refused as a foreign session (unexpected: 'OWNED BY ANOTHER LIVE SESSION')
+--- output ---
+{"systemMessage":"FIRSTMATE SUPERVISION IS OWNED BY ANOTHER LIVE SESSION: this read-only session cannot and should not arm or repair the watcher (lock owner pid 40454). Allowing this turn to end safely; the owning session must restore supervision."}
+rc=1

@@ -1,0 +1,2 @@
+ok - session-lock: a daemon-served owner's Stop is its own by payload thread; another thread stays foreign
+rc=0

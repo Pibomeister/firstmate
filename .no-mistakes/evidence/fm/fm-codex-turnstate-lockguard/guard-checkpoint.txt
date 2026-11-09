@@ -1,0 +1,2 @@
+ok - session-lock: Stop binds checkpoint descendants and rejects foreign or absent thread identity
+rc=0

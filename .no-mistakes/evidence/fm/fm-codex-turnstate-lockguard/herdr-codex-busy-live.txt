@@ -1,0 +1,31 @@
+
+
+
+
+› Ask Codex to do anything
+
+  GPT-6-Sol medium · master · Context 100% left · 0 …
+  ← for agents · ? for sh  ⚠ 4 warnings · f2 to view
+## S1 fresh codex, native idle, no turn end yet (expect unknown)
+11:03:03 herdr_agent_status=idle classify="unknown codex-unverified" turn-ended=absent
+## S2 submit a turn with a long tool call; turn-start recorded as the doorbell/typed send does
+empty
+11:03:05 herdr_agent_status=working classify="busy herdr-native" turn-ended=absent
+11:03:09 herdr_agent_status=working classify="busy herdr-native" turn-ended=absent
+11:03:12 herdr_agent_status=working classify="busy herdr-native" turn-ended=absent
+11:03:15 herdr_agent_status=working classify="busy herdr-native" turn-ended=absent
+## S3 wait for the turn to finish (expect idle codex-turn-ended)
+11:03:19 herdr_agent_status=working classify="busy herdr-native" turn-ended=present
+11:03:23 herdr_agent_status=working classify="busy herdr-native" turn-ended=present
+11:03:27 herdr_agent_status=working classify="busy herdr-native" turn-ended=present
+11:03:32 herdr_agent_status=working classify="busy herdr-native" turn-ended=present
+11:03:36 herdr_agent_status=working classify="busy herdr-native" turn-ended=present
+11:03:41 herdr_agent_status=working classify="busy herdr-native" turn-ended=present
+11:03:45 herdr_agent_status=idle classify="idle codex-turn-ended" turn-ended=present
+turn-start mtime=1794243783 turn-ended mtime=1794243824
+11:03:48 herdr_agent_status=idle classify="idle codex-turn-ended" turn-ended=present
+## S4 adversarial: a newer turn start with native idle (expect unknown, never idle)
+11:03:49 herdr_agent_status=idle classify="unknown codex-unverified" turn-ended=present
+## S5 relaunch incarnation newer than the turn end (expect unknown)
+11:03:50 herdr_agent_status=idle classify="unknown codex-unverified" turn-ended=present
+teardown rc=0
