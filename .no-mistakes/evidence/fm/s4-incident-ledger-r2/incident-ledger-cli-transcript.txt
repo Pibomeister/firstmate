@@ -1,49 +1,38 @@
-== S1: appends through the library ==
-appended t1 rc=0
-appended t2 rc=0
-appended t3 rc=0
-appended t4 rc=0
-appended t5 rc=0
--- invalid action --
-fm-incident-ledger: invalid action: bogus
-rc=2
--- empty class --
-fm-incident-ledger: home, subject, signal, state, class and episode must be non-empty
-rc=2
--- key --
-h1|w/task|1|open
--- episode rows e1 --
-t1	1794127474	h1	w/task	1	open	routine	e1	-	-	escalate
-t2	1794127475	h1	w/task	1	open	routine	e1	cause1	-	delta
-t3	1794127475	h1	w/task	1	closed	routine	e1	-	-	closure
-== ledger file (cat -et) ==
-t1^I1794127474^Ih1^Iw/task^I1^Iopen^Iroutine^Ie1^I-^I-^Iescalate$
-t2^I1794127475^Ih1^Iw/task^I1^Iopen^Iroutine^Ie1^Icause1^I-^Idelta$
-t3^I1794127475^Ih1^Iw/task^I1^Iclosed^Iroutine^Ie1^I-^I-^Iclosure$
-t4^I1794127476^Ih1^Iw/task^I01^Iopen^Istuck^Ie2^I-^I-^Iescalate$
-t5^I1794127476^Ih2^Isub ject^Isig nal^Iopen^Iroutine^Ie9^Imulti line^I-^Irecord$
-== S2: CLI latest (any state) ==
-t3	1794127475	h1	w/task	1	closed	routine	e1	-	-	closure
-rc=0
-== CLI latest --state open ==
-t2	1794127475	h1	w/task	1	open	routine	e1	cause1	-	delta
-== S3: text compare: signal 01 ==
-t4	1794127476	h1	w/task	01	open	stuck	e2	-	-	escalate
-== signal 1.0 (expect empty) ==
-rc=0
-== raw tab/newline lookup finds sanitized row ==
-t5	1794127476	h2	sub ject	sig nal	open	routine	e9	multi line	-	record
-== rows count / rows --since future ==
+## S1 append transitions + ids + key
+t1
+t2
+t3
+t4
+t5
+main|task-7|stale|open
+path: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.qpKWP4/state/incident-ledger.tsv
+episode ep1:
+t1	1794244158	main	task-7	stale	open	routine	ep1	-	-	escalate
+t2	1794244158	main	task-7	stale	open	routine	ep1	still stuck	-	delta
+t3	1794244158	main	task-7	stale	closed	routine	ep1	recovered	-	closure
+## ledger file (cat -A)
+t1^I1794244158^Imain^Itask-7^Istale^Iopen^Iroutine^Iep1^I-^I-^Iescalate$
+t2^I1794244158^Imain^Itask-7^Istale^Iopen^Iroutine^Iep1^Istill stuck^I-^Idelta$
+t3^I1794244158^Imain^Itask-7^Istale^Iclosed^Iroutine^Iep1^Irecovered^I-^Iclosure$
+t4^I1794244158^Imain^Itab here^Isig nl^Iopen^Iquota^Iep2^Ix^Iy^Irecord$
+t5^I1794244158^Imain^I01^Istale^Iopen^Iroutine^Iep3^I-^I-^Ihold$
+## S2 CLI latest any state
+t3	1794244158	main	task-7	stale	closed	routine	ep1	recovered	-	closure
+exit=0
+## CLI latest exact key open
+t2	1794244158	main	task-7	stale	open	routine	ep1	still stuck	-	delta
+exit=0
+## S3 text-key compare: subject 1 (should be empty) vs 01
+exit=0 (empty above expected)
+t5	1794244158	main	01	stale	open	routine	ep3	-	-	hold
+## S4 rows / rows --since
        5
        0
-== adversarial CLI ==
-fm-incident-ledger: --since is not a decimal whole number: abc
-rc=1
-fm-incident-ledger: missing --signal
-rc=1
-fm-incident-ledger: repeated flag: --home
-rc=1
-unknown subcmd rc=2
-fm-incident-ledger.sh - read the incident ledger.
-
-Usage:
+## S5 refusals
+[latest --home main --subject x] exit=2 stdout/err: fm-incident-ledger.sh - read the incident ledger.  Usage:   fm-incident-ledger.s
+[latest --home a --home b --subject x --signal y] exit=2 stdout/err: fm-incident-ledger.sh - read the incident ledger.  Usage:   fm-incident-ledger.s
+[rows --since abc] exit=2 stdout/err: fm-incident-ledger.sh - read the incident ledger.  Usage:   fm-incident-ledger.s
+[rows --bogus 1] exit=2 stdout/err: fm-incident-ledger.sh - read the incident ledger.  Usage:   fm-incident-ledger.s
+[nope] exit=2 stdout/err: fm-incident-ledger.sh - read the incident ledger.  Usage:   fm-incident-ledger.s
+## absent ledger
+exit=0 rows=       0

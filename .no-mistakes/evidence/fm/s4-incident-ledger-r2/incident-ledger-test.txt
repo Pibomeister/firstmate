@@ -1,0 +1,5 @@
+ok - every reader skips a row without eleven columns, a t<N> id and a decimal epoch
+ok - twenty concurrent appenders under the ledger lock lose no row and get unique ids
+ok - the ledger lock excludes a second holder until it is released
+ok - the latest and rows verbs and their refusals
+FM_TEST_COMPLETE

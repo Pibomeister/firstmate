@@ -1,0 +1,6 @@
+[latest --home main --subject x] exit=1 stdout_bytes=0 stderr: fm-incident-ledger: missing --signal
+[latest --home a --home b --subject x --signal y] exit=1 stdout_bytes=0 stderr: fm-incident-ledger: repeated flag: --home
+[rows --since abc] exit=1 stdout_bytes=0 stderr: fm-incident-ledger: --since is not a decimal whole number: abc
+[rows --bogus 1] exit=1 stdout_bytes=0 stderr: fm-incident-ledger: unknown flag for rows: --bogus
+[nope] exit=2 stdout_bytes=0 stderr: fm-incident-ledger.sh - read the incident ledger.
+[--help] exit=0 stdout_bytes=1057 stderr: 
