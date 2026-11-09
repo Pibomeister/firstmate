@@ -630,11 +630,20 @@ print_backlog_pointer() {
 # because awk's -v applies escape processing before the regex is ever compiled.
 MANUAL_KEEP_RE='[(]hold|blocked-by:'
 
+# Hold reasons are decoded before the cut, so a cut never splits an encoded
+# payload; each title line is then cut with the shared [truncated] marker:
+# held and blocked queued lines at BACKLOG_DECISION_ROW_MAX, every other line
+# at BACKLOG_ROW_MAX. Every in-flight, held, and blocked line still prints.
 print_backlog_manual_compact() {
   local path=$1 reason=$2
-  printf 'compact backlog listing (%s; done rows omitted; every in-flight, held, and blocked title line kept; other queued bounded to %s; indented task bodies omitted)\n' \
-    "$reason" "$QUEUED_LIMIT"
-  awk -v max="$QUEUED_LIMIT" -v keep_re="$MANUAL_KEEP_RE" '
+  printf 'compact backlog listing (%s; done rows omitted; every in-flight, held, and blocked title line kept; held and blocked lines capped at %s characters, other lines at %s; other queued bounded to %s; indented task bodies omitted)\n' \
+    "$reason" "$BACKLOG_DECISION_ROW_MAX" "$BACKLOG_ROW_MAX" "$QUEUED_LIMIT"
+  fm_hold_reason_decode_stream markdown < "$path" | awk -v max="$QUEUED_LIMIT" -v keep_re="$MANUAL_KEEP_RE" \
+    -v cap="$BACKLOG_ROW_MAX" -v decision_cap="$BACKLOG_DECISION_ROW_MAX" -v suffix="$FM_LINE_CAP_SUFFIX" '
+    function cut(line, limit) {
+      if (length(line) <= limit) return line
+      return substr(line, 1, limit - length(suffix)) suffix
+    }
     function state_for_heading(line, heading) {
       heading = line
       sub(/^##[[:space:]]+/, "", heading)
@@ -650,12 +659,12 @@ print_backlog_manual_compact() {
       if (state != "" && state != "done") print $0
       next
     }
-    state == "in_flight" && /^[-*][[:space:]]+/ { in_flight++; print $0; next }
+    state == "in_flight" && /^[-*][[:space:]]+/ { in_flight++; print cut($0, cap); next }
     state == "done" && /^[-*][[:space:]]+/ { done_total++; next }
     state == "queued" && /^[-*][[:space:]]+/ {
       queued_total++
-      if ($0 ~ keep_re) { gated++; print $0; next }
-      if (plain_shown < max) { plain_shown++; print $0 }
+      if ($0 ~ keep_re) { gated++; print cut($0, decision_cap); next }
+      if (plain_shown < max) { plain_shown++; print cut($0, cap) }
       next
     }
     END {
@@ -670,7 +679,7 @@ print_backlog_manual_compact() {
         }
       }
     }
-  ' "$path" | fm_hold_reason_decode_stream markdown
+  '
 }
 
 # tasks-axi closes every listing with its own help block. This section composes

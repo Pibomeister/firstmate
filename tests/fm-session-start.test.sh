@@ -2726,7 +2726,7 @@ EOF
 
   out=$(FM_SESSION_START_QUEUED_LIMIT=4 run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
 
-  assert_contains "$out" "compact backlog listing (manual backend; done rows omitted; every in-flight, held, and blocked title line kept; other queued bounded to 4; indented task bodies omitted)" \
+  assert_contains "$out" "compact backlog listing (manual backend; done rows omitted; every in-flight, held, and blocked title line kept; held and blocked lines capped at 320 characters, other lines at 180; other queued bounded to 4; indented task bodies omitted)" \
     "manual backend did not use compact title-line rendering"
   assert_contains "$out" "## In flight" "manual compact rendering omitted the in-flight section heading"
   assert_contains "$out" "- [ ] compact-startup - Compact startup digest" \
@@ -2752,6 +2752,50 @@ EOF
   assert_contains "$out" "or data/backlog.md" "manual compact digest omitted the data/backlog.md full-body pointer"
 
   pass "manual backlog rendering drops done rows, keeps every held or blocked title line, and bounds the rest"
+}
+
+test_backlog_compact_manual_backend_caps_title_lines() {
+  local rec root home fakebin out long_tail line id
+  rec=$(new_world backlog-compact-manual-caps)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  printf '%s\n' manual > "$home/config/backlog-backend"
+  long_tail=$(printf 'x%.0s' $(seq 1 500))
+  cat > "$home/data/backlog.md" <<EOF
+# Backlog
+
+## In flight
+- [ ] long-flight - In flight ${long_tail}
+- [ ] short-flight - Short in flight
+
+## Queued
+- [ ] long-held - Held work (hold: wait for captain ${long_tail}) (hold-kind: captain)
+- [ ] long-blocked - Blocked work blocked-by: long-flight ${long_tail}
+- [ ] short-held - Short held (hold: brief) (hold-kind: captain)
+- [ ] long-plain - Plain queued ${long_tail}
+
+## Done
+EOF
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  for id in long-flight short-flight long-held long-blocked short-held long-plain; do
+    assert_contains "$out" "- [ ] $id - " "manual compact rendering lost the id of $id"
+  done
+  assert_contains "$out" "- [ ] short-flight - Short in flight" "manual compact rendering cut a short in-flight row"
+  assert_contains "$out" "- [ ] short-held - Short held (hold: brief) (hold-kind: captain)" \
+    "manual compact rendering cut a short held row"
+  for id in long-flight:180 long-plain:180 long-held:320 long-blocked:320; do
+    line=$(printf '%s\n' "$out" | grep -F -- "- [ ] ${id%%:*} - ")
+    [ "${#line}" -eq "${id##*:}" ] ||
+      fail "manual row ${id%%:*} is ${#line} characters, want ${id##*:}: $line"
+    case $line in *' [truncated]') ;; *) fail "manual row ${id%%:*} has no [truncated] marker: $line" ;; esac
+  done
+
+  pass "manual backlog rendering cuts long title lines at 180 and 320 characters and keeps every id"
 }
 
 test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback() {
@@ -3736,6 +3780,7 @@ test_session_start_seeds_the_outcome_display_tail_while_away
 test_backlog_compact_tasks_axi_omits_bodies_and_keeps_metadata
 test_backlog_queued_bound_discloses_its_remainder
 test_backlog_compact_manual_backend_skips_indented_bodies
+test_backlog_compact_manual_backend_caps_title_lines
 test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback
 test_fleet_digest_empty_fleet
 test_next_step_sources_x_mode_cadence
