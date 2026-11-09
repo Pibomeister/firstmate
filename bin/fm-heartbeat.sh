@@ -24,7 +24,36 @@
 #   schema            stable id fm-heartbeat.v1
 #   generated         UTC observation time for this execution
 #   generated_epoch   Unix seconds for generated
+#   published_epoch   Unix seconds stamped at the successful publication; the
+#                     health verdict measures heartbeat age from this stamp
 #   fm_home           resolved operational home
+#   stale_after_secs  the stale bound: the watcher cycle period it passed as
+#                     FM_HEARTBEAT_CYCLE_SECS, never the wake heartbeat cadence,
+#                     plus the stale-grace-secs key of config/heartbeat
+#                     (docs/configuration.md), plus one whole-run cap; null while
+#                     the cycle period or the grace is missing. The whole-run
+#                     cap is max(FM_HEARTBEAT_DEADLINE, FM_HEARTBEAT_SNAPSHOT_TIMEOUT)
+#                     + FM_HEARTBEAT_DISCOVERY_TIMEOUT (default 60)
+#                     + FM_HEARTBEAT_QUOTA_TIMEOUT + an overrun of
+#                     17 * (max(READ, NM timeout) + 1) + 5 * (5 + 1) + 3
+#                     seconds: the 17 bounded reads of the primary or of the
+#                     one task row in flight when the deadline passes, each
+#                     with the 1 s kill slack of bin/fm-timeout-lib.sh; the 5 s
+#                     bound of the opt-in no-mistakes home resolver
+#                     (bin/fm-nm-run-lib.sh fm_nm_bounded, a hard limit that
+#                     kills a TERM-ignoring read), with its slack, for each of that
+#                     row's up to 5 resolver calls (the 4 no-mistakes host
+#                     reads and the state database lookup of an incomplete
+#                     run table); and that slack on the snapshot, discovery
+#                     and quota bounds. The watcher's independent ticker
+#                     launches a run every cycle, whatever the watcher loop is
+#                     doing, and a run cannot outlast the cap, so a healthy
+#                     home's age stays within cycle + run cap. A dead
+#                     publisher stamps nothing more and reads past the bound
+#                     stale_after_secs after its last publication: that is the
+#                     detection delay, plus the verdict reader's own cadence.
+#                     With the defaults (DEADLINE 240, READ 3) the cap is 411 s,
+#                     so a 15 s cycle and a 60 s grace give a 486 s delay.
 #   snapshot          {ok, schema, generated, failure} for the fleet snapshot read
 #   primary           supervising firstmate session (not a ship/scout task row)
 #     terminal          {backend, target, present} from this writer's environment
@@ -39,9 +68,12 @@
 #                       an external leash can see an unread-note stall without
 #                       reading the pane
 #     composer_state    empty|pending|pending-unproven|unknown
-#     context_left      {used_tokens, remaining}; remaining is {percent, source} from
-#                       the harness's own "N% until auto-compact" pane text, else
-#                       unknown; no window size is ever assumed
+#     context_left      {used_tokens, remaining, derived}; remaining is {percent, source}
+#                       from the harness's own "N% until auto-compact" pane text, else
+#                       unknown; derived is {percent, source} from the shared context
+#                       reading (bin/fm-context-reading-lib.sh) of the transcript, else
+#                       unknown, and always unknown while a state or config directory
+#                       override is in use; no window size is ever assumed
 #   tasks[]           one row per snapshot task id, sorted by id
 #     id
 #     terminal          {backend, target, exists} from snapshot endpoint
@@ -87,8 +119,9 @@
 # FM_HEARTBEAT_SNAPSHOT_SCRIPT may name a replacement snapshot producer; tests
 # use it to simulate slow reads without touching the real fleet snapshot.
 #
-# bin/fm-watch.sh runs --write detached and single-flight, so no read here can
-# hold a watcher poll.
+# bin/fm-watch.sh runs --write detached and single-flight from an independent
+# ticker every watcher cycle, so no read here can hold a watcher poll and no
+# watcher loop work can delay a launch.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -115,11 +148,17 @@ case "${1:-}" in
   *) sed -n '2,${/^#/!q;p;}' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
 esac
 
-case "$FM_HEARTBEAT_SNAPSHOT_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_SNAPSHOT_TIMEOUT=120 ;; esac
-case "$FM_HEARTBEAT_READ_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_READ_TIMEOUT=3 ;; esac
-case "$FM_HEARTBEAT_NM_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_NM_TIMEOUT=2 ;; esac
-case "$FM_HEARTBEAT_QUOTA_TIMEOUT" in ''|*[!0-9]*|0) FM_HEARTBEAT_QUOTA_TIMEOUT=10 ;; esac
-case "$FM_HEARTBEAT_DEADLINE" in ''|*[!0-9]*|0) FM_HEARTBEAT_DEADLINE=240 ;; esac
+# A digit-only value reads as decimal even with leading zeros (08 is 8, never
+# octal), so the run-cap arithmetic below cannot misread or reject it.
+heartbeat_seconds() {  # <value> <default>
+  case "$1" in ''|*[!0-9]*) printf '%s\n' "$2"; return ;; esac
+  case "$((10#$1))" in 0) printf '%s\n' "$2" ;; *) printf '%s\n' "$((10#$1))" ;; esac
+}
+FM_HEARTBEAT_SNAPSHOT_TIMEOUT=$(heartbeat_seconds "$FM_HEARTBEAT_SNAPSHOT_TIMEOUT" 120)
+FM_HEARTBEAT_READ_TIMEOUT=$(heartbeat_seconds "$FM_HEARTBEAT_READ_TIMEOUT" 3)
+FM_HEARTBEAT_NM_TIMEOUT=$(heartbeat_seconds "$FM_HEARTBEAT_NM_TIMEOUT" 2)
+FM_HEARTBEAT_QUOTA_TIMEOUT=$(heartbeat_seconds "$FM_HEARTBEAT_QUOTA_TIMEOUT" 10)
+FM_HEARTBEAT_DEADLINE=$(heartbeat_seconds "$FM_HEARTBEAT_DEADLINE" 240)
 
 command -v jq >/dev/null 2>&1 || {
   echo 'fm-heartbeat: jq is required' >&2
@@ -150,6 +189,9 @@ command -v jq >/dev/null 2>&1 || {
 # shellcheck source=bin/fm-context-footer-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-context-footer-lib.sh"
+# shellcheck source=bin/fm-context-reading-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-context-reading-lib.sh"
 # The unread captain inbox age rule has one owner, shared with fm-inbox.sh.
 # shellcheck source=bin/fm-captain-inbox-lib.sh
 # shellcheck disable=SC1091
@@ -251,17 +293,34 @@ heartbeat_pane_context_percent() {  # <backend> <target> [expected-label]
 }
 
 heartbeat_context_json() {  # <label> <transcript-or-empty> [backend] [target] [expected-label]
-  local tokens='' percent=''
+  local tokens='' percent='' reading derived='' why='no readable transcript'
   [ -z "$2" ] || tokens=$(heartbeat_read "$1 context" fm_warm_compact_context_tokens "$2") || tokens=
   if [ -n "${3:-}" ] && [ -n "${4:-}" ]; then
     percent=$(heartbeat_read "$1 pane context" heartbeat_pane_context_percent "$3" "$4" "${5:-}") || percent=
   fi
-  jq -n --arg used "$tokens" --arg percent "$percent" '
+  # The derived reading comes from the shared context reading, which finds the
+  # session's window by its id; a Claude transcript file is named for its session.
+  if [ -n "$2" ]; then
+    why='transcript had no token usage'
+    if [ -n "$tokens" ]; then
+      # That reading reads its window records under FM_HOME only, so a state or
+      # config override would give a number from records this run does not use.
+      if [ "$STATE" != "$FM_HOME/state" ] || [ "$CONFIG" != "$FM_HOME/config" ]; then
+        why='state or config directory override in use'
+      else
+        why='no context window for this session'
+        reading=$(heartbeat_read "$1 derived context" fm_context_reading "$FM_HOME" "$(basename "$2" .jsonl)" "$2" '') || reading=
+        derived=$(printf '%s\n' "$reading" | sed -n 's/^footer=[^ ]* derived=\([0-9][0-9]*\) .*/\1/p')
+      fi
+    fi
+  fi
+  jq -n --arg used "$tokens" --arg percent "$percent" --arg derived "$derived" --arg why "$why" '
     def u(r): {unknown:true,reason:r};
     {
       used_tokens:(if ($used | test("^[0-9]+$")) then ($used | tonumber) else u("transcript had no token usage") end),
       remaining:(if $percent == "" then u("harness showed no context text in its pane")
-        else {percent:($percent | tonumber),source:"terminal"} end)
+        else {percent:($percent | tonumber),source:"terminal"} end),
+      derived:(if ($derived | test("^[0-9]+$")) then {percent:($derived | tonumber),source:"transcript"} else u($why) end)
     }'
 }
 
@@ -683,8 +742,8 @@ heartbeat_weekly_allowance() {
 # Read-only ready-PR discovery across every registered repo (bin/fm-ready-pr-discovery.sh).
 # A failure or timeout stays an explicit unknown, never a silent empty list.
 heartbeat_ready_pr_discovery() {
-  local out rc=0 bound=${FM_HEARTBEAT_DISCOVERY_TIMEOUT:-60}
-  case "$bound" in ''|*[!0-9]*|0) bound=60 ;; esac
+  local out rc=0 bound
+  bound=$(heartbeat_seconds "${FM_HEARTBEAT_DISCOVERY_TIMEOUT:-}" 60)
   # The inner budget stops discovery starting new repos or runs before the outer bound
   # fires, so a slow fleet yields partial results instead of no field at all.
   out=$(fm_run_timed "$bound" \
@@ -703,6 +762,19 @@ heartbeat_ready_pr_discovery() {
 
 heartbeat_publish() {
   local snapshot_meta tmp=$HEARTBEAT_WORK/heartbeat.json weekly ready_pr
+  local cycle=${FM_HEARTBEAT_CYCLE_SECS:-} grace stale_after=null run_cap lead read discovery published
+  # HB-3 stale bound: the cycle period the watcher passed plus the FQ-5 grace
+  # plus one whole-run cap (see the header). With no usable cycle period or
+  # grace the bound is null.
+  grace=$(_fm_context_config_value "$CONFIG/heartbeat" stale-grace-secs zero-ok) || grace=
+  case "$cycle" in '' | 0* | *[!0-9]*) cycle= ;; esac
+  lead=$FM_HEARTBEAT_DEADLINE
+  [ "$FM_HEARTBEAT_SNAPSHOT_TIMEOUT" -le "$lead" ] || lead=$FM_HEARTBEAT_SNAPSHOT_TIMEOUT
+  read=$FM_HEARTBEAT_READ_TIMEOUT
+  [ "$FM_HEARTBEAT_NM_TIMEOUT" -le "$read" ] || read=$FM_HEARTBEAT_NM_TIMEOUT
+  discovery=$(heartbeat_seconds "${FM_HEARTBEAT_DISCOVERY_TIMEOUT:-}" 60)
+  run_cap=$((lead + discovery + FM_HEARTBEAT_QUOTA_TIMEOUT + 17 * (read + 1) + 5 * (5 + 1) + 3))
+  [ -z "$cycle" ] || [ -z "$grace" ] || stale_after=$((cycle + grace + run_cap))
   ready_pr=$(heartbeat_ready_pr_discovery) || ready_pr='{"unknown":true,"reason":"ready-pr discovery unreadable"}'
   case "$ready_pr" in
     '{'*'}') ;;
@@ -731,10 +803,15 @@ heartbeat_publish() {
       '{ok:false,schema:null,generated:null,failure:{reason:$reason}}')
     printf '[]\n' > "$HEARTBEAT_WORK/tasks"
   fi
+  # The publication stamp: the health verdict measures age from here, while
+  # generated stays the observation time.
+  published=$(date +%s)
   if jq -n \
     --arg generated "$HEARTBEAT_NOW" \
     --argjson generated_epoch "$HEARTBEAT_EPOCH" \
     --arg fm_home "$FM_HOME" \
+    --argjson stale_after "$stale_after" \
+    --argjson published_epoch "$published" \
     --argjson snapshot "$snapshot_meta" \
     --argjson primary "$PRIMARY_JSON" \
     --argjson weekly "$weekly" \
@@ -742,7 +819,8 @@ heartbeat_publish() {
     --slurpfile tasks "$HEARTBEAT_WORK/tasks" \
     --rawfile failures "$HEARTBEAT_WORK/failures" \
     '($failures | split("\n") | map(select(. != ""))) as $f
-    | {schema:"fm-heartbeat.v1",generated:$generated,generated_epoch:$generated_epoch,fm_home:$fm_home,
+    | {schema:"fm-heartbeat.v1",generated:$generated,generated_epoch:$generated_epoch,
+       published_epoch:$published_epoch,fm_home:$fm_home,stale_after_secs:$stale_after,
        snapshot:$snapshot,primary:$primary,tasks:$tasks[0],weekly_allowance:$weekly,ready_pr_discovery:$ready_pr,
        failure:(if ($f | length) == 0 then null else {reason:($f[:10] | join("; ")),count:($f | length)} end)}' > "$tmp" \
     && chmod 600 "$tmp" \

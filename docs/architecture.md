@@ -176,7 +176,7 @@ Each home atomically publishes that bounded home summary with freshness epoch me
 The fleet snapshot and Bearings paths use the concurrent remote-ledger collection, cache, unreadable-home disclosure, and remote-liveness boundary owned by `bin/fm-fleet-snapshot.sh`'s header.
 `bin/fm-fleet-view.sh` renders that snapshot as Markdown for humans, while `bin/fm-bearings-snapshot.sh` provides the bounded bearings projection, so both views consume one structured contract instead of reparsing raw fleet files.
 The script header owns the exact JSON schema.
-Each watcher poll also starts `bin/fm-heartbeat.sh --write` detached and single-flight, so no read can hold a poll; it enriches that snapshot with git, no-mistakes, inbox, terminal, and transcript facts, with weekly model allowance left, and with `bin/fm-ready-pr-discovery.sh`'s read-only list of no-mistakes runs parked with a PR ready or at a gate in every registered repo, and atomically publishes `state/heartbeat.json`, reporting an unread field as unknown instead of guessing.
+The watcher also runs an independent single-flight ticker that starts `bin/fm-heartbeat.sh --write` detached once per poll period, so no read can hold a poll; it enriches that snapshot with git, no-mistakes, inbox, terminal, and transcript facts, with weekly model allowance left, and with `bin/fm-ready-pr-discovery.sh`'s read-only list of no-mistakes runs parked with a PR ready or at a gate in every registered repo, and atomically publishes `state/heartbeat.json`, reporting an unread field as unknown instead of guessing.
 That allowance is model allowance left, and no trust-score owner exists.
 That script's header owns the document and its bounds.
 
