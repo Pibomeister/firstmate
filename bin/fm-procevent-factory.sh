@@ -16,19 +16,21 @@
 #            Refuses unless config/factory is present and valid.
 # poll       The blocking child the generic runner executes; never run this
 #            in a conversational turn. Every <interval> seconds (default 60) it
-#            reads `GET <url>/web/factory/projects/<id>/attention?kind=automation-failed&view=open&limit=50`
-#            and exits with a `status: failed` result once an item appears
-#            whose key no earlier captured result of this source reported. The
-#            result carries one `item:` line (key, failure code, error text) for
-#            the oldest such item, so each failure gets its own result and wake.
+#            reads `GET <url>/web/factory/projects/<id>/attention?kind=automation-failed&view=open&limit=50`,
+#            following `nextCursor` for up to 20 pages, and exits with a
+#            `status: failed` result once an item appears whose key no earlier
+#            captured result of this source reported. The result carries one
+#            `item:` line (key, failure code, error text, occurredAt) for the
+#            oldest such item, so each failure gets its own result and wake;
+#            failures already open at arm time are reported too, oldest first.
 #            The captured results are the dedup record, so a crash before
 #            capture re-detects instead of losing the failure. A failure result
 #            is not terminal: the watcher's reconcile restarts the watch.
 #            Three consecutive unreachable reads (connection failure, timeout,
 #            or HTTP 5xx; a good read resets the count), one 401 or 403, any
-#            other unexpected HTTP status, or a malformed or empty body end the watch with one terminal `status: error`
-#            result naming the cause, so a down Factory wakes once, not forever.
-#            Only the newest 50 open items are read per poll.
+#            other unexpected HTTP status, or a malformed or empty body or
+#            cursor end the watch with one terminal `status: error` result
+#            naming the cause, so a down Factory wakes once, not forever.
 # preflight  Read-only. Report whether a newly prepared run session in the
 #            project would get a usable model: the project's `defaultModelId`
 #            and `modelScope` (hybrid resolves to factory for runs) from
@@ -48,7 +50,7 @@
 #
 # Operator config lives in the private, gitignored `config/factory`, one
 # `key=value` per line: `url=` (required, http or https base URL) and
-# `token_file=` (optional absolute path to a private file holding one bearer
+# `token_file=` (optional path to a private file holding one bearer
 # token line). A URL with embedded credentials is refused. The token is passed
 # to curl on stdin, never on its argv, curl ignores any host .curlrc, and the
 # token never enters the registration. docs/configuration.md owns the schema.
@@ -68,6 +70,8 @@ CONFIG="$FM_HOME/config/factory"
 DEFAULT_INTERVAL=60
 MAX_CONSECUTIVE_READ_FAILURES=3
 READ_TIMEOUT=20
+# Pages of 50 open items read per poll; failures beyond them are not seen.
+MAX_PAGES=20
 DETAIL_MAX=512
 
 usage() {
@@ -161,46 +165,63 @@ emit_error() {  # <polls> <detail>
   exit 0
 }
 
-cmd_poll() {
-  parse_project_args "$@"
-  local polls=0 failures=0 items seen new
-  load_config || emit_error 1 "$CONFIG_ERROR"
+# read_failures: read every page of open automation-failed items, newest
+# first, into ITEMS as tab-separated key, failure code, error text, occurredAt.
+# Returns 1 on a transient failure with READ_ERROR set; ends the watch through
+# emit_error on a terminal one.
+read_failures() {
+  local cursor='' pages=0 page next
+  ITEMS=
   while :; do
-    polls=$((polls + 1))
-    if ! http_get "/web/factory/projects/$PROJECT/attention?kind=automation-failed&view=open&limit=50"; then
-      failures=$((failures + 1))
-      [ "$failures" -lt "$MAX_CONSECUTIVE_READ_FAILURES" ] && { sleep "$INTERVAL"; continue; }
-      emit_error "$polls" "Factory at $URL unreachable: $failures consecutive failed reads; last: $HTTP_ERROR"
-    fi
+    pages=$((pages + 1))
+    http_get "/web/factory/projects/$PROJECT/attention?kind=automation-failed&view=open&limit=50${cursor:+&before=$cursor}" \
+      || { READ_ERROR=$HTTP_ERROR; return 1; }
     case "$HTTP_STATUS" in
       200) ;;
-      401|403) emit_error "$polls" "Factory at $URL refused the attention read: HTTP $HTTP_STATUS (check config/factory token_file)" ;;
-      5??)
-        failures=$((failures + 1))
-        [ "$failures" -lt "$MAX_CONSECUTIVE_READ_FAILURES" ] && { sleep "$INTERVAL"; continue; }
-        emit_error "$polls" "Factory at $URL unreachable: $failures consecutive failed reads; last: HTTP $HTTP_STATUS"
-        ;;
-      *) emit_error "$polls" "Factory at $URL answered the attention read with HTTP $HTTP_STATUS" ;;
+      401|403) emit_error "$POLLS" "Factory at $URL refused the attention read: HTTP $HTTP_STATUS (check config/factory token_file)" ;;
+      5??) READ_ERROR="HTTP $HTTP_STATUS"; return 1 ;;
+      *) emit_error "$POLLS" "Factory at $URL answered the attention read with HTTP $HTTP_STATUS" ;;
     esac
-    failures=0
     # -n with input fails on an empty body, which a bare filter would read as no items.
-    items=$(printf '%s' "$HTTP_BODY" | jq -nr 'input
+    page=$(printf '%s' "$HTTP_BODY" | jq -nr 'input
       | .items | if type == "array" then . else error("no items") end
       | .[] | select(.kind == "automation-failed" and (.key | type) == "string")
-      | [.key, (.failureCode // "" | tostring), (.detail // .title // "" | tostring)] | @tsv' 2>/dev/null) \
-      || emit_error "$polls" "Factory at $URL returned a malformed attention response"
+      | [.key, (.failureCode // "" | tostring), (.detail // .title // "" | tostring), (.occurredAt // "" | tostring)] | @tsv' 2>/dev/null) \
+      || emit_error "$POLLS" "Factory at $URL returned a malformed attention response"
+    [ -z "$page" ] || ITEMS+="$page"$'\n'
+    next=$(printf '%s' "$HTTP_BODY" | jq -r 'if .hasMore == true then (.nextCursor // "") else "" end' 2>/dev/null)
+    [ -n "$next" ] || return 0
+    [[ "$next" =~ ^[A-Za-z0-9_-]+$ ]] || emit_error "$POLLS" "Factory at $URL returned a malformed attention cursor"
+    [ "$pages" -lt "$MAX_PAGES" ] || return 0
+    cursor=$next
+  done
+}
+
+cmd_poll() {
+  parse_project_args "$@"
+  local failures=0 seen new
+  POLLS=0
+  load_config || emit_error 1 "$CONFIG_ERROR"
+  while :; do
+    POLLS=$((POLLS + 1))
+    if ! read_failures; then
+      failures=$((failures + 1))
+      [ "$failures" -lt "$MAX_CONSECUTIVE_READ_FAILURES" ] && { sleep "$INTERVAL"; continue; }
+      emit_error "$POLLS" "Factory at $URL unreachable: $failures consecutive failed reads; last: $READ_ERROR"
+    fi
+    failures=0
     seen=$(reported_keys)
     # Items arrive newest first; report only the oldest unreported one, so every
     # failure gets its own result and wake. awk keeps empty fields, unlike read,
     # which would merge the tabs around a null failure code. @tsv already
     # escaped tabs and newlines inside each field.
-    new=$(printf '%s\n' "$items" | FM_FACTORY_SEEN="$seen" awk -F '\t' -v max="$DETAIL_MAX" '
+    new=$(printf '%s' "$ITEMS" | FM_FACTORY_SEEN="$seen" awk -F '\t' -v max="$DETAIL_MAX" '
       BEGIN { n = split(ENVIRON["FM_FACTORY_SEEN"], s, "\n"); for (i = 1; i <= n; i++) known[s[i]] = 1 }
-      $1 != "" && !($1 in known) { line = "item: " $1 "\t" $2 "\t" substr($3, 1, max) }
+      $1 != "" && !($1 in known) { line = "item: " $1 "\t" $2 "\t" substr($3, 1, max) "\t" $4 }
       END { if (line != "") print line }')
     if [ -n "$new" ]; then
       printf 'factory: %s\nstatus: failed\nproject: %s\n%s\ncondition_polls: %s\n' \
-        "$SOURCE_ID" "$PROJECT" "$new" "$polls"
+        "$SOURCE_ID" "$PROJECT" "$new" "$POLLS"
       exit 0
     fi
     sleep "$INTERVAL"
@@ -272,7 +293,7 @@ cmd_summary() {
   [ -f "$file" ] || die "result file does not exist: $file"
   case "$(result_status "$file")" in
     failed)
-      printf 'Factory automation failed: %s\n' "$(awk -F '\t' '/^item: / { print $3; exit }' "$file")" | cut -c 1-300
+      awk -F '\t' '/^item: / { printf "Factory automation failed at %s: %s\n", ($4 == "" ? "unknown time" : $4), $3; exit }' "$file" | cut -c 1-300
       ;;
     error)
       printf 'Factory watch stopped: %s\n' "$(awk '/^detail: / { sub(/^detail: /, ""); print; exit }' "$file")" | cut -c 1-300

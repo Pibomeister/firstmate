@@ -205,6 +205,24 @@ assert_equals 1 "$(item_lines "$TMP_ROOT/two.result")" "one result carries exact
 assert_contains "$out" "older failure" "the oldest unreported failure is reported first"
 pass "simultaneous failures are reported one per result, oldest first"
 
+# --- more failures than one page: the oldest, on a later page, is still found ---
+attention_body "$(item "$D3" "newest failure")" "$(item "$D2" "middle failure")" \
+  | jq -c '.hasMore = true | .nextCursor = "cGFnZS10d28"' > "$FIX/page1.json"
+attention_body "$(item "$D1" "oldest failure")" > "$FIX/page2.json"
+printf '200 page1.json\n200 page2.json\n' > "$FIX/attention.seq"
+H5="$TMP_ROOT/h-pages"; new_home "$H5"; configure "$H5" "$URL"
+: > "$FIX/requests.log"
+out=$(factory "$H5" poll --project "$PROJECT" --interval 0.05)
+assert_contains "$out" "oldest failure" "the oldest failure on a later page is reported first"
+assert_contains "$out" "condition_polls: 1" "every page is read within one poll"
+assert_grep "before=cGFnZS10d28" "$FIX/requests.log" "the next page is requested with Factory's cursor"
+attention_body "$(item "$D1" "x")" | jq -c '.hasMore = true | .nextCursor = "bad cursor!"' > "$FIX/badcursor.json"
+printf '200 badcursor.json\n' > "$FIX/attention.seq"
+H6="$TMP_ROOT/h-badcursor"; new_home "$H6"; configure "$H6" "$URL"
+out=$(factory "$H6" poll --project "$PROJECT" --interval 0.05)
+assert_contains "$out" "malformed attention cursor" "a malformed cursor stops the watch"
+pass "a poll reads every page, so an older failure past the first page still wakes"
+
 # --- end to end: one wake per failure, no repeat --------------------------------
 H="$TMP_ROOT/h-e2e"; new_home "$H"
 FIX="$TMP_ROOT/fx-e2e"; URL=$(start_factory "$FIX")
@@ -216,7 +234,7 @@ assert_no_grep "$TOKEN" "$H/state/procevent/$SOURCE.source" "the registration ne
 pe "$H" reconcile >/dev/null 2>&1
 wait_for_results "$H" 1 || fail "no result was captured for the new failure"
 payloads=$(wake_payloads "$H")
-assert_contains "$payloads" "procevent factory $SOURCE 1 - Factory automation failed: $ERR1" "the wake reason carries the error text"
+assert_contains "$payloads" "procevent factory $SOURCE 1 - Factory automation failed at 2026-11-09T15:00:00.000Z: $ERR1" "the wake reason carries the error text and when it occurred"
 assert_equals 1 "$(wakes "$H")" "exactly one wake for one failure"
 # The source is not terminal: reconcile restarts it, and the unchanged item
 # must not be reported again across polls that demonstrably happened.
