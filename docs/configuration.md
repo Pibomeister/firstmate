@@ -2946,11 +2946,11 @@ The adapter automates only the exact deterministic subset: anything needing judg
 The `factory` adapter (`bin/fm-procevent-factory.sh`) watches one Goodword Factory project's attention inbox and wakes firstmate once per new `automation-failed` item, with the item's error text in the wake.
 It reads its endpoint from the optional, private, gitignored `config/factory`, one `key=value` per line:
 
-- `url=` is required and is the Factory's `http` or `https` base URL.
-- `token_file=` is optional and names a private file holding one bearer token line; the token reaches the Factory only as an `Authorization` header and is never stored in the registration or passed on a command line.
+- `url=` is required and is the Factory's `http` or `https` base URL, without embedded credentials.
+- `token_file=` is optional and names a private file holding one bearer token line; the token reaches the Factory only as an `Authorization` header, is never stored in the registration or passed on a command line, and curl ignores any host `.curlrc` for these requests.
 
 Arm a watch with `bin/fm-procevent-factory.sh arm --project <factory-project-id>`; `arm` refuses when `config/factory` is missing or invalid.
-An item is reported once: an item whose key an earlier captured result of the same source already named never wakes again, and the captured results are that record, so a crash before capture re-detects rather than loses a failure.
+Each item gets its own result and wake, and is reported once: an item whose key an earlier captured result of the same source already named never wakes again, and the captured results are that record, so a crash before capture re-detects rather than loses a failure.
 A failure result keeps the watch armed, and the ordinary reconcile restarts it.
 A Factory that stays unreachable for three consecutive reads, refuses the token with HTTP 401 or 403, or answers with any other unexpected status or a malformed body ends the watch with one terminal diagnostic result, so an outage wakes firstmate once instead of on every cycle; re-arm after fixing the cause.
 Only the newest 50 open items are read per poll.
