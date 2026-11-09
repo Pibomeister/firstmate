@@ -92,6 +92,7 @@ SOURCE=
 EVENT=
 STREAM_OP=
 REQUEST=
+PROMPT_SHA256=
 if [ "$CMD" = apply ]; then
   NEW_STATE=${1:-}
   case "$NEW_STATE" in busy|idle|unknown) shift ;; *) usage ;; esac

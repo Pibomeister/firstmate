@@ -58,7 +58,7 @@ fm_agent_process_classify_name() {  # <path> [argv0] -> agent|shell|other
     # daemon), so a `*polytoken*` glob never claims an unrelated command.
     # cortex (Cortex Code) is anchored too (verified, cortex 1.1.104: a
     # Bun-compiled single binary, comm=cortex).
-    agy|devin|command-code|polytoken|cortex|hermes) printf 'agent' ;;
+    agy|devin|droid|command-code|polytoken|cortex|hermes) printf 'agent' ;;
     # kiro (Kiro CLI) is anchored for the same reason as muse, omp, and agy: its
     # live foreground process name is the bare word `kiro-cli` (verified,
     # kiro-cli 2.21.4: a toolbox/aim-sandbox wrapper whose comm and tmux

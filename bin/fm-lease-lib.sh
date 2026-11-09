@@ -291,23 +291,6 @@ fm_lease_live() {
 # against <old-pid> to <new-pid>, keeping its actor and epoch. The caller holds
 # the lease-command lock. Returns 1 when any matching lease could not be
 # rewritten.
-fm_lease_rekey_holder() {
-  local old=$1 new=$2 lease task tmp rc=0
-  for lease in "$STATE"/.lease-*; do
-    [ -e "$lease" ] || continue
-    task=${lease##*/.lease-}
-    fm_lease_valid_id "$task" || continue
-    fm_lease_read "$task" || continue
-    [ -n "$FM_LEASE_ACTOR" ] && [ "$FM_LEASE_PID" = "$old" ] || continue
-    tmp=$(mktemp "$STATE/.fm-lease-tmp.XXXXXX" 2>/dev/null) || { rc=1; continue; }
-    if ! { printf '%s\t%s\t%s\n' "$FM_LEASE_ACTOR" "$new" "$FM_LEASE_EPOCH" > "$tmp" && mv -f -- "$tmp" "$lease"; } 2>/dev/null; then
-      rm -f -- "$tmp"
-      rc=1
-    fi
-  done
-  return "$rc"
-}
-
 # fm_lease_rekey_holder <old-pid> <new-pid>: rewrite every lease recorded
 # against <old-pid> to <new-pid>, keeping its actor and epoch. The caller holds
 # the lease-command lock. Returns 1 when any matching lease could not be

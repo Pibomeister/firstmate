@@ -752,6 +752,12 @@ test_supervision_branch_resolves_the_primary_pin() {
     [ "$got" = 'claude|0' ] \
       || fail "a pinned branch resolved '${verb:-own}' as '$got', expected the primary's claude"
   done
+  for verb in '' crew secondmate; do
+    got=$(pin_probe "$bin" "$home" "$verb" PI_CODING_AGENT=true \
+      FM_SUPERVISION_ACTOR=branch FM_SUPERVISION_PRIMARY_HARNESS=droid)
+    [ "$got" = 'droid|0' ] \
+      || fail "a droid-pinned branch resolved '${verb:-own}' as '$got', expected the primary's droid"
+  done
   printf 'default\n' > "$home/config/crew-harness"
   got=$(pin_probe "$bin" "$home" crew PI_CODING_AGENT=true \
     FM_SUPERVISION_ACTOR=branch FM_SUPERVISION_PRIMARY_HARNESS=claude)

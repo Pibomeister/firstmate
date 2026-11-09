@@ -242,7 +242,7 @@ fi
 # /tmp is a fresh private tmpfs, so the decoy is a server of this suite's own
 # that no one outside this namespace can reach.
 env -u TMUX -u TMUX_TMPDIR tmux -f /dev/null new-session -d -s firstmate -n main \
-  "printf 'DECOY-PANE\n'; exec sleep 600" || fail "cannot start the decoy default server"
+  "printf 'DECOY-PANE\n'; exec sleep 600" || fail "cannot start the decoy default server" # fm-lint: tmux-socket-ok deliberate default-server decoy inside a private tmpfs namespace
 DECOY_PID=$(tmux -S "$DEFAULT_SOCKET" display-message -p '#{pid}')
 [ -n "$DECOY_PID" ] || fail "the decoy is not on the default socket"
 

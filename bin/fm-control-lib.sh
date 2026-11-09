@@ -292,7 +292,7 @@ fm_control_exit_command() {  # <harness> [opencode-major]
       esac
       ;;
     claude|grok|kimi|cursor|muse|rovo|droid) printf '/exit' ;;
-    codex|pi|pi-signed|omp|gemini|agy|devin|commandcode|polytoken|cortex|droid|kiro|hermes) printf '/quit' ;;
+    codex|pi|pi-signed|omp|gemini|agy|devin|commandcode|polytoken|cortex|kiro|hermes) printf '/quit' ;;
     *) return 1 ;;
   esac
 }
@@ -355,9 +355,6 @@ fm_control_backend_supports_key() {  # <backend> <key> [harness]
     t3code)
       case "$key" in Escape|Enter|C-c) return 0 ;; esac
       ;;
-    t3code)
-      case "$key" in Escape|Enter|C-c) return 0 ;; esac
-      ;;
   esac
   return 1
 }
@@ -413,11 +410,11 @@ fm_control_backend_exit_supported() {  # <backend>
 # nightlies refused a driver change outright), never the fresh agent a
 # relaunch promises. So t3code has no replacement to launch and a relaunch
 # is refused before anything is stopped (docs/t3code-backend.md "Active
-# limits"). zellij, orca, cmux, and paseo never reach this table: they fail
+# limits"). zellij, cmux, and paseo never reach this table: they fail
 # fm_control_backend_state_verified first.
 fm_control_backend_relaunch_supported() {  # <backend>
   case "${1-}" in
-    tmux|herdr|rex) return 0 ;;
+    tmux|herdr|orca|rex) return 0 ;;
   esac
   return 1
 }
@@ -842,18 +839,6 @@ fm_control_harness_wiring_dirs() {  # <harness> <state-dir> <id>
 # from the current operator config), and the sessions root holds the
 # versioned `<root>-v1` session tree the launch writes beside it, so both
 # the root and its versioned sibling are named.
-fm_control_harness_wiring_dirs() {  # <harness> <state-dir> <id>
-  local harness=${1-} state=${2-} id=${3-}
-  [ -n "$state" ] && [ -n "$id" ] || return 1
-  case "$harness" in
-    polytoken)
-      printf '%s\n' "$state/$id.polytoken-config"
-      printf '%s\n' "$state/$id.polytoken-sessions"
-      printf '%s\n' "$state/$id.polytoken-sessions-v1"
-      ;;
-  esac
-}
-
 # fm_control_droid_worktree_no_droid: one successful bounded `lsof` scan
 # showing no `droid` process whose working directory is <worktree> (already
 # physical) or under it. A missing `lsof`, a nonzero status other than the
