@@ -27,8 +27,8 @@
 # The last hour is [epoch-3600, epoch). live_workers counts the task ids with a
 # <home>/state/<id>.meta whose bin/fm-crew-state.sh line, read with
 # FM_HOME=<home> FM_CREW_STATE_NO_FORGE=1 and FM_STATE_OVERRIDE set to a
-# private temporary copy of <home>/state made once per sample or finish and
-# removed on exit, is `state: working` or `state: parked`.
+# private temporary copy of <home>/state made under --out (with TMPDIR pointed
+# inside it) once per sample or finish and removed on exit, is `state: working` or `state: parked`.
 # wake_acks_last_hour is the count value of `bin/fm-wake-ledger.sh count` over
 # the hour. status_lines_last_hour counts the lines of
 # <home>/state/*.status whose first `[at=<epoch>]` falls in the hour.
