@@ -1,0 +1,16 @@
+## S5 daemon re-execs a helper of itself (Tailscale SSH 'be-child ssh' shape) -> not a daemon restart
+daemon restarted at 1794262047 with a helper due in 15s; waiting for the guard loop to recover and the helper to appear
+49975 89616 $LAB/bin/fakenetd be-child ssh
+89616     1 $LAB/bin/fakenetd delayed-helper
+relay pids after helper appeared: 9892 13490 20239 
+actions lines: 12
+relay pids 20s (4 passes) later:  9892 13490 20239 
+actions lines: 12
+# fm-relay-guard v1 epoch=1794262087 daemon=fakenetd daemon-pid=89616
+m3	ok	9892	
+m4	ok	13490	
+studio	ok	20239	
+RESULT: no restart caused by the helper
+1794262051	m3	restart	daemon-restarted	69925	9892	ok
+1794262051	m4	restart	daemon-restarted	72506	13490	ok
+1794262051	studio	restart	daemon-restarted	75538	20239	ok

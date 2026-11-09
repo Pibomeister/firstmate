@@ -1,0 +1,55 @@
+## S1 baseline: pre-existing relays matched, all reachable
+curl relay 7201: env env1 ok
+ [200]
+curl relay 7202: env env2 ok
+ [200]
+curl relay 7203: env env3 ok
+ [200]
+$ fm-relay-guard.sh scan
+# fm-relay-guard v1 epoch=1794261945 daemon=fakenetd daemon-pid=28296
+m3	ok	33759	
+m4	ok	33885	
+studio	ok	34097	
+exit=0
+$ fm-relay-guard.sh once
+# fm-relay-guard v1 epoch=1794261947 daemon=fakenetd daemon-pid=28296
+m3	ok	33759	
+m4	ok	33885	
+studio	ok	34097	
+exit=0
+# fm-relay-guard v1 epoch=1794261947 daemon=fakenetd daemon-pid=28296
+m3	ok	33759	
+m4	ok	33885	
+studio	ok	34097	
+
+## S2 daemon restart -> relays go stale
+relay pids before: 33759 33885 34097 
+daemon restarted, new pid 39067
+curl relay 7201: stale: daemon gone  [502]
+curl relay 7202: stale: daemon gone  [502]
+curl relay 7203: stale: daemon gone  [502]
+$ fm-relay-guard.sh once
+# fm-relay-guard v1 epoch=1794261962 daemon=fakenetd daemon-pid=39067
+m3	restart	62287	daemon-restarted; probe ok
+m4	restart	79521	daemon-restarted; probe ok
+studio	restart	85824	daemon-restarted; probe ok
+exit=0
+# fm-relay-guard v1 epoch=1794261962 daemon=fakenetd daemon-pid=39067
+m3	restart	62287	daemon-restarted; probe ok
+m4	restart	79521	daemon-restarted; probe ok
+studio	restart	85824	daemon-restarted; probe ok
+relay pids after: 62287 79521 85824 
+curl relay 7201: env env1 ok  [200]
+curl relay 7202: env env2 ok  [200]
+curl relay 7203: env env3 ok  [200]
+unrelated relay pid before=34218 after=34218
+
+## S3 repeat pass is a no-op
+# fm-relay-guard v1 epoch=1794261976 daemon=fakenetd daemon-pid=39067
+m3	ok	62287	
+m4	ok	79521	
+studio	ok	85824	
+exit=0
+1794261962	m3	restart	daemon-restarted	33759	62287	ok
+1794261962	m4	restart	daemon-restarted	33885	79521	ok
+1794261962	studio	restart	daemon-restarted	34097	85824	ok

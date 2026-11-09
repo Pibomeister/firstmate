@@ -1,0 +1,12 @@
+## S4 run loop (interval 5s) recovers a daemon restart with no manual step
+guard loop pid 90014
+t=0 daemon restarted
+7201=502 7202=502 7203=502 
+t=6s recovered: 7201=200 7202=200 7203=200 
+1794261962	m3	restart	daemon-restarted	33759	62287	ok
+1794261962	m4	restart	daemon-restarted	33885	79521	ok
+1794261962	studio	restart	daemon-restarted	34097	85824	ok
+
+## S5 daemon re-execs a helper of itself (Tailscale SSH be-child shape) -> no restart
+28609     1 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-relaylab.NBWJPx/bin/fakenetd spawn-helper
+28636 28609 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-relaylab.NBWJPx/bin/fakenetd be-child

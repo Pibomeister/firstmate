@@ -1,0 +1,12 @@
+## S6 data-plane loss with the daemon unchanged: m4 relay frozen (accepts, forwards nothing)
+froze m4 pid 13490
+7201=200 7202=000 7203=200 
+t=19s recovered: 7201=200 7202=200 7203=200 
+old m4 pid alive? no
+
+## S7 relay process dies -> respawned
+killed m3 pid 9892
+t=8s recovered: 7201=200 7202=200 7203=200 
+1794262116	m4	restart	probe-failed	13490	89560	ok
+1794262116	m4	restart	probe-failed	13490	89560	ok
+1794262130	m3	spawn	missing	-	18861	ok

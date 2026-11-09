@@ -1,0 +1,4 @@
+$LAB/u.plist: OK
+true
+["\/bin\/bash","\/Users\/eduardopicazo\/.no-mistakes\/worktrees\/075d7f40c28a\/01M70M2NYG1QSD0QTRJYAN66V1\/bin\/fm-relay-guard.sh","run"]
+/Users/eduardopicazo/.local/bin:/opt/homebrew/opt/openjdk@17

@@ -1,0 +1,25 @@
+## S8 daemon down: guard leaves relays alone and reports unhealthy; daemon back: relays restarted
+# fm-relay-guard v1 epoch=1794262165 daemon=fakenetd daemon-pid=none
+m3	daemon-down	18861	no fakenetd process
+m4	daemon-down	89560	no fakenetd process
+studio	daemon-down	20239	no fakenetd process
+relay pids before=18861 20239 89560  now=18861 20239 89560 
+daemon back
+t=7s recovered: 7201=200 7202=200 7203=200 
+
+## S9 stopping the guard loop (TERM) exits promptly and leaves relays running
+guard exited in 2s
+relays before=69883 72067 74307  after=69883 72067 74307 
+7201=200 7202=200 7203=200 
+
+## S10 bad config refused before any action
+fm-relay-guard: relay.m4 has no probe.m4
+exit=2
+relays before=69883 72067 74307  after=69883 72067 74307  (untouched despite stale verdict)
+fm-relay-guard: bad relay name in key: relay.bad name
+exit=2
+# fm-relay-guard v1 epoch=1794262180 daemon=fakenetd daemon-pid=99652
+m3	restart	8582	daemon-restarted; probe ok
+m4	restart	11405	daemon-restarted; probe ok
+studio	restart	13617	daemon-restarted; probe ok
+restored config: exit=0
