@@ -41,6 +41,8 @@ FM_QUOTA_PROVIDER_ID_RE='^[a-z0-9]+(-[a-z0-9]+)*\z'
 #                                  quota-axi emits one (for example
 #                                  model:gemini_argon), else an explicit
 #                                  unknown row, never the shared gemini row.
+#                                  A grouped AGY model is not bounded by a
+#                                  collapsed all_models or all_products row.
 #                                  Cursor splits its all_models minimum
 #                                  into pools (auto/composer by auto_usage and
 #                                  included_usage, named API models by
@@ -136,17 +138,21 @@ FM_QUOTA_ROW_JQ='
     if $p.provider == "agy" then
       agy_group($model_token) as $group |
       if $group == null then $base
-      elif $group == "argon" or $group == "carbon" then
-        ([($p.quotaSemantics.effectiveAvailability // [])[]
-          | select((quota_scope_name(.scope) | contains($group)))
-          | select(.scope as $s | ($base | map(.scope) | index($s)) == null)]) as $specific |
-        if ($specific | length) > 0 then $base + $specific
-        else $base + [{scope: ("model:gemini_" + $group), status: "unknown"}]
-        end
       else
-        $base + [($p.quotaSemantics.effectiveAvailability // [])[]
-          | select(quota_scope_name(.scope) == $group)
-          | select(.scope as $s | ($base | map(.scope) | index($s)) == null)]
+        ($base | map(select(.scope != "all_models" and .scope != "all_products"))) as $group_base |
+        if $group == "argon" or $group == "carbon" then
+          ([($p.quotaSemantics.effectiveAvailability // [])[]
+            | select((quota_scope_name(.scope) | contains($group)))]) as $specific_all |
+          ([($specific_all[]
+            | select(.scope as $s | ($group_base | map(.scope) | index($s)) == null))]) as $specific |
+          if ($specific_all | length) > 0 then $group_base + $specific
+          else $group_base + [{scope: ("model:gemini_" + $group), status: "unknown"}]
+          end
+        else
+          $group_base + [($p.quotaSemantics.effectiveAvailability // [])[]
+            | select(quota_scope_name(.scope) == $group)
+            | select(.scope as $s | ($group_base | map(.scope) | index($s)) == null)]
+        end
       end
     elif $p.provider != "cursor" then $base
     else cursor_pool($model_token) as $pool |

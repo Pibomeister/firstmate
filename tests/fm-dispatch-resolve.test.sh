@@ -857,6 +857,20 @@ jq '(.providers[] | select(.provider == "agy") | .quotaSemantics.effectiveAvaila
   "$AGY_GROUPS_QUOTA" > "$AGY_ARGON_QUOTA"
 cursor_case '{"rules":[{"when":"Agy work.","use":[{"harness":"agy","model":"gemini-4-argon-high","provider":"agy"}]}]}' "$AGY_ARGON_QUOTA"
 assert_contains "$out" 'candidate: agy:gemini-4-argon-high  provider=agy  scope=model:gemini_argon  remaining=0%  spendPriority=-  runway=exhausted_now  -> not eligible: runway exhausted_now at model:gemini_argon' "agy Argon binds its dedicated scope when quota-axi emits one"
+cursor_case '{"rules":[{"when":"Agy work.","use":[{"harness":"agy","model":"gpt-oss-120b-medium","provider":"agy"}]}]}' "$AGY_GROUPS_QUOTA"
+assert_contains "$out" 'candidate: agy:gpt-oss-120b-medium  provider=agy  scope=claude_gpt  remaining=1%  spendPriority=-1.4871  runway=projected_exhaustion  -> eligible' "agy gpt-oss binds the claude_gpt scope"
+cursor_case '{"rules":[{"when":"Agy work.","use":[{"harness":"agy","model":"gemini-4-carbon-high","provider":"agy"}]}]}' "$AGY_GROUPS_QUOTA"
+assert_contains "$out" 'candidate: agy:gemini-4-carbon-high  provider=agy  scope=model:gemini_carbon  remaining=-%  spendPriority=-  runway=-  -> eligible, unranked: quota row model:gemini_carbon unknown: not rankable: disclosed uncertainty' "agy Carbon carries an explicit unknown row instead of the shared gemini row"
+AGY_COLLAPSED_QUOTA="$TMP_ROOT/agy-collapsed-quota.json"
+jq '(.providers[] | select(.provider == "agy") | .quotaSemantics.effectiveAvailability) = [
+    {"scope":"all_models","status":"known","effectivePercentRemaining":0,"runway":{"status":"exhausted_now"},"selection":{"spendPriority":0}},
+    {"scope":"gemini","status":"known","effectivePercentRemaining":99,"runway":{"status":"through_reset"},"selection":{"spendPriority":1.5627}},
+    {"scope":"model:gemini-4-argon-high","status":"known","effectivePercentRemaining":42,"runway":{"status":"through_reset"},"selection":{"spendPriority":0.42}}]' \
+  "$QUOTA" > "$AGY_COLLAPSED_QUOTA"
+cursor_case '{"rules":[{"when":"Agy work.","use":[{"harness":"agy","model":"gemini-3.8-flash-high","provider":"agy"}]}]}' "$AGY_COLLAPSED_QUOTA"
+assert_contains "$out" 'candidate: agy:gemini-3.8-flash-high  provider=agy  scope=gemini  remaining=99%  spendPriority=1.5627  runway=through_reset  -> eligible' "a grouped agy model is not bounded by the collapsed all_models row"
+cursor_case '{"rules":[{"when":"Agy work.","use":[{"harness":"agy","model":"gemini-4-argon-high","provider":"agy"}]}]}' "$AGY_COLLAPSED_QUOTA"
+assert_contains "$out" 'candidate: agy:gemini-4-argon-high  provider=agy  scope=model:gemini-4-argon-high  remaining=42%  spendPriority=0.42  runway=through_reset  -> eligible' "a known exact Argon scope does not gain a fabricated unknown row"
 
 CURSOR_REAL_POOLS="$TMP_ROOT/cursor-real-pools-quota.json"
 jq '(.providers[] | select(.provider == "cursor") | .quotaSemantics.effectiveAvailability) += [

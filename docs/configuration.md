@@ -2083,7 +2083,8 @@ No qualifying option, or two equally probable qualifying options, produces `ambi
 **Candidate eligibility and evidence**
 
 - Any applicable `exhausted_now` row or known zero bound makes that candidate ineligible, and a known profile-floor shortfall does the same before unrelated quota uncertainty is considered.
-- Cursor candidates are judged by pool, not by the collapsed `all_models` row: auto and composer models by `auto_usage` and `included_usage`, named API models by `api_usage`, and `grok-*` models by the API pool because no Cursor window is confirmed as billing them.
+- Cursor candidates are judged by pool, not by the collapsed `all_models` row: auto and composer models by `auto_usage` and `included_usage`, named API models by `api_usage`, and Grok 4.7, `cursor-grok-4.6-*`, and `cursor-grok-4.5-*` models by `auto_usage` and `included_usage` because Cursor's included pool covers Grok 4.7, Grok 4.6, Grok 4.5, and Composer 2.5.
+  Unknown future `grok-*` models stay on the API pool.
   A real `pool:<name>` row from `quota-axi` overrides the row derived from those windows, an unrecognized model keeps `all_models`, and any model outside the auto pool also needs the 5% Cursor pool floor.
   `quota_applicable` in [`bin/fm-quota-axi-lib.sh`](../bin/fm-quota-axi-lib.sh) owns this mapping.
 - Missing or nonnumeric `spendPriority` evidence is never ranked, and every candidate is printed beside its evidence or the reason it was not rankable, including on ambiguous and approval-gated outcomes that emit no profile.
