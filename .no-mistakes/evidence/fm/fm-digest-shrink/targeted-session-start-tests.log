@@ -1,0 +1,13 @@
+ok - large context files print indexed pointers and bounded outlines; small files still print whole
+ok - each in-flight row prints once, every omission is named by id, and long rows are cut visibly at their group's width
+ok - a large wake presentation saves to a file, then bounds annotation and open-decision lines inline while every record prints
+ok - the wake presentation bound counts bytes, so multibyte text cannot slip past it
+ok - a large wake presentation prints whole when the save path is a directory
+ok - a drain section after a bounded one prints whole inline on a large presentation
+ok - a large wake presentation keeps each latest direct annotation inline and leaves out only the unread backlog and historical lines
+ok - a large home's digest stays under 30 KB with every safety signal intact (29381 bytes)
+ok - manual backlog rendering cuts long title lines at 180 and 320 characters and keeps every id
+ok - the startup backlog bound cuts only dispatchable queued rows and discloses the remainder exactly
+ok - a lock refusal prints a loud read-only banner, skips every mutating step, and still completes the digest
+ok - session start lists overdue goals, and only a lock-holding session is told to act on them
+targeted-done

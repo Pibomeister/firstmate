@@ -1,0 +1,472 @@
+
+================================================================================
+SESSION START - /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.E2TxoD
+================================================================================
+
+LOCK
+--------------------------------------------------------------------------------
+lock acquired: harness pid 98861
+
+HOME ROLE
+--------------------------------------------------------------------------------
+fm-role: user (default)
+
+BOOTSTRAP
+--------------------------------------------------------------------------------
+BOOTSTRAP_INFO: lavish-axi >=0.1.80 enables confirmed board replies; this older compatible version retains the legacy reply path, but upgrade to prevent handing back a board before its reply is accepted
+
+WAKE QUEUE
+--------------------------------------------------------------------------------
+1794264382	4	check	order:1794264382-4fd85762	check: captain order 1794264382-4fd85762 from nightly - nightly: start the lab goals
+1794265221	8	signal	task-1.status	working: round 2 step 150 padding padding padding padding padding padding
+1794265221	9	signal	task-2.status	done: lab task 2 round 2 finished
+1794264388	7	signal	task-3.status	pr-ready: https://github.com/example/repo/pull/4242
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 9 --recovery-generation 74262.1794264381.wxU7nP
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 001 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 002 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 003 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 004 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 005 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 006 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 007 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 008 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 009 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 010 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 011 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 012 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 013 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 014 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 015 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 016 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 017 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 018 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 019 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 020 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 021 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 022 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 023 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 024 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 025 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 026 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 027 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 028 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 029 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 030 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 031 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 032 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 033 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 034 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 035 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 036 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 037 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 038 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 039 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 040 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 041 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 042 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 043 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 044 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 045 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 046 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 047 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 048 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 049 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 050 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 051 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 052 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 053 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 054 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 055 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 056 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 057 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 058 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 059 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 060 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 061 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 062 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 063 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 064 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 065 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 066 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 067 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 068 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 069 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 070 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 071 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 072 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 073 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 074 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 075 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 076 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 077 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 078 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 079 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 080 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 081 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 082 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 083 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 084 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 085 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 086 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 087 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 088 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 089 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 090 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 091 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 092 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 093 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 094 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 095 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 096 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 097 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 098 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 099 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 100 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 101 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 102 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 103 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 104 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 105 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 106 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 107 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 108 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 109 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 110 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 111 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 112 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 113 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 114 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 115 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 116 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 117 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 118 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 119 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 120 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 121 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 122 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 123 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 124 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 125 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 126 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 127 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 128 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 129 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 130 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 131 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 132 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 133 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 134 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 135 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 136 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 137 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 138 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 139 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 140 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 141 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 142 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 143 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 144 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 145 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 146 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 147 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 148 padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: round 2 step 149 padding padding padding padding padding padding
+wake annotation: latest wake-EVENT observed at drain, not current state: task-1.status: working: round 2 step 150 padding padding padding padding padding padding
+wake annotation: latest wake-EVENT observed at drain, not current state: task-2.status: done: lab task 2 round 2 finished
+STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+task-2 done: lab task 2 round 2 finished
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+task-dec1 [key=lab-call-1] needs-decision: the captain owes lab call 1 about a long-running choice with context padding padding padding
+task-dec10 [key=lab-call-10] needs-decision: the captain owes lab call 10 about a long-running choice with context padding padding padding
+task-dec11 [key=lab-call-11] needs-decision: the captain owes lab call 11 about a long-running choice with context padding padding padding
+task-dec12 [key=lab-call-12] needs-decision: the captain owes lab call 12 about a long-running choice with context padding padding padding
+task-dec2 [key=lab-call-2] needs-decision: the captain owes lab call 2 about a long-running choice with context padding padding padding
+task-dec3 [key=lab-call-3] needs-decision: the captain owes lab call 3 about a long-running choice with context padding padding padding
+task-dec4 [key=lab-call-4] needs-decision: the captain owes lab call 4 about a long-running choice with context padding padding padding
+task-dec5 [key=lab-call-5] needs-decision: the captain owes lab call 5 about a long-running choice with context padding padding padding
+task-dec6 [key=lab-call-6] needs-decision: the captain owes lab call 6 about a long-running choice with context padding padding padding
+task-dec7 [key=lab-call-7] needs-decision: the captain owes lab call 7 about a long-running choice with context padding padding padding
+task-dec8 [key=lab-call-8] needs-decision: the captain owes lab call 8 about a long-running choice with context padding padding padding
+task-dec9 [key=lab-call-9] needs-decision: the captain owes lab call 9 about a long-running choice with context padding padding padding
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 905s) - full banner already printed this episode.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+
+CAPTAIN ORDERS
+--------------------------------------------------------------------------------
+1 open captain order(s) - each is durable; ack it before acting:
+  1794264382-4fd85762 pending kind=order age=17m from=nightly :: nightly: start the lab goals
+Pending: bin/fm-order.sh ack <id> reads it (skip means another session already has it - never run it twice).
+Acked-unfinished: an earlier session read it; bin/fm-order.sh show <id>, check whether its work started, then finish it.
+Finish each with: bin/fm-order.sh finish <id> done|parked <outcome>
+================================================================================
+SUPERVISION OPERATING INSTRUCTIONS - primary harness: claude
+================================================================================
+Current state:
+- Lock: held by this session; this session owns normal supervision unless away mode says otherwise.
+- Away/quiet mode: inactive.
+- X mode: inactive; use the default watcher cadence.
+- Supervision host: on; it takes away-posture wakes and, where the dialog mirror is verified, eligible attended wakes itself, and hands the rest to you (protocol at the end of this block).
+- Ordinary wake: the Stop-owned auto-arm (bin/fm-claude-stop-autoarm.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.
+- Captain-facing turn replies stay short and do not use tables.
+- A long report goes in a file under data/, and the reply is one line from bin/fm-context-burn.sh report with that path and its sha256.
+- A large read, including a triage table or a handoff, goes through a worker or a bounded head or search, not a full read into this session.
+- The auto-compact percentage is the external footer, never a self-estimate.
+- bin/fm-context-burn.sh records that percentage each turn, from the footer when shown and otherwise from the transcript with the handoff trigger formula, and alerts when a fresh session drops more than about 30 points in 15 minutes.
+
+Mode: Claude Stop-hook-owned supervision.
+
+In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.
+
+When this session owns supervision and away mode is not active:
+1. Drain first with `bin/fm-wake-drain.sh`.
+   After handling all emitted wakes and reconciling open decisions and unread status lines, run the exact `--ack-through` command printed as `WAKE_ACK_REQUIRED`; until then the work remains durable for idempotent re-handling after interruption.
+2. Routine watcher arm and re-arm are owned by the Stop `asyncRewake` hook (`bin/fm-claude-stop-autoarm.sh`), never by you.
+   Every turn end while supervision is needed launches or attaches one home-scoped watcher cycle with no model command and no model tokens.
+   An actionable close wakes you through the hook's exit-2 rewake, delivered as a `Stop hook feedback` message.
+3. On a `Stop hook feedback` wake (`signal:`, `stale:`, `check:`, or `heartbeat`), run `bin/fm-wake-drain.sh` first and handle the wake.
+   Do not run `bin/fm-watch-arm.sh` after an ordinary wake; the next turn end re-arms automatically when supervision is still needed.
+   Do not invent a wake from an attach-status line alone; drain and act only on real wake records, the drain's `OPEN DECISIONS` and `UNREAD STATUS` entries, or a real watcher reason line.
+4. On the one `Stop hook feedback` automatic-mechanism failure notice (`firstmate watcher auto-arm FAILED ...`), drain, inspect the automatic mechanism failure, and do not turn the notice into a repeating manual-arm loop.
+5. If the Stop hook does not claim the home or reports an exhausted failure, inspect its registration and watcher startup path before ending blind.
+   Keep the Stop-owned automatic mechanism as the only Claude arm owner.
+6. Treat `watcher: started ...` and `watcher: attached ...` inside automatic arm output as proof that one live cycle exists.
+   On attach, the arm follows verified identity-matched successors instead of exiting when the first cycle ends.
+7. The durable wake queue preserves actionable events between a rewake and the next Stop-launched arm, while the bounded turn-end guard prevents a blind Stop when recovery did not start.
+   No PreToolUse hook denies fleet commands based on watcher status.
+   [`watcher-continuity.md`](../watcher-continuity.md) owns the exact session-lock recovery boundary.
+8. The turn-end guard (`bin/fm-turnend-guard.sh --claude`) remains the final backstop.
+   It requires the PID-strict live-watcher and fresh-beacon predicate at the Stop boundary, except for the foreign-live-owner safe exit owned by [`turnend-guard.md`](../turnend-guard.md#guard-predicates); that document also owns the distinct model-aware mid-turn pull-guard rules.
+   Otherwise, it allows the stop when a watcher is healthy or an open auto-arm generation claim owns recovery, while fresh failure epochs advance the bounded one-time attended fail-open progression described there.
+9. Waiting on the hook-owned cycle is silent: do not send idle progress while the watcher is parked.
+
+The watcher itself remains `bin/fm-watch.sh`, and `bin/fm-watch-arm.sh` remains the verified arm wrapper that the Stop hook foregrounds on a home that opted out of the [supervision host](../supervision-host.md) (`config/supervision-host-off`).
+Re-arm attaches to an existing healthy cycle when one is already present and follows its verified successor chain.
+See [`watcher-continuity.md`](../watcher-continuity.md) for the arm-layer successor and clean-close failure contract and the Claude ownership model.
+
+Supervision host: on for this home (`config/supervision-host-off` turns it off; [`supervision-host.md`](../supervision-host.md) owns the design).
+The Stop hook runs the supervision host in the arm's place, and everything above still holds with these additions:
+1. Attended (no away record, including a quiet-mode record; see [Postures](../supervision-host.md#postures)): a headless supervision session takes the wakes the supervision branch may take and never wakes you for a routine outcome, so fewer wakes reach you; check wakes, decision wakes, and whatever it cannot take still reach you exactly as above.
+   `supervision-host: branch-outcome: ...` means it handled a wake and recorded captain outcomes for you: run `bin/fm-wake-drain.sh`, process each entry of its `BRANCH OUTCOMES` section as firstmate from the task's current state, because each entry says how long ago it was recorded (tell the captain, land or merge what is ready, answer or escalate a decision, or act on a blocker; your reply covers only entries still open, as if a settled one, such as a PR since merged, had never been listed), then run the `mark-processed` acknowledgement it prints; every drain presents them again until you do.
+   `supervision-host: the supervision session could not take this wake ...` means the wake is yours: handle it as above.
+   A failing turn may include a `supervision-host:` health note about repeated engine errors: tell the captain when it matters and handle the handed-back wake as usual; during cooldown later attended closes reach you unchanged.
+   Routine outcomes never wake you; your next drain lists only visible routine outcomes under `BRANCH OUTCOMES, ROUTINE` for awareness, with nothing to acknowledge. Silent rows do not appear there, but remain available through `bin/fm-branch-outcome.sh list`.
+2. Away (an away record exists and no daemon runs): the host hands each wake to a headless away session that runs the supervision branch's contract under the record, and you are parked.
+   Only a wake the host hands back reaches you, as `Stop hook feedback` carrying the close plus one `supervision-host: <why>` line.
+   That wake is automatic supervision, not the captain's return: drain and handle it under the away posture, and never run the return from it.
+   After the return, a `supervision-host:` line naming the captain's return during a turn means that turn has visible outcomes missing from the return brief, whether the wake was handled or handed back: relay every following `supervision-host: outcome ...` line to the captain (the rows also remain in `bin/fm-branch-outcome.sh list`), then drain and handle any queued wake before acknowledging.
+   Each such visible outcome is also a queued `check: supervision-host outcome <n> ... was recorded after the captain returned` wake, which the drain presents until acknowledged: relay each outcome once, whichever arrives first, and acknowledge its `BRANCH OUTCOMES` entry too when it has one. Silent outcomes remain in the store but do not generate a handoff line or check wake.
+3. `supervision-host: cycle boundary ...` means the host ended its park at its bound: run `bin/fm-wake-drain.sh`, handle whatever it presents, run its printed acknowledgement (an empty queue prints `--ack-through 0`), and end the turn; the next park starts at that turn end.
+4. A guarded command that exits 6 naming the branch actor's lease means the supervision session is handling that task right now: leave the lease alone and retry after it releases, which it does when its turn ends.
+5. Captain outcomes the away session records stay in the outcome store until the return drain presents them; the return brief (`bin/fm-afk-return.sh`) counts them and points you to the `BRANCH OUTCOMES` section for processing and acknowledgement ([Captain outcomes](../supervision-host.md#captain-outcomes)).
+6. `/afk` writes only the record here (`bin/fm-afk-launch.sh start-native` refuses the away daemon on this home); for `/quiet`, follow the [quiet skill](../../.agents/skills/quiet/SKILL.md).
+
+
+================================================================================
+READ-ONCE CONTRACT
+================================================================================
+Everything below prints once for this session start: a compact
+data/backlog.md listing, one line per live task and per orphan status log,
+and the CONTEXT files (data/projects.md, data/secondmates.md, data/captain.md,
+data/captain-shared.md, data/learnings.md, and the tracked
+docs/learnings/overnight-learnings.md under the code root), each in full when
+small or INDEXED with its path, size, and outline when large.
+Do NOT re-read any of them after reading this digest, and do NOT bulk-read
+data/backlog.md or state/*.status.
+
+Go to a source directly only when:
+  - CONTEXT marked it INDEXED and this turn needs it (read the file, or the
+    section at the line its outline names),
+  - WAKE QUEUE named a saved presentation file (read it before handling a
+    signal record or reconciling the items it left out),
+  - this digest flagged it ABSENT (rebuild or create it per AGENTS.md), or its
+    contents looked unparseable or corrupt,
+  - one task's detail is needed (bin/fm-crew-state.sh <id> for reconciled
+    state; state/<id>.meta and state/<id>.status for raw records),
+  - a full task body, or a backlog row the listing omitted or cut, is needed
+    (bin/fm-tasks-axi.sh show <id> --full, bin/fm-tasks-axi.sh ready, or
+    data/backlog.md),
+  - NETWORK CHECKS reported checks still IN PROGRESS and this turn needs their
+    verdict (bin/fm-startup-network.sh report),
+  - or a STARTUP TRUNCATED banner named the stage that would have printed it,
+    or a context re-emit opened with a read cue because the harness cut the
+    digest short: that stage's sources were never emitted and must be
+    reconciled.
+
+================================================================================
+FLEET STATE
+================================================================================
+
+data/backlog.md
+--------------------------------------------------------------------------------
+compact backlog listing (tasks-axi; done rows omitted; every held and blocked row shown, and every in-flight row not already listed under held or Work under way; held and blocked rows capped at 320 characters, other rows at 180; ready queued bounded to 5; task bodies omitted)
+
+in flight:
+count: 30
+tasks[30]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:
+(30 plain in-flight row(s) with a live task record are left out here; Work under way below lists each one: task-1 task-2 task-3 task-4 task-5 task-6 task-7 task-8 task-9 task-10 task-11 task-12 task-13 task-14 task-15 task-16 task-17 task-18 task-19 task-20 task-21 task-22 task-23 task-24 task-25 task-26 task-27 task-28 task-29 task-30)
+
+held (captain- or time-gated; an in-flight item that is also held is listed here only):
+count: 15
+tasks[15]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:
+  held-1,queued,ship,firstmate,"Decide held item 1 with a long title that runs on and on with more context than  [truncated]",none,captain,"The captain owes a call on item 1, with a long reason that explains the context in several clauses so the row is wide padding padding padding padding padding padding pa [truncated]
+  held-2,queued,ship,firstmate,"Decide held item 2 with a long title that runs on and on with more context than  [truncated]",none,captain,"The captain owes a call on item 2, with a long reason that explains the context in several clauses so the row is wide padding padding padding padding padding padding pa [truncated]
+  held-3,queued,ship,firstmate,"Decide held item 3 with a long title that runs on and on with more context than  [truncated]",none,captain,"The captain owes a call on item 3, with a long reason that explains the context in several clauses so the row is wide padding padding padding padding padding padding pa [truncated]
+  held-4,queued,ship,firstmate,"Decide held item 4 with a long title that runs on and on with more context than  [truncated]",none,captain,"The captain owes a call on item 4, with a long reason that explains the context in several clauses so the row is wide padding padding padding padding padding padding pa [truncated]
+  held-5,queued,ship,firstmate,"Decide held item 5 with a long title that runs on and on with more context than  [truncated]",none,captain,"The captain owes a call on item 5, with a long reason that explains the context in several clauses so the row is wide padding padding padding padding padding padding pa [truncated]
+  held-6,queued,ship,firstmate,"Decide held item 6 with a long title that runs on and on with more context than  [truncated]",none,captain,"The captain owes a call on item 6, with a long reason that explains the context in several clauses so the row is wide padding padding padding padding padding padding pa [truncated]
+  held-7,queued,ship,firstmate,"Decide held item 7 with a long title that runs on and on with more context than  [truncated]",none,captain,"The captain owes a call on item 7, with a long reason that explains the context in several clauses so the row is wide padding padding padding padding padding padding pa [truncated]
+  held-8,queued,ship,firstmate,"Decide held item 8 with a long title that runs on and on with more context than  [truncated]",none,captain,"The captain owes a call on item 8, with a long reason that explains the context in several clauses so the row is wide padding padding padding padding padding padding pa [truncated]
+  held-9,queued,ship,firstmate,"Decide held item 9 with a long title that runs on and on with more context than  [truncated]",none,captain,"The captain owes a call on item 9, with a long reason that explains the context in several clauses so the row is wide padding padding padding padding padding padding pa [truncated]
+  held-10,queued,ship,firstmate,"Decide held item 10 with a long title that runs on and on with more context than [truncated]",none,captain,"The captain owes a call on item 10, with a long reason that explains the context in several clauses so the row is wide padding padding padding padding padding padding  [truncated]
+  held-11,queued,ship,firstmate,"Decide held item 11 with a long title that runs on and on with more context than [truncated]",none,captain,"The captain owes a call on item 11, with a long reason that explains the context in several clauses so the row is wide padding padding padding padding padding padding  [truncated]
+  held-12,queued,ship,firstmate,"Decide held item 12 with a long title that runs on and on with more context than [truncated]",none,captain,"The captain owes a call on item 12, with a long reason that explains the context in several clauses so the row is wide padding padding padding padding padding padding  [truncated]
+  held-13,queued,ship,firstmate,"Decide held item 13 with a long title that runs on and on with more context than [truncated]",none,captain,"The captain owes a call on item 13, with a long reason that explains the context in several clauses so the row is wide padding padding padding padding padding padding  [truncated]
+  held-14,queued,ship,firstmate,"Decide held item 14 with a long title that runs on and on with more context than [truncated]",none,captain,"The captain owes a call on item 14, with a long reason that explains the context in several clauses so the row is wide padding padding padding padding padding padding  [truncated]
+  held-15,queued,ship,firstmate,"Decide held item 15 with a long title that runs on and on with more context than [truncated]",none,captain,"The captain owes a call on item 15, with a long reason that explains the context in several clauses so the row is wide padding padding padding padding padding padding  [truncated]
+
+blocked queued:
+count: 0
+tasks: 0 blocked queued tasks in this backlog
+
+ready queued (dispatchable now):
+count: 25
+ready[25]{id,state,kind,repo,title}:
+  ready-1,queued,ship,firstmate,"Ready queued item 1 with a long title that runs on and on with more context than [truncated]"
+  ready-2,queued,ship,firstmate,"Ready queued item 2 with a long title that runs on and on with more context than [truncated]"
+  ready-3,queued,ship,firstmate,"Ready queued item 3 with a long title that runs on and on with more context than [truncated]"
+  ready-4,queued,ship,firstmate,"Ready queued item 4 with a long title that runs on and on with more context than [truncated]"
+  ready-5,queued,ship,firstmate,"Ready queued item 5 with a long title that runs on and on with more context than [truncated]"
+ready_public_followups: 0 delivery-ready obligations
+(shown 5 of 25 ready queued item(s))
+(20 more queued - bin/fm-tasks-axi.sh ready)
+Full task bodies and any row cut with [truncated] remain available on demand: bin/fm-tasks-axi.sh show <id> --full when compatible tasks-axi is available, or data/backlog.md.
+
+Work under way (state/*.meta)
+--------------------------------------------------------------------------------
+One line per live task: id, project, last recorded state, PR URL, age, endpoint.
+Full detail: bin/fm-crew-state.sh <id> (reconciled state); raw records: state/<id>.meta and state/<id>.status.
+task-1 project=firstmate state=working pr=- age=17m endpoint=dead
+task-10 project=firstmate state=paused pr=- age=17m endpoint=dead
+task-2 project=firstmate state=done pr=- age=17m endpoint=dead
+task-3 project=firstmate state=pr-ready pr=- age=17m endpoint=dead
+task-4 project=firstmate state=paused pr=- age=17m endpoint=dead
+task-5 project=firstmate state=paused pr=- age=17m endpoint=dead
+task-6 project=firstmate state=paused pr=- age=17m endpoint=dead
+task-7 project=firstmate state=paused pr=- age=17m endpoint=dead
+task-8 project=firstmate state=paused pr=- age=17m endpoint=dead
+task-9 project=firstmate state=paused pr=- age=17m endpoint=dead
+20 stale task(s) (endpoint dead or unknown, at least 3 days old, no recorded PR), condensed to id:state:age:endpoint: task-11:paused:9192d:dead task-12:paused:9192d:dead task-13:paused:9192d:dead task-14:paused:9192d:dead task-15:paused:9192d:dead task-16:paused:9192d:dead task-17:paused:9192d:dead task-18:paused:9192d:dead task-19:paused:9192d:dead task-20:paused:9192d:dead task-21:paused:9192d:dead task-22:paused:9192d:dead task-23:paused:9192d:dead task-24:paused:9192d:dead task-25:paused:9192d:dead task-26:paused:9192d:dead task-27:paused:9192d:dead task-28:paused:9192d:dead task-29:paused:9192d:dead task-30:paused:9192d:dead
+
+Orphan status logs (state/*.status without matching .meta)
+--------------------------------------------------------------------------------
+One line per orphan log: id and last recorded state. Full log: state/<id>.status.
+task-dec1 state=needs-decision
+task-dec10 state=needs-decision
+task-dec11 state=needs-decision
+task-dec12 state=needs-decision
+task-dec2 state=needs-decision
+task-dec3 state=needs-decision
+task-dec4 state=needs-decision
+task-dec5 state=needs-decision
+task-dec6 state=needs-decision
+task-dec7 state=needs-decision
+task-dec8 state=needs-decision
+task-dec9 state=needs-decision
+
+AFK
+--------------------------------------------------------------------------------
+absent
+
+================================================================================
+NETWORK CHECKS
+================================================================================
+completed off the startup path in 14s: GitHub authentication, dead-secondmate relaunch, secondmate convergence, home code drift, pending handoff delivery, project clone refresh with its drift reporting, and inactive terminal-outcome reconciliation.
+(silent - no problems found)
+
+================================================================================
+CONTEXT
+================================================================================
+A file over 2048 bytes is INDEXED: its path, size, and outline print instead of its text.
+Before the first dispatch, merge, or escalation call this session, read each INDEXED captain file,
+or at least the sections its outline names for that call.
+
+docs/learnings/overnight-learnings.md (tracked fleet learnings)
+--------------------------------------------------------------------------------
+INDEXED, not printed (6199 bytes, 55 lines): read /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M71569ZZ1P9MGSHX1Z9RRP92/docs/learnings/overnight-learnings.md when this turn needs a lesson from it.
+
+data/projects.md
+--------------------------------------------------------------------------------
+INDEXED, not printed (2862 bytes, 27 lines): read /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.E2TxoD/data/projects.md, or one section at its line number, when this turn needs it.
+  L3 - proj-01 [no-mistakes]
+  L4 - proj-02 [no-mistakes]
+  L5 - proj-03 [no-mistakes]
+  L6 - proj-04 [no-mistakes]
+  L7 - proj-05 [no-mistakes]
+  L8 - proj-06 [no-mistakes]
+  L9 - proj-07 [no-mistakes]
+  L10 - proj-08 [no-mistakes]
+  L11 - proj-09 [no-mistakes]
+  L12 - proj-10 [no-mistakes]
+  L13 - proj-11 [no-mistakes]
+  L14 - proj-12 [no-mistakes]
+  L15 - proj-13 [no-mistakes]
+  L16 - proj-14 [no-mistakes]
+  L17 - proj-15 [no-mistakes]
+  L18 - proj-16 [no-mistakes]
+  L19 - proj-17 [no-mistakes]
+  L20 - proj-18 [no-mistakes]
+  (+7 more item(s) - read the file for the rest)
+
+data/secondmates.md
+--------------------------------------------------------------------------------
+ABSENT
+
+data/captain.md
+--------------------------------------------------------------------------------
+INDEXED, not printed (10192 bytes, 241 lines): read /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.E2TxoD/data/captain.md, or one section at its line number, when this turn needs it.
+  L1 # Captain preferences
+  L3 ## Section 01
+  L11 ## Section 02
+  L19 ## Section 03
+  L27 ## Section 04
+  L35 ## Section 05
+  L43 ## Section 06
+  L51 ## Section 07
+  L59 ## Section 08
+  L67 ## Section 09
+  L75 ## Section 10
+  L83 ## Section 11
+  L91 ## Section 12
+  L99 ## Section 13
+  L107 ## Section 14
+  L115 ## Section 15
+  L123 ## Section 16
+  L131 ## Section 17
+  L139 ## Section 18
+  L147 ## Section 19
+  L155 ## Section 20
+  L163 ## Section 21
+  L171 ## Section 22
+  L179 ## Section 23
+  L187 ## Section 24
+  L195 ## Section 25
+  L203 ## Section 26
+  (+4 more heading(s) - read the file for the rest)
+
+data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)
+--------------------------------------------------------------------------------
+ABSENT
+
+data/learnings.md
+--------------------------------------------------------------------------------
+INDEXED, not printed (18212 bytes, 401 lines): read /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.E2TxoD/data/learnings.md when this turn needs a lesson from it.
+
+================================================================================
+NEXT STEP
+================================================================================
+Follow the supervision operating instructions block above for harness 'claude'.
+This script never starts supervision itself.
+
+The digest above is complete for this session start. The READ-ONCE CONTRACT
+section near the top of it governs what may still be read from disk.

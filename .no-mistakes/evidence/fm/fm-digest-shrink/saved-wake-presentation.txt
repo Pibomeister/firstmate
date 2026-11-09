@@ -1,0 +1,47 @@
+1794266547	4	signal	task-3.status	pr-ready: https://github.com/example/repo/pull/3
+1794266417	2	signal	task-7.status	pr-ready: https://github.com/example/repo/pull/7
+1794266417	3	signal	task-12.status	pr-ready: https://github.com/example/repo/pull/12
+1794266547	5	signal	task-4.status	done: finished live item 4
+1794266547	6	signal	task-5.status	done: finished live item 5
+1794266547	7	signal	task-6.status	done: finished live item 6
+1794266548	8	signal	task-8.status	done: finished live item 8
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 8 --recovery-generation 48910.1794266417.6vPOXH
+wake annotation: unread wake-EVENT since last drain, not current state: task-4.status: working: step one
+wake annotation: latest wake-EVENT observed at drain, not current state: task-4.status: done: finished live item 4
+wake annotation: unread wake-EVENT since last drain, not current state: task-5.status: working: step one
+wake annotation: latest wake-EVENT observed at drain, not current state: task-5.status: done: finished live item 5
+wake annotation: unread wake-EVENT since last drain, not current state: task-6.status: working: step one
+wake annotation: latest wake-EVENT observed at drain, not current state: task-6.status: done: finished live item 6
+wake annotation: unread wake-EVENT since last drain, not current state: task-8.status: working: step one
+wake annotation: latest wake-EVENT observed at drain, not current state: task-8.status: done: finished live item 8
+UNREAD STATUS (new since last drain, not re-printed after this presentation):
+task-note note: the captain said keep this unread note whole
+STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+task-4 done: finished live item 4
+task-5 done: finished live item 5
+task-6 done: finished live item 6
+task-8 done: finished live item 8
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+task-dec1 [key=call-1] needs-decision: the captain owes live call 1 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
+task-dec10 [key=call-10] needs-decision: the captain owes live call 10 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
+task-dec11 [key=call-11] needs-decision: the captain owes live call 11 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
+task-dec12 [key=call-12] needs-decision: the captain owes live call 12 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
+task-dec13 [key=call-13] needs-decision: the captain owes live call 13 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
+task-dec14 [key=call-14] needs-decision: the captain owes live call 14 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
+task-dec15 [key=call-15] needs-decision: the captain owes live call 15 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
+task-dec16 [key=call-16] needs-decision: the captain owes live call 16 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
+task-dec17 [key=call-17] needs-decision: the captain owes live call 17 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
+task-dec18 [key=call-18] needs-decision: the captain owes live call 18 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
+task-dec19 [key=call-19] needs-decision: the captain owes live call 19 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
+task-dec2 [key=call-2] needs-decision: the captain owes live call 2 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
+task-dec20 [key=call-20] needs-decision: the captain owes live call 20 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
+task-dec21 [key=call-21] needs-decision: the captain owes live call 21 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
+task-dec22 [key=call-22] needs-decision: the captain owes live call 22 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
+task-dec23 [key=call-23] needs-decision: the captain owes live call 23 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
+task-dec24 [key=call-24] needs-decision: the captain owes live call 24 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
+task-dec25 [key=call-25] needs-decision: the captain owes live call 25 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
+task-dec26 [key=call-26] needs-decision: the captain owes live call 26 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
+OPEN DECISIONS: 11 more omitted (byte cap)
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 242s) - full banner already printed this episode.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
