@@ -1,0 +1,376 @@
+
+================================================================================
+SESSION START - /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.eeIb6O
+================================================================================
+
+LOCK
+--------------------------------------------------------------------------------
+lock acquired: harness pid 43516
+
+HOME ROLE
+--------------------------------------------------------------------------------
+fm-role: user (default)
+
+BOOTSTRAP
+--------------------------------------------------------------------------------
+BOOTSTRAP_INFO: lavish-axi >=0.1.80 enables confirmed board replies; this older compatible version retains the legacy reply path, but upgrade to prevent handing back a board before its reply is accepted
+
+WAKE QUEUE
+--------------------------------------------------------------------------------
+1794253786	1	signal	task-1.status	working: step 200
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 66157.1794253786.Rl46JF
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+dec-1 [key=call-1] needs-decision: the captain owes call number 1 about a fairly long topic with context
+dec-10 [key=call-10] needs-decision: the captain owes call number 10 about a fairly long topic with context
+dec-11 [key=call-11] needs-decision: the captain owes call number 11 about a fairly long topic with context
+dec-12 [key=call-12] needs-decision: the captain owes call number 12 about a fairly long topic with context
+dec-13 [key=call-13] needs-decision: the captain owes call number 13 about a fairly long topic with context
+(32 more OPEN DECISIONS line(s) left out here; the saved presentation at /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.eeIb6O/state/.session-start-wake-presentation lists them)
+OPEN DECISIONS: 53 more omitted (byte cap)
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 64s) - full banner already printed this episode.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+WAKE ANNOTATIONS: 200 historical wake-event annotation line(s) left out to bound this digest; the complete presentation is saved at /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.eeIb6O/state/.session-start-wake-presentation - read it before handling a signal record above.
+================================================================================
+SUPERVISION OPERATING INSTRUCTIONS - primary harness: claude
+================================================================================
+Current state:
+- Lock: held by this session; this session owns normal supervision unless away mode says otherwise.
+- Away/quiet mode: inactive.
+- X mode: inactive; use the default watcher cadence.
+- Supervision host: on; it takes away-posture wakes and, where the dialog mirror is verified, eligible attended wakes itself, and hands the rest to you (protocol at the end of this block).
+- Ordinary wake: the Stop-owned auto-arm (bin/fm-claude-stop-autoarm.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.
+- Captain-facing turn replies stay short and do not use tables.
+- A long report goes in a file under data/, and the reply is one line from bin/fm-context-burn.sh report with that path and its sha256.
+- A large read, including a triage table or a handoff, goes through a worker or a bounded head or search, not a full read into this session.
+- The auto-compact percentage is the external footer, never a self-estimate.
+- bin/fm-context-burn.sh records that percentage each turn, from the footer when shown and otherwise from the transcript with the handoff trigger formula, and alerts when a fresh session drops more than about 30 points in 15 minutes.
+
+Mode: Claude Stop-hook-owned supervision.
+
+In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.
+
+When this session owns supervision and away mode is not active:
+1. Drain first with `bin/fm-wake-drain.sh`.
+   After handling all emitted wakes and reconciling open decisions and unread status lines, run the exact `--ack-through` command printed as `WAKE_ACK_REQUIRED`; until then the work remains durable for idempotent re-handling after interruption.
+2. Routine watcher arm and re-arm are owned by the Stop `asyncRewake` hook (`bin/fm-claude-stop-autoarm.sh`), never by you.
+   Every turn end while supervision is needed launches or attaches one home-scoped watcher cycle with no model command and no model tokens.
+   An actionable close wakes you through the hook's exit-2 rewake, delivered as a `Stop hook feedback` message.
+3. On a `Stop hook feedback` wake (`signal:`, `stale:`, `check:`, or `heartbeat`), run `bin/fm-wake-drain.sh` first and handle the wake.
+   Do not run `bin/fm-watch-arm.sh` after an ordinary wake; the next turn end re-arms automatically when supervision is still needed.
+   Do not invent a wake from an attach-status line alone; drain and act only on real wake records, the drain's `OPEN DECISIONS` and `UNREAD STATUS` entries, or a real watcher reason line.
+4. On the one `Stop hook feedback` automatic-mechanism failure notice (`firstmate watcher auto-arm FAILED ...`), drain, inspect the automatic mechanism failure, and do not turn the notice into a repeating manual-arm loop.
+5. If the Stop hook does not claim the home or reports an exhausted failure, inspect its registration and watcher startup path before ending blind.
+   Keep the Stop-owned automatic mechanism as the only Claude arm owner.
+6. Treat `watcher: started ...` and `watcher: attached ...` inside automatic arm output as proof that one live cycle exists.
+   On attach, the arm follows verified identity-matched successors instead of exiting when the first cycle ends.
+7. The durable wake queue preserves actionable events between a rewake and the next Stop-launched arm, while the bounded turn-end guard prevents a blind Stop when recovery did not start.
+   No PreToolUse hook denies fleet commands based on watcher status.
+   [`watcher-continuity.md`](../watcher-continuity.md) owns the exact session-lock recovery boundary.
+8. The turn-end guard (`bin/fm-turnend-guard.sh --claude`) remains the final backstop.
+   It requires the PID-strict live-watcher and fresh-beacon predicate at the Stop boundary, except for the foreign-live-owner safe exit owned by [`turnend-guard.md`](../turnend-guard.md#guard-predicates); that document also owns the distinct model-aware mid-turn pull-guard rules.
+   Otherwise, it allows the stop when a watcher is healthy or an open auto-arm generation claim owns recovery, while fresh failure epochs advance the bounded one-time attended fail-open progression described there.
+9. Waiting on the hook-owned cycle is silent: do not send idle progress while the watcher is parked.
+
+The watcher itself remains `bin/fm-watch.sh`, and `bin/fm-watch-arm.sh` remains the verified arm wrapper that the Stop hook foregrounds on a home that opted out of the [supervision host](../supervision-host.md) (`config/supervision-host-off`).
+Re-arm attaches to an existing healthy cycle when one is already present and follows its verified successor chain.
+See [`watcher-continuity.md`](../watcher-continuity.md) for the arm-layer successor and clean-close failure contract and the Claude ownership model.
+
+Supervision host: on for this home (`config/supervision-host-off` turns it off; [`supervision-host.md`](../supervision-host.md) owns the design).
+The Stop hook runs the supervision host in the arm's place, and everything above still holds with these additions:
+1. Attended (no away record, including a quiet-mode record; see [Postures](../supervision-host.md#postures)): a headless supervision session takes the wakes the supervision branch may take and never wakes you for a routine outcome, so fewer wakes reach you; check wakes, decision wakes, and whatever it cannot take still reach you exactly as above.
+   `supervision-host: branch-outcome: ...` means it handled a wake and recorded captain outcomes for you: run `bin/fm-wake-drain.sh`, process each entry of its `BRANCH OUTCOMES` section as firstmate from the task's current state, because each entry says how long ago it was recorded (tell the captain, land or merge what is ready, answer or escalate a decision, or act on a blocker; your reply covers only entries still open, as if a settled one, such as a PR since merged, had never been listed), then run the `mark-processed` acknowledgement it prints; every drain presents them again until you do.
+   `supervision-host: the supervision session could not take this wake ...` means the wake is yours: handle it as above.
+   A failing turn may include a `supervision-host:` health note about repeated engine errors: tell the captain when it matters and handle the handed-back wake as usual; during cooldown later attended closes reach you unchanged.
+   Routine outcomes never wake you; your next drain lists only visible routine outcomes under `BRANCH OUTCOMES, ROUTINE` for awareness, with nothing to acknowledge. Silent rows do not appear there, but remain available through `bin/fm-branch-outcome.sh list`.
+2. Away (an away record exists and no daemon runs): the host hands each wake to a headless away session that runs the supervision branch's contract under the record, and you are parked.
+   Only a wake the host hands back reaches you, as `Stop hook feedback` carrying the close plus one `supervision-host: <why>` line.
+   That wake is automatic supervision, not the captain's return: drain and handle it under the away posture, and never run the return from it.
+   After the return, a `supervision-host:` line naming the captain's return during a turn means that turn has visible outcomes missing from the return brief, whether the wake was handled or handed back: relay every following `supervision-host: outcome ...` line to the captain (the rows also remain in `bin/fm-branch-outcome.sh list`), then drain and handle any queued wake before acknowledging.
+   Each such visible outcome is also a queued `check: supervision-host outcome <n> ... was recorded after the captain returned` wake, which the drain presents until acknowledged: relay each outcome once, whichever arrives first, and acknowledge its `BRANCH OUTCOMES` entry too when it has one. Silent outcomes remain in the store but do not generate a handoff line or check wake.
+3. `supervision-host: cycle boundary ...` means the host ended its park at its bound: run `bin/fm-wake-drain.sh`, handle whatever it presents, run its printed acknowledgement (an empty queue prints `--ack-through 0`), and end the turn; the next park starts at that turn end.
+4. A guarded command that exits 6 naming the branch actor's lease means the supervision session is handling that task right now: leave the lease alone and retry after it releases, which it does when its turn ends.
+5. Captain outcomes the away session records stay in the outcome store until the return drain presents them; the return brief (`bin/fm-afk-return.sh`) counts them and points you to the `BRANCH OUTCOMES` section for processing and acknowledgement ([Captain outcomes](../supervision-host.md#captain-outcomes)).
+6. `/afk` writes only the record here (`bin/fm-afk-launch.sh start-native` refuses the away daemon on this home); for `/quiet`, follow the [quiet skill](../../.agents/skills/quiet/SKILL.md).
+
+
+================================================================================
+READ-ONCE CONTRACT
+================================================================================
+Everything below prints once for this session start: a compact
+data/backlog.md listing, one line per live task and per orphan status log,
+and the CONTEXT files (data/projects.md, data/secondmates.md, data/captain.md,
+data/captain-shared.md, data/learnings.md, and the tracked
+docs/learnings/overnight-learnings.md under the code root), each in full when
+small or INDEXED with its path, size, and outline when large.
+Do NOT re-read any of them after reading this digest, and do NOT bulk-read
+data/backlog.md or state/*.status.
+
+Go to a source directly only when:
+  - CONTEXT marked it INDEXED and this turn needs it (read the file, or the
+    section at the line its outline names),
+  - WAKE QUEUE named a saved presentation file (read it before handling a
+    signal record or reconciling the items it left out),
+  - this digest flagged it ABSENT (rebuild or create it per AGENTS.md), or its
+    contents looked unparseable or corrupt,
+  - one task's detail is needed (bin/fm-crew-state.sh <id> for reconciled
+    state; state/<id>.meta and state/<id>.status for raw records),
+  - a full task body, or a backlog row the listing omitted or cut, is needed
+    (bin/fm-tasks-axi.sh show <id> --full, bin/fm-tasks-axi.sh ready, or
+    data/backlog.md),
+  - NETWORK CHECKS reported checks still IN PROGRESS and this turn needs their
+    verdict (bin/fm-startup-network.sh report),
+  - or a STARTUP TRUNCATED banner named the stage that would have printed it,
+    or a context re-emit opened with a read cue because the harness cut the
+    digest short: that stage's sources were never emitted and must be
+    reconciled.
+
+================================================================================
+FLEET STATE
+================================================================================
+
+data/backlog.md
+--------------------------------------------------------------------------------
+compact backlog listing (tasks-axi; done rows omitted; every held and blocked row shown, and every in-flight row not already listed under held or Work under way; held and blocked rows capped at 320 characters, other rows at 180; ready queued bounded to 5; task bodies omitted)
+
+in flight:
+count: 30
+tasks[30]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:
+(30 plain in-flight row(s) with a live task record are left out here; Work under way below lists each one: task-1 task-2 task-3 task-4 task-5 task-6 task-7 task-8 task-9 task-10 task-11 task-12 task-13 task-14 task-15 task-16 task-17 task-18 task-19 task-20 task-21 task-22 task-23 task-24 task-25 task-26 task-27 task-28 task-29 task-30)
+
+held (captain- or time-gated; an in-flight item that is also held is listed here only):
+count: 15
+tasks[15]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:
+  held-1,queued,ship,firstmate,"Decide: a held item with a long title 1",none,captain,The captain owes a call on this item with a long reason that explains the context in several clauses
+  held-2,queued,ship,firstmate,"Decide: a held item with a long title 2",none,captain,The captain owes a call on this item with a long reason that explains the context in several clauses
+  held-3,queued,ship,firstmate,"Decide: a held item with a long title 3",none,captain,The captain owes a call on this item with a long reason that explains the context in several clauses
+  held-4,queued,ship,firstmate,"Decide: a held item with a long title 4",none,captain,The captain owes a call on this item with a long reason that explains the context in several clauses
+  held-5,queued,ship,firstmate,"Decide: a held item with a long title 5",none,captain,The captain owes a call on this item with a long reason that explains the context in several clauses
+  held-6,queued,ship,firstmate,"Decide: a held item with a long title 6",none,captain,The captain owes a call on this item with a long reason that explains the context in several clauses
+  held-7,queued,ship,firstmate,"Decide: a held item with a long title 7",none,captain,The captain owes a call on this item with a long reason that explains the context in several clauses
+  held-8,queued,ship,firstmate,"Decide: a held item with a long title 8",none,captain,The captain owes a call on this item with a long reason that explains the context in several clauses
+  held-9,queued,ship,firstmate,"Decide: a held item with a long title 9",none,captain,The captain owes a call on this item with a long reason that explains the context in several clauses
+  held-10,queued,ship,firstmate,"Decide: a held item with a long title 10",none,captain,The captain owes a call on this item with a long reason that explains the context in several clauses
+  held-11,queued,ship,firstmate,"Decide: a held item with a long title 11",none,captain,The captain owes a call on this item with a long reason that explains the context in several clauses
+  held-12,queued,ship,firstmate,"Decide: a held item with a long title 12",none,captain,The captain owes a call on this item with a long reason that explains the context in several clauses
+  held-13,queued,ship,firstmate,"Decide: a held item with a long title 13",none,captain,The captain owes a call on this item with a long reason that explains the context in several clauses
+  held-14,queued,ship,firstmate,"Decide: a held item with a long title 14",none,captain,The captain owes a call on this item with a long reason that explains the context in several clauses
+  held-15,queued,ship,firstmate,"Decide: a held item with a long title 15",none,captain,The captain owes a call on this item with a long reason that explains the context in several clauses
+
+blocked queued:
+count: 15
+tasks[15]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:
+  blocked-1,queued,task,"-",A blocked follow-up 1,task-1,"-","-"
+  blocked-2,queued,task,"-",A blocked follow-up 2,task-1,"-","-"
+  blocked-3,queued,task,"-",A blocked follow-up 3,task-1,"-","-"
+  blocked-4,queued,task,"-",A blocked follow-up 4,task-1,"-","-"
+  blocked-5,queued,task,"-",A blocked follow-up 5,task-1,"-","-"
+  blocked-6,queued,task,"-",A blocked follow-up 6,task-1,"-","-"
+  blocked-7,queued,task,"-",A blocked follow-up 7,task-1,"-","-"
+  blocked-8,queued,task,"-",A blocked follow-up 8,task-1,"-","-"
+  blocked-9,queued,task,"-",A blocked follow-up 9,task-1,"-","-"
+  blocked-10,queued,task,"-",A blocked follow-up 10,task-1,"-","-"
+  blocked-11,queued,task,"-",A blocked follow-up 11,task-1,"-","-"
+  blocked-12,queued,task,"-",A blocked follow-up 12,task-1,"-","-"
+  blocked-13,queued,task,"-",A blocked follow-up 13,task-1,"-","-"
+  blocked-14,queued,task,"-",A blocked follow-up 14,task-1,"-","-"
+  blocked-15,queued,task,"-",A blocked follow-up 15,task-1,"-","-"
+
+ready queued (dispatchable now):
+count: 40
+ready[40]{id,state,kind,repo,title}:
+  plain-1,queued,ship,firstmate,Plain queued item 1
+  plain-2,queued,ship,firstmate,Plain queued item 2
+  plain-3,queued,ship,firstmate,Plain queued item 3
+  plain-4,queued,ship,firstmate,Plain queued item 4
+  plain-5,queued,ship,firstmate,Plain queued item 5
+ready_public_followups: 0 delivery-ready obligations
+(shown 5 of 40 ready queued item(s))
+(35 more queued - bin/fm-tasks-axi.sh ready)
+Full task bodies and any row cut with [truncated] remain available on demand: bin/fm-tasks-axi.sh show <id> --full when compatible tasks-axi is available, or data/backlog.md.
+
+Work under way (state/*.meta)
+--------------------------------------------------------------------------------
+One line per live task: id, project, last recorded state, PR URL, age, endpoint.
+Full detail: bin/fm-crew-state.sh <id> (reconciled state); raw records: state/<id>.meta and state/<id>.status.
+task-1 project=firstmate state=working pr=- age=1m endpoint=dead
+task-10 project=firstmate state=paused pr=- age=1m endpoint=dead
+task-11 project=firstmate state=paused pr=- age=1m endpoint=dead
+task-12 project=firstmate state=paused pr=- age=1m endpoint=dead
+task-13 project=firstmate state=paused pr=- age=1m endpoint=dead
+task-14 project=firstmate state=paused pr=- age=1m endpoint=dead
+task-15 project=firstmate state=paused pr=- age=1m endpoint=dead
+task-2 project=firstmate state=paused pr=- age=1m endpoint=dead
+task-3 project=firstmate state=paused pr=- age=1m endpoint=dead
+task-4 project=firstmate state=paused pr=- age=1m endpoint=dead
+task-5 project=firstmate state=paused pr=- age=1m endpoint=dead
+task-6 project=firstmate state=paused pr=- age=1m endpoint=dead
+task-7 project=firstmate state=paused pr=- age=1m endpoint=dead
+task-8 project=firstmate state=paused pr=- age=1m endpoint=dead
+task-9 project=firstmate state=paused pr=- age=1m endpoint=dead
+15 stale task(s) (endpoint dead or unknown, at least 3 days old, no recorded PR), condensed to id:state:age:endpoint: task-16:paused:9192d:dead task-17:paused:9192d:dead task-18:paused:9192d:dead task-19:paused:9192d:dead task-20:paused:9192d:dead task-21:paused:9192d:dead task-22:paused:9192d:dead task-23:paused:9192d:dead task-24:paused:9192d:dead task-25:paused:9192d:dead task-26:paused:9192d:dead task-27:paused:9192d:dead task-28:paused:9192d:dead task-29:paused:9192d:dead task-30:paused:9192d:dead
+
+Orphan status logs (state/*.status without matching .meta)
+--------------------------------------------------------------------------------
+One line per orphan log: id and last recorded state. Full log: state/<id>.status.
+dec-1 state=needs-decision
+dec-10 state=needs-decision
+dec-11 state=needs-decision
+dec-12 state=needs-decision
+dec-13 state=needs-decision
+dec-14 state=needs-decision
+dec-15 state=needs-decision
+dec-16 state=needs-decision
+dec-17 state=needs-decision
+dec-18 state=needs-decision
+dec-19 state=needs-decision
+dec-2 state=needs-decision
+dec-20 state=needs-decision
+dec-21 state=needs-decision
+dec-22 state=needs-decision
+dec-23 state=needs-decision
+dec-24 state=needs-decision
+dec-25 state=needs-decision
+dec-26 state=needs-decision
+dec-27 state=needs-decision
+dec-28 state=needs-decision
+dec-29 state=needs-decision
+dec-3 state=needs-decision
+dec-30 state=needs-decision
+dec-31 state=needs-decision
+dec-32 state=needs-decision
+dec-33 state=needs-decision
+dec-34 state=needs-decision
+dec-35 state=needs-decision
+dec-36 state=needs-decision
+dec-37 state=needs-decision
+dec-38 state=needs-decision
+dec-39 state=needs-decision
+dec-4 state=needs-decision
+dec-40 state=needs-decision
+dec-41 state=needs-decision
+dec-42 state=needs-decision
+dec-43 state=needs-decision
+dec-44 state=needs-decision
+dec-45 state=needs-decision
+dec-46 state=needs-decision
+dec-47 state=needs-decision
+dec-48 state=needs-decision
+dec-49 state=needs-decision
+dec-5 state=needs-decision
+dec-50 state=needs-decision
+dec-51 state=needs-decision
+dec-52 state=needs-decision
+dec-53 state=needs-decision
+dec-54 state=needs-decision
+dec-55 state=needs-decision
+dec-56 state=needs-decision
+dec-57 state=needs-decision
+dec-58 state=needs-decision
+dec-59 state=needs-decision
+dec-6 state=needs-decision
+dec-60 state=needs-decision
+dec-61 state=needs-decision
+dec-62 state=needs-decision
+dec-63 state=needs-decision
+dec-64 state=needs-decision
+dec-65 state=needs-decision
+dec-66 state=needs-decision
+dec-67 state=needs-decision
+dec-68 state=needs-decision
+dec-69 state=needs-decision
+dec-7 state=needs-decision
+dec-70 state=needs-decision
+dec-71 state=needs-decision
+dec-72 state=needs-decision
+dec-73 state=needs-decision
+dec-74 state=needs-decision
+dec-75 state=needs-decision
+dec-76 state=needs-decision
+dec-77 state=needs-decision
+dec-78 state=needs-decision
+dec-79 state=needs-decision
+dec-8 state=needs-decision
+dec-80 state=needs-decision
+dec-81 state=needs-decision
+dec-82 state=needs-decision
+dec-83 state=needs-decision
+dec-84 state=needs-decision
+dec-85 state=needs-decision
+dec-86 state=needs-decision
+dec-87 state=needs-decision
+dec-88 state=needs-decision
+dec-89 state=needs-decision
+dec-9 state=needs-decision
+dec-90 state=needs-decision
+
+AFK
+--------------------------------------------------------------------------------
+absent
+
+================================================================================
+NETWORK CHECKS
+================================================================================
+completed off the startup path in 4s: GitHub authentication, dead-secondmate relaunch, secondmate convergence, home code drift, pending handoff delivery, project clone refresh with its drift reporting, and inactive terminal-outcome reconciliation.
+(silent - no problems found)
+
+================================================================================
+CONTEXT
+================================================================================
+A file over 2048 bytes is INDEXED: its path, size, and outline print instead of its text.
+Before the first dispatch, merge, or escalation call this session, read each INDEXED captain file,
+or at least the sections its outline names for that call.
+
+docs/learnings/overnight-learnings.md (tracked fleet learnings)
+--------------------------------------------------------------------------------
+INDEXED, not printed (6199 bytes, 55 lines): read /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70V2F0R33FZR48VY9Y5ZPWY/docs/learnings/overnight-learnings.md when this turn needs a lesson from it.
+
+data/projects.md
+--------------------------------------------------------------------------------
+ABSENT
+
+data/secondmates.md
+--------------------------------------------------------------------------------
+ABSENT
+
+data/captain.md
+--------------------------------------------------------------------------------
+INDEXED, not printed (21979 bytes, 301 lines): read /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.eeIb6O/data/captain.md, or one section at its line number, when this turn needs it.
+  L1 # Captain
+  L3 ## captain section 1
+  L13 ## captain section 2
+  L23 ## captain section 3
+  L33 ## captain section 4
+  L43 ## captain section 5
+  L53 ## captain section 6
+  L63 ## captain section 7
+  L73 ## captain section 8
+  L83 ## captain section 9
+  L93 ## captain section 10
+  L103 ## captain section 11
+  L113 ## captain section 12
+  L123 ## captain section 13
+  L133 ## captain section 14
+  L143 ## captain section 15
+  L153 ## captain section 16
+  L163 ## captain section 17
+  L173 ## captain section 18
+  L183 ## captain section 19
+  (+11 more heading(s) - read the file for the rest)
+
+data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)
+--------------------------------------------------------------------------------
+ABSENT
+
+data/learnings.md
+--------------------------------------------------------------------------------
+INDEXED, not printed (29691 bytes, 401 lines): read /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.eeIb6O/data/learnings.md when this turn needs a lesson from it.
+
+================================================================================
+NEXT STEP
+================================================================================
+Follow the supervision operating instructions block above for harness 'claude'.
+This script never starts supervision itself.
+
+The digest above is complete for this session start. The READ-ONCE CONTRACT
+section near the top of it governs what may still be read from disk.
