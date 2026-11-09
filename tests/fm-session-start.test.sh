@@ -2798,6 +2798,62 @@ EOF
   pass "manual backlog rendering cuts long title lines at 180 and 320 characters and keeps every id"
 }
 
+# The manual-row and latest-annotation cuts count characters, never bytes:
+# multibyte text under a cap prints whole, text over it is cut at exactly the
+# cap, and no cut splits a character into invalid UTF-8.
+test_line_cuts_count_characters_not_bytes() {
+  local rec root home fakebin out utf8 short long line spec want
+  rec=$(new_world line-cuts-multibyte)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  utf8=$(locale -a 2>/dev/null | grep -iE '^(c|en_us)\.utf-?8$' | head -1)
+  [ -n "$utf8" ] || utf8=C.UTF-8
+  printf '%s\n' manual > "$home/config/backlog-backend"
+  # Box-drawing characters: one character and three bytes each.
+  short=$(awk 'BEGIN { for (i = 0; i < 100; i++) printf "\342\224\200" }')
+  long=$(awk 'BEGIN { for (i = 0; i < 400; i++) printf "\342\224\200" }')
+  cat > "$home/data/backlog.md" <<EOF
+# Backlog
+
+## In flight
+- [ ] mb-short - ${short}
+- [ ] mb-long - ${long}
+
+## Queued
+- [ ] mb-held - Held (hold: ${long}) (hold-kind: captain)
+
+## Done
+EOF
+  awk -v tail="$short" 'BEGIN { for (i = 1; i <= 60; i++) printf "working: step %03d padding padding padding padding padding padding\n", i; print "done: " tail }' \
+    > "$home/state/task-s.status"
+  awk -v tail="$long" 'BEGIN { for (i = 1; i <= 60; i++) printf "working: stage %03d padding padding padding padding padding padding\n", i; print "done: " tail }' \
+    > "$home/state/task-l.status"
+  append_wake "$home/state" signal task-s.status "done: short" || fail "seed wake s failed"
+  append_wake "$home/state" signal task-l.status "done: long" || fail "seed wake l failed"
+
+  out=$(LC_ALL=$utf8 run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  printf '%s\n' "$out" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1 ||
+    fail "a line cut split a multibyte character into invalid UTF-8"
+  [ -f "$home/state/.session-start-wake-presentation" ] || fail "the over-budget wake presentation was not saved"
+  assert_contains "$out" "- [ ] mb-short - $short" "a multibyte in-flight row under 180 characters was cut"
+  assert_contains "$out" "wake annotation: latest wake-EVENT observed at drain, not current state: task-s.status: done: $short" \
+    "a multibyte latest-event annotation under 320 characters was cut"
+  for spec in '- [ ] mb-long - :180' '- [ ] mb-held - :320' \
+    'wake annotation: latest wake-EVENT observed at drain, not current state: task-l.status: :320'; do
+    want=${spec##*:}
+    line=$(printf '%s\n' "$out" | grep -F -- "${spec%:*}" | head -1)
+    [ "$(LC_ALL=$utf8 bash -c 'printf "%s" "${#1}"' _ "$line")" = "$want" ] ||
+      fail "the multibyte line is not cut at $want characters: $line"
+    case $line in *' [truncated]') ;; *) fail "the cut multibyte line has no [truncated] marker: $line" ;; esac
+  done
+
+  pass "manual-row and latest-annotation cuts count characters, so multibyte text is never cut early or split"
+}
+
 test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback() {
   local rec root home fakebin out
   rec=$(new_world backlog-compact-unavailable)
@@ -3781,6 +3837,7 @@ test_backlog_compact_tasks_axi_omits_bodies_and_keeps_metadata
 test_backlog_queued_bound_discloses_its_remainder
 test_backlog_compact_manual_backend_skips_indented_bodies
 test_backlog_compact_manual_backend_caps_title_lines
+test_line_cuts_count_characters_not_bytes
 test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback
 test_fleet_digest_empty_fleet
 test_next_step_sources_x_mode_cadence

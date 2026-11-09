@@ -557,6 +557,26 @@ print_context_file() {
   print_context_outline "$path"
 }
 
+# cap_marked_lines: copy stdin to stdout, cutting each line that awk marked as
+# "\037<max>\037<line>" to <max> characters with the shared fm_cap_line_var cut.
+# awk's length and substr count bytes on some platforms, so a cut made there can
+# split a multibyte character; bash counts characters and never does.
+cap_marked_lines() {
+  local line rest max
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      $'\037'*)
+        rest=${line#$'\037'}
+        max=${rest%%$'\037'*}
+        rest=${rest#*$'\037'}
+        fm_cap_line_var "$rest" "$max"
+        printf '%s\n' "$FM_LINE_CAP_LINE"
+        ;;
+      *) printf '%s\n' "$line" ;;
+    esac
+  done
+}
+
 # print_wake_presentation <drain-output>: the drain's own output, bounded. Within
 # WAKE_INLINE_MAX bytes it prints verbatim. Over it, the complete presentation is
 # first saved to WAKE_PRESENTATION_FILE, and only then is the inline copy bounded.
@@ -588,15 +608,14 @@ print_wake_presentation() {
     && printf '%s\n' "$out" > "$tmp" 2>/dev/null \
     && mv -f "$tmp" "$WAKE_PRESENTATION_FILE" 2>/dev/null; then
     printf '%s\n' "$out" | awk -v keep="$WAKE_SECTION_ITEMS" -v saved="$WAKE_PRESENTATION_FILE" -v bullet='●' \
-      -v amax="$WAKE_ANNOTATION_MAX" -v suffix="$FM_LINE_CAP_SUFFIX" '
+      -v amax="$WAKE_ANNOTATION_MAX" '
       function close_section() {
         if (section != "" && cut > 0)
           printf "(%d more %s line(s) left out here; the saved presentation at %s lists them)\n", cut, section, saved
         section = ""; shown = 0; cut = 0
       }
       /^wake annotation: latest wake-EVENT observed at drain, not current state: / {
-        if (length($0) > amax) print substr($0, 1, amax - length(suffix)) suffix
-        else print
+        printf "\037%d\037%s\n", amax, $0
         next
       }
       /^wake annotation:/ { annotations++; next }
@@ -612,7 +631,7 @@ print_wake_presentation() {
         close_section()
         if (annotations > 0)
           printf "WAKE ANNOTATIONS: %d earlier unread and historical wake-event annotation line(s) left out to bound this digest; the complete presentation is saved at %s - read it before handling a signal record above.\n", annotations, saved
-      }'
+      }' | cap_marked_lines
     return 0
   fi
   [ -z "$tmp" ] || rm -f "$tmp" 2>/dev/null || true
@@ -631,7 +650,8 @@ print_backlog_pointer() {
 MANUAL_KEEP_RE='[(]hold|blocked-by:'
 
 # Hold reasons are decoded before the cut, so a cut never splits an encoded
-# payload; each title line is then cut with the shared [truncated] marker:
+# payload; each title line is then cut with the shared [truncated] marker
+# (cap_marked_lines):
 # held and blocked queued lines at BACKLOG_DECISION_ROW_MAX, every other line
 # at BACKLOG_ROW_MAX. Every in-flight, held, and blocked line still prints.
 print_backlog_manual_compact() {
@@ -639,11 +659,9 @@ print_backlog_manual_compact() {
   printf 'compact backlog listing (%s; done rows omitted; every in-flight, held, and blocked title line kept; held and blocked lines capped at %s characters, other lines at %s; other queued bounded to %s; indented task bodies omitted)\n' \
     "$reason" "$BACKLOG_DECISION_ROW_MAX" "$BACKLOG_ROW_MAX" "$QUEUED_LIMIT"
   fm_hold_reason_decode_stream markdown < "$path" | awk -v max="$QUEUED_LIMIT" -v keep_re="$MANUAL_KEEP_RE" \
-    -v cap="$BACKLOG_ROW_MAX" -v decision_cap="$BACKLOG_DECISION_ROW_MAX" -v suffix="$FM_LINE_CAP_SUFFIX" '
-    function cut(line, limit) {
-      if (length(line) <= limit) return line
-      return substr(line, 1, limit - length(suffix)) suffix
-    }
+    -v cap="$BACKLOG_ROW_MAX" -v decision_cap="$BACKLOG_DECISION_ROW_MAX" '
+    # Mark the line for cap_marked_lines, which makes the character-safe cut.
+    function cut(line, limit) { return sprintf("\037%d\037%s", limit, line) }
     function state_for_heading(line, heading) {
       heading = line
       sub(/^##[[:space:]]+/, "", heading)
@@ -679,7 +697,7 @@ print_backlog_manual_compact() {
         }
       }
     }
-  '
+  ' | cap_marked_lines
 }
 
 # tasks-axi closes every listing with its own help block. This section composes
