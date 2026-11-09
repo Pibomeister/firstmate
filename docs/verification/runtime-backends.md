@@ -2932,7 +2932,7 @@ Every tool below printed `interrupt-delivered ... verified=agent-alive cancel=un
 | Tool and version | Model | Program status (OSC 7501) | Busy source read on Rex | Composer |
 | --- | --- | --- | --- | --- |
 | Claude Code 2.1.308 | `haiku` | `working`, `done`, `blocked` (`claude-code`) | `claude-hook` | `empty` idle and after each submit |
-| Codex 0.163.0 | `gpt-6-luna` | `working`, `idle` (`codex`) | `unknown codex-unverified`, the shared Codex contract | `empty` |
+| Codex 0.163.0 | `gpt-6-luna` | `working`, `idle` (`codex`) | `unknown codex-unverified`, the shared Codex contract at the time; Codex now reads `rex-native` while Rex reports `working`, not re-measured live | `empty` |
 | Grok 1.0.67 | default | `working`, `done`, `blocked` (`grok-build`) | `rex-native` while working, `grok-regex` after | `empty` |
 | OpenCode 1.19.3 | `openai/gpt-6-luna-fast` | none | `opencode-plugin` | `empty` with the cursor-anchored read |
 | Pi 0.87.0 and Pi signed 0.87.0 | `openai-codex/gpt-6-luna` | none | `pi-ext` | `empty` |

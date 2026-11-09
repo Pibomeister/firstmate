@@ -471,6 +471,7 @@ _fm_task_inbox_ring_once() {  # <backend> <target> <record-path> [expected-label
         [ "$(fm_task_inbox_record_harness "$rec")" = codex ] || return 1
       fi
       fm_task_inbox_composer_holds "$backend" "$target" "$line" "$label" || return 1
+      _fm_task_inbox_note_codex_turn_start "$rec"
       fm_backend_send_key "$backend" "$target" Enter "$label" >/dev/null 2>&1 || return 2
       sleep 0.3
       fm_task_inbox_composer_holds "$backend" "$target" "$line" "$label" || return 0
@@ -482,6 +483,7 @@ _fm_task_inbox_ring_once() {  # <backend> <target> <record-path> [expected-label
   # steps, so an agent exiting after the liveness check could leave a bare
   # shell only a suffix; the `: ` prefix protects complete lines only. Do not
   # add process-bound atomic delivery here unless an incident reopens this.
+  _fm_task_inbox_note_codex_turn_start "$rec"
   if ! verdict=$(fm_backend_send_text_submit "$backend" "$target" "$line" 2 0.4 0.3 "$label" 2>/dev/null); then
     return 2
   fi
@@ -489,6 +491,21 @@ _fm_task_inbox_ring_once() {  # <backend> <target> <record-path> [expected-label
   # (empty, pending, unknown, ...) is deliberately ignored, never proof.
   [ "$verdict" != send-failed ] || return 2
   return 0
+}
+
+# A ring starts a Codex turn, and the ladder deletes .ring-state once the worker
+# files the message (whose mv keeps its enqueue time), so record the start the
+# Codex busy classifier reads (fm_busy_codex_native_turn_state in
+# bin/fm-busy-lib.sh). Touched before submitting: a start recorded for a ring
+# that then fails only holds the verdict at unknown.
+_fm_task_inbox_note_codex_turn_start() {  # <record-path>
+  local dir=${1%/*} task
+  case "$(fm_task_inbox_record_harness "$1")" in codex*) ;; *) return 0 ;; esac
+  dir=${dir%/handled}
+  task=${dir##*/}
+  task=${task%.inbox}
+  { : > "${dir%/*}/$task.turn-start"; } 2>/dev/null \
+    || echo "fm-task-inbox: warning: could not record the codex turn start at ${dir%/*}/$task.turn-start; its busy state may read idle during this turn" >&2
 }
 
 # Whether the composer's content, ignoring line wrapping, is one or more whole
