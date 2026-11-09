@@ -1,0 +1,13 @@
+== S15 fresh heartbeat, live lock (watchdog: alive=live), fresh watcher, monitor enabled -> ok fresh
+verdict=ok reason=fresh heartbeat_age=0 lock=live watcher_age=1 monitor=enabled at=1794261245
+== S16 same, published_epoch moved 500s back (over its 72s bound) -> stale with measured age, never ok
+verdict=stale reason=heartbeat-stale heartbeat_age=504 lock=live watcher_age=5 monitor=enabled at=1794261249
+== S17 idle home (lock gone, watchdog pass -> none), heartbeat over age, monitor enabled -> ok idle
+  captain alive=none
+verdict=ok reason=idle heartbeat_age=508 lock=none watcher_age=8 monitor=enabled at=1794261253
+== S18 read without --write leaves state/health-verdict untouched; usage errors
+  health-verdict unchanged by a plain read
+fm-health-verdict.sh: unknown argument: --bogus
+  rc=2
+fm-health-verdict.sh: not a directory: /nonexistent
+  rc=2

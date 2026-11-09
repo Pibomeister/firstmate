@@ -1,0 +1,11 @@
+$ fm-watchdog.sh once --dry-run (lab home, no session)
+owner=none
+alive=none
+status=uncovered at=1794260940
+$ fm-heartbeat.sh --write (stale-grace-secs unset)
+{"published_epoch":1794260945,"stale_after_secs":null}
+$ fm-health-verdict.sh --home LAB --write
+verdict=unknown reason=stale-bound-unknown,monitor-uncovered heartbeat_age=8 lock=none watcher_age=unknown monitor=uncovered at=1794260953
+rc=0
+$ cat state/health-verdict
+verdict=unknown reason=stale-bound-unknown,monitor-uncovered heartbeat_age=8 lock=none watcher_age=unknown monitor=uncovered at=1794260953

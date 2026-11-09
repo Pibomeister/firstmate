@@ -1,0 +1,80 @@
+== S2 idle home: no lock, no open work, no away record, published bound
+  captain: owner=none alive=none 
+  monitor-status: status=uncovered at=1794261021
+  heartbeat: {"published_epoch":1794261026,"stale_after_secs":72}
+  $ fm-health-verdict.sh --home LAB --write
+  verdict=unknown reason=monitor-uncovered heartbeat_age=0 lock=none watcher_age=0 monitor=uncovered at=1794261026
+== S3 live lock (real sleeping process holds state/.lock)
+  captain: owner=pid:35364 alive=live 
+  monitor-status: status=uncovered at=1794261031
+  heartbeat: {"published_epoch":1794261039,"stale_after_secs":72}
+  $ fm-health-verdict.sh --home LAB --write
+  verdict=unknown reason=monitor-uncovered heartbeat_age=0 lock=live watcher_age=0 monitor=uncovered at=1794261039
+== S4 dead lock with a fresh heartbeat; nothing typed into any endpoint
+  captain: owner=pid:75240 alive=dead 
+  monitor-status: status=uncovered at=1794261042
+  heartbeat: {"published_epoch":1794261051,"stale_after_secs":72}
+  $ fm-health-verdict.sh --home LAB --write
+  verdict=dead reason=lock-dead heartbeat_age=0 lock=dead watcher_age=1 monitor=uncovered at=1794261051
+  endpoint tool calls by verdict: 0
+== S5 dead lock with no heartbeat file -> dead, not unknown
+  $ fm-health-verdict.sh --home LAB --write
+  verdict=dead reason=lock-dead heartbeat_age=unknown lock=dead watcher_age=4 monitor=uncovered at=1794261054
+== S6 live pid whose recorded instance does not match -> unconfirmed; process not signalled
+  captain: owner=session:anchor_pid=35364 alive=unconfirmed 
+  monitor-status: status=uncovered at=1794261058
+  heartbeat: {"published_epoch":1794261068,"stale_after_secs":72}
+  $ fm-health-verdict.sh --home LAB --write
+  verdict=unconfirmed reason=instance-mismatch heartbeat_age=0 lock=mismatch watcher_age=0 monitor=uncovered at=1794261068
+  lock holder 35364 still running
+  endpoint tool calls by verdict: 0
+== S7 lock none with open work (in-flight task) -> dead none-open-work
+  captain: owner=none alive=none 
+  monitor-status: status=uncovered at=1794261069
+  heartbeat: {"published_epoch":1794261076,"stale_after_secs":72}
+  $ fm-health-verdict.sh --home LAB --write
+  verdict=dead reason=none-open-work heartbeat_age=1 lock=none watcher_age=9 monitor=uncovered at=1794261077
+== S8 lock none with an away record -> dead none-away
+  captain: owner=none alive=none 
+  monitor-status: status=uncovered at=1794261079
+  heartbeat: {"published_epoch":1794261089,"stale_after_secs":72}
+  $ fm-health-verdict.sh --home LAB --write
+  verdict=dead reason=none-away heartbeat_age=0 lock=none watcher_age=22 monitor=uncovered at=1794261089
+== S9 lock none with an unresolved dispatch-log goal -> dead none-open-work
+  captain: owner=none alive=none 
+  monitor-status: status=uncovered at=1794261095
+  heartbeat: {"published_epoch":1794261099,"stale_after_secs":72}
+  $ fm-health-verdict.sh --home LAB --write
+  verdict=dead reason=none-open-work heartbeat_age=0 lock=none watcher_age=31 monitor=uncovered at=1794261099
+== S10 missing monitor unit record, live lock -> unknown naming the outer guard
+  captain: owner=pid:35364 alive=live 
+  monitor-status: status=uncovered at=1794261100
+  heartbeat: {"published_epoch":1794261102,"stale_after_secs":72}
+  $ fm-health-verdict.sh --home LAB --write
+  verdict=unknown reason=monitor-missing heartbeat_age=0 lock=live watcher_age=0 monitor=missing at=1794261102
+== S11 legacy .last-heartbeat fresh but heartbeat.json missing -> unknown heartbeat-missing
+  captain: owner=pid:35364 alive=live 
+  monitor-status: status=uncovered at=1794261103
+  heartbeat: {"published_epoch":1794261106,"stale_after_secs":72}
+  $ fm-health-verdict.sh --home LAB --write
+  verdict=unknown reason=heartbeat-missing,monitor-uncovered heartbeat_age=unknown lock=live watcher_age=0 monitor=uncovered at=1794261107
+== S12 publisher stops: live lock, open work, wait past the published bound (real elapsed time)
+  captain: owner=pid:35364 alive=live 
+  monitor-status: status=uncovered at=1794261112
+  heartbeat: {"published_epoch":1794261118,"stale_after_secs":72}
+  waiting 75s past publication (bound 72s)
+  $ fm-health-verdict.sh --home LAB --write
+  verdict=unknown reason=monitor-uncovered heartbeat_age=0 lock=live watcher_age=1 monitor=uncovered at=1794261118
+  $ fm-health-verdict.sh --home LAB --write
+  verdict=stale reason=heartbeat-stale,monitor-uncovered heartbeat_age=79 lock=live watcher_age=0 monitor=uncovered at=1794261197
+== S13 same, idle home (no lock record of live, no open work): reads ok idle past its bound
+  captain: alive=none
+  $ fm-health-verdict.sh --home LAB --write
+  verdict=unknown reason=monitor-uncovered heartbeat_age=79 lock=none watcher_age=0 monitor=uncovered at=1794261197
+== S14 watcher beat older than watcher-stale-secs with open work -> stale naming the watcher
+  captain: owner=pid:35364 alive=live 
+  monitor-status: status=uncovered at=1794261198
+  heartbeat: {"published_epoch":1794261202,"stale_after_secs":72}
+  $ fm-health-verdict.sh --home LAB --write
+  verdict=stale reason=watcher-stale,monitor-uncovered heartbeat_age=0 lock=live watcher_age=600 monitor=uncovered at=1794261202
+/tmp/fmhv-driver/drive.sh: line 66: 35364 Terminated: 15          sleep 100000

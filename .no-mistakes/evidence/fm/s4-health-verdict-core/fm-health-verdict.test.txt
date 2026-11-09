@@ -1,0 +1,28 @@
+1..26
+ok - a fresh heartbeat, a live lock and a fresh watcher give ok
+ok - a --write that cannot record the line exits 1 with a message
+ok - outside a supervisor turn a heartbeat older than its bound gives stale with the measured age
+ok - a dead publisher reads stale once its bound has passed after the last publication, and not before
+ok - a dead lock pid gives dead even while the heartbeat reads fresh
+ok - a dead lock gives dead in any turn state and with a missing heartbeat file
+ok - a live pid that does not match its instance gives unconfirmed with no typed signal and no restart
+ok - unconfirmed outranks the stale and unknown tier
+ok - a captain record of none gives dead with open work or an away record, and ok (idle) with neither
+ok - an idle home reads ok (idle) past its heartbeat bound, and none with open work or an away record still reads dead
+ok - a stale heartbeat with open work or an away record still reads stale
+ok - declared paused and captain-held waits are not open work, and a pause past its until time is
+ok - the open-work test counts in-flight work on a secondmate home
+ok - an unresolved dispatch-log goal is open work on a secondmate home too
+ok - inside a supervisor turn with a live lock an over-age heartbeat gives unknown (mid-turn), never ok
+ok - inside a supervisor turn an over-age heartbeat is never stale, whatever the lock verdict
+ok - a mid-turn reading never upgrades a missing monitor unit to ok
+ok - a missing heartbeat file gives unknown, not dead
+ok - an unread heartbeat field or a null stale bound gives unknown for that field and never ok
+ok - a monitor status other than enabled gives unknown naming the outer guard
+ok - stale with a missing monitor unit gives stale and names both
+ok - outside a supervisor turn a watcher beat older than its bound gives stale naming the watcher
+ok - the watcher bound is read with the watchdog's own config reader
+ok - the legacy last-heartbeat record never feeds the verdict
+ok - a proven supervisor turn reads mid-turn even before the watcher beat passes grace
+ok - a read without --write leaves a home with no state directory unchanged
+FM_TEST_COMPLETE
