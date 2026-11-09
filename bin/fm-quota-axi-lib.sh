@@ -95,7 +95,7 @@ FM_QUOTA_ROW_JQ='
   def cursor_pool($model):
     ($model | sub("^model:"; "") | ascii_downcase) as $t |
     if $t == "" or $t == "default" or $t == "auto" or $t == "composer" or ($t | startswith("composer-")) then "auto"
-    elif ($t | test("^(cursor-)?grok-4\\.[567](-|$)")) then "auto"
+    elif ($t | test("^grok-4\\.7(-|$)|^cursor-grok-4\\.[56](-|$)")) then "auto"
     elif ($t | test("^(cursor-)?grok-")) then "grok"
     elif ($t | test("^(claude|gpt|gemini|o[0-9])")) then "api"
     else null end;

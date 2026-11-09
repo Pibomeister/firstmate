@@ -831,8 +831,8 @@ out=$(call_choose --snapshot "$CURSOR_POOLS" --candidate cursor:grok-4.7-high)
 jq '(.providers[0].windows[] | select(.id == "grok_bot").percentRemaining) = 0' "$LAB/cursor-pools-api-6.json" > "$LAB/cursor-pools-grokbot-empty.json"
 out=$(call_choose --snapshot "$LAB/cursor-pools-grokbot-empty.json" --candidate cursor:grok-4.7-high)
 [ "$out" = "cursor grok-4.7-high" ] || fail "unrelated grok_bot window blocked a cursor grok model: $out"
-# Unknown future grok-* ids stay on the conservative api pool.
-for model in grok-4.8-high grok-9-high; do
+# Unknown future grok-* ids and unlisted spellings stay on the conservative api pool.
+for model in grok-4.8-high grok-9-high cursor-grok-4.7-high grok-4.6-high; do
   if out=$(call_choose --snapshot "$LAB/cursor-pools-api-empty.json" --candidate "cursor:$model"); then
     fail "unknown future cursor grok model $model borrowed headroom from another pool: $out"
   fi

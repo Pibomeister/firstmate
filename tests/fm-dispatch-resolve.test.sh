@@ -836,6 +836,8 @@ done
 cursor_case '{"rules":[{"when":"Cursor work.","use":[{"harness":"cursor","model":"grok-4.8-high"}]}]}' "$CURSOR_GROK_QUOTA"
 assert_contains "$out" 'candidate: cursor:grok-4.8-high  provider=cursor  scope=pool:api' "an unknown future cursor grok model stays on the conservative api pool"
 assert_contains "$out" 'not eligible: runway exhausted_now at pool:api' "an unknown future cursor grok model is blocked when the api pool is exhausted"
+cursor_case '{"rules":[{"when":"Cursor work.","use":[{"harness":"cursor","model":"grok-4.6-high"}]}]}' "$CURSOR_GROK_QUOTA"
+assert_contains "$out" 'candidate: cursor:grok-4.6-high  provider=cursor  scope=pool:api' "an unlisted bare grok-4.6 spelling stays on the conservative api pool"
 
 # AGY reads by group: Flash binds the shared gemini scope, Claude binds
 # claude_gpt, and Argon never binds the shared gemini row.
