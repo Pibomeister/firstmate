@@ -582,7 +582,19 @@ cmd_once() {
 cmd_run() {
   load_config
   local lock=$CFG_STATE/run.lock
-  mkdir "$lock" 2>/dev/null || { echo "fm-captain-nudge: another run loop holds $lock"; exit 0; }
+  if ! mkdir "$lock" 2>/dev/null; then
+    # A loop killed with SIGKILL (launchd bootout, OOM) leaves the lock behind.
+    # Take it over only when its pid is gone or is not this tool's run loop.
+    local holder
+    holder=$(tr -cd '0-9' < "$lock/pid" 2>/dev/null || true)
+    if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null \
+       && ps -o args= -p "$holder" 2>/dev/null | grep -q 'fm-captain-nudge.sh'; then
+      echo "fm-captain-nudge: another run loop holds $lock"
+      exit 0
+    fi
+    rm -rf "$lock"
+    mkdir "$lock" 2>/dev/null || { echo "fm-captain-nudge: another run loop holds $lock"; exit 0; }
+  fi
   printf '%s\n' "$$" > "$lock/pid"
   printf '%s\n' "$$" > "$CFG_STATE/loop.pid"
   local sleeper=''
