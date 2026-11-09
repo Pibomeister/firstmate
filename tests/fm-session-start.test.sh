@@ -1093,11 +1093,13 @@ EOF
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
   saved="$home/state/.session-start-wake-presentation"
 
-  assert_contains "$out" "historical wake-event annotation line(s) left out to bound this digest; the complete presentation is saved at $saved" \
+  assert_contains "$out" "149 earlier unread and historical wake-event annotation line(s) left out to bound this digest; the complete presentation is saved at $saved" \
     "a large wake presentation did not name its saved file"
-  if printf '%s\n' "$out" | grep -q '^wake annotation:'; then
-    fail "annotation lines still printed inline after the spill: $out"
+  if printf '%s\n' "$out" | grep -q '^wake annotation: unread wake-EVENT'; then
+    fail "unread backlog annotation lines still printed inline after the spill: $out"
   fi
+  [ "$(printf '%s\n' "$out" | grep -c '^wake annotation: latest wake-EVENT observed at drain, not current state: task-w.status: working: step 150')" -eq 1 ] \
+    || fail "the latest-event annotation did not stay inline once: $out"
   assert_contains "$out" "$(printf 'signal\ttask-w.status\tworking: step 150')" \
     "the wake record itself left the inline copy"
   assert_contains "$out" "WAKE_ACK_REQUIRED:" "the acknowledgement line left the inline copy"
@@ -1140,7 +1142,7 @@ EOF
 
   [ -f "$saved" ] || fail "a multibyte presentation over the byte bound was not saved"
   [ "$(LC_ALL=C wc -c < "$saved" | tr -d ' ')" -gt 8000 ] || fail "the fixture is not over the 8000-byte bound"
-  assert_contains "$out" "historical wake-event annotation line(s) left out to bound this digest" \
+  assert_contains "$out" "earlier unread and historical wake-event annotation line(s) left out to bound this digest" \
     "a multibyte presentation over the byte bound printed inline whole"
   assert_contains "$out" "WAKE_ACK_REQUIRED:" "the acknowledgement line left the inline copy"
 
@@ -1179,6 +1181,62 @@ EOF
   [ -z "$(ls -A "$saved")" ] || fail "a temporary copy was left inside the directory: $(ls -A "$saved")"
 
   pass "a large wake presentation prints whole when the save path is a directory"
+}
+
+# On a large presentation, each signalled worker's latest status event stays
+# inline as its annotation, cut visibly at 320 characters, while the earlier
+# unread backlog and every historical (turn-ended) annotation are left out,
+# counted, and kept in the saved presentation.
+test_wake_presentation_keeps_latest_direct_annotations_inline() {
+  local rec root home fakebin out saved url long row
+  rec=$(new_world wake-spill-latest)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  url='https://github.com/example/widgets/pull/42'
+  awk 'BEGIN { for (i = 1; i <= 60; i++) printf "working: step %03d padding padding padding padding padding padding\n", i; print "done: shipped the widget fix" }' \
+    > "$home/state/task-a.status"
+  awk -v url="$url" 'BEGIN { for (i = 1; i <= 60; i++) printf "working: stage %03d padding padding padding padding padding padding\n", i; print "pr-ready: " url }' \
+    > "$home/state/task-b.status"
+  long=$(awk 'BEGIN { for (i = 0; i < 40; i++) printf "long words "; }')
+  printf 'done: %send-of-line\n' "$long" > "$home/state/task-c.status"
+  awk 'BEGIN { for (i = 1; i <= 20; i++) printf "working: old note %03d padding padding padding padding padding\n", i }' \
+    > "$home/state/task-h.status"
+  : > "$home/state/task-h.turn-ended"
+  append_wake "$home/state" signal task-a.status "done: shipped the widget fix" || fail "seed wake a failed"
+  append_wake "$home/state" signal task-b.status "pr-ready: $url" || fail "seed wake b failed"
+  append_wake "$home/state" signal task-c.status "done: long" || fail "seed wake c failed"
+  append_wake "$home/state" signal task-h.turn-ended "signal: $home/state/task-h.turn-ended" || fail "seed wake h failed"
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  saved="$home/state/.session-start-wake-presentation"
+
+  [ -f "$saved" ] || fail "the over-budget presentation was not saved"
+  printf '%s\n' "$out" | grep '^wake annotation: latest wake-EVENT observed at drain, not current state: task-a.status: ' \
+    | grep -qF 'done: shipped the widget fix' || fail "the direct done annotation left the inline copy: $out"
+  printf '%s\n' "$out" | grep '^wake annotation: latest wake-EVENT observed at drain, not current state: task-b.status: ' \
+    | grep -qF "pr-ready: $url" || fail "the direct pr-ready annotation left the inline copy: $out"
+  row=$(printf '%s\n' "$out" | grep '^wake annotation: latest wake-EVENT observed at drain, not current state: task-c.status: ' | head -1)
+  [ -n "$row" ] || fail "the long latest-event annotation was dropped instead of cut: $out"
+  [ "${#row}" -le 320 ] || fail "the latest-event annotation was not capped at 320 characters (${#row}): $row"
+  case "$row" in *' [truncated]') ;; *) fail "a cut latest-event annotation did not carry the [truncated] marker: $row" ;; esac
+  assert_grep 'end-of-line' "$saved" "the saved presentation lost the uncut annotation"
+
+  if printf '%s\n' "$out" | grep -q '^wake annotation: unread wake-EVENT'; then
+    fail "unread backlog annotation lines printed inline after the spill: $out"
+  fi
+  if printf '%s\n' "$out" | grep '^wake annotation:' | grep -qF 'historical / not necessarily the triggering event'; then
+    fail "historical annotation lines printed inline after the spill: $out"
+  fi
+  assert_grep 'task-h.status: working: old note 020' "$saved" "the saved presentation lost the historical annotation"
+  assert_grep 'unread wake-EVENT since last drain' "$saved" "the saved presentation lost the unread backlog"
+  assert_contains "$out" "earlier unread and historical wake-event annotation line(s) left out to bound this digest; the complete presentation is saved at $saved - read it before handling a signal record above." \
+    "the annotation omission was not disclosed with its saved path"
+  assert_contains "$out" "WAKE_ACK_REQUIRED:" "the acknowledgement line left the inline copy"
+
+  pass "a large wake presentation keeps each latest direct annotation inline and leaves out only the unread backlog and historical lines"
 }
 
 # On a large presentation, a drain section that follows a bounded one is not
@@ -3641,6 +3699,7 @@ test_wake_presentation_spills_annotations_to_a_saved_file
 test_wake_presentation_bound_counts_bytes_not_characters
 test_wake_presentation_keeps_everything_when_save_path_is_a_directory
 test_wake_presentation_prints_section_after_bounded_one_whole
+test_wake_presentation_keeps_latest_direct_annotations_inline
 test_digest_stays_under_size_budget_on_large_home
 test_lock_refusal_read_only_path
 test_lock_write_failure_read_only_path

@@ -226,10 +226,11 @@
 #     The two learnings files print the pointer line alone.
 #   - A wake presentation over FM_SESSION_START_WAKE_INLINE_MAX bytes (default
 #     8000) is saved whole to state/.session-start-wake-presentation first, and
-#     only then does the inline copy leave out its historical `wake
-#     annotation:` lines and all but the first five OPEN DECISIONS and STATUS
-#     OUTCOME BACKSTOP items, with their counts and that path; if the save
-#     fails, nothing is left out.
+#     only then does the inline copy keep each non-historical latest-event
+#     `wake annotation:` line (capped at 320 characters), leave out the earlier
+#     unread and historical annotation lines and all but the first five OPEN
+#     DECISIONS and STATUS OUTCOME BACKSTOP items, with their counts and that
+#     path; if the save fails, nothing is left out.
 #   - The backlog and Work under way bounds are the BACKLOG DIGEST and
 #     WORK-UNDER-WAY notes above.
 #
@@ -463,6 +464,7 @@ WAKE_INLINE_MAX=${FM_SESSION_START_WAKE_INLINE_MAX:-8000}
 case "$WAKE_INLINE_MAX" in ''|*[!0-9]*|0) WAKE_INLINE_MAX=8000 ;; esac
 WAKE_PRESENTATION_FILE="$STATE/.session-start-wake-presentation"
 WAKE_SECTION_ITEMS=5
+WAKE_ANNOTATION_MAX=320
 BACKLOG_ROW_MAX=180
 # Held and blocked rows carry the hold reason and blocker the captain decides
 # on, so they get a wider cut that keeps an ordinary reason whole.
@@ -485,8 +487,9 @@ subsection() { printf '\n%s\n%s\n' "$1" "$SUBRULE"; }
 # context file. Markdown headings (#, ##, ###) are the outline when the file has
 # more than one; a list file with at most a title heading (the project and
 # secondmate registries) is outlined by each top-level item's label, the text
-# before its first " - ", so every registered name stays visible. The
-# outline stops at CONTEXT_OUTLINE_MAX bytes and discloses the exact remainder.
+# before its first " - ". The outline is bounded at CONTEXT_OUTLINE_MAX bytes,
+# so a long registry shows only its first names, and the remaining items are
+# counted in a closing line.
 print_context_outline() {
   local path=$1
   awk -v max="$CONTEXT_OUTLINE_MAX" '
@@ -556,10 +559,13 @@ print_context_file() {
 
 # print_wake_presentation <drain-output>: the drain's own output, bounded. Within
 # WAKE_INLINE_MAX bytes it prints verbatim. Over it, the complete presentation is
-# first saved to WAKE_PRESENTATION_FILE, and only then does the inline copy leave
-# out its historical `wake annotation:` lines and every OPEN DECISIONS or STATUS
-# OUTCOME BACKSTOP item past the first WAKE_SECTION_ITEMS of its section, each
-# omission disclosed with its count and the saved path. A bounded section ends
+# first saved to WAKE_PRESENTATION_FILE, and only then is the inline copy bounded.
+# It keeps each non-historical `wake annotation: latest wake-EVENT observed at
+# drain` line, one per signalled status file, cut to WAKE_ANNOTATION_MAX
+# characters with the shared line cut. It leaves out the earlier unread and the
+# historical `wake annotation:` lines and every OPEN DECISIONS or STATUS OUTCOME
+# BACKSTOP item past the first WAKE_SECTION_ITEMS of its section, each omission
+# disclosed with its count and the saved path. A bounded section ends
 # at a blank line, a guard banner, a warning, a `wake drain:` diagnostic, or any
 # all-capitals drain heading followed by ` (` or `:`, so every later section
 # (UNREAD STATUS, RECORD DIVERGENCE, BRANCH OUTCOMES, section tails, the
@@ -581,11 +587,17 @@ print_wake_presentation() {
     && tmp=$(mktemp "$WAKE_PRESENTATION_FILE.XXXXXX" 2>/dev/null) \
     && printf '%s\n' "$out" > "$tmp" 2>/dev/null \
     && mv -f "$tmp" "$WAKE_PRESENTATION_FILE" 2>/dev/null; then
-    printf '%s\n' "$out" | awk -v keep="$WAKE_SECTION_ITEMS" -v saved="$WAKE_PRESENTATION_FILE" -v bullet='●' '
+    printf '%s\n' "$out" | awk -v keep="$WAKE_SECTION_ITEMS" -v saved="$WAKE_PRESENTATION_FILE" -v bullet='●' \
+      -v amax="$WAKE_ANNOTATION_MAX" -v suffix="$FM_LINE_CAP_SUFFIX" '
       function close_section() {
         if (section != "" && cut > 0)
           printf "(%d more %s line(s) left out here; the saved presentation at %s lists them)\n", cut, section, saved
         section = ""; shown = 0; cut = 0
+      }
+      /^wake annotation: latest wake-EVENT observed at drain, not current state: / {
+        if (length($0) > amax) print substr($0, 1, amax - length(suffix)) suffix
+        else print
+        next
       }
       /^wake annotation:/ { annotations++; next }
       /^OPEN DECISIONS \(/ { close_section(); print; section = "OPEN DECISIONS"; next }
@@ -599,7 +611,7 @@ print_wake_presentation() {
       END {
         close_section()
         if (annotations > 0)
-          printf "WAKE ANNOTATIONS: %d historical wake-event annotation line(s) left out to bound this digest; the complete presentation is saved at %s - read it before handling a signal record above.\n", annotations, saved
+          printf "WAKE ANNOTATIONS: %d earlier unread and historical wake-event annotation line(s) left out to bound this digest; the complete presentation is saved at %s - read it before handling a signal record above.\n", annotations, saved
       }'
     return 0
   fi
