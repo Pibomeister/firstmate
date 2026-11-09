@@ -14,6 +14,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), [warm-cache compaction](#warm-cache-compaction-configwarm-compact), [early handoff trigger](#early-handoff-trigger-confighandoff-trigger), [heartbeat stale grace](#heartbeat-stale-grace-configheartbeat), [task budgets](#task-budget-enforcement-configbudget-enforcement), and [Calm preference](#calm-preference-configcalm) |
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
 | Unattended stall recovery for firstmates and second mates | [Assistant watchdog](#assistant-watchdog-configwatchdog) |
+| Restarting relays that go stale after a network daemon restart | [Relay guard](#relay-guard-configrelay-guard) |
 | Machine-wide heavy test admission | [`fm-test-queue.sh` header](../bin/fm-test-queue.sh) |
 | Review bots on owned GitHub pull requests | [Contribution review bots](#contribution-review-bots-configcontribution-review-bots) |
 | Per-run overrides and tuning | [Environment variables](#environment-variables) |
@@ -113,6 +114,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Per-task steering-inbox records under `state/<id>.inbox/` (`bin/fm-task-inbox-lib.sh`).
 - Parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`).
 - Per-task claim ledgers, `state/<id>.claims.jsonl` ([`claim-ledger.md`](claim-ledger.md)).
+- Relay guard pass status, action log, probe streaks, and relay logs under `state/relay-guard/` (`bin/fm-relay-guard.sh`).
 - The current captain handle, `state/captain-handle`, that order senders resolve at send time, and this session's handoff record, `state/.order-handoff`, that the restart gate reads (`bin/fm-order.sh`), plus the successor launch record, `state/.handoff-successor`, that the handoff trigger's successor gate reads, and the auto-compact point, `state/compact-point`, that the handoff trigger publishes for outside context readers (`bin/fm-handoff-trigger.sh`).
 
 `config/` holds local gitignored operating choices, including explicit extension bindings under `config/extensions.d/`.
@@ -794,6 +796,12 @@ See [`wedge-alarm.md`](wedge-alarm.md) for away and quiet alert behavior, channe
 
 See [`watchdog.md`](watchdog.md) for the watched homes, symptoms, action ladder, restart proof, hard boundaries, model fallback, status file, and every `config/watchdog` key.
 A muse `restart-command` with no approval-off flag gets `--yolo` added by default; the `restart-command` row in [`watchdog.md`](watchdog.md) owns the exact rule.
+
+## Relay guard (config/relay-guard)
+
+The optional local, gitignored `config/relay-guard` names the network-daemon-bound relays that [`bin/fm-relay-guard.sh`](../bin/fm-relay-guard.sh) owns on one host.
+That script's header owns every key, each verdict, the restart limits, the state files, and the install steps.
+[`docs/examples/relay-guard`](examples/relay-guard) is a starting point to copy.
 
 ## Captain self-nudge (`~/.config/firstmate/captain-nudge.json`)
 
