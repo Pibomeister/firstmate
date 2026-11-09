@@ -1,0 +1,27 @@
+{
+  "schema": "fm-captain-nudge.v1",
+  "host": "m3",
+  "interval_secs": 300,
+  "guard_stale_secs": 660,
+  "idle_min": 20,
+  "cooldown_min": 30,
+  "max_no_progress": 2,
+  "mode": "act",
+  "state_dir": "~/orca/nudge",
+  "jsonl_log": "~/orca/nudge/nudge.jsonl",
+  "beacon_log": "~/orca/beacon/gw-beacon.mirror.log",
+  "captains": [
+    {
+      "id": "m3",
+      "owner": "firstmate",
+      "backend": "orca",
+      "title": "m3",
+      "handle": "",
+      "fm_home": "~/orca/projects/firstmate",
+      "open_work": {
+        "repos": ["GoodwordTeam/goodword", "Pibomeister/goodword-factory"],
+        "queue_file": "~/orca/projects/firstmate/data/backlog.md"
+      }
+    }
+  ]
+}

@@ -111,6 +111,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-procevent.sh`        | Register, supervise, capture, classify, acknowledge, and safely retire built-in or explicitly bound process-event sources |
 | `fm-procevent-remote-reply.sh` | Relay the remote-secondmate status stream through non-destructive process-event deltas |
 | `fm-procevent-quota.sh`  | Wake Firstmate when tracked quota drops below a threshold, is exhausted, or cannot be polled |
+| `fm-procevent-factory.sh` | Optional Mastra Factory (`@mastra/factory`) adapter: wake Firstmate once per new automation-failed item, and preflight whether a project's run sessions would get a usable model |
 | `fm-procevent-when.sh`   | Fire a trust-bound deterministic action at most once when its registered condition holds, then wake with the outcome |
 | `fm-gate-refuse-lib.sh`  | Shared gate-context lifecycle boundary for real and lab homes                      |
 | `fm-watch-arm.sh`        | Verified home-scoped watcher arm wrapper with loud cycle endings and bounded lifecycle ledger |
@@ -174,6 +175,8 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-usage-warner.sh`     | Opt-in macOS threshold warner that notifies once when a configured Claude usage window crosses its percentage |
 | `fm-watchdog.sh`         | Opt-in per-machine assistant outside every session that detects stalled firstmates and second mates and nudges, settles, or restarts them within hard boundaries ([behavior](watchdog.md)) |
 | `fm-watchdog-lib.sh`     | Pure watchdog detectors for dialogs, timer loops, stall proof, guarded text, and the action ledger |
+| `fm-captain-nudge.sh`    | No-AI host-local typer that sends one fixed prompt when a configured captain is idle with open work ([behavior](captain-nudge.md), [formats](captain-nudge-spec.md)) |
+| `fm-captain-nudge-lib.sh` | Decision procedure, JSONL, `NUDGE v1` beacon line, and read-only open-work probes for the captain self-nudge |
 | `fm-compact-point-lib.sh` | Compute a Claude session's percent left before auto-compact, shared by the handoff trigger and the context-burn recorder |
 | `fm-handoff-trigger.sh` | Claude hook that tells a primary session once per context cycle to write its handoff when context left before auto-compact reaches the threshold, and enforces the captain-order and successor restart gates when that session stops |
 | `fm-handoff-launch.sh` | Launch a handing-off Claude primary's successor in a new terminal on the home's backend and record its live pid for the successor restart gate |

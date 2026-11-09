@@ -35,7 +35,8 @@
     "docs/rex-backend.md",
     "docs/t3code-backend.md",
     "docs/tern-backend.md",
-    "docs/remote-secondmates.md"
+    "docs/remote-secondmates.md",
+    "docs/captain-nudge.md"
   ],
   "requiredOwnerPointers": [
     {
@@ -85,6 +86,18 @@
     {
       "source": "docs/watchdog.md",
       "target": "docs/verification/runtime-backends.md"
+    },
+    {
+      "source": "docs/captain-nudge.md",
+      "target": "docs/captain-nudge-spec.md"
+    },
+    {
+      "source": "docs/captain-nudge.md",
+      "target": "docs/configuration.md"
+    },
+    {
+      "source": "docs/captain-nudge-spec.md",
+      "target": "docs/captain-nudge.md"
     },
     {
       "source": "docs/watchdog.md",
@@ -393,12 +406,44 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": "docs/captain-nudge.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/captain-nudge-spec.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/documentation-audiences.md",
       "audience": "maintainer-architecture"
     },
     {
       "path": "docs/extension-bindings.md",
       "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/examples/captain-nudge.md",
+      "audience": "operator-example"
+    },
+    {
+      "path": "docs/examples/captain-nudge/dev01.json",
+      "audience": "operator-example"
+    },
+    {
+      "path": "docs/examples/captain-nudge/goodword-factory.json",
+      "audience": "operator-example"
+    },
+    {
+      "path": "docs/examples/captain-nudge/m3.json",
+      "audience": "operator-example"
+    },
+    {
+      "path": "docs/examples/captain-nudge/m4.json",
+      "audience": "operator-example"
+    },
+    {
+      "path": "docs/examples/captain-nudge/studio.json",
+      "audience": "operator-example"
     },
     {
       "path": "docs/examples/crew-dispatch.json",

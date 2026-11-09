@@ -795,6 +795,44 @@ See [`wedge-alarm.md`](wedge-alarm.md) for away and quiet alert behavior, channe
 See [`watchdog.md`](watchdog.md) for the watched homes, symptoms, action ladder, restart proof, hard boundaries, model fallback, status file, and every `config/watchdog` key.
 A muse `restart-command` with no approval-off flag gets `--yolo` added by default; the `restart-command` row in [`watchdog.md`](watchdog.md) owns the exact rule.
 
+## Captain self-nudge (`~/.config/firstmate/captain-nudge.json`)
+
+Host-local JSON for `bin/fm-captain-nudge.sh`.
+It is not a file under `FM_HOME/config/`: one host can watch several captains that do not share a home.
+See [`captain-nudge.md`](captain-nudge.md) for behaviour, install, and hard limits, [`captain-nudge-spec.md`](captain-nudge-spec.md) for the JSONL and `NUDGE v1` line, and [`docs/examples/captain-nudge.md`](examples/captain-nudge.md) for per-host copies.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `schema` | `fm-captain-nudge.v1` | Config identity. |
+| `host` | required | Short host token written on every event (`m4`, `dev01`, ...). |
+| `interval_secs` | `300` | `run` loop sleep. |
+| `guard_stale_secs` | `660` | Outer guard restarts the loop when `loop.heartbeat` is older than this. |
+| `idle_min` | `20` | Default idle minutes before a nudge. A captain may override. |
+| `cooldown_min` | `30` | Default minutes between nudges for one captain. |
+| `max_no_progress` | `2` | Consecutive no-progress nudges before `nudge_no_progress` and stop. |
+| `mode` | `act` | `dry-run` logs decisions and never types. |
+| `state_dir` | `~/.local/state/firstmate/captain-nudge` | Heartbeat, pid, and per-captain state. |
+| `jsonl_log` | `<state_dir>/nudge.jsonl` | JSONL event log. |
+| `beacon_log` | `<state_dir>/nudge-beacon.log` | Compact `NUDGE v1` stream; point this at the existing host beacon log when a pane already tails it. |
+| `captains[]` | required | One object per captain on this host. |
+
+Each `captains[]` object:
+
+| Key | Meaning |
+| --- | --- |
+| `id` | Stable captain id (`m4main`, `abaco`, `factory`). |
+| `owner` | Event owner (`firstmate`, `abaco`, `casco`, `regulis`, `goodword`). |
+| `backend` | `orca` or `herdr` (tests may use `fixture`). |
+| `title` | Regex/substring match on the Orca terminal or Herdr pane title when `handle`/`pane` is empty. |
+| `handle` | Orca terminal handle, when known. |
+| `pane` | Herdr pane id (`w1:pG`), when known. |
+| `session` | Optional Herdr session name. |
+| `fm_home` | That captain's firstmate home, for `heartbeat.json` idle and commit progress. |
+| `idle_min` / `cooldown_min` / `max_no_progress` | Optional per-captain overrides. |
+| `open_work.repos` | `owner/name` repos probed with read-only `gh pr list --state open`. |
+| `open_work.queue_file` | Local queue; a `- [ ]` item, an `In flight`/`queued` line, or any non-comment body counts as open work. |
+| `open_work.command` | Optional extra probe; only `gh pr list...` or `gh api graphql` without `mutation` is allowed. |
+
 ## Escalation quiet hours (config/escalation)
 
 The optional local, gitignored `config/escalation` file holds escalation settings, one `key=value` per line.
@@ -1201,6 +1239,9 @@ That branch shares no history with code branches, so evidence never enters a pus
 The [`firstmate-coding-guidelines` skill](../.agents/skills/firstmate-coding-guidelines/SKILL.md#no-mistakes-test-configuration) owns why `commands.test` stays absent and targeted validation belongs to the evidence path.
 
 `commands.test` executes code, so no-mistakes honors it only from the default-branch copy of `.no-mistakes.yaml`; a pushed branch cannot change what the gate runs.
+The tracked file also declares `no_ci: true` because GitHub Actions starts no runs for this repository's pull requests, so the CI step accepts an empty check list instead of waiting for checks that never register.
+no-mistakes honors that key only from the default-branch copy, still processes any check that does register, and the declaration should be removed once Actions runs again.
+Firstmate's CI readers classify the resulting no-CI result as no checks, never as green.
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for the firstmate-specific local test policy and entry points.
 
 Portable shard evidence and coverage rules are in [fm-test-portable-shards.md](fm-test-portable-shards.md); [herdr-backend.md](herdr-backend.md#destructive-lab-safety) owns the real-Herdr lane's isolation boundary, and [runtime-backends.md](verification/runtime-backends.md#herdr) owns active evidence.
@@ -2100,9 +2141,12 @@ No qualifying option, or two equally probable qualifying options, produces `ambi
 **Candidate eligibility and evidence**
 
 - Any applicable `exhausted_now` row or known zero bound makes that candidate ineligible, and a known profile-floor shortfall does the same before unrelated quota uncertainty is considered.
-- Cursor candidates are judged by pool, not by the collapsed `all_models` row: auto and composer models by `auto_usage` and `included_usage`, named API models by `api_usage`, and `grok-*` models by the API pool because no Cursor window is confirmed as billing them.
+- Cursor candidates are judged by pool, not by the collapsed `all_models` row: auto and composer models by `auto_usage` and `included_usage`, named API models by `api_usage`, and `grok-4.7-*`, `cursor-grok-4.6-*`, and `cursor-grok-4.5-*` models by `auto_usage` and `included_usage` because Cursor's included pool covers Grok 4.7, Grok 4.6, Grok 4.5, and Composer 2.5.
+  Every other `grok-*` spelling, including unknown future ids, stays on the API pool.
   A real `pool:<name>` row from `quota-axi` overrides the row derived from those windows, an unrecognized model keeps `all_models`, and any model outside the auto pool also needs the 5% Cursor pool floor.
   `quota_applicable` in [`bin/fm-quota-axi-lib.sh`](../bin/fm-quota-axi-lib.sh) owns this mapping.
+- AGY candidates are judged by group, never by a collapsed `all_models` or `all_products` row: `claude-*` and `gpt-oss-*` models by the `claude_gpt` scope, `gemini-*` models by the `gemini` scope, and `gemini-4-argon-*` and `gemini-4-carbon-*` models only by a dedicated argon or carbon scope, else an explicit unknown row, never the shared `gemini` row.
+  `quota_applicable` owns this mapping too.
 - Missing or nonnumeric `spendPriority` evidence is never ranked, and every candidate is printed beside its evidence or the reason it was not rankable, including on ambiguous and approval-gated outcomes that emit no profile.
 - On the opted-in path, duplicate concrete profiles with the same harness, model, and effort inside one rule or the default array are configuration errors rather than ties.
 
@@ -2958,6 +3002,30 @@ A repo update that fast-forwards an in-repo action's bytes in place would otherw
 Every failure path - a mutated spec or action executable, a condition error past its budget, an expired deadline, a failed action, or an earlier fire whose outcome was never captured - produces a terminal captured outcome that wakes firstmate rather than a silent retry, and a durable single-fire marker claimed before the action makes restarts and re-polls unable to fire it twice.
 The adapter automates only the exact deterministic subset: anything needing judgment, and anything destructive, irreversible, or security-sensitive, keeps the ordinary check-fires-then-firstmate-decides flow, and the adapter's header and `--help` own its commands, flags, and outcome document.
 
+**Watch Factory dispatch failures (config/factory)**
+
+The optional `factory` adapter (`bin/fm-procevent-factory.sh`) watches one Mastra Factory (`@mastra/factory`) project's attention inbox and wakes firstmate once per new `automation-failed` item, with the item's error text in the wake.
+It is off unless an operator writes `config/factory` and arms a project, has no default URL, host, port, or project, and reads only routes and fields that stock `@mastra/factory` 0.23.0 serves.
+It reads its endpoint from the optional, private, gitignored `config/factory`, one `key=value` per line:
+
+- `url=` is required and is the Factory's `http` or `https` base URL, limited to a host, an optional port, and plain path segments.
+  Credentials, a query string, a fragment, percent-encoding, `=`, and `;` are refused, because the URL appears on curl's command line and in diagnostics and wakes; a secret written as a plain path segment cannot be told apart, so keep credentials in `token_file=`.
+- `token_file=` is optional and names a private file holding one bearer token line; the token reaches the Factory only as an `Authorization` header, is never stored in the registration or passed on a command line, and curl ignores any host `.curlrc` for these requests.
+
+Arm a watch with `bin/fm-procevent-factory.sh arm --project <factory-project-id>`; `arm` refuses when `config/factory` is missing or invalid.
+Each item gets its own result and wake, and is reported once: an item whose key an earlier captured result of the same source already named never wakes again, and the captured results are that record, so a crash before capture re-detects rather than loses a failure.
+A failure result keeps the watch armed, and the ordinary reconcile restarts it.
+A Factory that stays unreachable for three consecutive reads, refuses the token with HTTP 401 or 403, or answers with any other unexpected status or a malformed body ends the watch with one terminal diagnostic result, so an outage wakes firstmate once instead of on every cycle; re-arm after fixing the cause.
+Each poll follows the attention inbox's pages, up to 200 pages of failure history, and reaching that bound ends the watch with a diagnostic rather than miss a failure.
+A Factory page scans at most 200 failed decisions, archived ones included, so the bound measures a project's whole failure history rather than its open failures.
+Failures already open when the watch is armed are reported too, oldest first and one per wake, and every wake names when its failure occurred so an old failure is not mistaken for a new one.
+The watch reads only open items, so a failure that someone archives in Factory before the next poll never wakes firstmate; Factory archives an item only on an explicit user action, so that person has already seen it.
+
+Before launching unattended runs, `bin/fm-procevent-factory.sh preflight --project <id>` reports read-only whether a newly prepared run session would get a usable model.
+It exits 0 when the project's default model is in the Factory's credentialed model catalog for the project, 1 when it is not or the project has no default model, and 3 when it cannot tell, including a project whose sessions take each owner's own default model.
+That catalog proves a provider credential is present, not that it is still valid, so a preflight pass does not rule out an expired credential.
+The adapter's header and `--help` own its commands, flags, result document, and exit codes.
+
 **Capture and publish results**
 
 This section is the single owner of the runner's operating contract.
@@ -2965,6 +3033,7 @@ This section is the single owner of the runner's operating contract.
 - Process-event commands resolve the state root to its physical directory before validating it and deriving paths, so a home reached through a symlinked ancestor behaves like its physical spelling while an unsafe target directory remains refused.
 - Registration writes one private record under `state/procevent/`, and a completed result plus its immutable adapter identity are captured under `state/procevent-inbox/` before any announcement or event can reference it.
 - By default, results are published as ordinary `check` wakes carrying the source id and committed result sequence through the existing durable wake queue, so the runner adds no second notification control plane.
+- A built-in adapter may add one bounded, control-character-free summary line of its own result to that payload through its `summary` command; an adapter without one keeps the payload unchanged, and the `bin/fm-procevent.sh` header owns the seam.
 - The self-announcing adapter exception and its fail-safe ordering are defined below.
 - The watcher delivers a queued result on its ordinary cycle by reporting it as an actionable `check` wake, so a default or fallback publication reaches firstmate through the same rewake path every other wake uses and never waits for a manual drain.
 - A queued `check` delivery is reported at most once per captured source and sequence while any records for that key remain queued.

@@ -819,20 +819,28 @@ out=$(call_choose --snapshot "$LAB/cursor-pools-included-empty.json" --candidate
 [ "$out" = "cursor claude-opus-5-thinking-high" ] || fail "included_usage bounded the api pool: $out"
 ok "cursor named API models are judged by api_usage alone with a 5% floor"
 
-# The window that bills grok-* models through cursor-agent is unconfirmed, so
-# they take the conservative api pool and never the unrelated grok_bot window.
-for model in grok-4.7-high cursor-grok-4.5-high; do
-  if out=$(call_choose --snapshot "$LAB/cursor-pools-api-empty.json" --candidate "cursor:$model"); then
-    fail "cursor grok model $model borrowed headroom from another pool: $out"
-  fi
+# Cursor's included pool covers Grok 4.7, Grok 4.6, and Grok 4.5, so those
+# models are judged by the auto pool and never the unrelated grok_bot window,
+# even when api_usage is exhausted.
+for model in grok-4.7-high cursor-grok-4.6-medium cursor-grok-4.5-high; do
+  out=$(call_choose --snapshot "$LAB/cursor-pools-api-empty.json" --candidate "cursor:$model")
+  [ "$out" = "cursor $model" ] || fail "cursor grok model $model did not use the included auto pool with api_usage exhausted: $out"
 done
-if out=$(call_choose --snapshot "$CURSOR_POOLS" --candidate cursor:grok-4.7-high); then
-  fail "cursor grok model passed the conservative api pool floor at 2%: $out"
-fi
+out=$(call_choose --snapshot "$CURSOR_POOLS" --candidate cursor:grok-4.7-high)
+[ "$out" = "cursor grok-4.7-high" ] || fail "cursor grok-4.7 model did not use the included auto pool: $out"
 jq '(.providers[0].windows[] | select(.id == "grok_bot").percentRemaining) = 0' "$LAB/cursor-pools-api-6.json" > "$LAB/cursor-pools-grokbot-empty.json"
 out=$(call_choose --snapshot "$LAB/cursor-pools-grokbot-empty.json" --candidate cursor:grok-4.7-high)
 [ "$out" = "cursor grok-4.7-high" ] || fail "unrelated grok_bot window blocked a cursor grok model: $out"
-ok "cursor grok models use the conservative api pool and ignore grok_bot"
+# Unknown future grok-* ids and unlisted spellings stay on the conservative api pool.
+for model in grok-4.8-high grok-9-high cursor-grok-4.7-high grok-4.6-high; do
+  if out=$(call_choose --snapshot "$LAB/cursor-pools-api-empty.json" --candidate "cursor:$model"); then
+    fail "unknown future cursor grok model $model borrowed headroom from another pool: $out"
+  fi
+  if out=$(call_choose --snapshot "$CURSOR_POOLS" --candidate "cursor:$model"); then
+    fail "unknown future cursor grok model $model passed the conservative api pool floor at 2%: $out"
+  fi
+done
+ok "cursor Grok 4.7/4.6/4.5 models use the included auto pool, unknown future grok stays on api, and grok_bot is ignored"
 
 if out=$(call_choose --snapshot "$LAB/cursor-pools-api-empty.json" --candidate cursor:mystery-model-9); then
   fail "unknown cursor model escaped the all_models minimum: $out"
@@ -874,7 +882,9 @@ jq '.providers[0].quotaSemantics.effectiveAvailability += [
   { "scope": "pool:grok", "status": "known", "effectivePercentRemaining": 60, "runway": { "status": "through_reset" } }]' \
   "$LAB/cursor-pools-scopes.json" > "$LAB/cursor-pools-all-scopes.json"
 out=$(call_choose --snapshot "$LAB/cursor-pools-all-scopes.json" --candidate cursor:grok-4.7-high)
-[ "$out" = "cursor grok-4.7-high" ] || fail "explicit pool:grok scope lost to pool:api: $out"
+[ "$out" = "cursor grok-4.7-high" ] || fail "explicit pool scope lost to pool:api for a Grok 4.7 model: $out"
+out=$(call_choose --snapshot "$LAB/cursor-pools-all-scopes.json" --candidate cursor:grok-4.8-high)
+[ "$out" = "cursor grok-4.8-high" ] || fail "explicit pool:grok scope lost to pool:api for an unknown future grok model: $out"
 if out=$(call_choose --snapshot "$LAB/cursor-pools-all-scopes.json" --candidate cursor:gpt-5.6-sol-high); then
   fail "explicit pool:api row escaped the floor: $out"
 fi

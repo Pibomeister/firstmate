@@ -447,13 +447,13 @@ family_for_basename() {
       printf '%s\n' tern
       ;;
     fm-branch-supervision.test.sh|fm-busy-adapter-wiring.test.sh|\
-    fm-busy-state.test.sh|fm-capacity.test.sh|fm-disk-alarm.test.sh|fm-classify-corr-token.test.sh|\
+    fm-busy-state.test.sh|fm-capacity.test.sh|fm-captain-record.test.sh|fm-disk-alarm.test.sh|fm-classify-corr-token.test.sh|\
     fm-claude-stop-autoarm.test.sh|fm-cursor-harness.test.sh|\
     fm-dispatch-resolve.test.sh|\
     fm-extension-binding.test.sh|fm-gitignore-config.test.sh|fm-health-verdict.test.sh|\
     fm-no-mistakes-required.test.sh|fm-peek-remote.test.sh|\
     fm-pending-reply.test.sh|fm-pi-branch-extension.test.sh|\
-    fm-procevent-extension-errors.test.sh|fm-procevent-no-mistakes.test.sh|fm-procevent-quota.test.sh|fm-procevent-when.test.sh|fm-procevent.test.sh|\
+    fm-procevent-extension-errors.test.sh|fm-procevent-factory.test.sh|fm-procevent-no-mistakes.test.sh|fm-procevent-quota.test.sh|fm-procevent-when.test.sh|fm-procevent.test.sh|\
     fm-incident-ledger.test.sh|fm-layer-chain.test.sh|fm-live-gate.test.sh|\
     fm-project-origin.test.sh|fm-public-followup.test.sh|fm-quota-choose.test.sh|\
     fm-remote-entrypoint.test.sh|fm-remote-secondmate-parent-binding.test.sh|\
@@ -772,6 +772,7 @@ tests/fm-calm-claude-mod-plugin.test.sh 55
 tests/fm-calm-claude-mod.test.sh 3279
 tests/fm-calm-pi-extension.test.sh 56376
 tests/fm-calm-pi-queue-retention-live-e2e.test.sh 1364
+tests/fm-captain-nudge.test.sh 8000
 tests/fm-capacity.test.sh 7900
 tests/fm-check-unregister.test.sh 591
 tests/fm-ci-select.test.sh 5000
@@ -1662,6 +1663,9 @@ families_for_changed_path() {
       printf '%s\n' '__script__:fm-handoff-trigger.test.sh'
       printf '%s\n' '__script__:fm-handoff-trigger-live-e2e.test.sh'
       ;;
+    bin/fm-captain-nudge.sh|bin/fm-captain-nudge-lib.sh)
+      printf '%s\n' '__script__:fm-captain-nudge.test.sh'
+      ;;
     bin/fm-watchdog.sh|bin/fm-watchdog-lib.sh)
       printf '%s\n' watcher-wake-lock
       printf '%s\n' "__script__:fm-backend-t3code.test.sh"
@@ -1729,6 +1733,9 @@ families_for_changed_path() {
       ;;
     bin/fm-procevent-quota.sh)
       printf '%s\n' "__script__:fm-procevent-quota.test.sh"
+      ;;
+    bin/fm-procevent-factory.sh)
+      printf '%s\n' "__script__:fm-procevent-factory.test.sh"
       ;;
     bin/fm-quota-choose.sh|bin/fm-claude-seed.manifest)
       printf '%s\n' "__script__:fm-quota-choose.test.sh"
@@ -1833,6 +1840,7 @@ families_for_changed_path() {
       printf '%s\n' __script__:fm-procevent-extension-errors.test.sh
       printf '%s\n' __script__:fm-procevent.test.sh
       printf '%s\n' __script__:fm-procevent-when.test.sh
+      printf '%s\n' __script__:fm-procevent-factory.test.sh
       printf '%s\n' __script__:fm-remote-reply.test.sh
       ;;
     bin/fm-procevent-no-mistakes.sh)

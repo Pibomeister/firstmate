@@ -230,6 +230,7 @@ Firstmate's own skills live in two separate places with different audiences, and
 - [docs/wedge-alarm.md](docs/wedge-alarm.md) - configure the active alert for an away-mode escalation delivery that gets stuck.
 - [docs/usage-warner.md](docs/usage-warner.md) - configure the opt-in local threshold warner for Claude usage windows.
 - [docs/watchdog.md](docs/watchdog.md) - run the opt-in per-machine watchdog that recovers stalled firstmates and second mates.
+- [docs/captain-nudge.md](docs/captain-nudge.md) - install the no-AI host-local captain self-nudge (idle 20 minutes plus open work, one fixed prompt).
 - [docs/tmux-backend.md](docs/tmux-backend.md) - current setup and limits for the tmux reference backend.
 - [docs/herdr-backend.md](docs/herdr-backend.md) - current setup, CI coverage, safety boundaries, and limits for the Herdr backend.
 - [docs/zellij-backend.md](docs/zellij-backend.md) - current setup and limits for the experimental Zellij backend.
