@@ -23,7 +23,7 @@ eda57198865d7df8680e75cb2a263192dcdd24bb	.agents/skills/harness-adapters/referen
 7d5c5a19ba86ea52d4cb45954dc685f97654ec73	.agents/skills/harness-adapters/references/common/primary-hooks.md
 c0ae106b91cba0482d8a814dc11a321169d44a55	.agents/skills/harness-adapters/references/harness/agy.md
 fcde0512b2f64a7f6e78d5be5398a3cff3a5ea89	.agents/skills/harness-adapters/references/harness/claude.md
-40e2e1e91d20103b09de0448aefe718c92cb9cf9	.agents/skills/harness-adapters/references/harness/codex.md
+b1812903967aec67d6049704d48a303580ec2ae2	.agents/skills/harness-adapters/references/harness/codex.md
 1361f1b234171d3b52a0aadf187de06412c02fa6	.agents/skills/harness-adapters/references/harness/commandcode.md
 b7449a292cfa50aea02b9c1d64a7bb8ee9eed4ae	.agents/skills/harness-adapters/references/harness/cortex.md
 e6d20245981397f90c8450d7cc6e7e345052eb2d	.agents/skills/harness-adapters/references/harness/cursor.md
@@ -38,7 +38,7 @@ b73bb8d9eb5c0cbb0cf17040e56664cac01eb4aa	.agents/skills/harness-adapters/referen
 3a84c2f8b441117b531af599808f45f03a48a80a	.agents/skills/harness-adapters/references/harness/pi.md
 a7bfed42381539fe59ce8ad2b5b2b45878578025	.agents/skills/harness-adapters/references/harness/polytoken.md
 58602fc3d31146859c96acc94eb9faa3a02d6e26	.agents/skills/harness-adapters/references/harness/rovo.md
-10085d6c4208a0b5f95e86fb7667f0db6489da9d	.agents/skills/operational-home-layout/SKILL.md
+f358d1d109d15f6876e83404705961ca6f2be522	.agents/skills/operational-home-layout/SKILL.md
 11bf57f318370fe3f480dd373c9d6af4fa75658f	.agents/skills/process-event-sources/SKILL.md
 1080ba6a3df84034a6b17cdfe9948da521082ccf	.agents/skills/project-management/SKILL.md
 eff603d0d9c96f56a66cea717c80e7df1e4b88e5	.agents/skills/quiet/SKILL.md
