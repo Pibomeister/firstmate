@@ -513,6 +513,37 @@ test_out_that_contains_the_home_is_refused() {
   pass "an --out that contains the soak home is refused like one inside it"
 }
 
+test_root_out_is_refused_as_containing_the_home() {
+  local home rc out
+  home=$(make_home root-out/home)
+  for out in / //; do
+    soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null 2>&1; rc=$?
+    assert_equals 2 "$rc" "start refuses --out $out, which contains every home"
+    soak "$T0" sample --home "$home" --out "$out" > /dev/null 2>&1; rc=$?
+    assert_equals 2 "$rc" "sample refuses --out $out, which contains every home"
+  done
+  pass "a root --out is refused as containing the soak home"
+}
+
+test_order_document_at_a_path_suffix_is_kept() {
+  local inner json
+  mkdir -p "$TMP_ROOT/sfx-inner/data"
+  inner=$(cd -P "$TMP_ROOT/sfx-inner" && pwd -P)
+  # The home's data/handoff-a.md ends with the order document's whole path, but
+  # the two are distinct files: the order document must still be kept.
+  finish_fixture "sfx-outer$inner" baseline
+  printf 'order\n' > "$inner/data/handoff-a.md"; fm_touch_epoch $((T0 + 800)) "$inner/data/handoff-a.md"
+  printf 'doc=%s\nat=%s\nowner=1\n' "$inner/data/handoff-a.md" $((T0 + 800)) > "$HOME_DIR/state/.order-handoff"
+  soak $((T0 + 1000)) finish --home "$HOME_DIR" --out "$OUT_DIR" --watchdog-dir "$WD_DIR" --transcript-dir "$TR_DIR" \
+    > /dev/null || fail "finish failed"
+  json=$(jq -c . "$OUT_DIR/soak.json") || fail "soak.json is not JSON after finish"
+  assert_equals $'handoff-a.md\nhandoff-b.md\norder-handoff-a.md' "$(names "$OUT_DIR/handoffs")" \
+    "a distinct order document whose path is a suffix of a data handoff path is kept"
+  assert_equals 'order' "$(cat "$OUT_DIR/handoffs/order-handoff-a.md")" "the kept order document is the order record's file"
+  assert_equals 4 "$(jq -r .handoff_count <<<"$json")" "the distinct order document counts as its own handoff"
+  pass "an order document whose path is a suffix of a data handoff path is kept and counted"
+}
+
 test_sample_and_finish_refuse_another_home() {
   local home other out wd tr rc
   home=$(make_home own)
@@ -670,6 +701,8 @@ fm_test_run \
   test_watchdog_dir_inside_out_is_refused \
   test_finish_counts_a_document_then_a_frozen_restart \
   test_out_that_contains_the_home_is_refused \
+  test_root_out_is_refused_as_containing_the_home \
+  test_order_document_at_a_path_suffix_is_kept \
   test_sample_and_finish_refuse_another_home \
   test_unsafe_session_ids_never_become_paths \
   test_finish_counts_a_lean_handoff_restart \

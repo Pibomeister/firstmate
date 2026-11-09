@@ -119,6 +119,13 @@ canon_file() {  # <file>: the physical absolute path of an existing file
   printf '%s/%s\n' "$dir" "$(basename -- "$1")"
 }
 
+within() {  # <path> <dir>: <path> is <dir> or lies inside it; a root <dir> (/ or //) holds every absolute path
+  local dir=$2
+  while [ "${dir%/}" != "$dir" ]; do dir=${dir%/}; done
+  case "$1/" in "$dir"/*) return 0 ;; esac
+  return 1
+}
+
 in_window() {  # <epoch>
   [ "$1" -ge "$STARTED" ] && [ "$1" -le "$NOW" ]
 }
@@ -174,8 +181,8 @@ prepare_out() {
     parent=$(canon_dir "$(dirname -- "$OUT")") || die 2 "the parent of --out does not exist: $OUT"
     OUT="$parent/$(basename -- "$OUT")"
   fi
-  case "$OUT/" in "$HOME_DIR"/*) die 2 "--out is inside the soak home: $OUT" ;; esac
-  case "$HOME_DIR/" in "$OUT"/*) die 2 "--out contains the soak home: $OUT" ;; esac
+  ! within "$OUT" "$HOME_DIR" || die 2 "--out is inside the soak home: $OUT"
+  ! within "$HOME_DIR" "$OUT" || die 2 "--out contains the soak home: $OUT"
   for p in soak.json load.tsv handoff-events.tsv wake-ledger.tsv transcripts handoffs watchdog watchdog/actions.tsv watchdog/handoffs; do
     [ ! -L "$OUT/$p" ] || die 2 "refusing to write through a symlink: $OUT/$p"
   done
@@ -366,7 +373,7 @@ cmd_finish() {
   parse '--home --out --watchdog-dir --transcript-dir' "$@"
   [ -d "$WATCHDOG_DIR" ] || die 2 "the watchdog directory does not exist: $WATCHDOG_DIR"
   WATCHDOG_DIR=$(canon_dir "$WATCHDOG_DIR") || die 2 "the watchdog directory does not exist: $WATCHDOG_DIR"
-  case "$WATCHDOG_DIR/" in "$OUT"/*) die 2 "--watchdog-dir is --out or inside it: $WATCHDOG_DIR" ;; esac
+  ! within "$WATCHDOG_DIR" "$OUT" || die 2 "--watchdog-dir is --out or inside it: $WATCHDOG_DIR"
   [ -d "$TRANSCRIPT_DIR" ] || die 2 "the transcript directory does not exist: $TRANSCRIPT_DIR"
   [ -f "$OUT/soak.json" ] || die 1 "no soak run is started in $OUT"
   [ "$(jq -r '.finished_at // empty' "$OUT/soak.json")" = '' ] || die 1 "the soak run in $OUT is already finished"
@@ -410,8 +417,8 @@ cmd_finish() {
   doc=
   [ ! -f "$HOME_DIR/state/.order-handoff" ] || doc=$(sed -n 's/^doc=//p' "$HOME_DIR/state/.order-handoff" | head -n 1)
   if [ -n "$doc" ] && [ -f "$doc" ] && canon=$(canon_file "$doc"); then
-    case "$seen" in
-      *"$canon"$'\n'*) ;;
+    case $'\n'"$seen" in
+      *$'\n'"$canon"$'\n'*) ;;
       *) keep_handoff "$doc" "order-$(basename -- "$doc")" ;;
     esac
   fi
