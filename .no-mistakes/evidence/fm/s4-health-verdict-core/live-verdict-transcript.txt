@@ -1,36 +1,58 @@
-## 1. Real publisher: fm-heartbeat.sh --write in a lab home
-publisher exit=0
-{
-  "generated_epoch": 1794171214,
-  "published_epoch": 1794171219,
-  "stale_after_secs": 478
-}
-
-## 2. Verdict on the freshly published record
-verdict=ok reason=fresh heartbeat_age=0 lock=live watcher_age=1 monitor=enabled at=1794171219
-
-## 3. generated_epoch ancient (now-100000), published_epoch fresh -> must stay ok (age from publication)
-verdict=ok reason=fresh heartbeat_age=0 lock=live watcher_age=1 monitor=enabled at=1794171220
-
-## 4. Adversarial: generated_epoch fresh, published_epoch older than bound (478 s) -> must be stale
-verdict=stale reason=heartbeat-stale heartbeat_age=509 lock=live watcher_age=2 monitor=enabled at=1794171221
-
-## 5. Dead publisher: last publication just inside bound (age=bound-5) -> not stale yet
-verdict=ok reason=fresh heartbeat_age=474 lock=live watcher_age=2 monitor=enabled at=1794171221
-   ...publisher stays dead; same record, past bound (age=bound+1) -> stale
-verdict=stale reason=heartbeat-stale heartbeat_age=480 lock=live watcher_age=2 monitor=enabled at=1794171221
-
-## 6. Record with no published_epoch (fresh generated_epoch) -> unread, never ok
-verdict=unknown reason=heartbeat-field-unread heartbeat_age=unknown lock=live watcher_age=2 monitor=enabled at=1794171221
-   published_epoch="soon" (non-number)
-verdict=unknown reason=heartbeat-field-unread heartbeat_age=unknown lock=live watcher_age=3 monitor=enabled at=1794171222
-   published_epoch=null
-verdict=unknown reason=heartbeat-field-unread heartbeat_age=unknown lock=live watcher_age=3 monitor=enabled at=1794171222
-
-## 7. Republish with real publisher -> back to ok
-verdict=ok reason=fresh heartbeat_age=0 lock=live watcher_age=7 monitor=enabled at=1794171226
-written: verdict=ok reason=fresh heartbeat_age=0 lock=live watcher_age=7 monitor=enabled at=1794171226
-
-## 8. Read-only: verdict on a home with no state dir
-verdict=unknown reason=heartbeat-missing,lock-unknown,monitor-missing heartbeat_age=unknown lock=unknown watcher_age=unknown monitor=missing at=1794171226
-home unchanged: yes
+## S1 real publisher with stale-grace-secs=0; real watchdog captain record (none); real monitor-read (uncovered)
+{"published_epoch":1794265263,"stale_after_secs":null}
+status=uncovered at=1794265264
+verdict=unknown reason=stale-bound-unknown,monitor-uncovered heartbeat_age=1 lock=none watcher_age=unknown monitor=uncovered at=1794265264
+## S2 same, monitor-status set enabled (no real unit on this host): idle home -> ok idle
+verdict=unknown reason=stale-bound-unknown heartbeat_age=1 lock=none watcher_age=unknown monitor=enabled at=1794265264
+## S3 open work via real fm-dispatch-log.sh received with lock none -> dead none-open-work
+verdict=dead reason=none-open-work heartbeat_age=2 lock=none watcher_age=unknown monitor=enabled at=1794265265
+## S4 away record .afk with lock none -> dead none-away
+verdict=dead reason=none-away heartbeat_age=2 lock=none watcher_age=unknown monitor=enabled at=1794265265
+## S5 lock live, fresh heartbeat, fresh watcher beat -> ok fresh
+verdict=unknown reason=stale-bound-unknown heartbeat_age=1 lock=live watcher_age=10 monitor=enabled at=1794265275
+## S6 lock dead with fresh heartbeat -> dead lock-dead
+verdict=dead reason=lock-dead heartbeat_age=2 lock=dead watcher_age=11 monitor=enabled at=1794265276
+## S7 lock unconfirmed -> unconfirmed instance-mismatch, lock=mismatch
+verdict=unconfirmed reason=instance-mismatch heartbeat_age=5 lock=mismatch watcher_age=14 monitor=enabled at=1794265279
+## S8 lock live, wait past the 15s bound, no supervisor turn -> stale heartbeat-stale with measured age
+verdict=unknown reason=stale-bound-unknown heartbeat_age=25 lock=live watcher_age=1 monitor=enabled at=1794265299
+## S9 S8 plus monitor missing -> stale naming both
+verdict=unknown reason=stale-bound-unknown,monitor-missing heartbeat_age=30 lock=live watcher_age=5 monitor=missing at=1794265304
+## S10 legacy .last-heartbeat fresh does not rescue stale
+verdict=unknown reason=stale-bound-unknown heartbeat_age=33 lock=live watcher_age=9 monitor=enabled at=1794265307
+## S11 --write writes state/health-verdict atomically
+verdict=unknown reason=stale-bound-unknown heartbeat_age=36 lock=live watcher_age=11 monitor=enabled at=1794265310
+verdict=unknown reason=stale-bound-unknown heartbeat_age=36 lock=live watcher_age=11 monitor=enabled at=1794265310
+leftover tmp files: 0
+## S12 heartbeat file missing with lock live -> unknown heartbeat-missing
+verdict=unknown reason=heartbeat-missing heartbeat_age=unknown lock=live watcher_age=13 monitor=enabled at=1794265312
+## S13 heartbeat missing with lock dead -> dead
+verdict=dead reason=lock-dead heartbeat_age=unknown lock=dead watcher_age=15 monitor=enabled at=1794265314
+## S14 idle home (lock none) past bound -> ok idle
+verdict=unknown reason=stale-bound-unknown heartbeat_age=42 lock=none watcher_age=18 monitor=enabled at=1794265316
+## S15 watcher stale with open work, lock live, fresh heartbeat
+verdict=stale reason=watcher-stale,stale-bound-unknown heartbeat_age=1 lock=live watcher_age=60 monitor=enabled at=1794265327
+## === Round 2: real publisher with FM_HEARTBEAT_CYCLE_SECS=1, grace 0, short run caps ===
+{"published_epoch":1794265355,"stale_after_secs":71}
+## R1 lock live, fresh heartbeat, fresh watcher, monitor enabled -> ok fresh
+verdict=ok reason=fresh heartbeat_age=0 lock=live watcher_age=0 monitor=enabled at=1794265355
+## R2 idle home (none, no open work, no away) fresh -> ok idle
+verdict=ok reason=idle heartbeat_age=2 lock=none watcher_age=3 monitor=enabled at=1794265357
+## waiting past the published bound...
+## R3 lock live, heartbeat past bound, outside a turn -> stale heartbeat-stale with measured age
+verdict=stale reason=heartbeat-stale heartbeat_age=79 lock=live watcher_age=1 monitor=enabled at=1794265434
+## R4 R3 plus monitor missing -> stale naming both
+verdict=stale reason=heartbeat-stale,monitor-missing heartbeat_age=81 lock=live watcher_age=3 monitor=missing at=1794265436
+## R5 R3 with legacy .last-heartbeat freshly touched -> still stale
+verdict=stale reason=heartbeat-stale heartbeat_age=83 lock=live watcher_age=5 monitor=enabled at=1794265438
+## R6 R3 with lock dead -> dead (outranks stale)
+verdict=dead reason=lock-dead heartbeat_age=84 lock=dead watcher_age=6 monitor=enabled at=1794265439
+## R7 R3 with lock unconfirmed -> unconfirmed (outranks stale)
+verdict=unconfirmed reason=instance-mismatch heartbeat_age=85 lock=mismatch watcher_age=7 monitor=enabled at=1794265440
+## R8 idle home past bound -> ok idle
+verdict=ok reason=idle heartbeat_age=86 lock=none watcher_age=8 monitor=enabled at=1794265441
+## R9 none + open work (real dispatch-log received) past bound -> dead
+verdict=dead reason=none-open-work heartbeat_age=86 lock=none watcher_age=9 monitor=enabled at=1794265441
+## R10 --write on stale state
+verdict=stale reason=heartbeat-stale heartbeat_age=87 lock=live watcher_age=9 monitor=enabled at=1794265442
+verdict=stale reason=heartbeat-stale heartbeat_age=87 lock=live watcher_age=9 monitor=enabled at=1794265442
