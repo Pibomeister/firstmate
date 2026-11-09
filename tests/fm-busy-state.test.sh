@@ -562,7 +562,6 @@ test_codex_native_status_and_turn_marker() {
   set_mtime "$state/t1.turn-ended" "$((t0 + 40))"
   out=$(fm_busy_classify herdr s:p codex t1 "$state")
   [ "$out" = "unknown codex-unverified" ] || fail "a turn end tied with the last start must stay unknown, got '$out'"
-  # A relaunch records a newer spawn incarnation, so an older marker is stale.
   set_mtime "$state/t1.turn-ended" "$((t0 + 50))"
   out=$(fm_busy_classify herdr s:p codex t1 "$state")
   [ "$out" = "idle codex-turn-ended" ] || fail "a turn end after every recorded start must classify idle, got '$out'"
@@ -574,6 +573,7 @@ test_codex_native_status_and_turn_marker() {
   set_mtime "$state/t1.turn-ended" "$((t0 + 56))"
   out=$(fm_busy_classify herdr s:p codex t1 "$state")
   [ "$out" = "idle codex-turn-ended" ] || fail "a turn end after the typed start must classify idle, got '$out'"
+  # A relaunch records a newer spawn incarnation, so an older marker is stale.
   printf 'harness=codex\nspawn_gen=s%s.2.2\n' "$((t0 + 60))" > "$state/t1.meta"
   out=$(fm_busy_classify herdr s:p codex t1 "$state")
   [ "$out" = "unknown codex-unverified" ] || fail "a marker older than the current spawn must stay unknown, got '$out'"

@@ -214,9 +214,10 @@ fm_busy_codex_semantic_source() {
 # herdr's native idle AND the task's turn-ended marker (touched by the crew
 # launch's notify= program, bin/fm-spawn.sh) strictly newer than the task's last
 # recorded turn start: the spawn incarnation in its meta spawn_gen=, every steer
-# record in its inbox or handled/, the last doorbell ring, and the task's
-# turn-start marker (touched by bin/fm-send.sh's typed plane, such as a `$skill`
-# send). Native idle alone stays unknown because a long foreground tool call
+# record in its inbox or handled/, the doorbell ladder's .ring-state, and the
+# task's turn-start marker (touched by every doorbell ring in
+# bin/fm-task-inbox-lib.sh, since .ring-state is deleted once the inbox empties,
+# and by bin/fm-send.sh's typed plane, such as a `$skill` send). Native idle alone stays unknown because a long foreground tool call
 # also reads idle. Any other combination, including a missing marker or spawn
 # time, is unknown.
 # ponytail: text a person types straight into the pane is no recorded start, so
