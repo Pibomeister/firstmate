@@ -605,13 +605,17 @@ case "$cmd" in
     case "$interval" in ''|*[!0-9]*|0) die "--interval must be a positive whole number" 2 ;; esac
     load_config
     mkdir -p "$STATE" || die "cannot create $STATE"
-    trap drop_lock EXIT
+    sleep_pid=
+    trap '[ -z "$sleep_pid" ] || kill "$sleep_pid" 2>/dev/null; drop_lock' EXIT
     trap 'exit 143' TERM
     trap 'exit 130' INT
     while :; do
       locked_pass
       [ "$?" -eq 75 ] && printf 'fm-relay-guard: skipped a pass; the lock is held\n' >&2
-      sleep "$interval"
+      sleep "$interval" &
+      sleep_pid=$!
+      wait "$sleep_pid"
+      sleep_pid=
     done
     ;;
   scan)

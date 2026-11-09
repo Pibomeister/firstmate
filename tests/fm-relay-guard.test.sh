@@ -315,6 +315,39 @@ test_rendered_units_run_the_guard() {
   pass "rendered launchd and systemd units keep the guard's run loop alive for this home"
 }
 
+test_run_stops_promptly_during_the_interval() {
+  local pid m3 i code sleeper
+  world
+  std_conf
+  start_daemon
+  FM_HOME="$W/home" bash "$GUARD" run --interval 600 >/dev/null 2>&1 &
+  pid=$!
+  i=0
+  while [ ! -f "$W/home/state/relay-guard/status.tsv" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -f "$W/home/state/relay-guard/status.tsv" ] || fail "run did not complete a first pass"
+  sleep 0.3
+  m3=$(relay_pids m3 7001)
+  [ -n "$m3" ] || fail "run did not spawn the relay"
+  sleeper=$(ps -A -o pid= -o ppid= -o args= | awk -v p="$pid" '$2 == p && $3 ~ /sleep$/ && $4 == "600" { print $1 }')
+  [ -n "$sleeper" ] || fail "run is not waiting on its interval"
+  kill -TERM "$pid"
+  i=0
+  while alive "$pid" && [ "$i" -lt 30 ]; do sleep 0.1; i=$((i + 1)); done
+  if alive "$pid"; then
+    kill -KILL "$pid" 2>/dev/null
+    fail "run did not exit within 3s of TERM during its interval"
+  fi
+  wait "$pid"
+  code=$?
+  assert_equals 143 "$code"
+  alive "$sleeper" && fail "run left its interval sleep behind"
+  assert_equals "$m3" "$(relay_pids m3 7001)"
+  assert_absent "$W/home/state/relay-guard/lock.d"
+  kill "$m3" "$(relay_pids m4 7002)" 2>/dev/null
+  stop_daemon
+  pass "a TERM during the run interval exits at once, reaps the sleep, and leaves relays running"
+}
+
 test_example_config_is_accepted() {
   local out code
   world
@@ -409,6 +442,7 @@ fm_test_run \
   test_backoff_defers_a_second_restart \
   test_daemon_helper_is_not_a_daemon_restart \
   test_rendered_units_run_the_guard \
+  test_run_stops_promptly_during_the_interval \
   test_example_config_is_accepted \
   test_scan_reports_without_acting \
   test_bad_config_is_refused
