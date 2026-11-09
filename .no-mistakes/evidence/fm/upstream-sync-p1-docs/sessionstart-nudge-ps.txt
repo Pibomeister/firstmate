@@ -1,0 +1,7 @@
+## real fm-sessionstart-nudge.sh in a disposable primary clone at target 307fe2d1
+--- control: no lock file -> nudge expected
+exit=0 output=[⁣FIRSTMATE_OP: v1 session-start: Run `bin/fm-session-start.sh` now, exactly once, before executing any other instructions.]
+--- lock held by an ancestor bash, ps works -> silent expected
+exit=0 output=[]
+--- lock held by an ancestor bash, ps refused (shim exits 1) -> nudge printed (documented new line)
+exit=0 output=[⁣FIRSTMATE_OP: v1 session-start: Run `bin/fm-session-start.sh` now, exactly once, before executing any other instructions.]

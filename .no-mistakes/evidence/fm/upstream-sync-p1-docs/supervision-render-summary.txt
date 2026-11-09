@@ -1,0 +1,12 @@
+base claude afk=0 exit=0 lines=      62
+base claude afk=1 exit=0 lines=      62
+base codex afk=0 exit=0 lines=      67
+base codex afk=1 exit=0 lines=      67
+target claude afk=0 exit=0 lines=      62
+target claude afk=1 exit=0 lines=      62
+target codex afk=0 exit=0 lines=      67
+target codex afk=1 exit=0 lines=      67
+claude afk=0: IDENTICAL to base
+claude afk=1: IDENTICAL to base
+codex afk=0: IDENTICAL to base
+codex afk=1: IDENTICAL to base
