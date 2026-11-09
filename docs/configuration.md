@@ -1170,7 +1170,7 @@ That branch shares no history with code branches, so evidence never enters a pus
 The [`firstmate-coding-guidelines` skill](../.agents/skills/firstmate-coding-guidelines/SKILL.md#no-mistakes-test-configuration) owns why `commands.test` stays absent and targeted validation belongs to the evidence path.
 
 `commands.test` executes code, so no-mistakes honors it only from the default-branch copy of `.no-mistakes.yaml`; a pushed branch cannot change what the gate runs.
-It also declares `no_ci: true` because GitHub Actions starts no runs for this repository's pull requests, so the CI step accepts an empty check list instead of waiting for checks that never register.
+The tracked file also declares `no_ci: true` because GitHub Actions starts no runs for this repository's pull requests, so the CI step accepts an empty check list instead of waiting for checks that never register.
 no-mistakes honors that key only from the default-branch copy, still processes any check that does register, and the declaration should be removed once Actions runs again.
 Firstmate's CI readers classify the resulting no-CI result as no checks, never as green.
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for the firstmate-specific local test policy and entry points.
