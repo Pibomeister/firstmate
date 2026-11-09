@@ -195,7 +195,7 @@
 # title-line hold and blocked-by metadata remain visible while indented bodies
 # stay out of the startup digest; the same never-bound-a-held-or-blocked-row
 # rule applies, recognized there from the title line's own hold/blocked-by
-# markers.
+# markers, and the same BACKLOG_DECISION_ROW_MAX / BACKLOG_ROW_MAX cuts apply.
 # Full bodies are targeted follow-up only: `bin/fm-tasks-axi.sh show <id> --full` when
 # compatible tasks-axi is available, or `data/backlog.md` when the file body is
 # truly needed.
