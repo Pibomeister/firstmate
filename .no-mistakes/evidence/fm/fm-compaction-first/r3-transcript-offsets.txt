@@ -1,0 +1,13 @@
+690758	2026-11-09T22:16:20.369Z	attachment	hook_success	Stop	null
+695357	2026-11-09T22:16:24.793Z	system	stop_hook_summary		null
+695831	2026-11-09T22:16:24.831Z	system	turn_duration		null
+696067		file-history-snapshot			null
+696709	2026-11-09T22:18:49.185Z	user			Reply only "ok".
+698367	2026-11-09T22:18:55.920Z	api-request			null
+700050	2026-11-09T22:18:58.309Z	assistant			[{"type":"text","text":"ok"}]
+703793	2026-11-09T22:19:00.461Z	attachment	hook_success	Stop	null
+704558	2026-11-09T22:19:10.297Z	attachment	hook_cancelled	Stop	null
+705443	2026-11-09T22:19:15.078Z	attachment	hook_success	Stop	null
+706075	2026-11-09T22:19:15.080Z	attachment	hook_system_message	Stop	null
+710680	2026-11-09T22:19:19.736Z	system	stop_hook_summary		null
+711154	2026-11-09T22:19:19.742Z	system	turn_duration		null

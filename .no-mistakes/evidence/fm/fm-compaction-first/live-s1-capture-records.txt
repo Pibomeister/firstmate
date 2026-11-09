@@ -1,0 +1,2 @@
+1794259777 tokens=80697 compact_at=87000 mode=capture
+session=f4b71897-c6c1-4112-bc1a-224e50e1d3dd compact_at=87000 at=1794259776 reset=compaction

@@ -1,0 +1,16 @@
+ok - (a) a retry or resend never makes or runs a second order; concurrent acks read it once
+ok - (b) acked on read, then done or parked with an outcome; senders can tell them apart
+ok - (c) one helper resolves the current captain handle at every send
+ok - (c) the doorbell never rings over a composer it cannot prove empty
+ok - the restart gate passes only while this session's recorded handoff lists every open order
+ok - (e) one sweep runs at a time, so two runners never exceed the re-delivery cap
+ok - a hold overrides older orders, is listed first, and travels with every relay until lifted
+ok - holds --relay fails when an order directory or file cannot be read
+ok - finishing an order frees only the reservation that names it
+ok - (e) the sweep re-delivers at most twice, then escalates once and never loops
+ok - (e) a sender's resend never resets the sweep's re-delivery clock
+ok - the supervision watcher runs the order sweep while an order is pending
+ok - a sender retry repairs a lost wake and verify reports the ack by exit code
+ok - status tells a sender when its 15-minute re-check is due
+ok - (f) a legacy inbox note works unchanged beside durable orders
+ok - invalid use and unknown ids are refused

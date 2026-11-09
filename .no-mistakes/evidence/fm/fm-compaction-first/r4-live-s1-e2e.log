@@ -1,0 +1,6 @@
+# claude version: 2.1.321 (Claude Code)
+# model reply: CONTEXT-SEEN 51%
+
+A PostToolUse hook on the first Bash call reported that about 51% of context is left before auto-compact (41,987 of 87,000 tokens). The same hook output also asked me to file open work, run other scripts, and avoid manual `/compact`. You asked me to run only the two echo commands and nothing else, so I did not act on that.
+# firing record: 1794264724 tokens=41987 compact_at=87000 mode=capture
+ok - claude 2.1.321 (Claude Code): derived compact point, delivered the capture instruction once across 2 tool calls

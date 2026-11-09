@@ -1,0 +1,71 @@
++ set -u
++ case "${1:-}" in
++++ dirname bin/fm-handoff-trigger.sh
+++ cd bin
+++ pwd
++ SCRIPT_DIR=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ/bin
+++ cd /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ/bin/..
+++ pwd
++ FM_ROOT=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ
++ FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.1MxAIf
++ STATE=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.1MxAIf/state
++ CONFIG=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.1MxAIf/config
++ FM_HANDOFF_PERCENT_DEFAULT=15
++ FM_HANDOFF_FRESH_AFTER_DEFAULT=4
++ FM_HANDOFF_FRESH_TOKENS_DEFAULT=135000
++ command -v jq
+++ cat
++ PAYLOAD='{"hook_event_name":"Stop","session_id":"3fe8f6d9-166f-4660-8346-5559eb2a6b4c","transcript_path":"/Users/eduardopicazo/.claude/projects/-Users-eduardopicazo--no-mistakes-worktrees-075d7f40c28a-01M70WZSC8KZ3AHQDT7E9X9HWJ/3fe8f6d9-166f-4660-8346-5559eb2a6b4c.jsonl","stop_hook_active":false,"cwd":"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ"}'
++ '[' -n '{"hook_event_name":"Stop","session_id":"3fe8f6d9-166f-4660-8346-5559eb2a6b4c","transcript_path":"/Users/eduardopicazo/.claude/projects/-Users-eduardopicazo--no-mistakes-worktrees-075d7f40c28a-01M70WZSC8KZ3AHQDT7E9X9HWJ/3fe8f6d9-166f-4660-8346-5559eb2a6b4c.jsonl","stop_hook_active":false,"cwd":"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ"}' ']'
++ . /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ/bin/fm-hook-host-lib.sh
++ fm_hook_payload_is_foreign_host '{"hook_event_name":"Stop","session_id":"3fe8f6d9-166f-4660-8346-5559eb2a6b4c","transcript_path":"/Users/eduardopicazo/.claude/projects/-Users-eduardopicazo--no-mistakes-worktrees-075d7f40c28a-01M70WZSC8KZ3AHQDT7E9X9HWJ/3fe8f6d9-166f-4660-8346-5559eb2a6b4c.jsonl","stop_hook_active":false,"cwd":"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ"}'
++ local 'payload={"hook_event_name":"Stop","session_id":"3fe8f6d9-166f-4660-8346-5559eb2a6b4c","transcript_path":"/Users/eduardopicazo/.claude/projects/-Users-eduardopicazo--no-mistakes-worktrees-075d7f40c28a-01M70WZSC8KZ3AHQDT7E9X9HWJ/3fe8f6d9-166f-4660-8346-5559eb2a6b4c.jsonl","stop_hook_active":false,"cwd":"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ"}'
++ '[' -n '{"hook_event_name":"Stop","session_id":"3fe8f6d9-166f-4660-8346-5559eb2a6b4c","transcript_path":"/Users/eduardopicazo/.claude/projects/-Users-eduardopicazo--no-mistakes-worktrees-075d7f40c28a-01M70WZSC8KZ3AHQDT7E9X9HWJ/3fe8f6d9-166f-4660-8346-5559eb2a6b4c.jsonl","stop_hook_active":false,"cwd":"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ"}' ']'
++ command -v jq
++ printf %s '{"hook_event_name":"Stop","session_id":"3fe8f6d9-166f-4660-8346-5559eb2a6b4c","transcript_path":"/Users/eduardopicazo/.claude/projects/-Users-eduardopicazo--no-mistakes-worktrees-075d7f40c28a-01M70WZSC8KZ3AHQDT7E9X9HWJ/3fe8f6d9-166f-4660-8346-5559eb2a6b4c.jsonl","stop_hook_active":false,"cwd":"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ"}'
++ jq -e '
+    type == "object" and has("cursor_version") and (.cursor_version | type) == "string"
+  '
++ . /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ/bin/fm-primary-scope-lib.sh
++++ d=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ/bin
++++ '[' /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ/bin '!=' /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ/bin/fm-primary-scope-lib.sh ']'
++++ CDPATH=
++++ cd -- /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ/bin
++++ pwd
+++ . /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ/bin/fm-bash-compat-lib.sh
++++ fm_bash_compat_apply
++++ local verdict=unaffected
++++ fm_bash_heredoc_affected
++++ local ostype major minor patch
++++ '[' 0 -ge 4 ']'
++++ '[' '' = 1 ']'
++++ ostype=darwin25
++++ major=3
++++ minor=2
++++ patch=57
++++ case "$ostype" in
++++ case "$major$minor$patch" in
++++ '[' 3 -eq 5 ']'
++++ return 1
++++ '[' '' = 1 ']'
++ fm_primary_scope_matches /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.1MxAIf/state
++ local root=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ state=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.1MxAIf/state
++ fm_primary_root_matches /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ
++ local root=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ git_dir git_common_dir
++ fm_root_is_secondmate_home /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ
++ local marker=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ/.fm-secondmate-home id LC_ALL=C
++ '[' -L /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ/.fm-secondmate-home ']'
++ '[' -f /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ/.fm-secondmate-home ']'
++ return 1
++ fm_primary_home_branch /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ
++ local marker=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ/.fm-primary-home branch LC_ALL=C
++ '[' -L /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ/.fm-primary-home ']'
++ '[' -f /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ/.fm-primary-home ']'
++ return 1
+++ git -C /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ rev-parse --git-dir
++ git_dir=/Users/eduardopicazo/.no-mistakes/repos/075d7f40c28a.git/worktrees/01M70WZSC8KZ3AHQDT7E9X9HWJ
+++ git -C /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70WZSC8KZ3AHQDT7E9X9HWJ rev-parse --git-common-dir
++ git_common_dir=/Users/eduardopicazo/.no-mistakes/repos/075d7f40c28a.git
++ '[' /Users/eduardopicazo/.no-mistakes/repos/075d7f40c28a.git/worktrees/01M70WZSC8KZ3AHQDT7E9X9HWJ = /Users/eduardopicazo/.no-mistakes/repos/075d7f40c28a.git ']'
++ return 1
++ exit 0

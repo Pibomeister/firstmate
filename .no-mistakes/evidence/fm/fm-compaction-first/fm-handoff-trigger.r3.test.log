@@ -1,0 +1,24 @@
+ok - a firing is gated until a fresh launch record names a live successor; stale, dead, or request-only blocks (133, 116)
+ok - a second mate's handoff escalates to its parent once and its stop is never successor-gated (133, 116)
+ok - default threshold: silent at 16% left, fires at 15% left before auto-compact
+ok - the default firing is a capture step: durable records, no successor, an ungated stop
+ok - after fresh-start-after compactions the firing is a planned fresh start whose stop is gated
+ok - a heavy first reading after compaction makes the firing a planned fresh start; 0 turns that off
+ok - a legacy marker gates as a handoff, and a fresh launch-failure record releases the stop
+ok - a fresh start ends the idle old session once its successor is live; a new prompt or a capture keeps it
+ok - a deliberate handoff ends the idle old session once a newer live successor is recorded
+ok - threshold is configurable, 0 turns it off, and an unusable value keeps the default
+ok - fires once per cycle across tool calls and prompts, and again for a new session
+ok - a compaction re-arms the trigger for one more firing, and stale usage cannot spend it
+ok - eight concurrent hook calls for one session fire exactly once
+ok - compact point derives from Claude's autoCompactWindow layers and override, and a pin wins
+ok - the settings layers resolve the way Claude resolves them, on canonical model names
+ok - only integers from 100000 to 1000000 count as a settings window
+ok - CLAUDE_CODE_AUTO_COMPACT_WINDOW overrides settings the way Claude reads it
+ok - an unresolvable compact point or unreadable usage stays silent rather than guessing
+ok - inert in a crew worktree, for Cursor payloads, other events, and a home without state; live in the primary
+ok - a firing names every open captain order, and the stop is gated until the handoff lists them
+ok - a recorded handoff gates the stop even with the trigger off, and an ordinary stop is never gated
+ok - a handoff record gates only the session that wrote it, never another session's stop in the same home
+ok - a caller outside any harness reads the captain's handoff, and a second harness session does not
+ok - the tracked Stop hook for the handoff trigger allows 30 seconds

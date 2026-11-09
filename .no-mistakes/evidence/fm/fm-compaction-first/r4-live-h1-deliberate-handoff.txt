@@ -1,0 +1,17 @@
+# r4 live deliberate handoff, LAB=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.d2JooT CODE=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-labcode.JGN4ZF/fm commit=f36cd6f8, claude 2.1.321 (Claude Code)
+== .order-handoff
+cat: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.d2JooT/state/.order-handoff: No such file or directory
+== .handoff-successor
+pid=3313
+handoff=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.d2JooT/data/handoff-lab.md
+== .handoff-launch-failed
+cat: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.d2JooT/state/.handoff-launch-failed: No such file or directory
+== .handoff-end
+at=1794264336 pred=52195 result=ended reason=handoff
+== .lock after successor pickup
+3313
+== predecessor 52195 alive?
+gone
+== successor
+  PID ELAPSED COMM
+ 3313   01:54 claude

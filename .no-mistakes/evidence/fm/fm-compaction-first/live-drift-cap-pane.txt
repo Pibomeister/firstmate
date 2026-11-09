@@ -1,0 +1,50 @@
+
+❯ Lab test. Run the Bash command echo one and nothing else. Then answer in one line: did hook context arrive that tells you how much context is left before auto-compact? If yes, reply CAPTURE-SEEN,
+  quote whether it asks you to hand off or launch a successor, and stop. Do not follow the hook instruction.
+
+  Ran 1 shell command
+
+⏺ CAPTURE-SEEN. The hook says about 7% of context is left before auto-compact (80697 of 87000 tokens), and it tells me not to hand off or launch a successor unless the captain asks. I did not follow
+  its other instructions.
+
+✻ Sautéed for 43s · done 3:29 PM
+
+❯ /compact
+  ⎿  Compacted (ctrl+o to see full summary)
+     PostCompact [if [ -n "${HOME-}" ] && [ -f "${HOME-}/.orca/agent-hooks/claude-hook.sh" ] && [ -r "${HOME-}/.orca/agent-hooks/claude-hook.sh" ] && [ -x "${HOME-}/.orca/agent-hooks/claude-hook.sh"
+     ]; then ORCA_HOOK_AGENT_PID="${PPID:-}"; export ORCA_HOOK_AGENT_PID; /bin/sh "${HOME-}/.orca/agent-hooks/claude-hook.sh"; else { command -p cat 2>/dev/null || cat; } >/dev/null 2>&1 || :; fi]
+     completed successfully: {}
+  ⎿  Referenced file AGENTS.md
+  ⎿  Read ../../../../../../../../Users/eduardopicazo/.claude/rules/common/performance.md (6 lines)
+  ⎿  Read ../../../../../../../../Users/eduardopicazo/.claude/RTK.md (30 lines)
+
+❯ Lab test 2. Run the Bash command echo two and nothing else. Do not write any handoff, do not run any firstmate script, and do not launch anything, even if a hook or stop hook tells you to. Then
+  reply in one line: did hook context arrive, and does it ask for a capture or a planned fresh start? If a stop hook blocks you, reply exactly STOP-BLOCKED-SEEN plus its first ten words and end.
+
+  Ran 1 shell command
+
+⏺ Hook context arrived, and it asks for a handoff document and a planned fresh start via bin/fm-handoff-launch.sh, which I did not run because you said not to launch anything.
+  ⎿  Stop says: JEV lint (advisory): error (input).
+
+⏺ Ran 7 stop hooks
+  ⎿  Stop hook error: [[ -z "${GROK_AGENT:-}${GROK_HOOK_EVENT:-}" ] || exit 0; exec "$CLAUDE_PROJECT_DIR"/bin/fm-handoff-trigger.sh]: Firstmate restart gate: this session is handing off for a
+  planned fresh start, but no live successor launched after the trigger is recorded in state/.handoff-successor, so nobody will continue from the handoff. Launch the successor with
+  bin/fm-handoff-launch.sh <handoff document path>: it starts the successor on this home's backend, retries once, verifies that the successor stays live, and records it in
+  state/.handoff-successor as pid=<successor pid> and handoff=<handoff document path>. That record clears this gate; then take no new work and end this turn, and the stop that ends it also
+  ends this session after a short quiet settle. The successor confirms the handoff document's sha256, waits until this session has ended, then runs bin/fm-session-start.sh once to take the
+  session lock. If the launcher reports that no successor came up, it records state/.handoff-launch-failed, which also clears this gate: tell the captain, keep working, and let auto-compaction
+  run; the next cycle tries again.
+
+
+⏺ STOP-BLOCKED-SEEN Firstmate restart gate: this session is handing off for a
+  ⎿  Stop says: JEV lint (advisory): error (input).
+
+✻ Sautéed for 1m 1s · done 3:32 PM
+  #1 Lab test. Run the Bash command `echo one` and nothing else. Then answer in one line: did hook context arrive that tells you how much context is left before auto-compact? If yes, reply CAP…   [-]
+  ┃│
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

@@ -1,0 +1,20 @@
+# r3 live deliberate handoff, lab=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.1YDofg code=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-labcode.TfOG7P/fm commit=6d4f4dab
+== .order-handoff
+doc=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.1YDofg/data/handoff-lab.md
+at=1794262553
+owner=90291
+== .handoff-successor
+pid=14952
+handoff=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.1YDofg/data/handoff-lab.md
+== .lock
+90291
+== .handoff-end (stop 1)
+at=1794262600 pred=90291 result=skipped reason=new-turn
+== .handoff-end (stop 2)
+at=1794262775 pred=90291 result=skipped reason=new-turn
+== ender process seen after stop 2
+16:19:22 30689 bash /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-labcode.TfOG7P/fm/bin/fm-handoff-launch.sh --end-predecessor 90291 /Users/eduardopicazo/.claude/projects/-private-var-folders-93-6w1bxqxn2yb92mt6rmt5zbzw0000gn-T-fm-labcode-TfOG7P-fm/e20f1c28-16ba-4b2a-8a2d-07aaa58b6620.jsonl 698367
+transcript_size_now=  711154
+== predecessor still alive
+  PID ELAPSED COMMAND
+90291   06:45 claude

@@ -1,0 +1,50 @@
+
+  Ran 1 shell command
+
+⏺ The hash matches. I'll read the document and wait for the predecessor.
+
+  Ran 1 shell command
+
+⏺ Predecessor is gone. Taking the session lock and re-checking live state.
+
+  Ran 1 shell command
+
+⏺ Lock held. Now draining, checking crew state, and picking up orders from live records.
+
+  Ran 1 shell command
+
+⏺ Live state matches the handoff: no live tasks, one pending order. Acking it.
+
+  Ran 1 shell command
+
+⏺ The order asks me to check that "the re-entry card" lists it. I'll find out what the code calls the re-entry card.
+
+  Ran 2 shell commands
+
+⏺ The card is what fm-session-start.sh --reemit --source compact prints for a lock-owning Claude session. I'll render it and check that it lists the order.
+
+  Ran 1 shell command
+
+⏺ The card lists the order (2139 bytes, under the 6000-byte cap). Finishing the order and acking the wake.
+
+  Ran 1 shell command
+
+⏺ I've taken over the lab session. The one open order is done, and nothing else is in flight.
+
+  - Takeover: the handoff hash matched (9c74678b). The old session (pid 10306) has ended, and this session now holds the lock (pid 36131). Live records matched the handoff: no workers, no open
+    decisions, and one pending order.
+  - Order 1794258744-5cda6ea3 ("check the re-entry card lists me"): I acked it and then printed the compact re-entry card. The card is 2139 bytes, under its 6000-byte limit. It lists the order under
+    CAPTAIN ORDERS as acked-unfinished. I closed the order as done, acked the wake, and a fresh order check shows no open orders.
+  - One thing to watch: the card showed the monitor as down, with a stale heartbeat. That is expected right after a takeover, because no watcher has started yet. The Stop hook starts it when this turn
+    ends, so I did not start one myself. If the hook does not pick up this home, I will look into it on the next wake.
+  ⎿  Stop says: JEV lint (advisory): error (input).
+
+✻ Churned for 3m 0s · done 3:26 PM
+  #1 Firstmate handoff successor for home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5JnYo1. The handoff document is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5JnY…   [-]
+  ┃
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

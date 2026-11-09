@@ -1,0 +1,8 @@
+== record types past the ender's byte offset 698367 (what new_turn_since reads):
+assistant		2026-11-09T22:18:58.309Z
+attachment	hook_success	2026-11-09T22:19:00.461Z
+attachment	hook_cancelled	2026-11-09T22:19:10.297Z
+attachment	hook_success	2026-11-09T22:19:15.078Z
+attachment	hook_system_message	2026-11-09T22:19:15.080Z
+system	stop_hook_summary	2026-11-09T22:19:19.736Z
+system	turn_duration	2026-11-09T22:19:19.742Z

@@ -1,0 +1,50 @@
+
+ ▐▛███▛█   Claude Code v2.1.321
+▝▜██████▀  Haiku 5.5 · Claude Ultra
+ ▝▝   ▝▝   /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-labcode.biOYCM/fm
+
+  Fable 5.2 is here for your longest and toughest coding tasks. It draws down usage faster than Opus 5.5. Switch with /model.
+
+❯ Lab test. Run the Bash command echo one and nothing else. Then answer in one line: did hook context arrive that tells you how much context is left before auto-compact? If yes, reply CAPTURE-SEEN,
+  quote whether it asks you to hand off or launch a successor, and stop. Do not follow the hook instruction.
+
+  Ran 1 shell command
+
+⏺ CAPTURE-SEEN. The hook says about 7% of context is left before auto-compact (80697 of 87000 tokens), and it tells me not to hand off or launch a successor unless the captain asks. I did not follow
+  its other instructions.
+
+✻ Sautéed for 43s · done 3:29 PM
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  #1 Lab test. Run the Bash command `echo one` and nothing else. Then answer in one line: did hook context arrive that tells you how much context is left before auto-compact? If yes, reply CAP…   [-]
+  ┃
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
