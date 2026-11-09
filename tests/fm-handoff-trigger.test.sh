@@ -911,6 +911,18 @@ test_deliberate_handoff_stop_ends_the_idle_predecessor() {
   pass "a deliberate handoff ends the idle old session once a newer live successor is recorded"
 }
 
+# The tracked Claude settings give the Stop-hook run of the trigger 30 seconds.
+# Under heavy host load its order, gate, and lock checks took over 10 seconds,
+# Claude cancelled the hook, and the old session took one more turn.
+test_tracked_stop_hook_timeout() {
+  local timeouts
+  timeouts=$(jq -r '[.hooks.Stop[].hooks[]
+    | select(.type == "command" and (.command | endswith("/bin/fm-handoff-trigger.sh")))
+    | .timeout] | map(tostring) | join(",")' "$ROOT/.claude/settings.json")
+  assert_equals 30 "$timeouts" "the tracked Stop hook for the handoff trigger has exactly one entry with a 30 second timeout"
+  pass "the tracked Stop hook for the handoff trigger allows 30 seconds"
+}
+
 test_handoff_gates_the_stop_until_a_recorded_successor_is_alive
 test_secondmate_handoff_escalates_to_its_parent
 test_threshold_default_15
@@ -934,3 +946,4 @@ test_names_open_captain_orders_and_gates_the_stop
 test_a_recorded_handoff_gates_the_stop_without_the_trigger
 test_another_sessions_handoff_never_gates_this_stop
 test_a_caller_outside_any_harness_reads_the_captains_handoff
+test_tracked_stop_hook_timeout
