@@ -1,0 +1,8 @@
+ok - a caller gitattributes eol filter cannot authenticate a rewritten seed file
+ok - suggest excludes the current harness:model and a pinned account's harness
+# all fm-quota-choose tests passed
+rc=
+ok - configuration errors exit 2 before any network call
+ok - codex max profiles never read the installed catalog
+# all fm-dispatch-resolve tests passed
+rc=

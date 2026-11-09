@@ -1,0 +1,40 @@
+### AGY + Cursor candidates in one rule, live quota-axi snapshot
+dispatch-resolve:
+  status: clear
+  model: stub   latency_ms: 1000   tokens: 1/1
+  rule: rule_1 (Included pool work.)   confidence: 0.95
+  probabilities: rule_1=0.95 default=0.05
+  note: rule matched
+  note: 2 eligible candidate(s) unranked (agy)
+  candidate: agy:gemini-3.8-flash-high  provider=agy  scope=gemini  remaining=99%  spendPriority=1.6224  runway=through_reset  -> eligible
+  candidate: agy:gemini-4-argon-high  provider=agy  scope=model:gemini_argon  remaining=-%  spendPriority=-  runway=-  -> eligible, unranked: quota row model:gemini_argon unknown: not rankable: disclosed uncertainty
+  candidate: agy:gemini-4-carbon-high  provider=agy  scope=model:gemini_carbon  remaining=-%  spendPriority=-  runway=-  -> eligible, unranked: quota row model:gemini_carbon unknown: not rankable: disclosed uncertainty
+  candidate: agy:claude-opus-5-5-high  provider=agy  scope=claude_gpt  remaining=1%  spendPriority=-1.4324  runway=projected_exhaustion  -> eligible
+  candidate: agy:gpt-oss-120b  provider=agy  scope=claude_gpt  remaining=1%  spendPriority=-1.4324  runway=projected_exhaustion  -> eligible
+  candidate: cursor:composer-2.5  provider=cursor  scope=pool:auto  remaining=76%  spendPriority=0.76  runway=unknown  -> eligible
+  candidate: cursor:grok-4.7-high  provider=cursor  scope=pool:auto  remaining=76%  spendPriority=0.76  runway=unknown  -> eligible
+  candidate: cursor:cursor-grok-4.6-medium  provider=cursor  scope=pool:auto  remaining=76%  spendPriority=0.76  runway=unknown  -> eligible
+  candidate: cursor:cursor-grok-4.5-high  provider=cursor  scope=pool:auto  remaining=76%  spendPriority=0.76  runway=unknown  -> eligible
+  candidate: cursor:grok-4.8-high  provider=cursor  scope=pool:api  remaining=0%  spendPriority=-  runway=exhausted_now  -> not eligible: runway exhausted_now at pool:api
+  candidate: cursor:claude-opus-5-thinking-high  provider=cursor  scope=pool:api  remaining=0%  spendPriority=-  runway=exhausted_now  -> not eligible: runway exhausted_now at pool:api
+  profile: --harness 'agy' --model 'gemini-3.8-flash-high'
+
+### Argon alone (adversarial: shared gemini row is 99%)
+dispatch-resolve:
+  status: escalate
+  model: stub   latency_ms: 1000   tokens: 1/1
+  rule: rule_1 (Argon.)   confidence: 0.95
+  probabilities: rule_1=0.95 default=0.05
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: agy:gemini-4-argon-high  provider=agy  scope=model:gemini_argon  remaining=-%  spendPriority=-  runway=-  -> eligible, unranked: quota row model:gemini_argon unknown: not rankable: disclosed uncertainty
+
+### Unknown future grok alone
+dispatch-resolve:
+  status: escalate
+  model: stub   latency_ms: 0   tokens: 1/1
+  rule: rule_1 (Grok next.)   confidence: 0.95
+  probabilities: rule_1=0.95 default=0.05
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: cursor:grok-4.8-high  provider=cursor  scope=pool:api  remaining=0%  spendPriority=-  runway=exhausted_now  -> not eligible: runway exhausted_now at pool:api
