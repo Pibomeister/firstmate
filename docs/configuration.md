@@ -2947,7 +2947,8 @@ The optional `factory` adapter (`bin/fm-procevent-factory.sh`) watches one Mastr
 It is off unless an operator writes `config/factory` and arms a project, has no default URL, host, port, or project, and reads only routes and fields that stock `@mastra/factory` 0.23.0 serves.
 It reads its endpoint from the optional, private, gitignored `config/factory`, one `key=value` per line:
 
-- `url=` is required and is the Factory's `http` or `https` base URL; one that embeds credentials or carries a query string or fragment is refused, so no secret can reach a command line, a diagnostic, or a wake through it.
+- `url=` is required and is the Factory's `http` or `https` base URL, limited to a host, an optional port, and plain path segments.
+  Credentials, a query string, a fragment, percent-encoding, `=`, and `;` are refused, because the URL appears on curl's command line and in diagnostics and wakes; a secret written as a plain path segment cannot be told apart, so keep credentials in `token_file=`.
 - `token_file=` is optional and names a private file holding one bearer token line; the token reaches the Factory only as an `Authorization` header, is never stored in the registration or passed on a command line, and curl ignores any host `.curlrc` for these requests.
 
 Arm a watch with `bin/fm-procevent-factory.sh arm --project <factory-project-id>`; `arm` refuses when `config/factory` is missing or invalid.

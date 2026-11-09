@@ -414,23 +414,32 @@ if err=$(factory "$H" arm --project "$PROJECT" 2>&1); then
   fail "arm with credentials in the URL unexpectedly succeeded"
 fi
 assert_contains "$err" "must not embed credentials" "a credential-bearing URL is refused"
-# A base URL gets API paths appended, so a query or fragment there is never
-# usable; it is refused, and the refusal never echoes the secret it carries.
+# A base URL gets API paths appended, so it may hold only a scheme, a host, an
+# optional port and plain path segments. Anything else - a query, a fragment,
+# percent-encoding, or a `=` or `;` that could carry a credential - is refused,
+# and the refusal never echoes the URL.
 for q in '?token=QSECRET1' '?api_key=QSECRET1' '?client_secret=QSECRET1' '?auth=QSECRET1' \
-  '?password=QSECRET1' '/?x=1&Token=QSECRET1' '#access_token=QSECRET1' '?region=QSECRET1'; do
+  '?password=QSECRET1' '/?x=1&Token=QSECRET1' '#access_token=QSECRET1' '?region=QSECRET1' \
+  '/path%3Ftoken=QSECRET1' '%3Ftoken=QSECRET1' '/token=QSECRET1' '/;token=QSECRET1' '/u%40QSECRET1'; do
   printf 'url=https://factory.example%s\n' "$q" > "$H/config/factory"
   if err=$(factory "$H" arm --project "$PROJECT" 2>&1); then
-    fail "arm with a query or fragment ($q) in the URL unexpectedly succeeded"
+    fail "arm with $q in the URL unexpectedly succeeded"
   fi
-  assert_contains "$err" "must not carry a query string or fragment" "a URL with $q is refused"
-  out=$(factory "$H" preflight --project "$PROJECT" 2>&1); rc=$?
+  assert_contains "$err" "plain path segments only" "a URL with $q is refused"
+  pre=$(factory "$H" preflight --project "$PROJECT" 2>&1); rc=$?
   expect_code 3 "$rc" "preflight with $q in the URL cannot determine"
-  assert_contains "$out" "must not carry a query string or fragment" "preflight names the refusal for $q"
+  assert_contains "$pre" "plain path segments only" "preflight names the refusal for $q"
   out=$(factory "$H" poll --project "$PROJECT" --interval 0.05 2>&1)
   assert_contains "$out" "status: error" "poll with $q in the URL stops"
-  case "$err$out" in *QSECRET1*) fail "the URL's query or fragment ($q) was echoed: $err$out" ;; esac
+  case "$err$pre$out" in *QSECRET1*) fail "the URL ($q) was echoed: $err$pre$out" ;; esac
 done
-pass "arm refuses missing config and a URL that embeds credentials, a query or a fragment"
+# A plain base path and a bracketed IPv6 host stay allowed.
+for u in 'https://factory.example/api/v1' 'http://[::1]:9'; do
+  printf 'url=%s\n' "$u" > "$H/config/factory"
+  pre=$(factory "$H" preflight --project "$PROJECT" 2>&1)
+  case "$pre" in *"url="*) fail "a valid base URL ($u) was refused: $pre" ;; esac
+done
+pass "arm refuses missing config and a URL that embeds credentials or anything beyond host, port and path"
 
 # --- preflight ----------------------------------------------------------------------
 H="$TMP_ROOT/h-pre"; new_home "$H"
