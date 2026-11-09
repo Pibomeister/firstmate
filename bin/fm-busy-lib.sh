@@ -1098,9 +1098,9 @@ fm_busy_gemini_launch_prompt_tail() {
 # or fail when this harness has none. Consumes the tail on stdin. Scoped to
 # exactly the harnesses fm-spawn.sh arms with the fm-spawn busy source
 # (claude*, opencode*, pi, pi-signed, omp, gemini) since only those can ever
-# read a pinned "busy fm-spawn" record; codex and standalone Kimi already
-# classify unknown before a record is ever consulted, and opencode ships no
-# trust dialog at all.
+# read a pinned "busy fm-spawn" record; codex (busy, idle or unknown from its
+# native status and turn markers) and standalone Kimi (unknown) classify before
+# a record is ever consulted, and opencode ships no trust dialog at all.
 fm_busy_launch_prompt_parked() {  # <harness>
   case "${1:-}" in
     claude*) fm_busy_claude_launch_prompt_tail ;;
