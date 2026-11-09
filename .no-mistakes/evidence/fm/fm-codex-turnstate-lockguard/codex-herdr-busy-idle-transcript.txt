@@ -1,0 +1,38 @@
+# codex codex-cli 0.166.0 in Herdr lab session fm-lab-cxb-45563-9081 pane w1:p3; launch: codex --dangerously-bypass-approvals-and-sandbox --disable hooks -c notify=[bash,-c,touch <state>/t1.turn-ended]
+# meta:
+#   harness=codex
+#   backend=herdr
+#   window=fm-lab-cxb-45563-9081:w1:p3
+#   kind=ship
+#   worktree=/private/var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T/fm-cxb.Jqw0G0/work
+#   spawn_gen=s1794218184.1.1
+## before any turn
+03:56:38 | herdr agent_status=idle | turn-ended=absent | state: unknown · source: pane · harness state unavailable (unknown codex-unverified)
+## prompt submitted
+03:56:39 | herdr agent_status=idle | turn-ended=absent | state: working · source: pane · harness busy (herdr-native)
+03:56:43 | herdr agent_status=working | turn-ended=absent | state: working · source: pane · harness busy (herdr-native)
+03:56:47 | herdr agent_status=working | turn-ended=absent | state: working · source: pane · harness busy (herdr-native)
+03:56:50 | herdr agent_status=working | turn-ended=absent | state: working · source: pane · harness busy (herdr-native)
+03:56:54 | herdr agent_status=working | turn-ended=1794218210 | state: working · source: pane · harness busy (herdr-native)
+03:56:58 | herdr agent_status=working | turn-ended=1794218210 | state: working · source: pane · harness busy (herdr-native)
+03:57:01 | herdr agent_status=working | turn-ended=1794218210 | state: working · source: pane · harness busy (herdr-native)
+03:57:05 | herdr agent_status=working | turn-ended=1794218210 | state: working · source: pane · harness busy (herdr-native)
+03:57:09 | herdr agent_status=working | turn-ended=1794218210 | state: working · source: pane · harness busy (herdr-native)
+03:57:12 | herdr agent_status=working | turn-ended=1794218210 | state: working · source: pane · harness busy (herdr-native)
+03:57:16 | herdr agent_status=working | turn-ended=1794218210 | state: working · source: pane · harness busy (herdr-native)
+## after turn end
+03:57:19 | herdr agent_status=idle | turn-ended=1794218238 | state: unknown · source: none · no current-state source available
+03:57:23 | herdr agent_status=idle | turn-ended=1794218238 | state: unknown · source: none · no current-state source available
+
+## idle Codex after its turn ended, with a worker status line 'paused: waiting for the upstream API change to land'
+herdr agent_status=idle
+BASE  c24e589c fm-crew-state: state: unknown · source: pane · harness state unavailable (unknown codex-unverified)
+HEAD  bb6468bf fm-crew-state: state: paused · source: status-log · waiting for the upstream API change to land
+BASE  fleet-snapshot current_state: {"id":"t1","current_state":{"state":"unknown","source":"pane","detail":"harness state unavailable (unknown codex-unverified)"}}
+HEAD  fleet-snapshot current_state: {"id":"t1","current_state":{"state":"paused","source":"status-log","detail":"waiting for the upstream API change to land"}}
+
+## adversarial: a steering record written after the last turn end (real fm_task_inbox_write), Codex still natively idle
+steer record: 001.msg
+03:58:09 | herdr=idle | crew-state: state: unknown · source: pane · harness state unavailable (unknown codex-unverified)
+## deliver it as a real Codex turn and wait for the turn to end
+03:58:20 | herdr=idle | crew-state: state: paused · source: status-log · waiting for the upstream API change to land

@@ -1,0 +1,25 @@
+=== BASE-c24e589c: primary = codex 0.166.0 TUI --remote to lab app-server daemon (managed 0.167.0), cwd plain checkout of BASE-c24e589c, FM_HOME fresh lab home
+--- pane after the turn (Stop hook output shown as '↳ Hook')
+› Disposable test lab. Run exactly one shell command, `bin/fm-lock.sh; bin/fm-lock.sh status`, then reply with its raw output and end your turn. Do nothing else.
+• Ran bin/fm-lock.sh; bin/fm-lock.sh status
+  └ lock acquired: harness pid 66835
+    lock: held by live harness pid 66835
+• lock acquired: harness pid 66835
+  lock: held by live harness pid 66835
+↳ Hook · FIRSTMATE SUPERVISION IS OWNED BY ANOTHER LIVE SESSION: this read-only session cannot and should not arm or repair the watcher (lock owner pid 66835). Allowing this turn to end safely; the owning session must
+restore supervision.
+  Worked for 22s • 4:21 AM
+› Ask Codex to do anything
+  GPT-6-Sol medium · main · Context 97% left · 68.7K in · 268 out · weekly 10% left
+  ← for agents · ? for shortcuts                                                                                                                                                                  ⚠ 4 warnings · f2 to view
+--- state/.lock and .lock-session
+66835
+01a1bfd3-ab54-7d41-a4b1-89931c557ddd
+anchor_pid=66835
+anchor_start=1794219703.359533
+codex_daemon_pid=10425
+codex_daemon_start=1794219681.842065
+lock line-1 pid 66835: exited
+fm-lock.sh status: lock: held by live harness pid 66835
+--- watcher present after Stop:
+no watcher lock
