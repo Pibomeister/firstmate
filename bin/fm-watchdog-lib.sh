@@ -68,9 +68,6 @@
 #   fm_wd_dialog_text <screen>
 #       Prints the text a reserved check and the judge read, one line: the rows
 #       below a rule above the options, else all the last rows.
-#   fm_wd_footer_percent <screen>
-#       Prints N from a Claude `N% until auto-compact` or
-#       `until auto-compact: N%` footer in the last rows.
 #   fm_wd_transcript_events <transcript.jsonl> [lines]
 #       Prints `T\t<epoch>\t<text>` for assistant text and `U\t<epoch>\t<tool>\t<arg>`
 #       for assistant tool calls from the transcript tail.
@@ -360,13 +357,6 @@ fm_wd_dialog_options() {  # <screen>
 
 fm_wd_dialog_text() {  # <screen>
   _fm_wd_dialog_rows "$1" all | tr -s ' \t' '  ' | tr '\n' ' '
-}
-
-fm_wd_footer_percent() {  # <screen>
-  _fm_wd_tail_rows "$1" 10 | LC_ALL=C sed -nE \
-    -e 's/.*[^0-9]([0-9]{1,3})% until auto-compact.*/\1/p' \
-    -e 's/^([0-9]{1,3})% until auto-compact.*/\1/p' \
-    -e 's/.*until auto-compact:[ ]*([0-9]{1,3})%.*/\1/p' | tail -n 1
 }
 
 fm_wd_transcript_events() {  # <transcript.jsonl> [lines]

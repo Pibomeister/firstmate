@@ -10,8 +10,10 @@
 #
 # The recorder never writes inside the soak home <home>; it writes only under
 # --out, and refuses an --out that resolves inside <home> or contains it, and a
-# symlink at any path it writes under --out. sample and finish refuse a --home
-# other than the home soak.json records. Every time is fm_now
+# symlink or hard-linked file at any path it writes under --out, or a
+# non-regular file where it copies one. sample and finish refuse a --home
+# other than the home soak.json records (another spelling of the same
+# directory is the same home, and the recorded spelling is used). Every time is fm_now
 # (bin/fm-clock-lib.sh).
 #
 # readable-harnesses prints one harness per line whose transcripts the
@@ -27,8 +29,8 @@
 # The last hour is [epoch-3600, epoch). live_workers counts the task ids with a
 # <home>/state/<id>.meta whose bin/fm-crew-state.sh line, read with
 # FM_HOME=<home> FM_CREW_STATE_NO_FORGE=1 and FM_STATE_OVERRIDE set to a
-# private temporary copy of <home>/state made once per sample or finish and
-# removed on exit, is `state: working` or `state: parked`.
+# private temporary copy of <home>/state made under --out (with TMPDIR pointed
+# inside it) once per sample or finish and removed on exit, is `state: working` or `state: parked`.
 # wake_acks_last_hour is the count value of `bin/fm-wake-ledger.sh count` over
 # the hour. status_lines_last_hour counts the lines of
 # <home>/state/*.status whose first `[at=<epoch>]` falls in the hour.
@@ -52,7 +54,8 @@
 #                   <home>/state/.order-handoff, as order-<name> unless it is
 #                   one of the data/ documents already kept.
 #   watchdog/       actions.tsv: the <watchdog-dir>/actions.tsv rows whose home
-#                   is <home> and whose epoch is in the window
+#                   column names <home> (any spelling of the same directory)
+#                   and whose epoch is in the window
 #                   (bin/fm-watchdog.sh owns its columns); handoffs/: the
 #                   <watchdog-dir>/handoffs/ files modified in the window.
 #   wake-ledger.tsv the window's wake-ledger rows (bin/fm-wake-ledger.sh rows).
@@ -64,7 +67,8 @@
 #                   for which a handoff-document modification event
 #                   falls in that restart's episode: from the latest kept
 #                   `handoff-request` `nudge` `pending` row before its first
-#                   `restart` row, else the previous restart's `done` row, else
+#                   `restart` row, else the second after the previous
+#                   restart's `done` row, else
 #                   started_at (whichever is latest), to its `done` row. A
 #                   restart with any other symptom always counts one. The
 #                   watchdog's own handoff files are not counted.
@@ -109,14 +113,32 @@ mtime() {
   fi
 }
 
-canon_dir() {  # <dir>: the physical absolute path of an existing directory
-  (CDPATH='' cd -P -- "$1" 2>/dev/null && pwd -P)
+canon_dir() {  # <dir>: the physical absolute path of an existing directory, one leading slash
+  local d
+  d=$(CDPATH='' cd -P -- "$1" 2>/dev/null && pwd -P) || return 1
+  while [ "${d#//}" != "$d" ]; do d=${d#/}; done   # bash keeps a leading // from pwd -P
+  printf '%s\n' "$d"
 }
 
 canon_file() {  # <file>: the physical absolute path of an existing file
   local dir
   dir=$(canon_dir "$(dirname -- "$1")") || return 1
-  printf '%s/%s\n' "$dir" "$(basename -- "$1")"
+  printf '%s/%s\n' "${dir%/}" "$(basename -- "$1")"
+}
+
+# within <path> <dir>: <path> is <dir> or lies inside it. Decided by directory
+# identity (-ef) against each existing ancestor of <path>, never by comparing
+# spellings, so a root <dir>, a // spelling and a case alias on a
+# case-insensitive filesystem are all the same tree.
+within() {
+  local p=$1 up
+  [ -d "$2" ] || return 1
+  while :; do
+    if [ -e "$p" ] && [ "$p" -ef "$2" ]; then return 0; fi
+    up=$(dirname -- "$p")
+    [ "$up" != "$p" ] || return 1
+    p=$up
+  done
 }
 
 in_window() {  # <epoch>
@@ -163,8 +185,16 @@ parse() {  # <allowed-flags> <args...>
   case " $allowed " in *' --out '*) prepare_out ;; esac
 }
 
+# refuse_link <path>: refuse a symlink, or a regular file with more than one
+# hard link, where the recorder writes, so no write under --out can reach a
+# file that also lives elsewhere, such as in the home or the watchdog ledger.
+refuse_link() {
+  [ ! -L "$1" ] || die 2 "refusing to write through a symlink: $1"
+  [ ! -f "$1" ] || [ -z "$(find "$1" -prune -links +1)" ] || die 2 "refusing to write through a hard link: $1"
+}
+
 # prepare_out: resolve --out to its physical absolute path, refuse one inside
-# the soak home, and refuse any symlink where the recorder writes, so no write
+# the soak home, and refuse any link where the recorder writes, so no write
 # can follow a link into the home.
 prepare_out() {
   local parent p
@@ -172,20 +202,37 @@ prepare_out() {
     OUT=$(canon_dir "$OUT") || die 2 "--out is not a directory: $OUT"
   else
     parent=$(canon_dir "$(dirname -- "$OUT")") || die 2 "the parent of --out does not exist: $OUT"
-    OUT="$parent/$(basename -- "$OUT")"
+    OUT="${parent%/}/$(basename -- "$OUT")"
   fi
-  case "$OUT/" in "$HOME_DIR"/*) die 2 "--out is inside the soak home: $OUT" ;; esac
-  case "$HOME_DIR/" in "$OUT"/*) die 2 "--out contains the soak home: $OUT" ;; esac
+  ! within "$OUT" "$HOME_DIR" || die 2 "--out is inside the soak home: $OUT"
+  ! within "$HOME_DIR" "$OUT" || die 2 "--out contains the soak home: $OUT"
   for p in soak.json load.tsv handoff-events.tsv wake-ledger.tsv transcripts handoffs watchdog watchdog/actions.tsv watchdog/handoffs; do
-    [ ! -L "$OUT/$p" ] || die 2 "refusing to write through a symlink: $OUT/$p"
+    refuse_link "$OUT/$p"
   done
 }
 
 # require_run_home: refuse a --home other than the one the started run in
-# --out records, before anything is written.
+# --out records, before anything is written. The same directory under another
+# spelling, such as a case alias, is the same home, and every later path uses
+# the spelling recorded at start.
 require_run_home() {
-  [ "$(jq -r .home "$OUT/soak.json")" = "$HOME_DIR" ] \
+  local recorded
+  recorded=$(jq -r .home "$OUT/soak.json")
+  [ "$recorded" = "$HOME_DIR" ] || { [ -d "$recorded" ] && [ "$recorded" -ef "$HOME_DIR" ]; } \
     || die 2 "--home is not the home this soak run started on: $HOME_DIR"
+  HOME_DIR=$recorded
+}
+
+# home_spellings <actions.tsv>: each distinct home column of a watchdog ledger
+# that names the soak home: the canonical path, the --home as given, or any
+# other spelling of the same directory.
+home_spellings() {
+  local h
+  cut -f 3 -- "$1" | LC_ALL=C sort -u | while IFS= read -r h; do
+    if [ "$h" = "$HOME_DIR" ] || [ "$h" = "$HOME_GIVEN" ] || { [ -d "$h" ] && [ "$h" -ef "$HOME_DIR" ]; }; then
+      printf '%s\n' "$h"
+    fi
+  done
 }
 
 # safe_session_id <id>: a session id that is safe as one path component.
@@ -194,9 +241,11 @@ safe_session_id() {
 }
 
 # keep <source> <destination>: copy one input under --out, never through a
-# symlink at the destination.
+# symlink or a hard link at the destination, and never into an existing
+# destination that is not a regular file, where cp would write a path inside it.
 keep() {
-  [ ! -L "$2" ] || die 2 "refusing to write through a symlink: $2"
+  refuse_link "$2"
+  [ ! -e "$2" ] || [ -f "$2" ] || die 2 "refusing to copy onto a path that is not a regular file: $2"
   cp -p "$1" "$2"
 }
 
@@ -220,23 +269,62 @@ run_inventory() {
 
 STATE_SNAPSHOT=''
 
-# snapshot_state: copy <home>/state once into a private temporary directory,
-# removed on exit. Classifying a task can rewrite files under its state
-# directory (a stale Muse session cache is deleted and rewritten), so
+# snapshot_state: copy <home>/state once into a private temporary directory
+# under --out, removed on exit, and point TMPDIR inside it, so neither this
+# copy nor any temporary file the recorder or its children make can land in the
+# home through an inherited TMPDIR. Classifying a task can rewrite files under
+# its state directory (a stale Muse session cache is deleted and rewritten), so
 # crew_state reads this copy and the home is never written.
 snapshot_state() {
   [ -z "$STATE_SNAPSHOT" ] || return 0
-  STATE_SNAPSHOT=$(mktemp -d "${TMPDIR:-/tmp}/fm-soak-state.XXXXXX") \
+  STATE_SNAPSHOT=$(mktemp -d "$OUT/.fm-soak-state.XXXXXX") \
     || die 1 "cannot create a private copy of the home state"
   trap 'rm -rf "$STATE_SNAPSHOT"' EXIT
-  mkdir "$STATE_SNAPSHOT/state" \
+  mkdir "$STATE_SNAPSHOT/state" "$STATE_SNAPSHOT/tmp" \
     || die 1 "cannot create a private copy of the home state"
+  TMPDIR="$STATE_SNAPSHOT/tmp"
+  export TMPDIR
   if [ -d "$HOME_DIR/state" ]; then
     : > "$STATE_SNAPSHOT/copy-started" \
       || die 1 "cannot create a private copy of the home state"
     cp -RP "$HOME_DIR/state/." "$STATE_SNAPSHOT/state/" 2>/dev/null \
       || state_copy_complete \
       || die 1 "cannot copy the home state: $HOME_DIR/state"
+    isolate_links
+  fi
+}
+
+# isolate_links: make every symlink in the private copy end inside the copy,
+# so nothing done through one, such as stale-lock recovery, reaches the soak
+# home or anything else outside --out. A link that names a sibling of its
+# original, by a bare name or by an absolute path into the same directory as a
+# Firstmate lock link names its owner directory, is pointed at the copied
+# sibling, itself a copied entry; every other link, including a chain through
+# a path outside the copy, is pointed at a missing path inside the copy, so it
+# still reads as a link but leads nowhere.
+isolate_links() {
+  local l t orig
+  while IFS= read -r l; do
+    t=$(readlink "$l") || continue
+    orig="$HOME_DIR/state/${l#"$STATE_SNAPSHOT/state/"}"
+    case "$t" in
+      ''|.|..|*/.|*/..) ;;
+      /*)
+        if [ -d "$(dirname -- "$t")" ] && [ "$(dirname -- "$t")" -ef "$(dirname -- "$orig")" ]; then
+          relink "$l" "$(dirname -- "$l")/$(basename -- "$t")"
+          continue
+        fi ;;
+      */*) ;;
+      *) continue ;;
+    esac
+    relink "$l" "$STATE_SNAPSHOT/isolated-link"
+  done < <(find "$STATE_SNAPSHOT/state" -type l)
+}
+
+# relink <link> <target>: replace one symlink in the private copy.
+relink() {
+  if ! rm -f "$1" || ! ln -s "$2" "$1"; then
+    die 1 "cannot isolate a link in the private copy: $1"
   fi
 }
 
@@ -305,16 +393,24 @@ cmd_start() {
       harnesses: $harnesses, session_ids: []}' > "$OUT/soak.json"
 }
 
+# order_doc: the existing document the order record names, or nothing.
+order_doc() {
+  local doc=
+  [ ! -f "$HOME_DIR/state/.order-handoff" ] || doc=$(sed -n 's/^doc=//p' "$HOME_DIR/state/.order-handoff" | head -n 1)
+  [ -z "$doc" ] || [ ! -f "$doc" ] || printf '%s\n' "$doc"
+}
+
 # handoff_docs: the soak home's handoff documents, one path per line: each
 # data/handoff-*.md, then the document the order record names.
 handoff_docs() {
-  local doc
+  local doc order
+  order=$(order_doc)
   for doc in "$HOME_DIR"/data/handoff-*.md; do
-    [ -f "$doc" ] && printf '%s\n' "$doc"
+    [ -f "$doc" ] || continue
+    printf '%s\n' "$doc"
+    [ -z "$order" ] || [ ! "$order" -ef "$doc" ] || order=
   done
-  doc=
-  [ ! -f "$HOME_DIR/state/.order-handoff" ] || doc=$(sed -n 's/^doc=//p' "$HOME_DIR/state/.order-handoff" | head -n 1)
-  [ -z "$doc" ] || [ ! -f "$doc" ] || printf '%s\n' "$doc"
+  [ -z "$order" ] || printf '%s\n' "$order"
 }
 
 # handoff_events: one `<mtime>\t<physical path>` line per handoff document as
@@ -362,11 +458,11 @@ keep_handoff() {
 }
 
 cmd_finish() {
-  local doc canon id t sessions ids seen='' events restarts docs total violations h named
+  local doc order id t sessions ids events restarts docs total violations h named
   parse '--home --out --watchdog-dir --transcript-dir' "$@"
   [ -d "$WATCHDOG_DIR" ] || die 2 "the watchdog directory does not exist: $WATCHDOG_DIR"
   WATCHDOG_DIR=$(canon_dir "$WATCHDOG_DIR") || die 2 "the watchdog directory does not exist: $WATCHDOG_DIR"
-  case "$WATCHDOG_DIR/" in "$OUT"/*) die 2 "--watchdog-dir is --out or inside it: $WATCHDOG_DIR" ;; esac
+  ! within "$WATCHDOG_DIR" "$OUT" || die 2 "--watchdog-dir is --out or inside it: $WATCHDOG_DIR"
   [ -d "$TRANSCRIPT_DIR" ] || die 2 "the transcript directory does not exist: $TRANSCRIPT_DIR"
   [ -f "$OUT/soak.json" ] || die 1 "no soak run is started in $OUT"
   [ "$(jq -r '.finished_at // empty' "$OUT/soak.json")" = '' ] || die 1 "the soak run in $OUT is already finished"
@@ -400,21 +496,14 @@ cmd_finish() {
   done <<<"$sessions"
 
   # Handoff documents: kept once by physical path, counted by modification event.
+  order=$(order_doc)
   for doc in "$HOME_DIR"/data/handoff-*.md; do
     [ -f "$doc" ] || continue
     in_window "$(mtime "$doc")" || continue
-    canon=$(canon_file "$doc") || continue
     keep_handoff "$doc" "$(basename -- "$doc")"
-    seen="$seen$canon"$'\n'
+    [ -z "$order" ] || [ ! "$order" -ef "$doc" ] || order=
   done
-  doc=
-  [ ! -f "$HOME_DIR/state/.order-handoff" ] || doc=$(sed -n 's/^doc=//p' "$HOME_DIR/state/.order-handoff" | head -n 1)
-  if [ -n "$doc" ] && [ -f "$doc" ] && canon=$(canon_file "$doc"); then
-    case "$seen" in
-      *"$canon"$'\n'*) ;;
-      *) keep_handoff "$doc" "order-$(basename -- "$doc")" ;;
-    esac
-  fi
+  [ -z "$order" ] || keep_handoff "$order" "order-$(basename -- "$order")"
   events=$( { [ ! -f "$OUT/handoff-events.tsv" ] || cat "$OUT/handoff-events.tsv"; handoff_events; } |
     awk -F '\t' -v s="$STARTED" -v n="$NOW" '$1 ~ /^[0-9]+$/ && $1 + 0 >= s + 0 && $1 + 0 <= n + 0' | LC_ALL=C sort -u)
   docs=$(printf '%s' "$events" | awk 'END { print NR }')
@@ -423,9 +512,10 @@ cmd_finish() {
   mkdir -p "$OUT/watchdog"
   : > "$OUT/watchdog/actions.tsv"
   if [ -f "$WATCHDOG_DIR/actions.tsv" ]; then
-    awk -F '\t' -v h="$HOME_DIR" -v given="$HOME_GIVEN" -v s="$STARTED" -v n="$NOW" '
-      ($3 == h || $3 == given) && $1 ~ /^[0-9]+$/ && $1 + 0 >= s + 0 && $1 + 0 <= n + 0
-    ' "$WATCHDOG_DIR/actions.tsv" > "$OUT/watchdog/actions.tsv"
+    awk -F '\t' -v s="$STARTED" -v n="$NOW" '
+      FILENAME == ARGV[1] { home[$0]; next }
+      ($3 in home) && $1 ~ /^[0-9]+$/ && $1 + 0 >= s + 0 && $1 + 0 <= n + 0
+    ' <(home_spellings "$WATCHDOG_DIR/actions.tsv") "$WATCHDOG_DIR/actions.tsv" > "$OUT/watchdog/actions.tsv"
   fi
   for doc in "$WATCHDOG_DIR"/handoffs/*; do
     [ -f "$doc" ] || continue
@@ -439,7 +529,7 @@ cmd_finish() {
     $6 != "restart" || ($7 != "pending" && $7 != "done") || ($2 in done) { next }
     !($2 in from) {
       from[$2] = s + 0
-      if (prev > from[$2]) from[$2] = prev
+      if (prev && prev + 1 > from[$2]) from[$2] = prev + 1   # the second a restart finished belongs to it
       if (nudge > from[$2]) from[$2] = nudge
     }
     $7 == "done" {

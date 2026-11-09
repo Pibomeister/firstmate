@@ -59,6 +59,8 @@ assert_home_unchanged() {  # <home> <before> <label>
 # branch checked out in its working directory, so each task copy gets its own
 # run; tmux reports a quiet pane, and lists the windows named in
 # FM_FAKE_TMUX_WINDOWS, so a task window only exists where a test names it.
+# When FM_FAKE_TMUX_HOOK names a script, tmux runs it first, so a test can act
+# during task classification.
 make_fakebin() {
   local fb="$TMP_ROOT/fakebin"
   mkdir -p "$fb"
@@ -79,6 +81,7 @@ exit 0
 SH
   cat > "$fb/tmux" <<'SH'
 #!/usr/bin/env bash
+[ -z "${FM_FAKE_TMUX_HOOK:-}" ] || bash "$FM_FAKE_TMUX_HOOK"
 case "${1:-}" in
   display-message) printf '%%1\n' ;;
   capture-pane) printf 'all quiet\n> \n' ;;
@@ -513,6 +516,213 @@ test_out_that_contains_the_home_is_refused() {
   pass "an --out that contains the soak home is refused like one inside it"
 }
 
+test_root_out_is_refused_as_containing_the_home() {
+  local home rc out
+  home=$(make_home root-out/home)
+  for out in / //; do
+    soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null 2>&1; rc=$?
+    assert_equals 2 "$rc" "start refuses --out $out, which contains every home"
+    soak "$T0" sample --home "$home" --out "$out" > /dev/null 2>&1; rc=$?
+    assert_equals 2 "$rc" "sample refuses --out $out, which contains every home"
+  done
+  pass "a root --out is refused as containing the soak home"
+}
+
+# bash keeps a leading // from `pwd -P`, so //<dir> and /<dir> must still be
+# treated as one tree by every containment check and by the home check.
+test_double_slash_spelling_is_one_tree() {
+  local parent home before rc out tr rows
+  mkdir -p "$TMP_ROOT/dslash"
+  parent="$TMP_ROOT/dslash"
+  home=$(make_home dslash/home)
+  before=$(snapshot "$home")
+  soak "$T0" start --home "$home" --out "/$parent" --label baseline --harness claude > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "start refuses --out //<dir> when <dir> contains the soak home"
+  [ ! -e "$parent/soak.json" ] || fail "a refused start wrote soak.json above the home"
+  assert_home_unchanged "$home" "$before" "a // spelling of an --out that contains the home"
+  out="$TMP_ROOT/dslash-out"; tr="$TMP_ROOT/dslash-transcripts"
+  mkdir -p "$tr"
+  soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  soak $((T0 + 100)) sample --home "/$home" --out "$out" > /dev/null 2>&1; rc=$?
+  assert_equals 0 "$rc" "sample accepts the // spelling of the started soak home"
+  mkdir -p "$out/watchdog"
+  printf '%s\trestart\t%s\tw1\tdone\n' $((T0 + 10)) "$home" > "$out/watchdog/actions.tsv"
+  rows=$(cat "$out/watchdog/actions.tsv")
+  soak $((T0 + 1000)) finish --home "$home" --out "/$out" --watchdog-dir "$out/watchdog" --transcript-dir "$tr" > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "finish refuses a --watchdog-dir inside a // spelling of --out"
+  soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "/$out/watchdog" --transcript-dir "$tr" > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "finish refuses a // spelling of a --watchdog-dir inside --out"
+  assert_equals "$rows" "$(cat "$out/watchdog/actions.tsv")" "a refused finish left the staged watchdog rows intact"
+  pass "a // spelling of a directory is the same tree to every containment check"
+}
+
+# On a case-insensitive filesystem a differently cased spelling names the same
+# directory, and `pwd -P` keeps the case as typed; containment is decided by
+# directory identity, so the alias is still refused.
+test_case_alias_spelling_is_one_tree() {
+  local base home alias_home out alias_out tr rc rows before
+  mkdir -p "$TMP_ROOT/CaseProbe"
+  if [ ! -d "$TMP_ROOT/caseprobe" ]; then
+    pass "case-alias containment: not applicable on a case-sensitive filesystem"
+    return 0
+  fi
+  base="$TMP_ROOT/casealias"
+  home=$(make_home casealias/Home)
+  alias_home="$base/HOME"
+  before=$(snapshot "$home")
+  soak "$T0" start --home "$home" --out "$alias_home/out" --label baseline --harness claude > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "start refuses an --out inside a case alias of the soak home"
+  assert_home_unchanged "$home" "$before" "an --out inside a case alias of the home"
+  out="$TMP_ROOT/casealias-Out"; alias_out="$TMP_ROOT/casealias-OUT"; tr="$TMP_ROOT/casealias-transcripts"
+  mkdir -p "$tr"
+  soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  mkdir -p "$out/watchdog"
+  printf '%s\trestart\t%s\tw1\tdone\n' $((T0 + 10)) "$home" > "$out/watchdog/actions.tsv"
+  rows=$(cat "$out/watchdog/actions.tsv")
+  soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "$alias_out/watchdog" --transcript-dir "$tr" > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "finish refuses a --watchdog-dir that is a case alias of a directory inside --out"
+  assert_equals "$rows" "$(cat "$out/watchdog/actions.tsv")" "a refused finish left the staged watchdog rows intact"
+  pass "a case alias of a directory is the same tree to every containment check"
+}
+
+test_case_alias_order_document_is_one_handoff() {
+  local home out wd tr json
+  mkdir -p "$TMP_ROOT/CaseProbe2"
+  if [ ! -d "$TMP_ROOT/caseprobe2" ]; then
+    pass "case-alias order document: not applicable on a case-sensitive filesystem"
+    return 0
+  fi
+  home=$(make_home aliasdoc/Home)
+  out="$TMP_ROOT/aliasdoc-out"; wd="$TMP_ROOT/aliasdoc-watchdog"; tr="$TMP_ROOT/aliasdoc-transcripts"
+  mkdir -p "$wd" "$tr"
+  : > "$wd/actions.tsv"
+  soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  rewrite_handoff "$home" $((T0 + 100)) "first"
+  printf 'doc=%s\nat=%s\nowner=1\n' "$TMP_ROOT/aliasdoc/HOME/data/handoff-main.md" $((T0 + 100)) > "$home/state/.order-handoff"
+  soak $((T0 + 150)) sample --home "$home" --out "$out" > /dev/null || fail "sample failed"
+  assert_equals 1 "$(wc -l < "$out/handoff-events.tsv" | tr -d ' ')" "a case-alias order document is not a second event"
+  soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "$wd" --transcript-dir "$tr" \
+    > /dev/null || fail "finish failed"
+  json=$(jq -c . "$out/soak.json") || fail "soak.json is not JSON after finish"
+  assert_equals 'handoff-main.md' "$(names "$out/handoffs")" "the case-alias order document is kept once, under its own name"
+  assert_equals 1 "$(jq -r .handoff_count <<<"$json")" "a case-alias order document counts once"
+  pass "an order document that is a case alias of a data handoff document is one handoff"
+}
+
+# On a case-insensitive filesystem a case alias of the soak home is that home:
+# sample and finish accept it, and watchdog rows whose home column spells the
+# home differently are still the home's rows.
+test_case_alias_home_is_the_run_home() {
+  local home alias_home out wd tr rc json
+  mkdir -p "$TMP_ROOT/CaseProbe3"
+  if [ ! -d "$TMP_ROOT/caseprobe3" ]; then
+    pass "case-alias soak home: not applicable on a case-sensitive filesystem"
+    return 0
+  fi
+  home=$(make_home aliashome/Home)
+  alias_home="$TMP_ROOT/aliashome/HOME"
+  out="$TMP_ROOT/aliashome-out"; wd="$TMP_ROOT/aliashome-watchdog"; tr="$TMP_ROOT/aliashome-transcripts"
+  mkdir -p "$wd" "$tr"
+  printf '%s\tw1\t%s\tprimary\tfrozen\trestart\tdone\tpickup verified\n' $((T0 + 500)) "$alias_home" > "$wd/actions.tsv"
+  soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  soak $((T0 + 100)) sample --home "$alias_home" --out "$out" > /dev/null 2>&1; rc=$?
+  assert_equals 0 "$rc" "sample accepts a case alias of the run's home"
+  soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "$wd" --transcript-dir "$tr" > /dev/null || fail "finish failed"
+  json=$(jq -c . "$out/soak.json") || fail "soak.json is not JSON after finish"
+  assert_equals 1 "$(awk 'END { print NR }' "$out/watchdog/actions.tsv")" "a watchdog row spelling the home as a case alias is kept"
+  assert_equals 1 "$(jq -r .handoff_count <<<"$json")" "a frozen restart recorded under a case alias of the home counts"
+  pass "a case alias of the soak home is the run's home to sample, finish and the watchdog rows"
+}
+
+# One rewrite of a handoff document, sampled under the started spelling and
+# then under a case alias of the home, is one handoff event.
+test_case_alias_home_samples_count_one_handoff() {
+  local home alias_home out wd tr json
+  mkdir -p "$TMP_ROOT/CaseProbe4"
+  if [ ! -d "$TMP_ROOT/caseprobe4" ]; then
+    pass "case-alias home samples: not applicable on a case-sensitive filesystem"
+    return 0
+  fi
+  home=$(make_home aliassample/Home)
+  alias_home="$TMP_ROOT/aliassample/HOME"
+  out="$TMP_ROOT/aliassample-out"; wd="$TMP_ROOT/aliassample-watchdog"; tr="$TMP_ROOT/aliassample-transcripts"
+  mkdir -p "$wd" "$tr"
+  : > "$wd/actions.tsv"
+  soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  rewrite_handoff "$home" $((T0 + 100)) "first"
+  soak $((T0 + 150)) sample --home "$home" --out "$out" > /dev/null || fail "sample failed"
+  soak $((T0 + 200)) sample --home "$alias_home" --out "$out" > /dev/null || fail "alias sample failed"
+  assert_equals 1 "$(wc -l < "$out/handoff-events.tsv" | tr -d ' ')" "a sample under a case alias of the home adds no second event"
+  soak $((T0 + 1000)) finish --home "$alias_home" --out "$out" --watchdog-dir "$wd" --transcript-dir "$tr" \
+    > /dev/null || fail "finish failed"
+  json=$(jq -c . "$out/soak.json") || fail "soak.json is not JSON after finish"
+  assert_equals 1 "$(jq -r .handoff_count <<<"$json")" "one rewrite sampled under two spellings of the home counts once"
+  pass "samples under two spellings of the soak home count one handoff"
+}
+
+# Two requested restarts with no handoff nudge between them: a document written
+# in the same second the first restart finished belongs to the first, so the
+# second restart, which left no document of its own, still counts.
+test_finish_counts_a_requested_restart_after_a_boundary_document() {
+  local home out wd tr json
+  home=$(make_home boundary)
+  out="$TMP_ROOT/boundary-out"; wd="$TMP_ROOT/boundary-watchdog"; tr="$TMP_ROOT/boundary-transcripts"
+  mkdir -p "$wd/handoffs" "$tr"
+  soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  rewrite_handoff "$home" $((T0 + 300)) "first"
+  {
+    printf '%s\tr1\t%s\tprimary\trestart-requested\trestart\tpending\ttoken=1\n' $((T0 + 290)) "$home"
+    printf '%s\tr1\t%s\tprimary\trestart-requested\trestart\tdone\tpickup verified\n' $((T0 + 300)) "$home"
+    printf '%s\tr2\t%s\tprimary\trestart-requested\trestart\tpending\ttoken=2\n' $((T0 + 600)) "$home"
+    printf '%s\tr2\t%s\tprimary\trestart-requested\trestart\tdone\tpickup verified\n' $((T0 + 610)) "$home"
+  } > "$wd/actions.tsv"
+  soak $((T0 + 400)) sample --home "$home" --out "$out" > /dev/null || fail "sample failed"
+  soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "$wd" --transcript-dir "$tr" \
+    > /dev/null || fail "finish failed"
+  json=$(jq -c . "$out/soak.json") || fail "soak.json is not JSON after finish"
+  assert_equals 2 "$(jq -r .handoff_count <<<"$json")" "the boundary document counts once and the second requested restart counts"
+  pass "a document in the second a requested restart finished is not reused by the next requested restart"
+}
+
+# The private state copy never lands in the soak home, even when the inherited
+# TMPDIR points inside it.
+test_tmpdir_inside_the_home_is_never_written() {
+  local home out wd tr before
+  home=$(make_home tmpdir-home)
+  out="$TMP_ROOT/tmpdir-out"; wd="$TMP_ROOT/tmpdir-watchdog"; tr="$TMP_ROOT/tmpdir-transcripts"
+  mkdir -p "$home/tmp" "$wd" "$tr"
+  before=$(snapshot "$home")
+  TMPDIR="$home/tmp" soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  assert_home_unchanged "$home" "$before" "start with TMPDIR inside the home"
+  TMPDIR="$home/tmp" soak $((T0 + 100)) sample --home "$home" --out "$out" > /dev/null || fail "sample failed"
+  assert_home_unchanged "$home" "$before" "sample with TMPDIR inside the home"
+  TMPDIR="$home/state" soak $((T0 + 200)) sample --home "$home" --out "$out" > /dev/null || fail "sample failed"
+  assert_home_unchanged "$home" "$before" "sample with TMPDIR at the home state directory"
+  TMPDIR="$home/tmp" soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "$wd" --transcript-dir "$tr" > /dev/null || fail "finish failed"
+  assert_home_unchanged "$home" "$before" "finish with TMPDIR inside the home"
+  assert_equals 2 "$(awk 'END { print NR }' "$out/load.tsv")" "both samples still recorded their load rows"
+  pass "a TMPDIR inside the soak home never receives the private state copy"
+}
+
+test_order_document_at_a_path_suffix_is_kept() {
+  local inner json
+  mkdir -p "$TMP_ROOT/sfx-inner/data"
+  inner=$(cd -P "$TMP_ROOT/sfx-inner" && pwd -P)
+  # The home's data/handoff-a.md ends with the order document's whole path, but
+  # the two are distinct files: the order document must still be kept.
+  finish_fixture "sfx-outer$inner" baseline
+  printf 'order\n' > "$inner/data/handoff-a.md"; fm_touch_epoch $((T0 + 800)) "$inner/data/handoff-a.md"
+  printf 'doc=%s\nat=%s\nowner=1\n' "$inner/data/handoff-a.md" $((T0 + 800)) > "$HOME_DIR/state/.order-handoff"
+  soak $((T0 + 1000)) finish --home "$HOME_DIR" --out "$OUT_DIR" --watchdog-dir "$WD_DIR" --transcript-dir "$TR_DIR" \
+    > /dev/null || fail "finish failed"
+  json=$(jq -c . "$OUT_DIR/soak.json") || fail "soak.json is not JSON after finish"
+  assert_equals $'handoff-a.md\nhandoff-b.md\norder-handoff-a.md' "$(names "$OUT_DIR/handoffs")" \
+    "a distinct order document whose path is a suffix of a data handoff path is kept"
+  assert_equals 'order' "$(cat "$OUT_DIR/handoffs/order-handoff-a.md")" "the kept order document is the order record's file"
+  assert_equals 4 "$(jq -r .handoff_count <<<"$json")" "the distinct order document counts as its own handoff"
+  pass "an order document whose path is a suffix of a data handoff path is kept and counted"
+}
+
 test_sample_and_finish_refuse_another_home() {
   local home other out wd tr rc
   home=$(make_home own)
@@ -661,8 +871,97 @@ test_sample_refuses_a_failed_copy_of_existing_state() {
   pass "a copy that misses existing home state stops sample"
 }
 
+test_hard_linked_output_is_refused() {
+  local before rc wd_before
+  finish_fixture hard baseline
+  # A load.tsv hard-linked to a home file is refused, not appended through.
+  mv "$OUT_DIR/load.tsv" "$TMP_ROOT/hard-load.tsv"
+  ln "$HOME_DIR/state/feat-c.status" "$OUT_DIR/load.tsv"
+  before=$(snapshot "$HOME_DIR")
+  soak $((T0 + 300)) sample --home "$HOME_DIR" --out "$OUT_DIR" > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "sample refuses a load.tsv that is a hard link"
+  assert_home_unchanged "$HOME_DIR" "$before" "sample through a hard-linked load.tsv"
+  rm "$OUT_DIR/load.tsv"; mv "$TMP_ROOT/hard-load.tsv" "$OUT_DIR/load.tsv"
+  # A watchdog copy hard-linked to the watchdog's own ledger is refused before
+  # it is truncated.
+  mkdir -p "$OUT_DIR/watchdog"
+  ln "$WD_DIR/actions.tsv" "$OUT_DIR/watchdog/actions.tsv"
+  wd_before=$(cat "$WD_DIR/actions.tsv")
+  soak $((T0 + 1000)) finish --home "$HOME_DIR" --out "$OUT_DIR" --watchdog-dir "$WD_DIR" --transcript-dir "$TR_DIR" \
+    > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "finish refuses a watchdog copy that is a hard link"
+  assert_equals "$wd_before" "$(cat "$WD_DIR/actions.tsv")" "the watchdog ledger is unchanged"
+  rm "$OUT_DIR/watchdog/actions.tsv"
+  # A kept handoff copy hard-linked to another home file is refused.
+  mkdir -p "$OUT_DIR/handoffs"
+  ln "$HOME_DIR/state/feat-c.status" "$OUT_DIR/handoffs/handoff-b.md"
+  before=$(snapshot "$HOME_DIR")
+  soak $((T0 + 1000)) finish --home "$HOME_DIR" --out "$OUT_DIR" --watchdog-dir "$WD_DIR" --transcript-dir "$TR_DIR" \
+    > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "finish refuses a handoff copy that is a hard link"
+  assert_home_unchanged "$HOME_DIR" "$before" "finish through a hard-linked handoff copy"
+  pass "a hard link where the recorder writes is refused and nothing behind it changes"
+}
+
+test_directory_at_a_copy_destination_is_refused() {
+  local before rc
+  finish_fixture dirdest baseline
+  # A directory where a kept copy goes would make cp write inside it, past the
+  # link checks, here through a symlink into the home.
+  mkdir -p "$OUT_DIR/handoffs/handoff-a.md"
+  ln -s "$HOME_DIR/state/feat-c.status" "$OUT_DIR/handoffs/handoff-a.md/handoff-a.md"
+  before=$(snapshot "$HOME_DIR")
+  soak $((T0 + 1000)) finish --home "$HOME_DIR" --out "$OUT_DIR" --watchdog-dir "$WD_DIR" --transcript-dir "$TR_DIR" \
+    > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "finish refuses a directory where a handoff copy goes"
+  assert_home_unchanged "$HOME_DIR" "$before" "finish with a directory at a copy destination"
+  pass "a directory where a copy goes is refused and nothing behind it changes"
+}
+
+# Firstmate lock links name their owner directory by absolute path inside the
+# home state. Lock recovery run on the private copy during classification, as
+# stale-lock recovery does, must reach only the copy, never the home.
+test_lock_recovery_on_the_state_copy_leaves_the_home_unchanged() {
+  local home out wd tr before hook ran
+  home=$(make_home lockcopy)
+  out="$TMP_ROOT/lockcopy-out"; wd="$TMP_ROOT/lockcopy-watchdog"; tr="$TMP_ROOT/lockcopy-transcripts"
+  mkdir -p "$wd" "$tr" "$home/state/.control-feat-a.lock.owner.AbC123"
+  printf '99999\n' > "$home/state/.control-feat-a.lock.owner.AbC123/pid"
+  ln -s "$home/state/.control-feat-a.lock.owner.AbC123" "$home/state/.control-feat-a.lock"
+  # A lock link reaching its owner through a link outside the home is cut off
+  # too, as is any other link into the home.
+  mkdir "$home/state/.control-feat-c.lock.owner.XyZ789"
+  printf '99998\n' > "$home/state/.control-feat-c.lock.owner.XyZ789/pid"
+  ln -s "$home/state/.control-feat-c.lock.owner.XyZ789" "$TMP_ROOT/lockcopy-owner-alias"
+  ln -s "$TMP_ROOT/lockcopy-owner-alias" "$home/state/.control-feat-c.lock"
+  ln -s "$home/config" "$home/state/config-link"
+  hook="$TMP_ROOT/lockcopy-hook.sh"; ran="$TMP_ROOT/lockcopy-ran"
+  cat > "$hook" <<SH
+[ -n "\${FM_STATE_OVERRIDE:-}" ] || exit 0
+[ -L "\$FM_STATE_OVERRIDE/.control-feat-a.lock" ] || exit 0
+. "$ROOT/bin/fm-wake-lib.sh"
+fm_lock_remove_path "\$FM_STATE_OVERRIDE/.control-feat-a.lock"
+fm_lock_remove_path "\$FM_STATE_OVERRIDE/.control-feat-c.lock"
+: 2> /dev/null > "\$FM_STATE_OVERRIDE/config-link/written"
+: > "$ran"
+SH
+  FM_FAKE_TMUX_WINDOWS=fm-feat-a soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  before=$(snapshot "$home")
+  FM_FAKE_TMUX_HOOK=$hook FM_FAKE_TMUX_WINDOWS=fm-feat-a soak $((T0 + 100)) sample --home "$home" --out "$out" > /dev/null || fail "sample failed"
+  [ -e "$ran" ] || fail "lock recovery did not run on the copy during sample"
+  assert_home_unchanged "$home" "$before" "sample with lock recovery on the state copy"
+  rm -f "$ran"
+  FM_FAKE_TMUX_HOOK=$hook FM_FAKE_TMUX_WINDOWS=fm-feat-a soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "$wd" --transcript-dir "$tr" > /dev/null || fail "finish failed"
+  [ -e "$ran" ] || fail "lock recovery did not run on the copy during finish"
+  assert_home_unchanged "$home" "$before" "finish with lock recovery on the state copy"
+  pass "lock recovery on the private state copy never reaches the home"
+}
+
 make_fakebin
 fm_test_run \
+  test_lock_recovery_on_the_state_copy_leaves_the_home_unchanged \
+  test_directory_at_a_copy_destination_is_refused \
+  test_hard_linked_output_is_refused \
   test_sample_tolerates_a_state_entry_that_vanishes_during_the_copy \
   test_sample_tolerates_a_state_entry_renamed_in_during_the_copy \
   test_sample_refuses_a_failed_copy_of_existing_state \
@@ -670,6 +969,15 @@ fm_test_run \
   test_watchdog_dir_inside_out_is_refused \
   test_finish_counts_a_document_then_a_frozen_restart \
   test_out_that_contains_the_home_is_refused \
+  test_root_out_is_refused_as_containing_the_home \
+  test_order_document_at_a_path_suffix_is_kept \
+  test_double_slash_spelling_is_one_tree \
+  test_case_alias_spelling_is_one_tree \
+  test_case_alias_order_document_is_one_handoff \
+  test_case_alias_home_is_the_run_home \
+  test_case_alias_home_samples_count_one_handoff \
+  test_finish_counts_a_requested_restart_after_a_boundary_document \
+  test_tmpdir_inside_the_home_is_never_written \
   test_sample_and_finish_refuse_another_home \
   test_unsafe_session_ids_never_become_paths \
   test_finish_counts_a_lean_handoff_restart \
