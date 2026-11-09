@@ -157,6 +157,13 @@
 # condition. For built-ins, silence remains independent of the keyed-answer feed
 # below: suppressing an announcement never suppresses the captain's own answer.
 #
+# A wake summary is adapter-owned through the same kind of seam. When a built-in
+# adapter answers exit 0 to `bin/fm-procevent-<adapter>.sh summary <result-file>`,
+# the first line it prints, stripped of control characters and bounded to 300
+# bytes, is appended to the generic `check` payload after ` - `. A missing
+# command, an error, any other exit, or an extension result leaves the payload
+# byte-identical. The summary is source text, so it is input, never instruction.
+#
 # Applying a built-in result is adapter-owned through the same kind of seam. Some results
 # carry no judgement at all - they must simply be applied idempotently to the
 # home's own durable state - and leaving that to an agent that has to remember
@@ -410,6 +417,25 @@ adapter_self_announcing() {  # <adapter>
   script=$(adapter_script "$1")
   [ -f "$script" ] && [ ! -L "$script" ] || return 1
   "$script" self-announcing >/dev/null 2>&1
+}
+
+# Ask a built-in adapter for one line describing a captured result, to append to
+# its generic wake payload (see the wake-summary note in the header). Prints
+# nothing for an extension result, a missing command, or any failure, so the
+# payload stays byte-identical. Control characters are stripped and the line is
+# bounded, because the text can come from the watched source.
+adapter_result_summary() {  # <adapter> <result-file>
+  local script owner_state text
+  fm_procevent_result_extension_load "$2"
+  owner_state=$?
+  [ "$owner_state" -eq 1 ] || return 0
+  script=$(adapter_script "$1")
+  [ -f "$script" ] && [ ! -L "$script" ] || return 0
+  # Exit 0 is the only summary verdict, so an adapter that prints usage for an
+  # unknown command contributes nothing.
+  text=$("$script" summary "$2" 2>/dev/null) || return 0
+  printf '%s\n' "$text" | head -1 \
+    | LC_ALL=C tr -d '\000-\010\013-\037\177' | cut -c 1-300
 }
 
 source_file()  { printf '%s/%s.source\n' "$REG" "$1"; }
@@ -812,7 +838,7 @@ cmd_register_extension() {
 # publication, so a result stays eligible for re-announcement across restarts
 # and drains until `fm_procevent_mark_handled` records it.
 publish_result() {  # <result-file>
-  local result=$1 id seq adapter line status=1 owner_task='' message='' record=''
+  local result=$1 id seq adapter line status=1 owner_task='' message='' record='' summary=''
   local ring_backend ring_target ring_meta inbox_dir handled_dir pre_existing existing new_record
   id=$(fm_procevent_result_source_id "$result")
   seq=$(fm_procevent_result_sequence "$result")
@@ -896,6 +922,8 @@ EOF
       esac
     fi
     unset FM_PROCEVENT_CAPTURE_SOURCE_LOCK_HELD
+    summary=$(adapter_result_summary "$adapter" "$result")
+    [ -z "$summary" ] || line="$line - $summary"
     if fm_wake_append check "procevent:$id:$seq" "check: $line"; then
       status=0
     fi

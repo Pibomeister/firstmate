@@ -263,6 +263,7 @@ payload=$(wake_payloads "$H1")
 assert_contains "$payload" "procevent lavish src-one 1" "completion publishes the committed result sequence"
 assert_not_contains "$payload" "payload one" "source output never reaches the event line"
 [ "$(printf '%s\n' "$payload" | grep -c .)" = 1 ] || fail "expected exactly one event, got: $payload"
+assert_equals "check: procevent lavish src-one 1" "$payload" "an adapter with no summary command keeps the exact payload"
 pass "one blocking completion yields exactly one bounded normalized event"
 
 RESULT=$(first_result "$H1" src-one || true)
@@ -495,8 +496,29 @@ case "${1-}" in
   *) exit 2 ;;
 esac
 SH
+cat > "$ADAPTER_ROOT/bin/fm-procevent-summing.sh" <<'SH'
+#!/usr/bin/env bash
+# Fixture adapter whose summary is hostile: a control sequence, an overlong
+# first line, and a second line.
+case "${1-}" in
+  summary)
+    printf 'first\033[31m line '
+    printf 'x%.0s' $(seq 1 400)
+    printf '\nsecond line\n'
+    ;;
+  *) exit 2 ;;
+esac
+SH
+cat > "$ADAPTER_ROOT/bin/fm-procevent-usagesum.sh" <<'SH'
+#!/usr/bin/env bash
+# Fixture adapter that prints usage on stdout for an unknown command and exits
+# nonzero, the shape a summary-unaware adapter can have.
+printf 'Usage: fixture adapter\n'
+exit 2
+SH
 chmod +x "$ADAPTER_ROOT/bin/fm-procevent-endnow.sh" "$ADAPTER_ROOT/bin/fm-procevent-openended.sh" \
-  "$ADAPTER_ROOT/bin/fm-procevent-applying.sh" "$ADAPTER_ROOT/bin/fm-procevent-selfann.sh"
+  "$ADAPTER_ROOT/bin/fm-procevent-applying.sh" "$ADAPTER_ROOT/bin/fm-procevent-selfann.sh" \
+  "$ADAPTER_ROOT/bin/fm-procevent-summing.sh" "$ADAPTER_ROOT/bin/fm-procevent-usagesum.sh"
 
 pe_adapter() {  # <home> <command>...: run the runner against the fixture adapters
   local home=$1
@@ -591,6 +613,29 @@ assert_contains "$ack_out" "handled: ends-src 1" "a terminal result is acknowled
 out=$(pe_adapter "$HTERM" reconcile)
 assert_contains "$out" "published=0" "an acknowledged terminal result stops being re-announced"
 pass "an adapter-classified terminal result is captured once, announced, and retires its source automatically"
+
+# An adapter's summary line joins the payload only on exit 0, as one line with
+# control characters stripped and its length bounded.
+HSUM="$TMP_ROOT/hsum"; new_home "$HSUM"
+fm_test_track_procevent_home "$HSUM"
+pe_adapter "$HSUM" register summing sum-src -- /bin/echo "summed payload" >/dev/null
+pe_adapter "$HSUM" start sum-src >/dev/null
+pe_adapter "$HSUM" retire sum-src >/dev/null
+payload=$(wake_payloads "$HSUM")
+[ "$(printf '%s\n' "$payload" | grep -c .)" = 1 ] || fail "a summary produced more than one event: $payload"
+assert_contains "$payload" "check: procevent summing sum-src 1 - first[31m line x" "the summary's first line joins the payload"
+assert_not_contains "$payload" "second line" "only the summary's first line joins the payload"
+printf '%s' "$payload" | LC_ALL=C grep -q "$(printf '\033')" && fail "a control character in a summary reached the wake queue"
+summary=${payload#"check: procevent summing sum-src 1 - "}
+assert_equals 300 "${#summary}" "the summary is bounded to 300 bytes"
+HUSAGE="$TMP_ROOT/husage"; new_home "$HUSAGE"
+fm_test_track_procevent_home "$HUSAGE"
+pe_adapter "$HUSAGE" register usagesum usage-src -- /bin/echo "usage payload" >/dev/null
+pe_adapter "$HUSAGE" start usage-src >/dev/null
+pe_adapter "$HUSAGE" retire usage-src >/dev/null
+assert_equals "check: procevent usagesum usage-src 1" "$(wake_payloads "$HUSAGE")" \
+  "stdout from a nonzero summary exit never reaches the payload"
+pass "an adapter summary joins the payload only on exit 0, as one bounded control-free line"
 
 HOPEN="$TMP_ROOT/hopen"; new_home "$HOPEN"
 fm_test_track_procevent_home "$HOPEN"
