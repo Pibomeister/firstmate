@@ -1,0 +1,11 @@
+## S15: a real captain goal received via fm-dispatch-log.sh opens work
+2026-11-09T00:05:48Z received g-lab-1: summary=lab goal
+  log_exit=0
+  lock none + open work:
+verdict=dead reason=none-open-work heartbeat_age=16 lock=none watcher_age=24 monitor=enabled at=1794182748
+## S16: lock live, open work, watcher beat older than watcher-stale-secs=60
+verdict=stale reason=watcher-stale heartbeat_age=16 lock=live watcher_age=600 monitor=enabled at=1794182748
+## S17: goal dispatched closes it; same stale beat no longer matters
+2026-11-09T00:05:48Z dispatched g-lab-1: task=lab-t1
+  log_exit=0
+verdict=ok reason=fresh heartbeat_age=16 lock=live watcher_age=600 monitor=enabled at=1794182748

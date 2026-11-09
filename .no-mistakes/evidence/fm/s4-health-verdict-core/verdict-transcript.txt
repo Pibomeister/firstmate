@@ -1,0 +1,52 @@
+## S1: empty lab home before any publication (state dir listing, then verdict)
+verdict=unknown reason=heartbeat-missing,lock-unknown,monitor-missing heartbeat_age=unknown lock=unknown watcher_age=unknown monitor=missing at=1794182721
+  (exit=0)
+## S1b: read without --write did not create files
+## S2: real heartbeat publication (watcher cycle 15s, stale-grace-secs=60)
+  hb_exit=0
+{"schema":"fm-heartbeat.v1","generated_epoch":1794182721,"published_epoch":1794182724,"stale_after_secs":478}
+  verdict with heartbeat but no watchdog captain record:
+verdict=unknown reason=lock-unknown,monitor-missing heartbeat_age=0 lock=unknown watcher_age=unknown monitor=missing at=1794182724
+  (exit=0)
+## S3: watchdog records lock live, monitor enabled, fresh watcher beat
+verdict=ok reason=fresh heartbeat_age=0 lock=live watcher_age=0 monitor=enabled at=1794182724
+  (exit=0)
+## S4: lock dead outranks a fresh heartbeat
+verdict=dead reason=lock-dead heartbeat_age=1 lock=dead watcher_age=1 monitor=enabled at=1794182725
+  (exit=0)
+## S5: lock unconfirmed -> instance-mismatch
+verdict=unconfirmed reason=instance-mismatch heartbeat_age=2 lock=mismatch watcher_age=2 monitor=enabled at=1794182726
+  (exit=0)
+## S6: lock none, no open work, no away -> ok idle
+verdict=ok reason=idle heartbeat_age=3 lock=none watcher_age=3 monitor=enabled at=1794182727
+  (exit=0)
+## S7: lock none with away record -> dead none-away
+verdict=dead reason=none-away heartbeat_age=3 lock=none watcher_age=3 monitor=enabled at=1794182727
+  (exit=0)
+## S8: lock live, heartbeat published_epoch aged past stale_after_secs (generated_epoch left fresh)
+verdict=stale reason=heartbeat-stale heartbeat_age=508 lock=live watcher_age=3 monitor=enabled at=1794182727
+  (exit=0)
+## S9: inverse: generated_epoch old but published_epoch fresh -> fresh (age from publication stamp)
+verdict=ok reason=fresh heartbeat_age=0 lock=live watcher_age=4 monitor=enabled at=1794182728
+  (exit=0)
+## S10: heartbeat with no published_epoch -> unknown heartbeat-field-unread, never ok
+verdict=unknown reason=heartbeat-field-unread heartbeat_age=unknown lock=live watcher_age=5 monitor=enabled at=1794182729
+  (exit=0)
+## S11: monitor disabled folds into unknown
+verdict=unknown reason=monitor-disabled heartbeat_age=0 lock=live watcher_age=8 monitor=disabled at=1794182732
+  (exit=0)
+## S12: corrupt heartbeat.json -> unknown, no crash
+verdict=unknown reason=heartbeat-field-unread,stale-bound-unknown heartbeat_age=unknown lock=live watcher_age=9 monitor=enabled at=1794182733
+  (exit=0)
+## S13: --write records the verdict line atomically
+verdict=ok reason=fresh heartbeat_age=1 lock=live watcher_age=9 monitor=enabled at=1794182733
+  (exit=0)
+verdict=ok reason=fresh heartbeat_age=1 lock=live watcher_age=9 monitor=enabled at=1794182733
+0
+## S14: usage errors
+fm-health-verdict.sh: unknown argument: --bogus
+  exit=2
+fm-health-verdict.sh: not a directory: /nonexistent/x
+  exit=2
+fm-health-verdict.sh: no home: pass --home or set FM_HOME
+  exit=2

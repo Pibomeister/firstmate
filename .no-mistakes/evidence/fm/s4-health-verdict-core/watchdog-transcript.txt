@@ -1,0 +1,17 @@
+## S18: real watchdog dry-run pass on the lab home writes the captain record, then the verdict reads it
+  wd_exit=0
+  captain record:
+owner=none
+lock_pid=
+session=
+alive=none
+usage_limit_autowait=0
+backend=
+target=
+moved_at=1794182760
+lock_at=0
+checked_at=1794182760
+source=watchdog
+  monitor-status:
+status=uncovered at=1794182760
+verdict=unknown reason=monitor-uncovered heartbeat_age=29 lock=none watcher_age=613 monitor=uncovered at=1794182761

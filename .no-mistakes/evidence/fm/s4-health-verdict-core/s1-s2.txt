@@ -1,0 +1,11 @@
+## S1: empty lab home, before any publication
+total 0
+drwxr-xr-x@ 2 eduardopicazo  staff   64 Nov  8 18:05 .
+drwx------@ 7 eduardopicazo  staff  224 Nov  8 18:05 ..
+(eval):7: no such file or directory: env -u NO_MISTAKES_GATE -u FM_GATE_REFUSE_BYPASS -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u FM_DATA_OVERRIDE -u FM_CONFIG_OVERRIDE -u FM_PROJECTS_OVERRIDE FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.K1Vt2Z
+exit=127
+## S2: real heartbeat publication (watcher cycle 15s)
+(eval):10: no such file or directory: env -u NO_MISTAKES_GATE -u FM_GATE_REFUSE_BYPASS -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u FM_DATA_OVERRIDE -u FM_CONFIG_OVERRIDE -u FM_PROJECTS_OVERRIDE FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.K1Vt2Z
+hb_exit=127
+jq: error: Could not open file /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.K1Vt2Z/state/heartbeat.json: No such file or directory
+(eval):12: no such file or directory: env -u NO_MISTAKES_GATE -u FM_GATE_REFUSE_BYPASS -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u FM_DATA_OVERRIDE -u FM_CONFIG_OVERRIDE -u FM_PROJECTS_OVERRIDE FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.K1Vt2Z
