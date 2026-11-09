@@ -1,0 +1,53 @@
+
+$ fm-terminal-reap.sh --min-age 0 --no-browsers
+keep	terminal	task	term-rec	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis/ws/fm-rec	t-rec (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis)
+keep	terminal	captain	term-captain	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis	Terminal 3
+keep	terminal	captain	term-claude	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis	✳ Claude Code
+keep	terminal	captain	term-notes	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis	notes
+reap	terminal	idle-session	term-main	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis	M4 main successor
+reap	terminal	idle-session	term-handoff	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis	FM handoff
+keep	terminal	foreign	term-foreign	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis/elsewhere	my shell
+reap	terminal	idle-task	term-landed	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis/ws/fm-landed	fm-landed
+keep	terminal	unlanded	term-dirty	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis/ws/fm-dirty	fm-dirty
+keep	terminal	unlanded	term-ahead	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis/ws/fm-ahead	fm-ahead
+reap	terminal	gone-worktree	term-gone	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis/ws/fm-gone	fm-gone
+keep	terminal	live-worker	term-worker	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis/ws/fm-worker	fm-worker
+keep	terminal	live-agent	term-agent	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis	fm main
+summary: mode=dry-run terminals=13 reap=4 keep=9 browsers=0 reap=0 keep=0
+(exit 0)
+closed after dry run: []
+keep	terminal	young	term-main	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis	M4 main successor
+keep	terminal	young	term-landed	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis/ws/fm-landed	fm-landed
+summary: mode=dry-run terminals=13 reap=0 keep=13 browsers=0 reap=0 keep=0
+
+$ fm-terminal-reap.sh --min-age 0 --apply --no-browsers
+keep	terminal	task	term-rec	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis/ws/fm-rec	t-rec (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis)
+keep	terminal	captain	term-captain	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis	Terminal 3
+keep	terminal	captain	term-claude	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis	✳ Claude Code
+keep	terminal	captain	term-notes	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis	notes
+closed	terminal	idle-session	term-main	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis	M4 main successor
+closed	terminal	idle-session	term-handoff	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis	FM handoff
+keep	terminal	foreign	term-foreign	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis/elsewhere	my shell
+closed	terminal	idle-task	term-landed	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis/ws/fm-landed	fm-landed
+keep	terminal	unlanded	term-dirty	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis/ws/fm-dirty	fm-dirty
+keep	terminal	unlanded	term-ahead	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis/ws/fm-ahead	fm-ahead
+closed	terminal	gone-worktree	term-gone	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis/ws/fm-gone	fm-gone
+keep	terminal	live-worker	term-worker	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis/ws/fm-worker	fm-worker
+keep	terminal	live-agent	term-agent	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.enSJis	fm main
+summary: mode=apply terminals=13 closed=4 skipped=0 failed=0 keep=9 browsers=0 stopped=0 skipped=0 failed=0 reap=0 keep=0
+(exit 0)
+closed after apply: [term-gone term-handoff term-landed term-main ]
+dirty worktree still has wip.txt: yes
+worker agent still running: yes
+
+$ fm-terminal-reap.sh --bogus
+(exit 2)
+$ fm-terminal-reap.sh --min-age abc
+error: --min-age must be whole seconds
+(exit 2)
+
+$ fm-terminal-reap.sh --min-age 0 --apply
+error: unreadable Orca JSON: Unexpected token 'o', "not json
+" is not valid JSON
+(exit 1)
+closed after unreadable inventory: []

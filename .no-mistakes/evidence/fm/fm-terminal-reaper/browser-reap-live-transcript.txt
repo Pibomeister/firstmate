@@ -1,0 +1,18 @@
+daemon in deleted dir: pid 30029 ; daemon beside live owner: pid 30033
+
+$ fm-terminal-reap.sh    (rows for this lab's two daemons)
+reap	browser	owner-gone	30029	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.4jVrYO/gone	bash /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.4jVrYO/lib/node_modules/agent-browser/dist/daemon.js
+keep	browser	owner-live	30033	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.4jVrYO/live	bash /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.4jVrYO/lib/node_modules/agent-browser/dist/daemon.js
+summary: mode=dry-run terminals=0 reap=0 keep=0 browsers=19 reap=1 keep=18
+
+$ fm-terminal-reap.sh --apply   (rows for this lab's two daemons)
+reap	browser	owner-gone	30029	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.4jVrYO/gone	bash /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.4jVrYO/lib/node_modules/agent-browser/dist/daemon.js
+keep	browser	owner-live	30033	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.4jVrYO/live	bash /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.4jVrYO/lib/node_modules/agent-browser/dist/daemon.js
+summary: mode=apply terminals=0 closed=0 skipped=0 failed=0 keep=0 browsers=19 stopped=0 skipped=0 failed=0 reap=1 keep=18
+after --apply: gone-dir daemon alive? yes
+
+$ fm-terminal-reap.sh --apply --browsers   (rows for this lab's two daemons)
+stopped	browser	owner-gone	30029	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.4jVrYO/gone	bash /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.4jVrYO/lib/node_modules/agent-browser/dist/daemon.js
+keep	browser	owner-live	30033	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.4jVrYO/live	bash /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.4jVrYO/lib/node_modules/agent-browser/dist/daemon.js
+summary: mode=apply terminals=0 closed=0 skipped=0 failed=0 keep=0 browsers=19 stopped=1 skipped=0 failed=0 reap=0 keep=18
+after --apply --browsers: gone-dir daemon alive? no; live-owner daemon alive? yes
