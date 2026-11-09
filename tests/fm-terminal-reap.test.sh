@@ -27,7 +27,8 @@ reap_cleanup() {
     kill -KILL "$pid" 2>/dev/null || true
   done
 }
-trap 'reap_cleanup; fm_test_cleanup' EXIT
+# Permission cases lock directories; unlock everything before removal.
+trap 'reap_cleanup; chmod -R u+rwx "$TMP_ROOT" 2>/dev/null; fm_test_cleanup' EXIT
 
 STANDIN=$(fm_agent_standin "$TMP_ROOT/standin") || STANDIN=
 if [ -n "$STANDIN" ]; then
@@ -305,6 +306,12 @@ test_apply_reproves_facts_that_change_before_the_close() {
   idle_term term-late-ok pty-late-ok "$WS/fm-late-ok" fm-late-ok
   show term-late-ok pty-late-ok "$WS/fm-late-ok"
 
+  # The captain renames a home tab while the apply works through others.
+  idle_term term-retitle pty-retitle "$HOME_DIR" "fm main retitle"
+  show term-retitle pty-retitle "$HOME_DIR"
+  printf '#!/usr/bin/env bash\nsed "s/fm main retitle/notes/" %q > %q.new && mv %q.new %q\n' \
+    "$FX/list.json" "$FX/list.json" "$FX/list.json" "$FX/list.json" > "$FX/onshow-term-retitle"
+
   if [ -n "$STANDIN" ]; then
     local worker
     clone_worktree "$bare" "$WS/fm-late-worker"
@@ -316,6 +323,32 @@ test_apply_reproves_facts_that_change_before_the_close() {
     TRACKED_PIDS+=("$worker")
     printf '#!/usr/bin/env bash\nprintf "p%%s\\nn%%s\\n" %q %q >> %q\n' "$worker" "$WS/fm-late-worker" "$FX/lsof.out" \
       > "$FX/onshow-term-late-worker"
+
+    # An agent that starts inside the classified session itself, after the
+    # first liveness read: the session shell runs it once a trigger appears,
+    # and the hook fires it on the second fresh read, the pid check.
+    local fifo trigger
+    fifo=$(mktemp -u "$TMP_ROOT/fifo.XXXXXX"); mkfifo "$fifo"
+    trigger="$FX/start-agent"
+    bash -c 'while :; do if [ -e "$2" ]; then "$1" 600; exit 0; fi; read -r -t 1 _ <> "$3"; done' \
+      _ "$TMP_ROOT/agent-bin/claude" "$trigger" "$fifo" >/dev/null 2>&1 </dev/null &
+    PID=$!
+    disown "$PID" 2>/dev/null || true
+    TRACKED_PIDS+=("$PID")
+    term term-late-agent pty-late-agent "$HOME_DIR" "fm main late agent"
+    session pty-late-agent "$PID"
+    show term-late-agent pty-late-agent "$HOME_DIR"
+    cat > "$FX/onshow-term-late-agent" <<HOOK
+#!/usr/bin/env bash
+n=\$(( \$(cat '$FX/shows-late-agent' 2>/dev/null || echo 0) + 1 ))
+printf '%s\n' "\$n" > '$FX/shows-late-agent'
+[ "\$n" -eq 2 ] || exit 0
+: > '$trigger'
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+  pgrep -P $PID >/dev/null 2>&1 && exit 0
+  sleep 0.2
+done
+HOOK
   fi
   chmod +x "$FX"/onshow-*
   fixture_write
@@ -331,14 +364,59 @@ test_apply_reproves_facts_that_change_before_the_close() {
   expect term-late-dirty "skipped idle-task:now-unlanded" "a worktree that gained uncommitted work since the listing must keep its terminal"
   expect term-regrown "skipped gone-worktree:now-present" "a worktree that reappeared since the listing must keep its terminal"
   expect term-late-ok "closed idle-task" "an unchanged landed worktree's idle shell is still closed"
+  expect term-retitle "skipped idle-session:now-retitled" "a home tab renamed off a firstmate title since the listing is the captain's"
   if [ -n "$STANDIN" ]; then
     expect term-late-worker "skipped idle-task:now-live-worker" "a worktree that gained a worker since the listing must keep its terminal"
+    expect term-late-agent "skipped idle-session:now-alive" "an agent started in the classified session during the checks must keep its terminal"
   else
     pass "SKIP: late live-worker case (no agent stand-in survives here)"
   fi
   closed=$(sort "$FX/closed.log" | tr '\n' ' ')
   [ "$closed" = 'term-late-ok ' ] || fail "only the unchanged orphan may close, got '$closed'"
   pass "fm-terminal-reap: --apply re-proves the session, worktree, and landed state just before each close"
+}
+
+# Unreadable is never absent: a worktree that cannot be looked up is not gone,
+# and a record that cannot be read still owns its terminal.
+test_unreadable_owner_facts_keep_terminals() {
+  if [ "$(id -u)" = 0 ]; then
+    pass "SKIP: permission cases (root reads through every mode)"
+    return 0
+  fi
+  local closed
+  fixture_reset unreadable
+  HOME_DIR="$FX/home"
+  mkdir -p "$HOME_DIR/state" "$FX/locked/fm-hidden"
+  cwd_row "$$" "$FX"
+  idle_term term-hidden pty-hidden "$FX/locked/fm-hidden" fm-hidden
+  idle_term term-first pty-first "$HOME_DIR" "fm main successor"
+  show term-first pty-first "$HOME_DIR"
+  idle_term term-second pty-second "$HOME_DIR" "fm main handoff"
+  show term-second pty-second "$HOME_DIR"
+  fm_write_meta "$HOME_DIR/state/other.meta" kind=ship backend=orca terminal=term-other "worktree=$FX/other-wt"
+  printf '#!/usr/bin/env bash\nchmod 000 %q\n' "$HOME_DIR/state/other.meta" > "$FX/onshow-term-first"
+  chmod +x "$FX/onshow-term-first"
+  fixture_write
+  chmod 000 "$FX/locked"
+
+  run_reap --no-browsers
+  [ "$RC" = 0 ] || fail "a readable inventory must exit 0, got $RC: $(cat "$FX/stderr")"
+  expect term-hidden "keep unreadable" "a task worktree that cannot be looked up is not gone"
+
+  run_reap --apply --no-browsers
+  [ "$RC" = 0 ] || fail "an apply whose closes all succeed or skip must exit 0, got $RC: $(cat "$FX/stderr")"
+  expect term-hidden "keep unreadable" "an apply never closes a terminal whose worktree cannot be looked up"
+  expect term-first "closed idle-session" "a terminal re-proved before its records turn unreadable still closes"
+  expect term-second "skipped idle-session:now-unreadable-records" "a close whose fresh record read fails must be skipped"
+  closed=$(tr '\n' ' ' < "$FX/closed.log")
+  [ "$closed" = 'term-first ' ] || fail "only the re-proved terminal may close, got '$closed'"
+
+  : > "$FX/closed.log"
+  run_reap --apply --no-browsers
+  [ "$RC" = 1 ] || fail "an unreadable task record must fail the inventory with exit 1, got $RC"
+  [ ! -s "$FX/closed.log" ] || fail "an unreadable task record must close nothing, closed: $(cat "$FX/closed.log")"
+  chmod 755 "$FX/locked"; chmod 644 "$HOME_DIR/state/other.meta"
+  pass "fm-terminal-reap: unreadable worktrees and records keep their terminals"
 }
 
 test_unreadable_inventory_closes_nothing() {
@@ -414,5 +492,6 @@ fm_test_run \
   test_min_age_keeps_young_sessions \
   test_apply_closes_only_reproven_orphans \
   test_apply_reproves_facts_that_change_before_the_close \
+  test_unreadable_owner_facts_keep_terminals \
   test_unreadable_inventory_closes_nothing \
   test_browsers_are_reaped_only_without_a_live_owner

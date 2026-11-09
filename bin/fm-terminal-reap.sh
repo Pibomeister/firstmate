@@ -27,8 +27,9 @@
 # the browser's command. A final `summary:` line counts each action.
 #
 # Exit status: 0 when the inventory was read (and, with --apply, every reap
-# succeeded or was safely skipped); 1 when an inventory read failed, in which
-# case nothing is closed; 2 on a usage error; 3 when --apply hit a failure.
+# succeeded or was safely skipped); 1 when an inventory read failed, including
+# an unreadable task record or secondmate registry, in which case nothing is
+# closed; 2 on a usage error; 3 when --apply hit a failure.
 #
 # Owners. The script reads this home's state/*.meta records and, through each
 # home's data/secondmates.md, every local secondmate home's records, read-only.
@@ -51,7 +52,9 @@
 #   keep live-agent    a verified agent harness runs in its session
 #   keep busy          its session runs a program this classifier cannot rule
 #                      out as an agent
-#   keep unreadable    its session's process tree could not be read
+#   keep unreadable    its session's process tree could not be read, or its
+#                      task worktree could not be looked up (only a missing
+#                      path counts as gone)
 #   keep captain       an idle shell in a home root whose title does not name
 #                      a firstmate main or handoff session (see idle-session),
 #                      including an empty or Orca default "Terminal <n>" title,
@@ -81,7 +84,7 @@
 #   keep task          it works in a recorded task's worktree
 #   keep home          it works in a home root
 #   keep young         it is younger than --min-age
-#   keep unknown       its working directory could not be read
+#   keep unknown       its working directory could not be read or looked up
 #   keep owner-live    some other process still works in that directory
 #   reap owner-gone    its directory is gone, or nothing but browsers (and
 #                      terminals this run reaps) still works there
@@ -94,12 +97,16 @@
 # before the process-table snapshot it was classified from, so a pid reused
 # after that snapshot is never signalled. It never sends SIGKILL.
 #
-# --apply re-proves each terminal immediately before closing it: the records are
-# re-read, fm_backend_orca_agent_state must still report dead or missing, and
-# Orca must still name the session pid it was classified with (a replaced
-# session is skipped). An idle-task close also re-reads the working-directory
-# scan and the landed state, and a gone-worktree close requires the worktree to
-# be still gone; any change or unreadable fact skips the close.
+# --apply re-proves each terminal immediately before closing it. The records
+# are re-read (an unreadable record skips the close), and
+# fm_backend_orca_agent_state must still report dead or missing. An idle-task
+# close re-reads the working-directory scan and the landed state, a
+# gone-worktree close requires the worktree to be still gone, and an
+# idle-session close requires the fresh title to still name a firstmate
+# session. Orca must still name the session pid it was classified with (a
+# replaced session is skipped), and the last read before the close requires
+# that session, if it still runs, to hold shells and nothing else. Any change or
+# unreadable fact skips the close.
 # Environment: FM_HOME selects the home; FM_ROOT_OVERRIDE as elsewhere.
 set -u
 
@@ -162,8 +169,12 @@ collect_owners() {
     case "$seen" in *" $home "*) continue ;; esac
     seen="$seen$home "
     printf 'home\t%s\n' "$home"
+    # A record that cannot be read is an owner this run cannot see, so the
+    # whole read fails rather than treating it as absent.
+    if [ -e "$home/state" ] && { [ ! -r "$home/state" ] || [ ! -x "$home/state" ]; }; then return 1; fi
     for meta in "$home"/state/*.meta; do
       [ -f "$meta" ] || continue
+      [ -r "$meta" ] || return 1
       id=${meta##*/}; id=${id%.meta}
       terminal=$(fm_meta_get "$meta" terminal)
       worktree=$(fm_meta_get "$meta" worktree)
@@ -171,7 +182,8 @@ collect_owners() {
       printf 'rec\t%s\t%s\t%s\t%s\n' "$home" "$id" "$terminal" "$worktree"
     done
     reg="$home/data/secondmates.md"
-    [ -f "$reg" ] || continue
+    [ -e "$reg" ] || continue
+    [ -f "$reg" ] && [ -r "$reg" ] || return 1
     while IFS= read -r line || [ -n "$line" ]; do
       secondmate_registry_parse_line "$line" || continue
       [ "$SECONDMATE_REGISTRY_REMOTE" -eq 0 ] || continue
@@ -185,7 +197,8 @@ collect_owners() {
 }
 
 read_inventory() {
-  collect_owners > "$WORK/owners.tsv" || return 1
+  collect_owners > "$WORK/owners.tsv" || {
+    echo "error: a task record or secondmate registry could not be read; nothing was closed" >&2; return 1; }
   orca terminal list --json > "$WORK/terminals.json" 2>/dev/null || {
     echo "error: orca terminal list failed; nothing was closed" >&2; return 1; }
   orca diagnostics memory --json > "$WORK/memory.json" 2>/dev/null || {
@@ -212,7 +225,11 @@ const minAge = Number(minAgeRaw);
 const read = (f) => fs.readFileSync(`${work}/${f}`, "utf8");
 const clean = (s) => String(s == null ? "" : s).replace(/[\t\r\n]+/g, " ").trim();
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return p; } };
-const exists = (p) => { try { return fs.statSync(p).isDirectory(); } catch (_) { return false; } };
+// Only a missing path is gone; a lookup that fails any other way is unknown.
+const presence = (p) => {
+  try { fs.statSync(p); return "present"; }
+  catch (err) { return err && (err.code === "ENOENT" || err.code === "ENOTDIR") ? "gone" : "unknown"; }
+};
 const under = (p, root) => p === root || p.startsWith(root + "/");
 // Bash `read` merges adjacent tabs, so an empty field is written as "-".
 const row = (fields) => fields.map((f) => (String(f) === "" ? "-" : String(f))).join("\t") + "\n";
@@ -282,7 +299,11 @@ if (mode === "terminals") {
       prelim = "task-worktree"; detail = `${r.id} (${r.home}); ${title}`; emit(); continue;
     }
     if (wt && homes.includes(wt)) scope = "home";
-    else if (wt && /^fm-/.test(wt.split("/").pop())) scope = exists(wt) ? "task" : "gone";
+    else if (wt && /^fm-/.test(wt.split("/").pop())) {
+      const there = presence(wt);
+      if (there === "unknown") { prelim = "unreadable"; emit(); continue; }
+      scope = there === "gone" ? "gone" : "task";
+    }
     else { prelim = "foreign"; emit(); continue; }
     const sp = pidOf.get(clean(t.ptyId));
     if (!Number.isInteger(sp) || sp <= 1 || dup.has(clean(t.ptyId))) { prelim = "no-session"; emit(); continue; }
@@ -325,7 +346,8 @@ if (mode === "terminals") {
     else if (rec) cls = "task";
     else if (homes.some((h) => under(dir, h))) cls = "home";
     else if (!(p.age >= minAge)) cls = "young";
-    else if (!exists(dir)) { verdict = "reap"; cls = "owner-gone"; }
+    else if (presence(dir) === "unknown") cls = "unknown";
+    else if (presence(dir) === "gone") { verdict = "reap"; cls = "owner-gone"; }
     else {
       let live = false;
       for (const [pid, d] of cwd) {
@@ -339,6 +361,12 @@ if (mode === "terminals") {
   }
 }
 JS
+}
+
+path_presence() {  # <path> -> gone|present|unknown; only a missing path is gone
+  node -e '
+try { require("fs").statSync(process.argv[1]); process.stdout.write("present"); }
+catch (err) { process.stdout.write(err && (err.code === "ENOENT" || err.code === "ENOTDIR") ? "gone" : "unknown"); }' "$1" 2>/dev/null || printf 'unknown'
 }
 
 firstmate_title() {  # <title>
@@ -396,19 +424,38 @@ judge_terminal() {
   printf '%s\n' "$tree" | cut -f1 >&3
 }
 
-# recorded_now <handle> <path>: true when a fresh read of the records claims
-# this terminal or its worktree.
+# recorded_now <handle> <path>: 0 when a fresh read of the records claims this
+# terminal or its worktree, 1 when it does not, 2 when the records are unreadable.
 recorded_now() {
-  local handle=$1 wt
+  local handle=$1 wt owners
   wt=$(phys "$2")
-  collect_owners | awk -F'\t' -v h="$handle" -v w="$wt" '
+  owners=$(collect_owners) || return 2
+  printf '%s\n' "$owners" | awk -F'\t' -v h="$handle" -v w="$wt" '
     $1 == "rec" && (($4 != "" && $4 == h) || ($5 != "" && $5 == w)) { found = 1 }
     END { exit found ? 0 : 1 }'
 }
 
+# current_title <handle>: the terminal's title from a fresh Orca listing; exit 1
+# when the listing is unreadable or no longer holds the terminal.
+current_title() {  # <handle>
+  orca terminal list --json 2>/dev/null | node -e '
+let d; try { d = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (_) { process.exit(1); }
+const ts = d && d.ok !== false && d.result && Array.isArray(d.result.terminals) ? d.result.terminals : null;
+if (!ts) process.exit(1);
+const t = ts.find((x) => x && x.handle === process.argv[1]);
+if (!t) process.exit(1);
+process.stdout.write(typeof t.title === "string" ? t.title.replace(/[\t\r\n]+/g, " ") : "");' "$1"
+}
+
 close_terminal() {  # <handle> <path> <class> <pid> -> closed|skipped:<why>|failed:<why>
-  local handle=$1 path=$2 class=$3 pid=$4 state out facts pty now scan agents
-  if recorded_now "$handle" "$path"; then printf 'skipped\tnow-recorded'; return 0; fi
+  local handle=$1 path=$2 class=$3 pid=$4 state out facts pty now scan agents title
+  local rec=0
+  recorded_now "$handle" "$path" || rec=$?
+  case "$rec" in
+    0) printf 'skipped\tnow-recorded'; return 0 ;;
+    1) ;;
+    *) printf 'skipped\tnow-unreadable-records'; return 0 ;;
+  esac
   state=$(fm_backend_orca_agent_state "$handle")
   case "$state" in
     dead|missing) ;;
@@ -426,11 +473,20 @@ close_terminal() {  # <handle> <path> <class> <pid> -> closed|skipped:<why>|fail
       esac
       ;;
     gone-worktree)
-      [ ! -e "$path" ] || { printf 'skipped\tnow-present'; return 0; }
+      case "$(path_presence "$path")" in
+        gone) ;;
+        present) printf 'skipped\tnow-present'; return 0 ;;
+        *) printf 'skipped\tnow-unreadable'; return 0 ;;
+      esac
       ;;
   esac
-  # Last, so a session replaced after the state read is still caught: a
-  # connected terminal must still be rooted at the classified session pid.
+  # A home-root tab is the captain's unless its title still names a firstmate
+  # session; it may have been renamed since the listing.
+  if [ "$class" = idle-session ]; then
+    title=$(current_title "$handle") || { printf 'skipped\tnow-unreadable'; return 0; }
+    firstmate_title "$title" || { printf 'skipped\tnow-retitled'; return 0; }
+  fi
+  # A connected terminal must still be rooted at the classified session pid.
   if [ "$state" = dead ]; then
     facts=$(fm_backend_orca_terminal_facts "$handle") || { printf 'skipped\tnow-unreadable'; return 0; }
     IFS=$'\x1f' read -r _ _ _ _ pty _ _ <<FACTS
@@ -439,6 +495,19 @@ FACTS
     now=$(fm_backend_orca_session_pid "$pty") || { printf 'skipped\tnow-unreadable'; return 0; }
     [ "$now" = "$pid" ] || { printf 'skipped\tnow-replaced'; return 0; }
   fi
+  # The last read before the close: the classified session, if it still runs,
+  # must still hold shells and nothing else. An agent started under the same
+  # session pid during the checks above is caught here.
+  local absent=0
+  fm_backend_orca_pid_absent "$pid" || absent=$?
+  case "$absent" in
+    0) ;;
+    1)
+      state=$(fm_backend_orca_tree_state "$pid")
+      [ "$state" = dead ] || { printf 'skipped\tnow-%s' "$state"; return 0; }
+      ;;
+    *) printf 'skipped\tnow-unreadable'; return 0 ;;
+  esac
   out=$(orca terminal close --terminal "$handle" --json 2>/dev/null) || true
   if printf '%s' "$out" | node -e '
 let d; try { d = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (_) { process.exit(1); }
@@ -503,7 +572,7 @@ read_inventory || exit 1
 : > "$WORK/exclude.txt"
 classify_node terminals > "$WORK/terminals.tsv" || exit 1
 
-declare -i N_REAP=0 N_KEEP=0 N_DONE=0 N_SKIP=0 N_FAIL=0 B_REAP=0 B_KEEP=0 B_DONE=0 B_SKIP=0 B_FAIL=0 N_TOTAL=0 B_TOTAL=0
+declare -i N_REAP=0 N_KEEP=0 N_DONE=0 N_SKIP=0 N_FAIL=0 B_REAP=0 B_KEEP=0 B_DONE=0 B_SKIP=0 B_FAIL=0 N_TOTAL=0 B_TOTAL=0 INV_FAIL=0
 : > "$WORK/terminal-verdicts.tsv"
 while IFS=$'\t' read -r handle prelim scope pid path detail; do
   [ -n "$handle" ] || continue
@@ -563,10 +632,10 @@ if [ "$APPLY" = 1 ]; then
   if ! LC_ALL=C ps -axo pid=,ppid=,etime=,args= > "$WORK/ps.txt" 2>/dev/null; then
     echo "error: the process table could not be re-read; no browser was stopped" >&2
     : > "$WORK/browsers.tsv"
-    N_FAIL+=1
+    INV_FAIL+=1
   else
     if fm_backend_orca_cwd_scan > "$WORK/cwd.txt"; then CWD_SCAN_OK=1; else CWD_SCAN_OK=0; : > "$WORK/cwd.txt"; fi
-    classify_browsers || { : > "$WORK/browsers.tsv"; N_FAIL+=1; }
+    classify_browsers || { echo "error: browsers could not be classified; no browser was stopped" >&2; : > "$WORK/browsers.tsv"; INV_FAIL+=1; }
   fi
 fi
 
@@ -593,7 +662,7 @@ if [ "$APPLY" = 1 ]; then
   B_KEEP=$((B_TOTAL - B_DONE - B_SKIP - B_FAIL - B_REAP))
   printf 'summary: mode=apply terminals=%d closed=%d skipped=%d failed=%d keep=%d browsers=%d stopped=%d skipped=%d failed=%d reap=%d keep=%d\n' \
     "$N_TOTAL" "$N_DONE" "$N_SKIP" "$N_FAIL" "$N_KEEP" "$B_TOTAL" "$B_DONE" "$B_SKIP" "$B_FAIL" "$B_REAP" "$B_KEEP"
-  [ $((N_FAIL + B_FAIL)) -eq 0 ] || exit 3
+  [ $((N_FAIL + B_FAIL + INV_FAIL)) -eq 0 ] || exit 3
 else
   printf 'summary: mode=dry-run terminals=%d reap=%d keep=%d browsers=%d reap=%d keep=%d\n' \
     "$N_TOTAL" "$N_REAP" "$N_KEEP" "$B_TOTAL" "$B_REAP" "$B_KEEP"
