@@ -1,60 +1,55 @@
 == readable-harnesses
 claude
-exit=0
+rc=0
 == inventory claude codex
 claude readable
 codex unreadable
-exit=3
-== start with codex (must refuse 3)
+rc=3
+== start with unreadable harness (expect 3, no soak.json)
 claude readable
 codex unreadable
 fm-soak-record: refusing to start: a declared harness is unreadable
-exit=3 soak.json exists: no
-== adversarial --out inside home
-fm-soak-record: --out is inside the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.KWcVNA/data/x
-exit=2
-== adversarial --out containing home
+rc=3 soak.json_exists=no
+== start with --out inside home (expect 2)
+fm-soak-record: --out is inside the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fRS5D0/data/soak
+rc=2 created=no
+== start with --out containing home (expect 2)
 fm-soak-record: --out contains the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T
-exit=2
-== adversarial --out /
-fm-soak-record: --out contains the soak home: /
-exit=2
-== adversarial --out inside a case alias of the home (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//FM-LAB.KWcVNA/data/x)
-fm-soak-record: --out is inside the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/FM-LAB.KWcVNA/data/x
-exit=2
-== start (post-change, claude)
+rc=2
+== start baseline
 claude readable
-exit=0
-{"label":"post-change","home":"/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.KWcVNA","revision":"aa43ae61d1e4d39ec6ad58f870d9f69e64bd854c","started_at":1794224898,"harnesses":["claude"],"session_ids":[]}
-home HEAD: aa43ae61d1e4d39ec6ad58f870d9f69e64bd854c
-== sample 1
-exit=0
--- load.tsv
-1794224900	2	4	1	live-sess-1
--- handoff-events.tsv
-1794224900	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.KWcVNA/data/handoff-main.md
-HOME UNCHANGED after sample
-== crew-state as seen by recorder
-state: working · source: run-step · validating (running)
-== sample with a different --home (must refuse 2)
-fm-soak-record: --home is not the home this soak run started on: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soak-live.uDRmjR/other
-exit=2
-== adversarial finish --watchdog-dir inside --out (must refuse 2)
-fm-soak-record: --watchdog-dir is --out or inside it: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soak-live.uDRmjR/soak-out/wd
-exit=2 finished_at=unset
-== sample 2 (after rewrite)
-exit=0
-1794224900	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.KWcVNA/data/handoff-main.md
-1794224904	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.KWcVNA/data/handoff-main.md
-== finish
-exit=0
-HOME UNCHANGED after finish
--- soak.json
+rc=0
 {
-  "label": "post-change",
-  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.KWcVNA",
-  "revision": "aa43ae61d1e4d39ec6ad58f870d9f69e64bd854c",
-  "started_at": 1794224898,
+  "label": "baseline",
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fRS5D0",
+  "revision": "05401661a7ab04a94360da7399f37e93de713559",
+  "started_at": 1794238959,
+  "harnesses": [
+    "claude"
+  ],
+  "session_ids": []
+}
+  home HEAD: 05401661a7ab04a94360da7399f37e93de713559
+== sample
+rc=0
+1794238960	0	3	2	live-sess-1
+-- handoff-events.tsv
+1794238960	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fRS5D0/data/handoff-main.md
+  home unchanged by sample: yes
+== sample with another home (expect 2)
+fm-soak-record: --home is not the home this soak run started on: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soak-live.DALeP4/otherhome.9jJc
+rc=2
+== finish with --watchdog-dir inside --out (expect 2)
+fm-soak-record: --watchdog-dir is --out or inside it: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soak-live.DALeP4/out/wdx
+rc=2 finished_at=null
+== finish
+rc=0
+  home unchanged by finish: yes
+{
+  "label": "baseline",
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fRS5D0",
+  "revision": "05401661a7ab04a94360da7399f37e93de713559",
+  "started_at": 1794238959,
   "harnesses": [
     "claude"
   ],
@@ -64,23 +59,13 @@ HOME UNCHANGED after finish
       "transcript": "transcripts/live-sess-1.jsonl"
     },
     {
-      "id": "live-sess-2",
-      "transcript": "transcripts/live-sess-2.jsonl"
+      "id": "other-sess",
+      "transcript": "transcripts/other-sess.jsonl"
     }
   ],
-  "finished_at": 1794224907,
+  "finished_at": 1794238961,
   "handoff_count": 3,
-  "violations": [
-    {
-      "kind": "undeclared-harness",
-      "task": "feat-c",
-      "harness": "codex"
-    },
-    {
-      "kind": "activity-sources-unavailable",
-      "harness": "claude"
-    }
-  ]
+  "violations": []
 }
 -- out tree
 ./handoff-events.tsv
@@ -88,15 +73,19 @@ HOME UNCHANGED after finish
 ./load.tsv
 ./soak.json
 ./transcripts/live-sess-1.jsonl
-./transcripts/live-sess-2.jsonl
+./transcripts/other-sess.jsonl
 ./wake-ledger.tsv
 ./watchdog/actions.tsv
-./watchdog/handoffs/primary-1.md
+./watchdog/handoffs/lean-1.md
 -- watchdog/actions.tsv
-1794224905	w1	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.KWcVNA	primary	frozen	restart	done	pickup verified
+1794238960	n1	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fRS5D0	primary	handoff-request	nudge	pending	context is low
+1794238960	w1	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fRS5D0	primary	frozen	restart	done	pickup verified
 -- wake-ledger.tsv
-1794224899	ack	g1	4	3,4	["c","d"]
-== finish again (must refuse 1)
-fm-soak-record: the soak run in /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soak-live.uDRmjR/soak-out is already finished
-exit=1
-== no lab state leaked into home: . .. .fm-lab-tmux-dir .lock-session .order-handoff feat-a.meta feat-a.status feat-c.meta wake-ledger.tsv 
+1794238960	ack	g1	4	4	["d"]
+== sample after finish (expect refusal)
+fm-soak-record: the soak run in /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soak-live.DALeP4/out is already finished
+rc=1
+== post-change start/finish
+start rc=0
+finish rc=0
+[{"kind":"activity-sources-unavailable","harness":"claude"}]

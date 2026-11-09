@@ -1,47 +1,57 @@
 #!/usr/bin/env bash
-# Live drive of bin/fm-soak-record.sh against a disposable lab home, real clock.
+# Live drive of bin/fm-soak-record.sh against a disposable lab home (real clock, real helpers).
 set -u
-WT=/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70A83BXS4MCHGRHEVZNM961
-S="$WT/bin/fm-soak-record.sh"
-LAB=$(mktemp -d "${TMPDIR:-/tmp}/fm-lab.XXXXXX"); WORK=$(mktemp -d "${TMPDIR:-/tmp}/fm-soakwork.XXXXXX")
-trap 'bash "$WT/bin/fm-lab-home.sh" teardown "$LAB" >/dev/null 2>&1; rm -rf "$LAB" "$WORK"' EXIT
-bash "$WT/bin/fm-lab-home.sh" create "$LAB" >/dev/null
-TD=$(bash "$WT/bin/fm-lab-home.sh" tmux-dir "$LAB")
-export TMUX_TMPDIR="$TD"; unset TMUX TMUX_PANE FM_STATE_OVERRIDE FM_ROOT_OVERRIDE FM_DATA_OVERRIDE
-run() { echo "\$ fm-soak-record.sh $*" | sed "s#$LAB#<home>#g; s#$WORK#<work>#g"; bash "$S" "$@" 2>&1 | sed "s#$LAB#<home>#g; s#$WORK#<work>#g"; echo "exit=${PIPESTATUS[0]}"; }
-git -C "$LAB" init -q && git -C "$LAB" -c user.name=t -c user.email=t@x.invalid commit -q --allow-empty -m soak-home
+R=$1; EV=$2
+LAB=$(mktemp -d "${TMPDIR:-/tmp}/fm-lab.XXXXXX")
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/fm-soak-live.XXXXXX")
+trap 'rm -rf "$LAB" "$WORK"' EXIT
+"$R/bin/fm-lab-home.sh" create "$LAB" >/dev/null
+git -C "$LAB" init -q && git -C "$LAB" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m home
+export FM_HOME="$LAB"
+OUT="$WORK/out"; WD="$WORK/watchdog"; TR="$WORK/transcripts"
+mkdir -p "$WD/handoffs" "$TR"
+S="$R/bin/fm-soak-record.sh"
+snap() { (cd "$LAB" && find . -path ./.git -prune -o -print0 | sort -z | xargs -0 stat -f '%N %m %z' ) | shasum | cut -c1-16; }
+echo "== readable-harnesses"; "$S" readable-harnesses; echo "rc=$?"
+echo "== inventory claude codex"; "$S" inventory --home "$LAB" --harness claude --harness codex; echo "rc=$?"
+echo "== start with unreadable harness (expect 3, no soak.json)"; "$S" start --home "$LAB" --out "$OUT" --label baseline --harness claude --harness codex; echo "rc=$? soak.json_exists=$([ -e "$OUT/soak.json" ] && echo yes || echo no)"
+echo "== start with --out inside home (expect 2)"; "$S" start --home "$LAB" --out "$LAB/data/soak" --label baseline --harness claude; echo "rc=$? created=$([ -e "$LAB/data/soak" ] && echo yes || echo no)"
+echo "== start with --out containing home (expect 2)"; "$S" start --home "$LAB" --out "$(dirname "$LAB")" --label baseline --harness claude 2>&1 | tail -1; echo "rc=${PIPESTATUS[0]}"
 NOW=$(date +%s)
-# home fixtures: lock session id, a status line in the hour, wake-ledger rows, a task on an undeclared harness, a handoff doc
-printf 'sess-live-1\n' > "$LAB/state/.lock-session"
-printf '[at=%s] working: x\n[at=%s] old\n' $((NOW-60)) $((NOW-7200)) > "$LAB/state/feat-a.status"
-printf '%s\tack\t-\t3\t1,2,3\t["a","b","c"]\n' $((NOW-30)) > "$LAB/state/wake-ledger.tsv"
+# Seed home inputs before baseline snapshot
+printf '%s\tack\tg1\t3\t1,2,3\t["a","b","c"]\n' $((NOW - 30)) > "$LAB/state/wake-ledger.tsv"
+printf 'working [at=%s]: x\nneeds-decision [at=%s]: y\n' $((NOW - 20)) $((NOW - 10)) > "$LAB/state/feat-a.status"
 printf 'window=fm:fm-feat-a\nworktree=%s\nkind=ship\nbackend=tmux\nharness=codex\n' "$WORK" > "$LAB/state/feat-a.meta"
-mkdir -p "$WORK/wd/handoffs" "$WORK/tx"
-snap() { (cd "$LAB" && find . -path ./.git -prune -o -print | LC_ALL=C sort | while read -r p; do [ -f "$p" ] && echo "$p $(stat -f %m "$p") $(cksum <"$p")" || echo "$p D"; done); }
-echo "== S1 readable-harnesses / inventory"; run readable-harnesses; run inventory --home "$LAB" --harness claude; run inventory --home "$LAB" --harness claude --harness codex
-echo "== S2 start refuses unreadable harness"; run start --home "$LAB" --out "$WORK/out" --label baseline --harness codex; ls "$WORK/out/soak.json" 2>&1 | sed "s#$WORK#<work>#"
-echo "== S3 start refuses --out inside / containing home"; run start --home "$LAB" --out "$LAB/data/out" --label baseline --harness claude; run start --home "$LAB/data" --out "$LAB" --label baseline --harness claude
-BEFORE=$(snap)
-echo "== S4 start baseline"; run start --home "$LAB" --out "$WORK/out" --label baseline --harness claude; jq . "$WORK/out/soak.json" | sed "s#$LAB#<home>#g"
-echo "revision matches home HEAD: $( [ "$(jq -r .revision "$WORK/out/soak.json")" = "$(git -C "$LAB" rev-parse HEAD)" ] && echo yes || echo NO)"
-sleep 1; printf '# handoff\n' > "$LAB/data/handoff-a.md"; BEFORE=$(snap)
-echo "== S5 sample"; run sample --home "$LAB" --out "$WORK/out"; cat "$WORK/out/load.tsv"; echo "-- handoff-events"; sed "s#$LAB#<home>#g" "$WORK/out/handoff-events.tsv"
-echo "home unchanged by sample: $( [ "$(snap)" = "$BEFORE" ] && echo yes || echo NO)"
-echo "== S6 sample refuses another --home"; OTHER=$(mktemp -d); run sample --home "$OTHER" --out "$WORK/out"; rm -rf "$OTHER"
-# window activity: transcript, watchdog rows
-printf '{"x":1}\n' > "$WORK/tx/sess-live-2.jsonl"
-N2=$(date +%s)
-printf '%s\tw1\t%s\tprimary\tfrozen\trestart\tdone\tpickup verified\n%s\tw9\t/elsewhere\tprimary\tfrozen\trestart\tdone\tx\n' "$N2" "$LAB" "$N2" > "$WORK/wd/actions.tsv"
-printf 'wd handoff\n' > "$WORK/wd/handoffs/h1.md"
-echo "== S7 finish refuses --watchdog-dir inside --out"; mkdir -p "$WORK/out/wdx"; run finish --home "$LAB" --out "$WORK/out" --watchdog-dir "$WORK/out/wdx" --transcript-dir "$WORK/tx"; echo "finished_at after refusal: $(jq -r '.finished_at // "unset"' "$WORK/out/soak.json")"; rmdir "$WORK/out/wdx"
-sleep 1; BEFORE=$(snap)
-echo "== S8 finish"; run finish --home "$LAB" --out "$WORK/out" --watchdog-dir "$WORK/wd" --transcript-dir "$WORK/tx"
-jq '{label,finished_at_set:(.finished_at!=null),session_ids,handoff_count,violations}' "$WORK/out/soak.json" | sed "s#$WORK#<work>#g"
-echo "-- out tree"; (cd "$WORK/out" && find . -type f | LC_ALL=C sort)
-echo "-- watchdog/actions.tsv"; sed "s#$LAB#<home>#g" "$WORK/out/watchdog/actions.tsv"
-echo "-- wake-ledger.tsv"; cat "$WORK/out/wake-ledger.tsv"
-echo "home unchanged by finish: $( [ "$(snap)" = "$BEFORE" ] && echo yes || echo NO)"
-echo "== S9 sample/finish after finish refused"; run sample --home "$LAB" --out "$WORK/out"; run finish --home "$LAB" --out "$WORK/out" --watchdog-dir "$WORK/wd" --transcript-dir "$WORK/tx"
-echo "== S10 post-change violations without fm-activity-sources.sh"; run start --home "$LAB" --out "$WORK/out2" --label post-change --harness claude; run finish --home "$LAB" --out "$WORK/out2" --watchdog-dir "$WORK/wd" --transcript-dir "$WORK/tx"; jq -c .violations "$WORK/out2/soak.json"
-echo "== S11 hard-linked load.tsv to a home file is refused"; run start --home "$LAB" --out "$WORK/out3" --label baseline --harness claude; ln "$LAB/data/handoff-a.md" "$WORK/out3/load.tsv"; B=$(snap); run sample --home "$LAB" --out "$WORK/out3"; echo "home unchanged: $( [ "$(snap)" = "$B" ] && echo yes || echo NO)"
-echo "== S12 case-alias --home accepted and pinned (case-insensitive fs)"; ALIAS=$(printf '%s' "$LAB" | sed 's/fm-lab/FM-LAB/'); if [ -d "$ALIAS" ]; then run start --home "$LAB" --out "$WORK/out4" --label baseline --harness claude; run sample --home "$LAB" --out "$WORK/out4"; run sample --home "$ALIAS" --out "$WORK/out4"; run finish --home "$LAB" --out "$WORK/out4" --watchdog-dir "$WORK/wd" --transcript-dir "$WORK/tx"; echo "handoff-event rows: $(wc -l < "$WORK/out4/handoff-events.tsv" | tr -d ' ')"; jq -c '{handoff_count}' "$WORK/out4/soak.json"; else echo "case-sensitive fs: not applicable"; fi
+printf 'live-sess-1\nanchor_pid=1\n' > "$LAB/state/.lock-session"
+sleep 1
+echo "== start baseline"; "$S" start --home "$LAB" --out "$OUT" --label baseline --harness claude; echo "rc=$?"; jq . "$OUT/soak.json"
+echo "  home HEAD: $(git -C "$LAB" rev-parse HEAD)"
+sleep 1
+echo "handoff v1" > "$LAB/data/handoff-main.md"
+printf 'doc=%s\nat=%s\nowner=1\n' "$LAB/data/handoff-main.md" "$(date +%s)" > "$LAB/state/.order-handoff"
+echo '{"type":"x"}' > "$TR/live-sess-1.jsonl"; echo '{"type":"y"}' > "$TR/other-sess.jsonl"
+T=$(date +%s)
+printf '%s\tn1\t%s\tprimary\thandoff-request\tnudge\tpending\tcontext is low\n' "$T" "$LAB" > "$WD/actions.tsv"
+printf '%s\tw1\t%s\tprimary\tfrozen\trestart\tdone\tpickup verified\n' "$T" "$LAB" >> "$WD/actions.tsv"
+printf '%s\tw9\t/some/other/home\tprimary\tfrozen\trestart\tdone\tpickup verified\n' "$T" >> "$WD/actions.tsv"
+echo "lean" > "$WD/handoffs/lean-1.md"
+printf '%s\tack\tg1\t4\t4\t["d"]\n' "$T" >> "$LAB/state/wake-ledger.tsv"
+B=$(snap)
+echo "== sample"; "$S" sample --home "$LAB" --out "$OUT"; echo "rc=$?"; cat "$OUT/load.tsv"; echo "-- handoff-events.tsv"; cat "$OUT/handoff-events.tsv"
+echo "  home unchanged by sample: $([ "$B" = "$(snap)" ] && echo yes || echo NO)"
+echo "== sample with another home (expect 2)"; OTHER=$(mktemp -d "$WORK/otherhome.XXXX"); mkdir -p "$OTHER/state"; "$S" sample --home "$OTHER" --out "$OUT"; echo "rc=$?"
+echo "== finish with --watchdog-dir inside --out (expect 2)"; mkdir -p "$OUT/wdx"; "$S" finish --home "$LAB" --out "$OUT" --watchdog-dir "$OUT/wdx" --transcript-dir "$TR"; echo "rc=$? finished_at=$(jq -r .finished_at "$OUT/soak.json")"
+sleep 1
+echo "handoff v2" > "$LAB/data/handoff-main.md"
+B=$(snap)
+echo "== finish"; "$S" finish --home "$LAB" --out "$OUT" --watchdog-dir "$WD" --transcript-dir "$TR"; echo "rc=$?"
+echo "  home unchanged by finish: $([ "$B" = "$(snap)" ] && echo yes || echo NO)"
+jq . "$OUT/soak.json"
+echo "-- out tree"; (cd "$OUT" && find . -type f | sort)
+echo "-- watchdog/actions.tsv"; cat "$OUT/watchdog/actions.tsv"
+echo "-- wake-ledger.tsv"; cat "$OUT/wake-ledger.tsv"
+echo "== sample after finish (expect refusal)"; "$S" sample --home "$LAB" --out "$OUT"; echo "rc=$?"
+# post-change run
+OUT2="$WORK/out2"
+echo "== post-change start/finish"; "$S" start --home "$LAB" --out "$OUT2" --label post-change --harness claude >/dev/null; echo "start rc=$?"
+"$S" finish --home "$LAB" --out "$OUT2" --watchdog-dir "$WD" --transcript-dir "$TR" >/dev/null; echo "finish rc=$?"; jq -c .violations "$OUT2/soak.json"
