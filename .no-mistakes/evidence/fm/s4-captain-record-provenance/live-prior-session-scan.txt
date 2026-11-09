@@ -1,0 +1,27 @@
+# Live watchdog scan: second mate whose heartbeat names a prior session (%1); parent meta pane is %0
+$ FM_HOME=parent bin/fm-watchdog.sh scan
+subject parent (/private<lab>/parent)
+  endpoint=tmux:%2 session=00000000-0000-4000-8000-0000000000a1 lock_pid=2187 alive=1 instance=match owner=live
+  captain=tmux:%2 moved_at=1794257750
+  pane_static=0s dialog=none usage_limit_autowait=0 composer=unknown turn_running=unknown cpu_busy=unknown
+  transcript_age=unknowns loop=none/0 restart_requested=0 ctx=unknown [footer=unknown derived=unknown owner=none disagreement=-]
+  owed=0 oldest=0s afk=0 daemon=unknown heartbeat_age=0s
+subject mate (/private<lab>/mate)
+  endpoint=tmux:%0 session=00000000-0000-4000-8000-0000000000b1 lock_pid=2225 alive=1 instance=match owner=live
+  captain=tmux:%0 moved_at=1794257750
+  pane_static=0s dialog=none usage_limit_autowait=0 composer=unknown turn_running=unknown cpu_busy=unknown
+  transcript_age=unknowns loop=none/0 restart_requested=0 ctx=unknown [footer=unknown derived=unknown owner=none disagreement=-]
+  owed=0 oldest=0s afk=0 daemon=unknown heartbeat_age=6s
+
+$ cat mate/state/watchdog/captain
+owner=session:00000000-0000-4000-8000-0000000000b1
+lock_pid=2225
+session=00000000-0000-4000-8000-0000000000b1
+alive=live
+usage_limit_autowait=0
+backend=tmux
+target=%0
+moved_at=1794257750
+lock_at=1794257750
+checked_at=1794257851
+source=watchdog
