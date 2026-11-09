@@ -1,0 +1,122 @@
+== S1 readable-harnesses / inventory
+$ fm-soak-record.sh readable-harnesses
+claude
+[exit 0]
+$ fm-soak-record.sh inventory --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qugq6K --harness claude
+claude readable
+[exit 0]
+$ fm-soak-record.sh inventory --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qugq6K --harness claude --harness codex
+claude readable
+codex unreadable
+[exit 3]
+== S2 start refuses unreadable harness
+$ fm-soak-record.sh start --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qugq6K --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakx.oS6aHE/out --label baseline --harness codex
+codex unreadable
+fm-soak-record: refusing to start: a declared harness is unreadable
+[exit 3]
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakx.oS6aHE/out/soak.json: No such file or directory
+== S8 adversarial --out inside / containing home
+$ fm-soak-record.sh start --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qugq6K --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qugq6K/data/out --label baseline --harness claude
+fm-soak-record: --out is inside the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.Qugq6K/data/out
+[exit 2]
+$ fm-soak-record.sh start --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qugq6K/data --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qugq6K --label baseline --harness claude
+fm-soak-record: --out contains the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.Qugq6K
+[exit 2]
+== S2 start
+$ fm-soak-record.sh start --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qugq6K --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakx.oS6aHE/out --label post-change --harness claude
+claude readable
+[exit 0]
+{
+  "label": "post-change",
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.Qugq6K",
+  "revision": "9576d8ff5a14fd3647470f632cafc43e51563625",
+  "started_at": 1794210781,
+  "harnesses": [
+    "claude"
+  ],
+  "session_ids": []
+}
+
+home HEAD: 9576d8ff5a14fd3647470f632cafc43e51563625
+== S3 sample
+$ fm-soak-record.sh sample --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qugq6K --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakx.oS6aHE/out
+[exit 0]
+$ fm-soak-record.sh sample --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qugq6K --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakx.oS6aHE/out
+[exit 0]
+-- load.tsv
+1794210782	2	2	1	sess-live
+1794210784	2	2	1	sess-live
+HOME UNCHANGED across sample (besides test-written doc): yes
+== S9 adversarial --home mismatch
+$ fm-soak-record.sh sample --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakx.oS6aHE/other --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakx.oS6aHE/out
+fm-soak-record: --home is not the home this soak run started on: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soakx.oS6aHE/other
+[exit 2]
+== S10 adversarial unsafe session id
+$ fm-soak-record.sh sample --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qugq6K --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakx.oS6aHE/out
+[exit 0]
+1794210785	2	2	1	-
+== S11 adversarial watchdog-dir inside out
+$ fm-soak-record.sh finish --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qugq6K --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakx.oS6aHE/out --watchdog-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakx.oS6aHE/out/wdin --transcript-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakx.oS6aHE/tr
+fm-soak-record: --watchdog-dir is --out or inside it: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soakx.oS6aHE/out/wdin
+[exit 2]
+keep
+0
+== S4 finish
+$ fm-soak-record.sh finish --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qugq6K --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakx.oS6aHE/out --watchdog-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakx.oS6aHE/wd --transcript-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakx.oS6aHE/tr
+[exit 0]
+{
+  "label": "post-change",
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.Qugq6K",
+  "revision": "9576d8ff5a14fd3647470f632cafc43e51563625",
+  "started_at": 1794210781,
+  "harnesses": [
+    "claude"
+  ],
+  "session_ids": [
+    {
+      "id": "sess-live",
+      "transcript": "transcripts/sess-live.jsonl"
+    },
+    {
+      "id": "sess-other",
+      "transcript": "transcripts/sess-other.jsonl"
+    }
+  ],
+  "finished_at": 1794210787,
+  "handoff_count": 3,
+  "violations": [
+    {
+      "kind": "undeclared-harness",
+      "task": "feat-c",
+      "harness": "codex"
+    },
+    {
+      "kind": "activity-sources-unavailable",
+      "harness": "claude"
+    }
+  ]
+}
+
+-- handoff-events.tsv
+1794210783	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.Qugq6K/data/handoff-x.md
+1794210785	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.Qugq6K/data/handoff-x.md
+-- out tree
+./handoff-events.tsv
+./handoffs/handoff-x.md
+./load.tsv
+./soak.json
+./transcripts/sess-live.jsonl
+./transcripts/sess-other.jsonl
+./wake-ledger.tsv
+./watchdog/actions.tsv
+./watchdog/handoffs/primary-1.md
+./wdin/actions.tsv
+-- watchdog/actions.tsv
+1794210787	w1	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qugq6K	primary	frozen	restart	done	pickup
+-- wake-ledger.tsv
+1794210787	ack	g2	3	3	["c"]
+HOME UNCHANGED across finish: yes
+== S12 sample after finish refused
+$ fm-soak-record.sh sample --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qugq6K --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakx.oS6aHE/out
+fm-soak-record: the soak run in /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soakx.oS6aHE/out is already finished
+[exit 1]
