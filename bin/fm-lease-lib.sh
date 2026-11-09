@@ -146,7 +146,6 @@ fm_lease_command_lock_acquire() {
   echo "error: $action refused - this home's lease-command lock ($lockdir) is busy, still held${holder:+ by $holder} after ${wait}s (wait status $rc); retry the command once that holder finishes, and if it stays held, inspect that process and never remove the lock by hand" >&2
   exit "$FM_LEASE_REFUSE_EXIT"
 }
-
 # fm_lease_tagged_holder_live <value>: 0 iff <value> is a Windows-tagged
 # session-lock identity whose holder is a live verified harness. Only a
 # win:-shaped value reaches the session-lock library, so a POSIX home never
@@ -279,6 +278,7 @@ fm_lease_live() {
       return
       ;;
   esac
+  kill -0 "$FM_LEASE_PID" 2>/dev/null || return 1
   case "$lock_pid" in ''|0|1|*[!0-9]*) return 1 ;; esac
   [ "$FM_LEASE_PID" = "$lock_pid" ] || return 1
   # shellcheck source=/dev/null
@@ -295,6 +295,28 @@ fm_lease_rekey_holder() {
   local old=$1 new=$2 lease task tmp rc=0
   for lease in "$STATE"/.lease-*; do
     [ -e "$lease" ] || continue
+    task=${lease##*/.lease-}
+    fm_lease_valid_id "$task" || continue
+    fm_lease_read "$task" || continue
+    [ -n "$FM_LEASE_ACTOR" ] && [ "$FM_LEASE_PID" = "$old" ] || continue
+    tmp=$(mktemp "$STATE/.fm-lease-tmp.XXXXXX" 2>/dev/null) || { rc=1; continue; }
+    if ! { printf '%s\t%s\t%s\n' "$FM_LEASE_ACTOR" "$new" "$FM_LEASE_EPOCH" > "$tmp" && mv -f -- "$tmp" "$lease"; } 2>/dev/null; then
+      rm -f -- "$tmp"
+      rc=1
+    fi
+  done
+  return "$rc"
+}
+
+# fm_lease_rekey_holder <old-pid> <new-pid>: rewrite every lease recorded
+# against <old-pid> to <new-pid>, keeping its actor and epoch. The caller holds
+# the lease-command lock. Returns 1 when any matching lease could not be
+# rewritten.
+fm_lease_rekey_holder() {
+  local old=$1 new=$2 lease task tmp rc=0
+  for lease in "$STATE"/.lease-*; do
+    [ -e "$lease" ] || continue
+    case "$lease" in *.lock) continue ;; esac
     task=${lease##*/.lease-}
     fm_lease_valid_id "$task" || continue
     fm_lease_read "$task" || continue

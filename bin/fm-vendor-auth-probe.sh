@@ -124,8 +124,7 @@ done
 
 [ -n "$PROBE" ] || die_usage "a probe name is required"
 
-# A non-positive bound is not a bound: `timeout 0` and the Perl fallback's
-# `alarm 0` both disable the deadline, so a hung vendor CLI would run unbounded.
+# Apply the shared bound contract from bin/fm-timeout-lib.sh.
 TIMEOUT=${FM_VENDOR_AUTH_PROBE_TIMEOUT:-20}
 case "$TIMEOUT" in
   ''|*[!0-9]*|0*) TIMEOUT=20 ;;

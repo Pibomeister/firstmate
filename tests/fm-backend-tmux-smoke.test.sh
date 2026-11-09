@@ -83,10 +83,12 @@ pass "real tmux: server creation drops task-scoped FM variables and retains tuni
 
 "$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "$SESSION" -x 200 -y 50 \
   || fail "real tmux: new-session failed"
-"$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "$OTHER_SESSION" -x 200 -y 50 \
+tmux new-session -d -s "$OTHER_SESSION" -x 200 -y 50 \
   || fail "real tmux: second new-session failed"
-"$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "$PREFIX_SESSION" -n "$WINDOW" -x 200 -y 50 \
+tmux new-session -d -s "$PREFIX_SESSION" -n "$WINDOW" -x 200 -y 50 \
   || fail "real tmux: prefix-sharing session failed"
+tmux new-session -d -s firstmate -n supervisor -x 200 -y 50 \
+  || fail "real tmux: default supervisor session failed"
 fm_backend_tmux_create_task "$SESSION" "$WINDOW" "$HOME" \
   || fail "fm_backend_tmux_create_task failed to create the task window"
 tmux list-windows -t "$SESSION" -F '#{window_name}' | grep -qx "$WINDOW" \

@@ -315,13 +315,18 @@ _fm_task_inbox_strip_holds() {  # <file>
 # a repeated identical local steer is a deliberate new instruction.
 fm_task_inbox_write_idempotent() {  # <state-dir> <task-id> <text> [delivery-mode]
   local state=$1 task=$2 text=$3 delivery_mode=${4:-} dir lock want have f rec='' status=0
+  local first_line=${3%%$'\n'*} scan_dir
   dir=$(fm_task_inbox_dir "$state" "$task")
   mkdir -p "$dir/handled" || return 1
   lock="$dir/.seq.lock"
   fm_task_inbox_lock_acquire "$lock" || return 1
   if want=$(mktemp "$dir/.dedup.XXXXXX") && have=$(mktemp "$dir/.dedup.XXXXXX"); then
-    if printf '%s' "$text" > "$want" && _fm_task_inbox_strip_holds "$want"; then
-      for f in "$dir"/*.msg "$dir/handled"/*.msg; do
+    if printf '%s' "$text" > "$want"; then
+      # One grep per directory replaces per-record parsing of unrelated history.
+      # Header/other-line hits are harmless: mode and exact body still decide.
+      # Empty bodies also match the separator, including empty legacy records.
+      [ -n "$text" ] || first_line=--
+      while IFS= read -r -d '' f; do
         if [ ! -e "$f" ]; then
           case "$f" in
             "$dir"/*.msg)
@@ -350,7 +355,17 @@ fm_task_inbox_write_idempotent() {  # <state-dir> <task-id> <text> [delivery-mod
         [ ! -e "$dir/handled/${f##*/}" ] || f="$dir/handled/${f##*/}"
         rec=$f
         break
-      done
+      done < <(
+        # Expand handled/ only AFTER scanning pending records: an acknowledgement
+        # racing grep must remain visible even if its original path disappeared.
+        for scan_dir in "$dir" "$dir/handled"; do
+          # A read/argument-limit error must not turn an exact retry into a new
+          # request. Fall back to the original scan only on error, not no-match.
+          LC_ALL=C grep -lFx --null -- "$first_line" "$scan_dir"/*.msg 2>/dev/null || {
+            [ "$?" -eq 1 ] || printf '%s\0' "$scan_dir"/*.msg
+          }
+        done
+      )
     else
       status=1
     fi
