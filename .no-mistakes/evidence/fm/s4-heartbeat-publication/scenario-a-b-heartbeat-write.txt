@@ -1,0 +1,37 @@
+## Scenario A: real fm-heartbeat.sh --write in a lab home, cycle 15, grace 60
+exit=0
+wall: before=1794257181 after=1794257189
+{
+  "schema": "fm-heartbeat.v1",
+  "generated": "2026-11-09T20:46:21Z",
+  "generated_epoch": 1794257181,
+  "published_epoch": 1794257189,
+  "stale_after_secs": 486,
+  "primary_context": {
+    "used_tokens": {
+      "unknown": true,
+      "reason": "transcript had no token usage"
+    },
+    "remaining": {
+      "unknown": true,
+      "reason": "harness showed no context text in its pane"
+    },
+    "derived": {
+      "unknown": true,
+      "reason": "no readable transcript"
+    }
+  },
+  "failure": null
+}
+## Scenario B: grace key removed -> stale_after_secs null
+exit=0
+{
+  "published_epoch": 1794257196,
+  "stale_after_secs": null
+}
+## Scenario B2: grace set, no cycle period passed (manual run) -> null
+exit=0
+{
+  "published_epoch": 1794257216,
+  "stale_after_secs": null
+}

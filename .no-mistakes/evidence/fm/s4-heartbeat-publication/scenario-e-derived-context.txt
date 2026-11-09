@@ -1,0 +1,16 @@
+## Scenario E: derived context beside the footer (real tmux pane %0 on lab socket, transcript 90000 tokens, window 200000)
+exit=0
+{
+  "primary_context": {
+    "used_tokens": 90000,
+    "remaining": {
+      "percent": 12,
+      "source": "terminal"
+    },
+    "derived": {
+      "percent": 55,
+      "source": "transcript"
+    }
+  },
+  "failure": null
+}

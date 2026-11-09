@@ -1,0 +1,11 @@
+## Scenario D: real watcher, FM_POLL=5 (cycle) vs FM_HEARTBEAT=600 (wake cadence), grace 60; watcher pid 52163
+t=1794257309 published_epoch stale_after_secs: 1794257307 476
+t=1794257317 published_epoch stale_after_secs: 1794257317 476
+t=1794257324 published_epoch stale_after_secs: 1794257323 476
+t=1794257333 published_epoch stale_after_secs: 1794257332 476
+t=1794257344 published_epoch stale_after_secs: 1794257343 476
+t=1794257366 published_epoch stale_after_secs: 1794257364 476
+watcher alive
+watcher stopped at 1794257368
+25s after stop: published_epoch=1794257364
+35s after stop: published_epoch=1794257364

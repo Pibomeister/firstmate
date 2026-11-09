@@ -1,0 +1,9 @@
+## Scenario E2 (adversarial): config directory override -> derived unknown, never a number from unused records
+exit=0
+{
+  "derived": {
+    "unknown": true,
+    "reason": "state or config directory override in use"
+  },
+  "used": 90000
+}

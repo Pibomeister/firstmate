@@ -1,0 +1,11 @@
+## Scenario C: fm_nm_bounded on a TERM-ignoring child (bound 2s); timeout binary: /opt/homebrew/bin/timeout
+exit=124 elapsed=3s
+child 78383 killed
+## Scenario C2: wrapper dies on TERM, TERM-ignoring grandchild holds output (captured via $())
+exit=124 elapsed=3s
+grandchild  killed
+## Scenario C3: normal command keeps its exit status and stdout
+exit=3 out=hello
+## Scenario C2 (redo): wrapper exits on TERM, TERM-ignoring grandchild holds stdout (captured via $())
+exit=124 elapsed=2s grandchild_pid=54666
+grandchild 54666 killed
