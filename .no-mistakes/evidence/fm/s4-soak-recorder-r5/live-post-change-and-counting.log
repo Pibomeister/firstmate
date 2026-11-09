@@ -1,0 +1,82 @@
+## post-change run (out2)
+{
+  "label": "post-change",
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.J1gQYF/home",
+  "revision": "bb3aa8bceda8b4ca671f14d5c37d9f9f1b25f195",
+  "started_at": 1794222925,
+  "harnesses": [
+    "claude"
+  ],
+  "session_ids": [
+    {
+      "id": "sess-live",
+      "transcript": "transcripts/sess-live.jsonl"
+    }
+  ],
+  "finished_at": 1794222929,
+  "handoff_count": 1,
+  "violations": [
+    {
+      "kind": "undeclared-harness",
+      "task": "w2",
+      "harness": "codex"
+    },
+    {
+      "kind": "activity-sources-unavailable",
+      "harness": "claude"
+    }
+  ]
+}
+
+1794222926	2	3	3	-
+home snapshot diff across start/sample/finish with TMPDIR=<home>/tmp: none (HOME UNCHANGED)
+## counting run (out3): data handoff doc + completed frozen restart
+{
+  "label": "baseline",
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.J1gQYF/home",
+  "revision": "bb3aa8bceda8b4ca671f14d5c37d9f9f1b25f195",
+  "started_at": 1794222945,
+  "harnesses": [
+    "claude"
+  ],
+  "session_ids": [],
+  "finished_at": 1794222949,
+  "handoff_count": 2,
+  "violations": [
+    {
+      "kind": "undeclared-harness",
+      "task": "w2",
+      "harness": "codex"
+    }
+  ]
+}
+1794222948	wd-a	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.J1gQYF/home	fm-w1	frozen	restart	pending	x
+1794222948	wd-a	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.J1gQYF/home	fm-w1	frozen	restart	done	x
+1794222946	ack	-	9	7,8	["x","y"]
+## session ids (out4)
+1794222963	2	5	3	primary-sess-42
+1794222964	2	5	3	-
+{
+  "label": "baseline",
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.J1gQYF/home",
+  "revision": "bb3aa8bceda8b4ca671f14d5c37d9f9f1b25f195",
+  "started_at": 1794222963,
+  "harnesses": [
+    "claude"
+  ],
+  "session_ids": [
+    {
+      "id": "primary-sess-42",
+      "transcript": "missing-transcript"
+    }
+  ],
+  "finished_at": 1794222966,
+  "handoff_count": 0,
+  "violations": [
+    {
+      "kind": "undeclared-harness",
+      "task": "w2",
+      "harness": "codex"
+    }
+  ]
+}

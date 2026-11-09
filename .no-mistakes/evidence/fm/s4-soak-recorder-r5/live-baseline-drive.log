@@ -1,0 +1,91 @@
+create window failed: index 0 in use
+create window failed: index 0 in use
+== readable-harnesses
+claude
+rc=0
+== inventory claude codex
+claude readable
+codex unreadable
+rc=3
+== start refused on codex
+claude readable
+codex unreadable
+fm-soak-record: refusing to start: a declared harness is unreadable
+rc=3
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.J1gQYF/out: No such file or directory
+== out inside home refused
+fm-soak-record: --out is inside the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.J1gQYF/home/sub
+rc=2
+== out = / refused
+fm-soak-record: --out contains the soak home: /
+rc=2
+== out = //<parent of home> refused
+fm-soak-record: --out contains the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.J1gQYF
+rc=2
+== start baseline
+claude readable
+rc=0
+{
+  "label": "baseline",
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.J1gQYF/home",
+  "revision": "bb3aa8bceda8b4ca671f14d5c37d9f9f1b25f195",
+  "started_at": 1794222881,
+  "harnesses": [
+    "claude"
+  ],
+  "session_ids": []
+}
+
+home HEAD: bb3aa8bceda8b4ca671f14d5c37d9f9f1b25f195
+== sample
+rc=0
+1794222881	0	0	3	-
+== sample wrong home refused
+fm-soak-record: --home is not the home this soak run started on: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.J1gQYF/copies
+rc=2
+== sample 2
+rc=0
+1794222881	0	0	3	-
+1794222884	0	0	3	-
+1794222884	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.J1gQYF/home/data/handoff-1.md
+== finish watchdog inside out refused
+fm-soak-record: --watchdog-dir is --out or inside it: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.J1gQYF/out/wd
+rc=2
+0
+== finish
+rc=0
+{
+  "label": "baseline",
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.J1gQYF/home",
+  "revision": "bb3aa8bceda8b4ca671f14d5c37d9f9f1b25f195",
+  "started_at": 1794222881,
+  "harnesses": [
+    "claude"
+  ],
+  "session_ids": [
+    {
+      "id": "sess-1",
+      "transcript": "transcripts/sess-1.jsonl"
+    }
+  ],
+  "finished_at": 1794222886,
+  "handoff_count": 1,
+  "violations": []
+}
+
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.J1gQYF/out/handoff-events.tsv
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.J1gQYF/out/handoffs/handoff-1.md
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.J1gQYF/out/load.tsv
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.J1gQYF/out/soak.json
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.J1gQYF/out/transcripts/sess-1.jsonl
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.J1gQYF/out/wake-ledger.tsv
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.J1gQYF/out/watchdog/actions.tsv
+== sample after finish refused
+fm-soak-record: the soak run in /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.J1gQYF/out is already finished
+rc=1
+== home diff (expect only ./data/handoff-1.md added, ./data mtime)
+3c3,4
+< ./data 1794222881 64
+---
+> ./data 1794222884 96
+> ./data/handoff-1.md 1794222884 10
