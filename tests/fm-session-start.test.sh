@@ -1116,6 +1116,40 @@ EOF
   pass "a large wake presentation saves to a file, then bounds annotation and open-decision lines inline while every record prints"
 }
 
+# When the save path is a directory, mv would place the copy inside it and
+# report success; the save must count as failed, so nothing is left out inline.
+test_wake_presentation_keeps_everything_when_save_path_is_a_directory() {
+  local rec root home fakebin out saved i
+  rec=$(new_world wake-spill-dir)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  awk 'BEGIN { for (i = 1; i <= 150; i++) printf "working: step %03d padding padding padding padding padding padding\n", i }' \
+    > "$home/state/task-w.status"
+  append_wake "$home/state" signal task-w.status "working: step 150" || fail "seed wake failed"
+  i=1
+  while [ "$i" -le 8 ]; do
+    printf 'needs-decision [key=call-%s]: the captain owes call number %s\n' "$i" "$i" > "$home/state/task-d$i.status"
+    i=$((i + 1))
+  done
+  saved="$home/state/.session-start-wake-presentation"
+  mkdir "$saved"
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  assert_not_contains "$out" "left out here; the saved presentation" "open decisions were bounded although the save path is a directory"
+  assert_not_contains "$out" "the complete presentation is saved at" "the digest named a directory as the saved presentation"
+  printf '%s\n' "$out" | grep -q '^wake annotation:' \
+    || fail "annotation lines were not printed inline after a failed save"
+  [ "$(printf '%s\n' "$out" | grep -c 'needs-decision: the captain owes call number')" -eq 8 ] \
+    || fail "open decisions were bounded inline after a failed save: $out"
+  [ -z "$(ls -A "$saved")" ] || fail "a temporary copy was left inside the directory: $(ls -A "$saved")"
+
+  pass "a large wake presentation prints whole when the save path is a directory"
+}
+
 # On a large presentation, a drain section that follows a bounded one is not
 # counted as its items: BRANCH OUTCOMES directly after STATUS OUTCOME BACKSTOP
 # prints whole inline, while only the backstop's own items are bounded.
@@ -3542,6 +3576,7 @@ test_context_digest_absent_empty_present
 test_context_large_files_are_indexed
 test_backlog_in_flight_rows_listed_once
 test_wake_presentation_spills_annotations_to_a_saved_file
+test_wake_presentation_keeps_everything_when_save_path_is_a_directory
 test_wake_presentation_prints_section_after_bounded_one_whole
 test_digest_stays_under_size_budget_on_large_home
 test_lock_refusal_read_only_path

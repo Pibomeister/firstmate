@@ -572,7 +572,10 @@ print_wake_presentation() {
     printf '%s\n' "$out"
     return 0
   fi
-  if tmp=$(mktemp "$WAKE_PRESENTATION_FILE.XXXXXX" 2>/dev/null) \
+  # A directory at the save path would swallow the copy and still let mv
+  # succeed, so it counts as a failed save.
+  if [ ! -d "$WAKE_PRESENTATION_FILE" ] \
+    && tmp=$(mktemp "$WAKE_PRESENTATION_FILE.XXXXXX" 2>/dev/null) \
     && printf '%s\n' "$out" > "$tmp" 2>/dev/null \
     && mv -f "$tmp" "$WAKE_PRESENTATION_FILE" 2>/dev/null; then
     printf '%s\n' "$out" | awk -v keep="$WAKE_SECTION_ITEMS" -v saved="$WAKE_PRESENTATION_FILE" -v bullet='●' '
