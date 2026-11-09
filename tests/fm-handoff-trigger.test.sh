@@ -61,8 +61,28 @@ reset_lab() {
 expect_fire() {  # <output> <event> <label>
   printf '%s' "$1" | jq -e --arg e "$2" '
       .hookSpecificOutput.hookEventName == $e
-      and (.hookSpecificOutput.additionalContext | test("handoff"))
-    ' >/dev/null 2>&1 || fail "$3: expected one handoff instruction for $2, got: $1"
+      and (.hookSpecificOutput.additionalContext | test("of context is left before auto-compact"))
+    ' >/dev/null 2>&1 || fail "$3: expected one trigger instruction for $2, got: $1"
+}
+
+# expect_mode <output> capture|handoff <label>: the firing is the capture step
+# (compaction is the reset) or a planned fresh start (a full handoff).
+expect_mode() {
+  case "$2" in
+    capture)
+      printf '%s' "$1" | jq -e '.hookSpecificOutput.additionalContext
+          | test("Firstmate context capture") and (contains("bin/fm-handoff-launch.sh") | not)' >/dev/null 2>&1 \
+        || fail "$3: expected the capture step, got: $1" ;;
+    handoff)
+      printf '%s' "$1" | jq -e '.hookSpecificOutput.additionalContext
+          | test("Firstmate planned fresh start") and contains("bin/fm-order.sh handoff --doc")' >/dev/null 2>&1 \
+        || fail "$3: expected a planned fresh start, got: $1" ;;
+  esac
+}
+
+# boundary <file>: append one compaction boundary record.
+boundary() {
+  printf '{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}\n' >> "$1"
 }
 
 expect_silent() {  # <output> <label>
@@ -290,7 +310,7 @@ test_names_open_captain_orders_and_gates_the_stop() {
   local order_id rc err doc succ
   reset_lab
   rm -rf "$PRIMARY/data/orders" "$PRIMARY"/data/handoff-*.md "$PRIMARY/state/.order-handoff"
-  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  printf 'compact-at-tokens=100000\nfresh-start-after=0\n' > "$PRIMARY/config/handoff-trigger"
   transcript "$TMP_ROOT/t-90" 90000
   out=$(run_hook "$PRIMARY" s-orders-none "$TMP_ROOT/t-90")
   expect_fire "$out" PostToolUse "no open orders"
@@ -564,7 +584,7 @@ test_handoff_gates_the_stop_until_a_recorded_successor_is_alive() {
   doc="$TMP_ROOT/handoff-succ.md"
   rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.watchdog-restart-request" "$launch"
   printf '# Handoff\n' > "$doc"
-  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  printf 'compact-at-tokens=100000\nfresh-start-after=0\n' > "$PRIMARY/config/handoff-trigger"
   transcript "$TMP_ROOT/t-succ" 90000
   # A launch record from an earlier episode must not satisfy this firing.
   sleep 60 &
@@ -573,6 +593,7 @@ test_handoff_gates_the_stop_until_a_recorded_successor_is_alive() {
   sleep 1
   out=$(run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ")
   expect_fire "$out" PostToolUse "successor instruction firing"
+  expect_mode "$out" handoff "fresh-start-after=0 hands off every cycle"
   printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("bin/fm-handoff-launch.sh") and contains("state/.handoff-successor") and contains("bin/fm-session-start.sh")' >/dev/null \
     || fail "the instruction must say to launch the successor with the owned launcher and record it: $out"
   err="$TMP_ROOT/succ.err"
@@ -612,7 +633,7 @@ test_secondmate_handoff_escalates_to_its_parent() {
   launch="$PRIMARY/state/.handoff-successor"
   rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$launch"
   printf 'sm-test\n' > "$PRIMARY/.fm-secondmate-home"
-  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  printf 'compact-at-tokens=100000\nfresh-start-after=0\n' > "$PRIMARY/config/handoff-trigger"
   transcript "$TMP_ROOT/t-sm" 90000
   out=$(run_hook "$PRIMARY" s-sm "$TMP_ROOT/t-sm")
   expect_fire "$out" PostToolUse "second-mate firing"
@@ -625,9 +646,231 @@ test_secondmate_handoff_escalates_to_its_parent() {
   pass "a second mate's handoff escalates to its parent once and its stop is never successor-gated (133, 116)"
 }
 
+# marker_mode <session> <boundaries>: the mode= word of that cycle's marker.
+marker_mode() {
+  sed -n 's/.* mode=\([a-z]*\).*/\1/p' "$PRIMARY/state/.handoff-trigger.$1.$2" 2>/dev/null
+}
+
+# record_reset: the reset= word the hook published in state/compact-point.
+record_reset() {
+  sed -n 's/.* reset=\([a-z]*\)$/\1/p' "$PRIMARY/state/compact-point" 2>/dev/null
+}
+
+stop_rc() {  # <session> <transcript> [extra-payload-jq]
+  local rc=0
+  run_hook "$PRIMARY" "$1" "$2" Stop "${3:-.}" >/dev/null 2>"$TMP_ROOT/stop-rc.err" || rc=$?
+  printf '%s\n' "$rc"
+}
+
+# Compaction-first: with the defaults, the trigger is a capture step that has
+# the session file its chat-only open work into durable records and lets
+# auto-compaction run. It never asks for a successor and never gates a stop.
+test_capture_is_the_default_before_the_drift_cap() {
+  local out t="$TMP_ROOT/t-capture"
+  reset_lab
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.handoff-successor"
+  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$t" 90000
+  out=$(run_hook "$PRIMARY" s-capture "$t")
+  expect_fire "$out" PostToolUse "capture firing"
+  expect_mode "$out" capture "the default firing"
+  assert_equals capture "$(marker_mode s-capture 0)" "the marker records the capture mode"
+  assert_equals compaction "$(record_reset)" "the published point names compaction as this cycle's reset"
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext
+      | contains("bin/fm-dispatch-log.sh") and contains("bin/fm-tasks-axi.sh")
+        and contains("bin/fm-captain-hold.sh") and contains("bin/fm-order.sh")
+        and contains("bin/fm-crew-state.sh") and contains("re-entry card")
+        and contains("do not hand off") and contains("Compactions so far: 0")
+        and contains("planned fresh start comes after 4")' >/dev/null \
+    || fail "the capture instruction must name the durable records, the re-entry card, the re-check, and the drift cap: $out"
+  assert_equals 0 "$(stop_rc s-capture "$t")" "a capture firing never gates the stop"
+  expect_silent "$(run_hook "$PRIMARY" s-capture "$t")" "the capture fires once per cycle"
+  boundary "$t"
+  append_usage "$t" 90000
+  out=$(run_hook "$PRIMARY" s-capture "$t")
+  expect_mode "$out" capture "the next cycle below the drift cap"
+  assert_contains "$out" "Compactions so far: 1" "the capture names the compactions so far"
+  pass "the default firing is a capture step: durable records, no successor, an ungated stop"
+}
+
+# The drift cap: after fresh-start-after compactions on the same harness the
+# next firing is a planned fresh start (a full handoff), and its stop is gated.
+test_fresh_start_after_n_compactions() {
+  local out t="$TMP_ROOT/t-drift"
+  reset_lab
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.handoff-successor"
+  printf 'compact-at-tokens=100000\nfresh-start-after=2\nfresh-start-context-tokens=0\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$t" 90000
+  expect_mode "$(run_hook "$PRIMARY" s-drift "$t")" capture "no compaction yet"
+  boundary "$t"
+  append_usage "$t" 90000
+  expect_mode "$(run_hook "$PRIMARY" s-drift "$t")" capture "one compaction, below the cap of 2"
+  assert_equals compaction "$(record_reset)" "below the cap the reset is compaction"
+  boundary "$t"
+  append_usage "$t" 30000
+  expect_silent "$(run_hook "$PRIMARY" s-drift "$t")" "the cap cycle above the threshold"
+  assert_equals handoff "$(record_reset)" "at the cap the reset is a handoff, published before the firing"
+  append_usage "$t" 90000
+  out=$(run_hook "$PRIMARY" s-drift "$t")
+  expect_fire "$out" PostToolUse "the cap cycle at the threshold"
+  expect_mode "$out" handoff "two compactions on the same harness"
+  assert_equals handoff "$(marker_mode s-drift 2)" "the marker records the handoff mode"
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext
+      | contains("after 2 compactions") and contains("bin/fm-handoff-launch.sh")
+        and contains("never an addendum") and contains("held items")
+        and contains("bin/fm-tasks-axi.sh")' >/dev/null \
+    || fail "the fresh-start instruction must give its reason and the hardened handoff steps: $out"
+  assert_equals 2 "$(stop_rc s-drift "$t")" "a planned fresh start gates the stop until a successor is live"
+  assert_contains "$(cat "$TMP_ROOT/stop-rc.err")" "state/.handoff-successor" "the block names the launch record"
+
+  printf 'compact-at-tokens=100000\nfresh-start-after=abc\n' > "$PRIMARY/config/handoff-trigger"
+  t="$TMP_ROOT/t-drift-bad"
+  transcript "$t" 50000
+  boundary "$t"; boundary "$t"; boundary "$t"
+  append_usage "$t" 90000
+  expect_mode "$(run_hook "$PRIMARY" s-drift-bad "$t")" capture "an unusable fresh-start-after keeps the default 4"
+  boundary "$t"
+  append_usage "$t" 90000
+  expect_mode "$(run_hook "$PRIMARY" s-drift-bad "$t")" handoff "the default cap is 4 compactions"
+  pass "after fresh-start-after compactions the firing is a planned fresh start whose stop is gated"
+}
+
+# A compaction that leaves a heavy context shortens every later cycle, so a
+# first post-compaction reading at or above fresh-start-context-tokens makes the
+# cycle's firing a planned fresh start before the count cap.
+test_fresh_start_on_high_context_after_compaction() {
+  local out t="$TMP_ROOT/t-heavy" t2="$TMP_ROOT/t-light"
+  reset_lab
+  printf 'compact-at-tokens=100000\nfresh-start-context-tokens=60000\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$t" 50000
+  boundary "$t"
+  append_usage "$t" 65000
+  expect_silent "$(run_hook "$PRIMARY" s-heavy "$t")" "a heavy post-compaction context above the threshold"
+  assert_equals handoff "$(record_reset)" "a heavy post-compaction context publishes a handoff reset"
+  append_usage "$t" 90000
+  out=$(run_hook "$PRIMARY" s-heavy "$t")
+  expect_mode "$out" handoff "a heavy post-compaction context"
+  assert_contains "$out" "65000 tokens right after compaction" "the fresh start names the heavy reading"
+  transcript "$t2" 50000
+  boundary "$t2"
+  append_usage "$t2" 40000
+  append_usage "$t2" 90000
+  expect_mode "$(run_hook "$PRIMARY" s-light "$t2")" capture "a light post-compaction context"
+  printf 'compact-at-tokens=100000\nfresh-start-context-tokens=0\n' > "$PRIMARY/config/handoff-trigger"
+  expect_mode "$(run_hook "$PRIMARY" s-heavy-off "$t")" capture "fresh-start-context-tokens=0 turns the reading off"
+  pass "a heavy first reading after compaction makes the firing a planned fresh start; 0 turns that off"
+}
+
+# A marker from before compaction-first (no mode= word) was a handoff firing,
+# and a launch-failure record newer than the firing lets the stop pass so the
+# session can tell the captain and keep working on auto-compaction.
+test_legacy_marker_and_launch_failure() {
+  local t="$TMP_ROOT/t-legacy" failed="$PRIMARY/state/.handoff-launch-failed"
+  reset_lab
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.handoff-successor" "$failed"
+  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$t" 90000
+  printf '%s tokens=90000 compact_at=100000\n' "$(date +%s)" > "$PRIMARY/state/.handoff-trigger.s-legacy.0"
+  assert_equals 2 "$(stop_rc s-legacy "$t")" "a marker without a mode is a handoff firing"
+  sleep 1
+  printf 'at=%s attempts=2 backend=orca handoff=x reason=never-appeared\n' "$(date +%s)" > "$failed"
+  assert_equals 0 "$(stop_rc s-legacy "$t")" "a launch failure recorded after the firing lets the stop pass"
+  sleep 1
+  touch "$PRIMARY/state/.handoff-trigger.s-legacy.0"
+  assert_equals 2 "$(stop_rc s-legacy "$t")" "a launch failure older than the firing does not"
+  rm -f "$failed"
+  pass "a legacy marker gates as a handoff, and a fresh launch-failure record releases the stop"
+}
+
+# end_lab_predecessor <session> <transcript> <after-stop-shell>: run the Stop
+# hook inside a fake Claude harness that holds the session lock, then run the
+# given shell and idle. Prints the fake harness pid.
+end_lab_predecessor() {
+  local fakebin="$TMP_ROOT/fake-harness"
+  mkdir -p "$fakebin"
+  ln -sf /bin/bash "$fakebin/claude"
+  (
+    export HOOK CLAUDE_HOME PRIMARY ROOT TMP_ROOT
+    export FM_TEST_SEAM=1 FM_HANDOFF_END_SETTLE_SECS=2 FM_HANDOFF_END_WAIT_SECS=5
+    export END_SESSION=$1 END_TRANSCRIPT=$2 END_AFTER=$3
+    export -f run_hook
+    # shellcheck disable=SC2016 # The fake harness shell expands these.
+    exec "$fakebin/claude" -c '
+      printf "%s\n" "$$" > "$PRIMARY/state/.lock"
+      rc=0
+      run_hook "$PRIMARY" "$END_SESSION" "$END_TRANSCRIPT" Stop >/dev/null 2>"$TMP_ROOT/end-stop.err" || rc=$?
+      printf "%s\n" "$rc" > "$TMP_ROOT/end-stop.rc"
+      eval "$END_AFTER"
+      n=0
+      while [ "$n" -lt 200 ]; do sleep 0.1; n=$((n + 1)); done'
+  ) </dev/null >/dev/null 2>&1 &
+  printf '%s\n' "$!"
+}
+
+wait_for_file() {  # <path> <tenths>
+  local n=0
+  while [ ! -e "$1" ] && [ "$n" -lt "$2" ]; do sleep 0.1; n=$((n + 1)); done
+  [ -e "$1" ]
+}
+
+# H1, one live pane: once a planned fresh start has a live successor recorded,
+# the stop that ends the old session's handoff turn ends the old session too,
+# after a settle in which the transcript shows no new turn. The bookkeeping
+# Claude appends after every stop does not count as a new turn; a new prompt
+# does, and keeps the old session alive.
+test_handoff_stop_ends_the_idle_predecessor() {
+  local t="$TMP_ROOT/t-end" end="$PRIMARY/state/.handoff-end" succ pred n
+  reset_lab
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$end" "$PRIMARY/state/.lock-session" "$TMP_ROOT/end-stop.rc"
+  printf 'compact-at-tokens=100000\nfresh-start-after=0\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$t" 90000
+  expect_mode "$(run_hook "$PRIMARY" s-end "$t")" handoff "the every-cycle firing"
+  sleep 1
+  sleep 60 &
+  succ=$!
+  printf 'pid=%s\nhandoff=%s\n' "$succ" "$TMP_ROOT/end-handoff.md" > "$PRIMARY/state/.handoff-successor"
+  # shellcheck disable=SC2016 # The fake harness shell expands these.
+  pred=$(end_lab_predecessor s-end "$t" 'printf "%s\n" "{\"type\":\"system\",\"subtype\":\"stop_hook_summary\"}" "{\"type\":\"last-prompt\"}" >> "$END_TRANSCRIPT"')
+  wait_for_file "$end" 150 || fail "the stop with a live successor recorded must end the old session and record it"
+  assert_equals 0 "$(cat "$TMP_ROOT/end-stop.rc")" "the stop itself passes"
+  assert_contains "$(cat "$end")" "pred=$pred" "the record names the old session"
+  assert_contains "$(cat "$end")" "result=ended" "the old session was ended"
+  n=0
+  while kill -0 "$pred" 2>/dev/null && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+  ! kill -0 "$pred" 2>/dev/null || fail "the old session must be gone"
+  kill -0 "$succ" 2>/dev/null || fail "the successor must survive"
+
+  rm -f "$end" "$TMP_ROOT/end-stop.rc"
+  # shellcheck disable=SC2016 # The fake harness shell expands these.
+  pred=$(end_lab_predecessor s-end "$t" 'printf "%s\n" "{\"type\":\"queue-operation\"}" "{\"type\":\"user\",\"message\":{\"content\":\"one more thing\"}}" >> "$END_TRANSCRIPT"')
+  wait_for_file "$end" 150 || fail "a skipped end must still be recorded"
+  assert_contains "$(cat "$end")" "result=skipped" "a new turn keeps the old session"
+  kill -0 "$pred" 2>/dev/null || fail "the old session that took a new prompt must stay alive"
+  kill "$pred" 2>/dev/null; wait "$pred" 2>/dev/null
+
+  rm -f "$end" "$TMP_ROOT/end-stop.rc"
+  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  t="$TMP_ROOT/t-end-capture"
+  transcript "$t" 90000
+  expect_mode "$(run_hook "$PRIMARY" s-end-capture "$t")" capture "a capture firing"
+  pred=$(end_lab_predecessor s-end-capture "$t" ':')
+  wait_for_file "$TMP_ROOT/end-stop.rc" 100 || fail "the capture stop never ran"
+  sleep 3
+  [ ! -e "$end" ] || fail "a capture firing must never end the session: $(cat "$end")"
+  kill -0 "$pred" 2>/dev/null || fail "a capturing session must stay alive"
+  kill "$pred" "$succ" 2>/dev/null; wait "$pred" "$succ" 2>/dev/null
+  rm -f "$end" "$PRIMARY/state/.lock" "$PRIMARY/state/.handoff-successor" "$TMP_ROOT/end-stop.rc"
+  pass "a fresh start ends the idle old session once its successor is live; a new prompt or a capture keeps it"
+}
+
 test_handoff_gates_the_stop_until_a_recorded_successor_is_alive
 test_secondmate_handoff_escalates_to_its_parent
 test_threshold_default_15
+test_capture_is_the_default_before_the_drift_cap
+test_fresh_start_after_n_compactions
+test_fresh_start_on_high_context_after_compaction
+test_legacy_marker_and_launch_failure
+test_handoff_stop_ends_the_idle_predecessor
 test_threshold_configurable
 test_fires_once_per_context_cycle
 test_rearms_after_compaction

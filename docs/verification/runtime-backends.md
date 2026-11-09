@@ -95,7 +95,8 @@ ok - claude 2.1.314 (Claude Code): derived compact point, delivered the instruct
 
 Claude records a delivered instruction as one `hook_additional_context` attachment, and the model can report its content.
 Primed by the guard's prompt to follow no other instruction, the model called the context tool-result content and did not act on it, so the instruction names its source.
-The guard does not prove that an unprimed session writes its handoff.
+The guard does not prove that an unprimed session acts on the instruction.
+The output above predates the compaction-first capture step: the guard now expects `CONTEXT-SEEN` and a `mode=capture` firing record, and it has not been rerun since that change.
 
 ## Codex model catalog max validation
 

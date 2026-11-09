@@ -394,7 +394,7 @@ wd_observe() {
   st=$home/state
   now=$(wd_now)
   O_HOME=$home O_PARENT=$parent O_ID=$id O_TAG=$(wd_tag "$home") O_KEY=$(wd_state_key "$home")
-  O_BACKEND='' O_TARGET='' O_SESSION='' O_HB_AGE=unknown O_CTX='' O_CTX_SRC='' O_CTX_READING=''
+  O_BACKEND='' O_TARGET='' O_SESSION='' O_HB_AGE=unknown O_CTX='' O_CTX_SRC='' O_CTX_READING='' O_CTX_RESET=''
   O_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_AUTOWAIT=0 O_COMPOSER=unknown O_TURN=unknown
   O_LOCK_PID='' O_ALIVE=0 O_INSTANCE=unknown O_OWNER=none O_CPU_BUSY=unknown O_TRANSCRIPT='' O_TR_AGE=unknown
   C_BACKEND='' C_TARGET='' C_MOVED=''
@@ -487,6 +487,9 @@ EOF
     *' owner=derived '*) O_CTX=$(printf '%s\n' "$reading" | sed -n 's/.* derived=\([0-9]*\) .*/\1/p'); O_CTX_SRC=derived ;;
     *' owner=footer '*) O_CTX=$(printf '%s\n' "$reading" | sed -n 's/^footer=\([0-9]*\) .*/\1/p'); O_CTX_SRC=$footer_src ;;
   esac
+  # How this cycle ends, as the session's trigger published it: compaction
+  # means low context is the routine run-up to auto-compaction.
+  O_CTX_RESET=$(fm_context_reset_for_session "$home" "$O_SESSION")
   if [ -f "$st/.watchdog-restart-request" ]; then
     local req_at last_r
     req_at=$(wd_mtime "$st/.watchdog-restart-request")
@@ -526,7 +529,7 @@ wd_print_observation() {
     "  endpoint=${O_BACKEND:-none}:${O_TARGET:-none} session=${O_SESSION:-none} lock_pid=${O_LOCK_PID:-none} alive=$O_ALIVE instance=$O_INSTANCE owner=$O_OWNER" \
     "  captain=${C_BACKEND:-none}:${C_TARGET:-none} moved_at=${C_MOVED:-none}" \
     "  pane_static=${O_PANE_STATIC}s dialog=${O_DIALOG:-none} usage_limit_autowait=$O_AUTOWAIT composer=$O_COMPOSER turn_running=$O_TURN cpu_busy=$O_CPU_BUSY" \
-    "  transcript_age=${O_TR_AGE}s loop=$O_LOOP/$O_LOOP_N restart_requested=$O_RESTART_REQ ctx=${O_CTX:-unknown}${O_CTX_SRC:+ ($O_CTX_SRC)}${O_CTX_READING:+ [$O_CTX_READING]}" \
+    "  transcript_age=${O_TR_AGE}s loop=$O_LOOP/$O_LOOP_N restart_requested=$O_RESTART_REQ ctx=${O_CTX:-unknown}${O_CTX_SRC:+ ($O_CTX_SRC)}${O_CTX_READING:+ [$O_CTX_READING]}${O_CTX_RESET:+ reset=$O_CTX_RESET}" \
     "  owed=$O_OWED_N oldest=${O_OWED_AGE}s afk=$O_AFK daemon=$O_DAEMON heartbeat_age=${O_HB_AGE}s"
 }
 
@@ -1312,6 +1315,13 @@ wd_submit_unsent() {
   return 0
 }
 
+# Low context asks for a restart: context left at or below restart-at-percent,
+# unless the session's published reset is compaction (compaction-first: the
+# Claude trigger's capture step, not a handoff, serves that cycle).
+wd_low_context() {
+  [ -n "$O_CTX" ] && [ "$O_CTX" -le "$(cfgi restart-at-percent 8)" ] && [ "$O_CTX_RESET" != compaction ]
+}
+
 # A low-context ask with no delivered nudge that no later pass can deliver either.
 wd_handoff_undeliverable() {
   [ "$O_RESTART_REQ" != 1 ] && [ -z "$(wd_handoff_nudge_epoch)" ] || return 1
@@ -1500,7 +1510,7 @@ wd_handle_subject() {
   elif [ -n "$O_DIALOG" ] && [ "$O_DIALOG" != unknown ]; then
     symptom=dialog
     wd_handle_dialog
-  elif { [ "$O_RESTART_REQ" = 1 ] || { [ -n "$O_CTX" ] && [ "$O_CTX" -le "$(cfgi restart-at-percent 8)" ]; }; } && wd_restart_available && ! wd_handoff_undeliverable; then
+  elif { [ "$O_RESTART_REQ" = 1 ] || wd_low_context; } && wd_restart_available && ! wd_handoff_undeliverable; then
     symptom='restart-requested'
     wd_requested_restart "$quiet"
   elif { [ "$O_LOOP" = rapid ] && [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -le "$(cfgi rapid-loop-secs 180)" ]; } \

@@ -53,3 +53,13 @@ Keep every entry general: no person, company, project, customer, host, account, 
 - Failure: a nightly order landed during a captain restart and was never delivered, so its goals started hours late.
 - Rule: queue inbound prompts durably; the new session drains and acks the queue on pickup; senders verify the ack and redeliver after any restart.
 - Issue: https://github.com/Pibomeister/firstmate/issues/83
+
+## 2026-11-09 (from a context-handling assessment)
+
+### 11. Handoffs at every context cycle failed in four recorded ways
+- Failure: a limit was reached before the handoff was written, a successor never launched, an order was lost during a restart, and a handoff carried stale facts.
+- Rule: this supersedes entry 3's "never /compact" and its handoff at every cycle.
+  On the same harness, auto-compaction is the routine reset.
+  At about 15% context left, measured externally, capture open work into durable records before the compaction, and re-check volatile facts from live records after it.
+  Hand off to a fresh session only for a quota limit, a harness switch, or as a planned fresh start after 4 compactions.
+  Write a handoff early and incrementally, verify that the successor is live, carry every open order, and re-verify facts at pickup.

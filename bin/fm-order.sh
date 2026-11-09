@@ -111,9 +111,10 @@
 # (startup, resume, clear, or compact), so a document written before it never
 # satisfies a later context's gate. Enforcement:
 #   - bin/fm-handoff-trigger.sh, as a Claude Stop hook, runs `gate` once the
-#     session is handing off - the early handoff trigger fired in its context
-#     cycle, or `handing-off` says it ran `handoff --doc` (stow, a restart, or
-#     percent-left=0) - and blocks a stop whose document omits an open order
+#     session is handing off - the early handoff trigger fired a planned fresh
+#     start in its context cycle (a capture firing is not a handoff), or
+#     `handing-off` says it ran `handoff --doc` (stow, a restart, a deliberate
+#     handoff, or percent-left=0) - and blocks a stop whose document omits an open order
 #     (once per turn, so the session is never wedged). An ordinary stop is
 #     never gated, including another session's stop in the same home.
 #   - the stow skill and a restarting leash or sender run `gate` and do not
