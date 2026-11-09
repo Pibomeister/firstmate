@@ -868,8 +868,41 @@ test_sample_refuses_a_failed_copy_of_existing_state() {
   pass "a copy that misses existing home state stops sample"
 }
 
+test_hard_linked_output_is_refused() {
+  local before rc wd_before
+  finish_fixture hard baseline
+  # A load.tsv hard-linked to a home file is refused, not appended through.
+  mv "$OUT_DIR/load.tsv" "$TMP_ROOT/hard-load.tsv"
+  ln "$HOME_DIR/state/feat-c.status" "$OUT_DIR/load.tsv"
+  before=$(snapshot "$HOME_DIR")
+  soak $((T0 + 300)) sample --home "$HOME_DIR" --out "$OUT_DIR" > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "sample refuses a load.tsv that is a hard link"
+  assert_home_unchanged "$HOME_DIR" "$before" "sample through a hard-linked load.tsv"
+  rm "$OUT_DIR/load.tsv"; mv "$TMP_ROOT/hard-load.tsv" "$OUT_DIR/load.tsv"
+  # A watchdog copy hard-linked to the watchdog's own ledger is refused before
+  # it is truncated.
+  mkdir -p "$OUT_DIR/watchdog"
+  ln "$WD_DIR/actions.tsv" "$OUT_DIR/watchdog/actions.tsv"
+  wd_before=$(cat "$WD_DIR/actions.tsv")
+  soak $((T0 + 1000)) finish --home "$HOME_DIR" --out "$OUT_DIR" --watchdog-dir "$WD_DIR" --transcript-dir "$TR_DIR" \
+    > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "finish refuses a watchdog copy that is a hard link"
+  assert_equals "$wd_before" "$(cat "$WD_DIR/actions.tsv")" "the watchdog ledger is unchanged"
+  rm "$OUT_DIR/watchdog/actions.tsv"
+  # A kept handoff copy hard-linked to another home file is refused.
+  mkdir -p "$OUT_DIR/handoffs"
+  ln "$HOME_DIR/state/feat-c.status" "$OUT_DIR/handoffs/handoff-b.md"
+  before=$(snapshot "$HOME_DIR")
+  soak $((T0 + 1000)) finish --home "$HOME_DIR" --out "$OUT_DIR" --watchdog-dir "$WD_DIR" --transcript-dir "$TR_DIR" \
+    > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "finish refuses a handoff copy that is a hard link"
+  assert_home_unchanged "$HOME_DIR" "$before" "finish through a hard-linked handoff copy"
+  pass "a hard link where the recorder writes is refused and nothing behind it changes"
+}
+
 make_fakebin
 fm_test_run \
+  test_hard_linked_output_is_refused \
   test_sample_tolerates_a_state_entry_that_vanishes_during_the_copy \
   test_sample_tolerates_a_state_entry_renamed_in_during_the_copy \
   test_sample_refuses_a_failed_copy_of_existing_state \

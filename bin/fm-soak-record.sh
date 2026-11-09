@@ -10,7 +10,7 @@
 #
 # The recorder never writes inside the soak home <home>; it writes only under
 # --out, and refuses an --out that resolves inside <home> or contains it, and a
-# symlink at any path it writes under --out. sample and finish refuse a --home
+# symlink or hard-linked file at any path it writes under --out. sample and finish refuse a --home
 # other than the home soak.json records (another spelling of the same
 # directory is the same home, and the recorded spelling is used). Every time is fm_now
 # (bin/fm-clock-lib.sh).
@@ -184,8 +184,16 @@ parse() {  # <allowed-flags> <args...>
   case " $allowed " in *' --out '*) prepare_out ;; esac
 }
 
+# refuse_link <path>: refuse a symlink, or a regular file with more than one
+# hard link, where the recorder writes, so no write under --out can reach a
+# file that also lives elsewhere, such as in the home or the watchdog ledger.
+refuse_link() {
+  [ ! -L "$1" ] || die 2 "refusing to write through a symlink: $1"
+  [ ! -f "$1" ] || [ -z "$(find "$1" -prune -links +1)" ] || die 2 "refusing to write through a hard link: $1"
+}
+
 # prepare_out: resolve --out to its physical absolute path, refuse one inside
-# the soak home, and refuse any symlink where the recorder writes, so no write
+# the soak home, and refuse any link where the recorder writes, so no write
 # can follow a link into the home.
 prepare_out() {
   local parent p
@@ -198,7 +206,7 @@ prepare_out() {
   ! within "$OUT" "$HOME_DIR" || die 2 "--out is inside the soak home: $OUT"
   ! within "$HOME_DIR" "$OUT" || die 2 "--out contains the soak home: $OUT"
   for p in soak.json load.tsv handoff-events.tsv wake-ledger.tsv transcripts handoffs watchdog watchdog/actions.tsv watchdog/handoffs; do
-    [ ! -L "$OUT/$p" ] || die 2 "refusing to write through a symlink: $OUT/$p"
+    refuse_link "$OUT/$p"
   done
 }
 
@@ -232,9 +240,9 @@ safe_session_id() {
 }
 
 # keep <source> <destination>: copy one input under --out, never through a
-# symlink at the destination.
+# symlink or a hard link at the destination.
 keep() {
-  [ ! -L "$2" ] || die 2 "refusing to write through a symlink: $2"
+  refuse_link "$2"
   cp -p "$1" "$2"
 }
 
