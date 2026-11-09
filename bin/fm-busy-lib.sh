@@ -214,11 +214,13 @@ fm_busy_codex_semantic_source() {
 # herdr's native idle AND the task's turn-ended marker (touched by the crew
 # launch's notify= program, bin/fm-spawn.sh) strictly newer than the task's last
 # recorded turn start: the spawn incarnation in its meta spawn_gen=, every steer
-# record in its inbox or handled/, and the last doorbell ring. Native idle alone
-# stays unknown because a long foreground tool call also reads idle. Any other
-# combination, including a missing marker or spawn time, is unknown.
-# ponytail: a turn typed straight into the pane is no recorded start, so its
-# tool calls can read idle against the previous turn's marker; a Codex
+# record in its inbox or handled/, the last doorbell ring, and the task's
+# turn-start marker (touched by bin/fm-send.sh's typed plane, such as a `$skill`
+# send). Native idle alone stays unknown because a long foreground tool call
+# also reads idle. Any other combination, including a missing marker or spawn
+# time, is unknown.
+# ponytail: text a person types straight into the pane is no recorded start, so
+# its tool calls can read idle against the previous turn's marker; a Codex
 # semantic source (fm_busy_codex_semantic_source) replaces this.
 fm_busy_codex_native_turn_state() {  # <backend> <target> <state-dir> <id>
   local backend=$1 target=$2 state=$3 id=$4 native='' ended start f m
@@ -237,7 +239,7 @@ fm_busy_codex_native_turn_state() {  # <backend> <target> <state-dir> <id>
     && ended=$(fm_lock_path_mtime "$state/$id.turn-ended") \
     && start=$(sed -n 's/^spawn_gen=s\([0-9][0-9]*\)\..*/\1/p' "$state/$id.meta" 2>/dev/null) \
     && [ -n "$start" ]; then
-    for f in "$state/$id.inbox"/*.msg "$state/$id.inbox/handled"/*.msg "$state/$id.inbox/.ring-state"; do
+    for f in "$state/$id.inbox"/*.msg "$state/$id.inbox/handled"/*.msg "$state/$id.inbox/.ring-state" "$state/$id.turn-start"; do
       m=$(fm_lock_path_mtime "$f") || continue
       [ "$m" -le "$start" ] || start=$m
     done

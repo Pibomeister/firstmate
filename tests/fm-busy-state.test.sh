@@ -566,6 +566,14 @@ test_codex_native_status_and_turn_marker() {
   set_mtime "$state/t1.turn-ended" "$((t0 + 50))"
   out=$(fm_busy_classify herdr s:p codex t1 "$state")
   [ "$out" = "idle codex-turn-ended" ] || fail "a turn end after every recorded start must classify idle, got '$out'"
+  # A typed send (fm-send's `$skill` or `/` plane) records its own turn start.
+  : > "$state/t1.turn-start"
+  set_mtime "$state/t1.turn-start" "$((t0 + 55))"
+  out=$(fm_busy_classify herdr s:p codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "a typed turn start newer than the turn end must stay unknown, got '$out'"
+  set_mtime "$state/t1.turn-ended" "$((t0 + 56))"
+  out=$(fm_busy_classify herdr s:p codex t1 "$state")
+  [ "$out" = "idle codex-turn-ended" ] || fail "a turn end after the typed start must classify idle, got '$out'"
   printf 'harness=codex\nspawn_gen=s%s.2.2\n' "$((t0 + 60))" > "$state/t1.meta"
   out=$(fm_busy_classify herdr s:p codex t1 "$state")
   [ "$out" = "unknown codex-unverified" ] || fail "a marker older than the current spawn must stay unknown, got '$out'"

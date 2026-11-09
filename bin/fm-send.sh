@@ -1207,6 +1207,17 @@ $HOLDS_BLOCK"
   # verdict preserves the loud refusal boundary. Only LOCAL targets reach this
   # block: remote text rides the inbox leg above, and remote --key exits
   # earlier.
+  # A typed send to a Codex task starts a turn that leaves no inbox record, so
+  # record its start for the Codex busy classifier
+  # (fm_busy_codex_native_turn_state in bin/fm-busy-lib.sh); without it a long
+  # tool call in this turn could read idle against the previous turn's end.
+  # Touched before typing: a start recorded for a send that then fails only
+  # holds the verdict at unknown.
+  if [ -n "$TARGET_SELECTOR" ] && [ -n "$TARGET_META" ] && [ "$TARGET_HARNESS" = codex ]; then
+    if ! { : > "${TARGET_META%.meta}.turn-start"; } 2>/dev/null; then
+      echo "fm-send: warning: could not record the codex turn start at ${TARGET_META%.meta}.turn-start; its busy state may read idle during this turn" >&2
+    fi
+  fi
   send_rc=0
   verdict_file=$(mktemp "${TMPDIR:-/tmp}/fm-send-verdict.XXXXXX") || exit 1
   fm_run_timed_fn "$FM_SEND_BACKEND_BUDGET" fm_backend_send_text_submit "$TARGET_BACKEND" "$T" "$MESSAGE" \

@@ -2516,8 +2516,14 @@ SH
   for sid in T1 T2; do
     [ -s "$dir/state/guard-$sid.rc" ] || fail "$sid: the Stop guard never ran"
   done
+  # The owner reaches its own repair path, the detached-hold attempt, which this
+  # fixture's missing fm-watch-arm.sh makes report no persistent watcher.
+  expect_code 0 "$(cat "$dir/state/guard-T1.rc")" "the owner's Stop guard: $(cat "$dir/state/guard-T1.out")"
   assert_not_contains "$(cat "$dir/state/guard-T1.out")" "OWNED BY ANOTHER LIVE SESSION" \
     "the owning daemon-served session's Stop was refused as a foreign session"
+  assert_contains "$(cat "$dir/state/guard-T1.out")" "HAS NO PERSISTENT WATCHER" \
+    "the owning daemon-served session's Stop did not reach its own repair path"
+  expect_code 0 "$(cat "$dir/state/guard-T2.rc")" "the foreign Stop guard: $(cat "$dir/state/guard-T2.out")"
   assert_contains "$(cat "$dir/state/guard-T2.out")" "OWNED BY ANOTHER LIVE SESSION" \
     "a different live thread's Stop lost the foreign-owner exit"
   pass "session-lock: a daemon-served owner's Stop is its own by payload thread; another thread stays foreign"
