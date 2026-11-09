@@ -2953,7 +2953,8 @@ Arm a watch with `bin/fm-procevent-factory.sh arm --project <factory-project-id>
 Each item gets its own result and wake, and is reported once: an item whose key an earlier captured result of the same source already named never wakes again, and the captured results are that record, so a crash before capture re-detects rather than loses a failure.
 A failure result keeps the watch armed, and the ordinary reconcile restarts it.
 A Factory that stays unreachable for three consecutive reads, refuses the token with HTTP 401 or 403, or answers with any other unexpected status or a malformed body ends the watch with one terminal diagnostic result, so an outage wakes firstmate once instead of on every cycle; re-arm after fixing the cause.
-Each poll follows the attention inbox's pages, and a project with more than 1,000 open automation-failed items ends the watch with a diagnostic rather than miss one; archive old failures, then re-arm.
+Each poll follows the attention inbox's pages, up to 200 pages of failure history, and reaching that bound ends the watch with a diagnostic rather than miss a failure.
+A Factory page scans at most 200 failed decisions, archived ones included, so the bound measures a project's whole failure history rather than its open failures.
 Failures already open when the watch is armed are reported too, oldest first and one per wake, and every wake names when its failure occurred so an old failure is not mistaken for a new one.
 
 Before launching unattended runs, `bin/fm-procevent-factory.sh preflight --project <id>` reports read-only whether a newly prepared run session would get a usable model.

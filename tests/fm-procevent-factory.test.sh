@@ -230,15 +230,24 @@ attention_body "$(item "$D1" "x")" | jq -c '.hasMore = true' > "$FIX/nocursor.js
 printf '200 nocursor.json\n' > "$FIX/attention.seq"
 out=$(factory "$H6" poll --project "$PROJECT" --interval 0.05)
 assert_contains "$out" "malformed attention cursor" "more pages without a cursor stop the watch rather than end the read"
-# A server that never stops saying hasMore: the read is bounded, and reaching
-# the bound stops the watch loudly instead of silently skipping older failures.
+# A server that repeats its cursor would loop the read forever: that is malformed.
 attention_body "$(item "$D3" "endless")" | jq -c '.hasMore = true | .nextCursor = "c2FtZQ"' > "$FIX/attention.json"
-H7="$TMP_ROOT/h-cap"; new_home "$H7"; configure "$H7" "$URL"
+H7="$TMP_ROOT/h-loop"; new_home "$H7"; configure "$H7" "$URL"
 : > "$FIX/requests.log"
 out=$(factory "$H7" poll --project "$PROJECT" --interval 0.05)
-assert_contains "$out" "status: error" "an inbox past the page bound stops the watch"
-assert_contains "$out" "more than 1000 open automation-failed items" "the diagnostic names the bound"
-assert_equals 20 "$(grep -c '/attention?' "$FIX/requests.log")" "the read stops at exactly 20 pages"
+assert_contains "$out" "malformed attention cursor" "a repeated cursor stops the watch"
+assert_equals 2 "$(grep -c '/attention?' "$FIX/requests.log")" "a repeated cursor is caught on the second page"
+# Reaching the page bound stops the watch loudly instead of silently skipping
+# older failures (bound lowered to 3 for the test).
+for n in 1 2 3; do
+  attention_body "$(item "$D3" "page $n")" | jq -c --arg c "cGFnZ$n" '.hasMore = true | .nextCursor = $c' > "$FIX/bound$n.json"
+done
+printf '200 bound1.json\n200 bound2.json\n200 bound3.json\n' > "$FIX/attention.seq"
+: > "$FIX/requests.log"
+out=$(FM_FACTORY_MAX_PAGES=3 factory "$H7" poll --project "$PROJECT" --interval 0.05)
+assert_contains "$out" "status: error" "a history past the page bound stops the watch"
+assert_contains "$out" "more than 3 pages of automation-failed history" "the diagnostic names the bound"
+assert_equals 3 "$(grep -c '/attention?' "$FIX/requests.log")" "the read stops at exactly the bound"
 # An error on a later page discards the whole read: a 503 counts as one failed
 # read, and a refused token ends the watch, with nothing reported from page 1.
 attention "$FIX" "$(item "$D1" "after the outage")"
@@ -247,7 +256,7 @@ H8="$TMP_ROOT/h-page2"; new_home "$H8"; configure "$H8" "$URL"
 out=$(factory "$H8" poll --project "$PROJECT" --interval 0.05)
 assert_contains "$out" "after the outage" "the next full read reports its own oldest failure"
 assert_contains "$out" "condition_polls: 2" "a later-page server error discards the whole read"
-assert_not_contains "$out" "newest failure" "nothing from the partial read is reported"
+assert_not_contains "$out" "middle failure" "nothing from the partial read is reported"
 printf '200 page1.json\n401\n' > "$FIX/attention.seq"
 out=$(factory "$H8" poll --project "$PROJECT" --interval 0.05)
 assert_contains "$out" "HTTP 401" "a refused later page ends the watch"

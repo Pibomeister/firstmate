@@ -17,8 +17,9 @@
 # poll       The blocking child the generic runner executes; never run this
 #            in a conversational turn. Every <interval> seconds (default 60) it
 #            reads `GET <url>/web/factory/projects/<id>/attention?kind=automation-failed&view=open&limit=50`,
-#            following `nextCursor` for up to 20 pages (more ends the watch
-#            with a diagnostic rather than miss a failure), and exits with a
+#            following `nextCursor` for up to 200 pages (more ends the watch
+#            with a diagnostic rather than miss a failure; a repeated cursor is
+#            malformed), and exits with a
 #            `status: failed` result once an item appears whose key no earlier
 #            captured result of this source reported. The result carries one
 #            `item:` line (key, failure code, error text, occurredAt) for the
@@ -71,8 +72,11 @@ CONFIG="$FM_HOME/config/factory"
 DEFAULT_INTERVAL=60
 MAX_CONSECUTIVE_READ_FAILURES=3
 READ_TIMEOUT=20
-# Pages of 50 open items read per poll; an inbox larger than this ends the watch.
-MAX_PAGES=20
+# Pages read per poll before the watch stops rather than miss a failure. A
+# Factory page holds at most 50 open items but scans at most 200 failed
+# decisions, archived ones included, so this bounds failure history, not open
+# items. FM_FACTORY_MAX_PAGES overrides it for tests.
+MAX_PAGES=${FM_FACTORY_MAX_PAGES:-200}
 DETAIL_MAX=512
 
 usage() {
@@ -192,11 +196,12 @@ read_failures() {
     [ -z "$page" ] || ITEMS+="$page"$'\n'
     [ "$(printf '%s' "$HTTP_BODY" | jq -r '.hasMore == true' 2>/dev/null)" = true ] || return 0
     next=$(printf '%s' "$HTTP_BODY" | jq -r '.nextCursor // ""' 2>/dev/null)
-    [[ "$next" =~ ^[A-Za-z0-9_-]+$ ]] || emit_error "$POLLS" "Factory at $URL returned a malformed attention cursor"
+    [[ "$next" =~ ^[A-Za-z0-9_-]+$ ]] && [ "$next" != "$cursor" ] \
+      || emit_error "$POLLS" "Factory at $URL returned a malformed attention cursor"
     # Stopping loudly at the bound, rather than treating it as the end of the
     # inbox, is what keeps a failure past it from being silently never reported.
     [ "$pages" -lt "$MAX_PAGES" ] \
-      || emit_error "$POLLS" "Factory at $URL has more than $((MAX_PAGES * 50)) open automation-failed items; the watch stopped rather than miss one (archive old failures, then re-arm)"
+      || emit_error "$POLLS" "Factory at $URL has more than $MAX_PAGES pages of automation-failed history; the watch stopped rather than miss a failure"
     cursor=$next
   done
 }
@@ -204,6 +209,7 @@ read_failures() {
 cmd_poll() {
   parse_project_args "$@"
   local failures=0 seen new
+  [[ "$MAX_PAGES" =~ ^[1-9][0-9]*$ ]] || die "FM_FACTORY_MAX_PAGES must be a positive integer"
   POLLS=0
   load_config || emit_error 1 "$CONFIG_ERROR"
   while :; do
