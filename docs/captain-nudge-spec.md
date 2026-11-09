@@ -55,7 +55,8 @@ Path: config `beacon_log`.
 On M4 this is typically `~/orca/beacon/beacon.log` (same file the `orca-beacon` pane tails).
 On the Abaco and Goodword relays it is the matching `abaco-beacon.log` / `gw-beacon.log` (or their M4/M3 mirror files).
 The writer appends one line and keeps the last 500 lines.
-Existing `BEACON v1` / `ABACO v1` / `GW v1` parsers that match on their own prefix keep working; they ignore `NUDGE v1`.
+A parser that wrap-joins pane rows and splits on its own prefix must cut each piece at the next `NUDGE v1` (or other beacon prefix) before matching keys; otherwise a later `NUDGE v1` line's `ts=` and `host=` overwrite its record.
+On a host whose beacon log is relayed by `tail -n 1` (the Abaco and Goodword relays), point `beacon_log` at a separate `~/orca/beacon/nudge-beacon.log` and relay its new `NUDGE v1` lines separately, so a `NUDGE v1` line never displaces the heartbeat line the relay copies.
 
 Format, single line, space-separated `key=value` tokens, no spaces inside values:
 

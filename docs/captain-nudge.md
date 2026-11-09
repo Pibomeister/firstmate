@@ -88,3 +88,10 @@ bin/fm-captain-nudge.sh status --config ~/.config/firstmate/captain-nudge.json
 | goodword-factory | `docs/examples/captain-nudge/goodword-factory.json` | `~/.config/firstmate/captain-nudge.json` | factory |
 
 Fill `handle` or `title` (Orca) / `pane` or `title` (Herdr), `fm_home`, `open_work.repos`, and `beacon_log` so `NUDGE v1` lines land in the pane the box-side watchdog already tails (`orca-beacon`, `abaco-beacon`, `gw-beacon`).
+
+Host notes:
+
+- Prefer an Orca terminal `handle` over `title`: successor captains often reuse a title, and `title` picks the first match. Update the handle when a captain is replaced.
+- macOS launchd jobs cannot read `~/Documents` without Full Disk Access, so keep the firstmate checkout that runs this tool outside `~/Documents`; a `fm_home` or `queue_file` there reads as absent under launchd, and open work then has to come from `open_work.repos`.
+- Herdr refuses a client whose protocol is newer than the running server. Install with `PATH` putting the herdr binary that matches the server first (for example `PATH="$HOME/.local/bin:$PATH" bin/fm-captain-nudge.sh install ...`); the unit records that `PATH`.
+- Herdr has no last-output time, so a Herdr captain's idle time is how long its visible screen has been unchanged (tracked in `state_dir/captains/<id>.screen`). The first pass after install starts that clock.

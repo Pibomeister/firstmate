@@ -9,7 +9,7 @@
   "mode": "act",
   "state_dir": "~/orca/nudge",
   "jsonl_log": "~/orca/nudge/nudge.jsonl",
-  "beacon_log": "~/orca/beacon/gw-beacon.log",
+  "beacon_log": "~/orca/beacon/nudge-beacon.log",
   "captains": [
     {
       "id": "factory",
