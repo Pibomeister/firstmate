@@ -1,32 +1,28 @@
-### Scenario 2: arm the watch while the inbox is empty
+## Scenario: watch arms with an empty inbox and stays quiet
+$ fm-procevent-factory.sh arm --project 0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 --interval 0.3
 registered: factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 (factory)
 armed: factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31
-interval: 1s
+interval: 0.3s
 exit=0
-results after 3s with empty inbox: 0
+wakes after 1.5s idle: 0
 
-### a run fails ~20s after start: Factory raises automation-failed (ProviderAuthRequiredError)
-wake landed
-
---- captured result ---
+## Scenario: a ProviderAuthRequiredError dispatch failure wakes supervision
+wake landed: 1
+--- wake queue payloads:
+procevent:factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31:1 | check: procevent factory factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 1 - Factory automation failed at 2026-11-09T15:00:00.000Z: ProviderAuthRequiredError: no credential for provider anthropic
+procevent:factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31:1 | check: procevent factory factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 1 - Factory automation failed at 2026-11-09T15:00:00.000Z: ProviderAuthRequiredError: no credential for provider anthropic
+--- result file:
 factory: factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31
 status: failed
 project: 0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31
-item: automation-failed:run_01	ProviderAuthRequiredError	ProviderAuthRequiredError: provider anthropic requires authentication for model anthropic/claude-sonnet-5-5	2026-11-09T09:00:21Z
+item: factory:0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31:automation-failed:aaaaaaaa-0000-4000-8000-000000000001:0	dispatch_failed	ProviderAuthRequiredError: no credential for provider anthropic	2026-11-09T15:00:00.000Z
 condition_polls: 1
 
---- wake queue payload ---
-procevent:factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31:1 | check: procevent factory factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 1 - Factory automation failed at 2026-11-09T09:00:21Z: ProviderAuthRequiredError: provider anthropic requires authentication for model anthropic/claude-sonnet-5-5
+## Scenario: the same open failure does not wake again
+wakes after re-polls: 1
 
---- what firstmate sees on drain (fm-wake-drain.sh) ---
-1794254297	1	check	procevent:factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31:1	check: procevent factory factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 1 - Factory automation failed at 2026-11-09T09:00:21Z: ProviderAuthRequiredError: provider anthropic requires authentication for model anthropic/claude-sonnet-5-5
-WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 15749.1794254297.KJLA9W
-●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-●  WATCHER DOWN - SUPERVISION IS OFF
-●  1 process-event source(s) registered, but no watcher has a fresh beacon (last beat: never, grace 300s).
-●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
-●  down 1s.
-●  This is a supervision warning only; the guarded operation WILL still run.
-●  After draining queued wakes, watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
-●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+## Scenario: a second distinct failure wakes once more
+wakes: 2
+wakes after settle: 2
+procevent:factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31:1 | check: procevent factory factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 1 - Factory automation failed at 2026-11-09T15:00:00.000Z: ProviderAuthRequiredError: no credential for provider anthropic
+procevent:factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31:2 | check: procevent factory factory-0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 2 - Factory automation failed at 2026-11-09T15:00:20.000Z: ProviderAuthRequiredError: second ticket

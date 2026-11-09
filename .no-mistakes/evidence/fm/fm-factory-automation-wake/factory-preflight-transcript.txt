@@ -1,42 +1,32 @@
-### Scenario 1: preflight before launch (default model has no credentialed provider)
-$ bin/fm-procevent-factory.sh preflight --project 0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31
+## Scenario: preflight flags a default model whose provider has no credential (Nov 9 cause)
+$ fm-procevent-factory.sh preflight --project 0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31
 not usable: default model anthropic/claude-sonnet-5-5 is not in the Factory's credentialed model catalog for project 0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31
 exit=1
 
-### fix the credential: catalog now lists the default model
+## Scenario: preflight passes once that provider has a credential (factory scope)
 usable: anthropic/claude-sonnet-5-5 (scope factory; provider credential present, validity not checked)
 exit=0
 
-### project with no default model
+## Scenario: hybrid scope resolves to factory
+usable: anthropic/claude-sonnet-5-5 (scope hybrid; provider credential present, validity not checked)
+exit=0
+
+## Scenario: no default model
 not usable: project 0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 has no default model; a run session would fall back to an unpinned mode default
 exit=1
 
-### per-user model scope (cannot determine)
+## Scenario: user model scope cannot be judged
 cannot determine: project 0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 uses per-user model scope; a run session takes its owner's default model, which this read cannot see
 exit=3
 
-### token refused (401)
-cannot determine: Factory at http://127.0.0.1:52507 refused the project read: HTTP 401
-exit=3
-
-### unknown project (404)
-cannot determine: project deadbeef-0000 uses per-user model scope; a run session takes its owner's default model, which this read cannot see
-exit=3
-
-### Factory down
-cannot determine: Factory at http://127.0.0.1:1 unreachable: curl: (7) Failed to connect to 127.0.0.1 port 1 after 0 ms: Couldn't connect to server
-exit=3
-
-### requests seen by fake Factory (token in header only)
-/web/factory/projects/0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 auth=Bearer lab-token-not-a-real-secret
-/web/config/models?factoryId=0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 auth=Bearer lab-token-not-a-real-secret
-/web/factory/projects/0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 auth=Bearer lab-token-not-a-real-secret
-/web/config/models?factoryId=0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 auth=Bearer lab-token-not-a-real-secret
-/web/factory/projects/0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 auth=Bearer lab-token-not-a-real-secret
-/web/factory/projects/0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 auth=Bearer lab-token-not-a-real-secret
-/web/factory/projects/0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 auth=Bearer lab-token-not-a-real-secret
-/web/factory/projects/deadbeef-0000 auth=Bearer lab-token-not-a-real-secret
-
-### unknown project (fake Factory answers 404) - re-driven
-not usable: project deadbeef-0000 not found
+## Scenario: project not found
+not usable: project 0b7c1f9e-3d2a-4c55-9a10-6f2b8e4d7a31 not found
 exit=1
+
+## Scenario: Factory refuses auth
+cannot determine: Factory at http://127.0.0.1:55097 refused the project read: HTTP 401
+exit=3
+
+## Scenario: Factory unreachable (closed port)
+cannot determine: Factory at http://127.0.0.1:55558 unreachable: curl: (7) Failed to connect to 127.0.0.1 port 55558 after 0 ms: Couldn't connect to server
+exit=3
