@@ -585,12 +585,18 @@ cmd_run() {
   mkdir "$lock" 2>/dev/null || { echo "fm-captain-nudge: another run loop holds $lock"; exit 0; }
   printf '%s\n' "$$" > "$lock/pid"
   printf '%s\n' "$$" > "$CFG_STATE/loop.pid"
-  trap 'rm -rf "$lock"; exit 0' INT TERM HUP EXIT
+  local sleeper=''
+  trap 'rm -rf "$lock"; [ -n "$sleeper" ] && kill "$sleeper" 2>/dev/null; exit 0' INT TERM HUP EXIT
   while :; do
     heartbeat_write
     fm_run_timed_fn 120 cmd_once || true
     heartbeat_write
-    sleep "$CFG_INTERVAL"
+    # Background sleep + wait so a TERM from launchd/systemd stops the loop now,
+    # not after the interval.
+    sleep "$CFG_INTERVAL" &
+    sleeper=$!
+    wait "$sleeper" 2>/dev/null || true
+    sleeper=''
   done
 }
 
@@ -767,8 +773,8 @@ cmd_install() {
       if [ "${FM_TEST_SEAM:-}" != 1 ]; then
         launchctl bootout "gui/$(id -u)/$LABEL_RUN" 2>/dev/null || true
         launchctl bootout "gui/$(id -u)/$LABEL_GUARD" 2>/dev/null || true
-        launchctl bootstrap "gui/$(id -u)" "$launchd_dir/$LABEL_RUN.plist"
-        launchctl bootstrap "gui/$(id -u)" "$launchd_dir/$LABEL_GUARD.plist"
+        launchd_bootstrap_retry "$launchd_dir/$LABEL_RUN.plist" || die "launchctl bootstrap failed for $LABEL_RUN"
+        launchd_bootstrap_retry "$launchd_dir/$LABEL_GUARD.plist" || die "launchctl bootstrap failed for $LABEL_GUARD"
       fi
       printf 'installed launchd %s and %s\n' "$LABEL_RUN" "$LABEL_GUARD"
       ;;
@@ -815,6 +821,17 @@ cmd_install() {
       die "unsupported platform $(uname -s)" 2
       ;;
   esac
+}
+
+# bootout is asynchronous; bootstrap right after it fails with EIO (5) until the
+# old job is gone, so retry for up to ~40s.
+launchd_bootstrap_retry() {  # <plist>
+  local plist=$1 i
+  for i in $(seq 1 20); do
+    launchctl bootstrap "gui/$(id -u)" "$plist" 2>/dev/null && return 0
+    sleep 2
+  done
+  launchctl bootstrap "gui/$(id -u)" "$plist"
 }
 
 cmd_uninstall() {
