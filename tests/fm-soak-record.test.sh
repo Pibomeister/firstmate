@@ -606,6 +606,55 @@ test_case_alias_order_document_is_one_handoff() {
   pass "an order document that is a case alias of a data handoff document is one handoff"
 }
 
+# On a case-insensitive filesystem a case alias of the soak home is that home:
+# sample and finish accept it, and watchdog rows whose home column spells the
+# home differently are still the home's rows.
+test_case_alias_home_is_the_run_home() {
+  local home alias_home out wd tr rc json
+  mkdir -p "$TMP_ROOT/CaseProbe3"
+  if [ ! -d "$TMP_ROOT/caseprobe3" ]; then
+    pass "case-alias soak home: not applicable on a case-sensitive filesystem"
+    return 0
+  fi
+  home=$(make_home aliashome/Home)
+  alias_home="$TMP_ROOT/aliashome/HOME"
+  out="$TMP_ROOT/aliashome-out"; wd="$TMP_ROOT/aliashome-watchdog"; tr="$TMP_ROOT/aliashome-transcripts"
+  mkdir -p "$wd" "$tr"
+  printf '%s\tw1\t%s\tprimary\tfrozen\trestart\tdone\tpickup verified\n' $((T0 + 500)) "$alias_home" > "$wd/actions.tsv"
+  soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  soak $((T0 + 100)) sample --home "$alias_home" --out "$out" > /dev/null 2>&1; rc=$?
+  assert_equals 0 "$rc" "sample accepts a case alias of the run's home"
+  soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "$wd" --transcript-dir "$tr" > /dev/null || fail "finish failed"
+  json=$(jq -c . "$out/soak.json") || fail "soak.json is not JSON after finish"
+  assert_equals 1 "$(awk 'END { print NR }' "$out/watchdog/actions.tsv")" "a watchdog row spelling the home as a case alias is kept"
+  assert_equals 1 "$(jq -r .handoff_count <<<"$json")" "a frozen restart recorded under a case alias of the home counts"
+  pass "a case alias of the soak home is the run's home to sample, finish and the watchdog rows"
+}
+
+# Two requested restarts with no handoff nudge between them: a document written
+# in the same second the first restart finished belongs to the first, so the
+# second restart, which left no document of its own, still counts.
+test_finish_counts_a_requested_restart_after_a_boundary_document() {
+  local home out wd tr json
+  home=$(make_home boundary)
+  out="$TMP_ROOT/boundary-out"; wd="$TMP_ROOT/boundary-watchdog"; tr="$TMP_ROOT/boundary-transcripts"
+  mkdir -p "$wd/handoffs" "$tr"
+  soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  rewrite_handoff "$home" $((T0 + 300)) "first"
+  {
+    printf '%s\tr1\t%s\tprimary\trestart-requested\trestart\tpending\ttoken=1\n' $((T0 + 290)) "$home"
+    printf '%s\tr1\t%s\tprimary\trestart-requested\trestart\tdone\tpickup verified\n' $((T0 + 300)) "$home"
+    printf '%s\tr2\t%s\tprimary\trestart-requested\trestart\tpending\ttoken=2\n' $((T0 + 600)) "$home"
+    printf '%s\tr2\t%s\tprimary\trestart-requested\trestart\tdone\tpickup verified\n' $((T0 + 610)) "$home"
+  } > "$wd/actions.tsv"
+  soak $((T0 + 400)) sample --home "$home" --out "$out" > /dev/null || fail "sample failed"
+  soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "$wd" --transcript-dir "$tr" \
+    > /dev/null || fail "finish failed"
+  json=$(jq -c . "$out/soak.json") || fail "soak.json is not JSON after finish"
+  assert_equals 2 "$(jq -r .handoff_count <<<"$json")" "the boundary document counts once and the second requested restart counts"
+  pass "a document in the second a requested restart finished is not reused by the next requested restart"
+}
+
 # The private state copy never lands in the soak home, even when the inherited
 # TMPDIR points inside it.
 test_tmpdir_inside_the_home_is_never_written() {
@@ -807,6 +856,8 @@ fm_test_run \
   test_double_slash_spelling_is_one_tree \
   test_case_alias_spelling_is_one_tree \
   test_case_alias_order_document_is_one_handoff \
+  test_case_alias_home_is_the_run_home \
+  test_finish_counts_a_requested_restart_after_a_boundary_document \
   test_tmpdir_inside_the_home_is_never_written \
   test_sample_and_finish_refuse_another_home \
   test_unsafe_session_ids_never_become_paths \

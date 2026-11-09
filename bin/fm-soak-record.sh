@@ -52,7 +52,8 @@
 #                   <home>/state/.order-handoff, as order-<name> unless it is
 #                   one of the data/ documents already kept.
 #   watchdog/       actions.tsv: the <watchdog-dir>/actions.tsv rows whose home
-#                   is <home> and whose epoch is in the window
+#                   column names <home> (any spelling of the same directory)
+#                   and whose epoch is in the window
 #                   (bin/fm-watchdog.sh owns its columns); handoffs/: the
 #                   <watchdog-dir>/handoffs/ files modified in the window.
 #   wake-ledger.tsv the window's wake-ledger rows (bin/fm-wake-ledger.sh rows).
@@ -64,7 +65,8 @@
 #                   for which a handoff-document modification event
 #                   falls in that restart's episode: from the latest kept
 #                   `handoff-request` `nudge` `pending` row before its first
-#                   `restart` row, else the previous restart's `done` row, else
+#                   `restart` row, else the second after the previous
+#                   restart's `done` row, else
 #                   started_at (whichever is latest), to its `done` row. A
 #                   restart with any other symptom always counts one. The
 #                   watchdog's own handoff files are not counted.
@@ -200,10 +202,25 @@ prepare_out() {
 }
 
 # require_run_home: refuse a --home other than the one the started run in
-# --out records, before anything is written.
+# --out records, before anything is written. The same directory under another
+# spelling, such as a case alias, is the same home.
 require_run_home() {
-  [ "$(jq -r .home "$OUT/soak.json")" = "$HOME_DIR" ] \
+  local recorded
+  recorded=$(jq -r .home "$OUT/soak.json")
+  [ "$recorded" = "$HOME_DIR" ] || { [ -d "$recorded" ] && [ "$recorded" -ef "$HOME_DIR" ]; } \
     || die 2 "--home is not the home this soak run started on: $HOME_DIR"
+}
+
+# home_spellings <actions.tsv>: each distinct home column of a watchdog ledger
+# that names the soak home: the canonical path, the --home as given, or any
+# other spelling of the same directory.
+home_spellings() {
+  local h
+  cut -f 3 -- "$1" | LC_ALL=C sort -u | while IFS= read -r h; do
+    if [ "$h" = "$HOME_DIR" ] || [ "$h" = "$HOME_GIVEN" ] || { [ -d "$h" ] && [ "$h" -ef "$HOME_DIR" ]; }; then
+      printf '%s\n' "$h"
+    fi
+  done
 }
 
 # safe_session_id <id>: a session id that is safe as one path component.
@@ -446,9 +463,10 @@ cmd_finish() {
   mkdir -p "$OUT/watchdog"
   : > "$OUT/watchdog/actions.tsv"
   if [ -f "$WATCHDOG_DIR/actions.tsv" ]; then
-    awk -F '\t' -v h="$HOME_DIR" -v given="$HOME_GIVEN" -v s="$STARTED" -v n="$NOW" '
-      ($3 == h || $3 == given) && $1 ~ /^[0-9]+$/ && $1 + 0 >= s + 0 && $1 + 0 <= n + 0
-    ' "$WATCHDOG_DIR/actions.tsv" > "$OUT/watchdog/actions.tsv"
+    awk -F '\t' -v s="$STARTED" -v n="$NOW" '
+      FILENAME == ARGV[1] { home[$0]; next }
+      ($3 in home) && $1 ~ /^[0-9]+$/ && $1 + 0 >= s + 0 && $1 + 0 <= n + 0
+    ' <(home_spellings "$WATCHDOG_DIR/actions.tsv") "$WATCHDOG_DIR/actions.tsv" > "$OUT/watchdog/actions.tsv"
   fi
   for doc in "$WATCHDOG_DIR"/handoffs/*; do
     [ -f "$doc" ] || continue
@@ -462,7 +480,7 @@ cmd_finish() {
     $6 != "restart" || ($7 != "pending" && $7 != "done") || ($2 in done) { next }
     !($2 in from) {
       from[$2] = s + 0
-      if (prev > from[$2]) from[$2] = prev
+      if (prev && prev + 1 > from[$2]) from[$2] = prev + 1   # the second a restart finished belongs to it
       if (nudge > from[$2]) from[$2] = nudge
     }
     $7 == "done" {
