@@ -1,0 +1,33 @@
+== S1: hook publishes the point it resolved (pin compact-at-tokens=100000), 91500 tokens used
+hook stdout: Firstmate early handoff trigger, from this home's tracked Claude hook: about 8% of context is left before auto-compact (91500 of 100000 tokens). Write your full
+state/compact-point: session=11111111-2222-4333-8444-555555555555 compact_at=100000 at=1794210899
+no temp file left (atomic rename)
+== S2: watchdog reads record for its session; pane footer 30%, derived floors 91500/100000 -> 8 (restart-at-percent default 8)
+(pin removed: window can only come from the published record)
+
+
+  transcript_age=3000s loop=none/0 restart_requested=0 ctx=8 (derived) [footer=30 derived=8 owner=derived disagreement=-]
+nudge row: handoff-request	nudge	dry-run	Watchdog (automated, not the captain or the owner): context is low (footer=30 derived=8 owner=derived disagreement=-). Write a full handoff to data/handoff-<name>.md in your home, then create state/.watchdog-restart-request there. The watchdog then restarts this session, and the new session picks up from that handoff.
+== S3 adversarial: derived 50 (50000 tokens) with a pane at 7% must NOT ask for handoff
+record: session=11111111-2222-4333-8444-555555555555 compact_at=100000 at=1794210902
+  transcript_age=3000s loop=none/0 restart_requested=0 ctx=50 (derived) [footer=7 derived=50 owner=derived disagreement=-]
+nudge rows: []
+== S4: record names another session, and no pin -> no derived; footer 7 decides
+  transcript_age=3000s loop=none/0 restart_requested=0 ctx=7 (pane) [footer=7 derived=unknown owner=footer disagreement=-]
+nudge row: handoff-request	nudge	dry-run	Watchdog (automated, not the captain or the owner): context is low (footer=7 derived=unknown owner=footer disagreement=-). Write a full handoff to data/handoff-<name>.md in your home, then create state/.watchdog-restart-request there. The watchdog then restarts this session, and the new session picks up from that handoff.
+== S5 adversarial: other-session record with pin 100000 -> derived from pin wins over a high pane
+  transcript_age=3000s loop=none/0 restart_requested=0 ctx=7 (derived) [footer=50 derived=7 owner=derived disagreement=-]
+nudge row: handoff-request	nudge	dry-run	Watchdog (automated, not the captain or the owner): context is low (footer=50 derived=7 owner=derived disagreement=-). Write a full handoff to data/handoff-<name>.md in your home, then create state/.watchdog-restart-request there. The watchdog then restarts this session, and the new session picks up from that handoff.
+== S6 adversarial: owner none (no footer in pane, no window) never restarts
+  transcript_age=3000s loop=none/0 restart_requested=0 ctx=unknown [footer=unknown derived=unknown owner=none disagreement=-]
+nudge rows: []
+no restart rows
+== S7: disagreement-points=10 set; derived 7 vs footer 30 -> disagreement=1, derived acts
+  transcript_age=3000s loop=none/0 restart_requested=0 ctx=7 (derived) [footer=30 derived=7 owner=derived disagreement=1]
+nudge row: handoff-request	nudge	dry-run	Watchdog (automated, not the captain or the owner): context is low (footer=30 derived=7 owner=derived disagreement=1). Write a full handoff to data/handoff-<name>.md in your home, then create state/.watchdog-restart-request there. The watchdog then restarts this session, and the new session picks up from that handoff.
+== S8: hook in-session decision unchanged: 93000/100000 fires, record still published
+(fresh session 99999999-2222-4333-8444-555555555555)
+Firstmate early handoff trigger, from this home's tracked Claude hook: about 7% of context is left before auto-compact (93000 of 100000 tokens). Write your full session handoff now, before auto-compac
+record: session=99999999-2222-4333-8444-555555555555 compact_at=100000 at=1794210915
+== S9: hook run resolving no point withdraws its session's record
+record withdrawn
