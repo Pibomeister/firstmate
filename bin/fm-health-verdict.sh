@@ -39,7 +39,8 @@
 #   3. stale or unknown, one tier. stale wins inside the tier because it
 #      carries a measured age, and its reason also names every unknown:
 #      - heartbeat-stale: outside a supervisor turn, the heartbeat is older
-#        than stale_after_secs;
+#        than stale_after_secs, except on an idle home (lock none, no open
+#        work, no away record), which reads ok (idle) at any heartbeat age;
 #      - watcher-stale: outside a supervisor turn and on a home with open
 #        work or an away record, the watcher beat is older than its bound;
 #      - mid-turn (unknown): inside a supervisor turn, the heartbeat is older
@@ -162,8 +163,13 @@ open=0 away=0
 fm_health_open_work "$FM_HOME" "$now" "$STATE" && open=1
 [ -e "$STATE/.afk" ] && away=1
 
+# An idle home (a captain record of none, no open work, no away record) reads
+# ok (idle) at any heartbeat age: its watcher stopped with the session, so
+# publication stopped too, and the stale tier must not override that rule.
+idle=0
+[ "$lock" = none ] && [ "$open" = 0 ] && [ "$away" = 0 ] && idle=1
 if [ -n "$bound" ] && [ "$hb_age" != unknown ] && [ "$hb_age" -gt "$bound" ]; then
-  if [ "$in_turn" = 1 ]; then add_unknown mid-turn; else add_stale heartbeat-stale; fi
+  if [ "$in_turn" = 1 ]; then add_unknown mid-turn; elif [ "$idle" = 0 ]; then add_stale heartbeat-stale; fi
 fi
 if [ "$in_turn" = 0 ] && { [ "$open" = 1 ] || [ "$away" = 1 ]; }; then
   if [ "$watcher_age" = unknown ]; then

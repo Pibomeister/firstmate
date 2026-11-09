@@ -216,6 +216,42 @@ test_none_maps_by_open_work_and_away() {
   pass "a captain record of none gives dead with open work or an away record, and ok (idle) with neither"
 }
 
+test_an_idle_home_past_its_bound_still_reads_idle() {
+  local home="$TMP_ROOT/idle-stale" out
+  new_home "$home" none
+  # The session ended and the watcher with it, so publication stopped long ago.
+  heartbeat "$home" "$((NOW - 2000))" 60
+  out=$(verdict "$home")
+  assert_equals "ok idle none" "$(field "$out" verdict) $(field "$out" reason) $(field "$out" lock)" \
+    "an idle home whose heartbeat is past its bound"
+  open_task "$home"
+  out=$(verdict "$home")
+  assert_equals "dead none-open-work" "$(field "$out" verdict) $(field "$out" reason)" \
+    "none with open work and a stale heartbeat"
+  rm -f "$home/state/task-a.meta"
+  printf 'away\n' > "$home/state/.afk"
+  out=$(verdict "$home")
+  assert_equals "dead none-away" "$(field "$out" verdict) $(field "$out" reason)" \
+    "none with an away record and a stale heartbeat"
+  pass "an idle home reads ok (idle) past its heartbeat bound, and none with open work or an away record still reads dead"
+}
+
+test_a_stale_heartbeat_with_open_work_or_away_still_reads_stale() {
+  local home="$TMP_ROOT/live-stale" out
+  new_home "$home" live
+  heartbeat "$home" "$((NOW - 2000))" 60
+  open_task "$home"
+  out=$(verdict "$home")
+  assert_equals "stale heartbeat-stale" "$(field "$out" verdict) $(field "$out" reason)" \
+    "a live home with open work and a stale heartbeat"
+  rm -f "$home/state/task-a.meta"
+  printf 'away\n' > "$home/state/.afk"
+  out=$(verdict "$home")
+  assert_equals "stale heartbeat-stale" "$(field "$out" verdict) $(field "$out" reason)" \
+    "a live home with an away record and a stale heartbeat"
+  pass "a stale heartbeat with open work or an away record still reads stale"
+}
+
 test_declared_waits_are_not_open_work() {
   local home="$TMP_ROOT/waits" out
   new_home "$home" none
@@ -451,6 +487,8 @@ fm_test_run \
   test_mismatched_instance_is_unconfirmed_with_no_signal \
   test_unconfirmed_outranks_the_stale_and_unknown_tier \
   test_none_maps_by_open_work_and_away \
+  test_an_idle_home_past_its_bound_still_reads_idle \
+  test_a_stale_heartbeat_with_open_work_or_away_still_reads_stale \
   test_declared_waits_are_not_open_work \
   test_open_work_counts_on_a_secondmate_home \
   test_open_goal_counts_on_a_secondmate_home \
