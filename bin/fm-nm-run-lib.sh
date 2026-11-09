@@ -20,8 +20,9 @@
 # Bounded call to an arbitrary command in dir $1, timeout $2 seconds, and its
 # `no-mistakes "$@"` specialization. Every branch is a hard limit: a child
 # that ignores TERM is killed one second after the bound (timeout -k 1, or the
-# perl branch's TERM then KILL), which the heartbeat run cap relies on. The
-# bounded form preserves stdout, stderr, and exit status; the checked form discards
+# perl branch's TERM then KILL), which the heartbeat run cap relies on. Any
+# timed-out call exits 124, including one that needed the KILL. The bounded
+# form preserves stdout, stderr, and exit status; the checked form discards
 # stderr, while fm_nm_run keeps the fail-open query contract for read-only callers.
 # The no-mistakes forms route host reads through the opt-in home resolver below.
 fm_nm_bounded() {  # <dir> <timeout_secs> <command> <args...>
@@ -42,7 +43,9 @@ fm_nm_bounded() {  # <dir> <timeout_secs> <command> <args...>
         runner=$!
         rc=0
         wait "$runner" || rc=$?
-        case "$rc" in 124|137) kill -KILL -- "-$runner" 2>/dev/null || true ;; esac
+        # A KILL escalation (137) is still a timeout: report 124, as the perl
+        # branch does, so no caller reads a killed probe as an answer.
+        case "$rc" in 124|137) kill -KILL -- "-$runner" 2>/dev/null || true; rc=124 ;; esac
         exit "$rc" ) ;;
     perl)     ( cd "$dir" && perl -e 'my $t = shift; my $pid = fork; die "fork failed" unless defined $pid; if (!$pid) { setpgrp(0, 0); exec @ARGV } local $SIG{ALRM} = sub { kill "TERM", -$pid; select undef, undef, undef, 0.2; kill "KILL", -$pid; exit 124 }; alarm $t; waitpid $pid, 0; exit($? >> 8)' "$timeout_secs" "$@" ) ;;
     *)        return 1 ;;
