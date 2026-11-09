@@ -1,0 +1,14 @@
+ok - help renders only the header
+ok - poll reports a new automation-failed item with its error text
+ok - a null failure code keeps the error text in the wake
+ok - only keyed automation-failed items count as failures
+ok - simultaneous failures are reported one per result, oldest first
+ok - a poll reads every page, bounds the read, and treats a later-page error as a failed read
+ok - every failure wakes exactly once with its own error text, and a repeat never does
+ok - an unreachable Factory produces one diagnostic and stops the watch
+ok - server errors are tolerated until three in a row, and a good read resets the count
+ok - refused auth, unexpected statuses, and malformed or empty bodies stop the watch at once
+ok - the token never reaches a command line and a host .curlrc is ignored
+ok - arm refuses missing config and a URL that embeds credentials
+ok - preflight passes a usable model, fails an unusable one, and reports what it cannot judge
+# all fm-procevent-factory tests passed

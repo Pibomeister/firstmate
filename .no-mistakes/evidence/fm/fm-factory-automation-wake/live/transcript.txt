@@ -1,0 +1,71 @@
+
+===== S1 preflight: Nov 9 shape - default model set, provider has no credential in catalog =====
+$ bin/fm-procevent-factory.sh preflight --project ftest-nov9
+not usable: default model anthropic/claude-opus is not in the Factory's credentialed model catalog for project ftest-nov9
+[exit 1]
+
+===== S1b preflight: no default model =====
+$ bin/fm-procevent-factory.sh preflight --project ftest-nov9
+not usable: project ftest-nov9 has no default model; a run session would fall back to an unpinned mode default
+[exit 1]
+
+===== S1c preflight: credentialed default model (healthy) =====
+$ bin/fm-procevent-factory.sh preflight --project ftest-nov9
+usable: anthropic/claude-opus (scope factory; provider credential present, validity not checked)
+[exit 0]
+
+===== S1d preflight: user scope -> cannot determine; token refused -> cannot determine =====
+$ bin/fm-procevent-factory.sh preflight --project ftest-nov9
+cannot determine: project ftest-nov9 uses per-user model scope; a run session takes its owner's default model, which this read cannot see
+[exit 3]
+$ bin/fm-procevent-factory.sh preflight --project ftest-nov9
+cannot determine: Factory at http://127.0.0.1:52310 refused the project read: HTTP 401
+[exit 3]
+
+===== S2 arm watch; no failures yet -> no wake =====
+$ bin/fm-procevent-factory.sh arm --project ftest-nov9 --interval 1
+registered: factory-ftest-nov9 (factory)
+armed: factory-ftest-nov9
+interval: 1s
+[exit 0]
+factory wakes queued: 0
+token present in registration record? 0 files
+
+===== S3 a run hits ProviderAuthRequiredError ~20s after start -> supervision wake =====
+wake observed
+--- what supervision sees (bin/fm-wake-drain.sh) ---
+1794244961	1	check	procevent:factory-ftest-nov9:1	check: procevent factory factory-ftest-nov9 1 - Factory automation failed at 2026-11-09T15:00:20Z: ProviderAuthRequiredError: provider anthropic requires authentication
+
+===== S4 same open item stays open -> no duplicate wake; second failure -> its own wake =====
+distinct factory wakes after waiting with the same open item: 1
+second wake observed
+procevent:factory-ftest-nov9:1 | check: procevent factory factory-ftest-nov9 1 - Factory automation failed at 2026-11-09T15:00:20Z: ProviderAuthRequiredError: provider anthropic requires authentication
+procevent:factory-ftest-nov9:2 | check: procevent factory factory-ftest-nov9 2 - Factory automation failed at 2026-11-09T15:00:41Z: ProviderAuthRequiredError: second ticket
+
+===== S5 adversarial: Factory refuses the token (401) -> one terminal error wake, watch stops =====
+third wake observed
+procevent:factory-ftest-nov9:1 | check: procevent factory factory-ftest-nov9 1 - Factory automation failed at 2026-11-09T15:00:20Z: ProviderAuthRequiredError: provider anthropic requires authentication
+procevent:factory-ftest-nov9:2 | check: procevent factory factory-ftest-nov9 2 - Factory automation failed at 2026-11-09T15:00:41Z: ProviderAuthRequiredError: second ticket
+procevent:factory-ftest-nov9:3 | check: procevent factory factory-ftest-nov9 3 - Factory watch stopped: Factory at http://127.0.0.1:52310 refused the attention read: HTTP 401 (check config/factory token_file)
+poller processes still running: 0
+-- factory-ftest-nov9.1.result classify=failed
+factory: factory-ftest-nov9
+status: failed
+project: ftest-nov9
+item: factory:ftest-nov9:automation-failed:d1:0	dispatch_failed	ProviderAuthRequiredError: provider anthropic requires authentication	2026-11-09T15:00:20Z
+condition_polls: 1
+-- factory-ftest-nov9.2.result classify=failed
+factory: factory-ftest-nov9
+status: failed
+project: ftest-nov9
+item: factory:ftest-nov9:automation-failed:d2:0	dispatch_failed	ProviderAuthRequiredError: second ticket	2026-11-09T15:00:41Z
+condition_polls: 4
+-- factory-ftest-nov9.3.result classify=error
+factory: factory-ftest-nov9
+status: error
+project: ftest-nov9
+detail: Factory at http://127.0.0.1:52310 refused the attention read: HTTP 401 (check config/factory token_file)
+condition_polls: 1
+--- request log: auth header ---
+  13 auth=present
+token on any process argv? 1

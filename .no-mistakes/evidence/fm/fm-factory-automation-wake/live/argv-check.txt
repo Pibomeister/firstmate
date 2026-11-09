@@ -1,0 +1,3 @@
+poller running: 1
+curl seen during sampling: 34 requests
+processes whose argv contained the token: 0
