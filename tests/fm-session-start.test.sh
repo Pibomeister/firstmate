@@ -1035,7 +1035,7 @@ EOF
       "long-held,queued,ship,firstmate,\"$long_title\",none,captain,reason")" \
     run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
 
-  assert_contains "$out" "(1 held in-flight row(s) are left out here; the held group below prints each one whole: held-flight)" \
+  assert_contains "$out" "(1 held in-flight row(s) are left out here; the held group below prints each one: held-flight)" \
     "a held in-flight row was not deferred to the held group by id"
   assert_contains "$out" "(1 plain in-flight row(s) with a live task record are left out here; Work under way below lists each one: live-plain)" \
     "a plain live in-flight row was not deferred to Work under way by id"
@@ -1114,6 +1114,37 @@ EOF
     || fail "the saved presentation does not list every open decision"
 
   pass "a large wake presentation saves to a file, then bounds annotation and open-decision lines inline while every record prints"
+}
+
+# The inline bound is in bytes. Under a UTF-8 locale a shell length counts
+# characters, so multibyte status text under 8000 characters but over 8000 bytes
+# must still be saved and bounded.
+test_wake_presentation_bound_counts_bytes_not_characters() {
+  local rec root home fakebin out saved utf8 bar
+  rec=$(new_world wake-spill-bytes)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  utf8=$(locale -a 2>/dev/null | grep -iE '^(c|en_us)\.utf-?8$' | head -1)
+  [ -n "$utf8" ] || utf8=C.UTF-8
+  # 200 box-drawing characters: 200 characters, 600 bytes.
+  bar=$(awk 'BEGIN { for (i = 0; i < 200; i++) printf "\342\224\200" }')
+  awk -v bar="$bar" 'BEGIN { for (i = 1; i <= 15; i++) printf "working: %02d %s\n", i, bar }' \
+    > "$home/state/task-u.status"
+  append_wake "$home/state" signal task-u.status "working: 15" || fail "seed wake failed"
+
+  out=$(LC_ALL=$utf8 run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  saved="$home/state/.session-start-wake-presentation"
+
+  [ -f "$saved" ] || fail "a multibyte presentation over the byte bound was not saved"
+  [ "$(LC_ALL=C wc -c < "$saved" | tr -d ' ')" -gt 8000 ] || fail "the fixture is not over the 8000-byte bound"
+  assert_contains "$out" "historical wake-event annotation line(s) left out to bound this digest" \
+    "a multibyte presentation over the byte bound printed inline whole"
+  assert_contains "$out" "WAKE_ACK_REQUIRED:" "the acknowledgement line left the inline copy"
+
+  pass "the wake presentation bound counts bytes, so multibyte text cannot slip past it"
 }
 
 # When the save path is a directory, mv would place the copy inside it and
@@ -1195,7 +1226,7 @@ EOF
 # The digest every primary handoff pays stays under 30 KB on a large home, and
 # none of the safety signals is cut to get there.
 test_digest_stays_under_size_budget_on_large_home() {
-  local rec root home fakebin out i in_flight held blocked bytes id
+  local rec root home fakebin out i in_flight held blocked bytes id order_id stub
   rec=$(new_world size-budget)
   IFS='|' read -r root home fakebin <<EOF
 $rec
@@ -1204,7 +1235,23 @@ EOF
   make_fake_tasks_axi_compact "$fakebin"
   make_fake_ps_claude "$fakebin"
   make_fake_tmux "$fakebin" "fm-sess:live"
+  # A missing tool gives the digest an actionable bootstrap diagnostic.
+  rm -f "$fakebin/node"
   printf '# Backlog\n\n## In flight\n\n## Queued\n' > "$home/data/backlog.md"
+  stub="$fakebin/order-nudge"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$stub"
+  chmod +x "$stub"
+  env -u FM_DATA_OVERRIDE -u FM_STATE_OVERRIDE FM_HOME="$home" FM_ORDER_NUDGE_CMD="$stub" \
+    "$ROOT/bin/fm-order.sh" send --from nightly "nightly: start the size-budget goals" >/dev/null \
+    || fail "could not seed a captain order"
+  order_id=$(find "$home/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
+  [ -n "$order_id" ] || fail "the seeded captain order is not pending"
+  i=1
+  while [ "$i" -le 3 ]; do
+    printf 'needs-decision [key=size-call-%s]: the captain owes size-budget call %s\n' "$i" "$i" > "$home/state/task-dec$i.status"
+    i=$((i + 1))
+  done
+  printf 'note: the captain said keep the size-budget answer\n' > "$home/state/task-note.status"
 
   write_padded_markdown "$home/data/captain.md" "Captain preferences" 30 6 captain
   write_padded_markdown "$home/data/captain-shared.md" "Shared captain preferences" 30 6 shared
@@ -1246,17 +1293,33 @@ EOF
   out=$(FM_SESSION_START_TIMEOUT=600 FM_FAKE_TASKS_AXI_SHOW_STATE=in_flight \
     FM_FAKE_TASKS_AXI_IN_FLIGHT_ROWS="$in_flight" FM_FAKE_TASKS_AXI_HELD_ROWS="$held" \
     FM_FAKE_TASKS_AXI_BLOCKED_ROWS="$blocked" FM_FAKE_TASKS_AXI_READY=30 \
-    run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
-  bytes=$(printf '%s\n' "$out" | wc -c | tr -d ' ')
+    run_session_start "$home" "$root" "$fakebin:$(fm_test_base_path_sans "$BASE_PATH" node)")
+  bytes=$(printf '%s\n' "$out" | LC_ALL=C wc -c | tr -d ' ')
 
   [ "$bytes" -lt 30000 ] || fail "the large-home digest is $bytes bytes, over the 30 KB budget"
   assert_contains "$out" "lock acquired: harness pid" "the lock verdict was cut"
   assert_contains "$out" "$(printf 'signal\ttask-1.status\tworking: step 200')" "a wake record was cut"
   assert_contains "$out" "WAKE_ACK_REQUIRED:" "the acknowledgement line was cut"
+  assert_contains "$out" "CAPTAIN ORDERS" "the captain orders section was cut"
+  assert_contains "$out" "$order_id pending" "the pending captain order was cut"
+  assert_contains "$out" "MISSING: node" "the actionable bootstrap diagnostic was cut"
+  assert_contains "$out" "OPEN DECISIONS (" "the open-decisions section was cut"
   i=1
+  while [ "$i" -le 3 ]; do
+    assert_contains "$out" "the captain owes size-budget call $i" "open decision $i was cut"
+    i=$((i + 1))
+  done
+  assert_contains "$out" "UNREAD STATUS (" "the unread-status section was cut"
+  assert_contains "$out" "task-note note: the captain said keep the size-budget answer" "the unread status line was cut"
+  # Each task is checked on its own entry, never on a disclosure that only names
+  # its id: a live task on its Work under way line, a stale one in the condensed list.
+  i=1
+  while [ "$i" -le 15 ]; do
+    assert_contains "$out" "task-$i project=firstmate state=" "live task task-$i lost its Work under way line"
+    i=$((i + 1))
+  done
   while [ "$i" -le 30 ]; do
-    id="task-$i"
-    printf '%s\n' "$out" | grep -Eq "(^| )$id( |:)" || fail "live task $id is missing from the digest"
+    printf '%s\n' "$out" | grep -Eq "(^|[ ,])task-$i:[a-z-]+:" || fail "stale task task-$i lost its condensed entry"
     i=$((i + 1))
   done
   i=1
@@ -1267,7 +1330,6 @@ EOF
   done
   assert_contains "$out" "15 stale task(s) (endpoint dead or unknown, at least 3 days old, no recorded PR), condensed to id:state:age:endpoint:" \
     "old dead-endpoint tasks were not condensed"
-  assert_contains "$out" "task-1 project=firstmate state=" "a live task lost its full line"
 
   pass "a large home's digest stays under 30 KB with every safety signal intact ($bytes bytes)"
 }
@@ -3576,6 +3638,7 @@ test_context_digest_absent_empty_present
 test_context_large_files_are_indexed
 test_backlog_in_flight_rows_listed_once
 test_wake_presentation_spills_annotations_to_a_saved_file
+test_wake_presentation_bound_counts_bytes_not_characters
 test_wake_presentation_keeps_everything_when_save_path_is_a_directory
 test_wake_presentation_prints_section_after_bounded_one_whole
 test_digest_stays_under_size_budget_on_large_home

@@ -567,8 +567,11 @@ print_context_file() {
 # from the durable status logs at every drain. If the save fails, nothing is
 # left out.
 print_wake_presentation() {
-  local out=$1 tmp=
-  if [ "${#out}" -le "$WAKE_INLINE_MAX" ]; then
+  local out=$1 tmp='' bytes=''
+  # Count bytes, not characters: under a UTF-8 locale ${#out} counts characters,
+  # so multibyte text would slip past the byte budget.
+  bytes=$(printf '%s\n' "$out" | LC_ALL=C wc -c | tr -d ' ')
+  if [ "$bytes" -le "$WAKE_INLINE_MAX" ]; then
     printf '%s\n' "$out"
     return 0
   fi
@@ -714,7 +717,7 @@ print_ready_queued_bounded() {
 # way prints that task's line below; its id is still named in the disclosure.
 # An in-flight row whose id the held group lists (the space-separated ids in
 # BACKLOG_HELD_IDS) is left out here too, because the held group prints that
-# same row whole; its id is named in a second disclosure. A blocked in-flight
+# same row under its own cap; its id is named in a second disclosure. A blocked in-flight
 # row, or a plain one with no live record, always prints.
 compact_backlog_rows() {
   local mode=${1:-} line id omitted='' count=0 held_dup='' held_count=0 cap=$BACKLOG_ROW_MAX
@@ -751,7 +754,7 @@ compact_backlog_rows() {
     esac
   done
   if [ "$held_count" -gt 0 ]; then
-    printf '(%d held in-flight row(s) are left out here; the held group below prints each one whole:%s)\n' \
+    printf '(%d held in-flight row(s) are left out here; the held group below prints each one:%s)\n' \
       "$held_count" "$held_dup"
   fi
   if [ "$count" -gt 0 ]; then
