@@ -203,12 +203,14 @@ prepare_out() {
 
 # require_run_home: refuse a --home other than the one the started run in
 # --out records, before anything is written. The same directory under another
-# spelling, such as a case alias, is the same home.
+# spelling, such as a case alias, is the same home, and every later path uses
+# the spelling recorded at start.
 require_run_home() {
   local recorded
   recorded=$(jq -r .home "$OUT/soak.json")
   [ "$recorded" = "$HOME_DIR" ] || { [ -d "$recorded" ] && [ "$recorded" -ef "$HOME_DIR" ]; } \
     || die 2 "--home is not the home this soak run started on: $HOME_DIR"
+  HOME_DIR=$recorded
 }
 
 # home_spellings <actions.tsv>: each distinct home column of a watchdog ledger

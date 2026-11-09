@@ -631,6 +631,32 @@ test_case_alias_home_is_the_run_home() {
   pass "a case alias of the soak home is the run's home to sample, finish and the watchdog rows"
 }
 
+# One rewrite of a handoff document, sampled under the started spelling and
+# then under a case alias of the home, is one handoff event.
+test_case_alias_home_samples_count_one_handoff() {
+  local home alias_home out wd tr json
+  mkdir -p "$TMP_ROOT/CaseProbe4"
+  if [ ! -d "$TMP_ROOT/caseprobe4" ]; then
+    pass "case-alias home samples: not applicable on a case-sensitive filesystem"
+    return 0
+  fi
+  home=$(make_home aliassample/Home)
+  alias_home="$TMP_ROOT/aliassample/HOME"
+  out="$TMP_ROOT/aliassample-out"; wd="$TMP_ROOT/aliassample-watchdog"; tr="$TMP_ROOT/aliassample-transcripts"
+  mkdir -p "$wd" "$tr"
+  : > "$wd/actions.tsv"
+  soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  rewrite_handoff "$home" $((T0 + 100)) "first"
+  soak $((T0 + 150)) sample --home "$home" --out "$out" > /dev/null || fail "sample failed"
+  soak $((T0 + 200)) sample --home "$alias_home" --out "$out" > /dev/null || fail "alias sample failed"
+  assert_equals 1 "$(wc -l < "$out/handoff-events.tsv" | tr -d ' ')" "a sample under a case alias of the home adds no second event"
+  soak $((T0 + 1000)) finish --home "$alias_home" --out "$out" --watchdog-dir "$wd" --transcript-dir "$tr" \
+    > /dev/null || fail "finish failed"
+  json=$(jq -c . "$out/soak.json") || fail "soak.json is not JSON after finish"
+  assert_equals 1 "$(jq -r .handoff_count <<<"$json")" "one rewrite sampled under two spellings of the home counts once"
+  pass "samples under two spellings of the soak home count one handoff"
+}
+
 # Two requested restarts with no handoff nudge between them: a document written
 # in the same second the first restart finished belongs to the first, so the
 # second restart, which left no document of its own, still counts.
@@ -857,6 +883,7 @@ fm_test_run \
   test_case_alias_spelling_is_one_tree \
   test_case_alias_order_document_is_one_handoff \
   test_case_alias_home_is_the_run_home \
+  test_case_alias_home_samples_count_one_handoff \
   test_finish_counts_a_requested_restart_after_a_boundary_document \
   test_tmpdir_inside_the_home_is_never_written \
   test_sample_and_finish_refuse_another_home \
