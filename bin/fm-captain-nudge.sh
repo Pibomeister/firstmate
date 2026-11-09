@@ -217,6 +217,22 @@ herdr_resolve_pane() {  # <captain-json> -> pane_id
   ' 2>/dev/null
 }
 
+herdr_screen_change_epoch() {  # <captain-id> <screen> -> epoch the screen last changed
+  local id=$1 screen=$2 f sum prev_sum prev_at now
+  f=$CFG_STATE/captains/$id.screen
+  sum=$(printf '%s' "$screen" | cksum | awk '{print $1}')
+  now=$(fm_nudge_now)
+  if [ -f "$f" ]; then
+    read -r prev_sum prev_at < "$f" || true
+    if [ "${prev_sum:-}" = "$sum" ] && [ -n "${prev_at:-}" ]; then
+      printf '%s\n' "$prev_at"
+      return 0
+    fi
+  fi
+  printf '%s %s\n' "$sum" "$now" > "$f"
+  printf '%s\n' "$now"
+}
+
 iso_to_epoch() {  # <iso-or-epoch>
   local v=$1
   case "$v" in
@@ -359,6 +375,11 @@ observe_live() {  # <captain-json>
       session=$(fm_nudge_json_get "$cap" '.session // ""' '') || true
       OBS_TARGET=$pane
       OBS_SCREEN=$(herdr_read_screen "$pane" "$session") || OBS_SCREEN=''
+      # Herdr has no lastOutputAt; a cron-written heartbeat.json is not
+      # captain activity. Track when the visible screen last changed.
+      if [ -n "$OBS_SCREEN" ]; then
+        OBS_LAST_AT=$(herdr_screen_change_epoch "$(fm_nudge_json_get "$cap" '.id' 'captain')" "$OBS_SCREEN") || OBS_LAST_AT=''
+      fi
       ;;
     *)
       return 1

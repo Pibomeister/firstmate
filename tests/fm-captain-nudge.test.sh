@@ -417,6 +417,26 @@ test_expand_path_literal_tilde() {
   pass "fm-captain-nudge: literal ~ in config paths expands to HOME"
 }
 
+test_herdr_idle_tracks_screen_change_not_heartbeat() {
+  local home bin cap idle
+  bin="$TMP_ROOT/herdr-bin"
+  mkdir -p "$bin"
+  printf '#!/bin/sh\nprintf "%%s\\n" "${FAKE_HERDR_SCREEN:-idle screen}"\n' > "$bin/herdr"
+  chmod +x "$bin/herdr"
+  mkdir -p "$TMP_ROOT/herdr-home/state"
+  printf '{"generated_epoch":2000003000}\n' > "$TMP_ROOT/herdr-home/state/heartbeat.json"
+  cap=$(jq -nc --arg fm "$TMP_ROOT/herdr-home" '[{id:"hd", owner:"abaco", backend:"herdr", pane:"w1:pG", fm_home:$fm, open_work:{repos:[], queue_file:""}}]')
+  home=$(write_home herdr-idle "$cap")
+  PATH="$bin:$PATH" FM_NUDGE_NOW=2000000000 run_once "$home" >/dev/null 2>&1
+  PATH="$bin:$PATH" FM_NUDGE_NOW=$((2000000000 + 25 * 60)) run_once "$home" >/dev/null 2>&1
+  idle=$(tail -n 1 "$home/state/nudge.jsonl" | jq -r '.idle_min')
+  [ "$idle" = 25 ] || fail "herdr idle should follow unchanged screen (25m), got $idle"
+  PATH="$bin:$PATH" FAKE_HERDR_SCREEN="new output" FM_NUDGE_NOW=$((2000000000 + 26 * 60)) run_once "$home" >/dev/null 2>&1
+  idle=$(tail -n 1 "$home/state/nudge.jsonl" | jq -r '.idle_min')
+  [ "$idle" = 0 ] || fail "herdr idle should reset when the screen changes, got $idle"
+  pass "fm-captain-nudge: herdr idle tracks screen change, not a cron heartbeat"
+}
+
 fm_test_run \
   test_help_and_usage \
   test_decide_nudge_happy_path \
@@ -441,4 +461,5 @@ fm_test_run \
   test_open_work_queue_file \
   test_beacon_line_has_no_spaces_in_values \
   test_example_configs_parse \
-  test_expand_path_literal_tilde
+  test_expand_path_literal_tilde \
+  test_herdr_idle_tracks_screen_change_not_heartbeat
