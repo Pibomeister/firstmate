@@ -1,0 +1,49 @@
+== baseline scan
+# fm-relay-guard v1 epoch=1794247544 daemon=fktsd daemon-pid=50815
+m3	ok	54629	
+m4	ok	54635	
+studio	ok	54663	
+exit=0
+== baseline once
+# fm-relay-guard v1 epoch=1794247545 daemon=fktsd daemon-pid=50815
+m3	ok	54629	
+m4	ok	54635	
+studio	ok	54663	
+exit=0
+# fm-relay-guard v1 epoch=1794247545 daemon=fktsd daemon-pid=50815
+m3	ok	54629	
+m4	ok	54635	
+studio	ok	54663	
+== restart daemon (simulated tailscaled restart)
+new daemon pid 99561
+== reachability through stale relays (expect 502 stale session)
+7101: 502
+7102: 502
+7103: 502
+== guard once
+# fm-relay-guard v1 epoch=1794247547 daemon=fktsd daemon-pid=99561
+m3	restart	2599	daemon-restarted; probe ok
+m4	restart	3540	daemon-restarted; probe ok
+studio	restart	4345	daemon-restarted; probe ok
+exit=0
+# fm-relay-guard v1 epoch=1794247547 daemon=fktsd daemon-pid=99561
+m3	restart	2599	daemon-restarted; probe ok
+m4	restart	3540	daemon-restarted; probe ok
+studio	restart	4345	daemon-restarted; probe ok
+== actions.tsv
+1794247547	m3	restart	daemon-restarted	54629	2599	ok
+1794247547	m4	restart	daemon-restarted	54635	3540	ok
+1794247547	studio	restart	daemon-restarted	54663	4345	ok
+== reachability after recovery
+7101: orca M3 ok
+7102: orca M4 ok
+7103: orca Studio ok
+== decoy relay (7199, unconfigured) still original pid?
+decoy alive pid 54672
+== repeat pass is a no-op
+# fm-relay-guard v1 epoch=1794247555 daemon=fktsd daemon-pid=99561
+m3	ok	2599	
+m4	ok	3540	
+studio	ok	4345	
+exit=0
+       3

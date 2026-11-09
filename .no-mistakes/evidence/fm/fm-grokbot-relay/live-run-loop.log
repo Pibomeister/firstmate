@@ -1,0 +1,38 @@
+settle pass exit=0
+guard run pid 7951
+== A: daemon-named helper child (like tailscaled be-child ssh)
+23473 55026 /tmp/rg-live.Sxl5By/bin/fktsd
+actions before=       6 after=       6 (expect equal)
+# fm-relay-guard v1 epoch=1794247664 daemon=fktsd daemon-pid=55026
+m3	ok	72818	
+m4	ok	80125	
+studio	ok	89518	
+== B: restart daemon while run loop is live
+/tmp/rg-run.sh: line 4: 55026 Terminated: 15          nohup $L/bin/fktsd $L/daemon.mjs >> $L/daemon.log 2>&1
+right after restart 7101: 000
+right after restart 7102: 502
+right after restart 7103: 502
+all three reachable ~4s after daemon restart
+# fm-relay-guard v1 epoch=1794247678 daemon=fktsd daemon-pid=62611
+m3	ok	67081	
+m4	ok	70209	
+studio	ok	74590	
+1794247669	m3	restart	daemon-restarted	72818	67081	ok
+1794247669	m4	restart	daemon-restarted	80125	70209	ok
+1794247669	studio	restart	daemon-restarted	89518	74590	ok
+== C: freeze m4 relay (data-plane loss, daemon still up)
+froze 70209
+during freeze: 000
+m4 reachable again ~22s later: orca M4 ok
+1794247669	studio	restart	daemon-restarted	89518	74590	ok
+1794247689	m4	restart	probe-failed	70209	84234	ok
+frozen pid 70209 gone
+== D: stop guard with TERM between passes; relays must survive
+guard exited in 0s
+relay 67081 alive
+relay 74590 alive
+relay 84234 alive
+orca M3 ok
+orca M4 ok
+orca Studio ok
+decoy 7199 untouched pid 54672

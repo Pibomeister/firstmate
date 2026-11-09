@@ -1,0 +1,39 @@
+== render-launchd
+/Users/eduardopicazo/.no-mistakes/evidence/01M70M2NYG1QSD0QTRJYAN66V1/rendered.plist: OK
+{'Label': 'firstmate-relay-guard-2364458282', 'ProgramArguments': ['/bin/bash', '/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70M2NYG1QSD0QTRJYAN66V1/bin/fm-relay-guard.sh', 'run'], 'AbandonProcessGroup': True, 'KeepAlive': True}
+env keys ['FM_HOME', 'PATH'] PATH has node dir: True
+== render-systemd
+[Unit]
+Description=Firstmate relay guard (firstmate-relay-guard-2364458282)
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Environment="FM_HOME=/private/tmp/rg-live.Sxl5By/home"
+Environment="PATH=/Users/eduardopicazo/.local/bin:/opt/homebrew/opt/openjdk@17/bin:/Users/eduardopicazo/Library/Android/sdk/platform-tools:/Users/eduardopicazo/Library/Android/sdk/emulator:/Users/eduardopicazo/.grok/bin:/Users/eduardopicazo/.kimi-code/bin:/Users/eduardopicazo/Library/pnpm:/Users/eduardopicazo/.bun/bin:/Users/eduardopicazo/Library/Python/3.9/bin:/Library/TeX/texbin:/Users/eduardopicazo/.local/bin:/opt/homebrew/opt/node@24/bin:/Users/eduardopicazo/.antigravity/antigravity/bin:/opt/homebrew/opt/node@24/bin:/Users/eduardopicazo/.local/bin:/opt/homebrew/opt/openjdk@17/bin:/Users/eduardopicazo/Library/Android/sdk/platform-tools:/Users/eduardopicazo/Library/Android/sdk/emulator:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Library/TeX/texbin:/opt/homebrew/bin:/Users/eduardopicazo/go/bin:/Users/eduardopicazo/.local/bin:/Users/eduardopicazo/.cargo/bin:/Users/eduardopicazo/bin:/opt/homebrew/sbin:/usr/local/sbin:/Users/eduardopicazo/.orbstack/bin:/Users/eduardopicazo/.lmstudio/bin:/Users/eduardopicazo/.claude/plugins/cache/agent-kit/ak/0.1.96/bin"
+ExecStart=/bin/bash "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70M2NYG1QSD0QTRJYAN66V1/bin/fm-relay-guard.sh" run
+Restart=always
+RestartSec=10s
+KillMode=process
+
+[Install]
+WantedBy=default.target
+== lock contention
+# fm-relay-guard v1 epoch=1794247720 daemon=fktsd daemon-pid=62611
+m3	ok	67081	
+m4	ok	84234	
+studio	ok	74590	
+exit=0 (expect 75)
+rmdir: /tmp/rg-live.Sxl5By/home/state/relay-guard/lock.d: No such file or directory
+== bad config refused before action
+fm-relay-guard: relay.extra has no probe.extra
+exit=2 (expect 2)
+nothing started
+== missing FM_HOME
+fm-relay-guard: FM_HOME must name the home that holds config/relay-guard
+exit=2
+== lock held by a live pid
+fm-relay-guard: another pass holds /tmp/rg-live.Sxl5By/home/state/relay-guard/lock.d
+exit=75 (expect 75)
+== stale lock (dead holder) is reclaimed
+exit=0
