@@ -772,6 +772,7 @@ tests/fm-calm-claude-mod-plugin.test.sh 55
 tests/fm-calm-claude-mod.test.sh 3279
 tests/fm-calm-pi-extension.test.sh 56376
 tests/fm-calm-pi-queue-retention-live-e2e.test.sh 1364
+tests/fm-captain-nudge.test.sh 8000
 tests/fm-capacity.test.sh 7900
 tests/fm-check-unregister.test.sh 591
 tests/fm-ci-select.test.sh 5000
@@ -1661,6 +1662,9 @@ families_for_changed_path() {
     bin/fm-handoff-trigger.sh)
       printf '%s\n' '__script__:fm-handoff-trigger.test.sh'
       printf '%s\n' '__script__:fm-handoff-trigger-live-e2e.test.sh'
+      ;;
+    bin/fm-captain-nudge.sh|bin/fm-captain-nudge-lib.sh)
+      printf '%s\n' '__script__:fm-captain-nudge.test.sh'
       ;;
     bin/fm-watchdog.sh|bin/fm-watchdog-lib.sh)
       printf '%s\n' watcher-wake-lock

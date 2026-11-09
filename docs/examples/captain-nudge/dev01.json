@@ -1,0 +1,28 @@
+{
+  "schema": "fm-captain-nudge.v1",
+  "host": "dev01",
+  "interval_secs": 300,
+  "guard_stale_secs": 660,
+  "idle_min": 20,
+  "cooldown_min": 30,
+  "max_no_progress": 2,
+  "mode": "act",
+  "state_dir": "~/orca/nudge",
+  "jsonl_log": "~/orca/nudge/nudge.jsonl",
+  "beacon_log": "~/orca/beacon/abaco-beacon.log",
+  "captains": [
+    {
+      "id": "abaco",
+      "owner": "abaco",
+      "backend": "herdr",
+      "pane": "w1:pG",
+      "title": "",
+      "session": "",
+      "fm_home": "~/firstmate",
+      "open_work": {
+        "repos": ["Abaco-Money/abaco"],
+        "queue_file": "~/firstmate/data/backlog.md"
+      }
+    }
+  ]
+}
