@@ -1,0 +1,26 @@
+## S7 session start with an enabled watchdog unit (firstmate-watchdog-75669039 answers loaded) leaves the monitor read to the watchdog
+manager: enabled (firstmate-watchdog-75669039)
+rc=0
+lock acquired: harness pid 53622
+--- service manager queries during start:
+launchctl print gui/501/firstmate-watchdog-75669039
+launchctl print gui/501/firstmate-watchdog-75669039
+--- monitor-status after:
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.6Aw7nC/state/monitor-status: No such file or directory
+
+## S8 context re-emit with no enabled watchdog writes nothing
+rc=0
+RE-EMIT CUE: if this output ends with "Output too large ... Full output saved to <path>",
+read that whole file now, before acting. Otherwise read data/captain.md, data/captain-shared.md,
+data/learnings.md under /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.6Aw7nC/data, and docs/learnings/overnight-learnings.md under the code root now if
+any of them is missing below.
+
+================================================================================
+SESSION START (CONTEXT RE-EMIT) - /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.6Aw7nC
+================================================================================
+This session already took the helm at its own startup and has only lost its
+context. Lock ownership is re-verified and the durable records below are
+reprinted, but the sweeps startup already reconciled - project clone refresh,
+secondmate convergence and liveness, pending remote handoff
+--- monitor-status after:
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.6Aw7nC/state/monitor-status: No such file or directory

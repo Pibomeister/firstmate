@@ -1,0 +1,24 @@
+## S6 lock-refused session start (lock held by the earlier lab session; this start has no harness ancestor)
+rc=0
+
+================================================================================
+SESSION START - /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.6Aw7nC
+================================================================================
+
+LOCK
+--------------------------------------------------------------------------------
+error: cannot locate harness process in ancestry
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  READ-ONLY SESSION - FLEET LOCK OWNERSHIP WAS NOT VERIFIED
+●  error: cannot locate harness process in ancestry
+●  Skipping every mutating step: stale Herdr child cleanup,
+●  secondmate convergence, secondmate liveness, pending remote handoff retry,
+●  X-mode artifacts, fleet sync, and wake-queue drain. Detect-only bootstrap
+●  diagnostics and the rest of this read-only-safe digest still ran below.
+●  Operate read-only until this resolves - do not spawn, steer, merge, or
+●  otherwise mutate fleet state from this session.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+HOME ROLE
+--- monitor-status after:
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.6Aw7nC/state/monitor-status: No such file or directory

@@ -1,0 +1,5 @@
+## S3 adversarial: launchctl hangs, the monitor read times out and prints no manager: line
+status=disabled at=1794246142
+rc=0 elapsed=10s
+status=unreadable at=1794246169
+monitor-status

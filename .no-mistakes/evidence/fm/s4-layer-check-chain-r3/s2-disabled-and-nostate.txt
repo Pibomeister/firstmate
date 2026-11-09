@@ -1,0 +1,12 @@
+monitor unit name: firstmate-monitor-watchdog-75669039
+## S2 unit file present but not loaded (real launchctl print)
+manager: disabled (firstmate-monitor-watchdog-75669039)
+rc=1
+rc=0
+status=disabled at=1794246142
+## S6 adversarial: home without state dir
+rc=0
+.
+..
+state
+## S7 adversarial: monitor read prints no manager: line (fm-monitor-watchdog missing FM_HOME name -> broken lab copy)

@@ -1,0 +1,9 @@
+## S1 monitor-read, real launchctl, no unit installed
+$ FM_HOME=$LAB bin/fm-monitor-watchdog.sh manager-status
+manager: uncovered (unit not installed)
+rc=1
+$ FM_HOME=$LAB bin/fm-watchdog.sh monitor-read
+rc=0
+$ cat $LAB/state/monitor-status
+status=uncovered at=1794246130
+monitor-status
