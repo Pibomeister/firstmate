@@ -4,8 +4,8 @@
 # Orca and the working-directory scan are faked so each case controls exactly
 # which terminals exist and where processes work. The process trees behind the
 # terminals are real: idle sessions are real shells, live sessions run a real
-# agent stand-in, and worktrees are real git clones, so the idle, live-agent,
-# and landed-work verdicts come from the same reads the script makes on a host.
+# agent stand-in, so the idle and live-agent verdicts come from the same reads
+# the script makes on a host.
 # The fake scan lists only this suite's processes, so any real browser on the
 # test host reads as unknown and is never stopped.
 set -u
@@ -165,9 +165,7 @@ build_world() {  # <case>
   fm_git_init_commit "$FX/src"
   bare="$FX/src.git"
   git clone -q --bare "$FX/src" "$bare"
-  for p in fm-t-live fm-landed fm-dirty fm-ahead fm-worker; do clone_worktree "$bare" "$WS/$p"; done
-  printf 'scratch\n' > "$WS/fm-dirty/untracked.txt"
-  git -C "$WS/fm-ahead" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m local-only
+  for p in fm-t-live fm-landed; do clone_worktree "$bare" "$WS/$p"; done
 
   fm_write_meta "$HOME_DIR/state/t-live.meta" kind=ship backend=orca terminal=term-task "worktree=$WS/fm-t-live"
   fm_write_meta "$SM_HOME/state/s-task.meta" kind=ship backend=orca terminal=term-smtask "worktree=$FX/sm-wt"
@@ -184,23 +182,21 @@ build_world() {  # <case>
   idle_term term-m4 pty-m4 "$HOME_DIR" "M4 main successor"
   idle_term term-handoff pty-handoff "$HOME_DIR" "FM handoff"
   idle_term term-idle pty-idle "$HOME_DIR" "fm main successor"
+  idle_term term-mfch pty-mfch "$HOME_DIR" "M4 main Firstmate captain handoff"
+  idle_term term-stamp pty-stamp "$HOME_DIR" "fm-main-successor-2300Z"
+  idle_term term-path pty-path "$HOME_DIR" "eduardo@m4: ~/orca/projects/firstmate"
+  idle_term term-branch pty-branch "$HOME_DIR" "zsh (main)"
+  idle_term term-leash pty-leash "$HOME_DIR" "leash-drop-2236"
+  idle_term term-muse pty-muse "$HOME_DIR" "Muse Code under Astra Opus"
   idle_term term-sm-idle pty-sm-idle "$SM_HOME" "sm1 successor"
   idle_term term-gone pty-gone "$WS/fm-gone" fm-gone
   idle_term term-landed pty-landed "$WS/fm-landed" fm-landed
-  idle_term term-dirty pty-dirty "$WS/fm-dirty" fm-dirty
-  idle_term term-ahead pty-ahead "$WS/fm-ahead" fm-ahead
   term term-nosession pty-none "$HOME_DIR" "old main"
   if [ -n "$STANDIN" ]; then
-    local agent worker
+    local agent
     agent_session
     agent=$PID
     term term-agent pty-agent "$HOME_DIR" "fm main"; session pty-agent "$agent"
-    idle_term term-worker pty-worker "$WS/fm-worker" fm-worker
-    "$TMP_ROOT/agent-bin/claude" 600 >/dev/null 2>&1 </dev/null &
-    worker=$!
-    disown "$worker" 2>/dev/null || true
-    TRACKED_PIDS+=("$worker")
-    cwd_row "$worker" "$WS/fm-worker"
     # An idle home session that gains an agent between the listing and the
     # close: Orca's fresh read names a session running the stand-in.
     idle_term term-flip pty-flip "$HOME_DIR" "fm main handoff"
@@ -208,6 +204,7 @@ build_world() {  # <case>
     show term-flip pty-flip-now "$HOME_DIR"
   fi
   for p in term-idle:pty-idle:"$HOME_DIR" term-m4:pty-m4:"$HOME_DIR" term-handoff:pty-handoff:"$HOME_DIR" term-sm-idle:pty-sm-idle:"$SM_HOME" \
+    term-mfch:pty-mfch:"$HOME_DIR" term-stamp:pty-stamp:"$HOME_DIR" \
     term-gone:pty-gone:"$WS/fm-gone" term-landed:pty-landed:"$WS/fm-landed"; do
     show "${p%%:*}" "$(printf '%s' "$p" | cut -d: -f2)" "${p#*:*:}"
   done
@@ -232,15 +229,18 @@ test_dry_run_classifies_every_owner_and_closes_nothing() {
   expect term-nosession "keep no-session" "a terminal Orca's sweep cannot name is never judged idle"
   expect term-idle "reap idle-session" "a finished firstmate session at its prompt is an orphan"
   expect term-sm-idle "reap idle-session" "a secondmate home root is a home root"
-  expect term-gone "reap gone-worktree" "an idle shell whose task worktree is gone is an orphan"
-  expect term-landed "reap idle-task" "an idle shell in an unrecorded, fully landed task worktree is an orphan"
-  expect term-dirty "keep unlanded" "uncommitted changes keep the terminal"
-  expect term-ahead "keep unlanded" "a commit no remote branch holds keeps the terminal"
+  expect term-mfch "reap idle-session" "a handoff title with firstmate words is a firstmate session"
+  expect term-stamp "reap idle-session" "a hyphenated session name still yields whole title words"
+  expect term-path "keep captain" "a home-root path in a shell title is not a firstmate session name"
+  expect term-branch "keep captain" "a parenthesized branch name is not a firstmate session name"
+  expect term-leash "keep captain" "a task-like title naming no firstmate word is the captain's"
+  expect term-muse "keep captain" "a program title naming no firstmate word is the captain's"
+  expect term-gone "keep unowned-task" "an idle shell in an unrecorded, gone task worktree may belong to another home"
+  expect term-landed "keep unowned-task" "an idle shell in an unrecorded, present task worktree may belong to another home"
   if [ -n "$STANDIN" ]; then
     expect term-agent "keep live-agent" "a session running an agent harness is live"
-    expect term-worker "keep live-worker" "an agent still working in the task worktree keeps its idle shell"
   else
-    pass "SKIP: live-agent and live-worker cases (no agent stand-in survives here)"
+    pass "SKIP: live-agent case (no agent stand-in survives here)"
   fi
   [ ! -s "$FX/closed.log" ] || fail "a dry run must close nothing, closed: $(cat "$FX/closed.log")"
   assert_contains "$OUT" "summary: mode=dry-run" "a dry run must end with its summary line"
@@ -253,7 +253,7 @@ test_min_age_keeps_young_sessions() {
   OUT=$(PATH="$FB:$PATH" FM_HOME="$HOME_DIR" bash "$REAP" --min-age 86400 --no-browsers 2>"$FX/stderr") || RC=$?
   [ "$RC" = 0 ] || fail "the young-session run must exit 0, got $RC"
   expect term-idle "keep young" "a session younger than --min-age may still be launching its agent"
-  expect term-landed "keep young" "the age guard applies to task worktrees too"
+  expect term-m4 "keep young" "the age guard applies to every home-root session"
   pass "fm-terminal-reap: --min-age keeps sessions that may still be launching"
 }
 
@@ -263,10 +263,12 @@ test_apply_closes_only_reproven_orphans() {
   run_reap --apply --no-browsers
   [ "$RC" = 0 ] || fail "an apply whose closes all succeed or skip must exit 0, got $RC: $(cat "$FX/stderr")"
   closed=$(sort "$FX/closed.log" | tr '\n' ' ')
-  want='term-gone term-handoff term-idle term-landed term-m4 term-sm-idle '
+  want='term-handoff term-idle term-m4 term-mfch term-sm-idle term-stamp '
   [ "$closed" = "$want" ] || fail "--apply must close exactly the orphans; want '$want', got '$closed'"
   expect term-idle "closed idle-session" "an apply reports each close"
-  expect term-dirty "keep unlanded" "an apply never closes a terminal with unlanded work"
+  expect term-landed "keep unowned-task" "an apply never closes a terminal in an unrecorded task worktree"
+  expect term-gone "keep unowned-task" "an apply never closes a terminal in an unrecorded, gone task worktree"
+  expect term-path "keep captain" "an apply never closes a home-root tab whose title only holds a path"
   if [ -n "$STANDIN" ]; then
     expect term-flip "skipped idle-session:now-alive" "a session that gained an agent since the listing must be skipped"
   else
@@ -279,32 +281,17 @@ test_apply_closes_only_reproven_orphans() {
 # Each terminal here is a reap candidate when listed, and a hook on Orca's
 # fresh read changes one fact before the close.
 test_apply_reproves_facts_that_change_before_the_close() {
-  local bare p closed
+  local closed
   fixture_reset late
   HOME_DIR="$FX/home"
-  WS="$FX/workspaces"
-  mkdir -p "$HOME_DIR/state" "$WS"
-  fm_git_init_commit "$FX/src"
-  bare="$FX/src.git"
-  git clone -q --bare "$FX/src" "$bare"
-  for p in fm-late-dirty fm-late-ok; do clone_worktree "$bare" "$WS/$p"; done
-  # An empty working-directory scan reads as unproven, so list this suite.
-  cwd_row "$$" "$FX"
+  mkdir -p "$HOME_DIR/state"
 
   idle_term term-replaced pty-replaced "$HOME_DIR" "fm main successor"
   idle_shell; session pty-replaced-now "$PID"
   show term-replaced pty-replaced-now "$HOME_DIR"
 
-  idle_term term-late-dirty pty-late-dirty "$WS/fm-late-dirty" fm-late-dirty
-  show term-late-dirty pty-late-dirty "$WS/fm-late-dirty"
-  printf '#!/usr/bin/env bash\nprintf "late\\n" > %q\n' "$WS/fm-late-dirty/late.txt" > "$FX/onshow-term-late-dirty"
-
-  idle_term term-regrown pty-regrown "$WS/fm-regrown" fm-regrown
-  show term-regrown pty-regrown "$WS/fm-regrown"
-  printf '#!/usr/bin/env bash\nmkdir -p %q\n' "$WS/fm-regrown" > "$FX/onshow-term-regrown"
-
-  idle_term term-late-ok pty-late-ok "$WS/fm-late-ok" fm-late-ok
-  show term-late-ok pty-late-ok "$WS/fm-late-ok"
+  idle_term term-late-ok pty-late-ok "$HOME_DIR" "fm main ok"
+  show term-late-ok pty-late-ok "$HOME_DIR"
 
   # The captain renames a home tab while the apply works through others.
   idle_term term-retitle pty-retitle "$HOME_DIR" "fm main retitle"
@@ -313,17 +300,6 @@ test_apply_reproves_facts_that_change_before_the_close() {
     "$FX/list.json" "$FX/list.json" "$FX/list.json" "$FX/list.json" > "$FX/onshow-term-retitle"
 
   if [ -n "$STANDIN" ]; then
-    local worker
-    clone_worktree "$bare" "$WS/fm-late-worker"
-    idle_term term-late-worker pty-late-worker "$WS/fm-late-worker" fm-late-worker
-    show term-late-worker pty-late-worker "$WS/fm-late-worker"
-    "$TMP_ROOT/agent-bin/claude" 600 >/dev/null 2>&1 </dev/null &
-    worker=$!
-    disown "$worker" 2>/dev/null || true
-    TRACKED_PIDS+=("$worker")
-    printf '#!/usr/bin/env bash\nprintf "p%%s\\nn%%s\\n" %q %q >> %q\n' "$worker" "$WS/fm-late-worker" "$FX/lsof.out" \
-      > "$FX/onshow-term-late-worker"
-
     # An agent that starts inside the classified session itself, after the
     # first liveness read: the session shell runs it once a trigger appears,
     # and the hook fires it on the second fresh read, the pid check.
@@ -355,29 +331,25 @@ HOOK
 
   run_reap --no-browsers
   expect term-replaced "reap idle-session" "the listed session is an idle firstmate session"
-  expect term-late-dirty "reap idle-task" "the listed worktree is clean and landed"
-  expect term-regrown "reap gone-worktree" "the listed worktree is gone"
+  expect term-late-ok "reap idle-session" "the listed session is an idle firstmate session"
 
   run_reap --apply --no-browsers
   [ "$RC" = 0 ] || fail "an apply whose closes all succeed or skip must exit 0, got $RC: $(cat "$FX/stderr")"
   expect term-replaced "skipped idle-session:now-replaced" "a terminal whose session was replaced since the listing must be skipped"
-  expect term-late-dirty "skipped idle-task:now-unlanded" "a worktree that gained uncommitted work since the listing must keep its terminal"
-  expect term-regrown "skipped gone-worktree:now-present" "a worktree that reappeared since the listing must keep its terminal"
-  expect term-late-ok "closed idle-task" "an unchanged landed worktree's idle shell is still closed"
+  expect term-late-ok "closed idle-session" "an unchanged idle firstmate session is still closed"
   expect term-retitle "skipped idle-session:now-retitled" "a home tab renamed off a firstmate title since the listing is the captain's"
   if [ -n "$STANDIN" ]; then
-    expect term-late-worker "skipped idle-task:now-live-worker" "a worktree that gained a worker since the listing must keep its terminal"
     expect term-late-agent "skipped idle-session:now-alive" "an agent started in the classified session during the checks must keep its terminal"
   else
-    pass "SKIP: late live-worker case (no agent stand-in survives here)"
+    pass "SKIP: late agent case (no agent stand-in survives here)"
   fi
   closed=$(sort "$FX/closed.log" | tr '\n' ' ')
   [ "$closed" = 'term-late-ok ' ] || fail "only the unchanged orphan may close, got '$closed'"
-  pass "fm-terminal-reap: --apply re-proves the session, worktree, and landed state just before each close"
+  pass "fm-terminal-reap: --apply re-proves the session and title just before each close"
 }
 
-# Unreadable is never absent: a worktree that cannot be looked up is not gone,
-# and a record that cannot be read still owns its terminal.
+# Unreadable is never absent: a record that cannot be read still owns its
+# terminal.
 test_unreadable_owner_facts_keep_terminals() {
   if [ "$(id -u)" = 0 ]; then
     pass "SKIP: permission cases (root reads through every mode)"
@@ -386,9 +358,7 @@ test_unreadable_owner_facts_keep_terminals() {
   local closed
   fixture_reset unreadable
   HOME_DIR="$FX/home"
-  mkdir -p "$HOME_DIR/state" "$FX/locked/fm-hidden"
-  cwd_row "$$" "$FX"
-  idle_term term-hidden pty-hidden "$FX/locked/fm-hidden" fm-hidden
+  mkdir -p "$HOME_DIR/state"
   idle_term term-first pty-first "$HOME_DIR" "fm main successor"
   show term-first pty-first "$HOME_DIR"
   idle_term term-second pty-second "$HOME_DIR" "fm main handoff"
@@ -397,15 +367,9 @@ test_unreadable_owner_facts_keep_terminals() {
   printf '#!/usr/bin/env bash\nchmod 000 %q\n' "$HOME_DIR/state/other.meta" > "$FX/onshow-term-first"
   chmod +x "$FX/onshow-term-first"
   fixture_write
-  chmod 000 "$FX/locked"
-
-  run_reap --no-browsers
-  [ "$RC" = 0 ] || fail "a readable inventory must exit 0, got $RC: $(cat "$FX/stderr")"
-  expect term-hidden "keep unreadable" "a task worktree that cannot be looked up is not gone"
 
   run_reap --apply --no-browsers
   [ "$RC" = 0 ] || fail "an apply whose closes all succeed or skip must exit 0, got $RC: $(cat "$FX/stderr")"
-  expect term-hidden "keep unreadable" "an apply never closes a terminal whose worktree cannot be looked up"
   expect term-first "closed idle-session" "a terminal re-proved before its records turn unreadable still closes"
   expect term-second "skipped idle-session:now-unreadable-records" "a close whose fresh record read fails must be skipped"
   closed=$(tr '\n' ' ' < "$FX/closed.log")
@@ -415,8 +379,8 @@ test_unreadable_owner_facts_keep_terminals() {
   run_reap --apply --no-browsers
   [ "$RC" = 1 ] || fail "an unreadable task record must fail the inventory with exit 1, got $RC"
   [ ! -s "$FX/closed.log" ] || fail "an unreadable task record must close nothing, closed: $(cat "$FX/closed.log")"
-  chmod 755 "$FX/locked"; chmod 644 "$HOME_DIR/state/other.meta"
-  pass "fm-terminal-reap: unreadable worktrees and records keep their terminals"
+  chmod 644 "$HOME_DIR/state/other.meta"
+  pass "fm-terminal-reap: unreadable records keep their terminals"
 }
 
 test_unreadable_inventory_closes_nothing() {

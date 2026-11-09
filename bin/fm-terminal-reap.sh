@@ -41,41 +41,36 @@
 #   keep task          its handle is a recorded task or secondmate endpoint
 #   keep task-worktree it runs in a recorded task's worktree; that task's own
 #                      cleanup owns it, whether or not its work has landed
+#   keep unowned-task  it runs in a firstmate task worktree (a directory whose
+#                      name starts with fm-, the spawn's own naming), present or
+#                      gone, that no task record of this home or its local
+#                      secondmates names; another home on this host may own it,
+#                      so this home never closes it
 #   keep foreign       it runs outside every home root and outside every
-#                      firstmate task worktree (a worktree whose directory name
-#                      starts with fm-, the spawn's own naming), so it belongs to
-#                      the captain or another tool and is never firstmate's to
-#                      close
+#                      firstmate task worktree, so it belongs to the captain or
+#                      another tool and is never firstmate's to close
 #   keep no-session    Orca's process sweep names no session for it
 #   keep young         its session is younger than --min-age
 #   keep self          this script runs inside it
 #   keep live-agent    a verified agent harness runs in its session
 #   keep busy          its session runs a program this classifier cannot rule
 #                      out as an agent
-#   keep unreadable    its session's process tree could not be read, or its
-#                      task worktree could not be looked up (only a missing
-#                      path counts as gone)
+#   keep unreadable    its session's process tree could not be read
 #   keep captain       an idle shell in a home root whose title does not name
 #                      a firstmate main or handoff session (see idle-session),
 #                      including an empty or Orca default "Terminal <n>" title,
 #                      so this is the captain's own tab
-#   keep live-worker   an agent still runs inside its task worktree
-#   keep unlanded      its task worktree has uncommitted changes or commits no
-#                      remote-tracking branch holds
-#   keep unproven      landed state or the working-directory scan was unreadable
-#   reap idle-session  an idle shell in a home root whose title contains, in
-#                      any case, main, successor, handoff, firstmate, or fm-: a
-#                      finished primary or secondmate session left at its prompt
-#   reap idle-task     an idle shell in an unrecorded firstmate task worktree
-#                      whose work is all committed and held by a remote branch
-#   reap gone-worktree an idle shell whose firstmate task worktree is gone
+#   reap idle-session  an idle shell in a home root whose title names a
+#                      finished primary or secondmate session left at its
+#                      prompt: after dropping path and branch parts (any word
+#                      holding /, ~ or @, any word ending in :, and any
+#                      parenthesized or bracketed segment), some remaining word,
+#                      split on non-alphanumerics and in any case, is main,
+#                      successor, handoff, firstmate, or fm
 # "Idle" means the session's process tree holds shells and nothing else
-# (fm_backend_orca_tree_state's dead verdict). The landed test here is weaker
-# than bin/fm-teardown.sh's: it needs only a clean tree and a HEAD that some
-# remote-tracking branch holds (any remote, including a gate remote), with no
-# merged-PR or default-branch proof. It is safe only because closing an idle
-# shell never touches a worktree's files, and it must not be reused as
-# teardown-grade proof that work has landed.
+# (fm_backend_orca_tree_state's dead verdict). This home reaps only idle
+# firstmate sessions in its own roots; every terminal in a task worktree,
+# recorded or not, is kept.
 #
 # Browser roots are agent-browser daemons, chrome-devtools-axi bridges, and
 # automation browsers (headless, pipe-debugged, Playwright, or Puppeteer
@@ -98,12 +93,10 @@
 # after that snapshot is never signalled. It never sends SIGKILL.
 #
 # --apply re-proves each terminal immediately before closing it. The records
-# are re-read (an unreadable record skips the close), and
-# fm_backend_orca_agent_state must still report dead or missing. An idle-task
-# close re-reads the working-directory scan and the landed state, a
-# gone-worktree close requires the worktree to be still gone, and an
-# idle-session close requires the fresh title to still name a firstmate
-# session. Orca must still name the session pid it was classified with (a
+# are re-read (an unreadable record skips the close),
+# fm_backend_orca_agent_state must still report dead or missing, and the fresh
+# title must still name a firstmate session. Orca must still name the session
+# pid it was classified with (a
 # replaced session is skipped), and the last read before the close requires
 # that session, if it still runs, to hold shells and nothing else. Any change or
 # unreadable fact skips the close.
@@ -215,8 +208,8 @@ read_inventory() {
 }
 
 # classify_node <mode>: the JSON and table joins, in one place. Mode terminals
-# prints `handle prelim scope pid path title`; prelim is a final keep class or
-# `candidate`. Mode browsers prints `pid verdict class cwd descendants detail`.
+# prints `handle prelim pid path title`; prelim is a final keep class or
+# `candidate`, and every candidate is in a home root. Mode browsers prints `pid verdict class cwd descendants detail`.
 classify_node() {
   node - "$1" "$WORK" "$MIN_AGE" "$CWD_SCAN_OK" <<'JS'
 const fs = require("fs");
@@ -288,8 +281,8 @@ if (mode === "terminals") {
     const handle = clean(t.handle), path = clean(t.worktreePath), title = clean(t.title);
     if (!handle) continue;
     const wt = path ? real(path) : "";
-    let prelim = "candidate", scope = "", pid = "", detail = title;
-    const emit = () => process.stdout.write(row([handle, prelim, scope, pid, path, detail]));
+    let prelim = "candidate", pid = "", detail = title;
+    const emit = () => process.stdout.write(row([handle, prelim, pid, path, detail]));
     let r;
     if ((t.executionHostId || "local") !== "local") { prelim = "remote"; emit(); continue; }
     if ((r = recFor((x) => x.terminal && x.terminal === handle))) {
@@ -298,13 +291,8 @@ if (mode === "terminals") {
     if (wt && (r = recFor((x) => x.worktree && x.worktree === wt))) {
       prelim = "task-worktree"; detail = `${r.id} (${r.home}); ${title}`; emit(); continue;
     }
-    if (wt && homes.includes(wt)) scope = "home";
-    else if (wt && /^fm-/.test(wt.split("/").pop())) {
-      const there = presence(wt);
-      if (there === "unknown") { prelim = "unreadable"; emit(); continue; }
-      scope = there === "gone" ? "gone" : "task";
-    }
-    else { prelim = "foreign"; emit(); continue; }
+    if (wt && /^fm-/.test(wt.split("/").pop())) { prelim = "unowned-task"; emit(); continue; }
+    if (!(wt && homes.includes(wt))) { prelim = "foreign"; emit(); continue; }
     const sp = pidOf.get(clean(t.ptyId));
     if (!Number.isInteger(sp) || sp <= 1 || dup.has(clean(t.ptyId))) { prelim = "no-session"; emit(); continue; }
     pid = String(sp);
@@ -363,34 +351,24 @@ if (mode === "terminals") {
 JS
 }
 
-path_presence() {  # <path> -> gone|present|unknown; only a missing path is gone
-  node -e '
-try { require("fs").statSync(process.argv[1]); process.stdout.write("present"); }
-catch (err) { process.stdout.write(err && (err.code === "ENOENT" || err.code === "ENOTDIR") ? "gone" : "unknown"); }' "$1" 2>/dev/null || printf 'unknown'
+# firstmate_title <title>: 0 when a title word, outside its path and branch
+# parts, is main, successor, handoff, firstmate, or fm.
+firstmate_title() {
+  printf '%s\n' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]' \
+    | sed -e 's/([^)]*)/ /g' -e 's/\[[^]]*\]/ /g' \
+    | LC_ALL=C awk '
+      { for (i = 1; i <= NF; i++) {
+          if ($i ~ /[\/~@]/ || $i ~ /:$/) continue
+          n = split($i, w, /[^a-z0-9]+/)
+          for (j = 1; j <= n; j++) if (w[j] ~ /^(main|successor|handoff|firstmate|fm)$/) found = 1
+      } }
+      END { exit found ? 0 : 1 }'
 }
 
-firstmate_title() {  # <title>
-  case "$(printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')" in
-    *main*|*successor*|*handoff*|*firstmate*|*fm-*) return 0 ;;
-  esac
-  return 1
-}
-
-# landed_state <worktree> -> landed|unlanded|unknown
-landed_state() {
-  local wt=$1 dirty ahead
-  git -C "$wt" rev-parse --show-toplevel >/dev/null 2>&1 || { printf 'unknown'; return 0; }
-  dirty=$(git -C "$wt" status --porcelain --untracked-files=normal 2>/dev/null) || { printf 'unknown'; return 0; }
-  [ -z "$dirty" ] || { printf 'unlanded'; return 0; }
-  ahead=$(git -C "$wt" rev-list -n 1 HEAD --not --remotes 2>/dev/null) || { printf 'unknown'; return 0; }
-  [ -z "$ahead" ] || { printf 'unlanded'; return 0; }
-  printf 'landed'
-}
-
-# judge_terminal <scope> <pid> <path> <title> -> `<action> <class>` and, for a
-# reap, the session's pids on fd 3 so browsers can discount them.
+# judge_terminal <pid> <title> -> `<action> <class>` for a home-root candidate
+# and, for a reap, the session's pids on fd 3 so browsers can discount them.
 judge_terminal() {
-  local scope=$1 pid=$2 path=$3 title=$4 state tree agents landed
+  local pid=$1 title=$2 state tree
   tree=$(fm_backend_orca_process_tree "$pid") || { printf 'keep\tunreadable'; return 0; }
   if printf '%s\n' "$tree" | cut -f1 | grep -qx "$$"; then printf 'keep\tself'; return 0; fi
   state=$(fm_backend_orca_tree_state "$pid")
@@ -400,27 +378,8 @@ judge_terminal() {
     dead) ;;
     *) printf 'keep\tunreadable'; return 0 ;;
   esac
-  case "$scope" in
-    home)
-      firstmate_title "$title" || { printf 'keep\tcaptain'; return 0; }
-      printf 'reap\tidle-session'
-      ;;
-    gone)
-      printf 'reap\tgone-worktree'
-      ;;
-    task)
-      [ "$CWD_SCAN_OK" = 1 ] || { printf 'keep\tunproven'; return 0; }
-      agents=$(fm_backend_orca_worktree_agent_pids "$path" "$(cat "$WORK/cwd.txt")") || { printf 'keep\tunproven'; return 0; }
-      [ -z "$agents" ] || { printf 'keep\tlive-worker'; return 0; }
-      landed=$(landed_state "$path")
-      case "$landed" in
-        landed) printf 'reap\tidle-task' ;;
-        unlanded) printf 'keep\tunlanded'; return 0 ;;
-        *) printf 'keep\tunproven'; return 0 ;;
-      esac
-      ;;
-    *) printf 'keep\tunreadable'; return 0 ;;
-  esac
+  firstmate_title "$title" || { printf 'keep\tcaptain'; return 0; }
+  printf 'reap\tidle-session'
   printf '%s\n' "$tree" | cut -f1 >&3
 }
 
@@ -447,8 +406,8 @@ if (!t) process.exit(1);
 process.stdout.write(typeof t.title === "string" ? t.title.replace(/[\t\r\n]+/g, " ") : "");' "$1"
 }
 
-close_terminal() {  # <handle> <path> <class> <pid> -> closed|skipped:<why>|failed:<why>
-  local handle=$1 path=$2 class=$3 pid=$4 state out facts pty now scan agents title
+close_terminal() {  # <handle> <path> <pid> -> closed|skipped:<why>|failed:<why>
+  local handle=$1 path=$2 pid=$3 state out facts pty now title
   local rec=0
   recorded_now "$handle" "$path" || rec=$?
   case "$rec" in
@@ -461,31 +420,10 @@ close_terminal() {  # <handle> <path> <class> <pid> -> closed|skipped:<why>|fail
     dead|missing) ;;
     *) printf 'skipped\tnow-%s' "$state"; return 0 ;;
   esac
-  case "$class" in
-    idle-task)
-      scan=$(fm_backend_orca_cwd_scan) || { printf 'skipped\tnow-unproven'; return 0; }
-      agents=$(fm_backend_orca_worktree_agent_pids "$path" "$scan") || { printf 'skipped\tnow-unproven'; return 0; }
-      [ -z "$agents" ] || { printf 'skipped\tnow-live-worker'; return 0; }
-      case "$(landed_state "$path")" in
-        landed) ;;
-        unlanded) printf 'skipped\tnow-unlanded'; return 0 ;;
-        *) printf 'skipped\tnow-unproven'; return 0 ;;
-      esac
-      ;;
-    gone-worktree)
-      case "$(path_presence "$path")" in
-        gone) ;;
-        present) printf 'skipped\tnow-present'; return 0 ;;
-        *) printf 'skipped\tnow-unreadable'; return 0 ;;
-      esac
-      ;;
-  esac
   # A home-root tab is the captain's unless its title still names a firstmate
   # session; it may have been renamed since the listing.
-  if [ "$class" = idle-session ]; then
-    title=$(current_title "$handle") || { printf 'skipped\tnow-unreadable'; return 0; }
-    firstmate_title "$title" || { printf 'skipped\tnow-retitled'; return 0; }
-  fi
+  title=$(current_title "$handle") || { printf 'skipped\tnow-unreadable'; return 0; }
+  firstmate_title "$title" || { printf 'skipped\tnow-retitled'; return 0; }
   # A connected terminal must still be rooted at the classified session pid.
   if [ "$state" = dead ]; then
     facts=$(fm_backend_orca_terminal_facts "$handle") || { printf 'skipped\tnow-unreadable'; return 0; }
@@ -574,10 +512,10 @@ classify_node terminals > "$WORK/terminals.tsv" || exit 1
 
 declare -i N_REAP=0 N_KEEP=0 N_DONE=0 N_SKIP=0 N_FAIL=0 B_REAP=0 B_KEEP=0 B_DONE=0 B_SKIP=0 B_FAIL=0 N_TOTAL=0 B_TOTAL=0 INV_FAIL=0
 : > "$WORK/terminal-verdicts.tsv"
-while IFS=$'\t' read -r handle prelim scope pid path detail; do
+while IFS=$'\t' read -r handle prelim pid path detail; do
   [ -n "$handle" ] || continue
   if [ "$prelim" = candidate ]; then
-    verdict=$(judge_terminal "$scope" "$pid" "$path" "$detail" 3>>"$WORK/exclude.txt")
+    verdict=$(judge_terminal "$pid" "$detail" 3>>"$WORK/exclude.txt")
   else
     verdict=$'keep\t'"$prelim"
   fi
@@ -613,7 +551,7 @@ fi
 while IFS=$'\t' read -r action class handle pid path detail; do
   N_TOTAL+=1
   if [ "$action" = reap ] && [ "$APPLY" = 1 ]; then
-    result=$(close_terminal "$handle" "$path" "$class" "$pid")
+    result=$(close_terminal "$handle" "$path" "$pid")
     case "$result" in closed*) N_DONE+=1 ;; skipped*) N_SKIP+=1 ;; *) N_FAIL+=1 ;; esac
     action=${result%%$'\t'*}
     why=${result#*$'\t'}
