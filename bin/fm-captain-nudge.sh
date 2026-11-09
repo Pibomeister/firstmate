@@ -228,7 +228,14 @@ s=sys.argv[1]
 s=s.replace("Z","+00:00")
 print(int(datetime.datetime.fromisoformat(s).timestamp()))' "$v" 2>/dev/null
       ;;
-    *) printf '%s\n' "$v" ;;
+    *)
+      # Orca lastOutputAt is epoch milliseconds; normalise to seconds.
+      if [ "${#v}" -ge 13 ]; then
+        printf '%s\n' "$((v / 1000))"
+      else
+        printf '%s\n' "$v"
+      fi
+      ;;
   esac
 }
 
