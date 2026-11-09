@@ -10,7 +10,8 @@
 #
 # The recorder never writes inside the soak home <home>; it writes only under
 # --out, and refuses an --out that resolves inside <home> or contains it, and a
-# symlink or hard-linked file at any path it writes under --out. sample and finish refuse a --home
+# symlink or hard-linked file at any path it writes under --out, or a
+# non-regular file where it copies one. sample and finish refuse a --home
 # other than the home soak.json records (another spelling of the same
 # directory is the same home, and the recorded spelling is used). Every time is fm_now
 # (bin/fm-clock-lib.sh).
@@ -240,9 +241,11 @@ safe_session_id() {
 }
 
 # keep <source> <destination>: copy one input under --out, never through a
-# symlink or a hard link at the destination.
+# symlink or a hard link at the destination, and never into an existing
+# destination that is not a regular file, where cp would write a path inside it.
 keep() {
   refuse_link "$2"
+  [ ! -e "$2" ] || [ -f "$2" ] || die 2 "refusing to copy onto a path that is not a regular file: $2"
   cp -p "$1" "$2"
 }
 

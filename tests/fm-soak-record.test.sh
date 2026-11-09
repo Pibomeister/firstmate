@@ -900,8 +900,24 @@ test_hard_linked_output_is_refused() {
   pass "a hard link where the recorder writes is refused and nothing behind it changes"
 }
 
+test_directory_at_a_copy_destination_is_refused() {
+  local before rc
+  finish_fixture dirdest baseline
+  # A directory where a kept copy goes would make cp write inside it, past the
+  # link checks, here through a symlink into the home.
+  mkdir -p "$OUT_DIR/handoffs/handoff-a.md"
+  ln -s "$HOME_DIR/state/feat-c.status" "$OUT_DIR/handoffs/handoff-a.md/handoff-a.md"
+  before=$(snapshot "$HOME_DIR")
+  soak $((T0 + 1000)) finish --home "$HOME_DIR" --out "$OUT_DIR" --watchdog-dir "$WD_DIR" --transcript-dir "$TR_DIR" \
+    > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "finish refuses a directory where a handoff copy goes"
+  assert_home_unchanged "$HOME_DIR" "$before" "finish with a directory at a copy destination"
+  pass "a directory where a copy goes is refused and nothing behind it changes"
+}
+
 make_fakebin
 fm_test_run \
+  test_directory_at_a_copy_destination_is_refused \
   test_hard_linked_output_is_refused \
   test_sample_tolerates_a_state_entry_that_vanishes_during_the_copy \
   test_sample_tolerates_a_state_entry_renamed_in_during_the_copy \
