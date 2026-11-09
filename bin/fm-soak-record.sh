@@ -122,11 +122,19 @@ canon_file() {  # <file>: the physical absolute path of an existing file
   printf '%s/%s\n' "${dir%/}" "$(basename -- "$1")"
 }
 
-within() {  # <path> <dir>: <path> is <dir> or lies inside it; a root <dir> (/ or //) holds every absolute path
-  local dir=$2
-  while [ "${dir%/}" != "$dir" ]; do dir=${dir%/}; done
-  case "$1/" in "$dir"/*) return 0 ;; esac
-  return 1
+# within <path> <dir>: <path> is <dir> or lies inside it. Decided by directory
+# identity (-ef) against each existing ancestor of <path>, never by comparing
+# spellings, so a root <dir>, a // spelling and a case alias on a
+# case-insensitive filesystem are all the same tree.
+within() {
+  local p=$1 up
+  [ -d "$2" ] || return 1
+  while :; do
+    if [ -e "$p" ] && [ "$p" -ef "$2" ]; then return 0; fi
+    up=$(dirname -- "$p")
+    [ "$up" != "$p" ] || return 1
+    p=$up
+  done
 }
 
 in_window() {  # <epoch>

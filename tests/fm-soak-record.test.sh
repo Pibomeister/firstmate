@@ -553,6 +553,35 @@ test_double_slash_spelling_is_one_tree() {
   pass "a // spelling of a directory is the same tree to every containment check"
 }
 
+# On a case-insensitive filesystem a differently cased spelling names the same
+# directory, and `pwd -P` keeps the case as typed; containment is decided by
+# directory identity, so the alias is still refused.
+test_case_alias_spelling_is_one_tree() {
+  local base home alias_home out alias_out tr rc rows before
+  mkdir -p "$TMP_ROOT/CaseProbe"
+  if [ ! -d "$TMP_ROOT/caseprobe" ]; then
+    pass "case-alias containment: not applicable on a case-sensitive filesystem"
+    return 0
+  fi
+  base="$TMP_ROOT/casealias"
+  home=$(make_home casealias/Home)
+  alias_home="$base/HOME"
+  before=$(snapshot "$home")
+  soak "$T0" start --home "$home" --out "$alias_home/out" --label baseline --harness claude > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "start refuses an --out inside a case alias of the soak home"
+  assert_home_unchanged "$home" "$before" "an --out inside a case alias of the home"
+  out="$TMP_ROOT/casealias-Out"; alias_out="$TMP_ROOT/casealias-OUT"; tr="$TMP_ROOT/casealias-transcripts"
+  mkdir -p "$tr"
+  soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  mkdir -p "$out/watchdog"
+  printf '%s\trestart\t%s\tw1\tdone\n' $((T0 + 10)) "$home" > "$out/watchdog/actions.tsv"
+  rows=$(cat "$out/watchdog/actions.tsv")
+  soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "$alias_out/watchdog" --transcript-dir "$tr" > /dev/null 2>&1; rc=$?
+  assert_equals 2 "$rc" "finish refuses a --watchdog-dir that is a case alias of a directory inside --out"
+  assert_equals "$rows" "$(cat "$out/watchdog/actions.tsv")" "a refused finish left the staged watchdog rows intact"
+  pass "a case alias of a directory is the same tree to every containment check"
+}
+
 # The private state copy never lands in the soak home, even when the inherited
 # TMPDIR points inside it.
 test_tmpdir_inside_the_home_is_never_written() {
@@ -752,6 +781,7 @@ fm_test_run \
   test_root_out_is_refused_as_containing_the_home \
   test_order_document_at_a_path_suffix_is_kept \
   test_double_slash_spelling_is_one_tree \
+  test_case_alias_spelling_is_one_tree \
   test_tmpdir_inside_the_home_is_never_written \
   test_sample_and_finish_refuse_another_home \
   test_unsafe_session_ids_never_become_paths \
