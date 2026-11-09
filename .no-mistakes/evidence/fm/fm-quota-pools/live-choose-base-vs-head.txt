@@ -1,0 +1,28 @@
+== BASE
+agy:gemini-3.8-flash-high -> rc=2 error: unknown harness: agy
+agy:claude-opus-5-5-high -> rc=2 error: unknown harness: agy
+agy:gpt-oss-120b-medium -> rc=2 error: unknown harness: agy
+agy:gemini-4-argon-high -> rc=2 error: unknown harness: agy
+agy:gemini-4-carbon-high -> rc=2 error: unknown harness: agy
+cursor:grok-4.7-high -> rc=1 none
+cursor:cursor-grok-4.6-medium -> rc=1 none
+cursor:cursor-grok-4.5-high -> rc=1 none
+cursor:composer-2.5 -> rc=0 cursor composer-2.5
+cursor:grok-4.8-high -> rc=1 none
+cursor:cursor-grok-4.7-high -> rc=1 none
+cursor:grok-4.6-high -> rc=1 none
+cursor:claude-opus-5-thinking-high -> rc=1 none
+== HEAD
+agy:gemini-3.8-flash-high -> rc=2 error: unknown harness: agy
+agy:claude-opus-5-5-high -> rc=2 error: unknown harness: agy
+agy:gpt-oss-120b-medium -> rc=2 error: unknown harness: agy
+agy:gemini-4-argon-high -> rc=2 error: unknown harness: agy
+agy:gemini-4-carbon-high -> rc=2 error: unknown harness: agy
+cursor:grok-4.7-high -> rc=0 cursor grok-4.7-high
+cursor:cursor-grok-4.6-medium -> rc=0 cursor cursor-grok-4.6-medium
+cursor:cursor-grok-4.5-high -> rc=0 cursor cursor-grok-4.5-high
+cursor:composer-2.5 -> rc=0 cursor composer-2.5
+cursor:grok-4.8-high -> rc=1 none
+cursor:cursor-grok-4.7-high -> rc=1 none
+cursor:grok-4.6-high -> rc=1 none
+cursor:claude-opus-5-thinking-high -> rc=1 none
