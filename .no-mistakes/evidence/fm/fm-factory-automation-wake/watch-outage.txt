@@ -1,0 +1,13 @@
+== Factory server stopped; wakes for the source:
+procevent:factory-proj-good:4 | check: procevent factory factory-proj-good 4 - Factory automation failed at 2026-11-09T15:00:24.000Z: ProviderAuthRequiredError: ticket ENG-104
+procevent:factory-proj-good:5 | check: procevent factory factory-proj-good 5 - Factory watch stopped: Factory at http://127.0.0.1:59129 unreachable: 3 consecutive failed reads; last: curl: (7) Failed to connect to 127.0.0.1 port 59129 after 3 ms: Couldn't connect to server
+== error results: 1
+factory: factory-proj-good
+status: error
+project: proj-good
+detail: Factory at http://127.0.0.1:59129 unreachable: 3 consecutive failed reads; last: curl: (7) Failed to connect to 127.0.0.1 port 59129 after 3 ms: Couldn't connect to server
+condition_polls: 21
+== classify: error
+terminal exit=0 (0 = watch stopped)
+== source list after the outage:
+no sources registered

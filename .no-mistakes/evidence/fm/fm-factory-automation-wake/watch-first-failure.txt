@@ -1,0 +1,10 @@
+== wake queue after first failure
+procevent:factory-proj-good:1 | check: procevent factory factory-proj-good 1 - Factory automation failed at 2026-11-09T15:00:20.000Z: ProviderAuthRequiredError: provider openai requires credentials
+== captured result /var/folders/pp/067w2xf11l3fl2qq_nmfn5_m0000gn/T//fm-lab.t1cXPP/state/procevent-inbox/factory-proj-good.1.result
+factory: factory-proj-good
+status: failed
+project: proj-good
+item: factory:proj-good:automation-failed:d-001:0	dispatch_failed	ProviderAuthRequiredError: provider openai requires credentials	2026-11-09T15:00:20.000Z
+condition_polls: 13
+== classify: failed
+terminal exit=1 (1 = watch stays armed)

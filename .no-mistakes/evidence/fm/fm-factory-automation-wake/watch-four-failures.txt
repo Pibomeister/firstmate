@@ -1,0 +1,26 @@
+== distinct Factory result wakes after four tickets failed (d-001 already reported): 4
+procevent:factory-proj-good:1 | check: procevent factory factory-proj-good 1 - Factory automation failed at 2026-11-09T15:00:20.000Z: ProviderAuthRequiredError: provider openai requires credentials
+procevent:factory-proj-good:2 | check: procevent factory factory-proj-good 2 - Factory automation failed at 2026-11-09T15:00:22.000Z: ProviderAuthRequiredError: ticket ENG-102
+procevent:factory-proj-good:3 | check: procevent factory factory-proj-good 3 - Factory automation failed at 2026-11-09T15:00:23.000Z: ProviderAuthRequiredError: ticket ENG-103
+procevent:factory-proj-good:4 | check: procevent factory factory-proj-good 4 - Factory automation failed at 2026-11-09T15:00:24.000Z: ProviderAuthRequiredError: ticket ENG-104
+== results captured: 4
+== item keys per result:
+   1 item: factory:proj-good:automation-failed:d-001:0
+   1 item: factory:proj-good:automation-failed:d-002:0
+   1 item: factory:proj-good:automation-failed:d-003:0
+   1 item: factory:proj-good:automation-failed:d-004:0
+== what the supervisor's wake drain presents:
+1794250795	30	check	procevent:factory-proj-good:1	check: procevent factory factory-proj-good 1 - Factory automation failed at 2026-11-09T15:00:20.000Z: ProviderAuthRequiredError: provider openai requires credentials
+1794250795	31	check	procevent:factory-proj-good:2	check: procevent factory factory-proj-good 2 - Factory automation failed at 2026-11-09T15:00:22.000Z: ProviderAuthRequiredError: ticket ENG-102
+1794250796	32	check	procevent:factory-proj-good:3	check: procevent factory factory-proj-good 3 - Factory automation failed at 2026-11-09T15:00:23.000Z: ProviderAuthRequiredError: ticket ENG-103
+1794250796	33	check	procevent:factory-proj-good:4	check: procevent factory factory-proj-good 4 - Factory automation failed at 2026-11-09T15:00:24.000Z: ProviderAuthRequiredError: ticket ENG-104
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 33 --recovery-generation 90295.1794250748.chjlHo
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 process-event source(s) registered, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 1s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  After draining queued wakes, watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.

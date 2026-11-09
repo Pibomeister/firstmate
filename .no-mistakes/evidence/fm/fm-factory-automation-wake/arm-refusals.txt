@@ -1,0 +1,17 @@
+$ arm with url=https://user:secret@factory.example
+error: config/factory url= must not embed credentials; use token_file=
+exit=1
+$ arm with url=https://factory.example/?token=secret
+error: config/factory url= must not carry a query string or fragment; use token_file= for credentials
+exit=1
+$ arm with url=https://factory.example/#secret
+error: config/factory url= must not carry a query string or fragment; use token_file= for credentials
+exit=1
+$ arm with url=ftp://factory.example
+error: config/factory url= must be an http or https URL
+exit=1
+$ arm with no config/factory
+error: missing operator config: config/factory
+exit=1
+$ registered sources:
+no sources registered

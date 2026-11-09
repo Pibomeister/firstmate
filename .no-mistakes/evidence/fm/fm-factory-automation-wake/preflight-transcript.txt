@@ -1,0 +1,27 @@
+$ fm-procevent-factory.sh preflight --project proj-good   # credentialed default model
+usable: claude-opus-5-5 (scope factory; provider credential present, validity not checked)
+exit=0
+
+$ fm-procevent-factory.sh preflight --project proj-noauth   # default model whose provider has no credential (Nov 9 ProviderAuthRequiredError shape)
+not usable: default model gpt-6 is not in the Factory's credentialed model catalog for project proj-noauth
+exit=1
+
+$ fm-procevent-factory.sh preflight --project proj-nodefault   # no default model
+not usable: project proj-nodefault has no default model; a run session would fall back to an unpinned mode default
+exit=1
+
+$ fm-procevent-factory.sh preflight --project proj-missing   # project not found
+not usable: project proj-missing not found
+exit=1
+
+$ fm-procevent-factory.sh preflight --project proj-user   # per-user model scope
+cannot determine: project proj-user uses per-user model scope; a run session takes its owner's default model, which this read cannot see
+exit=3
+
+$ fm-procevent-factory.sh preflight --project proj-denied   # token refused
+cannot determine: Factory at http://127.0.0.1:59129 refused the project read: HTTP 401
+exit=3
+
+$ preflight with Factory unreachable
+cannot determine: Factory at http://127.0.0.1:1 unreachable: curl: (7) Failed to connect to 127.0.0.1 port 1 after 0 ms: Couldn't connect to server
+exit=3
