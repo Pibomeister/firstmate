@@ -90,6 +90,7 @@ A relaunch does take one session reference when the endpoint's own runtime recor
    Ship and scout replacements also pass the [worker tool exclusion checks](configuration.md#worker-tool-exclusions-configcrew-exclude-tools) at this step.
 2. **Safe checkpoint.**
    The recorded worktree must exist and be a worktree root; its head and dirty state are recorded.
+   A ship whose local copy has another branch checked out than its record names continues on the copy's branch, and a copy on a base branch refuses here; the verb header in [`bin/fm-control.sh`](../bin/fm-control.sh) owns that correction.
    The [AGY adapter reference](../.agents/skills/harness-adapters/references/harness/agy.md#trust-and-where-the-decision-persists) owns the additional custody preconditions for pooled relaunches from or to AGY.
    For a `kind=secondmate` task, the home's identity marker must match and its child records must be readable, so a relaunch can never strand child work behind an unreadable home.
    A secondmate's own crewmates run in their own endpoints and outlive its relaunch; the relaunched secondmate reconciles them from its home's durable records at startup.
@@ -97,6 +98,7 @@ A relaunch does take one session reference when the endpoint's own runtime recor
    A ship or scout relaunch requires `--note`, because the replacement inherits the local copy but none of the conversation; the note is appended to the instructions it reads.
    A secondmate relaunch does not require one and never rewrites its standing charter.
 4. **Stop the old agent** through the `exit` verb, with its postcondition.
+   A live non-Droid agent on Orca is stopped by closing its terminal instead, under the [Orca agent stop proof](orca-backend.md#agent-stop-proof).
 5. **Launch the replacement** through its single owner, `bin/fm-spawn.sh --relaunch`, which reuses the recorded worktree instead of creating one, adopts the recorded endpoint when it still exists, clears the previous harness's per-task wiring, and arms a fresh busy generation.
    A `no-mistakes` ship relaunch (or one with no recorded mode in a repository with a `no-mistakes` remote) whose recorded branch exists on origin first resyncs that worktree to the published head through `bin/fm-pr-resync.sh`; a branch that diverged from that head is refused and left as-is, and an explicit `direct-PR` or `local-only` relaunch never resyncs, as the [`fm-spawn.sh` header](../bin/fm-spawn.sh) owns.
    When the recorded endpoint is proven gone rather than merely idle or unreachable - which Herdr and Rex can establish, tmux from a record carrying its server identity, and Orca against the recorded worktree - the launch owner creates one fresh endpoint in that same worktree and the republished record rebinds the task to it - see [Reclaiming a task whose endpoint is gone](#reclaiming-a-task-whose-endpoint-is-gone).

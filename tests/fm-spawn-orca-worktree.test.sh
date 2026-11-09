@@ -19,7 +19,10 @@
 # Orca's reads faked and every other fact real: a closed terminal with no agent
 # left rebinds a new terminal in the recorded worktree, a dead terminal is
 # adopted in place, and a live agent or any unprovable read refuses before a
-# terminal is created.
+# terminal is created. The live-Claude cases drive bin/fm-control.sh relaunch
+# end to end: it closes the live terminal instead of sending Escape, refuses
+# when an agent survives in the worktree, follows the branch the local copy
+# has checked out, and refuses a copy on its base branch before stopping.
 set -u
 
 # shellcheck source=tests/fixtures.sh
@@ -1700,6 +1703,179 @@ PY
   pass "real tmux preserves absent/C locale values and reported raw bytes, rejects missing/phantom names and excludes the automatic SSH agent"
 }
 
+# orca_claude_live_case <name>: a recorded Orca task whose terminal still runs
+# a live, idle Claude agent (a stand-in named claude under a shell root), plus a
+# fake Orca in which closing that terminal ends its process tree and replaces
+# the old terminal's facts with Orca's closed answer, and in which the
+# relaunch's replacement terminal starts a new stand-in Claude. Sets STANDIN
+# (empty when no stand-in survives a foreign name here) and OLD_ROOT.
+orca_claude_live_case() {
+  orca_relaunch_case "$1"
+  printf 'harness=claude\nbranch=task-%s\n' "$TASK" >> "$HOME_DIR/state/$TASK.meta"
+  STANDIN=$(fm_agent_standin "$TMP_ROOT/relaunch-standin") || STANDIN=
+  OLD_ROOT=
+  [ -n "$STANDIN" ] || return 0
+  ln -sf "$STANDIN" "$CASE_DIR/claude"
+  bash -c '"$0" 600 & wait' "$CASE_DIR/claude" >/dev/null 2>&1 &
+  OLD_ROOT=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do [ -n "$(pgrep -P "$OLD_ROOT" 2>/dev/null)" ] && break; sleep 0.1; done
+  printf '%s\n' "$OLD_ROOT" > "$CASE_DIR/old-root.pid"
+  orca_relaunch_show true ''
+  printf '{"ok":true,"result":{"worktrees":[{"sessions":[{"sessionId":"pty-old","pid":%s}]}]}}\n' "$OLD_ROOT" > "$CASE_DIR/memory.json"
+  printf '{"ok":true,"result":{"terminal":{"handle":"term-new","ptyId":"pty-new","connected":true,"writable":true,"exitCause":null,"executionHostId":"local","worktreePath":"%s"}}}\n' \
+    "$WT" > "$CASE_DIR/show-term-new.json"
+  mv "$FB/orca" "$FB/orca-base"
+  cat > "$FB/orca" <<'SH'
+#!/usr/bin/env bash
+DIR=$FM_TEST_ORCA_DIR
+case "$*" in
+  "terminal close --terminal term-old"*)
+    root=$(cat "$DIR/old-root.pid")
+    pkill -P "$root" 2>/dev/null || true
+    kill "$root" 2>/dev/null || true
+    wt=$(cat "$DIR/wt-path")
+    printf '{"ok":true,"result":{"terminal":{"handle":"term-old","ptyId":"pty-old","connected":false,"writable":false,"exitCause":{"kind":"operator_close"},"executionHostId":"local","worktreePath":"%s"}}}\n' \
+      "$wt" > "$DIR/show-term-old.json"
+    printf '{"ok":true,"result":{"worktrees":[{"sessions":[]}]}}\n' > "$DIR/memory.json"
+    [ ! -f "$DIR/survivor.lsof" ] || cat "$DIR/survivor.lsof" >> "$DIR/lsof.out"
+    ;;
+  "terminal send --terminal term-new --text "*/launch.*)
+    "$(dirname "$0")/orca-base" "$@" || exit
+    bash -c '"$0" 600 & wait' "$DIR/claude" </dev/null >/dev/null 2>&1 &
+    pid=$!
+    printf '%s\n' "$pid" > "$DIR/pane.pid"
+    printf '{"ok":true,"result":{"worktrees":[{"sessions":[{"sessionId":"pty-new","pid":%s}]}]}}\n' "$pid" > "$DIR/memory.json"
+    exit 0
+    ;;
+esac
+exec "$(dirname "$0")/orca-base" "$@"
+SH
+  chmod +x "$FB/orca"
+  printf '%s\n' "$WT" > "$CASE_DIR/wt-path"
+}
+
+orca_claude_control_relaunch() {  # -> sets OUT and STATUS
+  STATUS=0
+  OUT=$(FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" HOME="$CASE_DIR/user-home" CLAUDE_CONFIG_DIR='' \
+    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+    FM_SPAWN_NO_GUARD=1 FM_TEST_ORCA_DIR="$CASE_DIR" FM_TEST_ORCA_NEW_TERMINAL=term-new \
+    FM_TEST_ORCA_BOOT_EPOCH=2000 FM_CONTROL_POLL=0.1 FM_CONTROL_EXIT_WAIT=5 FM_CONTROL_LAUNCH_WAIT=10 \
+    PATH="$FB:$PATH" \
+    "$ROOT/bin/fm-control.sh" "$TASK" relaunch --harness claude --note 'the worker stopped' 2>&1) || STATUS=$?
+}
+
+orca_claude_cleanup() {
+  local pid
+  for pid in "$OLD_ROOT" "$(cat "$CASE_DIR/pane.pid" 2>/dev/null)" "${SURVIVOR:-}"; do
+    [ -n "$pid" ] || continue
+    pkill -P "$pid" 2>/dev/null || true
+    kill "$pid" 2>/dev/null || true
+  done
+  SURVIVOR=
+}
+
+test_orca_claude_relaunch_closes_the_live_terminal_and_respawns() {
+  orca_claude_live_case claude-live
+  [ -n "$STANDIN" ] || { pass "SKIP: Orca live Claude relaunch (no agent stand-in survives here)"; return 0; }
+  printf 'uncommitted task work\n' > "$WT/keep.txt"
+  orca_claude_control_relaunch
+  orca_claude_cleanup
+  expect_code 0 "$STATUS" "a relaunch of a live Claude worker on Orca must stop it and respawn"$'\n'"$OUT"
+  assert_contains "$OUT" "relaunched $TASK harness=claude" "fm-control must report the relaunch"
+  [ -e "$CASE_DIR/terminal-closed" ] || fail "the relaunch must close the old terminal"
+  assert_not_contains "$(cat "$CASE_DIR/terminal-send.log" 2>/dev/null)" '--terminal term-old' \
+    "the relaunch must send no key or text to the old terminal"
+  assert_contains "$(cat "$CASE_DIR/terminal-create.log")" "--worktree id:wt-1::$WT" \
+    "the replacement terminal must use the recorded Orca worktree"
+  [ "$(orca_meta_field terminal)" = term-new ] || fail "the task must record the replacement terminal"
+  [ "$(orca_meta_field worktree)" = "$WT" ] || fail "the task must keep its local copy"
+  [ "$(cat "$WT/keep.txt")" = 'uncommitted task work' ] || fail "the relaunch must preserve unlanded work"
+  assert_contains "$(cat "$HOME_DIR/state/$TASK.control-relaunch")" 'exit_result=endpoint-gone' \
+    "the journal must record that the stop closed the endpoint"
+  pass "an Orca relaunch closes a live Claude worker's terminal instead of sending Escape, then respawns in the same local copy"
+}
+
+test_orca_claude_relaunch_refuses_when_an_agent_survives_the_close() {
+  local before
+  orca_claude_live_case claude-survivor
+  [ -n "$STANDIN" ] || { pass "SKIP: Orca Claude survivor relaunch (no agent stand-in survives here)"; return 0; }
+  ( cd "$WT" && exec "$CASE_DIR/claude" 600 ) >/dev/null 2>&1 &
+  SURVIVOR=$!
+  printf 'p%s\nn%s\n' "$SURVIVOR" "$WT" > "$CASE_DIR/survivor.lsof"
+  before=$(cat "$HOME_DIR/state/$TASK.meta")
+  orca_claude_control_relaunch
+  orca_claude_cleanup
+  expect_code 1 "$STATUS" "a close that leaves an agent in the local copy must refuse"$'\n'"$OUT"
+  assert_contains "$OUT" "an agent process still runs in" "the surviving agent must be named as the reason"
+  [ ! -e "$CASE_DIR/terminal-create.log" ] || fail "the refusal must create no terminal"$'\n'"$OUT"
+  [ "$(cat "$HOME_DIR/state/$TASK.meta")" = "$before" ] || fail "the refusal must leave the task record unchanged"
+  pass "an Orca Claude relaunch refuses when an agent still runs in the local copy after the close"
+}
+
+test_orca_claude_relaunch_follows_the_copy_branch() {
+  local brief
+  orca_claude_live_case claude-branch
+  [ -n "$STANDIN" ] || { pass "SKIP: Orca Claude branch correction (no agent stand-in survives here)"; return 0; }
+  brief="$HOME_DIR/data/$TASK/brief.md"
+  echo "branch=fm/$TASK" >> "$HOME_DIR/state/$TASK.meta"
+  git -C "$WT" checkout -q -b "fm/$TASK-stacked"
+  {
+    echo "Ship branch: fm/$TASK"
+    echo "Push fm/$TASK. Keep fm/$TASK-stacked and xfm/$TASK as they are."
+  } >> "$brief"
+  orca_claude_control_relaunch
+  orca_claude_cleanup
+  expect_code 0 "$STATUS" "a relaunch must follow the branch the local copy has checked out"$'\n'"$OUT"
+  [ "$(orca_meta_field branch)" = "fm/$TASK-stacked" ] || fail "the record must name the copy's branch, got '$(orca_meta_field branch)'"
+  assert_contains "$(cat "$brief")" "Ship branch: fm/$TASK-stacked" "the instructions must name the copy's branch"
+  assert_contains "$(cat "$brief")" "Push fm/$TASK-stacked. Keep fm/$TASK-stacked and xfm/$TASK as they are." \
+    "only exact mentions of the recorded branch may change"
+  assert_not_contains "$(cat "$brief")" "Ship branch: fm/$TASK"$'\n' "no stale Ship branch line may remain"
+  assert_contains "$OUT" "fm/$TASK-stacked" "the relaunch must report the correction"
+  assert_contains "$(cat "$brief")" "recorded branch fm/$TASK" "the progress note must state the correction"
+  assert_contains "$(cat "$HOME_DIR/state/$TASK.control-relaunch")" "branch_correction=fm/$TASK->fm/$TASK-stacked" \
+    "the journal must record the correction"
+  pass "an Orca relaunch takes the branch from the local copy when the record disagrees, and records the correction"
+}
+
+test_orca_claude_relaunch_keeps_the_record_on_a_scaffolding_branch() {
+  local brief
+  orca_claude_live_case claude-scaffold
+  [ -n "$STANDIN" ] || { pass "SKIP: Orca Claude scaffolding branch (no agent stand-in survives here)"; return 0; }
+  brief="$HOME_DIR/data/$TASK/brief.md"
+  # The copy stays on the branch its worktree was created on, outside fm/.
+  echo "branch=fm/$TASK" >> "$HOME_DIR/state/$TASK.meta"
+  echo "Ship branch: fm/$TASK" >> "$brief"
+  orca_claude_control_relaunch
+  orca_claude_cleanup
+  expect_code 0 "$STATUS" "a relaunch from a scaffolding branch must proceed on the recorded branch"$'\n'"$OUT"
+  [ "$(orca_meta_field branch)" = "fm/$TASK" ] || fail "a scaffolding branch must keep the recorded branch, got '$(orca_meta_field branch)'"
+  assert_contains "$(cat "$brief")" "Ship branch: fm/$TASK" "the instructions must keep the recorded branch"
+  assert_not_contains "$(cat "$HOME_DIR/state/$TASK.control-relaunch")" 'branch_correction=' \
+    "a scaffolding branch is not a correction"
+  pass "an Orca relaunch keeps the recorded branch while the local copy is still on a branch outside its prefix"
+}
+
+test_orca_claude_relaunch_refuses_a_copy_on_the_base_branch() {
+  local before brief_before
+  orca_claude_live_case claude-base
+  [ -n "$STANDIN" ] || { pass "SKIP: Orca Claude base-branch refusal (no agent stand-in survives here)"; return 0; }
+  echo "branch=fm/$TASK" >> "$HOME_DIR/state/$TASK.meta"
+  echo "base_branch=release" >> "$HOME_DIR/state/$TASK.meta"
+  git -C "$WT" checkout -q -b release
+  before=$(cat "$HOME_DIR/state/$TASK.meta")
+  brief_before=$(cat "$HOME_DIR/data/$TASK/brief.md")
+  orca_claude_control_relaunch
+  orca_claude_cleanup
+  expect_code 1 "$STATUS" "a copy on the base branch must refuse"$'\n'"$OUT"
+  assert_contains "$OUT" "base branch" "the refusal must name the base branch"
+  [ ! -e "$CASE_DIR/terminal-closed" ] || fail "the refusal must come before the agent is stopped"
+  [ "$(cat "$HOME_DIR/state/$TASK.meta")" = "$before" ] || fail "the refusal must leave the task record unchanged"
+  [ "$(cat "$HOME_DIR/data/$TASK/brief.md")" = "$brief_before" ] || fail "the refusal must leave the instructions unchanged"
+  pass "an Orca relaunch refuses, before stopping anything, a local copy that sits on the base branch"
+}
+
 test_orca_source_preserves_values_without_utf8_locale
 test_orca_droid_relaunch_connected_shell_without_marker
 test_orca_droid_relaunch_rebinds_only_after_stop_and_terminal_proof
@@ -1726,5 +1902,10 @@ test_orca_relaunch_adopts_a_dead_connected_terminal
 test_orca_relaunch_rebinds_a_connected_terminal_whose_session_root_exited
 test_orca_relaunch_refuses_without_proof_of_a_stopped_agent
 test_orca_relaunch_takes_values_from_the_scoped_source
+test_orca_claude_relaunch_closes_the_live_terminal_and_respawns
+test_orca_claude_relaunch_refuses_when_an_agent_survives_the_close
+test_orca_claude_relaunch_follows_the_copy_branch
+test_orca_claude_relaunch_refuses_a_copy_on_the_base_branch
+test_orca_claude_relaunch_keeps_the_record_on_a_scaffolding_branch
 
 echo "# all fm-spawn-orca-worktree tests passed"

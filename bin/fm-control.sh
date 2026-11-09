@@ -130,6 +130,19 @@
 #              inherits the local copy but none of the conversation; a
 #              secondmate reconciles its own home's records at startup, so its
 #              standing charter is never rewritten.
+#              A live non-Droid agent on Orca is stopped by closing its
+#              terminal rather than by Escape or a typed exit command, which
+#              Orca cannot deliver to it or which can open a picker; the stop
+#              holds only when Orca's absence proof then reads gone, so an
+#              agent still working in the worktree refuses, and the
+#              replacement rebinds a fresh terminal in the recorded Orca
+#              worktree (docs/orca-backend.md "Agent stop proof").
+#              A ship whose local copy has another branch under the recorded
+#              branch's prefix checked out continues on the copy's branch,
+#              while any other branch keeps the record: the record,
+#              the instructions, and the progress note name it, and the
+#              journal records `branch_correction=`. A copy on a base branch
+#              refuses before the old agent stops.
 #              Records a durable checkpoint and that note, exits the old agent,
 #              then delegates the launch to its single owner,
 #              bin/fm-spawn.sh --relaunch. A failure before publication keeps
@@ -168,7 +181,8 @@
 #   - An unverified harness, or a harness whose control mechanics are unknown,
 #     is refused rather than guessed at.
 #   - A backend that cannot deliver the harness's interrupt key is refused;
-#     Orca's raw Escape and Ctrl+U control is verified for Droid only.
+#     Orca's raw Escape and Ctrl+U control is verified for Droid only, so
+#     relaunch stops any other Orca agent by closing its terminal.
 #   - `exit` and `relaunch` require a recovery-grade agent-state classifier
 #     (tmux, herdr, orca, rex, or t3code) or Droid's shared absence proof on Orca
 #     (fm_control_droid_agent_absent in bin/fm-control-lib.sh), because
@@ -602,6 +616,33 @@ usage_limit_relaunch_close() {
   printf 'endpoint-gone'
 }
 
+# orca_relaunch_close: relaunch's stop for a live non-Droid agent on Orca.
+# Orca delivers Escape and Ctrl-U only to Droid, and a typed exit command can
+# open a picker that this script never confirms, so relaunch closes the
+# recorded terminal instead; closing it ends the terminal's whole process tree
+# (docs/orca-backend.md "Agent stop proof"). The stop is claimed only once the
+# shared absence proof reads `gone`: the terminal closed, Orca's sweep dropped
+# its session, and no agent process works in the recorded worktree. The
+# worktree and its uncommitted files are never touched, and fm-spawn's
+# relaunch then rebinds a fresh terminal in the same Orca worktree.
+orca_relaunch_close() {
+  local absence elapsed=0
+  fm_backend_kill "$BACKEND" "$T" \
+    || die "task $ID's Orca terminal $T could not be closed to stop its agent"
+  while :; do
+    absence=$(fm_control_endpoint_absence_verdict "$BACKEND" "$T" "$WT" "$META")
+    if [ "${absence%%$'\t'*}" = gone ]; then
+      retire_busy_incarnation
+      printf 'endpoint-gone'
+      return 0
+    fi
+    awk -v e="$elapsed" -v t="$EXIT_WAIT" 'BEGIN{exit !(e < t)}' || break
+    sleep "$POLL"
+    elapsed=$(awk -v e="$elapsed" -v p="$POLL" 'BEGIN{printf "%.3f", e + p}')
+  done
+  die "task $ID's Orca terminal $T was closed to stop its agent, but within ${EXIT_WAIT}s the stop could not be proven: ${absence#*$'\t'}"
+}
+
 # relaunch_endpoint_path: the live pane cwd, used to refuse a replacement that
 # would start outside the recorded worktree before the old agent stops. Empty
 # means the endpoint is gone or this backend has no current-path helper.
@@ -979,6 +1020,10 @@ do_exit() {
     fi
     die "task $ID is at a usage-limit screen; refusing to type Enter into it. Queue until reset."
   fi
+  if [ "$VERB" = relaunch ] && [ "$BACKEND" = orca ] && [ "$HARNESS" != droid ]; then
+    orca_relaunch_close
+    return 0
+  fi
   # A busy agent is interrupted first before the exit command is submitted.
   case "$(busy_verdict)" in
     busy*)
@@ -1140,9 +1185,11 @@ TARGET_EFFORT=
 # busy_gen before calling spawn. Cooperating writers (fm-x-link, budget) may
 # change other keys without publishing a new incarnation.
 relaunch_record_changed_beyond_tx() {
-  local now was
-  now=$(grep -v -e '^control_relaunch_tx=' -e '^busy_gen=' "$META" 2>/dev/null || true)
-  was=$(grep -v -e '^control_relaunch_tx=' -e '^busy_gen=' "$META_PRIOR" 2>/dev/null || true)
+  local now was branch_line='^control_relaunch_tx='
+  # The relaunch token step also writes a branch correction, so it is ours too.
+  [ -z "$RELAUNCH_BRANCH_TO" ] || branch_line='^branch='
+  now=$(grep -v -e '^control_relaunch_tx=' -e '^busy_gen=' -e "$branch_line" "$META" 2>/dev/null || true)
+  was=$(grep -v -e '^control_relaunch_tx=' -e '^busy_gen=' -e "$branch_line" "$META_PRIOR" 2>/dev/null || true)
   [ "$now" != "$was" ]
 }
 
@@ -1442,6 +1489,44 @@ resolve_relaunch_profile() {
   fi
 }
 
+# relaunch_branch_check: a ship relaunch continues on the branch its local copy
+# has checked out. A worker that switched or stacked branches leaves the record
+# naming another one, and fm-spawn's resync would refuse that mismatch only
+# after the old agent stopped, so this runs while the agent is untouched. It
+# keeps the record when HEAD is detached, unreadable, or already the recorded
+# branch; refuses a copy on a base branch (the recorded base, origin's default,
+# main, or master); and corrects the record only to a branch under the
+# recorded branch's own prefix (`fm/` for `fm/<id>`), so the scaffolding branch
+# a fresh Orca or pooled worktree starts on, before the worker switches to its
+# ship branch, keeps the record. A correction sets RELAUNCH_BRANCH_FROM and
+# RELAUNCH_BRANCH_TO. record_note writes it into the instructions and the
+# progress note, and the relaunch token step writes it into the record.
+RELAUNCH_BRANCH_FROM=
+RELAUNCH_BRANCH_TO=
+relaunch_branch_check() {
+  local recorded copy base origin_default
+  [ "$KIND" = ship ] || return 0
+  recorded=$(fm_meta_get "$META" branch)
+  [ -n "$recorded" ] || recorded="fm/$ID"
+  copy=$(git -C "$WT" symbolic-ref -q --short HEAD 2>/dev/null) || return 0
+  [ -n "$copy" ] && [ "$copy" != "$recorded" ] || return 0
+  base=$(fm_meta_get "$META" base_branch)
+  origin_default=$(git -C "$WT" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || true)
+  origin_default=${origin_default#origin/}
+  if [ "$copy" = main ] || [ "$copy" = master ] || [ "$copy" = "$base" ] || [ "$copy" = "$origin_default" ]; then
+    die "task $ID records branch $recorded, but its local copy has the base branch $copy checked out; refusing to relaunch a ship onto a base branch, and the running agent was not touched"
+  fi
+  case "$recorded" in
+    */*) case "$copy" in "${recorded%%/*}/"?*) ;; *) return 0 ;; esac ;;
+    *) return 0 ;;
+  esac
+  git check-ref-format --branch "$copy" >/dev/null 2>&1 \
+    || die "task $ID's local copy has '$copy' checked out, which is not a valid branch name; refusing to relaunch, and the running agent was not touched"
+  RELAUNCH_BRANCH_FROM=$recorded
+  RELAUNCH_BRANCH_TO=$copy
+  echo "notice: task $ID records branch $recorded, but its local copy has $copy checked out; the relaunch continues on $copy and records the correction" >&2
+}
+
 # safe_checkpoint: prove, before anything is stopped, that the work a relaunch
 # must preserve is actually there and recoverable afterwards. Fills
 # CHECKPOINT_LINES with the journal lines describing what it proved, and
@@ -1528,6 +1613,18 @@ record_note() {
     ship|scout)
       cp -p "$RELAUNCH_BRIEF" "$BRIEF_PRIOR" \
         || die "could not preserve task $ID's instructions before recording the progress note"
+      if [ -n "$RELAUNCH_BRANCH_TO" ]; then
+        # Rename only whole mentions of the recorded branch: a longer branch
+        # name that starts with it, or one it ends, stays as written.
+        # shellcheck disable=SC2016 # Perl, not the shell, expands $ENV.
+        if ! FM_BRANCH_FROM=$RELAUNCH_BRANCH_FROM FM_BRANCH_TO=$RELAUNCH_BRANCH_TO perl -pe '
+          s{(?<![A-Za-z0-9._/-])\Q$ENV{FM_BRANCH_FROM}\E(?![A-Za-z0-9_/-]|\.[A-Za-z0-9_/-])}{$ENV{FM_BRANCH_TO}}g
+        ' "$BRIEF_PRIOR" > "$RELAUNCH_BRIEF.branch" \
+          || ! mv -f "$RELAUNCH_BRIEF.branch" "$RELAUNCH_BRIEF"; then
+          rm -f "$RELAUNCH_BRIEF.branch"
+          die "could not record task $ID's branch correction in its instructions"
+        fi
+      fi
       {
         echo
         echo "## Progress note ($stamp)"
@@ -1541,6 +1638,12 @@ record_note() {
         echo "each message in numeric order, then mv each handled file into"
         echo "'$inbox_q/handled/'. A steer sent before the relaunch survives there."
         echo
+        if [ -n "$RELAUNCH_BRANCH_TO" ]; then
+          echo "The recorded branch $RELAUNCH_BRANCH_FROM did not match the local copy, which has"
+          echo "$RELAUNCH_BRANCH_TO checked out, so this relaunch continues on $RELAUNCH_BRANCH_TO and the"
+          echo "task record and these instructions now name it."
+          echo
+        fi
         printf '%s\n' "$NOTE"
       } >> "$RELAUNCH_BRIEF" \
         || die "could not append the progress note to task $ID's instructions"
@@ -1624,7 +1727,9 @@ do_relaunch() {
       fi
     fi
   fi
+  relaunch_branch_check
   safe_checkpoint
+  [ -z "$RELAUNCH_BRANCH_TO" ] || CHECKPOINT_LINES+=("branch_correction=$RELAUNCH_BRANCH_FROM->$RELAUNCH_BRANCH_TO")
   cp -p "$META" "$META_PRIOR" || die "could not preserve task $ID's durable record before relaunching"
   RELAUNCH_ACTIVE=1
   journal_write checkpoint "${CHECKPOINT_LINES[@]}" "$note_line"
@@ -1644,7 +1749,12 @@ do_relaunch() {
     || die "could not lock task $ID's durable record before recording relaunch token $RELAUNCH_TX"
   cp -p "$META" "$META.tx" || die "could not stage relaunch token $RELAUNCH_TX for task $ID"
   {
-    grep -v '^control_relaunch_tx=' "$META" || true
+    if [ -n "$RELAUNCH_BRANCH_TO" ]; then
+      grep -v -e '^control_relaunch_tx=' -e '^branch=' "$META" || true
+      printf 'branch=%s\n' "$RELAUNCH_BRANCH_TO"
+    else
+      grep -v '^control_relaunch_tx=' "$META" || true
+    fi
     printf 'control_relaunch_tx=%s\n' "$RELAUNCH_TX"
   } > "$META.tx" || die "could not stage relaunch token $RELAUNCH_TX for task $ID"
   mv "$META.tx" "$META" || die "could not record relaunch token $RELAUNCH_TX on task $ID before spawn"

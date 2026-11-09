@@ -127,6 +127,8 @@ A stale handle reads `unreadable`; only Orca's exact `ok:false` response with `e
 It proves absence only after a host reboot: the boot time read from the kernel must postdate the handle's recorded evidence (the record's spawn generation, or its mtime without one), Orca's process sweep must be readable from the post-boot runtime, and no agent process may be working in the recorded worktree.
 Without that reboot proof a stale handle refuses exactly like any other unprovable read, so an Orca restart short of a reboot can never license a second agent.
 
+Orca cannot deliver Escape to a non-Droid agent, so `fm-control.sh relaunch` stops a live one by closing its terminal, which ends the terminal's whole process tree.
+The stop holds only when this proof then reads gone, so an agent still working in the worktree refuses the relaunch; the [`fm-control.sh` header](../bin/fm-control.sh) owns the verb's contract.
 A rebind creates the new terminal through the recorded `orca_worktree_id=`, and refuses unless that id names the recorded worktree.
 The [Orca environment source](configuration.md#orca-environment-source-configlaunch-env-tmux-session) owns launch-environment handling for relaunches.
 [`verification/runtime-backends.md`](verification/runtime-backends.md#orca-agent-stop-proof) records the observed Orca responses and process layout.
@@ -136,7 +138,7 @@ The [Orca environment source](configuration.md#orca-environment-source-configlau
 - Orca is macOS-only and explicit-only.
 - The app must be running and report ready.
 - Secondmate spawns are unsupported.
-- Escape and Ctrl+U are verified for Droid only.
+- Escape and Ctrl+U are verified for Droid only; relaunch stops any other agent by closing its terminal.
 - Orca exposes no stable CLI version or protocol marker, so readiness is the compatibility gate rather than a version floor.
 - Only the verified terminal-handle and worktree result fields are accepted; speculative response shapes are rejected.
 - Orca's worktree shape is unverified against the spawn-time Claude workspace-trust check in `bin/fm-claude-trust.sh`, which refuses any path that is not a linked git worktree sharing the project's git common dir, so a claude spawn on Orca fails loudly at that check rather than launching if Orca clones instead of linking.
