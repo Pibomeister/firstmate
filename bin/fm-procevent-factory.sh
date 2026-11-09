@@ -53,7 +53,8 @@
 # Operator config lives in the private, gitignored `config/factory`, one
 # `key=value` per line: `url=` (required, http or https base URL) and
 # `token_file=` (optional path to a private file holding one bearer
-# token line). A URL with embedded credentials is refused. The token is passed
+# token line). A URL with embedded credentials, a query string or a fragment
+# is refused, so nothing secret rides it into argv or wakes. The token is passed
 # to curl on stdin, never on its argv, curl ignores any host .curlrc, and the
 # token never enters the registration. docs/configuration.md owns the schema.
 set -u
@@ -123,6 +124,9 @@ load_config() {
   [[ "$URL" =~ ^https?://[^[:space:]\"\\]+$ ]] || { CONFIG_ERROR='config/factory url= must be an http or https URL'; return 1; }
   # The URL is echoed into diagnostics and wakes, so it must not carry credentials.
   [[ ! "$URL" =~ ^https?://[^/]*@ ]] || { CONFIG_ERROR='config/factory url= must not embed credentials; use token_file='; return 1; }
+  # API paths are appended to the base URL, so a query or fragment is never
+  # usable there and could carry a credential into argv and wakes.
+  [[ "$URL" != *[?#]* ]] || { CONFIG_ERROR='config/factory url= must not carry a query string or fragment; use token_file= for credentials'; return 1; }
   TOKEN=
   if [ -n "$token_file" ]; then
     [ -f "$token_file" ] && [ -r "$token_file" ] || { CONFIG_ERROR='config/factory token_file is not a readable file'; return 1; }

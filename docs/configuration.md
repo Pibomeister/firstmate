@@ -2946,7 +2946,7 @@ The adapter automates only the exact deterministic subset: anything needing judg
 The `factory` adapter (`bin/fm-procevent-factory.sh`) watches one Goodword Factory project's attention inbox and wakes firstmate once per new `automation-failed` item, with the item's error text in the wake.
 It reads its endpoint from the optional, private, gitignored `config/factory`, one `key=value` per line:
 
-- `url=` is required and is the Factory's `http` or `https` base URL, without embedded credentials.
+- `url=` is required and is the Factory's `http` or `https` base URL; one that embeds credentials or carries a query string or fragment is refused, so no secret can reach a command line, a diagnostic, or a wake through it.
 - `token_file=` is optional and names a private file holding one bearer token line; the token reaches the Factory only as an `Authorization` header, is never stored in the registration or passed on a command line, and curl ignores any host `.curlrc` for these requests.
 
 Arm a watch with `bin/fm-procevent-factory.sh arm --project <factory-project-id>`; `arm` refuses when `config/factory` is missing or invalid.
@@ -2956,6 +2956,7 @@ A Factory that stays unreachable for three consecutive reads, refuses the token 
 Each poll follows the attention inbox's pages, up to 200 pages of failure history, and reaching that bound ends the watch with a diagnostic rather than miss a failure.
 A Factory page scans at most 200 failed decisions, archived ones included, so the bound measures a project's whole failure history rather than its open failures.
 Failures already open when the watch is armed are reported too, oldest first and one per wake, and every wake names when its failure occurred so an old failure is not mistaken for a new one.
+The watch reads only open items, so a failure that someone archives in Factory before the next poll never wakes firstmate; Factory archives an item only on an explicit user action, so that person has already seen it.
 
 Before launching unattended runs, `bin/fm-procevent-factory.sh preflight --project <id>` reports read-only whether a newly prepared run session would get a usable model.
 It exits 0 when the project's default model is in the Factory's credentialed model catalog for the project, 1 when it is not or the project has no default model, and 3 when it cannot tell, including a project whose sessions take each owner's own default model.
