@@ -1,0 +1,114 @@
+== readable-harnesses
+$ fm-soak-record.sh readable-harnesses
+claude
+[exit 0]
+== inventory
+$ fm-soak-record.sh inventory --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.O6YGSE --harness claude --harness codex
+claude readable
+codex unreadable
+[exit 3]
+== start refused on unreadable harness
+$ fm-soak-record.sh start --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.O6YGSE --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/out --label baseline --harness codex
+codex unreadable
+fm-soak-record: refusing to start: a declared harness is unreadable
+[exit 3]
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/out: No such file or directory
+== start refused when --out is inside the home
+$ fm-soak-record.sh start --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.O6YGSE --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.O6YGSE/data/soak --label baseline --harness claude
+fm-soak-record: --out is inside the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.O6YGSE/data/soak
+[exit 2]
+== start
+$ fm-soak-record.sh start --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.O6YGSE --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/out --label baseline --harness claude
+claude readable
+[exit 0]
+{
+  "label": "baseline",
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.O6YGSE",
+  "revision": "812118dc60506ab9620cbcceb0b6e6dbb5129c9f",
+  "started_at": 1794230947,
+  "harnesses": [
+    "claude"
+  ],
+  "session_ids": []
+}
+== sample
+$ fm-soak-record.sh sample --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.O6YGSE --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/out
+[exit 0]
+1794230948	0	0	0	-
+HOME UNCHANGED BY SAMPLE
+== sample with a different --home is refused
+$ fm-soak-record.sh sample --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/out
+fm-soak-record: --out is inside the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soakwork.ZMLNsS/out
+[exit 2]
+== ADVERSARIAL: hard-linked load.tsv
+$ fm-soak-record.sh sample --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.O6YGSE --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/out
+fm-soak-record: refusing to write through a hard link: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soakwork.ZMLNsS/out/load.tsv
+[exit 2]
+HOME FILE BEHIND HARD LINK UNCHANGED
+== ADVERSARIAL: hard-linked watchdog copy
+$ fm-soak-record.sh finish --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.O6YGSE --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/out --watchdog-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/wd --transcript-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/tr
+fm-soak-record: refusing to write through a hard link: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soakwork.ZMLNsS/out/watchdog/actions.tsv
+[exit 2]
+WATCHDOG LEDGER UNCHANGED
+not finished
+== ADVERSARIAL: symlinked load.tsv
+$ fm-soak-record.sh sample --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.O6YGSE --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/out
+fm-soak-record: refusing to write through a symlink: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soakwork.ZMLNsS/out/load.tsv
+[exit 2]
+== ADVERSARIAL: watchdog dir inside --out
+$ fm-soak-record.sh finish --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.O6YGSE --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/out --watchdog-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/out/watchdog --transcript-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/tr
+fm-soak-record: --watchdog-dir is --out or inside it: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soakwork.ZMLNsS/out/watchdog
+[exit 2]
+== finish
+$ fm-soak-record.sh finish --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.O6YGSE --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/out --watchdog-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/wd --transcript-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/tr
+[exit 0]
+HOME UNCHANGED BY FINISH
+{
+  "label": "baseline",
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.O6YGSE",
+  "revision": "812118dc60506ab9620cbcceb0b6e6dbb5129c9f",
+  "started_at": 1794230947,
+  "harnesses": [
+    "claude"
+  ],
+  "session_ids": [
+    {
+      "id": "sess-abc",
+      "transcript": "transcripts/sess-abc.jsonl"
+    }
+  ],
+  "finished_at": 1794230950,
+  "handoff_count": 2,
+  "violations": []
+}
+-- out tree
+./handoff-events.tsv
+./handoffs/handoff-primary.md
+./load.tsv
+./soak.json
+./transcripts/sess-abc.jsonl
+./wake-ledger.tsv
+./watchdog/actions.tsv
+./watchdog/handoffs/wd-lean.md
+-- watchdog/actions.tsv
+1794230948	w1	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.O6YGSE	primary	frozen	restart	done	pickup verified
+== post-change start + finish (violations)
+$ fm-soak-record.sh start --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.O6YGSE --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/out2 --label post-change --harness claude
+claude readable
+[exit 0]
+$ fm-soak-record.sh finish --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.O6YGSE --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/out2 --watchdog-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/wd --transcript-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/tr
+[exit 0]
+{
+  "label": "post-change",
+  "violations": [
+    {
+      "kind": "activity-sources-unavailable",
+      "harness": "claude"
+    }
+  ],
+  "handoff_count": 0
+}
+== sample after finish is refused
+$ fm-soak-record.sh sample --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.O6YGSE --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakwork.ZMLNsS/out
+fm-soak-record: the soak run in /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soakwork.ZMLNsS/out is already finished
+[exit 1]
