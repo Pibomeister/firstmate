@@ -229,8 +229,8 @@ fetch_once() {
 # (AGENTS.md, which CLAUDE.md imports via @AGENTS.md), its agent-loaded skills
 # (.agents/skills/), and its tooling (bin/). Public skills/ is installer-facing
 # and intentionally not part of this watched instruction surface. Neither is
-# docs/learnings/: session start and each AFK preflight print it from disk, so a
-# change to it needs no re-read.
+# docs/learnings/: session start points at it and each AFK preflight prints it,
+# both from disk, so a change to it needs no re-read.
 changed_instr() {
   local dir=$1 base=$2 p out=""
   for p in AGENTS.md bin .agents/skills; do
