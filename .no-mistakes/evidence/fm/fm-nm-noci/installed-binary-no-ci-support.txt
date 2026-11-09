@@ -1,0 +1,3 @@
+no-mistakes version v1.84.0 (4822244) 2026-09-26T08:31:07Z
+Repository declares no CI (no_ci: true on the trusted default branch) and no checks are registered - treated as all checks passed.
+repository declares no CI (no_ci: true) - treating as all checks passed - still monitoring until merged or closed

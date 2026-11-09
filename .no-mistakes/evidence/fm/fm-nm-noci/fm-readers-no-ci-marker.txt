@@ -1,0 +1,3 @@
+ok - a no_ci ci-monitor marker reads as unverified, not validating
+ok - status-log override refuses a no_ci repository
+ok - a red marker after the no_ci sentence reads not ready
