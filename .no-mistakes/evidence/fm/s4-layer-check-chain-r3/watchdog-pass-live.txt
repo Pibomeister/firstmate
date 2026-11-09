@@ -1,0 +1,6 @@
+## S4: one real watchdog pass (once --dry-run) over owner + second watched home, real launchctl
+owner monitor unit file present (not loaded); second home has none
+once exit=0
+owner:  status=disabled at=1794234758
+second: status=uncovered at=1794234758
+temp files left:        0

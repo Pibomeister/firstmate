@@ -1,0 +1,7 @@
+## S6 (adversarial): session start that cannot verify the lock (launched outside the harness ancestry in a lab tmux pane)
+pre-seeded record: status=SENTINEL at=1
+LOCK
+--------------------------------------------------------------------------------
+error: cannot locate harness process in ancestry
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+record after: status=SENTINEL at=1

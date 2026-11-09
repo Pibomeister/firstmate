@@ -1,0 +1,11 @@
+## S5: real session start in lab home; its watchdog unit is not installed
+$ FM_HOME=$LAB bin/fm-watchdog.sh manager-status
+manager: uncovered (unit not installed)
+before: <no record>
+session-start exit=0
+LOCK
+lock acquired: harness pid 78071
+- Lock: held by this session; this session owns normal supervision unless away mode says otherwise.
+- Supervision host: on; it takes away-posture wakes and, where the dialog mirror is verified, eligible attended wakes itself, and hands the rest to you (protocol at the end of this block).
+   [`watcher-continuity.md`](../watcher-continuity.md) owns the exact session-lock recovery boundary.
+after:  status=uncovered at=1794234770

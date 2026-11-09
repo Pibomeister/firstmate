@@ -1,0 +1,21 @@
+## S1: monitor-read against lab home, real launchctl, no unit installed
+$ FM_HOME=$LAB bin/fm-monitor-watchdog.sh manager-status
+manager: uncovered (unit not installed)
+exit=1
+$ FM_HOME=$LAB bin/fm-watchdog.sh monitor-read
+exit=0
+$ cat $LAB/state/monitor-status
+status=uncovered at=1794234733
+monitor-status
+
+## S2: unit file installed but not loaded in launchd (disposable HOME) -> disabled
+manager: disabled (firstmate-monitor-watchdog-1471905237)
+exit=0
+status=disabled at=1794234733
+
+## S3 (adversarial): state dir unwritable -> exit nonzero, old record kept, no temp left
+exit=1
+status=disabled at=1794234733
+0
+## S3b: home with no state dir -> refused
+exit=0
