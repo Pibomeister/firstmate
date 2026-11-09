@@ -816,9 +816,10 @@ wait_for_file() {  # <path> <tenths>
 
 # H1, one live pane: once a planned fresh start has a live successor recorded,
 # the stop that ends the old session's handoff turn ends the old session too,
-# after a settle in which the transcript shows no new turn. The bookkeeping
-# Claude appends after every stop does not count as a new turn; a new prompt
-# does, and keeps the old session alive.
+# after a settle in which the transcript shows no new turn. The stopped turn's
+# final assistant reply, which Claude can flush after the Stop hook measures
+# the transcript, and the bookkeeping Claude appends after every stop do not
+# count as a new turn; a new prompt does, and keeps the old session alive.
 test_handoff_stop_ends_the_idle_predecessor() {
   local t="$TMP_ROOT/t-end" end="$PRIMARY/state/.handoff-end" succ pred n
   reset_lab
@@ -831,7 +832,7 @@ test_handoff_stop_ends_the_idle_predecessor() {
   succ=$!
   printf 'pid=%s\nhandoff=%s\n' "$succ" "$TMP_ROOT/end-handoff.md" > "$PRIMARY/state/.handoff-successor"
   # shellcheck disable=SC2016 # The fake harness shell expands these.
-  pred=$(end_lab_predecessor s-end "$t" 'printf "%s\n" "{\"type\":\"system\",\"subtype\":\"stop_hook_summary\"}" "{\"type\":\"last-prompt\"}" >> "$END_TRANSCRIPT"')
+  pred=$(end_lab_predecessor s-end "$t" 'printf "%s\n" "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}" "{\"type\":\"system\",\"subtype\":\"stop_hook_summary\"}" "{\"type\":\"last-prompt\"}" >> "$END_TRANSCRIPT"')
   wait_for_file "$end" 150 || fail "the stop with a live successor recorded must end the old session and record it"
   assert_equals 0 "$(cat "$TMP_ROOT/end-stop.rc")" "the stop itself passes"
   assert_contains "$(cat "$end")" "pred=$pred" "the record names the old session"

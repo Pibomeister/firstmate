@@ -66,9 +66,10 @@
 # seconds) it ends <pid> with SIGTERM, waiting up to 30 seconds for it to go,
 # only when all of these still hold: state/.lock names <pid>, the successor
 # record names a different live pid, <pid> is a live harness process, and the
-# transcript has no new user, assistant, or queued-message record past
-# <bytes> (Claude's own bookkeeping after a stop does not count as a new
-# turn). It records the outcome in state/.handoff-end as
+# transcript has no new user or queued-message record past <bytes>. Claude
+# can flush the stopped turn's final assistant reply after the Stop hook
+# measures <bytes>, so an assistant record, like Claude's own bookkeeping
+# after a stop, does not count as a new turn. It records the outcome in state/.handoff-end as
 # at= pred= result=ended|alive|skipped reason=. It never signals anything else.
 #
 # Test seam, honoured only with FM_TEST_SEAM=1: FM_HANDOFF_TEST_HARNESS
@@ -140,10 +141,11 @@ await_predecessor() {
 }
 
 # new_turn_since <transcript> <bytes>: true when the transcript gained a
-# record that starts or continues a turn past <bytes>.
+# record that starts a new turn past <bytes>: a user prompt or a queued
+# message. A late assistant record is the stopped turn's own final reply.
 new_turn_since() {
   tail -c "+$(($2 + 1))" "$1" 2>/dev/null | jq -R -r 'fromjson? | .type // empty | strings' 2>/dev/null \
-    | grep -qxE 'user|assistant|queue-operation'
+    | grep -qxE 'user|queue-operation'
 }
 
 # --end-predecessor <pid> <transcript> <bytes>
