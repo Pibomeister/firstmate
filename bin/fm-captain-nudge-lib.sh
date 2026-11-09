@@ -60,8 +60,10 @@ fm_nudge_mtime() {
 # Expand a leading ~/ to $HOME. Other paths pass through.
 fm_nudge_expand_path() {
   case "$1" in
-    ~/*) printf '%s\n' "${HOME}/${1#~/}" ;;
-    ~) printf '%s\n' "${HOME}" ;;
+    # Quoted: bash tilde-expands unquoted case patterns, so ~/* would never
+    # match a literal "~/..." config value.
+    '~/'*) printf '%s\n' "${HOME}/${1#'~/'}" ;;
+    '~') printf '%s\n' "${HOME}" ;;
     *) printf '%s\n' "$1" ;;
   esac
 }
@@ -70,9 +72,9 @@ fm_nudge_expand_path() {
 fm_nudge_iso_ts() {
   local epoch=${1:-} raw tz
   if [ -n "$epoch" ]; then
-    if raw=$(date -u -d "@$epoch" +%Y-%m-%dT%H:%M:%S%z 2>/dev/null); then
+    if raw=$(date -d "@$epoch" +%Y-%m-%dT%H:%M:%S%z 2>/dev/null); then
       :
-    elif raw=$(date -u -r "$epoch" +%Y-%m-%dT%H:%M:%S%z 2>/dev/null); then
+    elif raw=$(date -r "$epoch" +%Y-%m-%dT%H:%M:%S%z 2>/dev/null); then
       :
     else
       raw=$(date +%Y-%m-%dT%H:%M:%S%z)

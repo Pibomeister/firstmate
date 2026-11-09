@@ -409,6 +409,14 @@ test_example_configs_parse() {
   pass "fm-captain-nudge: example host configs parse"
 }
 
+test_expand_path_literal_tilde() {
+  local out
+  out=$(HOME=/tmp/fm-nudge-home bash -c '. "$1/bin/fm-captain-nudge-lib.sh"; fm_nudge_expand_path "~/orca/nudge"; fm_nudge_expand_path "~"; fm_nudge_expand_path /abs/p' _ "$ROOT")
+  [ "$out" = "$(printf '/tmp/fm-nudge-home/orca/nudge\n/tmp/fm-nudge-home\n/abs/p')" ] \
+    || fail "expand_path did not expand a literal ~ config value: $out"
+  pass "fm-captain-nudge: literal ~ in config paths expands to HOME"
+}
+
 fm_test_run \
   test_help_and_usage \
   test_decide_nudge_happy_path \
@@ -432,4 +440,5 @@ fm_test_run \
   test_install_idempotent_units \
   test_open_work_queue_file \
   test_beacon_line_has_no_spaces_in_values \
-  test_example_configs_parse
+  test_example_configs_parse \
+  test_expand_path_literal_tilde
