@@ -170,14 +170,15 @@ load_lab() {  # <root>: refuse anything up did not build, then load its record
 # directory exists and otherwise silently falls back to /tmp/tmux-<uid>, where a
 # lab command would reach the user's own default server.
 lab_socket() {
-  [ -n "${TMUX_DIR:-}" ] || return 1
+  case "${TMUX_DIR:-}" in /tmp/fml.[A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]) ;; *) return 1 ;; esac
+  [ -d "$TMUX_DIR" ] && [ ! -L "$TMUX_DIR" ] && [ -O "$TMUX_DIR" ] || return 1
   printf '%s/tmux-%s/default\n' "$TMUX_DIR" "$(id -u)"
 }
 
 lab_tmux() {
   local socket
   socket=$(lab_socket) || return 1
-  env -u TMUX tmux -S "$socket" "$@"
+  env -u TMUX -u TMUX_PANE tmux -S "$socket" "$@"
 }
 
 # lab_kill_server: stop the lab's tmux server, and do nothing at all when its

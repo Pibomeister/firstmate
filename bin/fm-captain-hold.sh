@@ -2059,14 +2059,15 @@ EOF
   fi
 
   if [ "$has_meta" = 1 ]; then
-    if [ "$(meta_value "$meta" decisions_reviewed)" != 1 ] || [ "$previous" != "$keys" ]; then
+    if [ "$(meta_value "$meta" decisions_reviewed)" != 1 ] || [ "$previous" != "$keys" ] \
+      || [ "$previous_cross" != "$cross_keys" ]; then
       tmp=$(mktemp "$STATE/.$origin.meta.XXXXXX") \
         || fail "cannot stage the completion record for $origin"
-      if ! awk -v keys="$keys" '
-          /^(decisions_reviewed|decision_keys)=/ { next }
-          /^pr=/ && !done { print "decisions_reviewed=1"; print "decision_keys=" keys; done = 1 }
+      if ! awk -v keys="$keys" -v cross="$cross_keys" '
+          /^(decisions_reviewed|decision_keys|cross_origin_keys)=/ { next }
+          /^pr=/ && !done { print "decisions_reviewed=1"; print "decision_keys=" keys; if (cross != "") print "cross_origin_keys=" cross; done = 1 }
           { print }
-          END { if (!done) { print "decisions_reviewed=1"; print "decision_keys=" keys } }
+          END { if (!done) { print "decisions_reviewed=1"; print "decision_keys=" keys; if (cross != "") print "cross_origin_keys=" cross } }
         ' "$meta" > "$tmp" || ! mv -f -- "$tmp" "$meta"; then
         rm -f -- "$tmp"
         fail "cannot record completion for $origin"
