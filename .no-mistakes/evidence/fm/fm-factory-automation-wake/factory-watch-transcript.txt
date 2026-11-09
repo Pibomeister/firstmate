@@ -1,0 +1,58 @@
+# Live Factory watch in disposable lab home (stub Factory on 127.0.0.1:18765)
+
+## Captured results (one per failure / terminal stop)
+### factory-test-proj.1.result
+factory: factory-test-proj
+status: failed
+project: test-proj
+item: automation-failed:run-GW-101	ProviderAuthRequiredError	ProviderAuthRequiredError: No credential configured for provider anthropic^[[31m\tin project test-proj	2026-11-09T09:00:20.000Z
+condition_polls: 32
+
+### factory-test-proj.2.result
+factory: factory-test-proj
+status: failed
+project: test-proj
+item: automation-failed:run-GW-102	ProviderAuthRequiredError	ProviderAuthRequiredError on run GW-102	2026-11-09T09:00:21.000Z
+condition_polls: 19
+
+### factory-test-proj.3.result
+factory: factory-test-proj
+status: failed
+project: test-proj
+item: automation-failed:run-GW-103	ProviderAuthRequiredError	ProviderAuthRequiredError on run GW-103	2026-11-09T09:00:22.000Z
+condition_polls: 1
+
+### factory-test-proj.4.result
+factory: factory-test-proj
+status: failed
+project: test-proj
+item: automation-failed:run-GW-104	ProviderAuthRequiredError	ProviderAuthRequiredError on run GW-104	2026-11-09T09:00:23.000Z
+condition_polls: 1
+
+### factory-test-proj.5.result
+factory: factory-test-proj
+status: error
+project: test-proj
+detail: Factory at http://127.0.0.1:18765 unreachable: 3 consecutive failed reads; last: curl: (7) Failed to connect to 127.0.0.1 port 18765 after 0 ms: Couldn't connect to server
+condition_polls: 34
+
+### factory-test-proj.6.result
+factory: factory-test-proj
+status: error
+project: test-proj
+detail: Factory at http://127.0.0.1:18765 refused the attention read: HTTP 401 (check config/factory token_file)
+condition_polls: 1
+
+## Requests the stub Factory received (auth header shows token delivered as header only)
+  84 /web/factory/projects/test-proj/attention?kind=automation-failed&view=open&limit=50 auth=Bearer <lab-token>
+  34 /web/factory/projects/test-proj/attention?kind=automation-failed&view=open&limit=50&before=4 auth=Bearer <lab-token>
+  34 /web/factory/projects/test-proj/attention?kind=automation-failed&view=open&limit=50&before=2 auth=Bearer <lab-token>
+   3 /web/factory/projects/test-proj auth=Bearer <lab-token>
+   2 /web/config/models?factoryId=test-proj auth=Bearer <lab-token>
+   1 /web/factory/projects/userscope auth=Bearer <lab-token>
+   1 /web/factory/projects/test-proj/attention?kind=automation-failed&view=open&limit=50 auth=Bearer wrongtok
+   1 /web/factory/projects/test-proj auth=Bearer wrongtok
+   1 /web/factory/projects/nomodel auth=Bearer <lab-token>
+   1 /web/factory/projects/hybrid-ok auth=Bearer <lab-token>
+   1 /web/factory/projects/ghost auth=Bearer <lab-token>
+   1 /web/config/models?factoryId=hybrid-ok auth=Bearer <lab-token>

@@ -1,0 +1,50 @@
+## Nov-9 reproduction: default model's provider has no credential in project scope
+$ fm-procevent-factory.sh preflight --project test-proj
+not usable: default model anthropic/claude-sonnet-4-5 is not in the Factory's credentialed model catalog for project test-proj
+exit=1
+
+## Credentialed hybrid project
+$ fm-procevent-factory.sh preflight --project hybrid-ok
+usable: openai/gpt-5 (scope hybrid; provider credential present, validity not checked)
+exit=0
+
+## No default model
+$ fm-procevent-factory.sh preflight --project nomodel
+not usable: project nomodel has no default model; a run session would fall back to an unpinned mode default
+exit=1
+
+## Per-user model scope
+$ fm-procevent-factory.sh preflight --project userscope
+cannot determine: project userscope uses per-user model scope; a run session takes its owner's default model, which this read cannot see
+exit=3
+
+## Unknown project
+$ fm-procevent-factory.sh preflight --project ghost
+not usable: project ghost not found
+exit=1
+
+## Wrong token (401)
+$ fm-procevent-factory.sh preflight --project test-proj
+cannot determine: Factory at http://127.0.0.1:18765 refused the project read: HTTP 401
+exit=3
+
+## Factory down
+$ fm-procevent-factory.sh preflight --project test-proj
+cannot determine: Factory at http://127.0.0.1:18799 unreachable: curl: (7) Failed to connect to 127.0.0.1 port 18799 after 0 ms: Couldn't connect to server
+exit=3
+
+## URL with query string carrying a secret
+$ fm-procevent-factory.sh preflight --project test-proj
+cannot determine: config/factory url= must not carry a query string or fragment; use token_file= for credentials
+exit=3
+
+## URL with embedded credentials
+$ fm-procevent-factory.sh preflight --project test-proj
+cannot determine: config/factory url= must not embed credentials; use token_file=
+exit=3
+
+## After operator adds the credential (catalog now lists the model)
+$ fm-procevent-factory.sh preflight --project test-proj
+usable: anthropic/claude-sonnet-4-5 (scope factory; provider credential present, validity not checked)
+exit=0
+
