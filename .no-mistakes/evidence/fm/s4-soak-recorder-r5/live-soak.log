@@ -1,0 +1,118 @@
+== lab home revision: d3686be8f248d3943ff1588478203b195bfbb4b8
+
+== crew state as the recorder sees it
+state: working · source: pane · harness busy (claude-hook)
+state: working · source: pane · harness busy (gemini-hook)
+state: unknown · source: none · backend target gone: fm:fm-feat-z
+
+== readable-harnesses
+claude
+
+== inventory claude codex
+claude readable
+codex unreadable
+exit=3
+
+== start with an unreadable harness (codex)
+codex unreadable
+fm-soak-record: refusing to start: a declared harness is unreadable
+exit=3 soak.json exists: no
+
+== adversarial: --out inside the home / containing the home / root
+fm-soak-record: --out is inside the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.B1SFys/data/x
+exit=2
+fm-soak-record: --out contains the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T
+exit=2
+fm-soak-record: --out contains the soak home: /
+exit=2
+fm-soak-record: --out contains the soak home: //
+exit=2
+
+== start (baseline, claude)
+claude readable
+exit=0
+{
+  "label": "baseline",
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.B1SFys",
+  "revision": "d3686be8f248d3943ff1588478203b195bfbb4b8",
+  "started_at": 1794220573,
+  "harnesses": [
+    "claude"
+  ],
+  "session_ids": []
+}
+
+== sample
+exit=0
+epoch	live	acks	status	session
+1794220573	2	3	1	sess-1234
+
+== adversarial: sample with a different --home
+fm-soak-record: --home is not the home this soak run started on: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soak-work.pgpqV2/other
+exit=2
+
+== sample after a handoff
+exit=0
+1794220575	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.B1SFys/data/handoff-1.md
+
+== adversarial: finish with --watchdog-dir inside --out
+fm-soak-record: --watchdog-dir is --out or inside it: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soak-work.pgpqV2/out/wdin
+exit=2 finished_at=unset
+
+== finish
+exit=0
+{
+  "label": "baseline",
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.B1SFys",
+  "revision": "d3686be8f248d3943ff1588478203b195bfbb4b8",
+  "started_at": 1794220573,
+  "harnesses": [
+    "claude"
+  ],
+  "session_ids": [
+    {
+      "id": "sess-1234",
+      "transcript": "missing-transcript"
+    },
+    {
+      "id": "sess-abc",
+      "transcript": "transcripts/sess-abc.jsonl"
+    }
+  ],
+  "finished_at": 1794220576,
+  "handoff_count": 2,
+  "violations": [
+    {
+      "kind": "undeclared-harness",
+      "task": "feat-c",
+      "harness": "gemini"
+    }
+  ]
+}
+
+== out tree
+./handoff-events.tsv
+./handoffs/handoff-1.md
+./load.tsv
+./soak.json
+./transcripts/sess-abc.jsonl
+./wake-ledger.tsv
+./watchdog/actions.tsv
+./watchdog/handoffs/wd-1.md
+
+== watchdog/actions.tsv
+1794220575	w1	<LAB>	low-context	restart-requested	restart	done
+1794220575	w2	<LAB>	frozen	frozen	restart	done
+
+== wake-ledger.tsv
+1794220575	ack	-	5	5,6	["e","f"]
+
+== sample after finish
+fm-soak-record: the soak run in /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soak-work.pgpqV2/out is already finished
+exit=1
+
+== soak home unchanged apart from the lab's own test writes? recorder-only comparison below
+
+== post-change run: activity-sources violation
+exit=0
+[{"kind":"undeclared-harness","task":"feat-c","harness":"gemini"},{"kind":"activity-sources-unavailable","harness":"claude"}]
