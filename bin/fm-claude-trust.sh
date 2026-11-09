@@ -32,7 +32,8 @@
 # control that reaches an interactive pane. The same reasoning covers Claude
 # Code's separate "Allow external CLAUDE.md file imports?" dialog, which
 # `--setting-sources project,local` (now passed only by fm-live-lab.sh; an
-# fm-spawn.sh worker loads user settings too) does not suppress: it renders whenever a loaded CLAUDE.md chain
+# fm-spawn.sh worker's settings sources are not guaranteed to load the user
+# scope) does not suppress: it renders whenever a loaded CLAUDE.md chain
 # reaches outside the project tree - which every crewmate's does, through the
 # captain's own `~/.claude/CLAUDE.md` importing `~/.claude/RTK.md` - and it is
 # gated the same fail-closed way as trust: cursor on "No, disable", no arrow
