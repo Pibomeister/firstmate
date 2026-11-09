@@ -36,9 +36,6 @@
 #                       mutating step runs.
 #   1b. home role    - the resolved firstmate-repository role line
 #                      (bin/fm-role.sh report), purely local, no network.
-#                      After it, a full locked start that is not a re-emit
-#                      runs the watchdog's monitor read once when this home's
-#                      watchdog unit is not enabled (docs/watchdog.md).
 #   2. bootstrap      - home-local stale Herdr projection cleanup runs only
 #                       when this session actually holds the lock. Detect-only
 #                       diagnostics always run. Bootstrap's seven MUTATING sweeps
@@ -828,15 +825,6 @@ if [ "$READ_ONLY" -eq 0 ]; then
   [ "$REEMIT" -eq 0 ] || NETWORK_STAGE_LOCKED=0
   "$SCRIPT_DIR/fm-startup-network.sh" start \
     --locked "$NETWORK_STAGE_LOCKED" --harvest-pid $$ >/dev/null 2>&1 || true
-  # With no enabled watchdog to read the monitor unit each pass, a full
-  # locked start runs the watchdog's one read itself (docs/watchdog.md),
-  # after the network stage is launched so the read never delays it.
-  if [ "$REEMIT" -eq 0 ]; then
-    case "$(fm_run_timed 10 env FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-watchdog.sh" manager-status 2>/dev/null)" in
-      'manager: enabled'*) ;;
-      *) fm_run_timed 20 env FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-watchdog.sh" monitor-read >/dev/null 2>&1 || true ;;
-    esac
-  fi
 fi
 
 # --- 2. bootstrap --------------------------------------------------------

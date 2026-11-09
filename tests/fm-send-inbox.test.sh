@@ -305,12 +305,16 @@ test_harness_invocations_stay_typed() {
   typed=$(cat "$dir/send.log")
   assert_contains "$typed" "/no-mistakes" "the slash command should be typed literally"
   [ ! -d "$dir/home/state/t1.inbox" ] || fail "a slash command must not be routed to the inbox"
+  [ ! -e "$dir/home/state/t1.turn-start" ] || fail "a typed send to a non-codex task must not record a codex turn start"
   # A codex `$<skill>` invocation likewise stays typed.
   dir=$(setup_case codexskill codex)
   err="$dir/send.err"
   run_send "$dir" "$err" -- t1 '$no-mistakes' || fail "a codex \$skill send should succeed"
   assert_contains "$(cat "$dir/send.log")" '$no-mistakes' "the codex \$skill should be typed literally"
   [ ! -d "$dir/home/state/t1.inbox" ] || fail "a codex \$skill must not be routed to the inbox"
+  # With no inbox record, the typed send records the Codex turn start the busy
+  # classifier (fm_busy_codex_native_turn_state) needs.
+  [ -f "$dir/home/state/t1.turn-start" ] || fail "a codex \$skill send must record a turn start"
   # The same `$` message to a non-codex harness is plain text: inbox plane.
   dir=$(setup_case dollartext claude)
   err="$dir/send.err"
