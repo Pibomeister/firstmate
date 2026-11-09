@@ -96,10 +96,11 @@ A new tool remains undispatchable until the `verify` plan, its harness entry, ev
     "omp": "references/harness/omp.md",
     "agy": "references/harness/agy.md",
     "devin": "references/harness/devin.md",
-    "droid": "references/harness/droid.md",
     "commandcode": "references/harness/commandcode.md",
     "polytoken": "references/harness/polytoken.md",
-    "cortex": "references/harness/cortex.md"
+    "cortex": "references/harness/cortex.md",
+    "kiro": "references/harness/kiro.md",
+    "hermes": "references/harness/hermes.md"
   }
 }
 ```
