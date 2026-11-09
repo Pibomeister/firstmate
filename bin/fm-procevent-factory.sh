@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Factory dispatch-failure process-event adapter and model preflight.
+# Optional process-event adapter and model preflight for a Mastra Factory
+# (@mastra/factory) project's attention inbox. It is inert until an operator
+# writes config/factory and arms a project; it has no default URL, host, port
+# or project, and reads only routes and fields of stock @mastra/factory 0.23.0.
 #
 # Usage:
 #   fm-procevent-factory.sh arm --project <id> [--interval <secs>]

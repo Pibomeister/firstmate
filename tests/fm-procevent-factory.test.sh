@@ -135,7 +135,7 @@ configure() {  # <home> <url>
 }
 
 item() {  # <decision-uuid> <detail> [failure-code-json]
-  printf '{"key":"factory:%s:automation-failed:%s:0","kind":"automation-failed","decisionId":"%s","occurrence":0,"workItemId":"11111111-1111-4111-8111-111111111111","title":"ENG-4357 run","detail":"%s","failureCode":%s,"canRetry":true,"occurredAt":"2026-11-09T15:00:00.000Z","read":false,"archived":false}' \
+  printf '{"key":"factory:%s:automation-failed:%s:0","kind":"automation-failed","decisionId":"%s","occurrence":0,"workItemId":"11111111-1111-4111-8111-111111111111","title":"example run","detail":"%s","failureCode":%s,"canRetry":true,"occurredAt":"2026-11-09T15:00:00.000Z","read":false,"archived":false}' \
     "$PROJECT" "$1" "$1" "$2" "${3:-\"dispatch_failed\"}"
 }
 attention_body() {  # [item-json...]: newest first, as Factory orders them
@@ -402,6 +402,13 @@ if err=$(factory "$H" arm --project "$PROJECT" 2>&1); then
   fail "arm without config/factory unexpectedly succeeded"
 fi
 assert_contains "$err" "config/factory" "the refusal names the missing config"
+# Off unless configured: with no config/factory there is no default endpoint to
+# fall back on, so nothing is registered and preflight cannot judge.
+out=$(FM_HOME="$H" "$ROOT/bin/fm-procevent.sh" list 2>&1)
+case "$out" in *factory-*) fail "a factory source exists without config/factory: $out" ;; esac
+out=$(factory "$H" preflight --project "$PROJECT" 2>&1); rc=$?
+expect_code 3 "$rc" "preflight without config/factory cannot determine"
+assert_contains "$out" "missing operator config: config/factory" "preflight names the missing config"
 printf 'url=https://user:secret@factory.example\n' > "$H/config/factory"
 if err=$(factory "$H" arm --project "$PROJECT" 2>&1); then
   fail "arm with credentials in the URL unexpectedly succeeded"

@@ -2943,7 +2943,8 @@ The adapter automates only the exact deterministic subset: anything needing judg
 
 **Watch Factory dispatch failures (config/factory)**
 
-The `factory` adapter (`bin/fm-procevent-factory.sh`) watches one Goodword Factory project's attention inbox and wakes firstmate once per new `automation-failed` item, with the item's error text in the wake.
+The optional `factory` adapter (`bin/fm-procevent-factory.sh`) watches one Mastra Factory (`@mastra/factory`) project's attention inbox and wakes firstmate once per new `automation-failed` item, with the item's error text in the wake.
+It is off unless an operator writes `config/factory` and arms a project, has no default URL, host, port, or project, and reads only routes and fields that stock `@mastra/factory` 0.23.0 serves.
 It reads its endpoint from the optional, private, gitignored `config/factory`, one `key=value` per line:
 
 - `url=` is required and is the Factory's `http` or `https` base URL; one that embeds credentials or carries a query string or fragment is refused, so no secret can reach a command line, a diagnostic, or a wake through it.
