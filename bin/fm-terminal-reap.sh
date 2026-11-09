@@ -89,11 +89,17 @@
 # their socket, so owner-gone judges only the directory, not other clients; for
 # that reason only --apply --browsers stops browsers.
 # --apply --browsers stops a browser with SIGTERM to its root and descendants, only after
-# re-reading that every process still has the start time and command it was
-# classified with. It never sends SIGKILL.
+# re-reading that every process still has the start time and command recorded
+# when it was classified. A process is recorded only when it provably started
+# before the process-table snapshot it was classified from, so a pid reused
+# after that snapshot is never signalled. It never sends SIGKILL.
 #
 # --apply re-proves each terminal immediately before closing it: the records are
-# re-read, and fm_backend_orca_agent_state must still report dead or missing.
+# re-read, fm_backend_orca_agent_state must still report dead or missing, and
+# Orca must still name the session pid it was classified with (a replaced
+# session is skipped). An idle-task close also re-reads the working-directory
+# scan and the landed state, and a gone-worktree close requires the worktree to
+# be still gone; any change or unreadable fact skips the close.
 # Environment: FM_HOME selects the home; FM_ROOT_OVERRIDE as elsewhere.
 set -u
 
@@ -184,6 +190,7 @@ read_inventory() {
     echo "error: orca terminal list failed; nothing was closed" >&2; return 1; }
   orca diagnostics memory --json > "$WORK/memory.json" 2>/dev/null || {
     echo "error: orca diagnostics memory failed; nothing was closed" >&2; return 1; }
+  SNAP_EPOCH=$(date +%s)
   LC_ALL=C ps -axo pid=,ppid=,etime=,args= > "$WORK/ps.txt" 2>/dev/null || {
     echo "error: the process table could not be read; nothing was closed" >&2; return 1; }
   if fm_backend_orca_cwd_scan > "$WORK/cwd.txt"; then
@@ -399,14 +406,39 @@ recorded_now() {
     END { exit found ? 0 : 1 }'
 }
 
-close_terminal() {  # <handle> <path> -> closed|skipped:<why>|failed:<why>
-  local handle=$1 path=$2 state out
+close_terminal() {  # <handle> <path> <class> <pid> -> closed|skipped:<why>|failed:<why>
+  local handle=$1 path=$2 class=$3 pid=$4 state out facts pty now scan agents
   if recorded_now "$handle" "$path"; then printf 'skipped\tnow-recorded'; return 0; fi
   state=$(fm_backend_orca_agent_state "$handle")
   case "$state" in
     dead|missing) ;;
     *) printf 'skipped\tnow-%s' "$state"; return 0 ;;
   esac
+  case "$class" in
+    idle-task)
+      scan=$(fm_backend_orca_cwd_scan) || { printf 'skipped\tnow-unproven'; return 0; }
+      agents=$(fm_backend_orca_worktree_agent_pids "$path" "$scan") || { printf 'skipped\tnow-unproven'; return 0; }
+      [ -z "$agents" ] || { printf 'skipped\tnow-live-worker'; return 0; }
+      case "$(landed_state "$path")" in
+        landed) ;;
+        unlanded) printf 'skipped\tnow-unlanded'; return 0 ;;
+        *) printf 'skipped\tnow-unproven'; return 0 ;;
+      esac
+      ;;
+    gone-worktree)
+      [ ! -e "$path" ] || { printf 'skipped\tnow-present'; return 0; }
+      ;;
+  esac
+  # Last, so a session replaced after the state read is still caught: a
+  # connected terminal must still be rooted at the classified session pid.
+  if [ "$state" = dead ]; then
+    facts=$(fm_backend_orca_terminal_facts "$handle") || { printf 'skipped\tnow-unreadable'; return 0; }
+    IFS=$'\x1f' read -r _ _ _ _ pty _ _ <<FACTS
+$facts
+FACTS
+    now=$(fm_backend_orca_session_pid "$pty") || { printf 'skipped\tnow-unreadable'; return 0; }
+    [ "$now" = "$pid" ] || { printf 'skipped\tnow-replaced'; return 0; }
+  fi
   out=$(orca terminal close --terminal "$handle" --json 2>/dev/null) || true
   if printf '%s' "$out" | node -e '
 let d; try { d = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (_) { process.exit(1); }
@@ -419,6 +451,35 @@ process.exit(d && d.ok === true ? 0 : 1);'; then
 
 proc_identity() {  # <pid> -> start time and command, or nothing when gone
   LC_ALL=C ps -p "$1" -o lstart=,args= 2>/dev/null
+}
+
+etime_secs() {  # <[[dd-]hh:]mm:ss> -> seconds, or nothing when malformed
+  local e=$1 d=0 h=0 m s rest
+  case "$e" in *-*) d=${e%%-*}; e=${e#*-} ;; esac
+  case "$e" in
+    *:*:*) h=${e%%:*}; rest=${e#*:}; m=${rest%%:*}; s=${rest#*:} ;;
+    *:*) m=${e%%:*}; s=${e#*:} ;;
+    *) return 0 ;;
+  esac
+  case "$d$h$m$s" in *[!0-9]*|'') return 0 ;; esac
+  printf '%d' $((10#$d * 86400 + 10#$h * 3600 + 10#$m * 60 + 10#$s))
+}
+
+# snapshot_identity <pid>: the pid's identity, printed only when the process
+# provably started before SNAP_EPOCH, the time taken just before the process
+# table it was classified from. A process that started in or after the
+# snapshot's second may be a reused pid and prints nothing.
+snapshot_identity() {  # <pid>
+  local first second et age
+  first=$(proc_identity "$1")
+  [ -n "$first" ] || return 0
+  et=$(LC_ALL=C ps -p "$1" -o etime= 2>/dev/null | tr -d ' ')
+  second=$(proc_identity "$1")
+  [ "$first" = "$second" ] || return 0
+  age=$(etime_secs "$et")
+  [ -n "$age" ] || return 0
+  [ $(( $(date +%s) - age )) -lt "$SNAP_EPOCH" ] || return 0
+  printf '%s' "$first"
 }
 
 stop_browser() {  # <root-pid> <identity-file> -> stopped|skipped:<why>|failed:<why>
@@ -451,11 +512,11 @@ while IFS=$'\t' read -r handle prelim scope pid path detail; do
   else
     verdict=$'keep\t'"$prelim"
   fi
-  printf '%s\t%s\t%s\t%s\n' "$verdict" "$handle" "$path" "$detail" >> "$WORK/terminal-verdicts.tsv"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$verdict" "$handle" "${pid:--}" "$path" "$detail" >> "$WORK/terminal-verdicts.tsv"
 done < "$WORK/terminals.tsv"
 
 # classify_browsers: judge browser roots against the current tables and record
-# each reap root's process identities at that same moment.
+# the identity of each reap root's processes that started before that table.
 classify_browsers() {
   local bpid bverdict bdesc p id
   if [ "$BROWSERS" = 1 ]; then
@@ -467,7 +528,7 @@ classify_browsers() {
     [ "$bverdict" = reap ] || continue
     : > "$WORK/browser-$bpid.id"
     for p in ${bdesc//,/ }; do
-      id=$(proc_identity "$p")
+      id=$(snapshot_identity "$p")
       [ -n "$id" ] && printf '%s\t%s\n' "$p" "$id" >> "$WORK/browser-$bpid.id"
     done
   done < "$WORK/browsers.tsv"
@@ -480,10 +541,10 @@ if [ "$APPLY" = 0 ]; then
   classify_browsers || exit 1
 fi
 
-while IFS=$'\t' read -r action class handle path detail; do
+while IFS=$'\t' read -r action class handle pid path detail; do
   N_TOTAL+=1
   if [ "$action" = reap ] && [ "$APPLY" = 1 ]; then
-    result=$(close_terminal "$handle" "$path")
+    result=$(close_terminal "$handle" "$path" "$class" "$pid")
     case "$result" in closed*) N_DONE+=1 ;; skipped*) N_SKIP+=1 ;; *) N_FAIL+=1 ;; esac
     action=${result%%$'\t'*}
     why=${result#*$'\t'}
@@ -498,6 +559,7 @@ done < "$WORK/terminal-verdicts.tsv"
 
 if [ "$APPLY" = 1 ]; then
   : > "$WORK/exclude.txt"
+  SNAP_EPOCH=$(date +%s)
   if ! LC_ALL=C ps -axo pid=,ppid=,etime=,args= > "$WORK/ps.txt" 2>/dev/null; then
     echo "error: the process table could not be re-read; no browser was stopped" >&2
     : > "$WORK/browsers.tsv"

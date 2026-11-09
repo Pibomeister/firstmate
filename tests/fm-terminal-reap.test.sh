@@ -44,6 +44,8 @@ case "$1 $2" in
   "terminal list") cat "$FX/list.json" ;;
   "diagnostics memory") cat "$FX/memory.json" ;;
   "terminal show")
+    # A per-handle hook changes the world between the listing and the close.
+    if [ -x "$FX/onshow-$4" ]; then "$FX/onshow-$4"; fi
     if [ -f "$FX/show-$4.json" ]; then cat "$FX/show-$4.json"
     else printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n'; exit 1; fi
     ;;
@@ -55,7 +57,17 @@ cat > "$FB/lsof" <<'SH'
 #!/usr/bin/env bash
 cat "$FX/lsof.out"
 SH
-chmod +x "$FB/orca" "$FB/lsof"
+# ps passes through, except that a pid with a fresh-<pid> marker reads as just
+# started, the shape of a pid reused after the reaper's process snapshot.
+REAL_PS=$(command -v ps)
+cat > "$FB/ps" <<SH
+#!/usr/bin/env bash
+if [ "\$1" = -p ] && [ "\${3:-}" = -o ] && [ "\${4:-}" = etime= ] && [ -n "\${FX:-}" ] && [ -f "\$FX/fresh-\$2" ]; then
+  printf '   00:00\n'; exit 0
+fi
+exec '$REAL_PS' "\$@"
+SH
+chmod +x "$FB/orca" "$FB/lsof" "$FB/ps"
 
 # Process starters set PID rather than print it: a command substitution would
 # wait on the background process and lose the tracked pid in its subshell.
@@ -263,6 +275,72 @@ test_apply_closes_only_reproven_orphans() {
   pass "fm-terminal-reap: --apply closes only orphans it re-proves just before closing"
 }
 
+# Each terminal here is a reap candidate when listed, and a hook on Orca's
+# fresh read changes one fact before the close.
+test_apply_reproves_facts_that_change_before_the_close() {
+  local bare p closed
+  fixture_reset late
+  HOME_DIR="$FX/home"
+  WS="$FX/workspaces"
+  mkdir -p "$HOME_DIR/state" "$WS"
+  fm_git_init_commit "$FX/src"
+  bare="$FX/src.git"
+  git clone -q --bare "$FX/src" "$bare"
+  for p in fm-late-dirty fm-late-ok; do clone_worktree "$bare" "$WS/$p"; done
+  # An empty working-directory scan reads as unproven, so list this suite.
+  cwd_row "$$" "$FX"
+
+  idle_term term-replaced pty-replaced "$HOME_DIR" "fm main successor"
+  idle_shell; session pty-replaced-now "$PID"
+  show term-replaced pty-replaced-now "$HOME_DIR"
+
+  idle_term term-late-dirty pty-late-dirty "$WS/fm-late-dirty" fm-late-dirty
+  show term-late-dirty pty-late-dirty "$WS/fm-late-dirty"
+  printf '#!/usr/bin/env bash\nprintf "late\\n" > %q\n' "$WS/fm-late-dirty/late.txt" > "$FX/onshow-term-late-dirty"
+
+  idle_term term-regrown pty-regrown "$WS/fm-regrown" fm-regrown
+  show term-regrown pty-regrown "$WS/fm-regrown"
+  printf '#!/usr/bin/env bash\nmkdir -p %q\n' "$WS/fm-regrown" > "$FX/onshow-term-regrown"
+
+  idle_term term-late-ok pty-late-ok "$WS/fm-late-ok" fm-late-ok
+  show term-late-ok pty-late-ok "$WS/fm-late-ok"
+
+  if [ -n "$STANDIN" ]; then
+    local worker
+    clone_worktree "$bare" "$WS/fm-late-worker"
+    idle_term term-late-worker pty-late-worker "$WS/fm-late-worker" fm-late-worker
+    show term-late-worker pty-late-worker "$WS/fm-late-worker"
+    "$TMP_ROOT/agent-bin/claude" 600 >/dev/null 2>&1 </dev/null &
+    worker=$!
+    disown "$worker" 2>/dev/null || true
+    TRACKED_PIDS+=("$worker")
+    printf '#!/usr/bin/env bash\nprintf "p%%s\\nn%%s\\n" %q %q >> %q\n' "$worker" "$WS/fm-late-worker" "$FX/lsof.out" \
+      > "$FX/onshow-term-late-worker"
+  fi
+  chmod +x "$FX"/onshow-*
+  fixture_write
+
+  run_reap --no-browsers
+  expect term-replaced "reap idle-session" "the listed session is an idle firstmate session"
+  expect term-late-dirty "reap idle-task" "the listed worktree is clean and landed"
+  expect term-regrown "reap gone-worktree" "the listed worktree is gone"
+
+  run_reap --apply --no-browsers
+  [ "$RC" = 0 ] || fail "an apply whose closes all succeed or skip must exit 0, got $RC: $(cat "$FX/stderr")"
+  expect term-replaced "skipped idle-session:now-replaced" "a terminal whose session was replaced since the listing must be skipped"
+  expect term-late-dirty "skipped idle-task:now-unlanded" "a worktree that gained uncommitted work since the listing must keep its terminal"
+  expect term-regrown "skipped gone-worktree:now-present" "a worktree that reappeared since the listing must keep its terminal"
+  expect term-late-ok "closed idle-task" "an unchanged landed worktree's idle shell is still closed"
+  if [ -n "$STANDIN" ]; then
+    expect term-late-worker "skipped idle-task:now-live-worker" "a worktree that gained a worker since the listing must keep its terminal"
+  else
+    pass "SKIP: late live-worker case (no agent stand-in survives here)"
+  fi
+  closed=$(sort "$FX/closed.log" | tr '\n' ' ')
+  [ "$closed" = 'term-late-ok ' ] || fail "only the unchanged orphan may close, got '$closed'"
+  pass "fm-terminal-reap: --apply re-proves the session, worktree, and landed state just before each close"
+}
+
 test_unreadable_inventory_closes_nothing() {
   build_world broken
   printf 'not json\n' > "$FX/list.json"
@@ -285,7 +363,7 @@ fake_browser() {  # <dir> -> PID
 }
 
 test_browsers_are_reaped_only_without_a_live_owner() {
-  local gone live task owner
+  local gone live task owner reused
   fixture_reset browsers
   HOME_DIR="$FX/home"
   mkdir -p "$HOME_DIR/state" "$FX/live-dir" "$FX/task-wt"
@@ -294,12 +372,16 @@ test_browsers_are_reaped_only_without_a_live_owner() {
   fake_browser; gone=$PID
   fake_browser; live=$PID
   fake_browser; task=$PID
+  fake_browser; reused=$PID
   idle_shell; owner=$PID
   cwd_row "$gone" "$FX/gone-dir"
+  cwd_row "$reused" "$FX/reused-dir"
   cwd_row "$live" "$FX/live-dir"
   cwd_row "$owner" "$FX/live-dir/sub"
   cwd_row "$task" "$FX/task-wt"
-  sleep 0.3
+  # Identities are recorded only for processes that started before the
+  # snapshot's second, so let these age past it.
+  sleep 1.2
   run_reap
   [ "$RC" = 0 ] || fail "the browser dry run must exit 0, got $RC: $(cat "$FX/stderr")"
   expect "$gone" "reap owner-gone" "a browser whose working directory is gone has no owner"
@@ -313,14 +395,17 @@ test_browsers_are_reaped_only_without_a_live_owner() {
   sleep 0.3
   kill -0 "$gone" 2>/dev/null || fail "--apply without --browsers must stop no browser"
 
+  : > "$FX/fresh-$reused"
   run_reap --apply --browsers
   [ "$RC" = 0 ] || fail "the browser apply must exit 0, got $RC: $(cat "$FX/stderr")"
   expect "$gone" "stopped owner-gone" "an apply stops an ownerless browser"
+  expect "$reused" "skipped owner-gone:gone" "a root that reads as started after the snapshot may be a reused pid and is never signalled"
   local i
   for i in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$gone" 2>/dev/null || break; sleep 0.2; done
   ! kill -0 "$gone" 2>/dev/null || fail "an apply must stop the ownerless browser's root"
   kill -0 "$live" 2>/dev/null || fail "an apply must leave a browser with a live owner running"
   kill -0 "$task" 2>/dev/null || fail "an apply must leave a task's browser running"
+  kill -0 "$reused" 2>/dev/null || fail "an apply must never signal a possibly reused pid"
   pass "fm-terminal-reap: browsers are stopped only when nothing else works in their directory"
 }
 
@@ -328,5 +413,6 @@ fm_test_run \
   test_dry_run_classifies_every_owner_and_closes_nothing \
   test_min_age_keeps_young_sessions \
   test_apply_closes_only_reproven_orphans \
+  test_apply_reproves_facts_that_change_before_the_close \
   test_unreadable_inventory_closes_nothing \
   test_browsers_are_reaped_only_without_a_live_owner
