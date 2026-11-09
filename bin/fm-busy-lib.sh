@@ -61,7 +61,7 @@
 # Classifier-only sources (never written into a record):
 #   endpoint-gone, herdr-native, rex-native, t3code-native, tern-native, grok-regex, rovo-regex, agy-regex, muse-session-log,
 #   cursor-transcript, missing, malformed, gen-mismatch, source-mismatch,
-#   kimi-unverified, codex-unverified, capture-failed, no-target, launch-prompt
+#   kimi-unverified, codex-unverified, codex-turn-ended, capture-failed, no-target, launch-prompt
 #
 # Classification (fm_busy_classify): busy | idle | unknown | dead, always
 # with the producing source as the second token. Precedence:
@@ -69,7 +69,8 @@
 #   2. a t3code task: the T3 server's busy, idle, or unknown verdict
 #      (the provider reports it for claude and codex alike, and no
 #      shell sits in front of the agent)
-#   3. standalone Kimi before verification       -> unknown kimi-unverified
+#   3. standalone Kimi before verification       -> unknown kimi-unverified;
+#      Codex before verification -> fm_busy_codex_native_turn_state
 #   4. a valid, gen-matching, source-trusted record -> its state and source,
 #      UNLESS the record is still the untouched seed fm-spawn wrote at arm
 #      time (state=busy source=fm-spawn - no adapter hook has posted since
@@ -136,14 +137,17 @@
 # fm_busy_codex_hooks_verified): the approved contract prefers Codex's
 # app-server turn lifecycle with capability negotiation, and sanctions its
 # stable lifecycle hooks as the intermediate. Neither is usable on the
-# installed binary, so Codex classifies unknown codex-unverified rather than
-# falling back to idle, and fm-spawn installs no Codex busy wiring.
+# installed binary, so fm-spawn installs no Codex busy wiring and Codex
+# classifies through fm_busy_codex_native_turn_state, never idle on native
+# idle alone.
 # docs/verification/supervision.md owns the evidence for both probes.
 #
 # Sourcing: set -u and set -e safe; no subshell-unfriendly globals.
 
 # shellcheck source=bin/fm-bash-compat-lib.sh
 . "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)/fm-bash-compat-lib.sh"
+# shellcheck source=bin/fm-lock-lib.sh
+. "$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)/fm-lock-lib.sh"
 FM_BUSY_LIB_VERSION=v1
 
 # Standalone-Kimi verification gate. Empty means no installed Kimi version
@@ -199,9 +203,50 @@ fm_busy_codex_hooks_verified() {
 
 # fm_busy_codex_semantic_source: 0 when ANY verified Codex semantic source
 # exists. fm-spawn arms and wires Codex only behind this gate, and the
-# classifier reports unknown codex-unverified until it opens.
+# classifier uses fm_busy_codex_native_turn_state until it opens.
 fm_busy_codex_semantic_source() {
   fm_busy_codex_appserver_observable || fm_busy_codex_hooks_verified
+}
+
+# fm_busy_codex_native_turn_state: Codex's verdict while the gate above stays
+# closed, from two signals firstmate already holds. A native busy verdict from
+# herdr, rex, or tern is busy, exactly as for a task with no record. Idle needs
+# herdr's native idle AND the task's turn-ended marker (touched by the crew
+# launch's notify= program, bin/fm-spawn.sh) strictly newer than the task's last
+# recorded turn start: the spawn incarnation in its meta spawn_gen=, every steer
+# record in its inbox or handled/, and the last doorbell ring. Native idle alone
+# stays unknown because a long foreground tool call also reads idle. Any other
+# combination, including a missing marker or spawn time, is unknown.
+# ponytail: a turn typed straight into the pane is no recorded start, so its
+# tool calls can read idle against the previous turn's marker; a Codex
+# semantic source (fm_busy_codex_semantic_source) replaces this.
+fm_busy_codex_native_turn_state() {  # <backend> <target> <state-dir> <id>
+  local backend=$1 target=$2 state=$3 id=$4 native='' ended start f m
+  case "$backend" in
+    herdr|rex|tern)
+      if command -v fm_backend_busy_state >/dev/null 2>&1; then
+        native=$(fm_backend_busy_state "$backend" "$target" 2>/dev/null || true)
+      fi
+      ;;
+  esac
+  if [ "$native" = busy ]; then
+    printf 'busy %s-native' "$backend"
+    return 0
+  fi
+  if [ "$backend" = herdr ] && [ "$native" = idle ] \
+    && ended=$(fm_lock_path_mtime "$state/$id.turn-ended") \
+    && start=$(sed -n 's/^spawn_gen=s\([0-9][0-9]*\)\..*/\1/p' "$state/$id.meta" 2>/dev/null) \
+    && [ -n "$start" ]; then
+    for f in "$state/$id.inbox"/*.msg "$state/$id.inbox/handled"/*.msg "$state/$id.inbox/.ring-state"; do
+      m=$(fm_lock_path_mtime "$f") || continue
+      [ "$m" -le "$start" ] || start=$m
+    done
+    if [ "$ended" -gt "$start" ]; then
+      printf 'idle codex-turn-ended'
+      return 0
+    fi
+  fi
+  printf 'unknown codex-unverified'
 }
 
 fm_busy_record_path() {  # <state-dir> <id>
@@ -1095,7 +1140,7 @@ fm_busy_classify() {  # <backend> <target> <harness> <id> <state-dir> [tail40]
       ;;
     codex*)
       if ! fm_busy_codex_semantic_source; then
-        printf 'unknown codex-unverified'
+        fm_busy_codex_native_turn_state "$backend" "$target" "$state" "$id"
         return 0
       fi
       ;;
