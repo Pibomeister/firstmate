@@ -1,0 +1,20 @@
+-- crew-state as the recorder reads it:
+state: unknown · source: pane · harness state unavailable (unknown codex-unverified)
+$ fm-soak-record.sh start ...
+claude readable
+exit=0
+$ fm-soak-record.sh sample ...
+exit=0
+$ fm-soak-record.sh sample ...
+exit=0
+-- load.tsv
+1794233599	0	0	0	-
+1794233599	0	0	0	-
+-- handoff-events.tsv rows: 1
+$ fm-soak-record.sh finish ...
+exit=0
+{"handoff_count":1,"violations":[]}
+-- wake-ledger.tsv
+1794233599	ack	-	7	7	["k"]
+-- handoffs kept:
+handoff-a.md

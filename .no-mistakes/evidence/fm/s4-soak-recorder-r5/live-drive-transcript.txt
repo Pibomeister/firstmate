@@ -1,0 +1,121 @@
+== S1 readable-harnesses / inventory
+$ fm-soak-record.sh readable-harnesses
+claude
+exit=0
+$ fm-soak-record.sh inventory --home <home> --harness claude
+claude readable
+exit=0
+$ fm-soak-record.sh inventory --home <home> --harness claude --harness codex
+claude readable
+codex unreadable
+exit=3
+== S2 start refuses unreadable harness
+$ fm-soak-record.sh start --home <home> --out <work>/out --label baseline --harness codex
+codex unreadable
+fm-soak-record: refusing to start: a declared harness is unreadable
+exit=3
+ls: <work>/out/soak.json: No such file or directory
+== S3 start refuses --out inside / containing home
+$ fm-soak-record.sh start --home <home> --out <home>/data/out --label baseline --harness claude
+fm-soak-record: --out is inside the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.UdZ97P/data/out
+exit=2
+$ fm-soak-record.sh start --home <home>/data --out <home> --label baseline --harness claude
+fm-soak-record: --out contains the soak home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.UdZ97P
+exit=2
+== S4 start baseline
+$ fm-soak-record.sh start --home <home> --out <work>/out --label baseline --harness claude
+claude readable
+exit=0
+{
+  "label": "baseline",
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.UdZ97P",
+  "revision": "2a77d70bb9239b5be75fbda7f24fe9d4ea2976b1",
+  "started_at": 1794233572,
+  "harnesses": [
+    "claude"
+  ],
+  "session_ids": []
+}
+revision matches home HEAD: yes
+== S5 sample
+$ fm-soak-record.sh sample --home <home> --out <work>/out
+exit=0
+1794233573	0	3	1	sess-live-1
+-- handoff-events
+1794233573	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.UdZ97P/data/handoff-a.md
+home unchanged by sample: yes
+== S6 sample refuses another --home
+$ fm-soak-record.sh sample --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.aHI3bIij0K --out <work>/out
+fm-soak-record: --home is not the home this soak run started on: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.aHI3bIij0K
+exit=2
+== S7 finish refuses --watchdog-dir inside --out
+$ fm-soak-record.sh finish --home <home> --out <work>/out --watchdog-dir <work>/out/wdx --transcript-dir <work>/tx
+fm-soak-record: --watchdog-dir is --out or inside it: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soakwork.jNf788/out/wdx
+exit=2
+finished_at after refusal: unset
+== S8 finish
+$ fm-soak-record.sh finish --home <home> --out <work>/out --watchdog-dir <work>/wd --transcript-dir <work>/tx
+exit=0
+{
+  "label": "baseline",
+  "finished_at_set": true,
+  "session_ids": [
+    {
+      "id": "sess-live-1",
+      "transcript": "missing-transcript"
+    },
+    {
+      "id": "sess-live-2",
+      "transcript": "transcripts/sess-live-2.jsonl"
+    }
+  ],
+  "handoff_count": 2,
+  "violations": []
+}
+-- out tree
+./handoff-events.tsv
+./handoffs/handoff-a.md
+./load.tsv
+./soak.json
+./transcripts/sess-live-2.jsonl
+./wake-ledger.tsv
+./watchdog/actions.tsv
+./watchdog/handoffs/h1.md
+-- watchdog/actions.tsv
+1794233573	w1	<home>	primary	frozen	restart	done	pickup verified
+-- wake-ledger.tsv
+home unchanged by finish: yes
+== S9 sample/finish after finish refused
+$ fm-soak-record.sh sample --home <home> --out <work>/out
+fm-soak-record: the soak run in /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soakwork.jNf788/out is already finished
+exit=1
+$ fm-soak-record.sh finish --home <home> --out <work>/out --watchdog-dir <work>/wd --transcript-dir <work>/tx
+fm-soak-record: the soak run in /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soakwork.jNf788/out is already finished
+exit=1
+== S10 post-change violations without fm-activity-sources.sh
+$ fm-soak-record.sh start --home <home> --out <work>/out2 --label post-change --harness claude
+claude readable
+exit=0
+$ fm-soak-record.sh finish --home <home> --out <work>/out2 --watchdog-dir <work>/wd --transcript-dir <work>/tx
+exit=0
+[{"kind":"activity-sources-unavailable","harness":"claude"}]
+== S11 hard-linked load.tsv to a home file is refused
+$ fm-soak-record.sh start --home <home> --out <work>/out3 --label baseline --harness claude
+claude readable
+exit=0
+$ fm-soak-record.sh sample --home <home> --out <work>/out3
+fm-soak-record: refusing to write through a hard link: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-soakwork.jNf788/out3/load.tsv
+exit=2
+home unchanged: yes
+== S12 case-alias --home accepted and pinned (case-insensitive fs)
+$ fm-soak-record.sh start --home <home> --out <work>/out4 --label baseline --harness claude
+claude readable
+exit=0
+$ fm-soak-record.sh sample --home <home> --out <work>/out4
+exit=0
+$ fm-soak-record.sh sample --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//FM-LAB.UdZ97P --out <work>/out4
+exit=0
+$ fm-soak-record.sh finish --home <home> --out <work>/out4 --watchdog-dir <work>/wd --transcript-dir <work>/tx
+exit=0
+handoff-event rows: 1
+{"handoff_count":0}
