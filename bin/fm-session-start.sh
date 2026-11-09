@@ -559,9 +559,11 @@ print_context_file() {
 # first saved to WAKE_PRESENTATION_FILE, and only then does the inline copy leave
 # out its historical `wake annotation:` lines and every OPEN DECISIONS or STATUS
 # OUTCOME BACKSTOP item past the first WAKE_SECTION_ITEMS of its section, each
-# omission disclosed with its count and the saved path. Wake records, UNREAD
-# STATUS, RECORD DIVERGENCE, warnings, banners, section tails, and the
-# acknowledgement line always print inline. Both bounded sections are refolded
+# omission disclosed with its count and the saved path. A bounded section ends
+# at a blank line, a guard banner, a warning, a `wake drain:` diagnostic, or any
+# all-capitals drain heading followed by ` (` or `:`, so every later section
+# (UNREAD STATUS, RECORD DIVERGENCE, BRANCH OUTCOMES, section tails, the
+# acknowledgement line) always prints inline. Both bounded sections are refolded
 # from the durable status logs at every drain. If the save fails, nothing is
 # left out.
 print_wake_presentation() {
@@ -583,7 +585,7 @@ print_wake_presentation() {
       /^OPEN DECISIONS \(/ { close_section(); print; section = "OPEN DECISIONS"; next }
       /^STATUS OUTCOME BACKSTOP \(/ { close_section(); print; section = "STATUS OUTCOME BACKSTOP"; next }
       section != "" && $0 != "" && index($0, bullet) != 1 \
-        && $0 !~ /^(OPEN DECISIONS|STATUS OUTCOME BACKSTOP|UNREAD STATUS|RECORD DIVERGENCE|WAKE_ACK_REQUIRED|WARNING)/ {
+        && $0 !~ /^([A-Z][A-Z_, ]*( [(]|:)|WARNING|wake drain:)/ {
         if (shown < keep) { shown++; print } else cut++
         next
       }

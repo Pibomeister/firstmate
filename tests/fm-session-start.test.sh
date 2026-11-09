@@ -1116,6 +1116,48 @@ EOF
   pass "a large wake presentation saves to a file, then bounds annotation and open-decision lines inline while every record prints"
 }
 
+# On a large presentation, a drain section that follows a bounded one is not
+# counted as its items: BRANCH OUTCOMES directly after STATUS OUTCOME BACKSTOP
+# prints whole inline, while only the backstop's own items are bounded.
+test_wake_presentation_prints_section_after_bounded_one_whole() {
+  local rec root home fakebin out saved i old
+  rec=$(new_world wake-spill-follower)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  : > "$home/config/supervision-host"
+  awk 'BEGIN { for (i = 1; i <= 150; i++) printf "working: step %03d padding padding padding padding padding padding\n", i }' \
+    > "$home/state/task-w.status"
+  append_wake "$home/state" signal task-w.status "working: step 150" || fail "seed wake failed"
+  old=$(( $(date +%s) - 20 ))
+  i=1
+  while [ "$i" -le 8 ]; do
+    printf 'done: finished deliverable number %s\n' "$i" > "$home/state/task-b$i.status"
+    perl -e 'utime($ARGV[0], $ARGV[0], $ARGV[1]) or exit 1' "$old" "$home/state/task-b$i.status" \
+      || fail "could not age the backstop status"
+    i=$((i + 1))
+  done
+  FM_HOME="$home" "$ROOT/bin/fm-branch-outcome.sh" append \
+    --task task-o --verdict captain --summary 'outcome for the captain after the backstop' >/dev/null \
+    || fail "could not record the captain branch outcome"
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  saved="$home/state/.session-start-wake-presentation"
+
+  [ -f "$saved" ] || fail "the large presentation was not saved: $out"
+  assert_contains "$out" "STATUS OUTCOME BACKSTOP (" "the backstop heading left the inline copy"
+  assert_contains "$out" "(3 more STATUS OUTCOME BACKSTOP line(s) left out here; the saved presentation at $saved lists them)" \
+    "the backstop bound did not count only its own items"
+  assert_contains "$out" "BRANCH OUTCOMES (captain outcomes" "the branch outcomes heading was swallowed by the backstop bound"
+  assert_contains "$out" "outcome for the captain after the backstop" "a branch outcome line was swallowed by the backstop bound"
+  assert_contains "$out" "BRANCH OUTCOMES: after processing them run bin/fm-branch-outcome.sh mark-processed --through 1" \
+    "the branch outcomes processing command was swallowed by the backstop bound"
+
+  pass "a drain section after a bounded one prints whole inline on a large presentation"
+}
+
 # The digest every primary handoff pays stays under 30 KB on a large home, and
 # none of the safety signals is cut to get there.
 test_digest_stays_under_size_budget_on_large_home() {
@@ -3500,6 +3542,7 @@ test_context_digest_absent_empty_present
 test_context_large_files_are_indexed
 test_backlog_in_flight_rows_listed_once
 test_wake_presentation_spills_annotations_to_a_saved_file
+test_wake_presentation_prints_section_after_bounded_one_whole
 test_digest_stays_under_size_budget_on_large_home
 test_lock_refusal_read_only_path
 test_lock_write_failure_read_only_path
