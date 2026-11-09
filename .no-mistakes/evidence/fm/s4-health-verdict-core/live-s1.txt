@@ -1,0 +1,22 @@
+## S0 monitor-status written by session start:
+status=uncovered at=1794183699
+## S1 verdict before any heartbeat or watchdog pass:
+verdict=unknown reason=heartbeat-missing,lock-unknown,monitor-uncovered heartbeat_age=unknown lock=unknown watcher_age=unknown monitor=uncovered at=1794183750
+## publish heartbeat:
+rc=0
+{'schema': 'fm-heartbeat.v1', 'generated_epoch': 1794183750, 'published_epoch': 1794183753, 'stale_after_secs': None}
+## watchdog once --dry-run:
+rc=0
+## captain record:
+owner=session:f77bde53-fbb1-421c-a7ed-78db4c773712
+lock_pid=38783
+session=f77bde53-fbb1-421c-a7ed-78db4c773712
+alive=live
+usage_limit_autowait=0
+backend=
+target=
+moved_at=1794183698
+lock_at=1794183698
+checked_at=1794183753
+source=watchdog
+status=uncovered at=1794183753

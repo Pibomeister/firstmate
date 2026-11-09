@@ -1,0 +1,10 @@
+## S7 session ended cleanly (lock released), watchdog pass, heartbeat left to go stale:
+alive=none
+idle, heartbeat past bound:
+verdict=ok reason=idle heartbeat_age=101 lock=none watcher_age=unknown monitor=enabled at=1794183990
+## S8 open work recorded in the real dispatch ledger:
+fm-dispatch-log: unknown argument: lab goal
+verdict=ok reason=idle heartbeat_age=101 lock=none watcher_age=unknown monitor=enabled at=1794183990
+## S9 away record with no open work:
+fm-dispatch-log: goal lab-goal-1 has no received line
+verdict=dead reason=none-away heartbeat_age=101 lock=none watcher_age=unknown monitor=enabled at=1794183990

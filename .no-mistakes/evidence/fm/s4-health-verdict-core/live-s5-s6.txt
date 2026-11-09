@@ -1,0 +1,8 @@
+## S5 stop the real primary (lab tmux kill-server), then a watchdog pass:
+lock pid gone
+alive=dead
+verdict, no open work:
+verdict=dead reason=lock-dead heartbeat_age=0 lock=dead watcher_age=unknown monitor=enabled at=1794183889
+## S6 add open work via the real dispatch ledger:
+fm-dispatch-log: goal id must match [A-Za-z0-9._-]+: 'lab goal for verdict test'
+verdict=dead reason=lock-dead heartbeat_age=1 lock=dead watcher_age=unknown monitor=enabled at=1794183890

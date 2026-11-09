@@ -1,0 +1,5 @@
+## S2 live lock, fresh published heartbeat with a bound, no open work:
+{'generated_epoch': 1794183771, 'published_epoch': 1794183773, 'stale_after_secs': 85}
+verdict=unknown reason=monitor-uncovered heartbeat_age=0 lock=live watcher_age=unknown monitor=uncovered at=1794183773
+recorded:
+verdict=unknown reason=monitor-uncovered heartbeat_age=0 lock=live watcher_age=unknown monitor=uncovered at=1794183773

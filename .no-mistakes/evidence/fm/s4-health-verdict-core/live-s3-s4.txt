@@ -1,0 +1,4 @@
+## S3 same home, monitor-status set to enabled (injected record; lab has no installed monitor unit):
+verdict=ok reason=fresh heartbeat_age=9 lock=live watcher_age=unknown monitor=enabled at=1794183782
+## S4 wait past stale_after_secs=85 with no republication:
+verdict=stale reason=heartbeat-stale heartbeat_age=101 lock=live watcher_age=unknown monitor=enabled at=1794183874
