@@ -294,27 +294,30 @@ snapshot_state() {
   fi
 }
 
-# isolate_links: keep every symlink in the private copy from leading back into
-# the soak home. A Firstmate lock link names its owner directory, a sibling in
-# the same state directory, by absolute path, so such a link is re-pointed at
-# the copied sibling; any other link that resolves into the home is re-pointed
-# at a missing path inside the copy, so it still reads as a link but nothing
-# done through it, such as stale-lock recovery, reaches the home.
+# isolate_links: make every symlink in the private copy end inside the copy,
+# so nothing done through one, such as stale-lock recovery, reaches the soak
+# home or anything else outside --out. A link that names a sibling of its
+# original, by a bare name or by an absolute path into the same directory as a
+# Firstmate lock link names its owner directory, is pointed at the copied
+# sibling, itself a copied entry; every other link, including a chain through
+# a path outside the copy, is pointed at a missing path inside the copy, so it
+# still reads as a link but leads nowhere.
 isolate_links() {
-  local l t orig dest
+  local l t orig
   while IFS= read -r l; do
     t=$(readlink "$l") || continue
     orig="$HOME_DIR/state/${l#"$STATE_SNAPSHOT/state/"}"
     case "$t" in
+      ''|.|..|*/.|*/..) ;;
       /*)
         if [ -d "$(dirname -- "$t")" ] && [ "$(dirname -- "$t")" -ef "$(dirname -- "$orig")" ]; then
           relink "$l" "$(dirname -- "$l")/$(basename -- "$t")"
           continue
-        fi
-        dest=$t ;;
-      *) dest="$(dirname -- "$l")/$t" ;;
+        fi ;;
+      */*) ;;
+      *) continue ;;
     esac
-    ! within "$dest" "$HOME_DIR" || relink "$l" "$STATE_SNAPSHOT/isolated-link"
+    relink "$l" "$STATE_SNAPSHOT/isolated-link"
   done < <(find "$STATE_SNAPSHOT/state" -type l)
 }
 

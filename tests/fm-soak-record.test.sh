@@ -928,7 +928,12 @@ test_lock_recovery_on_the_state_copy_leaves_the_home_unchanged() {
   mkdir -p "$wd" "$tr" "$home/state/.control-feat-a.lock.owner.AbC123"
   printf '99999\n' > "$home/state/.control-feat-a.lock.owner.AbC123/pid"
   ln -s "$home/state/.control-feat-a.lock.owner.AbC123" "$home/state/.control-feat-a.lock"
-  # Any other link into the home is cut off from it too.
+  # A lock link reaching its owner through a link outside the home is cut off
+  # too, as is any other link into the home.
+  mkdir "$home/state/.control-feat-c.lock.owner.XyZ789"
+  printf '99998\n' > "$home/state/.control-feat-c.lock.owner.XyZ789/pid"
+  ln -s "$home/state/.control-feat-c.lock.owner.XyZ789" "$TMP_ROOT/lockcopy-owner-alias"
+  ln -s "$TMP_ROOT/lockcopy-owner-alias" "$home/state/.control-feat-c.lock"
   ln -s "$home/config" "$home/state/config-link"
   hook="$TMP_ROOT/lockcopy-hook.sh"; ran="$TMP_ROOT/lockcopy-ran"
   cat > "$hook" <<SH
@@ -936,6 +941,7 @@ test_lock_recovery_on_the_state_copy_leaves_the_home_unchanged() {
 [ -L "\$FM_STATE_OVERRIDE/.control-feat-a.lock" ] || exit 0
 . "$ROOT/bin/fm-wake-lib.sh"
 fm_lock_remove_path "\$FM_STATE_OVERRIDE/.control-feat-a.lock"
+fm_lock_remove_path "\$FM_STATE_OVERRIDE/.control-feat-c.lock"
 : 2> /dev/null > "\$FM_STATE_OVERRIDE/config-link/written"
 : > "$ran"
 SH
