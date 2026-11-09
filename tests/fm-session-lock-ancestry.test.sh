@@ -2458,8 +2458,9 @@ if [ "$FM_TEST_CHECKPOINT_THREAD" = none ]; then
 else
   python3 "$reader" bound "$watcher" "$FM_TEST_CHECKPOINT_THREAD" || exit 4
 fi
+# Like a real Codex Stop hook, the guard gets its thread only from the payload.
 printf '%s\n' '{"session_id":"T1","turn_id":"checkpoint","stop_hook_active":false}' \
-  | CODEX_THREAD_ID=T1 CODEX_SESSION_ID=T1 "$FM_HOME/bin/fm-turnend-guard.sh" > "$FM_HOME/state/guard.out" 2>&1
+  | "$FM_HOME/bin/fm-turnend-guard.sh" > "$FM_HOME/state/guard.out" 2>&1
 printf '%s\n' "$?" > "$FM_HOME/state/guard.rc"
 SH
     chmod +x "$dir/checkpoint/fm-watch-checkpoint.sh"
@@ -2474,12 +2475,72 @@ SH
   pass "session-lock: Stop binds checkpoint descendants and rejects foreign or absent thread identity"
 }
 
+# A real Codex Stop hook carries no CODEX_THREAD_ID/CODEX_SESSION_ID pair; its
+# thread id arrives only as the payload's session_id (live probe, codex-cli
+# 0.166.0). A daemon-served owner's lock line 1 is the acquiring helper, which
+# has exited by the time its own Stop fires. That Stop must be recognised as
+# the owner through the recorded thread, and a different live thread's Stop
+# must still take the read-only foreign-owner exit.
+test_codex_daemon_owner_stop_is_not_foreign() {
+  local dir sid
+  dir="$TMP_ROOT/codex-daemon-owner-stop"
+  mkdir -p "$dir/state"
+  git init -q "$dir"
+  : > "$dir/AGENTS.md"
+  : > "$dir/state/task.meta"
+  cp -R "$ROOT/bin" "$dir/bin"
+  # No detached watcher may start inside this fixture.
+  rm -f "$dir/bin/fm-watch-arm.sh"
+  printf '{"T1":"active","T2":"active"}\n' > "$dir/state/thread-states.json"
+  cat > "$dir/body.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$PPID" > "$FM_HOME/state/daemon-pid"
+CODEX_THREAD_ID=T1 CODEX_SESSION_ID=T1 "$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/acquire.out" 2>&1
+printf '%s\n' "$?" > "$FM_HOME/state/acquire.rc"
+for sid in T1 T2; do
+  printf '{"session_id":"%s","turn_id":"turn-%s","stop_hook_active":false}\n' "$sid" "$sid" \
+    | "$FM_HOME/bin/fm-turnend-guard.sh" > "$FM_HOME/state/guard-$sid.out" 2>&1
+  printf '%s\n' "$?" > "$FM_HOME/state/guard-$sid.rc"
+done
+SH
+  env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
+    FM_HOME="$dir" FM_TEST_CODEX_BODY="$dir/body.sh" FM_TEST_CODEX_SOCKET="$SOCKET_ROOT/owner-stop.sock" \
+    FM_TEST_CODEX_SERVER="$TMP_ROOT/native/server.py" \
+    "$NATIVE_CODEX" app-server --listen unix:// --managed-daemon \
+    || fail "the daemon-served Stop fixture failed (exit $?)"
+  expect_code 0 "$(cat "$dir/state/acquire.rc")" "the daemon-served owner could not acquire: $(cat "$dir/state/acquire.out")"
+  [ "$(head -n 1 "$dir/state/.lock-session")" = T1 ] || fail "the owner did not record its thread beside the lock"
+  if kill -0 "$(cat "$dir/state/.lock")" 2>/dev/null; then
+    fail "lock line 1 is still live, so the case does not reproduce a transient anchor"
+  fi
+  for sid in T1 T2; do
+    [ -s "$dir/state/guard-$sid.rc" ] || fail "$sid: the Stop guard never ran"
+  done
+  # The owner reaches its own repair path, the detached-hold attempt, which this
+  # fixture's missing fm-watch-arm.sh makes report no persistent watcher.
+  expect_code 0 "$(cat "$dir/state/guard-T1.rc")" "the owner's Stop guard: $(cat "$dir/state/guard-T1.out")"
+  assert_not_contains "$(cat "$dir/state/guard-T1.out")" "OWNED BY ANOTHER LIVE SESSION" \
+    "the owning daemon-served session's Stop was refused as a foreign session"
+  assert_contains "$(cat "$dir/state/guard-T1.out")" "HAS NO PERSISTENT WATCHER" \
+    "the owning daemon-served session's Stop did not reach its own repair path"
+  expect_code 0 "$(cat "$dir/state/guard-T2.rc")" "the foreign Stop guard: $(cat "$dir/state/guard-T2.out")"
+  assert_contains "$(cat "$dir/state/guard-T2.out")" "OWNED BY ANOTHER LIVE SESSION" \
+    "a different live thread's Stop lost the foreign-owner exit"
+  pass "session-lock: a daemon-served owner's Stop is its own by payload thread; another thread stays foreign"
+}
+
+if [ "${FM_TEST_ONLY:-}" = codex-daemon-owner-stop ]; then
+  test_codex_daemon_owner_stop_is_not_foreign
+  exit 0
+fi
+
 if [ "${FM_TEST_ONLY:-}" = codex-checkpoint-descendant ]; then
   test_codex_stop_binds_checkpoint_descendant
   exit 0
 fi
 
 test_codex_stop_binds_checkpoint_descendant
+test_codex_daemon_owner_stop_is_not_foreign
 test_version_named_session_is_identified_on_both_platforms
 test_muse_versioned_session_is_identified
 test_harness_at_namespace_pid1_is_examined

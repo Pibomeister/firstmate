@@ -145,6 +145,14 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-wake-drain.sh`       | Present and acknowledge the current actor's claimed wake rows alongside status, outcome-backstop, decision, divergence, supervision-host outcome, recovery, and supervision checks |
 | `fm-wake-grant.sh`       | Serialize Pi supervision-branch wake-row claim activation, publication, release, and deactivation |
 | `fm-wake-lib.sh`         | Shared durable wake queue, recovery generations, portable locks, and watcher identity/health helpers |
+| `fm-wake-ledger-lib.sh`  | Append-only wake ledger: one row for every wake-queue removal, naming the sequence numbers it took out |
+| `fm-wake-ledger.sh`      | Count or list wake-ledger rows over a time window, so wakes still count after a drain removed their queue rows |
+| `fm-clock-lib.sh`        | Shared fixed-clock seam (`fm_now`) for supervision ledgers and tests |
+| `fm-soak-record.sh`      | Record a baseline or post-change soak run: harness inventory, load samples, and the window's transcripts, handoffs, watchdog and wake-ledger rows, without writing inside the soak home |
+| `fm-incident-ledger-lib.sh` | Append-only incident ledger: one row per incident transition keyed by home, subject, signal and state, written under the ledger lock |
+| `fm-incident-ledger.sh`  | Print the latest incident-ledger row of a key, or the ledger rows since an epoch |
+| `fm-quiet-hours-lib.sh`  | Quiet-hours clock: whether a moment is inside the nightly or weekend quiet-hours window and when that window ends, in the config/escalation zone |
+| `fm-quiet-hours.sh`      | Print the quiet-hours reading for an epoch or for now |
 | `fm-path-lib.sh`         | Fork-free `dirname`/`basename` equivalents with no source-time side effects             |
 | `fm-classify-lib.sh`     | Shared wake classification, durable keyed-decision folds and scans, unread status selection, home-owned status-append ranges, and bounded latest-event snapshots |
 | `fm-send.sh`             | Steer a task via a durable inbox record plus doorbell, or send a supported key or typed harness invocation through the recorded backend |

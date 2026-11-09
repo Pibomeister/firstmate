@@ -504,6 +504,86 @@ test_codex_unverified_gate() {
   pass "codex classifies unknown until a semantic source passes its verification gate"
 }
 
+set_mtime() {  # <path> <epoch>
+  python3 -c 'import os, sys; t = int(sys.argv[2]); os.utime(sys.argv[1], (t, t))' "$1" "$2"
+}
+
+# Codex has no verified semantic source, so its verdict combines two signals
+# firstmate already holds: the backend's native agent status and the task's
+# turn-ended marker (codex's launch notify=) against its last recorded turn
+# start. Native idle alone is never idle, because a long tool call reads idle.
+test_codex_native_status_and_turn_marker() {
+  local state out t0=1794200000
+  state=$(new_state_dir codex-native)
+  mkdir -p "$state/t1.inbox/handled"
+  printf 'harness=codex\nspawn_gen=s%s.1.1\n' "$t0" > "$state/t1.meta"
+  # shellcheck disable=SC2329 # invoked indirectly through fm_busy_classify
+  fm_backend_busy_state() { printf '%s' "$FAKE_NATIVE"; }
+  FAKE_NATIVE=busy
+  out=$(fm_busy_classify herdr s:p codex t1 "$state")
+  [ "$out" = "busy herdr-native" ] || fail "codex with native working must classify busy, got '$out'"
+  FAKE_NATIVE=idle
+  out=$(fm_busy_classify herdr s:p codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "native idle with no turn-ended marker must stay unknown, got '$out'"
+  : > "$state/t1.turn-ended"
+  set_mtime "$state/t1.turn-ended" "$((t0 + 10))"
+  out=$(fm_busy_classify herdr s:p codex t1 "$state")
+  [ "$out" = "idle codex-turn-ended" ] || fail "native idle plus a turn end after spawn must classify idle, got '$out'"
+  # The divergence the verdict depends on: the same native idle with the
+  # marker removed is unknown, so the marker carries the idle verdict.
+  mv "$state/t1.turn-ended" "$state/t1.turn-ended.aside"
+  out=$(fm_busy_classify herdr s:p codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "native idle alone must not classify idle, got '$out'"
+  mv "$state/t1.turn-ended.aside" "$state/t1.turn-ended"
+  FAKE_NATIVE=unknown
+  out=$(fm_busy_classify herdr s:p codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "a fresh marker without native idle must stay unknown, got '$out'"
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "a backend without native status must stay unknown, got '$out'"
+  FAKE_NATIVE=idle
+  # A steer delivered after the turn end starts a new turn: contradictory.
+  printf 'schema=fm-task-inbox.v1\n--\nsteer\n' > "$state/t1.inbox/001.msg"
+  set_mtime "$state/t1.inbox/001.msg" "$((t0 + 20))"
+  out=$(fm_busy_classify herdr s:p codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "a steer newer than the turn end must stay unknown, got '$out'"
+  # Acknowledging the steer keeps its delivery time as a turn start.
+  mv "$state/t1.inbox/001.msg" "$state/t1.inbox/handled/001.msg"
+  out=$(fm_busy_classify herdr s:p codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "a handled steer newer than the turn end must stay unknown, got '$out'"
+  set_mtime "$state/t1.turn-ended" "$((t0 + 30))"
+  out=$(fm_busy_classify herdr s:p codex t1 "$state")
+  [ "$out" = "idle codex-turn-ended" ] || fail "a turn end after the handled steer must classify idle, got '$out'"
+  # A doorbell re-ring is a turn start too.
+  printf '001.msg\t1\t%s\n' "$((t0 + 40))" > "$state/t1.inbox/.ring-state"
+  set_mtime "$state/t1.inbox/.ring-state" "$((t0 + 40))"
+  out=$(fm_busy_classify herdr s:p codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "a ring newer than the turn end must stay unknown, got '$out'"
+  # A same-second tie proves no order, so it stays unknown.
+  set_mtime "$state/t1.turn-ended" "$((t0 + 40))"
+  out=$(fm_busy_classify herdr s:p codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "a turn end tied with the last start must stay unknown, got '$out'"
+  set_mtime "$state/t1.turn-ended" "$((t0 + 50))"
+  out=$(fm_busy_classify herdr s:p codex t1 "$state")
+  [ "$out" = "idle codex-turn-ended" ] || fail "a turn end after every recorded start must classify idle, got '$out'"
+  # A typed send (fm-send's `$skill` or `/` plane) records its own turn start.
+  : > "$state/t1.turn-start"
+  set_mtime "$state/t1.turn-start" "$((t0 + 55))"
+  out=$(fm_busy_classify herdr s:p codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "a typed turn start newer than the turn end must stay unknown, got '$out'"
+  set_mtime "$state/t1.turn-ended" "$((t0 + 56))"
+  out=$(fm_busy_classify herdr s:p codex t1 "$state")
+  [ "$out" = "idle codex-turn-ended" ] || fail "a turn end after the typed start must classify idle, got '$out'"
+  # A relaunch records a newer spawn incarnation, so an older marker is stale.
+  printf 'harness=codex\nspawn_gen=s%s.2.2\n' "$((t0 + 60))" > "$state/t1.meta"
+  out=$(fm_busy_classify herdr s:p codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "a marker older than the current spawn must stay unknown, got '$out'"
+  printf 'harness=codex\n' > "$state/t1.meta"
+  out=$(fm_busy_classify herdr s:p codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "no recorded spawn time must stay unknown, got '$out'"
+  unset -f fm_backend_busy_state
+  pass "codex reads busy from native working and idle only from native idle plus a turn end after its last start"
+}
+
 test_kimi_unverified_gate() {
   local state gen out
   state=$(new_state_dir kimi-gate)
@@ -716,6 +796,7 @@ test_launch_prompt_never_reclassifies_an_advanced_record
 test_launch_prompt_requires_a_captured_tail
 test_grok_regex_isolated
 test_codex_unverified_gate
+test_codex_native_status_and_turn_marker
 test_kimi_unverified_gate
 test_cursor_ignores_rendered_and_native_signals
 test_dead_endpoint_overrides

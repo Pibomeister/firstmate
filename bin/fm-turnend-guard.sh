@@ -268,6 +268,18 @@ FAILURE_NOTICE="$STATE/.claude-autoarm-failure-notified"
 FAILURE_ALARM="$STATE/.claude-autoarm-failure-alarmed"
 SESSION_ID=$(printf '%s' "$PAYLOAD" | jq -r '.session_id // "unknown"' 2>/dev/null || printf 'unknown')
 TURN_ID=$(printf '%s' "$PAYLOAD" | jq -r '.turn_id // ""' 2>/dev/null || true)
+# A Codex Stop hook gets no CODEX_THREAD_ID/CODEX_SESSION_ID pair (live probe,
+# codex-cli 0.166.0); its thread id arrives only as the payload's session_id.
+# Hand that id to the session-lock library so its same-session checks below
+# can recognise this session, notably a daemon-served owner whose lock line 1
+# is an exited helper. The library's Codex-ancestry trust gate still applies.
+# Unset first so the pair stays unexported and no child inherits it.
+if [ "$CODEX_MODE" -eq 1 ] && [ -z "${CODEX_THREAD_ID:-}" ] && [ -z "${CODEX_SESSION_ID:-}" ] \
+  && [ -n "$SESSION_ID" ] && [ "$SESSION_ID" != unknown ]; then
+  unset CODEX_THREAD_ID CODEX_SESSION_ID
+  CODEX_THREAD_ID=$SESSION_ID
+  CODEX_SESSION_ID=$SESSION_ID
+fi
 CODEX_BLOCK="$STATE/.turnend-codex-block.$(printf '%s' "$SESSION_ID" | tr -c 'A-Za-z0-9_-' '_')"
 # Watcher progress since a block: the beacon mtime at full precision, so beats
 # within one second still differ, plus the watch-lock identity, so a new cycle

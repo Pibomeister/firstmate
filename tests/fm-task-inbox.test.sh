@@ -472,6 +472,57 @@ test_ring_submits_owned_doorbells_on_a_busy_codex_only() {
   pass "inbox: owned doorbells are submitted on a busy Codex, other busy harnesses stay protected, and a changed composer gets no retry"
 }
 
+# A doorbell ring starts a Codex turn, and the ladder's .ring-state is deleted
+# once the worker files the message (whose mv keeps its enqueue time), so the
+# ring itself records the turn start the Codex busy classifier reads. Without
+# it a re-rung turn reads idle against the previous turn's end.
+test_ring_records_a_codex_turn_start() {
+  local dir state rec log composer out t0
+  dir="$TMP_ROOT/ring-codex-turn-start"
+  state="$dir/state"
+  mkdir -p "$state"
+  make_herdr_codex_stub "$dir"
+  log="$dir/send.log"; composer="$dir/composer"
+  # The stub's composer holds our own doorbell, which the ring submits.
+  ring() {
+    : > "$log"; inbox_lib "$state" fm_task_inbox_doorbell_line "$rec" > "$composer"
+    PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_COMPOSER="$composer" \
+      FM_FAKE_AGENT_STATUS=idle FM_BACKEND_HERDR_IDLE_SHELL_PROOF_POLLS=1 \
+      inbox_lib "$state" fm_task_inbox_ring herdr lab:w1:p1 "$rec" fm-t1
+  }
+  mtime() { perl -e 'utime($ARGV[0], $ARGV[0], $ARGV[1]) or exit 1' "$1" "$2"; }
+
+  printf 'harness=claude\n' > "$state/t1.meta"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  ring || fail "a ring on an idle claude pane failed"
+  grep -q '^SUBMIT' "$log" || fail "the claude ring submitted nothing:"$'\n'"$(cat "$log")"
+  [ ! -e "$state/t1.turn-start" ] || fail "a ring to a claude task must not record a codex turn start"
+  t0=$(( $(date +%s) - 300 ))
+  mtime "$((t0 + 5))" "$rec"
+  mv "$rec" "$state/t1.inbox/handled/"
+
+  printf 'harness=codex\nspawn_gen=s%s.1.1\n' "$t0" > "$state/t1.meta"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  mtime "$((t0 + 10))" "$rec"
+  : > "$state/t1.turn-ended"
+  mtime "$((t0 + 20))" "$state/t1.turn-ended"
+  ring || fail "a ring on an idle codex pane failed"
+  grep -q '^SUBMIT' "$log" || fail "the codex ring submitted nothing:"$'\n'"$(cat "$log")"
+  [ -f "$state/t1.turn-start" ] || fail "a ring to a codex task must record a turn start"
+  # The worker files the message and the ladder resets on the empty inbox.
+  inbox_lib "$state" fm_task_inbox_record_ring "$state" t1 "$rec"
+  mv "$rec" "$state/t1.inbox/handled/"
+  out=$(inbox_lib "$state" fm_task_inbox_due_action "$state" t1)
+  [ "$out" = quiet ] || fail "an empty inbox should be quiet, got '$out'"
+  [ ! -e "$state/t1.inbox/.ring-state" ] || fail "the empty-inbox reset kept .ring-state, so this case would be vacuous"
+  out=$(PATH="$dir/fakebin:$PATH" FM_FAKE_AGENT_STATUS=idle bash -c '
+    . "$1/bin/fm-backend.sh" >/dev/null 2>&1; . "$1/bin/fm-busy-lib.sh"
+    fm_busy_classify herdr lab:w1:p1 codex t1 "$2"' _ "$ROOT" "$state")
+  [ "$out" = "unknown codex-unverified" ] \
+    || fail "a codex turn started by a ring must not read idle after the ack resets the ladder, got '$out'"
+  pass "inbox: a ring records a codex turn start that survives the ack and ladder reset, and a non-codex ring records none"
+}
+
 test_idempotent_write_dedups_exact_body() {
   local state r1 r2 r3 r4 count text
   state="$TMP_ROOT/idem/state"; mkdir -p "$state"
@@ -1647,6 +1698,7 @@ test_ring_skips_dead_agent
 test_ring_submits_its_own_stuck_doorbell
 test_ring_submits_repeated_own_doorbells_only
 test_ring_submits_owned_doorbells_on_a_busy_codex_only
+test_ring_records_a_codex_turn_start
 test_idempotent_write_dedups_exact_body
 test_idempotent_write_ignores_the_holds_block
 test_idempotent_write_follows_concurrent_ack

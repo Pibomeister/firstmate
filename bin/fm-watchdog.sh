@@ -10,7 +10,6 @@
 #   status                        Print the status file.
 #   ack-read                      Record that the status file was read now.
 #   pickup <token>                Run by a restarted session to prove it took over.
-#   monitor-read                  Record FM_HOME's monitor unit status.
 #   manager-name | manager-status | render-launchd | render-systemd
 #
 # The watchdog layers above the watcher, the away daemon, and
@@ -32,8 +31,6 @@
 # A restarted session writes <its home>/state/watchdog/pickups/<token>.
 #   <watched home>/state/watchdog/captain  key=value record of that home's live
 #                                captain, rewritten each pass and by pickup.
-#   <watched home>/state/monitor-status  one-line record of that home's monitor
-#                                unit status, rewritten atomically each pass and by monitor-read.
 #
 # Test seams, honoured only with FM_TEST_SEAM=1: FM_WD_NOW fixes the clock and
 # FM_WD_TEST_COMPOSER replaces the composer verdict for a plain test pane.
@@ -1604,21 +1601,6 @@ wd_write_status() {  # <health-file> <gaps-file>
 
 # --- commands ----------------------------------------------------------------------
 
-# One home's monitor unit status, from bin/fm-monitor-watchdog.sh manager-status.
-# A read that prints no `manager:` line, including one that times out, is unreadable.
-wd_monitor_read() {  # <home>
-  local home=$1 out word tmp
-  out=$(fm_run_timed 10 env FM_HOME="$home" bash "$SCRIPT_DIR/fm-monitor-watchdog.sh" manager-status 2>/dev/null) || true
-  word=$(printf '%s\n' "$out" | sed -n 's/^manager: \([a-z]*\).*/\1/p' | head -n 1)
-  case "$word" in enabled|disabled|uncovered) ;; *) word=unreadable ;; esac
-  tmp=$(mktemp "$home/state/.monitor-status.XXXXXX" 2>/dev/null) || return 1
-  if printf 'status=%s at=%s\n' "$word" "$(wd_now)" > "$tmp" && mv -f "$tmp" "$home/state/monitor-status"; then
-    return 0
-  fi
-  rm -f "$tmp"
-  return 1
-}
-
 wd_once() {  # [home-filter]
   local filter=${1:-} health
   mkdir -p "$WD" "$OUT"
@@ -1628,7 +1610,6 @@ wd_once() {  # [home-filter]
   wd_reconcile_pending
   wd_subjects | while IFS=$'\t' read -r home parent id; do
     [ -z "$filter" ] || [ "$home" = "$filter" ] || continue
-    wd_monitor_read "$home"
     wd_observe "$home" "$parent" "$id"
     WD_SYMPTOM=ok WD_RESTARTED=0
     wd_handle_subject
@@ -1754,7 +1735,7 @@ manager_status() {
   return 1
 }
 
-usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; }
 
 cmd=${1:-}
 [ "$#" -eq 0 ] || shift
@@ -1782,9 +1763,6 @@ case "$cmd" in
   status) cat "$OUT/status.md" 2>/dev/null || die "no status file yet" ;;
   ack-read) mkdir -p "$WD" && wd_now > "$WD/last-read" ;;
   pickup) cmd_pickup "$@" ;;
-  monitor-read)
-    [ -d "$OWNER_HOME/state" ] || die "no state directory in $OWNER_HOME" 2
-    wd_monitor_read "$OWNER_HOME" ;;
   manager-name) manager_name ;;
   manager-status) manager_status ;;
   render-launchd) render_launchd ;;

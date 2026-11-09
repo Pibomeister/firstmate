@@ -795,6 +795,20 @@ See [`wedge-alarm.md`](wedge-alarm.md) for away and quiet alert behavior, channe
 See [`watchdog.md`](watchdog.md) for the watched homes, symptoms, action ladder, restart proof, hard boundaries, model fallback, status file, and every `config/watchdog` key.
 A muse `restart-command` with no approval-off flag gets `--yolo` added by default; the `restart-command` row in [`watchdog.md`](watchdog.md) owns the exact rule.
 
+## Escalation quiet hours (config/escalation)
+
+The optional local, gitignored `config/escalation` file holds escalation settings, one `key=value` per line.
+`#` comment lines are skipped, spaces around the key and value are trimmed, and the last line for a key wins.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `quiet-hours-zone` | `America/Costa_Rica` | The time zone of the quiet-hours windows, as a zoneinfo name. |
+
+The quiet-hours clock reads every window in this zone and never in the host's own zone.
+An absent file, an absent key or an empty value uses the default.
+A zone name that does not name zoneinfo data is refused rather than read in another zone.
+The [`bin/fm-quiet-hours-lib.sh`](../bin/fm-quiet-hours-lib.sh) header owns the windows and the exact output, and `bin/fm-quiet-hours.sh at` prints the reading for one moment.
+
 ## Trace context propagation (config/trace-context / FM_TRACE_CONTEXT)
 
 The optional local, gitignored `config/trace-context` presence flag enables default-off native W3C trace-context propagation.
