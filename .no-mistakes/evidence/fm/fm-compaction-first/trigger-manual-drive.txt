@@ -1,0 +1,35 @@
+### Scenario A: 16% left -> silent
+[exit 0]
+### Scenario A: 15% left -> capture step
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PostToolUse",
+    "additionalContext": "Firstmate context capture, from this home's tracked Claude hook: about 15% of context is left before auto-compact (85000 of 100000 tokens). Auto-compaction is this session's routine reset, so do not hand off or launch a successor unless the captain asks for a handoff, such as for a quota limit or a harness switch, and do not run /compact by hand. Before it lands, file every piece of open work that lives only in this chat into its durable record: new captain goals in the dispatch log (bin/fm-dispatch-log.sh), your own to-dos as backlog items or task notes (bin/fm-tasks-axi.sh), pending captain calls as holds (bin/fm-captain-hold.sh), and captain orders through bin/fm-order.sh; route durable knowledge as the stow skill describes. After compaction the re-entry card lists open orders, decisions, overdue goals, and workers; drain the wake queue and run bin/fm-crew-state.sh before acting on any PR, worker, or decision fact the summary carries, because the summary can be stale. Compactions so far: 0; a planned fresh start comes after 4. This instruction fires once per context cycle."
+  }
+}
+[exit 0]
+### state/compact-point
+session=s1 compact_at=100000 at=1794254892 reset=compaction
+### Stop after capture (should not block)
+[exit 0]
+### Scenario B: 4 compactions then 15% left -> planned fresh start
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PostToolUse",
+    "additionalContext": "Firstmate planned fresh start, from this home's tracked Claude hook: about 15% of context is left before auto-compact (85000 of 100000 tokens), and the drift cap is reached after 4 compactions on this harness (fresh-start-after=4), so this cycle ends in a handoff to a fresh session instead of another compaction. Write it incrementally, because the limit can land at any point: first file every piece of open work that lives only in this chat into its durable record (the dispatch log through bin/fm-dispatch-log.sh, backlog items or notes through bin/fm-tasks-axi.sh, holds through bin/fm-captain-hold.sh, orders through bin/fm-order.sh); next write a short handoff document and record it at once with bin/fm-order.sh handoff --doc <handoff file>; then extend it and record it again. Keep it slim: point to held items and backlog items instead of restating them or earlier handoffs, leave out an orders block and the startup steps that session start already prints, and move standing rules into data/learnings.md. A fact that arrives after you record the document goes into its durable record, never an addendum file, because the successor reads only the hashed document. Then launch your successor with bin/fm-handoff-launch.sh <handoff file>: it starts the successor on this home's backend, retries once, verifies that the successor stays live, and records it in state/.handoff-successor. Once that record names a live successor, take no new work and end this turn: the stop that ends it also ends this session after a short quiet settle, and the successor waits for that end before it runs bin/fm-session-start.sh to take the session lock. If the launcher reports that no successor came up, tell the captain, keep working, and let auto-compaction run; the next cycle tries again. This turn cannot end until the record names a live successor or a launch failure is recorded. Do not run /compact instead. This instruction fires once per context cycle."
+  }
+}
+[exit 0]
+### compact-point
+session=s2 compact_at=100000 at=1794254892 reset=handoff
+### Stop after fresh-start firing (should block awaiting successor)
+Firstmate restart gate: this session is handing off for a planned fresh start, but no live successor launched after the trigger is recorded in state/.handoff-successor, so nobody will continue from the handoff. Launch the successor with bin/fm-handoff-launch.sh <handoff document path>: it starts the successor on this home's backend, retries once, verifies that the successor stays live, and records it in state/.handoff-successor as pid=<successor pid> and handoff=<handoff document path>. That record clears this gate; then take no new work and end this turn, and the stop that ends it also ends this session after a short quiet settle. The successor confirms the handoff document's sha256, waits until this session has ended, then runs bin/fm-session-start.sh once to take the session lock. If the launcher reports that no successor came up, it records state/.handoff-launch-failed, which also clears this gate: tell the captain, keep working, and let auto-compaction run; the next cycle tries again.
+[exit 2]
+### Scenario C: 1 compaction, first reading 140000-token-equivalent heavy (fresh-start-context-tokens)
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PostToolUse",
+    "additionalContext": "Firstmate planned fresh start, from this home's tracked Claude hook: about 14% of context is left before auto-compact (171000 of 200000 tokens), and the latest compaction left 140000 tokens right after compaction, at or above 135000, so each cycle is getting shorter, so this cycle ends in a handoff to a fresh session instead of another compaction. Write it incrementally, because the limit can land at any point: first file every piece of open work that lives only in this chat into its durable record (the dispatch log through bin/fm-dispatch-log.sh, backlog items or notes through bin/fm-tasks-axi.sh, holds through bin/fm-captain-hold.sh, orders through bin/fm-order.sh); next write a short handoff document and record it at once with bin/fm-order.sh handoff --doc <handoff file>; then extend it and record it again. Keep it slim: point to held items and backlog items instead of restating them or earlier handoffs, leave out an orders block and the startup steps that session start already prints, and move standing rules into data/learnings.md. A fact that arrives after you record the document goes into its durable record, never an addendum file, because the successor reads only the hashed document. Then launch your successor with bin/fm-handoff-launch.sh <handoff file>: it starts the successor on this home's backend, retries once, verifies that the successor stays live, and records it in state/.handoff-successor. Once that record names a live successor, take no new work and end this turn: the stop that ends it also ends this session after a short quiet settle, and the successor waits for that end before it runs bin/fm-session-start.sh to take the session lock. If the launcher reports that no successor came up, tell the captain, keep working, and let auto-compaction run; the next cycle tries again. This turn cannot end until the record names a live successor or a launch failure is recorded. Do not run /compact instead. This instruction fires once per context cycle."
+  }
+}
+[exit 0]
