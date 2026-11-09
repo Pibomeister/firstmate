@@ -109,6 +109,7 @@ state/               runtime records and signals; gitignored
   captain-handle .order-handoff .order-sweep  the current captain terminal that order senders resolve at send time, the recorded handoff the restart gate reads, and the watcher's order-sweep throttle stamp; bin/fm-order.sh owns the handle and record
   .handoff-successor                         the successor launch record (pid, handoff path) bin/fm-handoff-launch.sh writes and the handoff trigger's successor gate reads; bin/fm-handoff-trigger.sh owns it
   compact-point                              the auto-compact point the handoff trigger last resolved, named for its session, read by bin/fm-context-reading-lib.sh; bin/fm-handoff-trigger.sh owns it
+  monitor-status                             the home's monitor unit status, rewritten by each watchdog pass and by a session start whose watchdog unit is not enabled; docs/watchdog.md "Layer check chain" owns the format
   launch-charter.md  a secondmate home's launch copy of its charter with the standing captain holds appended; written by bin/fm-spawn.sh, so the charter itself never changes
   <id>.inbox/          durable steering inbox: sequenced firstmate instruction records the worker acknowledges by moving them into its handled/ subdirectory; written by fm-send, with ordinary records re-rung and escalated by the watcher while explicit fire-and-forget records are excluded from that ladder, and removed by teardown (bin/fm-task-inbox-lib.sh)
   <id>.meta          task metadata; each producer script's header owns its exact fields and mutation contract, with docs/configuration.md routing operator-facing backend and trace-context details
@@ -171,7 +172,7 @@ state/               runtime records and signals; gitignored
   .secondmate-relaunch-<id> .secondmate-relaunch-bound-<id>   durable relaunch history and parked-bound state; never touch (bin/fm-secondmate-liveness-lib.sh owns the ledger contract)
   .watch-triage.log  watcher's absorbed-wake debug log (size-capped); never relied on, safe to delete
   lane-capacity.json  this home's published lane facts, refreshed only while config/lane-capacity exists; written only by bin/fm-capacity.sh --publish, whose header owns the document
-  heartbeat.json .heartbeat-work.*  this home's self-watching fleet ledger and its private temp directory; refreshed detached by the watcher each poll; written only by bin/fm-heartbeat.sh --write, whose header owns the document
+  heartbeat.json .heartbeat-work.*  this home's self-watching fleet ledger and its private temp directory; refreshed detached by the watcher's heartbeat ticker once per poll period; written only by bin/fm-heartbeat.sh --write, whose header owns the document
   .last-watcher-beat watcher liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
   .watcher-stage .watcher-deferral.<name>   the watcher's current cycle stage and its record of work skipped behind a held lock; bin/fm-watch.sh writes both and bin/fm-guard.sh reads them; never touch
   .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch

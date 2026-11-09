@@ -47,6 +47,7 @@ if [ "${1:-}" = daemon ]; then
     stopped) printf '○ daemon not running\n' ;;
     refused) exit 1 ;;
     hang) sleep 30 ;;
+    hang-ignore-term) trap '' TERM; sleep 30 ;;
   esac
   exit 0
 fi
@@ -384,6 +385,13 @@ test_daemon_answer_qualifies_executing_run() {
     .tasks[0].no_mistakes_run == {run_id:"01RUN",step:"review",active:true}
     and (.failure.reason | test("daemon status timed out"))
   ' "an unanswered probe dropped a live run or left failure null"
+  # A probe that ignores TERM is killed one second after its bound; that kill
+  # is still no answer, never an answered daemon-down.
+  publish "$home" FAKE_NM_MODE=run FAKE_NM_DAEMON=hang-ignore-term FM_HEARTBEAT_NM_TIMEOUT=1
+  assert_ledger "$home" '
+    .tasks[0].no_mistakes_run == {run_id:"01RUN",step:"review",active:true}
+    and (.failure.reason | test("daemon status timed out"))
+  ' "a TERM-ignoring probe killed at its bound read as an answered daemon-down"
   publish "$home" FAKE_NM_MODE=parked "FAKE_NM_HEAD=$head" FAKE_NM_DAEMON=stopped
   assert_ledger "$home" '.tasks[0].no_mistakes_run | .run_id == "01OLD" and .active.unknown == true' \
     "a parked run claimed to be live with its daemon down"
@@ -918,7 +926,7 @@ test_a_term_ignoring_bounded_read_is_still_killed() {
     fm_nm_bounded "$TMP_ROOT" 1 bash -c 'trap "" TERM; echo $$ > "$1"; sleep 9; sleep 9' _ "$marker"
   ) || rc=$?
   elapsed=$(( $(date +%s) - started ))
-  [ "$rc" -ne 0 ] || fail "a TERM-ignoring bounded read reported success"
+  [ "$rc" -eq 124 ] || fail "a TERM-ignoring bounded read killed at its bound exited $rc, not the timeout status 124"
   [ "$elapsed" -le 3 ] || fail "a TERM-ignoring bounded read ran ${elapsed}s past its 1s bound plus the one-second kill"
   [ -s "$marker" ] || fail "the TERM-ignoring child never started"
   ! kill -0 "$(cat "$marker")" 2>/dev/null || fail "the TERM-ignoring child outlived its bound"
