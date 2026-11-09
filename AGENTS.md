@@ -417,7 +417,7 @@ The scaffold is a safety contract, not a suggestion.
 
 Firstmate's shared instruction surface reaches running homes only after it lands on the default branch and those homes fast-forward.
 Only `AGENTS.md`, `bin/`, and `.agents/skills/` are a running firstmate instruction surface; public `skills/` is an installer-facing surface.
-`docs/learnings/` is outside that surface: session start and each AFK preflight print it from disk, so a change to it needs no re-read.
+`docs/learnings/` is outside that surface: session start points at it and each AFK preflight prints it, both from disk, so a change to it needs no re-read.
 When the captain invokes `/updatefirstmate` or asks to update firstmate, load the `/updatefirstmate` skill.
 The skill owns the guarded fleet update and restart procedure; it never touches anything under `projects/`.
 

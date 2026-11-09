@@ -16,9 +16,14 @@
 #   - the one-line-per-task work-under-way rendering (id, project, state,
 #     PR URL, age, endpoint) with its full-detail pointer, and no meta or
 #     status body re-print
-#   - startup backlog composition: done rows dropped, every in-flight/held/
-#     blocked row kept whole, the dispatchable queued listing bounded with an
-#     exact disclosed remainder
+#   - startup backlog composition: done rows dropped, every held and blocked
+#     row kept, each in-flight row listed once (held rows under held, plain
+#     live rows under Work under way, each omission named by id), the
+#     dispatchable queued listing bounded with an exact disclosed remainder
+#   - the size budget: a large fixture home's digest stays under 30 KB while
+#     every safety signal still prints, large context files print as indexed
+#     outlines or pointers, and a large wake presentation saves its annotation
+#     lines to a file before leaving them out
 #   - orphan status logs whose task meta has already disappeared
 #   - per-task endpoint-liveness lines for a live and a dead recorded target,
 #     tmux and herdr both
@@ -132,6 +137,13 @@ task_header() {
   printf 'count: %s\n' "$1"
   printf 'tasks[%s]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:\n' "$1"
 }
+# emit_rows <rows>: one tasks-axi group from newline-separated rows.
+emit_rows() {
+  local n
+  n=$(printf '%s\n' "$1" | grep -c .)
+  task_header "$n"
+  printf '%s\n' "$1" | sed '/^$/d; s/^/  /'
+}
 list_help() {
   printf 'help[1]:\n'
   printf '%s\n' '  - Run `tasks-axi show <id> --full` for full notes on a task'
@@ -150,6 +162,14 @@ case "${1:-}" in
   mv)
     if [ "${2:-}" = --help ]; then
       printf '%s\n' 'usage: tasks-axi mv <dest> [<id>...]'
+      exit 0
+    fi
+    ;;
+  show)
+    # A fixture with many live task records sets this so bootstrap's backlog
+    # reconciliation reads every one as already in flight.
+    if [ -n "${FM_FAKE_TASKS_AXI_SHOW_STATE:-}" ]; then
+      printf 'task:\n  id: %s\n  state: %s\n' "${2:-}" "$FM_FAKE_TASKS_AXI_SHOW_STATE"
       exit 0
     fi
     ;;
@@ -181,16 +201,13 @@ case "${1:-}" in
         exit 9
         ;;
       *'--state in_flight'*)
-        task_header 1
-        printf '%s\n' '  compact-startup,in_flight,ship,firstmate,Compact startup digest,none,captain,captain choice pending'
+        emit_rows "${FM_FAKE_TASKS_AXI_IN_FLIGHT_ROWS:-compact-startup,in_flight,ship,firstmate,Compact startup digest,none,captain,captain choice pending}"
         ;;
       *'--state held'*)
-        task_header 1
-        printf '%s\n' '  held-queued,queued,ship,firstmate,Held queued work,none,captain,captain choice pending'
+        emit_rows "${FM_FAKE_TASKS_AXI_HELD_ROWS:-held-queued,queued,ship,firstmate,Held queued work,none,captain,captain choice pending}"
         ;;
       *'--state queued'*'--blocked'*)
-        task_header 1
-        printf '%s\n' '  blocked-followup,queued,scout,firstmate,Follow compact startup,compact-startup,"-","-"'
+        emit_rows "${FM_FAKE_TASKS_AXI_BLOCKED_ROWS:-blocked-followup,queued,scout,firstmate,Follow compact startup,compact-startup,\"-\",\"-\"}"
         ;;
       *)
         printf '%s\n' 'startup recovery must not request an unfiltered whole-backlog listing' >&2
@@ -921,6 +938,262 @@ EOF
   assert_contains "$cap_section" "(present, empty)" "empty-but-present captain.md was not distinguished from ABSENT"
 
   pass "context digest distinguishes ABSENT, empty-but-present, and populated files"
+}
+
+# --- size budget: indexed context, rows listed once, wake spill ---------------
+
+# write_padded_markdown <path> <title> <sections> <lines-per-section> <marker>:
+# a Markdown file with a title heading, <sections> `## Section N` headings, and
+# <lines-per-section> body lines under each, every body line carrying <marker>.
+write_padded_markdown() {
+  awk -v title="$2" -v n="$3" -v per="$4" -v marker="$5" 'BEGIN {
+    printf "# %s\n", title
+    for (s = 1; s <= n; s++) {
+      printf "\n## Section %02d\n", s
+      for (l = 1; l <= per; l++) printf "%s %02d-%02d padding padding padding padding padding\n", marker, s, l
+    }
+  }' > "$1"
+}
+
+# A context file over the inline limit prints as an indexed pointer plus an
+# outline (headings, or registry items for a title-only list file); the
+# learnings files print the pointer alone; a small file still prints whole.
+test_context_large_files_are_indexed() {
+  local rec root home fakebin out learn_section i
+  rec=$(new_world context-indexed)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+
+  write_padded_markdown "$home/data/captain.md" "Captain preferences" 6 8 CAPTAIN-BODY-LINE
+  write_padded_markdown "$home/data/learnings.md" "Learnings" 6 8 LEARNING-BODY-LINE
+  printf '# Projects\n\n' > "$home/data/projects.md"
+  i=1
+  while [ "$i" -le 40 ]; do
+    printf -- '- proj-%02d [no-mistakes] - PROJECT-BODY-TEXT a registered project with a long description (added 2026-07-01)\n' "$i" >> "$home/data/projects.md"
+    i=$((i + 1))
+  done
+  printf '%s\n' '- mate-a - a small secondmate registry entry (added 2026-07-01)' > "$home/data/secondmates.md"
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  assert_contains "$out" "read $home/data/captain.md, or one section at its line number, when this turn needs it." \
+    "a large captain file did not print its indexed pointer"
+  assert_contains "$out" "  L3 ## Section 01" \
+    "the captain outline did not name a heading at its line number"
+  assert_not_contains "$out" "CAPTAIN-BODY-LINE" "a large captain file printed its body"
+  assert_contains "$out" "Before the first dispatch, merge, or escalation call this session, read each INDEXED captain file" \
+    "CONTEXT did not tell the session when it must read an indexed captain file"
+
+  assert_contains "$out" "read $home/data/learnings.md when this turn needs a lesson from it." \
+    "a large learnings file did not print its pointer"
+  assert_not_contains "$out" "LEARNING-BODY-LINE" "a large learnings file printed its body"
+  learn_section=$(printf '%s\n' "$out" | awk '/^data\/learnings\.md$/{flag=1;next}/^={10}/{flag=0}flag')
+  assert_not_contains "$learn_section" "## Section 01" "the learnings pointer carried an outline"
+
+  assert_contains "$out" "  L3 - proj-01 [no-mistakes]" \
+    "a title-only registry was not outlined by its item labels"
+  assert_not_contains "$out" "PROJECT-BODY-TEXT" "an indexed registry printed item descriptions"
+  assert_contains "$out" "more item(s) - read the file for the rest)" \
+    "a long registry outline did not disclose its remainder"
+
+  assert_contains "$out" "- mate-a - a small secondmate registry entry (added 2026-07-01)" \
+    "a small context file did not print in full"
+
+  pass "large context files print indexed pointers and bounded outlines; small files still print whole"
+}
+
+# Each in-flight row prints once: a held one under held, a plain one with a live
+# task record under Work under way, each omission named by id; a blocked or
+# record-less in-flight row stays in the in-flight group; long rows are cut.
+test_backlog_in_flight_rows_listed_once() {
+  local rec root home fakebin out long_title mid_reason row count
+  rec=$(new_world backlog-listed-once)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_tasks_axi_compact "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  write_long_body_backlog "$home/data/backlog.md"
+  printf 'window=fm-sess:plain\nkind=ship\n' > "$home/state/live-plain.meta"
+  long_title=$(awk 'BEGIN { for (i = 0; i < 30; i++) printf "long title words "; }')
+  mid_reason=$(awk 'BEGIN { for (i = 0; i < 12; i++) printf "reason words "; }')
+
+  out=$(FM_FAKE_TASKS_AXI_IN_FLIGHT_ROWS="$(printf '%s\n' \
+      'held-flight,in_flight,ship,firstmate,Held in flight,none,captain,owner call pending' \
+      'live-plain,in_flight,ship,firstmate,Live plain work,none,"-","-"' \
+      'no-record,in_flight,ship,firstmate,No record work,none,"-","-"' \
+      'blocked-flight,in_flight,ship,firstmate,Blocked in flight,dep-x,"-","-"' \
+      "long-flight,in_flight,ship,firstmate,\"$long_title\",dep-y,\"-\",\"-\"")" \
+    FM_FAKE_TASKS_AXI_HELD_ROWS="$(printf '%s\n' \
+      'held-flight,in_flight,ship,firstmate,Held in flight,none,captain,owner call pending' \
+      "mid-held,queued,ship,firstmate,Mid held,none,captain,\"$mid_reason end-of-reason\"" \
+      'noted-held,queued,ship,firstmate,"Decide: a title tasks-axi cut\n... (truncated, 140 chars total - use show noted-held --full to see complete text)",none,captain,owner call' \
+      "long-held,queued,ship,firstmate,\"$long_title\",none,captain,reason")" \
+    run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  assert_contains "$out" "(1 held in-flight row(s) are left out here; the held group below prints each one whole: held-flight)" \
+    "a held in-flight row was not deferred to the held group by id"
+  assert_contains "$out" "(1 plain in-flight row(s) with a live task record are left out here; Work under way below lists each one: live-plain)" \
+    "a plain live in-flight row was not deferred to Work under way by id"
+  count=$(printf '%s\n' "$out" | grep -c '^  held-flight,')
+  [ "$count" -eq 1 ] || fail "the held in-flight row printed $count times instead of once: $out"
+  assert_contains "$out" "live-plain project=- state=unknown pr=- age=" \
+    "the deferred plain row's task is missing from Work under way"
+  assert_contains "$out" '  no-record,in_flight,ship,firstmate,No record work,none,"-","-"' \
+    "a plain in-flight row with no live record was dropped"
+  assert_contains "$out" '  blocked-flight,in_flight,ship,firstmate,Blocked in flight,dep-x,"-","-"' \
+    "a blocked in-flight row was dropped"
+
+  row=$(printf '%s\n' "$out" | grep '^  long-flight,in_flight' | head -1)
+  [ -n "$row" ] || fail "a long in-flight row was dropped instead of cut: $out"
+  [ "${#row}" -le 180 ] || fail "a long in-flight row was not capped at 180 characters (${#row}): $row"
+  case "$row" in *' [truncated]') ;; *) fail "a cut in-flight row did not carry the [truncated] marker: $row" ;; esac
+
+  row=$(printf '%s\n' "$out" | grep '^  mid-held,queued' | head -1)
+  [ "${#row}" -gt 180 ] || fail "the fixture's mid-length held row is too short to prove the wider cut (${#row}): $row"
+  case "$row" in *'end-of-reason"') ;; *) fail "a held row under the decision cut lost the end of its hold reason: $row" ;; esac
+
+  assert_contains "$out" '  noted-held,queued,ship,firstmate,"Decide: a title tasks-axi cut [truncated]",none,captain,owner call' \
+    "a field tasks-axi cut did not keep the short [truncated] marker"
+  assert_not_contains "$out" "chars total - use show noted-held --full" \
+    "the long tasks-axi cut note was printed in the listing"
+
+  row=$(printf '%s\n' "$out" | grep '^  long-held,queued' | head -1)
+  [ -n "$row" ] || fail "a long held row was dropped instead of cut: $out"
+  [ "${#row}" -le 320 ] || fail "a long held row was not capped at 320 characters (${#row}): $row"
+  case "$row" in *' [truncated]') ;; *) fail "a cut held row did not carry the [truncated] marker: $row" ;; esac
+
+  pass "each in-flight row prints once, every omission is named by id, and long rows are cut visibly at their group's width"
+}
+
+# A wake presentation over the inline limit is saved whole first; only then do
+# its historical annotation lines leave the inline copy, and every record and
+# the acknowledgement line still print inline.
+test_wake_presentation_spills_annotations_to_a_saved_file() {
+  local rec root home fakebin out saved i
+  rec=$(new_world wake-spill)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  awk 'BEGIN { for (i = 1; i <= 150; i++) printf "working: step %03d padding padding padding padding padding padding\n", i }' \
+    > "$home/state/task-w.status"
+  append_wake "$home/state" signal task-w.status "working: step 150" || fail "seed wake failed"
+  i=1
+  while [ "$i" -le 8 ]; do
+    printf 'needs-decision [key=call-%s]: the captain owes call number %s\n' "$i" "$i" > "$home/state/task-d$i.status"
+    i=$((i + 1))
+  done
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  saved="$home/state/.session-start-wake-presentation"
+
+  assert_contains "$out" "historical wake-event annotation line(s) left out to bound this digest; the complete presentation is saved at $saved" \
+    "a large wake presentation did not name its saved file"
+  if printf '%s\n' "$out" | grep -q '^wake annotation:'; then
+    fail "annotation lines still printed inline after the spill: $out"
+  fi
+  assert_contains "$out" "$(printf 'signal\ttask-w.status\tworking: step 150')" \
+    "the wake record itself left the inline copy"
+  assert_contains "$out" "WAKE_ACK_REQUIRED:" "the acknowledgement line left the inline copy"
+  [ -f "$saved" ] || fail "the complete presentation was not saved"
+  assert_grep 'wake annotation:' "$saved" "the saved presentation lost its annotation lines"
+  assert_grep 'WAKE_ACK_REQUIRED:' "$saved" "the saved presentation is not the complete output"
+
+  assert_contains "$out" "OPEN DECISIONS (still open" "the open-decisions heading left the inline copy"
+  [ "$(printf '%s\n' "$out" | grep -c 'needs-decision: the captain owes call number')" -eq 5 ] \
+    || fail "the inline open-decisions list was not bounded to five items: $out"
+  assert_contains "$out" "(3 more OPEN DECISIONS line(s) left out here; the saved presentation at $saved lists them)" \
+    "the inline open-decisions bound did not disclose its remainder and the saved file"
+  [ "$(grep -c 'needs-decision: the captain owes call number' "$saved")" -eq 8 ] \
+    || fail "the saved presentation does not list every open decision"
+
+  pass "a large wake presentation saves to a file, then bounds annotation and open-decision lines inline while every record prints"
+}
+
+# The digest every primary handoff pays stays under 30 KB on a large home, and
+# none of the safety signals is cut to get there.
+test_digest_stays_under_size_budget_on_large_home() {
+  local rec root home fakebin out i in_flight held blocked bytes id
+  rec=$(new_world size-budget)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_tasks_axi_compact "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  make_fake_tmux "$fakebin" "fm-sess:live"
+  printf '# Backlog\n\n## In flight\n\n## Queued\n' > "$home/data/backlog.md"
+
+  write_padded_markdown "$home/data/captain.md" "Captain preferences" 30 6 captain
+  write_padded_markdown "$home/data/captain-shared.md" "Shared captain preferences" 30 6 shared
+  write_padded_markdown "$home/data/learnings.md" "Learnings" 40 8 learning
+  mkdir -p "$root/docs/learnings"
+  write_padded_markdown "$root/docs/learnings/overnight-learnings.md" "Fleet learnings" 10 8 fleet
+  printf '# Projects\n\n' > "$home/data/projects.md"
+  i=1
+  while [ "$i" -le 20 ]; do
+    printf -- '- proj-%02d [no-mistakes] - a registered project with a long description of its delivery posture (added 2026-07-01)\n' "$i" >> "$home/data/projects.md"
+    printf -- '- mate-%02d - a secondmate with a long scope description covering several projects and its charter (added 2026-07-01)\n' "$i" >> "$home/data/secondmates.md"
+    i=$((i + 1))
+  done
+
+  in_flight='' held='' blocked=''
+  i=1
+  while [ "$i" -le 30 ]; do
+    if [ "$i" -le 15 ]; then
+      printf 'window=fm-sess:live\nproject=/srv/projects/firstmate\nkind=ship\nspawn_gen=s%s.1.1\n' "$(date +%s)" > "$home/state/task-$i.meta"
+    else
+      printf 'window=fm-sess:gone-%s\nproject=/srv/projects/firstmate\nkind=ship\nspawn_gen=s1000000000.1.1\n' "$i" > "$home/state/task-$i.meta"
+    fi
+    printf 'working: step one\npaused: waiting on review\n' > "$home/state/task-$i.status"
+    in_flight="${in_flight}task-$i,in_flight,ship,firstmate,Work item $i for the fleet,none,\"-\",\"-\""$'\n'
+    i=$((i + 1))
+  done
+  i=1
+  while [ "$i" -le 15 ]; do
+    held="${held}held-$i,queued,ship,firstmate,\"Decide: a held item with a long title that runs on for a while $i\",none,captain,\"The captain owes a call on this item, with a long reason that explains the context in several clauses so the row is wide\""$'\n'
+    blocked="${blocked}blocked-$i,queued,ship,firstmate,\"A blocked follow-up with a long title that waits on another task $i\",task-1,\"-\",\"-\""$'\n'
+    i=$((i + 1))
+  done
+  awk 'BEGIN { for (i = 1; i <= 200; i++) printf "working: step %03d padding padding padding padding padding padding\n", i }' \
+    > "$home/state/task-1.status"
+  append_wake "$home/state" signal task-1.status "working: step 200" || fail "seed wake failed"
+
+  # Thirty per-task reads take about a minute on a loaded runner, so the
+  # runtime bound is raised: this test measures size, not startup speed.
+  out=$(FM_SESSION_START_TIMEOUT=600 FM_FAKE_TASKS_AXI_SHOW_STATE=in_flight \
+    FM_FAKE_TASKS_AXI_IN_FLIGHT_ROWS="$in_flight" FM_FAKE_TASKS_AXI_HELD_ROWS="$held" \
+    FM_FAKE_TASKS_AXI_BLOCKED_ROWS="$blocked" FM_FAKE_TASKS_AXI_READY=30 \
+    run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  bytes=$(printf '%s\n' "$out" | wc -c | tr -d ' ')
+
+  [ "$bytes" -lt 30000 ] || fail "the large-home digest is $bytes bytes, over the 30 KB budget"
+  assert_contains "$out" "lock acquired: harness pid" "the lock verdict was cut"
+  assert_contains "$out" "$(printf 'signal\ttask-1.status\tworking: step 200')" "a wake record was cut"
+  assert_contains "$out" "WAKE_ACK_REQUIRED:" "the acknowledgement line was cut"
+  i=1
+  while [ "$i" -le 30 ]; do
+    id="task-$i"
+    printf '%s\n' "$out" | grep -Eq "(^| )$id( |:)" || fail "live task $id is missing from the digest"
+    i=$((i + 1))
+  done
+  i=1
+  while [ "$i" -le 15 ]; do
+    assert_contains "$out" "  held-$i,queued" "held row held-$i was cut"
+    assert_contains "$out" "  blocked-$i,queued" "blocked row blocked-$i was cut"
+    i=$((i + 1))
+  done
+  assert_contains "$out" "15 stale task(s) (endpoint dead or unknown, at least 3 days old, no recorded PR), condensed to id:state:age:endpoint:" \
+    "old dead-endpoint tasks were not condensed"
+  assert_contains "$out" "task-1 project=firstmate state=" "a live task lost its full line"
+
+  pass "a large home's digest stays under 30 KB with every safety signal intact ($bytes bytes)"
 }
 
 # --- lock refusal: read-only path --------------------------------------------
@@ -2169,7 +2442,7 @@ EOF
   out=$(FM_FAKE_TASKS_AXI_LOG="$log" FM_FAKE_TASKS_AXI_READY=3 \
     run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
 
-  assert_contains "$out" "compact backlog listing (tasks-axi; done rows omitted; every in-flight, held, and blocked row shown in full; ready queued bounded to 20; task bodies omitted)" \
+  assert_contains "$out" "compact backlog listing (tasks-axi; done rows omitted; every held and blocked row shown, and every in-flight row not already listed under held or Work under way; held and blocked rows capped at 320 characters, other rows at 180; ready queued bounded to 5; task bodies omitted)" \
     "compatible tasks-axi backend did not render the compact backlog listing"
   assert_contains "$out" "tasks[1]{id,state,kind,repo,title,blocked_by,hold_kind,hold_reason}:" \
     "tasks-axi compact listing omitted the expected structured field header"
@@ -2186,7 +2459,7 @@ EOF
   assert_not_contains "$out" "DONE-ROW-LINE" "tasks-axi compact digest listed a done row at startup"
   assert_contains "$out" "compact-startup project=firstmate state=unknown pr=- age=" "in-flight task did not render as the one-line startup identity"
   assert_contains "$out" "bin/fm-crew-state.sh <id>" "startup digest omitted the per-task full-detail pointer"
-  assert_contains "$out" "Full task bodies remain available on demand: bin/fm-tasks-axi.sh show <id> --full" \
+  assert_contains "$out" "Full task bodies and any row cut with [truncated] remain available on demand: bin/fm-tasks-axi.sh show <id> --full" \
     "compact digest omitted the full-body lookup pointer"
   assert_contains "$out" "ready_public_followups: 0 delivery-ready obligations" \
     "the composed listing dropped a real signal from the dispatchable set"
@@ -2542,7 +2815,10 @@ FIXTURE
   normal=$(FM_FAKE_HARNESS_PID=$$ run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
   assert_not_contains "$normal" "RE-EMIT CUE" "a normal start printed the re-emit cue"
 
-  reemit=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$root" FM_FAKE_HARNESS_PID=$$ PATH="$fakebin:$BASE_PATH" \
+  # A raised inline limit prints the large captain file whole, so the output
+  # really exceeds the hook's inline limit.
+  reemit=$(FM_SESSION_START_CONTEXT_INLINE_MAX=1000000 \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$root" FM_FAKE_HARNESS_PID=$$ PATH="$fakebin:$BASE_PATH" \
     env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
     "$SESSION_START" --reemit)
   [ "${#reemit}" -gt 10000 ] || fail "re-emit fixture did not exceed the hook output limit"
@@ -3221,6 +3497,10 @@ EOF
 }
 
 test_context_digest_absent_empty_present
+test_context_large_files_are_indexed
+test_backlog_in_flight_rows_listed_once
+test_wake_presentation_spills_annotations_to_a_saved_file
+test_digest_stays_under_size_budget_on_large_home
 test_lock_refusal_read_only_path
 test_lock_write_failure_read_only_path
 test_trace_context_effective_state_is_frozen_after_lock
