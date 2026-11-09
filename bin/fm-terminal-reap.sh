@@ -3,11 +3,17 @@
 # classify each by owner, and close only the orphans.
 #
 # Usage:
-#   fm-terminal-reap.sh [--apply] [--min-age <seconds>] [--no-browsers]
+#   fm-terminal-reap.sh [--apply] [--browsers] [--min-age <seconds>] [--no-browsers]
 #
 #   (default)        dry run: print every verdict and change nothing
-#   --apply          close every terminal and stop every browser whose verdict
-#                    is reap, re-proving each one just before acting on it
+#   --apply          close every terminal whose verdict is reap, re-proving
+#                    each one just before acting on it; browsers are only
+#                    listed unless --browsers is also given
+#   --browsers       with --apply, also stop every browser whose verdict is
+#                    reap; agent-browser daemons and chrome-devtools-axi
+#                    bridges are shared by every client of their socket, so a
+#                    browser judged owner-gone may still serve another live
+#                    worker (no socket probe is made)
 #   --min-age <s>    never reap a terminal session or browser younger than this
 #                    many seconds (default 1800), so a session that is still
 #                    launching its agent is never mistaken for an idle one
@@ -46,22 +52,27 @@
 #   keep busy          its session runs a program this classifier cannot rule
 #                      out as an agent
 #   keep unreadable    its session's process tree could not be read
-#   keep captain       an idle shell in a home root whose title is Orca's
-#                      default (empty or "Terminal <n>"); firstmate always titles
-#                      the sessions it launches, so this is the captain's own tab
+#   keep captain       an idle shell in a home root whose title does not name
+#                      a firstmate main or handoff session (see idle-session),
+#                      including an empty or Orca default "Terminal <n>" title,
+#                      so this is the captain's own tab
 #   keep live-worker   an agent still runs inside its task worktree
 #   keep unlanded      its task worktree has uncommitted changes or commits no
 #                      remote-tracking branch holds
 #   keep unproven      landed state or the working-directory scan was unreadable
-#   reap idle-session  an idle shell in a home root, titled by firstmate: a
+#   reap idle-session  an idle shell in a home root whose title contains, in
+#                      any case, main, successor, handoff, firstmate, or fm-: a
 #                      finished primary or secondmate session left at its prompt
 #   reap idle-task     an idle shell in an unrecorded firstmate task worktree
 #                      whose work is all committed and held by a remote branch
 #   reap gone-worktree an idle shell whose firstmate task worktree is gone
 # "Idle" means the session's process tree holds shells and nothing else
-# (fm_backend_orca_tree_state's dead verdict). The landed test here is a strict
-# subset of bin/fm-teardown.sh's: it never needs a PR or the network, and any
-# doubt keeps the terminal. Closing a terminal never touches a worktree's files.
+# (fm_backend_orca_tree_state's dead verdict). The landed test here is weaker
+# than bin/fm-teardown.sh's: it needs only a clean tree and a HEAD that some
+# remote-tracking branch holds (any remote, including a gate remote), with no
+# merged-PR or default-branch proof. It is safe only because closing an idle
+# shell never touches a worktree's files, and it must not be reused as
+# teardown-grade proof that work has landed.
 #
 # Browser roots are agent-browser daemons, chrome-devtools-axi bridges, and
 # automation browsers (headless, pipe-debugged, Playwright, or Puppeteer
@@ -74,7 +85,10 @@
 #   keep owner-live    some other process still works in that directory
 #   reap owner-gone    its directory is gone, or nothing but browsers (and
 #                      terminals this run reaps) still works there
-# --apply stops a browser with SIGTERM to its root and descendants, only after
+# Agent-browser daemons and chrome-devtools-axi bridges serve every client of
+# their socket, so owner-gone judges only the directory, not other clients; for
+# that reason only --apply --browsers stops browsers.
+# --apply --browsers stops a browser with SIGTERM to its root and descendants, only after
 # re-reading that every process still has the start time and command it was
 # classified with. It never sends SIGKILL.
 #
@@ -94,11 +108,12 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 # shellcheck source=bin/fm-secondmate-registry-lib.sh
 . "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
 
-usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; }
 
 APPLY=0
 MIN_AGE=1800
 BROWSERS=1
+STOP_BROWSERS=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --apply) APPLY=1 ;;
@@ -107,6 +122,7 @@ while [ "$#" -gt 0 ]; do
       MIN_AGE=$2; shift
       ;;
     --no-browsers) BROWSERS=0 ;;
+    --browsers) STOP_BROWSERS=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "error: unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -318,9 +334,11 @@ if (mode === "terminals") {
 JS
 }
 
-default_title() {  # <title>, where "-" stands for an empty title
-  case "$1" in ''|-) return 0 ;; 'Terminal '*) ;; *) return 1 ;; esac
-  case "${1#Terminal }" in ''|*[!0-9]*) return 1 ;; esac
+firstmate_title() {  # <title>
+  case "$(printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')" in
+    *main*|*successor*|*handoff*|*firstmate*|*fm-*) return 0 ;;
+  esac
+  return 1
 }
 
 # landed_state <worktree> -> landed|unlanded|unknown
@@ -349,7 +367,7 @@ judge_terminal() {
   esac
   case "$scope" in
     home)
-      if default_title "$title"; then printf 'keep\tcaptain'; return 0; fi
+      firstmate_title "$title" || { printf 'keep\tcaptain'; return 0; }
       printf 'reap\tidle-session'
       ;;
     gone)
@@ -494,7 +512,7 @@ while IFS=$'\t' read -r bpid bverdict bclass bdir _ bdetail; do
   [ -n "$bpid" ] || continue
   B_TOTAL+=1
   action=$bverdict
-  if [ "$bverdict" = reap ] && [ "$APPLY" = 1 ]; then
+  if [ "$bverdict" = reap ] && [ "$APPLY" = 1 ] && [ "$STOP_BROWSERS" = 1 ]; then
     result=$(stop_browser "$bpid" "$WORK/browser-$bpid.id")
     case "$result" in stopped*) B_DONE+=1 ;; skipped*) B_SKIP+=1 ;; *) B_FAIL+=1 ;; esac
     action=${result%%$'\t'*}
@@ -510,9 +528,9 @@ done < "$WORK/browsers.tsv"
 
 if [ "$APPLY" = 1 ]; then
   N_KEEP=$((N_TOTAL - N_DONE - N_SKIP - N_FAIL))
-  B_KEEP=$((B_TOTAL - B_DONE - B_SKIP - B_FAIL))
-  printf 'summary: mode=apply terminals=%d closed=%d skipped=%d failed=%d keep=%d browsers=%d stopped=%d skipped=%d failed=%d keep=%d\n' \
-    "$N_TOTAL" "$N_DONE" "$N_SKIP" "$N_FAIL" "$N_KEEP" "$B_TOTAL" "$B_DONE" "$B_SKIP" "$B_FAIL" "$B_KEEP"
+  B_KEEP=$((B_TOTAL - B_DONE - B_SKIP - B_FAIL - B_REAP))
+  printf 'summary: mode=apply terminals=%d closed=%d skipped=%d failed=%d keep=%d browsers=%d stopped=%d skipped=%d failed=%d reap=%d keep=%d\n' \
+    "$N_TOTAL" "$N_DONE" "$N_SKIP" "$N_FAIL" "$N_KEEP" "$B_TOTAL" "$B_DONE" "$B_SKIP" "$B_FAIL" "$B_REAP" "$B_KEEP"
   [ $((N_FAIL + B_FAIL)) -eq 0 ] || exit 3
 else
   printf 'summary: mode=dry-run terminals=%d reap=%d keep=%d browsers=%d reap=%d keep=%d\n' \

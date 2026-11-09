@@ -166,6 +166,10 @@ build_world() {  # <case>
   idle_term term-foreign pty-foreign "$FX/elsewhere" "captain lane"
   idle_term term-captain pty-captain "$HOME_DIR" "Terminal 2"
   idle_term term-untitled pty-untitled "$HOME_DIR" ""
+  idle_term term-claude pty-claude "$HOME_DIR" "✳ Claude Code"
+  idle_term term-notes pty-notes "$HOME_DIR" "notes"
+  idle_term term-m4 pty-m4 "$HOME_DIR" "M4 main successor"
+  idle_term term-handoff pty-handoff "$HOME_DIR" "FM handoff"
   idle_term term-idle pty-idle "$HOME_DIR" "fm main successor"
   idle_term term-sm-idle pty-sm-idle "$SM_HOME" "sm1 successor"
   idle_term term-gone pty-gone "$WS/fm-gone" fm-gone
@@ -190,7 +194,7 @@ build_world() {  # <case>
     session pty-flip-now "$agent"
     show term-flip pty-flip-now "$HOME_DIR"
   fi
-  for p in term-idle:pty-idle:"$HOME_DIR" term-sm-idle:pty-sm-idle:"$SM_HOME" \
+  for p in term-idle:pty-idle:"$HOME_DIR" term-m4:pty-m4:"$HOME_DIR" term-handoff:pty-handoff:"$HOME_DIR" term-sm-idle:pty-sm-idle:"$SM_HOME" \
     term-gone:pty-gone:"$WS/fm-gone" term-landed:pty-landed:"$WS/fm-landed"; do
     show "${p%%:*}" "$(printf '%s' "$p" | cut -d: -f2)" "${p#*:*:}"
   done
@@ -208,6 +212,10 @@ test_dry_run_classifies_every_owner_and_closes_nothing() {
   expect term-foreign "keep foreign" "a terminal outside every home and firstmate worktree is the captain's"
   expect term-captain "keep captain" "an idle default-titled tab in a home root is the captain's own"
   expect term-untitled "keep captain" "an idle untitled tab in a home root is the captain's own"
+  expect term-claude "keep captain" "a program-written title that names no firstmate session is the captain's"
+  expect term-notes "keep captain" "a captain-chosen title in a home root is the captain's own"
+  expect term-m4 "reap idle-session" "a title naming a main successor marks a firstmate session"
+  expect term-handoff "reap idle-session" "a title naming a handoff matches in any case"
   expect term-nosession "keep no-session" "a terminal Orca's sweep cannot name is never judged idle"
   expect term-idle "reap idle-session" "a finished firstmate session at its prompt is an orphan"
   expect term-sm-idle "reap idle-session" "a secondmate home root is a home root"
@@ -242,7 +250,7 @@ test_apply_closes_only_reproven_orphans() {
   run_reap --apply --no-browsers
   [ "$RC" = 0 ] || fail "an apply whose closes all succeed or skip must exit 0, got $RC: $(cat "$FX/stderr")"
   closed=$(sort "$FX/closed.log" | tr '\n' ' ')
-  want='term-gone term-idle term-landed term-sm-idle '
+  want='term-gone term-handoff term-idle term-landed term-m4 term-sm-idle '
   [ "$closed" = "$want" ] || fail "--apply must close exactly the orphans; want '$want', got '$closed'"
   expect term-idle "closed idle-session" "an apply reports each close"
   expect term-dirty "keep unlanded" "an apply never closes a terminal with unlanded work"
@@ -300,6 +308,12 @@ test_browsers_are_reaped_only_without_a_live_owner() {
   kill -0 "$gone" 2>/dev/null || fail "a dry run must stop no browser"
 
   run_reap --apply
+  [ "$RC" = 0 ] || fail "a terminals-only apply must exit 0, got $RC: $(cat "$FX/stderr")"
+  expect "$gone" "reap owner-gone" "--apply without --browsers only lists a browser verdict"
+  sleep 0.3
+  kill -0 "$gone" 2>/dev/null || fail "--apply without --browsers must stop no browser"
+
+  run_reap --apply --browsers
   [ "$RC" = 0 ] || fail "the browser apply must exit 0, got $RC: $(cat "$FX/stderr")"
   expect "$gone" "stopped owner-gone" "an apply stops an ownerless browser"
   local i
