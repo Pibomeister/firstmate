@@ -60,6 +60,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-ensure-agents-md.sh` | Manually initialize project agent-memory files (see the helper's header and help) |
 | `fm-capacity.sh`         | Report of open lanes against the optional `config/lane-capacity` target and host headroom for queued-work dispatch; `--publish` writes this home's `state/lane-capacity.json` |
 | `fm-disk-alarm.sh`       | Read free space on `/System/Volumes/Data` and gate a fresh crewmate launch or a new lane |
+| `fm-terminal-reap.sh`   | List Orca terminals and headless browsers this home left orphaned, closing only re-proven orphans with `--apply` and never a recorded task, unlanded work, a live agent, or the captain's own tabs |
 | `fm-guard.sh`            | Warn on primary-checkout tangles, main-session pending wakes, and unhealthy supervision |
 | `fm-primary-scope-lib.sh` | Shared marker-or-plain-checkout primary-home predicate for tracked hooks             |
 | `fm-session-lock-lib.sh` | Shared session-lock ownership and owner-lifetime boundary; its header owns ancestry and trusted-session rules, including Codex daemon sessions and Windows/Git Bash published harness pids, behind `fm-lock.sh` and `fm-inbox.sh ready` |

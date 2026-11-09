@@ -730,18 +730,31 @@ fm_backend_orca_physical_dir() {  # <dir>
   (cd -P -- "$1" 2>/dev/null && pwd -P)
 }
 
+# fm_backend_orca_cwd_scan: one `lsof -Fpn` working-directory read of every
+# process this user owns (`p<pid>` then `n<cwd>` lines). Returns 1 when lsof is
+# absent, fails, or prints nothing, which callers treat as missing proof.
+fm_backend_orca_cwd_scan() {
+  local scan
+  command -v lsof >/dev/null 2>&1 || return 1
+  scan=$(LC_ALL=C lsof -nP -a -u "$(id -u)" -d cwd -Fpn 2>/dev/null) || return 1
+  [ -n "$scan" ] || return 1
+  printf '%s\n' "$scan"
+}
+
 # fm_backend_orca_worktree_agent_pids: every process this user owns whose
 # working directory is <worktree> or below it and that classifies as an agent,
 # one `pid<TAB>comm` line each. This catches an agent that outlived the pty it
 # started in. Returns 1 when the working-directory scan cannot be read, which
-# the caller must treat as missing proof, never as an empty scan.
-fm_backend_orca_worktree_agent_pids() {  # <worktree>
-  local worktree=$1 root scan pids pid comm
+# the caller must treat as missing proof, never as an empty scan. A caller
+# judging many worktrees at once may pass one fm_backend_orca_cwd_scan result
+# as [scan] so the scan runs once instead of once per worktree.
+fm_backend_orca_worktree_agent_pids() {  # <worktree> [scan]
+  local worktree=$1 scan=${2:-} root pids pid comm
   root=$(fm_backend_orca_physical_dir "$worktree") || return 1
   [ -n "$root" ] || return 1
-  command -v lsof >/dev/null 2>&1 || return 1
-  scan=$(LC_ALL=C lsof -nP -a -u "$(id -u)" -d cwd -Fpn 2>/dev/null) || return 1
-  [ -n "$scan" ] || return 1
+  if [ -z "$scan" ]; then
+    scan=$(fm_backend_orca_cwd_scan) || return 1
+  fi
   pids=$(printf '%s\n' "$scan" | awk -v root="$root" '
     /^p/ { pid = substr($0, 2); next }
     /^n/ { path = substr($0, 2); if (pid != "" && (path == root || index(path, root "/") == 1)) print pid }')

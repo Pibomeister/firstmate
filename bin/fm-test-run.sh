@@ -440,7 +440,7 @@ family_for_basename() {
     fm-backend-zellij.test.sh|fm-backend-zellij-smoke.test.sh)
       printf '%s\n' zellij
       ;;
-    fm-backend-orca.test.sh)
+    fm-backend-orca.test.sh|fm-terminal-reap.test.sh)
       printf '%s\n' orca
       ;;
     fm-backend-tern.test.sh|fm-backend-tern-smoke.test.sh)
@@ -988,6 +988,7 @@ tests/fm-task-inbox.test.sh 142283
 tests/fm-tasks-axi.test.sh 3140
 tests/fm-teardown-endpoint-safety.test.sh 59363
 tests/fm-teardown.test.sh 374320
+tests/fm-terminal-reap.test.sh 18332
 tests/fm-test-fixture-cleanup.test.sh 2235
 tests/fm-test-fixtures.test.sh 9169
 tests/fm-test-isolation-proof.test.sh 4079
