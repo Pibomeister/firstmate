@@ -52,7 +52,8 @@ FM_QUOTA_PROVIDER_ID_RE='^[a-z0-9]+(-[a-z0-9]+)*\z'
 #                                  (https://cursor.com/docs/account/pricing),
 #                                  so grok-4.7-*, cursor-grok-4.6-*, and
 #                                  cursor-grok-4.5-* take the auto pool;
-#                                  unknown future grok-* ids take the
+#                                  every other grok-* spelling, including
+#                                  unknown future ids, takes the
 #                                  conservative api pool unless quota-axi
 #                                  emits pool:grok (grok_bot is the separate
 #                                  Grok Bot meter); an unrecognized model

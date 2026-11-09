@@ -2083,10 +2083,12 @@ No qualifying option, or two equally probable qualifying options, produces `ambi
 **Candidate eligibility and evidence**
 
 - Any applicable `exhausted_now` row or known zero bound makes that candidate ineligible, and a known profile-floor shortfall does the same before unrelated quota uncertainty is considered.
-- Cursor candidates are judged by pool, not by the collapsed `all_models` row: auto and composer models by `auto_usage` and `included_usage`, named API models by `api_usage`, and Grok 4.7, `cursor-grok-4.6-*`, and `cursor-grok-4.5-*` models by `auto_usage` and `included_usage` because Cursor's included pool covers Grok 4.7, Grok 4.6, Grok 4.5, and Composer 2.5.
-  Unknown future `grok-*` models stay on the API pool.
+- Cursor candidates are judged by pool, not by the collapsed `all_models` row: auto and composer models by `auto_usage` and `included_usage`, named API models by `api_usage`, and `grok-4.7-*`, `cursor-grok-4.6-*`, and `cursor-grok-4.5-*` models by `auto_usage` and `included_usage` because Cursor's included pool covers Grok 4.7, Grok 4.6, Grok 4.5, and Composer 2.5.
+  Every other `grok-*` spelling, including unknown future ids, stays on the API pool.
   A real `pool:<name>` row from `quota-axi` overrides the row derived from those windows, an unrecognized model keeps `all_models`, and any model outside the auto pool also needs the 5% Cursor pool floor.
   `quota_applicable` in [`bin/fm-quota-axi-lib.sh`](../bin/fm-quota-axi-lib.sh) owns this mapping.
+- AGY candidates are judged by group, never by a collapsed `all_models` or `all_products` row: `claude-*` and `gpt-oss-*` models by the `claude_gpt` scope, `gemini-*` models by the `gemini` scope, and `gemini-4-argon-*` and `gemini-4-carbon-*` models only by a dedicated argon or carbon scope, else an explicit unknown row, never the shared `gemini` row.
+  `quota_applicable` owns this mapping too.
 - Missing or nonnumeric `spendPriority` evidence is never ranked, and every candidate is printed beside its evidence or the reason it was not rankable, including on ambiguous and approval-gated outcomes that emit no profile.
 - On the opted-in path, duplicate concrete profiles with the same harness, model, and effort inside one rule or the default array are configuration errors rather than ties.
 
