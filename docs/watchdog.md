@@ -50,6 +50,25 @@ Other dialogs are read from the visible screen only where the backend gives a vi
 A viewport that cannot be read is unknown: no dialog key and no quota pick, and it does not pre-empt a restart, low-context, or timer-loop check.
 Other backends, including Orca without a recorded Droid frame, fall back to the last 60 captured rows.
 
+## Layer check chain
+
+Four layers keep a home supervised: the monitor unit, the watcher arm, the heartbeat and the watchdog.
+Each layer is checked by exactly one layer above it, meaning one that supervises it, and session start is the layer above the watchdog.
+
+| Layer | What it is | Checked by |
+| --- | --- | --- |
+| Monitor unit | `bin/fm-monitor-watchdog.sh` under launchd or systemd, which keeps the home's watcher armed ([watcher continuity](watcher-continuity.md#independent-home-watchdog)) | The watchdog, through the monitor read below |
+| Watcher arm | The armed `bin/fm-watch.sh`, which writes the heartbeat | The monitor unit, which arms again after each completed arm |
+| Heartbeat | `state/heartbeat.json` | The watchdog, which reports a heartbeat older than `watcher-stale-secs` as a gap |
+| Watchdog | `bin/fm-watchdog.sh` under launchd or systemd | Session start, through `manager-status` |
+
+Each `once` pass runs `FM_HOME=<home> bin/fm-monitor-watchdog.sh manager-status` for every watched home and its registered second mates.
+It rewrites `<home>/state/monitor-status` atomically as `status=<enabled|disabled|uncovered|unreadable> at=<epoch>`.
+`unreadable` means the read printed no `manager:` line, for example because it failed or timed out.
+The record hands the monitor unit's status on; the pass takes no action on it.
+When `FM_HOME=<home> bin/fm-watchdog.sh manager-status` does not print `manager: enabled`, a full locked session start runs the same read once, through `monitor-read`, and writes the same record.
+A lock-refused session start and a context re-emit write nothing.
+
 ## Symptoms and the action ladder
 
 Each home gets at most one symptom per pass, in this order.
@@ -235,4 +254,5 @@ An absent file means dry-run on the owner home alone.
 ## Verification
 
 `tests/fm-watchdog.test.sh` drives every symptom, ladder step, and boundary against real tmux panes on a private socket, real lock holders, and real records, with fake model CLIs.
+`tests/fm-layer-chain.test.sh` proves the monitor read on each pass and at session start, with a fake service manager.
 `tests/fm-watchdog-live.test.sh` reads real installed Claude Code panes without spending tokens; [`verification/runtime-backends.md`](verification/runtime-backends.md) records its dated results.
