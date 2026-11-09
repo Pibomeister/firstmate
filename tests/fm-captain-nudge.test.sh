@@ -437,6 +437,24 @@ test_herdr_idle_tracks_screen_change_not_heartbeat() {
   pass "fm-captain-nudge: herdr idle tracks screen change, not a cron heartbeat"
 }
 
+test_once_submits_own_unsent_prompt_only() {
+  local home cap now=2000000000 prompt
+  prompt="Continue open work: pick next item, reroute quota if exhausted, never park self-servable work"
+  cap=$(fixture_captain 25 true "" pending "› $prompt" $((now - 25 * 60)))
+  home=$(write_home own-unsent "[$cap]")
+  printf '{"last_nudge_epoch":%s,"fingerprint":"x","consecutive_no_progress":0,"escalated":false}\n' $((now - 300)) > "$home/state/captains/alpha.json"
+  FM_NUDGE_NOW=$now run_once "$home"
+  assert_equals nudge "$(last_event "$home")" "own unsent prompt is submitted"
+  [ "$(cut -f3 "$home/send.log")" = "<Enter>" ] || fail "only Enter may be sent for an own unsent prompt: $(cat "$home/send.log")"
+  cap=$(fixture_captain 25 true "" pending "› $prompt and more from eduardo" $((now - 25 * 60)))
+  home=$(write_home own-unsent-edited "[$cap]")
+  printf '{"last_nudge_epoch":%s,"fingerprint":"x","consecutive_no_progress":0,"escalated":false}\n' $((now - 300)) > "$home/state/captains/alpha.json"
+  FM_NUDGE_NOW=$now run_once "$home"
+  assert_equals skipped_input_not_empty "$(last_event "$home")" "edited composer is never submitted"
+  [ ! -s "$home/send.log" ] || fail "edited composer must not receive Enter"
+  pass "fm-captain-nudge: submits only its own unsent fixed prompt, Enter only"
+}
+
 fm_test_run \
   test_help_and_usage \
   test_decide_nudge_happy_path \
@@ -462,4 +480,5 @@ fm_test_run \
   test_beacon_line_has_no_spaces_in_values \
   test_example_configs_parse \
   test_expand_path_literal_tilde \
-  test_herdr_idle_tracks_screen_change_not_heartbeat
+  test_herdr_idle_tracks_screen_change_not_heartbeat \
+  test_once_submits_own_unsent_prompt_only

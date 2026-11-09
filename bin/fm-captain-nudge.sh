@@ -292,11 +292,13 @@ send_fixed_prompt() {  # <backend> <target> [session]
     herdr)
       if [ -n "$session" ]; then
         fm_run_timed 20 herdr pane send-text "$target" "$text" --session "$session" >/dev/null || return 1
-        fm_run_timed 20 herdr pane send-keys "$target" Enter --session "$session" >/dev/null
       else
         fm_run_timed 20 herdr pane send-text "$target" "$text" >/dev/null || return 1
-        fm_run_timed 20 herdr pane send-keys "$target" Enter >/dev/null
       fi
+      # Codex treats an Enter that arrives right after a burst of typed text as
+      # part of a paste and leaves the prompt unsent; pause before submitting.
+      sleep "${FM_NUDGE_SUBMIT_DELAY:-1.5}"
+      send_enter_only herdr "$target" "$session"
       ;;
     fixture)
       [ -n "${FM_NUDGE_SEND_LOG:-}" ] || die "fixture send needs FM_NUDGE_SEND_LOG"
@@ -306,6 +308,42 @@ send_fixed_prompt() {  # <backend> <target> [session]
       die "unknown backend for send: $backend" 2
       ;;
   esac
+}
+
+# Enter only. Used after the fixed prompt, and to submit our own fixed prompt
+# when a previous pass left it unsent in the composer.
+send_enter_only() {  # <backend> <target> [session]
+  local backend=$1 target=$2 session=${3:-}
+  if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_NUDGE_SEND_LOG:-}" ]; then
+    printf '%s\t%s\t%s\n' "$backend" "$target" "<Enter>" >> "$FM_NUDGE_SEND_LOG"
+    return 0
+  fi
+  case "$backend" in
+    herdr)
+      if [ -n "$session" ]; then
+        fm_run_timed 20 herdr pane send-keys "$target" Enter --session "$session" >/dev/null
+      else
+        fm_run_timed 20 herdr pane send-keys "$target" Enter >/dev/null
+      fi
+      ;;
+    orca)
+      fm_run_timed 20 orca terminal send --terminal "$target" --text "" --enter --json >/dev/null
+      ;;
+    fixture)
+      [ -n "${FM_NUDGE_SEND_LOG:-}" ] || die "fixture send needs FM_NUDGE_SEND_LOG"
+      printf '%s\t%s\t%s\n' "$backend" "$target" "<Enter>" >> "$FM_NUDGE_SEND_LOG"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# True when the composer's pending line is exactly the fixed prompt (ours,
+# left unsent), so pressing Enter cannot submit anybody else's text.
+pending_is_fixed_prompt() {  # <screen>
+  local text
+  text=$(fm_nudge_text)
+  text=${text%$'\n'}
+  printf '%s\n' "$1" | awk 'NF' | tail -n 8 | LC_ALL=C grep -Fxq -e "› $text" -e "❯ $text" -e "> $text" -e "›  $text"
 }
 
 # --- one captain ------------------------------------------------------------
@@ -465,6 +503,22 @@ process_captain() {  # <captain-json> [force]
     composer=pending
   fi
   [ -n "$composer" ] || composer=unknown
+
+  # Our own fixed prompt left unsent by an earlier pass: submit it (Enter only)
+  # instead of reporting the composer as someone else's text.
+  if [ "$composer" != empty ] && [ -z "$dialog" ] && [ "$last_nudge" -gt 0 ] \
+     && pending_is_fixed_prompt "${OBS_SCREEN:-}"; then
+    extra=$(jq -nc --arg t "${OBS_TARGET:-}" --arg b "$backend" '{target:$t, backend:$b}')
+    decision=$(jq -nc '{event:"nudge",severity:"info",reason:"submitted own fixed prompt left unsent in composer (Enter only)",should_send:true}')
+    if cfg_mode_is_act; then
+      session=$(fm_nudge_json_get "$cap" '.session // ""' '') || true
+      if ! send_enter_only "$backend" "${OBS_TARGET:-$id}" "$session"; then
+        decision=$(jq -nc '{event:"blocker",severity:"medium",reason:"submit of pending fixed prompt failed",should_send:false}')
+      fi
+    fi
+    emit_event "$id" "$owner" "$decision" "$(idle_min_from_obs 2>/dev/null || echo 0)" 'pending fixed prompt' "$extra" >/dev/null
+    return 0
+  fi
 
   idle=$(idle_min_from_obs) || idle=''
   if [ -z "$idle" ]; then
