@@ -35,7 +35,6 @@
     "docs/rex-backend.md",
     "docs/t3code-backend.md",
     "docs/tern-backend.md",
-    "docs/hc-backend.md",
     "docs/remote-secondmates.md"
   ],
   "requiredOwnerPointers": [
@@ -117,10 +116,6 @@
     },
     {
       "source": "docs/tern-backend.md",
-      "target": "docs/verification/runtime-backends.md"
-    },
-    {
-      "source": "docs/hc-backend.md",
       "target": "docs/verification/runtime-backends.md"
     },
     {
@@ -243,14 +238,6 @@
     },
     {
       "path": ".agents/skills/harness-adapters/references/harness/kimi.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/harness-adapters/references/harness/hermes.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/harness-adapters/references/harness/kiro.md",
       "audience": "agent-runtime"
     },
     {
@@ -391,10 +378,6 @@
     },
     {
       "path": "docs/tern-backend.md",
-      "audience": "operator-current"
-    },
-    {
-      "path": "docs/hc-backend.md",
       "audience": "operator-current"
     },
     {
@@ -598,10 +581,6 @@
       "audience": "agent-runtime"
     },
     {
-      "path": "docs/supervision-protocols/codex-checkpoint.md",
-      "audience": "agent-runtime"
-    },
-    {
       "path": "docs/supervision-protocols/cursor.md",
       "audience": "agent-runtime"
     },
@@ -683,14 +662,6 @@
     },
     {
       "path": "docs/verification/dispatch-resolve.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "docs/verification/hermes.md",
-      "audience": "maintainer-verification"
-    },
-    {
-      "path": "docs/verification/kiro.md",
       "audience": "maintainer-verification"
     },
     {
@@ -787,10 +758,6 @@
     },
     {
       "path": ".agents/skills/away-quiet-supervision/SKILL.md",
-      "audience": "agent-runtime"
-    },
-    {
-      "path": ".agents/skills/lavish-url/SKILL.md",
       "audience": "agent-runtime"
     },
     {

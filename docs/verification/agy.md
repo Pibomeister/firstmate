@@ -238,6 +238,7 @@ The keychain itself was healthy; only the substituted `HOME` hid it.
 `bin/fm-spawn.sh` refuses an agy launch on macOS under such a `HOME` before anything launches, and names the cause.
 `tests/fm-agy-harness.test.sh` pins the refusal with a fake `uname` that reports Darwin, and accepts a HOME that has only the legacy `login.keychain`.
 Never press "Reset To Defaults" on that dialog; it does not apply to this cause.
+
 ## What is still unproven
 
 The signed-out `agy models` stdout was inferred from agy's log, not captured (see [Model and effort](#model-and-effort)).
