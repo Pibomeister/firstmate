@@ -290,6 +290,38 @@ snapshot_state() {
     cp -RP "$HOME_DIR/state/." "$STATE_SNAPSHOT/state/" 2>/dev/null \
       || state_copy_complete \
       || die 1 "cannot copy the home state: $HOME_DIR/state"
+    isolate_links
+  fi
+}
+
+# isolate_links: keep every symlink in the private copy from leading back into
+# the soak home. A Firstmate lock link names its owner directory, a sibling in
+# the same state directory, by absolute path, so such a link is re-pointed at
+# the copied sibling; any other link that resolves into the home is re-pointed
+# at a missing path inside the copy, so it still reads as a link but nothing
+# done through it, such as stale-lock recovery, reaches the home.
+isolate_links() {
+  local l t orig dest
+  while IFS= read -r l; do
+    t=$(readlink "$l") || continue
+    orig="$HOME_DIR/state/${l#"$STATE_SNAPSHOT/state/"}"
+    case "$t" in
+      /*)
+        if [ -d "$(dirname -- "$t")" ] && [ "$(dirname -- "$t")" -ef "$(dirname -- "$orig")" ]; then
+          relink "$l" "$(dirname -- "$l")/$(basename -- "$t")"
+          continue
+        fi
+        dest=$t ;;
+      *) dest="$(dirname -- "$l")/$t" ;;
+    esac
+    ! within "$dest" "$HOME_DIR" || relink "$l" "$STATE_SNAPSHOT/isolated-link"
+  done < <(find "$STATE_SNAPSHOT/state" -type l)
+}
+
+# relink <link> <target>: replace one symlink in the private copy.
+relink() {
+  if ! rm -f "$1" || ! ln -s "$2" "$1"; then
+    die 1 "cannot isolate a link in the private copy: $1"
   fi
 }
 

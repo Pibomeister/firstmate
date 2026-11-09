@@ -59,6 +59,8 @@ assert_home_unchanged() {  # <home> <before> <label>
 # branch checked out in its working directory, so each task copy gets its own
 # run; tmux reports a quiet pane, and lists the windows named in
 # FM_FAKE_TMUX_WINDOWS, so a task window only exists where a test names it.
+# When FM_FAKE_TMUX_HOOK names a script, tmux runs it first, so a test can act
+# during task classification.
 make_fakebin() {
   local fb="$TMP_ROOT/fakebin"
   mkdir -p "$fb"
@@ -79,6 +81,7 @@ exit 0
 SH
   cat > "$fb/tmux" <<'SH'
 #!/usr/bin/env bash
+[ -z "${FM_FAKE_TMUX_HOOK:-}" ] || bash "$FM_FAKE_TMUX_HOOK"
 case "${1:-}" in
   display-message) printf '%%1\n' ;;
   capture-pane) printf 'all quiet\n> \n' ;;
@@ -915,8 +918,42 @@ test_directory_at_a_copy_destination_is_refused() {
   pass "a directory where a copy goes is refused and nothing behind it changes"
 }
 
+# Firstmate lock links name their owner directory by absolute path inside the
+# home state. Lock recovery run on the private copy during classification, as
+# stale-lock recovery does, must reach only the copy, never the home.
+test_lock_recovery_on_the_state_copy_leaves_the_home_unchanged() {
+  local home out wd tr before hook ran
+  home=$(make_home lockcopy)
+  out="$TMP_ROOT/lockcopy-out"; wd="$TMP_ROOT/lockcopy-watchdog"; tr="$TMP_ROOT/lockcopy-transcripts"
+  mkdir -p "$wd" "$tr" "$home/state/.control-feat-a.lock.owner.AbC123"
+  printf '99999\n' > "$home/state/.control-feat-a.lock.owner.AbC123/pid"
+  ln -s "$home/state/.control-feat-a.lock.owner.AbC123" "$home/state/.control-feat-a.lock"
+  # Any other link into the home is cut off from it too.
+  ln -s "$home/config" "$home/state/config-link"
+  hook="$TMP_ROOT/lockcopy-hook.sh"; ran="$TMP_ROOT/lockcopy-ran"
+  cat > "$hook" <<SH
+[ -n "\${FM_STATE_OVERRIDE:-}" ] || exit 0
+[ -L "\$FM_STATE_OVERRIDE/.control-feat-a.lock" ] || exit 0
+. "$ROOT/bin/fm-wake-lib.sh"
+fm_lock_remove_path "\$FM_STATE_OVERRIDE/.control-feat-a.lock"
+: 2> /dev/null > "\$FM_STATE_OVERRIDE/config-link/written"
+: > "$ran"
+SH
+  FM_FAKE_TMUX_WINDOWS=fm-feat-a soak "$T0" start --home "$home" --out "$out" --label baseline --harness claude > /dev/null || fail "start failed"
+  before=$(snapshot "$home")
+  FM_FAKE_TMUX_HOOK=$hook FM_FAKE_TMUX_WINDOWS=fm-feat-a soak $((T0 + 100)) sample --home "$home" --out "$out" > /dev/null || fail "sample failed"
+  [ -e "$ran" ] || fail "lock recovery did not run on the copy during sample"
+  assert_home_unchanged "$home" "$before" "sample with lock recovery on the state copy"
+  rm -f "$ran"
+  FM_FAKE_TMUX_HOOK=$hook FM_FAKE_TMUX_WINDOWS=fm-feat-a soak $((T0 + 1000)) finish --home "$home" --out "$out" --watchdog-dir "$wd" --transcript-dir "$tr" > /dev/null || fail "finish failed"
+  [ -e "$ran" ] || fail "lock recovery did not run on the copy during finish"
+  assert_home_unchanged "$home" "$before" "finish with lock recovery on the state copy"
+  pass "lock recovery on the private state copy never reaches the home"
+}
+
 make_fakebin
 fm_test_run \
+  test_lock_recovery_on_the_state_copy_leaves_the_home_unchanged \
   test_directory_at_a_copy_destination_is_refused \
   test_hard_linked_output_is_refused \
   test_sample_tolerates_a_state_entry_that_vanishes_during_the_copy \
