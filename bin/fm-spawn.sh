@@ -636,8 +636,8 @@
 # A --secondmate launch arms the same semantic busy contract (bin/fm-busy-lib.sh) in THIS
 # parent home for claude, opencode, pi, pi-signed, and omp, so the parent's active-turn
 # gate can read a busy verdict. Those hooks do not touch the parent's turn-ended marker:
-# a mate's completed turns stay in its own home. Codex stays unknown until a semantic
-# source exists. Grok keeps its rendered-tail fallback and is not given a parent
+# a mate's completed turns stay in its own home. Until a semantic source exists, Codex
+# classifies through fm_busy_codex_native_turn_state. Grok keeps its rendered-tail fallback and is not given a parent
 # turn-end hook. Cursor's transcript binding is written for a secondmate the same way
 # as for a crewmate. Muse, gemini, devin, cortex, and rovo are refused as secondmates.
 # A raw launch command for a claude, pi, pi-signed, or omp secondmate is not armed
@@ -7506,10 +7506,10 @@ EOF
     # probes and the evidence). Neither Codex path is usable on the
     # installed binary: a pane worker's turns are not observable through
     # the app-server protocol, and its lifecycle hooks did not fire for a
-    # firstmate-launched worker. Codex therefore classifies unknown with
-    # an explicit reason rather than falling back to idle, and no busy
-    # wiring is installed. The turn-end NOTIFICATION marker still rides
-    # the launch command via -c notify=[...] and __TURNEND__.
+    # firstmate-launched worker. No busy wiring is installed, and Codex
+    # classifies through fm_busy_codex_native_turn_state instead. The
+    # turn-end marker rides the launch command via -c notify=[...] and
+    # __TURNEND__; that classifier also reads it as idle evidence.
     ;;
   grok*)
     # Parent turn-end wiring only. A secondmate already classifies through the

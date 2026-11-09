@@ -102,6 +102,8 @@ In [Codex mode](#codex-mode), an identity-matched live watcher held by this sess
 When an active home instead has a live session lock held by a verified harness that the current session does not own, the Claude and Codex guards emit a read-only ownership diagnostic and allow the turn to end safely.
 
 [`bin/fm-session-lock-lib.sh`](../bin/fm-session-lock-lib.sh) owns the shared ownership and owner-lifetime verdicts, including trusted Claude and Codex identities; [`bin/fm-lock.sh`](../bin/fm-lock.sh) owns sidecar publication and anchor changes.
+A Codex `Stop` hook receives no `CODEX_THREAD_ID`/`CODEX_SESSION_ID` pair, so the guard hands that verdict the payload's `session_id`, and the library's Codex-ancestry gate still decides whether to trust it; a daemon-served owner is therefore recognized as itself even though its lock records an exited tool shell.
+The same payload thread also lets a daemon-served session prove its own foreground checkpoint by thread binding, so its Stop now blocks while that checkpoint holds the watcher, as Codex mode's own-checkpoint rule already requires.
 
 A Claude or Codex session that does not own the lock cannot arm or repair the home without stealing the live owner's lock, so blocking it would create an unbounded loop.
 The lock-owning session remains responsible for restoring supervision.
