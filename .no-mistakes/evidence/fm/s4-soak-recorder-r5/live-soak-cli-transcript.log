@@ -1,0 +1,117 @@
++(eval):4> bin/fm-lab-home.sh create /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R
++(eval):5> git -C /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R init -q
++(eval):5> git -C /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R -c 'user.email=t@t' -c 'user.name=t' commit -q --allow-empty -m lab
++(eval):6> mkdir -p /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R/data /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R/state /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakw.PL2DJZ/wd/handoffs /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakw.PL2DJZ/tx
++(eval):7> now=+(eval):7> date +%s
++(eval):7> now=1794236400 
++(eval):8> echo '[at=1794236400] working: lab task'
++(eval):9> echo '[at=1794229200] old'
++(eval):11> mkdir -p /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R/state/.lk.owner
++(eval):11> echo 'pid=1'
++(eval):11> ln -s /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R/state/.lk.owner /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R/state/.lk
++(eval):12> find /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R -path /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R/.git -prune -o -print0
++find:1> local _cc_bin=/Users/eduardopicazo/.local/share/claude/versions/2.1.319
++find:2> [[ -x /Users/eduardopicazo/.local/share/claude/versions/2.1.319 ]]
++find:3> [[ ! -x /Users/eduardopicazo/.local/share/claude/versions/2.1.319 ]]
++find:4> [[ -n 5.9 ]]
++find:5> ARGV0=bfs bfs -S dfs -regextype findutils-default /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R -path /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R/.git -prune -o -print0
++(eval):12> xargs -0 stat -f '%N %m %z'
++(eval):12> sort
++(eval):13> bin/fm-soak-record.sh readable-harnesses
+claude
++(eval):14> bin/fm-soak-record.sh inventory --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R --harness claude --harness codex
+claude readable
+codex unreadable
++(eval):14> echo 'inventory exit=3'
+inventory exit=3
++(eval):15> bin/fm-soak-record.sh start --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakw.PL2DJZ/bad --label baseline --harness claude --harness codex
+claude readable
+codex unreadable
+fm-soak-record: refusing to start: a declared harness is unreadable
++(eval):15> echo 'start-unreadable exit=3'
+start-unreadable exit=3
++(eval):16> bin/fm-soak-record.sh start --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R/data/out --label baseline --harness claude
+fm-soak-record: --out is inside the soak home: <LAB>/data/out
++(eval):16> echo 'start-out-in-home exit=2'
+start-out-in-home exit=2
++(eval):17> bin/fm-soak-record.sh start --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakw.PL2DJZ/out --label baseline --harness claude
+claude readable
++(eval):17> echo 'start exit=0'
+start exit=0
++(eval):18> cat /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakw.PL2DJZ/out/soak.json
+{
+  "label": "baseline",
+  "home": "<LAB>",
+  "revision": "ce683cb36ac1da3c7342f7fb385c97b31b0a8f56",
+  "started_at": 1794236400,
+  "harnesses": [
+    "claude"
+  ],
+  "session_ids": []
+}
++(eval):19> sleep 1
++(eval):19> echo '# plan'
++(eval):20> find /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R -path /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R/.git -prune -o -print0
++find:1> local _cc_bin=/Users/eduardopicazo/.local/share/claude/versions/2.1.319
++find:2> [[ -x /Users/eduardopicazo/.local/share/claude/versions/2.1.319 ]]
++find:3> [[ ! -x /Users/eduardopicazo/.local/share/claude/versions/2.1.319 ]]
++find:4> [[ -n 5.9 ]]
++find:5> ARGV0=bfs bfs -S dfs -regextype findutils-default /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R -path /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R/.git -prune -o -print0
++(eval):20> xargs -0 stat -f '%N %m %z'
++(eval):20> sort
++(eval):21> echo '{"x":1}'
++(eval):22> printf 'epoch\thome\taction\n%s\t%s\thandoff\n%s\t/other\thandoff\n' 1794236400 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R 1794236400
++(eval):23> bin/fm-soak-record.sh sample --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakw.PL2DJZ/out
++(eval):23> echo 'sample exit=0'
+sample exit=0
++(eval):24> bin/fm-soak-record.sh sample --home /nonexistent-home --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakw.PL2DJZ/out
+fm-soak-record: the soak home is not a directory
++(eval):24> echo 'sample-other-home exit=2'
+sample-other-home exit=2
++(eval):25> bin/fm-soak-record.sh finish --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakw.PL2DJZ/out --watchdog-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakw.PL2DJZ/out/wd --transcript-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakw.PL2DJZ/tx
+fm-soak-record: the watchdog directory does not exist: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakw.PL2DJZ/out/wd
++(eval):25> echo 'finish-wd-in-out exit=2'
+finish-wd-in-out exit=2
++(eval):26> bin/fm-soak-record.sh finish --home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakw.PL2DJZ/out --watchdog-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakw.PL2DJZ/wd --transcript-dir /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-soakw.PL2DJZ/tx
++(eval):26> echo 'finish exit=0'
+finish exit=0
++(eval):27> set +x
+--- load.tsv
+1794236402	0	0	1	-
+--- soak.json
+{
+  "label": "baseline",
+  "home": "<LAB>",
+  "revision": "ce683cb36ac1da3c7342f7fb385c97b31b0a8f56",
+  "started_at": 1794236400,
+  "harnesses": [
+    "claude"
+  ],
+  "session_ids": [
+    {
+      "id": "sess-xyz",
+      "transcript": "transcripts/sess-xyz.jsonl"
+    }
+  ],
+  "finished_at": 1794236402,
+  "handoff_count": 1,
+  "violations": []
+}
+--- out tree
+./handoff-events.tsv
+./handoffs/handoff-a.md
+./load.tsv
+./soak.json
+./transcripts/sess-xyz.jsonl
+./wake-ledger.tsv
+./watchdog/actions.tsv
+--- watchdog/actions.tsv
+--- home diff (empty = unchanged)
+HOME UNCHANGED
+lrwxr-xr-x@ 1 eduardopicazo  staff  79 Nov  9 09:00 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R/state/.lk -> /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R/state/.lk.owner
+
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4v3n8R/state/.lk.owner:
+total 8
+drwxr-xr-x@ 3 eduardopicazo  staff   96 Nov  9 09:00 .
+drwxr-xr-x@ 5 eduardopicazo  staff  160 Nov  9 09:00 ..
+-rw-r--r--@ 1 eduardopicazo  staff    6 Nov  9 09:00 info

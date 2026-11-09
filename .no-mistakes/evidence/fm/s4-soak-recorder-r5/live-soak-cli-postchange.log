@@ -1,0 +1,32 @@
+claude readable
+start exit=0
+sample exit=0
+fm-soak-record: --watchdog-dir is --out or inside it: /private<W>/out/wdin
+finish-wd-inside-out exit=2
+staged actions.tsv intact:        2 lines; finished_at present: 0
+finish exit=0
+--- soak.json
+{
+  "label": "post-change",
+  "home": "<LAB>",
+  "revision": "5175594cd87c7821bd9dc65b8bdd15b7ca7c4735",
+  "started_at": 1794236418,
+  "harnesses": [
+    "claude"
+  ],
+  "session_ids": [],
+  "finished_at": 1794236420,
+  "handoff_count": 2,
+  "violations": [
+    {
+      "kind": "activity-sources-unavailable",
+      "harness": "claude"
+    }
+  ]
+}
+--- kept watchdog rows
+1794236419	w1	<LAB>	primary	frozen	restart	done	pickup verified
+lean-1.md
+HOME UNCHANGED
+fm-soak-record: the soak run in /private<W>/out is already finished
+sample-after-finish exit=1

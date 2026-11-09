@@ -1,4 +1,6 @@
-1..29
+1..31
+ok - lock recovery on the private state copy never reaches the home
+ok - a directory where a copy goes is refused and nothing behind it changes
 ok - a hard link where the recorder writes is refused and nothing behind it changes
 ok - a state entry that vanishes during the private copy does not stop sample
 ok - a state entry renamed into place during the private copy does not stop sample
