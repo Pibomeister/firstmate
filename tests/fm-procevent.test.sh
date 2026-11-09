@@ -263,6 +263,7 @@ payload=$(wake_payloads "$H1")
 assert_contains "$payload" "procevent lavish src-one 1" "completion publishes the committed result sequence"
 assert_not_contains "$payload" "payload one" "source output never reaches the event line"
 [ "$(printf '%s\n' "$payload" | grep -c .)" = 1 ] || fail "expected exactly one event, got: $payload"
+assert_equals "check: procevent lavish src-one 1" "$payload" "an adapter with no summary command keeps the exact payload"
 pass "one blocking completion yields exactly one bounded normalized event"
 
 RESULT=$(first_result "$H1" src-one || true)

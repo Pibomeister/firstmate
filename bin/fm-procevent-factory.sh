@@ -1,0 +1,288 @@
+#!/usr/bin/env bash
+# Factory dispatch-failure process-event adapter and model preflight.
+#
+# Usage:
+#   fm-procevent-factory.sh arm --project <id> [--interval <secs>]
+#   fm-procevent-factory.sh poll --project <id> [--interval <secs>]
+#   fm-procevent-factory.sh preflight --project <id>
+#   fm-procevent-factory.sh classify <result-file>
+#   fm-procevent-factory.sh terminal <result-file>
+#   fm-procevent-factory.sh summary <result-file>
+#   fm-procevent-factory.sh source-id --project <id>
+#   fm-procevent-factory.sh retire --project <id>
+#
+# arm        Register a watch on one Factory project's attention inbox through
+#            `bin/fm-procevent.sh register`; source id `factory-<project-id>`.
+#            Refuses unless config/factory is present and valid.
+# poll       The blocking child the generic runner executes; never run this
+#            in a conversational turn. Every <interval> seconds (default 60) it
+#            reads `GET <url>/web/factory/projects/<id>/attention?kind=automation-failed&view=open&limit=50`
+#            and exits with a `status: failed` result once an item appears
+#            whose key no earlier captured result of this source reported, one
+#            `item:` line per new item carrying its key, failure code, and error
+#            text. The captured results are the dedup record, so a crash before
+#            capture re-detects instead of losing the failure. A failure result
+#            is not terminal: the watcher's reconcile restarts the watch.
+#            Three consecutive unreachable reads (connection failure, timeout,
+#            or HTTP 5xx), one 401 or 403, any other unexpected HTTP status, or
+#            a malformed body end the watch with one terminal `status: error`
+#            result naming the cause, so a down Factory wakes once, not forever.
+#            Only the newest 50 open items are read per poll.
+# preflight  Read-only. Report whether a newly prepared run session in the
+#            project would get a usable model: the project's `defaultModelId`
+#            and `modelScope` (hybrid resolves to factory for runs) from
+#            `GET /web/factory/projects/<id>`, checked against
+#            `GET /web/config/models?factoryId=<id>`, which lists only models
+#            whose provider has a credential in the project's scope. That
+#            catalog proves a credential is present, not that it is still valid.
+#            Exit 0 usable, 1 not usable (no default model, model not in the
+#            catalog, project not found), 3 cannot determine (user model scope,
+#            no catalog exposed, Factory unreachable or auth refused), 2 usage.
+# classify   Print failed, error, or unknown for a captured result.
+# terminal   Exit 0 only for an error result.
+# summary    Print one bounded line for the wake reason: the new failures' count
+#            and first error text, or the reason the watch stopped.
+# source-id  Print the canonical source id.
+# retire     Stop the project's watch and retire its registration.
+#
+# Operator config lives in the private, gitignored `config/factory`, one
+# `key=value` per line: `url=` (required, http or https base URL) and
+# `token_file=` (optional absolute path to a private file holding one bearer
+# token line). The token is passed to curl on stdin, never on its argv, and
+# never enters the registration. docs/configuration.md owns the schema.
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
+STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+CONFIG="$FM_HOME/config/factory"
+
+# shellcheck source=bin/fm-pr-lib.sh
+. "$SCRIPT_DIR/fm-pr-lib.sh"
+# shellcheck source=bin/fm-procevent-lib.sh
+. "$SCRIPT_DIR/fm-procevent-lib.sh"
+
+DEFAULT_INTERVAL=60
+MAX_CONSECUTIVE_READ_FAILURES=3
+READ_TIMEOUT=20
+DETAIL_MAX=512
+
+usage() {
+  awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "${BASH_SOURCE[0]}"
+  exit 2
+}
+die() { printf 'error: %s\n' "$1" >&2; exit 1; }
+
+PROJECT=
+INTERVAL=$DEFAULT_INTERVAL
+URL=
+TOKEN=
+
+parse_project_args() {
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --project)  [ -n "${2-}" ] || die "--project needs a value"; PROJECT=$2; shift 2 ;;
+      --interval) [ -n "${2-}" ] || die "--interval needs a value"; INTERVAL=$2; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  [ -n "$PROJECT" ] || die "--project is required"
+  [[ "$PROJECT" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,55}$ ]] || die "invalid project id: $PROJECT"
+  [[ "$INTERVAL" =~ ^[0-9]+(\.[0-9]+)?$ ]] && [[ ! "$INTERVAL" =~ ^0+(\.0+)?$ ]] \
+    || die "--interval needs a positive number"
+  SOURCE_ID="factory-$PROJECT"
+  fm_procevent_source_id_valid "$SOURCE_ID" || die "source id is not path-safe: $SOURCE_ID"
+}
+
+# Load config/factory into URL and TOKEN. Returns 1 with CONFIG_ERROR set.
+load_config() {
+  local key value token_file=''
+  CONFIG_ERROR=
+  [ -f "$CONFIG" ] && [ ! -L "$CONFIG" ] || { CONFIG_ERROR='missing operator config: config/factory'; return 1; }
+  URL=
+  while IFS='=' read -r key value; do
+    case "$key" in
+      url) URL=$value ;;
+      token_file) token_file=$value ;;
+      ''|'#'*) ;;
+    esac
+  done < "$CONFIG"
+  URL=${URL%/}
+  [[ "$URL" =~ ^https?://[^[:space:]\"\\]+$ ]] || { CONFIG_ERROR='config/factory url= must be an http or https URL'; return 1; }
+  TOKEN=
+  if [ -n "$token_file" ]; then
+    [ -f "$token_file" ] && [ -r "$token_file" ] || { CONFIG_ERROR='config/factory token_file is not a readable file'; return 1; }
+    IFS= read -r TOKEN < "$token_file" || [ -n "$TOKEN" ] || { CONFIG_ERROR='config/factory token_file is empty'; return 1; }
+    [[ "$TOKEN" =~ ^[A-Za-z0-9._~+/=-]+$ ]] || { CONFIG_ERROR='config/factory token_file must hold one bearer token line'; return 1; }
+  fi
+}
+
+# http_get <path-and-query>: sets HTTP_STATUS and HTTP_BODY. Returns 0 when an
+# HTTP answer arrived, 1 on a transport failure with HTTP_ERROR set.
+http_get() {
+  local body status rc=0
+  body=$(mktemp "${TMPDIR:-/tmp}/fm-factory.XXXXXX") || { HTTP_ERROR="cannot create a temporary file"; return 1; }
+  # The token reaches curl through its stdin config, so it never sits on argv.
+  status=$( { [ -z "$TOKEN" ] || printf 'header = "Authorization: Bearer %s"\n' "$TOKEN"; } \
+    | curl -sS -K - --max-time "$READ_TIMEOUT" -o "$body" -w '%{http_code}' -- "$URL$1" 2>"$body.err") || rc=$?
+  HTTP_BODY=$(cat "$body" 2>/dev/null)
+  HTTP_ERROR=$(head -1 "$body.err" 2>/dev/null)
+  rm -f -- "$body" "$body.err"
+  HTTP_STATUS=$status
+  if [ "$rc" -ne 0 ] || [ -z "$status" ] || [ "$status" = 000 ]; then
+    HTTP_ERROR=${HTTP_ERROR:-curl exit $rc}
+    return 1
+  fi
+  return 0
+}
+
+one_line() { tr '\t\r\n' '   ' | cut -c "1-$DETAIL_MAX"; }
+
+# Keys every earlier captured result of this source already reported.
+reported_keys() {
+  local inbox result
+  inbox=$(fm_procevent_inbox_dir "$STATE")
+  for result in "$inbox/$SOURCE_ID".*.result; do
+    [ -f "$result" ] || continue
+    awk -F '\t' '/^item: / { sub(/^item: /, "", $1); print $1 }' "$result"
+  done
+}
+
+emit_error() {  # <polls> <detail>
+  printf 'factory: %s\nstatus: error\nproject: %s\ndetail: %s\ncondition_polls: %s\n' \
+    "$SOURCE_ID" "$PROJECT" "$(printf '%s' "$2" | one_line)" "$1"
+  exit 0
+}
+
+cmd_poll() {
+  parse_project_args "$@"
+  local polls=0 failures=0 items seen new
+  load_config || emit_error 1 "$CONFIG_ERROR"
+  while :; do
+    polls=$((polls + 1))
+    if ! http_get "/web/factory/projects/$PROJECT/attention?kind=automation-failed&view=open&limit=50"; then
+      failures=$((failures + 1))
+      [ "$failures" -lt "$MAX_CONSECUTIVE_READ_FAILURES" ] && { sleep "$INTERVAL"; continue; }
+      emit_error "$polls" "Factory at $URL unreachable: $failures consecutive failed reads; last: $HTTP_ERROR"
+    fi
+    case "$HTTP_STATUS" in
+      200) ;;
+      401|403) emit_error "$polls" "Factory at $URL refused the attention read: HTTP $HTTP_STATUS (check config/factory token_file)" ;;
+      5??)
+        failures=$((failures + 1))
+        [ "$failures" -lt "$MAX_CONSECUTIVE_READ_FAILURES" ] && { sleep "$INTERVAL"; continue; }
+        emit_error "$polls" "Factory at $URL unreachable: $failures consecutive failed reads; last: HTTP $HTTP_STATUS"
+        ;;
+      *) emit_error "$polls" "Factory at $URL answered the attention read with HTTP $HTTP_STATUS" ;;
+    esac
+    failures=0
+    items=$(printf '%s' "$HTTP_BODY" | jq -r '
+      .items | if type == "array" then . else error("no items") end
+      | .[] | select(.kind == "automation-failed" and (.key | type) == "string")
+      | [.key, (.failureCode // "" | tostring), (.detail // .title // "" | tostring)] | @tsv' 2>/dev/null) \
+      || emit_error "$polls" "Factory at $URL returned a malformed attention response"
+    seen=$(reported_keys)
+    new=$(printf '%s\n' "$items" | FM_FACTORY_SEEN="$seen" awk -F '\t' '
+      BEGIN { n = split(ENVIRON["FM_FACTORY_SEEN"], s, "\n"); for (i = 1; i <= n; i++) known[s[i]] = 1 }
+      $1 != "" && !($1 in known) && !($1 in done) { done[$1] = 1; print }')
+    if [ -n "$new" ]; then
+      printf 'factory: %s\nstatus: failed\nproject: %s\n' "$SOURCE_ID" "$PROJECT"
+      printf '%s\n' "$new" | while IFS=$'\t' read -r key code detail; do
+        printf 'item: %s\t%s\t%s\n' "$key" "$code" "$(printf '%s' "$detail" | one_line)"
+      done
+      printf 'condition_polls: %s\n' "$polls"
+      exit 0
+    fi
+    sleep "$INTERVAL"
+  done
+}
+
+cmd_arm() {
+  parse_project_args "$@"
+  load_config || die "$CONFIG_ERROR"
+  "$SCRIPT_DIR/fm-procevent.sh" register factory "$SOURCE_ID" \
+    -- "$SCRIPT_DIR/fm-procevent-factory.sh" poll --project "$PROJECT" --interval "$INTERVAL" || exit 1
+  printf 'armed: %s\ninterval: %ss\n' "$SOURCE_ID" "$INTERVAL"
+}
+
+preflight_undetermined() { printf 'cannot determine: %s\n' "$1"; exit 3; }
+preflight_unusable() { printf 'not usable: %s\n' "$1"; exit 1; }
+
+cmd_preflight() {
+  parse_project_args "$@"
+  local scope model listed
+  load_config || preflight_undetermined "$CONFIG_ERROR"
+  http_get "/web/factory/projects/$PROJECT" \
+    || preflight_undetermined "Factory at $URL unreachable: $HTTP_ERROR"
+  case "$HTTP_STATUS" in
+    200) ;;
+    401|403) preflight_undetermined "Factory at $URL refused the project read: HTTP $HTTP_STATUS" ;;
+    404) preflight_unusable "project $PROJECT not found" ;;
+    *) preflight_undetermined "Factory at $URL answered the project read with HTTP $HTTP_STATUS" ;;
+  esac
+  scope=$(printf '%s' "$HTTP_BODY" | jq -r '.project.modelScope // empty' 2>/dev/null)
+  model=$(printf '%s' "$HTTP_BODY" | jq -r '.project.defaultModelId // empty' 2>/dev/null)
+  case "$scope" in
+    factory|hybrid) ;;
+    user) preflight_undetermined "project $PROJECT uses per-user model scope; a run session takes its owner's default model, which this read cannot see" ;;
+    *) preflight_undetermined "Factory exposes no modelScope for project $PROJECT" ;;
+  esac
+  [ -n "$model" ] || preflight_unusable "project $PROJECT has no default model; a run session would fall back to an unpinned mode default"
+  http_get "/web/config/models?factoryId=$PROJECT" \
+    || preflight_undetermined "Factory at $URL unreachable: $HTTP_ERROR"
+  if [ "$HTTP_STATUS" != 200 ] || ! printf '%s' "$HTTP_BODY" | jq -e '.models | type == "array"' >/dev/null 2>&1; then
+    preflight_undetermined "Factory at $URL exposes no model catalog for admission (HTTP $HTTP_STATUS)"
+  fi
+  listed=$(printf '%s' "$HTTP_BODY" | jq -r --arg m "$model" 'any(.models[]; .id == $m)')
+  [ "$listed" = true ] \
+    || preflight_unusable "default model $model is not in the Factory's credentialed model catalog for project $PROJECT"
+  printf 'usable: %s (scope %s; provider credential present, validity not checked)\n' "$model" "$scope"
+}
+
+result_status() {
+  awk '/^status: / { sub(/^status: /, ""); print; exit }' "$1"
+}
+
+cmd_classify() {
+  [ -f "${1-}" ] || die "result file does not exist: ${1-}"
+  case "$(result_status "$1")" in
+    failed) echo failed ;;
+    error) echo error ;;
+    *) echo unknown ;;
+  esac
+}
+
+cmd_terminal() {
+  [ -f "${1-}" ] || die "result file does not exist: ${1-}"
+  [ "$(result_status "$1")" = error ]
+}
+
+cmd_summary() {
+  local file=${1-} count first
+  [ -f "$file" ] || die "result file does not exist: $file"
+  case "$(result_status "$file")" in
+    failed)
+      count=$(grep -c '^item: ' "$file")
+      first=$(awk -F '\t' '/^item: / { print $3; exit }' "$file")
+      printf 'Factory automation failed (%s new): %s\n' "$count" "$first" | cut -c 1-300
+      ;;
+    error)
+      printf 'Factory watch stopped: %s\n' "$(awk '/^detail: / { sub(/^detail: /, ""); print; exit }' "$file")" | cut -c 1-300
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+case "${1-}" in
+  arm)       shift; cmd_arm "$@" ;;
+  poll)      shift; cmd_poll "$@" ;;
+  preflight) shift; cmd_preflight "$@" ;;
+  classify)  shift; cmd_classify "$@" ;;
+  terminal)  shift; cmd_terminal "$@" ;;
+  summary)   shift; cmd_summary "$@" ;;
+  source-id) shift; parse_project_args "$@"; printf '%s\n' "$SOURCE_ID" ;;
+  retire)    shift; parse_project_args "$@"; "$SCRIPT_DIR/fm-procevent.sh" retire "$SOURCE_ID" ;;
+  ''|-h|--help|help) usage ;;
+  *) die "unknown command: $1" ;;
+esac

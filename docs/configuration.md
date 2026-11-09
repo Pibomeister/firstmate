@@ -2941,6 +2941,25 @@ A repo update that fast-forwards an in-repo action's bytes in place would otherw
 Every failure path - a mutated spec or action executable, a condition error past its budget, an expired deadline, a failed action, or an earlier fire whose outcome was never captured - produces a terminal captured outcome that wakes firstmate rather than a silent retry, and a durable single-fire marker claimed before the action makes restarts and re-polls unable to fire it twice.
 The adapter automates only the exact deterministic subset: anything needing judgment, and anything destructive, irreversible, or security-sensitive, keeps the ordinary check-fires-then-firstmate-decides flow, and the adapter's header and `--help` own its commands, flags, and outcome document.
 
+**Watch Factory dispatch failures (config/factory)**
+
+The `factory` adapter (`bin/fm-procevent-factory.sh`) watches one Goodword Factory project's attention inbox and wakes firstmate once per new `automation-failed` item, with the item's error text in the wake.
+It reads its endpoint from the optional, private, gitignored `config/factory`, one `key=value` per line:
+
+- `url=` is required and is the Factory's `http` or `https` base URL.
+- `token_file=` is optional and names a private file holding one bearer token line; the token reaches the Factory only as an `Authorization` header and is never stored in the registration or passed on a command line.
+
+Arm a watch with `bin/fm-procevent-factory.sh arm --project <factory-project-id>`; `arm` refuses when `config/factory` is missing or invalid.
+An item is reported once: an item whose key an earlier captured result of the same source already named never wakes again, and the captured results are that record, so a crash before capture re-detects rather than loses a failure.
+A failure result keeps the watch armed, and the ordinary reconcile restarts it.
+A Factory that stays unreachable for three consecutive reads, refuses the token with HTTP 401 or 403, or answers with any other unexpected status or a malformed body ends the watch with one terminal diagnostic result, so an outage wakes firstmate once instead of on every cycle; re-arm after fixing the cause.
+Only the newest 50 open items are read per poll.
+
+Before launching unattended runs, `bin/fm-procevent-factory.sh preflight --project <id>` reports read-only whether a newly prepared run session would get a usable model.
+It exits 0 when the project's default model is in the Factory's credentialed model catalog for the project, 1 when it is not or the project has no default model, and 3 when it cannot tell, including a project whose sessions take each owner's own default model.
+That catalog proves a provider credential is present, not that it is still valid, so a preflight pass does not rule out an expired credential.
+The adapter's header and `--help` own its commands, flags, result document, and exit codes.
+
 **Capture and publish results**
 
 This section is the single owner of the runner's operating contract.
@@ -2948,6 +2967,7 @@ This section is the single owner of the runner's operating contract.
 - Process-event commands resolve the state root to its physical directory before validating it and deriving paths, so a home reached through a symlinked ancestor behaves like its physical spelling while an unsafe target directory remains refused.
 - Registration writes one private record under `state/procevent/`, and a completed result plus its immutable adapter identity are captured under `state/procevent-inbox/` before any announcement or event can reference it.
 - By default, results are published as ordinary `check` wakes carrying the source id and committed result sequence through the existing durable wake queue, so the runner adds no second notification control plane.
+- A built-in adapter may add one bounded, control-character-free summary line of its own result to that payload through its `summary` command; an adapter without one keeps the payload unchanged, and the `bin/fm-procevent.sh` header owns the seam.
 - The self-announcing adapter exception and its fail-safe ordering are defined below.
 - The watcher delivers a queued result on its ordinary cycle by reporting it as an actionable `check` wake, so a default or fallback publication reaches firstmate through the same rewake path every other wake uses and never waits for a manual drain.
 - A queued `check` delivery is reported at most once per captured source and sequence while any records for that key remain queued.
