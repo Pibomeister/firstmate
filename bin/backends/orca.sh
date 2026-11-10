@@ -659,8 +659,9 @@ fm_backend_orca_classify_pid() {  # <pid> <comm>
 # alive|dead|ambiguous|unreadable. Any verified harness anywhere in the tree is
 # `alive`. `dead` needs at least one shell and nothing but shells, apart from
 # the `login` process Orca roots a macOS session with. Anything else - a
-# background job, an unrecognized program - is `ambiguous`, because it could be
-# an agent this classifier does not know.
+# background job, an unrecognized program, a process still running whose
+# command line could not be read - is `ambiguous`, because it could be an agent
+# this classifier does not know.
 fm_backend_orca_tree_state() {  # <root-pid>
   local root=$1 tree pid comm class shells=0 other=0
   tree=$(fm_backend_orca_process_tree "$root") || { printf 'unreadable'; return 0; }
@@ -670,7 +671,12 @@ fm_backend_orca_tree_state() {  # <root-pid>
     case "$class" in
       agent) printf 'alive'; return 0 ;;
       shell) shells=1 ;;
-      '') ;;
+      '')
+        # Unclassified: the process exited after the tree read, or its read
+        # failed. Only a process a complete process-table read proves gone
+        # may be ignored; a failed signal probe proves nothing.
+        fm_backend_orca_pid_absent "$pid" || other=1
+        ;;
       *)
         if [ "$pid" != "$root" ] || [ "${comm##*/}" != login ]; then
           other=1
@@ -730,6 +736,17 @@ fm_backend_orca_physical_dir() {  # <dir>
   (cd -P -- "$1" 2>/dev/null && pwd -P)
 }
 
+# fm_backend_orca_cwd_scan: one `lsof -Fpn` working-directory read of every
+# process this user owns (`p<pid>` then `n<cwd>` lines). Returns 1 when lsof is
+# absent, fails, or prints nothing, which callers treat as missing proof.
+fm_backend_orca_cwd_scan() {
+  local scan
+  command -v lsof >/dev/null 2>&1 || return 1
+  scan=$(LC_ALL=C lsof -nP -a -u "$(id -u)" -d cwd -Fpn 2>/dev/null) || return 1
+  [ -n "$scan" ] || return 1
+  printf '%s\n' "$scan"
+}
+
 # fm_backend_orca_worktree_agent_pids: every process this user owns whose
 # working directory is <worktree> or below it and that classifies as an agent,
 # one `pid<TAB>comm` line each. This catches an agent that outlived the pty it
@@ -739,9 +756,7 @@ fm_backend_orca_worktree_agent_pids() {  # <worktree>
   local worktree=$1 root scan pids pid comm
   root=$(fm_backend_orca_physical_dir "$worktree") || return 1
   [ -n "$root" ] || return 1
-  command -v lsof >/dev/null 2>&1 || return 1
-  scan=$(LC_ALL=C lsof -nP -a -u "$(id -u)" -d cwd -Fpn 2>/dev/null) || return 1
-  [ -n "$scan" ] || return 1
+  scan=$(fm_backend_orca_cwd_scan) || return 1
   pids=$(printf '%s\n' "$scan" | awk -v root="$root" '
     /^p/ { pid = substr($0, 2); next }
     /^n/ { path = substr($0, 2); if (pid != "" && (path == root || index(path, root "/") == 1)) print pid }')

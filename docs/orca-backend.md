@@ -110,6 +110,7 @@ Orca's terminal API never names the processes behind a terminal, so the verdict 
 - The process table under that root is classified by the shared harness-process classifier in `bin/fm-agent-process-lib.sh`.
 
 A connected terminal is `alive` when any process in its session tree is a verified harness, `dead` when the tree holds only shells besides the `login` root, and `ambiguous` otherwise.
+A tree process whose command line cannot be read counts as an unrecognized program, so the tree reads `ambiguous`, unless a complete process-table read proves that process gone.
 A connected terminal is `missing` when the session root its sweep names is absent from a complete read of the process table.
 Orca can keep reporting such a terminal connected and writable after its session process exited, and input typed into it reaches no process.
 A process table that cannot be read, or that does not list the reading shell, is not complete, so the terminal reads `unreadable`.
