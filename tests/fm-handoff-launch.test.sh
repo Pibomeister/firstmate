@@ -110,6 +110,7 @@ test_success_path_records_a_live_successor() {
   [ "$SUCC_PID" != "$PRED_PID" ] || fail "the successor pid must not be the predecessor pid"
   kill -0 "$SUCC_PID" 2>/dev/null || fail "the recorded successor pid $SUCC_PID must be alive"
   assert_contains "$(cat "$LAB/state/.handoff-successor")" "handoff=$LAB/data/handoff.md" "the record names the handoff document"
+  assert_contains "$(cat "$LAB/state/.handoff-successor")" "predecessor=$PRED_PID" "the record names the session it replaces"
   sha8=$(shasum -a 256 "$LAB/data/handoff.md" 2>/dev/null | cut -c1-8)
   [ -n "$sha8" ] || sha8=$(sha256sum "$LAB/data/handoff.md" | cut -c1-8)
   assert_contains "$out" "sha8=$sha8" "the launch reports the handoff sha8"

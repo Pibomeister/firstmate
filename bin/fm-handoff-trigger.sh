@@ -112,10 +112,19 @@
 # stop a human `/quit` or a crash, and it does not run for a non-Claude
 # primary; bin/fm-order.sh owns the gate and its limits.
 #
+# DELIBERATE HANDOFF. A primary with no open fresh-start firing is on a
+# deliberate handoff while state/.handoff-successor names a live successor pid
+# and predecessor=<this session's lock pid>, the field bin/fm-handoff-launch.sh
+# writes; a record that names another predecessor belongs to an earlier
+# handoff. That record, not state/.order-handoff, is the evidence, so a rerun
+# of handoff --doc or a compaction before the stop does not close it. Its stop
+# is blocked once per turn while `bin/fm-order.sh covers` finds an open captain
+# order missing from the record's handoff=<document>.
+#
 # ONE LIVE PANE. When a primary's stop passes with the order gate clear, this
 # session holding the session lock, and either a fresh-start firing with a live
-# successor recorded, or a deliberate handoff (`handing-off`) whose live
-# successor record is newer than state/.order-handoff, the hook detaches
+# successor recorded, or a deliberate handoff whose successor's handoff document
+# lists every open captain order, the hook detaches
 # `bin/fm-handoff-launch.sh --end-predecessor <lock pid> <transcript> <bytes>`,
 # which ends this session after a quiet settle unless the transcript shows a
 # new turn; that script's header owns the checks. The successor waits for that
@@ -267,31 +276,55 @@ if [ "$EVENT" = Stop ]; then
       *) HANDOFF_MARKER=1 ;;
     esac
   fi
-  [ -n "$HANDOFF_MARKER" ] ||
-    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" handing-off 2>/dev/null || exit 0
-  ACTIVE=$(printf '%s' "$PAYLOAD" | jq -r '.stop_hook_active // false' 2>/dev/null)
-  GATE_RC=0
-  GATE_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" gate 2>/dev/null) || GATE_RC=$?
-  if [ "$GATE_RC" -eq 3 ]; then
-    [ "$ACTIVE" != true ] || exit 0
-    printf 'Firstmate restart gate: this session is handing off, but its handoff does not list every open captain order. %s
-' \
-      "$(printf '%s' "$GATE_OUT" | tr '\n' ' ')" >&2
-    exit 2
-  fi
-  # Successor gate: only an open fresh-start firing owes a successor; a
-  # handoff recorded for stow does not, and a second mate asks its parent for a
-  # relaunch instead. A deliberate handoff whose live successor was recorded
-  # after its handoff document still ends this session.
-  ! fm_root_is_secondmate_home "$FM_ROOT" || exit 0
+  # A deliberate handoff is under way while a live successor record names this
+  # session, the lock owner, as its predecessor. The record is the evidence, not
+  # the handoff record, which handoff --doc rewrites and a compaction clears.
   LAUNCH="$STATE/.handoff-successor"
   SUCC_PID=$(sed -n 's/^pid=//p' "$LAUNCH" 2>/dev/null | tail -1)
   case "$SUCC_PID" in '' | *[!0-9]*) SUCC_PID= ;; esac
-  if [ -z "$HANDOFF_MARKER" ]; then
-    if [ -n "$SUCC_PID" ] && [ -f "$LAUNCH" ] && [ "$LAUNCH" -nt "$STATE/.order-handoff" ] &&
+  DELIBERATE=
+  if [ -z "$HANDOFF_MARKER" ] && [ -n "$SUCC_PID" ] && ! fm_root_is_secondmate_home "$FM_ROOT"; then
+    SUCC_PRED=$(sed -n 's/^predecessor=//p' "$LAUNCH" 2>/dev/null | tail -1)
+    LOCK_PID=$(head -n 1 "$STATE/.lock" 2>/dev/null | tr -cd '0-9')
+    if [ -n "$LOCK_PID" ] && [ "$SUCC_PRED" = "$LOCK_PID" ] && [ "$SUCC_PID" != "$LOCK_PID" ] &&
       kill -0 "$SUCC_PID" 2>/dev/null; then
-      end_predecessor "$SUCC_PID"
+      # shellcheck source=bin/fm-session-lock-lib.sh
+      . "$SCRIPT_DIR/fm-session-lock-lib.sh"
+      ! fm_session_lock_owned_by_self "$STATE" || DELIBERATE=1
     fi
+  fi
+  HANDING_OFF=$HANDOFF_MARKER
+  [ -n "$HANDING_OFF" ] ||
+    ! FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" handing-off 2>/dev/null || HANDING_OFF=1
+  [ -n "$HANDING_OFF" ] || [ -n "$DELIBERATE" ] || exit 0
+  ACTIVE=$(printf '%s' "$PAYLOAD" | jq -r '.stop_hook_active // false' 2>/dev/null)
+  if [ -n "$HANDING_OFF" ]; then
+    GATE_RC=0
+    GATE_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" gate 2>/dev/null) || GATE_RC=$?
+    if [ "$GATE_RC" -eq 3 ]; then
+      [ "$ACTIVE" != true ] || exit 0
+      printf 'Firstmate restart gate: this session is handing off, but its handoff does not list every open captain order. %s\n' \
+        "$(printf '%s' "$GATE_OUT" | tr '\n' ' ')" >&2
+      exit 2
+    fi
+  fi
+  # Successor gate: only an open fresh-start firing owes a successor; a
+  # handoff recorded for stow does not, and a second mate asks its parent for a
+  # relaunch instead. A deliberate handoff ends this session once its
+  # successor's handoff document lists every open captain order.
+  ! fm_root_is_secondmate_home "$FM_ROOT" || exit 0
+  if [ -z "$HANDOFF_MARKER" ]; then
+    [ -n "$DELIBERATE" ] || exit 0
+    COVER_RC=0
+    COVER_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" covers \
+      "$(sed -n 's/^handoff=//p' "$LAUNCH" 2>/dev/null | tail -1)" 2>&1) || COVER_RC=$?
+    if [ "$COVER_RC" -ne 0 ]; then
+      [ "$ACTIVE" != true ] || exit 0
+      printf 'Firstmate restart gate: this session launched successor pid %s for its handoff, but that handoff does not list every open captain order. %s Then end this turn; the stop that ends it also ends this session after a short quiet settle.\n' \
+        "$SUCC_PID" "$(printf '%s' "$COVER_OUT" | tr '\n' ' ')" >&2
+      exit 2
+    fi
+    end_predecessor "$SUCC_PID"
     exit 0
   fi
   if [ ! -f "$LAUNCH" ] || [ "$MARKER" -nt "$LAUNCH" ] || [ -z "$SUCC_PID" ] ||

@@ -23,6 +23,7 @@
 #   fm-order.sh holds [--relay]
 #   fm-order.sh handoff --doc <file>
 #   fm-order.sh gate
+#   fm-order.sh covers <file>
 #   fm-order.sh handing-off
 #   fm-order.sh claim-handle
 #   fm-order.sh sweep
@@ -106,10 +107,14 @@
 # only when this session recorded a handoff. `gate` reads this session's
 # recorded document and exits 0 only when it names every open order id;
 # otherwise it exits 3 naming the missing ids, including when this session
-# recorded no handoff or the document is gone.
+# recorded no handoff or the document is gone. `covers <file>` applies the same
+# test to a named document, such as a handoff successor's, and neither reads
+# nor writes the record, so it is no restart gate: only `gate` clears a restart.
 # `claim-handle` clears the record whenever the lock owner opens a new context
 # (startup, resume, clear, or compact), so a document written before it never
-# satisfies a later context's gate. Enforcement:
+# satisfies a later context's gate. It leaves state/.handoff-successor alone, so
+# a deliberate handoff still ends its predecessor after a compaction
+# (bin/fm-handoff-trigger.sh owns that end). Enforcement:
 #   - bin/fm-handoff-trigger.sh, as a Claude Stop hook, runs `gate` once the
 #     session is handing off - its newest early handoff trigger firing is a
 #     planned fresh start (a capture firing is not a handoff), or
@@ -831,32 +836,57 @@ cmd_handoff() {
   printf 'handoff: wrote %s open order(s) into %s\n' "$n" "$doc"
 }
 
-cmd_gate() {
-  local doc lines id state missing='' n=0
-  [ "$#" -eq 0 ] || usage_die "usage: fm-order.sh gate"
-  doc=$(recorded_handoff_doc)
+# doc_missing_orders <doc>: set OPEN_N to the open order count and MISSING to
+# the open order ids <doc> does not name, every one when <doc> is empty or gone.
+doc_missing_orders() {
+  local doc=$1 lines id state
+  MISSING='' OPEN_N=0
   lines=$(open_orders)
   while read -r id state; do
     [ -n "$id" ] || continue
-    n=$((n + 1))
+    OPEN_N=$((OPEN_N + 1))
     if [ -z "$doc" ] || [ ! -f "$doc" ] || ! grep -qF -- "$id" "$doc"; then
-      missing="$missing $id"
+      MISSING="$MISSING $id"
     fi
   done <<EOF
 $lines
 EOF
-  if [ -n "$missing" ]; then
+}
+
+cmd_gate() {
+  local doc
+  [ "$#" -eq 0 ] || usage_die "usage: fm-order.sh gate"
+  doc=$(recorded_handoff_doc)
+  doc_missing_orders "$doc"
+  if [ -n "$MISSING" ]; then
     if [ -z "$doc" ]; then
-      printf 'gate: blocked - this session wrote no handoff, so none lists the open order(s):%s\n' "$missing"
+      printf 'gate: blocked - this session wrote no handoff, so none lists the open order(s):%s\n' "$MISSING"
     elif [ ! -f "$doc" ]; then
-      printf 'gate: blocked - the recorded handoff %s is gone; open order(s):%s\n' "$doc" "$missing"
+      printf 'gate: blocked - the recorded handoff %s is gone; open order(s):%s\n' "$doc" "$MISSING"
     else
-      printf 'gate: blocked - the handoff %s does not list open order(s):%s\n' "$doc" "$missing"
+      printf 'gate: blocked - the handoff %s does not list open order(s):%s\n' "$doc" "$MISSING"
     fi
     printf '  Run bin/fm-order.sh handoff --doc <handoff file> so the handoff names every open order before restart.\n'
     return 3
   fi
-  printf 'gate: clear (%s open order(s), all in the handoff)\n' "$n"
+  printf 'gate: clear (%s open order(s), all in the handoff)\n' "$OPEN_N"
+}
+
+cmd_covers() {
+  local doc
+  [ "$#" -eq 1 ] && [ -n "$1" ] || usage_die "usage: fm-order.sh covers <file>"
+  doc=$1
+  doc_missing_orders "$doc"
+  if [ -n "$MISSING" ]; then
+    if [ ! -f "$doc" ]; then
+      printf 'covers: no - the handoff %s is gone; open order(s):%s\n' "$doc" "$MISSING"
+    else
+      printf 'covers: no - the handoff %s does not list open order(s):%s\n' "$doc" "$MISSING"
+    fi
+    printf '  Run bin/fm-order.sh handoff --doc %s so it names every open order.\n' "$doc"
+    return 3
+  fi
+  printf 'covers: yes (%s open order(s), all in %s)\n' "$OPEN_N" "$doc"
 }
 
 # ---------------------------------------------------------------- leash
@@ -932,6 +962,7 @@ case "${1:-}" in
   holds) shift; cmd_holds "$@" ;;
   handoff) shift; cmd_handoff "$@" ;;
   gate) shift; cmd_gate "$@" ;;
+  covers) shift; cmd_covers "$@" ;;
   handing-off) shift; cmd_handing_off "$@" ;;
   claim-handle) shift; cmd_claim_handle ;;
   sweep) shift; cmd_sweep ;;

@@ -34,8 +34,9 @@
 #   4. waits for the new harness pid to appear (a live process whose
 #      command line carries the handoff path and was not there before the
 #      launch), then checks that it is still alive after a settle, and
-#      writes state/.handoff-successor as pid=<pid> and handoff=<path> so
-#      the Stop gate passes, removing any earlier launch-failure record. It
+#      writes state/.handoff-successor as pid=<pid>, handoff=<path>, and
+#      predecessor=<predecessor pid> so the Stop gate passes, removing any
+#      earlier launch-failure record. It
 #      verifies only that live successor pid; the successor confirms the
 #      handoff sha256 at pickup and stops on a mismatch.
 # A launch whose terminal fails to open or whose successor dies during the
@@ -61,14 +62,15 @@
 # 90 seconds, inside a tool call's default timeout), exit 2 on a usage error.
 #
 # END (fm-handoff-launch.sh --end-predecessor <pid> <transcript> <bytes>). Run
-# detached by the trigger's Stop hook when a planned fresh start's stop passes
-# with a live successor recorded (one live pane). After a settle (default 15
+# detached by the trigger's Stop hook when a handoff's stop passes with a live
+# successor recorded (one live pane). After a settle (default 15
 # seconds) it ends <pid> with SIGTERM, waiting up to 30 seconds for it to go,
 # only when all of these still hold: state/.lock names <pid>, the successor
 # record names a different live pid, <pid> is a live harness process, and the
 # transcript has no new user or queued-message record past <bytes>, and
-# `bin/fm-order.sh gate` still passes, so a captain order filed during the
-# settle keeps the old session (reason=order-gate). Claude
+# `bin/fm-order.sh covers` still finds every open order in the successor
+# record's handoff document, so a captain order filed during the settle keeps
+# the old session (reason=order-gate). Claude
 # can flush the stopped turn's final assistant reply after the Stop hook
 # measures <bytes>, so an assistant record, like Claude's own bookkeeping
 # after a stop, does not count as a new turn. It records the outcome in state/.handoff-end as
@@ -152,7 +154,7 @@ new_turn_since() {
 
 # --end-predecessor <pid> <transcript> <bytes>
 end_predecessor() {
-  local pid=$1 transcript=$2 bytes=$3 settle wait_secs lock succ result=skipped reason='' waited=0
+  local pid=$1 transcript=$2 bytes=$3 settle wait_secs lock succ succ_doc result=skipped reason='' waited=0
   case "$pid:$bytes" in *[!0-9:]* | :* | *:) printf 'usage: fm-handoff-launch.sh --end-predecessor <pid> <transcript> <bytes>\n' >&2; exit 2 ;; esac
   settle=$(seam_secs FM_HANDOFF_END_SETTLE_SECS 15)
   wait_secs=$(seam_secs FM_HANDOFF_END_WAIT_SECS 30)
@@ -160,6 +162,7 @@ end_predecessor() {
   lock=$(cat "$STATE/.lock" 2>/dev/null)
   succ=$(sed -n 's/^pid=//p' "$STATE/.handoff-successor" 2>/dev/null | tail -n 1)
   case "$succ" in '' | *[!0-9]*) succ= ;; esac
+  succ_doc=$(sed -n 's/^handoff=//p' "$STATE/.handoff-successor" 2>/dev/null | tail -n 1)
   if [ "$lock" != "$pid" ]; then
     reason='lock-moved'
   elif [ -z "$succ" ] || [ "$succ" = "$pid" ] || ! kill -0 "$succ" 2>/dev/null; then
@@ -168,7 +171,7 @@ end_predecessor() {
     reason=predecessor-gone
   elif [ ! -r "$transcript" ] || new_turn_since "$transcript" "$bytes"; then
     reason=new-turn
-  elif ! FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" gate >/dev/null 2>&1; then
+  elif ! FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" covers "$succ_doc" >/dev/null 2>&1; then
     reason=order-gate
   else
     kill -TERM "$pid" 2>/dev/null
@@ -379,7 +382,8 @@ done
 [ -n "$SUCC_PID" ] || fail_launch "$LAST_FAILURE after $ATTEMPTS attempt(s); state/.handoff-successor left unwritten"
 
 atomic_record "$LAUNCH_RECORD" "pid=$SUCC_PID
-handoff=$HANDOFF" || fail_launch "cannot record the successor in $LAUNCH_RECORD"
+handoff=$HANDOFF
+predecessor=$PRED_PID" || fail_launch "cannot record the successor in $LAUNCH_RECORD"
 rm -f "$FAILED_RECORD"
 printf 'successor launched: pid=%s backend=%s handoff=%s sha8=%s attempt %s of %s\n' \
   "$SUCC_PID" "$BACKEND" "$HANDOFF" "$SHA8" "$ATTEMPTS" "$MAX_ATTEMPTS"

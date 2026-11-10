@@ -241,6 +241,25 @@ test_restart_gate_requires_every_open_order_in_the_handoff() {
   rc=0
   run_order "$home" gate --doc "$doc" >/dev/null 2>&1 || rc=$?
   assert_equals 2 "$rc" "gate takes no document argument"
+  # covers checks a named document, such as a successor's, with no record.
+  out=$(run_order "$home" covers "$doc") || fail "covers passes a document that lists every open order, with no record"
+  assert_contains "$out" "covers: yes (2 open order(s)" "covers reports a clear verdict"
+  printf 'lists only %s\n' "$first" >"$home/data/partial-handoff.md"
+  rc=0
+  out=$(run_order "$home" covers "$home/data/partial-handoff.md") || rc=$?
+  assert_equals 3 "$rc" "covers refuses a document that omits an open order"
+  assert_contains "$out" "$second" "covers names the missing order"
+  assert_not_contains "$out" "$first" "covers names only the missing order"
+  rc=0
+  out=$(run_order "$home" covers "$home/data/no-such-handoff.md") || rc=$?
+  assert_equals 3 "$rc" "covers refuses a document that is gone"
+  assert_contains "$out" "is gone" "covers says the document is gone"
+  rc=0
+  run_order "$home" covers >/dev/null 2>&1 || rc=$?
+  assert_equals 2 "$rc" "covers needs a document"
+  rc=0
+  out=$(run_order "$home" gate) || rc=$?
+  assert_equals 3 "$rc" "covers never writes a record that clears the restart gate"
   pass "the restart gate passes only while this session's recorded handoff lists every open order"
 }
 
