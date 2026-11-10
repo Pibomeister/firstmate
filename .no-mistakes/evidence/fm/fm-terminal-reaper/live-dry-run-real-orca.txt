@@ -1,0 +1,11 @@
+dry run exit=0; terminals before=168 after=168
+--- orca calls made:
+   1 diagnostics memory --json
+   1 terminal list --json
+--- verdict counts (action kind class):
+   2 keep	browser	owner-live
+ 134 keep	terminal	foreign
+  34 keep	terminal	unowned-task
+  14 reap	browser	owner-gone
+summary: mode=dry-run terminals=168 reap=0 keep=168 browsers=16 reap=14 keep=2
+--- stderr:

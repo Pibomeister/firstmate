@@ -7,4 +7,3 @@ ok - fm-terminal-reap: unreadable records keep their terminals
 ok - fm-terminal-reap: an unreadable inventory exits 1 and closes nothing
 ok - fm-terminal-reap: browsers are stopped only when nothing else works in their directory
 FM_TEST_COMPLETE
-bash tests/fm-terminal-reap.test.sh  10.72s user 20.12s system 7% cpu 6:39.52 total
