@@ -20,11 +20,12 @@ This overlay does not replace Firstmate's supervisor contract in the repository-
 This overlay does not claim attested independent review or strict Cursor support.
 Firstmate's tracked `.cursor/hooks.json` is not part of the bundle and must stay in place.
 
-Recorded with `sha256sum .cursor/bin/ak .cursor/bin/ak-gate.mjs` at that commit.
-`bin/fm-agent-kit-pin.sh` checks these two lines against the files on disk.
+Recorded with `sha256sum .cursor/bin/ak .cursor/bin/ak.js .cursor/bin/ak-gate.mjs` at that commit.
+`bin/fm-agent-kit-pin.sh` checks these three lines against the files on disk.
 
 ```
 6df9b52c31bbd16e199349cee2c0ad33355e528199d978e88193ade79c63cfbc  .cursor/bin/ak
+ff0855da89386fda752efb20d56b884c8ad5ceb5260a3fb1847ee270864fd506  .cursor/bin/ak.js
 b1615ebfe0f15cbcd7b99e3efa4b8f7265b47279ddda50d4abd04ce614de6a9a  .cursor/bin/ak-gate.mjs
 ```
 
@@ -58,8 +59,18 @@ Every authored catalog role is a `.cursor/agents/<id>.md` subagent.
 
 This repository's agent-kit project record is [`ak.project.json`](../ak.project.json).
 Pass that path as `--project` to `.cursor/bin/ak delegation`.
+`/super-bound` and `/doc-review` runners must pass `--project ak.project.json` for `review.cold_read` and `review.comprehension` shadow to take effect.
+There is no knowledgebase index, and an unindexed project counts as off.
 The Cursor overlay `ak` does not auto-discover a project file and does not expose `ak validate`.
 Keep `review.cold_read` off `on` until GS-004k ships.
+
+## Bun
+
+The overlay launcher `.cursor/bin/ak` requires bun `1.3.14`.
+Install it with `bash tools/cursor/install.sh`.
+That script and `tools/cursor/bun-v1.3.14.sha256` are vendored from agent-kit `v0.1.106` (`e1716acf`).
+The install puts bun `1.3.14` at `~/.bun/bin/bun`.
+It skips `bun install --frozen-lockfile` because this repository has no `bun.lock`.
 
 ## Refresh
 
@@ -73,8 +84,11 @@ bun run ak build --host cursor --out /tmp/ak-cursor
 Copy the overlay trees with `rsync -a` as `adapters/cursor/README.md` specifies (identical to CONTRACT §5): `skills/`, `agents/`, `rules/`, `roles/`, `references/`, `schemas/`, `templates/`, `bin/`, and `licenses/`.
 Do not copy `.cursor/adapters/`; nothing in the vendored discovery trees links into that extra root.
 The documented `cp -n` of `.cursor/catalog.yaml` will not replace an existing catalog; overwrite `.cursor/catalog.yaml` with the upstream file so the recorded version is not left stale.
-Refresh the two `sha256sum` lines in this file from `.cursor/bin/ak` and `.cursor/bin/ak-gate.mjs`, then run `bin/fm-agent-kit-pin.sh`.
+Copy `.cursor/environment.json`, `tools/cursor/install.sh`, and `tools/cursor/bun-v1.3.14.sha256`.
+Keep Firstmate's `.cursor/hooks.json`.
+Do not copy `.cursor-plugin/`.
+This repository has no `bun.lock`, so after a refresh keep the `install.sh` skip of `bun install --frozen-lockfile`.
+Refresh the three `sha256sum` lines in this file from `.cursor/bin/ak`, `.cursor/bin/ak.js`, and `.cursor/bin/ak-gate.mjs`, then run `bin/fm-agent-kit-pin.sh`.
 Merge a newly generated root `AGENTS.md` section rather than replacing Firstmate's supervisor contract.
 Keep that overlay section a short pointer: it does not replace the supervisor contract, reviewer isolation is `partial`, and super-review runs as `/super-review full|readiness|delta` in Cursor sessions only.
-Do not copy `.cursor-plugin/`, `.cursor/hooks.json`, or `.cursor/environment.json`.
 Check for path collisions with Firstmate's existing `.cursor/` files before copying, and keep Firstmate's copies on a conflict.

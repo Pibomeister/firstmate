@@ -6,8 +6,9 @@
 #   bin/fm-agent-kit-pin.sh --root <repo>
 #
 # Reads sha256 digests from <repo>/.cursor/agent-kit.md in GNU sha256sum form
-# (`<64 hex>  .cursor/bin/<name>`) and compares them to the files on disk.
-# Non-network. Requires `shasum -a 256` or `sha256sum`.
+# (`<64 hex>  <relative-path>`) and compares them to the files on disk.
+# The required paths are .cursor/bin/ak, .cursor/bin/ak.js, and
+# .cursor/bin/ak-gate.mjs. Non-network. Requires `shasum -a 256` or `sha256sum`.
 set -eu
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -56,28 +57,39 @@ count_lines() {
   printf '%s\n' "$n"
 }
 
+# GNU sha256sum form: 64 hex, two spaces, the relative path.
+expected_digest() {
+  local rel=$1
+  awk -v p="$rel" '
+    $1 ~ /^[0-9a-f]{64}$/ && NF >= 2 {
+      path = substr($0, index($0, $2))
+      if (path == p) print $1
+    }
+  ' "$MANIFEST"
+}
+
 MANIFEST="$ROOT/.cursor/agent-kit.md"
-AK="$ROOT/.cursor/bin/ak"
-GATE="$ROOT/.cursor/bin/ak-gate.mjs"
-
 [ -f "$MANIFEST" ] || fail "missing .cursor/agent-kit.md"
-[ -f "$AK" ] || fail "missing .cursor/bin/ak"
-[ -f "$GATE" ] || fail "missing .cursor/bin/ak-gate.mjs"
 
-expected_ak=$(sed -n 's/^\([0-9a-f]\{64\}\)  \.cursor\/bin\/ak$/\1/p' "$MANIFEST")
-expected_gate=$(sed -n 's/^\([0-9a-f]\{64\}\)  \.cursor\/bin\/ak-gate\.mjs$/\1/p' "$MANIFEST")
+ok_parts=
+while IFS= read -r rel; do
+  [ -n "$rel" ] || continue
+  [ -f "$ROOT/$rel" ] || fail "missing $rel"
+  expected=$(expected_digest "$rel")
+  [ "$(count_lines "$expected")" = 1 ] || fail "need exactly one recorded digest for $rel"
+  actual=$(digest_file "$ROOT/$rel")
+  if [ "$actual" != "$expected" ]; then
+    fail "$rel digest $actual does not match recorded $expected"
+  fi
+  if [ -n "$ok_parts" ]; then
+    ok_parts="$ok_parts ${rel##*/}=$actual"
+  else
+    ok_parts="${rel##*/}=$actual"
+  fi
+done <<'EOF'
+.cursor/bin/ak
+.cursor/bin/ak.js
+.cursor/bin/ak-gate.mjs
+EOF
 
-[ "$(count_lines "$expected_ak")" = 1 ] || fail "need exactly one recorded digest for .cursor/bin/ak"
-[ "$(count_lines "$expected_gate")" = 1 ] || fail "need exactly one recorded digest for .cursor/bin/ak-gate.mjs"
-
-actual_ak=$(digest_file "$AK")
-actual_gate=$(digest_file "$GATE")
-
-if [ "$actual_ak" != "$expected_ak" ]; then
-  fail ".cursor/bin/ak digest $actual_ak does not match recorded $expected_ak"
-fi
-if [ "$actual_gate" != "$expected_gate" ]; then
-  fail ".cursor/bin/ak-gate.mjs digest $actual_gate does not match recorded $expected_gate"
-fi
-
-printf 'fm-agent-kit-pin: ok ak=%s ak-gate.mjs=%s\n' "$actual_ak" "$actual_gate"
+printf 'fm-agent-kit-pin: ok %s\n' "$ok_parts"

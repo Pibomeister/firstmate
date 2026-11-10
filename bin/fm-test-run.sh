@@ -1850,15 +1850,16 @@ families_for_changed_path() {
       printf '%s\n' __script__:fm-pi-primary-types.test.sh
       printf '%s\n' live-harness-optin
       ;;
-    .cursor/agent-kit.md|.cursor/bin/ak|.cursor/bin/ak-gate.mjs|bin/fm-agent-kit-pin.sh)
+    .cursor/agent-kit.md|.cursor/bin/ak|.cursor/bin/ak.js|.cursor/bin/ak-gate.mjs|\
+    .cursor/environment.json|bin/fm-agent-kit-pin.sh|tools/cursor/*)
       printf '%s\n' "__script__:fm-agent-kit-pin.test.sh"
       ;;
-    ak.project.json)
+    ak.project.json|.cursor/catalog.yaml)
       printf '%s\n' "__script__:fm-agent-kit-review.test.sh"
       ;;
     .cursor/skills/*|.cursor/agents/*|.cursor/rules/*|.cursor/roles/*|\
     .cursor/references/*|.cursor/schemas/*|.cursor/templates/*|\
-    .cursor/licenses/*|.cursor/catalog.yaml|.cursor/bin/ak.js)
+    .cursor/licenses/*)
       # Vendored overlay content has no Firstmate behavior test of its own.
       # Any other .cursor path falls through to the reference-scan catch-all.
       ;;

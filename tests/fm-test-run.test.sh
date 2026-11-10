@@ -500,12 +500,12 @@ test_changed_cursor_overlay_mapping_is_narrow() {
   git -C "$repo" -c user.name=test -c user.email=test@example.invalid \
     commit -qm firstmate-cursor-hooks
 
-  : >"$repo/.cursor/environment.json"
+  : >"$repo/.cursor/unmapped.json"
   rc=0
   (cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD) \
     >"$tmp/out" 2>"$tmp/err" || rc=$?
   [ "$rc" -eq 2 ] || fail "unmapped .cursor path must fail with exit 2, got $rc"
-  grep -Fq 'no changed-test mapping for source path: .cursor/environment.json' \
+  grep -Fq 'no changed-test mapping for source path: .cursor/unmapped.json' \
     "$tmp/err" \
     || fail "unmapped .cursor path failure is not actionable: $(cat "$tmp/err")"
 
