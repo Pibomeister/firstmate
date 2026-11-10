@@ -1,0 +1,6 @@
+# live --apply WITHOUT --browsers, FM_HOME=lab home, --min-age 0 (exit 0)
+pid 93034 verdict: reap owner-gone; still running: yes
+pid 93201 verdict: reap owner-gone; still running: yes
+ 170 keep
+  16 reap
+summary: mode=apply terminals=167 closed=0 skipped=0 failed=0 keep=167 browsers=19 stopped=0 skipped=0 failed=0 reap=16 keep=3

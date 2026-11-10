@@ -1,0 +1,10 @@
+# live dry run, FM_HOME=lab home, --min-age 0; fixture rows only (pids 93034 93201 93352 93409 93586)
+pid 93034: reap	browser	owner-gone	93034	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-reap-live.yOrqnV/gone1	$T/Apps/Google Chrome.app/Contents/MacOS/Google Chrome -c sleep 900 & wait x --headless --use
+pid 93201: reap	browser	owner-gone	93201	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-reap-live.yOrqnV/gone2	$T/ms-playwright/chromium-1/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Framework
+pid 93352: <not listed>
+pid 93409: <not listed>
+pid 93586: keep	browser	owner-live	93586	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-reap-live.yOrqnV/live5	$T/Apps/Google Chrome.app/Contents/MacOS/Google Chrome -c sleep 900 & wait x --headless
+# terminal verdicts on this host (class counts only):
+ 135 keep foreign
+  32 keep unowned-task
+summary: mode=dry-run terminals=167 reap=0 keep=167 browsers=19 reap=16 keep=3
