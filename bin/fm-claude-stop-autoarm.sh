@@ -6,6 +6,8 @@
 # in the background on EVERY Stop of a Claude primary session, with no
 # deduplication across firings. It owns routine tokenless watcher continuity
 # for Claude primaries (main home and marked secondmate homes):
+# bin/fm-stop-policy-lib.sh applies before arming and before every continuation;
+# its allow-stop verdict takes precedence over the recovery behavior below.
 #
 #   - Scope: only a genuine primary checkout (plain checkout or validly marked
 #     secondmate home) with AGENTS.md, bin/, and the effective state dir - the
@@ -197,6 +199,10 @@ fi
 # --- scope: genuine primary checkout only -----------------------------------
 fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
 
+# shellcheck source=bin/fm-stop-policy-lib.sh
+. "$SCRIPT_DIR/fm-stop-policy-lib.sh"
+fm_stop_policy_allows_stop "$PAYLOAD" && exit 0
+
 # --- identity: only the lock-owning session's hooks may arm ------------------
 # A prior session may have died after leaving its harness identity in .lock.
 # Use the shared liveness predicate to recognize only that stale-owner case; it
@@ -265,6 +271,11 @@ MY_GEN=$FM_AUTOARM_MY_GEN
 # even an already-printed banner is never delivered by a losing generation.
 autoarm_commit() {  # <outcome> [marker-file]
   local outcome=$1 marker=${2:-} session_pid recovery
+  if fm_stop_policy_allows_stop "$PAYLOAD" charge; then
+    autoarm_record stopped
+    [ -z "${OUT:-}" ] || rm -f "$OUT" 2>/dev/null || true
+    exit 0
+  fi
   if [ "$outcome" = rewake ]; then
     fm_session_lock_owned_by_self "$STATE" || return 2
     session_pid=$(sed -n '1p' "$STATE/.lock" 2>/dev/null || true)

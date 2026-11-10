@@ -103,7 +103,8 @@
 # including turns started by the asyncRewake auto-arm, so the one-shot allow
 # would re-open the exact blind window this guard exists to close
 # (docs/turnend-guard.md records the 2026-07-21 incident). In --claude mode this
-# guard ignores stop_hook_active and instead cooperates with the Stop-owned
+# guard first applies bin/fm-stop-policy-lib.sh, including its active-hook
+# stop, parked-work exit and shared continuation limits, then cooperates with the Stop-owned
 # auto-arm (bin/fm-claude-stop-autoarm.sh), which fires on the same Stop event:
 #   1. a live identity-matched watcher with a fresh beacon - or, in away mode, a
 #      live identity-matched daemon with a fresh beacon - allows immediately;
@@ -247,6 +248,10 @@ fi
 # checkout has the two equal. Child worktrees never carry the gitignored marker,
 # so this exempts them while guarding every real secondmate home.
 fm_primary_scope_matches "$FM_ROOT" "$STATE" || allow_exit
+
+# shellcheck source=bin/fm-stop-policy-lib.sh
+. "$SCRIPT_DIR/fm-stop-policy-lib.sh"
+fm_stop_policy_allows_stop "$PAYLOAD" && allow_exit
 
 # External auto-compact footer for this turn. A missing script or footer stays silent.
 if [ "${FM_TEST_SEAM:-}" != 1 ] && [ -x "$SCRIPT_DIR/fm-context-burn.sh" ]; then
@@ -437,6 +442,7 @@ fi
 
 block_stop() {
   local afk x_mode reason rule msg max_blocks cur_blocks blocks cause
+  fm_stop_policy_allows_stop "$PAYLOAD" charge && allow_exit
   afk=0
   [ -e "$STATE/.afk" ] && afk=1
   x_mode=0

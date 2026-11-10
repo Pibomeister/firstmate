@@ -465,6 +465,7 @@ The same suite ingests a keyed remote-secondmate parent reply through the real a
 It also covers unchanged decisions remaining available to the next drain without an empty-queue wake, interrupted handling, handling-window generation reuse, non-fatal moved-generation acknowledgement with sequence-bounded consumption, and a persistent successor remaining live after recovery is acknowledged.
 
 The Claude product live path ran with Claude Code 2.1.278 on 2026-09-21.
+Its repeated-rewake result below predates the shared stop policy; the current active-hook payload proof is in [runtime backend verification](runtime-backends.md#claude-stop-continuation-policy).
 The same guard also passed once under Claude Code 2.1.236 and 2.1.219 during this verification.
 
 ```sh

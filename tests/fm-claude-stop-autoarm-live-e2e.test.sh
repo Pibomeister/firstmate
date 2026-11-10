@@ -4,10 +4,9 @@
 # Proves, against the real installed Claude Code and the real tracked hook
 # registration: a fresh session with in-flight work, no watcher, and a stale
 # session lock receives the full session-start digest through the tracked
-# SessionStart hook; session start reclaims the dead owner; at least two
-# tokenless auto-arm and rewake cycles then complete with zero model-issued arm
-# commands; and the cooperative guard consumes no forced continuation while the
-# hook's launch is healthy.
+# SessionStart hook; session start reclaims the dead owner; one tokenless
+# auto-arm rewake completes with zero model-issued arm commands, then the
+# shared stop policy honors stop_hook_active and preserves the open work.
 # The project and FM_HOME are isolated; Claude keeps using its existing managed
 # authentication. No live fleet home, worktree, or session is touched.
 # shellcheck disable=SC2016 # the model, not this test shell, reads the prompt text
@@ -124,20 +123,21 @@ PROMPT='After reading the complete session-start digest, reply with exactly CYCL
 ) > "$TRANSCRIPT" 2>&1 || fail "Claude credentialed auto-arm session failed: $(tail -20 "$TRANSCRIPT")"
 
 ARM_RUNS=$(wc -l < "$HOME_DIR/state/arm-ran" 2>/dev/null | tr -d ' ')
-[ "$ARM_RUNS" = 2 ] || fail "expected exactly 2 hook-owned arm cycles, got $ARM_RUNS: $(cat "$HOME_DIR/state/arm-ran" 2>/dev/null)"
+[ "$ARM_RUNS" = 1 ] || fail "expected exactly 1 hook-owned arm cycle, got $ARM_RUNS: $(cat "$HOME_DIR/state/arm-ran" 2>/dev/null)"
 SUCCESSOR_RUNS=$(wc -l < "$HOME_DIR/state/successor-ran" 2>/dev/null | tr -d ' ')
-[ "$SUCCESSOR_RUNS" = 2 ] || fail "expected one handling successor per rewake, got $SUCCESSOR_RUNS: $(cat "$HOME_DIR/state/successor-ran" 2>/dev/null)"
+[ "$SUCCESSOR_RUNS" = 1 ] || fail "expected one handling successor per rewake, got $SUCCESSOR_RUNS: $(cat "$HOME_DIR/state/successor-ran" 2>/dev/null)"
 DRAIN_RUNS=$(wc -l < "$HOME_DIR/state/drain-ran" 2>/dev/null | tr -d ' ')
-[ "$DRAIN_RUNS" = 3 ] || fail "expected one session-start drain plus two model wake drains, got $DRAIN_RUNS drains"
+[ "$DRAIN_RUNS" = 2 ] || fail "expected one session-start drain plus one model wake drain, got $DRAIN_RUNS drains"
 REWAKES=$(jq -r '
   select(.type == "user")
   | .message.content[]?
   | select(.type == "text")
   | .text
 ' "$TRANSCRIPT" 2>/dev/null | awk '/^Stop hook feedback:/{count++} END{print count+0}')
-[ "$REWAKES" -ge 2 ] || fail "expected at least 2 exit-2 rewake deliveries, got $REWAKES"
+[ "$REWAKES" = 1 ] || fail "expected 1 exit-2 rewake delivery, got $REWAKES"
 grep -q 'stale: fixture-rapid-1' "$TRANSCRIPT" || fail "first rapid rewake reason missing from the transcript"
-grep -q 'stale: fixture-rapid-2' "$TRANSCRIPT" || fail "second rapid rewake reason missing from the transcript"
+[ -f "$HOME_DIR/state/task.meta" ] || fail "allowing the stop resolved unfinished work"
+grep -q 'status=hook_active ' "$HOME_DIR/state/stop-hook.log" || fail "active-hook stop policy did not run"
 [ -s "$HOME_DIR/state/tool-calls.log" ] \
   || fail "Claude emitted no logged Bash tool calls"
 ! grep -q 'fm-session-start.sh' "$HOME_DIR/state/tool-calls.log" \
@@ -191,4 +191,4 @@ printf '%s\n' '{"session_id":"live-owner-control"}' \
 [ ! -s "$LAB/live-owner.out" ] && [ ! -s "$LAB/live-owner.err" ] || fail "competing Stop hook produced a rewake while another live session owned the home"
 wait "$LIVE_OWNER_PID"
 
-printf 'ok - Claude %s live E2E reclaimed a stale session lock through session start, completed two tokenless Stop-owned rewake cycles, and preserved the competing-live-owner boundary\n' "$CLAUDE_VERSION"
+printf 'ok - Claude %s live E2E reclaimed a stale session lock, completed one Stop-owned rewake, honored stop_hook_active, and preserved open work and the competing-live-owner boundary\n' "$CLAUDE_VERSION"

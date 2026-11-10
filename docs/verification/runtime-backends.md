@@ -6,6 +6,26 @@ This record contains reusable version-scoped evidence for active runtime guarant
 The backend guides own current setup, safety boundaries, and limitations.
 Exact task chronology, branch names, temporary homes, local paths, process ids, thread ids, and delivery transcripts remain in private reports or PR evidence.
 
+## Claude Stop continuation policy
+
+Verified on 2026-11-10 on macOS arm64 with Claude Code 2.1.322.
+The live guard starts isolated Claude print sessions with project-only settings and no tools or MCP servers.
+It uses a temporary home and the real primary Stop guard, without launching a worker or changing the live home.
+The parked session emitted one real Stop payload.
+The actionable session emitted `stop_hook_active=false` followed by `stop_hook_active=true`, then stopped.
+The shared stop policy's mechanics and log format are owned by [`bin/fm-stop-policy-lib.sh`](../../bin/fm-stop-policy-lib.sh).
+The policy has no runtime backend calls; other harness integrations retain their native turn-end adapters and are not live-verified by this Claude-specific guard.
+
+```sh
+FM_STOP_POLICY_LIVE_E2E=1 bash tests/fm-stop-policy-live-e2e.test.sh
+```
+
+```text
+claude version: 2.1.322 (Claude Code)
+ok - 2.1.322 (Claude Code): parked stopped after 1 real Stop payload(s)
+ok - 2.1.322 (Claude Code): active stopped after 2 real Stop payload(s)
+```
+
 ## Named PR check supervision
 
 Verified on 2026-10-28 on macOS arm64 with Bash 5.3.20, gh-axi 0.1.36, jq 1.7.1-apple, and tmux 3.6a.

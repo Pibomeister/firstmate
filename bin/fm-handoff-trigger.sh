@@ -185,6 +185,10 @@ if [ -n "$SESSION_ID" ] && [ -n "$TRANSCRIPT" ]; then
   esac
 fi
 if [ "$EVENT" = Stop ]; then
+  # Shared quota/park policy also covers this parallel Stop writer.
+  # shellcheck source=bin/fm-stop-policy-lib.sh
+  . "$SCRIPT_DIR/fm-stop-policy-lib.sh"
+  fm_stop_policy_allows_stop "$PAYLOAD" && exit 0
   # Enforce the restart gate only on a session that is handing off: the
   # trigger fired in this cycle, or this session recorded a handoff document
   # (bin/fm-order.sh handing-off), which also covers percent-left=0. Another
@@ -195,6 +199,7 @@ if [ "$EVENT" = Stop ]; then
   GATE_RC=0
   GATE_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" gate 2>/dev/null) || GATE_RC=$?
   if [ "$GATE_RC" -eq 3 ]; then
+    fm_stop_policy_allows_stop "$PAYLOAD" charge && exit 0
     printf 'Firstmate restart gate: this session is handing off, but its handoff does not list every open captain order. %s
 ' \
       "$(printf '%s' "$GATE_OUT" | tr '\n' ' ')" >&2
@@ -209,6 +214,7 @@ if [ "$EVENT" = Stop ]; then
     case "$SUCC_PID" in '' | *[!0-9]*) SUCC_PID= ;; esac
     if [ ! -f "$LAUNCH" ] || [ "$MARKER" -nt "$LAUNCH" ] || [ -z "$SUCC_PID" ] ||
       ! kill -0 "$SUCC_PID" 2>/dev/null; then
+      fm_stop_policy_allows_stop "$PAYLOAD" charge && exit 0
       printf 'Firstmate restart gate: this session is handing off, but no live successor launched after the handoff trigger is recorded in state/.handoff-successor, so nobody will continue from the handoff. Launch the successor with bin/fm-handoff-launch.sh <handoff document path>: it starts the successor on this home'"'"'s backend, verifies that the new successor harness pid is live, and records it in state/.handoff-successor as pid=<successor pid> and handoff=<handoff document path>. That record clears this gate; then end this turn. Its launch prompt has the successor confirm the handoff document'"'"'s sha256 at pickup and stop on a mismatch, wait until this session'"'"'s harness pid (line 1 of state/.lock) is dead, then run bin/fm-session-start.sh to take the session lock and continue from the handoff. The predecessor process is then ended by the captain, by a leash or operator /exit in its pane, or by the watchdog restart path; this session cannot exit itself, and the successor waits for its pid to die before session start.\n' >&2
       exit 2
     fi
