@@ -15,6 +15,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
 | Unattended stall recovery for firstmates and second mates | [Assistant watchdog](#assistant-watchdog-configwatchdog) |
 | Restarting relays that go stale after a network daemon restart | [Relay guard](#relay-guard-configrelay-guard) |
+| Terminals the reaper must never close | [Terminal reap keep list](#terminal-reap-keep-list-configterminal-reap-keep) |
 | Host identity, credential, and reachability probes for an outside watchdog | [Host-health probe](#host-health-probe) |
 | Machine-wide heavy test admission | [`fm-test-queue.sh` header](../bin/fm-test-queue.sh) |
 | Review bots on owned GitHub pull requests | [Contribution review bots](#contribution-review-bots-configcontribution-review-bots) |
@@ -812,6 +813,13 @@ A muse `restart-command` with no approval-off flag gets `--yolo` added by defaul
 The optional local, gitignored `config/relay-guard` names the network-daemon-bound relays that [`bin/fm-relay-guard.sh`](../bin/fm-relay-guard.sh) owns on one host.
 That script's header owns every key, each verdict, the restart limits, the state files, and the install steps.
 [`docs/examples/relay-guard`](examples/relay-guard) is a starting point to copy.
+
+## Terminal reap keep list (config/terminal-reap-keep)
+
+The optional local, gitignored `config/terminal-reap-keep` names extra terminals that [`bin/fm-terminal-reap.sh`](../bin/fm-terminal-reap.sh) never closes.
+That script's header owns the line format, the `keep helper` verdict, and the built-in title seed `sup-writer-*`, which applies whether or not this file exists.
+An unreadable file or a malformed line makes the run close nothing.
+[`docs/examples/terminal-reap-keep`](examples/terminal-reap-keep) is a starting point to copy.
 
 ## Host-health probe
 

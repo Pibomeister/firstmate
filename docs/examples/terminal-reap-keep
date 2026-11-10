@@ -1,0 +1,8 @@
+# config/terminal-reap-keep
+# Copy into the home's gitignored config/terminal-reap-keep to add keeps.
+# The reaper already keeps every whole title matching sup-writer-*.
+# One entry per line. Blank lines and # comments are ignored.
+#   title <glob>     * and ? match the whole title
+#   handle <prefix>  that handle, or the prefix followed by a hyphen
+title sup-writer-*
+# handle term_example

@@ -24,6 +24,9 @@
 #                    many seconds (default 1800), so a session that is still
 #                    launching its agent is never mistaken for an idle one
 #   --no-browsers    classify terminals only
+#   Live helpers are kept: the built-in title seed sup-writer-*, and every
+#   title glob or handle prefix in the home's config/terminal-reap-keep.
+#   The script header owns that file's format and the keep helper verdict.
 #
 # Output: one tab-separated line per terminal or browser root,
 #   <action> <kind> <class> <id> <path> <detail>
@@ -34,7 +37,7 @@
 #
 # Exit status: 0 when the inventory was read (and, with --apply, every reap
 # succeeded or was safely skipped); 1 when an inventory read failed, including
-# an unreadable home, task record, or secondmate registry, in which case
+# an unreadable home, task record, secondmate registry, or keep list, in which case
 # nothing is closed; 2 on a usage error; 3 when --apply hit a failure.
 #
 # Owners. The script reads this home's state/*.meta records and, through each
@@ -58,6 +61,16 @@
 #                      another tool and is never firstmate's to close
 #   keep no-session    Orca's process sweep names no session for it
 #   keep young         its session is younger than --min-age
+#   keep helper        a home-root candidate whose whole title matches a
+#                      keep-list title glob, or whose handle equals a
+#                      keep-list handle prefix or continues it with a hyphen.
+#                      The built-in title seed sup-writer-* always applies.
+#                      The home-local config/terminal-reap-keep adds lines
+#                      `title <glob>` and `handle <prefix>`. Blank lines and
+#                      lines whose first non-space character is # are ignored.
+#                      In a title glob, * and ? are the only metacharacters.
+#                      A missing file keeps the seed alone. An unreadable
+#                      file or a malformed line closes nothing.
 #   keep self          this script runs inside it
 #   keep live-agent    a verified agent harness runs in its session
 #   keep busy          its session runs a program this classifier cannot rule
@@ -111,7 +124,9 @@
 # --apply re-proves each terminal immediately before closing it. The records
 # are re-read (an unreadable record skips the close),
 # fm_backend_orca_agent_state must still report dead or missing, and the fresh
-# title must still name a firstmate session. A terminal Orca still reports
+# title must still name a firstmate session. The keep list is read again:
+# a fresh title or handle on it skips the close, and an unreadable or
+# malformed keep list skips the close too. A terminal Orca still reports
 # connected must still be rooted at the session pid it was classified with,
 # whichever of those two states was read (a replaced session is skipped), and
 # the last read before the close requires
@@ -484,6 +499,75 @@ firstmate_title() {
       END { exit found ? 0 : 1 }'
 }
 
+# load_keep_list: title globs and handle prefixes for this home.
+# The built-in seed sup-writer-* is always included; docs/examples/terminal-reap-keep
+# carries that same seed line for a home that wants it written down.
+# Returns 1 when the file exists but cannot be read or a line is malformed.
+# A missing file is success.
+load_keep_list() {
+  local file="$FM_HOME/config/terminal-reap-keep" line kind rest
+  local titles="$WORK/keep-title.new" handles="$WORK/keep-handle.new"
+  printf '%s\n' 'sup-writer-*' > "$titles" || return 1
+  : > "$handles" || return 1
+  if [ -e "$file" ] || [ -L "$file" ]; then
+    [ -f "$file" ] && [ -r "$file" ] || return 1
+    while IFS= read -r line || [ -n "$line" ]; do
+      line=${line%$'\r'}
+      line=${line#"${line%%[![:space:]]*}"}
+      line=${line%"${line##*[![:space:]]}"}
+      case "$line" in
+        ''|\#*) continue ;;
+      esac
+      kind=${line%%[[:space:]]*}
+      rest=${line#"$kind"}
+      rest=${rest#"${rest%%[![:space:]]*}"}
+      rest=${rest%"${rest##*[![:space:]]}"}
+      case "$kind" in
+        title)
+          [ -n "$rest" ] || return 1
+          printf '%s\n' "$rest" >> "$titles" || return 1
+          ;;
+        handle)
+          [ -n "$rest" ] || return 1
+          case "$rest" in *[[:space:]]*) return 1 ;; esac
+          printf '%s\n' "$rest" >> "$handles" || return 1
+          ;;
+        *) return 1 ;;
+      esac
+    done < "$file"
+  fi
+  mv "$titles" "$WORK/keep-title" && mv "$handles" "$WORK/keep-handle"
+}
+
+# keep_listed <handle> <title>: 0 when the loaded keep list matches, 1 when it
+# does not, 2 when that list cannot be read.
+keep_listed() {
+  node - "$1" "$2" "$WORK/keep-title" "$WORK/keep-handle" <<'JS'
+const fs = require("fs");
+const [handle, title, titleFile, handleFile] = process.argv.slice(2);
+let titles, handles;
+try {
+  titles = fs.readFileSync(titleFile, "utf8").split("\n");
+  handles = fs.readFileSync(handleFile, "utf8").split("\n");
+} catch (err) {
+  process.exit(2);
+}
+const meta = /[.*+?^${}()|[\]\\]/g;
+function titleMatch(text, pattern) {
+  let re = "^";
+  for (const c of pattern) {
+    if (c === "*") re += "[\\s\\S]*";
+    else if (c === "?") re += "[\\s\\S]";
+    else re += c.replace(meta, "\\$&");
+  }
+  return new RegExp(re + "$").test(text);
+}
+if (titles.some((p) => p !== "" && titleMatch(title, p))) process.exit(0);
+if (handles.some((p) => p !== "" && (handle === p || handle.startsWith(p + "-")))) process.exit(0);
+process.exit(1);
+JS
+}
+
 # judge_terminal <pid> <title> -> `<action> <class>` for a home-root candidate
 # and, for a reap, the session's pids on fd 3 so browsers can discount them.
 judge_terminal() {
@@ -553,6 +637,12 @@ close_terminal() {  # <handle> <path> <pid> -> closed|skipped:<why>|failed:<why>
   # session; it may have been renamed since the listing.
   title=$(current_title "$handle") || { printf 'skipped\tnow-unreadable'; return 0; }
   firstmate_title "$title" || { printf 'skipped\tnow-retitled'; return 0; }
+  local keep_rc
+  load_keep_list || { printf 'skipped\thelper-unreadable'; return 0; }
+  keep_listed "$handle" "$title"
+  keep_rc=$?
+  if [ "$keep_rc" -eq 0 ]; then printf 'skipped\thelper'; return 0; fi
+  if [ "$keep_rc" -ne 1 ]; then printf 'skipped\thelper-unreadable'; return 0; fi
   # A connected terminal must still be rooted at the classified session pid,
   # whether the liveness read said dead or missing: a session that exited may
   # have been replaced by a new one under the same handle.
@@ -659,10 +749,23 @@ classify_node terminals > "$WORK/terminals.tsv" || exit 1
 
 declare -i N_REAP=0 N_KEEP=0 N_DONE=0 N_SKIP=0 N_FAIL=0 B_REAP=0 B_KEEP=0 B_DONE=0 B_SKIP=0 B_FAIL=0 N_TOTAL=0 B_TOTAL=0 INV_FAIL=0
 : > "$WORK/terminal-verdicts.tsv"
+load_keep_list || {
+  echo "error: config/terminal-reap-keep could not be read; nothing was closed" >&2
+  exit 1
+}
 while IFS=$'\t' read -r handle prelim pid path detail; do
   [ -n "$handle" ] || continue
   if [ "$prelim" = candidate ]; then
-    verdict=$(judge_terminal "$pid" "$detail" 3>>"$WORK/exclude.txt")
+    keep_listed "$handle" "$detail"
+    keep_rc=$?
+    if [ "$keep_rc" -eq 0 ]; then
+      verdict=$'keep\thelper'
+    elif [ "$keep_rc" -eq 1 ]; then
+      verdict=$(judge_terminal "$pid" "$detail" 3>>"$WORK/exclude.txt")
+    else
+      echo "error: config/terminal-reap-keep could not be read; nothing was closed" >&2
+      exit 1
+    fi
   else
     verdict=$'keep\t'"$prelim"
   fi

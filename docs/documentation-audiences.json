@@ -462,6 +462,10 @@
       "audience": "operator-example"
     },
     {
+      "path": "docs/examples/terminal-reap-keep",
+      "audience": "operator-example"
+    },
+    {
       "path": "docs/examples/usage-warner",
       "audience": "operator-example"
     },
