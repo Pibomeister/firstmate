@@ -250,7 +250,15 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/harness-adapters/references/harness/hermes.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/harness-adapters/references/harness/kimi.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/harness-adapters/references/harness/kiro.md",
       "audience": "agent-runtime"
     },
     {
@@ -699,6 +707,14 @@
     },
     {
       "path": "docs/verification/cortex.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/verification/hermes.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/verification/kiro.md",
       "audience": "maintainer-verification"
     },
     {
