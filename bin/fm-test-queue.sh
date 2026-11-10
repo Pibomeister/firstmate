@@ -51,6 +51,33 @@
 # Blank lines and # comments are ignored. All callers use this shared file;
 # per-process slots, ceiling, and config-path overrides are not supported.
 # Defaults: slots=2, load_ceiling=16.
+# Optional remote_hosts is a comma-separated list of SSH aliases (for example
+# m3,hetzner). offload_threshold defaults to 8. Above that load, the head ticket
+# with a free slot first tries those hosts in order, with noninteractive SSH.
+# offload_projects is a comma-separated list of project names, matched against
+# the last path segment of the caller checkout's origin URL without .git; it
+# defaults to firstmate, whose suites are self-contained Bash. A project not on
+# the list always uses local admission.
+# These settings live in the shared config; an empty host or project list
+# disables offload.
+# A failed preparation falls back to ordinary local admission and retries after
+# 60 seconds while waiting. Preparation includes the snapshot upload and the
+# queue scripts, which travel beside the snapshot rather than inside it, so a
+# failure before the suite starts never becomes a test result. It never bypasses the local ceiling or slot limit.
+# Remote runs use the remote user's queue and its local load/slot policy;
+# FM_TEST_QUEUE_REMOTE_DISABLE=1 prevents recursive offloading there.
+# The transport snapshots the current Git checkout (shallow HEAD, tracked and
+# nonignored untracked files, including edits and deletions) into a private
+# remote temporary checkout over a compressed tar stream. Commands that need
+# older history must fetch it explicitly. Git, tar, Bash and test dependencies must already
+# exist remotely. Ignored dependencies, credentials and caller environment are
+# not copied. Worktree paths in argv are rewritten to the remote checkout;
+# other absolute paths must be valid remotely. stdin/stdout/stderr and exit
+# status pass through. Once execution is attempted, an SSH error is returned,
+# never retried locally, because the remote workload may already have started.
+# Remote scratch is removed on wrapper exit after a normal result when SSH
+# remains reachable. An ambiguous transport/signal result preserves the scratch
+# path and reports it, so cleanup cannot disrupt a possibly running workload.
 # slots is a positive integer and load_ceiling a positive number. An invalid
 # value or an unknown config key is reported on stderr and stops the script
 # before any ticket is taken.
@@ -112,12 +139,18 @@ case "$SPOOL" in /*) ;; *) SPOOL="$PWD/$SPOOL" ;; esac
 CONFIG_FILE="$SPOOL/config"
 TICKETS="$SPOOL/tickets"
 LOCK="$SPOOL/lock"
+SCRIPT_DIR=$(CDPATH='' cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+# shellcheck source=bin/fm-test-queue-remote.sh
+. "$SCRIPT_DIR/fm-test-queue-remote.sh"
 
 # --- configuration ----------------------------------------------------------
 load_config() {
   local key value line
   SLOTS=2
   LOAD_CEILING=16
+  REMOTE_HOSTS=""
+  OFFLOAD_THRESHOLD=8
+  OFFLOAD_PROJECTS=firstmate
   if [ -f "$CONFIG_FILE" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
       line=${line%%#*}
@@ -129,6 +162,9 @@ load_config() {
       case "$key" in
         slots) SLOTS=$value ;;
         load_ceiling) LOAD_CEILING=$value ;;
+        remote_hosts) REMOTE_HOSTS=$value ;;
+        offload_threshold) OFFLOAD_THRESHOLD=$value ;;
+        offload_projects) OFFLOAD_PROJECTS=$value ;;
         *) die "unknown key in $CONFIG_FILE: $key" ;;
       esac
     done < "$CONFIG_FILE"
@@ -136,6 +172,9 @@ load_config() {
   POLL=${FM_TEST_QUEUE_POLL:-5}
   { is_uint "$SLOTS" && [ "$SLOTS" -gt 0 ]; } || die "slots must be a positive integer, got '$SLOTS'"
   is_positive_number "$LOAD_CEILING" || die "load_ceiling must be a positive number, got '$LOAD_CEILING'"
+  is_positive_number "$OFFLOAD_THRESHOLD" || die "offload_threshold must be a positive number, got '$OFFLOAD_THRESHOLD'"
+  case "$REMOTE_HOSTS" in *[!a-zA-Z0-9@._,-]*|-*|*,-*|,*|*,|*,,*) die "remote_hosts must contain comma-separated SSH aliases" ;; esac
+  case "$OFFLOAD_PROJECTS" in *[!a-zA-Z0-9._,-]*|,*|*,|*,,*) die "offload_projects must contain comma-separated project names" ;; esac
   is_positive_number "$POLL" || die "FM_TEST_QUEUE_POLL must be a positive number, got '$POLL'"
 }
 
@@ -320,6 +359,7 @@ reclaim_dead() {
 MY_TICKET=""
 
 cleanup() {
+  remote_cleanup
   if [ -n "$MY_TICKET" ]; then
     if ticket_read "$MY_TICKET" && ! workload_alive "$$"; then
       rm -f "$MY_TICKET"
@@ -373,10 +413,11 @@ take_ticket() {  # <label>
 
 # Under the lock: decide whether this ticket may be served now. Prints the
 # reason it must wait (empty when admitted) and the position.
-WAIT_REASON="" POSITION=0
+WAIT_REASON="" POSITION=0 WANT_REMOTE=0 OFFLOAD_LISTED=0
 admission_check() {
   local f serving=0 head="" pos=0 load=""
   POSITION=0
+  WANT_REMOTE=0
   while IFS= read -r f; do
     ticket_read "$f" || continue
     if [ -n "$T_SERVED" ]; then
@@ -391,9 +432,16 @@ admission_check() {
     WAIT_REASON="waiting behind $((POSITION - 1)) earlier ticket(s)"
   elif [ "$serving" -ge "$SLOTS" ]; then
     WAIT_REASON="all $SLOTS slot(s) busy"
-  elif load=$(load1) && ! awk -v l="$load" -v c="$LOAD_CEILING" 'BEGIN { exit !(l + 0 < c + 0) }'; then
-    WAIT_REASON="load $load is not below $LOAD_CEILING"
   else
+    load=$(load1) || load=""
+    if [ -z "$REMOTE_HOST" ] && [ "$OFFLOAD_LISTED" = 1 ] &&
+      [ -n "$load" ] && awk -v l="$load" -v c="$OFFLOAD_THRESHOLD" 'BEGIN { exit !(l + 0 > c + 0) }'; then
+      WANT_REMOTE=1
+    fi
+    if [ -z "$REMOTE_HOST" ] && [ -n "$load" ] && ! awk -v l="$load" -v c="$LOAD_CEILING" 'BEGIN { exit !(l + 0 < c + 0) }'; then
+      WAIT_REASON="load $load is not below $LOAD_CEILING"
+      return
+    fi
     if [ -z "$load" ]; then
       echo "fm-test-queue: warning: load probe failed; enforcing slot limit only" >&2
     fi
@@ -411,7 +459,7 @@ command_exec() {
 }
 
 cmd_run() {
-  local label="" n last=""
+  local label="" n last="" remote_retry=0 now
   while [ $# -gt 0 ]; do
     case "$1" in
       --label) [ $# -ge 2 ] || usage; label=$2; shift 2 ;;
@@ -437,6 +485,10 @@ cmd_run() {
   trap 'exit 129' HUP
   trap 'exit 131' QUIT
 
+  if [ -n "$REMOTE_HOSTS" ] && [ "${FM_TEST_QUEUE_REMOTE_DISABLE:-}" != 1 ] && remote_project_listed; then
+    OFFLOAD_LISTED=1
+  fi
+
   take_ticket "$label"
   n=$MY_NUMBER
 
@@ -445,6 +497,15 @@ cmd_run() {
     reclaim_dead
     [ -f "$MY_TICKET" ] || { lock_release; die "ticket $n vanished from $TICKETS"; }
     admission_check
+    now=$(date +%s)
+    if [ "$WANT_REMOTE" = 1 ] && [ "$now" -ge "$remote_retry" ]; then
+      lock_release
+      if ! remote_prepare; then
+        echo "fm-test-queue: no remote prepared; using local admission" >&2
+        remote_retry=$(( $(date +%s) + 60 ))
+      fi
+      continue
+    fi
     if [ -z "$WAIT_REASON" ]; then
       ticket_read "$MY_TICKET"
       T_SERVED=$(date +%s)
@@ -471,6 +532,10 @@ cmd_run() {
     ticket_write "$MY_TICKET" || die "cannot record child for ticket $n"
     lock_release
     export FM_TEST_QUEUE_HELD=$MY_TICKET
+    if [ -n "$REMOTE_HOST" ]; then
+      remote_exec "$@"
+      exit $?
+    fi
     command_exec "$@"
   )
 }
