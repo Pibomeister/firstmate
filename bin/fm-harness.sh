@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Detect the agent harness this process tree runs on.
-# Usage: fm-harness.sh                  print own harness: claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|gemini|muse|rovo|omp|agy|devin|commandcode|droid|polytoken|cortex|kiro|hermes|unknown
+# Usage: fm-harness.sh                  print own harness: claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|gemini|muse|rovo|omp|agy|devin|commandcode|droid|polytoken|cortex|unknown
 #        fm-harness.sh crew             print the effective CREWMATE harness
 #                                        (config/crew-harness; "default" resolves to own)
 #        fm-harness.sh secondmate [id]  print the harness the PRIMARY uses to launch
@@ -85,16 +85,11 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-cursor-lib.sh"
 # shellcheck source=bin/fm-gemini-lib.sh
 . "$SCRIPT_DIR/fm-gemini-lib.sh"
-# shellcheck source=bin/fm-hermes-process-lib.sh
-. "${SCRIPT_DIR:-/}/fm-hermes-process-lib.sh"
 
 # Print the harness named by a verified environment marker, or nothing when no
 # marker is present. Markers only report what the environment CLAIMS; detect_own
 # decides whether that claim survives contradicting ancestry.
 harness_marker() {
-  if [ "${FM_HERMES_HARNESS:-}" = hermes ] && [ "$(harness_ancestry | awk '{print $2}')" = hermes ]; then
-    echo hermes; return
-  fi
   # Cursor is tested BEFORE claude, deliberately. cursor-agent does NOT clear an
   # inherited CLAUDECODE, so a cursor session started by hand from a claude
   # primary carries BOTH markers and whichever is tested first wins. This
@@ -203,11 +198,6 @@ harness_process_verdict() {  # <pid>
     echo "comm gemini"
     return
   fi
-  args=$(ps -o args= -p "$pid" 2>/dev/null) || args=
-  if fm_hermes_process_matches "$args" "$pid"; then
-    echo "comm hermes"
-    return
-  fi
   case "$(basename -- "$comm")" in
     # gemini precedes claude here for the same precedence reason as the
     # marker layer above, so a gemini worker under a claude primary is never
@@ -278,24 +268,11 @@ harness_process_verdict() {  # <pid>
     # marker a parent harness could not also carry, so like devin it is
     # detected by anchored ancestry alone.
     cortex) echo "comm cortex"; return ;;
-    hermes) echo "comm hermes"; return ;;
     # Command Code runs as a node bundle that sets its own process title, so
     # the kernel process name is exactly `command-code` (verified, Command Code
     # 1.74.1: comm=command-code and the rewritten argv is the same word).
     # Anchored, so an unrelated command containing that fragment never matches.
     command-code) echo "comm commandcode"; return ;;
-    # kiro (Kiro CLI) publishes no harness-identity marker of its own (a live
-    # 2.21.4 tool subprocess carries no KIRO_* identity variable; KIRO_HOME is
-    # a firstmate-set config-relocation path, not an identity), so like muse
-    # and agy it is detected by ancestry alone. The installed command is a
-    # toolbox/aim-sandbox wrapper whose foreground process name is exactly
-    # `kiro-cli` (verified, kiro-cli 2.21.4: `ps -o comm=` and tmux
-    # #{pane_current_command} both report kiro-cli; the aim-sandbox and the
-    # compiled bun/node binary run as descendants). Anchored, never *kiro*, so
-    # unrelated commands cannot be misread as this harness. kiro is a
-    # crewmate/scout adapter only and is never a primary or secondmate, so
-    # this arm only lets a kiro crewmate identify its own harness.
-    kiro-cli) echo "comm kiro"; return ;;
     node*|python*)
       # Bare interpreter: match the harness name in its script path.
       args=$(ps -o args= -p "$pid" 2>/dev/null)

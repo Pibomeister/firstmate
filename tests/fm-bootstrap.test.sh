@@ -1417,8 +1417,6 @@ gemini profile with explicit provider is accepted^{"rules":[{"when":"gemini work
 agy low medium high efforts are accepted^{"rules":[{"when":"agy low","use":{"harness":"agy","effort":"low"}},{"when":"agy medium","use":{"harness":"agy","effort":"medium"}},{"when":"agy high","use":{"harness":"agy","effort":"high"}}]}^empty^
 unsupported agy xhigh effort is flagged^{"rules":[{"when":"agy xhigh","use":{"harness":"agy","effort":"xhigh"}}]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - invalid effort: agy:xhigh
 unsupported agy max effort is flagged^{"rules":[{"when":"agy max","use":{"harness":"agy","effort":"max"}}]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - invalid effort: agy:max
-kiro harness is flagged as unverified^{"rules":[{"when":"kiro work","use":{"harness":"kiro","effort":"low"}}]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - unverified harness: kiro
-hermes harness is flagged as unverified^{"rules":[{"when":"hermes work","use":{"harness":"hermes"}}]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - unverified harness: hermes
 droid harness is verified^{"rules":[{"when":"droid work","use":{"harness":"droid","effort":"high"}}]}^empty^
 unsupported opencode effort is flagged^{"rules":[{"when":"opencode work","use":{"harness":"opencode","model":"anthropic/claude-sonnet-4-5","effort":"high","provider":"claude"}}]}^exact^CREW_DISPATCH: invalid config/crew-dispatch.json - invalid effort: opencode:high
 kimi model profile is accepted^{"rules":[{"when":"kimi work","use":{"harness":"kimi","model":"kimi-code/k3"}}]}^empty^

@@ -3404,7 +3404,6 @@ launch_template() {
   # because Cortex loads Claude-compatible hooks, and Herdr's claude integration
   # hook claims a pane as a claude session whenever that variable is set.
   cortex) printf '%s' 'env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u FM_OMP_HARNESS -u ATLASSIAN_AGENT_TYPE -u ROVODEV_CLI __CORTEXBIN__ --dangerously-allow-all-tool-calls --plugin-dir __CORTEXPLUGIN__ __MODELFLAG____EFFORTFLAG__-- "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
-  # Hermes's native interactive query starts a visible TUI, never one-shot.
   # Kimi Code rejects a positional prompt, so it launches bare and receives
   # only an absolute brief pointer after the TUI readiness gate below.
   # Its turn-end signal is a globally configured Stop hook plus a guarded

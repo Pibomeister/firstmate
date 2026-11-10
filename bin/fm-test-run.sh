@@ -366,7 +366,7 @@ family_for_basename() {
     fm-composer-matrix-live-e2e.test.sh|\
     fm-composer-codex-idle-live-e2e.test.sh|\
     fm-codex-continuity-live-e2e.test.sh|fm-codex-hook-layer-live-e2e.test.sh|\
-    fm-grok-continuity-live-e2e.test.sh|\
+    fm-grok-continuity-live-e2e.test.sh|fm-grok-quota-handoff-live-e2e.test.sh|\
     fm-cursor-primary-live-e2e.test.sh|fm-agy-primary-live-e2e.test.sh|\
     fm-grok-stop-live-e2e.test.sh|fm-harness-adapter-instructions-live-e2e.test.sh|\
     fm-harness-liveness-drift-live-e2e.test.sh|fm-backend-hc-liveness-live-e2e.test.sh|\
@@ -377,7 +377,7 @@ family_for_basename() {
     fm-pi-seeded-home-trust-live-e2e.test.sh|\
     fm-herdr-version-floor-live-e2e.test.sh|\
     fm-herdr-projected-cd-live-e2e.test.sh|\
-    fm-herdr-pi-stale-registration-live-e2e.test.sh|\
+    fm-herdr-pi-stale-registration-live-e2e.test.sh|fm-herdr-secondmate-watch-live-e2e.test.sh|\
     fm-worker-account-live-e2e.test.sh|\
     fm-opencode-primary-live-e2e.test.sh|fm-pi-branch-live-e2e.test.sh|\
     fm-pi-branch-responsiveness-live-e2e.test.sh|\
@@ -410,7 +410,7 @@ family_for_basename() {
     fm-git-strip-ai-trailers.test.sh|\
     fm-trace-context-spawn.test.sh|fm-spawn-worktree-settle.test.sh|\
     fm-spawn-compact-adviser-disable.test.sh|\
-    fm-spawn-compact-adviser-disable-remote.test.sh|\
+    fm-spawn-compact-adviser-disable-remote.test.sh|fm-codex-shell-env.test.sh|\
     fm-project-capacity.test.sh|\
     fm-teardown-endpoint-safety.test.sh)
       printf '%s\n' backend-dispatch
@@ -1756,6 +1756,7 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-procevent-quota.test.sh"
       printf '%s\n' "__script__:fm-quota-choose.test.sh"
       printf '%s\n' "__script__:fm-dispatch-resolve.test.sh"
+      printf '%s\n' "__script__:fm-capacity.test.sh"
       printf '%s\n' "__script__:fm-claude-account-quota.test.sh"
       ;;
     bin/fm-procevent-quota.sh)
@@ -1777,6 +1778,9 @@ families_for_changed_path() {
     bin/fm-capacity.sh)
       printf '%s\n' "__script__:fm-capacity.test.sh"
       printf '%s\n' "__script__:fm-project-capacity.test.sh"
+      ;;
+    bin/fm-disk-alarm.sh)
+      printf '%s\n' "__script__:fm-disk-alarm.test.sh"
       ;;
     bin/fm-env-lib.sh)
       # The one .env accessor, sourced by bin/fm-x-lib.sh (Relay token) and

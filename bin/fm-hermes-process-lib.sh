@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Hermes process identity, shared by detection, liveness and the tmux composer.
+# Hermes process identity, used by agent-process liveness.
 # Match only argv[0], a Node TUI script argument, or Python's exact -m module;
 # never a later prompt argument or a working-directory path. Linux argv fields
 # preserve spaces; the ps fallback conservatively rejects ambiguous paths.
