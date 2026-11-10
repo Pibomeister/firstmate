@@ -62,8 +62,10 @@
 # 90 seconds, inside a tool call's default timeout), exit 2 on a usage error.
 #
 # END (fm-handoff-launch.sh --end-predecessor <pid> <transcript> <bytes>). Run
-# detached by the trigger's Stop hook when a handoff's stop passes with a live
-# successor recorded (one live pane). After a settle (default 15
+# detached by the trigger's Stop hook when a handoff's stop can end the old
+# session with a live successor recorded (one live pane). When
+# FM_HANDOFF_END_AFTER_PID names the hook, it first waits up to 60 seconds for
+# that hook to exit; the hook cancels it when it blocks the stop. After a settle (default 15
 # seconds) it ends <pid> with SIGTERM, waiting up to 30 seconds for it to go,
 # only when all of these still hold: state/.lock names <pid>, the successor
 # record names a different live pid, <pid> is a live harness process, and the
@@ -154,10 +156,19 @@ new_turn_since() {
 
 # --end-predecessor <pid> <transcript> <bytes>
 end_predecessor() {
-  local pid=$1 transcript=$2 bytes=$3 settle wait_secs lock succ succ_doc result=skipped reason='' waited=0
+  local pid=$1 transcript=$2 bytes=$3 settle wait_secs after lock succ succ_doc result=skipped reason='' waited=0
   case "$pid:$bytes" in *[!0-9:]* | :* | *:) printf 'usage: fm-handoff-launch.sh --end-predecessor <pid> <transcript> <bytes>\n' >&2; exit 2 ;; esac
   settle=$(seam_secs FM_HANDOFF_END_SETTLE_SECS 15)
   wait_secs=$(seam_secs FM_HANDOFF_END_WAIT_SECS 30)
+  # The trigger detaches this ender before its slower gate checks and cancels
+  # it when it blocks the stop, so wait first until that hook has exited.
+  after=${FM_HANDOFF_END_AFTER_PID:-}
+  case "$after" in '' | *[!0-9]*) after= ;; esac
+  while [ -n "$after" ] && kill -0 "$after" 2>/dev/null && [ "$waited" -lt 60 ]; do
+    sleep 1
+    waited=$((waited + 1))
+  done
+  waited=0
   sleep "$settle"
   lock=$(cat "$STATE/.lock" 2>/dev/null)
   succ=$(sed -n 's/^pid=//p' "$STATE/.handoff-successor" 2>/dev/null | tail -n 1)

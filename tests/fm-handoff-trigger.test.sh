@@ -1067,6 +1067,62 @@ test_deliberate_handoff_survives_a_compaction_before_its_stop() {
   pass "a deliberate handoff whose stop follows a compaction blocks once for a missing order, then still ends the old session"
 }
 
+# H1 on a loaded host: Claude cancels a Stop hook at its timeout. When each
+# order check is slow, the hook is cancelled before its gate checks finish, and
+# the old session must still be ended once its successor is live. The ender is
+# detached before those checks; it waits for the hook to exit, then rechecks
+# order coverage itself. A stop that the hook blocks still cancels the ender.
+test_a_cancelled_slow_stop_hook_still_ends_the_predecessor() {
+  local t="$TMP_ROOT/t-slow" end="$PRIMARY/state/.handoff-end" doc="$PRIMARY/data/slow-handoff.md"
+  local slow="$TMP_ROOT/slowbin" fakebin="$TMP_ROOT/fake-harness" succ pred n
+  reset_lab
+  rm -rf "$PRIMARY/data/orders" "$end" "$PRIMARY/state/.lock-session" "$PRIMARY/state/.handoff-successor" \
+    "$TMP_ROOT/slow-stop.done" "$slow"
+  mkdir -p "$PRIMARY/data" "$fakebin"
+  ln -sf /bin/bash "$fakebin/claude"
+  cp -R "$ROOT/bin" "$slow"
+  mv "$slow/fm-order.sh" "$slow/fm-order-real.sh"
+  # shellcheck disable=SC2016 # The wrapper expands these.
+  printf '#!/usr/bin/env bash\nsleep 3\nexec "$(dirname "$0")/fm-order-real.sh" "$@"\n' > "$slow/fm-order.sh"
+  chmod +x "$slow/fm-order.sh"
+  printf 'percent-left=0\n' > "$PRIMARY/config/handoff-trigger"
+  printf '# Handoff\n' > "$doc"
+  transcript "$t" 10000
+  sleep 60 &
+  succ=$!
+  (
+    export HOOK="$slow/fm-handoff-trigger.sh" CLAUDE_HOME PRIMARY ROOT TMP_ROOT DOC=$doc SUCC=$succ T=$t
+    export FM_TEST_SEAM=1 FM_HANDOFF_END_SETTLE_SECS=1 FM_HANDOFF_END_WAIT_SECS=5
+    export -f run_hook
+    # shellcheck disable=SC2016 # The fake harness shell expands these.
+    exec "$fakebin/claude" -c '
+      printf "%s\n" "$$" > "$PRIMARY/state/.lock"
+      FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handoff --doc "$DOC" >/dev/null
+      sleep 1
+      printf "pid=%s\nhandoff=%s\npredecessor=%s\n" "$SUCC" "$DOC" "$$" > "$PRIMARY/state/.handoff-successor"
+      run_hook "$PRIMARY" s-slow "$T" Stop >/dev/null 2>&1 &
+      hook=$!
+      sleep 2
+      kill -KILL "$hook" 2>/dev/null
+      printf "cancelled\n" > "$TMP_ROOT/slow-stop.done"
+      n=0
+      while [ "$n" -lt 300 ]; do sleep 0.1; n=$((n + 1)); done'
+  ) </dev/null >/dev/null 2>&1 &
+  pred=$!
+  wait_for_file "$TMP_ROOT/slow-stop.done" 100 || fail "the slow stop never ran"
+  wait_for_file "$end" 250 || fail "a Stop hook cancelled before its slow checks finish must still end the old session"
+  assert_contains "$(cat "$end")" "pred=$pred" "the record names the old session"
+  assert_contains "$(cat "$end")" "result=ended" "the old session was ended"
+  n=0
+  while kill -0 "$pred" 2>/dev/null && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+  ! kill -0 "$pred" 2>/dev/null || fail "the old session must be gone"
+  kill -0 "$succ" 2>/dev/null || fail "the successor must survive"
+  kill "$succ" 2>/dev/null; wait "$pred" "$succ" 2>/dev/null
+  rm -rf "$PRIMARY/data/orders" "$doc" "$end" "$PRIMARY/state/.lock" "$PRIMARY/state/.order-handoff" \
+    "$PRIMARY/state/.handoff-successor" "$PRIMARY/config/handoff-trigger" "$TMP_ROOT/slow-stop.done" "$slow"
+  pass "a Stop hook cancelled at its timeout on a loaded host still ends the old session once its successor is live"
+}
+
 # The tracked Claude settings give the Stop-hook run of the trigger 30 seconds.
 # Under heavy host load its order, gate, and lock checks took over 10 seconds,
 # Claude cancelled the hook, and the old session took one more turn.
@@ -1091,6 +1147,7 @@ test_a_compaction_inside_a_fresh_start_keeps_it_open
 test_deliberate_handoff_stop_ends_the_idle_predecessor
 test_deliberate_handoff_rerun_after_a_settle_order_ends_the_predecessor
 test_deliberate_handoff_survives_a_compaction_before_its_stop
+test_a_cancelled_slow_stop_hook_still_ends_the_predecessor
 test_threshold_configurable
 test_fires_once_per_context_cycle
 test_rearms_after_compaction

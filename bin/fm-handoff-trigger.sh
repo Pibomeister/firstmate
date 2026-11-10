@@ -221,25 +221,34 @@ if [ -n "$SESSION_ID" ] && [ -n "$TRANSCRIPT" ]; then
   esac
 fi
 
-# end_predecessor <successor pid>: when this session holds the session lock and
-# the successor is another process, detach the launcher's ender for this
-# session, so the stop that ends the handoff turn also ends the old session.
-end_predecessor() {
-  local succ=$1 lock_pid size
+# detach_ender <lock pid>: detach the launcher's ender for this session, so the
+# stop that ends the handoff turn also ends the old session. The caller has
+# checked that this session holds the session lock and that a live successor is
+# another process. The ender is detached before the slower gate checks, so a
+# hook that Claude cancels at its timeout on a loaded host still ends the old
+# session; the ender waits until this hook has exited, then rechecks the lock,
+# the live successor, new turns, and order coverage after its settle. A stop
+# that this hook blocks cancels the ender with cancel_ender before it exits.
+ENDER=
+detach_ender() {
+  local size
   [ -n "$TRANSCRIPT" ] && [ -r "$TRANSCRIPT" ] || return 0
-  # shellcheck source=bin/fm-session-lock-lib.sh
-  . "$SCRIPT_DIR/fm-session-lock-lib.sh"
-  lock_pid=$(cat "$STATE/.lock" 2>/dev/null) || return 0
-  case "$lock_pid" in '' | *[!0-9]*) return 0 ;; esac
-  [ "$lock_pid" != "$succ" ] || return 0
-  fm_session_lock_owned_by_self "$STATE" || return 0
   size=$(wc -c < "$TRANSCRIPT" 2>/dev/null | tr -d ' ')
   case "$size" in '' | *[!0-9]*) return 0 ;; esac
   set -m
-  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
-    nohup "$SCRIPT_DIR/fm-handoff-launch.sh" --end-predecessor "$lock_pid" "$TRANSCRIPT" "$size" \
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" FM_HANDOFF_END_AFTER_PID=$$ \
+    nohup "$SCRIPT_DIR/fm-handoff-launch.sh" --end-predecessor "$1" "$TRANSCRIPT" "$size" \
     >/dev/null 2>&1 </dev/null &
+  ENDER=$!
   set +m
+}
+
+# cancel_ender: stop a detached ender, for every stop that does not end the
+# old session.
+cancel_ender() {
+  [ -n "$ENDER" ] || return 0
+  kill -TERM -- "-$ENDER" 2>/dev/null || kill -TERM "$ENDER" 2>/dev/null
+  ENDER=
 }
 
 # newest_firing: this session's newest trigger marker at or below the current
@@ -279,29 +288,42 @@ if [ "$EVENT" = Stop ]; then
   # A deliberate handoff is under way while a live successor record names this
   # session, the lock owner, as its predecessor. The record is the evidence, not
   # the handoff record, which handoff --doc rewrites and a compaction clears.
+  # An open fresh start ends this session once a live successor launched after
+  # its firing is recorded. Either way this session must hold the session lock;
+  # when it does, the ender is detached here, before the slower gate checks.
   LAUNCH="$STATE/.handoff-successor"
   SUCC_PID=$(sed -n 's/^pid=//p' "$LAUNCH" 2>/dev/null | tail -1)
   case "$SUCC_PID" in '' | *[!0-9]*) SUCC_PID= ;; esac
+  LOCK_PID=$(cat "$STATE/.lock" 2>/dev/null)
+  case "$LOCK_PID" in '' | *[!0-9]*) LOCK_PID= ;; esac
+  END_CANDIDATE=
+  if [ -n "$SUCC_PID" ] && [ -n "$LOCK_PID" ] && [ "$SUCC_PID" != "$LOCK_PID" ] &&
+    ! fm_root_is_secondmate_home "$FM_ROOT" && kill -0 "$SUCC_PID" 2>/dev/null; then
+    if [ -n "$HANDOFF_MARKER" ]; then
+      [ ! -f "$LAUNCH" ] || [ "$MARKER" -nt "$LAUNCH" ] || END_CANDIDATE=1
+    elif [ "$(sed -n 's/^predecessor=//p' "$LAUNCH" 2>/dev/null | tail -1)" = "$LOCK_PID" ]; then
+      END_CANDIDATE=1
+    fi
+  fi
   DELIBERATE=
-  if [ -z "$HANDOFF_MARKER" ] && [ -n "$SUCC_PID" ] && ! fm_root_is_secondmate_home "$FM_ROOT"; then
-    SUCC_PRED=$(sed -n 's/^predecessor=//p' "$LAUNCH" 2>/dev/null | tail -1)
-    LOCK_PID=$(head -n 1 "$STATE/.lock" 2>/dev/null | tr -cd '0-9')
-    if [ -n "$LOCK_PID" ] && [ "$SUCC_PRED" = "$LOCK_PID" ] && [ "$SUCC_PID" != "$LOCK_PID" ] &&
-      kill -0 "$SUCC_PID" 2>/dev/null; then
-      # shellcheck source=bin/fm-session-lock-lib.sh
-      . "$SCRIPT_DIR/fm-session-lock-lib.sh"
-      ! fm_session_lock_owned_by_self "$STATE" || DELIBERATE=1
+  if [ -n "$END_CANDIDATE" ]; then
+    # shellcheck source=bin/fm-session-lock-lib.sh
+    . "$SCRIPT_DIR/fm-session-lock-lib.sh"
+    if fm_session_lock_owned_by_self "$STATE"; then
+      [ -n "$HANDOFF_MARKER" ] || DELIBERATE=1
+      detach_ender "$LOCK_PID"
     fi
   fi
   HANDING_OFF=$HANDOFF_MARKER
   [ -n "$HANDING_OFF" ] ||
     ! FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" handing-off 2>/dev/null || HANDING_OFF=1
-  [ -n "$HANDING_OFF" ] || [ -n "$DELIBERATE" ] || exit 0
+  [ -n "$HANDING_OFF" ] || [ -n "$DELIBERATE" ] || { cancel_ender; exit 0; }
   ACTIVE=$(printf '%s' "$PAYLOAD" | jq -r '.stop_hook_active // false' 2>/dev/null)
   if [ -n "$HANDING_OFF" ]; then
     GATE_RC=0
     GATE_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" gate 2>/dev/null) || GATE_RC=$?
     if [ "$GATE_RC" -eq 3 ]; then
+      cancel_ender
       [ "$ACTIVE" != true ] || exit 0
       printf 'Firstmate restart gate: this session is handing off, but its handoff does not list every open captain order. %s\n' \
         "$(printf '%s' "$GATE_OUT" | tr '\n' ' ')" >&2
@@ -312,30 +334,30 @@ if [ "$EVENT" = Stop ]; then
   # handoff recorded for stow does not, and a second mate asks its parent for a
   # relaunch instead. A deliberate handoff ends this session once its
   # successor's handoff document lists every open captain order.
-  ! fm_root_is_secondmate_home "$FM_ROOT" || exit 0
+  ! fm_root_is_secondmate_home "$FM_ROOT" || { cancel_ender; exit 0; }
   if [ -z "$HANDOFF_MARKER" ]; then
-    [ -n "$DELIBERATE" ] || exit 0
+    [ -n "$DELIBERATE" ] || { cancel_ender; exit 0; }
     COVER_RC=0
     COVER_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" covers \
       "$(sed -n 's/^handoff=//p' "$LAUNCH" 2>/dev/null | tail -1)" 2>&1) || COVER_RC=$?
     if [ "$COVER_RC" -ne 0 ]; then
+      cancel_ender
       [ "$ACTIVE" != true ] || exit 0
       printf 'Firstmate restart gate: this session launched successor pid %s for its handoff, but that handoff does not list every open captain order. %s Then end this turn; the stop that ends it also ends this session after a short quiet settle.\n' \
         "$SUCC_PID" "$(printf '%s' "$COVER_OUT" | tr '\n' ' ')" >&2
       exit 2
     fi
-    end_predecessor "$SUCC_PID"
     exit 0
   fi
   if [ ! -f "$LAUNCH" ] || [ "$MARKER" -nt "$LAUNCH" ] || [ -z "$SUCC_PID" ] ||
     ! kill -0 "$SUCC_PID" 2>/dev/null; then
+    cancel_ender
     [ "$ACTIVE" != true ] || exit 0
     FAILED="$STATE/.handoff-launch-failed"
     { [ -f "$FAILED" ] && [ "$FAILED" -nt "$MARKER" ]; } && exit 0
     printf 'Firstmate restart gate: this session is handing off for a planned fresh start, but no live successor launched after the trigger is recorded in state/.handoff-successor, so nobody will continue from the handoff. Launch the successor with bin/fm-handoff-launch.sh <handoff document path>: it starts the successor on this home'"'"'s backend, retries once, verifies that the successor stays live, and records it in state/.handoff-successor as pid=<successor pid> and handoff=<handoff document path>. That record clears this gate; then take no new work and end this turn, and the stop that ends it also ends this session after a short quiet settle. The successor confirms the handoff document'"'"'s sha256, waits until this session has ended, then runs bin/fm-session-start.sh once to take the session lock. If the launcher reports that no successor came up, it records state/.handoff-launch-failed, which also clears this gate: tell the captain, keep working, and let auto-compaction run; the next cycle tries again.\n' >&2
     exit 2
   fi
-  end_predecessor "$SUCC_PID"
   exit 0
 fi
 
