@@ -728,25 +728,31 @@ test_raw_droid_command_does_not_arm_unused_hooks() {
   pass "raw Droid commands remain outside canonical hook arming"
 }
 
+assert_droid_current_no_pipe_footer() {  # <screen> <locale-label>
+  local screen=$1 label=$2 out
+  out=$(fm_composer_droid_state "$screen" orca)
+  [ "$out" = empty ] || fail "the current Droid footer without a pipe must read empty (${label}), got '$out'"
+  out=$(fm_composer_droid_state "${screen/│ >           /│ > /exit     }" orca)
+  [ "$out" = pending ] || fail "typed text under the current Droid footer must stay pending (${label}), got '$out'"
+  out=$(fm_composer_droid_state "${screen/\[⏱ 37m 20s\] /}" orca)
+  [ "$out" = unknown ] || fail "a footer without Droid's timer must refuse input under the current shape (${label}), got '$out'"
+  out=$(fm_composer_droid_state "$screen
+shell prompt" orca)
+  [ "$out" = unknown ] || fail "a shell prompt below the current Droid frame must stay unknown (${label}), got '$out'"
+  out=$(fm_composer_droid_state "${screen/IDE ◌/IDE ◌ leftover}" orca)
+  [ "$out" = unknown ] || fail "text after a trailing IDE glyph must refuse (${label}), got '$out'"
+}
+
 test_droid_composer_current_footer_shape() {
-  local screen out
+  local screen
   screen=' Auto (High) · allow all commands                                  GLM-5.3-Flash (High)
 ╭──────────────────────────────────────────────────────────────────────────────╮
 │ >                                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 [⏱ 37m 20s] 6 config issues — /diagnostics                                         IDE ◌
 firstmate'
-  out=$(fm_composer_droid_state "$screen" orca)
-  [ "$out" = empty ] || fail "the current Droid footer without a pipe must read empty, got '$out'"
-  out=$(fm_composer_droid_state "${screen/│ >           /│ > /exit     }" orca)
-  [ "$out" = pending ] || fail "typed text under the current Droid footer must stay pending, got '$out'"
-  out=$(fm_composer_droid_state "${screen/\[⏱ 37m 20s\] /}" orca)
-  [ "$out" = unknown ] || fail "a footer without Droid's timer must refuse input under the current shape, got '$out'"
-  out=$(fm_composer_droid_state "$screen
-shell prompt" orca)
-  [ "$out" = unknown ] || fail "a shell prompt below the current Droid frame must stay unknown, got '$out'"
-  out=$(fm_composer_droid_state "${screen/IDE ◌/IDE ◌ leftover}" orca)
-  [ "$out" = unknown ] || fail "text after a trailing IDE glyph must refuse, got '$out'"
+  assert_droid_current_no_pipe_footer "$screen" "ambient locale"
+  LC_ALL=C assert_droid_current_no_pipe_footer "$screen" "LC_ALL=C"
   pass "the current Droid footer without an ASCII pipe reads empty or pending, never a shell"
 }
 
