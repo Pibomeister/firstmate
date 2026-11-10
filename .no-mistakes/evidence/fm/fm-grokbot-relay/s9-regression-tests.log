@@ -1,0 +1,22 @@
+1..17
+ok - a pid-less lock is held while fresh and reclaimed only once it is old
+ok - a lock is held only by its live owner with the same start time; a reused pid is reclaimed
+ok - contenders racing to reclaim a stale lock run their passes one at a time
+ok - a pass removes only a lock that still names it as owner
+tests/fm-relay-guard.test.sh: line 564: 67096 Killed: 9               nohup "$W/stubborn-relay.sh" s 7009 < /dev/null > /dev/null 2>&1
+ok - KILL reaches a TERM-proof relay, never a pid that stopped being that relay
+ok - a relay as old as the daemon in whole seconds counts as predating the daemon
+ok - relays that outlived a daemon restart are stopped, respawned, and probed reachable; a repeat pass changes nothing
+ok - missing relays are spawned, a down daemon leaves relays alone, and its return restarts them
+ok - duplicate relays for one entry converge to a single relay
+ok - probe failures restart only after the streak, and the restart cap stops further restarts
+ok - backoff defers a restart that comes too soon after the previous one
+ok - a daemon-named helper the daemon spawns is not mistaken for a daemon restart
+ok - rendered launchd and systemd units keep the guard's run loop alive for this home
+ok - a TERM during the run interval exits at once, reaps the sleep, and leaves relays running
+ok - the example m3-forward config is accepted by the guard
+ok - scan reports a stale relay without stopping or starting anything
+ok - missing, empty, misspelled, dangling, probe-less, and non-numeric configuration is refused before any action
+FM_TEST_COMPLETE
+bash tests/fm-relay-guard.test.sh  16.19s user 40.96s system 8% cpu 10:53.47 total
+exit=0

@@ -1,0 +1,51 @@
+### S0 baseline: scan + once with healthy relays
+# fm-relay-guard v1 epoch=1794277763 daemon=fmlabtsd daemon-pid=56920
+m3	ok	63283	
+m4	ok	63376	
+studio	ok	63405	
+scan exit=0
+# fm-relay-guard v1 epoch=1794277776 daemon=fmlabtsd daemon-pid=56920
+m3	ok	63283	
+m4	ok	63376	
+studio	ok	63405	
+once exit=0
+# fm-relay-guard v1 epoch=1794277776 daemon=fmlabtsd daemon-pid=56920
+m3	ok	63283	
+m4	ok	63376	
+studio	ok	63405	
+
+### S1 restart the daemon (tailscaled restart stand-in)
+new daemon pid 88161
+before guard port 17101: curl: (28) Operation timed out after 2149 milliseconds with 0 bytes received
+ (stale relay: no forwarding)
+before guard port 17102: curl: (28) Operation timed out after 2145 milliseconds with 0 bytes received
+ (stale relay: no forwarding)
+before guard port 17103: curl: (28) Operation timed out after 2158 milliseconds with 0 bytes received
+ (stale relay: no forwarding)
+# fm-relay-guard v1 epoch=1794277800 daemon=fmlabtsd daemon-pid=88161
+m3	restart	63769	daemon-restarted; probe ok
+m4	restart	94446	daemon-restarted; probe ok
+studio	restart	18047	daemon-restarted; probe ok
+once exit=0
+# fm-relay-guard v1 epoch=1794277800 daemon=fmlabtsd daemon-pid=88161
+m3	restart	63769	daemon-restarted; probe ok
+m4	restart	94446	daemon-restarted; probe ok
+studio	restart	18047	daemon-restarted; probe ok
+after guard port 17101: m3 ok
+after guard port 17102: m4 ok
+after guard port 17103: studio ok
+--- actions.tsv
+1794277800	m3	restart	daemon-restarted	63283	63769	ok
+1794277800	m4	restart	daemon-restarted	63376	94446	ok
+1794277800	studio	restart	daemon-restarted	63405	18047	ok
+
+### second pass is a no-op
+# fm-relay-guard v1 epoch=1794277846 daemon=fmlabtsd daemon-pid=88161
+m3	ok	63769	
+m4	ok	94446	
+studio	ok	18047	
+once exit=0
+# fm-relay-guard v1 epoch=1794277846 daemon=fmlabtsd daemon-pid=88161
+m3	ok	63769	
+m4	ok	94446	
+studio	ok	18047	

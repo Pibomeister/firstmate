@@ -1,12 +1,12 @@
 [Unit]
-Description=Firstmate relay guard (firstmate-relay-guard-2364458282)
+Description=Firstmate relay guard (firstmate-relay-guard-1433836708)
 StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-Environment="FM_HOME=/private/tmp/rg-live.Sxl5By/home"
-Environment="PATH=/Users/eduardopicazo/.local/bin:/opt/homebrew/opt/openjdk@17/bin:/Users/eduardopicazo/Library/Android/sdk/platform-tools:/Users/eduardopicazo/Library/Android/sdk/emulator:/Users/eduardopicazo/.grok/bin:/Users/eduardopicazo/.kimi-code/bin:/Users/eduardopicazo/Library/pnpm:/Users/eduardopicazo/.bun/bin:/Users/eduardopicazo/Library/Python/3.9/bin:/Library/TeX/texbin:/Users/eduardopicazo/.local/bin:/opt/homebrew/opt/node@24/bin:/Users/eduardopicazo/.antigravity/antigravity/bin:/opt/homebrew/opt/node@24/bin:/Users/eduardopicazo/.local/bin:/opt/homebrew/opt/openjdk@17/bin:/Users/eduardopicazo/Library/Android/sdk/platform-tools:/Users/eduardopicazo/Library/Android/sdk/emulator:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Library/TeX/texbin:/opt/homebrew/bin:/Users/eduardopicazo/go/bin:/Users/eduardopicazo/.local/bin:/Users/eduardopicazo/.cargo/bin:/Users/eduardopicazo/bin:/opt/homebrew/sbin:/usr/local/sbin:/Users/eduardopicazo/.orbstack/bin:/Users/eduardopicazo/.lmstudio/bin:/Users/eduardopicazo/.claude/plugins/cache/agent-kit/ak/0.1.96/bin"
-ExecStart=/bin/bash "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M70M2NYG1QSD0QTRJYAN66V1/bin/fm-relay-guard.sh" run
+Environment="FM_HOME=/private/tmp/fm-relaylab.XfxEGD/home"
+Environment="PATH=<elided>"
+ExecStart=/bin/bash "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M71JED6RNX8FD5YZDNK0YWDV/bin/fm-relay-guard.sh" run
 Restart=always
 RestartSec=10s
 KillMode=process

@@ -1,0 +1,44 @@
+### S4 adversarial bystanders: look-alike relay on another port, and a process whose args only contain the command
+bystanders 60323 60360
+
+### S2 unattended run loop (interval 3s) recovers after a daemon restart, no manual pass
+daemon restarted, new pid 85302; reachable right after restart: 0
+all three reachable again: 1 after 37s
+# fm-relay-guard v1 epoch=1794277924 daemon=fmlabtsd daemon-pid=88161
+m3	ok	63769	
+m4	restart	30077	daemon-restarted; probe ok
+studio	restart	51027	daemon-restarted; probe ok
+
+### S3 data-plane loss without daemon restart: m4 relay stops forwarding
+wedged m4 pid 30077; reachable now: 0
+all three reachable again: 1 after 54s
+# fm-relay-guard v1 epoch=1794277956 daemon=fmlabtsd daemon-pid=85302
+m4	probe-failing	30077	probe failed 1 of 2 passes
+studio	ok	51027	
+m3	restart	9029	daemon-restarted; probe ok
+
+### S6 lock: a manual once while run loop is mid-pass
+manual once exit=75 (75 = another pass holds the lock, or 0 if loop idle)
+
+### S7 stop the run loop (TERM) - relays must survive
+run exit=143 after 5s; reachable after guard stop: 1
+bystander 60323 alive: yes
+bystander 60360 alive: yes
+--- actions.tsv
+1794277800	m3	restart	daemon-restarted	63283	63769	ok
+1794277800	m4	restart	daemon-restarted	63376	94446	ok
+1794277800	studio	restart	daemon-restarted	63405	18047	ok
+1794277924	m4	restart	daemon-restarted	94446	30077	ok
+1794277924	studio	restart	daemon-restarted	18047	51027	ok
+1794277956	m3	restart	daemon-restarted	63769	9029	ok
+/tmp/fm-relaylab-s2.sh: line 26: 60323 Terminated: 15          nohup $NODE $LAB/m3-forward.mjs --listen 127.0.0.1:17109 --target 127.0.0.1:17201 > /dev/null 2>&1
+/tmp/fm-relaylab-s2.sh: line 26: 60360 Terminated: 15          nohup /bin/sh -c "sleep 600; : $NODE $LAB/m3-forward.mjs --listen 127.0.0.1:17101 --target 127.0.0.1:17201 extra" > /dev/null 2>&1
+--- run.out
+# fm-relay-guard v1 epoch=1794277924 daemon=fmlabtsd daemon-pid=88161
+m3	ok	63769	
+m4	restart	30077	daemon-restarted; probe ok
+studio	restart	51027	daemon-restarted; probe ok
+# fm-relay-guard v1 epoch=1794277956 daemon=fmlabtsd daemon-pid=85302
+m4	probe-failing	30077	probe failed 1 of 2 passes
+studio	ok	51027	
+m3	restart	9029	daemon-restarted; probe ok

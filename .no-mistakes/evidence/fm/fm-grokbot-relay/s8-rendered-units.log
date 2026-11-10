@@ -1,0 +1,26 @@
+/Users/eduardopicazo/.no-mistakes/evidence/01M71JED6RNX8FD5YZDNK0YWDV/rendered.plist: OK
+true
+Array {
+    /bin/bash
+    /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M71JED6RNX8FD5YZDNK0YWDV/bin/fm-relay-guard.sh
+    run
+}
+Dict {
+    FM_HOME = /private/tmp/fm-relaylab.XfxEGD/home
+    PATH = <caller PATH, elided>
+}
+[Unit]
+Description=Firstmate relay guard (firstmate-relay-guard-1433836708)
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Environment="FM_HOME=/private/tmp/fm-relaylab.XfxEGD/home"
+Environment="PATH=<elided>"
+ExecStart=/bin/bash "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M71JED6RNX8FD5YZDNK0YWDV/bin/fm-relay-guard.sh" run
+Restart=always
+RestartSec=10s
+KillMode=process
+
+[Install]
+WantedBy=default.target
