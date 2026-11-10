@@ -294,7 +294,7 @@ family_for_basename() {
     fm-classify-decision-key.test.sh|\
     fm-composer-ghost.test.sh|fm-composer-lib.test.sh|fm-context-reading.test.sh|\
     fm-crew-state.test.sh|fm-captain-hold-lifecycle.test.sh|\
-    fm-agent-kit-pin.test.sh|fm-documentation-audiences.test.sh|fm-ensure-agents-md.test.sh|fm-forge-detect.test.sh|fm-grok-harness.test.sh|\
+    fm-agent-kit-pin.test.sh|fm-agent-kit-review.test.sh|fm-documentation-audiences.test.sh|fm-ensure-agents-md.test.sh|fm-forge-detect.test.sh|fm-grok-harness.test.sh|\
     fm-fork-free-helpers.test.sh|\
     fm-harness-precedence.test.sh|fm-install-herdr.test.sh|\
     fm-kimi-harness.test.sh|fm-devin-harness.test.sh|fm-commandcode-harness.test.sh|fm-cortex-harness.test.sh|fm-muse-harness.test.sh|fm-rovo-harness.test.sh|fm-agy-harness.test.sh|fm-droid-harness.test.sh|fm-omp-harness.test.sh|fm-polytoken-harness.test.sh|fm-herdr-lab.test.sh|fm-lint.test.sh|\
@@ -737,6 +737,7 @@ tests/fm-afk-inject-e2e.test.sh 43276
 tests/fm-afk-pi-herdr-return-e2e.test.sh 54
 tests/fm-afk-return.test.sh 68818
 tests/fm-agent-kit-pin.test.sh 1000
+tests/fm-agent-kit-review.test.sh 1000
 tests/fm-agy-harness.test.sh 129716
 tests/fm-agy-primary-live-e2e.test.sh 82
 tests/fm-agy-primary.test.sh 41648
@@ -1852,9 +1853,12 @@ families_for_changed_path() {
     .cursor/agent-kit.md|.cursor/bin/ak|.cursor/bin/ak-gate.mjs|bin/fm-agent-kit-pin.sh)
       printf '%s\n' "__script__:fm-agent-kit-pin.test.sh"
       ;;
+    ak.project.json)
+      printf '%s\n' "__script__:fm-agent-kit-review.test.sh"
+      ;;
     .cursor/skills/*|.cursor/agents/*|.cursor/rules/*|.cursor/roles/*|\
     .cursor/references/*|.cursor/schemas/*|.cursor/templates/*|\
-    .cursor/licenses/*|.cursor/catalog.yaml)
+    .cursor/licenses/*|.cursor/catalog.yaml|.cursor/bin/ak.js)
       # Vendored overlay content has no Firstmate behavior test of its own.
       # Any other .cursor path falls through to the reference-scan catch-all.
       ;;

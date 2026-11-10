@@ -54,6 +54,13 @@ Every authored catalog skill is under `.cursor/skills/`.
 Every authored catalog role is a `.cursor/agents/<id>.md` subagent.
 `.cursor-plugin/` is not vendored; Cloud Automations load the repository `.cursor/` overlay, not a local plugin install.
 
+## Review settings
+
+This repository's agent-kit project record is [`ak.project.json`](../ak.project.json).
+Pass that path as `--project` to `.cursor/bin/ak delegation`.
+The Cursor overlay `ak` does not auto-discover a project file and does not expose `ak validate`.
+Keep `review.cold_read` off `on` until GS-004k ships.
+
 ## Refresh
 
 Clone agent-kit at the desired commit outside this repository, install bun dependencies, and build into an empty directory:
