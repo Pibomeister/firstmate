@@ -212,6 +212,8 @@ build_world() {  # <case>
   idle_term term-branch pty-branch "$HOME_DIR" "zsh (main)"
   idle_term term-nested pty-nested "$HOME_DIR" "zsh (feature(old)-main)"
   idle_term term-unbalanced pty-unbalanced "$HOME_DIR" "zsh (main"
+  idle_term term-pathseg pty-pathseg "$HOME_DIR" "user@host: ~/orca/projects/(old)firstmate"
+  idle_term term-wordseg pty-wordseg "$HOME_DIR" "zsh [wip]fm"
   idle_term term-leash pty-leash "$HOME_DIR" "leash-drop-2236"
   idle_term term-muse pty-muse "$HOME_DIR" "Muse Code under Astra Opus"
   idle_term term-sm-idle pty-sm-idle "$SM_HOME" "sm1 successor"
@@ -261,6 +263,8 @@ test_dry_run_classifies_every_owner_and_closes_nothing() {
   expect term-branch "keep captain" "a parenthesized branch name is not a firstmate session name"
   expect term-nested "keep captain" "a nested parenthesized branch name is not a firstmate session name"
   expect term-unbalanced "keep captain" "a title whose brackets do not balance is never a firstmate session name"
+  expect term-pathseg "keep captain" "a bracketed segment inside a path part never exposes a firstmate word"
+  expect term-wordseg "keep captain" "a word a bracketed segment touches is dropped whole"
   expect term-leash "keep captain" "a task-like title naming no firstmate word is the captain's"
   expect term-muse "keep captain" "a program title naming no firstmate word is the captain's"
   expect term-gone "keep unowned-task" "an idle shell in an unrecorded, gone task worktree may belong to another home"
@@ -446,16 +450,33 @@ test_unreadable_inventory_closes_nothing() {
   pass "fm-terminal-reap: an unreadable inventory exits 1 and closes nothing"
 }
 
-# fake_browser: a real process whose command line names an agent-browser
-# daemon, with one child, started in <dir> (created only for the run).
-fake_browser() {  # <dir> -> PID
-  local script="$TMP_ROOT/lib/node_modules/agent-browser/dist/daemon.js"
-  mkdir -p "${script%/*}"
-  printf 'sleep 600 & wait\n' > "$script"
-  bash "$script" >/dev/null 2>&1 </dev/null &
+# await_exec: wait until a just-started process has replaced this suite's
+# forked copy with its own command line, so a heavily loaded host never
+# snapshots a starter mid-exec.
+await_exec() {  # <pid>
+  local mine i
+  mine=$(ps -o args= -p "$$" 2>/dev/null) || return 0
+  for i in $(seq 1 100); do
+    [ "$(ps -o args= -p "$1" 2>/dev/null)" != "$mine" ] && return 0
+    sleep 0.1
+  done
+  fail "process $1 never left this suite's command line"
+}
+
+# fake_script: a real process whose command line is node <script> [args...],
+# where the script holds one child.
+fake_script() {  # <script> [args...] -> PID
+  mkdir -p "${1%/*}"
+  printf 'sleep 600 & wait\n' > "$1"
+  ( exec -a node bash "$@" ) >/dev/null 2>&1 </dev/null &
   PID=$!
   disown "$PID" 2>/dev/null || true
   TRACKED_PIDS+=("$PID")
+  await_exec "$PID"
+}
+# fake_browser: an agent-browser daemon as node runs it.
+fake_browser() {  # -> PID
+  fake_script "$TMP_ROOT/lib/node_modules/agent-browser/bin/../dist/daemon.js"
 }
 
 # fake_headless: a real process whose command line starts with <exe> and
@@ -465,6 +486,7 @@ fake_headless() {  # <exe> -> PID
   PID=$!
   disown "$PID" 2>/dev/null || true
   TRACKED_PIDS+=("$PID")
+  await_exec "$PID"
 }
 # headless_program: a non-browser program given a browser path and --headless
 # as its arguments, with one child.
@@ -473,10 +495,11 @@ headless_program() {  # <browser path> -> PID
   PID=$!
   disown "$PID" 2>/dev/null || true
   TRACKED_PIDS+=("$PID")
+  await_exec "$PID"
 }
 
 test_browsers_are_reaped_only_without_a_live_owner() {
-  local gone live task owner reused headless other
+  local gone live task owner reused headless other bridge cfgarg daemonarg
   fixture_reset browsers
   HOME_DIR="$FX/home"
   mkdir -p "$HOME_DIR/state" "$FX/live-dir" "$FX/task-wt"
@@ -493,6 +516,14 @@ test_browsers_are_reaped_only_without_a_live_owner() {
   fake_headless "$TMP_ROOT/browser-bin/chrome-headless-shell"; headless=$PID
   headless_program "$TMP_ROOT/browser-bin/chrome"; other=$PID
   : > "$FX/ppid1-$headless"; : > "$FX/ppid1-$other"
+  # A chrome-devtools-axi bridge is a root, and node scripts given a bridge or
+  # daemon path as an argument are not.
+  fake_script "$TMP_ROOT/lib/node_modules/chrome-devtools-axi/dist/bin/chrome-devtools-axi-bridge.js"; bridge=$PID
+  fake_script "$TMP_ROOT/jobs/worker.js" --config "$TMP_ROOT/jobs/chrome-devtools-axi-bridge.json"; cfgarg=$PID
+  fake_script "$TMP_ROOT/jobs/runner.js" "$TMP_ROOT/lib/node_modules/agent-browser/dist/daemon.js"; daemonarg=$PID
+  cwd_row "$bridge" "$FX/bridge-dir"
+  cwd_row "$cfgarg" "$FX/cfgarg-dir"
+  cwd_row "$daemonarg" "$FX/daemonarg-dir"
   cwd_row "$headless" "$FX/headless-dir"
   cwd_row "$other" "$FX/other-dir"
   cwd_row "$gone" "$FX/gone-dir"
@@ -510,6 +541,9 @@ test_browsers_are_reaped_only_without_a_live_owner() {
   expect "$task" "keep task" "a browser in a recorded task worktree belongs to that task"
   expect "$headless" "reap owner-gone" "an orphaned headless browser executable is a browser root"
   expect "$other" "" "an orphaned --headless program that is no browser executable must never be listed as a browser"
+  expect "$bridge" "reap owner-gone" "a chrome-devtools-axi bridge node runs is a browser root"
+  expect "$cfgarg" "" "a node script given a bridge path as an argument must never be listed as a browser"
+  expect "$daemonarg" "" "a node script given a daemon path as an argument must never be listed as a browser"
   kill -0 "$gone" 2>/dev/null || fail "a dry run must stop no browser"
 
   run_reap --apply
@@ -530,6 +564,8 @@ test_browsers_are_reaped_only_without_a_live_owner() {
   kill -0 "$task" 2>/dev/null || fail "an apply must leave a task's browser running"
   kill -0 "$reused" 2>/dev/null || fail "an apply must never signal a possibly reused pid"
   kill -0 "$other" 2>/dev/null || fail "an apply must never signal a --headless program that is no browser"
+  kill -0 "$cfgarg" 2>/dev/null || fail "an apply must never signal a program given a bridge path"
+  kill -0 "$daemonarg" 2>/dev/null || fail "an apply must never signal a program given a daemon path"
   pass "fm-terminal-reap: browsers are stopped only when nothing else works in their directory"
 }
 

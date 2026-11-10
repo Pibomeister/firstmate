@@ -63,9 +63,9 @@
 #   reap idle-session  an idle shell in a home root whose title names a
 #                      finished primary or secondmate session left at its
 #                      prompt: after dropping path and branch parts (any word
-#                      holding /, ~ or @, any word ending in :, and any
-#                      parenthesized or bracketed segment, nested ones
-#                      included), some remaining word, split on
+#                      holding /, ~ or @, any word ending in :, and any word
+#                      a parenthesized or bracketed segment touches, nested
+#                      segments included), some remaining word, split on
 #                      non-alphanumerics and in any case, is main, successor,
 #                      handoff, firstmate, or fm; a title whose brackets do
 #                      not balance is always the captain's
@@ -74,12 +74,14 @@
 # firstmate sessions in its own roots; every terminal in a task worktree,
 # recorded or not, is kept.
 #
-# Browser roots are agent-browser daemons, chrome-devtools-axi bridges, and
+# Browser roots are agent-browser daemons and chrome-devtools-axi bridges, each
+# named by the script node runs (the command line's first word, or the second
+# after node), and
 # automation browsers whose parent has exited: a browser executable (Chrome,
 # Chromium, Edge, Firefox, or a headless shell), named by the command line's
 # first word, started with --headless or --remote-debugging-pipe or from a
 # Playwright or Puppeteer build. Another program is never listed, even when a
-# browser path or --headless is among its arguments. Each root is
+# browser, daemon, or bridge path or --headless is among its arguments. Each root is
 # judged by its working directory, together with every process under it:
 #   keep task          it works in a recorded task's worktree
 #   keep home          it works in a home root
@@ -310,10 +312,12 @@ if (mode === "terminals") {
   }
 } else if (mode === "browsers") {
   const browserExe = /^((\/([^/ ]+|[^/]*\.app))*\/)?(Google Chrome( for Testing)?|Chromium|chrome|chromium|chromium-browser|chrome-headless-shell|headless_shell|msedge|Microsoft Edge|firefox)( |$)/;
+  const daemonScript = /^((\S*\/)?node(js)? )?(\S*\/agent-browser\/(\S*\/)?daemon\.js|\S*\/chrome-devtools-axi-bridge(\.js)?)( |$)/;
   const isRoot = (p) => {
     const a = p.args;
-    if (/\/agent-browser\//.test(a) && /daemon\.js/.test(a)) return true;
-    if (/chrome-devtools-axi-bridge/.test(a)) return true;
+    // A daemon or bridge is named by the script node runs, never by an
+    // argument some other program was given.
+    if (daemonScript.test(a)) return true;
     if (p.ppid !== 1) return false;
     // An automation browser is a browser executable, named by the command
     // line's first word (a path whose only spaced parts are .app bundles and
@@ -368,11 +372,12 @@ JS
 
 # firstmate_title <title>: 0 when a title word, outside its path and branch
 # parts, is main, successor, handoff, firstmate, or fm. Parenthesized and
-# bracketed segments are removed innermost first, so nesting is handled; a
-# title whose brackets do not balance is never a firstmate title.
+# bracketed segments become a / innermost first, so nesting is handled and any
+# word a segment touched is dropped as a path part; a title whose brackets do
+# not balance is never a firstmate title.
 firstmate_title() {
   printf '%s\n' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]' \
-    | sed -e ':a' -e 's/([^][()]*)/ /g' -e 's/\[[^][()]*\]/ /g' -e 'ta' \
+    | sed -e ':a' -e 's|([^][()]*)|/|g' -e 's|\[[^][()]*\]|/|g' -e 'ta' \
     | LC_ALL=C awk '
       /[][()]/ { exit 1 }
       { for (i = 1; i <= NF; i++) {
