@@ -1,0 +1,90 @@
+1794274257	1	signal	task-r.status	seed
+1794274264	2	signal	task-o.status	seed
+1794274270	3	signal	task-p.status	seed
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 31023.1794274259.3Ta1PU
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: working: waiting on the same upstream check with identical padding text
+wake annotation: unread wake-EVENT since last drain, not current state: task-o.status: working: started
+wake annotation: latest wake-EVENT observed at drain, not current state: task-o.status: done: shipped the émoji fix ✅ for the captain
+wake annotation: latest wake-EVENT observed at drain, not current state: task-p.status: pr-ready: https://github.com/example/repo/pull/42
+STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+task-o done: shipped the émoji fix ✅ for the captain
+task-p pr-ready: https://github.com/example/repo/pull/42
