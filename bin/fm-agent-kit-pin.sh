@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# fm-agent-kit-pin.sh - prove the six pinned Cursor agent-kit overlay files match the recorded pin.
+# fm-agent-kit-pin.sh - prove the six pinned Cursor agent-kit overlay files
+# match the recorded pin, and that ak.project.json review.cold_read and
+# review.comprehension match the expected review.*= lines in the same
+# .cursor/agent-kit.md pin record. Change those JSON fields and the two
+# expected lines together. Non-network.
 #
 # Usage:
 #   bin/fm-agent-kit-pin.sh
@@ -9,8 +13,8 @@
 # (`<64 hex>  <relative-path>`) and compares them to the files on disk.
 # The required paths are .cursor/bin/ak, .cursor/bin/ak.js,
 # .cursor/bin/ak-gate.mjs, .cursor/environment.json, tools/cursor/install.sh,
-# and tools/cursor/bun-v1.3.14.sha256. Non-network.
-# Requires `shasum -a 256` or `sha256sum`.
+# and tools/cursor/bun-v1.3.14.sha256.
+# Requires `shasum -a 256` or `sha256sum`, and python3 to read ak.project.json.
 set -eu
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -70,6 +74,37 @@ expected_digest() {
   ' "$MANIFEST"
 }
 
+# Lines of the form review.cold_read=<value> or review.comprehension=<value>.
+expected_review_setting() {
+  local key=$1
+  awk -F= -v k="$key" '
+    $1 == k {
+      print substr($0, length($1) + 2)
+    }
+  ' "$MANIFEST"
+}
+
+actual_review_setting() {
+  local file=$1 key=$2
+  command -v python3 >/dev/null 2>&1 || fail "python3 is required to read $file"
+  python3 - "$file" "$key" <<'PY'
+import json, pathlib, sys
+path, key = sys.argv[1], sys.argv[2]
+try:
+    data = json.loads(pathlib.Path(path).read_text())
+except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+    sys.stderr.write(str(exc) + "\n")
+    sys.exit(1)
+review = data.get("review")
+if not isinstance(review, dict) or key not in review:
+    sys.exit(1)
+value = review[key]
+if not isinstance(value, str) or value == "":
+    sys.exit(1)
+print(value)
+PY
+}
+
 MANIFEST="$ROOT/.cursor/agent-kit.md"
 [ -f "$MANIFEST" ] || fail "missing .cursor/agent-kit.md"
 
@@ -95,6 +130,29 @@ done <<'EOF'
 .cursor/environment.json
 tools/cursor/install.sh
 tools/cursor/bun-v1.3.14.sha256
+EOF
+
+PROJECT_RECORD="$ROOT/ak.project.json"
+[ -f "$PROJECT_RECORD" ] || fail "missing ak.project.json"
+
+while IFS= read -r key; do
+  [ -n "$key" ] || continue
+  field=${key#review.}
+  expected=$(expected_review_setting "$key")
+  [ "$(count_lines "$expected")" = 1 ] || fail "need exactly one recorded $key line"
+  actual=$(actual_review_setting "$PROJECT_RECORD" "$field") \
+    || fail "missing $key in ak.project.json"
+  if [ "$actual" != "$expected" ]; then
+    fail "$key is $actual, expected $expected"
+  fi
+  if [ -n "$ok_parts" ]; then
+    ok_parts="$ok_parts $key=$actual"
+  else
+    ok_parts="$key=$actual"
+  fi
+done <<'EOF'
+review.cold_read
+review.comprehension
 EOF
 
 printf 'fm-agent-kit-pin: ok %s\n' "$ok_parts"

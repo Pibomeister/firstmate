@@ -22,6 +22,8 @@ Firstmate's tracked `.cursor/hooks.json` is not part of the bundle and must stay
 
 Recorded with `sha256sum .cursor/bin/ak .cursor/bin/ak.js .cursor/bin/ak-gate.mjs .cursor/environment.json tools/cursor/install.sh tools/cursor/bun-v1.3.14.sha256` at that commit.
 `bin/fm-agent-kit-pin.sh` checks these six lines against the files on disk.
+It also compares `ak.project.json` `review.cold_read` and `review.comprehension` to the two `review.*=` lines below.
+Edit the JSON fields and those two lines together.
 
 ```
 6df9b52c31bbd16e199349cee2c0ad33355e528199d978e88193ade79c63cfbc  .cursor/bin/ak
@@ -30,6 +32,8 @@ b1615ebfe0f15cbcd7b99e3efa4b8f7265b47279ddda50d4abd04ce614de6a9a  .cursor/bin/ak
 edb46699507fe67aa5c0b73c82dcaa4aaa9b5abf1ba2a9b1a54a01c663a96a58  .cursor/environment.json
 3e343b3d74a15d1240da284f4cc90c72f27741db4df6abf650270afa42ef7020  tools/cursor/install.sh
 3d622cb47b53a08e66f9e0d6c81186cd179c6f90917c07f9cf7a55800e49cd37  tools/cursor/bun-v1.3.14.sha256
+review.cold_read=shadow
+review.comprehension=shadow
 ```
 
 ## Licenses
@@ -66,6 +70,7 @@ The runner names `ak.project.json` as the project record in the `/doc-review` pr
 `review.cold_read` and `review.comprehension` are `shadow`.
 Keep `review.cold_read` at `shadow`.
 Do not set it to `on` until agent-kit ships the release that enables it.
+`bin/fm-agent-kit-pin.sh` enforces the expected values recorded in the pin section.
 `/super-bound` treats an unindexed project as off.
 There is no knowledgebase index.
 The Cursor overlay `ak` does not auto-discover a project file and does not expose `ak validate`.
@@ -104,6 +109,7 @@ Keep Firstmate's `.cursor/hooks.json`.
 Do not copy `.cursor-plugin/`.
 This repository has no `bun.lock`, so after a refresh keep the `install.sh` skip of `bun install --frozen-lockfile`.
 Refresh the six `sha256sum` lines in this file from `.cursor/bin/ak`, `.cursor/bin/ak.js`, `.cursor/bin/ak-gate.mjs`, `.cursor/environment.json`, `tools/cursor/install.sh`, and `tools/cursor/bun-v1.3.14.sha256`, then run `bin/fm-agent-kit-pin.sh`.
+When changing review settings, edit `ak.project.json` and the `review.*=` pin lines together.
 Merge a newly generated root `AGENTS.md` section rather than replacing Firstmate's supervisor contract.
 Keep that overlay section a short pointer: it does not replace the supervisor contract, reviewer isolation is `partial`, and super-review runs as `/super-review full|readiness|delta` in Cursor sessions only.
 Check for path collisions with Firstmate's existing `.cursor/` files before copying, and keep Firstmate's copies on a conflict.

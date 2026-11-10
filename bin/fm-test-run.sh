@@ -1855,6 +1855,7 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-agent-kit-pin.test.sh"
       ;;
     ak.project.json)
+      printf '%s\n' "__script__:fm-agent-kit-pin.test.sh"
       printf '%s\n' "__script__:fm-agent-kit-review.test.sh"
       ;;
     .cursor/catalog.yaml|.cursor/skills/*|.cursor/agents/*|.cursor/rules/*|\

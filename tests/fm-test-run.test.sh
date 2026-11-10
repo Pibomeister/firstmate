@@ -552,6 +552,8 @@ test_changed_cursor_overlay_mapping_is_narrow() {
 
   : >"$repo/ak.project.json"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/fm-agent-kit-pin.test.sh" \
+    "ak.project.json must select the pin test"
   assert_contains "$listed" "tests/fm-agent-kit-review.test.sh" \
     "ak.project.json must select the review test"
   git -C "$repo" add ak.project.json

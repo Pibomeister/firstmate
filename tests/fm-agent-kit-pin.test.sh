@@ -26,6 +26,17 @@ write_pin_files() {  # <repo>
   printf '{"name":"agent-kit"}\n' >"$repo/.cursor/environment.json"
   printf 'install-bytes\n' >"$repo/tools/cursor/install.sh"
   printf 'sums-bytes\n' >"$repo/tools/cursor/bun-v1.3.14.sha256"
+  write_review_project "$repo" "off" "off"
+}
+
+write_review_project() {  # <repo> <cold_read> <comprehension>
+  printf '{"review":{"cold_read":"%s","comprehension":"%s"}}\n' "$2" "$3" \
+    >"$1/ak.project.json"
+}
+
+write_review_expected() {  # stdout: the two review.*= lines for this fixture
+  printf 'review.cold_read=off\n'
+  printf 'review.comprehension=off\n'
 }
 
 digest_text() {  # hashes the file named in $1
@@ -50,8 +61,19 @@ write_matching_fixture() {  # <repo>
     printf '%s\n\n' '# fixture pin'
     printf '%s\n' '```'
     matching_lines "$repo"
+    write_review_expected
     printf '%s\n' '```'
   } >"$repo/.cursor/agent-kit.md"
+}
+
+replace_review_expected() {  # <manifest> <key> <value>
+  local manifest=$1 key=$2 value=$3 tmp
+  tmp="$manifest.new"
+  awk -F= -v k="$key" -v v="$value" '
+    $1 == k { print k "=" v; next }
+    { print }
+  ' "$manifest" >"$tmp"
+  mv "$tmp" "$manifest"
 }
 
 replace_recorded_digest() {  # <manifest> <rel> <digest>
@@ -78,6 +100,8 @@ test_repository_pin_matches() {
   assert_contains "$out" "environment.json=" "pin check did not report the environment.json digest"
   assert_contains "$out" "install.sh=" "pin check did not report the install.sh digest"
   assert_contains "$out" "bun-v1.3.14.sha256=" "pin check did not report the bun sha256 digest"
+  assert_contains "$out" "review.cold_read=" "pin check did not report review.cold_read"
+  assert_contains "$out" "review.comprehension=" "pin check did not report review.comprehension"
   pass "the recorded agent-kit pin digests match the vendored files"
 }
 
@@ -87,6 +111,8 @@ test_matching_fixture_passes() {
   write_matching_fixture "$repo"
   out=$("$PIN" --root "$repo") || fail "matching fixture pin was refused: $out"
   assert_contains "$out" "fm-agent-kit-pin: ok" "matching fixture did not report ok"
+  assert_contains "$out" "review.cold_read=off" "matching fixture did not report the fixture review.cold_read"
+  assert_contains "$out" "review.comprehension=off" "matching fixture did not report the fixture review.comprehension"
   pass "a fixture whose recorded digests match its pinned files is accepted"
 }
 
@@ -129,6 +155,32 @@ test_missing_ak_js_is_refused() {
   pass "a missing .cursor/bin/ak.js is refused"
 }
 
+test_mutated_project_review_is_refused() {
+  local repo rc out
+  repo="$TMP_ROOT/mutate-project"
+  write_matching_fixture "$repo"
+  write_review_project "$repo" "on" "off"
+  rc=0
+  out=$("$PIN" --root "$repo" 2>&1) || rc=$?
+  expect_code 1 "$rc" "a drifted project review.cold_read must fail"
+  assert_contains "$out" "review.cold_read is on, expected off" \
+    "refusal did not name the project and expected review.cold_read values"
+  pass "changing only the project review value is refused"
+}
+
+test_mutated_expected_review_is_refused() {
+  local repo rc out
+  repo="$TMP_ROOT/mutate-expected"
+  write_matching_fixture "$repo"
+  replace_review_expected "$repo/.cursor/agent-kit.md" "review.cold_read" "on"
+  rc=0
+  out=$("$PIN" --root "$repo" 2>&1) || rc=$?
+  expect_code 1 "$rc" "a drifted expected review.cold_read must fail"
+  assert_contains "$out" "review.cold_read is off, expected on" \
+    "refusal did not name the project and expected review.cold_read values"
+  pass "changing only the expected review value is refused"
+}
+
 test_duplicate_recorded_digest_is_refused() {
   local repo ak_hash out rc
   repo="$TMP_ROOT/dup"
@@ -137,6 +189,7 @@ test_duplicate_recorded_digest_is_refused() {
   {
     matching_lines "$repo"
     printf '%s  .cursor/bin/ak\n' "$ak_hash"
+    write_review_expected
   } >"$repo/.cursor/agent-kit.md"
   rc=0
   out=$("$PIN" --root "$repo" 2>&1) || rc=$?
@@ -152,4 +205,6 @@ fm_test_run \
   test_tampering_each_pinned_file_is_refused \
   test_missing_gate_is_refused \
   test_missing_ak_js_is_refused \
+  test_mutated_project_review_is_refused \
+  test_mutated_expected_review_is_refused \
   test_duplicate_recorded_digest_is_refused
