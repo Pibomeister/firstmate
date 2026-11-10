@@ -1,0 +1,59 @@
+FIRSTMATE COMPACT RE-ENTRY CARD - <lab-home>
+Auto-compaction reset this session's context; this session still holds the helm.
+Lock: lock acquired: harness pid 32190
+This card lists only the work in flight, small enough to read whole. AGENTS.md is still
+loaded, and the startup digest and its sweeps are not repeated.
+
+RE-CHECK BEFORE ACTING - the compaction summary is history, not current state:
+1. Run <lab-home>/bin/fm-wake-drain.sh now, handle what it presents, then run its WAKE_ACK_REQUIRED command.
+2. Run <lab-home>/bin/fm-crew-state.sh <id> before acting on any worker, PR, or merge fact.
+3. Act on an order only as bin/fm-order.sh pickup lists it now; ack it before acting.
+
+CAPTAIN ORDERS (bin/fm-order.sh pickup)
+1 open captain order(s) - each is durable; ack it before acting:
+  1794280499-f86a3999 pending kind=order age=2m from=captain :: ship the compaction-first change
+Pending: bin/fm-order.sh ack <id> reads it (skip means another session already has it - never run it twice).
+Acked-unfinished: an earlier session read it; bin/fm-order.sh show <id>, check whether its work started, then finish it.
+Finish each with: bin/fm-order.sh finish <id> done|parked <outcome>
+
+OPEN DECISIONS (folded from the status logs)
+(none)
+
+OVERDUE GOALS (bin/fm-dispatch-log.sh overdue)
+(none)
+
+WORK UNDER WAY (last recorded event; bin/fm-crew-state.sh <id> has current state)
+task0 project=p0 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 0 so the card budget is exercised
+task1 project=p1 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 1 so the card budget is exercised
+task10 project=p10 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 10 so the card budget is exercised
+task11 project=p11 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 11 so the card budget is exercised
+task12 project=p12 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 12 so the card budget is exercised
+task13 project=p13 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 13 so the card budget is exercised
+task14 project=p14 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 14 so the card budget is exercised
+task15 project=p15 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 15 so the card budget is exercised
+task16 project=p16 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 16 so the card budget is exercised
+task17 project=p17 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 17 so the card budget is exercised
+task18 project=p18 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 18 so the card budget is exercised
+task19 project=p19 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 19 so the card budget is exercised
+task2 project=p2 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 2 so the card budget is exercised
+task20 project=p20 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 20 so the card budget is exercised
+task21 project=p21 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 21 so the card budget is exercised
+task22 project=p22 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 22 so the card budget is exercised
+task23 project=p23 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 23 so the card budget is exercised
+task24 project=p24 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 24 so the card budget is exercised
+task25 project=p25 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 25 so the card budget is exercised
+task26 project=p26 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 26 so the card budget is exercised
+task27 project=p27 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 27 so the card budget is exercised
+task28 project=p28 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 28 so the card budget is exercised
+task29 project=p29 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 29 so the card budget is exercised
+task3 project=p3 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 3 so the card budget is exercised
+task30 project=p30 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 30 so the card budget is exercised
+task31 project=p31 state=working pr=- age=2m last: working [at=1]: a long running status line that keeps going for task 31 so the card budget is exercised
+[14 more line(s) omitted at the card's byte bound; run the full re-emit named under MORE to list them]
+
+MONITOR
+monitor: DOWN (stale-beacon) - restore it with the supervision protocol's repair action before ending this turn
+
+MORE
+Supervision protocol: <lab-home>/bin/fm-supervision-instructions.sh --harness claude --read-only 0 --afk 0 --afk-mode away --x-mode 0
+Full re-emit (backlog, projects, captain and learnings files): FM_HOME=<lab-home> <lab-home>/bin/fm-session-start.sh --reemit

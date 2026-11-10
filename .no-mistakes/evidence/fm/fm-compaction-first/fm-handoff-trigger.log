@@ -6,6 +6,7 @@ ok - after fresh-start-after compactions the firing is a planned fresh start who
 ok - a heavy first reading after compaction makes the firing a planned fresh start; 0 turns that off
 ok - a legacy marker gates as a handoff, and a fresh launch-failure record releases the stop
 ok - a fresh start ends the idle old session once its successor is live; a new prompt or a capture keeps it
+ok - a compaction inside a fresh-start turn keeps it open: its stop is still gated and still ends the old session
 ok - a deliberate handoff ends the idle old session once a newer live successor is recorded
 ok - threshold is configurable, 0 turns it off, and an unusable value keeps the default
 ok - fires once per cycle across tool calls and prompts, and again for a new session
@@ -21,3 +22,5 @@ ok - a firing names every open captain order, and the stop is gated until the ha
 ok - a recorded handoff gates the stop even with the trigger off, and an ordinary stop is never gated
 ok - a handoff record gates only the session that wrote it, never another session's stop in the same home
 ok - a caller outside any harness reads the captain's handoff, and a second harness session does not
+ok - the tracked Stop hook for the handoff trigger allows 30 seconds
+bash tests/$t.test.sh  7.85s user 15.14s system 13% cpu 2:54.80 total

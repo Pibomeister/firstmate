@@ -28,3 +28,4 @@ ok - Pi distinguishes header-proven restored CLI sessions from named create-if-m
 ok - Pi provider preflight owns one generation-bound startup prerequisite with deterministic fallback, replacement, cancellation, timeout, and truncation
 ok - Pi reload shutdown releases its exit listener and stale startup generation
 ok - Pi retains a bounded digest prefix and loudly marks oversized preflight delivery
+bash tests/$t.test.sh  49.90s user 80.10s system 22% cpu 9:27.10 total
