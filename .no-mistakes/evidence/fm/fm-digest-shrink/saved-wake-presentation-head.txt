@@ -1,0 +1,31 @@
+1794280173	1	signal	task-1.status	needs-decision [key=call-1]: the captain owes call 1
+1794280174	2	signal	task-2.status	done: task-2 finished — all checks pass ✓
+1794280174	3	signal	task-3.status	pr-ready: https://github.com/example/repo/pull/4242
+1794280175	4	signal	task-4.status	needs-decision [key=call-4]: the captain owes call 4
+1794280176	5	signal	task-5.status	needs-decision [key=call-5]: the captain owes call 5
+1794280177	6	signal	task-6.status	needs-decision [key=call-6]: the captain owes call 6
+1794280177	7	signal	task-7.status	needs-decision [key=call-7]: the captain owes call 7
+1794280178	8	signal	task-8.status	needs-decision [key=call-8]: the captain owes call 8
+1794280179	9	check	order:1794280178-b02d0644	check: captain order 1794280178-b02d0644 from nightly - nightly: keep the digest small
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 9 --recovery-generation 97985.1794280173.Xq0roD
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: step 001 — étape padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: step 002 — étape padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: step 003 — étape padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: step 004 — étape padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: step 005 — étape padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: step 006 — étape padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: step 007 — étape padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: step 008 — étape padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: step 009 — étape padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: step 010 — étape padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: step 011 — étape padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: step 012 — étape padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: step 013 — étape padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: step 014 — étape padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: step 015 — étape padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: step 016 — étape padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: step 017 — étape padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: step 018 — étape padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: step 019 — étape padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: working: step 020 — étape padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-1.status: wo

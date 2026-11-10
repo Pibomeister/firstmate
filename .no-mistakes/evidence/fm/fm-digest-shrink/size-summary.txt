@@ -1,0 +1,7 @@
+Real bin/fm-session-start.sh on disposable lab homes (bytes):
+  870664  digest-base-large-lab
+   40572  digest-new-large-lab
+  364861  digest-base-typical-lab
+   33266  digest-new-typical-lab-utf8
+   33188  digest-new-typical-lab-Clocale
+   21275  digest-new-typical-lab-tasksaxi
