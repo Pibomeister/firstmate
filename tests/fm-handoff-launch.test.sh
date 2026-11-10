@@ -21,7 +21,13 @@ ln -s /bin/bash "$FAKEBIN/claude"
 export LAB ROOT
 export FM_HOME="$LAB" FM_STATE_OVERRIDE="$LAB/state" FM_CONFIG_OVERRIDE="$LAB/config"
 export FM_ROOT_OVERRIDE="$ROOT" FM_HANDOFF_TEST_HARNESS=claude
-export FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=12
+# Lab budgets leave each attempt's half enough headroom for process startup,
+# ack validation and lock work on a heavily loaded host. A success case ends
+# at its ack, so its larger budget costs nothing on a healthy host. LAB_SLACK
+# bounds how far past its budget the launcher may report failure, and
+# LAB_STARTUP also covers predecessor startup.
+LAB_FAIL_BUDGET=80 LAB_SUCCESS_BUDGET=300 LAB_SLACK=60 LAB_STARTUP=120
+export FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=$LAB_FAIL_BUDGET
 export PATH="$FAKEBIN:$PATH" FM_HANDOFF_TEST_PIDS="$TMP_ROOT/pids"
 unset FM_BACKEND FM_SESSION_ENDPOINT_META CLAUDE_PID CLAUDE_CODE_SESSION_ID
 cat > "$FAKEBIN/orca" <<'EOF'
@@ -104,14 +110,14 @@ run_hook_fixture() {
 }
 
 run_case() {
-  local mode=$1 i
+  local mode=$1 limit
   test_cleanup_processes
   rm -f "$LAB/state/".* "$LAB/state/attempts" "$LAB/state/handoff-events.log" "$LAB/state/"successor-*.out "$LAB/rc" "$LAB/ack.out" 2>/dev/null || true
   printf '%s\n' "${2:-orca}" > "$LAB/config/backend"
   printf '# Quoting-hostile handoff\nRead this document.\n' > "$LAB/data/handoff ) '.md"
-  budget=12
+  budget=$LAB_FAIL_BUDGET
   if [ "$mode" = success ]; then
-    budget=60
+    budget=$LAB_SUCCESS_BUDGET
     printf 'compact-at-tokens=100000\n' > "$LAB/config/handoff-trigger"
     printf '{"type":"assistant","message":{"model":"claude-test-model","usage":{"input_tokens":90000,"output_tokens":1}}}\n' > "$LAB/transcript"
     hook_output=$(run_hook_fixture PostToolUse)
@@ -121,7 +127,8 @@ run_case() {
   fi
   FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS="$budget" FM_HANDOFF_LAB_MODE="$mode" claude "$LAB/predecessor.sh" &
   echo "$!" >> "$TMP_ROOT/pids"
-  for i in $(seq 1 400); do
+  limit=$((SECONDS + budget + LAB_SLACK + LAB_STARTUP))
+  while [ "$SECONDS" -lt "$limit" ]; do
     [ ! -f "$LAB/rc" ] || return 0
     sleep 0.1
   done
@@ -204,14 +211,16 @@ rm "$LAB/config/claude-permission-mode"
 pass 'unsupported backends and unenforceable permission posture refuse before launch'
 
 for mode in exit parse reject wrong-sha stale expired hung-launch; do
-  start=$SECONDS
   run_case "$mode"
   [ "$(cat "$LAB/rc")" != 0 ] || fail "$mode must fail"
   [ "$(cat "$LAB/state/attempts")" = 2 ] || fail "$mode must retry exactly once in a fresh pane"
   [ ! -e "$LAB/state/.handoff-successor" ] || fail "$mode must not clear the stop gate"
   [ "$(cat "$LAB/state/.lock")" = "$(cat "$LAB/pred.pid")" ] || fail "$mode moved predecessor lock"
   grep -q '^HANDOFF v1 .* event=handoff_failed ' "$LAB/state/handoff-events.log" || fail "$mode must emit machine-readable failure"
-  [ "$((SECONDS-start))" -lt 30 ] || fail "$mode exceeded bounded lab deadline"
+  started=$(sed -n 's/^HANDOFF v1 ts=\([0-9]*\) event=handoff_started .*/\1/p' "$LAB/state/handoff-events.log")
+  failed=$(sed -n 's/^HANDOFF v1 ts=\([0-9]*\) event=handoff_failed .*/\1/p' "$LAB/state/handoff-events.log")
+  [ -n "$started" ] && [ "$((failed - started))" -lt "$((LAB_FAIL_BUDGET + LAB_SLACK))" ] \
+    || fail "$mode exceeded bounded lab deadline"
   if [ "$mode" = reject ]; then
     grep -q ' event=handoff_reject nonce=none .* reason=lock_held_unbound$' "$LAB/state/handoff-events.log" \
       || fail 'a session refused during the pending window must log lock_held_unbound'
