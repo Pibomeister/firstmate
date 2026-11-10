@@ -335,9 +335,11 @@ test_names_open_captain_orders_and_gates_the_stop() {
   succ=$!
   printf 'pid=%s\nhandoff=%s\n' "$succ" "$doc" > "$PRIMARY/state/.handoff-successor"
   rc=0
-  run_hook "$PRIMARY" s-orders "$TMP_ROOT/t-90" Stop >/dev/null 2>&1 || rc=$?
+  run_hook "$PRIMARY" s-orders "$TMP_ROOT/t-90" Stop >/dev/null 2>"$err" || rc=$?
   kill "$succ" 2>/dev/null; wait "$succ" 2>/dev/null
   [ "$rc" -eq 2 ] || fail "listing orders and a live PID still requires the verified successor ack (rc=$rc)"
+  assert_not_contains "$(cat "$err")" "$order_id" "the order gate clears once the handoff lists every open order"
+  assert_contains "$(cat "$err")" "no verified successor acknowledgement" "only the successor gate still blocks the stop"
   rm -rf "$PRIMARY/data/orders" "$doc" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.handoff-successor"
   pass "a firing names every open captain order, and the stop is gated until the handoff lists them"
 }

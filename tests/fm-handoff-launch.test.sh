@@ -169,6 +169,13 @@ assert_contains "$locate" 'handle=term_lab_1' 'discovery follows lock holder'
 assert_contains "$locate" "pid=$(cat "$LAB/state/.lock")" 'discovery names lock pid'
 bash "$ROOT/bin/fm-handoff-ack.sh" "$nonce" "$(jq -r .sha256 "$ack")" >/dev/null 2>&1 && fail 'replay from another process must refuse'
 pass 'verified successor ack transfers the lock while predecessor remains alive; discovery follows it'
+[ ! -e "$LAB/state/.handoff-pending" ] || fail 'a completed handoff must retire its pending claim'
+rejects=$(grep -c ' event=handoff_reject ' "$LAB/state/handoff-events.log" || true)
+# shellcheck disable=SC2016 # The harness child expands its own environment.
+claude -c 'bash "$ROOT/bin/fm-lock.sh"' >/dev/null 2>&1 && fail 'an unrelated session must stay read-only'
+[ "$(grep -c ' event=handoff_reject ' "$LAB/state/handoff-events.log" || true)" = "$rejects" ] \
+  || fail 'an unrelated refused session after completion must not emit handoff_reject'
+pass 'a completed handoff retires its claim, so later refused sessions emit no reject'
 # An ordinary shell cannot open a handoff for a foreign session.
 bash "$ROOT/bin/fm-handoff-launch.sh" "$LAB/data/handoff ) '.md" >/dev/null 2>&1 && fail 'foreign session must not launch a successor'
 # A stale endpoint is not presented as a live captain.

@@ -296,8 +296,10 @@ confirm_own_lock() {  # <recorded-pid>
 }
 
 refuse_live_owner() {  # <recorded-pid>
-  local recorded
-  if [ -f "$STATE/.handoff-pending" ]; then
+  local recorded deadline
+  if [ -f "$STATE/.handoff-pending" ] \
+    && deadline=$(jq -er '.deadline | numbers' "$STATE/.handoff-pending" 2>/dev/null) \
+    && [ "$(date +%s)" -lt "$deadline" ]; then
     fm_handoff_event handoff_reject "$(jq -r '.nonce // ""' "$STATE/.handoff-pending" 2>/dev/null)" 0 "$me" "${ORCA_TERMINAL_HANDLE:-${TMUX_PANE:-}}" lock_held >&2
   fi
   if recorded=$(fm_session_lock_recorded_session_id "$STATE"); then

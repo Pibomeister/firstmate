@@ -75,6 +75,13 @@ fm_lock_try_acquire "$STATE/.handoff-launch.lock" || die 'a handoff launcher alr
 NONCE=
 CLAIM_HELD=0
 cleanup() {
+  if [ -n "$NONCE" ] && [ "$CLAIM_HELD" != 1 ] && fm_lock_acquire_wait_max "$STATE/.lock.acquire" 10; then
+    CLAIM_HELD=1
+  fi
+  if [ "$CLAIM_HELD" = 1 ] && [ -n "$NONCE" ] \
+    && [ "$(jq -r '.nonce // ""' "$STATE/.handoff-pending" 2>/dev/null)" = "$NONCE" ]; then
+    rm -f "$STATE/.handoff-pending"
+  fi
   if [ "$CLAIM_HELD" = 1 ]; then fm_lock_release "$STATE/.lock.acquire"; fi
   fm_lock_release "$STATE/.handoff-launch.lock"
 }
