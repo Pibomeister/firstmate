@@ -33,7 +33,7 @@ ok - fm-control relaunch: moving off Claude refuses when Claude-specific tooling
 ok - fm-control relaunch: an unreadable claude-account pin refuses the move off Claude
 ok - fm-control relaunch: a claude-tooling exit 2 refuses the move off Claude
 ok - fm-control relaunch: production ignores FM_QUOTA_REROUTE and uses the shipped helper
-Note: switching to 'f18cdea3dcd51155593dade6da8494cddcedcacf'.
+Note: switching to '07ef07eb82aa9c5f484b994e73e1c55fdadab66c'.
 
 You are in 'detached HEAD' state. You can look around, make experimental
 changes and commit them, and you can discard any commits you make in this

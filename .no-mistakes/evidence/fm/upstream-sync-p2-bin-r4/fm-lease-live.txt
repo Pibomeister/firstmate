@@ -1,17 +1,27 @@
-$ claim t1 --actor main (pin = live session-lock owner)
-exit=0
-$ check t1
-main 47743 1794286634 stale
-exit=0
-$ claim t1 --actor branch (other actor holds live lease)
-exit=0
-$ claim t2 with pin 999999 that does not own the session lock (adversarial)
-error: claim refused - the pinned supervision session no longer owns this home
-exit=6
-$ check t2
-exit=1
-$ release t1
-exit=0
-$ check t1
-branch 47743 1794286634 stale
-exit=0
++(eval):3> bin/fm-lease.sh check t1
++(eval):3> echo 'rc=1'
+rc=1
++(eval):4> bin/fm-lease.sh claim t1 --actor main
++(eval):4> echo 'rc=0'
+rc=0
++(eval):5> bin/fm-lease.sh check t1
+main 41876 1794289342 stale
++(eval):5> echo 'rc=0'
+rc=0
++(eval):6> FM_SUPERVISION_ACTOR=branch bin/fm-lease.sh claim t1 --actor branch
++(eval):6> echo 'rc=0 (expect 6)'
+rc=0 (expect 6)
++(eval):7> bin/fm-lease.sh claim t1 --actor branch
+error: claim refused - the main supervision actor cannot claim a lease as branch on 't1'
++(eval):7> echo 'rc=6 (expect 6 actor mismatch)'
+rc=6 (expect 6 actor mismatch)
++(eval):8> bin/fm-lease.sh release t1 --actor main
++(eval):8> echo 'rc=0'
+rc=0
++(eval):9> bin/fm-lease.sh check t1
+branch 43612 1794289343 stale
++(eval):9> echo 'rc=0 (expect 1)'
+rc=0 (expect 1)
++(eval):10> bin/fm-lease.sh sweep
++(eval):10> echo 'rc=0'
+rc=0
