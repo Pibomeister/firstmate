@@ -123,6 +123,7 @@ test_success_path_records_a_live_successor() {
   kill -0 "$SUCC_PID" 2>/dev/null || fail "the recorded successor pid $SUCC_PID must be alive"
   assert_contains "$(cat "$LAB/state/.handoff-successor")" "handoff=$LAB/data/handoff.md" "the record names the handoff document"
   assert_contains "$(cat "$LAB/state/.handoff-successor")" "predecessor=$PRED_PID" "the record names the session it replaces"
+  grep -qE '^launched=[0-9]+$' "$LAB/state/.handoff-successor" || fail "the record carries the launch time that leaves later orders to the successor's pickup"
   sha8=$(shasum -a 256 "$LAB/data/handoff.md" 2>/dev/null | cut -c1-8)
   [ -n "$sha8" ] || sha8=$(sha256sum "$LAB/data/handoff.md" | cut -c1-8)
   assert_contains "$out" "sha8=$sha8" "the launch reports the handoff sha8"
@@ -136,7 +137,6 @@ test_success_path_records_a_live_successor() {
   assert_contains "$cmd" "bin/fm-session-start.sh" "the successor prompt runs session start after the predecessor dies"
   assert_contains "$cmd" "--await-predecessor $PRED_PID" "the successor waits for the old session with the bounded wait"
   assert_contains "$cmd" "addendum" "the successor reads only the hashed document"
-  assert_contains "$cmd" "$LAB/data/handoff.md.late-orders" "the successor reads the late-orders file for orders recorded after its launch"
   assert_contains "$cmd" "bin/fm-crew-state.sh" "the successor re-checks worker and PR facts at pickup"
   assert_contains "$cmd" "bin/fm-order.sh pickup" "the successor re-checks open orders at pickup"
   assert_contains "$cmd" "once" "the successor runs session start once"
@@ -276,12 +276,12 @@ test_end_predecessor_skips_unless_safe() {
   pass "the old session is ended only while it holds the lock, a live successor exists, and its transcript is quiet"
 }
 
-# The order gate is checked again after the settle: a captain order filed while
-# the old session settles, and missing from its handoff, keeps the old session
-# alive so it can write that order into the handoff; once the handoff lists it,
-# the end goes ahead.
+# The end re-checks orders after its settle: an open captain order recorded
+# before the launch and missing from the successor's handoff keeps the old
+# session alive, while an order recorded during the settle, after the launch,
+# is left to the successor's pickup and does not.
 test_end_predecessor_rechecks_the_order_gate() {
-  local t="$TMP_ROOT/end-gate-transcript" end="$LAB/state/.handoff-end" pred succ bytes ender start
+  local t="$TMP_ROOT/end-gate-transcript" end="$LAB/state/.handoff-end" pred succ bytes ender start older
   reset_lab
   kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
   rm -rf "$LAB/data/orders" "$LAB/state/.order-handoff" "$end"
@@ -290,10 +290,18 @@ test_end_predecessor_rechecks_the_order_gate() {
   pred=$(fake_harness_pid)
   sleep 60 &
   succ=$!
-  printf 'pid=%s\nhandoff=%s\n' "$succ" "$LAB/data/handoff.md" > "$LAB/state/.handoff-successor"
   printf '%s\n' "$pred" > "$LAB/state/.lock"
-  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" handoff --doc "$LAB/data/handoff.md" >/dev/null \
-    || fail "could not record the handoff fixture"
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" send --from test "order before the launch" >/dev/null \
+    || fail "could not send the older order fixture"
+  older=$(find "$LAB/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
+  sleep 1
+  printf 'pid=%s\nhandoff=%s\nlaunched=%s\n' "$succ" "$LAB/data/handoff.md" "$(date +%s)" > "$LAB/state/.handoff-successor"
+  run_mode --end-predecessor "$pred" "$t" "$bytes" >/dev/null 2>&1
+  assert_contains "$(cat "$end")" "result=skipped" "an older order missing from the handoff keeps the old session"
+  assert_contains "$(cat "$end")" "reason=order-gate" "the record names the order gate"
+  kill -0 "$pred" 2>/dev/null || fail "the old session must survive an older order its handoff does not list"
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" ack "$older" >/dev/null || fail "could not ack the older order"
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" finish "$older" 'done' "handled" >/dev/null || fail "could not finish the older order"
   start=$(date +%s)
   END_SETTLE_SECS=6 run_mode --end-predecessor "$pred" "$t" "$bytes" >/dev/null 2>&1 &
   ender=$!
@@ -301,17 +309,11 @@ test_end_predecessor_rechecks_the_order_gate() {
     || fail "could not send the order fixture"
   [ $(( $(date +%s) - start )) -lt 6 ] || fail "the order fixture took longer than the settle, so it did not land during it"
   wait "$ender"
-  assert_contains "$(cat "$end")" "result=skipped" "an order missing from the handoff keeps the old session"
-  assert_contains "$(cat "$end")" "reason=order-gate" "the record names the order gate"
-  kill -0 "$pred" 2>/dev/null || fail "the old session must survive an order its handoff does not list"
-  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" handoff --doc "$LAB/data/handoff.md" >/dev/null \
-    || fail "could not rewrite the handoff fixture"
-  run_mode --end-predecessor "$pred" "$t" "$bytes" >/dev/null 2>&1
-  assert_contains "$(cat "$end")" "result=ended" "once the handoff lists the order the old session is ended"
+  assert_contains "$(cat "$end")" "result=ended" "an order recorded after the launch is left to the successor's pickup"
   ! kill -0 "$pred" 2>/dev/null || fail "the old session must be gone"
   kill "$succ" 2>/dev/null; wait "$succ" 2>/dev/null
   rm -rf "$end" "$LAB/state/.handoff-successor" "$LAB/state/.order-handoff" "$LAB/data/orders"
-  pass "the old session is ended only while its handoff still lists every open captain order"
+  pass "the old session is ended only while its handoff lists every open captain order recorded before the launch"
 }
 
 test_stale_record_naming_the_current_session_still_launches() {

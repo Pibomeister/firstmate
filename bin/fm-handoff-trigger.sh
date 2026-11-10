@@ -122,7 +122,8 @@
 # handoff. That record, not state/.order-handoff, is the evidence, so a rerun
 # of handoff --doc or a compaction before the stop does not close it. Its stop
 # is blocked once per turn while `bin/fm-order.sh covers` finds an open captain
-# order missing from the record's handoff=<document> and its late-orders file.
+# order missing from the record's handoff=<document> (an order recorded after
+# the launch is left to the successor's pickup).
 #
 # ONE LIVE PANE. On a primary's stop, while this session holds the session
 # lock and either a fresh-start firing has a live successor recorded after it

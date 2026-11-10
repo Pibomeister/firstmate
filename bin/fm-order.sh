@@ -130,13 +130,14 @@
 # because the files stay in pending/ or acked/ and the next session's digest
 # lists them.
 #
-# LATE ORDERS. A successor confirms its handoff document's sha256, so once a
-# live successor holds the document - state/.handoff-successor names it with a
-# live pid other than line 1 of state/.lock - `handoff --doc` never changes it.
-# It writes the open-order block to <document>.late-orders instead, replacing
-# any earlier list there, and the successor reads that file once its
-# predecessor is gone (bin/fm-handoff-launch.sh names it in the successor's
-# prompt). `gate` and `covers` count an order named in either file as listed.
+# ORDERS AFTER A LAUNCH. A successor confirms its handoff document's sha256, so
+# once a live successor holds the document - state/.handoff-successor names it
+# with a live pid other than line 1 of state/.lock - `handoff --doc` leaves it
+# byte-unchanged and writes no other file. `gate` and `covers` then count an
+# open order recorded at or after that record's launched=<epoch> (the send time
+# in its id) as covered, because it stays open in the durable order store and
+# the successor's `pickup` lists it; an older open order must still be named
+# in the document.
 #
 # SENDER RE-CHECK AND LEASH. `status` prints, per order, its kind, state, age
 # since send, deliveries, re-deliveries against the cap, and `resend_due=yes`
@@ -809,16 +810,13 @@ handoff_record_mine() {
   return 1
 }
 
-# The late-orders file beside handoff document <doc> (LATE ORDERS above).
-late_orders_file() {
-  printf '%s.late-orders\n' "$1"
-}
-
 # True when state/.handoff-successor names a live successor, other than this
-# home's lock holder, that was launched with handoff document <doc>.
+# home's lock holder, that was launched with handoff document <doc>. Sets
+# SUCC_LAUNCHED to the record's launched=<epoch>, or nothing.
 successor_holds_doc() {
   # shellcheck disable=SC2031  # only wake()'s subshell sources the lib that sets this
   local doc=$1 rec="$STATE/.handoff-successor" pid lock succ_doc
+  SUCC_LAUNCHED=
   [ -r "$rec" ] && [ -f "$doc" ] || return 1
   pid=$(sed -n 's/^pid=//p' "$rec" | tail -n 1)
   case "$pid" in '' | *[!0-9]*) return 1 ;; esac
@@ -826,7 +824,9 @@ successor_holds_doc() {
   lock=$(head -n 1 "$STATE/.lock" 2>/dev/null | tr -cd '0-9') || lock=
   [ "$pid" != "$lock" ] && kill -0 "$pid" 2>/dev/null || return 1
   succ_doc=$(sed -n 's/^handoff=//p' "$rec" | tail -n 1)
-  [ -n "$succ_doc" ] && [ "$succ_doc" -ef "$doc" ]
+  [ -n "$succ_doc" ] && [ "$succ_doc" -ef "$doc" ] || return 1
+  SUCC_LAUNCHED=$(sed -n 's/^launched=//p' "$rec" | tail -n 1)
+  case "$SUCC_LAUNCHED" in *[!0-9]*) SUCC_LAUNCHED= ;; esac
 }
 
 # The handoff document this session recorded with `handoff --doc`, or nothing.
@@ -841,7 +841,7 @@ cmd_handing_off() {
 }
 
 cmd_handoff() {
-  local doc block n tmp dir dest
+  local doc block n tmp dir held=
   [ "$#" -eq 2 ] && [ "$1" = --doc ] && [ -n "$2" ] || usage_die "usage: fm-order.sh handoff --doc <file>"
   doc=$2
   if [ -z "$(open_orders)" ]; then
@@ -853,12 +853,8 @@ cmd_handoff() {
   dir=$(cd "$(dirname "$doc")" && pwd)
   doc="$dir/${doc##*/}"
   if successor_holds_doc "$doc"; then
-    dest=$(late_orders_file "$doc")
-    tmp=$(mktemp "$dest.XXXXXX")
-    printf 'Captain orders recorded after the successor launched with %s, which stays unchanged.\n%s\n' "$doc" "$block" >"$tmp"
-    mv "$tmp" "$dest"
+    held=1
   else
-    dest=$doc
     printf '\n%s\n' "$block" >>"$doc"
   fi
   # shellcheck disable=SC2031  # only wake()'s subshell sources the lib that sets this
@@ -869,22 +865,27 @@ cmd_handoff() {
   printf 'doc=%s\nat=%s\nowner=%s\n' "$doc" "$(now_epoch)" "$(printf '%s' "$SESSION_PIDS" | tr '\n' ' ')" >"$tmp"
   mv "$tmp" "$HANDOFF_RECORD"
   n=$(open_orders | awk 'NF { n++ } END { print n + 0 }')
-  printf 'handoff: wrote %s open order(s) into %s\n' "$n" "$dest"
+  if [ -n "$held" ]; then
+    printf 'handoff: left %s unchanged for its live successor; %s open order(s) stay in the order store for its pickup\n' "$doc" "$n"
+  else
+    printf 'handoff: wrote %s open order(s) into %s\n' "$n" "$doc"
+  fi
 }
 
 # doc_missing_orders <doc>: set OPEN_N to the open order count and MISSING to
-# the open order ids that neither <doc> nor its late-orders file names, every
-# one when <doc> is empty or gone.
+# the open order ids that <doc> does not name, every one when <doc> is empty or
+# gone. An order recorded after a live successor launched with <doc> is covered
+# (ORDERS AFTER A LAUNCH above).
 doc_missing_orders() {
-  local doc=$1 lines id state late=
+  local doc=$1 lines id state launched=
   MISSING='' OPEN_N=0
-  [ -z "$doc" ] || late=$(late_orders_file "$doc")
+  [ -z "$doc" ] || ! successor_holds_doc "$doc" || launched=$SUCC_LAUNCHED
   lines=$(open_orders)
   while read -r id state; do
     [ -n "$id" ] || continue
     OPEN_N=$((OPEN_N + 1))
-    if [ -z "$doc" ] || [ ! -f "$doc" ] ||
-      { ! grep -qF -- "$id" "$doc" && ! grep -qsF -- "$id" "$late"; }; then
+    [ -z "$launched" ] || [ "${id%-*}" -lt "$launched" ] || continue
+    if [ -z "$doc" ] || [ ! -f "$doc" ] || ! grep -qF -- "$id" "$doc"; then
       MISSING="$MISSING $id"
     fi
   done <<EOF

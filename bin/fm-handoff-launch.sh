@@ -28,17 +28,17 @@
 #      the predecessor still holds the lock) and a prompt naming the handoff
 #      path and the document's sha256 (and its sha8 prefix): confirm the
 #      hash and read only that document, wait for the predecessor (line 1 of
-#      state/.lock) with --await-predecessor, then read the document's
-#      late-orders file if it exists (the captain orders bin/fm-order.sh
-#      handoff --doc recorded after the launch, leaving the document
-#      unchanged), run bin/fm-session-start.sh once, and re-check PR, worker,
-#      order, and decision facts from live records before acting on the
-#      document's copy of them;
+#      state/.lock) with --await-predecessor, run bin/fm-session-start.sh
+#      once, and re-check PR, worker, order, and decision facts from live
+#      records before acting on the document's copy of them, with
+#      bin/fm-order.sh pickup listing the captain orders recorded after the
+#      launch;
 #   4. waits for the new harness pid to appear (a live process whose
 #      command line carries the handoff path and was not there before the
 #      launch), then checks that it is still alive after a settle, and
-#      writes state/.handoff-successor as pid=<pid>, handoff=<path>, and
-#      predecessor=<predecessor pid> so the Stop gate passes, removing any
+#      writes state/.handoff-successor as pid=<pid>, handoff=<path>,
+#      predecessor=<predecessor pid>, and launched=<epoch taken just before
+#      the document was hashed> so the Stop gate passes, removing any
 #      earlier launch-failure record. It
 #      verifies only that live successor pid; the successor confirms the
 #      handoff sha256 at pickup and stops on a mismatch.
@@ -73,9 +73,10 @@
 # only when all of these still hold: state/.lock names <pid>, the successor
 # record names a different live pid, <pid> is a live harness process, and the
 # transcript has no new user or queued-message record past <bytes>, and
-# `bin/fm-order.sh covers` still finds every open order in the successor
-# record's handoff document or its late-orders file, so a captain order filed
-# during the settle keeps the old session (reason=order-gate). Claude
+# `bin/fm-order.sh covers` still passes for the successor record's handoff
+# document, which counts an order recorded after the launch as covered by the
+# successor's pickup, so an older open order the document omits keeps the old
+# session (reason=order-gate). Claude
 # can flush the stopped turn's final assistant reply after the Stop hook
 # measures <bytes>, so an assistant record, like Claude's own bookkeeping
 # after a stop, does not count as a new turn. It records the outcome in state/.handoff-end as
@@ -288,7 +289,9 @@ case "$CLAUDE_PERMISSION_MODE" in
   *) PERM_FLAG='--dangerously-skip-permissions' ;;
 esac
 
-# Hash confirmation material for the successor prompt.
+# Hash confirmation material for the successor prompt. An order recorded from
+# here on is left to the successor's pickup (bin/fm-order.sh).
+LAUNCHED_AT=$(date +%s)
 if command -v sha256sum >/dev/null 2>&1; then
   SHA256=$(sha256sum "$HANDOFF" 2>/dev/null | awk '{print $1}')
 elif command -v shasum >/dev/null 2>&1; then
@@ -304,7 +307,7 @@ SHA8=${SHA256:0:8}
 
 LAUNCH_RECORD="$STATE/.handoff-successor"
 
-PROMPT="Firstmate handoff successor for home $FM_HOME. The handoff document is $HANDOFF with sha256 $SHA256 (sha8 $SHA8). Confirm that hash before acting (sha256sum or shasum -a 256 on the document) and stop if it does not match; read only that document and the late-orders file named below, because any other addendum file is not part of the handoff. The predecessor session, harness pid $PRED_PID, is ended when its handoff turn ends. Wait for that with FM_HOME=$FM_HOME $FM_ROOT/bin/fm-handoff-launch.sh --await-predecessor $PRED_PID: exit 0 means it is gone; exit 3 means it still runs, so tell the captain that the old session still runs in its own terminal and ask them to /exit it, then wait again, and do not take over until it is gone. Once it is gone, read $HANDOFF.late-orders if it exists: it lists the captain orders recorded after this launch, which leaves the handoff document and its hash unchanged. Then run FM_HOME=$FM_HOME $FM_ROOT/bin/fm-session-start.sh once to take the session lock, unless this session's startup digest already shows that it holds the lock. Before acting on any PR, worker, order, or decision fact from the handoff, re-check it from live records: drain the wake queue, run bin/fm-crew-state.sh, and run bin/fm-order.sh pickup, because the document can be stale."
+PROMPT="Firstmate handoff successor for home $FM_HOME. The handoff document is $HANDOFF with sha256 $SHA256 (sha8 $SHA8). Confirm that hash before acting (sha256sum or shasum -a 256 on the document) and stop if it does not match; read only that document, because any addendum file is not part of the handoff. The predecessor session, harness pid $PRED_PID, is ended when its handoff turn ends. Wait for that with FM_HOME=$FM_HOME $FM_ROOT/bin/fm-handoff-launch.sh --await-predecessor $PRED_PID: exit 0 means it is gone; exit 3 means it still runs, so tell the captain that the old session still runs in its own terminal and ask them to /exit it, then wait again, and do not take over until it is gone. Once it is gone, run FM_HOME=$FM_HOME $FM_ROOT/bin/fm-session-start.sh once to take the session lock, unless this session's startup digest already shows that it holds the lock. Before acting on any PR, worker, order, or decision fact from the handoff, re-check it from live records: drain the wake queue, run bin/fm-crew-state.sh, and run bin/fm-order.sh pickup, which also lists the captain orders recorded after this launch, because the document can be stale and stays unchanged after it."
 SUCCESSOR_CMD="FM_HANDOFF_PREDECESSOR_PID=$PRED_PID claude $PERM_FLAG $(printf '%q' "$PROMPT")"
 
 # Pids whose command line already carries the handoff path (this launcher
@@ -397,7 +400,8 @@ done
 
 atomic_record "$LAUNCH_RECORD" "pid=$SUCC_PID
 handoff=$HANDOFF
-predecessor=$PRED_PID" || fail_launch "cannot record the successor in $LAUNCH_RECORD"
+predecessor=$PRED_PID
+launched=$LAUNCHED_AT" || fail_launch "cannot record the successor in $LAUNCH_RECORD"
 rm -f "$FAILED_RECORD"
 printf 'successor launched: pid=%s backend=%s handoff=%s sha8=%s attempt %s of %s\n' \
   "$SUCC_PID" "$BACKEND" "$HANDOFF" "$SHA8" "$ATTEMPTS" "$MAX_ATTEMPTS"
