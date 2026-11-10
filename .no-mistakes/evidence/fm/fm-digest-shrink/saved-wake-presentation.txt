@@ -1,47 +1,207 @@
-1794266547	4	signal	task-3.status	pr-ready: https://github.com/example/repo/pull/3
-1794266417	2	signal	task-7.status	pr-ready: https://github.com/example/repo/pull/7
-1794266417	3	signal	task-12.status	pr-ready: https://github.com/example/repo/pull/12
-1794266547	5	signal	task-4.status	done: finished live item 4
-1794266547	6	signal	task-5.status	done: finished live item 5
-1794266547	7	signal	task-6.status	done: finished live item 6
-1794266548	8	signal	task-8.status	done: finished live item 8
-WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 8 --recovery-generation 48910.1794266417.6vPOXH
-wake annotation: unread wake-EVENT since last drain, not current state: task-4.status: working: step one
-wake annotation: latest wake-EVENT observed at drain, not current state: task-4.status: done: finished live item 4
-wake annotation: unread wake-EVENT since last drain, not current state: task-5.status: working: step one
-wake annotation: latest wake-EVENT observed at drain, not current state: task-5.status: done: finished live item 5
-wake annotation: unread wake-EVENT since last drain, not current state: task-6.status: working: step one
-wake annotation: latest wake-EVENT observed at drain, not current state: task-6.status: done: finished live item 6
-wake annotation: unread wake-EVENT since last drain, not current state: task-8.status: working: step one
-wake annotation: latest wake-EVENT observed at drain, not current state: task-8.status: done: finished live item 8
-UNREAD STATUS (new since last drain, not re-printed after this presentation):
-task-note note: the captain said keep this unread note whole
+1794269872	1	signal	task-a.status	event a
+1794269873	2	signal	task-b.status	event b
+1794269874	3	signal	task-c.status	event c
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 67588.1794269873.8CUnAd
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 001 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 002 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 003 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 004 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 005 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 006 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 007 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 008 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 009 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 010 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 011 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 012 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 013 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 014 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 015 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 016 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 017 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 018 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 019 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 020 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 021 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 022 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 023 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 024 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 025 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 026 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 027 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 028 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 029 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 030 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 031 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 032 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 033 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 034 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 035 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 036 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 037 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 038 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 039 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 040 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 041 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 042 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 043 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 044 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 045 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 046 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 047 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 048 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 049 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 050 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 051 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 052 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 053 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 054 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 055 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 056 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 057 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 058 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 059 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 060 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 061 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 062 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 063 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 064 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 065 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 066 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 067 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 068 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 069 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 070 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 071 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 072 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 073 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 074 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 075 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 076 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 077 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 078 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 079 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-a.status: working: step 080 padding padding padding padding padding padding padding
+wake annotation: latest wake-EVENT observed at drain, not current state: task-a.status: done: ax😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀é
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 001 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 002 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 003 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 004 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 005 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 006 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 007 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 008 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 009 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 010 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 011 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 012 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 013 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 014 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 015 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 016 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 017 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 018 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 019 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 020 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 021 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 022 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 023 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 024 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 025 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 026 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 027 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 028 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 029 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 030 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 031 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 032 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 033 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 034 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 035 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 036 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 037 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 038 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 039 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 040 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 041 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 042 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 043 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 044 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 045 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 046 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 047 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 048 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 049 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 050 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 051 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 052 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 053 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 054 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 055 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 056 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 057 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 058 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 059 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 060 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 061 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 062 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 063 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 064 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 065 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 066 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 067 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 068 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 069 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 070 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 071 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 072 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 073 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 074 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 075 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 076 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 077 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 078 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 079 padding padding padding padding padding padding padding
+wake annotation: unread wake-EVENT since last drain, not current state: task-b.status: working: step 080 padding padding padding padding padding padding padding
+wake annotation: latest wake-EVENT observed at drain, not current state: task-b.status: done: bx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀é
+wake annotation: latest wake-EVENT observed at drain, not current state: task-c.status: pr-ready: https://example.invalid/pr/1 ✓ ready
 STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
-task-4 done: finished live item 4
-task-5 done: finished live item 5
-task-6 done: finished live item 6
-task-8 done: finished live item 8
+task-a done: ax😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx [truncated]
+task-b done: bx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx😀éx [truncated]
+task-c pr-ready: https://example.invalid/pr/1 ✓ ready
 OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
-task-dec1 [key=call-1] needs-decision: the captain owes live call 1 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
-task-dec10 [key=call-10] needs-decision: the captain owes live call 10 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
-task-dec11 [key=call-11] needs-decision: the captain owes live call 11 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
-task-dec12 [key=call-12] needs-decision: the captain owes live call 12 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
-task-dec13 [key=call-13] needs-decision: the captain owes live call 13 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
-task-dec14 [key=call-14] needs-decision: the captain owes live call 14 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
-task-dec15 [key=call-15] needs-decision: the captain owes live call 15 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
-task-dec16 [key=call-16] needs-decision: the captain owes live call 16 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
-task-dec17 [key=call-17] needs-decision: the captain owes live call 17 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
-task-dec18 [key=call-18] needs-decision: the captain owes live call 18 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
-task-dec19 [key=call-19] needs-decision: the captain owes live call 19 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
-task-dec2 [key=call-2] needs-decision: the captain owes live call 2 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
-task-dec20 [key=call-20] needs-decision: the captain owes live call 20 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
-task-dec21 [key=call-21] needs-decision: the captain owes live call 21 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
-task-dec22 [key=call-22] needs-decision: the captain owes live call 22 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
-task-dec23 [key=call-23] needs-decision: the captain owes live call 23 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
-task-dec24 [key=call-24] needs-decision: the captain owes live call 24 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
-task-dec25 [key=call-25] needs-decision: the captain owes live call 25 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
-task-dec26 [key=call-26] needs-decision: the captain owes live call 26 with context éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé
-OPEN DECISIONS: 11 more omitted (byte cap)
+task-d1 [key=k1] needs-decision: decide item 1 with a padded reason padded reason padded reason padded reason é😀
+task-d10 [key=k10] needs-decision: decide item 10 with a padded reason padded reason padded reason padded reason é😀
+task-d11 [key=k11] needs-decision: decide item 11 with a padded reason padded reason padded reason padded reason é😀
+task-d12 [key=k12] needs-decision: decide item 12 with a padded reason padded reason padded reason padded reason é😀
+task-d13 [key=k13] needs-decision: decide item 13 with a padded reason padded reason padded reason padded reason é😀
+task-d14 [key=k14] needs-decision: decide item 14 with a padded reason padded reason padded reason padded reason é😀
+task-d15 [key=k15] needs-decision: decide item 15 with a padded reason padded reason padded reason padded reason é😀
+task-d16 [key=k16] needs-decision: decide item 16 with a padded reason padded reason padded reason padded reason é😀
+task-d17 [key=k17] needs-decision: decide item 17 with a padded reason padded reason padded reason padded reason é😀
+task-d18 [key=k18] needs-decision: decide item 18 with a padded reason padded reason padded reason padded reason é😀
+task-d19 [key=k19] needs-decision: decide item 19 with a padded reason padded reason padded reason padded reason é😀
+task-d2 [key=k2] needs-decision: decide item 2 with a padded reason padded reason padded reason padded reason é😀
+task-d20 [key=k20] needs-decision: decide item 20 with a padded reason padded reason padded reason padded reason é😀
+task-d21 [key=k21] needs-decision: decide item 21 with a padded reason padded reason padded reason padded reason é😀
+task-d22 [key=k22] needs-decision: decide item 22 with a padded reason padded reason padded reason padded reason é😀
+task-d23 [key=k23] needs-decision: decide item 23 with a padded reason padded reason padded reason padded reason é😀
+task-d24 [key=k24] needs-decision: decide item 24 with a padded reason padded reason padded reason padded reason é😀
+task-d25 [key=k25] needs-decision: decide item 25 with a padded reason padded reason padded reason padded reason é😀
+task-d26 [key=k26] needs-decision: decide item 26 with a padded reason padded reason padded reason padded reason é😀
+task-d27 [key=k27] needs-decision: decide item 27 with a padded reason padded reason padded reason padded reason é😀
+task-d28 [key=k28] needs-decision: decide item 28 with a padded reason padded reason padded reason padded reason é😀
+task-d29 [key=k29] needs-decision: decide item 29 with a padded reason padded reason padded reason padded reason é😀
+task-d3 [key=k3] needs-decision: decide item 3 with a padded reason padded reason padded reason padded reason é😀
+task-d30 [key=k30] needs-decision: decide item 30 with a padded reason padded reason padded reason padded reason é😀
+task-d31 [key=k31] needs-decision: decide item 31 with a padded reason padded reason padded reason padded reason é😀
+task-d32 [key=k32] needs-decision: decide item 32 with a padded reason padded reason padded reason padded reason é😀
+task-d33 [key=k33] needs-decision: decide item 33 with a padded reason padded reason padded reason padded reason é😀
+task-d34 [key=k34] needs-decision: decide item 34 with a padded reason padded reason padded reason padded reason é😀
+task-d35 [key=k35] needs-decision: decide item 35 with a padded reason padded reason padded reason padded reason é😀
+task-d36 [key=k36] needs-decision: decide item 36 with a padded reason padded reason padded reason padded reason é😀
+task-d37 [key=k37] needs-decision: decide item 37 with a padded reason padded reason padded reason padded reason é😀
+task-d38 [key=k38] needs-decision: decide item 38 with a padded reason padded reason padded reason padded reason é😀
+task-d39 [key=k39] needs-decision: decide item 39 with a padded reason padded reason padded reason padded reason é😀
+OPEN DECISIONS: 7 more omitted (byte cap)
 OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
-WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 242s) - full banner already printed this episode.
-WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
