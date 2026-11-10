@@ -659,8 +659,9 @@ fm_backend_orca_classify_pid() {  # <pid> <comm>
 # alive|dead|ambiguous|unreadable. Any verified harness anywhere in the tree is
 # `alive`. `dead` needs at least one shell and nothing but shells, apart from
 # the `login` process Orca roots a macOS session with. Anything else - a
-# background job, an unrecognized program - is `ambiguous`, because it could be
-# an agent this classifier does not know.
+# background job, an unrecognized program, a process still running whose
+# command line could not be read - is `ambiguous`, because it could be an agent
+# this classifier does not know.
 fm_backend_orca_tree_state() {  # <root-pid>
   local root=$1 tree pid comm class shells=0 other=0
   tree=$(fm_backend_orca_process_tree "$root") || { printf 'unreadable'; return 0; }
@@ -670,7 +671,11 @@ fm_backend_orca_tree_state() {  # <root-pid>
     case "$class" in
       agent) printf 'alive'; return 0 ;;
       shell) shells=1 ;;
-      '') ;;
+      '')
+        # Unclassified: the process exited after the tree read, or its read
+        # failed. Only a process that no longer exists may be ignored.
+        if kill -0 "$pid" 2>/dev/null; then other=1; fi
+        ;;
       *)
         if [ "$pid" != "$root" ] || [ "${comm##*/}" != login ]; then
           other=1

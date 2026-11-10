@@ -71,6 +71,11 @@ cat > "$FB/ps" <<SH
 if [ "\$1" = -p ] && [ "\${3:-}" = -o ] && [ "\${4:-}" = etime= ] && [ -n "\${FX:-}" ] && [ -f "\$FX/fresh-\$2" ]; then
   printf '   00:00\n'; exit 0
 fi
+# A pid with an argsfail-<pid> marker fails its own command-line read while it
+# still runs.
+if [ "\$#" = 4 ] && [ "\$1" = -p ] && [ "\$3" = -o ] && [ "\$4" = args= ] && [ -e "\${FX:-/nonexistent}/argsfail-\$2" ]; then
+  exit 1
+fi
 if [ "\$*" = "-axo pid=,ppid=,etime=,args=" ] && [ -n "\${FX:-}" ] && ls "\$FX"/ppid1-* >/dev/null 2>&1; then
   out=\$('$REAL_PS' "\$@") || exit
   marks=\$(cd "\$FX" && ls ppid1-* | sed 's/^ppid1-//' | tr '\n' ' ')
@@ -225,6 +230,18 @@ build_world() {  # <case>
     agent_session
     agent=$PID
     term term-agent pty-agent "$HOME_DIR" "fm main"; session pty-agent "$agent"
+    # A session whose agent is still running but whose command-line read
+    # fails: an unreadable live process is never ignored as an exited one.
+    local hidden i child=
+    agent_session
+    hidden=$PID
+    for i in $(seq 1 100); do
+      child=$(pgrep -P "$hidden" 2>/dev/null | head -1) && [ -n "$child" ] && break
+      sleep 0.1
+    done
+    [ -n "$child" ] || fail "the stand-in agent session never started its agent"
+    : > "$FX/argsfail-$child"
+    term term-hidden pty-hidden "$HOME_DIR" "fm main successor"; session pty-hidden "$hidden"
     # An idle home session that gains an agent between the listing and the
     # close: Orca's fresh read names a session running the stand-in.
     idle_term term-flip pty-flip "$HOME_DIR" "fm main handoff"
@@ -271,6 +288,7 @@ test_dry_run_classifies_every_owner_and_closes_nothing() {
   expect term-landed "keep unowned-task" "an idle shell in an unrecorded, present task worktree may belong to another home"
   if [ -n "$STANDIN" ]; then
     expect term-agent "keep live-agent" "a session running an agent harness is live"
+    expect term-hidden "keep busy" "a running process whose command line cannot be read keeps its session"
   else
     pass "SKIP: live-agent case (no agent stand-in survives here)"
   fi
