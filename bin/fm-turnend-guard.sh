@@ -443,7 +443,7 @@ block_stop() {
   local afk x_mode reason rule msg max_blocks cur_blocks blocks cause
   if [ "$CLAUDE_MODE" -eq 1 ]; then
     fm_stop_policy_allows_stop "$PAYLOAD" repair && allow_exit
-  else
+  elif [ "$CHECKPOINT_OPEN" -eq 0 ]; then
     fm_stop_policy_allows_stop "$PAYLOAD" charge && allow_exit
   fi
   afk=0
@@ -543,8 +543,6 @@ if [ "$CLAUDE_MODE" -eq 1 ] || [ "$CODEX_MODE" -eq 1 ]; then
 fi
 if [ "$CLAUDE_MODE" -eq 1 ]; then
   fm_stop_policy_allows_stop "$PAYLOAD" supervise && allow_exit
-else
-  fm_stop_policy_allows_stop "$PAYLOAD" check && allow_exit
 fi
 
 # Codex rule 2 (header): once this session's own checkpoint is closed, detach an

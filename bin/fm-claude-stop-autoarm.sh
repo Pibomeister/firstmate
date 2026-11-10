@@ -261,6 +261,7 @@ fi
 MY_GEN=$FM_AUTOARM_MY_GEN
 [ -n "$MY_GEN" ] || exit 0
 FM_STOP_POLICY_OWNER_CHECKED=1
+FM_STOP_POLICY_LOG_EARLY=0
 AUTOARM_POLICY_DEFERRED=0
 
 # Commit <outcome> (optionally with the once-per-episode notice marker) for

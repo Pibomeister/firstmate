@@ -33,7 +33,9 @@
 # ts is UTC Unix seconds; safe-id matches [A-Za-z0-9_-]{1,128}; turns counts
 # rolling-hour reservations; repeat counts identical no-progress replies.
 # Early parked/active/error exits use zero counts. Cached events do not emit
-# duplicate records. Check-mode uncertainty preserves existing behavior.
+# duplicate records. FM_STOP_POLICY_LOG_EARLY=0 omits parked/active records for
+# a writer that does not decide the model stop, such as the auto-arm's retries.
+# Check-mode uncertainty preserves existing behavior.
 
 fm_stop_policy_parked() { # <state> <home> <script-dir>
   local state=$1 home=$2 script_dir=$3 meta line seen=0 order check data
@@ -102,13 +104,14 @@ fm_stop_policy_allows_stop() (
   case "$mode" in
     check|charge)
       if [ "$active" = true ]; then
-        [ -z "$session" ] || fm_stop_policy_log hook_active
+        [ -z "$session" ] || [ "${FM_STOP_POLICY_LOG_EARLY:-1}" = 0 ] || fm_stop_policy_log hook_active
         return 0
       fi ;;
   esac
   [ -n "$session" ] || return 1
   if [ "$mode" != rewake ] && fm_stop_policy_parked "$state" "$home" "$script_dir"; then
-    fm_stop_policy_log parked; return 0
+    [ "${FM_STOP_POLICY_LOG_EARLY:-1}" = 0 ] || fm_stop_policy_log parked
+    return 0
   fi
   case "$mode" in check|supervise) return 1 ;; esac
 

@@ -188,7 +188,6 @@ if [ "$EVENT" = Stop ]; then
   # Shared quota/park policy also covers this parallel Stop writer.
   # shellcheck source=bin/fm-stop-policy-lib.sh
   . "$SCRIPT_DIR/fm-stop-policy-lib.sh"
-  fm_stop_policy_allows_stop "$PAYLOAD" && exit 0
   # Enforce the restart gate only on a session that is handing off: the
   # trigger fired in this cycle, or this session recorded a handoff document
   # (bin/fm-order.sh handing-off), which also covers percent-left=0. Another
