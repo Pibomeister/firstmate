@@ -791,6 +791,7 @@ end_lab_predecessor() {
   ln -sf /bin/bash "$fakebin/claude"
   (
     export HOOK CLAUDE_HOME PRIMARY ROOT TMP_ROOT
+    # shellcheck disable=SC2030 # Each lab subshell sets its own seam values on purpose.
     export FM_TEST_SEAM=1 FM_HANDOFF_END_SETTLE_SECS=${END_SETTLE_SECS:-2} FM_HANDOFF_END_WAIT_SECS=5
     export END_SESSION=$1 END_TRANSCRIPT=$2 END_AFTER=$3 END_BEFORE=${4:-:}
     export -f run_hook
@@ -1098,6 +1099,7 @@ test_a_cancelled_slow_stop_hook_still_ends_the_predecessor() {
   succ=$!
   (
     export HOOK="$slow/fm-handoff-trigger.sh" CLAUDE_HOME PRIMARY ROOT TMP_ROOT DOC=$doc SUCC=$succ T=$t
+    # shellcheck disable=SC2031 # Each lab subshell sets its own seam values on purpose.
     export FM_TEST_SEAM=1 FM_HANDOFF_END_SETTLE_SECS=1 FM_HANDOFF_END_WAIT_SECS=5
     export -f run_hook
     # shellcheck disable=SC2016 # The fake harness shell expands these.

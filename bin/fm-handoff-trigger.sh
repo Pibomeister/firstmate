@@ -121,14 +121,17 @@
 # is blocked once per turn while `bin/fm-order.sh covers` finds an open captain
 # order missing from the record's handoff=<document> and its late-orders file.
 #
-# ONE LIVE PANE. When a primary's stop passes with the order gate clear, this
-# session holding the session lock, and either a fresh-start firing with a live
-# successor recorded, or a deliberate handoff whose successor's handoff document
-# lists every open captain order, the hook detaches
-# `bin/fm-handoff-launch.sh --end-predecessor <lock pid> <transcript> <bytes>`,
-# which ends this session after a quiet settle unless the transcript shows a
-# new turn; that script's header owns the checks. The successor waits for that
-# end before it runs bin/fm-session-start.sh, so exactly one session runs.
+# ONE LIVE PANE. On a primary's stop, while this session holds the session
+# lock and either a fresh-start firing has a live successor recorded after it
+# or a deliberate handoff names this session as predecessor, the hook detaches
+# `bin/fm-handoff-launch.sh --end-predecessor <lock pid> <transcript> <bytes>`
+# before its slower order checks, so a hook that Claude cancels at its timeout
+# on a loaded host still ends this session. A stop the hook blocks, or one
+# that turns out not to end a handoff, cancels that ender. The ender waits for
+# this hook to exit, then ends this session after a quiet settle unless the
+# transcript shows a new turn or the order check fails; that script's header
+# owns the checks. The successor waits for that end before it runs
+# bin/fm-session-start.sh, so exactly one session runs.
 #
 # Any failure to read the payload, transcript, or settings is silent: the hook
 # never blocks a tool call or prompt and never prints anything but the one
