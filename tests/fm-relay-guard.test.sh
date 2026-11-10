@@ -17,6 +17,10 @@ DAEMON_NAME=
 SLEEP_BIN=$(type -P sleep)
 BASH_BIN=$(type -P bash)
 FALSE_BIN=$(type -P false)
+CAT_BIN=$(type -P cat)
+MKDIR_BIN=$(type -P mkdir)
+TR_BIN=$(type -P tr)
+PS_BIN=$(type -P ps)
 
 world() {
   W=$(fm_test_tmproot fm-relay-guard) || fail "tmproot"
@@ -25,15 +29,17 @@ world() {
   WORLD_N=$((WORLD_N + 1))
   DAEMON_NAME="fsd$$x$WORLD_N"  # under the 15-byte Linux comm limit
   ln -s "$SLEEP_BIN" "$W/$DAEMON_NAME"
+  # Fixtures call their tools by absolute path, so a PATH shim a case installs
+  # for the guard sees only the guard's own calls.
   cat > "$W/fake-relay.sh" <<EOF
 #!/bin/sh
-cat "$W/daemon.pid" > "$W/gen/\$1" 2>/dev/null || : > "$W/gen/\$1"
-while :; do sleep 0.2; done
+"$CAT_BIN" "$W/daemon.pid" > "$W/gen/\$1" 2>/dev/null || : > "$W/gen/\$1"
+while :; do "$SLEEP_BIN" 0.2; done
 EOF
   cat > "$W/fake-probe.sh" <<EOF
 #!/bin/sh
-d=\$(cat "$W/daemon.pid" 2>/dev/null) || exit 1
-g=\$(cat "$W/gen/\$1" 2>/dev/null) || exit 1
+d=\$("$CAT_BIN" "$W/daemon.pid" 2>/dev/null) || exit 1
+g=\$("$CAT_BIN" "$W/gen/\$1" 2>/dev/null) || exit 1
 [ -n "\$d" ] && [ "\$d" = "\$g" ] && kill -0 "\$d" 2>/dev/null
 EOF
   chmod +x "$W/fake-relay.sh" "$W/fake-probe.sh"
@@ -712,6 +718,156 @@ EOF
   pass "KILL reaches a TERM-proof relay, never a pid that stopped being that relay"
 }
 
+# A shim for one external command: its first call, from anywhere in the guard's
+# process tree, marks itself and holds for 2s before running the real command,
+# so a case can SIGKILL the guard while that child is still alive.
+holding_shim() {  # <command>
+  local real
+  real=$(type -P "$1") || fail "no $1 on PATH"
+  mkdir -p "$W/shim"
+  cat > "$W/shim/$1" <<EOF
+#!/bin/sh
+if "$MKDIR_BIN" "$W/held.$1" 2>/dev/null; then
+  : > "$W/holding.$1"
+  "$SLEEP_BIN" 2
+fi
+exec "$real" "\$@"
+EOF
+  chmod +x "$W/shim/$1"
+}
+
+test_no_child_of_a_killed_guard_holds_the_lock() {
+  local c gpid out code
+  for c in date ps awk rm sleep mv; do
+    world
+    # A relay that predates a daemon restart, so the pass stops, starts,
+    # settles, and records: every external command a pass runs is reached.
+    start_daemon
+    start_relay m3 7001
+    sleep 1.2
+    stop_daemon
+    start_daemon
+    conf <<EOF
+daemon=$DAEMON_NAME
+relay.m3=$W/fake-relay.sh m3 7001
+probe.m3=$W/fake-probe.sh m3
+settle-secs=1
+term-wait-secs=1
+EOF
+    holding_shim "$c"
+    FM_HOME="$W/home" PATH="$W/shim:$PATH" bash "$GUARD" once >/dev/null 2>&1 &
+    gpid=$!
+    wait_for_file "$W/holding.$c" || fail "fixture is vacuous: the pass never ran $c"
+    kill -KILL "$gpid" 2>/dev/null
+    wait "$gpid" 2>/dev/null
+    out=$(guard once 2>&1)
+    code=$?
+    [ "$code" -ne 75 ] || fail "the guard died while its $c child ran, and that child still holds the pass lock: $out"
+    sleep 2
+    pkill -f "$W/fake-relay.sh m3 7001" 2>/dev/null
+    stop_daemon
+  done
+  pass "a guard killed while any child it started still runs leaves no holder of the pass lock"
+}
+
+# A ps shim for the guard's start-time reads. At the <n>th read it changes the
+# identity of the pid read just before: from then on that pid reports another
+# start time. It first records whether that pid still lives, waiting up to 1s
+# for a signal the guard already sent it to land.
+identity_flip_shim() {  # <n>
+  mkdir -p "$W/shim"
+  cat > "$W/shim/ps" <<EOF
+#!/bin/sh
+if [ "\$1" = -o ] && [ "\$2" = lstart= ] && [ "\$3" = -p ]; then
+  n=\$(( \$("$CAT_BIN" "$W/reads" 2>/dev/null || echo 0) + 1 ))
+  echo "\$n" > "$W/reads"
+  if [ -f "$W/flip.\$4" ]; then printf 'Sat Jan  1 00:00:00 2000\n'; exit 0; fi
+  if [ "\$n" = $1 ]; then
+    prev=\$("$CAT_BIN" "$W/last-read")
+    i=0
+    while :; do
+      st=\$("$PS_BIN" -o stat= -p "\$prev" 2>/dev/null | "$TR_BIN" -d ' ')
+      case "\$st" in ''|Z*) echo 0 > "$W/flip.\$prev"; break ;; esac
+      [ "\$i" -lt 10 ] || { echo 1 > "$W/flip.\$prev"; break; }
+      "$SLEEP_BIN" 0.1
+      i=\$((i + 1))
+    done
+  fi
+  echo "\$4" > "$W/last-read"
+fi
+exec "$PS_BIN" "\$@"
+EOF
+  chmod +x "$W/shim/ps"
+}
+
+# A pid whose identity changed while it was still alive was signaled anyway.
+assert_no_signal_after_identity_change() {  # <out>
+  local f pid
+  set -- "$1" "$W"/flip.*
+  [ -e "$2" ] || fail "fixture is vacuous: no identity changed: $1"
+  for f in "${@:2}"; do
+    pid=${f##*.}
+    if [ "$(cat "$f")" = 1 ] && ! alive "$pid"; then
+      fail "pid $pid was signaled after its start time changed, because the signal used an earlier identity check: $1"
+    fi
+  done
+}
+
+test_each_term_rechecks_its_own_pid_first() {
+  local out
+  world
+  start_daemon
+  start_relay m4 7002
+  start_relay m4 7002
+  sleep 0.3
+  [ "$(relay_pids m4 7002 | wc -l | tr -d ' ')" = 2 ] || fail "fixture duplicates did not start"
+  conf <<EOF
+daemon=$DAEMON_NAME
+relay.m4=$W/fake-relay.sh m4 7002
+probe.m4=$W/fake-probe.sh m4
+settle-secs=1
+term-wait-secs=1
+EOF
+  # Reads 1 and 2 check the two duplicates before TERM; read 2 retires the
+  # first one's pid.
+  identity_flip_shim 2
+  out=$(PATH="$W/shim:$PATH" guard once 2>&1)
+  assert_no_signal_after_identity_change "$out"
+  pkill -f "$W/fake-relay.sh m4 7002" 2>/dev/null
+  stop_daemon
+  pass "each TERM follows its own pid's identity check, never a batch of earlier checks"
+}
+
+test_each_kill_rechecks_its_own_pid_first() {
+  local out
+  world
+  cat > "$W/stubborn-relay.sh" <<EOF
+#!/bin/sh
+trap '' TERM
+while :; do "$SLEEP_BIN" 0.2; done
+EOF
+  chmod +x "$W/stubborn-relay.sh"
+  start_daemon
+  nohup "$W/stubborn-relay.sh" s 7009 </dev/null >/dev/null 2>&1 &
+  nohup "$W/stubborn-relay.sh" s 7009 </dev/null >/dev/null 2>&1 &
+  sleep 0.3
+  conf <<EOF
+daemon=$DAEMON_NAME
+relay.s=$W/stubborn-relay.sh s 7009
+probe.s=$W/fake-probe.sh s
+settle-secs=1
+term-wait-secs=1
+EOF
+  # Reads 1 and 2 precede TERM, which both ignore; reads 3 and 4 precede KILL,
+  # and read 4 retires the first one's pid.
+  identity_flip_shim 4
+  out=$(PATH="$W/shim:$PATH" guard once 2>&1)
+  assert_no_signal_after_identity_change "$out"
+  pkill -KILL -f "$W/stubborn-relay.sh" 2>/dev/null
+  stop_daemon
+  pass "each KILL follows its own pid's identity check, never a batch of earlier checks"
+}
+
 test_relay_started_in_the_daemon_restart_second_is_restarted() {
   local old new out code dead
   world
@@ -749,6 +905,9 @@ fm_test_run \
   test_a_relay_pid_reused_during_the_probe_is_not_signaled \
   test_leading_zero_numbers_are_decimal \
   test_kill_spares_a_pid_that_is_no_longer_the_relay \
+  test_no_child_of_a_killed_guard_holds_the_lock \
+  test_each_term_rechecks_its_own_pid_first \
+  test_each_kill_rechecks_its_own_pid_first \
   test_relay_started_in_the_daemon_restart_second_is_restarted \
   test_stale_relays_after_daemon_restart_are_respawned \
   test_missing_relay_is_spawned_and_daemon_loss_waits_for_the_daemon \

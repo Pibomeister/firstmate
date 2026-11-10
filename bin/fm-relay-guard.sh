@@ -78,10 +78,10 @@
 #   backoff-secs=30  settle-secs=2  term-wait-secs=5
 #                             Numbers are decimal: a leading zero is ignored.
 # The relay match records each process's pid and start time from one ps
-# snapshot. Stopping sends TERM only to a pid that still has that start time,
-# waits <term-wait-secs>, then KILLs only survivors that still have it, so a
-# relay that exited during the pass and whose pid was reused is never
-# signaled; it never signals a process the relay match did not select.
+# snapshot. Stopping checks each pid for that start time right before its own
+# TERM, waits <term-wait-secs>, then checks each survivor again right before its
+# own KILL, so a relay that exited during the pass and whose pid was reused is
+# never signaled; it never signals a process the relay match did not select.
 # A started relay runs detached (setsid where available, nohup, stdin from
 # /dev/null) with output appended to state/relay-guard/<name>.log, so it
 # outlives this command. The rendered units keep relays alive across a guard
@@ -104,7 +104,7 @@
 #                  on it for the whole pass, and a pass already holding it
 #                  makes once exit 75 (run skips that pass). The kernel releases
 #                  it when the holder exits, even by SIGKILL, so a crashed pass
-#                  never leaves a stale lock; relays and probes never hold it.
+#                  never leaves a stale lock; no child a pass starts holds it.
 #
 # Exit status: 0 when every relay ends the pass proven healthy, 3 when any
 # relay is not (daemon down, probe failing, capped, backoff, or a start that
@@ -294,47 +294,55 @@ proc_start() {  # <pid> -> the process's start time, as relay_pids prints it; em
 
 # Is <pid> still the process that had <start>? Empty <start> never matches.
 same_proc() {  # <pid> <start>
-  [ -n "$2" ] && [ "$(proc_start "$1")" = "$2" ]
+  [ -n "$2" ] && [ "$(exec 9>&-; proc_start "$1")" = "$2" ]
 }
 
 stop_pids() {  # <"pid start"...> from relay_pids; nonzero when any survives
   local e pid i k alive pids=() starts=() survivors=()
-  # Signal only a pid that is still the process the relay match selected: a
-  # relay that exited since, and whose pid another process now holds, has a
-  # different start time and is skipped.
+  # Each signal goes only to a pid that is still the process the relay match
+  # selected, checked right before that one signal: a relay that exited since,
+  # and whose pid another process now holds, has a different start time and is
+  # skipped.
   for e in "$@"; do
     [ -n "$e" ] || continue
     pid=${e%% *}
     same_proc "$pid" "${e#* }" || continue
+    kill -TERM "$pid" 2>/dev/null
     pids+=("$pid")
     starts+=("${e#* }")
   done
   [ "${#pids[@]}" -gt 0 ] || return 0
-  kill -TERM "${pids[@]}" 2>/dev/null
   i=0
   while [ "$i" -lt $((TERM_WAIT * 10)) ]; do
     alive=0
     for pid in "${pids[@]}"; do kill -0 "$pid" 2>/dev/null && alive=1; done
     [ "$alive" -eq 1 ] || return 0
-    sleep 0.1
+    sleep 0.1 9>&-
     i=$((i + 1))
   done
   k=0
   for pid in "${pids[@]}"; do
-    same_proc "$pid" "${starts[$k]}" && survivors+=("$pid")
+    if same_proc "$pid" "${starts[$k]}"; then
+      kill -KILL "$pid" 2>/dev/null
+      survivors+=("$pid")
+    fi
     k=$((k + 1))
   done
   [ "${#survivors[@]}" -gt 0 ] || return 0
-  kill -KILL "${survivors[@]}" 2>/dev/null
-  sleep 0.2
+  sleep 0.2 9>&-
   for pid in "${survivors[@]}"; do kill -0 "$pid" 2>/dev/null && return 1; done
   return 0
 }
 
-# Relays and probes run in a subshell whose bare `exec 9>&-` closes the
-# pass-lock fd for good. A `9>&-` on the command itself is not enough: bash
-# parks the fd on a spare number to restore it later (bash 3.2 even for exec
-# with a command), and the long-lived child would inherit and hold that copy.
+# No child a pass starts holds the pass-lock fd, so a guard that dies leaves no
+# holder behind. Relays, probes, and command or process substitutions that run
+# an external command open with a bare `exec 9>&-`, which closes the fd for
+# good. An external command the guard runs directly carries `9>&-`, which bash
+# applies in the forked child. Elsewhere a `9>&-` is not enough: on a function,
+# subshell, or substitution bash parks the fd on a spare number to restore it
+# later (bash 3.2 even for exec with a command), and the child holds that copy.
+# Substitutions that run only builtins skip it; they cannot outlive the guard
+# by more than their next few instructions.
 spawn_relay() {  # <name> <command>
   local words
   set -f
@@ -408,8 +416,8 @@ join_pids() {
 pass_once() {
   local now dline dpid='' dage='' ages i name cmd probe pids procs n rage reason limited verdict
   local detail fails gate unhealthy=0 started=() started_reason=() started_old=() status_lines=()
-  now=$(date +%s)
-  if dline=$(daemon_youngest); then
+  now=$(exec 9>&-; date +%s)
+  if dline=$(exec 9>&-; daemon_youngest); then
     dpid=${dline%% *}
     dage=${dline#* }
   fi
@@ -420,7 +428,7 @@ pass_once() {
     probe=${PROBES[$i]}
     pids=()
     procs=()
-    while IFS= read -r n; do [ -n "$n" ] && { pids+=("${n%% *}"); procs+=("$n"); }; done < <(relay_pids "$cmd")
+    while IFS= read -r n; do [ -n "$n" ] && { pids+=("${n%% *}"); procs+=("$n"); }; done < <(exec 9>&-; relay_pids "$cmd")
     reason=''
     limited=1
     verdict=''
@@ -432,10 +440,10 @@ pass_once() {
       reason=missing
     elif [ "${#pids[@]}" -gt 1 ]; then
       reason=duplicate
-    elif ! dline=$(daemon_youngest); then
+    elif ! dline=$(exec 9>&-; daemon_youngest); then
       verdict='daemon-down'
       detail="no $DAEMON process"
-    elif ages=$(pair_ages "${pids[0]}" "${dline%% *}"); rage=${ages%% *}; dage=${ages#* }; [ "$rage" = - ]; then
+    elif ages=$(exec 9>&-; pair_ages "${pids[0]}" "${dline%% *}"); rage=${ages%% *}; dage=${ages#* }; [ "$rage" = - ]; then
       reason=missing
       pids=()
       procs=()
@@ -443,12 +451,12 @@ pass_once() {
       verdict='daemon-down'
       detail="no $DAEMON process"
     elif [ "$rage" -gt "$dage" ] || { [ "$rage" -eq "$dage" ] &&
-        [ "$(cat "$STATE/$name.bound" 2>/dev/null)" != "${pids[0]} ${dline%% *}" ]; }; then
+        [ "$(exec 9>&-; cat "$STATE/$name.bound" 2>/dev/null)" != "${pids[0]} ${dline%% *}" ]; }; then
       reason='daemon-restarted'
       limited=0
       detail="relay age ${rage}s >= $DAEMON age ${dage}s"
     elif run_probe "$name" "$probe"; then
-      [ "$ACT" -eq 1 ] && rm -f "$STATE/$name.fails"
+      [ "$ACT" -eq 1 ] && rm -f "$STATE/$name.fails" 9>&-
       verdict=ok
     else
       fails=$(( $(read_int "$STATE/$name.fails") + 1 ))
@@ -465,7 +473,7 @@ pass_once() {
         verdict="would-restart:$reason"
       else
         gate=ok
-        [ "$limited" -eq 1 ] && gate=$(start_allowed "$name" "$now")
+        [ "$limited" -eq 1 ] && gate=$(exec 9>&-; start_allowed "$name" "$now")
         if [ "$gate" != ok ]; then
           verdict=${gate%% *}
           if [ "$verdict" = backoff ]; then
@@ -480,7 +488,7 @@ pass_once() {
         else
           spawn_relay "$name" "$cmd"
           [ "$limited" -eq 1 ] && printf '%s\n' "$now" >> "$STATE/$name.starts"
-          rm -f "$STATE/$name.fails"
+          rm -f "$STATE/$name.fails" 9>&-
           started+=("$i")
           started_reason+=("$reason")
           started_old+=("$(join_pids "${pids[@]:-}")")
@@ -495,7 +503,7 @@ pass_once() {
   done
 
   if [ "${#started[@]}" -gt 0 ]; then
-    [ "$SETTLE" -gt 0 ] && sleep "$SETTLE"
+    [ "$SETTLE" -gt 0 ] && sleep "$SETTLE" 9>&-
     local j idx new probe_result action
     j=0
     while [ "$j" -lt "${#started[@]}" ]; do
@@ -505,7 +513,7 @@ pass_once() {
       action=restart
       [ "$reason" = missing ] && action=spawn
       pids=()
-      while IFS= read -r n; do [ -n "$n" ] && pids+=("${n%% *}"); done < <(relay_pids "${CMDS[$idx]}")
+      while IFS= read -r n; do [ -n "$n" ] && pids+=("${n%% *}"); done < <(exec 9>&-; relay_pids "${CMDS[$idx]}")
       new=$(join_pids "${pids[@]:-}")
       [ "${#pids[@]}" -eq 1 ] && printf '%s %s\n' "${pids[0]}" "$dpid" > "$STATE/$name.bound"
       probe_result=-
@@ -533,7 +541,7 @@ pass_once() {
   local header="# fm-relay-guard v1 epoch=$now daemon=$DAEMON daemon-pid=${dpid:-none}"
   if [ "$ACT" -eq 1 ]; then
     { printf '%s\n' "$header"; printf '%s\n' "${status_lines[@]}"; } > "$STATE/status.tsv.tmp" &&
-      mv "$STATE/status.tsv.tmp" "$STATE/status.tsv"
+      mv "$STATE/status.tsv.tmp" "$STATE/status.tsv" 9>&-
   fi
   printf '%s\n' "$header"
   printf '%s\n' "${status_lines[@]}"
@@ -616,9 +624,9 @@ EOF
 # The pass lock is a kernel lock: flock(2) on $STATE/lock, taken through fd 9
 # and held while this process keeps fd 9 open. The kernel releases it when the
 # holder exits however it dies, so there is never a stale lock to reclaim, and
-# relays and probes the pass starts never inherit fd 9. Bash has no flock
-# builtin and macOS ships no flock command, so perl takes the lock on the
-# inherited fd; the lock belongs to the open file, so it outlives that perl.
+# no child the pass starts keeps fd 9 (see the note above spawn_relay). Bash
+# has no flock builtin and macOS ships no flock command, so perl takes the lock
+# on the inherited fd; the lock belongs to the open file, so it outlives perl.
 LOCKED=0
 take_lock() {  # 0 when taken, 1 when another pass holds it, 2 when it cannot be taken
   command -v perl >/dev/null 2>&1 || return 2
