@@ -226,7 +226,8 @@ if [ "$CMD" = arm ]; then
   {
     printf '%s\n' "$GEN" > "$GEN_FILE.tmp.$$" && mv -f "$GEN_FILE.tmp.$$" "$GEN_FILE" \
       && write_record "$GEN" 1 \
-      && rm -f "$STATE/$ID.progress" "$(fm_busy_prompt_receipts_path "$STATE" "$ID")"
+      && rm -f "$STATE/$ID.progress" "$(fm_busy_prompt_receipts_path "$STATE" "$ID")" \
+      && clear_stream_incarnation
   } || { lock_release; umask "$old_umask"; echo "error: arm failed for $ID" >&2; exit 1; }
   lock_release
   umask "$old_umask"
@@ -249,7 +250,7 @@ fi
 lock_acquire || { umask "$old_umask"; exit 1; }
 CURRENT=$(fm_busy_current_gen "$STATE" "$ID") || {
   if [ "$CMD" = retire ] && [ ! -e "$GEN_FILE" ] && [ ! -L "$GEN_FILE" ]; then
-    rm -f "$REC" "$STATE/$ID.progress" "$(fm_busy_prompt_receipts_path "$STATE" "$ID")" || {
+    { rm -f "$REC" "$STATE/$ID.progress" "$(fm_busy_prompt_receipts_path "$STATE" "$ID")" && clear_stream_incarnation; } || {
       lock_release
       umask "$old_umask"
       echo "error: busy-state retirement failed for $ID" >&2
@@ -274,7 +275,7 @@ if [ "$GEN" != "$CURRENT" ]; then
   exit 1
 fi
 if [ "$CMD" = retire ]; then
-  rm -f "$GEN_FILE" "$REC" "$STATE/$ID.progress" "$(fm_busy_prompt_receipts_path "$STATE" "$ID")" || {
+  { rm -f "$GEN_FILE" "$REC" "$STATE/$ID.progress" "$(fm_busy_prompt_receipts_path "$STATE" "$ID")" && clear_stream_incarnation; } || {
     lock_release
     umask "$old_umask"
     echo "error: busy-state retirement failed for $ID" >&2
@@ -354,6 +355,9 @@ write_record "$GEN" "$NEXT_SEQ" || {
   echo "error: record write failed for $ID" >&2
   exit 1
 }
+if [ "$NEW_STATE" != busy ]; then
+  clear_stream || { lock_release; exit 1; }
+fi
 if [ -n "$PROMPT_SHA256" ]; then
   printf 'v1 gen=%s seq=%s sha256=%s\n' "$GEN" "$NEXT_SEQ" "$PROMPT_SHA256" \
     >> "$(fm_busy_prompt_receipts_path "$STATE" "$ID")" || {

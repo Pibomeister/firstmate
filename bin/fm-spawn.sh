@@ -290,14 +290,8 @@
 #   every place held prints one `deferred:` line and exits 75 before any brief
 #   render, endpoint, worktree, record, or backlog move exists, so the task stays
 #   exactly as queued as it was; an unreadable declaration refuses with exit 1.
-#   Lane capacity: only when this home's config/lane-capacity declares
-#   admit-spawns (bin/fm-capacity.sh --spawn-gate-enabled answers; that script
-#   owns the declaration and the verdict), a fresh ship or
-#   scout spawn runs `fm-capacity.sh --spawn-gate` while holding the machine-wide
-#   lane-admission lock in the local root home's state/ (waiting up to 120 s for
-#   it) and keeps holding it through metadata publication; a verdict that does
-#   not admit prints `deferred:` and exits 75 with the task exactly as queued,
-#   and an unreadable declaration refuses with exit 1.
+#   Lane capacity admission is deferred with bin/fm-capacity.sh's
+#   --spawn-gate support (see the note at the project-capacity gate below).
 #   A batch reports such a pair as `batch: DEFERRED` and exits 75 when nothing
 #   else failed. A relaunch and a --secondmate spawn are never counted against
 #   capacity.
@@ -4673,40 +4667,10 @@ if [ -n "$SPAWN_PROJECT_CAPACITY" ]; then
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
   fi
 fi
-# Lane capacity admission (opt-in; bin/fm-capacity.sh owns the verdict and
-# --spawn-gate exits 0 unless config/lane-capacity declares admit-spawns). A
-# fresh ship or scout asks it under one machine-wide lane-admission lock in the
-# local root home, held until the task record is published, so two spawns on
-# this machine can never take the same open lane. A deferral leaves the task
-# exactly as queued as it was, like a project-capacity deferral.
-if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ -e "$CONFIG/lane-capacity" ] &&
-  FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
-    "$SCRIPT_DIR/fm-capacity.sh" --spawn-gate-enabled </dev/null 2>/dev/null; then
-  SPAWN_LANE_ROOT=$(fm_firstmate_root_home "$FM_HOME") || {
-    echo "error: could not resolve the root Firstmate home that holds the lane admission lock for $FM_HOME" >&2
-    exit 1
-  }
-  SPAWN_LANE_ADMISSION_LOCK="$SPAWN_LANE_ROOT/state/.lane-admission.lock"
-  if ! fm_lock_acquire_wait_max "$SPAWN_LANE_ADMISSION_LOCK" 120; then
-    echo "deferred: another spawn on this machine held the lane admission lock for 120 s; task $ID was not launched and its backlog item stays queued - dispatch it again" >&2
-    exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
-  fi
-  SPAWN_LANE_ADMISSION_LOCK_HELD=1
-  SPAWN_LANE_RC=0
-  FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
-    "$SCRIPT_DIR/fm-capacity.sh" --spawn-gate </dev/null || SPAWN_LANE_RC=$?
-  case "$SPAWN_LANE_RC" in
-    0) ;;
-    75)
-      echo "deferred: task $ID was not launched and its backlog item stays queued - dispatch it again once this machine's lane capacity admits another lane" >&2
-      exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
-      ;;
-    *)
-      echo "error: spawn refused: this home's lane capacity cannot be read (bin/fm-capacity.sh --spawn-gate exited $SPAWN_LANE_RC); fix config/lane-capacity so the captain's limits are known (docs/configuration.md \"Lane capacity\")" >&2
-      exit 1
-      ;;
-  esac
-fi
+# Lane capacity admission is deferred to the part of the upstream sync that
+# brings bin/fm-capacity.sh's --spawn-gate support; at this revision that
+# script has no such flag, so a caller here could never admit or refuse and
+# would only pretend to enforce. Spawn behaviour is unchanged until then.
 # A secondmate home's lane total is the mate plus every child, nested
 # secondmates included. Refuse a new child before any endpoint exists when that
 # total is already at a stop.
@@ -7004,6 +6968,9 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
       exit 1
     fi
 
+  fi
+
+  if [ "$BACKEND" != t3code ]; then
     if spawn_endpoint_closes_on_abort; then
       validate_spawn_worktree "treehouse get" "$WT ($(spawn_endpoint_hint))"
     else
