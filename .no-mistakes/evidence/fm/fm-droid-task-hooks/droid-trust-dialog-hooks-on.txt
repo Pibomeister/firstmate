@@ -1,0 +1,26 @@
+                                                                         █████████    █████████     ████████    ███   █████████
+                                                                         ███    ███   ███    ███   ███    ███   ███   ███    ███
+                                                                         ███    ███   ███    ███   ███    ███   ███   ███    ███
+                                                                         ███    ███   █████████    ███    ███   ███   ███    ███
+                                                                         ███    ███   ███    ███   ███    ███   ███   ███    ███
+                                                                         ███    ███   ███    ███   ███    ███   ███   ███    ███
+                                                                         █████████    ███    ███    ████████    ███   █████████
+                                                                                                 v1.1.0
+                                                                 TIP: Run /readiness-report to evaluate this repo for agent readiness.
+                                                                           shift+tab to cycle modes · ctrl+N to cycle models
+                                                                                ctrl+L for autonomy · tab for reasoning
+                                                                         Skills (…)  MCPs (0) ✗  Connectors (0) ✗  AGENTS.md ✓
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                                                                                                      │
+│ Trust this folder?                                                                                                                                                                                   │
+│                                                                                                                                                                                                      │
+│ /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.CAvVou1npR                                                                                                                              │
+│                                                                                                                                                                                                      │
+│ Droid will read, edit, and run files in this folder, and load any project configuration it defines, including hooks and MCP servers that can execute commands on your machine.                       │
+│                                                                                                                                                                                                      │
+│ If you just cloned this folder or don't recognize its contents, review the files and any .factory configuration (hooks, MCP servers) before trusting it.                                             │
+│                                                                                                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+> 1. Trust this folder
+  2. Exit without trusting
+Enter to confirm · Esc to exit
