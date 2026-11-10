@@ -105,7 +105,7 @@ keep	terminal	foreign	term_1f4aad95-daa5-44c2-88eb-422a9d20122a	/Users/eduardopi
 keep	terminal	foreign	term_3b2790f8-4c1d-40b5-aa5d-655a12c3402f	/Users/eduardopicazo/orca/workspaces/Casco/muse-a2	Terminal 1
 keep	terminal	foreign	term_6adce9b7-9b95-47bb-bdc6-8f4d6449fb37	/Users/eduardopicazo/orca/workspaces/Casco/muse-a2	muse-a2
 keep	terminal	unowned-task	term_44848561-103f-49f0-a923-8ee0d8191b55	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-upstream-sync	Terminal 1
-keep	terminal	unowned-task	term_4baaa0cc-e4ba-4983-bebb-47c63aff0b72	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-upstream-sync	⠧ fm-fm-upstream-sync
+keep	terminal	unowned-task	term_4baaa0cc-e4ba-4983-bebb-47c63aff0b72	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-upstream-sync	fm-fm-upstream-sync
 keep	terminal	unowned-task	term_3fee6702-9339-4055-995e-d8187c15a37a	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-watchdog-rollout	Terminal 1
 keep	terminal	unowned-task	term_c65cfacc-5e1d-4a73-9568-e1e40a45979e	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-watchdog-rollout	Firstmate operational inbox message
 keep	terminal	unowned-task	term_1f2868e4-0807-4bb2-ae1f-4e50123b972b	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-holds-triage	Terminal 1
