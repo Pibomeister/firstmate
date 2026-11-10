@@ -73,9 +73,11 @@
 # recorded or not, is kept.
 #
 # Browser roots are agent-browser daemons, chrome-devtools-axi bridges, and
-# automation browsers (headless, pipe-debugged, Playwright, or Puppeteer
-# builds) whose parent has exited. Each root is judged by its working
-# directory, together with every process under it:
+# automation browsers whose parent has exited: Playwright or Puppeteer builds,
+# or a browser executable (Chrome, Chromium, Edge, Firefox, or a headless
+# shell) started with --headless or --remote-debugging-pipe. Another program
+# started with --headless is not a browser and is never listed. Each root is
+# judged by its working directory, together with every process under it:
 #   keep task          it works in a recorded task's worktree
 #   keep home          it works in a home root
 #   keep young         it is younger than --min-age
@@ -95,9 +97,10 @@
 # --apply re-proves each terminal immediately before closing it. The records
 # are re-read (an unreadable record skips the close),
 # fm_backend_orca_agent_state must still report dead or missing, and the fresh
-# title must still name a firstmate session. Orca must still name the session
-# pid it was classified with (a
-# replaced session is skipped), and the last read before the close requires
+# title must still name a firstmate session. A terminal Orca still reports
+# connected must still be rooted at the session pid it was classified with,
+# whichever of those two states was read (a replaced session is skipped), and
+# the last read before the close requires
 # that session, if it still runs, to hold shells and nothing else. Any change or
 # unreadable fact skips the close.
 # Environment: FM_HOME selects the home; FM_ROOT_OVERRIDE as elsewhere.
@@ -114,7 +117,8 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 # shellcheck source=bin/fm-secondmate-registry-lib.sh
 . "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
 
-usage() { sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; }
+# usage: the header from its first line through the exit-status paragraph.
+usage() { sed -n '2,/^# closed; 2 on a usage error/p' "$0" | sed 's/^# \{0,1\}//'; }
 
 APPLY=0
 MIN_AGE=1800
@@ -306,7 +310,11 @@ if (mode === "terminals") {
     const a = p.args;
     if (/\/agent-browser\//.test(a) && /daemon\.js/.test(a)) return true;
     if (/chrome-devtools-axi-bridge/.test(a)) return true;
-    return p.ppid === 1 && /(--headless|--remote-debugging-pipe|\/ms-playwright\/|puppeteer_dev_chrome_profile|playwright_chromiumdev_profile)/.test(a);
+    if (p.ppid !== 1) return false;
+    if (/(\/ms-playwright\/|puppeteer_dev_chrome_profile|playwright_chromiumdev_profile)/.test(a)) return true;
+    // A bare --headless or pipe flag names a browser only on a browser executable.
+    return /(^|\/)(Google Chrome( for Testing)?|Chromium|chrome|chromium|chromium-browser|chrome-headless-shell|headless_shell|msedge|Microsoft Edge|firefox)( |$)/.test(a)
+      && /(^| )(--headless(=\S*)?|--remote-debugging-pipe)( |$)/.test(a);
   };
   const matched = new Set([...procs.values()].filter(isRoot).map((p) => p.pid));
   const roots = [...matched].filter((pid) => {
@@ -424,15 +432,23 @@ close_terminal() {  # <handle> <path> <pid> -> closed|skipped:<why>|failed:<why>
   # session; it may have been renamed since the listing.
   title=$(current_title "$handle") || { printf 'skipped\tnow-unreadable'; return 0; }
   firstmate_title "$title" || { printf 'skipped\tnow-retitled'; return 0; }
-  # A connected terminal must still be rooted at the classified session pid.
-  if [ "$state" = dead ]; then
-    facts=$(fm_backend_orca_terminal_facts "$handle") || { printf 'skipped\tnow-unreadable'; return 0; }
-    IFS=$'\x1f' read -r _ _ _ _ pty _ _ <<FACTS
+  # A connected terminal must still be rooted at the classified session pid,
+  # whether the liveness read said dead or missing: a session that exited may
+  # have been replaced by a new one under the same handle.
+  local fread connected
+  facts=$(fm_backend_orca_terminal_facts "$handle") || { printf 'skipped\tnow-unreadable'; return 0; }
+  IFS=$'\x1f' read -r fread connected _ _ pty _ _ <<FACTS
 $facts
 FACTS
-    now=$(fm_backend_orca_session_pid "$pty") || { printf 'skipped\tnow-unreadable'; return 0; }
-    [ "$now" = "$pid" ] || { printf 'skipped\tnow-replaced'; return 0; }
-  fi
+  [ "$fread" = ok ] || { printf 'skipped\tnow-unreadable'; return 0; }
+  case "$connected" in
+    false) ;;
+    true)
+      now=$(fm_backend_orca_session_pid "$pty") || { printf 'skipped\tnow-unreadable'; return 0; }
+      [ "$now" = "$pid" ] || { printf 'skipped\tnow-replaced'; return 0; }
+      ;;
+    *) printf 'skipped\tnow-unreadable'; return 0 ;;
+  esac
   # The last read before the close: the classified session, if it still runs,
   # must still hold shells and nothing else. An agent started under the same
   # session pid during the checks above is caught here.

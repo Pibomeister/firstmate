@@ -11,11 +11,14 @@
 set -u
 
 # shellcheck source=tests/lib.sh
-. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh" || { echo "fm-terminal-reap.test: cannot load tests/lib.sh" >&2; exit 1; }
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
-TMP_ROOT=$(fm_test_tmproot fm-terminal-reap)
-TMP_ROOT=$(cd "$TMP_ROOT" && pwd -P)
+# Every fixture and the cleanup trap work under TMP_ROOT, so it must be a real
+# temporary directory and never the checkout.
+TMP_ROOT=$(fm_test_tmproot fm-terminal-reap) && [ -n "$TMP_ROOT" ] && [ -d "$TMP_ROOT" ] \
+  && TMP_ROOT=$(cd "$TMP_ROOT" && pwd -P) && [ -n "$TMP_ROOT" ] && [ "$TMP_ROOT" != "$ROOT" ] \
+  || { echo "fm-terminal-reap.test: cannot create a temporary directory" >&2; exit 1; }
 REAP="$ROOT/bin/fm-terminal-reap.sh"
 
 TRACKED_PIDS=()
@@ -58,6 +61,8 @@ cat > "$FB/lsof" <<'SH'
 #!/usr/bin/env bash
 cat "$FX/lsof.out"
 SH
+# In the process-table snapshot, a pid with a ppid1-<pid> marker reads as an
+# orphan whose parent is pid 1.
 # ps passes through, except that a pid with a fresh-<pid> marker reads as just
 # started, the shape of a pid reused after the reaper's process snapshot.
 REAL_PS=$(command -v ps)
@@ -65,6 +70,13 @@ cat > "$FB/ps" <<SH
 #!/usr/bin/env bash
 if [ "\$1" = -p ] && [ "\${3:-}" = -o ] && [ "\${4:-}" = etime= ] && [ -n "\${FX:-}" ] && [ -f "\$FX/fresh-\$2" ]; then
   printf '   00:00\n'; exit 0
+fi
+if [ "\$*" = "-axo pid=,ppid=,etime=,args=" ] && [ -n "\${FX:-}" ] && ls "\$FX"/ppid1-* >/dev/null 2>&1; then
+  out=\$('$REAL_PS' "\$@") || exit
+  marks=\$(cd "\$FX" && ls ppid1-* | sed 's/^ppid1-//' | tr '\n' ' ')
+  printf '%s\n' "\$out" | awk -v marks="\$marks" 'BEGIN { n = split(marks, m, " "); for (i = 1; i <= n; i++) o[m[i]] = 1 }
+    (\$1 in o) { \$2 = 1 } { print }'
+  exit 0
 fi
 exec '$REAL_PS' "\$@"
 SH
@@ -88,6 +100,18 @@ agent_session() {  # -> PID
   bash -c '"$1" 600; :' _ "$TMP_ROOT/agent-bin/claude" >/dev/null 2>&1 </dev/null &
   PID=$!
   disown "$PID" 2>/dev/null || true
+  TRACKED_PIDS+=("$PID")
+}
+
+# orphan_idle_shell: an idle shell reparented to pid 1, so once killed it
+# leaves the process table at once instead of lingering as this suite's zombie.
+orphan_idle_shell() {  # -> PID
+  local fifo pidf
+  fifo=$(mktemp -u "$TMP_ROOT/fifo.XXXXXX")
+  mkfifo "$fifo"
+  pidf=$(mktemp "$TMP_ROOT/pid.XXXXXX")
+  ( bash -c 'read -r _ <> "$1"' _ "$fifo" >/dev/null 2>&1 </dev/null & printf '%s\n' "$!" > "$pidf" )
+  PID=$(cat "$pidf")
   TRACKED_PIDS+=("$PID")
 }
 
@@ -326,16 +350,42 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27
 done
 HOOK
   fi
+  # The listed session exits, so the liveness read says missing, and a new
+  # session takes over the same terminal before the close.
+  local exited
+  term term-missing pty-missing "$HOME_DIR" "fm main missing"
+  orphan_idle_shell; exited=$PID; session pty-missing "$exited"
+  idle_shell; session pty-missing-now "$PID"
+  show term-missing pty-missing-now "$HOME_DIR"
+  mv "$FX/show-term-missing.json" "$FX/show-term-missing.next"
+  show term-missing pty-missing "$HOME_DIR"
+  cat > "$FX/onshow-term-missing" <<HOOK
+#!/usr/bin/env bash
+n=\$(( \$(cat '$FX/shows-missing' 2>/dev/null || echo 0) + 1 ))
+printf '%s\n' "\$n" > '$FX/shows-missing'
+if [ "\$n" -eq 1 ]; then
+  kill -KILL $exited 2>/dev/null
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    ps -p $exited >/dev/null 2>&1 || exit 0
+    sleep 0.1
+  done
+elif [ "\$n" -eq 2 ]; then
+  cp '$FX/show-term-missing.next' '$FX/show-term-missing.json'
+fi
+HOOK
+
   chmod +x "$FX"/onshow-*
   fixture_write
 
   run_reap --no-browsers
   expect term-replaced "reap idle-session" "the listed session is an idle firstmate session"
+  expect term-missing "reap idle-session" "the listed session is an idle firstmate session"
   expect term-late-ok "reap idle-session" "the listed session is an idle firstmate session"
 
   run_reap --apply --no-browsers
   [ "$RC" = 0 ] || fail "an apply whose closes all succeed or skip must exit 0, got $RC: $(cat "$FX/stderr")"
   expect term-replaced "skipped idle-session:now-replaced" "a terminal whose session was replaced since the listing must be skipped"
+  expect term-missing "skipped idle-session:now-replaced" "a terminal whose session exited and was replaced since the listing must be skipped"
   expect term-late-ok "closed idle-session" "an unchanged idle firstmate session is still closed"
   expect term-retitle "skipped idle-session:now-retitled" "a home tab renamed off a firstmate title since the listing is the captain's"
   if [ -n "$STANDIN" ]; then
@@ -404,8 +454,19 @@ fake_browser() {  # <dir> -> PID
   TRACKED_PIDS+=("$PID")
 }
 
+# fake_headless: a real process started as <exe> --headless, with one child.
+fake_headless() {  # <exe> -> PID
+  mkdir -p "${1%/*}"
+  printf '#!/usr/bin/env bash\nsleep 600 & wait\n' > "$1"
+  chmod +x "$1"
+  "$1" --headless >/dev/null 2>&1 </dev/null &
+  PID=$!
+  disown "$PID" 2>/dev/null || true
+  TRACKED_PIDS+=("$PID")
+}
+
 test_browsers_are_reaped_only_without_a_live_owner() {
-  local gone live task owner reused
+  local gone live task owner reused headless other
   fixture_reset browsers
   HOME_DIR="$FX/home"
   mkdir -p "$HOME_DIR/state" "$FX/live-dir" "$FX/task-wt"
@@ -416,6 +477,13 @@ test_browsers_are_reaped_only_without_a_live_owner() {
   fake_browser; task=$PID
   fake_browser; reused=$PID
   idle_shell; owner=$PID
+  # Orphaned --headless processes: a browser executable is a browser root, and
+  # any other program is not a browser at all.
+  fake_headless "$TMP_ROOT/browser-bin/chrome-headless-shell"; headless=$PID
+  fake_headless "$TMP_ROOT/office-bin/soffice"; other=$PID
+  : > "$FX/ppid1-$headless"; : > "$FX/ppid1-$other"
+  cwd_row "$headless" "$FX/headless-dir"
+  cwd_row "$other" "$FX/other-dir"
   cwd_row "$gone" "$FX/gone-dir"
   cwd_row "$reused" "$FX/reused-dir"
   cwd_row "$live" "$FX/live-dir"
@@ -429,6 +497,8 @@ test_browsers_are_reaped_only_without_a_live_owner() {
   expect "$gone" "reap owner-gone" "a browser whose working directory is gone has no owner"
   expect "$live" "keep owner-live" "a browser another process still works beside has an owner"
   expect "$task" "keep task" "a browser in a recorded task worktree belongs to that task"
+  expect "$headless" "reap owner-gone" "an orphaned headless browser executable is a browser root"
+  expect "$other" "" "an orphaned --headless program that is no browser executable must never be listed as a browser"
   kill -0 "$gone" 2>/dev/null || fail "a dry run must stop no browser"
 
   run_reap --apply
@@ -448,6 +518,7 @@ test_browsers_are_reaped_only_without_a_live_owner() {
   kill -0 "$live" 2>/dev/null || fail "an apply must leave a browser with a live owner running"
   kill -0 "$task" 2>/dev/null || fail "an apply must leave a task's browser running"
   kill -0 "$reused" 2>/dev/null || fail "an apply must never signal a possibly reused pid"
+  kill -0 "$other" 2>/dev/null || fail "an apply must never signal a --headless program that is no browser"
   pass "fm-terminal-reap: browsers are stopped only when nothing else works in their directory"
 }
 
