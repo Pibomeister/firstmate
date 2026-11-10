@@ -584,8 +584,8 @@ cap_marked_lines() {
 # first saved to WAKE_PRESENTATION_FILE, and only then is the inline copy bounded.
 # It keeps each non-historical `wake annotation: latest wake-EVENT observed at
 # drain` line, only the first per signalled status file, cut to WAKE_ANNOTATION_MAX
-# characters with the shared line cut. It leaves out the earlier unread and the
-# historical `wake annotation:` lines and every OPEN DECISIONS or STATUS OUTCOME
+# characters with the shared line cut. It leaves out the earlier unread, repeated,
+# and historical `wake annotation:` lines and every OPEN DECISIONS or STATUS OUTCOME
 # BACKSTOP item past the first WAKE_SECTION_ITEMS of its section, each omission
 # disclosed with its count and the saved path. A bounded section ends
 # at a blank line, a guard banner, a warning, a `wake drain:` diagnostic, or any
