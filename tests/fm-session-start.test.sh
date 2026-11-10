@@ -1005,6 +1005,39 @@ EOF
   pass "large context files print indexed pointers and bounded outlines; small files still print whole"
 }
 
+test_context_outline_multibyte_stays_within_byte_bound() {
+  local rec root home fakebin out utf8 loc heading outline bytes i
+  utf8=$(locale -a 2>/dev/null | grep -iE '^(c|en_us)\.utf-?8$' | head -1)
+  [ -n "$utf8" ] || utf8=C.UTF-8
+  heading=$(awk 'BEGIN { for (i = 0; i < 60; i++) printf "\342\200\224" }')
+  for loc in "$utf8" C; do
+    rec=$(new_world "context-outline-multibyte-$loc")
+    IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+    make_fake_toolchain "$fakebin"
+    make_fake_ps_claude "$fakebin"
+    printf '# Captain preferences\n\n' > "$home/data/captain.md"
+    i=1
+    while [ "$i" -le 30 ]; do
+      printf '## %02d %s\n\nbody line\n\n' "$i" "$heading" >> "$home/data/captain.md"
+      i=$((i + 1))
+    done
+
+    out=$(LC_ALL=$loc run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+    outline=$(printf '%s\n' "$out" | awk '/^data\/captain\.md$/ { flag = 1; next } flag && /^  L[0-9]/ { print } flag && /^  \(\+/ { exit }')
+    [ -n "$outline" ] || fail "under LC_ALL=$loc the multibyte captain outline printed no rows"
+    printf '%s\n' "$outline" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1 ||
+      fail "under LC_ALL=$loc the multibyte outline is not valid UTF-8"
+    bytes=$(printf '%s\n' "$outline" | wc -c | tr -d ' ')
+    [ "$bytes" -le 560 ] || fail "under LC_ALL=$loc the multibyte outline is $bytes bytes, over its 560-byte bound"
+    assert_contains "$out" "more heading(s) - read the file for the rest)" \
+      "under LC_ALL=$loc the bounded multibyte outline did not disclose its remainder"
+  done
+  pass "a multibyte context outline stays within its byte bound and valid UTF-8, under a UTF-8 or a C locale"
+}
+
 # Each in-flight row prints once: a held one under held, a plain one with a live
 # task record under Work under way, each omission named by id; a blocked or
 # record-less in-flight row stays in the in-flight group; long rows are cut.
@@ -3892,6 +3925,7 @@ EOF
 
 test_context_digest_absent_empty_present
 test_context_large_files_are_indexed
+test_context_outline_multibyte_stays_within_byte_bound
 test_backlog_in_flight_rows_listed_once
 test_wake_presentation_spills_annotations_to_a_saved_file
 test_wake_presentation_bound_counts_bytes_not_characters

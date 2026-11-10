@@ -487,12 +487,13 @@ subsection() { printf '\n%s\n%s\n' "$1" "$SUBRULE"; }
 # context file. Markdown headings (#, ##, ###) are the outline when the file has
 # more than one; a list file with at most a title heading (the project and
 # secondmate registries) is outlined by each top-level item's label, the text
-# before its first " - ". The outline is bounded at CONTEXT_OUTLINE_MAX bytes,
-# so a long registry shows only its first names, and the remaining items are
-# counted in a closing line.
+# before its first " - ". The outline is bounded at CONTEXT_OUTLINE_MAX bytes in
+# every encoding: awk counts bytes, and each row is charged its byte length, or
+# 400 bytes for a label cut at 100 characters. A long registry shows only its
+# first names, and the remaining items are counted in a closing line.
 print_context_outline() {
-  local path=$1
-  awk -v max="$CONTEXT_OUTLINE_MAX" '
+  local path=$1 outline
+  outline=$(LC_ALL=C awk -v max="$CONTEXT_OUTLINE_MAX" '
     /^```/ { fence = !fence; next }
     fence { next }
     /^#[ \t]|^##[ \t]|^###[ \t]/ { hn++; hline[hn] = NR; htext[hn] = $0; next }
@@ -509,7 +510,7 @@ print_context_outline() {
         if (kind == "heading") { ln = hline[i]; t = htext[i] } else { ln = iline[i]; t = itext[i] }
         prefix = "  L" ln " "
         row = prefix t
-        cost = length(t) > 100 ? length(prefix) + 100 : length(row)
+        cost = length(prefix) + (length(t) > 400 ? 400 : length(t))
         if (used + cost + 1 > max) {
           printf "  (+%d more %s(s) - read the file for the rest)\n", n - i + 1, kind
           exit
@@ -518,7 +519,8 @@ print_context_outline() {
         used += cost + 1
       }
     }
-  ' "$path" 2>/dev/null | cap_marked_lines || printf '  (outline unavailable - read the file)\n'
+  ' "$path" 2>/dev/null) || { printf '  (outline unavailable - read the file)\n'; return 0; }
+  printf '%s\n' "$outline" | cap_marked_lines
 }
 
 # print_context_file <path> <label> [pointer]: one context source under a labeled
