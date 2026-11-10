@@ -673,8 +673,9 @@ fm_backend_orca_tree_state() {  # <root-pid>
       shell) shells=1 ;;
       '')
         # Unclassified: the process exited after the tree read, or its read
-        # failed. Only a process that no longer exists may be ignored.
-        if kill -0 "$pid" 2>/dev/null; then other=1; fi
+        # failed. Only a process a complete process-table read proves gone
+        # may be ignored; a failed signal probe proves nothing.
+        fm_backend_orca_pid_absent "$pid" || other=1
         ;;
       *)
         if [ "$pid" != "$root" ] || [ "${comm##*/}" != login ]; then

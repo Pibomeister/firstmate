@@ -76,6 +76,12 @@ fi
 if [ "\$#" = 4 ] && [ "\$1" = -p ] && [ "\$3" = -o ] && [ "\$4" = args= ] && [ -e "\${FX:-/nonexistent}/argsfail-\$2" ]; then
   exit 1
 fi
+# The process-tree read also holds any extra rows the case adds.
+if [ "\$*" = "-axo pid=,ppid=,comm=" ] && [ -s "\${FX:-/nonexistent}/extra-rows" ]; then
+  '$REAL_PS' "\$@" || exit
+  cat "\$FX/extra-rows"
+  exit 0
+fi
 if [ "\$*" = "-axo pid=,ppid=,etime=,args=" ] && [ -n "\${FX:-}" ] && ls "\$FX"/ppid1-* >/dev/null 2>&1; then
   out=\$('$REAL_PS' "\$@") || exit
   marks=\$(cd "\$FX" && ls ppid1-* | sed 's/^ppid1-//' | tr '\n' ' ')
@@ -242,6 +248,19 @@ build_world() {  # <case>
     [ -n "$child" ] || fail "the stand-in agent session never started its agent"
     : > "$FX/argsfail-$child"
     term term-hidden pty-hidden "$HOME_DIR" "fm main successor"; session pty-hidden "$hidden"
+    # A running process this user may not signal, whose command line cannot
+    # be read either, joins an idle session's tree: a denied probe is never
+    # proof that it exited.
+    ROOTPID=$(ps -axo pid=,ppid=,user= | awk '
+      { pid[NR] = $1; user[NR] = $3; parent[$2] = 1 }
+      END { for (i = 1; i <= NR; i++) if (user[i] == "root" && pid[i] > 1 && !(pid[i] in parent)) { print pid[i]; exit } }')
+    if [ -n "$ROOTPID" ] && ! kill -0 "$ROOTPID" 2>/dev/null; then
+      idle_term term-denied pty-denied "$HOME_DIR" "fm main handoff successor"
+      printf '%s %s helper\n' "$ROOTPID" "$PID" > "$FX/extra-rows"
+      : > "$FX/argsfail-$ROOTPID"
+    else
+      ROOTPID=
+    fi
     # An idle home session that gains an agent between the listing and the
     # close: Orca's fresh read names a session running the stand-in.
     idle_term term-flip pty-flip "$HOME_DIR" "fm main handoff"
@@ -289,6 +308,11 @@ test_dry_run_classifies_every_owner_and_closes_nothing() {
   if [ -n "$STANDIN" ]; then
     expect term-agent "keep live-agent" "a session running an agent harness is live"
     expect term-hidden "keep busy" "a running process whose command line cannot be read keeps its session"
+    if [ -n "${ROOTPID:-}" ]; then
+      expect term-denied "keep busy" "a running process this user cannot signal or read keeps its session"
+    else
+      echo "# SKIP: no childless root process to stand in for an unsignalable one" >&2
+    fi
   else
     pass "SKIP: live-agent case (no agent stand-in survives here)"
   fi
