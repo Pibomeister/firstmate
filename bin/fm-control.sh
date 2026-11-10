@@ -5,7 +5,7 @@
 # Usage: fm-control.sh <task-id> interrupt
 #        fm-control.sh <task-id> exit
 #        fm-control.sh <task-id> relaunch [--harness <name>] [--model <name>]
-#                                         [--effort <level>]
+#                                         [--effort <level>] [--account <entry>]
 #                                         (--note <text> | --note-file <path>)
 #
 # Why this exists, and how it differs from fm-send.sh. bin/fm-send.sh is the
@@ -65,10 +65,11 @@
 #              `already-stopped`, because the endpoint this verb normally
 #              preserves did not survive; a pane that turns out to be there and
 #              idle is the ordinary `already-stopped`; one whose agent is back
-#              takes the ordinary interrupt-then-exit path. A tmux record
-#              without that server identity still REFUSES: this verb cannot
-#              tell a destroyed window from one on a tmux server it cannot
-#              address, and it will not claim a stop it cannot see.
+#              takes the ordinary interrupt-then-exit path. A tmux `missing`
+#              always REFUSES: a task record carries no socket identity for its
+#              endpoint, so this verb cannot tell a destroyed window from one on
+#              a tmux server it cannot address, and it will not claim a stop it
+#              cannot see.
 #              Refused on t3code before anything is sent: T3's `/mcp` tools
 #              have no session stop (bin/fm-control-lib.sh
 #              fm_control_backend_exit_supported); interrupt ends its turn.
@@ -104,7 +105,10 @@
 #              A replacement Claude or Pi profile must also pass this home's
 #              worker account pin (bin/fm-worker-account-lib.sh) here, so a pin
 #              that no longer resolves or is signed out refuses before the old
-#              agent stops.
+#              agent stops. Under a declared config/claude-accounts list, a
+#              Claude ship or scout keeps the account its record names, and
+#              only an explicit --account <entry> moves it to another
+#              declared one, checked here the same way.
 #              A replacement omp secondmate likewise passes its per-secondmate
 #              omp profile pin (bin/fm-omp-profile-lib.sh) before the old agent
 #              stops.
@@ -338,9 +342,11 @@ fi
 NEW_HARNESS=
 NEW_MODEL=
 NEW_EFFORT=
+NEW_ACCOUNT=
 HARNESS_SET=0
 MODEL_SET=0
 EFFORT_SET=0
+ACCOUNT_SET=0
 NOTE=
 NOTE_SET=0
 control_want_value=
@@ -353,6 +359,7 @@ for control_arg in "$@"; do
       harness) NEW_HARNESS=$control_arg; HARNESS_SET=1 ;;
       model) NEW_MODEL=$control_arg; MODEL_SET=1 ;;
       effort) NEW_EFFORT=$control_arg; EFFORT_SET=1 ;;
+      account) NEW_ACCOUNT=$control_arg; ACCOUNT_SET=1 ;;
       note) NOTE=$control_arg; NOTE_SET=1 ;;
       note_file)
         [ -f "$control_arg" ] || die "--note-file '$control_arg' is not a readable file"
@@ -370,6 +377,8 @@ for control_arg in "$@"; do
     --model=*) NEW_MODEL=${control_arg#--model=}; MODEL_SET=1 ;;
     --effort) control_want_value=effort ;;
     --effort=*) NEW_EFFORT=${control_arg#--effort=}; EFFORT_SET=1 ;;
+    --account) control_want_value=account ;;
+    --account=*) NEW_ACCOUNT=${control_arg#--account=}; ACCOUNT_SET=1 ;;
     --note) control_want_value=note ;;
     --note=*) NOTE=${control_arg#--note=}; NOTE_SET=1 ;;
     --note-file) control_want_value=note_file ;;
@@ -387,9 +396,10 @@ if [ -n "$control_want_value" ]; then
 fi
 
 if [ "$VERB" != relaunch ]; then
-  [ "$HARNESS_SET" = 0 ] && [ "$MODEL_SET" = 0 ] && [ "$EFFORT_SET" = 0 ] && [ "$NOTE_SET" = 0 ] \
-    || die "--harness, --model, --effort, and --note apply to 'relaunch' only"
+  [ "$HARNESS_SET" = 0 ] && [ "$MODEL_SET" = 0 ] && [ "$EFFORT_SET" = 0 ] && [ "$ACCOUNT_SET" = 0 ] && [ "$NOTE_SET" = 0 ] \
+    || die "--harness, --model, --effort, --account, and --note apply to 'relaunch' only"
 fi
+[ "$ACCOUNT_SET" = 0 ] || [ -n "$NEW_ACCOUNT" ] || die "--account requires a non-empty value"
 [ "$HARNESS_SET" = 0 ] || [ -n "$NEW_HARNESS" ] || die "--harness requires a non-empty value"
 [ "$MODEL_SET" = 0 ] || [ -n "$NEW_MODEL" ] || die "--model requires a non-empty value"
 [ "$EFFORT_SET" = 0 ] || [ -n "$NEW_EFFORT" ] || die "--effort requires a non-empty value"
@@ -1040,6 +1050,11 @@ do_exit() {
       esac
       ;;
   esac
+  cmd=$(fm_control_exit_command "$HARNESS" "$OPENCODE_MAJOR")
+  hazard=$(fm_control_interrupt_hazard_signal "$HARNESS")
+  if [ -n "$hazard" ] && rendered_matches "$hazard"; then
+    die "task $ID shows the $HARNESS revert picker, where typed text becomes a search and Enter reverts file changes; refusing to type the $cmd exit command. Close it with $(fm_control_interrupt_key "$HARNESS"), never Enter, then retry '$VERB'"
+  fi
   : > "$FM_COMPOSER_DIALOG_SINK" \
     || die "task $ID's dialog check could not be recorded"
   composer_state=$(fm_backend_composer_state "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
@@ -1178,6 +1193,7 @@ PRIOR_EFFORT=
 TARGET_HARNESS=$HARNESS
 TARGET_MODEL=
 TARGET_EFFORT=
+TARGET_ACCOUNT=
 
 # True when spawn rewrote the live record, not merely when this transaction
 # stamped control_relaunch_tx onto it or stopping the old agent cleared its
@@ -1462,8 +1478,12 @@ resolve_relaunch_profile() {
     fi
   fi
   [ "$KIND" != secondmate ] || account_mate=$ID
+  # Under a declared Claude account list, the replacement stays on the
+  # account the task records unless --account explicitly moves it.
+  TARGET_ACCOUNT=$(fm_worker_account_relaunch_request "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
+    "$PRIOR_HARNESS" "$(fm_meta_get "$META" account)" "$NEW_ACCOUNT" "$account_mate") || return 1
   fm_worker_account_select "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
-    "$account_model" "$TARGET_HARNESS" "" "$account_mate" >/dev/null || return 1
+    "$account_model" "$TARGET_HARNESS" "" "$account_mate" "$TARGET_ACCOUNT" >/dev/null || return 1
   fm_omp_profile_select "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
     "$account_mate" >/dev/null || return 1
   # Likewise polytoken's launch profile and wiring refusals
@@ -1757,6 +1777,7 @@ do_relaunch() {
   spawn_args=("$ID" --relaunch --harness "$TARGET_HARNESS")
   [ "$TARGET_MODEL" = default ] || spawn_args+=(--model "$TARGET_MODEL")
   [ "$TARGET_EFFORT" = default ] || spawn_args+=(--effort "$TARGET_EFFORT")
+  [ -z "$TARGET_ACCOUNT" ] || spawn_args+=(--account "$TARGET_ACCOUNT")
   spawn_err=$(mktemp "${TMPDIR:-/tmp}/fm-control-spawn.XXXXXX") || die "could not record spawn output for task $ID"
   spawn_rc=0
   # A same-pin secondmate relaunch (restart, liveness) must not mint a

@@ -146,7 +146,6 @@ fm_lease_command_lock_acquire() {
   echo "error: $action refused - this home's lease-command lock ($lockdir) is busy, still held${holder:+ by $holder} after ${wait}s (wait status $rc); retry the command once that holder finishes, and if it stays held, inspect that process and never remove the lock by hand" >&2
   exit "$FM_LEASE_REFUSE_EXIT"
 }
-
 # fm_lease_tagged_holder_live <value>: 0 iff <value> is a Windows-tagged
 # session-lock identity whose holder is a live verified harness. Only a
 # win:-shaped value reaches the session-lock library, so a POSIX home never
@@ -295,6 +294,9 @@ fm_lease_rekey_holder() {
   local old=$1 new=$2 lease task tmp rc=0
   for lease in "$STATE"/.lease-*; do
     [ -e "$lease" ] || continue
+    # A *.lock directory is a lock, not a lease; a regular lease file whose
+    # task id ends in .lock is a valid lease and must still be rekeyed.
+    case "$lease" in *.lock) [ -d "$lease" ] && continue ;; esac
     task=${lease##*/.lease-}
     fm_lease_valid_id "$task" || continue
     fm_lease_read "$task" || continue

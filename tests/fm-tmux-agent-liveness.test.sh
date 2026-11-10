@@ -267,6 +267,64 @@ wait_for_state "$SESSION:unknown" ambiguous \
   || fail "a foreground process no name source attributes must stay ambiguous"
 pass "tmux liveness: a process neither name source attributes stays ambiguous rather than inventing an agent"
 
+# --- Hermes's Python bootstrap and same-group Node TUI child -----------------
+# Neither process name identifies the harness on the reported git install.
+# The first script argument, not a prompt or the Python -c payload, owns it.
+PYTHON_BIN=$(command -v python3 2>/dev/null || true)
+NODE_BIN=$(command -v node 2>/dev/null || true)
+if [ -n "$PYTHON_BIN" ] && [ -n "$NODE_BIN" ]; then
+  mkdir -p "$LAB/.hermes/hermes-agent/ui-tui/dist" "$LAB/unrelated"
+  printf 'setInterval(() => {}, 1000);\n' > "$LAB/.hermes/hermes-agent/ui-tui/dist/entry.js"
+  cp "$LAB/.hermes/hermes-agent/ui-tui/dist/entry.js" "$LAB/unrelated/entry.js"
+  bootstrap='import os, subprocess, sys; child = subprocess.Popen([sys.argv[1], "--expose-gc", sys.argv[2]]); open(sys.argv[3], "w").write(str(child.pid)); child.wait()'
+  for shape in native unrelated; do
+    script="$LAB/.hermes/hermes-agent/ui-tui/dist/entry.js"
+    [ "$shape" = native ] || script="$LAB/unrelated/entry.js"
+    target="$SESSION:hermes-$shape"
+    new_window "hermes-$shape" env -u NODE_OPTIONS -u NODE_PATH "$PYTHON_BIN" -I -c "$bootstrap" "$NODE_BIN" "$script" "$LAB/$shape.pid"
+    child_pid=
+    for _ in $(seq 1 100); do
+      [ -s "$LAB/$shape.pid" ] && child_pid=$(cat "$LAB/$shape.pid") && break
+      sleep 0.1
+    done
+    [ -n "$child_pid" ] || fail "Hermes $shape bootstrap did not start its Node child"
+    pane_pid=$("$REAL_TMUX" -L "$SOCKET" display-message -p -t "$target" '#{pane_pid}')
+    parent_pgid=$(ps -p "$pane_pid" -o pgid= | tr -d ' ')
+    child_pgid=$(ps -p "$child_pid" -o pgid= | tr -d ' ')
+    [ -n "$parent_pgid" ] && [ "$parent_pgid" = "$child_pgid" ] \
+      || fail "Hermes $shape parent and child must share their process group"
+    foreground_pids=$(fm_backend_tmux_foreground_pids "$target")
+    printf '%s\n' "$foreground_pids" | grep -Fxq "$pane_pid" \
+      || fail "Hermes $shape Python bootstrap must be foreground"
+    printf '%s\n' "$foreground_pids" | grep -Fxq "$child_pid" \
+      || fail "Hermes $shape Node child must be foreground"
+    if title_classifies_agent "$target" || comms_classify_agent "$target"; then
+      fail "Hermes $shape case must not rely on a harness-named process"
+    fi
+    if [ "$shape" = native ]; then
+      wait_for_state "$target" alive || fail "Hermes bootstrap and Node TUI must classify alive"
+      (
+        fm_backend_tmux_foreground_pids() { :; }
+        [ -z "$(fm_backend_tmux_foreground_pids "$target")" ] || exit 1
+        [ "$(fm_backend_agent_state tmux "$target")" = alive ]
+      ) || fail "Hermes TUI must remain alive with only the ps argument path"
+      if [ -r "/proc/$child_pid/cmdline" ]; then
+        (
+          fm_backend_tmux_foreground_args() { :; }
+          [ -z "$(fm_backend_tmux_foreground_args "$target")" ] || exit 1
+          [ "$(fm_backend_agent_state tmux "$target")" = alive ]
+        ) || fail "Hermes TUI must remain alive with only the kernel argv path"
+      fi
+      pass "tmux liveness: Python -I -c bootstrap with same-group Node --expose-gc Hermes TUI classifies alive without harness names"
+    else
+      wait_for_state "$target" ambiguous || fail "unrelated Node script must stay ambiguous"
+      pass "tmux liveness: the same bootstrap with an unrelated Node script stays ambiguous"
+    fi
+  done
+else
+  echo "skip: Hermes bootstrap/Node regression needs python3 and node"
+fi
+
 # --- a launcher whose own identity reads as a bare shell --------------------
 # The single-source classifier would read this pane as an idle shell and call
 # it dead - the one verdict that can start a duplicate agent on a live worktree.

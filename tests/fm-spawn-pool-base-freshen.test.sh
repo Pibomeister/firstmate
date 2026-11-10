@@ -1380,7 +1380,6 @@ test_from_branch_starts_from_the_source_and_keeps_the_default_target() {
   done
   pass "--from-branch starts from origin's source, records no base, and must agree with the brief"
 }
-
 # A local-only project lands work with bin/fm-merge-local.sh: the primary
 # checkout's default branch advances and nothing is pushed, so origin stays at
 # the tip the slot was allocated from while that branch moves on.

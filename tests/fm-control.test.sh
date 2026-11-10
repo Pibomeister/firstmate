@@ -957,6 +957,7 @@ test_backend_restricted_relaunch_off_tmux_and_herdr_refuses_before_stopping() {
   pass "fm-control relaunch: commandcode and agy off tmux and herdr are refused before the running agent is stopped"
 }
 
+
 test_state_verified_backends_are_exactly_tmux_herdr_orca_and_rex() {
   fm_control_backend_state_verified tmux || fail "tmux has a recovery-grade classifier"
   fm_control_backend_state_verified herdr || fail "herdr has a recovery-grade classifier"

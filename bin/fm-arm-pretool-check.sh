@@ -247,4 +247,20 @@ CODE=${REST%%"$TAB"*}
 REASON=${REST#*"$TAB"}
 [ -n "$CODE" ] && [ -n "$REASON" ] && [ "$REASON" != "$REST" ] || exit 0
 
-render_deny
+DETAIL="[$CODE] $REASON"
+ESCAPED=$(json_escape "$DETAIL")
+if [ "$CURSOR_MODE" -eq 1 ]; then
+  printf '{"permission":"deny","user_message":"%s"}\n' "$ESCAPED"
+  exit 0
+fi
+if [ "$AGY_MODE" -eq 1 ]; then
+  if command -v jq >/dev/null 2>&1; then
+    jq -cn --arg r "$DETAIL" '{decision:"deny",reason:$r}'
+  else
+    printf '{"decision":"deny","reason":"%s"}\n' "$ESCAPED"
+  fi
+  exit 0
+fi
+printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"%s"}\n' "$ESCAPED" >&2
+[ "$CLAUDE_MODE" -eq 1 ] || printf '{"decision":"deny","reason":"%s"}\n' "$ESCAPED"
+exit 2

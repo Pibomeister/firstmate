@@ -331,7 +331,7 @@ fm_control_relaunch_resume_flag() {  # <harness> <registered-agent>
 fm_control_backend_supports_key() {  # <backend> <key> [harness]
   local backend=${1-} key=${2-}
   case "$backend" in
-    tmux|herdr|zellij|cmux|paseo|rex|tern)
+    tmux|herdr|zellij|cmux|paseo|rex|tern|hc)
       case "$key" in Escape|Enter|C-c|C-u) return 0 ;; esac
       ;;
     orca)
