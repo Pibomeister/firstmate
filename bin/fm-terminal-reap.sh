@@ -24,6 +24,7 @@
 #                    many seconds (default 1800), so a session that is still
 #                    launching its agent is never mistaken for an idle one
 #   --no-browsers    classify terminals only
+#   Live helpers whose whole title matches sup-writer-* are always kept.
 #
 # Output: one tab-separated line per terminal or browser root,
 #   <action> <kind> <class> <id> <path> <detail>
@@ -58,6 +59,8 @@
 #                      another tool and is never firstmate's to close
 #   keep no-session    Orca's process sweep names no session for it
 #   keep young         its session is younger than --min-age
+#   keep helper        a home-root candidate whose whole title matches the
+#                      built-in live-helper seed sup-writer-*
 #   keep self          this script runs inside it
 #   keep live-agent    a verified agent harness runs in its session
 #   keep busy          its session runs a program this classifier cannot rule
@@ -111,7 +114,8 @@
 # --apply re-proves each terminal immediately before closing it. The records
 # are re-read (an unreadable record skips the close),
 # fm_backend_orca_agent_state must still report dead or missing, and the fresh
-# title must still name a firstmate session. A terminal Orca still reports
+# title must still name a firstmate session and must not match the helper
+# seed. A terminal Orca still reports
 # connected must still be rooted at the session pid it was classified with,
 # whichever of those two states was read (a replaced session is skipped), and
 # the last read before the close requires
@@ -484,6 +488,14 @@ firstmate_title() {
       END { exit found ? 0 : 1 }'
 }
 
+# keep_listed <title>: 0 when the whole title matches the live-helper seed.
+keep_listed() {
+  case "$1" in
+    sup-writer-*) return 0 ;;
+  esac
+  return 1
+}
+
 # judge_terminal <pid> <title> -> `<action> <class>` for a home-root candidate
 # and, for a reap, the session's pids on fd 3 so browsers can discount them.
 judge_terminal() {
@@ -553,6 +565,7 @@ close_terminal() {  # <handle> <path> <pid> -> closed|skipped:<why>|failed:<why>
   # session; it may have been renamed since the listing.
   title=$(current_title "$handle") || { printf 'skipped\tnow-unreadable'; return 0; }
   firstmate_title "$title" || { printf 'skipped\tnow-retitled'; return 0; }
+  if keep_listed "$title"; then printf 'skipped\thelper'; return 0; fi
   # A connected terminal must still be rooted at the classified session pid,
   # whether the liveness read said dead or missing: a session that exited may
   # have been replaced by a new one under the same handle.
@@ -662,7 +675,11 @@ declare -i N_REAP=0 N_KEEP=0 N_DONE=0 N_SKIP=0 N_FAIL=0 B_REAP=0 B_KEEP=0 B_DONE
 while IFS=$'\t' read -r handle prelim pid path detail; do
   [ -n "$handle" ] || continue
   if [ "$prelim" = candidate ]; then
-    verdict=$(judge_terminal "$pid" "$detail" 3>>"$WORK/exclude.txt")
+    if keep_listed "$detail"; then
+      verdict=$'keep\thelper'
+    else
+      verdict=$(judge_terminal "$pid" "$detail" 3>>"$WORK/exclude.txt")
+    fi
   else
     verdict=$'keep\t'"$prelim"
   fi
