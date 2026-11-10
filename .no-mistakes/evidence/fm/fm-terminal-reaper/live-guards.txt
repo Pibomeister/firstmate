@@ -1,0 +1,11 @@
+$ --min-age abc
+error: --min-age must be whole seconds
+rc=2
+$ --help (socket note)
+11:  --browsers       with --apply, also stop every browser whose verdict is
+12-                   reap; agent-browser daemons and chrome-devtools-axi
+13-                   bridges are shared by every client of their socket, so a
+14-                   browser judged owner-gone may still serve another live
+$ unreadable record
+error: a task record or secondmate registry could not be read; nothing was closed
+rc=1
