@@ -1,0 +1,35 @@
+== daemon pid 37801; drop all tailnet sessions (SIGUSR1), daemon keeps running
+== immediately after data-plane loss:
+  relay :18101 -> curl: (52) Empty reply from server
+UNREACHABLE
+  relay :18102 -> curl: (52) Empty reply from server
+UNREACHABLE
+  relay :18103 -> curl: (52) Empty reply from server
+UNREACHABLE
+  relay :18199 -> curl: (52) Empty reply from server
+UNREACHABLE
+47504 127.0.0.1:18101
+51827 127.0.0.1:18102
+57088 127.0.0.1:18103
+68702 127.0.0.1:18199
+== no manual action; wait 35 s for the watchdog loop (needs 2 failed probes)
+== after:
+  relay :18101 -> M3 ok
+  relay :18102 -> M4 ok
+  relay :18103 -> Studio ok
+  relay :18199 -> curl: (52) Empty reply from server
+UNREACHABLE
+19288 127.0.0.1:18101
+68702 127.0.0.1:18199
+83960 127.0.0.1:18102
+95366 127.0.0.1:18103
+   daemon pid still 37801
+== status:
+# fm-relay-guard v1 epoch=1794284070 daemon=tsdlab daemon-pid=37801
+m3	ok	19288	
+m4	ok	83960	
+studio	ok	95366	
+== new actions:
+1794284050	m4	restart	probe-failed	51827	83960	ok
+1794284050	studio	restart	probe-failed	57088	95366	ok
+1794284062	m3	restart	probe-failed	47504	19288	ok

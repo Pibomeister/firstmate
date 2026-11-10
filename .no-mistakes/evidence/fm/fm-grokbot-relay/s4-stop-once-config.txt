@@ -1,0 +1,22 @@
+== guard loop exited after TERM in .26 s
+== relays unchanged after guard stop:
+   yes, same pids
+  relay :18101 -> M3 ok
+  relay :18102 -> M4 ok
+  relay :18103 -> Studio ok
+  relay :18199 -> curl: (52) Empty reply from server
+UNREACHABLE
+== manual one-shot pass on healthy relays:
+# fm-relay-guard v1 epoch=1794284145 daemon=tsdlab daemon-pid=60521
+m3	ok	63424	
+m4	ok	11051	
+studio	ok	65568	
+   once exit=0 in 2 s
+== render-systemd (not installed):
+ExecStart=/bin/bash "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M71T959JF3VZDHJ7EC61BHWN/bin/fm-relay-guard.sh" run
+Restart=always
+KillMode=process
+== adversarial: relay without probe is refused before touching anything
+fm-relay-guard: relay.extra has no probe.extra
+   exit=2
+   relays on 18104: 0

@@ -1,0 +1,37 @@
+== start the guard watchdog loop: fm-relay-guard.sh run --interval 3
+== status after first pass:
+fm-relay-guard: no status yet at /tmp/rg.awVS/home/state/relay-guard/status.tsv
+== relays before daemon restart:
+68599 127.0.0.1:18101
+68633 127.0.0.1:18102
+68664 127.0.0.1:18103
+68702 127.0.0.1:18199
+== restart daemon (tailscaled stand-in), old pid 64986
+   new daemon pid 37801
+== immediately after restart (decoy 18199 is not guarded):
+  relay :18101 -> curl: (52) Empty reply from server
+UNREACHABLE
+  relay :18102 -> curl: (52) Empty reply from server
+UNREACHABLE
+  relay :18103 -> curl: (52) Empty reply from server
+UNREACHABLE
+  relay :18199 -> curl: (52) Empty reply from server
+UNREACHABLE
+== no manual action; wait 8 s for the watchdog loop
+== after recovery:
+  relay :18101 -> M3 ok
+  relay :18102 -> M4 ok
+  relay :18103 -> Studio ok
+  relay :18199 -> curl: (52) Empty reply from server
+UNREACHABLE
+47504 127.0.0.1:18101
+51827 127.0.0.1:18102
+57088 127.0.0.1:18103
+68702 127.0.0.1:18199
+== status:
+# fm-relay-guard v1 epoch=1794283999 daemon=tsdlab daemon-pid=64986
+m3	ok	68599	
+m4	ok	68633	
+studio	ok	68664	
+== actions.tsv:
+cat: /tmp/rg.awVS/home/state/relay-guard/actions.tsv: No such file or directory

@@ -1,0 +1,40 @@
+== stop the daemon entirely
+== during outage, status (expect daemon-down, no restarts):
+# fm-relay-guard v1 epoch=1794284100 daemon=tsdlab daemon-pid=none
+m3	daemon-down	19288	no tsdlab process
+m4	daemon-down	83960	no tsdlab process
+studio	daemon-down	95366	no tsdlab process
+19288 127.0.0.1:18101
+68702 127.0.0.1:18199
+83960 127.0.0.1:18102
+95366 127.0.0.1:18103
+   actions added during outage: 0
+== daemon comes back
+== after:
+  relay :18101 -> M3 ok
+  relay :18102 -> M4 ok
+  relay :18103 -> Studio ok
+  relay :18199 -> curl: (52) Empty reply from server
+UNREACHABLE
+63424 127.0.0.1:18101
+64318 127.0.0.1:18102
+65568 127.0.0.1:18103
+68702 127.0.0.1:18199
+# fm-relay-guard v1 epoch=1794284110 daemon=tsdlab daemon-pid=60521
+m3	ok	63424	
+m4	ok	64318	
+studio	ok	65568	
+1794284103	m3	restart	daemon-restarted	19288	63424	ok
+1794284103	m4	restart	daemon-restarted	83960	64318	ok
+1794284103	studio	restart	daemon-restarted	95366	65568	ok
+== kill the m4 relay outright (crash)
+  relay :18101 -> M3 ok
+  relay :18102 -> M4 ok
+  relay :18103 -> Studio ok
+  relay :18199 -> curl: (52) Empty reply from server
+UNREACHABLE
+# fm-relay-guard v1 epoch=1794284126 daemon=tsdlab daemon-pid=60521
+m3	ok	63424	
+m4	ok	11051	
+studio	ok	65568	
+1794284117	m4	spawn	missing	-	11051	ok
