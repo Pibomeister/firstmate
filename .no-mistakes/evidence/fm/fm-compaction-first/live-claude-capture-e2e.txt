@@ -1,0 +1,6 @@
+# claude version: 2.1.322 (Claude Code)
+# model reply: CONTEXT-SEEN 51%
+
+The PostToolUse hook after the first `echo one` reported about 51% of context left before auto-compact. It also included instructions about filing work, handoffs and compaction. I did not act on those because you asked me to run nothing else.
+# firing record: 1794284312 tokens=41983 compact_at=87000 mode=capture
+ok - claude 2.1.322 (Claude Code): derived compact point, delivered the capture instruction once across 2 tool calls

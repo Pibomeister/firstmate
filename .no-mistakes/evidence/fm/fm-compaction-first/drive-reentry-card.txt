@@ -1,0 +1,59 @@
+=== startup: first lines / lock
+lock acquired: harness pid 43695
+startup bytes:    17286
+
+=== compact (auto-compaction re-entry card), bytes:     2374
+FIRSTMATE COMPACT RE-ENTRY CARD - /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.DQ8gVz
+Auto-compaction reset this session's context; this session still holds the helm.
+Lock: lock acquired: harness pid 43695
+This card lists only the work in flight, small enough to read whole. AGENTS.md is still
+loaded, and the startup digest and its sweeps are not repeated.
+
+RE-CHECK BEFORE ACTING - the compaction summary is history, not current state:
+1. Run /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.DQ8gVz/bin/fm-wake-drain.sh now, handle what it presents, then run its WAKE_ACK_REQUIRED command.
+2. Run /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.DQ8gVz/bin/fm-crew-state.sh <id> before acting on any worker, PR, or merge fact.
+3. Act on an order only as bin/fm-order.sh pickup lists it now; ack it before acting.
+
+CAPTAIN ORDERS (bin/fm-order.sh pickup)
+1 open captain order(s) - each is durable; ack it before acting:
+  1794284263-2aae5da1 pending kind=order age=10s from=lab :: merge the docs PR once green
+Pending: bin/fm-order.sh ack <id> reads it (skip means another session already has it - never run it twice).
+Acked-unfinished: an earlier session read it; bin/fm-order.sh show <id>, check whether its work started, then finish it.
+Finish each with: bin/fm-order.sh finish <id> done|parked <outcome>
+
+OPEN DECISIONS (folded from the status logs)
+w1 [key=db] needs-decision: pick the database engine
+
+HELD FOR THE CAPTAIN (tasks-axi list --state held)
+(none)
+
+OVERDUE GOALS (bin/fm-dispatch-log.sh overdue)
+OVERDUE alpha-202611091200 age=60m received=2026-11-10T03:17:43Z summary=build the card
+
+WORK UNDER WAY (last recorded event; bin/fm-crew-state.sh <id> has current state)
+w1 project=alpha state=needs-decision pr=- age=10s last: needs-decision [at=2] [key=db]: pick the database engine
+
+MONITOR
+monitor: DOWN (stale-beacon) - restore it with the supervision protocol's repair action before ending this turn
+
+MORE
+Supervision protocol: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.DQ8gVz/bin/fm-supervision-instructions.sh --harness claude --read-only 0 --afk 0 --afk-mode away --x-mode 0
+Full re-emit (backlog, projects, captain and learnings files): FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.DQ8gVz /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.DQ8gVz/bin/fm-session-start.sh --reemit
+
+=== .order-handoff after compact: cleared
+
+=== clear: bytes    17160; head:
+RE-EMIT CUE: if this output ends with "Output too large ... Full output saved to <path>",
+read that whole file now, before acting. Otherwise read data/captain.md, data/captain-shared.md,
+data/learnings.md under /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.DQ8gVz/data, and docs/learnings/overnight-learnings.md under the code root now if
+0
+
+=== H2: successor opens while predecessor holds the lock
+exit=0
+bytes:      619
+Firstmate handoff successor: the predecessor session, harness pid 6484, still holds this home's session lock, so this open skips the startup digest, which could only run read-only now.
+Follow your launch prompt: confirm the handoff document hash, wait with FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.DQ8gVz /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.DQ8gVz/bin/fm-handoff-launch.sh --await-predecessor 6484, then run FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.DQ8gVz /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.DQ8gVz/bin/fm-session-start.sh once.
+lock still predecessor: yes
+
+=== H2b: predecessor ended -> successor gets full digest and takes lock
+lock acquired: harness pid 7731
