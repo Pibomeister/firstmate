@@ -61,8 +61,9 @@ Every authored catalog role is a `.cursor/agents/<id>.md` subagent.
 ## Review settings
 
 This repository's agent-kit project record is [`ak.project.json`](../ak.project.json).
-Pass that path as `--project` to `.cursor/bin/ak delegation`.
-`/doc-review` comprehension shadow applies when it runs with `--project ak.project.json`.
+Pass that path as `--project` only to `.cursor/bin/ak delegation`.
+The runner names `ak.project.json` as the project record in the `/doc-review` prompt, with no CLI flag.
+The GS-003a dogfood confirms whether `/doc-review` honors that record.
 `/super-bound` cold_read reads only the indexed project record (vendored [super-bound SKILL.md](skills/super-bound/SKILL.md) lines 142-143), so it is expected to stay off until a kb index exists.
 The GS-003a run will confirm this.
 There is no knowledgebase index, and an unindexed project counts as off.
@@ -75,7 +76,8 @@ The overlay launcher `.cursor/bin/ak` requires bun `1.3.14`.
 `tools/cursor/install.sh` is for Linux and Cursor cloud agents only.
 On Apple-silicon macOS it would install a Linux ELF.
 For macOS, install exactly bun `1.3.14` with `curl -fsSL https://bun.com/install | bash -s "bun-v1.3.14"` ([Bun docs: Installing Older Versions](https://bun.com/docs/installation#installing-older-versions); the documented example uses `bun-v1.3.3` and the same `bash -s` tag form).
-That script and `tools/cursor/bun-v1.3.14.sha256` are vendored from agent-kit `v0.1.106` (`e1716acf`).
+The bun.com installer has no checksum pin, unlike the Linux route, and it replaces any existing `~/.bun/bin/bun`.
+`tools/cursor/install.sh` and `tools/cursor/bun-v1.3.14.sha256` are vendored from agent-kit `v0.1.106` (`e1716acf`).
 The Linux install puts bun `1.3.14` at `~/.bun/bin/bun`.
 It skips `bun install --frozen-lockfile` because this repository has no `bun.lock`.
 
