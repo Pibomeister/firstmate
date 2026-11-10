@@ -83,7 +83,7 @@ run_launcher() {  # [env assignments...] -- print output, set RC
 run_mode() {  # <mode args...> -- run the launcher in another mode, print output
   env PATH="$FAKEBIN:$PATH" FM_TEST_SEAM=1 FM_HOME="$LAB" FM_ROOT_OVERRIDE="$ROOT" \
     FM_STATE_OVERRIDE="$LAB/state" FM_CONFIG_OVERRIDE="$LAB/config" \
-    FM_HANDOFF_AWAIT_SECS="${AWAIT_SECS:-3}" FM_HANDOFF_END_SETTLE_SECS=1 FM_HANDOFF_END_WAIT_SECS=3 \
+    FM_HANDOFF_AWAIT_SECS="${AWAIT_SECS:-3}" FM_HANDOFF_END_SETTLE_SECS="${END_SETTLE_SECS:-1}" FM_HANDOFF_END_WAIT_SECS=3 \
     bash "$LAUNCHER" "$@"
 }
 
@@ -259,6 +259,44 @@ test_end_predecessor_skips_unless_safe() {
   pass "the old session is ended only while it holds the lock, a live successor exists, and its transcript is quiet"
 }
 
+# The order gate is checked again after the settle: a captain order filed while
+# the old session settles, and missing from its handoff, keeps the old session
+# alive so it can write that order into the handoff; once the handoff lists it,
+# the end goes ahead.
+test_end_predecessor_rechecks_the_order_gate() {
+  local t="$TMP_ROOT/end-gate-transcript" end="$LAB/state/.handoff-end" pred succ bytes ender start
+  reset_lab
+  kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
+  rm -rf "$LAB/data/orders" "$LAB/state/.order-handoff" "$end"
+  printf '{"type":"assistant"}\n' > "$t"
+  bytes=$(wc -c < "$t" | tr -d ' ')
+  pred=$(fake_harness_pid)
+  sleep 60 &
+  succ=$!
+  printf 'pid=%s\nhandoff=%s\n' "$succ" "$LAB/data/handoff.md" > "$LAB/state/.handoff-successor"
+  printf '%s\n' "$pred" > "$LAB/state/.lock"
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" handoff --doc "$LAB/data/handoff.md" >/dev/null \
+    || fail "could not record the handoff fixture"
+  start=$(date +%s)
+  END_SETTLE_SECS=6 run_mode --end-predecessor "$pred" "$t" "$bytes" >/dev/null 2>&1 &
+  ender=$!
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" send --from test "order during the settle" >/dev/null \
+    || fail "could not send the order fixture"
+  [ $(( $(date +%s) - start )) -lt 6 ] || fail "the order fixture took longer than the settle, so it did not land during it"
+  wait "$ender"
+  assert_contains "$(cat "$end")" "result=skipped" "an order missing from the handoff keeps the old session"
+  assert_contains "$(cat "$end")" "reason=order-gate" "the record names the order gate"
+  kill -0 "$pred" 2>/dev/null || fail "the old session must survive an order its handoff does not list"
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" handoff --doc "$LAB/data/handoff.md" >/dev/null \
+    || fail "could not rewrite the handoff fixture"
+  run_mode --end-predecessor "$pred" "$t" "$bytes" >/dev/null 2>&1
+  assert_contains "$(cat "$end")" "result=ended" "once the handoff lists the order the old session is ended"
+  ! kill -0 "$pred" 2>/dev/null || fail "the old session must be gone"
+  kill "$succ" 2>/dev/null; wait "$succ" 2>/dev/null
+  rm -rf "$end" "$LAB/state/.handoff-successor" "$LAB/state/.order-handoff" "$LAB/data/orders"
+  pass "the old session is ended only while its handoff still lists every open captain order"
+}
+
 test_stale_record_naming_the_current_session_still_launches() {
   local out rc
   reset_lab
@@ -283,3 +321,4 @@ test_a_late_successor_is_never_joined_by_a_second
 test_a_second_attempt_recovers_a_terminal_that_failed_to_open
 test_await_predecessor_is_bounded
 test_end_predecessor_skips_unless_safe
+test_end_predecessor_rechecks_the_order_gate

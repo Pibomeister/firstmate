@@ -66,7 +66,9 @@
 # seconds) it ends <pid> with SIGTERM, waiting up to 30 seconds for it to go,
 # only when all of these still hold: state/.lock names <pid>, the successor
 # record names a different live pid, <pid> is a live harness process, and the
-# transcript has no new user or queued-message record past <bytes>. Claude
+# transcript has no new user or queued-message record past <bytes>, and
+# `bin/fm-order.sh gate` still passes, so a captain order filed during the
+# settle keeps the old session (reason=order-gate). Claude
 # can flush the stopped turn's final assistant reply after the Stop hook
 # measures <bytes>, so an assistant record, like Claude's own bookkeeping
 # after a stop, does not count as a new turn. It records the outcome in state/.handoff-end as
@@ -166,6 +168,8 @@ end_predecessor() {
     reason=predecessor-gone
   elif [ ! -r "$transcript" ] || new_turn_since "$transcript" "$bytes"; then
     reason=new-turn
+  elif ! FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" gate >/dev/null 2>&1; then
+    reason=order-gate
   else
     kill -TERM "$pid" 2>/dev/null
     while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt "$wait_secs" ]; do

@@ -88,8 +88,9 @@
 # without a mode (written before compaction-first) counts as a handoff. A
 # firing also removes markers older than 30 days.
 #
-# RESTART GATE (Stop). A session is handing off once a fresh-start firing
-# happened in its current context cycle, or once it ran
+# RESTART GATE (Stop). A session is handing off while its newest firing is a
+# fresh start, which a compaction inside that turn does not close (only a newer
+# firing or, for an earlier cycle's firing, a launch failure does), or once it ran
 # `bin/fm-order.sh handoff --doc` (stow, a restart, a deliberate handoff, or a
 # home with percent-left=0). A capture firing is not a handoff. On each Stop of
 # a session handing off, the hook runs `bin/fm-order.sh gate`; when the recorded
@@ -232,14 +233,35 @@ end_predecessor() {
   set +m
 }
 
+# newest_firing: this session's newest trigger marker at or below the current
+# cycle count, or nothing. A compaction that lands inside a fresh-start turn
+# advances the count before that turn's stop, so the current cycle can have no
+# marker while the session's newest firing is still that open fresh start. An
+# earlier cycle's firing stays open only until a launch failure releases it,
+# because the cycle after a failed launch retries on its own firing.
+newest_firing() {
+  local f n best='' best_n=-1
+  for f in "${MARKER%.*}".*; do
+    [ -f "$f" ] || continue
+    n=${f##*.}
+    case "$n" in '' | *[!0-9]*) continue ;; esac
+    [ "$n" -le "$BOUNDARIES" ] && [ "$n" -gt "$best_n" ] || continue
+    best=$f best_n=$n
+  done
+  [ -z "$best" ] || [ "$best_n" -eq "$BOUNDARIES" ] ||
+    [ ! "$STATE/.handoff-launch-failed" -nt "$best" ] || best=
+  printf '%s' "$best"
+}
+
 if [ "$EVENT" = Stop ]; then
-  # Enforce the restart gate only on a session that is handing off: a
-  # fresh-start firing in this cycle, or this session recorded a handoff
-  # document (bin/fm-order.sh handing-off), which also covers percent-left=0.
-  # A capture firing is not a handoff. Another session's handoff record in the
+  # Enforce the restart gate only on a session that is handing off: its newest
+  # firing is a fresh start, or this session recorded a handoff document
+  # (bin/fm-order.sh handing-off), which also covers percent-left=0. A capture
+  # firing is not a handoff. Another session's handoff record or firing in the
   # same home never gates this stop.
   HANDOFF_MARKER=
-  if [ -n "$MARKER" ] && [ -e "$MARKER" ]; then
+  [ -z "$MARKER" ] || MARKER=$(newest_firing)
+  if [ -n "$MARKER" ]; then
     case "$(sed -n 's/.* mode=\([a-z]*\).*/\1/p' "$MARKER" 2>/dev/null)" in
       capture) ;;
       *) HANDOFF_MARKER=1 ;;
@@ -257,7 +279,7 @@ if [ "$EVENT" = Stop ]; then
       "$(printf '%s' "$GATE_OUT" | tr '\n' ' ')" >&2
     exit 2
   fi
-  # Successor gate: only a fresh-start firing in this cycle owes a successor; a
+  # Successor gate: only an open fresh-start firing owes a successor; a
   # handoff recorded for stow does not, and a second mate asks its parent for a
   # relaunch instead. A deliberate handoff whose live successor was recorded
   # after its handoff document still ends this session.

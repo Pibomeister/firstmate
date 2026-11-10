@@ -494,7 +494,7 @@ When no live successor appears, the launcher records `state/.handoff-launch-fail
 The launcher refuses rather than guess when the backend or harness cannot be determined.
 The successor's launch prompt tells it to confirm the handoff document's sha256, wait for the predecessor's harness pid (line 1 of `state/.lock`) to end with `bin/fm-handoff-launch.sh --await-predecessor`, and then run `bin/fm-session-start.sh` once to take the session lock.
 Its own session open prints a short notice instead of a read-only digest while the predecessor still holds the lock.
-The predecessor ends its handoff turn once the successor record is live, and its last stop ends it after a quiet settle, when its lock and transcript show no new turn; the result lands in `state/.handoff-end`.
+The predecessor ends its handoff turn once the successor record is live, and its last stop ends it after a quiet settle, when its lock and transcript show no new turn and its handoff still lists every open captain order; the result lands in `state/.handoff-end`.
 This holds for a fresh start and for a deliberate handoff alike: a deliberate handoff ends the predecessor when the session recorded its handoff document and the live successor record is newer than that document record.
 A predecessor that is not ended that way is ended by the captain, an operator `/exit` in its pane, or the watchdog restart path, and the successor takes the lock only after that pid dies.
 A second mate never launches its own successor: it appends one relaunch request to its parent channel and stops.
@@ -530,9 +530,9 @@ On each tool call and prompt, the trigger publishes the point it resolved to `st
 The trigger runs only in a genuine primary home, including a marked secondmate home, and stays inert in worker worktrees and under other harnesses that load Claude's settings.
 It never writes the handoff or compacts the session.
 
-The same hook enforces the captain-order restart gate at each Stop of a session that is handing off: a fresh start fired in this context cycle, or the session ran `bin/fm-order.sh handoff --doc` (stow, a restart, a deliberate handoff, or `percent-left=0`).
+The same hook enforces the captain-order restart gate at each Stop of a session that is handing off: its newest firing is a fresh start, which a compaction inside that turn does not close, or the session ran `bin/fm-order.sh handoff --doc` (stow, a restart, a deliberate handoff, or `percent-left=0`).
 It blocks such a stop once per turn while the recorded handoff document omits an open captain order, and it never gates an ordinary stop.
-A primary session on a fresh start is also blocked once per turn until `state/.handoff-successor` is newer than the firing and names a successor pid that is alive now, or until a newer `state/.handoff-launch-failed` records a failed launch, so that handoff turn cannot end with no successor and no report; a second mate's stop is not gated this way, because its parent owns the relaunch.
+A primary session on a fresh start is also blocked once per turn until `state/.handoff-successor` is newer than the firing and names a successor pid that is alive now, or until a newer `state/.handoff-launch-failed` records a failed launch, which also closes that fresh start once a compaction has passed, so that handoff turn cannot end with no successor and no report; a second mate's stop is not gated this way, because its parent owns the relaunch.
 The handoff record belongs to the session that wrote it, so another session's stop in the same home is never gated by it.
 A caller outside any harness session, such as a restarting leash or sender, reads the record as the captain's, so its `bin/fm-order.sh gate` check clears when the captain's handoff lists every open order.
 The gate has limits: it runs only for a Claude primary, so a non-Claude primary, or a home with no resolvable auto-compact window that never runs `handoff --doc`, is not gated.

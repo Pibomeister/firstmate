@@ -865,6 +865,53 @@ test_handoff_stop_ends_the_idle_predecessor() {
   pass "a fresh start ends the idle old session once its successor is live; a new prompt or a capture keeps it"
 }
 
+# A compaction can land inside a planned fresh start's own turn, before its
+# stop. It advances the cycle count, and its compact re-entry clears the handoff
+# record, but the fresh start is still open: the session's newest firing still
+# gates the stop until a live successor is recorded, and with one recorded the
+# stop still ends the old session. A newer capture firing closes it.
+test_a_compaction_inside_a_fresh_start_keeps_it_open() {
+  local t="$TMP_ROOT/t-midturn" end="$PRIMARY/state/.handoff-end" failed="$PRIMARY/state/.handoff-launch-failed" succ pred n
+  reset_lab
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.handoff-successor" "$failed" "$end" \
+    "$PRIMARY/state/.lock-session" "$TMP_ROOT/end-stop.rc"
+  printf 'compact-at-tokens=100000\nfresh-start-after=0\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$t" 90000
+  expect_mode "$(run_hook "$PRIMARY" s-midturn "$t")" handoff "the fresh-start firing"
+  boundary "$t"
+  append_usage "$t" 30000
+  assert_equals 2 "$(stop_rc s-midturn "$t")" "a compaction inside the fresh-start turn still gates its stop until a successor is live"
+  assert_contains "$(cat "$TMP_ROOT/stop-rc.err")" "state/.handoff-successor" "the block names the launch record"
+  assert_equals 0 "$(stop_rc s-midturn "$t" '.stop_hook_active = true')" "the gate still blocks at most once per turn"
+  assert_equals 0 "$(stop_rc s-midturn-other "$t")" "another session's open fresh start never gates this stop"
+  sleep 1
+  printf 'at=%s attempts=2 backend=orca handoff=x reason=never-appeared\n' "$(date +%s)" > "$failed"
+  assert_equals 0 "$(stop_rc s-midturn "$t")" "a launch failure recorded after the firing still releases the stop"
+  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --from test "order after the failed launch" >/dev/null \
+    || fail "could not send the order fixture"
+  assert_equals 0 "$(stop_rc s-midturn "$t")" "after a failed launch and a compaction, an open order with no handoff document does not gate the stop"
+  rm -rf "$failed" "$PRIMARY/data/orders"
+
+  sleep 60 &
+  succ=$!
+  printf 'pid=%s\nhandoff=%s\n' "$succ" "$TMP_ROOT/midturn-handoff.md" > "$PRIMARY/state/.handoff-successor"
+  pred=$(end_lab_predecessor s-midturn "$t" ':')
+  wait_for_file "$end" 150 || fail "the stop after the compaction must still end the old session once its successor is live"
+  assert_equals 0 "$(cat "$TMP_ROOT/end-stop.rc")" "that stop itself passes"
+  assert_contains "$(cat "$end")" "pred=$pred" "the record names the old session"
+  assert_contains "$(cat "$end")" "result=ended" "the old session was ended"
+  n=0
+  while kill -0 "$pred" 2>/dev/null && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+  ! kill -0 "$pred" 2>/dev/null || fail "the old session must be gone"
+  kill "$succ" 2>/dev/null; wait "$succ" 2>/dev/null
+  rm -f "$end" "$PRIMARY/state/.handoff-successor" "$PRIMARY/state/.lock" "$TMP_ROOT/end-stop.rc"
+
+  printf '%s tokens=90000 compact_at=100000 mode=capture\n' "$(date +%s)" > "$PRIMARY/state/.handoff-trigger.s-midturn.1"
+  assert_equals 0 "$(stop_rc s-midturn "$t")" "a newer capture firing closes the older fresh start"
+  rm -f "$PRIMARY/config/handoff-trigger"
+  pass "a compaction inside a fresh-start turn keeps it open: its stop is still gated and still ends the old session"
+}
+
 # H1 on the deliberate path: a session that recorded its handoff document with
 # bin/fm-order.sh handoff --doc and then launched a live successor is ended by
 # the stop that ends its turn, with no trigger firing. A successor record older
@@ -932,6 +979,7 @@ test_fresh_start_after_n_compactions
 test_fresh_start_on_high_context_after_compaction
 test_legacy_marker_and_launch_failure
 test_handoff_stop_ends_the_idle_predecessor
+test_a_compaction_inside_a_fresh_start_keeps_it_open
 test_deliberate_handoff_stop_ends_the_idle_predecessor
 test_threshold_configurable
 test_fires_once_per_context_cycle
