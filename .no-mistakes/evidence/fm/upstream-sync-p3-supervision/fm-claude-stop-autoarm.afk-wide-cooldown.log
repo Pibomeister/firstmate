@@ -1,0 +1,2 @@
+not ok - need appearing during the StopFailure cooldown wait must end the firing silently: expected exit 0, got 2
+exit=1

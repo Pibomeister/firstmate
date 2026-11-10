@@ -1,0 +1,4 @@
+## StopFailure payload from a session that does not hold the lab lock
+exit=0
+watcher processes for lab:
+none

@@ -1,0 +1,3 @@
+ok - tmux proof: the recorded window id on the live recorded server is never gone, under any name
+not ok - the window id gone from the same live server: expected gone, got 'unproven	the working-directory scan of the task's copy could not finish'
+exit=1

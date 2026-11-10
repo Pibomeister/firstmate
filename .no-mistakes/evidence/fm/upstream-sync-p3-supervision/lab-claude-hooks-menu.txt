@@ -1,0 +1,40 @@
+ ▝▝   ▝▝   ~/.no-mistakes/worktrees/075d7f40c28a/01M7355G7PAFZBGZCF8X3112ZJ
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Hooks
+   38 hooks on 16 events
+   This menu is read-only. To add or change a hook, edit settings.json or ask Claude. Learn more
+     PreToolUse  before tool execution
+   ❯ [Project] "$CLAUDE_PROJECT_DIR"/bin/fm-subagent-pretool-che…   .* · command
+     [User]    /Users/eduardopicazo/.claude/hooks/rtk-rewrite.sh    Bash · command
+     [Project] [ -z "${GROK_AGENT:-}${GROK_HOOK_EVENT:-}" ] || e…   Bash · command
+     [Project] [ -z "${GROK_AGENT:-}${GROK_HOOK_EVENT:-}" ] || e…   Bash · command
+     [User]    if [ -z "${HOME-}" ]; then case "${OSTYPE-}" in m…   * · command
+     [User]    /Users/eduardopicazo/.claude/hooks/lavish-plan-re…   ExitPlanMode · command
+     PostToolUse  after tool execution
+     [Project] [ -z "${GROK_AGENT:-}${GROK_HOOK_EVENT:-}" ] || e…   .* · command
+     [User]    if [ -z "${HOME-}" ]; then case "${OSTYPE-}" in m…   * · command
+     PostToolUseFailure  after tool execution fails
+     [User]    if [ -z "${HOME-}" ]; then case "${OSTYPE-}" in m…   * · command
+     PostToolBatch  after a batch of tool calls resolves
+     [User]    if [ -z "${HOME-}" ]; then case "${OSTYPE-}" in m…   command
+     UserPromptSubmit  when the user submits a prompt
+     [User]    if [ -z "${HOME-}" ]; then case "${OSTYPE-}" in m…   command
+     [Project] [ -z "${GROK_AGENT:-}${GROK_HOOK_EVENT:-}" ] || e…   command
+     [Project] [ -z "${GROK_AGENT:-}${GROK_HOOK_EVENT:-}" ] || e…   command
+     SessionStart  when a new session is started
+     [User]    gh-axi                                               command
+     [User]    chrome-devtools-axi                                  command
+     [User]    lavish-axi                                           command
+     [User]    if [ -z "${HOME-}" ]; then case "${OSTYPE-}" in m…   command
+     [Project] [ -z "${GROK_AGENT:-}${GROK_HOOK_EVENT:-}" ] || e…   command
+     [User]    bash '/Users/eduardopicazo/.claude/hooks/herdr-ag…   * · command
+     [User]    /Users/eduardopicazo/.bun/bin/bun /Users/eduardop…   startup|resume|clear|compact · command
+     [Plugin]  "${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd" sessio…   superpowers@superpowers-marketplace · startup|clear|compact · command
+     Stop  right before Claude concludes its response
+     [User]    /Users/eduardopicazo/.bun/bin/bun /Users/eduardop…   command
+     [User]    if [ -z "${HOME-}" ]; then case "${OSTYPE-}" in m…   command
+     [Project] [ -z "${GROK_AGENT:-}${GROK_HOOK_EVENT:-}" ] || e…   command
+     [Project] [ -z "${GROK_AGENT:-}${GROK_HOOK_EVENT:-}" ] || e…   command
+     [Project] [ -z "${GROK_AGENT:-}${GROK_HOOK_EVENT:-}" ] || e…   command
+     ↓ 13 more
+   Enter to view · Esc to close

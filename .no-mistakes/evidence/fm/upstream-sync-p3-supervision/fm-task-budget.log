@@ -1,0 +1,10 @@
+ok - spawn records all four explicit budget limits
+ok - budgeted Claude relaunch publishes its fingerprint and preserves limits
+ok - claude native usage is normalized and deduplicated
+ok - codex native usage is normalized and deduplicated
+ok - default dry-run and opt-in enforcement are durable and deduplicated
+ok - native allocation consumption survives a harness switch
+ok - relaunch never strands a task on unmeasurable prior usage
+ok - bound native logs fold appended records into retained totals
+ok - a deferred interrupt retries and its one decision records the delivered outcome
+exit=124

@@ -1,0 +1,5 @@
+ok - disposable watcher refuses inherited state outside its marked lab
+ok - tombstone cleanup respects a live reaper and recovers a recycled reaper pid
+wait_for_exit hung after its deadline on a stopped child
+not ok - bounded child cleanup regression
+exit=1

@@ -1,0 +1,5 @@
+1..128
+wait_for_exit: owned pid 51248 exceeded 100 polls; sending TERM
+51248 42128 SN   bash /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M7355G7PAFZBGZCF8X3112ZJ/bin/fm-watch.sh
+not ok - expired stream never surfaced
+exit=1
