@@ -305,6 +305,26 @@ run_droid_spawn() {  # <id> [extra args]
       "$id" "$PROJ_DIR" --scout --harness droid "$@"
 }
 
+test_droid_enables_hooks_with_global_hooks_off() {
+  local id=droid-global-hooks-off out rc settings global_settings
+  make_droid_case global-hooks-off "$id"
+  global_settings="$HOME_DIR/user-home/.factory/settings.json"
+  mkdir -p "$(dirname "$global_settings")"
+  printf '%s\n' '{"enableHooks":false,"hooksDisabled":false}' >"$global_settings"
+  cp "$global_settings" "$CASE_DIR/global-settings-before.json"
+  out=$(run_droid_spawn "$id")
+  rc=$?
+  expect_code 0 "$rc" "Droid spawn with global hooks off failed: $out"
+  settings="$HOME_DIR/state/$id.droid-settings.json"
+  jq -e '.enableHooks == true and (has("hooksDisabled") | not)' "$settings" >/dev/null \
+    || fail "Droid task settings must enable hooks without overriding hooksDisabled"
+  cmp -s "$global_settings" "$CASE_DIR/global-settings-before.json" \
+    || fail "Droid spawn changed the operator's global settings"
+  [ "$(fm_busy_classify tmux fake:win droid "$id" "$HOME_DIR/state")" = 'busy droid-hook' ] \
+    || fail "Droid launch acknowledgement hook was not wired"
+  pass "Droid task settings enable hooks despite global hooks off without changing user settings"
+}
+
 test_droid_launch_and_hooks() {
   local id=droid-launch-1 out rc settings cmd state baseline digest gen live_bin live_pid
   make_droid_case launch "$id"
@@ -313,7 +333,7 @@ test_droid_launch_and_hooks() {
   expect_code 0 "$rc" "Droid spawn failed: $out"
   settings="$HOME_DIR/state/$id.droid-settings.json"
   state="$HOME_DIR/state"
-  jq -e '.sessionDefaultSettings.model == "gpt-5.6-luna" and .reasoningEffort == "low" and .sessionDefaultSettings.autonomyLevel == "high" and (has("hooksDisabled") | not)' "$settings" >/dev/null \
+  jq -e '.enableHooks == true and .sessionDefaultSettings.model == "gpt-5.6-luna" and .reasoningEffort == "low" and .sessionDefaultSettings.autonomyLevel == "high" and (has("hooksDisabled") | not)' "$settings" >/dev/null \
     || fail "Droid settings lost model/effort/autonomy or overrode the operator's hooks policy"
   out=$(sh -c "$(jq -r '.statusLine.command' "$settings")" 2>/dev/null)
   [ -n "$out" ] && [ "$(fm_tmux_droid_composer_state "${DROID_IDLE_SCREEN%firstmate}$out")" = empty ] \
@@ -893,6 +913,7 @@ test_droid_composer_requires_a_droid_process
 test_droid_orca_composer_uses_the_live_screen
 test_droid_composer_current_footer_shape
 test_droid_connected_shell_absence_proof
+test_droid_enables_hooks_with_global_hooks_off
 test_droid_launch_and_hooks
 test_droid_swallowed_trust_enter_is_retried_until_the_dialog_clears
 test_droid_trust_enter_max_sends_one_enter_while_the_dialog_stays

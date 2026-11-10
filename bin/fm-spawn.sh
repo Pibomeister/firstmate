@@ -7461,6 +7461,8 @@ EOF
       # Droid loads runtime settings passed with --settings for this process.
       # The private file avoids modifying project or user hooks. Its prompt,
       # completion, cancellation, and exit hooks are a closed busy-state pair.
+      # Enable these hooks even when global enableHooks is false, while
+      # leaving the operator's separate hooksDisabled policy intact.
       busy_cmd_prefix="$(shell_quote "$FM_ROOT/bin/fm-busy-event.sh") apply $(shell_quote "$STATE_REAL") $(shell_quote "$ID")"
       busy_suffix="--gen $(shell_quote "$BUSY_GEN") --source droid-hook"
       # Keep the exact submitted prompt digest beside its busy-event sequence
@@ -7474,7 +7476,8 @@ EOF
       d_end="$(shell_quote "$FM_ROOT/bin/fm-droid-session-end-hook.sh") $(shell_quote "$STATE_REAL") $(shell_quote "$ID") $(shell_quote "$BUSY_GEN") >/dev/null 2>&1 || true"
       jq -n --arg model "$MODEL" --arg effort "$DROID_EFFORT_APPLY" \
         --arg submit "$d_submit" --arg stop "$d_stop" --arg idle "$d_idle" --arg end "$d_end" '
-        {statusLine:{type:"command",command:"printf firstmate"},
+        {enableHooks:true,
+         statusLine:{type:"command",command:"printf firstmate"},
          sessionDefaultSettings:{interactionMode:"auto",autonomyLevel:"high"},
          hooks:{
            UserPromptSubmit:[{hooks:[{type:"command",command:$submit}]}],
