@@ -1,0 +1,10 @@
+ ▐▛███▛█   Claude Code v2.1.321
+▝▜██████▀  Opus 5.5 · Claude Ultra
+ ▝▝   ▝▝   /private/tmp/fm-lab.ReTLf4/pool/.treehouse/demo-e9fa79/1/demo
+❯ : Firstmate operational input waiting: read '/private/tmp/fm-lab.ReTLf4/state/operational-inbox/1794269144-6234a1c97c4e21d7.msg' and handle its contents as Firstmate operational input.
+· Cascading… (16s)
+                                                                                                     tmux detected · scroll with PgUp/PgDn · or add 'set -g mouse on' to ~/.tmux.conf for wheel scroll
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

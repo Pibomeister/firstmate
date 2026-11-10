@@ -1,0 +1,16 @@
+== copy branch: release
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/tmp/fm-lab.ReTLf4
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/tmp/fm-lab.ReTLf4
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 391s) - full banner already printed this episode.
+notice: lt1 ships mode=local-only while the standing posture for demo is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+notice: lt1 ships branch=fm/lt1-stacked while demo registers the ship-branch prefix 'fm/' (branch fm/lt1) - the task's branch and PR will read as firstmate-authored; proceed only on a current explicit captain instruction or an intake judgment you can state
+relaunched lt1 harness=claude from=claude model=default effort=default backend=tmux endpoint=primary:fm-lt1 worktree=/private/tmp/fm-lab.ReTLf4/pool/.treehouse/demo-e9fa79/1/demo
+RELAUNCH_RC=0
+== record
+branch=fm/lt1-stacked
+== journal
+phase=complete
+exit_result=stopped
+== Ship branch line
+98:Ship branch: fm/lt1-stacked
+uncommitted lab work

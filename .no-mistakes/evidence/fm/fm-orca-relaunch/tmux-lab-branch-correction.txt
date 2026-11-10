@@ -1,0 +1,69 @@
+== relaunch output
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/tmp/fm-lab.ReTLf4
+notice: task lt1 records branch fm/lt1, but its local copy has fm/lt1-stacked checked out; the relaunch continues on fm/lt1-stacked and records the correction
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/tmp/fm-lab.ReTLf4
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 2s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+notice: lt1 ships mode=local-only while the standing posture for demo is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+notice: lt1 ships branch=fm/lt1-stacked while demo registers the ship-branch prefix 'fm/' (branch fm/lt1) - the task's branch and PR will read as firstmate-authored; proceed only on a current explicit captain instruction or an intake judgment you can state
+relaunched lt1 harness=claude from=claude model=default effort=default backend=tmux endpoint=primary:fm-lt1 worktree=/private/tmp/fm-lab.ReTLf4/pool/.treehouse/demo-e9fa79/1/demo
+RELAUNCH_RC=0
+== record branch
+window=primary:fm-lt1
+worktree=/private/tmp/fm-lab.ReTLf4/pool/.treehouse/demo-e9fa79/1/demo
+harness=claude
+branch=fm/lt1-stacked
+== brief branch mentions
+22:1. First action: create your branch: `git checkout -b fm/lt1-stacked --`
+25:1. Never push to any remote and never open a PR. Work only on your `fm/lt1-stacked` branch; firstmate handles the merge into local `main`.
+98:Ship branch: fm/lt1-stacked
+100:The task is complete only when committed on your branch `fm/lt1-stacked`. Do NOT push, do NOT open a PR, do NOT merge.
+103:When it is implemented and committed, append `done [at=<epoch>]: ready in branch fm/lt1-stacked` to the status file and stop.
+116:The recorded branch fm/lt1 did not match the local copy, which has
+117:fm/lt1-stacked checked out, so this relaunch continues on fm/lt1-stacked and the
+== progress note
+## Progress note (2026-11-10T00:04:35Z)
+
+This task was relaunched. Continue from here; the local copy and every
+uncommitted change are exactly as the previous worker left them.
+
+First, check your instruction inbox: list it with
+`find '/private/tmp/fm-lab.ReTLf4/state/lt1.inbox' -maxdepth 1 -name '*.msg' 2>/dev/null | sort -V`, act on
+each message in numeric order, then mv each handled file into
+'/private/tmp/fm-lab.ReTLf4/state/lt1.inbox/handled/'. A steer sent before the relaunch survives there.
+
+The recorded branch fm/lt1 did not match the local copy, which has
+fm/lt1-stacked checked out, so this relaunch continues on fm/lt1-stacked and the
+task record and these instructions now name it.
+
+lab relaunch after branch switch
+== journal
+v1
+task=lt1
+phase=complete
+ts=2026-11-10T00:05:47Z
+backend=tmux
+endpoint=primary:fm-lt1
+worktree=/private/tmp/fm-lab.ReTLf4/pool/.treehouse/demo-e9fa79/1/demo
+kind=ship
+from_harness=claude
+from_model=default
+from_effort=default
+to_harness=claude
+to_model=default
+to_effort=default
+worktree_head=23092e7c4d30716d0ca83ebec379e73614e562ac
+worktree_dirty=yes
+branch_correction=fm/lt1->fm/lt1-stacked
+note_file=/private/tmp/fm-lab.ReTLf4/state/lt1.control-relaunch.note
+exit_result=stopped
+== local copy
+## fm/lt1-stacked
+?? keep.txt
+uncommitted lab work

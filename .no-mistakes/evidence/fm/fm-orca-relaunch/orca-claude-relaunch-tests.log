@@ -1,0 +1,6 @@
+ok - an Orca relaunch closes a live Claude worker's terminal instead of sending Escape, then respawns in the same local copy
+ok - an Orca Claude relaunch refuses when an agent still runs in the local copy after the close
+ok - an Orca relaunch takes the branch from the local copy when the record disagrees, and records the correction
+ok - an Orca relaunch keeps the recorded branch while the local copy sits on a base branch outside its prefix
+ok - an Orca relaunch keeps the recorded branch while the local copy is still on a branch outside its prefix
+# selected Orca Claude relaunch tests passed
