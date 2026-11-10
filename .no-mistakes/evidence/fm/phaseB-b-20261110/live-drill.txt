@@ -1,0 +1,43 @@
+## 1. Real host, no SSH alias (genuine id/dscl/gh/uptime)
+$ FM_HOME=$LAB bin/fm-host-health.sh run
+HOSTHEALTH v1 ts=1794327093 ok=1 fail=none ssh=skip uptime_b64=MTA6MTEgIHVwIDUgZGF5cywgMTQ6NDgsIDEzMCB1c2VycywgbG9hZCBhdmVyYWdlczogMjI3LjkyIDE4OS42MiAxMzAuMzY= load1=227.92 load5=189.62 load15=130.36
+exit=0
+
+## 2. DRILL: id shimmed to fail (last night's identity-lookup failure)
+$ PATH=<shim-with-failing-id>:$PATH FM_HOME=$LAB bin/fm-host-health.sh run
+HOSTHEALTH v1 ts=1794327102 ok=0 fail=id ssh=skip uptime_b64=MTA6MTEgIHVwIDUgZGF5cywgMTQ6NDgsIDEzMCB1c2VycywgbG9hZCBhdmVyYWdlczogMjI5LjExIDE5MS4xMSAxMzEuNTg= load1=229.11 load5=191.11 load15=131.58
+exit=1
+
+## 3. SSH alias configured but unreachable
+HOSTHEALTH v1 ts=1794327111 ok=0 fail=ssh ssh=fail uptime_b64=MTA6MTEgIHVwIDUgZGF5cywgMTQ6NDgsIDEzMCB1c2VycywgbG9hZCBhdmVyYWdlczogMjM2LjQ2IDE5My45MSAxMzMuMjc= load1=236.46 load5=193.91 load15=133.27
+exit=1
+
+## 4. Hung gh bounded by timeout=2
+HOSTHEALTH v1 ts=1794327121 ok=0 fail=gh_auth,gh_api ssh=skip uptime_b64=MTA6MTIgIHVwIDUgZGF5cywgMTQ6NDgsIDEzMCB1c2VycywgbG9hZCBhdmVyYWdlczogMjMxLjg1IDE5NC4yOSAxMzQuMTE= load1=231.85 load5=194.29 load15=134.11
+exit=1 elapsed=10s
+
+## 5. Adversarial config: option-injection SSH alias, relative home, bad timeout
+HOSTHEALTH_ERROR v1 code=ssh_alias
+exit=2
+HOSTHEALTH_ERROR v1 code=home
+exit=2
+HOSTHEALTH_ERROR v1 code=timeout
+exit=2
+
+## 6. Unwritable beacon -> exit 2, no healthy stdout
+HOSTHEALTH_ERROR v1 code=beacon_write
+exit=2
+
+## 7. Beacon log contents (machine-readable lines for watchdog)
+HOSTHEALTH v1 ts=1794327093 ok=1 fail=none ssh=skip uptime_b64=MTA6MTEgIHVwIDUgZGF5cywgMTQ6NDgsIDEzMCB1c2VycywgbG9hZCBhdmVyYWdlczogMjI3LjkyIDE4OS42MiAxMzAuMzY= load1=227.92 load5=189.62 load15=130.36
+HOSTHEALTH v1 ts=1794327102 ok=0 fail=id ssh=skip uptime_b64=MTA6MTEgIHVwIDUgZGF5cywgMTQ6NDgsIDEzMCB1c2VycywgbG9hZCBhdmVyYWdlczogMjI5LjExIDE5MS4xMSAxMzEuNTg= load1=229.11 load5=191.11 load15=131.58
+HOSTHEALTH v1 ts=1794327111 ok=0 fail=ssh ssh=fail uptime_b64=MTA6MTEgIHVwIDUgZGF5cywgMTQ6NDgsIDEzMCB1c2VycywgbG9hZCBhdmVyYWdlczogMjM2LjQ2IDE5My45MSAxMzMuMjc= load1=236.46 load5=193.91 load15=133.27
+HOSTHEALTH v1 ts=1794327121 ok=0 fail=gh_auth,gh_api ssh=skip uptime_b64=MTA6MTIgIHVwIDUgZGF5cywgMTQ6NDgsIDEzMCB1c2VycywgbG9hZCBhdmVyYWdlczogMjMxLjg1IDE5NC4yOSAxMzQuMTE= load1=231.85 load5=194.29 load15=134.11
+parse check:
+line ok: ok=1 fail=none
+line ok: ok=0 fail=id
+line ok: ok=0 fail=ssh
+line ok: ok=0 fail=gh_auth,gh_api
+/Users/eduardopicazo/.no-mistakes/evidence/01M733B84R8QW93QRX7XCMY7NS/rendered-launchagent.plist: OK
+HOSTHEALTH v1 ts=1794327143 ok=1 fail=none ssh=skip uptime_b64=MTA6MTIgIHVwIDUgZGF5cywgMTQ6NDksIDEzMCB1c2VycywgbG9hZCBhdmVyYWdlczogMjM4LjUwIDE5OC44NSAxMzcuNDk= load1=238.50 load5=198.85 load15=137.49
+launchd-env exit=0

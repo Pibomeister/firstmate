@@ -1,0 +1,9 @@
+1..7
+ok - green probes append a parseable beacon with diagnostic uptime/load
+ok - each failed probe and the combined M3 failure are reported independently
+ok - SSH is optional, and beacon publication errors are explicit
+ok - each hung check is bounded and its child is reaped
+ok - launchd configuration preserves paths and runs without a session or current directory
+ok - invalid settings fail before probing
+ok - portable metrics, missing tools and absent account metadata are explicit
+FM_TEST_COMPLETE
