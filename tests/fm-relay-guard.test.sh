@@ -468,10 +468,14 @@ test_lock_of_a_reused_pid_is_reclaimed() {
   sleep 600 >/dev/null 2>&1 &
   holder=$!
   mkdir -p "$W/home/state/relay-guard/lock.d"
-  printf '%s\n%s\n' "$holder" "$(ps -o lstart= -p "$holder")" > "$W/home/state/relay-guard/lock.d/pid"
+  printf '%s\n%s\n' "$holder" "$(LC_ALL=C TZ=UTC ps -o lstart= -p "$holder")" > "$W/home/state/relay-guard/lock.d/pid"
   out=$(guard once 2>&1)
   code=$?
   [ "$code" -eq 75 ] || fail "a lock whose live owner kept its start time should be held (exit 75), got $code: $out"
+  # A contender in another time zone and locale reads the same owner identity.
+  out=$(TZ=Asia/Tokyo LC_ALL=fr_FR.UTF-8 LANG=fr_FR.UTF-8 guard once 2>&1)
+  code=$?
+  [ "$code" -eq 75 ] || fail "a live owner's lock should be held from another time zone and locale (exit 75), got $code: $out"
   [ -z "$(relay_pids m3 7001)" ] || fail "a pass ran while a live owner held the lock"
   printf '%s\n%s\n' "$holder" "Thu Jan  1 00:00:00 2020" > "$W/home/state/relay-guard/lock.d/pid"
   out=$(guard once 2>&1)
@@ -490,6 +494,43 @@ test_lock_of_a_reused_pid_is_reclaimed() {
   kill "$(relay_pids m3 7001)" "$(relay_pids m4 7002)" 2>/dev/null
   stop_daemon
   pass "a lock is held only by its live owner with the same start time; a reused pid is reclaimed"
+}
+
+test_pass_does_not_drop_a_lock_it_lost() {
+  local out code holder start
+  world
+  start_daemon
+  sleep 600 >/dev/null 2>&1 &
+  holder=$!
+  start=$(LC_ALL=C TZ=UTC ps -o lstart= -p "$holder")
+  # The probe runs inside the pass; it hands lock.d to another live owner, as
+  # a contender that moved this pass's lock aside and took its own would.
+  printf '%s\n%s\n' "$holder" "$start" > "$W/foreign-lock"
+  cat > "$W/steal-probe.sh" <<EOF
+#!/bin/sh
+cp "$W/foreign-lock" "$W/home/state/relay-guard/lock.d/pid"
+exec "$W/fake-probe.sh" "\$@"
+EOF
+  chmod +x "$W/steal-probe.sh"
+  conf <<EOF
+daemon=$DAEMON_NAME
+relay.m3=$W/fake-relay.sh m3 7001
+probe.m3=$W/steal-probe.sh m3
+settle-secs=1
+term-wait-secs=3
+EOF
+  out=$(guard once 2>&1)
+  code=$?
+  [ "$code" -eq 0 ] || fail "the pass should still finish, got $code: $out"
+  [ -d "$W/home/state/relay-guard/lock.d" ] || fail "a pass removed a lock another owner now holds"
+  assert_equals "$holder" "$(sed -n 1p "$W/home/state/relay-guard/lock.d/pid")"
+  out=$(guard once 2>&1)
+  code=$?
+  [ "$code" -eq 75 ] || fail "the new owner's lock should still be held (exit 75), got $code: $out"
+  kill "$holder" 2>/dev/null
+  kill $(relay_pids m3 7001) 2>/dev/null
+  stop_daemon
+  pass "a pass removes only a lock that still names it as owner"
 }
 
 test_contenders_on_a_stale_lock_run_one_pass_at_a_time() {
@@ -617,6 +658,7 @@ fm_test_run \
   test_lock_without_pid_is_held_until_it_ages \
   test_lock_of_a_reused_pid_is_reclaimed \
   test_contenders_on_a_stale_lock_run_one_pass_at_a_time \
+  test_pass_does_not_drop_a_lock_it_lost \
   test_kill_spares_a_pid_that_is_no_longer_the_relay \
   test_relay_started_in_the_daemon_restart_second_is_restarted \
   test_stale_relays_after_daemon_restart_are_respawned \

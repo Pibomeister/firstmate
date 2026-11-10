@@ -280,7 +280,7 @@ relay_pids() {  # <command> -> matching pids, one per line
 }
 
 proc_start() {  # <pid> -> the process's start time; empty when gone
-  ps -o lstart= -p "$1" 2>/dev/null
+  LC_ALL=C TZ=UTC ps -o lstart= -p "$1" 2>/dev/null
 }
 
 stop_pids() {  # <pids...>; nonzero when any survives
@@ -602,6 +602,11 @@ lock_live() {  # <lock dir>; zero while its owner still holds it
   [ -n "$(find "$1" -prune -mmin -1 2>/dev/null)" ]
 }
 
+lock_mine() {  # zero while lock.d/pid names this process and its start time
+  [ "$(read_int "$STATE/lock.d/pid")" = "$$" ] &&
+    [ "$(sed -n 2p "$STATE/lock.d/pid" 2>/dev/null)" = "$(proc_start "$$")" ]
+}
+
 take_lock() {
   local stale="$STATE/lock.stale.$$"
   if ! mkdir "$STATE/lock.d" 2>/dev/null; then
@@ -614,12 +619,13 @@ take_lock() {
     rm -rf "$stale"
     mkdir "$STATE/lock.d" 2>/dev/null || return 1
   fi
-  printf '%s\n%s\n' "$$" "$(proc_start "$$")" > "$STATE/lock.d/pid.$$" && mv "$STATE/lock.d/pid.$$" "$STATE/lock.d/pid"
+  { printf '%s\n%s\n' "$$" "$(proc_start "$$")" > "$STATE/lock.d/pid.$$" &&
+    mv "$STATE/lock.d/pid.$$" "$STATE/lock.d/pid"; } 2>/dev/null && lock_mine || return 1
   LOCKED=1
 }
 
 drop_lock() {
-  [ "$LOCKED" -eq 1 ] && rm -rf "$STATE/lock.d"
+  [ "$LOCKED" -eq 1 ] && lock_mine && rm -rf "$STATE/lock.d"
   LOCKED=0
 }
 
