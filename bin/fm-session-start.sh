@@ -560,7 +560,9 @@ print_context_file() {
 # cap_marked_lines: copy stdin to stdout, cutting each line that awk marked as
 # "\037<max>\037<line>" to <max> characters with the shared fm_cap_line_var cut.
 # awk's length and substr count bytes on some platforms, so a cut made there can
-# split a multibyte character; bash counts characters and never does.
+# split a multibyte character; the shared cut counts characters under a UTF-8
+# locale and, under any other, drops a trailing incomplete sequence, so it never
+# does.
 cap_marked_lines() {
   local line rest max
   while IFS= read -r line || [ -n "$line" ]; do

@@ -2801,20 +2801,18 @@ EOF
 # The manual-row and latest-annotation cuts count characters, never bytes:
 # multibyte text under a cap prints whole, text over it is cut at exactly the
 # cap, and no cut splits a character into invalid UTF-8.
-test_line_cuts_count_characters_not_bytes() {
-  local rec root home fakebin out utf8 short long line spec want
-  rec=$(new_world line-cuts-multibyte)
+# seed_multibyte_cut_home <world> <short> <long>: a manual-backend home whose
+# backlog rows and signalled status tails hold multibyte text, with an
+# over-budget wake presentation queued. Prints the world record.
+seed_multibyte_cut_home() {
+  local rec root home fakebin short=$2 long=$3
+  rec=$(new_world "$1")
   IFS='|' read -r root home fakebin <<EOF
 $rec
 EOF
   make_fake_toolchain "$fakebin"
   make_fake_ps_claude "$fakebin"
-  utf8=$(locale -a 2>/dev/null | grep -iE '^(c|en_us)\.utf-?8$' | head -1)
-  [ -n "$utf8" ] || utf8=C.UTF-8
   printf '%s\n' manual > "$home/config/backlog-backend"
-  # Box-drawing characters: one character and three bytes each.
-  short=$(awk 'BEGIN { for (i = 0; i < 100; i++) printf "\342\224\200" }')
-  long=$(awk 'BEGIN { for (i = 0; i < 400; i++) printf "\342\224\200" }')
   cat > "$home/data/backlog.md" <<EOF
 # Backlog
 
@@ -2833,6 +2831,20 @@ EOF
     > "$home/state/task-l.status"
   append_wake "$home/state" signal task-s.status "done: short" || fail "seed wake s failed"
   append_wake "$home/state" signal task-l.status "done: long" || fail "seed wake l failed"
+  printf '%s\n' "$rec"
+}
+
+test_line_cuts_count_characters_not_bytes() {
+  local rec root home fakebin out utf8 short long line spec want
+  utf8=$(locale -a 2>/dev/null | grep -iE '^(c|en_us)\.utf-?8$' | head -1)
+  [ -n "$utf8" ] || utf8=C.UTF-8
+  # Box-drawing characters: one character and three bytes each.
+  short=$(awk 'BEGIN { for (i = 0; i < 100; i++) printf "\342\224\200" }')
+  long=$(awk 'BEGIN { for (i = 0; i < 400; i++) printf "\342\224\200" }')
+  rec=$(seed_multibyte_cut_home line-cuts-multibyte "$short" "$long")
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
 
   out=$(LC_ALL=$utf8 run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
 
@@ -2851,7 +2863,26 @@ EOF
     case $line in *' [truncated]') ;; *) fail "the cut multibyte line has no [truncated] marker: $line" ;; esac
   done
 
-  pass "manual-row and latest-annotation cuts count characters, so multibyte text is never cut early or split"
+  rec=$(seed_multibyte_cut_home line-cuts-multibyte-c-locale "$short" "$long")
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+
+  out=$(LC_ALL=C run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  printf '%s\n' "$out" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1 ||
+    fail "under LC_ALL=C a line cut split a multibyte character into invalid UTF-8"
+  for spec in '- [ ] mb-long - :180' '- [ ] mb-held - :320' \
+    'wake annotation: latest wake-EVENT observed at drain, not current state: task-l.status: :320'; do
+    want=${spec##*:}
+    line=$(printf '%s\n' "$out" | grep -F -- "${spec%:*}" | head -1)
+    [ -n "$line" ] || fail "under LC_ALL=C the cut multibyte line is missing: ${spec%:*}"
+    [ "$(LC_ALL=$utf8 bash -c 'printf "%s" "${#1}"' _ "$line")" -le "$want" ] ||
+      fail "under LC_ALL=C the multibyte line is over $want characters: $line"
+    case $line in *' [truncated]') ;; *) fail "under LC_ALL=C the cut multibyte line has no [truncated] marker: $line" ;; esac
+  done
+
+  pass "manual-row and latest-annotation cuts never split a multibyte character, under a UTF-8 or a C locale"
 }
 
 test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback() {
