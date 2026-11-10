@@ -230,9 +230,6 @@ if [ "$CLAUDE_MODE" -eq 0 ] && [ "$CURSOR_MODE" -eq 0 ] \
   && [ "$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null)" = codex ]; then
   CODEX_MODE=1
 fi
-if [ "$CLAUDE_MODE" -eq 0 ] && [ "$CODEX_MODE" -eq 0 ] && [ "$AGY_MODE" -eq 0 ] && [ "$STOP_HOOK_ACTIVE" = "true" ]; then
-  allow_exit
-fi
 
 # --- scope precisely to a PRIMARY checkout ----------------------------------
 # A genuinely-marked secondmate home runs its OWN primary firstmate session, so
@@ -250,6 +247,12 @@ fm_primary_scope_matches "$FM_ROOT" "$STATE" || allow_exit
 
 # shellcheck source=bin/fm-stop-policy-lib.sh
 . "$SCRIPT_DIR/fm-stop-policy-lib.sh"
+# An ordinary-mode active hook always stops; check mode only records the
+# hook_active watchdog line for this primary home.
+if [ "$CLAUDE_MODE" -eq 0 ] && [ "$CODEX_MODE" -eq 0 ] && [ "$AGY_MODE" -eq 0 ] && [ "$STOP_HOOK_ACTIVE" = "true" ]; then
+  fm_stop_policy_allows_stop "$PAYLOAD" check >/dev/null 2>&1 || true
+  allow_exit
+fi
 
 # External auto-compact footer for this turn. A missing script or footer stays silent.
 if [ "${FM_TEST_SEAM:-}" != 1 ] && [ -x "$SCRIPT_DIR/fm-context-burn.sh" ]; then
