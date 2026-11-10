@@ -292,8 +292,8 @@ test_unresolvable_project_hookspath_still_refuses() {
     fail "a commit succeeded although the repository's hooks directory cannot be resolved"
   assert_contains "$err" "failed to expand user dir" "the refusal did not show git's lookup error"
   assert_hookspath_wrapper_contract "$err" "failed to expand user dir"
-  git -C "$repo" config --unset core.hooksPath
-  assert_equals "$head" "$(git -C "$repo" rev-parse HEAD)" "a refused commit still moved HEAD"
+  git -C "$repo" -c core.hooksPath=x config --unset core.hooksPath
+  assert_equals "$head" "$(git -C "$repo" -c core.hooksPath=x rev-parse HEAD)" "a refused commit still moved HEAD"
   pass "an unresolvable project core.hooksPath still refuses the commit"
 }
 
@@ -311,8 +311,8 @@ test_valueless_project_hookspath_still_refuses() {
     fail "a commit succeeded although core.hooksPath has no value"
   assert_contains "$err" "missing value for 'core.hookspath'" "the refusal did not show git's lookup error"
   assert_hookspath_wrapper_contract "$err" "missing value for 'core.hookspath'"
-  git -C "$repo" config --unset core.hooksPath
-  assert_equals "$head" "$(git -C "$repo" rev-parse HEAD)" "a refused commit still moved HEAD"
+  git -C "$repo" -c core.hooksPath=x config --unset core.hooksPath
+  assert_equals "$head" "$(git -C "$repo" -c core.hooksPath=x rev-parse HEAD)" "a refused commit still moved HEAD"
   pass "a valueless project core.hooksPath still refuses the commit"
 }
 
@@ -329,8 +329,8 @@ test_valueless_hookspath_before_install_succeeds_and_commit_still_refuses() {
   err=$(with_hooks_env "$hooks" git -C "$repo" commit -q -m 'fix: valueless hooksPath before install' 2>&1) &&
     fail "a commit succeeded although core.hooksPath has no value"
   assert_contains "$err" "missing value for 'core.hookspath'" "the refusal did not show git's lookup error"
-  git -C "$repo" config --unset core.hooksPath
-  assert_equals "$head" "$(git -C "$repo" rev-parse HEAD)" "a refused commit still moved HEAD"
+  git -C "$repo" -c core.hooksPath=x config --unset core.hooksPath
+  assert_equals "$head" "$(git -C "$repo" -c core.hooksPath=x rev-parse HEAD)" "a refused commit still moved HEAD"
   pass "install accepts a valueless core.hooksPath already present and the later commit still refuses"
 }
 

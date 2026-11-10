@@ -167,6 +167,42 @@ SH
   pass "fm-herdr-owned-xdg: live start/check/stop own only the recorded fixture and never call server stop"
 }
 
+test_start_failure_signals_the_forked_process_group() {
+  local root fakebin leader child status=0
+  root=$(fm_herdr_owned_xdg_create) || fail "create failed"
+  remember_owned "$root"
+  fakebin=$(fm_fakebin "$(fm_test_tmproot fm-herdr-owned-xdg-reap)/bin")
+  cat > "$fakebin/herdr" <<SH
+#!/usr/bin/env bash
+if [ "\$1" = session ]; then
+  if [ -s $(printf '%q' "$root/leader.pid") ]; then
+    printf '%s\\n' '{"sessions":[{"default":true,"name":"default","running":true,"socket_path":"/tmp/owned-xdg-reap.sock"}]}'
+  else
+    printf '%s\\n' '{"sessions":[]}'
+  fi
+  exit 0
+fi
+if [ "\$1" = server ]; then
+  sleep 98764 &
+  printf '%s\\n' "\$!" > $(printf '%q' "$root/child.pid")
+  printf '%s\\n' "\$\$" > $(printf '%q' "$root/leader.pid")
+  exec sleep 98765
+fi
+exit 90
+SH
+  chmod +x "$fakebin/herdr"
+  PATH="$fakebin:$PATH" "$HELPER" start "$root" >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "start must fail when the default session never becomes ready"
+  [ -s "$root/leader.pid" ] || fail "the forked herdr did not record its pid"
+  [ -s "$root/child.pid" ] || fail "the forked herdr did not record its process-group child"
+  leader=$(cat "$root/leader.pid")
+  child=$(cat "$root/child.pid")
+  kill -0 "$leader" 2>/dev/null && fail "start left the forked leader pid $leader running"
+  kill -0 "$child" 2>/dev/null && fail "start left process-group child $child running after the leader exited"
+  fm_herdr_owned_xdg_cleanup "$root" || fail "cleanup after a failed start failed"
+  pass "fm-herdr-owned-xdg: a failed start signals the pid it forked, including the process group"
+}
+
 test_live_empty_owned_xdg_still_trips_lab_provision() {
   local root status=0 out name
   command -v herdr >/dev/null 2>&1 || { pass "fm-herdr-owned-xdg: live zero-default (skipped, no herdr)"; return; }
@@ -187,5 +223,6 @@ test_create_clears_inherited_identity_and_cleanup_removes_only_that_dir
 test_cli_refuses_foreign_paths_and_unknown_commands
 test_stop_refuses_a_live_non_herdr_pid
 test_lab_tripwire_still_refuses_zero_and_multiple_defaults
+test_start_failure_signals_the_forked_process_group
 test_live_empty_owned_xdg_still_trips_lab_provision
 test_live_owned_fixture_is_the_only_process_cleanup_stops
