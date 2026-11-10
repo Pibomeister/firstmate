@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>dev.firstmate.terminal-reap</string>
+<key>ProgramArguments</key><array><string>/bin/bash</string><string>/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M73DWA18DQVV86CD6NDTE755/bin/fm-terminal-reap.sh</string><string>--apply</string><string>--no-browsers</string></array>
+<key>EnvironmentVariables</key><dict><key>FM_HOME</key><string><tmp>/fx-after/home</string><key>PATH</key><string>/Users/eduardopicazo/.local/bin:/opt/homebrew/opt/openjdk@17/bin:/Users/eduardopicazo/Library/Android/sdk/platform-tools:/Users/eduardopicazo/Library/Android/sdk/emulator:/Users/eduardopicazo/.grok/bin:/Users/eduardopicazo/.kimi-code/bin:/Users/eduardopicazo/Library/pnpm:/Users/eduardopicazo/.bun/bin:/Users/eduardopicazo/Library/Python/3.9/bin:/Library/TeX/texbin:/Users/eduardopicazo/.local/bin:/opt/homebrew/opt/node@24/bin:/Users/eduardopicazo/.antigravity/antigravity/bin:/opt/homebrew/opt/node@24/bin:/Users/eduardopicazo/.local/bin:/opt/homebrew/opt/openjdk@17/bin:/Users/eduardopicazo/Library/Android/sdk/platform-tools:/Users/eduardopicazo/Library/Android/sdk/emulator:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Library/TeX/texbin:/opt/homebrew/bin:/Users/eduardopicazo/go/bin:/Users/eduardopicazo/.local/bin:/Users/eduardopicazo/.cargo/bin:/Users/eduardopicazo/bin:/opt/homebrew/sbin:/usr/local/sbin:/Users/eduardopicazo/.orbstack/bin:/Users/eduardopicazo/.lmstudio/bin:/Users/eduardopicazo/.claude/plugins/cache/agent-kit/ak/0.1.96/bin</string><key>HOME</key><string>/Users/eduardopicazo</string></dict>
+<key>StartInterval</key><integer>3600</integer>
+<key>RunAtLoad</key><false/>
+<key>StandardOutPath</key><string><tmp>/fx-after/home/state/terminal-reap.log</string>
+<key>StandardErrorPath</key><string><tmp>/fx-after/home/state/terminal-reap.err</string>
+</dict></plist>

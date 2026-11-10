@@ -1,0 +1,37 @@
+=== AFTER (5112d735) ===
+$ FM_HOME=<disposable home> fm-terminal-reap.sh --min-age 0 --no-browsers 
+keep	terminal	helper	term_94a49bc7	/private<tmp>/fx-after/home	sup-writer-main
+keep	terminal	helper	term_55b9d455	/private<tmp>/fx-after/home	sup-writer-secondary
+reap	terminal	idle-session	term_orphan01	/private<tmp>/fx-after/home	fm main successor
+reap	terminal	idle-session	term_embed01	/private<tmp>/fx-after/home	note sup-writer-main
+summary: mode=dry-run terminals=4 reap=2 keep=2 browsers=0 reap=0 keep=0
+exit=0
+$ FM_HOME=<disposable home> fm-terminal-reap.sh --min-age 0 --no-browsers --apply
+keep	terminal	helper	term_94a49bc7	/private<tmp>/fx-after/home	sup-writer-main
+keep	terminal	helper	term_55b9d455	/private<tmp>/fx-after/home	sup-writer-secondary
+closed	terminal	idle-session	term_orphan01	/private<tmp>/fx-after/home	fm main successor
+closed	terminal	idle-session	term_embed01	/private<tmp>/fx-after/home	note sup-writer-main
+summary: mode=apply terminals=4 closed=2 skipped=0 failed=0 keep=2 browsers=0 stopped=0 skipped=0 failed=0 reap=0 keep=0
+exit=0
+orca terminal close calls: term_orphan01 term_embed01 
+
+=== BEFORE (0389b644, base) ===
+$ FM_HOME=<disposable home> fm-terminal-reap.sh --min-age 0 --no-browsers 
+reap	terminal	idle-session	term_94a49bc7	/private<tmp>/fx-before/home	sup-writer-main
+keep	terminal	captain	term_55b9d455	/private<tmp>/fx-before/home	sup-writer-secondary
+reap	terminal	idle-session	term_orphan01	/private<tmp>/fx-before/home	fm main successor
+reap	terminal	idle-session	term_embed01	/private<tmp>/fx-before/home	note sup-writer-main
+summary: mode=dry-run terminals=4 reap=3 keep=1 browsers=0 reap=0 keep=0
+exit=0
+$ FM_HOME=<disposable home> fm-terminal-reap.sh --min-age 0 --no-browsers --apply
+closed	terminal	idle-session	term_94a49bc7	/private<tmp>/fx-before/home	sup-writer-main
+keep	terminal	captain	term_55b9d455	/private<tmp>/fx-before/home	sup-writer-secondary
+closed	terminal	idle-session	term_orphan01	/private<tmp>/fx-before/home	fm main successor
+closed	terminal	idle-session	term_embed01	/private<tmp>/fx-before/home	note sup-writer-main
+summary: mode=apply terminals=4 closed=3 skipped=0 failed=0 keep=1 browsers=0 stopped=0 skipped=0 failed=0 reap=0 keep=0
+exit=0
+orca terminal close calls: term_94a49bc7 term_orphan01 term_embed01 
+<tmp>/drive.sh: line 38: 96802 Terminated: 15          bash -c 'read -r _ <> "$1"' _ "$FX/fifo-$h" > /dev/null 2>&1 < /dev/null
+<tmp>/drive.sh: line 38:  1500 Terminated: 15          bash -c 'read -r _ <> "$1"' _ "$FX/fifo-$h" > /dev/null 2>&1 < /dev/null
+<tmp>/drive.sh: line 38:  3867 Terminated: 15          bash -c 'read -r _ <> "$1"' _ "$FX/fifo-$h" > /dev/null 2>&1 < /dev/null
+<tmp>/drive.sh: line 38:  9774 Terminated: 15          bash -c 'read -r _ <> "$1"' _ "$FX/fifo-$h" > /dev/null 2>&1 < /dev/null
