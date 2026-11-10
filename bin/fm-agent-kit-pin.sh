@@ -7,8 +7,10 @@
 #
 # Reads sha256 digests from <repo>/.cursor/agent-kit.md in GNU sha256sum form
 # (`<64 hex>  <relative-path>`) and compares them to the files on disk.
-# The required paths are .cursor/bin/ak, .cursor/bin/ak.js, and
-# .cursor/bin/ak-gate.mjs. Non-network. Requires `shasum -a 256` or `sha256sum`.
+# The required paths are .cursor/bin/ak, .cursor/bin/ak.js,
+# .cursor/bin/ak-gate.mjs, .cursor/environment.json, tools/cursor/install.sh,
+# and tools/cursor/bun-v1.3.14.sha256. Non-network.
+# Requires `shasum -a 256` or `sha256sum`.
 set -eu
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -61,7 +63,7 @@ count_lines() {
 expected_digest() {
   local rel=$1
   awk -v p="$rel" '
-    $1 ~ /^[0-9a-f]{64}$/ && NF >= 2 {
+    length($1) == 64 && $1 ~ /^[0-9a-f]+$/ && NF >= 2 {
       path = substr($0, index($0, $2))
       if (path == p) print $1
     }
@@ -90,6 +92,9 @@ done <<'EOF'
 .cursor/bin/ak
 .cursor/bin/ak.js
 .cursor/bin/ak-gate.mjs
+.cursor/environment.json
+tools/cursor/install.sh
+tools/cursor/bun-v1.3.14.sha256
 EOF
 
 printf 'fm-agent-kit-pin: ok %s\n' "$ok_parts"

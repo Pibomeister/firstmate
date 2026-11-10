@@ -20,13 +20,16 @@ This overlay does not replace Firstmate's supervisor contract in the repository-
 This overlay does not claim attested independent review or strict Cursor support.
 Firstmate's tracked `.cursor/hooks.json` is not part of the bundle and must stay in place.
 
-Recorded with `sha256sum .cursor/bin/ak .cursor/bin/ak.js .cursor/bin/ak-gate.mjs` at that commit.
-`bin/fm-agent-kit-pin.sh` checks these three lines against the files on disk.
+Recorded with `sha256sum .cursor/bin/ak .cursor/bin/ak.js .cursor/bin/ak-gate.mjs .cursor/environment.json tools/cursor/install.sh tools/cursor/bun-v1.3.14.sha256` at that commit.
+`bin/fm-agent-kit-pin.sh` checks these six lines against the files on disk.
 
 ```
 6df9b52c31bbd16e199349cee2c0ad33355e528199d978e88193ade79c63cfbc  .cursor/bin/ak
 ff0855da89386fda752efb20d56b884c8ad5ceb5260a3fb1847ee270864fd506  .cursor/bin/ak.js
 b1615ebfe0f15cbcd7b99e3efa4b8f7265b47279ddda50d4abd04ce614de6a9a  .cursor/bin/ak-gate.mjs
+edb46699507fe67aa5c0b73c82dcaa4aaa9b5abf1ba2a9b1a54a01c663a96a58  .cursor/environment.json
+3e343b3d74a15d1240da284f4cc90c72f27741db4df6abf650270afa42ef7020  tools/cursor/install.sh
+3d622cb47b53a08e66f9e0d6c81186cd179c6f90917c07f9cf7a55800e49cd37  tools/cursor/bun-v1.3.14.sha256
 ```
 
 ## Licenses
@@ -59,7 +62,9 @@ Every authored catalog role is a `.cursor/agents/<id>.md` subagent.
 
 This repository's agent-kit project record is [`ak.project.json`](../ak.project.json).
 Pass that path as `--project` to `.cursor/bin/ak delegation`.
-`/super-bound` and `/doc-review` runners must pass `--project ak.project.json` for `review.cold_read` and `review.comprehension` shadow to take effect.
+`/doc-review` comprehension shadow applies when it runs with `--project ak.project.json`.
+`/super-bound` cold_read reads only the indexed project record (vendored [super-bound SKILL.md](skills/super-bound/SKILL.md) lines 142-143), so it is expected to stay off until a kb index exists.
+The GS-003a run will confirm this.
 There is no knowledgebase index, and an unindexed project counts as off.
 The Cursor overlay `ak` does not auto-discover a project file and does not expose `ak validate`.
 Keep `review.cold_read` off `on` until GS-004k ships.
@@ -67,9 +72,11 @@ Keep `review.cold_read` off `on` until GS-004k ships.
 ## Bun
 
 The overlay launcher `.cursor/bin/ak` requires bun `1.3.14`.
-Install it with `bash tools/cursor/install.sh`.
+`tools/cursor/install.sh` is for Linux and Cursor cloud agents only.
+On Apple-silicon macOS it would install a Linux ELF.
+For macOS, install exactly bun `1.3.14` with `curl -fsSL https://bun.com/install | bash -s "bun-v1.3.14"` ([Bun docs: Installing Older Versions](https://bun.com/docs/installation#installing-older-versions); the documented example uses `bun-v1.3.3` and the same `bash -s` tag form).
 That script and `tools/cursor/bun-v1.3.14.sha256` are vendored from agent-kit `v0.1.106` (`e1716acf`).
-The install puts bun `1.3.14` at `~/.bun/bin/bun`.
+The Linux install puts bun `1.3.14` at `~/.bun/bin/bun`.
 It skips `bun install --frozen-lockfile` because this repository has no `bun.lock`.
 
 ## Refresh
@@ -88,7 +95,7 @@ Copy `.cursor/environment.json`, `tools/cursor/install.sh`, and `tools/cursor/bu
 Keep Firstmate's `.cursor/hooks.json`.
 Do not copy `.cursor-plugin/`.
 This repository has no `bun.lock`, so after a refresh keep the `install.sh` skip of `bun install --frozen-lockfile`.
-Refresh the three `sha256sum` lines in this file from `.cursor/bin/ak`, `.cursor/bin/ak.js`, and `.cursor/bin/ak-gate.mjs`, then run `bin/fm-agent-kit-pin.sh`.
+Refresh the six `sha256sum` lines in this file from `.cursor/bin/ak`, `.cursor/bin/ak.js`, `.cursor/bin/ak-gate.mjs`, `.cursor/environment.json`, `tools/cursor/install.sh`, and `tools/cursor/bun-v1.3.14.sha256`, then run `bin/fm-agent-kit-pin.sh`.
 Merge a newly generated root `AGENTS.md` section rather than replacing Firstmate's supervisor contract.
 Keep that overlay section a short pointer: it does not replace the supervisor contract, reviewer isolation is `partial`, and super-review runs as `/super-review full|readiness|delta` in Cursor sessions only.
 Check for path collisions with Firstmate's existing `.cursor/` files before copying, and keep Firstmate's copies on a conflict.
