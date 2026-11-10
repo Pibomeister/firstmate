@@ -1,0 +1,6 @@
+claude version: 2.1.322 (Claude Code)
+ok - 2.1.322 (Claude Code): parked stopped after 1 real Stop payload(s)
+STOPHOOK v1 ts=1794343942 session=8493cfc1-0c2c-4251-9005-5195da3ecdf3 status=parked turns=0 repeat=0
+ok - 2.1.322 (Claude Code): active stopped after 2 real Stop payload(s)
+STOPHOOK v1 ts=1794343998 session=8c38f9aa-da61-4828-8e11-007abe393cc0 status=continue turns=1 repeat=0
+rc=0

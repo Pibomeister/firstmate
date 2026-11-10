@@ -1,0 +1,13 @@
+DRILL parked: model stopped in 1 turn; tokenless arm is waiting
+DRILL parked: later real external wake delivered exit=2; queue retained
+STOPHOOK v1 ts=1794343196 session=parked-monitor status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1794343196 session=parked-monitor status=continue turns=1 repeat=0
+ok - parked parked session stops cleanly while monitoring and later wake delivery continue
+DRILL budget: model stopped in 1 turn; tokenless arm is waiting
+DRILL budget: later real external wake delivered exit=2; queue retained
+STOPHOOK v1 ts=1794343224 session=parked-monitor status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1794343224 session=parked-monitor status=hook_budget turns=6 repeat=0
+STOPHOOK v1 ts=1794346825 session=parked-monitor status=continue turns=1 repeat=0
+ok - parked budget session stops cleanly while monitoring and later wake delivery continue
+ok - auto-arm: actionable close translates to exactly one exit-2 rewake with reason
+rc=0

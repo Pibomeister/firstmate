@@ -1,0 +1,11 @@
+claude_rc=0
+--- Stop payloads seen: 2
+guard_rc=2 active=false
+--- assistant replies:
+SHIPSHAPE
+SHIPSHAPE
+--- transcript_path readable: yes
+--- state/stop-hook.log:
+STOPHOOK v1 ts=1794343522 session=2d5cd5fb-2273-472d-9b13-fddebab1a92a status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794343533 session=2d5cd5fb-2273-472d-9b13-fddebab1a92a status=continue turns=2 repeat=2
+rc=0

@@ -1,0 +1,14 @@
+claude_rc=0
+--- Stop payloads seen: 3
+guard_rc=2 active=false
+guard_rc=2 active=true
+guard_rc=0 active=true
+--- assistant replies:
+SHIPSHAPE
+SHIPSHAPE
+SHIPSHAPE
+--- transcript_path readable: yes
+--- state/stop-hook.log:
+STOPHOOK v1 ts=1794340646 session=56d71403-7b28-4789-bf2e-4a6aace2e8c1 status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794340657 session=56d71403-7b28-4789-bf2e-4a6aace2e8c1 status=continue turns=2 repeat=2
+STOPHOOK v1 ts=1794340677 session=56d71403-7b28-4789-bf2e-4a6aace2e8c1 status=hook_loop turns=2 repeat=3

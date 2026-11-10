@@ -1,0 +1,6 @@
+Test round 2 at head 2ffe0b37 (host load average 120-190 throughout)
+- bash tests/fm-stop-policy.test.sh -> 12/12 ok (includes the previously failing "stop_hook_active is honored by the ordinary Stop guard" + hook_active log line). r2-stop-policy-suite.txt
+- FM_TEST_ONLY=stop-policy bash tests/fm-turnend-guard.test.sh -> all ok, incl. codex checkpoint reblock under active+budget and parked passive no-watcher. r2-turnend-guard-stop-policy.txt
+- FM_TEST_ONLY=stop-policy bash tests/fm-claude-stop-autoarm.test.sh -> all ok (parked drill + budget drill, monitoring retained). r2-autoarm-stop-policy.txt
+- Live Claude 2.1.322 payload probe (FM_STOP_POLICY_LIVE_E2E=1): r2 and r3 flaked (one hook payload missing / stop-hook.log absent) because guard latency under load exceeded the test wrapper's 10s hook timeout; r4 passed (parked: 1 payload; active: 2 payloads). Installed guard hook uses Claude's default 60s timeout.
+- Live loop drill with real Claude, timed wrapper (90s hook timeout): turns 1-2 exit 2 (continue), turn 3 identical reply -> hook_loop, allow, claude exits. Guard latencies 1s/2s/21s. r3-live-loop-drill-timed.txt

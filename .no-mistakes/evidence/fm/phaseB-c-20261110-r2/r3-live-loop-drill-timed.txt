@@ -1,0 +1,17 @@
+14:49  up 5 days, 19:26, 148 users, load averages: 144.67 146.34 181.86
+claude_rc=0
+--- Stop payloads seen: 3
+guard_rc=2 active=false secs=1
+guard_rc=2 active=true secs=2
+guard_rc=0 active=true secs=21
+--- assistant replies:
+SHIPSHAPE
+SHIPSHAPE
+SHIPSHAPE
+--- transcript_path readable: yes
+--- state/stop-hook.log:
+STOPHOOK v1 ts=1794343807 session=65e4b35a-277d-4bf3-9048-1c18b4fe696e status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794343810 session=65e4b35a-277d-4bf3-9048-1c18b4fe696e status=continue turns=2 repeat=2
+STOPHOOK v1 ts=1794343826 session=65e4b35a-277d-4bf3-9048-1c18b4fe696e status=hook_loop turns=2 repeat=3
+rc=0
+14:50  up 5 days, 19:27, 148 users, load averages: 163.70 149.52 181.11

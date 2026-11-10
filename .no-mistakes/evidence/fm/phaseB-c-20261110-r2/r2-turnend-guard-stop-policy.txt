@@ -1,0 +1,9 @@
+ok - fm-turnend-guard --claude: active-hook stop cannot reopen the blind-supervision window
+ok - fm-turnend-guard --claude: a live arming epoch advances once and repeated observation is idempotent
+ok - fm-turnend-guard --claude: fresh rewake epoch prevents a duplicate continuation for the same event
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-turnend-guard.679pdL/codex-own-checkpoint-reblock/ckpt/fm-watch-checkpoint.sh: line 12: 55411 Terminated: 15          sleep 30
+ok - fm-turnend-guard codex: stop_hook_active and the hourly budget do not end a turn over a running checkpoint
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-turnend-guard.679pdL/codex-own-checkpoint-ends-300/ckpt/fm-watch-checkpoint.sh: line 12: 50915 Terminated: 15          sleep 30
+ok - fm-turnend-guard codex: holds the turn while its own checkpoint runs, then the no-progress escape applies
+ok - fm-turnend-guard: the parked shortcut never ends a passive turn without a watcher
+rc=0

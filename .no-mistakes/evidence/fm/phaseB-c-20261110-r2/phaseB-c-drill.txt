@@ -1,0 +1,99 @@
+== phaseB-c combined drill @ 753efa6592fd705ec2ed45cbcc592c66d080edb0
+
+### stop-policy-suite.txt
+DRILL lab_home=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stop-policy.l6oexC/home (temporary FM_HOME)
+ok - DRILL all-parked: stopped in 1 turn
+ok - parked shortcut preserves executable orders and mixed work
+not ok - missing hook_active event
+bash tests/fm-stop-policy.test.sh  0.76s user 1.47s system 4% cpu 47.960 total
+
+### stop-policy-suite-remaining-scenarios.txt
+DRILL lab_home=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stop-policy.jE4mGQ/home (temporary FM_HOME)
+ok - DRILL all-parked: stopped in 1 turn
+ok - parked shortcut preserves executable orders and mixed work
+ok - stop_hook_active is honored by the ordinary Stop guard
+DRILL repeated reply turn=1 exit=2
+DRILL repeated reply turn=2 exit=2
+DRILL repeated reply turn=3 exit=0
+ok - DRILL constant normalized reply: loop broken by turn 3
+ok - rolling-hour budget permits at most six continuations per session
+ok - budget expires after a rolling hour without affecting other sessions
+ok - a fixed turn_id without a transcript cannot bypass the cap
+ok - parallel Stop entrypoints share one event charge
+ok - three concurrent Stop writers reserve one continuation
+ok - check mode ignores ledger contention and transcript parsing
+ok - tool calls and commits reset the repeat streak
+ok - handoff gate honors stop_hook_active; auto-arm arming is tested separately
+STOPHOOK v1 ts=1794339988 session=parked status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1794339991 session=parked-order status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794340008 session=external status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1794340023 session=mixed status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794340032 session=repeat status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794340037 session=repeat status=continue turns=2 repeat=2
+STOPHOOK v1 ts=1794340043 session=repeat status=hook_loop turns=2 repeat=3
+STOPHOOK v1 ts=1794340044 session=budget status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794340050 session=budget status=continue turns=2 repeat=1
+STOPHOOK v1 ts=1794340055 session=budget status=continue turns=3 repeat=1
+STOPHOOK v1 ts=1794340081 session=budget status=continue turns=4 repeat=1
+STOPHOOK v1 ts=1794340112 session=budget status=continue turns=5 repeat=1
+STOPHOOK v1 ts=1794340127 session=budget status=continue turns=6 repeat=1
+STOPHOOK v1 ts=1794340162 session=budget status=hook_budget turns=6 repeat=1
+STOPHOOK v1 ts=1794343781 session=budget status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794340186 session=no-transcript status=continue turns=1 repeat=0
+STOPHOOK v1 ts=1794340193 session=no-transcript status=continue turns=2 repeat=0
+STOPHOOK v1 ts=1794340195 session=no-transcript status=continue turns=3 repeat=0
+STOPHOOK v1 ts=1794340198 session=no-transcript status=continue turns=4 repeat=0
+STOPHOOK v1 ts=1794340204 session=no-transcript status=continue turns=5 repeat=0
+STOPHOOK v1 ts=1794340214 session=no-transcript status=continue turns=6 repeat=0
+STOPHOOK v1 ts=1794340226 session=no-transcript status=hook_budget turns=6 repeat=0
+STOPHOOK v1 ts=1794340231 session=dedup status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794340256 session=concurrent status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794340259 session=progress status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794340263 session=progress status=continue turns=2 repeat=2
+STOPHOOK v1 ts=1794340267 session=progress status=continue turns=3 repeat=0
+STOPHOOK v1 ts=1794340274 session=progress status=continue turns=4 repeat=0
+
+### turnend-guard-stop-policy.txt
+ok - fm-turnend-guard --claude: active-hook stop cannot reopen the blind-supervision window
+ok - fm-turnend-guard --claude: a live arming epoch advances once and repeated observation is idempotent
+ok - fm-turnend-guard --claude: fresh rewake epoch prevents a duplicate continuation for the same event
+ok - fm-turnend-guard codex: stop_hook_active and the hourly budget do not end a turn over a running checkpoint
+ok - fm-turnend-guard codex: holds the turn while its own checkpoint runs, then the no-progress escape applies
+ok - fm-turnend-guard: the parked shortcut never ends a passive turn without a watcher
+
+### autoarm-stop-policy.txt
+DRILL parked: model stopped in 1 turn; tokenless arm is waiting
+DRILL parked: later real external wake delivered exit=2; queue retained
+STOPHOOK v1 ts=1794339723 session=parked-monitor status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1794339723 session=parked-monitor status=continue turns=1 repeat=0
+ok - parked parked session stops cleanly while monitoring and later wake delivery continue
+DRILL budget: model stopped in 1 turn; tokenless arm is waiting
+DRILL budget: later real external wake delivered exit=2; queue retained
+STOPHOOK v1 ts=1794339773 session=parked-monitor status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1794339773 session=parked-monitor status=hook_budget turns=6 repeat=0
+STOPHOOK v1 ts=1794343374 session=parked-monitor status=continue turns=1 repeat=0
+ok - parked budget session stops cleanly while monitoring and later wake delivery continue
+ok - auto-arm: actionable close translates to exactly one exit-2 rewake with reason
+
+### stop-policy-live-e2e.txt
+claude version: 2.1.322 (Claude Code)
+ok - 2.1.322 (Claude Code): parked stopped after 1 real Stop payload(s)
+STOPHOOK v1 ts=1794340348 session=e111b16e-dd1d-42db-804b-c4e0145c02ce status=parked turns=0 repeat=0
+ok - 2.1.322 (Claude Code): active stopped after 2 real Stop payload(s)
+STOPHOOK v1 ts=1794340370 session=55284c0e-89ad-421e-9a7b-c2c275c41ab0 status=continue turns=1 repeat=0
+
+### live-loop-drill.txt
+claude_rc=0
+--- Stop payloads seen: 3
+guard_rc=2 active=false
+guard_rc=2 active=true
+guard_rc=0 active=true
+--- assistant replies:
+SHIPSHAPE
+SHIPSHAPE
+SHIPSHAPE
+--- transcript_path readable: yes
+--- state/stop-hook.log:
+STOPHOOK v1 ts=1794340646 session=56d71403-7b28-4789-bf2e-4a6aace2e8c1 status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794340657 session=56d71403-7b28-4789-bf2e-4a6aace2e8c1 status=continue turns=2 repeat=2
+STOPHOOK v1 ts=1794340677 session=56d71403-7b28-4789-bf2e-4a6aace2e8c1 status=hook_loop turns=2 repeat=3
