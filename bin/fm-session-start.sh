@@ -583,7 +583,7 @@ cap_marked_lines() {
 # WAKE_INLINE_MAX bytes it prints verbatim. Over it, the complete presentation is
 # first saved to WAKE_PRESENTATION_FILE, and only then is the inline copy bounded.
 # It keeps each non-historical `wake annotation: latest wake-EVENT observed at
-# drain` line, one per signalled status file, cut to WAKE_ANNOTATION_MAX
+# drain` line, only the first per signalled status file, cut to WAKE_ANNOTATION_MAX
 # characters with the shared line cut. It leaves out the earlier unread and the
 # historical `wake annotation:` lines and every OPEN DECISIONS or STATUS OUTCOME
 # BACKSTOP item past the first WAKE_SECTION_ITEMS of its section, each omission
@@ -610,13 +610,19 @@ print_wake_presentation() {
     && printf '%s\n' "$out" > "$tmp" 2>/dev/null \
     && mv -f "$tmp" "$WAKE_PRESENTATION_FILE" 2>/dev/null; then
     printf '%s\n' "$out" | awk -v keep="$WAKE_SECTION_ITEMS" -v saved="$WAKE_PRESENTATION_FILE" -v bullet='●' \
-      -v amax="$WAKE_ANNOTATION_MAX" '
+      -v amax="$WAKE_ANNOTATION_MAX" \
+      -v latest_prefix='wake annotation: latest wake-EVENT observed at drain, not current state: ' '
       function close_section() {
         if (section != "" && cut > 0)
           printf "(%d more %s line(s) left out here; the saved presentation at %s lists them)\n", cut, section, saved
         section = ""; shown = 0; cut = 0
       }
+      # The drain labels every unread event whose text equals the newest one
+      # "latest", so keep only the first per status file; repeats count as left out.
       /^wake annotation: latest wake-EVENT observed at drain, not current state: / {
+        key = substr($0, length(latest_prefix) + 1)
+        key = substr(key, 1, index(key, ": ") - 1)
+        if (seen[key]++) { annotations++; next }
         printf "\037%d\037%s\n", amax, $0
         next
       }

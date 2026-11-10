@@ -1239,6 +1239,40 @@ EOF
   pass "a large wake presentation keeps each latest direct annotation inline and leaves out only the unread backlog and historical lines"
 }
 
+# The drain labels every unread event whose text equals the newest one as
+# "latest", so a worker that repeats one status line many times produces many
+# identical latest annotations. The inline copy keeps one per status file and
+# counts the repeats among the left-out lines.
+test_wake_presentation_keeps_one_latest_annotation_per_status_file() {
+  local rec root home fakebin out saved n
+  rec=$(new_world wake-spill-latest-repeats)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  awk 'BEGIN { for (i = 1; i <= 80; i++) print "working: waiting on the same upstream check with identical padding text" }' \
+    > "$home/state/task-r.status"
+  printf 'done: shipped the other fix\n' > "$home/state/task-o.status"
+  append_wake "$home/state" signal task-r.status "working: waiting" || fail "seed wake r failed"
+  append_wake "$home/state" signal task-o.status "done: shipped the other fix" || fail "seed wake o failed"
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  saved="$home/state/.session-start-wake-presentation"
+
+  [ -f "$saved" ] || fail "the over-budget presentation was not saved"
+  [ "$(grep -c '^wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: ' "$saved")" -gt 1 ] ||
+    fail "the fixture no longer produces repeated latest annotations, so this test proves nothing"
+  n=$(printf '%s\n' "$out" | grep -c '^wake annotation: latest wake-EVENT observed at drain, not current state: task-r.status: ')
+  [ "$n" -eq 1 ] || fail "repeated identical latest annotations for one status file printed $n times inline: $out"
+  assert_contains "$out" "wake annotation: latest wake-EVENT observed at drain, not current state: task-o.status: done: shipped the other fix" \
+    "another status file's latest annotation left the inline copy"
+  assert_contains "$out" "earlier unread and historical wake-event annotation line(s) left out to bound this digest" \
+    "the left-out repeats were not disclosed"
+
+  pass "a large wake presentation keeps one latest annotation per status file when a worker repeats its status line"
+}
+
 # On a large presentation, a drain section that follows a bounded one is not
 # counted as its items: BRANCH OUTCOMES directly after STATUS OUTCOME BACKSTOP
 # prints whole inline, while only the backstop's own items are bounded.
@@ -3831,6 +3865,7 @@ test_wake_presentation_bound_counts_bytes_not_characters
 test_wake_presentation_keeps_everything_when_save_path_is_a_directory
 test_wake_presentation_prints_section_after_bounded_one_whole
 test_wake_presentation_keeps_latest_direct_annotations_inline
+test_wake_presentation_keeps_one_latest_annotation_per_status_file
 test_digest_stays_under_size_budget_on_large_home
 test_lock_refusal_read_only_path
 test_lock_write_failure_read_only_path
