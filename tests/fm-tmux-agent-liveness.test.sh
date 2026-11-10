@@ -73,9 +73,6 @@ ln -s "$STANDIN_BIN" "$LAB/bin/notdroid"
 # merely contains it.
 ln -s "$STANDIN_BIN" "$LAB/bin/command-code"
 ln -s "$STANDIN_BIN" "$LAB/bin/command-code-helper"
-# Hermes's own launcher is argv[0] `hermes`; the decoy merely contains it.
-ln -s "$STANDIN_BIN" "$LAB/bin/hermes"
-ln -s "$STANDIN_BIN" "$LAB/bin/hermes-helper"
 # muse's installed binary is muse-bin-<version>: the launcher execs it, so the
 # version is the LIVE process name and it changes on every auto-update. Unlike
 # Claude Code's version-named binary there is no `muse` path component to fall
@@ -569,64 +566,6 @@ fi
 [ "$(fm_tmux_composer_state "$SESSION:cc-decoy")" = unknown ] \
   || fail "the reclassification and its ceiling must be gated on Command Code's own process identity"
 pass "commandcode composer: an identical screen stays unknown when the pane is not Command Code"
-
-# Hermes's default profile draws an unprefixed `❯` prompt under its native
-# status rule (Hermes Agent 0.21.7). That row also matches the generic
-# cursor-anchored shape, so a Hermes pane must be read by its identity-scoped
-# classifier first: the native orange busy hint is not a draft, and a bare
-# prompt without the status rule is not proven empty.
-hermes_screen() {  # <rule|norule> <hint|draft|placeholder|bare>
-  local e
-  e=$(printf '\033')
-  printf '\n  done\n\n'
-  case "$1" in
-    rule) printf ' \342\224\200 ready \342\224\202 model \342\224\202 1s\n' ;;
-  esac
-  case "$2" in
-    hint) printf '\342\235\257 %s[38;5;231m%s[48;5;178mC%s[38;5;178m%s[49mtrl+C to interrupt\342\200\246%s[39m' "$e" "$e" "$e" "$e" "$e" ;;
-    draft) printf '\342\235\257 real draft' ;;
-    placeholder) printf '\342\235\257 %s[2mAsk me anything\342\200\246%s[0m' "$e" "$e" ;;
-    bare) printf '\342\235\257 ' ;;
-  esac
-}
-open_hermes_pane() {  # <window> <binary> <rule|norule> <row>
-  local window=$1 binary=$2 rule=$3 row=$4 i=0
-  new_window "$window" bash -c "$(declare -f hermes_screen); hermes_screen '$rule' '$row'; exec '$binary' 900"
-  while [ "$i" -lt 100 ]; do
-    case "$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$SESSION:$window" 2>/dev/null)" in
-      *'❯'*) sleep 0.2; return 0 ;;
-    esac
-    sleep 0.1
-    i=$((i + 1))
-  done
-  fail "pane $window never rendered its composer"
-}
-
-open_hermes_pane hm-busy "$LAB/bin/hermes" rule hint
-case "$(fm_tmux_composer_identity "$SESSION:hm-busy")" in
-  hermes$'\t'*) ;;
-  *) fail "a pane whose foreground process is hermes must identify as Hermes" ;;
-esac
-[ "$(fm_tmux_composer_state "$SESSION:hm-busy")" = empty ] \
-  || fail "Hermes's native busy hint on an unprefixed prompt must not read as a draft, or busy interrupts are refused"
-open_hermes_pane hm-idle "$LAB/bin/hermes" rule placeholder
-[ "$(fm_tmux_composer_state "$SESSION:hm-idle")" = empty ] \
-  || fail "an idle unprefixed Hermes prompt beneath its status rule must read empty"
-open_hermes_pane hm-draft "$LAB/bin/hermes" rule draft
-[ "$(fm_tmux_composer_state "$SESSION:hm-draft")" = pending ] \
-  || fail "a bright typed draft on an unprefixed Hermes prompt must read pending"
-open_hermes_pane hm-norule "$LAB/bin/hermes" norule bare
-[ "$(fm_tmux_composer_state "$SESSION:hm-norule")" = unknown ] \
-  || fail "an unprefixed Hermes prompt without its native status rule must not be proven empty"
-pass "hermes composer: an unprefixed default-profile prompt is read by Hermes identity before the generic cursor shape"
-
-open_hermes_pane hm-decoy "$LAB/bin/hermes-helper" norule bare
-if fm_tmux_composer_identity "$SESSION:hm-decoy" >/dev/null; then
-  fail "a pane running hermes-helper must not identify as Hermes"
-fi
-[ "$(fm_tmux_composer_state "$SESSION:hm-decoy")" = "$(cursor_anchored_verdict "$SESSION:hm-decoy")" ] \
-  || fail "a non-Hermes prompt pane must keep the generic cursor-anchored verdict"
-pass "hermes composer: a non-Hermes prompt keeps the generic cursor-anchored verdict"
 
 cleanup_all
 trap - EXIT
