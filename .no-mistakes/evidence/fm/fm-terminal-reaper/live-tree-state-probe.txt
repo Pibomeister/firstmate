@@ -1,0 +1,7 @@
+busy tree (bash running python3): ambiguous
+kill -0 on root-owned launchd pid 1 rc=1 (permission denied, process live)
+pid_absent 1: present (correct, never ignored)
+pid_absent of exited pid 38655: absent (correct)
+bash: line 1: 35990 Terminated: 15          python3 -c "import time; time.sleep(600)"
+idle shell tree (bash waiting on read): dead
+bash: line 1: 10540 Terminated: 15          bash -c "read x <$F"
