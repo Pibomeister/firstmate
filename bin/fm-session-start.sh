@@ -1134,7 +1134,7 @@ print_reentry_card() {
   printf '%s\n' "$head"
   reentry_card_body | LC_ALL=C awk -v max="$budget" '
     { n += length($0) + 1; if (cut || n > max) { cut = 1; omitted++; next } print }
-    END { if (cut) printf "[%d more line(s) omitted at the card'"'"'s byte bound; the full re-emit below lists them]\n", omitted }'
+    END { if (cut) printf "[%d more line(s) omitted at the card'"'"'s byte bound; run the full re-emit named under MORE to list them]\n", omitted }'
   printf '%s\n' "$tail"
 }
 
