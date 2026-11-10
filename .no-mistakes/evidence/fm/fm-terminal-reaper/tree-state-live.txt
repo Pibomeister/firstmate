@@ -1,0 +1,3 @@
+shell with unrecognized child (sleep): ambiguous
+idle shell only: dead
+exited pid: unreadable
