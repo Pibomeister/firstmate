@@ -341,6 +341,8 @@ esac
 . "$SCRIPT_DIR/fm-busy-lib.sh"
 # shellcheck source=bin/fm-watchdog-lib.sh
 . "$SCRIPT_DIR/fm-watchdog-lib.sh"
+# shellcheck source=bin/fm-health-lib.sh
+. "$SCRIPT_DIR/fm-health-lib.sh"
 # Steering-inbox loss detection: bin/fm-task-inbox-lib.sh owns the record,
 # doorbell, re-ring ladder, and unavailable-endpoint contracts; this watcher
 # supplies their live endpoint and busy checks plus wake emission
@@ -3914,26 +3916,13 @@ EOF
 # surfaced when it wakes firstmate, this normally finds nothing and the heartbeat
 # is absorbed; it surfaces only an event the per-wake path absorbed by mistake -
 # the fail-safe backstop.
-# heartbeat_open_work: an attended primary home with an unresolved dispatch-log
-# goal, or an in-flight task not resting in a declared paused or captain-held
-# wait, gets the 15-minute heartbeat floor; held and paused waits keep their own
-# PAUSE_RESURFACE_SECS cadence and the HEARTBEAT_MAX backoff.
+# heartbeat_open_work: an attended primary home with open work
+# (fm_health_open_work in bin/fm-health-lib.sh) gets the 15-minute heartbeat
+# floor; held and paused waits keep their own PAUSE_RESURFACE_SECS cadence and
+# the HEARTBEAT_MAX backoff. A secondmate home never gets the floor.
 heartbeat_open_work() {
-  local meta task last until
   [ ! -e "$FM_HOME/.fm-secondmate-parent" ] || return 1
-  fm_sup_open_goal "$STATE" && return 0
-  for meta in "$STATE"/*.meta; do
-    [ -e "$meta" ] || continue
-    task=${meta##*/}; task=${task%.meta}
-    last=$(status_declared_wait_line "$STATE/$task.status")
-    status_is_captain_held "$last" && continue
-    if status_is_paused "$last" \
-      && { ! until=$(status_paused_until "$last") || [ "$(fm_watch_now)" -lt "$until" ]; }; then
-      continue
-    fi
-    return 0
-  done
-  return 1
+  fm_health_open_work "$FM_HOME" "$(fm_watch_now)" "$STATE"
 }
 
 heartbeat_scan_finds_actionable() {

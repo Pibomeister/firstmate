@@ -450,7 +450,7 @@ family_for_basename() {
     fm-busy-state.test.sh|fm-capacity.test.sh|fm-captain-record.test.sh|fm-disk-alarm.test.sh|fm-classify-corr-token.test.sh|\
     fm-claude-stop-autoarm.test.sh|fm-cursor-harness.test.sh|\
     fm-dispatch-resolve.test.sh|\
-    fm-extension-binding.test.sh|fm-gitignore-config.test.sh|\
+    fm-extension-binding.test.sh|fm-gitignore-config.test.sh|fm-health-verdict.test.sh|\
     fm-no-mistakes-required.test.sh|fm-peek-remote.test.sh|\
     fm-pending-reply.test.sh|fm-pi-branch-extension.test.sh|\
     fm-procevent-extension-errors.test.sh|fm-procevent-factory.test.sh|fm-procevent-no-mistakes.test.sh|fm-procevent-quota.test.sh|fm-procevent-when.test.sh|fm-procevent.test.sh|\

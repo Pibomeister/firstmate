@@ -16,6 +16,8 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-fleet-sync.sh`       | Refresh project clones with safe fast-forwards, self-heals, `STUCK:` reports, branch pruning, and bounded recovery from an orphaned `.git/packed-refs.lock` |
 | `fm-fleet-snapshot.sh`   | Print structured fleet snapshot JSON and refresh only its parent-side remote-ledger cache (schema `fm-fleet-snapshot.v1`) |
 | `fm-heartbeat.sh`        | Atomically publish the bounded self-watching ledger `state/heartbeat.json` (schema `fm-heartbeat.v1`); unread fields report unknown, including weekly model allowance when quota-axi cannot be read |
+| `fm-health-verdict.sh`   | Print one read-only health verdict for a home (`ok`, `stale`, `dead`, `unconfirmed` or `unknown`) from the heartbeat ledger, the captain record's lock verdict and the watcher beat, and with `--write` record it in `state/health-verdict`. The mid-turn exemption uses the caller's own supervision model, so a caller on a different harness than the home's primary must set `FM_SUPERVISION_MODEL` |
+| `fm-health-lib.sh`       | Shared health predicates, starting with the open-work test that the heartbeat floor and the health verdict both read |
 | `fm-ready-pr-discovery.sh` | List read-only the no-mistakes runs parked with a PR ready or at a gate in every registered repo, owned or orphan |
 | `fm-context-burn.sh`     | Record each turn's external until-auto-compact percent, from the pane footer or else the transcript formula, and name a long report by path and sha256 |
 | `fm-context-footer-lib.sh` | Parse the external auto-compact footer percent shared by the heartbeat ledger, the context-burn recorder and the shared context reading |
