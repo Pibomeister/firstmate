@@ -213,7 +213,10 @@ for mode in exit parse reject wrong-sha stale expired hung-launch; do
   grep -q '^HANDOFF v1 .* event=handoff_failed ' "$LAB/state/handoff-events.log" || fail "$mode must emit machine-readable failure"
   [ "$((SECONDS-start))" -lt 30 ] || fail "$mode exceeded bounded lab deadline"
   if [ "$mode" = reject ]; then
-    grep -q ' event=handoff_reject ' "$LAB/state/handoff-events.log" || fail 'read-only successor must reject loudly'
+    grep -q ' event=handoff_reject nonce=none .* reason=lock_held_unbound$' "$LAB/state/handoff-events.log" \
+      || fail 'a session refused during the pending window must log lock_held_unbound'
+    grep -q ' event=handoff_reject nonce=[0-9a-f]* .* reason=lock_held$' "$LAB/state/handoff-events.log" \
+      && fail 'a refusal without the claim nonce must never be a bound successor reject'
   fi
   cat "$LAB/state/handoff-events.log"
   if [ "$mode" = parse ]; then cat "$LAB/state/"successor-*.out; fi

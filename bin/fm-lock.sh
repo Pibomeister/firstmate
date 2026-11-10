@@ -296,11 +296,16 @@ confirm_own_lock() {  # <recorded-pid>
 }
 
 refuse_live_owner() {  # <recorded-pid>
-  local recorded deadline
+  local recorded deadline nonce
   if [ -f "$STATE/.handoff-pending" ] \
     && deadline=$(jq -er '.deadline | numbers' "$STATE/.handoff-pending" 2>/dev/null) \
     && [ "$(date +%s)" -lt "$deadline" ]; then
-    fm_handoff_event handoff_reject "$(jq -r '.nonce // ""' "$STATE/.handoff-pending" 2>/dev/null)" 0 "$me" "${ORCA_TERMINAL_HANDLE:-${TMUX_PANE:-}}" lock_held >&2
+    nonce=$(jq -r '.nonce // ""' "$STATE/.handoff-pending" 2>/dev/null)
+    if [ -n "$nonce" ] && [ "${FM_HANDOFF_NONCE:-}" = "$nonce" ]; then
+      fm_handoff_event handoff_reject "$nonce" 0 "$me" "${ORCA_TERMINAL_HANDLE:-${TMUX_PANE:-}}" lock_held >&2
+    else
+      fm_handoff_event handoff_reject none 0 "$me" "${ORCA_TERMINAL_HANDLE:-${TMUX_PANE:-}}" lock_held_unbound >&2
+    fi
   fi
   if recorded=$(fm_session_lock_recorded_session_id "$STATE"); then
     echo "error: another live firstmate session holds the lock (pid $1, session $recorded); operate read-only until resolved" >&2

@@ -14,6 +14,9 @@
 # HANDOFF v1 ts=<epoch> event=<handoff_started|handoff_retry|handoff_ack|handoff_failed|handoff_reject>
 #   nonce=<hex-or-none> attempt=<0|1|2> pid=<digits-or-0> handle=<safe-token-or-none> reason=<safe-token>
 # Each event is ONE line, fields in that order; no prose or paths on the wire.
+# reason=lock_held_unbound (always nonce=none) is a refused session during a
+# live claim that did not present the claim's nonce. It is NOT a successor
+# reject and must not end an attempt; only a nonce-bound handoff_reject does.
 
 fm_handoff_event() { # <event> <nonce> <attempt> <pid> <handle> <reason>
   local line handle=$5 nonce=$2 pid=$4
