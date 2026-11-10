@@ -2464,15 +2464,32 @@ test_codex_blocks_turn_end_while_own_checkpoint_runs() {
   pass "fm-turnend-guard codex: blocks a turn end while its own checkpoint is still running"
 }
 
-test_codex_allows_active_hook_over_open_checkpoint() {
-  local dir checkpoint
+test_codex_reblocks_open_checkpoint_after_its_own_block() {
+  local dir checkpoint now
   dir=$(make_primary_dir "$TMP_ROOT/codex-own-checkpoint-reblock")
   : > "$dir/state/task1.meta"
+  now=$(date +%s)
+  jq -nc --argjson now "$now" '{times:[$now,$now,$now,$now,$now,$now],streak:0}' > "$dir/state/.stop-hook.s1.json"
   checkpoint=$(make_codex_checkpoint "$dir")
   run_codex_hook "$dir" "$(codex_payload s1 t1 true)" "$checkpoint"
   stop_codex_checkpoint "$dir"
-  expect_code 0 "$STATUS" "stop_hook_active=true must allow stop even over a running checkpoint: $OUT"
-  pass "fm-turnend-guard codex: honors stop_hook_active over a running checkpoint"
+  expect_code 2 "$STATUS" "stop_hook_active=true and a spent hourly budget must not end a Codex turn over a checkpoint that is still running: $OUT"
+  assert_contains "$OUT" "foreground checkpoint is still running" "the re-block must name the running checkpoint"
+  pass "fm-turnend-guard codex: stop_hook_active and the hourly budget do not end a turn over a running checkpoint"
+}
+
+test_hook_passive_parked_home_without_watcher_blocks() {
+  local dir home out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-passive-parked-blind")
+  : > "$dir/state/task1.meta"
+  printf 'paused [at=1]: awaiting external check completion\n' > "$dir/state/task1.status"
+  home=$(cd "$dir" && pwd)
+  status=0
+  out=$(printf '{"session_id":"passive-parked","stop_hook_active":false}' \
+    | PATH="$BLIND_BIN:$PATH" CLAUDECODE=1 FM_HOME="$home" bash "$dir/bin/fm-turnend-guard.sh" 2>&1) || status=$?
+  expect_code 2 "$status" "a parked passive home with no watcher must still be told to restore monitoring: $out"
+  assert_contains "$out" "TURN WOULD END BLIND" "the block must carry the blind-turn banner"
+  pass "fm-turnend-guard: the parked shortcut never ends a passive turn without a watcher"
 }
 
 test_codex_holds_own_checkpoint_then_ignored_repair_can_end() {
@@ -2504,9 +2521,9 @@ printf "%s" "$FM_T_NEXT" | FM_HOME="$FM_T_HOME" bash "$FM_T_HOME/bin/fm-turnend-
 printf "%s\n" "$?" > "$FM_T_DIR/rc3"
 :'
   expect_code 2 "$(cat "$io/rc1")" "a Codex stop while this session's own checkpoint runs must block: $(cat "$io/out1")"
-  expect_code 0 "$(cat "$io/rc2")" "active-hook continuation may stop while the own checkpoint is alive: $(cat "$io/out2")"
+  expect_code 2 "$(cat "$io/rc2")" "a continuation while the own checkpoint is still alive must stay held: $(cat "$io/out2")"
   expect_code 0 "$(cat "$io/rc3")" "once the own checkpoint has ended and nothing advanced, the continuation may end: $(cat "$io/out3")"
-  pass "fm-turnend-guard codex: initial checkpoint stop blocks; active-hook stops are allowed"
+  pass "fm-turnend-guard codex: holds the turn while its own checkpoint runs, then the no-progress escape applies"
 }
 
 test_codex_allows_watcher_owned_by_another_session() {
@@ -3250,6 +3267,9 @@ if [ "${FM_TEST_ONLY:-}" = stop-policy ]; then
   test_hook_claude_mode_reblocks_stop_hook_active_when_unhealthy
   test_hook_claude_mode_allows_when_autoarm_owner_alive
   test_hook_claude_mode_allows_on_fresh_rewake_epoch
+  test_codex_reblocks_open_checkpoint_after_its_own_block
+  test_codex_holds_own_checkpoint_then_ignored_repair_can_end
+  test_hook_passive_parked_home_without_watcher_blocks
   exit 0
 fi
 if [ "${FM_TEST_ONLY:-}" = secondmate-endturn ]; then
@@ -3361,8 +3381,9 @@ test_hook_away_daemon_blocks_dead_daemon_despite_poll_derived_grace
 test_hook_away_daemon_blocks_beacon_older_than_poll_derived_grace
 test_hook_no_afk_ignores_poll_derived_grace
 test_codex_blocks_turn_end_while_own_checkpoint_runs
-test_codex_allows_active_hook_over_open_checkpoint
+test_codex_reblocks_open_checkpoint_after_its_own_block
 test_codex_holds_own_checkpoint_then_ignored_repair_can_end
+test_hook_passive_parked_home_without_watcher_blocks
 test_codex_holds_own_checkpoint_then_ignored_repair_can_end 1 2
 test_codex_allows_watcher_owned_by_another_session
 test_codex_missing_watcher_allows_stop_without_a_checkpoint_loop

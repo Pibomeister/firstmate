@@ -444,7 +444,7 @@ block_stop() {
   if [ "$CLAUDE_MODE" -eq 1 ]; then
     fm_stop_policy_allows_stop "$PAYLOAD" repair && allow_exit
   elif [ "$CHECKPOINT_OPEN" -eq 0 ]; then
-    fm_stop_policy_allows_stop "$PAYLOAD" charge && allow_exit
+    fm_stop_policy_allows_stop "$PAYLOAD" limit && allow_exit
   fi
   afk=0
   [ -e "$STATE/.afk" ] && afk=1

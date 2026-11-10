@@ -1,11 +1,12 @@
 # shellcheck shell=bash
 # Primary Stop continuation policy. Monitoring never uses this as an arm gate.
-# fm_stop_policy_allows_stop <payload-json> [check|supervise|charge|repair|rewake]
+# fm_stop_policy_allows_stop <payload-json> [check|supervise|charge|limit|repair|rewake]
 # returns 0 to suppress a model continuation, 1 to retain existing behavior.
 # check honors stop_hook_active and parked work; supervise checks parked work
 # but leaves Claude's missing-supervision recovery intact. Neither check mode
 # parses transcripts, reads HEAD, acquires a lock or spends continuation budget.
-# charge reserves a continuation; repair ignores the active-hook shortcut so
+# charge reserves a continuation; limit reserves one without the parked shortcut,
+# for a caller whose stop would otherwise leave monitoring blind; repair ignores the active-hook shortcut so
 # missing monitoring can recover; rewake also ignores the parked shortcut,
 # because its caller has just observed a real watcher close. All state and
 # transcript evidence is read at invocation time, never cached at hook startup.
@@ -102,14 +103,14 @@ fm_stop_policy_allows_stop() (
       "${now:-$(date +%s)}" "$session" "$1" "${2:-0}" "${3:-0}" >> "$state/stop-hook.log"
   }
   case "$mode" in
-    check|charge)
+    check|charge|limit)
       if [ "$active" = true ]; then
         [ -z "$session" ] || [ "${FM_STOP_POLICY_LOG_EARLY:-1}" = 0 ] || fm_stop_policy_log hook_active
         return 0
       fi ;;
   esac
   [ -n "$session" ] || return 1
-  if [ "$mode" != rewake ] && fm_stop_policy_parked "$state" "$home" "$script_dir"; then
+  if [ "$mode" != rewake ] && [ "$mode" != limit ] && fm_stop_policy_parked "$state" "$home" "$script_dir"; then
     [ "${FM_STOP_POLICY_LOG_EARLY:-1}" = 0 ] || fm_stop_policy_log parked
     return 0
   fi
