@@ -1469,24 +1469,6 @@ resolve_relaunch_profile() {
     # harness change must not silently reset it to default.
     TARGET_EFFORT=$PRIOR_EFFORT
   fi
-  if [ "$TARGET_HARNESS" = hermes ]; then
-    [ "$BACKEND" = tmux ] || die 'Hermes is verified on tmux only; refusing before the current worker stops'
-    [ "$TARGET_MODEL" = default ] || die 'Hermes models are profile-owned; relaunch requires the default model axis'
-    # shellcheck source=bin/fm-hermes-lib.sh
-    . "$SCRIPT_DIR/fm-hermes-lib.sh"
-    fm_hermes_managed_check || return 1
-    local hermes_bin hermes_home hermes_profile
-    hermes_bin=$(command -v hermes) || die 'hermes executable not found on PATH'
-    hermes_profile=
-    if [ "$PRIOR_HARNESS" = hermes ]; then
-      hermes_home=$(fm_meta_get "$META" hermes_home)
-      hermes_profile=$(fm_meta_get "$META" hermes_profile)
-    else
-      hermes_home=$(fm_hermes_profile_home "$hermes_bin" '') || return 1
-    fi
-    [ -n "$hermes_home" ] || die 'recorded Hermes profile home is missing; refusing an unbound replacement'
-    fm_hermes_gateway_check "$hermes_home" "$hermes_profile" || return 1
-  fi
   # The launch owner applies this home's worker account pin too, but only after
   # the old agent has been stopped, so a pin that no longer resolves or is
   # signed out must refuse here, while nothing has changed yet.

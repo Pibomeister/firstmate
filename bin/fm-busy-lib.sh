@@ -128,7 +128,7 @@
 # has no caller today. So a kiro task with no record classifies unknown
 # missing, and an abnormal turn end (no StopFailure/SessionEnd equivalent
 # exists on kiro V2) leaves the record busy until the next userPromptSubmit
-# re-opens it - docs/verification/kiro.md owns that disclosure.
+# re-opens it.
 #
 # The muse pull source is semantic, not rendered: it folds muse's own durable
 # session event log. It has no writer, no arm, and no gen, because
