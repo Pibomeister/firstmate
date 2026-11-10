@@ -507,17 +507,18 @@ print_context_outline() {
       used = 0
       for (i = 1; i <= n; i++) {
         if (kind == "heading") { ln = hline[i]; t = htext[i] } else { ln = iline[i]; t = itext[i] }
-        if (length(t) > 100) t = substr(t, 1, 88) " [truncated]"
-        row = "  L" ln " " t
-        if (used + length(row) + 1 > max) {
+        prefix = "  L" ln " "
+        row = prefix t
+        cost = length(t) > 100 ? length(prefix) + 100 : length(row)
+        if (used + cost + 1 > max) {
           printf "  (+%d more %s(s) - read the file for the rest)\n", n - i + 1, kind
           exit
         }
-        print row
-        used += length(row) + 1
+        printf "\037%d\037%s\n", length(prefix) + 100, row
+        used += cost + 1
       }
     }
-  ' "$path" 2>/dev/null || printf '  (outline unavailable - read the file)\n'
+  ' "$path" 2>/dev/null | cap_marked_lines || printf '  (outline unavailable - read the file)\n'
 }
 
 # print_context_file <path> <label> [pointer]: one context source under a labeled
@@ -736,8 +737,7 @@ print_ready_queued_bounded() {
     rows && /^[[:space:]]/ {
       total++
       if (shown < max) {
-        if (length($0) > cap) print substr($0, 1, cap - 12) " [truncated]"
-        else print
+        printf "\037%d\037%s\n", cap, $0
         shown++
       }
       next
@@ -751,7 +751,7 @@ print_ready_queued_bounded() {
         }
       }
     }
-  '
+  ' | cap_marked_lines
 }
 
 # compact_backlog_rows [in_flight|decision]: cap every tasks-axi row (the

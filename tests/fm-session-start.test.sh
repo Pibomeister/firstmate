@@ -179,7 +179,7 @@ case "${1:-}" in
     printf 'ready[%s]{id,state,kind,repo,title}:\n' "$ready_count"
     i=1
     while [ "$i" -le "$ready_count" ]; do
-      printf '  ready-%s,queued,ship,firstmate,Ready item %s\n' "$i" "$i"
+      printf '  ready-%s,queued,ship,firstmate,%s\n' "$i" "${FM_FAKE_TASKS_AXI_READY_TITLE:-Ready item $i}"
       i=$((i + 1))
     done
     printf 'ready_public_followups: 0 delivery-ready obligations\n'
@@ -2919,6 +2919,39 @@ EOF
   pass "manual-row and latest-annotation cuts never split a multibyte character, under a UTF-8 or a C locale"
 }
 
+test_ready_row_cut_counts_characters_not_bytes() {
+  local rec root home fakebin out utf8 long line loc
+  utf8=$(locale -a 2>/dev/null | grep -iE '^(c|en_us)\.utf-?8$' | head -1)
+  [ -n "$utf8" ] || utf8=C.UTF-8
+  long=$(awk 'BEGIN { for (i = 0; i < 400; i++) printf "\342\224\200" }')
+  for loc in "$utf8" C; do
+    rec=$(new_world "ready-row-multibyte-$loc")
+    IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+    make_fake_toolchain "$fakebin"
+    make_fake_tasks_axi_compact "$fakebin"
+    make_fake_ps_claude "$fakebin"
+    write_long_body_backlog "$home/data/backlog.md"
+
+    out=$(FM_FAKE_TASKS_AXI_READY=1 FM_FAKE_TASKS_AXI_READY_TITLE="$long" LC_ALL=$loc \
+      run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+    printf '%s\n' "$out" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1 ||
+      fail "under LC_ALL=$loc the ready-row cut split a multibyte character into invalid UTF-8"
+    line=$(printf '%s\n' "$out" | grep -F -- '  ready-1,queued,ship,firstmate,' | head -1)
+    [ -n "$line" ] || fail "under LC_ALL=$loc the multibyte ready row is missing"
+    [ "$(LC_ALL=$utf8 bash -c 'printf "%s" "${#1}"' _ "$line")" -le 180 ] ||
+      fail "under LC_ALL=$loc the multibyte ready row is over 180 characters: $line"
+    case $line in *' [truncated]') ;; *) fail "under LC_ALL=$loc the cut ready row has no [truncated] marker: $line" ;; esac
+    if [ "$loc" = "$utf8" ]; then
+      [ "$(LC_ALL=$utf8 bash -c 'printf "%s" "${#1}"' _ "$line")" = 180 ] ||
+        fail "the multibyte ready row is not cut at exactly 180 characters: $line"
+    fi
+  done
+  pass "ready-queued row cuts never split a multibyte character, under a UTF-8 or a C locale"
+}
+
 test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback() {
   local rec root home fakebin out
   rec=$(new_world backlog-compact-unavailable)
@@ -3904,6 +3937,7 @@ test_backlog_queued_bound_discloses_its_remainder
 test_backlog_compact_manual_backend_skips_indented_bodies
 test_backlog_compact_manual_backend_caps_title_lines
 test_line_cuts_count_characters_not_bytes
+test_ready_row_cut_counts_characters_not_bytes
 test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback
 test_fleet_digest_empty_fleet
 test_next_step_sources_x_mode_cadence
