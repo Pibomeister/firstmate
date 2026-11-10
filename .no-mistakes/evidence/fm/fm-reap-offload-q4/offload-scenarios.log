@@ -1,0 +1,35 @@
+== 11:33  up 5 days, 16:10, 136 users, load averages: 218.15 196.77 191.56
+== S1b listed firstmate project offloaded; queue suite runs remotely
+fm-test-queue: preparing compressed snapshot for labhost
+fm-test-queue: offloading to labhost (snapshot of /private/tmp/fmq-lab.iox0KN/fmclone)
+on-remote=1
+Terminated: 15
+fm-test-queue: remote execution uncertain; preserved labhost:/tmp/fm-test-offload.iYTfWEyi (no local retry)
+wrapper rc=124  ssh calls=       3
+
+== S2 unlisted webapp project (default offload_projects=firstmate): stays local, no SSH
+on-remote=no pwd=/private/tmp/fmq-lab.iox0KN/webapp
+wrapper rc=4  ssh calls=       0
+
+== S3 webapp opted in (offload_projects=webapp); project has no bin/fm-test-queue.sh
+ls: webapp/bin: No such file or directory
+fm-test-queue: ticket 5, position 1: load 306.38 is not below 16
+fm-test-queue: ticket 5, position 1: load 301.16 is not below 16
+fm-test-queue: ticket 5, position 1: load 300.83 is not below 16
+fm-test-queue: ticket 5, position 1: load 299.07 is not below 16
+fm-test-queue: ticket 5, position 1: load 303.36 is not below 16
+fm-test-queue: ticket 5, position 1: load 308.15 is not below 16
+fm-test-queue: ticket 5, position 1: load 310.10 is not below 16
+fm-test-queue: ticket 5, position 1: load 304.87 is not below 16
+fm-test-queue: ticket 5, position 1: load 298.15 is not below 16
+fm-test-queue: ticket 5, position 1: load 297.68 is not below 16
+fm-test-queue: ticket 5, position 1: load 301.73 is not below 16
+fm-test-queue: ticket 5, position 1: load 303.31 is not below 16
+wrapper rc=124  ssh calls=       0
+
+== S4 adversarial: upload fails on faultyhost before the suite starts -> runs locally, status is the suite's
+fm-test-queue: preparing compressed snapshot for faultyhost
+fm-test-queue: no remote prepared; using local admission
+on-remote=no pwd=/private/tmp/fmq-lab.iox0KN/fmclone
+wrapper rc=5  ssh calls=       3
+leftover offload dirs:        1  local tickets:        0

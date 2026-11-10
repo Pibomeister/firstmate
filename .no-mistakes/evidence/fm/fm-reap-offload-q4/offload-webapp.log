@@ -1,0 +1,19 @@
+== 11:41  up 5 days, 16:18, 135 users, load averages: 266.44 261.07 228.36
+== S3 webapp opted in (offload_projects=webapp); project has no bin/ at all
+edit.txt
+run.sh
+sub
+fm-test-queue: preparing compressed snapshot for labhost
+fm-test-queue: offloading to labhost (snapshot of /private/tmp/fmq-lab.iox0KN/webapp)
+on-remote=1 pwd=/tmp/fm-test-offload.4J2WJojX/repo
+local edit
+suite-ok
+wrapper rc=6  ssh calls=       4
+== S2b same webapp with default offload_projects (unlisted): local wait, no SSH
+fm-test-queue: ticket 8, position 1: load 252.46 is not below 16
+fm-test-queue: ticket 8, position 1: load 243.13 is not below 16
+fm-test-queue: ticket 8, position 1: load 244.40 is not below 16
+Terminated: 15
+wrapper rc=124 (124=still waiting under local load ceiling) ssh calls=       0
+(eval):13: no matches found: /private/tmp/fm-test-offload.*
+leftover offload dirs:        0

@@ -1,0 +1,20 @@
+== plutil -lint
+/tmp/fm-plist.ZeJs6S/p.plist: OK
+== parsed
+{
+    "StandardOutPath": "/tmp/fm-plist.ZeJs6S/home/state/terminal-reap.log",
+    "EnvironmentVariables": {
+        "FM_HOME": "/tmp/fm-plist.ZeJs6S/home",
+        "HOME": "/Users/eduardopicazo"
+    },
+    "StartInterval": 3600,
+    "ProgramArguments": [
+        "/bin/bash",
+        "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M735XSSAGYQ0CK4G0EQTGR1D/bin/fm-terminal-reap.sh",
+        "--apply",
+        "--no-browsers"
+    ],
+    "StandardErrorPath": "/tmp/fm-plist.ZeJs6S/home/state/terminal-reap.err",
+    "RunAtLoad": false,
+    "Label": "dev.firstmate.terminal-reap"
+}

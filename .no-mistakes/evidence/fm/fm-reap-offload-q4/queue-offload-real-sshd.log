@@ -1,0 +1,32 @@
+== host load: { 203.78 204.59 201.82 }  (lab dir uses physical path /private/tmp/fm-sshlab.dFR8Fs)
+== S1 firstmate offload over a real sshd on 127.0.0.1:22422 (remote_hosts=labremote)
+fm-test-queue: preparing compressed snapshot for labremote
+fm-test-queue: offloading to labremote (snapshot of /private/tmp/fm-sshlab.dFR8Fs/fm)
+cwd=/tmp/fm-test-offload.czGLrXmC/repo
+mark=local-uncommitted-edit
+shallow=true
+arg=it's spaced
+exit=7
+(eval):7: no matches found: /tmp/fm-test-offload.*
+== remote scratch dirs left in /tmp: 0
+== S2 listed project without queue scripts (offload_projects=webapp)
+ls: webapp/bin: No such file or directory
+fm-test-queue: preparing compressed snapshot for labremote
+fm-test-queue: offloading to labremote (snapshot of /private/tmp/fm-sshlab.dFR8Fs/webapp)
+cwd=/tmp/fm-test-offload.iok8PfbP/repo
+hi
+exit=0
+== S3 unlisted project (default list=firstmate), ceiling 1000 so it runs locally
+cwd=/private/tmp/fm-sshlab.dFR8Fs/webapp
+exit=3
+ssh logins during S3: 0
+== S4 unreachable host: prepare fails, runs locally (ceiling 1000)
+fm-test-queue: no remote prepared; using local admission
+cwd=/private/tmp/fm-sshlab.dFR8Fs/fm
+exit=5
+== S5 unreachable host, real load above ceiling 16: keeps waiting locally (12s)
+fm-test-queue: no remote prepared; using local admission
+fm-test-queue: ticket 5, position 1: load 169.02 is not below 16
+fm-test-queue: ticket 5, position 1: load 167.82 is not below 16
+Terminated: 15
+exit=124 (124 = still waiting at timeout; RAN never printed)

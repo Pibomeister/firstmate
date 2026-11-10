@@ -1,0 +1,135 @@
+keep	terminal	foreign	term_fd3d159e-2e53-492d-ba32-b9bd8dcfc51b	/Users/eduardopicazo/orca/projects/Abaco	dev01: firstmate
+keep	terminal	foreign	term_086dd9dd-2f33-4c8f-89fe-d673155fa5fb	/Users/eduardopicazo/orca/projects/Abaco	abaco-ssh-merge
+keep	terminal	foreign	term_1bf7d4a8-9e71-4c43-8904-b465feeaa599	/Users/eduardopicazo/orca/projects/Abaco	abaco-ssh-merge2
+keep	terminal	foreign	term_3190948f-3b8b-4b06-9d15-aad625ba0bac	/Users/eduardopicazo/orca/projects/Abaco	abaco-lock-watch
+keep	terminal	foreign	term_971f8230-f7cf-43b5-865b-9bf9bfbe7197	/Users/eduardopicazo/Documents/Casco	✳ Linear backlog work
+keep	terminal	foreign	term_35c018d9-a015-4fa0-9eec-9ab797a209d6	/Users/eduardopicazo/Documents/Casco	AgentKit lifecycle #378 and #383
+keep	terminal	foreign	term_a85e04a7-2f90-4cce-a93b-fc042c282a2a	/Users/eduardopicazo/Documents/Casco	Casco captain handoff AFK takeover
+keep	terminal	foreign	term_5e3b5098-ef78-422d-a996-be081ce13639	/Users/eduardopicazo/Documents/Casco	Casco AFK lane night-d brief
+keep	terminal	foreign	term_782026fe-0ce5-4734-bec3-5c1e8d082129	/Users/eduardopicazo/Documents/Casco	Casco AFK lane night-e brief
+keep	terminal	foreign	term_3e8fd8bd-7ed9-4573-b02b-2aa4fab5cdb2	/Users/eduardopicazo/Documents/Casco	Casco AFK lane night-f brief
+keep	terminal	foreign	term_e858214b-525e-4d90-a46b-862325871cb7	/Users/eduardopicazo/Documents/Casco	Casco captain handoff AFK mode
+keep	terminal	foreign	term_2f331cc3-4894-42be-a6df-42a8840eb16e	/Users/eduardopicazo/Documents/Casco	Casco AFK lane night-g
+keep	terminal	foreign	term_96a677be-9431-44c6-a16f-d09fc68d81a3	/Users/eduardopicazo/Documents/Casco	Casco AFK lane night-h
+keep	terminal	foreign	term_2291adc5-4317-48f7-967a-d530535c08a9	/Users/eduardopicazo/Documents/Casco	Casco AFK lane night-i
+keep	terminal	foreign	term_de98679b-0d68-4649-97a0-d2504560ad07	/Users/eduardopicazo/Documents/Casco	Casco AFK lane night-j
+keep	terminal	foreign	term_4123f372-f9b5-472a-992a-66a9d0c55303	/Users/eduardopicazo/Documents/Casco	Casco AFK night-k handoff
+keep	terminal	foreign	term_0338e5be-2d46-4cd7-b4c4-b389eb2aef3b	/Users/eduardopicazo/Documents/Casco	Casco AFK crew lane night-l
+keep	terminal	foreign	term_58e4aff0-6e43-4509-a6c8-ed9ab796500c	/Users/eduardopicazo/Documents/Casco	Casco AFK crew night-m lane
+keep	terminal	foreign	term_51b4b8c1-e277-4cd2-9de4-542e77a39b68	/Users/eduardopicazo/Documents/Casco	Casco captain AFK handoff
+keep	terminal	foreign	term_c8389b07-8305-4bf0-a144-ac3930956d20	/Users/eduardopicazo/Documents/Casco	Casco AFK night-n lane
+keep	terminal	foreign	term_b3cbf4b5-f5e5-4f42-a3f3-e8b123ada5b8	/Users/eduardopicazo/Documents/Casco	Casco AFK lane night-o
+keep	terminal	foreign	term_13138982-0f6e-4e32-a376-8c5629a8df98	/Users/eduardopicazo/Documents/Casco	Casco AFK night-p lane
+keep	terminal	foreign	term_4b8986aa-9f0a-4a26-8a03-ed7d2e765470	/Users/eduardopicazo/Documents/Casco	Casco AFK lane night-q
+keep	terminal	foreign	term_06d9ce11-85b6-4bbd-b05a-cdef3cb8bcfd	/Users/eduardopicazo/Documents/Casco	Casco AFK lane night-r
+keep	terminal	foreign	term_14290c4d-f81a-41f0-9eec-3c663a093a70	/Users/eduardopicazo/Documents/Casco	Casco captain AFK handoff
+keep	terminal	foreign	term_d838050a-1613-4849-8116-c598727c8a4b	/Users/eduardopicazo/Documents/Casco	Casco AFK lane night-s
+keep	terminal	foreign	term_77a13cc8-4490-407b-a4f7-80972dacb13c	/Users/eduardopicazo/Documents/Casco	Casco
+keep	terminal	foreign	term_387f8e32-e8d1-424e-975b-f59018665ec0	/Users/eduardopicazo/Documents/Casco	Casco AFK night-u lane
+keep	terminal	foreign	term_78d477cd-d16b-46b4-93fb-a9eb12d51daa	/Users/eduardopicazo/Documents/Casco	Casco
+keep	terminal	foreign	term_bffc9e04-d68d-4a96-acad-8a154fbde105	/Users/eduardopicazo/Documents/Casco	Casco AFK night-w lane
+keep	terminal	foreign	term_d0d6f75a-55d4-48c8-870a-fa0736a01a11	/Users/eduardopicazo/Documents/Casco	Casco captain handoff pickup
+keep	terminal	foreign	term_c670c92d-caaf-487d-963d-dedc03bda23b	/Users/eduardopicazo/Documents/Casco	Casco AFK crew lane night-x
+keep	terminal	foreign	term_b879e7f8-dc54-40b5-8f73-437195162102	/Users/eduardopicazo/Documents/Casco	Casco AFK lane night-y startup
+keep	terminal	foreign	term_7915bf67-1308-4fb1-8a42-8f3d50c7feab	/Users/eduardopicazo/Documents/Casco	Casco AFK lane night-z
+keep	terminal	foreign	term_f0b5969d-c1bb-425f-a51a-f8225f845cc8	/Users/eduardopicazo/orca/projects/Abaco	tl-ro-1325
+keep	terminal	foreign	term_7966ab03-f09d-49dd-9736-179a422a2d5b	/Users/eduardopicazo/orca/projects/Abaco	dev01: firstmate
+keep	terminal	foreign	term_b1f9a4aa-f4fa-4c22-8596-0c25540a2a5d	/Users/eduardopicazo/Documents/Casco	casco-read8
+keep	terminal	foreign	term_74c82eae-0dbe-4a58-94f6-ae7603ddca86	/Users/eduardopicazo/Documents/Casco	Casco captain AFK pickup
+keep	terminal	foreign	term_85867a34-100f-42e5-8f1a-efb82749ae9d	/Users/eduardopicazo/Documents/Casco	Casco captain handoff AFK resume
+keep	terminal	foreign	term_0b399e92-ce0d-42c6-bd7e-428823a4373f	/Users/eduardopicazo/Documents/Casco	Casco captain AFK handoff
+keep	terminal	foreign	term_f207bfb1-4519-4018-bf8b-1d24cd992f76	/Users/eduardopicazo/Documents/Casco	Casco AFK lane n10-a startup
+keep	terminal	foreign	term_b884f37e-7d06-4def-a209-5c9d8bba3771	/Users/eduardopicazo/Documents/Casco	n10-d
+keep	terminal	foreign	term_4ab2bb7f-9324-444c-8097-c53fc66a9d2e	/Users/eduardopicazo/Documents/Casco	Casco n10-d2 policies empty state copy
+keep	terminal	foreign	term_96d169c2-4af3-45ba-bfff-980333b52310	/Users/eduardopicazo/Documents/Casco	Casco lane n10-v startup
+keep	terminal	foreign	term_5e643061-3a08-4195-b33a-c1385985031f	/Users/eduardopicazo/Documents/Casco	Casco lane n10-r startup
+keep	terminal	foreign	term_a2e17b40-dd0f-40c8-88b8-6ed3efb659a4	/Users/eduardopicazo/Documents/Casco	Casco captain handoff pickup
+keep	terminal	foreign	term_d532e4a6-bf6c-49da-89f9-769ad2f96673	/Users/eduardopicazo/Documents/Casco	✳ Casco milestone audit against SOW
+keep	terminal	foreign	term_bf043dd0-64e4-4e03-9c40-9bb39ef21ec9	/Users/eduardopicazo/orca/projects/firstmate	Firstmate handoff successor session
+keep	terminal	foreign	term_94a49bc7-4ae8-4abe-aa48-d658c6f80ada	/Users/eduardopicazo/orca/projects/firstmate	sup-writer-main
+keep	terminal	foreign	term_4473f04e-27e4-492e-9817-51a1c1562afd	/Users/eduardopicazo/orca/projects/firstmate	orca-beacon
+keep	terminal	foreign	term_62eab0e3-f350-4887-90b1-56e0a86ee2b8	/Users/eduardopicazo/orca/projects/firstmate	m4ops
+keep	terminal	foreign	term_3d7f6fb5-3679-4b78-aea2-eacdb40b3517	/Users/eduardopicazo/orca/projects/firstmate	abaco-beacon
+keep	terminal	foreign	term_2fe40da2-8eee-4c8b-9872-3a1fdf518097	/Users/eduardopicazo/orca/projects/firstmate	supervision-audit
+keep	terminal	foreign	term_55b9d455-083a-414d-bc03-bf8554b515bb	/Users/eduardopicazo/orca/projects/firstmate	sup-writer-secondary
+keep	terminal	foreign	term_639fa583-b97a-4856-9786-ddbdc723b72a	/Users/eduardopicazo/orca/projects/firstmate	sc-skills-scratch
+keep	terminal	task	term_f8970f70-e63f-4c77-8056-7ab0cea930c8	/Users/eduardopicazo/orca/workspaces/shipcontent-v2/fm-shipcontent-nightly-g2-budget-20261105	shipcontent-nightly-g2-budget-20261105 (/Users/eduardopicazo/orca/workspaces/firstmate/shipcontent-mate)
+keep	terminal	foreign	term_48c27a02-4ad6-4b33-9dcb-47f7de58a754	/Users/eduardopicazo/orca/workspaces/Casco/merge-a	Casco merge crew QUEUE-A
+keep	terminal	foreign	term_cc7f31e0-7851-4bae-a08b-08544c69bd2b	/Users/eduardopicazo/orca/workspaces/Casco/merge-r	Terminal 1
+keep	terminal	foreign	term_82255073-6c1f-422a-b8aa-9a50b0248735	/Users/eduardopicazo/orca/workspaces/Casco/merge-r	Read merge crew brief | merge-r
+keep	terminal	foreign	term_26e2dfd8-d796-4d6c-acc8-44a285a6f8cd	/Users/eduardopicazo/orca/workspaces/Casco/merge-u	PR #411 clear-all review fix and merge
+keep	terminal	foreign	term_b35aaebc-f586-49f9-86eb-53684760f846	/Users/eduardopicazo/orca/workspaces/Casco/muse-u2	Terminal 1
+keep	terminal	foreign	term_1f4aad95-daa5-44c2-88eb-422a9d20122a	/Users/eduardopicazo/orca/workspaces/Casco/muse-u2	muse-u2
+keep	terminal	foreign	term_3b2790f8-4c1d-40b5-aa5d-655a12c3402f	/Users/eduardopicazo/orca/workspaces/Casco/muse-a2	Terminal 1
+keep	terminal	foreign	term_6adce9b7-9b95-47bb-bdc6-8f4d6449fb37	/Users/eduardopicazo/orca/workspaces/Casco/muse-a2	muse-a2
+keep	terminal	task-worktree	term_44848561-103f-49f0-a923-8ee0d8191b55	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-upstream-sync	fm-upstream-sync (/Users/eduardopicazo/orca/projects/firstmate); Terminal 1
+keep	terminal	task	term_4baaa0cc-e4ba-4983-bebb-47c63aff0b72	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-upstream-sync	fm-upstream-sync (/Users/eduardopicazo/orca/projects/firstmate)
+keep	terminal	task-worktree	term_3fee6702-9339-4055-995e-d8187c15a37a	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-watchdog-rollout	fm-watchdog-rollout (/Users/eduardopicazo/orca/projects/firstmate); Terminal 1
+keep	terminal	task	term_c65cfacc-5e1d-4a73-9568-e1e40a45979e	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-watchdog-rollout	fm-watchdog-rollout (/Users/eduardopicazo/orca/projects/firstmate)
+keep	terminal	task-worktree	term_1f2868e4-0807-4bb2-ae1f-4e50123b972b	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-holds-triage	fm-holds-triage (/Users/eduardopicazo/orca/projects/firstmate); Terminal 1
+keep	terminal	task	term_9cb48d88-5734-47b1-88e2-150d615afa24	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-holds-triage	fm-holds-triage (/Users/eduardopicazo/orca/projects/firstmate)
+keep	terminal	task-worktree	term_a0e454e4-e5c6-4001-bc9c-8624fa5a293f	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-fleet-reconcile	fm-fleet-reconcile (/Users/eduardopicazo/orca/projects/firstmate); Terminal 1
+keep	terminal	task	term_8e44cf59-8c31-40a3-a067-95542d98f19c	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-fleet-reconcile	fm-fleet-reconcile (/Users/eduardopicazo/orca/projects/firstmate)
+keep	terminal	task-worktree	term_7131a657-d54f-4ce3-a01c-0b82bb1fca69	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-compaction-first	fm-compaction-first (/Users/eduardopicazo/orca/projects/firstmate); Terminal 1
+keep	terminal	task	term_3e4aa818-e5c4-4ae1-98d8-0d1bb7d58f5f	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-compaction-first	fm-compaction-first (/Users/eduardopicazo/orca/projects/firstmate)
+keep	terminal	task-worktree	term_85d0f5a9-a274-4bec-bdda-eee3d2556632	/Users/eduardopicazo/orca/workspaces/pepper-takehome/fm-pepper-takehome	pepper-takehome (/Users/eduardopicazo/orca/projects/firstmate); Terminal 1
+keep	terminal	task	term_79606a54-ae6f-4550-a900-7e735639f153	/Users/eduardopicazo/orca/workspaces/pepper-takehome/fm-pepper-takehome	pepper-takehome (/Users/eduardopicazo/orca/projects/firstmate)
+keep	terminal	unowned-task	term_9e8c4090-6afd-4866-8065-c33e996c017d	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-quota-pools	Terminal 1
+keep	terminal	foreign	term_bdffe880-719e-49d5-84db-e2c89a3688e0	/Users/eduardopicazo/orca/workspaces/Casco/n10d-create-policy	Terminal 1
+keep	terminal	foreign	term_1b9d736b-4816-43cc-b3c8-3c93e5e2db30	/Users/eduardopicazo/orca/workspaces/Casco/n10a-455-pipeline-status	Terminal 1
+keep	terminal	foreign	term_1e242599-7e47-452d-ada2-cd5fa15ad6cd	/Users/eduardopicazo/orca/workspaces/Casco/n10v-377-upload-ab	Terminal 1
+keep	terminal	foreign	term_289616d7-3adf-4eac-8804-6d395395c9eb	/Users/eduardopicazo/orca/workspaces/Casco/muse-413-mark-executed-form	Terminal 1
+keep	terminal	task-worktree	term_53e56bf0-9e38-4be7-9ece-189db40c1f12	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-phaseB-a-20261110	phaseB-a-20261110 (/Users/eduardopicazo/orca/projects/firstmate); Terminal 1
+keep	terminal	task	term_921f2837-9d01-4293-85b3-d421f82ff4b9	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-phaseB-a-20261110	phaseB-a-20261110 (/Users/eduardopicazo/orca/projects/firstmate)
+keep	terminal	task-worktree	term_4c55938c-e96e-4066-b7d4-75b1fd6d76e8	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-phaseB-c-20261110	phaseB-c-20261110 (/Users/eduardopicazo/orca/projects/firstmate); Terminal 1
+keep	terminal	task	term_67f13de1-2f5b-4df6-a23f-204873df5f7c	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-phaseB-c-20261110	phaseB-c-20261110 (/Users/eduardopicazo/orca/projects/firstmate)
+keep	terminal	task-worktree	term_fd4ba3f2-a274-4cf0-ace8-c2559f2207d5	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-reap-offload-q4	fm-reap-offload-q4 (/Users/eduardopicazo/orca/projects/firstmate); Terminal 1
+keep	terminal	task	term_56ee7584-e13e-4645-8764-86f97496bd94	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-reap-offload-q4	fm-reap-offload-q4 (/Users/eduardopicazo/orca/projects/firstmate)
+keep	terminal	foreign	term_0d27c260-2b7b-4b99-a86a-8e0aaf4552f0	/Users/eduardopicazo/orca/workspaces/Casco/n10r-demo-record	Terminal 1
+keep	terminal	task-worktree	term_6b10ed72-19da-46c0-bacb-2fb9d3217541	/Users/eduardopicazo/orca/workspaces/agent-kit/fm-ak-review-routing-plan	ak-review-routing-plan (/Users/eduardopicazo/orca/workspaces/firstmate/agent-kit-mate); Terminal 1
+keep	terminal	task	term_85a094eb-94d9-4f74-92bc-e58660651cad	/Users/eduardopicazo/orca/workspaces/agent-kit/fm-ak-review-routing-plan	ak-review-routing-plan (/Users/eduardopicazo/orca/workspaces/firstmate/agent-kit-mate)
+keep	terminal	task-worktree	term_c605d70c-75f4-442f-a8e1-bab3b0316c21	/Users/eduardopicazo/orca/workspaces/agent-kit/fm-ak-runner-audit-stay-autonomous	ak-runner-audit-stay-autonomous (/Users/eduardopicazo/orca/workspaces/firstmate/agent-kit-mate); Terminal 1
+keep	terminal	task	term_b86c48b0-8444-4907-a19c-3d6d127f6e9c	/Users/eduardopicazo/orca/workspaces/agent-kit/fm-ak-runner-audit-stay-autonomous	ak-runner-audit-stay-autonomous (/Users/eduardopicazo/orca/workspaces/firstmate/agent-kit-mate)
+keep	terminal	task-worktree	term_fc433ed6-c455-4d84-95f6-ed97cbebbd8e	/Users/eduardopicazo/orca/workspaces/agent-kit/fm-ak-current-main-charter-draft	ak-current-main-charter-draft (/Users/eduardopicazo/orca/workspaces/firstmate/agent-kit-mate); Terminal 1
+keep	terminal	task	term_56442f09-7d0d-4a5b-8e2b-c4268445921a	/Users/eduardopicazo/orca/workspaces/agent-kit/fm-ak-current-main-charter-draft	ak-current-main-charter-draft (/Users/eduardopicazo/orca/workspaces/firstmate/agent-kit-mate)
+keep	terminal	foreign	term_aa83bf97-8216-44ca-804c-3722f652c7c3	/Users/eduardopicazo/orca/workspaces/Casco/gate-main-r340	-
+keep	terminal	task-worktree	term_d0fac137-2bcc-4f0b-afa6-ffd538e54df2	/Users/eduardopicazo/orca/workspaces/shipcontent-v2/fm-shipcontent-nightly-g3-pr228-keyboard-20261105	shipcontent-nightly-g3-pr228-keyboard-20261105 (/Users/eduardopicazo/orca/workspaces/firstmate/shipcontent-mate); 
+keep	terminal	task	term_b6aba98c-c2c8-4fa0-8abb-2d03419f481a	/Users/eduardopicazo/orca/workspaces/shipcontent-v2/fm-shipcontent-nightly-g3-pr228-keyboard-20261105	shipcontent-nightly-g3-pr228-keyboard-20261105 (/Users/eduardopicazo/orca/workspaces/firstmate/shipcontent-mate)
+keep	terminal	foreign	term_24e2e68f-5eb6-418c-b512-1d947bd17bcf	/Users/eduardopicazo/orca/workspaces/Casco/gate-main-r337	-
+keep	terminal	task-worktree	term_5a4a6abe-05e1-42d9-9a5c-3fe17657500e	/Users/eduardopicazo/orca/workspaces/shipcontent-v2/fm-shipcontent-pr208-code-refresh-202611060159	shipcontent-pr208-code-refresh-202611060159 (/Users/eduardopicazo/orca/workspaces/firstmate/shipcontent-mate); 
+keep	terminal	task	term_d1aef2f5-80e9-4bb2-a14b-fb6ae911e931	/Users/eduardopicazo/orca/workspaces/shipcontent-v2/fm-shipcontent-pr208-code-refresh-202611060159	shipcontent-pr208-code-refresh-202611060159 (/Users/eduardopicazo/orca/workspaces/firstmate/shipcontent-mate)
+keep	terminal	foreign	term_03a79618-3c76-42e8-865e-ae12ca06e8af	/Users/eduardopicazo/orca/workspaces/Casco/gate-main-r339	-
+keep	terminal	foreign	term_91d51c4a-78fd-4de4-9f96-8be1b63b1af4	/Users/eduardopicazo/orca/workspaces/Casco/gate-main-r336	-
+keep	terminal	foreign	term_5096ccc6-7c37-4046-a799-c905e1781b15	/Users/eduardopicazo/orca/workspaces/Casco/night-c-412-signed-moa-pdf	-
+keep	terminal	foreign	term_e73c5cff-3799-4a91-94b1-f886a5aa6d8f	/Users/eduardopicazo/orca/workspaces/Casco/night-c-378-failed-batch-selection	-
+keep	terminal	foreign	term_52f49f05-1698-4715-89b6-97903ec76691	/Users/eduardopicazo/orca/workspaces/Casco/night-d-377-site-form-engagements	-
+keep	terminal	foreign	term_b0b9a9d6-d8c1-4fc0-b48c-923e8e723b26	/Users/eduardopicazo/orca/workspaces/Casco/night-e-304-scoring-golden	-
+keep	terminal	foreign	term_cdce10af-195a-4a6a-8ec4-efed0d35fcd1	/Users/eduardopicazo/Documents/shipcontent-v2	Lane sc-x AFK captain session
+keep	terminal	foreign	term_6264201e-a851-42da-bc30-01a7c7dde7a9	/Users/eduardopicazo/orca/workspaces/shipcontent-v2/sc-x-pr48	-
+keep	terminal	foreign	term_c72342f3-5a0a-4e14-bcd2-f2ebbac223a8	/Users/eduardopicazo/orca/workspaces/shipcontent-v2/sc-x-pr135	-
+keep	terminal	foreign	term_2b9d46b8-aa19-47b3-af4b-20b1462d1d72	/Users/eduardopicazo/orca/workspaces/shipcontent-v2/sc-x-pr150	-
+keep	terminal	foreign	term_f259b9aa-86c9-4350-8f72-ef3d668f27f7	/Users/eduardopicazo/orca/workspaces/Casco/night-f-346-golden-set-2	-
+keep	terminal	task-worktree	term_71638efc-cf2d-48b0-b8c9-fc7ddb02be31	/Users/eduardopicazo/orca/workspaces/fluxkeep/fm-fluxkeep-pr86-conflicts	fluxkeep-pr86-conflicts (/Users/eduardopicazo/orca/workspaces/firstmate/fluxkeep-mate); 
+keep	terminal	task	term_94a3df67-9cf8-401c-b68b-f56384bf41ab	/Users/eduardopicazo/orca/workspaces/fluxkeep/fm-fluxkeep-pr86-conflicts	fluxkeep-pr86-conflicts (/Users/eduardopicazo/orca/workspaces/firstmate/fluxkeep-mate)
+keep	terminal	foreign	term_77cddc4d-3b36-42e9-9f33-53b6cb69f634	/Users/eduardopicazo/orca/workspaces/Casco/i1-cas151-image-caps	-
+keep	terminal	foreign	term_005cc82e-8a1c-4d19-8a2a-55c30f450e03	/Users/eduardopicazo/orca/workspaces/Casco/j1-cas114-retire-planned-draft	-
+keep	terminal	foreign	term_b2982f26-ab3f-498b-a126-ea89171071ea	/Users/eduardopicazo/orca/workspaces/Casco/l1-300-payload-length	-
+keep	terminal	foreign	term_472bb0f9-8eaa-495d-b890-f1b5823ffad5	/Users/eduardopicazo/orca/workspaces/Casco/l2-318-create-rollback	-
+keep	terminal	foreign	term_d5dd01cd-3a1d-4b3c-9c7f-8593b330cd59	/Users/eduardopicazo/orca/workspaces/Casco/l3-137-catalogue-planned	-
+keep	terminal	foreign	term_0b33ce81-329d-4722-9267-a8ace8f45be5	/Users/eduardopicazo/orca/workspaces/Casco/m1-318-ambient-rollback	-
+keep	terminal	foreign	term_c87bb451-d0d3-45e4-a388-8bc9d076ef59	/Users/eduardopicazo/orca/workspaces/Casco/m2-439-artifact-link-wording	-
+keep	terminal	foreign	term_764bb8a6-6987-4f17-aeda-6e802ab12ff7	/Users/eduardopicazo/orca/workspaces/Casco/n1-322-rollup-recompute	-
+keep	terminal	task-worktree	term_170d9d84-af71-41ab-aa9b-ca37d3256022	/Users/eduardopicazo/orca/workspaces/shipcontent-v2/fm-shipcontent-pr208-coderabbit-stack	shipcontent-pr208-coderabbit-stack (/Users/eduardopicazo/orca/workspaces/firstmate/shipcontent-mate); 
+keep	terminal	task	term_d6643388-5af1-4b80-8267-4b9cec039b9f	/Users/eduardopicazo/orca/workspaces/shipcontent-v2/fm-shipcontent-pr208-coderabbit-stack	shipcontent-pr208-coderabbit-stack (/Users/eduardopicazo/orca/workspaces/firstmate/shipcontent-mate)
+keep	terminal	foreign	term_3bab5349-b162-4a6a-806c-755b6acfcd83	/Users/eduardopicazo/orca/workspaces/Casco/q1-has-overrides	-
+keep	terminal	foreign	term_68c1b13a-aa0f-4817-8443-302719844a70	/Users/eduardopicazo/orca/workspaces/Casco/q2-locktest-budget	-
+keep	terminal	foreign	term_172707fe-ae4f-4a7a-938b-97d058b972d3	/Users/eduardopicazo/orca/workspaces/Casco/night-s-test-plan	-
+keep	terminal	task-worktree	term_76aad823-d0ce-4b3d-b05e-19cfac2e7192	/Users/eduardopicazo/orca/workspaces/shipcontent-v2/fm-shipcontent-inapp-acceptance	shipcontent-inapp-acceptance (/Users/eduardopicazo/orca/workspaces/firstmate/shipcontent-mate); 
+keep	terminal	task	term_64e559ec-5bc8-4f47-a87d-31816146cf14	/Users/eduardopicazo/orca/workspaces/shipcontent-v2/fm-shipcontent-inapp-acceptance	shipcontent-inapp-acceptance (/Users/eduardopicazo/orca/workspaces/firstmate/shipcontent-mate)
+keep	terminal	foreign	term_91f44547-b08c-4bc6-b127-462dcfd7bf66	/Users/eduardopicazo/orca/workspaces/Casco/muse-t-test-exec	-
+keep	terminal	foreign	term_309fac74-4462-4698-80fc-be3157a5c49f	/Users/eduardopicazo/orca/workspaces/Casco/night-u-plan-fixes	-
+keep	terminal	foreign	term_9faaabd4-2caf-4649-ba46-926bf1c91a20	/Users/eduardopicazo/orca/workspaces/Casco/night-w-dogfood	-
+keep	terminal	foreign	term_bf4baa97-cddc-4aeb-a924-185c1af20556	/Users/eduardopicazo/orca/workspaces/Casco/night-x-dogfood-fixes	-
+keep	terminal	foreign	term_af8fcae7-9a32-49b4-afcb-b9366df6d734	/Users/eduardopicazo/orca/workspaces/Casco/night-y-customer-fixes	-
+keep	terminal	foreign	term_d4fafac0-d561-4a14-8cfb-1cdbaa12f51c	/Users/eduardopicazo/orca/workspaces/Casco/night-z-developer-leaks	-
+summary: mode=dry-run terminals=134 reap=0 keep=134 browsers=0 reap=0 keep=0

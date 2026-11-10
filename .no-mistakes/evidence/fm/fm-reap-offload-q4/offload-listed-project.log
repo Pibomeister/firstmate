@@ -1,0 +1,18 @@
+== 11:19  up 5 days, 15:56, 130 users, load averages: 161.79 158.96 166.96
+== S1 listed firstmate project, real M4 load, hosts deadhost,labhost
+fm-test-queue: preparing compressed snapshot for labhost
+fm-test-queue: offloading to labhost (snapshot of /private/tmp/fmq-lab.iox0KN/fmclone)
+on-remote=1 pwd=/tmp/fm-test-offload.cl3AGcJo/repo
+uncommitted-edit
+shallow=true
+remote_suite_rc=1
+wrapper rc=3
+ssh calls:
+-o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 deadhost umask 077; command -v bash >/dev/null && command -v git >/dev/n
+-o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 labhost umask 077; command -v bash >/dev/null && command -v git >/dev/nu
+-o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 labhost tar -xzf - -C '/tmp/fm-test-offload.cl3AGcJo' && tar -xf '/tmp/f
+-o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 labhost cd '/tmp/fm-test-offload.cl3AGcJo/repo' && FM_HOME='/tmp/fm-test
+-o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 labhost rm -rf -- '/tmp/fm-test-offload.cl3AGcJo'
+(eval):10: no matches found: /private/tmp/fm-test-offload.*
+leftover remote dirs:        0
+local tickets:        0
