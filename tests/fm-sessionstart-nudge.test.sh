@@ -427,6 +427,54 @@ test_run_claude_compact_card_stays_within_its_bound() {
   pass "run wrapper: a crowded re-entry card stays within its bound and names what it omitted"
 }
 
+# A captain call is a backlog task held through bin/fm-captain-hold.sh, so the
+# card must carry it as an open decision even when no status log names it.
+test_run_claude_compact_card_lists_captain_holds() {
+  local root="$TMP_ROOT/run-claude-card-held" outdir="$TMP_ROOT/run-claude-card-held-out"
+  local real hostbin out bytes i n
+  real=$(command -v tasks-axi) || {
+    echo "skip: tasks-axi not found; the re-entry card's held listing was not exercised"
+    return 0
+  }
+  make_run_primary "$root"
+  mkdir -p "$outdir"
+  fm_test_tasks_toml "$root/.tasks.toml"
+  printf '## In flight\n\n## Queued\n\n## Done\n' >"$root/data/backlog.md"
+  i=1
+  while [ "$i" -le 11 ]; do
+    n=$(printf '%02d' "$i")
+    FM_HOME="$root" FM_STATE_OVERRIDE="$root/state" FM_DATA_OVERRIDE="$root/data" \
+      FM_CONFIG_OVERRIDE="$root/config" "$ROOT/bin/fm-captain-hold.sh" hold "call-$n" \
+      --title "captain call $n" --reason "pick option $n" --repo sample >/dev/null \
+      || fail "could not hold captain call $n"
+    i=$((i + 1))
+  done
+  # The card runs on the deliberately bare PATH; expose only tasks-axi, on the
+  # host PATH it needs to run.
+  hostbin="$root/hostbin"
+  mkdir -p "$hostbin"
+  printf '#!/bin/sh\nPATH=%s exec %s "$@"\n' "'$PATH'" "'$real'" >"$hostbin/tasks-axi"
+  chmod +x "$hostbin/tasks-axi"
+
+  RUN_PATH="$hostbin:$RUN_PATH" run_claude_sequence "$root" "$outdir" startup compact
+  out=$(cat "$outdir/compact.out")
+  assert_contains "$out" "$CARD_BANNER$root" "a Claude compact with held captain calls did not print the card"
+  bytes=$(byte_count "$out")
+  [ "$bytes" -le 6000 ] || fail "the held re-entry card is $bytes bytes, above its 6000-byte bound"
+  assert_contains "$out" "HELD FOR THE CAPTAIN" "the card did not list the captain holds"
+  assert_contains "$out" "held: 11 in total" "the card did not give the total held count"
+  for n in 01 02 03 04 05 06 07 08; do
+    assert_contains "$out" "captain call $n" "the card dropped held captain call $n"
+  done
+  for n in 09 10 11; do
+    assert_not_contains "$out" "captain call $n" "the card listed more than 8 held rows (call $n)"
+  done
+  assert_contains "$out" "pick option 01" "a held row lost its hold reason"
+  assert_contains "$out" "[3 more held item(s) not shown; run the full re-emit named under MORE to list them]" \
+    "the card did not name the held items it left out"
+  pass "run wrapper: the re-entry card lists captain holds, at most 8 rows, and names the rest"
+}
+
 # A handoff successor's own session open must not run a lock-refused digest
 # while its predecessor still holds the lock (bin/fm-handoff-launch.sh sets
 # FM_HANDOFF_PREDECESSOR_PID on the successor).
@@ -1268,6 +1316,7 @@ test_run_rebuild_forwards_source_to_drifted_instruction_refresh
 test_run_new_context_clears_the_order_handoff_record
 test_run_claude_compact_prints_the_reentry_card
 test_run_claude_compact_card_stays_within_its_bound
+test_run_claude_compact_card_lists_captain_holds
 test_run_handoff_successor_waits_for_its_predecessor
 test_run_compact_without_completion_refreshes_before_finishing_startup
 test_run_clear_without_completion_finishes_startup

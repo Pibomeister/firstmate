@@ -1043,11 +1043,12 @@ EOF
 # whole but replaces 13.8 KB and more with a short preview, and the full re-emit
 # runs to well over 100 KB. A lock-owning Claude compact therefore prints this
 # card instead, bounded to REENTRY_CARD_BYTES: only the work in flight (open
-# captain orders, open decisions, overdue goals, workers under way, and the
-# monitor), the re-check that turns the compaction summary's facts back into
-# current state, and pointers to everything else. The wake queue is left for
-# the session's own drain, which the card asks for first. A lock this session
-# cannot verify falls through to the full re-emit and its read-only banner.
+# captain orders, open decisions, captain holds, overdue goals, workers under
+# way, and the monitor), the re-check that turns the compaction summary's facts
+# back into current state, and pointers to everything else. The wake queue is
+# left for the session's own drain, which the card asks for first. A lock this
+# session cannot verify falls through to the full re-emit and its read-only
+# banner.
 REENTRY_CARD_BYTES=6000
 
 reentry_card_head() {  # <lock-output>
@@ -1060,6 +1061,48 @@ reentry_card_head() {  # <lock-output>
   printf '1. Run %s/bin/fm-wake-drain.sh now, handle what it presents, then run its WAKE_ACK_REQUIRED command.\n' "$FM_ROOT"
   printf '2. Run %s/bin/fm-crew-state.sh <id> before acting on any worker, PR, or merge fact.\n' "$FM_ROOT"
   printf '3. Act on an order only as bin/fm-order.sh pickup lists it now; ack it before acting.\n'
+}
+
+# Captain calls are backlog tasks held through bin/fm-captain-hold.sh, so they
+# are open decisions no status log names. The card lists the total and at most
+# REENTRY_CARD_HELD_ROWS rows; the full re-emit's backlog listing has the rest.
+REENTRY_CARD_HELD_ROWS=8
+
+reentry_card_held() {
+  local backlog="$DATA/backlog.md" out header rows total shown=0 row
+  printf '\nHELD FOR THE CAPTAIN (tasks-axi list --state held)\n'
+  if [ ! -s "$backlog" ]; then
+    printf '(none)\n'
+    return 0
+  fi
+  if ! fm_tasks_axi_backend_available "$CONFIG"; then
+    printf '(not listed without a compatible tasks-axi backend; the full re-emit named under MORE lists the backlog)\n'
+    return 0
+  fi
+  if ! out=$(tasks-axi list --file "$backlog" --state held --fields hold_kind,hold_until,hold_reason 2>&1); then
+    fm_cap_line_var "(tasks-axi list failed: $(printf '%s\n' "$out" | head -n 1); the full re-emit named under MORE lists the backlog)"
+    printf '%s\n' "$FM_LINE_CAP_LINE"
+    return 0
+  fi
+  out=$(printf '%s\n' "$out" | fm_hold_reason_decode_stream | strip_axi_help)
+  header=$(printf '%s\n' "$out" | awk '/^tasks\[/ { print; exit }')
+  rows=$(printf '%s\n' "$out" | awk '/^tasks\[/ { r = 1; next } r && /^[[:space:]]/ { print; next } { r = 0 }')
+  total=$(printf '%s' "$rows" | awk 'END { print NR }')
+  if [ "$total" -eq 0 ]; then
+    printf '(none)\n'
+    return 0
+  fi
+  printf 'held: %d in total\n%s\n' "$total" "$header"
+  while IFS= read -r row; do
+    [ "$shown" -lt "$REENTRY_CARD_HELD_ROWS" ] || break
+    fm_cap_line_var "$row"
+    printf '%s\n' "$FM_LINE_CAP_LINE"
+    shown=$((shown + 1))
+  done <<EOF
+$rows
+EOF
+  [ "$total" -le "$shown" ] ||
+    printf '[%d more held item(s) not shown; run the full re-emit named under MORE to list them]\n' "$((total - shown))"
 }
 
 reentry_card_body() {
@@ -1081,6 +1124,8 @@ reentry_card_body() {
 $out
 EOF
   [ "$found" -eq 1 ] || printf '(none)\n'
+
+  reentry_card_held
 
   printf '\nOVERDUE GOALS (bin/fm-dispatch-log.sh overdue)\n'
   out=
