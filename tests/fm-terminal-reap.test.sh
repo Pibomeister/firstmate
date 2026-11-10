@@ -725,35 +725,24 @@ test_discovered_home_and_lock_ancestry() {
   pass 'fm-terminal-reap: discovers other local home records and protects lock process ancestry'
 }
 
-# A live helper is an idle shell whose title or handle is on the keep list.
-# The built-in seed matches sup-writer-* with no config file line. A listed
-# handle is a literal prefix. Neither is closed on a dry run or on --apply.
+# A live helper is an idle shell whose whole title matches sup-writer-*.
+# It is not closed on a dry run or on --apply.
 test_keep_list_protects_live_helpers() {
-  local closed keepfile
+  local closed
   fixture_reset helpers
   HOME_DIR="$FX/home"
-  keepfile="$HOME_DIR/config/terminal-reap-keep"
-  mkdir -p "$HOME_DIR/state" "$HOME_DIR/config"
-  printf '%s\n' '# extra helpers' '' 'title audit-helper-*' 'handle term-listed' > "$keepfile"
+  mkdir -p "$HOME_DIR/state"
 
   idle_term term-still pty-still "$HOME_DIR" "fm main still"
-  idle_term term-listedextra pty-listedextra "$HOME_DIR" "fm main listed extra"
   idle_term term-embed pty-embed "$HOME_DIR" "note sup-writer-main"
   idle_term term-promote pty-promote "$HOME_DIR" "fm main promote"
   idle_term term-helper pty-helper "$HOME_DIR" "sup-writer-main"
   idle_term term-secondary pty-secondary "$HOME_DIR" "sup-writer-secondary"
-  idle_term term-audit pty-audit "$HOME_DIR" "audit-helper-main"
-  idle_term term-listed pty-listed "$HOME_DIR" "fm main listed"
-  idle_term term-listed-2 pty-listed-2 "$HOME_DIR" "fm main listed two"
   show term-still pty-still "$HOME_DIR"
-  show term-listedextra pty-listedextra "$HOME_DIR"
   show term-embed pty-embed "$HOME_DIR"
   show term-promote pty-promote "$HOME_DIR"
   show term-helper pty-helper "$HOME_DIR"
   show term-secondary pty-secondary "$HOME_DIR"
-  show term-audit pty-audit "$HOME_DIR"
-  show term-listed pty-listed "$HOME_DIR"
-  show term-listed-2 pty-listed-2 "$HOME_DIR"
   printf '#!/usr/bin/env bash\nsed "s/fm main promote/sup-writer-main/" %q > %q.new && mv %q.new %q\n' \
     "$FX/list.json" "$FX/list.json" "$FX/list.json" "$FX/list.json" > "$FX/onshow-term-promote"
   chmod +x "$FX/onshow-term-promote"
@@ -761,49 +750,24 @@ test_keep_list_protects_live_helpers() {
 
   run_reap --no-browsers
   [ "$RC" = 0 ] || fail "a helper dry run must exit 0, got $RC: $(cat "$FX/stderr")"
-  expect term-helper "keep helper" "the built-in sup-writer-* seed keeps sup-writer-main"
-  expect term-secondary "keep helper" "the built-in seed keeps sup-writer-secondary"
-  expect term-audit "keep helper" "a title glob in the keep list keeps the whole title"
-  expect term-listed "keep helper" "a listed handle is kept"
-  expect term-listed-2 "keep helper" "a handle that extends a listed prefix with a hyphen is kept"
-  expect term-listedextra "reap idle-session" "a handle that only shares a listed prefix is still an orphan"
+  expect term-helper "keep helper" "the sup-writer-* seed keeps sup-writer-main"
+  expect term-secondary "keep helper" "the seed keeps sup-writer-secondary"
   expect term-still "reap idle-session" "an unlisted idle firstmate session is still reaped"
   expect term-embed "reap idle-session" "a title that merely contains the seed is not a seed match"
   expect term-promote "reap idle-session" "the listed title is an idle firstmate session"
   [ ! -s "$FX/closed.log" ] || fail "a dry run must close no helper, closed: $(cat "$FX/closed.log")"
-  "$REAP" --help 2>&1 | grep -q 'sup-writer-\*' || fail "--help must name the built-in helper seed"
+  "$REAP" --help 2>&1 | grep -q 'sup-writer-\*' || fail "--help must name the helper seed"
 
   run_reap --apply --no-browsers
   [ "$RC" = 0 ] || fail "a helper apply must exit 0, got $RC: $(cat "$FX/stderr")"
   expect term-helper "keep helper" "an apply keeps sup-writer-main"
   expect term-secondary "keep helper" "an apply keeps sup-writer-secondary"
-  expect term-audit "keep helper" "an apply keeps a listed title"
-  expect term-listed "keep helper" "an apply keeps a listed handle"
-  expect term-listed-2 "keep helper" "an apply keeps a handle under a listed prefix"
   expect term-still "closed idle-session" "an unlisted orphan is still closed"
-  expect term-listedextra "closed idle-session" "a near-prefix handle is still closed"
   expect term-embed "closed idle-session" "a title that merely contains the seed is still closed"
   expect term-promote "skipped idle-session:helper" "a title that becomes a helper before the close is skipped"
   closed=$(sort "$FX/closed.log" | tr '\n' ' ')
-  [ "$closed" = 'term-embed term-listedextra term-still ' ] || fail "apply must close only the unlisted orphans, got '$closed'"
-
-  : > "$FX/closed.log"
-  printf '#!/usr/bin/env bash\nchmod 000 %q\n' "$keepfile" > "$FX/onshow-term-still"
-  chmod +x "$FX/onshow-term-still"
-  run_reap --apply --no-browsers
-  chmod 644 "$keepfile" 2>/dev/null || true
-  [ "$RC" = 0 ] || fail "an apply that loses the keep list at the close must skip, got $RC: $(cat "$FX/stderr")"
-  expect term-still "skipped idle-session:helper-unreadable" "a keep list that turns unreadable before the close skips that close"
-  closed=$(tr '\n' ' ' < "$FX/closed.log")
-  [ -z "$closed" ] || fail "an unreadable keep list at the close must close nothing, got '$closed'"
-
-  rm -f "$FX/onshow-term-still"
-  printf 'not a rule\n' > "$keepfile"
-  : > "$FX/closed.log"
-  run_reap --apply --no-browsers
-  [ "$RC" = 1 ] || fail "a malformed keep list must exit 1, got $RC: $(cat "$FX/stderr")"
-  [ ! -s "$FX/closed.log" ] || fail "a malformed keep list must close nothing, closed: $(cat "$FX/closed.log")"
-  pass "fm-terminal-reap: live helpers and listed handles are kept on a dry run and on apply"
+  [ "$closed" = 'term-embed term-still ' ] || fail "apply must close only the unlisted orphans, got '$closed'"
+  pass "fm-terminal-reap: live sup-writer helpers are kept on a dry run and on apply"
 }
 
 fm_test_run \
