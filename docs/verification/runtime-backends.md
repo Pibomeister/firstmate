@@ -2689,6 +2689,29 @@ sweep sessions: live=52 absent=242
 
 `tests/fm-backend-orca.test.sh`, `tests/fm-spawn-orca-worktree.test.sh`, and `tests/fm-control.test.sh` pin the rule with a real exited and reaped process as the swept root: such a terminal reads `missing`, is proven gone only with a matching worktree and a clean agent scan, and is replaced rather than adopted; a live agent tree stays `alive`, and a process table that fails or omits the reading shell stays `unreadable`.
 
+Closing a terminal that runs a live Claude agent was observed on 2026-11-09 on macOS with the `orca` CLI reporting version 1.4.255, read under Bash 3.2.57.
+A probe terminal was created in this repository's worktree running `claude`, read, closed, and read again:
+
+```sh
+orca terminal create --worktree path:<worktree> --command claude --json
+bash -c '. bin/fm-backend.sh; fm_backend_source orca; fm_backend_orca_agent_state <handle>; fm_backend_orca_process_tree <session pid>'
+orca terminal close --terminal <handle> --json
+ps -p <claude pid> -o pid=
+bash -c '. bin/fm-backend.sh; fm_backend_source orca; fm_backend_orca_agent_state <handle>; fm_backend_orca_endpoint_absence_proof <handle> <worktree>'
+```
+
+```text
+before close: connected=true writable=true  state=alive  tree: /usr/bin/login -> -/bin/zsh -> claude -> ...
+close:        ok
+ps -p:        absent at the first read, 0.5 seconds after the close
+after close:  connected=false writable=false exitCause.kind=operator_close executionHostId=local  sweep: no session
+              state=missing  proof=unproven|an agent process still runs in <worktree> (<pid> claude)
+```
+
+The process the proof named was the Claude session running the probe, whose working directory was that same worktree, so the survivor check refused exactly as intended; the probe's own agent was gone.
+`fm-control.sh relaunch` relies on this close to stop a live non-Droid agent on Orca.
+`tests/fm-spawn-orca-worktree.test.sh` pins that relaunch with real stand-in processes: it closes the terminal without sending input to it, rebinds a new terminal in the recorded worktree, preserves uncommitted files, and refuses when an agent survives in the worktree.
+
 ### Orca environment source
 
 The environment source was verified on 2026-10-14 on macOS 15.6.1 with tmux 3.6a, Bash 5.3.20, Bash 3.2.57, and zsh 5.9.
