@@ -108,8 +108,14 @@ applicable prior experience still reaches the reader without being raised agains
   recorded history on a surface is the ordinary case, not a gap to fill with general advice.
 - Entries matched but none of their conditions reach a line in this diff: return the entries as
   context notes and `empty` findings.
-- The knowledgebase adapter was unavailable, or `readContext` failed: return `unavailable`. A
-  search that could not run is not a search that found nothing.
+- A knowledgebase coverage limit: `.cursor/bin/ak kb check` exit 3 (`kb.unbound`, `kb.unregistered`) or a
+  missing or unknown `.cursor/bin/ak kb` command. The project has recorded no learnings this seat can read,
+  which is not a failed lookup: the lane's activation condition, a readable corpus with hits on the
+  touched surface, is not met, so the review records the lane `skipped` with that limit as its
+  reason, never `unavailable` ([`references/knowledgebase-binding/REFERENCE.md`](../../../references/knowledgebase-binding/REFERENCE.md)). If seated anyway,
+  run against what it can read and name the limit the run states.
+- A configured knowledgebase cannot be used (`.cursor/bin/ak kb check` exit 1), or `readContext` failed: return
+  `unavailable`. A search that could not run is not a search that found nothing.
 
 ## Rationalizations this seat makes
 
@@ -121,4 +127,4 @@ applicable prior experience still reaches the reader without being raised agains
 | "I found eleven relevant entries and they are all useful." | Past a handful, relevance collapses and the reader stops reading, which costs the strong matches too. | Keep the five most directly applicable. Two caveated adjacent entries at most. |
 | "This learning is close enough to apply here." | A broadly-worded lesson matches almost anything once "close enough" is the test. | Check that the entry's own condition reaches the line. A rule about stored values does not reach a log statement. |
 | "This lesson is stale; I should update it while I am here." | The central knowledgebase owns the lesson, and a seat being in the file is not permission to rewrite project knowledge (ruling `central-kb-owns-project-artifacts`). | Report it. Proposing a lesson is a separate act under the adapter's own contract. |
-| "The knowledgebase was unreachable, so there is nothing to report." | Empty says the history was read and nothing applied; it hides a failed lookup behind a clean lane (ruling `required-lane-failure-is-unavailable`). | Return `unavailable` and name the failure. |
+| "The configured knowledgebase was unreachable, so there is nothing to report." | Empty says the history was read and nothing applied; it hides a failed lookup behind a clean lane (ruling `required-lane-failure-is-unavailable`). | Return `unavailable` and name the failure. |

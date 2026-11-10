@@ -918,6 +918,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".cursor/agents/doc-review-comprehension.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".cursor/agents/doc-review-design-lens.md",
       "audience": "agent-runtime"
     },
@@ -1015,6 +1019,10 @@
     },
     {
       "path": ".cursor/references/shared/adapters/knowledgebase/CONTRACT.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/references/shared/adapters/knowledgebase/backends/in-repo.md",
       "audience": "agent-runtime"
     },
     {
@@ -1194,6 +1202,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".cursor/references/shared/roles/doc-review/comprehension/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".cursor/references/shared/roles/doc-review/design-lens/ROLE.md",
       "audience": "agent-runtime"
     },
@@ -1315,6 +1327,10 @@
     },
     {
       "path": ".cursor/roles/doc-review/coherence/ROLE.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/roles/doc-review/comprehension/ROLE.md",
       "audience": "agent-runtime"
     },
     {

@@ -70,7 +70,7 @@ There is one protocol. Where the host cannot validate a grant, a controller stop
 inventing a second pipeline (ruling `entrypoint-phase-operation-split`). An agent start does not
 need that grant.
 
-Under a Firstmate binding, cite `ak firstmate grant --binding <path> --operation review.full` (or
+Under a Firstmate binding, cite `.cursor/bin/ak firstmate grant --binding <path> --operation review.full` (or
 `review.readiness`) when it exits 0. A refusal means the binding does not cover the delegated
 operation. It does not stop the model start.
 
@@ -278,7 +278,7 @@ this stop.
 merge-with-follow-ups or design-decision) and every open finding attached.
 
 `failed`: a required lane returned `unavailable` and the run cannot proceed, or the snapshot could
-not be frozen. The lane and the reason are named, and the run stays resumable.
+not be frozen. The lane and the reason are named, and the run stays resumable. A knowledgebase coverage limit — `.cursor/bin/ak kb check` exit 3 (kb.unbound, kb.unregistered), a publish exit 3 (kb.read-only), kb.in-repo-missing, or a missing or unknown `.cursor/bin/ak kb` command — never stops this phase under any policy: reads are unavailable, each skipped publish is named in the result as not published, and only exit 1 stops. A seat that reads the knowledgebase runs against what it can read and names the limit, so a lane whose only gap is that limit is covered, not unavailable; the learnings lane, which activates only on a readable corpus with hits, is recorded skipped with the limit as its reason.
 
 `cancelled`: the caller withdrew mid-run. Lane results already collected are kept and emitted as
 what they are.

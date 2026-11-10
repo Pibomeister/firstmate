@@ -93,8 +93,8 @@ search and it is `assumed` at best until read back in the source.
 9. Write `recommendation.further_inspection`: what to look at next and why the evidence so far does
    not settle it. Nothing else goes in this field.
 10. Publish the dossier through the knowledgebase adapter's `publishArtifact` operation with a
-    run-artifact placement, then return a short gist naming the published record and the headline
-    locations. The caller reads the dossier; the raw search transcript is not returned.
+    run-artifact placement (under a knowledgebase coverage limit, skip it and name the dossier as not
+    published), then return a short gist naming the published record's reference, or, under a coverage limit, the dossier named as not published, and the headline locations. The caller reads the dossier; the raw search transcript is not returned.
 
 ## Hard gates
 
@@ -147,8 +147,9 @@ The scout supplies no path: the
 knowledgebase resolves placement, and a scout that writes a documentation tree into the repository
 it is reading has broken the read-only gate and the central-ownership boundary in one step.
 
-The return value to the caller is a short gist: the published record reference, the headline
-locations, and the count of coverage limits and unknowns. It repeats neither the dossier's contents
+The return value to the caller is a short gist: the published record reference (under a coverage
+limit, the dossier named as not published), the headline locations, and the count of coverage limits
+and unknowns. It repeats neither the dossier's contents
 nor the search transcript.
 
 ## Side effects
@@ -164,15 +165,20 @@ No `workspace-write`, no `local-commit`: a scout cannot edit the repository it i
 
 ## Stop conditions
 
-`complete`: the dossier is published. A dossier whose `status` is `limited` is complete — the
-coverage limits materially restrict what it supports, and saying so is the result.
+`complete`: the dossier is published, or named as not published under a knowledgebase coverage
+limit. A dossier whose `status` is `limited` is complete — the coverage limits materially restrict
+what it supports, and saying so is the result.
 
 `needs-input`: no bounded question, or a question broad enough that no search would end it. Returns
 the narrower question it proposes and no partial dossier.
 
-`failed`: the repository is unreadable at the named revision, or the knowledgebase refuses the write.
-The dossier content is returned to the caller unpublished, with the refusal, rather than written to a
-path in the repository.
+`failed`: the repository is unreadable at the named revision, or a configured knowledgebase refuses
+the write. The dossier content is returned to the caller unpublished, with the refusal, rather than
+written to a path in the repository.
+
+A knowledgebase coverage limit — `.cursor/bin/ak kb check` exit 3 (kb.unbound, kb.unregistered), a publish exit 3 (kb.read-only), kb.in-repo-missing, or a
+missing or unknown `.cursor/bin/ak kb` command — never stops this phase under any policy: reads are unavailable,
+each skipped publish is named in the result as not published, and only exit 1 stops.
 
 `cancelled`: the caller withdrew the question mid-run. Searches already recorded are discarded
 rather than published as a dossier nobody asked to keep.

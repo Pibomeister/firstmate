@@ -138,7 +138,7 @@ The build, for each ticket, in this order (ruling `work-trail-is-account-not-evi
     boundary as a run artifact of the run, and keep the ref it returns.
 14. Report what Outputs lists.
 
-The publication boundary for steps 8 and 13 is `ak kb publish artifact --file <record> --run <run-id>
+The publication boundary for steps 8 and 13 is `.cursor/bin/ak kb publish artifact --file <record> --run <run-id>
 --trail-attempts <stretch-index>.attempts`. Inside the knowledgebase lock, after checks that can
 refuse without writing and immediately before writing the record, it creates the attempt mark
 exclusively and flushes the mark and its directory to durable storage. The mark's filename is the

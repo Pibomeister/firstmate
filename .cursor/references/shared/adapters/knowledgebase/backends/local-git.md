@@ -22,7 +22,7 @@ locator:
 ```
 
 `locator.knowledgebase` is the only key read ([`schemas/kb-backends/local-git.schema.json`](../../../schemas/kb-backends/local-git.schema.json), which
-`ak kb check` applies after the generic [`schemas/kb-binding.schema.json`](../../../schemas/kb-binding.schema.json)). It is an id of lowercase
+`.cursor/bin/ak kb check` applies after the generic [`schemas/kb-binding.schema.json`](../../../schemas/kb-binding.schema.json)). It is an id of lowercase
 words joined by hyphens, so a path cannot be written there: the schema refuses a `/`.
 
 Several projects may name the same knowledgebase. Each is filed under its own `project`, and no
@@ -37,10 +37,10 @@ task copy of a bound project needs none of it.
 
 1. Create the knowledgebase where it should live, outside every application repository:
    `git init <path>`. Give it a remote or not; this binding never pushes.
-2. Register it on this machine: `ak kb register <knowledgebase-id> <path>`. The registry is
+2. Register it on this machine: `.cursor/bin/ak kb register <knowledgebase-id> <path>`. The registry is
    `~/.agent-kit/kb/registry.json`, or the file `AK_KB_REGISTRY` names.
 3. Commit `ak.kb.yaml` (§1) at the project root.
-4. Run `ak kb check` in the project. It prints `bound`, with the knowledgebase's path and the
+4. Run `.cursor/bin/ak kb check` in the project. It prints `bound`, with the knowledgebase's path and the
    project id, and exits 0.
 
 Another machine repeats steps 1 and 2 with its own path — typically a clone of the same
@@ -81,7 +81,7 @@ can change while the refs stay the same.
 
 ## 4. `readContext`
 
-`ak kb read --kind <kind>[,<kind>…] --scope <scope>`
+`.cursor/bin/ak kb read --kind <kind>[,<kind>…] --scope <scope>`
 
 Returns the pages of those kinds at the scope and at each scope above it, most specific first, each
 with its record ref, content hash, the knowledgebase commit that last changed it, and its body.
@@ -107,7 +107,7 @@ commit, so reading the commit returns what was published.
 
 ### `kb-document` placement
 
-`ak kb publish document --kind <kind> --scope <scope> --id <id> --title <title> --file <page.md> [--run <run>]`
+`.cursor/bin/ak kb publish document --kind <kind> --scope <scope> --id <id> --title <title> --file <page.md> [--run <run>]`
 
 The page body is the file; the knowledgebase writes the header. A body that begins with a `---`
 header of its own is refused, because the header carries the status.
@@ -122,7 +122,7 @@ header of its own is refused, because the header carries the status.
 
 ### `run-artifact` placement
 
-`ak kb publish artifact --file <artifact.json> --run <run> [--link <record-ref>]… [--trail-attempts <directory>]`
+`.cursor/bin/ak kb publish artifact --file <artifact.json> --run <run> [--link <record-ref>]… [--trail-attempts <directory>]`
 
 - **Validated before any write** against the schema its envelope names. A failing artifact leaves
   the knowledgebase untouched.
@@ -222,9 +222,11 @@ Also absent, and worth knowing before relying on this binding:
 
 ## 7. The knowledgebase is never the application repository
 
-The registered checkout is refused on every operation, and at registration too when `ak kb register`
+The registered checkout is refused on every operation, and at registration too when `.cursor/bin/ak kb register`
 runs from a bound project, when it is the
 project's own checkout, another work tree of the same repository, or a directory inside or around
-the project's tree (contract §3). Every git call this binding makes drops the caller's `GIT_*`
+the project's tree (contract §3). The one exception is a binding that cannot write:
+`backends/in-repo.md` reads pages the project itself commits and skips every publish (ruling
+`kb-binding-is-a-locator`). Every git call this binding makes drops the caller's `GIT_*`
 environment first, so a hook's `GIT_DIR` cannot point a publish at the repository the run is
 working in.

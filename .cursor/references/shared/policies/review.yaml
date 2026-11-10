@@ -505,6 +505,21 @@ doc_review:
       tier: always-on
     - role: doc-review/feasibility
       tier: always-on
+    - role: doc-review/comprehension
+      tier: always-on
+      activation: >-
+        The project's review.comprehension is shadow or on. Off, a missing review object, and a
+        missing key skip the seat. When seated it reaches every document. (phase 1b, GS-004h)
+      receives:
+        - the pinned snapshot
+        - the files and knowledgebase pages the document links to or names by path
+        - governing constraints the host loads for every session
+      never_receives:
+        - the glossary or concept pages the document does not link
+        - a prior-finding packet or an earlier paraphrase
+        - the author's narrative, rationale or self-assessment
+        - another reviewer's findings, judgments or dispositions
+      rulings: [comprehension-seat-stays-naive, comprehension-gap-not-contestable]
     - role: doc-review/product-lens
       tier: conditional
       activation: the document takes or implies an unsettled product position

@@ -100,7 +100,7 @@
       ]
     },
     "required_gates": {
-      "description": "The lifecycle gates the worker must pass before super-ship will publish, each proved by a gate record (src/lifecycle/gate.ts) that `ak firstmate status complete` checks. Order is the lifecycle's, not this list's.",
+      "description": "The lifecycle gates the worker must pass before super-ship will publish, each proved by a gate record (src/lifecycle/gate.ts) that `.cursor/bin/ak firstmate status complete` checks. Order is the lifecycle's, not this list's.",
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,

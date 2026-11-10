@@ -25,7 +25,7 @@ schema_version: 1
 package:
   id: ak
   name: agent-kit
-  version: 0.1.92
+  version: 0.1.106
   # Canonical explicit-start namespace. Host adapters render this plus a skill
   # id into the host's native form when packaging (ADR-0011).
   namespace: "/ak:"
@@ -593,7 +593,7 @@ protocols:
       shown to a seat that judges the change.
 
 # ---------------------------------------------------------------------------
-# Roles — 38. Role prompts, not skills. Never individually invocable.
+# Roles — 39. Role prompts, not skills. Never individually invocable.
 # ---------------------------------------------------------------------------
 roles:
   # Core (6)
@@ -752,7 +752,7 @@ roles:
     tier: stack-conditional
     summary: SwiftUI state, concurrency, Core Data threading, entitlements, accessibility.
 
-  # Doc review (7) — arch 6.5, a different catalog from code review.
+  # Doc review (8) — arch 6.5, a different catalog from code review.
   - id: doc-review/coherence
     batch: 2
     provenance_origin: donor
@@ -800,6 +800,14 @@ roles:
     summary: >-
       Challenges premises and stress-tests decisions rather than evaluating document quality.
       Not activated on a routine in-scope plan with validated upstream provenance.
+  - id: doc-review/comprehension
+    batch: 16
+    provenance_origin: donor
+    status: authored
+    tier: always-on
+    summary: >-
+      Naive restatement of a document. Flags unparaphrasable sections and undefined project
+      terms. Seated when review.comprehension is shadow or on; default off. (phase 1b, GS-004h)
 
   # Learn (5) — judgement prompts for the opt-in learning runtime. `ak learn` reads each body
   # verbatim and appends the output contract and the inputs; the judge that fills the seat is

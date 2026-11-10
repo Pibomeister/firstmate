@@ -48,8 +48,8 @@ invocation and the candidate stays a draft (ruling `entrypoint-phase-operation-s
   and hash. Absent: `complete` with no lesson, and the report says there was no trigger.
 - The knowledgebase adapter's `readContext`, to find an existing lesson on the same subject.
   Unavailable: `needs-input`.
-- Optional, under the `learning` profile: `ak learn review report` for the repository's active
-  review patterns and guardrail drafts, and `ak learn memory show` for its working memory and
+- Optional, under the `learning` profile: `.cursor/bin/ak learn review report` for the repository's active
+  review patterns and guardrail drafts, and `.cursor/bin/ak learn memory show` for its working memory and
   confirmed lessons. A pattern or lesson there is admitted as supporting evidence only where the
   evidence gate admitted it (protocol [`evidence-gate`](../../references/shared/protocols/evidence-gate/PROTOCOL.md)); a `candidate` pattern or a `hypothesis`
   lesson is context, not support. These are runtime commands, not skills, and the runtime is an

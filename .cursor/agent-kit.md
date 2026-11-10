@@ -10,9 +10,9 @@ This overlay does not replace Firstmate's supervisor contract in the repository-
 
 ## Pin
 
-- Package: agent-kit `0.1.92`
+- Package: agent-kit `0.1.106`
 - Source: https://github.com/Pibomeister/agent-kit
-- Commit: `afed13adfbcbba7ba8307d5fb0baf7e148087f40` (merge of PR #212)
+- Commit: `e1716acfc4be6691a6462dc77cba727a11d8d77e` (`v0.1.106`)
 - Host: `cursor`
 - Profile: `core`
 
@@ -24,8 +24,8 @@ Recorded with `sha256sum .cursor/bin/ak .cursor/bin/ak-gate.mjs` at that commit.
 `bin/fm-agent-kit-pin.sh` checks these two lines against the files on disk.
 
 ```
-aff80a908c5d2d0d25339db41fdf959fcaf3d73fded8c49933d8cd7ec9cc15c6  .cursor/bin/ak
-8fc4777b2f3683b4a5fb527431f4e5a403f7b87a78b02dc6a39f7a8043edc4d7  .cursor/bin/ak-gate.mjs
+6df9b52c31bbd16e199349cee2c0ad33355e528199d978e88193ade79c63cfbc  .cursor/bin/ak
+b1615ebfe0f15cbcd7b99e3efa4b8f7265b47279ddda50d4abd04ce614de6a9a  .cursor/bin/ak-gate.mjs
 ```
 
 ## Licenses
