@@ -1248,7 +1248,7 @@ Portable shard evidence and coverage rules are in [fm-test-portable-shards.md](f
 
 ## Captain Preferences (data/captain.md / data/captain-shared.md)
 
-Domain-local preferences for one captain's fleet live locally in each home's `data/captain.md`; it is gitignored and printed in the session-start context digest after `data/projects.md` and optional `data/secondmates.md`.
+Domain-local preferences for one captain's fleet live locally in each home's `data/captain.md`; it is gitignored and shown in the session-start context digest after `data/projects.md` and optional `data/secondmates.md`, in full when small or as an indexed outline when large (`bin/fm-session-start.sh` SIZE BUDGET note).
 Before changing it, inspect the current file and curate the matching bullet in place under the internal [`stow` skill's](../.agents/skills/stow/SKILL.md) tiering and archive contract; add a new bullet only for a genuinely new durable preference.
 
 Shared captain preferences that apply across secondmate domains live only in the primary home's optional `data/captain-shared.md`.
@@ -1256,10 +1256,10 @@ Shared captain preferences that apply across secondmate domains live only in the
 
 ## Operational learnings (data/learnings.md)
 
-Fleet-local operational facts and gotchas live locally in `data/learnings.md`; it is gitignored and printed after the captain-preference files in the session-start context digest.
+Fleet-local operational facts and gotchas live locally in `data/learnings.md`; it is gitignored and shown after the captain-preference files in the session-start context digest, in full when small or as a pointer when large.
 The file is created lazily on first learning and follows the internal [`stow` skill's](../.agents/skills/stow/SKILL.md) aging-tier and cold-archive contract: inspect the current file first and curate it instead of appending forever.
 
-Fleet-wide learnings that every captain should load at session start and each `/afk` preflight ship in the tracked code root at `docs/learnings/overnight-learnings.md` because `data/` is gitignored; `bin/fm-fleet-learnings.sh` and `bin/fm-afk-preflight.sh` print it, and a missing copy is non-blocking.
+Fleet-wide learnings that every captain should load at session start and each `/afk` preflight ship in the tracked code root at `docs/learnings/overnight-learnings.md` because `data/` is gitignored; session start shows it in its context digest (as a pointer when large), `bin/fm-fleet-learnings.sh` and `bin/fm-afk-preflight.sh` print it, and a missing copy is non-blocking.
 
 ## External memory tiers (Memory layering section)
 
@@ -1314,7 +1314,7 @@ Registering it is a reason to watch on the same terms as the [watched-tool check
 Use `bin/fm-startup-growth-check.sh disarm` to remove the check and its local report record.
 
 The check evaluates at most once per day and stays silent when nothing meaningful changed.
-A due evaluation uses file metadata and byte sizes before any content inspection: it asks `bin/fm-startup-memory-budget.sh report` for the budget verdict over `data/captain.md`, `data/captain-shared.md`, and `data/learnings.md`, watches the `data/projects.md`, `data/secondmates.md`, and tracked `docs/learnings/overnight-learnings.md` that session start also prints in full for growth without entering that budget total, and separately watches the tracked startup/instruction owner files described by the script header.
+A due evaluation uses file metadata and byte sizes before any content inspection: it asks `bin/fm-startup-memory-budget.sh report` for the budget verdict over `data/captain.md`, `data/captain-shared.md`, and `data/learnings.md`, watches the `data/projects.md`, `data/secondmates.md`, and tracked `docs/learnings/overnight-learnings.md` that session start also shows for growth without entering that budget total, and separately watches the tracked startup/instruction owner files described by the script header.
 `bin/fm-startup-memory-budget.sh` remains the sole owner of the budget total and its verdict, so the check never re-derives either: when that owner annotates an overrun caused by the primary-owned `data/captain-shared.md` alone, a secondmate home is not woken about an overrun it cannot act on.
 A secondmate home is likewise not notified about per-file growth of that same primary-owned `data/captain-shared.md`, which it receives read-only; the growth is still observed and recorded, and a primary home reports it normally.
 Those tracked bytes are code and instruction-surface size, not prompt-memory cost.
@@ -3380,7 +3380,9 @@ FM_BACKEND_TERN_CTL_TIMEOUT=5  # tern-only: seconds bounding each tern ctl call 
 FM_BACKEND_TERN_SUBMIT_POLLS=6  # tern-only: native-state samples across each Enter confirmation budget
 FM_BACKEND_TERN_SUBMIT_MIN_SLEEP=0.6  # tern-only: minimum per-Enter confirmation budget before polling native state after an idle baseline
 CMUX_SOCKET_PASSWORD=   # cmux-only: socket password fallback when config/cmux-socket-password is absent (docs/cmux-backend.md)
-FM_SESSION_START_QUEUED_LIMIT=20   # plain queued backlog rows in the session-start digest; in-flight, held, and blocked rows are never bounded and done rows are never listed
+FM_SESSION_START_QUEUED_LIMIT=5   # plain queued backlog rows in the session-start digest; on both the tasks-axi and manual backlog paths every held and blocked row prints, each capped at 320 characters, other rows are capped at 180, each in-flight row prints once, and done rows are never listed
+FM_SESSION_START_CONTEXT_INLINE_MAX=2048   # bytes at or under which a session-start CONTEXT file prints in full; a larger file prints as an indexed pointer and outline
+FM_SESSION_START_WAKE_INLINE_MAX=8000   # bytes over which the session-start wake presentation is saved to state/.session-start-wake-presentation and its inline copy keeps one latest-event annotation line per status file (cut at 320 characters), leaves out the earlier unread, repeated, and historical annotation lines and all but five OPEN DECISIONS and STATUS OUTCOME BACKSTOP items
 FM_SESSION_START_ENDPOINT_TIMEOUT=10   # seconds bounding each per-task endpoint liveness read in the session-start digest (bin/fm-session-start.sh); nonpositive or invalid values fall back to 10; a read that hits the bound or dies becomes that task's own `endpoint=error` field and the digest continues
 FM_DISPATCH_SLA_MINUTES=15   # whole minutes of the captain-goal dispatch SLA; bin/fm-dispatch-log.sh owns the ledger contract
 FM_CLAIMS_NET_TIMEOUT=20   # seconds bounding each claim-verifier network read; a read that hits it is recorded unverifiable; bin/fm-claims.sh owns the other FM_CLAIMS_* tunables

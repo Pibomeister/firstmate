@@ -85,9 +85,11 @@ test_session_start_includes_fleet_learnings_when_root_has_file() {
     "$SESSION_START" 2>&1 | head -n 400)
   assert_contains "$out" 'docs/learnings/overnight-learnings.md (tracked fleet learnings' \
     "session start did not label fleet learnings in CONTEXT"
-  assert_contains "$out" 'Prompts lost during restarts' \
-    "session start did not print fleet learnings body"
-  pass "session start CONTEXT includes fleet learnings when the code root ships them"
+  assert_contains "$out" "read $root/docs/learnings/overnight-learnings.md when this turn needs a lesson from it" \
+    "session start did not point at the large fleet learnings file"
+  assert_not_contains "$out" 'Prompts lost during restarts' \
+    "session start printed the large fleet learnings body instead of pointing at it"
+  pass "session start CONTEXT points at fleet learnings when the code root ships them"
 }
 
 test_session_start_missing_fleet_learnings_nonblocking() {

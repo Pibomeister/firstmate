@@ -81,8 +81,9 @@
 #                       step 1, harvested WITHOUT waiting for it.
 #   8. context digest - docs/learnings/overnight-learnings.md, data/projects.md,
 #                       data/secondmates.md, data/captain.md,
-#                       data/captain-shared.md, data/learnings.md: read-only,
-#                       always safe, always runs.
+#                       data/captain-shared.md, data/learnings.md, each in full
+#                       when small and indexed when large (see SIZE BUDGET):
+#                       read-only, always safe, always runs.
 #   9. closing reminder - prints the context-specific watcher next step; this
 #                       script points back to the emitted harness supervision
 #                       block and deliberately never arms the watcher itself.
@@ -164,12 +165,20 @@
 #   - `done` rows are never listed. Retained completion history belongs to the
 #     reporting surfaces (bin/fm-bearings-snapshot.sh, /ahoy), and at startup it
 #     is pure weight - 10 done rows cost 3.3KB in an observed main-home digest.
-#   - Every in-flight, held, and blocked row is listed IN FULL, with its
-#     hold_kind/hold_reason and blocked_by. Those are the rows AGENTS.md
-#     sections 7 and 10 make actionable at startup, so they are never bounded
-#     away.
+#   - Every held and blocked row is listed, with its hold_kind/hold_reason and
+#     blocked_by. Those are the rows AGENTS.md sections 7 and 10 make
+#     actionable at startup, so they are never bounded away. A hold reason is
+#     captain-decision context, so these rows are cut only past
+#     BACKLOG_DECISION_ROW_MAX characters, with a [truncated] marker; the id
+#     that leads each row always survives.
+#   - A field tasks-axi already cut keeps a short [truncated] marker in place of
+#     the tool's long show-command note, which the listing header names once.
+#   - An in-flight row is listed once: one the held group already lists, or a
+#     plain one (no hold, no blocked_by) whose state/<id>.meta exists, is left
+#     out of the in-flight group, and its id is named in a disclosure line,
+#     because the held group or Work under way prints it.
 #   - Only the plain queued (dispatchable-now) listing is bounded, by
-#     FM_SESSION_START_QUEUED_LIMIT, default 20. Anything it omits is disclosed
+#     FM_SESSION_START_QUEUED_LIMIT, default 5. Anything it omits is disclosed
 #     with an exact remainder count and the command that shows the rest, so a
 #     deep queue costs a counter rather than kilobytes.
 #     (This replaces FM_SESSION_START_BACKLOG_LIMIT, which bounded the whole
@@ -179,14 +188,14 @@
 # `tasks-axi list` for the compact identity fields plus blocked_by, hold_kind,
 # and hold_reason, never body. The groups are the tool's own filters
 # (`--state in_flight`, `--state held`, `--state queued --blocked`, and
-# `tasks-axi ready`), so this script never reimplements task state; the groups
-# can overlap, because an in-flight item that is also held appears under both.
+# `tasks-axi ready`), so this script never reimplements task state; an
+# in-flight item that is also held is printed under held only.
 # When manual mode is selected, or tasks-axi is unavailable or incompatible,
 # this script prints only backlog section headings and item title lines, so
 # title-line hold and blocked-by metadata remain visible while indented bodies
 # stay out of the startup digest; the same never-bound-a-held-or-blocked-row
 # rule applies, recognized there from the title line's own hold/blocked-by
-# markers.
+# markers, and the same BACKLOG_DECISION_ROW_MAX / BACKLOG_ROW_MAX cuts apply.
 # Full bodies are targeted follow-up only: `bin/fm-tasks-axi.sh show <id> --full` when
 # compatible tasks-axi is available, or `data/backlog.md` when the file body is
 # truly needed.
@@ -199,6 +208,31 @@
 # bin/fm-crew-state.sh <id> owns the reconciled current state, and the raw
 # state/<id>.meta and state/<id>.status files hold the full records. The
 # section header prints that pointer once, so no per-task tail is needed.
+# A stale task - endpoint dead or unknown, no recorded PR, and at least
+# STALE_TASK_DAYS old - is condensed to an id:state:age:endpoint entry on one
+# shared line, so long-dead work costs a few words while staying visible to
+# recovery.
+#
+# SIZE BUDGET: every primary handoff pays this digest, so on a large home it
+# stays under 30 KB (tests/fm-session-start.test.sh pins that on a fixture
+# home). Nothing safety-relevant is cut to get there: the lock verdict, CAPTAIN
+# ORDERS, every wake record, OPEN DECISIONS, UNREAD STATUS, the
+# WAKE_ACK_REQUIRED line, actionable diagnostics, and every live task id print
+# in every case. Long, stable material is summarized or pointed at instead:
+#   - A CONTEXT file over FM_SESSION_START_CONTEXT_INLINE_MAX bytes (default
+#     2048) is INDEXED: its absolute path, size, and a line-numbered outline of
+#     its headings, or of its list items when it has at most a title heading,
+#     print instead of its text; the outline stops at CONTEXT_OUTLINE_MAX bytes.
+#     The two learnings files print the pointer line alone.
+#   - A wake presentation over FM_SESSION_START_WAKE_INLINE_MAX bytes (default
+#     8000) is saved whole to state/.session-start-wake-presentation first, and
+#     only then does the inline copy keep one non-historical latest-event
+#     `wake annotation:` line per status file (capped at 320 characters), leave
+#     out the earlier unread, repeated, and historical annotation lines and all
+#     but the first five OPEN DECISIONS and STATUS OUTCOME BACKSTOP items, with
+#     their counts and that path; if the save fails, nothing is left out.
+#   - The backlog and Work under way bounds are the BACKLOG DIGEST and
+#     WORK-UNDER-WAY notes above.
 #
 # RUNTIME BOUND: the digest is now executed through a native session-open
 # adapter (see bin/fm-sessionstart-run.sh), which blocks either hook-driven
@@ -401,6 +435,8 @@ PRIMARY_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
 . "$SCRIPT_DIR/fm-classify-lib.sh"
 # shellcheck source=bin/fm-hold-reason-lib.sh
 . "$SCRIPT_DIR/fm-hold-reason-lib.sh"
+# shellcheck source=bin/fm-line-cap-lib.sh
+. "$SCRIPT_DIR/fm-line-cap-lib.sh"
 
 # One tasks-axi compatibility verdict per session start. The probe costs three
 # tasks-axi subprocesses and this digest needs the same answer twice - here for
@@ -414,8 +450,25 @@ PRIMARY_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
 if fm_tasks_axi_compatible; then TASKS_AXI_COMPATIBLE=1; else TASKS_AXI_COMPATIBLE=0; fi
 TASKS_AXI_CHECK_REASON=$(fm_tasks_axi_check_reason)
 
-QUEUED_LIMIT=${FM_SESSION_START_QUEUED_LIMIT:-20}
-case "$QUEUED_LIMIT" in ''|*[!0-9]*|0) QUEUED_LIMIT=20 ;; esac
+QUEUED_LIMIT=${FM_SESSION_START_QUEUED_LIMIT:-5}
+case "$QUEUED_LIMIT" in ''|*[!0-9]*|0) QUEUED_LIMIT=5 ;; esac
+# SIZE BUDGET knobs (see this file's SIZE BUDGET note). A context file at or
+# under CONTEXT_INLINE_MAX bytes prints in full; a larger one is indexed. A wake
+# presentation over WAKE_INLINE_MAX bytes is saved to a file, and its inline
+# copy is bounded (print_wake_presentation). Invalid or zero values fall back to
+# the defaults.
+CONTEXT_INLINE_MAX=${FM_SESSION_START_CONTEXT_INLINE_MAX:-2048}
+case "$CONTEXT_INLINE_MAX" in ''|*[!0-9]*|0) CONTEXT_INLINE_MAX=2048 ;; esac
+CONTEXT_OUTLINE_MAX=560
+WAKE_INLINE_MAX=${FM_SESSION_START_WAKE_INLINE_MAX:-8000}
+case "$WAKE_INLINE_MAX" in ''|*[!0-9]*|0) WAKE_INLINE_MAX=8000 ;; esac
+WAKE_PRESENTATION_FILE="$STATE/.session-start-wake-presentation"
+WAKE_SECTION_ITEMS=5
+WAKE_ANNOTATION_MAX=320
+BACKLOG_ROW_MAX=180
+# Held and blocked rows carry the hold reason and blocker the captain decides
+# on, so they get a wider cut that keeps an ordinary reason whole.
+BACKLOG_DECISION_ROW_MAX=320
 # One per-task endpoint read may never outlive this bound: a hung backend CLI
 # becomes that task's endpoint=error field instead of the digest's whole
 # runtime budget.
@@ -430,28 +483,174 @@ SUBRULE='-----------------------------------------------------------------------
 section() { printf '\n%s\n%s\n%s\n' "$RULE" "$1" "$RULE"; }
 subsection() { printf '\n%s\n%s\n' "$1" "$SUBRULE"; }
 
-# print_file_or_absent <path> <label>: full contents under a labeled
-# subsection, or an explicit ABSENT marker. Absence is semantically
-# meaningful for every one of these files (captain.md absent = firstmate
-# repo built-in defaults, projects.md absent = rebuild from clones, etc. -
-# AGENTS.md section 3) and must never be confused with an empty-but-present
-# file, so the two cases print differently.
-print_file_or_absent() {
-  local path=$1 label=$2
+# print_context_outline <path>: a bounded, line-numbered outline of one indexed
+# context file. Markdown headings (#, ##, ###) are the outline when the file has
+# more than one; a list file with at most a title heading (the project and
+# secondmate registries) is outlined by each top-level item's label, the text
+# before its first " - ". The outline is bounded at CONTEXT_OUTLINE_MAX bytes in
+# every encoding: awk counts bytes, and each row is charged its byte length, or
+# 400 bytes for a label cut at 100 characters. A long registry shows only its
+# first names, and the remaining items are counted in a closing line.
+print_context_outline() {
+  local path=$1 outline
+  outline=$(LC_ALL=C awk -v max="$CONTEXT_OUTLINE_MAX" '
+    /^```/ { fence = !fence; next }
+    fence { next }
+    /^#[ \t]|^##[ \t]|^###[ \t]/ { hn++; hline[hn] = NR; htext[hn] = $0; next }
+    /^[-*][ \t]/ {
+      label = $0
+      sub(/ - .*/, "", label)
+      in_++; iline[in_] = NR; itext[in_] = label
+    }
+    END {
+      if (hn > 1 || in_ == 0) { n = hn; kind = "heading" } else { n = in_; kind = "item" }
+      if (n == 0) { print "  (no headings or list items to outline)"; exit }
+      used = 0
+      for (i = 1; i <= n; i++) {
+        if (kind == "heading") { ln = hline[i]; t = htext[i] } else { ln = iline[i]; t = itext[i] }
+        prefix = "  L" ln " "
+        row = prefix t
+        cost = length(prefix) + (length(t) > 400 ? 400 : length(t))
+        if (used + cost + 1 > max) {
+          printf "  (+%d more %s(s) - read the file for the rest)\n", n - i + 1, kind
+          exit
+        }
+        printf "\037%d\037%s\n", length(prefix) + 100, row
+        used += cost + 1
+      }
+    }
+  ' "$path" 2>/dev/null) || { printf '  (outline unavailable - read the file)\n'; return 0; }
+  printf '%s\n' "$outline" | cap_marked_lines
+}
+
+# print_context_file <path> <label> [pointer]: one context source under a labeled
+# subsection. Absence is semantically meaningful for every one of these files
+# (captain.md absent = firstmate repo built-in defaults, projects.md absent =
+# rebuild from clones, etc. - AGENTS.md section 3) and must never be confused
+# with an empty-but-present file, so the two cases print differently. A file at
+# or under CONTEXT_INLINE_MAX bytes prints in full; a larger one prints an INDEXED
+# pointer line (absolute path, size) plus its outline instead of its contents;
+# with `pointer`, a large file prints the pointer line alone (the learnings
+# files, which a turn reads only when it needs a specific lesson).
+print_context_file() {
+  local path=$1 label=$2 mode=${3:-} bytes lines
   subsection "$label"
-  if [ -f "$path" ]; then
-    if [ -s "$path" ]; then
-      cat "$path"
-    else
-      printf '(present, empty)\n'
-    fi
-  else
+  if [ ! -f "$path" ]; then
     printf 'ABSENT\n'
+    return 0
   fi
+  if [ ! -s "$path" ]; then
+    printf '(present, empty)\n'
+    return 0
+  fi
+  bytes=$(wc -c < "$path" 2>/dev/null | tr -d ' ') || bytes=
+  case "$bytes" in ''|*[!0-9]*) bytes=0 ;; esac
+  if [ "$bytes" -le "$CONTEXT_INLINE_MAX" ]; then
+    cat "$path"
+    return 0
+  fi
+  lines=$(wc -l < "$path" 2>/dev/null | tr -d ' ') || lines='?'
+  if [ "$mode" = pointer ]; then
+    printf 'INDEXED, not printed (%s bytes, %s lines): read %s when this turn needs a lesson from it.\n' \
+      "$bytes" "$lines" "$path"
+    return 0
+  fi
+  printf 'INDEXED, not printed (%s bytes, %s lines): read %s, or one section at its line number, when this turn needs it.\n' \
+    "$bytes" "$lines" "$path"
+  print_context_outline "$path"
+}
+
+# cap_marked_lines: copy stdin to stdout, cutting each line that awk marked as
+# "\037<max>\037<line>" to <max> characters with the shared fm_cap_line_var cut.
+# awk's length and substr count bytes on some platforms, so a cut made there can
+# split a multibyte character; the shared cut counts characters under a UTF-8
+# locale and, under any other, drops a trailing incomplete sequence, so it never
+# does.
+cap_marked_lines() {
+  local line rest max
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      $'\037'*)
+        rest=${line#$'\037'}
+        max=${rest%%$'\037'*}
+        rest=${rest#*$'\037'}
+        fm_cap_line_var "$rest" "$max"
+        printf '%s\n' "$FM_LINE_CAP_LINE"
+        ;;
+      *) printf '%s\n' "$line" ;;
+    esac
+  done
+}
+
+# print_wake_presentation <drain-output>: the drain's own output, bounded. Within
+# WAKE_INLINE_MAX bytes it prints verbatim. Over it, the complete presentation is
+# first saved to WAKE_PRESENTATION_FILE, and only then is the inline copy bounded.
+# It keeps each non-historical `wake annotation: latest wake-EVENT observed at
+# drain` line, only the first per signalled status file, cut to WAKE_ANNOTATION_MAX
+# characters with the shared line cut. It leaves out the earlier unread, repeated,
+# and historical `wake annotation:` lines and every OPEN DECISIONS or STATUS OUTCOME
+# BACKSTOP item past the first WAKE_SECTION_ITEMS of its section, each omission
+# disclosed with its count and the saved path. A bounded section ends
+# at a blank line, a guard banner, a warning, a `wake drain:` diagnostic, or any
+# all-capitals drain heading followed by ` (` or `:`, so every later section
+# (UNREAD STATUS, RECORD DIVERGENCE, BRANCH OUTCOMES, section tails, the
+# acknowledgement line) always prints inline. Both bounded sections are refolded
+# from the durable status logs at every drain. If the save fails, nothing is
+# left out.
+print_wake_presentation() {
+  local out=$1 tmp='' bytes=''
+  # Count bytes, not characters: under a UTF-8 locale ${#out} counts characters,
+  # so multibyte text would slip past the byte budget.
+  bytes=$(printf '%s\n' "$out" | LC_ALL=C wc -c | tr -d ' ')
+  if [ "$bytes" -le "$WAKE_INLINE_MAX" ]; then
+    printf '%s\n' "$out"
+    return 0
+  fi
+  # A directory at the save path would swallow the copy and still let mv
+  # succeed, so it counts as a failed save.
+  if [ ! -d "$WAKE_PRESENTATION_FILE" ] \
+    && tmp=$(mktemp "$WAKE_PRESENTATION_FILE.XXXXXX" 2>/dev/null) \
+    && printf '%s\n' "$out" > "$tmp" 2>/dev/null \
+    && mv -f "$tmp" "$WAKE_PRESENTATION_FILE" 2>/dev/null; then
+    printf '%s\n' "$out" | awk -v keep="$WAKE_SECTION_ITEMS" -v saved="$WAKE_PRESENTATION_FILE" -v bullet='●' \
+      -v amax="$WAKE_ANNOTATION_MAX" \
+      -v latest_prefix='wake annotation: latest wake-EVENT observed at drain, not current state: ' '
+      function close_section() {
+        if (section != "" && cut > 0)
+          printf "(%d more %s line(s) left out here; the saved presentation at %s lists them)\n", cut, section, saved
+        section = ""; shown = 0; cut = 0
+      }
+      # The drain labels every unread event whose text equals the newest one
+      # "latest", so keep only the first per status file; repeats count as left out.
+      /^wake annotation: latest wake-EVENT observed at drain, not current state: / {
+        key = substr($0, length(latest_prefix) + 1)
+        key = substr(key, 1, index(key, ": ") - 1)
+        if (seen[key]++) { annotations++; next }
+        printf "\037%d\037%s\n", amax, $0
+        next
+      }
+      /^wake annotation:/ { annotations++; next }
+      /^OPEN DECISIONS \(/ { close_section(); print; section = "OPEN DECISIONS"; next }
+      /^STATUS OUTCOME BACKSTOP \(/ { close_section(); print; section = "STATUS OUTCOME BACKSTOP"; next }
+      section != "" && $0 != "" && index($0, bullet) != 1 \
+        && $0 !~ /^([A-Z][A-Z_, ]*( [(]|:)|WARNING|wake drain:)/ {
+        if (shown < keep) { shown++; print } else cut++
+        next
+      }
+      { close_section(); print }
+      END {
+        close_section()
+        if (annotations > 0)
+          printf "WAKE ANNOTATIONS: %d earlier unread, repeated, and historical wake-event annotation line(s) left out to bound this digest; the complete presentation is saved at %s - read it before handling a signal record above.\n", annotations, saved
+      }' | cap_marked_lines
+    return 0
+  fi
+  [ -z "$tmp" ] || rm -f "$tmp" 2>/dev/null || true
+  printf '%s\n' "$out"
 }
 
 print_backlog_pointer() {
-  printf 'Full task bodies remain available on demand: bin/fm-tasks-axi.sh show <id> --full when compatible tasks-axi is available, or data/backlog.md.\n'
+  printf 'Full task bodies and any row cut with [truncated] remain available on demand: bin/fm-tasks-axi.sh show <id> --full when compatible tasks-axi is available, or data/backlog.md.\n'
 }
 
 # A queued title line whose own text already marks it held or blocked. The
@@ -461,11 +660,19 @@ print_backlog_pointer() {
 # because awk's -v applies escape processing before the regex is ever compiled.
 MANUAL_KEEP_RE='[(]hold|blocked-by:'
 
+# Hold reasons are decoded before the cut, so a cut never splits an encoded
+# payload; each title line is then cut with the shared [truncated] marker
+# (cap_marked_lines):
+# held and blocked queued lines at BACKLOG_DECISION_ROW_MAX, every other line
+# at BACKLOG_ROW_MAX. Every in-flight, held, and blocked line still prints.
 print_backlog_manual_compact() {
   local path=$1 reason=$2
-  printf 'compact backlog listing (%s; done rows omitted; every in-flight, held, and blocked title line kept; other queued bounded to %s; indented task bodies omitted)\n' \
-    "$reason" "$QUEUED_LIMIT"
-  awk -v max="$QUEUED_LIMIT" -v keep_re="$MANUAL_KEEP_RE" '
+  printf 'compact backlog listing (%s; done rows omitted; every in-flight, held, and blocked title line kept; held and blocked lines capped at %s characters, other lines at %s; other queued bounded to %s; indented task bodies omitted)\n' \
+    "$reason" "$BACKLOG_DECISION_ROW_MAX" "$BACKLOG_ROW_MAX" "$QUEUED_LIMIT"
+  fm_hold_reason_decode_stream markdown < "$path" | awk -v max="$QUEUED_LIMIT" -v keep_re="$MANUAL_KEEP_RE" \
+    -v cap="$BACKLOG_ROW_MAX" -v decision_cap="$BACKLOG_DECISION_ROW_MAX" '
+    # Mark the line for cap_marked_lines, which makes the character-safe cut.
+    function cut(line, limit) { return sprintf("\037%d\037%s", limit, line) }
     function state_for_heading(line, heading) {
       heading = line
       sub(/^##[[:space:]]+/, "", heading)
@@ -481,12 +688,12 @@ print_backlog_manual_compact() {
       if (state != "" && state != "done") print $0
       next
     }
-    state == "in_flight" && /^[-*][[:space:]]+/ { in_flight++; print $0; next }
+    state == "in_flight" && /^[-*][[:space:]]+/ { in_flight++; print cut($0, cap); next }
     state == "done" && /^[-*][[:space:]]+/ { done_total++; next }
     state == "queued" && /^[-*][[:space:]]+/ {
       queued_total++
-      if ($0 ~ keep_re) { gated++; print $0; next }
-      if (plain_shown < max) { plain_shown++; print $0 }
+      if ($0 ~ keep_re) { gated++; print cut($0, decision_cap); next }
+      if (plain_shown < max) { plain_shown++; print cut($0, cap) }
       next
     }
     END {
@@ -501,7 +708,7 @@ print_backlog_manual_compact() {
         }
       }
     }
-  ' "$path" | fm_hold_reason_decode_stream markdown
+  ' | cap_marked_lines
 }
 
 # tasks-axi closes every listing with its own help block. This section composes
@@ -513,18 +720,28 @@ strip_axi_help() {
   awk '/^help\[/ { exit } { print }'
 }
 
+# shorten_axi_cut_notes: tasks-axi marks a field it cut with a ~90-character
+# note naming `show <id> --full`; the listing header already names that command,
+# so each note becomes the same short [truncated] marker the row cut uses.
+shorten_axi_cut_notes() {
+  sed -E 's/\\n\.\.\. \(truncated, [0-9]+ chars total - use show [^ ]+ --full to see complete text\)/ [truncated]/g'
+}
+
 # Bound the dispatchable-now listing without rewriting the tool's own rendering:
 # `tasks-axi ready` rows are the indented lines under its ready[N]{...} header,
 # and every other line it prints (its count, its public-followup line) passes
 # through untouched. Whatever is cut is disclosed exactly.
 print_ready_queued_bounded() {
   local ready=$1
-  printf '%s\n' "$ready" | awk -v max="$QUEUED_LIMIT" '
+  printf '%s\n' "$ready" | awk -v max="$QUEUED_LIMIT" -v cap="$BACKLOG_ROW_MAX" '
     /^help\[/ { exit }
     /^ready\[/ { rows = 1; print; next }
     rows && /^[[:space:]]/ {
       total++
-      if (shown < max) { print; shown++ }
+      if (shown < max) {
+        printf "\037%d\037%s\n", cap, $0
+        shown++
+      }
       next
     }
     { rows = 0; print }
@@ -536,7 +753,69 @@ print_ready_queued_bounded() {
         }
       }
     }
-  '
+  ' | cap_marked_lines
+}
+
+# compact_backlog_rows [in_flight|decision]: cap every tasks-axi row (the
+# indented lines under a tasks[N]{...} header) at BACKLOG_ROW_MAX characters
+# with the shared line cut, so one long title costs a bounded line and the id
+# that leads it stays intact. With `decision` (the held and blocked groups,
+# whose hold reasons and blockers are decision context), the cap is the wider
+# BACKLOG_DECISION_ROW_MAX. With `in_flight`, a plain row - no blocked_by, no
+# hold - whose task has a state/<id>.meta is left out here, because Work under
+# way prints that task's line below; its id is still named in the disclosure.
+# An in-flight row whose id the held group lists (the space-separated ids in
+# BACKLOG_HELD_IDS) is left out here too, because the held group prints that
+# same row under its own cap; its id is named in a second disclosure. A blocked in-flight
+# row, or a plain one with no live record, always prints.
+compact_backlog_rows() {
+  local mode=${1:-} line id omitted='' count=0 held_dup='' held_count=0 cap=$BACKLOG_ROW_MAX
+  [ "$mode" = decision ] && cap=$BACKLOG_DECISION_ROW_MAX
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      '  '*)
+        if [ "$mode" = in_flight ]; then
+          id=${line#"${line%%[![:space:]]*}"}
+          id=${id%%,*}
+          case " ${BACKLOG_HELD_IDS:-} " in
+            *" $id "*)
+              if [ -n "$id" ]; then
+                held_dup="$held_dup $id"
+                held_count=$((held_count + 1))
+                continue
+              fi
+              ;;
+          esac
+          case "$line" in
+            *',none,"-","-"'|*',none,-,-')
+              if [ -n "$id" ] && [ -f "$STATE/$id.meta" ]; then
+                omitted="$omitted $id"
+                count=$((count + 1))
+                continue
+              fi
+              ;;
+          esac
+        fi
+        fm_cap_line_var "$line" "$cap"
+        printf '%s\n' "$FM_LINE_CAP_LINE"
+        ;;
+      *) printf '%s\n' "$line" ;;
+    esac
+  done
+  if [ "$held_count" -gt 0 ]; then
+    printf '(%d held in-flight row(s) are left out here; the held group below prints each one:%s)\n' \
+      "$held_count" "$held_dup"
+  fi
+  if [ "$count" -gt 0 ]; then
+    printf '(%d plain in-flight row(s) with a live task record are left out here; Work under way below lists each one:%s)\n' \
+      "$count" "$omitted"
+  fi
+}
+
+# backlog_row_ids: the leading id of every indented tasks-axi row on stdin, one
+# space-separated line.
+backlog_row_ids() {
+  awk '/^  [^ ]/ { id = $0; sub(/^ +/, "", id); sub(/,.*/, "", id); if (id != "") printf "%s ", id }'
 }
 
 print_backlog_tasks_axi_compact() {
@@ -550,16 +829,17 @@ print_backlog_tasks_axi_compact() {
   elif ! ready=$(tasks-axi ready --file "$path" 2>&1); then
     err=$ready
   else
-    printf 'compact backlog listing (tasks-axi; done rows omitted; every in-flight, held, and blocked row shown in full; ready queued bounded to %s; task bodies omitted)\n' \
-      "$QUEUED_LIMIT"
+    printf 'compact backlog listing (tasks-axi; done rows omitted; every held and blocked row shown, and every in-flight row not already listed under held or Work under way; held and blocked rows capped at %s characters, other rows at %s; ready queued bounded to %s; task bodies omitted)\n' \
+      "$BACKLOG_DECISION_ROW_MAX" "$BACKLOG_ROW_MAX" "$QUEUED_LIMIT"
     printf '\nin flight:\n'
-    printf '%s\n' "$in_flight" | fm_hold_reason_decode_stream | strip_axi_help
-    printf '\nheld (captain- or time-gated; an in-flight item that is also held appears in both groups):\n'
-    printf '%s\n' "$held" | fm_hold_reason_decode_stream | strip_axi_help
+    printf '%s\n' "$in_flight" | fm_hold_reason_decode_stream | strip_axi_help | shorten_axi_cut_notes \
+      | BACKLOG_HELD_IDS=$(printf '%s\n' "$held" | strip_axi_help | backlog_row_ids) compact_backlog_rows in_flight
+    printf '\nheld (captain- or time-gated; an in-flight item that is also held is listed here only):\n'
+    printf '%s\n' "$held" | fm_hold_reason_decode_stream | strip_axi_help | shorten_axi_cut_notes | compact_backlog_rows decision
     printf '\nblocked queued:\n'
-    printf '%s\n' "$blocked" | fm_hold_reason_decode_stream | strip_axi_help
+    printf '%s\n' "$blocked" | fm_hold_reason_decode_stream | strip_axi_help | shorten_axi_cut_notes | compact_backlog_rows decision
     printf '\nready queued (dispatchable now):\n'
-    print_ready_queued_bounded "$ready"
+    print_ready_queued_bounded "$(printf '%s\n' "$ready" | shorten_axi_cut_notes)"
     return 0
   fi
   printf 'tasks-axi compact listing failed; falling back to title-line rendering.\n'
@@ -637,6 +917,21 @@ fm_task_age() {  # <meta>
   elif [ "$secs" -ge 3600 ]; then printf '%dh' $((secs / 3600));
   elif [ "$secs" -ge 60 ]; then printf '%dm' $((secs / 60));
   else printf '%ds' "$secs"; fi
+}
+
+# is_stale_task <endpoint> <pr> <age>: true for a task whose endpoint is dead or
+# unknown, that has no recorded PR, and that is at least STALE_TASK_DAYS old.
+# Work under way condenses such a task to one short id:state:age:endpoint entry
+# instead of a full line; every live, errored, young, or PR-bearing task keeps its
+# full line.
+STALE_TASK_DAYS=3
+is_stale_task() {  # <endpoint> <pr> <age>
+  local endpoint=$1 pr=$2 age=$3 days
+  case "$endpoint" in dead|unknown) ;; *) return 1 ;; esac
+  [ "$pr" = '-' ] || return 1
+  case "$age" in *d) days=${age%d} ;; *) return 1 ;; esac
+  case "$days" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$days" -ge "$STALE_TASK_DAYS" ]
 }
 
 # fm_task_project_label <meta>: the recorded project's basename, or "-".
@@ -906,7 +1201,7 @@ else
   fi
   DRAIN_OUT=$("$SCRIPT_DIR/fm-wake-drain.sh" 2>&1)
   if [ -n "$DRAIN_OUT" ]; then
-    printf '%s\n' "$DRAIN_OUT"
+    print_wake_presentation "$DRAIN_OUT"
   else
     printf '(no queued wakes)\n'
   fi
@@ -993,36 +1288,33 @@ fi
 stage read-once
 section "READ-ONCE CONTRACT"
 cat <<'EOF'
-Everything below is printed for this session start: a compact
-data/backlog.md listing, one line per live task (id, project, last recorded
-state, recorded PR URL, age, endpoint verdict) with one line per orphan
-status log, data/projects.md, data/secondmates.md, data/captain.md,
-data/captain-shared.md, and data/learnings.md, plus the tracked
-docs/learnings/overnight-learnings.md under the code root. Full per-task
-records are not re-printed here: bin/fm-crew-state.sh <id> shows the
-reconciled detail, and state/<id>.meta plus state/<id>.status hold the raw
-records.
+Everything below prints once for this session start: a compact
+data/backlog.md listing, one line per live task and per orphan status log,
+and the CONTEXT files (data/projects.md, data/secondmates.md, data/captain.md,
+data/captain-shared.md, data/learnings.md, and the tracked
+docs/learnings/overnight-learnings.md under the code root), each in full when
+small or INDEXED with its path, size, and outline when large.
 Do NOT re-read any of them after reading this digest, and do NOT bulk-read
-data/backlog.md or state/*.status: re-reading everything defeats the entire
-point of this command.
+data/backlog.md or state/*.status.
 
 Go to a source directly only when:
-  - this digest flagged it ABSENT (then rebuild or create it per AGENTS.md),
-  - its contents looked unparseable or corrupt,
-  - an individual task's full detail is needed (bin/fm-crew-state.sh <id> for
-    the reconciled state, or state/<id>.meta and state/<id>.status for the raw
-    records and older wake-event history),
-  - a full task body is needed (bin/fm-tasks-axi.sh show <id> --full, or data/backlog.md),
-  - the backlog listing disclosed omitted queued items and this turn needs them,
-  - the NETWORK CHECKS section reported its checks still IN PROGRESS and this
-    turn needs their verdict (bin/fm-startup-network.sh report),
-  - or a STARTUP TRUNCATED banner named the stage that would have printed it, in
-    which case that stage's sources were never emitted and must be reconciled,
-  - or a context re-emit opened with a read cue because the
-    harness cut the digest short,
-  - or CONTEXT omitted docs/learnings/overnight-learnings.md because the digest
-    tail was truncated, in which case read that file under the code root
-    (docs/learnings/overnight-learnings.md relative to the firstmate checkout).
+  - CONTEXT marked it INDEXED and this turn needs it (read the file, or the
+    section at the line its outline names),
+  - WAKE QUEUE named a saved presentation file (read it before handling a
+    signal record or reconciling the items it left out),
+  - this digest flagged it ABSENT (rebuild or create it per AGENTS.md), or its
+    contents looked unparseable or corrupt,
+  - one task's detail is needed (bin/fm-crew-state.sh <id> for reconciled
+    state; state/<id>.meta and state/<id>.status for raw records),
+  - a full task body, or a backlog row the listing omitted or cut, is needed
+    (bin/fm-tasks-axi.sh show <id> --full, bin/fm-tasks-axi.sh ready, or
+    data/backlog.md),
+  - NETWORK CHECKS reported checks still IN PROGRESS and this turn needs their
+    verdict (bin/fm-startup-network.sh report),
+  - or a STARTUP TRUNCATED banner named the stage that would have printed it,
+    or a context re-emit opened with a read cue because the harness cut the
+    digest short: that stage's sources were never emitted and must be
+    reconciled.
 EOF
 
 # --- 6. fleet-state digest ---------------------------------------------
@@ -1036,6 +1328,8 @@ subsection "Work under way (state/*.meta)"
 printf 'One line per live task: id, project, last recorded state, PR URL, age, endpoint.\n'
 printf 'Full detail: bin/fm-crew-state.sh <id> (reconciled state); raw records: state/<id>.meta and state/<id>.status.\n'
 META_FOUND=0
+STALE_COUNT=0
+STALE_ENTRIES=
 for meta in "$STATE"/*.meta; do
   [ -f "$meta" ] || continue
   META_FOUND=1
@@ -1060,11 +1354,22 @@ for meta in "$STATE"/*.meta; do
   else
     endpoint='unknown'
   fi
+  task_state=$(fm_task_state_word "$status")
+  task_pr=$(fm_task_pr_url "$meta" "$status")
+  task_age=$(fm_task_age "$meta")
+  if is_stale_task "$endpoint" "$task_pr" "$task_age"; then
+    STALE_COUNT=$((STALE_COUNT + 1))
+    STALE_ENTRIES="$STALE_ENTRIES $id:$task_state:$task_age:$endpoint"
+    continue
+  fi
   printf '%s project=%s state=%s pr=%s age=%s endpoint=%s\n' \
-    "$id" "$(fm_task_project_label "$meta")" "$(fm_task_state_word "$status")" \
-    "$(fm_task_pr_url "$meta" "$status")" "$(fm_task_age "$meta")" "$endpoint"
+    "$id" "$(fm_task_project_label "$meta")" "$task_state" "$task_pr" "$task_age" "$endpoint"
 done
 [ "$META_FOUND" -eq 1 ] || printf '(none)\n'
+if [ "$STALE_COUNT" -gt 0 ]; then
+  printf '%d stale task(s) (endpoint dead or unknown, at least %d days old, no recorded PR), condensed to id:state:age:endpoint:%s\n' \
+    "$STALE_COUNT" "$STALE_TASK_DAYS" "$STALE_ENTRIES"
+fi
 
 subsection "Orphan status logs (state/*.status without matching .meta)"
 printf 'One line per orphan log: id and last recorded state. Full log: state/<id>.status.\n'
@@ -1170,12 +1475,16 @@ fi
 # take (see this file's ORDERING note).
 stage context
 section "CONTEXT"
-"$SCRIPT_DIR/fm-fleet-learnings.sh" 2>/dev/null || true
-print_file_or_absent "$DATA/projects.md" "data/projects.md"
-print_file_or_absent "$DATA/secondmates.md" "data/secondmates.md"
-print_file_or_absent "$DATA/captain.md" "data/captain.md"
-print_file_or_absent "$DATA/captain-shared.md" "data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)"
-print_file_or_absent "$DATA/learnings.md" "data/learnings.md"
+printf 'A file over %s bytes is INDEXED: its path, size, and outline print instead of its text.\n' "$CONTEXT_INLINE_MAX"
+printf 'Before the first dispatch, merge, or escalation call this session, read each INDEXED captain file,\n'
+printf 'or at least the sections its outline names for that call.\n'
+print_context_file "$FM_ROOT/docs/learnings/overnight-learnings.md" \
+  "docs/learnings/overnight-learnings.md (tracked fleet learnings)" pointer
+print_context_file "$DATA/projects.md" "data/projects.md"
+print_context_file "$DATA/secondmates.md" "data/secondmates.md"
+print_context_file "$DATA/captain.md" "data/captain.md"
+print_context_file "$DATA/captain-shared.md" "data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)"
+print_context_file "$DATA/learnings.md" "data/learnings.md" pointer
 
 # --- 9. closing reminder -----------------------------------------------
 stage next-step

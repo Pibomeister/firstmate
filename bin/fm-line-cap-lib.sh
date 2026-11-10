@@ -13,9 +13,11 @@
 # OPEN DECISIONS global byte cap and its "N more omitted" disclosure. This
 # file owns only the per-line cut.
 #
-# The cap counts characters, so a plain-ASCII line - what status lines are in
-# practice - is bounded to the same number of bytes, and a multibyte character
-# is never cut in half into an invalid sequence.
+# Under a UTF-8 locale the cap counts characters, so a plain-ASCII line - what
+# status lines are in practice - is bounded to the same number of bytes. Under a
+# C or unset locale bash counts bytes, so after a byte cut any trailing
+# incomplete UTF-8 sequence is dropped: the line may come out a little shorter
+# than the cap, but a multibyte character is never cut in half.
 # Truncation stays recoverable because every OPEN DECISIONS entry begins with
 # the task id that identifies its durable state/<id>.status source.
 
@@ -37,7 +39,32 @@ fm_cap_line_var() {
   fi
   keep=$((max - ${#FM_LINE_CAP_SUFFIX}))
   [ "$keep" -ge 0 ] || keep=0
-  FM_LINE_CAP_LINE="${line:0:$keep}$FM_LINE_CAP_SUFFIX"
+  line=${line:0:$keep}
+  [ "${#FM_LINE_CAP_PROBE}" -eq 1 ] || fm_line_cap_trim_partial_utf8
+  FM_LINE_CAP_LINE="$line$FM_LINE_CAP_SUFFIX"
+}
+
+# One three-byte character: its length is 1 only when bash counts characters.
+FM_LINE_CAP_PROBE=$'\342\224\200'
+
+# fm_line_cap_trim_partial_utf8: drop a trailing incomplete UTF-8 sequence (a
+# lead byte and the continuation bytes after it) from the caller's byte-cut
+# `line`. Only called when bash counts bytes, so each pattern matches one byte.
+fm_line_cap_trim_partial_utf8() {
+  local rest=$line n=0 need
+  while [ "$n" -lt 3 ]; do
+    case ${rest: -1} in
+      [$'\200'-$'\277']) rest=${rest%?}; n=$((n + 1)) ;;
+      *) break ;;
+    esac
+  done
+  case ${rest: -1} in
+    [$'\300'-$'\337']) need=1 ;;
+    [$'\340'-$'\357']) need=2 ;;
+    [$'\360'-$'\367']) need=3 ;;
+    *) return 0 ;;
+  esac
+  [ "$n" -ge "$need" ] || line=${rest%?}
 }
 
 # fm_cap_line <line> [<max>]: the same cut, printed on stdout, for a caller that
