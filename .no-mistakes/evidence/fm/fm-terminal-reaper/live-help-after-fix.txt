@@ -1,0 +1,32 @@
+fm-terminal-reap.sh - list this host's Orca terminals and headless browsers,
+classify each by owner, and close only the orphans.
+
+Usage:
+  fm-terminal-reap.sh [--apply] [--browsers] [--min-age <seconds>] [--no-browsers]
+
+  (default)        dry run: print every verdict and change nothing
+  --apply          close every terminal whose verdict is reap, re-proving
+                   each one just before acting on it; browsers are only
+                   listed unless --browsers is also given
+  --browsers       with --apply, also stop every browser whose verdict is
+                   reap; agent-browser daemons and chrome-devtools-axi
+                   bridges are shared by every client of their socket, so a
+                   browser judged owner-gone may still serve another live
+                   worker (no socket probe is made)
+  --min-age <s>    never reap a terminal session or browser younger than this
+                   many seconds (default 1800), so a session that is still
+                   launching its agent is never mistaken for an idle one
+  --no-browsers    classify terminals only
+
+Output: one tab-separated line per terminal or browser root,
+  <action> <kind> <class> <id> <path> <detail>
+where action is reap or keep on a dry run, and closed, stopped, skipped, or
+failed on --apply; kind is terminal or browser; id is the Orca terminal handle
+or the browser's root pid; detail is the owning task, the terminal title, or
+the browser's command. A final `summary:` line counts each action.
+
+Exit status: 0 when the inventory was read (and, with --apply, every reap
+succeeded or was safely skipped); 1 when an inventory read failed, including
+an unreadable home, task record, or secondmate registry, in which case
+nothing is closed; 2 on a usage error; 3 when --apply hit a failure.
+exit=0

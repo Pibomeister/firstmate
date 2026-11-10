@@ -114,15 +114,12 @@ keep	terminal	unowned-task	term_a0e454e4-e5c6-4001-bc9c-8624fa5a293f	/Users/edua
 keep	terminal	unowned-task	term_8e44cf59-8c31-40a3-a067-95542d98f19c	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-fleet-reconcile	Firstmate operational inbox message
 keep	terminal	unowned-task	term_082bf29c-540e-4109-8700-9884d299c230	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-digest-shrink	Terminal 1
 keep	terminal	unowned-task	term_dbf2d77c-0ccd-4092-b04e-b7b64d3f384d	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-digest-shrink	Firstmate operational inbox message
-keep	terminal	unowned-task	term_0ff8ebe5-20de-4bd3-b66e-edd5400aefce	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-orca-relaunch	Terminal 1
-keep	terminal	unowned-task	term_56513eee-38a0-44e3-9d7b-d5f405e9ca83	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-orca-relaunch	Firstmate operational inbox message
 keep	terminal	unowned-task	term_f9216a93-4aae-4308-b2ef-0bf78811a5f2	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-terminal-reaper	Terminal 1
 keep	terminal	unowned-task	term_0c3e23d4-7245-4bff-810e-4b41883b1eca	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-terminal-reaper	Firstmate operational inbox message
 keep	terminal	unowned-task	term_4f9ef589-5204-446f-ba61-66f0727de11b	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-grokbot-relay	Terminal 1
 keep	terminal	unowned-task	term_adcd5351-5098-4364-9b4c-62cc6c896e89	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-grokbot-relay	Firstmate operational inbox input
 keep	terminal	unowned-task	term_7131a657-d54f-4ce3-a01c-0b82bb1fca69	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-compaction-first	Terminal 1
 keep	terminal	unowned-task	term_3e4aa818-e5c4-4ae1-98d8-0d1bb7d58f5f	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-compaction-first	Firstmate operational inbox message
-keep	terminal	unowned-task	term_79606a54-ae6f-4550-a900-7e735639f153	/Users/eduardopicazo/orca/workspaces/pepper-takehome/fm-pepper-takehome	Firstmate operational inbox message
 keep	terminal	unowned-task	term_e368462e-15cd-4e01-829f-4800d363a7bb	/Users/eduardopicazo/orca/workspaces/shipcontent-v2/fm-shipcontent-m5-writepath-picker-identity	Terminal 1
 keep	terminal	unowned-task	term_da995fe5-879c-456b-ade9-bd30456ba51f	/Users/eduardopicazo/orca/workspaces/shipcontent-v2/fm-shipcontent-m5-writepath-picker-identity	Prepare v1 launch brief | fm-shipcontent-m5-wri...
 keep	terminal	unowned-task	term_9e8c4090-6afd-4866-8065-c33e996c017d	/Users/eduardopicazo/orca/workspaces/firstmate-fork/fm-fm-quota-pools	Terminal 1
@@ -166,20 +163,19 @@ keep	terminal	foreign	term_9faaabd4-2caf-4649-ba46-926bf1c91a20	/Users/eduardopi
 keep	terminal	foreign	term_bf4baa97-cddc-4aeb-a924-185c1af20556	/Users/eduardopicazo/orca/workspaces/Casco/night-x-dogfood-fixes	-
 keep	terminal	foreign	term_af8fcae7-9a32-49b4-afcb-b9366df6d734	/Users/eduardopicazo/orca/workspaces/Casco/night-y-customer-fixes	-
 keep	terminal	foreign	term_d4fafac0-d561-4a14-8cfb-1cdbaa12f51c	/Users/eduardopicazo/orca/workspaces/Casco/night-z-developer-leaks	-
-reap	browser	owner-gone	12864	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M6Q9995QM6D5Q69E8D4WQAY3	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+keep	terminal	unowned-task	term_79606a54-ae6f-4550-a900-7e735639f153	/Users/eduardopicazo/orca/workspaces/pepper-takehome/fm-pepper-takehome	Firstmate operational inbox message
+keep	browser	owner-live	12864	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M6Q9995QM6D5Q69E8D4WQAY3	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
 reap	browser	owner-gone	17435	/Users/eduardopicazo/.no-mistakes/worktrees/d4cb77c98cd3/01M6QVWA80K8VDJZVGKFA0WG0J	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
-reap	browser	owner-gone	34602	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M6Q9995QM6D5Q69E8D4WQAY3	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+keep	browser	owner-live	34602	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M6Q9995QM6D5Q69E8D4WQAY3	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
 keep	browser	owner-live	36010	/Users/eduardopicazo/orca/workspaces/shipcontent-v2/fm-shipcontent-inapp-acceptance	node /opt/homebrew/lib/node_modules/chrome-devtools-axi/dist/bin/chrome-devtools-axi-bridge.js
 reap	browser	owner-gone	45901	/Users/eduardopicazo/Documents/Casco/.claude/worktrees/agent-a9ea457f124ba34cf	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
 reap	browser	owner-gone	46348	/private/tmp/nm7mdmd	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
-reap	browser	owner-gone	50462	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M6Q9995QM6D5Q69E8D4WQAY3	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+keep	browser	owner-live	50462	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M6Q9995QM6D5Q69E8D4WQAY3	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
 reap	browser	owner-gone	53784	/Users/eduardopicazo/Documents/Casco/.claude/worktrees/agent-a9ea457f124ba34cf	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
-reap	browser	owner-gone	55638	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M6Q9995QM6D5Q69E8D4WQAY3	/Users/eduardopicazo/Library/Caches/ms-playwright/chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Fra
-reap	browser	owner-gone	55709	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M6Q9995QM6D5Q69E8D4WQAY3	/Users/eduardopicazo/Library/Caches/ms-playwright/chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Fra
 reap	browser	owner-gone	72366	/Users/eduardopicazo/orca/workspaces/shipcontent-v2/fm-shipcontent-video-ux-quality-audit-20261104	node /opt/homebrew/lib/node_modules/chrome-devtools-axi/dist/bin/chrome-devtools-axi-bridge.js
-reap	browser	owner-gone	76778	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M6Q9995QM6D5Q69E8D4WQAY3	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+keep	browser	owner-live	76778	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M6Q9995QM6D5Q69E8D4WQAY3	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
 keep	browser	owner-live	76954	/Users/eduardopicazo/orca/workspaces/shipcontent-v2/fm-shipcontent-inapp-acceptance	node /opt/homebrew/lib/node_modules/chrome-devtools-axi/dist/bin/chrome-devtools-axi-bridge.js
 reap	browser	owner-gone	87267	/private/tmp/nm7mdmd	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
-reap	browser	owner-gone	91947	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M6Q9995QM6D5Q69E8D4WQAY3	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+keep	browser	owner-live	91947	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M6Q9995QM6D5Q69E8D4WQAY3	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
 reap	browser	owner-gone	98793	/Users/eduardopicazo/Documents/Casco/.claude/worktrees/agent-a9ea457f124ba34cf	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
-summary: mode=dry-run terminals=168 reap=0 keep=168 browsers=16 reap=14 keep=2
+summary: mode=dry-run terminals=166 reap=0 keep=166 browsers=14 reap=7 keep=7

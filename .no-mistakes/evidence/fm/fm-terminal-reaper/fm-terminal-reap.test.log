@@ -1,10 +1,11 @@
-1..7
+1..8
 ok - fm-terminal-reap: a dry run classifies every owner and closes nothing
 ok - fm-terminal-reap: --min-age keeps sessions that may still be launching
 ok - fm-terminal-reap: --apply closes only orphans it re-proves just before closing
 ok - fm-terminal-reap: --apply re-proves the session and title just before each close
 ok - fm-terminal-reap: unreadable records keep their terminals
 ok - fm-terminal-reap: an unreadable inventory exits 1 and closes nothing
+ok - fm-terminal-reap: --help and a usage error print only the usage header
 ok - fm-terminal-reap: browsers are stopped only when nothing else works in their directory
 FM_TEST_COMPLETE
-bash tests/fm-terminal-reap.test.sh  10.70s user 22.02s system 9% cpu 5:54.74 total
+bash tests/fm-terminal-reap.test.sh  10.33s user 18.86s system 36% cpu 1:18.97 total

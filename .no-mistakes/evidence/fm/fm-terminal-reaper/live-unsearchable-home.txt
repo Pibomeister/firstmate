@@ -1,0 +1,15 @@
+## home state directory not searchable (chmod 000)
+exit=1
+error: a home, task record, or secondmate registry could not be read; nothing was closed
+stdout lines: 0
+## home data directory not searchable (chmod 000)
+exit=1
+error: a home, task record, or secondmate registry could not be read; nothing was closed
+stdout lines: 0
+## registered secondmate home not searchable (chmod 000)
+exit=1
+error: a home, task record, or secondmate registry could not be read; nothing was closed
+stdout lines: 0
+## registered secondmate home missing under a searchable parent (absent, not a failure)
+exit=0
+stdout lines: 167
