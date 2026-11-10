@@ -98,9 +98,11 @@
 #   <name>.bound   "<relay-pid> <daemon-pid>" of the relay this guard last
 #                  started and the daemon running when it did.
 #   <name>.log     The relay's own output.
-#   lock.d/        Per-pass lock holding its owner's pid; a pass already holding
-#                  it makes once exit 75. A lock with no pid yet is held until
-#                  it is a minute old, then reclaimed as a crashed owner's.
+#   lock.d/        Per-pass lock holding its owner's pid and start time; a pass
+#                  already holding it makes once exit 75. A lock whose pid is
+#                  gone or now has another start time is a crashed owner's and
+#                  is reclaimed by renaming it aside. A lock with no pid yet is
+#                  held until it is a minute old, then reclaimed the same way.
 #
 # Exit status: 0 when every relay ends the pass proven healthy, 3 when any
 # relay is not (daemon down, probe failing, capped, backoff, or a start that
@@ -587,22 +589,32 @@ EOF
 }
 
 LOCKED=0
+lock_live() {  # <lock dir>; zero while its owner still holds it
+  local holder start
+  holder=$(read_int "$1/pid")
+  if [ "$holder" -gt 0 ]; then
+    start=$(sed -n 2p "$1/pid" 2>/dev/null)
+    [ -n "$start" ] && kill -0 "$holder" 2>/dev/null && [ "$(proc_start "$holder")" = "$start" ]
+    return
+  fi
+  # No pid yet means the owner is between its mkdir and its pid write, so the
+  # lock is live until it is a minute old.
+  [ -n "$(find "$1" -prune -mmin -1 2>/dev/null)" ]
+}
+
 take_lock() {
-  local holder
+  local stale="$STATE/lock.stale.$$"
   if ! mkdir "$STATE/lock.d" 2>/dev/null; then
-    holder=$(read_int "$STATE/lock.d/pid")
-    if [ "$holder" -gt 0 ] && kill -0 "$holder" 2>/dev/null; then
+    lock_live "$STATE/lock.d" && return 1
+    mv "$STATE/lock.d" "$stale" 2>/dev/null || return 1
+    if lock_live "$stale"; then
+      mv "$stale" "$STATE/lock.d" 2>/dev/null
       return 1
     fi
-    # No pid yet means the owner is between its mkdir and its pid write, so the
-    # lock is live until it is a minute old.
-    if [ "$holder" -eq 0 ] && [ -n "$(find "$STATE/lock.d" -prune -mmin -1 2>/dev/null)" ]; then
-      return 1
-    fi
-    rm -rf "$STATE/lock.d"
+    rm -rf "$stale"
     mkdir "$STATE/lock.d" 2>/dev/null || return 1
   fi
-  printf '%s\n' "$$" > "$STATE/lock.d/pid.$$" && mv "$STATE/lock.d/pid.$$" "$STATE/lock.d/pid"
+  printf '%s\n%s\n' "$$" "$(proc_start "$$")" > "$STATE/lock.d/pid.$$" && mv "$STATE/lock.d/pid.$$" "$STATE/lock.d/pid"
   LOCKED=1
 }
 

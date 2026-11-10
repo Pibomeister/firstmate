@@ -458,6 +458,68 @@ test_lock_without_pid_is_held_until_it_ages() {
   pass "a pid-less lock is held while fresh and reclaimed only once it is old"
 }
 
+test_lock_of_a_reused_pid_is_reclaimed() {
+  local out code holder
+  world
+  std_conf
+  start_daemon
+  # After a crash and reboot, lock.d can name a pid that is alive again as
+  # another process. Only the same pid with the same start time holds it.
+  sleep 600 >/dev/null 2>&1 &
+  holder=$!
+  mkdir -p "$W/home/state/relay-guard/lock.d"
+  printf '%s\n%s\n' "$holder" "$(ps -o lstart= -p "$holder")" > "$W/home/state/relay-guard/lock.d/pid"
+  out=$(guard once 2>&1)
+  code=$?
+  [ "$code" -eq 75 ] || fail "a lock whose live owner kept its start time should be held (exit 75), got $code: $out"
+  [ -z "$(relay_pids m3 7001)" ] || fail "a pass ran while a live owner held the lock"
+  printf '%s\n%s\n' "$holder" "Thu Jan  1 00:00:00 2020" > "$W/home/state/relay-guard/lock.d/pid"
+  out=$(guard once 2>&1)
+  code=$?
+  [ "$code" -eq 0 ] || fail "a lock whose pid now has another start time should be reclaimed, got $code: $out"
+  [ -n "$(relay_pids m3 7001)" ] || fail "the pass after reclaiming a reused-pid lock did not run"
+  printf '%s\n' "$holder" > "$W/home/state/relay-guard/lock.d.tmp"
+  mkdir -p "$W/home/state/relay-guard/lock.d"
+  mv "$W/home/state/relay-guard/lock.d.tmp" "$W/home/state/relay-guard/lock.d/pid"
+  out=$(guard once 2>&1)
+  code=$?
+  [ "$code" -eq 0 ] || fail "a lock naming a live pid with no start time should be reclaimed, got $code: $out"
+  assert_absent "$W/home/state/relay-guard/lock.d"
+  [ -z "$(ls -d "$W/home/state/relay-guard"/lock.stale.* 2>/dev/null)" ] || fail "a reclaimed lock was left behind"
+  kill "$holder" 2>/dev/null
+  kill "$(relay_pids m3 7001)" "$(relay_pids m4 7002)" 2>/dev/null
+  stop_daemon
+  pass "a lock is held only by its live owner with the same start time; a reused pid is reclaimed"
+}
+
+test_contenders_on_a_stale_lock_run_one_pass_at_a_time() {
+  local i pids=() code n
+  world
+  std_conf
+  start_daemon
+  mkdir -p "$W/home/state/relay-guard/lock.d"
+  printf '%s\n%s\n' 999999 "Thu Jan  1 00:00:00 2020" > "$W/home/state/relay-guard/lock.d/pid"
+  for i in 1 2 3 4 5 6; do
+    guard once >"$W/contender.$i" 2>&1 &
+    pids+=("$!")
+  done
+  n=0
+  for i in "${pids[@]}"; do
+    wait "$i"
+    code=$?
+    [ "$code" -eq 0 ] && n=$((n + 1))
+    [ "$code" -eq 0 ] || [ "$code" -eq 75 ] || fail "a contender exited $code"
+  done
+  [ "$n" -ge 1 ] || fail "no contender reclaimed the stale lock"
+  [ "$(relay_pids m3 7001 | wc -l | tr -d ' ')" -eq 1 ] || fail "concurrent passes started duplicate relays: $(relay_pids m3 7001 | tr '\n' ' ')"
+  [ "$(relay_pids m4 7002 | wc -l | tr -d ' ')" -eq 1 ] || fail "concurrent passes started duplicate m4 relays"
+  assert_absent "$W/home/state/relay-guard/lock.d"
+  [ -z "$(ls -d "$W/home/state/relay-guard"/lock.stale.* 2>/dev/null)" ] || fail "a reclaimed lock was left behind"
+  kill $(relay_pids m3 7001) $(relay_pids m4 7002) 2>/dev/null
+  stop_daemon
+  pass "contenders racing to reclaim a stale lock run their passes one at a time"
+}
+
 test_kill_spares_a_pid_that_is_no_longer_the_relay() {
   local stubborn out real_ps
   world
@@ -553,6 +615,8 @@ test_relay_started_in_the_daemon_restart_second_is_restarted() {
 
 fm_test_run \
   test_lock_without_pid_is_held_until_it_ages \
+  test_lock_of_a_reused_pid_is_reclaimed \
+  test_contenders_on_a_stale_lock_run_one_pass_at_a_time \
   test_kill_spares_a_pid_that_is_no_longer_the_relay \
   test_relay_started_in_the_daemon_restart_second_is_restarted \
   test_stale_relays_after_daemon_restart_are_respawned \
