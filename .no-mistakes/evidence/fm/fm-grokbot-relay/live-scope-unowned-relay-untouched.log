@@ -1,0 +1,23 @@
+unowned relay pid 17500 (not in config)
+# fm-relay-guard v1 epoch=1794281898 daemon=fmtsdlive daemon-pid=21960
+m3	restart	30733	daemon-restarted; probe ok
+m4	restart	34634	daemon-restarted; probe ok
+studio	restart	41173	daemon-restarted; probe ok
+exit=0
+unowned relay 17500 untouched: Mon Nov  9 21:38:15 2026    
+== rendered systemd unit
+[Unit]
+Description=Firstmate relay guard (firstmate-relay-guard-767051172)
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Environment="FM_HOME=/private/tmp/rg-live.nYhkfV/home"
+Environment="PATH=<rendering shell PATH, redacted>"
+ExecStart=/bin/bash "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M71QWR9NP0E8CNH71CK0F7H7/bin/fm-relay-guard.sh" run
+Restart=always
+RestartSec=10s
+KillMode=process
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,21 @@
+== run loop, interval 3s
+== 21:37:39 tailscaled-equivalent restart (no manual relay action)
+21:37:39 port 7201 stale
+21:37:39 port 7202 stale
+21:37:39 port 7203 stale
+21:37:53 guard recorded recovery 14s after restart
+# fm-relay-guard v1 epoch=1794281863 daemon=fmtsdlive daemon-pid=81790
+m3	restart	6994	daemon-restarted; probe ok
+m4	restart	16385	daemon-restarted; probe ok
+studio	restart	23846	daemon-restarted; probe ok
+ok-m3
+ok-m4
+ok-studio
+1794281863	m3	restart	daemon-restarted	26127	6994	ok
+1794281863	m4	restart	daemon-restarted	27383	16385	ok
+1794281863	studio	restart	daemon-restarted	33459	23846	ok
+== 21:37:53 relay m4 dies
+21:37:59 m4 reachable again after 6s
+1794281876	m4	spawn	missing	-	65779	ok
+== TERM loop during interval
+loop exited in 0s; relays alive:        3
