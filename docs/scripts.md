@@ -179,6 +179,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-captain-nudge.sh`    | No-AI host-local typer that sends one fixed prompt when a configured captain is idle with open work ([behavior](captain-nudge.md), [formats](captain-nudge-spec.md)) |
 | `fm-captain-nudge-lib.sh` | Decision procedure, JSONL, `NUDGE v1` beacon line, and read-only open-work probes for the captain self-nudge |
 | `fm-relay-guard.sh`      | Single owner of a host's network-daemon-bound relays: restart relays that predate a daemon restart, are missing, or keep failing their required probe, with backoff and a cap; renders its launchd or systemd unit ([example config](examples/relay-guard)) |
+| `fm-host-health.sh`      | Read-only host probes (identity, directory service, GitHub auth/TLS, optional SSH, uptime/load) that append one `HOSTHEALTH v1` beacon line for an external watchdog; renders its LaunchAgent plist |
 | `fm-compact-point-lib.sh` | Compute a Claude session's percent left before auto-compact, shared by the handoff trigger and the context-burn recorder |
 | `fm-handoff-trigger.sh` | Claude hook that tells a primary session once per context cycle to write its handoff when context left before auto-compact reaches the threshold, and enforces the captain-order and successor restart gates when that session stops |
 | `fm-handoff-launch.sh` | Launch a handing-off Claude primary's successor in a new terminal on the home's backend and record its live pid for the successor restart gate |
