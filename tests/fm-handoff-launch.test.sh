@@ -27,9 +27,20 @@ export FM_ROOT_OVERRIDE="$ROOT" FM_HANDOFF_TEST_HARNESS=claude
 # bounds how far past its budget the launcher may report failure, and
 # LAB_STARTUP also covers predecessor startup.
 LAB_FAIL_BUDGET=80 LAB_SUCCESS_BUDGET=300 LAB_SLACK=60 LAB_STARTUP=120
+FM_TEST_STUB_MAX_BLOCK_SECONDS=$((LAB_SUCCESS_BUDGET + LAB_SLACK + LAB_STARTUP))
+export FM_TEST_STUB_MAX_BLOCK_SECONDS
 export FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=$LAB_FAIL_BUDGET
 export PATH="$FAKEBIN:$PATH" FM_HANDOFF_TEST_PIDS="$TMP_ROOT/pids"
 unset FM_BACKEND FM_SESSION_ENDPOINT_META CLAUDE_PID CLAUDE_CODE_SESSION_ID
+FM_HANDOFF_REAL_SLEEP=$(command -v sleep)
+export FM_HANDOFF_REAL_SLEEP
+cat > "$FAKEBIN/sleep" <<'EOF'
+#!/usr/bin/env bash
+if [ "${FM_HANDOFF_LAB_MODE:-}" = error-exit ] && [ "${1:-}" = 0.2 ] \
+  && [ -f "$FM_HOME/state/attempts" ]; then exit 42; fi
+exec "$FM_HANDOFF_REAL_SLEEP" "$@"
+EOF
+chmod +x "$FAKEBIN/sleep"
 cat > "$FAKEBIN/orca" <<'EOF'
 #!/usr/bin/env bash
 set -eu
@@ -47,6 +58,10 @@ done
 [ -n "$prompt" ] || exit 93
 n=$(cat "$FM_HOME/state/attempts" 2>/dev/null || echo 0)
 n=$((n+1)); echo "$n" > "$FM_HOME/state/attempts"
+case "$FM_HANDOFF_LAB_MODE" in
+  interrupt) kill -TERM "$(cat "$FM_HOME/launcher.pid")"; sleep 1; exit 0 ;;
+  error-exit) exit 0 ;;
+esac
 if [ "$FM_HANDOFF_LAB_MODE" = hung-launch ]; then sleep 60; exit 1; fi
 ORCA_TERMINAL_HANDLE="term_lab_$n" claude "$FM_HOME/successor.sh" > "$FM_HOME/state/successor-$n.out" 2>&1 &
 echo "$!" >> "$FM_HANDOFF_TEST_PIDS"
@@ -90,7 +105,8 @@ case "$FM_HANDOFF_LAB_MODE" in
   wrong-sha) sha=$(printf '%064d' 0) ;;
 esac
 bash "$ROOT/bin/fm-handoff-ack.sh" "$nonce" "$sha" > "$FM_HOME/ack.out" 2>&1 || true
-while :; do sleep 1; done
+while kill -0 "$FM_TEST_SUITE_PID" 2>/dev/null \
+  && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 1; done
 EOF
 cat > "$LAB/predecessor.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -98,9 +114,14 @@ set -eu
 echo "$$" > "$FM_HOME/pred.pid"
 ORCA_TERMINAL_HANDLE=term_predecessor bash "$ROOT/bin/fm-lock.sh" > "$FM_HOME/lock.out" 2>&1
 set +e
-bash "$ROOT/bin/fm-handoff-launch.sh" "$FM_HOME/data/handoff ) '.md" > "$FM_HOME/launch.out" 2>&1
+bash "$ROOT/bin/fm-handoff-launch.sh" "$FM_HOME/data/handoff ) '.md" > "$FM_HOME/launch.out" 2>&1 &
+launcher=$!
+echo "$launcher" > "$FM_HOME/launcher.pid"
+echo "$launcher" >> "$FM_HANDOFF_TEST_PIDS"
+wait "$launcher"
 echo "$?" > "$FM_HOME/rc"
-while :; do sleep 1; done
+while kill -0 "$FM_TEST_SUITE_PID" 2>/dev/null \
+  && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 1; done
 EOF
 
 run_hook_fixture() {
@@ -141,6 +162,78 @@ test_cleanup_processes() {
   fi
 }
 
+test_resumed_endpoint() {
+  local backend=$1 expected=$2 current=$3 explicit=${4:-} dir phase pid limit handle
+  local -a endpoint_env metadata_env
+  dir="$TMP_ROOT/resume-$backend-$expected"
+  mkdir -p "$dir/state"
+  metadata_env=("FM_SESSION_ENDPOINT_META=")
+  if [ -n "$explicit" ]; then
+    printf 'backend=orca\nterminal=term_explicit\nworktree=%s\nspawn_gen=s1.1.1\n' "$dir" > "$dir/endpoint"
+    metadata_env=("FM_SESSION_ENDPOINT_META=$dir/endpoint")
+  fi
+  cat > "$dir/session.sh" <<'EOF'
+#!/usr/bin/env bash
+set -u
+CLAUDE_CODE_SESSION_ID=endpoint-resume CLAUDE_PID=$$ bash "$ROOT/bin/fm-lock.sh" > "$FM_HOME/$FM_RESUME_PHASE.out" 2>&1
+echo "$?" > "$FM_HOME/$FM_RESUME_PHASE.rc"
+echo "$$" > "$FM_HOME/$FM_RESUME_PHASE.pid"
+while kill -0 "$FM_TEST_SUITE_PID" 2>/dev/null \
+  && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 1; done
+EOF
+  for phase in first second; do
+    endpoint_env=("ORCA_TERMINAL_HANDLE=" "TMUX_PANE=")
+    handle=$current
+    [ "$phase" != first ] || handle=old_endpoint
+    if [ -n "$handle" ]; then
+      case "$backend" in
+        tmux) endpoint_env=("ORCA_TERMINAL_HANDLE=" "TMUX_PANE=$handle") ;;
+        orca) endpoint_env=("ORCA_TERMINAL_HANDLE=$handle" "TMUX_PANE=") ;;
+      esac
+    fi
+    env -u ORCA_TERMINAL_HANDLE -u TMUX_PANE -u FM_SESSION_ENDPOINT_META \
+      FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_RESUME_PHASE="$phase" \
+      "${metadata_env[@]}" "${endpoint_env[@]}" claude "$dir/session.sh" &
+    pid=$!
+    echo "$pid" >> "$TMP_ROOT/pids"
+    limit=$((SECONDS + LAB_STARTUP))
+    while [ ! -f "$dir/$phase.pid" ] && [ "$SECONDS" -lt "$limit" ]; do sleep 0.1; done
+    [ -f "$dir/$phase.rc" ] || fail "$backend $phase did not finish locking"
+    [ "$(cat "$dir/$phase.rc")" = 0 ] || fail "$backend $phase refused: $(cat "$dir/$phase.out")"
+  done
+  kill -0 "$(cat "$dir/first.pid")" || fail 'resume must re-anchor while the old process is still alive'
+  [ "$(cat "$dir/state/.lock")" = "$(cat "$dir/second.pid")" ] || fail 'resume did not move to the new process anchor'
+  locate=$(FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" bash "$ROOT/bin/fm-captain-locate.sh") \
+    || fail "$backend resume lost its discoverable endpoint: $(cat "$dir/state/.lock-session")"
+  assert_contains "$locate" "handle=$expected" "$backend resume uses the correct terminal"
+  if [ -n "$explicit" ]; then
+    assert_contains "$(cat "$dir/state/.lock-session")" 'spawn_gen=s1.1.1' 'explicit endpoint keeps its generation during resume'
+  fi
+  kill "$(cat "$dir/first.pid")" "$(cat "$dir/second.pid")" 2>/dev/null || true
+  pass "$backend resume discovers $expected and preserves explicit metadata precedence"
+}
+
+test_resumed_endpoint tmux %32 %32
+test_resumed_endpoint tmux old_endpoint ''
+test_resumed_endpoint orca term_new term_new
+test_resumed_endpoint orca term_explicit term_ignored explicit
+
+for mode in interrupt error-exit; do
+  run_case "$mode"
+  [ "$(cat "$LAB/rc")" != 0 ] || fail "$mode must fail"
+  expected_reason=error
+  [ "$mode" != interrupt ] || expected_reason=interrupted
+  [ "$(grep -c ' event=handoff_failed ' "$LAB/state/handoff-events.log" || true)" = 1 ] \
+    || fail "$mode must emit exactly one durable failure"
+  grep -q " event=handoff_failed nonce=[0-9a-f]* attempt=1 .* reason=$expected_reason$" "$LAB/launch.out" \
+    || fail "$mode must emit its failure on the original stdout: $(cat "$LAB/launch.out")"
+  [ "$(cat "$LAB/state/.lock")" = "$(cat "$LAB/pred.pid")" ] || fail "$mode moved the predecessor lock"
+  [ ! -e "$LAB/state/.handoff-pending" ] || fail "$mode must retire its claim"
+  [ ! -e "$LAB/state/.handoff-successor" ] || fail "$mode must not record completion"
+  cat "$LAB/state/handoff-events.log"
+  pass "DRILL $mode: one failure on stdout and log, predecessor lock retained"
+done
+
 # Existing supervisor endpoint metadata outranks an inherited terminal variable.
 META_HOME="$TMP_ROOT/meta-home"
 mkdir -p "$META_HOME/state"
@@ -150,7 +243,7 @@ FM_HOME="$META_HOME" FM_STATE_OVERRIDE="$META_HOME/state" ORCA_TERMINAL_HANDLE=t
   FM_SESSION_ENDPOINT_META="$META_HOME/endpoint" claude -c '
     bash "$ROOT/bin/fm-lock.sh" > "$FM_HOME/out" 2>&1
     touch "$FM_HOME/ready"
-    while :; do sleep 1; done' &
+    while kill -0 "$FM_TEST_SUITE_PID" 2>/dev/null && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 1; done' &
 meta_pid=$!
 echo "$meta_pid" >> "$TMP_ROOT/pids"
 for i in $(seq 1 200); do [ ! -e "$META_HOME/ready" ] || break; sleep 0.1; done
@@ -217,6 +310,7 @@ for mode in exit parse reject wrong-sha stale expired hung-launch; do
   [ ! -e "$LAB/state/.handoff-successor" ] || fail "$mode must not clear the stop gate"
   [ "$(cat "$LAB/state/.lock")" = "$(cat "$LAB/pred.pid")" ] || fail "$mode moved predecessor lock"
   grep -q '^HANDOFF v1 .* event=handoff_failed ' "$LAB/state/handoff-events.log" || fail "$mode must emit machine-readable failure"
+  [ "$(grep -c ' event=handoff_failed ' "$LAB/state/handoff-events.log")" = 1 ] || fail "$mode must emit its failure exactly once"
   started=$(sed -n 's/^HANDOFF v1 ts=\([0-9]*\) event=handoff_started .*/\1/p' "$LAB/state/handoff-events.log")
   failed=$(sed -n 's/^HANDOFF v1 ts=\([0-9]*\) event=handoff_failed .*/\1/p' "$LAB/state/handoff-events.log")
   [ -n "$started" ] && [ "$((failed - started))" -lt "$((LAB_FAIL_BUDGET + LAB_SLACK))" ] \

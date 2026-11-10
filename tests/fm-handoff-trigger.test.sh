@@ -575,7 +575,7 @@ test_handoff_gates_the_stop_until_a_recorded_successor_is_alive() {
   sleep 1
   out=$(run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ")
   expect_fire "$out" PostToolUse "successor instruction firing"
-  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("bin/fm-handoff-launch.sh") and contains("state/.handoff-successor") and contains("bin/fm-session-start.sh")' >/dev/null \
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("bin/fm-handoff-launch.sh") and contains("state/.handoff-successor") and contains("bin/fm-session-start.sh") and contains("timeout=600000") and contains("run_in_background=true")' >/dev/null \
     || fail "the instruction must say to launch the successor with the owned launcher and record it: $out"
   err="$TMP_ROOT/succ.err"
   rc=0

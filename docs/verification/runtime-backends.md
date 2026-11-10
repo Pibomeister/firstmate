@@ -158,9 +158,16 @@ Selected output:
 ok - supervisor endpoint metadata retains precedence and generation
 ok - verified successor ack transfers the lock while predecessor remains alive; discovery follows it
 ok - tmux launches direct argv and transfers the verified lock
+ok - tmux resume discovers %32 and preserves explicit metadata precedence
+ok - orca resume discovers term_new and preserves explicit metadata precedence
+ok - DRILL interrupt: one failure on stdout and log, predecessor lock retained
+ok - DRILL error-exit: one failure on stdout and log, predecessor lock retained
 ```
 
 The regression also requires the actual Stop gate to reject a changed acknowledgement and each failure drill to retain the predecessor lock after one retry.
+The resume fixtures keep the previous process alive while a new process with the same trusted session id takes the anchor.
+The interruption hits during the redirected backend call; the error drill fails the poll operation after launch.
+Both require exactly one failure on the original stdout and in the durable event log.
 The shared session-lock ancestry suite passed on the same host; it covers other supported primary harness identities, re-keys, task leases, and rewake ownership through their existing integration surfaces.
 
 ## Codex model catalog max validation

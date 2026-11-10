@@ -3,10 +3,13 @@
 # Only the current lock owner can prepare a claim. Launches via Orca agent
 # argv (never a shell command string), or tmux's direct argv execution.
 # Two fresh terminals share a total 600-second deadline, 300 seconds each.
+# Allow that full wait on a blocking tool call, or run in the background and
+# collect the exit status and output before reporting readiness.
 # A successor must read the document and call fm-handoff-ack.sh with its nonce
 # and digest. fm-lock.sh validates that ack before moving the live lock.
 # The predecessor is never killed. Failed attempts retain their panes for
 # diagnosis; their nonce expires and cannot later take ownership.
+# Every unfinished exit after handoff_started emits one handoff_failed event.
 # Outputs only the versioned events owned by fm-handoff-lib.sh. Other errors
 # go to stderr. state/.handoff-successor is written only after lock verification.
 # Test-only: FM_TEST_SEAM=1 enables FM_HANDOFF_TEST_HARNESS and
@@ -74,7 +77,26 @@ mkdir -p "$FM_HOME/data"
 fm_lock_try_acquire "$STATE/.handoff-launch.lock" || die 'a handoff launcher already owns this home'
 NONCE=
 CLAIM_HELD=0
+HANDOFF_STARTED=0
+HANDOFF_COMPLETE=0
+HANDOFF_FAIL_REQUESTED=0
+HANDOFF_FAILURE_REASON=error
+attempt=0
+# A signal may arrive inside a call whose stdout is redirected to the backend
+# receipt. Keep the event stream on its original descriptor, out of that receipt.
+exec 9>&1
+# Keep the existing hard-bound timeout mechanism. The constant exec wrapper
+# closes our event descriptor in the backend process; all launch data stays argv.
+# shellcheck disable=SC2016 # Expansion belongs to the fixed child wrapper.
+BACKEND_EXEC=(bash -c 'exec 9>&-; exec "$@"' handoff-launch)
 cleanup() {
+  local rc=$?
+  trap - EXIT HUP INT TERM
+  set +e
+  if [ "$HANDOFF_COMPLETE" -eq 0 ] \
+    && { [ "$HANDOFF_STARTED" -eq 1 ] || [ "$HANDOFF_FAIL_REQUESTED" -eq 1 ]; }; then
+    fm_handoff_event handoff_failed "$NONCE" "$attempt" "$PRED_PID" none "$HANDOFF_FAILURE_REASON" >&9
+  fi
   if [ -n "$NONCE" ] && [ "$CLAIM_HELD" != 1 ] && fm_lock_acquire_wait_max "$STATE/.lock.acquire" 10; then
     CLAIM_HELD=1
   fi
@@ -84,12 +106,20 @@ cleanup() {
   fi
   if [ "$CLAIM_HELD" = 1 ]; then fm_lock_release "$STATE/.lock.acquire"; fi
   fm_lock_release "$STATE/.handoff-launch.lock"
+  exec 9>&-
+  return "$rc"
 }
 trap cleanup EXIT
-trap 'exit 1' HUP INT TERM
+trap 'HANDOFF_FAILURE_REASON=interrupted; exit 1' HUP INT TERM
 rm -f "$STATE/.handoff-successor"
 DEADLINE=$(( $(date +%s) + TIMEOUT ))
 MONO_DEADLINE=$((SECONDS + TIMEOUT))
+
+fail_handoff() {
+  HANDOFF_FAILURE_REASON=$1
+  HANDOFF_FAIL_REQUESTED=1
+  exit 1
+}
 
 take_claim() {
   local left=$((MONO_DEADLINE - SECONDS))
@@ -106,13 +136,13 @@ record_completion() {
   record_tmp=$(mktemp "$STATE/.handoff-successor.XXXXXX")
   printf 'pid=%s\nnonce=%s\nhandoff=%s\nsha256=%s\n' "$(cat "$STATE/.lock")" "$NONCE" "$HANDOFF" "$SHA256" > "$record_tmp"
   if ! fm_handoff_completed "$record_tmp"; then rm -f "$record_tmp"; return 1; fi
-  mv "$record_tmp" "$STATE/.handoff-successor"
+  mv "$record_tmp" "$STATE/.handoff-successor" || return 1
+  HANDOFF_COMPLETE=1
 }
 
 for attempt in 1 2; do
   if ! take_claim; then
-    fm_handoff_event handoff_failed "$NONCE" "$attempt" "$PRED_PID" none claim_busy
-    exit 1
+    fail_handoff claim_busy
   fi
   if [ "$(cat "$STATE/.lock")" != "$PRED_PID" ] || ! fm_session_lock_owned_by_self "$STATE"; then
     die 'predecessor no longer owns the lock'
@@ -131,6 +161,7 @@ for attempt in 1 2; do
   CLAIM_HELD=0
   event=handoff_started
   [ "$attempt" = 1 ] || event=handoff_retry
+  HANDOFF_STARTED=1
   fm_handoff_event "$event" "$NONCE" "$attempt" "$PRED_PID" "${ORCA_TERMINAL_HANDLE:-${TMUX_PANE:-}}" awaiting_ack
   printf -v ACK_CMD 'FM_HOME=%q bash %q %q %q' "$FM_HOME" "$SCRIPT_DIR/fm-handoff-ack.sh" "$NONCE" "$SHA256"
   printf -v START_CMD 'FM_HOME=%q bash %q' "$FM_HOME" "$SCRIPT_DIR/fm-session-start.sh"
@@ -139,16 +170,16 @@ for attempt in 1 2; do
   if [ "$remaining" -gt 0 ]; then
     case "$BACKEND" in
       orca)
-        fm_run_timed "$remaining" orca agent launch --agent claude --worktree "path:$FM_HOME" \
+        fm_run_timed "$remaining" "${BACKEND_EXEC[@]}" orca agent launch --agent claude --worktree "path:$FM_HOME" \
           --surface terminal --prompt "$PROMPT" --json > "$STATE/.handoff-launch-result" 2>&1 || true
         ;;
       tmux)
         SESS=$(tmux display-message -p '#{session_name}' 2>/dev/null) || SESS="firstmate-$(basename "$FM_HOME")"
         SESS=${SESS:-firstmate-$(basename "$FM_HOME")}
         if tmux has-session -t "=$SESS" >/dev/null 2>&1; then
-          fm_run_timed "$remaining" tmux new-window -d -t "=$SESS:" -c "$FM_HOME" -n firstmate claude "${PERM_ARGS[@]}" "$PROMPT" > "$STATE/.handoff-launch-result" 2>&1 || true
+          fm_run_timed "$remaining" "${BACKEND_EXEC[@]}" tmux new-window -d -t "=$SESS:" -c "$FM_HOME" -n firstmate claude "${PERM_ARGS[@]}" "$PROMPT" > "$STATE/.handoff-launch-result" 2>&1 || true
         else
-          fm_run_timed "$remaining" tmux new-session -d -s "$SESS" -c "$FM_HOME" -n firstmate claude "${PERM_ARGS[@]}" "$PROMPT" > "$STATE/.handoff-launch-result" 2>&1 || true
+          fm_run_timed "$remaining" "${BACKEND_EXEC[@]}" tmux new-session -d -s "$SESS" -c "$FM_HOME" -n firstmate claude "${PERM_ARGS[@]}" "$PROMPT" > "$STATE/.handoff-launch-result" 2>&1 || true
         fi
         ;;
     esac
@@ -166,18 +197,15 @@ for attempt in 1 2; do
   done
   # Revoke the attempt under the very same lock the successor uses for CAS.
   if ! take_claim; then
-    fm_handoff_event handoff_failed "$NONCE" "$attempt" "$PRED_PID" none claim_busy
-    exit 1
+    fail_handoff claim_busy
   fi
   if [ "$(cat "$STATE/.lock")" != "$PRED_PID" ]; then
     # A transfer may have raced the final inspection; do not launch another.
     if record_completion; then exit 0; fi
-    fm_handoff_event handoff_failed "$NONCE" "$attempt" "$PRED_PID" none ownership_changed
-    exit 1
+    fail_handoff ownership_changed
   fi
   rm -f "$STATE/.handoff-pending"
   fm_lock_release "$STATE/.lock.acquire"
   CLAIM_HELD=0
 done
-fm_handoff_event handoff_failed "$NONCE" 2 "$PRED_PID" none deadline
-exit 1
+fail_handoff deadline

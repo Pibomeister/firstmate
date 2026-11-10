@@ -480,6 +480,7 @@ The instruction asks the session to persist its open work records, decisions, an
 A primary launches its successor with `bin/fm-handoff-launch.sh <handoff file>` on the home's recorded Orca or tmux backend.
 The launcher and `bin/fm-handoff-ack.sh` implement the acknowledgement and lock-transfer contract owned by `bin/fm-handoff-lib.sh`; its header defines the records and watchdog events.
 The launcher refuses rather than guess when the backend or harness cannot be determined, and it never kills or interrupts the current session.
+Its `--help` owns blocking-call and unfinished-exit behavior.
 Orca uses `orca agent launch` with a prompt argument; tmux executes direct argv.
 Orca owns the agent's permission posture; an explicit `auto` home setting currently refuses rather than substituting a shell launch.
 The successor reads the handoff and acknowledges it before running session start.

@@ -26,8 +26,10 @@
 # process instance. Daemon-served Codex records also carry codex_daemon_pid
 # and codex_daemon_start for the lifetime query owned by the shared library.
 # Valid FM_SESSION_ENDPOINT_META from a secondmate launch contributes the
-# Orca backend, terminal, worktree, and spawn_gen fields; a same-id publication
-# preserves those fields when no new endpoint metadata is supplied.
+# Orca backend, terminal, worktree, and spawn_gen fields with precedence over
+# terminal environment variables. A primary's current terminal replaces a
+# previous sidecar endpoint on re-publication; otherwise its Orca or tmux
+# endpoint is preserved for the same trusted session id.
 # Confirmed-own acquisition leaves a matching anchor instance's sidecar
 # byte-identical; otherwise it republishes the record. A same-session
 # confirmation keeps a live line 1 that is in this session's harness ancestry,
@@ -182,7 +184,7 @@ remember_lock_session() {
 }
 
 publish_lock_endpoint() {
-  local trusted=$1 recorded=$2 candidate=${FM_SESSION_ENDPOINT_META:-} source='' field value endpoint_backend=tmux
+  local trusted=$1 recorded=$2 candidate=${FM_SESSION_ENDPOINT_META:-} source='' field value endpoint_backend=tmux explicit=0
   if [ -n "$trusted" ] && [ "$trusted" = "$recorded" ]; then
     source=$LOCK_SESSION
   fi
@@ -191,10 +193,11 @@ publish_lock_endpoint() {
     && [ "$(sed -n 's/^worktree=//p' "$candidate")" = "${FM_HOME%/}" ] \
     && [ -n "$(sed -n 's/^terminal=//p' "$candidate")" ]; then
     source=$candidate
+    explicit=1
   fi
-  # Primary sessions have no supervisor endpoint record. Publish their actual
-  # terminal only as a fallback; explicit endpoint metadata keeps its generation.
-  if [ -z "$source" ] && [ -n "${ORCA_TERMINAL_HANDLE:-${TMUX_PANE:-}}" ]; then
+  # A resumed primary can move terminals while retaining its trusted id.
+  # Its live terminal outranks its old sidecar, but not explicit launch metadata.
+  if [ "$explicit" -eq 0 ] && [ -n "${ORCA_TERMINAL_HANDLE:-${TMUX_PANE:-}}" ]; then
     value=${ORCA_TERMINAL_HANDLE:-${TMUX_PANE:-}}
     case "$value" in *[!A-Za-z0-9_.:%-]*) return 1 ;; esac
     [ -z "${ORCA_TERMINAL_HANDLE:-}" ] || endpoint_backend=orca
@@ -202,7 +205,7 @@ publish_lock_endpoint() {
     return 0
   fi
   [ -n "$source" ] && [ -f "$source" ] && [ ! -L "$source" ] || return 0
-  [ "$(sed -n 's/^backend=//p' "$source")" = orca ] || return 0
+  case "$(sed -n 's/^backend=//p' "$source")" in orca|tmux) ;; *) return 0 ;; esac
   value=$(sed -n 's/^worktree=//p' "$source")
   [ -n "$value" ] && [ "$value" = "${FM_HOME%/}" ] || return 0
   [ -n "$(sed -n 's/^terminal=//p' "$source")" ] || return 0

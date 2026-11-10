@@ -239,7 +239,7 @@ MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: 
 if fm_root_is_secondmate_home "$FM_ROOT"; then
   MESSAGE="$MESSAGE This is a second mate, so never launch your own successor: append to your parent channel that your handoff is written, name the handoff document, and ask the parent to relaunch you, once, then end this turn."
 else
-  MESSAGE="$MESSAGE Launch your successor with bin/fm-handoff-launch.sh <handoff file>. It requires the successor to read the document, write its nonce-bound acknowledgement with bin/fm-handoff-ack.sh, and take the session lock before state/.handoff-successor clears this turn's gate. The successor then runs bin/fm-session-start.sh. After verified transfer, end this turn and retire the predecessor session. If both attempts fail within ten minutes, the launcher emits handoff_failed; report that failure instead of claiming readiness."
+  MESSAGE="$MESSAGE Launch your successor with bin/fm-handoff-launch.sh <handoff file>. Use the Bash tool with timeout=600000 milliseconds or run_in_background=true, and collect the launcher's exit status and output before reporting readiness. It requires the successor to read the document, write its nonce-bound acknowledgement with bin/fm-handoff-ack.sh, and take the session lock before state/.handoff-successor clears this turn's gate. The successor then runs bin/fm-session-start.sh. After verified transfer, end this turn and retire the predecessor session. If both attempts fail within ten minutes, the launcher emits handoff_failed; report that failure instead of claiming readiness."
 fi
 MESSAGE="$MESSAGE Do not run /compact. This instruction fires once per context cycle."
 # Durable captain orders are part of the handoff: name each open order and the
