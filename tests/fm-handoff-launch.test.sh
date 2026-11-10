@@ -32,8 +32,11 @@ chmod +x "$FAKEBIN/claude"
 # Fake orca: run the --command it was handed, with the fake harness on
 # PATH, detached like a real new terminal. FM_FAKE_ORCA_MODE=noop accepts
 # the create and launches nothing; first-fail fails only the first create;
-# late starts the command 3s after the create. Each create appends one line
-# to $FM_FAKE_ORCA_CMD.
+# late holds the command until $FM_FAKE_ORCA_RELEASE exists, which the test
+# creates only after the launcher returns. The late child signals once it has
+# exec'd and the fake waits for that, because until then the fork still
+# carries this create's arguments, handoff path included, and reads as a live
+# successor. Each create appends one line to $FM_FAKE_ORCA_CMD.
 cat > "$FAKEBIN/orca" <<'EOF'
 #!/usr/bin/env bash
 here=$(cd "$(dirname "$0")" && pwd)
@@ -51,7 +54,16 @@ if [ "${FM_FAKE_ORCA_MODE:-launch}" = first-fail ] && [ "$(grep -c '' "$FM_FAKE_
 fi
 [ -n "$cmd" ] || exit 1
 if [ "${FM_FAKE_ORCA_MODE:-launch}" = late ]; then
-  FM_LATE_CMD=$cmd PATH="$here:$PATH" bash -c 'sleep 3; exec bash -c "$FM_LATE_CMD"' >/dev/null 2>&1 &
+  ready="$FM_FAKE_ORCA_RELEASE.ready"
+  rm -f "$ready"
+  FM_LATE_CMD=$cmd FM_LATE_READY=$ready PATH="$here:$PATH" bash -c '
+    : > "$FM_LATE_READY"
+    n=0
+    while [ ! -e "$FM_FAKE_ORCA_RELEASE" ] && [ "$n" -lt 600 ]; do sleep 0.1; n=$((n + 1)); done
+    [ -e "$FM_FAKE_ORCA_RELEASE" ] || exit 0
+    exec bash -c "$FM_LATE_CMD"' >/dev/null 2>&1 &
+  n=0
+  while [ ! -e "$ready" ] && [ "$n" -lt 600 ]; do sleep 0.05; n=$((n + 1)); done
   printf '{"terminal":"term_fake"}\n'; exit 0
 fi
 PATH="$here:$PATH" bash -c "$cmd" >/dev/null 2>&1 &
@@ -175,10 +187,12 @@ test_successor_never_appears_records_nothing() {
 }
 
 test_a_late_successor_is_never_joined_by_a_second() {
-  local out rc pid n live
+  local out rc pid n live release="$TMP_ROOT/late-release"
   reset_lab
+  rm -f "$release" "$release.ready"
   rc=0
-  out=$(run_launcher FM_FAKE_ORCA_MODE=late FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=1 2>&1) || rc=$?
+  out=$(run_launcher FM_FAKE_ORCA_MODE=late FM_FAKE_ORCA_RELEASE="$release" FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=1 2>&1) || rc=$?
+  : > "$release"
   [ "$rc" -ne 0 ] || fail "a successor that appears only after the timeout fails the launch: $out"
   n=0
   live=''
@@ -190,6 +204,7 @@ test_a_late_successor_is_never_joined_by_a_second() {
   for pid in $live; do kill "$pid" 2>/dev/null; done
   pkill -f "$LAB/data/handoff.md" 2>/dev/null
   kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
+  rm -f "$release" "$release.ready"
   pass "a launch whose successor starts late opens only one terminal"
 }
 
