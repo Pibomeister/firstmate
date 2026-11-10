@@ -1,0 +1,19 @@
+## live-harness-optin
+tests/fm-grok-quota-handoff-live-e2e.test.sh
+tests/fm-herdr-secondmate-watch-live-e2e.test.sh
+## backend-dispatch
+tests/fm-codex-shell-env.test.sh
+## kiro/hermes line count vs base (added lines)
+0
++  # when a Gemini or Hermes script path contains whitespace, which flattened
++    agy|devin|droid|command-code|polytoken|cortex|hermes) printf 'agent' ;;
++# Hermes process identity, used by agent-process liveness.
++        hermes) return 0 ;;
++      node:*/ui-tui/dist/entry.js|node:*/hermes_cli/tui_dist/entry.js) return 0 ;;
+## coverage
+FM_TEST_COVERAGE ok total=379 parallel=26 parallel_max_ms=1418942 parallel_imbalance_ms=589 parallel_unhinted=0 serial=337 serial_shards=24 serial_unhinted=16 serial_max_ms=770412 serial_budget_ms=780000 serial_oversized=0 herdr=16
+## changed: bin/fm-disk-alarm.sh
+tests/fm-disk-alarm.test.sh
+## changed: bin/fm-quota-axi-lib.sh
+tests/fm-capacity.test.sh
+tests/fm-claude-account-quota.test.sh

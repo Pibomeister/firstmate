@@ -1,0 +1,25 @@
+## timed view rows (key<TAB>verb<TAB>epoch<TAB>note), parsed as fm-watch reads them
+key=cred verb=blocked opened=1700000100 note=need login
+key=pick verb=needs-decision opened=1700000000 note=choose: A or B
+## raw (cat -t)
+cred^Iblocked^I1700000100^Ineed login
+pick^Ineeds-decision^I1700000000^Ichoose: A or B
+nokey-unstamped^Ineeds-decision^Iunknown^Ilegacy## ordinary view
+cred^Iblocked^Ineed login
+pick^Ineeds-decision^Ichoose: A or B
+nokey-unstamped^Ineeds-decision^Ilegacy## cursor version
+version=9:unknown:timed
+## wake drain
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+t1 [key=cred] blocked: need login
+t1 [key=pick] needs-decision: choose: A or B
+t1 [key=nokey-unstamped] needs-decision: legacy
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+## adversarial: poison cursor with donor timed3 5-column rows
+version=9:unknown:timed3
+cred^Iblocked^I1700000100^Ineed login
+pick^Ineeds-decision^I1700000000^Ichoose: A or B
+nokey-unstamped^Ineeds-decision^Iunknown^Ilegacy
+new^Iblocked^I1700000900^Ifresh
+## cursor after
+version=9:unknown:timed

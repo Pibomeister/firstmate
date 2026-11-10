@@ -1,345 +1,145 @@
-FM_TEST_BEGIN 2026-11-10T07:50:47Z tests/fm-crew-state.test.sh family=pure-contract-unit expected_gate_skip=none
-FM_TEST_BEGIN 2026-11-10T07:50:47Z tests/fm-pr-merge.test.sh family=pr-forge expected_gate_skip=none
-ok - captured AXI replacement status replays through crew-state
-ok - captured AXI parked status replays through crew-state
-ok - captured AXI failed status replays through crew-state
-ok - captured capped inventory replays selection, ambiguity, and unavailable lookup
-ok - captured status formats reject a synthetic authority transition
-ok - captured completed status yields to synthetic subsequent development
-ok - captured cancelled run leaves fleet inventory unverified without a failure contradiction
-ok - failed-outcome/github/open: terminal delivery uses current disposition
-ok - failed-outcome/github/merged: terminal delivery uses current disposition
-ok - failed-outcome/github/closed: terminal delivery uses current disposition
-ok - failed-outcome/github/unreadable: terminal delivery uses current disposition
-ok - failed-outcome/github/skipped: terminal delivery uses current disposition
-ok - failed-outcome/github/no-identity: terminal delivery uses current disposition
-ok - failed-outcome/gitlab/open: terminal delivery uses current disposition
-ok - failed-outcome/gitlab/merged: terminal delivery uses current disposition
-ok - failed-outcome/gitlab/closed: terminal delivery uses current disposition
-ok - failed-outcome/gitlab/unreadable: terminal delivery uses current disposition
-ok - failed-outcome/gitlab/skipped: terminal delivery uses current disposition
-ok - failed-outcome/gitlab/no-identity: terminal delivery uses current disposition
-ok - failed-outcome/gerrit/open: terminal delivery uses current disposition
-ok - failed-outcome/gerrit/merged: terminal delivery uses current disposition
-ok - failed-outcome/gerrit/closed: terminal delivery uses current disposition
-ok - failed-outcome/gerrit/unreadable: terminal delivery uses current disposition
-ok - failed-outcome/gerrit/skipped: terminal delivery uses current disposition
-ok - failed-outcome/gerrit/no-identity: terminal delivery uses current disposition
-ok - failed-status/github/open: terminal delivery uses current disposition
-ok - failed-status/github/merged: terminal delivery uses current disposition
-ok - failed-status/github/closed: terminal delivery uses current disposition
-ok - failed-status/github/unreadable: terminal delivery uses current disposition
-ok - failed-status/github/skipped: terminal delivery uses current disposition
-ok - failed-status/github/no-identity: terminal delivery uses current disposition
-ok - failed-status/gitlab/open: terminal delivery uses current disposition
-ok - failed-status/gitlab/merged: terminal delivery uses current disposition
-ok - failed-status/gitlab/closed: terminal delivery uses current disposition
-ok - failed-status/gitlab/unreadable: terminal delivery uses current disposition
-ok - failed-status/gitlab/skipped: terminal delivery uses current disposition
-ok - failed-status/gitlab/no-identity: terminal delivery uses current disposition
-ok - failed-status/gerrit/open: terminal delivery uses current disposition
-ok - failed-status/gerrit/merged: terminal delivery uses current disposition
-ok - failed-status/gerrit/closed: terminal delivery uses current disposition
-ok - failed-status/gerrit/unreadable: terminal delivery uses current disposition
-ok - failed-status/gerrit/skipped: terminal delivery uses current disposition
-ok - failed-status/gerrit/no-identity: terminal delivery uses current disposition
-ok - cancelled-outcome/github/open: terminal delivery uses current disposition
-ok - cancelled-outcome/github/merged: terminal delivery uses current disposition
-ok - cancelled-outcome/github/closed: terminal delivery uses current disposition
-ok - cancelled-outcome/github/unreadable: terminal delivery uses current disposition
-ok - cancelled-outcome/github/skipped: terminal delivery uses current disposition
-ok - cancelled-outcome/github/no-identity: terminal delivery uses current disposition
-ok - cancelled-outcome/gitlab/open: terminal delivery uses current disposition
-ok - cancelled-outcome/gitlab/merged: terminal delivery uses current disposition
-ok - cancelled-outcome/gitlab/closed: terminal delivery uses current disposition
-ok - cancelled-outcome/gitlab/unreadable: terminal delivery uses current disposition
-ok - cancelled-outcome/gitlab/skipped: terminal delivery uses current disposition
-ok - cancelled-outcome/gitlab/no-identity: terminal delivery uses current disposition
-ok - cancelled-outcome/gerrit/open: terminal delivery uses current disposition
-ok - cancelled-outcome/gerrit/merged: terminal delivery uses current disposition
-ok - cancelled-outcome/gerrit/closed: terminal delivery uses current disposition
-ok - cancelled-outcome/gerrit/unreadable: terminal delivery uses current disposition
-ok - cancelled-outcome/gerrit/skipped: terminal delivery uses current disposition
-ok - cancelled-outcome/gerrit/no-identity: terminal delivery uses current disposition
-ok - cancelled-status/github/open: terminal delivery uses current disposition
-ok - cancelled-status/github/merged: terminal delivery uses current disposition
-ok - cancelled-status/github/closed: terminal delivery uses current disposition
-ok - cancelled-status/github/unreadable: terminal delivery uses current disposition
-ok - cancelled-status/github/skipped: terminal delivery uses current disposition
-ok - cancelled-status/github/no-identity: terminal delivery uses current disposition
-ok - cancelled-status/gitlab/open: terminal delivery uses current disposition
-ok - cancelled-status/gitlab/merged: terminal delivery uses current disposition
-ok - cancelled-status/gitlab/closed: terminal delivery uses current disposition
-ok - cancelled-status/gitlab/unreadable: terminal delivery uses current disposition
-ok - cancelled-status/gitlab/skipped: terminal delivery uses current disposition
-ok - cancelled-status/gitlab/no-identity: terminal delivery uses current disposition
-ok - cancelled-status/gerrit/open: terminal delivery uses current disposition
-ok - cancelled-status/gerrit/merged: terminal delivery uses current disposition
-ok - cancelled-status/gerrit/closed: terminal delivery uses current disposition
-ok - cancelled-status/gerrit/unreadable: terminal delivery uses current disposition
-ok - cancelled-status/gerrit/skipped: terminal delivery uses current disposition
-ok - cancelled-status/gerrit/no-identity: terminal delivery uses current disposition
-ok - outcome: cancellation without delivery carries no verdict
-ok - status: cancellation without delivery carries no verdict
-ok - selected: cancellation without delivery carries no verdict
-ok - coarse: cancellation without delivery carries no verdict
-ok - no-ci-log: cancellation without delivery carries no verdict
-ok - red-ci: cancellation without delivery carries no verdict
-ok - cancelled-test: cancellation without delivery carries no verdict
-ok - skipped-test: cancellation without delivery carries no verdict
-ok - synthetic cancelled run leaves fleet inventory unverified without a failure contradiction
-ok - cancelled-outcome: terminal delivery reports only observed evidence
-ok - cancelled-status: terminal delivery reports only observed evidence
-ok - skipped-rebase: terminal delivery reports only observed evidence
-ok - cancelled-skipped-rebase: terminal delivery reports only observed evidence
-ok - passed: terminal delivery reports only observed evidence
-ok - hung backend pane probe is bounded and reads unreachable
-ok - active run-step is authoritative
-ok - stale needs-decision over active run is superseded
-ok - stale blocked over active run is superseded
-ok - daemon/timeout blocked claim over a live fixing run reads as run alive
-ok - socket refusal or missing socket over a stale fixing run reports blocked
-ok - socket refusal over a terminal attributed run reports blocked
-ok - socket refusal outranks a ledger-resolved terminal run
-ok - socket-down evidence outranks a live run only while it is the log's latest event
-ok - broken-pipe blocker over a live run keeps the plain superseded reading
-ok - genuine daemon-down blocked line still reports blocked
-ok - a busy secondmate keeps its open blocker until that exact key closes
-ok - the most recently opened decision supplies the reported state and detail
-/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M726CBHYHNWDS81B7JWQQM0H/bin/fm-timeout-lib.sh: child setpgid (59336 to 59336): Operation not permitted
-/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M726CBHYHNWDS81B7JWQQM0H/bin/fm-timeout-lib.sh: child setpgid (94662 to 94662): Operation not permitted
-ok - ship and scout terminal declarations supersede stale decisions
-ok - latest status retains legacy completion events and shared captain matching
-ok - latest status subprocess work stays bounded and still reads past a long prose tail
-ok - genuine parked run is not flagged superseded
-ok - the parked human-decision component is derived from the findings table's action column
-ok - scalar gate parked run is not flagged superseded
-ok - gate block parked run is not flagged superseded
-ok - ci-ready status log beats monitoring run
-ok - ci-monitoring run with checks already green surfaces done
-ok - top-level ci status uses ci log green marker
-ok - a PR with no CI checks reported is not read as checks green
-ok - status-log override refuses a PR with no CI checks
-ok - base-advance re-arm after green stays checks green
-ok - a green marker before the ci log tail still surfaces done
-ok - a no_ci ci-monitor marker reads as unverified, not validating
-ok - status-log override refuses a no_ci repository
-ok - a red marker after the no_ci sentence reads not ready
-ok - pending no-checks ci-monitor marker stays working
-ok - ci-monitoring run with checks not yet green stays working
-ok - a fresh issue after an earlier green reading is not masked
-ok - stale checks-green status log does not mask CI relapse
-ok - ci fixing is not overridden by an earlier green marker
-ok - top-level fixing is not overridden by a stale ci running row
-ok - top-level fixing is not overridden by a stale done log
-ok - terminal passed run is authoritative
-ok - terminal passed-with-override run reads done like a clean pass
-ok - terminal passed-with-skips run reads done with the skip kept visible
-ok - terminal passed run uses matching retirement receipt without forge
-ok - terminal passed no-forge mode preserves local receipt evidence
-ok - terminal passed run with open PR does not claim merged
-ok - terminal passed run PR overrides stale task metadata
-ok - terminal passed run without readable PR identity reports unknown
-ok - terminal passed run reads open GitLab MR state
-ok - terminal passed run reads Forgejo pull request state through tea api
-ok - terminal passed run reads merged GitLab MR state
-ok - terminal passed run handles failed GitLab read
-ok - terminal passed run reads open Gerrit change state
-ok - terminal passed run reads merged and abandoned Gerrit change state
-ok - terminal passed run handles an unreadable or mismatched Gerrit read
-ok - terminal failed run is authoritative
-ok - orphaned ci monitor after green reads as held-for-merge done
-ok - status-only failed orphaned ci monitor after green reads done
-ok - genuinely failing CI keeps the failed verdict
-ok - a second failed step disqualifies the orphaned-monitor reclassification
-ok - cross-branch run is attributed via the real runs list
-ok - socket refusal over a coarse active run reports blocked
-ok - failed ledger record reads unknown only when the daemon is provably down
-ok - cross-branch attribution picks the branch's most recent row
-ok - a newer failure is not hidden by a live sibling
-ok - runs-list selection keeps the newer failure over an older live row
-ok - an older unfetched live sibling does not hide a newer failure
-ok - two terminal rows keep the existing newest-first precedence
-ok - an unclassifiable status row keeps the ledger's newest-first precedence
-ok - a terminal run with no live sibling is unchanged
-ok - coarse run does not probe another branch's ci log
-ok - another branch's run is ignored, falls back
-ok - unpushed ship done: is current-state blocked
-ok - recorded merged PR reads done under the fleet snapshot's captured meta
-ok - no-mistakes pre-validation done: stays current-state done
-ok - moved remote branch without the named head is current-state blocked
-ok - forge=external: an uploaded review reads done, and a PR report reads blocked with the gate's reason
-ok - no run + a busy semantic record reads working, attributed to its source
-ok - runs_on_current_branch: 0 makes a capped overview fall through to crew-state sources
-ok - a launch parked on a recognized interactive prompt never reads working, closing the absorb path a stale watcher poll depends on
-ok - a converted adapter never reads working from rendered footer text
-ok - grok still reads working through its isolated rendered-tail fallback
-ok - herdr's native busy verdict reads working with no record present
-ok - a herdr CLI that fails to answer reads unknown/unreachable, never gone
-ok - an alive endpoint whose scrollback read failed stays working
-ok - a husk pane (agent gone) still reads gone for reclaim
-ok - a mid-tool-call crew stays working because its record outranks herdr's generation state
-ok - an idle record with idle agent_status stays not-busy (no regression for a human-blocked agent)
-ok - no run + idle pane uses the status-log verb
-ok - no run + idle pane parses keyed status syntax
-ok - no run + idle pane on a paused: status reports state: paused with its reason
-ok - no run + idle pane honors the configured paused verb
-ok - a trailing resolved: event does not corrupt state render (idle stays idle)
-ok - dead window ignores stale status log
-ok - a gone window of a live session ignores the stale status log
-ok - a tmux that fails to answer reads unknown/unreachable, never gone
-ok - closed pane still reports a terminal run-step
-ok - closed pane still reports an active run-step
-/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M726CBHYHNWDS81B7JWQQM0H/bin/fm-composer-lib.sh: line 688: tr: command not found
-/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M726CBHYHNWDS81B7JWQQM0H/bin/fm-composer-lib.sh: line 688: tr: command not found
-ok - no timeout command uses perl bound
-ok - scout skips the run lookup
-ok - torn-down worktree is handled gracefully
-ok - fm-crew-state remote: alive endpoint falls through to the routed status log
-ok - fm-crew-state remote: an idle alive endpoint reads alive, never gone or dead
-ok - fm-crew-state remote: an unreachable host reads unknown-remote, never gone or dead
-ok - fm-crew-state remote: the remote host's own dead verdict is reported truthfully
-ok - missing meta is handled gracefully
-ok - override guard: a foreign-named override is ignored and the task's own state files are read
-ok - override guard: a matching-name override still steers the read at the captured generation
-ok - crew_is_provably_working absorbs a validating crew found only via the runs-list fallback
-ok - crew_is_provably_working still surfaces a genuinely stopped crew (safety property preserved)
-ok - usage error exits 2
-ok - historical same-branch rewritten head is not attributed as current
-ok - active run with valid descendant fix head remains current
-ok - local work advanced past run head invalidates attribution
-ok - pipeline-owned active run binds without head equality and beats the failed row
-ok - a genuinely failed run with no later run is not hidden
-ok - a later active run supersedes a stale failed reading
-ok - a later unbindable completed run leaves the failure unprovable
-ok - an unbindable later run reports unknown rather than a stale failure
-ok - a distinct unbindable terminal row supersedes an older failure
-ok - a same-head terminal rerun publishes the newest pull request
-ok - a terminal reading keeps its pull request when the ledger has no row
-ok - a precedence verdict reads as one sentence with the run id last
-ok - a ledger-sourced verdict never names the attributed run as its own
-ok - a newer cancelled ledger row leaves an earlier failure unprovable
-ok - a coarse terminal reading claims no supersession
-ok - a foreign status answer cannot hide the coarse terminal pull request
-ok - a stale passed run publishes no pull request for an active rerun
-ok - a stale cancelled run publishes no pull request for an active rerun
-ok - a malformed ledger row supplies no newest-row evidence
-ok - a ledger sha longer than the run head still binds the current run
-ok - a stale failed reading behind a declared pause reads unknown
-ok - a stale cancelled reading behind a declared pause reads unknown
-ok - a contradicted done reading is never published as a success
-ok - a stale failed reading behind a declared done reads unknown
-ok - a live replacement run outranks a status-log done
-ok - a mid-run pause does not mask the current run's failure
-ok - a mid-run done line does not mask the current run's failure
-ok - a pre-run done line does not mask a failed run
-ok - a failed run with no ordering evidence still surfaces
-ok - a needs-decision log never supersedes a failed run
-ok - a failed run advertises no pull request it never opened
-ok - a terminal run publishes its own pull request identity
-ok - coarse scan anchors the unresolvable active row instead of falling to an older one
-ok - coarse scan with a mismatched anchor stays unknown and lets the pane answer
-ok - coarse terminal row at a foreign head is not attributed
-ok - an executing run binds regardless of branch_sync state
-ok - a parked run keeps the strict head rule without pipeline_owned
-ok - run_parked_scalar_gate_running keeps the strict head rule despite its live status word
-ok - run_parked_in_gate_block keeps the strict head rule despite its live status word
-ok - the exemption never applies to a terminal run
-ok - missing run head falls back instead of matching by branch
-ok - active fix round with an unfetched pipeline head reads working
-ok - unanchored unverifiable active row is attributed because it is live
-ok - unresolvable terminal row never reads as current
-ok - runs-list continuation attribution works when axi answers another branch
-ok - herdr stale registration over a shell-only pane reads agent gone, not alive
-ok - herdr stale working record never reports a shell-only pane busy
-ok - capped overview retains both competing same-branch run ids
-ok - same-branch identity survives both runs falling outside the overview
-ok - a capped overview with zero same-branch rows reports absent, not unreadable
-ok - no run for this branch beside a live run elsewhere reads absent, not unreadable
-ok - the capped inventory reader is bounded by the crew read budget
-ok - a repo spelling the inventory does not record reads unreadable
-ok - a linked worktree green PR in merge monitoring reads held for merge
-ok - complete inventory preserves the replacement gate without writes
-ok - missing complete-inventory failure reports unknown
-ok - corrupt complete-inventory failure reports unknown
-ok - schema complete-inventory failure reports unknown
-ok - repo complete-inventory failure reports unknown
-ok - count complete-inventory failure reports unknown
-ok - norepo complete-inventory failure reports unknown
-ok - R6 complete selection ignores unrelated branch semantics
-ok - R6 requested branches use exact identity without a whitelist
-ok - R6 capped inventory ignores unrelated semantics and names both ids
-ok - R6 complete identity lookup precedes partial-row semantic rejection
-ok - R6 capped inventory preserves quoted requested-branch identity
-ok - R6 structural completeness and requested-run validation remain enforced
-ok - R5 complete inventory without Python keeps the replacement gate
-ok - R5 complete ambiguity without Python names both ids
-ok - R5 capped lookup without Python preserves available ids
-ok - R5 capped lookup without SQLite support preserves available ids
-ok - R1 both directions of inventory liveness disagreement read unknown
-ok - R2 uninitialized busy workers retain pane reporting
-ok - R2 uninitialized idle workers retain status reporting
-ok - R3 historical inventory yields to the current busy pane
-ok - R3 historical inventory yields to current worker status
-ok - superseded cancelled run preserves the replacement review gate
-ok - a live rebased run beats an older failed run at the local head
-ok - pending run with a rebased head reads working
-ok - running run with a rebased head reads working
-ok - legacy live rebased run is authoritative over an older failed row
-ok - legacy surface binds a fixing run at a rebased head
-ok - legacy surface binds a ci run at a rebased head
-ok - an unproven record at a diverged head does not answer for the crew
-ok - an unproven record with a dead daemon never overrides a busy pane
-ok - an ordinary blocked tip over a coarse live row keeps the superseded reading
-ok - a socket-refused blocker survives the dead-daemon verdict
-ok - an ordinary blocked tip survives the dead-daemon verdict
-ok - a parked gate survives a dead daemon with its findings intact
-ok - an unproven record at a diverged head does not answer on the selected route
-ok - a live record at a diverged head binds while the daemon answers
-ok - the anchored continuation binds while the daemon answers
-ok - a head-tied coarse record keeps its working reading and its original note
-ok - a coarse failed record with a dead daemon reads unknown
-ok - the selected-run anchored continuation reports the dead daemon, not an identity failure
-ok - the selected-run anchored continuation binds while the daemon answers
-ok - the selected route keeps an anchored parked run's gate with a dead daemon
-ok - an open decision survives the dead-daemon verdict on the selected route
-ok - a coarse pending ledger word reads unknown
-ok - an unanswered probe never turns a failed coarse record into a gate
-ok - the selected-route dead-daemon verdict names the run once
-ok - a head-tied row reads working when axi names the self run
-ok - a head-tied row reads working when axi names the other run
-ok - a head-tied coarse row is exempt even when the record head diverged
-ok - an unrecognised ledger word keeps the ordinary supersede note
-ok - daemon probe classifies running
-ok - daemon probe classifies stopped
-ok - daemon probe classifies empty
-ok - daemon probe classifies unexpected
-ok - daemon probe classifies absent
-ok - daemon probe classifies refused
-ok - daemon probe classifies timeout
-ok - an unanswered daemon probe leaves a live rebased run bound
-ok - a head-tied coarse live row is exempt from the dead-daemon verdict
-ok - a coarse live row over an open decision keeps the original supersede note
-ok - a coarse live row at a rebased head is not attributed
-ok - a terminal run at a diverged head keeps the strict head rule
-ok - competing live runs report unknown with both run ids
-ok - active current run beats a stale overview row
-ok - active current run beats a stale failed overview row
-ok - same-head active run beats a stale failed overview row
-ok - same-head run with an unverified ULID timestamp reports unknown
-ok - older live status does not hide a newer completed run
-ok - failed selected-run detail read is not attributed
-ok - live run newer than the selection does not hide a newer failed run
-ok - newer failed run remains failed beside an older live run
-ok - a live ledger row appearing after selection reports unknown
-ok - missing run selection reports unknown with candidate ids
-ok - wrong-id run selection reports unknown with candidate ids
-ok - wrong-branch run selection reports unknown with candidate ids
-ok - wrong-head run selection reports unknown with candidate ids
-ok - missing-status run selection reports unknown with candidate ids
-ok - malformed-table run selection reports unknown with candidate ids
-ok - inventory-error run selection reports unknown with candidate ids
-ok - selected-error run selection reports unknown with candidate ids
-ok - legacy conflicting run records report unknown
-all fm-crew-state tests passed
-FM_TEST_END 2026-11-10T08:14:44Z tests/fm-crew-state.test.sh exit=0 duration_ms=1436254 gate_skip=false
+FM_TEST_BEGIN 2026-11-10T09:12:24Z tests/fm-classify-decision-key.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - a stated [key=X] opens X whether it precedes or follows the verb colon
+ok - a keyless needs-decision still opens and closes the default key
+ok - a resolution closes its decision regardless of either line's key position
+ok - blocked [key=X] opens X in both key positions
+ok - two colon-form keyed decisions never collapse into one shared bucket
+ok - a [key=x] mentioned mid-note is prose, never an opened or closed key
+ok - a malformed stated key is rejected in both positions, never folded as default
+ok - status_line_verb strips every bracket tag before the colon, in any order, and recovers the bare verb
+ok - a [corr=...] tag ahead of [key=...] no longer swallows the verb: opens and closes under the stated key
+ok - a [corr=...] tag with no stated key opens under 'default', exactly like a bare needs-decision line
+ok - a [key=x] tag alone (no corr tag) still opens x - no regression from the tag-stripping fix
+ok - blocked/resolved parse their bare verb with any bracket-tag order preceding the colon
+ok - the incremental fold matches the full fold across appends in both key positions
+ok - status_key_closing_verb separates resolution, durable transfer, and still-open
+ok - status_key_closing_verb reports the last real transition, in either key position
+ok - per-key reads retain resolutions without subprocess work growing with unrelated history
+ok - overridden resolve and durable-transfer verbs still close keys behind unrelated history
+ok - per-key filtering retains ship/scout terminals, reopenings, and secondmate blockers
+ok - prose without a colon cannot impersonate a ship or scout terminal declaration
+ok - a stated default retraction closes its decision and leaves an unrelated keyless wait standing
+ok - a declared wait outlives answers for other keys beyond the event window, and its own resolved line retracts it
+ok - only a colon-bearing or keyed line is a decision transition in the fold
+ok - a recorded line stays recorded across a later resolve
+ok - claim-refuted keys open and close only through their reserved vocabulary
+FM_TEST_END 2026-11-10T09:12:32Z tests/fm-classify-decision-key.test.sh exit=0 duration_ms=7327 gate_skip=false
+FM_TEST_BEGIN 2026-11-10T09:12:32Z tests/fm-wake-drain-open-decisions-cursor.test.sh family=standalone expected_gate_skip=none
+FM_TEST_BEGIN 2026-11-10T09:12:32Z tests/fm-classify-corr-token.test.sh family=standalone expected_gate_skip=none
+FM_TEST_BEGIN 2026-11-10T09:12:32Z tests/fm-wake-drain-open-decisions.test.sh family=standalone expected_gate_skip=none
+ok - a needs-decision buried under later routine/other-key lines still reports as open
+ok - an over-long open decision is cut to its per-item budget with the shared truncation marker
+ok - an explicit resolved [key=X] closes the keyed decision
+ok - a later unrelated terminal line never clears an open decision
+ok - a reserved decision key can only be opened or closed by its owning library
+ok - no open decisions across the fleet prints nothing
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 6366.1794301968.LPNinV
+ok - the open-decision section is fleet-wide, not scoped to this drain's own queued records
+ok - a buried open decision surfaces even when the wake queue itself is empty
+ok - the fleet-wide decision scan does not follow status symlinks
+FM_TEST_END 2026-11-10T09:12:55Z tests/fm-wake-drain-open-decisions.test.sh exit=0 duration_ms=23186 gate_skip=false
+ok - captain regex overrides preserve timed and legacy relevance and event bytes
+ok - malformed event times stay ordinary line bytes without hiding the event
+ok - malformed event times never open or close a decision
+ok - optional event time preserves parsing and legacy unknown time
+ok - a correlation token between the verb and the key breaks neither opening nor closing
+ok - the token is read through before the key, after it, doubled, bracketed, and unkeyed
+ok - the untokened opener/closer pair behaves exactly as before
+ok - prose, malformed, wrong-length and unknown name=value tokens stay non-transitions
+ok - a token-first line cannot impersonate any opening or closing verb
+ok - untokened captain-relevance, pause, terminal-verb and captain-held verdicts are unchanged
+ok - captain-relevance, terminal-verb, pause and captain-held all read through the token
+ok - the daemon and crew-state verb case arms read through the token
+ok - reading through the token does not weaken the reserved-key namespace rule
+ok - the cursor-backed fold and the whole-file fold agree on every correlated transition
+ok - a cursor persisted under the previous reading is discarded and refolded
+ok - both real correlation-token writers produce lines this classifier reads through
+FM_TEST_END 2026-11-10T09:13:20Z tests/fm-classify-corr-token.test.sh exit=0 duration_ms=48123 gate_skip=false
+ok - terminal supersession reaches whole-file reads, incremental drains, old caches, and captured spans
+ok - folded decisions are rebuilt when task-kind evidence changes
+ok - a truncated/rewritten log falls back to a full re-fold instead of dropping or misreading the decision
+ok - a same-size file rotation (new inode) is detected and falls back to a full re-fold
+ok - a failed presentation read preserves status state for retry
+ok - a cursor-cache read failure refolds decisions without replaying handled unread status
+ok - a pre-fix cursor is rebuilt so a previously skipped corr-tagged decision surfaces
+ok - an old fold cache is rebuilt once before same-version incremental reads resume
+ok - a buried decision survives many growing drains with bounded read cost, and resolution durably clears it at bounded cost too
+FM_TEST_END 2026-11-10T09:14:53Z tests/fm-wake-drain-open-decisions-cursor.test.sh exit=0 duration_ms=140724 gate_skip=false
+FM_TEST_BEGIN 2026-11-10T09:14:53Z tests/fm-backend-rex.test.sh family=rex expected_gate_skip=optional-binary
+ok - fm_backend_rex_bin: REX_BIN_DIR, then PATH, then the server bundle path
+ok - Rex spawn refuses an endpoint whose server locality is unproven before creating sessions or tabs
+ok - fm_backend_rex_version_check: accepts API revision 5 and refuses an older CLI, older server, or missing CLI
+ok - fm_backend_rex_parse_target: <session-uuid>:<block-uuid> only, prefixes restored
+ok - fm_backend_rex_create_task: one per-home session created once then adopted, one tab per task, scoped block label, 200x50
+warning: could not move the respawned Rex secondmate tab window:00000009-0000-7000-8000-000000000009 to the first position
+ok - fm_backend_rex_create_task: confirmed launcher session gets the tab focus-safe; unconfirmed claims refuse; nested tmux and other-home use the per-home session
+ok - fm_backend_rex_create_task: refuses an unreadable inventory, ambiguous per-home sessions, and duplicates; a gone session returns 2
+ok - fm_backend_rex_create_task_in_session: closes a bare-shell husk carrying the task label, refuses over a live one
+ok - fm_backend_rex_create_task reclaim: the fallback placement closes a bare-shell husk, refuses a live one, and spawn still refuses duplicates
+ok - rex capture: CR stripped and tailed; viewport derived from the last size.rows styled rows, implicit empty bottom row restored
+ok - fm_backend_composer_state rex: the composer holding the cursor decides; a cursor outside any composer falls back to the cursorless read
+ok - fm_backend_agent_state rex: alive/dead/ambiguous from the process view, missing on not-found, unreadable without starting a server
+ok - fm_backend_agent_state rex: a harness below a shell foreground is alive and its records are trusted; a bare shell stays dead
+ok - fm_backend_busy_state rex: OSC 7501 records count only while their owner is the foreground process or an ancestor
+ok - fm_backend_rex_current_path: the foreground process cwd
+ok - rex input: literal text after --, no call for empty input, verified key names only, line submit
+ok - fm_backend_kill rex: closes exactly its tab, treats a gone block as done, retires the emptied per-home session
+ok - fm_backend_kill rex: never kills a session this home does not own, even when it is empty
+ok - fm_backend_kill rex: refuses success unless the block is proven gone
+ok - fm-teardown rex: retiring a secondmate closes its crew and its own tab and retires its per-home session
+ok - fm_backend_rex_endpoint_absence_recheck: proof only from the recorded server; missing/dead/unproven
+ok - fm_control_endpoint_absence_verdict rex: gone only on a not-found from the recorded server
+ok - fm-control exit on rex: a stopped server goes through the recorded-server absence proof, and refuses when it cannot prove absence
+ok - fm_backend_rex_list_live: home-scoped blocks only, nothing when unreachable
+ok - fm_backend_events_capable rex: API revision 5 on both ends, read without starting a server
+ok - fm_backend_wait_transition rex: a trusted blocked edge returns its record with Rex's app, kind, and message
+ok - fm_backend_wait_transition rex: a blocked edge counts only while its owner is the foreground process or an ancestor
+ok - fm_backend_wait_transition rex: level reconcile returns a blocked block once; working and cleanup clear the marker
+ok - fm_backend_wait_transition rex: a watched block's exit or close ends the wait at once for an immediate poll
+ok - fm_backend_wait_transition rex: a reader that cannot start or ends early falls back to polling
+ok - rex: a mark, progress record, tint, and wedge alert are each one small terminal write of Firstmate's own app=firstmate record
+ok - rex: mark_read reports only Firstmate's record and fails on an unreadable pane
+ok - rex: Firstmate's own program-status records never count as the worker's busy state or blocked edge
+ok - rex: attention marks are off unless config/rex-status-marks turns them on
+ok - rex: the marks producer plans from status, writes once, repairs without re-notifying, clears on resolve, and honors off
+ok - rex: clearing a task removes its mark, tint, and caches
+ok - rex: validation progress reads captured no-mistakes status by column name
+FM_TEST_END 2026-11-10T09:16:03Z tests/fm-backend-rex.test.sh exit=0 duration_ms=70373 gate_skip=false
+FM_TEST_BEGIN 2026-11-10T09:16:03Z tests/fm-tmux-agent-liveness.test.sh family=backend-dispatch expected_gate_skip=none
+ok - tmux liveness: a harness-named foreground process classifies alive
+ok - tmux liveness: muse's version-suffixed muse-bin-<version> classifies alive
+ok - tmux liveness: unrelated muse-containing command names stay ambiguous
+ok - tmux liveness: omp's bare binary name classifies alive
+ok - tmux liveness: unrelated omp-containing command names stay ambiguous
+ok - tmux liveness: real Droid-shaped process is alive and fragments stay ambiguous
+ok - tmux liveness: Command Code's anchored process name classifies alive; a containing name stays ambiguous
+ok - tmux liveness: a version-named executable under a harness install path classifies alive
+ok - tmux liveness: a version-named executable under a decoy path stays ambiguous
+ok - tmux liveness: a process neither name source attributes stays ambiguous rather than inventing an agent
+ok - tmux liveness: Python -I -c bootstrap with same-group Node --expose-gc Hermes TUI classifies alive without harness names
+ok - tmux liveness: the same bootstrap with an unrelated Node script stays ambiguous
+ok - tmux liveness: a launcher whose own identity reads as a bare shell classifies alive from its harness child
+ok - tmux liveness: an idle shell pane classifies dead
+ok - tmux liveness: a harness-named background process in an idle pane still classifies dead
+ok - tmux liveness: an absent window classifies missing rather than inheriting tmux's active-window fallback
+ok - cursor composer: an idle Cursor pane reads empty even though the cursor row is blind
+ok - cursor composer: a fully dim placeholder reads empty
+ok - cursor composer: bright text matching the placeholder stays pending
+ok - cursor composer: real typed text still reads pending, so the injection guard holds
+ok - cursor composer: an identical screen stays unknown when the pane is not Cursor
+ok - cursor composer: a stale Cursor screen over a dead shell never reads empty
+ok - commandcode composer: an idle pane reads empty although its cursor row is blind and its placeholder is bright
+ok - commandcode composer: typed text still reads pending
+ok - commandcode composer: an identical screen stays unknown when the pane is not Command Code
+FM_TEST_END 2026-11-10T09:16:12Z tests/fm-tmux-agent-liveness.test.sh exit=0 duration_ms=9074 gate_skip=false
+FM_TEST_SUMMARY total=6 failed=0 skipped_gate=0 duration_ms=228521
+FM_TEST_SUMMARY_FAMILY family=backend-dispatch count=1 duration_ms=9074 failed=0
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=7327 failed=0
+FM_TEST_SUMMARY_FAMILY family=rex count=1 duration_ms=70373 failed=0
+FM_TEST_SUMMARY_FAMILY family=standalone count=3 duration_ms=212033 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-wake-drain-open-decisions-cursor.test.sh duration_ms=140724
+FM_TEST_SLOWEST rank=2 script=tests/fm-backend-rex.test.sh duration_ms=70373
+FM_TEST_SLOWEST rank=3 script=tests/fm-classify-corr-token.test.sh duration_ms=48123
+FM_TEST_SLOWEST rank=4 script=tests/fm-wake-drain-open-decisions.test.sh duration_ms=23186
+FM_TEST_SLOWEST rank=5 script=tests/fm-tmux-agent-liveness.test.sh duration_ms=9074
+FM_TEST_SLOWEST rank=6 script=tests/fm-classify-decision-key.test.sh duration_ms=7327
