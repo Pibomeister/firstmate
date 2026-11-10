@@ -226,11 +226,11 @@
 #     The two learnings files print the pointer line alone.
 #   - A wake presentation over FM_SESSION_START_WAKE_INLINE_MAX bytes (default
 #     8000) is saved whole to state/.session-start-wake-presentation first, and
-#     only then does the inline copy keep each non-historical latest-event
-#     `wake annotation:` line (capped at 320 characters), leave out the earlier
-#     unread and historical annotation lines and all but the first five OPEN
-#     DECISIONS and STATUS OUTCOME BACKSTOP items, with their counts and that
-#     path; if the save fails, nothing is left out.
+#     only then does the inline copy keep one non-historical latest-event
+#     `wake annotation:` line per status file (capped at 320 characters), leave
+#     out the earlier unread, repeated, and historical annotation lines and all
+#     but the first five OPEN DECISIONS and STATUS OUTCOME BACKSTOP items, with
+#     their counts and that path; if the save fails, nothing is left out.
 #   - The backlog and Work under way bounds are the BACKLOG DIGEST and
 #     WORK-UNDER-WAY notes above.
 #
