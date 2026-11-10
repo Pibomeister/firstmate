@@ -1,0 +1,7 @@
+$ fm-test-run.sh --list --family backend-dispatch | grep codex-shell-env
+tests/fm-codex-shell-env.test.sh
+$ fm-test-run.sh --list --family live-harness-optin | grep -E "grok-quota-handoff|herdr-secondmate-watch"
+tests/fm-grok-quota-handoff-live-e2e.test.sh
+tests/fm-herdr-secondmate-watch-live-e2e.test.sh
+$ fm-test-run.sh --check-coverage
+(--check-coverage stopped after 10 minutes; not part of this evidence)

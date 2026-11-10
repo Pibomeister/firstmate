@@ -1,0 +1,8 @@
+-- config/osc7501-status=off on a Rex pane (expect 0) --
+case=off osc7501_records=0 R=0 
+-- unknown terminal, no Rex/hc/ghostty marker (expect 0) --
+case=unknown osc7501_records=0 R=0 
+-- Rex pane, reporting on (second control, expect >=1) --
+case=native osc7501_records=1 R=0 
+-- Rex pane, reporting on (control, expect >=1) --
+case=on osc7501_records=2 R=0 

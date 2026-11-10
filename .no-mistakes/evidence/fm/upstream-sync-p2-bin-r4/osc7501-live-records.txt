@@ -1,0 +1,6 @@
+# raw OSC 7501 records written to a real tmux pane tty (title is base64 of fm-demo-1)
+ESC]7501;state=idle:app=firstmate-opencode:title=Zm0tZGVtby0x
+ESC]7501;state=blocked:kind=question:app=firstmate-opencode:title=Zm0tZGVtby0x:msg=TmVlZHMgeW91ciBkZWNpc2lvbjogcGljayBhIGRiIA==
+ESC]7501;state=done:app=firstmate-opencode:title=Zm0tZGVtby0x:msg=UFIgcmVhZHk6IFBSIHJlYWR5IGh0dHBzOi8vZXhhbXBsZS50ZXN0L3ByLzE=
+ESC]7501;state=done:app=firstmate-opencode:title=Zm0tZGVtby0x:msg=UFIgcmVhZHk6IFBSIHJlYWR5IGh0dHBzOi8vZXhhbXBsZS50ZXN0L3ByLzE=
+ESC]7501;state=done:app=firstmate-opencode:title=Zm0tZGVtby0x:msg=UFIgcmVhZHk6IFBSIHJlYWR5IGh0dHBzOi8vZXhhbXBsZS50ZXN0L3ByLzE=

@@ -1,0 +1,32 @@
+$ fm-dispatch-resolve.sh brief.md --project demo   (no provider key)
+dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.imziUh/.env)
+exit=0
+$ fm-dispatch-resolve.sh --supports-credential-source macos-keychain
+supported
+exit=0
+$ fm-dispatch-resolve.sh --supports-credential-source bogus
+unsupported
+exit=1
+$ systemone provider with bad base URL
+error: FM_DISPATCH_BASE_URL must start with http:// or https://
+exit=2
+$ FM_DISPATCH_PROVIDER=systemone FM_DISPATCH_BASE_URL=http://127.0.0.1:18931 fm-dispatch-resolve.sh brief.md --project demo
+error: malformed rules file: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.imziUh/config/crew-dispatch.json - each rule needs at least one use profile
+exit=2
+--- request body received by stub (state excerpt) ---
+head: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.4FhKurLL2j/req.json: No such file or directory
+--- with docs/examples/crew-dispatch.json, local System One stub, real curl + quota-axi ---
+dispatch-resolve:
+  status: clear
+  model: stub   latency_ms: 0   tokens: 1/1
+  rule: default (No listed rule applies to this task.)   confidence: 0.94
+  probabilities: rule_1=0.02 rule_2=0.02 rule_3=0.02 default=0.94
+  note: no rule matched
+  note: 1 eligible candidate(s) unranked (claude)
+  candidate: codex:gpt-5.5  provider=codex  scope=all_models  remaining=79%  spendPriority=0.0335  runway=through_reset  -> eligible
+  candidate: pi:anthropic/claude-sonnet-5  provider=claude  scope=all_models  remaining=-%  spendPriority=-  runway=unknown  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  profile: --harness 'codex' --model 'gpt-5.5' --effort 'medium'
+exit=0
+--- stub received request keys ---
+["model","questions","state"]
+"stub"
