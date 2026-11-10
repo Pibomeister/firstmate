@@ -745,6 +745,11 @@ The local `config/rex-status-marks` file opts a home in to Rex attention marks: 
 [Attention marks](rex-backend.md#attention-marks) owns the status mapping and its limits.
 The local `config/rex-tint` file opts in to a subtle background tint on waiting and failed workers: `off` (the default when absent), `subtle`, or `subtle-light`; [State tint](rex-backend.md#state-tint) owns its behavior and caveats.
 
+### Worker program status (OSC 7501)
+
+The local `config/osc7501-status` file controls the worker-side program-status reporter: `on` (the default when absent) lets a worker on a known OSC 7501-aware terminal report its state as an `app=firstmate-<harness>` root record, `off` disables it, and an unrecognized word warns once and reads as `off`.
+The `bin/fm-osc7501.sh` header owns the arming conditions, the native-reporter exclusions, and the status mapping.
+
 For normal herdr operations, `HERDR_SESSION` selects the named session, but destructive test cleanup must not rely on `HERDR_SESSION` alone.
 Use the explicit guarded cleanup path described in [`docs/herdr-backend.md`](herdr-backend.md) instead of `herdr server stop`.
 
