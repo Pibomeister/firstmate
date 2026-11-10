@@ -112,6 +112,7 @@ while [ $# -gt 0 ]; do
     --source) SOURCE=${2:-}; shift 2 || usage ;;
     --event) EVENT=${2:-}; shift 2 || usage ;;
     --turn-ended) [ "$CMD" = apply ] || usage; TURN_ENDED=1; shift ;;
+    --request) REQUEST=${2:-}; shift 2 || usage ;;
     --prompt-sha256) PROMPT_SHA256=${2:-}; shift 2 || usage ;;
     *) usage ;;
   esac

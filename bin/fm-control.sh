@@ -1478,8 +1478,12 @@ resolve_relaunch_profile() {
     fi
   fi
   [ "$KIND" != secondmate ] || account_mate=$ID
+  # Under a declared Claude account list, the replacement stays on the
+  # account the task records unless --account explicitly moves it.
+  TARGET_ACCOUNT=$(fm_worker_account_relaunch_request "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
+    "$PRIOR_HARNESS" "$(fm_meta_get "$META" account)" "$NEW_ACCOUNT" "$account_mate") || return 1
   fm_worker_account_select "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
-    "$account_model" "$TARGET_HARNESS" "" "$account_mate" >/dev/null || return 1
+    "$account_model" "$TARGET_HARNESS" "" "$account_mate" "$TARGET_ACCOUNT" >/dev/null || return 1
   fm_omp_profile_select "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
     "$account_mate" >/dev/null || return 1
   # Likewise polytoken's launch profile and wiring refusals
@@ -1773,6 +1777,7 @@ do_relaunch() {
   spawn_args=("$ID" --relaunch --harness "$TARGET_HARNESS")
   [ "$TARGET_MODEL" = default ] || spawn_args+=(--model "$TARGET_MODEL")
   [ "$TARGET_EFFORT" = default ] || spawn_args+=(--effort "$TARGET_EFFORT")
+  [ -z "$TARGET_ACCOUNT" ] || spawn_args+=(--account "$TARGET_ACCOUNT")
   spawn_err=$(mktemp "${TMPDIR:-/tmp}/fm-control-spawn.XXXXXX") || die "could not record spawn output for task $ID"
   spawn_rc=0
   # A same-pin secondmate relaunch (restart, liveness) must not mint a

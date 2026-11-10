@@ -278,7 +278,6 @@ fm_lease_live() {
       return
       ;;
   esac
-  kill -0 "$FM_LEASE_PID" 2>/dev/null || return 1
   case "$lock_pid" in ''|0|1|*[!0-9]*) return 1 ;; esac
   [ "$FM_LEASE_PID" = "$lock_pid" ] || return 1
   # shellcheck source=/dev/null
@@ -299,7 +298,9 @@ fm_lease_rekey_holder() {
   local old=$1 new=$2 lease task tmp rc=0
   for lease in "$STATE"/.lease-*; do
     [ -e "$lease" ] || continue
-    case "$lease" in *.lock) continue ;; esac
+    # A *.lock directory is a lock, not a lease; a regular lease file whose
+    # task id ends in .lock is a valid lease and must still be rekeyed.
+    case "$lease" in *.lock) [ -d "$lease" ] && continue ;; esac
     task=${lease##*/.lease-}
     fm_lease_valid_id "$task" || continue
     fm_lease_read "$task" || continue

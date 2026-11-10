@@ -321,27 +321,17 @@ case "$DISPATCH_PROVIDER" in
   '')
     DISPATCH_PROVIDER=typesafe
     DISPATCH_MODEL=$TS_MODEL
-    [ -n "$TYPESAFE_API_KEY_PRIVATE" ] || TYPESAFE_API_KEY_PRIVATE=$(fmx_env_get TYPESAFE_API_KEY "$FM_HOME/.env")
-    if [ -z "$TYPESAFE_API_KEY_PRIVATE" ]; then
-      echo "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and $FM_HOME/.env)" >&2
-      exit 0
-    fi
+    select_typesafe_base
+    select_key typesafe TYPESAFE_API_KEY TYPESAFE_API_KEY_PRIVATE
     ;;
   typesafe)
     [ -n "$DISPATCH_MODEL" ] || DISPATCH_MODEL=$TS_MODEL
-    [ -n "$TYPESAFE_API_KEY_PRIVATE" ] || TYPESAFE_API_KEY_PRIVATE=$(fmx_env_get TYPESAFE_API_KEY "$FM_HOME/.env")
-    if [ -z "$TYPESAFE_API_KEY_PRIVATE" ]; then
-      echo "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and $FM_HOME/.env)" >&2
-      exit 0
-    fi
+    select_typesafe_base
+    select_key typesafe TYPESAFE_API_KEY TYPESAFE_API_KEY_PRIVATE
     ;;
   openrouter)
     [ -n "$DISPATCH_MODEL" ] || die "FM_DISPATCH_MODEL required when FM_DISPATCH_PROVIDER=openrouter"
-    [ -n "$OPENROUTER_API_KEY_PRIVATE" ] || OPENROUTER_API_KEY_PRIVATE=$(fmx_env_get OPENROUTER_API_KEY "$FM_HOME/.env")
-    if [ -z "$OPENROUTER_API_KEY_PRIVATE" ]; then
-      echo "dispatch-resolve: off (OPENROUTER_API_KEY absent from the environment and $FM_HOME/.env)" >&2
-      exit 0
-    fi
+    select_key openrouter OPENROUTER_API_KEY OPENROUTER_API_KEY_PRIVATE
     ;;
   systemone)
     [ -n "$DISPATCH_MODEL" ] || die "FM_DISPATCH_MODEL required when FM_DISPATCH_PROVIDER=systemone"
@@ -360,8 +350,7 @@ case "$DISPATCH_PROVIDER" in
     [ -n "$DISPATCH_MODEL" ] || die "FM_DISPATCH_MODEL required when FM_DISPATCH_PROVIDER=openai"
     [ -n "$OPENAI_API_KEY_PRIVATE" ] || OPENAI_API_KEY_PRIVATE=$(fmx_env_get OPENAI_API_KEY "$FM_HOME/.env")
     if [ -z "$OPENAI_API_KEY_PRIVATE" ]; then
-      echo "dispatch-resolve: off (OPENAI_API_KEY absent from the environment and $FM_HOME/.env)" >&2
-      exit 0
+      resolver_off "OPENAI_API_KEY absent from the environment and $FM_HOME/.env"
     fi
     ;;
   *) die "unknown FM_DISPATCH_PROVIDER: $DISPATCH_PROVIDER (expected typesafe, openrouter, systemone, or openai)" ;;
@@ -669,10 +658,15 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
   def lane_of($c): quota_lane($c.harness; $c.model);
   def measured($p; $lane):
     (prov($p; $lane) != null and (["known", "partial"] | index(prov($p; $lane).quotaSemantics.status)) != null);
-  def applicable($p; $lane; $m):
+  def applicable($p; $lane; $m; $qs):
     (prov($p; $lane)) as $row |
     if $row == null then []
-    else quota_applicable($row; bare($m))
+    else (quota_applicable($row; bare($m))) as $base |
+      if $qs == null then $base
+      else $base + [($row.quotaSemantics.effectiveAvailability // [])[]
+             | select(.scope == $qs)
+             | select(.scope as $s | ($base | map(.scope) | index($s)) == null)]
+      end
     end;
   def floor_rows($f; $p; $lane; $m):
     if $f == null then []
@@ -774,7 +768,7 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
    end) as $fb |
   (if $fb.to then $fb.to else $picked end) as $choice |
   (rule_at($choice)) as $rule |
-  (if $sq or $rule == null then "none" else floor_state($rule.floor; $rule.floor.provider; "") end) as $rule_floor_state |
+  (if $sq or $rule == null then "none" else rule_floor_state($rule) end) as $rule_floor_state |
   (if $choice != "default" and $rule == null then []
    elif $rule == null then profiles($cfg.default // null)
    else profiles($rule.use)

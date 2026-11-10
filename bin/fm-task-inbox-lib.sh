@@ -321,7 +321,7 @@ fm_task_inbox_write_idempotent() {  # <state-dir> <task-id> <text> [delivery-mod
   lock="$dir/.seq.lock"
   fm_task_inbox_lock_acquire "$lock" || return 1
   if want=$(mktemp "$dir/.dedup.XXXXXX") && have=$(mktemp "$dir/.dedup.XXXXXX"); then
-    if printf '%s' "$text" > "$want"; then
+    if printf '%s' "$text" > "$want" && _fm_task_inbox_strip_holds "$want"; then
       # One grep per directory replaces per-record parsing of unrelated history.
       # Header/other-line hits are harmless: mode and exact body still decide.
       # Empty bodies also match the separator, including empty legacy records.

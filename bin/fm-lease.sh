@@ -117,6 +117,18 @@ case "$CMD" in
       echo "error: claim refused - task '$TASK' is leased to the $FM_LEASE_ACTOR supervision actor (state/.lease-$TASK)" >&2
       exit "$FM_LEASE_REFUSE_EXIT"
     fi
+    # A pinned holder (FM_LEASE_HOLDER_PID / FM_LEASE_HOLDER_SESSION) must
+    # still own this home's session lock; an unverified pin refuses rather
+    # than claiming against a successor session, and a verified claim
+    # records the lock's live line 1, never the possibly dead pin itself.
+    PINNED=
+    if [ -n "${FM_LEASE_HOLDER_PID:-}" ] || [ -n "${FM_LEASE_HOLDER_SESSION:-}" ]; then
+      PINNED=1
+      HOLDER_PID=$(fm_lease_claim_holder) || {
+        echo "error: claim refused - the pinned supervision session no longer owns this home" >&2
+        exit "$FM_LEASE_REFUSE_EXIT"
+      }
+    fi
     # The lease outlives this CLI call, so its liveness pid must be the
     # long-lived supervising process: FM_LEASE_HOLDER_PID when the caller
     # provides one (the supervision host and the Pi branch extension pass the
@@ -134,22 +146,24 @@ case "$CMD" in
     # a live verified harness, and fm_lease_live checks it against the Windows
     # process table. Any other non-numeric value yields nothing and falls
     # through to the next source.
-    HOLDER_PID=${FM_LEASE_HOLDER_PID:-}
-    case "$HOLDER_PID" in
-      win:*) fm_lease_tagged_holder_live "$HOLDER_PID" || HOLDER_PID= ;;
-      *[!0-9]*) HOLDER_PID= ;;
-    esac
-    LOCK_PID=$(head -n 1 "$STATE/.lock" 2>/dev/null || true)
-    case "$LOCK_PID" in
-      win:*) fm_lease_tagged_holder_live "$LOCK_PID" || LOCK_PID= ;;
-      *[!0-9]*) LOCK_PID= ;;
-    esac
-    if [ -z "$HOLDER_PID" ]; then
-      HOLDER_PID=$LOCK_PID
-    elif [ "$HOLDER_PID" != "$LOCK_PID" ] && fm_pid_alive "$HOLDER_PID" && fm_pid_alive "$LOCK_PID"; then
-      HOLDER_PID=$LOCK_PID
+    if [ -z "$PINNED" ]; then
+      HOLDER_PID=${FM_LEASE_HOLDER_PID:-}
+      case "$HOLDER_PID" in
+        win:*) fm_lease_tagged_holder_live "$HOLDER_PID" || HOLDER_PID= ;;
+        *[!0-9]*) HOLDER_PID= ;;
+      esac
+      LOCK_PID=$(head -n 1 "$STATE/.lock" 2>/dev/null || true)
+      case "$LOCK_PID" in
+        win:*) fm_lease_tagged_holder_live "$LOCK_PID" || LOCK_PID= ;;
+        *[!0-9]*) LOCK_PID= ;;
+      esac
+      if [ -z "$HOLDER_PID" ]; then
+        HOLDER_PID=$LOCK_PID
+      elif [ "$HOLDER_PID" != "$LOCK_PID" ] && fm_pid_alive "$HOLDER_PID" && fm_pid_alive "$LOCK_PID"; then
+        HOLDER_PID=$LOCK_PID
+      fi
+      [ -n "$HOLDER_PID" ] || HOLDER_PID=$$
     fi
-    [ -n "$HOLDER_PID" ] || HOLDER_PID=$$
     TMP=$(mktemp "$STATE/.fm-lease-tmp.XXXXXX")
     printf '%s\t%s\t%s\n' "$ACTOR" "$HOLDER_PID" "$(date +%s)" > "$TMP"
     if [ -e "$LEASE" ]; then

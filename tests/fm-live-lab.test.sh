@@ -126,9 +126,8 @@ record_pid() {  # <root> <pid>
 }
 
 lab_tmux() {  # <root> <tmux args...>
-  local home
-  home=$(sed -n 's/^home=//p' "$1/.fm-live-lab")
-  [ -n "$home" ] || return 1
+  local dir
+  dir=$(sed -n 's/^tmux_dir=//p' "$1/.fm-live-lab")
   shift
   [ -n "$dir" ] || return 1
   env -u TMUX tmux -S "$(lab_socket_of "$dir")" "$@"
