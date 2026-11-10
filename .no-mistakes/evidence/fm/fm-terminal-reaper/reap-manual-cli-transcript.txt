@@ -1,0 +1,68 @@
+$ FM_HOME=$LAB bin/fm-terminal-reap.sh --min-age 0 --no-browsers
+keep	terminal	task	t-endpoint	$LAB/ws/fm-dirty	dirty ($LAB)
+keep	terminal	task-worktree	t-extra	$LAB/ws/fm-dirty	dirty ($LAB); Terminal 3
+keep	terminal	unowned-task	t-unowned	$LAB/ws/fm-other	fm-other
+keep	terminal	captain	t-captain	$LAB	Terminal 1
+keep	terminal	captain	t-path	$LAB	eduardo@m4: ~/orca/projects/firstmate
+keep	terminal	captain	t-branch	$LAB	zsh (main)
+reap	terminal	idle-session	t-orphan	$LAB	fm-main-successor-2300Z
+reap	terminal	idle-session	t-handoff	$LAB	M4 main Firstmate captain handoff
+keep	terminal	foreign	t-foreign	$LAB/elsewhere	captain lane
+summary: mode=dry-run terminals=9 reap=2 keep=7 browsers=0 reap=0 keep=0
+exit=0
+closed after dry run:        0
+$ FM_HOME=$LAB bin/fm-terminal-reap.sh --min-age 0 --no-browsers --apply
+keep	terminal	task	t-endpoint	$LAB/ws/fm-dirty	dirty ($LAB)
+keep	terminal	task-worktree	t-extra	$LAB/ws/fm-dirty	dirty ($LAB); Terminal 3
+keep	terminal	unowned-task	t-unowned	$LAB/ws/fm-other	fm-other
+keep	terminal	captain	t-captain	$LAB	Terminal 1
+keep	terminal	captain	t-path	$LAB	eduardo@m4: ~/orca/projects/firstmate
+keep	terminal	captain	t-branch	$LAB	zsh (main)
+closed	terminal	idle-session	t-orphan	$LAB	fm-main-successor-2300Z
+closed	terminal	idle-session	t-handoff	$LAB	M4 main Firstmate captain handoff
+keep	terminal	foreign	t-foreign	$LAB/elsewhere	captain lane
+summary: mode=apply terminals=9 closed=2 skipped=0 failed=0 keep=7 browsers=0 stopped=0 skipped=0 failed=0 reap=0 keep=0
+exit=0
+closed by Orca: t-orphan t-handoff 
+dirty file still present: u.txt
+$ FM_HOME=$LAB bin/fm-terminal-reap.sh --min-age 99999 --no-browsers --apply
+keep	terminal	task	t-endpoint	$LAB/ws/fm-dirty	dirty ($LAB)
+keep	terminal	task-worktree	t-extra	$LAB/ws/fm-dirty	dirty ($LAB); Terminal 3
+keep	terminal	unowned-task	t-unowned	$LAB/ws/fm-other	fm-other
+keep	terminal	young	t-captain	$LAB	Terminal 1
+keep	terminal	young	t-path	$LAB	eduardo@m4: ~/orca/projects/firstmate
+keep	terminal	young	t-branch	$LAB	zsh (main)
+keep	terminal	young	t-orphan	$LAB	fm-main-successor-2300Z
+keep	terminal	young	t-handoff	$LAB	M4 main Firstmate captain handoff
+keep	terminal	foreign	t-foreign	$LAB/elsewhere	captain lane
+summary: mode=apply terminals=9 closed=0 skipped=0 failed=0 keep=9 browsers=0 stopped=0 skipped=0 failed=0 reap=0 keep=0
+exit=0
+$ FM_HOME=$LAB bin/fm-terminal-reap.sh --bogus
+error: unknown argument: --bogus
+fm-terminal-reap.sh - list this host's Orca terminals and headless browsers,
+classify each by owner, and close only the orphans.
+
+Usage:
+  fm-terminal-reap.sh [--apply] [--browsers] [--min-age <seconds>] [--no-browsers]
+
+  (default)        dry run: print every verdict and change nothing
+  --apply          close every terminal whose verdict is reap, re-proving
+                   each one just before acting on it; browsers are only
+                   listed unless --browsers is also given
+  --browsers       with --apply, also stop every browser whose verdict is
+                   reap; agent-browser daemons and chrome-devtools-axi
+                   bridges are shared by every client of their socket, so a
+                   browser judged owner-gone may still serve another live
+                   worker (no socket probe is made)
+  --min-age <s>    never reap a terminal session or browser younger than this
+                   many seconds (default 1800), so a session that is still
+                   launching its agent is never mistaken for an idle one
+  --no-browsers    classify terminals only
+
+Output: one tab-separated line per terminal or browser root,
+  <action> <kind> <class> <id> <path> <detail>
+where action is reap or keep on a dry run, and closed, stopped, skipped, or
+failed on --apply; kind is terminal or browser; id is the Orca terminal handle
+or the browser's root pid; detail is the owning task, the terminal title, or
+the browser's command. A final `summary:` line counts each action.
+
