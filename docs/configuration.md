@@ -2059,6 +2059,8 @@ OpenRouter, `systemone`, and OpenAI each require their explicit `FM_DISPATCH_PRO
 With no provider setting, the original typesafe.ai behavior is unchanged: `jev-latest` is used when `TYPESAFE_API_KEY` is available, `FM_DISPATCH_MODEL` is ignored, and the resolver is off otherwise.
 Explicit `FM_DISPATCH_PROVIDER=typesafe` also uses `jev-latest` when no model is set.
 The selected provider's key must be non-empty in the environment or `.env`, with the environment taking precedence; `systemone` is the exception, where an absent `FM_DISPATCH_API_KEY` means the request carries no `Authorization` header.
+For `typesafe` and `openrouter` only, when neither source supplies a key, the resolver reads the provider's entry in the optional `config/dispatch-credential-sources.json`, which names where the key lives (such as a macOS Keychain item) and never holds a key; the [`fm-dispatch-resolve.sh` header](../bin/fm-dispatch-resolve.sh) owns its fields and outcomes, and `bin/fm-credential-source-lib.sh` owns its schema.
+Both implicit and explicit `typesafe` accept an optional `TYPESAFE_BASE` from the environment or `.env` that replaces the `https://api.typesafe.ai` base; it must be an `http://` or `https://` URL with a host and no userinfo, query, fragment, whitespace, or brackets in its path, trailing slashes are dropped, and a rejected value is an actionable configuration error that never echoes the value.
 
 Off means one `dispatch-resolve: off` line on stderr, nothing on stdout, exit 0, and no network call, so firstmate dispatches exactly as it does without the tool.
 This section is the single owner of the tool's operator contract; the script header owns its exact flags and output lines, and "Crew dispatch profiles" above owns the declared top-level, rule, and profile fields it applies.
@@ -2180,7 +2182,7 @@ Firstmate passes its profile line unless it states a reason to override, such as
 
 - The resolver copies every environment-provided key into a non-exported private variable and unsets `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, and `FM_DISPATCH_API_KEY` before launching child processes; bootstrap also protects the typesafe key.
 - The resolver sends only the selected key to `curl` as a header read from a file descriptor, never on argv, and never prints, logs, or writes any key.
-- The typesafe.ai endpoint is `https://api.typesafe.ai/v1/systemone`, the OpenRouter endpoint is `https://openrouter.ai/api/alpha/decisions`, the OpenAI endpoint is `https://api.openai.com/v1/decisions`, and the `systemone` endpoint is `<FM_DISPATCH_BASE_URL>/v1/systemone`.
+- The typesafe.ai endpoint is `https://api.typesafe.ai/v1/systemone` (or `<TYPESAFE_BASE>/v1/systemone`), the OpenRouter endpoint is `https://openrouter.ai/api/alpha/decisions`, the OpenAI endpoint is `https://api.openai.com/v1/decisions`, and the `systemone` endpoint is `<FM_DISPATCH_BASE_URL>/v1/systemone`.
 - The default confidence floor remains 0.6; request timeouts are 5 seconds for typesafe.ai and 10 seconds for OpenRouter, `systemone`, and OpenAI.
 - A CPU-only local `systemone` host may not answer within its 10-second timeout; that is an ordinary `error` outcome, and firstmate keeps its existing intake.
 
@@ -3466,6 +3468,7 @@ FM_DISPATCH_MODEL=      # explicit model for the selected provider; required for
 FM_DISPATCH_BASE_URL=   # http(s) base of a System One-compatible host; required for systemone
 FM_DISPATCH_API_KEY=    # optional systemone key; absent sends no Authorization header
 TYPESAFE_API_KEY=       # typesafe dispatch key, from the environment or .env
+TYPESAFE_BASE=          # optional http(s) base replacing https://api.typesafe.ai for typesafe dispatch
 OPENROUTER_API_KEY=     # OpenRouter dispatch key, from the environment or .env
 OPENAI_API_KEY=         # OpenAI dispatch key, from the environment or .env
 FMX_DISCORD_REPLY_MAX_CHARS=1900   # Discord reply per-message split budget; values below 50 clamp to 50, values above 2000 reset to 1900
