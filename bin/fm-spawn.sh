@@ -131,6 +131,16 @@
 #   only a shell that will not go refuses.
 #   --harness <name> is the explicit per-spawn harness/profile adapter. The old
 #   positional harness arg still works for back-compat.
+#   --budget-inclusive-hard, --budget-inclusive-stop, --budget-fresh-hard, and
+#   --budget-fresh-stop each take a positive whole token count, exactly once and
+#   all together. Stops may not exceed hard caps. A fresh ship, scout, or
+#   secondmate may set them; relaunch keeps the recorded budget. A secondmate
+#   records the lane allocation and each child is measured against that lane
+#   without its own four limits. A child launch is refused before any endpoint
+#   exists when the lane total is not strictly under a recorded stop. A budgeted
+#   relaunch folds final native usage before replacing its source binding;
+#   unknown prior usage is reported and not carried, never blocking launch.
+#   Native usage and watcher enforcement are owned by bin/fm-task-budget.sh.
 #   --hermes-profile <name> selects Hermes's native -p profile for a tmux
 #   crewmate/scout; omission keeps Hermes's default selection. Names follow the
 #   native lowercase 1-64 character grammar. The resolved home is pinned for
@@ -289,17 +299,17 @@
 #   every place held prints one `deferred:` line and exits 75 before any brief
 #   render, endpoint, worktree, record, or backlog move exists, so the task stays
 #   exactly as queued as it was; an unreadable declaration refuses with exit 1.
-#   Lane capacity: only when this home's config/lane-capacity declares
-#   admit-spawns (bin/fm-capacity.sh --spawn-gate-enabled answers; that script
-#   owns the declaration and the verdict), a fresh ship or
-#   scout spawn runs `fm-capacity.sh --spawn-gate` while holding the machine-wide
-#   lane-admission lock in the local root home's state/ (waiting up to 120 s for
-#   it) and keeps holding it through metadata publication; a verdict that does
-#   not admit prints `deferred:` and exits 75 with the task exactly as queued,
-#   and an unreadable declaration refuses with exit 1.
+#   Lane capacity admission is deferred with bin/fm-capacity.sh's
+#   --spawn-gate support (see the note at the project-capacity gate below).
 #   A batch reports such a pair as `batch: DEFERRED` and exits 75 when nothing
 #   else failed. A relaunch and a --secondmate spawn are never counted against
-#   either capacity.
+#   capacity.
+#   Disk alarm: before any lock, brief, endpoint, worktree, record, or backlog
+#   move, a fresh ship or scout runs bin/fm-disk-alarm.sh --gate crew. The human
+#   line stays on stderr and the machine line is discarded. A refusal exits 1
+#   and does not stay queued. A relaunch and a --secondmate spawn are not new
+#   crewmate launches. A refused batch pair is FAILED. bin/fm-disk-alarm.sh owns
+#   the reading and the levels.
 #   With no harness arg, a crewmate/scout spawn resolves the CREW harness only when
 #   config/crew-dispatch.json is absent. When that file exists, crewmate/scout
 #   spawns require an explicit harness so firstmate cannot silently skip dispatch
@@ -2944,6 +2954,20 @@ FACTS
     echo "error: task $ID has no recorded harness; pass --harness to relaunch it" >&2
     exit 1
   }
+  # Gone-secondmate recovery has one owner per path: --secondmate for the
+  # liveness sweep and same-pin restart, and fm-control relaunch that named
+  # --harness or --model (which sets FM_CONTROL_RELAUNCH_TX and stamps the
+  # same token on the record) for a proven-gone quota or control-plane
+  # replace. Direct --relaunch of a gone secondmate is refused so those two
+  # cannot both mint a window. The env var alone is not enough.
+  if [ "$RELAUNCH_REBIND" -eq 1 ] && [ "$KIND" = secondmate ]; then
+    recorded_tx=$(fm_meta_get "$RELAUNCH_META" control_relaunch_tx)
+    if [ -z "${FM_CONTROL_RELAUNCH_TX:-}" ] \
+       || [ "$recorded_tx" != "$FM_CONTROL_RELAUNCH_TX" ]; then
+      echo "error: --relaunch of a gone secondmate is refused except through fm-control relaunch that named --harness or --model on a proven-gone endpoint; recover it with --secondmate" >&2
+      exit 4
+    fi
+  fi
 elif [ "$KIND" = secondmate ]; then
   case "${POS[1]:-}" in
   '' | claude | codex | opencode | pi | pi-signed | grok | kimi | cursor | gemini | muse | rovo | omp | agy | devin | commandcode | droid | polytoken | cortex | kiro | hermes)
@@ -8412,16 +8436,21 @@ else
 fi
 SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
-  awk -F= '
+  awk -F= -v budget_owned="${SPAWN_BUDGET_RECORD:+1}" '
     BEGIN {
-      split("window endpoint_task_id worktree project harness hermes_profile hermes_home kind mode yolo branch tasktmp base_branch upstream_consent forge backup_remote backup_prefix model effort opencode_version account account_provider omp_profile busy_gen spawn_gen approval_mode traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id paseo_terminal_id paseo_workspace_id rex_server rex_session_id rex_window_id rex_block_id t3_thread_id t3_project_id tern_session_id tern_tab_id tern_block_id hc_session hc_terminal home projects control_relaunch_tx polytoken_session polytoken_port polytoken_credential", keys, " ")
+      split("window endpoint_task_id worktree project harness hermes_profile hermes_home kind mode yolo branch tasktmp base_branch upstream_consent forge backup_remote backup_prefix model effort opencode_version account account_provider omp_profile busy_gen spawn_gen approval_mode traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id paseo_terminal_id paseo_workspace_id rex_server rex_session_id rex_window_id rex_block_id t3_thread_id t3_project_id tern_session_id tern_tab_id tern_block_id hc_session hc_terminal home projects control_relaunch_tx polytoken_session polytoken_port polytoken_credential tmux_socket tmux_server_pid tmux_server_identity tmux_window_id", keys, " ")
       for (i in keys) owned[keys[i]] = 1
+      if (budget_owned) {
+        split("budget_inclusive_hard budget_inclusive_stop budget_fresh_hard budget_fresh_stop budget_launch_at budget_worktree budget_log_root budget_launch_marker budget_launch_fingerprint budget_prior_inclusive budget_prior_fresh budget_started_at", budgets, " ")
+        for (i in budgets) owned[budgets[i]] = 1
+      }
     }
     !($1 in owned)
   ' "$RELAUNCH_META"
 }
 {
   echo "window=$META_WINDOW"
+  [ -z "$TMUX_RECORD" ] || printf '%s\n' "$TMUX_RECORD"
   echo "endpoint_task_id=$ID"
   echo "worktree=$WT"
   echo "project=$PROJ_ABS"
@@ -8460,6 +8489,7 @@ preserve_relaunch_meta() {
   [ "$HARNESS" != hermes ] || { echo "hermes_profile=$HERMES_PROFILE"; echo "hermes_home=$HERMES_PROFILE_HOME"; }
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
   echo "spawn_gen=$SPAWN_GEN"
+  [ -z "$SPAWN_BUDGET_RECORD" ] || printf '%s\n' "$SPAWN_BUDGET_RECORD"
   # Default-off writes no traceparent= line.
   # backend= is written only for a non-default (non-tmux) backend, so the
   # default path's meta stays byte-identical (absent backend= means tmux;
@@ -8820,7 +8850,14 @@ case "$LAUNCH" in
   ;;
 esac
 case "$HARNESS" in
-claude | codex | opencode | pi | pi-signed | grok | kimi | gemini | muse | rovo | agy | devin | commandcode | cortex | kiro | hermes)
+codex)
+  if [ -n "${CODEX_HOME:-}" ]; then
+    LAUNCH="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CODEX_HOME=$(shell_quote "$CODEX_HOME") $LAUNCH"
+  else
+    LAUNCH="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI -u CODEX_HOME $LAUNCH"
+  fi
+  ;;
+claude | opencode | pi | pi-signed | grok | kimi | gemini | muse | rovo | agy | devin | commandcode | cortex | kiro | hermes)
   LAUNCH="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI $LAUNCH"
   ;;
 esac

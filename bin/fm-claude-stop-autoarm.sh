@@ -20,8 +20,8 @@
 #     ancestor, or a live lock was recorded under this same trusted Claude
 #     session id (which is what keeps a background session arming after its
 #     transient helper chain is recycled).
-#     When the shared fm_session_lock_pid_blocks_reclaim verdict refuses to
-#     reclaim the recorded owner, the hook stays inert; otherwise it delegates
+#     When the recorded owner is still a live harness (fm_harness_pid_alive),
+#     the hook stays inert; otherwise it delegates
 #     guarded recovery to bin/fm-lock.sh and then re-verifies ownership.
 #     A missing lock, a malformed record, or unresolved ancestry stays inert too,
 #     so a competing session never arms or rewakes.

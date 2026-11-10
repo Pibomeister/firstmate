@@ -519,7 +519,7 @@ block_stop() {
 }
 
 # Another live session owns the home lock under the shared
-# `fm_session_lock_pid_blocks_reclaim` verdict and is neither this session's
+# `fm_session_lock_foreign_owner_live` verdict and is neither this session's
 # harness ancestry nor its trusted id.
 # This session is read-only and cannot arm or repair supervision without
 # stealing ownership, so blocking its Stop would create an impossible loop.

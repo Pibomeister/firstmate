@@ -3690,8 +3690,11 @@ cleanup_firstmate_home_children() {
     retire_busy_state "$sub_state" "$child_id" "$child_busy_gen" || return 1
     teardown_retire_status "$sub_state" "$child_id" "$archive_parent/children/$child_id" || return 1
     fm_wake_queue_prune_task "$sub_state" "$child_id" "$child_t" 2>/dev/null || true
+    if [ "$child_kind" != secondmate ]; then
+      "$SCRIPT_DIR/fm-task-budget.sh" fold-away "$sub_state/lane-budget" "$child_meta" || return 1
+    fi
     fm_backlog_atomic_transition remove "$sub_state/$child_id.meta" "task record" "$sub_state" || return 1
-    rm -f "$sub_state/$child_id.turn-ended" "$sub_state/$child_id.progress" \
+    rm -f "$sub_state/$child_id.turn-ended" "$sub_state/$child_id.turn-start" "$sub_state/$child_id.progress" \
       "$(fm_wake_signal_seen_path "$sub_state" "$sub_state/$child_id.turn-ended")" \
       "$sub_state/$child_id.pi-ext.ts" "$sub_state/$child_id.omp-ext.ts" \
       "$sub_state/$child_id.grok-turnend-token" "$sub_state/$child_id.kimi-turnend-token" \
@@ -3701,6 +3704,7 @@ cleanup_firstmate_home_children() {
       "$sub_state/$child_id.droid-settings.json" "$sub_state/$child_id.droid-session-end" \
       "$sub_state/$child_id.droid-submit-receipts" \
       "$sub_state/$child_id.polytoken-busy.sh" \
+      "$sub_state/$child_id.budget" "$sub_state/$child_id.budget-diagnostic" \
       "$sub_state/.$child_id.branch-outcome-index"
     rm -rf "$sub_state/$child_id.kiro-home"
     chmod u+w "$sub_state/$child_id.git-hooks" 2>/dev/null || true
@@ -4266,6 +4270,7 @@ rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.turn-start" "$STATE/$ID.progress" \
   "$STATE/$ID.droid-settings.json" "$STATE/$ID.droid-session-end" \
   "$STATE/$ID.droid-submit-receipts" \
   "$STATE/$ID.polytoken-busy.sh" "$STATE/$ID.pr-register-refused" \
+  "$STATE/$ID.budget" "$STATE/$ID.budget-diagnostic" \
   "$STATE/.$ID.branch-outcome-index" \
   "$STATE/.secondmate-relaunch-$ID" "$STATE/.secondmate-relaunch-bound-$ID"
 # kiro's per-task home is a directory (its relocated KIRO_HOME holds the hook
