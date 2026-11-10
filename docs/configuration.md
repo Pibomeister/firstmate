@@ -810,6 +810,12 @@ The optional local, gitignored `config/relay-guard` names the network-daemon-bou
 That script's header owns every key, each verdict, the restart limits, the state files, and the install steps.
 [`docs/examples/relay-guard`](examples/relay-guard) is a starting point to copy.
 
+## Host-health probe
+
+[`bin/fm-host-health.sh`](../bin/fm-host-health.sh) runs independent identity, directory-service, GitHub credential/TLS, optional SSH, and uptime/load probes without an agent session.
+Its header and `--help` own the environment settings, beacon format, LaunchAgent rendering, activation, and rollback commands.
+[`tests/fm-host-health.test.sh`](../tests/fm-host-health.test.sh) exercises the executable and rendered LaunchAgent configuration without installing a service or contacting live hosts.
+
 ## Captain self-nudge (`~/.config/firstmate/captain-nudge.json`)
 
 Host-local JSON for `bin/fm-captain-nudge.sh`.
