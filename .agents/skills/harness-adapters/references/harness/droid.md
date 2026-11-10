@@ -30,7 +30,7 @@ No project `.factory/` file or user Factory hook configuration is changed.
 Folder trust is an interactive Droid decision on the isolated worktree; the spawn does not write Factory's trust store.
 Only tmux and Orca can launch Droid because their viewport capture, composer, and lifecycle controls are verified; Herdr and Zellij require live verification before dispatch.
 A history capture could replay a stale trust dialog and send Enter to a live composer.
-The per-task settings leave the operator's `hooksDisabled` policy intact, and spawn refuses when hooks cannot acknowledge the launch brief.
+The per-task settings set `enableHooks=true` even when the operator's global `enableHooks` is false, leave the separate `hooksDisabled` policy intact, and spawn refuses when hooks cannot acknowledge the launch brief.
 Requested effort stays in task metadata but is omitted from Droid settings when no explicit `--model` is given, since the operator's own default model then runs, or when that model's CLI catalog does not establish support for it.
 [`bin/fm-spawn.sh`](../../../../../bin/fm-spawn.sh) owns the model-probe timeout and refusal contract, plus the trust-loop limits and diagnostic controls.
 

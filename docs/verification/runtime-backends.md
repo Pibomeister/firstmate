@@ -3845,6 +3845,8 @@ The recorded tmux composer proof used the live `droid` process identity, the bou
 The Orca proof requires `terminal read --screen` to return `source=screen` and the exact recorded task terminal, then applies the shared shape check owned by [`fm_composer_droid_state`](../../bin/fm-composer-lib.sh).
 The live captures showed `TMUX ⧉` on tmux and `IDE ◌` on Orca.
 The portable [Droid regression](../../tests/fm-droid-harness.test.sh) covers the older pipe-separated footer and the current footer without a pipe, including pending input, a missing timer, and a stale frame above a shell prompt.
+On 2026-11-10, `bash bin/fm-test-run.sh tests/fm-droid-harness.test.sh` printed `ok - Droid task settings enable hooks despite global hooks off without changing user settings`.
+This fixture check exercises generated task settings and the launch hook with a temporary user settings file; it does not run the native Droid CLI.
 The opt-in Orca guard still asserts the observed `IDE ◌` indicator as a version drift check.
 An unrelated process, stale frame, extra row, or unknown terminal reads `unknown` and cannot authorize typed input.
 Orca 1.4.218 delivered Droid's raw Escape and Ctrl+U keys, while its current-generation `SessionEnd` hook marked exit before relaunch or teardown.
