@@ -2649,8 +2649,10 @@ test_spawn_relaunch_origin_probe_timeout_refuses() {
   before=$(git -C "$dir/wt" for-each-ref --format='%(refname) %(objectname)')
   cat > "$dir/fakebin/timeout" <<'SH'
 #!/usr/bin/env bash
+all="$*"
+[ "${1:-}" != -k ] || shift 2
 if [ "$1 $2 $3" = '120 git ls-remote' ]; then
-  printf '%s\n' "$*" > "$FM_FAKE_DIR/probe-timeout"
+  printf '%s\n' "$all" > "$FM_FAKE_DIR/probe-timeout"
   exit 124
 fi
 shift
