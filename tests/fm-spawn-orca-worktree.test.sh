@@ -1876,6 +1876,41 @@ test_orca_claude_relaunch_keeps_the_record_on_a_base_branch() {
   pass "an Orca relaunch keeps the recorded branch while the local copy sits on a base branch outside its prefix"
 }
 
+test_orca_claude_relaunch_keeps_the_full_task_prefix() {
+  local brief
+  orca_claude_live_case claude-nested-out
+  [ -n "$STANDIN" ] || { pass "SKIP: Orca Claude nested-prefix relaunch (no agent stand-in survives here)"; return 0; }
+  brief="$HOME_DIR/data/$TASK/brief.md"
+  # Only the first component of team/ships/<id> matches team/unrelated.
+  echo "branch=team/ships/$TASK" >> "$HOME_DIR/state/$TASK.meta"
+  echo "Ship branch: team/ships/$TASK" >> "$brief"
+  git -C "$WT" checkout -q -b team/unrelated
+  orca_claude_control_relaunch
+  orca_claude_cleanup
+  expect_code 0 "$STATUS" "a copy outside the full task prefix must keep the record"$'\n'"$OUT"
+  [ "$(orca_meta_field branch)" = "team/ships/$TASK" ] \
+    || fail "a branch outside the full task prefix must not be adopted, got '$(orca_meta_field branch)'"
+  assert_contains "$(cat "$brief")" "Ship branch: team/ships/$TASK" "the instructions must keep the recorded branch"
+  assert_not_contains "$(cat "$HOME_DIR/state/$TASK.control-relaunch")" 'branch_correction=' \
+    "a branch outside the full task prefix is not a correction"
+  pass "an Orca relaunch keeps a team/ships/<id> record when the local copy is on team/unrelated"
+}
+
+test_orca_claude_relaunch_follows_the_copy_branch_under_a_nested_prefix() {
+  orca_claude_live_case claude-nested-in
+  [ -n "$STANDIN" ] || { pass "SKIP: Orca Claude nested-prefix correction (no agent stand-in survives here)"; return 0; }
+  echo "branch=team/ships/$TASK" >> "$HOME_DIR/state/$TASK.meta"
+  git -C "$WT" checkout -q -b "team/ships/$TASK-stacked"
+  orca_claude_control_relaunch
+  orca_claude_cleanup
+  expect_code 0 "$STATUS" "a copy under the full task prefix must be followed"$'\n'"$OUT"
+  [ "$(orca_meta_field branch)" = "team/ships/$TASK-stacked" ] \
+    || fail "the record must name the copy's branch, got '$(orca_meta_field branch)'"
+  assert_contains "$(cat "$HOME_DIR/state/$TASK.control-relaunch")" "branch_correction=team/ships/$TASK->team/ships/$TASK-stacked" \
+    "the journal must record the correction"
+  pass "an Orca relaunch follows the local copy's branch under a nested team/ships/ prefix"
+}
+
 test_orca_source_preserves_values_without_utf8_locale
 test_orca_droid_relaunch_connected_shell_without_marker
 test_orca_droid_relaunch_rebinds_only_after_stop_and_terminal_proof
@@ -1907,5 +1942,7 @@ test_orca_claude_relaunch_refuses_when_an_agent_survives_the_close
 test_orca_claude_relaunch_follows_the_copy_branch
 test_orca_claude_relaunch_keeps_the_record_on_a_base_branch
 test_orca_claude_relaunch_keeps_the_record_on_a_scaffolding_branch
+test_orca_claude_relaunch_keeps_the_full_task_prefix
+test_orca_claude_relaunch_follows_the_copy_branch_under_a_nested_prefix
 
 echo "# all fm-spawn-orca-worktree tests passed"

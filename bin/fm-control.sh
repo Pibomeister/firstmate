@@ -138,7 +138,7 @@
 #              replacement rebinds a fresh terminal in the recorded Orca
 #              worktree (docs/orca-backend.md "Agent stop proof").
 #              A ship whose local copy has another branch under the recorded
-#              branch's prefix checked out continues on the copy's branch,
+#              branch's full task prefix checked out continues on the copy's branch,
 #              while any other branch keeps the record: the record,
 #              the instructions, and the progress note name it, and the
 #              journal records `branch_correction=`.
@@ -1494,7 +1494,9 @@ resolve_relaunch_profile() {
 # after the old agent stopped, so this runs while the agent is untouched. It
 # keeps the record when HEAD is detached, unreadable, or already the recorded
 # branch, and corrects the record only to a branch under the
-# recorded branch's own prefix (`fm/` for `fm/<id>`), so the scaffolding branch
+# recorded branch's full task prefix (fm_ship_branch_prefix: `fm/` for
+# `fm/<id>`, `team/ships/` for `team/ships/<id>`; a recorded branch that does
+# not end with the task id has none and keeps the record), so the scaffolding branch
 # a fresh Orca or pooled worktree starts on, before the worker switches to its
 # ship branch, keeps the record. A correction sets RELAUNCH_BRANCH_FROM and
 # RELAUNCH_BRANCH_TO. record_note writes it into the instructions and the
@@ -1502,16 +1504,19 @@ resolve_relaunch_profile() {
 RELAUNCH_BRANCH_FROM=
 RELAUNCH_BRANCH_TO=
 relaunch_branch_check() {
-  local recorded copy
+  local recorded copy prefix
   [ "$KIND" = ship ] || return 0
   recorded=$(fm_meta_get "$META" branch)
   [ -n "$recorded" ] || recorded="fm/$ID"
   copy=$(git -C "$WT" symbolic-ref -q --short HEAD 2>/dev/null) || return 0
   [ -n "$copy" ] && [ "$copy" != "$recorded" ] || return 0
-  case "$recorded" in
-    */*) case "$copy" in "${recorded%%/*}/"?*) ;; *) return 0 ;; esac ;;
-    *) return 0 ;;
-  esac
+  if ! declare -F fm_ship_branch_prefix >/dev/null 2>&1; then
+    # shellcheck source=bin/fm-dod-lib.sh
+    . "$SCRIPT_DIR/fm-dod-lib.sh"
+  fi
+  prefix=$(fm_ship_branch_prefix "$recorded" "$ID")
+  [ -n "$prefix" ] || return 0
+  case "$copy" in "$prefix"?*) ;; *) return 0 ;; esac
   RELAUNCH_BRANCH_FROM=$recorded
   RELAUNCH_BRANCH_TO=$copy
   echo "notice: task $ID records branch $recorded, but its local copy has $copy checked out; the relaunch continues on $copy and records the correction" >&2
