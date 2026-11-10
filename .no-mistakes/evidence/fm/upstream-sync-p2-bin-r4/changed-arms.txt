@@ -1,0 +1,5 @@
+## --list --changed after touching bin/fm-disk-alarm.sh and bin/fm-quota-axi-lib.sh
+tests/fm-disk-alarm.test.sh
+tests/fm-quota-choose.test.sh
+tests/fm-capacity.test.sh
+tests/fm-claude-account-quota.test.sh

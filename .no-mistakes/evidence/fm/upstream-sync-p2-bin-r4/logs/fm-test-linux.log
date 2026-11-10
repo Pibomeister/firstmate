@@ -1,0 +1,6 @@
+1..4
+ok - selects committed, modified, and untracked tests only
+ok - no changed tests needs no runtime
+ok - missing container runtime stops with exit 2
+ok - gnu stat fixture red then green skipped: set FM_TEST_LINUX_CONTAINER=1 with a running container engine
+FM_TEST_COMPLETE

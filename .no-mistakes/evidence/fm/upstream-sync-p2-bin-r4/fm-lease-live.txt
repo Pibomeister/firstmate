@@ -1,0 +1,17 @@
+$ claim t1 --actor main (pin = live session-lock owner)
+exit=0
+$ check t1
+main 47743 1794286634 stale
+exit=0
+$ claim t1 --actor branch (other actor holds live lease)
+exit=0
+$ claim t2 with pin 999999 that does not own the session lock (adversarial)
+error: claim refused - the pinned supervision session no longer owns this home
+exit=6
+$ check t2
+exit=1
+$ release t1
+exit=0
+$ check t1
+branch 47743 1794286634 stale
+exit=0

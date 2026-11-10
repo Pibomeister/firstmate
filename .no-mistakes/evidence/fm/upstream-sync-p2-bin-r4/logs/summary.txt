@@ -1,0 +1,12 @@
+fm-harness-precedence exit=1
+fm-live-lab exit=0
+fm-composer-lib exit=1
+fm-claude-account-quota exit=0
+fm-busy-state exit=0
+fm-busy-adapter-wiring exit=1
+fm-backend-hc exit=0
+fm-tmux-agent-liveness exit=0
+fm-dispatch-resolve exit=0
+fm-task-inbox exit=0
+fm-control-relaunch exit=1
+fm-control exit=0

@@ -1,0 +1,18 @@
+## added kiro lines vs base:
+0
+## hermes-added files:
+bin/backends/tmux.sh
+bin/fm-agent-process-lib.sh
+bin/fm-backend.sh
+bin/fm-hermes-process-lib.sh
+tests/fm-backend.test.sh
+tests/fm-tmux-agent-liveness.test.sh
+## fm-test-run family listings for restored fork-only entries
+-- backend-dispatch
+tests/fm-codex-shell-env.test.sh
+-- live-harness-optin
+tests/fm-grok-quota-handoff-live-e2e.test.sh
+tests/fm-herdr-secondmate-watch-live-e2e.test.sh
+-- changed-path arms (restored)
+FM_TEST_COVERAGE ok total=379 parallel=26 parallel_max_ms=1418942 parallel_imbalance_ms=589 parallel_unhinted=0 serial=337 serial_shards=24 serial_unhinted=16 serial_max_ms=770412 serial_budget_ms=780000 serial_oversized=0 herdr=16
+coverage exit=0
