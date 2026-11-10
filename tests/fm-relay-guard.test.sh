@@ -528,7 +528,7 @@ EOF
   code=$?
   [ "$code" -eq 75 ] || fail "the new owner's lock should still be held (exit 75), got $code: $out"
   kill "$holder" 2>/dev/null
-  kill $(relay_pids m3 7001) 2>/dev/null
+  relay_pids m3 7001 | while read -r p; do kill "$p" 2>/dev/null; done
   stop_daemon
   pass "a pass removes only a lock that still names it as owner"
 }
@@ -556,7 +556,7 @@ test_contenders_on_a_stale_lock_run_one_pass_at_a_time() {
   [ "$(relay_pids m4 7002 | wc -l | tr -d ' ')" -eq 1 ] || fail "concurrent passes started duplicate m4 relays"
   assert_absent "$W/home/state/relay-guard/lock.d"
   [ -z "$(ls -d "$W/home/state/relay-guard"/lock.stale.* 2>/dev/null)" ] || fail "a reclaimed lock was left behind"
-  kill $(relay_pids m3 7001) $(relay_pids m4 7002) 2>/dev/null
+  { relay_pids m3 7001; relay_pids m4 7002; } | while read -r p; do kill "$p" 2>/dev/null; done
   stop_daemon
   pass "contenders racing to reclaim a stale lock run their passes one at a time"
 }
