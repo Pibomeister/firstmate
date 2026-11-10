@@ -480,7 +480,7 @@ The instruction asks the session to persist its open work records, decisions, an
 A primary launches its successor with `bin/fm-handoff-launch.sh <handoff file>` on the home's recorded Orca or tmux backend.
 The launcher and `bin/fm-handoff-ack.sh` implement the acknowledgement and lock-transfer contract owned by `bin/fm-handoff-lib.sh`; its header defines the records and watchdog events.
 The launcher refuses rather than guess when the backend or harness cannot be determined, and it never kills or interrupts the current session.
-Its `--help` owns blocking-call and unfinished-exit behavior.
+Its `--help` owns background-launch and unfinished-exit behavior.
 Orca uses `orca agent launch` with a prompt argument; tmux executes direct argv.
 Orca owns the agent's permission posture; an explicit `auto` home setting currently refuses rather than substituting a shell launch.
 The successor reads the handoff and acknowledges it before running session start.
@@ -488,7 +488,7 @@ The predecessor remains alive until the acknowledgement is validated and the loc
 The predecessor then ends its turn and retires; it must not continue fleet mutations after the transfer.
 Two fresh terminal attempts share one ten-minute budget; the launcher emits a parseable failure if neither completes.
 A missing or invalid acknowledgement cannot move the predecessor's live lock.
-Failed panes remain available for diagnosis, with expired claims that cannot take ownership.
+On Orca, failed panes remain available for diagnosis; on every backend, a failed attempt's expired claim cannot take ownership.
 `bin/fm-captain-locate.sh` reports the verified lock holder and its terminal handle for supervisor discovery; its header owns the output format.
 A second mate never launches its own successor: it appends one relaunch request to its parent channel and stops.
 It fires at most once per context cycle: a session that auto-compacts anyway is told again before its next auto-compact.

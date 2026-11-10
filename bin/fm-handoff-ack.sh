@@ -3,6 +3,8 @@
 # Run by the successor after reading the handoff, BEFORE session-start.
 # Writes the ack owned by fm-handoff-lib.sh, then requests the serialized
 # one-time transfer in fm-lock.sh. Every rejection emits handoff_reject.
+# A predecessor proven dead yields the ordinary stale takeover, recorded as
+# handoff_ack reason=stale_takeover rather than lock_transferred.
 set -eu
 umask 077
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -39,5 +41,7 @@ jq -n --arg nonce "$nonce" --arg sha "$sha" --arg handle "$handle" \
   --arg start "$start" --argjson pid "$pid" \
   '{version:1,nonce:$nonce,sha256:$sha,harness_pid:$pid,fm_lock_pid:$pid,harness_start:$start,terminal_handle:$handle}' > "$tmp"
 mv "$tmp" "$FM_HOME/data/handoff-ack-$nonce.json"
-FM_HANDOFF_NONCE="$nonce" bash "$SCRIPT_DIR/fm-lock.sh" >/dev/null || reject lock_refused
-fm_handoff_event handoff_ack "$nonce" 0 "$pid" "$handle" lock_transferred
+lock_out=$(FM_HANDOFF_NONCE="$nonce" bash "$SCRIPT_DIR/fm-lock.sh") || reject lock_refused
+reason=lock_transferred
+case "$lock_out" in *handoff_takeover=stale_takeover*) reason=stale_takeover ;; esac
+fm_handoff_event handoff_ack "$nonce" 0 "$pid" "$handle" "$reason"

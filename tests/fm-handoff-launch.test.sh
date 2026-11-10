@@ -31,13 +31,23 @@ FM_TEST_STUB_MAX_BLOCK_SECONDS=$((LAB_SUCCESS_BUDGET + LAB_SLACK + LAB_STARTUP))
 export FM_TEST_STUB_MAX_BLOCK_SECONDS
 export FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=$LAB_FAIL_BUDGET
 export PATH="$FAKEBIN:$PATH" FM_HANDOFF_TEST_PIDS="$TMP_ROOT/pids"
-unset FM_BACKEND FM_SESSION_ENDPOINT_META CLAUDE_PID CLAUDE_CODE_SESSION_ID
+unset FM_BACKEND FM_SESSION_ENDPOINT_META CLAUDE_PID CLAUDE_CODE_SESSION_ID TMUX
 FM_HANDOFF_REAL_SLEEP=$(command -v sleep)
 export FM_HANDOFF_REAL_SLEEP
 cat > "$FAKEBIN/sleep" <<'EOF'
 #!/usr/bin/env bash
 if [ "${FM_HANDOFF_LAB_MODE:-}" = error-exit ] && [ "${1:-}" = 0.2 ] \
   && [ -f "$FM_HOME/state/attempts" ]; then exit 42; fi
+# Interrupt the launcher's poll only after the successor commits its transfer.
+if [ "${FM_HANDOFF_LAB_MODE:-}" = interrupt-after-ack ] && [ "${1:-}" = 0.2 ] && [ ! -e "$FM_HOME/state/polling" ] \
+  && [ "$PPID" = "$(cat "$FM_HOME/launcher.pid" 2>/dev/null)" ]; then
+  touch "$FM_HOME/state/polling"
+  end=$((SECONDS + 120))
+  while [ "$(cat "$FM_HOME/state/.lock")" = "$(cat "$FM_HOME/pred.pid")" ] \
+    && [ "$SECONDS" -lt "$end" ]; do "$FM_HANDOFF_REAL_SLEEP" 0.1; done
+  kill -TERM "$PPID"
+  exit 0
+fi
 exec "$FM_HANDOFF_REAL_SLEEP" "$@"
 EOF
 chmod +x "$FAKEBIN/sleep"
@@ -80,7 +90,8 @@ esac
 while [ $# -gt 0 ]; do
   case "$1" in
     -d) shift ;;
-    -t|-c|-n) shift 2 ;;
+    -t) echo "$2" > "$FM_HOME/state/tmux-target"; shift 2 ;;
+    -c|-n) shift 2 ;;
     *) break ;;
   esac
 done
@@ -96,17 +107,37 @@ cat > "$LAB/successor.sh" <<'EOF'
 set -eu
 nonce=$(jq -r .nonce "$FM_HOME/state/.handoff-pending")
 sha=$(jq -r .sha256 "$FM_HOME/state/.handoff-pending")
+wait_for_suite() {
+  while kill -0 "$FM_TEST_SUITE_PID" 2>/dev/null \
+    && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 1; done
+}
 case "$FM_HANDOFF_LAB_MODE" in
   exit) exit 0 ;;
   parse) if command -v zsh >/dev/null; then zsh -c ')'; else bash -c ')'; fi ;;
   reject) bash "$ROOT/bin/fm-lock.sh"; exit ;;
+  no-ack)
+    FM_HANDOFF_NONCE="$nonce" bash "$ROOT/bin/fm-lock.sh" > "$FM_HOME/ack.out" 2>&1 || true
+    wait_for_suite; exit ;;
+  unprovable)
+    cp "$FM_HOME/state/.lock-session" "$FM_HOME/state/session.keep"
+    sed 's/^anchor_start=.*/anchor_start=unprovable/' "$FM_HOME/state/session.keep" > "$FM_HOME/state/.lock-session"
+    bash "$ROOT/bin/fm-handoff-ack.sh" "$nonce" "$sha" > "$FM_HOME/ack.out" 2>&1 || true
+    cp "$FM_HOME/state/session.keep" "$FM_HOME/state/.lock-session"
+    wait_for_suite; exit ;;
+  pred-dies)
+    pred=$(cat "$FM_HOME/pred.pid")
+    kill "$pred"
+    end=$((SECONDS + 60))
+    while kill -0 "$pred" 2>/dev/null && [ "$SECONDS" -lt "$end" ]; do sleep 0.1; done ;;
+  interrupt-after-ack)
+    end=$((SECONDS + 60))
+    while [ ! -e "$FM_HOME/state/polling" ] && [ "$SECONDS" -lt "$end" ]; do sleep 0.1; done ;;
   stale) nonce=00000000000000000000000000000000 ;;
   expired) jq '.deadline=0' "$FM_HOME/state/.handoff-pending" > "$FM_HOME/state/expired"; mv "$FM_HOME/state/expired" "$FM_HOME/state/.handoff-pending" ;;
   wrong-sha) sha=$(printf '%064d' 0) ;;
 esac
 bash "$ROOT/bin/fm-handoff-ack.sh" "$nonce" "$sha" > "$FM_HOME/ack.out" 2>&1 || true
-while kill -0 "$FM_TEST_SUITE_PID" 2>/dev/null \
-  && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 1; done
+wait_for_suite
 EOF
 cat > "$LAB/predecessor.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -133,7 +164,8 @@ run_hook_fixture() {
 run_case() {
   local mode=$1 limit
   test_cleanup_processes
-  rm -f "$LAB/state/".* "$LAB/state/attempts" "$LAB/state/handoff-events.log" "$LAB/state/"successor-*.out "$LAB/rc" "$LAB/ack.out" 2>/dev/null || true
+  rm -f "$LAB/state/".* "$LAB/state/attempts" "$LAB/state/handoff-events.log" "$LAB/state/"successor-*.out "$LAB/rc" "$LAB/ack.out" \
+    "$LAB/state/tmux-target" "$LAB/state/polling" "$LAB/state/session.keep" "$LAB/launcher.pid" "$LAB/pred.pid" 2>/dev/null || true
   printf '%s\n' "${2:-orca}" > "$LAB/config/backend"
   printf '# Quoting-hostile handoff\nRead this document.\n' > "$LAB/data/handoff ) '.md"
   budget=$LAB_FAIL_BUDGET
@@ -146,11 +178,14 @@ run_case() {
       || fail 'the real hook must arm the lab handoff gate'
     [ -e "$LAB/state/.handoff-trigger.lab-predecessor.0" ] || fail 'the lab handoff gate marker must exist'
   fi
-  FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS="$budget" FM_HANDOFF_LAB_MODE="$mode" claude "$LAB/predecessor.sh" &
-  echo "$!" >> "$TMP_ROOT/pids"
+  # Detach the predecessor so its death is not hidden behind an unreaped zombie.
+  (FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS="$budget" FM_HANDOFF_LAB_MODE="$mode" claude "$LAB/predecessor.sh" &
+    echo "$!" >> "$TMP_ROOT/pids")
   limit=$((SECONDS + budget + LAB_SLACK + LAB_STARTUP))
   while [ "$SECONDS" -lt "$limit" ]; do
     [ ! -f "$LAB/rc" ] || return 0
+    if [ "$mode" = pred-dies ] && [ -f "$LAB/launcher.pid" ] \
+      && ! kill -0 "$(cat "$LAB/launcher.pid")" 2>/dev/null; then return 0; fi
     sleep 0.1
   done
   fail "handoff did not finish: $(cat "$LAB/launch.out" 2>/dev/null)"
@@ -291,7 +326,42 @@ run_case success tmux
 [ "$(cat "$LAB/rc")" = 0 ] || fail "tmux direct argv must transfer: $(cat "$LAB/launch.out") $(cat "$LAB/ack.out" 2>/dev/null)"
 assert_contains "$(bash "$ROOT/bin/fm-captain-locate.sh")" 'handle=%9' 'tmux discovery uses the successor pane'
 run_hook_fixture Stop >/dev/null 2>&1 || fail 'tmux completion must clear Stop gate'
-pass 'tmux launches direct argv and transfers the verified lock'
+# The fake server answers display-message with an unrelated session.
+[ "$(cat "$LAB/state/tmux-target")" = "=firstmate-$(basename "$LAB"):" ] \
+  || fail "outside tmux the successor must open in this home's session, not $(cat "$LAB/state/tmux-target")"
+pass 'tmux launches direct argv outside tmux in its home session and transfers the verified lock'
+export TMUX=/tmp/lab-tmux,1,0
+run_case success tmux
+unset TMUX
+[ "$(cat "$LAB/rc")" = 0 ] || fail "tmux inside a session must transfer: $(cat "$LAB/launch.out")"
+[ "$(cat "$LAB/state/tmux-target")" = '=lab:' ] || fail 'inside tmux the successor must open in the current session'
+pass 'tmux inside a session opens the successor in that session'
+
+# A signal after the successor's committed transfer records completion only.
+run_case interrupt-after-ack
+[ "$(cat "$LAB/rc")" = 0 ] || fail "a committed transfer must not be reported as failed: $(cat "$LAB/launch.out")"
+[ -e "$LAB/state/polling" ] || fail 'the interrupt must arrive during the launcher poll'
+[ "$(grep -c ' event=handoff_failed ' "$LAB/state/handoff-events.log" || true)" = 0 ] \
+  || fail "an interrupt after transfer must not emit handoff_failed: $(cat "$LAB/state/handoff-events.log")"
+[ "$(grep -c ' event=handoff_ack .* reason=lock_transferred$' "$LAB/state/handoff-events.log")" = 1 ] \
+  || fail 'the committed transfer must have exactly one ack outcome'
+[ -e "$LAB/state/.handoff-successor" ] || fail 'cleanup must record the committed completion'
+[ "$(cat "$LAB/state/.lock")" != "$(cat "$LAB/pred.pid")" ] || fail 'lock did not transfer'
+cat "$LAB/state/handoff-events.log"
+pass 'DRILL interrupt-after-ack: one completion outcome, no contradictory failure'
+
+# A predecessor that dies before the ack leaves an ordinary stale lock.
+run_case pred-dies
+[ -e "$LAB/state/.handoff-successor" ] || fail "the orphaned launcher must record the completed takeover: $(cat "$LAB/ack.out")"
+ack_pid=$(jq -r .harness_pid "$LAB/data/handoff-ack-$(sed -n 's/^nonce=//p' "$LAB/state/.handoff-successor").json")
+[ "$(cat "$LAB/state/.lock")" = "$ack_pid" ] || fail "the successor must take a dead predecessor's lock: $(cat "$LAB/ack.out")"
+[ "$(grep -c ' event=handoff_ack .* reason=stale_takeover$' "$LAB/state/handoff-events.log")" = 1 ] \
+  || fail "the stale takeover must be named in the log: $(cat "$LAB/state/handoff-events.log")"
+grep -q 'reason=lock_held$' "$LAB/state/handoff-events.log" && fail 'a dead predecessor must not log lock_held'
+assert_not_contains "$(cat "$LAB/ack.out")" 'another live firstmate session' 'a dead predecessor is not reported live'
+[ "$(grep -c ' event=handoff_failed ' "$LAB/state/handoff-events.log" || true)" = 0 ] || fail 'a stale takeover is not a failed handoff'
+cat "$LAB/state/handoff-events.log"
+pass 'DRILL pred-dies: the successor takes the stale lock and the log names that path'
 
 run_case success unsupported-backend
 [ "$(cat "$LAB/rc")" != 0 ] || fail 'unsupported backend must refuse'
@@ -303,7 +373,7 @@ run_case success
 rm "$LAB/config/claude-permission-mode"
 pass 'unsupported backends and unenforceable permission posture refuse before launch'
 
-for mode in exit parse reject wrong-sha stale expired hung-launch; do
+for mode in exit parse reject no-ack unprovable wrong-sha stale expired hung-launch; do
   run_case "$mode"
   [ "$(cat "$LAB/rc")" != 0 ] || fail "$mode must fail"
   [ "$(cat "$LAB/state/attempts")" = 2 ] || fail "$mode must retry exactly once in a fresh pane"
@@ -320,6 +390,11 @@ for mode in exit parse reject wrong-sha stale expired hung-launch; do
       || fail 'a session refused during the pending window must log lock_held_unbound'
     grep -q ' event=handoff_reject nonce=[0-9a-f]* .* reason=lock_held$' "$LAB/state/handoff-events.log" \
       && fail 'a refusal without the claim nonce must never be a bound successor reject'
+  fi
+  if [ "$mode" = no-ack ] || [ "$mode" = unprovable ]; then
+    grep -q ' event=handoff_reject nonce=[0-9a-f]* .* reason=lock_held$' "$LAB/state/handoff-events.log" \
+      || fail "$mode must be refused at the live or unprovable predecessor lock"
+    grep -q 'reason=stale_takeover' "$LAB/state/handoff-events.log" && fail "$mode must never take over"
   fi
   cat "$LAB/state/handoff-events.log"
   if [ "$mode" = parse ]; then cat "$LAB/state/"successor-*.out; fi

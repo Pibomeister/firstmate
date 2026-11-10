@@ -18,7 +18,11 @@
 # live claim that did not present the claim's nonce. It is NOT a successor
 # reject and must not end an attempt; only a nonce-bound handoff_reject does.
 # An unfinished launcher's signal/error exit emits handoff_failed with
-# reason=interrupted or reason=error, respectively.
+# reason=interrupted or reason=error, respectively, unless the lock already
+# moved to the acknowledged successor; then it records completion instead.
+# handoff_ack reason=lock_transferred is a verified transfer from a live
+# predecessor; reason=stale_takeover means the predecessor was proven dead and
+# the successor took the lock through the ordinary stale-owner path.
 
 fm_handoff_event() { # <event> <nonce> <attempt> <pid> <handle> <reason>
   local line handle=$5 nonce=$2 pid=$4

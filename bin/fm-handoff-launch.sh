@@ -3,13 +3,16 @@
 # Only the current lock owner can prepare a claim. Launches via Orca agent
 # argv (never a shell command string), or tmux's direct argv execution.
 # Two fresh terminals share a total 600-second deadline, 300 seconds each.
-# Allow that full wait on a blocking tool call, or run in the background and
-# collect the exit status and output before reporting readiness.
+# Setup and cleanup add to that budget, so a foreground tool timeout of 600
+# seconds cannot cover it. Run in the background and collect the exit status
+# and output before reporting readiness.
 # A successor must read the document and call fm-handoff-ack.sh with its nonce
 # and digest. fm-lock.sh validates that ack before moving the live lock.
-# The predecessor is never killed. Failed attempts retain their panes for
-# diagnosis; their nonce expires and cannot later take ownership.
-# Every unfinished exit after handoff_started emits one handoff_failed event.
+# The predecessor is never killed. On Orca, failed attempts retain their panes
+# for diagnosis. A failed attempt's nonce expires and cannot take ownership.
+# Every unfinished exit after handoff_started emits one handoff_failed event,
+# unless the lock already moved to a successor with a valid ack: that exit
+# records completion instead.
 # Outputs only the versioned events owned by fm-handoff-lib.sh. Other errors
 # go to stderr. state/.handoff-successor is written only after lock verification.
 # Test-only: FM_TEST_SEAM=1 enables FM_HANDOFF_TEST_HARNESS and
@@ -93,12 +96,15 @@ cleanup() {
   local rc=$?
   trap - EXIT HUP INT TERM
   set +e
+  if [ -n "$NONCE" ] && [ "$CLAIM_HELD" != 1 ] && fm_lock_acquire_wait_max "$STATE/.lock.acquire" 10; then
+    CLAIM_HELD=1
+  fi
+  if [ "$HANDOFF_COMPLETE" -eq 0 ] && [ -n "$NONCE" ] && transfer_committed && record_completion; then
+    rc=0
+  fi
   if [ "$HANDOFF_COMPLETE" -eq 0 ] \
     && { [ "$HANDOFF_STARTED" -eq 1 ] || [ "$HANDOFF_FAIL_REQUESTED" -eq 1 ]; }; then
     fm_handoff_event handoff_failed "$NONCE" "$attempt" "$PRED_PID" none "$HANDOFF_FAILURE_REASON" >&9
-  fi
-  if [ -n "$NONCE" ] && [ "$CLAIM_HELD" != 1 ] && fm_lock_acquire_wait_max "$STATE/.lock.acquire" 10; then
-    CLAIM_HELD=1
   fi
   if [ "$CLAIM_HELD" = 1 ] && [ -n "$NONCE" ] \
     && [ "$(jq -r '.nonce // ""' "$STATE/.handoff-pending" 2>/dev/null)" = "$NONCE" ]; then
@@ -107,7 +113,7 @@ cleanup() {
   if [ "$CLAIM_HELD" = 1 ]; then fm_lock_release "$STATE/.lock.acquire"; fi
   fm_lock_release "$STATE/.handoff-launch.lock"
   exec 9>&-
-  return "$rc"
+  exit "$rc"
 }
 trap cleanup EXIT
 trap 'HANDOFF_FAILURE_REASON=interrupted; exit 1' HUP INT TERM
@@ -129,6 +135,13 @@ take_claim() {
     fm_lock_try_acquire "$STATE/.lock.acquire" || return 1
   fi
   CLAIM_HELD=1
+}
+
+transfer_committed() {
+  local pid
+  pid=$(cat "$STATE/.lock" 2>/dev/null) || return 1
+  [ "$pid" != "$PRED_PID" ] && fm_handoff_ack_valid "$NONCE" "$HANDOFF" "$SHA256" "$pid" \
+    && fm_session_lock_anchor_instance_matches "$STATE"
 }
 
 record_completion() {
@@ -174,7 +187,8 @@ for attempt in 1 2; do
           --surface terminal --prompt "$PROMPT" --json > "$STATE/.handoff-launch-result" 2>&1 || true
         ;;
       tmux)
-        SESS=$(tmux display-message -p '#{session_name}' 2>/dev/null) || SESS="firstmate-$(basename "$FM_HOME")"
+        SESS=
+        if [ -n "${TMUX:-}" ]; then SESS=$(tmux display-message -p '#{session_name}' 2>/dev/null) || SESS=; fi
         SESS=${SESS:-firstmate-$(basename "$FM_HOME")}
         if tmux has-session -t "=$SESS" >/dev/null 2>&1; then
           fm_run_timed "$remaining" "${BACKEND_EXEC[@]}" tmux new-window -d -t "=$SESS:" -c "$FM_HOME" -n firstmate claude "${PERM_ARGS[@]}" "$PROMPT" > "$STATE/.handoff-launch-result" 2>&1 || true
@@ -187,11 +201,7 @@ for attempt in 1 2; do
   while :; do
     # Check success before the deadline: a transfer that committed just before
     # expiry must be accepted even if the parent was scheduled after expiry.
-    pid=$(cat "$STATE/.lock" 2>/dev/null) || pid=
-    if [ "$pid" != "$PRED_PID" ] && fm_handoff_ack_valid "$NONCE" "$HANDOFF" "$SHA256" "$pid" \
-      && fm_session_lock_anchor_instance_matches "$STATE"; then
-      if record_completion; then exit 0; fi
-    fi
+    if transfer_committed && record_completion; then exit 0; fi
     [ "$SECONDS" -lt "$ATTEMPT_END" ] || break
     sleep 0.2
   done

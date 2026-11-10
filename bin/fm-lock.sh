@@ -318,6 +318,22 @@ refuse_live_owner() {  # <recorded-pid>
   exit 1
 }
 
+# A handoff successor needs a valid ack while the recorded owner is live.
+# A proven-dead owner takes the ordinary stale path; a pid that still exists
+# without a live owner verdict is doubt and refuses.
+HANDOFF_TAKEOVER=verified_transfer
+handoff_transfer_refused() {  # <recorded-pid>
+  [ -n "${FM_HANDOFF_NONCE:-}" ] || return 1
+  if fm_session_lock_recorded_owner_live "$STATE"; then
+    ! fm_handoff_can_transfer "$me" "$1"
+    return
+  fi
+  case "$1" in ''|*[!0-9]*) return 0 ;; esac
+  ! kill -0 "$1" 2>/dev/null || return 0
+  HANDOFF_TAKEOVER=stale_takeover
+  return 1
+}
+
 if [ -f "$LOCK" ] && [ ! -L "$LOCK" ]; then
   old=$(cat "$LOCK" 2>/dev/null || true)
   if fm_session_lock_owned_by_self "$STATE"; then
@@ -377,7 +393,7 @@ if [ -z "$REANCHOR" ]; then
   LEASE_LOCK_HELD=1
   # The ack must still be valid at the actual mutation, after waiting for
   # leases. Both claim and lease locks are held through publication.
-  if [ -n "${FM_HANDOFF_NONCE:-}" ] && ! fm_handoff_can_transfer "$me" "${old:-}"; then
+  if handoff_transfer_refused "${old:-}"; then
     refuse_live_owner "${old:-}"
   fi
   for lease in "$STATE"/.lease-*; do
@@ -390,7 +406,7 @@ if [ -z "$REANCHOR" ]; then
     }
   done
 fi
-if [ -n "${FM_HANDOFF_NONCE:-}" ] && ! fm_handoff_can_transfer "$me" "${old:-}"; then
+if handoff_transfer_refused "${old:-}"; then
   refuse_live_owner "${old:-}"
 fi
 publish_lock_session_or_die
@@ -445,4 +461,5 @@ fi
 commit_lock_session
 release_lease_lock
 release_claim_lock
+[ -z "${FM_HANDOFF_NONCE:-}" ] || echo "handoff_takeover=$HANDOFF_TAKEOVER"
 echo "lock acquired: harness pid $me"
