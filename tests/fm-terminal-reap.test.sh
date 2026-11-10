@@ -573,7 +573,7 @@ test_browsers_are_reaped_only_without_a_live_owner() {
   : > "$FX/ppid1-$headless"; : > "$FX/ppid1-$other"
   # A browser path with spaces is one word only when that file exists, so
   # another program's separate arguments never join into one.
-  local appexe spaced joined
+  local appexe spaced joined crash
   appexe="$TMP_ROOT/Apps/Google Chrome.app/Contents/MacOS/Google Chrome"
   mkdir -p "${appexe%/*}"; : > "$appexe"
   fake_headless "$appexe"; spaced=$PID
@@ -582,7 +582,17 @@ test_browsers_are_reaped_only_without_a_live_owner() {
   disown "$joined" 2>/dev/null || true
   TRACKED_PIDS+=("$joined")
   await_exec "$joined"
-  : > "$FX/ppid1-$spaced"; : > "$FX/ppid1-$joined"
+  # A crash handler inside a Playwright browser's .app bundle is part of
+  # that browser.
+  crash="$TMP_ROOT/ms-playwright/chromium-1/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Helpers/chrome_crashpad_handler"
+  mkdir -p "${crash%/*}"; : > "$crash"
+  ( exec -a "$crash" bash -c 'sleep 600 & wait' "$crash" --monitor-self ) >/dev/null 2>&1 </dev/null &
+  crash=$!
+  disown "$crash" 2>/dev/null || true
+  TRACKED_PIDS+=("$crash")
+  await_exec "$crash"
+  : > "$FX/ppid1-$spaced"; : > "$FX/ppid1-$joined"; : > "$FX/ppid1-$crash"
+  cwd_row "$crash" "$FX/crash-dir"
   cwd_row "$spaced" "$FX/spaced-dir"
   cwd_row "$joined" "$FX/joined-dir"
   # A chrome-devtools-axi bridge is a root, and node scripts given a bridge or
@@ -612,6 +622,7 @@ test_browsers_are_reaped_only_without_a_live_owner() {
   expect "$other" "" "an orphaned --headless program that is no browser executable must never be listed as a browser"
   expect "$spaced" "reap owner-gone" "an orphaned headless browser at a path with spaces is a browser root"
   expect "$joined" "" "separate arguments of another program never join into a browser path"
+  expect "$crash" "reap owner-gone" "an orphaned crash handler inside a Playwright browser bundle is a browser root"
   expect "$bridge" "reap owner-gone" "a chrome-devtools-axi bridge node runs is a browser root"
   expect "$cfgarg" "" "a node script given a bridge path as an argument must never be listed as a browser"
   expect "$daemonarg" "" "a node script given a daemon path as an argument must never be listed as a browser"

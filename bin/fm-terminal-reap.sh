@@ -78,10 +78,11 @@
 # named by the script node runs (the command line's first word, or the second
 # after node), and
 # automation browsers whose parent has exited: a browser executable (Chrome,
-# Chromium, Edge, Firefox, or a headless shell), named by the command line's
-# first word (a path with spaces counts only when that file exists), started
-# with --headless or --remote-debugging-pipe or from a
-# Playwright or Puppeteer build. Another program is never listed, even when a
+# Chromium, Edge, Firefox, a headless shell, or any file inside a browser's .app
+# bundle, such as its crash handler), started with --headless or
+# --remote-debugging-pipe or from a Playwright or Puppeteer build. The
+# executable is the command line's first word, or, for a path with spaces, its
+# shortest prefix that is an existing file. Another program is never listed, even when a
 # browser, daemon, or bridge path or --headless is among its arguments. Each root is
 # judged by its working directory, together with every process under it:
 #   keep task          it works in a recorded task's worktree
@@ -332,7 +333,20 @@ if (mode === "terminals") {
     emit();
   }
 } else if (mode === "browsers") {
-  const browserExe = /^((\/([^/ ]+|[^/]*\.app))*\/)?(Google Chrome( for Testing)?|Chromium|chrome|chromium|chromium-browser|chrome-headless-shell|headless_shell|msedge|Microsoft Edge|firefox)( |$)/;
+  const browserName = /^(Google Chrome( for Testing)?|Chromium|chrome|chromium|chromium-browser|chrome-headless-shell|headless_shell|chrome_crashpad_handler|msedge|Microsoft Edge|firefox)$/;
+  const browserBundle = /\/(Google Chrome( for Testing)?|Chromium|Microsoft Edge|Firefox)\.app\/Contents\//;
+  const isFile = (f) => { try { return fs.statSync(f).isFile(); } catch (_) { return false; } };
+  // executable: the command line's executable path. A path with spaces is
+  // one word only up to the shortest prefix that is an existing file, so
+  // another program's separate arguments never join into one; otherwise it
+  // is the first word.
+  const executable = (a) => {
+    for (let i = a.indexOf(" "); i > 0; i = a.indexOf(" ", i + 1)) {
+      if (a.startsWith("/") && isFile(a.slice(0, i))) return a.slice(0, i);
+    }
+    if (a.startsWith("/") && isFile(a)) return a;
+    return a.split(" ")[0];
+  };
   const daemonScript = /^((\S*\/)?node(js)? )?(\S*\/agent-browser\/(\S*\/)?daemon\.js|\S*\/chrome-devtools-axi-bridge(\.js)?)( |$)/;
   const isRoot = (p) => {
     const a = p.args;
@@ -340,17 +354,12 @@ if (mode === "terminals") {
     // argument some other program was given.
     if (daemonScript.test(a)) return true;
     if (p.ppid !== 1) return false;
-    // An automation browser is a browser executable, named by the command
-    // line's first word (a path whose only spaced parts are .app bundles and
-    // the executable's own name, and which exists when it has spaces), run headless, pipe-debugged, or from a
-    // Playwright or Puppeteer build. A browser path passed as an argument to
-    // another program never counts.
-    const exe = browserExe.exec(a);
-    if (!exe) return false;
-    // A path with spaces is only one word when that file exists, so separate
-    // arguments are never read as one browser path.
-    const path = exe[0].replace(/ $/, "");
-    if (path.includes(" ") && !(() => { try { return fs.statSync(path).isFile(); } catch (_) { return false; } })()) return false;
+    // An automation browser is a browser executable (by name, or any file
+    // inside a browser's .app bundle, such as its crash handler), run
+    // headless, pipe-debugged, or from a Playwright or Puppeteer build. A
+    // browser path passed as an argument to another program never counts.
+    const exe = executable(a);
+    if (!browserName.test(exe.split("/").pop()) && !(isFile(exe) && browserBundle.test(exe))) return false;
     return /((^| )(--headless(=\S*)?|--remote-debugging-pipe)( |$)|\/ms-playwright\/|puppeteer_dev_chrome_profile|playwright_chromiumdev_profile)/.test(a);
   };
   const matched = new Set([...procs.values()].filter(isRoot).map((p) => p.pid));
