@@ -719,9 +719,10 @@ EOF
 }
 
 # A shim for one external command: its first call, from anywhere in the guard's
-# process tree, marks itself and holds for 2s before running the real command,
-# so a case can SIGKILL the guard while that child is still alive.
-holding_shim() {  # <command>
+# process tree, waits for the release file before running the real command,
+# so a case can SIGKILL the guard while that child is still alive. Mark command
+# completion so a case can check the state after the orphaned write finishes.
+holding_shim() {  # <command> <release-file>
   local real
   real=$(type -P "$1") || fail "no $1 on PATH"
   mkdir -p "$W/shim"
@@ -729,14 +730,73 @@ holding_shim() {  # <command>
 #!/bin/sh
 if "$MKDIR_BIN" "$W/held.$1" 2>/dev/null; then
   : > "$W/holding.$1"
-  "$SLEEP_BIN" 2
+  i=0
+  while [ ! -f "$2" ] && [ "\$i" -lt 300 ]; do
+    "$SLEEP_BIN" 0.1
+    i=\$((i + 1))
+  done
 fi
-exec "$real" "\$@"
+"$real" "\$@"
+rc=\$?
+: > "$W/finished.$1"
+exit "\$rc"
 EOF
   chmod +x "$W/shim/$1"
 }
 
-test_no_child_of_a_killed_guard_holds_the_lock() {
+test_a_killed_guards_pending_start_write_cannot_erase_a_later_start() {
+  local c gpid out code before state
+  for c in rm mv; do
+    world
+    start_daemon
+    conf <<EOF
+daemon=$DAEMON_NAME
+relay.m3=$W/fake-relay.sh m3 7001
+probe.m3=$W/fake-probe.sh m3
+max-restarts=2
+window-secs=3600
+backoff-secs=0
+settle-secs=1
+EOF
+    state=$W/home/state/relay-guard
+    mkdir -p "$state"
+    # With no history start_allowed deletes .starts; with live history it
+    # replaces .starts. A pending old write must never erase a newer append.
+    [ "$c" != mv ] || date +%s > "$state/m3.starts"
+    holding_shim "$c" "$W/release"
+    FM_HOME="$W/home" PATH="$W/shim:$PATH" bash "$GUARD" once >"$W/old.out" 2>&1 &
+    gpid=$!
+    wait_for_file "$W/holding.$c" || fail "fixture is vacuous: no pending $c of .starts"
+    kill -KILL "$gpid" 2>/dev/null
+    wait "$gpid" 2>/dev/null
+
+    out=$(guard once 2>&1)
+    code=$?
+    # A safe implementation may hold the lock until its pending write ends.
+    # On the broken guard this pass succeeds, allowing the actual erasure
+    # below to be observed rather than failing only on lock ownership.
+    [ "$code" -eq 0 ] || [ "$code" -eq 75 ] || fail "successor exited $code: $out"
+    if [ "$code" -eq 0 ]; then
+      before=$(cat "$state/m3.starts")
+      [ -n "$before" ] || fail "successor did not record its start"
+    fi
+    : > "$W/release"
+    wait_for_file "$W/finished.$c" || fail "pending $c did not finish"
+    if [ "$code" -eq 0 ]; then
+      assert_equals "$before" "$(cat "$state/m3.starts" 2>/dev/null)" "orphaned $c erased the successor's start record"
+    else
+      out=$(guard once 2>&1)
+      code=$?
+      [ "$code" -eq 0 ] || fail "successor after pending $c exited $code: $out"
+    fi
+    [ -s "$state/m3.starts" ] || fail "successor's start record is absent after $c"
+    pkill -f "$W/fake-relay.sh m3 7001" 2>/dev/null
+    stop_daemon
+  done
+  pass "pending start-history deletion and replacement cannot erase a successor's restart record after SIGKILL"
+}
+
+test_only_pending_state_writes_of_a_killed_guard_hold_the_lock() {
   local c gpid out code
   for c in date ps awk rm sleep mv; do
     world
@@ -754,7 +814,7 @@ probe.m3=$W/fake-probe.sh m3
 settle-secs=1
 term-wait-secs=1
 EOF
-    holding_shim "$c"
+    holding_shim "$c" "$W/release"
     FM_HOME="$W/home" PATH="$W/shim:$PATH" bash "$GUARD" once >/dev/null 2>&1 &
     gpid=$!
     wait_for_file "$W/holding.$c" || fail "fixture is vacuous: the pass never ran $c"
@@ -762,12 +822,19 @@ EOF
     wait "$gpid" 2>/dev/null
     out=$(guard once 2>&1)
     code=$?
-    [ "$code" -ne 75 ] || fail "the guard died while its $c child ran, and that child still holds the pass lock: $out"
-    sleep 2
+    case "$c" in
+      rm|mv) [ "$code" -eq 75 ] || fail "pending state write $c lost the lock: $out" ;;
+      *) [ "$code" -ne 75 ] || fail "the guard's $c child still holds the pass lock: $out" ;;
+    esac
+    : > "$W/release"
+    wait_for_file "$W/finished.$c" || fail "held $c did not finish"
+    out=$(guard once 2>&1)
+    code=$?
+    [ "$code" -ne 75 ] || fail "finished $c left the pass lock held: $out"
     pkill -f "$W/fake-relay.sh m3 7001" 2>/dev/null
     stop_daemon
   done
-  pass "a guard killed while any child it started still runs leaves no holder of the pass lock"
+  pass "only pending state writes retain a killed guard's lock, and release it on completion"
 }
 
 # A ps shim for the guard's start-time reads. At the <n>th read it changes the
@@ -900,12 +967,13 @@ test_relay_started_in_the_daemon_restart_second_is_restarted() {
 }
 
 fm_test_run \
+  test_a_killed_guards_pending_start_write_cannot_erase_a_later_start \
   test_a_crashed_pass_never_blocks_the_next \
   test_concurrent_passes_never_overlap \
   test_a_relay_pid_reused_during_the_probe_is_not_signaled \
   test_leading_zero_numbers_are_decimal \
   test_kill_spares_a_pid_that_is_no_longer_the_relay \
-  test_no_child_of_a_killed_guard_holds_the_lock \
+  test_only_pending_state_writes_of_a_killed_guard_hold_the_lock \
   test_each_term_rechecks_its_own_pid_first \
   test_each_kill_rechecks_its_own_pid_first \
   test_relay_started_in_the_daemon_restart_second_is_restarted \
