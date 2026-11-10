@@ -124,6 +124,7 @@ test_success_path_records_a_live_successor() {
   assert_contains "$cmd" "bin/fm-session-start.sh" "the successor prompt runs session start after the predecessor dies"
   assert_contains "$cmd" "--await-predecessor $PRED_PID" "the successor waits for the old session with the bounded wait"
   assert_contains "$cmd" "addendum" "the successor reads only the hashed document"
+  assert_contains "$cmd" "$LAB/data/handoff.md.late-orders" "the successor reads the late-orders file for orders recorded after its launch"
   assert_contains "$cmd" "bin/fm-crew-state.sh" "the successor re-checks worker and PR facts at pickup"
   assert_contains "$cmd" "bin/fm-order.sh pickup" "the successor re-checks open orders at pickup"
   assert_contains "$cmd" "once" "the successor runs session start once"

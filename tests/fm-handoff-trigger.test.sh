@@ -961,9 +961,10 @@ test_deliberate_handoff_stop_ends_the_idle_predecessor() {
 }
 
 # A captain order filed during the predecessor's settle keeps the old session,
-# because its handoff does not list the order. Once the session writes the
-# order into the same handoff with handoff --doc, which rewrites the handoff
-# record after the successor record, the next stop still ends the old session.
+# because its handoff does not list the order. The session reruns handoff
+# --doc, which rewrites the handoff record after the successor record and lists
+# the order in the document's late-orders file, leaving the document the
+# successor hash-checks unchanged; the next stop still ends the old session.
 test_deliberate_handoff_rerun_after_a_settle_order_ends_the_predecessor() {
   local t="$TMP_ROOT/t-delib-rerun" end="$PRIMARY/state/.handoff-end" doc="$PRIMARY/data/delib-rerun.md" succ pred n
   reset_lab
@@ -989,7 +990,8 @@ test_deliberate_handoff_rerun_after_a_settle_order_ends_the_predecessor() {
     printf "%s\n" "$rc" > "$TMP_ROOT/end-stop2.rc"' '
     FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handoff --doc "$DELIB_DOC" >/dev/null
     sleep 1
-    printf "pid=%s\nhandoff=%s\npredecessor=%s\n" "$DELIB_SUCC" "$DELIB_DOC" "$$" > "$PRIMARY/state/.handoff-successor"')
+    printf "pid=%s\nhandoff=%s\npredecessor=%s\n" "$DELIB_SUCC" "$DELIB_DOC" "$$" > "$PRIMARY/state/.handoff-successor"
+    cp "$DELIB_DOC" "$TMP_ROOT/delib-rerun-launched.md"')
   wait_for_file "$TMP_ROOT/end-stop2.rc" 200 || fail "the second stop never ran"
   assert_equals 0 "$(cat "$TMP_ROOT/end-stop.rc")" "the first stop passes"
   assert_contains "$(cat "$TMP_ROOT/first-end")" "reason=order-gate" "an order filed during the settle keeps the old session"
@@ -1003,12 +1005,16 @@ test_deliberate_handoff_rerun_after_a_settle_order_ends_the_predecessor() {
   while kill -0 "$pred" 2>/dev/null && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
   ! kill -0 "$pred" 2>/dev/null || fail "the old session must be gone"
   kill -0 "$succ" 2>/dev/null || fail "the successor must survive"
+  cmp -s "$doc" "$TMP_ROOT/delib-rerun-launched.md" ||
+    fail "the rerun must leave the launched handoff document unchanged, so the successor's hash still matches"
+  assert_contains "$(cat "$doc.late-orders")" "$(find "$PRIMARY/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')" \
+    "the order filed during the settle is listed in the late-orders file"
   kill "$pred" "$succ" 2>/dev/null; wait "$pred" "$succ" 2>/dev/null
   unset DELIB_DOC DELIB_SUCC
-  rm -rf "$PRIMARY/data/orders" "$doc" "$end" "$PRIMARY/state/.lock" "$PRIMARY/state/.order-handoff" \
+  rm -rf "$PRIMARY/data/orders" "$doc" "$doc.late-orders" "$end" "$PRIMARY/state/.lock" "$PRIMARY/state/.order-handoff" \
     "$PRIMARY/state/.handoff-successor" "$PRIMARY/config/handoff-trigger" "$TMP_ROOT/end-stop.rc" \
-    "$TMP_ROOT/end-stop2.rc" "$TMP_ROOT/first-end"
-  pass "a deliberate handoff rerun after an order filed during the settle still ends the old session"
+    "$TMP_ROOT/end-stop2.rc" "$TMP_ROOT/first-end" "$TMP_ROOT/delib-rerun-launched.md"
+  pass "a deliberate handoff rerun after an order filed during the settle leaves the document unchanged and still ends the old session"
 }
 
 # An auto-compaction after the successor launch and before the stop runs the
@@ -1061,7 +1067,7 @@ test_deliberate_handoff_survives_a_compaction_before_its_stop() {
   kill -0 "$succ" 2>/dev/null || fail "the successor must survive"
   kill "$pred" "$succ" 2>/dev/null; wait "$pred" "$succ" 2>/dev/null
   unset DELIB_DOC DELIB_SUCC
-  rm -rf "$PRIMARY/data/orders" "$doc" "$end" "$PRIMARY/state/.lock" "$PRIMARY/state/.order-handoff" \
+  rm -rf "$PRIMARY/data/orders" "$doc" "$doc.late-orders" "$end" "$PRIMARY/state/.lock" "$PRIMARY/state/.order-handoff" \
     "$PRIMARY/state/.handoff-successor" "$PRIMARY/state/captain-handle" "$PRIMARY/config/handoff-trigger" "$TMP_ROOT/end-stop.rc" \
     "$TMP_ROOT/compact-block.rc" "$TMP_ROOT/compact-block.err" "$TMP_ROOT/compact-active.rc"
   pass "a deliberate handoff whose stop follows a compaction blocks once for a missing order, then still ends the old session"

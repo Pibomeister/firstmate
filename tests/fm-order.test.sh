@@ -263,6 +263,57 @@ test_restart_gate_requires_every_open_order_in_the_handoff() {
   pass "the restart gate passes only while this session's recorded handoff lists every open order"
 }
 
+# A successor confirms its handoff document's sha256, so once a live successor
+# holds the document, handoff --doc never changes it: the open orders go to the
+# document's late-orders file, which the gate and covers also read. With the
+# successor gone, handoff --doc writes into the document again, so a relaunch
+# hashes it whole.
+test_handoff_after_a_successor_launch_leaves_the_document_unchanged() {
+  local home doc first second third succ out rc=0
+  home=$(make_home late-orders)
+  doc="$home/data/launched-handoff.md"
+  printf '# Handoff\n' >"$doc"
+  run_order "$home" send "before the launch" >/dev/null
+  first=$(only_id "$home" pending)
+  run_order "$home" handoff --doc "$doc" >/dev/null
+  assert_contains "$(cat "$doc")" "$first" "before any launch, handoff --doc writes into the document"
+  sleep 60 &
+  succ=$!
+  printf '%s\n' "$$" >"$home/state/.lock"
+  printf 'pid=%s\nhandoff=%s\npredecessor=%s\n' "$succ" "$doc" "$$" >"$home/state/.handoff-successor"
+  cp "$doc" "$TMP_ROOT/launched-handoff.copy"
+
+  sleep 1
+  run_order "$home" send "after the launch" >/dev/null
+  second=$(find "$home/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//' | grep -v "$first")
+  rc=0
+  run_order "$home" covers "$doc" >/dev/null || rc=$?
+  assert_equals 3 "$rc" "an order that arrived after the launch is not yet listed"
+  out=$(run_order "$home" handoff --doc "$doc")
+  cmp -s "$doc" "$TMP_ROOT/launched-handoff.copy" || fail "handoff --doc must never change a document a live successor holds"
+  assert_contains "$out" "$doc.late-orders" "handoff --doc says where it wrote the orders"
+  assert_contains "$(cat "$doc.late-orders")" "$second" "the late-orders file lists the order that arrived after the launch"
+  run_order "$home" covers "$doc" >/dev/null || fail "covers counts an order listed in the late-orders file"
+  run_order "$home" gate >/dev/null || fail "the gate counts an order listed in the late-orders file"
+
+  sleep 1
+  run_order "$home" send "after the rerun" >/dev/null
+  third=$(find "$home/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//' | grep -v "$first" | grep -v "$second")
+  rc=0
+  run_order "$home" covers "$doc" >/dev/null || rc=$?
+  assert_equals 3 "$rc" "a newer order is missing from both until handoff --doc runs again"
+  run_order "$home" handoff --doc "$doc" >/dev/null
+  cmp -s "$doc" "$TMP_ROOT/launched-handoff.copy" || fail "a second rerun must also leave the document unchanged"
+  assert_contains "$(cat "$doc.late-orders")" "$third" "the rerun lists the newer order"
+  assert_equals 1 "$(grep -c 'CAPTAIN ORDERS' "$doc.late-orders")" "each rerun replaces the late-orders list instead of appending another"
+  run_order "$home" covers "$doc" >/dev/null || fail "covers passes once the late-orders file lists every open order"
+
+  kill "$succ" 2>/dev/null; wait "$succ" 2>/dev/null || true
+  run_order "$home" handoff --doc "$doc" >/dev/null
+  assert_contains "$(cat "$doc")" "$third" "with the successor gone, handoff --doc writes into the document again"
+  pass "handoff --doc leaves a live successor's document unchanged and lists later orders in its late-orders file"
+}
+
 # --- holds ---------------------------------------------------------------------
 
 test_hold_overrides_older_orders_and_travels_with_relays() {
@@ -572,6 +623,7 @@ test_two_stage_ack_separates_receipt_from_completion
 test_handle_is_resolved_at_send_time
 test_doorbell_defers_over_an_unproven_composer
 test_restart_gate_requires_every_open_order_in_the_handoff
+test_handoff_after_a_successor_launch_leaves_the_document_unchanged
 test_one_sweep_runs_at_a_time
 test_hold_overrides_older_orders_and_travels_with_relays
 test_holds_read_fails_when_the_store_is_unreadable
