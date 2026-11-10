@@ -456,6 +456,30 @@ test_unreadable_owner_facts_keep_terminals() {
   [ "$RC" = 1 ] || fail "an unreadable task record must fail the inventory with exit 1, got $RC"
   [ ! -s "$FX/closed.log" ] || fail "an unreadable task record must close nothing, closed: $(cat "$FX/closed.log")"
   chmod 644 "$HOME_DIR/state/other.meta"
+
+  # A home or data directory that cannot be searched hides its records, so it
+  # fails the inventory rather than reading as a home with none.
+  rm -f "$FX/onshow-term-first"
+  chmod 000 "$HOME_DIR"
+  run_reap --apply --no-browsers
+  chmod 755 "$HOME_DIR"
+  [ "$RC" = 1 ] || fail "an unsearchable home must fail the inventory with exit 1, got $RC"
+  [ ! -s "$FX/closed.log" ] || fail "an unsearchable home must close nothing, closed: $(cat "$FX/closed.log")"
+  mkdir -p "$HOME_DIR/data"
+  chmod 000 "$HOME_DIR/data"
+  run_reap --apply --no-browsers
+  chmod 755 "$HOME_DIR/data"
+  [ "$RC" = 1 ] || fail "an unsearchable data directory must fail the inventory with exit 1, got $RC"
+  [ ! -s "$FX/closed.log" ] || fail "an unsearchable data directory must close nothing, closed: $(cat "$FX/closed.log")"
+  # The same holds for the fresh read just before a close.
+  : > "$FX/closed.log"
+  printf '#!/usr/bin/env bash\nchmod 000 %q\n' "$HOME_DIR" > "$FX/onshow-term-first"
+  chmod +x "$FX/onshow-term-first"
+  run_reap --apply --no-browsers
+  chmod 755 "$HOME_DIR"
+  expect term-second "skipped idle-session:now-unreadable-records" "a close whose home turns unsearchable must be skipped"
+  closed=$(tr '\n' ' ' < "$FX/closed.log")
+  [ "$closed" = 'term-first ' ] || fail "only the terminal re-proved before the home turned unsearchable may close, got '$closed'"
   pass "fm-terminal-reap: unreadable records keep their terminals"
 }
 
@@ -534,6 +558,20 @@ test_browsers_are_reaped_only_without_a_live_owner() {
   fake_headless "$TMP_ROOT/browser-bin/chrome-headless-shell"; headless=$PID
   headless_program "$TMP_ROOT/browser-bin/chrome"; other=$PID
   : > "$FX/ppid1-$headless"; : > "$FX/ppid1-$other"
+  # A browser path with spaces is one word only when that file exists, so
+  # another program's separate arguments never join into one.
+  local appexe spaced joined
+  appexe="$TMP_ROOT/Apps/Google Chrome.app/Contents/MacOS/Google Chrome"
+  mkdir -p "${appexe%/*}"; : > "$appexe"
+  fake_headless "$appexe"; spaced=$PID
+  ( exec -a "$TMP_ROOT/py/python3" bash -c 'sleep 600 & wait' worker.py "Chrome.app/Contents/MacOS/Google Chrome" --headless ) >/dev/null 2>&1 </dev/null &
+  joined=$!
+  disown "$joined" 2>/dev/null || true
+  TRACKED_PIDS+=("$joined")
+  await_exec "$joined"
+  : > "$FX/ppid1-$spaced"; : > "$FX/ppid1-$joined"
+  cwd_row "$spaced" "$FX/spaced-dir"
+  cwd_row "$joined" "$FX/joined-dir"
   # A chrome-devtools-axi bridge is a root, and node scripts given a bridge or
   # daemon path as an argument are not.
   fake_script "$TMP_ROOT/lib/node_modules/chrome-devtools-axi/dist/bin/chrome-devtools-axi-bridge.js"; bridge=$PID
@@ -559,6 +597,8 @@ test_browsers_are_reaped_only_without_a_live_owner() {
   expect "$task" "keep task" "a browser in a recorded task worktree belongs to that task"
   expect "$headless" "reap owner-gone" "an orphaned headless browser executable is a browser root"
   expect "$other" "" "an orphaned --headless program that is no browser executable must never be listed as a browser"
+  expect "$spaced" "reap owner-gone" "an orphaned headless browser at a path with spaces is a browser root"
+  expect "$joined" "" "separate arguments of another program never join into a browser path"
   expect "$bridge" "reap owner-gone" "a chrome-devtools-axi bridge node runs is a browser root"
   expect "$cfgarg" "" "a node script given a bridge path as an argument must never be listed as a browser"
   expect "$daemonarg" "" "a node script given a daemon path as an argument must never be listed as a browser"
@@ -582,6 +622,7 @@ test_browsers_are_reaped_only_without_a_live_owner() {
   kill -0 "$task" 2>/dev/null || fail "an apply must leave a task's browser running"
   kill -0 "$reused" 2>/dev/null || fail "an apply must never signal a possibly reused pid"
   kill -0 "$other" 2>/dev/null || fail "an apply must never signal a --headless program that is no browser"
+  kill -0 "$joined" 2>/dev/null || fail "an apply must never signal a program whose arguments only look like a browser path"
   kill -0 "$cfgarg" 2>/dev/null || fail "an apply must never signal a program given a bridge path"
   kill -0 "$daemonarg" 2>/dev/null || fail "an apply must never signal a program given a daemon path"
   pass "fm-terminal-reap: browsers are stopped only when nothing else works in their directory"

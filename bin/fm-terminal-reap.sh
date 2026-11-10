@@ -28,8 +28,8 @@
 #
 # Exit status: 0 when the inventory was read (and, with --apply, every reap
 # succeeded or was safely skipped); 1 when an inventory read failed, including
-# an unreadable task record or secondmate registry, in which case nothing is
-# closed; 2 on a usage error; 3 when --apply hit a failure.
+# an unreadable home, task record, or secondmate registry, in which case
+# nothing is closed; 2 on a usage error; 3 when --apply hit a failure.
 #
 # Owners. The script reads this home's state/*.meta records and, through each
 # home's data/secondmates.md, every local secondmate home's records, read-only.
@@ -79,7 +79,8 @@
 # after node), and
 # automation browsers whose parent has exited: a browser executable (Chrome,
 # Chromium, Edge, Firefox, or a headless shell), named by the command line's
-# first word, started with --headless or --remote-debugging-pipe or from a
+# first word (a path with spaces counts only when that file exists), started
+# with --headless or --remote-debugging-pipe or from a
 # Playwright or Puppeteer build. Another program is never listed, even when a
 # browser, daemon, or bridge path or --headless is among its arguments. Each root is
 # judged by its working directory, together with every process under it:
@@ -160,6 +161,23 @@ phys() {  # <path> -> the physical path when it exists, else the path itself
   fi
 }
 
+# absent <path>: 0 only when <path> provably does not exist: the nearest
+# existing ancestor is a searchable directory, so a failed lookup is never
+# read as a missing entry.
+absent() {
+  local p=$1 parent
+  case "$p" in /*) ;; *) return 1 ;; esac
+  while :; do
+    parent=${p%/*}; [ -n "$parent" ] || parent=/
+    if [ -d "$parent" ]; then
+      [ -x "$parent" ] && [ ! -e "$p" ] && [ ! -L "$p" ]
+      return
+    fi
+    if [ -e "$parent" ] || [ -L "$parent" ]; then return 1; fi
+    p=$parent
+  done
+}
+
 # collect_owners: every home root and recorded task, as `home<TAB>path` and
 # `rec<TAB>home<TAB>id<TAB>terminal<TAB>worktree` lines on stdout.
 collect_owners() {
@@ -172,8 +190,10 @@ collect_owners() {
     seen="$seen$home "
     printf 'home\t%s\n' "$home"
     # A record that cannot be read is an owner this run cannot see, so the
-    # whole read fails rather than treating it as absent.
-    if [ -e "$home/state" ] && { [ ! -r "$home/state" ] || [ ! -x "$home/state" ]; }; then return 1; fi
+    # whole read fails rather than treating it as absent; so does a home, or
+    # its state or data directory, that cannot be searched.
+    [ -d "$home" ] && [ -r "$home" ] && [ -x "$home" ] || return 1
+    if ! absent "$home/state" && { [ ! -d "$home/state" ] || [ ! -r "$home/state" ] || [ ! -x "$home/state" ]; }; then return 1; fi
     for meta in "$home"/state/*.meta; do
       [ -f "$meta" ] || continue
       [ -r "$meta" ] || return 1
@@ -184,7 +204,7 @@ collect_owners() {
       printf 'rec\t%s\t%s\t%s\t%s\n' "$home" "$id" "$terminal" "$worktree"
     done
     reg="$home/data/secondmates.md"
-    [ -e "$reg" ] || continue
+    if absent "$home/data" || absent "$reg"; then continue; fi
     [ -f "$reg" ] && [ -r "$reg" ] || return 1
     while IFS= read -r line || [ -n "$line" ]; do
       secondmate_registry_parse_line "$line" || continue
@@ -192,7 +212,8 @@ collect_owners() {
       case "$SECONDMATE_REGISTRY_HOME" in
         \~/*) SECONDMATE_REGISTRY_HOME="$HOME/${SECONDMATE_REGISTRY_HOME#\~/}" ;;
       esac
-      [ -d "$SECONDMATE_REGISTRY_HOME" ] || continue
+      if absent "$SECONDMATE_REGISTRY_HOME"; then continue; fi
+      [ -d "$SECONDMATE_REGISTRY_HOME" ] || return 1
       queue+=("$(phys "$SECONDMATE_REGISTRY_HOME")")
     done < "$reg"
   done
@@ -200,7 +221,7 @@ collect_owners() {
 
 read_inventory() {
   collect_owners > "$WORK/owners.tsv" || {
-    echo "error: a task record or secondmate registry could not be read; nothing was closed" >&2; return 1; }
+    echo "error: a home, task record, or secondmate registry could not be read; nothing was closed" >&2; return 1; }
   orca terminal list --json > "$WORK/terminals.json" 2>/dev/null || {
     echo "error: orca terminal list failed; nothing was closed" >&2; return 1; }
   orca diagnostics memory --json > "$WORK/memory.json" 2>/dev/null || {
@@ -321,11 +342,16 @@ if (mode === "terminals") {
     if (p.ppid !== 1) return false;
     // An automation browser is a browser executable, named by the command
     // line's first word (a path whose only spaced parts are .app bundles and
-    // the executable's own name), run headless, pipe-debugged, or from a
+    // the executable's own name, and which exists when it has spaces), run headless, pipe-debugged, or from a
     // Playwright or Puppeteer build. A browser path passed as an argument to
     // another program never counts.
-    return browserExe.test(a)
-      && /((^| )(--headless(=\S*)?|--remote-debugging-pipe)( |$)|\/ms-playwright\/|puppeteer_dev_chrome_profile|playwright_chromiumdev_profile)/.test(a);
+    const exe = browserExe.exec(a);
+    if (!exe) return false;
+    // A path with spaces is only one word when that file exists, so separate
+    // arguments are never read as one browser path.
+    const path = exe[0].replace(/ $/, "");
+    if (path.includes(" ") && !(() => { try { return fs.statSync(path).isFile(); } catch (_) { return false; } })()) return false;
+    return /((^| )(--headless(=\S*)?|--remote-debugging-pipe)( |$)|\/ms-playwright\/|puppeteer_dev_chrome_profile|playwright_chromiumdev_profile)/.test(a);
   };
   const matched = new Set([...procs.values()].filter(isRoot).map((p) => p.pid));
   const roots = [...matched].filter((pid) => {
