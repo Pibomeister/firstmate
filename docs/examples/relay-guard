@@ -1,0 +1,32 @@
+# config/relay-guard - the network-daemon-bound relays one host's
+# bin/fm-relay-guard.sh owns (its header owns the full contract). Copy this into
+# a local, gitignored config/relay-guard on the relay host and edit every path,
+# port, and probe target to match the host's existing launcher.
+#
+# This example is the Grok Bot box shape: one m3-forward.mjs relay per paired
+# Orca environment (M3, M4, Studio), all bound to tailscaled. Each relay.<name>
+# line must equal the running relay's command line (an interpreter such as
+# `node` may precede it in ps), so run `fm-relay-guard.sh scan` first and confirm
+# every existing relay is matched before you install the unit.
+#
+# Every relay needs a probe.<name> that reaches the paired environment through
+# that relay. A local port check is not enough: a stale relay still accepts
+# connections and forwards nothing.
+daemon=tailscaled
+
+relay.m3=/usr/bin/node /opt/grok-bot/m3-forward.mjs --listen 127.0.0.1:7101 --target m3:7000
+probe.m3=/usr/bin/curl -fsS --max-time 5 -o /dev/null http://127.0.0.1:7101/health
+
+relay.m4=/usr/bin/node /opt/grok-bot/m3-forward.mjs --listen 127.0.0.1:7102 --target m4:7000
+probe.m4=/usr/bin/curl -fsS --max-time 5 -o /dev/null http://127.0.0.1:7102/health
+
+relay.studio=/usr/bin/node /opt/grok-bot/m3-forward.mjs --listen 127.0.0.1:7103 --target studio:7000
+probe.studio=/usr/bin/curl -fsS --max-time 5 -o /dev/null http://127.0.0.1:7103/health
+
+# Restart a relay after two failed probes in a row, at most three times in
+# fifteen minutes, with backoff between attempts.
+probe-fails=2
+probe-timeout-secs=10
+max-restarts=3
+window-secs=900
+backoff-secs=30
