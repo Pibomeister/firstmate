@@ -26,6 +26,18 @@ remote_cleanup() {
   REMOTE_HOST="" REMOTE_DIR="" REMOTE_LOCAL=""
 }
 
+# Offload is opt-in per project, named by the origin URL's last path segment.
+remote_project_listed() {
+  local url name
+  url=$(git config --get remote.origin.url 2>/dev/null) || return 1
+  url=${url%/}
+  url=${url%.git}
+  name=${url##*[/:]}
+  [ -n "$name" ] || return 1
+  case ",$OFFLOAD_PROJECTS," in *",$name,"*) return 0 ;; esac
+  return 1
+}
+
 # Prepare before starting any workload. A failed preparation can safely fall
 # back to local admission. Once remote_exec starts, no local retry is safe.
 remote_prepare() {
@@ -53,14 +65,16 @@ remote_prepare() {
       done < "$REMOTE_LOCAL/all"
       if ! git clone -q --depth=1 --no-checkout "file://$root" "$REMOTE_LOCAL/repo" >/dev/null 2>&1 ||
         ! git -C "$REMOTE_LOCAL/repo" read-tree HEAD ||
-        ! tar -cf "$REMOTE_LOCAL/tree.tar" -C "$root" --null -T "$REMOTE_LOCAL/files"; then
+        ! tar -cf "$REMOTE_LOCAL/tree.tar" -C "$root" --null -T "$REMOTE_LOCAL/files" ||
+        ! mkdir "$REMOTE_LOCAL/queue" ||
+        ! cp "$SCRIPT_DIR/fm-test-queue.sh" "$SCRIPT_DIR/fm-test-queue-remote.sh" "$REMOTE_LOCAL/queue/"; then
         remote_cleanup
         return 1
       fi
     fi
     echo "fm-test-queue: preparing compressed snapshot for $host" >&2
-    if (set -o pipefail; tar -czf - -C "$REMOTE_LOCAL" repo/.git tree.tar |
-      remote_ssh "$host" "tar -xzf - -C $(remote_quote "$dir") && tar -xf $(remote_quote "$dir/tree.tar") -C $(remote_quote "$dir/repo")" >/dev/null 2>&1); then
+    if (set -o pipefail; tar -czf - -C "$REMOTE_LOCAL" repo/.git tree.tar queue |
+      remote_ssh "$host" "tar -xzf - -C $(remote_quote "$dir") && tar -xf $(remote_quote "$dir/tree.tar") -C $(remote_quote "$dir/repo") && cd $(remote_quote "$dir/repo$rel") && test -f $(remote_quote "$dir/queue/fm-test-queue.sh")" >/dev/null 2>&1); then
       REMOTE_ROOT="$dir/repo"
       REMOTE_CWD="$REMOTE_ROOT$rel"
       LOCAL_ROOT=$root
@@ -83,7 +97,7 @@ remote_exec() {
     command="$command $(remote_quote "$arg")"
   done
   : > "$REMOTE_LOCAL/execution-uncertain"
-  remote_ssh "$REMOTE_HOST" "cd $(remote_quote "$REMOTE_CWD") && FM_HOME=$(remote_quote "$REMOTE_ROOT") FM_TEST_QUEUE_REMOTE_DISABLE=1 bash $(remote_quote "$REMOTE_ROOT/bin/fm-test-queue.sh") run --$command"
+  remote_ssh "$REMOTE_HOST" "cd $(remote_quote "$REMOTE_CWD") && FM_HOME=$(remote_quote "$REMOTE_ROOT") FM_TEST_QUEUE_REMOTE_DISABLE=1 bash $(remote_quote "$REMOTE_DIR/queue/fm-test-queue.sh") run --$command"
   rc=$?
   if [ "$rc" -lt 128 ]; then rm -f "$REMOTE_LOCAL/execution-uncertain"; fi
   return "$rc"

@@ -54,9 +54,16 @@
 # Optional remote_hosts is a comma-separated list of SSH aliases (for example
 # m3,hetzner). offload_threshold defaults to 8. Above that load, the head ticket
 # with a free slot first tries those hosts in order, with noninteractive SSH.
-# Both settings live in the shared config; an empty host list disables offload.
+# offload_projects is a comma-separated list of project names, matched against
+# the last path segment of the caller checkout's origin URL without .git; it
+# defaults to firstmate, whose suites are self-contained Bash. A project not on
+# the list always uses local admission.
+# These settings live in the shared config; an empty host or project list
+# disables offload.
 # A failed preparation falls back to ordinary local admission and retries after
-# 60 seconds while waiting. It never bypasses the local ceiling or slot limit.
+# 60 seconds while waiting. Preparation includes the snapshot upload and the
+# queue scripts, which travel beside the snapshot rather than inside it, so a
+# failure before the suite starts never becomes a test result. It never bypasses the local ceiling or slot limit.
 # Remote runs use the remote user's queue and its local load/slot policy;
 # FM_TEST_QUEUE_REMOTE_DISABLE=1 prevents recursive offloading there.
 # The transport snapshots the current Git checkout (shallow HEAD, tracked and
@@ -143,6 +150,7 @@ load_config() {
   LOAD_CEILING=16
   REMOTE_HOSTS=""
   OFFLOAD_THRESHOLD=8
+  OFFLOAD_PROJECTS=firstmate
   if [ -f "$CONFIG_FILE" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
       line=${line%%#*}
@@ -156,6 +164,7 @@ load_config() {
         load_ceiling) LOAD_CEILING=$value ;;
         remote_hosts) REMOTE_HOSTS=$value ;;
         offload_threshold) OFFLOAD_THRESHOLD=$value ;;
+        offload_projects) OFFLOAD_PROJECTS=$value ;;
         *) die "unknown key in $CONFIG_FILE: $key" ;;
       esac
     done < "$CONFIG_FILE"
@@ -165,6 +174,7 @@ load_config() {
   is_positive_number "$LOAD_CEILING" || die "load_ceiling must be a positive number, got '$LOAD_CEILING'"
   is_positive_number "$OFFLOAD_THRESHOLD" || die "offload_threshold must be a positive number, got '$OFFLOAD_THRESHOLD'"
   case "$REMOTE_HOSTS" in *[!a-zA-Z0-9@._,-]*|-*|*,-*|,*|*,|*,,*) die "remote_hosts must contain comma-separated SSH aliases" ;; esac
+  case "$OFFLOAD_PROJECTS" in *[!a-zA-Z0-9._,-]*|,*|*,|*,,*) die "offload_projects must contain comma-separated project names" ;; esac
   is_positive_number "$POLL" || die "FM_TEST_QUEUE_POLL must be a positive number, got '$POLL'"
 }
 
@@ -403,7 +413,7 @@ take_ticket() {  # <label>
 
 # Under the lock: decide whether this ticket may be served now. Prints the
 # reason it must wait (empty when admitted) and the position.
-WAIT_REASON="" POSITION=0 WANT_REMOTE=0
+WAIT_REASON="" POSITION=0 WANT_REMOTE=0 OFFLOAD_LISTED=0
 admission_check() {
   local f serving=0 head="" pos=0 load=""
   POSITION=0
@@ -424,7 +434,7 @@ admission_check() {
     WAIT_REASON="all $SLOTS slot(s) busy"
   else
     load=$(load1) || load=""
-    if [ -z "$REMOTE_HOST" ] && [ -n "$REMOTE_HOSTS" ] && [ "${FM_TEST_QUEUE_REMOTE_DISABLE:-}" != 1 ] &&
+    if [ -z "$REMOTE_HOST" ] && [ "$OFFLOAD_LISTED" = 1 ] &&
       [ -n "$load" ] && awk -v l="$load" -v c="$OFFLOAD_THRESHOLD" 'BEGIN { exit !(l + 0 > c + 0) }'; then
       WANT_REMOTE=1
     fi
@@ -474,6 +484,10 @@ cmd_run() {
   trap 'exit 143' TERM
   trap 'exit 129' HUP
   trap 'exit 131' QUIT
+
+  if [ -n "$REMOTE_HOSTS" ] && [ "${FM_TEST_QUEUE_REMOTE_DISABLE:-}" != 1 ] && remote_project_listed; then
+    OFFLOAD_LISTED=1
+  fi
 
   take_ticket "$label"
   n=$MY_NUMBER
