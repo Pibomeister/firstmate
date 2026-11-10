@@ -3690,11 +3690,8 @@ cleanup_firstmate_home_children() {
     retire_busy_state "$sub_state" "$child_id" "$child_busy_gen" || return 1
     teardown_retire_status "$sub_state" "$child_id" "$archive_parent/children/$child_id" || return 1
     fm_wake_queue_prune_task "$sub_state" "$child_id" "$child_t" 2>/dev/null || true
-    if [ "$child_kind" != secondmate ]; then
-      "$SCRIPT_DIR/fm-task-budget.sh" fold-away "$sub_state/lane-budget" "$child_meta" || return 1
-    fi
     fm_backlog_atomic_transition remove "$sub_state/$child_id.meta" "task record" "$sub_state" || return 1
-    rm -f "$sub_state/$child_id.turn-ended" "$sub_state/$child_id.turn-start" "$sub_state/$child_id.progress" \
+    rm -f "$sub_state/$child_id.turn-ended" "$sub_state/$child_id.progress" \
       "$(fm_wake_signal_seen_path "$sub_state" "$sub_state/$child_id.turn-ended")" \
       "$sub_state/$child_id.pi-ext.ts" "$sub_state/$child_id.omp-ext.ts" \
       "$sub_state/$child_id.grok-turnend-token" "$sub_state/$child_id.kimi-turnend-token" \
@@ -3704,11 +3701,11 @@ cleanup_firstmate_home_children() {
       "$sub_state/$child_id.droid-settings.json" "$sub_state/$child_id.droid-session-end" \
       "$sub_state/$child_id.droid-submit-receipts" \
       "$sub_state/$child_id.polytoken-busy.sh" \
-      "$sub_state/$child_id.budget" "$sub_state/$child_id.budget-diagnostic" \
       "$sub_state/.$child_id.branch-outcome-index"
+    rm -rf "$sub_state/$child_id.kiro-home"
     chmod u+w "$sub_state/$child_id.git-hooks" 2>/dev/null || true
     rm -rf "$sub_state/$child_id.git-hooks" "$sub_state/$child_id.push-guard" \
-      "$sub_state/$child_id.cortex-plugin" \
+      "$sub_state/$child_id.cortex-plugin" "$sub_state/$child_id.hermes-hooks" \
       "$sub_state/$child_id.polytoken-config" \
       "$sub_state/$child_id.polytoken-sessions" \
       "$sub_state/$child_id.polytoken-sessions-v1"
@@ -4265,13 +4262,16 @@ rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.turn-start" "$STATE/$ID.progress" \
   "$STATE/$ID.control-relaunch" "$STATE/$ID.control-relaunch.meta-prior" \
   "$STATE/$ID.control-relaunch.brief-prior" "$STATE/$ID.control-relaunch.note" \
   "$STATE/$ID.reconcile-nudged" "$STATE/$ID.gemini-settings.json" \
-  "$STATE/$ID.claude-settings.json" "$STATE/$ID.devin-config.json"  \
+  "$STATE/$ID.claude-settings.json" "$STATE/$ID.devin-config.json" \
   "$STATE/$ID.droid-settings.json" "$STATE/$ID.droid-session-end" \
   "$STATE/$ID.droid-submit-receipts" \
-  "$STATE/$ID.polytoken-busy.sh" \
-  "$STATE/$ID.budget" "$STATE/$ID.budget-diagnostic" \
+  "$STATE/$ID.polytoken-busy.sh" "$STATE/$ID.pr-register-refused" \
   "$STATE/.$ID.branch-outcome-index" \
   "$STATE/.secondmate-relaunch-$ID" "$STATE/.secondmate-relaunch-bound-$ID"
+# kiro's per-task home is a directory (its relocated KIRO_HOME holds the hook
+# agent config, the trust setting, and this task's sessions), so it needs a
+# recursive removal rather than the file rm above.
+rm -rf "$STATE/$ID.kiro-home"
 # The steering inbox (bin/fm-task-inbox-lib.sh) is runtime state for the
 # retired endpoint; teardown only runs after landing is confirmed, so any
 # leftover unhandled steer here is moot rather than unlanded work.
@@ -4286,7 +4286,7 @@ chmod u+w "$STATE/$ID.git-hooks" 2>/dev/null || true
 # state/<id>.cortex-plugin is the per-task Cortex Code plugin directory
 # (bin/fm-cortex-plugin.sh) carrying the busy-state hooks.
 rm -rf "$STATE/$ID.inbox" "$STATE/$ID.git-hooks" "$STATE/$ID.push-guard" \
-  "$STATE/$ID.cortex-plugin" \
+  "$STATE/$ID.cortex-plugin" "$STATE/$ID.hermes-hooks" \
   "$STATE/$ID.polytoken-config" \
   "$STATE/$ID.polytoken-sessions" "$STATE/$ID.polytoken-sessions-v1"
 # A presentation journal the close path left behind is orphaned once the

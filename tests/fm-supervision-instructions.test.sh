@@ -335,6 +335,7 @@ test_cross_harness_ordinary_continuation_and_repair_matrix() {
   pass "renderer preserves every harness ordinary-continuation and missing-cycle repair path"
 }
 
+
 test_pi_signed_preserves_identity_with_pi_supervision_protocol() {
   local out ordinary
   out=$("$RENDER" --harness pi-signed)
@@ -425,4 +426,34 @@ test_pi_signed_preserves_identity_with_pi_supervision_protocol
 test_grok_is_background_notify
 test_grok_command_sources_effective_config
 test_pi_snippet_uses_effective_extension_path
+test_literal_paths_in_rendered_snippets() {
+  local name home harness out quoted_config
+  for name in normal 'R&D "double" '\''single'\'' home'; do
+    home="$TMP_ROOT/$name"
+    mkdir -p "$home/config" "$home/state"
+    : > "$home/config/supervision-host-off"
+    quoted_config="'$(printf '%s' "$home/config/x-mode.env" | sed "s/'/'\\\\''/g")'"
+    for harness in pi pi-signed omp codex grok cursor opencode claude; do
+      out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$RENDER" --harness "$harness" --x-mode 1)
+      assert_not_contains "$out" '__FM_' "$harness: literal path leaked a placeholder"
+      case "$harness" in
+        pi|pi-signed)
+          assert_contains "$out" "$home/.pi/extensions/fm-primary-pi-watch.ts" "Pi watch path changed"
+          assert_contains "$out" "$home/.pi/extensions/fm-primary-turnend-guard.ts" "Pi turn-end path changed"
+          ;;
+        omp)
+          assert_contains "$out" "$home/.omp/extensions/fm-primary-omp-watch.ts" "omp watch path changed"
+          assert_contains "$out" "$home/.omp/extensions/fm-primary-turnend-guard.ts" "omp turn-end path changed"
+          ;;
+        grok)
+          assert_contains "$out" "[ -f $quoted_config ] && . $quoted_config; export FM_WATCH_GROK_CONTINUITY=1; exec bin/fm-watch-arm.sh" "quoted config path changed"
+          ;;
+      esac
+    done
+  done
+  pass "snippets preserve literal ampersands, quotes and spaces in paths across primary harnesses"
+}
+
+test_literal_paths_in_rendered_snippets
+
 test_context_burn_reply_contract

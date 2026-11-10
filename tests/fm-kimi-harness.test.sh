@@ -102,6 +102,18 @@ fake_screen() {
       rule=' ──────────────────────────────────────────────────────────────────────────────'
       printf 'export FM_TASK_ID=fake-task\nuser@host wt %% export COMPACT_ADVISER_DIS\nABLE=1\nexport FM_TASK_ID=fake-task\nuser@host wt %% export FM_TASK_ID=fake-tas\nk\nuser@host wt %% . '"'"'/tmp/fm-fake-task+0123456789abcdef0123456789abcdef0123456789ab\ncdef/launch.s1793266373.29604.14955.sh'"'"'\n%s\n  Trust this folder?\n  ↑↓ navigate · Enter select · Esc exit\n\n  %s\n\n  Load project instructions\n    Check: AGENTS.md · .agents/skills/\n\n  Trust is remembered for this folder, including future project config changes.\n  Tool approvals follow your permission settings.\n\n   ❯ Trust and continue\n     %s\n%s\n' "$rule" "$FM_FAKE_PANE_PATH" "$negative" "$rule"
       ;;
+    trust-230|trust-230-rootmcp|trust-230-kimimcp|trust-230-small|trust-230-paged)
+      # Recorded from Kimi Code CLI 2.3.0; tests/captures/kimi-code-2.3.0/README.md
+      # owns the provenance. The directory line becomes the fake pane's path.
+      case "$state" in
+        trust-230) capture=plain.pane ;;
+        trust-230-rootmcp) capture=root-mcp-json.pane ;;
+        trust-230-kimimcp) capture=kimi-code-mcp-json.pane ;;
+        trust-230-small) capture=small-terminal.pane ;;
+        trust-230-paged) capture=paged.pane ;;
+      esac
+      sed "s|{WORKDIR}|$FM_FAKE_PANE_PATH|g" "$FM_FAKE_KIMI_CAPTURES/$capture"
+      ;;
     pointer-typed)
       printf 'context: 0%% (0/256k)\n╭────────────────────────────────╮\n│ > Read the brief and follow it │\n│                                │\n╰────────────────────────────────╯\n'
       ;;
@@ -168,7 +180,7 @@ case "${1:-}" in
         ". '"*"'") staged=${literal#". '"}; staged=${staged%"'"}; [ ! -f "$staged" ] || literal=$(cat "$staged") ;;
       esac
       case "$literal" in
-        *' --auto')
+        *' --auto'|*' --auto'$'\n'*)
           printf '%s\n' "$literal" >> "$FM_FAKE_LAUNCH_LOG"
           printf 'launched\n' > "$FM_FAKE_KIMI_STATE"
           ;;
@@ -380,7 +392,7 @@ test_kimi_launch_then_send_is_verified() {
   assert_contains "$out" "spawned $id harness=kimi" "kimi spawn did not report success"
 
   launch=$(cat "$CASE_DIR/launch.log")
-  [ "$(fm_test_launch_without_env_scrub "$launch")" = "export FM_TASK_ID=$id; export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$HOME_DIR" "$id")$(fm_test_launch_git_prefix "$launch")env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI '$FAKEBIN_DIR/kimi' --model 'kimi-code/k3' --auto" ] \
+  [ "$(fm_test_launch_without_env_scrub "$(fm_test_launch_unframe "$launch")")" = "export FM_TASK_ID=$id; export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$HOME_DIR" "$id")$(fm_test_launch_git_prefix "$(fm_test_launch_unframe "$launch")")export FM_HOME='$HOME_DIR'; env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI '$FAKEBIN_DIR/kimi' --model 'kimi-code/k3' --auto" ] \
     || fail "kimi launch did not use the absolute binary, model, and --auto only: $launch"
   assert_not_contains "$launch" "--effort" "kimi launch emitted a nonexistent effort flag"
   assert_not_contains "$launch" "turn-ended" "kimi launch embedded a turn-end path"
@@ -912,7 +924,7 @@ test_kimi_falls_back_to_expanded_home_binary() {
   rc=$?
   expect_code 0 "$rc" "Kimi HOME fallback spawn should succeed"
   launch=$(cat "$CASE_DIR/launch.log")
-  [ "$(fm_test_launch_without_env_scrub "$launch")" = "export FM_TASK_ID=$id; export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$HOME_DIR" "$id")$(fm_test_launch_git_prefix "$launch")env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI '$fallback' --auto" ] \
+  [ "$(fm_test_launch_without_env_scrub "$(fm_test_launch_unframe "$launch")")" = "export FM_TASK_ID=$id; export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$HOME_DIR" "$id")$(fm_test_launch_git_prefix "$(fm_test_launch_unframe "$launch")")export FM_HOME='$HOME_DIR'; env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI '$fallback' --auto" ] \
     || fail "Kimi fallback did not expand HOME into an absolute executable: $launch"
   pass "fm-spawn: Kimi fallback expands the active HOME"
 }

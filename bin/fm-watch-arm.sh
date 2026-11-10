@@ -111,6 +111,17 @@
 # deletion after start can trip it. The watcher's own home-gone exit
 # (bin/fm-watch.sh) covers the cycle this arm waits on.
 #
+# An arm whose ground is removed under it exits instead of polling on: when its
+# own script file, the state directory, or an FM_HOME that existed at start no
+# longer exists, it prints
+# "watcher: FAILED - arm ground removed: <path> no longer exists" and exits 1.
+# The check runs on every confirmation, successor, and attached poll, so the
+# bound is one poll interval plus a 0.2s recheck that keeps a transient rename
+# (a self-update rewriting this file) from counting as a removal. Sourcing
+# bin/fm-wake-lib.sh creates a not-yet-existing state directory first, so only a
+# deletion after start can trip it. The watcher's own home-gone exit
+# (bin/fm-watch.sh) covers the cycle this arm waits on.
+#
 # A copy of this script living under a disposable no-mistakes validation
 # checkout (a path containing /.no-mistakes/worktrees/) refuses every mode
 # outside a marked lab with
@@ -164,14 +175,46 @@ WATCH_LOCK="$STATE/.watch.lock"
 BEAT="$STATE/.last-watcher-beat"
 # "Fresh" reuses the guard's threshold so there is one definition of liveness.
 GRACE=${FM_GUARD_GRACE:-300}
+case "$GRACE" in
+  ''|*[!0-9]*) GRACE=300 ;;
+  *) GRACE=$((10#$GRACE)) ;;
+esac
 # How long to wait for a freshly forked watcher to acquire the lock and beat.
-# Git Bash/MSYS pays a much higher fork cost while the watcher completes its
-# required pre-lock migration, so its bounded default covers that cold start.
+# The bound is a liveness backstop, not a fork-budget: watcher startup lock
+# waits are bounded internally (FM_WATCHER_STARTUP_LOCK_BOUND), so host load
+# stretching a fork-heavy start is a reason to wait longer, not to kill the
+# child. It defaults to the guard grace so a watcher gets the same runway the
+# guard already allows one beacon refresh to take, but never drops below the
+# legacy budget - a zero grace means "beacons are never fresh", not "kill the
+# child at once", and a child whose whole cycle is an immediate wake still has
+# to reach its exit on a loaded host. Git Bash/MSYS pays a much higher fork
+# cost while the watcher completes its required pre-lock migration, so the
+# shorter legacy bound remains only as the successor-attach budget and as the
+# documented floor for operators who want faster failure.
 case "${OSTYPE:-}" in
   msys*|mingw*|cygwin*) ARM_CONFIRM_DEFAULT=30 ;;
   *) ARM_CONFIRM_DEFAULT=10 ;;
 esac
-CONFIRM_TIMEOUT=${FM_ARM_CONFIRM_TIMEOUT:-$ARM_CONFIRM_DEFAULT}
+CONFIRM_TIMEOUT=${FM_ARM_CONFIRM_TIMEOUT:-}
+case "$CONFIRM_TIMEOUT" in
+  ''|*[!0-9]*) CONFIRM_TIMEOUT=0 ;;
+  *) CONFIRM_TIMEOUT=$((10#$CONFIRM_TIMEOUT)) ;;
+esac
+if [ "$CONFIRM_TIMEOUT" -le 0 ]; then
+  CONFIRM_TIMEOUT=$GRACE
+  [ "$CONFIRM_TIMEOUT" -gt "$ARM_CONFIRM_DEFAULT" ] || CONFIRM_TIMEOUT=$ARM_CONFIRM_DEFAULT
+fi
+# How long an attached arm may wait for a successor to prove itself after a
+# delivery it confirmed. This budget is deliberately short and separate from
+# CONFIRM_TIMEOUT: it answers "did the handoff land" for a watcher that is
+# already known-live, not "may a cold start still be in flight", so it keeps
+# the legacy fork-cost default even when the fresh-child backstop runs long.
+SUCCESSOR_CONFIRM_TIMEOUT=${FM_ARM_SUCCESSOR_CONFIRM_TIMEOUT:-$ARM_CONFIRM_DEFAULT}
+case "$SUCCESSOR_CONFIRM_TIMEOUT" in
+  ''|*[!0-9]*) SUCCESSOR_CONFIRM_TIMEOUT=0 ;;
+  *) SUCCESSOR_CONFIRM_TIMEOUT=$((10#$SUCCESSOR_CONFIRM_TIMEOUT)) ;;
+esac
+[ "$SUCCESSOR_CONFIRM_TIMEOUT" -gt 0 ] || SUCCESSOR_CONFIRM_TIMEOUT=$ARM_CONFIRM_DEFAULT
 # Poll interval while attached to an existing healthy watcher.
 ATTACH_POLL=${FM_ARM_ATTACH_POLL:-0.5}
 # The beacon age at which the watcher's own re-arm evicts a live holder; an
@@ -390,7 +433,7 @@ wait_for_healthy_successor() {
   local deadline
   # date(1) exposes whole seconds. Add one rounding second so a timeout of one
   # second cannot collapse to a few milliseconds when called near a boundary.
-  deadline=$(( $(date +%s) + CONFIRM_TIMEOUT + 1 ))
+  deadline=$(( $(date +%s) + SUCCESSOR_CONFIRM_TIMEOUT + 1 ))
   while :; do
     healthy_watcher && return 0
     arm_ground_gone && return 1
@@ -870,6 +913,37 @@ cleanup_child() {
     fi
     fm_watcher_stop_tree "$child" "" 5 || true
   fi
+}
+
+# The watcher installs its EXIT cleanup trap immediately after claiming the
+# singleton and publishes its home-bound lock identity right after that. TERM
+# before that identity is complete can still land mid-claim - abandoning the
+# steal mutex or a startup lock - so a stop is forwarded only once the
+# identity matches the child (the startup safe point) or once the state
+# directory holding those locks is gone; otherwise this waits for the child to
+# exit on its own. No deadline overrides it; startup identity-publication
+# failure exits through the child's cleanup rather than stranding this wait.
+term_child_at_safe_point() {
+  # The cheap gate reads only files the child itself writes after its trap
+  # installs: the claimed pid plus all three identity records. The full
+  # fm_watcher_lock_matches_pid proof (a ps-backed identity compare) is not
+  # needed here - our own child pid cannot be recycled while it still lives -
+  # and would add a ps fork per iteration on a host that is already loaded.
+  while fm_pid_alive "$child"; do
+    if [ ! -d "$STATE" ]; then
+      kill -TERM "$child" 2>/dev/null || true
+      break
+    fi
+    if [ "$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)" = "$child" ] \
+      && [ -s "$WATCH_LOCK/fm-home" ] \
+      && [ -s "$WATCH_LOCK/watcher-path" ] \
+      && [ -s "$WATCH_LOCK/pid-identity" ]; then
+      kill -TERM "$child" 2>/dev/null || true
+      break
+    fi
+    sleep 0.1
+  done
+  wait "$child" 2>/dev/null
 }
 
 # shellcheck disable=SC2329 # Invoked indirectly by the signal traps below.
