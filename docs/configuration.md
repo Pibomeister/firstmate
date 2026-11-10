@@ -477,11 +477,18 @@ This feature does not set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` or any other autocom
 
 A Claude primary session receives one instruction to write its full handoff when its context left before auto-compact falls to a set percentage.
 The instruction asks the session to persist its open work records, decisions, and durable knowledge, record the handoff, hand off to a successor, and report that it is ready to restart, so a session can restart from a handoff instead of compacting.
-A primary launches its successor with `bin/fm-handoff-launch.sh <handoff file>`, which starts the successor in a new terminal on the home's recorded backend, verifies that the new successor harness pid is live, and records it in `state/.handoff-successor` as `pid=<successor pid>` and `handoff=<handoff document path>`; the gate reads only that record, so any other launcher, such as an operator, must write the same record for the stop to clear.
+A primary launches its successor with `bin/fm-handoff-launch.sh <handoff file>` on the home's recorded Orca or tmux backend.
+The launcher and `bin/fm-handoff-ack.sh` implement the acknowledgement and lock-transfer contract owned by `bin/fm-handoff-lib.sh`; its header defines the records and watchdog events.
 The launcher refuses rather than guess when the backend or harness cannot be determined, and it never kills or interrupts the current session.
-The launcher verifies only the live successor pid; the successor confirms the handoff sha256 at pickup and stops on a mismatch.
-The successor's launch prompt tells it to confirm the handoff document's sha256, wait until the predecessor's harness pid (line 1 of `state/.lock`) is dead, and then run `bin/fm-session-start.sh` to take the session lock.
-The predecessor then ends its turn; it cannot exit itself, so its process is ended by the captain, by a leash or operator `/exit` in its pane, or by the watchdog restart path, and the successor takes the lock only after that pid dies.
+Orca uses `orca agent launch` with a prompt argument; tmux executes direct argv.
+Orca owns the agent's permission posture; an explicit `auto` home setting currently refuses rather than substituting a shell launch.
+The successor reads the handoff and acknowledges it before running session start.
+The predecessor remains alive until the acknowledgement is validated and the lock transfers under the existing claim and task-lease locks.
+The predecessor then ends its turn and retires; it must not continue fleet mutations after the transfer.
+Two fresh terminal attempts share one ten-minute budget; the launcher emits a parseable failure if neither completes.
+A missing or invalid acknowledgement cannot move the predecessor's live lock.
+Failed panes remain available for diagnosis, with expired claims that cannot take ownership.
+`bin/fm-captain-locate.sh` reports the verified lock holder and its terminal handle for supervisor discovery; its header owns the output format.
 A second mate never launches its own successor: it appends one relaunch request to its parent channel and stops.
 It fires at most once per context cycle: a session that auto-compacts anyway is told again before its next auto-compact.
 

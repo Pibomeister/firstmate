@@ -71,6 +71,8 @@ mkdir -p "$STATE" 2>/dev/null || {
 # Stop auto-arm applies the exact same identity contract.
 # shellcheck source=bin/fm-session-lock-lib.sh
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
+# shellcheck source=bin/fm-handoff-lib.sh
+. "$SCRIPT_DIR/fm-handoff-lib.sh"
 
 if [ "${1:-}" = "status" ]; then
   fm_session_lock_inspect "$STATE"
@@ -180,7 +182,7 @@ remember_lock_session() {
 }
 
 publish_lock_endpoint() {
-  local trusted=$1 recorded=$2 candidate=${FM_SESSION_ENDPOINT_META:-} source='' field value
+  local trusted=$1 recorded=$2 candidate=${FM_SESSION_ENDPOINT_META:-} source='' field value endpoint_backend=tmux
   if [ -n "$trusted" ] && [ "$trusted" = "$recorded" ]; then
     source=$LOCK_SESSION
   fi
@@ -189,6 +191,15 @@ publish_lock_endpoint() {
     && [ "$(sed -n 's/^worktree=//p' "$candidate")" = "${FM_HOME%/}" ] \
     && [ -n "$(sed -n 's/^terminal=//p' "$candidate")" ]; then
     source=$candidate
+  fi
+  # Primary sessions have no supervisor endpoint record. Publish their actual
+  # terminal only as a fallback; explicit endpoint metadata keeps its generation.
+  if [ -z "$source" ] && [ -n "${ORCA_TERMINAL_HANDLE:-${TMUX_PANE:-}}" ]; then
+    value=${ORCA_TERMINAL_HANDLE:-${TMUX_PANE:-}}
+    case "$value" in *[!A-Za-z0-9_.:%-]*) return 1 ;; esac
+    [ -z "${ORCA_TERMINAL_HANDLE:-}" ] || endpoint_backend=orca
+    printf 'backend=%s\nterminal=%s\nworktree=%s\n' "$endpoint_backend" "$value" "${FM_HOME%/}"
+    return 0
   fi
   [ -n "$source" ] && [ -f "$source" ] && [ ! -L "$source" ] || return 0
   [ "$(sed -n 's/^backend=//p' "$source")" = orca ] || return 0
@@ -286,6 +297,9 @@ confirm_own_lock() {  # <recorded-pid>
 
 refuse_live_owner() {  # <recorded-pid>
   local recorded
+  if [ -f "$STATE/.handoff-pending" ]; then
+    fm_handoff_event handoff_reject "$(jq -r '.nonce // ""' "$STATE/.handoff-pending" 2>/dev/null)" 0 "$me" "${ORCA_TERMINAL_HANDLE:-${TMUX_PANE:-}}" lock_held >&2
+  fi
   if recorded=$(fm_session_lock_recorded_session_id "$STATE"); then
     echo "error: another live firstmate session holds the lock (pid $1, session $recorded); operate read-only until resolved" >&2
   else
@@ -300,7 +314,7 @@ if [ -f "$LOCK" ] && [ ! -L "$LOCK" ]; then
     confirm_own_lock "$old"
     old=$(cat "$LOCK" 2>/dev/null || true)
   fi
-  if [ -z "$REANCHOR" ] && fm_session_lock_recorded_owner_live "$STATE"; then
+  if [ -z "$REANCHOR" ] && fm_session_lock_recorded_owner_live "$STATE" && ! fm_handoff_can_transfer "$me" "$old"; then
     refuse_live_owner "$old"
   fi
 fi
@@ -331,7 +345,7 @@ if [ -e "$LOCK" ] || [ -L "$LOCK" ]; then
   if [ -z "$REANCHOR" ] && fm_session_lock_recorded_owner_live "$STATE"; then
     fm_session_lock_owned_by_self "$STATE" && confirm_own_lock "$old"
     old=$(cat "$LOCK" 2>/dev/null || true)
-    if [ -z "$REANCHOR" ] && fm_session_lock_recorded_owner_live "$STATE"; then
+    if [ -z "$REANCHOR" ] && fm_session_lock_recorded_owner_live "$STATE" && ! fm_handoff_can_transfer "$me" "$old"; then
       refuse_live_owner "$old"
     fi
   fi
@@ -351,6 +365,11 @@ if [ -z "$REANCHOR" ]; then
     exit 1
   }
   LEASE_LOCK_HELD=1
+  # The ack must still be valid at the actual mutation, after waiting for
+  # leases. Both claim and lease locks are held through publication.
+  if [ -n "${FM_HANDOFF_NONCE:-}" ] && ! fm_handoff_can_transfer "$me" "${old:-}"; then
+    refuse_live_owner "${old:-}"
+  fi
   for lease in "$STATE"/.lease-*; do
     [ -f "$lease" ] || [ -L "$lease" ] || continue
     task=${lease##*/.lease-}
@@ -360,6 +379,9 @@ if [ -z "$REANCHOR" ]; then
       exit 1
     }
   done
+fi
+if [ -n "${FM_HANDOFF_NONCE:-}" ] && ! fm_handoff_can_transfer "$me" "${old:-}"; then
+  refuse_live_owner "${old:-}"
 fi
 publish_lock_session_or_die
 if [ -f "$LOCK" ]; then

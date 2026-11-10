@@ -337,7 +337,7 @@ test_names_open_captain_orders_and_gates_the_stop() {
   rc=0
   run_hook "$PRIMARY" s-orders "$TMP_ROOT/t-90" Stop >/dev/null 2>&1 || rc=$?
   kill "$succ" 2>/dev/null; wait "$succ" 2>/dev/null
-  [ "$rc" -eq 0 ] || fail "once the handoff lists every open order and a live successor is recorded the stop must pass (rc=$rc)"
+  [ "$rc" -eq 2 ] || fail "listing orders and a live PID still requires the verified successor ack (rc=$rc)"
   rm -rf "$PRIMARY/data/orders" "$doc" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.handoff-successor"
   pass "a firing names every open captain order, and the stop is gated until the handoff lists them"
 }
@@ -591,11 +591,11 @@ test_handoff_gates_the_stop_until_a_recorded_successor_is_alive() {
   run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop >/dev/null 2>&1 || rc=$?
   [ "$rc" -eq 2 ] || fail "a restart request with no recorded successor must not clear the stop (rc=$rc)"
   rm -f "$PRIMARY/config/watchdog" "$PRIMARY/state/.watchdog-restart-request"
-  # A fresh record naming a live successor clears the stop.
+  # A fresh record naming a live process without an ack and lock never clears.
   printf 'pid=%s\nhandoff=%s\n' "$succ" "$doc" > "$launch"
   rc=0
   run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop >/dev/null 2>&1 || rc=$?
-  [ "$rc" -eq 0 ] || fail "a recorded live successor must let the stop pass (rc=$rc)"
+  [ "$rc" -eq 2 ] || fail "a live pid without a verified ack must keep the stop blocked (rc=$rc)"
   # A fresh record whose successor has died keeps the stop blocked.
   kill "$succ" 2>/dev/null; wait "$succ" 2>/dev/null
   printf 'pid=%s\nhandoff=%s\n' "$succ" "$doc" > "$launch"
@@ -603,7 +603,7 @@ test_handoff_gates_the_stop_until_a_recorded_successor_is_alive() {
   run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ" Stop >/dev/null 2>&1 || rc=$?
   [ "$rc" -eq 2 ] || fail "a recorded successor that is dead must keep the stop blocked (rc=$rc)"
   rm -f "$launch" "$doc"
-  pass "a firing is gated until a fresh launch record names a live successor; stale, dead, or request-only blocks (133, 116)"
+  pass "a firing rejects stale, dead, request-only and unacknowledged live successor records"
 }
 
 test_secondmate_handoff_escalates_to_its_parent() {
