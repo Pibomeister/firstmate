@@ -1,0 +1,5 @@
+ok - real tmux preserves absent/C locale values and reported raw bytes, rejects missing/phantom names and excludes the automatic SSH agent
+ok - an Orca relaunch closes a live Claude worker's terminal instead of sending Escape, then respawns in the same local copy
+ok - an Orca Claude relaunch refuses when an agent still runs in the local copy after the close
+ok - an Orca relaunch takes the branch from the local copy when the record disagrees, and records the correction
+Terminated: 15

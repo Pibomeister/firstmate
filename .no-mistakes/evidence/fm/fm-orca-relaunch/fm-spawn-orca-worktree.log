@@ -32,6 +32,4 @@ ok - an aborted Orca spawn deletes only contained work, retains uncontained comm
 ok - a relaunch against an Orca-backed task whose agent is not proven stopped is refused before the RELAUNCH+orca worktree carve-out could run
 ok - an Orca relaunch of a closed, agent-free terminal creates a new terminal in the recorded worktree
 ok - an Orca relaunch rebinds a stale terminal recorded before the host reboot in the recorded worktree
-ok - Orca Droid relaunch retains non-reboot SessionEnd prerequisites
-ok - an Orca relaunch refuses a stale terminal while an agent survives in the recorded worktree after a reboot
-ok - an Orca relaunch adopts a connected terminal whose agent is proven stopped
+Terminated: 15
