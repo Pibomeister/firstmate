@@ -522,8 +522,10 @@ test_concurrent_passes_never_overlap() {
   world
   overlap_probe
   probed_world "$W/overlap-probe.sh"
-  # A directory rename stalls for a second, as on a loaded host, so any
-  # check-then-rename window in the lock stays open long enough to hit.
+  # A directory rename stalls for a second, as on a loaded host. This shim
+  # reproduced the check-then-rename race of the earlier mkdir/rename lock,
+  # and keeps this test red if a rename-based lock returns. The current
+  # flock lock renames nothing, so the shim does not slow it.
   real_mv=$(type -P mv)
   mkdir -p "$W/shim"
   cat > "$W/shim/mv" <<EOF
