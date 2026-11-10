@@ -434,7 +434,127 @@ EOF
   pass "missing, empty, misspelled, dangling, probe-less, and non-numeric configuration is refused before any action"
 }
 
+test_lock_without_pid_is_held_until_it_ages() {
+  local out code
+  world
+  std_conf
+  start_daemon
+  # A contender can see lock.d in the instant between the owner's mkdir and
+  # its pid write. That lock is live, not stale.
+  mkdir -p "$W/home/state/relay-guard/lock.d"
+  out=$(guard once 2>&1)
+  code=$?
+  [ "$code" -eq 75 ] || fail "a fresh lock with no pid yet should be held (exit 75), got $code: $out"
+  [ -d "$W/home/state/relay-guard/lock.d" ] || fail "a held fresh lock was removed"
+  [ -z "$(relay_pids m3 7001)" ] || fail "a pass ran while another pass held a fresh lock"
+  # A pid-less lock left behind long ago is a crashed owner's, so it is stale.
+  touch -t 202001010000 "$W/home/state/relay-guard/lock.d"
+  out=$(guard once 2>&1)
+  code=$?
+  [ "$code" -eq 0 ] || fail "an old pid-less lock should be reclaimed, got $code: $out"
+  [ -n "$(relay_pids m3 7001)" ] || fail "the pass after reclaiming a stale lock did not run"
+  assert_absent "$W/home/state/relay-guard/lock.d"
+  stop_daemon
+  pass "a pid-less lock is held while fresh and reclaimed only once it is old"
+}
+
+test_kill_spares_a_pid_that_is_no_longer_the_relay() {
+  local stubborn out real_ps
+  world
+  real_ps=$(type -P ps)
+  cat > "$W/stubborn-relay.sh" <<EOF
+#!/bin/sh
+trap '' TERM
+cat "$W/daemon.pid" > "$W/gen/\$1" 2>/dev/null || : > "$W/gen/\$1"
+while :; do sleep 0.2; done
+EOF
+  chmod +x "$W/stubborn-relay.sh"
+  # A ps stand-in that reports a different start time for a marked pid after
+  # its first start-time read: the pid now belongs to another process.
+  mkdir -p "$W/shim"
+  cat > "$W/shim/ps" <<EOF
+#!/bin/sh
+if [ "\$1" = -o ] && [ "\$2" = lstart= ] && [ "\$3" = -p ] && [ -f "$W/reuse.\$4" ]; then
+  n=\$(( \$(cat "$W/reuse.\$4") + 1 ))
+  printf '%s\n' "\$n" > "$W/reuse.\$4"
+  if [ "\$n" -gt 1 ]; then printf 'Sat Jan  1 00:00:00 2000\n'; exit 0; fi
+fi
+exec "$real_ps" "\$@"
+EOF
+  chmod +x "$W/shim/ps"
+  conf <<EOF
+daemon=$DAEMON_NAME
+relay.s=$W/stubborn-relay.sh s 7009
+probe.s=$W/fake-probe.sh s
+settle-secs=1
+term-wait-secs=1
+EOF
+  start_daemon
+  nohup "$W/stubborn-relay.sh" s 7009 </dev/null >/dev/null 2>&1 &
+  stubborn=$!
+  sleep 1.2
+  stop_daemon
+  start_daemon
+  sleep 0.3
+  # Control: a relay that ignores TERM and is still itself is KILLed.
+  out=$(guard once 2>&1)
+  if alive "$stubborn"; then
+    kill -KILL "$stubborn" 2>/dev/null
+    fail "control is vacuous: a TERM-proof relay that is still itself was not KILLed: $out"
+  fi
+  pkill -KILL -f "$W/stubborn-relay.sh" 2>/dev/null
+  sleep 0.3
+  nohup "$W/stubborn-relay.sh" s 7009 </dev/null >/dev/null 2>&1 &
+  stubborn=$!
+  sleep 1.2
+  stop_daemon
+  start_daemon
+  sleep 0.3
+  printf '0\n' > "$W/reuse.$stubborn"
+  out=$(PATH="$W/shim:$PATH" guard once 2>&1)
+  if ! alive "$stubborn"; then
+    fail "KILL reached a pid whose start time changed after TERM: $out"
+  fi
+  pkill -KILL -f "$W/stubborn-relay.sh" 2>/dev/null
+  stop_daemon
+  pass "KILL reaches a TERM-proof relay, never a pid that stopped being that relay"
+}
+
+test_relay_started_in_the_daemon_restart_second_is_restarted() {
+  local old new out code dead
+  world
+  std_conf
+  start_daemon
+  sleep 1.2
+  dead=$(cat "$W/daemon.pid")
+  stop_daemon
+  # The relay starts while no daemon runs, and the new daemon starts in the
+  # same second, so both report the same whole-second age. The relay's sockets
+  # belong to the daemon that just died, which its generation record shows.
+  start_relay m3 7001
+  start_daemon
+  start_relay m4 7002
+  sleep 1.3
+  printf '%s\n' "$dead" > "$W/gen/m3"
+  old=$(relay_pids m3 7001)
+  [ -n "$old" ] || fail "fixture relay did not start"
+  if "$W/fake-probe.sh" m3; then
+    fail "fixture is vacuous: a relay older than the daemon passes its probe"
+  fi
+  out=$(guard once 2>&1)
+  code=$?
+  new=$(relay_pids m3 7001)
+  [ -n "$new" ] && [ "$new" != "$old" ] || fail "a relay from the daemon restart second was not restarted ($code): $out"
+  assert_grep "$(printf 'm3\trestart\tdaemon-restarted')" "$W/home/state/relay-guard/actions.tsv" "m3 restart was not recorded as daemon-restarted: $out"
+  "$W/fake-probe.sh" m3 || fail "restarted m3 relay is not reachable"
+  stop_daemon
+  pass "a relay as old as the daemon in whole seconds counts as predating the daemon"
+}
+
 fm_test_run \
+  test_lock_without_pid_is_held_until_it_ages \
+  test_kill_spares_a_pid_that_is_no_longer_the_relay \
+  test_relay_started_in_the_daemon_restart_second_is_restarted \
   test_stale_relays_after_daemon_restart_are_respawned \
   test_missing_relay_is_spawned_and_daemon_loss_waits_for_the_daemon \
   test_duplicate_relays_converge_to_one \

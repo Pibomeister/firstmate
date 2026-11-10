@@ -30,9 +30,13 @@
 #                     daemon is back, by the daemon-restarted rule.
 #   missing           No process runs the relay command. Start it.
 #   duplicate         More than one process runs it. Stop all, start one.
-#   daemon-restarted  The relay process is older than the youngest top-level
-#                     daemon process, so it predates the running daemon. Stop and
-#                     start it. This is deterministic and needs no probe.
+#   daemon-restarted  The relay process is at least as old as the youngest
+#                     top-level daemon process, so it may predate the running
+#                     daemon. Both whole-second ages come from one ps snapshot,
+#                     so a relay started in the daemon's restart second counts,
+#                     unless <name>.bound records that this guard started that
+#                     relay pid while that daemon pid ran. Stop and start it.
+#                     This is deterministic and needs no probe.
 #   probe-failed      The relay's probe failed <probe-fails> passes in a row
 #                     while the relay is newer than the daemon. Stop and start.
 #   ok                Otherwise. A passing probe resets the failure streak.
@@ -41,7 +45,8 @@
 # the next waits <backoff-secs> * 2^(k-1) seconds. A refused start reports
 # capped or backoff and never loops. daemon-restarted is not limited, because a
 # restarted relay is newer than the daemon and cannot repeat that verdict until
-# the daemon restarts again; the daemon's own supervisor owns that rate.
+# the daemon restarts again, except once for a relay another launcher started
+# within the daemon's first second; the daemon's own supervisor owns that rate.
 # After the pass's starts it waits <settle-secs>, confirms each started relay is
 # running, and runs its probe; a failed post-start probe begins a new streak.
 #
@@ -72,7 +77,9 @@
 #   probe-fails=2  probe-timeout-secs=10  max-restarts=3  window-secs=900
 #   backoff-secs=30  settle-secs=2  term-wait-secs=5
 # Stopping sends TERM to the matched pids, waits <term-wait-secs>, then KILLs
-# survivors; it never signals a process the relay match did not select.
+# survivors whose start time is unchanged since the TERM, so a pid that exited
+# and was reused is spared; it never signals a process the relay match did not
+# select.
 # A started relay runs detached (setsid where available, nohup, stdin from
 # /dev/null) with output appended to state/relay-guard/<name>.log, so it
 # outlives this command. The rendered units keep relays alive across a guard
@@ -88,8 +95,12 @@
 #                  where action is spawn, restart, or hold (a refused start).
 #   <name>.fails   Current consecutive probe-failure count.
 #   <name>.starts  Epochs of limited starts inside the window.
+#   <name>.bound   "<relay-pid> <daemon-pid>" of the relay this guard last
+#                  started and the daemon running when it did.
 #   <name>.log     The relay's own output.
-#   lock.d/        Per-pass lock; a pass already holding it makes once exit 75.
+#   lock.d/        Per-pass lock holding its owner's pid; a pass already holding
+#                  it makes once exit 75. A lock with no pid yet is held until
+#                  it is a minute old, then reclaimed as a crashed owner's.
 #
 # Exit status: 0 when every relay ends the pass proven healthy, 3 when any
 # relay is not (daemon down, probe failing, capped, backoff, or a start that
@@ -212,11 +223,16 @@ etime_secs() {
   printf '%s' $(( 10#$d * 86400 + 10#$h * 3600 + 10#$m * 60 + 10#$s ))
 }
 
-proc_age() {  # <pid> -> seconds; nonzero when gone
-  local et
-  et=$(ps -o etime= -p "$1" 2>/dev/null | tr -d '[:space:]')
-  [ -n "$et" ] || return 1
-  etime_secs "$et"
+# "<relay-age> <daemon-age>" in seconds from one ps snapshot, so both ages are
+# read at the same instant; '-' stands for a process that is gone.
+pair_ages() {  # <relay-pid> <daemon-pid>
+  local pid et r=- d=-
+  while read -r pid et; do
+    [ -n "${et:-}" ] || continue
+    [ "$pid" = "$1" ] && r=$(etime_secs "$et")
+    [ "$pid" = "$2" ] && d=$(etime_secs "$et")
+  done < <(ps -o pid= -o etime= -p "$1,$2" 2>/dev/null)
+  printf '%s %s' "$r" "$d"
 }
 
 # "<pid> <age>" of the youngest top-level process named $DAEMON; nonzero when
@@ -261,9 +277,14 @@ relay_pids() {  # <command> -> matching pids, one per line
     }'
 }
 
+proc_start() {  # <pid> -> the process's start time; empty when gone
+  ps -o lstart= -p "$1" 2>/dev/null
+}
+
 stop_pids() {  # <pids...>; nonzero when any survives
-  local pid i alive
+  local pid i k alive starts=() survivors=()
   [ "$#" -gt 0 ] || return 0
+  for pid in "$@"; do starts+=("$(proc_start "$pid")"); done
   kill -TERM "$@" 2>/dev/null
   i=0
   while [ "$i" -lt $((TERM_WAIT * 10)) ]; do
@@ -273,9 +294,19 @@ stop_pids() {  # <pids...>; nonzero when any survives
     sleep 0.1
     i=$((i + 1))
   done
-  kill -KILL "$@" 2>/dev/null
+  # KILL only a pid that is still the process TERM was sent to: a pid that
+  # exited and was reused by another process has a different start time.
+  k=0
+  for pid in "$@"; do
+    if [ -n "${starts[$k]}" ] && [ "$(proc_start "$pid")" = "${starts[$k]}" ]; then
+      survivors+=("$pid")
+    fi
+    k=$((k + 1))
+  done
+  [ "${#survivors[@]}" -gt 0 ] || return 0
+  kill -KILL "${survivors[@]}" 2>/dev/null
   sleep 0.2
-  for pid in "$@"; do kill -0 "$pid" 2>/dev/null && return 1; done
+  for pid in "${survivors[@]}"; do kill -0 "$pid" 2>/dev/null && return 1; done
   return 0
 }
 
@@ -350,7 +381,7 @@ join_pids() {
 
 # One pass. ACT=1 acts and records; ACT=0 only observes.
 pass_once() {
-  local now dline dpid='' dage='' i name cmd probe pids n rage reason limited verdict
+  local now dline dpid='' dage='' ages i name cmd probe pids n rage reason limited verdict
   local detail fails gate unhealthy=0 started=() started_reason=() started_old=() status_lines=()
   now=$(date +%s)
   if dline=$(daemon_youngest); then
@@ -375,16 +406,20 @@ pass_once() {
       reason=missing
     elif [ "${#pids[@]}" -gt 1 ]; then
       reason=duplicate
-    elif ! rage=$(proc_age "${pids[0]}"); then
-      reason=missing
-      pids=()
     elif ! dline=$(daemon_youngest); then
       verdict='daemon-down'
       detail="no $DAEMON process"
-    elif dage=${dline#* }; [ "$rage" -gt "$dage" ]; then
+    elif ages=$(pair_ages "${pids[0]}" "${dline%% *}"); rage=${ages%% *}; dage=${ages#* }; [ "$rage" = - ]; then
+      reason=missing
+      pids=()
+    elif [ "$dage" = - ]; then
+      verdict='daemon-down'
+      detail="no $DAEMON process"
+    elif [ "$rage" -gt "$dage" ] || { [ "$rage" -eq "$dage" ] &&
+        [ "$(cat "$STATE/$name.bound" 2>/dev/null)" != "${pids[0]} ${dline%% *}" ]; }; then
       reason='daemon-restarted'
       limited=0
-      detail="relay age ${rage}s > $DAEMON age ${dage}s"
+      detail="relay age ${rage}s >= $DAEMON age ${dage}s"
     elif run_probe "$name" "$probe"; then
       [ "$ACT" -eq 1 ] && rm -f "$STATE/$name.fails"
       verdict=ok
@@ -445,6 +480,7 @@ pass_once() {
       pids=()
       while IFS= read -r n; do [ -n "$n" ] && pids+=("$n"); done < <(relay_pids "${CMDS[$idx]}")
       new=$(join_pids "${pids[@]:-}")
+      [ "${#pids[@]}" -eq 1 ] && printf '%s %s\n' "${pids[0]}" "$dpid" > "$STATE/$name.bound"
       probe_result=-
       if [ "${#pids[@]}" -eq 0 ]; then
         verdict='start-failed'
@@ -558,10 +594,15 @@ take_lock() {
     if [ "$holder" -gt 0 ] && kill -0 "$holder" 2>/dev/null; then
       return 1
     fi
+    # No pid yet means the owner is between its mkdir and its pid write, so the
+    # lock is live until it is a minute old.
+    if [ "$holder" -eq 0 ] && [ -n "$(find "$STATE/lock.d" -prune -mmin -1 2>/dev/null)" ]; then
+      return 1
+    fi
     rm -rf "$STATE/lock.d"
     mkdir "$STATE/lock.d" 2>/dev/null || return 1
   fi
-  printf '%s\n' "$$" > "$STATE/lock.d/pid"
+  printf '%s\n' "$$" > "$STATE/lock.d/pid.$$" && mv "$STATE/lock.d/pid.$$" "$STATE/lock.d/pid"
   LOCKED=1
 }
 
