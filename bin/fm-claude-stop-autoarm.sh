@@ -6,8 +6,8 @@
 # in the background on EVERY Stop of a Claude primary session, with no
 # deduplication across firings. It owns routine tokenless watcher continuity
 # for Claude primaries (main home and marked secondmate homes):
-# bin/fm-stop-policy-lib.sh applies before arming and before every continuation;
-# its allow-stop verdict takes precedence over the recovery behavior below.
+# bin/fm-stop-policy-lib.sh bounds model continuations, never watcher arming.
+# A deferred continuation retains this tokenless generation and retries.
 #
 #   - Scope: only a genuine primary checkout (plain checkout or validly marked
 #     secondmate home) with AGENTS.md, bin/, and the effective state dir - the
@@ -201,7 +201,6 @@ fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
 
 # shellcheck source=bin/fm-stop-policy-lib.sh
 . "$SCRIPT_DIR/fm-stop-policy-lib.sh"
-fm_stop_policy_allows_stop "$PAYLOAD" && exit 0
 
 # --- identity: only the lock-owning session's hooks may arm ------------------
 # A prior session may have died after leaving its harness identity in .lock.
@@ -261,6 +260,8 @@ if [ "$CLAIM_RC" -ne 0 ]; then
 fi
 MY_GEN=$FM_AUTOARM_MY_GEN
 [ -n "$MY_GEN" ] || exit 0
+FM_STOP_POLICY_OWNER_CHECKED=1
+AUTOARM_POLICY_DEFERRED=0
 
 # Commit <outcome> (optionally with the once-per-episode notice marker) for
 # this generation. Success means this generation's translation WINS and the
@@ -270,11 +271,12 @@ MY_GEN=$FM_AUTOARM_MY_GEN
 # (cleanup, exit 0) - the harness discards the collected stderr on exit 0, so
 # even an already-printed banner is never delivered by a losing generation.
 autoarm_commit() {  # <outcome> [marker-file]
-  local outcome=$1 marker=${2:-} session_pid recovery
-  if fm_stop_policy_allows_stop "$PAYLOAD" charge; then
-    autoarm_record stopped
-    [ -z "${OUT:-}" ] || rm -f "$OUT" 2>/dev/null || true
-    exit 0
+  local outcome=$1 marker=${2:-} session_pid recovery policy_mode=repair
+  [ "$outcome" != rewake ] || policy_mode=rewake
+  AUTOARM_POLICY_DEFERRED=0
+  if fm_stop_policy_allows_stop "$PAYLOAD" "$policy_mode"; then
+    AUTOARM_POLICY_DEFERRED=1
+    return 3
   fi
   if [ "$outcome" = rewake ]; then
     fm_session_lock_owned_by_self "$STATE" || return 2
@@ -296,6 +298,22 @@ autoarm_commit() {  # <outcome> [marker-file]
 # changes nothing about the action taken.
 autoarm_record() {  # <outcome>
   fm_autoarm_write_owned "$STATE" "$MY_GEN" "$1" >/dev/null 2>&1 || true
+}
+
+# A continuation bound never ends the monitoring owner. Its queue remains
+# durable; retry tokenlessly so a later external event or the rolling-hour
+# budget expiry can deliver a fresh wake. Keep the sleep interruptible through
+# the same child-pid trap used for an arm.
+autoarm_policy_wait() {
+  local delay=${FM_POLL:-60}
+  case "$delay" in ''|*[!0-9]*|0) delay=60 ;; esac
+  [ "$delay" -le 60 ] || delay=60
+  [ -z "${OUT:-}" ] || rm -f "$OUT" 2>/dev/null || true
+  fm_autoarm_still_owner "$STATE" "$MY_GEN" || exit 0
+  sleep "$delay" &
+  ARM_PID=$!
+  wait "$ARM_PID" || true
+  ARM_PID=
 }
 
 # Claude terminates the complete async-hook process tree when the configured
@@ -405,6 +423,10 @@ start_handling_successor() {  # <closed-arm-pid>
   return 1
 }
 
+while :; do
+if [ -e "$STATE/.afk" ]; then autoarm_record afk; exit 0; fi
+if ! need_supervision; then autoarm_record clean; exit 0; fi
+AUTOARM_POLICY_DEFERRED=0
 OUT=
 ACTIONABLE=0
 HEALTHY=0
@@ -508,6 +530,7 @@ if [ "$HEALTHY" -eq 1 ]; then
     [ -e "$FAILURE_ALARM" ] && exit 0
     exit 2
   fi
+  if [ "$AUTOARM_POLICY_DEFERRED" -eq 1 ]; then autoarm_policy_wait; continue; fi
   [ -z "$OUT" ] || rm -f "$OUT" 2>/dev/null || true
   exit 0
 fi
@@ -531,7 +554,7 @@ if [ "$ACTIONABLE" -eq 1 ]; then
   if [ "$HOST_MODE" -eq 0 ]; then
     start_handling_successor "$CLOSED_ARM_PID" || true
   fi
-  {
+  BANNER=$(
     printf 'firstmate watcher wake - one supervision event needs a handling turn now.\n'
     if [ "$HOST_MODE" -eq 1 ]; then
       [ -n "$OUT" ] && awk '/^supervision-host:/ { print; next } /^(signal:|stale:|check:|heartbeat)/ && shown++ < 8' "$OUT" 2>/dev/null
@@ -544,11 +567,13 @@ if [ "$ACTIONABLE" -eq 1 ]; then
     fi
     [ -z "$SUCCESSOR_FAILURE" ] || printf '%s\n' "$SUCCESSOR_FAILURE"
     printf 'Run bin/fm-wake-drain.sh first, handle the wake, then run its exact WAKE_ACK_REQUIRED --ack-through command. Until that post-handling acknowledgement, interruption leaves the wake durable for idempotent re-handling. This Stop hook owns watcher continuity: when the handling turn ends, the next needed cycle arms automatically - do NOT run bin/fm-watch-arm.sh after an ordinary wake.\n'
-  } >&2
+  )
   if autoarm_commit rewake; then
+    printf '%s\n' "$BANNER" >&2
     [ -z "$OUT" ] || rm -f "$OUT" 2>/dev/null || true
     exit 2
   fi
+  if [ "$AUTOARM_POLICY_DEFERRED" -eq 1 ]; then autoarm_policy_wait; continue; fi
   if [ "$HOST_MODE" -eq 1 ] && fm_autoarm_still_owner "$STATE" "$MY_GEN" \
     && fm_recovery_marker_snapshot "$STATE/.watcher-down" \
     && [[ "$FM_RECOVERY_MARKER_TOKEN" == pending:handling:* || "$FM_RECOVERY_MARKER_TOKEN" == announced:handling:* ]] \
@@ -565,6 +590,7 @@ if [ "$ACTIONABLE" -eq 1 ]; then
       exit 2
     fi
   fi
+  if [ "$AUTOARM_POLICY_DEFERRED" -eq 1 ]; then autoarm_policy_wait; continue; fi
   [ -z "$OUT" ] || rm -f "$OUT" 2>/dev/null || true
   exit 0
 fi
@@ -579,16 +605,18 @@ if [ ! -e "$FAILURE_NOTICE" ]; then
     [ -z "$OUT" ] || rm -f "$OUT" 2>/dev/null || true
     exit 0
   fi
-  {
+  BANNER=$(
     printf 'firstmate watcher auto-arm FAILED - the Stop-owned automatic supervision mechanism is broken after %s bounded attempts, and no live watcher with a fresh beacon was verified.\n' "$attempt"
     [ -n "$OUT" ] && grep -E '^(watcher:|signal:|stale:|check:|heartbeat|supervision-host)' "$OUT" 2>/dev/null | head -8
     [ "$HOST_MODE" -eq 0 ] || printf 'The supervision host (docs/supervision-host.md) ran these cycles; its last one exited %s without a wake.\n' "$HOST_RC"
     printf 'Do not launch a manual background arm from this notice; investigate the automatic Stop hook and watcher startup before ending blind.\n'
-  } >&2
+  )
   if autoarm_commit failed "$FAILURE_NOTICE"; then
+    printf '%s\n' "$BANNER" >&2
     [ -z "$OUT" ] || rm -f "$OUT" 2>/dev/null || true
     exit 2
   fi
+  if [ "$AUTOARM_POLICY_DEFERRED" -eq 1 ]; then autoarm_policy_wait; continue; fi
   [ -z "$OUT" ] || rm -f "$OUT" 2>/dev/null || true
   exit 0
 fi
@@ -596,5 +624,7 @@ if autoarm_commit failed-suppressed; then
   [ -z "$OUT" ] || rm -f "$OUT" 2>/dev/null || true
   exit 2
 fi
+if [ "$AUTOARM_POLICY_DEFERRED" -eq 1 ]; then autoarm_policy_wait; continue; fi
 [ -z "$OUT" ] || rm -f "$OUT" 2>/dev/null || true
 exit 0
+done

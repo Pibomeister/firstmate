@@ -103,8 +103,7 @@
 # including turns started by the asyncRewake auto-arm, so the one-shot allow
 # would re-open the exact blind window this guard exists to close
 # (docs/turnend-guard.md records the 2026-07-21 incident). In --claude mode this
-# guard first applies bin/fm-stop-policy-lib.sh, including its active-hook
-# stop, parked-work exit and shared continuation limits, then cooperates with the Stop-owned
+# guard keeps missing-supervision recovery intact and cooperates with the Stop-owned
 # auto-arm (bin/fm-claude-stop-autoarm.sh), which fires on the same Stop event:
 #   1. a live identity-matched watcher with a fresh beacon - or, in away mode, a
 #      live identity-matched daemon with a fresh beacon - allows immediately;
@@ -251,7 +250,6 @@ fm_primary_scope_matches "$FM_ROOT" "$STATE" || allow_exit
 
 # shellcheck source=bin/fm-stop-policy-lib.sh
 . "$SCRIPT_DIR/fm-stop-policy-lib.sh"
-fm_stop_policy_allows_stop "$PAYLOAD" && allow_exit
 
 # External auto-compact footer for this turn. A missing script or footer stays silent.
 if [ "${FM_TEST_SEAM:-}" != 1 ] && [ -x "$SCRIPT_DIR/fm-context-burn.sh" ]; then
@@ -335,6 +333,7 @@ allow_supervised_stop() {
   fi
   [ "$CLAUDE_MODE" -eq 1 ] || exit 0
   fm_failure_episode_reset "$STATE" && exit 0
+  fm_stop_policy_allows_stop "$PAYLOAD" repair && allow_exit
   exit 2
 }
 
@@ -442,7 +441,11 @@ fi
 
 block_stop() {
   local afk x_mode reason rule msg max_blocks cur_blocks blocks cause
-  fm_stop_policy_allows_stop "$PAYLOAD" charge && allow_exit
+  if [ "$CLAUDE_MODE" -eq 1 ]; then
+    fm_stop_policy_allows_stop "$PAYLOAD" repair && allow_exit
+  else
+    fm_stop_policy_allows_stop "$PAYLOAD" charge && allow_exit
+  fi
   afk=0
   [ -e "$STATE/.afk" ] && afk=1
   x_mode=0
@@ -534,6 +537,14 @@ if { [ "$CLAUDE_MODE" -eq 1 ] || [ "$CODEX_MODE" -eq 1 ]; } && fm_session_lock_f
   printf '{"systemMessage":"FIRSTMATE SUPERVISION IS OWNED BY ANOTHER LIVE SESSION: this read-only session cannot and should not arm or repair the watcher (lock owner pid %s). Allowing this turn to end safely; the owning session must restore supervision."}\n' \
     "$FM_SESSION_LOCK_FOREIGN_OWNER_PID"
   exit 0
+fi
+if [ "$CLAUDE_MODE" -eq 1 ] || [ "$CODEX_MODE" -eq 1 ]; then
+  FM_STOP_POLICY_OWNER_CHECKED=1
+fi
+if [ "$CLAUDE_MODE" -eq 1 ]; then
+  fm_stop_policy_allows_stop "$PAYLOAD" supervise && allow_exit
+else
+  fm_stop_policy_allows_stop "$PAYLOAD" check && allow_exit
 fi
 
 # Codex rule 2 (header): once this session's own checkpoint is closed, detach an
@@ -791,7 +802,7 @@ i=0
 while [ "$i" -lt $((SYNC_WAIT_MS / 100)) ]; do
   if autoarm_owns_recovery; then
     if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
-      fm_failure_episode_reset "$STATE" || exit 2
+      fm_failure_episode_reset "$STATE" || { fm_stop_policy_allows_stop "$PAYLOAD" repair && allow_exit; exit 2; }
     fi
     exit 0
   fi
@@ -800,7 +811,7 @@ while [ "$i" -lt $((SYNC_WAIT_MS / 100)) ]; do
 done
 if autoarm_owns_recovery; then
   if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
-    fm_failure_episode_reset "$STATE" || exit 2
+    fm_failure_episode_reset "$STATE" || { fm_stop_policy_allows_stop "$PAYLOAD" repair && allow_exit; exit 2; }
   fi
   exit 0
 fi

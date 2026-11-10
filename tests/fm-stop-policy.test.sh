@@ -23,7 +23,11 @@ turn() { # <session> <text> [active]
 }
 guard() {
   RC=0
-  bash "$ROOT/bin/fm-turnend-guard.sh" --claude < "$PAYLOAD" > "$TMP_ROOT/out" 2> "$TMP_ROOT/err" || RC=$?
+  if [ "${1:-claude}" = default ]; then
+    bash "$ROOT/bin/fm-turnend-guard.sh" < "$PAYLOAD" > "$TMP_ROOT/out" 2> "$TMP_ROOT/err" || RC=$?
+  else
+    bash "$ROOT/bin/fm-turnend-guard.sh" --claude < "$PAYLOAD" > "$TMP_ROOT/out" 2> "$TMP_ROOT/err" || RC=$?
+  fi
 }
 expect_rc() { [ "$RC" -eq "$1" ] || fail "$2: expected rc=$1, got $RC: $(cat "$TMP_ROOT/err")"; }
 event() { rg -q "status=$1 " "$LAB/state/stop-hook.log" || fail "missing $1 event"; }
@@ -56,10 +60,10 @@ pass 'parked shortcut preserves executable orders and mixed work'
 
 printf 'working [at=2]: executable work\n' >> "$LAB/state/task.status"
 turn active shipshape true
-guard
+guard default
 expect_rc 0 'stop_hook_active always allows stop'
 event hook_active
-pass 'stop_hook_active is honored in Claude mode'
+pass 'stop_hook_active is honored by the ordinary Stop guard'
 
 for n in 1 2 3; do
   case "$n" in 1) text='Shipshape.' ;; 2) text='  SHIPSHAPE.  ' ;; 3) text='shipshape.' ;; esac
@@ -83,7 +87,6 @@ for hook in fm-handoff-trigger.sh fm-claude-stop-autoarm.sh; do
   bash "$ROOT/bin/$hook" < "$PAYLOAD" > "$TMP_ROOT/out" 2> "$TMP_ROOT/err" || RC=$?
   expect_rc 0 "$hook honors exhausted session budget"
 done
-[ ! -e "$LAB/state/.claude-autoarm-epoch" ] || fail 'exhausted budget armed a watcher'
 
 FAKEBIN=$(fm_fakebin "$TMP_ROOT/clock")
 REAL_DATE=$(command -v date)
@@ -129,6 +132,19 @@ done
 [ "$(rg -c 'session=concurrent .*status=continue ' "$LAB/state/stop-hook.log")" -eq 1 ] || fail 'concurrent Stop charged twice'
 pass 'three concurrent Stop writers reserve one continuation'
 
+# The public cheap predicate does not take the ledger lock or parse a transcript.
+mkdir "$LAB/state/.stop-hook.check-fast.json.lock"
+FASTBIN=$(fm_fakebin "$TMP_ROOT/fast-check")
+printf '#!/usr/bin/env bash\nexit 99\n' > "$FASTBIN/cksum"
+chmod +x "$FASTBIN/cksum"
+turn check-fast same
+RC=0
+PATH="$FASTBIN:$PATH" bash -c '. "$1/bin/fm-stop-policy-lib.sh"; fm_stop_policy_allows_stop "$(cat "$2")" supervise' _ "$ROOT" "$PAYLOAD" || RC=$?
+expect_rc 1 'check-mode contention preserves existing supervision behavior'
+[ -d "$LAB/state/.stop-hook.check-fast.json.lock" ] || fail 'check mode touched the ledger lock'
+rmdir "$LAB/state/.stop-hook.check-fast.json.lock"
+pass 'check mode ignores ledger contention and transcript parsing'
+
 # A tool between identical replies and a new commit independently reset the run.
 turn progress same
 guard
@@ -146,13 +162,9 @@ pass 'tool calls and commits reset the repeat streak'
 
 # The other Claude Stop writers must not undo an allowed stop.
 turn siblings same true
-for hook in fm-handoff-trigger.sh fm-claude-stop-autoarm.sh; do
-  RC=0
-  bash "$ROOT/bin/$hook" < "$PAYLOAD" > "$TMP_ROOT/out" 2> "$TMP_ROOT/err" || RC=$?
-  expect_rc 0 "$hook honors active hook"
-done
-[ "$(rg -c 'session=siblings status=hook_active ' "$LAB/state/stop-hook.log")" -eq 2 ] || fail 'a sibling bypassed shared active-hook policy'
-[ ! -e "$LAB/state/.claude-autoarm-epoch" ] || fail 'allowed stop armed a watcher'
-pass 'all Claude Stop entrypoints honor the shared allow verdict'
+RC=0
+bash "$ROOT/bin/fm-handoff-trigger.sh" < "$PAYLOAD" > "$TMP_ROOT/out" 2> "$TMP_ROOT/err" || RC=$?
+expect_rc 0 'handoff hook honors active hook'
+pass 'handoff gate honors stop_hook_active; auto-arm arming is tested separately'
 
 cat "$LAB/state/stop-hook.log"

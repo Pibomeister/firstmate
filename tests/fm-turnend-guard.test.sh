@@ -1448,15 +1448,16 @@ SH
   chmod +x "$dir/bin/fm-watch-arm.sh"
 }
 
-# The F5 incident takes precedence over the previous re-block behavior.
+# Active-hook stops cannot leave the home blind when no auto-arm owns recovery.
 test_hook_claude_mode_reblocks_stop_hook_active_when_unhealthy() {
   local dir out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-claude-reblock")
   : > "$dir/state/task1.meta"
   out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" true); status=$?
-  expect_code 0 "$status" "--claude must honor stop_hook_active even without a healthy watcher"
-  [ -z "$out" ] || fail "active-hook stop printed a continuation: $out"
-  pass "fm-turnend-guard --claude: honors active-hook stop while preserving open work"
+  expect_code 2 "$status" "--claude must recover missing monitoring even after stop_hook_active"
+  assert_contains "$out" "TURN WOULD END BLIND" "unclaimed recovery must explain the blind stop"
+  assert_contains "$out" "Stop-owned auto-arm did not claim" "the repair must name missing auto-arm ownership"
+  pass "fm-turnend-guard --claude: active-hook stop cannot reopen the blind-supervision window"
 }
 
 test_hook_claude_mode_reblocks_x_mode_without_tasks() {
@@ -3244,6 +3245,13 @@ SH
   pass "secondmate Herdr binding is proven from the lock owner and rings its recorded target; the default session needs no HERDR_SESSION, a leftover watcher is taken over for this home only, and legacy tmux bindings still validate"
 }
 
+if [ "${FM_TEST_ONLY:-}" = stop-policy ]; then
+  trap fm_test_cleanup EXIT
+  test_hook_claude_mode_reblocks_stop_hook_active_when_unhealthy
+  test_hook_claude_mode_allows_when_autoarm_owner_alive
+  test_hook_claude_mode_allows_on_fresh_rewake_epoch
+  exit 0
+fi
 if [ "${FM_TEST_ONLY:-}" = secondmate-endturn ]; then
   test_secondmate_event_instructions_finish_turn
   test_secondmate_event_status_requires_notification_owner

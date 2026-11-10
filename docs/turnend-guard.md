@@ -309,7 +309,7 @@ The registrations in detail:
 ### Claude and Codex blocking
 
 Claude and Codex can block a Stop directly with exit status 2 and stderr.
-Claude keeps its one-shot `stop_hook_active` allow.
+Ordinary guards honor `stop_hook_active`; Claude's cooperative mode also preserves tokenless monitoring before allowing a blind stop.
 The shared primary continuation limits, parked-work exit and watchdog log are owned by [`bin/fm-stop-policy-lib.sh`](../bin/fm-stop-policy-lib.sh), with regression and lab drill in [`tests/fm-stop-policy.test.sh`](../tests/fm-stop-policy.test.sh).
 Codex mode is owned by the header of [`bin/fm-turnend-guard.sh`](../bin/fm-turnend-guard.sh).
 A running checkpoint this session started still blocks unless the shared stop policy allows the stop.
@@ -354,9 +354,10 @@ Existing native protocols remain authoritative outside the selected row.
 
 ### Claude cooperative mode
 
-Claude runs the guard with `--claude`, which applies the shared stop policy before cooperating with the Stop-owned auto-arm.
+Claude runs the guard with `--claude`, which preserves missing-supervision recovery while the shared policy bounds model continuations.
 Claude Code sets `stop_hook_active=true` on every stop after any stop-hook continuation, including `asyncRewake` rewakes.
-An allowed stop can leave supervision pending until the next external wake or message; durable work remains open.
+The Stop-owned auto-arm keeps tokenless monitoring running when the model may stop.
+At a later external wake it evaluates fresh state, and a continuation bound retains the monitoring owner while the pending wake stays durable.
 
 Before the Claude cooperative budget can re-block a Stop, the guard checks for a live foreign session-lock owner and takes the same safe diagnostic exit described under "Guard predicates" ([foreign session-lock owner](#foreign-session-lock-owner)).
 

@@ -2034,6 +2034,83 @@ test_fm_lock_status_still_works_with_shared_lib() {
   pass "fm-lock: shared session-lock lib preserves the status path"
 }
 
+# A real hook process stays tokenless while the model stops, then observes a
+# later fixture event. The budget variant also keeps monitoring across a bound.
+test_parked_stop_keeps_monitoring() {
+  local variant=${1:-parked} dir pid n rc clockbin real_date now
+  dir=$(make_primary_dir "$TMP_ROOT/parked-policy-$variant")
+  cp "$ROOT/bin/fm-turnend-guard.sh" "$ROOT/bin/fm-harness.sh" "$ROOT/bin/fm-operational-input.sh" "$dir/bin/"
+  : > "$dir/state/task.meta"
+  printf 'captain-held [at=1]: owner decision\n' > "$dir/state/task.status"
+  printf '{"session_id":"parked-monitor","stop_hook_active":true}\n' > "$dir/payload.json"
+  clockbin=$(fm_fakebin "$dir/clockbin")
+  real_date=$(command -v date)
+  now=$(date +%s)
+  printf '%s\n' "$now" > "$dir/state/clock"
+  printf '#!/usr/bin/env bash\nif [ "$*" = +%%s ]; then cat "$FM_HOME/state/clock"; else exec %q "$@"; fi\n' "$real_date" > "$clockbin/date"
+  chmod +x "$clockbin/date"
+  if [ "$variant" = budget ]; then
+    jq -nc --argjson now "$now" '{times:[$now,$now,$now,$now,$now,$now],streak:0}' > "$dir/state/.stop-hook.parked-monitor.json"
+  fi
+  cat > "$dir/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+if [ -n "${FM_WATCH_PREDECESSOR_ARM_PID:-}" ]; then
+  printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+  exit 0
+fi
+printf '%s\n' "$$" >> "$FM_HOME/state/arm-ran"
+touch "$FM_HOME/state/.last-watcher-beat"
+while [ ! -e "$FM_HOME/state/release" ]; do sleep 0.05; done
+if [ ! -s "$FM_HOME/state/.wake-queue" ]; then
+  printf '1 1 check: lab-external-release\n' > "$FM_HOME/state/.wake-queue"
+fi
+printf 'pending:downtime:parked-lab\n' > "$FM_HOME/state/.watcher-down"
+printf 'watcher: started pid=%s (beacon fresh)\ncheck: lab-external-release\n' "$$"
+SH
+  chmod +x "$dir/bin/fm-watch-arm.sh"
+  env PATH="$clockbin:$PATH" FM_HOME="$dir" FM_POLL=1 FM_TEST_SEAM=1 FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=0 \
+    "$FAKE_CLAUDE" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      bash "$FM_HOME/bin/fm-turnend-guard.sh" --claude < "$FM_HOME/payload.json" > "$FM_HOME/state/guard.out" 2>&1
+      printf "%s\n" "$?" > "$FM_HOME/state/guard.rc"
+      bash "$FM_HOME/bin/fm-claude-stop-autoarm.sh" < "$FM_HOME/payload.json" > "$FM_HOME/state/autoarm.out" 2>&1
+      printf "%s\n" "$?" > "$FM_HOME/state/autoarm.rc"
+    ' &
+  pid=$!
+  for ((n=0; n<600; n++)); do [ ! -s "$dir/state/arm-ran" ] || break; sleep 0.1; done
+  [ -s "$dir/state/arm-ran" ] || { kill "$pid" 2>/dev/null || true; fail "parked auto-arm never started: $(cat "$dir/state/autoarm.out" 2>/dev/null)"; }
+  [ "$(cat "$dir/state/guard.rc")" = 0 ] || fail "parked model stop was blocked: $(cat "$dir/state/guard.out")"
+  grep -q 'status=parked ' "$dir/state/stop-hook.log" || fail 'parked stop was not classified'
+  kill -0 "$pid" 2>/dev/null || fail 'monitoring owner exited before the external wake'
+  printf 'DRILL %s: model stopped in 1 turn; tokenless arm is waiting\n' "$variant"
+  : > "$dir/state/release"
+  if [ "$variant" = budget ]; then
+    for ((n=0; n<600; n++)); do grep -q 'status=hook_budget ' "$dir/state/stop-hook.log" && break; sleep 0.1; done
+    grep -q 'status=hook_budget ' "$dir/state/stop-hook.log" || fail 'budget was not enforced at rewake time'
+    [ ! -e "$dir/state/autoarm.rc" ] || fail 'budget ended the monitoring owner'
+    kill -0 "$pid" 2>/dev/null || fail 'budget killed tokenless monitoring'
+    printf '%s\n' "$((now+3601))" > "$dir/state/clock"
+  fi
+  for ((n=0; n<600; n++)); do [ ! -f "$dir/state/autoarm.rc" ] || break; sleep 0.1; done
+  [ -f "$dir/state/autoarm.rc" ] || { kill "$pid" 2>/dev/null || true; fail "later real wake never arrived: $(cat "$dir/state/autoarm.out")"; }
+  wait "$pid" || true
+  rc=$(cat "$dir/state/autoarm.rc")
+  [ "$rc" = 2 ] || fail "later external wake returned $rc: $(cat "$dir/state/autoarm.out")"
+  grep -q 'check: lab-external-release' "$dir/state/autoarm.out" || fail 'external wake reason was dropped'
+  [ -s "$dir/state/.wake-queue" ] || fail 'bound handling acknowledged the pending wake'
+  printf 'DRILL %s: later real external wake delivered exit=2; queue retained\n' "$variant"
+  cat "$dir/state/stop-hook.log"
+  pass "parked $variant session stops cleanly while monitoring and later wake delivery continue"
+}
+
+if [ "${FM_TEST_ONLY:-}" = stop-policy ]; then
+  trap fm_test_cleanup EXIT
+  test_parked_stop_keeps_monitoring parked
+  test_parked_stop_keeps_monitoring budget
+  test_actionable_close_rewakes_with_reason
+  exit 0
+fi
+
 test_inert_in_child_worktree
 test_inert_without_session_lock
 test_reclaims_stale_session_lock_before_arming
@@ -2098,3 +2175,5 @@ test_host_crash_is_retried_then_reported
 test_arguments_never_arm
 test_fm_lock_status_still_works_with_shared_lib
 test_stands_down_only_on_pi_code_transcript_path
+test_parked_stop_keeps_monitoring parked
+test_parked_stop_keeps_monitoring budget

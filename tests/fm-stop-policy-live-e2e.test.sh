@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Credentialed Claude guard: real Stop payloads, no live home or worker launch.
+# Credentialed Claude payload probe, no live home or worker launch.
+# The active continuation is ended by the lab wrapper after capturing its real
+# payload; monitoring continuity is exercised by the portable auto-arm drill.
 set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 fm_live_gate opt-in FM_STOP_POLICY_LIVE_E2E claude
@@ -22,6 +24,7 @@ for scenario in parked active; do
 #!/usr/bin/env bash
 payload=$(cat)
 printf '%s\n' "$payload" >> "$FM_HOME/payloads.jsonl"
+printf '%s' "$payload" | jq -e '.stop_hook_active == true' >/dev/null && exit 0
 printf '%s' "$payload" | bash "$POLICY_ROOT/bin/fm-turnend-guard.sh" --claude
 SH
   jq -nc --arg command "bash '$LAB/hook.sh'" \
@@ -41,7 +44,6 @@ SH
   else
     jq -se 'length == 2 and .[0].stop_hook_active == false and .[1].stop_hook_active == true' "$LAB/payloads.jsonl" >/dev/null \
       || fail "$VERSION changed its Stop continuation payload: $(cat "$LAB/payloads.jsonl")"
-    rg -q 'status=hook_active ' "$LAB/state/stop-hook.log" || fail "$VERSION active-hook event absent"
   fi
   printf 'ok - %s: %s stopped after %s real Stop payload(s)\n' "$VERSION" "$scenario" "$(wc -l < "$LAB/payloads.jsonl" | tr -d ' ')"
   cat "$LAB/state/stop-hook.log"
