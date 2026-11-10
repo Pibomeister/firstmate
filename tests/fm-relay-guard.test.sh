@@ -218,7 +218,7 @@ EOF
 }
 
 test_backoff_defers_a_second_restart() {
-  local out pid
+  local out pid i
   world
   conf <<EOF
 daemon=$DAEMON_NAME
@@ -231,7 +231,10 @@ settle-secs=0
 EOF
   start_daemon
   guard once >/dev/null 2>&1
+  # With no settle time the detached relay may still be exec'ing.
+  i=0
   pid=$(relay_pids bad 7003)
+  while [ -z "$pid" ] && [ "$i" -lt 30 ]; do sleep 0.1; i=$((i + 1)); pid=$(relay_pids bad 7003); done
   [ -n "$pid" ] || fail "relay was not spawned"
   out=$(guard once 2>&1)
   assert_contains "$out" "backoff"
@@ -258,7 +261,9 @@ test_daemon_helper_is_not_a_daemon_restart() {
   world
   std_conf
   start_daemon_with_helper
-  sleep 0.3
+  # Relays a whole second newer than the daemon: an equal whole-second age
+  # counts as a relay that may predate the daemon.
+  sleep 1.2
   start_relay m3 7001
   start_relay m4 7002
   sleep 1.6
@@ -342,7 +347,9 @@ test_run_stops_promptly_during_the_interval() {
   assert_equals 143 "$code"
   alive "$sleeper" && fail "run left its interval sleep behind"
   assert_equals "$m3" "$(relay_pids m3 7001)"
-  assert_absent "$W/home/state/relay-guard/lock.d"
+  code=0
+  guard once >/dev/null 2>&1 || code=$?
+  [ "$code" -ne 75 ] || fail "run left the pass lock held after it exited"
   kill "$m3" "$(relay_pids m4 7002)" 2>/dev/null
   stop_daemon
   pass "a TERM during the run interval exits at once, reaps the sleep, and leaves relays running"
@@ -434,131 +441,211 @@ EOF
   pass "missing, empty, misspelled, dangling, probe-less, and non-numeric configuration is refused before any action"
 }
 
-test_lock_without_pid_is_held_until_it_ages() {
-  local out code
-  world
-  std_conf
-  start_daemon
-  # A contender can see lock.d in the instant between the owner's mkdir and
-  # its pid write. That lock is live, not stale.
-  mkdir -p "$W/home/state/relay-guard/lock.d"
-  out=$(guard once 2>&1)
-  code=$?
-  [ "$code" -eq 75 ] || fail "a fresh lock with no pid yet should be held (exit 75), got $code: $out"
-  [ -d "$W/home/state/relay-guard/lock.d" ] || fail "a held fresh lock was removed"
-  [ -z "$(relay_pids m3 7001)" ] || fail "a pass ran while another pass held a fresh lock"
-  # A pid-less lock left behind long ago is a crashed owner's, so it is stale.
-  touch -t 202001010000 "$W/home/state/relay-guard/lock.d"
-  out=$(guard once 2>&1)
-  code=$?
-  [ "$code" -eq 0 ] || fail "an old pid-less lock should be reclaimed, got $code: $out"
-  [ -n "$(relay_pids m3 7001)" ] || fail "the pass after reclaiming a stale lock did not run"
-  assert_absent "$W/home/state/relay-guard/lock.d"
-  stop_daemon
-  pass "a pid-less lock is held while fresh and reclaimed only once it is old"
-}
 
-test_lock_of_a_reused_pid_is_reclaimed() {
-  local out code holder
-  world
-  std_conf
+# One relay, started newer than the daemon, so every pass runs its probe.
+probed_world() {  # <probe-script>
   start_daemon
-  # After a crash and reboot, lock.d can name a pid that is alive again as
-  # another process. Only the same pid with the same start time holds it.
-  sleep 600 >/dev/null 2>&1 &
-  holder=$!
-  mkdir -p "$W/home/state/relay-guard/lock.d"
-  printf '%s\n%s\n' "$holder" "$(LC_ALL=C TZ=UTC ps -o lstart= -p "$holder")" > "$W/home/state/relay-guard/lock.d/pid"
-  out=$(guard once 2>&1)
-  code=$?
-  [ "$code" -eq 75 ] || fail "a lock whose live owner kept its start time should be held (exit 75), got $code: $out"
-  # A contender in another time zone and locale reads the same owner identity.
-  out=$(TZ=Asia/Tokyo LC_ALL=fr_FR.UTF-8 LANG=fr_FR.UTF-8 guard once 2>&1)
-  code=$?
-  [ "$code" -eq 75 ] || fail "a live owner's lock should be held from another time zone and locale (exit 75), got $code: $out"
-  [ -z "$(relay_pids m3 7001)" ] || fail "a pass ran while a live owner held the lock"
-  printf '%s\n%s\n' "$holder" "Thu Jan  1 00:00:00 2020" > "$W/home/state/relay-guard/lock.d/pid"
-  out=$(guard once 2>&1)
-  code=$?
-  [ "$code" -eq 0 ] || fail "a lock whose pid now has another start time should be reclaimed, got $code: $out"
-  [ -n "$(relay_pids m3 7001)" ] || fail "the pass after reclaiming a reused-pid lock did not run"
-  printf '%s\n' "$holder" > "$W/home/state/relay-guard/lock.d.tmp"
-  mkdir -p "$W/home/state/relay-guard/lock.d"
-  mv "$W/home/state/relay-guard/lock.d.tmp" "$W/home/state/relay-guard/lock.d/pid"
-  out=$(guard once 2>&1)
-  code=$?
-  [ "$code" -eq 0 ] || fail "a lock naming a live pid with no start time should be reclaimed, got $code: $out"
-  assert_absent "$W/home/state/relay-guard/lock.d"
-  [ -z "$(ls -d "$W/home/state/relay-guard"/lock.stale.* 2>/dev/null)" ] || fail "a reclaimed lock was left behind"
-  kill "$holder" 2>/dev/null
-  kill "$(relay_pids m3 7001)" "$(relay_pids m4 7002)" 2>/dev/null
-  stop_daemon
-  pass "a lock is held only by its live owner with the same start time; a reused pid is reclaimed"
-}
-
-test_pass_does_not_drop_a_lock_it_lost() {
-  local out code holder start
-  world
-  start_daemon
-  sleep 600 >/dev/null 2>&1 &
-  holder=$!
-  start=$(LC_ALL=C TZ=UTC ps -o lstart= -p "$holder")
-  # The probe runs inside the pass; it hands lock.d to another live owner, as
-  # a contender that moved this pass's lock aside and took its own would.
-  printf '%s\n%s\n' "$holder" "$start" > "$W/foreign-lock"
-  cat > "$W/steal-probe.sh" <<EOF
-#!/bin/sh
-cp "$W/foreign-lock" "$W/home/state/relay-guard/lock.d/pid"
-exec "$W/fake-probe.sh" "\$@"
-EOF
-  chmod +x "$W/steal-probe.sh"
+  sleep 1.2
+  start_relay m3 7001
   conf <<EOF
 daemon=$DAEMON_NAME
 relay.m3=$W/fake-relay.sh m3 7001
-probe.m3=$W/steal-probe.sh m3
+probe.m3=$1 m3
 settle-secs=1
 term-wait-secs=3
 EOF
-  out=$(guard once 2>&1)
-  code=$?
-  [ "$code" -eq 0 ] || fail "the pass should still finish, got $code: $out"
-  [ -d "$W/home/state/relay-guard/lock.d" ] || fail "a pass removed a lock another owner now holds"
-  assert_equals "$holder" "$(sed -n 1p "$W/home/state/relay-guard/lock.d/pid")"
-  out=$(guard once 2>&1)
-  code=$?
-  [ "$code" -eq 75 ] || fail "the new owner's lock should still be held (exit 75), got $code: $out"
-  kill "$holder" 2>/dev/null
-  relay_pids m3 7001 | while read -r p; do kill "$p" 2>/dev/null; done
-  stop_daemon
-  pass "a pass removes only a lock that still names it as owner"
 }
 
-test_contenders_on_a_stale_lock_run_one_pass_at_a_time() {
-  local i pids=() code n
+# A probe that records any second pass whose probe runs while one is in flight,
+# then answers as the ordinary fake probe does.
+overlap_probe() {
+  cat > "$W/overlap-probe.sh" <<EOF
+#!/bin/sh
+if mkdir "$W/inpass" 2>/dev/null; then
+  sleep 1.2
+  rmdir "$W/inpass"
+else
+  : > "$W/overlap"
+fi
+exec "$W/fake-probe.sh" "\$@"
+EOF
+  chmod +x "$W/overlap-probe.sh"
+}
+
+# A probe that blocks until released, so a test can crash a pass mid-probe.
+blocking_probe() {
+  cat > "$W/blocking-probe.sh" <<EOF
+#!/bin/sh
+: > "$W/probing"
+while [ ! -f "$W/release" ]; do sleep 0.1; done
+exec "$W/fake-probe.sh" "\$@"
+EOF
+  chmod +x "$W/blocking-probe.sh"
+}
+
+wait_for_file() {  # <path>
+  local i=0
+  while [ ! -e "$1" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -e "$1" ]
+}
+
+test_a_crashed_pass_never_blocks_the_next() {
+  local gpid out code
   world
-  std_conf
-  start_daemon
-  mkdir -p "$W/home/state/relay-guard/lock.d"
-  printf '%s\n%s\n' 999999 "Thu Jan  1 00:00:00 2020" > "$W/home/state/relay-guard/lock.d/pid"
-  for i in 1 2 3 4 5 6; do
-    guard once >"$W/contender.$i" 2>&1 &
+  blocking_probe
+  probed_world "$W/blocking-probe.sh"
+  FM_HOME="$W/home" bash "$GUARD" once >/dev/null 2>&1 &
+  gpid=$!
+  wait_for_file "$W/probing" || fail "the pass never reached its probe"
+  out=$(guard once 2>&1)
+  code=$?
+  [ "$code" -eq 75 ] || fail "a pass while another is in flight should exit 75, got $code: $out"
+  # The pass dies mid-probe and leaves its probe running, as a crash or an
+  # OOM kill would. Nothing it left behind may hold the lock.
+  kill -KILL "$gpid" 2>/dev/null
+  wait "$gpid" 2>/dev/null
+  rm -f "$W/probing"
+  : > "$W/release"
+  out=$(guard once 2>&1)
+  code=$?
+  [ "$code" -eq 0 ] || fail "the pass after a crashed pass should run at once, got $code: $out"
+  out=$(guard once 2>&1)
+  code=$?
+  [ "$code" -eq 0 ] || fail "a finished pass left the lock held, got $code: $out"
+  relay_pids m3 7001 | while read -r p; do kill "$p" 2>/dev/null; done
+  stop_daemon
+  pass "a pass killed mid-probe releases the lock at once, and its orphaned probe does not hold it"
+}
+
+test_concurrent_passes_never_overlap() {
+  local real_mv gpid i pids=() code n=0
+  world
+  overlap_probe
+  probed_world "$W/overlap-probe.sh"
+  # A directory rename stalls for a second, as on a loaded host, so any
+  # check-then-rename window in the lock stays open long enough to hit.
+  real_mv=$(type -P mv)
+  mkdir -p "$W/shim"
+  cat > "$W/shim/mv" <<EOF
+#!/bin/sh
+[ -d "\$1" ] && sleep 1
+exec "$real_mv" "\$@"
+EOF
+  chmod +x "$W/shim/mv"
+  # Start from a crashed pass's leftovers.
+  blocking_probe
+  conf <<EOF
+daemon=$DAEMON_NAME
+relay.m3=$W/fake-relay.sh m3 7001
+probe.m3=$W/blocking-probe.sh m3
+EOF
+  FM_HOME="$W/home" bash "$GUARD" once >/dev/null 2>&1 &
+  gpid=$!
+  wait_for_file "$W/probing" || fail "the crashing pass never reached its probe"
+  kill -KILL "$gpid" 2>/dev/null
+  wait "$gpid" 2>/dev/null
+  : > "$W/release"
+  conf <<EOF
+daemon=$DAEMON_NAME
+relay.m3=$W/fake-relay.sh m3 7001
+probe.m3=$W/overlap-probe.sh m3
+EOF
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    PATH="$W/shim:$PATH" guard once >"$W/contender.$i" 2>&1 &
     pids+=("$!")
+    sleep 0.25
   done
-  n=0
   for i in "${pids[@]}"; do
     wait "$i"
     code=$?
     [ "$code" -eq 0 ] && n=$((n + 1))
-    [ "$code" -eq 0 ] || [ "$code" -eq 75 ] || fail "a contender exited $code"
+    [ "$code" -eq 0 ] || [ "$code" -eq 75 ] || fail "a contender exited $code: $(cat "$W"/contender.* 2>/dev/null)"
   done
-  [ "$n" -ge 1 ] || fail "no contender reclaimed the stale lock"
-  [ "$(relay_pids m3 7001 | wc -l | tr -d ' ')" -eq 1 ] || fail "concurrent passes started duplicate relays: $(relay_pids m3 7001 | tr '\n' ' ')"
-  [ "$(relay_pids m4 7002 | wc -l | tr -d ' ')" -eq 1 ] || fail "concurrent passes started duplicate m4 relays"
-  assert_absent "$W/home/state/relay-guard/lock.d"
-  [ -z "$(ls -d "$W/home/state/relay-guard"/lock.stale.* 2>/dev/null)" ] || fail "a reclaimed lock was left behind"
-  { relay_pids m3 7001; relay_pids m4 7002; } | while read -r p; do kill "$p" 2>/dev/null; done
+  [ "$n" -ge 1 ] || fail "no contender ran a pass"
+  [ ! -e "$W/overlap" ] || fail "two passes ran their probes at the same time"
+  [ "$(relay_pids m3 7001 | wc -l | tr -d ' ')" -eq 1 ] || fail "concurrent passes left duplicate relays: $(relay_pids m3 7001 | tr '\n' ' ')"
+  relay_pids m3 7001 | while read -r p; do kill "$p" 2>/dev/null; done
   stop_daemon
-  pass "contenders racing to reclaim a stale lock run their passes one at a time"
+  pass "staggered passes racing over a crashed pass's leftovers never run at the same time"
+}
+
+test_a_relay_pid_reused_during_the_probe_is_not_signaled() {
+  local real_ps relay out
+  world
+  real_ps=$(type -P ps)
+  # The probe fails and, while it runs, the relay's pid passes to another
+  # process: a ps stand-in reports a new start time for that pid from then on.
+  mkdir -p "$W/shim"
+  cat > "$W/shim/ps" <<EOF
+#!/bin/sh
+if [ "\$1" = -o ] && [ "\$2" = lstart= ] && [ "\$3" = -p ] && [ -f "$W/reused.\$4" ]; then
+  printf 'Sat Jan  1 00:00:00 2000\n'
+  exit 0
+fi
+exec "$real_ps" "\$@"
+EOF
+  cat > "$W/reuse-probe.sh" <<EOF
+#!/bin/sh
+: > "$W/reused.\$(cat "$W/relay.pid")"
+exit 1
+EOF
+  chmod +x "$W/shim/ps" "$W/reuse-probe.sh"
+  start_daemon
+  sleep 1.2
+  start_relay m3 7001
+  sleep 0.3
+  relay=$(relay_pids m3 7001)
+  [ -n "$relay" ] || fail "fixture relay did not start"
+  printf '%s\n' "$relay" > "$W/relay.pid"
+  conf <<EOF
+daemon=$DAEMON_NAME
+relay.m3=$W/fake-relay.sh m3 7001
+probe.m3=$W/reuse-probe.sh m3
+probe-fails=1
+settle-secs=1
+term-wait-secs=1
+EOF
+  out=$(PATH="$W/shim:$PATH" guard once 2>&1)
+  [ -f "$W/reused.$relay" ] || fail "fixture is vacuous: the probe never ran: $out"
+  alive "$relay" || fail "the guard signaled a pid whose start time changed after the relay was matched: $out"
+  pkill -f "$W/fake-relay.sh m3 7001" 2>/dev/null
+  stop_daemon
+  pass "a relay pid that changed owner during the probe is never sent TERM or KILL"
+}
+
+test_leading_zero_numbers_are_decimal() {
+  local old new out code
+  world
+  start_daemon
+  start_relay m3 7001
+  sleep 1.3
+  stop_daemon
+  start_daemon
+  old=$(relay_pids m3 7001)
+  [ -n "$old" ] || fail "fixture relay did not start"
+  conf <<EOF
+daemon=$DAEMON_NAME
+relay.m3=$W/fake-relay.sh m3 7001
+probe.m3=$W/fake-probe.sh m3
+probe-fails=02
+max-restarts=08
+window-secs=0900
+backoff-secs=09
+settle-secs=01
+term-wait-secs=08
+EOF
+  out=$(guard once 2>&1)
+  code=$?
+  [ "$code" -eq 0 ] || fail "zero-padded numbers should recover a stale relay, got $code: $out"
+  new=$(relay_pids m3 7001)
+  [ -n "$new" ] && [ "$new" != "$old" ] || fail "the stale relay was not restarted: $out"
+  "$W/fake-probe.sh" m3 || fail "the restarted relay is not reachable"
+  kill "$new" 2>/dev/null
+  out=$(guard run --interval 00 2>&1)
+  code=$?
+  [ "$code" -eq 2 ] || fail "a zero interval written as 00 should be refused (exit 2), got $code: $out"
+  stop_daemon
+  pass "zero-padded config numbers parse as decimal and a 00 interval is refused"
 }
 
 test_kill_spares_a_pid_that_is_no_longer_the_relay() {
@@ -655,10 +742,10 @@ test_relay_started_in_the_daemon_restart_second_is_restarted() {
 }
 
 fm_test_run \
-  test_lock_without_pid_is_held_until_it_ages \
-  test_lock_of_a_reused_pid_is_reclaimed \
-  test_contenders_on_a_stale_lock_run_one_pass_at_a_time \
-  test_pass_does_not_drop_a_lock_it_lost \
+  test_a_crashed_pass_never_blocks_the_next \
+  test_concurrent_passes_never_overlap \
+  test_a_relay_pid_reused_during_the_probe_is_not_signaled \
+  test_leading_zero_numbers_are_decimal \
   test_kill_spares_a_pid_that_is_no_longer_the_relay \
   test_relay_started_in_the_daemon_restart_second_is_restarted \
   test_stale_relays_after_daemon_restart_are_respawned \

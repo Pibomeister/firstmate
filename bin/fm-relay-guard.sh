@@ -76,10 +76,12 @@
 #                             environment, not only the local listener.
 #   probe-fails=2  probe-timeout-secs=10  max-restarts=3  window-secs=900
 #   backoff-secs=30  settle-secs=2  term-wait-secs=5
-# Stopping sends TERM to the matched pids, waits <term-wait-secs>, then KILLs
-# survivors whose start time is unchanged since the TERM, so a pid that exited
-# and was reused is spared; it never signals a process the relay match did not
-# select.
+#                             Numbers are decimal: a leading zero is ignored.
+# The relay match records each process's pid and start time from one ps
+# snapshot. Stopping sends TERM only to a pid that still has that start time,
+# waits <term-wait-secs>, then KILLs only survivors that still have it, so a
+# relay that exited during the pass and whose pid was reused is never
+# signaled; it never signals a process the relay match did not select.
 # A started relay runs detached (setsid where available, nohup, stdin from
 # /dev/null) with output appended to state/relay-guard/<name>.log, so it
 # outlives this command. The rendered units keep relays alive across a guard
@@ -98,18 +100,19 @@
 #   <name>.bound   "<relay-pid> <daemon-pid>" of the relay this guard last
 #                  started and the daemon running when it did.
 #   <name>.log     The relay's own output.
-#   lock.d/        Per-pass lock holding its owner's pid and start time; a pass
-#                  already holding it makes once exit 75. A lock whose pid is
-#                  gone or now has another start time is a crashed owner's and
-#                  is reclaimed by renaming it aside. A lock with no pid yet is
-#                  held until it is a minute old, then reclaimed the same way.
+#   lock           Pass lock file, never removed. A pass holds a kernel flock(2)
+#                  on it for the whole pass, and a pass already holding it
+#                  makes once exit 75 (run skips that pass). The kernel releases
+#                  it when the holder exits, even by SIGKILL, so a crashed pass
+#                  never leaves a stale lock; relays and probes never hold it.
 #
 # Exit status: 0 when every relay ends the pass proven healthy, 3 when any
 # relay is not (daemon down, probe failing, capped, backoff, or a start that
 # did not stay running), 2 on a usage or configuration error, 75 when another
 # pass holds the lock, 1 on any other failure. run keeps looping past 3.
 # Requires a procps-style ps that accepts -A, -ww, and
-# -o pid=,ppid=,args=,etime=,comm= (Linux procps and macOS both do).
+# -o pid=,ppid=,args=,etime=,comm=,lstart= (Linux procps and macOS both do),
+# and perl for the pass lock (macOS ships it; a pass without it exits 1).
 #
 # Install: FM_HOME must be absolute. On macOS save render-launchd as
 # ~/Library/LaunchAgents/<label>.plist and launchctl bootstrap gui/$(id -u)
@@ -185,6 +188,7 @@ load_config() {
         fi ;;
       probe-fails|probe-timeout-secs|max-restarts|window-secs|backoff-secs|settle-secs|term-wait-secs)
         case "$val" in ''|*[!0-9]*) die "$key must be a whole number: $val" 2 ;; esac
+        val=$((10#$val))  # decimal, so a leading zero is never read as octal
         case "$key" in
           probe-fails) PROBE_FAILS=$val ;;
           probe-timeout-secs) PROBE_TIMEOUT=$val ;;
@@ -263,46 +267,61 @@ daemon_youngest() {
   printf '%s %s' "$best_pid" "$best_age"
 }
 
-relay_pids() {  # <command> -> matching pids, one per line
-  ps -A -ww -o pid= -o args= 2>/dev/null | FM_RG_CMD="$1" FM_RG_SELF="$$" awk '
+# "<pid> <start>" per matching process, one per line, where <start> is its
+# start time read in the same ps snapshot that matched its command line, so the
+# pair names that exact process even if the pid is later reused.
+relay_pids() {  # <command>
+  LC_ALL=C TZ=UTC ps -A -ww -o pid= -o lstart= -o args= 2>/dev/null |
+    FM_RG_CMD="$1" FM_RG_SELF="$$" awk '
     {
       pid = $1
+      start = $2 " " $3 " " $4 " " $5 " " $6
       line = $0
-      sub(/^[ \t]*[0-9]+[ \t]*/, "", line)
+      sub(/^[ \t]*[0-9]+[ \t]+[^ \t]+[ \t]+[^ \t]+[ \t]+[^ \t]+[ \t]+[^ \t]+[ \t]+[^ \t]+[ \t]*/, "", line)
       gsub(/[ \t]+/, " ", line)
       sub(/ $/, "", line)
       c = ENVIRON["FM_RG_CMD"]
       if (pid == ENVIRON["FM_RG_SELF"]) next
-      if (line == c) { print pid; next }
+      if (line == c) { print pid, start; next }
       n = length(line); m = length(c)
-      if (n > m && substr(line, n - m) == " " c) print pid
+      if (n > m && substr(line, n - m) == " " c) print pid, start
     }'
 }
 
-proc_start() {  # <pid> -> the process's start time; empty when gone
-  LC_ALL=C TZ=UTC ps -o lstart= -p "$1" 2>/dev/null
+proc_start() {  # <pid> -> the process's start time, as relay_pids prints it; empty when gone
+  squash "$(LC_ALL=C TZ=UTC ps -o lstart= -p "$1" 2>/dev/null)"
 }
 
-stop_pids() {  # <pids...>; nonzero when any survives
-  local pid i k alive starts=() survivors=()
-  [ "$#" -gt 0 ] || return 0
-  for pid in "$@"; do starts+=("$(proc_start "$pid")"); done
-  kill -TERM "$@" 2>/dev/null
+# Is <pid> still the process that had <start>? Empty <start> never matches.
+same_proc() {  # <pid> <start>
+  [ -n "$2" ] && [ "$(proc_start "$1")" = "$2" ]
+}
+
+stop_pids() {  # <"pid start"...> from relay_pids; nonzero when any survives
+  local e pid i k alive pids=() starts=() survivors=()
+  # Signal only a pid that is still the process the relay match selected: a
+  # relay that exited since, and whose pid another process now holds, has a
+  # different start time and is skipped.
+  for e in "$@"; do
+    [ -n "$e" ] || continue
+    pid=${e%% *}
+    same_proc "$pid" "${e#* }" || continue
+    pids+=("$pid")
+    starts+=("${e#* }")
+  done
+  [ "${#pids[@]}" -gt 0 ] || return 0
+  kill -TERM "${pids[@]}" 2>/dev/null
   i=0
   while [ "$i" -lt $((TERM_WAIT * 10)) ]; do
     alive=0
-    for pid in "$@"; do kill -0 "$pid" 2>/dev/null && alive=1; done
+    for pid in "${pids[@]}"; do kill -0 "$pid" 2>/dev/null && alive=1; done
     [ "$alive" -eq 1 ] || return 0
     sleep 0.1
     i=$((i + 1))
   done
-  # KILL only a pid that is still the process TERM was sent to: a pid that
-  # exited and was reused by another process has a different start time.
   k=0
-  for pid in "$@"; do
-    if [ -n "${starts[$k]}" ] && [ "$(proc_start "$pid")" = "${starts[$k]}" ]; then
-      survivors+=("$pid")
-    fi
+  for pid in "${pids[@]}"; do
+    same_proc "$pid" "${starts[$k]}" && survivors+=("$pid")
     k=$((k + 1))
   done
   [ "${#survivors[@]}" -gt 0 ] || return 0
@@ -312,14 +331,18 @@ stop_pids() {  # <pids...>; nonzero when any survives
   return 0
 }
 
+# Relays and probes run in a subshell whose bare `exec 9>&-` closes the
+# pass-lock fd for good. A `9>&-` on the command itself is not enough: bash
+# parks the fd on a spare number to restore it later (bash 3.2 even for exec
+# with a command), and the long-lived child would inherit and hold that copy.
 spawn_relay() {  # <name> <command>
   local words
   set -f
   read -r -a words <<< "$2"
   if command -v setsid >/dev/null 2>&1; then
-    ( exec setsid nohup "${words[@]}" </dev/null >>"$STATE/$1.log" 2>&1 ) &
+    ( exec 9>&-; exec setsid nohup "${words[@]}" </dev/null >>"$STATE/$1.log" 2>&1 ) &
   else
-    ( exec nohup "${words[@]}" </dev/null >>"$STATE/$1.log" 2>&1 ) &
+    ( exec 9>&-; exec nohup "${words[@]}" </dev/null >>"$STATE/$1.log" 2>&1 ) &
   fi
 }
 
@@ -328,9 +351,9 @@ run_probe() {  # <name> <probe-command>; status of the probe
   set -f
   read -r -a words <<< "$2"
   if [ -d "$STATE" ] && [ "$ACT" -eq 1 ]; then
-    fm_run_timed "$PROBE_TIMEOUT" "${words[@]}" </dev/null >>"$STATE/$1.log" 2>&1
+    ( exec 9>&-; fm_run_timed "$PROBE_TIMEOUT" "${words[@]}" ) </dev/null >>"$STATE/$1.log" 2>&1
   else
-    fm_run_timed "$PROBE_TIMEOUT" "${words[@]}" </dev/null >/dev/null 2>&1
+    ( exec 9>&-; fm_run_timed "$PROBE_TIMEOUT" "${words[@]}" ) </dev/null >/dev/null 2>&1
   fi
 }
 
@@ -383,7 +406,7 @@ join_pids() {
 
 # One pass. ACT=1 acts and records; ACT=0 only observes.
 pass_once() {
-  local now dline dpid='' dage='' ages i name cmd probe pids n rage reason limited verdict
+  local now dline dpid='' dage='' ages i name cmd probe pids procs n rage reason limited verdict
   local detail fails gate unhealthy=0 started=() started_reason=() started_old=() status_lines=()
   now=$(date +%s)
   if dline=$(daemon_youngest); then
@@ -396,7 +419,8 @@ pass_once() {
     cmd=${CMDS[$i]}
     probe=${PROBES[$i]}
     pids=()
-    while IFS= read -r n; do [ -n "$n" ] && pids+=("$n"); done < <(relay_pids "$cmd")
+    procs=()
+    while IFS= read -r n; do [ -n "$n" ] && { pids+=("${n%% *}"); procs+=("$n"); }; done < <(relay_pids "$cmd")
     reason=''
     limited=1
     verdict=''
@@ -414,6 +438,7 @@ pass_once() {
     elif ages=$(pair_ages "${pids[0]}" "${dline%% *}"); rage=${ages%% *}; dage=${ages#* }; [ "$rage" = - ]; then
       reason=missing
       pids=()
+      procs=()
     elif [ "$dage" = - ]; then
       verdict='daemon-down'
       detail="no $DAEMON process"
@@ -449,7 +474,7 @@ pass_once() {
             detail="$reason; $MAX_RESTARTS starts within ${WINDOW}s"
           fi
           ledger "$now" "$name" hold "$reason:$verdict" "$(join_pids "${pids[@]:-}")" - -
-        elif ! stop_pids "${pids[@]:-}"; then
+        elif ! stop_pids "${procs[@]:-}"; then
           verdict='stop-failed'
           detail="$reason; a relay process survived KILL"
         else
@@ -480,7 +505,7 @@ pass_once() {
       action=restart
       [ "$reason" = missing ] && action=spawn
       pids=()
-      while IFS= read -r n; do [ -n "$n" ] && pids+=("$n"); done < <(relay_pids "${CMDS[$idx]}")
+      while IFS= read -r n; do [ -n "$n" ] && pids+=("${n%% *}"); done < <(relay_pids "${CMDS[$idx]}")
       new=$(join_pids "${pids[@]:-}")
       [ "${#pids[@]}" -eq 1 ] && printf '%s %s\n' "${pids[0]}" "$dpid" > "$STATE/$name.bound"
       probe_result=-
@@ -588,50 +613,37 @@ WantedBy=default.target
 EOF
 }
 
+# The pass lock is a kernel lock: flock(2) on $STATE/lock, taken through fd 9
+# and held while this process keeps fd 9 open. The kernel releases it when the
+# holder exits however it dies, so there is never a stale lock to reclaim, and
+# relays and probes the pass starts never inherit fd 9. Bash has no flock
+# builtin and macOS ships no flock command, so perl takes the lock on the
+# inherited fd; the lock belongs to the open file, so it outlives that perl.
 LOCKED=0
-lock_live() {  # <lock dir>; zero while its owner still holds it
-  local holder start
-  holder=$(read_int "$1/pid")
-  if [ "$holder" -gt 0 ]; then
-    start=$(sed -n 2p "$1/pid" 2>/dev/null)
-    [ -n "$start" ] && kill -0 "$holder" 2>/dev/null && [ "$(proc_start "$holder")" = "$start" ]
-    return
-  fi
-  # No pid yet means the owner is between its mkdir and its pid write, so the
-  # lock is live until it is a minute old.
-  [ -n "$(find "$1" -prune -mmin -1 2>/dev/null)" ]
-}
-
-lock_mine() {  # zero while lock.d/pid names this process and its start time
-  [ "$(read_int "$STATE/lock.d/pid")" = "$$" ] &&
-    [ "$(sed -n 2p "$STATE/lock.d/pid" 2>/dev/null)" = "$(proc_start "$$")" ]
-}
-
-take_lock() {
-  local stale="$STATE/lock.stale.$$"
-  if ! mkdir "$STATE/lock.d" 2>/dev/null; then
-    lock_live "$STATE/lock.d" && return 1
-    mv "$STATE/lock.d" "$stale" 2>/dev/null || return 1
-    if lock_live "$stale"; then
-      mv "$stale" "$STATE/lock.d" 2>/dev/null
-      return 1
-    fi
-    rm -rf "$stale"
-    mkdir "$STATE/lock.d" 2>/dev/null || return 1
-  fi
-  { printf '%s\n%s\n' "$$" "$(proc_start "$$")" > "$STATE/lock.d/pid.$$" &&
-    mv "$STATE/lock.d/pid.$$" "$STATE/lock.d/pid"; } 2>/dev/null && lock_mine || return 1
-  LOCKED=1
+take_lock() {  # 0 when taken, 1 when another pass holds it, 2 when it cannot be taken
+  command -v perl >/dev/null 2>&1 || return 2
+  exec 9>>"$STATE/lock" || return 2
+  perl -MFcntl=:flock -e 'open(my $fh, ">&=", 9) or exit 2; flock($fh, LOCK_EX | LOCK_NB) or exit 1; exit 0' 2>/dev/null
+  case $? in
+    0) LOCKED=1; return 0 ;;
+    1) exec 9>&-; return 1 ;;
+    *) exec 9>&-; return 2 ;;
+  esac
 }
 
 drop_lock() {
-  [ "$LOCKED" -eq 1 ] && lock_mine && rm -rf "$STATE/lock.d"
+  [ "$LOCKED" -eq 1 ] && exec 9>&-
   LOCKED=0
 }
 
 locked_pass() {
   local rc
-  take_lock || { printf 'fm-relay-guard: another pass holds %s\n' "$STATE/lock.d" >&2; return 75; }
+  take_lock
+  case $? in
+    0) ;;
+    1) printf 'fm-relay-guard: another pass holds %s\n' "$STATE/lock" >&2; return 75 ;;
+    *) printf 'fm-relay-guard: cannot take the pass lock on %s (perl is required)\n' "$STATE/lock" >&2; return 1 ;;
+  esac
   pass_once
   rc=$?
   drop_lock
@@ -661,7 +673,9 @@ case "$cmd" in
         *) die "unknown run argument: $1" 2 ;;
       esac
     done
-    case "$interval" in ''|*[!0-9]*|0) die "--interval must be a positive whole number" 2 ;; esac
+    case "$interval" in ''|*[!0-9]*) die "--interval must be a positive whole number" 2 ;; esac
+    interval=$((10#$interval))
+    [ "$interval" -gt 0 ] || die "--interval must be a positive whole number" 2
     load_config
     mkdir -p "$STATE" || die "cannot create $STATE"
     sleep_pid=
