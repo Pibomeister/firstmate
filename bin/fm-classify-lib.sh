@@ -1254,7 +1254,7 @@ EOF
 #
 # The cursor format is `version` (FM_OPEN_DECISIONS_FOLD_VERSION plus the task
 # kind, as `<n>:<kind>`), `offset`, `ident`, then the folded open set.
-# The optional timed view uses a separate `.timed` cursor and adds `:timed`
+# The optional timed view uses a separate `.timed` cursor and adds `:timed2`
 # to the version; status_open_decisions_incremental owns its row format.
 # FM_OPEN_DECISIONS_FOLD_VERSION must be bumped whenever
 # _fm_decision_fold_line semantics change, so persisted state from an older
@@ -1423,8 +1423,11 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
   fold_version="$FM_OPEN_DECISIONS_FOLD_VERSION:$kind"
   cf=$(_fm_open_decisions_cursor_path "$f")
   # A separate cursor keeps the ordinary presentation view byte-compatible.
-  # Timed rows are <key> TAB <verb> TAB <epoch-or-unknown> TAB <note>.
-  if [ "$timed" = timed ]; then cf="$cf.timed"; fold_version="$fold_version:timed"; fi
+  # Timed rows are <key> TAB <verb> TAB <epoch-or-unknown> TAB <note>. The
+  # timed2 suffix retires cursors persisted under the fork's `:timed` epoch
+  # rule (a republish restamped the open time; this fold keeps the first)
+  # and under the donor's five-column `:timed3` format alike.
+  if [ "$timed" = timed ]; then cf="$cf.timed"; fold_version="$fold_version:timed2"; fi
   offset=0
   ident=''
   if [ -f "$cf" ] && [ -r "$cf" ] && [ ! -L "$cf" ]; then
