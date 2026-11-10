@@ -1093,7 +1093,7 @@ EOF
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
   saved="$home/state/.session-start-wake-presentation"
 
-  assert_contains "$out" "149 earlier unread and historical wake-event annotation line(s) left out to bound this digest; the complete presentation is saved at $saved" \
+  assert_contains "$out" "149 earlier unread, repeated, and historical wake-event annotation line(s) left out to bound this digest; the complete presentation is saved at $saved" \
     "a large wake presentation did not name its saved file"
   if printf '%s\n' "$out" | grep -q '^wake annotation: unread wake-EVENT'; then
     fail "unread backlog annotation lines still printed inline after the spill: $out"
@@ -1142,7 +1142,7 @@ EOF
 
   [ -f "$saved" ] || fail "a multibyte presentation over the byte bound was not saved"
   [ "$(LC_ALL=C wc -c < "$saved" | tr -d ' ')" -gt 8000 ] || fail "the fixture is not over the 8000-byte bound"
-  assert_contains "$out" "earlier unread and historical wake-event annotation line(s) left out to bound this digest" \
+  assert_contains "$out" "earlier unread, repeated, and historical wake-event annotation line(s) left out to bound this digest" \
     "a multibyte presentation over the byte bound printed inline whole"
   assert_contains "$out" "WAKE_ACK_REQUIRED:" "the acknowledgement line left the inline copy"
 
@@ -1232,7 +1232,7 @@ EOF
   fi
   assert_grep 'task-h.status: working: old note 020' "$saved" "the saved presentation lost the historical annotation"
   assert_grep 'unread wake-EVENT since last drain' "$saved" "the saved presentation lost the unread backlog"
-  assert_contains "$out" "earlier unread and historical wake-event annotation line(s) left out to bound this digest; the complete presentation is saved at $saved - read it before handling a signal record above." \
+  assert_contains "$out" "earlier unread, repeated, and historical wake-event annotation line(s) left out to bound this digest; the complete presentation is saved at $saved - read it before handling a signal record above." \
     "the annotation omission was not disclosed with its saved path"
   assert_contains "$out" "WAKE_ACK_REQUIRED:" "the acknowledgement line left the inline copy"
 
@@ -1267,7 +1267,7 @@ EOF
   [ "$n" -eq 1 ] || fail "repeated identical latest annotations for one status file printed $n times inline: $out"
   assert_contains "$out" "wake annotation: latest wake-EVENT observed at drain, not current state: task-o.status: done: shipped the other fix" \
     "another status file's latest annotation left the inline copy"
-  assert_contains "$out" "earlier unread and historical wake-event annotation line(s) left out to bound this digest" \
+  assert_contains "$out" "earlier unread, repeated, and historical wake-event annotation line(s) left out to bound this digest" \
     "the left-out repeats were not disclosed"
 
   pass "a large wake presentation keeps one latest annotation per status file when a worker repeats its status line"

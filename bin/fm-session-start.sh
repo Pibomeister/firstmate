@@ -638,7 +638,7 @@ print_wake_presentation() {
       END {
         close_section()
         if (annotations > 0)
-          printf "WAKE ANNOTATIONS: %d earlier unread and historical wake-event annotation line(s) left out to bound this digest; the complete presentation is saved at %s - read it before handling a signal record above.\n", annotations, saved
+          printf "WAKE ANNOTATIONS: %d earlier unread, repeated, and historical wake-event annotation line(s) left out to bound this digest; the complete presentation is saved at %s - read it before handling a signal record above.\n", annotations, saved
       }' | cap_marked_lines
     return 0
   fi
