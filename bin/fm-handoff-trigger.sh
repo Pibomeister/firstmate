@@ -85,8 +85,11 @@
 # first firing in a cycle creates state/.handoff-trigger.<session-id>.<count>
 # with an exclusive create, so concurrent hook calls from parallel tool calls
 # still fire once; the marker records mode=capture or mode=handoff, and a marker
-# without a mode (written before compaction-first) counts as a handoff. A
-# firing also removes markers older than 30 days.
+# without a mode (written before compaction-first) counts as a handoff. The
+# hook builds the whole instruction before that create and prints it right
+# after, so a run Claude cancels at its hook timeout while it is still building
+# leaves the firing to the next run. A firing also removes markers older than
+# 30 days.
 #
 # RESTART GATE (Stop). A session is handing off while its newest firing is a
 # fresh start, which a compaction inside that turn does not close (only a newer
@@ -420,30 +423,34 @@ case "$TOKENS" in '' | *[!0-9]*) exit 0 ;; esac
 LEFT=$(fm_compact_left_percent "$TOKENS" "$COMPACT_AT")
 [ "$LEFT" -le "$PERCENT" ] || exit 0
 
-# Claim the one firing for this context cycle; a concurrent call that loses exits.
-( set -o noclobber; printf '%s\n' "$(date +%s) tokens=$TOKENS compact_at=$COMPACT_AT mode=$MODE" > "$MARKER" ) 2>/dev/null || exit 0
+# Build the whole instruction before the claim below (ONCE PER CONTEXT CYCLE).
 find "$STATE" -maxdepth 1 -name '.handoff-trigger.*' -type f -mtime +30 -exec rm -f {} + 2>/dev/null
 
 if [ "$MODE" = capture ]; then
   MESSAGE="Firstmate context capture, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). Auto-compaction is this session's routine reset, so do not hand off or launch a successor unless the captain asks for a handoff, such as for a quota limit or a harness switch, and do not run /compact by hand. Before it lands, file every piece of open work that lives only in this chat into its durable record: new captain goals in the dispatch log (bin/fm-dispatch-log.sh), your own to-dos as backlog items or task notes (bin/fm-tasks-axi.sh), pending captain calls as holds (bin/fm-captain-hold.sh), and captain orders through bin/fm-order.sh; route durable knowledge as the stow skill describes. After compaction the re-entry card lists open orders, decisions, overdue goals, and workers; drain the wake queue and run bin/fm-crew-state.sh before acting on any PR, worker, or decision fact the summary carries, because the summary can be stale. Compactions so far: ${BOUNDARIES}; a planned fresh start comes after ${FRESH_AFTER}. This instruction fires once per context cycle."
-  jq -n --arg event "$EVENT" --arg context "$MESSAGE" \
-    '{hookSpecificOutput: {hookEventName: $event, additionalContext: $context}}'
-  exit 0
-fi
-MESSAGE="Firstmate planned fresh start, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens), and ${REASON}, so this cycle ends in a handoff to a fresh session instead of another compaction. Write it incrementally, because the limit can land at any point: first file every piece of open work that lives only in this chat into its durable record (the dispatch log through bin/fm-dispatch-log.sh, backlog items or notes through bin/fm-tasks-axi.sh, holds through bin/fm-captain-hold.sh, orders through bin/fm-order.sh); next write a short handoff document and record it at once with bin/fm-order.sh handoff --doc <handoff file>; then extend it and record it again. Keep it slim: point to held items and backlog items instead of restating them or earlier handoffs, leave out an orders block and the startup steps that session start already prints, and move standing rules into data/learnings.md. A fact that arrives after you record the document goes into its durable record, never an addendum file, because the successor reads only the hashed document."
-if fm_root_is_secondmate_home "$FM_ROOT"; then
-  MESSAGE="$MESSAGE This is a second mate, so never launch your own successor: append to your parent channel that your handoff is written, name the handoff document, and ask the parent to relaunch you, once, then end this turn."
 else
-  MESSAGE="$MESSAGE Then launch your successor with bin/fm-handoff-launch.sh <handoff file>: it starts the successor on this home's backend, retries once, verifies that the successor stays live, and records it in state/.handoff-successor. Once that record names a live successor, take no new work and end this turn: the stop that ends it also ends this session after a short quiet settle, and the successor waits for that end before it runs bin/fm-session-start.sh to take the session lock. If the launcher reports that no successor came up, tell the captain, keep working, and let auto-compaction run; the next cycle tries again. This turn cannot end until the record names a live successor or a launch failure is recorded."
+  MESSAGE="Firstmate planned fresh start, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens), and ${REASON}, so this cycle ends in a handoff to a fresh session instead of another compaction. Write it incrementally, because the limit can land at any point: first file every piece of open work that lives only in this chat into its durable record (the dispatch log through bin/fm-dispatch-log.sh, backlog items or notes through bin/fm-tasks-axi.sh, holds through bin/fm-captain-hold.sh, orders through bin/fm-order.sh); next write a short handoff document and record it at once with bin/fm-order.sh handoff --doc <handoff file>; then extend it and record it again. Keep it slim: point to held items and backlog items instead of restating them or earlier handoffs, leave out an orders block and the startup steps that session start already prints, and move standing rules into data/learnings.md. A fact that arrives after you record the document goes into its durable record, never an addendum file, because the successor reads only the hashed document."
+  if fm_root_is_secondmate_home "$FM_ROOT"; then
+    MESSAGE="$MESSAGE This is a second mate, so never launch your own successor: append to your parent channel that your handoff is written, name the handoff document, and ask the parent to relaunch you, once, then end this turn."
+  else
+    MESSAGE="$MESSAGE Then launch your successor with bin/fm-handoff-launch.sh <handoff file>: it starts the successor on this home's backend, retries once, verifies that the successor stays live, and records it in state/.handoff-successor. Once that record names a live successor, take no new work and end this turn: the stop that ends it also ends this session after a short quiet settle, and the successor waits for that end before it runs bin/fm-session-start.sh to take the session lock. If the launcher reports that no successor came up, tell the captain, keep working, and let auto-compaction run; the next cycle tries again. This turn cannot end until the record names a live successor or a launch failure is recorded."
+  fi
+  MESSAGE="$MESSAGE Do not run /compact instead. This instruction fires once per context cycle."
+  # Durable captain orders are part of the handoff: name each open order and the
+  # command that writes them into the handoff document (bin/fm-order.sh owns the
+  # list and the restart gate this hook enforces on Stop).
+  ORDERS=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" pickup 2>/dev/null \
+    | awk '/^  [0-9]+-[0-9a-f]+ / && $3 ~ /^kind=/ { printf "%s%s (%s)", sep, $1, $2; sep = ", " }')
+  if [ -n "$ORDERS" ]; then
+    MESSAGE="$MESSAGE Open captain orders that your handoff must list: ${ORDERS}. Write them into your handoff document with bin/fm-order.sh handoff --doc <handoff file>; this session cannot end its handoff turn until bin/fm-order.sh gate passes."
+  fi
 fi
-MESSAGE="$MESSAGE Do not run /compact instead. This instruction fires once per context cycle."
-# Durable captain orders are part of the handoff: name each open order and the
-# command that writes them into the handoff document (bin/fm-order.sh owns the
-# list and the restart gate this hook enforces on Stop).
-ORDERS=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" pickup 2>/dev/null \
-  | awk '/^  [0-9]+-[0-9a-f]+ / && $3 ~ /^kind=/ { printf "%s%s (%s)", sep, $1, $2; sep = ", " }')
-if [ -n "$ORDERS" ]; then
-  MESSAGE="$MESSAGE Open captain orders that your handoff must list: ${ORDERS}. Write them into your handoff document with bin/fm-order.sh handoff --doc <handoff file>; this session cannot end its handoff turn until bin/fm-order.sh gate passes."
-fi
-jq -n --arg event "$EVENT" --arg context "$MESSAGE" \
-  '{hookSpecificOutput: {hookEventName: $event, additionalContext: $context}}'
+OUTPUT=$(jq -n --arg event "$EVENT" --arg context "$MESSAGE" \
+  '{hookSpecificOutput: {hookEventName: $event, additionalContext: $context}}') || exit 0
+CLAIM="$(date +%s) tokens=$TOKENS compact_at=$COMPACT_AT mode=$MODE"
+
+# Claim the one firing for this context cycle and print it at once, with only
+# builtins between the two; a concurrent call that loses the claim exits.
+set -o noclobber
+{ printf '%s\n' "$CLAIM" > "$MARKER"; } 2>/dev/null || exit 0
+printf '%s\n' "$OUTPUT"

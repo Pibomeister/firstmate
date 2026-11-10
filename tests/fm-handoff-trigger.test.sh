@@ -693,6 +693,37 @@ test_capture_is_the_default_before_the_drift_cap() {
   pass "the default firing is a capture step: durable records, no successor, an ungated stop"
 }
 
+# A capture firing that Claude cancels while the hook builds its output, as it
+# cancelled a UserPromptSubmit run at its 10 second timeout on a loaded host,
+# must not spend the cycle's one firing: the hook claims the cycle only once
+# the whole instruction is built, so the next run still delivers it.
+test_a_capture_cancelled_while_building_its_output_fires_on_the_next_run() {
+  local t="$TMP_ROOT/t-cut" slow="$TMP_ROOT/slowjq" started="$TMP_ROOT/slow-jq.started" out hook
+  reset_lab
+  rm -rf "$slow" "$started" "$TMP_ROOT/cut.out" "$PRIMARY/data/orders" "$PRIMARY/state/.handoff-successor"
+  mkdir -p "$slow"
+  # shellcheck disable=SC2016 # The wrapper expands these.
+  printf '#!/usr/bin/env bash\ncase " $* " in *hookSpecificOutput*) : > %q; sleep 60 ;; esac\nexec %q "$@"\n' \
+    "$started" "$(command -v jq)" > "$slow/jq"
+  chmod +x "$slow/jq"
+  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$t" 90000
+  set -m
+  HOOK_ENV="PATH=$slow:$PATH" run_hook "$PRIMARY" s-cut "$t" UserPromptSubmit > "$TMP_ROOT/cut.out" 2>/dev/null &
+  hook=$!
+  set +m
+  wait_for_file "$started" 300 || fail "the drill never reached the step that writes the hook's output"
+  kill -KILL -- "-$hook" 2>/dev/null
+  wait "$hook" 2>/dev/null
+  expect_silent "$(cat "$TMP_ROOT/cut.out")" "the run cancelled while it built its output"
+  out=$(run_hook "$PRIMARY" s-cut "$t")
+  expect_fire "$out" PostToolUse "the next run after a cancelled capture firing"
+  expect_mode "$out" capture "the delivered firing"
+  expect_silent "$(run_hook "$PRIMARY" s-cut "$t")" "the delivered capture still fires once per cycle"
+  rm -rf "$slow" "$started" "$TMP_ROOT/cut.out"
+  pass "a capture firing cancelled while it builds its output is delivered by the next run"
+}
+
 # The drift cap: after fresh-start-after compactions on the same harness the
 # next firing is a planned fresh start (a full handoff), and its stop is gated.
 test_fresh_start_after_n_compactions() {
@@ -1147,6 +1178,7 @@ test_handoff_gates_the_stop_until_a_recorded_successor_is_alive
 test_secondmate_handoff_escalates_to_its_parent
 test_threshold_default_15
 test_capture_is_the_default_before_the_drift_cap
+test_a_capture_cancelled_while_building_its_output_fires_on_the_next_run
 test_fresh_start_after_n_compactions
 test_fresh_start_on_high_context_after_compaction
 test_legacy_marker_and_launch_failure
