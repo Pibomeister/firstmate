@@ -178,8 +178,6 @@
 #   auto-detected (the paseo and tern markers, like bare hc markers, leak into
 #   every descendant process). An app-detected hc also records its signal in
 #   meta's backend_detect= line.
-#   Herdr leases its slot durably (treehouse get --lease) and moves the pane's
-#   top-level shell into it, because a restart restores that shell's cwd.
 #   codex-app is not a known backend yet; docs/codex-app-backend.md owns that
 #   blocked backend contract. Default tmux spawns do not write backend= to meta;
 #   absent backend= means tmux. Orca, cmux, paseo, tern, and hc do not support

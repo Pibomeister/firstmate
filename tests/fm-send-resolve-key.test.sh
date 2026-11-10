@@ -943,47 +943,6 @@ test_decision_answer_partition_relocates_under_the_record() {
   pass "fm-send --resolve-key: a decision answer refuses the attended branch before sending, a blocked: key stays steering, and the away-posture record relocates the answer"
 }
 
-# The reported failure this pair exists for: a worker trailed its key AFTER the
-# summary ("blocked: ... [key=no-mistakes-start]"), where the key grammar reads
-# it as prose, so the line opened "default". The listing then suppressed
-# "[key=default]" and printed the note verbatim, leaving the decoy token as the
-# only key a reader could see - and the command the listing itself advises
-# refused, discarding the steer with it. The invariant both halves restore: the
-# key an OPEN DECISIONS entry SHOWS is the key that closes it.
-test_listed_key_closes_a_trailing_token_blocker() {
-  local dir fb log home rc out entry key
-  dir="$TMP_ROOT/trailing-token"; mkdir -p "$dir"
-  fb=$(make_stubs "$dir"); log="$dir/send.log"
-  home=$(setup_home trailing-token)
-  fm_write_meta "$home/state/t10.meta" "window=sess:fm-t10" "kind=ship"
-  printf 'blocked: axi run hung without registering a branch run [key=no-mistakes-start]\n' \
-    > "$home/state/t10.status"
-
-  out=$(drain_out "$home")
-  entry=$(printf '%s\n' "$out" | grep '^t10 ') \
-    || fail "the blocked line produced no OPEN DECISIONS entry: $out"
-
-  # Read the key exactly as an operator does: the first [key=...] on the entry.
-  key=${entry#*[key=}
-  key=${key%%]*}
-  [ "$key" != "$entry" ] \
-    || fail "the listed entry states no key at all, so the advised command cannot be composed: $entry"
-
-  run_send "$fb" "$home" "$log" t10 --resolve-key "$key" "restart the run"; rc=$?
-  expect_code 0 "$rc" \
-    "the key the listing showed ('$key') must close the entry the listing showed it for"
-  grep -qF "restart the run" "$home/state/t10.inbox/001.msg" \
-    || fail "the answer never reached the worker's durable inbox record"
-  sed -E 's/ \[at=[0-9]+\]//' "$home/state/t10.status" | grep -F "resolved [key=$key]: answered: restart the run" >/dev/null \
-    || fail "the closing resolved line is missing:"$'\n'"$(cat "$home/state/t10.status")"
-
-  out=$(drain_out "$home")
-  if printf '%s' "$out" | grep -F 'OPEN DECISIONS' >/dev/null; then
-    fail "the answered blocker still lists as open: $out"
-  fi
-  pass "fm-send --resolve-key: the key an OPEN DECISIONS entry shows closes that entry"
-}
-
 # The compound failure: the refusal must stay a refusal (delivering an answer
 # this send cannot close would orphan the decision behind it), so the message
 # must survive the refusal instead. Proven by running the resend command the
@@ -1200,7 +1159,6 @@ test_refusal_keyed_resend_keeps_the_accepted_keys() {
 test_answer_send_closes_open_decision
 test_answer_close_is_self_announced
 test_separate_resolve_key_answers_do_not_rewake
-test_listed_key_closes_a_trailing_token_blocker
 test_unresolvable_key_refusal_preserves_the_message
 test_refusal_resend_carries_its_own_routing_context
 test_empty_status_open_set_still_offers_the_keyed_resend

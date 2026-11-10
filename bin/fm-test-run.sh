@@ -608,19 +608,19 @@ portable_parallel_lane_weight() {
 # its own header owns temporary dependency provisioning.
 list_portable_parallel_1() {
   cat <<'EOF'
-tests/fm-captain-hold-lifecycle.test.sh
+tests/fm-test-run.test.sh
+tests/fm-pr-merge.test.sh
 tests/fm-backend-t3code.test.sh
-tests/fm-crew-state.test.sh
 tests/fm-t3-mcp.test.sh
+tests/fm-x-mode.test.sh
 tests/fm-arm-pretool-check.test.sh
-tests/fm-herdr-lab.test.sh
-tests/fm-cd-pretool-check.test.sh
-tests/fm-grok-harness.test.sh
 tests/fm-pi-primary-types.test.sh
-tests/fm-review-diff.test.sh
+tests/fm-herdr-lab.test.sh
+tests/fm-grok-harness.test.sh
+tests/fm-spawn-batch.test.sh
+tests/fm-send-settle.test.sh
 tests/fm-tmux-submit-busy.test.sh
-tests/fm-composer-ghost.test.sh
-tests/fm-transition-lib.test.sh
+tests/fm-supervision-instructions.test.sh
 EOF
 }
 
@@ -1043,6 +1043,16 @@ tests/fm-watcher-replacement.test.sh 97325
 tests/fm-worker-account-live-e2e.test.sh 3496
 tests/fm-worker-account.test.sh 78443
 tests/fm-worktree-cleanup.test.sh 13276
+tests/fm-backend-hc-liveness-live-e2e.test.sh 9000
+tests/fm-backend-hc-smoke.test.sh 3700
+tests/fm-backend-hc.test.sh 4000
+tests/fm-claude-account-quota.test.sh 2492
+tests/fm-codex-stop-park.test.sh 35000
+tests/fm-herdr-projected-cd-live-e2e.test.sh 28000
+tests/fm-install-herdr.test.sh 1000
+tests/fm-live-lab-isolation.test.sh 6459
+tests/fm-osc7501.test.sh 14000
+tests/fm-test-linux.test.sh 1500
 EOF
 }
 
@@ -1970,10 +1980,6 @@ families_for_changed_path() {
     .agents/skills/harness-adapters/SKILL.md|.agents/skills/harness-adapters/references/*)
       printf '%s\n' pure-contract-unit
       printf '%s\n' live-harness-optin
-      ;;
-    .agents/skills/lavish-url/assets/*|.agents/skills/lavish-url/enhancers/*)
-      # The layers bin/fm-lavish-url.sh injects into every snapshot.
-      printf '%s\n' "__script__:fm-lavish-url.test.sh"
       ;;
     .agents/skills/*/SKILL.md)
       printf '%s\n' pure-contract-unit

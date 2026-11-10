@@ -550,14 +550,18 @@ env | grep '^FM_' | sort
 printf 'TEST_CREDENTIAL=%s\n' "${TEST_CREDENTIAL-unset}"
 SH
   chmod +x "$dir/fakebin/claude"
-  launch=$(tail -n 1 "$dir/fake/literal-raw")
+  # The staged launch is one multi-line payload (env scrub, agent command,
+  # then the OSC 7501 disarm), so take every line typed after the /exit.
+  launch=$(awk 'seen { print } $0 == "/exit" { seen = 1 }' "$dir/fake/literal-raw")
   worker_env=$(env -i HOME="$dir/user-home" PATH="$dir/fakebin:$PATH" SHELL=/bin/sh \
     FM_HOME=/synthetic/foreign FM_CREW_STATE_META_OVERRIDE=/synthetic/foreign.meta \
     FM_CREW_STATE_STATUS_OVERRIDE=/synthetic/foreign.status FM_SEND_RETRIES=7 \
     FM_TASK_ID=foreign FM_TASK_INBOX=/synthetic/foreign.inbox TEST_CREDENTIAL=keep \
     /bin/sh -c "$launch") || fail "relaunch command did not execute its replacement worker"
+  # The ship works for its own home, so the launch replaces the foreign
+  # FM_HOME with the task's home rather than inheriting or dropping it.
   [ "$worker_env" = "$(printf '%s\n' \
-    'FM_SEND_RETRIES=7' 'FM_TASK_ID=rl1' "FM_TASK_INBOX=$dir/home/state/rl1.inbox" \
+    "FM_HOME=$dir/home" 'FM_SEND_RETRIES=7' 'FM_TASK_ID=rl1' "FM_TASK_INBOX=$dir/home/state/rl1.inbox" \
     'TEST_CREDENTIAL=keep')" ] \
     || fail "relaunch inherited foreign FM variables or lost task values: $worker_env"
   pass "fm-control relaunch: a same-harness relaunch replaces the agent in the same endpoint and worktree"
