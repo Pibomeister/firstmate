@@ -63,20 +63,26 @@ Every authored catalog role is a `.cursor/agents/<id>.md` subagent.
 This repository's agent-kit project record is [`ak.project.json`](../ak.project.json).
 Pass that path as `--project` only to `.cursor/bin/ak delegation`.
 The runner names `ak.project.json` as the project record in the `/doc-review` prompt, with no CLI flag.
-The GS-003a dogfood confirms whether `/doc-review` honors that record.
-`/super-bound` cold_read reads only the indexed project record (vendored [super-bound SKILL.md](skills/super-bound/SKILL.md) lines 142-143), so it is expected to stay off until a kb index exists.
-The GS-003a run will confirm this.
-There is no knowledgebase index, and an unindexed project counts as off.
+`review.cold_read` and `review.comprehension` are `shadow`.
+Keep `review.cold_read` at `shadow`.
+Do not set it to `on` until agent-kit ships the release that enables it.
+`/super-bound` treats an unindexed project as off.
+There is no knowledgebase index.
 The Cursor overlay `ak` does not auto-discover a project file and does not expose `ak validate`.
-Keep `review.cold_read` off `on` until GS-004k ships.
 
 ## Bun
 
 The overlay launcher `.cursor/bin/ak` requires bun `1.3.14`.
 `tools/cursor/install.sh` is for Linux and Cursor cloud agents only.
 On Apple-silicon macOS it would install a Linux ELF.
-For macOS, install exactly bun `1.3.14` with `curl -fsSL https://bun.com/install | bash -s "bun-v1.3.14"` ([Bun docs: Installing Older Versions](https://bun.com/docs/installation#installing-older-versions); the documented example uses `bun-v1.3.3` and the same `bash -s` tag form).
-The bun.com installer has no checksum pin, unlike the Linux route, and it replaces any existing `~/.bun/bin/bun`.
+For macOS, download `bun-darwin-aarch64.zip` or `bun-darwin-x64.zip` from the [bun-v1.3.14 GitHub release](https://github.com/oven-sh/bun/releases/tag/bun-v1.3.14).
+Check its sha256 against `d8b96221828ad6f97ac7ac0ab7e95872341af763001e8803e8267652c2652620` for aarch64, or `4183df3374623e5bab315c547cfa0974533cd457d86b73b639f7a87974cd6633` for x64.
+Those digests match `SHASUMS256.txt` on that release.
+Unzip the matching archive and place `bun` at `~/.bun/bin/bun`.
+`.cursor/bin/ak` exiting 127 with `need bun 1.3.14` means bun is missing or is the wrong version.
+That is a setup failure to fix, not a coverage limit.
+If `~/.bun/bin/bun` exists at another version, `tools/cursor/install.sh` refuses.
+Move that binary aside and rerun.
 `tools/cursor/install.sh` and `tools/cursor/bun-v1.3.14.sha256` are vendored from agent-kit `v0.1.106` (`e1716acf`).
 The Linux install puts bun `1.3.14` at `~/.bun/bin/bun`.
 It skips `bun install --frozen-lockfile` because this repository has no `bun.lock`.

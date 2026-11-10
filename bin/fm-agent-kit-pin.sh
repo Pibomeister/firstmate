@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fm-agent-kit-pin.sh - prove the vendored Cursor agent-kit bin files match the recorded pin.
+# fm-agent-kit-pin.sh - prove the six pinned Cursor agent-kit overlay files match the recorded pin.
 #
 # Usage:
 #   bin/fm-agent-kit-pin.sh

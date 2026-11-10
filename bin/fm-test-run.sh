@@ -1854,11 +1854,11 @@ families_for_changed_path() {
     .cursor/environment.json|bin/fm-agent-kit-pin.sh|tools/cursor/*)
       printf '%s\n' "__script__:fm-agent-kit-pin.test.sh"
       ;;
-    ak.project.json|.cursor/catalog.yaml)
+    ak.project.json)
       printf '%s\n' "__script__:fm-agent-kit-review.test.sh"
       ;;
-    .cursor/skills/*|.cursor/agents/*|.cursor/rules/*|.cursor/roles/*|\
-    .cursor/references/*|.cursor/schemas/*|.cursor/templates/*|\
+    .cursor/catalog.yaml|.cursor/skills/*|.cursor/agents/*|.cursor/rules/*|\
+    .cursor/roles/*|.cursor/references/*|.cursor/schemas/*|.cursor/templates/*|\
     .cursor/licenses/*)
       # Vendored overlay content has no Firstmate behavior test of its own.
       # Any other .cursor path falls through to the reference-scan catch-all.

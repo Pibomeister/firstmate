@@ -508,9 +508,64 @@ test_changed_cursor_overlay_mapping_is_narrow() {
   grep -Fq 'no changed-test mapping for source path: .cursor/unmapped.json' \
     "$tmp/err" \
     || fail "unmapped .cursor path failure is not actionable: $(cat "$tmp/err")"
+  rm -f "$repo/.cursor/unmapped.json"
+
+  printf '#!/usr/bin/env bash\n' >"$repo/tests/fm-agent-kit-pin.test.sh"
+  printf '#!/usr/bin/env bash\n' >"$repo/tests/fm-agent-kit-review.test.sh"
+  chmod +x "$repo/tests/fm-agent-kit-pin.test.sh" "$repo/tests/fm-agent-kit-review.test.sh"
+  git -C "$repo" add tests/fm-agent-kit-pin.test.sh tests/fm-agent-kit-review.test.sh
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid \
+    commit -qm seed-agent-kit-tests
+
+  mkdir -p "$repo/.cursor/bin" "$repo/tools/cursor"
+  : >"$repo/.cursor/bin/ak.js"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/fm-agent-kit-pin.test.sh" \
+    ".cursor/bin/ak.js must select the pin test"
+  git -C "$repo" add .cursor/bin/ak.js
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid \
+    commit -qm overlay-ak-js
+
+  : >"$repo/.cursor/environment.json"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/fm-agent-kit-pin.test.sh" \
+    ".cursor/environment.json must select the pin test"
+  git -C "$repo" add .cursor/environment.json
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid \
+    commit -qm overlay-environment
+
+  : >"$repo/tools/cursor/install.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/fm-agent-kit-pin.test.sh" \
+    "tools/cursor/install.sh must select the pin test"
+  git -C "$repo" add tools/cursor/install.sh
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid \
+    commit -qm overlay-install
+
+  : >"$repo/tools/cursor/bun-v1.3.14.sha256"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/fm-agent-kit-pin.test.sh" \
+    "tools/cursor/bun-v1.3.14.sha256 must select the pin test"
+  git -C "$repo" add tools/cursor/bun-v1.3.14.sha256
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid \
+    commit -qm overlay-bun-sums
+
+  : >"$repo/ak.project.json"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/fm-agent-kit-review.test.sh" \
+    "ak.project.json must select the review test"
+  git -C "$repo" add ak.project.json
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid \
+    commit -qm overlay-project-record
+
+  : >"$repo/.cursor/catalog.yaml"
+  rc=0
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD) || rc=$?
+  [ "$rc" -eq 0 ] || fail "vendored catalog.yaml must not refuse, got $rc"
+  [ -z "$listed" ] || fail "vendored catalog.yaml selected tests: $listed"
 
   rm -rf "$tmp"
-  pass "vendored .cursor overlay is empty-mapped; other .cursor paths keep the catch-all"
+  pass "vendored .cursor overlay is empty-mapped; pin and review paths select their tests"
 }
 
 test_changed_ci_select_selects_its_contract_tests() {
