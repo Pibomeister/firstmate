@@ -210,6 +210,8 @@ build_world() {  # <case>
   idle_term term-stamp pty-stamp "$HOME_DIR" "fm-main-successor-2300Z"
   idle_term term-path pty-path "$HOME_DIR" "eduardo@m4: ~/orca/projects/firstmate"
   idle_term term-branch pty-branch "$HOME_DIR" "zsh (main)"
+  idle_term term-nested pty-nested "$HOME_DIR" "zsh (feature(old)-main)"
+  idle_term term-unbalanced pty-unbalanced "$HOME_DIR" "zsh (main"
   idle_term term-leash pty-leash "$HOME_DIR" "leash-drop-2236"
   idle_term term-muse pty-muse "$HOME_DIR" "Muse Code under Astra Opus"
   idle_term term-sm-idle pty-sm-idle "$SM_HOME" "sm1 successor"
@@ -257,6 +259,8 @@ test_dry_run_classifies_every_owner_and_closes_nothing() {
   expect term-stamp "reap idle-session" "a hyphenated session name still yields whole title words"
   expect term-path "keep captain" "a home-root path in a shell title is not a firstmate session name"
   expect term-branch "keep captain" "a parenthesized branch name is not a firstmate session name"
+  expect term-nested "keep captain" "a nested parenthesized branch name is not a firstmate session name"
+  expect term-unbalanced "keep captain" "a title whose brackets do not balance is never a firstmate session name"
   expect term-leash "keep captain" "a task-like title naming no firstmate word is the captain's"
   expect term-muse "keep captain" "a program title naming no firstmate word is the captain's"
   expect term-gone "keep unowned-task" "an idle shell in an unrecorded, gone task worktree may belong to another home"
@@ -454,12 +458,18 @@ fake_browser() {  # <dir> -> PID
   TRACKED_PIDS+=("$PID")
 }
 
-# fake_headless: a real process started as <exe> --headless, with one child.
+# fake_headless: a real process whose command line starts with <exe> and
+# ends with --headless, with one child.
 fake_headless() {  # <exe> -> PID
-  mkdir -p "${1%/*}"
-  printf '#!/usr/bin/env bash\nsleep 600 & wait\n' > "$1"
-  chmod +x "$1"
-  "$1" --headless >/dev/null 2>&1 </dev/null &
+  ( exec -a "$1" bash -c 'sleep 600 & wait' "$1" --headless ) >/dev/null 2>&1 </dev/null &
+  PID=$!
+  disown "$PID" 2>/dev/null || true
+  TRACKED_PIDS+=("$PID")
+}
+# headless_program: a non-browser program given a browser path and --headless
+# as its arguments, with one child.
+headless_program() {  # <browser path> -> PID
+  bash -c 'sleep 600 & wait' worker "$1" --headless >/dev/null 2>&1 </dev/null &
   PID=$!
   disown "$PID" 2>/dev/null || true
   TRACKED_PIDS+=("$PID")
@@ -478,9 +488,10 @@ test_browsers_are_reaped_only_without_a_live_owner() {
   fake_browser; reused=$PID
   idle_shell; owner=$PID
   # Orphaned --headless processes: a browser executable is a browser root, and
-  # any other program is not a browser at all.
+  # another program is not a browser at all, even when a browser path is one of
+  # its arguments.
   fake_headless "$TMP_ROOT/browser-bin/chrome-headless-shell"; headless=$PID
-  fake_headless "$TMP_ROOT/office-bin/soffice"; other=$PID
+  headless_program "$TMP_ROOT/browser-bin/chrome"; other=$PID
   : > "$FX/ppid1-$headless"; : > "$FX/ppid1-$other"
   cwd_row "$headless" "$FX/headless-dir"
   cwd_row "$other" "$FX/other-dir"

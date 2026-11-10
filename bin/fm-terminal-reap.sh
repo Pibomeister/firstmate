@@ -64,19 +64,22 @@
 #                      finished primary or secondmate session left at its
 #                      prompt: after dropping path and branch parts (any word
 #                      holding /, ~ or @, any word ending in :, and any
-#                      parenthesized or bracketed segment), some remaining word,
-#                      split on non-alphanumerics and in any case, is main,
-#                      successor, handoff, firstmate, or fm
+#                      parenthesized or bracketed segment, nested ones
+#                      included), some remaining word, split on
+#                      non-alphanumerics and in any case, is main, successor,
+#                      handoff, firstmate, or fm; a title whose brackets do
+#                      not balance is always the captain's
 # "Idle" means the session's process tree holds shells and nothing else
 # (fm_backend_orca_tree_state's dead verdict). This home reaps only idle
 # firstmate sessions in its own roots; every terminal in a task worktree,
 # recorded or not, is kept.
 #
 # Browser roots are agent-browser daemons, chrome-devtools-axi bridges, and
-# automation browsers whose parent has exited: Playwright or Puppeteer builds,
-# or a browser executable (Chrome, Chromium, Edge, Firefox, or a headless
-# shell) started with --headless or --remote-debugging-pipe. Another program
-# started with --headless is not a browser and is never listed. Each root is
+# automation browsers whose parent has exited: a browser executable (Chrome,
+# Chromium, Edge, Firefox, or a headless shell), named by the command line's
+# first word, started with --headless or --remote-debugging-pipe or from a
+# Playwright or Puppeteer build. Another program is never listed, even when a
+# browser path or --headless is among its arguments. Each root is
 # judged by its working directory, together with every process under it:
 #   keep task          it works in a recorded task's worktree
 #   keep home          it works in a home root
@@ -306,15 +309,19 @@ if (mode === "terminals") {
     emit();
   }
 } else if (mode === "browsers") {
+  const browserExe = /^((\/([^/ ]+|[^/]*\.app))*\/)?(Google Chrome( for Testing)?|Chromium|chrome|chromium|chromium-browser|chrome-headless-shell|headless_shell|msedge|Microsoft Edge|firefox)( |$)/;
   const isRoot = (p) => {
     const a = p.args;
     if (/\/agent-browser\//.test(a) && /daemon\.js/.test(a)) return true;
     if (/chrome-devtools-axi-bridge/.test(a)) return true;
     if (p.ppid !== 1) return false;
-    if (/(\/ms-playwright\/|puppeteer_dev_chrome_profile|playwright_chromiumdev_profile)/.test(a)) return true;
-    // A bare --headless or pipe flag names a browser only on a browser executable.
-    return /(^|\/)(Google Chrome( for Testing)?|Chromium|chrome|chromium|chromium-browser|chrome-headless-shell|headless_shell|msedge|Microsoft Edge|firefox)( |$)/.test(a)
-      && /(^| )(--headless(=\S*)?|--remote-debugging-pipe)( |$)/.test(a);
+    // An automation browser is a browser executable, named by the command
+    // line's first word (a path whose only spaced parts are .app bundles and
+    // the executable's own name), run headless, pipe-debugged, or from a
+    // Playwright or Puppeteer build. A browser path passed as an argument to
+    // another program never counts.
+    return browserExe.test(a)
+      && /((^| )(--headless(=\S*)?|--remote-debugging-pipe)( |$)|\/ms-playwright\/|puppeteer_dev_chrome_profile|playwright_chromiumdev_profile)/.test(a);
   };
   const matched = new Set([...procs.values()].filter(isRoot).map((p) => p.pid));
   const roots = [...matched].filter((pid) => {
@@ -360,11 +367,14 @@ JS
 }
 
 # firstmate_title <title>: 0 when a title word, outside its path and branch
-# parts, is main, successor, handoff, firstmate, or fm.
+# parts, is main, successor, handoff, firstmate, or fm. Parenthesized and
+# bracketed segments are removed innermost first, so nesting is handled; a
+# title whose brackets do not balance is never a firstmate title.
 firstmate_title() {
   printf '%s\n' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]' \
-    | sed -e 's/([^)]*)/ /g' -e 's/\[[^]]*\]/ /g' \
+    | sed -e ':a' -e 's/([^][()]*)/ /g' -e 's/\[[^][()]*\]/ /g' -e 'ta' \
     | LC_ALL=C awk '
+      /[][()]/ { exit 1 }
       { for (i = 1; i <= NF; i++) {
           if ($i ~ /[\/~@]/ || $i ~ /:$/) continue
           n = split($i, w, /[^a-z0-9]+/)
