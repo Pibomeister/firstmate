@@ -1,0 +1,16 @@
+status file:
+needs-decision [at=1000] [key=api]: choose
+needs-decision [at=5000] [key=api]: choose
+== fresh timed fold of identical republish (expect epoch 1000):
+api^Ineeds-decision^I1000^Ichoose
+cursor: version=9:unknown:timed2
+== planted legacy fork ':timed' cursor (same ident/offset) holding restamped 5000; expect it retired -> 1000:
+api^Ineeds-decision^I1000^Ichoose
+cursor: version=9:unknown:timed2
+== planted donor five-column ':timed3' cursor; expect retired -> four columns, 1000:
+api^Ineeds-decision^I1000^Ichoose
+cursor: version=9:unknown:timed2
+== control: a current ':timed2' cursor is trusted (plant 7777, expect 7777 reused, no reread):
+api^Ineeds-decision^I7777^Ichoose
+== plain (non-timed) view still three columns:
+api^Ineeds-decision^Ichoose

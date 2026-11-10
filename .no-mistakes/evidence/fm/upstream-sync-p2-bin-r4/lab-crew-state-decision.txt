@@ -1,0 +1,6 @@
+$ fm-crew-state.sh labtask
+state: unknown · source: none · no metadata for labtask
+exit=0
+$ after resolution:
+state: unknown · source: none · no metadata for labtask
+exit=0
