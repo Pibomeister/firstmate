@@ -1,0 +1,26 @@
+1..21
+ok - pending start-history deletion and replacement cannot erase a successor's restart record after SIGKILL
+ok - a pass killed mid-probe releases the lock at once, and its orphaned probe does not hold it
+ok - staggered passes racing over a crashed pass's leftovers never run at the same time
+ok - a relay pid that changed owner during the probe is never sent TERM or KILL
+ok - zero-padded config numbers parse as decimal and a 00 interval is refused
+tests/fm-relay-guard.test.sh: line 659: 44773 Killed: 9               nohup "$W/stubborn-relay.sh" s 7009 < /dev/null > /dev/null 2>&1
+ok - KILL reaches a TERM-proof relay, never a pid that stopped being that relay
+ok - only pending state writes retain a killed guard's lock, and release it on completion
+ok - each TERM follows its own pid's identity check, never a batch of earlier checks
+tests/fm-relay-guard.test.sh: line 908: 45920 Killed: 9               nohup "$W/stubborn-relay.sh" s 7009 < /dev/null > /dev/null 2>&1
+tests/fm-relay-guard.test.sh: line 908: 45924 Killed: 9               nohup "$W/stubborn-relay.sh" s 7009 < /dev/null > /dev/null 2>&1
+ok - each KILL follows its own pid's identity check, never a batch of earlier checks
+ok - a relay as old as the daemon in whole seconds counts as predating the daemon
+ok - relays that outlived a daemon restart are stopped, respawned, and probed reachable; a repeat pass changes nothing
+ok - missing relays are spawned, a down daemon leaves relays alone, and its return restarts them
+ok - duplicate relays for one entry converge to a single relay
+ok - probe failures restart only after the streak, and the restart cap stops further restarts
+ok - backoff defers a restart that comes too soon after the previous one
+ok - a daemon-named helper the daemon spawns is not mistaken for a daemon restart
+ok - rendered launchd and systemd units keep the guard's run loop alive for this home
+ok - a TERM during the run interval exits at once, reaps the sleep, and leaves relays running
+ok - the example m3-forward config is accepted by the guard
+ok - scan reports a stale relay without stopping or starting anything
+ok - missing, empty, misspelled, dangling, probe-less, and non-numeric configuration is refused before any action
+FM_TEST_COMPLETE

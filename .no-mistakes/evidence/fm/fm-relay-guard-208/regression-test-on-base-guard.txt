@@ -1,0 +1,2 @@
+1..1
+not ok - orphaned rm erased the successor's start record (expected '1794328042', got '')
