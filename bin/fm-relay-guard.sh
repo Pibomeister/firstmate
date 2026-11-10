@@ -103,8 +103,8 @@
 #   lock           Pass lock file, never removed. A pass holds a kernel flock(2)
 #                  on it for the whole pass, and a pass already holding it
 #                  makes once exit 75 (run skips that pass). The kernel releases
-#                  it when the holder exits, even by SIGKILL, so a crashed pass
-#                  never leaves a stale lock; no child a pass starts holds it.
+#                  it when the last holder exits, even by SIGKILL. Pending
+#                  state writes keep it until done; other children close it.
 #
 # Exit status: 0 when every relay ends the pass proven healthy, 3 when any
 # relay is not (daemon down, probe failing, capped, backoff, or a start that
@@ -334,10 +334,10 @@ stop_pids() {  # <"pid start"...> from relay_pids; nonzero when any survives
   return 0
 }
 
-# No child a pass starts holds the pass-lock fd, so a guard that dies leaves no
-# holder behind. Relays, probes, and command or process substitutions that run
-# an external command open with a bare `exec 9>&-`, which closes the fd for
-# good. An external command the guard runs directly carries `9>&-`, which bash
+# Only the pass's own state writes keep the pass-lock fd: a write orphaned by
+# SIGKILL must finish before a successor can change that state. Relays, probes,
+# and substitutions that read or wait open with a bare `exec 9>&-`, which closes
+# the fd for good. Other direct external commands carry `9>&-`, which bash
 # applies in the forked child. Elsewhere a `9>&-` is not enough: on a function,
 # subshell, or substitution bash parks the fd on a spare number to restore it
 # later (bash 3.2 even for exec with a command), and the child holds that copy.
@@ -456,7 +456,7 @@ pass_once() {
       limited=0
       detail="relay age ${rage}s >= $DAEMON age ${dage}s"
     elif run_probe "$name" "$probe"; then
-      [ "$ACT" -eq 1 ] && rm -f "$STATE/$name.fails" 9>&-
+      [ "$ACT" -eq 1 ] && rm -f "$STATE/$name.fails"
       verdict=ok
     else
       fails=$(( $(read_int "$STATE/$name.fails") + 1 ))
@@ -473,7 +473,7 @@ pass_once() {
         verdict="would-restart:$reason"
       else
         gate=ok
-        [ "$limited" -eq 1 ] && gate=$(exec 9>&-; start_allowed "$name" "$now")
+        [ "$limited" -eq 1 ] && gate=$(start_allowed "$name" "$now")
         if [ "$gate" != ok ]; then
           verdict=${gate%% *}
           if [ "$verdict" = backoff ]; then
@@ -488,7 +488,7 @@ pass_once() {
         else
           spawn_relay "$name" "$cmd"
           [ "$limited" -eq 1 ] && printf '%s\n' "$now" >> "$STATE/$name.starts"
-          rm -f "$STATE/$name.fails" 9>&-
+          rm -f "$STATE/$name.fails"
           started+=("$i")
           started_reason+=("$reason")
           started_old+=("$(join_pids "${pids[@]:-}")")
@@ -541,7 +541,7 @@ pass_once() {
   local header="# fm-relay-guard v1 epoch=$now daemon=$DAEMON daemon-pid=${dpid:-none}"
   if [ "$ACT" -eq 1 ]; then
     { printf '%s\n' "$header"; printf '%s\n' "${status_lines[@]}"; } > "$STATE/status.tsv.tmp" &&
-      mv "$STATE/status.tsv.tmp" "$STATE/status.tsv" 9>&-
+      mv "$STATE/status.tsv.tmp" "$STATE/status.tsv"
   fi
   printf '%s\n' "$header"
   printf '%s\n' "${status_lines[@]}"
@@ -623,8 +623,8 @@ EOF
 
 # The pass lock is a kernel lock: flock(2) on $STATE/lock, taken through fd 9
 # and held while this process keeps fd 9 open. The kernel releases it when the
-# holder exits however it dies, so there is never a stale lock to reclaim, and
-# no child the pass starts keeps fd 9 (see the note above spawn_relay). Bash
+# last holder exits however it dies, so there is never a stale lock to reclaim.
+# Only pending state writes inherit it (see the note above spawn_relay). Bash
 # has no flock builtin and macOS ships no flock command, so perl takes the lock
 # on the inherited fd; the lock belongs to the open file, so it outlives perl.
 LOCKED=0
