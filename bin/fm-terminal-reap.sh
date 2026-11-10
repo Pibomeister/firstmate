@@ -124,7 +124,7 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 . "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
 
 # usage: the header from its first line through the exit-status paragraph.
-usage() { sed -n '2,/^# closed; 2 on a usage error/p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,/^# .*2 on a usage error/p' "$0" | sed 's/^# \{0,1\}//'; }
 
 APPLY=0
 MIN_AGE=1800

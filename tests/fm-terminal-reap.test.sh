@@ -492,6 +492,19 @@ test_unreadable_inventory_closes_nothing() {
   pass "fm-terminal-reap: an unreadable inventory exits 1 and closes nothing"
 }
 
+test_help_prints_only_the_usage_header() {
+  local out rc
+  out=$("$REAP" --help 2>&1); rc=$?
+  [ "$rc" = 0 ] || fail "--help must exit 0, got $rc"
+  printf '%s\n' "$out" | grep -q -- '--browsers' || fail "--help must describe --browsers"
+  [ "$(printf '%s\n' "$out" | tail -n 1)" = "nothing is closed; 2 on a usage error; 3 when --apply hit a failure." ] \
+    || fail "--help must end at the exit-status paragraph, got: $(printf '%s\n' "$out" | tail -n 1)"
+  out=$("$REAP" --no-such-flag 2>&1); rc=$?
+  [ "$rc" = 2 ] || fail "an unknown argument must exit 2, got $rc"
+  ! printf '%s\n' "$out" | grep -q '^set -u' || fail "a usage error must not print the script body"
+  pass "fm-terminal-reap: --help and a usage error print only the usage header"
+}
+
 # await_exec: wait until a just-started process has replaced this suite's
 # forked copy with its own command line, so a heavily loaded host never
 # snapshots a starter mid-exec.
@@ -635,4 +648,5 @@ fm_test_run \
   test_apply_reproves_facts_that_change_before_the_close \
   test_unreadable_owner_facts_keep_terminals \
   test_unreadable_inventory_closes_nothing \
+  test_help_prints_only_the_usage_header \
   test_browsers_are_reaped_only_without_a_live_owner
