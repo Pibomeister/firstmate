@@ -1628,10 +1628,11 @@ families_for_changed_path() {
     bin/fm-test-linux.sh|tests/linux/Dockerfile)
       printf '%s\n' "__script__:fm-test-linux.test.sh"
       ;;
-    bin/backends/herdr*|bin/fm-herdr-lab.sh|tests/herdr-test-safety.sh|tests/herdr-client-pair-fixture.sh)
+    bin/backends/herdr*|bin/fm-herdr-lab.sh|bin/fm-herdr-owned-xdg.sh|tests/herdr-test-safety.sh|tests/herdr-client-pair-fixture.sh|tests/herdr-owned-xdg.sh)
       printf '%s\n' real-herdr-gated
       printf '%s\n' backend-dispatch
       printf '%s\n' pure-contract-unit
+      printf '%s\n' "__script__:fm-herdr-secondmate-watch-live-e2e.test.sh"
       ;;
     bin/fm-herdr-session-cleanup.sh)
       printf '%s\n' session-bootstrap

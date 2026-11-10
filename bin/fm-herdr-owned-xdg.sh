@@ -278,7 +278,17 @@ fm_herdr_owned_xdg_start() { # <root>
   done
   if ! fm_herdr_owned_xdg_prove_pid "$root" >/dev/null || ! fm_herdr_owned_xdg_default_ready; then
     fm_herdr_owned_xdg_error "test-owned default Herdr session did not become ready"
-    fm_herdr_owned_xdg_stop "$root" >/dev/null 2>&1 || true
+    fm_herdr_owned_xdg_signal_tree "$pid" TERM
+    i=0
+    while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 10 ]; do
+      sleep 0.1
+      i=$((i + 1))
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      fm_herdr_owned_xdg_signal_tree "$pid" KILL
+    fi
+    wait "$pid" 2>/dev/null || true
+    fm_herdr_owned_xdg_clear_pid "$root" || true
     return 1
   fi
 }
@@ -297,8 +307,8 @@ fm_herdr_owned_xdg_check() { # <root>
 
 fm_herdr_owned_xdg_signal_tree() { # <pid> <signal>
   local pid=$1 sig=$2 pgid
-  kill "-$sig" "$pid" 2>/dev/null || true
   pgid=$(fm_herdr_owned_xdg_process_pgid "$pid")
+  kill "-$sig" "$pid" 2>/dev/null || true
   if [ "$pgid" = "$pid" ]; then
     kill "-$sig" -- "-$pid" 2>/dev/null || true
   fi
