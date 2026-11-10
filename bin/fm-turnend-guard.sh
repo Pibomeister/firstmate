@@ -80,7 +80,7 @@
 #      no wake queued and no watcher other than a hold, the stop is allowed with
 #      a loud notice that away supervision is not running until the next checkpoint.
 #   3. A stop following this guard's own block in the same session and turn is
-#      allowed only when rule 1 no longer applies, no wake is queued, and
+#      allowed when rule 1 no longer applies, no wake is queued, and
 #      nothing advanced since that block - the watcher beacon at full mtime
 #      precision and the watch-lock identity both unchanged. Rule 3 is the
 #      escape for a secondmate home and for a home where state/.afk is present.
@@ -92,6 +92,9 @@
 #      line in the rule 3 record. Open-checkpoint blocks do not consume it. A
 #      home where state/.afk is present does not use this bound; rule 3 is its
 #      escape.
+# Only after rules 1 and 2, and never while this session's own checkpoint runs,
+# bin/fm-stop-policy-lib.sh limit mode also allows a stop that follows a hook
+# continuation or reaches its loop or hourly bound.
 # A home whose session lock is held by another live session gets the read-only
 # diagnostic exit, exactly like --claude mode below.
 # Pending wakes hold the turn until the bound in rule 4
@@ -130,6 +133,8 @@
 #      re-block (budget_account_current_epoch owns that rule), so an inert
 #      hook that leaves the ledger frozen cannot hold the guard in an
 #      unbounded re-block loop below that override.
+#      Before any re-block, bin/fm-stop-policy-lib.sh repair mode applies the
+#      parked, loop and hourly bounds; it ignores stop_hook_active.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
