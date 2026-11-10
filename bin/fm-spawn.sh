@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
 # secondmate in its isolated firstmate home.
-# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--dispatch-override <reason>] [--account <entry>] [--backend <name>] [--herdr-resume-lock-wait]
-#        fm-spawn.sh <task-id> <project-dir> --scout [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--dispatch-override <reason>] [--account <entry>] [--backend <name>] [--herdr-resume-lock-wait]
+# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--dispatch-override <reason>] [--hermes-profile <name>] [--account <entry>] [--backend <name>] [--herdr-resume-lock-wait]
+#        fm-spawn.sh <task-id> <project-dir> --scout [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--dispatch-override <reason>] [--hermes-profile <name>] [--account <entry>] [--backend <name>] [--herdr-resume-lock-wait]
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
 #   spawn and refused on --scout and --secondmate spawns. Firstmate resolves both
@@ -141,6 +141,15 @@
 #   relaunch folds final native usage before replacing its source binding;
 #   unknown prior usage is reported and not carried, never blocking launch.
 #   Native usage and watcher enforcement are owned by bin/fm-task-budget.sh.
+#   --hermes-profile <name> selects Hermes's native -p profile for a tmux
+#   crewmate/scout; omission keeps Hermes's default selection. Names follow the
+#   native lowercase 1-64 character grammar. The resolved home is pinned for
+#   launch, and hermes_profile= is replayed on relaunch. Non-default --model is
+#   refused; effort is recorded but the profile owns model and reasoning.
+#   Native pre_llm_call/on_session_end hooks live in a private managed-scope
+#   overlay; an existing managed scope is refused. The profile's own gateway
+#   may run only while idle; a mid-turn, ambiguous or unreadable gateway is
+#   refused without changing it. No profile config or SOUL is edited.
 #   --model <name> and --effort <low|medium|high|xhigh|max|ultra> are concrete profile
 #   axes chosen by firstmate at intake. They are only threaded into harnesses whose
 #   installed CLIs were verified to support that axis; unsupported axes are omitted
@@ -307,7 +316,7 @@
 #   profile consultation. A --secondmate spawn is exempt and resolves the SECONDMATE
 #   harness (config/secondmate-harness -> config/crew-harness -> own), so the
 #   secondmate-vs-crewmate split is DURABLE across every respawn (recovery,
-#   /updatefirstmate, restart). A bare adapter name (claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|gemini|muse|rovo|omp|agy|devin|commandcode|droid|cortex)
+#   /updatefirstmate, restart). A bare adapter name (claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|gemini|muse|rovo|omp|agy|devin|commandcode|cortex|kiro)
 #   overrides it for this spawn (either kind). A non-flag string containing
 #   whitespace is treated as a RAW launch command - the escape hatch for verifying
 #   new adapters. For pi and pi-signed, fm-spawn resolves the selected executable
@@ -645,12 +654,14 @@
 #                  writes the versioned `<root>-v1` sibling beside it)
 #     __POLYTOKENFACETS__ the worktree's `.polytoken/facets` dir carrying the
 #                  generated firstmate-worker facet (the project facet layer)
+#     __KIROBIN__   resolved, kiro-verified executable for a kiro launch
+#     __KIROHOME__  firstmate-owned per-task KIRO_HOME dir (hook agent config + trust setting)
 # Verified per-harness turn-end hooks are installed automatically where enabled; some live outside the worktree.
 # A --secondmate launch arms the same semantic busy contract (bin/fm-busy-lib.sh) in THIS
 # parent home for claude, opencode, pi, pi-signed, and omp, so the parent's active-turn
 # gate can read a busy verdict. Those hooks do not touch the parent's turn-ended marker:
-# a mate's completed turns stay in its own home. Until a semantic source exists, Codex
-# classifies through fm_busy_codex_native_turn_state. Grok keeps its rendered-tail fallback and is not given a parent
+# a mate's completed turns stay in its own home. Codex stays unknown until a semantic
+# source exists. Grok keeps its rendered-tail fallback and is not given a parent
 # turn-end hook. Cursor's transcript binding is written for a secondmate the same way
 # as for a crewmate. Muse, gemini, devin, cortex, and rovo are refused as secondmates.
 # A raw launch command for a claude, pi, pi-signed, or omp secondmate is not armed
@@ -679,7 +690,7 @@
 # plus a gitignored .fm-grok-turnend worktree pointer and a state token.
 # muse installs no hook at all - its plugin engine is off in the default build - so
 # it writes state/<id>.muse-session to bind the pane to muse's own session event
-# log; muse, gemini, devin, commandcode, and cortex are crewmate/scout only and are refused for --secondmate.
+# log; muse, gemini, devin, commandcode, cortex, and kiro are crewmate/scout only and are refused for --secondmate.
 # rovo installs no hook either - its eventHooks fire at tool granularity only,
 # never turn-end - so it carries no busy-source wiring at all and no turn-end
 # hook. A positional brief is dead-on-arrival (rovo loads, never works, and drops
@@ -696,6 +707,20 @@
 # screen-scrape fallback like grok and rovo, while an agy SECONDMATE runs the
 # tracked project-scope .agents/hooks.json in its own home, whose stop-hook park
 # owns that home's supervision (docs/supervision-protocols/agy.md).
+# kiro (Kiro CLI, V2 engine) IS claude-shaped: its V2 agent-config hooks
+# (userPromptSubmit opens a turn, stop closes it and keeps the turn-ended
+# notification touch) are the per-task turn-end wiring. That config must not go
+# into the worktree's own .kiro/, so - mirroring gemini - the spawn writes a
+# firstmate-owned per-task agent config under state/<id>.kiro-home/agents/ and
+# reaches it by relocating KIRO_HOME onto that dir on the launch command; the
+# captain's real ~/.kiro is never touched, and auth is unaffected on AL2 where
+# it lives in the XDG data dir - where macOS carries auth is unestablished, so
+# a macOS worker may hit an auth prompt (docs/verification/kiro.md owns that
+# gap). --agent is name-only (a path is rejected), and --trust-all-tools
+# would otherwise block on a modal, so the spawn seeds
+# chat.disableTrustAllConfirmation into that per-task home's settings. kiro is
+# crewmate/scout only and refused for --secondmate. The kiro-hook record is its
+# only busy-state source (bin/fm-busy-lib.sh).
 # cursor installs no per-task hook either: it writes state/<id>.cursor-session to
 # bind the pane to cursor's own conversation transcript (projects root, the exact
 # workspace path cursor records in .workspace-trusted, and the conversations that
@@ -1042,23 +1067,25 @@ TRACEPARENT_ARG=
 HARNESS_SET=0
 MODEL_SET=0
 EFFORT_SET=0
+HERMES_PROFILE=
+HERMES_PROFILE_SET=0
 BACKEND_SET=0
 MODE_SET=0
 YOLO_SET=0
 BRANCH_PREFIX_SET=0
 BASE_BRANCH=
 BASE_BRANCH_SET=0
-PR_BRANCH=
-PR_BRANCH_SET=0
-FROM_BRANCH=
-FROM_BRANCH_SET=0
-RELAUNCH_MONITOR=
 UPSTREAM_CONSENT=
 UPSTREAM_CONSENT_SET=0
 TRACEPARENT_SET=0
 ACCOUNT_ARG=
 ACCOUNT_SET=0
 RELAUNCH=0
+PR_BRANCH=
+PR_BRANCH_SET=0
+FROM_BRANCH=
+FROM_BRANCH_SET=0
+RELAUNCH_MONITOR=
 BUDGET_IH=''
 BUDGET_IS=''
 BUDGET_FH=''
@@ -1104,6 +1131,10 @@ for a in "$@"; do
       EFFORT_SET=1
       ;;
     dispatch-override) DISPATCH_OVERRIDE=$a ;;
+    hermes-profile)
+      HERMES_PROFILE=$a
+      HERMES_PROFILE_SET=1
+      ;;
     backend)
       BACKEND_ARG=$a
       BACKEND_SET=1
@@ -1183,6 +1214,8 @@ for a in "$@"; do
     ;;
   --dispatch-override) want_value=dispatch-override ;;
   --dispatch-override=*) DISPATCH_OVERRIDE=${a#--dispatch-override=} ;;
+  --hermes-profile) want_value=hermes-profile ;;
+  --hermes-profile=*) HERMES_PROFILE=${a#--hermes-profile=}; HERMES_PROFILE_SET=1 ;;
   --backend) want_value=backend ;;
   --backend=*)
     BACKEND_ARG=${a#--backend=}
@@ -1262,6 +1295,14 @@ fi
   echo "error: --model requires a non-empty value" >&2
   exit 1
 }
+[ "$HERMES_PROFILE_SET" -eq 0 ] || [ -n "$HERMES_PROFILE" ] || {
+  echo "error: --hermes-profile requires a non-empty value" >&2
+  exit 1
+}
+if [ "$KIND" = secondmate ] && [ "$HERMES_PROFILE_SET" = 1 ]; then
+  echo 'error: --hermes-profile is for crewmate/scout launches, never a secondmate' >&2
+  exit 1
+fi
 [ "$EFFORT_SET" -eq 0 ] || [ -n "$EFFORT" ] || {
   echo "error: --effort requires a non-empty value" >&2
   exit 1
@@ -2295,6 +2336,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   [ -z "$MODEL" ] || shared_args+=(--model "$MODEL")
   [ -z "$EFFORT" ] || shared_args+=(--effort "$EFFORT")
   [ -z "$DISPATCH_OVERRIDE" ] || shared_args+=(--dispatch-override "$DISPATCH_OVERRIDE")
+  [ "$HERMES_PROFILE_SET" -eq 0 ] || shared_args+=(--hermes-profile "$HERMES_PROFILE")
   [ -z "$BACKEND_ARG" ] || shared_args+=(--backend "$BACKEND_ARG")
   # One delivery contract applies to every pair in a batch, exactly like the shared
   # harness. Each pair still re-validates it against its own brief, so a batch
@@ -2326,7 +2368,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
     pair_rc=0
     FM_SPAWN_NO_GUARD=1 "$FM_ROOT/bin/fm-spawn.sh" "${pair_args[@]}" || pair_rc=$?
     if [ "$pair_rc" -eq "$FM_PROJECT_CAPACITY_DEFER_EXIT" ]; then
-      echo "batch: DEFERRED ${pair%%=*} (${pair#*=}) - its project or this machine's lanes are at capacity, so it stays queued" >&2
+      echo "batch: DEFERRED ${pair%%=*} (${pair#*=}) - its project is at capacity, so it stays queued" >&2
       [ "$rc" -ne 0 ] || rc=$FM_PROJECT_CAPACITY_DEFER_EXIT
     elif [ "$pair_rc" -ne 0 ]; then
       echo "batch: FAILED to spawn ${pair%%=*} (${pair#*=})" >&2
@@ -2928,7 +2970,7 @@ FACTS
   fi
 elif [ "$KIND" = secondmate ]; then
   case "${POS[1]:-}" in
-  '' | claude | codex | opencode | pi | pi-signed | grok | kimi | cursor | gemini | muse | rovo | omp | agy | devin | commandcode | droid | polytoken | cortex)
+  '' | claude | codex | opencode | pi | pi-signed | grok | kimi | cursor | gemini | muse | rovo | omp | agy | devin | commandcode | droid | polytoken | cortex | kiro | hermes)
     ARG3=${POS[1]:-}
     ;;
   *' '*)
@@ -3067,6 +3109,70 @@ agy_model_validate() {  # <agy-bin> <model>
   return 1
 }
 
+# kiro pre-launch model validation. `kiro-cli chat --agent-engine v2
+# --list-models -f json` (kiro-cli 2.21.4) prints
+# {"models":[{"model_id":"<id>",...}],"default_model":"auto"} for the account's
+# catalog; model ids are bare (claude-opus-5, auto), never provider-prefixed. A
+# requested model absent from a reachable listing is concrete unsupported
+# evidence and refuses the spawn, so a stale id fails loudly here instead of
+# wedging a worker pane. The listing is a remote fetch that needs network and a
+# signed-in account, so the probe runs under the shared hard bound
+# (bin/fm-timeout-lib.sh) with stdin detached: a stalled fetch or a sign-in
+# prompt can never block the spawn before any pane exists. model_ids are read
+# with grep/sed rather than jq so the check has no extra dependency. An
+# unreachable listing establishes nothing (harness-adapters model-and-effort.md)
+# and launches unvalidated with a notice. The field pattern tolerates whitespace
+# around the JSON colon so a pretty-printed listing still yields model ids
+# instead of refusing every requested model. A listing that yields no model_id at
+# all - a renamed field, or an empty catalog - also establishes nothing about
+# whether the model exists, so it takes the same unvalidated-launch notice; only
+# a listing that parses and omits the requested id is unsupported evidence.
+kiro_model_validate() {  # <kiro-bin> <model>
+  local bin=$1 model=$2 listing ids rc=0 bound=${FM_KIRO_MODELS_TIMEOUT:-15}
+  case "$bound" in ''|*[!0-9]*|0*) bound=15 ;; esac
+  [ -n "$model" ] && [ "$model" != default ] || return 0
+  listing=$(fm_run_timed "$bound" "$bin" chat --agent-engine v2 --list-models -f json 2>/dev/null < /dev/null) || rc=$?
+  if [ "$rc" -ne 0 ] || [ -z "$listing" ]; then
+    if [ "$rc" -eq 124 ]; then
+      echo "notice: 'kiro-cli --list-models' did not answer within ${bound}s; launching with --model '$model' unvalidated" >&2
+    else
+      echo "notice: 'kiro-cli --list-models' listing is unreachable (exit $rc); launching with --model '$model' unvalidated" >&2
+    fi
+    return 0
+  fi
+  ids=$(printf '%s' "$listing" | grep -oE '"model_id"[[:space:]]*:[[:space:]]*"[^"]+"' \
+    | sed 's/.*:[[:space:]]*"//;s/"$//')
+  if [ -z "$ids" ]; then
+    echo "notice: 'kiro-cli --list-models' listing carries no model_id; launching with --model '$model' unvalidated" >&2
+    return 0
+  fi
+  if printf '%s\n' "$ids" | grep -qxF -- "$model"; then
+    return 0
+  fi
+  echo "error: kiro model '$model' is not listed by 'kiro-cli --list-models'; choose a listed model_id or omit --model" >&2
+  return 1
+}
+
+# kiro's hook commands are single-token absolute paths, so a hook path carrying
+# whitespace or a shell-special character cannot be delivered as one token under
+# both interpretations - a shell splits or expands it, an argv split does not,
+# and no quoting fixes both. kiro has no second state source, so the seeded
+# busy record would never clear and the supervisor would read the worker as
+# provably working forever. Refuse alongside the model check, before any
+# worktree or pane exists, and name the path. The physical resolution is what
+# gets embedded, so that is what is checked; an unresolvable state dir falls
+# back to the configured string.
+kiro_hook_path_validate() {  # <state-dir> <id>
+  local state=$1 id=$2 real
+  real=$(cd "$state" 2>/dev/null && pwd -P) || real=$state
+  [ -n "$real" ] || real=$state
+  case "$real/$id.kiro-home" in
+    *[[:space:]\'\"\\\$\`\;\&\|\<\>\(\)\*\?\[\]\{\}\!]*)
+      echo "error: kiro hook scripts would live under '$real/$id.kiro-home', whose path contains whitespace or a shell-special character; kiro hook commands must be a single unquoted token, so point FM_HOME or FM_STATE_OVERRIDE at a path free of both" >&2
+      return 1 ;;
+  esac
+  return 0
+}
 
 # The Claude task-worker channel statement: the launch brief and the Firstmate
 # instruction inbox are first-party, everything else keeps the model's normal
@@ -3291,6 +3397,24 @@ launch_template() {
   # agy exposes no hook surface, so busy state is a rendered-tail fallback
   # (bin/fm-busy-lib.sh) and nothing is armed below.
   agy) printf '%s' 'env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS __AGYBIN__ --prompt-interactive "$(__OPINPUT__ encode launch-brief < __BRIEF__)" __MODELFLAG____EFFORTFLAG__--dangerously-skip-permissions' ;;
+  # kiro (Kiro CLI, V2 engine): a positional prompt starts the supervised
+  # interactive session and auto-submits the brief (verified: a positional
+  # brief submitted itself with no extra Enter, kiro-cli 2.21.4). --agent-engine
+  # v2 pins the AL2-supported engine (v3/KAS is out of scope and unsupported
+  # here). --agent names the firstmate-owned per-task agent config that carries
+  # the busy/turn-end hooks; --agent is name-only, so the config is reached by
+  # relocating KIRO_HOME onto the per-task home that holds an agents/firstmate.json
+  # (see the hook section below) rather than by a config path. --trust-all-tools
+  # auto-approves every tool call an unattended crewmate needs; its otherwise
+  # blocking confirmation modal is suppressed by the chat.disableTrustAllConfirmation
+  # setting the hook section seeds into that same per-task home. --model takes a
+  # bare catalog model_id from --list-models; --effort takes low|medium|high|xhigh|max.
+  # The foreign primary markers are cleared for the same reason cursor/gemini/agy
+  # clear them: kiro publishes no marker of its own and does not scrub an
+  # inherited CLAUDECODE, so bin/fm-harness.sh must not read a kiro worker as its
+  # launcher. The V2 stop hook is a real turn-end pair, so busy state is armed
+  # below (unlike agy's screen-scrape-only fallback).
+  kiro) printf '%s' 'env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS KIRO_HOME=__KIROHOME__ __KIROBIN__ chat --agent-engine v2 --agent firstmate __MODELFLAG____EFFORTFLAG__--trust-all-tools "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
   droid) printf '%s' 'env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS FACTORY_DROID_AUTO_UPDATE_ENABLED=false __DROIDBIN__ --settings __DROIDSETTINGS__ --auto high "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
   # grok (Grok Build TUI): a positional prompt starts the supervised interactive
   # session. --always-approve auto-approves every tool execution (verified: the
@@ -3396,6 +3520,8 @@ launch_template() {
   # because Cortex loads Claude-compatible hooks, and Herdr's claude integration
   # hook claims a pane as a claude session whenever that variable is set.
   cortex) printf '%s' 'env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u FM_OMP_HARNESS -u ATLASSIAN_AGENT_TYPE -u ROVODEV_CLI __CORTEXBIN__ --dangerously-allow-all-tool-calls --plugin-dir __CORTEXPLUGIN__ __MODELFLAG____EFFORTFLAG__-- "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
+  # Hermes's native interactive query starts a visible TUI, never one-shot.
+  hermes) printf '%s' 'env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u FM_OMP_HARNESS -u ATLASSIAN_AGENT_TYPE -u ROVODEV_CLI FM_HERMES_HARNESS=hermes HERMES_HOME=__HERMESHOME__ HERMES_MANAGED_DIR=__HERMESHOOKS__ __HERMESBIN__ __HERMESPROFILE__chat --tui --yolo --accept-hooks -q "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
   # Kimi Code rejects a positional prompt, so it launches bare and receives
   # only an absolute brief pointer after the TUI readiness gate below.
   # Its turn-end signal is a globally configured Stop hook plus a guarded
@@ -3534,7 +3660,7 @@ if [ "$KIND" != secondmate ] && [ "$RELAUNCH" -eq 0 ] && [ -f "$CONFIG/crew-disp
   fi
 fi
 
-# muse, gemini, devin, commandcode, polytoken, and cortex are verified as CREWMATE/SCOUT adapters only. A secondmate is
+# muse, gemini, devin, commandcode, polytoken, cortex, and kiro are verified as CREWMATE/SCOUT adapters only. A secondmate is
 # a firstmate instance, so it needs a primary supervision protocol.
 # gemini has none: docs/supervision-protocols/ carries no gemini wake protocol
 # and this task verified only crewmate-side launch, busy state, interrupt, and
@@ -3552,7 +3678,10 @@ fi
 # docs/supervision-protocols/ carries no polytoken primary wake protocol.
 # cortex has none either: only its worker lifecycle hooks are verified, and
 # docs/supervision-protocols/ carries no cortex wake protocol (cortex 1.1.104).
-if [ "$KIND" = secondmate ] && { [ "$HARNESS" = muse ] || [ "$HARNESS" = gemini ] || [ "$HARNESS" = devin ] || [ "$HARNESS" = commandcode ] || [ "$HARNESS" = droid ] || [ "$HARNESS" = polytoken ] || [ "$HARNESS" = cortex ]; }; then
+# kiro has none either: this task verified only crewmate-side launch, busy state,
+# interrupt, exit, and resume on the V2 engine, and docs/supervision-protocols/
+# carries no kiro wake protocol (kiro-cli 2.21.4).
+if [ "$KIND" = secondmate ] && { [ "$HARNESS" = muse ] || [ "$HARNESS" = gemini ] || [ "$HARNESS" = devin ] || [ "$HARNESS" = commandcode ] || [ "$HARNESS" = droid ] || [ "$HARNESS" = polytoken ] || [ "$HARNESS" = cortex ] || [ "$HARNESS" = kiro ] || [ "$HARNESS" = hermes ]; }; then
   if [ "$HARNESS" = muse ]; then
     echo "error: $HARNESS cannot run a secondmate; its secondmate integration remains unverified. Select a harness verified for secondmates." >&2
   else
@@ -3561,7 +3690,7 @@ if [ "$KIND" = secondmate ] && { [ "$HARNESS" = muse ] || [ "$HARNESS" = gemini 
   exit 1
 fi
 
-# rovo has no turn-end hook and no
+# rovo carries the same primary-supervision gap as muse: no turn-end hook, no
 # verified primary integration, so a secondmate (a firstmate instance that must
 # itself act as a primary) could never be supervised. Refuse loudly rather than
 # standing one up with no way to arm its watch cycle.
@@ -3585,6 +3714,7 @@ if [ "$HARNESS" = cortex ] && [ "$BACKEND" != tmux ] && [ "$BACKEND" != herdr ];
   echo "error: cortex is verified on the tmux and herdr backends only; backend=$BACKEND cannot prove its composer empty. Select backend tmux or herdr." >&2
   exit 1
 fi
+
 
 # agy's launch readiness gate (agy_wait_for_working) reads the trust dialog and
 # the pinned busy row from the backend's pane capture, which is proven per
@@ -3655,6 +3785,35 @@ if [ "$HARNESS" = agy ]; then
   trap 'exit 129' HUP
   trap 'exit 130' INT
   trap 'exit 143' TERM
+fi
+
+# Hermes is verified only as a visible tmux worker. Other backends do not
+# yet prove its profile-prefixed composer or native process identity.
+if [ "$HARNESS" = hermes ] && [ "$BACKEND" != tmux ]; then
+  echo "error: hermes is verified on the tmux backend only; backend=$BACKEND is unsupported" >&2
+  exit 1
+fi
+if [ "$HERMES_PROFILE_SET" -eq 1 ] && [ "$HARNESS" != hermes ]; then
+  echo "error: --hermes-profile requires --harness hermes" >&2
+  exit 1
+fi
+if [ "$HARNESS" = hermes ]; then
+  # shellcheck source=bin/fm-hermes-lib.sh
+  . "$SCRIPT_DIR/fm-hermes-lib.sh"
+  fm_hermes_managed_check || exit 1
+  HERMES_BIN=$(command -v hermes) || { echo 'error: hermes executable not found on PATH' >&2; exit 1; }
+  if [ "$RELAUNCH" -eq 1 ] && [ "$HERMES_PROFILE_SET" -eq 0 ] && [ "$RELAUNCH_PRIOR_HARNESS" = hermes ]; then
+    HERMES_PROFILE=$(fm_meta_get "$RELAUNCH_META" hermes_profile)
+    HERMES_HOME=$(fm_meta_get "$RELAUNCH_META" hermes_home)
+    export HERMES_HOME
+  fi
+  if [ -n "$MODEL" ] && [ "$MODEL" != default ]; then
+    echo 'error: Hermes model selection belongs to the selected profile; omit --model or use default' >&2
+    exit 1
+  fi
+  [ -z "$EFFORT" ] || echo "notice: Hermes reasoning is profile-owned; effort=$EFFORT is recorded but not passed" >&2
+  HERMES_PROFILE_HOME=$(fm_hermes_profile_home "$HERMES_BIN" "$HERMES_PROFILE") || exit 1
+  fm_hermes_gateway_check "$HERMES_PROFILE_HOME" "${HERMES_PROFILE:-${HERMES_PROFILE_HOME##*/}}" || exit 1
 fi
 
 # config/crew-exclude-tools (header above): refuse before worker provisioning
@@ -3793,6 +3952,12 @@ agy)
     exit 1
   }
   ;;
+kiro)
+  KIRO_BIN=$(resolve_pi_executable kiro-cli) || {
+    echo "error: kiro-cli executable not found on PATH; install Kiro CLI or select a different verified harness" >&2
+    exit 1
+  }
+  ;;
 polytoken)
   POLYTOKEN_BIN=$(fm_polytoken_binary) || {
     echo "error: polytoken executable not found; install Polytoken CLI or select a different verified harness" >&2
@@ -3878,16 +4043,11 @@ if [ "$HARNESS" = polytoken ] && [ "$RAW_LAUNCH" -eq 0 ]; then
 elif [ "$HARNESS" = polytoken ]; then
   POLYTOKEN_MODEL_REF=$(fm_polytoken_model_ref "$POLYTOKEN_BIN" "$MODEL" "$EFFORT") || exit 1
 fi
-# polytoken's model validation composes firstmate's model and effort axes into
-# the launch model reference (bin/fm-polytoken-lib.sh owns the reasoning): the
-# base model must be concrete and listed, and effort maps to the nearest
-# compatible selectable `<model>(<effort>)` reference. Resolved
-# before the busy wiring arms, so the generated launch command carries the
-# composed reference and task metadata keeps the separate axes.
-if [ "$HARNESS" = polytoken ] && [ "$RAW_LAUNCH" -eq 0 ]; then
-  POLYTOKEN_MODEL_REF=$(fm_polytoken_launch_ref "$POLYTOKEN_BIN" "$MODEL" "$EFFORT") || exit 1
-elif [ "$HARNESS" = polytoken ]; then
-  POLYTOKEN_MODEL_REF=$(fm_polytoken_model_ref "$POLYTOKEN_BIN" "$MODEL" "$EFFORT") || exit 1
+if [ "$HARNESS" = kiro ]; then
+  kiro_model_validate "$KIRO_BIN" "$MODEL" || exit 1
+  if [ "$RAW_LAUNCH" -eq 0 ]; then
+    kiro_hook_path_validate "$STATE" "$ID" || exit 1
+  fi
 fi
 # Worker account pin (header above): resolved before any endpoint, worktree, or
 # record exists. An absent pin selects nothing and leaves every later launch
@@ -4117,7 +4277,7 @@ model_flag_for_harness() {
     [ "$oc_major" = 1 ] || return 0
     printf -- '--model %s ' "$(shell_quote "$model")"
     ;;
-  claude | codex | pi | pi-signed | grok | kimi | cursor | gemini | muse | rovo | omp | agy | devin | commandcode | cortex)
+  claude | codex | pi | pi-signed | grok | kimi | cursor | gemini | muse | rovo | omp | agy | devin | commandcode | cortex | kiro)
     printf -- '--model %s ' "$(shell_quote "$model")"
     ;;
   # polytoken encodes reasoning effort inside the model reference, so the
@@ -4179,6 +4339,14 @@ effort_flag_for_harness() {
       *"|$effort|"*) printf -- '--effort %s ' "$(shell_quote "$effort")" ;;
       esac
       ;;
+    esac
+    ;;
+  kiro)
+    # kiro-cli 2.21.4 --effort accepts the full shared vocabulary
+    # (low|medium|high|xhigh|max, per `kiro-cli chat --help`), so every level
+    # passes through.
+    case "$effort" in
+    low | medium | high | xhigh | max) printf -- '--effort %s ' "$(shell_quote "$effort")" ;;
     esac
     ;;
   commandcode)
@@ -6438,6 +6606,18 @@ rovo_spawn_fail() { # <detail>
 # a row that was never dispatched, and the possibly surviving worker blocks a
 # duplicate dispatch of the same item. A row that cannot be moved is named in
 # its own warning rather than silently left disagreeing with its record.
+# Close the endpoint after a failed post-launch gate (Hermes readiness):
+# proven-closed only when the backend kill itself succeeds.
+rovo_endpoint_cleanup() {
+  if [ "$BACKEND" = orca ]; then
+    fm_backend_kill orca "$T" 2>/dev/null && SPAWN_ENDPOINT_CLOSED=1 || true
+    return 0
+  fi
+  local tab_id=
+  [ "$BACKEND" = zellij ] && tab_id=$ZELLIJ_TAB_ID
+  fm_backend_kill "$BACKEND" "$T" "$tab_id" "fm-$ID" 2>/dev/null && SPAWN_ENDPOINT_CLOSED=1 || true
+}
+
 spawn_gate_endpoint_cleanup() {
   local tab_id='' kill_unproven=0
   [ "$BACKEND" = zellij ] && tab_id=$ZELLIJ_TAB_ID
@@ -7324,7 +7504,7 @@ BUSY_GEN=
     }
     [ "$RELAUNCH" -ne 1 ] || RELAUNCH_REPLACEMENT_BUSY_GEN=$BUSY_GEN
     ;;
-  gemini | devin | commandcode | droid | polytoken | cortex)
+  gemini | devin | commandcode | droid | polytoken | cortex | kiro | hermes)
     if [ "$RAW_LAUNCH" -eq 0 ]; then
       BUSY_GEN=$("$FM_ROOT/bin/fm-busy-event.sh" arm "$STATE_REAL" "$ID") || {
         echo "error: failed to arm the busy-state contract for $ID" >&2
@@ -7417,6 +7597,11 @@ BUSY_GEN=
     # learns into it, so that vendor runtime state stays out of worker commits.
     exclude_path '.commandcode/taste/'
     ;;
+  hermes)
+    if [ "$RAW_LAUNCH" -eq 0 ]; then
+      fm_hermes_write_hooks "$HERMES_BIN" "$HERMES_PROFILE_HOME" "$STATE_REAL" "$ID" "$BUSY_GEN" || exit 1
+    fi
+    ;;
   cortex)
     if [ "$RAW_LAUNCH" -eq 0 ]; then
       "$SCRIPT_DIR/fm-cortex-plugin.sh" "$STATE_REAL" "$ID" "$BUSY_GEN" || exit 1
@@ -7490,6 +7675,69 @@ EOF
         + (if (["low","medium","high","xhigh","max"] | index($effort)) != null
            then {reasoningEffort:$effort} else {} end)
       ' >"$STATE_REAL/$ID.droid-settings.json" || exit 1
+    fi
+    ;;
+  kiro)
+    if [ "$RAW_LAUNCH" -eq 0 ]; then
+      # Semantic busy-state hooks (bin/fm-busy-lib.sh): the V2 agent-config
+      # userPromptSubmit hook opens a turn and the stop hook closes it, with the
+      # stop hook also keeping the turn-ended NOTIFICATION touch for the watcher.
+      # Verified live on kiro-cli 2.21.4 as a clean per-turn pair in both the
+      # non-interactive run and the interactive TUI (userPromptSubmit fired on
+      # submit, stop fired at turn end). Like Claude's Stop hook, kiro's stop
+      # does NOT fire on a manual Escape interrupt, so fm-control preserves the
+      # adapter-owned record there (fm_control_interrupt_ack_source is none). kiro
+      # V2 exposes no verified StopFailure/SessionEnd equivalent, so an abnormal
+      # turn end leaves the record busy until the next userPromptSubmit re-opens
+      # it, and the supervisor reads that record as provably working. Nothing
+      # rescues it: the rendered `Kiro is working` footer is a delivery guard
+      # only (bin/fm-composer-lib.sh), never a worker state source.
+      #
+      # These are written into a FIRSTMATE-OWNED per-task agent config under
+      # state/<id>.kiro-home/agents/, reached by relocating KIRO_HOME onto that
+      # home on the launch command, never into the worktree's own .kiro/ - that
+      # dir belongs to the project, and --agent is name-only so a config path is
+      # not an option. The same per-task home carries a settings/cli.json seeding
+      # chat.disableTrustAllConfirmation, which suppresses --trust-all-tools's
+      # otherwise blocking confirmation modal (verified on AL2: the modal is the
+      # only blocker there, and auth stays in the XDG data dir unaffected by
+      # KIRO_HOME; macOS auth location is unestablished, docs/verification/kiro.md).
+      #
+      # Each hook command is a single-token absolute path to a generated script
+      # under the same per-task home, so the hooks behave identically whether
+      # kiro hands the command to a shell or splits it into argv - a vendor fact
+      # nothing here has to depend on. The redirect, the refused-event tolerance
+      # (|| true) and the turn-end touch all live inside the scripts, where the
+      # interpreter is fixed by their own shebang, so a stale-gen writer still
+      # cannot break kiro's lifecycle. No stdout contract applies.
+      #
+      # A raw launch command carries no KIRO_HOME and no --agent, so neither hook
+      # could ever fire; arming and writing the config anyway would seed a busy
+      # record nothing can clear. The gemini arm above skips both for the same
+      # reason, and for the same reason claude does not: its hooks land in the
+      # worktree, which a raw claude launch still reads.
+      KIRO_HOME_DIR="$STATE_REAL/$ID.kiro-home"
+      mkdir -p "$KIRO_HOME_DIR/agents" "$KIRO_HOME_DIR/settings" "$KIRO_HOME_DIR/hooks"
+      printf '{"chat.disableTrustAllConfirmation":true}\n' >"$KIRO_HOME_DIR/settings/cli.json"
+      busy_cmd_prefix="$(shell_quote "$FM_ROOT/bin/fm-busy-event.sh") apply $(shell_quote "$STATE_REAL") $(shell_quote "$ID")"
+      busy_suffix="--gen $(shell_quote "$BUSY_GEN") --source kiro-hook"
+      k_submit="$KIRO_HOME_DIR/hooks/user-prompt-submit"
+      k_stop="$KIRO_HOME_DIR/hooks/stop"
+      cat >"$k_submit" <<EOF
+#!/bin/sh
+$busy_cmd_prefix busy $busy_suffix --event user-prompt-submit 2>/dev/null || true
+exit 0
+EOF
+      cat >"$k_stop" <<EOF
+#!/bin/sh
+touch $(shell_quote "$TURNEND")
+$busy_cmd_prefix idle $busy_suffix --event stop 2>/dev/null || true
+exit 0
+EOF
+      chmod +x "$k_submit" "$k_stop"
+      cat >"$KIRO_HOME_DIR/agents/firstmate.json" <<EOF
+{"name":"firstmate","description":"Firstmate per-task crewmate agent (busy-state and turn-end hooks)","tools":["*"],"allowedTools":["*"],"hooks":{"userPromptSubmit":[{"command":"$(json_escape "$k_submit")"}],"stop":[{"command":"$(json_escape "$k_stop")"}]}}
+EOF
     fi
     ;;
   opencode*)
@@ -8193,7 +8441,7 @@ SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
   awk -F= -v budget_owned="${SPAWN_BUDGET_RECORD:+1}" '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo branch tasktmp base_branch upstream_consent forge backup_remote backup_prefix model effort opencode_version account account_provider omp_profile busy_gen spawn_gen approval_mode traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id paseo_terminal_id paseo_workspace_id rex_server rex_session_id rex_window_id rex_block_id t3_thread_id t3_project_id tern_session_id tern_tab_id tern_block_id home projects control_relaunch_tx polytoken_session polytoken_port polytoken_credential tmux_socket tmux_server_pid tmux_server_identity tmux_window_id", keys, " ")
+      split("window endpoint_task_id worktree project harness hermes_profile hermes_home kind mode yolo branch tasktmp base_branch upstream_consent forge backup_remote backup_prefix model effort opencode_version account account_provider omp_profile busy_gen spawn_gen approval_mode traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id paseo_terminal_id paseo_workspace_id rex_server rex_session_id rex_window_id rex_block_id t3_thread_id t3_project_id tern_session_id tern_tab_id tern_block_id hc_session hc_terminal home projects control_relaunch_tx polytoken_session polytoken_port polytoken_credential tmux_socket tmux_server_pid tmux_server_identity tmux_window_id", keys, " ")
       for (i in keys) owned[keys[i]] = 1
       if (budget_owned) {
         split("budget_inclusive_hard budget_inclusive_stop budget_fresh_hard budget_fresh_stop budget_launch_at budget_worktree budget_log_root budget_launch_marker budget_launch_fingerprint budget_prior_inclusive budget_prior_fresh budget_started_at", budgets, " ")
@@ -8241,6 +8489,7 @@ preserve_relaunch_meta() {
   # The per-secondmate omp profile pin, only when one applies, so every other
   # task record stays byte-identical.
   [ -z "$OMP_PROFILE_PIN" ] || echo "omp_profile=$OMP_PROFILE_PIN"
+  [ "$HARNESS" != hermes ] || { echo "hermes_profile=$HERMES_PROFILE"; echo "hermes_home=$HERMES_PROFILE_HOME"; }
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
   echo "spawn_gen=$SPAWN_GEN"
   [ -z "$SPAWN_BUDGET_RECORD" ] || printf '%s\n' "$SPAWN_BUDGET_RECORD"
@@ -8519,6 +8768,14 @@ commandcode)
   fi
   LAUNCH=${LAUNCH//__COMMANDCODEMOD__/$COMMANDCODEMOD}
   ;;
+hermes)
+  HERMES_PROFILE_FLAG=
+  [ -z "$HERMES_PROFILE" ] || HERMES_PROFILE_FLAG="-p $(shell_quote "$HERMES_PROFILE") "
+  LAUNCH=${LAUNCH//__HERMESBIN__/"$(shell_quote "$HERMES_BIN")"}
+  LAUNCH=${LAUNCH//__HERMESHOME__/"$(shell_quote "$HERMES_PROFILE_HOME")"}
+  LAUNCH=${LAUNCH//__HERMESPROFILE__/$HERMES_PROFILE_FLAG}
+  LAUNCH=${LAUNCH//__HERMESHOOKS__/"$(shell_quote "$STATE_REAL/$ID.hermes-hooks")"}
+  ;;
 cortex)
   LAUNCH=${LAUNCH//__CORTEXBIN__/"$(shell_quote "$CORTEX_BIN")"}
   LAUNCH=${LAUNCH//__CORTEXPLUGIN__/"$(shell_quote "$STATE_REAL/$ID.cortex-plugin")"}
@@ -8545,6 +8802,10 @@ polytoken)
   LAUNCH=${LAUNCH//__POLYTOKENCONFIG__/"$(shell_quote "$(fm_polytoken_config_dir "$STATE_REAL" "$ID")")"}
   LAUNCH=${LAUNCH//__POLYTOKENSESSIONS__/"$(shell_quote "$(fm_polytoken_sessions_root "$STATE_REAL" "$ID")")"}
   LAUNCH=${LAUNCH//__POLYTOKENFACETS__/"$(shell_quote "$WT/.polytoken/facets")"}
+  ;;
+kiro)
+  LAUNCH=${LAUNCH//__KIROBIN__/"$(shell_quote "$KIRO_BIN")"}
+  LAUNCH=${LAUNCH//__KIROHOME__/"$(shell_quote "$STATE_REAL/$ID.kiro-home")"}
   ;;
 esac
 LAUNCH=${LAUNCH//__WORKTREE__/$sq_worktree}
@@ -8599,7 +8860,7 @@ codex)
     LAUNCH="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI -u CODEX_HOME $LAUNCH"
   fi
   ;;
-claude | opencode | pi | pi-signed | grok | kimi | gemini | muse | rovo | agy | devin | commandcode | cortex)
+claude | opencode | pi | pi-signed | grok | kimi | gemini | muse | rovo | agy | devin | commandcode | cortex | kiro | hermes)
   LAUNCH="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI $LAUNCH"
   ;;
 esac
@@ -9036,6 +9297,37 @@ else
   if [ "$ORCA_LAUNCH_ENV_ENABLED" = 1 ]; then
     spawn_orca_wait_launch_consumed
     trap - HUP INT TERM
+  fi
+fi
+if [ "$HARNESS" = hermes ] && [ "$RAW_LAUNCH" -eq 0 ]; then
+  HERMES_READY=0
+  HERMES_DECLINED=0
+  for ((HERMES_POLL=0; HERMES_POLL<${FM_HERMES_READY_POLLS:-180}; HERMES_POLL++)); do
+    HERMES_SCREEN=$(fm_backend_capture "$BACKEND" "$T" 120 "$W" 2>/dev/null || true)
+    case "$(fm_hermes_startup_screen "$HERMES_SCREEN")" in
+      decline)
+        if [ "$HERMES_DECLINED" = 0 ]; then
+          spawn_send_key "$T" Enter || break
+          HERMES_DECLINED=1
+        fi
+        ;;
+      ready) HERMES_READY=1; break ;;
+    esac
+    case "$(fm_busy_classify "$BACKEND" "$T" hermes "$ID" "$STATE_REAL")" in
+      'busy hermes-hook'|'idle hermes-hook') HERMES_READY=1; break ;;
+    esac
+    sleep "${FM_HERMES_POLL_INTERVAL:-0.5}"
+  done
+  if [ "$HERMES_READY" != 1 ]; then
+    echo "error: Hermes did not reach its TUI or process its brief in $T; inspect profile setup, provider errors, and first-run consent (only an already-selected No thanks is answered)" >&2
+    rovo_endpoint_cleanup
+    if [ "$SPAWN_ENDPOINT_CLOSED" != 1 ]; then
+      # Hermes may still finish starting there, so the record stays for
+      # supervision and teardown instead of being rolled back.
+      SPAWN_FRESH_COMMIT_PENDING=0
+      echo "warning: could not close endpoint $T after the failed Hermes launch of $ID; its task record is kept so the worker stays reachable - inspect it, then tear it down" >&2
+    fi
+    exit 1
   fi
 fi
 if [ "$HARNESS" = kimi ]; then

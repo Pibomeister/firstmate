@@ -379,7 +379,7 @@ fm_win_harness_ancestry_pids() {
 # session cannot be read off the ancestry at all, so the whole contiguous run is
 # reported and the callers below decide what they need from it.
 fm_harness_ancestry_pids() {
-  local pid=$$ comm args extending=0 printed=0
+  local pid=$$ extending=0 printed=0
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
     comm=$(fm_ps_comm "$pid") || break
     args=$(fm_ps_args "$pid")

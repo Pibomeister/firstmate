@@ -1463,6 +1463,10 @@ It has no primary or secondmate supervision protocol.
 The launch generates a private per-task config directory that mirrors the operator's provider/model configuration and enforces unattended permissions without modifying global configuration.
 The first-start license dialog requires an operator decision and is never accepted automatically.
 
+Kiro (Kiro CLI, V2 engine) and Hermes are verified for crewmate and scout launches only; a secondmate is refused because neither has a primary supervision protocol.
+Hermes runs only on the tmux backend.
+The [Kiro adapter reference](../.agents/skills/harness-adapters/references/harness/kiro.md) and the [Hermes adapter reference](../.agents/skills/harness-adapters/references/harness/hermes.md) own their operating contracts, and [Kiro verification](verification/kiro.md) and [Hermes verification](verification/hermes.md) own the live evidence.
+
 ### Verification and primary supervision
 
 New harnesses get verified through a supervised trial task before joining the set.

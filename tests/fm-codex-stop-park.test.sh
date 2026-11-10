@@ -89,7 +89,7 @@ mkdir -p "$CODE/bin"
 git init -q "$CODE"
 git -C "$CODE" commit -q --allow-empty -m init
 : > "$CODE/AGENTS.md"
-cp "$ROOT/bin/fm-codex-stop-park.sh" "$ROOT/bin/fm-harness.sh" "$ROOT"/bin/*-lib.sh "$CODE/bin/"
+cp "$ROOT/bin/fm-codex-stop-park.sh" "$ROOT/bin/fm-harness.sh" "$ROOT"/bin/*-lib.sh "$ROOT/bin/fm-session-process.py" "$CODE/bin/"
 PARK="$CODE/bin/fm-codex-stop-park.sh"
 
 # The arm fixture reads its behavior from the home: `wake` reports a signal at

@@ -31,7 +31,9 @@ c90e3e933642d9979c85130212a5a50f32a83854	.agents/skills/harness-adapters/referen
 e5d4054050a0aec9120c1902fb3079b5ea5856db	.agents/skills/harness-adapters/references/harness/droid.md
 b73bb8d9eb5c0cbb0cf17040e56664cac01eb4aa	.agents/skills/harness-adapters/references/harness/gemini.md
 8779fe49258889cd671f863799d80e47ffe9ab2d	.agents/skills/harness-adapters/references/harness/grok.md
+5b15f366fc4e33e8263a736e019cc551e3aac481	.agents/skills/harness-adapters/references/harness/hermes.md
 03044d477756e2156c0009c3916d4d416be7a02c	.agents/skills/harness-adapters/references/harness/kimi.md
+619d47ecc6e716c7cfe603d789a80c8f40c64823	.agents/skills/harness-adapters/references/harness/kiro.md
 07ad08eafd36785ef829dc223a8801f372775c35	.agents/skills/harness-adapters/references/harness/muse.md
 959967e02b587632e303da8105342d7a03c02d3c	.agents/skills/harness-adapters/references/harness/omp.md
 1cab038a632153083c40b14e1b92d1a1217b8fbf	.agents/skills/harness-adapters/references/harness/opencode.md
@@ -64,5 +66,5 @@ ef492c1f3c1fe7514a10f89a939e7591fe596c12	.claude/mods/firstmate-calm/lib/fm-calm
 dadb6777faa9e822c0dcccf59b1bd64a31a86aeb	.claude/mods/firstmate-calm/tests/calm.test.ts
 140d4db05ff26a87c434a766279a80ea5e543741	.claude/mods/firstmate-calm/tests/support.ts
 a5210b1c660d4445138df49b7f274118dbefd299	.claude/mods/firstmate-calm/tests/working-ship.test.ts
-8f818c6fab5699562f38255edf7405e32e7cd3f6	.claude/settings.json
+0bf553ccd3d79c356c356c6fcf0454eba20afa2b	.claude/settings.json
 2b7a412b8fa0fb7e985b0793321bd4e698f2b6cd	.claude/skills
