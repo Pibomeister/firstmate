@@ -1,0 +1,146 @@
+FM_TEST_BEGIN 2026-11-10T02:02:29Z tests/fm-composer-lib.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - fm_composer_classify_content: a bare shell prompt glyph (>/$/%/#) reads unknown, never empty
+ok - fm_composer_classify_content: stripped unbordered content is unknown except verified agent glyphs
+ok - fm_composer_classify_content: a bare shell prompt carrying a command is not empty
+ok - fm_composer_classify_content: a bare prompt glyph inside a bordered composer box reads empty (claude's own idle composer)
+ok - fm_composer_classify_content: agent prompt glyphs (❯ claude, › codex, ⟩ muse) read empty bordered or bare
+ok - fm_composer_classify_content: an empty composer reads empty
+ok - fm_composer_classify_content: idle matching is limited to proven placeholder positions
+ok - fm_composer_classify_content: idle matching preserves the caller's case mode
+ok - fm_composer_classify_content: real unsubmitted text reads pending (including a popup argument-hint fill)
+ok - matrix: claude's ❯+NBSP row reads empty on every profile in both locales (#1988)
+not ok - multiword named claude idle on herdr: expected empty, got 'unknown'
+FM_TEST_END 2026-11-10T02:02:38Z tests/fm-composer-lib.test.sh exit=1 duration_ms=8657 gate_skip=false
+FM_TEST_BEGIN 2026-11-10T02:02:38Z tests/fm-harness-precedence.test.sh family=pure-contract-unit expected_gate_skip=none
+not ok - codex ancestry alone resolved '', expected codex (the ancestry signal is not live)
+FM_TEST_END 2026-11-10T02:02:40Z tests/fm-harness-precedence.test.sh exit=1 duration_ms=1760 gate_skip=false
+FM_TEST_BEGIN 2026-11-10T02:02:40Z tests/fm-claude-account-quota.test.sh family=standalone expected_gate_skip=none
+ok - each declared account prints its own quota row, read under its own root
+ok - a model-specific scope is printed only for that model
+ok - exhausted, 0%, and unreadable accounts print facts and uncertainty without a verdict
+ok - a projected exhaustion prints each account's own runway seconds and confidence without a verdict
+ok - a rate-limited account names the vendor's reason
+ok - ordinary is measured from the default ~/.claude root
+ok - an absent or malformed list refuses before any quota read
+# all fm-claude-account-quota tests passed
+FM_TEST_END 2026-11-10T02:02:53Z tests/fm-claude-account-quota.test.sh exit=0 duration_ms=11804 gate_skip=false
+FM_TEST_BEGIN 2026-11-10T02:02:53Z tests/fm-tmux-agent-liveness.test.sh family=backend-dispatch expected_gate_skip=none
+ok - tmux liveness: a harness-named foreground process classifies alive
+ok - tmux liveness: muse's version-suffixed muse-bin-<version> classifies alive
+ok - tmux liveness: unrelated muse-containing command names stay ambiguous
+ok - tmux liveness: omp's bare binary name classifies alive
+ok - tmux liveness: unrelated omp-containing command names stay ambiguous
+ok - tmux liveness: real Droid-shaped process is alive and fragments stay ambiguous
+ok - tmux liveness: Command Code's anchored process name classifies alive; a containing name stays ambiguous
+ok - tmux liveness: a version-named executable under a harness install path classifies alive
+ok - tmux liveness: a version-named executable under a decoy path stays ambiguous
+ok - tmux liveness: a process neither name source attributes stays ambiguous rather than inventing an agent
+ok - tmux liveness: Python -I -c bootstrap with same-group Node --expose-gc Hermes TUI classifies alive without harness names
+ok - tmux liveness: the same bootstrap with an unrelated Node script stays ambiguous
+ok - tmux liveness: a launcher whose own identity reads as a bare shell classifies alive from its harness child
+ok - tmux liveness: an idle shell pane classifies dead
+ok - tmux liveness: a harness-named background process in an idle pane still classifies dead
+ok - tmux liveness: an absent window classifies missing rather than inheriting tmux's active-window fallback
+ok - cursor composer: an idle Cursor pane reads empty even though the cursor row is blind
+ok - cursor composer: a fully dim placeholder reads empty
+ok - cursor composer: bright text matching the placeholder stays pending
+ok - cursor composer: real typed text still reads pending, so the injection guard holds
+ok - cursor composer: an identical screen stays unknown when the pane is not Cursor
+ok - cursor composer: a stale Cursor screen over a dead shell never reads empty
+ok - commandcode composer: an idle pane reads empty although its cursor row is blind and its placeholder is bright
+ok - commandcode composer: typed text still reads pending
+ok - commandcode composer: an identical screen stays unknown when the pane is not Command Code
+FM_TEST_END 2026-11-10T02:03:41Z tests/fm-tmux-agent-liveness.test.sh exit=0 duration_ms=48256 gate_skip=false
+FM_TEST_BEGIN 2026-11-10T02:03:41Z tests/fm-control.test.sh family=backend-dispatch expected_gate_skip=none
+ok - fm-control exit: every verified harness gets its own verified exit command
+ok - fm-control exit: a recorded OpenCode major picks /exit (1.x) or Ctrl-U then Ctrl-C (2.x)
+ok - fm-control exit: OpenCode 2.x retries Ctrl-C exactly once while the agent is still alive
+ok - fm-control interrupt: every verified harness gets its own verified key and repeat count
+ok - fm-control Devin interrupt: second press only after the armed hint, then busy invalidated without fabricating idle
+ok - fm-control Devin interrupt: an idle agent gets one Escape and reports not-running
+ok - fm-control Devin exit: a busy record whose turn already ended never opens the revert picker
+ok - fm-control Devin interrupt: a revert picker a press opened is closed with Escape, never Enter
+ok - fm-control Devin: an open revert picker refuses every typed command
+ok - fm-control interrupt: opencode needs a double Escape, claude a single one
+ok - fm-control: a harness with no verified control mechanics is refused, not guessed at
+ok - fm-control-lib: a recorded harness resolves to its verified adapter without guessing
+ok - fm-control-lib: only a runtime's own recorded session has a relaunch resume form
+ok - fm-control: prefixed recorded harnesses reach interrupt and exit mechanics
+ok - fm-control-lib: the backend key matrix matches each adapter's real send-key surface
+ok - fm-control-lib: adapter capability is per task kind, not per adapter alone
+ok - fm-control interrupt: a backend that cannot deliver Escape refuses instead of sending a key
+ok - fm-control interrupt: Orca Droid capture failure refuses without sending keys
+ok - fm-control relaunch: Orca Droid refuses a non-Droid replacement before stopping the worker
+ok - fm-control exit: a second exit on a stopped Orca Droid is idempotent success
+ok - fm-control relaunch: an exited Orca Droid is admitted for a Droid replacement
+ok - fm-control relaunch: live marker-free Droid exits retain proof for separate and combined replacement admission
+ok - fm-control: a backend that cannot prove an agent stopped refuses exit and relaunch
+ok - fm-control relaunch: commandcode and agy off tmux and herdr are refused before the running agent is stopped
+ok - fm-control-lib: stop-proving verbs are gated on the backends that really classify agent state
+ok - fm-control: a legacy window label is refused and the exact task id is named
+ok - fm-control: an explicit backend endpoint is never a control target
+ok - fm-control: an unrecorded task id is refused
+ok - fm-control: a record whose endpoint identity names another task is refused
+ok - fm-control: a remotely placed secondmate is refused by placement, not by a metadata complaint
+ok - fm-control: interrupt and exit lock before task-state resolution
+ok - fm-control: the verb list is closed - no raw keys, arbitrary text, or clear verb
+ok - fm-control: resume is refused with the determinism reason and the alternative
+ok - fm-control: profile and note flags belong to relaunch only
+ok - fm-control exit: an already-stopped agent is idempotent success with no bytes sent
+ok - fm-control exit: an unprovable tmux endpoint refuses instead of claiming the agent stopped
+ok - fm-control exit: a closed Orca terminal with no agent left reports endpoint-gone and sends nothing
+ok - fm-control exit: a closed Orca terminal refuses when the worktree scan cannot be read
+ok - fm-control exit: closed Droid terminals retain their SessionEnd requirement
+ok - fm-control exit: a connected owned Droid shell proves the agent stopped without a SessionEnd marker
+ok - fm-control exit: a connected Orca terminal whose session root exited reports endpoint-gone without a Droid idle record, refuses a live Droid in the worktree, and sends nothing
+ok - fm-control exit: the connected-shell proof refuses a wrong-generation marker and a live worktree process
+ok - fm-control exit: a stale Orca handle recorded before the host reboot reports endpoint-gone and sends nothing
+ok - fm-control exit: a reboot-stale Orca handle refuses while an agent survives in the recorded worktree
+ok - fm-control exit: a stale Orca handle refuses when the host boot does not postdate its recorded evidence
+ok - fm-control interrupt: an unreadable pane sends no keys
+ok - fm-control exit: an unreadable pane sends no keys even when the agent is busy
+ok - fm-control interrupt: refuses when no agent is running rather than keying a shell
+ok - fm-control exit: an endpoint whose process cannot be attributed refuses
+ok - fm-control exit: a busy agent receives interrupt delivery before the exit command
+ok - fm-control exit: a busy agent whose composer is empty after interrupt still exits
+ok - fm-control exit: text that comes back after the interrupt still refuses
+ok - fm-control exit: a usage-limit pane that appears after interrupt still refuses
+ok - fm-control exit: an idle agent goes straight to its exit command
+ok - fm-control exit: retiring a codex incarnation drops busy_gen with the sidecar
+ok - fm-control exit: an already-open background-task picker is not typed into
+ok - fm-control exit: the Enter that opens the background-task picker is not followed by a confirming Enter
+ok - fm-control exit: a picker that renders after the submit returned is named when the stop wait times out
+ok - fm-control interrupt: unconfirmed delivery preserves observed busy state
+ok - fm-control interrupt: muse confirms cancellation from its session log
+ok - fm-control interrupt: postconditions are revalidated after acknowledgement polling
+ok - fm-control exit: an interrupt-stopped agent satisfies the gone-state postcondition
+ok - fm-control exit: a stubborn agent reports delivered input and an unconfirmed exit
+ok - fm-control interrupt: grok reports delivery without claiming cancellation
+ok - fm-control interrupt: grok's idle footer does not confirm cancellation
+ok - fm-control: a lifecycle command to a secondmate is unmarked and opens no reply expectation
+ok - fm-control's arrival leaves fm-send's from-firstmate marking untouched
+FM_TEST_END 2026-11-10T02:19:12Z tests/fm-control.test.sh exit=0 duration_ms=930306 gate_skip=false
+FM_TEST_BEGIN 2026-11-10T02:19:12Z tests/fm-control-relaunch.test.sh family=backend-dispatch expected_gate_skip=none
+ok - fm-spawn --relaunch: tracked opencode wiring is retired as on main
+ok - fm-control removes the dialog file after exit and after relaunch
+ok - fm-control exit removes the dialog file before it releases the control lock
+not ok - relaunch inherited foreign FM variables or lost task values: 
+FM_TEST_END 2026-11-10T02:20:51Z tests/fm-control-relaunch.test.sh exit=1 duration_ms=99015 gate_skip=false
+FM_TEST_BEGIN 2026-11-10T02:20:51Z tests/fm-send-resolve-key.test.sh family=backend-dispatch expected_gate_skip=none
+ok - fm-send --resolve-key: the answer send itself closes the open decision
+ok - fm-send --resolve-key: the close never re-wakes its own home, later lines still do
+ok - fm-send --resolve-key: separate answers do not each re-wake; later lines still do
+not ok - the key the listing showed ('no-mistakes-start') must close the entry the listing showed it for: expected exit 0, got 1
+FM_TEST_END 2026-11-10T02:21:30Z tests/fm-send-resolve-key.test.sh exit=1 duration_ms=38746 gate_skip=false
+FM_TEST_SUMMARY total=7 failed=4 skipped_gate=0 duration_ms=1144333
+FM_TEST_SUMMARY_FAMILY family=backend-dispatch count=4 duration_ms=1116323 failed=2
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=2 duration_ms=10417 failed=2
+FM_TEST_SUMMARY_FAMILY family=standalone count=1 duration_ms=11804 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-control.test.sh duration_ms=930306
+FM_TEST_SLOWEST rank=2 script=tests/fm-control-relaunch.test.sh duration_ms=99015
+FM_TEST_SLOWEST rank=3 script=tests/fm-tmux-agent-liveness.test.sh duration_ms=48256
+FM_TEST_SLOWEST rank=4 script=tests/fm-send-resolve-key.test.sh duration_ms=38746
+FM_TEST_SLOWEST rank=5 script=tests/fm-claude-account-quota.test.sh duration_ms=11804
+FM_TEST_SLOWEST rank=6 script=tests/fm-composer-lib.test.sh duration_ms=8657
+FM_TEST_SLOWEST rank=7 script=tests/fm-harness-precedence.test.sh duration_ms=1760
+exit=1

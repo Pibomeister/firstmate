@@ -1,0 +1,5 @@
+fm-harness-precedence exit=1
+fm-composer-lib exit=1
+fm-tmux-agent-liveness exit=0
+fm-send-resolve-key exit=0
+fm-control-relaunch exit=1

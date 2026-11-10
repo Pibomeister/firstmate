@@ -1,0 +1,27 @@
+$ bin/fm-test-run.sh --check-coverage   # at c026d342 (before shard-1 restore)
+fm-test-run: coverage guard: portable parallel shards share scripts:
+tests/fm-captain-hold-lifecycle.test.sh
+tests/fm-cd-pretool-check.test.sh
+tests/fm-composer-ghost.test.sh
+tests/fm-crew-state.test.sh
+tests/fm-review-diff.test.sh
+tests/fm-transition-lib.test.sh
+
+$ bin/fm-test-run.sh --check-coverage   # base 59ad9130
+FM_TEST_COVERAGE ok total=365 parallel=26 parallel_max_ms=1418942 parallel_imbalance_ms=589 parallel_unhinted=0 serial=323 serial_shards=24 serial_unhinted=10 serial_max_ms=759635 serial_budget_ms=780000 serial_oversized=0 herdr=16
+
+$ bin/fm-test-run.sh --check-coverage   # after shard-1 restore
+fm-test-run: coverage guard: largest portable serial shard packs 787767ms above the 780000ms target
+fm-test-run: refresh CI hints and rebalance or add shards; do not raise the job timeout: docs/fm-test-portable-shards.md
+exit=1
+
+$ bin/fm-test-run.sh --list --family live-harness-optin | grep ...
+tests/fm-grok-quota-handoff-live-e2e.test.sh
+tests/fm-herdr-secondmate-watch-live-e2e.test.sh
+$ bin/fm-test-run.sh --list --family backend-dispatch | grep codex-shell-env
+tests/fm-codex-shell-env.test.sh
+
+$ bin/fm-harness.sh --help | head -5
+claude
+$ git grep -ciE "kiro|hermes" (harness, send, composer, control, busy, teardown)
+       0

@@ -1,0 +1,4 @@
+droid supported=yes
+muse supported=yes
+kiro supported=no
+hermes supported=no

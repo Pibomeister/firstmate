@@ -1,0 +1,10 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.cu5WJz
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 28s) - full banner already printed this episode.
+teardown: reaping leaked worktree process(es) for scout1: 10756 26830 67645 87824
+teardown: force-killing leaked worktree process(es) for scout1: 26830
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown scout1 complete (window firstmate:fm-scout1, worktree /Users/eduardopicazo/.treehouse/demo-2ce4f8/1/demo)
+Backlog: scout1 is closed in /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.cu5WJz/data/backlog.md. Run bin/fm-tasks-axi.sh ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due.

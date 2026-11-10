@@ -1,0 +1,8 @@
+bin/fm-harness.sh base=0 head=0
+bin/fm-send.sh base=0 head=0
+bin/fm-composer-lib.sh base=0 head=0
+bin/fm-control-lib.sh base=0 head=0
+bin/fm-control.sh base=0 head=0
+bin/fm-busy-lib.sh base=0 head=0
+bin/fm-teardown.sh base=0 head=0
+bin/fm-test-run.sh base=0 head=0

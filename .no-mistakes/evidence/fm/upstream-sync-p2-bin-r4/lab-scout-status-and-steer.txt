@@ -1,0 +1,28 @@
+## status
+done [at=1794281956]: demo repo has 1 commit (7858a39 init); report written
+## report
+# Scout report: commit count of the demo repository
+
+## Answer
+The demo repository has **1 commit**.
+
+## What I did
+I ran git log and rev-list in the scout worktree
+`/Users/eduardopicazo/.treehouse/demo-2ce4f8/1/demo`. This worktree is a checkout of
+`/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.cu5WJz/projects/demo`.
+
+## Evidence
+```
+## crew-state
+state: working · source: pane · harness busy (claude-hook)
+## fm-send steer
+●  down 1s.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+exit=0
+001.msg
+handled
+## Branch (firstmate follow-up, inbox 001)
+Branch: none. The worktree is at a detached HEAD on `7858a39`, and that commit is also the tip of `main` (the default branch, checked out in another worktree).
+Evidence: `git branch --show-current` printed nothing; `git branch -a --contains HEAD` printed `* (no branch)` and `+ main`.

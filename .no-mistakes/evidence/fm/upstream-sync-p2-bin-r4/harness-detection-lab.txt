@@ -1,0 +1,18 @@
+## own harness from this claude test agent
+claude
+exit=0
+## crew-harness=droid
+droid
+exit=0
+## crew-harness=kiro
+kiro
+exit=0
+## crew-harness=hermes
+hermes
+exit=0
+## fm-control relaunch arg validation with unsupported harness
+fm-control.sh - the CONTROL PLANE for a firstmate-owned agent: allowlisted
+lifecycle verbs addressed to an exact task id.
+
+Usage: fm-control.sh <task-id> interrupt
+       fm-control.sh <task-id> exit
