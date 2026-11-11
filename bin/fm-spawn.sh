@@ -3661,11 +3661,11 @@ case "$ARG3" in
     word=${word%[\"\'\)]}
     if [ "$raw_cmdpos" = 1 ] && [ -n "$word" ]; then
       case "$raw_wrap:$word" in
-      env:-u | env:--unset) raw_wrap=env-arg ;;
-      env-arg:*) raw_wrap=env ;;
+      env:-u | env:--unset | env:-C | env:--chdir | exec:-a | shell:[-+]o | shell:[-+]O) raw_wrap=${raw_wrap}-arg ;;
+      *-arg:*) raw_wrap=${raw_wrap%-arg} ;;
       env:-* | exec:-* | command:-* | nohup:-*) ;;
       shell:-*c*) raw_wrap=shell-c ;;
-      shell:-*) ;;
+      shell:[-+]*) ;;
       shell:*) raw_cmdpos=0 ;;
       shell-c:* | env:* | exec:* | command:* | nohup:* | :*)
         case "$word" in

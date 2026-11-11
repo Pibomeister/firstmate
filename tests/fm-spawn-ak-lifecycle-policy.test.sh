@@ -269,15 +269,19 @@ argv=<hooks>"
     "the refusal must say why the raw Codex form is unsupported"
   [ ! -s "$LAUNCH_LOG" ] || fail "a refused raw Codex command still launched"
 
-  id='raw-codex-second-a1'
-  rec=$(make_case raw-codex-second codex "$id")
-  read_case "$rec"
-  out=$(run_case_spawn "$id" "$PROJ_DIR" --scout 'codex --disable hooks; codex resume' 2>&1)
-  status=$?
-  expect_code 1 "$status" "a raw command that starts a second Codex after the leading one must refuse: $out"
-  assert_contains "$out" 'cannot carry the launch environment into its tool shells' \
-    "the refusal for a later Codex must say why the raw form is unsupported"
-  [ ! -s "$LAUNCH_LOG" ] || fail "a refused compound raw Codex command still launched"
+  local n=0
+  for raw in 'codex --disable hooks; codex resume' 'env -C /w codex x' 'exec -a n codex' "bash -o pipefail -c 'codex x'"; do
+    n=$((n + 1))
+    id="raw-codex-hidden-$n-a1"
+    rec=$(make_case "raw-codex-hidden-$n" codex "$id")
+    read_case "$rec"
+    out=$(run_case_spawn "$id" "$PROJ_DIR" --scout "$raw" 2>&1)
+    status=$?
+    expect_code 1 "$status" "raw command '$raw' starts Codex the launcher cannot take over and must refuse: $out"
+    assert_contains "$out" 'cannot carry the launch environment into its tool shells' \
+      "the refusal for '$raw' must say why the raw form is unsupported"
+    [ ! -s "$LAUNCH_LOG" ] || fail "refused raw command '$raw' still launched"
+  done
   pass "raw Codex commands run through the Codex launcher, and a Codex hidden behind another command refuses"
 }
 
