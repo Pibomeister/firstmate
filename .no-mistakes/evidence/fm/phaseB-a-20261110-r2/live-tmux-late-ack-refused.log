@@ -1,0 +1,25 @@
+== live drill mode=late budget=60s lab=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.bwnxVc tmux_socket_dir=/tmp/fml.mCJGBy sha=a1abb6eb63eba665b8c704b198ac1dc35514f30b
+launcher_rc=1 elapsed=79s
+-- predecessor pid=25715 lock_line1=25715
+-- tmux windows on private server:
+primary:0 tmux dead=0 status= cmd=sleep 3600
+primary:2 firstmate dead=0 status= cmd=claude --dangerously-skip-permissions "Firstmate handoff successor. Read the entire document at /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.bwnxVc/d
+primary:3 firstmate dead=0 status= cmd=claude --dangerously-skip-permissions "Firstmate handoff successor. Read the entire document at /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.bwnxVc/d
+-- launcher output (events + stderr):
+HANDOFF v1 ts=1794400189 event=handoff_started nonce=011a39b7b2088f09428cdb14b2b21ba5 attempt=1 pid=25715 handle=%1 reason=awaiting_ack
+HANDOFF v1 ts=1794400232 event=handoff_retry nonce=27e044fdace7e0c43da5503234b5c890 attempt=2 pid=25715 handle=%1 reason=awaiting_ack
+HANDOFF v1 ts=1794400248 event=handoff_failed nonce=27e044fdace7e0c43da5503234b5c890 attempt=2 pid=25715 handle=none reason=deadline
+-- state/handoff-events.log:
+HANDOFF v1 ts=1794400189 event=handoff_started nonce=011a39b7b2088f09428cdb14b2b21ba5 attempt=1 pid=25715 handle=%1 reason=awaiting_ack
+HANDOFF v1 ts=1794400228 event=handoff_reject nonce=011a39b7b2088f09428cdb14b2b21ba5 attempt=0 pid=0 handle=%2 reason=stale_nonce
+HANDOFF v1 ts=1794400232 event=handoff_retry nonce=27e044fdace7e0c43da5503234b5c890 attempt=2 pid=25715 handle=%1 reason=awaiting_ack
+HANDOFF v1 ts=1794400248 event=handoff_failed nonce=27e044fdace7e0c43da5503234b5c890 attempt=2 pid=25715 handle=none reason=deadline
+-- successor ack output:
+HANDOFF v1 ts=1794400228 event=handoff_reject nonce=011a39b7b2088f09428cdb14b2b21ba5 attempt=0 pid=0 handle=%2 reason=stale_nonce
+-- fake successor runs:
+fake-successor ran argv=2 prompt_nonce=011a39b7b2088f09428cdb14b2b21ba5
+fake-successor ran argv=2 prompt_nonce=27e044fdace7e0c43da5503234b5c890
+-- captain locate now:
+CAPTAIN v1 pid=25715 handle=%1 state=held
+locate_rc=0
+== cleaned up lab

@@ -1,0 +1,23 @@
+== live drill mode=parse budget=120s lab=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.HfOQwG tmux_socket_dir=/tmp/fml.UotEaJ sha=a1abb6eb63eba665b8c704b198ac1dc35514f30b
+launcher_rc=1 elapsed=152s
+-- predecessor pid=67233 lock_line1=67233
+-- tmux windows on private server:
+primary:0 tmux dead=0 status= cmd=sleep 3600
+primary:1 env dead=0 status= cmd=env -u NO_MISTAKES_GATE -u FM_GATE_REFUSE_BYPASS -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u FM_DATA_OVERRIDE -u FM_CONFIG_OVERRIDE -u FM_PROJECTS_OVERRIDE -u ORCA_TER
+primary:2 firstmate dead=1 status=1 cmd=claude --dangerously-skip-permissions "Firstmate handoff successor. Read the entire document at /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.HfOQwG/
+primary:3 firstmate dead=1 status=1 cmd=claude --dangerously-skip-permissions "Firstmate handoff successor. Read the entire document at /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.HfOQwG/
+-- launcher output (events + stderr):
+HANDOFF v1 ts=1794399921 event=handoff_started nonce=f30568f01dbe4338beab58e84e9a7c32 attempt=1 pid=67233 handle=%1 reason=awaiting_ack
+HANDOFF v1 ts=1794399982 event=handoff_retry nonce=2689a27d9236ce1bfd0d1788f10bc732 attempt=2 pid=67233 handle=%1 reason=awaiting_ack
+HANDOFF v1 ts=1794400038 event=handoff_failed nonce=2689a27d9236ce1bfd0d1788f10bc732 attempt=2 pid=67233 handle=none reason=deadline
+-- state/handoff-events.log:
+HANDOFF v1 ts=1794399921 event=handoff_started nonce=f30568f01dbe4338beab58e84e9a7c32 attempt=1 pid=67233 handle=%1 reason=awaiting_ack
+HANDOFF v1 ts=1794399982 event=handoff_retry nonce=2689a27d9236ce1bfd0d1788f10bc732 attempt=2 pid=67233 handle=%1 reason=awaiting_ack
+HANDOFF v1 ts=1794400038 event=handoff_failed nonce=2689a27d9236ce1bfd0d1788f10bc732 attempt=2 pid=67233 handle=none reason=deadline
+-- fake successor runs:
+fake-successor ran argv=2 pwd=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.HfOQwG
+fake-successor ran argv=2 pwd=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.HfOQwG
+-- captain locate now:
+CAPTAIN v1 pid=67233 handle=%1 state=held
+locate_rc=0
+== cleaned up lab
