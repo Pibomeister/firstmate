@@ -1,0 +1,36 @@
+FIRSTMATE COMPACT RE-ENTRY CARD - /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.9TZswz
+Auto-compaction reset this session's context; this session still holds the helm.
+Lock: lock acquired: harness pid 8487
+This card lists only the work in flight, small enough to read whole. AGENTS.md is still
+loaded, and the startup digest and its sweeps are not repeated.
+
+RE-CHECK BEFORE ACTING - the compaction summary is history, not current state:
+1. Run /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M7417AH4DHXP1XTCS7GEGJ44/bin/fm-wake-drain.sh now, handle what it presents, then run its WAKE_ACK_REQUIRED command.
+2. Run /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M7417AH4DHXP1XTCS7GEGJ44/bin/fm-crew-state.sh <id> before acting on any worker, PR, or merge fact.
+3. Act on an order only as bin/fm-order.sh pickup lists it now; ack it before acting.
+
+CAPTAIN ORDERS (bin/fm-order.sh pickup)
+1 open captain order(s) - each is durable; ack it before acting:
+  1794360616-d887648c pending kind=order age=60s from=captain :: lab order: keep the alpha PR open until review
+Pending: bin/fm-order.sh ack <id> reads it (skip means another session already has it - never run it twice).
+Acked-unfinished: an earlier session read it; bin/fm-order.sh show <id>, check whether its work started, then finish it.
+Finish each with: bin/fm-order.sh finish <id> done|parked <outcome>
+
+OPEN DECISIONS (folded from the status logs)
+(none)
+
+HELD FOR THE CAPTAIN (tasks-axi list --state held)
+(none)
+
+OVERDUE GOALS (bin/fm-dispatch-log.sh overdue)
+(none)
+
+WORK UNDER WAY (last recorded event; bin/fm-crew-state.sh <id> has current state)
+demo-task project=demo state=working pr=https://example.invalid/pr/1 age=54s last: working: tests green
+
+MONITOR
+monitor: DOWN (stale-beacon) - restore it with the supervision protocol's repair action before ending this turn
+
+MORE
+Supervision protocol: /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M7417AH4DHXP1XTCS7GEGJ44/bin/fm-supervision-instructions.sh --harness claude --read-only 0 --afk 0 --afk-mode away --x-mode 0
+Full re-emit (backlog, projects, captain and learnings files): FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.9TZswz /Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M7417AH4DHXP1XTCS7GEGJ44/bin/fm-session-start.sh --reemit

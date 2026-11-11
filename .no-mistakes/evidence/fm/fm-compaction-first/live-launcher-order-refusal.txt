@@ -1,0 +1,28 @@
+lock holder (stand-in predecessor) pid=65318
+$ bin/fm-order.sh send -- order A
+queued 1794364129-84e09f36
+  kind=order state=pending wake=ok nudge=none
+[exit=0]
+$ bin/fm-order.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.IiaE9f/data/handoff.md
+handoff: wrote 1 open order(s) into /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.IiaE9f/data/handoff.md
+[exit=0]
+$ bin/fm-order.sh send -- order B: filed between handoff --doc and launch
+queued 1794364136-838dd77d
+  kind=order state=pending wake=ok nudge=none
+[exit=0]
+$ bin/fm-handoff-launch.sh /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.IiaE9f/data/handoff.md
+error: no successor launched, because the handoff document does not list every open captain order.
+covers: no - the handoff /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.IiaE9f/data/handoff.md does not list open order(s): 1794364136-838dd77d
+  Run bin/fm-order.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.IiaE9f/data/handoff.md so it names every open order.
+No successor holds the document yet, so that rerun appends the open orders; then run bin/fm-handoff-launch.sh /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.IiaE9f/data/handoff.md again. No launch failure is recorded, so the handoff stop gate stays closed until a successor launches.
+[exit=3]
+after refusal: successor record exists? no; launch-failed record exists? no; doc unchanged? yes
+tmux sessions on lab socket:
+error connecting to /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.IiaE9f/tmux/tmux-501/fm-lab (No such file or directory)
+error connecting to /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.IiaE9f/tmux/tmux-501/default (No such file or directory)
+$ bin/fm-order.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.IiaE9f/data/handoff.md
+handoff: wrote 2 open order(s) into /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.IiaE9f/data/handoff.md
+[exit=0]
+$ bin/fm-order.sh covers /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.IiaE9f/data/handoff.md
+covers: yes (2 open order(s), all in /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.IiaE9f/data/handoff.md)
+[exit=0]

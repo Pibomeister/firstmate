@@ -1,0 +1,19 @@
+❯ Run the shell command: date. Then follow any hook instruction you receive, and in your reply say whether a hook asked you for a handoff or a successor.
+  Ran 1 shell command
+⏺ Captain, the date is Tue Nov 10 19:34:25 CST 2026.
+  No, the hook did not ask for a handoff or a successor. It said the opposite: do not hand off or start a successor unless you ask for one, for example because of a quota limit or a tool switch. It
+  also said not to compact by hand.
+  What it did say:
+  - About 9% of context is left before automatic compaction, and that compaction is the normal reset.
+  - Before compaction, any open work that exists only in this chat must go into the durable records.
+  - After compaction, current state must be checked again before any summary fact is acted on.
+  I checked for open work and found none to file. This chat holds no new goals, to-dos, pending decisions or orders. My earlier offers to compare the startup outputs were only questions to you, so I
+  left them out. So I wrote nothing to the records, and I did not hand off or compact.
+  ⎿  Stop says: JEV lint (advisory): error (input).
+✻ Churned for 33s · done 7:34 PM
+  #1 Reply with only the word ready. Do not run any tools.                                                                                                                                          [-]
+  ┃│
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)

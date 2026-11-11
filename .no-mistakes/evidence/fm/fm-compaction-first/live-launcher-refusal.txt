@@ -1,0 +1,50 @@
+$ bin/fm-order.sh send -- order A: keep the fleet green
+queued 1794363373-e061f6e9
+  kind=order state=pending wake=ok nudge=none
+[exit=0]
+$ bin/fm-order.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.M3WctC/data/handoff.md
+handoff: wrote 1 open order(s) into /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.M3WctC/data/handoff.md
+[exit=0]
+$ bin/fm-order.sh send -- order B: filed after handoff --doc, before launch
+queued 1794363407-85c38bdc
+  kind=order state=pending wake=ok nudge=none
+[exit=0]
+$ bin/fm-order.sh covers /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.M3WctC/data/handoff.md
+covers: no - the handoff /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.M3WctC/data/handoff.md does not list open order(s): 1794363407-85c38bdc
+  Run bin/fm-order.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.M3WctC/data/handoff.md so it names every open order.
+[exit=3]
+$ bin/fm-handoff-launch.sh /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.M3WctC/data/handoff.md
+error: no session lock at /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.M3WctC/state/.lock; cannot name the predecessor pid the successor must wait for
+No successor is running. state/.handoff-launch-failed records the failure and releases the handoff stop gate: tell the captain that the planned fresh start could not launch a successor (no session lock at /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.M3WctC/state/.lock; cannot name the predecessor pid the successor must wait for), keep working in this session, and let auto-compaction run; the next context cycle tries the handoff again.
+[exit=1]
+successor record:
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.M3WctC/state/.handoff-successor: No such file or directory
+-rw-------@ 1 eduardopicazo  staff  254 Nov 10 20:17 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.M3WctC/state/.handoff-launch-failed
+doc hash unchanged by refusal: yes
+$ bin/fm-order.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.M3WctC/data/handoff.md
+handoff: wrote 2 open order(s) into /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.M3WctC/data/handoff.md
+[exit=0]
+$ bin/fm-order.sh covers /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.M3WctC/data/handoff.md
+covers: yes (2 open order(s), all in /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.M3WctC/data/handoff.md)
+[exit=0]
+$ bin/fm-order.sh gate
+gate: clear (2 open order(s), all in the handoff)
+[exit=0]
+--- doc
+# Handoff
+Slim doc.
+
+CAPTAIN ORDERS at handoff (2026-11-11T02:16:24Z):
+1 open captain order(s) - each is durable; ack it before acting:
+  1794363373-e061f6e9 pending kind=order age=11s from=unknown :: order A: keep the fleet green
+Pending: bin/fm-order.sh ack <id> reads it (skip means another session already has it - never run it twice).
+Acked-unfinished: an earlier session read it; bin/fm-order.sh show <id>, check whether its work started, then finish it.
+Finish each with: bin/fm-order.sh finish <id> done|parked <outcome>
+
+CAPTAIN ORDERS at handoff (2026-11-11T02:17:09Z):
+2 open captain order(s) - each is durable; ack it before acting:
+  1794363373-e061f6e9 pending kind=order age=56s from=unknown :: order A: keep the fleet green
+  1794363407-85c38bdc pending kind=order age=22s from=unknown :: order B: filed after handoff --doc, before launch
+Pending: bin/fm-order.sh ack <id> reads it (skip means another session already has it - never run it twice).
+Acked-unfinished: an earlier session read it; bin/fm-order.sh show <id>, check whether its work started, then finish it.
+Finish each with: bin/fm-order.sh finish <id> done|parked <outcome>

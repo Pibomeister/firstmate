@@ -1,0 +1,10 @@
+ok - a written handoff launches a live successor and records its pid for the Stop gate
+ok - a stale record naming the current session never stands in for a new successor
+ok - an unknown recorded backend refuses rather than guessing another backend
+ok - a successor that never appears fails at once, one that dies at start fails, and both record the failure
+ok - a launch whose successor starts late opens only one terminal
+ok - a second attempt recovers a first terminal that failed to open
+ok - the successor's wait for the old session is bounded and reports a still-running predecessor
+ok - the old session is ended only while it holds the lock, a live successor exists, and its transcript is quiet
+ok - the old session is ended only while its handoff lists every open captain order recorded before the launch
+ok - a launch refuses a handoff that omits an open order, and a rerun of handoff --doc lets it launch

@@ -3,6 +3,7 @@ ok - (b) acked on read, then done or parked with an outcome; senders can tell th
 ok - (c) one helper resolves the current captain handle at every send
 ok - (c) the doorbell never rings over a composer it cannot prove empty
 ok - the restart gate passes only while this session's recorded handoff lists every open order
+ok - handoff --doc leaves a live successor's document unchanged and leaves later orders to its pickup
 ok - (e) one sweep runs at a time, so two runners never exceed the re-delivery cap
 ok - a hold overrides older orders, is listed first, and travels with every relay until lifted
 ok - holds --relay fails when an order directory or file cannot be read
@@ -14,3 +15,4 @@ ok - a sender retry repairs a lost wake and verify reports the ack by exit code
 ok - status tells a sender when its 15-minute re-check is due
 ok - (f) a legacy inbox note works unchanged beside durable orders
 ok - invalid use and unknown ids are refused
+rc=0 elapsed=422s
