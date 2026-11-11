@@ -5068,6 +5068,42 @@ test_required_producer_identity() {
   pass "fm-pr-merge enforces required producer identity and named waivers"
 }
 
+# A head with many check runs returns full run objects far larger than one argv
+# string may be (Linux MAX_ARG_STRLEN is 128 KiB); the required-producer check
+# must still evaluate rather than refuse because the rollup could not be read.
+test_required_producer_check_survives_large_check_runs() {
+  local case_dir head kind
+  head=a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8
+  for kind in classic ruleset; do
+    case_dir=$(make_case "required-producer-large-$kind")
+    add_gh_mocks "$case_dir" "$head"
+    write_github_required "$case_dir" "$kind:ci"
+    if [ "$kind" = classic ]; then
+      jq '.protection.required_status_checks.checks[0].app_id = 15368' \
+        "$case_dir/github-branch.json" > "$case_dir/updated.json"
+      mv "$case_dir/updated.json" "$case_dir/github-branch.json"
+    else
+      jq '.[1].parameters.required_status_checks[0].integration_id = 15368' \
+        "$case_dir/github-required-rules.json" > "$case_dir/updated.json"
+      mv "$case_dir/updated.json" "$case_dir/github-required-rules.json"
+    fi
+    jq -cn --arg head "$head" '
+      ("x" * 4096) as $text
+      | {check_runs: ([{name: "ci", app: {id: 15368, description: $text}, head_sha: $head,
+          output: {summary: $text, text: $text}}]
+        + [range(60) | {name: "extra-\(.)", app: {id: 42, description: $text}, head_sha: $head,
+          output: {summary: $text, text: $text}}])}' > "$case_dir/github-runs.json"
+    [ "$(wc -c < "$case_dir/github-runs.json")" -gt 262144 ] \
+      || fail "large-$kind: check-runs fixture is not larger than the argv string limit"
+    run_required_case "$case_dir" 112
+    expect_code 0 "$RC" "large-$kind: a correct producer among large check runs must merge: $(cat "$case_dir/stderr")"
+    assert_no_grep 'check rollup could not be read' "$case_dir/stderr" \
+      "large-$kind: large check runs were reported as an unreadable rollup"
+    assert_logged_gh_merge "$case_dir" 112 example/repo --squash
+  done
+  pass "fm-pr-merge evaluates required producers when check runs exceed the argv string limit"
+}
+
 # A commit status carries no app id to compare, so an app-bound required context
 # that arrives as a green status matches by name, while the same context left
 # unreported still refuses.
@@ -5603,6 +5639,7 @@ test_allow_missing_waives_only_the_named_unreported_check
 test_allow_missing_follows_the_allow_red_rules
 
 test_required_producer_identity
+test_required_producer_check_survives_large_check_runs
 test_app_bound_required_status_context_matches_by_name
 test_required_partial_reads_report_all_failures
 test_allow_red_refused_on_forgejo
