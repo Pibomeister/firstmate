@@ -660,6 +660,7 @@ while :; do
 if [ -e "$STATE/.afk" ]; then autoarm_record afk; exit 0; fi
 if ! need_supervision; then autoarm_record clean; exit 0; fi
 AUTOARM_POLICY_DEFERRED=0
+SUCCESSOR_FAILURE=
 OUT=
 ACTIONABLE=0
 HEALTHY=0
