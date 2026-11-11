@@ -519,6 +519,58 @@ fm_backend_orca_kill() {  # <terminal-id>
   orca terminal close --terminal "$1" --json >/dev/null 2>&1 || true
 }
 
+# fm_backend_orca_close_worktree_terminals: close every Orca terminal whose
+# worktree path is <path>, on the local Orca and on every saved paired Orca
+# environment (`orca environment list`). Handles belong to the Orca server that
+# issued them, so each close carries the environment it was listed from.
+# Prints `closed=<total> environments=<count>` on stdout, where environments
+# counts every Orca actually listed (local included). Exit 0 when every listed
+# environment was read and every terminal it named for this worktree closed;
+# exit 1 when a close answered failure; exit 2 when an environment or terminal
+# list could not be read, so the caller can warn that the count is a floor.
+fm_backend_orca_close_worktree_terminals() {  # <worktree-path>
+  fm_backend_orca_tool_check || return 2
+  command -v node >/dev/null 2>&1 || return 2
+  local target=$1 envs env list closed=0 env_count=0 rc=0 handles h
+  envs=$(orca environment list --json 2>/dev/null | node -e '
+let d; try { d = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (_) { process.exit(1); }
+if (!d || d.ok === false || !d.result || !Array.isArray(d.result.environments)) process.exit(1);
+for (const e of d.result.environments) if (e && typeof e.id === "string" && e.id) console.log(e.id);') || return 2
+  while IFS= read -r env; do
+    [ -n "$env" ] || env=local
+    env_count=$((env_count + 1))
+    if [ "$env" = local ]; then
+      list=$(orca terminal list --json 2>/dev/null) || { rc=2; continue; }
+    else
+      list=$(orca terminal list --environment "$env" --json 2>/dev/null) || { rc=2; continue; }
+    fi
+    handles=$(printf '%s' "$list" | node -e '
+const fs = require("fs");
+let d; try { d = JSON.parse(fs.readFileSync(0, "utf8")); } catch (_) { process.exit(1); }
+if (!d || d.ok === false || !d.result || !Array.isArray(d.result.terminals)) process.exit(1);
+const target = process.argv[1];
+const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return p; } };
+for (const t of d.result.terminals) {
+  if (t && typeof t.handle === "string" && t.handle && typeof t.worktreePath === "string" && real(t.worktreePath) === real(target)) console.log(t.handle);
+}' "$target") || { rc=2; continue; }
+    while IFS= read -r h; do
+      [ -n "$h" ] || continue
+      if [ "$env" = local ]; then
+        orca terminal close --terminal "$h" --json >/dev/null 2>&1 && closed=$((closed + 1)) || rc=1
+      else
+        orca terminal close --terminal "$h" --environment "$env" --json >/dev/null 2>&1 && closed=$((closed + 1)) || rc=1
+      fi
+    done <<EOF
+$handles
+EOF
+  done <<EOF
+local
+$envs
+EOF
+  printf 'closed=%s environments=%s\n' "$closed" "$env_count"
+  return "$rc"
+}
+
 # --- Recovery-grade agent state and endpoint absence ------------------------
 #
 # Orca's terminal API never names the processes behind a terminal, so the

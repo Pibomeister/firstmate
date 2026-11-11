@@ -20,6 +20,17 @@
 # request's head commit is reported and left in place. A head commit that is
 # missing locally is fetched from origin's refs/pull/<n>/head, and a worktree is
 # reported and left in place when that fetch does not produce it.
+# A worktree whose only untracked files are caches or browser profiles (a
+# top-level `.cache`, `.playwright`, `ms-playwright`, `.ms-playwright`, or
+# `.puppeteer` directory, a `playwright_chromiumdev_profile*` or
+# `puppeteer_dev_chrome_profile*` directory, or `node_modules/.cache`) does not
+# stay behind for them: once every landed proof below has passed, those
+# directories are pruned and the tree must then read clean before removal.
+# Any other untracked file, and any tracked change, still leaves the worktree
+# in place. A dry run reports the prune instead of deleting.
+# Each pass first reads bin/fm-disk-alarm.sh and logs its line when the level
+# is warn, pause, stop, or unreadable; low disk never blocks pruning, because
+# pruning is what frees the space.
 # Removal is `git worktree remove`, or `orca worktree rm` for a worktree Orca
 # lists so that its list stays correct, never with --force, followed by
 # `git worktree prune`. A refusal is reported. Orca removes the directory after
@@ -220,6 +231,51 @@ dirt_kind() {
     esac
   done < "$status_file"
   printf '%s' "$kind"
+}
+
+# cache_root_of <untracked-path>: print the cache or browser-profile root to
+# prune for a known cache path, or nothing for any other path.
+cache_root_of() {
+  local p=$1 top
+  top=${p%%/*}
+  case "$top" in
+    .cache|.playwright|ms-playwright|.ms-playwright|.puppeteer|playwright_chromiumdev_profile*|puppeteer_dev_chrome_profile*)
+      printf '%s' "$top" ;;
+    node_modules)
+      case "$p" in node_modules/.cache|node_modules/.cache/*) printf 'node_modules/.cache' ;; esac ;;
+  esac
+}
+
+# prune_landed_caches <worktree>: 0 when the tree holds no untracked files
+# beyond known caches and profiles (pruning them, unless this is a dry run),
+# 1 when another untracked file is present, 2 when the tree cannot be read.
+# Callers must already have proved the work has landed.
+prune_landed_caches() {
+  local wt=$1 status_file=$SCRATCH/prune-status line path root
+  local roots='' seen=' '
+  git -C "$wt" status --porcelain=v1 --untracked-files=all -z > "$status_file" || return 2
+  while IFS= read -r -d '' line; do
+    case "$line" in
+      '') continue ;;
+      \?\?*) ;;
+      *) return 1 ;;
+    esac
+    path=${line#\?\? }
+    root=$(cache_root_of "$path")
+    [ -n "$root" ] || return 1
+    case "$seen" in *" $root "*) ;; *) seen="$seen$root "; roots="$roots $root" ;; esac
+  done < "$status_file"
+  [ -n "$roots" ] || return 0
+  if [ "$DRY" -eq 1 ]; then
+    emit "worktree-cleanup: dry-run prune caches $wt:$roots"
+    return 0
+  fi
+  for root in $roots; do
+    rm -rf -- "${wt:?}/${root:?}" || return 2
+  done
+  emit "worktree-cleanup: prune caches $wt:$roots"
+  [ "$(dirt_kind "$wt")" = clean ] || return 1
+  return 0
 }
 
 pr_rows() {
@@ -468,10 +524,7 @@ consider_worktree() {
       emit "worktree-cleanup: report $phys uncommitted tracked changes"
       return 0
       ;;
-    untracked)
-      emit "worktree-cleanup: report $phys untracked files"
-      return 0
-      ;;
+    untracked) ;; # caches and profiles are judged after the landed proofs
     clean) ;;
     *)
       emit "worktree-cleanup: report $phys cannot read worktree status"
@@ -535,6 +588,13 @@ EOF
     emit "worktree-cleanup: skip $phys live process"
     return 0
   fi
+  prune_landed_caches "$phys" || {
+    case $? in
+      1) emit "worktree-cleanup: report $phys untracked files" ;;
+      *) emit "worktree-cleanup: report $phys cannot read worktree status" ;;
+    esac
+    return 0
+  }
   remove_worktree "$repo" "$phys" "$chosen_state" "$chosen_url" "$orca_listed"
 }
 
@@ -601,6 +661,14 @@ run_target() {
   }
   collect_repo "$resolved"
 }
+
+if [ -x "$SCRIPT_DIR/fm-disk-alarm.sh" ]; then
+  alarm_line=$("$SCRIPT_DIR/fm-disk-alarm.sh" 2>/dev/null || true)
+  case "$alarm_line" in
+    *'level=warn'*|*'level=pause'*|*'level=stop'*|*'level=unreadable'*)
+      emit "worktree-cleanup: $alarm_line" ;;
+  esac
+fi
 
 if [ -n "$TARGET" ]; then
   run_target "$TARGET"

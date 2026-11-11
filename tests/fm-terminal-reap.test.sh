@@ -168,7 +168,7 @@ cwd_row() {  # <pid> <cwd>
 
 run_reap() {  # [args...] -> stdout of the reaper; exit status in RC
   RC=0
-  OUT=$(PATH="$FB:$PATH" FM_HOME="$HOME_DIR" bash "$REAP" --min-age 0 "$@" 2>"$FX/stderr") || RC=$?
+  OUT=$(PATH="$FB:$PATH" FM_HOME="$HOME_DIR" bash "$REAP" --min-age 0 --browser-min-age 0 "$@" 2>"$FX/stderr") || RC=$?
 }
 
 verdict_of() {  # <id> -> "<action> <class>" from the last OUT
@@ -770,7 +770,61 @@ test_keep_list_protects_live_helpers() {
   pass "fm-terminal-reap: live sup-writer helpers are kept on a dry run and on apply"
 }
 
+# spawn_headless_under <owner-argv0> <chrome-exe>: start a headless browser
+# whose immediate parent carries <owner-argv0> as its command line, and print
+# the browser pid. The owner keeps waiting, so it stays a live ancestor.
+spawn_headless_under() {  # <owner-argv0> <chrome-exe> -> PID
+  local spawner="$FX/spawn-under.sh" pidfile
+  pidfile=$(mktemp "$FX/child.XXXXXX"); rm -f "$pidfile"
+  cat > "$spawner" <<'SH'
+#!/usr/bin/env bash
+( exec -a "$1" bash -c 'sleep 600 & wait' "$1" --headless ) &
+printf '%s\n' "$!" > "$2"
+wait
+SH
+  chmod +x "$spawner"
+  ( exec -a "$1" bash "$spawner" "$2" "$pidfile" ) >/dev/null 2>&1 </dev/null &
+  TRACKED_PIDS+=("$!")
+  local i
+  for i in $(seq 1 50); do [ -s "$pidfile" ] && break; sleep 0.1; done
+  PID=$(cat "$pidfile")
+  TRACKED_PIDS+=("$PID")
+  await_exec "$PID"
+}
+
+test_browsers_keep_young_and_live_owners() {
+  fixture_reset browser-owners
+  HOME_DIR="$FX/home"
+  mkdir -p "$HOME_DIR/state"
+  fixture_write
+  local appexe chrome young owned captained
+  appexe="$TMP_ROOT/Apps/Google Chrome.app/Contents/MacOS/Google Chrome"
+  mkdir -p "${appexe%/*}"; : > "$appexe"
+  chrome="$TMP_ROOT/browser-bin/chrome-headless-shell"
+  fake_headless "$chrome"; young=$PID
+  cwd_row "$young" "$FX/gone-young"
+  spawn_headless_under "node $TMP_ROOT/playwright/driver.js" "$chrome"; owned=$PID
+  cwd_row "$owned" "$FX/gone-owned"
+  spawn_headless_under "$appexe" "$chrome"; captained=$PID
+  cwd_row "$captained" "$FX/gone-captained"
+  sleep 1.2
+  run_reap --browser-min-age 3600
+  [ "$RC" = 0 ] || fail "the browser owner dry run must exit 0, got $RC: $(cat "$FX/stderr")"
+  expect "$young" "keep young" "a browser younger than the browser minimum age is never reaped"
+  run_reap --browser-min-age 0
+  [ "$RC" = 0 ] || fail "the browser owner dry run must exit 0, got $RC: $(cat "$FX/stderr")"
+  expect "$owned" "keep live-ancestor" "a browser a live driver still owns is never reaped"
+  expect "$captained" "keep captain-browser" "a browser the captain's own browser owns is never reaped"
+  expect "$young" "reap owner-gone" "an ownerless headless browser older than the floor is reaped"
+  run_reap --apply --browsers --browser-min-age 0
+  [ "$RC" = 0 ] || fail "the browser owner apply must exit 0, got $RC: $(cat "$FX/stderr")"
+  kill -0 "$owned" 2>/dev/null || fail "an apply stopped a live worker's browser"
+  kill -0 "$captained" 2>/dev/null || fail "an apply stopped the captain browser's browser"
+  pass "fm-terminal-reap: browsers keep a young age, a live worker owner, and a captain-browser owner"
+}
+
 fm_test_run \
+  test_browsers_keep_young_and_live_owners \
   test_keep_list_protects_live_helpers \
   test_protected_terminals_and_hourly_schedule \
   test_discovered_home_and_lock_ancestry \

@@ -185,7 +185,12 @@
 # require_orca_worktree_path_match instead.
 # Orca tasks use the same safety checks, then close the recorded terminal and
 # remove the recorded worktree through `orca worktree rm`; teardown never guesses
-# an Orca target from ambient CLI state.
+# an Orca target from ambient CLI state. Before that removal it also closes
+# every other Orca terminal in the task's worktree on the local Orca and every
+# saved paired environment (bin/backends/orca.sh's
+# fm_backend_orca_close_worktree_terminals) and prints the closed count across
+# all environments; a close that answers failure refuses, while an environment
+# that cannot be listed warns that the count is a floor.
 # A Herdr presentation journal never authorizes cleanup. Teardown still closes
 # only the exact task pane from ordinary endpoint metadata and never calls
 # `workspace close`. It retires the non-authoritative journal only when a
@@ -4123,6 +4128,23 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
   if [ -n "$T_ORCA" ]; then
     fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" \
       || { endpoint_close_refusal "$ID" "$BACKEND" "$T" 0; exit 1; }
+  fi
+  # Close every other Orca terminal this task opened in its worktree, on the
+  # local Orca and every saved paired environment, and report the count. A
+  # terminal that answers its close with failure refuses like the recorded
+  # endpoint above; an environment that cannot be listed only warns, because
+  # the recorded endpoint is already closed and Orca's own worktree removal
+  # below remains the guard for the workspace it owns.
+  if [ -n "$WT" ] && [ -d "$WT" ] && fm_backend_source orca; then
+    orca_sweep_rc=0
+    orca_sweep_out=$(fm_backend_orca_close_worktree_terminals "$WT") || orca_sweep_rc=$?
+    case "$orca_sweep_rc" in
+      0) printf 'teardown: %s Orca terminal(s) closed across %s for task %s\n' \
+           "$(printf '%s' "$orca_sweep_out" | sed -n 's/^closed=\([0-9]*\).*/\1/p')" \
+           "$(printf '%s' "$orca_sweep_out" | sed -n 's/.*environments=\([0-9]*\).*/\1/p')" "$ID" ;;
+      1) endpoint_close_refusal "$ID" "$BACKEND" "worktree:$WT" 0; exit 1 ;;
+      *) echo "warning: could not list every Orca environment for task $ID; its terminal count is a floor ($orca_sweep_out)" >&2 ;;
+    esac
   fi
   orca_remove_error=
   if orca_remove_error=$(fm_backend_remove_worktree "$BACKEND" "$ORCA_WORKTREE_ID" "$WT" 2>&1); then

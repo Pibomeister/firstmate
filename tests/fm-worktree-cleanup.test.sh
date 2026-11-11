@@ -276,6 +276,44 @@ test_untracked_files_are_reported() {
   pass "non-ignored untracked files are reported"
 }
 
+test_landed_caches_and_profiles_are_pruned() {
+  begin_case caches
+  publish_pr MERGED
+  mkdir -p "$CASE_WT/.cache/x" "$CASE_WT/playwright_chromiumdev_profile-1" "$CASE_WT/node_modules/.cache"
+  printf 'cache\n' > "$CASE_WT/.cache/x/f"
+  printf 'profile\n' > "$CASE_WT/playwright_chromiumdev_profile-1/f"
+  printf 'cache\n' > "$CASE_WT/node_modules/.cache/f"
+  capture_clean "$CASE_DIR"
+  assert_removed
+  assert_out "prune caches"
+  assert_out "pull request MERGED $PR_URL"
+  pass "landed worktree caches and browser profiles are pruned before removal"
+}
+
+test_cache_beside_real_untracked_work_is_kept() {
+  begin_case cache-mixed
+  publish_pr MERGED
+  mkdir -p "$CASE_WT/.cache"
+  printf 'cache\n' > "$CASE_WT/.cache/f"
+  printf 'note\n' > "$CASE_WT/notes.txt"
+  capture_clean "$CASE_DIR"
+  assert_kept
+  [ -f "$CASE_WT/.cache/f" ] || fail "a cache beside real untracked work was pruned"
+  assert_out "untracked files"
+  pass "a cache beside real untracked work keeps the worktree and the cache"
+}
+
+test_open_pr_caches_are_kept() {
+  begin_case cache-open
+  publish_pr OPEN
+  mkdir -p "$CASE_WT/.cache"
+  printf 'cache\n' > "$CASE_WT/.cache/f"
+  capture_clean "$CASE_DIR"
+  assert_kept
+  [ -f "$CASE_WT/.cache/f" ] || fail "an open pull request's cache was pruned"
+  pass "unlanded work keeps its caches"
+}
+
 test_ignored_private_files_do_not_block_removal() {
   begin_case ignored
   commit_ignore_rules "$CASE_REPO" "$CASE_WT" || fail "could not commit ignore rules"
@@ -799,6 +837,9 @@ fm_test_run \
   test_closed_pr_removes_worktree_keeps_branch \
   test_tracked_changes_are_reported \
   test_untracked_files_are_reported \
+  test_landed_caches_and_profiles_are_pruned \
+  test_cache_beside_real_untracked_work_is_kept \
+  test_open_pr_caches_are_kept \
   test_ignored_private_files_do_not_block_removal \
   test_dry_run_changes_nothing \
   test_main_checkout_is_skipped \
