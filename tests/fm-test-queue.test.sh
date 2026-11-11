@@ -39,7 +39,7 @@ new_case() {
   export FM_TEST_QUEUE_LOAD_FILE="$CASE/load"
   export FM_TEST_QUEUE_POLL=0.1
   export FM_TEST_SEAM=1
-  unset FM_TEST_QUEUE_SLOTS FM_TEST_QUEUE_LOAD_CEILING FM_TEST_QUEUE_HELD
+  unset FM_TEST_QUEUE_SLOTS FM_TEST_QUEUE_LOAD_CEILING FM_TEST_QUEUE_HELD FM_TEST_QUEUE_REMOTE_DISABLE
 }
 
 q() { "$QBASH" "$QUEUE" "$@"; }
@@ -341,7 +341,7 @@ test_shared_configuration_and_validation() {
   echo slots=9 > "$CASE/other-config"
   assert_contains "$(FM_TEST_QUEUE_SLOTS=4 FM_TEST_QUEUE_LOAD_CEILING=12 FM_TEST_QUEUE_CONFIG="$CASE/other-config" q status)" "slots=3 load_ceiling=8.5 " \
     "a per-process setting overrode the shared config file"
-  for bad in "slots=0" "slots=two" "load_ceiling=-1" "load_ceiling=" "colour=blue" "slots"; do
+  for bad in "slots=0" "slots=two" "load_ceiling=-1" "load_ceiling=" "colour=blue" "slots" "offload_threshold=0" "remote_hosts=-oProxyCommand=bad" "remote_hosts=m3,,hetzner" "offload_projects=a/b" "offload_projects=a,,b"; do
     printf '%s\n' "$bad" > "$FM_TEST_QUEUE_DIR/config"
     q run -- sh -c ': > "$1/ran"' _ "$CASE" 2>"$CASE/err"; rc=$?
     expect_code 125 "$rc" "run with config '$bad'"
@@ -515,7 +515,114 @@ test_terminal_execution_modes() {
   pass "fm-test-queue.sh: terminal foreground, background, input, interrupt, and stop/resume work"
 }
 
+offload_fixture_repo() {  # <dir> <origin-url>
+  fm_git_init_commit "$1"
+  git -C "$1" remote add origin "$2"
+}
+
+fake_remote_ssh() {  # <path>: runs remote commands locally; FAIL_EXTRACT fails the upload
+  cat > "$1" <<'SH'
+#!/usr/bin/env bash
+while [ "${1:-}" = -o ]; do shift 2; done
+host=$1; shift
+printf '%s\n' "$host" >> "$SSH_LOG"
+[ "$host" != unreachable ] || exit 255
+case "$*" in *"tar -xzf"*) [ "${FAIL_EXTRACT:-}" != 1 ] || { cat >/dev/null; exit 1; } ;; esac
+export FM_TEST_QUEUE_DIR="${SSH_LOG%/*}/remote-spool"
+export FM_TEST_QUEUE_LOAD_FILE="${SSH_LOG%/*}/remote-load"
+unset FM_TEST_QUEUE_HELD
+exec bash -c "$*"
+SH
+  chmod +x "$1"
+}
+
+test_unlisted_project_runs_locally_and_failed_upload_falls_back() {
+  local out rc saved_path=$PATH
+  new_case offload-optin
+  mkdir -p "$CASE/fakebin"
+  fake_remote_ssh "$CASE/fakebin/ssh"
+  export SSH_LOG="$CASE/ssh.log"
+  offload_fixture_repo "$CASE/other" git@example.invalid:owner/webapp.git
+  offload_fixture_repo "$CASE/listed" https://example.invalid/owner/firstmate.git
+  printf 'slots=1\nload_ceiling=150\nremote_hosts=m3\n' > "$FM_TEST_QUEUE_DIR/config"
+  echo 9 > "$CASE/load"
+  echo 1 > "$CASE/remote-load"
+  PATH="$CASE/fakebin:$PATH"
+  out=$( ( cd "$CASE/other" && q run -- sh -c 'printf "%s\n" "$PWD"; exit 4' ) 2>"$CASE/other.err"); rc=$?
+  expect_code 4 "$rc" 'unlisted project local exit status'
+  assert_equals "$(cd "$CASE/other" && pwd -P)" "$(cd "$out" && pwd -P)" 'unlisted project did not run in its own checkout'
+  assert_absent "$SSH_LOG" 'unlisted project tried SSH offload'
+  out=$( ( cd "$CASE/listed" && FAIL_EXTRACT=1 q run -- sh -c 'printf "%s\n" "$PWD"; exit 5' ) 2>"$CASE/listed.err"); rc=$?
+  PATH=$saved_path
+  expect_code 5 "$rc" 'failed upload must run the suite locally, not report a failure'
+  assert_equals "$(cd "$CASE/listed" && pwd -P)" "$(cd "$out" && pwd -P)" 'failed upload did not fall back to the local checkout'
+  assert_grep 'no remote prepared; using local admission' "$CASE/listed.err" 'failed upload was not reported as a preparation failure'
+  assert_equals 3 "$(wc -l < "$SSH_LOG" | tr -d ' ')" 'failed upload must mint, upload, and remove the scratch exactly once'
+  line_is_empty || fail 'fallback run leaked local ticket'
+  pass 'fm-test-queue.sh: offload is per-project opt-in; a failed upload runs locally'
+}
+
+test_remote_offload_snapshot_and_failure() {
+  local out rc saved_path=$PATH
+  new_case offload
+  mkdir -p "$CASE/fakebin"
+  offload_fixture_repo "$CASE/repo" https://example.invalid/owner/firstmate.git
+  printf 'original\n' > "$CASE/repo/source"
+  printf 'delete me\n' > "$CASE/repo/deleted"
+  git -C "$CASE/repo" add .
+  git -C "$CASE/repo" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm fixture
+  printf 'changed\n' > "$CASE/repo/source"
+  rm "$CASE/repo/deleted"
+  printf 'untracked\n' > "$CASE/repo/extra"
+  printf 'slots=1\nload_ceiling=150\nremote_hosts=unreachable,m3\n' > "$FM_TEST_QUEUE_DIR/config"
+  echo 9 > "$CASE/load"
+  echo 1 > "$CASE/remote-load"
+  fake_remote_ssh "$CASE/fakebin/ssh"
+  export SSH_LOG="$CASE/ssh.log"
+  PATH="$CASE/fakebin:$PATH"
+  [ ! -e "$CASE/repo/bin/fm-test-queue.sh" ] || fail 'offload fixture must not carry the queue scripts'
+  out=$( ( cd "$CASE/repo" && q run -- sh -c '[ ! -e deleted ] || exit 8; printf "%s|%s|%s|%s\n" "$(cat source)" "$(cat extra)" "$1" "$(git rev-parse --is-shallow-repository)"; exit 7' _ "quote' and spaces" ) 2>"$CASE/stderr"); rc=$?
+  PATH=$saved_path
+  expect_code 7 "$rc" 'remote exit status'
+  assert_equals "changed|untracked|quote' and spaces|true" "$out" 'remote shallow snapshot and argv'
+  assert_grep 'offloading to m3' "$CASE/stderr" 'load above eight must prefer reachable remote even below local ceiling'
+  assert_grep unreachable "$SSH_LOG" 'the first configured host was not attempted'
+  assert_equals 5 "$(wc -l < "$SSH_LOG" | tr -d ' ')" 'test command failed remotely and was retried or cleanup was missed'
+  line_is_empty || fail 'remote command leaked local ticket'
+  pass 'fm-test-queue.sh: high load offloads current source and preserves arguments and failure status'
+}
+
+test_unreachable_remote_waits_locally_and_threshold_is_configurable() {
+  local p saved_path=$PATH out
+  new_case remote-fallback
+  mkdir -p "$CASE/fakebin"
+  printf '#!/bin/sh\nexit 255\n' > "$CASE/fakebin/ssh"
+  chmod +x "$CASE/fakebin/ssh"
+  PATH="$CASE/fakebin:$PATH"
+  printf 'slots=1\nload_ceiling=16\nremote_hosts=m3,hetzner\n' > "$FM_TEST_QUEUE_DIR/config"
+  echo 20 > "$CASE/load"
+  offload_fixture_repo "$CASE/repo" https://example.invalid/owner/firstmate.git
+  ( cd "$CASE/repo" && qbg run -- sh -c ': > "$1/ran"' _ "$CASE" ) 2>"$CASE/stderr" &
+  p=$!
+  CASE_PIDS+=("$p")
+  wait_until 'unreachable remote fallback' grep -Fq 'no remote prepared; using local admission' "$CASE/stderr"
+  assert_absent "$CASE/ran" 'unreachable hosts bypassed the local load ceiling'
+  echo 1 > "$CASE/load"
+  wait "$p" || fail 'local fallback did not complete after load fell'
+  assert_present "$CASE/ran" 'local fallback never ran'
+  printf 'slots=1\nload_ceiling=16\nremote_hosts=m3\noffload_threshold=12\n' > "$FM_TEST_QUEUE_DIR/config"
+  echo 9 > "$CASE/load"
+  out=$(cd "$CASE/repo" && q run -- echo local 2>"$CASE/threshold.err") || fail 'custom offload threshold failed'
+  assert_equals local "$out" 'below-threshold command did not run locally'
+  [ ! -s "$CASE/threshold.err" ] || fail 'below-threshold command tried SSH'
+  PATH=$saved_path
+  pass 'fm-test-queue.sh: unreachable hosts preserve local admission; threshold is configurable'
+}
+
 test_help_and_usage
+test_remote_offload_snapshot_and_failure
+test_unreachable_remote_waits_locally_and_threshold_is_configurable
+test_unlisted_project_runs_locally_and_failed_upload_falls_back
 test_run_passes_status_and_output_through
 test_line_is_first_in_first_out
 test_slots_bound_concurrency

@@ -117,6 +117,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Per-task claim ledgers, `state/<id>.claims.jsonl` ([`claim-ledger.md`](claim-ledger.md)).
 - Relay guard pass status, action log, probe streaks, relay logs, and pass lock under `state/relay-guard/` (`bin/fm-relay-guard.sh`).
 - The default host-health beacon log, `state/host-health-beacon.log` (`bin/fm-host-health.sh`).
+- The scheduled terminal-cleanup logs, `state/terminal-reap.log` and `state/terminal-reap.err`, written by the hourly LaunchAgent that `bin/fm-terminal-reap.sh --schedule-plist` prints.
 - The current captain handle, `state/captain-handle`, that order senders resolve at send time, and this session's handoff record, `state/.order-handoff`, that the restart gate reads (`bin/fm-order.sh`), plus the successor launch record, `state/.handoff-successor`, that the handoff trigger's successor gate reads, and the auto-compact point, `state/compact-point`, that the handoff trigger publishes for outside context readers (`bin/fm-handoff-trigger.sh`).
 
 `config/` holds local gitignored operating choices, including explicit extension bindings under `config/extensions.d/`.
@@ -1461,6 +1462,10 @@ Polytoken is verified for crewmate and scout launches only; [its adapter referen
 It has no primary or secondmate supervision protocol.
 The launch generates a private per-task config directory that mirrors the operator's provider/model configuration and enforces unattended permissions without modifying global configuration.
 The first-start license dialog requires an operator decision and is never accepted automatically.
+
+Kiro (Kiro CLI, V2 engine) and Hermes are verified for crewmate and scout launches only; a secondmate is refused because neither has a primary supervision protocol.
+Hermes runs only on the tmux backend.
+The [Kiro adapter reference](../.agents/skills/harness-adapters/references/harness/kiro.md) and the [Hermes adapter reference](../.agents/skills/harness-adapters/references/harness/hermes.md) own their operating contracts, and [Kiro verification](verification/kiro.md) and [Hermes verification](verification/hermes.md) own the live evidence.
 
 ### Verification and primary supervision
 

@@ -4,6 +4,12 @@
 #
 # Usage:
 #   fm-terminal-reap.sh [--apply] [--browsers] [--min-age <seconds>] [--no-browsers]
+#   fm-terminal-reap.sh --schedule-plist
+#     Print an hourly macOS LaunchAgent (no immediate run). Save as
+#     ~/Library/LaunchAgents/dev.firstmate.terminal-reap.plist, then bootstrap
+#     it with launchctl bootstrap gui/$(id -u) <plist>. Install from the stable
+#     checkout with FM_HOME set to the main home, never a disposable worktree.
+#     The schedule applies terminals only; browsers require separate review.
 #
 #   (default)        dry run: print every verdict and change nothing
 #   --apply          close every terminal whose verdict is reap, re-proving
@@ -18,6 +24,7 @@
 #                    many seconds (default 1800), so a session that is still
 #                    launching its agent is never mistaken for an idle one
 #   --no-browsers    classify terminals only
+#   Live helpers whose whole title matches sup-writer-* are always kept.
 #
 # Output: one tab-separated line per terminal or browser root,
 #   <action> <kind> <class> <id> <path> <detail>
@@ -38,6 +45,7 @@
 #
 # Terminal verdicts, first match wins (every keep is final):
 #   keep remote        the terminal runs on another execution host
+#   keep protected     the unconditional term_f25f1bc6 exclusion
 #   keep task          its handle is a recorded task or secondmate endpoint
 #   keep task-worktree it runs in a recorded task's worktree; that task's own
 #                      cleanup owns it, whether or not its work has landed
@@ -51,6 +59,8 @@
 #                      another tool and is never firstmate's to close
 #   keep no-session    Orca's process sweep names no session for it
 #   keep young         its session is younger than --min-age
+#   keep helper        a home-root candidate whose whole title matches the
+#                      built-in live-helper seed sup-writer-*
 #   keep self          this script runs inside it
 #   keep live-agent    a verified agent harness runs in its session
 #   keep busy          its session runs a program this classifier cannot rule
@@ -104,13 +114,17 @@
 # --apply re-proves each terminal immediately before closing it. The records
 # are re-read (an unreadable record skips the close),
 # fm_backend_orca_agent_state must still report dead or missing, and the fresh
-# title must still name a firstmate session. A terminal Orca still reports
+# title must still name a firstmate session and must not match the helper
+# seed. A terminal Orca still reports
 # connected must still be rooted at the session pid it was classified with,
 # whichever of those two states was read (a replaced session is skipped), and
 # the last read before the close requires
 # that session, if it still runs, to hold shells and nothing else. Any change or
 # unreadable fact skips the close.
 # Environment: FM_HOME selects the home; FM_ROOT_OVERRIDE as elsewhere.
+# Home roots visible in Orca's local terminal inventory are also read for task
+# records. Lock sidecar endpoints are always kept, including stale records;
+# a lock pid inside a terminal's process tree also keeps that terminal.
 set -u
 
 SCRIPT_DIR=$(CDPATH='' cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
@@ -131,6 +145,7 @@ APPLY=0
 MIN_AGE=1800
 BROWSERS=1
 STOP_BROWSERS=0
+SCHEDULE=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --apply) APPLY=1 ;;
@@ -140,6 +155,7 @@ while [ "$#" -gt 0 ]; do
       ;;
     --no-browsers) BROWSERS=0 ;;
     --browsers) STOP_BROWSERS=1 ;;
+    --schedule-plist) SCHEDULE=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "error: unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -148,6 +164,25 @@ done
 case "$MIN_AGE" in ''|*[!0-9]*) echo "error: --min-age must be whole seconds" >&2; exit 2 ;; esac
 
 command -v node >/dev/null 2>&1 || { echo "error: node is required" >&2; exit 1; }
+if [ "$SCHEDULE" = 1 ]; then
+  node - "$SCRIPT_DIR/fm-terminal-reap.sh" "$FM_HOME" "$PATH" <<'JS'
+const [script, home, path] = process.argv.slice(2);
+const xml = s => String(s).replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'}[c]));
+const str = s => `<string>${xml(s)}</string>`;
+console.log(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key>${str('dev.firstmate.terminal-reap')}
+<key>ProgramArguments</key><array>${['/bin/bash',script,'--apply','--no-browsers'].map(str).join('')}</array>
+<key>EnvironmentVariables</key><dict><key>FM_HOME</key>${str(home)}<key>PATH</key>${str(path)}<key>HOME</key>${str(process.env.HOME)}</dict>
+<key>StartInterval</key><integer>3600</integer>
+<key>RunAtLoad</key><false/>
+<key>StandardOutPath</key>${str(home + '/state/terminal-reap.log')}
+<key>StandardErrorPath</key>${str(home + '/state/terminal-reap.err')}
+</dict></plist>`);
+JS
+  exit $?
+fi
 fm_backend_orca_tool_check || exit 1
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/fm-terminal-reap.XXXXXX") || exit 1
@@ -184,6 +219,23 @@ absent() {
 collect_owners() {
   local queue=() seen=' ' home meta id terminal worktree line reg
   queue+=("$(phys "$FM_HOME")")
+  printf 'reap-home\t%s\n' "$(phys "$FM_HOME")"
+  if [ -f "$WORK/terminals.json" ]; then
+    local discovered
+    discovered=$(node - "$WORK/terminals.json" <<'JS'
+const fs = require('fs');
+const d = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+if (!d || d.ok === false || !Array.isArray(d.result?.terminals)) process.exit(1);
+for (const t of d.result.terminals) {
+  if ((t.executionHostId || 'local') !== 'local' || !t.worktreePath) continue;
+  try {
+    if (fs.statSync(t.worktreePath + '/state').isDirectory()) console.log(fs.realpathSync(t.worktreePath));
+  } catch (e) { if (!['ENOENT','ENOTDIR'].includes(e.code)) process.exit(1); }
+}
+JS
+    ) || return 1
+    while IFS= read -r line; do [ -z "$line" ] || queue+=("$line"); done <<< "$discovered"
+  fi
   while [ "${#queue[@]}" -gt 0 ]; do
     home=${queue[0]}
     queue=("${queue[@]:1}")
@@ -195,6 +247,16 @@ collect_owners() {
     # its state or data directory, that cannot be searched.
     [ -d "$home" ] && [ -r "$home" ] && [ -x "$home" ] || return 1
     if ! absent "$home/state" && { [ ! -d "$home/state" ] || [ ! -r "$home/state" ] || [ ! -x "$home/state" ]; }; then return 1; fi
+    if ! absent "$home/state/.lock-session"; then
+      [ -r "$home/state/.lock-session" ] || return 1
+      terminal=$(fm_meta_get "$home/state/.lock-session" terminal)
+      printf 'rec\t%s\tmain-lock\t%s\t\n' "$home" "$terminal"
+    fi
+    if ! absent "$home/state/.lock"; then
+      [ -r "$home/state/.lock" ] || return 1
+      line=$(cat "$home/state/.lock") || return 1
+      case "$line" in ''|*[!0-9]*) ;; *) printf 'lock\t%s\t%s\n' "$home" "$line" ;; esac
+    fi
     for meta in "$home"/state/*.meta; do
       [ -f "$meta" ] || continue
       [ -r "$meta" ] || return 1
@@ -216,15 +278,16 @@ collect_owners() {
       if absent "$SECONDMATE_REGISTRY_HOME"; then continue; fi
       [ -d "$SECONDMATE_REGISTRY_HOME" ] || return 1
       queue+=("$(phys "$SECONDMATE_REGISTRY_HOME")")
+      printf 'reap-home\t%s\n' "$(phys "$SECONDMATE_REGISTRY_HOME")"
     done < "$reg"
   done
 }
 
 read_inventory() {
-  collect_owners > "$WORK/owners.tsv" || {
-    echo "error: a home, task record, or secondmate registry could not be read; nothing was closed" >&2; return 1; }
   orca terminal list --json > "$WORK/terminals.json" 2>/dev/null || {
     echo "error: orca terminal list failed; nothing was closed" >&2; return 1; }
+  collect_owners > "$WORK/owners.tsv" || {
+    echo "error: a home, task record, or secondmate registry could not be read; nothing was closed" >&2; return 1; }
   orca diagnostics memory --json > "$WORK/memory.json" 2>/dev/null || {
     echo "error: orca diagnostics memory failed; nothing was closed" >&2; return 1; }
   SNAP_EPOCH=$(date +%s)
@@ -258,10 +321,11 @@ const under = (p, root) => p === root || p.startsWith(root + "/");
 // Bash `read` merges adjacent tabs, so an empty field is written as "-".
 const row = (fields) => fields.map((f) => (String(f) === "" ? "-" : String(f))).join("\t") + "\n";
 
-const homes = [], recs = [];
+const homes = [], reapHomes = [], recs = [];
 for (const line of read("owners.tsv").split("\n")) {
   const f = line.split("\t");
   if (f[0] === "home") homes.push(f[1]);
+  else if (f[0] === "reap-home") reapHomes.push(f[1]);
   else if (f[0] === "rec") recs.push({ home: f[1], id: f[2], terminal: f[3], worktree: f[4] });
 }
 const recFor = (pred) => recs.find(pred);
@@ -315,6 +379,7 @@ if (mode === "terminals") {
     let prelim = "candidate", pid = "", detail = title;
     const emit = () => process.stdout.write(row([handle, prelim, pid, path, detail]));
     let r;
+    if (/^term_f25f1bc6(?:-|$)/.test(handle)) { prelim = 'protected'; emit(); continue; }
     if ((t.executionHostId || "local") !== "local") { prelim = "remote"; emit(); continue; }
     if ((r = recFor((x) => x.terminal && x.terminal === handle))) {
       prelim = "task"; detail = `${r.id} (${r.home})`; emit(); continue;
@@ -323,7 +388,7 @@ if (mode === "terminals") {
       prelim = "task-worktree"; detail = `${r.id} (${r.home}); ${title}`; emit(); continue;
     }
     if (wt && /^fm-/.test(wt.split("/").pop())) { prelim = "unowned-task"; emit(); continue; }
-    if (!(wt && homes.includes(wt))) { prelim = "foreign"; emit(); continue; }
+    if (!(wt && reapHomes.includes(wt))) { prelim = "foreign"; emit(); continue; }
     const sp = pidOf.get(clean(t.ptyId));
     if (!Number.isInteger(sp) || sp <= 1 || dup.has(clean(t.ptyId))) { prelim = "no-session"; emit(); continue; }
     pid = String(sp);
@@ -423,11 +488,20 @@ firstmate_title() {
       END { exit found ? 0 : 1 }'
 }
 
+# keep_listed <title>: 0 when the whole title matches the live-helper seed.
+keep_listed() {
+  case "$1" in
+    sup-writer-*) return 0 ;;
+  esac
+  return 1
+}
+
 # judge_terminal <pid> <title> -> `<action> <class>` for a home-root candidate
 # and, for a reap, the session's pids on fd 3 so browsers can discount them.
 judge_terminal() {
   local pid=$1 title=$2 state tree
   tree=$(fm_backend_orca_process_tree "$pid") || { printf 'keep\tunreadable'; return 0; }
+  if lock_in_tree "$tree"; then printf 'keep\tmain-lock'; return 0; fi
   if printf '%s\n' "$tree" | cut -f1 | grep -qx "$$"; then printf 'keep\tself'; return 0; fi
   state=$(fm_backend_orca_tree_state "$pid")
   case "$state" in
@@ -441,12 +515,20 @@ judge_terminal() {
   printf '%s\n' "$tree" | cut -f1 >&3
 }
 
+lock_in_tree() {  # <process-tree>: owners are refreshed before apply
+  local locks
+  locks=$(awk -F'\t' '$1 == "lock" { print $3 }' "$WORK/owners.tsv")
+  [ -n "$locks" ] || return 1
+  printf '%s\n' "$1" | cut -f1 | grep -Fxf <(printf '%s\n' "$locks") >/dev/null
+}
+
 # recorded_now <handle> <path>: 0 when a fresh read of the records claims this
 # terminal or its worktree, 1 when it does not, 2 when the records are unreadable.
 recorded_now() {
   local handle=$1 wt owners
   wt=$(phys "$2")
   owners=$(collect_owners) || return 2
+  printf '%s\n' "$owners" > "$WORK/owners.tsv" || return 2
   printf '%s\n' "$owners" | awk -F'\t' -v h="$handle" -v w="$wt" '
     $1 == "rec" && (($4 != "" && $4 == h) || ($5 != "" && $5 == w)) { found = 1 }
     END { exit found ? 0 : 1 }'
@@ -467,6 +549,7 @@ process.stdout.write(typeof t.title === "string" ? t.title.replace(/[\t\r\n]+/g,
 close_terminal() {  # <handle> <path> <pid> -> closed|skipped:<why>|failed:<why>
   local handle=$1 path=$2 pid=$3 state out facts pty now title
   local rec=0
+  case "$handle" in term_f25f1bc6|term_f25f1bc6-*) printf 'skipped\tprotected'; return 0 ;; esac
   recorded_now "$handle" "$path" || rec=$?
   case "$rec" in
     0) printf 'skipped\tnow-recorded'; return 0 ;;
@@ -482,6 +565,7 @@ close_terminal() {  # <handle> <path> <pid> -> closed|skipped:<why>|failed:<why>
   # session; it may have been renamed since the listing.
   title=$(current_title "$handle") || { printf 'skipped\tnow-unreadable'; return 0; }
   firstmate_title "$title" || { printf 'skipped\tnow-retitled'; return 0; }
+  if keep_listed "$title"; then printf 'skipped\thelper'; return 0; fi
   # A connected terminal must still be rooted at the classified session pid,
   # whether the liveness read said dead or missing: a session that exited may
   # have been replaced by a new one under the same handle.
@@ -503,10 +587,20 @@ FACTS
   # must still hold shells and nothing else. An agent started under the same
   # session pid during the checks above is caught here.
   local absent=0
+  rec=0
+  recorded_now "$handle" "$path" || rec=$?
+  case "$rec" in
+    0) printf 'skipped\tnow-recorded'; return 0 ;;
+    1) ;;
+    *) printf 'skipped\tnow-unreadable-records'; return 0 ;;
+  esac
   fm_backend_orca_pid_absent "$pid" || absent=$?
   case "$absent" in
     0) ;;
     1)
+      local tree
+      tree=$(fm_backend_orca_process_tree "$pid") || { printf 'skipped\tnow-unreadable'; return 0; }
+      lock_in_tree "$tree" && { printf 'skipped\tnow-main-lock'; return 0; }
       state=$(fm_backend_orca_tree_state "$pid")
       [ "$state" = dead ] || { printf 'skipped\tnow-%s' "$state"; return 0; }
       ;;
@@ -581,7 +675,11 @@ declare -i N_REAP=0 N_KEEP=0 N_DONE=0 N_SKIP=0 N_FAIL=0 B_REAP=0 B_KEEP=0 B_DONE
 while IFS=$'\t' read -r handle prelim pid path detail; do
   [ -n "$handle" ] || continue
   if [ "$prelim" = candidate ]; then
-    verdict=$(judge_terminal "$pid" "$detail" 3>>"$WORK/exclude.txt")
+    if keep_listed "$detail"; then
+      verdict=$'keep\thelper'
+    else
+      verdict=$(judge_terminal "$pid" "$detail" 3>>"$WORK/exclude.txt")
+    fi
   else
     verdict=$'keep\t'"$prelim"
   fi

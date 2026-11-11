@@ -892,7 +892,7 @@ _fm_status_kind() {
 
 _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb> <kind> [timed]
   local open=$1 line=$2 resolve=$3 held=$4 kind=$5 verb key note unstamped
-  local timed=${6:-} epoch old_key old_verb old_epoch old_note
+  local timed=${6:-} epoch until old_key old_verb old_epoch old_note
   # Both colon tests below ask where the head ends, the same question the note
   # and key readers ask, so they read the same unstamped copy those readers do.
   # A worker-written time tag must never decide whether a decision opens or
@@ -927,18 +927,20 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
     needs-decision|blocked)
       note=$(status_line_note "$line")
       if [ "$timed" = timed ]; then
-        # The timed view adds an emission-time column, without changing any
-        # open/closed rule. Keyless or unstamped events have unknown age.
-        # A republish of a still-open key with the same verb and
+        # The timed view adds emission-time and deferral-date columns, without
+        # changing any open/closed rule. Keyless or unstamped events have
+        # unknown age. A republish of a still-open key with the same verb and
         # note keeps the open row's earlier time, so its age and reminder
         # schedule survive; a resolution has already dropped the key, so a
-        # reopen takes its own time. The deferral-date column the donor adds
-        # here is deferred with its fm-watch.sh / fm-wake-drain.sh readers.
+        # reopen takes its own time. The deferral column always comes from the
+        # newest line; it is `-` when absent and `?` when malformed, never
+        # empty, so a TAB-split read cannot collapse it.
         epoch=unknown
         if [ -n "$(_fm_decision_key "$line" '')" ]; then
           _fm_status_at_epoch "$line" epoch || epoch=unknown
         fi
-        while IFS=$'\t' read -r old_key old_verb old_epoch old_note; do
+        _fm_status_until_date "$line" until || case $? in 1) until=- ;; *) until='?' ;; esac
+        while IFS=$'\t' read -r old_key old_verb old_epoch _ old_note; do
           [ "$old_key" = "$key" ] || continue
           case "$old_epoch" in
             ''|unknown|*[!0-9]*) ;;
@@ -948,7 +950,7 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
         done <<EOF
 $open
 EOF
-        note="$epoch"$'\t'"$note"
+        note="$epoch"$'\t'"$until"$'\t'"$note"
       fi
       open=$(_fm_decision_drop "$open" "$key")
       [ -n "$open" ] && open="${open}"$'\n'
@@ -1254,7 +1256,7 @@ EOF
 #
 # The cursor format is `version` (FM_OPEN_DECISIONS_FOLD_VERSION plus the task
 # kind, as `<n>:<kind>`), `offset`, `ident`, then the folded open set.
-# The optional timed view uses a separate `.timed` cursor and adds `:timed2`
+# The optional timed view uses a separate `.timed` cursor and adds `:timed3`
 # to the version; status_open_decisions_incremental owns its row format.
 # FM_OPEN_DECISIONS_FOLD_VERSION must be bumped whenever
 # _fm_decision_fold_line semantics change, so persisted state from an older
@@ -1423,11 +1425,10 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
   fold_version="$FM_OPEN_DECISIONS_FOLD_VERSION:$kind"
   cf=$(_fm_open_decisions_cursor_path "$f")
   # A separate cursor keeps the ordinary presentation view byte-compatible.
-  # Timed rows are <key> TAB <verb> TAB <epoch-or-unknown> TAB <note>. The
-  # timed2 suffix retires cursors persisted under the fork's `:timed` epoch
-  # rule (a republish restamped the open time; this fold keeps the first)
-  # and under the donor's five-column `:timed3` format alike.
-  if [ "$timed" = timed ]; then cf="$cf.timed"; fold_version="$fold_version:timed2"; fi
+  # Timed rows are <key> TAB <verb> TAB <epoch-or-unknown> TAB
+  # <until-date, `-` absent, `?` malformed> TAB <note>. The suffix number
+  # retires timed cursors persisted under an older row format or epoch rule.
+  if [ "$timed" = timed ]; then cf="$cf.timed"; fold_version="$fold_version:timed3"; fi
   offset=0
   ident=''
   if [ -f "$cf" ] && [ -r "$cf" ] && [ ! -L "$cf" ]; then

@@ -24,7 +24,8 @@ turn() { # <session> <text> [active]
 guard() {
   RC=0
   if [ "${1:-claude}" = default ]; then
-    bash "$ROOT/bin/fm-turnend-guard.sh" < "$PAYLOAD" > "$TMP_ROOT/out" 2> "$TMP_ROOT/err" || RC=$?
+    FM_SUPERVISION_ACTOR=branch FM_SUPERVISION_PRIMARY_HARNESS=claude \
+      bash "$ROOT/bin/fm-turnend-guard.sh" < "$PAYLOAD" > "$TMP_ROOT/out" 2> "$TMP_ROOT/err" || RC=$?
   else
     bash "$ROOT/bin/fm-turnend-guard.sh" --claude < "$PAYLOAD" > "$TMP_ROOT/out" 2> "$TMP_ROOT/err" || RC=$?
   fi

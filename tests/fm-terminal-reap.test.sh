@@ -470,10 +470,10 @@ test_unreadable_owner_facts_keep_terminals() {
 
   run_reap --apply --no-browsers
   [ "$RC" = 0 ] || fail "an apply whose closes all succeed or skip must exit 0, got $RC: $(cat "$FX/stderr")"
-  expect term-first "closed idle-session" "a terminal re-proved before its records turn unreadable still closes"
+  expect term-first "skipped idle-session:now-unreadable-records" "the final owner read catches records that turn unreadable during terminal checks"
   expect term-second "skipped idle-session:now-unreadable-records" "a close whose fresh record read fails must be skipped"
   closed=$(tr '\n' ' ' < "$FX/closed.log")
-  [ "$closed" = 'term-first ' ] || fail "only the re-proved terminal may close, got '$closed'"
+  [ -z "$closed" ] || fail "unreadable ownership at the final read must close nothing, got '$closed'"
 
   : > "$FX/closed.log"
   run_reap --apply --no-browsers
@@ -503,7 +503,7 @@ test_unreadable_owner_facts_keep_terminals() {
   chmod 755 "$HOME_DIR"
   expect term-second "skipped idle-session:now-unreadable-records" "a close whose home turns unsearchable must be skipped"
   closed=$(tr '\n' ' ' < "$FX/closed.log")
-  [ "$closed" = 'term-first ' ] || fail "only the terminal re-proved before the home turned unsearchable may close, got '$closed'"
+  [ -z "$closed" ] || fail "a home turning unsearchable before the close must close nothing, got '$closed'"
   pass "fm-terminal-reap: unreadable records keep their terminals"
 }
 
@@ -676,7 +676,104 @@ test_browsers_are_reaped_only_without_a_live_owner() {
   pass "fm-terminal-reap: browsers are stopped only when nothing else works in their directory"
 }
 
+test_protected_terminals_and_hourly_schedule() {
+  fixture_reset protected
+  HOME_DIR="$FX/home"
+  mkdir -p "$HOME_DIR/state" "$HOME_DIR/data"
+  idle_term term_f25f1bc6 pty-excluded "$HOME_DIR" 'fm main'
+  idle_term term_f25f1bc6-full-handle pty-excluded-full "$HOME_DIR" 'fm main'
+  idle_term term-lock pty-lock "$HOME_DIR" 'fm main'
+  printf '%s\n' "$PID" > "$HOME_DIR/state/.lock"
+  printf '\nterminal=term-lock\n' > "$HOME_DIR/state/.lock-session"
+  fixture_write
+  run_reap --apply --no-browsers
+  [ "$RC" = 0 ] || fail "protected apply failed"
+  expect term_f25f1bc6 'keep protected' 'the explicit terminal exclusion is unconditional'
+  expect term_f25f1bc6-full-handle 'keep protected' 'the excluded short handle protects the full handle'
+  expect term-lock 'keep task' 'lock endpoint metadata protects the main terminal'
+  [ ! -s "$FX/closed.log" ] || fail 'a protected terminal was closed'
+  FM_HOME="$HOME_DIR" bash "$REAP" --schedule-plist > "$FX/schedule.plist" || fail 'schedule generation failed'
+  python3 - "$FX/schedule.plist" "$HOME_DIR" "$REAP" <<'PY' || fail 'invalid hourly schedule'
+import plistlib, sys
+with open(sys.argv[1], 'rb') as f:
+    p = plistlib.load(f)
+assert p['StartInterval'] == 3600
+assert p.get('RunAtLoad', False) is False
+assert p['EnvironmentVariables']['FM_HOME'] == sys.argv[2]
+assert p['ProgramArguments'] == ['/bin/bash', sys.argv[3], '--apply', '--no-browsers']
+PY
+  pass 'fm-terminal-reap: explicit and lock exclusions survive apply; schedule runs hourly'
+}
+
+test_discovered_home_and_lock_ancestry() {
+  fixture_reset discovered
+  HOME_DIR="$FX/home"
+  local other="$FX/unregistered-home"
+  mkdir -p "$HOME_DIR/state" "$other/state"
+  idle_term term-main-pid pty-main-pid "$HOME_DIR" 'fm main'
+  printf '%s\n' "$PID" > "$HOME_DIR/state/.lock"
+  idle_term term-other-home pty-other-home "$other" 'fm main'
+  idle_term term-elsewhere-task pty-elsewhere-task "$HOME_DIR" 'fm main'
+  fm_write_meta "$other/state/live.meta" terminal=term-elsewhere-task kind=ship
+  fixture_write
+  run_reap --apply --no-browsers
+  [ "$RC" = 0 ] || fail 'discovered home apply failed'
+  expect term-main-pid 'keep main-lock' 'legacy lock pid inside session protects the main terminal'
+  expect term-elsewhere-task 'keep task' 'records from another inventoried home protect a task in the main home'
+  expect term-other-home 'keep foreign' 'discovery grants protection without claiming another home for cleanup'
+  ! grep -Eq '^(term-main-pid|term-elsewhere-task)$' "$FX/closed.log" || fail 'live owner terminal closed'
+  pass 'fm-terminal-reap: discovers other local home records and protects lock process ancestry'
+}
+
+# A live helper is an idle shell whose whole title matches sup-writer-*.
+# It is not closed on a dry run or on --apply.
+test_keep_list_protects_live_helpers() {
+  local closed
+  fixture_reset helpers
+  HOME_DIR="$FX/home"
+  mkdir -p "$HOME_DIR/state"
+
+  idle_term term-still pty-still "$HOME_DIR" "fm main still"
+  idle_term term-embed pty-embed "$HOME_DIR" "note sup-writer-main"
+  idle_term term-promote pty-promote "$HOME_DIR" "fm main promote"
+  idle_term term-helper pty-helper "$HOME_DIR" "sup-writer-main"
+  idle_term term-secondary pty-secondary "$HOME_DIR" "sup-writer-secondary"
+  show term-still pty-still "$HOME_DIR"
+  show term-embed pty-embed "$HOME_DIR"
+  show term-promote pty-promote "$HOME_DIR"
+  show term-helper pty-helper "$HOME_DIR"
+  show term-secondary pty-secondary "$HOME_DIR"
+  printf '#!/usr/bin/env bash\nsed "s/fm main promote/sup-writer-main/" %q > %q.new && mv %q.new %q\n' \
+    "$FX/list.json" "$FX/list.json" "$FX/list.json" "$FX/list.json" > "$FX/onshow-term-promote"
+  chmod +x "$FX/onshow-term-promote"
+  fixture_write
+
+  run_reap --no-browsers
+  [ "$RC" = 0 ] || fail "a helper dry run must exit 0, got $RC: $(cat "$FX/stderr")"
+  expect term-helper "keep helper" "the sup-writer-* seed keeps sup-writer-main"
+  expect term-secondary "keep helper" "the seed keeps sup-writer-secondary"
+  expect term-still "reap idle-session" "an unlisted idle firstmate session is still reaped"
+  expect term-embed "reap idle-session" "a title that merely contains the seed is not a seed match"
+  expect term-promote "reap idle-session" "the listed title is an idle firstmate session"
+  [ ! -s "$FX/closed.log" ] || fail "a dry run must close no helper, closed: $(cat "$FX/closed.log")"
+  "$REAP" --help 2>&1 | grep -q 'sup-writer-\*' || fail "--help must name the helper seed"
+
+  run_reap --apply --no-browsers
+  [ "$RC" = 0 ] || fail "a helper apply must exit 0, got $RC: $(cat "$FX/stderr")"
+  expect term-helper "keep helper" "an apply keeps sup-writer-main"
+  expect term-secondary "keep helper" "an apply keeps sup-writer-secondary"
+  expect term-still "closed idle-session" "an unlisted orphan is still closed"
+  expect term-embed "closed idle-session" "a title that merely contains the seed is still closed"
+  expect term-promote "skipped idle-session:helper" "a title that becomes a helper before the close is skipped"
+  closed=$(sort "$FX/closed.log" | tr '\n' ' ')
+  [ "$closed" = 'term-embed term-still ' ] || fail "apply must close only the unlisted orphans, got '$closed'"
+  pass "fm-terminal-reap: live sup-writer helpers are kept on a dry run and on apply"
+}
+
 fm_test_run \
+  test_keep_list_protects_live_helpers \
+  test_protected_terminals_and_hourly_schedule \
+  test_discovered_home_and_lock_ancestry \
   test_dry_run_classifies_every_owner_and_closes_nothing \
   test_min_age_keeps_young_sessions \
   test_apply_closes_only_reproven_orphans \

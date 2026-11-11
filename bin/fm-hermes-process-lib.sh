@@ -8,6 +8,12 @@ fm_hermes_process_matches() {  # <args> [pid]
   local words=()
   if [ -n "$pid" ] && [ -r "/proc/$pid/cmdline" ]; then
     while IFS= read -r -d '' word; do words+=("$word"); done < "/proc/$pid/cmdline"
+  elif [ -n "$pid" ]; then
+    # No /proc (macOS): the live ps command line is the same kernel fact,
+    # split on spaces; the matcher below still rejects ambiguous paths.
+    local ps_args
+    ps_args=$(ps -o args= -p "$pid" 2>/dev/null) || ps_args=
+    read -r -a words <<< "${ps_args:-$args}"
   else
     read -r -a words <<< "$args"
   fi
@@ -17,7 +23,7 @@ fm_hermes_process_matches() {  # <args> [pid]
       case "${word##*/}" in
         hermes) return 0 ;;
         node|node-*|node[0-9]*|MainThread) interpreter=node ;;
-        python|python[0-9]*) interpreter=python ;;
+        python|python[0-9]*|Python|Python[0-9]*) interpreter=python ;;
         *) return 1 ;;
       esac
       continue

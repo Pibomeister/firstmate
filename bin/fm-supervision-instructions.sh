@@ -12,6 +12,9 @@
 # unchanged.
 set -eu
 
+# Template replacements must stay literal on Bash 5.2+ and stock macOS Bash.
+shopt -u patsub_replacement 2>/dev/null || true
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-bash-compat-lib.sh
 . "$SCRIPT_DIR/fm-bash-compat-lib.sh"
@@ -103,6 +106,9 @@ if [ -z "$HARNESS" ]; then
 fi
 
 case "$HARNESS" in
+  hermes)
+    echo 'error: hermes is a crewmate/scout adapter only; primary supervision is unsupported' >&2
+    exit 1 ;;
   claude|codex|opencode|pi|grok|cursor|omp|muse|agy) SNIPPET="$DOC_DIR/$HARNESS.md" ;;
   pi-signed) SNIPPET="$DOC_DIR/pi.md" ;;
   *) HARNESS=unknown; SNIPPET="$DOC_DIR/unknown.md" ;;
@@ -168,7 +174,10 @@ render_snippet() {  # [snippet]
       '{'*'} '*)
         tags=${line%%\} *}
         tags=${tags#\{}
-        case ",$tags," in *",$HARNESS,"*) ;; *) continue ;; esac
+        case ",$tags," in
+          *",$HARNESS,"*) ;;
+          *) continue ;;
+        esac
         line=${line#*\} }
         ;;
     esac

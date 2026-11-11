@@ -158,6 +158,22 @@ fm_test_launch_without_env_scrub() {  # <launch>
   printf '%s' "$launch"
 }
 
+# The launch with its OSC 7501 arm/disarm frame (bin/fm-spawn.sh) removed:
+# the arm line's exports stay, the agent command line stays, the disarm goes.
+fm_test_launch_unframe() {  # <launch>
+  local launch=$1 nl=$'\n' head body last
+  [ -n "$launch" ] || return 0
+  case "$launch" in
+    *fm-osc7501.sh*' arm --task '*" || true$nl"*"$nl"*fm-osc7501.sh*' disarm --state '*' || true'*) ;;
+    *) fail "launch has no OSC 7501 arm/disarm frame: $launch" ;;
+  esac
+  head=${launch%%"$nl"*}
+  body=${launch#*"$nl"}
+  last=${body##*"$nl"}
+  body=${body%"$nl"*}
+  printf '%s; %s%s' "${head%; *fm-osc7501.sh*}" "$body" "${last##*' || true'}"
+}
+
 fm_test_launch_git_prefix() {  # <launch>
   local launch helper tail end=' || return 1 2>/dev/null || exit 1; '
   launch=$(fm_test_launch_without_env_scrub "$1")
