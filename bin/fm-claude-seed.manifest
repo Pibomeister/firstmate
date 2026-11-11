@@ -1,12 +1,12 @@
 fm-claude-seed.v1
 a577f193c567d232a26c1031598b6fc3d14cff65	.agents/skills/afk/SKILL.md
-1ce48bcda7910d182920babcdb8ad06197ec79ae	.agents/skills/agent-skill-trigger-index/SKILL.md
+00918a4bb074b1304218bd57902563d21871e659	.agents/skills/agent-skill-trigger-index/SKILL.md
 0d9bd0c86ca74d8e430f0f1d132c8f4d307d69ea	.agents/skills/ahoy/SKILL.md
 088ab88b867a328a4e9083f72758706d42b78643	.agents/skills/ask-user-authority/SKILL.md
 b9f72a3460c61bdc6c509396f032fd2214087258	.agents/skills/away-quiet-supervision/SKILL.md
 b11f1256bb420df81868e88ac6ee1b51fbc3380e	.agents/skills/bearings/SKILL.md
 987db2d8c03d822f333e30b6176bcbd0049acf82	.agents/skills/bearings/assets/board-template.html
-882d0153f69e43e8fd51528cf218dbeddf67d934	.agents/skills/bootstrap-diagnostics/SKILL.md
+00da7cff7affcd6e597ded999215593ffef29f89	.agents/skills/bootstrap-diagnostics/SKILL.md
 1c4c4329637ac8c07ff523fae2eda11932832f27	.agents/skills/captain-hold-lifecycle/SKILL.md
 d2950993e7c3577f58d2120f748fd0a838030b78	.agents/skills/diagnostic-reasoning/SKILL.md
 de224f571d3cdfb96e5b13fc208fdacfe56a1096	.agents/skills/firstmate-calm
