@@ -1096,7 +1096,9 @@ NM_SNAPSHOT_FILE=$(fm_nm_status_snapshot_path "$STATE")
 # Scouts and secondmates never drive a no-mistakes validation of their own
 # worktree, so skip the lookup for them and read state from pane/log directly.
 if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/null 2>&1; then
-  if fm_nm_snapshot_load_worktree "$WT" "$CREW_BRANCH" "$NM_TIMEOUT" "$FM_CREW_STATE_RUNS_LIMIT" "$NM_SNAPSHOT_FILE"; then
+  if fm_nm_snapshot_load_worktree "$WT" "$CREW_BRANCH" "$NM_TIMEOUT" "$FM_CREW_STATE_RUNS_LIMIT" "$NM_SNAPSHOT_FILE" \
+    && { [ -z "$NM_SNAPSHOT_SELECTED_ID" ] || ! fm_nm_run_is_active "$NM_SNAPSHOT_STATUS_OUT" \
+      || fm_nm_head_matches_worktree "$WT" "$(strip_quotes "$(fm_nm_field "$NM_SNAPSHOT_STATUS_OUT" head)")"; }; then
     NM_SNAPSHOT_ACTIVE=1
     RUN_OUT=$NM_SNAPSHOT_STATUS_OUT
   else
@@ -1211,10 +1213,6 @@ if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/n
         if fm_nm_run_is_active "$RUN_OUT"; then current_class=live; else current_class=terminal; fi
         if [ "$(fm_nm_run_status_class "$selected_status")" != "$current_class" ]; then
           emit unknown run-step "selected run status disagrees with inventory; run ids: $candidate_ids"
-        fi
-        if [ "$NM_SNAPSHOT_ACTIVE" = 1 ] && ! nm_run_head_matches_worktree && fm_nm_run_is_parked "$RUN_OUT"; then
-          cli_selected_detail=$(fm_nm_run_checked "$WT" "$NM_TIMEOUT" axi status --run "$selected_id") || cli_selected_detail=
-          [ -z "$cli_selected_detail" ] || RUN_OUT=$cli_selected_detail
         fi
         if nm_run_head_matches_worktree || fm_nm_run_is_pipeline_owned_active "$RUN_OUT" \
           || { fm_nm_run_is_executing "$RUN_OUT" && ! nm_daemon_answered_down; }; then

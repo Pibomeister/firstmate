@@ -6908,7 +6908,7 @@ PY
 }
 
 test_status_snapshot_readonly_and_shared_across_sweep() {
-  local d=$TMP_ROOT/snap-sweep head_a head_b before after out_a out_b snap_cap_1 snap_cap_2
+  local d=$TMP_ROOT/snap-sweep head_a head_b before after out_a out_b out_a2 snap_cap_1 snap_cap_2 snap_cap_3
   reset_fakes
   mkdir -p "$d/state"
   make_repo_on_branch "$d/wt" fm/ship-a
@@ -6943,16 +6943,27 @@ EOF
 
   chmod 0444 "$NM_HOME/state.sqlite"
   before=$(git hash-object "$NM_HOME/state.sqlite")
+  FM_NM_SNAPSHOT_TTL=60
+  export FM_NM_SNAPSHOT_TTL
+  local repo_cap='import json,sys; print(json.load(open(sys.argv[1]))["repo_snapshots"][sys.argv[2]]["captured_at"])'
 
   out_a=$(run_crew_state "$d" snap-sweep)
   [ ! -e "$d/nm-cli.log" ] || fail "status snapshot invoked no-mistakes CLI on first read"
   [ -f "$d/state/.nm-status-snapshot.json" ] || fail "status snapshot file was not written"
-  snap_cap_1=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["captured_at"])' "$d/state/.nm-status-snapshot.json")
+  snap_cap_1=$(python3 -c "$repo_cap" "$d/state/.nm-status-snapshot.json" repo-1)
 
   out_b=$(run_crew_state "$d" ship-b)
   [ ! -e "$d/nm-cli.log" ] || fail "status snapshot invoked no-mistakes CLI on second read in sweep"
-  snap_cap_2=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["captured_at"])' "$d/state/.nm-status-snapshot.json")
-  [ "$snap_cap_1" = "$snap_cap_2" ] || fail "second crew read in sweep did not reuse the cached status snapshot"
+  snap_cap_2=$(python3 -c "$repo_cap" "$d/state/.nm-status-snapshot.json" repo-1)
+  [ "$snap_cap_1" = "$snap_cap_2" ] || fail "another repository's read dropped or recaptured the cached repository entry"
+  python3 -c "$repo_cap" "$d/state/.nm-status-snapshot.json" repo-2 >/dev/null \
+    || fail "second repository's read did not join the shared status snapshot"
+
+  out_a2=$(run_crew_state "$d" snap-sweep)
+  snap_cap_3=$(python3 -c "$repo_cap" "$d/state/.nm-status-snapshot.json" repo-1)
+  [ "$snap_cap_1" = "$snap_cap_3" ] || fail "repeat crew read in sweep did not reuse the cached status snapshot"
+  [ "$out_a" = "$out_a2" ] || fail "cached status snapshot changed the crew report"
+  unset FM_NM_SNAPSHOT_TTL
 
   after=$(git hash-object "$NM_HOME/state.sqlite")
   [ "$before" = "$after" ] || fail "status snapshot modified state.sqlite"
@@ -7089,15 +7100,17 @@ test_status_snapshot_stale_snapshot_is_rejected() {
   assert_contains "$out" "state: parked" "initial snapshot captures parked state"
   [ -f "$d/state/.nm-status-snapshot.json" ] || fail "initial snapshot file missing"
 
-  # Case A: Backdate the cached snapshot's captured_at so it is stale past TTL,
-  # and update state.sqlite so the run is failed. Even if a reader tried to
-  # trust the cached file, the expired timestamp forces a refresh.
+  # Case A: Backdate the cached snapshot's capture times so it is stale past
+  # TTL, and update state.sqlite so the run is failed. The expired timestamps
+  # force a refresh.
   python3 - "$d/state/.nm-status-snapshot.json" "$NM_HOME/state.sqlite" <<'PY'
 import json, sqlite3, sys, time
 snap_path, db_path = sys.argv[1:]
 with open(snap_path, "r", encoding="utf-8") as fh:
     snap = json.load(fh)
-snap["captured_at"] = time.time() - 3600
+snap["repos_captured_at"] = time.time() - 3600
+for entry in snap["repo_snapshots"].values():
+    entry["captured_at"] = time.time() - 3600
 with open(snap_path, "w", encoding="utf-8") as fh:
     json.dump(snap, fh)
 with sqlite3.connect(db_path) as db:
@@ -7108,12 +7121,17 @@ PY
   assert_contains "$out" "state: failed" "expired stale snapshot is discarded and refreshed from state.sqlite"
   assert_contains "$out" "run failed" "refreshed snapshot reports current failed status"
 
-  # Case B: Within the TTL window, state.sqlite advances (run is replaced by a
-  # new running run). The db_fingerprint check detects the stale snapshot
-  # immediately without waiting for TTL expiry.
-  python3 - "$NM_HOME/state.sqlite" "$head" <<'PY'
-import sqlite3, sys
-db_path, head = sys.argv[1:]
+  # Case B: Within the TTL window, a snapshot written in an older snapshot
+  # format is rejected, so the advanced state.sqlite (a new running run) is
+  # read at once.
+  python3 - "$NM_HOME/state.sqlite" "$head" "$d/state/.nm-status-snapshot.json" <<'PY'
+import json, sqlite3, sys
+db_path, head, snap_path = sys.argv[1:]
+with open(snap_path, "r", encoding="utf-8") as fh:
+    snap = json.load(fh)
+snap["schema_version"] = 1
+with open(snap_path, "w", encoding="utf-8") as fh:
+    json.dump(snap, fh)
 with sqlite3.connect(db_path) as db:
     db.execute(
         "INSERT INTO runs (id, repo_id, branch, head_sha, status, pr_url, gates_json, error, awaiting_agent_since, created_at) "
@@ -7128,7 +7146,36 @@ PY
   out=$(run_crew_state "$d" snap-stale)
   assert_contains "$out" "state: working" "snapshot stale relative to updated state.sqlite is refreshed immediately"
   assert_contains "$out" "run: 01M7SNAPSHOTA0000000000099" "refreshed snapshot selects the newer live run"
-  pass "stale snapshots (expired TTL or DB fingerprint change) are rejected and refreshed"
+  pass "stale snapshots (expired TTL or older snapshot format) are rejected and refreshed"
+}
+
+test_status_snapshot_moved_live_run_reads_cli() {
+  local d=$TMP_ROOT/snap-moved head out
+  reset_fakes
+  mkdir -p "$d/state"
+  make_repo_on_branch "$d/wt" fm/ship-a
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/snap-moved.meta" "window=fm:fm-snap-moved" "worktree=$d/wt" "kind=ship"
+  head=$(git -C "$d/wt" rev-parse HEAD)
+  NM_HOME="$d/nm-home"
+  export NM_HOME
+  mkdir -p "$NM_HOME"
+  init_full_nm_sqlite "$NM_HOME/state.sqlite" "$d/wt" 0123456789abcdef0123456789abcdef01234567
+
+  FM_FAKE_AXI_HOME="repo: $d/wt
+count: 1 of 1 total
+runs[1]{id,branch,status,head,pr}:
+  01M7CLIMOVEDHEAD0000000001,fm/ship-a,running,$head,\"\""
+  FM_FAKE_AXI_STATUS="id: 01M7CLIMOVEDHEAD0000000001
+branch: fm/ship-a
+status: running
+head: $head"
+  FM_FAKE_AXI_STATUS_RUN=$FM_FAKE_AXI_STATUS
+
+  out=$(run_crew_state "$d" snap-moved)
+  assert_contains "$out" "state: working" "live run on a moved head is read from the CLI"
+  assert_contains "$out" "run: 01M7CLIMOVEDHEAD0000000001" "CLI detail replaces the snapshot for a moved live run"
+  pass "a live snapshot run whose head differs from the worktree falls back to the CLI"
 }
 
 test_captured_axi_status_shapes
@@ -7370,5 +7417,6 @@ test_status_snapshot_readonly_and_shared_across_sweep
 test_status_snapshot_schema_version_guard_falls_back_to_daemon
 test_status_snapshot_read_failure_falls_back_to_daemon
 test_status_snapshot_stale_snapshot_is_rejected
+test_status_snapshot_moved_live_run_reads_cli
 
 echo "all fm-crew-state tests passed"

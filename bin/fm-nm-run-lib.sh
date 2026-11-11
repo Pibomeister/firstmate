@@ -756,7 +756,10 @@ fm_nm_runs_newest_for_branch() {  # <branch> <runs-list-output>
 # failing closed (returning 1) when the database is absent, unreadable,
 # corrupt, or uses an unknown schema version so callers fall back to the
 # daemon/CLI calls. Never creates or writes state.sqlite.
-FM_NM_SNAPSHOT_SCHEMA_VERSION=1
+# A capture reads only the worktree's own repository: its runs, plus step rows
+# for the newest and newest-active run of each branch. Each repository entry
+# and the repos map are reused until FM_NM_SNAPSHOT_TTL seconds old.
+FM_NM_SNAPSHOT_SCHEMA_VERSION=2
 FM_NM_SQLITE_USER_VERSION=${FM_NM_SQLITE_USER_VERSION:-0}
 FM_NM_SNAPSHOT_TTL=${FM_NM_SNAPSHOT_TTL:-5}
 
@@ -794,7 +797,6 @@ fm_nm_snapshot_load_worktree() {  # <worktree> <branch> <timeout_secs> <runs_lim
     "$wt" "$branch" "$runs_limit" "$snapshot_file" "$db_path" \
     "$FM_NM_SNAPSHOT_SCHEMA_VERSION" "$FM_NM_SQLITE_USER_VERSION" "$FM_NM_SNAPSHOT_TTL" 2>/dev/null <<'PY'
 import datetime
-import hashlib
 import json
 import os
 import re
@@ -839,65 +841,43 @@ CI_MARKER_RE = re.compile(
 )
 
 
-def compute_db_fingerprint(db_file: str) -> str:
-    st = os.stat(db_file)
-    if st.st_size < 100:
-        raise ValueError("database too small")
-    with open(db_file, "rb") as fh:
-        header = fh.read(100)
-    if header[:16] != b"SQLite format 3\x00":
-        raise ValueError("not a sqlite3 file")
-    h = hashlib.sha256()
-    h.update(f"{st.st_mtime_ns}:{st.st_size}:".encode())
-    h.update(header)
-    for suffix in ("-wal", "-shm"):
-        aux = db_file + suffix
-        if os.path.exists(aux):
-            ast = os.stat(aux)
-            h.update(f"|{suffix}:{ast.st_mtime_ns}:{ast.st_size}:".encode())
-            if suffix == "-wal" and ast.st_size > 0:
-                with open(aux, "rb") as afh:
-                    h.update(afh.read(64))
-                    if ast.st_size > 64:
-                        afh.seek(max(0, ast.st_size - 64))
-                        h.update(afh.read(64))
-        else:
-            h.update(f"|{suffix}:absent".encode())
-    return h.hexdigest()
+GATE_STEP_STATUSES = ("awaiting_approval", "fix_review")
 
 
-def load_cached_snapshot(snap_path: str, db_real: str, db_fp: str):
+def is_fresh(captured_at) -> bool:
+    if ttl < 0 or isinstance(captured_at, bool) or not isinstance(captured_at, (int, float)):
+        return False
+    age = now - float(captured_at)
+    return -60 <= age <= ttl
+
+
+def load_cached_snapshot(snap_path: str, db_real: str):
     if not snap_path or not os.path.isfile(snap_path):
         return None
     try:
-        st = os.stat(snap_path)
-        if ttl < 0 or (now - st.st_mtime) > ttl or (st.st_mtime - now) > 60:
-            return None
         with open(snap_path, "r", encoding="utf-8") as fh:
             snap = json.load(fh)
-        if not isinstance(snap, dict):
-            return None
-        if snap.get("schema_version") != expected_schema_ver:
-            return None
-        if snap.get("db_user_version") != expected_user_ver:
-            return None
-        if snap.get("db_path") != db_real:
-            return None
-        if snap.get("db_fingerprint") != db_fp:
-            return None
-        captured_at = snap.get("captured_at")
-        if not isinstance(captured_at, (int, float)):
-            return None
-        if (now - float(captured_at)) > ttl or (float(captured_at) - now) > 60:
-            return None
-        if not isinstance(snap.get("repos"), dict) or not isinstance(snap.get("runs_by_repo"), dict):
-            return None
-        return snap
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError):
         return None
+    if (not isinstance(snap, dict)
+            or snap.get("schema_version") != expected_schema_ver
+            or snap.get("db_user_version") != expected_user_ver
+            or snap.get("db_path") != db_real
+            or not isinstance(snap.get("repos"), dict)
+            or not isinstance(snap.get("repo_snapshots"), dict)):
+        return None
+    return snap
 
 
-def capture_snapshot_from_sqlite(db_file: str, db_real: str, db_fp: str) -> dict:
+def summarize_findings(findings_json: str, gate: bool):
+    try:
+        items = parse_findings_list(findings_json)
+    except (ValueError, TypeError):
+        return None, None
+    return len(items), (items if gate else [])
+
+
+def capture_repo_from_sqlite(db_real: str):
     uri = Path(db_real).as_uri() + "?mode=ro"
     with closing(sqlite3.connect(uri, uri=True, timeout=30)) as db:
         db.execute("PRAGMA query_only = ON")
@@ -927,40 +907,21 @@ def capture_snapshot_from_sqlite(db_file: str, db_real: str, db_fp: str) -> dict
                 raise ValueError("invalid repo row")
             repos[repo_id] = working_path
 
-        runs_rows = db.execute(
-            "SELECT id, repo_id, branch, status, head_sha, pr_url, gates_json, "
+        repo_id = resolve_repo_id(repos)
+        if not repo_id:
+            return repos, None, None
+
+        runs = []
+        newest_by_branch = {}
+        newest_active_by_branch = {}
+        for r in db.execute(
+            "SELECT id, branch, status, head_sha, pr_url, gates_json, "
             "error, awaiting_agent_since, created_at "
-            "FROM runs ORDER BY created_at DESC, id DESC"
-        ).fetchall()
-
-        steps_by_run = {}
-        for srow in db.execute(
-            "SELECT run_id, step_name, step_order, status, duration_ms, findings_json, "
-            "log_path, last_activity_at, last_activity, override_reason, skip_reason "
-            "FROM step_results ORDER BY run_id, step_order ASC"
+            "FROM runs WHERE repo_id = ? ORDER BY created_at DESC, id DESC",
+            (repo_id,),
         ).fetchall():
-            run_id = srow[0]
-            if not isinstance(run_id, str):
-                continue
-            steps_by_run.setdefault(run_id, []).append({
-                "step_name": srow[1] if isinstance(srow[1], str) else "",
-                "step_order": int(srow[2]) if isinstance(srow[2], int) else 0,
-                "status": srow[3] if isinstance(srow[3], str) else "",
-                "duration_ms": int(srow[4]) if isinstance(srow[4], int) and srow[4] >= 0 else 0,
-                "findings_json": srow[5] if isinstance(srow[5], str) else "",
-                "log_path": srow[6] if isinstance(srow[6], str) else "",
-                "last_activity_at": int(srow[7]) if isinstance(srow[7], int) else 0,
-                "last_activity": srow[8] if isinstance(srow[8], str) else "",
-                "override_reason": srow[9] if isinstance(srow[9], str) else "",
-                "skip_reason": srow[10] if isinstance(srow[10], str) else "",
-            })
-
-        runs_by_repo = {rid: [] for rid in repos}
-        for r in runs_rows:
-            rid, repo_id, br, st, head_sha, pr_url, gates_json, err, awaiting, created_at = r
-            if repo_id not in runs_by_repo:
-                continue
-            runs_by_repo[repo_id].append({
+            rid, br, st, head_sha, pr_url, gates_json, err, awaiting, created_at = r
+            runs.append({
                 "id": rid,
                 "repo_id": repo_id,
                 "branch": br,
@@ -971,18 +932,45 @@ def capture_snapshot_from_sqlite(db_file: str, db_real: str, db_fp: str) -> dict
                 "error": err if isinstance(err, str) else "",
                 "awaiting_agent_since": int(awaiting) if isinstance(awaiting, int) else 0,
                 "created_at": created_at,
-                "steps": steps_by_run.get(rid, []),
             })
+            if isinstance(rid, str) and isinstance(br, str):
+                newest_by_branch.setdefault(br, rid)
+                if isinstance(st, str) and overview_status_word(st) in ("pending", "running"):
+                    newest_active_by_branch.setdefault(br, rid)
 
-    return {
-        "schema_version": expected_schema_ver,
-        "db_user_version": expected_user_ver,
-        "captured_at": now,
-        "db_path": db_real,
-        "db_fingerprint": db_fp,
-        "repos": repos,
-        "runs_by_repo": runs_by_repo,
-    }
+        rendered_ids = sorted(set(newest_by_branch.values()) | set(newest_active_by_branch.values()))
+        steps_by_run = {rid: [] for rid in rendered_ids}
+        for start in range(0, len(rendered_ids), 500):
+            part = rendered_ids[start:start + 500]
+            for srow in db.execute(
+                "SELECT run_id, step_name, step_order, status, duration_ms, findings_json, "
+                "log_path, last_activity_at, last_activity, override_reason, skip_reason "
+                f"FROM step_results WHERE run_id IN ({','.join('?' * len(part))}) "
+                "ORDER BY run_id, step_order ASC",
+                part,
+            ).fetchall():
+                sstatus = srow[3] if isinstance(srow[3], str) else ""
+                fcount, gate_findings = summarize_findings(
+                    srow[5] if isinstance(srow[5], str) else "", sstatus in GATE_STEP_STATUSES
+                )
+                steps_by_run[srow[0]].append({
+                    "step_name": srow[1] if isinstance(srow[1], str) else "",
+                    "step_order": int(srow[2]) if isinstance(srow[2], int) else 0,
+                    "status": sstatus,
+                    "duration_ms": int(srow[4]) if isinstance(srow[4], int) and srow[4] >= 0 else 0,
+                    "findings_count": fcount,
+                    "gate_findings": gate_findings,
+                    "log_path": srow[6] if isinstance(srow[6], str) else "",
+                    "last_activity_at": int(srow[7]) if isinstance(srow[7], int) else 0,
+                    "last_activity": srow[8] if isinstance(srow[8], str) else "",
+                    "override_reason": srow[9] if isinstance(srow[9], str) else "",
+                    "skip_reason": srow[10] if isinstance(srow[10], str) else "",
+                })
+        for run in runs:
+            if run["id"] in steps_by_run:
+                run["steps"] = steps_by_run[run["id"]]
+
+    return repos, repo_id, runs
 
 
 def write_snapshot_atomic(snap_path: str, snap: dict) -> None:
@@ -1084,7 +1072,9 @@ def format_run_detail(run: dict) -> str:
     head_sha = run["head_sha"]
     pr_url = run.get("pr_url") or ""
     awaiting = int(run.get("awaiting_agent_since") or 0)
-    steps = run.get("steps") or []
+    steps = run.get("steps")
+    if not isinstance(steps, list):
+        raise ValueError("run steps not captured")
     gates_json = run.get("gates_json") or ""
 
     lines = [
@@ -1101,10 +1091,14 @@ def format_run_detail(run: dict) -> str:
         sst = s.get("status") or ""
         if sst not in KNOWN_STEP_STATUSES or not sname:
             raise ValueError("invalid step row")
-        if not gate_step and sst in ("awaiting_approval", "fix_review"):
+        if not isinstance(s.get("findings_count"), int):
+            raise ValueError("invalid findings_json")
+        if not gate_step and sst in GATE_STEP_STATUSES:
             gate_step = sname
             gate_status = sst
-            gate_findings = parse_findings_list(s.get("findings_json") or "")
+            gate_findings = s.get("gate_findings")
+            if not isinstance(gate_findings, list):
+                raise ValueError("invalid findings_json")
 
     if not gate_step and gates_json and gates_json not in ("{}", "[]"):
         gdata = json.loads(gates_json)
@@ -1150,9 +1144,8 @@ def format_run_detail(run: dict) -> str:
     if steps:
         lines.append(f"steps[{len(steps)}]{{step,status,findings,duration_ms}}:")
         for s in steps:
-            flist = parse_findings_list(s.get("findings_json") or "")
             dur = int(s.get("duration_ms") or 0)
-            lines.append(f'  {clean_scalar(s["step_name"])},{clean_scalar(s["status"])},{len(flist)},{dur}')
+            lines.append(f'  {clean_scalar(s["step_name"])},{clean_scalar(s["status"])},{s["findings_count"]},{dur}')
 
     active_steps = [s for s in steps if s.get("status") in ("running", "fixing")]
     if active_steps and not is_terminal:
@@ -1242,17 +1235,34 @@ def read_ci_log_for_run(run: dict, db_real: str) -> str:
 
 try:
     db_real = os.path.realpath(database)
-    db_fp = compute_db_fingerprint(db_real)
-    snap = load_cached_snapshot(snapshot_file, db_real, db_fp)
-    if snap is None:
-        snap = capture_snapshot_from_sqlite(database, db_real, db_fp)
-        write_snapshot_atomic(snapshot_file, snap)
-
-    repo_id = resolve_repo_id(snap["repos"])
-    if not repo_id:
-        sys.exit(1)
-    repo_path = snap["repos"][repo_id]
-    repo_runs = snap["runs_by_repo"].get(repo_id, [])
+    snap = load_cached_snapshot(snapshot_file, db_real)
+    repos = None
+    repo_id = None
+    repo_runs = None
+    if snap is not None and is_fresh(snap.get("repos_captured_at")):
+        cached_id = resolve_repo_id(snap["repos"])
+        entry = snap["repo_snapshots"].get(cached_id) if cached_id else None
+        if isinstance(entry, dict) and is_fresh(entry.get("captured_at")) and isinstance(entry.get("runs"), list):
+            repos, repo_id, repo_runs = snap["repos"], cached_id, entry["runs"]
+    if repo_runs is None:
+        repos, repo_id, repo_runs = capture_repo_from_sqlite(db_real)
+        if not repo_id:
+            sys.exit(1)
+        kept = {}
+        if snap is not None:
+            for kid, kentry in snap["repo_snapshots"].items():
+                if kid != repo_id and kid in repos and isinstance(kentry, dict) and is_fresh(kentry.get("captured_at")):
+                    kept[kid] = kentry
+        kept[repo_id] = {"captured_at": now, "runs": repo_runs}
+        write_snapshot_atomic(snapshot_file, {
+            "schema_version": expected_schema_ver,
+            "db_user_version": expected_user_ver,
+            "db_path": db_real,
+            "repos_captured_at": now,
+            "repos": repos,
+            "repo_snapshots": kept,
+        })
+    repo_path = repos[repo_id]
 
     for r in repo_runs:
         rid = r.get("id")
@@ -1327,11 +1337,6 @@ try:
         print(ci_log_out)
     print("__FM_NM_SECTION_END__")
 except Exception:
-    if snapshot_file:
-        try:
-            os.unlink(snapshot_file)
-        except OSError:
-            pass
     sys.exit(1)
 PY
   ) || return 1
