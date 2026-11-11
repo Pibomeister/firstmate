@@ -30,15 +30,28 @@ wait_until_gone() { # <pid> <msg>
   kill -0 "$pid" 2>/dev/null && fail "$msg"
 }
 
+# Install a sleep binary under a new name. A copied macOS arm64e sleep is
+# SIGKILLed on launch, so take its x86_64 slice and ad-hoc sign it, matching
+# tests/fm-droid-harness.test.sh.
+install_renamed_sleep() { # <dest>
+  local dest=$1 src
+  src=$(command -v sleep) || fail "sleep is required for a renamed decoy"
+  mkdir -p "$(dirname "$dest")"
+  lipo "$src" -thin x86_64 -output "$dest" 2>/dev/null \
+    || cp "$src" "$dest" || fail "could not install a renamed sleep at $dest"
+  chmod +x "$dest"
+  if command -v codesign >/dev/null 2>&1; then
+    codesign -s - -f "$dest" >/dev/null 2>&1 || fail "could not sign the renamed sleep at $dest"
+  fi
+}
+
 # Start a copy of sleep whose comm is herdr. Do not wrap this in $(); a
 # command-substitution subshell would hang up the background decoy.
 start_herdr_named_sleep() { # <pidfile> <seconds> [env assignments...]
   local pidfile=$1 seconds=$2 bin
   shift 2
   bin=$(fm_test_tmproot herdr-named-sleep)/bin
-  mkdir -p "$bin"
-  cp "$(command -v sleep)" "$bin/herdr"
-  chmod +x "$bin/herdr"
+  install_renamed_sleep "$bin/herdr"
   env "$@" "$bin/herdr" "$seconds" &
   printf '%s\n' "$!" > "$pidfile"
 }
@@ -215,9 +228,7 @@ test_fixture_stays_on_default_when_a_custom_fleet_session_is_exported() {
   started=$(herdr_fixture_create) || fail "create started failed"
   remember_owned "$started"
   fakebin=$(fm_fakebin "$(fm_test_tmproot fm-herdr-owned-xdg-custom-fleet)/bin")
-  mkdir -p "$started/procbin"
-  cp "$(command -v sleep)" "$started/procbin/herdr"
-  chmod +x "$started/procbin/herdr"
+  install_renamed_sleep "$started/procbin/herdr"
   cat > "$fakebin/herdr" <<SH
 #!/usr/bin/env bash
 printf '%s\\n' "\$*" >> $(printf '%q' "$foreign/herdr.log")
@@ -291,9 +302,7 @@ test_second_start_on_a_started_fixture_is_idempotent() {
   local root fakebin first second
   root=$(herdr_fixture_create) || fail "create failed"
   remember_owned "$root"
-  mkdir -p "$root/procbin"
-  cp "$(command -v sleep)" "$root/procbin/herdr"
-  chmod +x "$root/procbin/herdr"
+  install_renamed_sleep "$root/procbin/herdr"
   fakebin=$(fm_fakebin "$(fm_test_tmproot fm-herdr-owned-xdg-idempotent)/bin")
   cat > "$fakebin/herdr" <<SH
 #!/usr/bin/env bash
@@ -394,9 +403,7 @@ test_start_fails_fast_when_the_forked_pid_has_no_start_time() {
   local root fakebin real_ps leader status=0 out pid_recorded
   root=$(herdr_fixture_create) || fail "create failed"
   remember_owned "$root"
-  mkdir -p "$root/procbin"
-  cp "$(command -v sleep)" "$root/procbin/herdr"
-  chmod +x "$root/procbin/herdr"
+  install_renamed_sleep "$root/procbin/herdr"
   real_ps=$(command -v ps)
   fakebin=$(fm_fakebin "$(fm_test_tmproot fm-herdr-owned-xdg-empty-lstart)/bin")
   cat > "$fakebin/ps" <<SH
@@ -439,9 +446,7 @@ test_start_reaps_when_session_list_hangs() {
   local root fakebin leader child status=0 started elapsed
   root=$(herdr_fixture_create) || fail "create failed"
   remember_owned "$root"
-  mkdir -p "$root/procbin"
-  cp "$(command -v sleep)" "$root/procbin/herdr"
-  chmod +x "$root/procbin/herdr"
+  install_renamed_sleep "$root/procbin/herdr"
   fakebin=$(fm_fakebin "$(fm_test_tmproot fm-herdr-owned-xdg-list-hang)/bin")
   cat > "$fakebin/herdr" <<SH
 #!/usr/bin/env bash
