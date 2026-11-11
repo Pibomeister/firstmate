@@ -2,8 +2,9 @@
 # fm-handoff-launch.sh <handoff-file> - verified primary Claude handoff.
 # Only the current lock owner can prepare a claim. Launches via Orca agent
 # argv (never a shell command string), or tmux's direct argv execution.
-# Two fresh terminals share a total 600-second deadline. The first gets up to
-# 300 seconds, never past that total, and the retry gets the rest.
+# Two fresh terminals share a total 600-second deadline. After acquiring the
+# initial claim lock, the first gets half the remaining time, up to 300 seconds,
+# and the retry gets the rest.
 # Setup and cleanup add to that budget, so a foreground tool timeout of 600
 # seconds cannot cover it. Run in the background and collect the exit status
 # and output before reporting readiness.
@@ -174,7 +175,9 @@ for attempt in 1 2; do
     die 'predecessor no longer owns the lock'
   fi
   NONCE=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
-  ATTEMPT_END=$((SECONDS + TIMEOUT / 2))
+  remaining=$((MONO_DEADLINE - SECONDS))
+  [ "$remaining" -gt 0 ] || fail_handoff deadline
+  ATTEMPT_END=$((SECONDS + remaining / 2))
   [ "$attempt" = 1 ] || ATTEMPT_END=$MONO_DEADLINE
   [ "$ATTEMPT_END" -le "$MONO_DEADLINE" ] || ATTEMPT_END=$MONO_DEADLINE
   CLAIM_DEADLINE=$(( $(date +%s) + ATTEMPT_END - SECONDS ))
@@ -188,8 +191,6 @@ for attempt in 1 2; do
   CLAIM_HELD=0
   event=handoff_started
   [ "$attempt" = 1 ] || event=handoff_retry
-  HANDOFF_STARTED=1
-  fm_handoff_event "$event" "$NONCE" "$attempt" "$PRED_PID" "$(fm_handoff_endpoint_handle || true)" awaiting_ack
   printf -v ACK_CMD 'FM_HOME=%q bash %q %q %q' "$FM_HOME" "$SCRIPT_DIR/fm-handoff-ack.sh" "$NONCE" "$SHA256"
   printf -v START_CMD 'FM_HOME=%q bash %q' "$FM_HOME" "$SCRIPT_DIR/fm-session-start.sh"
   PROMPT="Firstmate handoff successor. Read the entire document at $HANDOFF. Its sha256 must be $SHA256. Before doing any project work or starting a read-only session, run this exact acknowledgement command: $ACK_CMD . It writes your harness pid, lock pid, terminal handle and document hash, and transfers the predecessor lock only after validation. If it refuses, emit no claim of readiness and exit; it records handoff_reject. After success run $START_CMD and continue the document. nonce=$NONCE"
@@ -197,6 +198,8 @@ for attempt in 1 2; do
   if [ "$remaining" -gt 0 ]; then
     case "$BACKEND" in
       orca)
+        HANDOFF_STARTED=1
+        fm_handoff_event "$event" "$NONCE" "$attempt" "$PRED_PID" "$(fm_handoff_endpoint_handle || true)" awaiting_ack
         fm_run_timed "$remaining" "${BACKEND_EXEC[@]}" orca agent launch --agent claude --worktree "path:$FM_HOME" \
           --surface terminal --prompt "$PROMPT" --json > "$STATE/.handoff-launch-result" 2>&1 || true
         ;;
@@ -213,10 +216,16 @@ for attempt in 1 2; do
         fi
         remaining=$((ATTEMPT_END - SECONDS))
         if [ "$remaining" -gt 0 ]; then
+          HANDOFF_STARTED=1
+          fm_handoff_event "$event" "$NONCE" "$attempt" "$PRED_PID" "$(fm_handoff_endpoint_handle || true)" awaiting_ack
           fm_run_timed "$remaining" "${BACKEND_EXEC[@]}" tmux "${TMUX_TARGET[@]}" -c "$FM_HOME" -n firstmate claude "${PERM_ARGS[@]}" "$PROMPT" > "$STATE/.handoff-launch-result" 2>&1 || true
+        else
+          fail_handoff deadline
         fi
         ;;
     esac
+  else
+    fail_handoff deadline
   fi
   while :; do
     # Check success before the deadline: a transfer that committed just before

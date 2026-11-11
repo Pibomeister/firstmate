@@ -398,8 +398,8 @@ pass 'supervisor endpoint metadata retains precedence and generation'
 
 # A verified transfer retires predecessor leases only once it commits.
 REAL_MKTEMP=$(command -v mktemp) REAL_RM=$(command -v rm)
-REAL_CAT=$(command -v cat)
-export REAL_MKTEMP REAL_RM REAL_CAT
+REAL_CAT=$(command -v cat) REAL_CP=$(command -v cp)
+export REAL_MKTEMP REAL_RM REAL_CAT REAL_CP
 lease_transfer() {  # <case> <stub-name> <stub-body>
   local home="$TMP_ROOT/lease-$1" bin="$TMP_ROOT/lease-$1-bin"
   LEASE_HOME=$home
@@ -407,6 +407,10 @@ lease_transfer() {  # <case> <stub-name> <stub-body>
   printf 'lease handoff\n' > "$home/handoff.md"
   printf '#!/usr/bin/env bash\n%s\n' "$3" > "$bin/$2"
   chmod +x "$bin/$2"
+  if [ "${4:-}" = rollback-second-signal ]; then
+    cp "$TMP_ROOT/rollback-cp" "$bin/cp"
+    chmod +x "$bin/cp"
+  fi
   # shellcheck disable=SC2016 # The harness child expands its own environment.
   FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" ORCA_TERMINAL_HANDLE=term_lease_pred claude -c '
     bash "$ROOT/bin/fm-lock.sh" > "$FM_HOME/pred.out" 2>&1
@@ -485,6 +489,31 @@ assert_contains "$(cat "$LEASE_HOME/ack.out")" 'reason=lock_refused' 'the interr
 cmp -s "$LEASE_HOME/session.before" "$LEASE_HOME/state/.lock-session" || fail 'an interrupted transfer must restore the predecessor sidecar'
 [ -f "$LEASE_HOME/state/.lease-task-a" ] || fail 'an interrupted transfer retired the live predecessor lease'
 pass 'a transfer interrupted after its line-1 write restores predecessor ownership and leases'
+
+# A second signal while rollback restores line 1 must not interrupt the
+# sidecar restoration or the release of either transaction lock.
+cat > "$TMP_ROOT/rollback-cp" <<'EOF'
+#!/usr/bin/env bash
+if [ "${1:-}" = -f ] && [ "${3:-}" = "$FM_HOME/state/.lock" ]; then
+  touch "$FM_HOME/rollback-second-signal"
+  kill -TERM "$PPID"
+fi
+exec "$REAL_CP" "$@"
+EOF
+# shellcheck disable=SC2016 # The stub expands its own arguments.
+lease_transfer phase2-second-signal cat 'if [ "${1:-}" = "$FM_HOME/state/.lock" ] && [ -f "$FM_HOME/succ.pid" ] \
+  && [ "$("$REAL_CAT" "$1")" = "$("$REAL_CAT" "$FM_HOME/succ.pid")" ]; then kill -TERM "$PPID"; fi
+exec "$REAL_CAT" "$@"' rollback-second-signal
+[ -e "$LEASE_HOME/rollback-second-signal" ] || fail 'the second signal must arrive inside production rollback'
+[ "$(cat "$LEASE_HOME/ack.rc")" != 0 ] || fail 'an interrupted transfer must not acknowledge success'
+[ "$(cat "$LEASE_HOME/state/.lock")" = "$(cat "$LEASE_HOME/pred.pid")" ] || fail 'rollback interrupted twice must restore the predecessor PID'
+cmp -s "$LEASE_HOME/session.before" "$LEASE_HOME/state/.lock-session" || fail 'rollback interrupted twice must restore the predecessor sidecar'
+[ -f "$LEASE_HOME/state/.lease-task-a" ] || fail 'rollback interrupted twice must preserve the predecessor lease'
+for guard in .lock.acquire .fm-lease-command.lock; do
+  [ ! -e "$LEASE_HOME/state/$guard" ] || fail "rollback interrupted twice must release $guard"
+  [ ! -L "$LEASE_HOME/state/$guard" ] || fail "rollback interrupted twice must unlink $guard"
+done
+pass 'a second signal during transaction rollback preserves ownership and releases its locks'
 
 # A predecessor that owns the lock by ancestry, with no sidecar, is restored
 # with its sidecar still absent when the transfer is interrupted.
@@ -685,6 +714,7 @@ pass 'DRILL cleanup-second-signal: a second signal during cleanup still emits ex
 # than its usual half of the budget.
 run_case slow-claim
 [ "$(cat "$LAB/rc")" != 0 ] || fail 'a handoff with no ack must fail'
+[ "$(cat "$LAB/state/attempts")" = 2 ] || fail "a slow initial claim must leave time for two actual backend launches: $(cat "$LAB/launch.out")"
 failed=$(sed -n 's/^HANDOFF v1 ts=\([0-9]*\) event=handoff_failed .*/\1/p' "$LAB/state/handoff-events.log")
 [ -n "$failed" ] && [ "$((failed - $(cat "$LAB/state/claim-released")))" -lt "$((LAB_FAIL_BUDGET / 2))" ] \
   || fail "a slow initial claim must not push failure past the total budget: $(cat "$LAB/state/handoff-events.log")"

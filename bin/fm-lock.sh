@@ -177,6 +177,9 @@ commit_lock_session() {
   rm -f "$LOCK_SESSION_PREV" 2>/dev/null || true
 }
 on_lock_exit() {
+  # Complete ownership restoration and lock release after the first signal.
+  trap '' HUP INT TERM
+  trap - EXIT
   restore_uncommitted_lock_session
   [ -n "$LOCK_LINE_PRE" ] && rm -f "$LOCK_LINE_PRE"
   release_autoarm_lock
