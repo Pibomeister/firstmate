@@ -1,0 +1,25 @@
+# raw launch: codex -c shell_environment_policy.inherit=core exec ... 'env | grep ^AK_LIFECYCLE'
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.taIB95
+spawned akcodex-a1 harness=codex kind=scout window=primary:fm-akcodex-a1 worktree=/Users/eduardopicazo/.treehouse/demo-30afeb/3/demo
+exit=0
+# launch script lines
+1:'/Users/eduardopicazo/.no-mistakes/worktrees/572d358bf07b/01M7471VF59C9Z9ZQ60YP0YK95/bin/fm-env-scrub.sh' unset-file '/tmp/fm-akcodex-a1+e9211ed7313a79ee7b9765c3d8cfa2bb10b8674f5d6b5a34f5b3334703794cd6/env-scrub.s1794368543.36043.10667.sh' && . '/tmp/fm-akcodex-a1+e9211ed7313a79ee7b9765c3d8cfa2bb10b8674f5d6b5a34f5b3334703794cd6/env-scrub.s1794368543.36043.10667.sh' || return 1 2>/dev/null || exi
+2:'/Users/eduardopicazo/.no-mistakes/worktrees/572d358bf07b/01M7471VF59C9Z9ZQ60YP0YK95/bin/fm-git-strip-ai-trailers.sh' env-file '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.taIB95/state/akcodex-a1.git-hooks' '/tmp/fm-akcodex-a1+e9211ed7313a79ee7b9765c3d8cfa2bb10b8674f5d6b5a34f5b3334703794cd6/git-config.s1794368543.36043.10667.sh' && . '/tmp/fm-akcodex-a1+e9211ed7313a79ee7b9765
+# Codex tool-shell output (-o file)
+AK_LIFECYCLE_POLICY=unattended
+AK_LIFECYCLE_SUPERVISOR=firstmate
+# pane transcript
+codex
+AK_LIFECYCLE_POLICY=unattended
+AK_LIFECYCLE_SUPERVISOR=firstmate
+hook: Stop
+hook: Stop
+hook: Stop
+hook: Stop
+hook: Stop Completed
+hook: Stop Completed
+hook: Stop Completed
+hook: Stop Completed
+tokens used
+35,984
+eduardopicazo@Eduardos-MacBook-Pro-2 demo %

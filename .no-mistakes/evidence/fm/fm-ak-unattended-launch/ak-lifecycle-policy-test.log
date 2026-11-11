@@ -1,6 +1,9 @@
 ok - ship and scout launches carry the unattended policy and Firstmate supervisor in both allowlist postures, overriding contrary pane values
 ok - a secondmate launch carries the unattended policy and Firstmate supervisor
 ok - the launch command sets the unattended policy on its own
-ok - explicit operator values, including an empty policy, are carried unchanged instead of the defaults
+ok - inherited empty or contrary values never replace the unattended policy and Firstmate supervisor
 ok - a compound raw launch carries the unattended policy and Firstmate supervisor
+ok - raw Codex commands run through the Codex launcher, and a Codex hidden behind another command refuses
+ok - a raw non-Codex command that only mentions codex still spawns
 ok - relaunch rebuilds the unattended policy and Firstmate supervisor in both allowlist postures
+suite exit=0

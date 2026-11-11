@@ -1,0 +1,25 @@
+### fm-spawn akrefuse-env-a1 --scout env codex exec hi
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.taIB95
+error: raw command 'env codex exec hi' starts Codex behind another command word or after the leading command, so bin/fm-codex-launch.sh cannot carry the launch environment into its tool shells; make Codex the leading command word, after any plain NAME=value assignments
+exit=1
+### fm-spawn akrefuse-norc-a1 --scout bash --norc -c 'codex x'
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.taIB95
+error: raw command 'bash --norc -c 'codex x'' starts Codex behind another command word or after the leading command, so bin/fm-codex-launch.sh cannot carry the launch environment into its tool shells; make Codex the leading command word, after any plain NAME=value assignments
+exit=1
+### fm-spawn akrefuse-rcfile-a1 --scout bash --rcfile f -c 'codex x'
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.taIB95
+error: raw command 'bash --rcfile f -c 'codex x'' starts Codex behind another command word or after the leading command, so bin/fm-codex-launch.sh cannot carry the launch environment into its tool shells; make Codex the leading command word, after any plain NAME=value assignments
+exit=1
+### fm-spawn akok-assign-a1 --scout WORKDIR=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.taIB95/w/codex /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.taIB95/w/codex/run --model codex
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.taIB95
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: 308s ago, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 6s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+spawned akok-assign-a1 harness=run kind=scout window=primary:fm-akok-assign-a1 worktree=/Users/eduardopicazo/.treehouse/demo-30afeb/2/demo
+exit=0
+DONE
