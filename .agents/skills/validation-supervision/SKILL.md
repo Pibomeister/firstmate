@@ -13,6 +13,7 @@ The task worker that starts a no-mistakes run drives the pipeline and owns every
 For a named PR check outside that worker-owned run, firstmate arms the check watch and the paused worker does not poll; `process-event-sources` owns its lifecycle and historical-result revalidation.
 Firstmate never invokes `no-mistakes axi respond` for a crew-owned run.
 `bin/fm-dod-lib.sh` owns the worker-side `--intent` contract.
+Every lane listens for its park events: when a crew-owned run is working and `bin/fm-procevent.sh list` shows no `task:<id>` owner for that task's no-mistakes source, steer the worker to arm its completion listener under its Definition of done, so a parked gate reaches it within minutes.
 Once validation starts, prefer routing new requirements to follow-up work rather than expanding the current task, unless a new requirement completely invalidates the work being validated; however, the smallest downstream changes needed to keep already accepted product or engineering behavior correct, add behavioral tests where an executable contract exists, or keep documentation accurate remain within the current task even when they touch files not named at intake, and corrections required to satisfy already accepted intent are not new requirements.
 
 Only a current, explicit captain instruction that completely invalidates the work being validated keeps the task with the same worker instead of routing it to follow-up work or handing it to a replacement.
@@ -25,6 +26,7 @@ Outside that supersession sequence, `bin/fm-pr-resync.sh <task-id> <worktree> <b
 
 An ask-user finding returns as `needs-decision`; firstmate loads `ask-user-authority` and either decides or escalates per that skill.
 Send the same worker one exact decision naming the decision key, step, action, affected finding IDs, instructions where needed, and exact response command, passing `--resolve-key` so the worker's open decision record closes at answer time.
+Cover every finding the gate holds in that one response command, so one fix round settles them all, and relay a captain's answer in the captain's words so the worker can carry it into a later run's `--intent`.
 Require the matching `resolved` event, forbid `--yes`, and require the worker to process every synchronous return until completion or a genuinely new escalation.
 Resume fleet supervision immediately after the decision lands.
 
