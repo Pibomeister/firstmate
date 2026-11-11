@@ -913,7 +913,7 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
 printf '%s|%s\n' "${AK_LIFECYCLE_POLICY-unset}" "${AK_LIFECYCLE_SUPERVISOR-unset}"
 SH
   chmod +x "$TMP_ROOT/spawn-probe/claude"
-  assert_equals "${AK_LIFECYCLE_POLICY-unattended}|${AK_LIFECYCLE_SUPERVISOR-firstmate}" \
+  assert_equals "unattended|firstmate" \
     "$(env -i HOME="$SPAWN_HOME" PATH="$TMP_ROOT/spawn-probe:$FB:$PATH" TERM=xterm \
       AK_LIFECYCLE_POLICY=terminal-value AK_LIFECYCLE_SUPERVISOR=terminal-supervisor /bin/sh -c "$launch" 2>/dev/null | tail -1)" \
     "an Orca worker must start under the agent-kit unattended policy with Firstmate as supervisor"

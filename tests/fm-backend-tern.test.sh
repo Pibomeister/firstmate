@@ -1677,8 +1677,8 @@ EOF
     TERN_WINDOW_SOCKET=/run/tern/window.sock TERN_IDENTITY=ident SECRET_TOKEN=leak \
     AK_LIFECYCLE_POLICY=block-value AK_LIFECYCLE_SUPERVISOR=block-supervisor) \
     || fail "the emitted tern launch failed to run"
-  assert_contains "$seen" "AK_LIFECYCLE_POLICY=${AK_LIFECYCLE_POLICY-unattended}" "a tern task must start under the agent-kit unattended policy, not the block's value"
-  assert_contains "$seen" "AK_LIFECYCLE_SUPERVISOR=${AK_LIFECYCLE_SUPERVISOR-firstmate}" "a tern task must name Firstmate as the agent-kit supervisor"
+  assert_contains "$seen" "AK_LIFECYCLE_POLICY=unattended" "a tern task must start under the agent-kit unattended policy, not the block's value"
+  assert_contains "$seen" "AK_LIFECYCLE_SUPERVISOR=firstmate" "a tern task must name Firstmate as the agent-kit supervisor"
   assert_contains "$seen" "TERM_PROGRAM=tern" "a tern task must keep TERM_PROGRAM=tern so the harness's own Tern integration survives"
   assert_contains "$seen" "TERN_PANE=$BLK" "a tern task must keep TERN_PANE byte-exact"
   assert_contains "$seen" "TERN_PANE_SOCKET=/run/tern/pane.sock" "a tern task must keep TERN_PANE_SOCKET"

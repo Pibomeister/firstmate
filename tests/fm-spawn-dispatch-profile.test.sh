@@ -129,13 +129,12 @@ make_seeded_secondmate_home() {
 }
 
 # The inbox export, followed by the agent-kit lifecycle exports every launch
-# carries right after it (defaults unless this test's environment sets them).
+# carries right after it as fixed literals.
 task_inbox_export() {  # <home> <id>
   local state
   state=$(CDPATH='' cd -- "$1/state" && pwd -P) || fail "cannot resolve state dir $1/state"
   printf "export FM_TASK_INBOX='%s'; " "$state/$2.inbox"
-  printf "export AK_LIFECYCLE_POLICY='%s'; export AK_LIFECYCLE_SUPERVISOR='%s'; " \
-    "${AK_LIFECYCLE_POLICY-unattended}" "${AK_LIFECYCLE_SUPERVISOR-firstmate}"
+  printf '%s' 'export AK_LIFECYCLE_POLICY=unattended; export AK_LIFECYCLE_SUPERVISOR=firstmate; '
 }
 
 launch_inner() {  # <delivered command> -> worker command after the env boundary
@@ -1055,7 +1054,7 @@ test_raw_codex_effort_placeholder_checks_catalog() {
   status=$?
   expect_code 0 "$status" "raw Codex command without effort placeholder must retain its prior path: $out"
   launch=$(launch_inner "$(cat "$LAUNCH_LOG")")
-  assert_contains "$launch" 'codex --raw-mode' 'raw command changed without an effort placeholder'
+  assert_contains "$launch" "fm-codex-launch.sh' --raw-mode" 'raw command changed without an effort placeholder'
   assert_not_contains "$launch" 'model_reasoning_effort=' 'effort flag leaked into raw command without placeholder'
   pass 'raw Codex max is catalog-gated only when its effort placeholder is substituted'
 }

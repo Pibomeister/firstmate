@@ -28,13 +28,12 @@ NODE_BIN_DIR=$(dirname "$NODE_BIN")
 BASE_PATH=${FM_TEST_BASE_PATH:-$PYTHON_BIN_DIR:$NODE_BIN_DIR:/usr/bin:/bin:/usr/sbin:/sbin}
 
 # The inbox export, followed by the agent-kit lifecycle exports every launch
-# carries right after it (defaults unless this test's environment sets them).
+# carries right after it as fixed literals.
 task_inbox_export() {  # <home> <id>
   local state
   state=$(CDPATH='' cd -- "$1/state" && pwd -P) || fail "cannot resolve state dir $1/state"
   printf "export FM_TASK_INBOX='%s'; " "$state/$2.inbox"
-  printf "export AK_LIFECYCLE_POLICY='%s'; export AK_LIFECYCLE_SUPERVISOR='%s'; " \
-    "${AK_LIFECYCLE_POLICY-unattended}" "${AK_LIFECYCLE_SUPERVISOR-firstmate}"
+  printf '%s' 'export AK_LIFECYCLE_POLICY=unattended; export AK_LIFECYCLE_SUPERVISOR=firstmate; '
 }
 
 

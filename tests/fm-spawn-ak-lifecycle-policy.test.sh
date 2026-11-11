@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/fm-spawn-ak-lifecycle-policy.test.sh - every agent this fleet launches
 # must start under agent-kit's unattended lifecycle policy with Firstmate named
-# as the supervisor, unless the operator's spawn environment says otherwise.
+# as the supervisor, whatever values the spawn or pane environment inherited.
 #
 # The assertions never read bin/fm-spawn.sh's source. They drive the real spawn
 # against a fake tmux pane and a real isolated git worktree, then EXECUTE the
@@ -20,8 +20,8 @@ set -u
 CONTROL="$ROOT/bin/fm-control.sh"
 TMP_ROOT=$(fm_test_tmproot fm-spawn-ak-lifecycle)
 
-# The default cases must not depend on the runner's own environment, which is
-# itself a Firstmate launch carrying these names.
+# The cases must not depend on the runner's own environment, which is itself a
+# Firstmate launch carrying these names; the inherited-value case sets its own.
 unset AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR
 
 DEFAULT_REPORT='policy=unattended
@@ -158,29 +158,117 @@ test_launch_command_alone_carries_the_values() {
   pass "the launch command sets the unattended policy on its own"
 }
 
-# An explicit value in the operator's spawn environment wins, including the
-# empty string that withholds the environment opt-in. An empty value reaches
-# the agent as empty and is not forced into Codex tool shells.
-test_operator_values_are_respected() {
-  local setting rec id out status seen
+# The values are fixed: an inherited empty policy or a different supervisor in
+# the spawn's own environment never replaces them, in the agent process or in
+# its Codex tool shells.
+test_inherited_values_never_replace_the_pair() {
+  local setting parent rec id out status seen
   for setting in absent enabled; do
-    id="operator-$setting-a1"
-    rec=$(make_case "operator-$setting" codex "$id")
-    read_case "$rec"
-    [ "$setting" = absent ] || : > "$HOME_DIR/config/launch-env-allowlist"
-    out=$(AK_LIFECYCLE_POLICY='' AK_LIFECYCLE_SUPERVISOR="night desk's \"shift\"" \
-      run_case_spawn "$id" "$PROJ_DIR" --mode no-mistakes --yolo off)
-    status=$?
-    expect_code 0 "$status" "spawn with explicit operator values should succeed: $out"
-    install_probe "$FAKEBIN_DIR"
-    seen=$(emitted_report "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
-      || fail "operator values, allowlist $setting: the emitted launch failed to run"
-    assert_equals "policy=
-supervisor=night desk's \"shift\"
-codex-set=shell_environment_policy.set.AK_LIFECYCLE_SUPERVISOR=\"night desk's \\\"shift\\\"\"" "$seen" \
-      "allowlist=$setting: explicit operator values must reach the agent unchanged"
+    for parent in empty contrary; do
+      id="inherited-$setting-$parent-a1"
+      rec=$(make_case "inherited-$setting-$parent" codex "$id")
+      read_case "$rec"
+      [ "$setting" = absent ] || : > "$HOME_DIR/config/launch-env-allowlist"
+      if [ "$parent" = empty ]; then
+        out=$(AK_LIFECYCLE_POLICY='' AK_LIFECYCLE_SUPERVISOR='' \
+          run_case_spawn "$id" "$PROJ_DIR" --mode no-mistakes --yolo off)
+      else
+        out=$(AK_LIFECYCLE_POLICY=attended AK_LIFECYCLE_SUPERVISOR="night desk's \"shift\"" \
+          run_case_spawn "$id" "$PROJ_DIR" --mode no-mistakes --yolo off)
+      fi
+      status=$?
+      expect_code 0 "$status" "spawn with $parent inherited values should succeed: $out"
+      install_probe "$FAKEBIN_DIR"
+      seen=$(emitted_report "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
+        || fail "inherited $parent values, allowlist $setting: the emitted launch failed to run"
+      assert_equals "$DEFAULT_REPORT" "$seen" \
+        "allowlist=$setting: $parent inherited values must not replace unattended and firstmate"
+    done
   done
-  pass "explicit operator values, including an empty policy, are carried unchanged instead of the defaults"
+  pass "inherited empty or contrary values never replace the unattended policy and Firstmate supervisor"
+}
+
+# A raw command that starts Codex runs through bin/fm-codex-launch.sh with its
+# own arguments and assignments kept, so its tool shells receive both names. A
+# raw command that starts Codex behind another command word refuses.
+install_raw_probe() {  # <path> <marker>
+  mkdir -p "$(dirname "$1")"
+  cat > "$1" <<SH
+#!/bin/sh
+printf 'ran=%s\n' '$2'
+SH
+  cat >> "$1" <<'SH'
+printf 'policy=%s\n' "${AK_LIFECYCLE_POLICY-unset}"
+printf 'supervisor=%s\n' "${AK_LIFECYCLE_SUPERVISOR-unset}"
+printf 'codex-home=%s\n' "${CODEX_HOME-unset}"
+printf 'codex-bin-env=%s\n' "${FM_CODEX_BIN-unset}"
+skip=0
+for arg do
+  if [ "$skip" = 1 ]; then
+    skip=0
+    case "$arg" in shell_environment_policy.set.AK_*) printf 'codex-set=%s\n' "$arg" ;; esac
+    continue
+  fi
+  case "$arg" in
+    -c) skip=1 ;;
+    *) printf 'argv=<%s>\n' "$arg" ;;
+  esac
+done
+SH
+  chmod +x "$1"
+}
+
+test_raw_codex_launch_uses_the_launcher() {
+  local form rec id raw out status seen expected
+  for form in bare path; do
+    id="raw-codex-$form-a1"
+    rec=$(make_case "raw-codex-$form" codex "$id")
+    read_case "$rec"
+    if [ "$form" = bare ]; then
+      raw='codex --disable hooks'
+    else
+      raw="CODEX_HOME=$CASE_DIR/codex-home $CASE_DIR/by-path/codex --disable hooks"
+    fi
+    out=$(run_case_spawn "$id" "$PROJ_DIR" --scout "$raw")
+    status=$?
+    expect_code 0 "$status" "raw $form Codex spawn should succeed: $out"
+    assert_contains "$(cat "$LAUNCH_LOG")" "fm-codex-launch.sh' --disable hooks" \
+      "a raw $form Codex command must run through the Codex launcher with its arguments kept"
+    install_raw_probe "$FAKEBIN_DIR/codex" path-lookup
+    install_raw_probe "$CASE_DIR/by-path/codex" named-path
+    seen=$(emitted_report "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
+      || fail "raw $form Codex: the emitted launch failed to run"
+    if [ "$form" = bare ]; then
+      expected="ran=path-lookup
+policy=unattended
+supervisor=firstmate
+codex-home=unset"
+    else
+      expected="ran=named-path
+policy=unattended
+supervisor=firstmate
+codex-home=$CASE_DIR/codex-home"
+    fi
+    expected="$expected
+codex-bin-env=unset
+codex-set=shell_environment_policy.set.AK_LIFECYCLE_POLICY=\"unattended\"
+codex-set=shell_environment_policy.set.AK_LIFECYCLE_SUPERVISOR=\"firstmate\"
+argv=<--disable>
+argv=<hooks>"
+    assert_equals "$expected" "$seen" \
+      "a raw $form Codex command must start the named Codex with both tool-shell overrides and its own arguments"
+  done
+
+  id='raw-codex-behind-env-a1'
+  rec=$(make_case raw-codex-behind-env codex "$id")
+  read_case "$rec"
+  out=$(run_case_spawn "$id" "$PROJ_DIR" --scout 'env -u FOO codex --disable hooks' 2>&1)
+  status=$?
+  expect_code 1 "$status" "a raw command that starts Codex behind env must refuse: $out"
+  assert_contains "$out" 'cannot carry the launch environment into its tool shells' \
+    "the refusal must say why the raw Codex form is unsupported"
+  [ ! -s "$LAUNCH_LOG" ] || fail "a refused raw Codex command still launched"
+  pass "raw Codex commands run through the Codex launcher, and a Codex hidden behind another command refuses"
 }
 
 # A raw compound launch: an export statement, not a command-prefix assignment,
@@ -315,6 +403,7 @@ test_relaunch_rebuilds_the_values() {
 test_ship_and_scout_launches
 test_secondmate_launch
 test_launch_command_alone_carries_the_values
-test_operator_values_are_respected
+test_inherited_values_never_replace_the_pair
 test_raw_compound_launch
+test_raw_codex_launch_uses_the_launcher
 test_relaunch_rebuilds_the_values

@@ -1917,10 +1917,11 @@ Every crewmate, scout, and secondmate Firstmate launches starts with `AK_LIFECYC
 An older installed agent-kit, for example 0.1.96, ignores `AK_LIFECYCLE_SUPERVISOR`, so only `AK_LIFECYCLE_POLICY=unattended` takes effect there and no supervisor is recorded.
 As with the compact adviser setting, this covers raw launch commands, remote secondmates, and launches filtered by `config/launch-env-allowlist`, and Codex workers receive both names in their tool shells even under a `[shell_environment_policy] inherit = "core"` configuration.
 
-An explicit operator value wins: when the environment that runs `bin/fm-spawn.sh` already sets either name, even to the empty string, the launch carries that value unchanged.
-Setting `AK_LIFECYCLE_POLICY` to the empty string withholds the environment opt-in, so agent-kit falls back to its own `ak.lifecycle.json` selection on the project's default branch.
-The destination pane's environment is never consulted, because a pane value comes from shell startup or the terminal app rather than from the operator's choice for this home.
-A remote secondmate is launched by the remote host's own `bin/fm-spawn.sh`, so that host's spawn environment decides there.
+The values are fixed and have no setting.
+An inherited value, whether in the environment that runs `bin/fm-spawn.sh` or in the destination pane, never replaces them, even when it is empty or names another supervisor.
+A secondmate therefore launches its own workers with the same pair, and a remote secondmate's host applies the same values through its own `bin/fm-spawn.sh`.
+A raw launch command that starts Codex, as `codex ...` or `/path/to/codex ...` after any plain `NAME=value` assignments, is routed through the same Codex launcher with its arguments kept, so its tool shells receive both names.
+A raw command that starts Codex behind another command word, such as `env` or a shell, refuses before launch, because the launcher cannot carry the names into that Codex's tool shells.
 This applies only to agents Firstmate launches; the captain's own primary Firstmate session is never given either variable.
 Firstmate provides no configuration file or flag for this, and agent-kit's own unattended-policy checks, such as its refusal to ship onto an unprotected default branch, still apply.
 

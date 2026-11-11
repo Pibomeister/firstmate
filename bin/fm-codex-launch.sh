@@ -19,6 +19,10 @@
 # pane rather than the launching process's. Only variables that carry a
 # value are named; an unset variable stays unset in the tool shell.
 #
+# FM_CODEX_BIN, when set, names the Codex executable to exec instead of the
+# first codex on PATH; bin/fm-spawn.sh sets it for a raw command that starts
+# Codex by path. It is unset before exec so Codex never inherits it.
+#
 # Usage: fm-codex-launch.sh [codex args...]
 set -u
 
@@ -34,4 +38,6 @@ for var in HERDR_PANE_ID HERDR_SESSION TMUX TMUX_PANE FM_TASK_INBOX AK_LIFECYCLE
   args+=(-c "shell_environment_policy.set.$var=\"$value\"")
 done
 
-exec codex ${args[@]+"${args[@]}"} "$@"
+codex_bin=${FM_CODEX_BIN:-codex}
+unset FM_CODEX_BIN
+exec "$codex_bin" ${args[@]+"${args[@]}"} "$@"
