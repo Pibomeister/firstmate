@@ -436,9 +436,12 @@ SH
 }
 
 test_start_reaps_when_session_list_hangs() {
-  local root fakebin leader child status=0
+  local root fakebin leader child status=0 started elapsed
   root=$(herdr_fixture_create) || fail "create failed"
   remember_owned "$root"
+  mkdir -p "$root/procbin"
+  cp "$(command -v sleep)" "$root/procbin/herdr"
+  chmod +x "$root/procbin/herdr"
   fakebin=$(fm_fakebin "$(fm_test_tmproot fm-herdr-owned-xdg-list-hang)/bin")
   cat > "$fakebin/herdr" <<SH
 #!/usr/bin/env bash
@@ -449,13 +452,16 @@ if [ "\$1" = server ]; then
   sleep 98772 &
   printf '%s\\n' "\$!" > $(printf '%q' "$root/child.pid")
   printf '%s\\n' "\$\$" > $(printf '%q' "$root/leader.pid")
-  exec sleep 98773
+  exec $(printf '%q' "$root/procbin/herdr") 98773
 fi
 exit 90
 SH
   chmod +x "$fakebin/herdr"
+  started=$SECONDS
   PATH="$fakebin:$PATH" "$LAB" fixture start "$root" >/dev/null 2>&1 || status=$?
+  elapsed=$((SECONDS - started))
   expect_code 1 "$status" "start must fail when session list never returns"
+  [ "$elapsed" -lt 20 ] || fail "start took ${elapsed}s; a first timed-out session list must return within 20s"
   [ -s "$root/leader.pid" ] || fail "the forked herdr did not record its pid"
   [ -s "$root/child.pid" ] || fail "the forked herdr did not record its process-group child"
   leader=$(cat "$root/leader.pid")
