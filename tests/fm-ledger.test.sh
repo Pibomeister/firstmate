@@ -172,6 +172,20 @@ test_depth_reports_short_active_projects() {
   pass "depth reports every active project below the ready target"
 }
 
+test_done_items_are_history_not_work() {
+  new_home done-only
+  local out rc
+  tasks add z-done "zeta finished" --repo zeta >/dev/null || fail "seed add failed"
+  tasks start z-done >/dev/null || fail "seed start failed"
+  tasks 'done' z-done >/dev/null || fail "seed done failed"
+  out=$(ledger plan) || fail "plan failed: $out"
+  case "$out" in *zeta* | *z-done*) fail "plan lists a project whose only item is done: $out" ;; esac
+  out=$(ledger depth); rc=$?
+  expect_code 0 "$rc" "depth with only a done item"
+  case "$out" in *zeta*) fail "depth reports a project whose only item is done: $out" ;; esac
+  pass "done items are not counted as active or blocked work"
+}
+
 test_scheduled_depth_fires_once_per_slot() {
   new_home scheduled
   seed_fleet
@@ -207,18 +221,20 @@ test_scheduled_depth_fires_once_per_slot() {
 
 test_unfiled_lists_open_orders_without_items() {
   new_home unfiled
-  local out rc filed mentioned loose
+  local out rc filed mentioned loose tricky
   out=$(ledger unfiled); rc=$?
   expect_code 0 "$rc" "unfiled with no orders"
   filed=$(order send --from test -- "filed through intake" | awk '/^queued / { print $2 }')
   mentioned=$(order send --from test -- "filed before the ledger" | awk '/^queued / { print $2 }')
   loose=$(order send --from test -- "never filed" | awk '/^queued / { print $2 }')
   order send --hold --from test -- "hold merges" >/dev/null
+  tricky=$(order send --from test -- "summary says kind=hold" | awk '/^queued / { print $2 }')
   ledger intake --mint --project alpha --title "filed through intake" --source "order:$filed" >/dev/null || fail "intake failed"
   tasks add old-item "old item for order $mentioned" --repo alpha >/dev/null
   out=$(ledger unfiled); rc=$?
   expect_code 3 "$rc" "unfiled with one unfiled order"
-  [ "$out" = "UNFILED $loose pending :: never filed" ] || fail "unfiled must list only the never-filed order: $out"
+  [ "$out" = "UNFILED $loose pending :: never filed"$'\n'"UNFILED $tricky pending :: summary says kind=hold" ] \
+    || fail "unfiled must list only the never-filed orders, whatever their summary says: $out"
   pass "unfiled lists only open orders that no ledger item records"
 }
 
@@ -278,6 +294,7 @@ fm_test_run \
   test_plan_groups_orders_and_marks_short \
   test_next_is_read_only_and_exits_3_when_empty \
   test_depth_reports_short_active_projects \
+  test_done_items_are_history_not_work \
   test_scheduled_depth_fires_once_per_slot \
   test_unfiled_lists_open_orders_without_items \
   test_handoff_writes_from_ledger_and_refuses_chains \

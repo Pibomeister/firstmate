@@ -264,7 +264,7 @@ load_backlog() {
 # for every open item, where group is in_flight, ready, blocked, or held.
 classified_rows() {
   printf '%s\n' "$OPEN_ROWS" | awk -F '\t' -v ready="$READY_IDS" '
-    NF < 5 { next }
+    NF < 5 || $2 == "done" { next }
     {
       id = $1; state = $2; kind = $3; repo = $4; title = $5; pri = $6; held = $7
       if (repo == "") repo = "-"
@@ -526,14 +526,11 @@ unfiled_lines() {
   out=$(tasks list --fields body 2>&1) || die "backlog read failed: $(clean "$out")"
   known="$known
 $out"
-  out=$(tasks list --state 'done' --fields body 2>&1) || die "backlog read failed: $(clean "$out")"
-  known="$known
-$out"
   printf '%s\n' "$status" | while IFS= read -r line; do
     id=${line%% *}
     case "$id" in *[!0-9a-f-]* | '') continue ;; esac
     state=$(printf '%s' "$line" | awk '{ print $2 }')
-    kind=$(printf '%s' "$line" | sed -n 's/.* kind=\([a-z]*\).*/\1/p')
+    kind=$(printf '%s' "${line%% :: *}" | sed -n 's/.* kind=\([a-z]*\).*/\1/p')
     [ "$kind" = order ] || continue
     printf '%s\n' "$known" | grep -qF -- "$id" && continue
     summary=${line#* :: }
