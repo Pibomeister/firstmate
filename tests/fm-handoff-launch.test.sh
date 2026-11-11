@@ -44,7 +44,8 @@ if [ "${FM_HANDOFF_LAB_MODE:-}" = error-exit ] && [ "${1:-}" = 0.2 ] \
 if [ "${FM_HANDOFF_LAB_MODE:-}" = interrupt-after-ack ] && [ "${1:-}" = 0.2 ] && [ ! -e "$FM_HOME/state/polling" ] \
   && [ "$PPID" = "$(cat "$FM_HOME/launcher.pid" 2>/dev/null)" ]; then
   touch "$FM_HOME/state/polling"
-  end=$((SECONDS + 120))
+  # Wait past the attempt's claim deadline, half the total budget.
+  end=$((SECONDS + FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS / 2 + 10))
   while [ "$(cat "$FM_HOME/state/.lock")" = "$(cat "$FM_HOME/pred.pid")" ] \
     && [ "$SECONDS" -lt "$end" ]; do "$FM_HANDOFF_REAL_SLEEP" 0.1; done
   kill -TERM "$PPID"
@@ -218,6 +219,8 @@ run_case() {
   printf '%s\n' "${2:-orca}" > "$LAB/config/backend"
   printf '# Quoting-hostile handoff\nRead this document.\n' > "$LAB/data/handoff ) '.md"
   budget=$LAB_FAIL_BUDGET
+  # interrupt-after-ack also ends at its ack, so it needs the success budget.
+  [ "$mode" != interrupt-after-ack ] || budget=$LAB_SUCCESS_BUDGET
   if [ "$mode" = success ]; then
     budget=$LAB_SUCCESS_BUDGET
     printf 'compact-at-tokens=100000\n' > "$LAB/config/handoff-trigger"
