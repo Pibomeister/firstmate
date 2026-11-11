@@ -1,0 +1,6 @@
+1..3
+ok - landed worktree caches and browser profiles are pruned before removal
+ok - a cache beside real untracked work keeps the worktree and the cache
+ok - unlanded work keeps its caches
+FM_TEST_COMPLETE
+exit=0

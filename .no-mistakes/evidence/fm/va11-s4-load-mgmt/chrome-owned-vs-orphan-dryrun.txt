@@ -1,0 +1,4 @@
+### Chrome root 28800 launched by a live Playwright-style node driver, cwd /tmp/fm-chrome-owned.Gs6OJN, --browser-min-age 0
+keep	browser	live-ancestor	28800	/private/tmp/fm-chrome-owned.Gs6OJN	/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --user-data-dir=/tmp/fm-chrome-owned.Gs6OJN/prof --remote-debugging-port=0 --no-firs
+reap	browser	owner-gone	74095	/private/tmp/fm-chrome-orphan.5atJin	/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --user-data-dir=/tmp/fm-chrome-orphan.5atJin/prof --remote-debugging-port=0 --no-fir
+summary: mode=dry-run terminals=78 reap=0 keep=78 browsers=10 reap=9 keep=1

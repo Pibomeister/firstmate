@@ -1,0 +1,3 @@
+ok - Orca selector_not_found with an absent recorded path completes teardown record cleanup
+ok - Orca teardown closes the task's terminals on every environment and reports the count
+ok - Orca teardown refuses and keeps the worktree when a swept terminal will not close

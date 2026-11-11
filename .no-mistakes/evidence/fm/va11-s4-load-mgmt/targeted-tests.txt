@@ -1,0 +1,4 @@
+### fm-backend-orca: test_close_worktree_terminals_counts_across_environments test_close_worktree_terminals_refuses_a_failed_close
+(targeted test job stopped before completion: host load ~280)
+## rerun Wed Nov 11 14:41:21 CST 2026
+### fm-teardown: test_orca_teardown_sweeps_task_terminals_on_every_environment test_orca_teardown_refuses_when_a_swept_terminal_will_not_close

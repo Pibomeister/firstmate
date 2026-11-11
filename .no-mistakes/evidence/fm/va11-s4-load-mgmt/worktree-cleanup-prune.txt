@@ -1,0 +1,41 @@
+## A: landed worktree with caches + a stray untracked file
+$ fm-worktree-cleanup.sh --dry-run /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.knwrJR/projects/fm-clone
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.knwrJR/projects/fm-clone main checkout
+worktree-cleanup: report /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.knwrJR/wt-landed untracked files
+exit=0
+$ fm-worktree-cleanup.sh /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.knwrJR/projects/fm-clone
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.knwrJR/projects/fm-clone main checkout
+worktree-cleanup: report /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.knwrJR/wt-landed untracked files
+exit=0
+.cache
+node_modules
+notes.txt
+playwright_chromiumdev_profile-abc
+
+## B: stray file removed; only caches/profiles remain
+$ fm-worktree-cleanup.sh --dry-run /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.knwrJR/projects/fm-clone
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.knwrJR/projects/fm-clone main checkout
+worktree-cleanup: dry-run prune caches /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.knwrJR/wt-landed: .cache node_modules/.cache playwright_chromiumdev_profile-abc
+worktree-cleanup: dry-run /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.knwrJR/wt-landed pull request MERGED https://github.com/Pibomeister/firstmate/pull/222
+exit=0
+after dry run, caches still present:
+.cache
+node_modules
+playwright_chromiumdev_profile-abc
+$ fm-worktree-cleanup.sh /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.knwrJR/projects/fm-clone
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.knwrJR/projects/fm-clone main checkout
+worktree-cleanup: prune caches /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.knwrJR/wt-landed: .cache node_modules/.cache playwright_chromiumdev_profile-abc
+worktree-cleanup: remove /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.knwrJR/wt-landed pull request MERGED https://github.com/Pibomeister/firstmate/pull/222
+exit=0
+worktree dir exists? no
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.knwrJR/projects/fm-clone  92dda2b8 [main]
+disk alarm now: disk-alarm: level=ok free_kib=113934448 volume=/System/Volumes/Data
+## C: disk alarm on a 20 MB scratch volume (FM_TEST_SEAM volume override)
+$ fm-disk-alarm.sh -> disk-alarm: level=stop free_kib=19964 volume=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.knwrJR/mnt
+$ fm-worktree-cleanup.sh (scan, low disk)
+worktree-cleanup: disk-alarm: level=stop free_kib=19964 volume=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.knwrJR/mnt
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.knwrJR/projects/fm-clone main checkout
+exit=0
+$ fm-worktree-cleanup.sh (scan, real volume level=ok)
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.knwrJR/projects/fm-clone main checkout
+exit=0

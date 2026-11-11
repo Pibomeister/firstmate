@@ -1,0 +1,7 @@
+## host disk ok (real df):
+rc=0
+## df reports 8 GiB free:
+worktree-cleanup: disk-alarm: level=pause free_kib=8388608 volume=/System/Volumes/Data
+rc=0
+## log file:
+worktree-cleanup: disk-alarm: level=pause free_kib=8388608 volume=/System/Volumes/Data

@@ -1,0 +1,4 @@
+### live sweep against the real local Orca + paired 'Abaco Hetzner' environment, worktree path with no terminals: /tmp/fm-sweep-empty.ISqi
+closed=0 environments=5
+exit=2
+Note: 5 = local + 4 paired (Abaco Hetzner, GrokBot, M3 Max MBP, Mac Studio). GrokBot's terminal list fails (exit 1, unreachable), so the sweep returns exit 2 = count is a floor, as its contract states. Nothing was closed.

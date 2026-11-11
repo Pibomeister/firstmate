@@ -1,0 +1,6 @@
+1..2
+ok - fm-terminal-reap: browsers keep a young age, a live worker owner, and a captain-browser owner
+ok - fm-terminal-reap: browsers are stopped only when nothing else works in their directory
+FM_TEST_COMPLETE
+tests/.vsel-fm-terminal-reap.test.sh: line 27: 40894 Killed: 9               ( exec -a "$1" bash "$spawner" "$2" "$pidfile" ) > /dev/null 2>&1 < /dev/null
+exit=0

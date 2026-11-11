@@ -1,0 +1,12 @@
+## Live Orca sweep against the real local Orca + its saved paired environment(s), for a directory with no terminals (read-only: lists only, nothing to close)
+orca environment list ids: 75e0730e-8a5c-4d9f-b9ef-800ae8a5d84c (Abaco Hetzner), 0dc2e463-a306-4b72-9362-07d21baadbee (GrokBot), dfd0c0d1-57e0-4f3f-833b-2eca5f4c0e22 (M3 Max MBP), 54eb5af4-596f-41e0-8eb0-23156723f948 (Mac Studio)
+$ fm_backend_orca_close_worktree_terminals /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-chrome-x.YV5LCC/no-terminals-wt
+closed=0 environments=5
+exit=2
+
+per-environment terminal list readability:
+local: exit=0
+75e0730e-8a5c-4d9f-b9ef-800ae8a5d84c: exit=0
+0dc2e463-a306-4b72-9362-07d21baadbee: exit=1
+dfd0c0d1-57e0-4f3f-833b-2eca5f4c0e22: exit=0
+54eb5af4-596f-41e0-8eb0-23156723f948: exit=0

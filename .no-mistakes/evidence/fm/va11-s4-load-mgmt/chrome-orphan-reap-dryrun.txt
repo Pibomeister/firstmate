@@ -1,0 +1,10 @@
+### dry run --browser-min-age 0 (orphan Chrome root pid 74095, cwd /tmp/fm-chrome-orphan.5atJin)
+keep	browser	owner-live	74095	/private/tmp/fm-chrome-orphan.5atJin	/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --user-data-dir=/tmp/fm-chrome-orphan.5atJin/prof --remote-debugging-port=0 --no-fir
+summary: mode=dry-run terminals=80 reap=0 keep=80 browsers=9 reap=8 keep=1
+exit=0
+### dry run default browser age floor (3600s)
+keep	browser	young	74095	/private/tmp/fm-chrome-orphan.5atJin	/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --user-data-dir=/tmp/fm-chrome-orphan.5atJin/prof --remote-debugging-port=0 --no-fir
+summary: mode=dry-run terminals=80 reap=0 keep=80 browsers=9 reap=8 keep=1
+### re-run after Chrome finished starting (age >3 min): consistent verdict
+reap	browser	owner-gone	74095	/private/tmp/fm-chrome-orphan.5atJin	/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --user-data-dir=/tmp/fm-chrome-orphan.5atJin/prof --remote-debugging-port=0 --no-fir
+summary: mode=dry-run terminals=78 reap=0 keep=78 browsers=10 reap=9 keep=1

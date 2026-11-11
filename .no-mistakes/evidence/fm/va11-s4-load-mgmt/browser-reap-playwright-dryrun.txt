@@ -1,0 +1,30 @@
+playwright headless shell orphan pid=75412 cwd=/tmp/fm-browser-cwd.FJbrLJ/pw
+## --browser-min-age 0 dry run
+keep	browser	owner-live	1713	/private/tmp/fm-browser-cwd.FJbrLJ/orphan	/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --user-data-dir=/tmp/fm-browser-cwd.FJbrLJ/orphan/profile --no-first-run about:blank
+keep	browser	live-ancestor	1994	/private/tmp/fm-browser-cwd.FJbrLJ/owned	/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --user-data-dir=/tmp/fm-browser-cwd.FJbrLJ/owned/profile --no-first-run about:blank
+reap	browser	owner-gone	8872	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+reap	browser	owner-gone	17840	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+reap	browser	owner-gone	20361	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+reap	browser	owner-gone	46650	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+reap	browser	owner-gone	59418	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+reap	browser	owner-gone	71800	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+reap	browser	owner-gone	75412	/private/tmp/fm-browser-cwd.FJbrLJ/pw	/Users/eduardopicazo/Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell --user-data-dir=/tmp/fm-bro
+reap	browser	owner-gone	79459	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+reap	browser	owner-gone	84189	/Users/eduardopicazo/.no-mistakes/worktrees/d4cb77c98cd3/01M75Q3E5GTWHEA93XDX762KNN	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+summary: mode=dry-run terminals=0 reap=0 keep=0 browsers=11 reap=9 keep=2
+rc=0
+## default floor dry run
+keep	browser	young	1713	/private/tmp/fm-browser-cwd.FJbrLJ/orphan	/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --user-data-dir=/tmp/fm-browser-cwd.FJbrLJ/orphan/profile --no-first-run about:blank
+keep	browser	live-ancestor	1994	/private/tmp/fm-browser-cwd.FJbrLJ/owned	/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --user-data-dir=/tmp/fm-browser-cwd.FJbrLJ/owned/profile --no-first-run about:blank
+reap	browser	owner-gone	8872	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+reap	browser	owner-gone	17840	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+reap	browser	owner-gone	20361	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+reap	browser	owner-gone	46650	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+reap	browser	owner-gone	59418	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+reap	browser	owner-gone	71800	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+keep	browser	young	74447	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M74SX62JZ4YN7B9WBQPGCPPE	/Applications/Google Chrome.app/Contents/MacOS/Google Chrome about:blank --allow-pre-commit-input --disable-background-networking --enable-features=NetworkServi
+keep	browser	young	75412	/private/tmp/fm-browser-cwd.FJbrLJ/pw	/Users/eduardopicazo/Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-arm64/chrome-headless-shell --user-data-dir=/tmp/fm-bro
+reap	browser	owner-gone	79459	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+reap	browser	owner-gone	84189	/Users/eduardopicazo/.no-mistakes/worktrees/d4cb77c98cd3/01M75Q3E5GTWHEA93XDX762KNN	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+summary: mode=dry-run terminals=0 reap=0 keep=0 browsers=12 reap=8 keep=4
+rc=0
