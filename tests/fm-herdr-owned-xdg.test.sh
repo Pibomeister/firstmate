@@ -435,6 +435,37 @@ SH
   pass "fm-herdr-lab fixture: start fails fast when the forked pid has no start time and writes no usable record"
 }
 
+test_start_reaps_when_session_list_hangs() {
+  local root fakebin leader child status=0
+  root=$(herdr_fixture_create) || fail "create failed"
+  remember_owned "$root"
+  fakebin=$(fm_fakebin "$(fm_test_tmproot fm-herdr-owned-xdg-list-hang)/bin")
+  cat > "$fakebin/herdr" <<SH
+#!/usr/bin/env bash
+if [ "\$1" = session ]; then
+  exec sleep 98771
+fi
+if [ "\$1" = server ]; then
+  sleep 98772 &
+  printf '%s\\n' "\$!" > $(printf '%q' "$root/child.pid")
+  printf '%s\\n' "\$\$" > $(printf '%q' "$root/leader.pid")
+  exec sleep 98773
+fi
+exit 90
+SH
+  chmod +x "$fakebin/herdr"
+  PATH="$fakebin:$PATH" "$LAB" fixture start "$root" >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "start must fail when session list never returns"
+  [ -s "$root/leader.pid" ] || fail "the forked herdr did not record its pid"
+  [ -s "$root/child.pid" ] || fail "the forked herdr did not record its process-group child"
+  leader=$(cat "$root/leader.pid")
+  child=$(cat "$root/child.pid")
+  wait_until_gone "$leader" "start left the forked leader pid $leader running after session list hung"
+  wait_until_gone "$child" "start left process-group child $child running after session list hung"
+  herdr_fixture_cleanup "$root" || fail "cleanup after a hung session list failed"
+  pass "fm-herdr-lab fixture: start reaps the forked pid when session list never returns"
+}
+
 test_reap_started_skips_a_pid_whose_start_time_no_longer_matches() {
   local root decoy
   root=$(herdr_fixture_create) || fail "create failed"
@@ -463,4 +494,5 @@ test_second_start_on_a_started_fixture_is_idempotent
 test_start_failure_signals_the_forked_process_group
 test_start_write_record_failure_signals_the_forked_process
 test_start_fails_fast_when_the_forked_pid_has_no_start_time
+test_start_reaps_when_session_list_hangs
 test_reap_started_skips_a_pid_whose_start_time_no_longer_matches

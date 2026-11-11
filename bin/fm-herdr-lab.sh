@@ -735,7 +735,27 @@ fm_herdr_lab_fixture_apply_vars() { # <root>
 }
 
 fm_herdr_lab_fixture_ready() {
-  FM_HERDR_LAB_FLEET_SESSION=default fm_herdr_lab_fleet_state default >/dev/null 2>&1
+  local rc=0
+  # shellcheck source=bin/fm-timeout-lib.sh
+  command -v fm_run_timed_fn >/dev/null 2>&1 || . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-timeout-lib.sh"
+  FM_HERDR_LAB_FLEET_SESSION=default fm_run_timed_fn "$fm_herdr_lab_viewer_timeout_seconds" \
+    fm_herdr_lab_fleet_state default >/dev/null 2>&1 || rc=$?
+  return "$rc"
+}
+
+fm_herdr_lab_fixture_wait_ready() {
+  local i=0 rc=0
+  while [ "$i" -lt 150 ]; do
+    rc=0
+    fm_herdr_lab_fixture_ready || rc=$?
+    [ "$rc" -eq 0 ] && return 0
+    if fm_timed_out "$rc"; then
+      return 1
+    fi
+    sleep 0.2
+    i=$((i + 1))
+  done
+  return 1
 }
 
 fm_herdr_lab_fixture_create() {
@@ -775,12 +795,7 @@ fm_herdr_lab_fixture_start() { # <root>
   command -v jq >/dev/null 2>&1 || { fm_herdr_lab_error "jq is required"; return 1; }
   fm_herdr_lab_fixture_apply_vars "$root" || return 1
   if pid=$(fm_herdr_lab_fixture_prove_pid "$root" 2>/dev/null); then
-    i=0
-    until fm_herdr_lab_fixture_ready || [ "$i" -ge 150 ]; do
-      sleep 0.2
-      i=$((i + 1))
-    done
-    fm_herdr_lab_fixture_ready || {
+    fm_herdr_lab_fixture_wait_ready || {
       fm_herdr_lab_error "owned herdr pid $pid is running but the default session is not ready"
       return 1
     }
@@ -831,12 +846,7 @@ fm_herdr_lab_fixture_start() { # <root>
     fm_herdr_lab_fixture_reap_started "$root" "$pid" "$started"
     return 1
   }
-  i=0
-  until fm_herdr_lab_fixture_ready || [ "$i" -ge 150 ]; do
-    sleep 0.2
-    i=$((i + 1))
-  done
-  if ! fm_herdr_lab_fixture_prove_pid "$root" >/dev/null || ! fm_herdr_lab_fixture_ready; then
+  if ! fm_herdr_lab_fixture_wait_ready || ! fm_herdr_lab_fixture_prove_pid "$root" >/dev/null; then
     fm_herdr_lab_error "test-owned default Herdr session did not become ready"
     fm_herdr_lab_fixture_reap_started "$root" "$pid" "$started"
     return 1
