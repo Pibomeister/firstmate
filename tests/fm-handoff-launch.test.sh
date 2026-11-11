@@ -104,7 +104,7 @@ run_mode() {  # <mode args...> -- run the launcher in another mode, print output
 fake_harness_pid() {
   mkdir -p "$TMP_ROOT/fake-harness"
   ln -sf /bin/bash "$TMP_ROOT/fake-harness/claude"
-  "$TMP_ROOT/fake-harness/claude" -c 'sleep 30; exit 0' </dev/null >/dev/null 2>&1 &
+  "$TMP_ROOT/fake-harness/claude" -c 'sleep 600; exit 0' </dev/null >/dev/null 2>&1 &
   printf '%s\n' "$!"
 }
 
