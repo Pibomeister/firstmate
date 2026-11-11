@@ -490,8 +490,9 @@
 #   command instead.
 # Launch environment (config/launch-env-allowlist):
 #   Absent keeps ambient inheritance but unsets inherited home- and task-scoped
-#   FM_* values (bin/fm-env-scrub.sh) in the pane shell before re-establishing
-#   this launch's own values. A present readable regular file opts every
+#   FM_* values and the agent-kit lifecycle pair (bin/fm-env-scrub.sh) in the
+#   pane shell before re-establishing this launch's own values. A present
+#   readable regular file opts every
 #   supported command-line launch (ship, scout, secondmate, raw command, and
 #   relaunch) into /usr/bin/env -i followed by /bin/sh -c of the existing launch
 #   command. T3 Code refuses the file because T3 owns the provider process
@@ -638,8 +639,14 @@
 #                  turn-end signal rides the launch command, e.g. codex -c notify=[...])
 #     __CODEXLAUNCH__ quoted path to bin/fm-codex-launch.sh, the codex
 #                  launcher that adds the shell-environment overrides for
-#                  the endpoint and inbox variables its own environment
-#                  carries before exec'ing codex with the remaining args
+#                  the endpoint, inbox and agent-kit lifecycle variables
+#                  (AK_LIFECYCLE_POLICY, AK_LIFECYCLE_SUPERVISOR) its own
+#                  environment carries before exec'ing codex with the
+#                  remaining args; the FM_CODEX_BIN= assignment before it
+#                  pins the executable, empty on every Codex template and
+#                  bare raw Codex launch and the literal path on a raw
+#                  /path/to/codex launch, so an inherited FM_CODEX_BIN
+#                  cannot redirect the launcher
 #     __PIEXT__    absolute path to state/<task-id>.pi-ext.ts (pi busy-state extension,
 #                  written by this script; outside the worktree to avoid pi's trust gate;
 #                  a secondmate loads it beside its two primary extensions)

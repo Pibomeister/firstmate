@@ -1822,7 +1822,7 @@ The flag is read only for ship and scout spawns, secondmate charters never take 
 
 The optional local, gitignored `config/launch-env-allowlist` limits the ambient environment passed to newly launched workers, scouts, and secondmates, including relaunches.
 T3 Code starts the provider from the server's environment and cannot apply this command boundary, so `backend=t3code` refuses when the file exists; [`t3code-backend.md`](t3code-backend.md#active-limits) owns that backend limit.
-With no file, the pane shell unsets inherited home- and task-scoped variables (`FM_HOME`, `FM_TASK_ID`, `FM_TASK_INBOX`, `FM_PUBLIC_FOLLOWUP_PRIMARY_HOME`, `FM_SESSION_ENDPOINT_META`, `FM_LEASE_HOLDER_SESSION`, `FM_*_OVERRIDE`, `FM_PROCEVENT_CLAIM_*`, `FM_PROCEVENT_CAPTURE_*`, and `FM_ZELLIJ_SESSION` outside the zellij backend) before assigning the worker's own values; runtime tuning `FM_*` variables and other variables remain subject to the provider, long-lived terminal daemon, and shell initialization.
+With no file, the pane shell unsets inherited home- and task-scoped variables (`FM_HOME`, `FM_TASK_ID`, `FM_TASK_INBOX`, `FM_PUBLIC_FOLLOWUP_PRIMARY_HOME`, `FM_SESSION_ENDPOINT_META`, `FM_LEASE_HOLDER_SESSION`, `FM_*_OVERRIDE`, `FM_PROCEVENT_CLAIM_*`, `FM_PROCEVENT_CAPTURE_*`, and `FM_ZELLIJ_SESSION` outside the zellij backend) and the agent-kit lifecycle pair (`AK_LIFECYCLE_POLICY`, `AK_LIFECYCLE_SUPERVISOR`) before assigning the worker's own values; runtime tuning `FM_*` variables and other variables remain subject to the provider, long-lived terminal daemon, and shell initialization.
 
 Do not assume every worker inherits the invoking Firstmate process's current environment.
 The file is inherited into secondmate homes through the [primary-authoritative configuration contract](../.agents/skills/secondmate-provisioning/SKILL.md).
@@ -1928,6 +1928,7 @@ Known false refusals follow from that rule: a command that is not a Codex launch
 These refusals are accepted so that Firstmate does not parse shell.
 Launch Codex with `--harness codex`, or simplify the raw command, instead.
 This applies only to agents Firstmate launches; the captain's own primary Firstmate session is never given either variable.
+A tmux server that a launched agent starts does not hand either variable to later sessions, because Firstmate removes both from the environment it creates the server with.
 Firstmate provides no configuration file or flag for this, and agent-kit's own unattended-policy checks, such as its refusal to ship onto an unprotected default branch, still apply.
 
 [`fm-spawn.sh --help`](../bin/fm-spawn.sh) owns the delivery mechanics, with focused regression coverage in [`tests/fm-spawn-ak-lifecycle-policy.test.sh`](../tests/fm-spawn-ak-lifecycle-policy.test.sh).

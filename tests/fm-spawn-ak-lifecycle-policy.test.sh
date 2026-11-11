@@ -9,8 +9,10 @@
 # carries contrary values, with the harness binary replaced by a probe. The
 # Codex launch template runs the real bin/fm-codex-launch.sh, so the probe also
 # reports the tool-shell overrides a Codex configured with inherit = "core"
-# would receive. Orca, Tern, Herdr and T3 Code launch paths are covered in their
-# own backend suites; the remote second-mate route in
+# would receive. One case starts a real tmux server on a private socket to show
+# that a server created by a process carrying the pair never publishes it.
+# Orca, Tern, Herdr and T3 Code launch paths are covered in their own backend
+# suites; the remote second-mate route in
 # tests/fm-spawn-compact-adviser-disable-remote.test.sh.
 set -u
 
@@ -477,6 +479,78 @@ test_relaunch_rebuilds_the_values() {
   pass "relaunch rebuilds the unattended policy and Firstmate supervisor in both allowlist postures"
 }
 
+# A tmux server copies its creator's environment into its global environment,
+# which every later session and pane inherits. A process that carries the pair,
+# such as a secondmate outside tmux spawning its first tmux-backed worker, must
+# therefore start the server without it, or an unrelated later session would
+# run under the unattended policy. Drives the real tmux backend against a real
+# server on a private socket inside this suite's temp dir.
+SCRUB_REAL_TMUX=
+SCRUB_TMUX_SOCKET=
+cleanup_scrub_tmux() {
+  [ -z "$SCRUB_TMUX_SOCKET" ] ||
+    env -u TMUX -u TMUX_PANE "$SCRUB_REAL_TMUX" -S "$SCRUB_TMUX_SOCKET" kill-server >/dev/null 2>&1 || true
+}
+trap 'cleanup_scrub_tmux; fm_test_cleanup' EXIT
+
+test_new_tmux_server_never_publishes_the_pair() {
+  local dir shim dump later out status global leaked i
+  SCRUB_REAL_TMUX=$(command -v tmux) || {
+    echo 'ok - skipped: tmux is not installed, so the new-server scrub case cannot run'
+    return 0
+  }
+  dir="$TMP_ROOT/scrub-tmux"
+  shim="$dir/bin"
+  dump="$dir/dump.sh"
+  later="$dir/later-session.env"
+  mkdir -p "$shim"
+  SCRUB_TMUX_SOCKET="$dir/s"
+  cat > "$shim/tmux" <<SH
+#!/bin/sh
+exec "$SCRUB_REAL_TMUX" -f /dev/null -S "$SCRUB_TMUX_SOCKET" "\$@"
+SH
+  chmod +x "$shim/tmux"
+  cat > "$dump" <<SH
+#!/bin/sh
+env > "$later.tmp" && mv "$later.tmp" "$later"
+SH
+  chmod +x "$dump"
+
+  # shellcheck disable=SC2016 # The bash -c script expands its own variables.
+  out=$(env -u TMUX -u TMUX_PANE PATH="$shim:$PATH" SHELL=/bin/sh \
+    AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate AK_SCRUB_CREATOR_MARKER=creator \
+    bash -c '. "$1/bin/fm-backend.sh" && fm_backend_source tmux && fm_backend_tmux_container_ensure &&
+      printf "\ncreator=%s|%s\n" "${AK_LIFECYCLE_POLICY-unset}" "${AK_LIFECYCLE_SUPERVISOR-unset}"' _ "$ROOT" 2>&1)
+  status=$?
+  expect_code 0 "$status" "the tmux backend should create its server: $out"
+  assert_contains "$out" 'creator=unattended|firstmate' \
+    "the process that created the server must still carry the pair, so this case cannot pass vacuously"
+
+  global=$(env -u TMUX -u TMUX_PANE "$SCRUB_REAL_TMUX" -S "$SCRUB_TMUX_SOCKET" show-environment -g 2>&1) \
+    || fail "show-environment -g failed on the new server: $global"
+  printf '%s\n' "$global" | grep -qx 'AK_SCRUB_CREATOR_MARKER=creator' ||
+    fail "the new server must hold its creator's other variables, so the pair's absence is the scrub's doing"
+  leaked=$(printf '%s\n' "$global" | grep -E '^AK_LIFECYCLE_(POLICY|SUPERVISOR)=' || true)
+  [ -z "$leaked" ] || fail "a server created by a pair-carrying process must not publish the pair globally: $leaked"
+
+  env -i PATH="$PATH" HOME="$TMP_ROOT/pane-home" \
+    "$SCRUB_REAL_TMUX" -f /dev/null -S "$SCRUB_TMUX_SOCKET" new-session -d -s unrelated /bin/sh "$dump" \
+    || fail "a later client with neither name could not open a session on the server"
+  i=0
+  while [ ! -f "$later" ] && [ "$i" -lt 100 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ -f "$later" ] || fail "the later session never reported its environment"
+  grep -qx 'AK_SCRUB_CREATOR_MARKER=creator' "$later" ||
+    fail "a later session must inherit the server's global environment, so the check below is meaningful"
+  leaked=$(grep -E '^AK_LIFECYCLE_(POLICY|SUPERVISOR)=' "$later" || true)
+  [ -z "$leaked" ] || fail "an unrelated later session must not inherit the pair from the server: $leaked"
+  cleanup_scrub_tmux
+  SCRUB_TMUX_SOCKET=
+  pass "a tmux server started by a process carrying the pair publishes neither name to later sessions"
+}
+
 test_ship_and_scout_launches
 test_secondmate_launch
 test_launch_command_alone_carries_the_values
@@ -485,3 +559,4 @@ test_raw_compound_launch
 test_raw_codex_launch_uses_the_launcher
 test_raw_non_codex_commands
 test_relaunch_rebuilds_the_values
+test_new_tmux_server_never_publishes_the_pair
