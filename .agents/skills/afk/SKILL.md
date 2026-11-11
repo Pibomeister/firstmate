@@ -1,7 +1,7 @@
 ---
 name: afk
 description: >-
-  Enter the away posture when the captain invokes /afk, says they are going afk, `state/.afk-contract` or `state/.afk` exists, an incoming message starts with `FM_INJECT_MARK`, or any `state/.subsuper-*` marker is involved.
+  Enter the away posture when the captain invokes /afk, says they are going afk, a `check: auto-away` wake arrives, `state/.afk-contract` or `state/.afk` exists, an incoming message starts with `FM_INJECT_MARK`, or any `state/.subsuper-*` marker is involved.
   Load it at once in the /afk turn, before any other work, and on the first unmarked message while away to render the return brief.
 user-invocable: true
 metadata:
@@ -13,10 +13,21 @@ metadata:
 Away mode is a POSTURE of the one supervision session, not a second architecture.
 Being away changes exactly two things: how the captain is informed, and what happens at a captain-owned decision point (hold for return, or the answer the captain's away words already gave).
 It never changes the authority set.
-The posture is a file, `state/.afk-contract`, written only by `bin/fm-afk-contract.sh` in the same turn as `/afk`; nothing infers the posture from chat.
+The posture is a file, `state/.afk-contract`, written only by `bin/fm-afk-contract.sh` during explicit or automatic entry; nothing infers the posture from chat.
 A record carrying quiet mode (`bin/fm-afk-contract.sh mode`) is not this posture: the captain is present, so none of this skill's holds for a return apply to it (the `quiet` skill owns it).
 Typing `/afk` is itself the go: the captain may not look at the screen again, so entry never waits for a further human response, and no read-back gates it or asks for a go.
 Hold-for-return is the default and the only reach profile this release records: there is no phone channel, and the entry announcement says so aloud every time.
+
+## Automatic entry
+
+`bin/fm-auto-away.sh` owns the scheduled trigger and its activity stamp; [configuration](../../../docs/configuration.md#automatic-away-mode-configauto-away) owns the defaults and settings.
+On a `check: auto-away` wake, run the exact `bin/fm-auto-away.sh enter <activity>` command it carries.
+This guarded command rechecks the trigger and writes the same record as plain `/afk`, with no away words or new authority.
+If it prints nothing, the request is obsolete or a posture already exists: acknowledge the wake without announcing or starting another session.
+If it prints the entry announcement, continue at step 2 below, then announce automatic entry once with its trigger and the ordinary reach statement from step 3.
+Do not repeat step 1: the record already stands.
+The wake is internal input, not the captain's return.
+The next genuine captain message takes the normal return path below.
 
 ## Entering: `/afk [words]`
 

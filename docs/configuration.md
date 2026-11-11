@@ -809,6 +809,35 @@ An Orca supervisor terminal has no native busy signal, so the daemon's busy guar
 
 Selecting any other supervisor backend, including `zellij`, `cmux`, or `tern`, refuses at daemon startup instead of trying tmux injection primitives against a non-tmux pane.
 
+## Automatic away mode (`config/auto-away`)
+
+The primary home's locked session start arms `bin/fm-auto-away.sh` on the existing authenticated watcher-check scheduler.
+It requests plain `/afk` at 23:00 in the configured local zone, or after 7200 seconds without a genuine captain message.
+The first scheduled check after a crossing queues entry, including a missed clock crossing on the previous local date.
+No extra timer or daemon is installed; the normal check cadence and primary-turn availability bound entry latency.
+
+`config/auto-away` is an optional, local, gitignored file of `key=value` lines.
+Blank lines and lines beginning with `#` are ignored; malformed settings fail visibly instead of executing configuration as shell code.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `on` | `off` disables automatic entry; the next session start retires its check. |
+| `time` | `23:00` | Local daily trigger in 24-hour `HH:MM`, or `off` to disable this trigger. |
+| `silence-seconds` | `7200` | Silence window in seconds; `0` disables this trigger. |
+| `timezone` | `local` | Host process local zone, or an IANA zone such as `America/Mexico_City`; set this when the host and captain use different zones. |
+
+The emitted supervision instructions require `captain-message` on each genuine captain message on every primary harness.
+This explicit activity boundary avoids treating operational prompts, watcher wakes, output changes, or compactions as human activity.
+It depends on main following those instructions, rather than on a vendor transcript parser.
+First arm seeds an activity baseline; later starts preserve it, and an absent or unreadable activity stamp never proves silence.
+A new message cancels a pending request, and the normal return path records activity before clearing away mode, so the same clock crossing cannot immediately put a returned captain away again.
+An existing away or quiet record, legacy mode flag, or pending return blocks automatic entry.
+Secondmate homes do not arm this feature.
+
+The [`afk` skill](../.agents/skills/afk/SKILL.md#automatic-entry) owns entry completion, the single announcement, and ordinary return behavior.
+The automatic entry carries no away words and grants no new approval authority.
+`bin/fm-auto-away.sh --help` owns the commands; `tests/fm-auto-away.test.sh` exercises the triggers, cancellation, deduplication, timezone, and check binding.
+
 ## Away-mode wedge alarm channels (config/wedge-alarm)
 
 See [`wedge-alarm.md`](wedge-alarm.md) for away and quiet alert behavior, channels, overrides, defaults, failure handling, verification, and a copyable config.

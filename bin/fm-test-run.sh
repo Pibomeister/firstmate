@@ -455,7 +455,7 @@ family_for_basename_var() {
     fm-review-diff.test.sh|fm-teardown.test.sh|fm-x-mode.test.sh)
       REPLY_FAMILY=pr-forge
       ;;
-    fm-afk-contract.test.sh|fm-afk-inject-e2e.test.sh|fm-afk-return.test.sh|\
+    fm-afk-contract.test.sh|fm-afk-inject-e2e.test.sh|fm-afk-return.test.sh|fm-auto-away.test.sh|\
     fm-supervision-host.test.sh|fm-supervision-host-fork.test.sh|fm-supervision-host-drain.test.sh|\
     fm-supervision-host-hook.test.sh|fm-supervision-host-park.test.sh|fm-supervision-host-mirror.test.sh|\
     fm-host-mirror.test.sh)

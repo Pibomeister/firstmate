@@ -23,6 +23,7 @@ install_runner() {  # <case-dir>
   local dir=$1
   mkdir -p "$dir/bin" "$dir/home/state" "$dir/home/data" "$dir/home/config"
   cp "$ROOT/bin/fm-afk-return.sh" "$dir/bin/"
+  cp "$ROOT/bin/fm-auto-away.sh" "$dir/bin/"
   cp "$ROOT/bin/fm-wake-lib.sh" "$dir/bin/"
   cp "$ROOT/bin/fm-bash-compat-lib.sh" "$dir/bin/"
   cp "$ROOT/bin/fm-lock-lib.sh" "$dir/bin/"
@@ -134,6 +135,7 @@ test_return_gate_owns_remediation_and_reports_catchup_to_bearings() {
   [ "$rc" -eq 3 ] || fail "return begin should gate on a live blocker (rc=$rc): $out"
   gate="$dir/home/state/.afk-return-catchup"
   [ -s "$gate" ] || fail "return begin did not persist its fail-closed catch-up gate"
+  assert_present "$dir/home/state/.captain-message-epoch" "ordinary return did not reset automatic-away activity"
   assert_contains "$out" 'firstmate-actionable blocker: repair-task [key=synthetic-dependency]' "return output did not assign blocker remediation to Firstmate"
   grep -F $'evidence\twake\t1784074271' "$gate" >/dev/null || fail "drained wake evidence was not retained in the durable gate"
   grep -F $'evidence\twake\twake annotation: latest wake-EVENT observed at drain, not current state: repair-task.status: blocked synthetic dependency' "$gate" >/dev/null \

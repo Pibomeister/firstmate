@@ -911,6 +911,7 @@ EOF
 
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
 
+  assert_present "$home/state/auto-away.check-trust" "locked startup did not register automatic away checks"
   jq -e --arg home "$home" '
     .schema == "fm-secondmate-home-summary.v1"
     and .home == $home
@@ -1490,6 +1491,7 @@ EOF
   wait "$holder_pid" 2>/dev/null || true
 
   expect_code 0 "$status" "fm-session-start.sh must exit 0 even on a lock refusal"
+  assert_absent "$home/state/auto-away.check.sh" "lock-refused startup armed automatic away checks"
   assert_contains "$out" "READ-ONLY SESSION" "read-only banner missing on lock refusal"
   assert_contains "$out" "another live firstmate session holds the lock" "read-only banner did not surface fm-lock.sh's own error text"
   assert_contains "$out" "Skipping every mutating step" "read-only banner did not explain what was skipped"

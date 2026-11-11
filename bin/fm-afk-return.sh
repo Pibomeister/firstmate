@@ -1006,6 +1006,11 @@ main() {
   . "$SCRIPT_DIR/fm-pr-lib.sh"
 
   mkdir -p "$STATE" || return 1
+  # The ordinary return is genuine captain activity. Record it before lifting
+  # the posture so the scheduler cannot immediately re-enter on the old stamp.
+  if [ "$mode" = begin ]; then
+    "$SCRIPT_DIR/fm-auto-away.sh" captain-message || return 1
+  fi
   fm_lock_acquire_wait "$LOCK"
   trap 'fm_lock_release "$LOCK"' EXIT
   if [ ! -e "$GATE" ] \
