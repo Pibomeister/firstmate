@@ -1,0 +1,15 @@
+Case: tests/fm-backend-t3code.test.sh test_spawn_leases_slot_creates_thread_and_starts_launch_turn (FM_TEST_ONLY), env key-list equality
+
+HEAD dadcbb81
+  expected: AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR COMPACT_ADVISER_DISABLE FM_T3CODE_ENV_KEYS FM_TASK_ID FM_TASK_INBOX GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GOTMPDIR
+  actual:   AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR COMPACT_ADVISER_DISABLE FM_HOME FM_T3CODE_ENV_KEYS FM_TASK_ID FM_TASK_INBOX GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GOTMPDIR
+  diff:     +FM_HOME
+  result:   not ok
+
+BASE 099c5c29 (merge base with origin/main)
+  expected: COMPACT_ADVISER_DISABLE FM_T3CODE_ENV_KEYS FM_TASK_ID FM_TASK_INBOX GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GOTMPDIR
+  actual:   COMPACT_ADVISER_DISABLE FM_HOME FM_T3CODE_ENV_KEYS FM_TASK_ID FM_TASK_INBOX GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GOTMPDIR
+  diff:     +FM_HOME
+  result:   not ok
+
+Conclusion: identical pre-existing failure (extra FM_HOME key, not introduced by this branch; branch diff of bin/fm-spawn.sh has no FM_HOME change). The branch's only delta is the AK pair, present on both sides. Per recorded decision: no change.

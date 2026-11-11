@@ -1,0 +1,2 @@
+not ok - a worker env block carries the task inbox and Git hook with the launch environment
+HEAD_EXIT=1

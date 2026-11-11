@@ -1,0 +1,15 @@
+== fm-spawn-ak-lifecycle-policy
+ok - inherited empty or contrary values never replace the unattended policy and Firstmate supervisor
+ok - a compound raw launch carries the unattended policy and Firstmate supervisor
+ok - only the safe raw Codex form runs through the Codex launcher, and every other raw Codex form refuses
+ok - a raw non-Codex command that names codex refuses, and one that never names it spawns
+ok - relaunch rebuilds the unattended policy and Firstmate supervisor in both allowlist postures
+exit=
+== fm-backend-t3code
+ok - fm_busy_classify: t3code native busy, idle, and unknown are trusted without a record
+ok - fm-control-lib: t3code key set, state-verified, no-exit, and no-replacement membership
+ok - fm-control.sh backend=t3code: exit refuses before any call (V2 has no session stop); interrupt ends the turn natively
+ok - fm-control.sh relaunch backend=t3code: refused before anything is stopped, by the control plane and by the launch owner
+not ok - a worker env block carries the task inbox and Git hook with the launch environment
+exit=
+== fm-spawn-compact-adviser-disable-remote

@@ -1,0 +1,33 @@
+## baseline: agent-kit 0.1.96 ak-gate.mjs unattended check in the lab primary env (AK_LIFECYCLE_POLICY=attended, AK_LIFECYCLE_SUPERVISOR=human)
+BASE super-align
+ak lifecycle unattended check: AK_LIFECYCLE_POLICY accepts only 'unattended', not 'attended'
+BASE_EXIT=2
+BASE super-ship
+ak lifecycle unattended check: AK_LIFECYCLE_POLICY accepts only 'unattended', not 'attended'
+BASE_EXIT=2
+
+## same check run by a worker that bin/fm-spawn.sh launched from that primary
+cwd=/private/tmp/fm-lab.CW3q9Y/projects/demo/.treehouse/demo-f8cb09/3/demo
+AK_LIFECYCLE_POLICY=unattended
+AK_LIFECYCLE_SUPERVISOR=firstmate
+== ak-gate unattended check --phase super-align
+{
+  "policy": "unattended",
+  "source": "environment",
+  "phase": "super-align"
+}
+exit=0
+== ak-gate unattended check --phase super-bound
+{
+  "policy": "unattended",
+  "source": "environment",
+  "phase": "super-bound"
+}
+exit=0
+== ak-gate unattended check --phase super-ship
+{
+  "policy": "unattended",
+  "source": "environment",
+  "phase": "super-ship"
+}
+exit=0

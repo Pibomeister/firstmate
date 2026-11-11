@@ -1,0 +1,22 @@
+AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate
+phase=super-align
+{
+  "policy": "unattended",
+  "source": "environment",
+  "phase": "super-align"
+}
+rc=0
+phase=super-bound
+{
+  "policy": "unattended",
+  "source": "environment",
+  "phase": "super-bound"
+}
+rc=0
+phase=super-ship
+{
+  "policy": "unattended",
+  "source": "environment",
+  "phase": "super-ship"
+}
+rc=0

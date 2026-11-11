@@ -1,0 +1,16 @@
+## lab primary pane (contrary ambient values)
+bash-3.2$ echo PRIMARY: $AK_LIFECYCLE_POLICY $AK_LIFECYCLE_SUPERVISOR; bin/fm-spawn.sh ak-live-scout "$FM_HOME/projects/demo" --scout --harness "$FM_HOME/probe.sh" --backend tmux; echo SPAWN_EXIT=$?
+PRIMARY: attended human
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/tmp/fm-lab.CW3q9Y
+error: unknown harness '/private/tmp/fm-lab.CW3q9Y/probe.sh'; pass a raw launch command to use an unverified adapter
+SPAWN_EXIT=1
+bash-3.2$ clear; bin/fm-spawn.sh ak-live-scout "$FM_HOME/projects/demo" --scout --harness "sh $FM_HOME/probe.sh" --backend tmux; echo SPAWN_EXIT=$?
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/tmp/fm-lab.CW3q9Y
+spawned ak-live-scout harness=sh kind=scout window=primary:fm-ak-live-scout worktree=/private/tmp/fm-lab.CW3q9Y/projects/demo/.treehouse/demo-f8cb09/1/demo
+SPAWN_EXIT=0
+bash-3.2$
+
+## worker probe output (env seen by the launched worker)
+pid=13841 cwd=/private/tmp/fm-lab.CW3q9Y/projects/demo/.treehouse/demo-f8cb09/1/demo
+AK_LIFECYCLE_POLICY=unattended
+AK_LIFECYCLE_SUPERVISOR=firstmate

@@ -1,0 +1,14 @@
+## lab primary pane
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/tmp/fm-lab.CW3q9Y
+error: raw command 'env /private/tmp/fm-lab.CW3q9Y/bin/codex exec hi' names codex outside the one raw form bin/fm-codex-launch.sh can take over: plain NAME=value words with no quote, backslash, $ or s
+hell operator, then codex or a literal /path/to/codex as the only word naming codex. Use --harness codex, or simplify the raw command
+SPAWN_EXIT=1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/tmp/fm-lab.CW3q9Y
+spawned ak-codex-path harness=codex kind=scout window=primary:fm-ak-codex-path worktree=/private/tmp/fm-lab.CW3q9Y/projects/demo/.treehouse/demo-f8cb09/2/demo
+SPAWN_EXIT=0
+bash-3.2$
+
+## probe codex at literal path: argv and env received through bin/fm-codex-launch.sh
+argv: -c shell_environment_policy.set.TMUX="/private/tmp/fm-lab.CW3q9Y/tmux/tmux-501/fm-lab,52508,0" -c shell_environment_policy.set.TMUX_PANE="%2" -c shell_environment_policy.set.FM_TASK_INBOX="/private/tmp/fm-lab.CW3q9Y/state/ak-codex-path.inbox" -c shell_environment_policy.set.AK_LIFECYCLE_POLICY="unattended" -c shell_environment_policy.set.AK_LIFECYCLE_SUPERVISOR="firstmate" exec hello-world
+AK_LIFECYCLE_POLICY=unattended
+AK_LIFECYCLE_SUPERVISOR=firstmate
