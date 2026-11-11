@@ -54,8 +54,11 @@
 # this helper created under $(cd /tmp && pwd -P)/hx.XXXXXX. They prove the
 # canonical root and marker token before they act, signal only the recorded
 # herdr pid (TERM, then bounded KILL) whose start time still matches, and
-# never run `herdr server stop`. Inherited HERDR_* identity is cleared on
-# every fixture command. Lab session names still cannot be default.
+# never run `herdr server stop`. When that pid's environment is readable,
+# they also require XDG_CONFIG_HOME to be this fixture's config dir:
+# /proc/<pid>/environ, or Darwin `ps -Eww` as in fm_remote_herdr_process_env.
+# Inherited HERDR_* identity is cleared on every fixture command. Lab session
+# names still cannot be default.
 set -u
 
 fm_herdr_lab_error() {
@@ -644,6 +647,24 @@ fm_herdr_lab_fixture_process_pgid() { # <pid>
   LC_ALL=C ps -p "$1" -o pgid= 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
 }
 
+# Prints NAME=VALUE lines when the pid's environment is readable.
+# Returns 0 even for an empty environment (so a readable /proc file with no
+# XDG_CONFIG_HOME still refuses). Returns 1 when nothing can be read.
+# FM_PROC_ROOT_OVERRIDE points tests at a fake /proc, matching fm-wake-lib.sh.
+fm_herdr_lab_fixture_process_env() { # <pid>
+  local pid=$1 proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc} lines
+  case "$pid" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  if [ -r "$proc_root/$pid/environ" ]; then
+    tr '\0' '\n' < "$proc_root/$pid/environ"
+    return 0
+  fi
+  lines=$(ps -Eww -o command= -p "$pid" 2>/dev/null | tr ' ' '\n' | grep -E '^[A-Za-z_][A-Za-z0-9_]*=' || true)
+  [ -n "$lines" ] || return 1
+  printf '%s\n' "$lines"
+}
+
 fm_herdr_lab_fixture_prove() { # <root>
   local root token recorded_root recorded_token prefix
   root=$(fm_herdr_lab_fixture_canonical "$1") || {
@@ -689,7 +710,7 @@ fm_herdr_lab_fixture_prove() { # <root>
 }
 
 fm_herdr_lab_fixture_prove_pid() { # <root>
-  local root pid recorded_start current_start comm
+  local root pid recorded_start current_start comm env_text
   root=$(fm_herdr_lab_fixture_prove "$1") || return 1
   pid=$(fm_herdr_lab_fixture_record_get "$root" pid)
   case "$pid" in
@@ -716,8 +737,8 @@ fm_herdr_lab_fixture_prove_pid() { # <root>
     fm_herdr_lab_error "refusing pid $pid: start time does not match the ownership record"
     return 1
   }
-  if [ -r "/proc/$pid/environ" ]; then
-    tr '\0' '\n' < "/proc/$pid/environ" | grep -Fx "XDG_CONFIG_HOME=$root/c" >/dev/null || {
+  if env_text=$(fm_herdr_lab_fixture_process_env "$pid"); then
+    printf '%s\n' "$env_text" | grep -Fx "XDG_CONFIG_HOME=$root/c" >/dev/null || {
       fm_herdr_lab_error "refusing pid $pid: it does not carry this fixture's XDG_CONFIG_HOME"
       return 1
     }
