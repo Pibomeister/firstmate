@@ -268,7 +268,43 @@ argv=<hooks>"
   assert_contains "$out" 'cannot carry the launch environment into its tool shells' \
     "the refusal must say why the raw Codex form is unsupported"
   [ ! -s "$LAUNCH_LOG" ] || fail "a refused raw Codex command still launched"
+
+  id='raw-codex-second-a1'
+  rec=$(make_case raw-codex-second codex "$id")
+  read_case "$rec"
+  out=$(run_case_spawn "$id" "$PROJ_DIR" --scout 'codex --disable hooks; codex resume' 2>&1)
+  status=$?
+  expect_code 1 "$status" "a raw command that starts a second Codex after the leading one must refuse: $out"
+  assert_contains "$out" 'cannot carry the launch environment into its tool shells' \
+    "the refusal for a later Codex must say why the raw form is unsupported"
+  [ ! -s "$LAUNCH_LOG" ] || fail "a refused compound raw Codex command still launched"
   pass "raw Codex commands run through the Codex launcher, and a Codex hidden behind another command refuses"
+}
+
+# A raw non-Codex command that only mentions codex as an argument, quoted text
+# or a path segment is not a Codex launch and must spawn.
+test_raw_command_mentioning_codex_spawns() {
+  local form rec id raw out status probe_dir
+  for form in path-segment argument quoted; do
+    id="raw-mention-$form-a1"
+    rec=$(make_case "raw-mention-$form" claude "$id")
+    read_case "$rec"
+    probe_dir="$CASE_DIR/work/codex"
+    mkdir -p "$probe_dir"
+    printf '#!/bin/sh\nexit 0\n' > "$probe_dir/probe"
+    chmod +x "$probe_dir/probe"
+    case "$form" in
+    path-segment) raw="cd $probe_dir && ./probe" ;;
+    argument) raw="$probe_dir/probe --model codex" ;;
+    quoted) raw="$probe_dir/probe \"use codex to review\"" ;;
+    esac
+    out=$(run_case_spawn "$id" "$PROJ_DIR" --scout "$raw" 2>&1)
+    status=$?
+    expect_code 0 "$status" "a raw non-Codex command mentioning codex as $form must spawn: $out"
+    assert_contains "$(cat "$LAUNCH_LOG")" "probe" \
+      "the raw $form command must reach the pane"
+  done
+  pass "a raw non-Codex command that only mentions codex still spawns"
 }
 
 # A raw compound launch: an export statement, not a command-prefix assignment,
@@ -406,4 +442,5 @@ test_launch_command_alone_carries_the_values
 test_inherited_values_never_replace_the_pair
 test_raw_compound_launch
 test_raw_codex_launch_uses_the_launcher
+test_raw_command_mentioning_codex_spawns
 test_relaunch_rebuilds_the_values
