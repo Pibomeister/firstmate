@@ -78,7 +78,8 @@ test_intake_files_one_item_per_ask_and_replays() {
   [ -n "$oid" ] || fail "could not send a test order"
   ledger intake w-1 --project alpha --title "Ship widget" --source "order:$oid" >/dev/null || fail "first ask of the order was refused"
   ledger intake g-1 --project beta --title "Fix gadget" --source "order:$oid" >/dev/null || fail "second ask of the order was refused"
-  tasks show w-1 >/dev/null && tasks show g-1 >/dev/null || fail "one order with two asks did not become two items"
+  tasks show w-1 >/dev/null || fail "one order with two asks did not become two items (w-1)"
+  tasks show g-1 >/dev/null || fail "one order with two asks did not become two items (g-1)"
   out=$(ledger intake w-3 --project alpha --title "Widget follow-up" --source ask:chat --blocked-by w-1 --body "after the widget") \
     || fail "intake with a dependency was refused: $out"
   out=$(tasks show w-3 --full)
@@ -162,13 +163,13 @@ test_depth_reports_short_active_projects() {
     || fail "depth must report only gamma (beta is parked and the unnamed project is never short): $out"
   printf 'exclude=gamma\n' > "$HOME_DIR/config/mission-ledger"
   out=$(ledger depth); rc=$?
-  expect_code 0 "$rc" "depth with the short project excluded"
-  assert_contains "$out" "ready-depth: ok" "depth reports ok"
+  expect_code 3 "$rc" "depth with an unsupported exclude line"
+  assert_contains "$out" "SHORT gamma ready=1" "every active project is checked; no project can be skipped"
   printf 'min-ready=4\nmin-ready=junk\n' > "$HOME_DIR/config/mission-ledger"
   out=$(ledger depth); rc=$?
   expect_code 3 "$rc" "depth with a higher target"
   assert_contains "$out" "SHORT alpha ready=3 min=4" "a configured target applies and an unusable value keeps it"
-  pass "depth reports each active, non-excluded project below the ready target"
+  pass "depth reports every active project below the ready target"
 }
 
 test_scheduled_depth_fires_once_per_slot() {
@@ -190,7 +191,7 @@ test_scheduled_depth_fires_once_per_slot() {
   printf 'at=09:15\n' > "$HOME_DIR/config/mission-ledger"
   rm -f "$HOME_DIR/state/.ready-depth-slot"
   out=$(ledger_at $((SLOT_1700 - 7 * 3600 + 15 * 60)) depth --scheduled)
-  assert_contains "$out" "ready-depth 09:15:" "a configured check time is used"
+  [ -z "$out" ] || fail "the check times are fixed at 17:00 and 23:00, but an at= line moved them: $out"
   printf 'min-ready=0\n' > "$HOME_DIR/config/mission-ledger"
   rm -f "$HOME_DIR/state/.ready-depth-slot"
   out=$(ledger_at $((SLOT_1700 + 60)) depth --scheduled)

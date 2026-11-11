@@ -73,11 +73,10 @@
 # target, so the night always has work:
 #   SHORT <name> ready=<n> min=<m> in_flight=<n> blocked=<n> held=<n>
 # It exits 3 when any project is short; otherwise it prints one
-# `ready-depth: ok` line and exits 0. The project `-` and every excluded
-# project are never short.
+# `ready-depth: ok` line and exits 0. The project `-` is never short.
 # `depth --scheduled` is what the watcher's ready-depth check runs every check
-# sweep. It does nothing until a scheduled time has passed, then evaluates once
-# per scheduled time and prints one line only when a project is short, which the
+# sweep. The scheduled times are fixed at 17:00 and 23:00. It does nothing
+# until a scheduled time has passed, then evaluates once per scheduled time and prints one line only when a project is short, which the
 # watcher queues as a `check:` wake for the supervisor:
 #   ready-depth <HH:MM>: <k> active project(s) below <m> ready: <name>(ready=<n>) ...
 # A scheduled time counts as passed for 6 hours after it; one that passed
@@ -113,8 +112,6 @@
 # ledger" owns the schema). Absent means the defaults.
 #   min-ready=<n>     ready items each active project needs (default 3; 0
 #                     turns the scheduled check off)
-#   at=<HH:MM>[,...]  scheduled check times (default 17:00,23:00)
-#   exclude=<name>    a project the depth check skips (repeatable)
 # Blank lines and lines starting with # are ignored; an unusable value keeps
 # its default.
 #
@@ -172,8 +169,7 @@ clean() { printf '%s' "$1" | tr '\t\r\n' '   '; }
 # --- configuration -----------------------------------------------------------
 
 MIN_READY=3
-SLOTS="17:00,23:00"
-EXCLUDE=" "
+SLOTS="17:00,23:00"  # fixed scheduled check times, captain-local
 
 load_config() {
   local conf="$CONFIG/mission-ledger" line key val
@@ -189,27 +185,8 @@ load_config() {
       min-ready)
         case "$val" in '' | *[!0-9]*) ;; *) MIN_READY=$((10#$val)) ;; esac
         ;;
-      at)
-        valid_slots "$val" && SLOTS=$val
-        ;;
-      exclude)
-        case "$val" in '' | *[!A-Za-z0-9._-]*) ;; *) EXCLUDE="$EXCLUDE$val " ;; esac
-        ;;
     esac
   done < "$conf"
-}
-
-valid_slots() {  # <comma-separated HH:MM list>
-  local s rest=$1
-  [ -n "$rest" ] || return 1
-  while [ -n "$rest" ]; do
-    s=${rest%%,*}
-    case "$rest" in *,*) rest=${rest#*,} ;; *) rest= ;; esac
-    case "$s" in
-      [01][0-9]:[0-5][0-9] | 2[0-3]:[0-5][0-9]) ;;
-      *) return 1 ;;
-    esac
-  done
 }
 
 # --- backlog reads -------------------------------------------------------------
@@ -311,18 +288,12 @@ project_counts() {
   ' | LC_ALL=C sort
 }
 
-is_excluded() {
-  case "$EXCLUDE" in *" $1 "*) return 0 ;; esac
-  return 1
-}
-
-# short_lines: the SHORT lines for every active, non-excluded project below MIN_READY.
+# short_lines: the SHORT lines for every active project below MIN_READY.
 short_lines() {
   local name ready inflight blocked held
   while IFS="$(printf '\t')" read -r name ready inflight blocked held; do
     [ -n "$name" ] || continue
     [ "$name" != - ] || continue
-    is_excluded "$name" && continue
     [ $((ready + inflight + blocked)) -gt 0 ] || continue
     [ "$ready" -lt "$MIN_READY" ] || continue
     printf 'SHORT %s ready=%s min=%s in_flight=%s blocked=%s held=%s\n' \

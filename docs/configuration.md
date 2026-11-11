@@ -874,13 +874,12 @@ The mission ledger is the backlog itself, read as a per-project plan with a read
 At 17:00 and 23:00 in the quiet-hours zone (`config/escalation`), the check sends the supervisor one notification naming every active project with fewer ready items than the target.
 Session start arms the check in a home with a tasks-axi backlog.
 
+The check times are fixed, and the check covers every active project.
 The optional local, gitignored `config/mission-ledger` file holds one `key=value` per line, each optional:
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `min-ready` | `3` | Ready items each active project needs at each check time; `0` turns the scheduled check off. |
-| `at` | `17:00,23:00` | The check times, as comma-separated `HH:MM` wall-clock times in the quiet-hours zone. |
-| `exclude` | none | A project the check never reports; repeat the line for more projects. |
 
 Blank lines and lines that start with `#` are ignored, and an unusable value keeps its default.
 A check time is reported only within 6 hours after it passes, so a watcher that was down overnight does not report a stale morning reading.
