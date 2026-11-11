@@ -1,79 +1,80 @@
-# phaseB-c combined drill transcript (test step round 4) revision=312ea0f000d7aabc6e92a22b52006c27fc1c1c7d date=2026-11-11T06:02:54Z
-# Prior round transcript at 334104b retained as phaseB-c-drill-r3-334104b.txt; HEAD differs from 334104b only in tests/fm-stop-policy-live-e2e.test.sh (hook timeout removed).
-
-=================== live-claude-stop-policy-r4.txt
-# live Claude Stop payload probe (direct, network-bound, not CPU heavy) revision=312ea0f000d7aabc6e92a22b52006c27fc1c1c7d date=2026-11-11T05:56:07Z
+fm-test-queue: ticket 1122, position 3: waiting behind 2 earlier ticket(s)
+fm-test-queue: ticket 1122, position 2: waiting behind 1 earlier ticket(s)
+fm-test-queue: ticket 1122, position 1: all 1 slot(s) busy
+fm-test-queue: ticket 1122 served
+rev=90fa3a8d5c2368768a6a782a7255b5373b7f69d6 start=2026-11-11T09:41:55Z
+=== CMD: env FM_TEST_ONLY=stop-policy-review bash tests/fm-turnend-guard.test.sh  (09:41:55Z load={ 126.62 115.85 108.03 })
+ok - parked homes with inert auto-arm or dead away daemon retain supervision repair
+ok - parked stop is logged only after the failure-episode reset succeeds
+=== EXIT 0 : env FM_TEST_ONLY=stop-policy-review bash tests/fm-turnend-guard.test.sh (09:42:22Z)
+=== CMD: env FM_TEST_ONLY=stop-policy bash tests/fm-claude-stop-autoarm.test.sh  (09:42:22Z load={ 109.82 112.83 107.21 })
+DRILL parked: model stopped in 1 turn; tokenless arm is waiting
+DRILL parked: later real external wake delivered exit=2; queue retained
+STOPHOOK v1 ts=1794390145 session=parked-monitor status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1794390145 session=parked-monitor status=continue turns=1 repeat=0
+ok - parked parked session stops cleanly while monitoring and later wake delivery continue
+DRILL budget: model stopped in 1 turn; tokenless arm is waiting
+DRILL budget: later real external wake delivered exit=2; queue retained
+STOPHOOK v1 ts=1794390159 session=parked-monitor status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1794390159 session=parked-monitor status=hook_budget turns=6 repeat=0
+STOPHOOK v1 ts=1794393760 session=parked-monitor status=continue turns=1 repeat=0
+ok - parked budget session stops cleanly while monitoring and later wake delivery continue
+ok - parked startup failure delivers one notice and its watchdog record without looping
+ok - auto-arm: actionable close translates to exactly one exit-2 rewake with reason
+ok - auto-arm: a deferred host hand-back keeps the host parked and delivers after budget expiry
+=== EXIT 0 : env FM_TEST_ONLY=stop-policy bash tests/fm-claude-stop-autoarm.test.sh (09:43:48Z)
+=== CMD: bash tests/fm-stop-policy.test.sh  (09:43:48Z load={ 90.13 105.50 104.92 })
+DRILL lab_home=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stop-policy.lnX9Q1/home (temporary FM_HOME)
+ok - DRILL all-parked: stopped in 1 turn
+ok - parked shortcut preserves executable orders and mixed work
+ok - stop_hook_active is honored by the ordinary Stop guard
+DRILL repeated reply turn=1 exit=2
+DRILL repeated reply turn=2 exit=2
+DRILL repeated reply turn=3 exit=0
+ok - DRILL constant normalized reply: loop broken by turn 3
+ok - rolling-hour budget permits at most six continuations per session
+ok - budget expires after a rolling hour without affecting other sessions
+ok - a fixed turn_id without a transcript cannot bypass the cap
+ok - parallel Stop entrypoints share one event charge
+ok - three concurrent Stop writers reserve one continuation
+ok - check mode ignores ledger contention and transcript parsing
+ok - tool calls and commits reset the repeat streak
+ok - handoff gate honors stop_hook_active; auto-arm arming is tested separately
+STOPHOOK v1 ts=1794390236 session=parked status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1794390239 session=parked-order status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794390246 session=external status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1794390249 session=mixed status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794390255 session=active status=hook_active turns=0 repeat=0
+STOPHOOK v1 ts=1794390257 session=repeat status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794390260 session=repeat status=continue turns=2 repeat=2
+STOPHOOK v1 ts=1794390264 session=repeat status=hook_loop turns=2 repeat=3
+STOPHOOK v1 ts=1794390266 session=budget status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794390272 session=budget status=continue turns=2 repeat=1
+STOPHOOK v1 ts=1794390279 session=budget status=continue turns=3 repeat=1
+STOPHOOK v1 ts=1794390285 session=budget status=continue turns=4 repeat=1
+STOPHOOK v1 ts=1794390289 session=budget status=continue turns=5 repeat=1
+STOPHOOK v1 ts=1794390294 session=budget status=continue turns=6 repeat=1
+STOPHOOK v1 ts=1794390297 session=budget status=hook_budget turns=6 repeat=1
+STOPHOOK v1 ts=1794393901 session=budget status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794390306 session=no-transcript status=continue turns=1 repeat=0
+STOPHOOK v1 ts=1794390312 session=no-transcript status=continue turns=2 repeat=0
+STOPHOOK v1 ts=1794390323 session=no-transcript status=continue turns=3 repeat=0
+STOPHOOK v1 ts=1794390324 session=no-transcript status=continue turns=4 repeat=0
+STOPHOOK v1 ts=1794390328 session=no-transcript status=continue turns=5 repeat=0
+STOPHOOK v1 ts=1794390332 session=no-transcript status=continue turns=6 repeat=0
+STOPHOOK v1 ts=1794390338 session=no-transcript status=hook_budget turns=6 repeat=0
+STOPHOOK v1 ts=1794390340 session=dedup status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794390349 session=concurrent status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794390362 session=progress status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794390373 session=progress status=continue turns=2 repeat=2
+STOPHOOK v1 ts=1794390375 session=progress status=continue turns=3 repeat=0
+STOPHOOK v1 ts=1794390385 session=progress status=continue turns=4 repeat=0
+=== EXIT 0 : bash tests/fm-stop-policy.test.sh (09:46:32Z)
+=== CMD: env FM_STOP_POLICY_LIVE_E2E=1 bash tests/fm-stop-policy-live-e2e.test.sh  (09:46:32Z load={ 107.34 102.94 103.70 })
 claude version: 2.1.322 (Claude Code)
 ok - 2.1.322 (Claude Code): parked stopped after 1 real Stop payload(s)
-STOPHOOK v1 ts=1794376582 session=c77d94de-b192-4400-a38a-ab89b6b0b825 status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1794390417 session=9fe7ad7d-60f9-48d0-a66f-141ee0f563c6 status=parked turns=0 repeat=0
 ok - 2.1.322 (Claude Code): active stopped after 2 real Stop payload(s)
-STOPHOOK v1 ts=1794376609 session=86914421-611a-45e5-a3e2-d91f0687f023 status=continue turns=1 repeat=0
-## exit=0
-
-=================== live-claude-loop-breaker-r4.txt
-# live Claude loop-breaker drill: real fm-turnend-guard.sh --claude as sole Stop hook, actionable task, no watcher, marked lab home, persisted session transcript
-# revision=312ea0f000d7aabc6e92a22b52006c27fc1c1c7d date=2026-11-11T06:02:27Z load: { 73.78 89.35 88.23 }
-2.1.322 (Claude Code)
-== claude_exit=0 real_stop_payloads=3
-{"stop_hook_active":false,"last_assistant_message":"SHIPSHAPE"}
-{"stop_hook_active":true,"last_assistant_message":"SHIPSHAPE"}
-{"stop_hook_active":true,"last_assistant_message":"SHIPSHAPE"}
-stop active=false guard_rc=2 dur=3s
-stop active=true guard_rc=2 dur=3s
-stop active=true guard_rc=0 dur=3s
--- state/stop-hook.log (watchdog lines)
-STOPHOOK v1 ts=1794376933 session=0dabe902-35fe-402b-ad32-fdcc7cf42723 status=continue turns=1 repeat=1
-STOPHOOK v1 ts=1794376939 session=0dabe902-35fe-402b-ad32-fdcc7cf42723 status=continue turns=2 repeat=2
-STOPHOOK v1 ts=1794376945 session=0dabe902-35fe-402b-ad32-fdcc7cf42723 status=hook_loop turns=2 repeat=3
-
-=================== live-claude-hourly-cap-no-transcript-r4.txt
-# live Claude loop-breaker drill: real fm-turnend-guard.sh --claude as sole Stop hook, actionable task, no watcher, marked lab home
-# revision=312ea0f000d7aabc6e92a22b52006c27fc1c1c7d date=2026-11-11T06:01:23Z load: { 78.81 93.66 89.55 }
-2.1.322 (Claude Code)
-== claude_exit=0 real_stop_payloads=7
-{"stop_hook_active":false,"last_assistant_message":"SHIPSHAPE"}
-{"stop_hook_active":true,"last_assistant_message":"SHIPSHAPE"}
-{"stop_hook_active":true,"last_assistant_message":"SHIPSHAPE"}
-{"stop_hook_active":true,"last_assistant_message":"SHIPSHAPE"}
-{"stop_hook_active":true,"last_assistant_message":"SHIPSHAPE"}
-{"stop_hook_active":true,"last_assistant_message":"SHIPSHAPE"}
-{"stop_hook_active":true,"last_assistant_message":"SHIPSHAPE"}
-stop active=false guard_rc=2 dur=4s
-stop active=true guard_rc=2 dur=6s
-stop active=true guard_rc=2 dur=12s
-stop active=true guard_rc=2 dur=9s
-stop active=true guard_rc=2 dur=3s
-stop active=true guard_rc=2 dur=4s
-stop active=true guard_rc=0 dur=3s
--- state/stop-hook.log (watchdog lines)
-STOPHOOK v1 ts=1794376827 session=d35c82c1-5a70-4172-846f-4ba20b238d5b status=continue turns=1 repeat=0
-STOPHOOK v1 ts=1794376838 session=d35c82c1-5a70-4172-846f-4ba20b238d5b status=continue turns=2 repeat=0
-STOPHOOK v1 ts=1794376848 session=d35c82c1-5a70-4172-846f-4ba20b238d5b status=continue turns=3 repeat=0
-STOPHOOK v1 ts=1794376863 session=d35c82c1-5a70-4172-846f-4ba20b238d5b status=continue turns=4 repeat=0
-STOPHOOK v1 ts=1794376869 session=d35c82c1-5a70-4172-846f-4ba20b238d5b status=continue turns=5 repeat=0
-STOPHOOK v1 ts=1794376874 session=d35c82c1-5a70-4172-846f-4ba20b238d5b status=continue turns=6 repeat=0
-STOPHOOK v1 ts=1794376881 session=d35c82c1-5a70-4172-846f-4ba20b238d5b status=hook_budget turns=6 repeat=0
-
-=================== seed-manifest-consumer-r4.txt
-# seed manifest consumer probe (tracked seed extracted by git archive) revision=312ea0f000d7aabc6e92a22b52006c27fc1c1c7d date=2026-11-11T05:54:40Z
-manifest blob for layout skill: 67e1ef89058e9f58348500edd0d36eadcfd7e5d6
-seeded layout skill blob:      67e1ef89058e9f58348500edd0d36eadcfd7e5d6
-seeded inventory lines naming stop-hook.log: 1
-unchanged seed: exit=1 out='' (expect exit=1, no signal)
-modified seed: exit=0 out='worktree .agents/skills/operational-home-layout/SKILL.md' (expect exit=0 with signal)
-
-=================== receipts-r4.txt
-# phaseB-c test round 4 receipts revision=312ea0f000d7aabc6e92a22b52006c27fc1c1c7d
-fm-test-queue: ticket 1072, position 5: waiting behind 4 earlier ticket(s)
-fm-test-queue: ticket 1072, position 4: waiting behind 3 earlier ticket(s)
-
-=================== final queued receipts (ticket 1072) revision=312ea0f000d7aabc6e92a22b52006c27fc1c1c7d collected=2026-11-11T07:07:58Z
-env FM_TEST_ONLY=stop-policy bash tests/fm-turnend-guard.test.sh          exit=1  (6/7 cases ok, then 'not ok - the auto-arm never committed the attended alarm (alarm-signal)'; aborts remaining cases)
-  remaining 3 cases run separately (guard-subset-remaining-r5.txt)        all ok; exit code not recorded
-  alarm-signal variant isolated at HEAD and base 099c5c29 (alarm-signal-flake-r5.txt): fails at both under load 75-117
-env FM_TEST_ONLY=stop-policy bash tests/fm-claude-stop-autoarm.test.sh    exit=0
-env FM_STOP_POLICY_LIVE_E2E=1 bash tests/fm-stop-policy-live-e2e.test.sh  exit=0  (real Claude 2.1.322: parked stops in 1 payload; active stops after 2)
-bash tests/fm-stop-policy.test.sh                                          exit=0  (DRILL all-parked 1 turn; constant reply broken at turn 3; cap 6/h)
-live loop-breaker drill (live-claude-loop-breaker-r4.txt)                 3 real Stop payloads, hook_loop at turn 3
-seed manifest consumer (seed-manifest-consumer-r4.txt)                     unchanged seed accepted, modification flagged
-queue at collection: slots=1 load1=192 ceiling=150 waiting=5; no new ticket submitted
+STOPHOOK v1 ts=1794390445 session=2e6c64e7-d0ab-449f-b820-99d881adbc5e status=continue turns=1 repeat=0
+=== EXIT 0 : env FM_STOP_POLICY_LIVE_E2E=1 bash tests/fm-stop-policy-live-e2e.test.sh (09:47:36Z)
+queue-exit=0
