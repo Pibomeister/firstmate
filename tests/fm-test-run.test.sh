@@ -2118,6 +2118,7 @@ test_bash32_reexecs_to_bash5_candidate() {
   local real_bash5='' candidate
   for candidate in "$BASH" /opt/homebrew/bin/bash /usr/local/bin/bash; do
     [ -x "$candidate" ] || continue
+    # shellcheck disable=SC2016  # the candidate shell must expand BASH_VERSINFO
     if "$candidate" -c '[ "${BASH_VERSINFO[0]:-0}" -ge 5 ]' 2>/dev/null; then
       real_bash5=$candidate
       break
