@@ -1,0 +1,13 @@
+fm-test-queue: ticket 1151, position 5: waiting behind 4 earlier ticket(s)
+fm-test-queue: ticket 1151, position 4: waiting behind 3 earlier ticket(s)
+fm-test-queue: ticket 1151, position 3: waiting behind 2 earlier ticket(s)
+fm-test-queue: ticket 1151, position 2: waiting behind 1 earlier ticket(s)
+fm-test-queue: ticket 1151 served
+not ok - Codex credentialed checkpoint turn failed: Reading additional input from stdin...
+{"type":"thread.started","thread_id":"01a1ca72-b272-7de3-a8c6-58978d3df6fe"}
+{"type":"item.completed","item":{"id":"item_0","type":"error","message":"Codex is ignoring 1 unrecognized configuration setting. Check for typos or deprecated settings.\n  user (/Users/eduardopicazo/.codex/config.toml): `features.child_agents_md` is ignored."}}
+{"type":"item.completed","item":{"id":"item_1","type":"error","message":"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."}}
+{"type":"item.completed","item":{"id":"item_2","type":"error","message":"Codex is ignoring 1 unrecognized configuration setting. Check for typos or deprecated settings.\n  user (/Users/eduardopicazo/.codex/config.toml): `features.child_agents_md` is ignored."}}
+{"type":"item.completed","item":{"id":"item_3","type":"error","message":"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."}}
+{"type":"turn.started"}
+exit=1

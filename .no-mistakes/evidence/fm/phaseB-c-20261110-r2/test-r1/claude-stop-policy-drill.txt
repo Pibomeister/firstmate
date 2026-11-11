@@ -1,0 +1,8 @@
+HEAD 0eaa8e070203d56465951e1b90776bf309d37f90
+COMMAND env FM_STOP_POLICY_LIVE_E2E=1 bash tests/fm-stop-policy-live-e2e.test.sh
+claude version: 2.1.322 (Claude Code)
+ok - 2.1.322 (Claude Code): parked stopped after 1 real Stop payload(s)
+STOPHOOK v1 ts=1794398835 session=ea583eda-9339-4ca8-a189-509822e79c3f status=parked turns=0 repeat=0
+ok - 2.1.322 (Claude Code): active stopped after 2 real Stop payload(s)
+STOPHOOK v1 ts=1794398856 session=afd011a5-755b-4801-a218-b0b9e94b3f0e status=continue turns=1 repeat=0
+EXIT 0

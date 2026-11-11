@@ -1,0 +1,4 @@
+fm-test-queue: ticket 1187, position 9: waiting behind 8 earlier ticket(s)
+fm-test-queue: ticket 1187, position 8: waiting behind 7 earlier ticket(s)
+fm-test-queue: ticket 1187, position 7: waiting behind 6 earlier ticket(s)
+Terminated: 15

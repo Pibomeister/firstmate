@@ -1,0 +1,16 @@
+50c50
+<   FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$PROJECT" fm_run_timed 120 codex exec \
+---
+>   FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$PROJECT" fm_run_timed 600 codex exec \
+86c86
+< cat "$LAB/guard.out"
+---
+> cat "$LAB/guard.out" >> /Users/eduardopicazo/.no-mistakes/evidence/01M754RTNTAHDA13ZBX69VPEJ6/test-r1/codex-live-diag/guard-out.txt; cat "$LAB/guard.err" >> /Users/eduardopicazo/.no-mistakes/evidence/01M754RTNTAHDA13ZBX69VPEJ6/test-r1/codex-live-diag/guard-err.txt; cp "/state/.lock" /Users/eduardopicazo/.no-mistakes/evidence/01M754RTNTAHDA13ZBX69VPEJ6/test-r1/codex-live-diag/lock.txt 2>/dev/null; cat "$LAB/guard.out"
+93c93
+<   FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$PROJECT" fm_run_timed 300 codex exec \
+---
+>   FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$PROJECT" fm_run_timed 900 codex exec \
+127c127
+<   FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$PROJECT" fm_run_timed 120 codex exec resume \
+---
+>   FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$PROJECT" fm_run_timed 600 codex exec resume \

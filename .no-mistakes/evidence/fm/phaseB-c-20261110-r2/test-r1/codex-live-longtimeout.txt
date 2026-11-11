@@ -1,0 +1,22 @@
+HEAD 0eaa8e070203d56465951e1b90776bf309d37f90
+COMMAND FM_CODEX_LIVE_E2E=1 bash tests/fm-codex-continuity-live-e2e.test.sh with only fm_run_timed limits raised (120->600, 300->900); diff in codex-live-longtimeout.diff
+Note: switching to '0eaa8e070203d56465951e1b90776bf309d37f90'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - codex-cli 0.167.1 live E2E preserved the one-second foreground checkpoint path
+not ok - the initial Codex Stop was not blocked while a wake was queued: {"code":0,"payload":{"session_id":"01a1ca8f-f4b5-7291-b087-08b72e91eb2b","turn_id":"01a1ca8f-ff03-7c93-a64f-6d35cc639761","transcript_path":"/Users/eduardopicazo/.codex/sessions/2026/11/11/rollout-2026-11-11T06-23-14-01a1ca8f-f4b5-7291-b087-08b72e91eb2b.jsonl","cwd":"/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M754RTNTAHDA13ZBX69VPEJ6/.codex-live-e2e.52350/project","hook_event_name":"Stop","model":"gpt-6.1-sol","permission_mode":"bypassPermissions","stop_hook_active":false,"last_assistant_message":"ok"}}
+EXIT 1

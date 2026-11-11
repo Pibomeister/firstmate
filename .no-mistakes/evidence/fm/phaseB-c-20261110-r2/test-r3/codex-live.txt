@@ -1,0 +1,34 @@
+HEAD 83ee636f27579badee4dda7eb361b7374e7dab3e
+COMMAND env FM_CODEX_LIVE_E2E=1 FM_CODEX_LIVE_E2E_EVIDENCE_DIR=/Users/eduardopicazo/.no-mistakes/evidence/01M754RTNTAHDA13ZBX69VPEJ6/test-r3/codex-live bash tests/fm-codex-continuity-live-e2e.test.sh
+fm-test-queue: ticket 1190, position 9: waiting behind 8 earlier ticket(s)
+fm-test-queue: ticket 1190, position 8: waiting behind 7 earlier ticket(s)
+fm-test-queue: ticket 1190, position 7: waiting behind 6 earlier ticket(s)
+fm-test-queue: ticket 1190, position 6: waiting behind 5 earlier ticket(s)
+fm-test-queue: ticket 1190, position 5: waiting behind 4 earlier ticket(s)
+fm-test-queue: ticket 1190, position 4: waiting behind 3 earlier ticket(s)
+fm-test-queue: ticket 1190, position 3: waiting behind 2 earlier ticket(s)
+fm-test-queue: ticket 1190, position 2: waiting behind 1 earlier ticket(s)
+fm-test-queue: ticket 1190, position 1: all 1 slot(s) busy
+fm-test-queue: ticket 1190 served
+Note: switching to '83ee636f27579badee4dda7eb361b7374e7dab3e'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+ok - codex-cli 0.167.1 live E2E preserved the one-second foreground checkpoint path
+ok - codex-cli 0.167.1 live E2E blocked the initial queued-wake Stop and allowed its active continuation
+ok - codex-cli 0.167.1 live E2E retained the queued wake across the allowed continuation
+ok - codex-cli 0.167.1 live E2E resumed the held session and ended after a quiet checkpoint
+EXIT 0

@@ -1,0 +1,46 @@
+fm-test-queue: ticket 1168, position 8: waiting behind 7 earlier ticket(s)
+fm-test-queue: ticket 1168, position 7: waiting behind 6 earlier ticket(s)
+fm-test-queue: ticket 1168, position 5: waiting behind 4 earlier ticket(s)
+fm-test-queue: ticket 1168, position 4: waiting behind 3 earlier ticket(s)
+fm-test-queue: ticket 1168, position 3: waiting behind 2 earlier ticket(s)
+fm-test-queue: ticket 1168, position 2: waiting behind 1 earlier ticket(s)
+fm-test-queue: ticket 1168, position 1: all 1 slot(s) busy
+fm-test-queue: ticket 1168 served
+HEAD 0eaa8e070203d56465951e1b90776bf309d37f90
+COMMAND env FM_TEST_ONLY=codex-continuation bash tests/fm-turnend-guard.test.sh
+ok - fm-turnend-guard codex: an active continuation ends with its queued wake retained
+ok - fm-turnend-guard codex: legacy block records do not change initial or active-stop behavior
+ok - fm-turnend-guard codex: queued work survives the active stop after the last task clears
+ok - fm-turnend-guard codex: an active secondmate continuation ends with its queued wake retained
+ok - fm-turnend-guard codex: a missing watcher allows initial and active stops without a checkpoint loop
+ok - fm-turnend-guard codex: stop_hook_active and the hourly budget do not end a turn over a running checkpoint
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-turnend-guard.EDlHqt/codex-own-checkpoint-reblock/ckpt/fm-watch-checkpoint.sh: line 12: 26009 Terminated: 15          sleep 30
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-turnend-guard.EDlHqt/codex-own-checkpoint-ends-300/ckpt/fm-watch-checkpoint.sh: line 12: 58489 Terminated: 15          sleep 30
+ok - fm-turnend-guard codex: holds the turn while its own checkpoint runs, then the active continuation may end
+EXIT 0
+COMMAND env FM_CODEX_LIVE_E2E=1 FM_CODEX_LIVE_E2E_EVIDENCE_DIR=... bash tests/fm-codex-continuity-live-e2e.test.sh
+Note: switching to '0eaa8e070203d56465951e1b90776bf309d37f90'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+not ok - Codex credentialed checkpoint turn failed: Reading additional input from stdin...
+{"type":"thread.started","thread_id":"01a1ca8a-2073-74b1-bce8-004b95dd354b"}
+{"type":"item.completed","item":{"id":"item_0","type":"error","message":"Codex is ignoring 1 unrecognized configuration setting. Check for typos or deprecated settings.\n  user (/Users/eduardopicazo/.codex/config.toml): `features.child_agents_md` is ignored."}}
+{"type":"item.completed","item":{"id":"item_1","type":"error","message":"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."}}
+{"type":"item.completed","item":{"id":"item_2","type":"error","message":"Codex is ignoring 1 unrecognized configuration setting. Check for typos or deprecated settings.\n  user (/Users/eduardopicazo/.codex/config.toml): `features.child_agents_md` is ignored."}}
+{"type":"item.completed","item":{"id":"item_3","type":"error","message":"`--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation."}}
+{"type":"turn.started"}
+EXIT 1
