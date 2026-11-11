@@ -60,10 +60,12 @@ HOLDER_FD=5
 hold() { # <marker-env...> -> HOLDER_PID
   local fifo="$TMP_ROOT/holder-$HOLDER_FD.fifo"
   mkfifo "$fifo"
+  # Open read-write so this never blocks on the reader; the holder sees EOF
+  # only when the descriptor closes at exit.
+  eval "exec ${HOLDER_FD}<>\"\$fifo\""
   env -i "$@" "$HOLDER_JQ" . "$fifo" &
   HOLDER_PID=$!
   HOLDER_PIDS+=("$HOLDER_PID")
-  eval "exec ${HOLDER_FD}>\"\$fifo\""
   HOLDER_FD=$((HOLDER_FD + 1))
 }
 hold XPC_SERVICE_NAME=dev.firstmate.herdr.fm-remote
