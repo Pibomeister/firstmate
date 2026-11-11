@@ -216,7 +216,7 @@ fm_herdr_owned_xdg_apply() { # <root>
 }
 
 fm_herdr_owned_xdg_start() { # <root>
-  local root pid herdr log i
+  local root pid herdr log i started
   fm_herdr_owned_xdg_forget_inherited
   root=$(fm_herdr_owned_xdg_prove "$1") || return 1
   command -v herdr >/dev/null 2>&1 || { fm_herdr_owned_xdg_error "herdr is required"; return 1; }
@@ -264,14 +264,15 @@ fm_herdr_owned_xdg_start() { # <root>
       return 1
       ;;
   esac
+  started=
   i=0
-  until [ -n "$(fm_herdr_owned_xdg_process_start "$pid")" ] || [ "$i" -ge 50 ]; do
+  until started=$(fm_herdr_owned_xdg_process_start "$pid"); [ -n "$started" ] || [ "$i" -ge 50 ]; do
     sleep 0.02
     i=$((i + 1))
   done
   fm_herdr_owned_xdg_write_record "$root" "$(fm_herdr_owned_xdg_record_get "$root" marker_token)" \
-    "$pid" "$(fm_herdr_owned_xdg_process_start "$pid")" || {
-    fm_herdr_owned_xdg_reap_started "$root" "$pid"
+    "$pid" "$started" || {
+    fm_herdr_owned_xdg_reap_started "$root" "$pid" "$started"
     return 1
   }
   i=0
@@ -281,20 +282,31 @@ fm_herdr_owned_xdg_start() { # <root>
   done
   if ! fm_herdr_owned_xdg_prove_pid "$root" >/dev/null || ! fm_herdr_owned_xdg_default_ready; then
     fm_herdr_owned_xdg_error "test-owned default Herdr session did not become ready"
-    fm_herdr_owned_xdg_reap_started "$root" "$pid"
+    fm_herdr_owned_xdg_reap_started "$root" "$pid" "$started"
     return 1
   fi
 }
 
-fm_herdr_owned_xdg_reap_started() { # <root> <pid>
-  local root=$1 pid=$2 i
+fm_herdr_owned_xdg_pid_matches_start() { # <pid> <started>
+  local pid=$1 started=$2 current
+  [ -n "$pid" ] && [ -n "$started" ] || return 1
+  current=$(fm_herdr_owned_xdg_process_start "$pid")
+  [ -n "$current" ] && [ "$current" = "$started" ]
+}
+
+fm_herdr_owned_xdg_reap_started() { # <root> <pid> <started>
+  local root=$1 pid=$2 started=$3 i
+  if ! fm_herdr_owned_xdg_pid_matches_start "$pid" "$started"; then
+    fm_herdr_owned_xdg_clear_pid "$root" || true
+    return 0
+  fi
   fm_herdr_owned_xdg_signal_tree "$pid" TERM
   i=0
-  while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 10 ]; do
+  while fm_herdr_owned_xdg_pid_matches_start "$pid" "$started" && [ "$i" -lt 10 ]; do
     sleep 0.1
     i=$((i + 1))
   done
-  if kill -0 "$pid" 2>/dev/null; then
+  if fm_herdr_owned_xdg_pid_matches_start "$pid" "$started"; then
     fm_herdr_owned_xdg_signal_tree "$pid" KILL
   fi
   wait "$pid" 2>/dev/null || true
