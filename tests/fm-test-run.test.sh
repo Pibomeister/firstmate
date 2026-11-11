@@ -2068,6 +2068,76 @@ assert len(doc["scripts"])==3
   pass "aggregate-json merges lane timing artifacts"
 }
 
+test_real_repo_coverage_guard_and_live_e2e_family() {
+  local tmp out listed unhinted max budget s
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-realcov.XXXXXX")
+  out=$("$RUNNER" --check-coverage) || { rm -rf "$tmp"; fail "real repository --check-coverage failed: $out"; }
+  assert_contains "$out" "FM_TEST_COVERAGE ok" "real repository coverage guard must report ok"
+  unhinted=$(printf '%s\n' "$out" | sed -n 's/.*serial_unhinted=\([0-9][0-9]*\).*/\1/p')
+  max=$(printf '%s\n' "$out" | sed -n 's/.*serial_max_ms=\([0-9][0-9]*\).*/\1/p')
+  budget=$(printf '%s\n' "$out" | sed -n 's/.*serial_budget_ms=\([0-9][0-9]*\).*/\1/p')
+  [ -n "$unhinted" ] && [ -n "$max" ] && [ -n "$budget" ] \
+    || { rm -rf "$tmp"; fail "real coverage summary missing serial metrics: $out"; }
+  [ "$unhinted" -eq 0 ] \
+    || { rm -rf "$tmp"; fail "real repository portable-serial lane must have 0 unhinted scripts, got $unhinted"; }
+  [ "$max" -le "$budget" ] \
+    || { rm -rf "$tmp"; fail "real repository largest serial shard (${max}ms) exceeds budget (${budget}ms)"; }
+
+  listed=$("$RUNNER" --list --family live-harness-optin)
+  for s in \
+    tests/fm-codex-catalog-live-e2e.test.sh \
+    tests/fm-hermes-gateway-coexistence-live-e2e.test.sh \
+    tests/fm-hermes-profile-safety-live-e2e.test.sh \
+    tests/fm-hermes-signals-live-e2e.test.sh \
+    tests/fm-kiro-signals-live-e2e.test.sh \
+    tests/fm-opencode-abs-cwd-rail-live-e2e.test.sh \
+    tests/fm-stop-policy-live-e2e.test.sh \
+    tests/fm-warm-compact-herdr-live-e2e.test.sh; do
+    assert_contains "$listed" "$s" "family live-harness-optin must include $s"
+  done
+
+  FM_LIVE=0 "$RUNNER" --json "$tmp/timing.json" \
+    tests/fm-stop-policy-live-e2e.test.sh >"$tmp/out.txt" 2>"$tmp/err.txt" \
+    || { rm -rf "$tmp"; fail "disabled stop-policy live guard must exit 0: $(cat "$tmp/err.txt")"; }
+  grep -q 'family=live-harness-optin' "$tmp/out.txt" \
+    || { rm -rf "$tmp"; fail "stop-policy live guard must report family=live-harness-optin: $(cat "$tmp/out.txt")"; }
+  grep -q 'expected_gate_skip=live-capability' "$tmp/out.txt" \
+    || { rm -rf "$tmp"; fail "stop-policy live guard must expect a capability skip: $(cat "$tmp/out.txt")"; }
+  rm -rf "$tmp"
+  pass "real repository passes coverage guard and maps live-e2e guards to live-harness-optin"
+}
+
+test_bash32_reexecs_to_bash5_candidate() {
+  local tmp out
+  if [ ! -x /bin/bash ] || /bin/bash -c '[ "${BASH_VERSINFO[0]:-0}" -ge 5 ]' 2>/dev/null; then
+    pass "bash 3.2 re-exec check skipped on host where /bin/bash is already bash 5+"
+    return 0
+  fi
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-reexec.XXXXXX")
+  cat >"$tmp/fake-bash5" <<EOF
+#!/usr/bin/env bash
+if [ "\${1:-}" = "-c" ]; then
+  exec "$BASH" "\$@"
+fi
+printf 'reexec:%s\n' "\${FM_TEST_RUN_BASH_REEXEC:-0}" >"$tmp/reexec.marker"
+exec "$BASH" "\$@"
+EOF
+  chmod +x "$tmp/fake-bash5"
+  out=$(FM_TEST_RUN_BASH5_CANDIDATE="$tmp/fake-bash5" /bin/bash "$RUNNER" --list-families) \
+    || { rm -rf "$tmp"; fail "runner invoked under /bin/bash 3.2 failed to re-exec into bash 5 candidate"; }
+  assert_contains "$out" "pure-contract-unit" "re-execed runner must print families"
+  [ -f "$tmp/reexec.marker" ] \
+    || { rm -rf "$tmp"; fail "runner invoked under /bin/bash 3.2 did not exec FM_TEST_RUN_BASH5_CANDIDATE"; }
+  assert_contains "$(cat "$tmp/reexec.marker")" "reexec:1" "re-exec must set FM_TEST_RUN_BASH_REEXEC=1"
+  rm -f "$tmp/reexec.marker"
+  FM_TEST_RUN_NO_REEXEC=1 FM_TEST_RUN_BASH5_CANDIDATE="$tmp/fake-bash5" /bin/bash "$RUNNER" --list-families >/dev/null \
+    || { rm -rf "$tmp"; fail "runner with FM_TEST_RUN_NO_REEXEC=1 failed --list-families"; }
+  [ ! -e "$tmp/reexec.marker" ] \
+    || { rm -rf "$tmp"; fail "FM_TEST_RUN_NO_REEXEC=1 must suppress bash 5 re-exec"; }
+  rm -rf "$tmp"
+  pass "runner invoked under bash 3.2 re-execs into bash 5+ candidate unless suppressed"
+}
+
 test_list_all_exact_suite_coverage
 test_family_selection
 test_single_script_selection
@@ -2115,3 +2185,5 @@ test_max_wall_ms_is_a_result_not_advice
 test_jobs_parallel_scheduler_and_failure_propagation
 test_herdr_ci_family_run_has_a_step_timeout
 test_aggregate_json
+test_real_repo_coverage_guard_and_live_e2e_family
+test_bash32_reexecs_to_bash5_candidate

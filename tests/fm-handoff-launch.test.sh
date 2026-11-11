@@ -12,7 +12,14 @@ set -u
 
 LAUNCHER="$ROOT/bin/fm-handoff-launch.sh"
 TMP_ROOT=$(fm_test_tmproot fm-handoff-launch)
-trap fm_test_cleanup EXIT
+PRED_PID=''
+SUCC_PID=''
+cleanup_handoff_test() {
+  [ -z "$SUCC_PID" ] || kill "$SUCC_PID" 2>/dev/null || true
+  [ -z "$PRED_PID" ] || kill "$PRED_PID" 2>/dev/null || true
+  fm_test_cleanup
+}
+trap cleanup_handoff_test EXIT
 
 LAB="$TMP_ROOT/home"
 FAKEBIN="$TMP_ROOT/fakebin"
@@ -23,7 +30,10 @@ mkdir -p "$LAB/state" "$LAB/config" "$LAB/data" "$FAKEBIN"
 cat > "$FAKEBIN/claude" <<'EOF'
 #!/usr/bin/env bash
 sleep 60 &
-wait
+child=$!
+[ -z "${FM_FAKE_CLAUDE_CHILD_PID:-}" ] || printf '%s\n' "$child" > "$FM_FAKE_CLAUDE_CHILD_PID"
+trap 'kill "$child" 2>/dev/null || true; exit 0' EXIT TERM INT
+wait "$child"
 EOF
 chmod +x "$FAKEBIN/claude"
 
@@ -48,12 +58,10 @@ printf '{"terminal":"term_fake"}\n'
 EOF
 chmod +x "$FAKEBIN/orca"
 
-PRED_PID=''
-SUCC_PID=''
-
 reset_lab() {
-  [ -z "$SUCC_PID" ] || { kill "$SUCC_PID" 2>/dev/null; SUCC_PID=''; }
-  rm -f "$LAB/state/.handoff-successor" "$LAB/config/backend" "$TMP_ROOT/orca-cmd"
+  [ -z "$SUCC_PID" ] || { kill "$SUCC_PID" 2>/dev/null || true; SUCC_PID=''; }
+  [ -z "$PRED_PID" ] || { kill "$PRED_PID" 2>/dev/null || true; wait "$PRED_PID" 2>/dev/null || true; PRED_PID=''; }
+  rm -f "$LAB/state/.handoff-successor" "$LAB/config/backend" "$TMP_ROOT/orca-cmd" "$TMP_ROOT/claude-child-pid"
   printf 'orca\n' > "$LAB/config/backend"
   printf '# Handoff\n\nContinue the work.\n' > "$LAB/data/handoff.md"
   sleep 60 &
@@ -64,13 +72,14 @@ reset_lab() {
 run_launcher() {  # [env assignments...] -- print output, set RC
   env -u FM_BACKEND PATH="$FAKEBIN:$PATH" FM_TEST_SEAM=1 \
     FM_HANDOFF_TEST_HARNESS=claude FM_FAKE_ORCA_CMD="$TMP_ROOT/orca-cmd" \
+    FM_FAKE_CLAUDE_CHILD_PID="$TMP_ROOT/claude-child-pid" \
     FM_HOME="$LAB" FM_ROOT_OVERRIDE="$ROOT" \
     FM_STATE_OVERRIDE="$LAB/state" FM_CONFIG_OVERRIDE="$LAB/config" \
     "$@" bash "$LAUNCHER" "$LAB/data/handoff.md"
 }
 
 test_success_path_records_a_live_successor() {
-  local out rc sha8
+  local out rc sha8 child_pid
   reset_lab
   rc=0
   out=$(run_launcher) || rc=$?
@@ -88,7 +97,17 @@ test_success_path_records_a_live_successor() {
   assert_contains "$(cat "$TMP_ROOT/orca-cmd")" "$sha8" "the successor prompt carries the handoff sha8"
   assert_contains "$(cat "$TMP_ROOT/orca-cmd")" "bin/fm-session-start.sh" "the successor prompt runs session start after the predecessor dies"
   kill -0 "$PRED_PID" 2>/dev/null || fail "the launcher must never kill or interrupt the current session"
+  child_pid=$(cat "$TMP_ROOT/claude-child-pid" 2>/dev/null || true)
+  [ -n "$child_pid" ] || fail "fake successor harness must record its child sleep pid"
   kill "$SUCC_PID" 2>/dev/null; SUCC_PID=''
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    kill -0 "$child_pid" 2>/dev/null || break
+    sleep 0.05
+  done
+  if kill -0 "$child_pid" 2>/dev/null; then
+    kill -9 "$child_pid" 2>/dev/null || true
+    fail "killing the successor harness must terminate its child sleep ($child_pid) rather than leaving an orphan"
+  fi
   kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
   pass "a written handoff launches a live successor and records its pid for the Stop gate"
 }
