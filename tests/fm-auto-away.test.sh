@@ -123,12 +123,16 @@ assert_absent "$FM_HOME/state/.wake-queue" 'custom silence window fired early'
 at "$((EARLY + 60))" check
 assert_present "$FM_HOME/state/.wake-queue" 'custom silence window was ignored'
 
-world baseline
-at "$EARLY" arm >/dev/null
-at "$((EARLY + 7200))" arm >/dev/null
-[ "$(cat "$FM_HOME/state/.captain-message-epoch")" = "$EARLY" ] || fail 're-arm treated startup as a captain message'
-at "$((EARLY + 7200))" check
-assert_present "$FM_HOME/state/.wake-queue" 're-arm suppressed overdue entry'
+world session-open
+# The previous session ended at 18:00 with no away mode; a new one opens 09:00.
+at "$((EARLY - 14400))" captain-message
+NEXT_MORNING=$((EARLY + 39600))
+at "$NEXT_MORNING" arm >/dev/null
+at "$NEXT_MORNING" check
+at "$((NEXT_MORNING + 7199))" check
+assert_absent "$FM_HOME/state/.wake-queue" 'session open entered away mode on a stale stamp or missed 23:00'
+at "$((NEXT_MORNING + 7200))" check
+assert_grep 'auto-away silence' "$FM_HOME/state/.wake-queue" 'silence after session open did not fire'
 
 world custom-clock
 printf 'time=22:30\nsilence-seconds=0\n' >> "$FM_HOME/config/auto-away"
@@ -146,9 +150,6 @@ FM_HOME="$TMP_ROOT/foreign" FM_STATE_OVERRIDE="$TMP_ROOT/foreign/state" FM_CONFI
   FM_AUTO_AWAY_NOW="$NIGHT" bash "$TMP_ROOT/arm/state/auto-away.check.sh"
 assert_present "$TMP_ROOT/arm/state/.wake-queue" 'registered check lost its pinned home'
 assert_absent "$TMP_ROOT/foreign/state/.wake-queue" 'registered check wrote into the caller home'
-world arm
-at "$EARLY" disarm >/dev/null
-assert_absent "$FM_HOME/state/auto-away.check-trust" 'disarm retained trust binding'
 
 world invalid
 printf 'silence-seconds=oops\n' >> "$FM_HOME/config/auto-away"

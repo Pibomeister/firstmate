@@ -5,7 +5,6 @@
 #   fm-auto-away.sh check               queue one request when a trigger is due
 #   fm-auto-away.sh enter <activity>    revalidate a request and run AFK entry
 #   fm-auto-away.sh captain-message     record a genuine captain message
-#   fm-auto-away.sh disarm              retire the scheduled check
 #
 # docs/configuration.md owns config/auto-away and its defaults. No extra timer
 # or daemon runs here. The watcher executes the authenticated shim at its normal
@@ -16,9 +15,11 @@
 # a message that arrived after a queued request cancels that request.
 #
 # captain-message is the harness-independent activity boundary, called by main
-# only for genuine captain input, never for operational wakes or session start.
-# The first arm seeds a conservative silence baseline; subsequent starts and
-# compactions preserve it. An existing quiet or away posture is never replaced.
+# only for genuine captain input, never for operational wakes. Arm runs at each
+# locked session start and records it as captain activity, because the opening
+# message precedes the instruction to record it; a trigger missed while no
+# session ran therefore never fires on session open. An existing quiet or away
+# posture is never replaced.
 # The AFK launch owner's lock serializes entry against explicit /afk and /quiet.
 # Test-only clock: FM_TEST_SEAM=1 FM_AUTO_AWAY_NOW=<epoch>.
 set -eu
@@ -32,7 +33,7 @@ ACTIVITY="$STATE/.captain-message-epoch"
 REQUEST="$STATE/.auto-away-request"
 LOCK="$STATE/.auto-away.lock"
 
-usage() { sed -n '2,8s/^# \{0,1\}//p' "$0"; }
+usage() { sed -n '2,7s/^# \{0,1\}//p' "$0"; }
 fail() { printf 'fm-auto-away: %s\n' "$1" >&2; exit 1; }
 
 # Parse values, never source configuration as shell code.
@@ -134,7 +135,7 @@ arm() {
     rm -f "$REQUEST"
     return
   fi
-  read_activity || write_record "$ACTIVITY" "$NOW"
+  write_record "$ACTIVITY" "$NOW" || fail 'cannot record session start activity'
   if [ -L "$shim" ] || { [ -e "$shim" ] && [ ! -f "$shim" ]; }; then
     fail 'unsafe check shim'
   fi
@@ -152,14 +153,14 @@ arm() {
 
 case "${1:-check}" in
   --help|-h|help) usage; exit 0 ;;
-  arm|check|captain-message|disarm) [ "$#" -le 1 ] || { usage >&2; exit 2; } ;;
+  arm|check|captain-message) [ "$#" -le 1 ] || { usage >&2; exit 2; } ;;
   enter) [ "$#" -eq 2 ] && [[ "$2" =~ ^[1-9][0-9]{0,9}$ ]] || { usage >&2; exit 2; } ;;
   *) usage >&2; exit 2 ;;
 esac
 # This feature is only for the primary conversation, never a secondmate home.
 [ ! -e "$FM_HOME/.fm-secondmate-home" ] || exit 0
 case "${1:-check}" in
-  captain-message|disarm) ;;
+  captain-message) ;;
   *) read_config ;;
 esac
 mkdir -p "$STATE"
@@ -176,7 +177,6 @@ case "${1:-check}" in
     rm -f "$REQUEST"
     ;;
   arm) arm ;;
-  disarm) "$SCRIPT_DIR/fm-check-unregister.sh" auto-away; rm -f "$REQUEST" ;;
   check)
     [ "$ENABLED" != off ] || rm -f "$REQUEST"
     if due; then
