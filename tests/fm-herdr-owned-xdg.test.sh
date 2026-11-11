@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# Behavior tests for bin/fm-herdr-owned-xdg.sh and the lab tripwire it must
-# not weaken. Live start/check/stop cases run wherever herdr and jq exist.
+# Portable fixture tests for bin/fm-herdr-lab.sh fixture actions and the lab
+# tripwire they must not weaken. Live start/check/stop cases live in
+# tests/fm-herdr-owned-xdg-live-e2e.test.sh.
 set -u
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-# shellcheck source=tests/herdr-owned-xdg.sh
-. "$(dirname "${BASH_SOURCE[0]}")/herdr-owned-xdg.sh"
+# shellcheck source=tests/herdr-test-safety.sh
+. "$(dirname "${BASH_SOURCE[0]}")/herdr-test-safety.sh"
 
-HELPER=$ROOT/bin/fm-herdr-owned-xdg.sh
 LAB=$ROOT/bin/fm-herdr-lab.sh
 OWNED_XDG_LIST=$(fm_test_tmproot fm-herdr-owned-xdg-roots)/roots
 : > "$OWNED_XDG_LIST"
 
-[ -x "$HELPER" ] || fail "owned XDG helper is not executable"
+[ -x "$LAB" ] || fail "Herdr lab helper is not executable"
 
 remember_owned() { # <root>
   printf '%s\n' "$1" >> "$OWNED_XDG_LIST"
@@ -30,11 +30,24 @@ wait_until_gone() { # <pid> <msg>
   kill -0 "$pid" 2>/dev/null && fail "$msg"
 }
 
+# Start a copy of sleep whose comm is herdr. Do not wrap this in $(); a
+# command-substitution subshell would hang up the background decoy.
+start_herdr_named_sleep() { # <pidfile> <seconds> [env assignments...]
+  local pidfile=$1 seconds=$2 bin
+  shift 2
+  bin=$(fm_test_tmproot herdr-named-sleep)/bin
+  mkdir -p "$bin"
+  cp "$(command -v sleep)" "$bin/herdr"
+  chmod +x "$bin/herdr"
+  env "$@" "$bin/herdr" "$seconds" &
+  printf '%s\n' "$!" > "$pidfile"
+}
+
 owned_suite_cleanup() {
   local root
   while IFS= read -r root; do
     [ -n "$root" ] || continue
-    "$HELPER" cleanup "$root" >/dev/null 2>&1 || true
+    "$LAB" fixture cleanup "$root" >/dev/null 2>&1 || true
   done < "$OWNED_XDG_LIST"
   fm_test_cleanup
 }
@@ -50,7 +63,7 @@ test_create_clears_inherited_identity_and_cleanup_removes_only_that_dir() {
   HERDR_SESSION=default
   HERDR_PANE_ID=w1:p1
   HERDR_SOCKET_PATH=/tmp/not-ours.sock
-  fm_herdr_owned_xdg_create > "$pathfile" || fail "create failed"
+  herdr_fixture_create > "$pathfile" || fail "create failed"
   [ -z "${HERDR_SESSION:-}" ] || fail "create left HERDR_SESSION set"
   [ -z "${HERDR_PANE_ID:-}" ] || fail "create left HERDR_PANE_ID set"
   [ -z "${HERDR_SOCKET_PATH:-}" ] || fail "create left HERDR_SOCKET_PATH set"
@@ -58,33 +71,36 @@ test_create_clears_inherited_identity_and_cleanup_removes_only_that_dir() {
   remember_owned "$root"
   [ -d "$root" ] || fail "create did not print a directory"
   [ -d "$sibling" ] || fail "create removed an unrelated hx directory"
-  fm_herdr_owned_xdg_cleanup "$root" || fail "cleanup of a never-started fixture failed"
+  herdr_fixture_cleanup "$root" || fail "cleanup of a never-started fixture failed"
   [ ! -d "$root" ] || fail "cleanup left the owned directory"
   [ -f "$sibling/keep" ] || fail "cleanup removed an unrelated hx directory"
   rm -rf "$sibling"
   status=0
-  fm_herdr_owned_xdg_cleanup /tmp >/dev/null 2>&1 || status=$?
+  herdr_fixture_cleanup /tmp >/dev/null 2>&1 || status=$?
   expect_code 1 "$status" "cleanup must refuse /tmp"
-  pass "fm-herdr-owned-xdg: create clears inherited Herdr identity and cleanup removes only the owned directory"
+  pass "fm-herdr-lab fixture: create clears inherited Herdr identity and cleanup removes only the owned directory"
 }
 
 test_cli_refuses_foreign_paths_and_unknown_commands() {
   local status=0 out
-  out=$("$HELPER" start /tmp 2>&1) || status=$?
-  expect_code 1 "$status" "start must refuse /tmp"
+  out=$("$LAB" fixture start /tmp 2>&1) || status=$?
+  expect_code 1 "$status" "fixture start must refuse /tmp"
   assert_contains "$out" "owned" "foreign-path refusal was unclear"
   status=0
-  "$HELPER" start default >/dev/null 2>&1 || status=$?
-  expect_code 1 "$status" "start must not accept a session name"
+  "$LAB" fixture start default >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "fixture start must not accept a session name"
   status=0
-  "$HELPER" server stop >/dev/null 2>&1 || status=$?
+  "$LAB" server stop >/dev/null 2>&1 || status=$?
   expect_code 2 "$status" "the helper must not grow a server-stop command"
-  pass "fm-herdr-owned-xdg: CLI refuses foreign paths, session names, and server stop"
+  status=0
+  "$LAB" fixture server stop >/dev/null 2>&1 || status=$?
+  expect_code 2 "$status" "fixture must not grow a server-stop command"
+  pass "fm-herdr-lab fixture: CLI refuses foreign paths, session names, and server stop"
 }
 
 test_stop_refuses_a_live_non_herdr_pid() {
   local root pid start status=0 token
-  root=$(fm_herdr_owned_xdg_create) || fail "create failed"
+  root=$(herdr_fixture_create) || fail "create failed"
   remember_owned "$root"
   token=$(cat "$root/.fm-herdr-owned")
   sleep 30 &
@@ -92,14 +108,71 @@ test_stop_refuses_a_live_non_herdr_pid() {
   start=$(LC_ALL=C ps -p "$pid" -o lstart= | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
   printf 'schema=fm-herdr-owned-xdg.v1\nxdg_root=%s\nmarker_token=%s\npid=%s\npid_start=%s\n' \
     "$root" "$token" "$pid" "$start" > "$root/owned.record"
-  fm_herdr_owned_xdg_stop "$root" >/dev/null 2>&1 || status=$?
+  herdr_fixture_stop "$root" >/dev/null 2>&1 || status=$?
   expect_code 1 "$status" "stop must refuse a live non-herdr pid"
   kill -0 "$pid" 2>/dev/null || fail "stop signalled a sleep process stuffed into the record"
   kill -TERM "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
-  fm_herdr_owned_xdg_stop "$root" || fail "stop did not become a no-op after the foreign pid exited"
-  fm_herdr_owned_xdg_cleanup "$root" || fail "cleanup after a refused stop failed"
-  pass "fm-herdr-owned-xdg: stop refuses a live process that is not this fixture's herdr"
+  herdr_fixture_stop "$root" || fail "stop did not become a no-op after the foreign pid exited"
+  herdr_fixture_cleanup "$root" || fail "cleanup after a refused stop failed"
+  pass "fm-herdr-lab fixture: stop refuses a live process that is not this fixture's herdr"
+}
+
+test_stop_refuses_herdr_named_pid_with_wrong_start_time() {
+  local root pid start status=0 token pidfile
+  root=$(herdr_fixture_create) || fail "create failed"
+  remember_owned "$root"
+  token=$(cat "$root/.fm-herdr-owned")
+  pidfile=$(fm_test_tmproot herdr-named-sleep)/wrong-start.pid
+  start_herdr_named_sleep "$pidfile" 30 "XDG_CONFIG_HOME=$root/c"
+  pid=$(cat "$pidfile")
+  kill -0 "$pid" 2>/dev/null || fail "the herdr-named decoy did not start"
+  start=$(LC_ALL=C ps -p "$pid" -o lstart= | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  [ -n "$start" ] || fail "could not read the decoy start time"
+  printf 'schema=fm-herdr-owned-xdg.v1\nxdg_root=%s\nmarker_token=%s\npid=%s\npid_start=%s\n' \
+    "$root" "$token" "$pid" "not-$start" > "$root/owned.record"
+  status=0
+  herdr_fixture_stop "$root" >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "stop must refuse a herdr-named pid whose start time does not match"
+  kill -0 "$pid" 2>/dev/null || fail "stop signalled a herdr-named decoy with the wrong start time"
+  status=0
+  herdr_fixture_cleanup "$root" >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "cleanup must refuse a herdr-named pid whose start time does not match"
+  kill -0 "$pid" 2>/dev/null || fail "cleanup signalled a herdr-named decoy with the wrong start time"
+  kill -TERM "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  herdr_fixture_cleanup "$root" || fail "cleanup after the start-time decoy exited failed"
+  pass "fm-herdr-lab fixture: stop and cleanup refuse a herdr-named pid with the wrong start time"
+}
+
+test_stop_refuses_herdr_named_pid_without_fixture_xdg() {
+  local root pid start status=0 token pidfile
+  root=$(herdr_fixture_create) || fail "create failed"
+  remember_owned "$root"
+  token=$(cat "$root/.fm-herdr-owned")
+  pidfile=$(fm_test_tmproot herdr-named-sleep)/no-xdg.pid
+  start_herdr_named_sleep "$pidfile" 30
+  pid=$(cat "$pidfile")
+  kill -0 "$pid" 2>/dev/null || fail "the herdr-named decoy did not start"
+  start=$(LC_ALL=C ps -p "$pid" -o lstart= | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  [ -n "$start" ] || fail "could not read the decoy start time"
+  printf 'schema=fm-herdr-owned-xdg.v1\nxdg_root=%s\nmarker_token=%s\npid=%s\npid_start=%s\n' \
+    "$root" "$token" "$pid" "$start" > "$root/owned.record"
+  [ -r "/proc/$pid/environ" ] || fail "this host cannot read /proc/$pid/environ; the environ refusal cannot be proven here"
+  tr '\0' '\n' < "/proc/$pid/environ" | grep -Fx "XDG_CONFIG_HOME=$root/c" >/dev/null \
+    && fail "the environ decoy unexpectedly inherited this fixture's XDG_CONFIG_HOME"
+  status=0
+  herdr_fixture_stop "$root" >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "stop must refuse a herdr-named pid that lacks this fixture's XDG_CONFIG_HOME"
+  kill -0 "$pid" 2>/dev/null || fail "stop signalled a herdr-named decoy that lacked this fixture's XDG_CONFIG_HOME"
+  status=0
+  herdr_fixture_cleanup "$root" >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "cleanup must refuse a herdr-named pid that lacks this fixture's XDG_CONFIG_HOME"
+  kill -0 "$pid" 2>/dev/null || fail "cleanup signalled a herdr-named decoy that lacked this fixture's XDG_CONFIG_HOME"
+  kill -TERM "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  herdr_fixture_cleanup "$root" || fail "cleanup after the environ decoy exited failed"
+  pass "fm-herdr-lab fixture: stop and cleanup refuse a herdr-named pid without this fixture's XDG_CONFIG_HOME"
 }
 
 test_lab_tripwire_still_refuses_zero_and_multiple_defaults() {
@@ -135,52 +208,74 @@ SH
   pass "fm-herdr-lab: fleet-state tripwire still requires exactly one running default session"
 }
 
-test_live_owned_fixture_is_the_only_process_cleanup_stops() {
-  local a b log fakebin status=0 name pid_a pid_b real_herdr
-  command -v herdr >/dev/null 2>&1 || { pass "fm-herdr-owned-xdg: live isolation (skipped, no herdr)"; return; }
-  command -v jq >/dev/null 2>&1 || { pass "fm-herdr-owned-xdg: live isolation (skipped, no jq)"; return; }
-  real_herdr=$(command -v herdr)
-  log=$(fm_test_tmproot fm-herdr-owned-xdg-live)/herdr.log
-  fakebin=$(fm_fakebin "$(dirname "$log")")
+test_start_refuses_a_running_default_it_did_not_start() {
+  local root fakebin status=0
+  root=$(herdr_fixture_create) || fail "create failed"
+  remember_owned "$root"
+  fakebin=$(fm_fakebin "$(fm_test_tmproot fm-herdr-owned-xdg-foreign)/bin")
   cat > "$fakebin/herdr" <<SH
 #!/usr/bin/env bash
-printf '%s\\n' "\$*" >> $(printf '%q' "$log")
-exec $(printf '%q' "$real_herdr") "\$@"
+printf '%s\\n' "\$*" >> $(printf '%q' "$root/herdr.log")
+if [ "\$1" = session ]; then
+  printf '%s\\n' '{"sessions":[{"default":true,"name":"default","running":true,"socket_path":"/tmp/foreign-default.sock"}]}'
+  exit 0
+fi
+if [ "\$1" = server ]; then
+  printf 'invoked\\n' > $(printf '%q' "$root/server.invoked")
+  exit 0
+fi
+exit 90
 SH
   chmod +x "$fakebin/herdr"
-  a=$("$HELPER" create) || fail "create A failed"
-  remember_owned "$a"
-  b=$("$HELPER" create) || fail "create B failed"
-  remember_owned "$b"
-  PATH="$fakebin:$PATH" "$HELPER" start "$a" || fail "start A failed"
-  PATH="$fakebin:$PATH" "$HELPER" start "$b" || fail "start B failed"
-  pid_a=$(sed -n 's/^pid=//p' "$a/owned.record")
-  pid_b=$(sed -n 's/^pid=//p' "$b/owned.record")
-  PATH="$fakebin:$PATH" "$HELPER" check "$a" || fail "check A failed"
-  PATH="$fakebin:$PATH" "$HELPER" check "$b" || fail "check B failed"
-  eval "$("$HELPER" apply "$a")"
-  name=fm-lab-owned-$$
-  FM_HERDR_LAB_STATE_DIR="$a/lab" "$LAB" provision "$name" >/dev/null || fail "lab provision in owned A failed"
-  FM_HERDR_LAB_STATE_DIR="$a/lab" "$LAB" teardown "$name" >/dev/null || fail "lab teardown in owned A failed"
-  eval "$("$HELPER" apply "$b")"
-  PATH="$fakebin:$PATH" "$HELPER" cleanup "$a" || fail "cleanup A failed"
-  [ ! -d "$a" ] || fail "cleanup A left its directory"
-  kill -0 "$pid_a" 2>/dev/null && fail "cleanup A left its herdr process"
-  kill -0 "$pid_b" 2>/dev/null || fail "cleanup A stopped fixture B's herdr process"
-  PATH="$fakebin:$PATH" "$HELPER" check "$b" || fail "cleanup A stopped fixture B"
-  PATH="$fakebin:$PATH" "$HELPER" cleanup "$b" || fail "cleanup B failed"
-  [ ! -d "$b" ] || fail "cleanup B left its directory"
-  kill -0 "$pid_b" 2>/dev/null && fail "cleanup B left its herdr process"
-  ! grep -Fq 'server stop' "$log" || fail "lifecycle invoked herdr server stop"
-  status=0
-  "$HELPER" apply "$a" >/dev/null 2>&1 || status=$?
-  expect_code 1 "$status" "apply after cleanup must refuse the removed fixture"
-  pass "fm-herdr-owned-xdg: live start/check/stop own only the recorded fixture and never call server stop"
+  PATH="$fakebin:$PATH" "$LAB" fixture start "$root" >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "start must refuse a running default it did not start"
+  [ ! -e "$root/server.invoked" ] || fail "start forked a server against a foreign default"
+  ! grep -Fq 'server' "$root/herdr.log" || fail "start invoked herdr server against a foreign default"
+  herdr_fixture_cleanup "$root" || fail "cleanup after a foreign-default refusal failed"
+  pass "fm-herdr-lab fixture: start refuses a running default it did not start without forking a server"
+}
+
+test_second_start_on_a_started_fixture_is_idempotent() {
+  local root fakebin first second
+  root=$(herdr_fixture_create) || fail "create failed"
+  remember_owned "$root"
+  mkdir -p "$root/procbin"
+  cp "$(command -v sleep)" "$root/procbin/herdr"
+  chmod +x "$root/procbin/herdr"
+  fakebin=$(fm_fakebin "$(fm_test_tmproot fm-herdr-owned-xdg-idempotent)/bin")
+  cat > "$fakebin/herdr" <<SH
+#!/usr/bin/env bash
+printf '%s\\n' "\$*" >> $(printf '%q' "$root/herdr.log")
+if [ "\$1" = session ]; then
+  if [ -s $(printf '%q' "$root/leader.pid") ]; then
+    printf '%s\\n' '{"sessions":[{"default":true,"name":"default","running":true,"socket_path":"/tmp/owned-xdg-idempotent.sock"}]}'
+  else
+    printf '%s\\n' '{"sessions":[]}'
+  fi
+  exit 0
+fi
+if [ "\$1" = server ]; then
+  printf '%s\\n' "\$\$" > $(printf '%q' "$root/leader.pid")
+  exec $(printf '%q' "$root/procbin/herdr") 98768
+fi
+exit 90
+SH
+  chmod +x "$fakebin/herdr"
+  PATH="$fakebin:$PATH" "$LAB" fixture start "$root" || fail "first start failed"
+  first=$(sed -n 's/^pid=//p' "$root/owned.record")
+  [ -n "$first" ] || fail "first start recorded no pid"
+  PATH="$fakebin:$PATH" "$LAB" fixture start "$root" || fail "second start failed"
+  second=$(sed -n 's/^pid=//p' "$root/owned.record")
+  [ "$second" = "$first" ] || fail "second start changed the pid from $first to $second"
+  [ "$(grep -c '^server$' "$root/herdr.log")" = 1 ] \
+    || fail "second start forked another herdr server"
+  PATH="$fakebin:$PATH" herdr_fixture_cleanup "$root" || fail "cleanup after an idempotent start failed"
+  pass "fm-herdr-lab fixture: a second start on an already-started fixture returns 0 with the pid unchanged"
 }
 
 test_start_failure_signals_the_forked_process_group() {
   local root fakebin leader child status=0
-  root=$(fm_herdr_owned_xdg_create) || fail "create failed"
+  root=$(herdr_fixture_create) || fail "create failed"
   remember_owned "$root"
   fakebin=$(fm_fakebin "$(fm_test_tmproot fm-herdr-owned-xdg-reap)/bin")
   cat > "$fakebin/herdr" <<SH
@@ -202,21 +297,21 @@ fi
 exit 90
 SH
   chmod +x "$fakebin/herdr"
-  PATH="$fakebin:$PATH" "$HELPER" start "$root" >/dev/null 2>&1 || status=$?
-  expect_code 1 "$status" "start must fail when the default session never becomes ready"
+  PATH="$fakebin:$PATH" "$LAB" fixture start "$root" >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "start must fail when the forked pid's comm is not herdr"
   [ -s "$root/leader.pid" ] || fail "the forked herdr did not record its pid"
   [ -s "$root/child.pid" ] || fail "the forked herdr did not record its process-group child"
   leader=$(cat "$root/leader.pid")
   child=$(cat "$root/child.pid")
   wait_until_gone "$leader" "start left the forked leader pid $leader running"
   wait_until_gone "$child" "start left process-group child $child running after the leader exited"
-  fm_herdr_owned_xdg_cleanup "$root" || fail "cleanup after a failed start failed"
-  pass "fm-herdr-owned-xdg: a failed start signals the pid it forked, including the process group"
+  herdr_fixture_cleanup "$root" || fail "cleanup after a failed start failed"
+  pass "fm-herdr-lab fixture: a failed start whose forked pid is not comm=herdr signals the pid it forked, including the process group"
 }
 
 test_start_write_record_failure_signals_the_forked_process() {
   local root fakebin leader status=0
-  root=$(fm_herdr_owned_xdg_create) || fail "create failed"
+  root=$(herdr_fixture_create) || fail "create failed"
   remember_owned "$root"
   mkdir "$root/owned.record.tmp" || fail "could not occupy the record tmp path"
   fakebin=$(fm_fakebin "$(fm_test_tmproot fm-herdr-owned-xdg-write-record)/bin")
@@ -233,54 +328,40 @@ fi
 exit 90
 SH
   chmod +x "$fakebin/herdr"
-  PATH="$fakebin:$PATH" "$HELPER" start "$root" >/dev/null 2>&1 || status=$?
+  PATH="$fakebin:$PATH" "$LAB" fixture start "$root" >/dev/null 2>&1 || status=$?
   expect_code 1 "$status" "start must fail when the ownership record cannot be rewritten after fork"
   [ -s "$root/leader.pid" ] || fail "the forked herdr did not record its pid"
   leader=$(cat "$root/leader.pid")
   wait_until_gone "$leader" "start left the forked leader pid $leader running after write_record failed"
   rmdir "$root/owned.record.tmp" 2>/dev/null || true
-  fm_herdr_owned_xdg_cleanup "$root" || fail "cleanup after a write_record failure failed"
-  pass "fm-herdr-owned-xdg: a write_record failure after fork signals the pid it started"
+  herdr_fixture_cleanup "$root" || fail "cleanup after a write_record failure failed"
+  pass "fm-herdr-lab fixture: a write_record failure after fork signals the pid it started"
 }
 
 test_reap_started_skips_a_pid_whose_start_time_no_longer_matches() {
   local root decoy
-  root=$(fm_herdr_owned_xdg_create) || fail "create failed"
+  root=$(herdr_fixture_create) || fail "create failed"
   remember_owned "$root"
   sleep 98767 &
   decoy=$!
   kill -0 "$decoy" 2>/dev/null || fail "the decoy pid did not start"
-  fm_herdr_owned_xdg_reap_started "$root" "$decoy" "not-the-fork-start-time"
+  fm_herdr_lab_fixture_reap_started "$root" "$decoy" "not-the-fork-start-time"
   kill -0 "$decoy" 2>/dev/null \
     || fail "reap_started signalled pid $decoy whose start time did not match the fork"
   kill -TERM "$decoy" 2>/dev/null || true
   wait "$decoy" 2>/dev/null || true
-  fm_herdr_owned_xdg_cleanup "$root" || fail "cleanup after the reused-pid check failed"
-  pass "fm-herdr-owned-xdg: reap_started does not signal a pid whose start time no longer matches"
-}
-
-test_live_empty_owned_xdg_still_trips_lab_provision() {
-  local root status=0 out name
-  command -v herdr >/dev/null 2>&1 || { pass "fm-herdr-owned-xdg: live zero-default (skipped, no herdr)"; return; }
-  command -v jq >/dev/null 2>&1 || { pass "fm-herdr-owned-xdg: live zero-default (skipped, no jq)"; return; }
-  root=$("$HELPER" create) || fail "create failed"
-  remember_owned "$root"
-  eval "$("$HELPER" apply "$root")"
-  name=fm-lab-zero-$$
-  out=$(FM_HERDR_LAB_STATE_DIR="$root/lab" "$LAB" provision "$name" 2>&1) || status=$?
-  expect_code 1 "$status" "lab provision in a never-started owned XDG must fail"
-  assert_contains "$out" "fleet-state tripwire requires exactly one running default session" \
-    "zero-default live refusal changed its tripwire wording"
-  "$HELPER" cleanup "$root" || fail "cleanup of the never-started live fixture failed"
-  pass "fm-herdr-lab: live empty owned XDG still refuses provision without a running default"
+  herdr_fixture_cleanup "$root" || fail "cleanup after the reused-pid check failed"
+  pass "fm-herdr-lab fixture: reap_started does not signal a pid whose start time no longer matches"
 }
 
 test_create_clears_inherited_identity_and_cleanup_removes_only_that_dir
 test_cli_refuses_foreign_paths_and_unknown_commands
 test_stop_refuses_a_live_non_herdr_pid
+test_stop_refuses_herdr_named_pid_with_wrong_start_time
+test_stop_refuses_herdr_named_pid_without_fixture_xdg
 test_lab_tripwire_still_refuses_zero_and_multiple_defaults
+test_start_refuses_a_running_default_it_did_not_start
+test_second_start_on_a_started_fixture_is_idempotent
 test_start_failure_signals_the_forked_process_group
 test_start_write_record_failure_signals_the_forked_process
 test_reap_started_skips_a_pid_whose_start_time_no_longer_matches
-test_live_empty_owned_xdg_still_trips_lab_provision
-test_live_owned_fixture_is_the_only_process_cleanup_stops

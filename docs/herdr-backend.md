@@ -967,6 +967,7 @@ The helper:
 - Supplies an explicit `--session` Herdr option before any `--` delimiter in allowed task commands.
 - Refuses caller-supplied session flags and server/session lifecycle subcommands.
 - Performs destructive stop/delete only through its guarded lifecycle actions.
+- Owns a private-XDG fixture through `fixture create|apply|start|check|stop|cleanup`. Those actions may act only on a tree they created under the canonical `/tmp/hx.` prefix, prove the marker token before they act, signal only the recorded herdr pid whose start time still matches (TERM, then bounded KILL), and never run `herdr server stop`. Inherited `HERDR_*` identity is cleared on every fixture command. They do not change the lab session commands or the exactly-one-default provision tripwire.
 
 Immediately before every destructive call it re-queries the named session and refuses empty, missing, literal `default`, or `default:true` identities.
 Its before/after tripwire requires the live default-session snapshot to remain byte-identical.
@@ -1003,6 +1004,10 @@ tests/fm-herdr-session-cleanup.test.sh
 tests/fm-herdr-session-cleanup-e2e.test.sh
 tests/fm-herdr-groups.test.sh
 tests/fm-herdr-attached-viewer-live-e2e.test.sh
+tests/fm-herdr-lab.test.sh
+tests/fm-herdr-owned-xdg.test.sh
+tests/fm-herdr-owned-xdg-live-e2e.test.sh
+tests/fm-herdr-secondmate-watch-live-e2e.test.sh
 tests/fm-afk-inject-herdr-e2e.test.sh
 tests/fm-afk-pi-herdr-return-e2e.test.sh
 ```
