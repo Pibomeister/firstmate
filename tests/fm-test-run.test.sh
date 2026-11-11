@@ -2096,13 +2096,17 @@ test_real_repo_coverage_guard_and_live_e2e_family() {
     assert_contains "$listed" "$s" "family live-harness-optin must include $s"
   done
 
-  FM_LIVE=0 "$RUNNER" --json "$tmp/timing.json" \
+  FM_LIVE=0 FM_STOP_POLICY_LIVE_E2E=0 "$RUNNER" --json "$tmp/timing.json" \
     tests/fm-stop-policy-live-e2e.test.sh >"$tmp/out.txt" 2>"$tmp/err.txt" \
-    || { rm -rf "$tmp"; fail "disabled stop-policy live guard must exit 0: $(cat "$tmp/err.txt")"; }
+    || { local err; err=$(cat "$tmp/err.txt"); rm -rf "$tmp"; fail "disabled stop-policy live guard must exit 0: $err"; }
   grep -q 'family=live-harness-optin' "$tmp/out.txt" \
-    || { rm -rf "$tmp"; fail "stop-policy live guard must report family=live-harness-optin: $(cat "$tmp/out.txt")"; }
+    || { local out_txt; out_txt=$(cat "$tmp/out.txt"); rm -rf "$tmp"; fail "stop-policy live guard must report family=live-harness-optin: $out_txt"; }
   grep -q 'expected_gate_skip=live-capability' "$tmp/out.txt" \
-    || { rm -rf "$tmp"; fail "stop-policy live guard must expect a capability skip: $(cat "$tmp/out.txt")"; }
+    || { local out_txt; out_txt=$(cat "$tmp/out.txt"); rm -rf "$tmp"; fail "stop-policy live guard must expect a capability skip: $out_txt"; }
+  grep -q 'gate_skip=true' "$tmp/out.txt" \
+    || { local out_txt; out_txt=$(cat "$tmp/out.txt"); rm -rf "$tmp"; fail "stop-policy live guard output must report gate_skip=true: $out_txt"; }
+  grep -Eq '"gate_skip": *true' "$tmp/timing.json" \
+    || { local json_txt; json_txt=$(cat "$tmp/timing.json"); rm -rf "$tmp"; fail "stop-policy live guard timing json must record gate_skip=true: $json_txt"; }
   rm -rf "$tmp"
   pass "real repository passes coverage guard and maps live-e2e guards to live-harness-optin"
 }
@@ -2138,14 +2142,14 @@ printf 'reexec:%s\n' "\${FM_TEST_RUN_BASH_REEXEC:-0}" >"$tmp/reexec.marker"
 exec "$real_bash5" "\$@"
 EOF
   chmod +x "$tmp/fake-bash5"
-  out=$(FM_TEST_RUN_BASH5_CANDIDATE="$tmp/fake-bash5" /bin/bash "$RUNNER" --list-families) \
+  out=$(env -u FM_TEST_RUN_NO_REEXEC FM_TEST_SEAM=1 FM_TEST_RUN_BASH5_CANDIDATE="$tmp/fake-bash5" /bin/bash "$RUNNER" --list-families) \
     || { rm -rf "$tmp"; fail "runner invoked under /bin/bash 3.2 failed to re-exec into bash 5 candidate"; }
   assert_contains "$out" "pure-contract-unit" "re-execed runner must print families"
   [ -f "$tmp/reexec.marker" ] \
     || { rm -rf "$tmp"; fail "runner invoked under /bin/bash 3.2 did not exec FM_TEST_RUN_BASH5_CANDIDATE"; }
   assert_contains "$(cat "$tmp/reexec.marker")" "reexec:1" "re-exec must set FM_TEST_RUN_BASH_REEXEC=1"
   rm -f "$tmp/reexec.marker"
-  FM_TEST_RUN_NO_REEXEC=1 FM_TEST_RUN_BASH5_CANDIDATE="$tmp/fake-bash5" /bin/bash "$RUNNER" --list-families >/dev/null \
+  FM_TEST_RUN_NO_REEXEC=1 FM_TEST_SEAM=1 FM_TEST_RUN_BASH5_CANDIDATE="$tmp/fake-bash5" /bin/bash "$RUNNER" --list-families >/dev/null \
     || { rm -rf "$tmp"; fail "runner with FM_TEST_RUN_NO_REEXEC=1 failed --list-families"; }
   [ ! -e "$tmp/reexec.marker" ] \
     || { rm -rf "$tmp"; fail "FM_TEST_RUN_NO_REEXEC=1 must suppress bash 5 re-exec"; }

@@ -97,7 +97,11 @@ test_success_path_records_a_live_successor() {
   assert_contains "$(cat "$TMP_ROOT/orca-cmd")" "$sha8" "the successor prompt carries the handoff sha8"
   assert_contains "$(cat "$TMP_ROOT/orca-cmd")" "bin/fm-session-start.sh" "the successor prompt runs session start after the predecessor dies"
   kill -0 "$PRED_PID" 2>/dev/null || fail "the launcher must never kill or interrupt the current session"
-  child_pid=$(cat "$TMP_ROOT/claude-child-pid" 2>/dev/null || true)
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    child_pid=$(cat "$TMP_ROOT/claude-child-pid" 2>/dev/null || true)
+    [ -n "$child_pid" ] && break
+    sleep 0.05
+  done
   [ -n "$child_pid" ] || fail "fake successor harness must record its child sleep pid"
   kill "$SUCC_PID" 2>/dev/null; SUCC_PID=''
   for _ in 1 2 3 4 5 6 7 8 9 10; do

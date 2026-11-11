@@ -156,21 +156,24 @@
 set -eu
 
 # Under Bash older than 5 (stock macOS /bin/bash 3.2), re-exec the runner once
-# under the first Bash 5+ found at FM_TEST_RUN_BASH5_CANDIDATE,
-# /opt/homebrew/bin/bash, or /usr/local/bin/bash, so EPOCHREALTIME timing and
-# the faster builtins apply; with none found the runner continues on the
-# current Bash. FM_TEST_RUN_NO_REEXEC=1 disables the re-exec. The
-# FM_TEST_RUN_BASH_REEXEC marker stops a loop and is unset afterwards so test
-# children that invoke the runner re-exec on their own.
+# under the first Bash 5+ found at FM_TEST_RUN_BASH5_CANDIDATE (when
+# FM_TEST_SEAM=1), /opt/homebrew/bin/bash, or /usr/local/bin/bash, so
+# EPOCHREALTIME timing and the faster builtins apply; with none found the
+# runner continues on the current Bash. FM_TEST_RUN_NO_REEXEC=1 disables the
+# re-exec. The FM_TEST_RUN_BASH_REEXEC marker stops a loop and is unset
+# afterwards so test children that invoke the runner re-exec on their own.
 if [ "${BASH_VERSINFO[0]:-0}" -lt 5 ] && [ -z "${FM_TEST_RUN_BASH_REEXEC:-}" ] && [ -z "${FM_TEST_RUN_NO_REEXEC:-}" ]; then
-  for _fm_bash_candidate in "${FM_TEST_RUN_BASH5_CANDIDATE:-}" /opt/homebrew/bin/bash /usr/local/bin/bash; do
+  _fm_seam_bash5=''
+  [ "${FM_TEST_SEAM:-0}" = 1 ] && _fm_seam_bash5=${FM_TEST_RUN_BASH5_CANDIDATE:-}
+  for _fm_bash_candidate in "$_fm_seam_bash5" /opt/homebrew/bin/bash /usr/local/bin/bash; do
     [ -n "$_fm_bash_candidate" ] && [ -x "$_fm_bash_candidate" ] || continue
     # shellcheck disable=SC2016
     if "$_fm_bash_candidate" -c '[ "${BASH_VERSINFO[0]:-0}" -ge 5 ]' 2>/dev/null; then
+      unset _fm_seam_bash5
       FM_TEST_RUN_BASH_REEXEC=1 exec "$_fm_bash_candidate" "$0" "$@"
     fi
   done
-  unset _fm_bash_candidate
+  unset _fm_seam_bash5 _fm_bash_candidate
 fi
 unset FM_TEST_RUN_BASH_REEXEC
 
