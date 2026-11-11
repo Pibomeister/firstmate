@@ -1,0 +1,4 @@
+=== TARGET a4a5b899: /bin/bash (3.2) bin/fm-test-run.sh --check-coverage
+FM_TEST_COVERAGE ok total=391 parallel=26 parallel_max_ms=1418942 parallel_imbalance_ms=589 parallel_unhinted=0 serial=349 serial_shards=24 serial_unhinted=0 serial_max_ms=759223 serial_budget_ms=780000 serial_oversized=0 herdr=16
+/bin/bash bin/fm-test-run.sh --check-coverage  4.58s user 2.00s system 22% cpu 29.901 total
+exit=0

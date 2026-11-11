@@ -1,0 +1,7 @@
+PATH bash: /bin/bash
+inner BASH=/bin/bash
+not ok - runner invoked under /bin/bash 3.2 did not exec FM_TEST_RUN_BASH5_CANDIDATE
+--- with /opt/homebrew/bin first on PATH
+inner BASH=/opt/homebrew/bin/bash
+ok - runner invoked under bash 3.2 re-execs into bash 5+ candidate unless suppressed
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=76627

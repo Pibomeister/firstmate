@@ -1,0 +1,19 @@
+path | base_ms | target_ms | identical
+bin/backends/cmux.sh | 62123 | 16959 | yes (28 scripts)
+bin/fm-agent-kit-pin.sh | 2930 | 851 | yes (1 scripts)
+bin/fm-branch-prompt.sh | 341275 | 93485 | no (259 scripts)
+--- DIFF bin/fm-branch-prompt.sh
+59a60
+> tests/fm-codex-catalog-live-e2e.test.sh
+113a115,116
+> tests/fm-hermes-gateway-coexistence-live-e2e.test.sh
+> tests/fm-hermes-profile-safety-live-e2e.test.sh
+120a124
+> tests/fm-kiro-signals-live-e2e.test.sh
+133a138
+> tests/fm-opencode-abs-cwd-rail-live-e2e.test.sh
+190a196
+> tests/fm-stop-policy-live-e2e.test.sh
+232a239
+> tests/fm-warm-compact-herdr-live-e2e.test.sh
+bin/fm-ci-select.sh | 3433 | 1072 | yes (2 scripts)

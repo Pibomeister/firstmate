@@ -1,0 +1,23 @@
+family=pure-contract-unit head=60 main=60
+family=watcher-wake-lock head=35 main=35
+family=real-herdr-gated head=16 main=16
+family=secondmate head=24 main=24
+family=session-bootstrap head=11 main=11
+family=live-harness-optin head=73 main=65
+14a15
+> tests/fm-codex-catalog-live-e2e.test.sh
+36a38,40
+> tests/fm-hermes-gateway-coexistence-live-e2e.test.sh
+> tests/fm-hermes-profile-safety-live-e2e.test.sh
+> tests/fm-hermes-signals-live-e2e.test.sh
+38a43
+> tests/fm-kiro-signals-live-e2e.test.sh
+41a47
+> tests/fm-opencode-abs-cwd-rail-live-e2e.test.sh
+57a64
+> tests/fm-stop-policy-live-e2e.test.sh
+62a70
+> tests/fm-warm-compact-herdr-live-e2e.test.sh
+family=backend-dispatch head=26 main=26
+family=pr-forge head=10 main=10
+family=afk head=10 main=10

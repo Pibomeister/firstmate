@@ -1,0 +1,20 @@
+=== BASE: tests/fm-handoff-launch.test.sh (perl alarm 120s)
+ok - a written handoff launches a live successor and records its pid for the Stop gate
+ok - a stale record naming the current session never stands in for a new successor
+ok - an unknown recorded backend refuses rather than guessing another backend
+ok - a successor that never appears fails loudly and leaves the record unwritten
+perl -e 'alarm 120; exec @ARGV' /opt/homebrew/bin/bash   2.31s user 2.84s system 6% cpu 1:24.02 total
+exit=0
+
+=== TARGET: tests/fm-handoff-launch.test.sh
+ok - a written handoff launches a live successor and records its pid for the Stop gate
+ok - a stale record naming the current session never stands in for a new successor
+ok - an unknown recorded backend refuses rather than guessing another backend
+ok - a successor that never appears fails loudly and leaves the record unwritten
+perl -e 'alarm 120; exec @ARGV' /opt/homebrew/bin/bash   0.81s user 1.34s system 8% cpu 26.028 total
+exit=0
+
+=== orphan sleep 60 processes left after target run:
+15108 /bin/zsh -c source /Users/eduardopicazo/.claude/shell-snapshots/snapshot-zsh-1794405534919-zbmsg8.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && { \builtin unalias -- 'which'; \builtin unset -f -- 'which'; } >/dev/null 2>&1 || true && { \builtin unalias -- 'unsetenv'; \builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && eval '( tail -n 0 -F ~/Documents/Casco/.lavish/afk-log-20261110.md | grep --line-buffered -E '"'"'captain.*n11-g8|GATE-GO n11-g8|n11-g8-474'"'"' ) & while true; do r=$(ls ~/Documents/Casco/.lavish/council/records 2>/dev/null | grep '"'"'n11-g8-474-roles-r2'"'"'); [ -n "$r" ] && echo "council record: $r" && break; sleep 60; done' < /dev/null && pwd -P >| /tmp/claude-4ad4-cwd
+28486 /bin/zsh -c source /Users/eduardopicazo/.claude/shell-snapshots/snapshot-zsh-1794405534919-zbmsg8.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/null || true && { \builtin unalias -- 'which'; \builtin unset -f -- 'which'; } >/dev/null 2>&1 || true && { \builtin unalias -- 'unsetenv'; \builtin unset -f -- 'unsetenv'; } >/dev/null 2>&1 || true && eval '( tail -n 0 -F ~/Documents/Casco/.lavish/afk-log-20261110.md | grep --line-buffered -E '"'"'captain.*n11-g8|GATE-GO n11-g8|n11-g8-474'"'"' ) & while true; do r=$(ls ~/Documents/Casco/.lavish/council/records 2>/dev/null | grep n11-g8); [ -n "$r" ] && echo "council record: $r" && break; sleep 60; done' < /dev/null && pwd -P >| /tmp/claude-a301-cwd
+85370 sleep 60

@@ -1,0 +1,4 @@
+ok - real repository passes coverage guard and maps live-e2e guards to live-harness-optin
+not ok - runner invoked under /bin/bash 3.2 did not exec FM_TEST_RUN_BASH5_CANDIDATE
+/bin/bash $T/sub.test.sh  5.00s user 2.61s system 2% cpu 6:15.70 total
+exit=1

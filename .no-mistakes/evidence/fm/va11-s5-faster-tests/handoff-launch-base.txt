@@ -1,0 +1,10 @@
+FM_TEST_BEGIN 2026-11-11T19:41:40Z tests/fm-handoff-launch.test.sh family=unclassified expected_gate_skip=none
+ok - a written handoff launches a live successor and records its pid for the Stop gate
+ok - a stale record naming the current session never stands in for a new successor
+ok - an unknown recorded backend refuses rather than guessing another backend
+ok - a successor that never appears fails loudly and leaves the record unwritten
+FM_TEST_END 2026-11-11T19:42:38Z tests/fm-handoff-launch.test.sh exit=0 duration_ms=56401 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=59347
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=56401 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-handoff-launch.test.sh duration_ms=56401
+/bin/bash bin/fm-test-run.sh --per-script-timeout-secs 180   2.32s user 2.97s system 8% cpu 59.638 total

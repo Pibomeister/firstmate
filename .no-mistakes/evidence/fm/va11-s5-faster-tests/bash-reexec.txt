@@ -1,0 +1,26 @@
+### Scenario: /bin/bash 3.2 entry re-execs into Bash 5 candidate, marker not leaked to tests
+FM_TEST_BEGIN 2026-11-11T19:41:06Z /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.yisTBvJoWD/probe.test.sh family=unclassified expected_gate_skip=none
+probe: runner-parent-bash=/opt/homebrew/bin/bash bin/fm-test-run.sh /var/folders/93/6w1bxqxn2yb92mt6rmt5zb
+probe: REEXEC_MARKER=<unset>
+ok 1 probe
+FM_TEST_END 2026-11-11T19:41:06Z /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.yisTBvJoWD/probe.test.sh exit=0 duration_ms=29 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=313
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=29 failed=0
+FM_TEST_SLOWEST rank=1 script=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.yisTBvJoWD/probe.test.sh duration_ms=29
+exit=
+--- candidate log:
+candidate-invoked -c [ "${BASH_VERSINFO[0]:-0}" -ge 5 ]
+candidate-invoked bin/fm-test-run.sh /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.yisTBvJoWD/probe.test.sh
+
+### Scenario: FM_TEST_RUN_NO_REEXEC=1 opt-out stays on Bash 3.2
+FM_TEST_BEGIN 2026-11-11T19:41:07Z /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.yisTBvJoWD/probe.test.sh family=unclassified expected_gate_skip=none
+probe: runner-parent-bash=/bin/bash bin/fm-test-run.sh /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tm
+probe: REEXEC_MARKER=<unset>
+ok 1 probe
+FM_TEST_END 2026-11-11T19:41:07Z /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.yisTBvJoWD/probe.test.sh exit=0 duration_ms=201 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=737
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=201 failed=0
+FM_TEST_SLOWEST rank=1 script=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.yisTBvJoWD/probe.test.sh duration_ms=201
+exit=
+--- candidate log:
+(none - no re-exec)

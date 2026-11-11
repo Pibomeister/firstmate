@@ -1,0 +1,19 @@
+=== family of new live-e2e scripts (target)
+tests/fm-codex-catalog-live-e2e.test.sh
+tests/fm-hermes-gateway-coexistence-live-e2e.test.sh
+tests/fm-hermes-profile-safety-live-e2e.test.sh
+tests/fm-hermes-signals-live-e2e.test.sh
+tests/fm-kiro-signals-live-e2e.test.sh
+tests/fm-opencode-abs-cwd-rail-live-e2e.test.sh
+tests/fm-stop-policy-live-e2e.test.sh
+tests/fm-warm-compact-herdr-live-e2e.test.sh
+
+=== unclassified family under target (should not list these)
+(no live-e2e scripts unclassified)
+
+=== re-exec probe: runner invoked by /bin/bash 3.2 reports its own bash
++ /opt/homebrew/bin/bash -c '[ "${BASH_VERSINFO[0]:-0}" -ge 5 ]'
++ exec /opt/homebrew/bin/bash bin/fm-test-run.sh --list-families
+
+=== nested: outer re-exec must not leak marker to children
+outer-ok
