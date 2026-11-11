@@ -745,14 +745,20 @@ SH
 #!/usr/bin/env bash
 case "$1 $2" in
   "environment list") exit 1 ;;
+  "terminal list")
+    printf '{"ok":true,"result":{"terminals":[{"handle":"term-local","worktreePath":"%s"}]}}\n' "${FM_SWEEP_WT:?}" ;;
+  "terminal close") printf '%s\n' "$*" >> "${FM_SWEEP_LOG:?}"; printf '{"ok":true,"result":{}}\n' ;;
   *) exit 1 ;;
 esac
 SH
   chmod +x "$fb2/orca"
-  out=$( PATH="$fb2:$PATH" FM_SWEEP_WT="$wt" \
+  out=$( PATH="$fb2:$PATH" FM_SWEEP_WT="$wt" FM_SWEEP_LOG="$CASE_DIR/sweep-noenv.log" \
     bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_close_worktree_terminals "$1"' "$ROOT" "$wt" 2>&1 )
   status=$?
   [ "$status" -eq 2 ] || fail "an unreadable environment list should exit 2, got $status: $out"
+  [ "$out" = "closed=1 environments=1" ] || fail "an unreadable environment list should still sweep the local Orca, got '$out'"
+  grep -q 'terminal close --terminal term-local' "$CASE_DIR/sweep-noenv.log" \
+    || fail "the local terminal was left open when the environment list could not be read"
   pass "fm_backend_orca_close_worktree_terminals: a failed close refuses and an unreadable list is distinct"
 }
 

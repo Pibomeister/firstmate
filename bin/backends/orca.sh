@@ -535,7 +535,7 @@ fm_backend_orca_close_worktree_terminals() {  # <worktree-path>
   envs=$(orca environment list --json 2>/dev/null | node -e '
 let d; try { d = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (_) { process.exit(1); }
 if (!d || d.ok === false || !d.result || !Array.isArray(d.result.environments)) process.exit(1);
-for (const e of d.result.environments) if (e && typeof e.id === "string" && e.id) console.log(e.id);') || return 2
+for (const e of d.result.environments) if (e && typeof e.id === "string" && e.id) console.log(e.id);') || { envs=; rc=2; }
   while IFS= read -r env; do
     [ -n "$env" ] || continue
     env_count=$((env_count + 1))
