@@ -30,13 +30,25 @@ guard() {
     bash "$ROOT/bin/fm-turnend-guard.sh" --claude < "$PAYLOAD" > "$TMP_ROOT/out" 2> "$TMP_ROOT/err" || RC=$?
   fi
 }
+supervised_guard() {
+  local owner
+  sleep 60 &
+  owner=$!
+  mkdir -p "$LAB/state/.claude-autoarm.lock"
+  printf '%s\n' "$owner" > "$LAB/state/.claude-autoarm.lock/pid"
+  printf 'autoarm\n' > "$LAB/state/.claude-autoarm.lock/role"
+  guard
+  rm -rf "$LAB/state/.claude-autoarm.lock"
+  kill "$owner" 2>/dev/null || true
+  wait "$owner" 2>/dev/null || true
+}
 expect_rc() { [ "$RC" -eq "$1" ] || fail "$2: expected rc=$1, got $RC: $(cat "$TMP_ROOT/err")"; }
 event() { rg -q "status=$1 " "$LAB/state/stop-hook.log" || fail "missing $1 event"; }
 
 : > "$LAB/state/task.meta"
 printf 'captain-held [at=1]: transferred to owner\n' > "$LAB/state/task.status"
 turn parked shipshape
-guard
+supervised_guard
 expect_rc 0 'all parked stops in one turn'
 event parked
 pass 'DRILL all-parked: stopped in 1 turn'
@@ -49,7 +61,7 @@ expect_rc 2 'an executable order overrides parked tasks'
 rm "$LAB/data/orders/pending/new.order"
 printf 'paused [at=1]: awaiting external check completion\n' > "$LAB/state/task.status"
 turn external shipshape
-guard
+supervised_guard
 expect_rc 0 'all external waits stop'
 printf 'working [at=1]: other actionable task\n' > "$LAB/state/other.status"
 : > "$LAB/state/other.meta"

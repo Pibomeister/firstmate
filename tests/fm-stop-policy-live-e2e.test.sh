@@ -6,7 +6,8 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 fm_live_gate opt-in FM_STOP_POLICY_LIVE_E2E claude
 TMP_ROOT=$(fm_test_tmproot fm-stop-policy-live)
-trap fm_test_cleanup EXIT
+recovery_owner=
+trap '[ -z "$recovery_owner" ] || kill "$recovery_owner" 2>/dev/null || true; fm_test_cleanup' EXIT
 VERSION=$(claude --version)
 printf 'claude version: %s\n' "$VERSION"
 for scenario in parked active; do
@@ -17,6 +18,13 @@ for scenario in parked active; do
   : > "$LAB/state/task.meta"
   if [ "$scenario" = parked ]; then
     printf 'captain-held [at=1]: owner decision\n' > "$LAB/state/task.status"
+    # The portable auto-arm drill covers watcher continuity. This payload
+    # probe gives the guard a live recovery owner while Claude ends its turn.
+    sleep 300 &
+    recovery_owner=$!
+    mkdir -p "$LAB/state/.claude-autoarm.lock"
+    printf '%s\n' "$recovery_owner" > "$LAB/state/.claude-autoarm.lock/pid"
+    printf 'autoarm\n' > "$LAB/state/.claude-autoarm.lock/role"
   else
     printf 'working [at=1]: executable work\n' > "$LAB/state/task.status"
   fi
@@ -41,6 +49,11 @@ SH
       --strict-mcp-config --mcp-config '{"mcpServers":{}}' --setting-sources project \
       --no-session-persistence --output-format stream-json --verbose
   ) > "$LAB/claude.jsonl" 2>&1 || fail "$VERSION $scenario Claude run failed: $(tail -10 "$LAB/claude.jsonl")"
+  if [ "$scenario" = parked ]; then
+    kill "$recovery_owner" 2>/dev/null || true
+    wait "$recovery_owner" 2>/dev/null || true
+    recovery_owner=
+  fi
   if [ "$scenario" = parked ]; then
     [ "$(wc -l < "$LAB/payloads.jsonl" | tr -d ' ')" -eq 1 ] || fail "$VERSION parked session did not stop in one turn"
     rg -q 'status=parked ' "$LAB/state/stop-hook.log" || fail "$VERSION parked event absent"

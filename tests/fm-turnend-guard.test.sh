@@ -1554,6 +1554,20 @@ SH
 }
 
 # Active-hook stops cannot leave the home blind when no auto-arm owns recovery.
+test_parked_home_requires_monitoring() {
+  local variant dir out status
+  for variant in missing afk; do
+    dir=$(make_primary_dir "$TMP_ROOT/parked-unmonitored-$variant")
+    : > "$dir/state/task.meta"
+    printf 'paused [at=1]: waiting for external completion\n' > "$dir/state/task.status"
+    [ "$variant" != afk ] || : > "$dir/state/.afk"
+    out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=0 run_hook_claude "$dir" true); status=$?
+    expect_code 2 "$status" "parked $variant home must repair absent monitoring: $out"
+    assert_contains "$out" "TURN WOULD END BLIND" "parked $variant home lost its monitoring failure"
+  done
+  pass "parked homes with inert auto-arm or dead away daemon retain supervision repair"
+}
+
 test_hook_claude_mode_reblocks_stop_hook_active_when_unhealthy() {
   local dir out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-claude-reblock")
@@ -3562,8 +3576,14 @@ SH
   pass "secondmate Herdr binding is proven from the lock owner and rings its recorded target; the default session needs no HERDR_SESSION, a leftover watcher is taken over for this home only, and legacy tmux bindings still validate"
 }
 
+if [ "${FM_TEST_ONLY:-}" = stop-policy-review ]; then
+  trap fm_test_cleanup EXIT
+  test_parked_home_requires_monitoring
+  exit 0
+fi
 if [ "${FM_TEST_ONLY:-}" = stop-policy ]; then
   trap fm_test_cleanup EXIT
+  test_parked_home_requires_monitoring
   test_hook_claude_mode_reblocks_stop_hook_active_when_unhealthy
   test_hook_claude_mode_allows_when_autoarm_owner_alive
   test_hook_claude_mode_allows_on_fresh_rewake_epoch
@@ -3648,6 +3668,7 @@ test_pi_extension_injects_once_per_logical_agent_run
 test_pi_extension_retries_after_followup_delivery_failure
 test_pi_extension_keeps_marker_of_live_ancestor_session
 test_pi_extension_reads_a_windows_tagged_session_lock
+test_parked_home_requires_monitoring
 test_hook_claude_mode_reblocks_stop_hook_active_when_unhealthy
 test_hook_claude_mode_reblocks_x_mode_without_tasks
 test_hook_claude_mode_allows_when_autoarm_owner_alive

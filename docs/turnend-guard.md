@@ -313,7 +313,7 @@ The registrations in detail:
 Claude and Codex can block a Stop directly with exit status 2 and stderr.
 Ordinary guards honor `stop_hook_active`; Claude's cooperative mode also preserves tokenless monitoring before allowing a blind stop.
 The shared primary continuation limits, parked-work exit and watchdog log are owned by [`bin/fm-stop-policy-lib.sh`](../bin/fm-stop-policy-lib.sh), with regression and lab drill in [`tests/fm-stop-policy.test.sh`](../tests/fm-stop-policy.test.sh).
-A parked home without monitoring stops early only on Claude, whose auto-arm keeps watching; other harnesses still block until monitoring is restored.
+A parked Claude home stops early when a healthy watcher or verified auto-arm recovery owns monitoring; missing monitoring still requires repair.
 Codex mode is owned by the header of [`bin/fm-turnend-guard.sh`](../bin/fm-turnend-guard.sh).
 A running checkpoint this session started still blocks; the shared stop policy applies only after the checkpoint and detach rules.
 Once it has exited, the hook detaches a persistent hold or allows the stop.

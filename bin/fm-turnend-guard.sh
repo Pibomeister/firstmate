@@ -134,7 +134,8 @@
 #      hook that leaves the ledger frozen cannot hold the guard in an
 #      unbounded re-block loop below that override.
 #      Before any re-block, bin/fm-stop-policy-lib.sh repair mode applies the
-#      parked, loop and hourly bounds; it ignores stop_hook_active.
+#      loop and hourly bounds; missing-supervision repair skips both the parked
+#      shortcut and stop_hook_active.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -340,6 +341,7 @@ allow_supervised_stop() {
     exit 0
   fi
   [ "$CLAUDE_MODE" -eq 1 ] || exit 0
+  fm_stop_policy_allows_stop "$PAYLOAD" supervise || true
   fm_failure_episode_reset "$STATE" && exit 0
   fm_stop_policy_allows_stop "$PAYLOAD" repair && allow_exit
   exit 2
@@ -550,9 +552,6 @@ fi
 if [ "$CLAUDE_MODE" -eq 1 ] || [ "$CODEX_MODE" -eq 1 ]; then
   FM_STOP_POLICY_OWNER_CHECKED=1
 fi
-if [ "$CLAUDE_MODE" -eq 1 ]; then
-  fm_stop_policy_allows_stop "$PAYLOAD" supervise && allow_exit
-fi
 
 # Codex rule 2 (header): once this session's own checkpoint is closed, detach an
 # owner or allow the stop. A secondmate home and a home with state/.afk keep the
@@ -673,6 +672,7 @@ budget_account_current_epoch() {  # [observe|block]
 
 autoarm_owns_recovery() {
   local pid role outcome age
+  [ ! -e "$STATE/.afk" ] || return 1
   fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME" && return 0
   # An open generation claim owns recovery; fm_autoarm_claim_open in
   # bin/fm-wake-lib.sh owns the full predicate, including session reachability.
@@ -811,6 +811,7 @@ while [ "$i" -lt $((SYNC_WAIT_MS / 100)) ]; do
     if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
       fm_failure_episode_reset "$STATE" || { fm_stop_policy_allows_stop "$PAYLOAD" repair && allow_exit; exit 2; }
     fi
+    fm_stop_policy_allows_stop "$PAYLOAD" supervise || true
     exit 0
   fi
   sleep 0.1
@@ -820,6 +821,7 @@ if autoarm_owns_recovery; then
   if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
     fm_failure_episode_reset "$STATE" || { fm_stop_policy_allows_stop "$PAYLOAD" repair && allow_exit; exit 2; }
   fi
+  fm_stop_policy_allows_stop "$PAYLOAD" supervise || true
   exit 0
 fi
 

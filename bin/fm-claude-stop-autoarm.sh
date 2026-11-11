@@ -361,16 +361,32 @@ autoarm_record() {  # <outcome>
 # durable; retry tokenlessly so a later external event or the rolling-hour
 # budget expiry can deliver a fresh wake. Keep the sleep interruptible through
 # the same child-pid trap used for an arm.
-autoarm_policy_wait() {
+autoarm_policy_wait() {  # [retain-output]
   local delay=${FM_POLL:-60}
   case "$delay" in ''|*[!0-9]*|0) delay=60 ;; esac
   [ "$delay" -le 60 ] || delay=60
-  [ -z "${OUT:-}" ] || rm -f "$OUT" 2>/dev/null || true
-  fm_autoarm_still_owner "$STATE" "$MY_GEN" || exit 0
+  if [ "${1:-}" != retain-output ]; then
+    [ -z "${OUT:-}" ] || rm -f "$OUT" 2>/dev/null || true
+  fi
+  if ! fm_autoarm_still_owner "$STATE" "$MY_GEN"; then
+    [ -z "${OUT:-}" ] || rm -f "$OUT" 2>/dev/null || true
+    exit 0
+  fi
   sleep "$delay" &
   ARM_PID=$!
   wait "$ARM_PID" || true
   ARM_PID=
+  if ! fm_autoarm_still_owner "$STATE" "$MY_GEN"; then
+    :
+  elif [ -e "$STATE/.afk" ]; then
+    autoarm_record afk
+  elif ! need_supervision; then
+    autoarm_record clean
+  else
+    return 0
+  fi
+  [ -z "${OUT:-}" ] || rm -f "$OUT" 2>/dev/null || true
+  exit 0
 }
 
 # Before a StopFailure-triggered commit that delivers an exit-2 continuation,
@@ -627,6 +643,7 @@ run_arm() {  # <output file, or empty for none>
 SUCCESSOR_FAILURE=
 start_handling_successor() {  # <closed-arm-pid>
   local out pid deadline budget line monitor_was_on=0
+  SUCCESSOR_FAILURE=
   budget=${FM_ARM_SUCCESSOR_CONFIRM_TIMEOUT:-30}
   case "$budget" in ''|*[!0-9]*) budget=30 ;; esac
   if ! out=$(mktemp "$STATE/.claude-autoarm-successor.XXXXXX"); then
@@ -784,6 +801,19 @@ if [ "$ACTIONABLE" -eq 1 ]; then
   if [ "$HOST_MODE" -eq 0 ]; then
     start_handling_successor "$CLOSED_ARM_PID" || true
   fi
+  # A live handling successor suppresses this pending wake's reannouncement.
+  # Retain the close and retry its policy directly, independently of whether
+  # that successor ever closes. The queue stays unacknowledged throughout.
+  while :; do
+    autoarm_commit rewake
+    REWAKE_RC=$?
+    [ "$AUTOARM_POLICY_DEFERRED" -eq 1 ] || break
+    autoarm_policy_wait retain-output
+    if [ "$HOST_MODE" -eq 0 ] \
+      && ! fm_watcher_healthy "$STATE" "$SCRIPT_DIR/fm-watch.sh" "$GRACE" "$FM_HOME"; then
+      start_handling_successor "$CLOSED_ARM_PID" || true
+    fi
+  done
   BANNER=$(
     printf 'firstmate watcher wake - one supervision event needs a handling turn now.\n'
     if [ "$HOST_MODE" -eq 1 ]; then
@@ -798,12 +828,11 @@ if [ "$ACTIONABLE" -eq 1 ]; then
     [ -z "$SUCCESSOR_FAILURE" ] || printf '%s\n' "$SUCCESSOR_FAILURE"
     printf 'Run bin/fm-wake-drain.sh first, handle the wake, then run its exact WAKE_ACK_REQUIRED --ack-through command. Until that post-handling acknowledgement, interruption leaves the wake durable for idempotent re-handling. This Stop hook owns watcher continuity: when the handling turn ends, the next needed cycle arms automatically - do NOT run bin/fm-watch-arm.sh after an ordinary wake.\n'
   )
-  if autoarm_commit rewake; then
+  if [ "$REWAKE_RC" -eq 0 ]; then
     printf '%s\n' "$BANNER" >&2
     [ -z "$OUT" ] || rm -f "$OUT" 2>/dev/null || true
     exit 2
   fi
-  if [ "$AUTOARM_POLICY_DEFERRED" -eq 1 ]; then autoarm_policy_wait; continue; fi
   if [ "$HOST_MODE" -eq 1 ] && fm_autoarm_still_owner "$STATE" "$MY_GEN" \
     && fm_recovery_marker_snapshot "$STATE/.watcher-down" \
     && [[ "$FM_RECOVERY_MARKER_TOKEN" == pending:handling:* || "$FM_RECOVERY_MARKER_TOKEN" == announced:handling:* ]] \

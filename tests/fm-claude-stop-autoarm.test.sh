@@ -2376,7 +2376,7 @@ test_fm_lock_status_still_works_with_shared_lib() {
 # A real hook process stays tokenless while the model stops, then observes a
 # later fixture event. The budget variant also keeps monitoring across a bound.
 test_parked_stop_keeps_monitoring() {
-  local variant=${1:-parked} dir pid n rc clockbin real_date now
+  local variant=${1:-parked} dir pid n rc clockbin real_date now successor
   dir=$(make_primary_dir "$TMP_ROOT/parked-policy-$variant")
   cp "$ROOT/bin/fm-turnend-guard.sh" "$ROOT/bin/fm-harness.sh" "$ROOT/bin/fm-operational-input.sh" "$dir/bin/"
   : > "$dir/state/task.meta"
@@ -2394,7 +2394,14 @@ test_parked_stop_keeps_monitoring() {
   cat > "$dir/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
 if [ -n "${FM_WATCH_PREDECESSOR_ARM_PID:-}" ]; then
+  printf '%s\n' "$$" > "$FM_HOME/state/successor.pid"
   printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+  while [ ! -e "$FM_HOME/state/successor-stop" ]; do sleep 0.05; done
+  exit 0
+fi
+if [ -e "$FM_HOME/state/event-emitted" ]; then
+  : > "$FM_HOME/state/unexpected-reattach"
+  while [ ! -e "$FM_HOME/state/successor-stop" ]; do sleep 0.05; done
   exit 0
 fi
 printf '%s\n' "$$" >> "$FM_HOME/state/arm-ran"
@@ -2404,20 +2411,25 @@ if [ ! -s "$FM_HOME/state/.wake-queue" ]; then
   printf '1 1 check: lab-external-release\n' > "$FM_HOME/state/.wake-queue"
 fi
 printf 'pending:downtime:parked-lab\n' > "$FM_HOME/state/.watcher-down"
+: > "$FM_HOME/state/event-emitted"
 printf 'watcher: started pid=%s (beacon fresh)\ncheck: lab-external-release\n' "$$"
 SH
   chmod +x "$dir/bin/fm-watch-arm.sh"
   env PATH="$clockbin:$PATH" FM_HOME="$dir" FM_POLL=1 FM_TEST_SEAM=1 FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=0 \
     "$FAKE_CLAUDE" -c '
       printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      bash "$FM_HOME/bin/fm-claude-stop-autoarm.sh" < "$FM_HOME/payload.json" > "$FM_HOME/state/autoarm.out" 2>&1 &
+      autoarm_pid=$!
+      while [ ! -s "$FM_HOME/state/arm-ran" ]; do sleep 0.05; done
       bash "$FM_HOME/bin/fm-turnend-guard.sh" --claude < "$FM_HOME/payload.json" > "$FM_HOME/state/guard.out" 2>&1
       printf "%s\n" "$?" > "$FM_HOME/state/guard.rc"
-      bash "$FM_HOME/bin/fm-claude-stop-autoarm.sh" < "$FM_HOME/payload.json" > "$FM_HOME/state/autoarm.out" 2>&1
+      wait "$autoarm_pid"
       printf "%s\n" "$?" > "$FM_HOME/state/autoarm.rc"
     ' &
   pid=$!
   for ((n=0; n<600; n++)); do [ ! -s "$dir/state/arm-ran" ] || break; sleep 0.1; done
   [ -s "$dir/state/arm-ran" ] || { kill "$pid" 2>/dev/null || true; fail "parked auto-arm never started: $(cat "$dir/state/autoarm.out" 2>/dev/null)"; }
+  for ((n=0; n<600; n++)); do [ ! -f "$dir/state/guard.rc" ] || break; sleep 0.1; done
   [ "$(cat "$dir/state/guard.rc")" = 0 ] || fail "parked model stop was blocked: $(cat "$dir/state/guard.out")"
   grep -q 'status=parked ' "$dir/state/stop-hook.log" || fail 'parked stop was not classified'
   kill -0 "$pid" 2>/dev/null || fail 'monitoring owner exited before the external wake'
@@ -2430,7 +2442,18 @@ SH
     kill -0 "$pid" 2>/dev/null || fail 'budget killed tokenless monitoring'
     printf '%s\n' "$((now+3601))" > "$dir/state/clock"
   fi
-  for ((n=0; n<600; n++)); do [ ! -f "$dir/state/autoarm.rc" ] || break; sleep 0.1; done
+  for ((n=0; n<600; n++)); do
+    [ ! -e "$dir/state/unexpected-reattach" ] || break
+    [ ! -f "$dir/state/autoarm.rc" ] || break
+    sleep 0.1
+  done
+  : > "$dir/state/successor-stop"
+  successor=$(cat "$dir/state/successor.pid" 2>/dev/null || true)
+  [ -z "$successor" ] || kill "$successor" 2>/dev/null || true
+  [ ! -e "$dir/state/unexpected-reattach" ] || {
+    kill "$pid" 2>/dev/null || true
+    fail "deferred wake reattached to a persistent successor instead of reevaluating its pending delivery"
+  }
   [ -f "$dir/state/autoarm.rc" ] || { kill "$pid" 2>/dev/null || true; fail "later real wake never arrived: $(cat "$dir/state/autoarm.out")"; }
   wait "$pid" || true
   rc=$(cat "$dir/state/autoarm.rc")
@@ -2442,10 +2465,51 @@ SH
   pass "parked $variant session stops cleanly while monitoring and later wake delivery continue"
 }
 
+test_parked_failure_delivers_notice() {
+  local variant dir out status calls
+  # shellcheck source=bin/fm-timeout-lib.sh
+  . "$ROOT/bin/fm-timeout-lib.sh"
+  for variant in notice alarm host; do
+    dir=$(make_primary_dir "$TMP_ROOT/parked-failed-arm-$variant")
+    : > "$dir/state/task.meta"
+    printf 'captain-held [at=1]: owner decision\n' > "$dir/state/task.status"
+    calls="$dir/state/arm-ran"
+    if [ "$variant" = host ]; then
+      rm -f "$dir/config/supervision-host-off"
+      write_host_fixture "$dir" lost-handback
+      calls="$dir/state/host-ran"
+    else
+      write_arm_fixture "$dir" failed
+    fi
+    if [ "$variant" = alarm ]; then
+      : > "$dir/state/.claude-autoarm-failure-notified"
+      printf 'session=sess-autoarm\ncount=4\nepoch=0\n' > "$dir/state/.turnend-claude-blocks"
+    fi
+    out=$(FM_CLAUDE_AUTOARM_ATTEMPTS=1 FM_POLL=1 fm_run_timed_fn 60 run_autoarm "$dir" 2>/dev/null); status=$?
+    expect_code 2 "$status" "parked home with failed watcher startup must deliver its $variant: $out"
+    if [ "$variant" = alarm ]; then
+      assert_contains "$out" "FIRSTMATE SUPERVISION IS GENUINELY DOWN" "parked startup failure lost its alarm"
+      assert_present "$dir/state/.claude-autoarm-failure-alarmed" "failure alarm was never committed"
+    else
+      assert_contains "$out" "auto-arm FAILED" "parked startup failure lost its notice"
+      assert_present "$dir/state/.claude-autoarm-failure-notified" "failure notice was never committed"
+    fi
+    [ "$(wc -l < "$calls" | tr -d ' ')" = 1 ] || fail "parked startup failure looped"
+    assert_contains "$(cat "$dir/state/stop-hook.log")" "status=continue" "failure continuation needs a watchdog record"
+  done
+  pass "parked startup failure delivers one notice and its watchdog record without looping"
+}
+
+if [ "${FM_TEST_ONLY:-}" = stop-policy-review ]; then
+  trap fm_test_cleanup EXIT
+  test_parked_failure_delivers_notice
+  exit 0
+fi
 if [ "${FM_TEST_ONLY:-}" = stop-policy ]; then
   trap fm_test_cleanup EXIT
   test_parked_stop_keeps_monitoring parked
   test_parked_stop_keeps_monitoring budget
+  test_parked_failure_delivers_notice
   test_actionable_close_rewakes_with_reason
   exit 0
 fi
@@ -2522,5 +2586,6 @@ test_host_crash_is_retried_then_reported
 test_arguments_never_arm
 test_fm_lock_status_still_works_with_shared_lib
 test_stands_down_only_on_pi_code_transcript_path
+test_parked_failure_delivers_notice
 test_parked_stop_keeps_monitoring parked
 test_parked_stop_keeps_monitoring budget
