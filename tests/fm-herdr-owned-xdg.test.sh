@@ -208,6 +208,58 @@ SH
   pass "fm-herdr-lab: fleet-state tripwire still requires exactly one running default session"
 }
 
+test_fixture_stays_on_default_when_a_custom_fleet_session_is_exported() {
+  local foreign started fakebin status=0 first
+  foreign=$(herdr_fixture_create) || fail "create foreign failed"
+  remember_owned "$foreign"
+  started=$(herdr_fixture_create) || fail "create started failed"
+  remember_owned "$started"
+  fakebin=$(fm_fakebin "$(fm_test_tmproot fm-herdr-owned-xdg-custom-fleet)/bin")
+  mkdir -p "$started/procbin"
+  cp "$(command -v sleep)" "$started/procbin/herdr"
+  chmod +x "$started/procbin/herdr"
+  cat > "$fakebin/herdr" <<SH
+#!/usr/bin/env bash
+printf '%s\\n' "\$*" >> $(printf '%q' "$foreign/herdr.log")
+printf '%s\\n' "\$*" >> $(printf '%q' "$started/herdr.log")
+if [ "\$1" = session ]; then
+  if [ "\${FM_FAKE_FOREIGN_DEFAULT:-}" = 1 ]; then
+    printf '%s\\n' '{"sessions":[{"default":true,"name":"default","running":true,"socket_path":"/tmp/custom-fleet-foreign.sock"}]}'
+    exit 0
+  fi
+  if [ -s $(printf '%q' "$started/leader.pid") ]; then
+    printf '%s\\n' '{"sessions":[{"default":true,"name":"default","running":true,"socket_path":"/tmp/custom-fleet-owned.sock"}]}'
+  else
+    printf '%s\\n' '{"sessions":[]}'
+  fi
+  exit 0
+fi
+if [ "\$1" = server ]; then
+  printf 'invoked\\n' > $(printf '%q' "$foreign/server.invoked")
+  printf '%s\\n' "\$\$" > $(printf '%q' "$started/leader.pid")
+  exec $(printf '%q' "$started/procbin/herdr") 98769
+fi
+exit 90
+SH
+  chmod +x "$fakebin/herdr"
+  status=0
+  FM_HERDR_LAB_FLEET_SESSION=custom FM_FAKE_FOREIGN_DEFAULT=1 PATH="$fakebin:$PATH" \
+    "$LAB" fixture start "$foreign" >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "start must still refuse a running default when FM_HERDR_LAB_FLEET_SESSION is custom"
+  [ ! -e "$foreign/server.invoked" ] || fail "start forked a server against a foreign default under a custom fleet session"
+  ! grep -Fq 'server' "$foreign/herdr.log" || fail "start invoked herdr server against a foreign default under a custom fleet session"
+  FM_HERDR_LAB_FLEET_SESSION=custom PATH="$fakebin:$PATH" \
+    "$LAB" fixture start "$started" || fail "start failed under FM_HERDR_LAB_FLEET_SESSION=custom"
+  first=$(sed -n 's/^pid=//p' "$started/owned.record")
+  [ -n "$first" ] || fail "start under a custom fleet session recorded no pid"
+  FM_HERDR_LAB_FLEET_SESSION=custom PATH="$fakebin:$PATH" \
+    "$LAB" fixture check "$started" || fail "check failed under FM_HERDR_LAB_FLEET_SESSION=custom"
+  FM_HERDR_LAB_FLEET_SESSION=custom PATH="$fakebin:$PATH" \
+    herdr_fixture_cleanup "$started" || fail "cleanup after a custom-fleet start failed"
+  herdr_fixture_cleanup "$foreign" || fail "cleanup of the custom-fleet foreign fixture failed"
+  pass "fm-herdr-lab fixture: start and check stay on the default session when FM_HERDR_LAB_FLEET_SESSION is custom"
+}
+
 test_start_refuses_a_running_default_it_did_not_start() {
   local root fakebin status=0
   root=$(herdr_fixture_create) || fail "create failed"
@@ -338,6 +390,51 @@ SH
   pass "fm-herdr-lab fixture: a write_record failure after fork signals the pid it started"
 }
 
+test_start_fails_fast_when_the_forked_pid_has_no_start_time() {
+  local root fakebin real_ps leader status=0 out pid_recorded
+  root=$(herdr_fixture_create) || fail "create failed"
+  remember_owned "$root"
+  mkdir -p "$root/procbin"
+  cp "$(command -v sleep)" "$root/procbin/herdr"
+  chmod +x "$root/procbin/herdr"
+  real_ps=$(command -v ps)
+  fakebin=$(fm_fakebin "$(fm_test_tmproot fm-herdr-owned-xdg-empty-lstart)/bin")
+  cat > "$fakebin/ps" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *' lstart= '*|*lstart=*) exit 0 ;;
+esac
+exec $(printf '%q' "$real_ps") "\$@"
+SH
+  chmod +x "$fakebin/ps"
+  cat > "$fakebin/herdr" <<SH
+#!/usr/bin/env bash
+if [ "\$1" = session ]; then
+  printf '%s\\n' '{"sessions":[]}'
+  exit 0
+fi
+if [ "\$1" = server ]; then
+  printf '%s\\n' "\$\$" > $(printf '%q' "$root/leader.pid")
+  exec $(printf '%q' "$root/procbin/herdr") 98770
+fi
+exit 90
+SH
+  chmod +x "$fakebin/herdr"
+  status=0
+  out=$(PATH="$fakebin:$PATH" "$LAB" fixture start "$root" 2>&1) || status=$?
+  expect_code 1 "$status" "start must fail when the forked pid has no start time"
+  [ -s "$root/leader.pid" ] || fail "the forked herdr did not record its pid"
+  leader=$(cat "$root/leader.pid")
+  assert_contains "$out" "$leader" "the empty-start refusal must name the pid left running"
+  pid_recorded=$(sed -n 's/^pid=//p' "$root/owned.record")
+  [ -z "$pid_recorded" ] || fail "start wrote a usable pid into the record without a start time"
+  kill -0 "$leader" 2>/dev/null || fail "start reaped pid $leader that had no start time"
+  kill -TERM "$leader" 2>/dev/null || true
+  wait "$leader" 2>/dev/null || true
+  herdr_fixture_cleanup "$root" || fail "cleanup after an empty-start refusal failed"
+  pass "fm-herdr-lab fixture: start fails fast when the forked pid has no start time and writes no usable record"
+}
+
 test_reap_started_skips_a_pid_whose_start_time_no_longer_matches() {
   local root decoy
   root=$(herdr_fixture_create) || fail "create failed"
@@ -360,8 +457,10 @@ test_stop_refuses_a_live_non_herdr_pid
 test_stop_refuses_herdr_named_pid_with_wrong_start_time
 test_stop_refuses_herdr_named_pid_without_fixture_xdg
 test_lab_tripwire_still_refuses_zero_and_multiple_defaults
+test_fixture_stays_on_default_when_a_custom_fleet_session_is_exported
 test_start_refuses_a_running_default_it_did_not_start
 test_second_start_on_a_started_fixture_is_idempotent
 test_start_failure_signals_the_forked_process_group
 test_start_write_record_failure_signals_the_forked_process
+test_start_fails_fast_when_the_forked_pid_has_no_start_time
 test_reap_started_skips_a_pid_whose_start_time_no_longer_matches

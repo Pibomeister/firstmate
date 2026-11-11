@@ -735,7 +735,7 @@ fm_herdr_lab_fixture_apply_vars() { # <root>
 }
 
 fm_herdr_lab_fixture_ready() {
-  fm_herdr_lab_fleet_state default >/dev/null 2>&1
+  FM_HERDR_LAB_FLEET_SESSION=default fm_herdr_lab_fleet_state default >/dev/null 2>&1
 }
 
 fm_herdr_lab_fixture_create() {
@@ -822,6 +822,10 @@ fm_herdr_lab_fixture_start() { # <root>
     sleep 0.02
     i=$((i + 1))
   done
+  [ -n "$started" ] || {
+    fm_herdr_lab_error "forked herdr pid $pid has no start time; leaving it running"
+    return 1
+  }
   fm_herdr_lab_fixture_write_record "$root" "$(fm_herdr_lab_fixture_record_get "$root" marker_token)" \
     "$pid" "$started" || {
     fm_herdr_lab_fixture_reap_started "$root" "$pid" "$started"
@@ -887,7 +891,7 @@ fm_herdr_lab_fixture_signal_tree() { # <pid> <signal>
 }
 
 fm_herdr_lab_fixture_stop() { # <root>
-  local root pid i
+  local root pid started
   fm_herdr_lab_forget_inherited
   root=$(fm_herdr_lab_fixture_prove "$1") || return 1
   pid=$(fm_herdr_lab_fixture_record_get "$root" pid)
@@ -899,17 +903,8 @@ fm_herdr_lab_fixture_stop() { # <root>
     return 0
   fi
   fm_herdr_lab_fixture_prove_pid "$root" >/dev/null || return 1
-  fm_herdr_lab_fixture_signal_tree "$pid" TERM
-  i=0
-  while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 10 ]; do
-    sleep 0.1
-    i=$((i + 1))
-  done
-  if kill -0 "$pid" 2>/dev/null; then
-    fm_herdr_lab_fixture_signal_tree "$pid" KILL
-  fi
-  wait "$pid" 2>/dev/null || true
-  fm_herdr_lab_fixture_clear_pid "$root"
+  started=$(fm_herdr_lab_fixture_record_get "$root" pid_start)
+  fm_herdr_lab_fixture_reap_started "$root" "$pid" "$started"
 }
 
 fm_herdr_lab_fixture_cleanup() { # <root>
