@@ -45,7 +45,10 @@
 #                       against state/.session-start-shared-baseline for global
 #                       git config and the shared no-mistakes state database
 #                       schema since the last locked session start (baseline
-#                       updated only on a full locked start). Bootstrap's seven
+#                       updated only on a full locked start). System git
+#                       config and per-clone .git/config files are not
+#                       watched, although the brief rule forbids all four
+#                       git config locations. Bootstrap's seven
 #                       MUTATING sweeps
 #                       (same-home backlog reconciliation, home code drift,
 #                       secondmate convergence, secondmate liveness, pending remote
@@ -1075,6 +1078,8 @@ print("sha256:" + h.hexdigest())
 
 # Detect-only comparison runs on every session start; only a full locked start
 # (not read-only, not --reemit) writes or updates state/.session-start-shared-baseline.
+# It watches only global/XDG git config and the no-mistakes state database schema;
+# system git config and per-clone .git/config are not watched, though the brief rule forbids them too.
 check_shared_state_since_last_start() {
   local prev_git_slots='' prev_git_state='' prev_nm_path='' prev_nm_schema=''
   local git_snap curr_git_slots='' curr_git_state=''
