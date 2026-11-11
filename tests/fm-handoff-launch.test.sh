@@ -340,54 +340,80 @@ assert_contains "$(cat "$META_HOME/state/.lock-session")" 'spawn_gen=s1.1.1' 'ex
 kill "$meta_pid"; wait "$meta_pid" 2>/dev/null || true
 pass 'supervisor endpoint metadata retains precedence and generation'
 
-# A transfer that fails to publish after its verdict keeps the predecessor's leases.
-LEASE_HOME="$TMP_ROOT/lease-home"
-LEASE_BIN="$TMP_ROOT/lease-bin"
-mkdir -p "$LEASE_HOME/state" "$LEASE_HOME/data" "$LEASE_BIN"
-printf 'lease handoff\n' > "$LEASE_HOME/handoff.md"
-REAL_MKTEMP=$(command -v mktemp)
-export REAL_MKTEMP
-cat > "$LEASE_BIN/mktemp" <<'EOF'
-#!/usr/bin/env bash
-case "${1:-}" in */.lock-session.XXXXXX) exit 1 ;; esac
-exec "$REAL_MKTEMP" "$@"
-EOF
-chmod +x "$LEASE_BIN/mktemp"
-# shellcheck disable=SC2016 # The harness child expands its own environment.
-FM_HOME="$LEASE_HOME" FM_STATE_OVERRIDE="$LEASE_HOME/state" ORCA_TERMINAL_HANDLE=term_lease_pred claude -c '
-  bash "$ROOT/bin/fm-lock.sh" > "$FM_HOME/pred.out" 2>&1
-  echo "$$" > "$FM_HOME/pred.pid"
-  while kill -0 "$FM_TEST_SUITE_PID" 2>/dev/null && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 1; done' &
-echo "$!" >> "$TMP_ROOT/pids"
-limit=$((SECONDS + LAB_STARTUP))
-while [ ! -f "$LEASE_HOME/pred.pid" ] && [ "$SECONDS" -lt "$limit" ]; do sleep 0.1; done
-[ "$(cat "$LEASE_HOME/state/.lock")" = "$(cat "$LEASE_HOME/pred.pid")" ] || fail "lease predecessor must hold the lock: $(cat "$LEASE_HOME/pred.out")"
-printf 'holder=%s\n' "$(cat "$LEASE_HOME/pred.pid")" > "$LEASE_HOME/state/.lease-task-a"
-cp "$LEASE_HOME/state/.lock-session" "$LEASE_HOME/session.before"
-(
-  export FM_HOME="$LEASE_HOME" FM_STATE_OVERRIDE="$LEASE_HOME/state"
-  STATE="$LEASE_HOME/state"
-  . "$ROOT/bin/fm-wake-lib.sh"
-  . "$ROOT/bin/fm-session-lock-lib.sh"
-  . "$ROOT/bin/fm-handoff-lib.sh"
-  pred=$(cat "$FM_HOME/pred.pid")
-  nonce=0123456789abcdef0123456789abcdef
-  sha=$(fm_handoff_hash "$FM_HOME/handoff.md")
-  jq -n --arg nonce "$nonce" --arg doc "$FM_HOME/handoff.md" --arg sha "$sha" \
-    --arg start "$(fm_session_process_start "$pred")" --argjson pid "$pred" --argjson deadline "$(( $(date +%s) + 600 ))" \
-    '{version:1,nonce:$nonce,handoff:$doc,sha256:$sha,predecessor_pid:$pid,predecessor_start:$start,deadline:$deadline}' \
-    > "$STATE/.handoff-pending"
+# A verified transfer retires predecessor leases only once it commits.
+REAL_MKTEMP=$(command -v mktemp) REAL_RM=$(command -v rm)
+export REAL_MKTEMP REAL_RM
+lease_transfer() {  # <case> <stub-name> <stub-body>
+  local home="$TMP_ROOT/lease-$1" bin="$TMP_ROOT/lease-$1-bin"
+  LEASE_HOME=$home
+  mkdir -p "$home/state" "$home/data" "$bin"
+  printf 'lease handoff\n' > "$home/handoff.md"
+  printf '#!/usr/bin/env bash\n%s\n' "$3" > "$bin/$2"
+  chmod +x "$bin/$2"
   # shellcheck disable=SC2016 # The harness child expands its own environment.
-  PATH="$LEASE_BIN:$PATH" ORCA_TERMINAL_HANDLE=term_lease_succ claude -c '
-    bash "$ROOT/bin/fm-handoff-ack.sh" "$1" "$2" > "$FM_HOME/ack.out" 2>&1
-    echo "$?" > "$FM_HOME/ack.rc"' lease-successor "$nonce" "$sha"
-) || fail 'lease fixture failed'
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" ORCA_TERMINAL_HANDLE=term_lease_pred claude -c '
+    bash "$ROOT/bin/fm-lock.sh" > "$FM_HOME/pred.out" 2>&1
+    echo "$$" > "$FM_HOME/pred.pid"
+    while kill -0 "$FM_TEST_SUITE_PID" 2>/dev/null && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 1; done' &
+  echo "$!" >> "$TMP_ROOT/pids"
+  limit=$((SECONDS + LAB_STARTUP))
+  while [ ! -f "$home/pred.pid" ] && [ "$SECONDS" -lt "$limit" ]; do sleep 0.1; done
+  [ "$(cat "$home/state/.lock")" = "$(cat "$home/pred.pid")" ] || fail "lease predecessor must hold the lock: $(cat "$home/pred.out")"
+  printf 'holder=%s\n' "$(cat "$home/pred.pid")" > "$home/state/.lease-task-a"
+  cp "$home/state/.lock-session" "$home/session.before"
+  (
+    export FM_HOME="$home" FM_STATE_OVERRIDE="$home/state"
+    STATE="$home/state"
+    . "$ROOT/bin/fm-wake-lib.sh"
+    . "$ROOT/bin/fm-session-lock-lib.sh"
+    . "$ROOT/bin/fm-handoff-lib.sh"
+    pred=$(cat "$FM_HOME/pred.pid")
+    nonce=0123456789abcdef0123456789abcdef
+    sha=$(fm_handoff_hash "$FM_HOME/handoff.md")
+    jq -n --arg nonce "$nonce" --arg doc "$FM_HOME/handoff.md" --arg sha "$sha" \
+      --arg start "$(fm_session_process_start "$pred")" --argjson pid "$pred" --argjson deadline "$(( $(date +%s) + 600 ))" \
+      '{version:1,nonce:$nonce,handoff:$doc,sha256:$sha,predecessor_pid:$pid,predecessor_start:$start,deadline:$deadline}' \
+      > "$STATE/.handoff-pending"
+    # shellcheck disable=SC2016 # The harness child expands its own environment.
+    PATH="$bin:$PATH" ORCA_TERMINAL_HANDLE=term_lease_succ claude -c '
+      echo "$$" > "$FM_HOME/succ.pid"
+      bash "$ROOT/bin/fm-handoff-ack.sh" "$1" "$2" > "$FM_HOME/ack.out" 2>&1
+      echo "$?" > "$FM_HOME/ack.rc"' lease-successor "$nonce" "$sha"
+  ) || fail "lease fixture $1 failed"
+}
+assert_committed_transfer() {  # <case>
+  [ "$(cat "$LEASE_HOME/ack.rc")" = 0 ] || fail "$1: a committed transfer must succeed: $(cat "$LEASE_HOME/ack.out")"
+  assert_contains "$(cat "$LEASE_HOME/ack.out")" 'reason=lock_transferred' "$1: the committed transfer is acknowledged"
+  [ "$(cat "$LEASE_HOME/state/.lock")" = "$(cat "$LEASE_HOME/succ.pid")" ] || fail "$1: the successor must own the lock"
+  [ "$(sed -n 's/^anchor_pid=//p' "$LEASE_HOME/state/.lock-session")" = "$(cat "$LEASE_HOME/succ.pid")" ] \
+    || fail "$1: the committed sidecar must name the successor"
+  assert_contains "$(sed -n 's/^terminal=//p' "$LEASE_HOME/state/.lock-session")" term_lease_succ "$1: the committed sidecar keeps the successor terminal"
+}
+
+# shellcheck disable=SC2016 # The stub expands its own arguments.
+lease_transfer rollback mktemp 'case "${1:-}" in */.lock-session.XXXXXX) exit 1 ;; esac
+exec "$REAL_MKTEMP" "$@"'
 [ "$(cat "$LEASE_HOME/ack.rc")" != 0 ] || fail 'a transfer whose publication fails must not succeed'
 assert_contains "$(cat "$LEASE_HOME/ack.out")" 'reason=lock_refused' 'the failed publication is a nonce-bound reject'
 [ "$(cat "$LEASE_HOME/state/.lock")" = "$(cat "$LEASE_HOME/pred.pid")" ] || fail 'a rolled-back transfer moved the lock'
 cmp -s "$LEASE_HOME/session.before" "$LEASE_HOME/state/.lock-session" || fail 'a rolled-back transfer must restore the predecessor sidecar'
 [ -f "$LEASE_HOME/state/.lease-task-a" ] || fail 'a rolled-back transfer retired the live predecessor lease'
 pass 'a transfer that rolls back after its verdict preserves predecessor leases'
+
+# shellcheck disable=SC2016 # The stub expands its own arguments.
+lease_transfer retire-error rm 'for arg; do case "$arg" in */.lease-*) exit 1 ;; esac; done
+exec "$REAL_RM" "$@"'
+assert_committed_transfer 'retirement error'
+assert_contains "$(cat "$LEASE_HOME/ack.out")" 'could not be retired' 'a failed lease retirement after commit is a warning'
+[ -f "$LEASE_HOME/state/.lease-task-a" ] || fail 'the stub must have refused the lease retirement'
+pass 'a lease retirement error after commit keeps the committed transfer'
+
+# shellcheck disable=SC2016 # The stub expands its own arguments.
+lease_transfer retire-signal rm 'for arg; do case "$arg" in */.lease-*) kill -TERM "$PPID" ;; esac; done
+exec "$REAL_RM" "$@"'
+assert_committed_transfer 'retirement interruption'
+[ ! -e "$LEASE_HOME/state/.lease-task-a" ] || fail 'an interrupted retirement must still finish under the commit'
+pass 'an interruption during lease retirement after commit keeps the committed transfer'
 
 # A tmux pane nested in Orca outranks the inherited Orca handle, and an Orca
 # handle outside an Orca terminal is not trusted.

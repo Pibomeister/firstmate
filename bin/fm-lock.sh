@@ -325,10 +325,7 @@ retire_previous_leases() {
     [ -f "$lease" ] || [ -L "$lease" ] || continue
     task=${lease##*/.lease-}
     fm_lease_valid_id "$task" || continue
-    rm -f -- "$lease" || {
-      echo "error: cannot retire a previous session task lease; operate read-only until resolved" >&2
-      exit 1
-    }
+    rm -f -- "$lease" || return 1
   done
 }
 
@@ -397,11 +394,13 @@ fi
 # that session's resume own this lock. If the sidecar changes before line 1 is
 # written, a failure restores the previous sidecar. If line 1 is written but
 # not yet verified, a failure removes the sidecar and leaves the lock
-# ancestry-only. After line 1 verifies as this session's anchor, a later
-# signal leaves the published pair in place, except on the re-anchor path:
-# there a HUP, INT, or TERM during the lease move or the bounded
-# .claude-autoarm.lock wait, before commit_lock_session, still runs
-# restore_uncommitted_lock_session with phase 2 and removes the sidecar.
+# ancestry-only. On the re-anchor path a HUP, INT, or TERM during the lease
+# move or the bounded .claude-autoarm.lock wait, before commit_lock_session,
+# still runs restore_uncommitted_lock_session with phase 2 and removes the
+# sidecar. A verified transfer retires the predecessor's leases only after
+# commit_lock_session, still under the lease lock and with signals ignored, so
+# a rolled-back transfer keeps them and a committed one reports success; a
+# lease left by a failed retirement reads as stale against a non-owner pid.
 if [ -z "$REANCHOR" ]; then
   fm_lock_acquire_wait_max "$LEASE_LOCK" "$LEASE_LOCK_WAIT" || {
     echo "error: cannot retire the previous session's task leases; operate read-only until resolved" >&2
@@ -413,7 +412,12 @@ if [ -z "$REANCHOR" ]; then
   if handoff_transfer_refused "${old:-}"; then
     refuse_live_owner "${old:-}"
   fi
-  [ "$HANDOFF_TAKEOVER" = verified_transfer ] && [ -n "${FM_HANDOFF_NONCE:-}" ] || retire_previous_leases
+  if [ "$HANDOFF_TAKEOVER" != verified_transfer ] || [ -z "${FM_HANDOFF_NONCE:-}" ]; then
+    retire_previous_leases || {
+      echo "error: cannot retire a previous session task lease; operate read-only until resolved" >&2
+      exit 1
+    }
+  fi
 fi
 publish_lock_session_or_die
 if [ -f "$LOCK" ]; then
@@ -452,9 +456,6 @@ if [ ! -f "$LOCK" ] || [ -L "$LOCK" ] || [ "$written" != "$me" ]; then
   echo "error: session lock ownership verification failed; operate read-only until resolved" >&2
   exit 1
 fi
-if [ -z "$REANCHOR" ] && [ "$HANDOFF_TAKEOVER" = verified_transfer ] && [ -n "${FM_HANDOFF_NONCE:-}" ]; then
-  retire_previous_leases
-fi
 if [ -n "$REANCHOR" ] && ! fm_lease_rekey_holder "$REANCHOR" "$me"; then
   echo "warning: a task lease recorded against pid $REANCHOR could not be moved to pid $me, so it reads as stale" >&2
 fi
@@ -467,7 +468,14 @@ if [ -n "$REANCHOR" ] && fm_autoarm_ledger_read "$STATE" && [ "$FM_AUTOARM_SESSI
   fi
   release_autoarm_lock
 fi
-commit_lock_session
+if [ -z "$REANCHOR" ] && [ "$HANDOFF_TAKEOVER" = verified_transfer ] && [ -n "${FM_HANDOFF_NONCE:-}" ]; then
+  trap '' HUP INT TERM
+  commit_lock_session
+  retire_previous_leases \
+    || echo "warning: a previous session task lease could not be retired, so it reads as stale" >&2
+else
+  commit_lock_session
+fi
 release_lease_lock
 release_claim_lock
 [ -z "${FM_HANDOFF_NONCE:-}" ] || echo "handoff_takeover=$HANDOFF_TAKEOVER"
