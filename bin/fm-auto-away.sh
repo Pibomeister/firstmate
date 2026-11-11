@@ -17,11 +17,13 @@
 # a message that arrived after a queued request cancels that request.
 #
 # captain-message is the harness-independent activity boundary, called by main
-# only for genuine captain input, never for operational wakes. A true session
-# start arms with --session-start and counts as captain activity, because the
-# opening message precedes the instruction to record it; a trigger missed while
-# no session ran therefore never fires on session open. A re-emit after clear or
-# compact arms without it and preserves the last stamp, so both deadlines hold.
+# only for genuine captain input, never for operational wakes. A captain-opened
+# session start arms with --session-start and counts as captain activity,
+# because the opening message precedes the instruction to record it; a trigger
+# missed while no session ran therefore never fires on session open. A re-emit
+# after clear or compact arms without it; a handoff successor or a watchdog
+# restart is detected at arm. Both preserve the last stamp, so both deadlines
+# hold.
 # An existing quiet or away posture is never replaced.
 # The AFK launch owner's lock serializes entry against explicit /afk and /quiet.
 # Test-only clock: FM_TEST_SEAM=1 FM_AUTO_AWAY_NOW=<epoch>.
@@ -131,6 +133,19 @@ due() {
   return 1
 }
 
+# A handoff successor holding the lock, or a pending watchdog restart of this
+# home, opened the session; the captain did not.
+automated_start() {
+  local holder
+  holder=$(head -n 1 "$STATE/.lock" 2>/dev/null || true)
+  if [ -n "$holder" ] &&
+    [ "$(sed -n 's/^pid=//p' "$STATE/.handoff-successor" 2>/dev/null | tail -1)" = "$holder" ]; then
+    return 0
+  fi
+  [ "$(awk -F'\t' -v h="$FM_HOME" '$3 == h && $6 == "restart" { p = $7 } END { print p }' \
+    "$STATE/watchdog/actions.tsv" 2>/dev/null)" = pending ]
+}
+
 arm() {
   local shim="$STATE/auto-away.check.sh" tmp
   if [ "$ENABLED" = off ]; then
@@ -138,6 +153,7 @@ arm() {
     rm -f "$REQUEST"
     return
   fi
+  if [ "$SESSION_START" = 1 ] && automated_start; then SESSION_START=0; fi
   if [ "$SESSION_START" = 1 ] || ! read_activity; then
     write_record "$ACTIVITY" "$NOW" || fail 'cannot record session start activity'
   fi

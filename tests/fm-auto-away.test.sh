@@ -134,6 +134,33 @@ assert_absent "$FM_HOME/state/.wake-queue" 'session open entered away mode on a 
 at "$((NEXT_MORNING + 7200))" check
 assert_grep 'auto-away silence' "$FM_HOME/state/.wake-queue" 'silence after session open did not fire'
 
+world handoff-successor
+at "$((EARLY - 7200))" captain-message
+printf '4242\n' > "$FM_HOME/state/.lock"
+printf 'pid=4242\nhandoff=%s\n' "$FM_HOME/data/handoff.md" > "$FM_HOME/state/.handoff-successor"
+at "$((EARLY - 600))" arm --session-start >/dev/null
+assert_present "$FM_HOME/state/auto-away.check-trust" 'handoff successor did not register the check'
+at "$EARLY" check
+assert_grep 'auto-away silence' "$FM_HOME/state/.wake-queue" 'handoff successor start counted as captain activity'
+
+world watchdog-restart
+at "$((EARLY - 7200))" captain-message
+mkdir -p "$FM_HOME/state/watchdog"
+printf '1\tid1\t%s\tsubj\tstuck\trestart\tpending\ttoken=ab\n' "$FM_HOME" > "$FM_HOME/state/watchdog/actions.tsv"
+at "$((EARLY - 600))" arm --session-start >/dev/null
+at "$EARLY" check
+assert_grep 'auto-away silence' "$FM_HOME/state/.wake-queue" 'watchdog restart start counted as captain activity'
+
+world captain-after-successor
+at "$((EARLY - 7200))" captain-message
+printf '4243\n' > "$FM_HOME/state/.lock"
+printf 'pid=4242\n' > "$FM_HOME/state/.handoff-successor"
+mkdir -p "$FM_HOME/state/watchdog"
+printf '1\tid1\t%s\tsubj\tstuck\trestart\tpending\tx\n2\tid1\t%s\tsubj\tstuck\trestart\tdone\ty\n' "$FM_HOME" "$FM_HOME" > "$FM_HOME/state/watchdog/actions.tsv"
+at "$((EARLY - 600))" arm --session-start >/dev/null
+at "$EARLY" check
+assert_absent "$FM_HOME/state/.wake-queue" 'captain-opened start after an old successor did not count as activity'
+
 world compact-silence
 printf 'time=off\n' >> "$FM_HOME/config/auto-away"
 at "$((EARLY - 7200))" captain-message
