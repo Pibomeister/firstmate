@@ -446,7 +446,7 @@ test_handoff_doc_between_its_checks_sees_a_launch_that_finishes() {
 # appended. The launch must wait for that append, so the hash it gives the
 # successor is the hash of the document with the appended block. The run is
 # held just before its append while the launch starts; the test gives the
-# launch five seconds to open the successor terminal before it lets the run
+# launch three seconds to open the successor terminal before it lets the run
 # append.
 test_a_launch_waits_for_a_handoff_doc_append_under_way() {
   local rc lpid hpid sha n doc="$LAB/data/handoff.md" log="$TMP_ROOT/append-launch.out"
@@ -460,8 +460,10 @@ test_a_launch_waits_for_a_handoff_doc_append_under_way() {
   wait_for_file "$pause/handoff-before-append.reached" || fail "handoff --doc never reached the point before its append: $(cat "$hlog")"
   run_launcher >"$log" 2>&1 &
   lpid=$!
-  n=0
-  while [ ! -s "$TMP_ROOT/orca-cmd" ] && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+  # Bound this wait by the wall clock, well inside the launcher's 10-second
+  # lock bound: on a loaded host a count of short sleeps can run past it.
+  n=$SECONDS
+  while [ ! -s "$TMP_ROOT/orca-cmd" ] && [ $((SECONDS - n)) -lt 3 ]; do sleep 0.1; done
   rm -f "$pause/handoff-before-append.hold"
   rc=0
   wait "$hpid" || rc=$?
