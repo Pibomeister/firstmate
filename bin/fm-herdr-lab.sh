@@ -54,9 +54,10 @@
 # this helper created under $(cd /tmp && pwd -P)/hx.XXXXXX. They prove the
 # canonical root and marker token before they act, signal only the recorded
 # herdr pid (TERM, then bounded KILL) whose start time still matches, and
-# never run `herdr server stop`. When that pid's environment is readable,
-# they also require XDG_CONFIG_HOME to be this fixture's config dir:
-# /proc/<pid>/environ, or Darwin `ps -Eww` as in fm_remote_herdr_process_env.
+# never run `herdr server stop`. They signal only when that pid's environment
+# proves XDG_CONFIG_HOME is this fixture's config dir: /proc/<pid>/environ, or
+# Darwin `ps -Eww` after removing the `ps -o command=` argv text. If neither
+# reader yields an environment, they refuse to signal.
 # Inherited HERDR_* identity is cleared on every fixture command. Lab session
 # names still cannot be default.
 set -u
@@ -650,9 +651,11 @@ fm_herdr_lab_fixture_process_pgid() { # <pid>
 # Prints NAME=VALUE lines when the pid's environment is readable.
 # Returns 0 even for an empty environment (so a readable /proc file with no
 # XDG_CONFIG_HOME still refuses). Returns 1 when nothing can be read.
+# Darwin `ps -Eww -o command=` mixes env and argv; the no-E `ps -o command=`
+# text is removed so an argv NAME=VALUE token is not treated as env.
 # FM_PROC_ROOT_OVERRIDE points tests at a fake /proc, matching fm-wake-lib.sh.
 fm_herdr_lab_fixture_process_env() { # <pid>
-  local pid=$1 proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc} lines
+  local pid=$1 proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc} cmd eww env_text
   case "$pid" in
     ''|*[!0-9]*) return 1 ;;
   esac
@@ -660,9 +663,26 @@ fm_herdr_lab_fixture_process_env() { # <pid>
     tr '\0' '\n' < "$proc_root/$pid/environ"
     return 0
   fi
-  lines=$(ps -Eww -o command= -p "$pid" 2>/dev/null | tr ' ' '\n' | grep -E '^[A-Za-z_][A-Za-z0-9_]*=' || true)
-  [ -n "$lines" ] || return 1
-  printf '%s\n' "$lines"
+  cmd=$(LC_ALL=C ps -ww -o command= -p "$pid" 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  eww=$(LC_ALL=C ps -Eww -o command= -p "$pid" 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  [ -n "$cmd" ] && [ -n "$eww" ] || return 1
+  case "$eww" in
+    "$cmd")
+      return 1
+      ;;
+    "$cmd"*)
+      env_text=${eww#"$cmd"}
+      ;;
+    *"$cmd")
+      env_text=${eww%"$cmd"}
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+  env_text=$(printf '%s' "$env_text" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  [ -n "$env_text" ] || return 1
+  printf '%s\n' "$env_text" | tr ' ' '\n' | grep -E '^[A-Za-z_][A-Za-z0-9_]*='
 }
 
 fm_herdr_lab_fixture_prove() { # <root>
@@ -737,12 +757,14 @@ fm_herdr_lab_fixture_prove_pid() { # <root>
     fm_herdr_lab_error "refusing pid $pid: start time does not match the ownership record"
     return 1
   }
-  if env_text=$(fm_herdr_lab_fixture_process_env "$pid"); then
-    printf '%s\n' "$env_text" | grep -Fx "XDG_CONFIG_HOME=$root/c" >/dev/null || {
-      fm_herdr_lab_error "refusing pid $pid: it does not carry this fixture's XDG_CONFIG_HOME"
-      return 1
-    }
-  fi
+  env_text=$(fm_herdr_lab_fixture_process_env "$pid") || {
+    fm_herdr_lab_error "refusing pid $pid: process environment is unreadable"
+    return 1
+  }
+  printf '%s\n' "$env_text" | grep -Fx "XDG_CONFIG_HOME=$root/c" >/dev/null || {
+    fm_herdr_lab_error "refusing pid $pid: it does not carry this fixture's XDG_CONFIG_HOME"
+    return 1
+  }
   printf '%s' "$pid"
 }
 
