@@ -203,6 +203,35 @@ SH
   pass "fm-herdr-owned-xdg: a failed start signals the pid it forked, including the process group"
 }
 
+test_start_write_record_failure_signals_the_forked_process() {
+  local root fakebin leader status=0
+  root=$(fm_herdr_owned_xdg_create) || fail "create failed"
+  remember_owned "$root"
+  mkdir "$root/owned.record.tmp" || fail "could not occupy the record tmp path"
+  fakebin=$(fm_fakebin "$(fm_test_tmproot fm-herdr-owned-xdg-write-record)/bin")
+  cat > "$fakebin/herdr" <<SH
+#!/usr/bin/env bash
+if [ "\$1" = session ]; then
+  printf '%s\\n' '{"sessions":[]}'
+  exit 0
+fi
+if [ "\$1" = server ]; then
+  printf '%s\\n' "\$\$" > $(printf '%q' "$root/leader.pid")
+  exec sleep 98766
+fi
+exit 90
+SH
+  chmod +x "$fakebin/herdr"
+  PATH="$fakebin:$PATH" "$HELPER" start "$root" >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "start must fail when the ownership record cannot be rewritten after fork"
+  [ -s "$root/leader.pid" ] || fail "the forked herdr did not record its pid"
+  leader=$(cat "$root/leader.pid")
+  kill -0 "$leader" 2>/dev/null && fail "start left the forked leader pid $leader running after write_record failed"
+  rmdir "$root/owned.record.tmp" 2>/dev/null || true
+  fm_herdr_owned_xdg_cleanup "$root" || fail "cleanup after a write_record failure failed"
+  pass "fm-herdr-owned-xdg: a write_record failure after fork signals the pid it started"
+}
+
 test_live_empty_owned_xdg_still_trips_lab_provision() {
   local root status=0 out name
   command -v herdr >/dev/null 2>&1 || { pass "fm-herdr-owned-xdg: live zero-default (skipped, no herdr)"; return; }
@@ -224,5 +253,6 @@ test_cli_refuses_foreign_paths_and_unknown_commands
 test_stop_refuses_a_live_non_herdr_pid
 test_lab_tripwire_still_refuses_zero_and_multiple_defaults
 test_start_failure_signals_the_forked_process_group
+test_start_write_record_failure_signals_the_forked_process
 test_live_empty_owned_xdg_still_trips_lab_provision
 test_live_owned_fixture_is_the_only_process_cleanup_stops
