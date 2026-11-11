@@ -1,0 +1,14 @@
+=== akhead: fm_backend_herdr_server_ensure from bin/backends/herdr.sh, real herdr lab session fm-lab-akhead-21920-16391 ===
+creator carries 2 AK_LIFECYCLE_* vars
+server_ensure rc=0
+server pid 23613: AK_LIFECYCLE_* in env = 0
+later pane w1:p1 (opened by a clean client) env, filtered:
+  FM_SCRUB_MARKER=creator-was-here
+lab teardown rc=0
+=== akbase: fm_backend_herdr_server_ensure from /tmp/fmbase.n6HS/bin/backends/herdr.sh, real herdr lab session fm-lab-akbase-46899-29053 ===
+creator carries 2 AK_LIFECYCLE_* vars
+server_ensure rc=0
+server pid 52845: AK_LIFECYCLE_* in env = 2
+later pane w1:p1 (opened by a clean client) env, filtered:
+  FM_SCRUB_MARKER=creator-was-here
+lab teardown rc=0

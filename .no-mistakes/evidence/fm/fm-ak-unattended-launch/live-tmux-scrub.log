@@ -1,0 +1,16 @@
+=== HEAD bin/fm-env-scrub.sh ===
+creator AK vars after scrub: 0
+--- server global env (filtered) ---
+FM_SCRUB_MARKER=creator-was-here
+--- later session (clean client) env ---
+FM_SCRUB_MARKER=creator-was-here
+=== merge-base (099c5c29) fm-env-scrub.sh ===
+creator AK vars after scrub: 2
+--- server global env (filtered) ---
+AK_LIFECYCLE_POLICY=unattended
+AK_LIFECYCLE_SUPERVISOR=firstmate
+FM_SCRUB_MARKER=creator-was-here
+--- later session (clean client) env ---
+AK_LIFECYCLE_POLICY=unattended
+AK_LIFECYCLE_SUPERVISOR=firstmate
+FM_SCRUB_MARKER=creator-was-here

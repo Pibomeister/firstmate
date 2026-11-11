@@ -1,0 +1,17 @@
+zellij: zellij 0.46.0 (temporary release binary); isolated socket dir /tmp/fmzellij.J1IA/sock
+=== fmlab-akhead: fm_backend_zellij_server_ensure from bin/backends/zellij.sh ===
+creator carries 2 AK_LIFECYCLE_* vars
+server_ensure rc=0
+zellij server pid 76903: AK_LIFECYCLE_* in env = 0, creator marker = 1
+terminal_1
+later pane (opened by a clean client) env, filtered:
+  FM_SCRUB_MARKER=creator-was-here
+session removed
+=== fmlab-akbase: fm_backend_zellij_server_ensure from /tmp/fmbase.s9nB/bin/backends/zellij.sh ===
+creator carries 2 AK_LIFECYCLE_* vars
+server_ensure rc=0
+zellij server pid 91418: AK_LIFECYCLE_* in env = 2, creator marker = 1
+terminal_1
+later pane (opened by a clean client) env, filtered:
+  FM_SCRUB_MARKER=creator-was-here
+session removed
