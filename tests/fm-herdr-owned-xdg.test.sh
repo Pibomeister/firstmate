@@ -56,74 +56,54 @@ start_herdr_named_sleep() { # <pidfile> <seconds> [env assignments...]
   printf '%s\n' "$!" > "$pidfile"
 }
 
-# PATH stand-in for Darwin `ps -Eww`. Mode `argv-only` hides env (prints the
-# same command= text with or without -E). Otherwise, when /proc/<pid>/environ
-# is readable it rebuilds env+argv so Linux can prove the Darwin fallback.
-# FM_BSD_PS_INJECT_ARGV appends one argv token to command= and to the argv
-# side of -Eww, so a NAME=VALUE in argv is visible to the Darwin parser.
-install_bsd_env_ps() { # <dest-dir> [argv-only]
-  local dest=$1 mode=${2-} real
-  real=$(command -v ps) || fail "ps is required for the Darwin environ fallback"
-  case "$real" in
-    /*) ;;
-    *) fail "ps is not an absolute path: $real" ;;
-  esac
-  mkdir -p "$dest"
-  cat > "$dest/ps" <<SH
-#!/usr/bin/env bash
-real=$(printf '%q' "$real")
-hide_env=$(printf '%q' "$mode")
-want_env=0
-want_command=0
-pid=
-prev=
-for arg in "\$@"; do
-  case "\$arg" in
-    -Eww|-Ew|-E) want_env=1 ;;
-  esac
-  if [ "\$prev" = -p ]; then
-    pid=\$arg
-  fi
-  if [ "\$prev" = -o ]; then
-    case "\$arg" in
-      command=*|args=*) want_command=1 ;;
-    esac
-  fi
-  prev=\$arg
-done
-inject=\${FM_BSD_PS_INJECT_ARGV-}
-if [ -n "\$pid" ] && { [ "\$want_env" = 1 ] || [ -n "\$inject" ]; }; then
-  cmd=\$("\$real" -ww -p "\$pid" -o command= 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*\$//')
-  if [ -n "\$inject" ]; then
-    cmd="\$cmd \$inject"
-  fi
-  if [ "\$want_env" = 1 ] && [ "\$hide_env" != argv-only ] && [ -r "/proc/\$pid/environ" ]; then
-    env=\$(tr '\\0' ' ' < "/proc/\$pid/environ")
-    printf '%s %s\\n' "\$env" "\$cmd"
-    exit 0
-  fi
-  if [ "\$want_env" = 1 ] || [ "\$want_command" = 1 ]; then
-    printf '%s\\n' "\$cmd"
-    exit 0
-  fi
-fi
-exec "\$real" "\$@"
-SH
-  chmod +x "$dest/ps"
-}
-
-push_hidden_proc_ps() { # [argv-only]
-  _fm_xdg_oldpath=$PATH
-  _fm_xdg_fake=$(fm_fakebin "$(fm_test_tmproot fm-herdr-owned-xdg-bsd-ps)")
-  install_bsd_env_ps "$_fm_xdg_fake" "${1-}"
-  PATH="$_fm_xdg_fake:$PATH"
+# Hide /proc and feed the Darwin KERN_PROCARGS2 reader a buffer built from
+# this pid's real argv and environ (whole NUL fields, argv skipped). Mode
+# argv-only writes no buffer, so the reader is unreadable.
+push_darwin_env() { # [argv-only]
   export FM_PROC_ROOT_OVERRIDE
+  export FM_HERDR_LAB_KERN_PROCARGS2_OVERRIDE
   FM_PROC_ROOT_OVERRIDE=$(fm_test_tmproot fm-herdr-owned-xdg-no-proc)
+  FM_HERDR_LAB_KERN_PROCARGS2_OVERRIDE=$(fm_test_tmproot fm-herdr-owned-xdg-procargs2)
+  mkdir -p "$FM_HERDR_LAB_KERN_PROCARGS2_OVERRIDE"
+  unset FM_HERDR_LAB_DARWIN_ENV_HIDE
+  [ "${1-}" = argv-only ] && export FM_HERDR_LAB_DARWIN_ENV_HIDE=1
 }
 
-pop_hidden_proc_ps() {
-  PATH=${_fm_xdg_oldpath:-$PATH}
-  unset FM_PROC_ROOT_OVERRIDE _fm_xdg_oldpath _fm_xdg_fake
+pop_darwin_env() {
+  unset FM_PROC_ROOT_OVERRIDE FM_HERDR_LAB_KERN_PROCARGS2_OVERRIDE FM_HERDR_LAB_DARWIN_ENV_HIDE
+}
+
+# Build a KERN_PROCARGS2 blob: int32 argc, exec path, argv, then env.
+# Extra argv tokens from FM_TEST_HERDR_DECOY_ARGV are argv, not env.
+write_kern_procargs2() { # <pid>
+  local pid=$1 dest extra=${FM_TEST_HERDR_DECOY_ARGV-}
+  [ -n "${FM_HERDR_LAB_KERN_PROCARGS2_OVERRIDE:-}" ] || return 0
+  [ "${FM_HERDR_LAB_DARWIN_ENV_HIDE:-}" = 1 ] && return 0
+  dest=$FM_HERDR_LAB_KERN_PROCARGS2_OVERRIDE/$pid
+  /usr/bin/python3 - "$pid" "$dest" ${extra:+"$extra"} <<'PY' || fail "could not write a KERN_PROCARGS2 buffer"
+import struct
+import sys
+
+pid = sys.argv[1]
+dest = sys.argv[2]
+extra = sys.argv[3:]
+with open("/proc/%s/cmdline" % pid, "rb") as fh:
+    argv = [part for part in fh.read().split(b"\0") if part]
+for token in extra:
+    argv.append(token.encode())
+if not argv:
+    sys.exit(1)
+with open("/proc/%s/environ" % pid, "rb") as fh:
+    env = fh.read()
+buf = struct.pack("<i", len(argv)) + argv[0] + b"\0\0"
+for part in argv:
+    buf += part + b"\0"
+buf += b"\0"
+if env:
+    buf += env if env.endswith(b"\0") else env + b"\0"
+with open(dest, "wb") as fh:
+    fh.write(buf)
+PY
 }
 
 owned_suite_cleanup() {
@@ -231,10 +211,11 @@ test_stop_refuses_herdr_named_pid_with_wrong_start_time() {
 # Drive stop/cleanup against a herdr-named decoy. Fail-closed prove_pid must
 # refuse whether the environment lacks this fixture's XDG_CONFIG_HOME or no
 # reader yields an environment at all. decoy-shape: missing-xdg (default),
-# prefix (XDG_CONFIG_HOME=$root/cX), or inject-argv (that XDG only in argv).
-refuse_herdr_named_decoy() { # <pass-msg> [missing-xdg|prefix|inject-argv]
+# prefix (XDG_CONFIG_HOME=$root/cX), inject-argv (that XDG only in argv), or
+# space-xdg (FOO value contains a space then XDG_CONFIG_HOME=$root/c).
+refuse_herdr_named_decoy() { # <pass-msg> [missing-xdg|prefix|inject-argv|space-xdg]
   local root pid start status=0 token pidfile env_text pass_msg=$1 decoy_shape=${2:-missing-xdg} env_ok=1 extra_env=
-  unset FM_BSD_PS_INJECT_ARGV
+  unset FM_TEST_HERDR_DECOY_ARGV
   root=$(herdr_fixture_create) || fail "create failed"
   remember_owned "$root"
   token=$(cat "$root/.fm-herdr-owned")
@@ -242,7 +223,8 @@ refuse_herdr_named_decoy() { # <pass-msg> [missing-xdg|prefix|inject-argv]
   case "$decoy_shape" in
     missing-xdg) ;;
     prefix) extra_env="XDG_CONFIG_HOME=$root/cX" ;;
-    inject-argv) export FM_BSD_PS_INJECT_ARGV="XDG_CONFIG_HOME=$root/c" ;;
+    inject-argv) export FM_TEST_HERDR_DECOY_ARGV="XDG_CONFIG_HOME=$root/c" ;;
+    space-xdg) extra_env="FOO=x XDG_CONFIG_HOME=$root/c" ;;
     *) fail "unknown decoy shape: $decoy_shape" ;;
   esac
   if [ -n "$extra_env" ]; then
@@ -252,6 +234,7 @@ refuse_herdr_named_decoy() { # <pass-msg> [missing-xdg|prefix|inject-argv]
   fi
   pid=$(cat "$pidfile")
   kill -0 "$pid" 2>/dev/null || fail "the herdr-named decoy did not start"
+  write_kern_procargs2 "$pid"
   start=$(LC_ALL=C ps -p "$pid" -o lstart= | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
   [ -n "$start" ] || fail "could not read the decoy start time"
   printf 'schema=fm-herdr-owned-xdg.v1\nxdg_root=%s\nmarker_token=%s\npid=%s\npid_start=%s\n' \
@@ -272,7 +255,7 @@ refuse_herdr_named_decoy() { # <pass-msg> [missing-xdg|prefix|inject-argv]
   kill -TERM "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
   herdr_fixture_cleanup "$root" || fail "cleanup after the environ decoy exited failed"
-  unset FM_BSD_PS_INJECT_ARGV
+  unset FM_TEST_HERDR_DECOY_ARGV
   pass "$pass_msg"
 }
 
@@ -282,25 +265,25 @@ test_stop_refuses_herdr_named_pid_without_fixture_xdg() {
 }
 
 test_stop_refuses_herdr_named_pid_without_fixture_xdg_when_proc_is_hidden() {
-  push_hidden_proc_ps
+  push_darwin_env
   refuse_herdr_named_decoy \
     "fm-herdr-lab fixture: stop and cleanup refuse a herdr-named pid without XDG_CONFIG_HOME when /proc is hidden"
-  pop_hidden_proc_ps
+  pop_darwin_env
 }
 
 test_stop_refuses_herdr_named_pid_when_darwin_ps_hides_env() {
-  push_hidden_proc_ps argv-only
+  push_darwin_env argv-only
   refuse_herdr_named_decoy \
     "fm-herdr-lab fixture: stop and cleanup refuse a herdr-named pid when Darwin ps -E hides the environment"
-  pop_hidden_proc_ps
+  pop_darwin_env
 }
 
 test_stop_refuses_herdr_named_pid_when_xdg_is_only_in_argv() {
-  push_hidden_proc_ps
+  push_darwin_env
   refuse_herdr_named_decoy \
     "fm-herdr-lab fixture: stop and cleanup refuse a herdr-named pid whose argv contains XDG_CONFIG_HOME" \
     inject-argv
-  pop_hidden_proc_ps
+  pop_darwin_env
 }
 
 test_stop_refuses_herdr_named_pid_when_proc_is_unreadable_and_ps_e_is_absent() {
@@ -318,11 +301,19 @@ test_stop_refuses_herdr_named_pid_with_xdg_prefix_collision() {
 }
 
 test_stop_refuses_herdr_named_pid_with_xdg_prefix_collision_when_proc_is_hidden() {
-  push_hidden_proc_ps
+  push_darwin_env
   refuse_herdr_named_decoy \
     "fm-herdr-lab fixture: stop and cleanup refuse a Darwin-read herdr-named pid whose XDG_CONFIG_HOME only prefixes this fixture's" \
     prefix
-  pop_hidden_proc_ps
+  pop_darwin_env
+}
+
+test_stop_refuses_herdr_named_pid_when_xdg_is_a_space_inside_another_field() {
+  push_darwin_env
+  refuse_herdr_named_decoy \
+    "fm-herdr-lab fixture: stop and cleanup refuse a Darwin-read herdr-named pid whose XDG_CONFIG_HOME is a space inside another field" \
+    space-xdg
+  pop_darwin_env
 }
 
 test_stop_refuses_herdr_named_pid_with_empty_readable_environ() {
@@ -705,6 +696,7 @@ test_stop_refuses_herdr_named_pid_when_xdg_is_only_in_argv
 test_stop_refuses_herdr_named_pid_when_proc_is_unreadable_and_ps_e_is_absent
 test_stop_refuses_herdr_named_pid_with_xdg_prefix_collision
 test_stop_refuses_herdr_named_pid_with_xdg_prefix_collision_when_proc_is_hidden
+test_stop_refuses_herdr_named_pid_when_xdg_is_a_space_inside_another_field
 test_stop_refuses_herdr_named_pid_with_empty_readable_environ
 test_stop_refuses_herdr_named_pid_when_xdg_is_forged_inside_a_nul_field
 test_lab_tripwire_still_refuses_zero_and_multiple_defaults

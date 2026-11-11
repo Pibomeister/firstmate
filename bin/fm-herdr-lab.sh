@@ -55,9 +55,10 @@
 # canonical root and marker token before they act, signal only the recorded
 # herdr pid (TERM, then bounded KILL) whose start time still matches, and
 # never run `herdr server stop`. They signal only when that pid's environment
-# proves XDG_CONFIG_HOME is this fixture's config dir as a whole /proc environ
-# field, or Darwin `ps -Eww` after removing the `ps -o command=` argv text.
-# If neither reader yields an environment, they refuse to signal.
+# proves XDG_CONFIG_HOME is this fixture's config dir as a whole NUL field:
+# /proc/<pid>/environ, or Darwin KERN_PROCARGS2 via /usr/bin/python3 ctypes
+# (stock macOS, skipped if that python is the CLT stub). If neither reader
+# yields an environment, they refuse to signal.
 # Inherited HERDR_* identity is cleared on every fixture command. Lab session
 # names still cannot be default.
 set -u
@@ -655,14 +656,15 @@ fm_herdr_lab_fixture_process_pgid() { # <pid>
 # assignment. GNU grep -z is not used here because under -z its `.` matches
 # newline, so a field `FOO=x\nXDG_CONFIG_HOME=...` would still be emitted.
 # awk RS="\0" on this Linux-only branch drops those fields and prints the
-# rest as whole records. Darwin `ps -Eww -o command=` mixes env and argv;
-# the no-E `ps -o command=` text is removed so an argv NAME=VALUE token is
-# not treated as env. A Darwin dump that contains a newline is refused:
-# `ps` space-separates tokens, and a newline would forge a line the same way
-# `tr '\0' '\n'` did. Values with spaces remain a Darwin limit.
-# FM_PROC_ROOT_OVERRIDE points tests at a fake /proc, matching fm-wake-lib.sh.
+# rest as whole records. Darwin has no /proc; env is KERN_PROCARGS2
+# (int32 argc, exec path, argv, then env), the same buffer fm-procinfo.py
+# reads, via /usr/bin/python3 ctypes. There is no ps -Eww fallback: Apple
+# ps already joined env NULs with spaces. A missing or stub python, or a
+# failed sysctl, is unreadable. FM_PROC_ROOT_OVERRIDE points tests at a
+# fake /proc; FM_HERDR_LAB_KERN_PROCARGS2_OVERRIDE points tests at a fake
+# KERN_PROCARGS2 buffer, matching fm-wake-lib.sh's override style.
 fm_herdr_lab_fixture_process_env() { # <pid>
-  local pid=$1 proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc} cmd eww env_text
+  local pid=$1 proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc}
   case "$pid" in
     ''|*[!0-9]*) return 1 ;;
   esac
@@ -672,29 +674,86 @@ fm_herdr_lab_fixture_process_env() { # <pid>
       /^[A-Za-z_][A-Za-z0-9_]*=/ { print }' "$proc_root/$pid/environ"
     return 0
   fi
-  cmd=$(LC_ALL=C ps -ww -o command= -p "$pid" 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-  eww=$(LC_ALL=C ps -Eww -o command= -p "$pid" 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-  [ -n "$cmd" ] && [ -n "$eww" ] || return 1
-  case "$eww" in
-    "$cmd")
-      return 1
-      ;;
-    "$cmd"*)
-      env_text=${eww#"$cmd"}
-      ;;
-    *"$cmd")
-      env_text=${eww%"$cmd"}
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-  env_text=$(printf '%s' "$env_text" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-  [ -n "$env_text" ] || return 1
-  case "$env_text" in
-    *$'\n'*) return 1 ;;
-  esac
-  printf '%s\n' "$env_text" | tr ' ' '\n' | grep -E '^[A-Za-z_][A-Za-z0-9_]*='
+  fm_herdr_lab_fixture_darwin_env "$pid"
+}
+
+# /usr/bin/python3 with a working ctypes (not the CLT stub). No PATH search:
+# Homebrew python is not stock macOS.
+fm_herdr_lab_fixture_darwin_python() {
+  local py=/usr/bin/python3
+  [ -x "$py" ] || return 1
+  "$py" -c 'import ctypes, ctypes.util, struct' >/dev/null 2>&1 || return 1
+  printf '%s' "$py"
+}
+
+# Whole NUL env fields from KERN_PROCARGS2. argv is skipped, not parsed.
+# Fields with an embedded newline are dropped, matching the /proc reader.
+fm_herdr_lab_fixture_darwin_env() { # <pid>
+  local pid=$1 py
+  py=$(fm_herdr_lab_fixture_darwin_python) || return 1
+  "$py" - "$pid" <<'PY' 2>/dev/null
+import ctypes
+import ctypes.util
+import os
+import re
+import struct
+import sys
+
+CTL_KERN = 1
+KERN_PROCARGS2 = 49
+NAME = re.compile(br"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def load(pid):
+    override = os.environ.get("FM_HERDR_LAB_KERN_PROCARGS2_OVERRIDE")
+    if override:
+        try:
+            with open(os.path.join(override, str(pid)), "rb") as fh:
+                buf = fh.read()
+        except OSError:
+            return None
+        return buf or None
+    try:
+        libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.dylib", use_errno=True)
+        mib = (ctypes.c_int * 3)(CTL_KERN, KERN_PROCARGS2, pid)
+        size = ctypes.c_size_t(0)
+        if libc.sysctl(mib, 3, None, ctypes.byref(size), None, 0) != 0 or size.value == 0:
+            return None
+        raw = ctypes.create_string_buffer(size.value)
+        if libc.sysctl(mib, 3, raw, ctypes.byref(size), None, 0) != 0:
+            return None
+        return raw.raw[: size.value]
+    except (AttributeError, OSError):
+        return None
+
+
+pid = int(sys.argv[1])
+buf = load(pid)
+if not buf or len(buf) < 4:
+    sys.exit(1)
+argc = struct.unpack_from("<i", buf, 0)[0]
+if argc <= 0 or argc > 4096:
+    sys.exit(1)
+strings = buf[4:].split(b"\0")
+if not strings or not strings[0]:
+    sys.exit(1)
+i = 1
+while i < len(strings) and not strings[i]:
+    i += 1
+if i + argc > len(strings):
+    sys.exit(1)
+i += argc
+while i < len(strings) and not strings[i]:
+    i += 1
+out = sys.stdout.buffer
+while i < len(strings):
+    raw = strings[i]
+    i += 1
+    if not raw or b"\n" in raw or not NAME.match(raw):
+        continue
+    out.write(raw + b"\n")
+sys.exit(0)
+PY
 }
 
 fm_herdr_lab_fixture_prove() { # <root>
