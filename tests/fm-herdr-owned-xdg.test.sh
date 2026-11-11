@@ -19,6 +19,17 @@ remember_owned() { # <root>
   printf '%s\n' "$1" >> "$OWNED_XDG_LIST"
 }
 
+# kill -0 is true for a zombie. Poll until the pid is gone, then assert.
+wait_until_gone() { # <pid> <msg>
+  local pid=$1 msg=$2 i=0
+  while [ "$i" -lt 20 ]; do
+    kill -0 "$pid" 2>/dev/null || return 0
+    sleep 0.1
+    i=$((i + 1))
+  done
+  kill -0 "$pid" 2>/dev/null && fail "$msg"
+}
+
 owned_suite_cleanup() {
   local root
   while IFS= read -r root; do
@@ -197,8 +208,8 @@ SH
   [ -s "$root/child.pid" ] || fail "the forked herdr did not record its process-group child"
   leader=$(cat "$root/leader.pid")
   child=$(cat "$root/child.pid")
-  kill -0 "$leader" 2>/dev/null && fail "start left the forked leader pid $leader running"
-  kill -0 "$child" 2>/dev/null && fail "start left process-group child $child running after the leader exited"
+  wait_until_gone "$leader" "start left the forked leader pid $leader running"
+  wait_until_gone "$child" "start left process-group child $child running after the leader exited"
   fm_herdr_owned_xdg_cleanup "$root" || fail "cleanup after a failed start failed"
   pass "fm-herdr-owned-xdg: a failed start signals the pid it forked, including the process group"
 }
@@ -226,10 +237,26 @@ SH
   expect_code 1 "$status" "start must fail when the ownership record cannot be rewritten after fork"
   [ -s "$root/leader.pid" ] || fail "the forked herdr did not record its pid"
   leader=$(cat "$root/leader.pid")
-  kill -0 "$leader" 2>/dev/null && fail "start left the forked leader pid $leader running after write_record failed"
+  wait_until_gone "$leader" "start left the forked leader pid $leader running after write_record failed"
   rmdir "$root/owned.record.tmp" 2>/dev/null || true
   fm_herdr_owned_xdg_cleanup "$root" || fail "cleanup after a write_record failure failed"
   pass "fm-herdr-owned-xdg: a write_record failure after fork signals the pid it started"
+}
+
+test_reap_started_skips_a_pid_whose_start_time_no_longer_matches() {
+  local root decoy
+  root=$(fm_herdr_owned_xdg_create) || fail "create failed"
+  remember_owned "$root"
+  sleep 98767 &
+  decoy=$!
+  kill -0 "$decoy" 2>/dev/null || fail "the decoy pid did not start"
+  fm_herdr_owned_xdg_reap_started "$root" "$decoy" "not-the-fork-start-time"
+  kill -0 "$decoy" 2>/dev/null \
+    || fail "reap_started signalled pid $decoy whose start time did not match the fork"
+  kill -TERM "$decoy" 2>/dev/null || true
+  wait "$decoy" 2>/dev/null || true
+  fm_herdr_owned_xdg_cleanup "$root" || fail "cleanup after the reused-pid check failed"
+  pass "fm-herdr-owned-xdg: reap_started does not signal a pid whose start time no longer matches"
 }
 
 test_live_empty_owned_xdg_still_trips_lab_provision() {
@@ -254,5 +281,6 @@ test_stop_refuses_a_live_non_herdr_pid
 test_lab_tripwire_still_refuses_zero_and_multiple_defaults
 test_start_failure_signals_the_forked_process_group
 test_start_write_record_failure_signals_the_forked_process
+test_reap_started_skips_a_pid_whose_start_time_no_longer_matches
 test_live_empty_owned_xdg_still_trips_lab_provision
 test_live_owned_fixture_is_the_only_process_cleanup_stops

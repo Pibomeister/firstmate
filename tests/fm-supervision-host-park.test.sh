@@ -621,8 +621,11 @@ test_tagged_host_cleanup_reaps_the_wrapper_process_group() {
   kill -0 "$wrapper" 2>/dev/null || fail "tagged-reap: wrapper $wrapper died before cleanup"
   kill -0 "$child" 2>/dev/null || fail "tagged-reap: child $child died before cleanup"
   stop_home_processes "$home"
-  kill -0 "$wrapper" 2>/dev/null && fail "cleanup left the tagged wrapper pid $wrapper running"
-  kill -0 "$child" 2>/dev/null && fail "cleanup left the wrapper's child pid $child running"
+  wait_until 20 sh -c '! kill -0 "$1" 2>/dev/null' _ "$wrapper" \
+    || fail "cleanup left the tagged wrapper pid $wrapper running"
+  wait_until 20 sh -c '! kill -0 "$1" 2>/dev/null' _ "$child" \
+    || fail "cleanup left the wrapper's child pid $child running"
+  rm -f "$home/tagged-host.pid"
   pass "tagged-host cleanup signals the recorded process group, not only the wrapper pid"
 }
 
@@ -673,6 +676,7 @@ SH
     "the engine's lease must record the tagged holder whole and read live"
   kill -TERM "$(awk -F '\t' '$1 == "host" { print $2 }' "$home/state/.supervision-host")"
   wait_until_deadline 60 host_exited "$home" || fail "tagged: the host did not stop on TERM"
+  rm -f "$home/tagged-host.pid"
   pass "host: a Windows-tagged session-lock holder reaches the engine's lease whole"
 }
 
