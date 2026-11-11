@@ -1,0 +1,8 @@
+policy=
+supervisor=firstmate
+super-align: ak lifecycle unattended check: super-align is human-started and needs its typed command or a grant to start
+ exit=1
+super-bound: ak lifecycle unattended check: super-bound is human-started and needs its typed command or a grant to start
+ exit=1
+super-ship: ak lifecycle unattended check: super-ship is human-started and needs its typed command or a grant to start
+ exit=1

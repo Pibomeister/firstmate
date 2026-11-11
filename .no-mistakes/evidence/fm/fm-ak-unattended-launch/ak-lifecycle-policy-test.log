@@ -1,0 +1,6 @@
+ok - ship and scout launches carry the unattended policy and Firstmate supervisor in both allowlist postures, overriding contrary pane values
+ok - a secondmate launch carries the unattended policy and Firstmate supervisor
+ok - the launch command sets the unattended policy on its own
+ok - explicit operator values, including an empty policy, are carried unchanged instead of the defaults
+ok - a compound raw launch carries the unattended policy and Firstmate supervisor
+ok - relaunch rebuilds the unattended policy and Firstmate supervisor in both allowlist postures

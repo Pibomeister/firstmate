@@ -1,0 +1,20 @@
+policy=unattended
+supervisor=firstmate
+super-align: {
+  "policy": "unattended",
+  "source": "environment",
+  "phase": "super-align"
+}
+ exit=0
+super-bound: {
+  "policy": "unattended",
+  "source": "environment",
+  "phase": "super-bound"
+}
+ exit=0
+super-ship: {
+  "policy": "unattended",
+  "source": "environment",
+  "phase": "super-ship"
+}
+ exit=0
