@@ -1928,7 +1928,9 @@ Known false refusals follow from that rule: a command that is not a Codex launch
 These refusals are accepted so that Firstmate does not parse shell.
 Launch Codex with `--harness codex`, or simplify the raw command, instead.
 This applies only to agents Firstmate launches; the captain's own primary Firstmate session is never given either variable.
-A tmux, Herdr, or zellij server that a launched agent starts does not hand either variable to later sessions or panes, because Firstmate removes both from the environment it creates the server with.
+A shared process that a launch starts and that outlives it does not hand either variable to later terminals, because Firstmate removes both from the environment it starts that process with.
+That covers a tmux, Herdr, or zellij server, the Paseo daemon, the cmux app, a Herdr Core session's core, a Rex personal server, and a Tern session, and [`bin/fm-env-scrub.sh`](../bin/fm-env-scrub.sh) owns the removal.
+Orca and T3 Code only attach to an app or server the operator already runs, so Firstmate never starts one for them.
 Firstmate provides no configuration file or flag for this, and agent-kit's own unattended-policy checks, such as its refusal to ship onto an unprotected default branch, still apply.
 
 [`fm-spawn.sh --help`](../bin/fm-spawn.sh) owns the delivery mechanics, with focused regression coverage in [`tests/fm-spawn-ak-lifecycle-policy.test.sh`](../tests/fm-spawn-ak-lifecycle-policy.test.sh).

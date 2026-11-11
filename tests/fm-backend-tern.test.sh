@@ -1550,7 +1550,11 @@ case "$cmd" in
     ;;
   new)
     case "${1:-}" in
-      session) printf '%s' "$2" > "$S/session" ;;
+      session)
+        printf '%s' "$2" > "$S/session"
+        printf '%s/%s sentinel=%s\n' "${AK_LIFECYCLE_POLICY-<unset>}" "${AK_LIFECYCLE_SUPERVISOR-<unset>}" \
+          "${FM_TERN_SENTINEL-<unset>}" > "$S/session-env"
+        ;;
       tab)
         : > "$S/block"
         : > "$S/title"
@@ -1692,6 +1696,23 @@ EOF
   pass "fm-spawn.sh --backend tern: a cleared allowlist launch keeps TERM_PROGRAM and the TERN_* identity, drops the rest, and invents nothing"
 }
 
+test_spawn_tern_creates_its_session_without_the_pair_and_the_launch_still_carries_it() {
+  local rec seen
+  rec=$(make_spawn_case ak-pair tern-ak-a1)
+  # A secondmate carries the pair from its own launch when it spawns a worker.
+  export AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate FM_TERN_SENTINEL=kept
+  run_spawn_case "$rec" tern-ak-a1 --backend tern
+  unset AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR FM_TERN_SENTINEL
+  expect_code 0 "$SPAWN_STATUS" "a tern spawn from a pair-carrying caller should succeed: $SPAWN_OUT"
+  assert_equals "<unset>/<unset> sentinel=kept" "$(cat "$CASE_DIR/tern-state/session-env" 2>/dev/null)" \
+    "'tern new session' must create the home's long-lived session with the caller's environment minus the agent-kit lifecycle pair"
+  seen=$(launch_env_report "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG" \
+    AK_LIFECYCLE_POLICY=attended AK_LIFECYCLE_SUPERVISOR=human) \
+    || fail "the emitted tern launch failed to run"
+  assert_contains "$seen" "AK_LIFECYCLE_POLICY=unattended" "the worker launch must still set the unattended policy itself"
+  assert_contains "$seen" "AK_LIFECYCLE_SUPERVISOR=firstmate" "the worker launch must still name Firstmate as the supervisor itself"
+  pass "fm-spawn.sh --backend tern: creates the session without the agent-kit lifecycle pair while the worker launch still carries the fixed pair"
+}
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-backend.sh"
 
@@ -1762,6 +1783,7 @@ test_endpoint_validation_refuses_unsafe_tern_records
 test_secondmate_spawn_refuses_tern_backend
 test_spawn_tern_records_endpoint_metadata
 test_spawn_tern_launch_keeps_tern_environment_under_allowlist
+test_spawn_tern_creates_its_session_without_the_pair_and_the_launch_still_carries_it
 test_safety_guard_accepts_only_the_listed_fm_test_session
 test_safety_guard_compares_64_bit_ids_exactly
 test_safety_guard_never_touches_the_callers_own_session

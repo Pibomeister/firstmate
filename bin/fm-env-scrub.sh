@@ -7,7 +7,8 @@
 # the lifecycle pair again itself after this scrub. Runtime tuning FM_*
 # variables are not scoped and stay.
 #
-# Source `fm_env_scrub` in a subshell before creating a tmux server, or run:
+# Source `fm_env_scrub` in a subshell before creating a tmux server, use
+# `fm_env_without_ak_pair` (below) at any other shared server start, or run:
 #   fm-env-scrub.sh [--keep-zellij-session] unset-file <out-file>
 #   fm-env-scrub.sh exec <command> [args...]
 # `unset-file` writes the scoped names it inherited as unset statements in the
@@ -33,6 +34,23 @@ fm_env_scrub() {  # [keep-zellij-session: 0|1]
   while IFS= read -r name; do
     unset "$name"
   done < <(fm_env_scrub_names "${1:-0}")
+}
+
+# fm_env_drop_ak_pair unsets the agent-kit lifecycle pair in the current shell;
+# call it inside a subshell. fm_env_without_ak_pair runs a command or function
+# in a subshell without the pair. Every backend start that can launch a shared
+# server, daemon, app or session outliving the spawn goes through one of them,
+# because that process hands its startup environment to later terminals that
+# are not Firstmate workers.
+fm_env_drop_ak_pair() {
+  unset AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR
+}
+
+fm_env_without_ak_pair() {  # <command> [args...]
+  (
+    fm_env_drop_ak_pair
+    "$@"
+  )
 }
 
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0

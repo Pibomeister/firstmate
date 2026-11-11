@@ -487,7 +487,8 @@
 #   assignment value (DIR=/x/work/codex /x/work/codex/probe), and a Codex
 #   launch whose later words mention codex (CODEX_HOME=/srv/codex codex ...,
 #   or codex exec with codex in its prompt). Use --harness codex or a simpler
-#   command instead.
+#   command instead. A shared server, daemon, app or session that a backend
+#   starts for a launch never receives the pair (bin/fm-env-scrub.sh).
 # Launch environment (config/launch-env-allowlist):
 #   Absent keeps ambient inheritance but unsets inherited home- and task-scoped
 #   FM_* values and the agent-kit lifecycle pair (bin/fm-env-scrub.sh) in the

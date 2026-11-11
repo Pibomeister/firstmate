@@ -118,6 +118,8 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
 # shellcheck source=bin/fm-backend-hometag-lib.sh
 . "$FM_BACKEND_ZELLIJ_ROOT/bin/fm-backend-hometag-lib.sh"
+# shellcheck source=bin/fm-env-scrub.sh
+. "$FM_BACKEND_ZELLIJ_ROOT/bin/fm-env-scrub.sh"
 
 # Shared composer classification (the fleet-wide shape catalogue and verdict
 # owner; this adapter contributes only capture and capability facts).
@@ -238,7 +240,7 @@ fm_backend_zellij_server_ensure() {  # <session>
   fm_backend_zellij_session_exists "$session" && return 0
   # The session hands its startup environment to every later pane.
   (
-    unset AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR
+    fm_env_drop_ak_pair
     nohup zellij attach -b "$session" </dev/null >/dev/null 2>&1 &
   ) || return 1
   for i in $(seq 1 20); do

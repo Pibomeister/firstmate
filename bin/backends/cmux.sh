@@ -113,6 +113,8 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
 # shellcheck source=bin/fm-backend-hometag-lib.sh
 . "$FM_BACKEND_CMUX_ROOT/bin/fm-backend-hometag-lib.sh"
+# shellcheck source=bin/fm-env-scrub.sh
+. "$FM_BACKEND_CMUX_ROOT/bin/fm-env-scrub.sh"
 
 # Shared composer-content classifier (empty|pending|unknown, and the fleet-wide
 # dead-shell-vs-agent-composer rule). Owned by bin/fm-composer-lib.sh, reused by
@@ -271,7 +273,8 @@ fm_backend_cmux_ensure_running() {
       return 1
       ;;
   esac
-  open -a cmux >/dev/null 2>&1 || { echo "error: failed to launch cmux ('open -a cmux' failed)" >&2; return 1; }
+  # The app may hand its launch environment to every later cmux terminal.
+  fm_env_without_ak_pair open -a cmux >/dev/null 2>&1 || { echo "error: failed to launch cmux ('open -a cmux' failed)" >&2; return 1; }
   for i in $(seq 1 20); do
     state=$(fm_backend_cmux_ping_state)
     case "$state" in
