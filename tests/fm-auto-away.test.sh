@@ -144,19 +144,35 @@ at "$EARLY" check
 assert_grep 'auto-away silence' "$FM_HOME/state/.wake-queue" 'handoff successor start counted as captain activity'
 
 world watchdog-restart
+ln -s "$FM_HOME" "$TMP_ROOT/watchdog-restart-link"
+canonical=$(cd -P "$FM_HOME" && pwd -P)
+FM_HOME="$TMP_ROOT/watchdog-restart-link"
 at "$((EARLY - 7200))" captain-message
 mkdir -p "$FM_HOME/state/watchdog"
-printf '1\tid1\t%s\tsubj\tstuck\trestart\tpending\ttoken=ab\n' "$FM_HOME" > "$FM_HOME/state/watchdog/actions.tsv"
+printf '1\tid1\t%s\tsubj\tstuck\trestart\tpending\ttoken=ab\n' "$canonical" > "$FM_HOME/state/watchdog/actions.tsv"
 at "$((EARLY - 600))" arm --session-start >/dev/null
 at "$EARLY" check
-assert_grep 'auto-away silence' "$FM_HOME/state/.wake-queue" 'watchdog restart start counted as captain activity'
+assert_grep 'auto-away silence' "$FM_HOME/state/.wake-queue" 'watchdog restart through a symlinked home counted as captain activity'
+
+world watched-home-restart
+at "$((EARLY - 7200))" captain-message
+bash -c 'sleep 60; :' 'Watchdog restart of this firstmate home. Read the handoff first.' >/dev/null 2>&1 &
+restarted=$!
+printf '%s\n' "$restarted" > "$FM_HOME/state/.lock"
+at "$((EARLY - 600))" arm --session-start >/dev/null
+pkill -P "$restarted" 2>/dev/null || true
+kill "$restarted" 2>/dev/null || true
+wait "$restarted" 2>/dev/null || true
+at "$EARLY" check
+assert_grep 'auto-away silence' "$FM_HOME/state/.wake-queue" 'restart by another home watchdog counted as captain activity'
 
 world captain-after-successor
 at "$((EARLY - 7200))" captain-message
 printf '4243\n' > "$FM_HOME/state/.lock"
 printf 'pid=4242\n' > "$FM_HOME/state/.handoff-successor"
 mkdir -p "$FM_HOME/state/watchdog"
-printf '1\tid1\t%s\tsubj\tstuck\trestart\tpending\tx\n2\tid1\t%s\tsubj\tstuck\trestart\tdone\ty\n' "$FM_HOME" "$FM_HOME" > "$FM_HOME/state/watchdog/actions.tsv"
+canonical=$(cd -P "$FM_HOME" && pwd -P)
+printf '1\tid1\t%s\tsubj\tstuck\trestart\tpending\tx\n2\tid1\t%s\tsubj\tstuck\trestart\tdone\ty\n' "$canonical" "$canonical" > "$FM_HOME/state/watchdog/actions.tsv"
 at "$((EARLY - 600))" arm --session-start >/dev/null
 at "$EARLY" check
 assert_absent "$FM_HOME/state/.wake-queue" 'captain-opened start after an old successor did not count as activity'

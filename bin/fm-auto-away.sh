@@ -22,7 +22,7 @@
 # because the opening message precedes the instruction to record it; a trigger
 # missed while no session ran therefore never fires on session open. A re-emit
 # after clear or compact arms without it; a handoff successor or a watchdog
-# restart is detected at arm. Both preserve the last stamp, so both deadlines
+# restart, including one run by another home's watchdog, is detected at arm. Both preserve the last stamp, so both deadlines
 # hold.
 # An existing quiet or away posture is never replaced.
 # The AFK launch owner's lock serializes entry against explicit /afk and /quiet.
@@ -133,16 +133,22 @@ due() {
   return 1
 }
 
-# A handoff successor holding the lock, or a pending watchdog restart of this
-# home, opened the session; the captain did not.
+# A handoff successor holding the lock, or a watchdog restart of this home,
+# opened the session; the captain did not. A restarted holder carries the
+# watchdog's restart prompt in its own arguments, which covers a home whose
+# watchdog owner is another home; the owner's ledger lives in that owner.
 automated_start() {
-  local holder
+  local holder home
   holder=$(head -n 1 "$STATE/.lock" 2>/dev/null || true)
-  if [ -n "$holder" ] &&
-    [ "$(sed -n 's/^pid=//p' "$STATE/.handoff-successor" 2>/dev/null | tail -1)" = "$holder" ]; then
-    return 0
+  case "$holder" in ''|*[!0-9]*) holder= ;; esac
+  if [ -n "$holder" ]; then
+    [ "$(sed -n 's/^pid=//p' "$STATE/.handoff-successor" 2>/dev/null | tail -1)" != "$holder" ] || return 0
+    case "$(ps -o args= -p "$holder" 2>/dev/null || true)" in
+      *'Watchdog restart of this firstmate home.'*) return 0 ;;
+    esac
   fi
-  [ "$(awk -F'\t' -v h="$FM_HOME" '$3 == h && $6 == "restart" { p = $7 } END { print p }' \
+  home=$(cd -P -- "$FM_HOME" 2>/dev/null && pwd -P) || return 1
+  [ "$(awk -F'\t' -v h="$home" '$3 == h && $6 == "restart" { p = $7 } END { print p }' \
     "$STATE/watchdog/actions.tsv" 2>/dev/null)" = pending ]
 }
 
