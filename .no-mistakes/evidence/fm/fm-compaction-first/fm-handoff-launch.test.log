@@ -7,5 +7,6 @@ ok - a second attempt recovers a first terminal that failed to open
 ok - the successor's wait for the old session is bounded and reports a still-running predecessor
 ok - the old session is ended only while it holds the lock, a live successor exists, and its transcript is quiet
 ok - the old session is ended only while its handoff lists every open captain order recorded before the launch
+ok - the ender checks the old session is idle after its order check, so a prompt during that check keeps it
 ok - a launch refuses a handoff that omits an open order, and a rerun of handoff --doc lets it launch
-rc=0 elapsed=416s
+ok - handoff --doc during a launch leaves the document unchanged, so the successor's hash still matches

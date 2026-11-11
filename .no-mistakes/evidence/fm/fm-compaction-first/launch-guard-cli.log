@@ -1,0 +1,39 @@
++(eval):4> printf '# handoff\nshort doc\n'
++(eval):5> FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qc4F5w bin/fm-order.sh send --help
++(eval):6> sleep 300
++(eval):6> LP=61249 
++(eval):7> printf 'pid=%s\nhandoff=%s\n' 61249 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qc4F5w/data/handoff.md
++(eval):8> before=+(eval):8> shasum -a 256
++(eval):8> before='119d50bfc09fd3b6dfae12f2c08610edd1e6a0759b3d49e80c1868a5e0112e82  -' 
++(eval):9> FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qc4F5w bin/fm-order.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qc4F5w/data/handoff.md
+handoff: left /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.Qc4F5w/data/handoff.md unchanged for the successor launch under way; 1 open order(s) stay in the order store
++(eval):9> echo 'rc=0'
+rc=0
++(eval):10> after=+(eval):10> shasum -a 256
++(eval):10> after='119d50bfc09fd3b6dfae12f2c08610edd1e6a0759b3d49e80c1868a5e0112e82  -' 
++(eval):11> [ '119d50bfc09fd3b6dfae12f2c08610edd1e6a0759b3d49e80c1868a5e0112e82  -' '=' '119d50bfc09fd3b6dfae12f2c08610edd1e6a0759b3d49e80c1868a5e0112e82  -' ']'
++(eval):11> echo 'LIVE LAUNCH: document unchanged'
+LIVE LAUNCH: document unchanged
++(eval):12> kill 61249
++(eval):12> wait 61249
++(eval):13> FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qc4F5w bin/fm-order.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qc4F5w/data/handoff.md
+handoff: wrote 1 open order(s) into /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.Qc4F5w/data/handoff.md
++(eval):13> echo 'rc=0'
+rc=0
++(eval):14> after2=+(eval):14> shasum -a 256
++(eval):14> after2='9c514b82134860967ba39dff33dd840635e61fb50a661ae4a78e00e823105df7  -' 
++(eval):15> [ '119d50bfc09fd3b6dfae12f2c08610edd1e6a0759b3d49e80c1868a5e0112e82  -' '=' '9c514b82134860967ba39dff33dd840635e61fb50a661ae4a78e00e823105df7  -' ']'
++(eval):15> echo 'DEAD LAUNCHER: block appended (stale record ignored)'
+DEAD LAUNCHER: block appended (stale record ignored)
++(eval):16> printf 'pid=%s\nhandoff=%s\n' 42440 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qc4F5w/data/other.md
++(eval):17> s3=+(eval):17> shasum -a 256
++(eval):17> s3='9c514b82134860967ba39dff33dd840635e61fb50a661ae4a78e00e823105df7  -' 
++(eval):18> FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qc4F5w bin/fm-order.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Qc4F5w/data/handoff.md
+handoff: wrote 1 open order(s) into /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.Qc4F5w/data/handoff.md
++(eval):18> echo 'rc=0'
+rc=0
++(eval):19> shasum -a 256
++(eval):19> [ '9c514b82134860967ba39dff33dd840635e61fb50a661ae4a78e00e823105df7  -' '=' '98f285d92d93e45618f2eeb6a636288f76c7488096beea3fdd94553480619156  -' ']'
++(eval):19> echo 'OTHER DOC: block appended (record names a different doc)'
+OTHER DOC: block appended (record names a different doc)
++(eval):20> set +x

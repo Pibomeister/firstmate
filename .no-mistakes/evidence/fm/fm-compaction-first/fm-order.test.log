@@ -15,4 +15,3 @@ ok - a sender retry repairs a lost wake and verify reports the ack by exit code
 ok - status tells a sender when its 15-minute re-check is due
 ok - (f) a legacy inbox note works unchanged beside durable orders
 ok - invalid use and unknown ids are refused
-rc=0 elapsed=422s
