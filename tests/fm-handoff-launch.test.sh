@@ -316,6 +316,66 @@ test_end_predecessor_rechecks_the_order_gate() {
   pass "the old session is ended only while its handoff lists every open captain order recorded before the launch"
 }
 
+# An order filed between the session's last handoff --doc and the launch is
+# not in the document and not yet left to a successor's pickup, so the launch
+# refuses until the session reruns handoff --doc. Then the launch succeeds, an
+# order filed after it is left to the pickup with the document unchanged, and
+# the old session is ended.
+test_launch_refuses_a_handoff_that_omits_an_open_order() {
+  local out rc pred first late after sum bytes ids doc="$LAB/data/handoff.md" t="$TMP_ROOT/refuse-transcript" end="$LAB/state/.handoff-end"
+  reset_lab
+  kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
+  rm -rf "$LAB/data/orders" "$LAB/state/.order-handoff" "$end"
+  pred=$(fake_harness_pid)
+  printf '%s\n' "$pred" > "$LAB/state/.lock"
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" send --from test "order before the handoff" >/dev/null \
+    || fail "could not send the first order fixture"
+  first=$(find "$LAB/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" handoff --doc "$doc" >/dev/null || fail "could not record the handoff"
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" send --from test "order after handoff --doc, before the launch" >/dev/null \
+    || fail "could not send the late order fixture"
+  late=$(find "$LAB/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//' | grep -v "$first")
+
+  rc=0
+  out=$(run_launcher 2>&1) || rc=$?
+  assert_equals 3 "$rc" "a handoff that omits an open order must refuse the launch: $out"
+  assert_contains "$out" "$late" "the refusal names the order the document omits"
+  assert_not_contains "$out" "$first" "the refusal names only the missing order"
+  assert_contains "$out" "handoff --doc" "the refusal tells the session to rerun handoff --doc"
+  [ ! -e "$LAB/state/.handoff-successor" ] || fail "a refused launch must not record a successor"
+  [ ! -e "$LAB/state/.handoff-launch-failed" ] || fail "a refused launch records no launch failure, so the stop gate stays closed"
+  [ ! -e "$TMP_ROOT/orca-cmd" ] || fail "a refused launch must not open a terminal"
+
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" handoff --doc "$doc" >/dev/null || fail "could not rerun handoff --doc"
+  assert_contains "$(cat "$doc")" "$late" "with no successor yet, the rerun writes the late order into the document"
+  rc=0
+  out=$(run_launcher 2>&1) || rc=$?
+  assert_equals 0 "$rc" "the launch succeeds once the document lists every open order: $out"
+  SUCC_PID=$(sed -n 's/^pid=//p' "$LAB/state/.handoff-successor")
+  kill -0 "$SUCC_PID" 2>/dev/null || fail "the recorded successor pid must be alive"
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" covers "$doc" >/dev/null || fail "covers passes for the launched document"
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" gate >/dev/null || fail "the gate passes for the launched document"
+
+  sum=$(cksum < "$doc")
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" send --from test "order after the launch" >/dev/null \
+    || fail "could not send the after-launch order fixture"
+  ids=$(find "$LAB/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
+  after=$(printf '%s\n' "$ids" | grep -v -e "$first" -e "$late")
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" covers "$doc" >/dev/null || fail "an order filed after the launch is left to the successor's pickup"
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" handoff --doc "$doc" >/dev/null || fail "could not rerun handoff --doc after the launch"
+  assert_equals "$sum" "$(cksum < "$doc")" "the launched document stays byte-unchanged"
+  assert_contains "$(FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" pickup)" "$after" "the successor's pickup lists the order filed after the launch"
+
+  printf '{"type":"assistant"}\n' > "$t"
+  bytes=$(wc -c < "$t" | tr -d ' ')
+  run_mode --end-predecessor "$pred" "$t" "$bytes" >/dev/null 2>&1
+  assert_contains "$(cat "$end")" "result=ended" "the old session is ended after the launch"
+  ! kill -0 "$pred" 2>/dev/null || fail "the old session must be gone"
+  kill "$SUCC_PID" 2>/dev/null; SUCC_PID=''
+  rm -rf "$end" "$LAB/state/.handoff-successor" "$LAB/state/.order-handoff" "$LAB/data/orders"
+  pass "a launch refuses a handoff that omits an open order, and a rerun of handoff --doc lets it launch"
+}
+
 test_stale_record_naming_the_current_session_still_launches() {
   local out rc
   reset_lab
@@ -341,3 +401,4 @@ test_a_second_attempt_recovers_a_terminal_that_failed_to_open
 test_await_predecessor_is_bounded
 test_end_predecessor_skips_unless_safe
 test_end_predecessor_rechecks_the_order_gate
+test_launch_refuses_a_handoff_that_omits_an_open_order

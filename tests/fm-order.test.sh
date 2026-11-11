@@ -266,11 +266,12 @@ test_restart_gate_requires_every_open_order_in_the_handoff() {
 # A successor confirms its handoff document's sha256, so once a live successor
 # holds the document, handoff --doc leaves it byte-unchanged and writes no
 # other file. An order recorded after the launch stays open in the order store
-# for the successor's pickup, so the gate and covers pass; an older open order
-# the document omits still fails them. With the successor gone, handoff --doc
-# writes into the document again, so a relaunch hashes it whole.
+# for the successor's pickup, so the gate and covers pass. An order recorded
+# before the launch is in the document, because the launcher refuses one that
+# omits it (tests/fm-handoff-launch.test.sh). With the successor gone,
+# handoff --doc writes into the document again, so a relaunch hashes it whole.
 test_handoff_after_a_successor_launch_leaves_the_document_unchanged() {
-  local home doc first second old succ out rc=0 sum
+  local home doc first second succ out sum
   home=$(make_home after-launch)
   doc="$home/data/launched-handoff.md"
   printf '# Handoff\n' >"$doc"
@@ -294,17 +295,6 @@ test_handoff_after_a_successor_launch_leaves_the_document_unchanged() {
   assert_contains "$out" "unchanged" "handoff --doc says it left the document unchanged"
   assert_equals 1 "$(find "$home/data" -maxdepth 1 -type f | wc -l | tr -d ' ')" "handoff --doc writes no file beside the held document"
   assert_contains "$(run_order "$home" pickup)" "$second" "the successor's pickup lists the order recorded after the launch"
-
-  printf 'pid=%s\nhandoff=%s\npredecessor=%s\nlaunched=%s\n' "$succ" "$doc" "$$" "$(($(date +%s) + 5))" >"$home/state/.handoff-successor"
-  old=$second
-  rc=0
-  out=$(run_order "$home" covers "$doc") || rc=$?
-  assert_equals 3 "$rc" "an open order recorded before the launch must be in the held document"
-  assert_contains "$out" "$old" "covers names the older order the document omits"
-  assert_not_contains "$out" "$first" "covers still finds the order the document lists"
-  rc=0
-  run_order "$home" gate >/dev/null || rc=$?
-  assert_equals 3 "$rc" "the gate also refuses an older order the held document omits"
 
   kill "$succ" 2>/dev/null; wait "$succ" 2>/dev/null || true
   run_order "$home" handoff --doc "$doc" >/dev/null

@@ -22,7 +22,15 @@
 #      permission flag config/claude-permission-mode selects for this
 #      home (bin/fm-spawn.sh's resolution: bypass, the default, is
 #      --dangerously-skip-permissions; auto is --permission-mode auto);
-#   3. launches the successor in a NEW terminal on that backend, with
+#   3. takes the launch time and, before hashing the document, runs
+#      `bin/fm-order.sh covers` on it: every open captain order recorded
+#      before that time must be in the document, because one recorded after
+#      it is left to the successor's pickup. On a missing order it exits 3
+#      with no terminal opened and no record written, naming the order and
+#      telling the session to rerun `bin/fm-order.sh handoff --doc` (no
+#      successor holds the document yet, so the rerun appends) and launch
+#      again; the handoff stop gate stays closed until then;
+#   4. launches the successor in a NEW terminal on that backend, with
 #      FM_HANDOFF_PREDECESSOR_PID=<predecessor pid> in its environment (so
 #      bin/fm-sessionstart-run.sh skips the read-only startup digest while
 #      the predecessor still holds the lock) and a prompt naming the handoff
@@ -33,12 +41,12 @@
 #      records before acting on the document's copy of them, with
 #      bin/fm-order.sh pickup listing the captain orders recorded after the
 #      launch;
-#   4. waits for the new harness pid to appear (a live process whose
+#   5. waits for the new harness pid to appear (a live process whose
 #      command line carries the handoff path and was not there before the
 #      launch), then checks that it is still alive after a settle, and
 #      writes state/.handoff-successor as pid=<pid>, handoff=<path>,
-#      predecessor=<predecessor pid>, and launched=<epoch taken just before
-#      the document was hashed> so the Stop gate passes, removing any
+#      predecessor=<predecessor pid>, and launched=<the launch time of
+#      step 3> so the Stop gate passes, removing any
 #      earlier launch-failure record. It
 #      verifies only that live successor pid; the successor confirms the
 #      handoff sha256 at pickup and stops on a mismatch.
@@ -46,7 +54,8 @@
 # settle is tried again, up to two attempts in all. A successor that never
 # appears within the timeout is not retried, because a late start of that
 # terminal would leave two successors. When no attempt yields a live successor,
-# or the launch is refused after the handoff document was given, it writes
+# or the launch is refused after the handoff document was given (except the
+# order refusal of step 3, which the session corrects itself), it writes
 # state/.handoff-launch-failed (at= attempts= backend= handoff= reason=),
 # which releases the Stop gate, prints the escalation (tell the captain, keep
 # working, let auto-compaction run; the next cycle retries), and exits 1.
@@ -289,9 +298,16 @@ case "$CLAUDE_PERMISSION_MODE" in
   *) PERM_FLAG='--dangerously-skip-permissions' ;;
 esac
 
-# Hash confirmation material for the successor prompt. An order recorded from
-# here on is left to the successor's pickup (bin/fm-order.sh).
+# An order recorded from here on is left to the successor's pickup
+# (bin/fm-order.sh), so every order recorded before must be in the document.
 LAUNCHED_AT=$(date +%s)
+if ! COVERS_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" covers "$HANDOFF" 2>&1); then
+  printf 'error: no successor launched, because the handoff document does not list every open captain order.\n%s\n' "$COVERS_OUT" >&2
+  printf 'No successor holds the document yet, so that rerun appends the open orders; then run bin/fm-handoff-launch.sh %s again. No launch failure is recorded, so the handoff stop gate stays closed until a successor launches.\n' "$HANDOFF" >&2
+  exit 3
+fi
+
+# Hash confirmation material for the successor prompt.
 if command -v sha256sum >/dev/null 2>&1; then
   SHA256=$(sha256sum "$HANDOFF" 2>/dev/null | awk '{print $1}')
 elif command -v shasum >/dev/null 2>&1; then
