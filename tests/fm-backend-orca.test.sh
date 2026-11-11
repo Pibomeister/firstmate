@@ -690,9 +690,9 @@ case "$1 $2" in
         fi ;;
       *)
         if [ -f "$closed_file" ] && grep -qx 'local term-local' "$closed_file"; then
-          printf '{"ok":true,"result":{"terminals":[{"handle":"term-other","worktreePath":"/elsewhere"}],"truncated":false}}\n'
+          printf '{"ok":true,"result":{"terminals":[{"handle":"term-hosted","executionHostId":"ssh-host","worktreePath":"%s"},{"handle":"term-other","worktreePath":"/elsewhere"}],"truncated":false}}\n' "${FM_SWEEP_WT:?}"
         else
-          printf '{"ok":true,"result":{"terminals":[{"handle":"term-local","worktreePath":"%s"},{"handle":"term-other","worktreePath":"/elsewhere"}],"truncated":false}}\n' "${FM_SWEEP_WT:?}"
+          printf '{"ok":true,"result":{"terminals":[{"handle":"term-local","worktreePath":"%s"},{"handle":"term-hosted","executionHostId":"ssh-host","worktreePath":"%s"},{"handle":"term-other","worktreePath":"/elsewhere"}],"truncated":false}}\n' "${FM_SWEEP_WT:?}" "${FM_SWEEP_WT:?}"
         fi ;;
     esac ;;
   "terminal close")
@@ -708,17 +708,19 @@ SH
     bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_close_worktree_terminals "$1"' "$ROOT" "$wt" 2>&1 )
   status=$?
   [ "$status" -eq 0 ] || fail "the sweep should succeed, got $status: $out"
-  [ "$out" = "closed=1 environments=2 remote_matched=2" ] \
+  [ "$out" = "closed=1 environments=2 remote_matched=3" ] \
     || fail "without a recorded handle the sweep should close locally and only count remote path matches, got '$out'"
   grep -q 'terminal close --terminal term-local --json' "$CASE_DIR/sweep.log" || fail "the local terminal was not closed"
   ! grep -q 'terminal close --terminal term-remote' "$CASE_DIR/sweep.log" || fail "a path-only terminal on another host was closed from here"
+  ! grep -q 'terminal close --terminal term-hosted' "$CASE_DIR/sweep.log" \
+    || fail "a locally listed terminal hosted on another execution host was closed by path alone"
   ! grep -q 'term-other' "$CASE_DIR/sweep.log" || fail "a terminal in another worktree was closed"
   rm -f "$CASE_DIR/sweep.log" "$CASE_DIR/sweep.log.closed"
   out=$( PATH="$fb2:$PATH" FM_SWEEP_LOG="$CASE_DIR/sweep.log" FM_SWEEP_WT="$wt" \
     bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_close_worktree_terminals "$1" term-remote-own' "$ROOT" "$wt" 2>&1 )
   status=$?
   [ "$status" -eq 0 ] || fail "the sweep with a recorded handle should succeed, got $status: $out"
-  [ "$out" = "closed=2 environments=2 remote_matched=1" ] \
+  [ "$out" = "closed=2 environments=2 remote_matched=2" ] \
     || fail "the recorded remote terminal should close and the path-only one stay counted, got '$out'"
   grep -q 'terminal close --terminal term-remote-own --environment env-remote --json' "$CASE_DIR/sweep.log" \
     || fail "the task's recorded terminal on the paired environment was left open"

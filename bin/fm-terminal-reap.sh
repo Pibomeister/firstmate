@@ -91,31 +91,22 @@
 # Browser roots are agent-browser daemons and chrome-devtools-axi bridges, each
 # named by the script node runs (the command line's first word, or the second
 # after node), and
-# automation browsers: a browser executable (Chrome,
+# automation browsers whose parent has exited: a browser executable (Chrome,
 # Chromium, Edge, Firefox, a headless shell, or any file inside a browser's .app
 # bundle, such as its crash handler), started with --headless or
-# --remote-debugging-pipe or from a Playwright or Puppeteer build, whether or
-# not its parent has exited. The
+# --remote-debugging-pipe or from a Playwright or Puppeteer build. A browser
+# with any live parent is never listed. The
 # executable is the command line's first word, or, for a path with spaces, its
 # shortest prefix that is an existing file. Another program is never listed, even when a
 # browser, daemon, or bridge path or --headless is among its arguments. Each root is
-# judged by its working directory, together with every process under it, and by
-# its owner: its immediate live ancestor, when one remains.
-# An owner that is itself a browser without --headless is the captain's own
-# browser, and an owner running an agent harness, an agent-browser daemon, a
-# chrome-devtools bridge, a Playwright or Puppeteer driver, or any interpreter
-# (node, python, bun, deno) running a program is a live worker;
-# either keeps the root whatever its directory says:
+# judged by its working directory, together with every process under it:
 #   keep task          it works in a recorded task's worktree
 #   keep home          it works in a home root
-#   keep captain-browser its owner is the captain's own browser
-#   keep live-ancestor its owner is a live worker process
 #   keep young         it is younger than --browser-min-age
 #   keep unknown       its working directory could not be read or looked up
 #   keep owner-live    some other process still works in that directory
 #   reap owner-gone    its directory is gone, or nothing but browsers (and
-#                      terminals this run reaps) still works there, and no
-#                      live task, worker, or captain-browser owner remains
+#                      terminals this run reaps) still works there
 # Agent-browser daemons and chrome-devtools-axi bridges serve every client of
 # their socket, so owner-gone judges only the directory, not other clients; for
 # that reason only --apply --browsers stops browsers.
@@ -443,6 +434,7 @@ if (mode === "terminals") {
     // A daemon or bridge is named by the script node runs, never by an
     // argument some other program was given.
     if (daemonScript.test(a)) return true;
+    if (p.ppid !== 1) return false;
     // An automation browser is a browser executable (by name, or any file
     // inside a browser's .app bundle, such as its crash handler), run
     // headless, pipe-debugged, or from a Playwright or Puppeteer build. A
@@ -450,13 +442,6 @@ if (mode === "terminals") {
     if (!isBrowserProc(p)) return false;
     return /((^| )(--headless(=\S*)?|--remote-debugging-pipe)( |$)|\/ms-playwright\/|puppeteer_dev_chrome_profile|playwright_chromiumdev_profile)/.test(a);
   };
-  // ownerOf: the root's immediate live ancestor, or null when its parent
-  // has exited. Deeper ancestors lead a session, not this browser.
-  const ownerOf = (root) => {
-    const p = procs.get(procs.get(root)?.ppid);
-    return p && p.pid > 1 ? p : null;
-  };
-  const workerOwner = /((^|\/)(claude|codex|opencode|grok|kimi|cursor|cursor-agent|muse|agy|pi|hermes)(\s|$)|agent-browser|chrome-devtools-axi|chrome-devtools-mcp|playwright|puppeteer|chromedriver|(^|\/)(node|nodejs|python3?|bun|deno)(\s+\S|$))/;
   const matched = new Set([...procs.values()].filter(isRoot).map((p) => p.pid));
   const roots = [...matched].filter((pid) => {
     for (let p = procs.get(pid), hops = 0; p && p.ppid > 1 && hops < 512; hops++) {
@@ -479,12 +464,9 @@ if (mode === "terminals") {
     const p = procs.get(r), dir = cwd.get(r) || "";
     let verdict = "keep", cls;
     const rec = dir && recFor((x) => x.worktree && under(dir, x.worktree));
-    const owner = ownerOf(r);
     if (scanOk !== "1" || !dir) cls = "unknown";
     else if (rec) cls = "task";
     else if (homes.some((h) => under(dir, h))) cls = "home";
-    else if (owner && isBrowserProc(owner) && !/(^| )--headless(=\S*)?( |$)/.test(owner.args)) cls = "captain-browser";
-    else if (owner && workerOwner.test(owner.args)) cls = "live-ancestor";
     else if (!(p.age >= browserMinAge)) cls = "young";
     else if (presence(dir) === "unknown") cls = "unknown";
     else if (presence(dir) === "gone") { verdict = "reap"; cls = "owner-gone"; }

@@ -772,7 +772,7 @@ test_keep_list_protects_live_helpers() {
 
 # spawn_headless_under <owner-argv0> <chrome-exe>: start a headless browser
 # whose immediate parent carries <owner-argv0> as its command line, and print
-# the browser pid. The owner keeps waiting, so it stays a live ancestor.
+# the browser pid. The parent keeps waiting, so it stays live.
 spawn_headless_under() {  # <owner-argv0> <chrome-exe> -> PID
   local spawner="$FX/spawn-under.sh" pidfile
   pidfile=$(mktemp "$FX/child.XXXXXX"); rm -f "$pidfile"
@@ -792,21 +792,20 @@ SH
   await_exec "$PID"
 }
 
-test_browsers_keep_young_and_live_owners() {
+test_browsers_reap_only_old_orphans() {
   fixture_reset browser-owners
   HOME_DIR="$FX/home"
   mkdir -p "$HOME_DIR/state"
   fixture_write
-  local appexe chrome young owned captained
+  local appexe chrome orphan owned
   appexe="$TMP_ROOT/Apps/Google Chrome.app/Contents/MacOS/Google Chrome"
   mkdir -p "${appexe%/*}"; : > "$appexe"
   chrome="$TMP_ROOT/browser-bin/chrome-headless-shell"
-  fake_headless "$chrome"; young=$PID
-  cwd_row "$young" "$FX/gone-young"
-  spawn_headless_under "node $TMP_ROOT/playwright/driver.js" "$chrome"; owned=$PID
+  fake_headless "$chrome"; orphan=$PID
+  : > "$FX/ppid1-$orphan"
+  cwd_row "$orphan" "$FX/gone-orphan"
+  spawn_headless_under "bash -c $chrome" "$chrome"; owned=$PID
   cwd_row "$owned" "$FX/gone-owned"
-  spawn_headless_under "$appexe" "$chrome"; captained=$PID
-  cwd_row "$captained" "$FX/gone-captained"
   # A stable Chrome left headless with its crash handler, which Chrome
   # reparents to pid 1 beside it in the same directory: the handler is part
   # of the browser, never a live owner.
@@ -823,32 +822,24 @@ test_browsers_keep_young_and_live_owners() {
   : > "$FX/ppid1-$stable"; : > "$FX/ppid1-$handler"
   cwd_row "$stable" "$FX/stable-dir"
   cwd_row "$handler" "$FX/stable-dir"
-  # A headless browser whose immediate parent is a plain interpreter running
-  # a program (a test runner or driver script) has a live owner too.
-  local driven
-  spawn_headless_under "node $TMP_ROOT/jobs/browser-test.js" "$chrome"; driven=$PID
-  cwd_row "$driven" "$FX/gone-driven"
   sleep 1.2
   run_reap --browser-min-age 3600
-  [ "$RC" = 0 ] || fail "the browser owner dry run must exit 0, got $RC: $(cat "$FX/stderr")"
-  expect "$young" "keep young" "a browser younger than the browser minimum age is never reaped"
+  [ "$RC" = 0 ] || fail "the browser dry run must exit 0, got $RC: $(cat "$FX/stderr")"
+  expect "$orphan" "keep young" "an orphaned browser younger than one hour is never reaped"
+  expect "$owned" "" "a headless browser with a live parent is never a reap candidate"
   run_reap --browser-min-age 0
-  [ "$RC" = 0 ] || fail "the browser owner dry run must exit 0, got $RC: $(cat "$FX/stderr")"
-  expect "$owned" "keep live-ancestor" "a browser a live driver still owns is never reaped"
-  expect "$captained" "keep captain-browser" "a browser the captain's own browser owns is never reaped"
-  expect "$young" "reap owner-gone" "an ownerless headless browser older than the floor is reaped"
-  expect "$stable" "reap owner-gone" "an ownerless stable Chrome is reaped even beside its reparented crash handler"
-  expect "$driven" "keep live-ancestor" "a browser a plain interpreter driver still owns is never reaped"
+  [ "$RC" = 0 ] || fail "the browser dry run must exit 0, got $RC: $(cat "$FX/stderr")"
+  expect "$orphan" "reap owner-gone" "an orphaned headless browser older than the floor is reaped"
+  expect "$stable" "reap owner-gone" "an orphaned stable Chrome is reaped even beside its reparented crash handler"
+  expect "$owned" "" "a headless browser with a live parent is never a reap candidate at any age"
   run_reap --apply --browsers --browser-min-age 0
-  [ "$RC" = 0 ] || fail "the browser owner apply must exit 0, got $RC: $(cat "$FX/stderr")"
-  kill -0 "$owned" 2>/dev/null || fail "an apply stopped a live worker's browser"
-  kill -0 "$driven" 2>/dev/null || fail "an apply stopped an interpreter driver's browser"
-  kill -0 "$captained" 2>/dev/null || fail "an apply stopped the captain browser's browser"
-  pass "fm-terminal-reap: browsers keep a young age, a live worker owner, and a captain-browser owner"
+  [ "$RC" = 0 ] || fail "the browser apply must exit 0, got $RC: $(cat "$FX/stderr")"
+  kill -0 "$owned" 2>/dev/null || fail "an apply stopped a browser whose parent is still live"
+  pass "fm-terminal-reap: only orphaned headless browsers past the age floor are reaped"
 }
 
 fm_test_run \
-  test_browsers_keep_young_and_live_owners \
+  test_browsers_reap_only_old_orphans \
   test_keep_list_protects_live_helpers \
   test_protected_terminals_and_hourly_schedule \
   test_discovered_home_and_lock_ancestry \

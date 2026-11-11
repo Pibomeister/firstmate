@@ -522,7 +522,8 @@ fm_backend_orca_kill() {  # <terminal-id>
 # fm_backend_orca_close_worktree_terminals: close every Orca terminal whose
 # worktree path is <path> on the local Orca, and count matching terminals on
 # every saved paired Orca environment (`orca environment list`). On a paired
-# environment only the task's own recorded terminal handle, matched exactly,
+# environment, and for a locally listed terminal whose executionHostId names
+# another host, only the task's own recorded terminal handle, matched exactly,
 # is closed: a path match alone on another host does not prove this task owns
 # that terminal, because the same path layout exists on every Orca host and
 # that host's own teardown owns its worktree, so a path-only remote match is
@@ -539,7 +540,7 @@ fm_backend_orca_kill() {  # <terminal-id>
 fm_backend_orca_close_worktree_terminals() {  # <worktree-path> [recorded-terminal-handle]
   fm_backend_orca_tool_check || return 2
   command -v node >/dev/null 2>&1 || return 2
-  local target=$1 recorded=${2:-} envs env list closed=0 env_count=0 remote_matched=0 rc=0 handles h relist remaining
+  local target=$1 recorded=${2:-} envs env list closed=0 env_count=0 remote_matched=0 rc=0 matches handles h relist remaining
   local -a env_args
   envs=$(orca environment list --json 2>/dev/null | node -e '
 let d; try { d = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (_) { process.exit(1); }
@@ -551,24 +552,19 @@ for (const e of d.result.environments) if (e && typeof e.id === "string" && e.id
     env_args=()
     [ "$env" = local ] || env_args=(--environment "$env")
     list=$(orca terminal list ${env_args[@]+"${env_args[@]}"} --limit 100000 --json 2>/dev/null) || { [ "$rc" = 1 ] || rc=2; continue; }
-    handles=$(printf '%s' "$list" | node -e '
+    matches=$(printf '%s' "$list" | node -e '
 const fs = require("fs");
 let d; try { d = JSON.parse(fs.readFileSync(0, "utf8")); } catch (_) { process.exit(1); }
 if (!d || d.ok === false || !d.result || !Array.isArray(d.result.terminals) || d.result.truncated === true) process.exit(1);
-const target = process.argv[1];
+const [target, env, recorded] = process.argv.slice(1);
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return p; } };
 for (const t of d.result.terminals) {
-  if (t && typeof t.handle === "string" && t.handle && typeof t.worktreePath === "string" && real(t.worktreePath) === real(target)) console.log(t.handle);
-}' "$target") || { [ "$rc" = 1 ] || rc=2; continue; }
-    if [ "$env" != local ]; then
-      remote_matched=$((remote_matched + $(printf '%s\n' "$handles" | grep -c .)))
-      if [ -n "$recorded" ] && printf '%s\n' "$handles" | grep -qxF -- "$recorded"; then
-        handles=$recorded
-        remote_matched=$((remote_matched - 1))
-      else
-        handles=
-      fi
-    fi
+  if (!(t && typeof t.handle === "string" && t.handle && typeof t.worktreePath === "string" && real(t.worktreePath) === real(target))) continue;
+  const remote = env !== "local" || (t.executionHostId || "local") !== "local";
+  console.log(!remote || (recorded && t.handle === recorded) ? `close ${t.handle}` : `match ${t.handle}`);
+}' "$target" "$env" "$recorded") || { [ "$rc" = 1 ] || rc=2; continue; }
+    handles=$(printf '%s\n' "$matches" | sed -n 's/^close //p')
+    remote_matched=$((remote_matched + $(printf '%s\n' "$matches" | grep -c '^match ')))
     [ -n "$handles" ] || continue
     while IFS= read -r h; do
       [ -n "$h" ] || continue
