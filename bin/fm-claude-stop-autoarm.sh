@@ -804,6 +804,8 @@ if [ "$ACTIONABLE" -eq 1 ]; then
   # A live handling successor suppresses this pending wake's reannouncement.
   # Retain the close and retry its policy directly, independently of whether
   # that successor ever closes. The queue stays unacknowledged throughout.
+  # When no watcher survives the wait, restore one first: a host hand-back
+  # retired its cycle, so re-enter the outer loop and let the host park again.
   while :; do
     autoarm_commit rewake
     REWAKE_RC=$?
