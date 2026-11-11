@@ -199,6 +199,7 @@ case "$FM_HANDOFF_LAB_MODE" in
     fm_lock_release "$STATE/.lock.acquire"
     end=$((SECONDS + 60))
     while kill -0 "$launcher" 2>/dev/null && [ "$SECONDS" -lt "$end" ]; do sleep 0.1; done ;;
+  slow-claim) exit 0 ;;
   delayed-successor)
     printf 'holder=%s\n' "$(cat "$FM_HOME/pred.pid")" > "$FM_HOME/state/.lease-task-a"
     PATH="$FM_HANDOFF_DELAY_BIN:$PATH" ;;
@@ -215,6 +216,17 @@ set -eu
 echo "$$" > "$FM_HOME/pred.pid"
 ORCA_TERMINAL_HANDLE=term_predecessor bash "$ROOT/bin/fm-lock.sh" > "$FM_HOME/lock.out" 2>&1
 set +e
+if [ "$FM_HANDOFF_LAB_MODE" = slow-claim ]; then
+  # Hold the claim lock past half the budget before the launcher starts.
+  (STATE="$FM_HOME/state"
+    . "$ROOT/bin/fm-wake-lib.sh"
+    fm_lock_acquire_wait "$STATE/.lock.acquire"
+    touch "$STATE/claim-busy"
+    sleep $((FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS * 3 / 4))
+    fm_lock_release "$STATE/.lock.acquire"
+    date +%s > "$STATE/claim-released") &
+  while [ ! -e "$FM_HOME/state/claim-busy" ]; do sleep 0.1; done
+fi
 bash "$ROOT/bin/fm-handoff-launch.sh" "$FM_HOME/data/handoff ) '.md" > "$FM_HOME/launch.out" 2>&1 &
 launcher=$!
 echo "$launcher" > "$FM_HOME/launcher.pid"
@@ -236,7 +248,7 @@ run_case() {
   test_cleanup_processes
   rm -f "$LAB/state/".* "$LAB/state/attempts" "$LAB/state/handoff-events.log" "$LAB/state/"successor-*.out "$LAB/rc" "$LAB/ack.out" \
     "$LAB/state/tmux-target" "$LAB/state/polling" "$LAB/state/session.keep" "$LAB/state/lock.keep" "$LAB/state/claim-held" \
-    "$LAB/state/claim-wait" "$LAB/state/no-claim-wait" "$LAB/state/premature" "$LAB/state/retire-delayed" \
+    "$LAB/state/claim-wait" "$LAB/state/no-claim-wait" "$LAB/state/premature" "$LAB/state/retire-delayed" "$LAB/state/claim-busy" "$LAB/state/claim-released" \
     "$LAB/launcher.pid" "$LAB/pred.pid" 2>/dev/null || true
   printf '%s\n' "${2:-orca}" > "$LAB/config/backend"
   printf '# Quoting-hostile handoff\nRead this document.\n' > "$LAB/data/handoff ) '.md"
@@ -364,7 +376,8 @@ pass 'supervisor endpoint metadata retains precedence and generation'
 
 # A verified transfer retires predecessor leases only once it commits.
 REAL_MKTEMP=$(command -v mktemp) REAL_RM=$(command -v rm)
-export REAL_MKTEMP REAL_RM
+REAL_CAT=$(command -v cat)
+export REAL_MKTEMP REAL_RM REAL_CAT
 lease_transfer() {  # <case> <stub-name> <stub-body>
   local home="$TMP_ROOT/lease-$1" bin="$TMP_ROOT/lease-$1-bin"
   LEASE_HOME=$home
@@ -436,6 +449,19 @@ exec "$REAL_RM" "$@"'
 assert_committed_transfer 'retirement interruption'
 [ ! -e "$LEASE_HOME/state/.lease-task-a" ] || fail 'an interrupted retirement must still finish under the commit'
 pass 'an interruption during lease retirement after commit keeps the committed transfer'
+
+# A signal right after the successor's line-1 write rolls back to the
+# predecessor through fm-lock.sh's own cleanup, not a fixture restore.
+# shellcheck disable=SC2016 # The stub expands its own arguments.
+lease_transfer phase2-signal cat 'if [ "${1:-}" = "$FM_HOME/state/.lock" ] && [ -f "$FM_HOME/succ.pid" ] \
+  && [ "$("$REAL_CAT" "$1")" = "$("$REAL_CAT" "$FM_HOME/succ.pid")" ]; then kill -TERM "$PPID"; fi
+exec "$REAL_CAT" "$@"'
+[ "$(cat "$LEASE_HOME/ack.rc")" != 0 ] || fail 'a transfer interrupted before commit must not succeed'
+assert_contains "$(cat "$LEASE_HOME/ack.out")" 'reason=lock_refused' 'the interrupted transfer is a nonce-bound reject'
+[ "$(cat "$LEASE_HOME/state/.lock")" = "$(cat "$LEASE_HOME/pred.pid")" ] || fail 'an interrupted transfer must restore the predecessor line 1'
+cmp -s "$LEASE_HOME/session.before" "$LEASE_HOME/state/.lock-session" || fail 'an interrupted transfer must restore the predecessor sidecar'
+[ -f "$LEASE_HOME/state/.lease-task-a" ] || fail 'an interrupted transfer retired the live predecessor lease'
+pass 'a transfer interrupted after its line-1 write restores predecessor ownership and leases'
 
 # A tmux pane nested in Orca outranks the inherited Orca handle, and an Orca
 # handle outside an Orca terminal is not trusted.
@@ -573,6 +599,17 @@ run_case cleanup-contention
 [ ! -e "$LAB/state/.handoff-pending" ] || fail 'a reported failure must retire its claim'
 cat "$LAB/state/handoff-events.log"
 pass 'DRILL cleanup-contention: failure is reported only after the claim is fenced'
+
+# A claim lock held past half the budget at start cannot extend the first
+# attempt past the total deadline: the attempt gets only what is left, less
+# than its usual half of the budget.
+run_case slow-claim
+[ "$(cat "$LAB/rc")" != 0 ] || fail 'a handoff with no ack must fail'
+failed=$(sed -n 's/^HANDOFF v1 ts=\([0-9]*\) event=handoff_failed .*/\1/p' "$LAB/state/handoff-events.log")
+[ -n "$failed" ] && [ "$((failed - $(cat "$LAB/state/claim-released")))" -lt "$((LAB_FAIL_BUDGET / 2))" ] \
+  || fail "a slow initial claim must not push failure past the total budget: $(cat "$LAB/state/handoff-events.log")"
+cat "$LAB/state/handoff-events.log"
+pass 'DRILL slow-claim: a slow initial claim still fails within the total budget'
 
 # A successor transaction still holding the claim lock past the launcher's
 # bounded cleanup wait is reported unresolved, then settled by its ack.

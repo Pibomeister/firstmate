@@ -2,7 +2,8 @@
 # fm-handoff-launch.sh <handoff-file> - verified primary Claude handoff.
 # Only the current lock owner can prepare a claim. Launches via Orca agent
 # argv (never a shell command string), or tmux's direct argv execution.
-# Two fresh terminals share a total 600-second deadline, 300 seconds each.
+# Two fresh terminals share a total 600-second deadline. The first gets up to
+# 300 seconds, never past that total, and the retry gets the rest.
 # Setup and cleanup add to that budget, so a foreground tool timeout of 600
 # seconds cannot cover it. Run in the background and collect the exit status
 # and output before reporting readiness.
@@ -174,6 +175,7 @@ for attempt in 1 2; do
   NONCE=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
   ATTEMPT_END=$((SECONDS + TIMEOUT / 2))
   [ "$attempt" = 1 ] || ATTEMPT_END=$MONO_DEADLINE
+  [ "$ATTEMPT_END" -le "$MONO_DEADLINE" ] || ATTEMPT_END=$MONO_DEADLINE
   CLAIM_DEADLINE=$(( $(date +%s) + ATTEMPT_END - SECONDS ))
   [ "$CLAIM_DEADLINE" -le "$DEADLINE" ] || CLAIM_DEADLINE=$DEADLINE
   tmp=$(mktemp "$STATE/.handoff-pending.XXXXXX")
@@ -199,12 +201,18 @@ for attempt in 1 2; do
         ;;
       tmux)
         SESS=
-        if [ -n "${TMUX:-}" ]; then SESS=$(tmux display-message -p '#{session_name}' 2>/dev/null) || SESS=; fi
+        if [ -n "${TMUX:-}" ]; then
+          SESS=$(fm_run_timed "$remaining" "${BACKEND_EXEC[@]}" tmux display-message -p '#{session_name}' 2>/dev/null) || SESS=
+        fi
         SESS=${SESS:-firstmate-$(basename "$FM_HOME")}
-        if tmux has-session -t "=$SESS" >/dev/null 2>&1; then
-          fm_run_timed "$remaining" "${BACKEND_EXEC[@]}" tmux new-window -d -t "=$SESS:" -c "$FM_HOME" -n firstmate claude "${PERM_ARGS[@]}" "$PROMPT" > "$STATE/.handoff-launch-result" 2>&1 || true
-        else
-          fm_run_timed "$remaining" "${BACKEND_EXEC[@]}" tmux new-session -d -s "$SESS" -c "$FM_HOME" -n firstmate claude "${PERM_ARGS[@]}" "$PROMPT" > "$STATE/.handoff-launch-result" 2>&1 || true
+        TMUX_TARGET=(new-session -d -s "$SESS")
+        remaining=$((ATTEMPT_END - SECONDS))
+        if [ "$remaining" -gt 0 ] && fm_run_timed "$remaining" "${BACKEND_EXEC[@]}" tmux has-session -t "=$SESS" >/dev/null 2>&1; then
+          TMUX_TARGET=(new-window -d -t "=$SESS:")
+        fi
+        remaining=$((ATTEMPT_END - SECONDS))
+        if [ "$remaining" -gt 0 ]; then
+          fm_run_timed "$remaining" "${BACKEND_EXEC[@]}" tmux "${TMUX_TARGET[@]}" -c "$FM_HOME" -n firstmate claude "${PERM_ARGS[@]}" "$PROMPT" > "$STATE/.handoff-launch-result" 2>&1 || true
         fi
         ;;
     esac

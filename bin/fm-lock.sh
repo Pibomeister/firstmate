@@ -153,10 +153,20 @@ restore_uncommitted_lock_session() {
         2) rm -f "$LOCK_SESSION" "$LOCK_SESSION_PREV" 2>/dev/null || true ;;
       esac
       ;;
-    2) rm -f "$LOCK_SESSION" "$LOCK_SESSION_PREV" 2>/dev/null || true ;;
+    2)
+      if verified_handoff_transfer && [ -n "$LOCK_LINE_PRE" ] && [ "$LOCK_SESSION_KIND" -eq 1 ]; then
+        cp -f "$LOCK_LINE_PRE" "$LOCK" 2>/dev/null || true
+        mv -f "$LOCK_SESSION_PREV" "$LOCK_SESSION" 2>/dev/null || true
+      else
+        rm -f "$LOCK_SESSION" "$LOCK_SESSION_PREV" 2>/dev/null || true
+      fi
+      ;;
   esac
   LOCK_SESSION_PHASE=0
   LOCK_SESSION_KIND=0
+}
+verified_handoff_transfer() {
+  [ -z "$REANCHOR" ] && [ "${HANDOFF_TAKEOVER:-}" = verified_transfer ] && [ -n "${FM_HANDOFF_NONCE:-}" ]
 }
 commit_lock_session() {
   LOCK_SESSION_PHASE=0
@@ -394,7 +404,8 @@ fi
 # that session's resume own this lock. If the sidecar changes before line 1 is
 # written, a failure restores the previous sidecar. If line 1 is written but
 # not yet verified, a failure removes the sidecar and leaves the lock
-# ancestry-only. On the re-anchor path a HUP, INT, or TERM during the lease
+# ancestry-only, except on a verified transfer, where it restores both the
+# predecessor's line 1 and its sidecar under the held locks. On the re-anchor path a HUP, INT, or TERM during the lease
 # move or the bounded .claude-autoarm.lock wait, before commit_lock_session,
 # still runs restore_uncommitted_lock_session with phase 2 and removes the
 # sidecar. A verified transfer retires the predecessor's leases only after
@@ -412,7 +423,7 @@ if [ -z "$REANCHOR" ]; then
   if handoff_transfer_refused "${old:-}"; then
     refuse_live_owner "${old:-}"
   fi
-  if [ "$HANDOFF_TAKEOVER" != verified_transfer ] || [ -z "${FM_HANDOFF_NONCE:-}" ]; then
+  if ! verified_handoff_transfer; then
     retire_previous_leases || {
       echo "error: cannot retire a previous session task lease; operate read-only until resolved" >&2
       exit 1
@@ -468,7 +479,7 @@ if [ -n "$REANCHOR" ] && fm_autoarm_ledger_read "$STATE" && [ "$FM_AUTOARM_SESSI
   fi
   release_autoarm_lock
 fi
-if [ -z "$REANCHOR" ] && [ "$HANDOFF_TAKEOVER" = verified_transfer ] && [ -n "${FM_HANDOFF_NONCE:-}" ]; then
+if verified_handoff_transfer; then
   trap '' HUP INT TERM
   commit_lock_session
   retire_previous_leases \
