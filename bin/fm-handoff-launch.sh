@@ -100,7 +100,8 @@ exec 9>&1
 BACKEND_EXEC=(bash -c 'exec 9>&-; exec "$@"' handoff-launch)
 cleanup() {
   local rc=$? wait=10
-  trap - EXIT HUP INT TERM
+  trap - EXIT
+  trap '' HUP INT TERM
   set +e
   if [ -n "$NONCE" ] && [ "$CLAIM_HELD" != 1 ]; then
     [ $(( ${CLAIM_DEADLINE:-0} - $(date +%s) + 10 )) -le "$wait" ] || wait=$(( CLAIM_DEADLINE - $(date +%s) + 10 ))

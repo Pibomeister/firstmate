@@ -199,6 +199,28 @@ case "$FM_HANDOFF_LAB_MODE" in
     fm_lock_release "$STATE/.lock.acquire"
     end=$((SECONDS + 60))
     while kill -0 "$launcher" 2>/dev/null && [ "$SECONDS" -lt "$end" ]; do sleep 0.1; done ;;
+  cleanup-second-signal)
+    # Interrupt the launcher while holding the claim lock, then signal it
+    # again during its bounded cleanup wait for that lock.
+    STATE="$FM_HOME/state"
+    . "$ROOT/bin/fm-wake-lib.sh"
+    fm_lock_acquire_wait "$STATE/.lock.acquire"
+    touch "$STATE/claim-held"
+    launcher=$(cat "$FM_HOME/launcher.pid")
+    kill -TERM "$launcher"
+    sleep 1
+    rm -f "$STATE/claim-wait"
+    end=$((SECONDS + 8))
+    while [ ! -e "$STATE/claim-wait" ] && [ "$SECONDS" -lt "$end" ]; do sleep 0.1; done
+    [ -e "$STATE/claim-wait" ] || touch "$STATE/no-claim-wait"
+    kill -TERM "$launcher" 2>/dev/null || true
+    kill -INT "$launcher" 2>/dev/null || true
+    sleep 1
+    kill -0 "$launcher" 2>/dev/null || touch "$STATE/second-signal-killed"
+    rm -f "$STATE/claim-held"
+    fm_lock_release "$STATE/.lock.acquire"
+    end=$((SECONDS + 60))
+    while kill -0 "$launcher" 2>/dev/null && [ "$SECONDS" -lt "$end" ]; do sleep 0.1; done ;;
   slow-claim) exit 0 ;;
   delayed-successor)
     printf 'holder=%s\n' "$(cat "$FM_HOME/pred.pid")" > "$FM_HOME/state/.lease-task-a"
@@ -248,7 +270,7 @@ run_case() {
   test_cleanup_processes
   rm -f "$LAB/state/".* "$LAB/state/attempts" "$LAB/state/handoff-events.log" "$LAB/state/"successor-*.out "$LAB/rc" "$LAB/ack.out" \
     "$LAB/state/tmux-target" "$LAB/state/polling" "$LAB/state/session.keep" "$LAB/state/lock.keep" "$LAB/state/claim-held" \
-    "$LAB/state/claim-wait" "$LAB/state/no-claim-wait" "$LAB/state/premature" "$LAB/state/retire-delayed" "$LAB/state/claim-busy" "$LAB/state/claim-released" \
+    "$LAB/state/claim-wait" "$LAB/state/no-claim-wait" "$LAB/state/premature" "$LAB/state/retire-delayed" "$LAB/state/claim-busy" "$LAB/state/claim-released" "$LAB/state/second-signal-killed" \
     "$LAB/launcher.pid" "$LAB/pred.pid" 2>/dev/null || true
   printf '%s\n' "${2:-orca}" > "$LAB/config/backend"
   printf '# Quoting-hostile handoff\nRead this document.\n' > "$LAB/data/handoff ) '.md"
@@ -396,6 +418,7 @@ lease_transfer() {  # <case> <stub-name> <stub-body>
   [ "$(cat "$home/state/.lock")" = "$(cat "$home/pred.pid")" ] || fail "lease predecessor must hold the lock: $(cat "$home/pred.out")"
   printf 'holder=%s\n' "$(cat "$home/pred.pid")" > "$home/state/.lease-task-a"
   cp "$home/state/.lock-session" "$home/session.before"
+  [ "${4:-}" != no-sidecar ] || rm -f "$home/state/.lock-session"
   (
     export FM_HOME="$home" FM_STATE_OVERRIDE="$home/state"
     STATE="$home/state"
@@ -462,6 +485,50 @@ assert_contains "$(cat "$LEASE_HOME/ack.out")" 'reason=lock_refused' 'the interr
 cmp -s "$LEASE_HOME/session.before" "$LEASE_HOME/state/.lock-session" || fail 'an interrupted transfer must restore the predecessor sidecar'
 [ -f "$LEASE_HOME/state/.lease-task-a" ] || fail 'an interrupted transfer retired the live predecessor lease'
 pass 'a transfer interrupted after its line-1 write restores predecessor ownership and leases'
+
+# A predecessor that owns the lock by ancestry, with no sidecar, is restored
+# with its sidecar still absent when the transfer is interrupted.
+# shellcheck disable=SC2016 # The stub expands its own arguments.
+lease_transfer phase2-no-sidecar cat 'if [ "${1:-}" = "$FM_HOME/state/.lock" ] && [ -f "$FM_HOME/succ.pid" ] \
+  && [ "$("$REAL_CAT" "$1")" = "$("$REAL_CAT" "$FM_HOME/succ.pid")" ]; then kill -TERM "$PPID"; fi
+exec "$REAL_CAT" "$@"' no-sidecar
+[ "$(cat "$LEASE_HOME/ack.rc")" != 0 ] || fail 'a sidecar-less transfer interrupted before commit must not succeed'
+assert_contains "$(cat "$LEASE_HOME/ack.out")" 'reason=lock_refused' 'the interrupted sidecar-less transfer is a nonce-bound reject'
+[ "$(cat "$LEASE_HOME/state/.lock")" = "$(cat "$LEASE_HOME/pred.pid")" ] || fail 'an interrupted sidecar-less transfer must restore the predecessor line 1'
+[ ! -e "$LEASE_HOME/state/.lock-session" ] || fail 'an interrupted sidecar-less transfer must keep the sidecar absent'
+[ -f "$LEASE_HOME/state/.lease-task-a" ] || fail 'an interrupted sidecar-less transfer retired the live predecessor lease'
+pass 'a sidecar-less transfer interrupted after its line-1 write restores the predecessor'
+
+# Discovery during the uncommitted interval reports unknown; afterwards it
+# reports only the committed owner, for both rollback and commit.
+for locate_case in rollback commit; do
+  export LOCATE_CASE=$locate_case
+  # shellcheck disable=SC2016 # The stub expands its own arguments.
+  lease_transfer "locate-$locate_case" cat 'if [ "${1:-}" = "$FM_HOME/state/.lock" ] && [ -f "$FM_HOME/succ.pid" ] && [ ! -e "$FM_HOME/locate.during" ] \
+  && [ "$("$REAL_CAT" "$1")" = "$("$REAL_CAT" "$FM_HOME/succ.pid")" ]; then
+  PATH="${PATH#*:}" bash "$ROOT/bin/fm-captain-locate.sh" > "$FM_HOME/locate.during" 2>&1 || true
+  [ "$LOCATE_CASE" != rollback ] || kill -TERM "$PPID"
+fi
+exec "$REAL_CAT" "$@"'
+  during=$(cat "$LEASE_HOME/locate.during" 2>/dev/null || true)
+  assert_contains "$during" 'handle=none state=unknown' "$locate_case: discovery during an uncommitted transfer is unknown"
+  after=$(FM_HOME="$LEASE_HOME" FM_STATE_OVERRIDE="$LEASE_HOME/state" bash "$ROOT/bin/fm-captain-locate.sh" || true)
+  if [ "$locate_case" = rollback ]; then
+    assert_contains "$after" "pid=$(cat "$LEASE_HOME/pred.pid") handle=term_lease_pred state=held" 'discovery after rollback names the predecessor'
+    # A dead holder's claim lock does not hide the committed endpoint.
+    mkdir "$LEASE_HOME/state/.lock.acquire"
+    # shellcheck disable=SC2016 # The child prints its own pid, then exits.
+    dead_pid=$(bash -c 'echo "$$"')
+    echo "$dead_pid" > "$LEASE_HOME/state/.lock.acquire/pid"
+    stale=$(FM_HOME="$LEASE_HOME" FM_STATE_OVERRIDE="$LEASE_HOME/state" bash "$ROOT/bin/fm-captain-locate.sh" || true)
+    assert_contains "$stale" 'handle=term_lease_pred state=held' 'a stale claim lock does not hide the committed endpoint'
+  else
+    # The fixture successor exits after its ack, so its committed lock is stale.
+    assert_committed_transfer 'discovery commit'
+    assert_contains "$after" "pid=$(cat "$LEASE_HOME/succ.pid") handle=none state=stale" 'discovery after commit names the committed successor'
+  fi
+done
+pass 'discovery reports only committed endpoints across an uncommitted transfer'
 
 # A tmux pane nested in Orca outranks the inherited Orca handle, and an Orca
 # handle outside an Orca terminal is not trusted.
@@ -599,6 +666,19 @@ run_case cleanup-contention
 [ ! -e "$LAB/state/.handoff-pending" ] || fail 'a reported failure must retire its claim'
 cat "$LAB/state/handoff-events.log"
 pass 'DRILL cleanup-contention: failure is reported only after the claim is fenced'
+
+# A second signal during cleanup's bounded claim wait cannot drop the event.
+run_case cleanup-second-signal
+[ "$(cat "$LAB/rc")" != 0 ] || fail 'an interrupted attempt must fail'
+[ ! -e "$LAB/state/no-claim-wait" ] || fail 'the second signal must arrive during the cleanup claim wait'
+[ ! -e "$LAB/state/second-signal-killed" ] || fail 'a second signal during cleanup must not kill the launcher'
+[ "$(grep -c ' event=handoff_failed ' "$LAB/state/handoff-events.log" || true)" = 1 ] \
+  || fail "two signals must emit exactly one failure: $(cat "$LAB/state/handoff-events.log" 2>/dev/null)"
+grep -q ' event=handoff_failed .* reason=interrupted$' "$LAB/state/handoff-events.log" \
+  || fail "cleanup after two signals must report interruption: $(cat "$LAB/state/handoff-events.log" 2>/dev/null)"
+[ ! -e "$LAB/state/.handoff-pending" ] || fail 'cleanup after a second signal must retire its claim'
+[ ! -e "$LAB/state/.handoff-launch.lock" ] || fail 'cleanup after a second signal must release the launcher lock'
+pass 'DRILL cleanup-second-signal: a second signal during cleanup still emits exactly one failure'
 
 # A claim lock held past half the budget at start cannot extend the first
 # attempt past the total deadline: the attempt gets only what is left, less

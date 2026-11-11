@@ -154,9 +154,12 @@ restore_uncommitted_lock_session() {
       esac
       ;;
     2)
-      if verified_handoff_transfer && [ -n "$LOCK_LINE_PRE" ] && [ "$LOCK_SESSION_KIND" -eq 1 ]; then
+      if verified_handoff_transfer && [ -n "$LOCK_LINE_PRE" ]; then
         cp -f "$LOCK_LINE_PRE" "$LOCK" 2>/dev/null || true
-        mv -f "$LOCK_SESSION_PREV" "$LOCK_SESSION" 2>/dev/null || true
+        case "$LOCK_SESSION_KIND" in
+          1) mv -f "$LOCK_SESSION_PREV" "$LOCK_SESSION" 2>/dev/null || true ;;
+          *) rm -f "$LOCK_SESSION" "$LOCK_SESSION_PREV" 2>/dev/null || true ;;
+        esac
       else
         rm -f "$LOCK_SESSION" "$LOCK_SESSION_PREV" 2>/dev/null || true
       fi
