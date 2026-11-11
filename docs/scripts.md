@@ -182,7 +182,10 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-host-health.sh`      | Read-only host probes (identity, directory service, GitHub auth/TLS, optional SSH, uptime/load) that append one `HOSTHEALTH v1` beacon line for an external watchdog; renders its LaunchAgent plist |
 | `fm-compact-point-lib.sh` | Compute a Claude session's percent left before auto-compact, shared by the handoff trigger and the context-burn recorder |
 | `fm-handoff-trigger.sh` | Claude hook that tells a primary session once per context cycle to write its handoff when context left before auto-compact reaches the threshold, and enforces the captain-order and successor restart gates when that session stops |
-| `fm-handoff-launch.sh` | Launch a handing-off Claude primary's successor in a new terminal on the home's backend and record its live pid for the successor restart gate |
+| `fm-handoff-launch.sh` | Launch a handing-off Claude primary's successor in a fresh terminal on the home's Orca or tmux backend, wait for its verified acknowledgement and lock transfer, and record the completed successor for the restart gate |
+| `fm-handoff-ack.sh` | Successor-side acknowledgement of a handoff document that requests the nonce-bound lock transfer |
+| `fm-handoff-lib.sh` | Shared verified-handoff contract: pending claim, acknowledgement, completion record, and the `HANDOFF v1` watchdog event lines |
+| `fm-captain-locate.sh` | Read-only: print the verified session-lock holder's pid and terminal handle as one `CAPTAIN v1` line for supervisor discovery |
 | `fm-pr-lib.sh`           | Own canonical task and PR validation, the branch-to-PR lookup shared by teardown and the PR health monitor, plus private atomic PR-poll publication, merge-notification identity, and retirement |
 | `fm-pr-resync.sh`        | Move a task copy to a published pull-request head, archiving stale local history without force-pushing |
 | `fm-pr-poll.sh`          | Provide the byte-static watcher program for validated pull-request, merge-request, and Gerrit-change poll sidecars |

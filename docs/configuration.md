@@ -102,6 +102,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Explicitly installed content-addressed extension packages under `data/extensions/packages/`.
 - Failure-class records under `data/failure-classes/` ([`claim-ledger.md`](claim-ledger.md)).
 - Durable captain orders and holds under `data/orders/` (`bin/fm-order.sh`).
+- Successor handoff acknowledgements, `data/handoff-ack-<nonce>.json` (`bin/fm-handoff-lib.sh`).
 
 `state/` holds runtime records:
 
@@ -118,7 +119,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Relay guard pass status, action log, probe streaks, relay logs, and pass lock under `state/relay-guard/` (`bin/fm-relay-guard.sh`).
 - The default host-health beacon log, `state/host-health-beacon.log` (`bin/fm-host-health.sh`).
 - The scheduled terminal-cleanup logs, `state/terminal-reap.log` and `state/terminal-reap.err`, written by the hourly LaunchAgent that `bin/fm-terminal-reap.sh --schedule-plist` prints.
-- The current captain handle, `state/captain-handle`, that order senders resolve at send time, and this session's handoff record, `state/.order-handoff`, that the restart gate reads (`bin/fm-order.sh`), plus the successor launch record, `state/.handoff-successor`, that the handoff trigger's successor gate reads, and the auto-compact point, `state/compact-point`, that the handoff trigger publishes for outside context readers (`bin/fm-handoff-trigger.sh`).
+- The current captain handle, `state/captain-handle`, that order senders resolve at send time, and this session's handoff record, `state/.order-handoff`, that the restart gate reads (`bin/fm-order.sh`), plus the verified successor record, `state/.handoff-successor`, that the handoff trigger's successor gate reads, the pending handoff claim, `state/.handoff-pending`, and the versioned handoff event log, `state/handoff-events.log` (`bin/fm-handoff-lib.sh`), and the auto-compact point, `state/compact-point`, that the handoff trigger publishes for outside context readers (`bin/fm-handoff-trigger.sh`).
 
 `config/` holds local gitignored operating choices, including explicit extension bindings under `config/extensions.d/`.
 
@@ -523,7 +524,7 @@ It never writes the handoff, compacts, or restarts the session.
 
 The same hook enforces the captain-order restart gate at each Stop of a session that is handing off: the trigger fired in this context cycle, or the session ran `bin/fm-order.sh handoff --doc` (stow, a restart, or `percent-left=0`).
 It blocks such a stop once per turn while the recorded handoff document omits an open captain order, and it never gates an ordinary stop.
-A primary session the trigger fired on is also blocked once per turn until `state/.handoff-successor` is newer than the firing and names a successor pid that is alive now, so that handoff turn cannot end on ready to restart with no successor launched; a second mate's stop is not gated this way, because its parent owns the relaunch.
+A primary session the trigger fired on is also blocked once per turn until `state/.handoff-successor` is newer than the firing and records a successor whose acknowledgement, process instance, and lock ownership `bin/fm-handoff-lib.sh` validates, so that handoff turn cannot end on ready to restart without a verified transfer; a live pid alone does not clear it; a second mate's stop is not gated this way, because its parent owns the relaunch.
 The handoff record belongs to the session that wrote it, so another session's stop in the same home is never gated by it.
 A caller outside any harness session, such as a restarting leash or sender, reads the record as the captain's, so its `bin/fm-order.sh gate` check clears when the captain's handoff lists every open order.
 The gate has limits: it runs only for a Claude primary, so a non-Claude primary, or a home with no resolvable auto-compact window that never runs `handoff --doc`, is not gated.
