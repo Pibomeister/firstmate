@@ -11,6 +11,8 @@
 # semantics on StopFailure as on Stop (docs/verification/supervision.md), so
 # the same script covers both turn ends. It owns routine tokenless watcher
 # continuity for Claude primaries (main home and marked secondmate homes):
+# bin/fm-stop-policy-lib.sh bounds model continuations, never watcher arming.
+# A deferred continuation retains this tokenless generation and retries.
 #
 #   - Scope: only a genuine primary checkout (plain checkout or validly marked
 #     secondmate home) with AGENTS.md, bin/, and the effective state dir - the
@@ -246,6 +248,9 @@ fi
 # --- scope: genuine primary checkout only -----------------------------------
 fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
 
+# shellcheck source=bin/fm-stop-policy-lib.sh
+. "$SCRIPT_DIR/fm-stop-policy-lib.sh"
+
 # --- identity: only the lock-owning session's hooks may arm ------------------
 # A prior session may have died after leaving its harness identity in .lock.
 # Use the shared liveness predicate to recognize only that stale-owner case; it
@@ -307,16 +312,27 @@ if [ "$CLAIM_RC" -ne 0 ]; then
 fi
 MY_GEN=$FM_AUTOARM_MY_GEN
 [ -n "$MY_GEN" ] || exit 0
+FM_STOP_POLICY_OWNER_CHECKED=1
+FM_STOP_POLICY_LOG_EARLY=0
+AUTOARM_POLICY_DEFERRED=0
+
+autoarm_policy_check() {  # <policy-mode>
+  AUTOARM_POLICY_DEFERRED=0
+  if fm_stop_policy_allows_stop "$PAYLOAD" "$1"; then
+    AUTOARM_POLICY_DEFERRED=1
+    return 1
+  fi
+  return 0
+}
 
 # Commit <outcome> (optionally with the once-per-episode notice marker) for
 # this generation. Success means this generation's translation WINS and the
-# caller exits 2 unconditionally. Markerless outcomes commit with the owned
-# ledger write; a notice wins only when its following marker write succeeds in
-# the same hold. Failure means refused or unverifiable: the caller goes silent
-# (cleanup, exit 0) - the harness discards the collected stderr on exit 0, so
-# even an already-printed banner is never delivered by a losing generation.
+# caller exits 2. Markerless outcomes commit with the owned ledger write;
+# a notice wins only when its following marker write succeeds in the same hold.
+# A policy deferral returns 3 so the watcher owner can retry tokenlessly.
 autoarm_commit() {  # <outcome> [marker-file] [interrupted-session-identity]
   local outcome=$1 marker=${2:-} marker_identity=${3:-} session_pid recovery
+  AUTOARM_POLICY_DEFERRED=0
   stopfailure_pace
   if [ "$outcome" = rewake ]; then
     fm_session_lock_owned_by_self "$STATE" || return 2
@@ -326,8 +342,10 @@ autoarm_commit() {  # <outcome> [marker-file] [interrupted-session-identity]
       pending:downtime:*|announced:downtime:*) recovery=${FM_RECOVERY_MARKER_TOKEN##*:} ;;
       *) return 2 ;;
     esac
+    autoarm_policy_check rewake || return 3
     fm_autoarm_write_owned "$STATE" "$MY_GEN" "$outcome" "$marker" "$session_pid" "$recovery" || return
   else
+    autoarm_policy_check repair || return 3
     fm_autoarm_write_owned "$STATE" "$MY_GEN" "$outcome" "$marker" '' '' "$marker_identity" "$SESSION_ID" || return
   fi
   stopfailure_paced
@@ -337,6 +355,38 @@ autoarm_commit() {  # <outcome> [marker-file] [interrupted-session-identity]
 # changes nothing about the action taken.
 autoarm_record() {  # <outcome>
   fm_autoarm_write_owned "$STATE" "$MY_GEN" "$1" >/dev/null 2>&1 || true
+}
+
+# A continuation bound never ends the monitoring owner. Its queue remains
+# durable; retry tokenlessly so a later external event or the rolling-hour
+# budget expiry can deliver a fresh wake. Keep the sleep interruptible through
+# the same child-pid trap used for an arm.
+autoarm_policy_wait() {  # [retain-output]
+  local delay=${FM_POLL:-60}
+  case "$delay" in ''|*[!0-9]*|0) delay=60 ;; esac
+  [ "$delay" -le 60 ] || delay=60
+  if [ "${1:-}" != retain-output ]; then
+    [ -z "${OUT:-}" ] || rm -f "$OUT" 2>/dev/null || true
+  fi
+  if ! fm_autoarm_still_owner "$STATE" "$MY_GEN"; then
+    [ -z "${OUT:-}" ] || rm -f "$OUT" 2>/dev/null || true
+    exit 0
+  fi
+  sleep "$delay" &
+  ARM_PID=$!
+  wait "$ARM_PID" || true
+  ARM_PID=
+  if ! fm_autoarm_still_owner "$STATE" "$MY_GEN"; then
+    :
+  elif [ -e "$STATE/.afk" ]; then
+    autoarm_record afk
+  elif ! need_supervision; then
+    autoarm_record clean
+  else
+    return 0
+  fi
+  [ -z "${OUT:-}" ] || rm -f "$OUT" 2>/dev/null || true
+  exit 0
 }
 
 # Before a StopFailure-triggered commit that delivers an exit-2 continuation,
@@ -388,8 +438,8 @@ stopfailure_paced() {
 # failure is the proof the continuation is gone.
 #
 # Returns 0 when the alarm was committed, 2 when a verified healthy watcher
-# appeared inside the hold (the caller resets and closes clean instead), and
-# 1 on any other refusal or uncertainty.
+# appeared inside the hold (the caller resets and closes clean instead),
+# 3 when the continuation is deferred, and 1 on any other refusal or uncertainty.
 autoarm_commit_attended_alarm() {
   local session_id budget_session budget_count rc=1 i=0
   stopfailure_pace
@@ -415,12 +465,14 @@ autoarm_commit_attended_alarm() {
       budget_session=$(sed -n '1s/^session=//p' "$BUDGET_FILE" 2>/dev/null || true)
       budget_count=$(sed -n '2s/^count=//p' "$BUDGET_FILE" 2>/dev/null || true)
       case "$budget_count" in ''|*[!0-9]*) budget_count=0 ;; esac
-      if [ "$budget_session" = "$session_id" ] \
-        && [ "$budget_count" -gt "$BLOCK_BUDGET" ] \
-        && _fm_autoarm_write_owned_locked "$STATE" "$MY_GEN" failed-suppressed "$FAILURE_ALARM"; then
-        AUTOARM_COMMITTED_ALARM=1
-        stopfailure_paced
-        rc=0
+      if [ "$budget_session" = "$session_id" ] && [ "$budget_count" -gt "$BLOCK_BUDGET" ]; then
+        if ! autoarm_policy_check repair; then
+          rc=3
+        elif _fm_autoarm_write_owned_locked "$STATE" "$MY_GEN" failed-suppressed "$FAILURE_ALARM"; then
+          AUTOARM_COMMITTED_ALARM=1
+          stopfailure_paced
+          rc=0
+        fi
       fi
     fi
   fi
@@ -457,10 +509,11 @@ autoarm_alarm_banner() {
 # reset; otherwise commit failed-suppressed. <cause> says why this continuation
 # is suppressed, and the appended clause states the outcome the commit actually
 # decided: an already-alarmed episode schedules no Stop-owned retry (exit 0),
-# anything else keeps it alive (exit 2). Text already on stderr, such as the
-# host's actionable wake lines, is delivered with whichever rewake wins.
-autoarm_exit_suppressed() {  # <cause> [interrupted-session-identity]
-  local cause=$1 marker_identity=${2:-} rc
+# anything else keeps it alive (exit 2). A hand-back banner is delivered with
+# whichever rewake wins.
+# Returns 3 when the stop policy defers the continuation.
+autoarm_exit_suppressed() {  # <cause> [interrupted-session-identity] [banner]
+  local cause=$1 marker_identity=${2:-} banner=${3:-} rc
   if [ -n "$marker_identity" ] && ! fm_autoarm_session_matches "$STATE" "$marker_identity" "$SESSION_ID"; then
     autoarm_record session-ended
     [ -z "${OUT:-}" ] || rm -f "$OUT" 2>/dev/null || true
@@ -468,7 +521,9 @@ autoarm_exit_suppressed() {  # <cause> [interrupted-session-identity]
   fi
   autoarm_commit_attended_alarm
   rc=$?
+  [ "$rc" -ne 3 ] || return 3
   if [ "$rc" -eq 0 ]; then
+    [ -z "$banner" ] || printf '%s\n' "$banner" >&2
     autoarm_alarm_banner
     [ -z "${OUT:-}" ] || rm -f "$OUT" 2>/dev/null || true
     exit 2
@@ -484,6 +539,7 @@ autoarm_exit_suppressed() {  # <cause> [interrupted-session-identity]
     cause='firstmate watcher auto-arm could not clear the resolved failure episode - a verified healthy watcher is running, but the episode reset was refused'
   fi
   if ! autoarm_commit failed-suppressed '' "$marker_identity"; then
+    [ "$AUTOARM_POLICY_DEFERRED" -eq 0 ] || return 3
     [ -z "${OUT:-}" ] || rm -f "$OUT" 2>/dev/null || true
     exit 0
   fi
@@ -492,6 +548,7 @@ autoarm_exit_suppressed() {  # <cause> [interrupted-session-identity]
     printf '%s; the attended failure alarm is already committed for this episode, so this suppressed continuation repeats no operator notice and schedules no Stop-owned retry.\n' "$cause" >&2
     exit 0
   fi
+  [ -z "$banner" ] || printf '%s\n' "$banner" >&2
   printf '%s; no operator notice repeats in this episode, and this suppressed continuation keeps the Stop-owned retry alive.\n' "$cause" >&2
   exit 2
 }
@@ -535,6 +592,8 @@ handle_autoarm_signal() {
     exit 0
   fi
   autoarm_exit_suppressed "firstmate watcher auto-arm interrupted by $signal - the failure episode notice was already consumed" "$SESSION_IDENTITY"
+  [ -z "${OUT:-}" ] || rm -f "$OUT" 2>/dev/null || true
+  exit 0
 }
 
 trap 'handle_autoarm_signal HUP' HUP
@@ -584,6 +643,7 @@ run_arm() {  # <output file, or empty for none>
 SUCCESSOR_FAILURE=
 start_handling_successor() {  # <closed-arm-pid>
   local out pid deadline budget line monitor_was_on=0
+  SUCCESSOR_FAILURE=
   budget=${FM_ARM_SUCCESSOR_CONFIRM_TIMEOUT:-30}
   case "$budget" in ''|*[!0-9]*) budget=30 ;; esac
   if ! out=$(mktemp "$STATE/.claude-autoarm-successor.XXXXXX"); then
@@ -613,6 +673,11 @@ start_handling_successor() {  # <closed-arm-pid>
   return 1
 }
 
+while :; do
+if [ -e "$STATE/.afk" ]; then autoarm_record afk; exit 0; fi
+if ! need_supervision; then autoarm_record clean; exit 0; fi
+AUTOARM_POLICY_DEFERRED=0
+SUCCESSOR_FAILURE=
 OUT=
 ACTIONABLE=0
 HEALTHY=0
@@ -712,6 +777,8 @@ if [ "$HEALTHY" -eq 1 ]; then
     exit 0
   fi
   autoarm_exit_suppressed 'firstmate watcher auto-arm could not clear the resolved failure episode - a verified healthy watcher is running, but the episode reset was refused'
+  autoarm_policy_wait
+  continue
 fi
 
 # After either alarm writer has consumed the episode's attended fail-open,
@@ -734,7 +801,26 @@ if [ "$ACTIONABLE" -eq 1 ]; then
   if [ "$HOST_MODE" -eq 0 ]; then
     start_handling_successor "$CLOSED_ARM_PID" || true
   fi
-  {
+  # A live handling successor suppresses this pending wake's reannouncement.
+  # Retain the close and retry its policy directly, independently of whether
+  # that successor ever closes. The queue stays unacknowledged throughout.
+  # When no watcher survives the wait, restore one first: a host hand-back
+  # retired its cycle, so re-enter the outer loop and let the host park again.
+  while :; do
+    autoarm_commit rewake
+    REWAKE_RC=$?
+    [ "$AUTOARM_POLICY_DEFERRED" -eq 1 ] || break
+    autoarm_policy_wait retain-output
+    if fm_watcher_healthy "$STATE" "$SCRIPT_DIR/fm-watch.sh" "$GRACE" "$FM_HOME"; then
+      continue
+    fi
+    if [ "$HOST_MODE" -eq 1 ]; then
+      [ -z "$OUT" ] || rm -f "$OUT" 2>/dev/null || true
+      continue 2
+    fi
+    start_handling_successor "$CLOSED_ARM_PID" || true
+  done
+  BANNER=$(
     printf 'firstmate watcher wake - one supervision event needs a handling turn now.\n'
     if [ "$HOST_MODE" -eq 1 ]; then
       [ -n "$OUT" ] && awk '/^supervision-host:/ { print; next } /^(signal:|stale:|check:|heartbeat)/ && shown++ < 8' "$OUT" 2>/dev/null
@@ -747,8 +833,9 @@ if [ "$ACTIONABLE" -eq 1 ]; then
     fi
     [ -z "$SUCCESSOR_FAILURE" ] || printf '%s\n' "$SUCCESSOR_FAILURE"
     printf 'Run bin/fm-wake-drain.sh first, handle the wake, then run its exact WAKE_ACK_REQUIRED --ack-through command. Until that post-handling acknowledgement, interruption leaves the wake durable for idempotent re-handling. This Stop hook owns watcher continuity: when the handling turn ends, the next needed cycle arms automatically - do NOT run bin/fm-watch-arm.sh after an ordinary wake.\n'
-  } >&2
-  if autoarm_commit rewake; then
+  )
+  if [ "$REWAKE_RC" -eq 0 ]; then
+    printf '%s\n' "$BANNER" >&2
     [ -z "$OUT" ] || rm -f "$OUT" 2>/dev/null || true
     exit 2
   fi
@@ -756,14 +843,19 @@ if [ "$ACTIONABLE" -eq 1 ]; then
     && fm_recovery_marker_snapshot "$STATE/.watcher-down" \
     && [[ "$FM_RECOVERY_MARKER_TOKEN" == pending:handling:* || "$FM_RECOVERY_MARKER_TOKEN" == announced:handling:* ]] \
     && ! fm_watcher_healthy "$STATE" "$SCRIPT_DIR/fm-watch.sh" "$GRACE" "$FM_HOME"; then
-    [ ! -e "$FAILURE_NOTICE" ] \
-      || autoarm_exit_suppressed 'firstmate watcher auto-arm hand-back still uncommitted - the supervision host returned an actionable wake, but its rewake could not be committed, and the failure episode notice was already consumed'
-    printf 'firstmate watcher auto-arm FAILED - the supervision host returned an actionable wake, but its rewake could not be committed.\n' >&2
+    if [ -e "$FAILURE_NOTICE" ]; then
+      autoarm_exit_suppressed 'firstmate watcher auto-arm hand-back still uncommitted - the supervision host returned an actionable wake, but its rewake could not be committed, and the failure episode notice was already consumed' '' "$BANNER"
+      autoarm_policy_wait
+      continue
+    fi
     if autoarm_commit failed "$FAILURE_NOTICE"; then
+      printf '%s\n' "$BANNER" >&2
+      printf 'firstmate watcher auto-arm FAILED - the supervision host returned an actionable wake, but its rewake could not be committed.\n' >&2
       [ -z "$OUT" ] || rm -f "$OUT" 2>/dev/null || true
       exit 2
     fi
   fi
+  if [ "$AUTOARM_POLICY_DEFERRED" -eq 1 ]; then autoarm_policy_wait; continue; fi
   [ -z "$OUT" ] || rm -f "$OUT" 2>/dev/null || true
   exit 0
 fi
@@ -776,16 +868,18 @@ if [ ! -e "$FAILURE_NOTICE" ]; then
     [ -z "$OUT" ] || rm -f "$OUT" 2>/dev/null || true
     exit 0
   fi
-  {
+  BANNER=$(
     printf 'firstmate watcher auto-arm FAILED - the Stop-owned automatic supervision mechanism is broken after %s bounded attempts, and no live watcher with a fresh beacon was verified.\n' "$attempt"
     [ -n "$OUT" ] && grep -E '^(watcher:|signal:|stale:|check:|heartbeat|supervision-host)' "$OUT" 2>/dev/null | head -8
     [ "$HOST_MODE" -eq 0 ] || printf 'The supervision host (docs/supervision-host.md) ran these cycles; its last one exited %s without a wake.\n' "$HOST_RC"
     printf 'Do not launch a manual background arm from this notice; investigate the automatic Stop hook and watcher startup before ending blind.\n'
-  } >&2
+  )
   if autoarm_commit failed "$FAILURE_NOTICE"; then
+    printf '%s\n' "$BANNER" >&2
     [ -z "$OUT" ] || rm -f "$OUT" 2>/dev/null || true
     exit 2
   fi
+  if [ "$AUTOARM_POLICY_DEFERRED" -eq 1 ]; then autoarm_policy_wait; continue; fi
   [ -z "$OUT" ] || rm -f "$OUT" 2>/dev/null || true
   exit 0
 fi
@@ -795,3 +889,5 @@ fi
 # alarm writer; docs/turnend-guard.md names both and the owner-then-budget lock
 # order they share).
 autoarm_exit_suppressed 'firstmate watcher auto-arm still down - the automatic supervision mechanism remains broken in the recorded failure episode, whose notice was already consumed'
+autoarm_policy_wait
+done

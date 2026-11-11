@@ -4,10 +4,9 @@
 # Proves, against the real installed Claude Code and the real tracked hook
 # registration: a fresh session with in-flight work, no watcher, and a stale
 # session lock receives the full session-start digest through the tracked
-# SessionStart hook; session start reclaims the dead owner; at least two
-# tokenless auto-arm and rewake cycles then complete with zero model-issued arm
-# commands; and the cooperative guard consumes no forced continuation while the
-# hook's launch is healthy.
+# SessionStart hook; session start reclaims the dead owner; two tokenless
+# auto-arm rewakes complete with zero model-issued arm commands, including a
+# later external event after a stop_hook_active handling turn.
 # The project and FM_HOME are isolated; Claude keeps using its existing managed
 # authentication. No live fleet home, worktree, or session is touched.
 # shellcheck disable=SC2016 # the model, not this test shell, reads the prompt text
@@ -191,4 +190,4 @@ printf '%s\n' '{"session_id":"live-owner-control"}' \
 [ ! -s "$LAB/live-owner.out" ] && [ ! -s "$LAB/live-owner.err" ] || fail "competing Stop hook produced a rewake while another live session owned the home"
 wait "$LIVE_OWNER_PID"
 
-printf 'ok - Claude %s live E2E reclaimed a stale session lock through session start, completed two tokenless Stop-owned rewake cycles, and preserved the competing-live-owner boundary\n' "$CLAUDE_VERSION"
+printf 'ok - Claude %s live E2E reclaimed a stale session lock, completed two Stop-owned rewakes, and preserved the competing-live-owner boundary\n' "$CLAUDE_VERSION"

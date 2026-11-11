@@ -184,6 +184,7 @@ install_guard_scripts() {
   local dir=$1
   mkdir -p "$dir/bin"
   cp "$ROOT/bin/fm-turnend-guard.sh" "$dir/bin/fm-turnend-guard.sh"
+  cp "$ROOT/bin/fm-stop-policy-lib.sh" "$ROOT/bin/fm-classify-lib.sh" "$dir/bin/"
   cp "$ROOT/bin/fm-turnend-guard-grok.sh" "$dir/bin/fm-turnend-guard-grok.sh"
   cp "$ROOT/bin/fm-operational-input.sh" "$dir/bin/fm-operational-input.sh"
   cp "$ROOT/bin/fm-bash-compat-lib.sh" "$dir/bin/fm-bash-compat-lib.sh"
@@ -1463,15 +1464,16 @@ EOF
 }
 
 # --- --claude cooperative mode -----------------------------------------------
-# In --claude mode the guard ignores stop_hook_active (Claude marks every stop
-# after ANY stop-hook continuation true, including asyncRewake rewake turns) and
-# cooperates with the Stop-owned auto-arm instead: allow on health, live owner
+# With stop_hook_active=false, Claude cooperates with the Stop-owned auto-arm:
+# allow on health, live owner
 # claim, or a fresh rewake epoch; bounded re-block only when none materialize.
 
 run_hook_claude() {
   local dir=$1 stop_active=$2 home
   home=$(cd "$dir" && pwd)
-  printf '{"stop_hook_active":%s,"session_id":"sess-claude-mode"}' "$stop_active" | CLAUDECODE=1 FM_HOME="$home" bash "$dir/bin/fm-turnend-guard.sh" --claude 2>&1
+  jq -nc --arg t "$home/stop-transcript.jsonl" --argjson active "$stop_active" \
+    '{session_id:"sess-claude-mode",stop_hook_active:$active,transcript_path:$t}' \
+    | CLAUDECODE=1 FM_HOME="$home" bash "$dir/bin/fm-turnend-guard.sh" --claude 2>&1
 }
 
 seed_claude_failure() {
@@ -1522,7 +1524,8 @@ run_integrated_autoarm() {
   local dir=$1 home
   home=$(cd "$dir" && pwd)
   # shellcheck disable=SC2016 # the fake harness expands FM_HOME inside its child shell.
-  printf '{"session_id":"sess-claude-mode","stop_hook_active":false}\n' \
+  jq -nc --arg t "$home/stop-transcript.jsonl" \
+    '{session_id:"sess-claude-mode",stop_hook_active:false,transcript_path:$t}' \
     | FM_HOME="$home" "$dir/fake-claude" -c '
         printf "%s\n" "$$" > "$FM_HOME/state/.lock"
         "$FM_HOME/bin/fm-claude-stop-autoarm.sh"
@@ -1550,25 +1553,37 @@ SH
   chmod +x "$dir/bin/fm-watch-arm.sh"
 }
 
-# The 2026-07-21 incident regression: after a spent forced continuation the old
-# one-shot loop guard ALLOWED a blind stop (stop_hook_active=true) while the
-# watcher was already dead. In --claude mode the guard must re-block instead.
+# Active-hook stops cannot leave the home blind when no auto-arm owns recovery.
+test_parked_home_requires_monitoring() {
+  local variant dir out status
+  for variant in missing afk; do
+    dir=$(make_primary_dir "$TMP_ROOT/parked-unmonitored-$variant")
+    : > "$dir/state/task.meta"
+    printf 'paused [at=1]: waiting for external completion\n' > "$dir/state/task.status"
+    [ "$variant" != afk ] || : > "$dir/state/.afk"
+    out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=0 run_hook_claude "$dir" true); status=$?
+    expect_code 2 "$status" "parked $variant home must repair absent monitoring: $out"
+    assert_contains "$out" "TURN WOULD END BLIND" "parked $variant home lost its monitoring failure"
+  done
+  pass "parked homes with inert auto-arm or dead away daemon retain supervision repair"
+}
+
 test_hook_claude_mode_reblocks_stop_hook_active_when_unhealthy() {
   local dir out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-claude-reblock")
   : > "$dir/state/task1.meta"
   out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" true); status=$?
-  expect_code 2 "$status" "--claude mode must re-block a stop_hook_active=true stop while unhealthy with no auto-arm claim"
-  assert_contains "$out" "TURN WOULD END BLIND" "--claude re-block must carry the blind-turn banner"
-  assert_contains "$out" "Stop-owned auto-arm did not claim" "--claude re-block must explain the missing auto-arm claim"
-  pass "fm-turnend-guard --claude: re-blocks a loop-guarded stop while unhealthy and unclaimed (incident regression)"
+  expect_code 2 "$status" "--claude must recover missing monitoring even after stop_hook_active"
+  assert_contains "$out" "TURN WOULD END BLIND" "unclaimed recovery must explain the blind stop"
+  assert_contains "$out" "Stop-owned auto-arm did not claim" "the repair must name missing auto-arm ownership"
+  pass "fm-turnend-guard --claude: active-hook stop cannot reopen the blind-supervision window"
 }
 
 test_hook_claude_mode_reblocks_x_mode_without_tasks() {
   local dir out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-claude-x-mode")
   : > "$dir/state/x-watch.check.sh"
-  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" true); status=$?
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" false); status=$?
   expect_code 2 "$status" "--claude mode must re-block an X-mode-only stop when no auto-arm claims recovery"
   assert_contains "$out" "X-mode relay polling needs supervision" "--claude X-mode re-block must name the active supervision need"
   [ -f "$dir/state/.turnend-claude-blocks" ] || fail "--claude X-mode re-block must consume the shared block budget"
@@ -1607,7 +1622,7 @@ test_hook_claude_mode_repeated_failed_to_arming_interleavings_reach_fail_open() 
   : > "$dir/state/task1.meta"
   : > "$dir/state/.claude-autoarm-failure-notified"
   printf 'epoch=3 owner_pid=999 outcome=failed updated_at=%s\n' "$(date +%s)" > "$dir/state/.claude-autoarm-epoch"
-  out=$(run_hook_claude "$dir" true); status=$?
+  out=$(run_hook_claude "$dir" false); status=$?
   expect_code 0 "$status" "the first verified failed epoch must own its automatic handoff"
 
   epoch=3
@@ -1617,7 +1632,7 @@ test_hook_claude_mode_repeated_failed_to_arming_interleavings_reach_fail_open() 
     pid=$!
     record_autoarm_owner "$dir" "$pid"
     printf 'epoch=%s owner_pid=%s outcome=arming updated_at=%s\n' "$epoch" "$pid" "$(date +%s)" > "$dir/state/.claude-autoarm-epoch"
-    out=$(run_hook_claude "$dir" true); status=$?
+    out=$(run_hook_claude "$dir" false); status=$?
     expect_code 0 "$status" "active arming epoch $i must own its Stop while advancing the failure budget"
     count=$(sed -n '2s/^count=//p' "$dir/state/.turnend-claude-blocks")
     [ "$count" = "$i" ] || fail "arming epoch $i produced non-monotonic count $count"
@@ -1628,7 +1643,7 @@ test_hook_claude_mode_repeated_failed_to_arming_interleavings_reach_fail_open() 
     printf 'epoch=%s owner_pid=999 outcome=failed-suppressed updated_at=%s\n' "$epoch" "$(date +%s)" > "$dir/state/.claude-autoarm-epoch"
   done
 
-  out=$(run_hook_claude "$dir" true); status=$?
+  out=$(run_hook_claude "$dir" false); status=$?
   expect_code 0 "$status" "repeated failed-to-arming interleavings must reach terminal fail-open"
   assert_contains "$out" 'FIRSTMATE SUPERVISION IS GENUINELY DOWN' "arming interleavings stalled before the bounded fail-open"
   assert_present "$dir/state/.claude-autoarm-failure-alarmed" "arming interleavings did not consume the one-time alarm"
@@ -1664,7 +1679,7 @@ exec /bin/cat "$@"
 SH
   chmod +x "$fakebin/cat"
   (
-    printf '{"stop_hook_active":true,"session_id":"sess-claude-mode"}' \
+    printf '{"stop_hook_active":false,"session_id":"sess-claude-mode"}' \
       | PATH="$fakebin:$PATH" \
         FM_TERMINAL_ROLE_PATH="$dir/state/.claude-autoarm.lock/role" \
         FM_TERMINAL_READY="$ready" \
@@ -1693,7 +1708,7 @@ test_hook_claude_mode_allows_on_fresh_rewake_epoch() {
   dir=$(make_primary_dir "$TMP_ROOT/hook-claude-epoch")
   : > "$dir/state/task1.meta"
   printf 'epoch=3 owner_pid=999 outcome=rewake updated_at=%s\n' "$(date +%s)" > "$dir/state/.claude-autoarm-epoch"
-  out=$(run_hook_claude "$dir" true); status=$?
+  out=$(run_hook_claude "$dir" false); status=$?
   expect_code 0 "$status" "--claude mode must allow the stop whose rewake the auto-arm already owns"
   [ -z "$out" ] || fail "--claude rewake-epoch allow produced output: $out"
   pass "fm-turnend-guard --claude: fresh rewake epoch prevents a duplicate continuation for the same event"
@@ -1714,7 +1729,7 @@ test_hook_claude_mode_blocks_on_abandoned_autoarm_claim() {
   record_autoarm_owner "$dir" "$pid"
   printf 'epoch=464 owner_pid=%s outcome=rewake updated_at=1\n' "$pid" > "$dir/state/.claude-autoarm-epoch"
   touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
-  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" true); status=$?
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" false); status=$?
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
   expect_code 2 "$status" "an owner lock left behind by a finished claim must not pass for recovery under way"
@@ -1743,7 +1758,7 @@ test_hook_claude_mode_blocks_on_pid_reused_arming_claim() {
   printf 'epoch=464 owner_pid=%s outcome=arming updated_at=1\n' "$pid" > "$dir/state/.claude-autoarm-epoch"
   touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
   : > "$dir/state/.last-watcher-beat"
-  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" true); status=$?
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" false); status=$?
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
   expect_code 2 "$status" "a claim whose recorded identity no longer matches its live pid must not pass for recovery under way"
@@ -1768,7 +1783,7 @@ test_hook_claude_mode_blocks_on_stuck_arming_claim() {
   printf 'epoch=464 owner_pid=%s outcome=arming updated_at=1\n' "$pid" > "$dir/state/.claude-autoarm-epoch"
   touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
   touch -t 202001010000 "$dir/state/.last-watcher-beat"
-  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" true); status=$?
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" false); status=$?
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
   expect_code 2 "$status" "a live owner stuck arming past grace with a stale beacon must not pass for recovery under way"
@@ -1815,7 +1830,7 @@ test_hook_claude_mode_blocks_on_stuck_generation_claim() {
     > "$dir/state/.claude-autoarm-epoch"
   touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
   touch -t 202001010000 "$dir/state/.last-watcher-beat"
-  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" true); status=$?
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" false); status=$?
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
   expect_code 2 "$status" "a stuck generation claim must not pass for recovery under way"
@@ -1838,7 +1853,7 @@ test_hook_claude_mode_terminal_fail_open_clears_abandoned_claim() {
   record_autoarm_owner "$dir" "$pid"
   printf 'epoch=3 owner_pid=%s outcome=failed-suppressed updated_at=1\n' "$pid" > "$dir/state/.claude-autoarm-epoch"
   touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
-  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" true); status=$?
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" false); status=$?
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
   expect_code 0 "$status" "the verified attended fail-open still ends the turn once it is spent"
@@ -1855,14 +1870,14 @@ test_hook_claude_mode_preserves_fresh_failed_progression() {
   : > "$dir/state/task1.meta"
   : > "$dir/state/.claude-autoarm-failure-notified"
   printf 'epoch=3 owner_pid=999 outcome=failed updated_at=%s\n' "$(date +%s)" > "$dir/state/.claude-autoarm-epoch"
-  out=$(run_hook_claude "$dir" true); status=$?
+  out=$(run_hook_claude "$dir" false); status=$?
   expect_code 0 "$status" "the first fresh failed epoch must count as its automatic continuation"
   [ -z "$out" ] || fail "fresh failed-epoch allow produced output: $out"
   assert_present "$dir/state/.turnend-claude-blocks" "fresh failed epoch did not preserve bounded progression"
   count=$(sed -n '2s/^count=//p' "$dir/state/.turnend-claude-blocks")
   [ "$count" = 0 ] || fail "the owned first failed epoch must not consume a blocked-stop count, got $count"
   printf 'epoch=4 owner_pid=999 outcome=failed-suppressed updated_at=%s\n' "$(date +%s)" > "$dir/state/.claude-autoarm-epoch"
-  out=$(run_hook_claude "$dir" true); status=$?
+  out=$(run_hook_claude "$dir" false); status=$?
   expect_code 2 "$status" "a later fresh failed epoch must consume the bounded progression"
   assert_absent "$dir/state/.claude-autoarm-failure-alarmed" "fresh failure progression emitted the attended fail-open alarm too early"
   count=$(sed -n '2s/^count=//p' "$dir/state/.turnend-claude-blocks")
@@ -1877,15 +1892,18 @@ test_hook_claude_mode_integrated_monotonic_fail_open() {
   install_integrated_autoarm "$dir"
   write_integrated_failed_arm "$dir"
 
+  # Parallel hooks for one Claude Stop read the same transcript event.
+  printf '{"type":"assistant","message":{"content":"first failed arm"}}\n' > "$dir/stop-transcript.jsonl"
   out=$(run_integrated_autoarm "$dir"); status=$?
   expect_code 2 "$status" "the first exhausted auto-arm cycle must emit its one failure notice"
   assert_contains "$out" "automatic supervision mechanism is broken" "the first integrated failure notice is missing"
-  guard_out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" true); guard_status=$?
+  guard_out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" false); guard_status=$?
   expect_code 0 "$guard_status" "the first failed epoch must own its Stop handoff"
   count=$(sed -n '2s/^count=//p' "$dir/state/.turnend-claude-blocks")
   [ "$count" = 0 ] || fail "the first owned failure epoch must preserve a zero blocked-stop count, got $count"
 
   for i in 1 2 3 4; do
+    printf '{"type":"assistant","message":{"content":"failed arm %s"}}\n' "$i" >> "$dir/stop-transcript.jsonl"
     out=$(run_integrated_autoarm "$dir"); status=$?
     expect_code 2 "$status" "failed epoch $i must retain the automatic retry handoff"
     assert_contains "$out" "suppressed continuation" "failed epoch $i did not carry its one-line reason: $out"
@@ -1901,6 +1919,7 @@ test_hook_claude_mode_integrated_monotonic_fail_open() {
     fi
   done
 
+  printf '{"type":"assistant","message":{"content":"post-alarm arm"}}\n' >> "$dir/stop-transcript.jsonl"
   out=$(run_integrated_autoarm "$dir"); status=$?
   expect_code 0 "$status" "the auto-arm must not re-trigger continuation after the final fail-open"
   assert_contains "$out" "suppressed continuation" "post-fail-open auto-arm did not carry its one-line reason: $out"
@@ -1952,7 +1971,7 @@ test_hook_claude_mode_frozen_epoch_reaches_bounded_fail_open() {
 
   out=$(run_integrated_autoarm "$dir"); status=$?
   expect_code 2 "$status" "the exhausted auto-arm cycle must emit its one failure notice before going quiet"
-  guard_out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" true); guard_status=$?
+  guard_out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" false); guard_status=$?
   expect_code 0 "$guard_status" "the first failed epoch must own its Stop handoff"
   epoch_line=$(sed -n '1p' "$dir/state/.claude-autoarm-epoch")
 
@@ -1965,7 +1984,7 @@ test_hook_claude_mode_frozen_epoch_reaches_bounded_fail_open() {
     [ -z "$out" ] || fail "inert auto-arm produced output at stop $i: $out"
     [ "$(sed -n '1p' "$dir/state/.claude-autoarm-epoch")" = "$epoch_line" ] \
       || fail "the ledger epoch advanced at stop $i, so this case no longer drives a frozen epoch"
-    guard_out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" true); guard_status=$?
+    guard_out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" false); guard_status=$?
     if [ "$i" -lt 4 ]; then
       expect_code 2 "$guard_status" "frozen-epoch stop $i must still re-block within the budget"
       assert_contains "$guard_out" "TURN WOULD END BLIND" "frozen-epoch re-block $i lost the blind-turn banner"
@@ -1978,7 +1997,7 @@ test_hook_claude_mode_frozen_epoch_reaches_bounded_fail_open() {
     fi
   done
 
-  guard_out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" true); guard_status=$?
+  guard_out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" false); guard_status=$?
   expect_code 2 "$guard_status" "a later unhealthy stop after the frozen-epoch alarm must remain attended"
   assert_not_contains "$guard_out" 'FIRSTMATE SUPERVISION IS GENUINELY DOWN' "the attended alarm repeated against the frozen epoch"
 
@@ -1993,7 +2012,7 @@ test_hook_claude_mode_frozen_epoch_reaches_bounded_fail_open() {
   }
   record_watcher_lock "$dir" "$pid" "$identity"
   touch "$dir/state/.last-watcher-beat"
-  guard_out=$(run_hook_claude "$dir" true); guard_status=$?
+  guard_out=$(run_hook_claude "$dir" false); guard_status=$?
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
   rm -rf "$dir/state/.watch.lock"
@@ -2002,7 +2021,7 @@ test_hook_claude_mode_frozen_epoch_reaches_bounded_fail_open() {
   assert_absent "$dir/state/.turnend-claude-blocks" "positive recovery left the frozen-epoch block budget"
   assert_absent "$dir/state/.claude-autoarm-failure-notified" "positive recovery left the failure notice"
   assert_absent "$dir/state/.claude-autoarm-failure-alarmed" "positive recovery left the attended alarm"
-  guard_out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" true); guard_status=$?
+  guard_out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" false); guard_status=$?
   expect_code 2 "$guard_status" "a later unhealthy stop must re-block from a fresh budget"
   count=$(sed -n '2s/^count=//p' "$dir/state/.turnend-claude-blocks")
   [ "$count" = 1 ] || fail "the post-recovery episode must restart its budget at 1, got $count"
@@ -2174,7 +2193,16 @@ i=$1 variant=$2
 export CLAUDECODE=1 CLAUDE_CODE_SESSION_ID=sess-claude-mode CLAUDE_PID=$$
 printf '%s\n' "$$" > "$FM_HOME/state/.lock"
 printf '%s\n' "$CLAUDE_CODE_SESSION_ID" > "$FM_HOME/state/.lock-session"
-printf '{"session_id":"sess-claude-mode","stop_hook_active":false}\n' \
+# This test covers the attended-alarm episode, not the stop policy's rolling
+# six-per-hour continuation cap (tests/fm-stop-policy.test.sh owns that). Its
+# seven Stops would otherwise exhaust the cap before a slow machine commits the
+# alarm, deferring the seventh auto-arm for up to an hour.
+rm -f "$FM_HOME/state/.stop-hook.$CLAUDE_CODE_SESSION_ID.json"
+transcript="$FM_HOME/stop-transcript.jsonl"
+printf '{"type":"assistant","message":{"content":"recovery turn %s"}}\n' "$i" >> "$transcript"
+payload=$(jq -nc --arg t "$transcript" \
+  '{session_id:"sess-claude-mode",stop_hook_active:false,transcript_path:$t}')
+printf '%s\n' "$payload" \
   | FM_CLAUDE_AUTOARM_ATTEMPTS=1 "$FM_HOME/bin/fm-claude-stop-autoarm.sh" > "$FM_HOME/auto-$i.out" 2>&1 &
 auto_pid=$!
 # Fire the guard only once this generation's claim is observed open, so the
@@ -2187,7 +2215,7 @@ while [ "$waited" -lt 100 ]; do
   waited=$((waited + 1))
 done
 [ "$waited" -lt 100 ] || : > "$FM_HOME/noclaim-$i"
-printf '{"stop_hook_active":false,"session_id":"sess-claude-mode"}' \
+printf '%s\n' "$payload" \
   | CLAUDECODE=1 FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 bash "$FM_HOME/bin/fm-turnend-guard.sh" --claude > "$FM_HOME/guard-$i.out" 2>&1
 printf '%s' "$?" > "$FM_HOME/guard-$i.status"
 [ "$variant" != signal ] || kill -TERM "$auto_pid" 2>/dev/null || : > "$FM_HOME/nokill-$i"
@@ -2287,7 +2315,7 @@ test_hook_claude_mode_stale_rewake_epoch_blocks() {
   : > "$dir/state/task1.meta"
   printf 'epoch=3 owner_pid=999 outcome=rewake updated_at=1\n' > "$dir/state/.claude-autoarm-epoch"
   touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
-  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" true); status=$?
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" false); status=$?
   expect_code 2 "$status" "--claude mode must not treat an ancient rewake epoch as this event's recovery"
   pass "fm-turnend-guard --claude: stale rewake epoch does not allow a blind stop"
 }
@@ -2313,14 +2341,14 @@ test_hook_claude_mode_verified_failure_alarm_is_loud_and_once() {
   : > "$dir/state/task1.meta"
   seed_claude_failure "$dir"
   seed_claude_budget "$dir" 3
-  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" true); status=$?
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" false); status=$?
   expect_code 0 "$status" "verified failure with exhausted budget must take the bounded attended fail-open"
   assert_contains "$out" 'FIRSTMATE SUPERVISION IS GENUINELY DOWN' "bounded fail-open alarm was not unmistakable"
   assert_contains "$out" 'Keep this session attended' "bounded fail-open alarm omitted the attended-session action"
   assert_contains "$out" 'diagnose the automatic Stop-hook and watcher startup' "bounded fail-open alarm omitted automatic-mechanism diagnosis"
   assert_not_contains "$out" 'fm-watch-arm.sh' "bounded fail-open alarm assigned a manual watcher launch"
   assert_present "$dir/state/.claude-autoarm-failure-alarmed" "bounded fail-open did not consume the episode alarm"
-  out2=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" true); status2=$?
+  out2=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" false); status2=$?
   expect_code 2 "$status2" "a consumed attended alarm must make later unhealthy stops block again"
   assert_not_contains "$out2" 'FIRSTMATE SUPERVISION IS GENUINELY DOWN' "attended failure alarm repeated in one episode"
   pass "fm-turnend-guard --claude: verified fail-open is loud, bounded, attended, and non-repeating"
@@ -2333,14 +2361,14 @@ test_hook_claude_mode_fail_open_requires_notice_and_failure_epoch() {
   printf 'epoch=3 owner_pid=999 outcome=failed-suppressed updated_at=1\n' > "$no_notice/state/.claude-autoarm-epoch"
   touch -t 202001010000 "$no_notice/state/.claude-autoarm-epoch"
   seed_claude_budget "$no_notice" 3
-  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$no_notice" true); status=$?
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$no_notice" false); status=$?
   expect_code 2 "$status" "an exhausted failure epoch without the consumed notice must remain blocking"
 
   notice_only=$(make_primary_dir "$TMP_ROOT/hook-claude-alarm-no-epoch")
   : > "$notice_only/state/task1.meta"
   : > "$notice_only/state/.claude-autoarm-failure-notified"
   seed_claude_budget "$notice_only" 3
-  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$notice_only" true); status=$?
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$notice_only" false); status=$?
   expect_code 2 "$status" "a consumed notice without an exhausted failure epoch must remain blocking"
   pass "fm-turnend-guard --claude: fail-open requires both exhausted retries and consumed notice"
 }
@@ -2352,7 +2380,7 @@ test_hook_claude_mode_away_mode_never_uses_stop_autoarm_fail_open() {
   : > "$dir/state/.afk"
   seed_claude_failure "$dir"
   seed_claude_budget "$dir" 3
-  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" true); status=$?
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" false); status=$?
   expect_code 2 "$status" "away mode must not use a stale Stop-autoarm failure to fail open"
   assert_contains "$out" 'Away mode owns watcher supervision' "away-mode block lost its daemon ownership guidance"
   assert_absent "$dir/state/.claude-autoarm-failure-alarmed" "away mode consumed the Stop-autoarm attended alarm"
@@ -2416,7 +2444,7 @@ test_hook_claude_mode_secondmate_reblocks_like_primary() {
   local dir pid out status
   dir=$(make_secondmate_dir "$TMP_ROOT/hook-claude-sm-reblock")
   : > "$dir/state/task1.meta"
-  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" true); status=$?
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" false); status=$?
   expect_code 2 "$status" "--claude mode must re-block in a marked secondmate home exactly like the main primary"
   assert_contains "$out" "TURN WOULD END BLIND" "--claude secondmate re-block must carry the blind-turn banner"
   sleep 60 &
@@ -2751,17 +2779,34 @@ test_codex_blocks_turn_end_while_own_checkpoint_runs() {
 }
 
 test_codex_reblocks_open_checkpoint_after_its_own_block() {
-  local dir checkpoint
+  local dir checkpoint now
   dir=$(make_primary_dir "$TMP_ROOT/codex-own-checkpoint-reblock")
   : > "$dir/state/task1.meta"
+  now=$(date +%s)
+  jq -nc --argjson now "$now" '{times:[$now,$now,$now,$now,$now,$now],streak:0}' > "$dir/state/.stop-hook.s1.json"
   checkpoint=$(make_codex_checkpoint "$dir")
   run_codex_hook "$dir" "$(codex_payload s1 t1 true)" "$checkpoint"
   stop_codex_checkpoint "$dir"
-  expect_code 2 "$STATUS" "stop_hook_active=true must not end a Codex turn over a checkpoint that is still running: $OUT"
-  pass "fm-turnend-guard codex: stop_hook_active is no longer a one-shot allow over a running checkpoint"
+  expect_code 2 "$STATUS" "stop_hook_active=true and a spent hourly budget must not end a Codex turn over a checkpoint that is still running: $OUT"
+  assert_contains "$OUT" "foreground checkpoint is still running" "the re-block must name the running checkpoint"
+  pass "fm-turnend-guard codex: stop_hook_active and the hourly budget do not end a turn over a running checkpoint"
 }
 
-test_codex_holds_own_checkpoint_then_ignored_repair_can_end() {
+test_hook_passive_parked_home_without_watcher_blocks() {
+  local dir home out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-passive-parked-blind")
+  : > "$dir/state/task1.meta"
+  printf 'paused [at=1]: awaiting external check completion\n' > "$dir/state/task1.status"
+  home=$(cd "$dir" && pwd)
+  status=0
+  out=$(printf '{"session_id":"passive-parked","stop_hook_active":false}' \
+    | PATH="$BLIND_BIN:$PATH" CLAUDECODE=1 FM_HOME="$home" bash "$dir/bin/fm-turnend-guard.sh" 2>&1) || status=$?
+  expect_code 2 "$status" "a parked passive home with no watcher must still be told to restore monitoring: $out"
+  assert_contains "$out" "TURN WOULD END BLIND" "the block must carry the blind-turn banner"
+  pass "fm-turnend-guard: the parked shortcut never ends a passive turn without a watcher"
+}
+
+test_codex_holds_own_checkpoint_then_active_continuation_can_end() {
   local dir checkpoint home io grace=${1:-300} age=${2:-0}
   dir=$(make_primary_dir "$TMP_ROOT/codex-own-checkpoint-ends-$grace")
   : > "$dir/state/task1.meta"
@@ -2779,7 +2824,7 @@ test_codex_holds_own_checkpoint_then_ignored_repair_can_end() {
 "$FM_T_CHECKPOINT" "$FM_T_DIR/watcher.pid" &
 ckpt=$!
 while [ ! -s "$FM_T_DIR/watcher.pid" ]; do sleep 0.05; done
-      sleep "$FM_T_AGE"
+sleep "$FM_T_AGE"
 printf "%s" "$FM_T_FIRST" | FM_HOME="$FM_T_HOME" bash "$FM_T_HOME/bin/fm-turnend-guard.sh" > "$FM_T_DIR/out1" 2>&1
 printf "%s\n" "$?" > "$FM_T_DIR/rc1"
 printf "%s" "$FM_T_NEXT" | FM_HOME="$FM_T_HOME" bash "$FM_T_HOME/bin/fm-turnend-guard.sh" > "$FM_T_DIR/out2" 2>&1
@@ -2791,8 +2836,8 @@ printf "%s\n" "$?" > "$FM_T_DIR/rc3"
 :'
   expect_code 2 "$(cat "$io/rc1")" "a Codex stop while this session's own checkpoint runs must block: $(cat "$io/out1")"
   expect_code 2 "$(cat "$io/rc2")" "a continuation while the own checkpoint is still alive must stay held: $(cat "$io/out2")"
-  expect_code 0 "$(cat "$io/rc3")" "once the own checkpoint has ended and nothing advanced, the continuation may end: $(cat "$io/out3")"
-  pass "fm-turnend-guard codex: holds the turn while its own checkpoint runs, then the no-progress escape applies"
+  expect_code 0 "$(cat "$io/rc3")" "once the own checkpoint has ended, the active continuation may end: $(cat "$io/out3")"
+  pass "fm-turnend-guard codex: holds the turn while its own checkpoint runs, then the active continuation may end"
 }
 
 test_codex_allows_watcher_owned_by_another_session() {
@@ -2813,24 +2858,19 @@ test_codex_allows_watcher_owned_by_another_session() {
   pass "fm-turnend-guard codex: a live watcher another session owns still allows the stop"
 }
 
+
 test_codex_missing_watcher_allows_stop_without_a_checkpoint_loop() {
   local dir
-  dir=$(make_primary_dir "$TMP_ROOT/codex-progress")
+  dir=$(make_primary_dir "$TMP_ROOT/codex-missing-watcher")
   : > "$dir/state/task1.meta"
-  touch "$dir/state/.last-watcher-beat"
   run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
   expect_code 0 "$STATUS" "a Codex stop with no watcher must end instead of blocking: $OUT"
   assert_contains "$OUT" "NO PERSISTENT WATCHER" "the allow must name the missing hold"
   assert_not_contains "$OUT" "fm-watch-checkpoint.sh" "the allow must not name a checkpoint command"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 0 "$STATUS" "the real active continuation must also end without a watcher: $OUT"
   assert_not_contains "$OUT" "start the next checkpoint" "the allow must not ask for another checkpoint"
-  # A finished checkpoint whose beacon or lock identity advanced must not re-block.
-  touch -d 2026-01-01T00:00:00.6 "$dir/state/.last-watcher-beat"
-  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
-  expect_code 0 "$STATUS" "a beacon advance must not re-block a continued stop: $OUT"
-  record_watcher_lock "$dir" "$(nonexistent_pid)" "new cycle identity"
-  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
-  expect_code 0 "$STATUS" "a new watch-lock identity must not re-block a continued stop: $OUT"
-  pass "fm-turnend-guard codex: a missing watcher lets the turn end, and progress does not re-block it"
+  pass "fm-turnend-guard codex: a missing watcher allows initial and active stops without a checkpoint loop"
 }
 
 test_codex_detach_hold_allows_stop_when_the_watcher_is_healthy() {
@@ -2926,39 +2966,40 @@ SH
   pass "fm-turnend-guard codex: a selected supervision host home still lets the stop end through the arm"
 }
 
-test_codex_stale_or_foreign_block_record_is_judged_fresh() {
-  local dir
+
+test_codex_legacy_records_do_not_hold_active_stop() {
+  local dir queue
   dir=$(make_primary_dir "$TMP_ROOT/codex-stale-record")
-  printf '1790000000 1 signal task1.status done\n' > "$dir/state/.wake-queue"
+  queue='1790000000 1 signal task1.status done'
+  printf '%s\n' "$queue" > "$dir/state/.wake-queue"
+  printf 'turn=t1\nprogress=legacy\nblocks=2\n' > "$dir/state/.turnend-codex-block.s1"
   run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
-  expect_code 2 "$STATUS" "a queued wake must block the first stop: $OUT"
+  expect_code 2 "$STATUS" "a legacy block counter must not allow an initial queued stop: $OUT"
+  run_codex_hook "$dir" "$(codex_payload s1 t2 false)"
+  expect_code 2 "$STATUS" "a new turn with a queued wake must request handling: $OUT"
+  run_codex_hook "$dir" "$(codex_payload s2 t2 false)"
+  expect_code 2 "$STATUS" "a new session with a queued wake must request handling: $OUT"
   run_codex_hook "$dir" "$(codex_payload s1 t2 true)"
-  expect_code 2 "$STATUS" "a new turn must not inherit the previous turn's block budget: $OUT"
-  run_codex_hook "$dir" "$(codex_payload s2 t2 true)"
-  expect_code 2 "$STATUS" "another session's record must not allow this session's continued stop: $OUT"
-  run_codex_hook "$dir" "$(codex_payload s1 t2 true)"
-  expect_code 2 "$STATUS" "the second block of the same turn must still hold a queued wake: $OUT"
-  run_codex_hook "$dir" "$(codex_payload s1 t2 true)"
-  expect_code 0 "$STATUS" "the third block of the same turn must allow the stop: $OUT"
-  assert_contains "$OUT" "BLOCK BOUND" "the bound allow must name the bound"
-  assert_not_contains "$OUT" "fm-watch-checkpoint.sh" "the budget allow must not name a checkpoint command"
-  pass "fm-turnend-guard codex: block records stay on their own session and turn, then the budget allows the stop"
+  expect_code 0 "$STATUS" "an active continuation must stop regardless of the legacy record: $OUT"
+  run_codex_hook "$dir" "$(codex_payload s3 t9 true)"
+  expect_code 0 "$STATUS" "an active continuation from another hook needs no guard block record: $OUT"
+  [ "$(cat "$dir/state/.wake-queue")" = "$queue" ] || fail "active continuations consumed a queued wake"
+  pass "fm-turnend-guard codex: legacy block records do not change initial or active-stop behavior"
 }
 
-test_codex_queued_wake_budget_allows_stop() {
-  local dir
-  dir=$(make_primary_dir "$TMP_ROOT/codex-queue-budget")
-  printf '1790000000 1 signal task1.status done\n' > "$dir/state/.wake-queue"
+
+test_codex_queued_wake_allows_active_stop() {
+  local dir queue
+  dir=$(make_primary_dir "$TMP_ROOT/codex-queue-active")
+  queue='1790000000 1 signal task1.status done'
+  printf '%s\n' "$queue" > "$dir/state/.wake-queue"
   run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
-  expect_code 2 "$STATUS" "the first queued stop must block: $OUT"
+  expect_code 2 "$STATUS" "the initial queued stop must request handling: $OUT"
+  assert_contains "$OUT" "acknowledge" "the block must name the pending wake repair"
   run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
-  expect_code 2 "$STATUS" "the second queued stop must still block: $OUT"
-  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
-  expect_code 0 "$STATUS" "the third queued stop must allow the turn to end: $OUT"
-  assert_contains "$OUT" "BLOCK BOUND" "the bound allow must name the bound"
-  assert_contains "$OUT" "without a persistent watcher" "the bound allow must name the missing watcher"
-  assert_not_contains "$OUT" "start the next checkpoint" "the budget allow must not ask for another checkpoint"
-  pass "fm-turnend-guard codex: a queued wake cannot hold the turn past the block budget"
+  expect_code 0 "$STATUS" "the real active continuation must allow the turn to end: $OUT"
+  [ "$(cat "$dir/state/.wake-queue")" = "$queue" ] || fail "the active stop consumed a queued wake"
+  pass "fm-turnend-guard codex: an active continuation ends with its queued wake retained"
 }
 
 test_codex_foreign_lock_owner_gets_read_only_exit() {
@@ -2985,19 +3026,22 @@ test_codex_no_work_stays_silent() {
   pass "fm-turnend-guard codex: silent with nothing in flight"
 }
 
-test_codex_queued_wake_keeps_turn_open_after_last_task_clears() {
-  local dir
+
+test_codex_queued_wake_remains_after_active_stop() {
+  local dir queue
   dir=$(make_primary_dir "$TMP_ROOT/codex-queued-wake")
-  printf '1790000000 1 signal task1.status done\n' > "$dir/state/.wake-queue"
+  queue='1790000000 1 signal task1.status done'
+  printf '%s\n' "$queue" > "$dir/state/.wake-queue"
   run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
   expect_code 2 "$STATUS" "a queued wake still needs handling after the last task clears: $OUT"
   assert_contains "$OUT" "acknowledge" "the block must name the pending wake repair"
   run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
-  expect_code 2 "$STATUS" "the no-progress escape must not discard an unacknowledged wake: $OUT"
+  expect_code 0 "$STATUS" "the active continuation may end after the last task clears: $OUT"
+  [ "$(cat "$dir/state/.wake-queue")" = "$queue" ] || fail "the active stop acknowledged the wake"
   rm -f "$dir/state/.wake-queue"
   run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
   expect_code 0 "$STATUS" "after the queued wake clears, an idle Codex turn may end: $OUT"
-  pass "fm-turnend-guard codex: a queued wake holds the turn after the last task clears"
+  pass "fm-turnend-guard codex: queued work survives the active stop after the last task clears"
 }
 
 test_non_codex_default_mode_keeps_one_shot_allow() {
@@ -3008,8 +3052,7 @@ test_non_codex_default_mode_keeps_one_shot_allow() {
   expect_code 0 "$status" "the default (non-Codex) mode keeps its one-shot stop_hook_active allow: $out"
   out=$(run_hook "$dir" false); status=$?
   expect_code 2 "$status" "the default (non-Codex) mode still blocks a first unsupervised stop"
-  [ -z "$(ls "$dir/state"/.turnend-codex-block.* 2>/dev/null)" ] || fail "a non-Codex block wrote a Codex record"
-  pass "fm-turnend-guard: non-Codex default mode keeps its one-shot allow and writes no Codex record"
+  pass "fm-turnend-guard: non-Codex default mode keeps its one-shot allow"
 }
 
 test_secondmate_event_instructions_finish_turn() {
@@ -3029,26 +3072,24 @@ test_secondmate_event_instructions_finish_turn() {
   pass "secondmate instructions end the handling turn without model polling"
 }
 
-test_secondmate_block_bound_ends_a_checkpoint_loop() {
-  local dir
-  dir=$(make_secondmate_dir "$TMP_ROOT/sm-block-bound")
+
+test_secondmate_active_stop_retains_queued_wake() {
+  local dir queue
+  dir=$(make_secondmate_dir "$TMP_ROOT/sm-active-stop")
   cp -R "$ROOT/bin/." "$dir/bin/"
   mkdir -p "$dir/parent/state"
   printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$dir/parent" > "$dir/.fm-secondmate-parent"
-  printf '1790000000 1 signal task1.status done\n' > "$dir/state/.wake-queue"
+  queue='1790000000 1 signal task1.status done'
+  printf '%s\n' "$queue" > "$dir/state/.wake-queue"
   export FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27
   run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
-  expect_code 2 "$STATUS" "the first secondmate stop must block: $OUT"
+  expect_code 2 "$STATUS" "the initial secondmate stop must request handling: $OUT"
   assert_not_contains "$OUT" "fm-watch-checkpoint.sh" "the secondmate block must not print a checkpoint command"
-  touch -d 2026-01-01T00:00:00.6 "$dir/state/.last-watcher-beat"
-  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
-  expect_code 2 "$STATUS" "the second secondmate stop must block: $OUT"
-  touch -d 2026-01-02T00:00:00.6 "$dir/state/.last-watcher-beat"
   run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
   unset FM_TASK_INBOX TMUX TMUX_PANE
-  expect_code 0 "$STATUS" "progress must not hold a secondmate past the block bound: $OUT"
-  assert_contains "$OUT" "BLOCK BOUND" "the allow must name the bound"
-  pass "fm-turnend-guard codex: a secondmate home cannot loop past the block bound"
+  expect_code 0 "$STATUS" "the active secondmate continuation must allow stop: $OUT"
+  [ "$(cat "$dir/state/.wake-queue")" = "$queue" ] || fail "the active secondmate stop consumed a queued wake"
+  pass "fm-turnend-guard codex: an active secondmate continuation ends with its queued wake retained"
 }
 
 test_secondmate_event_status_requires_notification_owner() {
@@ -3111,7 +3152,7 @@ try:
     require(r.returncode==0, 'check registration: '+r.stderr)
     require(run(str(root/'bin/fm-harness.sh')).stdout.strip()=='codex', 'portable fixture did not establish a Codex-shaped ancestor')
     require(guard().returncode==2, 'selected secondmate ended blind without a watcher')
-    require(guard(True).returncode==0, 'unproven watcher lost the bounded no-progress escape')
+    require(guard(True).returncode==0, 'unproven watcher lost the active-continuation allow')
     require(not (root/'parent/state/sm-test-1.status').exists(), 'secondmate guard wrote a parent blocker')
     r=run(watch, '--secondmate')
     require(r.returncode==0, 'outside-turn start: '+r.stdout+r.stderr)
@@ -3132,7 +3173,7 @@ try:
     try:
         lines=binding.splitlines();lines[3]='/tmp/wrong-secondmate-socket'
         (root/'state/.secondmate-watch').write_text('\n'.join(lines)+'\n')
-        require(guard().returncode==2 and guard(True).returncode==0, 'mismatched route allowed a fresh stop or lost the no-progress escape')
+        require(guard().returncode==2 and guard(True).returncode==0, 'mismatched route allowed a fresh stop or lost the active-continuation allow')
     finally:
         (root/'state/.secondmate-watch').write_text(binding)
         os.kill(int(pid),signal.SIGCONT)
@@ -3531,6 +3572,69 @@ SH
   pass "secondmate Herdr binding is proven from the lock owner and rings its recorded target; the default session needs no HERDR_SESSION, a leftover watcher is taken over for this home only, and legacy tmux bindings still validate"
 }
 
+# A parked Stop is logged only once the healthy failure-episode reset succeeds;
+# a refused reset yields the repair decision alone.
+test_parked_refused_reset_logs_only_repair() {
+  local variant dir pid identity out status
+  for variant in reset refused; do
+    dir=$(make_primary_dir "$TMP_ROOT/parked-reset-$variant")
+    : > "$dir/state/task.meta"
+    printf 'paused [at=1]: waiting for external completion\n' > "$dir/state/task.status"
+    [ "$variant" != refused ] || mkdir -p "$dir/state/.claude-autoarm-failure-notified"
+    sleep 60 &
+    pid=$!
+    identity=$(watcher_identity "$dir" "$pid") || { kill "$pid" 2>/dev/null || true; fail "could not identify live watcher holder"; }
+    record_watcher_lock "$dir" "$pid" "$identity"
+    touch "$dir/state/.last-watcher-beat"
+    out=$(run_hook_claude "$dir" false); status=$?
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    [ "$(grep -c '^STOPHOOK v1 ' "$dir/state/stop-hook.log" 2>/dev/null)" = 1 ] \
+      || fail "$variant parked stop must emit exactly one decision: $(cat "$dir/state/stop-hook.log" 2>/dev/null)"
+    if [ "$variant" = reset ]; then
+      expect_code 0 "$status" "healthy parked stop must end the turn: $out"
+      grep -q 'status=parked ' "$dir/state/stop-hook.log" || fail "healthy parked stop was not logged as parked"
+    else
+      expect_code 2 "$status" "a refused reset must repair: $out"
+      ! grep -q 'status=parked ' "$dir/state/stop-hook.log" || fail "a refused reset still logged a parked stop"
+    fi
+  done
+  pass "parked stop is logged only after the failure-episode reset succeeds"
+}
+
+if [ "${FM_TEST_ONLY:-}" = codex-continuation ]; then
+  trap fm_test_cleanup EXIT
+  test_codex_queued_wake_allows_active_stop
+  test_codex_legacy_records_do_not_hold_active_stop
+  test_codex_queued_wake_remains_after_active_stop
+  test_secondmate_active_stop_retains_queued_wake
+  test_codex_missing_watcher_allows_stop_without_a_checkpoint_loop
+  test_codex_reblocks_open_checkpoint_after_its_own_block
+  test_codex_holds_own_checkpoint_then_active_continuation_can_end
+  exit 0
+fi
+if [ "${FM_TEST_ONLY:-}" = stop-policy-review ]; then
+  trap fm_test_cleanup EXIT
+  test_parked_home_requires_monitoring
+  test_parked_refused_reset_logs_only_repair
+  exit 0
+fi
+if [ "${FM_TEST_ONLY:-}" = stop-policy ]; then
+  trap fm_test_cleanup EXIT
+  test_parked_home_requires_monitoring
+  test_parked_refused_reset_logs_only_repair
+  test_hook_claude_mode_reblocks_stop_hook_active_when_unhealthy
+  test_hook_claude_mode_allows_when_autoarm_owner_alive
+  test_hook_claude_mode_allows_on_fresh_rewake_epoch
+  test_hook_claude_mode_integrated_monotonic_fail_open
+  test_hook_claude_mode_autoarm_commits_attended_alarm_on_exhausted_continuation
+  test_hook_claude_mode_autoarm_commits_attended_alarm_on_lost_handback
+  test_hook_claude_mode_autoarm_commits_attended_alarm_on_interruption
+  test_codex_reblocks_open_checkpoint_after_its_own_block
+  test_codex_holds_own_checkpoint_then_active_continuation_can_end
+  test_hook_passive_parked_home_without_watcher_blocks
+  exit 0
+fi
 if [ "${FM_TEST_ONLY:-}" = secondmate-endturn ]; then
   test_secondmate_event_instructions_finish_turn
   test_secondmate_event_status_requires_notification_owner
@@ -3542,7 +3646,7 @@ if [ "${FM_TEST_ONLY:-}" = secondmate-endturn ]; then
 fi
 
 test_secondmate_event_instructions_finish_turn
-test_secondmate_block_bound_ends_a_checkpoint_loop
+test_secondmate_active_stop_retains_queued_wake
 test_secondmate_event_status_requires_notification_owner
 test_secondmate_event_watcher_survives_and_notifies
 test_secondmate_event_scope_and_clock
@@ -3603,6 +3707,8 @@ test_pi_extension_injects_once_per_logical_agent_run
 test_pi_extension_retries_after_followup_delivery_failure
 test_pi_extension_keeps_marker_of_live_ancestor_session
 test_pi_extension_reads_a_windows_tagged_session_lock
+test_parked_home_requires_monitoring
+test_parked_refused_reset_logs_only_repair
 test_hook_claude_mode_reblocks_stop_hook_active_when_unhealthy
 test_hook_claude_mode_reblocks_x_mode_without_tasks
 test_hook_claude_mode_allows_when_autoarm_owner_alive
@@ -3645,16 +3751,17 @@ test_hook_away_daemon_blocks_beacon_older_than_poll_derived_grace
 test_hook_no_afk_ignores_poll_derived_grace
 test_codex_blocks_turn_end_while_own_checkpoint_runs
 test_codex_reblocks_open_checkpoint_after_its_own_block
-test_codex_holds_own_checkpoint_then_ignored_repair_can_end
-test_codex_holds_own_checkpoint_then_ignored_repair_can_end 1 2
+test_codex_holds_own_checkpoint_then_active_continuation_can_end
+test_hook_passive_parked_home_without_watcher_blocks
+test_codex_holds_own_checkpoint_then_active_continuation_can_end 1 2
 test_codex_allows_watcher_owned_by_another_session
 test_codex_missing_watcher_allows_stop_without_a_checkpoint_loop
 test_codex_detach_hold_allows_stop_when_the_watcher_is_healthy
 test_codex_host_selected_allows_stop_without_a_second_watcher
 test_codex_host_away_skips_the_detach_with_a_notice
-test_codex_stale_or_foreign_block_record_is_judged_fresh
-test_codex_queued_wake_budget_allows_stop
+test_codex_legacy_records_do_not_hold_active_stop
+test_codex_queued_wake_allows_active_stop
 test_codex_foreign_lock_owner_gets_read_only_exit
 test_codex_no_work_stays_silent
-test_codex_queued_wake_keeps_turn_open_after_last_task_clears
+test_codex_queued_wake_remains_after_active_stop
 test_non_codex_default_mode_keeps_one_shot_allow

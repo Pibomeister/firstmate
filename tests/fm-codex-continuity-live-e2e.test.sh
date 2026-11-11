@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Opt-in credentialed Codex regression proving the continuity changes preserve
 # Codex's bounded foreground-checkpoint supervision path.
-# A second phase proves a blocked Stop, a handled and acknowledged crew
-# wake, one successor checkpoint, and release once work clears.
+# A second phase proves a blocked initial Stop and an allowed active
+# continuation that keeps its queued wake durable.
 # FM_CODEX_LIVE_E2E_EVIDENCE_DIR optionally retains the lab receipts.
 set -u
 
@@ -27,13 +27,12 @@ TRANSCRIPT="$LAB/codex.jsonl"
 CODEX_VERSION=$(codex --version)
 
 cleanup() {
-  if [ -n "${releaser:-}" ]; then
-    kill "$releaser" 2>/dev/null || true
-    wait "$releaser" 2>/dev/null || true
+  if [ -x "$PROJECT/bin/fm-watch-arm.sh" ] && [ -d "$HOME_DIR/state" ]; then
+    FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$PROJECT" "$PROJECT/bin/fm-watch-arm.sh" --stop >/dev/null 2>&1 || true
   fi
   if [ -n "${FM_CODEX_LIVE_E2E_EVIDENCE_DIR:-}" ]; then
     mkdir -p "$FM_CODEX_LIVE_E2E_EVIDENCE_DIR"
-    cp "$LAB"/*.jsonl "$LAB"/held-record "$LAB"/wake-receipt "$FM_CODEX_LIVE_E2E_EVIDENCE_DIR/" 2>/dev/null || true
+    cp "$LAB"/*.jsonl "$LAB"/stop-hook.log "$FM_CODEX_LIVE_E2E_EVIDENCE_DIR/" 2>/dev/null || true
   fi
   rm -rf "$LAB"
 }
@@ -48,7 +47,7 @@ PROMPT='Run exactly `bin/fm-watch-checkpoint.sh --seconds 1` as one foreground s
 (
   cd "$PROJECT" || exit 1
   printf '%s\n' "$$" > "$HOME_DIR/state/.lock"
-  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$PROJECT" fm_run_timed 120 codex exec \
+  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$PROJECT" fm_run_timed 600 codex exec \
     --dangerously-bypass-hook-trust \
     --dangerously-bypass-approvals-and-sandbox \
     --skip-git-repo-check \
@@ -65,78 +64,72 @@ fi
 
 printf 'ok - %s live E2E preserved the one-second foreground checkpoint path\n' "$CODEX_VERSION"
 
-# Held turn: with work in flight the turn-end guard keeps one Codex turn running
-# checkpoints across repeated blocked stops (stop_hook_active true after the
-# first), and lets it end once nothing needs supervision. The releaser clears
-# the in-flight task only after a crew wake is resolved, acknowledged, and a
-# successor watcher owns the lock.
+# Held turn: an initial Stop with work in flight and a queued wake blocks and
+# asks for handling. Its stop_hook_active=true continuation, outside any open
+# checkpoint, is allowed while the queued wake stays durable. A test-owned
+# wrapper around the clone's guard records each real Stop payload and exit.
+# The wrapper seeds the in-flight work and queued wake at the first Stop: the
+# real session start drains any wake queued before the run.
 HELD_TRANSCRIPT="$LAB/codex-held.jsonl"
+DECISIONS="$LAB/stop-decisions.jsonl"
+QUEUED='1790000000 1 signal held-task.status needs-decision live-probe'
 rm -rf "$HOME_DIR/state"
 mkdir -p "$HOME_DIR/state"
 printf '%s\n' "$$" > "$HOME_DIR/state/.lock"
-: > "$HOME_DIR/state/held-task.meta"
-(
-  first='' blocks=0 probe_identity=''
-  for _ in $(seq 1 1800); do
-    record=$(cat "$HOME_DIR"/state/.turnend-codex-block.* 2>/dev/null)
-    if [ -n "$record" ] && [ "$record" != "$first" ]; then
-      blocks=$((blocks + 1))
-      first=$record
-    fi
-    identity=$(cat "$HOME_DIR/state/.watch.lock/pid-identity" 2>/dev/null)
-    watcher=$(cat "$HOME_DIR/state/.watch.lock/pid" 2>/dev/null)
-    if [ "$blocks" -ge 1 ] && [ -n "$identity" ] && kill -0 "$watcher" 2>/dev/null; then
-      if [ -z "$probe_identity" ]; then
-        probe_identity=$identity
-        printf 'needs-decision [key=live-probe] [at=%s]: acknowledge the isolated crew probe\n' "$(date +%s)" >> "$HOME_DIR/state/held-task.status"
-      elif [ "$identity" != "$probe_identity" ] \
-        && [ "$(tail -1 "$HOME_DIR/state/held-task.status" | grep -Ec '^resolved[ :].*\[key=live-probe\]')" -eq 1 ] \
-        && [ ! -s "$HOME_DIR/state/.wake-queue" ]; then
-        cp "$HOME_DIR"/state/.turnend-codex-block.* "$LAB/held-record" 2>/dev/null
-        cp "$HOME_DIR/state/held-task.status" "$LAB/wake-receipt"
-        rm -f "$HOME_DIR/state/held-task.meta"
-        exit 0
-      fi
-    fi
-    sleep 0.2
-  done
-) &
-releaser=$!
+mv "$PROJECT/bin/fm-turnend-guard.sh" "$PROJECT/bin/fm-turnend-guard.real.sh"
+cat > "$PROJECT/bin/fm-turnend-guard.sh" <<WRAP
+#!/usr/bin/env bash
+payload=\$(cat)
+if [ ! -e "$LAB/seeded" ]; then
+  : > "$HOME_DIR/state/held-task.meta"
+  printf '%s\\n' '$QUEUED' > "$HOME_DIR/state/.wake-queue"
+  : > "$LAB/seeded"
+fi
+printf '%s' "\$payload" | "\$(dirname "\$0")/fm-turnend-guard.real.sh" "\$@" >"$LAB/guard.out" 2>"$LAB/guard.err"
+code=\$?
+jq -cn --arg payload "\$payload" --argjson code "\$code" '{code:\$code,payload:(\$payload | fromjson? // \$payload)}' >> "$DECISIONS"
+cat "$LAB/guard.out"
+cat "$LAB/guard.err" >&2
+exit "\$code"
+WRAP
+chmod +x "$PROJECT/bin/fm-turnend-guard.sh"
 (
   cd "$PROJECT" || exit 1
-  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$PROJECT" FM_CODEX_WATCH_CHECKPOINT=2 fm_run_timed 420 codex exec \
+  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$PROJECT" fm_run_timed 600 codex exec \
     --dangerously-bypass-hook-trust \
     --dangerously-bypass-approvals-and-sandbox \
     --skip-git-repo-check \
     -c 'model_reasoning_effort="low"' \
     --json \
-    'Reply with the single word ok immediately. If a Stop hook blocks you, follow its instruction literally. Only after receiving the isolated held-task live-probe decision, resolve it by appending "resolved [key=live-probe] [at=EPOCH]: approved isolated probe" using the current numeric epoch. Drain and handle wakes, execute the exact printed acknowledgement command, and run one successor foreground checkpoint while the task remains in flight.'
+    'Reply with the single word ok immediately. This is an isolated lab probe. If a Stop hook blocks you, do not run any command or tool and do not drain or acknowledge wakes; reply with the single word ok again.'
 ) > "$HELD_TRANSCRIPT" 2>&1 || fail "Codex held-turn run failed: $(tail -20 "$HELD_TRANSCRIPT")"
-kill "$releaser" 2>/dev/null || true
-wait "$releaser" 2>/dev/null || true
+cp "$HOME_DIR/state/stop-hook.log" "$LAB/stop-hook.log" 2>/dev/null || true
 
-[ -s "$LAB/held-record" ] || fail "the guard did not block the Codex turn while work was in flight"
-[ -s "$LAB/wake-receipt" ] || fail "the crew wake was not resolved and acknowledged before a successor checkpoint"
-[ ! -s "$HOME_DIR/state/.wake-queue" ] || fail "the Codex turn ended with unacknowledged wakes"
-grep -E '^turn=.+' "$LAB/held-record" >/dev/null \
-  || fail "the Codex Stop payload carried no turn_id: $(cat "$LAB/held-record")"
-checkpoints=$(jq -R 'fromjson? | select(.type == "item.completed" and .item.type == "command_execution" and (.item.command | contains("fm-watch-checkpoint.sh")))' "$HELD_TRANSCRIPT" | jq -s length)
-[ "$checkpoints" -ge 2 ] \
-  || fail "the held Codex turn ran $checkpoints checkpoint commands, expected at least 2"
-grep -F -- '--ack-through' "$HELD_TRANSCRIPT" >/dev/null \
-  || fail "the held Codex turn omitted wake acknowledgement"
+active='(.payload | if type != "object" then null elif has("stopHookActive") then .stopHookActive else (.stop_hook_active // false) end)'
+[ -s "$DECISIONS" ] || fail "the Codex run reached no Stop hook"
+jq -se "length >= 2 and (.[0] | $active == false and .code == 2)" "$DECISIONS" >/dev/null \
+  || fail "the initial Codex Stop was not blocked while a wake was queued: $(cat "$DECISIONS")"
+jq -se "(.[-1] | $active == true and .code == 0) and all(.[1:][]; $active == true)" "$DECISIONS" >/dev/null \
+  || fail "the active Codex continuation was not allowed to stop: $(cat "$DECISIONS")"
+grep -Fx "$QUEUED" "$HOME_DIR/state/.wake-queue" >/dev/null \
+  || fail "the allowed active continuation did not retain the queued wake"
+grep -E '^STOPHOOK v1 .* status=hook_active ' "$LAB/stop-hook.log" >/dev/null \
+  || fail "the active continuation wrote no hook_active watchdog line: $(cat "$LAB/stop-hook.log" 2>/dev/null)"
 
-printf 'ok - %s live E2E held one turn after a guard block and ended once work cleared\n' "$CODEX_VERSION"
-printf 'ok - %s live E2E resolved and acknowledged a crew wake before one successor checkpoint\n' "$CODEX_VERSION"
+printf 'ok - %s live E2E blocked the initial queued-wake Stop and allowed its active continuation\n' "$CODEX_VERSION"
+printf 'ok - %s live E2E retained the queued wake across the allowed continuation\n' "$CODEX_VERSION"
 
-# Resume the exact held conversation after it becomes idle, proving the saved
-# per-session block cannot prevent a quiet foreground checkpoint and turn end.
+FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$PROJECT" "$PROJECT/bin/fm-watch-arm.sh" --stop >/dev/null 2>&1 || true
+rm -f "$HOME_DIR/state/held-task.meta" "$HOME_DIR/state/.wake-queue"
+
+# Resume the exact held conversation after it becomes idle, proving the earlier
+# block leaves nothing that prevents a quiet foreground checkpoint and turn end.
 held_session=$(jq -Rr 'fromjson? | select(.type == "thread.started") | .thread_id' "$HELD_TRANSCRIPT" | head -1)
 [ -n "$held_session" ] || fail "the held Codex run reported no session id"
 RESUME_TRANSCRIPT="$LAB/codex-resume.jsonl"
 (
   cd "$PROJECT" || exit 1
-  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$PROJECT" fm_run_timed 120 codex exec resume \
+  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$PROJECT" fm_run_timed 600 codex exec resume \
     --dangerously-bypass-hook-trust \
     --dangerously-bypass-approvals-and-sandbox \
     --skip-git-repo-check \

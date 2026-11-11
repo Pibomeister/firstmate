@@ -6,6 +6,47 @@ This record contains reusable version-scoped evidence for active runtime guarant
 The backend guides own current setup, safety boundaries, and limitations.
 Exact task chronology, branch names, temporary homes, local paths, process ids, thread ids, and delivery transcripts remain in private reports or PR evidence.
 
+## Claude Stop continuation policy
+
+Verified on 2026-11-10 on macOS arm64 with Claude Code 2.1.322.
+The live payload probe starts isolated Claude print sessions with project-only settings and no tools or MCP servers.
+It uses a temporary home and the real primary guard for the first Stop, without launching a worker or changing the live home.
+The parked session emitted one real Stop payload.
+The actionable session emitted `stop_hook_active=false` followed by `stop_hook_active=true`; the lab wrapper ends that continuation after capturing the payload.
+This probe verifies the vendor payload, while the focused portable auto-arm drill verifies monitoring continuity and later wake delivery.
+The shared stop policy's mechanics and log format are owned by [`bin/fm-stop-policy-lib.sh`](../../bin/fm-stop-policy-lib.sh).
+The policy has no runtime backend calls; other harness integrations retain their native turn-end adapters and are not live-verified by this Claude-specific guard.
+
+```sh
+FM_STOP_POLICY_LIVE_E2E=1 bash tests/fm-stop-policy-live-e2e.test.sh
+```
+
+```text
+claude version: 2.1.322 (Claude Code)
+ok - 2.1.322 (Claude Code): parked stopped after 1 real Stop payload(s)
+ok - 2.1.322 (Claude Code): active stopped after 2 real Stop payload(s)
+```
+
+The portable monitoring drill on the same date uses the real guard and auto-arm in a temporary home under a Bash process named `claude`.
+Its arm fixture waits for an explicit external release, and its controlled clock verifies budget expiry without waiting an hour.
+The pending wake remains unacknowledged after delivery.
+Refresh the focused proofs with:
+
+```sh
+FM_TEST_ONLY=stop-policy bash tests/fm-turnend-guard.test.sh
+FM_TEST_ONLY=stop-policy bash tests/fm-claude-stop-autoarm.test.sh
+bash tests/fm-stop-policy.test.sh
+```
+
+Selected drill output:
+
+```text
+DRILL parked: model stopped in 1 turn; tokenless arm is waiting
+DRILL parked: later real external wake delivered exit=2; queue retained
+DRILL budget: model stopped in 1 turn; tokenless arm is waiting
+DRILL budget: later real external wake delivered exit=2; queue retained
+```
+
 ## Named PR check supervision
 
 Verified on 2026-10-28 on macOS arm64 with Bash 5.3.20, gh-axi 0.1.36, jq 1.7.1-apple, and tmux 3.6a.
