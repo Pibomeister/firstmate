@@ -482,7 +482,12 @@
 #   $ or shell operator, then codex or a literal /path/to/codex, then
 #   arguments, with no other word on any line naming codex. Any other raw
 #   command that names codex as a word refuses, including codex inside quoted
-#   argument text; use --harness codex instead.
+#   argument text. Known false refusals, accepted so that Firstmate does not
+#   parse shell: a non-Codex command where codex is only a path segment or an
+#   assignment value (DIR=/x/work/codex /x/work/codex/probe), and a Codex
+#   launch whose later words mention codex (CODEX_HOME=/srv/codex codex ...,
+#   or codex exec with codex in its prompt). Use --harness codex or a simpler
+#   command instead.
 # Launch environment (config/launch-env-allowlist):
 #   Absent keeps ambient inheritance but unsets inherited home- and task-scoped
 #   FM_* values (bin/fm-env-scrub.sh) in the pane shell before re-establishing

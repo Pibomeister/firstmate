@@ -1924,6 +1924,8 @@ A raw launch command is routed through the same Codex launcher, with its argumen
 Its tool shells then receive both names.
 Any other raw command that names codex as a word refuses before launch, because Firstmate cannot be sure the launcher would carry the names into that Codex's tool shells.
 The check reads the whole string and does not parse shell syntax, so it refuses quoted or escaped assignments, a path built from a variable, a Codex behind any other command word such as `env`, `time`, `npx` or a shell, a second Codex after a separator or on another line, and codex inside quoted argument text, whether the command is Codex or another tool.
+Known false refusals follow from that rule: a command that is not a Codex launch refuses when codex appears only as a path segment or an assignment value, as in `DIR=/x/work/codex /x/work/codex/probe`, and a Codex launch refuses when a later word mentions codex, as in `CODEX_HOME=/srv/codex codex ...` or `codex exec` with codex in its prompt.
+These refusals are accepted so that Firstmate does not parse shell.
 Launch Codex with `--harness codex`, or simplify the raw command, instead.
 This applies only to agents Firstmate launches; the captain's own primary Firstmate session is never given either variable.
 Firstmate provides no configuration file or flag for this, and agent-kit's own unattended-policy checks, such as its refusal to ship onto an unprotected default branch, still apply.
