@@ -289,7 +289,7 @@ argv=<hooks>"
 # or a path segment is not a Codex launch and must spawn.
 test_raw_command_mentioning_codex_spawns() {
   local form rec id raw out status probe_dir
-  for form in path-segment argument quoted; do
+  for form in path-segment argument quoted assignment; do
     id="raw-mention-$form-a1"
     rec=$(make_case "raw-mention-$form" claude "$id")
     read_case "$rec"
@@ -301,6 +301,7 @@ test_raw_command_mentioning_codex_spawns() {
     path-segment) raw="cd $probe_dir && ./probe" ;;
     argument) raw="$probe_dir/probe --model codex" ;;
     quoted) raw="$probe_dir/probe \"use codex to review\"" ;;
+    assignment) raw="DIR=$probe_dir $probe_dir/probe" ;;
     esac
     out=$(run_case_spawn "$id" "$PROJ_DIR" --scout "$raw" 2>&1)
     status=$?

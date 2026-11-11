@@ -3659,7 +3659,9 @@ case "$ARG3" in
     word=${word%%[;|&]*}
     word=${word#[\"\'\(]}
     word=${word%[\"\'\)]}
-    if [ "${word##*/}" = codex ] && { [ "$raw_wrap" = 1 ] || [ "$raw_cmdpos" = 1 ]; }; then
+    if [ "$raw_wrap" = 0 ] && [ "$raw_cmdpos" = 1 ] && [[ $word == [A-Za-z_]*=* ]]; then
+      :
+    elif [ "${word##*/}" = codex ] && { [ "$raw_wrap" = 1 ] || [ "$raw_cmdpos" = 1 ]; }; then
       if [ "$raw_wrap" = 0 ] && [ "$raw_leading" = 1 ] && [ "$HARNESS" = codex ]; then
         raw_cmdpos=0
         raw_leading=0
@@ -3668,16 +3670,11 @@ case "$ARG3" in
         exit 1
       fi
     elif [ "$raw_cmdpos" = 1 ] && [ -n "$word" ]; then
-      case "$word" in
-      [A-Za-z_]*=*) ;;
-      *)
-        case "${word##*/}" in
-        env | exec | command | nohup | sh | bash | zsh | dash | ksh) raw_wrap=1 ;;
-        esac
-        raw_cmdpos=0
-        raw_leading=0
-        ;;
+      case "${word##*/}" in
+      env | exec | command | nohup | sh | bash | zsh | dash | ksh) raw_wrap=1 ;;
       esac
+      raw_cmdpos=0
+      raw_leading=0
     fi
     if [ "$raw_sep" = 1 ]; then
       raw_cmdpos=1
