@@ -47,7 +47,7 @@ PROMPT='Run exactly `bin/fm-watch-checkpoint.sh --seconds 1` as one foreground s
 (
   cd "$PROJECT" || exit 1
   printf '%s\n' "$$" > "$HOME_DIR/state/.lock"
-  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$PROJECT" fm_run_timed 120 codex exec \
+  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$PROJECT" fm_run_timed 600 codex exec \
     --dangerously-bypass-hook-trust \
     --dangerously-bypass-approvals-and-sandbox \
     --skip-git-repo-check \
@@ -68,18 +68,23 @@ printf 'ok - %s live E2E preserved the one-second foreground checkpoint path\n' 
 # asks for handling. Its stop_hook_active=true continuation, outside any open
 # checkpoint, is allowed while the queued wake stays durable. A test-owned
 # wrapper around the clone's guard records each real Stop payload and exit.
+# The wrapper seeds the in-flight work and queued wake at the first Stop: the
+# real session start drains any wake queued before the run.
 HELD_TRANSCRIPT="$LAB/codex-held.jsonl"
 DECISIONS="$LAB/stop-decisions.jsonl"
 QUEUED='1790000000 1 signal held-task.status needs-decision live-probe'
 rm -rf "$HOME_DIR/state"
 mkdir -p "$HOME_DIR/state"
 printf '%s\n' "$$" > "$HOME_DIR/state/.lock"
-: > "$HOME_DIR/state/held-task.meta"
-printf '%s\n' "$QUEUED" > "$HOME_DIR/state/.wake-queue"
 mv "$PROJECT/bin/fm-turnend-guard.sh" "$PROJECT/bin/fm-turnend-guard.real.sh"
 cat > "$PROJECT/bin/fm-turnend-guard.sh" <<WRAP
 #!/usr/bin/env bash
 payload=\$(cat)
+if [ ! -e "$LAB/seeded" ]; then
+  : > "$HOME_DIR/state/held-task.meta"
+  printf '%s\\n' '$QUEUED' > "$HOME_DIR/state/.wake-queue"
+  : > "$LAB/seeded"
+fi
 printf '%s' "\$payload" | "\$(dirname "\$0")/fm-turnend-guard.real.sh" "\$@" >"$LAB/guard.out" 2>"$LAB/guard.err"
 code=\$?
 jq -cn --arg payload "\$payload" --argjson code "\$code" '{code:\$code,payload:(\$payload | fromjson? // \$payload)}' >> "$DECISIONS"
@@ -90,7 +95,7 @@ WRAP
 chmod +x "$PROJECT/bin/fm-turnend-guard.sh"
 (
   cd "$PROJECT" || exit 1
-  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$PROJECT" fm_run_timed 300 codex exec \
+  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$PROJECT" fm_run_timed 600 codex exec \
     --dangerously-bypass-hook-trust \
     --dangerously-bypass-approvals-and-sandbox \
     --skip-git-repo-check \
@@ -124,7 +129,7 @@ held_session=$(jq -Rr 'fromjson? | select(.type == "thread.started") | .thread_i
 RESUME_TRANSCRIPT="$LAB/codex-resume.jsonl"
 (
   cd "$PROJECT" || exit 1
-  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$PROJECT" fm_run_timed 120 codex exec resume \
+  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$PROJECT" fm_run_timed 600 codex exec resume \
     --dangerously-bypass-hook-trust \
     --dangerously-bypass-approvals-and-sandbox \
     --skip-git-repo-check \
