@@ -740,8 +740,9 @@ IFS= read -r -d '' SHARED_INFRA_RULE <<'EOF' || true
      `.git/config`, which linked worktrees share by default unless `extensions.worktreeConfig` is
      enabled and `--worktree` is passed. Never run `git config --global`, `git config --system`, or
      an unguarded `git config` / `git config --local` that writes to the shared `.git/config`, and
-     never edit those files directly; pass per-invocation `git -c key=value` flags or isolate test
-     `HOME`/`GIT_CONFIG_GLOBAL` in a scratch directory instead.
+     never edit those files directly (normal remote or branch bookkeeping by sanctioned setup
+     commands such as `no-mistakes init` is fine); pass per-invocation `git -c key=value` flags
+     or isolate test `HOME`/`GIT_CONFIG_GLOBAL` in a scratch directory instead.
    - Shared databases - the shared `no-mistakes` state database (`state.sqlite`) and any other
      database shared across lanes, homes, or services. Never run DDL or direct writes, drop or
      recreate tables, run migrations, or delete or replace database files on a shared database; use

@@ -4000,11 +4000,33 @@ EOF
   assert_contains "$out" "SHARED_STATE: global git config changed since the last session start ($git_home/.gitconfig)" \
     "locked session start did not report removed ~/.gitconfig"
 
-  pass "session start detects created, edited, and removed global git config without mutating baseline on read-only or reemit"
+  # XDG git config ($XDG_CONFIG_HOME/git/config) creation and edit also trigger SHARED_STATE.
+  mkdir -p "$git_home/.config/git"
+  git config --file "$git_home/.config/git/config" user.name xdg-worker
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "SHARED_STATE: global git config changed since the last session start ($git_home/.config/git/config)" \
+    "locked session start did not report created XDG git config"
+
+  # Explicit GIT_CONFIG_GLOBAL slot switches cleanly on first sight, then reports edits to that file.
+  git config --file "$git_home/custom-global.gitconfig" user.name env-slot-v1
+  out=$(env GIT_CONFIG_GLOBAL="$git_home/custom-global.gitconfig" \
+    HOME="$git_home" XDG_CONFIG_HOME="$git_home/.config" NM_HOME="$nm_home" \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
+    "$SESSION_START")
+  assert_not_contains "$out" "SHARED_STATE:" "switching to GIT_CONFIG_GLOBAL slot false-alarmed on first sight"
+  git config --file "$git_home/custom-global.gitconfig" user.name env-slot-v2
+  out=$(env GIT_CONFIG_GLOBAL="$git_home/custom-global.gitconfig" \
+    HOME="$git_home" XDG_CONFIG_HOME="$git_home/.config" NM_HOME="$nm_home" \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
+    "$SESSION_START")
+  assert_contains "$out" "SHARED_STATE: global git config changed since the last session start ($git_home/custom-global.gitconfig)" \
+    "locked session start did not report edited GIT_CONFIG_GLOBAL file"
+
+  pass "session start detects created, edited, and removed global/XDG/GIT_CONFIG_GLOBAL git config without mutating baseline on read-only or reemit"
 }
 
 test_shared_nm_db_schema_change_reported_at_session_start() {
-  local rec root home fakebin git_home nm_home db out baseline_before
+  local rec root home fakebin git_home nm_home db out baseline_before internal_objs
   rec=$(new_world shared-nm-schema)
   IFS='|' read -r root home fakebin <<EOF
 $rec
@@ -4025,7 +4047,8 @@ EOF
   python3 - "$db" <<'PY'
 import sqlite3, sys
 conn = sqlite3.connect(sys.argv[1])
-conn.execute("CREATE TABLE runs (id TEXT PRIMARY KEY, status TEXT)")
+conn.execute("CREATE TABLE runs (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE, status TEXT)")
+conn.execute("CREATE INDEX idx_runs_status ON runs(status)")
 conn.execute("PRAGMA user_version = 1")
 conn.commit()
 conn.close()
@@ -4033,16 +4056,21 @@ PY
   out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
   assert_not_contains "$out" "SHARED_STATE:" "first state.sqlite initialization false-alarmed as schema drift"
 
-  # Ordinary row mutations must NOT trigger SHARED_STATE.
-  python3 - "$db" <<'PY'
+  # Ordinary row mutations and ANALYZE (creating sqlite_sequence / sqlite_stat1) must NOT trigger SHARED_STATE.
+  internal_objs=$(python3 - "$db" <<'PY'
 import sqlite3, sys
 conn = sqlite3.connect(sys.argv[1])
 conn.execute("INSERT INTO runs (id, status) VALUES ('run-1', 'running')")
+conn.execute("ANALYZE")
 conn.commit()
+names = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE name LIKE 'sqlite_%' ORDER BY name").fetchall()]
 conn.close()
+print(",".join(names))
 PY
+)
+  assert_contains "$internal_objs" "sqlite_stat1" "fixture did not materialize sqlite_stat1 via ANALYZE"
   out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
-  assert_not_contains "$out" "SHARED_STATE:" "ordinary state.sqlite row insert triggered schema drift"
+  assert_not_contains "$out" "SHARED_STATE:" "SQLite internal sqlite_* objects or row writes triggered schema drift"
 
   # Schema mutation (DDL) triggers SHARED_STATE; --reemit keeps baseline intact; full start updates it.
   baseline_before=$(cat "$home/state/.session-start-shared-baseline")
@@ -4073,7 +4101,134 @@ PY
   assert_contains "$out" "SHARED_STATE: shared no-mistakes database schema changed since the last session start ($db: removed)" \
     "locked session start did not report deleted state.sqlite"
 
-  pass "session start detects shared no-mistakes database schema changes while ignoring normal row writes"
+  pass "session start detects shared no-mistakes database schema changes while ignoring sqlite_* internal objects and row writes"
+}
+
+test_shared_state_baseline_preserved_across_inspection_failures() {
+  local rec root home fakebin git_home nm_home db db_backup nopy_bin slowpy_bin lock_ready lock_pid out baseline_before
+  rec=$(new_world shared-preserve-baseline)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  git_home="$TMP_ROOT/shared-preserve-git-home"
+  nm_home="$TMP_ROOT/shared-preserve-nm-home"
+  db="$nm_home/state.sqlite"
+  db_backup="$TMP_ROOT/shared-preserve-valid.sqlite"
+  mkdir -p "$git_home" "$nm_home"
+
+  git config --file "$git_home/.gitconfig" user.email valid@example.invalid
+  python3 - "$db" <<'PY'
+import sqlite3, sys
+conn = sqlite3.connect(sys.argv[1])
+conn.execute("CREATE TABLE runs (id TEXT PRIMARY KEY, status TEXT)")
+conn.execute("PRAGMA user_version = 1")
+conn.commit()
+conn.close()
+PY
+  cp "$db" "$db_backup"
+
+  # Establish clean baseline for both git config and state.sqlite.
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" "SHARED_STATE:" "clean initial setup false-alarmed"
+  baseline_before=$(cat "$home/state/.session-start-shared-baseline")
+  assert_contains "$baseline_before" "sha256:" "established baseline did not record sha256 state"
+
+  # 1. Missing python3 + simultaneous ~/.gitconfig edit: git alarm prints, baseline preserved byte-for-byte.
+  nopy_bin="$TMP_ROOT/shared-preserve-nopy-bin"
+  mkdir -p "$nopy_bin"
+  (
+    IFS=':'
+    for dir in $fakebin $BASE_PATH; do
+      [ -d "$dir" ] || continue
+      for cmd in "$dir"/*; do
+        [ -e "$cmd" ] || continue
+        base=${cmd##*/}
+        [ "$base" = python3 ] && continue
+        [ -e "$nopy_bin/$base" ] || ln -s "$cmd" "$nopy_bin/$base"
+      done
+    done
+  )
+  git config --file "$git_home/.gitconfig" user.email edited-during-missing-py@example.invalid
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$nopy_bin")
+  assert_contains "$out" "SHARED_STATE: global git config changed since the last session start ($git_home/.gitconfig)" \
+    "missing python3 suppressed simultaneous global git config alarm"
+  assert_not_contains "$out" "shared no-mistakes database schema changed" \
+    "missing python3 false-alarmed on database schema"
+  [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
+    || fail "missing python3 run mutated .session-start-shared-baseline"
+  git config --file "$git_home/.gitconfig" user.email valid@example.invalid
+
+  # 2. Exclusive SQLite lock (OperationalError) + simultaneous ~/.gitconfig edit: no DB false alarm, baseline preserved.
+  lock_ready="$TMP_ROOT/shared-preserve-lock.ready"
+  python3 - "$db" "$lock_ready" <<'PY' &
+import pathlib, sqlite3, sys, time
+conn = sqlite3.connect(sys.argv[1], isolation_level=None)
+conn.execute("BEGIN EXCLUSIVE")
+pathlib.Path(sys.argv[2]).write_text("locked\n", encoding="utf-8")
+time.sleep(30)
+PY
+  lock_pid=$!
+  while [ ! -f "$lock_ready" ]; do
+    sleep 0.05
+  done
+  git config --file "$git_home/.gitconfig" user.email edited-during-db-lock@example.invalid
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  kill "$lock_pid" 2>/dev/null || true
+  wait "$lock_pid" 2>/dev/null || true
+  assert_contains "$out" "SHARED_STATE: global git config changed since the last session start ($git_home/.gitconfig)" \
+    "locked state.sqlite suppressed simultaneous global git config alarm"
+  assert_not_contains "$out" "shared no-mistakes database schema changed" \
+    "locked state.sqlite false-alarmed as schema drift or corruption"
+  [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
+    || fail "locked state.sqlite run mutated .session-start-shared-baseline"
+  git config --file "$git_home/.gitconfig" user.email valid@example.invalid
+
+  # 3. Timed-out python3 inspection: bounded by fm_run_timed, no DB false alarm, baseline preserved.
+  slowpy_bin="$TMP_ROOT/shared-preserve-slowpy-bin"
+  mkdir -p "$slowpy_bin"
+  cat > "$slowpy_bin/python3" <<'SH'
+#!/usr/bin/env bash
+sleep 15
+SH
+  chmod +x "$slowpy_bin/python3"
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$slowpy_bin:$fakebin:$BASE_PATH")
+  assert_not_contains "$out" "SHARED_STATE:" "timed-out python3 inspection false-alarmed"
+  [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
+    || fail "timed-out python3 inspection mutated .session-start-shared-baseline"
+
+  # 4. Corrupt state.sqlite (DatabaseError): alarms on every locked start and preserves baseline byte-for-byte.
+  printf 'not-a-valid-sqlite-header-at-all\n' > "$db"
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "SHARED_STATE: shared no-mistakes database schema changed since the last session start ($db: corrupt or unreadable SQLite schema)" \
+    "corrupt state.sqlite did not trigger SHARED_STATE on first locked start"
+  [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
+    || fail "corrupt state.sqlite overwrote .session-start-shared-baseline"
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "SHARED_STATE: shared no-mistakes database schema changed since the last session start ($db: corrupt or unreadable SQLite schema)" \
+    "corrupt state.sqlite went silent on second locked start"
+  [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
+    || fail "second corrupt state.sqlite start overwrote .session-start-shared-baseline"
+
+  # 5. Unreadable state.sqlite: alarms without overwriting baseline (when running non-root).
+  cp "$db_backup" "$db"
+  chmod 000 "$db"
+  if [ ! -r "$db" ]; then
+    out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+    assert_contains "$out" "SHARED_STATE: shared no-mistakes database schema changed since the last session start ($db: unreadable)" \
+      "unreadable state.sqlite did not trigger SHARED_STATE"
+    [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
+      || fail "unreadable state.sqlite overwrote .session-start-shared-baseline"
+  fi
+  chmod 600 "$db"
+
+  # 6. Restoring valid state.sqlite returns cleanly to silence against the preserved baseline.
+  cp "$db_backup" "$db"
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" "SHARED_STATE:" "restored valid state.sqlite alarmed despite preserved baseline"
+
+  pass "session start preserves shared-state baseline byte-for-byte across missing python3, locks, timeouts, corruption, and unreadable files"
 }
 
 test_context_digest_absent_empty_present
@@ -4159,5 +4314,6 @@ test_dispatch_ledger_overdue_in_digest
 test_order_sent_mid_restart_is_picked_up_by_the_new_captain
 test_shared_git_config_change_reported_at_session_start
 test_shared_nm_db_schema_change_reported_at_session_start
+test_shared_state_baseline_preserved_across_inspection_failures
 
 echo "# fm-session-start.test.sh: all assertions passed"
