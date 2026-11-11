@@ -2806,7 +2806,7 @@ test_hook_passive_parked_home_without_watcher_blocks() {
   pass "fm-turnend-guard: the parked shortcut never ends a passive turn without a watcher"
 }
 
-test_codex_holds_own_checkpoint_then_ignored_repair_can_end() {
+test_codex_holds_own_checkpoint_then_active_continuation_can_end() {
   local dir checkpoint home io grace=${1:-300} age=${2:-0}
   dir=$(make_primary_dir "$TMP_ROOT/codex-own-checkpoint-ends-$grace")
   : > "$dir/state/task1.meta"
@@ -2836,8 +2836,8 @@ printf "%s\n" "$?" > "$FM_T_DIR/rc3"
 :'
   expect_code 2 "$(cat "$io/rc1")" "a Codex stop while this session's own checkpoint runs must block: $(cat "$io/out1")"
   expect_code 2 "$(cat "$io/rc2")" "a continuation while the own checkpoint is still alive must stay held: $(cat "$io/out2")"
-  expect_code 0 "$(cat "$io/rc3")" "once the own checkpoint has ended and nothing advanced, the continuation may end: $(cat "$io/out3")"
-  pass "fm-turnend-guard codex: holds the turn while its own checkpoint runs, then the no-progress escape applies"
+  expect_code 0 "$(cat "$io/rc3")" "once the own checkpoint has ended, the active continuation may end: $(cat "$io/out3")"
+  pass "fm-turnend-guard codex: holds the turn while its own checkpoint runs, then the active continuation may end"
 }
 
 test_codex_allows_watcher_owned_by_another_session() {
@@ -2858,24 +2858,19 @@ test_codex_allows_watcher_owned_by_another_session() {
   pass "fm-turnend-guard codex: a live watcher another session owns still allows the stop"
 }
 
+
 test_codex_missing_watcher_allows_stop_without_a_checkpoint_loop() {
   local dir
-  dir=$(make_primary_dir "$TMP_ROOT/codex-progress")
+  dir=$(make_primary_dir "$TMP_ROOT/codex-missing-watcher")
   : > "$dir/state/task1.meta"
-  touch "$dir/state/.last-watcher-beat"
   run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
   expect_code 0 "$STATUS" "a Codex stop with no watcher must end instead of blocking: $OUT"
   assert_contains "$OUT" "NO PERSISTENT WATCHER" "the allow must name the missing hold"
   assert_not_contains "$OUT" "fm-watch-checkpoint.sh" "the allow must not name a checkpoint command"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 0 "$STATUS" "the real active continuation must also end without a watcher: $OUT"
   assert_not_contains "$OUT" "start the next checkpoint" "the allow must not ask for another checkpoint"
-  # A finished checkpoint whose beacon or lock identity advanced must not re-block.
-  touch -d 2026-01-01T00:00:00.6 "$dir/state/.last-watcher-beat"
-  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
-  expect_code 0 "$STATUS" "a beacon advance must not re-block a continued stop: $OUT"
-  record_watcher_lock "$dir" "$(nonexistent_pid)" "new cycle identity"
-  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
-  expect_code 0 "$STATUS" "a new watch-lock identity must not re-block a continued stop: $OUT"
-  pass "fm-turnend-guard codex: a missing watcher lets the turn end, and progress does not re-block it"
+  pass "fm-turnend-guard codex: a missing watcher allows initial and active stops without a checkpoint loop"
 }
 
 test_codex_detach_hold_allows_stop_when_the_watcher_is_healthy() {
@@ -2971,39 +2966,40 @@ SH
   pass "fm-turnend-guard codex: a selected supervision host home still lets the stop end through the arm"
 }
 
-test_codex_stale_or_foreign_block_record_is_judged_fresh() {
-  local dir
+
+test_codex_legacy_records_do_not_hold_active_stop() {
+  local dir queue
   dir=$(make_primary_dir "$TMP_ROOT/codex-stale-record")
-  printf '1790000000 1 signal task1.status done\n' > "$dir/state/.wake-queue"
+  queue='1790000000 1 signal task1.status done'
+  printf '%s\n' "$queue" > "$dir/state/.wake-queue"
+  printf 'turn=t1\nprogress=legacy\nblocks=2\n' > "$dir/state/.turnend-codex-block.s1"
   run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
-  expect_code 2 "$STATUS" "a queued wake must block the first stop: $OUT"
+  expect_code 2 "$STATUS" "a legacy block counter must not allow an initial queued stop: $OUT"
   run_codex_hook "$dir" "$(codex_payload s1 t2 false)"
-  expect_code 2 "$STATUS" "a new turn must not inherit the previous turn's block budget: $OUT"
+  expect_code 2 "$STATUS" "a new turn with a queued wake must request handling: $OUT"
   run_codex_hook "$dir" "$(codex_payload s2 t2 false)"
-  expect_code 2 "$STATUS" "another session's record must not allow this session's continued stop: $OUT"
-  run_codex_hook "$dir" "$(codex_payload s1 t2 false)"
-  expect_code 2 "$STATUS" "the second block of the same turn must still hold a queued wake: $OUT"
-  run_codex_hook "$dir" "$(codex_payload s1 t2 false)"
-  expect_code 0 "$STATUS" "the third block of the same turn must allow the stop: $OUT"
-  assert_contains "$OUT" "BLOCK BOUND" "the bound allow must name the bound"
-  assert_not_contains "$OUT" "fm-watch-checkpoint.sh" "the budget allow must not name a checkpoint command"
-  pass "fm-turnend-guard codex: block records stay on their own session and turn, then the budget allows the stop"
+  expect_code 2 "$STATUS" "a new session with a queued wake must request handling: $OUT"
+  run_codex_hook "$dir" "$(codex_payload s1 t2 true)"
+  expect_code 0 "$STATUS" "an active continuation must stop regardless of the legacy record: $OUT"
+  run_codex_hook "$dir" "$(codex_payload s3 t9 true)"
+  expect_code 0 "$STATUS" "an active continuation from another hook needs no guard block record: $OUT"
+  [ "$(cat "$dir/state/.wake-queue")" = "$queue" ] || fail "active continuations consumed a queued wake"
+  pass "fm-turnend-guard codex: legacy block records do not change initial or active-stop behavior"
 }
 
-test_codex_queued_wake_budget_allows_stop() {
-  local dir
-  dir=$(make_primary_dir "$TMP_ROOT/codex-queue-budget")
-  printf '1790000000 1 signal task1.status done\n' > "$dir/state/.wake-queue"
+
+test_codex_queued_wake_allows_active_stop() {
+  local dir queue
+  dir=$(make_primary_dir "$TMP_ROOT/codex-queue-active")
+  queue='1790000000 1 signal task1.status done'
+  printf '%s\n' "$queue" > "$dir/state/.wake-queue"
   run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
-  expect_code 2 "$STATUS" "the first queued stop must block: $OUT"
-  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
-  expect_code 2 "$STATUS" "the second queued stop must still block: $OUT"
-  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
-  expect_code 0 "$STATUS" "the third queued stop must allow the turn to end: $OUT"
-  assert_contains "$OUT" "BLOCK BOUND" "the bound allow must name the bound"
-  assert_contains "$OUT" "without a persistent watcher" "the bound allow must name the missing watcher"
-  assert_not_contains "$OUT" "start the next checkpoint" "the budget allow must not ask for another checkpoint"
-  pass "fm-turnend-guard codex: a queued wake cannot hold the turn past the block budget"
+  expect_code 2 "$STATUS" "the initial queued stop must request handling: $OUT"
+  assert_contains "$OUT" "acknowledge" "the block must name the pending wake repair"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 0 "$STATUS" "the real active continuation must allow the turn to end: $OUT"
+  [ "$(cat "$dir/state/.wake-queue")" = "$queue" ] || fail "the active stop consumed a queued wake"
+  pass "fm-turnend-guard codex: an active continuation ends with its queued wake retained"
 }
 
 test_codex_foreign_lock_owner_gets_read_only_exit() {
@@ -3030,19 +3026,22 @@ test_codex_no_work_stays_silent() {
   pass "fm-turnend-guard codex: silent with nothing in flight"
 }
 
-test_codex_queued_wake_keeps_turn_open_after_last_task_clears() {
-  local dir
+
+test_codex_queued_wake_remains_after_active_stop() {
+  local dir queue
   dir=$(make_primary_dir "$TMP_ROOT/codex-queued-wake")
-  printf '1790000000 1 signal task1.status done\n' > "$dir/state/.wake-queue"
+  queue='1790000000 1 signal task1.status done'
+  printf '%s\n' "$queue" > "$dir/state/.wake-queue"
   run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
   expect_code 2 "$STATUS" "a queued wake still needs handling after the last task clears: $OUT"
   assert_contains "$OUT" "acknowledge" "the block must name the pending wake repair"
-  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
-  expect_code 2 "$STATUS" "the no-progress escape must not discard an unacknowledged wake: $OUT"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
+  expect_code 0 "$STATUS" "the active continuation may end after the last task clears: $OUT"
+  [ "$(cat "$dir/state/.wake-queue")" = "$queue" ] || fail "the active stop acknowledged the wake"
   rm -f "$dir/state/.wake-queue"
-  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
   expect_code 0 "$STATUS" "after the queued wake clears, an idle Codex turn may end: $OUT"
-  pass "fm-turnend-guard codex: a queued wake holds the turn after the last task clears"
+  pass "fm-turnend-guard codex: queued work survives the active stop after the last task clears"
 }
 
 test_non_codex_default_mode_keeps_one_shot_allow() {
@@ -3053,8 +3052,7 @@ test_non_codex_default_mode_keeps_one_shot_allow() {
   expect_code 0 "$status" "the default (non-Codex) mode keeps its one-shot stop_hook_active allow: $out"
   out=$(run_hook "$dir" false); status=$?
   expect_code 2 "$status" "the default (non-Codex) mode still blocks a first unsupervised stop"
-  [ -z "$(ls "$dir/state"/.turnend-codex-block.* 2>/dev/null)" ] || fail "a non-Codex block wrote a Codex record"
-  pass "fm-turnend-guard: non-Codex default mode keeps its one-shot allow and writes no Codex record"
+  pass "fm-turnend-guard: non-Codex default mode keeps its one-shot allow"
 }
 
 test_secondmate_event_instructions_finish_turn() {
@@ -3074,26 +3072,24 @@ test_secondmate_event_instructions_finish_turn() {
   pass "secondmate instructions end the handling turn without model polling"
 }
 
-test_secondmate_block_bound_ends_a_checkpoint_loop() {
-  local dir
-  dir=$(make_secondmate_dir "$TMP_ROOT/sm-block-bound")
+
+test_secondmate_active_stop_retains_queued_wake() {
+  local dir queue
+  dir=$(make_secondmate_dir "$TMP_ROOT/sm-active-stop")
   cp -R "$ROOT/bin/." "$dir/bin/"
   mkdir -p "$dir/parent/state"
   printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$dir/parent" > "$dir/.fm-secondmate-parent"
-  printf '1790000000 1 signal task1.status done\n' > "$dir/state/.wake-queue"
+  queue='1790000000 1 signal task1.status done'
+  printf '%s\n' "$queue" > "$dir/state/.wake-queue"
   export FM_TASK_INBOX="$dir/parent/state/sm-test-1.inbox" TMUX=fixture,1,0 TMUX_PANE=%27
   run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
-  expect_code 2 "$STATUS" "the first secondmate stop must block: $OUT"
+  expect_code 2 "$STATUS" "the initial secondmate stop must request handling: $OUT"
   assert_not_contains "$OUT" "fm-watch-checkpoint.sh" "the secondmate block must not print a checkpoint command"
-  touch -d 2026-01-01T00:00:00.6 "$dir/state/.last-watcher-beat"
-  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
-  expect_code 2 "$STATUS" "the second secondmate stop must block: $OUT"
-  touch -d 2026-01-02T00:00:00.6 "$dir/state/.last-watcher-beat"
-  run_codex_hook "$dir" "$(codex_payload s1 t1 false)"
+  run_codex_hook "$dir" "$(codex_payload s1 t1 true)"
   unset FM_TASK_INBOX TMUX TMUX_PANE
-  expect_code 0 "$STATUS" "progress must not hold a secondmate past the block bound: $OUT"
-  assert_contains "$OUT" "BLOCK BOUND" "the allow must name the bound"
-  pass "fm-turnend-guard codex: a secondmate home cannot loop past the block bound"
+  expect_code 0 "$STATUS" "the active secondmate continuation must allow stop: $OUT"
+  [ "$(cat "$dir/state/.wake-queue")" = "$queue" ] || fail "the active secondmate stop consumed a queued wake"
+  pass "fm-turnend-guard codex: an active secondmate continuation ends with its queued wake retained"
 }
 
 test_secondmate_event_status_requires_notification_owner() {
@@ -3156,7 +3152,7 @@ try:
     require(r.returncode==0, 'check registration: '+r.stderr)
     require(run(str(root/'bin/fm-harness.sh')).stdout.strip()=='codex', 'portable fixture did not establish a Codex-shaped ancestor')
     require(guard().returncode==2, 'selected secondmate ended blind without a watcher')
-    require(guard(True).returncode==0, 'unproven watcher lost the bounded no-progress escape')
+    require(guard(True).returncode==0, 'unproven watcher lost the active-continuation allow')
     require(not (root/'parent/state/sm-test-1.status').exists(), 'secondmate guard wrote a parent blocker')
     r=run(watch, '--secondmate')
     require(r.returncode==0, 'outside-turn start: '+r.stdout+r.stderr)
@@ -3177,7 +3173,7 @@ try:
     try:
         lines=binding.splitlines();lines[3]='/tmp/wrong-secondmate-socket'
         (root/'state/.secondmate-watch').write_text('\n'.join(lines)+'\n')
-        require(guard().returncode==2 and guard(True).returncode==0, 'mismatched route allowed a fresh stop or lost the no-progress escape')
+        require(guard().returncode==2 and guard(True).returncode==0, 'mismatched route allowed a fresh stop or lost the active-continuation allow')
     finally:
         (root/'state/.secondmate-watch').write_text(binding)
         os.kill(int(pid),signal.SIGCONT)
@@ -3606,6 +3602,17 @@ test_parked_refused_reset_logs_only_repair() {
   pass "parked stop is logged only after the failure-episode reset succeeds"
 }
 
+if [ "${FM_TEST_ONLY:-}" = codex-continuation ]; then
+  trap fm_test_cleanup EXIT
+  test_codex_queued_wake_allows_active_stop
+  test_codex_legacy_records_do_not_hold_active_stop
+  test_codex_queued_wake_remains_after_active_stop
+  test_secondmate_active_stop_retains_queued_wake
+  test_codex_missing_watcher_allows_stop_without_a_checkpoint_loop
+  test_codex_reblocks_open_checkpoint_after_its_own_block
+  test_codex_holds_own_checkpoint_then_active_continuation_can_end
+  exit 0
+fi
 if [ "${FM_TEST_ONLY:-}" = stop-policy-review ]; then
   trap fm_test_cleanup EXIT
   test_parked_home_requires_monitoring
@@ -3624,7 +3631,7 @@ if [ "${FM_TEST_ONLY:-}" = stop-policy ]; then
   test_hook_claude_mode_autoarm_commits_attended_alarm_on_lost_handback
   test_hook_claude_mode_autoarm_commits_attended_alarm_on_interruption
   test_codex_reblocks_open_checkpoint_after_its_own_block
-  test_codex_holds_own_checkpoint_then_ignored_repair_can_end
+  test_codex_holds_own_checkpoint_then_active_continuation_can_end
   test_hook_passive_parked_home_without_watcher_blocks
   exit 0
 fi
@@ -3639,7 +3646,7 @@ if [ "${FM_TEST_ONLY:-}" = secondmate-endturn ]; then
 fi
 
 test_secondmate_event_instructions_finish_turn
-test_secondmate_block_bound_ends_a_checkpoint_loop
+test_secondmate_active_stop_retains_queued_wake
 test_secondmate_event_status_requires_notification_owner
 test_secondmate_event_watcher_survives_and_notifies
 test_secondmate_event_scope_and_clock
@@ -3744,17 +3751,17 @@ test_hook_away_daemon_blocks_beacon_older_than_poll_derived_grace
 test_hook_no_afk_ignores_poll_derived_grace
 test_codex_blocks_turn_end_while_own_checkpoint_runs
 test_codex_reblocks_open_checkpoint_after_its_own_block
-test_codex_holds_own_checkpoint_then_ignored_repair_can_end
+test_codex_holds_own_checkpoint_then_active_continuation_can_end
 test_hook_passive_parked_home_without_watcher_blocks
-test_codex_holds_own_checkpoint_then_ignored_repair_can_end 1 2
+test_codex_holds_own_checkpoint_then_active_continuation_can_end 1 2
 test_codex_allows_watcher_owned_by_another_session
 test_codex_missing_watcher_allows_stop_without_a_checkpoint_loop
 test_codex_detach_hold_allows_stop_when_the_watcher_is_healthy
 test_codex_host_selected_allows_stop_without_a_second_watcher
 test_codex_host_away_skips_the_detach_with_a_notice
-test_codex_stale_or_foreign_block_record_is_judged_fresh
-test_codex_queued_wake_budget_allows_stop
+test_codex_legacy_records_do_not_hold_active_stop
+test_codex_queued_wake_allows_active_stop
 test_codex_foreign_lock_owner_gets_read_only_exit
 test_codex_no_work_stays_silent
-test_codex_queued_wake_keeps_turn_open_after_last_task_clears
+test_codex_queued_wake_remains_after_active_stop
 test_non_codex_default_mode_keeps_one_shot_allow
