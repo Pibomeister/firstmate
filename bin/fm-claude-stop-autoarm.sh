@@ -809,10 +809,14 @@ if [ "$ACTIONABLE" -eq 1 ]; then
     REWAKE_RC=$?
     [ "$AUTOARM_POLICY_DEFERRED" -eq 1 ] || break
     autoarm_policy_wait retain-output
-    if [ "$HOST_MODE" -eq 0 ] \
-      && ! fm_watcher_healthy "$STATE" "$SCRIPT_DIR/fm-watch.sh" "$GRACE" "$FM_HOME"; then
-      start_handling_successor "$CLOSED_ARM_PID" || true
+    if fm_watcher_healthy "$STATE" "$SCRIPT_DIR/fm-watch.sh" "$GRACE" "$FM_HOME"; then
+      continue
     fi
+    if [ "$HOST_MODE" -eq 1 ]; then
+      [ -z "$OUT" ] || rm -f "$OUT" 2>/dev/null || true
+      continue 2
+    fi
+    start_handling_successor "$CLOSED_ARM_PID" || true
   done
   BANNER=$(
     printf 'firstmate watcher wake - one supervision event needs a handling turn now.\n'

@@ -2500,6 +2500,47 @@ test_parked_failure_delivers_notice() {
   pass "parked startup failure delivers one notice and its watchdog record without looping"
 }
 
+# A host hand-back retires its successor. While the rolling-hour budget defers
+# the rewake, the hook must keep re-parking the host so monitoring runs, then
+# deliver the wake once the budget expires.
+test_host_deferred_handback_keeps_monitoring() {
+  local dir pid n clockbin real_date now hosts
+  dir=$(make_primary_dir "$TMP_ROOT/host-deferred-handback")
+  rm -f "$dir/config/supervision-host-off"
+  : > "$dir/state/task.meta"
+  write_host_fixture "$dir" boundary
+  printf '{"session_id":"host-deferred","stop_hook_active":false}\n' > "$dir/payload.json"
+  clockbin=$(fm_fakebin "$dir/clockbin")
+  real_date=$(command -v date)
+  now=$(date +%s)
+  printf '%s\n' "$now" > "$dir/state/clock"
+  printf '#!/usr/bin/env bash\nif [ "$*" = +%%s ]; then cat "$FM_HOME/state/clock"; else exec %q "$@"; fi\n' "$real_date" > "$clockbin/date"
+  chmod +x "$clockbin/date"
+  jq -nc --argjson now "$now" '{times:[$now,$now,$now,$now,$now,$now],streak:0}' > "$dir/state/.stop-hook.host-deferred.json"
+  env PATH="$clockbin:$PATH" FM_HOME="$dir" FM_POLL=1 FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=0 \
+    "$FAKE_CLAUDE" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      bash "$FM_HOME/bin/fm-claude-stop-autoarm.sh" < "$FM_HOME/payload.json" > "$FM_HOME/state/autoarm.out" 2>&1
+      printf "%s\n" "$?" > "$FM_HOME/state/autoarm.rc"
+    ' &
+  pid=$!
+  for ((n=0; n<600; n++)); do grep -q 'status=hook_budget ' "$dir/state/stop-hook.log" 2>/dev/null && break; sleep 0.1; done
+  grep -q 'status=hook_budget ' "$dir/state/stop-hook.log" 2>/dev/null \
+    || { kill "$pid" 2>/dev/null || true; fail "host hand-back was not deferred by the budget: $(cat "$dir/state/autoarm.out" 2>/dev/null)"; }
+  hosts=$(wc -l < "$dir/state/host-ran" | tr -d ' ')
+  for ((n=0; n<100; n++)); do [ "$(wc -l < "$dir/state/host-ran" | tr -d ' ')" -gt "$hosts" ] && break; sleep 0.1; done
+  [ "$(wc -l < "$dir/state/host-ran" | tr -d ' ')" -gt "$hosts" ] \
+    || { kill "$pid" 2>/dev/null || true; fail 'deferred host hand-back left the home with no host parked'; }
+  [ ! -f "$dir/state/autoarm.rc" ] || fail "deferred host hand-back ended monitoring: $(cat "$dir/state/autoarm.out")"
+  printf '%s\n' "$((now + 3601))" > "$dir/state/clock"
+  for ((n=0; n<300; n++)); do [ ! -f "$dir/state/autoarm.rc" ] || break; sleep 0.1; done
+  [ -f "$dir/state/autoarm.rc" ] || { kill "$pid" 2>/dev/null || true; fail 'budget expiry never delivered the host wake'; }
+  wait "$pid" 2>/dev/null || true
+  [ "$(cat "$dir/state/autoarm.rc")" = 2 ] || fail "budget expiry did not rewake: $(cat "$dir/state/autoarm.out")"
+  assert_contains "$(cat "$dir/state/autoarm.out")" "supervision-host: cycle boundary - fixture" "the delivered wake must carry the host line"
+  pass "auto-arm: a deferred host hand-back keeps the host parked and delivers after budget expiry"
+}
+
 if [ "${FM_TEST_ONLY:-}" = stop-policy-review ]; then
   trap fm_test_cleanup EXIT
   test_parked_failure_delivers_notice
@@ -2511,6 +2552,7 @@ if [ "${FM_TEST_ONLY:-}" = stop-policy ]; then
   test_parked_stop_keeps_monitoring budget
   test_parked_failure_delivers_notice
   test_actionable_close_rewakes_with_reason
+  test_host_deferred_handback_keeps_monitoring
   exit 0
 fi
 
@@ -2583,6 +2625,7 @@ test_host_benign_rewake_refusal_opens_no_failure_episode
 test_host_lost_handback_notifies_once_per_episode
 test_host_lost_announced_handback_notifies_once_per_episode
 test_host_crash_is_retried_then_reported
+test_host_deferred_handback_keeps_monitoring
 test_arguments_never_arm
 test_fm_lock_status_still_works_with_shared_lib
 test_stands_down_only_on_pi_code_transcript_path

@@ -341,8 +341,10 @@ allow_supervised_stop() {
     exit 0
   fi
   [ "$CLAUDE_MODE" -eq 1 ] || exit 0
-  fm_stop_policy_allows_stop "$PAYLOAD" supervise || true
-  fm_failure_episode_reset "$STATE" && exit 0
+  if fm_failure_episode_reset "$STATE"; then
+    fm_stop_policy_allows_stop "$PAYLOAD" supervise || true
+    exit 0
+  fi
   fm_stop_policy_allows_stop "$PAYLOAD" repair && allow_exit
   exit 2
 }
