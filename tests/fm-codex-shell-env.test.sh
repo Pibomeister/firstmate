@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # tests/fm-codex-shell-env.test.sh - a Codex launch must carry the pane's
-# endpoint and inbox variables into Codex tool shells.
+# endpoint, inbox and agent-kit lifecycle variables into Codex tool shells.
 #
 # The operator's global Codex config may set
 # [shell_environment_policy] inherit="core", which strips HERDR_PANE_ID,
-# HERDR_SESSION, TMUX, TMUX_PANE and FM_TASK_INBOX from tool shells even
-# though the pane shell carries them. fm_secondmate_watch_selected then
-# refuses the secondmate watcher. The launch therefore carries one
+# HERDR_SESSION, TMUX, TMUX_PANE, FM_TASK_INBOX, AK_LIFECYCLE_POLICY and
+# AK_LIFECYCLE_SUPERVISOR from tool shells even though the pane shell
+# carries them. fm_secondmate_watch_selected then refuses the secondmate
+# watcher. The launch therefore carries one
 # -c shell_environment_policy.set.<VAR>="<value>" override per variable the
 # pane shell actually has, expanded in the pane at launch.
 #
@@ -107,9 +108,11 @@ test_ship_tmux_launch_carries_overrides() {
   assert_override "$argvlog" TMUX '/tmp/fm-cx-test-sock,1,0'
   assert_override "$argvlog" TMUX_PANE '%27'
   assert_override "$argvlog" FM_TASK_INBOX "$want_inbox"
+  assert_override "$argvlog" AK_LIFECYCLE_POLICY unattended
+  assert_override "$argvlog" AK_LIFECYCLE_SUPERVISOR firstmate
   assert_no_override "$argvlog" HERDR_PANE_ID
   assert_no_override "$argvlog" HERDR_SESSION
-  pass "a Codex ship launch carries TMUX, TMUX_PANE and FM_TASK_INBOX overrides, and no Herdr overrides the pane lacks"
+  pass "a Codex ship launch carries TMUX, TMUX_PANE, FM_TASK_INBOX and agent-kit lifecycle overrides, and no Herdr overrides the pane lacks"
 }
 
 test_secondmate_herdr_launch_selects_watcher() {
@@ -136,6 +139,8 @@ test_secondmate_herdr_launch_selects_watcher() {
   assert_override "$argvlog" HERDR_PANE_ID 'w1:p9'
   assert_override "$argvlog" HERDR_SESSION 'lab'
   assert_override "$argvlog" FM_TASK_INBOX "$want_inbox"
+  assert_override "$argvlog" AK_LIFECYCLE_POLICY unattended
+  assert_override "$argvlog" AK_LIFECYCLE_SUPERVISOR firstmate
   assert_no_override "$argvlog" TMUX
   assert_no_override "$argvlog" TMUX_PANE
 
@@ -157,13 +162,13 @@ test_secondmate_herdr_launch_selects_watcher() {
         ;;
     esac
   done < "$argvlog"
-  [ "${#tool_env[@]}" -eq 3 ] \
-    || fail "expected exactly the three captured overrides to form the tool-shell environment, got: ${tool_env[*]:-none}"
+  [ "${#tool_env[@]}" -eq 5 ] \
+    || fail "expected exactly the three captured overrides plus the agent-kit lifecycle pair to form the tool-shell environment, got: ${tool_env[*]:-none}"
   status=0
   env -i PATH="$PATH" HOME="$TMP_ROOT/tool-home" FM_HOME="$sm" \
     "${tool_env[@]}" "$ROOT/bin/fm-watch.sh" --secondmate-selected || status=$?
   expect_code 0 "$status" "watcher selection refused the environment the Codex launch overrides deliver"
-  pass "a Codex secondmate launch carries Herdr and inbox overrides, and watcher selection accepts the tool-shell environment they produce"
+  pass "a Codex secondmate launch carries Herdr, inbox and agent-kit lifecycle overrides, and watcher selection accepts the tool-shell environment they produce"
 }
 
 test_ship_tmux_launch_carries_overrides
