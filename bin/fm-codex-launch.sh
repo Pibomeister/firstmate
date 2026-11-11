@@ -21,7 +21,9 @@
 #
 # FM_CODEX_BIN, when set, names the Codex executable to exec instead of the
 # first codex on PATH; bin/fm-spawn.sh sets it for a raw command that starts
-# Codex by path. It is unset before exec so Codex never inherits it.
+# Codex by literal path and pins it empty on every other Codex launch, so an
+# ambient value cannot redirect one. It is unset before exec so Codex never
+# inherits it.
 #
 # Usage: fm-codex-launch.sh [codex args...]
 set -u

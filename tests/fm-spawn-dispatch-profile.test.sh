@@ -1032,8 +1032,8 @@ test_raw_codex_effort_placeholder_checks_catalog() {
   assert_absent "$HOME_DIR/state/$id.meta" 'raw inline HOME refusal published task metadata'
   [ ! -s "$LAUNCH_LOG" ] || fail 'raw inline HOME refusal launched an agent'
 
-  # A quote inside the inline HOME word still refuses. A value containing
-  # whitespace is outside this parser: the raw word loop splits on it.
+  # A quote or $ inside the inline HOME word refuses before the catalog check,
+  # because the raw Codex launch is not the safe form.
   id=profile-codex-raw-max-inline-quoted-home
   rec=$(make_spawn_case profile-codex-raw-max-inline-quoted-home codex "$id")
   read_case_record "$rec"
@@ -1042,7 +1042,7 @@ test_raw_codex_effort_placeholder_checks_catalog() {
     "HOME=$CASE_DIR/o'q\$x-home codex __EFFORTFLAG__" --model gpt-5.6-luna --effort max 2>&1)
   status=$?
   expect_code 1 "$status" "raw inline HOME with shell metacharacters must refuse: $out"
-  assert_contains "$out" 'inline CODEX_HOME or HOME cannot be validated' 'quoted inline HOME refusal was not actionable'
+  assert_contains "$out" 'names codex outside the one raw form' 'quoted inline HOME refusal was not actionable'
   assert_absent "$HOME_DIR/state/$id.meta" 'quoted inline HOME refusal published task metadata'
   [ ! -s "$LAUNCH_LOG" ] || fail 'quoted inline HOME refusal launched an agent'
 

@@ -86,7 +86,9 @@ SH
 }
 
 # Run the emitted launch in a synthetic pane shell whose own values contradict
-# the expected ones, so a launch that merely inherited the pane is caught.
+# the expected ones, so a launch that merely inherited the pane is caught. The
+# pane also carries a stray FM_CODEX_BIN naming no executable, so a Codex
+# launch that let it redirect the launcher fails to run.
 #   emitted_report <fakebin> <launch-log> [pane-log]
 emitted_report() {
   local fakebin=$1 launch preamble=''
@@ -94,6 +96,7 @@ emitted_report() {
   [ -z "${3:-}" ] || preamble=$(grep '^export ' "$3")
   env -i HOME="$TMP_ROOT/pane-home" PATH="$fakebin:$PATH" TERM=xterm TMUX=synthetic-pane \
     AK_LIFECYCLE_POLICY=pane-value AK_LIFECYCLE_SUPERVISOR=pane-supervisor \
+    FM_CODEX_BIN="$TMP_ROOT/stray-codex-bin-must-not-run" \
     /bin/sh -c "$preamble
 $launch"
 }
@@ -188,9 +191,10 @@ test_inherited_values_never_replace_the_pair() {
   pass "inherited empty or contrary values never replace the unattended policy and Firstmate supervisor"
 }
 
-# A raw command that starts Codex runs through bin/fm-codex-launch.sh with its
-# own arguments and assignments kept, so its tool shells receive both names. A
-# raw command that starts Codex behind another command word refuses.
+# A raw command routes through bin/fm-codex-launch.sh, with its own arguments
+# and assignments kept, only in the one safe form: plain NAME=value words, then
+# codex or /path/to/codex as the only word naming codex. Every other raw form
+# that names codex refuses before launch.
 install_raw_probe() {  # <path> <marker>
   mkdir -p "$(dirname "$1")"
   cat > "$1" <<SH
@@ -218,17 +222,19 @@ SH
   chmod +x "$1"
 }
 
+RAW_CODEX_REFUSAL='names codex outside the one raw form bin/fm-codex-launch.sh can take over'
+
 test_raw_codex_launch_uses_the_launcher() {
   local form rec id raw out status seen expected
-  for form in bare path; do
+  for form in bare prefixed path; do
     id="raw-codex-$form-a1"
     rec=$(make_case "raw-codex-$form" codex "$id")
     read_case "$rec"
-    if [ "$form" = bare ]; then
-      raw='codex --disable hooks'
-    else
-      raw="CODEX_HOME=$CASE_DIR/codex-home $CASE_DIR/by-path/codex --disable hooks"
-    fi
+    case "$form" in
+    bare) raw='codex --disable hooks' ;;
+    prefixed) raw="FOO=bar CODEX_HOME=$CASE_DIR/codex-home codex --disable hooks" ;;
+    path) raw="CODEX_HOME=$CASE_DIR/codex-home $CASE_DIR/by-path/codex --disable hooks" ;;
+    esac
     out=$(run_case_spawn "$id" "$PROJ_DIR" --scout "$raw")
     status=$?
     expect_code 0 "$status" "raw $form Codex spawn should succeed: $out"
@@ -238,17 +244,20 @@ test_raw_codex_launch_uses_the_launcher() {
     install_raw_probe "$CASE_DIR/by-path/codex" named-path
     seen=$(emitted_report "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
       || fail "raw $form Codex: the emitted launch failed to run"
-    if [ "$form" = bare ]; then
-      expected="ran=path-lookup
+    case "$form" in
+    bare) expected="ran=path-lookup
 policy=unattended
 supervisor=firstmate
-codex-home=unset"
-    else
-      expected="ran=named-path
+codex-home=unset" ;;
+    prefixed) expected="ran=path-lookup
 policy=unattended
 supervisor=firstmate
-codex-home=$CASE_DIR/codex-home"
-    fi
+codex-home=$CASE_DIR/codex-home" ;;
+    path) expected="ran=named-path
+policy=unattended
+supervisor=firstmate
+codex-home=$CASE_DIR/codex-home" ;;
+    esac
     expected="$expected
 codex-bin-env=unset
 codex-set=shell_environment_policy.set.AK_LIFECYCLE_POLICY=\"unattended\"
@@ -259,57 +268,84 @@ argv=<hooks>"
       "a raw $form Codex command must start the named Codex with both tool-shell overrides and its own arguments"
   done
 
-  id='raw-codex-behind-env-a1'
-  rec=$(make_case raw-codex-behind-env codex "$id")
-  read_case "$rec"
-  out=$(run_case_spawn "$id" "$PROJ_DIR" --scout 'env -u FOO codex --disable hooks' 2>&1)
-  status=$?
-  expect_code 1 "$status" "a raw command that starts Codex behind env must refuse: $out"
-  assert_contains "$out" 'cannot carry the launch environment into its tool shells' \
-    "the refusal must say why the raw Codex form is unsupported"
-  [ ! -s "$LAUNCH_LOG" ] || fail "a refused raw Codex command still launched"
-
-  local n=0
-  for raw in 'codex --disable hooks; codex resume' 'env -C /w codex x' 'exec -a n codex' "bash -o pipefail -c 'codex x'" "bash --rcfile f -c 'codex x'" "bash --norc -c 'codex x'"; do
+  local n=0 template
+  # shellcheck disable=SC2016 # Literal $HOME words are raw-command test data.
+  for template in \
+    "CODEX_HOME='@DIR@/account name' codex --disable hooks" \
+    'CODEX_HOME="@DIR@/account name" codex --disable hooks' \
+    'CODEX_HOME=@DIR@/account\ name codex --disable hooks' \
+    'CODEX_HOME=$HOME/.codex-alt codex --disable hooks' \
+    '$HOME/bin/codex --disable hooks' \
+    'time codex --disable hooks' \
+    'npx @openai/codex --disable hooks' \
+    'true;codex --disable hooks' \
+    '{ codex --disable hooks; }' \
+    "echo ready
+codex --disable hooks" \
+    "codex exec 'review the codex config'" \
+    'env -u FOO codex --disable hooks' \
+    'codex --disable hooks; codex resume' \
+    'env -C /w codex x' \
+    'exec -a n codex' \
+    "bash -o pipefail -c 'codex x'" \
+    "bash --norc -c 'codex x'"; do
     n=$((n + 1))
-    id="raw-codex-hidden-$n-a1"
-    rec=$(make_case "raw-codex-hidden-$n" codex "$id")
+    id="raw-codex-refused-$n-a1"
+    rec=$(make_case "raw-codex-refused-$n" codex "$id")
     read_case "$rec"
+    raw=${template//@DIR@/$CASE_DIR}
     out=$(run_case_spawn "$id" "$PROJ_DIR" --scout "$raw" 2>&1)
     status=$?
-    expect_code 1 "$status" "raw command '$raw' starts Codex the launcher cannot take over and must refuse: $out"
-    assert_contains "$out" 'cannot carry the launch environment into its tool shells' \
-      "the refusal for '$raw' must say why the raw form is unsupported"
+    expect_code 1 "$status" "raw command '$raw' is not the safe Codex form and must refuse: $out"
+    assert_contains "$out" "$RAW_CODEX_REFUSAL" \
+      "the refusal for '$raw' must name the one supported raw Codex form"
+    assert_contains "$out" '--harness codex' \
+      "the refusal for '$raw' must point at --harness codex"
     [ ! -s "$LAUNCH_LOG" ] || fail "refused raw command '$raw' still launched"
   done
-  pass "raw Codex commands run through the Codex launcher, and a Codex hidden behind another command refuses"
+  pass "only the safe raw Codex form runs through the Codex launcher, and every other raw Codex form refuses"
 }
 
-# A raw non-Codex command that only mentions codex as an argument, quoted text
-# or a path segment is not a Codex launch and must spawn.
-test_raw_command_mentioning_codex_spawns() {
-  local form rec id raw out status probe_dir
-  for form in path-segment argument quoted assignment; do
-    id="raw-mention-$form-a1"
-    rec=$(make_case "raw-mention-$form" claude "$id")
+# A raw non-Codex command that names codex as a word refuses like any other
+# unsafe form; one that never names codex as a word spawns.
+test_raw_non_codex_commands() {
+  local form rec id raw out status work_dir
+  for form in path-segment argument quoted quoted-separator assignment near-miss-dir near-miss-arg; do
+    id="raw-noncodex-$form-a1"
+    rec=$(make_case "raw-noncodex-$form" claude "$id")
     read_case "$rec"
-    probe_dir="$CASE_DIR/work/codex"
-    mkdir -p "$probe_dir"
-    printf '#!/bin/sh\nexit 0\n' > "$probe_dir/probe"
-    chmod +x "$probe_dir/probe"
     case "$form" in
-    path-segment) raw="cd $probe_dir && ./probe" ;;
-    argument) raw="$probe_dir/probe --model codex" ;;
-    quoted) raw="$probe_dir/probe \"use codex to review\"" ;;
-    assignment) raw="DIR=$probe_dir $probe_dir/probe" ;;
+    near-miss-dir) work_dir="$CASE_DIR/work/codexes" ;;
+    *) work_dir="$CASE_DIR/work/codex" ;;
+    esac
+    mkdir -p "$work_dir"
+    printf '#!/bin/sh\nexit 0\n' > "$work_dir/probe"
+    chmod +x "$work_dir/probe"
+    case "$form" in
+    path-segment | near-miss-dir) raw="cd $work_dir && ./probe" ;;
+    argument) raw="$work_dir/probe --model codex" ;;
+    quoted) raw="$work_dir/probe \"use codex to review\"" ;;
+    quoted-separator) raw="$work_dir/probe 'a | codex'" ;;
+    assignment) raw="DIR=$work_dir $work_dir/probe" ;;
+    near-miss-arg) raw="$CASE_DIR/work/codex-free/probe --model codex-mini"
+      mkdir -p "$CASE_DIR/work/codex-free"
+      cp "$work_dir/probe" "$CASE_DIR/work/codex-free/probe" ;;
     esac
     out=$(run_case_spawn "$id" "$PROJ_DIR" --scout "$raw" 2>&1)
     status=$?
-    expect_code 0 "$status" "a raw non-Codex command mentioning codex as $form must spawn: $out"
-    assert_contains "$(cat "$LAUNCH_LOG")" "probe" \
-      "the raw $form command must reach the pane"
+    case "$form" in
+    near-miss-*)
+      expect_code 0 "$status" "a raw command that never names codex as a word ($form) must spawn: $out"
+      assert_contains "$(cat "$LAUNCH_LOG")" "probe" "the raw $form command must reach the pane"
+      ;;
+    *)
+      expect_code 1 "$status" "a raw non-Codex command naming codex as $form must refuse: $out"
+      assert_contains "$out" "$RAW_CODEX_REFUSAL" "the $form refusal must name the one supported raw Codex form"
+      [ ! -s "$LAUNCH_LOG" ] || fail "refused raw $form command still launched"
+      ;;
+    esac
   done
-  pass "a raw non-Codex command that only mentions codex still spawns"
+  pass "a raw non-Codex command that names codex refuses, and one that never names it spawns"
 }
 
 # A raw compound launch: an export statement, not a command-prefix assignment,
@@ -447,5 +483,5 @@ test_launch_command_alone_carries_the_values
 test_inherited_values_never_replace_the_pair
 test_raw_compound_launch
 test_raw_codex_launch_uses_the_launcher
-test_raw_command_mentioning_codex_spawns
+test_raw_non_codex_commands
 test_relaunch_rebuilds_the_values

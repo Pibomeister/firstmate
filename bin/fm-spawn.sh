@@ -476,9 +476,13 @@
 #   The values are fixed: an inherited value in this spawn's environment or in
 #   the destination pane, empty or different, never replaces them. T3 Code
 #   carries the same values in its per-directory harness config, and
-#   bin/fm-codex-launch.sh forces both into Codex tool shells; a raw command
-#   that starts Codex is routed through that launcher with its arguments kept,
-#   and one that starts Codex behind another command word refuses.
+#   bin/fm-codex-launch.sh forces both into Codex tool shells. A raw command
+#   is routed through that launcher, arguments kept, only when the whole
+#   string is one safe form: plain NAME=value words with no quote, backslash,
+#   $ or shell operator, then codex or a literal /path/to/codex, then
+#   arguments, with no other word on any line naming codex. Any other raw
+#   command that names codex as a word refuses, including codex inside quoted
+#   argument text; use --harness codex instead.
 # Launch environment (config/launch-env-allowlist):
 #   Absent keeps ambient inheritance but unsets inherited home- and task-scoped
 #   FM_* values (bin/fm-env-scrub.sh) in the pane shell before re-establishing
@@ -3354,9 +3358,9 @@ launch_template() {
   # secondmate launch deliberately keeps hooks on but shares this approval posture.
   codex)
     if [ "$kind" = secondmate ]; then
-      printf '%s' '__CODEXLAUNCH__ __MODELFLAG____EFFORTFLAG____CODEXAPPROVALFLAG__ "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
+      printf '%s' 'FM_CODEX_BIN= __CODEXLAUNCH__ __MODELFLAG____EFFORTFLAG____CODEXAPPROVALFLAG__ "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
     else
-      printf '%s' '__CODEXLAUNCH__ __MODELFLAG____EFFORTFLAG____CODEXAPPROVALFLAG__ --disable hooks -c "notify=[\"bash\",\"-c\",\"touch __TURNEND__\"]" "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
+      printf '%s' 'FM_CODEX_BIN= __CODEXLAUNCH__ __MODELFLAG____EFFORTFLAG____CODEXAPPROVALFLAG__ --disable hooks -c "notify=[\"bash\",\"-c\",\"touch __TURNEND__\"]" "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
     fi
     ;;
   opencode) printf '%s' 'OPENCODE_CONFIG_CONTENT='\''{"permission":{"*":"allow"}__EFFORTFLAG__}'\'' __OPENCODEBIN__ __MODELFLAG__--prompt "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
@@ -3617,70 +3621,33 @@ case "$ARG3" in
   done
   # Codex tool shells receive only what shell_environment_policy lets through,
   # so a raw Codex command runs through the same launcher as the template, or
-  # the agent-kit lifecycle names never reach its commands. A raw command that
-  # starts Codex in a form the launcher cannot take over refuses instead.
-  if [ "$HARNESS" = codex ]; then
-    raw_codex_re='^([[:space:]]*([A-Za-z_][^[:space:]]*=[^[:space:]]*[[:space:]]+)*)([^[:space:]]+)(.*)$'
+  # the agent-kit lifecycle names never reach its commands. Exactly one raw
+  # form is routed, judged on the whole string: plain NAME=value words (no
+  # quote, backslash, $ or shell operator), then codex or a literal
+  # /path/to/codex, then arguments, with no other word on any line naming
+  # codex. Every other raw command that names codex refuses rather than
+  # guessing how a shell would parse it. FM_CODEX_BIN is pinned empty on the
+  # bare form, as on the template, so an ambient value cannot redirect it.
+  raw_codex_name_re='(^|[^A-Za-z0-9_.-])codex($|[^A-Za-z0-9_.-])'
+  if [[ $ARG3 =~ $raw_codex_name_re ]]; then
+    raw_codex_safe_re='^[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]'"'"'"`\\$;|&<>()]*[[:space:]]+)*)(codex|[A-Za-z0-9._~+/-]*/codex)([[:space:]].*)?$'
     raw_codex_word=
-    if [[ $LAUNCH =~ $raw_codex_re ]]; then
+    if [[ $ARG3 =~ $raw_codex_safe_re ]]; then
       raw_codex_prefix=${BASH_REMATCH[1]}
       raw_codex_word=${BASH_REMATCH[3]}
       raw_codex_rest=${BASH_REMATCH[4]}
+      [[ "$raw_codex_prefix $raw_codex_rest" =~ $raw_codex_name_re ]] && raw_codex_word=
     fi
     case "$raw_codex_word" in
-    codex) LAUNCH="${raw_codex_prefix}__CODEXLAUNCH__${raw_codex_rest}" ;;
-    */codex)
-      case "$raw_codex_word" in
-      *[!A-Za-z0-9._/~+-]*) raw_codex_word= ;;
-      *) LAUNCH="${raw_codex_prefix}FM_CODEX_BIN=${raw_codex_word} __CODEXLAUNCH__${raw_codex_rest}" ;;
-      esac
-      ;;
-    *) raw_codex_word= ;;
-    esac
-    if [ -z "$raw_codex_word" ]; then
-      echo "error: raw Codex command '$ARG3' names Codex in a form bin/fm-codex-launch.sh cannot take over; start it as 'codex ...' or '/path/to/codex ...' after any plain NAME=value assignments" >&2
+    '')
+      echo "error: raw command '$ARG3' names codex outside the one raw form bin/fm-codex-launch.sh can take over: plain NAME=value words with no quote, backslash, \$ or shell operator, then codex or a literal /path/to/codex as the only word naming codex. Use --harness codex, or simplify the raw command" >&2
       exit 1
-    fi
-  fi
-  read -r -a raw_words <<<"$ARG3"
-  raw_cmdpos=1
-  raw_wrap=0
-  raw_leading=1
-  for word in "${raw_words[@]}"; do
-    raw_sep=0
-    case "$word" in
-    '&&' | '||' | ';' | '|' | '&')
-      raw_cmdpos=1
-      raw_wrap=0
-      continue
       ;;
-    *';' | *'|' | *'&') raw_sep=1 ;;
+    codex) LAUNCH="${raw_codex_prefix}FM_CODEX_BIN= __CODEXLAUNCH__${raw_codex_rest}" ;;
+    *) LAUNCH="${raw_codex_prefix}FM_CODEX_BIN=${raw_codex_word} __CODEXLAUNCH__${raw_codex_rest}" ;;
     esac
-    word=${word%%[;|&]*}
-    word=${word#[\"\'\(]}
-    word=${word%[\"\'\)]}
-    if [ "$raw_wrap" = 0 ] && [ "$raw_cmdpos" = 1 ] && [[ $word == [A-Za-z_]*=* ]]; then
-      :
-    elif [ "${word##*/}" = codex ] && { [ "$raw_wrap" = 1 ] || [ "$raw_cmdpos" = 1 ]; }; then
-      if [ "$raw_wrap" = 0 ] && [ "$raw_leading" = 1 ] && [ "$HARNESS" = codex ]; then
-        raw_cmdpos=0
-        raw_leading=0
-      else
-        echo "error: raw command '$ARG3' starts Codex behind another command word or after the leading command, so bin/fm-codex-launch.sh cannot carry the launch environment into its tool shells; make Codex the leading command word, after any plain NAME=value assignments" >&2
-        exit 1
-      fi
-    elif [ "$raw_cmdpos" = 1 ] && [ -n "$word" ]; then
-      case "${word##*/}" in
-      env | exec | command | nohup | sh | bash | zsh | dash | ksh) raw_wrap=1 ;;
-      esac
-      raw_cmdpos=0
-      raw_leading=0
-    fi
-    if [ "$raw_sep" = 1 ]; then
-      raw_cmdpos=1
-      raw_wrap=0
-    fi
-  done
+    HARNESS=codex
+  fi
   ;;
 '')
   # No explicit harness: resolve from config. A secondmate AGENT launches on the

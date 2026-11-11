@@ -1920,8 +1920,11 @@ As with the compact adviser setting, this covers raw launch commands, remote sec
 The values are fixed and have no setting.
 An inherited value, whether in the environment that runs `bin/fm-spawn.sh` or in the destination pane, never replaces them, even when it is empty or names another supervisor.
 A secondmate therefore launches its own workers with the same pair, and a remote secondmate's host applies the same values through its own `bin/fm-spawn.sh`.
-A raw launch command that starts Codex, as `codex ...` or `/path/to/codex ...` after any plain `NAME=value` assignments, is routed through the same Codex launcher with its arguments kept, so its tool shells receive both names.
-A raw command that starts Codex behind a wrapper such as `env`, `exec`, `command`, `nohup` or a shell, or as a later command after a separator like `;` or `&&`, refuses before launch, because the launcher cannot carry the names into that Codex's tool shells; a wrapper that names codex anywhere before the next separator refuses too. A raw non-wrapper command that only mentions codex as an argument or path segment launches normally.
+A raw launch command is routed through the same Codex launcher, with its arguments kept, only when the whole command string is one safe form: zero or more plain `NAME=value` words with no quote, backslash, `$` or shell operator, then `codex` or a literal path such as `/opt/bin/codex`, then arguments, with no other word on any line naming codex.
+Its tool shells then receive both names.
+Any other raw command that names codex as a word refuses before launch, because Firstmate cannot be sure the launcher would carry the names into that Codex's tool shells.
+The check reads the whole string and does not parse shell syntax, so it refuses quoted or escaped assignments, a path built from a variable, a Codex behind any other command word such as `env`, `time`, `npx` or a shell, a second Codex after a separator or on another line, and codex inside quoted argument text, whether the command is Codex or another tool.
+Launch Codex with `--harness codex`, or simplify the raw command, instead.
 This applies only to agents Firstmate launches; the captain's own primary Firstmate session is never given either variable.
 Firstmate provides no configuration file or flag for this, and agent-kit's own unattended-policy checks, such as its refusal to ship onto an unprotected default branch, still apply.
 
