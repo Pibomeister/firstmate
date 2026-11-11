@@ -2179,6 +2179,11 @@ i=$1 variant=$2
 export CLAUDECODE=1 CLAUDE_CODE_SESSION_ID=sess-claude-mode CLAUDE_PID=$$
 printf '%s\n' "$$" > "$FM_HOME/state/.lock"
 printf '%s\n' "$CLAUDE_CODE_SESSION_ID" > "$FM_HOME/state/.lock-session"
+# This test covers the attended-alarm episode, not the stop policy's rolling
+# six-per-hour continuation cap (tests/fm-stop-policy.test.sh owns that). Its
+# seven Stops would otherwise exhaust the cap before a slow machine commits the
+# alarm, deferring the seventh auto-arm for up to an hour.
+rm -f "$FM_HOME/state/.stop-hook.$CLAUDE_CODE_SESSION_ID.json"
 transcript="$FM_HOME/stop-transcript.jsonl"
 printf '{"type":"assistant","message":{"content":"recovery turn %s"}}\n' "$i" >> "$transcript"
 payload=$(jq -nc --arg t "$transcript" \
