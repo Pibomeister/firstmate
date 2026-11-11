@@ -20,6 +20,12 @@
 # pin of <home>/config/handoff-trigger is the fallback. With neither there is
 # no window and no derived reading.
 #
+# THE RESET. The same record names how the session's current context cycle
+# ends: reset=compaction (auto-compaction is the routine reset) or
+# reset=handoff (a planned fresh start). fm_context_reset_for_session prints
+# that word only for a record naming the session; a record without it, from an
+# older trigger, or no matching record prints nothing.
+#
 # THE OWNER. derived when a derived reading exists, footer when only the footer
 # exists, none otherwise. A caller decides on the owner's value; owner none
 # reports unknown and never drives a decision by itself.
@@ -30,6 +36,8 @@
 # than that many points, else 0.
 #
 #   fm_context_window_for_session <home> <session-id>
+#   fm_context_reset_for_session <home> <session-id>
+#       prints compaction or handoff, or nothing
 #   fm_context_derived_percent <transcript> <window-tokens>
 #   fm_context_reading <home> <session-id> <transcript> <pane-text-file>
 #       the pane text file may be any readable path, such as a process
@@ -58,14 +66,22 @@ fm_context_window_for_session() {  # <home> <session-id>
   local home=$1 session=$2 line rec_session rec_at
   if [ -n "$session" ] && [ -f "$home/state/compact-point" ]; then
     IFS= read -r line < "$home/state/compact-point" || [ -n "$line" ] || line=''
-    rec_session=$(printf '%s\n' "$line" | sed -n 's/^session=\([^ ]*\) compact_at=[0-9][0-9]* at=[0-9]*$/\1/p')
-    rec_at=$(printf '%s\n' "$line" | sed -n 's/^session=[^ ]* compact_at=\([1-9][0-9]*\) at=[0-9]*$/\1/p')
+    rec_session=$(printf '%s\n' "$line" | sed -n 's/^session=\([^ ]*\) compact_at=[0-9][0-9]* at=[0-9]*\( reset=[a-z]*\)\{0,1\}$/\1/p')
+    rec_at=$(printf '%s\n' "$line" | sed -n 's/^session=[^ ]* compact_at=\([1-9][0-9]*\) at=[0-9]*\( reset=[a-z]*\)\{0,1\}$/\1/p')
     if [ -n "$rec_at" ] && [ "$rec_session" = "$session" ]; then
       printf '%s\n' "$rec_at"
       return 0
     fi
   fi
   _fm_context_config_value "$home/config/handoff-trigger" compact-at-tokens
+}
+
+fm_context_reset_for_session() {  # <home> <session-id>
+  local home=$1 session=$2 line
+  [ -n "$session" ] && [ -f "$home/state/compact-point" ] || return 0
+  IFS= read -r line < "$home/state/compact-point" || [ -n "$line" ] || return 0
+  case "$line" in "session=$session "*) ;; *) return 0 ;; esac
+  printf '%s\n' "$line" | sed -En 's/^session=[^ ]* compact_at=[1-9][0-9]* at=[0-9]* reset=(compaction|handoff)$/\1/p'
 }
 
 fm_context_derived_percent() {  # <transcript> <window-tokens>

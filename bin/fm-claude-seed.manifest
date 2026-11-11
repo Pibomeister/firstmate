@@ -40,7 +40,7 @@ b73bb8d9eb5c0cbb0cf17040e56664cac01eb4aa	.agents/skills/harness-adapters/referen
 3a84c2f8b441117b531af599808f45f03a48a80a	.agents/skills/harness-adapters/references/harness/pi.md
 a7bfed42381539fe59ce8ad2b5b2b45878578025	.agents/skills/harness-adapters/references/harness/polytoken.md
 58602fc3d31146859c96acc94eb9faa3a02d6e26	.agents/skills/harness-adapters/references/harness/rovo.md
-970155925bbcf859154e61ac0ba7ed8487b926a0	.agents/skills/operational-home-layout/SKILL.md
+8f782ae727366aeb27446abcee53b670b741f3b1	.agents/skills/operational-home-layout/SKILL.md
 ab511115bc1e399b46bb8ab8c799694deeb53ecd	.agents/skills/process-event-sources/SKILL.md
 1080ba6a3df84034a6b17cdfe9948da521082ccf	.agents/skills/project-management/SKILL.md
 eff603d0d9c96f56a66cea717c80e7df1e4b88e5	.agents/skills/quiet/SKILL.md
@@ -66,5 +66,5 @@ ef492c1f3c1fe7514a10f89a939e7591fe596c12	.claude/mods/firstmate-calm/lib/fm-calm
 dadb6777faa9e822c0dcccf59b1bd64a31a86aeb	.claude/mods/firstmate-calm/tests/calm.test.ts
 140d4db05ff26a87c434a766279a80ea5e543741	.claude/mods/firstmate-calm/tests/support.ts
 a5210b1c660d4445138df49b7f274118dbefd299	.claude/mods/firstmate-calm/tests/working-ship.test.ts
-0bf553ccd3d79c356c356c6fcf0454eba20afa2b	.claude/settings.json
+5c2cee5c95f163bbffef74050d6d8ffac70f896c	.claude/settings.json
 2b7a412b8fa0fb7e985b0793321bd4e698f2b6cd	.claude/skills

@@ -118,7 +118,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Relay guard pass status, action log, probe streaks, relay logs, and pass lock under `state/relay-guard/` (`bin/fm-relay-guard.sh`).
 - The default host-health beacon log, `state/host-health-beacon.log` (`bin/fm-host-health.sh`).
 - The scheduled terminal-cleanup logs, `state/terminal-reap.log` and `state/terminal-reap.err`, written by the hourly LaunchAgent that `bin/fm-terminal-reap.sh --schedule-plist` prints.
-- The current captain handle, `state/captain-handle`, that order senders resolve at send time, and this session's handoff record, `state/.order-handoff`, that the restart gate reads (`bin/fm-order.sh`), plus the successor launch record, `state/.handoff-successor`, that the handoff trigger's successor gate reads, and the auto-compact point, `state/compact-point`, that the handoff trigger publishes for outside context readers (`bin/fm-handoff-trigger.sh`).
+- The current captain handle, `state/captain-handle`, that order senders resolve at send time, and this session's handoff record, `state/.order-handoff`, that the restart gate reads (`bin/fm-order.sh`), plus the successor launch record, `state/.handoff-successor`, and the failed-launch record, `state/.handoff-launch-failed`, that the handoff trigger's successor gate reads, the predecessor-end record, `state/.handoff-end`, and the launch-in-progress record, `state/.handoff-launching`, that keeps `bin/fm-order.sh handoff --doc` from changing a document while its launch runs (`bin/fm-handoff-launch.sh`), the handoff document lock, `state/.handoff-doc.lock`, that a launch holds while it writes that record and `handoff --doc` holds while it checks and appends (`bin/fm-order.sh`), and the auto-compact point, `state/compact-point`, that the handoff trigger publishes for outside context readers (`bin/fm-handoff-trigger.sh`).
 
 `config/` holds local gitignored operating choices, including explicit extension bindings under `config/extensions.d/`.
 
@@ -475,15 +475,33 @@ This feature does not set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` or any other autocom
 
 ## Early handoff trigger (config/handoff-trigger)
 
-A Claude primary session receives one instruction to write its full handoff when its context left before auto-compact falls to a set percentage.
-The instruction asks the session to persist its open work records, decisions, and durable knowledge, record the handoff, hand off to a successor, and report that it is ready to restart, so a session can restart from a handoff instead of compacting.
-A primary launches its successor with `bin/fm-handoff-launch.sh <handoff file>`, which starts the successor in a new terminal on the home's recorded backend, verifies that the new successor harness pid is live, and records it in `state/.handoff-successor` as `pid=<successor pid>` and `handoff=<handoff document path>`; the gate reads only that record, so any other launcher, such as an operator, must write the same record for the stop to clear.
-The launcher refuses rather than guess when the backend or harness cannot be determined, and it never kills or interrupts the current session.
-The launcher verifies only the live successor pid; the successor confirms the handoff sha256 at pickup and stops on a mismatch.
-The successor's launch prompt tells it to confirm the handoff document's sha256, wait until the predecessor's harness pid (line 1 of `state/.lock`) is dead, and then run `bin/fm-session-start.sh` to take the session lock.
-The predecessor then ends its turn; it cannot exit itself, so its process is ended by the captain, by a leash or operator `/exit` in its pane, or by the watchdog restart path, and the successor takes the lock only after that pid dies.
+A Claude primary session receives one instruction per context cycle when its context left before auto-compact falls to a set percentage.
+Auto-compaction is the routine context reset on the same harness, so the instruction is normally a capture step.
+A capture asks the session to file every piece of open work that lives only in its chat into its durable record (dispatch log, backlog items, captain holds, and orders) and then let auto-compaction run.
+A capture never asks for a handoff, a successor, or a manual `/compact`, and it never gates a stop.
+After the compaction, the Claude `compact` session open prints a short re-entry card instead of the full re-emit ([source routing](sessionstart-nudge.md#source-routing)), and the session re-checks volatile facts from live records before acting on them.
+
+The instruction is a planned fresh start, a full handoff to a new session, only at the drift cap:
+
+- the session has auto-compacted `fresh-start-after` times (default 4);
+- or the first context reading after the latest compaction is at or above `fresh-start-context-tokens` (default 135000), so each cycle is getting shorter.
+
+A handoff for a quota limit or a harness switch is a deliberate handoff that the captain or the session starts on the same path.
+A fresh start asks the session to file its open work first, then write a short handoff document incrementally and record it with `bin/fm-order.sh handoff --doc` at once, so a limit reached mid-write still leaves a recorded document.
+The document points to held items rather than repeating them, and anything learned after it is recorded goes into durable records, never into an addendum file, because the successor reads only the hashed document.
+From the start of a successor launch, and while a live successor holds the document, `bin/fm-order.sh handoff --doc` leaves it byte-unchanged so its hash still matches, and a captain order recorded after the launch stays open in the order store, where the successor's `bin/fm-order.sh pickup` lists it; `bin/fm-order.sh` owns that rule.
+A primary launches its successor with `bin/fm-handoff-launch.sh <handoff file>`, which starts the successor in a new terminal on the home's recorded backend, retries a launch whose terminal fails to open or whose successor dies at start (never one that only fails to appear in time, which could start late beside a second one), verifies that the successor harness pid stays live, and records it in `state/.handoff-successor` as `pid=<successor pid>`, `handoff=<handoff document path>`, `predecessor=<predecessor pid>`, and `launched=<epoch>`; the gate reads only that record, so any other launcher, such as an operator, must write the same record for the stop to clear.
+When no live successor appears, the launcher records `state/.handoff-launch-failed`, which releases the successor gate, and tells the session to tell the captain, keep working, and let auto-compaction run; the next context cycle tries again.
+The launcher refuses rather than guess when the backend or harness cannot be determined.
+It also refuses, with no successor launched and no record written, when `bin/fm-order.sh covers` reports that the document omits an open captain order recorded before the launch; the session reruns `bin/fm-order.sh handoff --doc` and launches again.
+The successor's launch prompt tells it to confirm the handoff document's sha256, wait for the predecessor's harness pid (line 1 of `state/.lock`) to end with `bin/fm-handoff-launch.sh --await-predecessor`, and then run `bin/fm-session-start.sh` once to take the session lock.
+Its own session open prints a short notice instead of a read-only digest while the predecessor still holds the lock.
+The predecessor ends its handoff turn once the successor record is live, and its last stop ends it after a quiet settle, when its lock and transcript show no new turn and `bin/fm-order.sh covers` still passes for the successor's handoff document, which must list every open captain order recorded before the launch; the result lands in `state/.handoff-end`.
+This holds for a fresh start and for a deliberate handoff alike.
+A deliberate handoff is under way while the live successor record names the session as its predecessor, so a rerun of `bin/fm-order.sh handoff --doc` or a compaction before the stop does not close it; its stop is blocked once per turn while the successor's handoff document omits an open captain order recorded before the launch (`bin/fm-order.sh covers`).
+A predecessor that is not ended that way is ended by the captain, an operator `/exit` in its pane, or the watchdog restart path, and the successor takes the lock only after that pid dies.
 A second mate never launches its own successor: it appends one relaunch request to its parent channel and stops.
-It fires at most once per context cycle: a session that auto-compacts anyway is told again before its next auto-compact.
+Each cycle fires at most once, whichever kind it is.
 
 The trigger is on by default at 15% context left, wherever it can resolve the auto-compact point.
 The file is local to each home, is not inherited, and is read at every hook call, so a change needs no restart.
@@ -491,6 +509,8 @@ It may hold these lines, each optional:
 
 - `percent-left=<n>` fires at or below `n`% context left (default 15); `0` turns the trigger off.
 - `compact-at-tokens=<n>` is the auto-compact point in tokens, used instead of the point derived from Claude's settings. `bin/fm-context-burn.sh` uses the same point when the pane footer is not shown.
+- `fresh-start-after=<n>` is the drift cap in compactions (default 4); `0` makes every firing a fresh start.
+- `fresh-start-context-tokens=<n>` makes a cycle a fresh start when the first reading after its latest compaction is at or above `n` tokens (default 135000); `0` turns that reading off.
 
 Blank lines and lines that start with `#` are ignored, and an unusable value keeps its default.
 
@@ -508,21 +528,21 @@ Pin `compact-at-tokens` to cover such a home.
 Claude also caps the configured window to the model's window, which the hook cannot see, so a home on a smaller-window model must pin `compact-at-tokens`.
 A window set only in managed settings or a `--settings` launch flag also needs that pin.
 
-On each tool call and prompt, the trigger publishes the point it resolved to `state/compact-point`, even with `percent-left=0`, so readers outside the session use the same window; the hook header owns the record.
+On each tool call and prompt, the trigger publishes the point it resolved to `state/compact-point`, even with `percent-left=0`, so readers outside the session use the same window, together with whether this cycle ends in auto-compaction or in a fresh start; the hook header owns the record.
 
 The trigger runs only in a genuine primary home, including a marked secondmate home, and stays inert in worker worktrees and under other harnesses that load Claude's settings.
-It never writes the handoff, compacts, or restarts the session.
+It never writes the handoff or compacts the session.
 
-The same hook enforces the captain-order restart gate at each Stop of a session that is handing off: the trigger fired in this context cycle, or the session ran `bin/fm-order.sh handoff --doc` (stow, a restart, or `percent-left=0`).
+The same hook enforces the captain-order restart gate at each Stop of a session that is handing off: its newest firing is a fresh start, which a compaction inside that turn does not close, or the session ran `bin/fm-order.sh handoff --doc` (stow, a restart, a deliberate handoff, or `percent-left=0`), or a live successor record names it as the predecessor (a deliberate handoff, above).
 It blocks such a stop once per turn while the recorded handoff document omits an open captain order, and it never gates an ordinary stop.
-A primary session the trigger fired on is also blocked once per turn until `state/.handoff-successor` is newer than the firing and names a successor pid that is alive now, so that handoff turn cannot end on ready to restart with no successor launched; a second mate's stop is not gated this way, because its parent owns the relaunch.
+A primary session on a fresh start is also blocked once per turn until `state/.handoff-successor` is newer than the firing and names a successor pid that is alive now, or until a newer `state/.handoff-launch-failed` records a failed launch, which also closes that fresh start once a compaction has passed, so that handoff turn cannot end with no successor and no report; a second mate's stop is not gated this way, because its parent owns the relaunch.
 The handoff record belongs to the session that wrote it, so another session's stop in the same home is never gated by it.
 A caller outside any harness session, such as a restarting leash or sender, reads the record as the captain's, so its `bin/fm-order.sh gate` check clears when the captain's handoff lists every open order.
 The gate has limits: it runs only for a Claude primary, so a non-Claude primary, or a home with no resolvable auto-compact window that never runs `handoff --doc`, is not gated.
 Open orders there stay durable and appear in the next session's digest.
 A new context (startup, resume, clear, or compact) clears the recorded handoff, so the gate never reads a document written before that context opened.
 `bin/fm-order.sh` owns the captain-order gate.
-`bin/fm-handoff-trigger.sh` owns the measurement, the once-per-cycle record, and the successor gate, with coverage in [`tests/fm-handoff-trigger.test.sh`](../tests/fm-handoff-trigger.test.sh); `bin/fm-handoff-launch.sh` owns the successor launch, with coverage in [`tests/fm-handoff-launch.test.sh`](../tests/fm-handoff-launch.test.sh); [runtime-backends verification](verification/runtime-backends.md#claude-early-handoff-trigger) records the Claude Code evidence.
+`bin/fm-handoff-trigger.sh` owns the measurement, the capture or fresh-start choice, the once-per-cycle record, the successor gate, and ending the predecessor, with coverage in [`tests/fm-handoff-trigger.test.sh`](../tests/fm-handoff-trigger.test.sh); `bin/fm-handoff-launch.sh` owns the successor launch, the predecessor wait, and the predecessor end, with coverage in [`tests/fm-handoff-launch.test.sh`](../tests/fm-handoff-launch.test.sh); [runtime-backends verification](verification/runtime-backends.md#claude-early-handoff-trigger) records the Claude Code evidence.
 
 ## Context reading (config/context-reading)
 

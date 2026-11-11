@@ -61,8 +61,28 @@ reset_lab() {
 expect_fire() {  # <output> <event> <label>
   printf '%s' "$1" | jq -e --arg e "$2" '
       .hookSpecificOutput.hookEventName == $e
-      and (.hookSpecificOutput.additionalContext | test("handoff"))
-    ' >/dev/null 2>&1 || fail "$3: expected one handoff instruction for $2, got: $1"
+      and (.hookSpecificOutput.additionalContext | test("of context is left before auto-compact"))
+    ' >/dev/null 2>&1 || fail "$3: expected one trigger instruction for $2, got: $1"
+}
+
+# expect_mode <output> capture|handoff <label>: the firing is the capture step
+# (compaction is the reset) or a planned fresh start (a full handoff).
+expect_mode() {
+  case "$2" in
+    capture)
+      printf '%s' "$1" | jq -e '.hookSpecificOutput.additionalContext
+          | test("Firstmate context capture") and (contains("bin/fm-handoff-launch.sh") | not)' >/dev/null 2>&1 \
+        || fail "$3: expected the capture step, got: $1" ;;
+    handoff)
+      printf '%s' "$1" | jq -e '.hookSpecificOutput.additionalContext
+          | test("Firstmate planned fresh start") and contains("bin/fm-order.sh handoff --doc")' >/dev/null 2>&1 \
+        || fail "$3: expected a planned fresh start, got: $1" ;;
+  esac
+}
+
+# boundary <file>: append one compaction boundary record.
+boundary() {
+  printf '{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}\n' >> "$1"
 }
 
 expect_silent() {  # <output> <label>
@@ -290,7 +310,7 @@ test_names_open_captain_orders_and_gates_the_stop() {
   local order_id rc err doc succ
   reset_lab
   rm -rf "$PRIMARY/data/orders" "$PRIMARY"/data/handoff-*.md "$PRIMARY/state/.order-handoff"
-  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  printf 'compact-at-tokens=100000\nfresh-start-after=0\n' > "$PRIMARY/config/handoff-trigger"
   transcript "$TMP_ROOT/t-90" 90000
   out=$(run_hook "$PRIMARY" s-orders-none "$TMP_ROOT/t-90")
   expect_fire "$out" PostToolUse "no open orders"
@@ -564,7 +584,7 @@ test_handoff_gates_the_stop_until_a_recorded_successor_is_alive() {
   doc="$TMP_ROOT/handoff-succ.md"
   rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.watchdog-restart-request" "$launch"
   printf '# Handoff\n' > "$doc"
-  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  printf 'compact-at-tokens=100000\nfresh-start-after=0\n' > "$PRIMARY/config/handoff-trigger"
   transcript "$TMP_ROOT/t-succ" 90000
   # A launch record from an earlier episode must not satisfy this firing.
   sleep 60 &
@@ -573,6 +593,7 @@ test_handoff_gates_the_stop_until_a_recorded_successor_is_alive() {
   sleep 1
   out=$(run_hook "$PRIMARY" s-succ "$TMP_ROOT/t-succ")
   expect_fire "$out" PostToolUse "successor instruction firing"
+  expect_mode "$out" handoff "fresh-start-after=0 hands off every cycle"
   printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("bin/fm-handoff-launch.sh") and contains("state/.handoff-successor") and contains("bin/fm-session-start.sh")' >/dev/null \
     || fail "the instruction must say to launch the successor with the owned launcher and record it: $out"
   err="$TMP_ROOT/succ.err"
@@ -612,7 +633,7 @@ test_secondmate_handoff_escalates_to_its_parent() {
   launch="$PRIMARY/state/.handoff-successor"
   rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$launch"
   printf 'sm-test\n' > "$PRIMARY/.fm-secondmate-home"
-  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  printf 'compact-at-tokens=100000\nfresh-start-after=0\n' > "$PRIMARY/config/handoff-trigger"
   transcript "$TMP_ROOT/t-sm" 90000
   out=$(run_hook "$PRIMARY" s-sm "$TMP_ROOT/t-sm")
   expect_fire "$out" PostToolUse "second-mate firing"
@@ -625,9 +646,526 @@ test_secondmate_handoff_escalates_to_its_parent() {
   pass "a second mate's handoff escalates to its parent once and its stop is never successor-gated (133, 116)"
 }
 
+# marker_mode <session> <boundaries>: the mode= word of that cycle's marker.
+marker_mode() {
+  sed -n 's/.* mode=\([a-z]*\).*/\1/p' "$PRIMARY/state/.handoff-trigger.$1.$2" 2>/dev/null
+}
+
+# record_reset: the reset= word the hook published in state/compact-point.
+record_reset() {
+  sed -n 's/.* reset=\([a-z]*\)$/\1/p' "$PRIMARY/state/compact-point" 2>/dev/null
+}
+
+stop_rc() {  # <session> <transcript> [extra-payload-jq]
+  local rc=0
+  run_hook "$PRIMARY" "$1" "$2" Stop "${3:-.}" >/dev/null 2>"$TMP_ROOT/stop-rc.err" || rc=$?
+  printf '%s\n' "$rc"
+}
+
+# Compaction-first: with the defaults, the trigger is a capture step that has
+# the session file its chat-only open work into durable records and lets
+# auto-compaction run. It never asks for a successor and never gates a stop.
+test_capture_is_the_default_before_the_drift_cap() {
+  local out t="$TMP_ROOT/t-capture"
+  reset_lab
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.handoff-successor"
+  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$t" 90000
+  out=$(run_hook "$PRIMARY" s-capture "$t")
+  expect_fire "$out" PostToolUse "capture firing"
+  expect_mode "$out" capture "the default firing"
+  assert_equals capture "$(marker_mode s-capture 0)" "the marker records the capture mode"
+  assert_equals compaction "$(record_reset)" "the published point names compaction as this cycle's reset"
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext
+      | contains("bin/fm-dispatch-log.sh") and contains("bin/fm-tasks-axi.sh")
+        and contains("bin/fm-captain-hold.sh") and contains("bin/fm-order.sh")
+        and contains("bin/fm-crew-state.sh") and contains("re-entry card")
+        and contains("do not hand off") and contains("Compactions so far: 0")
+        and contains("planned fresh start comes after 4")' >/dev/null \
+    || fail "the capture instruction must name the durable records, the re-entry card, the re-check, and the drift cap: $out"
+  assert_equals 0 "$(stop_rc s-capture "$t")" "a capture firing never gates the stop"
+  expect_silent "$(run_hook "$PRIMARY" s-capture "$t")" "the capture fires once per cycle"
+  boundary "$t"
+  append_usage "$t" 90000
+  out=$(run_hook "$PRIMARY" s-capture "$t")
+  expect_mode "$out" capture "the next cycle below the drift cap"
+  assert_contains "$out" "Compactions so far: 1" "the capture names the compactions so far"
+  pass "the default firing is a capture step: durable records, no successor, an ungated stop"
+}
+
+# A capture firing that Claude cancels while the hook builds its output, as it
+# cancelled a UserPromptSubmit run at its 10 second timeout on a loaded host,
+# must not spend the cycle's one firing: the hook claims the cycle only once
+# the whole instruction is built, so the next run still delivers it.
+test_a_capture_cancelled_while_building_its_output_fires_on_the_next_run() {
+  local t="$TMP_ROOT/t-cut" slow="$TMP_ROOT/slowjq" started="$TMP_ROOT/slow-jq.started" out hook
+  reset_lab
+  rm -rf "$slow" "$started" "$TMP_ROOT/cut.out" "$PRIMARY/data/orders" "$PRIMARY/state/.handoff-successor"
+  mkdir -p "$slow"
+  # shellcheck disable=SC2016 # The wrapper expands these.
+  printf '#!/usr/bin/env bash\ncase " $* " in *hookSpecificOutput*) : > %q; sleep 60 ;; esac\nexec %q "$@"\n' \
+    "$started" "$(command -v jq)" > "$slow/jq"
+  chmod +x "$slow/jq"
+  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$t" 90000
+  set -m
+  HOOK_ENV="PATH=$slow:$PATH" run_hook "$PRIMARY" s-cut "$t" UserPromptSubmit > "$TMP_ROOT/cut.out" 2>/dev/null &
+  hook=$!
+  set +m
+  wait_for_file "$started" 300 || fail "the drill never reached the step that writes the hook's output"
+  kill -KILL -- "-$hook" 2>/dev/null
+  wait "$hook" 2>/dev/null
+  expect_silent "$(cat "$TMP_ROOT/cut.out")" "the run cancelled while it built its output"
+  out=$(run_hook "$PRIMARY" s-cut "$t")
+  expect_fire "$out" PostToolUse "the next run after a cancelled capture firing"
+  expect_mode "$out" capture "the delivered firing"
+  expect_silent "$(run_hook "$PRIMARY" s-cut "$t")" "the delivered capture still fires once per cycle"
+  rm -rf "$slow" "$started" "$TMP_ROOT/cut.out"
+  pass "a capture firing cancelled while it builds its output is delivered by the next run"
+}
+
+# The drift cap: after fresh-start-after compactions on the same harness the
+# next firing is a planned fresh start (a full handoff), and its stop is gated.
+test_fresh_start_after_n_compactions() {
+  local out t="$TMP_ROOT/t-drift"
+  reset_lab
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.handoff-successor"
+  printf 'compact-at-tokens=100000\nfresh-start-after=2\nfresh-start-context-tokens=0\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$t" 90000
+  expect_mode "$(run_hook "$PRIMARY" s-drift "$t")" capture "no compaction yet"
+  boundary "$t"
+  append_usage "$t" 90000
+  expect_mode "$(run_hook "$PRIMARY" s-drift "$t")" capture "one compaction, below the cap of 2"
+  assert_equals compaction "$(record_reset)" "below the cap the reset is compaction"
+  boundary "$t"
+  append_usage "$t" 30000
+  expect_silent "$(run_hook "$PRIMARY" s-drift "$t")" "the cap cycle above the threshold"
+  assert_equals handoff "$(record_reset)" "at the cap the reset is a handoff, published before the firing"
+  append_usage "$t" 90000
+  out=$(run_hook "$PRIMARY" s-drift "$t")
+  expect_fire "$out" PostToolUse "the cap cycle at the threshold"
+  expect_mode "$out" handoff "two compactions on the same harness"
+  assert_equals handoff "$(marker_mode s-drift 2)" "the marker records the handoff mode"
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext
+      | contains("after 2 compactions") and contains("bin/fm-handoff-launch.sh")
+        and contains("never an addendum") and contains("held items")
+        and contains("bin/fm-tasks-axi.sh")' >/dev/null \
+    || fail "the fresh-start instruction must give its reason and the hardened handoff steps: $out"
+  assert_equals 2 "$(stop_rc s-drift "$t")" "a planned fresh start gates the stop until a successor is live"
+  assert_contains "$(cat "$TMP_ROOT/stop-rc.err")" "state/.handoff-successor" "the block names the launch record"
+
+  printf 'compact-at-tokens=100000\nfresh-start-after=abc\n' > "$PRIMARY/config/handoff-trigger"
+  t="$TMP_ROOT/t-drift-bad"
+  transcript "$t" 50000
+  boundary "$t"; boundary "$t"; boundary "$t"
+  append_usage "$t" 90000
+  expect_mode "$(run_hook "$PRIMARY" s-drift-bad "$t")" capture "an unusable fresh-start-after keeps the default 4"
+  boundary "$t"
+  append_usage "$t" 90000
+  expect_mode "$(run_hook "$PRIMARY" s-drift-bad "$t")" handoff "the default cap is 4 compactions"
+  pass "after fresh-start-after compactions the firing is a planned fresh start whose stop is gated"
+}
+
+# A compaction that leaves a heavy context shortens every later cycle, so a
+# first post-compaction reading at or above fresh-start-context-tokens makes the
+# cycle's firing a planned fresh start before the count cap.
+test_fresh_start_on_high_context_after_compaction() {
+  local out t="$TMP_ROOT/t-heavy" t2="$TMP_ROOT/t-light"
+  reset_lab
+  printf 'compact-at-tokens=100000\nfresh-start-context-tokens=60000\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$t" 50000
+  boundary "$t"
+  append_usage "$t" 65000
+  expect_silent "$(run_hook "$PRIMARY" s-heavy "$t")" "a heavy post-compaction context above the threshold"
+  assert_equals handoff "$(record_reset)" "a heavy post-compaction context publishes a handoff reset"
+  append_usage "$t" 90000
+  out=$(run_hook "$PRIMARY" s-heavy "$t")
+  expect_mode "$out" handoff "a heavy post-compaction context"
+  assert_contains "$out" "65000 tokens right after compaction" "the fresh start names the heavy reading"
+  transcript "$t2" 50000
+  boundary "$t2"
+  append_usage "$t2" 40000
+  append_usage "$t2" 90000
+  expect_mode "$(run_hook "$PRIMARY" s-light "$t2")" capture "a light post-compaction context"
+  printf 'compact-at-tokens=100000\nfresh-start-context-tokens=0\n' > "$PRIMARY/config/handoff-trigger"
+  expect_mode "$(run_hook "$PRIMARY" s-heavy-off "$t")" capture "fresh-start-context-tokens=0 turns the reading off"
+  pass "a heavy first reading after compaction makes the firing a planned fresh start; 0 turns that off"
+}
+
+# A marker from before compaction-first (no mode= word) was a handoff firing,
+# and a launch-failure record newer than the firing lets the stop pass so the
+# session can tell the captain and keep working on auto-compaction.
+test_legacy_marker_and_launch_failure() {
+  local t="$TMP_ROOT/t-legacy" failed="$PRIMARY/state/.handoff-launch-failed"
+  reset_lab
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.handoff-successor" "$failed"
+  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$t" 90000
+  printf '%s tokens=90000 compact_at=100000\n' "$(date +%s)" > "$PRIMARY/state/.handoff-trigger.s-legacy.0"
+  assert_equals 2 "$(stop_rc s-legacy "$t")" "a marker without a mode is a handoff firing"
+  sleep 1
+  printf 'at=%s attempts=2 backend=orca handoff=x reason=never-appeared\n' "$(date +%s)" > "$failed"
+  assert_equals 0 "$(stop_rc s-legacy "$t")" "a launch failure recorded after the firing lets the stop pass"
+  sleep 1
+  touch "$PRIMARY/state/.handoff-trigger.s-legacy.0"
+  assert_equals 2 "$(stop_rc s-legacy "$t")" "a launch failure older than the firing does not"
+  rm -f "$failed"
+  pass "a legacy marker gates as a handoff, and a fresh launch-failure record releases the stop"
+}
+
+# end_lab_predecessor <session> <transcript> <after-stop-shell> [before-stop-shell]:
+# run the Stop hook inside a fake Claude harness that holds the session lock,
+# then run the given shell and idle. Prints the fake harness pid.
+end_lab_predecessor() {
+  local fakebin="$TMP_ROOT/fake-harness"
+  mkdir -p "$fakebin"
+  ln -sf /bin/bash "$fakebin/claude"
+  (
+    export HOOK CLAUDE_HOME PRIMARY ROOT TMP_ROOT
+    # shellcheck disable=SC2030 # Each lab subshell sets its own seam values on purpose.
+    export FM_TEST_SEAM=1 FM_HANDOFF_END_SETTLE_SECS=${END_SETTLE_SECS:-2} FM_HANDOFF_END_WAIT_SECS=5
+    export END_SESSION=$1 END_TRANSCRIPT=$2 END_AFTER=$3 END_BEFORE=${4:-:}
+    export -f run_hook
+    # shellcheck disable=SC2016 # The fake harness shell expands these.
+    exec "$fakebin/claude" -c '
+      printf "%s\n" "$$" > "$PRIMARY/state/.lock"
+      eval "$END_BEFORE"
+      rc=0
+      run_hook "$PRIMARY" "$END_SESSION" "$END_TRANSCRIPT" Stop >/dev/null 2>"$TMP_ROOT/end-stop.err" || rc=$?
+      printf "%s\n" "$rc" > "$TMP_ROOT/end-stop.rc"
+      eval "$END_AFTER"
+      n=0
+      while [ "$n" -lt 200 ]; do sleep 0.1; n=$((n + 1)); done'
+  ) </dev/null >/dev/null 2>&1 &
+  printf '%s\n' "$!"
+}
+
+wait_for_file() {  # <path> <tenths>
+  local n=0
+  while [ ! -e "$1" ] && [ "$n" -lt "$2" ]; do sleep 0.1; n=$((n + 1)); done
+  [ -e "$1" ]
+}
+
+# H1, one live pane: once a planned fresh start has a live successor recorded,
+# the stop that ends the old session's handoff turn ends the old session too,
+# after a settle in which the transcript shows no new turn. The stopped turn's
+# final assistant reply, which Claude can flush after the Stop hook measures
+# the transcript, and the bookkeeping Claude appends after every stop do not
+# count as a new turn; a new prompt does, and keeps the old session alive.
+test_handoff_stop_ends_the_idle_predecessor() {
+  local t="$TMP_ROOT/t-end" end="$PRIMARY/state/.handoff-end" succ pred n
+  reset_lab
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$end" "$PRIMARY/state/.lock-session" "$TMP_ROOT/end-stop.rc"
+  printf 'compact-at-tokens=100000\nfresh-start-after=0\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$t" 90000
+  expect_mode "$(run_hook "$PRIMARY" s-end "$t")" handoff "the every-cycle firing"
+  sleep 1
+  sleep 60 &
+  succ=$!
+  printf 'pid=%s\nhandoff=%s\n' "$succ" "$TMP_ROOT/end-handoff.md" > "$PRIMARY/state/.handoff-successor"
+  # shellcheck disable=SC2016 # The fake harness shell expands these.
+  pred=$(end_lab_predecessor s-end "$t" 'printf "%s\n" "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}" "{\"type\":\"system\",\"subtype\":\"stop_hook_summary\"}" "{\"type\":\"last-prompt\"}" >> "$END_TRANSCRIPT"')
+  wait_for_file "$end" 150 || fail "the stop with a live successor recorded must end the old session and record it"
+  assert_equals 0 "$(cat "$TMP_ROOT/end-stop.rc")" "the stop itself passes"
+  assert_contains "$(cat "$end")" "pred=$pred" "the record names the old session"
+  assert_contains "$(cat "$end")" "result=ended" "the old session was ended"
+  n=0
+  while kill -0 "$pred" 2>/dev/null && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+  ! kill -0 "$pred" 2>/dev/null || fail "the old session must be gone"
+  kill -0 "$succ" 2>/dev/null || fail "the successor must survive"
+
+  rm -f "$end" "$TMP_ROOT/end-stop.rc"
+  # shellcheck disable=SC2016 # The fake harness shell expands these.
+  pred=$(end_lab_predecessor s-end "$t" 'printf "%s\n" "{\"type\":\"queue-operation\"}" "{\"type\":\"user\",\"message\":{\"content\":\"one more thing\"}}" >> "$END_TRANSCRIPT"')
+  wait_for_file "$end" 150 || fail "a skipped end must still be recorded"
+  assert_contains "$(cat "$end")" "result=skipped" "a new turn keeps the old session"
+  kill -0 "$pred" 2>/dev/null || fail "the old session that took a new prompt must stay alive"
+  kill "$pred" 2>/dev/null; wait "$pred" 2>/dev/null
+
+  rm -f "$end" "$TMP_ROOT/end-stop.rc"
+  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  t="$TMP_ROOT/t-end-capture"
+  transcript "$t" 90000
+  expect_mode "$(run_hook "$PRIMARY" s-end-capture "$t")" capture "a capture firing"
+  pred=$(end_lab_predecessor s-end-capture "$t" ':')
+  wait_for_file "$TMP_ROOT/end-stop.rc" 100 || fail "the capture stop never ran"
+  sleep 3
+  [ ! -e "$end" ] || fail "a capture firing must never end the session: $(cat "$end")"
+  kill -0 "$pred" 2>/dev/null || fail "a capturing session must stay alive"
+  kill "$pred" "$succ" 2>/dev/null; wait "$pred" "$succ" 2>/dev/null
+  rm -f "$end" "$PRIMARY/state/.lock" "$PRIMARY/state/.handoff-successor" "$TMP_ROOT/end-stop.rc"
+  pass "a fresh start ends the idle old session once its successor is live; a new prompt or a capture keeps it"
+}
+
+# A compaction can land inside a planned fresh start's own turn, before its
+# stop. It advances the cycle count, and its compact re-entry clears the handoff
+# record, but the fresh start is still open: the session's newest firing still
+# gates the stop until a live successor is recorded, and with one recorded the
+# stop still ends the old session. A newer capture firing closes it.
+test_a_compaction_inside_a_fresh_start_keeps_it_open() {
+  local t="$TMP_ROOT/t-midturn" end="$PRIMARY/state/.handoff-end" failed="$PRIMARY/state/.handoff-launch-failed" succ pred n
+  reset_lab
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.handoff-successor" "$failed" "$end" \
+    "$PRIMARY/state/.lock-session" "$TMP_ROOT/end-stop.rc"
+  printf 'compact-at-tokens=100000\nfresh-start-after=0\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$t" 90000
+  expect_mode "$(run_hook "$PRIMARY" s-midturn "$t")" handoff "the fresh-start firing"
+  boundary "$t"
+  append_usage "$t" 30000
+  assert_equals 2 "$(stop_rc s-midturn "$t")" "a compaction inside the fresh-start turn still gates its stop until a successor is live"
+  assert_contains "$(cat "$TMP_ROOT/stop-rc.err")" "state/.handoff-successor" "the block names the launch record"
+  assert_equals 0 "$(stop_rc s-midturn "$t" '.stop_hook_active = true')" "the gate still blocks at most once per turn"
+  assert_equals 0 "$(stop_rc s-midturn-other "$t")" "another session's open fresh start never gates this stop"
+  sleep 1
+  printf 'at=%s attempts=2 backend=orca handoff=x reason=never-appeared\n' "$(date +%s)" > "$failed"
+  assert_equals 0 "$(stop_rc s-midturn "$t")" "a launch failure recorded after the firing still releases the stop"
+  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --from test "order after the failed launch" >/dev/null \
+    || fail "could not send the order fixture"
+  assert_equals 0 "$(stop_rc s-midturn "$t")" "after a failed launch and a compaction, an open order with no handoff document does not gate the stop"
+  rm -rf "$failed" "$PRIMARY/data/orders"
+
+  sleep 60 &
+  succ=$!
+  printf 'pid=%s\nhandoff=%s\n' "$succ" "$TMP_ROOT/midturn-handoff.md" > "$PRIMARY/state/.handoff-successor"
+  pred=$(end_lab_predecessor s-midturn "$t" ':')
+  wait_for_file "$end" 150 || fail "the stop after the compaction must still end the old session once its successor is live"
+  assert_equals 0 "$(cat "$TMP_ROOT/end-stop.rc")" "that stop itself passes"
+  assert_contains "$(cat "$end")" "pred=$pred" "the record names the old session"
+  assert_contains "$(cat "$end")" "result=ended" "the old session was ended"
+  n=0
+  while kill -0 "$pred" 2>/dev/null && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+  ! kill -0 "$pred" 2>/dev/null || fail "the old session must be gone"
+  kill "$succ" 2>/dev/null; wait "$succ" 2>/dev/null
+  rm -f "$end" "$PRIMARY/state/.handoff-successor" "$PRIMARY/state/.lock" "$TMP_ROOT/end-stop.rc"
+
+  printf '%s tokens=90000 compact_at=100000 mode=capture\n' "$(date +%s)" > "$PRIMARY/state/.handoff-trigger.s-midturn.1"
+  assert_equals 0 "$(stop_rc s-midturn "$t")" "a newer capture firing closes the older fresh start"
+  rm -f "$PRIMARY/config/handoff-trigger"
+  pass "a compaction inside a fresh-start turn keeps it open: its stop is still gated and still ends the old session"
+}
+
+# H1 on the deliberate path: a session that recorded its handoff document with
+# bin/fm-order.sh handoff --doc and then launched a live successor is ended by
+# the stop that ends its turn, with no trigger firing. The successor record
+# names the session it replaces; a record that names another predecessor
+# belongs to an earlier handoff and ends nothing.
+test_deliberate_handoff_stop_ends_the_idle_predecessor() {
+  local t="$TMP_ROOT/t-deliberate" end="$PRIMARY/state/.handoff-end" doc="$PRIMARY/data/deliberate-handoff.md" succ pred n
+  reset_lab
+  rm -rf "$PRIMARY/data/orders" "$end" "$PRIMARY/state/.lock-session" "$PRIMARY/state/.handoff-successor" "$TMP_ROOT/end-stop.rc"
+  mkdir -p "$PRIMARY/data"
+  printf 'percent-left=0\n' > "$PRIMARY/config/handoff-trigger"
+  printf '# Handoff\n' > "$doc"
+  transcript "$t" 10000
+  sleep 60 &
+  succ=$!
+  export DELIB_DOC=$doc DELIB_SUCC=$succ
+  # shellcheck disable=SC2016 # The fake harness shell expands these.
+  pred=$(end_lab_predecessor s-deliberate "$t" ':' '
+    FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handoff --doc "$DELIB_DOC" >/dev/null
+    sleep 1
+    printf "pid=%s\nhandoff=%s\npredecessor=%s\n" "$DELIB_SUCC" "$DELIB_DOC" "$$" > "$PRIMARY/state/.handoff-successor"')
+  wait_for_file "$end" 150 || fail "a deliberate handoff with a live successor recorded must end the old session"
+  assert_equals 0 "$(cat "$TMP_ROOT/end-stop.rc")" "the deliberate handoff stop itself passes"
+  assert_contains "$(cat "$end")" "pred=$pred" "the record names the old session"
+  assert_contains "$(cat "$end")" "result=ended" "the old session was ended"
+  n=0
+  while kill -0 "$pred" 2>/dev/null && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+  ! kill -0 "$pred" 2>/dev/null || fail "the old session must be gone"
+  kill -0 "$succ" 2>/dev/null || fail "the successor must survive"
+
+  rm -f "$end" "$TMP_ROOT/end-stop.rc" "$PRIMARY/state/.order-handoff"
+  # shellcheck disable=SC2016 # The fake harness shell expands these.
+  pred=$(end_lab_predecessor s-deliberate "$t" ':' '
+    FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handoff --doc "$DELIB_DOC" >/dev/null
+    sleep 1
+    printf "pid=%s\nhandoff=%s\npredecessor=%s\n" "$DELIB_SUCC" "$DELIB_DOC" "$(($$ + 100000))" > "$PRIMARY/state/.handoff-successor"')
+  wait_for_file "$TMP_ROOT/end-stop.rc" 100 || fail "the earlier-handoff stop never ran"
+  assert_equals 0 "$(cat "$TMP_ROOT/end-stop.rc")" "a handoff whose successor record names another predecessor still passes its stop"
+  sleep 4
+  [ ! -e "$end" ] || fail "a successor record that names another predecessor must not end the session: $(cat "$end")"
+  kill -0 "$pred" 2>/dev/null || fail "a session that no successor record names must stay alive"
+  kill "$pred" "$succ" 2>/dev/null; wait "$pred" "$succ" 2>/dev/null
+  unset DELIB_DOC DELIB_SUCC
+  rm -rf "$PRIMARY/data/orders" "$doc" "$end" "$PRIMARY/state/.lock" "$PRIMARY/state/.order-handoff" \
+    "$PRIMARY/state/.handoff-successor" "$PRIMARY/config/handoff-trigger" "$TMP_ROOT/end-stop.rc"
+  pass "a deliberate handoff ends the idle old session once a live successor that names it is recorded"
+}
+
+# A captain order filed during the predecessor's settle arrives after the
+# successor launched, so it stays open in the order store for the successor's
+# pickup: the stop still ends the old session, the document the successor
+# hash-checks stays unchanged, and no file is written beside it.
+test_deliberate_handoff_order_during_the_settle_still_ends_the_predecessor() {
+  local t="$TMP_ROOT/t-delib-rerun" end="$PRIMARY/state/.handoff-end" doc="$PRIMARY/data/delib-rerun.md" succ pred n
+  reset_lab
+  rm -rf "$PRIMARY/data/orders" "$end" "$PRIMARY/state/.lock-session" "$PRIMARY/state/.handoff-successor" \
+    "$TMP_ROOT/end-stop.rc" "$TMP_ROOT/delib-rerun-launched.md"
+  mkdir -p "$PRIMARY/data"
+  printf 'percent-left=0\n' > "$PRIMARY/config/handoff-trigger"
+  printf '# Handoff\n' > "$doc"
+  transcript "$t" 10000
+  sleep 60 &
+  succ=$!
+  export DELIB_DOC=$doc DELIB_SUCC=$succ
+  # shellcheck disable=SC2016 # The fake harness shell expands these.
+  pred=$(END_SETTLE_SECS=6 end_lab_predecessor s-delib-rerun "$t" '
+    FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --from test "order during the settle" >/dev/null
+    FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handoff --doc "$DELIB_DOC" >/dev/null' '
+    FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handoff --doc "$DELIB_DOC" >/dev/null
+    sleep 1
+    printf "pid=%s\nhandoff=%s\npredecessor=%s\nlaunched=%s\n" "$DELIB_SUCC" "$DELIB_DOC" "$$" "$(date +%s)" > "$PRIMARY/state/.handoff-successor"
+    cp "$DELIB_DOC" "$TMP_ROOT/delib-rerun-launched.md"')
+  wait_for_file "$end" 200 || fail "an order filed after the launch must not keep the old session alive"
+  assert_equals 0 "$(cat "$TMP_ROOT/end-stop.rc")" "the stop passes"
+  assert_contains "$(cat "$end")" "pred=$pred" "the record names the old session"
+  assert_contains "$(cat "$end")" "result=ended" "the old session was ended"
+  n=0
+  while kill -0 "$pred" 2>/dev/null && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+  ! kill -0 "$pred" 2>/dev/null || fail "the old session must be gone"
+  kill -0 "$succ" 2>/dev/null || fail "the successor must survive"
+  cmp -s "$doc" "$TMP_ROOT/delib-rerun-launched.md" ||
+    fail "handoff --doc after the launch must leave the launched handoff document unchanged, so the successor's hash still matches"
+  [ "$(find "$PRIMARY/data" -maxdepth 1 -name 'delib-rerun.md*' | wc -l | tr -d ' ')" = 1 ] ||
+    fail "no file may be written beside the launched handoff document"
+  assert_contains "$(FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" pickup)" "order during the settle" \
+    "the order filed during the settle stays open for the successor's pickup"
+  kill "$pred" "$succ" 2>/dev/null; wait "$pred" "$succ" 2>/dev/null
+  unset DELIB_DOC DELIB_SUCC
+  rm -rf "$PRIMARY/data/orders" "$doc" "$end" "$PRIMARY/state/.lock" "$PRIMARY/state/.order-handoff" \
+    "$PRIMARY/state/.handoff-successor" "$PRIMARY/config/handoff-trigger" "$TMP_ROOT/end-stop.rc" \
+    "$TMP_ROOT/delib-rerun-launched.md"
+  pass "an order filed during the settle is left to the successor's pickup and the old session still ends"
+}
+
+# An auto-compaction after the successor launch and before the stop runs the
+# compact re-entry, whose claim-handle clears this session's handoff record.
+# The successor record still names this session, and an order recorded after
+# the launch is left to the successor's pickup, so the stop still ends the old
+# session.
+test_deliberate_handoff_survives_a_compaction_before_its_stop() {
+  local t="$TMP_ROOT/t-delib-compact" end="$PRIMARY/state/.handoff-end" doc="$PRIMARY/data/delib-compact.md" succ pred n
+  reset_lab
+  rm -rf "$PRIMARY/data/orders" "$end" "$PRIMARY/state/.lock-session" "$PRIMARY/state/.handoff-successor" \
+    "$TMP_ROOT/end-stop.rc" "$TMP_ROOT/compact-record"
+  mkdir -p "$PRIMARY/data"
+  printf 'percent-left=0\n' > "$PRIMARY/config/handoff-trigger"
+  printf '# Handoff\n' > "$doc"
+  transcript "$t" 10000
+  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --from test "order before the handoff" >/dev/null \
+    || fail "could not send the order fixture"
+  sleep 60 &
+  succ=$!
+  export DELIB_DOC=$doc DELIB_SUCC=$succ
+  # shellcheck disable=SC2016 # The fake harness shell expands these.
+  pred=$(end_lab_predecessor s-delib-compact "$t" ':' '
+    FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handoff --doc "$DELIB_DOC" >/dev/null
+    sleep 1
+    printf "pid=%s\nhandoff=%s\npredecessor=%s\nlaunched=%s\n" "$DELIB_SUCC" "$DELIB_DOC" "$$" "$(date +%s)" > "$PRIMARY/state/.handoff-successor"
+    FM_SUPERVISOR_TARGET=pane_7 FM_SUPERVISOR_BACKEND=tmux FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" claim-handle >/dev/null
+    printf "{\"type\":\"system\",\"subtype\":\"compact_boundary\",\"content\":\"Conversation compacted\"}\n" >> "$END_TRANSCRIPT"
+    FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --from test "order after the compaction" >/dev/null
+    [ ! -e "$PRIMARY/state/.order-handoff" ] || printf "kept\n" > "$TMP_ROOT/compact-record"')
+  wait_for_file "$end" 150 || fail "a compaction after the successor launch must not keep the old session alive"
+  [ ! -e "$TMP_ROOT/compact-record" ] || fail "the compact re-entry must clear this session's handoff record, or this case is vacuous"
+  assert_equals 0 "$(cat "$TMP_ROOT/end-stop.rc")" "the stop after the compaction passes"
+  assert_contains "$(cat "$end")" "pred=$pred" "the record names the old session"
+  assert_contains "$(cat "$end")" "result=ended" "the old session was ended"
+  n=0
+  while kill -0 "$pred" 2>/dev/null && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+  ! kill -0 "$pred" 2>/dev/null || fail "the old session must be gone"
+  kill -0 "$succ" 2>/dev/null || fail "the successor must survive"
+  kill "$pred" "$succ" 2>/dev/null; wait "$pred" "$succ" 2>/dev/null
+  unset DELIB_DOC DELIB_SUCC
+  rm -rf "$PRIMARY/data/orders" "$doc" "$end" "$PRIMARY/state/.lock" "$PRIMARY/state/.order-handoff" \
+    "$PRIMARY/state/.handoff-successor" "$PRIMARY/state/captain-handle" "$PRIMARY/config/handoff-trigger" "$TMP_ROOT/end-stop.rc" \
+    "$TMP_ROOT/compact-record"
+  pass "a deliberate handoff whose stop follows a compaction still ends the old session"
+}
+
+# H1 on a loaded host: Claude cancels a Stop hook at its timeout. When each
+# order check is slow, the hook is cancelled before its gate checks finish, and
+# the old session must still be ended once its successor is live. The ender is
+# detached before those checks; it waits for the hook to exit, then rechecks
+# order coverage itself. A stop that the hook blocks still cancels the ender.
+test_a_cancelled_slow_stop_hook_still_ends_the_predecessor() {
+  local t="$TMP_ROOT/t-slow" end="$PRIMARY/state/.handoff-end" doc="$PRIMARY/data/slow-handoff.md"
+  local slow="$TMP_ROOT/slowbin" fakebin="$TMP_ROOT/fake-harness" succ pred n
+  reset_lab
+  rm -rf "$PRIMARY/data/orders" "$end" "$PRIMARY/state/.lock-session" "$PRIMARY/state/.handoff-successor" \
+    "$TMP_ROOT/slow-stop.done" "$slow"
+  mkdir -p "$PRIMARY/data" "$fakebin"
+  ln -sf /bin/bash "$fakebin/claude"
+  cp -R "$ROOT/bin" "$slow"
+  mv "$slow/fm-order.sh" "$slow/fm-order-real.sh"
+  # shellcheck disable=SC2016 # The wrapper expands these.
+  printf '#!/usr/bin/env bash\nsleep 3\nexec "$(dirname "$0")/fm-order-real.sh" "$@"\n' > "$slow/fm-order.sh"
+  chmod +x "$slow/fm-order.sh"
+  printf 'percent-left=0\n' > "$PRIMARY/config/handoff-trigger"
+  printf '# Handoff\n' > "$doc"
+  transcript "$t" 10000
+  sleep 60 &
+  succ=$!
+  (
+    export HOOK="$slow/fm-handoff-trigger.sh" CLAUDE_HOME PRIMARY ROOT TMP_ROOT DOC=$doc SUCC=$succ T=$t
+    # shellcheck disable=SC2031 # Each lab subshell sets its own seam values on purpose.
+    export FM_TEST_SEAM=1 FM_HANDOFF_END_SETTLE_SECS=1 FM_HANDOFF_END_WAIT_SECS=5
+    export -f run_hook
+    # shellcheck disable=SC2016 # The fake harness shell expands these.
+    exec "$fakebin/claude" -c '
+      printf "%s\n" "$$" > "$PRIMARY/state/.lock"
+      FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handoff --doc "$DOC" >/dev/null
+      sleep 1
+      printf "pid=%s\nhandoff=%s\npredecessor=%s\n" "$SUCC" "$DOC" "$$" > "$PRIMARY/state/.handoff-successor"
+      run_hook "$PRIMARY" s-slow "$T" Stop >/dev/null 2>&1 &
+      hook=$!
+      sleep 2
+      kill -KILL "$hook" 2>/dev/null
+      printf "cancelled\n" > "$TMP_ROOT/slow-stop.done"
+      n=0
+      while [ "$n" -lt 300 ]; do sleep 0.1; n=$((n + 1)); done'
+  ) </dev/null >/dev/null 2>&1 &
+  pred=$!
+  wait_for_file "$TMP_ROOT/slow-stop.done" 100 || fail "the slow stop never ran"
+  wait_for_file "$end" 250 || fail "a Stop hook cancelled before its slow checks finish must still end the old session"
+  assert_contains "$(cat "$end")" "pred=$pred" "the record names the old session"
+  assert_contains "$(cat "$end")" "result=ended" "the old session was ended"
+  n=0
+  while kill -0 "$pred" 2>/dev/null && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+  ! kill -0 "$pred" 2>/dev/null || fail "the old session must be gone"
+  kill -0 "$succ" 2>/dev/null || fail "the successor must survive"
+  kill "$succ" 2>/dev/null; wait "$pred" "$succ" 2>/dev/null
+  rm -rf "$PRIMARY/data/orders" "$doc" "$end" "$PRIMARY/state/.lock" "$PRIMARY/state/.order-handoff" \
+    "$PRIMARY/state/.handoff-successor" "$PRIMARY/config/handoff-trigger" "$TMP_ROOT/slow-stop.done" "$slow"
+  pass "a Stop hook cancelled at its timeout on a loaded host still ends the old session once its successor is live"
+}
+
+# The tracked Claude settings give the Stop-hook run of the trigger 30 seconds.
+# Under heavy host load its order, gate, and lock checks took over 10 seconds,
+# Claude cancelled the hook, and the old session took one more turn.
+test_tracked_stop_hook_timeout() {
+  local timeouts
+  timeouts=$(jq -r '[.hooks.Stop[].hooks[]
+    | select(.type == "command" and (.command | endswith("/bin/fm-handoff-trigger.sh")))
+    | .timeout] | map(tostring) | join(",")' "$ROOT/.claude/settings.json")
+  assert_equals 30 "$timeouts" "the tracked Stop hook for the handoff trigger has exactly one entry with a 30 second timeout"
+  pass "the tracked Stop hook for the handoff trigger allows 30 seconds"
+}
+
 test_handoff_gates_the_stop_until_a_recorded_successor_is_alive
 test_secondmate_handoff_escalates_to_its_parent
 test_threshold_default_15
+test_capture_is_the_default_before_the_drift_cap
+test_a_capture_cancelled_while_building_its_output_fires_on_the_next_run
+test_fresh_start_after_n_compactions
+test_fresh_start_on_high_context_after_compaction
+test_legacy_marker_and_launch_failure
+test_handoff_stop_ends_the_idle_predecessor
+test_a_compaction_inside_a_fresh_start_keeps_it_open
+test_deliberate_handoff_stop_ends_the_idle_predecessor
+test_deliberate_handoff_order_during_the_settle_still_ends_the_predecessor
+test_deliberate_handoff_survives_a_compaction_before_its_stop
+test_a_cancelled_slow_stop_hook_still_ends_the_predecessor
 test_threshold_configurable
 test_fires_once_per_context_cycle
 test_rearms_after_compaction
@@ -642,3 +1180,4 @@ test_names_open_captain_orders_and_gates_the_stop
 test_a_recorded_handoff_gates_the_stop_without_the_trigger
 test_another_sessions_handoff_never_gates_this_stop
 test_a_caller_outside_any_harness_reads_the_captains_handoff
+test_tracked_stop_hook_timeout

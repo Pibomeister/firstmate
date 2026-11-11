@@ -241,7 +241,65 @@ test_restart_gate_requires_every_open_order_in_the_handoff() {
   rc=0
   run_order "$home" gate --doc "$doc" >/dev/null 2>&1 || rc=$?
   assert_equals 2 "$rc" "gate takes no document argument"
+  # covers checks a named document, such as a successor's, with no record.
+  out=$(run_order "$home" covers "$doc") || fail "covers passes a document that lists every open order, with no record"
+  assert_contains "$out" "covers: yes (2 open order(s)" "covers reports a clear verdict"
+  printf 'lists only %s\n' "$first" >"$home/data/partial-handoff.md"
+  rc=0
+  out=$(run_order "$home" covers "$home/data/partial-handoff.md") || rc=$?
+  assert_equals 3 "$rc" "covers refuses a document that omits an open order"
+  assert_contains "$out" "$second" "covers names the missing order"
+  assert_not_contains "$out" "$first" "covers names only the missing order"
+  rc=0
+  out=$(run_order "$home" covers "$home/data/no-such-handoff.md") || rc=$?
+  assert_equals 3 "$rc" "covers refuses a document that is gone"
+  assert_contains "$out" "is gone" "covers says the document is gone"
+  rc=0
+  run_order "$home" covers >/dev/null 2>&1 || rc=$?
+  assert_equals 2 "$rc" "covers needs a document"
+  rc=0
+  out=$(run_order "$home" gate) || rc=$?
+  assert_equals 3 "$rc" "covers never writes a record that clears the restart gate"
   pass "the restart gate passes only while this session's recorded handoff lists every open order"
+}
+
+# A successor confirms its handoff document's sha256, so once a live successor
+# holds the document, handoff --doc leaves it byte-unchanged and writes no
+# other file. An order recorded after the launch stays open in the order store
+# for the successor's pickup, so the gate and covers pass. An order recorded
+# before the launch is in the document, because the launcher refuses one that
+# omits it (tests/fm-handoff-launch.test.sh). With the successor gone,
+# handoff --doc writes into the document again, so a relaunch hashes it whole.
+test_handoff_after_a_successor_launch_leaves_the_document_unchanged() {
+  local home doc first second succ out sum
+  home=$(make_home after-launch)
+  doc="$home/data/launched-handoff.md"
+  printf '# Handoff\n' >"$doc"
+  run_order "$home" send "before the launch" >/dev/null
+  first=$(only_id "$home" pending)
+  run_order "$home" handoff --doc "$doc" >/dev/null
+  assert_contains "$(cat "$doc")" "$first" "before any launch, handoff --doc writes into the document"
+  sleep 60 &
+  succ=$!
+  printf '%s\n' "$$" >"$home/state/.lock"
+  sleep 1
+  printf 'pid=%s\nhandoff=%s\npredecessor=%s\nlaunched=%s\n' "$succ" "$doc" "$$" "$(date +%s)" >"$home/state/.handoff-successor"
+  sum=$(cksum <"$doc")
+
+  run_order "$home" send "after the launch" >/dev/null
+  second=$(find "$home/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//' | grep -v "$first")
+  run_order "$home" covers "$doc" >/dev/null || fail "covers counts an order recorded after the launch as left to the successor's pickup"
+  run_order "$home" gate >/dev/null || fail "the gate counts an order recorded after the launch as left to the successor's pickup"
+  out=$(run_order "$home" handoff --doc "$doc")
+  assert_equals "$sum" "$(cksum <"$doc")" "handoff --doc must never change a document a live successor holds"
+  assert_contains "$out" "unchanged" "handoff --doc says it left the document unchanged"
+  assert_equals 1 "$(find "$home/data" -maxdepth 1 -type f | wc -l | tr -d ' ')" "handoff --doc writes no file beside the held document"
+  assert_contains "$(run_order "$home" pickup)" "$second" "the successor's pickup lists the order recorded after the launch"
+
+  kill "$succ" 2>/dev/null; wait "$succ" 2>/dev/null || true
+  run_order "$home" handoff --doc "$doc" >/dev/null
+  assert_contains "$(cat "$doc")" "$second" "with the successor gone, handoff --doc writes into the document again"
+  pass "handoff --doc leaves a live successor's document unchanged and leaves later orders to its pickup"
 }
 
 # --- holds ---------------------------------------------------------------------
@@ -553,6 +611,7 @@ test_two_stage_ack_separates_receipt_from_completion
 test_handle_is_resolved_at_send_time
 test_doorbell_defers_over_an_unproven_composer
 test_restart_gate_requires_every_open_order_in_the_handoff
+test_handoff_after_a_successor_launch_leaves_the_document_unchanged
 test_one_sweep_runs_at_a_time
 test_hold_overrides_older_orders_and_travels_with_relays
 test_holds_read_fails_when_the_store_is_unreadable

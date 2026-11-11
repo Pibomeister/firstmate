@@ -23,6 +23,7 @@
 #   fm-order.sh holds [--relay]
 #   fm-order.sh handoff --doc <file>
 #   fm-order.sh gate
+#   fm-order.sh covers <file>
 #   fm-order.sh handing-off
 #   fm-order.sh claim-handle
 #   fm-order.sh sweep
@@ -106,14 +107,19 @@
 # only when this session recorded a handoff. `gate` reads this session's
 # recorded document and exits 0 only when it names every open order id;
 # otherwise it exits 3 naming the missing ids, including when this session
-# recorded no handoff or the document is gone.
+# recorded no handoff or the document is gone. `covers <file>` applies the same
+# test to a named document, such as a handoff successor's, and neither reads
+# nor writes the record, so it is no restart gate: only `gate` clears a restart.
 # `claim-handle` clears the record whenever the lock owner opens a new context
 # (startup, resume, clear, or compact), so a document written before it never
-# satisfies a later context's gate. Enforcement:
+# satisfies a later context's gate. It leaves state/.handoff-successor alone, so
+# a deliberate handoff still ends its predecessor after a compaction
+# (bin/fm-handoff-trigger.sh owns that end). Enforcement:
 #   - bin/fm-handoff-trigger.sh, as a Claude Stop hook, runs `gate` once the
-#     session is handing off - the early handoff trigger fired in its context
-#     cycle, or `handing-off` says it ran `handoff --doc` (stow, a restart, or
-#     percent-left=0) - and blocks a stop whose document omits an open order
+#     session is handing off - its newest early handoff trigger firing is a
+#     planned fresh start (a capture firing is not a handoff), or
+#     `handing-off` says it ran `handoff --doc` (stow, a restart, a deliberate
+#     handoff, or percent-left=0) - and blocks a stop whose document omits an open order
 #     (once per turn, so the session is never wedged). An ordinary stop is
 #     never gated, including another session's stop in the same home.
 #   - the stow skill and a restarting leash or sender run `gate` and do not
@@ -123,6 +129,24 @@
 # restart by a tool that does not run `gate`. None of those loses an order,
 # because the files stay in pending/ or acked/ and the next session's digest
 # lists them.
+#
+# ORDERS AFTER A LAUNCH. A successor confirms its handoff document's sha256, so
+# `handoff --doc` leaves the document byte-unchanged and writes no other file
+# while a launch for it is under way - state/.handoff-launching names it with a
+# live launcher pid, written by bin/fm-handoff-launch.sh before it hashes the
+# document and removed when it exits - and once a live successor holds it -
+# state/.handoff-successor names it with a live pid other than line 1 of
+# state/.lock. It checks the launch record before the successor record,
+# because the launcher writes the successor record before it removes its own.
+# It holds state/.handoff-doc.lock from those checks through its append, and
+# the launcher takes that lock to write its launch record, so a launch never
+# hashes the document mid-append; when the lock stays held for 10 seconds,
+# `handoff --doc` exits 1 with the document unchanged. `gate` and `covers`
+# count an open order recorded at or after that successor record's
+# launched=<epoch> (the send time in its id) as
+# covered, because it stays open in the durable order store and the
+# successor's `pickup` lists it; an older open order must still be named in the
+# document.
 #
 # SENDER RE-CHECK AND LEASH. `status` prints, per order, its kind, state, age
 # since send, deliveries, re-deliveries against the cap, and `resend_due=yes`
@@ -156,6 +180,12 @@
 # Environment:
 #   FM_HOME              operational home whose data/ and state/ are used
 #   FM_DATA_OVERRIDE, FM_STATE_OVERRIDE  directory overrides
+#   FM_ORDER_TEST_PAUSE_DIR  test seam, honoured only with FM_TEST_SEAM=1: a
+#                        `handoff --doc` run that reaches a named point while
+#                        <dir>/<point>.hold exists writes <dir>/<point>.reached
+#                        and waits, at most 60 seconds, until the hold is
+#                        removed; the points are handoff-between-checks and
+#                        handoff-before-append
 set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -184,6 +214,15 @@ NUDGE_BUDGET_SECS=20
 
 die() { printf 'fm-order: %s\n' "$*" >&2; exit 1; }
 usage_die() { printf 'fm-order: %s\n' "$*" >&2; exit 2; }
+
+# test_pause <point>: the FM_ORDER_TEST_PAUSE_DIR seam described in the header.
+test_pause() {
+  [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_ORDER_TEST_PAUSE_DIR:-}" ] || return 0
+  local hold="$FM_ORDER_TEST_PAUSE_DIR/$1.hold" n=0
+  [ -e "$hold" ] || return 0
+  : >"$FM_ORDER_TEST_PAUSE_DIR/$1.reached"
+  while [ -e "$hold" ] && [ "$n" -lt 600 ]; do sleep 0.1; n=$((n + 1)); done
+}
 
 usage() {
   sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'
@@ -795,6 +834,38 @@ handoff_record_mine() {
   return 1
 }
 
+# True when state/.handoff-successor names a live successor, other than this
+# home's lock holder, that was launched with handoff document <doc>. Sets
+# SUCC_LAUNCHED to the record's launched=<epoch>, or nothing.
+successor_holds_doc() {
+  # shellcheck disable=SC2031  # only wake()'s subshell sources the lib that sets this
+  local doc=$1 rec="$STATE/.handoff-successor" pid lock succ_doc
+  SUCC_LAUNCHED=
+  [ -r "$rec" ] && [ -f "$doc" ] || return 1
+  pid=$(sed -n 's/^pid=//p' "$rec" | tail -n 1)
+  case "$pid" in '' | *[!0-9]*) return 1 ;; esac
+  # shellcheck disable=SC2031  # only wake()'s subshell sources the lib that sets this
+  lock=$(head -n 1 "$STATE/.lock" 2>/dev/null | tr -cd '0-9') || lock=
+  [ "$pid" != "$lock" ] && kill -0 "$pid" 2>/dev/null || return 1
+  succ_doc=$(sed -n 's/^handoff=//p' "$rec" | tail -n 1)
+  [ -n "$succ_doc" ] && [ "$succ_doc" -ef "$doc" ] || return 1
+  SUCC_LAUNCHED=$(sed -n 's/^launched=//p' "$rec" | tail -n 1)
+  case "$SUCC_LAUNCHED" in *[!0-9]*) SUCC_LAUNCHED= ;; esac
+}
+
+# True when a successor launch with handoff document <doc> is under way:
+# state/.handoff-launching names <doc> and a live launcher pid.
+launch_holds_doc() {
+  # shellcheck disable=SC2031  # only wake()'s subshell sources the lib that sets this
+  local doc=$1 rec="$STATE/.handoff-launching" pid launch_doc
+  [ -r "$rec" ] && [ -f "$doc" ] || return 1
+  pid=$(sed -n 's/^pid=//p' "$rec" | tail -n 1)
+  case "$pid" in '' | *[!0-9]*) return 1 ;; esac
+  kill -0 "$pid" 2>/dev/null || return 1
+  launch_doc=$(sed -n 's/^handoff=//p' "$rec" | tail -n 1)
+  [ -n "$launch_doc" ] && [ "$launch_doc" -ef "$doc" ]
+}
+
 # The handoff document this session recorded with `handoff --doc`, or nothing.
 recorded_handoff_doc() {
   handoff_record_mine || return 0
@@ -807,7 +878,7 @@ cmd_handing_off() {
 }
 
 cmd_handoff() {
-  local doc block n tmp dir
+  local doc block n tmp dir held=
   [ "$#" -eq 2 ] && [ "$1" = --doc ] && [ -n "$2" ] || usage_die "usage: fm-order.sh handoff --doc <file>"
   doc=$2
   if [ -z "$(open_orders)" ]; then
@@ -818,7 +889,33 @@ cmd_handoff() {
   mkdir -p "$(dirname "$doc")"
   dir=$(cd "$(dirname "$doc")" && pwd)
   doc="$dir/${doc##*/}"
-  printf '\n%s\n' "$block" >>"$doc"
+  # bin/fm-handoff-launch.sh writes its launch record under this lock, so a
+  # launch has either recorded itself before these checks or starts after the
+  # append, and never hashes the document in between.
+  # shellcheck disable=SC2031  # only wake()'s subshell sources the lib that sets this
+  FM_ROOT_OVERRIDE=$FM_ROOT
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$SELF_DIR/fm-wake-lib.sh"
+  DOC_LOCK="$STATE/.handoff-doc.lock"
+  fm_lock_acquire_wait_max "$DOC_LOCK" 10 \
+    || die "cannot take $DOC_LOCK within 10 seconds, because a successor launch or another handoff --doc still holds it; $doc is unchanged, so rerun handoff --doc"
+  trap 'fm_lock_release "$DOC_LOCK"' EXIT
+  # The launch record comes first: the launcher writes the successor record
+  # before it removes its launch record, so a launch that finishes between the
+  # two checks still shows in the second.
+  if launch_holds_doc "$doc"; then
+    held=launch
+  fi
+  test_pause handoff-between-checks
+  if [ -z "$held" ] && successor_holds_doc "$doc"; then
+    held=successor
+  fi
+  if [ -z "$held" ]; then
+    test_pause handoff-before-append
+    printf '\n%s\n' "$block" >>"$doc"
+  fi
+  fm_lock_release "$DOC_LOCK" || true
+  trap - EXIT
   # shellcheck disable=SC2031  # only wake()'s subshell sources the lib that sets this
   mkdir -p "$STATE"
   load_session_pids
@@ -827,35 +924,70 @@ cmd_handoff() {
   printf 'doc=%s\nat=%s\nowner=%s\n' "$doc" "$(now_epoch)" "$(printf '%s' "$SESSION_PIDS" | tr '\n' ' ')" >"$tmp"
   mv "$tmp" "$HANDOFF_RECORD"
   n=$(open_orders | awk 'NF { n++ } END { print n + 0 }')
-  printf 'handoff: wrote %s open order(s) into %s\n' "$n" "$doc"
+  if [ "$held" = successor ]; then
+    printf 'handoff: left %s unchanged for its live successor; %s open order(s) stay in the order store for its pickup\n' "$doc" "$n"
+  elif [ "$held" = launch ]; then
+    printf 'handoff: left %s unchanged for the successor launch under way; %s open order(s) stay in the order store\n' "$doc" "$n"
+  else
+    printf 'handoff: wrote %s open order(s) into %s\n' "$n" "$doc"
+  fi
 }
 
-cmd_gate() {
-  local doc lines id state missing='' n=0
-  [ "$#" -eq 0 ] || usage_die "usage: fm-order.sh gate"
-  doc=$(recorded_handoff_doc)
+# doc_missing_orders <doc>: set OPEN_N to the open order count and MISSING to
+# the open order ids that <doc> does not name, every one when <doc> is empty or
+# gone. An order recorded after a live successor launched with <doc> is covered
+# (ORDERS AFTER A LAUNCH above).
+doc_missing_orders() {
+  local doc=$1 lines id state launched=
+  MISSING='' OPEN_N=0
+  [ -z "$doc" ] || ! successor_holds_doc "$doc" || launched=$SUCC_LAUNCHED
   lines=$(open_orders)
   while read -r id state; do
     [ -n "$id" ] || continue
-    n=$((n + 1))
+    OPEN_N=$((OPEN_N + 1))
+    [ -z "$launched" ] || [ "${id%-*}" -lt "$launched" ] || continue
     if [ -z "$doc" ] || [ ! -f "$doc" ] || ! grep -qF -- "$id" "$doc"; then
-      missing="$missing $id"
+      MISSING="$MISSING $id"
     fi
   done <<EOF
 $lines
 EOF
-  if [ -n "$missing" ]; then
+}
+
+cmd_gate() {
+  local doc
+  [ "$#" -eq 0 ] || usage_die "usage: fm-order.sh gate"
+  doc=$(recorded_handoff_doc)
+  doc_missing_orders "$doc"
+  if [ -n "$MISSING" ]; then
     if [ -z "$doc" ]; then
-      printf 'gate: blocked - this session wrote no handoff, so none lists the open order(s):%s\n' "$missing"
+      printf 'gate: blocked - this session wrote no handoff, so none lists the open order(s):%s\n' "$MISSING"
     elif [ ! -f "$doc" ]; then
-      printf 'gate: blocked - the recorded handoff %s is gone; open order(s):%s\n' "$doc" "$missing"
+      printf 'gate: blocked - the recorded handoff %s is gone; open order(s):%s\n' "$doc" "$MISSING"
     else
-      printf 'gate: blocked - the handoff %s does not list open order(s):%s\n' "$doc" "$missing"
+      printf 'gate: blocked - the handoff %s does not list open order(s):%s\n' "$doc" "$MISSING"
     fi
     printf '  Run bin/fm-order.sh handoff --doc <handoff file> so the handoff names every open order before restart.\n'
     return 3
   fi
-  printf 'gate: clear (%s open order(s), all in the handoff)\n' "$n"
+  printf 'gate: clear (%s open order(s), all in the handoff)\n' "$OPEN_N"
+}
+
+cmd_covers() {
+  local doc
+  [ "$#" -eq 1 ] && [ -n "$1" ] || usage_die "usage: fm-order.sh covers <file>"
+  doc=$1
+  doc_missing_orders "$doc"
+  if [ -n "$MISSING" ]; then
+    if [ ! -f "$doc" ]; then
+      printf 'covers: no - the handoff %s is gone; open order(s):%s\n' "$doc" "$MISSING"
+    else
+      printf 'covers: no - the handoff %s does not list open order(s):%s\n' "$doc" "$MISSING"
+    fi
+    printf '  Run bin/fm-order.sh handoff --doc %s so it names every open order.\n' "$doc"
+    return 3
+  fi
+  printf 'covers: yes (%s open order(s), all in %s)\n' "$OPEN_N" "$doc"
 }
 
 # ---------------------------------------------------------------- leash
@@ -931,6 +1063,7 @@ case "${1:-}" in
   holds) shift; cmd_holds "$@" ;;
   handoff) shift; cmd_handoff "$@" ;;
   gate) shift; cmd_gate "$@" ;;
+  covers) shift; cmd_covers "$@" ;;
   handing-off) shift; cmd_handing_off "$@" ;;
   claim-handle) shift; cmd_claim_handle ;;
   sweep) shift; cmd_sweep ;;

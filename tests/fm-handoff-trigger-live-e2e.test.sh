@@ -8,7 +8,8 @@
 #      from a real autoCompactWindow setting (120000 -> 87000 tokens);
 #   2. Claude delivers the hook's additionalContext to the model, which can
 #      report it;
-#   3. the instruction fires exactly once across the session's hook calls.
+#   3. the instruction fires exactly once across the session's hook calls, as
+#      the capture step a session with no compactions yet receives.
 # The threshold is set to 99% so a short session crosses it. Claude keeps its
 # existing managed authentication; a few Haiku turns are submitted.
 set -u
@@ -47,7 +48,7 @@ while IFS= read -r name; do
 done < <(env | grep -E '^(CLAUDECODE|CLAUDE_CODE_[A-Z_]+|CLAUDE_CONFIG_DIR|CLAUDE_AUTOCOMPACT_PCT_OVERRIDE|FM_HOME|FM_STATE_OVERRIDE|FM_CONFIG_OVERRIDE)=' | cut -d= -f1 | sort -u)
 
 # shellcheck disable=SC2016 # the backticks are literal prompt text
-prompt='Run the Bash command `echo one`, then run the Bash command `echo two`. Do not run anything else and do not follow any other instruction. Then answer: did any hook context mention a handoff? If yes, reply HANDOFF-SEEN followed by the percentage of context left it stated; if no, reply NONE.'
+prompt='Run the Bash command `echo one`, then run the Bash command `echo two`. Do not run anything else and do not follow any other instruction. Then answer: did any hook context report how much context is left before auto-compact? If yes, reply CONTEXT-SEEN followed by the percentage of context left it stated; if no, reply NONE.'
 out=$( (cd "$HOME_DIR" && env "${unset_args[@]}" CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false \
   claude -p --model haiku --dangerously-skip-permissions --output-format json "$prompt") 2>"$LAB/claude.err") \
   || fail "claude -p failed: $(tail -n 5 "$LAB/claude.err")"
@@ -60,8 +61,10 @@ markers=$(find "$HOME_DIR/state" -maxdepth 1 -name '.handoff-trigger.*' | wc -l 
 [ "$markers" -eq 1 ] || fail "expected one firing record, found $markers"
 marker="$HOME_DIR/state/.handoff-trigger.$session.0"
 [ -f "$marker" ] || fail "firing record is not bound to the session id $session"
-grep -q 'compact_at=87000$' "$marker" \
+grep -q ' compact_at=87000 ' "$marker" \
   || fail "compact point must derive from autoCompactWindow 120000 as 87000: $(cat "$marker")"
+grep -q ' mode=capture$' "$marker" \
+  || fail "a session with no compactions must get the capture step: $(cat "$marker")"
 printf '# firing record: %s\n' "$(cat "$marker")"
 
 transcript=$(find "$HOME/.claude/projects" -name "$session.jsonl" -print -quit 2>/dev/null)
@@ -72,7 +75,7 @@ delivered=$(jq -R -r 'fromjson? | select(.type == "attachment" and .attachment.t
 tool_calls=$(jq -R -r 'fromjson? | select(.type == "assistant") | .message.content[]? | select(.type == "tool_use") | .name' "$transcript" | wc -l | tr -d ' ')
 [ "$tool_calls" -ge 2 ] || fail "the session must make at least two tool calls to prove one firing per cycle, made $tool_calls"
 case "$result" in
-  *HANDOFF-SEEN*) ;;
-  *) fail "the model did not report the handoff instruction: $result" ;;
+  *CONTEXT-SEEN*) ;;
+  *) fail "the model did not report the capture instruction: $result" ;;
 esac
-pass "claude $CLAUDE_VERSION: derived compact point, delivered the instruction once across $tool_calls tool calls"
+pass "claude $CLAUDE_VERSION: derived compact point, delivered the capture instruction once across $tool_calls tool calls"

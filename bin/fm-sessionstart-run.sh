@@ -24,10 +24,15 @@
 #             invocation retains the always-zero compatibility contract below.
 #
 # Source routing (see docs/sessionstart-nudge.md for the per-harness names):
-#   startup, new            full digest - this process has not taken the helm
+#   startup, new            full digest - this process has not taken the helm,
+#                           except that a handoff successor opened while its
+#                           predecessor still holds the lock gets a short notice
+#                           instead (handoff_successor_waits below)
 #   clear, compact          `--reemit` digest only when this lock owner recorded
 #                           a completed full startup; otherwise a full digest,
-#                           so a startup killed mid-sweep is finished first
+#                           so a startup killed mid-sweep is finished first. A
+#                           Claude compact re-emit is the short re-entry card
+#                           (bin/fm-session-start.sh owns it)
 #   resume, reload, fork    delegate to the nudge wrapper. Prior context is
 #                           restored on these, so re-running is redundant when
 #                           this process still holds the lock (the nudge stays
@@ -110,6 +115,24 @@ session_start_completed() {
   [ "$completion_pid" = "$lock_pid" ]
 }
 
+# handoff_successor_waits: a handoff successor opens while its predecessor still
+# holds the session lock (bin/fm-handoff-launch.sh launches it with
+# FM_HANDOFF_PREDECESSOR_PID). A startup digest now could only run lock-refused
+# and read-only, so print a short notice instead and leave the one real session
+# start to the successor's launch prompt, after the predecessor has ended.
+handoff_successor_waits() {
+  local pred=${FM_HANDOFF_PREDECESSOR_PID:-} lock_pid
+  case "$pred" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$pred" -gt 1 ] || return 1
+  { IFS= read -r lock_pid < "$STATE/.lock"; } 2>/dev/null || return 1
+  [ "$lock_pid" = "$pred" ] || return 1
+  fm_harness_pid_alive "$pred" || return 1
+  ! fm_session_lock_owned_by_self "$STATE" || return 1
+  printf 'Firstmate handoff successor: the predecessor session, harness pid %s, still holds this home'"'"'s session lock, so this open skips the startup digest, which could only run read-only now.\n' "$pred"
+  printf 'Follow your launch prompt: confirm the handoff document hash, wait with FM_HOME=%s %s/bin/fm-handoff-launch.sh --await-predecessor %s, then run FM_HOME=%s %s/bin/fm-session-start.sh once.\n' \
+    "$FM_HOME" "$FM_ROOT" "$pred" "$FM_HOME" "$FM_ROOT"
+}
+
 if [ -z "$SOURCE" ] && [ ! -t 0 ]; then
   # Claude and Codex both deliver a JSON SessionStart payload on stdin whose
   # `source` field carries startup|resume|clear|compact. Parsed without jq so a
@@ -152,6 +175,9 @@ case "$SOURCE" in
     fi
     ;;
   *)
+    if handoff_successor_waits; then
+      exit 0
+    fi
     "$SCRIPT_DIR/fm-session-start.sh" --source "$SOURCE" || true
     ;;
 esac

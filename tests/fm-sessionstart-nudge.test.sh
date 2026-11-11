@@ -330,6 +330,181 @@ test_run_new_context_clears_the_order_handoff_record() {
   pass "run wrapper: a lock owner's clear, compact, or resume clears the earlier order handoff record"
 }
 
+# run_claude_sequence <root> <outdir> <step>...: run every step inside ONE fake
+# Claude harness process, as a real Claude primary's startup and later hooks
+# share one harness pid. A step is a session-open source, whose output lands in
+# <outdir>/<source>.out, `@handoff`, which records an order handoff document, or
+# `@crowd`, which records 40 workers with long status lines after startup, so the
+# startup digest itself does not have to walk them.
+run_claude_sequence() {
+  local root=$1 outdir=$2 fixture
+  shift 2
+  fixture=$(mktemp -d "$TMP_ROOT/claude-fixture.XXXXXX") || fail "could not create the Claude fixture"
+  ln -s /bin/bash "$fixture/claude" || fail "could not create the Claude fixture"
+  # shellcheck disable=SC2016 # Expand in the fixture shell, not this parent.
+  "$fixture/claude" -c '
+    root=$1 run=$2 path=$3 outdir=$4 order=$5
+    shift 5
+    for step in "$@"; do
+      case "$step" in
+        @handoff) FM_HOME="$root" "$order" handoff --doc "$root/handoff.md" >/dev/null 2>&1 ;;
+        @crowd)
+          i=0
+          while [ "$i" -lt 40 ]; do
+            printf "project=/srv/projects/p%s\n" "$i" >"$root/state/task$i.meta"
+            printf "working [at=1]: a long running status line that keeps going for task %s so the card budget is exercised\n" "$i" \
+              >"$root/state/task$i.status"
+            i=$((i + 1))
+          done
+          ;;
+        *)
+          env -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT CLAUDECODE=1 \
+            FM_GATE_REFUSE_BYPASS=0 FM_ROOT_OVERRIDE="$root" FM_HOME="$root" PATH="$path" \
+            "$run" --source "$step" </dev/null >"$outdir/$step.out" 2>&1
+          ;;
+      esac
+    done
+    :' _ "$root" "$RUN" "$RUN_PATH" "$outdir" "$ROOT/bin/fm-order.sh" "$@"
+}
+
+byte_count() { printf '%s' "$1" | LC_ALL=C wc -c | tr -d ' '; }
+
+CARD_BANNER="FIRSTMATE COMPACT RE-ENTRY CARD - "
+
+test_run_claude_compact_prints_the_reentry_card() {
+  local root="$TMP_ROOT/run-claude-card" outdir="$TMP_ROOT/run-claude-card-out" out clear_out bytes
+  make_run_primary "$root"
+  mkdir -p "$outdir"
+  printf 'project=/srv/projects/alpha\nspawn_gen=s%s\n' "$(date +%s)" >"$root/state/w1.meta"
+  printf 'working [at=1]: building\nneeds-decision [at=2] [key=db]: pick the database engine\n' \
+    >"$root/state/w1.status"
+  FM_HOME="$root" "$ROOT/bin/fm-order.sh" send --from test "ship the re-entry card" >/dev/null 2>&1 \
+    || fail "could not record a captain order"
+  FM_HOME="$root" FM_DISPATCH_NOW=$(($(date +%s) - 3600)) \
+    "$ROOT/bin/fm-dispatch-log.sh" received alpha-202611091200 --summary "build the card" >/dev/null \
+    || fail "could not record a dispatch goal"
+
+  run_claude_sequence "$root" "$outdir" startup @handoff compact clear
+  assert_contains "$(cat "$outdir/startup.out")" "lock acquired: harness pid" \
+    "the Claude fixture did not take the lock at startup"
+
+  out=$(cat "$outdir/compact.out")
+  assert_contains "$out" "$CARD_BANNER$root" "a Claude compact did not print the re-entry card"
+  assert_not_contains "$out" "$REEMIT_BANNER" "a Claude compact still printed the full re-emit"
+  assert_not_contains "$out" "READ-ONCE CONTRACT" "the card carried the full digest"
+  bytes=$(byte_count "$out")
+  [ "$bytes" -le 6000 ] || fail "the re-entry card is $bytes bytes, above the 6000-byte whole-delivery bound"
+  assert_contains "$out" "ship the re-entry card" "the card did not carry the open captain order"
+  assert_contains "$out" "w1 [key=db] needs-decision: pick the database engine" \
+    "the card did not carry the open decision"
+  assert_contains "$out" "alpha-202611091200" "the card did not carry the overdue goal"
+  assert_contains "$out" "w1 project=alpha state=needs-decision" "the card did not list the worker"
+  assert_contains "$out" "monitor:" "the card did not report the monitor"
+  assert_contains "$out" "bin/fm-wake-drain.sh" "the card did not ask for a wake drain before acting"
+  assert_contains "$out" "bin/fm-crew-state.sh" "the card did not ask for a current-state re-check"
+  assert_contains "$out" "bin/fm-session-start.sh --reemit" "the card did not point to the full re-emit"
+  assert_contains "$out" "bin/fm-supervision-instructions.sh --harness claude" \
+    "the card did not point to the supervision protocol"
+  assert_absent "$root/state/.order-handoff" "a compact card left the earlier handoff record in place"
+
+  clear_out=$(cat "$outdir/clear.out")
+  assert_contains "$clear_out" "$REEMIT_BANNER$root" "a Claude clear no longer re-emits the full digest"
+  assert_not_contains "$clear_out" "$CARD_BANNER" "a Claude clear printed the compact card"
+  pass "run wrapper: a Claude compact prints a short re-entry card, while clear keeps the full re-emit"
+}
+
+test_run_claude_compact_card_stays_within_its_bound() {
+  local root="$TMP_ROOT/run-claude-card-cap" outdir="$TMP_ROOT/run-claude-card-cap-out" out bytes
+  make_run_primary "$root"
+  mkdir -p "$outdir"
+  run_claude_sequence "$root" "$outdir" startup @crowd compact
+  out=$(cat "$outdir/compact.out")
+  assert_contains "$out" "$CARD_BANNER$root" "a crowded Claude compact did not print the card"
+  bytes=$(byte_count "$out")
+  [ "$bytes" -le 6000 ] || fail "a crowded re-entry card is $bytes bytes, above its 6000-byte bound"
+  assert_contains "$out" "omitted" "a cut card did not say what it left out"
+  assert_contains "$out" "bin/fm-session-start.sh --reemit" "a cut card lost its full re-emit pointer"
+  pass "run wrapper: a crowded re-entry card stays within its bound and names what it omitted"
+}
+
+# A captain call is a backlog task held through bin/fm-captain-hold.sh, so the
+# card must carry it as an open decision even when no status log names it.
+test_run_claude_compact_card_lists_captain_holds() {
+  local root="$TMP_ROOT/run-claude-card-held" outdir="$TMP_ROOT/run-claude-card-held-out"
+  local real hostbin out bytes i n
+  real=$(command -v tasks-axi) || {
+    echo "skip: tasks-axi not found; the re-entry card's held listing was not exercised"
+    return 0
+  }
+  make_run_primary "$root"
+  mkdir -p "$outdir"
+  fm_test_tasks_toml "$root/.tasks.toml"
+  printf '## In flight\n\n## Queued\n\n## Done\n' >"$root/data/backlog.md"
+  i=1
+  while [ "$i" -le 11 ]; do
+    n=$(printf '%02d' "$i")
+    FM_HOME="$root" FM_STATE_OVERRIDE="$root/state" FM_DATA_OVERRIDE="$root/data" \
+      FM_CONFIG_OVERRIDE="$root/config" "$ROOT/bin/fm-captain-hold.sh" hold "call-$n" \
+      --title "captain call $n" --reason "pick option $n" --repo sample >/dev/null \
+      || fail "could not hold captain call $n"
+    i=$((i + 1))
+  done
+  # The card runs on the deliberately bare PATH; expose only tasks-axi, on the
+  # host PATH it needs to run.
+  hostbin="$root/hostbin"
+  mkdir -p "$hostbin"
+  printf '#!/bin/sh\nPATH=%s exec %s "$@"\n' "'$PATH'" "'$real'" >"$hostbin/tasks-axi"
+  chmod +x "$hostbin/tasks-axi"
+
+  RUN_PATH="$hostbin:$RUN_PATH" run_claude_sequence "$root" "$outdir" startup compact
+  out=$(cat "$outdir/compact.out")
+  assert_contains "$out" "$CARD_BANNER$root" "a Claude compact with held captain calls did not print the card"
+  bytes=$(byte_count "$out")
+  [ "$bytes" -le 6000 ] || fail "the held re-entry card is $bytes bytes, above its 6000-byte bound"
+  assert_contains "$out" "HELD FOR THE CAPTAIN" "the card did not list the captain holds"
+  assert_contains "$out" "held: 11 in total" "the card did not give the total held count"
+  for n in 01 02 03 04 05 06 07 08; do
+    assert_contains "$out" "captain call $n" "the card dropped held captain call $n"
+  done
+  for n in 09 10 11; do
+    assert_not_contains "$out" "captain call $n" "the card listed more than 8 held rows (call $n)"
+  done
+  assert_contains "$out" "pick option 01" "a held row lost its hold reason"
+  assert_contains "$out" "[3 more held item(s) not shown; run the full re-emit named under MORE to list them]" \
+    "the card did not name the held items it left out"
+  pass "run wrapper: the re-entry card lists captain holds, at most 8 rows, and names the rest"
+}
+
+# A handoff successor's own session open must not run a lock-refused digest
+# while its predecessor still holds the lock (bin/fm-handoff-launch.sh sets
+# FM_HANDOFF_PREDECESSOR_PID on the successor).
+test_run_handoff_successor_waits_for_its_predecessor() {
+  local root="$TMP_ROOT/run-successor" fixture pred out status=0
+  make_run_primary "$root"
+  fixture=$(mktemp -d "$TMP_ROOT/pred-fixture.XXXXXX") || fail "could not create the predecessor fixture"
+  ln -s /bin/bash "$fixture/claude"
+  "$fixture/claude" -c 'sleep 30; :' &
+  pred=$!
+  printf '%s\n' "$pred" >"$root/state/.lock"
+
+  out=$(FM_HANDOFF_PREDECESSOR_PID=$pred run_hook "$root" --source startup) || status=$?
+  expect_code 0 "$status" "run wrapper successor open"
+  assert_contains "$out" "Firstmate handoff successor" "the successor open did not print its notice"
+  assert_contains "$out" "--await-predecessor $pred" "the notice did not name the wait command"
+  assert_not_contains "$out" "$FULL_BANNER" "the successor open still ran the startup digest"
+  [ "$(cat "$root/state/.lock")" = "$pred" ] || fail "the successor notice touched the lock"
+
+  out=$(FM_HANDOFF_PREDECESSOR_PID=999999 run_hook "$root" --source startup) || status=$?
+  assert_contains "$out" "$FULL_BANNER$root" "a pid that does not hold the lock skipped the startup digest"
+
+  kill "$pred" 2>/dev/null || true
+  wait "$pred" 2>/dev/null || true
+  out=$(FM_HANDOFF_PREDECESSOR_PID=$pred run_hook "$root" --source startup) || status=$?
+  assert_contains "$out" "$FULL_BANNER$root" "an ended predecessor still skipped the startup digest"
+  assert_contains "$out" "lock acquired: harness pid" "the successor did not take the lock once its predecessor ended"
+  pass "run wrapper: a handoff successor skips the startup digest only while its predecessor holds the lock"
+}
+
 test_run_compact_without_completion_refreshes_before_finishing_startup() {
   local root="$TMP_ROOT/run-compact-incomplete" out status=0 refresh_line bootstrap_line
   make_run_primary "$root"
@@ -1139,6 +1314,10 @@ test_run_startup_runs_the_full_digest
 test_run_clear_and_compact_reemit
 test_run_rebuild_forwards_source_to_drifted_instruction_refresh
 test_run_new_context_clears_the_order_handoff_record
+test_run_claude_compact_prints_the_reentry_card
+test_run_claude_compact_card_stays_within_its_bound
+test_run_claude_compact_card_lists_captain_holds
+test_run_handoff_successor_waits_for_its_predecessor
 test_run_compact_without_completion_refreshes_before_finishing_startup
 test_run_clear_without_completion_finishes_startup
 test_run_clear_rejects_previous_owner_completion

@@ -18,7 +18,12 @@ Keep every entry general: no person, company, project, customer, host, account, 
 
 ### 3. Captain context churn
 - Failure: captains restarted repeatedly overnight and auto-compacted, and one captain's self-estimate of remaining context was about five times too high.
-- Rule: hand off at 15% context left or more, measured externally (footer or auto-compact percentage, read by the watcher or leash), never by self-estimate. The new session confirms a full handoff before the old one stops; never /compact.
+- Failure: handoffs at every context cycle failed in four recorded ways: a limit was reached before the handoff was written, a successor never launched, an order was lost during a restart, and a handoff carried stale facts.
+- Rule: on the same harness, Claude auto-compaction is the routine context reset.
+  Measure context left externally (footer or auto-compact percentage, read by the watcher or leash), never by self-estimate.
+  The early trigger near 15% context left is a capture step, not a handoff: file open work into durable records before the compaction, and re-check volatile facts from live records after it.
+  Do a full handoff only for quota exhaustion, a harness switch, or a planned fresh start after about 4 compactions.
+  Write a handoff early and incrementally, verify that the successor is live, carry every open order, and re-verify facts at pickup.
 - Issues: https://github.com/Pibomeister/firstmate/issues/65 and https://github.com/Pibomeister/firstmate/issues/70
 
 ### 4. Late starts on one overloaded host

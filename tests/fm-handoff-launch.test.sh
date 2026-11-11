@@ -20,8 +20,10 @@ mkdir -p "$LAB/state" "$LAB/config" "$LAB/data" "$FAKEBIN"
 
 # Fake successor harness: stay alive with the launch args visible, so the
 # launcher's process-table wait can see the handoff path it was given.
+# FM_FAKE_CLAUDE_MODE=crash exits at once, like a harness that dies at start.
 cat > "$FAKEBIN/claude" <<'EOF'
 #!/usr/bin/env bash
+if [ "${FM_FAKE_CLAUDE_MODE:-}" = crash ]; then sleep 0.2; exit 1; fi
 sleep 60 &
 wait
 EOF
@@ -29,7 +31,12 @@ chmod +x "$FAKEBIN/claude"
 
 # Fake orca: run the --command it was handed, with the fake harness on
 # PATH, detached like a real new terminal. FM_FAKE_ORCA_MODE=noop accepts
-# the create and launches nothing.
+# the create and launches nothing; first-fail fails only the first create;
+# late holds the command until $FM_FAKE_ORCA_RELEASE exists, which the test
+# creates only after the launcher returns. The late child signals once it has
+# exec'd and the fake waits for that, because until then the fork still
+# carries this create's arguments, handoff path included, and reads as a live
+# successor. Each create appends one line to $FM_FAKE_ORCA_CMD.
 cat > "$FAKEBIN/orca" <<'EOF'
 #!/usr/bin/env bash
 here=$(cd "$(dirname "$0")" && pwd)
@@ -40,9 +47,25 @@ while [ $# -gt 0 ]; do
     *) shift ;;
   esac
 done
-printf '%s\n' "$cmd" > "$FM_FAKE_ORCA_CMD"
+printf '%s\n' "$cmd" >> "$FM_FAKE_ORCA_CMD"
 [ "${FM_FAKE_ORCA_MODE:-launch}" = noop ] && { printf '{"terminal":"term_fake"}\n'; exit 0; }
+if [ "${FM_FAKE_ORCA_MODE:-launch}" = first-fail ] && [ "$(grep -c '' "$FM_FAKE_ORCA_CMD")" -le 1 ]; then
+  exit 1
+fi
 [ -n "$cmd" ] || exit 1
+if [ "${FM_FAKE_ORCA_MODE:-launch}" = late ]; then
+  ready="$FM_FAKE_ORCA_RELEASE.ready"
+  rm -f "$ready"
+  FM_LATE_CMD=$cmd FM_LATE_READY=$ready PATH="$here:$PATH" bash -c '
+    : > "$FM_LATE_READY"
+    n=0
+    while [ ! -e "$FM_FAKE_ORCA_RELEASE" ] && [ "$n" -lt 600 ]; do sleep 0.1; n=$((n + 1)); done
+    [ -e "$FM_FAKE_ORCA_RELEASE" ] || exit 0
+    exec bash -c "$FM_LATE_CMD"' >/dev/null 2>&1 &
+  n=0
+  while [ ! -e "$ready" ] && [ "$n" -lt 600 ]; do sleep 0.05; n=$((n + 1)); done
+  printf '{"terminal":"term_fake"}\n'; exit 0
+fi
 PATH="$here:$PATH" bash -c "$cmd" >/dev/null 2>&1 &
 printf '{"terminal":"term_fake"}\n'
 EOF
@@ -53,7 +76,7 @@ SUCC_PID=''
 
 reset_lab() {
   [ -z "$SUCC_PID" ] || { kill "$SUCC_PID" 2>/dev/null; SUCC_PID=''; }
-  rm -f "$LAB/state/.handoff-successor" "$LAB/config/backend" "$TMP_ROOT/orca-cmd"
+  rm -f "$LAB/state/.handoff-successor" "$LAB/state/.handoff-launch-failed" "$LAB/config/backend" "$TMP_ROOT/orca-cmd"
   printf 'orca\n' > "$LAB/config/backend"
   printf '# Handoff\n\nContinue the work.\n' > "$LAB/data/handoff.md"
   sleep 60 &
@@ -65,28 +88,58 @@ run_launcher() {  # [env assignments...] -- print output, set RC
   env -u FM_BACKEND PATH="$FAKEBIN:$PATH" FM_TEST_SEAM=1 \
     FM_HANDOFF_TEST_HARNESS=claude FM_FAKE_ORCA_CMD="$TMP_ROOT/orca-cmd" \
     FM_HOME="$LAB" FM_ROOT_OVERRIDE="$ROOT" \
-    FM_STATE_OVERRIDE="$LAB/state" FM_CONFIG_OVERRIDE="$LAB/config" \
+    FM_STATE_OVERRIDE="$LAB/state" FM_CONFIG_OVERRIDE="$LAB/config" FM_HANDOFF_SETTLE_SECS=1 \
     "$@" bash "$LAUNCHER" "$LAB/data/handoff.md"
 }
 
+run_mode() {  # <mode args...> -- run the launcher (MODE_LAUNCHER, default the real one) in another mode, print output
+  env PATH="$FAKEBIN:$PATH" FM_TEST_SEAM=1 FM_HOME="$LAB" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_STATE_OVERRIDE="$LAB/state" FM_CONFIG_OVERRIDE="$LAB/config" \
+    FM_HANDOFF_AWAIT_SECS="${AWAIT_SECS:-3}" FM_HANDOFF_END_SETTLE_SECS="${END_SETTLE_SECS:-1}" FM_HANDOFF_END_WAIT_SECS=3 \
+    bash "${MODE_LAUNCHER:-$LAUNCHER}" "$@"
+}
+
+# fake_harness_pid: start a process the harness matcher reads as claude (a
+# bash symlink named claude that stays a shell) and print its pid.
+fake_harness_pid() {
+  mkdir -p "$TMP_ROOT/fake-harness"
+  ln -sf /bin/bash "$TMP_ROOT/fake-harness/claude"
+  "$TMP_ROOT/fake-harness/claude" -c 'sleep 600; exit 0' </dev/null >/dev/null 2>&1 &
+  printf '%s\n' "$!"
+}
+
 test_success_path_records_a_live_successor() {
-  local out rc sha8
+  local out rc sha8 cmd
   reset_lab
+  printf 'at=1 attempts=2 backend=orca handoff=x reason=old\n' > "$LAB/state/.handoff-launch-failed"
   rc=0
   out=$(run_launcher) || rc=$?
   [ "$rc" -eq 0 ] || fail "a launchable handoff must succeed (rc=$rc): $out"
+  [ ! -e "$LAB/state/.handoff-launch-failed" ] || fail "a successful launch must clear an earlier launch-failure record"
   [ -f "$LAB/state/.handoff-successor" ] || fail "success must write state/.handoff-successor"
   SUCC_PID=$(sed -n 's/^pid=//p' "$LAB/state/.handoff-successor")
   case "$SUCC_PID" in '' | *[!0-9]*) fail "the record must name a numeric successor pid, got: $SUCC_PID" ;; esac
   [ "$SUCC_PID" != "$PRED_PID" ] || fail "the successor pid must not be the predecessor pid"
   kill -0 "$SUCC_PID" 2>/dev/null || fail "the recorded successor pid $SUCC_PID must be alive"
   assert_contains "$(cat "$LAB/state/.handoff-successor")" "handoff=$LAB/data/handoff.md" "the record names the handoff document"
+  assert_contains "$(cat "$LAB/state/.handoff-successor")" "predecessor=$PRED_PID" "the record names the session it replaces"
+  grep -qE '^launched=[0-9]+$' "$LAB/state/.handoff-successor" || fail "the record carries the launch time that leaves later orders to the successor's pickup"
   sha8=$(shasum -a 256 "$LAB/data/handoff.md" 2>/dev/null | cut -c1-8)
   [ -n "$sha8" ] || sha8=$(sha256sum "$LAB/data/handoff.md" | cut -c1-8)
   assert_contains "$out" "sha8=$sha8" "the launch reports the handoff sha8"
   assert_contains "$(cat "$TMP_ROOT/orca-cmd")" "$LAB/data/handoff.md" "the successor prompt names the handoff path"
   assert_contains "$(cat "$TMP_ROOT/orca-cmd")" "$sha8" "the successor prompt carries the handoff sha8"
-  assert_contains "$(cat "$TMP_ROOT/orca-cmd")" "bin/fm-session-start.sh" "the successor prompt runs session start after the predecessor dies"
+  cmd=$(cat "$TMP_ROOT/orca-cmd")
+  assert_contains "$cmd" "FM_HANDOFF_PREDECESSOR_PID=$PRED_PID claude" "the successor carries the predecessor pid for its session-start hook"
+  # The prompt is the command's last word, shell-quoted by the launcher.
+  # shellcheck disable=SC2016 # The inner shell expands these.
+  cmd=$(bash -c 'eval "set -- $1"; printf "%s" "${!#}"' _ "$cmd")
+  assert_contains "$cmd" "bin/fm-session-start.sh" "the successor prompt runs session start after the predecessor dies"
+  assert_contains "$cmd" "--await-predecessor $PRED_PID" "the successor waits for the old session with the bounded wait"
+  assert_contains "$cmd" "addendum" "the successor reads only the hashed document"
+  assert_contains "$cmd" "bin/fm-crew-state.sh" "the successor re-checks worker and PR facts at pickup"
+  assert_contains "$cmd" "bin/fm-order.sh pickup" "the successor re-checks open orders at pickup"
+  assert_contains "$cmd" "once" "the successor runs session start once"
   kill -0 "$PRED_PID" 2>/dev/null || fail "the launcher must never kill or interrupt the current session"
   kill "$SUCC_PID" 2>/dev/null; SUCC_PID=''
   kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
@@ -108,16 +161,387 @@ test_unknown_backend_refuses_rather_than_guess() {
 }
 
 test_successor_never_appears_records_nothing() {
-  local out rc
+  local out rc failed="$LAB/state/.handoff-launch-failed"
   reset_lab
   rc=0
-  out=$(run_launcher FM_FAKE_ORCA_MODE=noop FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=2 2>&1) || rc=$?
+  out=$(run_launcher FM_FAKE_ORCA_MODE=noop FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=1 2>&1) || rc=$?
   [ "$rc" -ne 0 ] || fail "a successor that never appears must fail the launch: $out"
   assert_contains "$out" "never appeared" "the failure says the successor never appeared"
   [ ! -e "$LAB/state/.handoff-successor" ] || fail "no successor record may be written when nobody appeared"
+  assert_equals 1 "$(grep -c '' "$TMP_ROOT/orca-cmd")" "a successor that never appears is not launched again"
+  [ -f "$failed" ] || fail "a final launch failure must be recorded for the stop gate"
+  assert_contains "$(cat "$failed")" "attempts=1" "the failure record names the attempts"
+  assert_contains "$(cat "$failed")" "handoff=$LAB/data/handoff.md" "the failure record names the handoff"
+  assert_contains "$out" "tell the captain" "the failure escalates to the captain"
+  assert_contains "$out" "keep working" "the failure keeps the session working on auto-compaction"
   kill -0 "$PRED_PID" 2>/dev/null || fail "the launcher must never kill or interrupt the current session"
+
+  rm -f "$failed" "$TMP_ROOT/orca-cmd"
+  rc=0
+  out=$(run_launcher FM_FAKE_CLAUDE_MODE=crash FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=2 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a successor that dies at start must fail the launch: $out"
+  [ ! -e "$LAB/state/.handoff-successor" ] || fail "a successor that died at start must never be recorded"
+  [ -f "$failed" ] || fail "a successor that died at start must record the launch failure"
   kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
-  pass "a successor that never appears fails loudly and leaves the record unwritten"
+  pass "a successor that never appears fails at once, one that dies at start fails, and both record the failure"
+}
+
+test_a_late_successor_is_never_joined_by_a_second() {
+  local out rc pid n live release="$TMP_ROOT/late-release"
+  reset_lab
+  rm -f "$release" "$release.ready"
+  rc=0
+  out=$(run_launcher FM_FAKE_ORCA_MODE=late FM_FAKE_ORCA_RELEASE="$release" FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=1 2>&1) || rc=$?
+  : > "$release"
+  [ "$rc" -ne 0 ] || fail "a successor that appears only after the timeout fails the launch: $out"
+  n=0
+  live=''
+  while [ -z "$live" ] && [ "$n" -lt 60 ]; do
+    sleep 0.1; n=$((n + 1))
+    live=$(pgrep -f "$LAB/data/handoff.md" 2>/dev/null | tr '\n' ' ')
+  done
+  assert_equals 1 "$(grep -c '' "$TMP_ROOT/orca-cmd")" "a late successor is never joined by a second terminal"
+  for pid in $live; do kill "$pid" 2>/dev/null; done
+  pkill -f "$LAB/data/handoff.md" 2>/dev/null
+  kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
+  rm -f "$release" "$release.ready"
+  pass "a launch whose successor starts late opens only one terminal"
+}
+
+test_a_second_attempt_recovers_a_terminal_that_failed_to_open() {
+  local out rc
+  reset_lab
+  rc=0
+  out=$(run_launcher FM_FAKE_ORCA_MODE=first-fail FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=2 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "a second attempt must recover a terminal that failed to open (rc=$rc): $out"
+  assert_contains "$out" "attempt 2" "the launch reports that it needed a second attempt"
+  SUCC_PID=$(sed -n 's/^pid=//p' "$LAB/state/.handoff-successor")
+  kill -0 "$SUCC_PID" 2>/dev/null || fail "the recorded successor pid must be alive"
+  [ ! -e "$LAB/state/.handoff-launch-failed" ] || fail "a recovered launch records no failure"
+  kill "$SUCC_PID" 2>/dev/null; SUCC_PID=''
+  kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
+  pass "a second attempt recovers a first terminal that failed to open"
+}
+
+test_await_predecessor_is_bounded() {
+  local out rc pred
+  reset_lab
+  kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
+  rc=0
+  out=$(run_mode --await-predecessor "$PRED_PID" 2>&1) || rc=$?
+  assert_equals 0 "$rc" "an ended predecessor ends the wait at once: $out"
+  pred=$(fake_harness_pid)
+  rc=0
+  out=$(AWAIT_SECS=1 run_mode --await-predecessor "$pred" 2>&1) || rc=$?
+  assert_equals 3 "$rc" "a predecessor still running after the bound reports 3: $out"
+  assert_contains "$out" "still running" "the bounded wait says the old session still runs"
+  ( sleep 1; kill "$pred" 2>/dev/null ) &
+  rc=0
+  out=$(AWAIT_SECS=10 run_mode --await-predecessor "$pred" 2>&1) || rc=$?
+  assert_equals 0 "$rc" "the wait returns once the old session ends: $out"
+  wait 2>/dev/null
+  rc=0
+  run_mode --await-predecessor nope >/dev/null 2>&1 || rc=$?
+  assert_equals 2 "$rc" "a non-numeric pid is a usage error"
+  pass "the successor's wait for the old session is bounded and reports a still-running predecessor"
+}
+
+test_end_predecessor_skips_unless_safe() {
+  local t="$TMP_ROOT/end-transcript" end="$LAB/state/.handoff-end" pred succ bytes
+  reset_lab
+  kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
+  printf '{"type":"assistant"}\n' > "$t"
+  bytes=$(wc -c < "$t" | tr -d ' ')
+  pred=$(fake_harness_pid)
+  sleep 60 &
+  succ=$!
+  printf 'pid=%s\nhandoff=%s\n' "$succ" "$LAB/data/handoff.md" > "$LAB/state/.handoff-successor"
+  printf '%s\n' "$succ" > "$LAB/state/.lock"
+  run_mode --end-predecessor "$pred" "$t" "$bytes" >/dev/null 2>&1
+  assert_contains "$(cat "$end")" "result=skipped" "a lock that moved to another session keeps the old session"
+  kill -0 "$pred" 2>/dev/null || fail "the old session must survive a moved lock"
+  printf '%s\n' "$pred" > "$LAB/state/.lock"
+  kill "$succ" 2>/dev/null; wait "$succ" 2>/dev/null
+  run_mode --end-predecessor "$pred" "$t" "$bytes" >/dev/null 2>&1
+  assert_contains "$(cat "$end")" "result=skipped" "a dead successor keeps the old session"
+  kill -0 "$pred" 2>/dev/null || fail "the old session must survive a dead successor"
+  sleep 60 &
+  succ=$!
+  printf 'pid=%s\nhandoff=%s\n' "$succ" "$LAB/data/handoff.md" > "$LAB/state/.handoff-successor"
+  run_mode --end-predecessor "$pred" "$t" "$bytes" >/dev/null 2>&1
+  assert_contains "$(cat "$end")" "result=ended" "a quiet old session with a live successor is ended"
+  ! kill -0 "$pred" 2>/dev/null || fail "the old session must be gone"
+  kill "$succ" 2>/dev/null; wait "$succ" 2>/dev/null
+  rm -f "$end" "$LAB/state/.handoff-successor"
+  pass "the old session is ended only while it holds the lock, a live successor exists, and its transcript is quiet"
+}
+
+# The end re-checks orders after its settle: an open captain order recorded
+# before the launch and missing from the successor's handoff keeps the old
+# session alive, while an order recorded during the settle, after the launch,
+# is left to the successor's pickup and does not.
+test_end_predecessor_rechecks_the_order_gate() {
+  local t="$TMP_ROOT/end-gate-transcript" end="$LAB/state/.handoff-end" pred succ bytes ender start older
+  reset_lab
+  kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
+  rm -rf "$LAB/data/orders" "$LAB/state/.order-handoff" "$end"
+  printf '{"type":"assistant"}\n' > "$t"
+  bytes=$(wc -c < "$t" | tr -d ' ')
+  pred=$(fake_harness_pid)
+  sleep 60 &
+  succ=$!
+  printf '%s\n' "$pred" > "$LAB/state/.lock"
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" send --from test "order before the launch" >/dev/null \
+    || fail "could not send the older order fixture"
+  older=$(find "$LAB/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
+  sleep 1
+  printf 'pid=%s\nhandoff=%s\nlaunched=%s\n' "$succ" "$LAB/data/handoff.md" "$(date +%s)" > "$LAB/state/.handoff-successor"
+  run_mode --end-predecessor "$pred" "$t" "$bytes" >/dev/null 2>&1
+  assert_contains "$(cat "$end")" "result=skipped" "an older order missing from the handoff keeps the old session"
+  assert_contains "$(cat "$end")" "reason=order-gate" "the record names the order gate"
+  kill -0 "$pred" 2>/dev/null || fail "the old session must survive an older order its handoff does not list"
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" ack "$older" >/dev/null || fail "could not ack the older order"
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" finish "$older" 'done' "handled" >/dev/null || fail "could not finish the older order"
+  start=$(date +%s)
+  END_SETTLE_SECS=6 run_mode --end-predecessor "$pred" "$t" "$bytes" >/dev/null 2>&1 &
+  ender=$!
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" send --from test "order during the settle" >/dev/null \
+    || fail "could not send the order fixture"
+  [ $(( $(date +%s) - start )) -lt 6 ] || fail "the order fixture took longer than the settle, so it did not land during it"
+  wait "$ender"
+  assert_contains "$(cat "$end")" "result=ended" "an order recorded after the launch is left to the successor's pickup"
+  ! kill -0 "$pred" 2>/dev/null || fail "the old session must be gone"
+  kill "$succ" 2>/dev/null; wait "$succ" 2>/dev/null
+  rm -rf "$end" "$LAB/state/.handoff-successor" "$LAB/state/.order-handoff" "$LAB/data/orders"
+  pass "the old session is ended only while its handoff lists every open captain order recorded before the launch"
+}
+
+# The order check is the ender's slow step, so the checks that the old session
+# is still idle come after it: a prompt that arrives while the order check runs
+# keeps the old session alive. The ender runs from a copy of bin/ whose
+# fm-order.sh writes that prompt into the transcript as its covers check starts.
+test_end_predecessor_sees_a_turn_that_starts_during_the_order_check() {
+  local t="$TMP_ROOT/covers-turn-transcript" end="$LAB/state/.handoff-end" wrap="$TMP_ROOT/covers-turn-bin" pred succ bytes f
+  reset_lab
+  kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
+  rm -rf "$LAB/data/orders" "$LAB/state/.order-handoff" "$end" "$wrap"
+  mkdir -p "$wrap"
+  for f in "$ROOT"/bin/*; do ln -s "$f" "$wrap/"; done
+  rm -f "$wrap/fm-order.sh"
+  cat > "$wrap/fm-order.sh" <<EOF
+#!/usr/bin/env bash
+[ "\${1:-}" != covers ] || printf '{"type":"user"}\n' >> '$t'
+exec '$ROOT/bin/fm-order.sh' "\$@"
+EOF
+  chmod +x "$wrap/fm-order.sh"
+  printf '{"type":"assistant"}\n' > "$t"
+  bytes=$(wc -c < "$t" | tr -d ' ')
+  pred=$(fake_harness_pid)
+  sleep 60 &
+  succ=$!
+  printf '%s\n' "$pred" > "$LAB/state/.lock"
+  printf 'pid=%s\nhandoff=%s\nlaunched=%s\n' "$succ" "$LAB/data/handoff.md" "$(date +%s)" > "$LAB/state/.handoff-successor"
+  MODE_LAUNCHER="$wrap/fm-handoff-launch.sh" run_mode --end-predecessor "$pred" "$t" "$bytes" >/dev/null 2>&1
+  assert_contains "$(cat "$t")" '"type":"user"' "the order check ran and wrote the new prompt"
+  assert_contains "$(cat "$end")" "result=skipped" "a prompt that arrives during the order check keeps the old session"
+  assert_contains "$(cat "$end")" "reason=new-turn" "the record names the new turn"
+  kill -0 "$pred" 2>/dev/null || fail "the old session must survive a prompt that arrives during the order check"
+  kill "$pred" "$succ" 2>/dev/null; wait "$succ" 2>/dev/null
+  rm -rf "$end" "$wrap" "$LAB/state/.handoff-successor"
+  pass "the ender checks the old session is idle after its order check, so a prompt during that check keeps it"
+}
+
+# A session can run handoff --doc while its own launch is still waiting for
+# the successor, after the launcher hashed the document. That run must leave
+# the document byte-unchanged, so it still matches the hash the successor was
+# given. The successor is held until the test releases it, so handoff --doc
+# runs inside that window.
+test_handoff_doc_during_a_launch_leaves_the_document_unchanged() {
+  local out rc lpid sum sha n doc="$LAB/data/handoff.md" release="$TMP_ROOT/window-release" log="$TMP_ROOT/window-launch.out"
+  reset_lab
+  rm -rf "$LAB/data/orders" "$LAB/state/.order-handoff"
+  rm -f "$release" "$release.ready"
+  run_launcher FM_FAKE_ORCA_MODE=late FM_FAKE_ORCA_RELEASE="$release" FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=60 >"$log" 2>&1 &
+  lpid=$!
+  n=0
+  while [ ! -s "$TMP_ROOT/orca-cmd" ] && [ "$n" -lt 600 ]; do sleep 0.1; n=$((n + 1)); done
+  [ -s "$TMP_ROOT/orca-cmd" ] || fail "the launcher never opened the successor terminal"
+  sum=$(cksum < "$doc")
+  # A relative path keeps this call's arguments from naming the document, so
+  # the launcher cannot read it as the successor.
+  out=$(cd "$LAB/data" && FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" handoff --doc handoff.md) \
+    || fail "could not run handoff --doc during the launch: $out"
+  [ ! -e "$LAB/state/.handoff-successor" ] || fail "the successor was recorded before handoff --doc ran, so the launch window was not tested"
+  : > "$release"
+  rc=0
+  wait "$lpid" || rc=$?
+  assert_equals 0 "$rc" "the launch succeeds: $(cat "$log")"
+  SUCC_PID=$(sed -n 's/^pid=//p' "$LAB/state/.handoff-successor")
+  assert_equals "$sum" "$(cksum < "$doc")" "handoff --doc during the launch leaves the hashed document byte-unchanged"
+  assert_contains "$out" "unchanged" "handoff --doc says it left the document unchanged"
+  sha=$(shasum -a 256 "$doc" 2>/dev/null | awk '{print $1}')
+  [ -n "$sha" ] || sha=$(sha256sum "$doc" | awk '{print $1}')
+  assert_contains "$(cat "$TMP_ROOT/orca-cmd")" "$sha" "the document still matches the hash the successor was given"
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" handoff --doc "$doc" >/dev/null || fail "could not rerun handoff --doc after the launch"
+  assert_equals "$sum" "$(cksum < "$doc")" "the live successor still holds the document once the launch is recorded"
+  kill "$SUCC_PID" 2>/dev/null; SUCC_PID=''
+  pkill -f "$doc" 2>/dev/null
+  kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
+  rm -f "$release" "$release.ready" "$LAB/state/.handoff-successor" "$LAB/state/.order-handoff"
+  pass "handoff --doc during a launch leaves the document unchanged, so the successor's hash still matches"
+}
+
+# wait_for_file <path>: wait up to 60 seconds for <path> to exist.
+wait_for_file() {
+  local n=0
+  while [ ! -e "$1" ] && [ "$n" -lt 600 ]; do sleep 0.1; n=$((n + 1)); done
+  [ -e "$1" ]
+}
+
+# A launch can finish while a handoff --doc run is between its check for a
+# launch under way and its check for a live successor. The run must still see
+# one of the two, because the launcher writes the successor record before it
+# removes its own. The run is held between its two checks while the launch
+# writes the successor record and exits.
+test_handoff_doc_between_its_checks_sees_a_launch_that_finishes() {
+  local rc lpid hpid sum doc="$LAB/data/handoff.md" release="$TMP_ROOT/between-release" log="$TMP_ROOT/between-launch.out"
+  local pause="$TMP_ROOT/between-pause" hlog="$TMP_ROOT/between-handoff.out"
+  reset_lab
+  rm -rf "$LAB/data/orders" "$LAB/state/.order-handoff" "$pause"
+  mkdir -p "$pause"
+  rm -f "$release" "$release.ready"
+  run_launcher FM_FAKE_ORCA_MODE=late FM_FAKE_ORCA_RELEASE="$release" FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=60 >"$log" 2>&1 &
+  lpid=$!
+  wait_for_file "$TMP_ROOT/orca-cmd" || fail "the launcher never opened the successor terminal"
+  sum=$(cksum < "$doc")
+  : > "$pause/handoff-between-checks.hold"
+  # A relative path keeps this call's arguments from naming the document, so
+  # the launcher cannot read it as the successor.
+  (cd "$LAB/data" && FM_HOME="$LAB" FM_TEST_SEAM=1 FM_ORDER_TEST_PAUSE_DIR="$pause" "$ROOT/bin/fm-order.sh" handoff --doc handoff.md) >"$hlog" 2>&1 &
+  hpid=$!
+  wait_for_file "$pause/handoff-between-checks.reached" || fail "handoff --doc never reached the point between its checks: $(cat "$hlog")"
+  [ -e "$LAB/state/.handoff-launching" ] && [ ! -e "$LAB/state/.handoff-successor" ] \
+    || fail "the launch was not under way when handoff --doc made its first check, so the window was not tested"
+  : > "$release"
+  rc=0
+  wait "$lpid" || rc=$?
+  assert_equals 0 "$rc" "the launch succeeds: $(cat "$log")"
+  SUCC_PID=$(sed -n 's/^pid=//p' "$LAB/state/.handoff-successor")
+  [ ! -e "$LAB/state/.handoff-launching" ] || fail "the launcher left its launch record behind, so the window was not tested"
+  rm -f "$pause/handoff-between-checks.hold"
+  rc=0
+  wait "$hpid" || rc=$?
+  assert_equals 0 "$rc" "handoff --doc succeeds: $(cat "$hlog")"
+  assert_equals "$sum" "$(cksum < "$doc")" "a launch that finishes between the checks of handoff --doc leaves the hashed document byte-unchanged"
+  assert_contains "$(cat "$hlog")" "unchanged" "handoff --doc says it left the document unchanged"
+  kill "$SUCC_PID" 2>/dev/null; SUCC_PID=''
+  pkill -f "$doc" 2>/dev/null
+  kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
+  rm -rf "$pause"
+  rm -f "$release" "$release.ready" "$LAB/state/.handoff-successor" "$LAB/state/.order-handoff"
+  pass "a launch that finishes between the two checks of handoff --doc still leaves the document unchanged"
+}
+
+# A launch can start while a handoff --doc run has made its checks and not yet
+# appended. The launch must wait for that append, so the hash it gives the
+# successor is the hash of the document with the appended block. The run is
+# held just before its append while the launch starts; the test gives the
+# launch three seconds to open the successor terminal before it lets the run
+# append.
+test_a_launch_waits_for_a_handoff_doc_append_under_way() {
+  local rc lpid hpid sha n doc="$LAB/data/handoff.md" log="$TMP_ROOT/append-launch.out"
+  local pause="$TMP_ROOT/append-pause" hlog="$TMP_ROOT/append-handoff.out"
+  reset_lab
+  rm -rf "$LAB/data/orders" "$LAB/state/.order-handoff" "$pause"
+  mkdir -p "$pause"
+  : > "$pause/handoff-before-append.hold"
+  (cd "$LAB/data" && FM_HOME="$LAB" FM_TEST_SEAM=1 FM_ORDER_TEST_PAUSE_DIR="$pause" "$ROOT/bin/fm-order.sh" handoff --doc handoff.md) >"$hlog" 2>&1 &
+  hpid=$!
+  wait_for_file "$pause/handoff-before-append.reached" || fail "handoff --doc never reached the point before its append: $(cat "$hlog")"
+  run_launcher >"$log" 2>&1 &
+  lpid=$!
+  # Bound this wait by the wall clock, well inside the launcher's 10-second
+  # lock bound: on a loaded host a count of short sleeps can run past it.
+  n=$SECONDS
+  while [ ! -s "$TMP_ROOT/orca-cmd" ] && [ $((SECONDS - n)) -lt 3 ]; do sleep 0.1; done
+  rm -f "$pause/handoff-before-append.hold"
+  rc=0
+  wait "$hpid" || rc=$?
+  assert_equals 0 "$rc" "handoff --doc succeeds: $(cat "$hlog")"
+  assert_contains "$(cat "$hlog")" "wrote" "handoff --doc appends, because no launch was under way when it checked"
+  rc=0
+  wait "$lpid" || rc=$?
+  assert_equals 0 "$rc" "the launch succeeds: $(cat "$log")"
+  SUCC_PID=$(sed -n 's/^pid=//p' "$LAB/state/.handoff-successor")
+  sha=$(shasum -a 256 "$doc" 2>/dev/null | awk '{print $1}')
+  [ -n "$sha" ] || sha=$(sha256sum "$doc" | awk '{print $1}')
+  assert_contains "$(cat "$TMP_ROOT/orca-cmd")" "$sha" "the successor's hash is the hash of the document with the appended block"
+  kill "$SUCC_PID" 2>/dev/null; SUCC_PID=''
+  pkill -f "$doc" 2>/dev/null
+  kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
+  rm -rf "$pause"
+  rm -f "$LAB/state/.handoff-successor" "$LAB/state/.order-handoff"
+  pass "a launch that starts during a handoff --doc append waits for it, so the successor's hash matches"
+}
+
+# An order filed between the session's last handoff --doc and the launch is
+# not in the document and not yet left to a successor's pickup, so the launch
+# refuses until the session reruns handoff --doc. Then the launch succeeds, an
+# order filed after it is left to the pickup with the document unchanged, and
+# the old session is ended.
+test_launch_refuses_a_handoff_that_omits_an_open_order() {
+  local out rc pred first late after sum bytes ids doc="$LAB/data/handoff.md" t="$TMP_ROOT/refuse-transcript" end="$LAB/state/.handoff-end"
+  reset_lab
+  kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
+  rm -rf "$LAB/data/orders" "$LAB/state/.order-handoff" "$end"
+  pred=$(fake_harness_pid)
+  printf '%s\n' "$pred" > "$LAB/state/.lock"
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" send --from test "order before the handoff" >/dev/null \
+    || fail "could not send the first order fixture"
+  first=$(find "$LAB/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" handoff --doc "$doc" >/dev/null || fail "could not record the handoff"
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" send --from test "order after handoff --doc, before the launch" >/dev/null \
+    || fail "could not send the late order fixture"
+  late=$(find "$LAB/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//' | grep -v "$first")
+
+  rc=0
+  out=$(run_launcher 2>&1) || rc=$?
+  assert_equals 3 "$rc" "a handoff that omits an open order must refuse the launch: $out"
+  assert_contains "$out" "$late" "the refusal names the order the document omits"
+  assert_not_contains "$out" "$first" "the refusal names only the missing order"
+  assert_contains "$out" "handoff --doc" "the refusal tells the session to rerun handoff --doc"
+  [ ! -e "$LAB/state/.handoff-successor" ] || fail "a refused launch must not record a successor"
+  [ ! -e "$LAB/state/.handoff-launch-failed" ] || fail "a refused launch records no launch failure, so the stop gate stays closed"
+  [ ! -e "$TMP_ROOT/orca-cmd" ] || fail "a refused launch must not open a terminal"
+
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" handoff --doc "$doc" >/dev/null || fail "could not rerun handoff --doc"
+  assert_contains "$(cat "$doc")" "$late" "with no successor yet, the rerun writes the late order into the document"
+  rc=0
+  out=$(run_launcher 2>&1) || rc=$?
+  assert_equals 0 "$rc" "the launch succeeds once the document lists every open order: $out"
+  SUCC_PID=$(sed -n 's/^pid=//p' "$LAB/state/.handoff-successor")
+  kill -0 "$SUCC_PID" 2>/dev/null || fail "the recorded successor pid must be alive"
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" covers "$doc" >/dev/null || fail "covers passes for the launched document"
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" gate >/dev/null || fail "the gate passes for the launched document"
+
+  sum=$(cksum < "$doc")
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" send --from test "order after the launch" >/dev/null \
+    || fail "could not send the after-launch order fixture"
+  ids=$(find "$LAB/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
+  after=$(printf '%s\n' "$ids" | grep -v -e "$first" -e "$late")
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" covers "$doc" >/dev/null || fail "an order filed after the launch is left to the successor's pickup"
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" handoff --doc "$doc" >/dev/null || fail "could not rerun handoff --doc after the launch"
+  assert_equals "$sum" "$(cksum < "$doc")" "the launched document stays byte-unchanged"
+  assert_contains "$(FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" pickup)" "$after" "the successor's pickup lists the order filed after the launch"
+
+  printf '{"type":"assistant"}\n' > "$t"
+  bytes=$(wc -c < "$t" | tr -d ' ')
+  run_mode --end-predecessor "$pred" "$t" "$bytes" >/dev/null 2>&1
+  assert_contains "$(cat "$end")" "result=ended" "the old session is ended after the launch"
+  ! kill -0 "$pred" 2>/dev/null || fail "the old session must be gone"
+  kill "$SUCC_PID" 2>/dev/null; SUCC_PID=''
+  rm -rf "$end" "$LAB/state/.handoff-successor" "$LAB/state/.order-handoff" "$LAB/data/orders"
+  pass "a launch refuses a handoff that omits an open order, and a rerun of handoff --doc lets it launch"
 }
 
 test_stale_record_naming_the_current_session_still_launches() {
@@ -140,3 +564,13 @@ test_success_path_records_a_live_successor
 test_stale_record_naming_the_current_session_still_launches
 test_unknown_backend_refuses_rather_than_guess
 test_successor_never_appears_records_nothing
+test_a_late_successor_is_never_joined_by_a_second
+test_a_second_attempt_recovers_a_terminal_that_failed_to_open
+test_await_predecessor_is_bounded
+test_end_predecessor_skips_unless_safe
+test_end_predecessor_rechecks_the_order_gate
+test_end_predecessor_sees_a_turn_that_starts_during_the_order_check
+test_launch_refuses_a_handoff_that_omits_an_open_order
+test_handoff_doc_during_a_launch_leaves_the_document_unchanged
+test_handoff_doc_between_its_checks_sees_a_launch_that_finishes
+test_a_launch_waits_for_a_handoff_doc_append_under_way
