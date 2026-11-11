@@ -1,0 +1,6 @@
+hc exit=0
+cmux exit=0
+paseo exit=0
+zellij exit=0
+tern exit=0
+rex exit=0

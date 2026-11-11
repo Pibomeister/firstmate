@@ -1,0 +1,11 @@
+# Live: fm_backend_herdr_server_ensure starts a real Herdr server for lab session fm-lab-akpair-48601-15547
+# herdr version: herdr 0.8.2
+prepare rc=0
+server_ensure rc=0
+caller still has: AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate
+server pid=51056 cmd=herdr server --session fm-lab-akpair-48601-15547
+server env AK_LIFECYCLE_POLICY: absent
+server env AK_LIFECYCLE_SUPERVISOR: absent
+server env FM_LAB_CANARY: PRESENT (FM_LAB_CANARY=creator-var)
+teardown rc=0
+server gone after teardown

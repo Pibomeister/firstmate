@@ -1,0 +1,49 @@
+ok - fm_backend_paseo_version_check: accepts the verified minimum (0.8.0)
+ok - fm_backend_paseo_version_check: accepts a newer version (0.9.2)
+ok - fm_backend_paseo_version_check: refuses an old version loudly
+ok - fm_backend_paseo_version_check: refuses loudly when paseo is not found on PATH or at the bundle path
+ok - fm_backend_paseo_parse_target: splits '<terminal_id>:<workspace_id>' on the first colon
+ok - fm_backend_paseo_scoped_name: scopes a primary task name with firstmate plus root hash
+ok - fm_backend_paseo_scoped_name: scopes a secondmate task name with the home marker plus root hash
+ok - fm_backend_validate: paseo is a known backend
+ok - fm_backend_busy_state: paseo (no native primitive) always reports unknown, same as tmux/zellij/orca/cmux
+ok - fm_backend_composer_state: routes paseo to the paseo composer classifier
+ok - fm_backend_paseo_daemon_state: reports 'ok' when localDaemon=running and connectedDaemon=reachable
+ok - fm_backend_paseo_daemon_state: reports 'down' when 'paseo status' fails
+ok - fm_backend_paseo_ensure_running: returns immediately when paseo is already reachable
+ok - fm_backend_paseo_ensure_running: starts the shared daemon without the agent-kit lifecycle pair and keeps the caller's own
+ok - fm_backend_paseo_create_task: refuses a duplicate terminal name (paseo's own terminal create has no uniqueness check)
+ok - fm_backend_paseo_create_task: creates the shared workspace once plus a terminal tab and parses terminal_id/workspace_id
+ok - fm_backend_paseo_create_task: refuses, creating nothing, when the terminal or workspace inventory cannot be read
+ok - fm_backend_paseo_create_task: adopts the project's live firstmate workspace by cwd+label and adds a tab (never a second workspace)
+ok - fm_backend_paseo_create_task: adopts the workspace firstmate itself runs in (PASEO_WORKSPACE_ID) when its cwd is the project, ahead of the title lookup
+ok - fm_backend_paseo_create_task: a task for any project becomes a tab in firstmate's own workspace (PASEO_WORKSPACE_ID)
+ok - fm_backend_paseo_create_task: a Paseo agent uses the one workspace whose folder is its home, and falls back when that is ambiguous
+ok - fm_backend_paseo_workspace_ensure: adopts the shared workspace by its physical or slash-normalized logical cwd
+ok - fm_backend_paseo_cli_json: keeps stderr out of parsed JSON and relays it only on failure
+ok - fm_backend_paseo_workspace_label: 'firstmate' for the primary home, '2ndmate-<id>' for a secondmate home (no path hash)
+ok - fm_backend_paseo_target_ready: fails when the terminal is not found and no expected label is given
+ok - fm_backend_paseo_target_ready: verifies the live terminal name against the expected label
+ok - fm_backend_paseo_target_ready: rejects a terminal id reused under a different name
+ok - fm_backend_paseo_target_ready: recovers a stale terminal id by home-scoped NAME, never by title
+ok - fm_backend_paseo_capture: fetches the whole scrollback and trims to N lines locally
+ok - fm_backend_paseo_capture: fails when the target terminal is absent
+ok - fm_backend_paseo_send_key: passes the key through unchanged to the recorded terminal id
+ok - fm_backend_paseo_send_key: C-u goes as the raw 0x15 byte via -l; keys outside paseo's token set are refused, never typed
+ok - fm_backend_paseo_send_literal: calls send-keys -l with a -- separator before the literal payload
+ok - fm_backend_paseo_send_text_line: sends literal text then submits with Enter
+ok - fm_backend_paseo_current_path: actively probes with marked begin/end lines (creation-time-frozen cwd)
+ok - fm_backend_paseo_composer_state: a bare '❯' composer row reads empty
+ok - fm_backend_paseo_composer_state: real composer text reads pending
+ok - fm_backend_paseo_composer_state: reports unknown when the terminal cannot be captured
+ok - fm_backend_paseo_send_text_submit: reports 'empty' once the composer row reads empty after one Enter
+ok - fm_backend_paseo_send_text_submit: reports 'send-failed' when the target terminal is absent
+ok - fm_backend_paseo_kill: closes the task's terminal tab and leaves the workspace alive when its inventory is unreadable
+ok - fm_backend_paseo_kill: the last task tab retires firstmate's shared workspace and its own clone's project
+ok - fm_backend_paseo_kill: retires the recorded workspace and project when the task tab was already closed
+ok - fm_backend_paseo_kill: keeps the workspace while a tab, agent, other title, or firstmate itself uses it, and never retires anything outside this home's clones
+ok - fm_backend_paseo: spawn and workspace retirement share one lock; neither acts while another process holds it
+ok - fm_backend_paseo_kill: never fails even when terminal kill fails
+ok - fm_backend_paseo_list_live: lists only this home's scoped task terminals using plain fm-<id> labels
+ok - fm-spawn.sh: an explicit paseo refuses --secondmate (mirrors cmux/Orca); ambient Paseo markers never select paseo
+ok - Pi supervision branch claims a paseo stale wake keyed by the task's window= endpoint

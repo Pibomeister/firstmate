@@ -1,0 +1,4 @@
+not ok - 'paseo start' leaked AK_LIFECYCLE_POLICY into the shared daemon (missing: 'AK_LIFECYCLE_POLICY=<unset>')
+paseo-at-prior-backend exit=
+not ok - the rex call that started the personal server must carry the caller's environment without the agent-kit lifecycle pair (expected '<unset>/<unset> sentinel=kept', got 'unattended/firstmate sentinel=kept')
+rex-at-prior-backend exit=

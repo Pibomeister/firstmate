@@ -1,0 +1,9 @@
+ok - ship and scout launches carry the unattended policy and Firstmate supervisor in both allowlist postures, overriding contrary pane values
+ok - a secondmate launch carries the unattended policy and Firstmate supervisor
+ok - the launch command sets the unattended policy on its own
+ok - inherited empty or contrary values never replace the unattended policy and Firstmate supervisor
+ok - a compound raw launch carries the unattended policy and Firstmate supervisor
+ok - only the safe raw Codex form runs through the Codex launcher, and every other raw Codex form refuses
+ok - a raw non-Codex command that names codex refuses, and one that never names it spawns
+ok - relaunch rebuilds the unattended policy and Firstmate supervisor in both allowlist postures
+ok - a tmux server started by a process carrying the pair publishes neither name to later sessions
