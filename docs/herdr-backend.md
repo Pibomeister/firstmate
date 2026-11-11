@@ -652,6 +652,7 @@ When the selected named server is not running, the adapter launches it without t
 - Firstmate home and directory overrides.
 - Harness identity markers.
 - The supervision-model override.
+- The [agent-kit lifecycle pair](configuration.md#agent-kit-lifecycle-policy) (`AK_LIFECYCLE_POLICY`, `AK_LIFECYCLE_SUPERVISOR`).
 
 Herdr passes its server startup environment to every later pane, so retaining those values could misroute panes for another Firstmate home or harness.
 An already-running server is reused without restart or environment changes.
