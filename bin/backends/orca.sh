@@ -521,23 +521,26 @@ fm_backend_orca_kill() {  # <terminal-id>
 
 # fm_backend_orca_close_worktree_terminals: close every Orca terminal whose
 # worktree path is <path> on the local Orca, and count matching terminals on
-# every saved paired Orca environment (`orca environment list`) without
-# closing them. A path match on another host does not prove this task owns
-# that terminal: the same path layout exists on every Orca host, and that
-# host's own teardown owns its worktree, so a remote match is reported for
-# its own cleanup instead of being closed from here.
+# every saved paired Orca environment (`orca environment list`). On a paired
+# environment only the task's own recorded terminal handle, matched exactly,
+# is closed: a path match alone on another host does not prove this task owns
+# that terminal, because the same path layout exists on every Orca host and
+# that host's own teardown owns its worktree, so a path-only remote match is
+# counted and reported for its own cleanup instead of being closed from here.
 # Prints `closed=<n> environments=<count> remote_matched=<n>` on stdout,
-# where environments counts every Orca actually listed (local included).
-# A local close counts only when a re-list no longer names the handle,
-# because Orca's close exit status carries no authority. Exit 0 when every
-# listed environment was read completely and every local terminal it named
-# for this worktree is gone; exit 1 when one is still listed after its
-# close; exit 2 when an environment or terminal list could not be read
-# completely, so the caller can warn that the counts are a floor.
-fm_backend_orca_close_worktree_terminals() {  # <worktree-path>
+# where environments counts every Orca actually listed (local included) and
+# remote_matched counts the path-only remote matches left open.
+# A close counts only when a re-list of its environment no longer names the
+# handle, because Orca's close exit status carries no authority. Exit 0 when
+# every listed environment was read completely and every terminal closed
+# from here is gone; exit 1 when one is still listed after its close; exit 2
+# when an environment or terminal list could not be read completely, so the
+# caller can warn that the counts are a floor.
+fm_backend_orca_close_worktree_terminals() {  # <worktree-path> [recorded-terminal-handle]
   fm_backend_orca_tool_check || return 2
   command -v node >/dev/null 2>&1 || return 2
-  local target=$1 envs env list closed=0 env_count=0 remote_matched=0 rc=0 handles h relist remaining
+  local target=$1 recorded=${2:-} envs env list closed=0 env_count=0 remote_matched=0 rc=0 handles h relist remaining
+  local -a env_args
   envs=$(orca environment list --json 2>/dev/null | node -e '
 let d; try { d = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (_) { process.exit(1); }
 if (!d || d.ok === false || !d.result || !Array.isArray(d.result.environments)) process.exit(1);
@@ -545,11 +548,9 @@ for (const e of d.result.environments) if (e && typeof e.id === "string" && e.id
   while IFS= read -r env; do
     [ -n "$env" ] || continue
     env_count=$((env_count + 1))
-    if [ "$env" = local ]; then
-      list=$(orca terminal list --limit 100000 --json 2>/dev/null) || { [ "$rc" = 1 ] || rc=2; continue; }
-    else
-      list=$(orca terminal list --environment "$env" --limit 100000 --json 2>/dev/null) || { [ "$rc" = 1 ] || rc=2; continue; }
-    fi
+    env_args=()
+    [ "$env" = local ] || env_args=(--environment "$env")
+    list=$(orca terminal list ${env_args[@]+"${env_args[@]}"} --limit 100000 --json 2>/dev/null) || { [ "$rc" = 1 ] || rc=2; continue; }
     handles=$(printf '%s' "$list" | node -e '
 const fs = require("fs");
 let d; try { d = JSON.parse(fs.readFileSync(0, "utf8")); } catch (_) { process.exit(1); }
@@ -560,22 +561,22 @@ for (const t of d.result.terminals) {
   if (t && typeof t.handle === "string" && t.handle && typeof t.worktreePath === "string" && real(t.worktreePath) === real(target)) console.log(t.handle);
 }' "$target") || { [ "$rc" = 1 ] || rc=2; continue; }
     if [ "$env" != local ]; then
-      while IFS= read -r h; do
-        [ -n "$h" ] || continue
-        remote_matched=$((remote_matched + 1))
-      done <<EOF
-$handles
-EOF
-      continue
+      remote_matched=$((remote_matched + $(printf '%s\n' "$handles" | grep -c .)))
+      if [ -n "$recorded" ] && printf '%s\n' "$handles" | grep -qxF -- "$recorded"; then
+        handles=$recorded
+        remote_matched=$((remote_matched - 1))
+      else
+        handles=
+      fi
     fi
+    [ -n "$handles" ] || continue
     while IFS= read -r h; do
       [ -n "$h" ] || continue
-      orca terminal close --terminal "$h" --json >/dev/null 2>&1 || true
+      orca terminal close --terminal "$h" ${env_args[@]+"${env_args[@]}"} --json >/dev/null 2>&1 || true
     done <<EOF
 $handles
 EOF
-    [ -n "$handles" ] || continue
-    relist=$(orca terminal list --limit 100000 --json 2>/dev/null) || { [ "$rc" = 1 ] || rc=2; continue; }
+    relist=$(orca terminal list ${env_args[@]+"${env_args[@]}"} --limit 100000 --json 2>/dev/null) || { [ "$rc" = 1 ] || rc=2; continue; }
     remaining=$(printf '%s' "$relist" | WANTED_HANDLES="$handles" node -e '
 const fs = require("fs");
 let d; try { d = JSON.parse(fs.readFileSync(0, "utf8")); } catch (_) { process.exit(1); }
