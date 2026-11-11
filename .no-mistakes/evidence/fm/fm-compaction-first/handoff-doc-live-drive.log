@@ -1,0 +1,24 @@
+== 1. no launch under way: handoff --doc appends
+handoff: wrote 0 open order(s) into /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.3ttLy2/data/handoff.md
+rc=0
+      49
+== 2. live launch record names the doc: handoff --doc leaves it unchanged
+handoff: left /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.3ttLy2/data/handoff.md unchanged for the successor launch under way; 0 open order(s) stay in the order store
+rc=0
+sha before=7598543b10165a72 after=7598543b10165a72
+== 3. adversarial: launch record whose launcher pid is dead does not hold the doc
+handoff: wrote 0 open order(s) into /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.3ttLy2/data/handoff.md
+rc=0
+sha now=baaca187803cb641
+== 4. adversarial: live launch record for a different doc does not hold this doc
+handoff: wrote 0 open order(s) into /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.3ttLy2/data/handoff.md
+rc=0
+sha before=baaca187803cb641 after=6b453b55f359bd30
+== 5. adversarial: doc lock held by a live process for >10s -> handoff --doc exits 1, doc unchanged
+fm-order: cannot take /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.3ttLy2/state/.handoff-doc.lock within 10 seconds, because a successor launch or another handoff --doc still holds it; /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.3ttLy2/data/handoff.md is unchanged, so rerun handoff --doc
+rc=1 waited=9s
+sha before=6b453b55f359bd30 after=6b453b55f359bd30
+== 6. stale lock (owner dead) is recovered, append proceeds
+handoff: wrote 0 open order(s) into /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.3ttLy2/data/handoff.md
+rc=0
+lock released

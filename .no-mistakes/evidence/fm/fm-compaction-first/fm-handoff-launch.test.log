@@ -10,3 +10,7 @@ ok - the old session is ended only while its handoff lists every open captain or
 ok - the ender checks the old session is idle after its order check, so a prompt during that check keeps it
 ok - a launch refuses a handoff that omits an open order, and a rerun of handoff --doc lets it launch
 ok - handoff --doc during a launch leaves the document unchanged, so the successor's hash still matches
+ok - a launch that finishes between the two checks of handoff --doc still leaves the document unchanged
+not ok - the launch succeeds: error: cannot take /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-handoff-launch.RBA69N/home/state/.handoff-doc.lock within 10 seconds, because a bin/fm-order.sh handoff --doc run still holds it
+No successor is running. state/.handoff-launch-failed records the failure and releases the handoff stop gate: tell the captain that the planned fresh start could not launch a successor (cannot take /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-handoff-launch.RBA69N/home/state/.handoff-doc.lock within 10 seconds, because a bin/fm-order.sh handoff --doc run still holds it), keep working in this session, and let auto-compaction run; the next context cycle tries the handoff again. (expected '0', got '1')
+bash tests/fm-handoff-launch.test.sh  7.17s user 11.99s system 5% cpu 5:50.34 total
