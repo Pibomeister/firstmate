@@ -93,7 +93,8 @@
 # after node), and
 # automation browsers whose parent has exited: a browser executable (Chrome,
 # Chromium, Edge, Firefox, a headless shell, or any file inside a browser's .app
-# bundle, such as its crash handler), started with --headless or
+# bundle, such as its crash handler, or in the GoogleUpdater.app that Chrome
+# starts), started with --headless or
 # --remote-debugging-pipe or from a Playwright or Puppeteer build. A browser
 # with any live parent is never listed. The
 # executable is the command line's first word, or, for a path with spaces, its
@@ -411,7 +412,7 @@ if (mode === "terminals") {
   }
 } else if (mode === "browsers") {
   const browserName = /^(Google Chrome( for Testing)?|Chromium|chrome|chromium|chromium-browser|chrome-headless-shell|headless_shell|chrome_crashpad_handler|msedge|Microsoft Edge|firefox)$/;
-  const browserBundle = /\/(Google Chrome( for Testing)?|Chromium|Microsoft Edge|Firefox)\.app\/Contents\//;
+  const browserBundle = /\/(Google Chrome( for Testing)?|Chromium|Microsoft Edge|Firefox|GoogleUpdater)\.app\/Contents\//;
   const isFile = (f) => { try { return fs.statSync(f).isFile(); } catch (_) { return false; } };
   // executable: the command line's executable path. A path with spaces is
   // one word only up to the shortest prefix that is an existing file, so

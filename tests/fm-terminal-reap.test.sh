@@ -819,9 +819,20 @@ test_browsers_reap_only_old_orphans() {
   disown "$handler" 2>/dev/null || true
   TRACKED_PIDS+=("$handler")
   await_exec "$handler"
-  : > "$FX/ppid1-$stable"; : > "$FX/ppid1-$handler"
+  # Chrome also starts GoogleUpdater, whose crash handler is reparented to
+  # pid 1 and keeps Chrome's directory: it too is part of the browser.
+  local updater
+  updater="$TMP_ROOT/Library/Application Support/Google/GoogleUpdater/1.0/GoogleUpdater.app/Contents/MacOS/GoogleUpdater"
+  mkdir -p "${updater%/*}"; : > "$updater"
+  ( exec -a "$updater" bash -c 'sleep 600 & wait' "$updater" --crash-handler ) >/dev/null 2>&1 </dev/null &
+  updater=$!
+  disown "$updater" 2>/dev/null || true
+  TRACKED_PIDS+=("$updater")
+  await_exec "$updater"
+  : > "$FX/ppid1-$stable"; : > "$FX/ppid1-$handler"; : > "$FX/ppid1-$updater"
   cwd_row "$stable" "$FX/stable-dir"
   cwd_row "$handler" "$FX/stable-dir"
+  cwd_row "$updater" "$FX/stable-dir"
   sleep 1.2
   run_reap --browser-min-age 3600
   [ "$RC" = 0 ] || fail "the browser dry run must exit 0, got $RC: $(cat "$FX/stderr")"
@@ -830,7 +841,7 @@ test_browsers_reap_only_old_orphans() {
   run_reap --browser-min-age 0
   [ "$RC" = 0 ] || fail "the browser dry run must exit 0, got $RC: $(cat "$FX/stderr")"
   expect "$orphan" "reap owner-gone" "an orphaned headless browser older than the floor is reaped"
-  expect "$stable" "reap owner-gone" "an orphaned stable Chrome is reaped even beside its reparented crash handler"
+  expect "$stable" "reap owner-gone" "an orphaned stable Chrome is reaped even beside its reparented crash handlers"
   expect "$owned" "" "a headless browser with a live parent is never a reap candidate at any age"
   run_reap --apply --browsers --browser-min-age 0
   [ "$RC" = 0 ] || fail "the browser apply must exit 0, got $RC: $(cat "$FX/stderr")"
