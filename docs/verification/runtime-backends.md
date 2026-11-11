@@ -157,7 +157,7 @@ Selected output:
 ```text
 ok - supervisor endpoint metadata retains precedence and generation
 ok - verified successor ack transfers the lock while predecessor remains alive; discovery follows it
-ok - tmux launches direct argv and transfers the verified lock
+ok - tmux launches direct argv outside tmux in its home session and transfers the verified lock
 ok - tmux resume discovers %32 and preserves explicit metadata precedence
 ok - orca resume discovers term_new and preserves explicit metadata precedence
 ok - DRILL interrupt: one failure on stdout and log, predecessor lock retained
