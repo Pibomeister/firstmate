@@ -1,0 +1,6 @@
+# seed manifest consumer probe (tracked seed extracted by git archive) revision=312ea0f000d7aabc6e92a22b52006c27fc1c1c7d date=2026-11-11T05:54:40Z
+manifest blob for layout skill: 67e1ef89058e9f58348500edd0d36eadcfd7e5d6
+seeded layout skill blob:      67e1ef89058e9f58348500edd0d36eadcfd7e5d6
+seeded inventory lines naming stop-hook.log: 1
+unchanged seed: exit=1 out='' (expect exit=1, no signal)
+modified seed: exit=0 out='worktree .agents/skills/operational-home-layout/SKILL.md' (expect exit=0 with signal)

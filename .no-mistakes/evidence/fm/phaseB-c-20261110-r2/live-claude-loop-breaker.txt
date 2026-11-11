@@ -1,0 +1,14 @@
+# live Claude loop-breaker drill: real fm-turnend-guard.sh --claude as sole Stop hook, actionable task, no watcher
+# revision=334104b380341385b5c40625a648b8a7dec24eaa date=2026-11-11T03:32:33Z load: 132.69 116.13 101.65
+2.1.322 (Claude Code)
+== claude_exit=0 real_stop_payloads=3
+{"stop_hook_active":false,"last_assistant_message":"SHIPSHAPE"}
+{"stop_hook_active":true,"last_assistant_message":"SHIPSHAPE"}
+{"stop_hook_active":true,"last_assistant_message":"SHIPSHAPE"}
+stop#1 active=false guard_rc=2 dur=15s
+stop#2 active=true guard_rc=2 dur=15s
+stop#3 active=true guard_rc=0 dur=19s
+-- state/stop-hook.log (watchdog lines)
+STOPHOOK v1 ts=1794367993 session=fb7f1fa4-8d9f-4682-abdb-a350bdc6f1ef status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794368013 session=fb7f1fa4-8d9f-4682-abdb-a350bdc6f1ef status=continue turns=2 repeat=2
+STOPHOOK v1 ts=1794368040 session=fb7f1fa4-8d9f-4682-abdb-a350bdc6f1ef status=hook_loop turns=2 repeat=3

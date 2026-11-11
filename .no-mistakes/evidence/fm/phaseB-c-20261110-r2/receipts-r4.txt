@@ -1,0 +1,88 @@
+# phaseB-c test round 4 receipts revision=312ea0f000d7aabc6e92a22b52006c27fc1c1c7d
+fm-test-queue: ticket 1072, position 5: waiting behind 4 earlier ticket(s)
+fm-test-queue: ticket 1072, position 4: waiting behind 3 earlier ticket(s)
+fm-test-queue: ticket 1072, position 3: waiting behind 2 earlier ticket(s)
+fm-test-queue: ticket 1072, position 2: waiting behind 1 earlier ticket(s)
+fm-test-queue: ticket 1072, position 1: all 1 slot(s) busy
+fm-test-queue: ticket 1072 served
+### rev=312ea0f000d7aabc6e92a22b52006c27fc1c1c7d date=2026-11-11T06:22:19Z cmd: env FM_TEST_ONLY=stop-policy bash tests/fm-turnend-guard.test.sh
+ok - fm-turnend-guard --claude: active-hook stop cannot reopen the blind-supervision window
+ok - fm-turnend-guard --claude: a live arming epoch advances once and repeated observation is idempotent
+ok - fm-turnend-guard --claude: fresh rewake epoch prevents a duplicate continuation for the same event
+ok - fm-turnend-guard --claude: integrated fresh failures reach one bounded fail-open, stop continuation, and reset on recovery
+ok - fm-turnend-guard --claude: the exhausted auto-arm commits the attended alarm once, then stays suppressed until recovery
+ok - fm-turnend-guard --claude: a repeatedly lost host hand-back on a pending or announced handling marker reaches the attended alarm
+not ok - the auto-arm never committed the attended alarm (alarm-signal)
+## exit=1
+
+### rev=312ea0f000d7aabc6e92a22b52006c27fc1c1c7d date=2026-11-11T06:37:30Z cmd: env FM_TEST_ONLY=stop-policy bash tests/fm-claude-stop-autoarm.test.sh
+DRILL parked: model stopped in 1 turn; tokenless arm is waiting
+DRILL parked: later real external wake delivered exit=2; queue retained
+STOPHOOK v1 ts=1794379054 session=parked-monitor status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1794379054 session=parked-monitor status=continue turns=1 repeat=0
+ok - parked parked session stops cleanly while monitoring and later wake delivery continue
+DRILL budget: model stopped in 1 turn; tokenless arm is waiting
+DRILL budget: later real external wake delivered exit=2; queue retained
+STOPHOOK v1 ts=1794379068 session=parked-monitor status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1794379068 session=parked-monitor status=hook_budget turns=6 repeat=0
+STOPHOOK v1 ts=1794382669 session=parked-monitor status=continue turns=1 repeat=0
+ok - parked budget session stops cleanly while monitoring and later wake delivery continue
+ok - auto-arm: actionable close translates to exactly one exit-2 rewake with reason
+## exit=0
+
+### rev=312ea0f000d7aabc6e92a22b52006c27fc1c1c7d date=2026-11-11T06:38:24Z cmd: env FM_STOP_POLICY_LIVE_E2E=1 bash tests/fm-stop-policy-live-e2e.test.sh
+claude version: 2.1.322 (Claude Code)
+ok - 2.1.322 (Claude Code): parked stopped after 1 real Stop payload(s)
+STOPHOOK v1 ts=1794379123 session=3bf363ec-b61a-4099-a07e-a34aeeb8f2c2 status=parked turns=0 repeat=0
+ok - 2.1.322 (Claude Code): active stopped after 2 real Stop payload(s)
+STOPHOOK v1 ts=1794379145 session=5f4c5b53-c8e2-4697-879f-64a1cbff72b4 status=continue turns=1 repeat=0
+## exit=0
+
+### rev=312ea0f000d7aabc6e92a22b52006c27fc1c1c7d date=2026-11-11T06:39:10Z cmd: bash tests/fm-stop-policy.test.sh
+DRILL lab_home=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stop-policy.EKSj0J/home (temporary FM_HOME)
+ok - DRILL all-parked: stopped in 1 turn
+ok - parked shortcut preserves executable orders and mixed work
+ok - stop_hook_active is honored by the ordinary Stop guard
+DRILL repeated reply turn=1 exit=2
+DRILL repeated reply turn=2 exit=2
+DRILL repeated reply turn=3 exit=0
+ok - DRILL constant normalized reply: loop broken by turn 3
+ok - rolling-hour budget permits at most six continuations per session
+ok - budget expires after a rolling hour without affecting other sessions
+ok - a fixed turn_id without a transcript cannot bypass the cap
+ok - parallel Stop entrypoints share one event charge
+ok - three concurrent Stop writers reserve one continuation
+ok - check mode ignores ledger contention and transcript parsing
+ok - tool calls and commits reset the repeat streak
+ok - handoff gate honors stop_hook_active; auto-arm arming is tested separately
+STOPHOOK v1 ts=1794379152 session=parked status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1794379153 session=parked-order status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794379154 session=external status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1794379156 session=mixed status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794379158 session=active status=hook_active turns=0 repeat=0
+STOPHOOK v1 ts=1794379159 session=repeat status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794379162 session=repeat status=continue turns=2 repeat=2
+STOPHOOK v1 ts=1794379164 session=repeat status=hook_loop turns=2 repeat=3
+STOPHOOK v1 ts=1794379166 session=budget status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794379170 session=budget status=continue turns=2 repeat=1
+STOPHOOK v1 ts=1794379174 session=budget status=continue turns=3 repeat=1
+STOPHOOK v1 ts=1794379181 session=budget status=continue turns=4 repeat=1
+STOPHOOK v1 ts=1794379184 session=budget status=continue turns=5 repeat=1
+STOPHOOK v1 ts=1794379188 session=budget status=continue turns=6 repeat=1
+STOPHOOK v1 ts=1794379192 session=budget status=hook_budget turns=6 repeat=1
+STOPHOOK v1 ts=1794382796 session=budget status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794379205 session=no-transcript status=continue turns=1 repeat=0
+STOPHOOK v1 ts=1794379209 session=no-transcript status=continue turns=2 repeat=0
+STOPHOOK v1 ts=1794379213 session=no-transcript status=continue turns=3 repeat=0
+STOPHOOK v1 ts=1794379217 session=no-transcript status=continue turns=4 repeat=0
+STOPHOOK v1 ts=1794379221 session=no-transcript status=continue turns=5 repeat=0
+STOPHOOK v1 ts=1794379227 session=no-transcript status=continue turns=6 repeat=0
+STOPHOOK v1 ts=1794379235 session=no-transcript status=hook_budget turns=6 repeat=0
+STOPHOOK v1 ts=1794379238 session=dedup status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794379248 session=concurrent status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794379261 session=progress status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794379268 session=progress status=continue turns=2 repeat=2
+STOPHOOK v1 ts=1794379274 session=progress status=continue turns=3 repeat=0
+STOPHOOK v1 ts=1794379285 session=progress status=continue turns=4 repeat=0
+## exit=0
+

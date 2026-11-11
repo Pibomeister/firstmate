@@ -1,0 +1,70 @@
+
+### live-e2e rev=334104b380341385b5c40625a648b8a7dec24eaa (+ uncommitted probe timeout fix) cmd: env FM_STOP_POLICY_LIVE_E2E=1 bash tests/fm-stop-policy-live-e2e.test.sh
+fm-test-queue: ticket 1061, position 4: waiting behind 3 earlier ticket(s)
+fm-test-queue: ticket 1061, position 3: waiting behind 2 earlier ticket(s)
+fm-test-queue: ticket 1061, position 2: waiting behind 1 earlier ticket(s)
+fm-test-queue: ticket 1061, position 1: all 1 slot(s) busy
+fm-test-queue: ticket 1061 served
+claude version: 2.1.322 (Claude Code)
+ok - 2.1.322 (Claude Code): parked stopped after 1 real Stop payload(s)
+STOPHOOK v1 ts=1794373130 session=0f2b2ff0-544e-4a9b-9e97-6a4b7d3b9b1a status=parked turns=0 repeat=0
+ok - 2.1.322 (Claude Code): active stopped after 2 real Stop payload(s)
+STOPHOOK v1 ts=1794373144 session=d072ec62-cef0-4a22-b4fc-a9bc9ecf15ec status=continue turns=1 repeat=0
+## exit=0
+
+### stop-policy rev=334104b380341385b5c40625a648b8a7dec24eaa (+ uncommitted probe timeout fix) cmd: bash tests/fm-stop-policy.test.sh
+fm-test-queue: ticket 1065, position 4: waiting behind 3 earlier ticket(s)
+fm-test-queue: ticket 1065, position 3: waiting behind 2 earlier ticket(s)
+fm-test-queue: ticket 1065, position 2: waiting behind 1 earlier ticket(s)
+fm-test-queue: ticket 1065, position 1: all 1 slot(s) busy
+fm-test-queue: ticket 1065 served
+DRILL lab_home=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stop-policy.6aKzvI/home (temporary FM_HOME)
+ok - DRILL all-parked: stopped in 1 turn
+ok - parked shortcut preserves executable orders and mixed work
+ok - stop_hook_active is honored by the ordinary Stop guard
+DRILL repeated reply turn=1 exit=2
+DRILL repeated reply turn=2 exit=2
+DRILL repeated reply turn=3 exit=0
+ok - DRILL constant normalized reply: loop broken by turn 3
+ok - rolling-hour budget permits at most six continuations per session
+ok - budget expires after a rolling hour without affecting other sessions
+ok - a fixed turn_id without a transcript cannot bypass the cap
+ok - parallel Stop entrypoints share one event charge
+ok - three concurrent Stop writers reserve one continuation
+ok - check mode ignores ledger contention and transcript parsing
+ok - tool calls and commits reset the repeat streak
+ok - handoff gate honors stop_hook_active; auto-arm arming is tested separately
+STOPHOOK v1 ts=1794373462 session=parked status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1794373463 session=parked-order status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794373464 session=external status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1794373465 session=mixed status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794373467 session=active status=hook_active turns=0 repeat=0
+STOPHOOK v1 ts=1794373469 session=repeat status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794373473 session=repeat status=continue turns=2 repeat=2
+STOPHOOK v1 ts=1794373477 session=repeat status=hook_loop turns=2 repeat=3
+STOPHOOK v1 ts=1794373480 session=budget status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794373484 session=budget status=continue turns=2 repeat=1
+STOPHOOK v1 ts=1794373490 session=budget status=continue turns=3 repeat=1
+STOPHOOK v1 ts=1794373497 session=budget status=continue turns=4 repeat=1
+STOPHOOK v1 ts=1794373508 session=budget status=continue turns=5 repeat=1
+STOPHOOK v1 ts=1794373512 session=budget status=continue turns=6 repeat=1
+STOPHOOK v1 ts=1794373518 session=budget status=hook_budget turns=6 repeat=1
+STOPHOOK v1 ts=1794377122 session=budget status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794373533 session=no-transcript status=continue turns=1 repeat=0
+STOPHOOK v1 ts=1794373549 session=no-transcript status=continue turns=2 repeat=0
+STOPHOOK v1 ts=1794373568 session=no-transcript status=continue turns=3 repeat=0
+STOPHOOK v1 ts=1794373585 session=no-transcript status=continue turns=4 repeat=0
+STOPHOOK v1 ts=1794373600 session=no-transcript status=continue turns=5 repeat=0
+STOPHOOK v1 ts=1794373610 session=no-transcript status=continue turns=6 repeat=0
+STOPHOOK v1 ts=1794373616 session=no-transcript status=hook_budget turns=6 repeat=0
+STOPHOOK v1 ts=1794373620 session=dedup status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794373636 session=concurrent status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794373645 session=progress status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794373652 session=progress status=continue turns=2 repeat=2
+STOPHOOK v1 ts=1794373659 session=progress status=continue turns=3 repeat=0
+STOPHOOK v1 ts=1794373671 session=progress status=continue turns=4 repeat=0
+## exit=0
+
+### guard-subset rev=334104b380341385b5c40625a648b8a7dec24eaa (+ uncommitted probe timeout fix) cmd: env FM_TEST_ONLY=stop-policy bash tests/fm-turnend-guard.test.sh
+fm-test-queue: ticket 1070, position 5: waiting behind 4 earlier ticket(s)
+fm-test-queue: ticket 1070, position 4: waiting behind 3 earlier ticket(s)

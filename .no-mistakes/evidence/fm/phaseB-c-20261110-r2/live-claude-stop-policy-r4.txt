@@ -1,0 +1,7 @@
+# live Claude Stop payload probe (direct, network-bound, not CPU heavy) revision=312ea0f000d7aabc6e92a22b52006c27fc1c1c7d date=2026-11-11T05:56:07Z
+claude version: 2.1.322 (Claude Code)
+ok - 2.1.322 (Claude Code): parked stopped after 1 real Stop payload(s)
+STOPHOOK v1 ts=1794376582 session=c77d94de-b192-4400-a38a-ab89b6b0b825 status=parked turns=0 repeat=0
+ok - 2.1.322 (Claude Code): active stopped after 2 real Stop payload(s)
+STOPHOOK v1 ts=1794376609 session=86914421-611a-45e5-a3e2-d91f0687f023 status=continue turns=1 repeat=0
+## exit=0

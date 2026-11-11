@@ -1,0 +1,5 @@
+# phaseB-c focused subsets (rerun)  revision=334104b380341385b5c40625a648b8a7dec24eaa  date=2026-11-11T03:44:41Z
+
+## $ env FM_TEST_ONLY=stop-policy bash tests/fm-turnend-guard.test.sh   (revision=334104b380341385b5c40625a648b8a7dec24eaa)
+fm-test-queue: ticket 1042, position 1: all 1 slot(s) busy
+Terminated: 15

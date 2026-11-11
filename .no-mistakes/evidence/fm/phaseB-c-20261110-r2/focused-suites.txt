@@ -1,0 +1,61 @@
+# phaseB-c focused suites  revision=334104b380341385b5c40625a648b8a7dec24eaa  date=2026-11-11T03:15:53Z
+
+## $ bash tests/fm-stop-policy.test.sh   (revision=334104b380341385b5c40625a648b8a7dec24eaa)
+DRILL lab_home=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stop-policy.DNfY6J/home (temporary FM_HOME)
+ok - DRILL all-parked: stopped in 1 turn
+ok - parked shortcut preserves executable orders and mixed work
+ok - stop_hook_active is honored by the ordinary Stop guard
+DRILL repeated reply turn=1 exit=2
+DRILL repeated reply turn=2 exit=2
+DRILL repeated reply turn=3 exit=0
+ok - DRILL constant normalized reply: loop broken by turn 3
+ok - rolling-hour budget permits at most six continuations per session
+ok - budget expires after a rolling hour without affecting other sessions
+ok - a fixed turn_id without a transcript cannot bypass the cap
+ok - parallel Stop entrypoints share one event charge
+ok - three concurrent Stop writers reserve one continuation
+ok - check mode ignores ledger contention and transcript parsing
+ok - tool calls and commits reset the repeat streak
+ok - handoff gate honors stop_hook_active; auto-arm arming is tested separately
+STOPHOOK v1 ts=1794366960 session=parked status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1794366962 session=parked-order status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794366966 session=external status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1794366968 session=mixed status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794366973 session=active status=hook_active turns=0 repeat=0
+STOPHOOK v1 ts=1794366975 session=repeat status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794366979 session=repeat status=continue turns=2 repeat=2
+STOPHOOK v1 ts=1794366984 session=repeat status=hook_loop turns=2 repeat=3
+STOPHOOK v1 ts=1794366987 session=budget status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794366991 session=budget status=continue turns=2 repeat=1
+STOPHOOK v1 ts=1794366997 session=budget status=continue turns=3 repeat=1
+STOPHOOK v1 ts=1794367002 session=budget status=continue turns=4 repeat=1
+STOPHOOK v1 ts=1794367008 session=budget status=continue turns=5 repeat=1
+STOPHOOK v1 ts=1794367015 session=budget status=continue turns=6 repeat=1
+STOPHOOK v1 ts=1794367020 session=budget status=hook_budget turns=6 repeat=1
+STOPHOOK v1 ts=1794370623 session=budget status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794367029 session=no-transcript status=continue turns=1 repeat=0
+STOPHOOK v1 ts=1794367038 session=no-transcript status=continue turns=2 repeat=0
+STOPHOOK v1 ts=1794367044 session=no-transcript status=continue turns=3 repeat=0
+STOPHOOK v1 ts=1794367046 session=no-transcript status=continue turns=4 repeat=0
+STOPHOOK v1 ts=1794367050 session=no-transcript status=continue turns=5 repeat=0
+STOPHOOK v1 ts=1794367055 session=no-transcript status=continue turns=6 repeat=0
+STOPHOOK v1 ts=1794367059 session=no-transcript status=hook_budget turns=6 repeat=0
+STOPHOOK v1 ts=1794367061 session=dedup status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794367077 session=concurrent status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794367087 session=progress status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1794367094 session=progress status=continue turns=2 repeat=2
+STOPHOOK v1 ts=1794367099 session=progress status=continue turns=3 repeat=0
+STOPHOOK v1 ts=1794367105 session=progress status=continue turns=4 repeat=0
+## exit=0
+
+## $ env FM_TEST_ONLY=stop-policy bash tests/fm-turnend-guard.test.sh   (revision=334104b380341385b5c40625a648b8a7dec24eaa)
+ok - fm-turnend-guard --claude: active-hook stop cannot reopen the blind-supervision window
+ok - fm-turnend-guard --claude: a live arming epoch advances once and repeated observation is idempotent
+ok - fm-turnend-guard --claude: fresh rewake epoch prevents a duplicate continuation for the same event
+ok - fm-turnend-guard --claude: integrated fresh failures reach one bounded fail-open, stop continuation, and reset on recovery
+ok - fm-turnend-guard --claude: the exhausted auto-arm commits the attended alarm once, then stays suppressed until recovery
+ok - fm-turnend-guard --claude: a repeatedly lost host hand-back on a pending or announced handling marker reaches the attended alarm
+ok - fm-turnend-guard --claude: interruption reaches the attended alarm and preserves its final rewake after commit
+ok - fm-turnend-guard codex: stop_hook_active and the hourly budget do not end a turn over a running checkpoint
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-turnend-guard.GkN1eE/codex-own-checkpoint-reblock/ckpt/fm-watch-checkpoint.sh: line 12: 23352 Terminated: 15          sleep 30
+Terminated: 15

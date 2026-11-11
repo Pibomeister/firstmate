@@ -1,0 +1,6 @@
+ok - fm-turnend-guard codex: stop_hook_active and the hourly budget do not end a turn over a running checkpoint
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-turnend-guard.yT5bWM/codex-own-checkpoint-reblock/ckpt/fm-watch-checkpoint.sh: line 12: 15523 Terminated: 15          sleep 30
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-turnend-guard.yT5bWM/codex-own-checkpoint-ends-300/ckpt/fm-watch-checkpoint.sh: line 12: 29796 Terminated: 15          sleep 30
+ok - fm-turnend-guard codex: holds the turn while its own checkpoint runs, then the no-progress escape applies
+ok - fm-turnend-guard: the parked shortcut never ends a passive turn without a watcher
+## rev=312ea0f000d7aabc6e92a22b52006c27fc1c1c7d exit=

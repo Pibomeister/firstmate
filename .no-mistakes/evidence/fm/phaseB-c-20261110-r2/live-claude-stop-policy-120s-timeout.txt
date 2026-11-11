@@ -1,0 +1,13 @@
+# live Claude Stop probe, hook timeout 120s (production guard registration has none)
+# revision=334104b380341385b5c40625a648b8a7dec24eaa date=2026-11-11T03:30:28Z load: 115.09 113.19 98.84
+2.1.322 (Claude Code)
+== scenario=parked claude_exit=0 real_stop_payloads=1
+{"stop_hook_active":false,"last_assistant_message":"SHIPSHAPE"}
+guard rc=0 dur=3s
+STOPHOOK v1 ts=1794367852 session=e1622c71-581e-463d-9176-aa4feb5f9c65 status=parked turns=0 repeat=0
+== scenario=active claude_exit=0 real_stop_payloads=2
+{"stop_hook_active":false,"last_assistant_message":"SHIPSHAPE"}
+{"stop_hook_active":true,"last_assistant_message":"SHIPSHAPE"}
+guard rc=2 dur=12s
+active=true -> lab wrapper ends run
+STOPHOOK v1 ts=1794367882 session=75a9d545-ca3b-4a59-a080-38375891a761 status=continue turns=1 repeat=0

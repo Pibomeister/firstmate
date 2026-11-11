@@ -1,0 +1,6 @@
+# seed manifest consumer probe revision=334104b380341385b5c40625a648b8a7dec24eaa date=2026-11-11T03:45:53Z
+seeded skill blob: 67e1ef89058e9f58348500edd0d36eadcfd7e5d6
+manifest blob:     67e1ef89058e9f58348500edd0d36eadcfd7e5d6
+seeded inventory lines naming stop-hook.log: 1
+unchanged seed: claude-tooling exit=1 signal='' (expect exit=1, no signal)
+modified seed:  claude-tooling exit=0 signal='worktree .agents/skills/operational-home-layout/SKILL.md' (expect exit=0 with a signal)

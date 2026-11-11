@@ -1,0 +1,21 @@
+# Diagnosis of guard-subset failure in receipts-r4.txt (rev 312ea0f000d7aabc6e92a22b52006c27fc1c1c7d)
+Failing case: assert_autoarm_commits_attended_alarm_on_exhausted_continuation alarm-signal
+(tests/fm-turnend-guard.test.sh, upstream test present unchanged in base 099c5c292df0).
+Method: the same single variant was run in isolation, from a temp copy of the test file, at HEAD (worktree) and at base (git archive 099c5c29).
+Host load averages during the runs: 75-117.
+Results:
+  HEAD alone run A: not ok - the auto-arm never committed the attended alarm (alarm-signal)
+  base alone run A: ok (passed)
+  base+HEAD concurrent: both not ok - never committed the attended alarm
+  base alone x2: rc=1 both
+  HEAD alone x2: rc=1 both
+  base run: not ok - never committed the attended alarm
+  HEAD run: ok alarm-signal
+  base run: not ok - never committed the attended alarm
+  HEAD run: not ok - post-alarm generation must stay suppressed (stop 8)  [alarm only at stop 7; BSD `seq 8 7` counts down]
+Per-stop .turnend-claude-blocks traces show the guard's budget charge is sometimes dropped:
+fm_lock_try_acquire on the budget lock is non-blocking and `|| true`, and the slow guard can also charge after the
+auto-arm's alarm check. Under load the count fails to exceed BLOCK_BUDGET=3 within 7 Stops. This happens at base
+and at HEAD with the same frequency, so it is a load-sensitive timing flake in an upstream fixture. The stop-policy change did not cause it.
+Other queued suites at 312ea0f0 (ticket 1072): auto-arm stop-policy subset exit=0, live probe exit=0, tests/fm-stop-policy.test.sh exit=0.
+All other guard-subset cases before the flaky variant passed (see receipts-r4.txt).

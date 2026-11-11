@@ -1,0 +1,6 @@
+# live Claude Stop payload probe revision=334104b380341385b5c40625a648b8a7dec24eaa date=2026-11-11T03:26:10Z
+claude version: 2.1.322 (Claude Code)
+ok - 2.1.322 (Claude Code): parked stopped after 1 real Stop payload(s)
+STOPHOOK v1 ts=1794367617 session=db0038b8-fee5-4dec-be5f-84887cb00849 status=parked turns=0 repeat=0
+not ok - 2.1.322 (Claude Code) changed its Stop continuation payload: {"session_id":"554b3fcd-d270-46ce-83e8-f9ead960600a","transcript_path":"/Users/eduardopicazo/.claude/projects/-private-var-folders-93-6w1bxqxn2yb92mt6rmt5zbzw0000gn-T-fm-stop-policy-live-F5q3PG-active/554b3fcd-d270-46ce-83e8-f9ead960600a.jsonl","cwd":"/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stop-policy-live.F5q3PG/active","prompt_id":"08bf71a0-5c83-4299-8399-720cef7ed01d","permission_mode":"default","effort":{"level":"low"},"hook_event_name":"Stop","stop_hook_active":false,"last_assistant_message":"SHIPSHAPE","background_tasks":[],"session_crons":[]}
+## exit=1
