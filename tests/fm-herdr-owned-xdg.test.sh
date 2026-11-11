@@ -357,6 +357,38 @@ test_stop_refuses_herdr_named_pid_with_empty_readable_environ() {
   pass "fm-herdr-lab fixture: stop and cleanup refuse a herdr-named pid with an empty readable environ"
 }
 
+test_stop_refuses_herdr_named_pid_when_xdg_is_forged_inside_a_nul_field() {
+  local root pid start status=0 token pidfile proc_root
+  root=$(herdr_fixture_create) || fail "create failed"
+  remember_owned "$root"
+  token=$(cat "$root/.fm-herdr-owned")
+  pidfile=$(fm_test_tmproot herdr-named-sleep)/newline-environ.pid
+  start_herdr_named_sleep "$pidfile" 30
+  pid=$(cat "$pidfile")
+  kill -0 "$pid" 2>/dev/null || fail "the herdr-named decoy did not start"
+  start=$(LC_ALL=C ps -p "$pid" -o lstart= | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  [ -n "$start" ] || fail "could not read the decoy start time"
+  printf 'schema=fm-herdr-owned-xdg.v1\nxdg_root=%s\nmarker_token=%s\npid=%s\npid_start=%s\n' \
+    "$root" "$token" "$pid" "$start" > "$root/owned.record"
+  proc_root=$(fm_test_tmproot fm-herdr-owned-xdg-newline-proc)
+  mkdir -p "$proc_root/$pid"
+  printf 'BAR=1\0FOO=x\nXDG_CONFIG_HOME=%s\0' "$root/c" > "$proc_root/$pid/environ"
+  export FM_PROC_ROOT_OVERRIDE=$proc_root
+  status=0
+  herdr_fixture_stop "$root" >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "stop must refuse a herdr-named pid whose XDG_CONFIG_HOME is only a newline inside another field"
+  kill -0 "$pid" 2>/dev/null || fail "stop signalled a herdr-named decoy whose XDG_CONFIG_HOME was forged inside another field"
+  status=0
+  herdr_fixture_cleanup "$root" >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "cleanup must refuse a herdr-named pid whose XDG_CONFIG_HOME is only a newline inside another field"
+  kill -0 "$pid" 2>/dev/null || fail "cleanup signalled a herdr-named decoy whose XDG_CONFIG_HOME was forged inside another field"
+  unset FM_PROC_ROOT_OVERRIDE
+  kill -TERM "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  herdr_fixture_cleanup "$root" || fail "cleanup after the newline-environ decoy exited failed"
+  pass "fm-herdr-lab fixture: stop and cleanup refuse a herdr-named pid whose XDG_CONFIG_HOME is forged inside a NUL field"
+}
+
 test_lab_tripwire_still_refuses_zero_and_multiple_defaults() {
   local tmp fakebin status=0 out name
   tmp=$(fm_test_tmproot fm-herdr-owned-xdg-tripwire)
@@ -674,6 +706,7 @@ test_stop_refuses_herdr_named_pid_when_proc_is_unreadable_and_ps_e_is_absent
 test_stop_refuses_herdr_named_pid_with_xdg_prefix_collision
 test_stop_refuses_herdr_named_pid_with_xdg_prefix_collision_when_proc_is_hidden
 test_stop_refuses_herdr_named_pid_with_empty_readable_environ
+test_stop_refuses_herdr_named_pid_when_xdg_is_forged_inside_a_nul_field
 test_lab_tripwire_still_refuses_zero_and_multiple_defaults
 test_fixture_stays_on_default_when_a_custom_fleet_session_is_exported
 test_start_refuses_a_running_default_it_did_not_start

@@ -55,9 +55,9 @@
 # canonical root and marker token before they act, signal only the recorded
 # herdr pid (TERM, then bounded KILL) whose start time still matches, and
 # never run `herdr server stop`. They signal only when that pid's environment
-# proves XDG_CONFIG_HOME is this fixture's config dir: /proc/<pid>/environ, or
-# Darwin `ps -Eww` after removing the `ps -o command=` argv text. If neither
-# reader yields an environment, they refuse to signal.
+# proves XDG_CONFIG_HOME is this fixture's config dir as a whole /proc environ
+# field, or Darwin `ps -Eww` after removing the `ps -o command=` argv text.
+# If neither reader yields an environment, they refuse to signal.
 # Inherited HERDR_* identity is cleared on every fixture command. Lab session
 # names still cannot be default.
 set -u
@@ -651,8 +651,15 @@ fm_herdr_lab_fixture_process_pgid() { # <pid>
 # Prints NAME=VALUE lines when the pid's environment is readable.
 # Returns 0 even for an empty environment (so a readable /proc file with no
 # XDG_CONFIG_HOME still refuses). Returns 1 when nothing can be read.
-# Darwin `ps -Eww -o command=` mixes env and argv; the no-E `ps -o command=`
-# text is removed so an argv NAME=VALUE token is not treated as env.
+# /proc fields are NUL-delimited; a newline inside a value is not a new
+# assignment. GNU grep -z is not used here because under -z its `.` matches
+# newline, so a field `FOO=x\nXDG_CONFIG_HOME=...` would still be emitted.
+# awk RS="\0" on this Linux-only branch drops those fields and prints the
+# rest as whole records. Darwin `ps -Eww -o command=` mixes env and argv;
+# the no-E `ps -o command=` text is removed so an argv NAME=VALUE token is
+# not treated as env. A Darwin dump that contains a newline is refused:
+# `ps` space-separates tokens, and a newline would forge a line the same way
+# `tr '\0' '\n'` did. Values with spaces remain a Darwin limit.
 # FM_PROC_ROOT_OVERRIDE points tests at a fake /proc, matching fm-wake-lib.sh.
 fm_herdr_lab_fixture_process_env() { # <pid>
   local pid=$1 proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc} cmd eww env_text
@@ -660,7 +667,9 @@ fm_herdr_lab_fixture_process_env() { # <pid>
     ''|*[!0-9]*) return 1 ;;
   esac
   if [ -r "$proc_root/$pid/environ" ]; then
-    tr '\0' '\n' < "$proc_root/$pid/environ"
+    awk 'BEGIN { RS = "\0"; ORS = "\n" }
+      index($0, "\n") { next }
+      /^[A-Za-z_][A-Za-z0-9_]*=/ { print }' "$proc_root/$pid/environ"
     return 0
   fi
   cmd=$(LC_ALL=C ps -ww -o command= -p "$pid" 2>/dev/null | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
@@ -682,6 +691,9 @@ fm_herdr_lab_fixture_process_env() { # <pid>
   esac
   env_text=$(printf '%s' "$env_text" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
   [ -n "$env_text" ] || return 1
+  case "$env_text" in
+    *$'\n'*) return 1 ;;
+  esac
   printf '%s\n' "$env_text" | tr ' ' '\n' | grep -E '^[A-Za-z_][A-Za-z0-9_]*='
 }
 
