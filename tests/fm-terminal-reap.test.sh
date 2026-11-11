@@ -823,6 +823,11 @@ test_browsers_keep_young_and_live_owners() {
   : > "$FX/ppid1-$stable"; : > "$FX/ppid1-$handler"
   cwd_row "$stable" "$FX/stable-dir"
   cwd_row "$handler" "$FX/stable-dir"
+  # A headless browser whose immediate parent is a plain interpreter running
+  # a program (a test runner or driver script) has a live owner too.
+  local driven
+  spawn_headless_under "node $TMP_ROOT/jobs/browser-test.js" "$chrome"; driven=$PID
+  cwd_row "$driven" "$FX/gone-driven"
   sleep 1.2
   run_reap --browser-min-age 3600
   [ "$RC" = 0 ] || fail "the browser owner dry run must exit 0, got $RC: $(cat "$FX/stderr")"
@@ -833,9 +838,11 @@ test_browsers_keep_young_and_live_owners() {
   expect "$captained" "keep captain-browser" "a browser the captain's own browser owns is never reaped"
   expect "$young" "reap owner-gone" "an ownerless headless browser older than the floor is reaped"
   expect "$stable" "reap owner-gone" "an ownerless stable Chrome is reaped even beside its reparented crash handler"
+  expect "$driven" "keep live-ancestor" "a browser a plain interpreter driver still owns is never reaped"
   run_reap --apply --browsers --browser-min-age 0
   [ "$RC" = 0 ] || fail "the browser owner apply must exit 0, got $RC: $(cat "$FX/stderr")"
   kill -0 "$owned" 2>/dev/null || fail "an apply stopped a live worker's browser"
+  kill -0 "$driven" 2>/dev/null || fail "an apply stopped an interpreter driver's browser"
   kill -0 "$captained" 2>/dev/null || fail "an apply stopped the captain browser's browser"
   pass "fm-terminal-reap: browsers keep a young age, a live worker owner, and a captain-browser owner"
 }

@@ -675,6 +675,7 @@ test_close_worktree_terminals_counts_across_environments() {
   cat > "$fb2/orca" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${FM_SWEEP_LOG:?}"
+closed_file="${FM_SWEEP_LOG:?}.closed"
 case "$1 $2" in
   "environment list")
     [ "${FM_SWEEP_ENV_RC:-0}" = 0 ] || exit 1
@@ -682,12 +683,16 @@ case "$1 $2" in
   "terminal list")
     case "$*" in
       *--environment*)
-        printf '{"ok":true,"result":{"terminals":[{"handle":"term-remote","worktreePath":"%s"}]}}\n' "${FM_SWEEP_WT:?}" ;;
+        printf '{"ok":true,"result":{"terminals":[{"handle":"term-remote","worktreePath":"%s"}],"truncated":false}}\n' "${FM_SWEEP_WT:?}" ;;
       *)
-        printf '{"ok":true,"result":{"terminals":[{"handle":"term-local","worktreePath":"%s"},{"handle":"term-other","worktreePath":"/elsewhere"}]}}\n' "${FM_SWEEP_WT:?}" ;;
+        if [ -f "$closed_file" ] && grep -qx term-local "$closed_file"; then
+          printf '{"ok":true,"result":{"terminals":[{"handle":"term-other","worktreePath":"/elsewhere"}],"truncated":false}}\n'
+        else
+          printf '{"ok":true,"result":{"terminals":[{"handle":"term-local","worktreePath":"%s"},{"handle":"term-other","worktreePath":"/elsewhere"}],"truncated":false}}\n' "${FM_SWEEP_WT:?}"
+        fi ;;
     esac ;;
   "terminal close")
-    case "$*" in *term-fail*) exit 1 ;; esac
+    printf '%s\n' "$4" >> "$closed_file"
     printf '{"ok":true,"result":{}}\n' ;;
   *) exit 1 ;;
 esac
@@ -697,12 +702,12 @@ SH
     bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_close_worktree_terminals "$1"' "$ROOT" "$wt" 2>&1 )
   status=$?
   [ "$status" -eq 0 ] || fail "the sweep should succeed, got $status: $out"
-  [ "$out" = "closed=2 environments=2" ] || fail "the sweep should count both environments, got '$out'"
+  [ "$out" = "closed=1 environments=2 remote_matched=1" ] \
+    || fail "the sweep should close locally, count environments, and only count the remote match, got '$out'"
   grep -q 'terminal close --terminal term-local' "$CASE_DIR/sweep.log" || fail "the local terminal was not closed"
-  grep -q 'terminal close --terminal term-remote --environment env-remote' "$CASE_DIR/sweep.log" \
-    || fail "the remote terminal was not closed on its own environment"
+  ! grep -q 'term-remote' "$CASE_DIR/sweep.log" || fail "a terminal on another host was closed from here"
   ! grep -q 'term-other' "$CASE_DIR/sweep.log" || fail "a terminal in another worktree was closed"
-  pass "fm_backend_orca_close_worktree_terminals: closes a worktree's terminals on every environment and counts them"
+  pass "fm_backend_orca_close_worktree_terminals: closes local terminals, counts remote matches without closing them"
 }
 
 test_close_worktree_terminals_refuses_a_failed_close() {
@@ -724,7 +729,7 @@ SH
     bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_close_worktree_terminals "$1"' "$ROOT" "$wt" 2>&1 )
   status=$?
   [ "$status" -eq 1 ] || fail "a failed close should exit 1, got $status: $out"
-  [ "$out" = "closed=0 environments=1" ] || fail "with no paired environment only the local Orca should count, got '$out'"
+  [ "$out" = "closed=0 environments=1 remote_matched=0" ] || fail "with no paired environment only the local Orca should count, got '$out'"
   cat > "$fb2/orca" <<'SH'
 #!/usr/bin/env bash
 case "$1 $2" in
@@ -746,8 +751,12 @@ SH
 case "$1 $2" in
   "environment list") exit 1 ;;
   "terminal list")
-    printf '{"ok":true,"result":{"terminals":[{"handle":"term-local","worktreePath":"%s"}]}}\n' "${FM_SWEEP_WT:?}" ;;
-  "terminal close") printf '%s\n' "$*" >> "${FM_SWEEP_LOG:?}"; printf '{"ok":true,"result":{}}\n' ;;
+    if [ -f "${FM_SWEEP_LOG:?}.closed" ]; then
+      printf '{"ok":true,"result":{"terminals":[]}}\n'
+    else
+      printf '{"ok":true,"result":{"terminals":[{"handle":"term-local","worktreePath":"%s"}]}}\n' "${FM_SWEEP_WT:?}"
+    fi ;;
+  "terminal close") printf '%s\n' "$*" >> "${FM_SWEEP_LOG:?}"; : > "${FM_SWEEP_LOG:?}.closed"; printf '{"ok":true,"result":{}}\n' ;;
   *) exit 1 ;;
 esac
 SH
@@ -756,10 +765,24 @@ SH
     bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_close_worktree_terminals "$1"' "$ROOT" "$wt" 2>&1 )
   status=$?
   [ "$status" -eq 2 ] || fail "an unreadable environment list should exit 2, got $status: $out"
-  [ "$out" = "closed=1 environments=1" ] || fail "an unreadable environment list should still sweep the local Orca, got '$out'"
+  [ "$out" = "closed=1 environments=1 remote_matched=0" ] || fail "an unreadable environment list should still sweep the local Orca, got '$out'"
   grep -q 'terminal close --terminal term-local' "$CASE_DIR/sweep-noenv.log" \
     || fail "the local terminal was left open when the environment list could not be read"
-  pass "fm_backend_orca_close_worktree_terminals: a failed close refuses and an unreadable list is distinct"
+  cat > "$fb2/orca" <<'SH'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "environment list") printf '{"ok":true,"result":{"environments":[]}}\n' ;;
+  "terminal list")
+    printf '{"ok":true,"result":{"terminals":[{"handle":"term-local","worktreePath":"%s"}],"truncated":true}}\n' "${FM_SWEEP_WT:?}" ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fb2/orca"
+  out=$( PATH="$fb2:$PATH" FM_SWEEP_WT="$wt" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_close_worktree_terminals "$1"' "$ROOT" "$wt" 2>&1 )
+  status=$?
+  [ "$status" -eq 2 ] || fail "a truncated terminal list should exit 2, got $status: $out"
+  pass "fm_backend_orca_close_worktree_terminals: a failed close refuses and unreadable lists are distinct"
 }
 
 test_remove_worktree_refuses_empty_id() {

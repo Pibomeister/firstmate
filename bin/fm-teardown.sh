@@ -186,11 +186,14 @@
 # Orca tasks use the same safety checks, then close the recorded terminal and
 # remove the recorded worktree through `orca worktree rm`; teardown never guesses
 # an Orca target from ambient CLI state. Before that removal it also closes
-# every other Orca terminal in the task's worktree on the local Orca and every
-# saved paired environment (bin/backends/orca.sh's
-# fm_backend_orca_close_worktree_terminals) and prints the closed count across
-# all environments; a close that answers failure refuses, while an environment
-# that cannot be listed warns that the count is a floor.
+# every other Orca terminal in the task's worktree on the local Orca and
+# counts matches on every saved paired environment without closing them,
+# because a path match on another host does not prove this task owns that
+# terminal (bin/backends/orca.sh's fm_backend_orca_close_worktree_terminals
+# owns the proof); it prints the closed count and warns about remote matches
+# left to that host's own cleanup. A local terminal still listed after its
+# close refuses, while an environment that cannot be listed warns that the
+# count is a floor.
 # A Herdr presentation journal never authorizes cleanup. Teardown still closes
 # only the exact task pane from ordinary endpoint metadata and never calls
 # `workspace close`. It retires the non-authoritative journal only when a
@@ -4129,15 +4132,22 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
     fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" \
       || { endpoint_close_refusal "$ID" "$BACKEND" "$T" 0; exit 1; }
   fi
-  # Close every other Orca terminal this task opened in its worktree, on the
-  # local Orca and every saved paired environment, and report the count. A
-  # terminal that answers its close with failure refuses like the recorded
+  # Close every other Orca terminal this task opened in its worktree on the
+  # local Orca, count matches on every saved paired environment without
+  # closing them (a path match on another host does not prove this task owns
+  # that terminal; that host's own teardown owns it), and report the count.
+  # A local terminal still listed after its close refuses like the recorded
   # endpoint above; an environment that cannot be listed only warns, because
   # the recorded endpoint is already closed and Orca's own worktree removal
   # below remains the guard for the workspace it owns.
   if [ -n "$WT" ] && [ -d "$WT" ] && fm_backend_source orca; then
     orca_sweep_rc=0
     orca_sweep_out=$(fm_backend_orca_close_worktree_terminals "$WT") || orca_sweep_rc=$?
+    orca_remote_matched=$(printf '%s' "$orca_sweep_out" | sed -n 's/.*remote_matched=\([0-9]*\).*/\1/p')
+    case "$orca_remote_matched" in ''|*[!0-9]*) orca_remote_matched=0 ;; esac
+    if [ "$orca_remote_matched" -gt 0 ]; then
+      echo "warning: $orca_remote_matched Orca terminal(s) on other environments match task $ID's worktree path; left to that host's own cleanup" >&2
+    fi
     case "$orca_sweep_rc" in
       0) printf 'teardown: %s Orca terminal(s) closed across %s environment(s) for task %s\n' \
            "$(printf '%s' "$orca_sweep_out" | sed -n 's/^closed=\([0-9]*\).*/\1/p')" \

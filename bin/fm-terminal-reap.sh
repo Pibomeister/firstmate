@@ -103,7 +103,8 @@
 # its owner: its immediate live ancestor, when one remains.
 # An owner that is itself a browser without --headless is the captain's own
 # browser, and an owner running an agent harness, an agent-browser daemon, a
-# chrome-devtools bridge, or a Playwright or Puppeteer driver is a live worker;
+# chrome-devtools bridge, a Playwright or Puppeteer driver, or any interpreter
+# (node, python, bun, deno) running a program is a live worker;
 # either keeps the root whatever its directory says:
 #   keep task          it works in a recorded task's worktree
 #   keep home          it works in a home root
@@ -455,7 +456,7 @@ if (mode === "terminals") {
     const p = procs.get(procs.get(root)?.ppid);
     return p && p.pid > 1 ? p : null;
   };
-  const workerOwner = /((^|\/)(claude|codex|opencode|grok|kimi|cursor|cursor-agent|muse|agy|pi|hermes)(\s|$)|agent-browser|chrome-devtools-axi|playwright|puppeteer)/;
+  const workerOwner = /((^|\/)(claude|codex|opencode|grok|kimi|cursor|cursor-agent|muse|agy|pi|hermes)(\s|$)|agent-browser|chrome-devtools-axi|chrome-devtools-mcp|playwright|puppeteer|chromedriver|(^|\/)(node|nodejs|python3?|bun|deno)(\s+\S|$))/;
   const matched = new Set([...procs.values()].filter(isRoot).map((p) => p.pid));
   const roots = [...matched].filter((pid) => {
     for (let p = procs.get(pid), hops = 0; p && p.ppid > 1 && hops < 512; hops++) {

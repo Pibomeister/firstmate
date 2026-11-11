@@ -252,7 +252,7 @@ cache_root_of() {
 # Callers must already have proved the work has landed.
 prune_landed_caches() {
   local wt=$1 status_file=$SCRATCH/prune-status line path root
-  local roots='' seen=' '
+  local roots=() seen=' '
   git -C "$wt" status --porcelain=v1 --untracked-files=all -z > "$status_file" || return 2
   while IFS= read -r -d '' line; do
     case "$line" in
@@ -263,17 +263,22 @@ prune_landed_caches() {
     path=${line#\?\? }
     root=$(cache_root_of "$path")
     [ -n "$root" ] || return 1
-    case "$seen" in *" $root "*) ;; *) seen="$seen$root "; roots="$roots $root" ;; esac
+    case "$seen" in *" $root "*) ;; *) seen="$seen$root "; roots+=("$root") ;; esac
   done < "$status_file"
-  [ -n "$roots" ] || return 0
+  [ "${#roots[@]}" -gt 0 ] || return 0
+  # A cache root that also holds tracked files is not pruned: deleting the
+  # root would destroy tracked work the status scan never listed.
+  for root in "${roots[@]}"; do
+    [ -z "$(git -C "$wt" ls-files -- "$root")" ] || return 1
+  done
   if [ "$DRY" -eq 1 ]; then
-    emit "worktree-cleanup: dry-run prune caches $wt:$roots"
+    emit "worktree-cleanup: dry-run prune caches $wt: ${roots[*]}"
     return 0
   fi
-  for root in $roots; do
+  for root in "${roots[@]}"; do
     rm -rf -- "${wt:?}/${root:?}" || return 2
   done
-  emit "worktree-cleanup: prune caches $wt:$roots"
+  emit "worktree-cleanup: prune caches $wt: ${roots[*]}"
   [ "$(dirt_kind "$wt")" = clean ] || return 1
   return 0
 }
