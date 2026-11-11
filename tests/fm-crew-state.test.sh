@@ -6944,7 +6944,11 @@ EOF
   chmod 0444 "$NM_HOME/state.sqlite"
   before=$(git hash-object "$NM_HOME/state.sqlite")
   FM_NM_SNAPSHOT_TTL=60
-  export FM_NM_SNAPSHOT_TTL
+  # A loaded host can push one bounded snapshot read past the default 10 s
+  # bound, which correctly falls back to the CLI; widen the bound so this
+  # sweep proves cache reuse rather than host speed.
+  FM_CREW_STATE_NM_TIMEOUT=120
+  export FM_NM_SNAPSHOT_TTL FM_CREW_STATE_NM_TIMEOUT
   local repo_cap='import json,sys; print(json.load(open(sys.argv[1]))["repo_snapshots"][sys.argv[2]]["captured_at"])'
 
   out_a=$(run_crew_state "$d" snap-sweep)
@@ -6960,10 +6964,11 @@ EOF
     || fail "second repository's read did not join the shared status snapshot"
 
   out_a2=$(run_crew_state "$d" snap-sweep)
+  [ ! -e "$d/nm-cli.log" ] || fail "status snapshot invoked no-mistakes CLI on repeat read in sweep"
   snap_cap_3=$(python3 -c "$repo_cap" "$d/state/.nm-status-snapshot.json" repo-1)
   [ "$snap_cap_1" = "$snap_cap_3" ] || fail "repeat crew read in sweep did not reuse the cached status snapshot"
   [ "$out_a" = "$out_a2" ] || fail "cached status snapshot changed the crew report"
-  unset FM_NM_SNAPSHOT_TTL
+  unset FM_NM_SNAPSHOT_TTL FM_CREW_STATE_NM_TIMEOUT
 
   after=$(git hash-object "$NM_HOME/state.sqlite")
   [ "$before" = "$after" ] || fail "status snapshot modified state.sqlite"
