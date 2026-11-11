@@ -2113,14 +2113,28 @@ test_bash32_reexecs_to_bash5_candidate() {
     pass "bash 3.2 re-exec check skipped on host where /bin/bash is already bash 5+"
     return 0
   fi
+  # The fake candidate must hand off to a real Bash 5+. This test's own
+  # interpreter can be Bash 3.2 when PATH resolves bash to /bin/bash.
+  local real_bash5='' candidate
+  for candidate in "$BASH" /opt/homebrew/bin/bash /usr/local/bin/bash; do
+    [ -x "$candidate" ] || continue
+    if "$candidate" -c '[ "${BASH_VERSINFO[0]:-0}" -ge 5 ]' 2>/dev/null; then
+      real_bash5=$candidate
+      break
+    fi
+  done
+  if [ -z "$real_bash5" ]; then
+    pass "bash 3.2 re-exec check skipped on host with no bash 5+ to delegate to"
+    return 0
+  fi
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-reexec.XXXXXX")
   cat >"$tmp/fake-bash5" <<EOF
-#!/usr/bin/env bash
+#!/bin/sh
 if [ "\${1:-}" = "-c" ]; then
-  exec "$BASH" "\$@"
+  exec "$real_bash5" "\$@"
 fi
 printf 'reexec:%s\n' "\${FM_TEST_RUN_BASH_REEXEC:-0}" >"$tmp/reexec.marker"
-exec "$BASH" "\$@"
+exec "$real_bash5" "\$@"
 EOF
   chmod +x "$tmp/fake-bash5"
   out=$(FM_TEST_RUN_BASH5_CANDIDATE="$tmp/fake-bash5" /bin/bash "$RUNNER" --list-families) \
