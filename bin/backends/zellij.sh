@@ -236,7 +236,11 @@ fm_backend_zellij_session_exists() {  # <session>
 fm_backend_zellij_server_ensure() {  # <session>
   local session=$1 i
   fm_backend_zellij_session_exists "$session" && return 0
-  ( nohup zellij attach -b "$session" </dev/null >/dev/null 2>&1 & ) || return 1
+  # The session hands its startup environment to every later pane.
+  (
+    unset AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR
+    nohup zellij attach -b "$session" </dev/null >/dev/null 2>&1 &
+  ) || return 1
   for i in $(seq 1 20); do
     fm_backend_zellij_session_exists "$session" && return 0
     sleep 0.5

@@ -1712,8 +1712,9 @@ fm_backend_herdr_server_owner_name() {  # <owner-marker>
 # has-session || tmux new-session -d`. Verified: a bare socket CLI call does
 # NOT auto-start the server, so this must run before any workspace/tab/pane
 # call. The server outlives its launcher and passes its startup environment to
-# every later pane, so remove home, harness identity, and supervision selection
-# inherited from whichever agent happened to start it. Bounded poll for the
+# every later pane, so remove home, harness identity, supervision selection,
+# and the agent-kit lifecycle pair inherited from whichever agent happened to
+# start it. Bounded poll for the
 # server to report running.
 #
 # A running server returns after one marker check in the session directory,
@@ -1758,7 +1759,8 @@ fm_backend_herdr_server_ensure() {  # <session>
   # and every pane on it.
   (
     unset FM_HOME FM_ROOT_OVERRIDE FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_PROJECTS_OVERRIDE FM_CONFIG_OVERRIDE \
-      CURSOR_AGENT CURSOR_INVOKED_AS CLAUDECODE PI_CODING_AGENT FM_PI_HARNESS GROK_AGENT FM_SUPERVISION_MODEL
+      CURSOR_AGENT CURSOR_INVOKED_AS CLAUDECODE PI_CODING_AGENT FM_PI_HARNESS GROK_AGENT FM_SUPERVISION_MODEL \
+      AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR
     set -m
     fm_backend_herdr_cli "$session" server </dev/null >/dev/null 2>&1 &
   ) || return 1
