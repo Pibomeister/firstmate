@@ -27,8 +27,11 @@ printf '%s\n' "$payload" >> "$FM_HOME/payloads.jsonl"
 printf '%s' "$payload" | jq -e '.stop_hook_active == true' >/dev/null && exit 0
 printf '%s' "$payload" | bash "$POLICY_ROOT/bin/fm-turnend-guard.sh" --claude
 SH
+  # No hook timeout, matching the production guard registration in
+  # .claude/settings.json: a loaded host can need more than 10s, and an expired
+  # hook makes Claude stop after one payload instead of continuing.
   jq -nc --arg command "bash '$LAB/hook.sh'" \
-    '{hooks:{Stop:[{hooks:[{type:"command",command:$command,timeout:10}]}]}}' > "$LAB/.claude/settings.json"
+    '{hooks:{Stop:[{hooks:[{type:"command",command:$command}]}]}}' > "$LAB/.claude/settings.json"
   (
     cd "$LAB" || exit 1
     env -u CLAUDECODE FM_HOME="$LAB" FM_ROOT_OVERRIDE="$LAB" FM_STATE_OVERRIDE="$LAB/state" \
