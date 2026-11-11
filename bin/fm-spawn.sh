@@ -465,10 +465,35 @@
 #   prevents equal task ids in different Firstmate homes from sharing a file.
 #   Spawn refuses an unsafe pre-existing task temp root or launch namespace, and
 #   task teardown removes only the current home's launch namespace.
+# Agent-kit lifecycle policy:
+#   Every launch (ship, scout, secondmate, raw command, and relaunch, on every
+#   backend) exports AK_LIFECYCLE_POLICY=unattended and
+#   AK_LIFECYCLE_SUPERVISOR=firstmate, so agent-kit lifecycle skills run under
+#   agent-kit's unattended policy with Firstmate named as the supervisor.
+#   Agent-kit records the supervisor only from the release that includes its
+#   companion unattended opt-in change; an older agent-kit, for example 0.1.96,
+#   ignores AK_LIFECYCLE_SUPERVISOR, so only AK_LIFECYCLE_POLICY takes effect.
+#   The values are fixed: an inherited value in this spawn's environment or in
+#   the destination pane, empty or different, never replaces them. T3 Code
+#   carries the same values in its per-directory harness config, and
+#   bin/fm-codex-launch.sh forces both into Codex tool shells. A raw command
+#   is routed through that launcher, arguments kept, only when the whole
+#   string is one safe form: plain NAME=value words with no quote, backslash,
+#   $ or shell operator, then codex or a literal /path/to/codex, then
+#   arguments, with no other word on any line naming codex. Any other raw
+#   command that names codex as a word refuses, including codex inside quoted
+#   argument text. Known false refusals, accepted so that Firstmate does not
+#   parse shell: a non-Codex command where codex is only a path segment or an
+#   assignment value (DIR=/x/work/codex /x/work/codex/probe), and a Codex
+#   launch whose later words mention codex (CODEX_HOME=/srv/codex codex ...,
+#   or codex exec with codex in its prompt). Use --harness codex or a simpler
+#   command instead. A shared server, daemon, app or session that a backend
+#   starts for a launch never receives the pair (bin/fm-env-scrub.sh).
 # Launch environment (config/launch-env-allowlist):
 #   Absent keeps ambient inheritance but unsets inherited home- and task-scoped
-#   FM_* values (bin/fm-env-scrub.sh) in the pane shell before re-establishing
-#   this launch's own values. A present readable regular file opts every
+#   FM_* values and the agent-kit lifecycle pair (bin/fm-env-scrub.sh) in the
+#   pane shell before re-establishing this launch's own values. A present
+#   readable regular file opts every
 #   supported command-line launch (ship, scout, secondmate, raw command, and
 #   relaunch) into /usr/bin/env -i followed by /bin/sh -c of the existing launch
 #   command. T3 Code refuses the file because T3 owns the provider process
@@ -496,7 +521,8 @@
 #   An enabled task trace also retains TRACEPARENT. Explicit Firstmate launch
 #   assignments still apply inside the filtered environment, including the
 #   FM_TASK_INBOX export every launch carries (the absolute state/<id>.inbox
-#   path the steering doorbell names). Raw commands must
+#   path the steering doorbell names) and the agent-kit lifecycle exports
+#   described above. Raw commands must
 #   be POSIX sh compatible under this opt-in; the absent-file path is unchanged.
 #   This is an exec environment boundary, not a sandbox for the pane's startup
 #   shell, credential files, same-user processes, or later shell initialization.
@@ -614,8 +640,14 @@
 #                  turn-end signal rides the launch command, e.g. codex -c notify=[...])
 #     __CODEXLAUNCH__ quoted path to bin/fm-codex-launch.sh, the codex
 #                  launcher that adds the shell-environment overrides for
-#                  the endpoint and inbox variables its own environment
-#                  carries before exec'ing codex with the remaining args
+#                  the endpoint, inbox and agent-kit lifecycle variables
+#                  (AK_LIFECYCLE_POLICY, AK_LIFECYCLE_SUPERVISOR) its own
+#                  environment carries before exec'ing codex with the
+#                  remaining args; the FM_CODEX_BIN= assignment before it
+#                  pins the executable, empty on every Codex template and
+#                  bare raw Codex launch and the literal path on a raw
+#                  /path/to/codex launch, so an inherited FM_CODEX_BIN
+#                  cannot redirect the launcher
 #     __PIEXT__    absolute path to state/<task-id>.pi-ext.ts (pi busy-state extension,
 #                  written by this script; outside the worktree to avoid pi's trust gate;
 #                  a secondmate loads it beside its two primary extensions)
@@ -3339,9 +3371,9 @@ launch_template() {
   # secondmate launch deliberately keeps hooks on but shares this approval posture.
   codex)
     if [ "$kind" = secondmate ]; then
-      printf '%s' '__CODEXLAUNCH__ __MODELFLAG____EFFORTFLAG____CODEXAPPROVALFLAG__ "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
+      printf '%s' 'FM_CODEX_BIN= __CODEXLAUNCH__ __MODELFLAG____EFFORTFLAG____CODEXAPPROVALFLAG__ "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
     else
-      printf '%s' '__CODEXLAUNCH__ __MODELFLAG____EFFORTFLAG____CODEXAPPROVALFLAG__ --disable hooks -c "notify=[\"bash\",\"-c\",\"touch __TURNEND__\"]" "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
+      printf '%s' 'FM_CODEX_BIN= __CODEXLAUNCH__ __MODELFLAG____EFFORTFLAG____CODEXAPPROVALFLAG__ --disable hooks -c "notify=[\"bash\",\"-c\",\"touch __TURNEND__\"]" "$(__OPINPUT__ encode launch-brief < __BRIEF__)"'
     fi
     ;;
   opencode) printf '%s' 'OPENCODE_CONFIG_CONTENT='\''{"permission":{"*":"allow"}__EFFORTFLAG__}'\'' __OPENCODEBIN__ __MODELFLAG__--prompt "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
@@ -3600,6 +3632,35 @@ case "$ARG3" in
       ;;
     esac
   done
+  # Codex tool shells receive only what shell_environment_policy lets through,
+  # so a raw Codex command runs through the same launcher as the template, or
+  # the agent-kit lifecycle names never reach its commands. Exactly one raw
+  # form is routed, judged on the whole string: plain NAME=value words (no
+  # quote, backslash, $ or shell operator), then codex or a literal
+  # /path/to/codex, then arguments, with no other word on any line naming
+  # codex. Every other raw command that names codex refuses rather than
+  # guessing how a shell would parse it. FM_CODEX_BIN is pinned empty on the
+  # bare form, as on the template, so an ambient value cannot redirect it.
+  raw_codex_name_re='(^|[^A-Za-z0-9_.-])codex($|[^A-Za-z0-9_.-])'
+  if [[ $ARG3 =~ $raw_codex_name_re ]]; then
+    raw_codex_safe_re='^[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]'"'"'"`\\$;|&<>()]*[[:space:]]+)*)(codex|[A-Za-z0-9._~+/-]*/codex)([[:space:]].*)?$'
+    raw_codex_word=
+    if [[ $ARG3 =~ $raw_codex_safe_re ]]; then
+      raw_codex_prefix=${BASH_REMATCH[1]}
+      raw_codex_word=${BASH_REMATCH[3]}
+      raw_codex_rest=${BASH_REMATCH[4]}
+      [[ "$raw_codex_prefix $raw_codex_rest" =~ $raw_codex_name_re ]] && raw_codex_word=
+    fi
+    case "$raw_codex_word" in
+    '')
+      echo "error: raw command '$ARG3' names codex outside the one raw form bin/fm-codex-launch.sh can take over: plain NAME=value words with no quote, backslash, \$ or shell operator, then codex or a literal /path/to/codex as the only word naming codex. Use --harness codex, or simplify the raw command" >&2
+      exit 1
+      ;;
+    codex) LAUNCH="${raw_codex_prefix}FM_CODEX_BIN= __CODEXLAUNCH__${raw_codex_rest}" ;;
+    *) LAUNCH="${raw_codex_prefix}FM_CODEX_BIN=${raw_codex_word} __CODEXLAUNCH__${raw_codex_rest}" ;;
+    esac
+    HARNESS=codex
+  fi
   ;;
 '')
   # No explicit harness: resolve from config. A secondmate AGENT launches on the
@@ -9013,6 +9074,13 @@ $(shell_quote "$FM_ROOT/bin/fm-osc7501.sh") disarm --state $(shell_quote "$STATE
 if [ "$LAVISH_AXI_HOST_CONFIG_PRESENT" = 1 ]; then
   LAUNCH="export LAVISH_AXI_HOST=$(shell_quote "$LAVISH_AXI_HOST"); $LAUNCH"
 fi
+# Every launch carries the agent-kit unattended lifecycle opt-in, naming
+# Firstmate as the supervisor in place of a human (docs/configuration.md
+# "Agent-kit lifecycle policy"). The values are fixed literals: an inherited
+# value in this spawn's environment or the destination pane never replaces
+# them, so a secondmate's own spawns carry the same pair. Export statements
+# survive a compound raw launch and the launch-env-allowlist `env -i` wrapper.
+LAUNCH="export AK_LIFECYCLE_POLICY=unattended; export AK_LIFECYCLE_SUPERVISOR=firstmate; $LAUNCH"
 # Every launch also exports the absolute path of this task's steering inbox, so
 # the constant doorbell line (bin/fm-task-inbox-lib.sh) can name
 # "$FM_TASK_INBOX" instead of a path that grows with the home's depth. Like the
@@ -9066,7 +9134,8 @@ if [ "$BACKEND" = t3code ]; then
   # (spawn_t3code_env_install). TRACEPARENT is delivered only once its meta
   # record exists, the same delivered-implies-recorded invariant the pane path
   # keeps by unsetting it when the record fails.
-  T3CODE_ENV=("GOTMPDIR=$TASK_TMP/gotmp" COMPACT_ADVISER_DISABLE=1 "FM_TASK_INBOX=$STATE_REAL/$ID.inbox")
+  T3CODE_ENV=("GOTMPDIR=$TASK_TMP/gotmp" COMPACT_ADVISER_DISABLE=1 "FM_TASK_INBOX=$STATE_REAL/$ID.inbox"
+    AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate)
   if [ "$GIT_HOOKS_INSTALLED" = 1 ]; then
     T3CODE_ENV+=(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath "GIT_CONFIG_VALUE_0=$GIT_HOOKS_DIR")
   fi

@@ -91,6 +91,8 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
 # shellcheck source=bin/fm-backend-hometag-lib.sh
 . "$FM_BACKEND_PASEO_ROOT/bin/fm-backend-hometag-lib.sh"
+# shellcheck source=bin/fm-env-scrub.sh
+. "$FM_BACKEND_PASEO_ROOT/bin/fm-env-scrub.sh"
 
 # Shared composer-content classifier (empty|pending|unknown, and the fleet-wide
 # dead-shell-vs-agent-composer rule). Owned by bin/fm-composer-lib.sh, reused by
@@ -211,7 +213,8 @@ fm_backend_paseo_ensure_running() {
   local state i
   state=$(fm_backend_paseo_daemon_state)
   [ "$state" = ok ] && return 0
-  fm_backend_paseo_cli start >/dev/null 2>&1 || {
+  # The daemon hands its startup environment to every later Paseo terminal.
+  fm_env_without_ak_pair fm_backend_paseo_cli start >/dev/null 2>&1 || {
     echo "error: 'paseo start' failed; is the Paseo app installed? See docs/paseo-backend.md 'Setup'." >&2
     return 1
   }

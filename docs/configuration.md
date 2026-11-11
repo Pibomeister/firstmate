@@ -1822,7 +1822,7 @@ The flag is read only for ship and scout spawns, secondmate charters never take 
 
 The optional local, gitignored `config/launch-env-allowlist` limits the ambient environment passed to newly launched workers, scouts, and secondmates, including relaunches.
 T3 Code starts the provider from the server's environment and cannot apply this command boundary, so `backend=t3code` refuses when the file exists; [`t3code-backend.md`](t3code-backend.md#active-limits) owns that backend limit.
-With no file, the pane shell unsets inherited home- and task-scoped variables (`FM_HOME`, `FM_TASK_ID`, `FM_TASK_INBOX`, `FM_PUBLIC_FOLLOWUP_PRIMARY_HOME`, `FM_SESSION_ENDPOINT_META`, `FM_LEASE_HOLDER_SESSION`, `FM_*_OVERRIDE`, `FM_PROCEVENT_CLAIM_*`, `FM_PROCEVENT_CAPTURE_*`, and `FM_ZELLIJ_SESSION` outside the zellij backend) before assigning the worker's own values; runtime tuning `FM_*` variables and other variables remain subject to the provider, long-lived terminal daemon, and shell initialization.
+With no file, the pane shell unsets inherited home- and task-scoped variables (`FM_HOME`, `FM_TASK_ID`, `FM_TASK_INBOX`, `FM_PUBLIC_FOLLOWUP_PRIMARY_HOME`, `FM_SESSION_ENDPOINT_META`, `FM_LEASE_HOLDER_SESSION`, `FM_*_OVERRIDE`, `FM_PROCEVENT_CLAIM_*`, `FM_PROCEVENT_CAPTURE_*`, and `FM_ZELLIJ_SESSION` outside the zellij backend) and the agent-kit lifecycle pair (`AK_LIFECYCLE_POLICY`, `AK_LIFECYCLE_SUPERVISOR`) before assigning the worker's own values; runtime tuning `FM_*` variables and other variables remain subject to the provider, long-lived terminal daemon, and shell initialization.
 
 Do not assume every worker inherits the invoking Firstmate process's current environment.
 The file is inherited into secondmate homes through the [primary-authoritative configuration contract](../.agents/skills/secondmate-provisioning/SKILL.md).
@@ -1908,6 +1908,32 @@ Firstmate provides no configuration or flag to change this value.
 This applies only to agents Firstmate launches; the captain's own primary Firstmate session is never given the variable.
 
 [`fm-spawn.sh --help`](../bin/fm-spawn.sh) owns the delivery mechanics, with focused regression coverage in [`tests/fm-spawn-compact-adviser-disable.test.sh`](../tests/fm-spawn-compact-adviser-disable.test.sh) and [`tests/fm-spawn-compact-adviser-disable-remote.test.sh`](../tests/fm-spawn-compact-adviser-disable-remote.test.sh).
+
+### Agent-kit lifecycle policy
+
+Every crewmate, scout, and secondmate Firstmate launches starts with `AK_LIFECYCLE_POLICY=unattended` and `AK_LIFECYCLE_SUPERVISOR=firstmate` in its environment, on a fresh spawn and on a relaunch alike, on every runtime backend.
+`AK_LIFECYCLE_POLICY=unattended` selects agent-kit's opt-in unattended lifecycle policy for every agent-kit lifecycle run a launched worker performs.
+`AK_LIFECYCLE_SUPERVISOR=firstmate` names Firstmate as the supervisor in place of a human, but agent-kit records it only from the release that includes its companion unattended opt-in change.
+An older installed agent-kit, for example 0.1.96, ignores `AK_LIFECYCLE_SUPERVISOR`, so only `AK_LIFECYCLE_POLICY=unattended` takes effect there and no supervisor is recorded.
+As with the compact adviser setting, this covers raw launch commands, remote secondmates, and launches filtered by `config/launch-env-allowlist`, and Codex workers receive both names in their tool shells even under a `[shell_environment_policy] inherit = "core"` configuration.
+
+The values are fixed and have no setting.
+An inherited value, whether in the environment that runs `bin/fm-spawn.sh` or in the destination pane, never replaces them, even when it is empty or names another supervisor.
+A secondmate therefore launches its own workers with the same pair, and a remote secondmate's host applies the same values through its own `bin/fm-spawn.sh`.
+A raw launch command is routed through the same Codex launcher, with its arguments kept, only when the whole command string is one safe form: zero or more plain `NAME=value` words with no quote, backslash, `$` or shell operator, then `codex` or a literal path such as `/opt/bin/codex`, then arguments, with no other word on any line naming codex.
+Its tool shells then receive both names.
+Any other raw command that names codex as a word refuses before launch, because Firstmate cannot be sure the launcher would carry the names into that Codex's tool shells.
+The check reads the whole string and does not parse shell syntax, so it refuses quoted or escaped assignments, a path built from a variable, a Codex behind any other command word such as `env`, `time`, `npx` or a shell, a second Codex after a separator or on another line, and codex inside quoted argument text, whether the command is Codex or another tool.
+Known false refusals follow from that rule: a command that is not a Codex launch refuses when codex appears only as a path segment or an assignment value, as in `DIR=/x/work/codex /x/work/codex/probe`, and a Codex launch refuses when a later word mentions codex, as in `CODEX_HOME=/srv/codex codex ...` or `codex exec` with codex in its prompt.
+These refusals are accepted so that Firstmate does not parse shell.
+Launch Codex with `--harness codex`, or simplify the raw command, instead.
+This applies only to agents Firstmate launches; the captain's own primary Firstmate session is never given either variable.
+A shared process that a launch starts and that outlives it does not hand either variable to later terminals, because Firstmate removes both from the environment it starts that process with.
+That covers a tmux, Herdr, or zellij server, the Paseo daemon, the cmux app, a Herdr Core session's core, a Rex personal server, and a Tern session, and [`bin/fm-env-scrub.sh`](../bin/fm-env-scrub.sh) owns the removal.
+Orca and T3 Code only attach to an app or server the operator already runs, so Firstmate never starts one for them.
+Firstmate provides no configuration file or flag for this, and agent-kit's own unattended-policy checks, such as its refusal to ship onto an unprotected default branch, still apply.
+
+[`fm-spawn.sh --help`](../bin/fm-spawn.sh) owns the delivery mechanics, with focused regression coverage in [`tests/fm-spawn-ak-lifecycle-policy.test.sh`](../tests/fm-spawn-ak-lifecycle-policy.test.sh).
 
 ### Commit attribution
 

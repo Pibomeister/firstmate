@@ -128,10 +128,13 @@ make_seeded_secondmate_home() {
   git -C "$home" init -q -b main
 }
 
+# The inbox export, followed by the agent-kit lifecycle exports every launch
+# carries right after it as fixed literals.
 task_inbox_export() {  # <home> <id>
   local state
   state=$(CDPATH='' cd -- "$1/state" && pwd -P) || fail "cannot resolve state dir $1/state"
   printf "export FM_TASK_INBOX='%s'; " "$state/$2.inbox"
+  printf '%s' 'export AK_LIFECYCLE_POLICY=unattended; export AK_LIFECYCLE_SUPERVISOR=firstmate; '
 }
 
 launch_inner() {  # <delivered command> -> worker command after the env boundary
@@ -1029,8 +1032,8 @@ test_raw_codex_effort_placeholder_checks_catalog() {
   assert_absent "$HOME_DIR/state/$id.meta" 'raw inline HOME refusal published task metadata'
   [ ! -s "$LAUNCH_LOG" ] || fail 'raw inline HOME refusal launched an agent'
 
-  # A quote inside the inline HOME word still refuses. A value containing
-  # whitespace is outside this parser: the raw word loop splits on it.
+  # A quote or $ inside the inline HOME word refuses before the catalog check,
+  # because the raw Codex launch is not the safe form.
   id=profile-codex-raw-max-inline-quoted-home
   rec=$(make_spawn_case profile-codex-raw-max-inline-quoted-home codex "$id")
   read_case_record "$rec"
@@ -1039,7 +1042,7 @@ test_raw_codex_effort_placeholder_checks_catalog() {
     "HOME=$CASE_DIR/o'q\$x-home codex __EFFORTFLAG__" --model gpt-5.6-luna --effort max 2>&1)
   status=$?
   expect_code 1 "$status" "raw inline HOME with shell metacharacters must refuse: $out"
-  assert_contains "$out" 'inline CODEX_HOME or HOME cannot be validated' 'quoted inline HOME refusal was not actionable'
+  assert_contains "$out" 'names codex outside the one raw form' 'quoted inline HOME refusal was not actionable'
   assert_absent "$HOME_DIR/state/$id.meta" 'quoted inline HOME refusal published task metadata'
   [ ! -s "$LAUNCH_LOG" ] || fail 'quoted inline HOME refusal launched an agent'
 
@@ -1051,7 +1054,7 @@ test_raw_codex_effort_placeholder_checks_catalog() {
   status=$?
   expect_code 0 "$status" "raw Codex command without effort placeholder must retain its prior path: $out"
   launch=$(launch_inner "$(cat "$LAUNCH_LOG")")
-  assert_contains "$launch" 'codex --raw-mode' 'raw command changed without an effort placeholder'
+  assert_contains "$launch" "fm-codex-launch.sh' --raw-mode" 'raw command changed without an effort placeholder'
   assert_not_contains "$launch" 'model_reasoning_effort=' 'effort flag leaked into raw command without placeholder'
   pass 'raw Codex max is catalog-gated only when its effort placeholder is substituted'
 }
