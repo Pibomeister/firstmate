@@ -391,6 +391,97 @@ test_handoff_doc_during_a_launch_leaves_the_document_unchanged() {
   pass "handoff --doc during a launch leaves the document unchanged, so the successor's hash still matches"
 }
 
+# wait_for_file <path>: wait up to 60 seconds for <path> to exist.
+wait_for_file() {
+  local n=0
+  while [ ! -e "$1" ] && [ "$n" -lt 600 ]; do sleep 0.1; n=$((n + 1)); done
+  [ -e "$1" ]
+}
+
+# A launch can finish while a handoff --doc run is between its check for a
+# launch under way and its check for a live successor. The run must still see
+# one of the two, because the launcher writes the successor record before it
+# removes its own. The run is held between its two checks while the launch
+# writes the successor record and exits.
+test_handoff_doc_between_its_checks_sees_a_launch_that_finishes() {
+  local rc lpid hpid sum doc="$LAB/data/handoff.md" release="$TMP_ROOT/between-release" log="$TMP_ROOT/between-launch.out"
+  local pause="$TMP_ROOT/between-pause" hlog="$TMP_ROOT/between-handoff.out"
+  reset_lab
+  rm -rf "$LAB/data/orders" "$LAB/state/.order-handoff" "$pause"
+  mkdir -p "$pause"
+  rm -f "$release" "$release.ready"
+  run_launcher FM_FAKE_ORCA_MODE=late FM_FAKE_ORCA_RELEASE="$release" FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=60 >"$log" 2>&1 &
+  lpid=$!
+  wait_for_file "$TMP_ROOT/orca-cmd" || fail "the launcher never opened the successor terminal"
+  sum=$(cksum < "$doc")
+  : > "$pause/handoff-between-checks.hold"
+  # A relative path keeps this call's arguments from naming the document, so
+  # the launcher cannot read it as the successor.
+  (cd "$LAB/data" && FM_HOME="$LAB" FM_TEST_SEAM=1 FM_ORDER_TEST_PAUSE_DIR="$pause" "$ROOT/bin/fm-order.sh" handoff --doc handoff.md) >"$hlog" 2>&1 &
+  hpid=$!
+  wait_for_file "$pause/handoff-between-checks.reached" || fail "handoff --doc never reached the point between its checks: $(cat "$hlog")"
+  [ -e "$LAB/state/.handoff-launching" ] && [ ! -e "$LAB/state/.handoff-successor" ] \
+    || fail "the launch was not under way when handoff --doc made its first check, so the window was not tested"
+  : > "$release"
+  rc=0
+  wait "$lpid" || rc=$?
+  assert_equals 0 "$rc" "the launch succeeds: $(cat "$log")"
+  SUCC_PID=$(sed -n 's/^pid=//p' "$LAB/state/.handoff-successor")
+  [ ! -e "$LAB/state/.handoff-launching" ] || fail "the launcher left its launch record behind, so the window was not tested"
+  rm -f "$pause/handoff-between-checks.hold"
+  rc=0
+  wait "$hpid" || rc=$?
+  assert_equals 0 "$rc" "handoff --doc succeeds: $(cat "$hlog")"
+  assert_equals "$sum" "$(cksum < "$doc")" "a launch that finishes between the checks of handoff --doc leaves the hashed document byte-unchanged"
+  assert_contains "$(cat "$hlog")" "unchanged" "handoff --doc says it left the document unchanged"
+  kill "$SUCC_PID" 2>/dev/null; SUCC_PID=''
+  pkill -f "$doc" 2>/dev/null
+  kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
+  rm -rf "$pause"
+  rm -f "$release" "$release.ready" "$LAB/state/.handoff-successor" "$LAB/state/.order-handoff"
+  pass "a launch that finishes between the two checks of handoff --doc still leaves the document unchanged"
+}
+
+# A launch can start while a handoff --doc run has made its checks and not yet
+# appended. The launch must wait for that append, so the hash it gives the
+# successor is the hash of the document with the appended block. The run is
+# held just before its append while the launch starts; the test gives the
+# launch five seconds to open the successor terminal before it lets the run
+# append.
+test_a_launch_waits_for_a_handoff_doc_append_under_way() {
+  local rc lpid hpid sha n doc="$LAB/data/handoff.md" log="$TMP_ROOT/append-launch.out"
+  local pause="$TMP_ROOT/append-pause" hlog="$TMP_ROOT/append-handoff.out"
+  reset_lab
+  rm -rf "$LAB/data/orders" "$LAB/state/.order-handoff" "$pause"
+  mkdir -p "$pause"
+  : > "$pause/handoff-before-append.hold"
+  (cd "$LAB/data" && FM_HOME="$LAB" FM_TEST_SEAM=1 FM_ORDER_TEST_PAUSE_DIR="$pause" "$ROOT/bin/fm-order.sh" handoff --doc handoff.md) >"$hlog" 2>&1 &
+  hpid=$!
+  wait_for_file "$pause/handoff-before-append.reached" || fail "handoff --doc never reached the point before its append: $(cat "$hlog")"
+  run_launcher >"$log" 2>&1 &
+  lpid=$!
+  n=0
+  while [ ! -s "$TMP_ROOT/orca-cmd" ] && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+  rm -f "$pause/handoff-before-append.hold"
+  rc=0
+  wait "$hpid" || rc=$?
+  assert_equals 0 "$rc" "handoff --doc succeeds: $(cat "$hlog")"
+  assert_contains "$(cat "$hlog")" "wrote" "handoff --doc appends, because no launch was under way when it checked"
+  rc=0
+  wait "$lpid" || rc=$?
+  assert_equals 0 "$rc" "the launch succeeds: $(cat "$log")"
+  SUCC_PID=$(sed -n 's/^pid=//p' "$LAB/state/.handoff-successor")
+  sha=$(shasum -a 256 "$doc" 2>/dev/null | awk '{print $1}')
+  [ -n "$sha" ] || sha=$(sha256sum "$doc" | awk '{print $1}')
+  assert_contains "$(cat "$TMP_ROOT/orca-cmd")" "$sha" "the successor's hash is the hash of the document with the appended block"
+  kill "$SUCC_PID" 2>/dev/null; SUCC_PID=''
+  pkill -f "$doc" 2>/dev/null
+  kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
+  rm -rf "$pause"
+  rm -f "$LAB/state/.handoff-successor" "$LAB/state/.order-handoff"
+  pass "a launch that starts during a handoff --doc append waits for it, so the successor's hash matches"
+}
+
 # An order filed between the session's last handoff --doc and the launch is
 # not in the document and not yet left to a successor's pickup, so the launch
 # refuses until the session reruns handoff --doc. Then the launch succeeds, an
@@ -479,3 +570,5 @@ test_end_predecessor_rechecks_the_order_gate
 test_end_predecessor_sees_a_turn_that_starts_during_the_order_check
 test_launch_refuses_a_handoff_that_omits_an_open_order
 test_handoff_doc_during_a_launch_leaves_the_document_unchanged
+test_handoff_doc_between_its_checks_sees_a_launch_that_finishes
+test_a_launch_waits_for_a_handoff_doc_append_under_way

@@ -136,8 +136,14 @@
 # live launcher pid, written by bin/fm-handoff-launch.sh before it hashes the
 # document and removed when it exits - and once a live successor holds it -
 # state/.handoff-successor names it with a live pid other than line 1 of
-# state/.lock. `gate` and `covers` count an open order recorded at or after
-# that successor record's launched=<epoch> (the send time in its id) as
+# state/.lock. It checks the launch record before the successor record,
+# because the launcher writes the successor record before it removes its own.
+# It holds state/.handoff-doc.lock from those checks through its append, and
+# the launcher takes that lock to write its launch record, so a launch never
+# hashes the document mid-append; when the lock stays held for 10 seconds,
+# `handoff --doc` exits 1 with the document unchanged. `gate` and `covers`
+# count an open order recorded at or after that successor record's
+# launched=<epoch> (the send time in its id) as
 # covered, because it stays open in the durable order store and the
 # successor's `pickup` lists it; an older open order must still be named in the
 # document.
@@ -174,6 +180,12 @@
 # Environment:
 #   FM_HOME              operational home whose data/ and state/ are used
 #   FM_DATA_OVERRIDE, FM_STATE_OVERRIDE  directory overrides
+#   FM_ORDER_TEST_PAUSE_DIR  test seam, honoured only with FM_TEST_SEAM=1: a
+#                        `handoff --doc` run that reaches a named point while
+#                        <dir>/<point>.hold exists writes <dir>/<point>.reached
+#                        and waits, at most 60 seconds, until the hold is
+#                        removed; the points are handoff-between-checks and
+#                        handoff-before-append
 set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -202,6 +214,15 @@ NUDGE_BUDGET_SECS=20
 
 die() { printf 'fm-order: %s\n' "$*" >&2; exit 1; }
 usage_die() { printf 'fm-order: %s\n' "$*" >&2; exit 2; }
+
+# test_pause <point>: the FM_ORDER_TEST_PAUSE_DIR seam described in the header.
+test_pause() {
+  [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_ORDER_TEST_PAUSE_DIR:-}" ] || return 0
+  local hold="$FM_ORDER_TEST_PAUSE_DIR/$1.hold" n=0
+  [ -e "$hold" ] || return 0
+  : >"$FM_ORDER_TEST_PAUSE_DIR/$1.reached"
+  while [ -e "$hold" ] && [ "$n" -lt 600 ]; do sleep 0.1; n=$((n + 1)); done
+}
 
 usage() {
   sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'
@@ -835,6 +856,7 @@ successor_holds_doc() {
 # True when a successor launch with handoff document <doc> is under way:
 # state/.handoff-launching names <doc> and a live launcher pid.
 launch_holds_doc() {
+  # shellcheck disable=SC2031  # only wake()'s subshell sources the lib that sets this
   local doc=$1 rec="$STATE/.handoff-launching" pid launch_doc
   [ -r "$rec" ] && [ -f "$doc" ] || return 1
   pid=$(sed -n 's/^pid=//p' "$rec" | tail -n 1)
@@ -867,13 +889,33 @@ cmd_handoff() {
   mkdir -p "$(dirname "$doc")"
   dir=$(cd "$(dirname "$doc")" && pwd)
   doc="$dir/${doc##*/}"
-  if successor_holds_doc "$doc"; then
-    held=successor
-  elif launch_holds_doc "$doc"; then
+  # bin/fm-handoff-launch.sh writes its launch record under this lock, so a
+  # launch has either recorded itself before these checks or starts after the
+  # append, and never hashes the document in between.
+  # shellcheck disable=SC2031  # only wake()'s subshell sources the lib that sets this
+  FM_ROOT_OVERRIDE=$FM_ROOT
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$SELF_DIR/fm-wake-lib.sh"
+  DOC_LOCK="$STATE/.handoff-doc.lock"
+  fm_lock_acquire_wait_max "$DOC_LOCK" 10 \
+    || die "cannot take $DOC_LOCK within 10 seconds, because a successor launch or another handoff --doc still holds it; $doc is unchanged, so rerun handoff --doc"
+  trap 'fm_lock_release "$DOC_LOCK"' EXIT
+  # The launch record comes first: the launcher writes the successor record
+  # before it removes its launch record, so a launch that finishes between the
+  # two checks still shows in the second.
+  if launch_holds_doc "$doc"; then
     held=launch
-  else
+  fi
+  test_pause handoff-between-checks
+  if [ -z "$held" ] && successor_holds_doc "$doc"; then
+    held=successor
+  fi
+  if [ -z "$held" ]; then
+    test_pause handoff-before-append
     printf '\n%s\n' "$block" >>"$doc"
   fi
+  fm_lock_release "$DOC_LOCK" || true
+  trap - EXIT
   # shellcheck disable=SC2031  # only wake()'s subshell sources the lib that sets this
   mkdir -p "$STATE"
   load_session_pids

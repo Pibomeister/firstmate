@@ -25,8 +25,11 @@
 #   3. records the launch under way in state/.handoff-launching as
 #      pid=<launcher pid> and handoff=<path>, so `bin/fm-order.sh handoff
 #      --doc` leaves the document unchanged until this launcher exits and
-#      removes the record; then takes the launch time and, before hashing the
-#      document, runs
+#      removes the record; it writes the record under
+#      state/.handoff-doc.lock, which `handoff --doc` holds from its checks
+#      through its append, so the hash never lands mid-append (a lock still
+#      held after 10 seconds fails the launch); then takes the launch time
+#      and, before hashing the document, runs
 #      `bin/fm-order.sh covers` on it: every open captain order recorded
 #      before that time must be in the document, because one recorded after
 #      it is left to the successor's pickup. On a missing order it exits 3
@@ -205,7 +208,7 @@ end_predecessor() {
   elif ! harness_alive "$pid"; then
     reason=predecessor-gone
   elif [ ! -r "$transcript" ] || new_turn_since "$transcript" "$bytes"; then
-    reason=new-turn
+    reason='new-turn'
   elif [ "$covered" != yes ]; then
     reason=order-gate
   else
@@ -311,14 +314,25 @@ esac
 
 # While this launch runs, bin/fm-order.sh handoff --doc leaves the document
 # unchanged, so the hash taken below still matches the document the successor
-# reads. The record names this launcher, which removes it when it exits.
+# reads. The record names this launcher, which removes it when it exits. It is
+# written under state/.handoff-doc.lock, which handoff --doc holds from its
+# checks through its append, so the hash below never lands mid-append.
+# shellcheck source=bin/fm-wake-lib.sh
+. "$SCRIPT_DIR/fm-wake-lib.sh"
+DOC_LOCK="$STATE/.handoff-doc.lock"
 LAUNCH_MARK="$STATE/.handoff-launching"
 clear_launch_mark() {
   [ "$(sed -n 's/^pid=//p' "$LAUNCH_MARK" 2>/dev/null | tail -n 1)" != "$$" ] || rm -f "$LAUNCH_MARK"
 }
-atomic_record "$LAUNCH_MARK" "pid=$$
-handoff=$HANDOFF" || fail_launch "cannot record the launch under way in $LAUNCH_MARK"
+fm_lock_acquire_wait_max "$DOC_LOCK" 10 \
+  || fail_launch "cannot take $DOC_LOCK within 10 seconds, because a bin/fm-order.sh handoff --doc run still holds it"
+if ! atomic_record "$LAUNCH_MARK" "pid=$$
+handoff=$HANDOFF"; then
+  fm_lock_release "$DOC_LOCK" || true
+  fail_launch "cannot record the launch under way in $LAUNCH_MARK"
+fi
 trap clear_launch_mark EXIT
+fm_lock_release "$DOC_LOCK" || true
 
 # An order recorded from here on is left to the successor's pickup
 # (bin/fm-order.sh), so every order recorded before must be in the document.
