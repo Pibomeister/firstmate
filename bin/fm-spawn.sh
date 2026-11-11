@@ -469,7 +469,10 @@
 #   Every launch (ship, scout, secondmate, raw command, and relaunch, on every
 #   backend) exports AK_LIFECYCLE_POLICY=unattended and
 #   AK_LIFECYCLE_SUPERVISOR=firstmate, so agent-kit lifecycle skills run under
-#   agent-kit's unattended policy with Firstmate recorded as the supervisor.
+#   agent-kit's unattended policy with Firstmate named as the supervisor.
+#   Agent-kit records the supervisor only from the release that includes its
+#   companion unattended opt-in change; an older agent-kit, for example 0.1.96,
+#   ignores AK_LIFECYCLE_SUPERVISOR, so only AK_LIFECYCLE_POLICY takes effect.
 #   When this spawn's own environment already sets either name, even to the
 #   empty string, that value is carried instead; an empty AK_LIFECYCLE_POLICY
 #   is how an operator withholds the opt-in. T3 Code carries the same values in

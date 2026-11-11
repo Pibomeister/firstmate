@@ -1912,7 +1912,9 @@ This applies only to agents Firstmate launches; the captain's own primary Firstm
 ### Agent-kit lifecycle policy
 
 Every crewmate, scout, and secondmate Firstmate launches starts with `AK_LIFECYCLE_POLICY=unattended` and `AK_LIFECYCLE_SUPERVISOR=firstmate` in its environment, on a fresh spawn and on a relaunch alike, on every runtime backend.
-These select agent-kit's opt-in unattended lifecycle policy for every agent-kit lifecycle run a launched worker performs, with Firstmate recorded as the supervisor in place of a human.
+`AK_LIFECYCLE_POLICY=unattended` selects agent-kit's opt-in unattended lifecycle policy for every agent-kit lifecycle run a launched worker performs.
+`AK_LIFECYCLE_SUPERVISOR=firstmate` names Firstmate as the supervisor in place of a human, but agent-kit records it only from the release that includes its companion unattended opt-in change.
+An older installed agent-kit, for example 0.1.96, ignores `AK_LIFECYCLE_SUPERVISOR`, so only `AK_LIFECYCLE_POLICY=unattended` takes effect there and no supervisor is recorded.
 As with the compact adviser setting, this covers raw launch commands, remote secondmates, and launches filtered by `config/launch-env-allowlist`, and Codex workers receive both names in their tool shells even under a `[shell_environment_policy] inherit = "core"` configuration.
 
 An explicit operator value wins: when the environment that runs `bin/fm-spawn.sh` already sets either name, even to the empty string, the launch carries that value unchanged.
