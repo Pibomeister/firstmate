@@ -1,0 +1,40 @@
+RE-EMIT CUE: if this output ends with "Output too large ... Full output saved to <path>",
+read that whole file now, before acting. Otherwise read data/captain.md, data/captain-shared.md,
+data/learnings.md under /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.vrn7PA/data, and docs/learnings/overnight-learnings.md under the code root now if
+any of them is missing below.
+
+================================================================================
+SESSION START (CONTEXT RE-EMIT) - /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.vrn7PA
+================================================================================
+This session already took the helm at its own startup and has only lost its
+context. Lock ownership is re-verified and the durable records below are
+reprinted, but the sweeps startup already reconciled - project clone refresh,
+secondmate convergence and liveness, pending remote handoff
+retry, X-mode artifact writes, and stale Herdr child cleanup - are NOT repeated.
+Queued wakes ARE still drained: they arrived after startup and are this turn work.
+
+LOCK
+--------------------------------------------------------------------------------
+lock acquired: harness pid 75104
+
+HOME ROLE
+--------------------------------------------------------------------------------
+fm-role: user (default)
+
+BOOTSTRAP
+--------------------------------------------------------------------------------
+BOOTSTRAP_INFO: lavish-axi >=0.1.80 enables confirmed board replies; this older compatible version retains the legacy reply path, but upgrade to prevent handing back a board before its reply is accepted
+
+WAKE QUEUE
+--------------------------------------------------------------------------------
+
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  STARTUP TRUNCATED - SESSION START HIT ITS 120s RUNTIME BOUND
+●  It stopped during the "wake-queue" stage, so everything above is COMPLETE
+●  only up to that point.
+●  RECONCILE these stages before acting on anything they would have shown:
+●    wake-queue supervision-instructions read-once fleet-state network-checks context next-step
+●  Rerun bin/fm-session-start.sh now to finish taking the helm. If it truncates
+●  again, raise FM_SESSION_START_TIMEOUT and report the slow stage - a stage that
+●  cannot finish inside the bound is a fleet problem, not a reporting detail.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

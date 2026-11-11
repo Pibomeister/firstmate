@@ -1,0 +1,9 @@
+== shim at T+7199 (expect no request)
+exit=0
+1794432834	1	check	auto-away	check: auto-away clock trigger; load /afk and run bin/fm-auto-away.sh enter 1794432796; only if it prints an entry, finish /afk supervision setup and announce it once.
+== shim at T+7200 (expect silence request)
+1794432834	1	check	auto-away	check: auto-away clock trigger; load /afk and run bin/fm-auto-away.sh enter 1794432796; only if it prints an entry, finish /afk supervision setup and announce it once.
+== shim again (expect no duplicate)
+1
+== drain
+1794432834	1	check	auto-away	check: auto-away clock trigger; load /afk and run bin/fm-auto-away.sh enter 1794432796; only if it prints an entry, finish /afk supervision setup and announce it once.

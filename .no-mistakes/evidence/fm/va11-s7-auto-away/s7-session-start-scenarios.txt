@@ -1,0 +1,10 @@
+### Captain opens session at 2026-11-12 09:00 UTC after a missed 23:00
+session-start exit=0
+stamp after open: 1794474000 (expect 1794474000)
+auto-away requests at 09:01: 0
+### Compaction re-emit at 10:30 preserves the 09:00 stamp
+reemit exit=0
+stamp after reemit: 1794474000 (expect 1794474000)
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.vrn7PA/state/auto-away.check.sh
+requests at 11:00 (2h after open): 1
+auto-away silence trigger; load /afk and run bin/fm-auto-away.sh enter 1794474000
