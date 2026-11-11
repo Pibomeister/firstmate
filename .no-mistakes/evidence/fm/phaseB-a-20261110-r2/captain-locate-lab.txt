@@ -1,6 +1,12 @@
-# fresh lab home
+== free lock
 CAPTAIN v1 pid=0 handle=none state=free
 exit=1
-# lock naming a dead pid
-CAPTAIN v1 pid=999999 handle=none state=stale
+== held lock, matching anchor sidecar
+CAPTAIN v1 pid=5777 handle=none state=unknown
+exit=1
+== held lock, sidecar from another instance (stale handle, F12)
+CAPTAIN v1 pid=5777 handle=none state=unknown
+exit=1
+== dead holder
+CAPTAIN v1 pid=5777 handle=none state=stale
 exit=1
