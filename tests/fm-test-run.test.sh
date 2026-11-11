@@ -522,6 +522,8 @@ test_changed_cursor_overlay_mapping_is_narrow() {
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
   assert_contains "$listed" "tests/fm-agent-kit-pin.test.sh" \
     ".cursor/bin/ak.js must select the pin test"
+  assert_contains "$listed" "tests/fm-agent-kit-review.test.sh" \
+    ".cursor/bin/ak.js must select the review test"
   git -C "$repo" add .cursor/bin/ak.js
   git -C "$repo" -c user.name=test -c user.email=test@example.invalid \
     commit -qm overlay-ak-js

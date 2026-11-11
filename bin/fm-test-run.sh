@@ -1853,6 +1853,7 @@ families_for_changed_path() {
     .cursor/agent-kit.md|.cursor/bin/ak|.cursor/bin/ak.js|.cursor/bin/ak-gate.mjs|\
     .cursor/environment.json|bin/fm-agent-kit-pin.sh|tools/cursor/*)
       printf '%s\n' "__script__:fm-agent-kit-pin.test.sh"
+      printf '%s\n' "__script__:fm-agent-kit-review.test.sh"
       ;;
     ak.project.json)
       printf '%s\n' "__script__:fm-agent-kit-pin.test.sh"
