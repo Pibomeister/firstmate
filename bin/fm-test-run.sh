@@ -155,6 +155,13 @@
 # arms above those also name individual tests/ files explicitly.
 set -eu
 
+# Under Bash older than 5 (stock macOS /bin/bash 3.2), re-exec the runner once
+# under the first Bash 5+ found at FM_TEST_RUN_BASH5_CANDIDATE,
+# /opt/homebrew/bin/bash, or /usr/local/bin/bash, so EPOCHREALTIME timing and
+# the faster builtins apply; with none found the runner continues on the
+# current Bash. FM_TEST_RUN_NO_REEXEC=1 disables the re-exec. The
+# FM_TEST_RUN_BASH_REEXEC marker stops a loop and is unset afterwards so test
+# children that invoke the runner re-exec on their own.
 if [ "${BASH_VERSINFO[0]:-0}" -lt 5 ] && [ -z "${FM_TEST_RUN_BASH_REEXEC:-}" ] && [ -z "${FM_TEST_RUN_NO_REEXEC:-}" ]; then
   for _fm_bash_candidate in "${FM_TEST_RUN_BASH5_CANDIDATE:-}" /opt/homebrew/bin/bash /usr/local/bin/bash; do
     [ -n "$_fm_bash_candidate" ] && [ -x "$_fm_bash_candidate" ] || continue
