@@ -219,7 +219,8 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-public-followup-collect.sh` | Read and retire the typed terminal results a remote work home staged for the home that owes the public reply |
 | `fm-order.sh`            | Durable captain orders and holds: send, status, verify, ack, finish, the handoff restart gate, and bounded re-delivery with escalation |
 | `fm-inbox.sh`            | The captain's out-of-band capture surface: queue a note (optionally idempotent by request id), announce or repair its wake, record a durable primary reply, and emit bounded receipts and primary-readiness JSON |
-| `fm-dispatch-log.sh`     | Append-only captain-goal intake ledger: record each goal as received, dispatched, queued, or blocked, mark late resolutions, and list goals past the 15-minute dispatch SLA |
+| `fm-dispatch-log.sh`     | Append-only captain-goal intake ledger: record each goal as received, dispatched, queued, or blocked, mark late resolutions, and list open goals and goals past the 15-minute dispatch SLA |
+| `fm-ledger.sh`           | The mission ledger over the backlog: file each approved proposal or order as its own item, print the per-project plan and the next ready item, write handoffs from the ledger, and check ready depth at 17:00 and 23:00 |
 | [`fm-claims.sh`](../bin/fm-claims.sh) | Check the claims in a task's status log against git, the forge, no-mistakes, AgentKit, and the terminal, record each verdict in its claim ledger, and reopen a task whose claim is refuted ([contract](claim-ledger.md)) |
 | `fm-claims-lib.sh`       | Shared words of the refuted-claim blocker, used by the claim verifier and `fm-send --resolve-key` |
 | `fm-mail.sh`             | General-purpose mail plane: read unseen IMAP mail, send one SMTP message, or surface new mail as a `check` wake via `poll` (configuration in the home's gitignored `.env`) |

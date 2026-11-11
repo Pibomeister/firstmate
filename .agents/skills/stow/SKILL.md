@@ -257,7 +257,9 @@ Judge for yourself what is important and which record each thing belongs to, and
 One bound holds: this covers the open work you are actually holding in context, not the records at large.
 It is not a reconciliation of durable records against repository or forge reality, cannot become one on input this volatile, and must never be reported as one.
 Where the right correction is a judgment you cannot make, leave the record alone and raise the question instead of guessing.
-Before a reset, run `bin/fm-order.sh handoff --doc <handoff file>` so the handoff document lists every open captain order, and do not reset while `bin/fm-order.sh gate` exits 3; its header owns that restart gate.
+File every open ask, approved proposal, and captain order with no backlog item as its own item with `bin/fm-ledger.sh intake` first, so the ledger alone restores the work.
+Before a reset, write a new handoff with `bin/fm-ledger.sh handoff --doc <new handoff file> --note-file <short in-flight note>`, which adds only what is in flight right now to the ledger plan, never continues an earlier handoff, and runs `bin/fm-order.sh handoff --doc` so the document lists every open captain order.
+Do not reset while `bin/fm-order.sh gate` exits 3; its header owns that restart gate, and `bin/fm-ledger.sh`'s header owns the handoff document.
 
 ## One-time migration of unmarked entries
 

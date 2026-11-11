@@ -7,6 +7,7 @@
 #   fm-dispatch-log.sh queued     <goal-id> --reason <text>
 #   fm-dispatch-log.sh blocked    <goal-id> --reason <text>
 #   fm-dispatch-log.sh overdue
+#   fm-dispatch-log.sh open
 #   fm-dispatch-log.sh show       [<goal-id>]
 #
 # A goal is one new captain ask for work: a chat request, an inbox note, or an
@@ -46,12 +47,18 @@
 # late marks stay in `show`. It exits 3 when any OVERDUE line exists and 0 otherwise;
 # exit 3 is a result to act on, not an error.
 #
+# `open` prints every goal not yet dispatched or blocked, oldest first, whatever
+# its age, as `OPEN <goal-id> event=<received|queued> at=<iso> <received detail>`,
+# followed by ` <reason>` for a queued goal; a handoff lists these so a successor
+# session sees every captain goal still waiting. It always exits 0 and prints
+# nothing when no goal is open.
+#
 # Refuses, and writes nothing, when: the goal id is not [A-Za-z0-9._-]+; a
 # required flag is missing, empty, or only space after tab and newline folding;
 # `--task` or `--reason` is only a late mark, which that event would drop; a flag
 # value starts with `-`; an argument is unknown;
 # FM_DISPATCH_SLA_MINUTES is not a whole number and the subcommand reads the SLA
-# (`dispatched`, `queued`, `blocked`, `overdue`; `received` and `show` do not); or
+# (`dispatched`, `queued`, `blocked`, `overdue`; `received`, `open`, and `show` do not); or
 # `dispatched`/`queued`/`blocked` names a goal with no `received` line (all exit 1).
 # An unknown subcommand prints this usage and exits 2. `received` for an id
 # already in the ledger exits 4, so a retry can tell "already logged" from a
@@ -140,7 +147,7 @@ resolve() {  # <event> <goal-id> <detail>: append a resolution, marking lateness
 
 case "${1:-}" in
   -h|--help) usage; exit 0 ;;
-  received|dispatched|queued|blocked|overdue|show) cmd=$1; shift ;;
+  received|dispatched|queued|blocked|overdue|open|show) cmd=$1; shift ;;
   *) usage >&2; exit 2 ;;
 esac
 
@@ -243,6 +250,19 @@ case "$cmd" in
       }' "$LOG") || rc=$?
     [ -z "$out" ] || printf '%s\n' "$out"
     exit "$rc"
+    ;;
+  open)
+    [ -f "$LOG" ] || exit 0
+    awk -F '\t' '
+      $3 == "received" { iso[$4] = $1; det[$4] = $5; order[++n] = $4 }
+      { ev[$4] = $3; at[$4] = $1; last[$4] = $5 }
+      END {
+        for (i = 1; i <= n; i++) {
+          g = order[i]
+          if (ev[g] == "received") printf "OPEN %s event=received at=%s %s\n", g, at[g], det[g]
+          else if (ev[g] == "queued") printf "OPEN %s event=queued at=%s %s %s\n", g, at[g], det[g], last[g]
+        }
+      }' "$LOG"
     ;;
   show)
     if [ -z "$goal" ]; then
