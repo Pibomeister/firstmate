@@ -4139,7 +4139,7 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
     orca_sweep_rc=0
     orca_sweep_out=$(fm_backend_orca_close_worktree_terminals "$WT") || orca_sweep_rc=$?
     case "$orca_sweep_rc" in
-      0) printf 'teardown: %s Orca terminal(s) closed across %s for task %s\n' \
+      0) printf 'teardown: %s Orca terminal(s) closed across %s environment(s) for task %s\n' \
            "$(printf '%s' "$orca_sweep_out" | sed -n 's/^closed=\([0-9]*\).*/\1/p')" \
            "$(printf '%s' "$orca_sweep_out" | sed -n 's/.*environments=\([0-9]*\).*/\1/p')" "$ID" ;;
       1) endpoint_close_refusal "$ID" "$BACKEND" "worktree:$WT" 0; exit 1 ;;

@@ -537,12 +537,12 @@ let d; try { d = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (_) 
 if (!d || d.ok === false || !d.result || !Array.isArray(d.result.environments)) process.exit(1);
 for (const e of d.result.environments) if (e && typeof e.id === "string" && e.id) console.log(e.id);') || return 2
   while IFS= read -r env; do
-    [ -n "$env" ] || env=local
+    [ -n "$env" ] || continue
     env_count=$((env_count + 1))
     if [ "$env" = local ]; then
-      list=$(orca terminal list --json 2>/dev/null) || { rc=2; continue; }
+      list=$(orca terminal list --json 2>/dev/null) || { [ "$rc" = 1 ] || rc=2; continue; }
     else
-      list=$(orca terminal list --environment "$env" --json 2>/dev/null) || { rc=2; continue; }
+      list=$(orca terminal list --environment "$env" --json 2>/dev/null) || { [ "$rc" = 1 ] || rc=2; continue; }
     fi
     handles=$(printf '%s' "$list" | node -e '
 const fs = require("fs");
@@ -552,7 +552,7 @@ const target = process.argv[1];
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return p; } };
 for (const t of d.result.terminals) {
   if (t && typeof t.handle === "string" && t.handle && typeof t.worktreePath === "string" && real(t.worktreePath) === real(target)) console.log(t.handle);
-}' "$target") || { rc=2; continue; }
+}' "$target") || { [ "$rc" = 1 ] || rc=2; continue; }
     while IFS= read -r h; do
       [ -n "$h" ] || continue
       if [ "$env" = local ]; then

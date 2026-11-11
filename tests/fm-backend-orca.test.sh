@@ -724,6 +724,23 @@ SH
     bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_close_worktree_terminals "$1"' "$ROOT" "$wt" 2>&1 )
   status=$?
   [ "$status" -eq 1 ] || fail "a failed close should exit 1, got $status: $out"
+  [ "$out" = "closed=0 environments=1" ] || fail "with no paired environment only the local Orca should count, got '$out'"
+  cat > "$fb2/orca" <<'SH'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "environment list") printf '{"ok":true,"result":{"environments":[{"id":"env-broken"}]}}\n' ;;
+  "terminal list")
+    case "$*" in *--environment*) exit 1 ;; esac
+    printf '{"ok":true,"result":{"terminals":[{"handle":"term-fail","worktreePath":"%s"}]}}\n' "${FM_SWEEP_WT:?}" ;;
+  "terminal close") exit 1 ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fb2/orca"
+  out=$( PATH="$fb2:$PATH" FM_SWEEP_WT="$wt" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_close_worktree_terminals "$1"' "$ROOT" "$wt" 2>&1 )
+  status=$?
+  [ "$status" -eq 1 ] || fail "a failed close should still refuse when a later environment cannot be listed, got $status: $out"
   cat > "$fb2/orca" <<'SH'
 #!/usr/bin/env bash
 case "$1 $2" in
