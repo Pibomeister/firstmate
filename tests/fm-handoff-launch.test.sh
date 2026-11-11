@@ -219,8 +219,9 @@ run_case() {
   printf '%s\n' "${2:-orca}" > "$LAB/config/backend"
   printf '# Quoting-hostile handoff\nRead this document.\n' > "$LAB/data/handoff ) '.md"
   budget=$LAB_FAIL_BUDGET
-  # interrupt-after-ack also ends at its ack, so it needs the success budget.
-  [ "$mode" != interrupt-after-ack ] || budget=$LAB_SUCCESS_BUDGET
+  # interrupt-after-ack and precommit also end at a real ack, so they need
+  # the success budget's claim deadline rather than the 40 s failure claim.
+  case "$mode" in interrupt-after-ack|precommit) budget=$LAB_SUCCESS_BUDGET ;; esac
   if [ "$mode" = success ]; then
     budget=$LAB_SUCCESS_BUDGET
     printf 'compact-at-tokens=100000\n' > "$LAB/config/handoff-trigger"
