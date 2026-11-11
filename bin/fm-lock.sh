@@ -410,8 +410,9 @@ fi
 # that session's resume own this lock. If the sidecar changes before line 1 is
 # written, a failure restores the previous sidecar. If line 1 is written but
 # not yet verified, a failure removes the sidecar and leaves the lock
-# ancestry-only, except on a verified transfer, where it restores both the
-# predecessor's line 1 and its sidecar under the held locks. On the re-anchor path a HUP, INT, or TERM during the lease
+# ancestry-only, except on a verified transfer, where it restores the
+# predecessor's line 1 and its prior sidecar, or its absence, under the held
+# locks. On the re-anchor path a HUP, INT, or TERM during the lease
 # move or the bounded .claude-autoarm.lock wait, before commit_lock_session,
 # still runs restore_uncommitted_lock_session with phase 2 and removes the
 # sidecar. A verified transfer retires the predecessor's leases only after
