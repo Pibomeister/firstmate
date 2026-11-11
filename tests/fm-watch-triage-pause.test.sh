@@ -70,7 +70,7 @@ test_nonterminal_stale_not_working_surfaced() {
 # The confidently dead endpoint behind the same verb is the opposite case and
 # is pinned in test_dead_paused_escalates_but_captain_held_is_bounded_and_live_gate_surfaces.
 test_nonterminal_stale_paused_absorbed_then_resurfaced() {
-  local dir state fakebin out drain_out capture_file window key pane_hash sig pid back statusf
+  local dir state fakebin out drain_out capture_file window key pane_hash sig pid back statusf now
   dir=$(make_case nonterminal-stale-paused); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; drain_out="$dir/drain.out"; capture_file="$dir/pane.txt"
   window="test:fm-held"
@@ -88,13 +88,14 @@ test_nonterminal_stale_paused_absorbed_then_resurfaced() {
   printf '1\n' > "$state/.count-$key"
   # crew_absorb_class reads the declared pause from fm-crew-state.sh.
   export FM_FAKE_CREW_STATE='state: paused · source: status-log · holding for the upstream tool release'
+  now=$(( $(date +%s) + 30 ))
 
   # Phase A: first sight of a live paused crew surfaces at once - no wedge
   # timer, and the pause flag is recorded so later polls use the cadence.
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
     FM_FAKE_TMUX_CURRENT_COMMAND=grok \
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_WATCH_ONCE=1 FM_WATCH_NOW="$now" "$WATCH" > "$out" &
   pid=$!
   wait_for_exit "$pid" 100 || fail "watcher did not surface a live declared pause on first sight: $(cat "$out")"
   grep -Fx "stale: $window" "$out" >/dev/null || fail "first sight of a live pause did not print the bare stale wake"
@@ -115,7 +116,7 @@ test_nonterminal_stale_paused_absorbed_then_resurfaced() {
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
     FM_FAKE_TMUX_CURRENT_COMMAND=grok \
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_PAUSE_RESURFACE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_WATCH_ONCE=1 FM_WATCH_NOW="$((now + 500))" "$WATCH" > "$out" &
   pid=$!
   wait_for_exit "$pid" 100 || fail "watcher did not re-surface a declared pause past the threshold"
   grep -F "stale: $window" "$out" >/dev/null || fail "re-surface did not print a stale wake"
