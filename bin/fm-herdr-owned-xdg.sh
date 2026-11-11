@@ -270,7 +270,10 @@ fm_herdr_owned_xdg_start() { # <root>
     i=$((i + 1))
   done
   fm_herdr_owned_xdg_write_record "$root" "$(fm_herdr_owned_xdg_record_get "$root" marker_token)" \
-    "$pid" "$(fm_herdr_owned_xdg_process_start "$pid")" || return 1
+    "$pid" "$(fm_herdr_owned_xdg_process_start "$pid")" || {
+    fm_herdr_owned_xdg_reap_started "$root" "$pid"
+    return 1
+  }
   i=0
   until fm_herdr_owned_xdg_default_ready || [ "$i" -ge 150 ]; do
     sleep 0.2
@@ -278,19 +281,24 @@ fm_herdr_owned_xdg_start() { # <root>
   done
   if ! fm_herdr_owned_xdg_prove_pid "$root" >/dev/null || ! fm_herdr_owned_xdg_default_ready; then
     fm_herdr_owned_xdg_error "test-owned default Herdr session did not become ready"
-    fm_herdr_owned_xdg_signal_tree "$pid" TERM
-    i=0
-    while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 10 ]; do
-      sleep 0.1
-      i=$((i + 1))
-    done
-    if kill -0 "$pid" 2>/dev/null; then
-      fm_herdr_owned_xdg_signal_tree "$pid" KILL
-    fi
-    wait "$pid" 2>/dev/null || true
-    fm_herdr_owned_xdg_clear_pid "$root" || true
+    fm_herdr_owned_xdg_reap_started "$root" "$pid"
     return 1
   fi
+}
+
+fm_herdr_owned_xdg_reap_started() { # <root> <pid>
+  local root=$1 pid=$2 i
+  fm_herdr_owned_xdg_signal_tree "$pid" TERM
+  i=0
+  while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 10 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    fm_herdr_owned_xdg_signal_tree "$pid" KILL
+  fi
+  wait "$pid" 2>/dev/null || true
+  fm_herdr_owned_xdg_clear_pid "$root" || true
 }
 
 fm_herdr_owned_xdg_check() { # <root>

@@ -231,7 +231,7 @@ stop_home_processes() {  # <home>
     case "$pid" in
       ''|*[!0-9]*) ;;
       *)
-        kill -TERM "$pid" 2>/dev/null || true
+        kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
         wait_for_exit "$pid" 50 >/dev/null 2>&1 || true
         ;;
     esac
