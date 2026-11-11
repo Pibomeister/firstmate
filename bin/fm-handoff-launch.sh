@@ -180,7 +180,7 @@ for attempt in 1 2; do
   event=handoff_started
   [ "$attempt" = 1 ] || event=handoff_retry
   HANDOFF_STARTED=1
-  fm_handoff_event "$event" "$NONCE" "$attempt" "$PRED_PID" "${ORCA_TERMINAL_HANDLE:-${TMUX_PANE:-}}" awaiting_ack
+  fm_handoff_event "$event" "$NONCE" "$attempt" "$PRED_PID" "$(fm_handoff_endpoint_handle || true)" awaiting_ack
   printf -v ACK_CMD 'FM_HOME=%q bash %q %q %q' "$FM_HOME" "$SCRIPT_DIR/fm-handoff-ack.sh" "$NONCE" "$SHA256"
   printf -v START_CMD 'FM_HOME=%q bash %q' "$FM_HOME" "$SCRIPT_DIR/fm-session-start.sh"
   PROMPT="Firstmate handoff successor. Read the entire document at $HANDOFF. Its sha256 must be $SHA256. Before doing any project work or starting a read-only session, run this exact acknowledgement command: $ACK_CMD . It writes your harness pid, lock pid, terminal handle and document hash, and transfers the predecessor lock only after validation. If it refuses, emit no claim of readiness and exit; it records handoff_reject. After success run $START_CMD and continue the document. nonce=$NONCE"

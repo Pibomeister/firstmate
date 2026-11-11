@@ -31,7 +31,9 @@ FM_TEST_STUB_MAX_BLOCK_SECONDS=$((LAB_SUCCESS_BUDGET + LAB_SLACK + LAB_STARTUP))
 export FM_TEST_STUB_MAX_BLOCK_SECONDS
 export FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=$LAB_FAIL_BUDGET
 export PATH="$FAKEBIN:$PATH" FM_HANDOFF_TEST_PIDS="$TMP_ROOT/pids"
-unset FM_BACKEND FM_SESSION_ENDPOINT_META CLAUDE_PID CLAUDE_CODE_SESSION_ID TMUX
+unset FM_BACKEND FM_SESSION_ENDPOINT_META CLAUDE_PID CLAUDE_CODE_SESSION_ID TMUX TMUX_PANE ZELLIJ
+# Lab Orca handles come from Orca terminals, as fm_supervisor_in_orca requires.
+export TERM_PROGRAM=Orca
 FM_HANDOFF_REAL_SLEEP=$(command -v sleep)
 export FM_HANDOFF_REAL_SLEEP
 cat > "$FAKEBIN/sleep" <<'EOF'
@@ -334,10 +336,19 @@ assert_contains "$(cat "$META_HOME/state/.lock-session")" 'spawn_gen=s1.1.1' 'ex
 kill "$meta_pid"; wait "$meta_pid" 2>/dev/null || true
 pass 'supervisor endpoint metadata retains precedence and generation'
 
-# A transfer refused at the mutation point keeps the live predecessor's leases.
+# A transfer that fails to publish after its verdict keeps the predecessor's leases.
 LEASE_HOME="$TMP_ROOT/lease-home"
-mkdir -p "$LEASE_HOME/state" "$LEASE_HOME/data"
+LEASE_BIN="$TMP_ROOT/lease-bin"
+mkdir -p "$LEASE_HOME/state" "$LEASE_HOME/data" "$LEASE_BIN"
 printf 'lease handoff\n' > "$LEASE_HOME/handoff.md"
+REAL_MKTEMP=$(command -v mktemp)
+export REAL_MKTEMP
+cat > "$LEASE_BIN/mktemp" <<'EOF'
+#!/usr/bin/env bash
+case "${1:-}" in */.lock-session.XXXXXX) exit 1 ;; esac
+exec "$REAL_MKTEMP" "$@"
+EOF
+chmod +x "$LEASE_BIN/mktemp"
 # shellcheck disable=SC2016 # The harness child expands its own environment.
 FM_HOME="$LEASE_HOME" FM_STATE_OVERRIDE="$LEASE_HOME/state" ORCA_TERMINAL_HANDLE=term_lease_pred claude -c '
   bash "$ROOT/bin/fm-lock.sh" > "$FM_HOME/pred.out" 2>&1
@@ -348,6 +359,7 @@ limit=$((SECONDS + LAB_STARTUP))
 while [ ! -f "$LEASE_HOME/pred.pid" ] && [ "$SECONDS" -lt "$limit" ]; do sleep 0.1; done
 [ "$(cat "$LEASE_HOME/state/.lock")" = "$(cat "$LEASE_HOME/pred.pid")" ] || fail "lease predecessor must hold the lock: $(cat "$LEASE_HOME/pred.out")"
 printf 'holder=%s\n' "$(cat "$LEASE_HOME/pred.pid")" > "$LEASE_HOME/state/.lease-task-a"
+cp "$LEASE_HOME/state/.lock-session" "$LEASE_HOME/session.before"
 (
   export FM_HOME="$LEASE_HOME" FM_STATE_OVERRIDE="$LEASE_HOME/state"
   STATE="$LEASE_HOME/state"
@@ -357,27 +369,46 @@ printf 'holder=%s\n' "$(cat "$LEASE_HOME/pred.pid")" > "$LEASE_HOME/state/.lease
   pred=$(cat "$FM_HOME/pred.pid")
   nonce=0123456789abcdef0123456789abcdef
   sha=$(fm_handoff_hash "$FM_HOME/handoff.md")
-  deadline=$(( $(date +%s) + 3 ))
   jq -n --arg nonce "$nonce" --arg doc "$FM_HOME/handoff.md" --arg sha "$sha" \
-    --arg start "$(fm_session_process_start "$pred")" --argjson pid "$pred" --argjson deadline "$deadline" \
+    --arg start "$(fm_session_process_start "$pred")" --argjson pid "$pred" --argjson deadline "$(( $(date +%s) + 600 ))" \
     '{version:1,nonce:$nonce,handoff:$doc,sha256:$sha,predecessor_pid:$pid,predecessor_start:$start,deadline:$deadline}' \
     > "$STATE/.handoff-pending"
-  # Hold the lease lock until the claim expires, inside fm-lock.sh's lease wait.
-  fm_lock_try_acquire "$STATE/.fm-lease-command.lock" || exit 1
   # shellcheck disable=SC2016 # The harness child expands its own environment.
-  ORCA_TERMINAL_HANDLE=term_lease_succ claude -c '
+  PATH="$LEASE_BIN:$PATH" ORCA_TERMINAL_HANDLE=term_lease_succ claude -c '
     bash "$ROOT/bin/fm-handoff-ack.sh" "$1" "$2" > "$FM_HOME/ack.out" 2>&1
-    echo "$?" > "$FM_HOME/ack.rc"' lease-successor "$nonce" "$sha" &
-  echo "$!" >> "$TMP_ROOT/pids"
-  while [ "$(date +%s)" -lt "$deadline" ]; do sleep 0.1; done
-  fm_lock_release "$STATE/.fm-lease-command.lock"
-  limit=$((SECONDS + LAB_STARTUP))
-  while [ ! -f "$FM_HOME/ack.rc" ] && [ "$SECONDS" -lt "$limit" ]; do sleep 0.1; done
+    echo "$?" > "$FM_HOME/ack.rc"' lease-successor "$nonce" "$sha"
 ) || fail 'lease fixture failed'
-[ "$(cat "$LEASE_HOME/ack.rc")" != 0 ] || fail 'an expired claim must not transfer'
-[ "$(cat "$LEASE_HOME/state/.lock")" = "$(cat "$LEASE_HOME/pred.pid")" ] || fail 'a refused transfer moved the lock'
-[ -f "$LEASE_HOME/state/.lease-task-a" ] || fail 'a refused transfer retired the live predecessor lease'
-pass 'a transfer refused at the mutation point preserves predecessor leases'
+[ "$(cat "$LEASE_HOME/ack.rc")" != 0 ] || fail 'a transfer whose publication fails must not succeed'
+assert_contains "$(cat "$LEASE_HOME/ack.out")" 'reason=lock_refused' 'the failed publication is a nonce-bound reject'
+[ "$(cat "$LEASE_HOME/state/.lock")" = "$(cat "$LEASE_HOME/pred.pid")" ] || fail 'a rolled-back transfer moved the lock'
+cmp -s "$LEASE_HOME/session.before" "$LEASE_HOME/state/.lock-session" || fail 'a rolled-back transfer must restore the predecessor sidecar'
+[ -f "$LEASE_HOME/state/.lease-task-a" ] || fail 'a rolled-back transfer retired the live predecessor lease'
+pass 'a transfer that rolls back after its verdict preserves predecessor leases'
+
+# A tmux pane nested in Orca outranks the inherited Orca handle, and an Orca
+# handle outside an Orca terminal is not trusted.
+NEST_HOME="$TMP_ROOT/nest-home"
+for nest in nested:%41:%41 inherited::none; do
+  IFS=: read -r nest_case nest_pane nest_expected <<<"$nest"
+  rm -rf "$NEST_HOME"; mkdir -p "$NEST_HOME/state"
+  nest_env=("TERM_PROGRAM=Orca" "TMUX_PANE=$nest_pane")
+  [ "$nest_case" = nested ] || nest_env=("TERM_PROGRAM=" "TMUX_PANE=")
+  # shellcheck disable=SC2016 # The harness child expands its own environment.
+  env FM_HOME="$NEST_HOME" FM_STATE_OVERRIDE="$NEST_HOME/state" ORCA_TERMINAL_HANDLE=term_inherited "${nest_env[@]}" claude -c '
+    bash "$ROOT/bin/fm-lock.sh" > "$FM_HOME/out" 2>&1
+    touch "$FM_HOME/ready"
+    while kill -0 "$FM_TEST_SUITE_PID" 2>/dev/null && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 1; done' &
+  # shellcheck disable=SC2031 # The background job above sets $! here.
+  nest_pid=$!
+  echo "$nest_pid" >> "$TMP_ROOT/pids"
+  limit=$((SECONDS + LAB_STARTUP))
+  while [ ! -e "$NEST_HOME/ready" ] && [ "$SECONDS" -lt "$limit" ]; do sleep 0.1; done
+  locate=$(FM_HOME="$NEST_HOME" FM_STATE_OVERRIDE="$NEST_HOME/state" bash "$ROOT/bin/fm-captain-locate.sh" || true)
+  assert_contains "$locate" "handle=$nest_expected" "$nest_case endpoint follows supervisor-target precedence"
+  assert_not_contains "$(cat "$NEST_HOME/state/.lock-session")" 'term_inherited' "$nest_case must not record the inherited Orca handle"
+  kill "$nest_pid"; wait "$nest_pid" 2>/dev/null || true
+done
+pass 'lock endpoints follow supervisor-target precedence for nested and inherited terminals'
 
 run_case success
 [ "$(cat "$LAB/rc")" = 0 ] || fail "valid ack should transfer: $(cat "$LAB/launch.out") $(cat "$LAB/ack.out" 2>/dev/null)"
@@ -396,6 +427,30 @@ assert_contains "$locate" 'handle=term_lab_1' 'discovery follows lock holder'
 assert_contains "$locate" "pid=$(cat "$LAB/state/.lock")" 'discovery names lock pid'
 bash "$ROOT/bin/fm-handoff-ack.sh" "$nonce" "$(jq -r .sha256 "$ack")" >/dev/null 2>&1 && fail 'replay from another process must refuse'
 pass 'verified successor ack transfers the lock while predecessor remains alive; discovery follows it'
+# Discovery refuses a sidecar that changes while it is read.
+RACE_BIN="$TMP_ROOT/race-bin"
+mkdir -p "$RACE_BIN"
+REAL_SED=$(command -v sed)
+export REAL_SED
+cat > "$RACE_BIN/sed" <<'EOF'
+#!/usr/bin/env bash
+if [ "${2:-}" = 's/^terminal=//p' ] && [ -e "$FM_HOME/state/race-sidecar" ]; then
+  rm -f "$FM_HOME/state/race-sidecar"
+  "$REAL_SED" 's/^terminal=.*/terminal=term_racing/' "$FM_HOME/state/.lock-session" > "$FM_HOME/state/race.tmp"
+  mv "$FM_HOME/state/race.tmp" "$FM_HOME/state/.lock-session"
+fi
+exec "$REAL_SED" "$@"
+EOF
+chmod +x "$RACE_BIN/sed"
+cp "$LAB/state/.lock-session" "$LAB/session.race"
+touch "$LAB/state/race-sidecar"
+race_rc=0
+race=$(PATH="$RACE_BIN:$PATH" bash "$ROOT/bin/fm-captain-locate.sh") || race_rc=$?
+[ ! -e "$LAB/state/race-sidecar" ] || fail 'the sidecar change must happen during discovery'
+mv "$LAB/session.race" "$LAB/state/.lock-session"
+[ "$race_rc" != 0 ] || fail "a changed sidecar must not be reported as a verified captain: $race"
+assert_contains "$race" 'handle=none state=unknown' 'a changed snapshot reports unknown'
+pass 'discovery reports a pid and handle only from one unchanged snapshot'
 [ ! -e "$LAB/state/.handoff-pending" ] || fail 'a completed handoff must retire its pending claim'
 rejects=$(grep -c ' event=handoff_reject ' "$LAB/state/handoff-events.log" || true)
 # shellcheck disable=SC2016 # The harness child expands its own environment.

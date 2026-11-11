@@ -18,7 +18,7 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-handoff-lib.sh"
 nonce=${1:-}
 reject() {
-  fm_handoff_event handoff_reject "$nonce" 0 0 "${ORCA_TERMINAL_HANDLE:-${TMUX_PANE:-}}" "$1"
+  fm_handoff_event handoff_reject "$nonce" 0 0 "$(fm_handoff_endpoint_handle || true)" "$1"
   exit 1
 }
 case "$nonce" in ''|*[!a-f0-9]*) reject invalid_nonce ;; esac
@@ -33,7 +33,7 @@ doc=$(jq -er .handoff "$claim") || reject invalid_claim
 pid=$(fm_session_lock_anchor_pid) || reject no_harness
 [ "$pid" != "$(jq -r .predecessor_pid "$claim")" ] || reject predecessor_ack
 fm_harness_pid_alive "$pid" || reject no_harness
-handle=${ORCA_TERMINAL_HANDLE:-${TMUX_PANE:-}}
+handle=$(fm_handoff_endpoint_handle) || reject no_terminal
 case "$handle" in ''|*[!A-Za-z0-9_.:%-]*) reject no_terminal ;; esac
 start=$(fm_session_process_start "$pid") || reject no_harness
 tmp=$(mktemp "$FM_HOME/data/.handoff-ack.XXXXXX") || reject write_failed

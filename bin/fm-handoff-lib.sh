@@ -26,6 +26,21 @@
 # predecessor; reason=stale_takeover means the predecessor was proven dead and
 # the successor took the lock through the ordinary stale-owner path.
 
+# shellcheck source=bin/fm-supervisor-target-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fm-supervisor-target-lib.sh"
+
+# This session's terminal under the supervisor-target precedence: a tmux pane
+# first, then an Orca handle only inside an Orca terminal (fm_supervisor_in_orca).
+fm_handoff_endpoint_handle() {
+  if [ -n "${TMUX_PANE:-}" ]; then
+    printf '%s' "$TMUX_PANE"
+  elif fm_supervisor_in_orca; then
+    printf '%s' "$ORCA_TERMINAL_HANDLE"
+  else
+    return 1
+  fi
+}
+
 fm_handoff_event() { # <event> <nonce> <attempt> <pid> <handle> <reason>
   local line handle=$5 nonce=$2 pid=$4
   case "$handle" in ''|*[!A-Za-z0-9_.:%-]*) handle=none ;; esac

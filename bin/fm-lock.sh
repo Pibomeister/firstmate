@@ -48,7 +48,9 @@
 # warning and the re-anchor still completes. A busy lease-command lock past
 # LEASE_LOCK_WAIT seconds instead refuses acquisition without re-anchoring.
 # A foreign replacement retires the previous session's task leases under that
-# same lease-command lock before publishing its new anchor.
+# same lease-command lock before publishing its new anchor. A verified handoff
+# from a live predecessor retires them only after line 1 verifies as the
+# successor, so a refused or rolled-back transfer keeps the predecessor's leases.
 #
 # Usage: fm-lock.sh           acquire; exit 1 unless ownership is verified
 #        fm-lock.sh status    print holder and liveness; always exits 0.
@@ -197,10 +199,9 @@ publish_lock_endpoint() {
   fi
   # A resumed primary can move terminals while retaining its trusted id.
   # Its live terminal outranks its old sidecar, but not explicit launch metadata.
-  if [ "$explicit" -eq 0 ] && [ -n "${ORCA_TERMINAL_HANDLE:-${TMUX_PANE:-}}" ]; then
-    value=${ORCA_TERMINAL_HANDLE:-${TMUX_PANE:-}}
+  if [ "$explicit" -eq 0 ] && value=$(fm_handoff_endpoint_handle); then
     case "$value" in *[!A-Za-z0-9_.:%-]*) return 1 ;; esac
-    [ -z "${ORCA_TERMINAL_HANDLE:-}" ] || endpoint_backend=orca
+    [ -n "${TMUX_PANE:-}" ] || endpoint_backend=orca
     printf 'backend=%s\nterminal=%s\nworktree=%s\n' "$endpoint_backend" "$value" "${FM_HOME%/}"
     return 0
   fi
@@ -305,9 +306,9 @@ refuse_live_owner() {  # <recorded-pid>
     && [ "$(date +%s)" -lt "$deadline" ]; then
     nonce=$(jq -r '.nonce // ""' "$STATE/.handoff-pending" 2>/dev/null)
     if [ -n "$nonce" ] && [ "${FM_HANDOFF_NONCE:-}" = "$nonce" ]; then
-      fm_handoff_event handoff_reject "$nonce" 0 "$me" "${ORCA_TERMINAL_HANDLE:-${TMUX_PANE:-}}" lock_held >&2
+      fm_handoff_event handoff_reject "$nonce" 0 "$me" "$(fm_handoff_endpoint_handle || true)" lock_held >&2
     else
-      fm_handoff_event handoff_reject none 0 "$me" "${ORCA_TERMINAL_HANDLE:-${TMUX_PANE:-}}" lock_held_unbound >&2
+      fm_handoff_event handoff_reject none 0 "$me" "$(fm_handoff_endpoint_handle || true)" lock_held_unbound >&2
     fi
   fi
   if recorded=$(fm_session_lock_recorded_session_id "$STATE"); then
@@ -316,6 +317,19 @@ refuse_live_owner() {  # <recorded-pid>
     echo "error: another live firstmate session holds the lock (pid $1); operate read-only until resolved" >&2
   fi
   exit 1
+}
+
+retire_previous_leases() {
+  local lease task
+  for lease in "$STATE"/.lease-*; do
+    [ -f "$lease" ] || [ -L "$lease" ] || continue
+    task=${lease##*/.lease-}
+    fm_lease_valid_id "$task" || continue
+    rm -f -- "$lease" || {
+      echo "error: cannot retire a previous session task lease; operate read-only until resolved" >&2
+      exit 1
+    }
+  done
 }
 
 # A handoff successor needs a valid ack while the recorded owner is live.
@@ -399,15 +413,7 @@ if [ -z "$REANCHOR" ]; then
   if handoff_transfer_refused "${old:-}"; then
     refuse_live_owner "${old:-}"
   fi
-  for lease in "$STATE"/.lease-*; do
-    [ -f "$lease" ] || [ -L "$lease" ] || continue
-    task=${lease##*/.lease-}
-    fm_lease_valid_id "$task" || continue
-    rm -f -- "$lease" || {
-      echo "error: cannot retire a previous session task lease; operate read-only until resolved" >&2
-      exit 1
-    }
-  done
+  [ "$HANDOFF_TAKEOVER" = verified_transfer ] && [ -n "${FM_HANDOFF_NONCE:-}" ] || retire_previous_leases
 fi
 publish_lock_session_or_die
 if [ -f "$LOCK" ]; then
@@ -445,6 +451,9 @@ written=$(cat "$LOCK" 2>/dev/null) || {
 if [ ! -f "$LOCK" ] || [ -L "$LOCK" ] || [ "$written" != "$me" ]; then
   echo "error: session lock ownership verification failed; operate read-only until resolved" >&2
   exit 1
+fi
+if [ -z "$REANCHOR" ] && [ "$HANDOFF_TAKEOVER" = verified_transfer ] && [ -n "${FM_HANDOFF_NONCE:-}" ]; then
+  retire_previous_leases
 fi
 if [ -n "$REANCHOR" ] && ! fm_lease_rekey_holder "$REANCHOR" "$me"; then
   echo "warning: a task lease recorded against pid $REANCHOR could not be moved to pid $me, so it reads as stale" >&2
