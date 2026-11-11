@@ -165,6 +165,7 @@ if [ "${BASH_VERSINFO[0]:-0}" -lt 5 ] && [ -z "${FM_TEST_RUN_BASH_REEXEC:-}" ] &
   done
   unset _fm_bash_candidate
 fi
+unset FM_TEST_RUN_BASH_REEXEC
 
 now_ms() {
   local rt sec frac
