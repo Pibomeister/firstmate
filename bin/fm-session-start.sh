@@ -1186,9 +1186,11 @@ if [ "$READ_ONLY" -eq 1 ]; then
   [ -n "$GUARD_OUT" ] && printf '%s\n' "$GUARD_OUT"
 else
   # Register the automatic away trigger on the existing slow-check scheduler.
-  # Arm records the session start as captain activity (bin/fm-auto-away.sh).
+  # A true start counts as captain activity; a clear/compact re-emit does not.
+  AUTO_AWAY_START=--session-start
+  [ "$REEMIT" -eq 0 ] || AUTO_AWAY_START=
   AUTO_AWAY_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
-    "$SCRIPT_DIR/fm-auto-away.sh" arm 2>&1) || printf 'AUTO AWAY: %s\n' "$AUTO_AWAY_OUT"
+    "$SCRIPT_DIR/fm-auto-away.sh" arm ${AUTO_AWAY_START:+"$AUTO_AWAY_START"} 2>&1) || printf 'AUTO AWAY: %s\n' "$AUTO_AWAY_OUT"
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-branch-outcome.sh" seed-tail >/dev/null 2>&1 || true
   # Pi supervision-branch recovery, locked path only: clear leases whose
   # supervising session died, and surface outcomes the branch stored durably

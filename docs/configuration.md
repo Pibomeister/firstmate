@@ -829,7 +829,7 @@ Blank lines and lines beginning with `#` are ignored; malformed settings fail vi
 The emitted supervision instructions require `captain-message` on each genuine captain message on every primary harness.
 This explicit activity boundary avoids treating operational prompts, watcher wakes, output changes, or compactions as human activity.
 It depends on main following those instructions, rather than on a vendor transcript parser.
-Each locked session start counts as captain activity, because the captain's opening message arrives before the instruction to record it; a clock crossing missed while no session ran therefore never fires when a session opens. An absent or unreadable activity stamp never proves silence.
+Each true locked session start counts as captain activity, because the captain's opening message arrives before the instruction to record it; a clock crossing missed while no session ran therefore never fires when a session opens. A re-emitted digest after a clear or compaction keeps the last activity stamp, so it moves neither trigger. An absent or unreadable activity stamp never proves silence.
 A new message cancels a pending request, and the normal return path records activity before clearing away mode, so the same clock crossing cannot immediately put a returned captain away again.
 An existing away or quiet record, legacy mode flag, or pending return blocks automatic entry.
 Secondmate homes do not arm this feature.

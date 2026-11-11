@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Automatic entry requests for the existing /afk posture.
 # Usage:
-#   fm-auto-away.sh arm                 register the normal scheduled check
+#   fm-auto-away.sh arm [--session-start]
+#                                       register the normal scheduled check;
+#                                       --session-start also records activity
 #   fm-auto-away.sh check               queue one request when a trigger is due
 #   fm-auto-away.sh enter <activity>    revalidate a request and run AFK entry
 #   fm-auto-away.sh captain-message     record a genuine captain message
@@ -15,11 +17,12 @@
 # a message that arrived after a queued request cancels that request.
 #
 # captain-message is the harness-independent activity boundary, called by main
-# only for genuine captain input, never for operational wakes. Arm runs at each
-# locked session start and records it as captain activity, because the opening
-# message precedes the instruction to record it; a trigger missed while no
-# session ran therefore never fires on session open. An existing quiet or away
-# posture is never replaced.
+# only for genuine captain input, never for operational wakes. A true session
+# start arms with --session-start and counts as captain activity, because the
+# opening message precedes the instruction to record it; a trigger missed while
+# no session ran therefore never fires on session open. A re-emit after clear or
+# compact arms without it and preserves the last stamp, so both deadlines hold.
+# An existing quiet or away posture is never replaced.
 # The AFK launch owner's lock serializes entry against explicit /afk and /quiet.
 # Test-only clock: FM_TEST_SEAM=1 FM_AUTO_AWAY_NOW=<epoch>.
 set -eu
@@ -33,7 +36,7 @@ ACTIVITY="$STATE/.captain-message-epoch"
 REQUEST="$STATE/.auto-away-request"
 LOCK="$STATE/.auto-away.lock"
 
-usage() { sed -n '2,7s/^# \{0,1\}//p' "$0"; }
+usage() { sed -n '2,9s/^# \{0,1\}//p' "$0"; }
 fail() { printf 'fm-auto-away: %s\n' "$1" >&2; exit 1; }
 
 # Parse values, never source configuration as shell code.
@@ -135,7 +138,9 @@ arm() {
     rm -f "$REQUEST"
     return
   fi
-  write_record "$ACTIVITY" "$NOW" || fail 'cannot record session start activity'
+  if [ "$SESSION_START" = 1 ] || ! read_activity; then
+    write_record "$ACTIVITY" "$NOW" || fail 'cannot record session start activity'
+  fi
   if [ -L "$shim" ] || { [ -e "$shim" ] && [ ! -f "$shim" ]; }; then
     fail 'unsafe check shim'
   fi
@@ -153,10 +158,13 @@ arm() {
 
 case "${1:-check}" in
   --help|-h|help) usage; exit 0 ;;
-  arm|check|captain-message) [ "$#" -le 1 ] || { usage >&2; exit 2; } ;;
+  arm) [ "$#" -eq 1 ] || { [ "$#" -eq 2 ] && [ "$2" = --session-start ]; } || { usage >&2; exit 2; } ;;
+  check|captain-message) [ "$#" -le 1 ] || { usage >&2; exit 2; } ;;
   enter) [ "$#" -eq 2 ] && [[ "$2" =~ ^[1-9][0-9]{0,9}$ ]] || { usage >&2; exit 2; } ;;
   *) usage >&2; exit 2 ;;
 esac
+SESSION_START=0
+[ "${2:-}" != --session-start ] || SESSION_START=1
 # This feature is only for the primary conversation, never a secondmate home.
 [ ! -e "$FM_HOME/.fm-secondmate-home" ] || exit 0
 case "${1:-check}" in

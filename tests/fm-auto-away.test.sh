@@ -127,12 +127,26 @@ world session-open
 # The previous session ended at 18:00 with no away mode; a new one opens 09:00.
 at "$((EARLY - 14400))" captain-message
 NEXT_MORNING=$((EARLY + 39600))
-at "$NEXT_MORNING" arm >/dev/null
+at "$NEXT_MORNING" arm --session-start >/dev/null
 at "$NEXT_MORNING" check
 at "$((NEXT_MORNING + 7199))" check
 assert_absent "$FM_HOME/state/.wake-queue" 'session open entered away mode on a stale stamp or missed 23:00'
 at "$((NEXT_MORNING + 7200))" check
 assert_grep 'auto-away silence' "$FM_HOME/state/.wake-queue" 'silence after session open did not fire'
+
+world compact-silence
+printf 'time=off\n' >> "$FM_HOME/config/auto-away"
+at "$((EARLY - 7200))" captain-message
+at "$((EARLY - 600))" arm >/dev/null
+at "$EARLY" check
+assert_grep 'auto-away silence' "$FM_HOME/state/.wake-queue" 'compaction re-arm moved the silence window'
+
+world compact-night
+printf 'silence-seconds=0\n' >> "$FM_HOME/config/auto-away"
+at "$EARLY" captain-message
+at "$((NIGHT + 300))" arm >/dev/null
+at "$((NIGHT + 600))" check
+assert_grep 'auto-away clock' "$FM_HOME/state/.wake-queue" 'compaction re-arm cancelled the nightly trigger'
 
 world custom-clock
 printf 'time=22:30\nsilence-seconds=0\n' >> "$FM_HOME/config/auto-away"
