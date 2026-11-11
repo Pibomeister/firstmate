@@ -270,7 +270,7 @@ argv=<hooks>"
   [ ! -s "$LAUNCH_LOG" ] || fail "a refused raw Codex command still launched"
 
   local n=0
-  for raw in 'codex --disable hooks; codex resume' 'env -C /w codex x' 'exec -a n codex' "bash -o pipefail -c 'codex x'"; do
+  for raw in 'codex --disable hooks; codex resume' 'env -C /w codex x' 'exec -a n codex' "bash -o pipefail -c 'codex x'" "bash --rcfile f -c 'codex x'" "bash --norc -c 'codex x'"; do
     n=$((n + 1))
     id="raw-codex-hidden-$n-a1"
     rec=$(make_case "raw-codex-hidden-$n" codex "$id")

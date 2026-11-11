@@ -1921,7 +1921,7 @@ The values are fixed and have no setting.
 An inherited value, whether in the environment that runs `bin/fm-spawn.sh` or in the destination pane, never replaces them, even when it is empty or names another supervisor.
 A secondmate therefore launches its own workers with the same pair, and a remote secondmate's host applies the same values through its own `bin/fm-spawn.sh`.
 A raw launch command that starts Codex, as `codex ...` or `/path/to/codex ...` after any plain `NAME=value` assignments, is routed through the same Codex launcher with its arguments kept, so its tool shells receive both names.
-A raw command that starts Codex in any other command position, such as behind `env`, `exec` or `sh -c`, or after a separator like `;` or `&&`, refuses before launch, because the launcher cannot carry the names into that Codex's tool shells; a raw command that only mentions codex as an argument or path segment launches normally.
+A raw command that starts Codex behind a wrapper such as `env`, `exec`, `command`, `nohup` or a shell, or as a later command after a separator like `;` or `&&`, refuses before launch, because the launcher cannot carry the names into that Codex's tool shells; a wrapper that names codex anywhere before the next separator refuses too. A raw non-wrapper command that only mentions codex as an argument or path segment launches normally.
 This applies only to agents Firstmate launches; the captain's own primary Firstmate session is never given either variable.
 Firstmate provides no configuration file or flag for this, and agent-kit's own unattended-policy checks, such as its refusal to ship onto an unprotected default branch, still apply.
 

@@ -3644,14 +3644,14 @@ case "$ARG3" in
   fi
   read -r -a raw_words <<<"$ARG3"
   raw_cmdpos=1
-  raw_wrap=
+  raw_wrap=0
   raw_leading=1
   for word in "${raw_words[@]}"; do
     raw_sep=0
     case "$word" in
     '&&' | '||' | ';' | '|' | '&')
       raw_cmdpos=1
-      raw_wrap=
+      raw_wrap=0
       continue
       ;;
     *';' | *'|' | *'&') raw_sep=1 ;;
@@ -3659,41 +3659,29 @@ case "$ARG3" in
     word=${word%%[;|&]*}
     word=${word#[\"\'\(]}
     word=${word%[\"\'\)]}
-    if [ "$raw_cmdpos" = 1 ] && [ -n "$word" ]; then
-      case "$raw_wrap:$word" in
-      env:-u | env:--unset | env:-C | env:--chdir | exec:-a | shell:[-+]o | shell:[-+]O) raw_wrap=${raw_wrap}-arg ;;
-      *-arg:*) raw_wrap=${raw_wrap%-arg} ;;
-      env:-* | exec:-* | command:-* | nohup:-*) ;;
-      shell:-*c*) raw_wrap=shell-c ;;
-      shell:[-+]*) ;;
-      shell:*) raw_cmdpos=0 ;;
-      shell-c:* | env:* | exec:* | command:* | nohup:* | :*)
-        case "$word" in
-        [A-Za-z_]*=*) ;;
-        *)
-          if [ "${word##*/}" = codex ]; then
-            if [ "$raw_leading" = 1 ] && [ "$HARNESS" = codex ]; then
-              raw_cmdpos=0
-            else
-              echo "error: raw command '$ARG3' starts Codex behind another command word or after the leading command, so bin/fm-codex-launch.sh cannot carry the launch environment into its tool shells; make Codex the leading command word, after any plain NAME=value assignments" >&2
-              exit 1
-            fi
-          else
-            case "${word##*/}" in
-            env | exec | command | nohup) raw_wrap=${word##*/} ;;
-            sh | bash | zsh | dash | ksh) raw_wrap=shell ;;
-            *) raw_cmdpos=0 ;;
-            esac
-          fi
-          raw_leading=0
-          ;;
+    if [ "${word##*/}" = codex ] && { [ "$raw_wrap" = 1 ] || [ "$raw_cmdpos" = 1 ]; }; then
+      if [ "$raw_wrap" = 0 ] && [ "$raw_leading" = 1 ] && [ "$HARNESS" = codex ]; then
+        raw_cmdpos=0
+        raw_leading=0
+      else
+        echo "error: raw command '$ARG3' starts Codex behind another command word or after the leading command, so bin/fm-codex-launch.sh cannot carry the launch environment into its tool shells; make Codex the leading command word, after any plain NAME=value assignments" >&2
+        exit 1
+      fi
+    elif [ "$raw_cmdpos" = 1 ] && [ -n "$word" ]; then
+      case "$word" in
+      [A-Za-z_]*=*) ;;
+      *)
+        case "${word##*/}" in
+        env | exec | command | nohup | sh | bash | zsh | dash | ksh) raw_wrap=1 ;;
         esac
+        raw_cmdpos=0
+        raw_leading=0
         ;;
       esac
     fi
     if [ "$raw_sep" = 1 ]; then
       raw_cmdpos=1
-      raw_wrap=
+      raw_wrap=0
     fi
   done
   ;;
