@@ -1,0 +1,2 @@
+ok - a Codex ship launch carries TMUX, TMUX_PANE, FM_TASK_INBOX and agent-kit lifecycle overrides, and no Herdr overrides the pane lacks
+ok - a Codex secondmate launch carries Herdr, inbox and agent-kit lifecycle overrides, and watcher selection accepts the tool-shell environment they produce

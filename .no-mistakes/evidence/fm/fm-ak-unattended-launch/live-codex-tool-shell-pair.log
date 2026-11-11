@@ -1,0 +1,18 @@
+### control: plain codex, inherit=core
+hook: Stop Completed
+hook: Stop Completed
+tokens used
+36,414
+UNSET
+### head: via bin/fm-codex-launch.sh, inherit=core
+hook: Stop Completed
+hook: Stop Completed
+tokens used
+36,428
+unattended
+### head (rerun, single-line probe): via bin/fm-codex-launch.sh, inherit=core
+Run exactly this shell command and reply with only its raw output, verbatim: echo "POLICY=${AK_LIFECYCLE_POLICY:-UNSET} SUPERVISOR=${AK_LIFECYCLE_SUPERVISOR:-UNSET}"
+/bin/zsh -lc 'echo "POLICY=${AK_LIFECYCLE_POLICY:-UNSET} SUPERVISOR=${AK_LIFECYCLE_SUPERVISOR:-UNSET}"' in /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.vTD3ecFTwJ
+POLICY=unattended SUPERVISOR=firstmate
+POLICY=unattended SUPERVISOR=firstmate
+POLICY=unattended SUPERVISOR=firstmate

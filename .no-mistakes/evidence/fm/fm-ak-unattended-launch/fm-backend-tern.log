@@ -1,0 +1,73 @@
+ok - fm_backend_tern_parse_target: splits '<session-id>:<block-id>' and keeps ids above 2^53 byte-exact
+ok - fm_backend_tern_parse_target: refuses empty, non-numeric, signed, spaced, extra-colon and selector-shaped targets
+ok - fm_backend_tern_*: a selector-shaped target (@focused) is refused without calling tern
+ok - fm_backend_tern_container_ensure: reuses an existing named session and prints its full 64-bit id
+ok - fm_backend_tern_container_ensure: creates a missing session by name and returns the new id, leaving other sessions alone
+ok - fm_backend_tern_container_ensure: without an override the session is named fm-<home tag>
+ok - fm_backend_tern_container_ensure: refuses a tern older than 0.9.4 loudly before touching any session
+ok - fm_backend_tern_container_ensure: compares versions numerically (0.10.0 passes the 0.9.4 floor)
+ok - fm_backend_tern_container_ensure: an unreadable inventory fails instead of creating a duplicate session
+ok - fm_backend_tern_create_task: opens a keep-open tab in the session, renames it to the scoped title, reads it back, prints exact ids
+ok - fm_backend_tern_create_task: refuses to place a task in any session other than its own
+ok - fm_backend_tern_create_task: an unparseable 'new tab' answer fails without renaming anything
+ok - fm_backend_tern_create_task: a failed rename fails the create and closes only the block it made
+ok - fm_backend_tern_create_task: refuses a duplicate scoped tab title before creating anything
+ok - fm_backend_tern_create_task: a title that never reads back fails the create and closes the new block
+ok - fm_backend_tern_target_ready: one ls, true only for the exact session:block pair, exact at 64 bits, false when unreadable
+ok - fm_backend_tern_target_ready: the expected label must equal this home's scoped tab title
+ok - fm_backend_tern_capture: 'tern capture <block-id> --scrollback --surfaces', trimmed to N lines locally
+ok - fm_backend_tern_capture: propagates a failing capture and never reads an absent block
+ok - fm_backend_tern_visible_capture: --surfaces without --scrollback, limited to the block's visible rows
+ok - fm_backend_tern_capture/visible_capture: a --surfaces JSON object yields its .text before the line trim; other output is kept raw
+ok - fm_backend_tern_send_literal: 'tern send <block> text TEXT' with no Enter, even for option-shaped text
+ok - fm_backend_tern_send_key: Enter/Escape/Esc/C-c/C-u map to tern's enter/escape/ctrl+c/ctrl+u chords
+ok - fm_backend_tern_send_key: a mismatched expected task label sends nothing
+ok - fm_backend_tern_send_text_line: one atomic 'tern run' (text plus Enter), no separate key
+ok - fm_backend_tern_current_path: reads 'tern process' foreground.cwd without typing into the block
+ok - fm_backend_tern_current_path: prints nothing when the process cannot be read
+ok - fm_backend_tern_composer_state: empty/pending/unknown from a plain --surfaces capture, never failing the caller
+ok - fm_backend_composer_state: routes tern to the tern composer classifier
+ok - fm_backend_tern_busy_state: working->busy, idle->idle, waiting_input->blocked (herdr's vocabulary), picking the entry whose pane equals the block id at 64 bits
+ok - fm_backend_tern_busy_state: a stale 'working' registration over a shell-only block never reads busy
+ok - fm_backend_tern_busy_state: no entry, alive:false, malformed or non-array answers all read unknown
+ok - fm_backend_tern_busy_state: tolerates the optional fresh-Lua-state banner above the arrow line
+ok - fm_backend_tern_busy_state: no Tern window / failing tern ctl degrades to unknown, never an error
+ok - fm_backend_tern_native_state: a hung control endpoint is bounded by FM_BACKEND_TERN_CTL_TIMEOUT and reads unknown
+ok - fm_backend_tern_native_state: working|idle|waiting_input from the projected agent list after one inventory check, unknown for an unverified block
+ok - fm_backend_tern_native_state/busy_state: a displayed answer with a raw newline inside a string fails agents_json and reads unknown without failing the caller, while the same entries with it escaped read normally
+ok - fm_backend_tern_native_state: the projected answer parses (also laid out over several lines), every id survives as an exact decimal string, and the entry whose pane equals the block id supplies the state
+ok - fm_backend_busy_state: routes tern to the native agent-state reader
+ok - fm_backend_tern_agent_state: agent foreground -> alive, idle shell (incl. --rcfile) -> dead, shell -c / unrelated process -> ambiguous
+ok - fm_backend_tern_agent_state: missing only from a good inventory; exited -> dead; moved -> ambiguous; unreadable on any failed read
+ok - fm_backend_agent_state: routes tern to the tern process classifier
+ok - fm_backend_tern_kill: closes exactly the task block by numeric id, never the session
+ok - fm_backend_tern_kill: 0 when the block is already gone, and repeatable
+ok - fm_backend_tern_kill: an unreadable inventory fails instead of claiming the block is gone
+ok - fm_backend_tern_kill: a failed close is success only when a fresh inventory shows the block gone
+ok - fm_backend_tern_kill: refuses (and closes nothing) when the block id now belongs to another session
+ok - fm_backend_tern_kill: refuses (and closes nothing) when the block's tab no longer carries the task's title
+ok - fm_backend_tern_list_live: lists only this home's scoped task tabs in its own session, as plain fm-<id> labels
+ok - fm_backend_visible_capture: routes tern to the viewport read
+ok - fm_backend_target_exists: tern is a read-only inventory check
+ok - fm_backend dispatcher: send_key, capture and kill route to the tern adapter
+ok - fm_backend_tern_send_text_submit: a native idle -> working transition confirms delivery without reading the screen
+ok - fm_backend_tern_send_text_submit: waiting_input after Enter counts as a landed submit
+ok - fm_backend_tern_send_text_submit: an inconclusive native read falls back to the composer; retries press Enter only and never retype
+ok - fm_backend_tern_send_text_submit: a busy agent's queued Enter counts as delivered (shared queued-Enter policy)
+ok - fm_backend_tern_send_text_submit: no control endpoint degrades to the shared composer loop
+ok - fm_backend_tern_send_text_submit: retries past a popup-placeholder-fill Enter and lands the real second Enter
+ok - fm_backend_tern_send_text_submit: a swallowed Enter reports pending after the Enter-only retries
+ok - fm_backend_tern_send_text_submit: a failing Enter is retried as Enter only, and reported send-failed when it never lands
+ok - fm_backend_tern_send_text_submit: reports 'send-failed' when the block is absent
+ok - fm_backend_send_text_submit: routes tern to the native-confirming submit
+ok - fm_backend_validate_task_endpoint: a complete tern record validates and keeps 64-bit ids byte-exact
+ok - fm_backend_validate_task_endpoint: tern records without an exact binding, with mismatched/non-numeric/overlong/duplicate ids or selector windows are refused
+ok - fm-spawn.sh: refuses backend=tern for --secondmate spawns (no per-home lifecycle design is verified)
+ok - fm-spawn.sh --backend tern: writes backend/window/tern_*_id/endpoint_task_id with exact ids that pass cleanup validation
+ok - fm-spawn.sh --backend tern: a cleared allowlist launch keeps TERM_PROGRAM and the TERN_* identity, drops the rest, and invents nothing
+ok - fm-spawn.sh --backend tern: creates the session without the agent-kit lifecycle pair while the worker launch still carries the fixed pair
+ok - tern_refuse_if_unsafe: accepts only a numeric id listed under exactly its fm-test- name; fails closed on empty, non-numeric, foreign, unlisted or unreadable
+ok - tern_refuse_if_unsafe: session ids above 2^53 are compared as exact integers
+ok - tern_refuse_if_unsafe: a session hosting $TERN_PANE is never torn down
+ok - tern_safe_kill_session: one 'tern kill session <id>' behind the guard, nothing at all when the guard refuses
+ok - tern smoke test: skips cleanly with no tern, and with a listing daemon but no window control endpoint, touching nothing
