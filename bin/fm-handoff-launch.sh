@@ -22,7 +22,11 @@
 #      permission flag config/claude-permission-mode selects for this
 #      home (bin/fm-spawn.sh's resolution: bypass, the default, is
 #      --dangerously-skip-permissions; auto is --permission-mode auto);
-#   3. takes the launch time and, before hashing the document, runs
+#   3. records the launch under way in state/.handoff-launching as
+#      pid=<launcher pid> and handoff=<path>, so `bin/fm-order.sh handoff
+#      --doc` leaves the document unchanged until this launcher exits and
+#      removes the record; then takes the launch time and, before hashing the
+#      document, runs
 #      `bin/fm-order.sh covers` on it: every open captain order recorded
 #      before that time must be in the document, because one recorded after
 #      it is left to the successor's pickup. On a missing order it exits 3
@@ -78,14 +82,15 @@
 # session with a live successor recorded (one live pane). When
 # FM_HANDOFF_END_AFTER_PID names the hook, it first waits up to 60 seconds for
 # that hook to exit; the hook cancels it when it blocks the stop. After a settle (default 15
-# seconds) it ends <pid> with SIGTERM, waiting up to 30 seconds for it to go,
-# only when all of these still hold: state/.lock names <pid>, the successor
-# record names a different live pid, <pid> is a live harness process, and the
-# transcript has no new user or queued-message record past <bytes>, and
-# `bin/fm-order.sh covers` still passes for the successor record's handoff
+# seconds) it runs `bin/fm-order.sh covers` for the successor record's handoff
 # document, which counts an order recorded after the launch as covered by the
-# successor's pickup, so an older open order the document omits keeps the old
-# session (reason=order-gate). Claude
+# successor's pickup. Then it checks, after that slow step and right before the
+# signal, that state/.lock names <pid>, the successor record names a different
+# live pid, <pid> is a live harness process, and the transcript has no new user
+# or queued-message record past <bytes>. Only when all of these hold and covers
+# passed does it end <pid> with SIGTERM, waiting up to 30 seconds for it to go;
+# an older open order the document omits keeps the old session
+# (reason=order-gate). Claude
 # can flush the stopped turn's final assistant reply after the Stop hook
 # measures <bytes>, so an assistant record, like Claude's own bookkeeping
 # after a stop, does not count as a new turn. It records the outcome in state/.handoff-end as
@@ -169,7 +174,7 @@ new_turn_since() {
 
 # --end-predecessor <pid> <transcript> <bytes>
 end_predecessor() {
-  local pid=$1 transcript=$2 bytes=$3 settle wait_secs after lock succ succ_doc result=skipped reason='' waited=0
+  local pid=$1 transcript=$2 bytes=$3 settle wait_secs after lock succ succ_doc covered result=skipped reason='' waited=0
   case "$pid:$bytes" in *[!0-9:]* | :* | *:) printf 'usage: fm-handoff-launch.sh --end-predecessor <pid> <transcript> <bytes>\n' >&2; exit 2 ;; esac
   settle=$(seam_secs FM_HANDOFF_END_SETTLE_SECS 15)
   wait_secs=$(seam_secs FM_HANDOFF_END_WAIT_SECS 30)
@@ -183,10 +188,16 @@ end_predecessor() {
   done
   waited=0
   sleep "$settle"
+  # The order check is the slow step, so it runs first: the checks that the old
+  # session is still idle follow it, and the signal follows them at once.
+  succ_doc=$(sed -n 's/^handoff=//p' "$STATE/.handoff-successor" 2>/dev/null | tail -n 1)
+  covered=no
+  if FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" covers "$succ_doc" >/dev/null 2>&1; then
+    covered=yes
+  fi
   lock=$(cat "$STATE/.lock" 2>/dev/null)
   succ=$(sed -n 's/^pid=//p' "$STATE/.handoff-successor" 2>/dev/null | tail -n 1)
   case "$succ" in '' | *[!0-9]*) succ= ;; esac
-  succ_doc=$(sed -n 's/^handoff=//p' "$STATE/.handoff-successor" 2>/dev/null | tail -n 1)
   if [ "$lock" != "$pid" ]; then
     reason='lock-moved'
   elif [ -z "$succ" ] || [ "$succ" = "$pid" ] || ! kill -0 "$succ" 2>/dev/null; then
@@ -195,7 +206,7 @@ end_predecessor() {
     reason=predecessor-gone
   elif [ ! -r "$transcript" ] || new_turn_since "$transcript" "$bytes"; then
     reason=new-turn
-  elif ! FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" covers "$succ_doc" >/dev/null 2>&1; then
+  elif [ "$covered" != yes ]; then
     reason=order-gate
   else
     kill -TERM "$pid" 2>/dev/null
@@ -297,6 +308,17 @@ case "$CLAUDE_PERMISSION_MODE" in
   auto) PERM_FLAG='--permission-mode auto' ;;
   *) PERM_FLAG='--dangerously-skip-permissions' ;;
 esac
+
+# While this launch runs, bin/fm-order.sh handoff --doc leaves the document
+# unchanged, so the hash taken below still matches the document the successor
+# reads. The record names this launcher, which removes it when it exits.
+LAUNCH_MARK="$STATE/.handoff-launching"
+clear_launch_mark() {
+  [ "$(sed -n 's/^pid=//p' "$LAUNCH_MARK" 2>/dev/null | tail -n 1)" != "$$" ] || rm -f "$LAUNCH_MARK"
+}
+atomic_record "$LAUNCH_MARK" "pid=$$
+handoff=$HANDOFF" || fail_launch "cannot record the launch under way in $LAUNCH_MARK"
+trap clear_launch_mark EXIT
 
 # An order recorded from here on is left to the successor's pickup
 # (bin/fm-order.sh), so every order recorded before must be in the document.

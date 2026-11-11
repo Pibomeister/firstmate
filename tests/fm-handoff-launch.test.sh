@@ -92,11 +92,11 @@ run_launcher() {  # [env assignments...] -- print output, set RC
     "$@" bash "$LAUNCHER" "$LAB/data/handoff.md"
 }
 
-run_mode() {  # <mode args...> -- run the launcher in another mode, print output
+run_mode() {  # <mode args...> -- run the launcher (MODE_LAUNCHER, default the real one) in another mode, print output
   env PATH="$FAKEBIN:$PATH" FM_TEST_SEAM=1 FM_HOME="$LAB" FM_ROOT_OVERRIDE="$ROOT" \
     FM_STATE_OVERRIDE="$LAB/state" FM_CONFIG_OVERRIDE="$LAB/config" \
     FM_HANDOFF_AWAIT_SECS="${AWAIT_SECS:-3}" FM_HANDOFF_END_SETTLE_SECS="${END_SETTLE_SECS:-1}" FM_HANDOFF_END_WAIT_SECS=3 \
-    bash "$LAUNCHER" "$@"
+    bash "${MODE_LAUNCHER:-$LAUNCHER}" "$@"
 }
 
 # fake_harness_pid: start a process the harness matcher reads as claude (a
@@ -316,6 +316,81 @@ test_end_predecessor_rechecks_the_order_gate() {
   pass "the old session is ended only while its handoff lists every open captain order recorded before the launch"
 }
 
+# The order check is the ender's slow step, so the checks that the old session
+# is still idle come after it: a prompt that arrives while the order check runs
+# keeps the old session alive. The ender runs from a copy of bin/ whose
+# fm-order.sh writes that prompt into the transcript as its covers check starts.
+test_end_predecessor_sees_a_turn_that_starts_during_the_order_check() {
+  local t="$TMP_ROOT/covers-turn-transcript" end="$LAB/state/.handoff-end" wrap="$TMP_ROOT/covers-turn-bin" pred succ bytes f
+  reset_lab
+  kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
+  rm -rf "$LAB/data/orders" "$LAB/state/.order-handoff" "$end" "$wrap"
+  mkdir -p "$wrap"
+  for f in "$ROOT"/bin/*; do ln -s "$f" "$wrap/"; done
+  rm -f "$wrap/fm-order.sh"
+  cat > "$wrap/fm-order.sh" <<EOF
+#!/usr/bin/env bash
+[ "\${1:-}" != covers ] || printf '{"type":"user"}\n' >> '$t'
+exec '$ROOT/bin/fm-order.sh' "\$@"
+EOF
+  chmod +x "$wrap/fm-order.sh"
+  printf '{"type":"assistant"}\n' > "$t"
+  bytes=$(wc -c < "$t" | tr -d ' ')
+  pred=$(fake_harness_pid)
+  sleep 60 &
+  succ=$!
+  printf '%s\n' "$pred" > "$LAB/state/.lock"
+  printf 'pid=%s\nhandoff=%s\nlaunched=%s\n' "$succ" "$LAB/data/handoff.md" "$(date +%s)" > "$LAB/state/.handoff-successor"
+  MODE_LAUNCHER="$wrap/fm-handoff-launch.sh" run_mode --end-predecessor "$pred" "$t" "$bytes" >/dev/null 2>&1
+  assert_contains "$(cat "$t")" '"type":"user"' "the order check ran and wrote the new prompt"
+  assert_contains "$(cat "$end")" "result=skipped" "a prompt that arrives during the order check keeps the old session"
+  assert_contains "$(cat "$end")" "reason=new-turn" "the record names the new turn"
+  kill -0 "$pred" 2>/dev/null || fail "the old session must survive a prompt that arrives during the order check"
+  kill "$pred" "$succ" 2>/dev/null; wait "$succ" 2>/dev/null
+  rm -rf "$end" "$wrap" "$LAB/state/.handoff-successor"
+  pass "the ender checks the old session is idle after its order check, so a prompt during that check keeps it"
+}
+
+# A session can run handoff --doc while its own launch is still waiting for
+# the successor, after the launcher hashed the document. That run must leave
+# the document byte-unchanged, so it still matches the hash the successor was
+# given. The successor is held until the test releases it, so handoff --doc
+# runs inside that window.
+test_handoff_doc_during_a_launch_leaves_the_document_unchanged() {
+  local out rc lpid sum sha n doc="$LAB/data/handoff.md" release="$TMP_ROOT/window-release" log="$TMP_ROOT/window-launch.out"
+  reset_lab
+  rm -rf "$LAB/data/orders" "$LAB/state/.order-handoff"
+  rm -f "$release" "$release.ready"
+  run_launcher FM_FAKE_ORCA_MODE=late FM_FAKE_ORCA_RELEASE="$release" FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=60 >"$log" 2>&1 &
+  lpid=$!
+  n=0
+  while [ ! -s "$TMP_ROOT/orca-cmd" ] && [ "$n" -lt 600 ]; do sleep 0.1; n=$((n + 1)); done
+  [ -s "$TMP_ROOT/orca-cmd" ] || fail "the launcher never opened the successor terminal"
+  sum=$(cksum < "$doc")
+  # A relative path keeps this call's arguments from naming the document, so
+  # the launcher cannot read it as the successor.
+  out=$(cd "$LAB/data" && FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" handoff --doc handoff.md) \
+    || fail "could not run handoff --doc during the launch: $out"
+  [ ! -e "$LAB/state/.handoff-successor" ] || fail "the successor was recorded before handoff --doc ran, so the launch window was not tested"
+  : > "$release"
+  rc=0
+  wait "$lpid" || rc=$?
+  assert_equals 0 "$rc" "the launch succeeds: $(cat "$log")"
+  SUCC_PID=$(sed -n 's/^pid=//p' "$LAB/state/.handoff-successor")
+  assert_equals "$sum" "$(cksum < "$doc")" "handoff --doc during the launch leaves the hashed document byte-unchanged"
+  assert_contains "$out" "unchanged" "handoff --doc says it left the document unchanged"
+  sha=$(shasum -a 256 "$doc" 2>/dev/null | awk '{print $1}')
+  [ -n "$sha" ] || sha=$(sha256sum "$doc" | awk '{print $1}')
+  assert_contains "$(cat "$TMP_ROOT/orca-cmd")" "$sha" "the document still matches the hash the successor was given"
+  FM_HOME="$LAB" "$ROOT/bin/fm-order.sh" handoff --doc "$doc" >/dev/null || fail "could not rerun handoff --doc after the launch"
+  assert_equals "$sum" "$(cksum < "$doc")" "the live successor still holds the document once the launch is recorded"
+  kill "$SUCC_PID" 2>/dev/null; SUCC_PID=''
+  pkill -f "$doc" 2>/dev/null
+  kill "$PRED_PID" 2>/dev/null; wait "$PRED_PID" 2>/dev/null
+  rm -f "$release" "$release.ready" "$LAB/state/.handoff-successor" "$LAB/state/.order-handoff"
+  pass "handoff --doc during a launch leaves the document unchanged, so the successor's hash still matches"
+}
+
 # An order filed between the session's last handoff --doc and the launch is
 # not in the document and not yet left to a successor's pickup, so the launch
 # refuses until the session reruns handoff --doc. Then the launch succeeds, an
@@ -401,4 +476,6 @@ test_a_second_attempt_recovers_a_terminal_that_failed_to_open
 test_await_predecessor_is_bounded
 test_end_predecessor_skips_unless_safe
 test_end_predecessor_rechecks_the_order_gate
+test_end_predecessor_sees_a_turn_that_starts_during_the_order_check
 test_launch_refuses_a_handoff_that_omits_an_open_order
+test_handoff_doc_during_a_launch_leaves_the_document_unchanged

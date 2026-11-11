@@ -131,13 +131,16 @@
 # lists them.
 #
 # ORDERS AFTER A LAUNCH. A successor confirms its handoff document's sha256, so
-# once a live successor holds the document - state/.handoff-successor names it
-# with a live pid other than line 1 of state/.lock - `handoff --doc` leaves it
-# byte-unchanged and writes no other file. `gate` and `covers` then count an
-# open order recorded at or after that record's launched=<epoch> (the send time
-# in its id) as covered, because it stays open in the durable order store and
-# the successor's `pickup` lists it; an older open order must still be named
-# in the document.
+# `handoff --doc` leaves the document byte-unchanged and writes no other file
+# while a launch for it is under way - state/.handoff-launching names it with a
+# live launcher pid, written by bin/fm-handoff-launch.sh before it hashes the
+# document and removed when it exits - and once a live successor holds it -
+# state/.handoff-successor names it with a live pid other than line 1 of
+# state/.lock. `gate` and `covers` count an open order recorded at or after
+# that successor record's launched=<epoch> (the send time in its id) as
+# covered, because it stays open in the durable order store and the
+# successor's `pickup` lists it; an older open order must still be named in the
+# document.
 #
 # SENDER RE-CHECK AND LEASH. `status` prints, per order, its kind, state, age
 # since send, deliveries, re-deliveries against the cap, and `resend_due=yes`
@@ -829,6 +832,18 @@ successor_holds_doc() {
   case "$SUCC_LAUNCHED" in *[!0-9]*) SUCC_LAUNCHED= ;; esac
 }
 
+# True when a successor launch with handoff document <doc> is under way:
+# state/.handoff-launching names <doc> and a live launcher pid.
+launch_holds_doc() {
+  local doc=$1 rec="$STATE/.handoff-launching" pid launch_doc
+  [ -r "$rec" ] && [ -f "$doc" ] || return 1
+  pid=$(sed -n 's/^pid=//p' "$rec" | tail -n 1)
+  case "$pid" in '' | *[!0-9]*) return 1 ;; esac
+  kill -0 "$pid" 2>/dev/null || return 1
+  launch_doc=$(sed -n 's/^handoff=//p' "$rec" | tail -n 1)
+  [ -n "$launch_doc" ] && [ "$launch_doc" -ef "$doc" ]
+}
+
 # The handoff document this session recorded with `handoff --doc`, or nothing.
 recorded_handoff_doc() {
   handoff_record_mine || return 0
@@ -853,7 +868,9 @@ cmd_handoff() {
   dir=$(cd "$(dirname "$doc")" && pwd)
   doc="$dir/${doc##*/}"
   if successor_holds_doc "$doc"; then
-    held=1
+    held=successor
+  elif launch_holds_doc "$doc"; then
+    held=launch
   else
     printf '\n%s\n' "$block" >>"$doc"
   fi
@@ -865,8 +882,10 @@ cmd_handoff() {
   printf 'doc=%s\nat=%s\nowner=%s\n' "$doc" "$(now_epoch)" "$(printf '%s' "$SESSION_PIDS" | tr '\n' ' ')" >"$tmp"
   mv "$tmp" "$HANDOFF_RECORD"
   n=$(open_orders | awk 'NF { n++ } END { print n + 0 }')
-  if [ -n "$held" ]; then
+  if [ "$held" = successor ]; then
     printf 'handoff: left %s unchanged for its live successor; %s open order(s) stay in the order store for its pickup\n' "$doc" "$n"
+  elif [ "$held" = launch ]; then
+    printf 'handoff: left %s unchanged for the successor launch under way; %s open order(s) stay in the order store\n' "$doc" "$n"
   else
     printf 'handoff: wrote %s open order(s) into %s\n' "$n" "$doc"
   fi

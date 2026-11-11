@@ -111,6 +111,7 @@ state/               runtime records and signals; gitignored
   captain-handle .order-handoff .order-sweep  the current captain terminal that order senders resolve at send time, the recorded handoff the restart gate reads, and the watcher's order-sweep throttle stamp; bin/fm-order.sh owns the handle and record
   .handoff-successor .handoff-launch-failed  the successor launch record (pid, handoff path, predecessor pid) and the failed-launch record bin/fm-handoff-launch.sh writes, both read by the handoff trigger's successor gate; bin/fm-handoff-trigger.sh owns them
   .handoff-end                               the outcome of ending a handed-off predecessor session; bin/fm-handoff-launch.sh owns it
+  .handoff-launching                         the launch-in-progress record (launcher pid, handoff path) that keeps bin/fm-order.sh handoff --doc from changing the document while its launch runs; bin/fm-handoff-launch.sh owns it
   .handoff-trigger.<session>.<count>         the once-per-context-cycle trigger marker with its capture or handoff mode; bin/fm-handoff-trigger.sh owns it
   compact-point                              the auto-compact point the handoff trigger last resolved, named for its session, with whether the cycle ends in compaction or a handoff, read by bin/fm-context-reading-lib.sh; bin/fm-handoff-trigger.sh owns it
   monitor-status                             the home's monitor unit status, rewritten by each watchdog pass and by a session start whose watchdog unit is not enabled; docs/watchdog.md "Layer check chain" owns the format
