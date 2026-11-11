@@ -779,6 +779,84 @@ test_orca_other_remove_error_is_visible_and_retains_records() {
   pass "other Orca removal errors produce a visible refusal and retain records"
 }
 
+# configure_orca_sweep_case <case-dir>: an Orca task whose worktree has its
+# recorded terminal plus extra terminals on the local Orca and on one paired
+# environment. The fake Orca logs every call to FM_ORCA_SWEEP_LOG, fails a
+# close for any handle named in FM_ORCA_FAIL_HANDLE, and removes the worktree
+# directory on `worktree rm`.
+configure_orca_sweep_case() {  # <case-dir>
+  local case_dir=$1
+  configure_orca_teardown_case "$case_dir"
+  cat > "$case_dir/fakebin/orca" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_ORCA_SWEEP_LOG:?}"
+case "${1:-} ${2:-}" in
+  "worktree show")
+    printf '{"ok":true,"result":{"worktree":{"id":"wt-task-x1::/orca/wt-task-x1","path":"%s"}}}\n' "${FM_ORCA_RECORDED_PATH:?}" ;;
+  "environment list")
+    printf '{"ok":true,"result":{"environments":[{"id":"env-remote"}]}}\n' ;;
+  "terminal list")
+    case "$*" in
+      *--environment*)
+        printf '{"ok":true,"result":{"terminals":[{"handle":"term-remote-1","worktreePath":"%s"}]}}\n' "$FM_ORCA_RECORDED_PATH" ;;
+      *)
+        printf '{"ok":true,"result":{"terminals":[{"handle":"term-local-extra","worktreePath":"%s"},{"handle":"term-elsewhere","worktreePath":"/elsewhere"}]}}\n' "$FM_ORCA_RECORDED_PATH" ;;
+    esac ;;
+  "terminal close")
+    case "$*" in *"${FM_ORCA_FAIL_HANDLE:-__none__}"*) printf '{"ok":false,"error":{"code":"x","message":"close failed"}}\n'; exit 1 ;; esac
+    printf '{"ok":true,"result":{}}\n' ;;
+  "worktree rm")
+    rm -rf "$FM_ORCA_RECORDED_PATH"
+    printf '{"ok":true,"result":{}}\n' ;;
+  *) printf 'unexpected Orca command: %s\n' "$*" >&2; exit 2 ;;
+esac
+SH
+  chmod +x "$case_dir/fakebin/orca"
+}
+
+test_orca_teardown_sweeps_task_terminals_on_every_environment() {
+  local case_dir rc=0
+  case_dir=$(make_case orca-sweep-every-env)
+  write_meta "$case_dir" local-only ship
+  configure_orca_sweep_case "$case_dir"
+
+  FM_ORCA_RECORDED_PATH="$case_dir/wt" FM_ORCA_SWEEP_LOG="$case_dir/orca.log" \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "orca-sweep-every-env: teardown should finish"$'\n'"$(cat "$case_dir/stderr")"
+  assert_grep "teardown: 2 Orca terminal(s) closed across 2 environment(s) for task task-x1" "$case_dir/stdout" \
+    "orca-sweep-every-env: teardown did not report the count across environments: $(cat "$case_dir/stdout")"
+  assert_grep "terminal close --terminal term-local-extra --json" "$case_dir/orca.log" \
+    "orca-sweep-every-env: the extra local terminal was left open"
+  assert_grep "terminal close --terminal term-remote-1 --environment env-remote --json" "$case_dir/orca.log" \
+    "orca-sweep-every-env: the paired environment's terminal was left open"
+  if grep -q "term-elsewhere" "$case_dir/orca.log"; then
+    fail "orca-sweep-every-env: a terminal in another worktree was closed"
+  fi
+  assert_absent "$case_dir/state/task-x1.meta" "orca-sweep-every-env: teardown retained task metadata"
+  pass "Orca teardown closes the task's terminals on every environment and reports the count"
+}
+
+test_orca_teardown_refuses_when_a_swept_terminal_will_not_close() {
+  local case_dir rc=0 meta_before
+  case_dir=$(make_case orca-sweep-close-fails)
+  write_meta "$case_dir" local-only ship
+  configure_orca_sweep_case "$case_dir"
+  meta_before=$(cat "$case_dir/state/task-x1.meta")
+
+  FM_ORCA_RECORDED_PATH="$case_dir/wt" FM_ORCA_SWEEP_LOG="$case_dir/orca.log" FM_ORCA_FAIL_HANDLE=term-remote-1 \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  [ "$rc" -ne 0 ] || fail "orca-sweep-close-fails: teardown accepted a terminal that would not close"
+  if grep -q "worktree rm" "$case_dir/orca.log"; then
+    fail "orca-sweep-close-fails: teardown removed the worktree while a terminal stayed open"
+  fi
+  [ -d "$case_dir/wt" ] || fail "orca-sweep-close-fails: the worktree was removed"
+  [ "$(cat "$case_dir/state/task-x1.meta")" = "$meta_before" ] \
+    || fail "orca-sweep-close-fails: refusal changed task metadata"
+  pass "Orca teardown refuses and keeps the worktree when a swept terminal will not close"
+}
+
 # Seed a real backlog carrying task-x1 as In flight, so a teardown in this case
 # has a row to close. Uses the real tasks-axi (the fixture's default fakebin has
 # no tasks-axi stub, so PATH resolves the installed one).
@@ -6662,6 +6740,8 @@ test_retained_sources_still_reach_the_ordinary_refusal
 test_orca_selector_not_found_with_absent_path_completes_cleanup
 test_orca_selector_not_found_with_present_path_refuses_and_retains_records
 test_orca_other_remove_error_is_visible_and_retains_records
+test_orca_teardown_sweeps_task_terminals_on_every_environment
+test_orca_teardown_refuses_when_a_swept_terminal_will_not_close
 test_local_only_fork_remote_allows
 test_teardown_closes_the_backlog_item_itself
 test_teardown_closes_a_gerrit_task_with_its_change_url_as_a_note

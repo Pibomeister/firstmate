@@ -490,7 +490,10 @@ if (mode === "terminals") {
     else {
       let live = false;
       for (const [pid, d] of cwd) {
+        // A browser process outside the root's tree, such as a crash
+        // handler reparented to pid 1, is part of a browser, not an owner.
         if (family.has(pid) || exclude.has(pid)) continue;
+        if (procs.has(pid) && isBrowserProc(procs.get(pid))) continue;
         if (under(d, dir)) { live = true; break; }
       }
       if (live) cls = "owner-live"; else { verdict = "reap"; cls = "owner-gone"; }

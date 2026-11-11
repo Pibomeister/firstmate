@@ -807,6 +807,22 @@ test_browsers_keep_young_and_live_owners() {
   cwd_row "$owned" "$FX/gone-owned"
   spawn_headless_under "$appexe" "$chrome"; captained=$PID
   cwd_row "$captained" "$FX/gone-captained"
+  # A stable Chrome left headless with its crash handler, which Chrome
+  # reparents to pid 1 beside it in the same directory: the handler is part
+  # of the browser, never a live owner.
+  local stable handler
+  mkdir -p "$FX/stable-dir"
+  fake_headless "$appexe"; stable=$PID
+  handler="$TMP_ROOT/Apps/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Helpers/chrome_crashpad_handler"
+  mkdir -p "${handler%/*}"; : > "$handler"
+  ( exec -a "$handler" bash -c 'sleep 600 & wait' "$handler" --monitor-self ) >/dev/null 2>&1 </dev/null &
+  handler=$!
+  disown "$handler" 2>/dev/null || true
+  TRACKED_PIDS+=("$handler")
+  await_exec "$handler"
+  : > "$FX/ppid1-$stable"; : > "$FX/ppid1-$handler"
+  cwd_row "$stable" "$FX/stable-dir"
+  cwd_row "$handler" "$FX/stable-dir"
   sleep 1.2
   run_reap --browser-min-age 3600
   [ "$RC" = 0 ] || fail "the browser owner dry run must exit 0, got $RC: $(cat "$FX/stderr")"
@@ -816,6 +832,7 @@ test_browsers_keep_young_and_live_owners() {
   expect "$owned" "keep live-ancestor" "a browser a live driver still owns is never reaped"
   expect "$captained" "keep captain-browser" "a browser the captain's own browser owns is never reaped"
   expect "$young" "reap owner-gone" "an ownerless headless browser older than the floor is reaped"
+  expect "$stable" "reap owner-gone" "an ownerless stable Chrome is reaped even beside its reparented crash handler"
   run_reap --apply --browsers --browser-min-age 0
   [ "$RC" = 0 ] || fail "the browser owner apply must exit 0, got $RC: $(cat "$FX/stderr")"
   kill -0 "$owned" 2>/dev/null || fail "an apply stopped a live worker's browser"
