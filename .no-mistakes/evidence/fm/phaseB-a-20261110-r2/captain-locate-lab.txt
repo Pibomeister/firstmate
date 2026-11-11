@@ -1,0 +1,6 @@
+# fresh lab home
+CAPTAIN v1 pid=0 handle=none state=free
+exit=1
+# lock naming a dead pid
+CAPTAIN v1 pid=999999 handle=none state=stale
+exit=1
