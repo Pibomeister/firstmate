@@ -1,0 +1,34 @@
+# Live lab F1 drill on real tmux: first successor pane killed right after launch (successor exits); doc path contains ) and ' (argv launch, no shell parse)
+tested_sha=3e0732b74869ec9288e30811ea16b2ef1ee9008e  budget=60s via documented FM_TEST_SEAM knob; predecessor = real Claude pid 8381 (the earlier successor)
+killed window 3 (attempt-1 successor) at 1794385626
+## launcher stdout + rc
+HANDOFF v1 ts=1794385625 event=handoff_started nonce=f6f245a469505514de906d4be6a95629 attempt=1 pid=8381 handle=%2 reason=awaiting_ack
+HANDOFF v1 ts=1794385656 event=handoff_retry nonce=bb6f6033832fcc88e371983cbb0c7f39 attempt=2 pid=8381 handle=%2 reason=awaiting_ack
+HANDOFF v1 ts=1794385684 event=handoff_failed nonce=bb6f6033832fcc88e371983cbb0c7f39 attempt=2 pid=8381 handle=none reason=deadline
+rc=1
+## handoff-events.log (new lines)
+HANDOFF v1 ts=1794385625 event=handoff_started nonce=f6f245a469505514de906d4be6a95629 attempt=1 pid=8381 handle=%2 reason=awaiting_ack
+HANDOFF v1 ts=1794385656 event=handoff_retry nonce=bb6f6033832fcc88e371983cbb0c7f39 attempt=2 pid=8381 handle=%2 reason=awaiting_ack
+HANDOFF v1 ts=1794385684 event=handoff_reject nonce=bb6f6033832fcc88e371983cbb0c7f39 attempt=0 pid=0 handle=%4 reason=lock_refused
+HANDOFF v1 ts=1794385684 event=handoff_failed nonce=bb6f6033832fcc88e371983cbb0c7f39 attempt=2 pid=8381 handle=none reason=deadline
+## lock after (predecessor kept it)
+8381
+
+## .handoff-successor present?
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.DGh5aR/state/.handoff-successor: No such file or directory
+## locator after
+CAPTAIN v1 pid=8381 handle=%2 state=held
+rc=0
+## retry successor pane (real Claude arrived at the deadline, was rejected, made no readiness claim)
+⏺ The handoff was refused, so I am not claiming readiness and I am stopping here.
+  - Document: the sha256 matched e2ebf9c5…8aca44. It is a lab drill that says to reply READY after the acknowledgement succeeds.
+  - Acknowledgement: the ack script exited 1. It said another live firstmate session still holds the lock (pid 8381, session 3378c417-132b-471d-a510-e3c17679acec) and logged handoff_reject with
+    reason=lock_refused.
+  - Not done: I did not run fm-session-start.sh and did no other work, as the handoff instructions require when the ack is refused.
+  If you want to retry, the lock held by pid 8381 has to be released or transferred first.
+  ⎿  Stop says: JEV lint (advisory): error (input).
+✻ Baked for 32s · done 2:28 AM
+  #1 Firstmate handoff successor. Read the entire document at /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.DGh5aR/data/handoff ) 'x.md. Its sha256 must be e2ebf9c59a2d72ee7f76ae2d1…   [-]
+  ┃
+❯ 
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
