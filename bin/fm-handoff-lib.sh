@@ -22,6 +22,10 @@
 # moved to the acknowledged successor; then it records completion instead.
 # The launcher decides completion and failure only under .lock.acquire, the
 # lock fm-lock.sh holds from its transfer verdict through commit or rollback.
+# When that lock is still busy at the launcher's bounded exit, it emits
+# handoff_failed reason=unresolved instead. Consumers treat unresolved as not
+# final: a later handoff_ack reason=lock_transferred with the same nonce
+# settles it as a transfer; otherwise it stands as the failure.
 # handoff_ack reason=lock_transferred is a verified transfer from a live
 # predecessor; reason=stale_takeover means the predecessor was proven dead and
 # the successor took the lock through the ordinary stale-owner path.

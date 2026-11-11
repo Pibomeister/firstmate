@@ -14,8 +14,10 @@
 # unless the lock already moved to a successor with a valid ack: that exit
 # records completion instead. Completion and failure are decided only while
 # holding .lock.acquire, so an uncommitted transfer is never reported. An exit
-# waits for that lock until 10 seconds past the claim deadline, so a busy lock
-# cannot leave a live claim behind a reported failure.
+# waits for that lock until 10 seconds past the claim deadline. If the lock is
+# still busy then, a successor transaction may yet commit, so the exit emits
+# handoff_failed reason=unresolved: not final, settled by a later handoff_ack
+# reason=lock_transferred for the same nonce.
 # Outputs only the versioned events owned by fm-handoff-lib.sh. Other errors
 # go to stderr. state/.handoff-successor is written only after lock verification.
 # Test-only: FM_TEST_SEAM=1 enables FM_HANDOFF_TEST_HARNESS and
@@ -101,7 +103,11 @@ cleanup() {
   set +e
   if [ -n "$NONCE" ] && [ "$CLAIM_HELD" != 1 ]; then
     [ $(( ${CLAIM_DEADLINE:-0} - $(date +%s) + 10 )) -le "$wait" ] || wait=$(( CLAIM_DEADLINE - $(date +%s) + 10 ))
-    fm_lock_acquire_wait_max "$STATE/.lock.acquire" "$wait" && CLAIM_HELD=1
+    if fm_lock_acquire_wait_max "$STATE/.lock.acquire" "$wait"; then
+      CLAIM_HELD=1
+    else
+      HANDOFF_FAILURE_REASON=unresolved
+    fi
   fi
   if [ "$HANDOFF_COMPLETE" -eq 0 ] && [ "$CLAIM_HELD" = 1 ] && [ -n "$NONCE" ] \
     && transfer_committed && record_completion; then

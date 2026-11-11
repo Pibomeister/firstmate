@@ -59,6 +59,24 @@ fi
 exec "$FM_HANDOFF_REAL_SLEEP" "$@"
 EOF
 chmod +x "$FAKEBIN/sleep"
+FM_HANDOFF_REAL_RM=$(command -v rm) FM_HANDOFF_DELAY_BIN="$TMP_ROOT/delaybin"
+export FM_HANDOFF_REAL_RM FM_HANDOFF_DELAY_BIN
+mkdir -p "$FM_HANDOFF_DELAY_BIN"
+cat > "$FM_HANDOFF_DELAY_BIN/rm" <<'EOF'
+#!/usr/bin/env bash
+# Delay a successor's post-commit lease retirement, still under the claim
+# lock, until the launcher has given up waiting for that lock.
+for arg; do
+  case "$arg" in
+    */.lease-*)
+      touch "$FM_HOME/state/retire-delayed"
+      while ! grep -q ' event=handoff_failed ' "$FM_HOME/state/handoff-events.log" 2>/dev/null \
+        && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do "$FM_HANDOFF_REAL_SLEEP" 0.2; done ;;
+  esac
+done
+exec "$FM_HANDOFF_REAL_RM" "$@"
+EOF
+chmod +x "$FM_HANDOFF_DELAY_BIN/rm"
 cat > "$FAKEBIN/orca" <<'EOF'
 #!/usr/bin/env bash
 set -eu
@@ -181,6 +199,9 @@ case "$FM_HANDOFF_LAB_MODE" in
     fm_lock_release "$STATE/.lock.acquire"
     end=$((SECONDS + 60))
     while kill -0 "$launcher" 2>/dev/null && [ "$SECONDS" -lt "$end" ]; do sleep 0.1; done ;;
+  delayed-successor)
+    printf 'holder=%s\n' "$(cat "$FM_HOME/pred.pid")" > "$FM_HOME/state/.lease-task-a"
+    PATH="$FM_HANDOFF_DELAY_BIN:$PATH" ;;
   stale) nonce=00000000000000000000000000000000 ;;
   expired) jq '.deadline=0' "$FM_HOME/state/.handoff-pending" > "$FM_HOME/state/expired"; mv "$FM_HOME/state/expired" "$FM_HOME/state/.handoff-pending" ;;
   wrong-sha) sha=$(printf '%064d' 0) ;;
@@ -215,7 +236,8 @@ run_case() {
   test_cleanup_processes
   rm -f "$LAB/state/".* "$LAB/state/attempts" "$LAB/state/handoff-events.log" "$LAB/state/"successor-*.out "$LAB/rc" "$LAB/ack.out" \
     "$LAB/state/tmux-target" "$LAB/state/polling" "$LAB/state/session.keep" "$LAB/state/lock.keep" "$LAB/state/claim-held" \
-    "$LAB/state/claim-wait" "$LAB/state/no-claim-wait" "$LAB/state/premature" "$LAB/launcher.pid" "$LAB/pred.pid" 2>/dev/null || true
+    "$LAB/state/claim-wait" "$LAB/state/no-claim-wait" "$LAB/state/premature" "$LAB/state/retire-delayed" \
+    "$LAB/launcher.pid" "$LAB/pred.pid" 2>/dev/null || true
   printf '%s\n' "${2:-orca}" > "$LAB/config/backend"
   printf '# Quoting-hostile handoff\nRead this document.\n' > "$LAB/data/handoff ) '.md"
   budget=$LAB_FAIL_BUDGET
@@ -551,6 +573,26 @@ run_case cleanup-contention
 [ ! -e "$LAB/state/.handoff-pending" ] || fail 'a reported failure must retire its claim'
 cat "$LAB/state/handoff-events.log"
 pass 'DRILL cleanup-contention: failure is reported only after the claim is fenced'
+
+# A successor transaction still holding the claim lock past the launcher's
+# bounded cleanup wait is reported unresolved, then settled by its ack.
+run_case delayed-successor
+[ "$(cat "$LAB/rc")" != 0 ] || fail 'an unsettled handoff must not report success'
+[ -e "$LAB/state/retire-delayed" ] || fail 'the successor must be delayed during post-commit lease retirement'
+limit=$((SECONDS + LAB_SLACK))
+while ! grep -q ' event=handoff_ack ' "$LAB/state/handoff-events.log" && [ "$SECONDS" -lt "$limit" ]; do sleep 0.1; done
+failed_line=$(grep -n ' event=handoff_failed ' "$LAB/state/handoff-events.log" || true)
+ack_line=$(grep -n ' event=handoff_ack .* reason=lock_transferred$' "$LAB/state/handoff-events.log" || true)
+[ "$(printf '%s\n' "$failed_line" | grep -c 'reason=unresolved$')" = 1 ] && [ "$(printf '%s\n' "$failed_line" | wc -l)" -eq 1 ] \
+  || fail "a busy claim at the deadline must emit exactly one unresolved failure: $(cat "$LAB/state/handoff-events.log")"
+[ -n "$ack_line" ] || fail "the delayed transfer must still be acknowledged: $(cat "$LAB/state/handoff-events.log")"
+[ "${failed_line%%:*}" -lt "${ack_line%%:*}" ] || fail 'the settling ack must follow the unresolved failure'
+failed_nonce=$(printf '%s\n' "$failed_line" | sed -n 's/.* nonce=\([0-9a-f]*\) .*/\1/p')
+assert_contains "$ack_line" " nonce=${failed_nonce:-missing} " 'the settling ack must name the unresolved nonce'
+[ "$(cat "$LAB/state/.lock")" != "$(cat "$LAB/pred.pid")" ] || fail 'the delayed transfer must commit'
+[ ! -e "$LAB/state/.lease-task-a" ] || fail 'the committed transfer must retire the predecessor lease'
+cat "$LAB/state/handoff-events.log"
+pass 'DRILL delayed-successor: a busy claim at the deadline is unresolved, then settled by the ack'
 
 # A predecessor that dies before the ack leaves an ordinary stale lock.
 run_case pred-dies
