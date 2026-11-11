@@ -122,9 +122,11 @@
 # apart.
 # Ship briefs begin with a worktree-isolation assertion before the branch step.
 # Both crewmate scaffolds carry one shared rule against administering the
-# infrastructure every lane shares - the no-mistakes daemon and the worktree pool
-# their own slot came from - so ship and scout cannot drift apart. A secondmate
-# charter omits it: that home allocates and returns slots for its own crewmates.
+# infrastructure every lane shares - the no-mistakes daemon, the worktree pool
+# their own slot came from, shared git config (global, system, or the primary
+# clone's .git/config), and shared databases - so ship and scout cannot drift
+# apart. A secondmate charter omits it: that home allocates and returns slots
+# for its own crewmates.
 # --mode, --forge, --shape, and --pr are refused on scout and secondmate scaffolds: a
 # scout's deliverable is a report rather than a merge, and a charter is not a
 # delivery contract.
@@ -708,11 +710,12 @@ EOF
 TASK_SECTION=${TASK_SECTION%$'\n'}
 
 # One shared string keeps the ship and scout infrastructure rule identical.
-# Rule 2 governs file edits, so it does not prohibit pool administration.
+# Rule 2 governs file edits, so it does not prohibit pool administration,
+# shared git config mutations via git config, or shared database changes.
 # The secondmate charter deliberately omits this rule because a secondmate
 # legitimately allocates and returns slots for crewmates in its own home.
 IFS= read -r -d '' SHARED_INFRA_RULE <<'EOF' || true
-7. Never administer infrastructure that every lane shares. Two things are shared:
+7. Never administer infrastructure that every lane shares. Four things are shared:
    - The `no-mistakes` daemon - one instance serving every lane/home, so stopping, restarting, or
      updating it kills other lanes' in-flight pipeline runs; only firstmate manages the daemon.
      Before you append `blocked:` about the pipeline, run `no-mistakes daemon status` and
@@ -732,8 +735,19 @@ IFS= read -r -d '' SHARED_INFRA_RULE <<'EOF' || true
      get/return/remove/prune, the equivalent operations on any other worktree provider or runtime
      backend, and `git worktree add|remove|move|prune`. A slot that looks unused is not evidence
      that it is free, and returning your own worktree is firstmate's job at cleanup, not yours.
-   If you genuinely need a second checkout, another slot, or the daemon touched, append
-   `blocked [at=<epoch>]: {what you need}` and stop; firstmate arranges it.
+   - Shared git configuration - global git config (`~/.gitconfig`, `$XDG_CONFIG_HOME/git/config`,
+     `GIT_CONFIG_GLOBAL`), system git config (`git config --system`), and the primary clone's
+     `.git/config`, which linked worktrees share by default unless `extensions.worktreeConfig` is
+     enabled and `--worktree` is passed. Never run `git config --global`, `git config --system`, or
+     an unguarded `git config` / `git config --local` that writes to the shared `.git/config`, and
+     never edit those files directly; pass per-invocation `git -c key=value` flags or isolate test
+     `HOME`/`GIT_CONFIG_GLOBAL` in a scratch directory instead.
+   - Shared databases - the shared `no-mistakes` state database (`state.sqlite`) and any other
+     database shared across lanes, homes, or services. Never run DDL or direct writes, drop or
+     recreate tables, run migrations, or delete or replace database files on a shared database; use
+     an isolated temporary database for tests and reproductions.
+   If you genuinely need a second checkout, another slot, a shared git config or database change,
+   or the daemon touched, append `blocked [at=<epoch>]: {what you need}` and stop; firstmate arranges it.
 EOF
 SHARED_INFRA_RULE=${SHARED_INFRA_RULE%$'\n'}
 

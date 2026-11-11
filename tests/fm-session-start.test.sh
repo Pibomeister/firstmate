@@ -3923,6 +3923,159 @@ EOF
   pass "session start rejects Pi loaded markers from previous sessions"
 }
 
+run_isolated_shared_session_start() {  # <git-home> <nm-home> <fm-home> <root> <path> [extra-session-start-args...]
+  local git_home=$1 nm_home=$2 home=$3 root=$4 path=$5
+  shift 5
+  env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT -u GIT_CONFIG_GLOBAL \
+    HOME="$git_home" XDG_CONFIG_HOME="$git_home/.config" NM_HOME="$nm_home" \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$path" \
+    "$SESSION_START" "$@"
+}
+
+test_shared_git_config_change_reported_at_session_start() {
+  local rec root home fakebin git_home nm_home out baseline_before holder_pid
+  rec=$(new_world shared-git-config)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  git_home="$TMP_ROOT/shared-git-home"
+  nm_home="$TMP_ROOT/shared-git-nm-home"
+  mkdir -p "$git_home" "$nm_home"
+
+  # Start 1: global git config absent -> records initial baseline silently.
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" "SHARED_STATE:" "initial session start false-alarmed on absent global git config"
+  assert_present "$home/state/.session-start-shared-baseline" "initial session start did not record shared-state baseline"
+
+  # Start 2: still absent -> silent.
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" "SHARED_STATE:" "unchanged absent global git config triggered SHARED_STATE"
+
+  # Simulated worker mutation: create ~/.gitconfig.
+  baseline_before=$(cat "$home/state/.session-start-shared-baseline")
+  git config --file "$git_home/.gitconfig" user.email rogue@example.invalid
+
+  # Read-only session reports the change in BOOTSTRAP without overwriting baseline.
+  rm -f "$home/state/.lock" "$home/state/.lock-session"
+  sleep 300 &
+  holder_pid=$!
+  printf '%s\n' "$holder_pid" > "$home/state/.lock"
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  kill "$holder_pid" 2>/dev/null || true
+  wait "$holder_pid" 2>/dev/null || true
+  assert_contains "$out" "READ-ONLY SESSION" "lock refusal fixture did not enter read-only mode"
+  assert_contains "$out" "SHARED_STATE: global git config changed since the last session start ($git_home/.gitconfig)" \
+    "read-only session did not surface global git config change"
+  [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
+    || fail "read-only session overwrote .session-start-shared-baseline"
+
+  # Context --reemit also reports without consuming/overwriting the baseline.
+  rm -f "$home/state/.lock" "$home/state/.lock-session"
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH" --reemit)
+  assert_contains "$out" "SHARED_STATE: global git config changed since the last session start ($git_home/.gitconfig)" \
+    "--reemit did not surface unacknowledged global git config change"
+  [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
+    || fail "--reemit overwrote .session-start-shared-baseline"
+
+  # Full locked session start reports the change and advances the baseline.
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "SHARED_STATE: global git config changed since the last session start ($git_home/.gitconfig)" \
+    "locked session start did not report created ~/.gitconfig"
+
+  # Next unchanged start is silent.
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" "SHARED_STATE:" "unchanged ~/.gitconfig repeated SHARED_STATE after baseline update"
+
+  # Content edit of ~/.gitconfig triggers SHARED_STATE.
+  git config --file "$git_home/.gitconfig" core.autocrlf input
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "SHARED_STATE: global git config changed since the last session start ($git_home/.gitconfig)" \
+    "locked session start did not report edited ~/.gitconfig"
+
+  # Removal of ~/.gitconfig triggers SHARED_STATE.
+  rm -f "$git_home/.gitconfig"
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "SHARED_STATE: global git config changed since the last session start ($git_home/.gitconfig)" \
+    "locked session start did not report removed ~/.gitconfig"
+
+  pass "session start detects created, edited, and removed global git config without mutating baseline on read-only or reemit"
+}
+
+test_shared_nm_db_schema_change_reported_at_session_start() {
+  local rec root home fakebin git_home nm_home db out baseline_before
+  rec=$(new_world shared-nm-schema)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  git_home="$TMP_ROOT/shared-nm-git-home"
+  nm_home="$TMP_ROOT/shared-nm-db-home"
+  db="$nm_home/state.sqlite"
+  mkdir -p "$git_home" "$nm_home"
+
+  # Start 1: absent database stays absent on disk and records baseline silently.
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" "SHARED_STATE:" "initial session start false-alarmed on absent state.sqlite"
+  assert_absent "$db" "session start must never create an absent state.sqlite"
+
+  # First-ever initialization of state.sqlite adopts the initial schema without false alarm.
+  python3 - "$db" <<'PY'
+import sqlite3, sys
+conn = sqlite3.connect(sys.argv[1])
+conn.execute("CREATE TABLE runs (id TEXT PRIMARY KEY, status TEXT)")
+conn.execute("PRAGMA user_version = 1")
+conn.commit()
+conn.close()
+PY
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" "SHARED_STATE:" "first state.sqlite initialization false-alarmed as schema drift"
+
+  # Ordinary row mutations must NOT trigger SHARED_STATE.
+  python3 - "$db" <<'PY'
+import sqlite3, sys
+conn = sqlite3.connect(sys.argv[1])
+conn.execute("INSERT INTO runs (id, status) VALUES ('run-1', 'running')")
+conn.commit()
+conn.close()
+PY
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" "SHARED_STATE:" "ordinary state.sqlite row insert triggered schema drift"
+
+  # Schema mutation (DDL) triggers SHARED_STATE; --reemit keeps baseline intact; full start updates it.
+  baseline_before=$(cat "$home/state/.session-start-shared-baseline")
+  python3 - "$db" <<'PY'
+import sqlite3, sys
+conn = sqlite3.connect(sys.argv[1])
+conn.execute("ALTER TABLE runs ADD COLUMN worker_hack TEXT")
+conn.commit()
+conn.close()
+PY
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH" --reemit)
+  assert_contains "$out" "SHARED_STATE: shared no-mistakes database schema changed since the last session start ($db)" \
+    "--reemit did not surface state.sqlite schema change"
+  [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
+    || fail "--reemit overwrote .session-start-shared-baseline after schema change"
+
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "SHARED_STATE: shared no-mistakes database schema changed since the last session start ($db)" \
+    "locked session start did not report state.sqlite DDL schema change"
+
+  # Subsequent unchanged start is silent.
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" "SHARED_STATE:" "unchanged state.sqlite schema repeated SHARED_STATE after baseline update"
+
+  # Deleting an established state.sqlite is also reported.
+  rm -f "$db"
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "SHARED_STATE: shared no-mistakes database schema changed since the last session start ($db: removed)" \
+    "locked session start did not report deleted state.sqlite"
+
+  pass "session start detects shared no-mistakes database schema changes while ignoring normal row writes"
+}
+
 test_context_digest_absent_empty_present
 test_context_large_files_are_indexed
 test_context_outline_multibyte_stays_within_byte_bound
@@ -4004,5 +4157,7 @@ test_affected_bash_warning_comes_first_and_once
 test_dispatch_ledger_overdue_in_digest
 
 test_order_sent_mid_restart_is_picked_up_by_the_new_captain
+test_shared_git_config_change_reported_at_session_start
+test_shared_nm_db_schema_change_reported_at_session_start
 
 echo "# fm-session-start.test.sh: all assertions passed"

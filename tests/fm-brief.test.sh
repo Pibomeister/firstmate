@@ -1970,6 +1970,63 @@ SH
   pass "fm-brief.sh: emitted ship and scout queue commands execute from roots with spaces and quotes"
 }
 
+test_crewmate_scaffolds_forbid_shared_git_config_and_database_changes() {
+  local home id brief mode ship_rule scout_rule
+  home="$TMP_ROOT/shared-config-db-home"
+  mkdir -p "$home/data"
+
+  for mode in no-mistakes direct-PR local-only; do
+    id="brief-shared-$mode"
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" alpha --mode "$mode" >/dev/null 2>&1 \
+      || fail "fm-brief.sh --mode $mode exited non-zero"
+    brief="$home/data/$id/brief.md"
+    assert_grep "Shared git configuration" "$brief" \
+      "$mode ship brief did not forbid mutating shared git configuration"
+    assert_grep "git config --global" "$brief" \
+      "$mode ship brief did not forbid git config --global"
+    assert_grep "git config --system" "$brief" \
+      "$mode ship brief did not forbid git config --system"
+    assert_grep "primary clone's" "$brief" \
+      "$mode ship brief did not name the primary clone's shared git config"
+    assert_grep '.git/config' "$brief" \
+      "$mode ship brief did not name .git/config"
+    assert_grep "Shared databases" "$brief" \
+      "$mode ship brief did not forbid mutating shared databases"
+    assert_grep "state.sqlite" "$brief" \
+      "$mode ship brief did not name the shared no-mistakes state database"
+  done
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-shared-scout alpha --scout >/dev/null 2>&1 \
+    || fail "fm-brief.sh --scout exited non-zero"
+  brief="$home/data/brief-shared-scout/brief.md"
+  assert_grep "Shared git configuration" "$brief" \
+    "scout brief did not forbid mutating shared git configuration"
+  assert_grep "git config --global" "$brief" \
+    "scout brief did not forbid git config --global"
+  assert_grep "git config --system" "$brief" \
+    "scout brief did not forbid git config --system"
+  assert_grep '.git/config' "$brief" \
+    "scout brief did not name .git/config"
+  assert_grep "Shared databases" "$brief" \
+    "scout brief did not forbid mutating shared databases"
+
+  ship_rule=$(awk '/^7\. Never administer/,/^$/' "$home/data/brief-shared-no-mistakes/brief.md")
+  scout_rule=$(awk '/^7\. Never administer/,/^$/' "$brief")
+  [ -n "$ship_rule" ] || fail "ship brief emitted no shared-infrastructure rule"
+  [ "$ship_rule" = "$scout_rule" ] \
+    || fail "ship and scout shared-infrastructure rules drifted apart after adding git config and database rules"
+
+  FM_SECONDMATE_CHARTER='Supervise the alpha domain.' \
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-shared-mate --secondmate alpha >/dev/null 2>&1 \
+    || fail "fm-brief.sh --secondmate exited non-zero"
+  assert_no_grep "Shared git configuration" "$home/data/brief-shared-mate/brief.md" \
+    "secondmate charter must not carry the crewmate shared-infrastructure block"
+  assert_no_grep "Shared databases" "$home/data/brief-shared-mate/brief.md" \
+    "secondmate charter must not carry the crewmate shared-databases block"
+
+  pass "fm-brief.sh: every crewmate scaffold forbids changing shared git config and shared databases"
+}
+
 test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
@@ -2017,3 +2074,4 @@ test_branch_prefix_command_is_shell_safe
 test_crewmate_scaffolds_forbid_pool_administration
 test_crewmate_scaffolds_route_heavy_tests_through_the_queue
 test_queue_command_quotes_foreign_firstmate_path
+test_crewmate_scaffolds_forbid_shared_git_config_and_database_changes
