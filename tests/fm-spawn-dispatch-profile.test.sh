@@ -128,10 +128,14 @@ make_seeded_secondmate_home() {
   git -C "$home" init -q -b main
 }
 
+# The inbox export, followed by the agent-kit lifecycle exports every launch
+# carries right after it (defaults unless this test's environment sets them).
 task_inbox_export() {  # <home> <id>
   local state
   state=$(CDPATH='' cd -- "$1/state" && pwd -P) || fail "cannot resolve state dir $1/state"
   printf "export FM_TASK_INBOX='%s'; " "$state/$2.inbox"
+  printf "export AK_LIFECYCLE_POLICY='%s'; export AK_LIFECYCLE_SUPERVISOR='%s'; " \
+    "${AK_LIFECYCLE_POLICY-unattended}" "${AK_LIFECYCLE_SUPERVISOR-firstmate}"
 }
 
 launch_inner() {  # <delivered command> -> worker command after the env boundary

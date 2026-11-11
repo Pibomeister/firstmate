@@ -905,6 +905,18 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
   add_dirs="--add-dir '$(cd "$state" && pwd -P)/operational-inbox' --add-dir '$(cd "$state" && pwd -P)/$id.inbox' --add-dir '$(cd "$data" && pwd -P)/$id' --add-dir '$(cd "$ROOT" && pwd -P)/.agents/skills'"
   assert_contains "$launch" "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions $add_dirs --settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}'" \
     "the staged launch sent through Orca did not select the Claude harness"
+  # Execute the staged launch with a probe in place of claude, under contrary
+  # terminal values, to read what the agent would have started with.
+  mkdir -p "$TMP_ROOT/spawn-probe"
+  cat > "$TMP_ROOT/spawn-probe/claude" <<'SH'
+#!/bin/sh
+printf '%s|%s\n' "${AK_LIFECYCLE_POLICY-unset}" "${AK_LIFECYCLE_SUPERVISOR-unset}"
+SH
+  chmod +x "$TMP_ROOT/spawn-probe/claude"
+  assert_equals "${AK_LIFECYCLE_POLICY-unattended}|${AK_LIFECYCLE_SUPERVISOR-firstmate}" \
+    "$(env -i HOME="$SPAWN_HOME" PATH="$TMP_ROOT/spawn-probe:$FB:$PATH" TERM=xterm \
+      AK_LIFECYCLE_POLICY=terminal-value AK_LIFECYCLE_SUPERVISOR=terminal-supervisor /bin/sh -c "$launch" 2>/dev/null | tail -1)" \
+    "an Orca worker must start under the agent-kit unattended policy with Firstmate as supervisor"
   rm -rf "/tmp/fm-$id" "$(dirname "$staged")"
   pass "fm-spawn.sh --backend orca: reuses implicit terminal, records metadata, launches harness"
 }

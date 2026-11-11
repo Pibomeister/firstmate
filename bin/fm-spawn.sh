@@ -465,6 +465,16 @@
 #   prevents equal task ids in different Firstmate homes from sharing a file.
 #   Spawn refuses an unsafe pre-existing task temp root or launch namespace, and
 #   task teardown removes only the current home's launch namespace.
+# Agent-kit lifecycle policy:
+#   Every launch (ship, scout, secondmate, raw command, and relaunch, on every
+#   backend) exports AK_LIFECYCLE_POLICY=unattended and
+#   AK_LIFECYCLE_SUPERVISOR=firstmate, so agent-kit lifecycle skills run under
+#   agent-kit's unattended policy with Firstmate recorded as the supervisor.
+#   When this spawn's own environment already sets either name, even to the
+#   empty string, that value is carried instead; an empty AK_LIFECYCLE_POLICY
+#   is how an operator withholds the opt-in. T3 Code carries the same values in
+#   its per-directory harness config, and bin/fm-codex-launch.sh forces both
+#   into Codex tool shells.
 # Launch environment (config/launch-env-allowlist):
 #   Absent keeps ambient inheritance but unsets inherited home- and task-scoped
 #   FM_* values (bin/fm-env-scrub.sh) in the pane shell before re-establishing
@@ -496,7 +506,8 @@
 #   An enabled task trace also retains TRACEPARENT. Explicit Firstmate launch
 #   assignments still apply inside the filtered environment, including the
 #   FM_TASK_INBOX export every launch carries (the absolute state/<id>.inbox
-#   path the steering doorbell names). Raw commands must
+#   path the steering doorbell names) and the agent-kit lifecycle exports
+#   described above. Raw commands must
 #   be POSIX sh compatible under this opt-in; the absent-file path is unchanged.
 #   This is an exec environment boundary, not a sandbox for the pane's startup
 #   shell, credential files, same-user processes, or later shell initialization.
@@ -9013,6 +9024,16 @@ $(shell_quote "$FM_ROOT/bin/fm-osc7501.sh") disarm --state $(shell_quote "$STATE
 if [ "$LAVISH_AXI_HOST_CONFIG_PRESENT" = 1 ]; then
   LAUNCH="export LAVISH_AXI_HOST=$(shell_quote "$LAVISH_AXI_HOST"); $LAUNCH"
 fi
+# Every launch carries the agent-kit unattended lifecycle opt-in, naming
+# Firstmate as the supervisor in place of a human (docs/configuration.md
+# "Agent-kit lifecycle policy"). A value already present in this spawn's own
+# environment, even an empty one, is the operator's explicit choice and is
+# carried unchanged; the destination pane's environment is never consulted.
+# Export statements survive a compound raw launch and the
+# launch-env-allowlist `env -i` wrapper.
+AK_LIFECYCLE_POLICY_VALUE=${AK_LIFECYCLE_POLICY-unattended}
+AK_LIFECYCLE_SUPERVISOR_VALUE=${AK_LIFECYCLE_SUPERVISOR-firstmate}
+LAUNCH="export AK_LIFECYCLE_POLICY=$(shell_quote "$AK_LIFECYCLE_POLICY_VALUE"); export AK_LIFECYCLE_SUPERVISOR=$(shell_quote "$AK_LIFECYCLE_SUPERVISOR_VALUE"); $LAUNCH"
 # Every launch also exports the absolute path of this task's steering inbox, so
 # the constant doorbell line (bin/fm-task-inbox-lib.sh) can name
 # "$FM_TASK_INBOX" instead of a path that grows with the home's depth. Like the
@@ -9066,7 +9087,8 @@ if [ "$BACKEND" = t3code ]; then
   # (spawn_t3code_env_install). TRACEPARENT is delivered only once its meta
   # record exists, the same delivered-implies-recorded invariant the pane path
   # keeps by unsetting it when the record fails.
-  T3CODE_ENV=("GOTMPDIR=$TASK_TMP/gotmp" COMPACT_ADVISER_DISABLE=1 "FM_TASK_INBOX=$STATE_REAL/$ID.inbox")
+  T3CODE_ENV=("GOTMPDIR=$TASK_TMP/gotmp" COMPACT_ADVISER_DISABLE=1 "FM_TASK_INBOX=$STATE_REAL/$ID.inbox"
+    "AK_LIFECYCLE_POLICY=$AK_LIFECYCLE_POLICY_VALUE" "AK_LIFECYCLE_SUPERVISOR=$AK_LIFECYCLE_SUPERVISOR_VALUE")
   if [ "$GIT_HOOKS_INSTALLED" = 1 ]; then
     T3CODE_ENV+=(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath "GIT_CONFIG_VALUE_0=$GIT_HOOKS_DIR")
   fi

@@ -1909,6 +1909,21 @@ This applies only to agents Firstmate launches; the captain's own primary Firstm
 
 [`fm-spawn.sh --help`](../bin/fm-spawn.sh) owns the delivery mechanics, with focused regression coverage in [`tests/fm-spawn-compact-adviser-disable.test.sh`](../tests/fm-spawn-compact-adviser-disable.test.sh) and [`tests/fm-spawn-compact-adviser-disable-remote.test.sh`](../tests/fm-spawn-compact-adviser-disable-remote.test.sh).
 
+### Agent-kit lifecycle policy
+
+Every crewmate, scout, and secondmate Firstmate launches starts with `AK_LIFECYCLE_POLICY=unattended` and `AK_LIFECYCLE_SUPERVISOR=firstmate` in its environment, on a fresh spawn and on a relaunch alike, on every runtime backend.
+These select agent-kit's opt-in unattended lifecycle policy for every agent-kit lifecycle run a launched worker performs, with Firstmate recorded as the supervisor in place of a human.
+As with the compact adviser setting, this covers raw launch commands, remote secondmates, and launches filtered by `config/launch-env-allowlist`, and Codex workers receive both names in their tool shells even under a `[shell_environment_policy] inherit = "core"` configuration.
+
+An explicit operator value wins: when the environment that runs `bin/fm-spawn.sh` already sets either name, even to the empty string, the launch carries that value unchanged.
+Setting `AK_LIFECYCLE_POLICY` to the empty string withholds the environment opt-in, so agent-kit falls back to its own `ak.lifecycle.json` selection on the project's default branch.
+The destination pane's environment is never consulted, because a pane value comes from shell startup or the terminal app rather than from the operator's choice for this home.
+A remote secondmate is launched by the remote host's own `bin/fm-spawn.sh`, so that host's spawn environment decides there.
+This applies only to agents Firstmate launches; the captain's own primary Firstmate session is never given either variable.
+Firstmate provides no configuration file or flag for this, and agent-kit's own unattended-policy checks, such as its refusal to ship onto an unprotected default branch, still apply.
+
+[`fm-spawn.sh --help`](../bin/fm-spawn.sh) owns the delivery mechanics, with focused regression coverage in [`tests/fm-spawn-ak-lifecycle-policy.test.sh`](../tests/fm-spawn-ak-lifecycle-policy.test.sh).
+
 ### Commit attribution
 
 The optional local, gitignored `config/keep-ai-trailers` presence flag opts this home into keeping AI co-author trailers on its launched workers.

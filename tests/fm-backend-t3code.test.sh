@@ -1557,7 +1557,9 @@ test_spawn_leases_slot_creates_thread_and_starts_launch_turn() {
   [ "$(t3_json_field "$settings" 'd.env.GIT_CONFIG_COUNT')" = 1 ] || fail "T3 workers must select one Git config override"
   [ "$(t3_json_field "$settings" 'd.env.TRACEPARENT')" = undefined ] || fail "TRACEPARENT must be absent when trace context is off"
   [ "$(t3_json_field "$settings" 'd.env.COMPACT_ADVISER_DISABLE')" = 1 ] || fail "settings env must carry the compact-adviser kill switch every launch carries"
-  [ "$(t3_json_field "$settings" 'Object.keys(d.env).sort().join(" ")')" = "COMPACT_ADVISER_DISABLE FM_T3CODE_ENV_KEYS FM_TASK_ID FM_TASK_INBOX GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GOTMPDIR" ] || fail "a worker env block carries the task inbox and Git hook with the launch environment"
+  [ "$(t3_json_field "$settings" 'd.env.AK_LIFECYCLE_POLICY')" = "${AK_LIFECYCLE_POLICY-unattended}" ] || fail "settings env must carry the agent-kit unattended policy every launch carries"
+  [ "$(t3_json_field "$settings" 'd.env.AK_LIFECYCLE_SUPERVISOR')" = "${AK_LIFECYCLE_SUPERVISOR-firstmate}" ] || fail "settings env must name Firstmate as the agent-kit supervisor"
+  [ "$(t3_json_field "$settings" 'Object.keys(d.env).sort().join(" ")')" = "AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR COMPACT_ADVISER_DISABLE FM_T3CODE_ENV_KEYS FM_TASK_ID FM_TASK_INBOX GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GOTMPDIR" ] || fail "a worker env block carries the task inbox and Git hook with the launch environment"
   t3_excluded "$wt" .claude/settings.local.json || fail "the settings file must be git-excluded"
   assert_present "$wt/CLAUDE.local.md" "a claude worker gets the task-worker channel statement as CLAUDE.local.md"
   assert_grep "task worker launched by Firstmate" "$wt/CLAUDE.local.md" "CLAUDE.local.md must carry the channel statement"
@@ -1600,6 +1602,8 @@ test_spawn_codex_scout_writes_toml_env_with_traceparent() {
   [ "$(t3_toml_env "$toml" FM_TASK_INBOX)" = "$state/$id.inbox" ] || fail "a scout's config.toml must set FM_TASK_INBOX"
   [ "$(t3_toml_env "$toml" GIT_CONFIG_VALUE_0)" = "$state/$id.git-hooks" ] || fail "a scout's config.toml must select the installed Git hook"
   [ "$(t3_toml_env "$toml" COMPACT_ADVISER_DISABLE)" = 1 ] || fail "config.toml must set the compact-adviser kill switch"
+  [ "$(t3_toml_env "$toml" AK_LIFECYCLE_POLICY)" = "${AK_LIFECYCLE_POLICY-unattended}" ] || fail "config.toml must set the agent-kit unattended policy"
+  [ "$(t3_toml_env "$toml" AK_LIFECYCLE_SUPERVISOR)" = "${AK_LIFECYCLE_SUPERVISOR-firstmate}" ] || fail "config.toml must name Firstmate as the agent-kit supervisor"
   tp=$(t3_toml_env "$toml" TRACEPARENT)
   case "$tp" in 00-????????????????????????????????-????????????????-??) ;; *) fail "config.toml must set a W3C TRACEPARENT when trace context is on, got '$(cat "$toml")'" ;; esac
   grep -qxF "traceparent=$tp" "$state/$id.meta" || fail "the delivered TRACEPARENT must be the one recorded in the meta, got '$(grep '^traceparent=' "$state/$id.meta")'"

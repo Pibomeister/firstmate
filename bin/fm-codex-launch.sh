@@ -4,12 +4,14 @@
 #
 # Codex tool shells inherit only what the operator's Codex config lets
 # through: a global [shell_environment_policy] inherit="core" strips
-# HERDR_PANE_ID, HERDR_SESSION, TMUX, TMUX_PANE and FM_TASK_INBOX even though
-# the pane shell and the Codex process itself carry them, and the watcher
-# selection in bin/fm-push-transition-lib.sh then refuses the secondmate
-# watcher. A per-launch -c shell_environment_policy.set.<VAR>="<value>"
-# override (codex --help: -c takes a dotted key with a TOML-parsed value)
-# forces each variable into tool shells without editing any Codex config
+# HERDR_PANE_ID, HERDR_SESSION, TMUX, TMUX_PANE, FM_TASK_INBOX,
+# AK_LIFECYCLE_POLICY and AK_LIFECYCLE_SUPERVISOR even though the pane shell
+# and the Codex process itself carry them; the watcher selection in
+# bin/fm-push-transition-lib.sh then refuses the secondmate watcher, and
+# agent-kit lifecycle commands lose Firstmate's unattended opt-in. A
+# per-launch -c shell_environment_policy.set.<VAR>="<value>" override
+# (codex --help: -c takes a dotted key with a TOML-parsed value) forces each
+# variable into tool shells without editing any Codex config
 # file, including the operator's global ~/.codex/config.toml.
 #
 # This launcher reads the variables from its own environment, which the
@@ -21,7 +23,7 @@
 set -u
 
 args=()
-for var in HERDR_PANE_ID HERDR_SESSION TMUX TMUX_PANE FM_TASK_INBOX; do
+for var in HERDR_PANE_ID HERDR_SESSION TMUX TMUX_PANE FM_TASK_INBOX AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR; do
   value=${!var:-}
   [ -n "$value" ] || continue
   value=${value//\\/\\\\}

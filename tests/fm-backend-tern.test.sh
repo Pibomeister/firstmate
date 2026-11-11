@@ -1628,7 +1628,7 @@ launch_env_report() {
   shift 3
   cat > "$fakebin/codex" <<'SH'
 #!/bin/sh
-for v in TERM_PROGRAM TERN_PANE TERN_PANE_SOCKET TERN_WINDOW_KEY TERN_WINDOW_SOCKET TERN_IDENTITY SECRET_TOKEN; do
+for v in TERM_PROGRAM TERN_PANE TERN_PANE_SOCKET TERN_WINDOW_KEY TERN_WINDOW_SOCKET TERN_IDENTITY SECRET_TOKEN AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR; do
   eval "printf '%s=%s\n' $v \"\${$v-unset}\""
 done
 SH
@@ -1674,8 +1674,11 @@ EOF
   assert_contains "$(cat "$LAUNCH_LOG")" '/usr/bin/env -i' "an enabled allowlist must launch under a cleared environment"
   seen=$(launch_env_report "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG" \
     TERM_PROGRAM=tern TERN_PANE="$BLK" TERN_PANE_SOCKET=/run/tern/pane.sock TERN_WINDOW_KEY=win-key \
-    TERN_WINDOW_SOCKET=/run/tern/window.sock TERN_IDENTITY=ident SECRET_TOKEN=leak) \
+    TERN_WINDOW_SOCKET=/run/tern/window.sock TERN_IDENTITY=ident SECRET_TOKEN=leak \
+    AK_LIFECYCLE_POLICY=block-value AK_LIFECYCLE_SUPERVISOR=block-supervisor) \
     || fail "the emitted tern launch failed to run"
+  assert_contains "$seen" "AK_LIFECYCLE_POLICY=${AK_LIFECYCLE_POLICY-unattended}" "a tern task must start under the agent-kit unattended policy, not the block's value"
+  assert_contains "$seen" "AK_LIFECYCLE_SUPERVISOR=${AK_LIFECYCLE_SUPERVISOR-firstmate}" "a tern task must name Firstmate as the agent-kit supervisor"
   assert_contains "$seen" "TERM_PROGRAM=tern" "a tern task must keep TERM_PROGRAM=tern so the harness's own Tern integration survives"
   assert_contains "$seen" "TERN_PANE=$BLK" "a tern task must keep TERN_PANE byte-exact"
   assert_contains "$seen" "TERN_PANE_SOCKET=/run/tern/pane.sock" "a tern task must keep TERN_PANE_SOCKET"
