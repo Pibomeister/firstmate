@@ -1,0 +1,5 @@
+=== S1 unchanged locked start (expect silent)
+●  It stopped during the "lock" stage, so everything above is COMPLETE
+  baseline git-state: absent|absent | nm-schema: absent
++ worker mutation: git config --file $HOME/.gitconfig user.email rogue@example.invalid
+=== S2 read-only (lock held by other pid) after mutation (expect report, baseline unchanged)

@@ -1,0 +1,65 @@
+LAB=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e5cgpr  SANDBOX HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sb.SjRlnq/home  NM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sb.SjRlnq/nm
+
+=== S1 full start: gitconfig absent, DB absent (expect silent, baseline created)  (15:29:47) args:  ===
+exit-ok; READ-ONLY banner present: 0
+SHARED_STATE lines:
+  (none)
+baseline sha: 42f7796d92d11261
+--- baseline contents:
+xdg:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sb.SjRlnq/home/.config/git/config|home:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sb.SjRlnq/home/.gitconfig
+absent|absent
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sb.SjRlnq/nm/state.sqlite
+absent
+
+>>> mutate: git config --file $SB/home/.gitconfig user.email rogue@example.invalid
+>>> mutate: first creation of NM_HOME/state.sqlite (CREATE TABLE runs) + INSERT row
+>>> holding lab lock with live pid 34982 (no .lock-session)
+
+=== S2 lock-refused start (expect READ-ONLY, git SHARED_STATE, no DB line, baseline unchanged)  (15:31:33) args:  ===
+exit-ok; READ-ONLY banner present: 0
+SHARED_STATE lines:
+  (none)
+baseline sha: 42f7796d92d11261
+
+=== S3 --reemit (expect git SHARED_STATE, baseline unchanged)  (15:33:35) args: --reemit ===
+exit-ok; READ-ONLY banner present: 0
+SHARED_STATE lines:
+SHARED_STATE: global git config changed since the last session start (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sb.SjRlnq/home/.gitconfig) - workers must never edit shared git config; inspect recent changes and restore any unintended setting
+baseline sha: 42f7796d92d11261
+
+=== S4 full locked start (expect git SHARED_STATE once, no DB line, baseline updated)  (15:34:57) args:  ===
+exit-ok; READ-ONLY banner present: 0
+SHARED_STATE lines:
+SHARED_STATE: global git config changed since the last session start (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sb.SjRlnq/home/.gitconfig) - workers must never edit shared git config; inspect recent changes and restore any unintended setting
+baseline sha: aeea678827f6e9ed
+
+=== S5 full locked start unchanged (expect silent)  (15:36:32) args:  ===
+exit-ok; READ-ONLY banner present: 0
+SHARED_STATE lines:
+  (none)
+baseline sha: aeea678827f6e9ed
+
+>>> mutate: DML only - INSERT 2 more rows, UPDATE
+
+=== S6 full start after DML (expect silent)  (15:37:28) args:  ===
+exit-ok; READ-ONLY banner present: 0
+SHARED_STATE lines:
+  (none)
+baseline sha: aeea678827f6e9ed
+
+>>> mutate: DDL - ALTER TABLE runs ADD COLUMN worker_hack; CREATE TABLE extra
+
+=== S7 full start after DDL (expect DB SHARED_STATE naming /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sb.SjRlnq/nm/state.sqlite, no git line)  (15:39:29) args:  ===
+exit-ok; READ-ONLY banner present: 0
+SHARED_STATE lines:
+  (none)
+baseline sha: aeea678827f6e9ed
+
+=== S8 full start unchanged (expect silent)  (15:41:31) args:  ===
+exit-ok; READ-ONLY banner present: 0
+SHARED_STATE lines:
+SHARED_STATE: shared no-mistakes database schema changed since the last session start (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sb.SjRlnq/nm/state.sqlite) - workers must never alter shared databases; inspect no-mistakes version and state database before dispatching pipeline runs
+baseline sha: 28f2db92bd8147dc
+
+>>> real ~/.gitconfig untouched check: sandbox only; teardown
+DONE 15:43:34
