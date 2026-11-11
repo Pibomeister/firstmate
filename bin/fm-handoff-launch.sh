@@ -12,7 +12,10 @@
 # for diagnosis. A failed attempt's nonce expires and cannot take ownership.
 # Every unfinished exit after handoff_started emits one handoff_failed event,
 # unless the lock already moved to a successor with a valid ack: that exit
-# records completion instead.
+# records completion instead. Completion and failure are decided only while
+# holding .lock.acquire, so an uncommitted transfer is never reported. An exit
+# waits for that lock until 10 seconds past the claim deadline, so a busy lock
+# cannot leave a live claim behind a reported failure.
 # Outputs only the versioned events owned by fm-handoff-lib.sh. Other errors
 # go to stderr. state/.handoff-successor is written only after lock verification.
 # Test-only: FM_TEST_SEAM=1 enables FM_HANDOFF_TEST_HARNESS and
@@ -93,13 +96,15 @@ exec 9>&1
 # shellcheck disable=SC2016 # Expansion belongs to the fixed child wrapper.
 BACKEND_EXEC=(bash -c 'exec 9>&-; exec "$@"' handoff-launch)
 cleanup() {
-  local rc=$?
+  local rc=$? wait=10
   trap - EXIT HUP INT TERM
   set +e
-  if [ -n "$NONCE" ] && [ "$CLAIM_HELD" != 1 ] && fm_lock_acquire_wait_max "$STATE/.lock.acquire" 10; then
-    CLAIM_HELD=1
+  if [ -n "$NONCE" ] && [ "$CLAIM_HELD" != 1 ]; then
+    [ $(( ${CLAIM_DEADLINE:-0} - $(date +%s) + 10 )) -le "$wait" ] || wait=$(( CLAIM_DEADLINE - $(date +%s) + 10 ))
+    fm_lock_acquire_wait_max "$STATE/.lock.acquire" "$wait" && CLAIM_HELD=1
   fi
-  if [ "$HANDOFF_COMPLETE" -eq 0 ] && [ -n "$NONCE" ] && transfer_committed && record_completion; then
+  if [ "$HANDOFF_COMPLETE" -eq 0 ] && [ "$CLAIM_HELD" = 1 ] && [ -n "$NONCE" ] \
+    && transfer_committed && record_completion; then
     rc=0
   fi
   if [ "$HANDOFF_COMPLETE" -eq 0 ] \
@@ -201,7 +206,12 @@ for attempt in 1 2; do
   while :; do
     # Check success before the deadline: a transfer that committed just before
     # expiry must be accepted even if the parent was scheduled after expiry.
-    if transfer_committed && record_completion; then exit 0; fi
+    if transfer_committed; then
+      take_claim || fail_handoff claim_busy
+      if transfer_committed && record_completion; then exit 0; fi
+      fm_lock_release "$STATE/.lock.acquire"
+      CLAIM_HELD=0
+    fi
     [ "$SECONDS" -lt "$ATTEMPT_END" ] || break
     sleep 0.2
   done

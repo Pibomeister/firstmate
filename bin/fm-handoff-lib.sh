@@ -20,6 +20,8 @@
 # An unfinished launcher's signal/error exit emits handoff_failed with
 # reason=interrupted or reason=error, respectively, unless the lock already
 # moved to the acknowledged successor; then it records completion instead.
+# The launcher decides completion and failure only under .lock.acquire, the
+# lock fm-lock.sh holds from its transfer verdict through commit or rollback.
 # handoff_ack reason=lock_transferred is a verified transfer from a live
 # predecessor; reason=stale_takeover means the predecessor was proven dead and
 # the successor took the lock through the ordinary stale-owner path.
@@ -62,22 +64,25 @@ fm_handoff_ack_valid() { # <nonce> <handoff> <sha> [<expected-pid>]
   [ "$(fm_handoff_hash "$doc")" = "$sha" ] || return 1
 }
 
+fm_handoff_claim_live() { # <nonce>
+  local claim="$STATE/.handoff-pending" deadline
+  [ -n "$1" ] && [ -f "$claim" ] && [ ! -L "$claim" ] || return 1
+  [ "$(jq -er '.nonce | select(type == "string")' "$claim" 2>/dev/null)" = "$1" ] || return 1
+  deadline=$(jq -er '.deadline | numbers' "$claim" 2>/dev/null) || return 1
+  [ "$(date +%s)" -lt "$deadline" ]
+}
+
 fm_handoff_can_transfer() { # <new-anchor> <recorded-predecessor>
-  local claim="$STATE/.handoff-pending" nonce doc sha pred_start deadline
-  [ -n "${FM_HANDOFF_NONCE:-}" ] || return 1
-  [ -f "$claim" ] && [ ! -L "$claim" ] || return 1
-  nonce=$(jq -er '.nonce | select(type == "string")' "$claim") || return 1
-  [ "$nonce" = "$FM_HANDOFF_NONCE" ] || return 1
-  jq -e --arg old "$2" '.version == 1 and (.predecessor_pid | tostring) == $old and (.deadline | type == "number")' "$claim" >/dev/null || return 1
-  deadline=$(jq -r .deadline "$claim")
-  [ "$(date +%s)" -lt "$deadline" ] || return 1
+  local claim="$STATE/.handoff-pending" nonce=${FM_HANDOFF_NONCE:-} doc sha pred_start
+  fm_handoff_claim_live "$nonce" || return 1
+  jq -e --arg old "$2" '.version == 1 and (.predecessor_pid | tostring) == $old' "$claim" >/dev/null || return 1
   [ "$1" != "$2" ] || return 1
   pred_start=$(fm_session_process_start "$2") || return 1
   [ "$pred_start" = "$(jq -r .predecessor_start "$claim")" ] || return 1
   doc=$(jq -er .handoff "$claim") || return 1
   sha=$(jq -er .sha256 "$claim") || return 1
   fm_handoff_ack_valid "$nonce" "$doc" "$sha" "$1" || return 1
-  [ "$(date +%s)" -lt "$deadline" ]
+  fm_handoff_claim_live "$nonce"
 }
 
 fm_handoff_completed() { # <record-file>

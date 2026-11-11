@@ -48,6 +48,11 @@ if [ "${FM_HANDOFF_LAB_MODE:-}" = interrupt-after-ack ] && [ "${1:-}" = 0.2 ] &&
   kill -TERM "$PPID"
   exit 0
 fi
+# Mark that the launcher is waiting for the claim lock a lab successor holds.
+if [ "${1:-}" = 0.1 ] && [ -e "$FM_HOME/state/claim-held" ] \
+  && [ "$PPID" = "$(cat "$FM_HOME/launcher.pid" 2>/dev/null)" ]; then
+  touch "$FM_HOME/state/claim-wait"
+fi
 exec "$FM_HANDOFF_REAL_SLEEP" "$@"
 EOF
 chmod +x "$FAKEBIN/sleep"
@@ -132,6 +137,47 @@ case "$FM_HANDOFF_LAB_MODE" in
   interrupt-after-ack)
     end=$((SECONDS + 60))
     while [ ! -e "$FM_HOME/state/polling" ] && [ "$SECONDS" -lt "$end" ]; do sleep 0.1; done ;;
+  precommit)
+    # Hold the claim lock and expose the successor's line 1 and sidecar the
+    # way fm-lock.sh does before commit, then roll back as an interrupt would.
+    STATE="$FM_HOME/state"
+    . "$ROOT/bin/fm-wake-lib.sh"
+    . "$ROOT/bin/fm-session-lock-lib.sh"
+    fm_lock_acquire_wait "$STATE/.lock.acquire"
+    start=$(fm_session_process_start "$$")
+    jq -n --arg nonce "$nonce" --arg sha "$sha" --arg handle "$ORCA_TERMINAL_HANDLE" --arg start "$start" --argjson pid "$$" \
+      '{version:1,nonce:$nonce,sha256:$sha,harness_pid:$pid,fm_lock_pid:$pid,harness_start:$start,terminal_handle:$handle}' \
+      > "$FM_HOME/data/handoff-ack-$nonce.json"
+    cp "$STATE/.lock" "$STATE/lock.keep"
+    cp "$STATE/.lock-session" "$STATE/session.keep"
+    printf '\nanchor_pid=%s\nanchor_start=%s\nbackend=orca\nterminal=%s\nworktree=%s\n' \
+      "$$" "$start" "$ORCA_TERMINAL_HANDLE" "$FM_HOME" > "$STATE/.lock-session"
+    echo "$$" > "$STATE/.lock"
+    touch "$STATE/claim-held"
+    end=$((SECONDS + 60))
+    while [ ! -e "$STATE/claim-wait" ] && [ ! -e "$STATE/.handoff-successor" ] && [ "$SECONDS" -lt "$end" ]; do sleep 0.1; done
+    [ ! -e "$STATE/.handoff-successor" ] || touch "$STATE/premature"
+    cp "$STATE/lock.keep" "$STATE/.lock"
+    cp "$STATE/session.keep" "$STATE/.lock-session"
+    rm -f "$STATE/claim-held"
+    fm_lock_release "$STATE/.lock.acquire" ;;
+  cleanup-contention)
+    # Hold the claim lock across the launcher's interrupt for longer than its
+    # first 10-second cleanup wait, then try to complete the failed attempt.
+    STATE="$FM_HOME/state"
+    . "$ROOT/bin/fm-wake-lib.sh"
+    fm_lock_acquire_wait "$STATE/.lock.acquire"
+    touch "$STATE/claim-held"
+    launcher=$(cat "$FM_HOME/launcher.pid")
+    kill -TERM "$launcher"
+    end=$((SECONDS + 12))
+    while kill -0 "$launcher" 2>/dev/null && [ "$SECONDS" -lt "$end" ]; do sleep 0.1; done
+    [ -e "$STATE/claim-wait" ] || touch "$STATE/no-claim-wait"
+    kill -0 "$launcher" 2>/dev/null || touch "$STATE/no-claim-wait"
+    rm -f "$STATE/claim-held"
+    fm_lock_release "$STATE/.lock.acquire"
+    end=$((SECONDS + 60))
+    while kill -0 "$launcher" 2>/dev/null && [ "$SECONDS" -lt "$end" ]; do sleep 0.1; done ;;
   stale) nonce=00000000000000000000000000000000 ;;
   expired) jq '.deadline=0' "$FM_HOME/state/.handoff-pending" > "$FM_HOME/state/expired"; mv "$FM_HOME/state/expired" "$FM_HOME/state/.handoff-pending" ;;
   wrong-sha) sha=$(printf '%064d' 0) ;;
@@ -165,7 +211,8 @@ run_case() {
   local mode=$1 limit
   test_cleanup_processes
   rm -f "$LAB/state/".* "$LAB/state/attempts" "$LAB/state/handoff-events.log" "$LAB/state/"successor-*.out "$LAB/rc" "$LAB/ack.out" \
-    "$LAB/state/tmux-target" "$LAB/state/polling" "$LAB/state/session.keep" "$LAB/launcher.pid" "$LAB/pred.pid" 2>/dev/null || true
+    "$LAB/state/tmux-target" "$LAB/state/polling" "$LAB/state/session.keep" "$LAB/state/lock.keep" "$LAB/state/claim-held" \
+    "$LAB/state/claim-wait" "$LAB/state/no-claim-wait" "$LAB/state/premature" "$LAB/launcher.pid" "$LAB/pred.pid" 2>/dev/null || true
   printf '%s\n' "${2:-orca}" > "$LAB/config/backend"
   printf '# Quoting-hostile handoff\nRead this document.\n' > "$LAB/data/handoff ) '.md"
   budget=$LAB_FAIL_BUDGET
@@ -287,6 +334,51 @@ assert_contains "$(cat "$META_HOME/state/.lock-session")" 'spawn_gen=s1.1.1' 'ex
 kill "$meta_pid"; wait "$meta_pid" 2>/dev/null || true
 pass 'supervisor endpoint metadata retains precedence and generation'
 
+# A transfer refused at the mutation point keeps the live predecessor's leases.
+LEASE_HOME="$TMP_ROOT/lease-home"
+mkdir -p "$LEASE_HOME/state" "$LEASE_HOME/data"
+printf 'lease handoff\n' > "$LEASE_HOME/handoff.md"
+# shellcheck disable=SC2016 # The harness child expands its own environment.
+FM_HOME="$LEASE_HOME" FM_STATE_OVERRIDE="$LEASE_HOME/state" ORCA_TERMINAL_HANDLE=term_lease_pred claude -c '
+  bash "$ROOT/bin/fm-lock.sh" > "$FM_HOME/pred.out" 2>&1
+  echo "$$" > "$FM_HOME/pred.pid"
+  while kill -0 "$FM_TEST_SUITE_PID" 2>/dev/null && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 1; done' &
+echo "$!" >> "$TMP_ROOT/pids"
+limit=$((SECONDS + LAB_STARTUP))
+while [ ! -f "$LEASE_HOME/pred.pid" ] && [ "$SECONDS" -lt "$limit" ]; do sleep 0.1; done
+[ "$(cat "$LEASE_HOME/state/.lock")" = "$(cat "$LEASE_HOME/pred.pid")" ] || fail "lease predecessor must hold the lock: $(cat "$LEASE_HOME/pred.out")"
+printf 'holder=%s\n' "$(cat "$LEASE_HOME/pred.pid")" > "$LEASE_HOME/state/.lease-task-a"
+(
+  export FM_HOME="$LEASE_HOME" FM_STATE_OVERRIDE="$LEASE_HOME/state"
+  STATE="$LEASE_HOME/state"
+  . "$ROOT/bin/fm-wake-lib.sh"
+  . "$ROOT/bin/fm-session-lock-lib.sh"
+  . "$ROOT/bin/fm-handoff-lib.sh"
+  pred=$(cat "$FM_HOME/pred.pid")
+  nonce=0123456789abcdef0123456789abcdef
+  sha=$(fm_handoff_hash "$FM_HOME/handoff.md")
+  deadline=$(( $(date +%s) + 3 ))
+  jq -n --arg nonce "$nonce" --arg doc "$FM_HOME/handoff.md" --arg sha "$sha" \
+    --arg start "$(fm_session_process_start "$pred")" --argjson pid "$pred" --argjson deadline "$deadline" \
+    '{version:1,nonce:$nonce,handoff:$doc,sha256:$sha,predecessor_pid:$pid,predecessor_start:$start,deadline:$deadline}' \
+    > "$STATE/.handoff-pending"
+  # Hold the lease lock until the claim expires, inside fm-lock.sh's lease wait.
+  fm_lock_try_acquire "$STATE/.fm-lease-command.lock" || exit 1
+  # shellcheck disable=SC2016 # The harness child expands its own environment.
+  ORCA_TERMINAL_HANDLE=term_lease_succ claude -c '
+    bash "$ROOT/bin/fm-handoff-ack.sh" "$1" "$2" > "$FM_HOME/ack.out" 2>&1
+    echo "$?" > "$FM_HOME/ack.rc"' lease-successor "$nonce" "$sha" &
+  echo "$!" >> "$TMP_ROOT/pids"
+  while [ "$(date +%s)" -lt "$deadline" ]; do sleep 0.1; done
+  fm_lock_release "$STATE/.fm-lease-command.lock"
+  limit=$((SECONDS + LAB_STARTUP))
+  while [ ! -f "$FM_HOME/ack.rc" ] && [ "$SECONDS" -lt "$limit" ]; do sleep 0.1; done
+) || fail 'lease fixture failed'
+[ "$(cat "$LEASE_HOME/ack.rc")" != 0 ] || fail 'an expired claim must not transfer'
+[ "$(cat "$LEASE_HOME/state/.lock")" = "$(cat "$LEASE_HOME/pred.pid")" ] || fail 'a refused transfer moved the lock'
+[ -f "$LEASE_HOME/state/.lease-task-a" ] || fail 'a refused transfer retired the live predecessor lease'
+pass 'a transfer refused at the mutation point preserves predecessor leases'
+
 run_case success
 [ "$(cat "$LAB/rc")" = 0 ] || fail "valid ack should transfer: $(cat "$LAB/launch.out") $(cat "$LAB/ack.out" 2>/dev/null)"
 nonce=$(sed -n 's/^nonce=//p' "$LAB/state/.handoff-successor")
@@ -349,6 +441,31 @@ run_case interrupt-after-ack
 [ "$(cat "$LAB/state/.lock")" != "$(cat "$LAB/pred.pid")" ] || fail 'lock did not transfer'
 cat "$LAB/state/handoff-events.log"
 pass 'DRILL interrupt-after-ack: one completion outcome, no contradictory failure'
+
+# An unlocked read during the successor's uncommitted transfer never completes.
+run_case precommit
+[ "$(cat "$LAB/rc")" = 0 ] || fail "the later committed transfer must complete: $(cat "$LAB/launch.out") $(cat "$LAB/ack.out" 2>/dev/null)"
+[ ! -e "$LAB/state/premature" ] || fail 'the launcher recorded completion before the transfer committed'
+[ -e "$LAB/state/claim-wait" ] || fail 'the launcher must wait for the claim lock before deciding completion'
+[ "$(cat "$LAB/state/attempts")" = 1 ] || fail 'a rolled-back read must not consume the retry'
+[ "$(grep -c ' event=handoff_failed ' "$LAB/state/handoff-events.log" || true)" = 0 ] || fail 'a committed transfer is not a failure'
+[ "$(grep -c ' event=handoff_ack .* reason=lock_transferred$' "$LAB/state/handoff-events.log")" = 1 ] \
+  || fail "the committed transfer must have exactly one ack: $(cat "$LAB/state/handoff-events.log")"
+[ "$(sed -n 's/^pid=//p' "$LAB/state/.handoff-successor")" = "$(cat "$LAB/state/.lock")" ] || fail 'completion must name the committed owner'
+pass 'DRILL precommit: completion waits for the committed transfer, not an uncommitted read'
+
+# A busy claim lock during cleanup cannot leave a live claim behind a failure.
+run_case cleanup-contention
+[ "$(cat "$LAB/rc")" != 0 ] || fail 'an interrupted attempt must fail'
+[ ! -e "$LAB/state/no-claim-wait" ] || fail 'cleanup must keep waiting past 10 seconds while the claim is live'
+[ "$(grep -c ' event=handoff_failed .* reason=interrupted$' "$LAB/state/handoff-events.log" || true)" = 1 ] \
+  || fail "the interrupt must emit exactly one failure: $(cat "$LAB/state/handoff-events.log")"
+[ "$(grep -c ' event=handoff_ack ' "$LAB/state/handoff-events.log" || true)" = 0 ] \
+  || fail "a failed attempt must not later transfer: $(cat "$LAB/state/handoff-events.log")"
+[ "$(cat "$LAB/state/.lock")" = "$(cat "$LAB/pred.pid")" ] || fail 'a failed attempt moved the predecessor lock'
+[ ! -e "$LAB/state/.handoff-pending" ] || fail 'a reported failure must retire its claim'
+cat "$LAB/state/handoff-events.log"
+pass 'DRILL cleanup-contention: failure is reported only after the claim is fenced'
 
 # A predecessor that dies before the ack leaves an ordinary stale lock.
 run_case pred-dies

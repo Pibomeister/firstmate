@@ -319,8 +319,10 @@ refuse_live_owner() {  # <recorded-pid>
 }
 
 # A handoff successor needs a valid ack while the recorded owner is live.
-# A proven-dead owner takes the ordinary stale path; a pid that still exists
-# without a live owner verdict is doubt and refuses.
+# A proven-dead owner takes the ordinary stale path only while the presented
+# nonce's claim is still pending and unexpired; a pid that still exists
+# without a live owner verdict is doubt and refuses. The verdict is taken
+# once, under both locks, before any task lease is retired.
 HANDOFF_TAKEOVER=verified_transfer
 handoff_transfer_refused() {  # <recorded-pid>
   [ -n "${FM_HANDOFF_NONCE:-}" ] || return 1
@@ -330,6 +332,7 @@ handoff_transfer_refused() {  # <recorded-pid>
   fi
   case "$1" in ''|*[!0-9]*) return 0 ;; esac
   ! kill -0 "$1" 2>/dev/null || return 0
+  fm_handoff_claim_live "$FM_HANDOFF_NONCE" || return 0
   HANDOFF_TAKEOVER=stale_takeover
   return 1
 }
@@ -405,9 +408,6 @@ if [ -z "$REANCHOR" ]; then
       exit 1
     }
   done
-fi
-if handoff_transfer_refused "${old:-}"; then
-  refuse_live_owner "${old:-}"
 fi
 publish_lock_session_or_die
 if [ -f "$LOCK" ]; then
