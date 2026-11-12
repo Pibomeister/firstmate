@@ -491,6 +491,8 @@ Two fresh terminal attempts share one ten-minute budget; the launcher emits a pa
 A missing or invalid acknowledgement cannot move the predecessor's live lock.
 On Orca, failed panes remain available for diagnosis; on every backend, a failed attempt's expired claim cannot take ownership.
 `bin/fm-captain-locate.sh` reports the verified lock holder and its terminal handle for supervisor discovery; its header owns the output format.
+The lock transfers while the predecessor is still alive, so the handoff does not wait for an external exit.
+The successor confirms the handoff sha256 and stops on a mismatch.
 A second mate never launches its own successor: it appends one relaunch request to its parent channel and stops.
 It fires at most once per context cycle: a session that auto-compacts anyway is told again before its next auto-compact.
 

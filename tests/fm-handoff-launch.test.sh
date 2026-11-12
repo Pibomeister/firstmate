@@ -605,6 +605,12 @@ run_hook_fixture Stop >/dev/null 2>&1 && fail 'tampered ack must not clear the S
 mv "$LAB/ack.backup" "$ack"
 [ "$(cat "$LAB/state/.lock")" != "$(cat "$LAB/pred.pid")" ] || fail 'lock did not transfer'
 kill -0 "$(cat "$LAB/pred.pid")" || fail 'predecessor must not be killed'
+# Regression: the predecessor never exits, yet the launcher completes and the
+# lock names the acknowledged successor rather than waiting for an exit.
+[ "$(cat "$LAB/state/.lock")" = "$(jq -r .harness_pid "$ack")" ] || fail 'lock must name the acknowledged successor'
+[ "$(sed -n 's/^pid=//p' "$LAB/state/.handoff-successor")" = "$(cat "$LAB/state/.lock")" ] || fail 'completion record must name the lock holder'
+[ "$(grep -c " event=handoff_ack nonce=$nonce .* reason=lock_transferred\$" "$LAB/state/handoff-events.log")" = 1 ] \
+  || fail 'a live predecessor must not delay the committed transfer event'
 locate=$(bash "$ROOT/bin/fm-captain-locate.sh")
 assert_contains "$locate" 'handle=term_lab_1' 'discovery follows lock holder'
 assert_contains "$locate" "pid=$(cat "$LAB/state/.lock")" 'discovery names lock pid'
