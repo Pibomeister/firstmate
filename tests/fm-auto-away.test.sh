@@ -276,15 +276,17 @@ at "$((NIGHT + 60))" check
 [ "$(queued)" = 2 ] || fail 'failed entry stranded its receipt and blocked a retry'
 out=$(failing_enter "$((NIGHT + 60))") || fail 'an unchanged entry failure exited nonzero after it was reported'
 [ -z "$out" ] || fail "an unchanged entry failure was reported again: $out"
-at "$((NIGHT + 360))" check
-[ "$(queued)" = 3 ] || fail 'an unchanged entry failure permanently suppressed retries'
+for sweep in 360 660 1800; do at "$((NIGHT + sweep))" check; done
+[ "$(queued)" = 2 ] || fail 'an unchanged entry failure woke main again before its backoff'
+at "$((NIGHT + 60 + 1800))" check
+[ "$(queued)" = 3 ] || fail 'an unchanged entry failure was not retried after its backoff'
 printf 'cannot write away record\n' > "$FM_HOME/launch-error"
-if out=$(failing_enter "$((NIGHT + 360))"); then fail 'changed entry failure reported success'; fi
+if out=$(failing_enter "$((NIGHT + 1860))"); then fail 'changed entry failure reported success'; fi
 assert_contains "$out" 'auto-away entry failed: exit 1: cannot write away record' 'a changed entry failure was not reported'
-at "$((NIGHT + 660))" check
-[ "$(queued)" = 4 ] || fail 'a changed entry failure blocked its retry'
+at "$((NIGHT + 2160))" check
+[ "$(queued)" = 4 ] || fail 'a changed entry failure was not retried at the next check'
 rm -f "$FM_HOME/launch-error"
-out=$(failing_enter "$((NIGHT + 660))")
+out=$(failing_enter "$((NIGHT + 2160))")
 assert_contains "$out" 'hold-for-return only' 'entry did not recover once the failure cleared without new activity'
 assert_present "$FM_HOME/state/.afk-contract" 'recovered entry did not write the away record'
 assert_absent "$FM_HOME/state/.auto-away-entry-failure" 'successful entry kept the failure record'

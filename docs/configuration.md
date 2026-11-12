@@ -818,7 +818,7 @@ No extra timer or daemon is installed; the normal check cadence and primary-turn
 
 `config/auto-away` is an optional, local, gitignored file of `key=value` lines.
 Blank lines and lines beginning with `#` are ignored; malformed settings fail visibly instead of executing configuration as shell code, and a scheduled check reports each failure, including a local-time conversion failure that skips only the clock trigger, as a `check` wake once, staying silent until the failure changes or a clean check clears it.
-A failed automatic entry always clears its request receipt, so the next scheduled check queues another retry until entry succeeds or a new captain message arrives. The entry command reports each distinct failure, keyed by its exit status and first error line, once; an unchanged repeat prints nothing, and a success or a new captain message clears the record.
+A failed automatic entry always clears its request receipt, so a later scheduled check queues another retry until entry succeeds or a new captain message arrives. The entry command reports each distinct failure, keyed by its exit status and first error line, once, and the next check retries it at once; an unchanged repeat prints nothing and holds the next retry for 1800 seconds. A success or a new captain message clears the record.
 
 | Key | Default | Meaning |
 | --- | --- | --- |

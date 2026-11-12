@@ -17,7 +17,9 @@
 # a message that arrived after a queued request cancels that request.
 #
 # A failed entry leaves a later check free to retry; enter reports each distinct
-# failure once and stays silent while it repeats unchanged.
+# failure once and stays silent while it repeats unchanged. The failure record
+# holds the next retry time and the failure signature: a new signature retries
+# at the next check, an unchanged one only after ENTRY_BACKOFF seconds.
 #
 # captain-message is the harness-independent activity boundary, called by main
 # only for genuine captain input, never for operational wakes. A captain-opened
@@ -43,6 +45,7 @@ REQUEST="$STATE/.auto-away-request"
 LOCK="$STATE/.auto-away.lock"
 FAILURE="$STATE/.auto-away-failure"
 ENTRY_FAILURE="$STATE/.auto-away-entry-failure"
+ENTRY_BACKOFF=1800
 
 usage() { sed -n '2,9s/^# \{0,1\}//p' "$0"; }
 # The watcher turns only check stdout into a wake, so a check reports there,
@@ -238,7 +241,10 @@ case "${1:-check}" in
     [ "$ENABLED" != off ] || rm -f "$REQUEST"
     if due; then
       request=$LAST
-      if [ "$(cat "$REQUEST" 2>/dev/null || true)" != "$request" ]; then
+      retry=$(cat "$ENTRY_FAILURE" 2>/dev/null || true)
+      retry=${retry%% *}
+      [[ "$retry" =~ ^[0-9]{1,10}$ ]] || retry=0
+      if [ "$(cat "$REQUEST" 2>/dev/null || true)" != "$request" ] && [ "$NOW" -ge "$retry" ]; then
         fm_wake_append check auto-away \
           "check: auto-away $REASON trigger; load /afk and run bin/fm-auto-away.sh enter $LAST; only if it prints an entry, finish /afk supervision setup and announce it once." \
           || fail 'cannot queue automatic entry'
@@ -250,8 +256,6 @@ case "${1:-check}" in
     ;;
   enter)
     if due && [ "$LAST" = "$2" ]; then
-      # Every failed entry releases its receipt so a later check retries; the
-      # failure is reported once per distinct signature, until success clears it.
       errors=$(mktemp "$STATE/.auto-away-entry.XXXXXX") || fail 'cannot stage entry errors'
       status=0
       FM_AFK_MODE=away "$SCRIPT_DIR/fm-afk-launch.sh" enter-auto 2>"$errors" || status=$?
@@ -262,8 +266,12 @@ case "${1:-check}" in
         rm -f "$ENTRY_FAILURE"
       else
         [ "$(cat "$REQUEST" 2>/dev/null || true)" != "$2" ] || rm -f "$REQUEST"
-        [ "$(cat "$ENTRY_FAILURE" 2>/dev/null || true)" != "$signature" ] || exit 0
-        write_record "$ENTRY_FAILURE" "$signature" || true
+        previous=$(cat "$ENTRY_FAILURE" 2>/dev/null || true)
+        if [ "${previous#* }" = "$signature" ]; then
+          write_record "$ENTRY_FAILURE" "$((NOW + ENTRY_BACKOFF)) $signature" || true
+          exit 0
+        fi
+        write_record "$ENTRY_FAILURE" "$NOW $signature" || true
         printf 'auto-away entry failed: %s\n' "$signature"
         exit 1
       fi
