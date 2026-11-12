@@ -291,6 +291,43 @@ assert_contains "$out" 'hold-for-return only' 'entry did not recover once the fa
 assert_present "$FM_HOME/state/.afk-contract" 'recovered entry did not write the away record'
 assert_absent "$FM_HOME/state/.auto-away-entry-failure" 'successful entry kept the failure record'
 
+world prelaunch-failure
+at "$EARLY" captain-message
+at "$NIGHT" check
+printf 'invalid-key=1\n' >> "$FM_HOME/config/auto-away"
+if out=$(at "$NIGHT" enter "$EARLY" 2>/dev/null); then fail 'a configuration failure before launch reported success'; fi
+assert_contains "$out" 'auto-away entry failed: unknown config/auto-away key: invalid-key' 'a failure before launch was not reported as an entry failure'
+printf 'timezone=UTC\n' > "$FM_HOME/config/auto-away"
+at "$((NIGHT + 300))" check
+[ "$(wc -l < "$FM_HOME/state/.wake-queue" | tr -d ' ')" = 2 ] || fail 'a failure before launch stranded its request after the configuration was repaired'
+at "$((NIGHT + 300))" enter "$EARLY" >/dev/null
+assert_present "$FM_HOME/state/.afk-contract" 'entry did not recover after a failure before launch'
+
+world session-start-resets-entry
+at "$EARLY" captain-message
+at "$NIGHT" check
+printf 'invalid-key=1\n' >> "$FM_HOME/config/auto-away"
+at "$NIGHT" enter "$EARLY" >/dev/null 2>&1 || true
+printf 'timezone=UTC\n' > "$FM_HOME/config/auto-away"
+at "$((NIGHT + 300))" arm --session-start >/dev/null
+assert_absent "$FM_HOME/state/.auto-away-entry-failure" 'a captain-opened start kept an old entry failure'
+printf 'invalid-key=1\n' >> "$FM_HOME/config/auto-away"
+out=$(at "$((NIGHT + 7500))" enter "$((NIGHT + 300))" 2>/dev/null || true)
+assert_contains "$out" 'auto-away entry failed: unknown config/auto-away key' 'a failure after a captain-opened start stayed silent behind an old record'
+
+world clock-failure-away
+mkdir -p "$FM_HOME/bin"
+printf '#!/usr/bin/env bash\ncase " $* " in *" -r "*|*" -d "*) exit 1 ;; esac\nexec %q "$@"\n' "$REAL_DATE" > "$FM_HOME/bin/date"
+chmod +x "$FM_HOME/bin/date"
+at "$EARLY" captain-message
+out=$(PATH="$FM_HOME/bin:$PATH" at "$((EARLY + 60))" check || true)
+assert_contains "$out" 'cannot convert epoch' 'clock conversion failure was not reported'
+"$ROOT/bin/fm-afk-contract.sh" enter >/dev/null
+PATH="$FM_HOME/bin:$PATH" at "$((EARLY + 120))" check >/dev/null || fail 'away check without a clock evaluation failed'
+"$ROOT/bin/fm-afk-contract.sh" archive >/dev/null
+out=$(PATH="$FM_HOME/bin:$PATH" at "$((EARLY + 180))" check || true)
+[ -z "$out" ] || fail "an unchanged clock failure was reported again after an away period: $out"
+
 world off-start
 printf 'enabled=off\n' >> "$FM_HOME/config/auto-away"
 at "$((EARLY - 172800))" captain-message

@@ -16,7 +16,9 @@
 # path and announce once. It rechecks both the activity stamp and the triggers:
 # a message that arrived after a queued request cancels that request.
 #
-# A failed entry leaves a later check free to retry; enter reports each distinct
+# Entry consumes its matching request under the lock before anything can fail,
+# so a failed entry, including one before launch, leaves a later check free to
+# retry; enter reports each distinct
 # failure once and stays silent while it repeats unchanged. The failure record
 # holds the next retry time and the failure signature: a new signature retries
 # at the next check, an unchanged one only after ENTRY_BACKOFF seconds.
@@ -27,9 +29,10 @@
 # because the opening message precedes the instruction to record it; a trigger
 # missed while no session ran therefore never fires on session open. A clear or
 # compact, re-emitted or full, arms without it; a disabled feature still records
-# a captain-opened start; a handoff successor or a watchdog
-# restart, including one run by another home's watchdog, is detected at arm.
-# All of these preserve the last stamp, so both deadlines hold.
+# a captain-opened start, which also clears pending entry state as a captain
+# message does. A handoff successor or a watchdog restart, including one run by
+# another home's watchdog, is detected at arm. Automated starts and re-arms
+# preserve the last stamp, so both deadlines hold.
 # An existing quiet or away posture is never replaced.
 # The AFK launch owner's lock serializes entry against explicit /afk and /quiet.
 # Test-only clock: FM_TEST_SEAM=1 FM_AUTO_AWAY_NOW=<epoch>.
@@ -57,8 +60,23 @@ fail() {
       write_record "$FAILURE" "$1" || true
     fi
     printf 'auto-away check failed: %s\n' "$1"
+  elif [ "$CMD" = enter ] && [ "$LOCKED" = 1 ]; then
+    entry_failed "$1"
   else printf 'fm-auto-away: %s\n' "$1" >&2
   fi
+  exit 1
+}
+
+# Report a failure signature once; an unchanged repeat backs off silently.
+entry_failed() { # <signature>
+  local previous
+  previous=$(cat "$ENTRY_FAILURE" 2>/dev/null || true)
+  if [ "${previous#* }" = "$1" ]; then
+    write_record "$ENTRY_FAILURE" "$((NOW + ENTRY_BACKOFF)) $1" || true
+    exit 0
+  fi
+  write_record "$ENTRY_FAILURE" "$NOW $1" || true
+  printf 'auto-away entry failed: %s\n' "$1"
   exit 1
 }
 
@@ -151,7 +169,9 @@ due() {
   read_activity || return 1
   [ "$NOW" -ge "$LAST" ] || return 1
   if [ "$AT" != off ]; then
-    clock_due || CLOCK_ERROR='cannot convert epoch to local time; clock trigger skipped'
+    if clock_due; then CLOCK_OK=1
+    else CLOCK_ERROR='cannot convert epoch to local time; clock trigger skipped'
+    fi
     if [ "$CLOCK_DUE" = 1 ]; then REASON=clock; return 0; fi
   fi
   if [ "$SILENCE" -gt 0 ] && [ $((NOW - LAST)) -ge "$SILENCE" ]; then
@@ -185,6 +205,7 @@ arm() {
   if [ "$SESSION_START" = 1 ] && automated_start; then SESSION_START=0; fi
   if [ "$SESSION_START" = 1 ] || ! read_activity; then
     write_record "$ACTIVITY" "$NOW" || fail 'cannot record session start activity'
+    [ "$SESSION_START" != 1 ] || rm -f "$REQUEST" "$ENTRY_FAILURE"
   fi
   if [ "$ENABLED" = off ]; then
     "$SCRIPT_DIR/fm-check-unregister.sh" auto-away >/dev/null
@@ -208,6 +229,9 @@ arm() {
 
 CMD=${1:-check}
 CLOCK_ERROR=
+CLOCK_OK=0
+LOCKED=0
+NOW=
 case "$CMD" in
   --help|-h|help) usage; exit 0 ;;
   arm) [ "$#" -eq 1 ] || { [ "$#" -eq 2 ] && [ "$2" = --session-start ]; } || { usage >&2; exit 2; } ;;
@@ -222,15 +246,16 @@ SESSION_START=0
 umask 077
 mkdir -p "$STATE"
 [ ! -L "$STATE" ] || fail 'state is not a real directory'
-case "${1:-check}" in
-  captain-message) ;;
-  *) read_config ;;
-esac
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 fm_lock_acquire_wait "$LOCK" || fail 'cannot acquire activity lock'
 trap 'fm_lock_release "$LOCK"' EXIT
+LOCKED=1
 NOW=$(now)
+if [ "$CMD" = enter ] && [ "$(cat "$REQUEST" 2>/dev/null || true)" = "$2" ]; then
+  rm -f "$REQUEST"
+fi
+[ "$CMD" = captain-message ] || read_config
 case "${1:-check}" in
   captain-message)
     write_record "$ACTIVITY" "$NOW" || fail 'cannot record captain activity'
@@ -239,6 +264,7 @@ case "${1:-check}" in
   arm) arm ;;
   check)
     [ "$ENABLED" != off ] || rm -f "$REQUEST"
+    [ "$ENABLED" = on ] && [ "$AT" != off ] || CLOCK_OK=1
     if due; then
       request=$LAST
       retry=$(cat "$ENTRY_FAILURE" 2>/dev/null || true)
@@ -252,7 +278,10 @@ case "${1:-check}" in
       fi
     fi
     [ -z "$CLOCK_ERROR" ] || fail "$CLOCK_ERROR"
-    rm -f "$FAILURE"
+    # A check that never reached the clock keeps a clock failure receipt.
+    if [ "$CLOCK_OK" = 1 ] || [ "$(cat "$FAILURE" 2>/dev/null || true)" != 'cannot convert epoch to local time; clock trigger skipped' ]; then
+      rm -f "$FAILURE"
+    fi
     ;;
   enter)
     if due && [ "$LAST" = "$2" ]; then
@@ -262,23 +291,8 @@ case "${1:-check}" in
       signature="exit $status: $(head -n 1 "$errors")"
       [ "$status" != 0 ] || cat "$errors" >&2
       rm -f "$errors"
-      if [ "$status" = 0 ]; then
-        rm -f "$ENTRY_FAILURE"
-      else
-        [ "$(cat "$REQUEST" 2>/dev/null || true)" != "$2" ] || rm -f "$REQUEST"
-        previous=$(cat "$ENTRY_FAILURE" 2>/dev/null || true)
-        if [ "${previous#* }" = "$signature" ]; then
-          write_record "$ENTRY_FAILURE" "$((NOW + ENTRY_BACKOFF)) $signature" || true
-          exit 0
-        fi
-        write_record "$ENTRY_FAILURE" "$NOW $signature" || true
-        printf 'auto-away entry failed: %s\n' "$signature"
-        exit 1
-      fi
-    elif [ "$(cat "$REQUEST" 2>/dev/null || true)" = "$2" ]; then
-      # A changed setting can invalidate a queued request without a new
-      # message. Let its next real crossing publish a fresh request.
-      rm -f "$REQUEST"
+      [ "$status" = 0 ] || entry_failed "$signature"
+      rm -f "$ENTRY_FAILURE"
     fi
     ;;
 esac
