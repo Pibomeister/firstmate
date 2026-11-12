@@ -795,6 +795,9 @@ inbox_steer_recovery_action() {  # <window> <task> <recover-rc>
 # dismiss_pane_feedback_dialog: when an idle supervised pane shows a known
 # feedback or bug-report dialog for its harness, claim and dismiss it via the
 # shared helper (bin/fm-control-lib.sh) and log the outcome.
+# Returns 0 when the dialog is gone, 1 when this call does not dismiss (no
+# matching dialog, or no screen or harness), and 2 when the dialog may still
+# be up, so a caller must not type.
 dismiss_pane_feedback_dialog() {  # <window> <screen>
   local w=$1 screen=${2-} backend harness label rc=0
   [ -n "$screen" ] || return 1
@@ -838,6 +841,9 @@ inbox_steer_busy() {  # <window> <backend> <task> <tail40>
 # bin/fm-task-inbox-lib.sh owns delivery, busy-deferral, retry, and escalation policy.
 # Endpoint and busy checks precede delivery so recovery never types into a busy,
 # dead, or missing worker; the ring helper protects pending composer text.
+# A known feedback or bug-report dialog for the recorded harness is dismissed
+# first, and the doorbell is withheld unless that call reports the dialog gone
+# or not shown.
 # Normal retries keep the watcher blocking rather than waking firstmate.
 # Runs for secondmates too: their pane-staleness exemption is about quiet panes
 # being healthy, while an unacknowledged instruction can still be a stuck steer.

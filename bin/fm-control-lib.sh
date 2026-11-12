@@ -1340,12 +1340,14 @@ fm_control_acquire_feedback_claim() {  # <claim-dir> [<max-age-secs>]
 # post-send verification; never removes another live caller's active claim,
 # and atomically reclaims a lock left behind by a dead or expired owner.
 # Requires a non-empty live capture that still matches a supported feedback
-# dialog before sending any key. Records the attempted pane hash in
-# $state/.feedback-dismissed-<window_key> when post-send capture still shows
-# the dialog so an unchanged sticky dialog is not sent a second key, and clears
-# that marker once post-send capture verifies the dialog is gone. Each backend
-# send and capture is bounded by <call-timeout-secs> (default 20). A failed
-# send releases the lock without recording the marker so a later tick can retry.
+# dialog before sending any key. The one-key marker
+# ($state/.feedback-dismissed-<window_key>) hashes the dialog through its input
+# box, with digits stripped from the footer downward, so a status tick is not
+# a new pane. It is written when the post-send capture still shows the dialog
+# or is empty, and removed when that capture shows the dialog is gone. Each
+# backend send and capture is bounded by <call-timeout-secs> (default 20). A
+# failed send releases the lock without recording the marker so a later tick
+# can retry.
 # Returns:
 #   0 - claimed, sent key, re-captured, and verified the dialog is gone
 #   1 - <screen> does not match a known feedback/bug-report dialog for <harness>

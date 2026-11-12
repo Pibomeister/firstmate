@@ -844,8 +844,9 @@ task_window_harness() {  # <window> <state>
 }
 
 # stale_window_is_busy: 0 when the semantic busy-state contract
-# (bin/fm-busy-lib.sh) reports busy, 2 when the endpoint is gone, 3 for T3
-# native uncertainty, and 1 otherwise. Uncertainty cannot prove work resumed.
+# (bin/fm-busy-lib.sh) reports busy, or when a known feedback dialog on this
+# pane was just dismissed, 2 when the endpoint is gone, 3 for T3 native
+# uncertainty, and 1 otherwise. Uncertainty cannot prove work resumed.
 # A T3 thread is gone only when the adapter reads it missing (archived or 404);
 # its verdict is native, so a failed transcript read is uncertainty, not removal.
 # Other backends treat a failed capture as gone.

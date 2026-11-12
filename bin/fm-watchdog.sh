@@ -1501,8 +1501,10 @@ wd_worker_metas() {  # <home>
 }
 
 # Read each recorded worker pane with the home dialog detector.
-# mode=page sends a permission dialog through wd_page_permission and no other key.
-# mode=print reports the read and does not act. A gone endpoint is not a dialog.
+# mode=page dismisses a known feedback or bug-report dialog, pages a permission
+# dialog through wd_page_permission, and names a usage-limit pick. It sends no
+# other key. mode=print reports the read and does not act. A gone endpoint is
+# not a dialog.
 wd_visit_worker_dialogs() {
   local mode=$1 id meta backend target harness screen dialog
   local saved_pane saved_dialog_pane saved_backend saved_target saved_harness saved_dialog saved_id
