@@ -1,0 +1,45 @@
+== nm (     157 lines)
+  own lint command                                                       1
+  machine-wide test line                                                 2
+  gate still runs in full                                                1
+  one fix round covers them all                                          1
+  never rebase, amend, squash, reset, or force-push                      1
+  one run for all of them                                                1
+  every decision the captain already made                                1
+  a decision made by firstmate or by you is still not captain intent     1
+== nmmanual (     163 lines)
+  own lint command                                                       1
+  machine-wide test line                                                 2
+  gate still runs in full                                                1
+  one fix round covers them all                                          1
+  never rebase, amend, squash, reset, or force-push                      1
+  one run for all of them                                                1
+  every decision the captain already made                                1
+  a decision made by firstmate or by you is still not captain intent     1
+== nmgerrit (     179 lines)
+  own lint command                                                       1
+  machine-wide test line                                                 2
+  gate still runs in full                                                1
+  one fix round covers them all                                          1
+  never rebase, amend, squash, reset, or force-push                      1
+  one run for all of them                                                1
+  every decision the captain already made                                1
+  a decision made by firstmate or by you is still not captain intent     1
+== dpr (     107 lines)
+  own lint command                                                       0
+  machine-wide test line                                                 1
+  gate still runs in full                                                0
+  one fix round covers them all                                          0
+  never rebase, amend, squash, reset, or force-push                      0
+  one run for all of them                                                0
+  every decision the captain already made                                0
+  a decision made by firstmate or by you is still not captain intent     0
+== lo (     104 lines)
+  own lint command                                                       0
+  machine-wide test line                                                 1
+  gate still runs in full                                                0
+  one fix round covers them all                                          0
+  never rebase, amend, squash, reset, or force-push                      0
+  one run for all of them                                                0
+  every decision the captain already made                                0
+  a decision made by firstmate or by you is still not captain intent     0
