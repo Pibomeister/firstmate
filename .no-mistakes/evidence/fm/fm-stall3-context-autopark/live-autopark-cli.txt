@@ -1,0 +1,25 @@
+$ fm-context-burn.sh record --turn-type captain --session nightA --percent 16
+exit=0
+$ fm-context-burn.sh record --turn-type captain --session nightA --percent 15
+park-handoff: nightA at 15% context left: park open captain questions via bin/fm-captain-hold.sh then start handoff
+exit=0
+$ fm-context-burn.sh record --turn-type captain --session nightA --percent 14
+exit=0
+$ fm-context-burn.sh record --turn-type captain --session nightA --percent 40
+exit=0
+$ fm-context-burn.sh record --turn-type captain --session nightA --percent 3
+alert: nightA dropped from 40 to 3 in 2s turn captain
+exit=0
+$ record session nightB 15
+park-handoff: nightB at 15% context left: park open captain questions via bin/fm-captain-hold.sh then start handoff
+exit=0
+--- marker nightA:
+done 1794468210
+--- wake queue entries for context-autopark:
+1794468210	1	check	context-autopark-nightA	check: context autopark session nightA at 15% context left: park every open captain question as a held backlog item through bin/fm-captain-hold.sh (hold the work item the question gates, or create one captain-held tas
+1794468220	3	check	context-autopark-nightB	check: context autopark session nightB at 15% context left: park every open captain question as a held backlog item through bin/fm-captain-hold.sh (hold the work item the question gates, or create one captain-held tas
+--- count nightA wakes:
+       1
+--- config off: percent-left=0
+exit=0
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.UkMMYg/state/.context-autopark.nightC: No such file or directory

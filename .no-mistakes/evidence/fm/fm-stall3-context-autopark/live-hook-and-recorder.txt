@@ -1,0 +1,28 @@
+== hook at 16% left (84000/100000), session h1
+[hook rc=0]
+
+== hook at 15% left, session h1
+[hook rc=0]
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PostToolUse",
+    "additionalContext": "Firstmate early handoff trigger, from this home's tracked Claude hook: about 15% of context is left before auto-compact (85000 of 100000 tokens). Park first, then hand off: park every open captain question as a held backlog item through bin/fm-captain-hold.sh (hold the work item the question gates, or create one captain-held task per genuine question) without asking the captain or waiting for an answer, and keep working on everything the parked questions do not gate. Then write your full session handoff now, before auto-compact: persist every open work record, decision, and piece of durable knowledge th
+== recorder at 10% for h1 (must stay silent)
+[rec rc=0]
+== recorder-first session r1 at 12%
+park-handoff: r1 at 12% context left: park open captain questions via bin/fm-captain-hold.sh then start handoff
+[rec rc=0]
+== hook for r1 at 10% left (must be silent, but arm gate)
+[hook rc=0]
+
+== markers:
+.context-autopark.h1
+.context-autopark.r1
+.handoff-trigger.h1.0
+.handoff-trigger.r1.0
+== Stop for r1 without successor (expect rc=2 block)
+[hook rc=2]
+
+Firstmate restart gate: no verified successor acknowledgement and lock transfer is recorded in state/.handoff-successor. Run bin/fm-handoff-launch.sh <handoff document path>. A live PID alone does not clear this gate.
+== wake queue keys:
+context-autopark-r1
