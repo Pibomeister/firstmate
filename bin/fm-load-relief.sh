@@ -34,7 +34,7 @@
 # line (# comments and blank lines ignored):
 #   ceiling=<positive number>       load at or over this starts the window
 #   resume-below=<positive number>  load under this lifts pauses (default 75%
-#                                   of the ceiling)
+#                                   of the ceiling; must be under it)
 #   sustain-secs=<uint>             seconds at or over ceiling before a pause
 #                                   (default 300)
 #   pause-per-check=<uint>          workers paused per sustained pass (default 1)
@@ -153,7 +153,11 @@ is_uint "$cores" && [ "$cores" -gt 0 ] || cores=
 [ -n "$ceiling" ] || ceiling=${cores:-}
 [ -n "$ceiling" ] || die "no load ceiling: set max-load1 in config/lane-capacity or ceiling in config/load-relief"
 is_positive_number "$ceiling" || die "load ceiling '$ceiling' is not a positive number"
-[ -n "$resume_below" ] || resume_below=$(awk -v c="$ceiling" 'BEGIN { print c * 0.75 }')
+if [ -n "$resume_below" ]; then
+  num_lt "$resume_below" "$ceiling" || die "config/load-relief: resume-below $resume_below must be under the load ceiling $ceiling"
+else
+  resume_below=$(awk -v c="$ceiling" 'BEGIN { print c * 0.75 }')
+fi
 
 # --- load probe ---------------------------------------------------------------
 load1=

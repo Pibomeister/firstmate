@@ -210,6 +210,21 @@ SH
   pass "the pause record precedes the interrupt and is removed when the interrupt is not delivered"
 }
 
+test_resume_below_at_or_over_ceiling_refuses() {
+  local home out rc
+  home=$(make_home badresume)
+  add_worker "$home" w 100 4
+  printf 'ceiling=16\nresume-below=20\n' > "$home/config/load-relief"
+  rc=0; out=$(run_relief "$home" badresume 18 1000) || rc=$?
+  expect_code 1 "$rc" "a resume-below over the ceiling did not refuse: $out"
+  assert_contains "$out" "resume-below 20 must be under the load ceiling 16" "the refusal did not name the bad resume level"
+  printf 'ceiling=16\nresume-below=16\n' > "$home/config/load-relief"
+  rc=0; out=$(run_relief "$home" badresume 18 1000) || rc=$?
+  expect_code 1 "$rc" "a resume-below equal to the ceiling did not refuse: $out"
+  assert_absent "$home/state/load-relief/high-since" "a refused check still acted"
+  pass "an explicit resume-below at or over the ceiling refuses rather than silently disabling relief"
+}
+
 test_no_lane_capacity_is_a_noop() {
   local home out rc=0
   home=$(make_home noop)
@@ -230,4 +245,5 @@ test_finished_pause_record_dropped_without_steer
 test_tab_separated_max_load1_sets_ceiling
 test_resume_waits_below_hysteresis_and_staggers
 test_failed_interrupt_leaves_no_record
+test_resume_below_at_or_over_ceiling_refuses
 test_no_lane_capacity_is_a_noop
