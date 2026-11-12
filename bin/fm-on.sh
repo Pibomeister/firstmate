@@ -16,9 +16,11 @@
 # block staging indefinitely; a payload caller passes --stdin to forward its
 # own stream as the job's bounded input. stdout and stderr remain separate, and
 # ssh's exit status is returned unchanged. An exit 255 whose stderr shows ssh
-# never connected is retried by bin/fm-blip-retry-lib.sh first. Any other exit
-# 255, including a session that dropped mid-run, is unknown completion and must
-# be reconciled by the caller, never blindly repeated by this layer.
+# never connected is retried by bin/fm-blip-retry-lib.sh first. FM_BLIP_READ=1
+# selects that helper's short read budget for a read-only probe. A call that
+# changes something leaves it unset and keeps the five-minute budget. Any other
+# exit 255, including a session that dropped mid-run, is unknown completion and
+# must be reconciled by the caller, never blindly repeated by this layer.
 #
 # The SSH alias keeps normal public-key and strict host-key policy in ~/.ssh.
 # This command explicitly disables agent forwarding, forwarding setup, and
@@ -47,7 +49,7 @@ PROTOCOL=1
 . "$SCRIPT_DIR/fm-blip-retry-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
-usage() { sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
 encode_base64() {
   base64 | tr -d '\n'
@@ -156,5 +158,9 @@ fm_on_ssh_once() {
   fi
 }
 rc=0
-fm_blip_retry --ssh-connect fm_on_ssh_once || rc=$?
+read_budget_args=()
+if [ "${FM_BLIP_READ:-}" = 1 ]; then
+  read_budget_args=(--read)
+fi
+fm_blip_retry --ssh-connect ${read_budget_args[@]+"${read_budget_args[@]}"} fm_on_ssh_once || rc=$?
 exit "$rc"

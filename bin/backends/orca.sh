@@ -165,6 +165,28 @@ if (data.ok === false) {
 '
 }
 
+# A non-zero Orca CLI still prints its JSON error on stdout. Copy the connect
+# text onto stderr so a connect-only retry, which classifies stderr only, can
+# see it. Invalid JSON is left alone.
+fm_backend_orca_json_connect_note() {
+  node -e '
+const fs = require("fs");
+const input = fs.readFileSync(0, "utf8").trim();
+if (!input) process.exit(0);
+let data;
+try {
+  data = JSON.parse(input);
+} catch (_) {
+  process.exit(0);
+}
+if (!data || data.ok !== false || !data.error) process.exit(0);
+const message = data.error.message ? String(data.error.message) : "";
+const code = data.error.code ? String(data.error.code) : "";
+if (message) console.log(message);
+if (code) console.log(code);
+'
+}
+
 # One Orca CLI invocation. A JSON body with ok:false is a failure even when
 # the CLI exits 0, so a transient error in that body can be retried.
 fm_backend_orca_invoke() {
@@ -178,6 +200,8 @@ fm_backend_orca_invoke() {
   if [ "$rc" -eq 0 ]; then
     fm_backend_orca_json_ok <"$out_file" 2>>"$err_file"
     rc=$?
+  else
+    fm_backend_orca_json_connect_note <"$out_file" >>"$err_file" || true
   fi
   [ "$errexit" -eq 1 ] && set -e
   cat "$out_file"
@@ -299,7 +323,7 @@ fm_backend_orca_remove_worktree() {  # <worktree-id> [recorded-worktree-path]
   [ -n "$worktree_id" ] || { echo "error: missing Orca worktree id; cannot remove worktree" >&2; return 1; }
   fm_backend_orca_tool_check || return 1
   err_file=$(mktemp "${TMPDIR:-/tmp}/fm-orca-rm.XXXXXX") || return 1
-  out=$(fm_backend_orca_blip orca worktree rm --worktree "id:$worktree_id" --force --json 2>"$err_file") || orca_rc=$?
+  out=$(fm_backend_orca_blip_mutation orca worktree rm --worktree "id:$worktree_id" --force --json 2>"$err_file") || orca_rc=$?
   json_error=$(printf '%s' "$out" | fm_backend_orca_json_ok 2>&1) || json_rc=$?
   if [ "$orca_rc" -eq 0 ] && [ "$json_rc" -eq 0 ]; then
     rm -f -- "$err_file"

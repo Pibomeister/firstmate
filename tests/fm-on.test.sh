@@ -127,6 +127,11 @@ case "${FM_FAKE_SSH_MODE:-normal}" in
     fi
     exec "$FM_FAKE_REMOTE_ENTRYPOINT" "$@"
     ;;
+  offline)
+    cat >/dev/null
+    printf '%s\n' 'ssh: connect to host remote-mac port 22: Connection refused' >&2
+    exit 255
+    ;;
   *) exec "$FM_FAKE_REMOTE_ENTRYPOINT" "$@" ;;
 esac
 SH
@@ -268,6 +273,36 @@ set -e
 assert_grep 'stdin: payload one' "$TMP_ROOT/blip-stdin-out" \
   "a later SSH attempt did not see the caller's stdin again"
 pass "a refused SSH connection replays the caller's stdin on the successful attempt"
+
+blip_sleep_sum() {
+  awk '{ total += $1 } END { print total + 0 }' "$1"
+}
+
+: > "$SSH_COUNT"
+: > "$BLIP_SLEEP"
+set +e
+FM_BLIP_READ=1 FM_BLIP_NOW=4000 FM_BLIP_SLEEP_LOG="$BLIP_SLEEP" FM_FAKE_SSH_MODE=offline \
+  fm_on ios fm-probe-two.sh >"$TMP_ROOT/read-out" 2>"$TMP_ROOT/read-err"
+BLIP_RC=$?
+set -e
+[ "$BLIP_RC" -ne 0 ] || fail "a read-only probe treated a permanently offline host as success"
+[ "$(blip_sleep_sum "$BLIP_SLEEP")" -le 15 ] \
+  || fail "FM_BLIP_READ=1 waited past the 15-second budget: $(tr '\n' ' ' < "$BLIP_SLEEP")"
+[ "$(blip_sleep_sum "$BLIP_SLEEP")" -gt 0 ] \
+  || fail "FM_BLIP_READ=1 did not retry the offline host"
+pass "FM_BLIP_READ=1 returns an offline host within the short read budget"
+
+: > "$SSH_COUNT"
+: > "$BLIP_SLEEP"
+set +e
+FM_BLIP_NOW=5000 FM_BLIP_SLEEP_LOG="$BLIP_SLEEP" FM_FAKE_SSH_MODE=offline \
+  fm_on ios fm-probe-two.sh >"$TMP_ROOT/mutate-out" 2>"$TMP_ROOT/mutate-err"
+BLIP_RC=$?
+set -e
+[ "$BLIP_RC" -ne 0 ] || fail "a changing call treated a permanently offline host as success"
+[ "$(blip_sleep_sum "$BLIP_SLEEP")" -gt 15 ] \
+  || fail "a call without FM_BLIP_READ stopped inside the short read budget: $(tr '\n' ' ' < "$BLIP_SLEEP")"
+pass "a call that changes something keeps retrying past the short read budget"
 
 # The child PATH is the entrypoint's own composition, so it is asserted on the
 # PATH a real child receives rather than on the script that builds it. The

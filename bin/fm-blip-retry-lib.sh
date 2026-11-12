@@ -8,7 +8,9 @@
 #       stderr through. A definite failure is returned at once, once: not
 #       found, permission denied, or a usage error. A transient failure is
 #       retried: connection refused, connection reset, timed out, a missing
-#       socket, or an HTTP 5xx, service unavailable, or bad gateway. The wait
+#       socket, an Orca CLI connect failure (code runtime_unavailable, or the
+#       text "This terminal could not connect to Orca."), or an HTTP 5xx,
+#       service unavailable, or bad gateway. The wait
 #       starts at FM_BLIP_RETRY_BASE_SECS (default 2), doubles each time, and
 #       is capped at FM_BLIP_RETRY_CAP_SECS (default 32). Retries stop once
 #       FM_BLIP_RETRY_BUDGET_SECS (default 300) have elapsed since the first
@@ -22,8 +24,10 @@
 #       may have taken effect. Only the attempt's stderr is classified, and
 #       only a failure to connect at all is transient: connection refused,
 #       could not resolve the host, no route, a connect that timed out, a
-#       connection closed before the session began, or a missing socket. A
-#       reset, a mid-session timeout, or an HTTP 5xx is reported once.
+#       connection closed before the session began, a missing socket, or an
+#       Orca CLI connect failure (code runtime_unavailable, or the text
+#       "This terminal could not connect to Orca."). A reset, a mid-session
+#       timeout, or an HTTP 5xx is reported once.
 #
 #       --ssh-connect is the same rule for an ssh command whose stderr also
 #       carries the remote command's own stderr. Only an exit 255 is retried,
@@ -117,6 +121,7 @@ fm_blip_text_is_transient() {
   esac
   case "$text" in
     *'connection refused'*|*'connection reset'*|*'econnrefused'*|*'econnreset'*) return 0 ;;
+    *'this terminal could not connect to orca'*|*'runtime_unavailable'*) return 0 ;;
     *'timed out'*|*'etimedout'*) return 0 ;;
     *'service unavailable'*|*'bad gateway'*|*'gateway timeout'*) return 0 ;;
   esac
@@ -135,6 +140,7 @@ fm_blip_text_is_connect_failure() {
   fm_blip_text_is_missing_socket "$text" && return 0
   case "$text" in
     *'connection refused'*|*'econnrefused'*) return 0 ;;
+    *'this terminal could not connect to orca'*|*'runtime_unavailable'*) return 0 ;;
     *'could not resolve'*|*'name or service not known'*|*'nodename nor servname'*) return 0 ;;
     *'no route to host'*|*'network is unreachable'*|*'ehostunreach'*|*'enetunreach'*) return 0 ;;
     *'connect to host'*'timed out'*|*'connect etimedout'*) return 0 ;;

@@ -171,7 +171,8 @@ blip_connect_run() {
 
 test_connect_only_retries_a_failure_to_connect() {
   local text
-  for text in 'connect ECONNREFUSED /tmp/orca.sock' 'ssh: Could not resolve hostname remote-mac' \
+  for text in 'This terminal could not connect to Orca.' 'runtime_unavailable' \
+    'ssh: Could not resolve hostname remote-mac' \
     'ssh: connect to host remote-mac port 22: Operation timed out' \
     'Connection closed by 10.0.0.2 port 22' 'orca socket missing'; do
     blip_reset
@@ -337,7 +338,11 @@ n=$(cat "$FM_BLIP_ORCA_COUNT")
 n=$((n + 1))
 printf '%s\n' "$n" > "$FM_BLIP_ORCA_COUNT"
 if [ "$n" -le "${FM_BLIP_ORCA_FAILS:-2}" ]; then
-  printf '%s\n' "${FM_BLIP_ORCA_ERROR:-connect ECONNREFUSED}" >&2
+  if [ -n "${FM_BLIP_ORCA_ERROR:-}" ]; then
+    printf '%s\n' "$FM_BLIP_ORCA_ERROR" >&2
+  else
+    printf '%s\n' '{"ok":false,"error":{"code":"runtime_unavailable","message":"This terminal could not connect to Orca."}}'
+  fi
   exit 1
 fi
 printf '%s\n' '{"ok":true}'
@@ -355,10 +360,29 @@ SH
   assert_equals 0 "$rc" "an Orca send did not recover from a refused connection"
   assert_equals 3 "$(cat "$count")" "an Orca send did not retry the refused connection"
   assert_equals $'2\n4' "$(cat "$log")" "an Orca send did not back off between retries"
-  if grep -q 'ECONNREFUSED' "$out_file" "$err_file"; then
-    fail "an Orca send kept the refused-connection text after it recovered"
+  if grep -q 'could not connect to Orca' "$out_file" "$err_file"; then
+    fail "an Orca send kept the connect-failure text after it recovered"
   fi
   pass "an Orca terminal send retries a transient CLI blip"
+}
+
+test_orca_send_retries_connect_text_on_stderr() {
+  local dir
+  dir=$(blip_orca_stub_dir fm-blip-orca-stderr)
+  set +e
+  PATH="$dir/bin:$PATH" \
+    FM_BLIP_ORCA_COUNT="$dir/count" \
+    FM_BLIP_ORCA_FAILS=1 \
+    FM_BLIP_ORCA_ERROR='This terminal could not connect to Orca.' \
+    FM_BLIP_NOW=5100 \
+    FM_BLIP_SLEEP_LOG="$dir/sleep" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_send_literal term-1 hello' "$ROOT" \
+    >"$dir/out" 2>"$dir/err"
+  BLIP_RC=$?
+  set -e
+  assert_equals 0 "$BLIP_RC" "an Orca send did not recover from connect text on stderr"
+  assert_equals 2 "$(cat "$dir/count")" "an Orca send did not retry connect text on stderr"
+  pass "an Orca terminal send retries connect text printed on stderr"
 }
 
 test_orca_send_does_not_retry_permission_denied() {
@@ -407,7 +431,11 @@ n=$(cat "$FM_BLIP_ORCA_COUNT")
 n=$((n + 1))
 printf '%s\n' "$n" > "$FM_BLIP_ORCA_COUNT"
 if [ "$n" -le "${FM_BLIP_ORCA_FAILS:-2}" ]; then
-  printf '%s\n' "${FM_BLIP_ORCA_ERROR:-connect ECONNREFUSED}" >&2
+  if [ -n "${FM_BLIP_ORCA_ERROR:-}" ]; then
+    printf '%s\n' "$FM_BLIP_ORCA_ERROR" >&2
+  else
+    printf '%s\n' '{"ok":false,"error":{"code":"runtime_unavailable","message":"This terminal could not connect to Orca."}}'
+  fi
   exit 1
 fi
 printf '%s\n' '{"ok":true,"result":{"terminal":{"handle":"term-9"}}}'
@@ -432,7 +460,8 @@ blip_orca_call() { # <dir> <error> <shell snippet>
 test_orca_mutations_do_not_repeat_after_a_lost_reply() {
   local dir err call
   for call in 'fm_backend_orca_send_literal term-1 hello' 'fm_backend_orca_send_text_line term-1 hello' \
-    'fm_backend_orca_send_key term-1 C-c' 'fm_backend_orca_terminal_create wt-1 title'; do
+    'fm_backend_orca_send_key term-1 C-c' 'fm_backend_orca_terminal_create wt-1 title' \
+    'fm_backend_orca_remove_worktree wt-1'; do
     for err in 'request timed out' 'read ECONNRESET' 'HTTP 503 Service Unavailable'; do
       dir=$(blip_orca_stub_dir fm-blip-orca-mutation)
       blip_orca_call "$dir" "$err" "$call"
@@ -474,7 +503,6 @@ test_orca_capture_gives_up_within_the_short_read_budget() {
   PATH="$dir/bin:$PATH" \
     FM_BLIP_ORCA_COUNT="$dir/count" \
     FM_BLIP_ORCA_FAILS=99 \
-    FM_BLIP_ORCA_ERROR='connect ECONNREFUSED /tmp/orca.sock' \
     FM_BLIP_NOW=9000 \
     FM_BLIP_SLEEP_LOG="$dir/sleep" \
     bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_capture term-1 40' "$ROOT" \
@@ -485,7 +513,8 @@ test_orca_capture_gives_up_within_the_short_read_budget() {
   [ "$(blip_sum "$dir/sleep")" -le 15 ] \
     || fail "an Orca capture waited past the 15-second read budget: $(tr '\n' ' ' < "$dir/sleep")"
   [ "$(cat "$dir/count")" -gt 1 ] || fail "an Orca capture did not retry a refused connection at all"
-  assert_contains "$(cat "$dir/err")" 'ECONNREFUSED' "an Orca capture hid the refused-connection error"
+  assert_contains "$(cat "$dir/err")" 'This terminal could not connect to Orca.' \
+    "an Orca capture hid the connect-failure error"
   pass "an Orca capture against a refused connection gives up within the short read budget"
 }
 
@@ -496,7 +525,6 @@ test_orca_draft_present_holds_within_the_short_read_budget() {
   PATH="$dir/bin:$PATH" \
     FM_BLIP_ORCA_COUNT="$dir/count" \
     FM_BLIP_ORCA_FAILS=99 \
-    FM_BLIP_ORCA_ERROR='connect ECONNREFUSED /tmp/orca.sock' \
     FM_BLIP_NOW=9500 \
     FM_BLIP_SLEEP_LOG="$dir/sleep" \
     bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_draft_present term-1' "$ROOT" \
@@ -516,7 +544,6 @@ test_orca_send_retries_past_the_short_read_budget() {
   PATH="$dir/bin:$PATH" \
     FM_BLIP_ORCA_COUNT="$dir/count" \
     FM_BLIP_ORCA_FAILS=5 \
-    FM_BLIP_ORCA_ERROR='connect ECONNREFUSED /tmp/orca.sock' \
     FM_BLIP_NOW=9800 \
     FM_BLIP_SLEEP_LOG="$dir/sleep" \
     bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_send_literal term-1 hello' "$ROOT" \
@@ -548,6 +575,7 @@ fm_test_run \
   test_bare_failure_without_transient_text_is_not_retried \
   test_invalid_override_fails_before_the_command \
   test_orca_send_retries_a_transient_cli_blip \
+  test_orca_send_retries_connect_text_on_stderr \
   test_orca_send_does_not_retry_permission_denied \
   test_orca_mutations_do_not_repeat_after_a_lost_reply \
   test_orca_reads_retry_a_timed_out_reply \
