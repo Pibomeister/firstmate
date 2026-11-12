@@ -420,6 +420,26 @@ fm_control_backend_relaunch_supported() {  # <backend>
   return 1
 }
 
+# Whether a relaunch can RECLAIM a task whose endpoint reads `missing`, by
+# re-creating one in its worktree once fm_control_endpoint_absence_verdict
+# proves the old one gone. That proof exists on herdr, rex, and orca, and on
+# tmux only for a record carrying the server identity the tmux proof reads;
+# a yes here is admission to try, and relaunch still refuses an unproven
+# absence.
+fm_control_backend_reclaim_supported() {  # <backend> <meta>
+  local field
+  case "${1-}" in
+    herdr|rex|orca) return 0 ;;
+    tmux)
+      for field in tmux_socket tmux_server_pid tmux_server_identity tmux_window_id; do
+        [ -n "$(fm_meta_get "${2-}" "$field" 2>/dev/null || true)" ] || return 1
+      done
+      return 0
+      ;;
+  esac
+  return 1
+}
+
 # Whether a raw fm_backend_agent_state reading on <backend> goes through
 # fm_control_endpoint_absence_verdict before a recovery verb (exit, relaunch)
 # acts or refuses. `missing` always does. A Rex `unreadable` does too: Rex's

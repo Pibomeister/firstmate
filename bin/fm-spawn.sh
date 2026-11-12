@@ -8747,6 +8747,11 @@ if [ "$RELAUNCH" -eq 1 ]; then
   rm -f -- "$STATE_REAL/$ID.droid-session-end" ||
     echo "warning: could not retire the prior Droid stop marker of $ID; it names a retired generation, so it proves nothing about the replacement" >&2
 fi
+# A published replacement or fresh record ends any deliberate stop that
+# `fm-control.sh <id> exit` recorded, so the watcher's automatic relaunch
+# covers the new worker again.
+rm -f -- "$STATE/.crew-stopped-$ID" ||
+  echo "warning: could not clear the intentional-stop marker of $ID; the watcher will not auto-relaunch it until state/.crew-stopped-$ID is removed" >&2
 # A dispatch or relaunch keeps the per-task meta lock through launch delivery.
 # The backlog mutation is deliberately the final fallible commit below, so
 # teardown cannot remove a relaunched record while its replacement worker is
@@ -9090,6 +9095,11 @@ fi
 # command retires the reporter when the agent exits, because the pane shell
 # that sourced the launch outlives it. Newlines, not `;`, delimit the agent
 # command, so a raw launch ending in a separator or a comment stays intact.
+# The same closing line first records the agent command's exit status with
+# this incarnation's spawn_gen in state/<id>.agent-exit, which the watcher's
+# automatic relaunch reads to tell a clean exit from a crash or signal death
+# (bin/fm-watch.sh crew_auto_relaunch). A clean exit always reaches that line;
+# a wrapper killed together with its agent writes nothing.
 OSC7501_AGENT_BIN=
 if [ "$RAW_LAUNCH" = 0 ]; then
   case "$HARNESS" in
@@ -9111,7 +9121,7 @@ else
 fi
 LAUNCH="$(shell_quote "$FM_ROOT/bin/fm-osc7501.sh") arm --task $(shell_quote "$ID") --harness $(shell_quote "$HARNESS") --backend $(shell_quote "$BACKEND") --kind $(shell_quote "$KIND") --state $(shell_quote "$STATE_REAL") --config $(shell_quote "$CONFIG") --target $(shell_quote "$T") --agent-bin $(shell_quote "$OSC7501_AGENT_BIN") >/dev/null || true
 $LAUNCH
-$(shell_quote "$FM_ROOT/bin/fm-osc7501.sh") disarm --state $(shell_quote "$STATE_REAL") >/dev/null 2>/dev/null || true"
+fm_agent_exit_status=\$?; printf '%s\t%s\n' $(shell_quote "$SPAWN_GEN") \"\$fm_agent_exit_status\" 2>/dev/null >$(shell_quote "$STATE_REAL/$ID.agent-exit") || true; $(shell_quote "$FM_ROOT/bin/fm-osc7501.sh") disarm --state $(shell_quote "$STATE_REAL") >/dev/null 2>/dev/null || true"
 if [ "$LAVISH_AXI_HOST_CONFIG_PRESENT" = 1 ]; then
   LAUNCH="export LAVISH_AXI_HOST=$(shell_quote "$LAVISH_AXI_HOST"); $LAUNCH"
 fi

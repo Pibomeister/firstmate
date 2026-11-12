@@ -2548,8 +2548,11 @@ test_dead_crew_auto_relaunch_failures_and_exclusions_report_once() {
     || fail "a failed auto-relaunch retried or re-alarmed on a later threshold: $(cat "$out")"
   [ "$(control_calls "$dir")" -eq 1 ] || fail "a failed auto-relaunch was retried for the same dead agent"
 
-  # Records that must keep the ordinary report and never call relaunch.
-  for spec in missing nowt 'done' disabled; do
+  # Records that must keep the ordinary report and never call relaunch: a gone
+  # tmux endpoint whose record carries no server identity cannot be reclaimed,
+  # and a worker stopped through fm-control exit or one whose agent exited 0 in
+  # this incarnation was stopped on purpose.
+  for spec in missing nowt 'done' disabled stopped clean-exit; do
     name="auto-relaunch-skip-$spec"
     if [ "$spec" = 'done' ]; then
       dir=$(crew_relaunch_fixture "$name" 'done: PR ready' 2000 600)
@@ -2564,16 +2567,75 @@ test_dead_crew_auto_relaunch_failures_and_exclusions_report_once() {
       missing) gone_endpoint_env missing ;;
       nowt) rmdir "$dir/wt" ;;
       disabled) FM_CREW_RELAUNCH_MAX_ATTEMPTS=0; export FM_CREW_RELAUNCH_MAX_ATTEMPTS ;;
+      stopped) printf '%s\texit\n' "$(date +%s)" > "$state/.crew-stopped-wedge" ;;
+      clean-exit)
+        printf 'spawn_gen=s1.clean\n' >> "$state/wedge.meta"
+        printf 's1.clean\t0\n' > "$state/wedge.agent-exit"
+        ;;
     esac
     wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" exit \
       || fail "$spec: the dead-record report never fired: $(cat "$out")"
     unset FM_CREW_RELAUNCH_MAX_ATTEMPTS
     grep -F 'so this is not a wedge' "$out" >/dev/null || fail "$spec: the ordinary dead-record report is missing: $(cat "$out")"
+    case "$spec" in
+      stopped)
+        grep -F 'automatic relaunch skipped because the worker was stopped on purpose' "$out" >/dev/null \
+          || fail "stopped: the report does not name the deliberate stop: $(cat "$out")"
+        ;;
+      clean-exit)
+        grep -F 'automatic relaunch skipped because the agent exited cleanly with status 0' "$out" >/dev/null \
+          || fail "clean-exit: the report does not name the clean exit: $(cat "$out")"
+        ;;
+    esac
     [ "$(control_calls "$dir")" -eq 0 ] || fail "$spec: an excluded record was auto-relaunched"
     [ "$(crew_relaunch_wakes "$state" wedge relaunched)" -eq 0 ] || fail "$spec: an excluded record queued a relaunch wake"
   done
   unset FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS FM_CONTROL_BIN
-  pass "a failed auto-relaunch reports once without retrying, and a missing endpoint, a gone worktree, a finished task, or a disabled bound keeps the ordinary report"
+  pass "a failed auto-relaunch reports once without retrying, and an unreclaimable missing endpoint, a gone worktree, a finished task, a disabled bound, an fm-control exit, or a clean exit 0 keeps the ordinary report"
+}
+
+# The two deaths that are not deliberate still relaunch: an agent the launch
+# wrapper saw end on SIGTERM (status 143) in this incarnation, even when an older
+# incarnation's record says it exited 0, and a gone tmux endpoint whose record
+# carries the server identity relaunch's absence proof reads.
+test_signal_death_and_reclaimable_missing_endpoint_auto_relaunch() {
+  local dir state fakebin out capture window spec
+  local failed='state: failed · source: run-step · run failed'
+  window="test:fm-wedge"
+  for spec in sigterm missing-reclaim; do
+    dir=$(crew_relaunch_fixture "auto-relaunch-$spec" 'working: still compiling')
+    state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+    fake_crew_control "$dir" 0
+    FM_CONTROL_BIN="$dir/fake-control"; export FM_CONTROL_BIN
+    case "$spec" in
+      sigterm)
+        gone_endpoint_env dead
+        printf 'spawn_gen=s2.now\n' >> "$state/wedge.meta"
+        printf 's2.now\t143\n' > "$state/wedge.agent-exit"
+        ;;
+      missing-reclaim)
+        gone_endpoint_env missing
+        printf 'tmux_socket=%s\ntmux_server_pid=4242\ntmux_server_identity=4242:1\ntmux_window_id=@7\n' \
+          "$dir/tmux.sock" >> "$state/wedge.meta"
+        ;;
+    esac
+    export FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" exit \
+      || fail "$spec: the dead-record probe never handled the record: $(cat "$out")"
+    if [ "$spec" = sigterm ]; then
+      grep -F "check: wedge auto-relaunched from its checkpoint after its agent died in $window" "$out" >/dev/null \
+        || fail "sigterm: a signal death did not auto-relaunch: $(cat "$out")"
+    else
+      grep -F "check: wedge auto-relaunched from its checkpoint after its endpoint $window disappeared" "$out" >/dev/null \
+        || fail "missing-reclaim: a reclaimable missing endpoint did not auto-relaunch: $(cat "$out")"
+      grep -F 'recorded endpoint gone' "$dir/control.note" >/dev/null \
+        || fail "missing-reclaim: the relaunch note does not say the endpoint was gone: $(cat "$dir/control.note")"
+    fi
+    [ "$(control_calls "$dir")" -eq 1 ] || fail "$spec: made $(control_calls "$dir") relaunch calls instead of one"
+    [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] || fail "$spec: an auto-relaunched record was also reported stale"
+  done
+  unset FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS FM_CONTROL_BIN
+  pass "a SIGTERM death and a reclaimable missing endpoint auto-relaunch from the checkpoint"
 }
 
 # The load-bearing direction. A genuinely wedged LIVE agent must escalate exactly
@@ -5584,6 +5646,7 @@ fm_test_run \
   test_gone_endpoint_reports_once_instead_of_escalating_forever \
   test_dead_crew_agent_auto_relaunches_from_its_checkpoint_within_a_bound \
   test_dead_crew_auto_relaunch_failures_and_exclusions_report_once \
+  test_signal_death_and_reclaimable_missing_endpoint_auto_relaunch \
   test_live_and_unproven_endpoints_still_wedge_escalate \
   test_wedge_guards_absent_config_keeps_the_unchanged_ladder \
   test_wedge_guard_critical_defers_one_window_at_a_time_up_to_the_cap \

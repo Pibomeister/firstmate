@@ -38,7 +38,10 @@
 #              only after the first press rendered a running turn, and
 #              otherwise reports `cancel=not-running` having sent one press.
 #   exit       Stop the agent, preserving its terminal endpoint, worktree, and
-#              every uncommitted change. Interrupts first when the task reads
+#              every uncommitted change. A ship or scout first records the stop
+#              as deliberate in state/.crew-stopped-<id>, so the watcher's
+#              automatic relaunch leaves it stopped until a later relaunch or
+#              fresh spawn clears that marker. Interrupts first when the task reads
 #              busy, then submits the harness's exit command. Postcondition:
 #              the backend's recovery-grade classifier reports the agent gone.
 #              Already-stopped is success (idempotent). A proven usage-limit
@@ -1897,6 +1900,13 @@ case "$VERB" in
     echo "interrupt-delivered $ID harness=$HARNESS backend=$BACKEND verified=$proof"
     ;;
   exit)
+    # Recorded before the stop is attempted, so the watcher can never read
+    # the stopped agent as a crash and relaunch it in between; a refused stop
+    # keeps the marker too, since the request itself was deliberate.
+    if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
+      printf '%s\texit\n' "$(date +%s)" > "$STATE/.crew-stopped-$ID" \
+        || die "could not record task $ID's intentional stop at $STATE/.crew-stopped-$ID; refusing to stop an agent the watcher could then relaunch"
+    fi
     result=$(do_exit)
     echo "$result $ID harness=$HARNESS backend=$BACKEND endpoint=$T worktree=$WT"
     ;;

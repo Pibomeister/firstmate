@@ -1156,6 +1156,27 @@ test_already_stopped_exit_is_idempotent() {
   pass "fm-control exit: an already-stopped agent is idempotent success with no bytes sent"
 }
 
+# The watcher's automatic relaunch must never revive a worker stopped on
+# purpose, so exit records the stop for a ship or scout before it stops the
+# agent; a secondmate has its own liveness path and gets no marker.
+test_exit_records_the_intentional_stop_marker_for_crew_only() {
+  local dir out rc kind
+  for kind in ship scout secondmate; do
+    dir=$(new_case "stop-marker-$kind")
+    add_task "$dir" t1 claude "$kind"
+    alive_as "$dir" claude
+    out=$(run_control "$dir" t1 exit); rc=$?
+    expect_code 0 "$rc" "exit on a $kind should succeed"$'\n'"$out"
+    if [ "$kind" = secondmate ]; then
+      [ ! -e "$dir/home/state/.crew-stopped-t1" ] || fail "exit wrote a crew stop marker for a secondmate"
+    else
+      grep -q "$(printf '^[0-9][0-9]*\texit$')" "$dir/home/state/.crew-stopped-t1" 2>/dev/null \
+        || fail "exit on a $kind did not record its intentional stop: $(cat "$dir/home/state/.crew-stopped-t1" 2>&1)"
+    fi
+  done
+  pass "fm-control exit: a ship or scout records its intentional stop for the watcher, a secondmate does not"
+}
+
 test_missing_tmux_endpoint_refuses_rather_than_claiming_a_stop() {
   local dir out rc
   dir=$(new_case gone)
@@ -1954,6 +1975,7 @@ test_verb_allowlist_is_closed
 test_resume_is_refused_with_its_reason
 test_relaunch_only_flags_are_rejected_on_other_verbs
 test_already_stopped_exit_is_idempotent
+test_exit_records_the_intentional_stop_marker_for_crew_only
 test_missing_tmux_endpoint_refuses_rather_than_claiming_a_stop
 test_closed_orca_terminal_exit_reports_endpoint_gone
 test_closed_orca_terminal_exit_refuses_without_the_worktree_scan
