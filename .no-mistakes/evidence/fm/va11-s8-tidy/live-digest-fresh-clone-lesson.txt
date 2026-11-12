@@ -1,0 +1,13 @@
+59:docs/learnings/overnight-learnings.md under the code root), each in full when
+60-small or INDEXED with its path, size, and outline when large.
+61-Do NOT re-read any of them after reading this digest, and do NOT bulk-read
+62-data/backlog.md or state/*.status.
+63-
+--
+120:docs/learnings/overnight-learnings.md (tracked fleet learnings)
+121---------------------------------------------------------------------------------
+122:INDEXED, not printed (6790 bytes, 61 lines): read {run-worktree}/docs/learnings/overnight-learnings.md when this turn needs a lesson from it.
+123-
+124-data/projects.md
+125---------------------------------------------------------------------------------
+126-ABSENT

@@ -1,0 +1,2 @@
+ok - session start detects created, edited, and removed global/XDG/GIT_CONFIG_GLOBAL git config without mutating baseline on read-only or reemit
+ok - session start detects shared no-mistakes database schema changes while ignoring sqlite_* internal objects and row writes

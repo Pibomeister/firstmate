@@ -1,0 +1,23 @@
+=== STEP: 1 first locked start, DB absent (rc=0, 66s) ===
+(no SHARED_STATE / READ-ONLY lines)
+--- baseline: xdg:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp/home/.config/git/config|home:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp/home/.gitconfig absent|absent /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp/nm/state.sqlite absent 
+>>> DB created with table runs (absent -> present)
+=== STEP: 2 after initial DB creation (rc=0, 102s) ===
+(no SHARED_STATE / READ-ONLY lines)
+--- baseline: xdg:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp/home/.config/git/config|home:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp/home/.gitconfig absent|absent /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp/nm/state.sqlite sha256:b2e366de8c9aa83abaaca36572b236b00a744ae413f4abdf40a340e5201a0fa5 
+>>> DML: inserted 2 rows
+=== STEP: 3 after row inserts (rc=0, 57s) ===
+(no SHARED_STATE / READ-ONLY lines)
+--- baseline: xdg:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp/home/.config/git/config|home:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp/home/.gitconfig absent|absent /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp/nm/state.sqlite sha256:b2e366de8c9aa83abaaca36572b236b00a744ae413f4abdf40a340e5201a0fa5 
+>>> DDL: ALTER TABLE runs ADD COLUMN rogue
+=== STEP: 4 after ALTER TABLE (rc=0, 79s) ===
+SHARED_STATE: shared no-mistakes database schema changed since the last session start (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp/nm/state.sqlite) - workers must never alter shared databases; inspect no-mistakes version and state database before dispatching pipeline runs
+--- baseline: xdg:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp/home/.config/git/config|home:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp/home/.gitconfig absent|absent /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp/nm/state.sqlite sha256:9050bb1e770f1379f32ee67464ca3d50f63fb299eef2dff8bc8ac2ac67a2bbb8 
+=== STEP: 5 next unchanged start (rc=0, 68s) ===
+(no SHARED_STATE / READ-ONLY lines)
+--- baseline: xdg:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp/home/.config/git/config|home:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp/home/.gitconfig absent|absent /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp/nm/state.sqlite sha256:9050bb1e770f1379f32ee67464ca3d50f63fb299eef2dff8bc8ac2ac67a2bbb8 
+>>> DDL: CREATE TABLE rogue2
+=== STEP: 6 after CREATE TABLE (rc=0, 78s) ===
+SHARED_STATE: shared no-mistakes database schema changed since the last session start (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp/nm/state.sqlite) - workers must never alter shared databases; inspect no-mistakes version and state database before dispatching pipeline runs
+--- baseline: xdg:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp/home/.config/git/config|home:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp/home/.gitconfig absent|absent /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp/nm/state.sqlite sha256:5f4d613a4de6440d5d9198104dca00b8100f0a0eee6c71aa0053fc18056a3080 
+sandbox removed: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.hQmJrp

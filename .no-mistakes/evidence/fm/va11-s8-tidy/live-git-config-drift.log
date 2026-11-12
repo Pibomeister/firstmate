@@ -1,0 +1,24 @@
+=== STEP: 1 first locked start, no global git config (rc=0, 18s) ===
+(no SHARED_STATE / READ-ONLY lines)
+--- baseline: xdg:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/home/.config/git/config|home:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/home/.gitconfig absent|absent /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/nm/state.sqlite absent 
+=== STEP: 2 unchanged locked start (rc=0, 17s) ===
+(no SHARED_STATE / READ-ONLY lines)
+--- baseline: xdg:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/home/.config/git/config|home:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/home/.gitconfig absent|absent /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/nm/state.sqlite absent 
+>>> simulated worker: git config --file $HOME/.gitconfig user.email rogue@example.invalid
+=== STEP: 3 read-only (session lock unreadable -> lock refused) (rc=0, 8s) ===
+●  READ-ONLY SESSION - FLEET LOCK OWNERSHIP WAS NOT VERIFIED
+SHARED_STATE: global git config changed since the last session start (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/home/.gitconfig) - workers must never edit shared git config; inspect recent changes and restore any unintended setting
+--- baseline: xdg:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/home/.config/git/config|home:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/home/.gitconfig absent|absent /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/nm/state.sqlite absent 
+CHECK: read-only preserved baseline
+=== STEP: 4 --reemit (rc=0, 10s) ===
+SHARED_STATE: global git config changed since the last session start (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/home/.gitconfig) - workers must never edit shared git config; inspect recent changes and restore any unintended setting
+--- baseline: xdg:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/home/.config/git/config|home:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/home/.gitconfig absent|absent /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/nm/state.sqlite absent 
+CHECK: --reemit preserved baseline
+=== STEP: 5 full locked start after change (rc=0, 12s) ===
+SHARED_STATE: global git config changed since the last session start (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/home/.gitconfig) - workers must never edit shared git config; inspect recent changes and restore any unintended setting
+--- baseline: xdg:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/home/.config/git/config|home:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/home/.gitconfig absent|sha256:14218e46a0dd1592340fd66a81559889bd5dbf4bc52b5f1f880bd48a947d548d /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/nm/state.sqlite absent 
+CHECK: locked start advanced baseline
+=== STEP: 6 next unchanged locked start (rc=0, 10s) ===
+(no SHARED_STATE / READ-ONLY lines)
+--- baseline: xdg:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/home/.config/git/config|home:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/home/.gitconfig absent|sha256:14218e46a0dd1592340fd66a81559889bd5dbf4bc52b5f1f880bd48a947d548d /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd/nm/state.sqlite absent 
+sandbox removed: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-sbx.E1obZd

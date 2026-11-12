@@ -1,0 +1,5 @@
+{run-worktree}/bin/fm-timeout-lib.sh: child setpgid (85066 to 85066): Operation not permitted
+{run-worktree}/bin/fm-timeout-lib.sh: child setpgid (2364 to 2364): Operation not permitted
+{run-worktree}/bin/fm-timeout-lib.sh: child setpgid (89893 to 89893): Operation not permitted
+ok - session start preserves shared-state baseline byte-for-byte across missing python3, locks, timeouts, corruption, unreadable files, inaccessible parent directories, and transient lookup failures
+# focused baseline-preservation test: all assertions passed

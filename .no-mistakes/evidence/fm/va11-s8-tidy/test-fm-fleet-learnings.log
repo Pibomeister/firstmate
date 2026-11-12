@@ -1,0 +1,7 @@
+ok - digest prints tracked fleet learnings from the code root
+ok - missing fleet learnings digest exits 0
+ok - AFK preflight prints fleet learnings
+ok - /afk enter runs AFK preflight with fleet learnings
+ok - session start CONTEXT points at fleet learnings when the code root ships them
+ok - session start stays exit 0 when fleet learnings are absent
+# fm-fleet-learnings.test.sh: all assertions passed

@@ -1,0 +1,23 @@
+ok - context digest distinguishes ABSENT, empty-but-present, and populated files
+ok - large context files print indexed pointers and bounded outlines; small files still print whole
+ok - a multibyte context outline stays within its byte bound and valid UTF-8, under a UTF-8 or a C locale
+ok - each in-flight row prints once, every omission is named by id, and long rows are cut visibly at their group's width
+ok - a large wake presentation saves to a file, then bounds annotation and open-decision lines inline while every record prints
+ok - the wake presentation bound counts bytes, so multibyte text cannot slip past it
+ok - a large wake presentation prints whole when the save path is a directory
+ok - a drain section after a bounded one prints whole inline on a large presentation
+ok - a large wake presentation keeps each latest direct annotation inline and leaves out only the unread backlog and historical lines
+ok - a large wake presentation keeps one latest annotation per status file when a worker repeats its status line
+Terminated: 15
+tests/fm-session-start.test.sh: line 1447: printf: write error: Broken pipe
+tests/fm-session-start.test.sh: line 1447: printf: write error: Broken pipe
+tests/fm-session-start.test.sh: line 1447: printf: write error: Broken pipe
+tests/fm-session-start.test.sh: line 1447: printf: write error: Broken pipe
+ok - a large home's digest stays under 30 KB with every safety signal intact (29483 bytes)
+ok - a lock refusal prints a loud read-only banner, skips every mutating step, and still completes the digest
+ok - session start stays read-only when lock ownership cannot be published
+ok - locked session start freezes trace context and lock refusal leaves it unchanged
+ok - concurrent session-lock acquisition admits exactly one live harness
+ok - digest sections are ordered safety-preamble first, live fleet state before curated memory
+ok - the read-once contract is stated once, ahead of the sources it governs
+ok - session start: configured and auto-detected Herdr homes never require tmux
