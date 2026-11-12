@@ -1,0 +1,7 @@
+1..5
+ok - feedback and bug-report dialogs: exact per-harness signatures auto-dismiss when idle without submitting, near-misses and unknown dialogs do not
+ok - dialog keys stop after two failures in an hour, so a misread screen is never typed into repeatedly
+ok - feedback dismiss: a statusline percentage tick does not send another key
+ok - a dismissed dialog that only remains in scrollback is not read as showing
+ok - dialog key rate window is per pane: a worker's key does not block the home pane's key
+FM_TEST_COMPLETE

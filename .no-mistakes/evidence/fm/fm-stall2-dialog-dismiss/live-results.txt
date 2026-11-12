@@ -1,0 +1,7 @@
+lab=/tmp/fm-dlg.Q7JhUD
+PASS survey: watcher sent only literal 0, survey left the viewport, Enter was not received
+PASS bug: watcher sent only Escape, consent dialog left the viewport, Enter did not submit the report
+PASS status: one key at 8%, no key when the percentage became 7%, one more key when the row above the footer changed, no Enter
+PASS steer: sticky survey received one literal 0 and neither the doorbell nor Enter
+PASS stale: a survey sitting above a newer draft received no key
+DONE
