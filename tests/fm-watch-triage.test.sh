@@ -28,21 +28,33 @@ set -u
 # Each watcher cycle in this suite is a whole bin/fm-watch.sh process, and on a
 # loaded host one cycle can outlast the helpers' standard 100-poll (10s)
 # budget, so a healthy watcher was reaped before it decided and the case
-# reported a false "did not surface". Every wait of at least that standard
-# budget, reap's TERM wait included, gets FM_TEST_WAIT_EXIT_POLLS polls
-# instead (default 1200, 120s). The wait still returns the moment the watcher
-# exits, so a passing case costs nothing extra; the shorter budgets some cases
-# expect to expire keep their value.
+# reported a false "did not surface" or "was not absorbed". Every wait of at
+# least that standard budget - an exit wait, reap's TERM wait, a poll-cycle
+# wait, or a wait for state the watcher or a fixture writes - gets
+# FM_TEST_WAIT_POLLS polls instead (default 1200, 120s). Each wait still
+# returns the moment its condition holds, so a passing case costs nothing
+# extra; the shorter budgets some cases expect to expire keep their value.
+FM_TRIAGE_WAIT_FLOOR=${FM_TEST_WAIT_POLLS:-1200}
+case "$FM_TRIAGE_WAIT_FLOOR" in
+  ''|*[!0-9]*)
+    printf 'not ok - FM_TEST_WAIT_POLLS must be a whole number of polls, got %s\n' "'$FM_TRIAGE_WAIT_FLOOR'" >&2
+    exit 1
+    ;;
+esac
+load_tolerant_polls() {  # <polls>: the budget a wait of <polls> polls actually gets
+  if [ "$1" -ge 100 ] && [ "$1" -lt "$FM_TRIAGE_WAIT_FLOOR" ]; then
+    printf '%s\n' "$FM_TRIAGE_WAIT_FLOOR"
+  else
+    printf '%s\n' "$1"
+  fi
+}
 eval "fm_triage_base_wait_for_exit() $(declare -f wait_for_exit | tail -n +2)"
 wait_for_exit() {  # <pid> [polls]
-  local polls=${2:-50} floor=${FM_TEST_WAIT_EXIT_POLLS:-1200}
-  case "$floor" in
-    ''|*[!0-9]*) fail "FM_TEST_WAIT_EXIT_POLLS must be a whole number of polls, got '$floor'" ;;
-  esac
-  if [ "$polls" -ge 100 ] && [ "$polls" -lt "$floor" ]; then
-    polls=$floor
-  fi
-  fm_triage_base_wait_for_exit "$1" "$polls"
+  fm_triage_base_wait_for_exit "$1" "$(load_tolerant_polls "${2:-50}")"
+}
+eval "fm_triage_base_wait_poll_cycle() $(declare -f wait_poll_cycle | tail -n +2)"
+wait_poll_cycle() {  # <state> <pid> [limit-ticks]
+  fm_triage_base_wait_poll_cycle "$1" "$2" "$(load_tolerant_polls "${3:-300}")"
 }
 
 TMP_ROOT=$(fm_test_tmproot fm-watch-triage-tests)
@@ -834,8 +846,9 @@ churn_config() {  # <dir> [off]
 # than a poll cycle so the assertion lands inside the FIRST poll, long before an
 # unchanging fixture pane could reach the stale backbone.
 wait_for_absorbed() {  # <state> <pid> <needle>
-  local state=$1 pid=$2 needle=$3 i=0
-  while [ "$i" -lt 100 ]; do
+  local state=$1 pid=$2 needle=$3 i=0 limit
+  limit=$(load_tolerant_polls 100)
+  while [ "$i" -lt "$limit" ]; do
     grep -Fq "$needle" "$state/.watch-triage.log" 2>/dev/null && return 0
     kill -0 "$pid" 2>/dev/null || return 1
     sleep 0.1
@@ -879,7 +892,7 @@ test_turn_ended_churning_pane_absorbed() {
 }
 
 test_turn_ended_churn_resets_prior_stale_classification() {
-  local dir state fakebin out capture_file window key old_hash active_hash pid i
+  local dir state fakebin out capture_file window key old_hash active_hash pid i limit
   dir=$(make_case turn-ended-churn-resets-stale); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; capture_file="$dir/pane.txt"
   window="test:fm-codexreturned"
@@ -901,8 +914,8 @@ test_turn_ended_churn_resets_prior_stale_classification() {
   pid=$!
   wait_for_absorbed "$state" "$pid" "absorbed benign signal:" \
     || { reap "$pid"; fail "a churning turn-end with prior stale state was not absorbed: $(cat "$out")"; }
-  i=0
-  while [ "$i" -lt 100 ] && [ "$(cat "$state/.hash-$key" 2>/dev/null || true)" != "$active_hash" ]; do
+  i=0; limit=$(load_tolerant_polls 100)
+  while [ "$i" -lt "$limit" ] && [ "$(cat "$state/.hash-$key" 2>/dev/null || true)" != "$active_hash" ]; do
     kill -0 "$pid" 2>/dev/null || { reap "$pid"; fail "watcher exited before recording the active pane"; }
     sleep 0.1
     i=$((i + 1))
@@ -3208,7 +3221,7 @@ test_wedge_escalation_resets_when_pane_becomes_active() {
 # watcher inside the bound; the released lock and acknowledgeable stop record
 # prove its cleanup still ran.
 test_term_stops_a_watcher_blocked_inside_a_poll() {
-  local dir state fakebin out fifo window sig pid holder i rc
+  local dir state fakebin out fifo window sig pid holder i rc limit
   dir=$(make_case term-blocked-poll); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; fifo="$dir/pane.fifo"; window="test:fm-blocked-capture"
   mkfifo "$fifo"
@@ -3223,8 +3236,8 @@ test_term_stops_a_watcher_blocked_inside_a_poll() {
     FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  i=0
-  while [ ! -e "$dir/capture-blocked" ] && [ "$i" -lt 300 ]; do
+  i=0; limit=$(load_tolerant_polls 300)
+  while [ ! -e "$dir/capture-blocked" ] && [ "$i" -lt "$limit" ]; do
     sleep 0.1
     i=$((i + 1))
   done
@@ -3262,7 +3275,7 @@ test_term_stops_a_watcher_blocked_inside_a_poll() {
 # frees the lock <release-ticks> tenths of a second later. The caller's environment
 # reaches the watcher; its wait_for_exit code lands in HELD_MARKER_LOCK_RC.
 term_watcher_with_held_marker_lock() {  # <dir> [release-ticks]
-  local dir=$1 release_ticks=${2:-} successor=0 state fakebin out capture_file window sig pid holder i
+  local dir=$1 release_ticks=${2:-} successor=0 state fakebin out capture_file window sig pid holder i limit
   state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:fm-held-marker-lock"
   printf 'Working...' > "$capture_file"
@@ -3330,8 +3343,8 @@ term_watcher_with_held_marker_lock() {  # <dir> [release-ticks]
     "$dir/release-marker-lock" "$dir/marker-lock-contended" \
     "$release_ticks" &
   holder=$!
-  i=0
-  while [ ! -e "$dir/marker-lock-held" ] && [ "$i" -lt 100 ]; do
+  i=0; limit=$(load_tolerant_polls 100)
+  while [ ! -e "$dir/marker-lock-held" ] && [ "$i" -lt "$limit" ]; do
     sleep 0.1
     i=$((i + 1))
   done
@@ -4398,11 +4411,12 @@ pe_case() {  # <dir> <command>...
 # source so the fixture holds exactly the reported end state: one durably
 # captured, unhandled, queued result and no remaining poll work.
 seed_captured_procevent_result() {  # <dir>
-  local dir=$1 i=0
+  local dir=$1 i=0 limit
+  limit=$(load_tolerant_polls 100)
   pe_case "$dir" register lavish delivery-src -- \
     /bin/sh -c 'printf "session:\n  file: /a.html\n  status: waiting\n"' >/dev/null || return 1
   pe_case "$dir" reconcile >/dev/null || return 1
-  while [ "$i" -lt 100 ]; do
+  while [ "$i" -lt "$limit" ]; do
     [ -s "$dir/state/.wake-queue" ] && break
     sleep 0.1
     i=$((i + 1))
@@ -4415,7 +4429,7 @@ seed_captured_procevent_result() {  # <dir>
   # runner's last milliseconds. The bound keeps a runner that never releases a
   # real failure at retire rather than a hang here.
   i=0
-  while [ "$i" -lt 100 ]; do
+  while [ "$i" -lt "$limit" ]; do
     [ -e "$dir/claims/delivery-src.claim" ] || break
     sleep 0.1
     i=$((i + 1))
@@ -4763,7 +4777,7 @@ test_procevent_marker_failure_exits_and_replays() {
 # --- heartbeat: no-change absorbed, backstop surfaces a missed status --------
 
 test_heartbeat_no_change_absorbed() {
-  local dir state fakebin out pid i sig
+  local dir state fakebin out pid i sig limit
   dir=$(make_case heartbeat-absorb); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
   printf 'working: routine heartbeat history\n' > "$state/routine.status"
   sig=$(seen_sig "$state/routine.status"); printf '%s' "$sig" > "$state/.seen-routine_status"
@@ -4777,8 +4791,8 @@ test_heartbeat_no_change_absorbed() {
   # The heartbeat fires on the first poll whose .last-heartbeat has aged past
   # FM_HEARTBEAT, which need not be the first completed cycle, so wait for the
   # absorbed heartbeat itself rather than assuming one cycle produced it.
-  i=0
-  while [ "$i" -lt 200 ]; do
+  i=0; limit=$(load_tolerant_polls 200)
+  while [ "$i" -lt "$limit" ]; do
     [ "$(cat "$state/.heartbeat-streak" 2>/dev/null || echo 0)" -ge 1 ] && break
     kill -0 "$pid" 2>/dev/null || break
     sleep 0.1
