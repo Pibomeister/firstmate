@@ -6772,6 +6772,7 @@ test_captured_completed_history() {
 init_full_nm_sqlite() {  # <sqlite_path> <repo_working_path> <head_a> [head_b]
   python3 - "$1" "$2" "$3" "${4:-}" <<'PY'
 import json
+import os
 import sqlite3
 import sys
 
@@ -6904,6 +6905,10 @@ with sqlite3.connect(db_path) as db:
                 ("01M7SNAPSHOTB0000000000002", "ci", 4, "running", 0, "", "", 1775000205, "log: all CI checks passed - still monitoring until merged or closed"),
             ],
         )
+        ci_log_dir = os.path.join(os.path.dirname(db_path), "logs", "01M7SNAPSHOTB0000000000002")
+        os.makedirs(ci_log_dir, exist_ok=True)
+        with open(os.path.join(ci_log_dir, "ci.log"), "w", encoding="utf-8") as fh:
+            fh.write("[ci] all CI checks passed - still monitoring until merged or closed\n")
 PY
 }
 
@@ -7223,6 +7228,152 @@ head: $head"
   pass "a live snapshot run whose head differs from the worktree falls back to the CLI"
 }
 
+test_status_snapshot_missing_ci_log_falls_back_to_cli_not_last_activity() {
+  local d=$TMP_ROOT/snap-ci-log-fallback head out ci_log
+  reset_fakes
+  mkdir -p "$d/state"
+  make_repo_on_branch "$d/wt-b" fm/ship-b
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/ship-b.meta" "window=fm:fm-ship-b" "worktree=$d/wt-b" "kind=ship"
+  printf 'working [at=1700000000]: validating\n' > "$d/state/ship-b.status"
+  head=$(git -C "$d/wt-b" rev-parse HEAD)
+  NM_HOME="$d/nm-home"
+  export NM_HOME
+  mkdir -p "$NM_HOME"
+  init_full_nm_sqlite "$NM_HOME/state.sqlite" "$d/wt-b" "$head" "$head"
+  ci_log="$NM_HOME/logs/01M7SNAPSHOTB0000000000002/ci.log"
+
+  # 1. Missing ci.log with historical "checks passed" in step_results.last_activity
+  #    and an empty CLI log response must stay unknown (working), never done.
+  rm -f "$ci_log"
+  FM_FAKE_CI_LOGS=""
+  export FM_FAKE_CI_LOGS
+  out=$(run_crew_state "$d" ship-b)
+  assert_contains "$out" "state: working" "missing ci.log with empty CLI fallback keeps CI state unknown (working)"
+  assert_contains "$out" "validating (running)" "missing ci.log without CLI marker reports active run working detail"
+  case "$out" in
+    *"state: done"*|*"checks green"*)
+      fail "missing ci.log trusted historical last_activity 'checks passed': $out" ;;
+  esac
+
+  # 2. Unreadable ci.log (chmod 0000) with empty CLI fallback must also stay unknown.
+  printf '[ci] all CI checks passed - still monitoring until merged or closed\n' > "$ci_log"
+  chmod 0000 "$ci_log"
+  out=$(run_crew_state "$d" ship-b)
+  chmod 0644 "$ci_log"
+  rm -f "$ci_log"
+  assert_contains "$out" "state: working" "unreadable ci.log with empty CLI fallback keeps CI state unknown"
+  case "$out" in
+    *"state: done"*|*"checks green"*)
+      fail "unreadable ci.log trusted historical last_activity 'checks passed': $out" ;;
+  esac
+
+  # 3. Missing ci.log with a populated CLI axi logs response uses the CLI fallback.
+  FM_FAKE_CI_LOGS="[ci] all CI checks passed - still monitoring until merged or closed"
+  out=$(run_crew_state "$d" ship-b)
+  assert_contains "$out" "state: done" "missing ci.log falls back to CLI axi logs when available"
+  assert_contains "$out" "checks green: PR ready for review" "CLI axi logs fallback supplies green CI marker"
+  unset FM_FAKE_CI_LOGS
+  pass "missing or unreadable CI log returns empty snapshot CI result, runs CLI fallback, and never trusts historical last_activity"
+}
+
+test_status_snapshot_concurrent_writers_preserve_all_repos() {
+  local d=$TMP_ROOT/snap-concurrent h1 h2 h3 h4 i pid pids=() rc=0
+  reset_fakes
+  mkdir -p "$d/state"
+  make_repo_on_branch "$d/wt-1" fm/ship-a
+  for i in 2 3 4; do
+    make_repo_on_branch "$d/wt-$i" "fm/ship-$i"
+  done
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/ship-1a.meta" "window=fm:fm-ship-1a" "worktree=$d/wt-1" "kind=ship"
+  fm_write_meta "$d/state/ship-1b.meta" "window=fm:fm-ship-1b" "worktree=$d/wt-1" "kind=ship"
+  fm_write_meta "$d/state/ship-2.meta" "window=fm:fm-ship-2" "worktree=$d/wt-2" "kind=ship"
+  fm_write_meta "$d/state/ship-3.meta" "window=fm:fm-ship-3" "worktree=$d/wt-3" "kind=ship"
+  fm_write_meta "$d/state/ship-4.meta" "window=fm:fm-ship-4" "worktree=$d/wt-4" "kind=ship"
+  for name in ship-1a ship-1b ship-2 ship-3 ship-4; do
+    printf 'working [at=1700000000]: validating\n' > "$d/state/$name.status"
+  done
+
+  h1=$(git -C "$d/wt-1" rev-parse HEAD)
+  h2=$(git -C "$d/wt-2" rev-parse HEAD)
+  h3=$(git -C "$d/wt-3" rev-parse HEAD)
+  h4=$(git -C "$d/wt-4" rev-parse HEAD)
+  NM_HOME="$d/nm-home"
+  export NM_HOME
+  mkdir -p "$NM_HOME"
+  init_full_nm_sqlite "$NM_HOME/state.sqlite" "$d/wt-1" "$h1"
+  python3 - "$NM_HOME/state.sqlite" "$d/wt-2" "$h2" "$d/wt-3" "$h3" "$d/wt-4" "$h4" <<'PY'
+import sqlite3, sys
+db_path, wt2, h2, wt3, h3, wt4, h4 = sys.argv[1:]
+with sqlite3.connect(db_path) as db:
+    for idx, (wt, head) in enumerate([(wt2, h2), (wt3, h3), (wt4, h4)], start=2):
+        repo_id = f"repo-{idx}"
+        run_id = f"01M7SNAPSHOTCONC000000000{idx}"
+        branch = f"fm/ship-{idx}"
+        db.execute(
+            "INSERT INTO repos (id, working_path, default_branch, created_at) VALUES (?, ?, 'main', 1775000000)",
+            (repo_id, wt),
+        )
+        db.execute(
+            "INSERT INTO runs (id, repo_id, branch, head_sha, status, pr_url, gates_json, error, awaiting_agent_since, created_at) "
+            "VALUES (?, ?, ?, ?, 'running', '', '', '', 0, 1775000300)",
+            (run_id, repo_id, branch, head),
+        )
+        db.execute(
+            "INSERT INTO step_results (run_id, step_name, step_order, status, duration_ms, findings_json, log_path, last_activity_at, last_activity, override_reason, skip_reason) "
+            "VALUES (?, 'test', 1, 'running', 0, '', '', 1775000305, 'running tests', '', '')",
+            (run_id,),
+        )
+PY
+
+  cat > "$d/fakebin/no-mistakes" <<'EOF'
+#!/usr/bin/env bash
+echo "unexpected-cli-call: $*" >> "${FM_NM_CLI_LOG}"
+exit 99
+EOF
+  chmod +x "$d/fakebin/no-mistakes"
+  export FM_NM_CLI_LOG="$d/nm-cli.log"
+  FM_NM_SNAPSHOT_TTL=60
+  FM_CREW_STATE_NM_TIMEOUT=120
+  export FM_NM_SNAPSHOT_TTL FM_CREW_STATE_NM_TIMEOUT
+
+  for name in ship-1a ship-1b ship-2 ship-3 ship-4; do
+    (
+      run_crew_state "$d" "$name" > "$d/out-$name.txt"
+    ) &
+    pids+=("$!")
+  done
+  for pid in "${pids[@]}"; do
+    wait "$pid" || rc=1
+  done
+  unset FM_NM_SNAPSHOT_TTL FM_CREW_STATE_NM_TIMEOUT FM_NM_CLI_LOG
+  [ "$rc" -eq 0 ] || fail "concurrent run_crew_state processes failed"
+  [ ! -e "$d/nm-cli.log" ] || fail "concurrent snapshot sweep unexpectedly called no-mistakes CLI"
+
+  assert_contains "$(cat "$d/out-ship-1a.txt")" "state: parked" "ship-1a concurrent read succeeded"
+  assert_contains "$(cat "$d/out-ship-1b.txt")" "state: parked" "ship-1b concurrent read succeeded"
+  for i in 2 3 4; do
+    assert_contains "$(cat "$d/out-ship-$i.txt")" "state: working" "ship-$i concurrent read succeeded"
+    assert_contains "$(cat "$d/out-ship-$i.txt")" "run: 01M7SNAPSHOTCONC000000000$i" "ship-$i selected its repo run"
+  done
+
+  python3 - "$d/state/.nm-status-snapshot.json" <<'PY' || fail "concurrent writers lost a repository snapshot entry"
+import json, sys
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    snap = json.load(fh)
+repos = snap.get("repo_snapshots", {})
+expected = {"repo-1", "repo-2", "repo-3", "repo-4"}
+missing = expected - set(repos.keys())
+if missing:
+    raise SystemExit(f"missing repo_snapshots keys: {sorted(missing)}")
+for rid in expected:
+    if not repos[rid].get("runs"):
+        raise SystemExit(f"empty runs for {rid}")
+PY
+  pass "concurrent snapshot writers serialize via file lock and preserve all repository entries"
+}
+
 test_captured_axi_status_shapes
 test_captured_inventory_replay
 test_captured_authority_transition
@@ -7464,5 +7615,7 @@ test_status_snapshot_read_failure_falls_back_to_daemon
 test_status_snapshot_stale_snapshot_is_rejected
 test_status_snapshot_moved_live_run_reads_cli
 test_status_snapshot_quiet_uses_configured_step_quiet_warning
+test_status_snapshot_missing_ci_log_falls_back_to_cli_not_last_activity
+test_status_snapshot_concurrent_writers_preserve_all_repos
 
 echo "all fm-crew-state tests passed"

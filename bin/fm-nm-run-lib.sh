@@ -798,6 +798,7 @@ fm_nm_snapshot_load_worktree() {  # <worktree> <branch> <timeout_secs> <runs_lim
     "$wt" "$branch" "$runs_limit" "$snapshot_file" "$db_path" \
     "$FM_NM_SNAPSHOT_SCHEMA_VERSION" "$FM_NM_SQLITE_USER_VERSION" "$FM_NM_SNAPSHOT_TTL" 2>/dev/null <<'PY'
 import datetime
+import fcntl
 import json
 import os
 import re
@@ -881,10 +882,11 @@ def load_step_quiet_warning(db_path: str) -> float:
     return seconds
 
 
-def is_fresh(captured_at) -> bool:
+def is_fresh(captured_at, ref_now=None) -> bool:
     if ttl < 0 or isinstance(captured_at, bool) or not isinstance(captured_at, (int, float)):
         return False
-    age = now - float(captured_at)
+    cur = now if ref_now is None else ref_now
+    age = cur - float(captured_at)
     return -60 <= age <= ttl
 
 
@@ -1013,6 +1015,7 @@ def capture_repo_from_sqlite(db_real: str):
 def write_snapshot_atomic(snap_path: str, snap: dict) -> None:
     if not snap_path:
         return
+    tmp_path = ""
     try:
         parent = os.path.dirname(snap_path)
         if parent:
@@ -1022,7 +1025,11 @@ def write_snapshot_atomic(snap_path: str, snap: dict) -> None:
             json.dump(snap, fh, ensure_ascii=False)
         os.replace(tmp_path, snap_path)
     except OSError:
-        pass
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 def git_out(args):
@@ -1042,7 +1049,13 @@ def git_out(args):
     return ""
 
 
-def resolve_repo_id(repos_map: dict):
+WT_CANDIDATES = None
+
+
+def get_worktree_candidates():
+    global WT_CANDIDATES
+    if WT_CANDIDATES is not None:
+        return WT_CANDIDATES
     candidates = []
     def add_cand(p):
         if not p:
@@ -1066,7 +1079,12 @@ def resolve_repo_id(repos_map: dict):
             if line.startswith("worktree "):
                 add_cand(line[9:].strip())
                 break
+    WT_CANDIDATES = candidates
+    return WT_CANDIDATES
 
+
+def resolve_repo_id(repos_map: dict):
+    candidates = get_worktree_candidates()
     by_exact = {}
     by_real = {}
     for rid, wpath in repos_map.items():
@@ -1252,54 +1270,78 @@ def read_ci_log_for_run(run: dict, db_real: str) -> str:
             lp = (s.get("log_path") or "").strip()
             if lp:
                 candidates.append(lp)
-    candidates.append(os.path.join(nm_home, "logs", run["id"], "ci.log"))
+    default_log = os.path.join(nm_home, "logs", run["id"], "ci.log")
+    if default_log not in candidates:
+        candidates.append(default_log)
     for path in candidates:
-        if os.path.isfile(path) and os.access(path, os.R_OK):
-            try:
-                with open(path, "r", encoding="utf-8", errors="replace") as fh:
-                    matched = [ln.rstrip("\r\n") for ln in fh if CI_MARKER_RE.search(ln)]
-                if matched:
-                    return matched[-1]
-            except OSError:
-                pass
-    for s in run.get("steps") or []:
-        if s.get("step_name") == "ci":
-            la = (s.get("last_activity") or "").strip()
-            if la and CI_MARKER_RE.search(la):
-                return la
+        if not os.path.exists(path):
+            continue
+        if not os.path.isfile(path) or not os.access(path, os.R_OK):
+            return ""
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                matched = [ln.rstrip("\r\n") for ln in fh if CI_MARKER_RE.search(ln)]
+            if matched:
+                return matched[-1]
+        except OSError:
+            return ""
     return ""
 
 
 try:
     step_quiet_after = load_step_quiet_warning(database)
     db_real = os.path.realpath(database)
-    snap = load_cached_snapshot(snapshot_file, db_real)
+    get_worktree_candidates()
     repos = None
     repo_id = None
     repo_runs = None
-    if snap is not None and is_fresh(snap.get("repos_captured_at")):
-        cached_id = resolve_repo_id(snap["repos"])
-        entry = snap["repo_snapshots"].get(cached_id) if cached_id else None
-        if isinstance(entry, dict) and is_fresh(entry.get("captured_at")) and isinstance(entry.get("runs"), list):
-            repos, repo_id, repo_runs = snap["repos"], cached_id, entry["runs"]
-    if repo_runs is None:
-        repos, repo_id, repo_runs = capture_repo_from_sqlite(db_real)
-        if not repo_id:
-            sys.exit(1)
-        kept = {}
-        if snap is not None:
-            for kid, kentry in snap["repo_snapshots"].items():
-                if kid != repo_id and kid in repos and isinstance(kentry, dict) and is_fresh(kentry.get("captured_at")):
-                    kept[kid] = kentry
-        kept[repo_id] = {"captured_at": now, "runs": repo_runs}
-        write_snapshot_atomic(snapshot_file, {
-            "schema_version": expected_schema_ver,
-            "db_user_version": expected_user_ver,
-            "db_path": db_real,
-            "repos_captured_at": now,
-            "repos": repos,
-            "repo_snapshots": kept,
-        })
+    lock_fh = None
+    try:
+        if snapshot_file:
+            try:
+                parent = os.path.dirname(snapshot_file)
+                if parent:
+                    os.makedirs(parent, exist_ok=True)
+                lock_fh = open(f"{snapshot_file}.lock", "a+", encoding="utf-8")
+                fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+            except OSError:
+                if lock_fh is not None:
+                    lock_fh.close()
+                    lock_fh = None
+        now = time.time()
+        snap = load_cached_snapshot(snapshot_file, db_real)
+        if snap is not None and is_fresh(snap.get("repos_captured_at"), now):
+            cached_id = resolve_repo_id(snap["repos"])
+            entry = snap["repo_snapshots"].get(cached_id) if cached_id else None
+            if isinstance(entry, dict) and is_fresh(entry.get("captured_at"), now) and isinstance(entry.get("runs"), list):
+                repos, repo_id, repo_runs = snap["repos"], cached_id, entry["runs"]
+        if repo_runs is None:
+            repos, repo_id, repo_runs = capture_repo_from_sqlite(db_real)
+            if not repo_id:
+                sys.exit(1)
+            now = time.time()
+            snap = load_cached_snapshot(snapshot_file, db_real)
+            kept = {}
+            if snap is not None:
+                for kid, kentry in snap["repo_snapshots"].items():
+                    if kid != repo_id and kid in repos and isinstance(kentry, dict) and is_fresh(kentry.get("captured_at"), now):
+                        kept[kid] = kentry
+            kept[repo_id] = {"captured_at": now, "runs": repo_runs}
+            write_snapshot_atomic(snapshot_file, {
+                "schema_version": expected_schema_ver,
+                "db_user_version": expected_user_ver,
+                "db_path": db_real,
+                "repos_captured_at": now,
+                "repos": repos,
+                "repo_snapshots": kept,
+            })
+    finally:
+        if lock_fh is not None:
+            try:
+                fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+            lock_fh.close()
     repo_path = repos[repo_id]
 
     for r in repo_runs:
@@ -1401,4 +1443,3 @@ PY
   [ "$section" = end ] || return 1
   return 0
 }
-
