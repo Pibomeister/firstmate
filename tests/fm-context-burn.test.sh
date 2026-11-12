@@ -382,6 +382,32 @@ test_autopark_recovers_from_interrupted_publication() {
   assert_not_contains "$out" "park-handoff:" "a reclaimed claim emitted twice"
   assert_equals 1 "$(wake_count "$home" context-autopark-s1)" "second wake after reclaim"
 
+  # An empty marker (a recorder killed between creating the claim and
+  # writing it) is incomplete publication, not a completed claim.
+  : > "$home/state/.context-autopark.s3"
+  out=$(record_at "$home" 71150 captain s3 12)
+  assert_contains "$out" "park-handoff: s3 at 12% context left" "an empty claim suppressed the action"
+  assert_equals 1 "$(wake_count "$home" context-autopark-s3)" "wake after reclaiming an empty claim"
+
+  # A dead claim whose wake already reached the queue (a recorder killed
+  # after the append, before the completion mark) must not publish twice.
+  printf 'pending 999999 70000\n' > "$home/state/.context-autopark.s1"
+  out=$(record_at "$home" 71160 captain s1 8)
+  assert_equals 1 "$(wake_count "$home" context-autopark-s1)" "a second wake after an interrupted completion"
+  assert_contains "$(cat "$home/state/.context-autopark.s1")" "done" "an already-queued claim was not completed in place"
+
+  # Eight concurrent samples racing to reclaim one dead claim publish once.
+  home=$TMP_ROOT/autopark-race
+  prepare "$home"
+  printf 'pending 999999 70000\n' > "$home/state/.context-autopark.s1"
+  local i
+  for i in 1 2 3 4 5 6 7 8; do
+    record_at "$home" 71300 captain s1 10 > "$home/race.$i" &
+  done
+  wait
+  assert_equals 1 "$(wake_count "$home" context-autopark-s1)" "concurrent reclaim of a dead claim published more than one wake"
+
+  home=$TMP_ROOT/autopark-crash
   # A claim held by a live recorder still suppresses a concurrent sample.
   sleep 30 &
   sleeper=$!

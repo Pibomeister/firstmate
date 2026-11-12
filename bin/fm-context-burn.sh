@@ -58,7 +58,10 @@
 # session that recovers context and drops again does not emit it twice,
 # while a claim whose recorder died before the append finished is
 # reclaimed by the next sample instead of suppressing the action for the
-# rest of the session. The Claude early handoff hook
+# rest of the session. The claim lifecycle runs under the wake-queue lock,
+# and reclaiming checks the queue for an already-published wake before
+# appending, so interruption at any point in publication neither loses
+# nor duplicates the action. The Claude early handoff hook
 # (bin/fm-handoff-trigger.sh) claims the same marker, so whichever channel
 # claims first emits the action and the other stays silent for the session.
 # Markers older than 30 days are pruned.
@@ -322,33 +325,63 @@ autopark_threshold() {
 }
 
 queue_autopark() { # <session> <safe> <percent>
-  local session=$1 safe=$2 percent=$3 marker key payload claim claim_pid
+  local session=$1 safe=$2 percent=$3 marker key payload claim claim_pid claim_epoch emitted=0
   marker="$STATE/.context-autopark.$safe"
   key="context-autopark-$safe"
   payload="check: context autopark session ${session} at ${percent}% context left: park every open captain question as a held backlog item through bin/fm-captain-hold.sh (hold the work item the question gates, or create one captain-held task per genuine question) and then start the handoff/successor path - record the handoff with bin/fm-order.sh handoff --doc <handoff file> and launch the successor with bin/fm-handoff-launch.sh <handoff file> (a second mate asks its parent to relaunch it instead) - without asking the captain or waiting for an answer; keep working on everything the parked questions do not gate"
   find "$STATE" -maxdepth 1 -name '.context-autopark.*' -type f -mtime +30 -exec rm -f {} + 2>/dev/null
-  if [ -e "$marker" ]; then
-    claim=$(cat "$marker" 2>/dev/null || true)
-    case "$claim" in
-      pending\ *)
-        claim_pid=$(printf '%s' "$claim" | awk '{print $2}')
-        case "$claim_pid" in
-          '' | *[!0-9]*) ;;
-          *) kill -0 "$claim_pid" 2>/dev/null && return 0 ;;
-        esac
-        rm -f "$marker"
-        ;;
-      *) return 0 ;;
-    esac
-  fi
-  (set -C; printf 'pending %s %s\n' "$$" "$NOW" > "$marker") 2>/dev/null || return 0
+  # The whole claim lifecycle - claim check, wake append, completion mark -
+  # runs under the wake-queue lock, the lock bin/fm-wake-lib.sh documents for
+  # committing another durable record atomically with an append. A claim
+  # observed under that lock is therefore finished or orphaned: a live
+  # writer finishes before releasing it, so any `pending` claim still
+  # present whose owner is dead (or older than 300 seconds, which bounds
+  # pid reuse), and any empty or malformed claim left by a writer killed
+  # mid-write, is reclaimed here instead of suppressing the session.
+  # Reclaiming first checks the queue for this session's already-published
+  # wake, so a recorder killed after the append but before the completion
+  # mark does not publish a second one.
   # shellcheck source=bin/fm-wake-lib.sh
   . "$SCRIPT_DIR/fm-wake-lib.sh"
-  if ! fm_wake_append check "$key" "$payload"; then
+  fm_wake_queue_lock_acquire || return 0
+  claim=$(cat "$marker" 2>/dev/null || true)
+  case "$claim" in
+    done\ *)
+      fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+      return 0
+      ;;
+    pending\ *)
+      claim_pid=$(printf '%s' "$claim" | awk '{print $2}')
+      claim_epoch=$(printf '%s' "$claim" | awk '{print $3}')
+      case "$claim_epoch" in '' | *[!0-9]*) claim_epoch=0 ;; esac
+      if [ "$NOW" -ge "$claim_epoch" ] && [ $((NOW - claim_epoch)) -le 300 ]; then
+        case "$claim_pid" in
+          '' | *[!0-9]*) ;;
+          *) kill -0 "$claim_pid" 2>/dev/null && { fm_lock_release "$FM_WAKE_QUEUE_LOCK"; return 0; } ;;
+        esac
+      fi
+      ;;
+    '')
+      ;;
+    *[!0-9]*)
+      ;;
+    *)
+      fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+      return 0
+      ;;
+  esac
+  if [ -e "$marker" ] && awk -F '\t' -v k="$key" '$4 == k { found = 1 } END { exit !found }' "$FM_WAKE_QUEUE" 2>/dev/null; then
+    printf 'done %s\n' "$NOW" > "$marker" 2>/dev/null || true
+    emitted=1
+  elif printf 'pending %s %s\n' "$$" "$NOW" > "$marker" 2>/dev/null \
+    && fm_wake_append_locked check "$key" "$payload"; then
+    printf 'done %s\n' "$NOW" > "$marker" 2>/dev/null || true
+    emitted=1
+  else
     rm -f "$marker"
-    return 0
   fi
-  printf 'done %s\n' "$NOW" > "$marker" 2>/dev/null || true
+  fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+  [ "$emitted" -eq 1 ] || return 0
   printf 'park-handoff: %s at %s%% context left: park open captain questions via bin/fm-captain-hold.sh then start handoff\n' \
     "$session" "$percent"
 }

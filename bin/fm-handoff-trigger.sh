@@ -244,7 +244,12 @@ LEFT=$(fm_compact_left_percent "$TOKENS" "$COMPACT_AT")
 ( set -o noclobber; printf '%s\n' "$(date +%s) tokens=$TOKENS compact_at=$COMPACT_AT" > "$MARKER" ) 2>/dev/null || exit 0
 find "$STATE" -maxdepth 1 -name '.handoff-trigger.*' -type f -mtime +30 -exec rm -f {} + 2>/dev/null
 # Emit only for the session's first park-then-handoff claim across both channels.
-( set -o noclobber; printf 'done %s hook\n' "$(date +%s)" > "$AUTOPARK" ) 2>/dev/null || exit 0
+# Publish the claim atomically (a fully written temp file hard-linked into
+# place), so a hook killed mid-claim never leaves an empty marker behind.
+AUTOPARK_TMP=$(mktemp "$AUTOPARK.XXXXXX" 2>/dev/null) || exit 0
+printf 'done %s hook\n' "$(date +%s)" > "$AUTOPARK_TMP" 2>/dev/null || { rm -f "$AUTOPARK_TMP"; exit 0; }
+ln "$AUTOPARK_TMP" "$AUTOPARK" 2>/dev/null || { rm -f "$AUTOPARK_TMP"; exit 0; }
+rm -f "$AUTOPARK_TMP"
 
 MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). Park first, then hand off: park every open captain question as a held backlog item through bin/fm-captain-hold.sh (hold the work item the question gates, or create one captain-held task per genuine question) without asking the captain or waiting for an answer, and keep working on everything the parked questions do not gate. Then write your session handoff now, before auto-compact, from the mission ledger: file every open ask, approved proposal, and captain order that has no backlog item yet as its own item with bin/fm-ledger.sh intake, bring each item's note current, and persist every decision and piece of durable knowledge this session holds (the stow skill covers this). Then write a new handoff with bin/fm-ledger.sh handoff --doc <new handoff file> --note-file <short note of what is in flight right now>: it adds that note to the ledger plan, never continues an earlier handoff, and records the document with bin/fm-order.sh handoff --doc. If bin/fm-ledger.sh cannot read the backlog, do not skip the handoff: write a new handoff document yourself with the in-flight note, the open work, and bin/fm-dispatch-log.sh open, record it with bin/fm-order.sh handoff --doc <that file>, and say in it that the ledger was unreadable. Then hand off to a successor and report that this session is ready to restart."
 if fm_root_is_secondmate_home "$FM_ROOT"; then
