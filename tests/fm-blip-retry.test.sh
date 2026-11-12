@@ -162,65 +162,6 @@ test_real_transient_texts_retry() {
   pass "timed-out, reset, and real HTTP 5xx failures are retried"
 }
 
-blip_connect_run() {
-  set +e
-  fm_blip_retry --connect-only "$@" blip_stub >"$BLIP_OUT" 2>"$BLIP_ERR"
-  BLIP_RC=$?
-  set -e
-}
-
-test_connect_only_retries_a_failure_to_connect() {
-  local text
-  for text in 'This terminal could not connect to Orca.' 'runtime_unavailable' \
-    'ssh: Could not resolve hostname remote-mac' \
-    'ssh: connect to host remote-mac port 22: Operation timed out' \
-    'Connection closed by 10.0.0.2 port 22' 'orca socket missing'; do
-    blip_reset
-    BLIP_FAILS=1
-    BLIP_TEXT=$text
-    blip_connect_run
-    assert_equals 0 "$BLIP_RC" "connect failure '$text' was not retried to success"
-    assert_equals 2 "$(cat "$BLIP_COUNT")" "connect failure '$text' was not retried exactly once"
-  done
-  pass "a command that never connected is retried in connect-only mode"
-}
-
-test_connect_only_does_not_repeat_a_call_that_may_have_landed() {
-  local text
-  for text in 'Timeout, server not responding.' \
-    'Read from remote host remote-mac: Connection reset by peer' \
-    'request timed out' 'HTTP 503' 'permission denied'; do
-    blip_reset
-    BLIP_FAILS=5
-    BLIP_TEXT=$text
-    blip_connect_run
-    [ "$BLIP_RC" -ne 0 ] || fail "connect-only '$text' was treated as success"
-    assert_equals 1 "$(cat "$BLIP_COUNT")" "connect-only repeated a call after '$text'"
-    [ ! -s "$BLIP_SLEEP" ] || fail "connect-only waited after '$text'"
-  done
-  pass "connect-only mode does not repeat a call whose reply was lost"
-}
-
-blip_stdout_only() {
-  local n
-  n=$(cat "$BLIP_COUNT")
-  n=$((n + 1))
-  printf '%s\n' "$n" > "$BLIP_COUNT"
-  printf 'ssh: connect to host x port 22: Connection refused\n'
-  return 255
-}
-
-test_connect_only_ignores_stdout() {
-  blip_reset
-  set +e
-  fm_blip_retry --connect-only blip_stdout_only >"$BLIP_OUT" 2>"$BLIP_ERR"
-  BLIP_RC=$?
-  set -e
-  assert_equals 255 "$BLIP_RC" "connect-only replaced the exit status"
-  assert_equals 1 "$(cat "$BLIP_COUNT")" "connect-only classified the command's own stdout"
-  pass "connect-only mode never classifies the command's stdout"
-}
-
 test_ssh_connect_retries_only_exit_255() {
   blip_reset
   BLIP_FAILS=5
@@ -567,9 +508,6 @@ fm_test_run \
   test_missing_socket_is_retried_even_when_text_says_not_found \
   test_definite_texts_near_transient_words_fail_once \
   test_real_transient_texts_retry \
-  test_connect_only_retries_a_failure_to_connect \
-  test_connect_only_does_not_repeat_a_call_that_may_have_landed \
-  test_connect_only_ignores_stdout \
   test_ssh_connect_retries_only_exit_255 \
   test_ssh_connect_retries_a_pre_session_failure \
   test_ssh_connect_does_not_repeat_a_session_that_may_have_run \

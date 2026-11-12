@@ -3,7 +3,7 @@
 #
 # Sourced, never executed. This is the single owner of that retry.
 #
-#   fm_blip_retry [--connect-only|--ssh-connect] [--read] <command> [args...]
+#   fm_blip_retry [--ssh-connect] [--read] <command> [args...]
 #       Run the command. Call this only for a command that cannot change
 #       state. A mutation runs once, outside this helper: a connect-shaped
 #       error can arrive after the change was already written.
@@ -23,16 +23,7 @@
 #       budget. Each attempt sees the caller's stdin. A caller that must
 #       replay stdin across attempts has to spool it first.
 #
-#       --connect-only classifies only the attempt's stderr. It is not a
-#       mutation policy: production mutations run once, outside this helper.
-#       Only a failure to connect at all is transient: connection refused,
-#       could not resolve the host, no route, a connect that timed out, a
-#       connection closed before the session began, a missing socket, or an
-#       Orca CLI connect failure (code runtime_unavailable, or the text
-#       "This terminal could not connect to Orca."). A reset, a mid-session
-#       timeout, or an HTTP 5xx is reported once.
-#
-#       --ssh-connect is the same rule for an ssh command whose stderr also
+#       --ssh-connect is for an ssh command whose stderr also
 #       carries the remote command's own stderr. Only an exit 255 is retried,
 #       and only when a stderr line is one ssh prints before any session
 #       exists: `ssh: connect to host <h> port <n>: ` followed by refused,
@@ -134,24 +125,6 @@ fm_blip_text_is_transient() {
   return 1
 }
 
-# 0 when the failure text proves the command never reached its target, so a
-# repeat cannot duplicate an action that already landed.
-fm_blip_text_is_connect_failure() {
-  local text
-  text=$(fm_blip_text_lower "$1")
-  fm_blip_text_is_definite "$text" && return 1
-  fm_blip_text_is_missing_socket "$text" && return 0
-  case "$text" in
-    *'connection refused'*|*'econnrefused'*) return 0 ;;
-    *'this terminal could not connect to orca'*|*'runtime_unavailable'*) return 0 ;;
-    *'could not resolve'*|*'name or service not known'*|*'nodename nor servname'*) return 0 ;;
-    *'no route to host'*|*'network is unreachable'*|*'ehostunreach'*|*'enetunreach'*) return 0 ;;
-    *'connect to host'*'timed out'*|*'connect etimedout'*) return 0 ;;
-    *'connection closed by'*|*'kex_exchange_identification'*) return 0 ;;
-  esac
-  return 1
-}
-
 # 0 when a stderr line is ssh's own report that it never opened a session.
 fm_blip_text_is_ssh_connect_failure() {
   fm_blip_text_lower "$1" | grep -Eq \
@@ -185,10 +158,9 @@ fm_blip_retry_emit() { # <dir>
 
 fm_blip_retry() {
   local start now elapsed delay wait base cap budget rc=0 attempt=0
-  local dir text errexit=0 connect_only=0 ssh_connect=0 read_only=0
+  local dir text errexit=0 ssh_connect=0 read_only=0
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --connect-only) connect_only=1; shift ;;
       --ssh-connect) ssh_connect=1; shift ;;
       --read) read_only=1; shift ;;
       *) break ;;
@@ -237,9 +209,6 @@ fm_blip_retry() {
     if [ "$ssh_connect" -eq 1 ]; then
       [ "$rc" -eq 255 ] || break
       fm_blip_text_is_ssh_connect_failure "$(cat "$dir/err")" || break
-    elif [ "$connect_only" -eq 1 ]; then
-      text=$(cat "$dir/err")
-      fm_blip_text_is_connect_failure "$text" || break
     else
       text=$(cat "$dir/out" "$dir/err")
       fm_blip_text_is_transient "$text" || break
