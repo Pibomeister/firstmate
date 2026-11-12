@@ -1,0 +1,74 @@
+## S7 arm: installs and registers the ready-depth check shim
+$ bin/fm-ledger.sh arm --if-enabled
+registered: state/ready-depth.check.sh
+[exit 0]
+
+-rwx------@ 1 eduardopicazo  staff  508 Nov 11 21:18 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fQmEYp/state/ready-depth.check.sh
+ready-depth.check-trust
+ready-depth.check.sh
+## S8 scheduled check through the armed shim: silent at 16:00, fires once after 17:00, silent on repeat, fires again after 23:00
+$ FM_NOW=16:00Z /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fQmEYp/state/ready-depth.check.sh
+[exit 0]
+
+$ FM_NOW=17:02Z /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fQmEYp/state/ready-depth.check.sh
+ready-depth 17:00: 1 active project(s) below 3 ready: beta(ready=1); refill each ready queue (bin/fm-ledger.sh plan)
+[exit 0]
+
+$ FM_NOW=17:10Z /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fQmEYp/state/ready-depth.check.sh
+[exit 0]
+
+$ FM_NOW=23:01Z /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fQmEYp/state/ready-depth.check.sh
+ready-depth 23:00: 1 active project(s) below 3 ready: beta(ready=1); refill each ready queue (bin/fm-ledger.sh plan)
+[exit 0]
+
+1794438000
+
+## S8b adversarial: watcher down >6h after 23:00 -> stale slot skipped
+$ FM_NOW=06:00Z /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fQmEYp/state/ready-depth.check.sh
+[exit 0]
+
+## S9 min-ready=0 turns the check off: arm --if-enabled disarms
+$ bin/fm-ledger.sh arm --if-enabled
+unregistered: state/ready-depth.check.sh
+[exit 0]
+
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fQmEYp/state/ready-depth.check.sh: No such file or directory
+(no check registered)
+$ bin/fm-ledger.sh depth
+ready-depth: ok (every active project has at least 0 ready)
+[exit 0]
+
+## S10 dispatch-log open: captain goals still waiting appear for the successor
+$ bin/fm-dispatch-log.sh received g1 captain asks for ledger
+fm-dispatch-log: unknown argument: captain asks for ledger
+[exit 1]
+
+$ bin/fm-dispatch-log.sh received g2 captain asks for report
+fm-dispatch-log: unknown argument: captain asks for report
+[exit 1]
+
+$ bin/fm-dispatch-log.sh queued g2 --reason behind g1
+fm-dispatch-log: goal g2 has no received line
+[exit 1]
+
+$ bin/fm-dispatch-log.sh received g3 done one
+fm-dispatch-log: unknown argument: done one
+[exit 1]
+
+$ bin/fm-dispatch-log.sh dispatched g3 --task t3
+fm-dispatch-log: goal g3 has no received line
+[exit 1]
+
+$ bin/fm-dispatch-log.sh open
+[exit 0]
+
+$ bin/fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fQmEYp/handoff-C.md --note-file /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fQmEYp/n2.txt
+handoff: wrote 2 open order(s) into /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fQmEYp/handoff-C.md
+handoff: wrote /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fQmEYp/handoff-C.md from the ledger
+[exit 0]
+
+## Open captain goals at handoff
+
+none open
+
+CAPTAIN ORDERS at handoff (2026-11-12T03:18:47Z):

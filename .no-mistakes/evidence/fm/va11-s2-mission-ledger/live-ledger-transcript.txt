@@ -1,0 +1,68 @@
+## S1 intake: approved proposal with two asks -> two items; retry replays
+$ bin/fm-ledger.sh intake --mint --project alpha --title Mission ledger --source proposal:velocity-S2 --priority 1
+filed mission-ledger-f7 project=alpha source=proposal:velocity-S2
+[exit 0]
+
+$ bin/fm-ledger.sh intake --mint --project alpha --title Ready-depth check --source proposal:velocity-S2
+filed ready-depth-check-83 project=alpha source=proposal:velocity-S2
+[exit 0]
+
+$ bin/fm-ledger.sh intake --mint --project alpha --title Mission ledger --source proposal:velocity-S2 --priority 1
+replay mission-ledger-f7
+[exit 0]
+
+$ bin/fm-ledger.sh intake --mint --project alpha --title Bad --source order:does-not-exist
+fm-ledger: no captain order does-not-exist in this home
+[exit 1]
+
+## seed more work
+error: "Unknown field(s): state, repo. Available: blocked, blocked_by, body, closed, created, delivery_state, deps, held, hold_kind, hold_reason, hold_until, links, priority"
+code: VALIDATION_ERROR
+## S2 plan: per-project groups, parked/active, SHORT, done-only zeta absent
+$ bin/fm-ledger.sh plan
+PLAN at 2026-11-12T03:18:03Z (ready target 3 per active project; live view: bin/fm-ledger.sh plan)
+project alpha active ready=3 in_flight=1 blocked=1 held=0
+  in_flight a-fly  kind=task priority=-  alpha in flight
+  ready     a-third  kind=task priority=0  alpha third
+  ready     mission-ledger-f7  kind=task priority=1  Mission ledger
+  ready     ready-depth-check-83  kind=task priority=-  Ready-depth check
+  blocked   a-wait  kind=task priority=-  alpha waits
+project beta active ready=1 in_flight=0 blocked=0 held=0 SHORT
+  ready     b-one  kind=task priority=-  beta only one
+project gamma parked ready=0 in_flight=0 blocked=0 held=1
+  held      c-held  kind=task priority=-  gamma held
+[exit 0]
+
+## S3 depth: beta short (1<3), alpha ok (3 ready), zeta (done-only) not reported
+$ bin/fm-ledger.sh depth
+SHORT beta ready=1 min=3 in_flight=0 blocked=0 held=0
+[exit 3]
+
+## S4 next: a worker sees its next item with no supervisor; backlog unchanged
+$ bin/fm-ledger.sh next --project alpha
+NEXT a-third project=alpha kind=task priority=0
+task:
+  id: a-third
+  title: alpha third
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: task
+  repo: alpha
+  priority: 0
+  created: 2026-11-11
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+[exit 0]
+
+$ bin/fm-ledger.sh next --project gamma
+next: nothing ready for project gamma
+[exit 3]
+
+backlog unchanged by next: yes

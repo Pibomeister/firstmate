@@ -1,0 +1,80 @@
+## S5 captain orders: an order (summary contains ' kind=hold') is UNFILED; handoff refuses until filed
+order id: 1794453502-646d5ab2
+hold id: 1794453503-dfe4a5d7
+$ bin/fm-ledger.sh unfiled
+UNFILED 1794453502-646d5ab2 pending :: Ship the ledger please kind=hold trick
+[exit 3]
+
+$ bin/fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fQmEYp/handoff-A.md --note-file /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fQmEYp/note.txt
+UNFILED 1794453502-646d5ab2 pending :: Ship the ledger please kind=hold trick
+fm-ledger: handoff refused: file each open order above as its own ledger item first (bin/fm-ledger.sh intake <id> --project <name> --title <text> --source order:<order-id>)
+[exit 3]
+
+no document written: correct
+$ bin/fm-ledger.sh intake --mint --project alpha --title Ship the ledger --source order:1794453502-646d5ab2
+filed ship-the-ledger-a0 project=alpha source=order:1794453502-646d5ab2
+[exit 0]
+
+$ bin/fm-ledger.sh unfiled
+[exit 0]
+
+## S6 handoff = ledger + short note; never a delta chain
+$ bin/fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fQmEYp/handoff-B.md --note-file /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fQmEYp/badnote.txt
+fm-ledger: the in-flight note names an earlier handoff document; a handoff never continues another one - file what that document still carries as ledger items and drop the reference
+[exit 1]
+
+$ bin/fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fQmEYp/handoff-A.md --note-file /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fQmEYp/note.txt
+handoff: wrote 2 open order(s) into /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fQmEYp/handoff-A.md
+handoff: wrote /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fQmEYp/handoff-A.md from the ledger
+[exit 0]
+
+----- handoff-A.md -----
+# Session handoff 2026-11-12T03:18:28Z (fm-lab.fQmEYp)
+
+Written by bin/fm-ledger.sh handoff from the mission ledger.
+The ledger is authoritative and this document is complete on its own: it never continues an earlier handoff.
+Read live state with bin/fm-ledger.sh plan, bin/fm-dispatch-log.sh open, and bin/fm-order.sh pickup.
+
+## In flight now
+
+Worker on a-fly is mid-review.
+
+## Ledger plan at handoff
+
+PLAN at 2026-11-12T03:18:28Z (ready target 3 per active project; live view: bin/fm-ledger.sh plan)
+project alpha active ready=4 in_flight=1 blocked=1 held=0
+  in_flight a-fly  kind=task priority=-  alpha in flight
+  ready     a-third  kind=task priority=0  alpha third
+  ready     mission-ledger-f7  kind=task priority=1  Mission ledger
+  ready     ready-depth-check-83  kind=task priority=-  Ready-depth check
+  (1 more ready)
+  blocked: a-wait
+project beta active ready=1 in_flight=0 blocked=0 held=0 SHORT
+  ready     b-one  kind=task priority=-  beta only one
+project gamma parked ready=0 in_flight=0 blocked=0 held=1
+  held: c-held
+
+## Open captain goals at handoff
+
+none open
+
+CAPTAIN ORDERS at handoff (2026-11-12T03:18:28Z):
+Holds in force, newest first. A hold overrides every older order and every council ruling; relay nothing that contradicts one:
+  1794453503-dfe4a5d7 pending age=5s from=captain :: No merges tonight
+Lift a hold with: bin/fm-order.sh finish <id> done|parked <outcome>
+
+2 open captain order(s) - each is durable; ack it before acting:
+  1794453502-646d5ab2 pending kind=order age=6s from=captain :: Ship the ledger please kind=hold trick
+  1794453503-dfe4a5d7 pending kind=hold age=5s from=captain :: No merges tonight
+Pending: bin/fm-order.sh ack <id> reads it (skip means another session already has it - never run it twice).
+Acked-unfinished: an earlier session read it; bin/fm-order.sh show <id>, check whether its work started, then finish it.
+Finish each with: bin/fm-order.sh finish <id> done|parked <outcome>
+------------------------
+$ bin/fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fQmEYp/handoff-A.md --note-file /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fQmEYp/note.txt
+fm-ledger: the handoff document already exists: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fQmEYp/handoff-A.md; write a new one
+[exit 1]
+
+$ bin/fm-order.sh gate
+gate: clear (2 open order(s), all in the handoff)
+[exit 0]
+

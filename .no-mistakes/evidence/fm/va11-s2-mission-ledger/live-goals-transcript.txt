@@ -1,0 +1,37 @@
+## S10 (corrected syntax) dispatch-log open: waiting captain goals reach the successor's handoff
+$ bin/fm-dispatch-log.sh received g1 --summary captain asks for ledger --project alpha
+2026-11-12T03:18:57Z received g1: project=alpha summary=captain asks for ledger
+[exit 0]
+
+$ bin/fm-dispatch-log.sh received g2 --summary captain asks for report
+2026-11-12T03:18:57Z received g2: summary=captain asks for report
+[exit 0]
+
+$ bin/fm-dispatch-log.sh queued g2 --reason behind g1
+2026-11-12T03:18:57Z queued g2: reason=behind g1
+[exit 0]
+
+$ bin/fm-dispatch-log.sh received g3 --summary already dispatched
+2026-11-12T03:18:57Z received g3: summary=already dispatched
+[exit 0]
+
+$ bin/fm-dispatch-log.sh dispatched g3 --task t3
+2026-11-12T03:18:57Z dispatched g3: task=t3
+[exit 0]
+
+$ bin/fm-dispatch-log.sh open
+OPEN g1 event=received at=2026-11-12T03:18:57Z project=alpha summary=captain asks for ledger
+OPEN g2 event=queued at=2026-11-12T03:18:57Z summary=captain asks for report reason=behind g1
+[exit 0]
+
+$ bin/fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fQmEYp/handoff-D.md --note-file /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.fQmEYp/n2.txt
+handoff: wrote 2 open order(s) into /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fQmEYp/handoff-D.md
+handoff: wrote /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.fQmEYp/handoff-D.md from the ledger
+[exit 0]
+
+## Open captain goals at handoff
+
+OPEN g1 event=received at=2026-11-12T03:18:57Z project=alpha summary=captain asks for ledger
+OPEN g2 event=queued at=2026-11-12T03:18:57Z summary=captain asks for report reason=behind g1
+
+CAPTAIN ORDERS at handoff (2026-11-12T03:18:59Z):
