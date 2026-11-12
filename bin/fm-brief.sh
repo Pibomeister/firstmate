@@ -748,6 +748,7 @@ SHARED_NO_CD_RULE=${SHARED_NO_CD_RULE%$'\n'}
 # One shared string keeps the ship and scout test-queue rule identical;
 # bin/fm-test-queue.sh owns the queue contract.
 TEST_QUEUE_RULE="9. Run heavy test suites only through the machine-wide test line, \`$(shell_quote "$FM_ROOT/bin/fm-test-queue.sh") run -- <command>\`, which waits for your turn, a free slot, and a low load; run targeted tests directly."
+LEDGER_NEXT_RULE="10. To see the next ready backlog item without firstmate, run the read-only \`FM_HOME=$(shell_quote "$FM_HOME") $(shell_quote "$FM_ROOT/bin/fm-ledger.sh") next --project $(shell_quote "$REPO")\`."
 
 if [ -n "$PR_BRANCH" ]; then
   SETUP_BASE="You are in a disposable git worktree of $REPO, already on branch $PR_BRANCH, which contains its verified published pull-request head: equal to it, or ahead of it by the unpublished local commits the launch reported."
@@ -810,6 +811,7 @@ $CREWMATE_PAUSE_INSTRUCTIONS
 $SHARED_INFRA_RULE
 $SHARED_NO_CD_RULE
 $TEST_QUEUE_RULE
+$LEDGER_NEXT_RULE
 
 $WAIT_BLOCK$INBOX_SECTION
 
@@ -896,6 +898,7 @@ $ASK_USER_BLOCK
 $SHARED_INFRA_RULE
 $SHARED_NO_CD_RULE
 $TEST_QUEUE_RULE
+$LEDGER_NEXT_RULE
 
 $WAIT_BLOCK$INBOX_SECTION
 

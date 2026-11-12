@@ -403,3 +403,20 @@ for e1 in $EVENTS; do
 done
 [ "$matrix_count" = 259 ] || fail "the ordering matrix ran $matrix_count sequences, not 259"
 pass "every ordering of received, queued, blocked and dispatched up to 4 lines matches the stated model on each side of the SLA"
+
+OPEN_STATE="$TMP_ROOT/open-state"
+mkdir -p "$OPEN_STATE"
+dlo() { local now=$1; shift; FM_STATE_OVERRIDE="$OPEN_STATE" FM_DISPATCH_NOW="$now" bash "$DL" "$@"; }
+out=$(dlo "$T0" open); rc=$?
+[ "$rc" = 0 ] && [ -z "$out" ] || fail "open on an absent ledger must print nothing and exit 0 (rc=$rc): $out"
+dlo "$T0" received o1 --summary 'first ask' --project alpha >/dev/null
+dlo $((T0 + 1)) received o2 --summary 'second ask' >/dev/null
+dlo $((T0 + 2)) received o3 --summary 'third ask' >/dev/null
+dlo $((T0 + 60)) queued o2 --reason 'behind o1' >/dev/null
+dlo $((T0 + 61)) dispatched o3 --task t-3 >/dev/null
+out=$(dlo $((T0 + 7200)) open); rc=$?
+[ "$rc" = 0 ] || fail "open exited $rc with open goals"
+want="OPEN o1 event=received at=2027-01-15T08:00:00Z project=alpha summary=first ask
+OPEN o2 event=queued at=2027-01-15T08:01:00Z summary=second ask reason=behind o1"
+[ "$out" = "$want" ] || fail "open must list every undispatched, unblocked goal oldest first: $out"
+pass "open lists every goal not yet dispatched or blocked, whatever its age"

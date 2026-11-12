@@ -311,6 +311,8 @@ test_names_open_captain_orders_and_gates_the_stop() {
     || fail "the instruction must name the open order $order_id: $out"
   printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("bin/fm-order.sh handoff --doc")' >/dev/null \
     || fail "the instruction must name the command that writes the orders into the handoff: $out"
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("If bin/fm-ledger.sh cannot read the backlog, do not skip the handoff")' >/dev/null \
+    || fail "the instruction must give a handoff path that works when the ledger cannot read the backlog: $out"
 
   err="$TMP_ROOT/stop.err"
   rc=0

@@ -103,6 +103,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Failure-class records under `data/failure-classes/` ([`claim-ledger.md`](claim-ledger.md)).
 - Durable captain orders and holds under `data/orders/` (`bin/fm-order.sh`).
 - Successor handoff acknowledgements, `data/handoff-ack-<nonce>.json` (`bin/fm-handoff-lib.sh`).
+- The mission ledger's intake record `data/ledger-intake.tsv`, which says where each filed backlog item came from (`bin/fm-ledger.sh`).
 
 `state/` holds runtime records:
 
@@ -477,7 +478,7 @@ This feature does not set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` or any other autocom
 ## Early handoff trigger (config/handoff-trigger)
 
 A Claude primary session receives one instruction to write its full handoff when its context left before auto-compact falls to a set percentage.
-The instruction asks the session to persist its open work records, decisions, and durable knowledge, record the handoff, hand off to a successor, and report that it is ready to restart, so a session can restart from a handoff instead of compacting.
+The instruction asks the session to file its open asks, proposals, and orders as ledger items, persist its decisions and durable knowledge, write the handoff from the ledger with `bin/fm-ledger.sh handoff` (or, when the backlog cannot be read, write the document by hand and record it with `bin/fm-order.sh handoff --doc`), hand off to a successor, and report that it is ready to restart, so a session can restart from a handoff instead of compacting.
 A primary launches its successor with `bin/fm-handoff-launch.sh <handoff file>` on the home's recorded Orca or tmux backend.
 The launcher and `bin/fm-handoff-ack.sh` implement the acknowledgement and lock-transfer contract owned by `bin/fm-handoff-lib.sh`; its header defines the records and watchdog events.
 The launcher refuses rather than guess when the backend or harness cannot be determined, and it never kills or interrupts the current session.
@@ -867,6 +868,23 @@ Each `captains[]` object:
 | `open_work.repos` | `owner/name` repos probed with read-only `gh pr list --state open`. |
 | `open_work.queue_file` | Local queue; a `- [ ]` item, an `In flight`/`queued` line, or any non-comment body counts as open work. |
 | `open_work.command` | Optional extra probe; only `gh pr list...` or `gh api graphql` without `mutation` is allowed. |
+
+## Mission ledger (config/mission-ledger)
+
+The mission ledger is the backlog itself, read as a per-project plan with a ready queue deep enough to last the night.
+[`bin/fm-ledger.sh`](../bin/fm-ledger.sh) files each approved proposal and captain order as its own item, prints the plan and the next ready item, writes handoffs from the ledger, and runs the ready-depth check; its header owns the exact output and exit codes.
+At 17:00 and 23:00 in the quiet-hours zone (`config/escalation`), the check sends the supervisor one notification naming every active project with fewer ready items than the target.
+Session start arms the check in a home with a tasks-axi backlog.
+
+The check times are fixed, and the check covers every active project.
+The optional local, gitignored `config/mission-ledger` file holds one `key=value` per line, each optional:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `min-ready` | `3` | Ready items each active project needs at each check time; `0` turns the scheduled check off. |
+
+Blank lines and lines that start with `#` are ignored, and an unusable value keeps its default.
+A check time is reported only within 6 hours after it passes, so a watcher that was down overnight does not report a stale morning reading.
 
 ## Escalation quiet hours (config/escalation)
 

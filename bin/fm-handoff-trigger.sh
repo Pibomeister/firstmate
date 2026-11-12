@@ -4,10 +4,11 @@
 # Registered in tracked .claude/settings.json as a PostToolUse, a
 # UserPromptSubmit, and a Stop command hook. When the session's context left before
 # auto-compact falls to the configured percentage (default 15), the session
-# receives ONE instruction, as hook additionalContext, to write its full
-# handoff before auto-compact, hand off to a live successor it launches
-# with bin/fm-handoff-launch.sh (a second mate asks its parent to relaunch
-# it instead), and report that it is ready to restart. It fires
+# receives ONE instruction, as hook additionalContext, to write its handoff
+# from the mission ledger (bin/fm-ledger.sh handoff) before auto-compact, hand
+# off to a live successor it launches with bin/fm-handoff-launch.sh (a second
+# mate asks its parent to relaunch it instead), and report that it is ready to
+# restart. It fires
 # at most once per context cycle, so a session that keeps working past the
 # threshold is not nagged again, and a session that auto-compacts anyway is told
 # again before its next auto-compact.
@@ -237,7 +238,7 @@ LEFT=$(fm_compact_left_percent "$TOKENS" "$COMPACT_AT")
 ( set -o noclobber; printf '%s\n' "$(date +%s) tokens=$TOKENS compact_at=$COMPACT_AT" > "$MARKER" ) 2>/dev/null || exit 0
 find "$STATE" -maxdepth 1 -name '.handoff-trigger.*' -type f -mtime +30 -exec rm -f {} + 2>/dev/null
 
-MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). Write your full session handoff now, before auto-compact: persist every open work record, decision, and piece of durable knowledge this session holds (the stow skill covers this), record the handoff with bin/fm-order.sh handoff --doc <handoff file>, then hand off to a successor and report that this session is ready to restart."
+MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). Write your session handoff now, before auto-compact, from the mission ledger: file every open ask, approved proposal, and captain order that has no backlog item yet as its own item with bin/fm-ledger.sh intake, bring each item's note current, and persist every decision and piece of durable knowledge this session holds (the stow skill covers this). Then write a new handoff with bin/fm-ledger.sh handoff --doc <new handoff file> --note-file <short note of what is in flight right now>: it adds that note to the ledger plan, never continues an earlier handoff, and records the document with bin/fm-order.sh handoff --doc. If bin/fm-ledger.sh cannot read the backlog, do not skip the handoff: write a new handoff document yourself with the in-flight note, the open work, and bin/fm-dispatch-log.sh open, record it with bin/fm-order.sh handoff --doc <that file>, and say in it that the ledger was unreadable. Then hand off to a successor and report that this session is ready to restart."
 if fm_root_is_secondmate_home "$FM_ROOT"; then
   MESSAGE="$MESSAGE This is a second mate, so never launch your own successor: append to your parent channel that your handoff is written, name the handoff document, and ask the parent to relaunch you, once, then end this turn."
 else
@@ -250,7 +251,7 @@ MESSAGE="$MESSAGE Do not run /compact. This instruction fires once per context c
 ORDERS=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" pickup 2>/dev/null \
   | awk '/^  [0-9]+-[0-9a-f]+ / && $3 ~ /^kind=/ { printf "%s%s (%s)", sep, $1, $2; sep = ", " }')
 if [ -n "$ORDERS" ]; then
-  MESSAGE="$MESSAGE Open captain orders that your handoff must list: ${ORDERS}. Write them into your handoff document with bin/fm-order.sh handoff --doc <handoff file>; this session cannot end its handoff turn until bin/fm-order.sh gate passes."
+  MESSAGE="$MESSAGE Open captain orders that your handoff must list: ${ORDERS}. File each order that is not a hold as its own ledger item with bin/fm-ledger.sh intake --source order:<id>; bin/fm-ledger.sh handoff then writes them into your handoff document through bin/fm-order.sh handoff --doc, and this session cannot end its handoff turn until bin/fm-order.sh gate passes."
 fi
 jq -n --arg event "$EVENT" --arg context "$MESSAGE" \
   '{hookSpecificOutput: {hookEventName: $event, additionalContext: $context}}'

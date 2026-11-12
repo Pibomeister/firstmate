@@ -173,6 +173,7 @@ The delivery lifecycle is an always-loaded operational contract; referenced scri
 Resolve the project independently for every request.
 Record every new captain goal - a chat ask, inbox note, or away-mode ask for work, not a follow-up that only amends a logged goal - with `bin/fm-dispatch-log.sh received` the moment you read it, and within 15 minutes either spawn it (`dispatched --task`, or `--task secondmate:<id>` when routed to a secondmate) or record the concrete reason nothing can start (`blocked --reason`).
 Work waiting behind other work is `queued --reason`, which stays overdue until dispatched or blocked; the script header owns goal ids, exit codes, and the ledger at `state/dispatch-log.tsv`.
+File every approved proposal and every acknowledged captain order as its own backlog item at once with `bin/fm-ledger.sh intake`, one item per ask, so the backlog alone restores the work after any handoff.
 An explicit project wins, a clear follow-up inherits its referent, and otherwise match the request against the registry, work under way, and project code or README.
 Proceed on one confident match while naming the project in plain language; ask one concise question when multiple or no projects plausibly match.
 
@@ -385,6 +386,8 @@ When a main-side thread such as a pending captain decision or relay reminder is 
 Captain calls discovered by investigations or visual reviews follow `captain-hold-lifecycle`, which owns their completion gate and recorded-answer rules.
 When the automatic transition gate applies, dispatch and completion move the item themselves - `bin/fm-spawn.sh` and `bin/fm-teardown.sh` own those transitions and refuse rather than report success without them - so what remains yours is filing the item before dispatch, recording decisions, and keeping notes current; `docs/configuration.md` owns gate applicability and the manual-backend exception.
 Re-evaluate queued work after every teardown and heartbeat, and also after a recorded PR-ready handoff when `config/project-capacity` caps that project, dispatching items only when dependencies, time gates, and project capacity have cleared.
+The backlog is the mission ledger: `bin/fm-ledger.sh plan` and `next` show each project's plan and next ready item to anyone, supervisor or not, and a `ready-depth` notification means refilling each named project's ready queue with approved work before the night.
+Write every session handoff with `bin/fm-ledger.sh handoff`: the ledger plus a short in-flight note, never a continuation of an earlier handoff.
 When `config/lane-capacity` exists, `bin/fm-capacity.sh` reports open lanes and host headroom for that re-evaluation.
 
 `.tasks.toml`, `docs/configuration.md`, and current `tasks-axi --help` own the backlog schema, compatibility, retention, and routine command syntax.

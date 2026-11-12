@@ -70,6 +70,7 @@ config/spawn-base-primary-checkout  optional presence flag opting this home into
 config/cmux-socket-password  optional cmux control-socket password; LOCAL, gitignored; read fresh on every cmux CLI call and passed through without ever overriding an operator's own ambient CMUX_SOCKET_PASSWORD when absent (docs/cmux-backend.md "Setup")
 config/wedge-alarm  optional away-mode wedge-alarm active-alert directives; LOCAL, gitignored; absent means auto (macOS Notification Center when available); see docs/wedge-alarm.md
 config/escalation  optional escalation settings as key=value lines, currently the quiet-hours-zone key read by bin/fm-quiet-hours-lib.sh; absent means America/Costa_Rica; LOCAL, gitignored, and not inherited; see docs/configuration.md "Escalation quiet hours"
+config/mission-ledger  optional key=value settings for the mission ledger's ready-depth check, currently min-ready (default 3; 0 turns the scheduled check off); LOCAL, gitignored, and not inherited; see docs/configuration.md "Mission ledger"
 config/watched-tools.json  optional list of the tools this home depends on, read by the update check armed with bin/fm-tool-update-check.sh; LOCAL, gitignored, firstmate-maintained but human-editable, and NOT inherited by secondmate homes; see docs/configuration.md "Watched tool updates"
 config/watch.env     optional home-local watcher tuning as exported shell assignments; LOCAL, gitignored, never removed by bootstrap; loaded by bin/fm-watch-arm.sh before x-mode.env; see docs/configuration.md "Relay (.env)"
 config/usage-warner  optional Claude usage-window thresholds for the opt-in macOS threshold warner armed with bin/fm-usage-warner.sh; LOCAL, gitignored, and NOT inherited by secondmate homes; see docs/configuration.md "Local Claude usage warner"
@@ -87,6 +88,7 @@ data/                personal fleet records; LOCAL, gitignored as a whole
   pipeline-spend.jsonl  optional per-task no-mistakes pipeline spend, written only when config/pipeline-spend is present; bin/fm-pipeline-spend.sh owns the schema
   orders/            durable captain orders and holds, their event log, and the sweep lock; bin/fm-order.sh owns the lifecycle
   handoff-ack-<nonce>.json  a handoff successor's acknowledgement written by bin/fm-handoff-ack.sh; bin/fm-handoff-lib.sh owns the schema
+  ledger-intake.tsv  append-only record of where each mission-ledger item came from, never task state; bin/fm-ledger.sh owns the row format
   failure-classes/<key>.jsonl  append-only failure-class records from refuted claims, one file per class, shared by every task; docs/claim-ledger.md owns the schema
 projects/            cloned repos; gitignored; read-only except under hard rule 1's concrete captain-approved project operation exception
 state/               runtime records and signals; gitignored
@@ -142,6 +144,7 @@ state/               runtime records and signals; gitignored
   startup-growth.check.sh  generated daily startup-growth poll shim and its .check-trust binding; present only after bin/fm-startup-growth-check.sh arm; its record .startup-growth-check holds the daily gate, the per-file growth baselines, and the last reported finding set, so removing it re-baselines growth silently and repeats a standing finding such as a budget overrun once (docs/configuration.md "Daily startup growth check")
   pr-health.check.sh  generated owned-PR health poll shim and its .check-trust binding; present only after bin/fm-pr-health.sh arm, which config/pr-health-monitor gates (docs/configuration.md "PR health monitor")
   pr-health.json     the health monitor's fm-pr-health.v1 record: per-PR fingerprints of the conditions already reported and the task branch-to-PR lookup cache, replaced by rename under .pr-health.lock; bin/fm-pr-health.sh owns the format
+  ready-depth.check.sh  generated mission-ledger ready-depth poll shim and its .check-trust binding; present only after bin/fm-ledger.sh arm; its records .ready-depth-slot (the last evaluated check time) and .ready-depth-error (the last reported failure) keep one check time or one failure from being reported on every poll (docs/configuration.md "Mission ledger")
   pending-replies/   parent-owned secondmate pending-reply records (correlation id, delivery vs reply, recovery, escalation); fm-pending-reply-lib.sh
   t3code-sends/      T3 send request-id retention and accepted delivery outcomes; docs/t3code-backend.md "Current lifecycle and safety" owns the window and files
   procevent/         registered process-to-event sources, one private record per canonical source id; written only by bin/fm-procevent.sh, and their presence alone keeps supervision required (`process-event-sources` skill)
