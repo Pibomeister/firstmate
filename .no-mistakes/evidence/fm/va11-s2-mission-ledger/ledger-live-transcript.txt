@@ -1,0 +1,150 @@
+## S1 intake: each approved proposal ask and order ask becomes its own item
+$ bin/fm-ledger.sh intake --mint --project firstmate --title S2 mission ledger --source proposal:velocity-2026-11-11-S2 --priority 1
+filed s2-mission-ledger-0f project=firstmate source=proposal:velocity-2026-11-11-S2
+[exit 0]
+
+$ bin/fm-ledger.sh intake --mint --project firstmate --title S2 mission ledger --source proposal:velocity-2026-11-11-S2
+replay s2-mission-ledger-0f
+[exit 0]
+
+order id: 1794442877-f99fbfac
+## S5 handoff refused while order unfiled
+$ bin/fm-ledger.sh unfiled
+UNFILED 1794442877-f99fbfac pending :: ship widget and fix gadget
+[exit 3]
+
+$ bin/fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.CvkJYO/handoff-a.md --note-file /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.CvkJYO/note.txt
+UNFILED 1794442877-f99fbfac pending :: ship widget and fix gadget
+fm-ledger: handoff refused: file each open order above as its own ledger item first (bin/fm-ledger.sh intake <id> --project <name> --title <text> --source order:<order-id>)
+[exit 3]
+
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.CvkJYO/handoff-a.md: No such file or directory
+$ bin/fm-ledger.sh intake w-1 --project widgets --title Ship widget --source order:1794442877-f99fbfac
+filed w-1 project=widgets source=order:1794442877-f99fbfac
+[exit 0]
+
+$ bin/fm-ledger.sh intake g-1 --project gadgets --title Fix gadget --source order:1794442877-f99fbfac
+filed g-1 project=gadgets source=order:1794442877-f99fbfac
+[exit 0]
+
+$ bin/fm-ledger.sh unfiled
+[exit 0]
+
+## S2 plan per project
+$ bin/fm-ledger.sh plan
+PLAN at 2026-11-12T00:21:42Z (ready target 3 per active project; live view: bin/fm-ledger.sh plan)
+project firstmate active ready=1 in_flight=0 blocked=0 held=0 SHORT
+  ready     s2-mission-ledger-0f  kind=task priority=1  S2 mission ledger
+project gadgets active ready=1 in_flight=0 blocked=0 held=0 SHORT
+  ready     g-1  kind=task priority=-  Fix gadget
+project parked parked ready=0 in_flight=0 blocked=0 held=1
+  held      p-held  kind=task priority=-  parked held
+project widgets active ready=2 in_flight=0 blocked=1 held=0 SHORT
+  ready     w-2  kind=task priority=2  widget docs
+  ready     w-1  kind=task priority=-  Ship widget
+  blocked   w-3  kind=task priority=-  widget tests
+[exit 0]
+
+## S3 next, as a worker without supervisor (read-only)
+$ bin/fm-ledger.sh next --project widgets
+NEXT w-2 project=widgets kind=task priority=2
+task:
+  id: w-2
+  title: widget docs
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: task
+  repo: widgets
+  priority: 2
+  created: 2026-11-11
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+[exit 0]
+
+backlog unchanged by next: yes
+$ bin/fm-ledger.sh next --project parked
+next: nothing ready for project parked
+[exit 3]
+
+## S4 depth
+$ bin/fm-ledger.sh depth
+SHORT firstmate ready=1 min=3 in_flight=0 blocked=0 held=0
+SHORT gadgets ready=1 min=3 in_flight=0 blocked=0 held=0
+SHORT widgets ready=2 min=3 in_flight=0 blocked=1 held=0
+[exit 3]
+
+-- FM_NOW=1794416300 (16:58:20Z)
+[exit 0]
+-- FM_NOW=1794416400 (17:00:00Z)
+ready-depth 17:00: 3 active project(s) below 3 ready: firstmate(ready=1) gadgets(ready=1) widgets(ready=2); refill each ready queue (bin/fm-ledger.sh plan)
+[exit 0]
+-- FM_NOW=1794416460 (17:01:00Z)
+[exit 0]
+-- FM_NOW=1794438000 (23:00:00Z)
+ready-depth 23:00: 3 active project(s) below 3 ready: firstmate(ready=1) gadgets(ready=1) widgets(ready=2); refill each ready queue (bin/fm-ledger.sh plan)
+[exit 0]
+-- FM_NOW=1794438100 (23:01:40Z)
+[exit 0]
+## S5 handoff writes doc, refuses chains and overwrite
+$ bin/fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.CvkJYO/handoff-a.md --note-file /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.CvkJYO/note.txt
+handoff: wrote 1 open order(s) into /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.CvkJYO/handoff-a.md
+handoff: wrote /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.CvkJYO/handoff-a.md from the ledger
+[exit 0]
+
+----- document -----
+# Session handoff 2026-11-12T00:21:59Z (fm-lab.CvkJYO)
+
+Written by bin/fm-ledger.sh handoff from the mission ledger.
+The ledger is authoritative and this document is complete on its own: it never continues an earlier handoff.
+Read live state with bin/fm-ledger.sh plan, bin/fm-dispatch-log.sh open, and bin/fm-order.sh pickup.
+
+## In flight now
+
+Worker on ledger is mid-review.
+
+## Ledger plan at handoff
+
+PLAN at 2026-11-12T00:21:58Z (ready target 3 per active project; live view: bin/fm-ledger.sh plan)
+project firstmate active ready=1 in_flight=0 blocked=0 held=0 SHORT
+  ready     s2-mission-ledger-0f  kind=task priority=1  S2 mission ledger
+project gadgets active ready=1 in_flight=0 blocked=0 held=0 SHORT
+  ready     g-1  kind=task priority=-  Fix gadget
+project parked parked ready=0 in_flight=0 blocked=0 held=1
+  held: p-held
+project widgets active ready=2 in_flight=0 blocked=1 held=0 SHORT
+  ready     w-2  kind=task priority=2  widget docs
+  ready     w-1  kind=task priority=-  Ship widget
+  blocked: w-3
+
+## Open captain goals at handoff
+
+none open
+
+CAPTAIN ORDERS at handoff (2026-11-12T00:21:59Z):
+1 open captain order(s) - each is durable; ack it before acting:
+  1794442877-f99fbfac pending kind=order age=42s from=captain :: ship widget and fix gadget
+Pending: bin/fm-order.sh ack <id> reads it (skip means another session already has it - never run it twice).
+Acked-unfinished: an earlier session read it; bin/fm-order.sh show <id>, check whether its work started, then finish it.
+Finish each with: bin/fm-order.sh finish <id> done|parked <outcome>
+----- end -----
+$ bin/fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.CvkJYO/handoff-a.md --note-file /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.CvkJYO/note.txt
+fm-ledger: the handoff document already exists: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.CvkJYO/handoff-a.md; write a new one
+[exit 1]
+
+$ bin/fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.CvkJYO/handoff-b.md --note Continue from handoff-20261111T1405Z.md
+fm-ledger: the in-flight note names an earlier handoff document; a handoff never continues another one - file what that document still carries as ledger items and drop the reference
+[exit 1]
+
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.CvkJYO/handoff-b.md: No such file or directory
+## S6 adversarial: kind=hold in summary still unfiled
+$ bin/fm-ledger.sh unfiled
+UNFILED 1794442920-0e3a7976 pending :: rename it kind=hold please
+[exit 3]
+
