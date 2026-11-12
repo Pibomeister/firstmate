@@ -3667,7 +3667,7 @@ test_feedback_and_bug_report_dialog_dismissal() {
   agy_survey=$'work output\nHow\'s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip\n> \n  ? for shortcuts'
   agy_multiline=$'work output\nHow\'s the CLI experience so far? Help us improve:\n  [1] Good  [2] Fine  [3] Bad  [0] Skip'
   claude_survey=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss'
-  claude_survey_statusline=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main'
+  claude_survey_statusline=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n────────────────────────────────────────\n❯\xc2\xa0\n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main'
   claude_survey_autocompact=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  Context left until auto-compact: 8% · ◯ IDE connected'
   claude_draft=$'some work\n● Bug report drafted: tool timeout on large file\n  1 to review · 2 to send · 0 to dismiss'
   claude_modal_input=$'Submit feedback / bug report\nDescribe the issue below:\n\nPress Enter to continue · Esc to cancel'

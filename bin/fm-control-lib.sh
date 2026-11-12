@@ -1038,8 +1038,14 @@ fm_control_harness_turnend_auth_path() {  # <harness> <token>
 # cancel key (`0` or `Escape`), never a submit/send choice (`1`, `2`, `3`, `y`,
 # `Enter`) and never feedback text.
 fm_control_feedback_dialog_dismiss() {  # <harness> <screen>
-  local harness=${1-} screen=${2-} family=
+  local harness=${1-} screen=${2-} family='' lib
   [ -n "$screen" ] || return 1
+  # Claude draws its empty prompt as `❯`+NBSP; awk regex escapes for that
+  # byte pair are locale-dependent, so map Unicode spaces to ASCII first.
+  lib=${BASH_SOURCE[0]}
+  # shellcheck source=bin/fm-composer-lib.sh
+  command -v fm_composer_normalize_spaces_var >/dev/null 2>&1 || . "${lib%/*}/fm-composer-lib.sh"
+  fm_composer_normalize_spaces_var screen
   if [ -n "$harness" ]; then
     family=$(fm_control_harness_family "$harness" 2>/dev/null) || return 1
     case "$family" in
@@ -1058,7 +1064,7 @@ fm_control_feedback_dialog_dismiss() {  # <harness> <screen>
       }
       function is_any_prompt_row(r) {
         if (is_prompt_row(r)) return 1
-        return (r ~ /^[ \t]*((│|┃|[|])[ \t]+)?(❯|›|⟩|→|❭|>)([ \t]+|\xc2\xa0)/)
+        return (r ~ /^[ \t]*((│|┃|[|])[ \t]+)?(❯|›|⟩|→|❭|>)[ \t]+/)
       }
       function is_chrome_row(r) {
         if (r ~ /^[ \t]*$/) return 1
@@ -1307,8 +1313,10 @@ fm_control_acquire_feedback_claim() {  # <claim-dir> [<max-age-secs>]
       fi
       ;;
   esac
-  rm -f "$claim/owner" 2>/dev/null || true
-  rmdir "$claim" 2>/dev/null || return 1
+  local reclaim="$claim.reclaim.$$"
+  mv "$claim" "$reclaim" 2>/dev/null || return 1
+  rm -f "$reclaim/owner" 2>/dev/null || true
+  rmdir "$reclaim" 2>/dev/null || true
   if mkdir "$claim" 2>/dev/null; then
     printf '%s %s\n' "$$" "$now" > "$claim/owner" 2>/dev/null || true
     return 0
@@ -1322,14 +1330,14 @@ fm_control_acquire_feedback_claim() {  # <claim-dir> [<max-age-secs>]
 # (<backend>, <target>) with an owner-tracked lock directory
 # ($state/.feedback-claim-<window_key>) held from live capture through
 # post-send verification; never removes another live caller's active claim,
-# and reclaims a lock left behind by a dead or expired owner. Requires a
-# non-empty live capture that still matches a supported feedback dialog before
-# sending any key. Records the attempted pane hash in
-# $state/.feedback-dismissed-<window_key> while a dialog remains visible so an
-# unchanged sticky dialog is not sent a second key, and clears that marker once
-# post-send capture verifies the dialog is gone. Each backend send and capture
-# is bounded by <call-timeout-secs> (default 20). A failed send releases the
-# lock and restores the marker so a later tick can retry.
+# and atomically reclaims a lock left behind by a dead or expired owner.
+# Requires a non-empty live capture that still matches a supported feedback
+# dialog before sending any key. Records the attempted pane hash in
+# $state/.feedback-dismissed-<window_key> when post-send capture still shows
+# the dialog so an unchanged sticky dialog is not sent a second key, and clears
+# that marker once post-send capture verifies the dialog is gone. Each backend
+# send and capture is bounded by <call-timeout-secs> (default 20). A failed
+# send releases the lock without recording the marker so a later tick can retry.
 # Returns:
 #   0 - claimed, sent key, re-captured, and verified the dialog is gone
 #   1 - <screen> does not match a known feedback/bug-report dialog for <harness>
@@ -1356,10 +1364,6 @@ fm_control_dismiss_feedback_dialog() {
   mkdir -p "$state_dir" 2>/dev/null || return 1
   marker="$state_dir/.feedback-dismissed-$wkey"
   claim="$state_dir/.feedback-claim-$wkey"
-  prev_marker=$(cat "$marker" 2>/dev/null || true)
-  if [ "$prev_marker" = "$phash" ]; then
-    return 2
-  fi
   timeout_int=${call_timeout%%.*}
   case "$timeout_int" in ''|*[!0-9]*) timeout_int=20 ;; esac
   settle_int=${settle%%.*}
@@ -1399,13 +1403,7 @@ fm_control_dismiss_feedback_dialog() {
     fm_control_release_feedback_claim "$claim"
     return 2
   fi
-  printf '%s\n' "$phash" > "$marker"
   if ! fm_run_timed_fn "$call_timeout" fm_control_send_feedback_dismiss "$backend" "$target" "$dismiss_key" "$label" >/dev/null 2>&1; then
-    if [ -n "$prev_marker" ]; then
-      printf '%s\n' "$prev_marker" > "$marker"
-    else
-      rm -f "$marker"
-    fi
     fm_control_release_feedback_claim "$claim"
     return 3
   fi
@@ -1417,6 +1415,7 @@ fm_control_dismiss_feedback_dialog() {
   # shellcheck disable=SC2034
   FM_CONTROL_FEEDBACK_AFTER_PANE=$after
   if [ -z "$after" ] || fm_control_feedback_dialog_dismiss "$harness" "$after" >/dev/null 2>&1; then
+    printf '%s\n' "$phash" > "$marker"
     fm_control_release_feedback_claim "$claim"
     return 4
   fi
