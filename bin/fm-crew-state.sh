@@ -45,7 +45,9 @@
 #      unreachable or unreadable remote reports unknown-remote, never a false
 #      gone/dead.
 #   2. Matching no-mistakes run for this crew's branch AND current code identity,
-#      active or terminal (from `axi status`, or the coarse `no-mistakes runs`
+#      active or terminal (from bin/fm-nm-run-lib.sh's read-only status snapshot
+#      when that read succeeds and the run is absent, inactive, or its head
+#      matches this worktree, else `axi status`, or the coarse `no-mistakes runs`
 #      fallback)? Branch name alone is not enough: a historical run on a reused
 #      branch whose head was rewritten or diverged must not be attributed.
 #      A run EXECUTING on this crew's branch (pending, running, fixing or ci -
@@ -991,9 +993,11 @@ nm_effective_ci_step_status() {
 # still monitoring until merged or closed" (pinned from no-mistakes v1.84.0).
 # That no_ci sentence reads as no-checks, like the zero-checks marker: no check
 # ever verified the PR, so it stays working and never promotes a worker's own
-# "checks green" claim, even though its text says "all checks passed". Reads
-# the ci step's log via `axi logs --full` and scans
-# it for the MOST RECENT recognized marker (the log is append-only/chronological,
+# "checks green" claim, even though its text says "all checks passed".
+# When the status snapshot is active, this run is its selected run, and that
+# snapshot already holds a recognized ci marker, that text is the log.
+# Otherwise this reads the ci step's log via `axi logs --full` and scans it
+# for the MOST RECENT recognized marker (the log is append-only/chronological,
 # so the last match is current): green with nothing red after it means CI is
 # green right now, still only waiting on merge/close.
 # "base branch advanced (..), re-arming CI monitor timeout" is deliberately NOT
