@@ -1253,14 +1253,16 @@ FM_CONTROL_FEEDBACK_DIALOG_ID=
 FM_CONTROL_FEEDBACK_DISMISS_KEY=
 FM_CONTROL_FEEDBACK_AFTER_PANE=
 
-# fm_control_dismiss_feedback_dialog <state-dir> <backend> <target> <harness> <screen> [<expected-label>] [<settle-secs>]
+# fm_control_dismiss_feedback_dialog <state-dir> <backend> <target> <harness> <screen> [<expected-label>] [<settle-secs>] [<call-timeout-secs>]
 # Shared claim-and-dismiss helper called by the watcher's two sites, the
 # daemon's two sites, and the watchdog. Uses one marker format
 # ($state/.feedback-dismissed-<window_key>) storing one shared pane hash, and
 # acquires an atomic mkdir claim ($state/.feedback-claim-<window_key>-<pane_hash>)
 # before sending the key. After sending, waits <settle-secs>, re-captures the
 # pane, and verifies the dialog is gone; never sends a second key on the same
-# claim.
+# claim. Each backend send and capture is bounded by <call-timeout-secs>
+# (default 20). A failed send releases the claim and restores the marker so a
+# later tick can retry.
 # Returns:
 #   0 - claimed, sent key, re-captured, and verified the dialog is gone
 #   1 - <screen> does not match a known feedback/bug-report dialog for <harness>
@@ -1269,8 +1271,8 @@ FM_CONTROL_FEEDBACK_AFTER_PANE=
 #   4 - claimed and key sent, but re-capture did not prove the dialog gone
 fm_control_dismiss_feedback_dialog() {
   local state_dir=${1-} backend=${2-} target=${3-} harness=${4-} screen=${5-}
-  local label=${6-} settle=${7-0.2}
-  local spec dialog_id dismiss_key wkey phash marker claim old_claim after
+  local label=${6-} settle=${7-0.2} call_timeout=${8:-20}
+  local spec dialog_id dismiss_key wkey phash marker claim old_claim after prev_marker lib
   FM_CONTROL_FEEDBACK_DIALOG_ID=
   FM_CONTROL_FEEDBACK_DISMISS_KEY=
   FM_CONTROL_FEEDBACK_AFTER_PANE=
@@ -1286,7 +1288,8 @@ fm_control_dismiss_feedback_dialog() {
   mkdir -p "$state_dir" 2>/dev/null || return 1
   marker="$state_dir/.feedback-dismissed-$wkey"
   claim="$state_dir/.feedback-claim-$wkey-$phash"
-  if [ "$(cat "$marker" 2>/dev/null || true)" = "$phash" ]; then
+  prev_marker=$(cat "$marker" 2>/dev/null || true)
+  if [ "$prev_marker" = "$phash" ]; then
     return 2
   fi
   if ! mkdir "$claim" 2>/dev/null; then
@@ -1297,14 +1300,23 @@ fm_control_dismiss_feedback_dialog() {
     [ -d "$old_claim" ] || continue
     [ "$old_claim" = "$claim" ] || rmdir "$old_claim" 2>/dev/null || true
   done
-  if ! fm_control_send_feedback_dismiss "$backend" "$target" "$dismiss_key" "$label" >/dev/null 2>&1; then
+  lib=${BASH_SOURCE[0]}
+  # shellcheck source=bin/fm-timeout-lib.sh
+  command -v fm_run_timed_fn >/dev/null 2>&1 || . "${lib%/*}/fm-timeout-lib.sh"
+  if ! fm_run_timed_fn "$call_timeout" fm_control_send_feedback_dismiss "$backend" "$target" "$dismiss_key" "$label" >/dev/null 2>&1; then
+    if [ -n "$prev_marker" ]; then
+      printf '%s\n' "$prev_marker" > "$marker"
+    else
+      rm -f "$marker"
+    fi
+    rmdir "$claim" 2>/dev/null || true
     return 3
   fi
   case "$settle" in
     ''|0|0.0) ;;
     *) sleep "$settle" ;;
   esac
-  after=$(fm_control_capture_feedback_pane "$backend" "$target" "$label") || after=
+  after=$(fm_run_timed_fn "$call_timeout" fm_control_capture_feedback_pane "$backend" "$target" "$label") || after=
   FM_CONTROL_FEEDBACK_AFTER_PANE=$after
   [ -n "$after" ] || return 4
   if fm_control_feedback_dialog_dismiss "$harness" "$after" >/dev/null 2>&1; then

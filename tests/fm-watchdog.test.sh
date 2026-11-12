@@ -3810,6 +3810,44 @@ SH
   wait "$pid1" "$pid2"
   assert_equals "LITERAL:0" "$(cat "$wdir/race-keys.log")" "concurrent callers racing on one pane send the dismiss key exactly once"
 
+  # 7. A key delivery that fails leaves the dialog retryable on the next tick.
+  local fstate="$wdir/fail-state" frc=0
+  mkdir -p "$fstate"
+  printf '%s\n' "$agy_survey" > "$wdir/pane-fail.txt"
+  : > "$wdir/fail-keys.log"
+  : > "$wdir/send-fails-once"
+  cat > "$wfake/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  capture-pane) cat "$FM_TEST_WATCH_PANE"; exit 0 ;;
+  send-keys)
+    if [ -e "$FM_TEST_SEND_FAILS_ONCE" ]; then rm -f "$FM_TEST_SEND_FAILS_ONCE"; exit 1; fi
+    shift
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) shift; printf 'LITERAL:%s\n' "${1:-}" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+        *) printf 'KEY:%s\n' "$1" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+      esac
+    done
+    printf 'work output\n> \n' > "$FM_TEST_WATCH_PANE"
+    exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$wfake/tmux"
+  PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-fail.txt" FM_TEST_WATCH_KEYS="$wdir/fail-keys.log" FM_TEST_SEND_FAILS_ONCE="$wdir/send-fails-once" \
+    bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1' \
+    _ "$ROOT" "$fstate" "$agy_survey" >/dev/null 2>&1 || frc=$?
+  assert_equals 3 "$frc" "a failed key delivery reports delivery failure"
+  assert_equals "" "$(cat "$wdir/fail-keys.log")" "no key reached the pane on the failed delivery"
+  frc=0
+  PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-fail.txt" FM_TEST_WATCH_KEYS="$wdir/fail-keys.log" FM_TEST_SEND_FAILS_ONCE="$wdir/send-fails-once" \
+    bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1' \
+    _ "$ROOT" "$fstate" "$agy_survey" >/dev/null 2>&1 || frc=$?
+  assert_equals 0 "$frc" "the next tick retries the unchanged dialog after a failed delivery and clears it"
+  assert_equals "LITERAL:0" "$(cat "$wdir/fail-keys.log")" "the retry sends the dismiss key once"
+
   # Busy worker showing `esc to cancel` alongside the text is not touched.
   printf '%s\n  esc to cancel\n' "$agy_survey" > "$wdir/pane-busy.txt"
   : > "$wdir/keys.log"

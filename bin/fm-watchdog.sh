@@ -578,8 +578,8 @@ wd_print_observation() {
 # --- actions -------------------------------------------------------------------
 
 # wd_action_gate <symptom> <action> <rate-secs>: 0 when the action may run now.
-wd_rate_open() {
-  fm_wd_rate_ok "$LEDGER" "$O_HOME" "$1" "$2" "$3" "$(wd_now)"
+wd_rate_open() {  # <symptom> <action> <rate-secs> [subject]
+  fm_wd_rate_ok "$LEDGER" "$O_HOME" "$1" "$2" "$3" "$(wd_now)" "${4-}"
 }
 
 wd_rec() {  # <id> <symptom> <action> <phase> <detail>
@@ -624,8 +624,6 @@ wd_key() {
   case "$O_BACKEND:$key" in
     orca:[0-9]) fm_run_timed 10 orca terminal send --terminal "$O_TARGET" --text "$key" --json >/dev/null 2>&1 ;;
     tmux:[0-9]) fm_run_timed 10 tmux send-keys -t "$O_TARGET" -l "$key" >/dev/null 2>&1 ;;
-    herdr:[0-9]) fm_run_timed_fn 10 fm_backend_herdr_send_literal "$O_TARGET" "$key" >/dev/null 2>&1 ;;
-    rex:[0-9]) fm_run_timed_fn 10 fm_backend_rex_send_literal "$O_TARGET" "$key" >/dev/null 2>&1 ;;
     *) fm_run_timed_fn 10 fm_backend_send_key "$O_BACKEND" "$O_TARGET" "$key" >/dev/null 2>&1 ;;
   esac || { wd_rec "$id" "$symptom" key failed "key delivery failed"; return 1; }
   sleep "$(cfgi key-settle-secs 2)"
@@ -1038,12 +1036,12 @@ wd_handle_dialog() {
         wd_gap "feedback dialog key could not be resolved; no key pressed"
         return 0
       fi
-      wd_rate_open dialog key "$(cfgi key-secs 120)" || return 0
+      wd_rate_open dialog key "$(cfgi key-secs 120)" "${O_REC_SUBJECT:-$O_TAG}" || return 0
       id=$(wd_id)
       if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_rec "$id" dialog key refused "endpoint is on do-not-touch"; return 0; fi
       if [ "$(wd_mode)" != act ]; then wd_rec "$id" dialog key dry-run "would press $key: dismiss the feedback survey"; return 0; fi
       case "${O_ID:-}" in ''|-) ;; *) label=fm-$O_ID ;; esac
-      fm_control_dismiss_feedback_dialog "$O_HOME/state" "$O_BACKEND" "$O_TARGET" "" "$dialog_pane" "$label" "$(cfgi key-settle-secs 2)" || rc=$?
+      fm_control_dismiss_feedback_dialog "$O_HOME/state" "$O_BACKEND" "$O_TARGET" "" "$dialog_pane" "$label" "$(cfgi key-settle-secs 2)" "$(cfgi call-timeout-secs 20)" || rc=$?
       case "$rc" in
         0)
           wd_rec "$id" dialog key pending "press $FM_CONTROL_FEEDBACK_DISMISS_KEY: dismiss the feedback survey"
@@ -1053,7 +1051,11 @@ wd_handle_dialog() {
           O_DIALOG_PANE=$FM_CONTROL_FEEDBACK_AFTER_PANE
           wd_read_composer
           ;;
-        1|2)
+        1)
+          return 0
+          ;;
+        2)
+          wd_gap "feedback dialog still showing after an earlier dismiss key; no second key pressed"
           return 0
           ;;
         3)
