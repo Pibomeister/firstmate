@@ -504,6 +504,11 @@ It may hold these lines, each optional:
 - `percent-left=<n>` fires at or below `n`% context left (default 15); `0` turns the trigger off.
 - `compact-at-tokens=<n>` is the auto-compact point in tokens, used instead of the point derived from Claude's settings. `bin/fm-context-burn.sh` uses the same point when the pane footer is not shown.
 
+The same `percent-left` threshold also drives the low-context auto-park in `bin/fm-context-burn.sh`, which runs on every harness's turn-end record rather than only in the Claude hook above.
+When a recorded sample falls to that threshold or below, the recorder emits the park-then-handoff action exactly once per session: one queued check wake tells the session to park every open captain question as a held backlog item through `bin/fm-captain-hold.sh` and then start the handoff or successor path above, without asking the captain or waiting for an answer.
+The recorder never decides what counts as a captain question; the session inventories its own open questions when it acts on the wake.
+`bin/fm-context-burn.sh` owns that emission and its per-session record, with coverage in [`tests/fm-context-burn.test.sh`](../tests/fm-context-burn.test.sh).
+
 Blank lines and lines that start with `#` are ignored, and an unusable value keeps its default.
 
 Context left is measured against the auto-compact point, not the model's full window, because Claude Code's status-line `remaining_percentage` reads the full window and can still show most of it free when auto-compact fires.

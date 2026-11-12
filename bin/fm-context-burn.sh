@@ -41,6 +41,21 @@
 # "unknown" is recorded and never alerts. An identical session, turn type, and
 # percent within 2 seconds is not written again.
 #
+# LOW-CONTEXT AUTO-PARK. When a recorded sample falls to the handoff
+# threshold or below (the `percent-left` line of config/handoff-trigger,
+# default 15, 0 turns this off; docs/configuration.md "Early handoff trigger"
+# owns that file), record emits the park-then-handoff action exactly once
+# per session: it prints one `park-handoff:` line and queues one check wake
+# (key context-autopark-<session>) telling the session to park every open
+# captain question as a held backlog item through bin/fm-captain-hold.sh and
+# then start the existing handoff/successor path without asking the captain
+# or waiting for an answer. This script never decides what is a captain
+# question - the session inventories its own open questions, the way the
+# captain-hold lifecycle requires - it only emits the action at the
+# threshold. A session id of "unknown" never emits it. The per-session
+# marker state/.context-autopark.<session> is never cleared, so a session
+# that recovers context and drops again does not emit it twice.
+#
 # FM_CONTEXT_BURN_NOW overrides the clock. Under FM_TEST_SEAM=1, pane capture
 # and the primary-home check are skipped unless FM_CONTEXT_BURN_CAPTURE=1.
 #
@@ -284,6 +299,40 @@ clear_alert_marker() { # <safe>
   rm -f "$STATE/.context-burn-alert.$1"
 }
 
+autopark_threshold() {
+  local file="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/handoff-trigger" line key value threshold=15
+  if [ -f "$file" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      key=${line%%=*}
+      value=${line#*=}
+      case "$value" in '' | *[!0-9]*) continue ;; esac
+      case "$key" in
+        percent-left) [ "${#value}" -le 2 ] && threshold=$((10#$value)) ;;
+      esac
+    done < "$file"
+  fi
+  printf '%s\n' "$threshold"
+}
+
+queue_autopark() { # <session> <safe> <percent>
+  local session=$1 safe=$2 percent=$3 marker key payload
+  marker="$STATE/.context-autopark.$safe"
+  key="context-autopark-$safe"
+  payload="check: context autopark session ${session} at ${percent}% context left: park every open captain question as a held backlog item through bin/fm-captain-hold.sh (hold the work item the question gates, or create one captain-held task per genuine question) and then start the handoff/successor path - record the handoff with bin/fm-order.sh handoff --doc <handoff file> and launch the successor with bin/fm-handoff-launch.sh <handoff file> (a second mate asks its parent to relaunch it instead) - without asking the captain or waiting for an answer; keep working on everything the parked questions do not gate"
+  if [ -e "$marker" ]; then
+    return 0
+  fi
+  (set -C; printf '%s\n' "$NOW" > "$marker") 2>/dev/null || return 0
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$SCRIPT_DIR/fm-wake-lib.sh"
+  if ! fm_wake_append check "$key" "$payload"; then
+    rm -f "$marker"
+    return 0
+  fi
+  printf 'park-handoff: %s at %s%% context left: park open captain questions via bin/fm-captain-hold.sh then start handoff\n' \
+    "$session" "$percent"
+}
+
 cmd_record() {
   local turn_type='' session='' percent='' payload_file='' payload=''
   local safe='' last_epoch='' last_session='' last_type='' last_percent=''
@@ -397,6 +446,11 @@ EOF
     queue_alert "$session" "$safe"
   else
     clear_alert_marker "$safe"
+  fi
+  local autopark_at
+  autopark_at=$(autopark_threshold)
+  if [ "$autopark_at" -gt 0 ] && [ "$percent" -le "$autopark_at" ]; then
+    queue_autopark "$session" "$safe" "$percent"
   fi
 }
 

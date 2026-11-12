@@ -330,6 +330,44 @@ test_auto_turn_type_from_tailed_transcript() {
   pass "auto turn type comes from the tailed transcript"
 }
 
+test_autopark_at_low_context_once_per_session() {
+  local home=$TMP_ROOT/autopark out
+  prepare "$home"
+  out=$(record_at "$home" 70000 captain s1 16)
+  assert_not_contains "$out" "park-handoff:" "16% left triggered auto-park"
+  assert_equals 0 "$(wake_count "$home" context-autopark-s1)" "wake at 16% left"
+  [ ! -e "$home/state/.context-autopark.s1" ] || fail "marker at 16% left"
+
+  out=$(record_at "$home" 70100 captain s1 15)
+  assert_contains "$out" "park-handoff: s1 at 15% context left" "15% left did not emit park-then-handoff"
+  assert_equals 1 "$(wake_count "$home" context-autopark-s1)" "wake missing at 15% left"
+  [ -e "$home/state/.context-autopark.s1" ] || fail "marker missing at 15% left"
+  assert_contains "$(cat "$home/state/.wake-queue")" "bin/fm-captain-hold.sh" "wake does not name the captain-hold park"
+  assert_contains "$(cat "$home/state/.wake-queue")" "bin/fm-handoff-launch.sh" "wake does not name the handoff launch"
+  assert_contains "$(cat "$home/state/.wake-queue")" "without asking" "wake does not say to continue without asking"
+
+  out=$(record_at "$home" 70200 captain s1 4)
+  assert_not_contains "$out" "park-handoff:" "the same session emitted park-then-handoff twice"
+  assert_equals 1 "$(wake_count "$home" context-autopark-s1)" "the same session queued park-then-handoff twice"
+
+  out=$(record_at "$home" 70300 captain s2 15)
+  assert_contains "$out" "park-handoff: s2 at 15% context left" "a new session did not emit park-then-handoff"
+  assert_equals 1 "$(wake_count "$home" context-autopark-s2)" "wake missing for the new session"
+
+  out=$(record_at "$home" 70400 captain unknown 5)
+  assert_not_contains "$out" "park-handoff:" "an unknown session emitted park-then-handoff"
+  assert_equals 0 "$(wake_count "$home" context-autopark-unknown)" "wake for an unknown session"
+
+  home=$TMP_ROOT/autopark-off
+  prepare "$home"
+  mkdir -p "$home/config"
+  printf 'percent-left=0\n' > "$home/config/handoff-trigger"
+  out=$(record_at "$home" 70500 captain s1 5)
+  assert_not_contains "$out" "park-handoff:" "percent-left=0 did not turn auto-park off"
+  assert_equals 0 "$(wake_count "$home" context-autopark-s1)" "wake with auto-park off"
+  pass "auto-park: silent at 16% left, park-then-handoff once per session at 15% and below"
+}
+
 test_report_line() {
   local home=$TMP_ROOT/report out status sum
   prepare "$home"
@@ -410,6 +448,7 @@ fm_test_run \
   test_drop_window_and_freshness \
   test_alert_once_then_again_after_recovery \
   test_unknown_session_and_dedupe \
+  test_autopark_at_low_context_once_per_session \
   test_auto_turn_type_from_tailed_transcript \
   test_report_line \
   test_pane_footer_above_statusline \
