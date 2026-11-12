@@ -368,6 +368,51 @@ test_autopark_at_low_context_once_per_session() {
   pass "auto-park: silent at 16% left, park-then-handoff once per session at 15% and below"
 }
 
+test_autopark_recovers_from_interrupted_publication() {
+  local home=$TMP_ROOT/autopark-crash out sleeper
+  prepare "$home"
+  # A claim left by a recorder that died before the wake was queued (dead
+  # pid) must be reclaimed, not suppress the action for the whole session.
+  printf 'pending 999999 70000\n' > "$home/state/.context-autopark.s1"
+  out=$(record_at "$home" 71000 captain s1 15)
+  assert_contains "$out" "park-handoff: s1 at 15% context left" "a dead pending claim suppressed the action"
+  assert_equals 1 "$(wake_count "$home" context-autopark-s1)" "wake after reclaiming a dead claim"
+  assert_contains "$(cat "$home/state/.context-autopark.s1")" "done" "marker was not completed after the wake"
+  out=$(record_at "$home" 71100 captain s1 9)
+  assert_not_contains "$out" "park-handoff:" "a reclaimed claim emitted twice"
+  assert_equals 1 "$(wake_count "$home" context-autopark-s1)" "second wake after reclaim"
+
+  # A claim held by a live recorder still suppresses a concurrent sample.
+  sleep 30 &
+  sleeper=$!
+  printf 'pending %s 71200\n' "$sleeper" > "$home/state/.context-autopark.s2"
+  out=$(record_at "$home" 71200 captain s2 10)
+  kill "$sleeper" 2>/dev/null; wait "$sleeper" 2>/dev/null
+  assert_not_contains "$out" "park-handoff:" "a live pending claim did not suppress a concurrent sample"
+  assert_equals 0 "$(wake_count "$home" context-autopark-s2)" "wake from a concurrent sample"
+
+  # Context recovering and dropping again does not emit a second time.
+  home=$TMP_ROOT/autopark-recover
+  prepare "$home"
+  out=$(record_at "$home" 72000 captain s1 15)
+  assert_contains "$out" "park-handoff:" "first drop did not emit"
+  record_at "$home" 72100 captain s1 90 >/dev/null
+  out=$(record_at "$home" 72200 captain s1 10)
+  assert_not_contains "$out" "park-handoff:" "a session that recovered and dropped again emitted twice"
+  assert_equals 1 "$(wake_count "$home" context-autopark-s1)" "wake after recovery and second drop"
+
+  # A configured non-default threshold moves the boundary.
+  home=$TMP_ROOT/autopark-20
+  prepare "$home"
+  mkdir -p "$home/config"
+  printf 'percent-left=20\n' > "$home/config/handoff-trigger"
+  out=$(record_at "$home" 73000 captain s1 21)
+  assert_not_contains "$out" "park-handoff:" "21% left triggered a percent-left=20 auto-park"
+  out=$(record_at "$home" 73100 captain s1 20)
+  assert_contains "$out" "park-handoff: s1 at 20% context left" "20% left did not trigger a percent-left=20 auto-park"
+  pass "auto-park reclaims a dead claim, respects a live one, stays once per session, and honors a configured threshold"
+}
+
 test_report_line() {
   local home=$TMP_ROOT/report out status sum
   prepare "$home"
@@ -449,6 +494,7 @@ fm_test_run \
   test_alert_once_then_again_after_recovery \
   test_unknown_session_and_dedupe \
   test_autopark_at_low_context_once_per_session \
+  test_autopark_recovers_from_interrupted_publication \
   test_auto_turn_type_from_tailed_transcript \
   test_report_line \
   test_pane_footer_above_statusline \

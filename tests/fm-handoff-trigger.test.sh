@@ -80,6 +80,8 @@ test_threshold_default_15() {
   expect_fire "$out" PostToolUse "15% left meets the default threshold"
   printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("about 15% of context is left") and test("85000 of 100000 tokens")' >/dev/null \
     || fail "instruction must name the measured context left: $out"
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("Park first, then hand off") and test("bin/fm-captain-hold.sh") and test("without asking")' >/dev/null \
+    || fail "instruction must order parking captain questions before the handoff: $out"
   pass "default threshold: silent at 16% left, fires at 15% left before auto-compact"
 }
 

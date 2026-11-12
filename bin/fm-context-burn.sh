@@ -53,8 +53,12 @@
 # question - the session inventories its own open questions, the way the
 # captain-hold lifecycle requires - it only emits the action at the
 # threshold. A session id of "unknown" never emits it. The per-session
-# marker state/.context-autopark.<session> is never cleared, so a session
-# that recovers context and drops again does not emit it twice.
+# marker state/.context-autopark.<session> records a `pending <pid>`
+# claim while the wake is being queued and `done` once it is queued, so a
+# session that recovers context and drops again does not emit it twice,
+# while a claim whose recorder died before the append finished is
+# reclaimed by the next sample instead of suppressing the action for the
+# rest of the session. Markers older than 30 days are pruned.
 #
 # FM_CONTEXT_BURN_NOW overrides the clock. Under FM_TEST_SEAM=1, pane capture
 # and the primary-home check are skipped unless FM_CONTEXT_BURN_CAPTURE=1.
@@ -315,20 +319,33 @@ autopark_threshold() {
 }
 
 queue_autopark() { # <session> <safe> <percent>
-  local session=$1 safe=$2 percent=$3 marker key payload
+  local session=$1 safe=$2 percent=$3 marker key payload claim claim_pid
   marker="$STATE/.context-autopark.$safe"
   key="context-autopark-$safe"
   payload="check: context autopark session ${session} at ${percent}% context left: park every open captain question as a held backlog item through bin/fm-captain-hold.sh (hold the work item the question gates, or create one captain-held task per genuine question) and then start the handoff/successor path - record the handoff with bin/fm-order.sh handoff --doc <handoff file> and launch the successor with bin/fm-handoff-launch.sh <handoff file> (a second mate asks its parent to relaunch it instead) - without asking the captain or waiting for an answer; keep working on everything the parked questions do not gate"
+  find "$STATE" -maxdepth 1 -name '.context-autopark.*' -type f -mtime +30 -exec rm -f {} + 2>/dev/null
   if [ -e "$marker" ]; then
-    return 0
+    claim=$(cat "$marker" 2>/dev/null || true)
+    case "$claim" in
+      pending\ *)
+        claim_pid=$(printf '%s' "$claim" | awk '{print $2}')
+        case "$claim_pid" in
+          '' | *[!0-9]*) ;;
+          *) kill -0 "$claim_pid" 2>/dev/null && return 0 ;;
+        esac
+        rm -f "$marker"
+        ;;
+      *) return 0 ;;
+    esac
   fi
-  (set -C; printf '%s\n' "$NOW" > "$marker") 2>/dev/null || return 0
+  (set -C; printf 'pending %s %s\n' "$$" "$NOW" > "$marker") 2>/dev/null || return 0
   # shellcheck source=bin/fm-wake-lib.sh
   . "$SCRIPT_DIR/fm-wake-lib.sh"
   if ! fm_wake_append check "$key" "$payload"; then
     rm -f "$marker"
     return 0
   fi
+  printf 'done %s\n' "$NOW" > "$marker" 2>/dev/null || true
   printf 'park-handoff: %s at %s%% context left: park open captain questions via bin/fm-captain-hold.sh then start handoff\n' \
     "$session" "$percent"
 }
