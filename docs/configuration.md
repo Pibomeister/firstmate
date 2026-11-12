@@ -1048,8 +1048,8 @@ After load stays at or over the ceiling for the sustained window, that check int
 Priority is the `priority` field of the task's backlog item, with the largest number paused first; an item with no numeric priority counts as the lowest and pauses before any numbered one, a task with no backlog item or a lane with a ready PR is never paused, and ties pause the newest dispatch first.
 Only a worker whose recorded backend can deliver its harness's interrupt key is a candidate, so on the Orca backend only Droid and Grok workers are ever paused.
 A worker with an open decision or a captain hold is never paused or resumed, judged by the authoritative open-decision fold over its whole status file rather than its latest line.
-An interrupt that returns nonzero keeps its pause record as uncertain, because delivery is unproven, and the resume pass resolves it.
-The resume pass runs even when the lane-capacity file is removed or the relief config is malformed, so a paused worker is never stranded by a broken opt-in.
+An interrupt that returns nonzero keeps its pause record as uncertain, because delivery is unproven, appends a keyed `paused:` line that says so, and counts toward the per-pass pause limit; the resume pass resolves it.
+The resume pass runs even when the lane-capacity file is removed or the relief config is malformed: while a pause record exists, the watcher keeps running the check every 30 seconds without the lane-capacity file, so a paused worker is never stranded by a broken opt-in.
 The ceiling is `max-load1` above unless the optional `config/load-relief` file sets `ceiling`, `resume-below`, `sustain-secs`, or `pause-per-check`.
 [`bin/fm-load-relief.sh`](../bin/fm-load-relief.sh) owns that file's format, the priority order, and the pause records.
 The script's header owns the report line, the published document's fields, the verdict, the beat freshness rules, the host-constraint thresholds, and the probe fallbacks.

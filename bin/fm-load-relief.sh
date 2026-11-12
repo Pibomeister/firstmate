@@ -12,10 +12,13 @@
 # state/load-relief/paused/<id> bound to that worker's spawn_gen, delivers
 # the verified interrupt through bin/fm-control.sh (the agent stays alive,
 # its worktree and unlanded work untouched), and appends one paused: line to
-# the task's status file. A nonzero interrupt keeps the record as
-# state=uncertain and surfaces the control error: delivery may already have
-# happened, so the record is never dropped on an unproven failure, and the
-# resume pass resolves it by steering that worker like a paused one. When a
+# the task's status file. A meta with no backend= is the default tmux
+# backend, and the recorded harness is mapped to its adapter family first.
+# A nonzero interrupt keeps the record as state=uncertain, appends a keyed
+# paused: line saying delivery is unproven, and counts toward the per-pass
+# pause limit: delivery may already have happened, so the record is never
+# dropped on an unproven failure, and the resume pass resolves it by steering
+# that worker like a paused one. When a
 # later pass reads load below the resume level, it lifts one load-relief
 # pause per pass, highest priority (smallest priority number) first and,
 # among records without a priority, the most recently paused first: the
@@ -30,7 +33,8 @@
 # whose latest status is done or failed, is dropped without a steer.
 #
 # The watcher runs one detached check beside its lane-capacity publish while
-# config/lane-capacity exists; load relief is opt-in on that declaration.
+# config/lane-capacity exists, and every 30 s while state/load-relief/paused/
+# holds a record; load relief is opt-in on that declaration.
 # The resume pass runs even when config/lane-capacity is absent or
 # config/load-relief is malformed - the refusal is printed and the pause
 # decision is what refuses - so a broken or removed opt-in never strands a
@@ -200,8 +204,8 @@ worker_waiting() {
 interrupt_eligible() {
   local backend harness key
   backend=$(meta_get "$1" backend)
-  harness=$(meta_get "$1" harness)
-  [ -n "$backend" ] && [ -n "$harness" ] || return 1
+  backend=${backend:-tmux}
+  harness=$(fm_control_harness_family "$(meta_get "$1" harness)") || return 1
   [ "$(fm_control_interrupt_transport "$harness" 2>/dev/null)" = rest ] && return 0
   key=$(fm_control_interrupt_key "$harness" 2>/dev/null) || return 1
   [ -n "$key" ] || return 1
@@ -418,6 +422,9 @@ while IFS="$(printf '\t')" read -r _rank _prio _epoch id gen; do
     paused=$((paused + 1))
   else
     sed -i.bak 's/^state=paused$/state=uncertain/' "$PAUSED_DIR/$id" 2>/dev/null && rm -f "$PAUSED_DIR/$id.bak"
+    printf 'paused [key=load-relief] [at=%s]: load relief: load %s at or over ceiling %s for %ss; interrupt delivery unproven (control exit %s); record kept as uncertain, resumes when load falls\n' \
+      "$now" "$load1" "$ceiling" "$elapsed" "$control_rc" >> "$STATE/$id.status" 2>/dev/null || true
+    paused=$((paused + 1))
     echo "fm-load-relief: interrupt for $id returned $control_rc; its pause record is kept as uncertain because delivery is unproven: $control_out" >&2
   fi
 done <<EOF

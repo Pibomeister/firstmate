@@ -225,10 +225,40 @@ SH
   assert_present "$home/state/load-relief/paused/w" "a record was dropped after an interrupt whose delivery is unproven"
   assert_contains "$(cat "$home/state/load-relief/paused/w")" "state=uncertain" "the kept record is not marked uncertain"
   assert_contains "$out" "control blew up after the key" "the control error was not surfaced"
+  assert_contains "$(cat "$home/state/w.status")" "paused [key=load-relief] [at=1061]: load relief: load 200 at or over ceiling 20 for 61s; interrupt delivery unproven (control exit 1)" "the uncertain pause did not reach supervision as a keyed status line"
   run_relief "$home" failint 5 2000 >/dev/null
   assert_contains "$(cat "$TMP_ROOT/failint.log")" "send w" "the resume pass did not resolve the uncertain pause"
   assert_absent "$home/state/load-relief/paused/w" "the uncertain record survived its resume"
   pass "a nonzero interrupt keeps an uncertain pause record, surfaces the error, and the resume pass resolves it"
+}
+
+test_failed_interrupts_stay_within_pause_limit() {
+  local home
+  home=$(make_home failmany)
+  add_worker "$home" a 100 7
+  add_worker "$home" b 200 8
+  add_worker "$home" c 300 9
+  cat > "$TMP_ROOT/failmany-control" <<'SH'
+#!/usr/bin/env bash
+printf 'control %s\n' "$*" >> "$FM_RELIEF_LOG"
+exit 1
+SH
+  sustained_pass "$home" failmany 1000 >/dev/null
+  assert_equals "control c interrupt" "$(cat "$TMP_ROOT/failmany.log")" "a pass with failing interrupts tried more workers than pause-per-check allows"
+  assert_absent "$home/state/load-relief/paused/a" "a second candidate got an uncertain record in the same pass"
+  assert_absent "$home/state/load-relief/paused/b" "a second candidate got an uncertain record in the same pass"
+  pass "an uncertain interrupt counts toward pause-per-check, so one pass never reaches past the limit"
+}
+
+test_default_backend_and_harness_variant_are_paused() {
+  local home
+  home=$(make_home defaultbackend)
+  add_worker "$home" w 100 4
+  printf 'kind=ship\nspawn_gen=s100.1\nharness=claude-opus\n' > "$home/state/w.meta"
+  sustained_pass "$home" defaultbackend 1000 >/dev/null
+  assert_equals "control w interrupt" "$(cat "$TMP_ROOT/defaultbackend.log")" "a default-tmux worker with no backend= line and a harness variant was not paused"
+  assert_present "$home/state/load-relief/paused/w" "no pause record for the default-backend worker"
+  pass "a meta with no backend= is the default tmux backend and a harness variant maps to its family"
 }
 
 test_buried_decision_is_never_paused() {
@@ -352,6 +382,8 @@ test_finished_pause_record_dropped_without_steer
 test_tab_separated_max_load1_sets_ceiling
 test_resume_waits_below_hysteresis_and_staggers
 test_failed_interrupt_keeps_uncertain_record
+test_failed_interrupts_stay_within_pause_limit
+test_default_backend_and_harness_variant_are_paused
 test_buried_decision_is_never_paused
 test_decision_after_pause_defers_resume
 test_uninterruptible_worker_is_not_a_candidate

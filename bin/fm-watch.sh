@@ -4591,8 +4591,20 @@ lane_capacity_publish_detached() {
 
 # Automatic load relief (bin/fm-load-relief.sh owns the contract): one
 # detached check beside the capacity publish while the same opt-in file
-# exists, single-flight like the publish above.
+# exists, and every 30 s while a pause record exists without it, so removing
+# the opt-in never strands a paused worker; single-flight like the publish.
 LOAD_RELIEF_PID=
+LOAD_RELIEF_LAST=0
+load_relief_records_due() {
+  local f now
+  for f in "$STATE/load-relief/paused"/*; do
+    [ -f "$f" ] || continue
+    fm_watch_now now
+    [ $((now - LOAD_RELIEF_LAST)) -ge 30 ]
+    return
+  done
+  return 1
+}
 load_relief_check_detached() {
   if [ -n "$LOAD_RELIEF_PID" ]; then
     if kill -0 "$LOAD_RELIEF_PID" 2>/dev/null; then
@@ -4604,6 +4616,7 @@ load_relief_check_detached() {
   FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
     "$SCRIPT_DIR/fm-load-relief.sh" check </dev/null >/dev/null 2>&1 &
   LOAD_RELIEF_PID=$!
+  fm_watch_now LOAD_RELIEF_LAST
 }
 
 # Self-watching heartbeat ledger: publish state/heartbeat.json detached and
@@ -4916,6 +4929,8 @@ while :; do
   # Opt-in lane capacity facts: off costs one file test.
   if [ -e "$CONFIG/lane-capacity" ] && [ "$(age_of "$STATE/lane-capacity.json")" -ge 30 ]; then
     lane_capacity_publish_detached
+    load_relief_check_detached
+  elif [ ! -e "$CONFIG/lane-capacity" ] && load_relief_records_due; then
     load_relief_check_detached
   fi
 
