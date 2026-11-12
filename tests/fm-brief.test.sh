@@ -1944,6 +1944,8 @@ test_crewmate_scaffolds_name_a_runnable_ledger_next() {
   home="$TMP_ROOT/ledger next home's"
   mkdir -p "$home/data" "$home/state" "$home/config"
   printf '## In flight\n\n## Queued\n\n## Done\n' > "$home/data/backlog.md"
+  FM_HOME="$home" bash "$ROOT/bin/fm-tasks-axi.sh" add other-first "beta outranks alpha" --repo beta --priority 0 >/dev/null \
+    || fail "could not seed the other project's ready item"
   for mode in no-mistakes direct-PR local-only scout; do
     if [ "$mode" = scout ]; then
       FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "ledger-next-$mode" alpha --scout >/dev/null 2>&1 \
@@ -1957,16 +1959,16 @@ test_crewmate_scaffolds_name_a_runnable_ledger_next() {
     [ -n "$rule" ] || fail "$mode brief does not name the ledger next command"
     command=$(printf '%s\n' "$rule" | cut -d '`' -f 2)
     out=$(cd "$TMP_ROOT" && env -u FM_HOME /bin/bash -c "$command" 2>&1); rc=$?
-    expect_code 3 "$rc" "$mode ledger next command on an empty backlog (got: $out)"
-    FM_HOME="$home" bash "$ROOT/bin/fm-tasks-axi.sh" add "next-$mode" "ready for $mode" --repo alpha --priority 0 >/dev/null \
+    expect_code 3 "$rc" "$mode ledger next command with no ready item in the briefed project (got: $out)"
+    FM_HOME="$home" bash "$ROOT/bin/fm-tasks-axi.sh" add "next-$mode" "ready for $mode" --repo alpha --priority 2 >/dev/null \
       || fail "could not seed a ready item"
     out=$(cd "$TMP_ROOT" && env -u FM_HOME /bin/bash -c "$command" 2>&1); rc=$?
     expect_code 0 "$rc" "$mode ledger next command with a ready item (got: $out)"
-    assert_contains "$out" "NEXT next-$mode project=alpha" "$mode ledger next command did not read the home backlog"
+    assert_contains "$out" "NEXT next-$mode project=alpha" "$mode ledger next command did not return the briefed project's item"
     FM_HOME="$home" bash "$ROOT/bin/fm-tasks-axi.sh" start "next-$mode" >/dev/null \
       || fail "could not start the seeded item"
   done
-  pass "fm-brief.sh: ship and scout briefs name a runnable read-only ledger next command for their home"
+  pass "fm-brief.sh: ship and scout briefs name a runnable read-only ledger next command for their own project"
 }
 
 test_queue_command_quotes_foreign_firstmate_path() {
