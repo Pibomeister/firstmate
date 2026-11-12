@@ -482,6 +482,10 @@ test_herdr_dead_pin_follows_the_homes_live_captain_handle() {
   make_handle_herdr "$bin"
   fmhome="$TMP_ROOT/handle-fm-home"
   mkdir -p "$fmhome/state" "$TMP_ROOT/handle-queue"
+  # The live primary holds the home's lock and recorded its handle after it.
+  sleep 300 >/dev/null 2>&1 &
+  HANDLE_LOCK_PID=$!
+  printf '%s\n' "$HANDLE_LOCK_PID" > "$fmhome/state/.lock"
   printf 'backend=herdr\ntarget=default:w4:p5G\nat=1\n' > "$fmhome/state/captain-handle"
   printf -- '- [ ] open item\n' > "$TMP_ROOT/handle-queue/backlog.md"
   cap=$(jq -nc --arg fm "$fmhome" --arg q "$TMP_ROOT/handle-queue/backlog.md" \
@@ -501,9 +505,20 @@ test_herdr_dead_pin_follows_the_homes_live_captain_handle() {
     FM_NUDGE_NOW=$((2000000000 + 25 * 60)) run_once "$home" >/dev/null 2>&1
   [ "$(last_event "$home")" = nudge ] \
     || fail "an idle live primary with open work and an empty composer must be nudged: $(tail -n 1 "$home/state/nudge.jsonl")"
-  grep -q $'^herdr\tw4:p5G\t' "$home/send.log" \
-    || fail "the nudge must type into the live handle's pane: $(cat "$home/send.log" 2>/dev/null)"
-  pass "fm-captain-nudge: a dead pinned herdr pane follows the home's live captain handle, and a real Claude pane's empty composer reads empty"
+  grep -q $'^herdr\tw4:p5G\t.*\tdefault$' "$home/send.log" \
+    || fail "the nudge must type into the live handle's pane in its session: $(cat "$home/send.log" 2>/dev/null)"
+  # Once the recording session no longer holds the home, the handle is not
+  # trusted: the dead pin fails its read again and nothing is typed there.
+  kill "$HANDLE_LOCK_PID" 2>/dev/null || true
+  wait "$HANDLE_LOCK_PID" 2>/dev/null || true
+  : > "$home/send.log"
+  PATH="$bin:$PATH" FAKE_HERDR_LOG="$log" FAKE_HERDR_LIVE_PANE=w4:p5G \
+    FAKE_HERDR_SCREEN_FILE="$ROOT/tests/fixtures/claude-herdr-primary-empty-composer.screen.txt" \
+    FM_NUDGE_NOW=$((2000000000 + 60 * 60)) run_once "$home" >/dev/null 2>&1
+  [ "$(last_event "$home")" = skip_read_failed ] \
+    || fail "a handle whose session no longer holds the home must not be followed: $(tail -n 1 "$home/state/nudge.jsonl")"
+  [ ! -s "$home/send.log" ] || fail "the nudge typed into a handle whose session ended: $(cat "$home/send.log")"
+  pass "fm-captain-nudge: a dead pinned herdr pane follows the home's live captain handle, a real Claude pane's empty composer reads empty, and a handle whose session ended is ignored"
 }
 
 fm_test_run \

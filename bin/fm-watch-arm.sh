@@ -24,6 +24,10 @@
 # no doorbell: its wakes stay queued until the next captain message starts a turn.
 # FM_WATCH_MANAGED_HOLD=1 is the watchdog's foreground-owner variant: its
 # watcher remains this arm's child after a wake, with no detached successor.
+# Any other arm attached to such a managed-hold holder prints
+# `check: rearm-resurface` and exits 0 once main has pending wake rows (outside
+# away mode) instead of following it forever; with FM_WATCH_PREDECESSOR_ARM_PID
+# set it reports only rows newer than the highest one pending at attach.
 # On a harness with a PreToolUse-equivalent hook, bin/fm-arm-pretool-check.sh
 # applies the command-position policy before the command runs; see
 # docs/arm-pretool-check.md for the blessed tree and deny reason codes. It is a
