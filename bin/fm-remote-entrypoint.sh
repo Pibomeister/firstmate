@@ -16,8 +16,9 @@
 #
 # stdin is captured as bounded job input. The completed worker result is relayed
 # with stdout and stderr kept separate and its exit status preserved. An SSH
-# disconnect remains unknown completion to fm-on.sh, which retries only an ssh
-# that never connected. The final status is still OpenSSH's. The shared library
+# disconnect remains unknown completion to fm-on.sh. Only a read-only probe
+# retries an ssh that never connected. Any other call runs once. The final
+# status is still OpenSSH's. The shared library
 # header owns job fields, bounds, PATH, LaunchAgent contract, and worker
 # environment.
 #

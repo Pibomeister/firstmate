@@ -322,7 +322,7 @@ test_invalid_override_fails_before_the_command() {
   pass "a bad retry override is refused before the command runs"
 }
 
-test_orca_send_retries_a_transient_cli_blip() {
+test_orca_send_does_not_retry_a_transient_cli_blip() {
   local dir count log out_file err_file rc
   dir=$(fm_test_tmproot fm-blip-orca)
   mkdir -p "$dir/bin"
@@ -357,16 +357,16 @@ SH
     >"$out_file" 2>"$err_file"
   rc=$?
   set -e
-  assert_equals 0 "$rc" "an Orca send did not recover from a refused connection"
-  assert_equals 3 "$(cat "$count")" "an Orca send did not retry the refused connection"
-  assert_equals $'2\n4' "$(cat "$log")" "an Orca send did not back off between retries"
-  if grep -q 'could not connect to Orca' "$out_file" "$err_file"; then
-    fail "an Orca send kept the connect-failure text after it recovered"
+  [ "$rc" -ne 0 ] || fail "an Orca send retried a refused connection until success"
+  assert_equals 1 "$(cat "$count")" "an Orca send retried a refused connection"
+  [ ! -s "$log" ] || fail "an Orca send waited on a refused connection: $(cat "$log")"
+  if ! grep -q 'could not connect to Orca' "$out_file" "$err_file"; then
+    fail "an Orca send hid the connect-failure text"
   fi
-  pass "an Orca terminal send retries a transient CLI blip"
+  pass "an Orca terminal send does not retry a transient CLI blip"
 }
 
-test_orca_send_retries_connect_text_on_stderr() {
+test_orca_send_does_not_retry_connect_text_on_stderr() {
   local dir
   dir=$(blip_orca_stub_dir fm-blip-orca-stderr)
   set +e
@@ -380,9 +380,10 @@ test_orca_send_retries_connect_text_on_stderr() {
     >"$dir/out" 2>"$dir/err"
   BLIP_RC=$?
   set -e
-  assert_equals 0 "$BLIP_RC" "an Orca send did not recover from connect text on stderr"
-  assert_equals 2 "$(cat "$dir/count")" "an Orca send did not retry connect text on stderr"
-  pass "an Orca terminal send retries connect text printed on stderr"
+  [ "$BLIP_RC" -ne 0 ] || fail "an Orca send retried connect text on stderr until success"
+  assert_equals 1 "$(cat "$dir/count")" "an Orca send retried connect text on stderr"
+  [ ! -s "$dir/sleep" ] || fail "an Orca send waited after connect text on stderr"
+  pass "an Orca terminal send does not retry connect text printed on stderr"
 }
 
 test_orca_send_does_not_retry_permission_denied() {
@@ -537,23 +538,23 @@ test_orca_draft_present_holds_within_the_short_read_budget() {
   pass "an unreadable Orca draft probe still holds within the short read budget"
 }
 
-test_orca_send_retries_past_the_short_read_budget() {
+test_orca_remove_does_not_retry_a_connect_blip() {
   local dir
-  dir=$(blip_orca_stub_dir fm-blip-orca-send-long)
+  dir=$(blip_orca_stub_dir fm-blip-orca-remove-once)
   set +e
   PATH="$dir/bin:$PATH" \
     FM_BLIP_ORCA_COUNT="$dir/count" \
     FM_BLIP_ORCA_FAILS=5 \
     FM_BLIP_NOW=9800 \
     FM_BLIP_SLEEP_LOG="$dir/sleep" \
-    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_send_literal term-1 hello' "$ROOT" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_remove_worktree wt-1' "$ROOT" \
     >"$dir/out" 2>"$dir/err"
   BLIP_RC=$?
   set -e
-  assert_equals 0 "$BLIP_RC" "an Orca send gave up before its 5-minute budget"
-  assert_equals 6 "$(cat "$dir/count")" "an Orca send did not retry through five refused connections"
-  assert_equals $'2\n4\n8\n16\n32' "$(cat "$dir/sleep")" "an Orca send did not keep doubling past 15 seconds"
-  pass "an Orca send keeps retrying past the short read budget"
+  [ "$BLIP_RC" -ne 0 ] || fail "an Orca worktree removal retried a connect blip until success"
+  assert_equals 1 "$(cat "$dir/count")" "an Orca worktree removal retried a connect blip"
+  [ ! -s "$dir/sleep" ] || fail "an Orca worktree removal waited on a connect blip: $(cat "$dir/sleep")"
+  pass "an Orca worktree removal does not retry a connect blip"
 }
 
 fm_test_run \
@@ -574,11 +575,11 @@ fm_test_run \
   test_ssh_connect_does_not_repeat_a_session_that_may_have_run \
   test_bare_failure_without_transient_text_is_not_retried \
   test_invalid_override_fails_before_the_command \
-  test_orca_send_retries_a_transient_cli_blip \
-  test_orca_send_retries_connect_text_on_stderr \
+  test_orca_send_does_not_retry_a_transient_cli_blip \
+  test_orca_send_does_not_retry_connect_text_on_stderr \
   test_orca_send_does_not_retry_permission_denied \
   test_orca_mutations_do_not_repeat_after_a_lost_reply \
   test_orca_reads_retry_a_timed_out_reply \
   test_orca_capture_gives_up_within_the_short_read_budget \
   test_orca_draft_present_holds_within_the_short_read_budget \
-  test_orca_send_retries_past_the_short_read_budget
+  test_orca_remove_does_not_retry_a_connect_blip

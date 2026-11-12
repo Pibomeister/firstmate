@@ -17,7 +17,7 @@
 # Orca stop proof below means the same thing by "agent" that they do.
 # shellcheck source=bin/fm-agent-process-lib.sh
 . "$(dirname -- "${BASH_SOURCE[0]}")/../fm-agent-process-lib.sh"
-# Transient Orca CLI blips (terminal read/send and worktree calls) retry here.
+# Read-only Orca CLI blips retry here. A mutation runs once.
 # bin/fm-blip-retry-lib.sh owns the backoff. `orca terminal wait` stays out:
 # its timeout is the answer that a turn is still running, not a transport blip.
 # shellcheck source=bin/fm-blip-retry-lib.sh
@@ -166,8 +166,8 @@ if (data.ok === false) {
 }
 
 # A non-zero Orca CLI still prints its JSON error on stdout. Copy the connect
-# text onto stderr so a connect-only retry, which classifies stderr only, can
-# see it. Invalid JSON is left alone.
+# text onto stderr so a caller that reports stderr still sees why the CLI
+# failed. Invalid JSON is left alone.
 fm_backend_orca_json_connect_note() {
   node -e '
 const fs = require("fs");
@@ -220,10 +220,10 @@ fm_backend_orca_blip_read() {
   fm_blip_retry --read fm_backend_orca_invoke "$@"
 }
 
-# An Orca mutation may land before its reply is lost, so it is repeated only
-# when the CLI never connected.
+# A mutation runs once. A lost reply can mean the change already landed, so
+# send, create, add, and remove are never retried.
 fm_backend_orca_blip_mutation() {
-  fm_blip_retry --connect-only fm_backend_orca_invoke "$@"
+  fm_backend_orca_invoke "$@"
 }
 
 fm_backend_orca_run_json() {

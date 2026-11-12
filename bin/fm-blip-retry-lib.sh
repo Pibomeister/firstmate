@@ -4,7 +4,10 @@
 # Sourced, never executed. This is the single owner of that retry.
 #
 #   fm_blip_retry [--connect-only|--ssh-connect] [--read] <command> [args...]
-#       Run the command. Success returns its status and passes its stdout and
+#       Run the command. Call this only for a command that cannot change
+#       state. A mutation runs once, outside this helper: a connect-shaped
+#       error can arrive after the change was already written.
+#       Success returns its status and passes its stdout and
 #       stderr through. A definite failure is returned at once, once: not
 #       found, permission denied, or a usage error. A transient failure is
 #       retried: connection refused, connection reset, timed out, a missing
@@ -20,9 +23,9 @@
 #       budget. Each attempt sees the caller's stdin. A caller that must
 #       replay stdin across attempts has to spool it first.
 #
-#       --connect-only is for a command that is not safe to repeat once it
-#       may have taken effect. Only the attempt's stderr is classified, and
-#       only a failure to connect at all is transient: connection refused,
+#       --connect-only classifies only the attempt's stderr. It is not a
+#       mutation policy: production mutations run once, outside this helper.
+#       Only a failure to connect at all is transient: connection refused,
 #       could not resolve the host, no route, a connect that timed out, a
 #       connection closed before the session began, a missing socket, or an
 #       Orca CLI connect failure (code runtime_unavailable, or the text

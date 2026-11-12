@@ -33,8 +33,8 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-update.sh`           | Guarded self-update of firstmate and local or remote secondmate homes, reconciling redundant divergence and classifying every live mate left on the target commit for restart or fallback nudge |
 | `fm-secondmate-restart.sh` | Persist open conversational work, then restart eligible second mates or report the fallback outcome |
 | `fm-secondmate-restart-lib.sh` | Shared second-mate restart capability and persistence-request contract |
-| `fm-on.sh`               | Execute one tracked Firstmate command in a configured remote secondmate home, using its job worker except for the doctor bootstrap, retrying transient SSH blips first, with the 15-second budget when the caller sets FM_BLIP_READ=1 |
-| `fm-blip-retry-lib.sh`   | Retry one command across a transient Orca CLI or SSH blip, with capped exponential backoff for up to 5 minutes (15 seconds for a read-only probe), before the failure is reported |
+| `fm-on.sh`               | Execute one tracked Firstmate command in a configured remote secondmate home, using its job worker except for the doctor bootstrap. A read-only probe sets FM_BLIP_READ=1 and retries a pre-session SSH blip for up to 15 seconds. Any other call runs once. |
+| `fm-blip-retry-lib.sh`   | Retry one read-only Orca CLI or SSH probe across a transient blip, with capped exponential backoff for up to 5 minutes (15 seconds for a supervision probe), before the failure is reported. A mutation is not retried. |
 | `fm-remote-job-lib.sh`   | Shared bounded remote job queue, worker readiness, LaunchAgent contract, and filesystem-composed PATH |
 | `fm-remote-job-worker.sh` | Long-lived remote queue worker for tracked `fm-*.sh` commands in the account runtime |
 | `fm-remote-job-reap-orphans.sh` | Stop remote job workers left running by a pruned code root, never one whose checkout still exists |

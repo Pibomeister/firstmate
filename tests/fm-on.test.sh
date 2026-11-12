@@ -244,35 +244,35 @@ pass "the fixed entrypoint runs every command in the worker's explicit environme
 BLIP_SLEEP="$TMP_ROOT/blip-sleep"
 : > "$BLIP_SLEEP"
 set +e
-BLIP_OUT=$(FM_BLIP_NOW=1000 FM_BLIP_SLEEP_LOG="$BLIP_SLEEP" FM_FAKE_SSH_MODE=blip \
+BLIP_OUT=$(FM_BLIP_READ=1 FM_BLIP_NOW=1000 FM_BLIP_SLEEP_LOG="$BLIP_SLEEP" FM_FAKE_SSH_MODE=blip \
   fm_on ios fm-probe-two.sh 2>"$TMP_ROOT/blip-err")
 BLIP_RC=$?
 set -e
-[ "$BLIP_RC" -eq 0 ] || fail "a refused SSH connection that cleared was reported as a failure (got $BLIP_RC)"
-[ "$(cat "$SSH_COUNT")" -eq 3 ] || fail "a refused SSH connection was not retried twice before success (count $(cat "$SSH_COUNT"))"
-assert_equals $'2\n4' "$(cat "$BLIP_SLEEP")" "a refused SSH connection did not back off 2s then 4s"
-assert_contains "$BLIP_OUT" "home=$REMOTE_HOME" "a recovered SSH call did not return the remote result"
+[ "$BLIP_RC" -eq 0 ] || fail "a read-only probe whose refused SSH connection cleared was reported as a failure (got $BLIP_RC)"
+[ "$(cat "$SSH_COUNT")" -eq 3 ] || fail "a read-only probe did not retry a refused SSH connection twice before success (count $(cat "$SSH_COUNT"))"
+assert_equals $'2\n4' "$(cat "$BLIP_SLEEP")" "a read-only probe did not back off 2s then 4s"
+assert_contains "$BLIP_OUT" "home=$REMOTE_HOME" "a recovered read-only probe did not return the remote result"
 [ "$(printf '%s\n' "$BLIP_OUT" | grep -c '^home=')" -eq 1 ] \
-  || fail "a recovered SSH call repeated the remote result: $BLIP_OUT"
+  || fail "a recovered read-only probe repeated the remote result: $BLIP_OUT"
 if grep -q 'Connection refused' "$TMP_ROOT/blip-err"; then
-  fail "a recovered SSH call kept the refused-connection text"
+  fail "a recovered read-only probe kept the refused-connection text"
 fi
-pass "a refused SSH connection is retried until the remote command succeeds"
+pass "a read-only probe retries a refused SSH connection until the remote command succeeds"
 
 : > "$SSH_COUNT"
 : > "$BLIP_SLEEP"
 printf 'payload one\n' > "$TMP_ROOT/blip-stdin"
 set +e
-FM_BLIP_NOW=2000 FM_BLIP_SLEEP_LOG="$BLIP_SLEEP" FM_FAKE_SSH_MODE=blip \
+FM_BLIP_READ=1 FM_BLIP_NOW=2000 FM_BLIP_SLEEP_LOG="$BLIP_SLEEP" FM_FAKE_SSH_MODE=blip \
   fm_on --stdin ios fm-probe-one.sh "$REMOTE_HOME/blip-argv.bin" 0 'retried' \
   < "$TMP_ROOT/blip-stdin" > "$TMP_ROOT/blip-stdin-out" 2>"$TMP_ROOT/blip-stdin-err"
 BLIP_RC=$?
 set -e
-[ "$BLIP_RC" -eq 0 ] || fail "stdin replay across a refused SSH connection failed (got $BLIP_RC)"
+[ "$BLIP_RC" -eq 0 ] || fail "stdin replay across a read-only refused SSH connection failed (got $BLIP_RC)"
 [ "$(cat "$SSH_COUNT")" -eq 3 ] || fail "stdin replay did not retry the refused SSH connection"
 assert_grep 'stdin: payload one' "$TMP_ROOT/blip-stdin-out" \
   "a later SSH attempt did not see the caller's stdin again"
-pass "a refused SSH connection replays the caller's stdin on the successful attempt"
+pass "a read-only probe replays the caller's stdin on the successful attempt"
 
 blip_sleep_sum() {
   awk '{ total += $1 } END { print total + 0 }' "$1"
@@ -295,14 +295,14 @@ pass "FM_BLIP_READ=1 returns an offline host within the short read budget"
 : > "$SSH_COUNT"
 : > "$BLIP_SLEEP"
 set +e
-FM_BLIP_NOW=5000 FM_BLIP_SLEEP_LOG="$BLIP_SLEEP" FM_FAKE_SSH_MODE=offline \
+FM_BLIP_NOW=5000 FM_BLIP_SLEEP_LOG="$BLIP_SLEEP" FM_FAKE_SSH_MODE=blip \
   fm_on ios fm-probe-two.sh >"$TMP_ROOT/mutate-out" 2>"$TMP_ROOT/mutate-err"
 BLIP_RC=$?
 set -e
-[ "$BLIP_RC" -ne 0 ] || fail "a changing call treated a permanently offline host as success"
-[ "$(blip_sleep_sum "$BLIP_SLEEP")" -gt 15 ] \
-  || fail "a call without FM_BLIP_READ stopped inside the short read budget: $(tr '\n' ' ' < "$BLIP_SLEEP")"
-pass "a call that changes something keeps retrying past the short read budget"
+[ "$BLIP_RC" -ne 0 ] || fail "a changing call retried a refused SSH connection until success"
+[ "$(cat "$SSH_COUNT")" -eq 1 ] || fail "a changing call retried ssh (count $(cat "$SSH_COUNT"))"
+[ ! -s "$BLIP_SLEEP" ] || fail "a changing call waited before returning: $(tr '\n' ' ' < "$BLIP_SLEEP")"
+pass "a call that changes something does not retry a refused SSH connection"
 
 # The child PATH is the entrypoint's own composition, so it is asserted on the
 # PATH a real child receives rather than on the script that builds it. The
