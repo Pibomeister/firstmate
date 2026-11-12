@@ -68,7 +68,7 @@ The real Orca card movement from `in-progress` through `in-review` to `completed
 Tasks waiting without a PR and existing leaked branches are not reconciled by these event hooks.
 
 `fm-peek.sh` reads with `orca terminal read`.
-`bin/fm-orca-cli-cache.sh` reuses read-only Orca CLI results across supervision sweeps for a few seconds.
+`bin/fm-orca-cli-cache.sh` reuses read-only Orca CLI results for a few seconds, and its header owns that rule.
 An ordinary metadata-routed `fm-send.sh` text steer becomes a durable steering-inbox record, and only its best-effort constant doorbell passes through Orca's submit machinery.
 On the typed plane, `fm-send.sh` verifies composer clearance through the fleet-wide classifier in `bin/fm-composer-lib.sh`, retrying Enter without retyping when a slash popup first fills an argument placeholder.
 For a recorded Droid task, a matching post-Enter `UserPromptSubmit` receipt also confirms a typed send when the composer is temporarily unreadable during Droid's turn; the receipt binds the prompt digest and event sequence to the current task generation.
@@ -152,6 +152,7 @@ The [Orca environment source](configuration.md#orca-environment-source-configlau
 
 ```sh
 tests/fm-backend-orca.test.sh
+tests/fm-orca-cli-cache.test.sh
 tests/fm-spawn-orca-worktree.test.sh
 tests/fm-control.test.sh
 tests/fm-daemon.test.sh
