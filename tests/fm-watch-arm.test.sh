@@ -2549,7 +2549,29 @@ test_handling_successor_reports_only_newer_rows_under_managed_hold() {
   pass "watch-arm: a handling successor under a managed-hold holder reports only rows newer than its attach"
 }
 
+test_attached_arm_reports_unsequenced_row_under_managed_hold() {
+  local dir state fakebin out armout status
+  dir=$(make_case managed-hold-unsequenced)
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  armout="$dir/arm.out"
+  start_managed_seed_watcher "$state" "$fakebin" "$out"
+  # A truncated row has no sequence; only a main drain retires it, so an
+  # ordinary arm must still wake main for it.
+  printf 'truncated-row\n' >> "$state/.wake-queue"
+  start_attached_arm_env "$state" "$fakebin" "$armout" FM_WATCH_MANAGED_HOLD=
+  wait_for_exit "$ARM_PID" 50
+  status=$?
+  expect_code 0 "$status" "an arm attached to a managed-hold holder must report a queue holding only an unsequenced row: $(cat "$armout")"
+  grep -qx 'check: rearm-resurface' "$armout" \
+    || fail "attached arm did not report the unsequenced row: $(cat "$armout")"
+  stop_seed
+  pass "watch-arm: an arm attached to a managed-hold holder reports a queue holding only an unsequenced row"
+}
+
 test_attached_arm_reports_queued_wake_under_managed_hold
+test_attached_arm_reports_unsequenced_row_under_managed_hold
 test_attached_arm_keeps_following_managed_hold_when_not_reportable
 test_handling_successor_reports_only_newer_rows_under_managed_hold
 test_detach_hold_leaves_a_hold_behind_the_arm

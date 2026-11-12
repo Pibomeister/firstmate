@@ -81,6 +81,7 @@ A re-emit adds context but starts no turn, so an idle automatic compaction would
 For a Claude `compact` whose payload transcript shows the newest compact boundary with trigger `auto`, while supervision is needed, a wake row is queued, or a captain order is open, the wrapper starts one detached `bin/fm-resume-doorbell.sh`.
 It never starts on `clear`, a manual `/compact` (including the supervision host's warm compact), another harness, under an away or quiet record, or with `FM_RESUME_DOORBELL=0`.
 The doorbell types one fixed resume line into the terminal recorded in `state/captain-handle`, only when that session is provably idle with an empty composer, confirms the submit, and logs each outcome to `state/.resume-doorbell.log`; its header owns the exact checks and settings.
+Proving idle needs a backend that reports a native busy state, so on a backend without one (tmux, zellij, orca, cmux, paseo) the doorbell stands down and an idle auto compaction there still starts no turn.
 
 ### Change from the previous nudge matcher
 
