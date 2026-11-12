@@ -1,0 +1,19 @@
+# Sandbox: FM_HOME=lab home (fm-lab-home.sh), HOME=/tmp/fm-sb.rPSh74/home, XDG_CONFIG_HOME=/tmp/fm-sb.rPSh74/xdg, NM_HOME=/tmp/fm-sb.rPSh74/nm; real bin/fm-session-start.sh
+== reset: remove sandbox ~/.gitconfig left by earlier attempt, full start
+SHARED_STATE: global git config changed since the last session start (/tmp/fm-sb.rPSh74/home/.gitconfig) - workers must never edit shared git config; inspect recent changes and restore any unintended setting
+baseline line2: absent|absent
+== step 1: unchanged full start (expect silent)
+(no SHARED_STATE line)
+== simulated worker mutation: git config --file $HOME/.gitconfig user.email rogue@example.invalid
+== step 2: read-only start (lock held by another live session pid)
+●  READ-ONLY SESSION - FLEET LOCK OWNERSHIP WAS NOT VERIFIED
+SHARED_STATE: global git config changed since the last session start (/tmp/fm-sb.rPSh74/home/.gitconfig) - workers must never edit shared git config; inspect recent changes and restore any unintended setting
+baseline unchanged after read-only: YES
+== step 3: --reemit start
+SHARED_STATE: global git config changed since the last session start (/tmp/fm-sb.rPSh74/home/.gitconfig) - workers must never edit shared git config; inspect recent changes and restore any unintended setting
+baseline unchanged after --reemit: YES
+== step 4: full locked start (expect SHARED_STATE + baseline advance)
+SHARED_STATE: global git config changed since the last session start (/tmp/fm-sb.rPSh74/home/.gitconfig) - workers must never edit shared git config; inspect recent changes and restore any unintended setting
+baseline advanced: YES
+== step 5: next full start (expect silent)
+(no SHARED_STATE line)

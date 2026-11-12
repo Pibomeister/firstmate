@@ -1,0 +1,12 @@
+# PYTHONPATH sitecustomize disables SQLite double-quoted string literals (SQLITE_DBCONFIG_DQS_DML/DDL=0) on every python3 sqlite3 connection, emulating a SQLITE_DQS=0 build
+== shim check: old double-quoted form vs new bound form
+ERROR: SELECT COALESCE(sql, "") FROM sqlite_master WHERE substr(name,1,7) != "sqlite_" -> no such column: "" - should this be a string literal in single-quotes?
+OK   : SELECT COALESCE(sql, ?) FROM sqlite_master WHERE substr(name,1,7) != ?
+== full start with shim, no prior baseline (expect baseline written)
+(no SHARED_STATE line)
+baseline written: YES (sha256:6d3cb656a7f36e0c446b555a42bff3e15fc7851a4f1f90d35568b42d626a5107)
+== worker DDL: CREATE INDEX runs_status ON runs(status)
+== worker git edit too: core.editor in sandbox ~/.gitconfig
+== full start with shim (expect both SHARED_STATE lines)
+SHARED_STATE: global git config changed since the last session start (/tmp/fm-sb.rPSh74/home/.gitconfig) - workers must never edit shared git config; inspect recent changes and restore any unintended setting
+SHARED_STATE: shared no-mistakes database schema changed since the last session start (/tmp/fm-sb.rPSh74/nm/state.sqlite) - workers must never alter shared databases; inspect no-mistakes version and state database before dispatching pipeline runs

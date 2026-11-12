@@ -1,0 +1,16 @@
+# Sandbox NM_HOME=/tmp/fm-sb.rPSh74/nm (isolated, fresh DB); real bin/fm-session-start.sh
+== first creation of state.sqlite (CREATE TABLE runs, PRAGMA user_version=1)
+(no SHARED_STATE line)
+baseline line4: sha256:339ae72cca613b7cbb7a0d314d79327ed1daef0a59d16a93e873d1ed339d9ca1
+== DML: INSERT/UPDATE rows
+(no SHARED_STATE line)
+== internal sqlite_* object: ANALYZE (creates sqlite_stat1)
+(no SHARED_STATE line)
+== DDL by a worker: ALTER TABLE runs ADD COLUMN rogue TEXT
+SHARED_STATE: shared no-mistakes database schema changed since the last session start (/tmp/fm-sb.rPSh74/nm/state.sqlite) - workers must never alter shared databases; inspect no-mistakes version and state database before dispatching pipeline runs
+== next start (expect silent)
+(no SHARED_STATE line)
+== DDL: CREATE TABLE extra
+SHARED_STATE: shared no-mistakes database schema changed since the last session start (/tmp/fm-sb.rPSh74/nm/state.sqlite) - workers must never alter shared databases; inspect no-mistakes version and state database before dispatching pipeline runs
+== DDL: PRAGMA user_version=2
+SHARED_STATE: shared no-mistakes database schema changed since the last session start (/tmp/fm-sb.rPSh74/nm/state.sqlite) - workers must never alter shared databases; inspect no-mistakes version and state database before dispatching pipeline runs

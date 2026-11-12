@@ -1,0 +1,7 @@
+# fm-session-start.test.sh: all assertions passed
+ok - session start detects created, edited, and removed global/XDG/GIT_CONFIG_GLOBAL git config without mutating baseline on read-only or reemit
+GIT_TEST_DONE
+ok - session start detects shared no-mistakes database schema changes while ignoring sqlite_* internal objects and row writes
+NM_TEST_DONE
+ok - session start preserves shared-state baseline byte-for-byte across missing python3, locks, timeouts, corruption, and unreadable files
+BASE_TEST_DONE

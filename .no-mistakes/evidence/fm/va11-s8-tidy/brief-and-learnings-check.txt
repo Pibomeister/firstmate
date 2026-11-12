@@ -1,0 +1,18 @@
+== sb-ship: shared-infra rule lines
+62:7. Never administer infrastructure that every lane shares. Four things are shared:
+82:   - Shared git configuration - global git config (`~/.gitconfig`, `$XDG_CONFIG_HOME/git/config`,
+83:     `GIT_CONFIG_GLOBAL`), system git config (`git config --system`), and the primary clone's
+85:     enabled and `--worktree` is passed. Never run `git config --global`, `git config --system`, or
+90:   - Shared databases - the shared `no-mistakes` state database (`state.sqlite`) and any other
+== sb-scout: shared-infra rule lines
+50:7. Never administer infrastructure that every lane shares. Four things are shared:
+70:   - Shared git configuration - global git config (`~/.gitconfig`, `$XDG_CONFIG_HOME/git/config`,
+71:     `GIT_CONFIG_GLOBAL`), system git config (`git config --system`), and the primary clone's
+73:     enabled and `--worktree` is passed. Never run `git config --global`, `git config --system`, or
+78:   - Shared databases - the shared `no-mistakes` state database (`state.sqlite`) and any other
+== sb-mate-charter: shared-infra rule lines
+(rule absent)
+== fleet learnings digest printed by bin/fm-fleet-learnings.sh
+62:### 1. Setup and install changes passed only in a warm worktree
+63:- Failure: a setup or install change passed in the worker's existing warm worktree, where cached dependencies, generated files, and prior initialization hid a broken cold-start path on a fresh clone.
+64-- Rule: before reporting a setup, bootstrap, or install change done, verify the documented setup flow end-to-end in a fresh clone (or clean temporary directory with no pre-seeded caches or local state), not only in the warm task worktree, and record the fresh-clone verification output.
