@@ -23,9 +23,13 @@
 #
 # It stands down, typing nothing, when the session lock changes owner, an away
 # or quiet record exists, a Stop claimed after the compaction (a turn already
-# ran), the handle is unreadable, the agent is not alive, the composer is not
-# empty, a turn is running, idleness cannot be proven before the wait limit, or
-# another doorbell holds state/.resume-doorbell.lock. Every run appends one row to
+# ran), the handle is unreadable or older than the session lock, the agent is
+# not alive, the composer is not empty, a turn is running, idleness cannot be
+# proven before the wait limit, or another doorbell holds or takes over
+# state/.resume-doorbell.lock (each poll re-reads the lock's pid, so of two
+# doorbells that both cleared a stale lock only the last one types, and a
+# doorbell removes the lock on exit only while it still names it). Every run
+# appends one row to
 # state/.resume-doorbell.log:
 #   <utc-iso>\t<epoch>\t<source>\t<backend>:<target>\t<outcome>\t<detail>
 # with outcome submitted, unverified, stood-down or failed. It never kills,
@@ -101,7 +105,7 @@ if ! mkdir "$LOCK" 2>/dev/null; then
   mkdir "$LOCK" 2>/dev/null || finish stood-down "the doorbell lock could not be taken"
 fi
 printf '%s\n' "$$" > "$LOCK/pid" 2>/dev/null || true
-trap 'rm -rf "$LOCK" 2>/dev/null || true' EXIT
+trap '[ "$(cat "$LOCK/pid" 2>/dev/null)" != "$$" ] || rm -rf "$LOCK" 2>/dev/null || true' EXIT
 
 LOCK_PID=$(sed -n '1p' "$STATE/.lock" 2>/dev/null || true)
 [ -n "$LOCK_PID" ] || finish stood-down "no session lock"
@@ -130,8 +134,14 @@ transcript_size() {
 # <previous transcript size> is the size one poll earlier.
 idle_reason() {  # <previous-size>
   local prev=$1 agent busy composer size
+  # A second doorbell that cleared the same stale lock may have replaced ours.
+  [ "$(cat "$LOCK/pid" 2>/dev/null)" = "$$" ] || { printf 'another resume doorbell took the lock'; return 0; }
   [ "$(sed -n '1p' "$STATE/.lock" 2>/dev/null || true)" = "$LOCK_PID" ] || { printf 'the session lock changed owner'; return 0; }
   kill -0 "$LOCK_PID" 2>/dev/null || { printf 'the session lock changed owner'; return 0; }
+  # The handle counts only when this session recorded it: the re-emit's
+  # claim-handle rewrites it after the lock, so a handle older than the lock
+  # names some earlier session's terminal.
+  [ ! "$STATE/.lock" -nt "$STATE/captain-handle" ] || { printf 'state/captain-handle is older than the session lock'; return 0; }
   if [ -e "$STATE/.afk" ] || [ -e "$STATE/.afk-contract" ]; then
     printf 'an away or quiet record exists'; return 0
   fi
@@ -167,7 +177,7 @@ while :; do
   reason=$(idle_reason "$prev")
   [ -n "$reason" ] || break
   case "$reason" in
-    'the session lock changed owner'|'agent state is '*|'composer is '*|'a turn is running'|'busy state is '*|'an away or quiet record exists'|'a turn already ended after the compaction')
+    'another resume doorbell took the lock'|'state/captain-handle is older than the session lock'|'the session lock changed owner'|'agent state is '*|'composer is '*|'a turn is running'|'busy state is '*|'an away or quiet record exists'|'a turn already ended after the compaction')
       finish stood-down "$reason" ;;
   esac
   prev=$(transcript_size)

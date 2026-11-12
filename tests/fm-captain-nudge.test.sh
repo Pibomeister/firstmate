@@ -462,6 +462,10 @@ make_handle_herdr() {  # <bin-dir>
   cat > "$1/herdr" <<'SH'
 #!/bin/sh
 printf '%s\n' "$*" >> "$FAKE_HERDR_LOG"
+if [ "$1" = pane ] && [ "$2" = list ]; then
+  [ -z "${FAKE_HERDR_LIST:-}" ] || printf '%s\n' "$FAKE_HERDR_LIST"
+  exit 0
+fi
 [ "$1" = pane ] && [ "$2" = read ] || exit 0
 case "$3" in
   "$FAKE_HERDR_LIVE_PANE") cat "$FAKE_HERDR_SCREEN_FILE" ;;
@@ -477,7 +481,7 @@ SH
 # read-only capture of that primary taken mid-turn (conversation text
 # replaced); the composer classifier must read its empty composer as empty.
 test_herdr_dead_pin_follows_the_homes_live_captain_handle() {
-  local home bin cap fmhome log
+  local home bin cap fmhome log title_home
   bin="$TMP_ROOT/handle-herdr-bin"
   make_handle_herdr "$bin"
   fmhome="$TMP_ROOT/handle-fm-home"
@@ -507,6 +511,21 @@ test_herdr_dead_pin_follows_the_homes_live_captain_handle() {
     || fail "an idle live primary with open work and an empty composer must be nudged: $(tail -n 1 "$home/state/nudge.jsonl")"
   grep -q $'^herdr\tw4:p5G\t.*\tdefault$' "$home/send.log" \
     || fail "the nudge must type into the live handle's pane in its session: $(cat "$home/send.log" 2>/dev/null)"
+  # A title selector is not a pin: when it matches a pane whose read fails,
+  # the nudge does not follow the handle, even while the home is held.
+  cap=$(jq -nc --arg fm "$fmhome" --arg q "$TMP_ROOT/handle-queue/backlog.md" \
+    '[{id:"factory", owner:"goodword", backend:"herdr", pane:"", title:"primary", session:"", fm_home:$fm, open_work:{repos:[], queue_file:$q}}]')
+  title_home=$(write_home herdr-title-dead "$cap")
+  : > "$log"
+  PATH="$bin:$PATH" FAKE_HERDR_LOG="$log" FAKE_HERDR_LIVE_PANE=w4:p5G \
+    FAKE_HERDR_LIST='{"result":{"panes":[{"pane_id":"w4:p18","title":"primary"}]}}' \
+    FAKE_HERDR_SCREEN_FILE="$ROOT/tests/fixtures/claude-herdr-primary-empty-composer.screen.txt" \
+    FM_NUDGE_NOW=2000000000 run_once "$title_home" >/dev/null 2>&1
+  grep -q '^pane read w4:p18' "$log" || fail "the title selector's pane was not read: $(cat "$log")"
+  ! grep -q '^pane read w4:p5G' "$log" \
+    || fail "a title selector whose pane read failed must not follow the home's handle: $(cat "$log")"
+  [ "$(last_event "$title_home")" = skip_read_failed ] \
+    || fail "a title-matched pane whose read failed must log skip_read_failed: $(tail -n 1 "$title_home/state/nudge.jsonl")"
   # Once the recording session no longer holds the home, the handle is not
   # trusted: the dead pin fails its read again and nothing is typed there.
   kill "$HANDLE_LOCK_PID" 2>/dev/null || true
@@ -518,7 +537,7 @@ test_herdr_dead_pin_follows_the_homes_live_captain_handle() {
   [ "$(last_event "$home")" = skip_read_failed ] \
     || fail "a handle whose session no longer holds the home must not be followed: $(tail -n 1 "$home/state/nudge.jsonl")"
   [ ! -s "$home/send.log" ] || fail "the nudge typed into a handle whose session ended: $(cat "$home/send.log")"
-  pass "fm-captain-nudge: a dead pinned herdr pane follows the home's live captain handle, a real Claude pane's empty composer reads empty, and a handle whose session ended is ignored"
+  pass "fm-captain-nudge: a dead pinned herdr pane follows the home's live captain handle, a real Claude pane's empty composer reads empty, a title selector never follows it, and a handle whose session ended is ignored"
 }
 
 fm_test_run \
