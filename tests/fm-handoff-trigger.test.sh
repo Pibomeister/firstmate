@@ -86,6 +86,19 @@ expect_silent() {  # <output> <label>
   [ -z "$1" ] || fail "$2: expected no output, got: $1"
 }
 
+# The hook's delivered text. Oracle: the early-handoff contract. A wrong
+# instruction that says the questions are already parked, or that names the
+# park command, fails.
+expect_park_still_queued() {  # <text> <label>
+  assert_contains "$1" 'The park-then-handoff action is queued for this session but not yet done.' \
+    "$2: park must be queued and not yet done"
+  assert_contains "$1" 'Drain the wake queue now and act on the context-autopark check wake (park every open captain question) before writing the handoff.' \
+    "$2: must drain the context-autopark wake before the handoff"
+  assert_not_contains "$1" 'fm-captain-hold' "$2: must not repeat the park command"
+  assert_not_contains "$1" 'with those parked' "$2: must not claim the questions are parked"
+  assert_not_contains "$1" 'already parked' "$2: must not claim the questions are parked"
+}
+
 test_threshold_default_15() {
   reset_lab
   printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
@@ -97,8 +110,8 @@ test_threshold_default_15() {
   expect_fire "$out" PostToolUse "15% left meets the default threshold"
   printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("about 15% of context is left") and test("85000 of 100000 tokens")' >/dev/null \
     || fail "instruction must name the measured context left: $out"
-  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("follows the park-then-handoff action already queued") and (test("fm-captain-hold") | not)' >/dev/null \
-    || fail "instruction must follow the queued park action, not repeat it: $out"
+  expect_park_still_queued "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')" \
+    "instruction at 15% left"
   pass "default threshold: silent at 16% left, fires at 15% left before auto-compact"
 }
 
@@ -177,8 +190,8 @@ test_crossing_tool_call_parks_and_hands_off_at_once() {
   append_usage "$t" 90000
   out=$(NO_PARK=1 run_hook "$PRIMARY" s-cross "$t")
   expect_fire "$out" PostToolUse "the tool call that crosses the threshold"
-  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("follows the park-then-handoff action already queued") and (test("fm-captain-hold") | not)' >/dev/null \
-    || fail "the crossing call must follow the queued park, not repeat it: $out"
+  expect_park_still_queued "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')" \
+    "the crossing call"
   assert_equals 1 "$(autopark_wakes context-autopark-s_cross)" "park wake from the crossing call"
   assert_contains "$(cat "$PRIMARY/state/.context-autopark.s_cross")" "done" "the recorder did not complete the park claim"
   assert_contains "$(cat "$PRIMARY/state/context-burn.tsv")" "s_cross	captain	10" "the crossing call did not record its measured 10% sample"
@@ -225,16 +238,17 @@ test_hook_never_hands_off_ahead_of_the_park() {
   rc=0
   run_hook "$PRIMARY" s-share "$t" Stop >/dev/null 2>"$TMP_ROOT/share.err" || rc=$?
   [ "$rc" -eq 2 ] || fail "the stop that recorded the park must stay blocked without a verified successor (rc=$rc)"
-  assert_contains "$(cat "$TMP_ROOT/share.err")" "park-then-handoff action queued" "the stop block does not point at the queued park"
+  expect_park_still_queued "$(cat "$TMP_ROOT/share.err")" "the stop block"
   [ -e "$PRIMARY/state/.handoff-trigger.s-share.0" ] || fail "the stop did not arm the cycle's gate"
   assert_equals 1 "$(autopark_wakes context-autopark-s_share)" "park wakes for the session"
   pass "the hook never hands off ahead of the park, and a park recorded at turn end gates that stop"
 }
 
-# A hook call racing the recorder's sample: the park is emitted exactly once,
-# only by the recorder, and the hook's handoff still arrives exactly once.
+# A hook call racing the recorder's sample: exactly one context-autopark wake
+# is queued, whichever recorder takes the claim, and the hook's handoff
+# instruction arrives exactly once.
 test_racing_hook_and_recorder_emit_the_park_once() {
-  local t="$TMP_ROOT/t-mixed" s fired
+  local t="$TMP_ROOT/t-mixed" s fired out context
   reset_lab
   mkdir -p "$PRIMARY/data"
   printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
@@ -244,18 +258,18 @@ test_racing_hook_and_recorder_emit_the_park_once() {
     record_burn "s-$s" 10 > "$TMP_ROOT/mixed-rec.$s" &
     wait
     assert_equals 1 "$(autopark_wakes "context-autopark-s_$s")" "park wakes for racing $s"
-    assert_contains "$(cat "$TMP_ROOT/mixed-rec.$s")" "park-handoff:" "the recorder did not emit for racing $s"
     NO_PARK=1 run_hook "$PRIMARY" "s-$s" "$t" UserPromptSubmit > "$TMP_ROOT/mixed-hook2.$s"
     fired=0
     for out in "$(cat "$TMP_ROOT/mixed-hook.$s")" "$(cat "$TMP_ROOT/mixed-hook2.$s")"; do
       [ -n "$out" ] || continue
-      printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("fm-captain-hold") | not' >/dev/null \
-        || fail "the hook repeated the park instruction for racing $s: $out"
+      context=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext // empty')
+      [ -n "$context" ] || fail "racing $s printed something other than the handoff instruction: $out"
+      expect_park_still_queued "$context" "racing $s"
       fired=$((fired + 1))
     done
     assert_equals 1 "$fired" "hook handoff instructions for racing $s"
   done
-  pass "a hook racing the recorder never emits the park, and the handoff follows exactly once"
+  pass "a hook racing the recorder queues one park wake and one handoff instruction"
 }
 
 test_fires_once_under_concurrency() {

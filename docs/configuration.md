@@ -495,8 +495,10 @@ On Orca, failed panes remain available for diagnosis; on every backend, a failed
 The lock transfers while the predecessor is still alive, so the handoff does not wait for an external exit.
 The successor confirms the handoff sha256 and stops on a mismatch.
 A second mate never launches its own successor: it appends one relaunch request to its parent channel and stops.
-It fires at most once per session, and only after the low-context auto-park below has emitted the session's park-then-handoff action, so the handoff instruction follows that queued park and the hook never repeats the park instruction.
-When a tool call or prompt finds context left at or below the threshold before that action was emitted, the hook runs the recorder below itself with that call's measurement, so the park is queued in the turn that crosses the threshold rather than only at its turn end.
+It fires at most once per session, and only after the low-context auto-park below has emitted the session's park-then-handoff action.
+The instruction says that action is queued for this session but not yet done, and tells the session to drain the wake queue now and act on the context-autopark check wake, parking every open captain question, before writing the handoff.
+The hook never repeats the park procedure and never names `bin/fm-captain-hold.sh`.
+When a tool call or prompt finds context left at or below the threshold before that action was emitted, the hook runs the recorder below itself with that call's measurement, so the park wake is queued in the turn that crosses the threshold rather than only at its turn end.
 The recorder stays the only writer of the action's per-session record; until that record shows the action was emitted, the hook stays silent and arms nothing.
 From then on, whenever the hook sees context left at or below the threshold, and on every stop of that session, it arms the successor gate below for the current context cycle, including after a compaction, without sending its instruction again.
 
@@ -536,6 +538,7 @@ It never writes the handoff, compacts, or restarts the session.
 The same hook enforces the captain-order restart gate at each Stop of a session that is handing off: the trigger fired in this context cycle, or the session ran `bin/fm-order.sh handoff --doc` (stow, a restart, or `percent-left=0`).
 It blocks such a stop once per turn while the recorded handoff document omits an open captain order, and it never gates an ordinary stop.
 A primary session the trigger fired on is also blocked once per turn until `state/.handoff-successor` is newer than the firing and records a successor whose acknowledgement, process instance, and lock ownership `bin/fm-handoff-lib.sh` validates, so that handoff turn cannot end on ready to restart without a verified transfer; a live pid alone does not clear it; a second mate's stop is not gated this way, because its parent owns the relaunch.
+That block says the park-then-handoff action is queued for this session but not yet done, and tells the session to drain the wake queue and act on the context-autopark check wake before writing the handoff.
 The handoff record belongs to the session that wrote it, so another session's stop in the same home is never gated by it.
 A caller outside any harness session, such as a restarting leash or sender, reads the record as the captain's, so its `bin/fm-order.sh gate` check clears when the captain's handoff lists every open order.
 The gate has limits: it runs only for a Claude primary, so a non-Claude primary, or a home with no resolvable auto-compact window that never runs `handoff --doc`, is not gated.

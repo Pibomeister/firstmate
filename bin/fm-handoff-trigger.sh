@@ -6,13 +6,15 @@
 # auto-compact falls to the configured percentage (default 15), and the
 # turn-end recorder has emitted the session's park-then-handoff action (the
 # hook runs it on the crossing call; see PARK FIRST below), the session
-# receives ONE instruction, as hook additionalContext, to write its handoff
-# from the mission ledger (bin/fm-ledger.sh handoff) before auto-compact, hand
-# off to a live successor it launches with bin/fm-handoff-launch.sh (a second
-# mate asks its parent to relaunch it instead), and report that it is ready to
-# restart. It fires at most once per session (see ONCE PER SESSION below), so
-# a session that keeps working past the threshold, or auto-compacts anyway,
-# is not told again.
+# receives ONE instruction, as hook additionalContext. That instruction says
+# the action is queued but not yet done, and tells the session to drain the
+# wake queue and act on the context-autopark check wake before it writes its
+# handoff from the mission ledger (bin/fm-ledger.sh handoff) before
+# auto-compact, then hand off to a live successor it launches with
+# bin/fm-handoff-launch.sh (a second mate asks its parent to relaunch it
+# instead) and report that it is ready to restart. It fires at most once per
+# session (see ONCE PER SESSION below), so a session that keeps working past
+# the threshold, or auto-compacts anyway, is not told again.
 #
 # CONTEXT LEFT. Claude Code does not hand hooks its own "% until auto-compact"
 # figure, and the status line's context_window.remaining_percentage measures
@@ -75,11 +77,13 @@
 # its per-session claim state/.context-autopark.<session>; this hook only
 # reads that claim. At or below the threshold with no done claim, the hook
 # runs the recorder itself with its payload and measured percent, so the
-# turn that crosses the threshold parks at once, then re-reads the claim.
-# Until it reads `done` (a live recorder still publishing, or the recorder
-# failed), the hook stays silent and arms nothing, so a handoff never starts
-# ahead of the park. Once it reads `done`, the hook's instruction follows
-# that action rather than repeating it.
+# turn that crosses the threshold queues the park wake at once, then re-reads
+# the claim. Until it reads `done` (a live recorder still publishing, or the
+# recorder failed), the hook stays silent and arms nothing, so the handoff
+# instruction never starts before that wake is queued. Once it reads `done`,
+# the instruction says the action is queued but not yet done and tells the
+# session to drain the wake queue and act on the context-autopark check wake
+# before writing the handoff. The hook does not repeat the park procedure.
 #
 # ONCE PER SESSION. At or below the threshold, once the park claim is done,
 # the hook arms the cycle marker state/.handoff-trigger.<session-id>.<count>
@@ -205,6 +209,7 @@ autopark_done() {
   esac
   return 1
 }
+PARK_PENDING='The park-then-handoff action is queued for this session but not yet done. Drain the wake queue now and act on the context-autopark check wake (park every open captain question) before writing the handoff.'
 if [ "$EVENT" = Stop ]; then
   # Shared quota/park policy also covers this parallel Stop writer.
   # shellcheck source=bin/fm-stop-policy-lib.sh
@@ -243,7 +248,7 @@ if [ "$EVENT" = Stop ]; then
     . "$SCRIPT_DIR/fm-handoff-lib.sh"
     if [ "$MARKER" -nt "$LAUNCH" ] || ! fm_handoff_completed "$LAUNCH"; then
       fm_stop_policy_allows_stop "$PAYLOAD" charge && exit 0
-      printf '%s\n' 'Firstmate restart gate: this session reached the low-context threshold, and no verified successor acknowledgement and lock transfer is recorded in state/.handoff-successor. Handle the park-then-handoff action queued for this session first, write the handoff with bin/fm-ledger.sh handoff --doc <new handoff file>, which records it with bin/fm-order.sh handoff --doc, then run bin/fm-handoff-launch.sh <handoff document path>. A live PID alone does not clear this gate. The successor confirms the handoff sha256 and stops on a mismatch. The lock transfers while this session is still alive, so do not wait for an external exit.' >&2
+      printf '%s\n' "Firstmate restart gate: this session reached the low-context threshold, and no verified successor acknowledgement and lock transfer is recorded in state/.handoff-successor. ${PARK_PENDING} Write it with bin/fm-ledger.sh handoff --doc <new handoff file>, which records it with bin/fm-order.sh handoff --doc, then run bin/fm-handoff-launch.sh <handoff document path>. A live PID alone does not clear this gate. The successor confirms the handoff sha256 and stops on a mismatch. The lock transfers while this session is still alive, so do not wait for an external exit." >&2
       exit 2
     fi
   fi
@@ -269,9 +274,9 @@ case "$TOKENS" in '' | *[!0-9]*) exit 0 ;; esac
 LEFT=$(fm_compact_left_percent "$TOKENS" "$COMPACT_AT")
 [ "$LEFT" -le "$PERCENT" ] || exit 0
 
-# The turn that crosses the threshold must park now, not at its turn end: an
-# auto-compact before the next prompt would otherwise leave no low sample to
-# record. The recorder stays the claim's only writer; this hook hands it this
+# The turn that crosses the threshold must queue the park wake now, not at its
+# turn end: an auto-compact before the next prompt would otherwise leave no
+# low sample to record. The recorder stays the claim's only writer; this hook hands it this
 # payload and measurement, then reads the claim it published.
 if ! autopark_done; then
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
@@ -291,7 +296,7 @@ done
 find "$STATE" -maxdepth 1 -name '.handoff-trigger.*' -type f -mtime +30 -exec rm -f {} + 2>/dev/null
 [ "$FIRED_BEFORE" -eq 0 ] || exit 0
 
-MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). This follows the park-then-handoff action already queued for this session, which parks every open captain question first; with those parked, write your session handoff now, before auto-compact, from the mission ledger: file every open ask, approved proposal, and captain order that has no backlog item yet as its own item with bin/fm-ledger.sh intake, bring each item's note current, and persist every decision and piece of durable knowledge this session holds (the stow skill covers this). Then write a new handoff with bin/fm-ledger.sh handoff --doc <new handoff file> --note-file <short note of what is in flight right now>: it adds that note to the ledger plan, never continues an earlier handoff, and records the document with bin/fm-order.sh handoff --doc. If bin/fm-ledger.sh cannot read the backlog, do not skip the handoff: write a new handoff document yourself with the in-flight note, the open work, and bin/fm-dispatch-log.sh open, record it with bin/fm-order.sh handoff --doc <that file>, and say in it that the ledger was unreadable. Then hand off to a successor and report that this session is ready to restart."
+MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). ${PARK_PENDING} Write it before auto-compact, from the mission ledger: file every open ask, approved proposal, and captain order that has no backlog item yet as its own item with bin/fm-ledger.sh intake, bring each item's note current, and persist every decision and piece of durable knowledge this session holds (the stow skill covers this). Then write a new handoff with bin/fm-ledger.sh handoff --doc <new handoff file> --note-file <short note of what is in flight right now>: it adds that note to the ledger plan, never continues an earlier handoff, and records the document with bin/fm-order.sh handoff --doc. If bin/fm-ledger.sh cannot read the backlog, do not skip the handoff: write a new handoff document yourself with the in-flight note, the open work, and bin/fm-dispatch-log.sh open, record it with bin/fm-order.sh handoff --doc <that file>, and say in it that the ledger was unreadable. Then hand off to a successor and report that this session is ready to restart."
 if fm_root_is_secondmate_home "$FM_ROOT"; then
   MESSAGE="$MESSAGE This is a second mate, so never launch your own successor: append to your parent channel that your handoff is written, name the handoff document, and ask the parent to relaunch you, once, then end this turn."
 else
