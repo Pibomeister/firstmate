@@ -1,0 +1,5 @@
+1..36
+ok - merged pull request removes the worktree, keeps the branch, and prunes
+ok - closed pull request removes the worktree and keeps the branch
+ok - uncommitted tracked changes are reported
+ok - non-ignored untracked files are reported

@@ -1,0 +1,54 @@
+== S1: two identical reads within TTL (real orca status --json)
+call 1 rc=0 elapsed=1.133s bytes=13607 first80={
+  "id": "local-status",
+  "ok": true,
+  "result": {
+    "target": {
+      "kin
+call 2 rc=0 elapsed=0.078s bytes=13607 first80={
+  "id": "local-status",
+  "ok": true,
+  "result": {
+    "target": {
+      "kin
+call 3 rc=0 elapsed=0.095s bytes=13607 first80={
+  "id": "local-status",
+  "ok": true,
+  "result": {
+    "target": {
+      "kin
+CLI boots so far:        1
+5926 status --json
+== S2: 8 parallel identical terminal-list reads from separate processes (simulated homes)
+proc1 rc=0
+proc2 rc=0
+proc6 rc=0
+proc8 rc=0
+proc4 rc=0
+proc7 rc=0
+proc3 rc=0
+proc5 rc=0
+CLI boots for 8 parallel reads:        1
+10046 terminal list --json --limit 5000
+== S3: TTL expiry -> fresh boot
+boots after TTL expiry:        1
+== S4: mutation (terminal send to a bogus handle, fails harmlessly) invalidates even on failure
+gen before: 0
+send rc=1
+gen after: 2
+boots (list, send, list-after-mutation):        2
+22607 terminal send --terminal fm-nonexistent-handle-zzz --text x --json
+24090 terminal list --json --limit 5000
+== S5: fm_orca_terminal_exists against real terminal list
+truncated=false count=112
+existing handle rc=0 (want 0)
+bogus handle rc=1 (want 1)
+cache disabled rc=2 (want 2)
+== S6: adversarial cache dir that is a symlink -> bypass, no writes into target
+rc=0
+rc=0
+boots via symlinked dir (want 2, no reuse):        2; victim contents: []
+== S7: failed read (ok:false) is not stored
+read rc=1
+read rc=1
+boots for 2 failed reads (want 2):        2

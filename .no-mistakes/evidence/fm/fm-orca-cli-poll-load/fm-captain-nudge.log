@@ -1,0 +1,31 @@
+1..26
+ok - fm-captain-nudge: help and usage plumbing
+ok - fm-captain-nudge: decide nudges when idle with open work and empty composer
+ok - fm-captain-nudge: decide skips when idle is below threshold
+ok - fm-captain-nudge: decide skips when there is no open work
+ok - fm-captain-nudge: decide never types when a modal is visible
+ok - fm-captain-nudge: decide skips when the input line is not empty
+ok - fm-captain-nudge: decide refuses unknown or unproven composer
+ok - fm-captain-nudge: decide skips during cooldown
+ok - fm-captain-nudge: decide escalates after two no-progress nudges and resumes on progress
+ok - fm-captain-nudge: decide reports blocker before skipped_input_not_empty
+ok - fm-captain-nudge: once nudges, logs JSONL, emits NUDGE v1, and sends only the fixed prompt
+ok - fm-captain-nudge: dry-run logs a nudge and never sends
+ok - fm-captain-nudge: once never sends when a modal is visible
+ok - fm-captain-nudge: once never overwrites typed text
+ok - fm-captain-nudge: cooldown, two no-progress nudges, then high stop until progress
+ok - fm-captain-nudge: test-nudge still refuses a visible modal
+ok - fm-captain-nudge: test-nudge proves the send path on an empty composer
+ok - fm-captain-nudge: guard restarts when its own heartbeat is stale
+ok - fm-captain-nudge: guard is a no-op while the loop heartbeat is fresh
+installed launchd com.firstmate.captain-nudge and com.firstmate.captain-nudge-guard
+installed launchd com.firstmate.captain-nudge and com.firstmate.captain-nudge-guard
+removed launchd com.firstmate.captain-nudge and com.firstmate.captain-nudge-guard
+ok - fm-captain-nudge: install and uninstall are idempotent
+ok - fm-captain-nudge: queue-file probe treats checkboxes as open work
+ok - fm-captain-nudge: beacon line is wrap-join parseable
+ok - fm-captain-nudge: example host configs parse
+ok - fm-captain-nudge: literal ~ in config paths expands to HOME
+ok - fm-captain-nudge: herdr idle tracks screen change, not a cron heartbeat
+ok - fm-captain-nudge: submits only its own unsent fixed prompt, Enter only
+FM_TEST_COMPLETE

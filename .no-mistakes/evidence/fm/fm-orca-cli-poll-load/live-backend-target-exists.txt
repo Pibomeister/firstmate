@@ -1,0 +1,7 @@
+target_exists real rc=0
+target_exists real rc=0
+target_exists real rc=0
+target_exists real rc=0
+target_exists real rc=0
+target_exists bogus rc=1 (nonzero=absent)
+CLI boots for 6 existence probes:        1
