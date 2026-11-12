@@ -1070,9 +1070,10 @@ try:
     with closing(sqlite3.connect(p.as_uri() + "?mode=ro", uri=True, timeout=3)) as db:
         uv = db.execute("PRAGMA user_version").fetchone()
         rows = db.execute(
-            "SELECT type, name, tbl_name, COALESCE(sql, \"\") "
-            "FROM sqlite_master WHERE substr(name, 1, 7) != \"sqlite_\" "
-            "ORDER BY type, name, tbl_name"
+            "SELECT type, name, tbl_name, COALESCE(sql, ?) "
+            "FROM sqlite_master WHERE substr(name, 1, 7) != ? "
+            "ORDER BY type, name, tbl_name",
+            ("", "sqlite_"),
         ).fetchall()
 except sqlite3.OperationalError:
     sys.exit(3)
