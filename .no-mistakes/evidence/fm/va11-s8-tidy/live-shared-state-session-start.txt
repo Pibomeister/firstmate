@@ -1,0 +1,52 @@
+lab=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.W1w0mh sandbox=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s8-sb.xQSKVQ (HOME, XDG_CONFIG_HOME, NM_HOME all inside sandbox)
+
+===== 1. first locked start: sandbox git config absent, sandbox state.sqlite absent =====
+(no SHARED_STATE / READ-ONLY line)
+-- baseline:
+   xdg:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s8-sb.xQSKVQ/home/.config/git/config|home:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s8-sb.xQSKVQ/home/.gitconfig
+   absent|absent
+   /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s8-sb.xQSKVQ/nm/state.sqlite
+   absent
+
+===== 1b. first creation of sandbox state.sqlite (CREATE TABLE runs) then locked start =====
+(no SHARED_STATE / READ-ONLY line)
+-- baseline:
+   xdg:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s8-sb.xQSKVQ/home/.config/git/config|home:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s8-sb.xQSKVQ/home/.gitconfig
+   absent|absent
+   /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s8-sb.xQSKVQ/nm/state.sqlite
+   sha256:4362a8af25e3f373f06b51b62c010c482df8f6727e84357791fb1bfbce4ac2bb
+
+===== 2. worker mutation: git config --file $HOME/.gitconfig user.email rogue@example.invalid =====
+
+===== 3. read-only start (live sleep PID holds state/.lock) =====
+SHARED_STATE: global git config changed since the last session start (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s8-sb.xQSKVQ/home/.gitconfig) - workers must never edit shared git config; inspect recent changes and restore any unintended setting
+-> BASELINE CHANGED (unexpected)
+
+===== 4. --reemit =====
+(no SHARED_STATE / READ-ONLY line)
+-> BASELINE CHANGED (unexpected)
+
+===== 5. full locked start reports once and updates baseline =====
+(no SHARED_STATE / READ-ONLY line)
+-> baseline UPDATED
+-- baseline:
+   xdg:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s8-sb.xQSKVQ/home/.config/git/config|home:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s8-sb.xQSKVQ/home/.gitconfig
+   absent|sha256:14218e46a0dd1592340fd66a81559889bd5dbf4bc52b5f1f880bd48a947d548d
+   /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s8-sb.xQSKVQ/nm/state.sqlite
+   sha256:4362a8af25e3f373f06b51b62c010c482df8f6727e84357791fb1bfbce4ac2bb
+
+===== 6. next locked start: silent =====
+(no SHARED_STATE / READ-ONLY line)
+
+===== 7. DML: INSERT rows into sandbox DB =====
+(no SHARED_STATE / READ-ONLY line)
+
+===== 8. DDL: ALTER TABLE runs ADD COLUMN rogue TEXT =====
+SHARED_STATE: shared no-mistakes database schema changed since the last session start (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s8-sb.xQSKVQ/nm/state.sqlite) - workers must never alter shared databases; inspect no-mistakes version and state database before dispatching pipeline runs
+
+===== 9. next start after DDL: silent =====
+(no SHARED_STATE / READ-ONLY line)
+
+lab and sandbox removed
+
+NOTE (added after run): steps 3-4 in this run are a fixture flaw, not a product defect. The plain `sleep` PID used as the lock holder is not a harness process, so fm-lock correctly treated the lock as stale ("lock: stale (pid ... dead or not a harness)") and this start ran locked. See live-shared-state-readonly-reemit.txt for the corrected re-drive with a live harness-named holder, which entered READ-ONLY SESSION and preserved the baseline. Steps 1, 1b, 5-9 here remain valid.

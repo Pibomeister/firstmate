@@ -1,0 +1,5 @@
+ok - session start detects created, edited, and removed global/XDG/GIT_CONFIG_GLOBAL git config without mutating baseline on read-only or reemit
+ok - session start detects shared no-mistakes database schema changes while ignoring sqlite_* internal objects and row writes
+ok - session start preserves shared-state baseline byte-for-byte across missing python3, locks, timeouts, corruption, unreadable files, inaccessible parent directories, transient lookup failures, no-interpreter fallback, and failed baseline reads
+# focused shared-state tests passed
+bash tests/.tmp-shared-runner.test.sh  52.53s user 76.00s system 30% cpu 6:56.96 total
