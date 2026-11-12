@@ -186,12 +186,13 @@
 # Orca tasks use the same safety checks, then close the recorded terminal and
 # remove the recorded worktree through `orca worktree rm`; teardown never guesses
 # an Orca target from ambient CLI state. Before that removal it also closes
-# every other Orca terminal in the task's worktree on the local Orca and
-# counts matches on every saved paired environment. On a paired environment
-# it closes only the task's recorded terminal handle, matched exactly, because
-# a path match alone on another host does not prove this task owns that
-# terminal (bin/backends/orca.sh's fm_backend_orca_close_worktree_terminals
-# owns the proof); it prints the closed count and warns about path-only remote
+# every other Orca terminal in the task's worktree that the local Orca hosts
+# and counts matches on every saved paired environment and on any other
+# execution host the local list names. There it closes only the task's
+# recorded terminal handle, matched exactly, because a path match alone on
+# another host does not prove this task owns that terminal
+# (bin/backends/orca.sh's fm_backend_orca_close_worktree_terminals owns the
+# proof); it prints the closed count and warns about path-only remote
 # matches left to that host's own cleanup. A terminal still listed after its
 # close refuses, while an environment that cannot be listed warns that the
 # count is a floor.
