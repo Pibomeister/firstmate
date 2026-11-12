@@ -420,6 +420,38 @@ test_pr_ready_lanes_free_their_place() {
   pass "a lane that recorded its ready PR frees its place in the admission verdict"
 }
 
+test_spawn_gate_uses_one_load_ceiling() {
+  local home fakebin out rc
+  home=$(make_home spawngate 1 0)
+  fakebin=$(make_probes "$TMP_ROOT/p-spawngate" 24.00 5 16 20971520)
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 0 "$rc" "the spawn gate without config must admit: $out"
+  printf '4\nmax-load1 40\nreserve-flag %s/reserved.flag\n' "$home" > "$home/config/lane-capacity"
+  : > "$home/reserved.flag"
+  out=$(run_capacity_jq "$home" "$fakebin" --admit); rc=$?
+  expect_code 75 "$rc" "the advisory verdict must still hold for cpu, memory, and reserve: $out"
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 0 "$rc" "load 24 under max-load1 40 with advisory holds must admit a spawn: $out"
+  fakebin=$(make_probes "$TMP_ROOT/p-spawngate-hot" 41.00 60 16 20971520)
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 75 "$rc" "load 41 over max-load1 40 must defer a spawn"
+  assert_contains "$out" 'load: 41.00 at or over its ceiling 40 (max-load1)' "the deferral must name the load ceiling"
+  printf '4\n' > "$home/config/lane-capacity"
+  fakebin=$(make_probes "$TMP_ROOT/p-spawngate-cores" 16.00 60 16 20971520)
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 75 "$rc" "without max-load1, load at the core count must defer"
+  assert_contains "$out" 'ceiling 16 (logical cores)' "the deferral must name the core-count ceiling"
+  printf '1\n' > "$home/config/lane-capacity"
+  fakebin=$(make_probes "$TMP_ROOT/p-spawngate-full" 0.50 60 16 20971520)
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 75 "$rc" "a full lane cap must defer"
+  assert_contains "$out" 'full: 1 of 1 lanes hold a place' "the deferral must name the lane cap"
+  printf '1\nbogus 1\n' > "$home/config/lane-capacity"
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 1 "$rc" "an invalid declaration must refuse"
+  pass "the spawn gate holds only on the lane cap and one load ceiling"
+}
+
 test_publish_document() {
   local home fakebin rc doc mode i
   home=$(make_home publish 2 1)
@@ -567,6 +599,7 @@ test_beat_with_missing_fields
 test_cap_only_memory_rule_unchanged
 test_limits_and_admit
 test_pr_ready_lanes_free_their_place
+test_spawn_gate_uses_one_load_ceiling
 test_publish_document
 test_captain_and_quota
 test_watcher_publishes_only_when_opted_in
