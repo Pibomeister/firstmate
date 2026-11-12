@@ -69,11 +69,15 @@
 # Cursor load this Claude settings file too; Grok is excluded by the settings
 # entry and Cursor by its payload marker, because the trigger is Claude-only.
 #
-# ONCE PER CONTEXT CYCLE. A cycle is one session id plus the count of compact
-# boundary records in its transcript, so a compaction re-arms the trigger. The
-# first firing in a cycle creates state/.handoff-trigger.<session-id>.<count>
-# with an exclusive create, so concurrent hook calls from parallel tool calls
-# still fire once. A firing also removes markers older than 30 days.
+# ONCE PER SESSION. A firing claims, with exclusive creates, both the cycle
+# marker state/.handoff-trigger.<session-id>.<count> (a cycle is one session id
+# plus the count of compact boundary records in its transcript; the restart
+# gate below reads it) and the per-session park-then-handoff claim
+# state/.context-autopark.<session> that bin/fm-context-burn.sh's turn-end
+# recorder shares. Whichever channel claims first emits the action; the other
+# stays silent for the rest of the session, including after a compaction, and
+# concurrent hook calls from parallel tool calls still fire once. A firing also
+# removes markers older than 30 days.
 #
 # RESTART GATE (Stop). A session is handing off once the trigger has fired in
 # its current context cycle, or once it ran `bin/fm-order.sh handoff --doc`
@@ -224,6 +228,8 @@ publish_compact_point
 [ "$PERCENT" -gt 0 ] || exit 0
 [ -n "$MARKER" ] || exit 0
 [ -e "$MARKER" ] && exit 0
+AUTOPARK="$STATE/.context-autopark.$(printf '%s' "$SESSION_ID" | tr -c 'A-Za-z0-9_' '_')"
+[ -e "$AUTOPARK" ] && exit 0
 [ -n "$COMPACT_AT" ] || exit 0
 
 # shellcheck source=bin/fm-warm-compact-lib.sh
@@ -236,6 +242,10 @@ LEFT=$(fm_compact_left_percent "$TOKENS" "$COMPACT_AT")
 
 # Claim the one firing for this context cycle; a concurrent call that loses exits.
 ( set -o noclobber; printf '%s\n' "$(date +%s) tokens=$TOKENS compact_at=$COMPACT_AT" > "$MARKER" ) 2>/dev/null || exit 0
+if ! ( set -o noclobber; printf 'done %s hook\n' "$(date +%s)" > "$AUTOPARK" ) 2>/dev/null; then
+  rm -f "$MARKER"
+  exit 0
+fi
 find "$STATE" -maxdepth 1 -name '.handoff-trigger.*' -type f -mtime +30 -exec rm -f {} + 2>/dev/null
 
 MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). Park first, then hand off: park every open captain question as a held backlog item through bin/fm-captain-hold.sh (hold the work item the question gates, or create one captain-held task per genuine question) without asking the captain or waiting for an answer, and keep working on everything the parked questions do not gate. Then write your session handoff now, before auto-compact, from the mission ledger: file every open ask, approved proposal, and captain order that has no backlog item yet as its own item with bin/fm-ledger.sh intake, bring each item's note current, and persist every decision and piece of durable knowledge this session holds (the stow skill covers this). Then write a new handoff with bin/fm-ledger.sh handoff --doc <new handoff file> --note-file <short note of what is in flight right now>: it adds that note to the ledger plan, never continues an earlier handoff, and records the document with bin/fm-order.sh handoff --doc. If bin/fm-ledger.sh cannot read the backlog, do not skip the handoff: write a new handoff document yourself with the in-flight note, the open work, and bin/fm-dispatch-log.sh open, record it with bin/fm-order.sh handoff --doc <that file>, and say in it that the ledger was unreadable. Then hand off to a successor and report that this session is ready to restart."
@@ -244,7 +254,7 @@ if fm_root_is_secondmate_home "$FM_ROOT"; then
 else
   MESSAGE="$MESSAGE Launch your successor with bin/fm-handoff-launch.sh <handoff file>. Run it with the Bash tool's run_in_background=true, because a foreground tool timeout cannot cover its setup plus the ten-minute protocol deadline, and collect the launcher's exit status and output before reporting readiness. It requires the successor to read the document, write its nonce-bound acknowledgement with bin/fm-handoff-ack.sh, and take the session lock before state/.handoff-successor clears this turn's gate. The successor confirms the handoff sha256 and stops on a mismatch. The lock transfers while this session is still alive, so do not wait for an external exit. The successor then runs bin/fm-session-start.sh. After verified transfer, end this turn and retire the predecessor session. If both attempts fail within ten minutes, the launcher emits handoff_failed; report that failure instead of claiming readiness. A failure with reason=unresolved is not final: a later handoff_ack with reason=lock_transferred for the same nonce means the transfer committed."
 fi
-MESSAGE="$MESSAGE Do not run /compact. This instruction fires once per context cycle."
+MESSAGE="$MESSAGE Do not run /compact. This instruction fires once per session."
 # Durable captain orders are part of the handoff: name each open order and the
 # command that writes them into the handoff document (bin/fm-order.sh owns the
 # list and the restart gate this hook enforces on Stop).

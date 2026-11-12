@@ -495,7 +495,7 @@ On Orca, failed panes remain available for diagnosis; on every backend, a failed
 The lock transfers while the predecessor is still alive, so the handoff does not wait for an external exit.
 The successor confirms the handoff sha256 and stops on a mismatch.
 A second mate never launches its own successor: it appends one relaunch request to its parent channel and stops.
-It fires at most once per context cycle: a session that auto-compacts anyway is told again before its next auto-compact.
+It fires at most once per session, and it shares that once-per-session claim with the low-context auto-park below, so a session gets the park-then-handoff instruction from only one of the two.
 
 The trigger is on by default at 15% context left, wherever it can resolve the auto-compact point.
 The file is local to each home, is not inherited, and is read at every hook call, so a change needs no restart.
@@ -539,7 +539,7 @@ The gate has limits: it runs only for a Claude primary, so a non-Claude primary,
 Open orders there stay durable and appear in the next session's digest.
 A new context (startup, resume, clear, or compact) clears the recorded handoff, so the gate never reads a document written before that context opened.
 `bin/fm-order.sh` owns the captain-order gate.
-`bin/fm-handoff-trigger.sh` owns the measurement, the once-per-cycle record, and the successor gate, with coverage in [`tests/fm-handoff-trigger.test.sh`](../tests/fm-handoff-trigger.test.sh); `bin/fm-handoff-launch.sh` owns the successor launch, with coverage in [`tests/fm-handoff-launch.test.sh`](../tests/fm-handoff-launch.test.sh); [runtime-backends verification](verification/runtime-backends.md#claude-early-handoff-trigger) records the Claude Code evidence.
+`bin/fm-handoff-trigger.sh` owns the measurement, the once-per-session firing, and the successor gate, with coverage in [`tests/fm-handoff-trigger.test.sh`](../tests/fm-handoff-trigger.test.sh); `bin/fm-handoff-launch.sh` owns the successor launch, with coverage in [`tests/fm-handoff-launch.test.sh`](../tests/fm-handoff-launch.test.sh); [runtime-backends verification](verification/runtime-backends.md#claude-early-handoff-trigger) records the Claude Code evidence.
 
 ## Context reading (config/context-reading)
 

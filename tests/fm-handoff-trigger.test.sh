@@ -2,7 +2,8 @@
 # Behavior tests for the early handoff trigger (bin/fm-handoff-trigger.sh,
 # docs/configuration.md "Early handoff trigger"): the threshold, its
 # configuration, the auto-compact point derived from Claude's settings, the
-# once-per-context-cycle guarantee (including concurrent hook calls), and the scope that
+# once-per-session guarantee shared with the turn-end recorder (including
+# concurrent hook calls), and the scope that
 # keeps worker worktrees and Cursor payloads inert. The hook runs for real
 # against synthetic Claude transcripts.
 set -u
@@ -54,7 +55,7 @@ run_hook() {
 }
 
 reset_lab() {
-  rm -f "$PRIMARY"/state/.handoff-trigger.* "$PRIMARY/state/.order-handoff" "$PRIMARY/config/handoff-trigger" \
+  rm -f "$PRIMARY"/state/.handoff-trigger.* "$PRIMARY"/state/.context-autopark.* "$PRIMARY/state/.wake-queue" "$PRIMARY/state/.order-handoff" "$PRIMARY/config/handoff-trigger" \
     "$PRIMARY/.claude/settings.json" "$PRIMARY/.claude/settings.local.json" "$CLAUDE_HOME/settings.json"
 }
 
@@ -113,7 +114,7 @@ test_fires_once_per_context_cycle() {
   pass "fires once per cycle across tool calls and prompts, and again for a new session"
 }
 
-test_rearms_after_compaction() {
+test_compaction_does_not_rearm() {
   local t="$TMP_ROOT/t-cycle"
   reset_lab
   printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
@@ -123,16 +124,49 @@ test_rearms_after_compaction() {
 
   printf '{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}\n' >> "$t"
   expect_silent "$(run_hook "$PRIMARY" s-cycle "$t" UserPromptSubmit)" "pre-compaction usage must not fire in the new cycle"
-  append_usage "$t" 40000
-  expect_silent "$(run_hook "$PRIMARY" s-cycle "$t")" "new cycle below the threshold"
   append_usage "$t" 88000
-  expect_fire "$(run_hook "$PRIMARY" s-cycle "$t")" PostToolUse "new cycle at the threshold"
-  expect_silent "$(run_hook "$PRIMARY" s-cycle "$t")" "new cycle, second call"
+  expect_silent "$(run_hook "$PRIMARY" s-cycle "$t")" "new cycle at the threshold in the same session"
+  pass "the trigger fires once per session: a compaction does not re-arm it"
+}
 
-  # Text that quotes a boundary is not a compaction.
-  jq -nc '{type: "user", message: {content: "{\"type\":\"system\",\"subtype\":\"compact_boundary\"}"}}' >> "$t"
-  expect_silent "$(run_hook "$PRIMARY" s-cycle "$t")" "a quoted boundary does not re-arm"
-  pass "a compaction re-arms the trigger for one more firing, and stale usage cannot spend it"
+# record_burn <session> <percent>: the turn-end recorder's sample for this lab
+# home, printing its stdout.
+record_burn() {
+  env -u FM_CONFIG_OVERRIDE FM_HOME="$PRIMARY" FM_STATE_OVERRIDE="$PRIMARY/state" FM_DATA_OVERRIDE="$PRIMARY/data" \
+    "$ROOT/bin/fm-context-burn.sh" record --turn-type captain --session "$1" --percent "$2"
+}
+
+autopark_wakes() { # <key>
+  [ -f "$PRIMARY/state/.wake-queue" ] || { printf '0\n'; return 0; }
+  awk -F '\t' -v key="$1" '$4 == key { n++ } END { print n + 0 }' "$PRIMARY/state/.wake-queue"
+}
+
+test_one_park_handoff_across_hook_and_recorder() {
+  local t="$TMP_ROOT/t-share" out
+  reset_lab
+  mkdir -p "$PRIMARY/data"
+  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+
+  transcript "$t" 90000
+  expect_fire "$(run_hook "$PRIMARY" s-hook-first "$t")" PostToolUse "hook first"
+  out=$(record_burn s-hook-first 10)
+  assert_not_contains "$out" "park-handoff:" "the recorder repeated the hook's park-then-handoff"
+  assert_equals 0 "$(autopark_wakes context-autopark-s_hook_first)" "recorder wake after the hook fired"
+  printf '{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}\n' >> "$t"
+  append_usage "$t" 88000
+  expect_silent "$(run_hook "$PRIMARY" s-hook-first "$t")" "hook after compaction once the hook fired"
+
+  transcript "$t" 90000
+  out=$(record_burn s-rec-first 12)
+  assert_contains "$out" "at 12% context left" "recorder first did not emit"
+  assert_equals 1 "$(autopark_wakes context-autopark-s_rec_first)" "recorder first wake"
+  expect_silent "$(run_hook "$PRIMARY" s-rec-first "$t")" "hook after the recorder fired"
+  printf '{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}\n' >> "$t"
+  append_usage "$t" 88000
+  expect_silent "$(run_hook "$PRIMARY" s-rec-first "$t")" "hook after compaction once the recorder fired"
+  [ ! -e "$PRIMARY/state/.handoff-trigger.s-rec-first.0" ] || fail "a silent hook must not claim the cycle marker"
+  assert_equals 1 "$(autopark_wakes context-autopark-s_rec_first)" "recorder wake count after the hook stayed silent"
+  pass "hook-first and recorder-first each emit park-then-handoff exactly once per session across both channels"
 }
 
 test_fires_once_under_concurrency() {
@@ -636,7 +670,8 @@ test_secondmate_handoff_escalates_to_its_parent
 test_threshold_default_15
 test_threshold_configurable
 test_fires_once_per_context_cycle
-test_rearms_after_compaction
+test_compaction_does_not_rearm
+test_one_park_handoff_across_hook_and_recorder
 test_fires_once_under_concurrency
 test_compact_point_from_claude_settings
 test_window_precedence_matches_claude

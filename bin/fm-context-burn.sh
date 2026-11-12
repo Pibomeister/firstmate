@@ -58,7 +58,10 @@
 # session that recovers context and drops again does not emit it twice,
 # while a claim whose recorder died before the append finished is
 # reclaimed by the next sample instead of suppressing the action for the
-# rest of the session. Markers older than 30 days are pruned.
+# rest of the session. The Claude early handoff hook
+# (bin/fm-handoff-trigger.sh) claims the same marker, so whichever channel
+# claims first emits the action and the other stays silent for the session.
+# Markers older than 30 days are pruned.
 #
 # FM_CONTEXT_BURN_NOW overrides the clock. Under FM_TEST_SEAM=1, pane capture
 # and the primary-home check are skipped unless FM_CONTEXT_BURN_CAPTURE=1.
