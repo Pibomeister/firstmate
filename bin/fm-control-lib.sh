@@ -1028,3 +1028,162 @@ fm_control_harness_turnend_auth_path() {  # <harness> <token>
     *) return 0 ;;
   esac
 }
+
+# fm_control_feedback_dialog_dismiss <harness> <screen>
+# Inspects the tail of <screen> for an exact known feedback or bug-report dialog
+# signature belonging to <harness> (or any supported feedback-dialog harness
+# when <harness> is empty). Prints `<dialog-id>\t<dismiss-key>` and returns 0 on
+# match, or returns 1 with no output when no known feedback/bug-report dialog is
+# live at the bottom of the screen. The dismiss key is always a skip/dismiss/
+# cancel key (`0` or `Escape`), never a submit/send choice (`1`, `2`, `3`, `y`,
+# `Enter`) and never feedback text.
+fm_control_feedback_dialog_dismiss() {  # <harness> <screen>
+  local harness=${1-} screen=${2-} family=
+  [ -n "$screen" ] || return 1
+  if [ -n "$harness" ]; then
+    family=$(fm_control_harness_family "$harness" 2>/dev/null) || return 1
+    case "$family" in
+      claude|agy|codex) ;;
+      *) return 1 ;;
+    esac
+  fi
+  printf '%s\n' "$screen" \
+    | LC_ALL=C sed -e $'s/\033\\[[0-9;?<>=]*[ -\\/]*[@-~]//g' -e $'s/\033\\][^\a]*\a//g' -e $'s/\r//g' \
+    | awk -v fam="$family" '
+      function is_chrome_row(r) {
+        if (r ~ /^[ \t]*$/) return 1
+        if (r ~ /^[ \t]*[│┃─━╭╮╰╯┌┐└┘| \t-]+[ \t]*$/) return 1
+        if (r ~ /^[ \t]*((│|┃|[|])[ \t]+)?(❯|›|⟩|→|❭|>)[ \t]*$/) return 1
+        if (r ~ /^[ \t]*(⏵|⏸)/) return 1
+        if (r ~ /^[ \t]*(← for agents[ \t]+·[ \t]+)?\? for shortcuts([ \t]|$)/) return 1
+        return 0
+      }
+      function no_output_after(idx,   j) {
+        if (idx <= 0) return 0
+        for (j = idx + 1; j <= m; j++) {
+          if (!is_chrome_row(tail[j])) return 0
+        }
+        return 1
+      }
+      NF { rows[++n] = $0 }
+      END {
+        if (n == 0) exit 1
+        s = n - 14 + 1
+        if (s < 1) s = 1
+        m = 0
+        for (i = s; i <= n; i++) tail[++m] = rows[i]
+
+        # 1. Claude known feedback / bug-report dialogs
+        if (fam == "" || fam == "claude") {
+          h_survey = 0; f_survey = 0
+          h_draft = 0; f_draft = 0
+          h_modal = 0; b_modal = 0; f_modal = 0
+          h_follow = 0; f_follow = 0
+          for (i = 1; i <= m; i++) {
+            r = tail[i]
+            if (r ~ /^[ \t]*((●|•|[*])[ \t]+)?(How is Claude doing( this session)?\?|How was Claude'\''s recollection\?|How well did Claude use its memory\?|How well is Claude following the instructions you gave earlier in this conversation\?|How helpful has [A-Za-z0-9_.-]+ plugin been\?)([ \t]*\(optional\))?[ \t]*$/) h_survey = i
+            if (h_survey > 0 && i >= h_survey && r ~ /^[ \t]*1:[ \t]*Bad[ \t]+2:[ \t]*(Fine|Good)[ \t]+3:[ \t]*Good[ \t]+0:[ \t]*Dismiss[ \t]*$/) f_survey = i
+
+            if (r ~ /^[ \t]*((●|•|[*])[ \t]+)?(Bug report|Product feedback|Feature request|Feedback) drafted:[ \t]+[^ \t]/) h_draft = i
+            if (h_draft > 0 && i > h_draft && r ~ /^[ \t]*1 to review · 2 to send · 0 to dismiss[ \t]*$/) f_draft = i
+
+            if (r ~ /^[ \t]*(Submit feedback \/ bug report|Report a bug or share your conversation)[ \t]*$/) h_modal = i
+            if (h_modal > 0 && i > h_modal && r ~ /(Describe the issue below:|How much session history should we include\?|This report will include:|An archive will be saved to disk containing:|This shared conversation will include:)/) b_modal = i
+            if (h_modal > 0 && b_modal > 0 && i >= b_modal && r ~ /^[ \t]*((Enter|Press Enter|Edit and press Enter) to (continue|choose|submit|save|share|retry(, or)?) · (↑\/↓ to navigate · )?)?Esc to cancel[ \t]*$/) f_modal = i
+
+            if (r ~ /^[ \t]*((●|•|[*])[ \t]+)?(What went well\?|What went wrong\?|Tell us more)[ \t]*\(optional\)[ \t]*$/) h_follow = i
+            if (h_follow > 0 && i > h_follow && r ~ /^[ \t]*enter to (skip|send) · esc to (skip|clear)[ \t]*$/) f_follow = i
+          }
+          if (f_survey > 0 && no_output_after(f_survey)) {
+            print "claude-session-feedback\t0"
+            exit 0
+          }
+          if (f_draft > 0 && no_output_after(f_draft)) {
+            print "claude-bug-report-draft\t0"
+            exit 0
+          }
+          if (f_modal > 0 && no_output_after(f_modal)) {
+            print "claude-bug-report-dialog\tEscape"
+            exit 0
+          }
+          if (f_follow > 0 && no_output_after(f_follow)) {
+            print "claude-survey-followup\tEscape"
+            exit 0
+          }
+        }
+
+        # 2. Antigravity CLI (agy) known CLI experience survey
+        if (fam == "" || fam == "agy") {
+          h_agy = 0; f_agy = 0
+          for (i = 1; i <= m; i++) {
+            r = tail[i]
+            if (r ~ /^[ \t]*((│|┃|[|])[ \t]+)?((●|•|[*]|✦)[ \t]+)?How'\''s the CLI experience so far\? Help us improve:[ \t]+\[1\][ \t]*Good[ \t]+\[2\][ \t]*Fine[ \t]+\[3\][ \t]*Bad[ \t]+\[0\][ \t]*Skip([ \t]+(│|┃|[|]))?[ \t]*$/) {
+              h_agy = i; f_agy = i
+            } else if (r ~ /^[ \t]*((│|┃|[|])[ \t]+)?((●|•|[*]|✦)[ \t]+)?How'\''s the CLI experience so far\? Help us improve:([ \t]+(│|┃|[|]))?[ \t]*$/) {
+              h_agy = i
+            } else if (h_agy > 0 && i > h_agy && r ~ /^[ \t]*((│|┃|[|])[ \t]+)?\[1\][ \t]*Good[ \t]+\[2\][ \t]*Fine[ \t]+\[3\][ \t]*Bad[ \t]+\[0\][ \t]*Skip([ \t]+(│|┃|[|]))?[ \t]*$/) {
+              f_agy = i
+            }
+          }
+          if (f_agy > 0 && no_output_after(f_agy)) {
+            print "agy-cli-feedback\t0"
+            exit 0
+          }
+        }
+
+        # 3. Codex CLI known /feedback modal dialogs
+        if (fam == "" || fam == "codex") {
+          h_cx = 0; b_cx = 0; f_cx = 0
+          h_up = 0; b_up = 0; f_up = 0
+          for (i = 1; i <= m; i++) {
+            r = tail[i]
+            if (r ~ /^[ \t]*How was this\?[ \t]*$/) h_cx = i
+            if (h_cx > 0 && i > h_cx && r ~ /(Crash, error message, hang, or broken UI\/behavior|Output was off-target, incorrect, incomplete, or unhelpful|Slowness, feature suggestion, UX feedback, or anything else)/) b_cx = i
+            if (h_cx > 0 && b_cx > 0 && i > b_cx && r ~ /^[ \t]*(Press enter to confirm or esc to go back|Enter to select · (↑\/↓ to navigate · )?Esc to cancel|.*[ \t]esc to (cancel|go back|close))[ \t]*$/) f_cx = i
+
+            if (r ~ /^[ \t]*Upload logs\?[ \t]*$/) h_up = i
+            if (h_up > 0 && i > h_up && r ~ /The following files will be sent:/) b_up = i
+            if (h_up > 0 && b_up > 0 && i > b_up && r ~ /^[ \t]*((❯|›|>)[ \t]*(1[.][ \t]*)?(Yes|No)|[0-9]+[.][ \t]*No|Press enter to confirm or esc to go back|Enter to (confirm|select) · Esc to cancel)[ \t]*$/) f_up = i
+          }
+          if (f_cx > 0 && no_output_after(f_cx)) {
+            print "codex-feedback-dialog\tEscape"
+            exit 0
+          }
+          if (f_up > 0 && no_output_after(f_up)) {
+            print "codex-upload-logs\tEscape"
+            exit 0
+          }
+        }
+
+        exit 1
+      }
+    '
+}
+
+# fm_control_send_feedback_dismiss <backend> <target> <dismiss-key> [<expected-label>]
+# Delivers the dismiss choice resolved by fm_control_feedback_dialog_dismiss to
+# <backend>:<target> without ever pressing Enter or typing feedback text.
+# Only `0` (literal single-key skip/dismiss) and `Escape` are permitted.
+fm_control_send_feedback_dismiss() {  # <backend> <target> <dismiss-key> [<expected-label>]
+  local backend=${1-} target=${2-} key=${3-} label=${4-} fn
+  [ -n "$backend" ] && [ -n "$target" ] && [ -n "$key" ] || return 1
+  if declare -F fm_backend_source >/dev/null 2>&1; then
+    fm_backend_source "$backend" >/dev/null 2>&1 || return 1
+  fi
+  case "$key" in
+    Escape)
+      fm_backend_send_key "$backend" "$target" Escape "$label"
+      ;;
+    0)
+      fn="fm_backend_${backend}_send_literal"
+      if declare -F "$fn" >/dev/null 2>&1; then
+        "$fn" "$target" 0 "$label"
+      else
+        return 1
+      fi
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}

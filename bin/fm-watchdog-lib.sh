@@ -286,15 +286,29 @@ _fm_wd_tail_rows() {  # <screen> <n>
   printf '%s\n' "$1" | fm_wd_strip_ansi | awk 'NF { rows[++n] = $0 } END { s = n - '"$2"' + 1; if (s < 1) s = 1; for (i = s; i <= n; i++) print rows[i] }'
 }
 
-fm_wd_pane_dialog() {  # <screen>
+if ! declare -F fm_control_feedback_dialog_dismiss >/dev/null 2>&1; then
+  # shellcheck source=/dev/null # Analyzed separately as a canonical lint root.
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-control-lib.sh"
+fi
+
+fm_wd_feedback_dialog_dismiss() {  # <screen> [<harness>]
+  fm_control_feedback_dialog_dismiss "${2-}" "${1-}"
+}
+
+fm_wd_feedback_dialog_key() {  # <screen> [<harness>]
+  local spec
+  spec=$(fm_control_feedback_dialog_dismiss "${2-}" "${1-}") || return 1
+  printf '%s\n' "${spec#*$'\t'}"
+}
+
+fm_wd_pane_dialog() {  # <screen> [<harness>]
   local tail
   [ -n "${1-}" ] || return 1
-  tail=$(_fm_wd_tail_rows "$1" 14)
-  if printf '%s\n' "$tail" | LC_ALL=C grep -Eq 'How is Claude doing' \
-     && printf '%s\n' "$tail" | LC_ALL=C grep -Eq '(^|[^0-9])0:[ ]*Dismiss'; then
+  if fm_wd_feedback_dialog_dismiss "$1" "${2-}" >/dev/null; then
     printf 'feedback\n'
     return 0
   fi
+  tail=$(_fm_wd_tail_rows "$1" 14)
   # A picker: its last non-blank row is the recorded footer and a selected
   # row sits above it. Claude Code 2.1.316's folder-trust picker has no
   # numbers, so a cursor glyph before any text counts; a bare `>` needs a number.
@@ -464,10 +478,10 @@ fm_wd_rate_ok() {  # <ledger> <home> <symptom> <action> <secs> <now> [subject]
   [ -z "$last" ] || [ $(( $6 - last )) -ge "$5" ]
 }
 
-fm_wd_count_since() {  # <ledger> <home> <symptom|*> <action|*> <phase-regex> <since>
+fm_wd_count_since() {  # <ledger> <home> <symptom|*> <action|*> <phase-regex> <since> [subject]
   [ -f "$1" ] || { printf '0\n'; return 0; }
-  awk -F'\t' -v h="$2" -v s="$3" -v a="$4" -v p="$5" -v since="$6" '
-    $1 >= since && $3 == h && ($5 == s || s == "*") && ($6 == a || a == "*") && $7 ~ p { c++ }
+  awk -F'\t' -v h="$2" -v s="$3" -v a="$4" -v p="$5" -v since="$6" -v subj="${7:-}" '
+    $1 >= since && $3 == h && ($5 == s || s == "*") && ($6 == a || a == "*") && $7 ~ p && (subj == "" || $4 == subj) { c++ }
     END { print c + 0 }' "$1"
 }
 

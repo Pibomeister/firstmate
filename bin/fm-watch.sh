@@ -792,6 +792,30 @@ inbox_steer_recovery_action() {  # <window> <task> <recover-rc>
   fi
 }
 
+# dismiss_pane_feedback_dialog: when an idle supervised pane shows a known
+# feedback or bug-report dialog for its harness, send the per-harness skip/
+# dismiss key once for that pane hash and log the dismissal.
+dismiss_pane_feedback_dialog() {  # <window> <screen> [<pane-hash>]
+  local w=$1 screen=${2-} h=${3-} key spec dialog_id dismiss_key df backend harness label
+  [ -n "$screen" ] || return 1
+  harness=$(window_harness "$w")
+  spec=$(fm_control_feedback_dialog_dismiss "$harness" "$screen") || return 1
+  key=$(window_key "$w")
+  df="$STATE/.feedback-dismissed-$key"
+  [ -n "$h" ] || h=$(printf '%s' "$screen" | hash_pane)
+  if [ "$(cat "$df" 2>/dev/null || true)" = "$h" ]; then
+    return 1
+  fi
+  dialog_id=${spec%%$'\t'*}
+  dismiss_key=${spec#*$'\t'}
+  backend=$(window_backend "$w")
+  label=$(window_label "$w")
+  fm_control_send_feedback_dismiss "$backend" "$w" "$dismiss_key" "$label" >/dev/null 2>&1 || return 1
+  printf '%s' "$h" > "$df"
+  triage_log "auto-dismissed feedback dialog ($dialog_id key=$dismiss_key): $w"
+  return 0
+}
+
 # inbox_steer_busy: the steering-inbox delivery guard. Every backend keeps the
 # recorded task's busy verdict (window_is_busy). T3 Code alone also treats its
 # native uncertainty as busy (fm_busy_is_busy), so a doorbell waits for proven
@@ -872,6 +896,8 @@ inbox_steer_check() {  # <window> <task>
   elif [ "$verb" != retry ] && ! fm_task_inbox_clear_busy "$STATE" "$task"; then
     reason="stale: $w (steering-inbox busy bookkeeping unwritable: ${rec%/*}/.busy-state cannot be reset after a non-busy check; inspect the inbox directory)"
     verb=escalate
+  elif dismiss_pane_feedback_dialog "$w" "$tail40"; then
+    sleep 0.2
   fi
   case "$verb" in
     ring)
@@ -5330,6 +5356,11 @@ EOF
     # content cannot suppress stale detection. Read once per window per poll and
     # reused below so a busy verdict is consistent within one cycle.
     if window_is_busy "$w" "$tail40"; then busy_now=0; else busy_now=1; fi
+    if [ "$busy_now" -ne 0 ] && dismiss_pane_feedback_dialog "$w" "$tail40" "$h"; then
+      echo "$h" > "$hf"
+      echo 1 > "$cf"
+      continue
+    fi
     if [ "$h" = "$prev" ]; then
       n=$(( $(cat "$cf" 2>/dev/null || echo 0) + 1 ))
       echo "$n" > "$cf"

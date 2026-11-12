@@ -3637,6 +3637,131 @@ test_primary_ordinary_idle_is_not_paged() {
   pass "usage-limit auto-wait: an ordinary idle primary is not paged"
 }
 
+test_feedback_and_bug_report_dialog_dismissal() {
+  local agy_survey agy_multiline claude_survey claude_draft claude_modal_input claude_modal_scope claude_modal_consent claude_followup codex_feedback codex_upload near_miss unknown_picker
+  agy_survey=$'work output\nHow\'s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip\n> \n  ? for shortcuts'
+  agy_multiline=$'work output\nHow\'s the CLI experience so far? Help us improve:\n  [1] Good  [2] Fine  [3] Bad  [0] Skip'
+  claude_survey=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss'
+  claude_draft=$'some work\n● Bug report drafted: tool timeout on large file\n  1 to review · 2 to send · 0 to dismiss'
+  claude_modal_input=$'Submit feedback / bug report\nDescribe the issue below:\n\nPress Enter to continue · Esc to cancel'
+  claude_modal_scope=$'Report a bug or share your conversation\nHow much session history should we include?\n ❯ 1. This session only\n   2. Last 5 sessions\n\nEnter to choose · Esc to cancel'
+  claude_modal_consent=$'Submit feedback / bug report\nThis report will include:\n- Your feedback / bug description: hang\n\nEnter to submit · ↑/↓ to navigate · Esc to cancel'
+  claude_followup=$'● What went wrong? (optional)\n\n  enter to send · esc to skip'
+  codex_feedback=$'How was this?\n\n ❯ 1. bug         Crash, error message, hang, or broken UI/behavior\n   2. bad_result  Output was off-target, incorrect, incomplete, or unhelpful\n   3. other       Slowness, feature suggestion, UX feedback, or anything else\n\nPress enter to confirm or esc to go back'
+  codex_upload=$'Upload logs?\nThe following files will be sent:\n  • codex-logs.log\n\n ❯ 1. Yes\n   2. No\n\nPress enter to confirm or esc to go back'
+  unknown_picker=$'Which plan should I follow?\n ❯ 1. Plan A (Recommended)\n   2. Plan B\n\nEnter to select · ↑/↓ to navigate · Esc to cancel'
+
+  # 1. Exact per-harness signatures choose only the skip/dismiss key (0 or Escape), never submit.
+  assert_equals $'agy-cli-feedback\t0' "$(lib fm_control_feedback_dialog_dismiss agy "$agy_survey")" "agy single-line CLI survey chooses 0/Skip"
+  assert_equals $'agy-cli-feedback\t0' "$(lib fm_control_feedback_dialog_dismiss agy "$agy_multiline")" "agy two-line CLI survey chooses 0/Skip"
+  assert_equals $'claude-session-feedback\t0' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_survey")" "claude session survey chooses 0/Dismiss"
+  assert_equals $'claude-bug-report-draft\t0' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_draft")" "claude drafted bug report card chooses 0/dismiss"
+  assert_equals $'claude-bug-report-dialog\tEscape' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_modal_input")" "claude bug report input step chooses Escape"
+  assert_equals $'claude-bug-report-dialog\tEscape' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_modal_scope")" "claude bug report scope step chooses Escape"
+  assert_equals $'claude-bug-report-dialog\tEscape' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_modal_consent")" "claude bug report consent step chooses Escape"
+  assert_equals $'claude-survey-followup\tEscape' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_followup")" "claude survey follow-up chooses Escape"
+  assert_equals $'codex-feedback-dialog\tEscape' "$(lib fm_control_feedback_dialog_dismiss codex "$codex_feedback")" "codex feedback picker chooses Escape"
+  assert_equals $'codex-upload-logs\tEscape' "$(lib fm_control_feedback_dialog_dismiss codex "$codex_upload")" "codex upload logs prompt chooses Escape"
+
+  local screen
+  for screen in "$agy_survey" "$agy_multiline" "$claude_survey" "$claude_draft" "$claude_modal_input" "$claude_modal_scope" "$claude_modal_consent" "$claude_followup" "$codex_feedback" "$codex_upload"; do
+    assert_equals feedback "$(lib fm_wd_pane_dialog "$screen")" "fm_wd_pane_dialog classifies known feedback/bug-report fixture as feedback"
+  done
+
+  # 2. Per-harness scoping: a signature from another harness is never matched.
+  ! lib fm_control_feedback_dialog_dismiss claude "$agy_survey" || fail "claude adapter matched agy survey"
+  ! lib fm_control_feedback_dialog_dismiss codex "$agy_survey" || fail "codex adapter matched agy survey"
+  ! lib fm_control_feedback_dialog_dismiss pi "$agy_survey" || fail "pi adapter matched agy survey"
+  ! lib fm_control_feedback_dialog_dismiss agy "$claude_survey" || fail "agy adapter matched claude survey"
+  ! lib fm_control_feedback_dialog_dismiss codex "$claude_draft" || fail "codex adapter matched claude bug report draft"
+  ! lib fm_control_feedback_dialog_dismiss claude "$codex_feedback" || fail "claude adapter matched codex feedback dialog"
+
+  # 3. Near-miss texts and unknown dialogs are never dismissed.
+  for near_miss in \
+    $'Log: How\'s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip' \
+    $'How\'s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad' \
+    $'● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good' \
+    $'● Bug report drafted: tool timeout\n  1 to review · 2 to send' \
+    $'Submit feedback / bug report\nDescribe the issue below:\n\nPress Enter to continue' \
+    $'How\'s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip\nnew work output after survey\n> '; do
+    ! lib fm_control_feedback_dialog_dismiss "" "$near_miss" || fail "near-miss matched feedback dismissal: $near_miss"
+    assert_equals "" "$(lib fm_wd_pane_dialog "$near_miss")" "near-miss is not classified as a dialog: $near_miss"
+  done
+  ! lib fm_control_feedback_dialog_dismiss "" "$unknown_picker" || fail "unknown picker matched feedback dismissal"
+  assert_equals question "$(lib fm_wd_pane_dialog "$unknown_picker")" "unknown picker still classifies as question"
+
+  # 4. Watchdog auto-dismisses worker feedback and bug-report dialogs without submitting.
+  make_home $'Captain session\n> '
+  transcript 100 "Working."
+  cat > "$H/worker-agy.sh" <<SH
+#!/usr/bin/env bash
+printf '%s\n' 'How'\''s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip'
+stty -echo raw
+dd bs=1 count=1 of="$H/worker-agy.key" 2>/dev/null
+stty sane -echo
+clear
+printf '> \n'
+exec sleep 100000
+SH
+  chmod +x "$H/worker-agy.sh"
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "wkagy${CASE_N}" -x 160 -y 40 "$H/worker-agy.sh"
+  WP=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" list-panes -t "=wkagy${CASE_N}" -F '#{pane_id}' | head -n 1)
+  printf 'kind=ship\nharness=agy\nbackend=tmux\nwindow=%s\nendpoint_task_id=agyw\n' "$WP" > "$H/state/agyw.meta"
+  sleep 0.5
+  run_wd 0 once >/dev/null 2>&1 || fail "watchdog worker feedback pass failed"
+  assert_equals "0" "$(cat "$H/worker-agy.key" 2>/dev/null)" "worker agy survey received literal 0 and nothing else"
+  assert_equals 1 "$(awk -F'\t' '$4 == "worker:agyw" && $5 == "dialog" && $6 == "key" && $7 == "done"' "$H/state/watchdog/actions.tsv" | wc -l | tr -d ' ')" \
+    "worker agy feedback dismissal recorded done: $(ledger)"
+
+  # 5. Watcher (fm-watch.sh) auto-dismisses an idle worker's feedback dialog and logs the dismissal, but leaves a busy worker alone.
+  local wdir wstate wfake wout
+  wdir="$TMP_ROOT/watch-feedback-$CASE_N"
+  wstate="$wdir/state"
+  wfake="$wdir/fakebin"
+  wout="$wdir/watch.out"
+  mkdir -p "$wstate" "$wfake" "$wdir/config"
+  printf 'window=test:fm-agy\nkind=ship\nharness=agy\nbackend=tmux\n' > "$wstate/agy.meta"
+  cat > "$wfake/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  list-windows) printf 'fm-agy\n'; exit 0 ;;
+  capture-pane) cat "$FM_TEST_WATCH_PANE"; exit 0 ;;
+  send-keys)
+    shift
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) shift; printf 'LITERAL:%s\n' "${1:-}" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+        *) printf 'KEY:%s\n' "$1" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+      esac
+    done
+    exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$wfake/tmux"
+  printf '%s\n' "$agy_survey" > "$wdir/pane-idle.txt"
+  : > "$wdir/keys.log"
+  PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-idle.txt" FM_TEST_WATCH_KEYS="$wdir/keys.log" \
+    FM_HOME="$wdir" FM_STATE_OVERRIDE="$wstate" FM_CONFIG_OVERRIDE="$wdir/config" \
+    FM_WATCH_ONCE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    bash "$ROOT/bin/fm-watch.sh" > "$wout" 2>&1 || fail "fm-watch.sh once failed on idle feedback pane: $(cat "$wout")"
+  assert_equals "LITERAL:0" "$(cat "$wdir/keys.log")" "watcher sent only literal 0 (never Enter or submit) on idle agy survey"
+  assert_grep "auto-dismissed feedback dialog (agy-cli-feedback key=0): test:fm-agy" "$wstate/.watch-triage.log" \
+    "watcher logged the feedback dismissal"
+
+  # Busy worker showing `esc to cancel` alongside the text is not touched.
+  printf '%s\n  esc to cancel\n' "$agy_survey" > "$wdir/pane-busy.txt"
+  : > "$wdir/keys.log"
+  rm -f "$wstate"/.feedback-dismissed-*
+  PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-busy.txt" FM_TEST_WATCH_KEYS="$wdir/keys.log" \
+    FM_HOME="$wdir" FM_STATE_OVERRIDE="$wstate" FM_CONFIG_OVERRIDE="$wdir/config" \
+    FM_WATCH_ONCE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    bash "$ROOT/bin/fm-watch.sh" > "$wout" 2>&1 || fail "fm-watch.sh once failed on busy pane"
+  assert_equals "" "$(cat "$wdir/keys.log")" "watcher sends no key while the worker is busy"
+  pass "feedback and bug-report dialogs: exact per-harness signatures auto-dismiss when idle without submitting, near-misses and unknown dialogs do not"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -3644,6 +3769,7 @@ fi
 
 fm_test_run \
   test_dialog_detection \
+  test_feedback_and_bug_report_dialog_dismissal \
   test_mtime_uses_the_platform_stat_dialect \
   test_dismissed_dialog_in_scrollback_is_not_showing \
   test_dialog_keys_stop_after_two_failures \

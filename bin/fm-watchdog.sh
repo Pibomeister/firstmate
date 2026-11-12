@@ -623,6 +623,8 @@ wd_key() {
   case "$O_BACKEND:$key" in
     orca:[0-9]) fm_run_timed 10 orca terminal send --terminal "$O_TARGET" --text "$key" --json >/dev/null 2>&1 ;;
     tmux:[0-9]) fm_run_timed 10 tmux send-keys -t "$O_TARGET" -l "$key" >/dev/null 2>&1 ;;
+    herdr:[0-9]) fm_run_timed_fn 10 fm_backend_herdr_send_literal "$O_TARGET" "$key" >/dev/null 2>&1 ;;
+    rex:[0-9]) fm_run_timed_fn 10 fm_backend_rex_send_literal "$O_TARGET" "$key" >/dev/null 2>&1 ;;
     *) fm_run_timed_fn 10 fm_backend_send_key "$O_BACKEND" "$O_TARGET" "$key" >/dev/null 2>&1 ;;
   esac || { wd_rec "$id" "$symptom" key failed "key delivery failed"; return 1; }
   sleep "$(cfgi key-settle-secs 2)"
@@ -1018,18 +1020,20 @@ wd_ladder_nudge_then_restart() {  # <symptom> <nudge-body> <kind>...
 }
 
 wd_handle_dialog() {
-  local opts pick n text
+  local opts pick n text key
   # Two keys that did not clear a dialog within the hour stop the presses, so a
   # misread screen never keeps typing into the session and no model is asked.
   case "$O_DIALOG" in
     feedback|model-switch)
-      if [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" dialog key '^failed$' "$(( $(wd_now) - 3600 ))")" -ge 2 ]; then
+      if [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" dialog key '^failed$' "$(( $(wd_now) - 3600 ))" "${O_REC_SUBJECT:-}")" -ge 2 ]; then
         wd_gap "a $O_DIALOG dialog did not clear after two keys this hour; no more keys pressed"
         return 0
       fi ;;
   esac
   case "$O_DIALOG" in
-    feedback) wd_key dialog 0 "dismiss the feedback survey" ;;
+    feedback)
+      key=$(fm_wd_feedback_dialog_key "$O_PANE" 2>/dev/null) || key=0
+      wd_key dialog "${key:-0}" "dismiss the feedback survey" ;;
     permission)
       wd_gap "permission dialog waiting; the watchdog never answers permission prompts"
       wd_page_permission ;;
@@ -1489,6 +1493,15 @@ wd_visit_worker_dialogs() {
       continue
     fi
     case "$dialog" in
+      feedback)
+        O_BACKEND=$backend
+        O_TARGET=$target
+        O_PANE=$screen
+        O_DIALOG=$dialog
+        O_REC_SUBJECT="worker:$id"
+        wd_handle_dialog
+        unset O_REC_SUBJECT
+        ;;
       permission)
         O_BACKEND=$backend
         O_TARGET=$target
