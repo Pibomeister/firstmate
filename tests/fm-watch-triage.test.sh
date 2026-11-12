@@ -2670,6 +2670,45 @@ test_dead_crew_auto_relaunch_failures_and_exclusions_report_once() {
   pass "a failed auto-relaunch reports once without retrying, and an unreclaimable missing endpoint, a gone worktree, a finished task, a disabled bound, an fm-control exit, or a clean exit 0 keeps the ordinary report"
 }
 
+# A harness that had a busy gen can lose that file when relaunch fails after
+# arming a replacement and then retiring it. The once-marker has to hold the
+# identity the next probe reads, the pane hash once the gen is gone, or the
+# same dead agent is relaunched again. The wrong behavior is a second control
+# call for an unchanged dead display.
+test_failed_busy_gen_relaunch_is_not_retried() {
+  local dir state fakebin out capture window
+  local failed='state: failed · source: run-step · run failed'
+  window="test:fm-wedge"
+  dir=$(crew_relaunch_fixture auto-relaunch-busy-gen-failed 'working: still compiling')
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  printf 'g1.dead\n' > "$state/wedge.busy-gen"
+  cat > "$dir/fake-control" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$1 \$2 \$3" >> "$dir/control.calls"
+rm -f "$state/wedge.busy-gen"
+echo "fm-control: relaunch refused for the test" >&2
+exit 1
+SH
+  chmod +x "$dir/fake-control"
+  FM_CONTROL_BIN="$dir/fake-control"; export FM_CONTROL_BIN
+  gone_endpoint_env dead; export FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" exit \
+    || fail "a failed busy-gen auto-relaunch was never reported: $(cat "$out")"
+  grep -F "check: wedge auto-relaunch failed after its agent died in $window (exit 1): fm-control: relaunch refused for the test" "$out" >/dev/null \
+    || fail "a failed busy-gen auto-relaunch did not name its failure: $(cat "$out")"
+  [ "$(crew_relaunch_wakes "$state" wedge failed)" -eq 1 ] || fail "a failed busy-gen auto-relaunch did not queue one check row"
+  [ "$(control_calls "$dir")" -eq 1 ] || fail "the first failure made $(control_calls "$dir") relaunch calls"
+  [ ! -e "$state/wedge.busy-gen" ] || fail "the failed relaunch left the busy gen in place, so the next probe would not change identity"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the failed busy-gen auto-relaunch"
+  : > "$out"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" absorb \
+    || fail "a failed busy-gen auto-relaunch retried or re-alarmed on a later threshold: $(cat "$out")"
+  [ "$(control_calls "$dir")" -eq 1 ] || fail "a failed busy-gen auto-relaunch was retried for the same dead agent ($(control_calls "$dir") calls)"
+  [ "$(crew_relaunch_wakes "$state" wedge failed)" -eq 0 ] || fail "the later threshold queued another failed-relaunch wake"
+  unset FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS FM_CONTROL_BIN
+  pass "a failed auto-relaunch that drops the busy gen is absorbed on the next probe instead of retried"
+}
+
 # A worker whose decision sits with the captain as a backlog hold stays stopped
 # even on the escalation-cap path, which probes for a dead agent before it reads
 # the hold as a wait: relaunching it would answer the captain's call for them.
@@ -5757,6 +5796,7 @@ fm_test_run \
   test_dead_crew_agent_auto_relaunches_from_its_checkpoint_within_a_bound \
   test_dead_crew_successor_with_an_identical_dead_display_is_still_handled \
   test_dead_crew_auto_relaunch_failures_and_exclusions_report_once \
+  test_failed_busy_gen_relaunch_is_not_retried \
   test_dead_crew_with_backlog_captain_hold_is_not_auto_relaunched \
   test_signal_death_and_reclaimable_missing_endpoint_auto_relaunch \
   test_live_and_unproven_endpoints_still_wedge_escalate \

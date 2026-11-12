@@ -2319,10 +2319,11 @@ Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mist
 # successor's spawn generation instead: the successor can die into a
 # byte-identical dead display with no live read in between, and the old hash
 # would absorb that death without spending the next attempt or, past the bound,
-# the ordinary report. A failed relaunch keeps the hash, so it is reported once.
+# the ordinary report. A failed relaunch is keyed to the identity the next
+# probe reads, so that same dead agent is absorbed rather than retried.
 # Returns 0 when it has handled the window, 1 to escalate on the unchanged path.
 wedge_dead_record() {  # <window> <since-file> <triage-label> <idle-age> <pane-hash> <task>
-  local win=$1 since_file=$2 label=$3 age=$4 hash=$5 task=$6 key marker agent_state detail reason gen id successor
+  local win=$1 since_file=$2 label=$3 age=$4 hash=$5 task=$6 key marker agent_state detail reason gen id successor next
   key=$(window_key "$win")
   marker="$STATE/.dead-reported-$key"
   agent_state=$(fm_backend_agent_state "$(window_backend "$win")" "$win" 2>/dev/null) || agent_state=unreadable
@@ -2348,7 +2349,12 @@ wedge_dead_record() {  # <window> <since-file> <triage-label> <idle-age> <pane-h
   if crew_auto_relaunch "$win" "$task" "$age" "$agent_state"; then
     fm_wake_append check "$CREW_RELAUNCH_KEY" "$CREW_RELAUNCH_REASON" || exit 1
     successor=$id
-    if [ -z "$gen" ] && [ "$CREW_RELAUNCH_OK" = 1 ]; then
+    if [ "$CREW_RELAUNCH_OK" != 1 ]; then
+      successor=$hash
+      if next=$(fm_busy_current_gen "$STATE" "$task"); then
+        successor=$next
+      fi
+    elif [ -z "$gen" ]; then
       successor=$(fm_meta_get "$STATE/$task.meta" spawn_gen 2>/dev/null || true)
       successor="relaunched:${successor:-$CREW_RELAUNCH_KEY}"
     fi
