@@ -33,12 +33,17 @@
 #       composers are not proven.
 #   fm_wd_strip_ansi
 #       Filter: removes ANSI escape sequences and carriage returns.
-#   fm_wd_pane_dialog <screen>
+#   fm_wd_feedback_dialog_dismiss <screen> [<harness>]
+#   fm_wd_feedback_dialog_key <screen> [<harness>]
+#       Wrap fm_control_feedback_dialog_dismiss (bin/fm-control-lib.sh): print
+#       `<dialog-id>\t<key>` or only the skip key for a known feedback or
+#       bug-report dialog, else exit 1.
+#   fm_wd_pane_dialog <screen> [<harness>]
 #       Prints `feedback`, `permission`, `usage-limit`, `model-switch`, or
 #       `question` when the last rows of the screen hold that blocking dialog,
-#       else nothing (exit 1). A dialog needs its structure, not its words: the
-#       feedback survey needs its heading and its `0: Dismiss` row among the last
-#       rows; every other kind needs a selected numbered row and a recorded picker
+#       else nothing (exit 1). A dialog needs its structure, not its words: a
+#       feedback or bug-report dialog needs a known signature from
+#       fm_control_feedback_dialog_dismiss; every other kind needs a selected numbered row and a recorded picker
 #       footer as the last non-blank row. A row that opens by stating a provider
 #       limit is `usage-limit`; a same-account model or account switch stays
 #       `model-switch`.
@@ -95,7 +100,9 @@
 #   fm_wd_rate_ok <ledger> <home> <symptom> <action> <secs> <now> [subject]
 #       Returns 0 when the last attempt is older than secs.
 #       The optional subject filter is the same as fm_wd_last_epoch.
-#   fm_wd_count_since <ledger> <home> <symptom|*> <action|*> <phase-regex> <since>
+#   fm_wd_count_since <ledger> <home> <symptom|*> <action|*> <phase-regex> <since> [subject]
+#       Prints the count of matching rows; the optional subject filter is the
+#       same as fm_wd_last_epoch.
 #   fm_wd_open_pending <ledger>
 #       Prints `<id>\t<home>\t<symptom>\t<action>\t<epoch>` for every pending
 #       row with no later outcome row for the same id.
