@@ -38,6 +38,7 @@ esac
 
 shell=$(ps -o comm= -p "$PPID" 2>/dev/null || true)
 shell=${shell##*/}
+# shellcheck disable=SC2016 # Literal status spellings: the pane shell expands them in the snippet.
 case "${shell#-}" in
   fish) status_spell='$status' ;;
   *) status_spell='$?' ;;
