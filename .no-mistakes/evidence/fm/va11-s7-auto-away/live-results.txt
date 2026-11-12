@@ -1,0 +1,13 @@
+PASS clock-23-enters-away
+PASS silence-2h-enters-away
+PASS captain-message-cancels-queued-entry
+PASS disable-keeps-fulfilled-receipt
+PASS disable-drops-pending-request
+PASS quiet-blocks-automatic-entry
+PASS session-open-resets-missed-night
+PASS mexico-city-local-clock
+PASS disabled-does-not-queue
+PASS idle-home-needs-watcher-until-disabled
+PASS supervision-instructions-activity-boundary
+PASS off-start-records-activity
+PASS non-zone-file-rejected

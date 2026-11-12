@@ -1,0 +1,18 @@
+scenario=off-start-records-activity
+FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-auto-away-live.feqQG8/off-start-records-activity
+bin={run-worktree}/bin/fm-auto-away.sh
+old stamp 2026-11-09 22:00:00 UTC; open with enabled=off at 2026-11-11 22:00:00 UTC
+--- old captain-message ---
+
+(exit 0)
+--- arm --session-start while off ---
+
+(exit 0)
+activity: 1794434400
+--- re-arm without session-start ---
+armed: state/auto-away.check.sh
+(exit 0)
+--- check ---
+
+(exit 0)
+PASS

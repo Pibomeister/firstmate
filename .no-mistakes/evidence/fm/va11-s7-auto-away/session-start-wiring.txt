@@ -1,0 +1,11 @@
+old_stamp=1794333600 (2026-11-10 18:00 UTC)
+captain-opened exit=0
+- Before handling each genuine captain message (never a wake, hook, or startup), run bin/fm-auto-away.sh captain-message; a check: auto-away wake loads /afk.
+activity_after_open=1794509880
+trust_after_open=yes
+shim_after_open=yes
+compact exit=0 activity=1794509880 trust=yes
+clear exit=0 activity=1794509880 trust=yes
+second_open activity=1794509924
+disabled_open exit=0 activity=1794509935 trust=no
+lab_removed

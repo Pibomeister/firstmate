@@ -1,0 +1,23 @@
+scenario=session-open-resets-missed-night
+FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-auto-away-live.feqQG8/session-open-resets-missed-night
+bin={run-worktree}/bin/fm-auto-away.sh
+previous stamp 2026-11-11 18:00:00 UTC (18:00); open 2026-11-12 09:00:00 UTC (09:00 next day). Missed 23:00 must not fire.
+--- old captain-message ---
+
+(exit 0)
+--- arm --session-start ---
+armed: state/auto-away.check.sh
+(exit 0)
+activity: 1794474000
+--- check at open ---
+
+(exit 0)
+--- check at 7199s ---
+
+(exit 0)
+--- check at 7200s ---
+
+(exit 0)
+wake queue:
+1794509531	1	check	auto-away	check: auto-away silence trigger; load /afk and run bin/fm-auto-away.sh enter 1794474000; only if it prints an entry, finish /afk supervision setup and announce it once.
+PASS

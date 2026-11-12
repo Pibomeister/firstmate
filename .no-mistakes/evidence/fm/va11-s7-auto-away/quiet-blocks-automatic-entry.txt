@@ -1,0 +1,17 @@
+scenario=quiet-blocks-automatic-entry
+FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-auto-away-live.feqQG8/quiet-blocks-automatic-entry
+bin={run-worktree}/bin/fm-auto-away.sh
+--- captain-message ---
+
+(exit 0)
+--- quiet enter ---
+Quiet mode recorded at 2026-11-12T18:52:08Z: you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation. Only an explicit /quiet off ends it.
+Quiet mode (recorded):
+  entered: 2026-11-12T18:52:08Z
+  holds: none - you are present, so nothing waits for your return: every action you ask for, a local landing or a merge included, proceeds now under ordinary attended authority, and quiet mode changes only which updates reach this conversation.
+  your words: (none)
+(exit 0)
+--- check at 23:00 ---
+
+(exit 0)
+PASS
