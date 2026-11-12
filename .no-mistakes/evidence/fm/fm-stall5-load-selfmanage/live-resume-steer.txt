@@ -1,0 +1,22 @@
+== steering inbox for hipri
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.kmCQ4p/state/nopri.inbox/001.msg
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.kmCQ4p/state/hipri.inbox/001.msg
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.kmCQ4p/state/lowpri.inbox/001.msg
+schema=fm-task-inbox.v1
+at=2026-11-12T08:15:56Z
+body-terminator=1
+--
+Host load has fallen to 99.80 (resume level 750). Your load-relief pause is lifted; resume your task from where you left off.
+== hipri pane after resume
+  ┃  at=2026-11-12T08:15:56Z
+  ┃  body-terminator=1                                                                                                                                              OpenCode includes free models so
+  ┃  --                                                                                                                                                             you can start immediately.
+  ┃  Host load has fallen to 99.80 (resume level 750). Your load-relief pause is lifted; resume your task from where you left off.
+  ┃                                                                                                                                                                 Connect from 75+ providers to
+                                                                                                                                                                    use other models, including
+  ┃                                                                                                                                                                 Claude, GPT, Gemini etc
+  ┃
+  ┃                                                                                                                                                                 Connect provider        /connect
+  ┃  Build · Iceman Free OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ⬝⬝⬝⬝⬝⬝⬝⬝ esc interrupt                                                                                                        22.4K (9%)  ctrl+p commands    /…/T/fm-lab.kmCQ4p/wt-hipri:task-hipri

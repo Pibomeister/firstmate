@@ -1,0 +1,70 @@
+# Live load relief: lab home, 4 real opencode workers in lab tmux, real tasks-axi backlog, real host load
+# config/lane-capacity=4; config/load-relief: ceiling=0.01 sustain-secs=0
+# priorities: hipri=1 lowpri=4 nopri=(none) prready=4 with pr=
+== host load: { 122.66 161.21 176.46 }
+== pass 1
+load-relief: load=122.66 at or over ceiling=0.01; sustained window started
+exit=0
+== pass 2
+load-relief: paused nopri load=122.66 ceiling=0.01 sustained=2s
+exit=0
+== paused records
+(eval):1: no matches found: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.kmCQ4p/state/load-relief/paused/*(N)
+== paused records
+--- nopri
+id=nopri
+paused_epoch=1794471329
+priority=
+load=122.66
+ceiling=0.01
+== pass 3
+load-relief: paused lowpri load=114.75 ceiling=0.01 sustained=10s
+exit=0
+== pass 4
+load-relief: paused hipri load=109.97 ceiling=0.01 sustained=3s
+exit=0
+== paused dir
+hipri
+lowpri
+nopri
+--- status hipri
+paused [key=load-relief] [at=1794471342]: load relief: load 109.97 at or over ceiling 0.01 for 3s; interrupted in place, work preserved, resumes when load falls
+--- status lowpri
+paused [key=load-relief] [at=1794471339]: load relief: load 114.75 at or over ceiling 0.01 for 10s; interrupted in place, work preserved, resumes when load falls
+--- status nopri
+paused [key=load-relief] [at=1794471329]: load relief: load 122.66 at or over ceiling 0.01 for 2s; interrupted in place, work preserved, resumes when load falls
+--- status prready
+== worktrees untouched (uncommitted work still present)
+nopri:
+?? uncommitted.txt
+lowpri:
+?? uncommitted.txt
+== panes alive
+fm-hipri opencode dead=0
+fm-lowpri opencode dead=0
+fm-nopri opencode dead=0
+fm-prready opencode dead=0
+== pass 5 (all non-PR workers paused; expect no candidate)
+load-relief: load=99.80 sustained 11s over ceiling=0.01; no live worker to pause
+exit=0
+== config/load-relief now ceiling=1000 (resume-below default 750); host load { 99.80 152.81 172.99 }
+== resume pass 1
+load-relief: resumed hipri load=99.80 resume-below=750
+exit=0
+lowpri
+nopri
+== resume pass 2
+load-relief: resumed lowpri load=95.17 resume-below=750
+exit=0
+nopri
+== resume pass 3
+load-relief: resumed nopri load=90.51 resume-below=750
+exit=0
+== resume pass 4
+exit=0
+--- status hipri (last line)
+resolved [key=load-relief] [at=1794471353]: load relief lifted (load 99.80 below 750); resumed by steer
+--- status lowpri (last line)
+resolved [key=load-relief] [at=1794471359]: load relief lifted (load 95.17 below 750); resumed by steer
+--- status nopri (last line)
+resolved [key=load-relief] [at=1794471362]: load relief lifted (load 90.51 below 750); resumed by steer

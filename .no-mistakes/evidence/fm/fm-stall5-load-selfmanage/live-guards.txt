@@ -1,0 +1,15 @@
+== resume-below 20 >= ceiling 16 must refuse
+fm-load-relief: config/load-relief: resume-below 20 must be under the load ceiling 16
+exit=1
+== malformed sustain-secs must refuse
+fm-load-relief: config/load-relief line 1: sustain-secs needs a non-negative integer
+exit=1
+== stale pause record for a cleaned-up task is dropped without a steer
+load-relief: dropped pause record for finished or removed gone
+exit=0
+(empty = dropped)
+== a done: task's record dropped
+load-relief: dropped pause record for finished or removed lowpri
+exit=0
+001.msg
+handled

@@ -1,0 +1,17 @@
+# fm-capacity --spawn-gate (the verdict fm-spawn enforces) on the lab home; 4 lane records, 1 with pr=
+host load: { 97.76 146.18 169.74 }  cores: 16
+== cap 4, max-load1 1000 (3 lanes hold a place; prready freed)
+exit=0
+== cap 3, max-load1 1000 (3 places held = full)
+deferred: lane capacity of this home (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.kmCQ4p/config/lane-capacity) does not admit another lane: full: 3 of 3 lanes hold a place
+exit=75
+== cap 8, max-load1 5 (real load over ceiling)
+deferred: lane capacity of this home (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.kmCQ4p/config/lane-capacity) does not admit another lane: load: 97.76 at or over its ceiling 5 (max-load1)
+exit=75
+== cap 8, max-load1<TAB>1000 (tab-separated key honoured)
+exit=0
+== cap 8, no max-load1 (ceiling = core count)
+deferred: lane capacity of this home (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.kmCQ4p/config/lane-capacity) does not admit another lane: load: 97.76 at or over its ceiling 16 (logical cores)
+exit=75
+== no config/lane-capacity (opt-in off)
+exit=0

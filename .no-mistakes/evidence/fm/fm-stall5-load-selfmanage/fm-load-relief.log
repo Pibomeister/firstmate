@@ -1,0 +1,11 @@
+ok - a sustained stubbed-high load pauses the highest priority number once per window and a falling load resumes it
+ok - a priority tie pauses the newest dispatch first
+ok - an item with no numeric priority pauses before a numbered one, newest first; no backlog item is never paused
+ok - a lane with a ready PR is never paused, even as the first candidate
+ok - a worker waiting on a captain decision is never paused
+ok - a pause record for a finished or removed task is dropped without a steer
+ok - max-load1 parses with the same tab-tolerant grammar as fm-capacity
+ok - resume waits under 75% of the ceiling and lifts one pause per pass, highest priority first
+ok - the pause record precedes the interrupt and is removed when the interrupt is not delivered
+ok - an explicit resume-below at or over the ceiling refuses rather than silently disabling relief
+ok - without config/lane-capacity a check is a no-op
