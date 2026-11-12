@@ -75,6 +75,13 @@ cat > "$REMOTE_ROOT/bin/fm-mutate.sh" <<'SH'
 #!/usr/bin/env bash
 printf 'mutation\n' >> "$1"
 SH
+cat > "$REMOTE_ROOT/bin/fm-mutate-flaky.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'mutation\n' >> "$1"
+printf 'upstream request timed out: HTTP 503 Service Unavailable\n'
+printf 'upstream request timed out: HTTP 503 Service Unavailable\n' >&2
+exit 255
+SH
 chmod +x "$REMOTE_ROOT/bin"/*.sh
 chmod +x "$REMOTE_ROOT/bin/tasks-axi"
 git -C "$REMOTE_ROOT" init -q -b main
@@ -104,6 +111,25 @@ case "${FM_FAKE_SSH_MODE:-normal}" in
   unreachable) exit 255 ;;
   ambiguous)
     "$FM_FAKE_REMOTE_ENTRYPOINT" "$@"
+    exit 255
+    ;;
+  dropped)
+    "$FM_FAKE_REMOTE_ENTRYPOINT" "$@"
+    printf '%s\n' "${FM_FAKE_SSH_DROP_TEXT:-Timeout, server not responding.}" >&2
+    exit 255
+    ;;
+  blip)
+    case "$count" in ''|*[!0-9]*) count=0 ;; esac
+    if [ "$count" -lt 2 ]; then
+      cat >/dev/null
+      printf '%s\n' 'ssh: connect to host remote-mac port 22: Connection refused' >&2
+      exit 255
+    fi
+    exec "$FM_FAKE_REMOTE_ENTRYPOINT" "$@"
+    ;;
+  offline)
+    cat >/dev/null
+    printf '%s\n' 'ssh: connect to host remote-mac port 22: Connection refused' >&2
     exit 255
     ;;
   *) exec "$FM_FAKE_REMOTE_ENTRYPOINT" "$@" ;;
@@ -214,6 +240,70 @@ assert_contains "$out" 'secret=absent' "the primary ambient environment crossed 
 assert_contains "$out" 'worker=1' "the fixed entrypoint executed outside the remote job worker"
 pass "the fixed entrypoint runs every command in the worker's explicit environment"
 
+: > "$SSH_COUNT"
+BLIP_SLEEP="$TMP_ROOT/blip-sleep"
+: > "$BLIP_SLEEP"
+set +e
+BLIP_OUT=$(FM_BLIP_READ=1 FM_BLIP_NOW=1000 FM_BLIP_SLEEP_LOG="$BLIP_SLEEP" FM_FAKE_SSH_MODE=blip \
+  fm_on ios fm-probe-two.sh 2>"$TMP_ROOT/blip-err")
+BLIP_RC=$?
+set -e
+[ "$BLIP_RC" -eq 0 ] || fail "a read-only probe whose refused SSH connection cleared was reported as a failure (got $BLIP_RC)"
+[ "$(cat "$SSH_COUNT")" -eq 3 ] || fail "a read-only probe did not retry a refused SSH connection twice before success (count $(cat "$SSH_COUNT"))"
+assert_equals $'2\n4' "$(cat "$BLIP_SLEEP")" "a read-only probe did not back off 2s then 4s"
+assert_contains "$BLIP_OUT" "home=$REMOTE_HOME" "a recovered read-only probe did not return the remote result"
+[ "$(printf '%s\n' "$BLIP_OUT" | grep -c '^home=')" -eq 1 ] \
+  || fail "a recovered read-only probe repeated the remote result: $BLIP_OUT"
+if grep -q 'Connection refused' "$TMP_ROOT/blip-err"; then
+  fail "a recovered read-only probe kept the refused-connection text"
+fi
+pass "a read-only probe retries a refused SSH connection until the remote command succeeds"
+
+: > "$SSH_COUNT"
+: > "$BLIP_SLEEP"
+printf 'payload one\n' > "$TMP_ROOT/blip-stdin"
+set +e
+FM_BLIP_READ=1 FM_BLIP_NOW=2000 FM_BLIP_SLEEP_LOG="$BLIP_SLEEP" FM_FAKE_SSH_MODE=blip \
+  fm_on --stdin ios fm-probe-one.sh "$REMOTE_HOME/blip-argv.bin" 0 'retried' \
+  < "$TMP_ROOT/blip-stdin" > "$TMP_ROOT/blip-stdin-out" 2>"$TMP_ROOT/blip-stdin-err"
+BLIP_RC=$?
+set -e
+[ "$BLIP_RC" -eq 0 ] || fail "stdin replay across a read-only refused SSH connection failed (got $BLIP_RC)"
+[ "$(cat "$SSH_COUNT")" -eq 3 ] || fail "stdin replay did not retry the refused SSH connection"
+assert_grep 'stdin: payload one' "$TMP_ROOT/blip-stdin-out" \
+  "a later SSH attempt did not see the caller's stdin again"
+pass "a read-only probe replays the caller's stdin on the successful attempt"
+
+blip_sleep_sum() {
+  awk '{ total += $1 } END { print total + 0 }' "$1"
+}
+
+: > "$SSH_COUNT"
+: > "$BLIP_SLEEP"
+set +e
+FM_BLIP_READ=1 FM_BLIP_NOW=4000 FM_BLIP_SLEEP_LOG="$BLIP_SLEEP" FM_FAKE_SSH_MODE=offline \
+  fm_on ios fm-probe-two.sh >"$TMP_ROOT/read-out" 2>"$TMP_ROOT/read-err"
+BLIP_RC=$?
+set -e
+[ "$BLIP_RC" -ne 0 ] || fail "a read-only probe treated a permanently offline host as success"
+[ "$(blip_sleep_sum "$BLIP_SLEEP")" -le 15 ] \
+  || fail "FM_BLIP_READ=1 waited past the 15-second budget: $(tr '\n' ' ' < "$BLIP_SLEEP")"
+[ "$(blip_sleep_sum "$BLIP_SLEEP")" -gt 0 ] \
+  || fail "FM_BLIP_READ=1 did not retry the offline host"
+pass "FM_BLIP_READ=1 returns an offline host within the short read budget"
+
+: > "$SSH_COUNT"
+: > "$BLIP_SLEEP"
+set +e
+FM_BLIP_NOW=5000 FM_BLIP_SLEEP_LOG="$BLIP_SLEEP" FM_FAKE_SSH_MODE=blip \
+  fm_on ios fm-probe-two.sh >"$TMP_ROOT/mutate-out" 2>"$TMP_ROOT/mutate-err"
+BLIP_RC=$?
+set -e
+[ "$BLIP_RC" -ne 0 ] || fail "a changing call retried a refused SSH connection until success"
+[ "$(cat "$SSH_COUNT")" -eq 1 ] || fail "a changing call retried ssh (count $(cat "$SSH_COUNT"))"
+[ ! -s "$BLIP_SLEEP" ] || fail "a changing call waited before returning: $(tr '\n' ' ' < "$BLIP_SLEEP")"
+pass "a call that changes something does not retry a refused SSH connection"
+
 # The child PATH is the entrypoint's own composition, so it is asserted on the
 # PATH a real child receives rather than on the script that builds it. The
 # expectation is rebuilt here from the documented contract - fixed head, the
@@ -290,7 +380,12 @@ expect_dir "$REMOTE_ROOT/bin"
 if [ -d "$ACCOUNT_HOME/.local/bin" ] && [ ! -L "$ACCOUNT_HOME/.local/bin" ]; then
   expect_dir "$ACCOUNT_HOME/.local/bin"
 fi
-for candidate in "${NVM_CHILD_DIRS[@]}"; do expect_dir "$candidate"; done
+# Bash 3.2 with set -u treats an empty "${array[@]}" as unbound and aborts
+# the script. This host has no matching nvm bin, and the EXIT trap's cleanup
+# then reports that abort as success, so the later transport cases never run.
+if [ "${#NVM_CHILD_DIRS[@]}" -gt 0 ]; then
+  for candidate in "${NVM_CHILD_DIRS[@]}"; do expect_dir "$candidate"; done
+fi
 for candidate in "${DISCOVERED_DIRS[@]}"; do expect_dir "$candidate"; done
 for fixed in /usr/bin /bin /usr/sbin /sbin; do expect_dir "$fixed"; done
 
@@ -369,9 +464,9 @@ out=$(HOME="$DOCTOR_HOME" PATH="$DOCTOR_BIN:/usr/bin:/bin:/usr/sbin:/sbin" "$ROO
 rc=$?
 set -e
 [ "$rc" -ne 0 ] || fail "the remote doctor passed with a missing required tool"
-assert_contains "$out" 'required herdr=MISSING' "the remote doctor did not mark a missing required tool"
+assert_contains "$out" 'required backend=MISSING' "the remote doctor did not mark a missing required tool"
 assert_contains "$out" 'required tasks-axi=MISSING' "the remote doctor did not mark every missing required tool"
-assert_contains "$out" 'required tools do not resolve on the remote runtime PATH: herdr tasks-axi treehouse harness' "the remote doctor did not name the missing tools"
+assert_contains "$out" 'required tools do not resolve on the remote runtime PATH: backend tasks-axi treehouse harness' "the remote doctor did not name the missing tools"
 assert_contains "$out" '.local/bin' "the remote doctor did not offer the wrapper escape hatch"
 ln -sf "$(command -v git)" "$DOCTOR_BIN/git"
 # The direct doctor fixture needs the complete required tool set. These stubs
@@ -544,5 +639,33 @@ set -e
 [ "$(cat "$SSH_COUNT")" -eq 1 ] || fail "ambiguous completion was retried"
 [ "$(grep -c mutation "$REMOTE_HOME/mutations")" -eq 1 ] || fail "ambiguous mutation did not execute exactly once"
 pass "unreachable and ambiguous transport failures are surfaced without retry"
+
+for drop_text in 'Timeout, server not responding.' \
+  'Read from remote host remote-mac: Connection reset by peer'; do
+  : > "$SSH_COUNT"
+  rm -f "$REMOTE_HOME/mutations"
+  set +e
+  FM_BLIP_NOW=3000 FM_FAKE_SSH_MODE=dropped FM_FAKE_SSH_DROP_TEXT="$drop_text" \
+    fm_on ios fm-mutate.sh "$REMOTE_HOME/mutations" >/dev/null 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -eq 255 ] || fail "a dropped session did not surface status 255 after '$drop_text' (got $rc)"
+  [ "$(cat "$SSH_COUNT")" -eq 1 ] || fail "a dropped session was retried after '$drop_text'"
+  [ "$(grep -c mutation "$REMOTE_HOME/mutations")" -eq 1 ] \
+    || fail "a dropped session ran the mutation more than once after '$drop_text'"
+done
+pass "a session that drops after the remote command ran is not repeated"
+
+: > "$SSH_COUNT"
+rm -f "$REMOTE_HOME/mutations"
+set +e
+FM_BLIP_NOW=4000 fm_on ios fm-mutate-flaky.sh "$REMOTE_HOME/mutations" >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -eq 255 ] || fail "a remote command's own failure status was replaced (got $rc)"
+[ "$(cat "$SSH_COUNT")" -eq 1 ] || fail "a remote command that printed timed out and HTTP 503 was re-run"
+[ "$(grep -c mutation "$REMOTE_HOME/mutations")" -eq 1 ] \
+  || fail "a remote command that printed timed out and HTTP 503 ran more than once"
+pass "a remote command that reports a timeout or HTTP 503 itself runs once"
 
 echo "ALL TESTS PASSED"

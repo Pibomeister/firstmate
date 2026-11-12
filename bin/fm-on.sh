@@ -15,10 +15,12 @@
 # because remote staging captures stdin to EOF and an open caller stream would
 # block staging indefinitely; a payload caller passes --stdin to forward its
 # own stream as the job's bounded input. stdout and stderr remain separate, and
-# ssh's exit status is returned unchanged. OpenSSH never receives an auto-retry
-# instruction here. Exit 255 therefore means unavailable transport or unknown
-# remote completion and must be reconciled by the semantic caller, never
-# blindly repeated by this layer.
+# ssh's exit status is returned unchanged. Only a read-only probe, which sets
+# FM_BLIP_READ=1, is retried, and only for an exit 255 whose stderr shows ssh
+# never connected, under the short read budget in bin/fm-blip-retry-lib.sh.
+# A call that can change something runs once. Any other exit 255, including a
+# session that dropped mid-run, is unknown completion and must be reconciled
+# by the caller, never blindly repeated by this layer.
 #
 # The SSH alias keeps normal public-key and strict host-key policy in ~/.ssh.
 # This command explicitly disables agent forwarding, forwarding setup, and
@@ -43,9 +45,11 @@ PROTOCOL=1
 
 # shellcheck source=bin/fm-secondmate-registry-lib.sh
 . "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
+# shellcheck source=bin/fm-blip-retry-lib.sh
+. "$SCRIPT_DIR/fm-blip-retry-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
-usage() { sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
 encode_base64() {
   base64 | tr -d '\n'
@@ -119,7 +123,44 @@ SSH_ARGS=(
   -o "ServerAliveCountMax=$ALIVE_COUNT_MAX"
   -- "$HOST" fm-remote-entrypoint.sh "$PROTOCOL" "$ROOT_B64" "$HOME_B64" "$ARGV_B64"
 )
+# Replay a caller's stdin on every transport attempt. The bound is the same
+# knob the remote job worker enforces (FM_REMOTE_JOB_MAX_BYTES in
+# bin/fm-remote-job-lib.sh). A closed stdin stays /dev/null, so an open caller
+# stream still cannot reach a command that did not pass --stdin.
+STDIN_FILE=
+# shellcheck disable=SC2329 # EXIT trap removes the stdin spool.
+cleanup_stdin() {
+  [ -n "${STDIN_FILE:-}" ] || return 0
+  rm -f -- "$STDIN_FILE"
+  STDIN_FILE=
+}
+trap cleanup_stdin EXIT
 if [ "$STDIN_MODE" = caller ]; then
-  exec "$SSH_BIN" "${SSH_ARGS[@]}"
+  STDIN_BOUND=${FM_REMOTE_JOB_MAX_BYTES:-1048576}
+  case "$STDIN_BOUND" in
+    ''|*[!0-9]*|0) die "FM_REMOTE_JOB_MAX_BYTES must be a positive integer" ;;
+  esac
+  STDIN_FILE=$(mktemp "${TMPDIR:-/tmp}/fm-on-stdin.XXXXXX") || die "cannot capture remote job input"
+  if ! head -c "$((STDIN_BOUND + 1))" > "$STDIN_FILE"; then
+    die "cannot capture remote job input"
+  fi
+  STDIN_BYTES=$(wc -c < "$STDIN_FILE" | tr -d ' ')
+  if [ "$STDIN_BYTES" -gt "$STDIN_BOUND" ]; then
+    die "remote job stdin exceeds the ${STDIN_BOUND}-byte bound"
+  fi
 fi
-exec "$SSH_BIN" "${SSH_ARGS[@]}" < /dev/null
+# shellcheck disable=SC2329 # fm_blip_retry invokes this by name.
+fm_on_ssh_once() {
+  if [ -n "$STDIN_FILE" ]; then
+    "$SSH_BIN" "${SSH_ARGS[@]}" < "$STDIN_FILE"
+  else
+    "$SSH_BIN" "${SSH_ARGS[@]}" < /dev/null
+  fi
+}
+rc=0
+if [ "${FM_BLIP_READ:-}" = 1 ]; then
+  fm_blip_retry --ssh-connect --read fm_on_ssh_once || rc=$?
+else
+  fm_on_ssh_once || rc=$?
+fi
+exit "$rc"

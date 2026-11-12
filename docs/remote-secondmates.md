@@ -603,7 +603,11 @@ A line written before that position was recorded does not match, so the next bre
 ### SSH exit 255 and unavailable homes
 
 An SSH exit status of 255 always means transport failure or unknown remote completion.
-The underlying `fm-on` transport never retries automatically, but `fm-send` retries its correlation-preserving steering-inbox leg exactly once.
+The underlying `fm-on` transport retries an exit 255 only for a read-only probe that sets `FM_BLIP_READ=1`, and only when stderr shows ssh never connected ([`bin/fm-blip-retry-lib.sh`](../bin/fm-blip-retry-lib.sh) owns that rule).
+That probe stops after about 15 seconds.
+A call that can change something runs once.
+A session that may have reached the remote host is never repeated.
+`fm-send` retries its correlation-preserving steering-inbox leg exactly once.
 Semantic callers preserve the route or pending request:
 
 - An operation that is not idempotent requires same-host reconciliation rather than a blind resend.
@@ -706,6 +710,7 @@ The portable tests run with these commands:
 
 ```sh
 bin/fm-test-run.sh tests/fm-on.test.sh
+bin/fm-test-run.sh tests/fm-blip-read-budget.test.sh
 bin/fm-test-run.sh tests/fm-send-remote-delivery.test.sh
 bin/fm-test-run.sh tests/fm-secondmate-reconcile.test.sh
 bin/fm-test-run.sh tests/fm-peek-remote.test.sh

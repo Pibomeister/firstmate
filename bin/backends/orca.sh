@@ -17,6 +17,11 @@
 # Orca stop proof below means the same thing by "agent" that they do.
 # shellcheck source=bin/fm-agent-process-lib.sh
 . "$(dirname -- "${BASH_SOURCE[0]}")/../fm-agent-process-lib.sh"
+# Read-only Orca CLI blips retry here. A mutation runs once.
+# bin/fm-blip-retry-lib.sh owns the backoff. `orca terminal wait` stays out:
+# its timeout is the answer that a turn is still running, not a transport blip.
+# shellcheck source=bin/fm-blip-retry-lib.sh
+. "$(dirname -- "${BASH_SOURCE[0]}")/../fm-blip-retry-lib.sh"
 
 fm_backend_orca_tool_check() {
   command -v orca >/dev/null 2>&1 || { echo "error: backend=orca selected but the 'orca' CLI is not installed" >&2; return 1; }
@@ -160,21 +165,82 @@ if (data.ok === false) {
 '
 }
 
+# A non-zero Orca CLI still prints its JSON error on stdout. Copy the connect
+# text onto stderr so a caller that reports stderr still sees why the CLI
+# failed. Invalid JSON is left alone.
+fm_backend_orca_json_connect_note() {
+  node -e '
+const fs = require("fs");
+const input = fs.readFileSync(0, "utf8").trim();
+if (!input) process.exit(0);
+let data;
+try {
+  data = JSON.parse(input);
+} catch (_) {
+  process.exit(0);
+}
+if (!data || data.ok !== false || !data.error) process.exit(0);
+const message = data.error.message ? String(data.error.message) : "";
+const code = data.error.code ? String(data.error.code) : "";
+if (message) console.log(message);
+if (code) console.log(code);
+'
+}
+
+# One Orca CLI invocation. A JSON body with ok:false is a failure even when
+# the CLI exits 0, so a transient error in that body can be retried.
+fm_backend_orca_invoke() {
+  local rc=0 out_file err_file errexit=0
+  out_file=$(mktemp "${TMPDIR:-/tmp}/fm-orca-out.XXXXXX") || return 1
+  err_file=$(mktemp "${TMPDIR:-/tmp}/fm-orca-err.XXXXXX") || { rm -f -- "$out_file"; return 1; }
+  case $- in *e*) errexit=1 ;; esac
+  set +e
+  "$@" >"$out_file" 2>"$err_file"
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    fm_backend_orca_json_ok <"$out_file" 2>>"$err_file"
+    rc=$?
+  else
+    fm_backend_orca_json_connect_note <"$out_file" >>"$err_file" || true
+  fi
+  [ "$errexit" -eq 1 ] && set -e
+  cat "$out_file"
+  cat "$err_file" >&2
+  rm -f -- "$out_file" "$err_file"
+  return "$rc"
+}
+
+fm_backend_orca_blip() {
+  fm_blip_retry fm_backend_orca_invoke "$@"
+}
+
+# A terminal read feeds supervision probes, so it gets the short read budget
+# and then fails as one attempt would.
+fm_backend_orca_blip_read() {
+  fm_blip_retry --read fm_backend_orca_invoke "$@"
+}
+
+# A mutation runs once. A lost reply can mean the change already landed, so
+# send, create, add, and remove are never retried.
+fm_backend_orca_blip_mutation() {
+  fm_backend_orca_invoke "$@"
+}
+
 fm_backend_orca_run_json() {
   local out
-  out=$("$@") || return 1
+  out=$(fm_backend_orca_blip_mutation "$@") || return 1
   printf '%s' "$out" | fm_backend_orca_json_ok
 }
 
 fm_backend_orca_repo_ensure() {  # <project-path>
   local project=$1 out repo_id
   fm_backend_orca_tool_check || return 1
-  out=$(orca repo show --repo "path:$project" --json 2>/dev/null || true)
+  out=$(fm_backend_orca_blip orca repo show --repo "path:$project" --json 2>/dev/null || true)
   if repo_id=$(printf '%s' "$out" | fm_backend_orca_json_get repo-id 2>/dev/null); then
     printf '%s' "$repo_id"
     return 0
   fi
-  out=$(orca repo add --path "$project" --json) || return 1
+  out=$(fm_backend_orca_blip_mutation orca repo add --path "$project" --json) || return 1
   repo_id=$(printf '%s' "$out" | fm_backend_orca_json_get repo-id) || {
     echo "error: orca repo add did not return a repo id for $project" >&2
     return 1
@@ -185,7 +251,7 @@ fm_backend_orca_repo_ensure() {  # <project-path>
 fm_backend_orca_worktree_create() {  # <project-path> <name>
   local project=$1 name=$2 repo_id out wt_id wt_path terminal
   repo_id=$(fm_backend_orca_repo_ensure "$project") || return 1
-  out=$(orca worktree create --repo "id:$repo_id" --name "$name" --no-parent --setup skip --json) || return 1
+  out=$(fm_backend_orca_blip_mutation orca worktree create --repo "id:$repo_id" --name "$name" --no-parent --setup skip --json) || return 1
   wt_id=$(printf '%s' "$out" | fm_backend_orca_json_get worktree-id) || {
     echo "error: orca worktree create did not return a worktree id for $name" >&2
     return 1
@@ -211,7 +277,7 @@ fm_backend_orca_worktree_create() {  # <project-path> <name>
 fm_backend_orca_terminal_create() {  # <worktree-id> <title>
   local worktree_id=$1 title=$2 out terminal
   fm_backend_orca_tool_check || return 1
-  out=$(orca terminal create --worktree "id:$worktree_id" --title "$title" --json) || return 1
+  out=$(fm_backend_orca_blip_mutation orca terminal create --worktree "id:$worktree_id" --title "$title" --json) || return 1
   terminal=$(printf '%s' "$out" | fm_backend_orca_json_get terminal-handle) || {
     echo "error: orca terminal create did not return a terminal handle for $title" >&2
     return 1
@@ -253,12 +319,14 @@ try {
 }
 
 fm_backend_orca_remove_worktree() {  # <worktree-id> [recorded-worktree-path]
-  local worktree_id=${1:-} worktree_path=${2:-} out orca_rc=0 json_error='' json_rc=0 error_code='' path_inspection path_state path_error
+  local worktree_id=${1:-} worktree_path=${2:-} out orca_rc=0 json_error='' json_rc=0 error_code='' path_inspection path_state path_error err_file
   [ -n "$worktree_id" ] || { echo "error: missing Orca worktree id; cannot remove worktree" >&2; return 1; }
   fm_backend_orca_tool_check || return 1
-  out=$(orca worktree rm --worktree "id:$worktree_id" --force --json 2>&1) || orca_rc=$?
+  err_file=$(mktemp "${TMPDIR:-/tmp}/fm-orca-rm.XXXXXX") || return 1
+  out=$(fm_backend_orca_blip_mutation orca worktree rm --worktree "id:$worktree_id" --force --json 2>"$err_file") || orca_rc=$?
   json_error=$(printf '%s' "$out" | fm_backend_orca_json_ok 2>&1) || json_rc=$?
   if [ "$orca_rc" -eq 0 ] && [ "$json_rc" -eq 0 ]; then
+    rm -f -- "$err_file"
     return 0
   fi
   error_code=$(printf '%s' "$out" | node -e '
@@ -276,16 +344,19 @@ process.stdout.write(String(code));
   if [ "$error_code" = selector_not_found ]; then
     if [ -z "$worktree_path" ]; then
       echo "error: Orca no longer lists worktree $worktree_id, but no recorded path was provided to prove it is absent; refusing removal" >&2
+      rm -f -- "$err_file"
       return 1
     fi
     path_inspection=$(fm_backend_orca_recorded_path_state "$worktree_path" 2>&1) || {
       path_error=$path_inspection
       echo "error: Orca no longer lists worktree $worktree_id, but its recorded path $worktree_path could not be inspected: $path_error; refusing removal" >&2
+      rm -f -- "$err_file"
       return 1
     }
     path_state=$path_inspection
     if [ "$path_state" = absent ]; then
       echo "warning: Orca no longer lists worktree $worktree_id and its recorded path $worktree_path is confirmed absent; treating it as already removed" >&2
+      rm -f -- "$err_file"
       return 0
     fi
     if [ "$path_state" = present ]; then
@@ -293,15 +364,19 @@ process.stdout.write(String(code));
     else
       echo "error: Orca no longer lists worktree $worktree_id, but inspection of its recorded path $worktree_path returned unknown state $path_state; refusing removal" >&2
     fi
+    rm -f -- "$err_file"
     return 1
   fi
   if [ -n "$error_code" ] && [ -n "$json_error" ]; then
     printf '%s\n' "$json_error" >&2
   elif [ -n "$out" ]; then
     printf '%s\n' "$out" >&2
+  elif [ -s "$err_file" ]; then
+    cat "$err_file" >&2
   else
     echo "error: orca worktree rm failed for $worktree_id without error text" >&2
   fi
+  rm -f -- "$err_file"
   return 1
 }
 
@@ -309,7 +384,7 @@ fm_backend_orca_worktree_path() {
   local worktree_id=${1:-} out path
   [ -n "$worktree_id" ] || { echo "error: missing Orca worktree id; cannot resolve worktree path" >&2; return 1; }
   fm_backend_orca_tool_check || return 1
-  out=$(orca worktree show --worktree "id:$worktree_id" --json) || return 1
+  out=$(fm_backend_orca_blip orca worktree show --worktree "id:$worktree_id" --json) || return 1
   path=$(printf '%s' "$out" | fm_backend_orca_json_get worktree-path) || {
     echo "error: orca worktree show did not return a path for $worktree_id" >&2
     return 1
@@ -320,7 +395,7 @@ fm_backend_orca_worktree_path() {
 fm_backend_orca_capture() {  # <terminal-id> <lines>
   local terminal=$1 lines=${2:-40} out
   fm_backend_orca_tool_check || return 1
-  out=$(orca terminal read --terminal "$terminal" --limit "$lines" --json) || return 1
+  out=$(fm_backend_orca_blip_read orca terminal read --terminal "$terminal" --limit "$lines" --json) || return 1
   fm_backend_orca_json_text "$out"
 }
 
@@ -334,7 +409,7 @@ fm_backend_orca_visible_capture() {  # <terminal-id> [expected-label]
     return 1
   }
   fm_backend_orca_tool_check || return 1
-  out=$(orca terminal read --terminal "$terminal" --screen --json) || return 1
+  out=$(fm_backend_orca_blip_read orca terminal read --terminal "$terminal" --screen --json) || return 1
   fm_backend_orca_json_text "$out" screen
 }
 
@@ -401,7 +476,7 @@ fm_backend_orca_composer_capture() {  # <terminal-id> [expected-label]
 # A failed read proves nothing, so it holds too.
 fm_backend_orca_draft_present() {  # <terminal-id>
   local out
-  out=$(orca terminal read --terminal "$1" --limit "$FM_COMPOSER_CAPTURE_LINES" --json 2>/dev/null) || return 0
+  out=$(fm_backend_orca_blip_read orca terminal read --terminal "$1" --limit "$FM_COMPOSER_CAPTURE_LINES" --json 2>/dev/null) || return 0
   printf '%s' "$out" | node -e '
 let data;
 try { data = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (err) { process.exit(0); }

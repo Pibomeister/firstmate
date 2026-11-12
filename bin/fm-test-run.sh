@@ -1749,7 +1749,12 @@ families_for_changed_path() {
       # coverage re-runs, mirroring the real-herdr-gated arm above.
       printf '%s\n' hc
       ;;
-    bin/backends/orca*|bin/backends/tmux.sh)
+    bin/backends/orca*)
+      printf '%s\n' backend-dispatch
+      printf '%s\n' orca
+      printf '%s\n' "__script__:fm-blip-retry.test.sh"
+      ;;
+    bin/backends/tmux.sh)
       printf '%s\n' backend-dispatch
       printf '%s\n' orca
       ;;
@@ -1826,7 +1831,14 @@ families_for_changed_path() {
       printf '%s\n' secondmate
       printf '%s\n' "__script__:fm-backend-t3code.test.sh"
       ;;
-    bin/fm-remote*|bin/fm-on.sh|bin/fm-home-seed.sh|\
+    bin/fm-blip-retry-lib.sh)
+      printf '%s\n' "__script__:fm-blip-retry.test.sh"
+      ;;
+    bin/fm-on.sh)
+      printf '%s\n' secondmate
+      printf '%s\n' "__script__:fm-blip-retry.test.sh"
+      ;;
+    bin/fm-remote*|bin/fm-home-seed.sh|\
     bin/fm-backlog-handoff.sh|bin/fm-backlog-receive.sh|bin/fm-procevent-remote-reply.sh|\
     bin/fm-config-inherit-lib.sh|bin/fm-config-push.sh|bin/fm-shared*|\
     bin/fm-stow-cascade.sh)
