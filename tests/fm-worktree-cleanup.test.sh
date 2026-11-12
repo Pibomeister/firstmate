@@ -886,6 +886,138 @@ SH
   pass "a failed pass waits for the next check interval"
 }
 
+# An externally launched lane: a repository outside this home's projects, a
+# worktree Orca lists, and the lane's own terminal rooted at the main checkout
+# like a Casco lane. The pass is run with no project argument.
+begin_lane_case() {
+  local name=$1
+  begin_case "$name"
+  CASE_REPO=$(cd "$CASE_REPO" && pwd -P) || fail "could not resolve the repository"
+  CASE_WT=$(cd "$CASE_WT" && pwd -P) || fail "could not resolve the worktree"
+  LANE_ID=n11-g1
+  LANE_RECORD="$CASE_DIR/state/external-lanes/$LANE_ID.lane"
+  FM_HOME="$CASE_DIR" "$ROOT/bin/fm-lane-register.sh" "$LANE_ID" --repo "$CASE_REPO" \
+    --terminal term-lane --worktree "$CASE_WT" >/dev/null \
+    || fail "the lane could not be registered"
+  [ -f "$LANE_RECORD" ] || fail "registration wrote no record"
+  lane_orca_json ""
+}
+
+lane_orca_json() {  # <extra-handle>: the lane terminal handle when still open
+  jq -n --arg wt "$CASE_WT" --arg repo "$CASE_REPO" --arg extra "$1" '
+    {ok: true, result: {
+      worktrees: [{path: $wt}],
+      terminals: ([{worktreePath: $repo, handle: "term-captain"}]
+        + (if $extra == "" then [] else [{worktreePath: $repo, handle: $extra}] end)),
+      truncated: false
+    }}' > "$CASE_DIR/orca.json"
+}
+
+capture_pass() {
+  local dir=$1
+  shift
+  : > "$dir/stderr"
+  CAP_OUT=$(PATH="$dir/bin:$PATH" \
+    FM_TEST_GH_LOG="$dir/gh.log" \
+    FM_TEST_GH_JSON_FILE="$dir/pr.json" \
+    FM_TEST_ORCA_JSON_FILE="$dir/orca.json" \
+    FM_HOME="$dir" \
+    FM_STATE_OVERRIDE="$dir/state" \
+    FM_PROJECTS_OVERRIDE="$dir/projects" \
+    "$CLEAN" "$@" 2>"$dir/stderr") || fail "cleanup exited nonzero: $(cat "$dir/stderr")"
+  [ ! -s "$dir/stderr" ] || fail "cleanup wrote to stderr: $(cat "$dir/stderr")"
+}
+
+wait_gone() {  # <path>: Orca's fake removes the directory after it answers
+  local i
+  for i in $(seq 1 100); do
+    [ -e "$1" ] || return 0
+    sleep 0.1
+  done
+  return 1
+}
+
+test_registered_lane_merged_clean_worktree_is_removed() {
+  local sibling
+  begin_lane_case lane-merged
+  sibling="$CASE_DIR/sibling"
+  git -C "$CASE_REPO" worktree add --quiet -b sibling "$sibling"
+  publish_pr MERGED
+  capture_pass "$CASE_DIR"
+  wait_gone "$CASE_WT" || fail "the registered lane's merged clean worktree was not removed"
+  grep -F -- "--worktree path:$CASE_WT" "$CASE_DIR/orca.json.rm" >/dev/null \
+    || fail "Orca was not asked to remove the lane worktree"
+  if grep -F -- '--force' "$CASE_DIR/orca.json.rm" >/dev/null; then
+    fail "the lane worktree was removed with --force"
+  fi
+  assert_branch "$CASE_REPO" feature
+  assert_out "pull request MERGED $PR_URL"
+  assert_out "forget lane $LANE_ID worktree removed"
+  [ ! -e "$LANE_RECORD" ] || fail "the lane record outlived its removed worktree"
+  [ -d "$sibling" ] || fail "an unregistered worktree of the lane's repository was removed"
+  case "$CAP_OUT" in
+    *"$sibling"*) fail "an unregistered worktree of the lane's repository was judged" ;;
+  esac
+  pass "a registered lane's merged clean worktree is removed and its record dropped"
+}
+
+test_registered_lane_with_tracked_changes_is_kept() {
+  begin_lane_case lane-tracked
+  publish_pr MERGED
+  printf 'edit\n' >> "$CASE_WT/README.md"
+  capture_pass "$CASE_DIR"
+  assert_kept
+  [ ! -e "$CASE_DIR/orca.json.rm" ] || fail "Orca was asked to remove a dirty lane worktree"
+  assert_out "report $CASE_WT uncommitted tracked changes"
+  [ -f "$LANE_RECORD" ] || fail "a kept lane lost its record"
+  pass "a registered lane with uncommitted tracked changes is kept and reported"
+}
+
+test_registered_lane_with_untracked_file_is_kept() {
+  begin_lane_case lane-untracked
+  publish_pr MERGED
+  printf 'note\n' > "$CASE_WT/notes.txt"
+  capture_pass "$CASE_DIR"
+  assert_kept
+  [ ! -e "$CASE_DIR/orca.json.rm" ] || fail "Orca was asked to remove a lane worktree with untracked files"
+  assert_out "report $CASE_WT untracked files"
+  [ -f "$LANE_RECORD" ] || fail "a kept lane lost its record"
+  pass "a registered lane with a non-ignored untracked file is kept and reported"
+}
+
+test_registered_lane_with_open_terminal_is_kept() {
+  begin_lane_case lane-open
+  publish_pr MERGED
+  lane_orca_json term-lane
+  capture_pass "$CASE_DIR"
+  assert_kept
+  [ ! -e "$CASE_DIR/orca.json.rm" ] || fail "Orca was asked to remove a lane worktree whose terminal is open"
+  assert_out "registered lane $LANE_ID terminal is open"
+  [ -f "$LANE_RECORD" ] || fail "a kept lane lost its record"
+  pass "a registered lane's worktree is kept while its terminal is open"
+}
+
+test_registered_lane_dry_run_changes_nothing() {
+  begin_lane_case lane-dry
+  publish_pr MERGED
+  capture_pass "$CASE_DIR" --dry-run
+  assert_kept
+  [ ! -e "$CASE_DIR/orca.json.rm" ] || fail "a dry run asked Orca to remove a lane worktree"
+  assert_out "dry-run $CASE_WT pull request MERGED $PR_URL"
+  [ -f "$LANE_RECORD" ] || fail "a dry run dropped the lane record"
+  pass "a dry run over a registered lane changes nothing"
+}
+
+test_spent_lane_record_is_forgotten() {
+  begin_lane_case lane-spent
+  printf '[]\n' > "$CASE_DIR/pr.json"
+  git -C "$CASE_REPO" worktree remove "$CASE_WT"
+  capture_pass "$CASE_DIR"
+  assert_out "forget lane $LANE_ID worktree is gone"
+  [ ! -e "$LANE_RECORD" ] || fail "a spent lane record was kept"
+  pass "a lane whose worktree and terminal are both gone is forgotten"
+}
+
 fm_test_run \
   test_merged_pr_removes_worktree_keeps_branch_and_prunes \
   test_closed_pr_removes_worktree_keeps_branch \
@@ -929,4 +1061,10 @@ fm_test_run \
   test_budget_stops_rotate_through_every_worktree \
   test_lowercase_pr_state_is_a_failed_lookup \
   test_bare_project_name_is_refused \
-  test_failed_pass_waits_for_the_next_check_interval
+  test_failed_pass_waits_for_the_next_check_interval \
+  test_registered_lane_merged_clean_worktree_is_removed \
+  test_registered_lane_with_tracked_changes_is_kept \
+  test_registered_lane_with_untracked_file_is_kept \
+  test_registered_lane_with_open_terminal_is_kept \
+  test_registered_lane_dry_run_changes_nothing \
+  test_spent_lane_record_is_forgotten

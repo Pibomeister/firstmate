@@ -59,6 +59,14 @@
 # ($FM_HOME/projects, or $FM_PROJECTS_OVERRIDE). A directory that is not the
 # root of its own work tree is skipped. An explicit project argument is a clone
 # path. Linked worktrees of that clone are included wherever they live.
+# A pass with no project argument also covers each external lane registered in
+# this home's state/external-lanes/ (bin/fm-lane-register.sh owns the record):
+# the registered worktree of the registered repository gets every check above,
+# and is also reported and left in place while Orca still lists the lane's
+# registered terminal. Other worktrees of that repository are read only for the
+# nesting check. After it removes a lane's worktree, the pass deletes the
+# lane's record; it also deletes a record whose worktree is gone, or that names
+# no worktree, once Orca no longer lists its terminal.
 #
 # Usage:
 #   fm-worktree-cleanup.sh [--dry-run] [scan] [<clone-path>]
@@ -148,7 +156,10 @@ if [ -n "$LOG_FILE" ] && [ -z "$TARGET" ]; then
   CURSOR_FILE=$STATE/worktree-cleanup.cursor
 fi
 RECORDS=$SCRATCH/records
+NESTED=$SCRATCH/nested
+LANE_DIR=$STATE/external-lanes
 : > "$RECORDS"
+: > "$NESTED"
 
 emit() {
   local line=$1 size keep
@@ -397,13 +408,50 @@ load_orca_terminals() {
   orca_path_list "$1" terminal terminals worktreePath
 }
 
+load_orca_handles() {
+  orca_path_list "$1" terminal terminals handle
+}
+
+# 0 when Orca lists the terminal handle, 1 when it does not, 2 when the list
+# cannot be read. The list loads at most once in a pass.
+orca_lists_handle() {
+  local list=$SCRATCH/orca-handles handle=$1 line
+  if [ ! -e "$list" ] && [ ! -e "$list.failed" ]; then
+    load_orca_handles "$list" || : > "$list.failed"
+  fi
+  [ -e "$list" ] || return 2
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ "$line" = "$handle" ] && return 0
+  done < "$list"
+  return 1
+}
+
+lane_terminal() {  # <lane-id>: the registered lane's terminal handle
+  fm_meta_get "$LANE_DIR/$1.lane" terminal
+}
+
+# forget_lane <id> <reason>: drop a registered lane's record once nothing of
+# the lane is left for this pass to judge.
+forget_lane() {
+  local id=$1 reason=$2
+  if [ "$DRY" -eq 1 ]; then
+    emit "worktree-cleanup: dry-run forget lane $id $reason"
+    return 0
+  fi
+  if rm -f -- "$LANE_DIR/$id.lane"; then
+    emit "worktree-cleanup: forget lane $id $reason"
+  else
+    emit "worktree-cleanup: report lane $id record could not be removed"
+  fi
+}
+
 contains_registered_worktree() {
   local path=$1 phys=$2 other rest
   while IFS=$'\037' read -r other rest; do
     case "$other" in
       "$path"/*|"$phys"/*) return 0 ;;
     esac
-  done < "$RECORDS"
+  done < <(cat "$RECORDS" "$NESTED")
   return 1
 }
 
@@ -442,7 +490,7 @@ remove_with_owner() {
 }
 
 remove_worktree() {
-  local repo=$1 wt=$2 state=$3 url=$4 orca_listed=$5 rc=0
+  local repo=$1 wt=$2 state=$3 url=$4 orca_listed=$5 lane=${6:-} rc=0
   if [ "$DRY" -eq 1 ]; then
     emit "worktree-cleanup: dry-run $wt pull request $state $url"
     return 0
@@ -452,6 +500,7 @@ remove_worktree() {
     0)
       emit "worktree-cleanup: remove $wt pull request $state $url"
       git -C "$repo" worktree prune
+      [ -z "$lane" ] || forget_lane "$lane" "worktree removed"
       ;;
     2) emit "worktree-cleanup: report $wt Orca removal did not finish" ;;
     *) emit "worktree-cleanup: report $wt removal refused" ;;
@@ -460,10 +509,10 @@ remove_worktree() {
 }
 
 consider_worktree() {
-  local repo=$1 path=$2 branch=$3 detached=$4 locked=$5
+  local repo=$1 path=$2 branch=$3 detached=$4 locked=$5 lane=${6:-}
   local phys pids kind rows row number state head url head_owner main_rc=0 owner_rc orca_listed=0
   local open_count=0 terminal_count=0 chosen_number=0 chosen_state='' chosen_head='' chosen_url=''
-  local current
+  local current lane_handle
   if [ ! -d "$path" ]; then
     emit "worktree-cleanup: report $path worktree directory is missing"
     return 0
@@ -504,6 +553,24 @@ consider_worktree() {
   if contains_registered_worktree "$path" "$phys"; then
     emit "worktree-cleanup: report $phys contains another worktree"
     return 0
+  fi
+  if [ -n "$lane" ]; then
+    lane_handle=$(lane_terminal "$lane")
+    if [ -n "$lane_handle" ]; then
+      owner_rc=0
+      orca_lists_handle "$lane_handle" || owner_rc=$?
+      case "$owner_rc" in
+        0)
+          emit "worktree-cleanup: report $phys registered lane $lane terminal is open"
+          return 0
+          ;;
+        1) ;;
+        *)
+          emit "worktree-cleanup: report $phys cannot read Orca"
+          return 0
+          ;;
+      esac
+    fi
   fi
   owner_rc=0
   owner_lists_path orca-terminals load_orca_terminals "$phys" || owner_rc=$?
@@ -626,15 +693,15 @@ EOF
     esac
     return 0
   }
-  remove_worktree "$repo" "$phys" "$chosen_state" "$chosen_url" "$orca_listed"
+  remove_worktree "$repo" "$phys" "$chosen_state" "$chosen_url" "$orca_listed" "$lane"
 }
 
 collect_repo() {
-  local repo=$1 line rec_path='' rec_branch='' rec_detached=0 rec_locked=0
+  local repo=$1 out=${2:-$RECORDS} line rec_path='' rec_branch='' rec_detached=0 rec_locked=0
   flush_record() {
     [ -n "$rec_path" ] || return 0
-    printf '%s\037%s\037%s\037%s\037%s\n' \
-      "$rec_path" "$repo" "$rec_branch" "$rec_detached" "$rec_locked" >> "$RECORDS"
+    printf '%s\037%s\037%s\037%s\037%s\037\n' \
+      "$rec_path" "$repo" "$rec_branch" "$rec_detached" "$rec_locked" >> "$out"
     rec_path=
     rec_branch=
     rec_detached=0
@@ -674,14 +741,81 @@ run_records() {
     $1 > ENVIRON["CURSOR_PATH"] { print; next }
     { wrapped[++count] = $0 }
     END { for (i = 1; i <= count; i++) print wrapped[i] }' > "$rotated"
-  while IFS=$'\037' read -r path repo branch detached locked <&3; do
+  while IFS=$'\037' read -r path repo branch detached locked lane <&3; do
     if budget_reached; then
       note_budget
       break
     fi
     write_cursor "$path"
-    consider_worktree "$repo" "$path" "$branch" "$detached" "$locked"
+    consider_worktree "$repo" "$path" "$branch" "$detached" "$locked" "$lane"
   done 3< "$rotated"
+}
+
+# same_path <a> <b>: 0 when both name one directory, or the same missing path.
+same_path() {
+  [ "$1" = "$2" ] || [ "$1" -ef "$2" ]
+}
+
+# collect_lanes: add each registered external lane's worktree to the pass,
+# tagged with its lane id. The lane's whole repository is read so the nesting
+# check still sees its other worktrees, but only the registered one is judged.
+# A lane with no worktree left to judge and no listed terminal is forgotten.
+collect_lanes() {
+  local rec id repo wt root all row path rest handle rc found
+  [ -d "$LANE_DIR" ] && [ ! -L "$LANE_DIR" ] || return 0
+  if [ ! -r "$LANE_DIR" ] || [ ! -x "$LANE_DIR" ]; then
+    emit "worktree-cleanup: report $LANE_DIR registered lanes cannot be read"
+    return 0
+  fi
+  for rec in "$LANE_DIR"/*.lane; do
+    [ -f "$rec" ] || continue
+    id=${rec##*/}
+    id=${id%.lane}
+    if [ ! -r "$rec" ]; then
+      emit "worktree-cleanup: report lane $id record cannot be read"
+      continue
+    fi
+    repo=$(fm_meta_get "$rec" repo)
+    wt=$(fm_meta_get "$rec" worktree)
+    found=0
+    if [ -n "$wt" ]; then
+      if ! root=$(clone_root_path "$repo"); then
+        emit "worktree-cleanup: report $wt registered lane $id repository is unavailable"
+        continue
+      fi
+      all=$SCRATCH/lane-all
+      : > "$all"
+      collect_repo "$root" "$all"
+      while IFS= read -r row; do
+        IFS=$'\037' read -r path rest <<EOF
+$row
+EOF
+        if same_path "$path" "$wt"; then
+          found=1
+          awk -F $'\037' -v p="$path" '$1 != p' "$RECORDS" > "$RECORDS.new" && mv -f -- "$RECORDS.new" "$RECORDS"
+          printf '%s%s\n' "${row%$'\037'}" $'\037'"$id" >> "$RECORDS"
+        else
+          printf '%s\n' "$row" >> "$NESTED"
+        fi
+      done < "$all"
+      if [ "$found" -eq 0 ] && [ -e "$wt" ]; then
+        emit "worktree-cleanup: report $wt registered lane $id is not a worktree of its repository"
+        continue
+      fi
+    fi
+    [ "$found" -eq 0 ] || continue
+    handle=$(fm_meta_get "$rec" terminal)
+    if [ -n "$handle" ]; then
+      rc=0
+      orca_lists_handle "$handle" || rc=$?
+      [ "$rc" -eq 1 ] || continue
+    fi
+    if [ -n "$wt" ]; then
+      forget_lane "$id" "worktree is gone"
+    else
+      forget_lane "$id" "no worktree was registered"
+    fi
+  done
 }
 
 run_target() {
@@ -703,12 +837,15 @@ fi
 
 if [ -n "$TARGET" ]; then
   run_target "$TARGET"
-elif [ -d "$PROJECTS" ] && [ ! -L "$PROJECTS" ]; then
-  for project_dir in "$PROJECTS"/*; do
-    [ -d "$project_dir" ] || continue
-    if project_root=$(clone_root_path "$project_dir"); then
-      collect_repo "$project_root"
-    fi
-  done
+else
+  if [ -d "$PROJECTS" ] && [ ! -L "$PROJECTS" ]; then
+    for project_dir in "$PROJECTS"/*; do
+      [ -d "$project_dir" ] || continue
+      if project_root=$(clone_root_path "$project_dir"); then
+        collect_repo "$project_root"
+      fi
+    done
+  fi
+  collect_lanes
 fi
 run_records
