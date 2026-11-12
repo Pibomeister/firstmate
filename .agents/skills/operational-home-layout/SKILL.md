@@ -166,7 +166,7 @@ state/               runtime records and signals; gitignored
   .status-presentation-cursor .status-presentation-lock  fleet-wide per-task status identity plus independent annotation and outcome-backstop byte offsets, with a serialization lock preventing already-presented lines from replaying while preserving delayed signal annotations; owned by fm-classify-lib.sh, with each task's row retired by teardown
   .afk-contract      the away or quiet posture record; bin/fm-afk-contract.sh owns its mode, schema, entry, archive, and lock contract; its sibling .afk-contract.lock serializes actions authorized by the live record
   afk-contracts/     archived away and quiet records; bin/fm-afk-contract.sh owns their archive contract
-  .captain-message-epoch .auto-away-request .auto-away.lock auto-away.check.sh  automatic away-mode activity stamp, pending entry request, lock, and watcher check shim; bin/fm-auto-away.sh owns all four
+  .captain-message-epoch .auto-away-request .auto-away-failure .auto-away-entry-failure .auto-away.lock auto-away.check.sh  automatic away-mode activity stamp, pending entry request, last reported check failure, last failed entry, lock, and watcher check shim; bin/fm-auto-away.sh owns all six
   .afk               durable away/quiet-mode daemon flag on the harnesses that still launch the daemon (never on Pi); bin/fm-supervise-daemon.sh owns delivery gating; first line `away` (default, set by /afk, cleared on user return) or `quiet` (set by /quiet, cleared only on explicit /quiet off) per the single owner fm_afk_mode() in bin/fm-wake-lib.sh
   .lock-session      trusted Claude session-lock sidecar; written only by bin/fm-lock.sh; never touch
   .watch.lock .wake-queue.lock watcher singleton and queue serialization locks

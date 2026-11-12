@@ -249,6 +249,16 @@ at "$EARLY" arm >/dev/null
 printf 'silence-seconds=oops\n' >> "$FM_HOME/config/auto-away"
 out=$(FM_AUTO_AWAY_NOW="$NIGHT" bash "$FM_HOME/state/auto-away.check.sh" 2>/dev/null || true)
 assert_contains "$out" 'auto-away check failed: silence-seconds must be' 'scheduled check failure was not reported on stdout'
+# The watcher wakes on any check stdout, so a persistent failure must print once.
+for sweep in 1 2 3; do
+  out=$(FM_AUTO_AWAY_NOW="$((NIGHT + sweep * 300))" bash "$FM_HOME/state/auto-away.check.sh" 2>/dev/null || true)
+  [ -z "$out" ] || fail "persistent check failure was reported again on sweep $sweep: $out"
+done
+printf 'timezone=UTC\n' > "$FM_HOME/config/auto-away"
+FM_AUTO_AWAY_NOW="$((NIGHT + 1200))" bash "$FM_HOME/state/auto-away.check.sh" >/dev/null 2>&1 || fail 'repaired check failed'
+printf 'silence-seconds=oops\n' >> "$FM_HOME/config/auto-away"
+out=$(FM_AUTO_AWAY_NOW="$((NIGHT + 1500))" bash "$FM_HOME/state/auto-away.check.sh" 2>/dev/null || true)
+assert_contains "$out" 'auto-away check failed: silence-seconds must be' 'a failure that returned after a clean check was not reported'
 
 world failed-entry
 cp -R "$ROOT/bin" "$FM_HOME/failbin"
@@ -260,6 +270,14 @@ if FM_AUTO_AWAY_NOW="$NIGHT" "$FM_HOME/failbin/fm-auto-away.sh" enter "$EARLY" >
 fi
 at "$((NIGHT + 60))" check
 [ "$(wc -l < "$FM_HOME/state/.wake-queue" | tr -d ' ')" = 2 ] || fail 'failed entry stranded its receipt and blocked a retry'
+if FM_AUTO_AWAY_NOW="$((NIGHT + 60))" "$FM_HOME/failbin/fm-auto-away.sh" enter "$EARLY" >/dev/null 2>&1; then
+  fail 'repeated failed automatic entry reported success'
+fi
+for sweep in 1 2 3; do at "$((NIGHT + 60 + sweep * 300))" check; done
+[ "$(wc -l < "$FM_HOME/state/.wake-queue" | tr -d ' ')" = 2 ] || fail 'a repeated entry failure queued another retry'
+at "$((NIGHT + 1200))" captain-message
+at "$((NIGHT + 1200 + 7200))" check
+[ "$(wc -l < "$FM_HOME/state/.wake-queue" | tr -d ' ')" = 3 ] || fail 'a new activity stamp did not request entry after a failed one'
 
 world entry-arguments
 if FM_AFK_MODE=away "$ROOT/bin/fm-afk-launch.sh" enter-auto --words 'ship it' >/dev/null 2>&1; then

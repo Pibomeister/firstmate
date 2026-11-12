@@ -37,11 +37,19 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 ACTIVITY="$STATE/.captain-message-epoch"
 REQUEST="$STATE/.auto-away-request"
 LOCK="$STATE/.auto-away.lock"
+FAILURE="$STATE/.auto-away-failure"
+ENTRY_FAILURE="$STATE/.auto-away-entry-failure"
 
 usage() { sed -n '2,9s/^# \{0,1\}//p' "$0"; }
-# The watcher turns only check stdout into a wake, so a check reports there.
+# The watcher turns only check stdout into a wake, so a check reports there,
+# once per distinct failure until a clean check clears the receipt.
 fail() {
-  if [ "$CMD" = check ]; then printf 'auto-away check failed: %s\n' "$1"
+  if [ "$CMD" = check ]; then
+    if [ -d "$STATE" ] && [ ! -L "$STATE" ]; then
+      [ "$(cat "$FAILURE" 2>/dev/null || true)" != "$1" ] || exit 1
+      write_record "$FAILURE" "$1" || true
+    fi
+    printf 'auto-away check failed: %s\n' "$1"
   else printf 'fm-auto-away: %s\n' "$1" >&2
   fi
   exit 1
@@ -203,13 +211,13 @@ SESSION_START=0
 [ "${2:-}" != --session-start ] || SESSION_START=1
 # This feature is only for the primary conversation, never a secondmate home.
 [ ! -e "$FM_HOME/.fm-secondmate-home" ] || exit 0
+umask 077
+mkdir -p "$STATE"
+[ ! -L "$STATE" ] || fail 'state is not a real directory'
 case "${1:-check}" in
   captain-message) ;;
   *) read_config ;;
 esac
-mkdir -p "$STATE"
-[ ! -L "$STATE" ] || fail 'state is not a real directory'
-umask 077
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 fm_lock_acquire_wait "$LOCK" || fail 'cannot acquire activity lock'
@@ -233,12 +241,18 @@ case "${1:-check}" in
       fi
     fi
     [ -z "$CLOCK_ERROR" ] || fail "$CLOCK_ERROR"
+    rm -f "$FAILURE"
     ;;
   enter)
     if due && [ "$LAST" = "$2" ]; then
-      # A failed entry must not strand its receipt, or no later check retries.
+      # A first failed entry releases its receipt so one later check retries;
+      # a repeat failure for the same activity keeps it and stays quiet.
       if ! FM_AFK_MODE=away "$SCRIPT_DIR/fm-afk-launch.sh" enter-auto; then
-        [ "$(cat "$REQUEST" 2>/dev/null || true)" != "$2" ] || rm -f "$REQUEST"
+        if [ "$(cat "$ENTRY_FAILURE" 2>/dev/null || true)" != "$2" ] \
+            && write_record "$ENTRY_FAILURE" "$2" \
+            && [ "$(cat "$REQUEST" 2>/dev/null || true)" = "$2" ]; then
+          rm -f "$REQUEST"
+        fi
         exit 1
       fi
     elif [ "$(cat "$REQUEST" 2>/dev/null || true)" = "$2" ]; then

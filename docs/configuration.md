@@ -817,8 +817,8 @@ The first scheduled check after a crossing queues entry, including a missed cloc
 No extra timer or daemon is installed; the normal check cadence and primary-turn availability bound entry latency.
 
 `config/auto-away` is an optional, local, gitignored file of `key=value` lines.
-Blank lines and lines beginning with `#` are ignored; malformed settings fail visibly instead of executing configuration as shell code, and a scheduled check reports each failure, including a local-time conversion failure that skips only the clock trigger, as a `check` wake.
-A failed automatic entry clears its request receipt, so a later check queues it again.
+Blank lines and lines beginning with `#` are ignored; malformed settings fail visibly instead of executing configuration as shell code, and a scheduled check reports each failure, including a local-time conversion failure that skips only the clock trigger, as a `check` wake once, staying silent until the failure changes or a clean check clears it.
+A failed automatic entry clears its request receipt once, so a later check queues one retry; a repeat failure for the same activity stamp stays quiet until a new captain message or crossing.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
