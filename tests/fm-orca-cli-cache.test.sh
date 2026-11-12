@@ -23,6 +23,7 @@ setup_case() { # <name>
   FM_ORCA_READ_EXIT=0
   FM_ORCA_LIST_EXIT=0
   FM_ORCA_READ_BODY=
+  FM_ORCA_READ_ERR=
   FM_ORCA_HOLD=
   printf '%s\n' '{"ok":true,"result":{"truncated":false,"terminals":[{"handle":"term-a","id":"id-a"},{"handle":"term-b"}]}}' > "$LIST"
   cat > "$CASE/fakebin/orca" <<'SH'
@@ -77,6 +78,9 @@ if [ "${1:-} ${2:-}" = "terminal read" ] && [ -n "${FM_ORCA_DISTINCT:-}" ]; then
   exit 0
 fi
 if [ "${1:-} ${2:-}" = "terminal read" ]; then
+  if [ -n "${FM_ORCA_READ_ERR:-}" ]; then
+    printf '%s\n' "$FM_ORCA_READ_ERR" >&2
+  fi
   if [ -n "${FM_ORCA_READ_BODY:-}" ]; then
     printf '%s\n' "$FM_ORCA_READ_BODY"
   else
@@ -109,6 +113,7 @@ run_cli() {
     FM_ORCA_LIST="$LIST" \
     FM_ORCA_LIST_EXIT="${FM_ORCA_LIST_EXIT:-0}" \
     FM_ORCA_READ_BODY="${FM_ORCA_READ_BODY:-}" \
+    FM_ORCA_READ_ERR="${FM_ORCA_READ_ERR:-}" \
     FM_ORCA_READ_EXIT="${FM_ORCA_READ_EXIT:-0}" \
     FM_ORCA_HOLD="${FM_ORCA_HOLD:-}" \
     bash -c '. "$1"; shift; fm_orca_cli "$@"' _ "$ROOT/bin/fm-orca-cli-cache.sh" "$@"
@@ -254,6 +259,65 @@ test_unreadable_cached_stdout_is_a_miss() {
     "an unreadable cache entry was served as an empty hit"
   assert_equals 2 "$(calls)" "an unreadable cache entry was not read again from the CLI"
   pass "fm_orca_cli: an unreadable cached stdout is a miss"
+}
+
+test_cache_hit_replays_stderr() {
+  local body err
+  setup_case stderr-hit
+  CACHE_SWITCH=1
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"cached"}}'
+  FM_ORCA_READ_ERR='cached-stderr'
+  run_cli terminal read --terminal term-a --limit 1 --json >/dev/null 2>/dev/null
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"fresh"}}'
+  FM_ORCA_READ_ERR='fresh-stderr'
+  body=$(run_cli terminal read --terminal term-a --limit 1 --json 2>"$CASE/err")
+  err=$(cat "$CASE/err")
+  assert_equals '{"ok":true,"result":{"text":"cached"}}' "$body" \
+    "a cache hit did not replay stdout"
+  assert_equals "cached-stderr" "$err" \
+    "a cache hit did not replay stderr"
+  assert_equals 1 "$(calls)" "a cache hit booted the CLI again"
+  pass "fm_orca_cli: a cache hit replays stdout and stderr"
+}
+
+test_unreadable_cached_stderr_emits_nothing() {
+  local body entry err
+  setup_case unreadable-err
+  CACHE_SWITCH=1
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"cached"}}'
+  FM_ORCA_READ_ERR='cached-stderr'
+  run_cli terminal read --terminal term-a --limit 1 --json >/dev/null 2>/dev/null
+  entry=$(find "$FM_ORCA_CLI_CACHE_DIR" -type f -name stderr | head -n 1)
+  [ -n "$entry" ] || fail "the read did not store stderr"
+  chmod 000 "$entry" || fail "could not make the cached stderr unreadable"
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"fresh"}}'
+  FM_ORCA_READ_ERR='fresh-stderr'
+  body=$(run_cli terminal read --terminal term-a --limit 1 --json 2>"$CASE/err")
+  err=$(cat "$CASE/err")
+  chmod u+r "$entry" 2>/dev/null || true
+  assert_equals '{"ok":true,"result":{"text":"fresh"}}' "$body" \
+    "an unreadable stderr replay emitted cached stdout"
+  assert_not_contains "$err" "cached-stderr" \
+    "an unreadable stderr replay emitted cached stderr"
+  assert_equals 2 "$(calls)" "an unreadable stderr was treated as a hit"
+  pass "fm_orca_cli: an unreadable cached stderr emits nothing and is a miss"
+}
+
+test_missing_cached_stderr_is_a_miss() {
+  local body entry
+  setup_case missing-err
+  CACHE_SWITCH=1
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"cached"}}'
+  run_cli terminal read --terminal term-a --limit 1 --json >/dev/null
+  entry=$(find "$FM_ORCA_CLI_CACHE_DIR" -type f -name stderr | head -n 1)
+  [ -n "$entry" ] || fail "the read did not store stderr"
+  rm -f "$entry" || fail "could not remove the cached stderr"
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"fresh"}}'
+  body=$(run_cli terminal read --terminal term-a --limit 1 --json)
+  assert_equals '{"ok":true,"result":{"text":"fresh"}}' "$body" \
+    "a missing stderr replay emitted cached stdout"
+  assert_equals 2 "$(calls)" "a missing stderr file was treated as a hit"
+  pass "fm_orca_cli: a missing cached stderr is a miss"
 }
 
 test_symlinked_cache_dir_is_bypassed() {
@@ -446,6 +510,9 @@ fm_test_run \
   test_direct_mutation_drops_the_cache_before_the_command \
   test_two_fills_in_one_shell_keep_their_own_bodies \
   test_unreadable_cached_stdout_is_a_miss \
+  test_cache_hit_replays_stderr \
+  test_unreadable_cached_stderr_emits_nothing \
+  test_missing_cached_stderr_is_a_miss \
   test_symlinked_cache_dir_is_bypassed \
   test_different_args_do_not_share_a_read \
   test_failed_read_is_not_cached \

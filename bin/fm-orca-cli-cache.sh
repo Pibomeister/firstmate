@@ -11,7 +11,8 @@
 # runs and again after it finishes. `terminal wait` is neither stored nor a mutation. Any other command
 # is run as-is and leaves the cache untouched.
 # Each fill uses its own staging files, so two fills in one shell cannot publish each other's output.
-# A replay whose stdout cannot be read is a miss and the caller runs the CLI.
+# A replay reads stdout and stderr before it emits either.
+# A missing stream or a failed read is a miss, emits nothing, and the caller runs the CLI.
 #
 # Cached reads: status; diagnostics memory; repo show; worktree list and
 # show; terminal list, read, and show.
@@ -218,10 +219,10 @@ process.exit(0);
 }
 
 fm_orca_cli_try_replay() { # <dir> <key> -> 0 hit, 1 miss
-  local dir=$1 key=$2 gen entry now exp rc
+  local dir=$1 key=$2 gen entry now exp rc out err
   gen=$(fm_orca_cli_read_gen "$dir")
   entry=$dir/g/$gen/$key
-  [ -f "$entry/stdout" ] && [ -f "$entry/rc" ] && [ -f "$entry/expires" ] || return 1
+  [ -f "$entry/stdout" ] && [ -f "$entry/stderr" ] && [ -f "$entry/rc" ] && [ -f "$entry/expires" ] || return 1
   now=$(date +%s)
   exp=$(tr -cd '0-9' < "$entry/expires")
   case "$exp" in
@@ -230,10 +231,13 @@ fm_orca_cli_try_replay() { # <dir> <key> -> 0 hit, 1 miss
   [ "$now" -lt "$exp" ] || return 1
   rc=$(tr -cd '0-9' < "$entry/rc")
   [ "$rc" = 0 ] || return 1
-  cat "$entry/stdout" || return 1
-  if [ -f "$entry/stderr" ]; then
-    cat "$entry/stderr" >&2 || return 1
-  fi
+  # Both reads finish before either stream is written. A miss after a partial
+  # write would prepend the cached body to the fresh CLI result.
+  # The trailing x keeps the command substitution from stripping newlines.
+  out=$(cat "$entry/stdout" 2>/dev/null && printf '%s' x) || return 1
+  err=$(cat "$entry/stderr" 2>/dev/null && printf '%s' x) || return 1
+  printf '%s' "${out%x}"
+  printf '%s' "${err%x}" >&2
   return 0
 }
 
