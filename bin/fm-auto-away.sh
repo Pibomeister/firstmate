@@ -31,9 +31,9 @@
 # session start arms with --session-start and counts as captain activity,
 # because the opening message precedes the instruction to record it; a trigger
 # missed while no session ran therefore never fires on session open. A clear or
-# compact, re-emitted or full, arms without it; a disabled feature still records
-# a captain-opened start, which also clears pending entry state as a captain
-# message does. A handoff successor or a watchdog restart, including one run by
+# compact, re-emitted or full, arms without it; a disabled or unreadable
+# configuration still records a captain-opened start, which also clears pending
+# entry state as a captain message does. A handoff successor or a watchdog restart, including one run by
 # another home's watchdog, is detected at arm. Automated starts and re-arms
 # preserve the last stamp, so both deadlines hold.
 # An existing quiet or away posture is never replaced.
@@ -218,13 +218,19 @@ automated_start() {
     "$STATE/watchdog/actions.tsv" 2>/dev/null)" = pending ]
 }
 
-arm() {
-  local shim="$STATE/auto-away.check.sh" tmp
+# Runs before configuration is parsed: a broken config/auto-away still fails
+# arm, but must not lose a captain-opened start, or a later repair would let
+# the next check fire on the stamp from before that start.
+record_session_activity() {
   if [ "$SESSION_START" = 1 ] && automated_start; then SESSION_START=0; fi
   if [ "$SESSION_START" = 1 ] || ! read_activity; then
     write_record "$ACTIVITY" "$NOW" || fail 'cannot record session start activity'
     [ "$SESSION_START" != 1 ] || rm -f "$REQUEST" "$ENTRY_FAILURE"
   fi
+}
+
+arm() {
+  local shim="$STATE/auto-away.check.sh" tmp
   if [ "$ENABLED" = off ]; then
     "$SCRIPT_DIR/fm-check-unregister.sh" auto-away >/dev/null
     rm -f "$REQUEST"
@@ -276,6 +282,7 @@ NOW=$(now)
 if [ "$CMD" = enter ] && [ "$(cat "$REQUEST" 2>/dev/null || true)" = "$ENTRY_ACTIVITY fulfilled" ]; then
   exit 0
 fi
+[ "$CMD" != arm ] || record_session_activity
 [ "$CMD" = captain-message ] || read_config
 case "${1:-check}" in
   captain-message)

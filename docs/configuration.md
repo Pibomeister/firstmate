@@ -822,6 +822,7 @@ A failed or obsolete automatic entry releases its matching request receipt, so a
 A successful entry records fulfillment in that receipt, even if the originating check did not save its pending receipt.
 The fulfilled receipt blocks both scheduled requests and entry replays after return, including when the return could not record activity; a new captain message or captain-opened session start clears it.
 A present configuration that cannot be read reports a failure and permits no automatic entry; it never falls back to enabled defaults.
+A captain-opened session start still records its activity when the configuration is malformed or unreadable, so repairing it later cannot fire on the stamp from before that start.
 The entry command reports each distinct failure, keyed by its message or by the launcher's exit status and first error line, once, and the next check retries it at once; an unchanged repeat prints nothing and holds the next retry for 1800 seconds.
 A success, a new captain message, or a captain-opened session start clears the failure record.
 

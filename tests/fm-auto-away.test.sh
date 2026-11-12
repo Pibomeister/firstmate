@@ -134,6 +134,19 @@ assert_absent "$FM_HOME/state/.wake-queue" 'session open entered away mode on a 
 at "$((NEXT_MORNING + 7200))" check
 assert_grep 'auto-away silence' "$FM_HOME/state/.wake-queue" 'silence after session open did not fire'
 
+world session-open-bad-config
+# A start that cannot read its configuration still counts as captain activity,
+# so repairing the configuration later cannot fire on the pre-start stamp.
+at "$((EARLY - 14400))" captain-message
+NEXT_MORNING=$((EARLY + 39600))
+printf 'invalid-key=1\n' >> "$FM_HOME/config/auto-away"
+if at "$NEXT_MORNING" arm --session-start >/dev/null 2>&1; then fail 'arm accepted a malformed configuration'; fi
+assert_absent "$FM_HOME/state/auto-away.check-trust" 'a malformed configuration registered the check'
+[ "$(cat "$FM_HOME/state/.captain-message-epoch")" = "$NEXT_MORNING" ] || fail 'a malformed configuration blocked the session-open activity record'
+printf 'timezone=UTC\n' > "$FM_HOME/config/auto-away"
+at "$((NEXT_MORNING + 60))" check
+assert_absent "$FM_HOME/state/.wake-queue" 'repairing the configuration fired on the stamp from before session open'
+
 world handoff-successor
 at "$((EARLY - 7200))" captain-message
 printf '4242\n' > "$FM_HOME/state/.lock"
