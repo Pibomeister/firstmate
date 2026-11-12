@@ -168,6 +168,13 @@ project alpha active ready=3 in_flight=1 blocked=1 held=1
 EOF
 )
   [ "$out" = "$want" ] || fail "compact plan output differs:"$'\n'"$out"
+  local long
+  long=$(printf 'long title %.0s' $(seq 1 12))
+  tasks add g-long "$long" --repo gamma >/dev/null || fail "seed add failed"
+  out=$(ledger plan --limit 3 --project gamma | grep 'g-long')
+  [ "$(printf '%s' "$out" | grep -o 'truncate' | grep -c '')" = 1 ] \
+    || fail "a long title is cut more than once in the compact plan: $out"
+  case "$out" in *' [truncated]') ;; *) fail "a long title does not end in one cut note: $out" ;; esac
   pass "plan groups each project's items by in flight, ready by priority, blocked, and held, and marks short projects"
 }
 
@@ -309,7 +316,7 @@ test_scheduled_depth_fires_once_per_slot() {
 
 test_unfiled_lists_open_orders_without_items() {
   new_home unfiled
-  local out rc filed mentioned loose tricky
+  local out rc filed mentioned loose tricky short
   out=$(ledger unfiled); rc=$?
   expect_code 0 "$rc" "unfiled with no orders"
   filed=$(order send --from test -- "filed through intake" | awk '/^queued / { print $2 }')
@@ -319,6 +326,8 @@ test_unfiled_lists_open_orders_without_items() {
   tricky=$(order send --from test -- "summary says kind=hold" | awk '/^queued / { print $2 }')
   ledger intake --mint --project alpha --title "filed through intake" --source "order:$filed" >/dev/null || fail "intake failed"
   tasks add old-item "old item for order $mentioned" --repo alpha >/dev/null
+  short=$(order send --from test -- "named by its short hash" | awk '/^queued / { print $2 }')
+  tasks add short-item "item for order ${short##*-}" --repo alpha >/dev/null
   out=$(ledger unfiled); rc=$?
   expect_code 3 "$rc" "unfiled with one unfiled order"
   # Orders sent in the same second sort by their random id suffix, so compare as a set.
@@ -378,6 +387,30 @@ test_arm_registers_the_scheduled_check() {
   pass "arm installs and registers the scheduled check, and min-ready=0 disarms it"
 }
 
+test_arm_never_replaces_a_task_check_of_the_same_name() {
+  new_home arm-owner
+  local out rc monitor="$HOME_DIR/state/ready-depth.check.sh" before
+  ledger arm >/dev/null || fail "first arm failed"
+  ledger arm >/dev/null || fail "re-arming the ledger's own check failed"
+  ledger disarm >/dev/null || fail "disarm failed"
+  # A worker task whose id is ready-depth owns the same path for its PR monitor.
+  printf '#!/usr/bin/env bash\necho "PR monitor for task ready-depth"\n' > "$monitor"
+  chmod 700 "$monitor"
+  FM_HOME="$HOME_DIR" bash "$ROOT/bin/fm-check-register.sh" ready-depth >/dev/null || fail "could not register the task check"
+  before=$(cat "$monitor" "$HOME_DIR/state/ready-depth.check-trust")
+  out=$(ledger arm 2>&1); rc=$?
+  expect_code 1 "$rc" "arm over a task's check of the same name"
+  assert_contains "$out" "is not the mission ledger's check" "the refusal says the check belongs to something else"
+  out=$(ledger arm --if-enabled 2>&1); rc=$?
+  expect_code 1 "$rc" "session-start arming over a task's check of the same name"
+  printf 'min-ready=0\n' > "$HOME_DIR/config/mission-ledger"
+  ledger arm --if-enabled >/dev/null 2>&1 || fail "arm --if-enabled with min-ready=0 failed over a task check"
+  ledger disarm >/dev/null 2>&1 || fail "disarm failed over a task check"
+  [ "$(cat "$monitor" "$HOME_DIR/state/ready-depth.check-trust")" = "$before" ] \
+    || fail "the ledger replaced or removed a task's check of the same name"
+  pass "arm and disarm never replace or remove a task's check that shares the ready-depth name"
+}
+
 fm_test_run \
   test_intake_files_one_item_per_ask_and_replays \
   test_intake_replay_key_and_existing_ids \
@@ -390,4 +423,5 @@ fm_test_run \
   test_scheduled_depth_fires_once_per_slot \
   test_unfiled_lists_open_orders_without_items \
   test_handoff_writes_from_ledger_and_refuses_chains \
-  test_arm_registers_the_scheduled_check
+  test_arm_registers_the_scheduled_check \
+  test_arm_never_replaces_a_task_check_of_the_same_name

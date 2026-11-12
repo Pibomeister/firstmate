@@ -45,8 +45,9 @@
 # order; holds are standing limits, not work) that no ledger item records:
 #   UNFILED <order-id> <state> :: <summary>
 # An order counts as filed when an intake row names it as its source, or when an
-# open or kept-done backlog item mentions its id in its id, title, or the
-# visible part of its body (items filed before this command existed). It exits
+# open or kept-done backlog item mentions its id, or the id's 8-hex suffix as a
+# whole word, in its id, title, or the visible part of its body (items filed
+# before this command existed). It exits
 # 3 when any order is unfiled and 0 otherwise.
 #
 # PLAN. `plan` prints the per-project plan from the backlog: one `project`
@@ -109,7 +110,9 @@
 #
 # ARM. `arm` installs <state>/ready-depth.check.sh, a shim that runs
 # `depth --scheduled` with this home's directories, and registers it with
-# bin/fm-check-register.sh. `arm --if-enabled` arms only when min-ready is not
+# bin/fm-check-register.sh. The shim's second line marks it as the ledger's;
+# `ready-depth` is also a valid task id, so `arm` refuses (exit 1) to replace a
+# check at that path without the mark, and `disarm` leaves such a file alone. `arm --if-enabled` arms only when min-ready is not
 # 0, and otherwise disarms; bin/fm-bootstrap.sh runs it at session start when a
 # tasks-axi backlog is available. `disarm` unregisters the check through
 # bin/fm-check-unregister.sh.
@@ -144,6 +147,7 @@ INTAKE_LOG="$DATA/ledger-intake.tsv"
 SLOT_FILE="$STATE/.ready-depth-slot"
 ERROR_FILE="$STATE/.ready-depth-error"
 CHECK_ID='ready-depth'
+CHECK_MARK='# fm-ledger: mission ledger ready-depth check'
 SLOT_GRACE=21600
 NOTE_MAX_LINES=60
 NOTE_MAX_BYTES=6000
@@ -351,7 +355,7 @@ print_plan() {  # <project-or-empty> <limit-or-empty>
       g = $2
       title = $8
       if (limit != "") {
-        if (length(title) > 90) title = substr(title, 1, 90) " [truncated]"
+        if (length(title) > 90 && title !~ / \[truncated\]$/) title = substr(title, 1, 90) " [truncated]"
         if (g == "blocked" || g == "held") { ids[g] = ids[g] " " $5; next }
         if (g == "ready") { if (shown >= limit + 0) { more++; next } shown++ }
       }
@@ -554,7 +558,7 @@ cmd_intake() {
 # --- unfiled orders ------------------------------------------------------------
 
 unfiled_lines() {
-  local status known id state kind summary out
+  local status known id state kind summary out suffix
   status=$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" FM_STATE_OVERRIDE="$STATE" \
     "$SCRIPT_DIR/fm-order.sh" status 2>&1) || die "captain order read failed: $(clean "$status")"
   [ "$status" != 'no open orders' ] || return 0
@@ -572,6 +576,13 @@ $out"
     kind=$(printf '%s' "${line%% :: *}" | sed -n 's/.* kind=\([a-z]*\).*/\1/p')
     [ "$kind" = order ] || continue
     printf '%s\n' "$known" | grep -qF -- "$id" && continue
+    # Items written before the ledger often name an order by its 8-hex suffix alone.
+    suffix=${id##*-}
+    case "$suffix" in
+      [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f])
+        printf '%s\n' "$known" | grep -qE "(^|[^0-9a-f])$suffix([^0-9a-f]|\$)" && continue
+        ;;
+    esac
     summary=${line#* :: }
     [ "$summary" != "$line" ] || summary=
     printf 'UNFILED %s %s :: %s\n' "$id" "$state" "$summary"
@@ -756,7 +767,10 @@ cmd_arm() {
   device=$(fm_pr_file_device "$STATE") || die "state directory is unavailable: $STATE"
   fm_pr_regular_destination_on_device_or_absent "$STATE/$CHECK_ID.check.sh" "$device" \
     || die "unsafe check destination: $STATE/$CHECK_ID.check.sh"
+  ledger_check_owned_or_absent \
+    || die "$STATE/$CHECK_ID.check.sh exists and is not the mission ledger's check (a task named $CHECK_ID may own it); left unchanged"
   shim=('#!/usr/bin/env bash'
+    "$CHECK_MARK"
     "export FM_HOME=$(printf '%q' "$FM_HOME")"
     "export FM_STATE_OVERRIDE=$(printf '%q' "$STATE")"
     "export FM_DATA_OVERRIDE=$(printf '%q' "$DATA")"
@@ -771,7 +785,20 @@ cmd_arm() {
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-check-register.sh" "$CHECK_ID"
 }
 
+# ledger_check_owned_or_absent: true when state/<check>.check.sh is absent or
+# carries this command's ownership mark. The check id is also a valid task id,
+# so a task's own check (such as its PR monitor) may hold the same path.
+ledger_check_owned_or_absent() {
+  local check="$STATE/$CHECK_ID.check.sh"
+  [ -e "$check" ] || [ -L "$check" ] || return 0
+  [ -f "$check" ] && [ ! -L "$check" ] && sed -n 2p "$check" 2>/dev/null | grep -qxF -- "$CHECK_MARK"
+}
+
 cmd_disarm() {
+  if ! ledger_check_owned_or_absent; then
+    printf 'fm-ledger: %s is not the mission ledger check; left unchanged\n' "$STATE/$CHECK_ID.check.sh" >&2
+    return 0
+  fi
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-check-unregister.sh" "$CHECK_ID"
 }
 
