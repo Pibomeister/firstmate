@@ -416,7 +416,7 @@ wd_observe() {
   now=$(wd_now)
   O_HOME=$home O_PARENT=$parent O_ID=$id O_TAG=$(wd_tag "$home") O_KEY=$(wd_state_key "$home")
   O_BACKEND='' O_TARGET='' O_SESSION='' O_HB_AGE=unknown O_CTX='' O_CTX_SRC='' O_CTX_READING=''
-  O_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_AUTOWAIT=0 O_COMPOSER=unknown O_TURN=unknown
+  O_PANE='' O_DIALOG_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_AUTOWAIT=0 O_COMPOSER=unknown O_TURN=unknown
   O_LOCK_PID='' O_ALIVE=0 O_INSTANCE=unknown O_OWNER=none O_CPU_BUSY=unknown O_TRANSCRIPT='' O_TR_AGE=unknown
   C_BACKEND='' C_TARGET='' C_MOVED=''
   O_LOOP=none O_LOOP_N=0 O_EVENTS='' O_RESTART_REQ=0 O_OWED_N=0 O_OWED_AGE=0
@@ -508,6 +508,7 @@ EOF
     if [ "$O_SIG" = "$p_sig" ] && [ -n "$p_since" ]; then O_PANE_STATIC=$((now - p_since)); else p_since=$now; fi
     O_DIALOG=$(wd_observe_dialog "$O_BACKEND" "$O_TARGET") || O_DIALOG=''
     view=$(wd_view "$O_BACKEND" "$O_TARGET") || view=$O_PANE
+    O_DIALOG_PANE=$view
     if [ "$parent" = - ] && fm_wd_usage_limit_autowait "$view"; then O_AUTOWAIT=1; fi
     wd_read_composer
     O_TURN=$(wd_turn_running "$O_BACKEND" "$O_TARGET" "$O_PANE")
@@ -1020,20 +1021,52 @@ wd_ladder_nudge_then_restart() {  # <symptom> <nudge-body> <kind>...
 }
 
 wd_handle_dialog() {
-  local opts pick n text key
+  local opts pick n text key dialog_pane id label='' rc=0
   # Two keys that did not clear a dialog within the hour stop the presses, so a
   # misread screen never keeps typing into the session and no model is asked.
   case "$O_DIALOG" in
     feedback|model-switch)
-      if [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" dialog key '^failed$' "$(( $(wd_now) - 3600 ))" "${O_REC_SUBJECT:-}")" -ge 2 ]; then
+      if [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" dialog key '^failed$' "$(( $(wd_now) - 3600 ))" "${O_REC_SUBJECT:-$O_TAG}")" -ge 2 ]; then
         wd_gap "a $O_DIALOG dialog did not clear after two keys this hour; no more keys pressed"
         return 0
       fi ;;
   esac
   case "$O_DIALOG" in
     feedback)
-      key=$(fm_wd_feedback_dialog_key "$O_PANE" 2>/dev/null) || key=0
-      wd_key dialog "${key:-0}" "dismiss the feedback survey" ;;
+      dialog_pane=${O_DIALOG_PANE:-$O_PANE}
+      if ! key=$(fm_wd_feedback_dialog_key "$dialog_pane" 2>/dev/null) || [ -z "$key" ]; then
+        wd_gap "feedback dialog key could not be resolved; no key pressed"
+        return 0
+      fi
+      wd_rate_open dialog key "$(cfgi key-secs 120)" || return 0
+      id=$(wd_id)
+      if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_rec "$id" dialog key refused "endpoint is on do-not-touch"; return 0; fi
+      if [ "$(wd_mode)" != act ]; then wd_rec "$id" dialog key dry-run "would press $key: dismiss the feedback survey"; return 0; fi
+      case "${O_ID:-}" in ''|-) ;; *) label=fm-$O_ID ;; esac
+      fm_control_dismiss_feedback_dialog "$O_HOME/state" "$O_BACKEND" "$O_TARGET" "" "$dialog_pane" "$label" "$(cfgi key-settle-secs 2)" || rc=$?
+      case "$rc" in
+        0)
+          wd_rec "$id" dialog key pending "press $FM_CONTROL_FEEDBACK_DISMISS_KEY: dismiss the feedback survey"
+          wd_rec "$id" dialog key "done" "dialog left the pane"
+          O_DIALOG=''
+          O_PANE=$FM_CONTROL_FEEDBACK_AFTER_PANE
+          O_DIALOG_PANE=$FM_CONTROL_FEEDBACK_AFTER_PANE
+          wd_read_composer
+          ;;
+        1|2)
+          return 0
+          ;;
+        3)
+          wd_rec "$id" dialog key pending "press $FM_CONTROL_FEEDBACK_DISMISS_KEY: dismiss the feedback survey"
+          wd_rec "$id" dialog key failed "key delivery failed"
+          return 1
+          ;;
+        *)
+          wd_rec "$id" dialog key pending "press $FM_CONTROL_FEEDBACK_DISMISS_KEY: dismiss the feedback survey"
+          wd_rec "$id" dialog key failed "dialog still showing"
+          return 1
+          ;;
+      esac ;;
     permission)
       wd_gap "permission dialog waiting; the watchdog never answers permission prompts"
       wd_page_permission ;;
@@ -1461,11 +1494,13 @@ wd_worker_metas() {  # <home>
 # mode=print reports the read and does not act. A gone endpoint is not a dialog.
 wd_visit_worker_dialogs() {
   local mode=$1 id meta backend target screen dialog
-  local saved_pane saved_backend saved_target saved_dialog
+  local saved_pane saved_dialog_pane saved_backend saved_target saved_dialog saved_id
   saved_pane=$O_PANE
+  saved_dialog_pane=${O_DIALOG_PANE:-}
   saved_backend=$O_BACKEND
   saved_target=$O_TARGET
   saved_dialog=$O_DIALOG
+  saved_id=${O_ID:-}
   while IFS=$'\t' read -r id meta; do
     [ -n "$id" ] || continue
     backend=$(fm_backend_of_meta "$meta")
@@ -1497,9 +1532,12 @@ wd_visit_worker_dialogs() {
         O_BACKEND=$backend
         O_TARGET=$target
         O_PANE=$screen
+        O_DIALOG_PANE=$(wd_view "$backend" "$target" "fm-$id") || O_DIALOG_PANE=$screen
         O_DIALOG=$dialog
+        O_ID=$id
         O_REC_SUBJECT="worker:$id"
         wd_handle_dialog
+        O_ID=$saved_id
         unset O_REC_SUBJECT
         ;;
       permission)
@@ -1524,9 +1562,11 @@ wd_visit_worker_dialogs() {
     esac
   done < <(wd_worker_metas "$O_HOME")
   O_PANE=$saved_pane
+  O_DIALOG_PANE=$saved_dialog_pane
   O_BACKEND=$saved_backend
   O_TARGET=$saved_target
   O_DIALOG=$saved_dialog
+  O_ID=$saved_id
   unset O_REC_SUBJECT
 }
 

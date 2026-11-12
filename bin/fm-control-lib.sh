@@ -1050,17 +1050,40 @@ fm_control_feedback_dialog_dismiss() {  # <harness> <screen>
   printf '%s\n' "$screen" \
     | LC_ALL=C sed -e $'s/\033\\[[0-9;?<>=]*[ -\\/]*[@-~]//g' -e $'s/\033\\][^\a]*\a//g' -e $'s/\r//g' \
     | awk -v fam="$family" '
+      function is_border_row(r) {
+        return (r ~ /^[ \t]*[│┃─━╭╮╰╯┌┐└┘| \t-]+[ \t]*$/)
+      }
+      function is_prompt_row(r) {
+        return (r ~ /^[ \t]*((│|┃|[|])[ \t]+)?(❯|›|⟩|→|❭|>)[ \t]*((│|┃|[|])[ \t]*)?$/)
+      }
       function is_chrome_row(r) {
         if (r ~ /^[ \t]*$/) return 1
-        if (r ~ /^[ \t]*[│┃─━╭╮╰╯┌┐└┘| \t-]+[ \t]*$/) return 1
-        if (r ~ /^[ \t]*((│|┃|[|])[ \t]+)?(❯|›|⟩|→|❭|>)[ \t]*$/) return 1
+        if (is_border_row(r)) return 1
+        if (is_prompt_row(r)) return 1
         if (r ~ /^[ \t]*(⏵|⏸)/) return 1
         if (r ~ /^[ \t]*(← for agents[ \t]+·[ \t]+)?\? for shortcuts([ \t]|$)/) return 1
         return 0
       }
-      function no_output_after(idx,   j) {
+      function no_output_after(idx,   j, seen_top_border, seen_prompt) {
         if (idx <= 0) return 0
+        seen_top_border = 0
+        seen_prompt = 0
         for (j = idx + 1; j <= m; j++) {
+          if (seen_prompt) {
+            if (is_border_row(tail[j])) return 1
+            if (!seen_top_border) return 1
+            if (!is_chrome_row(tail[j])) return 0
+            continue
+          }
+          if (is_prompt_row(tail[j])) {
+            seen_prompt = 1
+            continue
+          }
+          if (is_border_row(tail[j])) {
+            if (tail[j] ~ /^[ \t]*[╰└]/) return 1
+            seen_top_border = 1
+            continue
+          }
           if (!is_chrome_row(tail[j])) return 0
         }
         return 1
@@ -1068,7 +1091,7 @@ fm_control_feedback_dialog_dismiss() {  # <harness> <screen>
       NF { rows[++n] = $0 }
       END {
         if (n == 0) exit 1
-        s = n - 14 + 1
+        s = n - 18 + 1
         if (s < 1) s = 1
         m = 0
         for (i = s; i <= n; i++) tail[++m] = rows[i]
@@ -1172,7 +1195,11 @@ fm_control_send_feedback_dismiss() {  # <backend> <target> <dismiss-key> [<expec
   fi
   case "$key" in
     Escape)
-      fm_backend_send_key "$backend" "$target" Escape "$label"
+      if [ "$backend" = orca ] && declare -F fm_backend_orca_send_literal >/dev/null 2>&1; then
+        fm_backend_orca_send_literal "$target" $'\033'
+      else
+        fm_backend_send_key "$backend" "$target" Escape "$label"
+      fi
       ;;
     0)
       fn="fm_backend_${backend}_send_literal"
@@ -1186,4 +1213,105 @@ fm_control_send_feedback_dismiss() {  # <backend> <target> <dismiss-key> [<expec
       return 1
       ;;
   esac
+}
+
+fm_control_feedback_window_key() {  # <target>
+  local key=${1-}
+  key=${key//:/_}
+  key=${key//\//_}
+  printf '%s' "${key//./_}"
+}
+
+fm_control_feedback_pane_hash() {  # <screen>
+  printf '%s\n' "${1-}" \
+    | LC_ALL=C sed -e $'s/\033\\[[0-9;?<>=]*[ -\\/]*[@-~]//g' -e $'s/\033\\][^\a]*\a//g' -e $'s/\r//g' \
+    | awk 'NF { r[++n] = $0 } END { s = n - 17; if (s < 1) s = 1; for (i = s; i <= n; i++) print r[i] }' \
+    | cksum | awk '{ print $1 "_" $2 }'
+}
+
+fm_control_capture_feedback_pane() {  # <backend> <target> [<expected-label>]
+  local backend=${1-} target=${2-} label=${3-}
+  [ -n "$backend" ] && [ -n "$target" ] || return 1
+  if declare -F fm_backend_source >/dev/null 2>&1; then
+    fm_backend_source "$backend" >/dev/null 2>&1 || return 1
+  fi
+  if declare -F fm_backend_visible_capture_supported >/dev/null 2>&1 \
+    && fm_backend_visible_capture_supported "$backend" 2>/dev/null; then
+    fm_backend_visible_capture "$backend" "$target" ${label:+"$label"} 2>/dev/null
+    return $?
+  fi
+  if [ "$backend" = orca ] \
+    && declare -F fm_backend_orca_recorded_droid >/dev/null 2>&1 \
+    && fm_backend_orca_recorded_droid "$target" "$label" 2>/dev/null; then
+    fm_backend_visible_capture "$backend" "$target" ${label:+"$label"} 2>/dev/null
+    return $?
+  fi
+  fm_backend_capture "$backend" "$target" 60 ${label:+"$label"} 2>/dev/null
+}
+
+FM_CONTROL_FEEDBACK_DIALOG_ID=
+FM_CONTROL_FEEDBACK_DISMISS_KEY=
+FM_CONTROL_FEEDBACK_AFTER_PANE=
+
+# fm_control_dismiss_feedback_dialog <state-dir> <backend> <target> <harness> <screen> [<expected-label>] [<settle-secs>]
+# Shared claim-and-dismiss helper called by the watcher's two sites, the
+# daemon's two sites, and the watchdog. Uses one marker format
+# ($state/.feedback-dismissed-<window_key>) storing one shared pane hash, and
+# acquires an atomic mkdir claim ($state/.feedback-claim-<window_key>-<pane_hash>)
+# before sending the key. After sending, waits <settle-secs>, re-captures the
+# pane, and verifies the dialog is gone; never sends a second key on the same
+# claim.
+# Returns:
+#   0 - claimed, sent key, re-captured, and verified the dialog is gone
+#   1 - <screen> does not match a known feedback/bug-report dialog for <harness>
+#   2 - already claimed for this (window_key, pane_hash); no key sent
+#   3 - claimed, but key delivery failed
+#   4 - claimed and key sent, but re-capture did not prove the dialog gone
+fm_control_dismiss_feedback_dialog() {
+  local state_dir=${1-} backend=${2-} target=${3-} harness=${4-} screen=${5-}
+  local label=${6-} settle=${7-0.2}
+  local spec dialog_id dismiss_key wkey phash marker claim old_claim after
+  FM_CONTROL_FEEDBACK_DIALOG_ID=
+  FM_CONTROL_FEEDBACK_DISMISS_KEY=
+  FM_CONTROL_FEEDBACK_AFTER_PANE=
+  [ -n "$state_dir" ] && [ -n "$backend" ] && [ -n "$target" ] && [ -n "$screen" ] || return 1
+  spec=$(fm_control_feedback_dialog_dismiss "$harness" "$screen") || return 1
+  dialog_id=${spec%%$'\t'*}
+  dismiss_key=${spec#*$'\t'}
+  FM_CONTROL_FEEDBACK_DIALOG_ID=$dialog_id
+  FM_CONTROL_FEEDBACK_DISMISS_KEY=$dismiss_key
+  wkey=$(fm_control_feedback_window_key "$target")
+  phash=$(fm_control_feedback_pane_hash "$screen")
+  [ -n "$wkey" ] && [ -n "$phash" ] || return 1
+  mkdir -p "$state_dir" 2>/dev/null || return 1
+  marker="$state_dir/.feedback-dismissed-$wkey"
+  claim="$state_dir/.feedback-claim-$wkey-$phash"
+  if [ "$(cat "$marker" 2>/dev/null || true)" = "$phash" ]; then
+    return 2
+  fi
+  if ! mkdir "$claim" 2>/dev/null; then
+    return 2
+  fi
+  printf '%s\n' "$phash" > "$marker"
+  for old_claim in "$state_dir/.feedback-claim-$wkey-"*; do
+    [ -d "$old_claim" ] || continue
+    [ "$old_claim" = "$claim" ] || rmdir "$old_claim" 2>/dev/null || true
+  done
+  if ! fm_control_send_feedback_dismiss "$backend" "$target" "$dismiss_key" "$label" >/dev/null 2>&1; then
+    return 3
+  fi
+  case "$settle" in
+    ''|0|0.0) ;;
+    *) sleep "$settle" ;;
+  esac
+  after=$(fm_control_capture_feedback_pane "$backend" "$target" "$label") || after=
+  FM_CONTROL_FEEDBACK_AFTER_PANE=$after
+  [ -n "$after" ] || return 4
+  if fm_control_feedback_dialog_dismiss "$harness" "$after" >/dev/null 2>&1; then
+    return 4
+  fi
+  if declare -F fm_wd_pane_dialog >/dev/null 2>&1 && fm_wd_pane_dialog "$after" >/dev/null 2>&1; then
+    return 4
+  fi
+  return 0
 }

@@ -793,27 +793,28 @@ inbox_steer_recovery_action() {  # <window> <task> <recover-rc>
 }
 
 # dismiss_pane_feedback_dialog: when an idle supervised pane shows a known
-# feedback or bug-report dialog for its harness, send the per-harness skip/
-# dismiss key once for that pane hash and log the dismissal.
+# feedback or bug-report dialog for its harness, claim and dismiss it via the
+# shared helper (bin/fm-control-lib.sh) and log the outcome.
 dismiss_pane_feedback_dialog() {  # <window> <screen> [<pane-hash>]
-  local w=$1 screen=${2-} h=${3-} key spec dialog_id dismiss_key df backend harness label
+  local w=$1 screen=${2-} backend harness label rc=0
   [ -n "$screen" ] || return 1
   harness=$(window_harness "$w")
-  spec=$(fm_control_feedback_dialog_dismiss "$harness" "$screen") || return 1
-  key=$(window_key "$w")
-  df="$STATE/.feedback-dismissed-$key"
-  [ -n "$h" ] || h=$(printf '%s' "$screen" | hash_pane)
-  if [ "$(cat "$df" 2>/dev/null || true)" = "$h" ]; then
-    return 1
-  fi
-  dialog_id=${spec%%$'\t'*}
-  dismiss_key=${spec#*$'\t'}
   backend=$(window_backend "$w")
   label=$(window_label "$w")
-  fm_control_send_feedback_dismiss "$backend" "$w" "$dismiss_key" "$label" >/dev/null 2>&1 || return 1
-  printf '%s' "$h" > "$df"
-  triage_log "auto-dismissed feedback dialog ($dialog_id key=$dismiss_key): $w"
-  return 0
+  fm_control_dismiss_feedback_dialog "$STATE" "$backend" "$w" "$harness" "$screen" "$label" 0.2 || rc=$?
+  case "$rc" in
+    0)
+      triage_log "auto-dismissed feedback dialog ($FM_CONTROL_FEEDBACK_DIALOG_ID key=$FM_CONTROL_FEEDBACK_DISMISS_KEY): $w"
+      return 0
+      ;;
+    4)
+      triage_log "feedback dialog still showing after dismiss ($FM_CONTROL_FEEDBACK_DIALOG_ID key=$FM_CONTROL_FEEDBACK_DISMISS_KEY): $w"
+      return 1
+      ;;
+    *)
+      return 1
+      ;;
+  esac
 }
 
 # inbox_steer_busy: the steering-inbox delivery guard. Every backend keeps the

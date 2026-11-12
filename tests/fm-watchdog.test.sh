@@ -2362,9 +2362,18 @@ SH
 }
 
 test_dialog_keys_stop_after_two_failures() {
-  make_home $'work output\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss'
+  make_home $'work output 1\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss'
   run_wd 0 once >/dev/null 2>&1
+  # The shared claim never sends a second key on the same pane hash.
+  run_wd 150 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows dialog key pending)" "the shared claim never sends a second key on the same pane"
+  printf '%s\n' $'work output 2\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss' > "$H/screen.txt"
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$T" "$H/agent.sh"
+  sleep 0.3
   run_wd 200 once >/dev/null 2>&1
+  printf '%s\n' $'work output 3\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss' > "$H/screen.txt"
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$T" "$H/agent.sh"
+  sleep 0.3
   run_wd 400 once >/dev/null 2>&1
   assert_equals 2 "$(ledger_rows dialog key failed)" "two keys that left the dialog showing are recorded as failed"
   assert_equals 2 "$(ledger_rows dialog key pending)" "no third key is pressed within the hour"
@@ -3638,10 +3647,12 @@ test_primary_ordinary_idle_is_not_paged() {
 }
 
 test_feedback_and_bug_report_dialog_dismissal() {
-  local agy_survey agy_multiline claude_survey claude_draft claude_modal_input claude_modal_scope claude_modal_consent claude_followup codex_feedback codex_upload near_miss unknown_picker
+  local agy_survey agy_multiline claude_survey claude_survey_statusline claude_survey_autocompact claude_draft claude_modal_input claude_modal_scope claude_modal_consent claude_followup codex_feedback codex_upload near_miss unknown_picker
   agy_survey=$'work output\nHow\'s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip\n> \n  ? for shortcuts'
   agy_multiline=$'work output\nHow\'s the CLI experience so far? Help us improve:\n  [1] Good  [2] Fine  [3] Bad  [0] Skip'
   claude_survey=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss'
+  claude_survey_statusline=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main'
+  claude_survey_autocompact=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  Context left until auto-compact: 8% · ◯ IDE connected'
   claude_draft=$'some work\n● Bug report drafted: tool timeout on large file\n  1 to review · 2 to send · 0 to dismiss'
   claude_modal_input=$'Submit feedback / bug report\nDescribe the issue below:\n\nPress Enter to continue · Esc to cancel'
   claude_modal_scope=$'Report a bug or share your conversation\nHow much session history should we include?\n ❯ 1. This session only\n   2. Last 5 sessions\n\nEnter to choose · Esc to cancel'
@@ -3655,6 +3666,8 @@ test_feedback_and_bug_report_dialog_dismissal() {
   assert_equals $'agy-cli-feedback\t0' "$(lib fm_control_feedback_dialog_dismiss agy "$agy_survey")" "agy single-line CLI survey chooses 0/Skip"
   assert_equals $'agy-cli-feedback\t0' "$(lib fm_control_feedback_dialog_dismiss agy "$agy_multiline")" "agy two-line CLI survey chooses 0/Skip"
   assert_equals $'claude-session-feedback\t0' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_survey")" "claude session survey chooses 0/Dismiss"
+  assert_equals $'claude-session-feedback\t0' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_survey_statusline")" "claude session survey with statusLine under input box chooses 0/Dismiss"
+  assert_equals $'claude-session-feedback\t0' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_survey_autocompact")" "claude session survey with auto-compact row under input box chooses 0/Dismiss"
   assert_equals $'claude-bug-report-draft\t0' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_draft")" "claude drafted bug report card chooses 0/dismiss"
   assert_equals $'claude-bug-report-dialog\tEscape' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_modal_input")" "claude bug report input step chooses Escape"
   assert_equals $'claude-bug-report-dialog\tEscape' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_modal_scope")" "claude bug report scope step chooses Escape"
@@ -3664,7 +3677,7 @@ test_feedback_and_bug_report_dialog_dismissal() {
   assert_equals $'codex-upload-logs\tEscape' "$(lib fm_control_feedback_dialog_dismiss codex "$codex_upload")" "codex upload logs prompt chooses Escape"
 
   local screen
-  for screen in "$agy_survey" "$agy_multiline" "$claude_survey" "$claude_draft" "$claude_modal_input" "$claude_modal_scope" "$claude_modal_consent" "$claude_followup" "$codex_feedback" "$codex_upload"; do
+  for screen in "$agy_survey" "$agy_multiline" "$claude_survey" "$claude_survey_statusline" "$claude_survey_autocompact" "$claude_draft" "$claude_modal_input" "$claude_modal_scope" "$claude_modal_consent" "$claude_followup" "$codex_feedback" "$codex_upload"; do
     assert_equals feedback "$(lib fm_wd_pane_dialog "$screen")" "fm_wd_pane_dialog classifies known feedback/bug-report fixture as feedback"
   done
 
@@ -3690,9 +3703,15 @@ test_feedback_and_bug_report_dialog_dismissal() {
   ! lib fm_control_feedback_dialog_dismiss "" "$unknown_picker" || fail "unknown picker matched feedback dismissal"
   assert_equals question "$(lib fm_wd_pane_dialog "$unknown_picker")" "unknown picker still classifies as question"
 
-  # 4. Watchdog auto-dismisses worker feedback and bug-report dialogs without submitting.
+  # 4. Watchdog auto-dismisses worker feedback and bug-report dialogs without submitting,
+  #    and worker failures do not consume the primary home pane's two-failure cap.
   make_home $'Captain session\n> '
   transcript 100 "Working."
+  local home_canon
+  home_canon=$(cd -P "$H" && pwd -P)
+  mkdir -p "$H/state/watchdog"
+  printf '%s\tw1\t%s\tworker:other\tdialog\tkey\tfailed\tstuck\n%s\tw2\t%s\tworker:other\tdialog\tkey\tfailed\tstuck\n' \
+    "$((BASE - 200))" "$home_canon" "$((BASE - 100))" "$home_canon" > "$H/state/watchdog/actions.tsv"
   cat > "$H/worker-agy.sh" <<SH
 #!/usr/bin/env bash
 printf '%s\n' 'How'\''s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip'
@@ -3711,7 +3730,7 @@ SH
   run_wd 0 once >/dev/null 2>&1 || fail "watchdog worker feedback pass failed"
   assert_equals "0" "$(cat "$H/worker-agy.key" 2>/dev/null)" "worker agy survey received literal 0 and nothing else"
   assert_equals 1 "$(awk -F'\t' '$4 == "worker:agyw" && $5 == "dialog" && $6 == "key" && $7 == "done"' "$H/state/watchdog/actions.tsv" | wc -l | tr -d ' ')" \
-    "worker agy feedback dismissal recorded done: $(ledger)"
+    "worker agy feedback dismissal recorded done despite another worker's two failures: $(ledger)"
 
   # 5. Watcher (fm-watch.sh) auto-dismisses an idle worker's feedback dialog and logs the dismissal, but leaves a busy worker alone.
   local wdir wstate wfake wout
@@ -3735,6 +3754,7 @@ case "${1:-}" in
         *) printf 'KEY:%s\n' "$1" >> "$FM_TEST_WATCH_KEYS"; shift ;;
       esac
     done
+    [ -z "${FM_TEST_WATCH_CLEAR_ON_SEND:-}" ] || printf 'work output\n> \n' > "$FM_TEST_WATCH_PANE"
     exit 0 ;;
 esac
 exit 0
@@ -3742,7 +3762,7 @@ SH
   chmod +x "$wfake/tmux"
   printf '%s\n' "$agy_survey" > "$wdir/pane-idle.txt"
   : > "$wdir/keys.log"
-  PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-idle.txt" FM_TEST_WATCH_KEYS="$wdir/keys.log" \
+  PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-idle.txt" FM_TEST_WATCH_KEYS="$wdir/keys.log" FM_TEST_WATCH_CLEAR_ON_SEND=1 \
     FM_HOME="$wdir" FM_STATE_OVERRIDE="$wstate" FM_CONFIG_OVERRIDE="$wdir/config" \
     FM_WATCH_ONCE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
     bash "$ROOT/bin/fm-watch.sh" > "$wout" 2>&1 || fail "fm-watch.sh once failed on idle feedback pane: $(cat "$wout")"
@@ -3750,10 +3770,50 @@ SH
   assert_grep "auto-dismissed feedback dialog (agy-cli-feedback key=0): test:fm-agy" "$wstate/.watch-triage.log" \
     "watcher logged the feedback dismissal"
 
+  # 6. Shared atomic claim: when two callers race on one pane, exactly one key is sent.
+  local rstate="$wdir/race-state" pid1 pid2
+  mkdir -p "$rstate"
+  printf '%s\n' "$agy_survey" > "$wdir/pane-race.txt"
+  : > "$wdir/race-keys.log"
+  cat > "$wfake/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  capture-pane) cat "$FM_TEST_WATCH_PANE"; exit 0 ;;
+  send-keys)
+    sleep 0.1
+    shift
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) shift; printf 'LITERAL:%s\n' "${1:-}" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+        *) printf 'KEY:%s\n' "$1" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+      esac
+    done
+    printf 'work output\n> \n' > "$FM_TEST_WATCH_PANE"
+    exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$wfake/tmux"
+  (
+    PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-race.txt" FM_TEST_WATCH_KEYS="$wdir/race-keys.log" \
+      bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1' \
+      _ "$ROOT" "$rstate" "$agy_survey" >/dev/null 2>&1 || true
+  ) &
+  pid1=$!
+  (
+    PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-race.txt" FM_TEST_WATCH_KEYS="$wdir/race-keys.log" \
+      bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1' \
+      _ "$ROOT" "$rstate" "$agy_survey" >/dev/null 2>&1 || true
+  ) &
+  pid2=$!
+  wait "$pid1" "$pid2"
+  assert_equals "LITERAL:0" "$(cat "$wdir/race-keys.log")" "concurrent callers racing on one pane send the dismiss key exactly once"
+
   # Busy worker showing `esc to cancel` alongside the text is not touched.
   printf '%s\n  esc to cancel\n' "$agy_survey" > "$wdir/pane-busy.txt"
   : > "$wdir/keys.log"
-  rm -f "$wstate"/.feedback-dismissed-*
+  rm -rf "$wstate"/.feedback-dismissed-* "$wstate"/.feedback-claim-*
   PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-busy.txt" FM_TEST_WATCH_KEYS="$wdir/keys.log" \
     FM_HOME="$wdir" FM_STATE_OVERRIDE="$wstate" FM_CONFIG_OVERRIDE="$wdir/config" \
     FM_WATCH_ONCE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \

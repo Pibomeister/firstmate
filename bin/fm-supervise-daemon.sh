@@ -866,20 +866,9 @@ stale_window_is_busy() {  # <window> <state>
     unknown\ t3code-native) return 3 ;;
   esac
   if [ -n "$tail40" ]; then
-    local spec dialog_id dismiss_key key df h
-    if spec=$(fm_control_feedback_dialog_dismiss "$harness" "$tail40"); then
-      key=$(window_key "$win")
-      df="$state/.feedback-dismissed-$key"
-      h=$(printf '%s' "$tail40" | cksum | awk '{ print $1 ":" $2 }')
-      if [ "$(cat "$df" 2>/dev/null || true)" != "$h" ]; then
-        dialog_id=${spec%%$'\t'*}
-        dismiss_key=${spec#*$'\t'}
-        if fm_control_send_feedback_dismiss "$backend" "$win" "$dismiss_key" "$label" >/dev/null 2>&1; then
-          printf '%s' "$h" > "$df"
-          log "auto-dismissed feedback dialog ($dialog_id key=$dismiss_key): $win"
-          return 0
-        fi
-      fi
+    if fm_control_dismiss_feedback_dialog "$state" "$backend" "$win" "$harness" "$tail40" "$label" 0.2; then
+      log "auto-dismissed feedback dialog ($FM_CONTROL_FEEDBACK_DIALOG_ID key=$FM_CONTROL_FEEDBACK_DISMISS_KEY): $win"
+      return 0
     fi
   fi
   return 1
@@ -1865,18 +1854,14 @@ inject_msg() {  # <message> [state] [exact] [request-id]
     composer="pending-unproven"
   fi
   if [ "$composer" != empty ] && [ "$backend" != t3code ]; then
-    local sup_screen sup_spec sup_dialog sup_key
+    local sup_screen
     sup_screen=$(fm_backend_capture "$backend" "$target" 40 2>/dev/null || true)
-    if [ -n "$sup_screen" ] && sup_spec=$(fm_control_feedback_dialog_dismiss "$(fm_daemon_primary_harness)" "$sup_screen"); then
-      sup_dialog=${sup_spec%%$'\t'*}
-      sup_key=${sup_spec#*$'\t'}
-      if fm_control_send_feedback_dismiss "$backend" "$target" "$sup_key" >/dev/null 2>&1; then
-        log "auto-dismissed feedback dialog ($sup_dialog key=$sup_key): $target"
-        sleep 0.2
-        composer=$(fm_backend_composer_state "$backend" "$target" 2>/dev/null)
-        if [ "$composer" = empty ] && [ "$backend" = orca ] && fm_backend_orca_draft_present "$target"; then
-          composer="pending-unproven"
-        fi
+    if [ -n "$sup_screen" ] \
+      && fm_control_dismiss_feedback_dialog "$state" "$backend" "$target" "$(fm_daemon_primary_harness)" "$sup_screen" "" 0.2; then
+      log "auto-dismissed feedback dialog ($FM_CONTROL_FEEDBACK_DIALOG_ID key=$FM_CONTROL_FEEDBACK_DISMISS_KEY): $target"
+      composer=$(fm_backend_composer_state "$backend" "$target" 2>/dev/null)
+      if [ "$composer" = empty ] && [ "$backend" = orca ] && fm_backend_orca_draft_present "$target"; then
+        composer="pending-unproven"
       fi
     fi
   fi
