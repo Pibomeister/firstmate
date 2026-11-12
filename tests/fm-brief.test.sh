@@ -1935,6 +1935,40 @@ test_crewmate_scaffolds_route_heavy_tests_through_the_queue() {
   pass "fm-brief.sh: every crewmate scaffold routes heavy test suites through the test queue"
 }
 
+test_crewmate_scaffolds_name_a_runnable_ledger_next() {
+  local home brief mode rule command out rc
+  if ! command -v tasks-axi >/dev/null 2>&1; then
+    pass "fm-brief.sh: ledger next check skipped (tasks-axi is not installed)"
+    return 0
+  fi
+  home="$TMP_ROOT/ledger next home's"
+  mkdir -p "$home/data" "$home/state" "$home/config"
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$home/data/backlog.md"
+  for mode in no-mistakes direct-PR local-only scout; do
+    if [ "$mode" = scout ]; then
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "ledger-next-$mode" alpha --scout >/dev/null 2>&1 \
+        || fail "fm-brief.sh --scout exited non-zero"
+    else
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "ledger-next-$mode" alpha --mode "$mode" >/dev/null 2>&1 \
+        || fail "fm-brief.sh --mode $mode exited non-zero"
+    fi
+    brief="$home/data/ledger-next-$mode/brief.md"
+    rule=$(grep -F 'next ready backlog item' "$brief")
+    [ -n "$rule" ] || fail "$mode brief does not name the ledger next command"
+    command=$(printf '%s\n' "$rule" | cut -d '`' -f 2)
+    out=$(cd "$TMP_ROOT" && env -u FM_HOME /bin/bash -c "$command" 2>&1); rc=$?
+    expect_code 3 "$rc" "$mode ledger next command on an empty backlog (got: $out)"
+    FM_HOME="$home" bash "$ROOT/bin/fm-tasks-axi.sh" add "next-$mode" "ready for $mode" --repo alpha --priority 0 >/dev/null \
+      || fail "could not seed a ready item"
+    out=$(cd "$TMP_ROOT" && env -u FM_HOME /bin/bash -c "$command" 2>&1); rc=$?
+    expect_code 0 "$rc" "$mode ledger next command with a ready item (got: $out)"
+    assert_contains "$out" "NEXT next-$mode project=alpha" "$mode ledger next command did not read the home backlog"
+    FM_HOME="$home" bash "$ROOT/bin/fm-tasks-axi.sh" start "next-$mode" >/dev/null \
+      || fail "could not start the seeded item"
+  done
+  pass "fm-brief.sh: ship and scout briefs name a runnable read-only ledger next command for their home"
+}
+
 test_queue_command_quotes_foreign_firstmate_path() {
   local home foreign_root mode brief rule ship_rule command out rc
   home="$TMP_ROOT/test-queue-foreign-home"
@@ -2017,3 +2051,4 @@ test_branch_prefix_command_is_shell_safe
 test_crewmate_scaffolds_forbid_pool_administration
 test_crewmate_scaffolds_route_heavy_tests_through_the_queue
 test_queue_command_quotes_foreign_firstmate_path
+test_crewmate_scaffolds_name_a_runnable_ledger_next
