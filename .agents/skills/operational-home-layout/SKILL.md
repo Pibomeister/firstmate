@@ -29,7 +29,8 @@ config/secondmate-accounts/<id>/omp-profile  optional PRIMARY-home omp profile n
 config/crew-dispatch.json  optional crewmate dispatch profiles; LOCAL, gitignored; firstmate-maintained but human-editable natural-language rules that choose a per-task harness/model/effort profile (section 4). Inherited by secondmate homes
 config/project-capacity  optional per-machine count of workers each named project admits at once, read from the root home by every local home; LOCAL, gitignored; see docs/configuration.md "Project capacity"
 config/secondmate-harness  primary-local secondmate runtime pins; see docs/configuration.md "Choose the secondmate harness" for schema, precedence, and inheritance
-config/lane-capacity  optional lane cap and limits for this home, read by bin/fm-capacity.sh and the opt-in that makes its watcher publish state/lane-capacity.json; LOCAL, gitignored, not inherited by secondmate homes; see docs/configuration.md "Lane capacity"
+config/lane-capacity  optional lane cap and limits for this home, read by bin/fm-capacity.sh, enforced on fresh spawns through its --spawn-gate, and the opt-in that makes its watcher publish state/lane-capacity.json and run bin/fm-load-relief.sh; LOCAL, gitignored, not inherited by secondmate homes; see docs/configuration.md "Lane capacity"
+config/load-relief  optional load-relief ceiling, resume level, window, and per-pass pause count; LOCAL, gitignored; bin/fm-load-relief.sh's header owns the format; see docs/configuration.md "Lane capacity"
 config/backlog-backend  backlog backend override; LOCAL, gitignored; absent or "tasks-axi" = the configured tasks-axi backend, "manual" = force routine backlog updates to hand-editing; inherited by secondmate homes (section 10)
 config/backend  runtime session-provider backend override for new tasks; LOCAL, gitignored; docs/configuration.md "Runtime backend" owns supported values, selection, and limits; inherited by secondmate homes under the primary-authoritative contract in secondmate-provisioning
 config/t3code-token  LOCAL, gitignored T3 Code mcp-client credential; docs/t3code-backend.md "Sign-in" owns minting, expiry, and secondmate linking
@@ -177,6 +178,7 @@ state/               runtime records and signals; gitignored
   .secondmate-relaunch-<id> .secondmate-relaunch-bound-<id>   durable relaunch history and parked-bound state; never touch (bin/fm-secondmate-liveness-lib.sh owns the ledger contract)
   .watch-triage.log  watcher's absorbed-wake debug log (size-capped); never relied on, safe to delete
   lane-capacity.json  this home's published lane facts, refreshed only while config/lane-capacity exists; written only by bin/fm-capacity.sh --publish, whose header owns the document
+  load-relief/       automatic load-relief state: high-since (start of the current over-ceiling stretch) and paused/<id> durable pause records; written only by bin/fm-load-relief.sh, whose header owns both
   heartbeat.json .heartbeat-work.*  this home's self-watching fleet ledger and its private temp directory; refreshed detached by the watcher's heartbeat ticker once per poll period; written only by bin/fm-heartbeat.sh --write, whose header owns the document
   .last-watcher-beat watcher liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
   .watcher-stage .watcher-deferral.<name>   the watcher's current cycle stage and its record of work skipped behind a held lock; bin/fm-watch.sh writes both and bin/fm-guard.sh reads them; never touch
