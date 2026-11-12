@@ -264,7 +264,11 @@ JS
     if ! absent "$home/state/.lock-session"; then
       [ -r "$home/state/.lock-session" ] || return 1
       terminal=$(fm_meta_get "$home/state/.lock-session" terminal)
-      printf 'rec\t%s\tmain-lock\t%s\t\n' "$home" "$terminal"
+      # unknown is recorded absence, not a terminal this run may close or keep.
+      case "$terminal" in
+        unknown|*[!A-Za-z0-9_.:%-]*) ;;
+        *) printf 'rec\t%s\tmain-lock\t%s\t\n' "$home" "$terminal" ;;
+      esac
     fi
     if ! absent "$home/state/.lock"; then
       [ -r "$home/state/.lock" ] || return 1

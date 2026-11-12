@@ -29,7 +29,11 @@ The rendered unit captures the current `PATH`, so render it from a shell that ca
 
 The owner home's `config/watchdog` lists the homes to watch in `homes`; an absent key means the owner home alone.
 Each listed home also brings the second mates registered in its `data/secondmates.md`.
-The watchdog acts only on recorded endpoints: a home's `state/heartbeat.json` terminal, or for a second mate without its own heartbeat, the parent's `state/<id>.meta`.
+The watchdog acts only on recorded endpoints.
+A proving heartbeat in `state/heartbeat.json` names the primary terminal.
+When that heartbeat does not prove one, the endpoint recorded in `state/.lock-session` names it.
+A second mate without its own proving heartbeat uses the parent's `state/<id>.meta`.
+The token `unknown` is not an address.
 Each home's recorded ship and scout workers are also read for a permission dialog, from that home's `state/<id>.meta` when `kind` is `ship` or `scout`.
 That read uses the same dialog detector and the same away-session page as the home pane.
 The watchdog does not answer, nudge, or restart a worker pane.
@@ -88,7 +92,9 @@ A home whose restart awaits pickup gets no action at all until that restart clos
 
 The frozen, agent-gone, and restart paths need a session transcript, and only the Claude transcript layout is read.
 A subject with no readable transcript has no activity source, so those restarts are unavailable for it; its health line reads `NO-ACTIVITY-SOURCE` instead of `ok`, and the status file lists the gap.
-A subject with no recorded terminal endpoint, such as a primary with no trusted lock session or a heartbeat whose terminal fields are unknown or whose session is not the one holding the lock, has no pane view; its health line reads `NO-ENDPOINT` instead of `ok`, and the status file lists the gap.
+A subject with no recorded terminal endpoint has no pane view.
+That includes a primary whose lock sidecar names no concrete endpoint, and a heartbeat whose terminal is unknown or whose session is not the one holding the lock when that sidecar also names none.
+Its health line reads `NO-ENDPOINT` instead of `ok`, and the status file lists the gap.
 
 These checks run on every pass as well:
 
@@ -177,7 +183,7 @@ It is the durable answer to which process and which terminal are that home's liv
 | `session` | The lock's recorded session id |
 | `alive` | `live`, `dead`, `unconfirmed`, or `none` |
 | `usage_limit_autowait` | `1` when this pass read the primary pane's usage-limit auto-wait footer (`Continuing automatically at <reset>`), else `0` |
-| `backend`, `target` | The captain's terminal, empty while it is not proven |
+| `backend`, `target` | The captain's terminal. Empty while neither a proving heartbeat nor the lock sidecar names a concrete endpoint. `unknown` is not an address |
 | `moved_at` | Epoch of the last move to a new owner or a new terminal |
 | `lock_at` | Newest mtime of `state/.lock` and `state/.lock-session` when this record was written |
 | `checked_at` | Epoch of this write |
@@ -192,9 +198,15 @@ It must also be written inside the lock owner: its writer's harness anchor pid i
 A heartbeat written outside the owner, such as by an away daemon in its own detached terminal, proves no terminal.
 So a retired pane is never named, even when a resumed session keeps the same session id in a new terminal.
 A second mate whose heartbeat names another session, or none, uses its parent's record of its endpoint.
-A heartbeat older than `lock_at` leaves the terminal empty, unproven, for a second mate too.
+A heartbeat older than `lock_at` proves no terminal.
+For a second mate the terminal then stays empty.
+For the primary, the lock sidecar endpoint names the captain when it is concrete.
 An unchanged owner keeps the recorded terminal while none is proven now, but only while `lock_at` is unchanged.
-After a lock rewrite the old terminal is never carried forward, and the terminal stays empty until a fresh heartbeat proves it.
+After a lock rewrite the old terminal is never carried forward.
+The endpoint in the new lock sidecar names the primary captain when the heartbeat does not prove one.
+The token `unknown` is not an address, and a sidecar whose worktree is not this home is not an address.
+A proving heartbeat still outranks the sidecar when it names a different pane.
+A heartbeat that does not prove the terminal does not keep its pane for capture.
 A new owner stamps `moved_at` with `lock_at`.
 Under the same owner, a proven terminal that differs from that owner's last proven terminal stamps `moved_at` with the pass time.
 The watchdog keeps that last proven terminal and its owner in its private per-home subjects record, so an unproven window neither loses a move nor names the old pane.

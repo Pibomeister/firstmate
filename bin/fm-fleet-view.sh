@@ -65,6 +65,11 @@ printf '%s\n' "$SNAPSHOT" | jq -r '
   "",
   "Schema: \(.schema)",
   "Home: \(.fm_home)",
+  (if (.session.endpoint.backend // "unknown") == "unknown"
+      or (.session.endpoint.target // "unknown") == "unknown"
+    then "Session endpoint: unknown"
+    else "Session endpoint: \(.session.endpoint.backend) \(.session.endpoint.target)"
+    end),
   "",
   "## Under Way",
   (if (.tasks | length) == 0 then

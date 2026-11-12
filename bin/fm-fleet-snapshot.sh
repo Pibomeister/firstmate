@@ -13,6 +13,10 @@
 #   schema: stable schema id.
 #   generated: UTC observation time for this fresh command execution.
 #   fm_home: resolved operational home.
+#   session: {endpoint:{backend,target}} from state/.lock-session, the endpoint
+#     recorded when the primary session took the lock.
+#     Unknown, absent, a worktree that is not this home, or an illegal token is
+#     backend and target "unknown", never a guessed pane.
 #   roots: resolved root/config/data/state/projects directories.
 #   backlog: {path,present,records[]} where records are ordered as written in
 #     data/backlog.md and cover In flight, Queued, and Done.
@@ -2081,9 +2085,34 @@ secondmate_current_json "$TASKS_JSON_FILE" "$SECONDMATE_CURRENT_JSON_FILE" \
 secondmate_landed_from_current_json "$SECONDMATE_CURRENT_JSON_FILE" "$SECONDMATE_LANDED_JSON_FILE" \
   || { echo "fm-fleet-snapshot: secondmate landed projection failed" >&2; exit 1; }
 
+session_backend=unknown
+session_target=unknown
+session_side="$STATE/.lock-session"
+if [ -f "$session_side" ] && [ ! -L "$session_side" ]; then
+  session_backend_raw=$(sed -n 's/^backend=//p' "$session_side")
+  session_target_raw=$(sed -n 's/^terminal=//p' "$session_side")
+  session_worktree=$(sed -n 's/^worktree=//p' "$session_side")
+  if [ "$session_worktree" = "${FM_HOME%/}" ]; then
+    case "$session_backend_raw" in
+      ''|unknown|*[!A-Za-z0-9_-]*) ;;
+      *)
+        case "$session_target_raw" in
+          ''|unknown|*[!A-Za-z0-9_.:%-]*) ;;
+          *)
+            session_backend=$session_backend_raw
+            session_target=$session_target_raw
+            ;;
+        esac
+        ;;
+    esac
+  fi
+fi
+
 jq -n \
   --arg generated "$SNAPSHOT_NOW" \
   --arg fm_home "$FM_HOME" \
+  --arg session_backend "$session_backend" \
+  --arg session_target "$session_target" \
   --arg fm_root "$FM_ROOT" \
   --arg state "$STATE" \
   --arg data "$DATA" \
@@ -2109,6 +2138,7 @@ jq -n \
      schema:"fm-fleet-snapshot.v1",
      generated:$generated,
      fm_home:$fm_home,
+     session:{endpoint:{backend:$session_backend,target:$session_target}},
      roots:{fm_root:$fm_root,state:$state,data:$data,config:$config,projects:$projects},
      backlog:$backlog,
      tasks:($tasks | map(. + {backlog:backlog_by_id(.id)})),

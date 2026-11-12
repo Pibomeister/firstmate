@@ -386,10 +386,27 @@ wd_publish_captain() {
   fi
 }
 
+# wd_lock_endpoint <state-dir> <home>
+# Prints the concrete backend and terminal from state/.lock-session, one per
+# line, when both name this home. unknown, empty, an illegal token, and a
+# different worktree are not addresses.
+wd_lock_endpoint() {
+  local side=$1/.lock-session backend terminal worktree
+  [ -f "$side" ] && [ ! -L "$side" ] || return 1
+  backend=$(sed -n 's/^backend=//p' "$side")
+  terminal=$(sed -n 's/^terminal=//p' "$side")
+  worktree=$(sed -n 's/^worktree=//p' "$side")
+  [ "$worktree" = "${2%/}" ] || return 1
+  case "$backend" in ''|unknown|*[!A-Za-z0-9_-]*) return 1 ;; esac
+  case "$terminal" in ''|unknown|*[!A-Za-z0-9_.:%-]*) return 1 ;; esac
+  printf '%s\n%s\n' "$backend" "$terminal"
+}
+
 # wd_observe <home> <parent> <id>: fills the O_* globals for one subject and
 # saves the comparable parts to state/watchdog/subjects/<home-basename>-<path-cksum>.
 wd_observe() {
   local home=$1 parent=$2 id=$3 st now hb prev meta row hb_sid hb_wpid='' hb_wsid='' ctx dt hb_at=0 cb='' ct=''
+  local lock_ep='' lock_backend='' lock_target=''
   local footer_text='' footer_src='' reading
   st=$home/state
   now=$(wd_now)
@@ -412,6 +429,8 @@ $row
 EOF
     [ "$O_BACKEND" != - ] || O_BACKEND=''
     [ "$O_TARGET" != - ] || O_TARGET=''
+    [ "$O_BACKEND" != unknown ] || O_BACKEND=''
+    [ "$O_TARGET" != unknown ] || O_TARGET=''
     [ "$hb_sid" != - ] || hb_sid=''
     [ "$hb_wpid" != - ] || hb_wpid=''
     [ "$hb_wsid" != - ] || hb_wsid=''
@@ -437,6 +456,27 @@ EOF
     && { { [ -n "$hb_wpid" ] && [ "$hb_wpid" = "$O_LOCK_PID" ]; } || { [ -n "$hb_wsid" ] && [ "$hb_wsid" = "$O_SESSION" ]; }; }; then
     # Only a heartbeat written inside the lock owner names the owner's terminal.
     cb=$O_BACKEND ct=$O_TARGET
+  fi
+  # A primary heartbeat that does not prove a terminal must not keep that pane
+  # for capture. The endpoint recorded when this session took the lock is the
+  # address. A second mate stays on the parent meta path above.
+  if [ "$parent" = - ] && { [ -z "$cb" ] || [ -z "$ct" ]; }; then
+    O_BACKEND=''
+    O_TARGET=''
+    cb=''
+    ct=''
+    lock_ep=$(wd_lock_endpoint "$st" "$home" 2>/dev/null) || lock_ep=''
+    if [ -n "$lock_ep" ]; then
+      lock_backend=${lock_ep%%$'\n'*}
+      lock_target=${lock_ep#*$'\n'}
+      lock_target=${lock_target%%$'\n'*}
+      if [ -n "$lock_backend" ] && [ -n "$lock_target" ]; then
+        O_BACKEND=$lock_backend
+        O_TARGET=$lock_target
+        cb=$lock_backend
+        ct=$lock_target
+      fi
+    fi
   fi
   prev=$WD/subjects/$O_KEY
   local p_sig='' p_since='' p_cpu='' p_at='' p_comp='' p_term='' p_term_owner=''

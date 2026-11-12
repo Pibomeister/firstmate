@@ -35,7 +35,8 @@ if [ "$FM_LOCK_INSPECT_STATE" = held ] && [ "$lock_snap" = "${FM_LOCK_INSPECT_PI
     && [ "$(printf '%s\n' "$session_snap" | sed -n 's/^anchor_pid=//p')" = "$lock_snap" ] \
     && [ "$(fm_session_process_start "$lock_snap" 2>/dev/null || true)" = "$anchor_start" ]; then
     handle=$(printf '%s\n' "$session_snap" | sed -n 's/^terminal=//p')
-    case "$handle" in ''|*[!A-Za-z0-9_.:%-]*) handle=none ;; esac
+    # unknown is the recorded absence of an endpoint, not a terminal name.
+    case "$handle" in ''|unknown|*[!A-Za-z0-9_.:%-]*) handle=none ;; esac
   fi
 fi
 if [ "$claim_busy" -eq 1 ] || claim_lock_busy \
