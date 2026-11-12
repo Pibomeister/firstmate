@@ -650,6 +650,7 @@ Output, one line per compaction, the same for an in-turn and an idle automatic c
 
 - After an idle automatic compaction the session ran the `SessionStart` hook with source `compact`, showed "Compacted while idle, before the prompt cache expired", and started no turn by itself.
 - An in-turn and an idle automatic compaction carry the same trigger, so the doorbell tells them apart by a native idle busy state plus a quiet transcript, never by the trigger.
+- Whether the boundary record reaches the transcript before the `SessionStart` hook runs is not verified. If it does not, a manual compaction that follows an automatic one reads the older `auto` boundary and starts the doorbell, which still types only into a provably idle session.
 - No live guard exercises this yet; rerun the command above on a real transcript after an idle compaction to refresh it.
 
 ## Claude workspace trust

@@ -543,9 +543,11 @@ attached_holder_live() {
 # The watchdog's managed-hold watcher never ends its cycle on a wake either, so
 # an arm attached to one (the Claude Stop hook's foreground arm, or a supervision
 # host cycle) reports main's queued rows the same way, outside away mode and
-# never as the watchdog's own managed-hold arm. A handling successor
-# (FM_WATCH_PREDECESSOR_ARM_PID set) reports only rows newer than the highest
-# main row queued when it attached: its predecessor already delivered those.
+# never as the watchdog's own managed-hold arm. Any pending main row counts,
+# an unsequenced one included, because only a main drain retires it. A handling
+# successor (FM_WATCH_PREDECESSOR_ARM_PID set) reports only rows newer than the
+# highest main row queued when it attached: its predecessor already delivered
+# those, and the next foreground arm still reports any row it skips.
 attach_and_wait() {
   local attached_pid=$1 age successor actor=main managed_floor=0
   trap 'handle_attached_signal HUP 129' HUP
@@ -581,7 +583,8 @@ attach_and_wait() {
       if [ "${FM_WATCH_MANAGED_HOLD:-}" != 1 ] && [ ! -e "$STATE/.afk" ] \
         && fm_managed_holding_watcher "$attached_pid" \
         && [ "$(fm_wake_actor_pending_count main)" -gt 0 ] \
-        && [ "$(fm_wake_main_max_seq)" -gt "$managed_floor" ]; then
+        && { [ -z "${FM_WATCH_PREDECESSOR_ARM_PID:-}" ] \
+          || [ "$(fm_wake_main_max_seq)" -gt "$managed_floor" ]; }; then
         cycle_log_append 0 none attached-delivered-wake "attached:$attached_pid"
         printf '%s\n' 'check: rearm-resurface'
         return 0

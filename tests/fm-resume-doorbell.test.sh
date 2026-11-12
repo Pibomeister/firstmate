@@ -105,7 +105,7 @@ test_idle_session_gets_one_line_and_submits() {
 
 test_unsafe_targets_stand_down_and_type_nothing() {
   local dir case_name reason
-  for case_name in busy pending dead unknown-no-transcript no-handle away later-stop; do
+  for case_name in busy pending dead unknown-no-transcript no-handle stale-handle away later-stop; do
     dir=$(make_home "stand-$case_name")
     case "$case_name" in
       busy) printf 'busy' > "$dir/fake/busy" ;;
@@ -113,6 +113,7 @@ test_unsafe_targets_stand_down_and_type_nothing() {
       dead) printf 'dead' > "$dir/fake/agent" ;;
       unknown-no-transcript) printf 'unknown' > "$dir/fake/busy" ;;
       no-handle) rm -f "$dir/state/captain-handle" ;;
+      stale-handle) fm_touch_epoch "$(( $(date +%s) - 60 ))" "$dir/state/captain-handle" ;;
       away) : > "$dir/state/.afk" ;;
       later-stop)
         printf 'source=compact\n' > "$dir/state/.context-epoch"
@@ -129,12 +130,13 @@ test_unsafe_targets_stand_down_and_type_nothing() {
       dead) reason='agent state is dead' ;;
       unknown-no-transcript) reason='busy state is unknown' ;;
       no-handle) reason='captain-handle is unreadable' ;;
+      stale-handle) reason='captain-handle is older than the session lock' ;;
       away) reason='an away or quiet record exists' ;;
       later-stop) reason='a turn already ended after the compaction' ;;
     esac
     assert_contains "$(last_detail "$dir")" "$reason" "$case_name: the stand-down must name its reason"
   done
-  pass "resume doorbell: a running turn, a draft, a dead agent, an unproven busy state, no handle, an away record, or a turn that already ran types nothing"
+  pass "resume doorbell: a running turn, a draft, a dead agent, an unproven busy state, no handle, a handle older than the session lock, an away record, or a turn that already ran types nothing"
 }
 
 test_idle_needs_native_idle_and_a_quiet_transcript() {
@@ -177,6 +179,29 @@ test_changed_lock_owner_stands_down() {
   [ "$(typed_count "$dir")" = 0 ] || fail "a doorbell must not type after the session lock changed owner"
   assert_contains "$(last_detail "$dir")" "session lock changed owner" "stand-down must name the lock change"
   pass "resume doorbell: a session lock that changed owner during the settle stands it down"
+}
+
+test_lock_taken_over_stands_down_and_keeps_the_new_lock() {
+  local dir pid i other
+  dir=$(make_home lock-taken-over)
+  SETTLE=1 run_doorbell "$dir" --source compact &
+  pid=$!
+  i=0
+  while [ ! -s "$dir/state/.resume-doorbell.lock/pid" ] && [ "$i" -lt 50 ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  # A second doorbell that also judged an old lock stale replaced this one's.
+  sleep 30 >/dev/null 2>&1 &
+  other=$!
+  printf '%s\n' "$other" >> "$TMP_ROOT/sleepers"
+  printf '%s\n' "$other" > "$dir/state/.resume-doorbell.lock/pid"
+  wait "$pid"
+  [ "$(typed_count "$dir")" = 0 ] || fail "a doorbell whose lock another doorbell took must not type"
+  assert_contains "$(last_detail "$dir")" "another resume doorbell took the lock" "stand-down must name the lock takeover"
+  [ "$(cat "$dir/state/.resume-doorbell.lock/pid" 2>/dev/null)" = "$other" ] \
+    || fail "a doorbell must not remove a lock that now names another doorbell"
+  pass "resume doorbell: a lock another doorbell took over stands it down and is left to its new holder"
 }
 
 test_dropped_enter_is_resubmitted_only_while_ours() {
@@ -225,5 +250,6 @@ test_idle_session_gets_one_line_and_submits
 test_unsafe_targets_stand_down_and_type_nothing
 test_idle_needs_native_idle_and_a_quiet_transcript
 test_changed_lock_owner_stands_down
+test_lock_taken_over_stands_down_and_keeps_the_new_lock
 test_dropped_enter_is_resubmitted_only_while_ours
 test_second_doorbell_types_nothing_while_one_runs

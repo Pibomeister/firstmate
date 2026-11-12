@@ -435,6 +435,7 @@ observe_live() {  # <captain-json>
       ;;
     herdr)
       pane=$(herdr_resolve_pane "$cap") || pane=''
+      pinned=$(fm_nudge_json_get "$cap" '.pane // .handle // ""' '') || pinned=''
       session=$(fm_nudge_json_get "$cap" '.session // ""' '') || true
       read_ok=0
       if [ -n "$pane" ] && OBS_SCREEN=$(herdr_read_screen "$pane" "$session"); then
@@ -445,8 +446,9 @@ observe_live() {  # <captain-json>
       # A pinned pane goes stale when herdr restarts or the captain moves. When
       # an explicit pin cannot be read, follow the live captain terminal the
       # named home recorded at its last session start instead of failing every
-      # pass. A title selector that matched nothing never falls back.
-      if [ "$read_ok" = 0 ] && [ -n "$pane" ] && row=$(herdr_live_handle "$fmhome") \
+      # pass. A title selector never falls back, whether it matched nothing or
+      # matched a pane whose read failed.
+      if [ "$read_ok" = 0 ] && [ -n "$pinned" ] && row=$(herdr_live_handle "$fmhome") \
         && [ "$row" != "$session"$'\t'"$pane" ]; then
         session=${row%%$'\t'*}
         pane=${row#*$'\t'}
