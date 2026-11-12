@@ -1,56 +1,60 @@
-## S1 intake: each approved proposal ask and order ask becomes its own item
-$ bin/fm-ledger.sh intake --mint --project firstmate --title S2 mission ledger --source proposal:velocity-2026-11-11-S2 --priority 1
-filed s2-mission-ledger-0f project=firstmate source=proposal:velocity-2026-11-11-S2
+## S1 intake: one item per ask, immediately, replay-safe
+$ bin/fm-ledger.sh intake alpha-a1 --project alpha --title Alpha ask one --source proposal:S2 --priority 1
+filed alpha-a1 project=alpha source=proposal:S2
 [exit 0]
 
-$ bin/fm-ledger.sh intake --mint --project firstmate --title S2 mission ledger --source proposal:velocity-2026-11-11-S2
-replay s2-mission-ledger-0f
+$ bin/fm-ledger.sh intake alpha-a1 --project alpha --title Alpha ask one --source proposal:S2 --priority 1
+replay alpha-a1
 [exit 0]
 
-order id: 1794442877-f99fbfac
-## S5 handoff refused while order unfiled
-$ bin/fm-ledger.sh unfiled
-UNFILED 1794442877-f99fbfac pending :: ship widget and fix gadget
-[exit 3]
-
-$ bin/fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.CvkJYO/handoff-a.md --note-file /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.CvkJYO/note.txt
-UNFILED 1794442877-f99fbfac pending :: ship widget and fix gadget
-fm-ledger: handoff refused: file each open order above as its own ledger item first (bin/fm-ledger.sh intake <id> --project <name> --title <text> --source order:<order-id>)
-[exit 3]
-
-ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.CvkJYO/handoff-a.md: No such file or directory
-$ bin/fm-ledger.sh intake w-1 --project widgets --title Ship widget --source order:1794442877-f99fbfac
-filed w-1 project=widgets source=order:1794442877-f99fbfac
+$ bin/fm-ledger.sh intake alpha-a2 --project alpha --title Alpha ask two --source proposal:S2 --priority 2
+filed alpha-a2 project=alpha source=proposal:S2
 [exit 0]
 
-$ bin/fm-ledger.sh intake g-1 --project gadgets --title Fix gadget --source order:1794442877-f99fbfac
-filed g-1 project=gadgets source=order:1794442877-f99fbfac
+$ bin/fm-ledger.sh intake beta-b1 --project beta --title Beta urgent --source ask:chat-1 --priority 0
+filed beta-b1 project=beta source=ask:chat-1
 [exit 0]
 
-$ bin/fm-ledger.sh unfiled
+$ bin/fm-ledger.sh intake beta-b2 --project beta --title Beta follow --source ask:chat-1 --blocked-by beta-b1
+filed beta-b2 project=beta source=ask:chat-1
 [exit 0]
 
-## S2 plan per project
+$ bin/fm-tasks-axi.sh list
+count: 4
+tasks[4]{id,state,kind,repo,title}:
+  alpha-a1,queued,task,alpha,Alpha ask one
+  alpha-a2,queued,task,alpha,Alpha ask two
+  beta-b1,queued,task,beta,Beta urgent
+  beta-b2,queued,task,beta,Beta follow
+help[2]:
+  - Run `tasks-axi show <id>` for full notes on a task
+  - Run `tasks-axi ready` to see unblocked queued work
+[exit 0]
+
+$ cat /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS/data/ledger-intake.tsv
+2026-11-12T03:55:58Z	1794455758	proposal:S2	alpha-a1	alpha	Alpha ask one
+2026-11-12T03:56:00Z	1794455760	proposal:S2	alpha-a2	alpha	Alpha ask two
+2026-11-12T03:56:00Z	1794455760	ask:chat-1	beta-b1	beta	Beta urgent
+2026-11-12T03:56:01Z	1794455761	ask:chat-1	beta-b2	beta	Beta follow
+[exit 0]
+
+## S2 plan per project + SHORT marking
 $ bin/fm-ledger.sh plan
-PLAN at 2026-11-12T00:21:42Z (ready target 3 per active project; live view: bin/fm-ledger.sh plan)
-project firstmate active ready=1 in_flight=0 blocked=0 held=0 SHORT
-  ready     s2-mission-ledger-0f  kind=task priority=1  S2 mission ledger
-project gadgets active ready=1 in_flight=0 blocked=0 held=0 SHORT
-  ready     g-1  kind=task priority=-  Fix gadget
-project parked parked ready=0 in_flight=0 blocked=0 held=1
-  held      p-held  kind=task priority=-  parked held
-project widgets active ready=2 in_flight=0 blocked=1 held=0 SHORT
-  ready     w-2  kind=task priority=2  widget docs
-  ready     w-1  kind=task priority=-  Ship widget
-  blocked   w-3  kind=task priority=-  widget tests
+PLAN at 2026-11-12T03:56:03Z (ready target 3 per active project; live view: bin/fm-ledger.sh plan)
+project alpha active ready=2 in_flight=0 blocked=0 held=0 SHORT
+  ready     alpha-a1  kind=task priority=1  Alpha ask one
+  ready     alpha-a2  kind=task priority=2  Alpha ask two
+project beta active ready=1 in_flight=0 blocked=1 held=0 SHORT
+  ready     beta-b1  kind=task priority=0  Beta urgent
+  blocked   beta-b2  kind=task priority=-  Beta follow
 [exit 0]
 
-## S3 next, as a worker without supervisor (read-only)
-$ bin/fm-ledger.sh next --project widgets
-NEXT w-2 project=widgets kind=task priority=2
+## S3 next (own project vs cross-project)
+$ bin/fm-ledger.sh next --project alpha
+NEXT alpha-a1 project=alpha kind=task priority=1
 task:
-  id: w-2
-  title: widget docs
+  id: alpha-a1
+  title: Alpha ask one
   state: queued
   blocked: no
   blocked_by: none
@@ -59,47 +63,124 @@ task:
   hold_kind: "-"
   hold_until: "-"
   kind: task
-  repo: widgets
-  priority: 2
+  repo: alpha
+  priority: 1
   created: 2026-11-11
   closed: "-"
   deps: none
   links: none
-  body: ""
+  body: "Ledger source: proposal:S2"
 [exit 0]
 
-backlog unchanged by next: yes
-$ bin/fm-ledger.sh next --project parked
-next: nothing ready for project parked
+$ bin/fm-ledger.sh next
+NEXT beta-b1 project=beta kind=task priority=0
+task:
+  id: beta-b1
+  title: Beta urgent
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: task
+  repo: beta
+  priority: 0
+  created: 2026-11-11
+  closed: "-"
+  deps: none
+  links: none
+  body: "Ledger source: ask:chat-1"
+[exit 0]
+
+$ bin/fm-ledger.sh next --project gamma
+next: nothing ready for project gamma
 [exit 3]
 
 ## S4 depth
 $ bin/fm-ledger.sh depth
-SHORT firstmate ready=1 min=3 in_flight=0 blocked=0 held=0
-SHORT gadgets ready=1 min=3 in_flight=0 blocked=0 held=0
-SHORT widgets ready=2 min=3 in_flight=0 blocked=1 held=0
+SHORT alpha ready=2 min=3 in_flight=0 blocked=0 held=0
+SHORT beta ready=1 min=3 in_flight=0 blocked=1 held=0
 [exit 3]
 
--- FM_NOW=1794416300 (16:58:20Z)
-[exit 0]
--- FM_NOW=1794416400 (17:00:00Z)
-ready-depth 17:00: 3 active project(s) below 3 ready: firstmate(ready=1) gadgets(ready=1) widgets(ready=2); refill each ready queue (bin/fm-ledger.sh plan)
-[exit 0]
--- FM_NOW=1794416460 (17:01:00Z)
-[exit 0]
--- FM_NOW=1794438000 (23:00:00Z)
-ready-depth 23:00: 3 active project(s) below 3 ready: firstmate(ready=1) gadgets(ready=1) widgets(ready=2); refill each ready queue (bin/fm-ledger.sh plan)
-[exit 0]
--- FM_NOW=1794438100 (23:01:40Z)
-[exit 0]
-## S5 handoff writes doc, refuses chains and overwrite
-$ bin/fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.CvkJYO/handoff-a.md --note-file /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.CvkJYO/note.txt
-handoff: wrote 1 open order(s) into /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.CvkJYO/handoff-a.md
-handoff: wrote /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.CvkJYO/handoff-a.md from the ledger
+## S5 done-only project is history, not active/short; held project is parked
+$ bin/fm-ledger.sh intake zeta-z1 --project zeta --title Zeta finished --source ask:chat-2
+filed zeta-z1 project=zeta source=ask:chat-2
 [exit 0]
 
------ document -----
-# Session handoff 2026-11-12T00:21:59Z (fm-lab.CvkJYO)
+$ bin/fm-tasks-axi.sh done zeta-z1
+ok: done zeta-z1 -> Done
+help[1]:
+  - Run `tasks-axi ready` to dispatch work unblocked by this
+[exit 0]
+
+$ bin/fm-ledger.sh intake delta-d1 --project delta --title Delta parked --source ask:chat-3
+filed delta-d1 project=delta source=ask:chat-3
+[exit 0]
+
+$ bin/fm-captain-hold.sh hold delta-d1 --reason captain decides later
+delta-d1
+[exit 0]
+
+$ bin/fm-ledger.sh plan
+PLAN at 2026-11-12T03:56:27Z (ready target 3 per active project; live view: bin/fm-ledger.sh plan)
+project alpha active ready=2 in_flight=0 blocked=0 held=0 SHORT
+  ready     alpha-a1  kind=task priority=1  Alpha ask one
+  ready     alpha-a2  kind=task priority=2  Alpha ask two
+project beta active ready=1 in_flight=0 blocked=1 held=0 SHORT
+  ready     beta-b1  kind=task priority=0  Beta urgent
+  blocked   beta-b2  kind=task priority=-  Beta follow
+project delta parked ready=0 in_flight=0 blocked=0 held=1
+  held      delta-d1  kind=task priority=-  Delta parked
+[exit 0]
+
+$ bin/fm-ledger.sh depth
+SHORT alpha ready=2 min=3 in_flight=0 blocked=0 held=0
+SHORT beta ready=1 min=3 in_flight=0 blocked=1 held=0
+[exit 3]
+
+## S6 unfiled order blocks handoff; adversarial summary containing ' kind=hold'
+$ bin/fm-order.sh send --from lab -- Ship the gamma fix kind=hold please
+queued 1794455789-b558592f
+  kind=order state=pending wake=ok nudge=none
+[exit 0]
+
+$ bin/fm-ledger.sh unfiled
+UNFILED 1794455789-b558592f pending :: Ship the gamma fix kind=hold please
+[exit 3]
+
+$ bin/fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS/data/handoffs/handoff-1.md --note alpha-a1 worker under way
+UNFILED 1794455789-b558592f pending :: Ship the gamma fix kind=hold please
+fm-ledger: handoff refused: file each open order above as its own ledger item first (bin/fm-ledger.sh intake <id> --project <name> --title <text> --source order:<order-id>)
+[exit 3]
+
+$ ls /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS/data/handoffs
+[exit 0]
+
+## S7 file the order, refuse chained / empty notes, then write handoff
+$ bin/fm-ledger.sh intake --mint --project gamma --title Ship the gamma fix --source order:1794455789-b558592f
+filed ship-the-gamma-fix-57 project=gamma source=order:1794455789-b558592f
+[exit 0]
+
+$ bin/fm-ledger.sh unfiled
+[exit 0]
+
+$ bin/fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS/data/handoffs/handoff-2.md --note continue from handoff-20261111T1405Z
+fm-ledger: the in-flight note names an earlier handoff document; a handoff never continues another one - file what that document still carries as ledger items and drop the reference
+[exit 1]
+
+$ bin/fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS/data/handoffs/handoff-2.md --note 
+fm-ledger: the in-flight note is empty; say what is in flight right now
+[exit 1]
+
+$ bin/fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS/data/handoffs/handoff-2.md --note alpha-a1 worker under way; nothing else live
+handoff: wrote 1 open order(s) into /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.e2MUHS/data/handoffs/handoff-2.md
+handoff: wrote /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.e2MUHS/data/handoffs/handoff-2.md from the ledger
+[exit 0]
+
+$ cat /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS/data/handoffs/handoff-2.md
+# Session handoff 2026-11-12T03:56:48Z (fm-lab.e2MUHS)
 
 Written by bin/fm-ledger.sh handoff from the mission ledger.
 The ledger is authoritative and this document is complete on its own: it never continues an earlier handoff.
@@ -107,44 +188,107 @@ Read live state with bin/fm-ledger.sh plan, bin/fm-dispatch-log.sh open, and bin
 
 ## In flight now
 
-Worker on ledger is mid-review.
+alpha-a1 worker under way; nothing else live
 
 ## Ledger plan at handoff
 
-PLAN at 2026-11-12T00:21:58Z (ready target 3 per active project; live view: bin/fm-ledger.sh plan)
-project firstmate active ready=1 in_flight=0 blocked=0 held=0 SHORT
-  ready     s2-mission-ledger-0f  kind=task priority=1  S2 mission ledger
-project gadgets active ready=1 in_flight=0 blocked=0 held=0 SHORT
-  ready     g-1  kind=task priority=-  Fix gadget
-project parked parked ready=0 in_flight=0 blocked=0 held=1
-  held: p-held
-project widgets active ready=2 in_flight=0 blocked=1 held=0 SHORT
-  ready     w-2  kind=task priority=2  widget docs
-  ready     w-1  kind=task priority=-  Ship widget
-  blocked: w-3
+PLAN at 2026-11-12T03:56:48Z (ready target 3 per active project; live view: bin/fm-ledger.sh plan)
+project alpha active ready=2 in_flight=0 blocked=0 held=0 SHORT
+  ready     alpha-a1  kind=task priority=1  Alpha ask one
+  ready     alpha-a2  kind=task priority=2  Alpha ask two
+project beta active ready=1 in_flight=0 blocked=1 held=0 SHORT
+  ready     beta-b1  kind=task priority=0  Beta urgent
+  blocked: beta-b2
+project delta parked ready=0 in_flight=0 blocked=0 held=1
+  held: delta-d1
+project gamma active ready=1 in_flight=0 blocked=0 held=0 SHORT
+  ready     ship-the-gamma-fix-57  kind=task priority=-  Ship the gamma fix
 
 ## Open captain goals at handoff
 
 none open
 
-CAPTAIN ORDERS at handoff (2026-11-12T00:21:59Z):
+CAPTAIN ORDERS at handoff (2026-11-12T03:56:48Z):
 1 open captain order(s) - each is durable; ack it before acting:
-  1794442877-f99fbfac pending kind=order age=42s from=captain :: ship widget and fix gadget
+  1794455789-b558592f pending kind=order age=19s from=lab :: Ship the gamma fix kind=hold please
 Pending: bin/fm-order.sh ack <id> reads it (skip means another session already has it - never run it twice).
 Acked-unfinished: an earlier session read it; bin/fm-order.sh show <id>, check whether its work started, then finish it.
 Finish each with: bin/fm-order.sh finish <id> done|parked <outcome>
------ end -----
-$ bin/fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.CvkJYO/handoff-a.md --note-file /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.CvkJYO/note.txt
-fm-ledger: the handoff document already exists: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.CvkJYO/handoff-a.md; write a new one
+[exit 0]
+
+$ bin/fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS/data/handoffs/handoff-2.md --note again
+fm-ledger: the handoff document already exists: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS/data/handoffs/handoff-2.md; write a new one
 [exit 1]
 
-$ bin/fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.CvkJYO/handoff-b.md --note Continue from handoff-20261111T1405Z.md
-fm-ledger: the in-flight note names an earlier handoff document; a handoff never continues another one - file what that document still carries as ledger items and drop the reference
-[exit 1]
+$ bin/fm-order.sh gate
+gate: clear (1 open order(s), all in the handoff)
+[exit 0]
 
-ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.CvkJYO/handoff-b.md: No such file or directory
-## S6 adversarial: kind=hold in summary still unfiled
-$ bin/fm-ledger.sh unfiled
-UNFILED 1794442920-0e3a7976 pending :: rename it kind=hold please
+## S8 armed scheduled ready-depth check fires once at 17:00 and 23:00 (zone UTC)
+$ bin/fm-ledger.sh arm
+registered: state/ready-depth.check.sh
+[exit 0]
+
+$ ls /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS/state
+ready-depth.check-trust
+ready-depth.check.sh
+[exit 0]
+
+-- shim at 2026-11-12 16:59 UTC
+$ env FM_TEST_SEAM=1 FM_NOW=1794502745 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS/state/ready-depth.check.sh
+[exit 0]
+
+-- shim at 2026-11-12 17:01 UTC
+$ env FM_TEST_SEAM=1 FM_NOW=1794502865 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS/state/ready-depth.check.sh
+ready-depth 17:00: 3 active project(s) below 3 ready: alpha(ready=2) beta(ready=1) gamma(ready=1); refill each ready queue (bin/fm-ledger.sh plan)
+[exit 0]
+
+-- shim at 2026-11-12 17:30 UTC
+$ env FM_TEST_SEAM=1 FM_NOW=1794504607 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS/state/ready-depth.check.sh
+[exit 0]
+
+-- shim at 2026-11-12 23:02 UTC
+$ env FM_TEST_SEAM=1 FM_NOW=1794524527 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS/state/ready-depth.check.sh
+ready-depth 23:00: 3 active project(s) below 3 ready: alpha(ready=2) beta(ready=1) gamma(ready=1); refill each ready queue (bin/fm-ledger.sh plan)
+[exit 0]
+
+-- shim at 2026-11-12 23:40 UTC
+$ env FM_TEST_SEAM=1 FM_NOW=1794526808 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS/state/ready-depth.check.sh
+[exit 0]
+
+## S9 min-ready=0 disarms
+$ bin/fm-ledger.sh arm --if-enabled
+unregistered: state/ready-depth.check.sh
+[exit 0]
+
+$ ls /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS/state
+[exit 0]
+
+$ bin/fm-ledger.sh depth
+ready-depth: ok (every active project has at least 0 ready)
+[exit 0]
+
+## S10 a project with 3 ready items is no longer short
+$ bin/fm-ledger.sh intake alpha-a3 --project alpha --title Alpha ask three --source proposal:S2
+filed alpha-a3 project=alpha source=proposal:S2
+[exit 0]
+
+$ bin/fm-ledger.sh depth
+SHORT beta ready=1 min=3 in_flight=0 blocked=1 held=0
+SHORT gamma ready=1 min=3 in_flight=0 blocked=0 held=0
 [exit 3]
 
+## S11 worker brief names own-project next; run it from outside the firstmate repo
+scaffolded: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS/data/alpha-a1/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+[ship brief exit 0]
+scaffolded: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS/data/alpha-s1/brief.md (scout; replace {TASK} and {FIRSTMATE_SPEC})
+[scout brief exit 0]
+-- /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS/data/alpha-a1/brief.md
+89:10. To see the next ready backlog item without firstmate, run the read-only `FM_HOME='/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS' '{run-worktree}/bin/fm-ledger.sh' next --project 'alpha'`.
+-- /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS/data/alpha-s1/brief.md
+76:10. To see the next ready backlog item without firstmate, run the read-only `FM_HOME='/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS' '{run-worktree}/bin/fm-ledger.sh' next --project 'alpha'`.
+$ (cd /tmp && FM_HOME='/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e2MUHS' '{run-worktree}/bin/fm-ledger.sh' next --project 'alpha')
+NEXT alpha-a1 project=alpha kind=task priority=1
+task:
+  id: alpha-a1
+[exit ]
