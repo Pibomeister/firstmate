@@ -449,7 +449,12 @@ test_spawn_gate_uses_one_load_ceiling() {
   printf '1\nbogus 1\n' > "$home/config/lane-capacity"
   out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
   expect_code 1 "$rc" "an invalid declaration must refuse"
-  pass "the spawn gate holds only on the lane cap and one load ceiling"
+  printf '1\n' > "$home/config/lane-capacity"
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate ship-0); rc=$?
+  expect_code 0 "$rc" "the spawning task's own record must not count against itself: $out"
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate other-task); rc=$?
+  expect_code 75 "$rc" "another task's record must still count at a full cap"
+  pass "the spawn gate holds only on the lane cap and one load ceiling, and never counts the spawner's own record"
 }
 
 test_publish_document() {

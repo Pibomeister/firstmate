@@ -115,8 +115,9 @@
 # --admit exits 0 when config/lane-capacity is absent or the verdict admits,
 # and 75 with one `deferred:` line on stderr when it does not.
 #
-# --spawn-gate is narrower and is the only verdict that blocks a fresh spawn:
-# it exits 0 when config/lane-capacity is absent, when the lanes holding a
+# --spawn-gate [<task-id>] is narrower and is the only verdict that blocks a
+# fresh spawn: the named spawning task's own record never counts against it.
+# It exits 0 when config/lane-capacity is absent, when the lanes holding a
 # place are under the cap, and when load1 is under one load ceiling -
 # max-load1 when set, else the logical core count (the ceiling
 # bin/fm-load-relief.sh uses). An unreadable load or core probe imposes no
@@ -159,7 +160,10 @@ case "${1:-}" in
   --spawn-gate) mode=spawn-gate ;;
   *) echo "usage: fm-capacity.sh [--json|--publish|--admit|--spawn-gate|--help]" >&2; exit 2 ;;
 esac
-[ "$#" -le 1 ] || { echo "usage: fm-capacity.sh [--json|--publish|--admit|--spawn-gate|--help]" >&2; exit 2; }
+[ "$#" -le 1 ] || { [ "$mode" = spawn-gate ] && [ "$#" -le 2 ]; } || { echo "usage: fm-capacity.sh [--json|--publish|--admit|--spawn-gate [<task-id>]|--help]" >&2; exit 2; }
+# --spawn-gate's optional task id names the spawning task, whose own stale
+# record (a fresh re-dispatch of the same id) never counts against itself.
+SPAWN_GATE_ID=${2:-}
 
 is_uint() {
   case "$1" in ''|*[!0-9]*) return 1 ;; esac
@@ -206,6 +210,9 @@ pr_ready=0
 lane_ids=
 for meta in "$STATE"/*.meta; do
   [ -f "$meta" ] || continue
+  if [ "$mode" = spawn-gate ] && [ -n "$SPAWN_GATE_ID" ] && [ "$(basename "$meta" .meta)" = "$SPAWN_GATE_ID" ]; then
+    continue
+  fi
   if grep -qx 'kind=secondmate' "$meta" 2>/dev/null; then
     secondmates=$((secondmates + 1))
   else

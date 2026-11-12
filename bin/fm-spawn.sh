@@ -4908,7 +4908,7 @@ fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
   lane_admit_rc=0
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
-    "$SCRIPT_DIR/fm-capacity.sh" --spawn-gate || lane_admit_rc=$?
+    "$SCRIPT_DIR/fm-capacity.sh" --spawn-gate "$ID" || lane_admit_rc=$?
   case "$lane_admit_rc" in
     0) ;;
     75) exit 75 ;;
