@@ -26,6 +26,10 @@ test_digest_present_in_repo_root() {
     "digest did not label fleet learnings"
   assert_contains "$out" 'Preflight readiness was guessed' \
     "digest did not include shipped fleet learnings content"
+  assert_contains "$out" 'Setup and install changes passed only in a warm worktree' \
+    "digest did not include the fresh-clone verification lesson"
+  assert_contains "$out" 'fresh clone' \
+    "digest did not require verifying setup or install changes on a fresh clone"
   pass "digest prints tracked fleet learnings from the code root"
 }
 

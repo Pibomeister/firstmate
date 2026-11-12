@@ -53,3 +53,9 @@ Keep every entry general: no person, company, project, customer, host, account, 
 - Failure: a nightly order landed during a captain restart and was never delivered, so its goals started hours late.
 - Rule: queue inbound prompts durably; the new session drains and acks the queue on pickup; senders verify the ack and redeliver after any restart.
 - Issue: https://github.com/Pibomeister/firstmate/issues/83
+
+## 2026-11-11 (from a velocity audit)
+
+### 1. Setup and install changes passed only in a warm worktree
+- Failure: a setup or install change passed in the worker's existing warm worktree, where cached dependencies, generated files, and prior initialization hid a broken cold-start path on a fresh clone.
+- Rule: before reporting a setup, bootstrap, or install change done, verify the documented setup flow end-to-end in a fresh clone (or clean temporary directory with no pre-seeded caches or local state), not only in the warm task worktree, and record the fresh-clone verification output.

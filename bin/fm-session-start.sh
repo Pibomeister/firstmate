@@ -41,7 +41,21 @@
 #                      watchdog unit is not enabled (docs/watchdog.md).
 #   2. bootstrap      - home-local stale Herdr projection cleanup runs only
 #                       when this session actually holds the lock. Detect-only
-#                       diagnostics always run. Bootstrap's seven MUTATING sweeps
+#                       diagnostics always run, including
+#                       `SHARED_STATE: global git config changed since the last
+#                       session start (<detail>) - ...` and
+#                       `SHARED_STATE: shared no-mistakes database schema
+#                       changed since the last session start (<detail>) - ...`
+#                       against state/.session-start-shared-baseline for global
+#                       git config and the shared no-mistakes state database
+#                       schema (sqlite_master excluding sqlite_* internal
+#                       objects, plus PRAGMA user_version) since the last
+#                       locked session start. Only a full locked start whose
+#                       git and database snapshots both succeed updates the
+#                       baseline; system git config and per-clone .git/config
+#                       files are not watched, although the brief rule forbids
+#                       all four git config locations. Bootstrap's seven
+#                       MUTATING sweeps
 #                       (same-home backlog reconciliation, home code drift,
 #                       secondmate convergence, secondmate liveness, pending remote
 #                       handoff retry, X-mode artifact writes, fleet sync) also run only when
@@ -304,6 +318,7 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 COMPLETION_FILE="$STATE/.session-start-complete"
 AGENTS_BASELINE_FILE="$STATE/.session-start-agents-baseline"
+SHARED_BASELINE_FILE="$STATE/.session-start-shared-baseline"
 
 REEMIT=0
 SESSION_SOURCE=
@@ -437,6 +452,8 @@ PRIMARY_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
 . "$SCRIPT_DIR/fm-hold-reason-lib.sh"
 # shellcheck source=bin/fm-line-cap-lib.sh
 . "$SCRIPT_DIR/fm-line-cap-lib.sh"
+# shellcheck source=bin/fm-nm-run-lib.sh
+. "$SCRIPT_DIR/fm-nm-run-lib.sh"
 
 # One tasks-axi compatibility verdict per session start. The probe costs three
 # tasks-axi subprocesses and this digest needs the same answer twice - here for
@@ -960,21 +977,342 @@ fm_session_start_endpoint_read() {  # <backend> <target> [expected-label]
 }
 
 hash_file_sha256() {
-  local file=$1 digest
+  local file=$1 raw digest
   [ -f "$file" ] || return 1
   if command -v shasum >/dev/null 2>&1; then
-    digest=$(shasum -a 256 "$file" 2>/dev/null | awk '
-      length($1) == 64 && $1 !~ /[^[:xdigit:]]/ { print "sha256:" $1; found=1; exit }
-      END { if (!found) exit 1 }
-    ') && [ -n "$digest" ] && { printf '%s\n' "$digest"; return 0; }
+    if raw=$(shasum -a 256 "$file" 2>/dev/null) \
+      && digest=$(printf '%s\n' "$raw" | awk '
+        length($1) == 64 && $1 !~ /[^[:xdigit:]]/ { print "sha256:" $1; found=1; exit }
+        END { if (!found) exit 1 }
+      ') && [ -n "$digest" ]; then
+      printf '%s\n' "$digest"
+      return 0
+    fi
   fi
   if command -v sha256sum >/dev/null 2>&1; then
-    digest=$(sha256sum "$file" 2>/dev/null | awk '
-      length($1) == 64 && $1 !~ /[^[:xdigit:]]/ { print "sha256:" $1; found=1; exit }
-      END { if (!found) exit 1 }
-    ') && [ -n "$digest" ] && { printf '%s\n' "$digest"; return 0; }
+    if raw=$(sha256sum "$file" 2>/dev/null) \
+      && digest=$(printf '%s\n' "$raw" | awk '
+        length($1) == 64 && $1 !~ /[^[:xdigit:]]/ { print "sha256:" $1; found=1; exit }
+        END { if (!found) exit 1 }
+      ') && [ -n "$digest" ]; then
+      printf '%s\n' "$digest"
+      return 0
+    fi
   fi
   return 1
+}
+
+# Called only when [ ! -e "$path" ] && [ ! -L "$path" ].
+# Distinguishes confirmed absence (ENOENT -> 0) from permission or traversal blocks
+# (EACCES/EPERM/ENOTDIR/ELOOP -> 2, non-recordable unreadable) and transient or
+# unclassified lookup errors (any other errno, or missing perl/python3 without a
+# proven ancestor block -> 1, skip without alarming or updating baseline).
+classify_missing_path() {
+  local path=$1 verdict='' cur parent
+  if command -v perl >/dev/null 2>&1; then
+    # shellcheck disable=SC2016  # Perl code uses its own @ARGV/$!, not shell expansion.
+    verdict=$(perl -MErrno=ENOENT,EACCES,EPERM,ENOTDIR,ELOOP -e '
+      my @s = lstat($ARGV[0]);
+      if (@s) { print "transient\n"; exit 0; }
+      if ($!{ENOENT}) { print "absent\n"; exit 0; }
+      if ($!{EACCES} || $!{EPERM} || $!{ENOTDIR} || $!{ELOOP}) { print "unreadable\n"; exit 0; }
+      print "transient\n";
+    ' "$path" 2>/dev/null) || verdict=''
+    case "$verdict" in
+      absent) return 0 ;;
+      unreadable) return 2 ;;
+      transient) return 1 ;;
+    esac
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    # shellcheck disable=SC2016  # Python code uses its own sys.argv, not shell expansion.
+    verdict=$(python3 -c '
+import errno, os, sys
+try:
+    os.lstat(sys.argv[1])
+    print("transient")
+except FileNotFoundError:
+    print("absent")
+except PermissionError:
+    print("unreadable")
+except OSError as exc:
+    print("unreadable" if exc.errno in (errno.ENOTDIR, errno.ELOOP) else "transient")
+' "$path" 2>/dev/null) || verdict=''
+    case "$verdict" in
+      absent) return 0 ;;
+      unreadable) return 2 ;;
+      transient) return 1 ;;
+    esac
+  fi
+  cur=$path
+  while :; do
+    parent=$(dirname "$cur" 2>/dev/null) || return 1
+    [ -n "$parent" ] && [ "$parent" != "$cur" ] || return 1
+    if [ -L "$parent" ] || [ -e "$parent" ]; then
+      if [ -d "$parent" ] && [ -x "$parent" ]; then
+        return 1
+      fi
+      return 2
+    fi
+    cur=$parent
+  done
+}
+
+git_config_slot_state() {  # <path> -> absent | sha256:<hex> (rc 0), unreadable (rc 2), or lookup/hash failure (rc 1)
+  local path=$1 digest miss_rc=0
+  if [ ! -e "$path" ] && [ ! -L "$path" ]; then
+    classify_missing_path "$path" || miss_rc=$?
+    if [ "$miss_rc" -eq 0 ]; then
+      printf 'absent\n'
+      return 0
+    fi
+    if [ "$miss_rc" -eq 2 ]; then
+      printf 'unreadable\n'
+      return 2
+    fi
+    return 1
+  fi
+  if [ -f "$path" ] && [ -r "$path" ]; then
+    digest=$(hash_file_sha256 "$path" 2>/dev/null) || return 1
+    [ -n "$digest" ] || return 1
+    printf '%s\n' "$digest"
+    return 0
+  fi
+  printf 'unreadable\n'
+  return 2
+}
+
+# Prints two lines: <slots-key>, <state-value>.
+# Returns 0 when every watched slot is absent, devnull, or hashed cleanly;
+# returns 2 when at least one slot is unreadable (so drift can still alarm without
+# overwriting the baseline); returns 1 when lookup or hashing fails transiently.
+global_git_config_snapshot() {
+  local slot_state slot_rc=0 xdg_file home_file home_dir xdg_state xdg_rc=0 home_state home_rc=0
+  if [ "${GIT_CONFIG_GLOBAL+x}" = x ]; then
+    if [ -z "$GIT_CONFIG_GLOBAL" ] || [ "$GIT_CONFIG_GLOBAL" = /dev/null ]; then
+      printf 'env:%s\ndevnull\n' "$GIT_CONFIG_GLOBAL"
+      return 0
+    fi
+    slot_state=$(git_config_slot_state "$GIT_CONFIG_GLOBAL") || slot_rc=$?
+    [ "$slot_rc" -eq 0 ] || [ "$slot_rc" -eq 2 ] || return 1
+    printf 'env:%s\n%s\n' "$GIT_CONFIG_GLOBAL" "$slot_state"
+    return "$slot_rc"
+  fi
+  home_dir=${HOME:-}
+  [ -n "$home_dir" ] || home_dir=~
+  xdg_file="${XDG_CONFIG_HOME:-$home_dir/.config}/git/config"
+  home_file="$home_dir/.gitconfig"
+  xdg_state=$(git_config_slot_state "$xdg_file") || xdg_rc=$?
+  [ "$xdg_rc" -eq 0 ] || [ "$xdg_rc" -eq 2 ] || return 1
+  home_state=$(git_config_slot_state "$home_file") || home_rc=$?
+  [ "$home_rc" -eq 0 ] || [ "$home_rc" -eq 2 ] || return 1
+  printf 'xdg:%s|home:%s\n%s|%s\n' "$xdg_file" "$home_file" "$xdg_state" "$home_state"
+  if [ "$xdg_rc" -eq 2 ] || [ "$home_rc" -eq 2 ]; then
+    return 2
+  fi
+  return 0
+}
+
+# Prints two lines: <db-path>, <schema-state>.
+# Returns 0 on recordable states (absent | sha256:<hex>), 2 on actionable non-recordable
+# states (corrupt | unreadable) so they alarm without overwriting the baseline, and 1 on
+# transient OperationalError/OSError, lookup error, timeout, or missing python3 so no
+# false alarm or baseline mutation occurs.
+nm_db_schema_snapshot() {
+  local db_path out rc miss_rc=0
+  db_path=$(fm_nm_state_db "$FM_HOME")
+  [ -n "$db_path" ] || return 1
+  if [ ! -e "$db_path" ] && [ ! -L "$db_path" ]; then
+    classify_missing_path "$db_path" || miss_rc=$?
+    if [ "$miss_rc" -eq 0 ]; then
+      printf '%s\nabsent\n' "$db_path"
+      return 0
+    fi
+    if [ "$miss_rc" -eq 2 ]; then
+      printf '%s\nunreadable\n' "$db_path"
+      return 2
+    fi
+    return 1
+  fi
+  if [ ! -f "$db_path" ] || [ ! -r "$db_path" ]; then
+    printf '%s\nunreadable\n' "$db_path"
+    return 2
+  fi
+  command -v python3 >/dev/null 2>&1 || return 1
+  rc=0
+  # shellcheck disable=SC2016  # Python code uses its own sys.argv, not shell expansion.
+  out=$(fm_run_timed 5 python3 -c '
+import hashlib, sqlite3, sys
+from contextlib import closing
+from pathlib import Path
+p = Path(sys.argv[1])
+try:
+    with closing(sqlite3.connect(p.as_uri() + "?mode=ro", uri=True, timeout=3)) as db:
+        uv = db.execute("PRAGMA user_version").fetchone()
+        rows = db.execute(
+            "SELECT type, name, tbl_name, COALESCE(sql, ?) "
+            "FROM sqlite_master WHERE substr(name, 1, 7) != ? "
+            "ORDER BY type, name, tbl_name",
+            ("", "sqlite_"),
+        ).fetchall()
+except sqlite3.OperationalError:
+    sys.exit(3)
+except sqlite3.DatabaseError:
+    print("corrupt")
+    sys.exit(2)
+except OSError:
+    sys.exit(3)
+h = hashlib.sha256()
+h.update(("user_version=%s\n" % (uv[0] if uv else 0)).encode("utf-8"))
+for row in rows:
+    h.update(("%s\x1f%s\x1f%s\x1f%s\x1e" % row).encode("utf-8"))
+print("sha256:" + h.hexdigest())
+' "$db_path" 2>/dev/null) || rc=$?
+  case "$out" in
+    sha256:*)
+      if [ "$rc" -eq 0 ]; then
+        printf '%s\n%s\n' "$db_path" "$out"
+        return 0
+      fi
+      ;;
+  esac
+  if [ "$rc" -eq 2 ] && [ "$out" = corrupt ]; then
+    printf '%s\ncorrupt\n' "$db_path"
+    return 2
+  fi
+  return 1
+}
+
+# Scope and line-format contract: see step 2 of the file header above.
+check_shared_state_since_last_start() {
+  local prev_git_slots='' prev_git_state='' prev_nm_path='' prev_nm_schema='' baseline_raw='' baseline_ok=0 baseline_miss_rc=0
+  local git_snap='' git_rc=0 git_ok=0 curr_git_slots='' curr_git_state=''
+  local nm_snap='' nm_rc=0 nm_ok=0 curr_nm_path='' curr_nm_schema=''
+  local git_alarm=0 nm_alarm=0
+  local report_label xdg_path home_path xdg_label home_label prev_xdg prev_home curr_xdg curr_home xdg_bad home_bad nm_detail tmp
+  if [ ! -e "$SHARED_BASELINE_FILE" ] && [ ! -L "$SHARED_BASELINE_FILE" ]; then
+    classify_missing_path "$SHARED_BASELINE_FILE" || baseline_miss_rc=$?
+    [ "$baseline_miss_rc" -eq 0 ] && baseline_ok=1
+  elif [ -f "$SHARED_BASELINE_FILE" ] && [ ! -L "$SHARED_BASELINE_FILE" ] && [ -r "$SHARED_BASELINE_FILE" ]; then
+    if baseline_raw=$(cat "$SHARED_BASELINE_FILE" 2>/dev/null) \
+      && prev_git_slots=$(printf '%s\n' "$baseline_raw" | sed -n '1p') \
+      && prev_git_state=$(printf '%s\n' "$baseline_raw" | sed -n '2p') \
+      && prev_nm_path=$(printf '%s\n' "$baseline_raw" | sed -n '3p') \
+      && prev_nm_schema=$(printf '%s\n' "$baseline_raw" | sed -n '4p') \
+      && [ -z "$(printf '%s\n' "$baseline_raw" | sed -n '5p')" ] \
+      && [ -n "$prev_git_slots" ] && [ -n "$prev_git_state" ] \
+      && [ -n "$prev_nm_path" ] && [ -n "$prev_nm_schema" ]; then
+      baseline_ok=1
+    else
+      prev_git_slots=''
+      prev_git_state=''
+      prev_nm_path=''
+      prev_nm_schema=''
+    fi
+  fi
+  git_snap=$(global_git_config_snapshot) || git_rc=$?
+  if [ "$git_rc" -eq 0 ] || [ "$git_rc" -eq 2 ]; then
+    if curr_git_slots=$(printf '%s\n' "$git_snap" | sed -n '1p') \
+      && curr_git_state=$(printf '%s\n' "$git_snap" | sed -n '2p') \
+      && [ -n "$curr_git_slots" ] && [ -n "$curr_git_state" ]; then
+      [ "$git_rc" -eq 0 ] && git_ok=1
+    else
+      curr_git_slots=''
+      curr_git_state=''
+      git_rc=1
+    fi
+  fi
+  nm_snap=$(nm_db_schema_snapshot) || nm_rc=$?
+  if [ "$nm_rc" -eq 0 ] || [ "$nm_rc" -eq 2 ]; then
+    if curr_nm_path=$(printf '%s\n' "$nm_snap" | sed -n '1p') \
+      && curr_nm_schema=$(printf '%s\n' "$nm_snap" | sed -n '2p') \
+      && [ -n "$curr_nm_path" ] && [ -n "$curr_nm_schema" ]; then
+      [ "$nm_rc" -eq 0 ] && nm_ok=1
+    else
+      curr_nm_path=''
+      curr_nm_schema=''
+      nm_rc=1
+    fi
+  fi
+  if [ -n "$prev_git_slots" ] && [ -n "$prev_git_state" ] \
+    && [ "$curr_git_slots" = "$prev_git_slots" ] && [ -n "$curr_git_state" ] \
+    && [ "$curr_git_state" != "$prev_git_state" ]; then
+    git_alarm=1
+  elif [ "$git_rc" -eq 2 ] && [ -n "$curr_git_slots" ]; then
+    git_alarm=1
+  fi
+  if [ "$git_alarm" -eq 1 ]; then
+    case "$curr_git_slots" in
+      env:*)
+        report_label=${curr_git_slots#env:}
+        [ -n "$report_label" ] || report_label='<empty>'
+        [ "$curr_git_state" = unreadable ] && report_label="$report_label: unreadable"
+        ;;
+      xdg:*'|home:'*)
+        xdg_path=${curr_git_slots#xdg:}
+        xdg_path=${xdg_path%%|home:*}
+        home_path=${curr_git_slots#*|home:}
+        curr_xdg=${curr_git_state%%|*}
+        curr_home=${curr_git_state#*|}
+        xdg_label=$xdg_path
+        home_label=$home_path
+        [ "$curr_xdg" = unreadable ] && xdg_label="$xdg_path: unreadable"
+        [ "$curr_home" = unreadable ] && home_label="$home_path: unreadable"
+        if [ -n "$prev_git_state" ] && [ "$curr_git_slots" = "$prev_git_slots" ]; then
+          prev_xdg=${prev_git_state%%|*}
+          prev_home=${prev_git_state#*|}
+          xdg_bad=0
+          home_bad=0
+          { [ "$curr_xdg" != "$prev_xdg" ] || [ "$curr_xdg" = unreadable ]; } && xdg_bad=1
+          { [ "$curr_home" != "$prev_home" ] || [ "$curr_home" = unreadable ]; } && home_bad=1
+          if [ "$xdg_bad" -eq 1 ] && [ "$home_bad" -eq 1 ]; then
+            report_label="$xdg_label, $home_label"
+          elif [ "$xdg_bad" -eq 1 ]; then
+            report_label="$xdg_label"
+          else
+            report_label="$home_label"
+          fi
+        elif [ "$curr_xdg" = unreadable ] && [ "$curr_home" = unreadable ]; then
+          report_label="$xdg_label, $home_label"
+        elif [ "$curr_xdg" = unreadable ]; then
+          report_label="$xdg_label"
+        else
+          report_label="$home_label"
+        fi
+        ;;
+      *)
+        report_label="$curr_git_slots"
+        ;;
+    esac
+    printf 'SHARED_STATE: global git config changed since the last session start (%s) - workers must never edit shared git config; inspect recent changes and restore any unintended setting\n' "$report_label"
+  fi
+  if [ "$nm_rc" -eq 2 ] && [ -n "$curr_nm_path" ]; then
+    nm_alarm=1
+  elif [ -n "$prev_nm_path" ] && [ -n "$prev_nm_schema" ] && [ "$prev_nm_schema" != absent ] \
+    && [ "$curr_nm_path" = "$prev_nm_path" ] && [ -n "$curr_nm_schema" ] \
+    && [ "$curr_nm_schema" != "$prev_nm_schema" ]; then
+    nm_alarm=1
+  fi
+  if [ "$nm_alarm" -eq 1 ]; then
+    nm_detail="$curr_nm_path"
+    case "$curr_nm_schema" in
+      absent) nm_detail="$curr_nm_path: removed" ;;
+      corrupt) nm_detail="$curr_nm_path: corrupt or unreadable SQLite schema" ;;
+      unreadable) nm_detail="$curr_nm_path: unreadable" ;;
+    esac
+    printf 'SHARED_STATE: shared no-mistakes database schema changed since the last session start (%s) - workers must never alter shared databases; inspect no-mistakes version and state database before dispatching pipeline runs\n' "$nm_detail"
+  fi
+  if [ "$READ_ONLY" -eq 0 ] && [ "$REEMIT" -eq 0 ] && [ "$baseline_ok" -eq 1 ] \
+    && [ "$git_ok" -eq 1 ] && [ "$nm_ok" -eq 1 ]; then
+    tmp=$(mktemp "$STATE/.session-start-shared-baseline.XXXXXX" 2>/dev/null || true)
+    if [ -n "$tmp" ]; then
+      if ! { printf '%s\n%s\n%s\n%s\n' \
+        "$curr_git_slots" "$curr_git_state" "$curr_nm_path" "$curr_nm_schema" > "$tmp" 2>/dev/null \
+        && mv -f "$tmp" "$SHARED_BASELINE_FILE" 2>/dev/null; }; then
+        rm -f "$tmp" 2>/dev/null || true
+      fi
+    fi
+  fi
 }
 
 # The baseline describes instructions this true session started with, not the
@@ -1155,6 +1493,14 @@ else
       FM_TASKS_AXI_CHECK_REASON="$TASKS_AXI_CHECK_REASON" \
       "$SCRIPT_DIR/fm-bootstrap.sh" 2>&1
   )
+fi
+SHARED_STATE_OUT=$(check_shared_state_since_last_start)
+if [ -n "$SHARED_STATE_OUT" ]; then
+  if [ -n "$BOOT_OUT" ]; then
+    BOOT_OUT="$BOOT_OUT"$'\n'"$SHARED_STATE_OUT"
+  else
+    BOOT_OUT="$SHARED_STATE_OUT"
+  fi
 fi
 if [ -n "$BOOT_OUT" ]; then
   printf '%s\n' "$BOOT_OUT"
