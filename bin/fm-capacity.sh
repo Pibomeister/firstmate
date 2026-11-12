@@ -33,7 +33,11 @@
 # malformed file reports target=invalid reason=invalid-target, names the
 # problem and its line on stderr, and exits 1.
 #
-# With a target, free_lanes is target minus lanes (never below 0), unless a
+# With a target, free_lanes is target minus the lanes that hold a place
+# (never below 0): a lane whose record carries a pr= line has recorded its
+# ready PR, waits on review or merge, and frees its place exactly as the
+# project-capacity gate releases one (bin/fm-project-capacity-lib.sh). It is
+# still counted in lanes and in lanes.pr_ready. That holds unless a
 # constraint holds, in which case free_lanes=0 and reason names every
 # constraint, comma-separated, in this order:
 #   cpu       probe basis: 1-minute load average >= logical cores
@@ -530,7 +534,7 @@ case "$target" in
   none) reason=no-target ;;
   invalid) reason=invalid-target ;;
   *)
-    free_lanes=$((target - lanes))
+    free_lanes=$((target - lanes + pr_ready))
     [ "$free_lanes" -ge 0 ] || free_lanes=0
     if [ -n "$constraints" ]; then
       free_lanes=0
@@ -540,7 +544,7 @@ case "$target" in
       admit=true
     else
       reason=full
-      reasons="full: $lanes of $target lanes
+      reasons="full: $((lanes - pr_ready)) of $target lanes
 "
       pub_reasons=$reasons
     fi
@@ -566,7 +570,7 @@ if [ "$mode" = report ]; then
   case "$target" in
     none) echo "Lanes: $lanes running, no target set (config/lane-capacity absent)." ;;
     invalid) echo "Lanes: $lanes running, target unreadable ($target_error)." ;;
-    *) echo "Lanes: $lanes running of $target target, $free_lanes open." ;;
+    *) echo "Lanes: $lanes running of $target target$([ "$pr_ready" -eq 0 ] || printf ' (%s with a ready PR, holding no place)' "$pr_ready"), $free_lanes open." ;;
   esac
   [ "$secondmates" -eq 0 ] || echo "Secondmates: $secondmates (hold no lane)."
   mem_text="${mem_free_pct}%"; [ "$mem_free_pct" != unknown ] || mem_text=unknown

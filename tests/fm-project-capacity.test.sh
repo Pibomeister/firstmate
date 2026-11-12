@@ -575,8 +575,9 @@ test_batch_reports_a_deferred_pair() {
   write_live "$home" live-a "$case_dir/project"
   out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" "task-c=$case_dir/project" --mode no-mistakes --yolo off) || rc=$?
   expect_code "$DEFER_EXIT" "$rc" "a batch whose only pair was deferred did not exit with the deferral status: $out"
-  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project is at capacity, so it stays queued" \
+  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - a capacity gate" \
     "the batch did not report the deferral"
+  assert_contains "$out" "deferred: project" "the child's own deferred line did not name the project cause"
   assert_not_contains "$out" "batch: FAILED" "the batch reported a deferral as a failure"
   pass "a batch reports a capacity deferral as deferred, not failed"
 }
@@ -661,6 +662,12 @@ test_lane_capacity_defers_spawn_past_home_cap() {
   expect_code "$DEFER_EXIT" "$rc" "a spawn past the lane cap was not deferred: $out"
   assert_contains "$out" "deferred: lane capacity" "the lane deferral did not name lane capacity"
   assert_nothing_created "$case_dir" "$home" task-c "$before" "$worktrees"
+  rc=0
+  out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" "task-c=$case_dir/project" --mode no-mistakes --yolo off) || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a batch past the lane cap was not deferred: $out"
+  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - a capacity gate" "the batch did not report the lane deferral"
+  assert_contains "$out" "deferred: lane capacity" "the batch hid the child's lane-capacity cause"
+  assert_not_contains "$out" "its project is at capacity" "the batch summary blamed project capacity for a lane deferral"
   pass "a spawn past the home lane cap is deferred with exit 75 and creates nothing"
 }
 
