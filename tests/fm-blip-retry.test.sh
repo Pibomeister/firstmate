@@ -230,6 +230,27 @@ test_status_limits_which_exits_retry() {
   pass "--status limits retries to the named exit status"
 }
 
+blip_linux_drop() {
+  local n
+  n=$(cat "$BLIP_COUNT")
+  n=$((n + 1))
+  printf '%s\n' "$n" > "$BLIP_COUNT"
+  printf 'Read from remote host remote-mac: Connection timed out\n' >&2
+  return 255
+}
+
+test_connect_only_does_not_repeat_a_linux_mid_session_timeout() {
+  blip_reset
+  set +e
+  fm_blip_retry --connect-only --status 255 blip_linux_drop >"$BLIP_OUT" 2>"$BLIP_ERR"
+  BLIP_RC=$?
+  set -e
+  assert_equals 255 "$BLIP_RC" "a Linux mid-session timeout lost its ssh status"
+  assert_equals 1 "$(cat "$BLIP_COUNT")" "a Linux mid-session timeout was repeated"
+  [ ! -s "$BLIP_SLEEP" ] || fail "a Linux mid-session timeout waited before returning"
+  pass "a Linux mid-session ssh timeout is not repeated"
+}
+
 blip_bare() {
   local n
   n=$(cat "$BLIP_COUNT")
@@ -485,6 +506,7 @@ fm_test_run \
   test_connect_only_does_not_repeat_a_call_that_may_have_landed \
   test_connect_only_ignores_stdout \
   test_status_limits_which_exits_retry \
+  test_connect_only_does_not_repeat_a_linux_mid_session_timeout \
   test_bare_failure_without_transient_text_is_not_retried \
   test_invalid_override_fails_before_the_command \
   test_orca_send_retries_a_transient_cli_blip \

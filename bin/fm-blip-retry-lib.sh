@@ -131,7 +131,7 @@ fm_blip_text_is_connect_failure() {
     *'connection refused'*|*'econnrefused'*) return 0 ;;
     *'could not resolve'*|*'name or service not known'*|*'nodename nor servname'*) return 0 ;;
     *'no route to host'*|*'network is unreachable'*|*'ehostunreach'*|*'enetunreach'*) return 0 ;;
-    *'connect to host'*'timed out'*|*'connection timed out'*|*'connect etimedout'*) return 0 ;;
+    *'connect to host'*'timed out'*|*'connect etimedout'*) return 0 ;;
     *'connection closed by'*|*'kex_exchange_identification'*) return 0 ;;
   esac
   return 1
