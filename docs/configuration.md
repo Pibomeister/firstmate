@@ -496,8 +496,9 @@ The lock transfers while the predecessor is still alive, so the handoff does not
 The successor confirms the handoff sha256 and stops on a mismatch.
 A second mate never launches its own successor: it appends one relaunch request to its parent channel and stops.
 It fires at most once per session, and only after the low-context auto-park below has emitted the session's park-then-handoff action, so the handoff instruction follows that queued park and the hook never repeats the park instruction.
-The hook only reads that action's per-session record; until it shows the action was emitted, the hook stays silent and arms nothing.
-From then on, whenever the hook sees context left at or below the threshold it arms the successor gate below for the current context cycle, including after a compaction, without sending its instruction again.
+When a tool call or prompt finds context left at or below the threshold before that action was emitted, the hook runs the recorder below itself with that call's measurement, so the park is queued in the turn that crosses the threshold rather than only at its turn end.
+The recorder stays the only writer of the action's per-session record; until that record shows the action was emitted, the hook stays silent and arms nothing.
+From then on, whenever the hook sees context left at or below the threshold, and on every stop of that session, it arms the successor gate below for the current context cycle, including after a compaction, without sending its instruction again.
 
 The trigger is on by default at 15% context left, wherever it can resolve the auto-compact point.
 The file is local to each home, is not inherited, and is read at every hook call, so a change needs no restart.
@@ -506,7 +507,7 @@ It may hold these lines, each optional:
 - `percent-left=<n>` fires at or below `n`% context left (default 15); `0` turns the trigger off.
 - `compact-at-tokens=<n>` is the auto-compact point in tokens, used instead of the point derived from Claude's settings. `bin/fm-context-burn.sh` uses the same point when the pane footer is not shown.
 
-The same `percent-left` threshold also drives the low-context auto-park in `bin/fm-context-burn.sh`, which runs on every harness's turn-end record rather than only in the Claude hook above, and `0` emits nothing.
+The same `percent-left` threshold also drives the low-context auto-park in `bin/fm-context-burn.sh`, which runs on every harness's turn-end record and also from the Claude hook above on the call that crosses the threshold, and `0` emits nothing.
 When a recorded sample falls to that threshold or below, the recorder emits the park-then-handoff action exactly once per session: one queued check wake tells the session to park every open captain question as a held backlog item through `bin/fm-captain-hold.sh` and then start the handoff or successor path above, without asking the captain or waiting for an answer.
 The recorder never decides what counts as a captain question; the session inventories its own open questions when it acts on the wake.
 `bin/fm-context-burn.sh` is the only emitter of that action and the only writer of its per-session record, with coverage in [`tests/fm-context-burn.test.sh`](../tests/fm-context-burn.test.sh).

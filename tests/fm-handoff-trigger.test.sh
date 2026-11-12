@@ -2,8 +2,9 @@
 # Behavior tests for the early handoff trigger (bin/fm-handoff-trigger.sh,
 # docs/configuration.md "Early handoff trigger"): the threshold, its
 # configuration, the auto-compact point derived from Claude's settings, the
-# once-per-session guarantee (including concurrent hook calls), the wait for
-# the turn-end recorder's park-then-handoff action, and the scope that
+# once-per-session guarantee (including concurrent hook calls), the
+# park-first ordering with the turn-end recorder's park-then-handoff action
+# (which the crossing call runs itself), and the scope that
 # keeps worker worktrees and Cursor payloads inert. The hook runs for real
 # against synthetic Claude transcripts.
 set -u
@@ -56,7 +57,7 @@ run_hook() {
 }
 
 # park_session <root> <session>: the turn-end recorder emits this session's
-# park-then-handoff action through its real command; the hook waits for that
+# park-then-handoff action through its real command; the hook follows that
 # (bin/fm-handoff-trigger.sh "PARK FIRST"). run_hook does this first unless
 # NO_PARK=1, so the firing tests exercise the handoff that follows the park.
 park_session() {
@@ -158,44 +159,76 @@ autopark_wakes() { # <key>
   awk -F '\t' -v key="$1" '$4 == key { n++ } END { print n + 0 }' "$PRIMARY/state/.wake-queue"
 }
 
-# The recorder is the single emitter of the park-then-handoff action: the hook
-# never writes its claim, stays silent and leaves the successor gate unarmed
-# until the claim is done, then sends only the handoff that follows the park.
-test_hook_waits_for_the_recorders_park() {
-  local t="$TMP_ROOT/t-share" out rc
+# The registered order on a Claude primary: the turn's PostToolUse call is the
+# first to see context at the threshold, with no record yet. The hook hands
+# that measurement to the recorder (the claim's only writer), which queues the
+# park, and the same call sends the handoff that follows it and arms the
+# successor gate. A compaction before the turn's Stop drops neither.
+test_crossing_tool_call_parks_and_hands_off_at_once() {
+  local t="$TMP_ROOT/t-cross" out rc
+  reset_lab
+  mkdir -p "$PRIMARY/data"
+  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  rm -f "$PRIMARY/state/.handoff-successor" "$PRIMARY/state/context-burn.tsv"
+
+  transcript "$t" 84000
+  expect_silent "$(NO_PARK=1 run_hook "$PRIMARY" s-cross "$t")" "16% left with no record"
+  [ ! -e "$PRIMARY/state/.context-autopark.s_cross" ] || fail "16% left recorded a park"
+  append_usage "$t" 90000
+  out=$(NO_PARK=1 run_hook "$PRIMARY" s-cross "$t")
+  expect_fire "$out" PostToolUse "the tool call that crosses the threshold"
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("follows the park-then-handoff action already queued") and (test("fm-captain-hold") | not)' >/dev/null \
+    || fail "the crossing call must follow the queued park, not repeat it: $out"
+  assert_equals 1 "$(autopark_wakes context-autopark-s_cross)" "park wake from the crossing call"
+  assert_contains "$(cat "$PRIMARY/state/.context-autopark.s_cross")" "done" "the recorder did not complete the park claim"
+  assert_contains "$(cat "$PRIMARY/state/context-burn.tsv")" "s_cross	captain	10" "the crossing call did not record its measured 10% sample"
+  [ -e "$PRIMARY/state/.handoff-trigger.s-cross.0" ] || fail "the crossing call did not arm the successor gate"
+  out=$(record_burn s-cross 9)
+  assert_not_contains "$out" "park-handoff:" "the turn-end recorder repeated the park"
+
+  printf '{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}\n' >> "$t"
+  append_usage "$t" 20000
+  rc=0
+  run_hook "$PRIMARY" s-cross "$t" Stop >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 2 ] || fail "a stop after a compaction must stay blocked without a verified successor (rc=$rc)"
+  [ -e "$PRIMARY/state/.handoff-trigger.s-cross.1" ] || fail "the stop did not arm the compacted cycle's gate"
+  assert_equals 1 "$(autopark_wakes context-autopark-s_cross)" "park wakes for the session"
+  pass "the crossing tool call parks, hands off and arms the gate at once, and a compaction before the stop drops none of it"
+}
+
+# The recorder is the claim's only writer: when it cannot publish (another
+# recorder is still mid-publication), the hook stays silent and arms nothing.
+# A park emitted only by the turn-end recorder still gates that same stop.
+test_hook_never_hands_off_ahead_of_the_park() {
+  local t="$TMP_ROOT/t-share" out rc sleeper
   reset_lab
   mkdir -p "$PRIMARY/data"
   printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
   rm -f "$PRIMARY/state/.handoff-successor"
-
   transcript "$t" 90000
-  expect_silent "$(NO_PARK=1 run_hook "$PRIMARY" s-share "$t")" "hook before the recorder's park"
+
+  sleep 30 &
+  sleeper=$!
+  printf 'pending %s %s\n' "$sleeper" "$(date +%s)" > "$PRIMARY/state/.context-autopark.s_share"
+  out=$(NO_PARK=1 run_hook "$PRIMARY" s-share "$t")
+  kill "$sleeper" 2>/dev/null; wait "$sleeper" 2>/dev/null
+  expect_silent "$out" "hook while another recorder holds the park claim"
   [ ! -e "$PRIMARY/state/.handoff-trigger.s-share.0" ] || fail "the hook armed the successor gate before the park"
-  [ ! -e "$PRIMARY/state/.context-autopark.s_share" ] || fail "the hook wrote the park claim"
+  assert_equals 0 "$(autopark_wakes context-autopark-s_share)" "park wake while another recorder holds the claim"
   rc=0
   NO_PARK=1 run_hook "$PRIMARY" s-share "$t" Stop >/dev/null 2>&1 || rc=$?
   [ "$rc" -eq 0 ] || fail "a stop before the park must not be gated (rc=$rc)"
 
-  out=$(record_burn s-share 10)
-  assert_contains "$out" "park-handoff: s_share at 10% context left" "the recorder did not emit the park"
-  assert_equals 1 "$(autopark_wakes context-autopark-s_share)" "park wake"
-  out=$(NO_PARK=1 run_hook "$PRIMARY" s-share "$t" UserPromptSubmit)
-  expect_fire "$out" UserPromptSubmit "hook after the park"
-  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("fm-captain-hold") | not' >/dev/null \
-    || fail "the hook repeated the park instruction: $out"
-  [ -e "$PRIMARY/state/.handoff-trigger.s-share.0" ] || fail "the hook did not arm the successor gate after the park"
-  out=$(record_burn s-share 8)
-  assert_not_contains "$out" "park-handoff:" "the recorder emitted the park twice"
-
-  printf '{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}\n' >> "$t"
-  append_usage "$t" 88000
-  expect_silent "$(NO_PARK=1 run_hook "$PRIMARY" s-share "$t")" "hook after compaction"
-  [ -e "$PRIMARY/state/.handoff-trigger.s-share.1" ] || fail "a compaction did not arm the new cycle's successor gate"
+  rm -f "$PRIMARY/state/.context-autopark.s_share"
+  out=$(record_burn s-share 9)
+  assert_contains "$out" "park-handoff: s_share at 9% context left" "the turn-end recorder did not emit the park"
   rc=0
-  run_hook "$PRIMARY" s-share "$t" Stop >/dev/null 2>&1 || rc=$?
-  [ "$rc" -eq 2 ] || fail "a stop after the park without a verified successor must stay blocked (rc=$rc)"
+  run_hook "$PRIMARY" s-share "$t" Stop >/dev/null 2>"$TMP_ROOT/share.err" || rc=$?
+  [ "$rc" -eq 2 ] || fail "the stop that recorded the park must stay blocked without a verified successor (rc=$rc)"
+  assert_contains "$(cat "$TMP_ROOT/share.err")" "park-then-handoff action queued" "the stop block does not point at the queued park"
+  [ -e "$PRIMARY/state/.handoff-trigger.s-share.0" ] || fail "the stop did not arm the cycle's gate"
   assert_equals 1 "$(autopark_wakes context-autopark-s_share)" "park wakes for the session"
-  pass "the hook waits for the recorder's single park, then hands off once with the successor gate armed"
+  pass "the hook never hands off ahead of the park, and a park recorded at turn end gates that stop"
 }
 
 # A hook call racing the recorder's sample: the park is emitted exactly once,
@@ -727,7 +760,8 @@ test_threshold_default_15
 test_threshold_configurable
 test_fires_once_per_context_cycle
 test_compaction_rearms_only_the_gate
-test_hook_waits_for_the_recorders_park
+test_crossing_tool_call_parks_and_hands_off_at_once
+test_hook_never_hands_off_ahead_of_the_park
 test_racing_hook_and_recorder_emit_the_park_once
 test_fires_once_under_concurrency
 test_compact_point_from_claude_settings

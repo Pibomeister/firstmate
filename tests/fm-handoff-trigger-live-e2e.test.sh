@@ -6,9 +6,12 @@
 # registers it, runs two tool calls. It proves, against the real harness:
 #   1. the hook reads real transcript usage and derives the auto-compact point
 #      from a real autoCompactWindow setting (120000 -> 87000 tokens);
-#   2. Claude delivers the hook's additionalContext to the model, which can
+#   2. the tool call that crosses the threshold runs the turn-end recorder
+#      (bin/fm-context-burn.sh) itself, so the session's park-then-handoff
+#      action is queued before the hook's instruction follows it;
+#   3. Claude delivers the hook's additionalContext to the model, which can
 #      report it;
-#   3. the instruction fires exactly once across the session's hook calls.
+#   4. the instruction fires exactly once across the session's hook calls.
 # The threshold is set to 99% so a short session crosses it. Claude keeps its
 # existing managed authentication; a few Haiku turns are submitted.
 set -u
@@ -25,7 +28,7 @@ LAB=$(fm_test_tmproot fm-handoff-trigger-live)
 trap fm_test_cleanup EXIT
 HOME_DIR="$LAB/primary"
 
-mkdir -p "$HOME_DIR/state" "$HOME_DIR/config" "$HOME_DIR/bin" "$HOME_DIR/.claude"
+mkdir -p "$HOME_DIR/state" "$HOME_DIR/data" "$HOME_DIR/config" "$HOME_DIR/bin" "$HOME_DIR/.claude"
 git init -q "$HOME_DIR"
 git -C "$HOME_DIR" commit -q --allow-empty -m init
 : > "$HOME_DIR/AGENTS.md"
@@ -63,16 +66,24 @@ marker="$HOME_DIR/state/.handoff-trigger.$session.0"
 grep -q 'compact_at=87000$' "$marker" \
   || fail "compact point must derive from autoCompactWindow 120000 as 87000: $(cat "$marker")"
 printf '# firing record: %s\n' "$(cat "$marker")"
+claim=$(cat "$HOME_DIR/state/.context-autopark.$(printf '%s' "$session" | tr -c 'A-Za-z0-9_' '_')" 2>/dev/null)
+case "$claim" in
+  done\ *) ;;
+  *) fail "the crossing tool call did not complete the recorder's park claim: ${claim:-absent}" ;;
+esac
+grep -q 'context-autopark' "$HOME_DIR/state/.wake-queue" 2>/dev/null \
+  || fail "the crossing tool call queued no park-then-handoff wake"
+printf '# park claim: %s\n' "$claim"
 
 transcript=$(find "$HOME/.claude/projects" -name "$session.jsonl" -print -quit 2>/dev/null)
 [ -n "$transcript" ] || fail "could not find the transcript for session $session"
 delivered=$(jq -R -r 'fromjson? | select(.type == "attachment" and .attachment.type == "hook_additional_context")
-    | tostring | select(contains("This instruction fires once per context cycle"))' "$transcript" | wc -l | tr -d ' ')
+    | tostring | select(contains("This instruction fires once per session"))' "$transcript" | wc -l | tr -d ' ')
 [ "$delivered" -eq 1 ] || fail "the instruction must reach the session exactly once, found $delivered"
 tool_calls=$(jq -R -r 'fromjson? | select(.type == "assistant") | .message.content[]? | select(.type == "tool_use") | .name' "$transcript" | wc -l | tr -d ' ')
-[ "$tool_calls" -ge 2 ] || fail "the session must make at least two tool calls to prove one firing per cycle, made $tool_calls"
+[ "$tool_calls" -ge 2 ] || fail "the session must make at least two tool calls to prove one firing per session, made $tool_calls"
 case "$result" in
   *HANDOFF-SEEN*) ;;
   *) fail "the model did not report the handoff instruction: $result" ;;
 esac
-pass "claude $CLAUDE_VERSION: derived compact point, delivered the instruction once across $tool_calls tool calls"
+pass "claude $CLAUDE_VERSION: derived compact point, parked first, delivered the instruction once across $tool_calls tool calls"

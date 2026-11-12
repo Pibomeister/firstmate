@@ -4,14 +4,15 @@
 # Registered in tracked .claude/settings.json as a PostToolUse, a
 # UserPromptSubmit, and a Stop command hook. When the session's context left before
 # auto-compact falls to the configured percentage (default 15), and the
-# turn-end recorder has emitted the session's park-then-handoff action, the
-# session receives ONE instruction, as hook additionalContext, to write its handoff
+# turn-end recorder has emitted the session's park-then-handoff action (the
+# hook runs it on the crossing call; see PARK FIRST below), the session
+# receives ONE instruction, as hook additionalContext, to write its handoff
 # from the mission ledger (bin/fm-ledger.sh handoff) before auto-compact, hand
 # off to a live successor it launches with bin/fm-handoff-launch.sh (a second
 # mate asks its parent to relaunch it instead), and report that it is ready to
-# restart. It fires
-# at most once per session (see ONCE PER SESSION below), so a session that
-# keeps working past the threshold, or auto-compacts anyway, is not told again.
+# restart. It fires at most once per session (see ONCE PER SESSION below), so
+# a session that keeps working past the threshold, or auto-compacts anyway,
+# is not told again.
 #
 # CONTEXT LEFT. Claude Code does not hand hooks its own "% until auto-compact"
 # figure, and the status line's context_window.remaining_percentage measures
@@ -72,10 +73,13 @@
 # PARK FIRST. bin/fm-context-burn.sh's turn-end recorder is the single
 # emitter of the low-context park-then-handoff action and the only writer of
 # its per-session claim state/.context-autopark.<session>; this hook only
-# reads that claim. Until it reads `done`, the session has not yet been told
-# to park its open captain questions, so the hook stays silent and arms
-# nothing, and a handoff never starts ahead of the park. Once it reads
-# `done`, the hook's instruction follows that action rather than repeating it.
+# reads that claim. At or below the threshold with no done claim, the hook
+# runs the recorder itself with its payload and measured percent, so the
+# turn that crosses the threshold parks at once, then re-reads the claim.
+# Until it reads `done` (a live recorder still publishing, or the recorder
+# failed), the hook stays silent and arms nothing, so a handoff never starts
+# ahead of the park. Once it reads `done`, the hook's instruction follows
+# that action rather than repeating it.
 #
 # ONCE PER SESSION. At or below the threshold, once the park claim is done,
 # the hook arms the cycle marker state/.handoff-trigger.<session-id>.<count>
@@ -87,8 +91,10 @@
 # successor gate armed without being told again. Arming also removes markers
 # older than 30 days.
 #
-# RESTART GATE (Stop). A session is handing off once the trigger has fired in
-# its current context cycle, or once it ran `bin/fm-order.sh handoff --doc`
+# RESTART GATE (Stop). Once this session's park claim is done, each Stop
+# first arms the current cycle's marker, so a compaction between the
+# crossing and the stop does not drop the successor gate. A session is
+# handing off once the trigger has fired in its current context cycle, or once it ran `bin/fm-order.sh handoff --doc`
 # (stow, a restart, or a home with percent-left=0). On each Stop of a session
 # handing off, the hook runs `bin/fm-order.sh gate`; when the recorded handoff
 # document does not name every open captain order it blocks that stop (exit 2,
@@ -189,6 +195,16 @@ if [ -n "$SESSION_ID" ] && [ -n "$TRANSCRIPT" ]; then
     *) MARKER="$STATE/.handoff-trigger.$(printf '%s' "$SESSION_ID" | tr -c 'A-Za-z0-9_-' '_').$BOUNDARIES" ;;
   esac
 fi
+# The recorder's per-session park-then-handoff claim (PARK FIRST above); read only.
+AUTOPARK=
+[ -z "$SESSION_ID" ] || AUTOPARK="$STATE/.context-autopark.$(printf '%s' "$SESSION_ID" | tr -c 'A-Za-z0-9_' '_')"
+autopark_done() {
+  [ -n "$AUTOPARK" ] || return 1
+  case "$(cat "$AUTOPARK" 2>/dev/null)" in
+    done\ *) return 0 ;;
+  esac
+  return 1
+}
 if [ "$EVENT" = Stop ]; then
   # Shared quota/park policy also covers this parallel Stop writer.
   # shellcheck source=bin/fm-stop-policy-lib.sh
@@ -197,6 +213,13 @@ if [ "$EVENT" = Stop ]; then
   # trigger fired in this cycle, or this session recorded a handoff document
   # (bin/fm-order.sh handing-off), which also covers percent-left=0. Another
   # session's handoff record in the same home never gates this stop.
+  # A session whose park-then-handoff action was emitted owes a successor in
+  # every context cycle, so this stop arms the current cycle's marker first:
+  # the stop that recorded the low sample, or one after a compaction, cannot
+  # end before the successor gate passes.
+  if [ "$PERCENT" -gt 0 ] && [ -n "$MARKER" ] && autopark_done; then
+    ( set -o noclobber; printf '%s stop\n' "$(date +%s)" > "$MARKER" ) 2>/dev/null || true
+  fi
   { [ -n "$MARKER" ] && [ -e "$MARKER" ]; } ||
     FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" handing-off 2>/dev/null || exit 0
   [ "$(printf '%s' "$PAYLOAD" | jq -r '.stop_hook_active // false' 2>/dev/null)" != true ] || exit 0
@@ -220,7 +243,7 @@ if [ "$EVENT" = Stop ]; then
     . "$SCRIPT_DIR/fm-handoff-lib.sh"
     if [ "$MARKER" -nt "$LAUNCH" ] || ! fm_handoff_completed "$LAUNCH"; then
       fm_stop_policy_allows_stop "$PAYLOAD" charge && exit 0
-      printf '%s\n' 'Firstmate restart gate: no verified successor acknowledgement and lock transfer is recorded in state/.handoff-successor. Run bin/fm-handoff-launch.sh <handoff document path>. A live PID alone does not clear this gate. The successor confirms the handoff sha256 and stops on a mismatch. The lock transfers while this session is still alive, so do not wait for an external exit.' >&2
+      printf '%s\n' 'Firstmate restart gate: this session reached the low-context threshold, and no verified successor acknowledgement and lock transfer is recorded in state/.handoff-successor. Handle the park-then-handoff action queued for this session first, write the handoff with bin/fm-ledger.sh handoff --doc <new handoff file>, which records it with bin/fm-order.sh handoff --doc, then run bin/fm-handoff-launch.sh <handoff document path>. A live PID alone does not clear this gate. The successor confirms the handoff sha256 and stops on a mismatch. The lock transfers while this session is still alive, so do not wait for an external exit.' >&2
       exit 2
     fi
   fi
@@ -246,11 +269,16 @@ case "$TOKENS" in '' | *[!0-9]*) exit 0 ;; esac
 LEFT=$(fm_compact_left_percent "$TOKENS" "$COMPACT_AT")
 [ "$LEFT" -le "$PERCENT" ] || exit 0
 
-# Read-only: wait for the recorder's park-then-handoff action (PARK FIRST above).
-case "$(cat "$STATE/.context-autopark.$(printf '%s' "$SESSION_ID" | tr -c 'A-Za-z0-9_' '_')" 2>/dev/null)" in
-  done\ *) ;;
-  *) exit 0 ;;
-esac
+# The turn that crosses the threshold must park now, not at its turn end: an
+# auto-compact before the next prompt would otherwise leave no low sample to
+# record. The recorder stays the claim's only writer; this hook hands it this
+# payload and measurement, then reads the claim it published.
+if ! autopark_done; then
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+    "$SCRIPT_DIR/fm-context-burn.sh" record --turn-type auto --session "$SESSION_ID" --percent "$LEFT" \
+    <<<"$PAYLOAD" >/dev/null 2>&1 || true
+  autopark_done || exit 0
+fi
 
 # Marker names carry no dot inside the session part, so this glob matches
 # only this session's earlier cycles.

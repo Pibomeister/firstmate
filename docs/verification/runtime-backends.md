@@ -125,7 +125,9 @@ FM_HANDOFF_TRIGGER_LIVE_E2E=1 bash tests/fm-handoff-trigger-live-e2e.test.sh
 ```
 
 It runs one headless Haiku session with the hook on PostToolUse and UserPromptSubmit, `autoCompactWindow` 120000, and `percent-left=99`, and makes two tool calls.
-Selected output from the successful guard:
+The first tool call crosses the threshold, so the hook runs the turn-end recorder itself, and the guard checks that the session's park claim is done and its park-then-handoff wake is queued before it counts the delivered instruction.
+The guard matches the instruction's once-per-session wording.
+Selected output from the last successful guard, recorded before the hook ran the recorder on the crossing call and before the instruction's wording changed from once per context cycle to once per session; it has no `# park claim:` line:
 
 ```text
 # claude version: 2.1.314 (Claude Code)

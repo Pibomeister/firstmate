@@ -65,8 +65,10 @@
 # publication neither loses nor duplicates the action, even after the wake
 # was consumed. This recorder is the only emitter of the action and the
 # only writer of that marker: the Claude early handoff hook
-# (bin/fm-handoff-trigger.sh) only reads it, and sends its own handoff
-# instruction only once the marker shows the action was emitted.
+# (bin/fm-handoff-trigger.sh) runs this record command itself on the tool
+# call or prompt that crosses the threshold, otherwise only reads the marker,
+# and sends its own handoff instruction only once it shows the action was
+# emitted.
 # Markers older than 30 days are pruned.
 #
 # FM_CONTEXT_BURN_NOW overrides the clock. Under FM_TEST_SEAM=1, pane capture
