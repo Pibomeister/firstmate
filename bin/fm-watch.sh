@@ -795,10 +795,11 @@ inbox_steer_recovery_action() {  # <window> <task> <recover-rc>
 # dismiss_pane_feedback_dialog: when an idle supervised pane shows a known
 # feedback or bug-report dialog for its harness, claim and dismiss it via the
 # shared helper (bin/fm-control-lib.sh) and log the outcome.
-dismiss_pane_feedback_dialog() {  # <window> <screen> [<pane-hash>]
+dismiss_pane_feedback_dialog() {  # <window> <screen>
   local w=$1 screen=${2-} backend harness label rc=0
   [ -n "$screen" ] || return 1
   harness=$(window_harness "$w")
+  [ -n "$harness" ] || return 1
   backend=$(window_backend "$w")
   label=$(window_label "$w")
   fm_control_dismiss_feedback_dialog "$STATE" "$backend" "$w" "$harness" "$screen" "$label" 0.2 || rc=$?
@@ -5357,7 +5358,7 @@ EOF
     # content cannot suppress stale detection. Read once per window per poll and
     # reused below so a busy verdict is consistent within one cycle.
     if window_is_busy "$w" "$tail40"; then busy_now=0; else busy_now=1; fi
-    if [ "$busy_now" -ne 0 ] && dismiss_pane_feedback_dialog "$w" "$tail40" "$h"; then
+    if [ "$busy_now" -ne 0 ] && dismiss_pane_feedback_dialog "$w" "$tail40"; then
       echo "$h" > "$hf"
       echo 1 > "$cf"
       continue

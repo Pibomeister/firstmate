@@ -271,9 +271,9 @@ fm_wd_usage_limit_kind() {  # <name>
 
 # Pane dialog first. If that misses, reuse fm_composer_blocking_dialog and
 # normalize a usage-limit kind to the pane name `usage-limit`. No extra regex.
-fm_wd_observe_dialog() {  # <screen>
+fm_wd_observe_dialog() {  # <screen> [<harness>]
   local dialog
-  dialog=$(fm_wd_pane_dialog "$1") || dialog=''
+  dialog=$(fm_wd_pane_dialog "$1" "${2-}") || dialog=''
   if [ -n "$dialog" ]; then
     printf '%s\n' "$dialog"
     return 0

@@ -192,13 +192,13 @@ wd_view() {  # <backend> <target> [expected-label]
 # when a viewport read is expected: a failed read is unknown (no dialog
 # action, no quota pick), and a successful blank screen is none.
 # Backends without a viewport keep classifying from scrollback.
-wd_observe_dialog() {  # <backend> <target> [expected-label]
-  local b=$1 t=$2 label=${3-} scroll view dialog
+wd_observe_dialog() {  # <backend> <target> [expected-label] [harness]
+  local b=$1 t=$2 label=${3-} harness=${4-} scroll view dialog
   if [ -z "$label" ]; then
     case "${O_ID:-}" in ''|-) ;; *) label=fm-$O_ID ;; esac
   fi
   scroll=$(wd_capture "$b" "$t" 60) || scroll=
-  dialog=$(fm_wd_observe_dialog "$scroll") || dialog=
+  dialog=$(fm_wd_observe_dialog "$scroll" "$harness") || dialog=
   case "$dialog" in
     permission)
       printf '%s\n' permission
@@ -210,7 +210,7 @@ wd_observe_dialog() {  # <backend> <target> [expected-label]
       printf '%s\n' unknown
       return 0
     }
-    fm_wd_observe_dialog "$view"
+    fm_wd_observe_dialog "$view" "$harness"
     return
   fi
   [ -n "$dialog" ] || return 1
@@ -415,7 +415,7 @@ wd_observe() {
   st=$home/state
   now=$(wd_now)
   O_HOME=$home O_PARENT=$parent O_ID=$id O_TAG=$(wd_tag "$home") O_KEY=$(wd_state_key "$home")
-  O_BACKEND='' O_TARGET='' O_SESSION='' O_HB_AGE=unknown O_CTX='' O_CTX_SRC='' O_CTX_READING=''
+  O_BACKEND='' O_TARGET='' O_HARNESS='' O_SESSION='' O_HB_AGE=unknown O_CTX='' O_CTX_SRC='' O_CTX_READING=''
   O_PANE='' O_DIALOG_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_AUTOWAIT=0 O_COMPOSER=unknown O_TURN=unknown
   O_LOCK_PID='' O_ALIVE=0 O_INSTANCE=unknown O_OWNER=none O_CPU_BUSY=unknown O_TRANSCRIPT='' O_TR_AGE=unknown
   C_BACKEND='' C_TARGET='' C_MOVED=''
@@ -450,6 +450,15 @@ EOF
   # parent's recorded endpoint for it.
   meta=''
   [ "$parent" = - ] || meta=$parent/state/$id.meta
+  if [ -n "$meta" ] && [ -f "$meta" ]; then
+    O_HARNESS=$(fm_meta_get "$meta" harness 2>/dev/null) || O_HARNESS=''
+  fi
+  if [ -z "$O_HARNESS" ] && [ -n "${FM_SESSION_LOCK_OWNER_HARNESS:-}" ]; then
+    O_HARNESS=$FM_SESSION_LOCK_OWNER_HARNESS
+  fi
+  if [ -z "$O_HARNESS" ] && [ -n "$O_LOCK_PID" ] && declare -F fm_ps_comm >/dev/null 2>&1 && declare -F fm_harness_path_name >/dev/null 2>&1; then
+    O_HARNESS=$(fm_harness_path_name "$(fm_ps_comm "$O_LOCK_PID" 2>/dev/null)" 2>/dev/null) || O_HARNESS=''
+  fi
   if [ -n "$meta" ] && [ -f "$meta" ] && { [ -z "$O_TARGET" ] || [ -z "$O_SESSION" ] || [ "$hb_sid" != "$O_SESSION" ]; }; then
     O_BACKEND=$(fm_backend_of_meta "$meta" 2>/dev/null)
     O_TARGET=$(fm_backend_target_of_meta "$meta" 2>/dev/null)
@@ -506,7 +515,7 @@ EOF
     local view
     O_SIG=$(wd_pane_sig "$O_PANE")
     if [ "$O_SIG" = "$p_sig" ] && [ -n "$p_since" ]; then O_PANE_STATIC=$((now - p_since)); else p_since=$now; fi
-    O_DIALOG=$(wd_observe_dialog "$O_BACKEND" "$O_TARGET") || O_DIALOG=''
+    O_DIALOG=$(wd_observe_dialog "$O_BACKEND" "$O_TARGET" "" "$O_HARNESS") || O_DIALOG=''
     view=$(wd_view "$O_BACKEND" "$O_TARGET") || view=$O_PANE
     O_DIALOG_PANE=$view
     if [ "$parent" = - ] && fm_wd_usage_limit_autowait "$view"; then O_AUTOWAIT=1; fi
@@ -1032,7 +1041,7 @@ wd_handle_dialog() {
   case "$O_DIALOG" in
     feedback)
       dialog_pane=${O_DIALOG_PANE:-$O_PANE}
-      if ! key=$(fm_wd_feedback_dialog_key "$dialog_pane" 2>/dev/null) || [ -z "$key" ]; then
+      if ! key=$(fm_wd_feedback_dialog_key "$dialog_pane" "${O_HARNESS:-}" 2>/dev/null) || [ -z "$key" ]; then
         wd_gap "feedback dialog key could not be resolved; no key pressed"
         return 0
       fi
@@ -1041,7 +1050,7 @@ wd_handle_dialog() {
       if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_rec "$id" dialog key refused "endpoint is on do-not-touch"; return 0; fi
       if [ "$(wd_mode)" != act ]; then wd_rec "$id" dialog key dry-run "would press $key: dismiss the feedback survey"; return 0; fi
       case "${O_ID:-}" in ''|-) ;; *) label=fm-$O_ID ;; esac
-      fm_control_dismiss_feedback_dialog "$O_HOME/state" "$O_BACKEND" "$O_TARGET" "" "$dialog_pane" "$label" "$(cfgi key-settle-secs 2)" "$(cfgi call-timeout-secs 20)" || rc=$?
+      fm_control_dismiss_feedback_dialog "$O_HOME/state" "$O_BACKEND" "$O_TARGET" "${O_HARNESS:-}" "$dialog_pane" "$label" "$(cfgi key-settle-secs 2)" "$(cfgi call-timeout-secs 20)" || rc=$?
       case "$rc" in
         0)
           wd_rec "$id" dialog key pending "press $FM_CONTROL_FEEDBACK_DISMISS_KEY: dismiss the feedback survey"
@@ -1049,7 +1058,7 @@ wd_handle_dialog() {
           O_DIALOG=''
           O_PANE=$FM_CONTROL_FEEDBACK_AFTER_PANE
           O_DIALOG_PANE=$FM_CONTROL_FEEDBACK_AFTER_PANE
-          wd_read_composer
+          [ -n "${O_REC_SUBJECT:-}" ] || wd_read_composer
           ;;
         1)
           return 0
@@ -1495,18 +1504,25 @@ wd_worker_metas() {  # <home>
 # mode=page sends a permission dialog through wd_page_permission and no other key.
 # mode=print reports the read and does not act. A gone endpoint is not a dialog.
 wd_visit_worker_dialogs() {
-  local mode=$1 id meta backend target screen dialog
-  local saved_pane saved_dialog_pane saved_backend saved_target saved_dialog saved_id
+  local mode=$1 id meta backend target harness screen dialog
+  local saved_pane saved_dialog_pane saved_backend saved_target saved_harness saved_dialog saved_id
+  local saved_composer saved_composer_text saved_composer_above saved_draft
   saved_pane=$O_PANE
   saved_dialog_pane=${O_DIALOG_PANE:-}
   saved_backend=$O_BACKEND
   saved_target=$O_TARGET
+  saved_harness=${O_HARNESS:-}
   saved_dialog=$O_DIALOG
   saved_id=${O_ID:-}
+  saved_composer=${O_COMPOSER:-}
+  saved_composer_text=${O_COMPOSER_TEXT:-}
+  saved_composer_above=${O_COMPOSER_ABOVE:-}
+  saved_draft=${O_DRAFT:-}
   while IFS=$'\t' read -r id meta; do
     [ -n "$id" ] || continue
     backend=$(fm_backend_of_meta "$meta")
     target=$(fm_backend_target_of_meta "$meta")
+    harness=$(fm_meta_get "$meta" harness 2>/dev/null) || harness=
     if [ -z "$backend" ] || [ -z "$target" ]; then
       [ "$mode" = print ] && printf '  worker %s endpoint=none dialog=none\n' "$id"
       continue
@@ -1524,7 +1540,7 @@ wd_visit_worker_dialogs() {
       continue
     fi
     screen=$(wd_capture "$backend" "$target" 60) || screen=''
-    dialog=$(wd_observe_dialog "$backend" "$target" "fm-$id") || dialog=''
+    dialog=$(wd_observe_dialog "$backend" "$target" "fm-$id" "${harness:-unknown}") || dialog=''
     if [ "$mode" = print ]; then
       printf '  worker %s endpoint=%s:%s dialog=%s\n' "$id" "$backend" "$target" "${dialog:-none}"
       continue
@@ -1533,13 +1549,15 @@ wd_visit_worker_dialogs() {
       feedback)
         O_BACKEND=$backend
         O_TARGET=$target
+        O_HARNESS=${harness:-unknown}
         O_PANE=$screen
         O_DIALOG_PANE=$(wd_view "$backend" "$target" "fm-$id") || O_DIALOG_PANE=$screen
         O_DIALOG=$dialog
         O_ID=$id
         O_REC_SUBJECT="worker:$id"
-        wd_handle_dialog
+        wd_handle_dialog || true
         O_ID=$saved_id
+        O_HARNESS=$saved_harness
         unset O_REC_SUBJECT
         ;;
       permission)
@@ -1567,8 +1585,13 @@ wd_visit_worker_dialogs() {
   O_DIALOG_PANE=$saved_dialog_pane
   O_BACKEND=$saved_backend
   O_TARGET=$saved_target
+  O_HARNESS=$saved_harness
   O_DIALOG=$saved_dialog
   O_ID=$saved_id
+  O_COMPOSER=$saved_composer
+  O_COMPOSER_TEXT=$saved_composer_text
+  O_COMPOSER_ABOVE=$saved_composer_above
+  O_DRAFT=$saved_draft
   unset O_REC_SUBJECT
 }
 
@@ -1855,6 +1878,7 @@ manager_status() {
 
 usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; }
 
+[ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 cmd=${1:-}
 [ "$#" -eq 0 ] || shift
 case "$cmd" in

@@ -3705,33 +3705,42 @@ test_feedback_and_bug_report_dialog_dismissal() {
   ! lib fm_control_feedback_dialog_dismiss codex "$claude_draft" || fail "codex adapter matched claude bug report draft"
   ! lib fm_control_feedback_dialog_dismiss claude "$codex_feedback" || fail "claude adapter matched codex feedback dialog"
 
-  # 3. Near-miss texts and unknown dialogs are never dismissed.
+  # 3. Near-miss texts, altered footers, and unknown dialogs are never dismissed.
   for near_miss in \
     $'Log: How\'s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip' \
     $'How\'s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad' \
     $'● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good' \
     $'● Bug report drafted: tool timeout\n  1 to review · 2 to send' \
     $'Submit feedback / bug report\nDescribe the issue below:\n\nPress Enter to continue' \
+    $'How was this?\n\n ❯ 1. bug         Crash, error message, hang, or broken UI/behavior\n\nDo not press esc to close' \
+    $'How was this?\n\n ❯ 1. bug         Crash, error message, hang, or broken UI/behavior\n\nPress space to continue or esc to close' \
+    $'Upload logs?\nThe following files will be sent:\n  • codex-logs.log\n\nPress space to confirm' \
     $'How\'s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip\nnew work output after survey\n> '; do
     ! lib fm_control_feedback_dialog_dismiss "" "$near_miss" || fail "near-miss matched feedback dismissal: $near_miss"
     assert_equals "" "$(lib fm_wd_pane_dialog "$near_miss")" "near-miss is not classified as a dialog: $near_miss"
   done
   # 3b. A TUI that full-clears its screen pushes the closed dialog and its input
-  #     box into scrollback, then draws a clean prompt below. The newer prompt
-  #     proves the dialog is stale; dismissing it would type 0 into the composer.
-  local stale_boxed stale_bare stale_rule
+  #     box into scrollback, then draws a clean or populated prompt below. The
+  #     later input box proves the dialog is stale; dismissing it would type 0
+  #     into the composer or corrupt an existing draft.
+  local stale_boxed stale_bare stale_rule stale_boxed_draft stale_bare_draft stale_rule_draft
   stale_boxed=$'● Done. I updated the parser and ran the tests.\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n╭──────────────────────────────╮\n│ >                            │\n╰──────────────────────────────╯\n  ? for shortcuts\n● Done. I updated the parser and ran the tests.\n╭──────────────────────────────╮\n│ >                            │\n╰──────────────────────────────╯\n  ? for shortcuts'
   stale_bare=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n> \nsome work\n> '
   stale_rule=$'some work\n● Bug report drafted: tool timeout on large file\n  1 to review · 2 to send · 0 to dismiss\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main\nsome work\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main'
-  for screen in "$stale_boxed" "$stale_bare" "$stale_rule"; do
+  stale_boxed_draft=$'● Done. I updated the parser and ran the tests.\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n╭──────────────────────────────╮\n│ >                            │\n╰──────────────────────────────╯\n  ? for shortcuts\n● Done. I updated the parser and ran the tests.\n╭──────────────────────────────╮\n│ > existing draft             │\n╰──────────────────────────────╯\n  ? for shortcuts'
+  stale_bare_draft=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n> \nsome work\n> existing draft'
+  stale_rule_draft=$'some work\n● Bug report drafted: tool timeout on large file\n  1 to review · 2 to send · 0 to dismiss\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main\nsome work\n────────────────────────────────────────\n❯ existing draft\n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main'
+  for screen in "$stale_boxed" "$stale_bare" "$stale_rule" "$stale_boxed_draft" "$stale_bare_draft" "$stale_rule_draft"; do
     ! lib fm_control_feedback_dialog_dismiss claude "$screen" || fail "stale dialog above a newer prompt matched feedback dismissal: $screen"
   done
   ! lib fm_control_feedback_dialog_dismiss "" "$unknown_picker" || fail "unknown picker matched feedback dismissal"
   assert_equals question "$(lib fm_wd_pane_dialog "$unknown_picker")" "unknown picker still classifies as question"
 
   # 4. Watchdog auto-dismisses worker feedback and bug-report dialogs without submitting,
-  #    and worker failures do not consume the primary home pane's two-failure cap.
-  make_home $'Captain session\n> '
+  #    enforces per-harness scoping on worker panes, preserves the home pane's composer
+  #    state (home draft + worker dialog in one pass), and does not let worker failures
+  #    consume the primary home pane's two-failure cap.
+  make_home $'Captain session\n────────────────────────────────────────\n❯ home draft in progress\n────────────────────────────────────────\n  ? for shortcuts'
   transcript 100 "Working."
   local home_canon
   home_canon=$(cd -P "$H" && pwd -P)
@@ -3752,11 +3761,51 @@ SH
   "$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "wkagy${CASE_N}" -x 160 -y 40 "$H/worker-agy.sh"
   WP=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" list-panes -t "=wkagy${CASE_N}" -F '#{pane_id}' | head -n 1)
   printf 'kind=ship\nharness=agy\nbackend=tmux\nwindow=%s\nendpoint_task_id=agyw\n' "$WP" > "$H/state/agyw.meta"
+  cat > "$H/worker-mismatch.sh" <<SH
+#!/usr/bin/env bash
+printf '%s\n' 'How'\''s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip'
+stty -echo
+exec cat >> "$H/worker-mismatch.key"
+SH
+  chmod +x "$H/worker-mismatch.sh"
+  : > "$H/worker-mismatch.key"
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "wkmis${CASE_N}" -x 160 -y 40 "$H/worker-mismatch.sh"
+  local WP_MIS
+  WP_MIS=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" list-panes -t "=wkmis${CASE_N}" -F '#{pane_id}' | head -n 1)
+  printf 'kind=ship\nharness=claude\nbackend=tmux\nwindow=%s\nendpoint_task_id=misw\n' "$WP_MIS" > "$H/state/misw.meta"
   sleep 0.5
-  run_wd 0 once >/dev/null 2>&1 || fail "watchdog worker feedback pass failed"
+  local post_worker_state
+  post_worker_state=$(
+    FM_TEST_SEAM=1 FM_WD_NOW="$BASE" FM_HOME="$H" bash -c '
+      HOME_T=$2
+      . "$1"
+      fm_backend_composer_state() {
+        if [ "$2" = "$HOME_T" ]; then printf "pending\n"; else printf "empty\n"; fi
+      }
+      mkdir -p "$WD" "$OUT"
+      WD_GAPS=$(mktemp "$WD/.gaps.XXXXXX")
+      wd_observe "$FM_HOME" - primary
+      O_DRAFT="home-orca-draft"
+      WD_SYMPTOM=ok WD_RESTARTED=0
+      wd_handle_subject
+      wd_visit_worker_dialogs page
+      rm -f "$WD_GAPS"
+      printf "%s|%s|%s\n" "$O_COMPOSER" "$O_DRAFT" "$(printf "%s" "$O_COMPOSER_TEXT" | tr "\n" " ")"
+    ' _ "$WD" "$T"
+  ) || fail "watchdog worker feedback pass failed"
   assert_equals "0" "$(cat "$H/worker-agy.key" 2>/dev/null)" "worker agy survey received literal 0 and nothing else"
+  assert_equals "" "$(cat "$H/worker-mismatch.key" 2>/dev/null)" "claude worker showing an agy survey receives no key"
+  assert_equals 0 "$(awk -F'\t' '$4 == "worker:misw"' "$H/state/watchdog/actions.tsv" | wc -l | tr -d ' ')" \
+    "mismatched-harness worker records no dialog key action"
   assert_equals 1 "$(awk -F'\t' '$4 == "worker:agyw" && $5 == "dialog" && $6 == "key" && $7 == "done"' "$H/state/watchdog/actions.tsv" | wc -l | tr -d ' ')" \
     "worker agy feedback dismissal recorded done despite another worker's two failures: $(ledger)"
+  assert_grep "composer=pending" "$H/state/watchdog/subjects/$(home_key)" \
+    "home subject recorded pending composer"
+  assert_contains "$post_worker_state" "pending|home-orca-draft|" \
+    "worker feedback dismissal did not overwrite the home pane's O_COMPOSER or O_DRAFT"
+  assert_contains "$post_worker_state" "home draft in progress" \
+    "worker feedback dismissal did not overwrite the home pane's O_COMPOSER_TEXT"
+  [ ! -s "$H/typed.log" ] || fail "home pane with draft was typed into during worker dialog dismissal: $(cat "$H/typed.log")"
 
   # 5. Watcher (fm-watch.sh) auto-dismisses an idle worker's feedback dialog and logs the dismissal, but leaves a busy worker alone.
   local wdir wstate wfake wout
@@ -3796,10 +3845,11 @@ SH
   assert_grep "auto-dismissed feedback dialog (agy-cli-feedback key=0): test:fm-agy" "$wstate/.watch-triage.log" \
     "watcher logged the feedback dismissal"
 
-  # 6. Shared atomic claim: when two callers race on one pane, exactly one key is sent.
+  # 6. Shared atomic claim: when two callers race on one pane (even with different
+  #    status-row snapshots), serialization sends the dismiss key at most once.
   local rstate="$wdir/race-state" pid1 pid2
   mkdir -p "$rstate"
-  printf '%s\n' "$agy_survey" > "$wdir/pane-race.txt"
+  printf '%s\n' "$claude_survey_statusline" > "$wdir/pane-race.txt"
   : > "$wdir/race-keys.log"
   cat > "$wfake/tmux" <<'SH'
 #!/usr/bin/env bash
@@ -3823,18 +3873,18 @@ SH
   chmod +x "$wfake/tmux"
   (
     PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-race.txt" FM_TEST_WATCH_KEYS="$wdir/race-keys.log" \
-      bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1' \
-      _ "$ROOT" "$rstate" "$agy_survey" >/dev/null 2>&1 || true
+      bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" claude "$3" "fm-agy" 0.1' \
+      _ "$ROOT" "$rstate" "$claude_survey_statusline" >/dev/null 2>&1 || true
   ) &
   pid1=$!
   (
     PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-race.txt" FM_TEST_WATCH_KEYS="$wdir/race-keys.log" \
-      bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1' \
-      _ "$ROOT" "$rstate" "$agy_survey" >/dev/null 2>&1 || true
+      bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" claude "$3" "fm-agy" 0.1' \
+      _ "$ROOT" "$rstate" "$claude_survey_autocompact" >/dev/null 2>&1 || true
   ) &
   pid2=$!
   wait "$pid1" "$pid2"
-  assert_equals "LITERAL:0" "$(cat "$wdir/race-keys.log")" "concurrent callers racing on one pane send the dismiss key exactly once"
+  assert_equals "LITERAL:0" "$(cat "$wdir/race-keys.log")" "concurrent callers racing with different snapshots on one pane send the dismiss key exactly once"
 
   # 7. A key delivery that fails leaves the dialog retryable on the next tick.
   local fstate="$wdir/fail-state" frc=0

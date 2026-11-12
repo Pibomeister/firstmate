@@ -1056,6 +1056,10 @@ fm_control_feedback_dialog_dismiss() {  # <harness> <screen>
       function is_prompt_row(r) {
         return (r ~ /^[ \t]*((│|┃|[|])[ \t]+)?(❯|›|⟩|→|❭|>)[ \t]*((│|┃|[|])[ \t]*)?$/)
       }
+      function is_any_prompt_row(r) {
+        if (is_prompt_row(r)) return 1
+        return (r ~ /^[ \t]*((│|┃|[|])[ \t]+)?(❯|›|⟩|→|❭|>)([ \t]+|\xc2\xa0)/)
+      }
       function is_chrome_row(r) {
         if (r ~ /^[ \t]*$/) return 1
         if (is_border_row(r)) return 1
@@ -1065,10 +1069,12 @@ fm_control_feedback_dialog_dismiss() {  # <harness> <screen>
         return 0
       }
       # Rows below the input box under the dialog (statusLine, mode hints) are
-      # ignored, but a later prompt row means a newer screen was drawn after
-      # it, so the dialog is a stale scrollback copy rather than live.
+      # ignored, but a later input box or prompt row (empty or populated) means
+      # a newer screen was drawn after it, so the dialog is stale history.
       function no_prompt_after(idx,   k) {
-        for (k = idx + 1; k <= m; k++) if (is_prompt_row(tail[k])) return 0
+        for (k = idx + 1; k <= m; k++) {
+          if (is_any_prompt_row(tail[k]) || is_border_row(tail[k])) return 0
+        }
         return 1
       }
       function no_output_after(idx,   j, seen_top_border, seen_prompt) {
@@ -1169,7 +1175,7 @@ fm_control_feedback_dialog_dismiss() {  # <harness> <screen>
             r = tail[i]
             if (r ~ /^[ \t]*How was this\?[ \t]*$/) h_cx = i
             if (h_cx > 0 && i > h_cx && r ~ /(Crash, error message, hang, or broken UI\/behavior|Output was off-target, incorrect, incomplete, or unhelpful|Slowness, feature suggestion, UX feedback, or anything else)/) b_cx = i
-            if (h_cx > 0 && b_cx > 0 && i > b_cx && r ~ /^[ \t]*(Press enter to confirm or esc to go back|Enter to select · (↑\/↓ to navigate · )?Esc to cancel|.*[ \t]esc to (cancel|go back|close))[ \t]*$/) f_cx = i
+            if (h_cx > 0 && b_cx > 0 && i > b_cx && r ~ /^[ \t]*(Press enter to confirm or esc to (go back|cancel)|Enter to (select|confirm) · (↑\/↓ to navigate · )?Esc to cancel|enter to (submit|confirm|select) · esc to (cancel|go back))[ \t]*$/) f_cx = i
 
             if (r ~ /^[ \t]*Upload logs\?[ \t]*$/) h_up = i
             if (h_up > 0 && i > h_up && r ~ /The following files will be sent:/) b_up = i
@@ -1222,8 +1228,9 @@ fm_control_send_feedback_dismiss() {  # <backend> <target> <dismiss-key> [<expec
   esac
 }
 
-fm_control_feedback_window_key() {  # <target>
+fm_control_feedback_window_key() {  # <backend> [<target>]
   local key=${1-}
+  [ "$#" -lt 2 ] || key="${1-}_${2-}"
   key=${key//:/_}
   key=${key//\//_}
   printf '%s' "${key//./_}"
@@ -1262,24 +1269,24 @@ FM_CONTROL_FEEDBACK_AFTER_PANE=
 
 # fm_control_dismiss_feedback_dialog <state-dir> <backend> <target> <harness> <screen> [<expected-label>] [<settle-secs>] [<call-timeout-secs>]
 # Shared claim-and-dismiss helper called by the watcher's two sites, the
-# daemon's two sites, and the watchdog. Uses one marker format
-# ($state/.feedback-dismissed-<window_key>) storing one shared pane hash, and
-# acquires an atomic mkdir claim ($state/.feedback-claim-<window_key>-<pane_hash>)
-# before sending the key. After sending, waits <settle-secs>, re-captures the
-# pane, and verifies the dialog is gone; never sends a second key on the same
-# claim. Each backend send and capture is bounded by <call-timeout-secs>
-# (default 20). A failed send releases the claim and restores the marker so a
-# later tick can retry.
+# daemon's two sites, and the watchdog. Serializes dismissal per
+# (<backend>, <target>) with an atomic mkdir lock ($state/.feedback-claim-<window_key>)
+# held from live capture through post-send verification, and never removes
+# another caller's active claim. Records the last attempted pane hash in
+# $state/.feedback-dismissed-<window_key> so an unchanged sticky dialog is not
+# sent a second key. Each backend send and capture is bounded by
+# <call-timeout-secs> (default 20). A failed send releases the lock and
+# restores the marker so a later tick can retry.
 # Returns:
 #   0 - claimed, sent key, re-captured, and verified the dialog is gone
 #   1 - <screen> does not match a known feedback/bug-report dialog for <harness>
-#   2 - already claimed for this (window_key, pane_hash); no key sent
+#   2 - already claimed or already dismissed for this (<backend>, <target>); no key sent
 #   3 - claimed, but key delivery failed
 #   4 - claimed and key sent, but re-capture did not prove the dialog gone
 fm_control_dismiss_feedback_dialog() {
   local state_dir=${1-} backend=${2-} target=${3-} harness=${4-} screen=${5-}
   local label=${6-} settle=${7-0.2} call_timeout=${8:-20}
-  local spec dialog_id dismiss_key wkey phash marker claim old_claim after prev_marker lib
+  local spec dialog_id dismiss_key wkey phash marker claim live after prev_marker lib
   FM_CONTROL_FEEDBACK_DIALOG_ID=
   FM_CONTROL_FEEDBACK_DISMISS_KEY=
   FM_CONTROL_FEEDBACK_AFTER_PANE=
@@ -1289,12 +1296,12 @@ fm_control_dismiss_feedback_dialog() {
   dismiss_key=${spec#*$'\t'}
   FM_CONTROL_FEEDBACK_DIALOG_ID=$dialog_id
   FM_CONTROL_FEEDBACK_DISMISS_KEY=$dismiss_key
-  wkey=$(fm_control_feedback_window_key "$target")
+  wkey=$(fm_control_feedback_window_key "$backend" "$target")
   phash=$(fm_control_feedback_pane_hash "$screen")
   [ -n "$wkey" ] && [ -n "$phash" ] || return 1
   mkdir -p "$state_dir" 2>/dev/null || return 1
   marker="$state_dir/.feedback-dismissed-$wkey"
-  claim="$state_dir/.feedback-claim-$wkey-$phash"
+  claim="$state_dir/.feedback-claim-$wkey"
   prev_marker=$(cat "$marker" 2>/dev/null || true)
   if [ "$prev_marker" = "$phash" ]; then
     return 2
@@ -1302,14 +1309,34 @@ fm_control_dismiss_feedback_dialog() {
   if ! mkdir "$claim" 2>/dev/null; then
     return 2
   fi
-  printf '%s\n' "$phash" > "$marker"
-  for old_claim in "$state_dir/.feedback-claim-$wkey-"*; do
-    [ -d "$old_claim" ] || continue
-    [ "$old_claim" = "$claim" ] || rmdir "$old_claim" 2>/dev/null || true
-  done
   lib=${BASH_SOURCE[0]}
   # shellcheck source=bin/fm-timeout-lib.sh
   command -v fm_run_timed_fn >/dev/null 2>&1 || . "${lib%/*}/fm-timeout-lib.sh"
+  prev_marker=$(cat "$marker" 2>/dev/null || true)
+  if [ "$prev_marker" = "$phash" ]; then
+    rmdir "$claim" 2>/dev/null || true
+    return 2
+  fi
+  live=$(fm_run_timed_fn "$call_timeout" fm_control_capture_feedback_pane "$backend" "$target" "$label") || live=
+  if [ -n "$live" ]; then
+    if ! spec=$(fm_control_feedback_dialog_dismiss "$harness" "$live"); then
+      FM_CONTROL_FEEDBACK_AFTER_PANE=$live
+      rmdir "$claim" 2>/dev/null || true
+      return 2
+    fi
+    dialog_id=${spec%%$'\t'*}
+    dismiss_key=${spec#*$'\t'}
+    # shellcheck disable=SC2034
+    FM_CONTROL_FEEDBACK_DIALOG_ID=$dialog_id
+    # shellcheck disable=SC2034
+    FM_CONTROL_FEEDBACK_DISMISS_KEY=$dismiss_key
+    phash=$(fm_control_feedback_pane_hash "$live")
+    if [ "$prev_marker" = "$phash" ]; then
+      rmdir "$claim" 2>/dev/null || true
+      return 2
+    fi
+  fi
+  printf '%s\n' "$phash" > "$marker"
   if ! fm_run_timed_fn "$call_timeout" fm_control_send_feedback_dismiss "$backend" "$target" "$dismiss_key" "$label" >/dev/null 2>&1; then
     if [ -n "$prev_marker" ]; then
       printf '%s\n' "$prev_marker" > "$marker"
@@ -1324,13 +1351,12 @@ fm_control_dismiss_feedback_dialog() {
     *) sleep "$settle" ;;
   esac
   after=$(fm_run_timed_fn "$call_timeout" fm_control_capture_feedback_pane "$backend" "$target" "$label") || after=
+  # shellcheck disable=SC2034
   FM_CONTROL_FEEDBACK_AFTER_PANE=$after
-  [ -n "$after" ] || return 4
-  if fm_control_feedback_dialog_dismiss "$harness" "$after" >/dev/null 2>&1; then
+  if [ -z "$after" ] || fm_control_feedback_dialog_dismiss "$harness" "$after" >/dev/null 2>&1; then
+    rmdir "$claim" 2>/dev/null || true
     return 4
   fi
-  if declare -F fm_wd_pane_dialog >/dev/null 2>&1 && fm_wd_pane_dialog "$after" >/dev/null 2>&1; then
-    return 4
-  fi
+  rmdir "$claim" 2>/dev/null || true
   return 0
 }

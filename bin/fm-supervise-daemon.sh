@@ -865,8 +865,8 @@ stale_window_is_busy() {  # <window> <state>
     busy\ *) return 0 ;;
     unknown\ t3code-native) return 3 ;;
   esac
-  if [ -n "$tail40" ]; then
-    if fm_control_dismiss_feedback_dialog "$state" "$backend" "$win" "$harness" "$tail40" "$label" 0.2; then
+  if [ -n "$tail40" ] && [ -n "$harness" ]; then
+    if fm_control_dismiss_feedback_dialog "$state" "$backend" "$win" "$harness" "$tail40" "$label" 0.2 "$DAEMON_PROBE_BUDGET"; then
       log "auto-dismissed feedback dialog ($FM_CONTROL_FEEDBACK_DIALOG_ID key=$FM_CONTROL_FEEDBACK_DISMISS_KEY): $win"
       return 0
     fi
@@ -1855,12 +1855,12 @@ inject_msg() {  # <message> [state] [exact] [request-id]
   fi
   if [ "$composer" != empty ] && [ "$backend" != t3code ]; then
     local sup_screen
-    sup_screen=$(fm_backend_capture "$backend" "$target" 40 2>/dev/null || true)
+    sup_screen=$(fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_capture "$backend" "$target" 40 2>/dev/null || true)
     if [ -n "$sup_screen" ] \
-      && fm_control_dismiss_feedback_dialog "$state" "$backend" "$target" "$(fm_daemon_primary_harness)" "$sup_screen" "" 0.2; then
+      && fm_control_dismiss_feedback_dialog "$state" "$backend" "$target" "$(fm_daemon_primary_harness)" "$sup_screen" "" 0.2 "$DAEMON_PROBE_BUDGET"; then
       log "auto-dismissed feedback dialog ($FM_CONTROL_FEEDBACK_DIALOG_ID key=$FM_CONTROL_FEEDBACK_DISMISS_KEY): $target"
-      composer=$(fm_backend_composer_state "$backend" "$target" 2>/dev/null)
-      if [ "$composer" = empty ] && [ "$backend" = orca ] && fm_backend_orca_draft_present "$target"; then
+      composer=$(fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_composer_state "$backend" "$target" 2>/dev/null || true)
+      if [ "$composer" = empty ] && [ "$backend" = orca ] && fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_orca_draft_present "$target"; then
         composer="pending-unproven"
       fi
     fi
