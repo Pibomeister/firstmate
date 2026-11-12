@@ -373,6 +373,105 @@ test_no_lane_capacity_is_a_noop() {
   pass "without config/lane-capacity a check is a no-op"
 }
 
+test_spawn_gen_binding_is_passed_to_interrupt_and_resume() {
+  local home log
+  home=$(make_home genbind)
+  log="$TMP_ROOT/genbind.log"
+  add_worker "$home" w 100 4
+  cat > "$TMP_ROOT/genbind-control" <<'SH'
+#!/usr/bin/env bash
+printf 'control %s gen=%s\n' "$*" "${FM_CONTROL_EXPECTED_SPAWN_GEN:-}" >> "$FM_RELIEF_LOG"
+SH
+  cat > "$TMP_ROOT/genbind-send" <<'SH'
+#!/usr/bin/env bash
+printf 'send %s gen=%s\n' "$1" "${FM_SEND_EXPECTED_SPAWN_GEN:-}" >> "$FM_RELIEF_LOG"
+SH
+  sustained_pass "$home" genbind 1000 >/dev/null
+  assert_equals "control w interrupt gen=s100.1" "$(cat "$log")" "the interrupt was not bound to the selected spawn_gen"
+  run_relief "$home" genbind 5 2000 >/dev/null
+  assert_contains "$(cat "$log")" "send w gen=s100.1" "the resume steer was not bound to the pause record's spawn_gen"
+  assert_absent "$home/state/load-relief/paused/w" "the bound resume did not lift the pause"
+  pass "the interrupt and the resume steer both carry the selected worker's spawn_gen"
+}
+
+test_candidate_relaunched_after_selection_is_not_interrupted() {
+  local home out
+  home=$(make_home relaunched)
+  printf 'sustain-secs=60\npause-per-check=2\n' > "$home/config/load-relief"
+  add_worker "$home" first 300 9
+  add_worker "$home" second 200 8
+  cat > "$TMP_ROOT/relaunched-control" <<'SH'
+#!/usr/bin/env bash
+printf 'control %s\n' "$*" >> "$FM_RELIEF_LOG"
+if [ "$1" = first ]; then
+  sed -i.bak 's/^spawn_gen=.*/spawn_gen=s999.1/' "$FM_HOME/state/second.meta"
+  rm -f "$FM_HOME/state/second.meta.bak"
+fi
+SH
+  out=$(sustained_pass "$home" relaunched 1000)
+  assert_equals "control first interrupt" "$(cat "$TMP_ROOT/relaunched.log")" "a candidate relaunched after selection was interrupted"
+  assert_absent "$home/state/load-relief/paused/second" "a pause record was written for the relaunched candidate's predecessor"
+  assert_contains "$out" "second was relaunched since selection" "the skipped relaunch was not reported"
+  pass "a candidate whose spawn_gen changed after selection is not interrupted and gets no pause record"
+}
+
+test_backlog_read_failure_blocks_pause_and_preserves_existing_pause() {
+  local home log out
+  home=$(make_home failread)
+  log="$TMP_ROOT/failread.log"
+  add_worker "$home" w 100 4
+  cp "$TMP_ROOT/failread-tasks" "$TMP_ROOT/failread-tasks.good"
+  cat > "$TMP_ROOT/failread-tasks" <<'SH'
+#!/usr/bin/env bash
+echo "backlog unavailable" >&2
+exit 2
+SH
+  sustained_pass "$home" failread 1000 >/dev/null
+  assert_equals "" "$(cat "$log")" "a worker was paused while its backlog read was failing"
+  assert_absent "$home/state/load-relief/paused/w" "a pause record was written while the backlog read was failing"
+  cp "$TMP_ROOT/failread-tasks.good" "$TMP_ROOT/failread-tasks"
+  sustained_pass "$home" failread 2000 >/dev/null
+  assert_present "$home/state/load-relief/paused/w" "setup pause missing once the backlog read recovered"
+  cat > "$TMP_ROOT/failread-tasks" <<'SH'
+#!/usr/bin/env bash
+echo "backlog unavailable" >&2
+exit 2
+SH
+  : > "$log"
+  out=$(run_relief "$home" failread 5 3000)
+  assert_equals "" "$(cat "$log")" "a paused worker was resumed while its hold lookup was failing"
+  assert_present "$home/state/load-relief/paused/w" "a failed hold lookup dropped the pause record"
+  assert_contains "$out" "backlog read for w failed" "the preserved pause was not reported"
+  cp "$TMP_ROOT/failread-tasks.good" "$TMP_ROOT/failread-tasks"
+  run_relief "$home" failread 5 3010 >/dev/null
+  assert_contains "$(cat "$log")" "send w" "the pause did not resume once the backlog read recovered"
+  assert_absent "$home/state/load-relief/paused/w" "the recovered resume kept the pause record"
+  pass "a failed backlog read pauses nobody and preserves an existing pause until a read succeeds"
+}
+
+test_unrelated_resolution_does_not_hide_a_standing_external_pause() {
+  local home log
+  home=$(make_home waitfold)
+  log="$TMP_ROOT/waitfold.log"
+  add_worker "$home" asks 900 9
+  add_worker "$home" busy 100 3
+  printf 'paused [key=external] [at=1]: awaiting approval\nresolved [key=other] [at=2]: unrelated answer\n' > "$home/state/asks.status"
+  sustained_pass "$home" waitfold 1000 >/dev/null
+  assert_equals "control busy interrupt" "$(cat "$log")" "a worker under a standing external pause hidden by an unrelated resolution was paused"
+  pause_record "$home" asks 900 9
+  run_relief "$home" waitfold 5 2000 >/dev/null
+  assert_not_contains "$(cat "$log")" "send asks" "a worker under a standing external pause was resumed after an unrelated resolution"
+  assert_present "$home/state/load-relief/paused/asks" "the hidden external pause's relief record was dropped"
+  printf 'resolved [key=external] [at=3]: approved\n' >> "$home/state/asks.status"
+  run_relief "$home" waitfold 5 2010 >/dev/null
+  assert_contains "$(cat "$log")" "send asks" "an answered external pause did not let the resume through"
+  pass "an unrelated resolution hides neither a standing external pause from the pause pass nor from the resume pass"
+}
+
+test_spawn_gen_binding_is_passed_to_interrupt_and_resume
+test_candidate_relaunched_after_selection_is_not_interrupted
+test_backlog_read_failure_blocks_pause_and_preserves_existing_pause
+test_unrelated_resolution_does_not_hide_a_standing_external_pause
 test_sustained_high_pauses_lowest_then_falling_resumes
 test_priority_tie_pauses_newest_dispatch
 test_unprioritized_pauses_first_and_absent_never

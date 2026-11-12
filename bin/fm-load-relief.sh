@@ -74,9 +74,18 @@
 # A worker with an open decision is never paused or resumed: the
 # authoritative open-decision fold (status_open_decisions in
 # bin/fm-classify-lib.sh) over its whole status file, its current declared
-# wait, and a captain hold on its backlog item (the held: field) all count,
-# never only the latest status verb. A decision raised after a pause
-# therefore also defers that worker's resume until it is answered.
+# wait (status_declared_wait_line, so a resolved line for another key never
+# hides a standing pause), and a captain hold on its backlog item (the
+# held: field) all count, never only the latest status verb. A decision
+# raised after a pause therefore also defers that worker's resume until
+# it is answered. A failed backlog read is not evidence of no hold: the
+# pause pass never pauses and the resume pass preserves the record until
+# a read succeeds. Both acting passes bind the worker's spawn_gen: the
+# pause re-reads it before acting and passes it to the interrupt as
+# FM_CONTROL_EXPECTED_SPAWN_GEN (bin/fm-control.sh refuses a mismatch
+# under its lifecycle lock), and the resume passes the record's spawn_gen
+# to the steer as FM_SEND_EXPECTED_SPAWN_GEN, so a worker relaunched
+# since selection is never interrupted or steered for its predecessor.
 #
 # State under state/load-relief/: high-since (epoch the current over-ceiling
 # stretch began) and paused/<id> (key=value: id, paused_epoch, priority,
@@ -178,7 +187,8 @@ latest_verb() {
 }
 
 # tasks_show <id>: the one recorded backlog read per task per pass; prints
-# the show output, or nothing when the task has no backlog item.
+# the show output and returns the read's exit status, so a failed read is
+# never mistaken for a task with no backlog item or no hold.
 tasks_show() {
   FM_HOME="$FM_HOME" "$tasks_cmd" show "$1" 2>/dev/null
 }
@@ -186,15 +196,18 @@ tasks_show() {
 # worker_waiting <id> <show-output>: the worker has an open decision or a
 # captain hold - an open decision from the authoritative fold over the
 # whole status file, a current declared wait that is not this relief's own
-# pause, or held: yes on its backlog item.
+# pause, or held: yes on its backlog item. Callers pass only a successful
+# backlog read; a failed read preserves the pause instead (see header).
 worker_waiting() {
-  local id=$1 show=$2 last
+  local id=$1 show=$2 wait_line key
   [ -n "$(status_open_decisions "$STATE/$id.status")" ] && return 0
   printf '%s\n' "$show" | grep -q '^  held: yes' && return 0
-  last=$(last_status_line "$STATE/$id.status")
-  if status_is_captain_held "$last"; then return 0; fi
-  if status_is_paused "$last"; then
-    case "$last" in *"[key=load-relief]"*) ;; *) return 0 ;; esac
+  wait_line=$(status_declared_wait_line "$STATE/$id.status")
+  [ -n "$wait_line" ] || return 1
+  if status_is_captain_held "$wait_line"; then return 0; fi
+  if status_is_paused "$wait_line"; then
+    key=$(_fm_decision_key "$wait_line" '') || key=
+    [ "$key" = load-relief ] || return 0
   fi
   return 1
 }
@@ -223,7 +236,7 @@ write_high_since() {
 # dropped without a steer; a worker with an open decision keeps its record
 # and is not steered.
 resume_pass() {
-  local level=$1 record id show rgen mgen rprio repoch resumable stale
+  local level=$1 record id show show_rc rgen mgen rprio repoch resumable stale
   num_lt "$load1" "$level" || return 0
   [ "$dry_run" -eq 0 ] && rm -f "$RELIEF_DIR/high-since"
   [ -d "$PAUSED_DIR" ] || return 0
@@ -232,7 +245,7 @@ resume_pass() {
     [ -f "$record" ] || continue
     id=$(basename "$record")
     case "$id" in *[!A-Za-z0-9._-]*) continue ;; esac
-    show=$(tasks_show "$id")
+    show=$(tasks_show "$id") && show_rc=0 || show_rc=$?
     rgen=$(meta_get "$record" spawn_gen)
     mgen=
     [ -f "$STATE/$id.meta" ] && mgen=$(meta_get "$STATE/$id.meta" spawn_gen)
@@ -245,6 +258,10 @@ resume_pass() {
         rm -f "$record"
         echo "load-relief: dropped pause record for finished, removed, or replaced $id"
       fi
+      continue
+    fi
+    if [ "$show_rc" -ne 0 ]; then
+      echo "fm-load-relief: backlog read for $id failed; its pause record is kept until a read succeeds" >&2
       continue
     fi
     worker_waiting "$id" "$show" && continue
@@ -265,7 +282,8 @@ resume_pass() {
       echo "load-relief: would resume $id load=$load1 resume-below=$level"
       break
     fi
-    if FM_HOME="$FM_HOME" "$send_cmd" "$id" "Host load has fallen to $load1 (resume level $level). Your load-relief pause is lifted; resume your task from where you left off." >/dev/null 2>&1; then
+    rgen=$(meta_get "$PAUSED_DIR/$id" spawn_gen)
+    if FM_SEND_EXPECTED_SPAWN_GEN="$rgen" FM_HOME="$FM_HOME" "$send_cmd" "$id" "Host load has fallen to $load1 (resume level $level). Your load-relief pause is lifted; resume your task from where you left off." >/dev/null 2>&1; then
       rm -f "$PAUSED_DIR/$id"
       printf 'resolved [key=load-relief] [at=%s]: load relief lifted (load %s below %s); resumed by steer\n' "$now" "$load1" "$level" >> "$STATE/$id.status" 2>/dev/null || true
       echo "load-relief: resumed $id load=$load1 resume-below=$level"
@@ -384,7 +402,7 @@ for meta in "$STATE"/*.meta; do
   esac
   grep -q '^pr=..*' "$meta" 2>/dev/null && continue
   interrupt_eligible "$meta" || continue
-  show=$(tasks_show "$id")
+  show=$(tasks_show "$id") || continue
   [ -n "$show" ] || continue
   worker_waiting "$id" "$show" && continue
   prio=$(printf '%s\n' "$show" | sed -n 's/^  priority: //p' | head -1)
@@ -407,6 +425,12 @@ while IFS="$(printf '\t')" read -r _rank _prio _epoch id gen; do
     paused=$((paused + 1))
     continue
   fi
+  current_gen=
+  [ -f "$STATE/$id.meta" ] && current_gen=$(meta_get "$STATE/$id.meta" spawn_gen)
+  if [ "$current_gen" != "$gen" ]; then
+    echo "load-relief: $id was relaunched since selection (spawn_gen changed); it was not interrupted"
+    continue
+  fi
   mkdir -p "$PAUSED_DIR" || die "cannot create $PAUSED_DIR"
   if ! { printf 'id=%s\npaused_epoch=%s\npriority=%s\nload=%s\nceiling=%s\nspawn_gen=%s\nstate=paused\n' "$id" "$now" "$_prio" "$load1" "$ceiling" "$gen" > "$PAUSED_DIR/$id.tmp.$$" \
       && mv "$PAUSED_DIR/$id.tmp.$$" "$PAUSED_DIR/$id"; }; then
@@ -414,7 +438,7 @@ while IFS="$(printf '\t')" read -r _rank _prio _epoch id gen; do
     echo "fm-load-relief: cannot write the pause record for $id; it was not interrupted" >&2
     continue
   fi
-  control_out=$(FM_HOME="$FM_HOME" "$control_cmd" "$id" interrupt 2>&1) && control_rc=0 || control_rc=$?
+  control_out=$(FM_CONTROL_EXPECTED_SPAWN_GEN="$gen" FM_HOME="$FM_HOME" "$control_cmd" "$id" interrupt 2>&1) && control_rc=0 || control_rc=$?
   if [ "$control_rc" -eq 0 ]; then
     printf 'paused [key=load-relief] [at=%s]: load relief: load %s at or over ceiling %s for %ss; interrupted in place, work preserved, resumes when load falls\n' \
       "$now" "$load1" "$ceiling" "$elapsed" >> "$STATE/$id.status" 2>/dev/null || true
