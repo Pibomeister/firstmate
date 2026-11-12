@@ -459,7 +459,6 @@ ${pr_return_line}The wake is advisory for your task's current branch, not pinned
 Before any gate response or ready report, reread current run evidence and refuse a stale captured result.
 Keep both the captured source round and its inbox record unacknowledged until handling or ask-user escalation is durable; then acknowledge the source/sequence with the command in the message, then move the message into handled/.
 Never replay an old \`respond\` on redelivery: if a response may already have been accepted and live evidence cannot establish what is owed, report a blocker instead of guessing.
-When a gate answer's drive call timed out or returned without a receipt, settle whether it landed from \`no-mistakes axi status\` for that run: still parked at the same gate with the same findings means it did not land and one resend of that same answer is safe; a run that moved past that gate means it landed and you continue from the current gate or outcome; any other reading, or a resend that also returns no receipt, is a blocker to report.
 Resolve the paused wait when handling is durable; re-arm and declare the next wait only when external pipeline work is underway.
 An elapsed or interrupted drive attachment is not evidence the daemon died; the listener reattaches routine elapsed holds, while errors and unknown returns wake you for recovery."
   cat <<EOF

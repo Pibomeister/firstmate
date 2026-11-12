@@ -9091,15 +9091,19 @@ fi
 # first word is a plain path to a harness with a launch template; a wrapper,
 # assignment prefix, quoted or expanded path, compound command, or unknown
 # adapter hides what actually runs, so it passes none and gets no reporter.
-# Its stderr stays on the pane so a config warning reaches the user. The `disarm` after the agent
-# command retires the reporter when the agent exits, because the pane shell
-# that sourced the launch outlives it. Newlines, not `;`, delimit the agent
-# command, so a raw launch ending in a separator or a comment stays intact.
-# The same closing line first records the agent command's exit status with
-# this incarnation's spawn_gen in state/<id>.agent-exit, which the watcher's
-# automatic relaunch reads to tell a clean exit from a crash or signal death
-# (bin/fm-watch.sh crew_auto_relaunch). A clean exit always reaches that line;
-# a wrapper killed together with its agent writes nothing.
+# Its stderr stays on the pane so a config warning reaches the user. The disarm
+# after the agent command retires the reporter when the agent exits, because the
+# pane shell that sourced the launch outlives it. Newlines, not `;`, delimit the
+# agent command, so a raw launch ending in a separator or a comment stays intact.
+# Before the agent, the pane writes a one-line snippet in its own syntax
+# (bin/fm-agent-exit-snippet.sh). After the agent, the launch sources that
+# snippet, whose first command reads this command's exit status into
+# state/<id>.agent-exit with this incarnation's spawn_gen. The watcher's
+# automatic relaunch reads that record to tell a clean exit from a crash or a
+# signal death (bin/fm-watch.sh crew_auto_relaunch). The launch file stays free
+# of that status spelling and of a bare assignment, so a fish pane can parse it.
+# A clean exit always reaches that source; a wrapper killed together with its
+# agent writes nothing.
 OSC7501_AGENT_BIN=
 if [ "$RAW_LAUNCH" = 0 ]; then
   case "$HARNESS" in
@@ -9119,9 +9123,9 @@ else
       ;;
   esac
 fi
-LAUNCH="$(shell_quote "$FM_ROOT/bin/fm-osc7501.sh") arm --task $(shell_quote "$ID") --harness $(shell_quote "$HARNESS") --backend $(shell_quote "$BACKEND") --kind $(shell_quote "$KIND") --state $(shell_quote "$STATE_REAL") --config $(shell_quote "$CONFIG") --target $(shell_quote "$T") --agent-bin $(shell_quote "$OSC7501_AGENT_BIN") >/dev/null || true
+LAUNCH="$(shell_quote "$FM_ROOT/bin/fm-agent-exit-snippet.sh") $(shell_quote "$LAUNCH_DIR/agent-exit.$SPAWN_GEN.sh") $(shell_quote "$SPAWN_GEN") $(shell_quote "$STATE_REAL/$ID.agent-exit") || true; $(shell_quote "$FM_ROOT/bin/fm-osc7501.sh") arm --task $(shell_quote "$ID") --harness $(shell_quote "$HARNESS") --backend $(shell_quote "$BACKEND") --kind $(shell_quote "$KIND") --state $(shell_quote "$STATE_REAL") --config $(shell_quote "$CONFIG") --target $(shell_quote "$T") --agent-bin $(shell_quote "$OSC7501_AGENT_BIN") >/dev/null || true
 $LAUNCH
-fm_agent_exit_status=\$?; printf '%s\t%s\n' $(shell_quote "$SPAWN_GEN") \"\$fm_agent_exit_status\" 2>/dev/null >$(shell_quote "$STATE_REAL/$ID.agent-exit") || true; $(shell_quote "$FM_ROOT/bin/fm-osc7501.sh") disarm --state $(shell_quote "$STATE_REAL") >/dev/null 2>/dev/null || true"
+. $(shell_quote "$LAUNCH_DIR/agent-exit.$SPAWN_GEN.sh") || true; $(shell_quote "$FM_ROOT/bin/fm-osc7501.sh") disarm --state $(shell_quote "$STATE_REAL") >/dev/null 2>/dev/null || true"
 if [ "$LAVISH_AXI_HOST_CONFIG_PRESENT" = 1 ]; then
   LAUNCH="export LAVISH_AXI_HOST=$(shell_quote "$LAVISH_AXI_HOST"); $LAUNCH"
 fi

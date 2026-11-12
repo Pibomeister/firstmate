@@ -160,6 +160,7 @@ fm_test_launch_without_env_scrub() {  # <launch>
 
 # The launch with its OSC 7501 arm/disarm frame (bin/fm-spawn.sh) removed:
 # the arm line's exports stay, the agent command line stays, the disarm goes.
+# The agent-exit snippet writer shares that arm line and goes with it.
 fm_test_launch_unframe() {  # <launch>
   local launch=$1 nl=$'\n' head body last
   [ -n "$launch" ] || return 0
@@ -171,7 +172,9 @@ fm_test_launch_unframe() {  # <launch>
   body=${launch#*"$nl"}
   last=${body##*"$nl"}
   body=${body%"$nl"*}
-  printf '%s; %s%s' "${head%; *fm-osc7501.sh*}" "$body" "${last##*' || true'}"
+  head=${head%; *fm-osc7501.sh*}
+  head=${head%; *fm-agent-exit-snippet.sh*}
+  printf '%s; %s%s' "$head" "$body" "${last##*' || true'}"
 }
 
 fm_test_launch_git_prefix() {  # <launch>

@@ -52,6 +52,17 @@ run_launch() {  # <fakebin> <launch-file>
     /bin/sh -c "$(cat "$2")" >/dev/null 2>&1 || true
 }
 
+# Source the staged launch the way a pane does. The shell's own status spelling
+# has to survive that source: a clean exit is 0 either way, so only a signal
+# death distinguishes a captured agent status from a source that clobbered it.
+run_launch_sourced() {  # <shell> <fakebin> <launch-file>
+  local shell=$1 fakebin=$2 launch=$3 quoted
+  quoted=$(printf '%s' "$launch" | sed "s/'/'\\\\''/g")
+  env -i HOME="$TMP_ROOT/pane-home" XDG_CONFIG_HOME="$TMP_ROOT/pane-home" \
+    PATH="$fakebin:$PATH" TERM=xterm TMUX=synthetic-pane \
+    "$shell" -c "source '$quoted'" >/dev/null 2>&1 || true
+}
+
 meta_field() {  # <home> <id> <key>
   sed -n "s/^$3=//p" "$1/state/$2.meta" | tail -1
 }
@@ -194,6 +205,42 @@ test_exit_records_the_stop_and_relaunch_clears_it() {
   pass "fm-control exit records the intentional stop and a later relaunch clears it"
 }
 
+# A fish pane sources the same allowlist-absent launch file. The record is the
+# observable: spawn_gen, a tab, and the agent status. Status 143 is 128+15, the
+# POSIX status of SIGTERM, and it is what shows the source did not replace the
+# agent's status with its own. Skip when fish is not installed.
+test_allowlist_absent_launch_records_exit_status_under_fish() {
+  local how id rec out status gen
+  if ! command -v fish >/dev/null 2>&1; then
+    pass "skipped: fish is not installed, so the allowlist-absent launch was not executed under fish"
+    return 0
+  fi
+  for how in clean sigterm; do
+    id="exit-fish-$how-a1"
+    rec=$(make_case "exit-fish-$how" "$id")
+    read_case "$rec"
+    : > "$LAUNCH_LOG"; : > "$PANE_LOG"
+    out=$(FM_FAKE_LAUNCH_LOG="$LAUNCH_LOG" FM_FAKE_PANE_LOG="$PANE_LOG" \
+      fm_test_run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" --mode no-mistakes --yolo off)
+    status=$?
+    expect_code 0 "$status" "spawn for a fish pane should succeed: $out"
+    gen=$(meta_field "$HOME_DIR" "$id" spawn_gen)
+    [ -n "$gen" ] || fail "the spawned record carries no spawn_gen"
+    [ ! -e "$HOME_DIR/state/$id.agent-exit" ] || fail "an exit status was recorded before the agent ran"
+    install_probe "$FAKEBIN_DIR" "$how"
+    run_launch_sourced fish "$FAKEBIN_DIR" "$LAUNCH_LOG"
+    if [ "$how" = clean ]; then
+      assert_equals "$gen	0" "$(cat "$HOME_DIR/state/$id.agent-exit" 2>&1)" \
+        "fish: a clean agent exit must be recorded as status 0 for this incarnation"
+    else
+      assert_equals "$gen	143" "$(cat "$HOME_DIR/state/$id.agent-exit" 2>&1)" \
+        "fish: an agent killed by SIGTERM must be recorded as status 143 for this incarnation"
+    fi
+  done
+  pass "a fish pane sourcing the allowlist-absent launch records the agent's exit status"
+}
+
 test_launch_records_clean_and_signal_exit_with_the_incarnation
 test_fresh_spawn_clears_an_intentional_stop_marker
 test_exit_records_the_stop_and_relaunch_clears_it
+test_allowlist_absent_launch_records_exit_status_under_fish
