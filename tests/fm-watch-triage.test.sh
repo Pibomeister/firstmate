@@ -2594,6 +2594,39 @@ test_dead_crew_auto_relaunch_failures_and_exclusions_report_once() {
   pass "a failed auto-relaunch reports once without retrying, and an unreclaimable missing endpoint, a gone worktree, a finished task, a disabled bound, an fm-control exit, or a clean exit 0 keeps the ordinary report"
 }
 
+# A worker whose decision sits with the captain as a backlog hold stays stopped
+# even on the escalation-cap path, which probes for a dead agent before it reads
+# the hold as a wait: relaunching it would answer the captain's call for them.
+test_dead_crew_with_backlog_captain_hold_is_not_auto_relaunched() {
+  local dir state fakebin out capture window
+  local failed='state: failed · source: run-step · run failed'
+  command -v tasks-axi >/dev/null 2>&1 \
+    || { echo "skip: tasks-axi not found (captain-held auto-relaunch exclusion)"; return 0; }
+  window="test:fm-wedge"
+  dir=$(crew_relaunch_fixture auto-relaunch-skip-held 'working: still compiling')
+  mkdir -p "$dir/data"
+  fm_test_tasks_toml "$dir/.tasks.toml" || fail "could not write the backlog config"
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$dir/data/backlog.md"
+  (cd "$dir" && tasks-axi add wedge 'waiting on a captain call' --file data/backlog.md) >/dev/null 2>&1 \
+    || fail "could not file the backlog item"
+  run_hold "$dir" hold wedge --reason 'awaiting the captain on the release call' \
+    || fail "could not hold the backlog item for the captain"
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  date +%s > "$state/.wedge-permanent-$(watch_window_key "$window")"
+  fake_crew_control "$dir" 0
+  FM_CONTROL_BIN="$dir/fake-control"; export FM_CONTROL_BIN
+  gone_endpoint_env dead; export FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS
+  FM_HOME="$dir" FM_DATA_OVERRIDE="$dir/data" FM_WEDGE_MAX_ESCALATIONS=1 \
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" exit \
+    || fail "a dead captain-held worker was never reported: $(cat "$out")"
+  grep -F "automatic relaunch skipped because the worker's decision is held for the captain" "$out" >/dev/null \
+    || fail "the report does not name the captain hold: $(cat "$out")"
+  [ "$(control_calls "$dir")" -eq 0 ] || fail "a dead captain-held worker was auto-relaunched"
+  [ "$(crew_relaunch_wakes "$state" wedge relaunched)" -eq 0 ] || fail "a captain-held worker queued a relaunch wake"
+  unset FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS FM_CONTROL_BIN
+  pass "a dead worker whose decision is held for the captain keeps the ordinary report instead of an automatic relaunch"
+}
+
 # The two deaths that are not deliberate still relaunch: an agent the launch
 # wrapper saw end on SIGTERM (status 143) in this incarnation, even when an older
 # incarnation's record says it exited 0, and a gone tmux endpoint whose record
@@ -5646,6 +5679,7 @@ fm_test_run \
   test_gone_endpoint_reports_once_instead_of_escalating_forever \
   test_dead_crew_agent_auto_relaunches_from_its_checkpoint_within_a_bound \
   test_dead_crew_auto_relaunch_failures_and_exclusions_report_once \
+  test_dead_crew_with_backlog_captain_hold_is_not_auto_relaunched \
   test_signal_death_and_reclaimable_missing_endpoint_auto_relaunch \
   test_live_and_unproven_endpoints_still_wedge_escalate \
   test_wedge_guards_absent_config_keeps_the_unchanged_ladder \

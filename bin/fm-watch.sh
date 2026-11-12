@@ -2212,6 +2212,10 @@ crew_auto_relaunch() {  # <window> <task> <idle-age> <dead|missing>
   statusf="$STATE/$task.status"
   last=$(last_status_line "$statusf")
   ! status_is_terminal_verb "$last" || return 1
+  if status_is_captain_held "$(status_declared_wait_line "$statusf")" || task_captain_call_open "$task"; then
+    CREW_RELAUNCH_NOTE="; automatic relaunch skipped because the worker's decision is held for the captain"
+    return 1
+  fi
   if [ -e "$STATE/.crew-stopped-$task" ] || [ -L "$STATE/.crew-stopped-$task" ]; then
     CREW_RELAUNCH_NOTE="; automatic relaunch skipped because the worker was stopped on purpose (state/.crew-stopped-$task)"
     return 1
