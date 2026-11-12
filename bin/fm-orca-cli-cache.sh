@@ -8,7 +8,7 @@
 # command whose exit status is 0, and whose stdout is not JSON with
 # `"ok":false`, is reused for FM_ORCA_CLI_CACHE_TTL seconds (default 3).
 # A mutating command is never stored and drops every cached result before it
-# runs. `terminal wait` is neither stored nor a mutation. Any other command
+# runs and again after it finishes. `terminal wait` is neither stored nor a mutation. Any other command
 # is run as-is and leaves the cache untouched.
 #
 # Cached reads: status; diagnostics memory; repo show; worktree list and
@@ -24,6 +24,8 @@
 #
 # Entries live under
 # ${FM_ORCA_CLI_CACHE_DIR:-${TMPDIR:-/tmp}/fm-orca-cli-cache-<uid>}/g/<gen>/<key>/.
+# A cache directory that is a symlink or that another user owns is never
+# used; calls then run the CLI directly.
 # A mutation bumps <gen> under gen.lock. A writer publishes only when the
 # generation is still the one it captured, so a result from before the
 # mutation cannot replace a later read. The key is the sha256 of the resolved
@@ -98,12 +100,11 @@ fm_orca_cli_cache_prepare() {
   dir=$(fm_orca_cli_cache_dir)
   old=$(umask)
   umask 077
-  mkdir -p "$dir/locks" "$dir/g" "$dir/staging" || {
-    umask "$old"
-    return 1
-  }
-  chmod 700 "$dir" 2>/dev/null || true
+  mkdir -p "$dir" 2>/dev/null
   umask "$old"
+  [ -d "$dir" ] && [ ! -L "$dir" ] && [ -O "$dir" ] || return 1
+  chmod 700 "$dir" 2>/dev/null || return 1
+  mkdir -p "$dir/locks" "$dir/g" "$dir/staging" || return 1
   printf '%s' "$dir"
 }
 
@@ -153,6 +154,15 @@ fm_orca_cli_cache_invalidate() {
   fi
   fm_orca_cli_lock_release "$lock"
   return 0
+}
+
+# Run a command that changes Orca state, then drop the cache whatever its
+# exit status, so a read that filled during the change cannot be reused.
+fm_orca_cli_mutation() { # <command...>
+  local rc=0
+  "$@" || rc=$?
+  fm_orca_cli_cache_invalidate
+  return "$rc"
 }
 
 fm_orca_cli_cache_key() {
@@ -362,8 +372,7 @@ fm_orca_cli() {
   case "$kind" in
     mutate)
       fm_orca_cli_cache_invalidate
-      command orca "$@" || return $?
-      return 0
+      fm_orca_cli_mutation command orca "$@"
       ;;
     read)
       fm_orca_cli_cached "$@"

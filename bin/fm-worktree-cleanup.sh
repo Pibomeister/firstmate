@@ -74,6 +74,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-control-lib.sh"
 # shellcheck source=bin/fm-backend.sh
 . "$SCRIPT_DIR/fm-backend.sh"
+# shellcheck source=bin/fm-orca-cli-cache.sh
+. "$SCRIPT_DIR/fm-orca-cli-cache.sh"
 # shellcheck source=bin/fm-secondmate-registry-lib.sh
 . "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
@@ -430,7 +432,7 @@ owner_lists_path() {
 remove_with_owner() {
   local repo=$1 wt=$2 orca_listed=$3 waited=0
   if [ "$orca_listed" -eq 1 ]; then
-    orca worktree rm --worktree "path:$wt" --json >/dev/null 2>&1 || return 1
+    fm_orca_cli_mutation orca worktree rm --worktree "path:$wt" --json >/dev/null 2>&1 || return 1
     while [ -e "$wt" ]; do
       [ "$waited" -lt "$ORCA_REMOVE_WAIT" ] || return 2
       sleep 1

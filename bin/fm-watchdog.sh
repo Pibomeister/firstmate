@@ -626,7 +626,7 @@ wd_key() {
   if [ "$(wd_mode)" != act ]; then wd_rec "$id" "$symptom" key dry-run "would press $key: $why"; return 1; fi
   wd_rec "$id" "$symptom" key pending "press $key: $why"
   case "$O_BACKEND:$key" in
-    orca:[0-9]) fm_run_timed 10 orca terminal send --terminal "$O_TARGET" --text "$key" --json >/dev/null 2>&1 && fm_orca_cli_cache_invalidate ;;
+    orca:[0-9]) fm_orca_cli_mutation fm_run_timed 10 orca terminal send --terminal "$O_TARGET" --text "$key" --json >/dev/null 2>&1 ;;
     tmux:[0-9]) fm_run_timed 10 tmux send-keys -t "$O_TARGET" -l "$key" >/dev/null 2>&1 ;;
     *) fm_run_timed_fn 10 fm_backend_send_key "$O_BACKEND" "$O_TARGET" "$key" >/dev/null 2>&1 ;;
   esac || { wd_rec "$id" "$symptom" key failed "key delivery failed"; return 1; }
@@ -955,7 +955,7 @@ wd_restart() {  # <symptom> <kind>...
   fi
   prompt="Watchdog restart of this firstmate home. Read $handoff first, then take over as the session-start contract says. After you hold the session lock, run: FM_HOME=$O_HOME $SCRIPT_DIR/fm-watchdog.sh pickup $token"
   case "$O_BACKEND" in
-    orca) fm_run_timed 60 orca terminal create --worktree "path:$O_HOME" --title "firstmate captain" --command "$cmd $(printf '%q' "$prompt")" --json >/dev/null 2>&1 && fm_orca_cli_cache_invalidate ;;
+    orca) fm_orca_cli_mutation fm_run_timed 60 orca terminal create --worktree "path:$O_HOME" --title "firstmate captain" --command "$cmd $(printf '%q' "$prompt")" --json >/dev/null 2>&1 ;;
     tmux)
       if fm_run_timed 10 tmux has-session -t "=$sess" >/dev/null 2>&1; then
         fm_run_timed 30 tmux new-window -d -t "=$sess:" -c "$O_HOME" -n firstmate "$cmd $(printf '%q' "$prompt")" >/dev/null 2>&1

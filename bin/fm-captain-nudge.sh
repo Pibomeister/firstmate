@@ -50,6 +50,8 @@ SCRIPT_DIR="$(CDPATH='' cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/fm-captain-nudge-lib.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
+# shellcheck source=bin/fm-orca-cli-cache.sh
+. "$SCRIPT_DIR/fm-orca-cli-cache.sh"
 
 die() { printf 'fm-captain-nudge: %s\n' "$1" >&2; exit "${2:-1}"; }
 
@@ -287,7 +289,7 @@ send_fixed_prompt() {  # <backend> <target> [session]
   fi
   case "$backend" in
     orca)
-      fm_run_timed 20 orca terminal send --terminal "$target" --text "$text" --enter --json >/dev/null
+      fm_orca_cli_mutation fm_run_timed 20 orca terminal send --terminal "$target" --text "$text" --enter --json >/dev/null
       ;;
     herdr)
       if [ -n "$session" ]; then
@@ -327,7 +329,7 @@ send_enter_only() {  # <backend> <target> [session]
       fi
       ;;
     orca)
-      fm_run_timed 20 orca terminal send --terminal "$target" --text "" --enter --json >/dev/null
+      fm_orca_cli_mutation fm_run_timed 20 orca terminal send --terminal "$target" --text "" --enter --json >/dev/null
       ;;
     fixture)
       [ -n "${FM_NUDGE_SEND_LOG:-}" ] || die "fixture send needs FM_NUDGE_SEND_LOG"

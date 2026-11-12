@@ -131,6 +131,41 @@ test_mutation_invalidates_cached_read() {
   pass "fm_orca_cli: a mutating command drops cached reads"
 }
 
+test_read_during_mutation_is_not_reused_after_it() {
+  local i
+  setup_case mutate-race
+  CACHE_SWITCH=1
+  FM_ORCA_HOLD="$CASE/hold"
+  run_cli terminal send --terminal term-a --text x --json >/dev/null &
+  i=0
+  while [ ! -f "$FM_ORCA_HOLD" ] && [ "$i" -lt 200 ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  [ -f "$FM_ORCA_HOLD" ] || fail "the send never reached the CLI"
+  FM_ORCA_HOLD=
+  run_cli terminal read --terminal term-a --limit 1 --json >/dev/null
+  touch "$CASE/hold.release"
+  wait
+  run_cli terminal read --terminal term-a --limit 1 --json >/dev/null
+  assert_equals 3 "$(calls)" "a read taken while the send ran was reused after the send finished"
+  pass "fm_orca_cli: a read taken during a mutation is dropped when it finishes"
+}
+
+test_symlinked_cache_dir_is_bypassed() {
+  setup_case symlink
+  CACHE_SWITCH=1
+  rm -rf "$FM_ORCA_CLI_CACHE_DIR"
+  mkdir -p "$CASE/elsewhere"
+  ln -s "$CASE/elsewhere" "$FM_ORCA_CLI_CACHE_DIR"
+  run_cli terminal read --terminal term-a --limit 1 --json >/dev/null
+  run_cli terminal read --terminal term-a --limit 1 --json >/dev/null
+  assert_equals 2 "$(calls)" "a symlinked cache directory was trusted for reuse"
+  assert_equals "" "$(ls -A "$CASE/elsewhere")" "the cache wrote through a symlinked directory"
+  rm -f "$FM_ORCA_CLI_CACHE_DIR"
+  pass "fm_orca_cli: a symlinked cache directory is not used"
+}
+
 test_different_args_do_not_share_a_read() {
   setup_case args
   CACHE_SWITCH=1
@@ -303,6 +338,8 @@ fm_test_run \
   test_cache_hit_reuses_one_read \
   test_ttl_expiry_reads_again \
   test_mutation_invalidates_cached_read \
+  test_read_during_mutation_is_not_reused_after_it \
+  test_symlinked_cache_dir_is_bypassed \
   test_different_args_do_not_share_a_read \
   test_failed_read_is_not_cached \
   test_ok_false_is_not_cached \
