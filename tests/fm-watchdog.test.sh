@@ -3924,6 +3924,99 @@ SH
   assert_equals 0 "$frc" "the next tick retries the unchanged dialog after a failed delivery and clears it"
   assert_equals "LITERAL:0" "$(cat "$wdir/fail-keys.log")" "the retry sends the dismiss key once"
 
+  # 7b. After a verified dismissal clears .feedback-dismissed-*, an identical dialog
+  #     reappearing later on the same endpoint is dismissed again.
+  printf '%s\n' "$agy_survey" > "$wdir/pane-fail.txt"
+  : > "$wdir/fail-keys.log"
+  frc=0
+  PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-fail.txt" FM_TEST_WATCH_KEYS="$wdir/fail-keys.log" \
+    bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1' \
+    _ "$ROOT" "$fstate" "$agy_survey" >/dev/null 2>&1 || frc=$?
+  assert_equals 0 "$frc" "an identical dialog reappearing after a verified dismissal is dismissed again"
+  assert_equals "LITERAL:0" "$(cat "$wdir/fail-keys.log")" "the reopened identical dialog receives its dismiss key"
+
+  # 7c. A failed, empty, or timed-out live pre-send capture refuses to send any key.
+  local cstate="$wdir/cap-state" cap_mode
+  mkdir -p "$cstate"
+  for cap_mode in fail empty timeout; do
+    : > "$wdir/cap-keys.log"
+    cat > "$wfake/tmux" <<SH
+#!/usr/bin/env bash
+case "\${1:-}" in
+  capture-pane)
+    case "$cap_mode" in
+      fail) exit 1 ;;
+      empty) exit 0 ;;
+      timeout) sleep 5; exit 0 ;;
+    esac ;;
+  send-keys)
+    printf 'SENT\n' >> "$wdir/cap-keys.log"
+    exit 0 ;;
+esac
+exit 0
+SH
+    chmod +x "$wfake/tmux"
+    frc=0
+    PATH="$wfake:$PATH" bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1 1' \
+      _ "$ROOT" "$cstate" "$agy_survey" >/dev/null 2>&1 || frc=$?
+    assert_equals 2 "$frc" "live capture mode '$cap_mode' refuses dismissal with rc 2"
+    assert_equals "" "$(cat "$wdir/cap-keys.log")" "live capture mode '$cap_mode' sends zero keys"
+  done
+
+  # 7d. An interrupted claimant (dead owner PID) or expired stale claim is recovered
+  #     by a subsequent caller on the same endpoint.
+  local kstate="$wdir/kill-state" dead_pid
+  mkdir -p "$kstate"
+  printf '%s\n' "$agy_survey" > "$wdir/pane-kill.txt"
+  : > "$wdir/kill-keys.log"
+  cat > "$wfake/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  capture-pane)
+    if [ -e "${FM_TEST_HOLD_CLAIM:-}" ]; then
+      : > "$FM_TEST_HOLD_CLAIM.ready"
+      sleep 30
+    fi
+    cat "$FM_TEST_WATCH_PANE"
+    exit 0 ;;
+  send-keys)
+    shift
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) shift; printf 'LITERAL:%s\n' "${1:-}" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+        *) printf 'KEY:%s\n' "$1" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+      esac
+    done
+    printf 'work output\n> \n' > "$FM_TEST_WATCH_PANE"
+    exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$wfake/tmux"
+  : > "$wdir/hold-claim"
+  (
+    PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-kill.txt" FM_TEST_WATCH_KEYS="$wdir/kill-keys.log" FM_TEST_HOLD_CLAIM="$wdir/hold-claim" \
+      bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1 20' \
+      _ "$ROOT" "$kstate" "$agy_survey" >/dev/null 2>&1
+  ) &
+  dead_pid=$!
+  local wait_i=0
+  while [ ! -e "$wdir/hold-claim.ready" ] && [ "$wait_i" -lt 40 ]; do
+    sleep 0.05
+    wait_i=$((wait_i + 1))
+  done
+  kill -9 "$dead_pid" 2>/dev/null || true
+  wait "$dead_pid" 2>/dev/null || true
+  rm -f "$wdir/hold-claim" "$wdir/hold-claim.ready"
+  [ -d "$kstate/.feedback-claim-tmux_test_fm-agy" ] || fail "killed claimant did not leave a claim directory behind"
+  frc=0
+  PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-kill.txt" FM_TEST_WATCH_KEYS="$wdir/kill-keys.log" \
+    bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1' \
+    _ "$ROOT" "$kstate" "$agy_survey" >/dev/null 2>&1 || frc=$?
+  assert_equals 0 "$frc" "subsequent caller recovers a claim left by a terminated owner and dismisses the dialog"
+  assert_equals "LITERAL:0" "$(cat "$wdir/kill-keys.log")" "recovered claim sends the dismiss key once"
+
   # Busy worker showing `esc to cancel` alongside the text is not touched.
   printf '%s\n  esc to cancel\n' "$agy_survey" > "$wdir/pane-busy.txt"
   : > "$wdir/keys.log"

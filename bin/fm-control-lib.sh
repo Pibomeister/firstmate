@@ -1267,26 +1267,80 @@ FM_CONTROL_FEEDBACK_DIALOG_ID=
 FM_CONTROL_FEEDBACK_DISMISS_KEY=
 FM_CONTROL_FEEDBACK_AFTER_PANE=
 
+fm_control_release_feedback_claim() {  # <claim-dir>
+  local claim=${1-}
+  [ -n "$claim" ] || return 0
+  rm -f "$claim/owner" 2>/dev/null || true
+  rmdir "$claim" 2>/dev/null || true
+}
+
+fm_control_acquire_feedback_claim() {  # <claim-dir> [<max-age-secs>]
+  local claim=${1-} max_age=${2:-120} now owner_pid='' owner_epoch='' claim_mtime=''
+  [ -n "$claim" ] || return 1
+  now=$(date +%s)
+  if mkdir "$claim" 2>/dev/null; then
+    printf '%s %s\n' "$$" "$now" > "$claim/owner" 2>/dev/null || true
+    return 0
+  fi
+  IFS=' ' read -r owner_pid owner_epoch < "$claim/owner" 2>/dev/null || true
+  if [ -z "$owner_pid" ]; then
+    sleep 0.05
+    IFS=' ' read -r owner_pid owner_epoch < "$claim/owner" 2>/dev/null || true
+  fi
+  case "$owner_pid" in
+    ''|*[!0-9]*)
+      claim_mtime=$(LC_ALL=C stat -f %m "$claim" 2>/dev/null || LC_ALL=C stat -c %Y "$claim" 2>/dev/null || printf '%s' "$now")
+      if [ $((now - claim_mtime)) -lt 2 ]; then
+        return 1
+      fi
+      ;;
+    *)
+      if kill -0 "$owner_pid" 2>/dev/null || ps -p "$owner_pid" >/dev/null 2>&1; then
+        case "$owner_epoch" in
+          ''|*[!0-9]*) return 1 ;;
+          *)
+            if [ $((now - owner_epoch)) -le "$max_age" ]; then
+              return 1
+            fi
+            ;;
+        esac
+      fi
+      ;;
+  esac
+  rm -f "$claim/owner" 2>/dev/null || true
+  rmdir "$claim" 2>/dev/null || return 1
+  if mkdir "$claim" 2>/dev/null; then
+    printf '%s %s\n' "$$" "$now" > "$claim/owner" 2>/dev/null || true
+    return 0
+  fi
+  return 1
+}
+
 # fm_control_dismiss_feedback_dialog <state-dir> <backend> <target> <harness> <screen> [<expected-label>] [<settle-secs>] [<call-timeout-secs>]
 # Shared claim-and-dismiss helper called by the watcher's two sites, the
 # daemon's two sites, and the watchdog. Serializes dismissal per
-# (<backend>, <target>) with an atomic mkdir lock ($state/.feedback-claim-<window_key>)
-# held from live capture through post-send verification, and never removes
-# another caller's active claim. Records the last attempted pane hash in
-# $state/.feedback-dismissed-<window_key> so an unchanged sticky dialog is not
-# sent a second key. Each backend send and capture is bounded by
-# <call-timeout-secs> (default 20). A failed send releases the lock and
-# restores the marker so a later tick can retry.
+# (<backend>, <target>) with an owner-tracked lock directory
+# ($state/.feedback-claim-<window_key>) held from live capture through
+# post-send verification; never removes another live caller's active claim,
+# and reclaims a lock left behind by a dead or expired owner. Requires a
+# non-empty live capture that still matches a supported feedback dialog before
+# sending any key. Records the attempted pane hash in
+# $state/.feedback-dismissed-<window_key> while a dialog remains visible so an
+# unchanged sticky dialog is not sent a second key, and clears that marker once
+# post-send capture verifies the dialog is gone. Each backend send and capture
+# is bounded by <call-timeout-secs> (default 20). A failed send releases the
+# lock and restores the marker so a later tick can retry.
 # Returns:
 #   0 - claimed, sent key, re-captured, and verified the dialog is gone
 #   1 - <screen> does not match a known feedback/bug-report dialog for <harness>
-#   2 - already claimed or already dismissed for this (<backend>, <target>); no key sent
+#   2 - already claimed, live capture empty/failed/cleared, or unchanged sticky dialog; no key sent
 #   3 - claimed, but key delivery failed
 #   4 - claimed and key sent, but re-capture did not prove the dialog gone
 fm_control_dismiss_feedback_dialog() {
   local state_dir=${1-} backend=${2-} target=${3-} harness=${4-} screen=${5-}
   local label=${6-} settle=${7-0.2} call_timeout=${8:-20}
   local spec dialog_id dismiss_key wkey phash marker claim live after prev_marker lib
+  local timeout_int settle_int max_claim_age
   FM_CONTROL_FEEDBACK_DIALOG_ID=
   FM_CONTROL_FEEDBACK_DISMISS_KEY=
   FM_CONTROL_FEEDBACK_AFTER_PANE=
@@ -1306,7 +1360,13 @@ fm_control_dismiss_feedback_dialog() {
   if [ "$prev_marker" = "$phash" ]; then
     return 2
   fi
-  if ! mkdir "$claim" 2>/dev/null; then
+  timeout_int=${call_timeout%%.*}
+  case "$timeout_int" in ''|*[!0-9]*) timeout_int=20 ;; esac
+  settle_int=${settle%%.*}
+  case "$settle_int" in ''|*[!0-9]*) settle_int=1 ;; esac
+  max_claim_age=$((3 * timeout_int + settle_int + 30))
+  [ "$max_claim_age" -ge 60 ] || max_claim_age=60
+  if ! fm_control_acquire_feedback_claim "$claim" "$max_claim_age"; then
     return 2
   fi
   lib=${BASH_SOURCE[0]}
@@ -1314,27 +1374,30 @@ fm_control_dismiss_feedback_dialog() {
   command -v fm_run_timed_fn >/dev/null 2>&1 || . "${lib%/*}/fm-timeout-lib.sh"
   prev_marker=$(cat "$marker" 2>/dev/null || true)
   if [ "$prev_marker" = "$phash" ]; then
-    rmdir "$claim" 2>/dev/null || true
+    fm_control_release_feedback_claim "$claim"
     return 2
   fi
   live=$(fm_run_timed_fn "$call_timeout" fm_control_capture_feedback_pane "$backend" "$target" "$label") || live=
-  if [ -n "$live" ]; then
-    if ! spec=$(fm_control_feedback_dialog_dismiss "$harness" "$live"); then
-      FM_CONTROL_FEEDBACK_AFTER_PANE=$live
-      rmdir "$claim" 2>/dev/null || true
-      return 2
-    fi
-    dialog_id=${spec%%$'\t'*}
-    dismiss_key=${spec#*$'\t'}
-    # shellcheck disable=SC2034
-    FM_CONTROL_FEEDBACK_DIALOG_ID=$dialog_id
-    # shellcheck disable=SC2034
-    FM_CONTROL_FEEDBACK_DISMISS_KEY=$dismiss_key
-    phash=$(fm_control_feedback_pane_hash "$live")
-    if [ "$prev_marker" = "$phash" ]; then
-      rmdir "$claim" 2>/dev/null || true
-      return 2
-    fi
+  if [ -z "$live" ]; then
+    fm_control_release_feedback_claim "$claim"
+    return 2
+  fi
+  if ! spec=$(fm_control_feedback_dialog_dismiss "$harness" "$live"); then
+    FM_CONTROL_FEEDBACK_AFTER_PANE=$live
+    rm -f "$marker"
+    fm_control_release_feedback_claim "$claim"
+    return 2
+  fi
+  dialog_id=${spec%%$'\t'*}
+  dismiss_key=${spec#*$'\t'}
+  # shellcheck disable=SC2034
+  FM_CONTROL_FEEDBACK_DIALOG_ID=$dialog_id
+  # shellcheck disable=SC2034
+  FM_CONTROL_FEEDBACK_DISMISS_KEY=$dismiss_key
+  phash=$(fm_control_feedback_pane_hash "$live")
+  if [ "$prev_marker" = "$phash" ]; then
+    fm_control_release_feedback_claim "$claim"
+    return 2
   fi
   printf '%s\n' "$phash" > "$marker"
   if ! fm_run_timed_fn "$call_timeout" fm_control_send_feedback_dismiss "$backend" "$target" "$dismiss_key" "$label" >/dev/null 2>&1; then
@@ -1343,7 +1406,7 @@ fm_control_dismiss_feedback_dialog() {
     else
       rm -f "$marker"
     fi
-    rmdir "$claim" 2>/dev/null || true
+    fm_control_release_feedback_claim "$claim"
     return 3
   fi
   case "$settle" in
@@ -1354,9 +1417,10 @@ fm_control_dismiss_feedback_dialog() {
   # shellcheck disable=SC2034
   FM_CONTROL_FEEDBACK_AFTER_PANE=$after
   if [ -z "$after" ] || fm_control_feedback_dialog_dismiss "$harness" "$after" >/dev/null 2>&1; then
-    rmdir "$claim" 2>/dev/null || true
+    fm_control_release_feedback_claim "$claim"
     return 4
   fi
-  rmdir "$claim" 2>/dev/null || true
+  rm -f "$marker"
+  fm_control_release_feedback_claim "$claim"
   return 0
 }
