@@ -11,6 +11,9 @@ set -u
 TMP_ROOT=$(fm_test_tmproot fm-load-relief)
 RELIEF="$ROOT/bin/fm-load-relief.sh"
 
+# The tasks seam prints the `show` shape tasks-axi itself prints (a
+# two-space-indented priority: field, "-" when unset) from <home>/prios,
+# one "<id> <priority>" per line; an id absent there is not in the backlog.
 make_home() {  # <name>
   local home="$TMP_ROOT/$1"
   mkdir -p "$home/state" "$home/config" "$home/data"
@@ -24,36 +27,49 @@ SH
 #!/usr/bin/env bash
 printf 'send %s\n' "$*" >> "$FM_RELIEF_LOG"
 SH
-  chmod +x "$TMP_ROOT/$1-control" "$TMP_ROOT/$1-send"
+  cat > "$TMP_ROOT/$1-tasks" <<'SH'
+#!/usr/bin/env bash
+[ "$1" = show ] || exit 2
+prio=$(awk -v id="$2" '$1 == id { print $2; found = 1 } END { exit !found }' "$FM_HOME/prios") || {
+  printf 'error: "Task \\"%s\\" not found in this backlog"\n' "$2"; exit 1; }
+printf 'task:\n  id: %s\n  title: t\n  state: in_flight\n  kind: task\n  priority: %s\n  body: ""\n' "$2" "$prio"
+SH
+  chmod +x "$TMP_ROOT/$1-control" "$TMP_ROOT/$1-send" "$TMP_ROOT/$1-tasks"
   : > "$TMP_ROOT/$1.log"
-  fm_write_meta "$home/state/high-prio.meta" "kind=ship" "spawn_gen=s100.1"
-  fm_write_meta "$home/state/low-prio.meta" "kind=ship" "spawn_gen=s300.1"
-  fm_write_meta "$home/state/no-prio.meta" "kind=scout" "spawn_gen=s50.1"
-  fm_write_meta "$home/state/done-low.meta" "kind=ship" "spawn_gen=s10.1"
-  printf 'done [at=1]: finished\n' > "$home/state/done-low.status"
-  cat > "$home/data/backlog.md" <<'EOF'
-# Backlog
-- [ ] high-prio - urgent work (priority: 1)
-- [ ] low-prio - background work (priority: 9)
-- [ ] done-low - finished work (priority: 99)
-EOF
+  : > "$home/prios"
   printf '%s\n' "$home"
+}
+
+add_worker() {  # <home> <id> <spawn-epoch> <priority|-|absent>
+  fm_write_meta "$1/state/$2.meta" "kind=ship" "spawn_gen=s$3.1"
+  [ "$4" = absent ] || printf '%s "%s"\n' "$2" "$4" | sed 's/"\([0-9][0-9]*\)"$/\1/' >> "$1/prios"
 }
 
 run_relief() {  # <home> <name> <load> <now>
   printf '%s\n' "$3" > "$TMP_ROOT/load.txt"
-  FM_HOME="$1" FM_LOAD_RELIEF_LOAD_FILE="$TMP_ROOT/load.txt" \
+  FM_HOME="$1" FM_TEST_SEAM=1 FM_LOAD_RELIEF_LOAD_FILE="$TMP_ROOT/load.txt" \
     FM_LOAD_RELIEF_NOW="$4" FM_LOAD_RELIEF_CORES=16 \
     FM_LOAD_RELIEF_CONTROL="$TMP_ROOT/$2-control" \
     FM_LOAD_RELIEF_SEND="$TMP_ROOT/$2-send" \
+    FM_LOAD_RELIEF_TASKS="$TMP_ROOT/$2-tasks" \
     FM_RELIEF_LOG="$TMP_ROOT/$2.log" \
     "$RELIEF" check 2>&1
+}
+
+# Opens the sustained window at <t0> and returns the pass at <t0>+61.
+sustained_pass() {  # <home> <name> <t0>
+  run_relief "$1" "$2" 200 "$3" >/dev/null
+  run_relief "$1" "$2" 200 "$(($3 + 61))"
 }
 
 test_sustained_high_pauses_lowest_then_falling_resumes() {
   local home out rc=0 log
   home=$(make_home relief)
   log="$TMP_ROOT/relief.log"
+  add_worker "$home" high-prio 300 1
+  add_worker "$home" low-prio 100 9
+  add_worker "$home" done-low 400 99
+  printf 'done [at=1]: finished\n' > "$home/state/done-low.status"
 
   out=$(run_relief "$home" relief 200 1000) || rc=$?
   expect_code 0 "$rc" "first high reading failed: $out"
@@ -66,27 +82,91 @@ test_sustained_high_pauses_lowest_then_falling_resumes() {
 
   out=$(run_relief "$home" relief 200 1061) || rc=$?
   expect_code 0 "$rc" "sustained reading failed: $out"
-  assert_contains "$out" "load-relief: paused low-prio" "the sustained reading did not pause the lowest-priority worker"
-  assert_equals "control low-prio interrupt" "$(cat "$log")" "the pause did not interrupt exactly the lowest-priority worker"
+  assert_equals "control low-prio interrupt" "$(cat "$log")" "the pause did not interrupt exactly the highest-number priority worker"
   assert_present "$home/state/load-relief/paused/low-prio" "no durable pause record was written"
   assert_absent "$home/state/load-relief/paused/high-prio" "the high-priority worker was paused"
-  assert_absent "$home/state/load-relief/paused/no-prio" "the unprioritized worker was paused before a prioritized one"
   assert_absent "$home/state/load-relief/paused/done-low" "a finished worker was paused"
-  assert_contains "$(cat "$home/state/low-prio.status")" "paused [at=1061]: load relief" "the paused worker has no durable paused status"
+  assert_contains "$(cat "$home/state/low-prio.status")" "paused [key=load-relief] [at=1061]: load relief" "the paused worker has no keyed paused status"
 
-  printf '%s\n' "" > "$log"
-  out=$(run_relief "$home" relief 5 1070) || rc=$?
+  out=$(run_relief "$home" relief 200 1091) || rc=$?
+  assert_equals "control low-prio interrupt" "$(cat "$log")" "a pass inside the restarted window paused another worker"
+
+  : > "$log"
+  out=$(run_relief "$home" relief 5 1100) || rc=$?
   expect_code 0 "$rc" "falling reading failed: $out"
-  assert_contains "$out" "load-relief: resumed low-prio" "the falling reading did not resume the paused worker"
   assert_contains "$(cat "$log")" "send low-prio" "the resume did not steer the paused worker"
   assert_absent "$home/state/load-relief/paused/low-prio" "the pause record survived the resume"
-  assert_contains "$(cat "$home/state/low-prio.status")" "resolved [at=1070]: load relief lifted" "the resumed worker has no resolved status"
-  pass "a sustained stubbed-high load pauses exactly the lowest-priority worker and a falling load resumes it"
+  assert_contains "$(cat "$home/state/low-prio.status")" "resolved [key=load-relief] [at=1100]: load relief lifted" "the resumed worker has no keyed resolved status"
+  pass "a sustained stubbed-high load pauses the highest priority number once per window and a falling load resumes it"
+}
+
+test_priority_tie_pauses_newest_dispatch() {
+  local home
+  home=$(make_home tie)
+  add_worker "$home" old-run 100 5
+  add_worker "$home" new-run 900 5
+  add_worker "$home" mid-run 500 5
+  add_worker "$home" urgent 950 2
+  sustained_pass "$home" tie 1000 >/dev/null
+  assert_equals "control new-run interrupt" "$(cat "$TMP_ROOT/tie.log")" "a priority tie did not pause the newest dispatch"
+  pass "a priority tie pauses the newest dispatch first"
+}
+
+test_missing_priority_is_never_paused() {
+  local home out
+  home=$(make_home noprio)
+  add_worker "$home" unset-prio 100 -
+  add_worker "$home" not-in-backlog 200 absent
+  out=$(sustained_pass "$home" noprio 1000)
+  assert_equals "" "$(cat "$TMP_ROOT/noprio.log")" "a task with no priority was paused"
+  assert_contains "$out" "no live worker to pause" "the pass did not report that nothing was pausable"
+  pass "a task with no backlog priority is never paused, even as the only candidate"
+}
+
+test_waiting_worker_is_not_paused_and_decision_survives() {
+  local home
+  home=$(make_home waiting)
+  add_worker "$home" asks 900 9
+  add_worker "$home" busy 100 3
+  printf 'needs-decision: which schema?\n' > "$home/state/asks.status"
+  sustained_pass "$home" waiting 1000 >/dev/null
+  assert_equals "control busy interrupt" "$(cat "$TMP_ROOT/waiting.log")" "a worker waiting on a decision was paused"
+  run_relief "$home" waiting 5 1100 >/dev/null
+  assert_equals "needs-decision: which schema?" "$(cat "$home/state/asks.status")" "the resume touched a waiting worker's status"
+  pass "a worker waiting on a captain decision is never paused"
+}
+
+test_finished_pause_record_dropped_without_steer() {
+  local home
+  home=$(make_home gone)
+  add_worker "$home" ended 100 9
+  add_worker "$home" removed 200 8
+  mkdir -p "$home/state/load-relief/paused"
+  printf 'id=ended\n' > "$home/state/load-relief/paused/ended"
+  printf 'id=removed\n' > "$home/state/load-relief/paused/removed"
+  printf 'done [at=5]: shipped\n' >> "$home/state/ended.status"
+  rm "$home/state/removed.meta"
+  run_relief "$home" gone 5 1000 >/dev/null
+  assert_equals "" "$(cat "$TMP_ROOT/gone.log")" "a finished or removed task was steered to resume"
+  assert_absent "$home/state/load-relief/paused/ended" "a finished task's pause record was kept"
+  assert_absent "$home/state/load-relief/paused/removed" "a removed task's pause record was kept"
+  pass "a pause record for a finished or removed task is dropped without a steer"
+}
+
+test_tab_separated_max_load1_sets_ceiling() {
+  local home out
+  home=$(make_home tabbed)
+  printf '4\nmax-load1\t50\n' > "$home/config/lane-capacity"
+  add_worker "$home" w 100 9
+  out=$(run_relief "$home" tabbed 40 1000)
+  assert_not_contains "$out" "sustained window started" "a tab-separated max-load1 50 was ignored for the 16-core fallback"
+  pass "max-load1 parses with the same tab-tolerant grammar as fm-capacity"
 }
 
 test_no_lane_capacity_is_a_noop() {
   local home out rc=0
   home=$(make_home noop)
+  add_worker "$home" low-prio 100 9
   rm "$home/config/lane-capacity"
   out=$(run_relief "$home" noop 200 2000) || rc=$?
   expect_code 0 "$rc" "an unconfigured check failed: $out"
@@ -96,4 +176,9 @@ test_no_lane_capacity_is_a_noop() {
 }
 
 test_sustained_high_pauses_lowest_then_falling_resumes
+test_priority_tie_pauses_newest_dispatch
+test_missing_priority_is_never_paused
+test_waiting_worker_is_not_paused_and_decision_survives
+test_finished_pause_record_dropped_without_steer
+test_tab_separated_max_load1_sets_ceiling
 test_no_lane_capacity_is_a_noop

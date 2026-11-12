@@ -13,7 +13,12 @@
 # state/load-relief/paused/<id>, and appends one paused: line to the task's
 # status file. When a later pass reads load below the resume level, it lifts
 # every load-relief pause: the record is removed and bin/fm-send.sh steers
-# the worker to resume. Nothing is killed, exited, or discarded.
+# the worker to resume. Nothing is killed, exited, or discarded. A successful
+# pause restarts the sustained window, so each further pause needs a fresh
+# full window over the ceiling. Both status lines carry [key=load-relief], so
+# lifting a pause never closes another open decision on that worker. A pause
+# record whose task has no meta, or whose latest status is done: or failed:,
+# is dropped without a steer.
 #
 # The watcher runs one detached check beside its lane-capacity publish while
 # config/lane-capacity exists; with that file absent a check is a no-op, so
@@ -31,12 +36,14 @@
 # A malformed config/load-relief, or an unreadable config/lane-capacity,
 # refuses with exit 1 rather than guessing the captain's limits.
 #
-# Priority: the (priority: N) value on the task's data/backlog.md item when
-# present (a larger N is lower priority, so it pauses first); workers with
-# no recorded priority pause after prioritized ones, and ties break by
-# oldest dispatch first (the epoch in the meta spawn_gen, else the meta
-# file's mtime). Already load-paused workers, secondmates, and tasks whose
-# latest status line is done: or failed: are never candidates.
+# Priority: the priority: field that bin/fm-tasks-axi.sh show <id> reports
+# for the task's backlog item (the value add --priority N sets; a larger N is
+# lower priority, so it pauses first). A task with no backlog item or no
+# priority value is never paused. Ties break by newest dispatch first (the
+# epoch in the meta spawn_gen, else the meta file's mtime), which has the
+# least progress to lose. Already load-paused workers, secondmates, and tasks
+# whose latest status event is done, failed, needs-decision, blocked, paused,
+# or captain-held are never candidates.
 #
 # State under state/load-relief/: high-since (epoch the current over-ceiling
 # stretch began) and paused/<id> (key=value: id, paused_epoch, load,
@@ -45,8 +52,9 @@
 # Test seams, honoured only with FM_TEST_SEAM=1: FM_LOAD_RELIEF_LOAD_FILE
 # names a file whose first word stands in for load1, FM_LOAD_RELIEF_NOW
 # fixes the clock, FM_LOAD_RELIEF_CORES fixes the core count,
-# FM_LOAD_RELIEF_CONTROL and FM_LOAD_RELIEF_SEND name the executables called
-# as <control> <id> interrupt and <send> <id> <text>.
+# FM_LOAD_RELIEF_CONTROL, FM_LOAD_RELIEF_SEND, and FM_LOAD_RELIEF_TASKS name
+# the executables called as <control> <id> interrupt, <send> <id> <text>, and
+# <tasks> show <id>.
 #
 # Environment: FM_HOME, FM_STATE_OVERRIDE, FM_CONFIG_OVERRIDE, and
 # FM_DATA_OVERRIDE resolve the home exactly as the other bin/ scripts do.
@@ -57,11 +65,12 @@ set -u
 export LC_ALL=C
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/fm-classify-lib.sh
+. "$SCRIPT_DIR/fm-classify-lib.sh"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
-DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 LANE_CONFIG="$CONFIG/lane-capacity"
 RELIEF_CONFIG="$CONFIG/load-relief"
 RELIEF_DIR="$STATE/load-relief"
@@ -102,12 +111,10 @@ if [ -e "$LANE_CONFIG" ]; then
   [ -r "$LANE_CONFIG" ] || die "config/lane-capacity is unreadable; refusing to guess the load ceiling"
   while IFS= read -r line || [ -n "$line" ]; do
     line=${line%%#*}
-    case "$line" in
-      *"max-load1 "*)
-        value=$(printf '%s' "$line" | awk '{print $2}')
-        [ -z "$ceiling" ] && ceiling=$value
-        ;;
-    esac
+    line=$(printf '%s' "$line" | tr '\t\r' '  ' | sed 's/^ *//; s/ *$//')
+    [ "${line%% *}" = max-load1 ] || continue
+    value=$(printf '%s' "${line#* }" | sed 's/^ *//')
+    [ -z "$ceiling" ] && ceiling=$value
   done < "$LANE_CONFIG"
 fi
 if [ -e "$RELIEF_CONFIG" ]; then
@@ -156,9 +163,11 @@ case "$load1" in [0-9]*) ;; *) echo "fm-load-relief: load probe unavailable; no 
 
 control_cmd="$SCRIPT_DIR/fm-control.sh"
 send_cmd="$SCRIPT_DIR/fm-send.sh"
+tasks_cmd="$SCRIPT_DIR/fm-tasks-axi.sh"
 if [ "${FM_TEST_SEAM:-}" = 1 ]; then
   [ -z "${FM_LOAD_RELIEF_CONTROL:-}" ] || control_cmd=$FM_LOAD_RELIEF_CONTROL
   [ -z "${FM_LOAD_RELIEF_SEND:-}" ] || send_cmd=$FM_LOAD_RELIEF_SEND
+  [ -z "${FM_LOAD_RELIEF_TASKS:-}" ] || tasks_cmd=$FM_LOAD_RELIEF_TASKS
 fi
 
 meta_get() { sed -n "s/^$2=//p" "$1" 2>/dev/null | head -1; }
@@ -167,6 +176,10 @@ file_mtime() {
   m=$(stat -c %Y "$1" 2>/dev/null) || m=
   is_uint "$m" || m=$(/usr/bin/stat -f %m "$1" 2>/dev/null) || m=
   is_uint "$m" && printf '%s\n' "$m"
+}
+
+latest_verb() {
+  status_line_verb "$(last_status_line "$STATE/$1.status")"
 }
 
 write_high_since() {
@@ -183,13 +196,20 @@ if num_lt "$load1" "$resume_below"; then
       [ -f "$record" ] || continue
       id=$(basename "$record")
       case "$id" in *[!A-Za-z0-9._-]*) continue ;; esac
+      if [ ! -f "$STATE/$id.meta" ] || case "$(latest_verb "$id")" in done|failed) true ;; *) false ;; esac; then
+        if [ "$dry_run" -eq 0 ]; then
+          rm -f "$record"
+          echo "load-relief: dropped pause record for finished or removed $id"
+        fi
+        continue
+      fi
       if [ "$dry_run" -eq 1 ]; then
         echo "load-relief: would resume $id load=$load1 resume-below=$resume_below"
         continue
       fi
       if FM_HOME="$FM_HOME" "$send_cmd" "$id" "Host load has fallen to $load1 (resume level $resume_below). Your load-relief pause is lifted; resume your task from where you left off." >/dev/null 2>&1; then
         rm -f "$record"
-        printf 'resolved [at=%s]: load relief lifted (load %s below %s); resumed by steer\n' "$now" "$load1" "$resume_below" >> "$STATE/$id.status" 2>/dev/null || true
+        printf 'resolved [key=load-relief] [at=%s]: load relief lifted (load %s below %s); resumed by steer\n' "$now" "$load1" "$resume_below" >> "$STATE/$id.status" 2>/dev/null || true
         echo "load-relief: resumed $id load=$load1 resume-below=$resume_below"
       else
         echo "fm-load-relief: resume steer for $id was not confirmed delivered; its pause record is kept" >&2
@@ -219,8 +239,8 @@ if [ "$elapsed" -lt "$sustain_secs" ]; then
   exit 0
 fi
 
-# Candidates, worst priority first: larger recorded priority number, then
-# unprioritized, then oldest dispatch. One tab-separated sortable row each.
+# Candidates, worst priority first: larger backlog priority number, then
+# newest dispatch. One tab-separated sortable row each.
 candidates=$(mktemp "${TMPDIR:-/tmp}/fm-load-relief.XXXXXX") || die "cannot create a temporary file"
 trap 'rm -f "$candidates"' EXIT
 for meta in "$STATE"/*.meta; do
@@ -230,24 +250,20 @@ for meta in "$STATE"/*.meta; do
   kind=$(meta_get "$meta" kind)
   case "$kind" in ship|scout|'') ;; *) continue ;; esac
   [ -f "$PAUSED_DIR/$id" ] && continue
-  if [ -f "$STATE/$id.status" ]; then
-    last=$(tail -1 "$STATE/$id.status" 2>/dev/null)
-    case "$last" in done:*|failed:*|"done ["*|"failed ["*) continue ;; esac
-  fi
-  prio=
-  if [ -f "$DATA/backlog.md" ]; then
-    prio=$(grep -F -- "- [ ] $id " "$DATA/backlog.md" 2>/dev/null | sed -n 's/.*(priority: \([0-9][0-9]*\)).*/\1/p' | head -1)
-  fi
-  if is_uint "$prio"; then prio_rank=0; prio_val=$prio; else prio_rank=1; prio_val=0; fi
+  case "$(latest_verb "$id")" in
+    done|failed|needs-decision|blocked|paused|captain-held) continue ;;
+  esac
+  prio=$(FM_HOME="$FM_HOME" "$tasks_cmd" show "$id" 2>/dev/null | sed -n 's/^  priority: //p' | head -1)
+  is_uint "$prio" || continue
   gen=$(meta_get "$meta" spawn_gen)
   epoch=$(printf '%s' "$gen" | sed -n 's/^s\([0-9][0-9]*\).*/\1/p')
   is_uint "$epoch" || epoch=$(file_mtime "$meta")
   is_uint "$epoch" || epoch=0
-  printf '%s\t%s\t%s\t%s\n' "$prio_rank" "$prio_val" "$epoch" "$id" >> "$candidates"
+  printf '%s\t%s\t%s\n' "$((10#$prio))" "$epoch" "$id" >> "$candidates"
 done
 
 paused=0
-while IFS="$(printf '\t')" read -r _rank _val _epoch id; do
+while IFS="$(printf '\t')" read -r _prio _epoch id; do
   [ -n "$id" ] || continue
   [ "$paused" -lt "$pause_per_check" ] || break
   if [ "$dry_run" -eq 1 ]; then
@@ -259,7 +275,7 @@ while IFS="$(printf '\t')" read -r _rank _val _epoch id; do
     mkdir -p "$PAUSED_DIR" || die "cannot create $PAUSED_DIR"
     printf 'id=%s\npaused_epoch=%s\nload=%s\nceiling=%s\n' "$id" "$now" "$load1" "$ceiling" > "$PAUSED_DIR/$id.tmp.$$" \
       && mv "$PAUSED_DIR/$id.tmp.$$" "$PAUSED_DIR/$id"
-    printf 'paused [at=%s]: load relief: load %s at or over ceiling %s for %ss; interrupted in place, work preserved, resumes when load falls\n' \
+    printf 'paused [key=load-relief] [at=%s]: load relief: load %s at or over ceiling %s for %ss; interrupted in place, work preserved, resumes when load falls\n' \
       "$now" "$load1" "$ceiling" "$elapsed" >> "$STATE/$id.status" 2>/dev/null || true
     echo "load-relief: paused $id load=$load1 ceiling=$ceiling sustained=${elapsed}s"
     paused=$((paused + 1))
@@ -267,7 +283,8 @@ while IFS="$(printf '\t')" read -r _rank _val _epoch id; do
     echo "fm-load-relief: interrupt for $id was not delivered; it was not paused" >&2
   fi
 done <<EOF
-$(sort -t "$(printf '\t')" -k1,1n -k2,2nr -k3,3n "$candidates")
+$(sort -t "$(printf '\t')" -k1,1nr -k2,2nr "$candidates")
 EOF
+[ "$paused" -eq 0 ] || write_high_since "$now"
 [ "$paused" -gt 0 ] || echo "load-relief: load=$load1 sustained ${elapsed}s over ceiling=$ceiling; no live worker to pause"
 exit 0
