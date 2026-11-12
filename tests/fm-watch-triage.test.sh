@@ -2426,6 +2426,156 @@ test_gone_endpoint_reports_once_instead_of_escalating_forever() {
   pass "a record whose endpoint is dead or missing reports itself once and is never re-escalated"
 }
 
+# A ship whose agent died in its existing endpoint, with its recorded worktree
+# still on disk, is relaunched from its checkpoint instead of only reported. The
+# bound is per task: past FM_CREW_RELAUNCH_MAX_ATTEMPTS relaunches in the window
+# the ordinary once-only dead report returns and names the pause.
+crew_relaunch_wakes() {  # <state> <task> <relaunched|failed>
+  local prefix="crew-relaunch-$2-"
+  [ "$3" = failed ] && prefix="crew-relaunch-failed-$2-"
+  awk -F '\t' -v p="$prefix" '$3 == "check" && index($4, p) == 1 { n++ } END { print n + 0 }' \
+    "$1/.wake-queue" 2>/dev/null || echo 0
+}
+
+# A stand-in for bin/fm-control.sh that records each call and its note, and
+# renders the replacement's first frame the way a real relaunch would.
+fake_crew_control() {  # <case-dir> <exit-code>
+  cat > "$1/fake-control" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$1 \$2 \$3" >> "$1/control.calls"
+printf '%s\n' "\$4" > "$1/control.note"
+# Each replacement renders its own frame: without a busy gen, the pane hash is
+# what tells one incarnation's death from the next.
+printf 'replacement %s is starting\n' "\$(awk 'END { print NR }' "$1/control.calls")" > "$1/pane.txt"
+[ "$2" -eq 0 ] || echo "fm-control: relaunch refused for the test" >&2
+exit "$2"
+SH
+  chmod +x "$1/fake-control"
+}
+
+crew_relaunch_fixture() {  # <name> <status-log> [<status-age> <timer-age>]
+  local dir
+  dir=$(wedge_threshold_fixture "$1" "$2" "${3:-0}" ${4:+"$4"}) || return 1
+  mkdir -p "$dir/wt"
+  # Aged so the worktree-write deferral, which runs first, sees no new writes.
+  set_mtime "$(( $(date +%s) - 86400 ))" "$dir/wt"
+  printf 'worktree=%s\n' "$dir/wt" >> "$dir/state/wedge.meta"
+  printf '%s\n' "$dir"
+}
+
+control_calls() { awk 'END { print NR + 0 }' "$1/control.calls" 2>/dev/null || echo 0; }
+
+test_dead_crew_agent_auto_relaunches_from_its_checkpoint_within_a_bound() {
+  local dir state fakebin out capture window round
+  local failed='state: failed · source: run-step · run failed'
+  local working='state: working · source: run-step · ci running'
+  window="test:fm-wedge"
+  dir=$(crew_relaunch_fixture auto-relaunch 'working: still compiling')
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  fake_crew_control "$dir" 0
+  FM_CONTROL_BIN="$dir/fake-control"; export FM_CONTROL_BIN
+
+  for round in 1 2; do
+    gone_endpoint_env dead; export FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS
+    : > "$out"
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" exit \
+      || fail "a dead ship agent was never handled at the wedge threshold (round $round): $(cat "$out")"
+    grep -F "check: wedge auto-relaunched from its checkpoint after its agent died in $window (relaunch $round of 2 in 3600s)" "$out" >/dev/null \
+      || fail "relaunch $round did not wake with its auto-relaunch outcome: $(cat "$out")"
+    [ "$(crew_relaunch_wakes "$state" wedge relaunched)" -eq 1 ] \
+      || fail "relaunch $round queued $(crew_relaunch_wakes "$state" wedge relaunched) check rows instead of one"
+    [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] \
+      || fail "an auto-relaunched agent was also reported stale on round $round"
+    [ "$(control_calls "$dir")" -eq "$round" ] || fail "round $round made $(control_calls "$dir") relaunch calls"
+    ack_stopped_cycle "$state" || fail "could not acknowledge relaunch $round"
+
+    # The replacement comes up and renders a new frame before it, too, dies.
+    FM_TEST_PANE_COMMAND=grok FM_TEST_TMUX_WINDOWS=fm-wedge
+    : > "$out"
+    FM_TEST_STALE_ESCALATE=999 wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" absorb \
+      || fail "the replacement after relaunch $round did not absorb: $(cat "$out")"
+  done
+  grep -Fx 'wedge relaunch --note' "$dir/control.calls" >/dev/null \
+    || fail "the relaunch did not go through fm-control relaunch with a note: $(cat "$dir/control.calls")"
+  grep -F 'working: still compiling' "$dir/control.note" >/dev/null \
+    || fail "the relaunch note does not carry the task's status log: $(cat "$dir/control.note")"
+  grep -F 'uncommitted changes were left exactly as the previous worker had them' "$dir/control.note" >/dev/null \
+    || fail "the relaunch note does not tell the replacement its copy was kept"
+  [ "$(grep -c "$(printf '\tattempt$')" "$state/.crew-relaunch-wedge")" -eq 2 ] \
+    && [ "$(grep -c "$(printf '\trelaunched$')" "$state/.crew-relaunch-wedge")" -eq 2 ] \
+    || fail "the relaunch ledger does not hold two attempts and two outcomes: $(cat "$state/.crew-relaunch-wedge")"
+
+  # Third death inside the window: no relaunch, and the once-only report names the pause.
+  gone_endpoint_env dead
+  : > "$out"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" exit \
+    || fail "a dead agent past the bound was never reported: $(cat "$out")"
+  grep -F 'automatic relaunch paused after 2 relaunches in 3600s, so recover it by hand' "$out" >/dev/null \
+    || fail "the report past the bound did not name the pause: $(cat "$out")"
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 1 ] || fail "the report past the bound was not one stale wake"
+  [ "$(control_calls "$dir")" -eq 2 ] || fail "the bound did not stop a third relaunch"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the paused report"
+  : > "$out"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" absorb \
+    || fail "the paused report re-alarmed: $(cat "$out")"
+  [ "$(control_calls "$dir")" -eq 2 ] || fail "a later threshold relaunched past the bound"
+  unset FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS FM_CONTROL_BIN
+  pass "a dead ship agent with a live worktree auto-relaunches from its checkpoint at most twice an hour, then reports the pause once"
+}
+
+test_dead_crew_auto_relaunch_failures_and_exclusions_report_once() {
+  local dir state fakebin out capture window spec name
+  local failed='state: failed · source: run-step · run failed'
+  window="test:fm-wedge"
+
+  dir=$(crew_relaunch_fixture auto-relaunch-failed 'working: still compiling')
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  fake_crew_control "$dir" 1
+  FM_CONTROL_BIN="$dir/fake-control"; export FM_CONTROL_BIN
+  gone_endpoint_env dead; export FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" exit \
+    || fail "a failed auto-relaunch was never reported: $(cat "$out")"
+  grep -F "check: wedge auto-relaunch failed after its agent died in $window (exit 1): fm-control: relaunch refused for the test" "$out" >/dev/null \
+    || fail "a failed auto-relaunch did not name its failure: $(cat "$out")"
+  [ "$(crew_relaunch_wakes "$state" wedge failed)" -eq 1 ] || fail "a failed auto-relaunch did not queue one check row"
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] || fail "a failed auto-relaunch was also reported stale"
+  grep -q "$(printf '\tfailed$')" "$state/.crew-relaunch-wedge" || fail "a failed auto-relaunch was not ledgered"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the failed auto-relaunch"
+  # A failed relaunch leaves the dead display as it was.
+  printf 'waiting at the gate' > "$capture"
+  : > "$out"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" absorb \
+    || fail "a failed auto-relaunch retried or re-alarmed on a later threshold: $(cat "$out")"
+  [ "$(control_calls "$dir")" -eq 1 ] || fail "a failed auto-relaunch was retried for the same dead agent"
+
+  # Records that must keep the ordinary report and never call relaunch.
+  for spec in missing nowt 'done' disabled; do
+    name="auto-relaunch-skip-$spec"
+    if [ "$spec" = 'done' ]; then
+      dir=$(crew_relaunch_fixture "$name" 'done: PR ready' 2000 600)
+    else
+      dir=$(crew_relaunch_fixture "$name" 'working: still compiling')
+    fi
+    state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+    fake_crew_control "$dir" 0
+    FM_CONTROL_BIN="$dir/fake-control"
+    gone_endpoint_env dead
+    case "$spec" in
+      missing) gone_endpoint_env missing ;;
+      nowt) rmdir "$dir/wt" ;;
+      disabled) FM_CREW_RELAUNCH_MAX_ATTEMPTS=0; export FM_CREW_RELAUNCH_MAX_ATTEMPTS ;;
+    esac
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" exit \
+      || fail "$spec: the dead-record report never fired: $(cat "$out")"
+    unset FM_CREW_RELAUNCH_MAX_ATTEMPTS
+    grep -F 'so this is not a wedge' "$out" >/dev/null || fail "$spec: the ordinary dead-record report is missing: $(cat "$out")"
+    [ "$(control_calls "$dir")" -eq 0 ] || fail "$spec: an excluded record was auto-relaunched"
+    [ "$(crew_relaunch_wakes "$state" wedge relaunched)" -eq 0 ] || fail "$spec: an excluded record queued a relaunch wake"
+  done
+  unset FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS FM_CONTROL_BIN
+  pass "a failed auto-relaunch reports once without retrying, and a missing endpoint, a gone worktree, a finished task, or a disabled bound keeps the ordinary report"
+}
+
 # The load-bearing direction. A genuinely wedged LIVE agent must escalate exactly
 # as it did before, and so must every verdict short of proof: an unattributable
 # foreground process (`ambiguous`) and an unreadable endpoint keep the identical
@@ -5432,6 +5582,8 @@ fm_test_run \
   test_wedge_escalation_marks_demand_deep_inspection_after_threshold \
   test_wedge_escalation_resets_when_pane_becomes_active \
   test_gone_endpoint_reports_once_instead_of_escalating_forever \
+  test_dead_crew_agent_auto_relaunches_from_its_checkpoint_within_a_bound \
+  test_dead_crew_auto_relaunch_failures_and_exclusions_report_once \
   test_live_and_unproven_endpoints_still_wedge_escalate \
   test_wedge_guards_absent_config_keeps_the_unchanged_ladder \
   test_wedge_guard_critical_defers_one_window_at_a_time_up_to_the_cap \

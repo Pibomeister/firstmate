@@ -1337,6 +1337,12 @@ test_workers_wait_without_spending_turns() {
   assert_grep 'until handling or ask-user escalation is durable' "$brief" \
     'the source must remain unacknowledged until handling is durable'
   assert_grep 'Never replay an old' "$brief" 'redelivery must not replay a gate response'
+  assert_grep "When a gate answer's drive call timed out or returned without a receipt, settle whether it landed from \`no-mistakes axi status\` for that run" "$brief" \
+    'a timed-out gate answer must be settled from the run status'
+  assert_grep 'still parked at the same gate with the same findings means it did not land and one resend of that same answer is safe' "$brief" \
+    'an unlanded gate answer must allow exactly one resend'
+  assert_grep 'a resend that also returns no receipt, is a blocker' "$brief" \
+    'a second unconfirmed gate answer must escalate rather than resend again'
   assert_no_grep "background the drive call" "$brief" "the no-mistakes DOD still backgrounds the drive call"
 
   FM_SECONDMATE_CHARTER='Supervise the alpha domain.' \

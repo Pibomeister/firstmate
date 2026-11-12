@@ -2527,7 +2527,7 @@ stale_published_task() {  # <case-dir> <id>: ship task on task-<id>, stale again
 }
 
 test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head() {
-  local dir out mode local_sha
+  local dir out mode local_sha launch
   dir=$(new_case prresync rl90)
   stale_published_task "$dir" rl90
   out=$(run_spawn "$dir" rl90 --relaunch)
@@ -2588,15 +2588,33 @@ test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head() {
   dir=$(new_case prresync-dirty rl91)
   stale_published_task "$dir" rl91
   printf 'keep\n' > "$dir/wt/uncommitted.txt"
+  printf 'edited\n' >> "$dir/wt/a.txt"
   out=$(run_spawn "$dir" rl91 --relaunch)
-  assert_contains "$out" "cannot relaunch: bin/fm-pr-resync.sh exited 1" "a dirty worktree did not refuse the relaunch"$'\n'"$out"
-  assert_not_contains "$out" "spawned rl91" "a refused relaunch still launched"
-  [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$STALE_SHA" ] || fail "a refused relaunch moved the branch"
-  assert_grep 'keep' "$dir/wt/uncommitted.txt" "a refused relaunch discarded local work"
+  assert_contains "$out" "spawned rl91" "a dirty task-owned copy did not relaunch"$'\n'"$out"
+  assert_contains "$out" "skipping the published-head resync" "a dirty relaunch did not say it skipped the resync"
+  assert_not_contains "$out" "fm-pr-resync:" "a dirty relaunch invoked the network resync owner"
+  [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$STALE_SHA" ] || fail "a dirty relaunch moved the branch"
+  assert_grep 'keep' "$dir/wt/uncommitted.txt" "a dirty relaunch discarded an untracked file"
+  assert_grep 'edited' "$dir/wt/a.txt" "a dirty relaunch discarded a tracked edit"
+  [ -z "$(git -C "$dir/wt" stash list)" ] || fail "a dirty relaunch stashed local work"
+  launch="$dir/home/data/rl91/launch-brief.md"
+  assert_grep '# Dirty-copy relaunch' "$launch" "the replacement was not told its copy is dirty"
+  assert_grep 'never stash, reset, check out over, clean, or discard them' "$launch" "the dirty-copy section does not protect the edits"
+  assert_grep 'uncommitted.txt' "$launch" "the dirty-copy section does not list the uncommitted paths"
+  assert_grep "fm-pr-resync.sh rl91 $dir/wt task-rl91" "$launch" "the dirty-copy section does not name the later resync"
 
   out=$(run_spawn "$dir" rl91 --relaunch --pr-branch task-rl91)
   assert_contains "$out" "--pr-branch and --from-branch apply only to a fresh launch" "--relaunch accepted --pr-branch"
-  pass "fm-spawn --relaunch: no-mistakes divergence refuses, behind advances, and explicit worker-owned modes skip resync despite a no-mistakes remote"
+
+  dir=$(new_case prresync-dirty-other rl98)
+  stale_published_task "$dir" rl98
+  git -C "$dir/wt" switch -q -c unrelated
+  printf 'keep\n' > "$dir/wt/uncommitted.txt"
+  out=$(run_spawn "$dir" rl98 --relaunch)
+  assert_not_contains "$out" "spawned rl98" "a dirty copy on another branch launched"$'\n'"$out"
+  assert_contains "$out" "cannot relaunch" "a dirty copy on another branch was not refused"$'\n'"$out"
+  assert_grep 'keep' "$dir/wt/uncommitted.txt" "a refused relaunch discarded local work"
+  pass "fm-spawn --relaunch: no-mistakes divergence refuses, behind advances, a dirty task-owned copy relaunches untouched without resync, and explicit worker-owned modes skip resync despite a no-mistakes remote"
 }
 
 # A successor launched with --from-branch keeps its brief's Setup "Source

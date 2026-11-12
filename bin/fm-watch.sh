@@ -235,6 +235,19 @@
 #                          budget and is parked until a probe reads it live
 #                          again (FM_SECONDMATE_LIVENESS_MAX_ATTEMPTS and
 #                          FM_SECONDMATE_LIVENESS_WINDOW_SECS)
+#   check: <id> auto-relaunched from its checkpoint after its agent died in <window> ...
+#                          the wedge threshold's dead-record probe read `dead`
+#                          for a ship or scout with a live recorded worktree
+#                          and no terminal status, and bin/fm-control.sh
+#                          relaunch replaced the agent with a note built from
+#                          its status log (crew_auto_relaunch); one wake per
+#                          relaunch, ledgered in state/.crew-relaunch-<id>
+#   check: <id> auto-relaunch failed after its agent died in <window> (exit <rc>): <detail>
+#                          the same relaunch returned nonzero; the attempt still
+#                          counts toward the bound, and past
+#                          FM_CREW_RELAUNCH_MAX_ATTEMPTS inside
+#                          FM_CREW_RELAUNCH_WINDOW_SECS the ordinary once-only
+#                          dead-record stale wake is sent instead, naming the pause
 # For normal supervision, resume the session-start primary-harness protocol
 # after each printed reason. Direct duplicate invocations of this script still
 # no-op through the watcher singleton lock. A live holder whose beacon is stale
@@ -566,6 +579,15 @@ SECONDMATE_LIVENESS_MAX_ATTEMPTS=${FM_SECONDMATE_LIVENESS_MAX_ATTEMPTS:-}
 case "$SECONDMATE_LIVENESS_MAX_ATTEMPTS" in ''|*[!0-9]*|0) SECONDMATE_LIVENESS_MAX_ATTEMPTS=3 ;; esac
 SECONDMATE_LIVENESS_WINDOW_SECS=${FM_SECONDMATE_LIVENESS_WINDOW_SECS:-}
 case "$SECONDMATE_LIVENESS_WINDOW_SECS" in ''|*[!0-9]*|0) SECONDMATE_LIVENESS_WINDOW_SECS=3600 ;; esac
+# Ship/scout automatic relaunch on a proven-dead agent (crew_auto_relaunch):
+# at most this many attempts per task inside the window, 0 turning it off, and
+# a wall-clock bound on each relaunch so a wedged one cannot stall the poll.
+CREW_RELAUNCH_MAX_ATTEMPTS=${FM_CREW_RELAUNCH_MAX_ATTEMPTS:-}
+case "$CREW_RELAUNCH_MAX_ATTEMPTS" in ''|*[!0-9]*) CREW_RELAUNCH_MAX_ATTEMPTS=2 ;; esac
+CREW_RELAUNCH_WINDOW_SECS=${FM_CREW_RELAUNCH_WINDOW_SECS:-}
+case "$CREW_RELAUNCH_WINDOW_SECS" in ''|*[!0-9]*|0) CREW_RELAUNCH_WINDOW_SECS=3600 ;; esac
+CREW_RELAUNCH_TIMEOUT=${FM_CREW_RELAUNCH_TIMEOUT:-}
+case "$CREW_RELAUNCH_TIMEOUT" in ''|*[!0-9]*|0) CREW_RELAUNCH_TIMEOUT=300 ;; esac
 # A crew with a declared pause is idling on a known external wait, so its stale
 # pane is absorbed rather than wedge-escalated.
 # A captain-held crew whose agent has confidently exited uses the same
@@ -2147,6 +2169,75 @@ wedge_defer_validating() {  # <window> <since-file> <triage-label> <idle-age> <t
   triage_log "absorbed $label (no-mistakes run $run validating ($step), idle ${age}s): $win"
 }
 
+# Automatic relaunch of a ship or scout whose agent died in its existing
+# endpoint; docs/architecture.md owns the contract and its exclusions. The
+# attempt ledger state/.crew-relaunch-<id> (one row per attempt and per outcome)
+# is both the durable record and the bound's input, and the per-task lock makes
+# its count-then-append atomic. Returns 0 when it ran a relaunch, with the check
+# wake's key and reason in CREW_RELAUNCH_KEY and CREW_RELAUNCH_REASON; returns 1
+# when the record is not eligible or the bound holds, leaving a suffix for the
+# ordinary stale reason in CREW_RELAUNCH_NOTE (empty when nothing was tried).
+crew_auto_relaunch() {  # <window> <task> <idle-age>
+  local win=$1 task=$2 age=$3 meta kind wt statusf last ledger lock now attempts note out rc=0 detail
+  CREW_RELAUNCH_KEY='' CREW_RELAUNCH_REASON='' CREW_RELAUNCH_NOTE=''
+  [ "$CREW_RELAUNCH_MAX_ATTEMPTS" -gt 0 ] || return 1
+  case "$task" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  meta="$STATE/$task.meta"
+  kind=$(fm_meta_get "$meta" kind 2>/dev/null || true)
+  case "$kind" in ship|scout) ;; *) return 1 ;; esac
+  [ -z "$(fm_meta_get "$meta" remote_host 2>/dev/null || true)" ] || return 1
+  # shellcheck source=bin/fm-control-lib.sh
+  command -v fm_control_backend_relaunch_supported >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-control-lib.sh"
+  fm_control_backend_relaunch_supported "$(window_backend "$win")" || return 1
+  wt=$(fm_meta_get "$meta" worktree 2>/dev/null || true)
+  [ -n "$wt" ] && [ -d "$wt" ] || return 1
+  statusf="$STATE/$task.status"
+  last=$(last_status_line "$statusf")
+  ! status_is_terminal_verb "$last" || return 1
+  lock="$STATE/.crew-relaunch-$task.lock"
+  fm_lock_try_acquire "$lock" || return 1
+  ledger="$STATE/.crew-relaunch-$task"
+  fm_watch_now now
+  attempts=0
+  if [ -e "$ledger" ] || [ -L "$ledger" ]; then
+    if ! attempts=$(awk -F '\t' -v cutoff="$((now - CREW_RELAUNCH_WINDOW_SECS))" \
+      '$1 ~ /^[0-9]+$/ && $1 >= cutoff && $2 == "attempt" { n++ } END { print n + 0 }' "$ledger" 2>/dev/null); then
+      fm_lock_release "$lock" 2>/dev/null || true
+      CREW_RELAUNCH_NOTE="; automatic relaunch skipped because $ledger is unreadable"
+      return 1
+    fi
+  fi
+  if [ "$attempts" -ge "$CREW_RELAUNCH_MAX_ATTEMPTS" ]; then
+    fm_lock_release "$lock" 2>/dev/null || true
+    CREW_RELAUNCH_NOTE="; automatic relaunch paused after $attempts relaunches in ${CREW_RELAUNCH_WINDOW_SECS}s, so recover it by hand"
+    return 1
+  fi
+  if ! printf '%s\tattempt\n' "$now" >> "$ledger" 2>/dev/null; then
+    fm_lock_release "$lock" 2>/dev/null || true
+    CREW_RELAUNCH_NOTE="; automatic relaunch skipped because $ledger is unwritable"
+    return 1
+  fi
+  attempts=$((attempts + 1))
+  note="Automatic relaunch: the watcher found no agent running in this task's existing endpoint after ${age}s idle, so it restarted the worker from its checkpoint (relaunch $attempts of $CREW_RELAUNCH_MAX_ATTEMPTS allowed in ${CREW_RELAUNCH_WINDOW_SECS}s).
+The local copy, its commits, and any uncommitted changes were left exactly as the previous worker had them.
+Its newest status events, oldest first:
+$(tail -n 5 "$statusf" 2>/dev/null | sed 's/^/    /')
+Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mistakes axi status\` for any run on this branch, then continue from that checkpoint."
+  out=$(FM_HOME=$FM_HOME FM_SPAWN_NO_GUARD=1 fm_run_timed_fn "$CREW_RELAUNCH_TIMEOUT" \
+    "${FM_CONTROL_BIN:-$SCRIPT_DIR/fm-control.sh}" "$task" relaunch --note "$note" </dev/null 2>&1) || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    printf '%s\trelaunched\n' "$now" >> "$ledger" 2>/dev/null || true
+    CREW_RELAUNCH_KEY="crew-relaunch-$task-$now"
+    CREW_RELAUNCH_REASON="check: $task auto-relaunched from its checkpoint after its agent died in $win (relaunch $attempts of $CREW_RELAUNCH_MAX_ATTEMPTS in ${CREW_RELAUNCH_WINDOW_SECS}s) - its local copy was kept; reconcile its current state rather than relaunching it again"
+  else
+    printf '%s\tfailed\n' "$now" >> "$ledger" 2>/dev/null || true
+    detail=$(printf '%s\n' "$out" | LC_ALL=C tr -d '\r' | awk 'NF { line = $0 } END { print substr(line, 1, 240) }')
+    CREW_RELAUNCH_KEY="crew-relaunch-failed-$task-$now"
+    CREW_RELAUNCH_REASON="check: $task auto-relaunch failed after its agent died in $win (exit $rc): ${detail:-no output} - recover it by hand, and check for unlanded work before any cleanup"
+  fi
+  fm_lock_release "$lock" 2>/dev/null || true
+  return 0
+}
 # The question the wedge timer never asked before it alarmed: is there still an
 # agent here to BE wedged? A wedge is something stuck that might recover, so
 # re-alarming it earns its cost; an agent that is gone never moves again, its pane
@@ -2181,6 +2272,8 @@ wedge_defer_validating() {  # <window> <since-file> <triage-label> <idle-age> <t
 # with the residual that a record-less successor dying into a byte-identical dead
 # display stays absorbed. Under one unchanged incarnation a dead pane's static
 # display absorbs on every threshold either way.
+# A first `dead` report for an eligible ship or scout is replaced by one
+# crew_auto_relaunch attempt and its check wake, under the same once-marker.
 # Returns 0 when it has handled the window, 1 to escalate on the unchanged path.
 wedge_dead_record() {  # <window> <since-file> <triage-label> <idle-age> <pane-hash> <task>
   local win=$1 since_file=$2 label=$3 age=$4 hash=$5 task=$6 key marker agent_state detail reason gen id
@@ -2203,7 +2296,15 @@ wedge_dead_record() {  # <window> <since-file> <triage-label> <idle-age> <pane-h
     triage_log "absorbed $label (agent $agent_state, already reported once, idle ${age}s): $win"
     return 0
   fi
-  reason="stale: $win (idle ${age}s, agent $agent_state - $detail, so this is not a wedge; reported once and not re-escalated while it stays that way - reconcile this record, and check for unlanded work before any cleanup)"
+  CREW_RELAUNCH_NOTE=''
+  if [ "$agent_state" = dead ] && crew_auto_relaunch "$win" "$task" "$age"; then
+    fm_wake_append check "$CREW_RELAUNCH_KEY" "$CREW_RELAUNCH_REASON" || exit 1
+    printf '%s %s' "$agent_state" "$id" > "$marker"
+    clear_write_tracking "$key"
+    wake "$CREW_RELAUNCH_REASON"
+    return 0
+  fi
+  reason="stale: $win (idle ${age}s, agent $agent_state - $detail, so this is not a wedge; reported once and not re-escalated while it stays that way - reconcile this record, and check for unlanded work before any cleanup${CREW_RELAUNCH_NOTE})"
   # Append before the marker, for the reason stale_wait_record gives: a marker
   # written ahead of a failed append outlives it, and the next sighting would then
   # absorb the retry - the one way this bound could swallow the report outright
