@@ -1,0 +1,27 @@
+1..24
+ok - a transient blip is retried until the call succeeds
+ok - a blip past the retry budget is reported once
+ok - a definite failure is returned once
+ok - a definite answer is not retried when the same text mentions a timeout
+ok - backoff doubles and then stays at the cap
+ok - an HTTP 5xx is a transient blip
+ok - a missing socket is retried even when the text says it was not found
+ok - definite errors that mention timeouts or 5NN numbers fail once
+ok - timed-out, reset, and real HTTP 5xx failures are retried
+ok - a command that never connected is retried in connect-only mode
+ok - connect-only mode does not repeat a call whose reply was lost
+ok - connect-only mode never classifies the command's stdout
+ok - --ssh-connect retries only an ssh exit 255
+ok - an ssh that never opened a session is retried
+ok - an ssh drop or remote stderr text is never retried
+ok - a failure with no transient text is returned once
+ok - a bad retry override is refused before the command runs
+ok - an Orca terminal send retries a transient CLI blip
+ok - an Orca terminal send does not retry permission denied
+ok - Orca sends and creates are not repeated after a reply that may have been lost
+ok - an Orca read retries a timed-out reply
+ok - an Orca capture against a refused connection gives up within the short read budget
+ok - an unreadable Orca draft probe still holds within the short read budget
+ok - an Orca send keeps retrying past the short read budget
+FM_TEST_COMPLETE
+exit=0

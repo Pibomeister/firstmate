@@ -1,0 +1,6 @@
+ok - Orca card hooks: exact argv, caller state override, and each event/backend/id guard
+ok - Orca card helper: requests exactly five seconds independently of caller wall-clock latency
+ok - Orca card pr hang elapsed=11.796729000008781s (required <15s)
+ok - Orca card merge hang elapsed=14.351313000006485s (required <15s)
+not ok - local hang must be timed out between 5 and 15 seconds, measured 16.09825000001001
+exit=1

@@ -1,0 +1,49 @@
+=== S1 remote host down for the whole budget (mode=refused)
+exit=255 wall=12s
+-- attempts:
+attempt 1 at 1794468223.43
+attempt 2 at 1794468224.55
+attempt 3 at 1794468226.65
+attempt 4 at 1794468230.76
+attempt 5 at 1794468234.87
+-- stdout:
+-- stderr:
+ssh: connect to host 127.0.0.1 port 1: Connection refused
+=== S2 blip recovers on 3rd attempt, stdin replayed (mode=recover)
+exit=0 wall=4s
+-- attempts:
+attempt 1 at 1794468236.15
+attempt 2 at 1794468237.30
+attempt 3 at 1794468239.41
+-- stdout:
+remote-ok stdin=[payload-123]
+-- stderr:
+=== S3 connected then dropped before auth (real ssh) (mode=banner)
+exit=255 wall=0s
+-- attempts:
+attempt 1 at 1794468240.63
+-- stdout:
+-- stderr:
+ssh_dispatch_run_fatal: Connection to 127.0.0.1 port 62798: Broken pipe
+=== S4 mid-session drop after job may have run (mode=midsession)
+exit=255 wall=0s
+-- attempts:
+attempt 1 at 1794468240.83
+-- stdout:
+partial-output
+-- stderr:
+Read from remote host 127.0.0.1: Connection timed out
+=== S5 mid-session no-route drop (mode=noroute)
+exit=255 wall=1s
+-- attempts:
+attempt 1 at 1794468241.06
+-- stdout:
+-- stderr:
+packet_write_wait: Connection to 127.0.0.1 port 22: No route to host
+=== S6 remote command itself fails with timeout/503 text (mode=remotefail)
+exit=1 wall=0s
+-- attempts:
+attempt 1 at 1794468241.32
+-- stdout:
+-- stderr:
+fetch timed out: HTTP 503
