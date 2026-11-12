@@ -4589,6 +4589,23 @@ lane_capacity_publish_detached() {
   LANE_CAPACITY_PID=$!
 }
 
+# Automatic load relief (bin/fm-load-relief.sh owns the contract): one
+# detached check beside the capacity publish while the same opt-in file
+# exists, single-flight like the publish above.
+LOAD_RELIEF_PID=
+load_relief_check_detached() {
+  if [ -n "$LOAD_RELIEF_PID" ]; then
+    if kill -0 "$LOAD_RELIEF_PID" 2>/dev/null; then
+      return 0
+    fi
+    wait "$LOAD_RELIEF_PID" 2>/dev/null || true
+    LOAD_RELIEF_PID=
+  fi
+  FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
+    "$SCRIPT_DIR/fm-load-relief.sh" check </dev/null >/dev/null 2>&1 &
+  LOAD_RELIEF_PID=$!
+}
+
 # Self-watching heartbeat ledger: publish state/heartbeat.json detached and
 # single-flight so no read can hold a poll. bin/fm-heartbeat.sh's header owns the
 # document and its bounds. An independent single-flight ticker launches one
@@ -4899,6 +4916,7 @@ while :; do
   # Opt-in lane capacity facts: off costs one file test.
   if [ -e "$CONFIG/lane-capacity" ] && [ "$(age_of "$STATE/lane-capacity.json")" -ge 30 ]; then
     lane_capacity_publish_detached
+    load_relief_check_detached
   fi
 
   # Durable captain orders: off (no pending order) costs one glob.

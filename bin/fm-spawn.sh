@@ -299,8 +299,8 @@
 #   every place held prints one `deferred:` line and exits 75 before any brief
 #   render, endpoint, worktree, record, or backlog move exists, so the task stays
 #   exactly as queued as it was; an unreadable declaration refuses with exit 1.
-#   Lane capacity admission is deferred with bin/fm-capacity.sh's
-#   --spawn-gate support (see the note at the project-capacity gate below).
+#   Lane capacity admission runs bin/fm-capacity.sh's --admit verdict at the
+#   lane-capacity gate below, with the same exit-75 deferral.
 #   A batch reports such a pair as `batch: DEFERRED` and exits 75 when nothing
 #   else failed. A relaunch and a --secondmate spawn are never counted against
 #   capacity.
@@ -4896,10 +4896,27 @@ if [ -n "$SPAWN_PROJECT_CAPACITY" ]; then
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
   fi
 fi
-# Lane capacity admission is deferred to the part of the upstream sync that
-# brings bin/fm-capacity.sh's --spawn-gate support; at this revision that
-# script has no such flag, so a caller here could never admit or refuse and
-# would only pretend to enforce. Spawn behaviour is unchanged until then.
+# Lane capacity and host-load admission (bin/fm-capacity.sh --admit owns the
+# verdict: the config/lane-capacity lane cap plus its host constraints, which
+# include the 1-minute load at or over the core count and any max-load1).
+# A fresh ship or scout that verdict does not admit is deferred here, before
+# any brief render, endpoint, worktree, record, or backlog move exists, so the
+# task stays queued; exit 75 is that deferral and exit 1 its unreadable-config
+# refusal. With config/lane-capacity absent the verdict admits and nothing
+# changes. A relaunch and a secondmate spawn are never gated here.
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
+  lane_admit_rc=0
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+    "$SCRIPT_DIR/fm-capacity.sh" --admit || lane_admit_rc=$?
+  case "$lane_admit_rc" in
+    0) ;;
+    75) exit 75 ;;
+    *)
+      echo "error: spawn refused: lane capacity admission failed (fm-capacity.sh --admit exited $lane_admit_rc); fix config/lane-capacity so the captain's worker limits are known" >&2
+      exit 1
+      ;;
+  esac
+fi
 # A secondmate home's lane total is the mate plus every child, nested
 # secondmates included. Refuse a new child before any endpoint exists when that
 # total is already at a stop.

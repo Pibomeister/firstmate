@@ -1038,9 +1038,13 @@ A pressure file is any producer of the `lookout.beat` 1.x shape, read by its own
 `quota-provider` is the only key that makes the script reach the network, through `quota-axi`, bounded to five seconds.
 
 While the file exists, the watcher runs `bin/fm-capacity.sh --publish` detached at most every 30 seconds, writing this home's lane facts to `state/lane-capacity.json`: its lanes, its cap and limits, its machine's pressure and boots, its watcher's freshness, and its own admission verdict.
-Publishing is best-effort and never changes what the watcher does; no spawn reads the verdict.
-`bin/fm-capacity.sh --admit` is an advisory check of the same verdict: it exits 0 when the verdict admits or the file is absent, and reports the reasons on stderr with exit 75 when it does not.
-No Firstmate script calls it.
+Publishing is best-effort and never changes what the watcher does.
+`bin/fm-capacity.sh --admit` is the same verdict as an exit status: it exits 0 when the verdict admits or the file is absent, and reports the reasons on stderr with exit 75 when it does not.
+`bin/fm-spawn.sh` runs that verdict for every fresh ship or scout spawn, so a spawn past the lane cap, or on a host whose load is at or over the core count or any `max-load1`, is deferred with exit 75 before anything is created and its backlog item stays queued.
+The watcher also runs `bin/fm-load-relief.sh check` detached beside the publish while the file exists.
+After load stays at or over the ceiling for the sustained window, that check interrupts exactly one lowest-priority live worker in place per pass - never killing it or touching its work - records the pause under `state/load-relief/paused/`, and steers the worker to resume when a later check reads load below the resume level.
+The ceiling is `max-load1` above unless the optional `config/load-relief` file sets `ceiling`, `resume-below`, `sustain-secs`, or `pause-per-check`.
+[`bin/fm-load-relief.sh`](../bin/fm-load-relief.sh) owns that file's format, the priority order, and the pause records.
 The script's header owns the report line, the published document's fields, the verdict, the beat freshness rules, the host-constraint thresholds, and the probe fallbacks.
 
 ## Disk alarm
