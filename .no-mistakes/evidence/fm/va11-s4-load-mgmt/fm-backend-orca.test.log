@@ -1,0 +1,4 @@
+ok - Orca card hooks: exact argv, caller state override, and each event/backend/id guard
+ok - Orca card helper: requests exactly five seconds independently of caller wall-clock latency
+not ok - pr hang must be timed out between 5 and 15 seconds, measured 24.487756999995327
+exit=1 secs=236

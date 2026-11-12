@@ -1,0 +1,9 @@
+ok - teardown leaves opencode's busy plugin in the returned pool worktree as on main
+ok - Orca selector_not_found with an absent recorded path completes teardown record cleanup
+ok - Orca selector_not_found with a present recorded path refuses and retains records
+ok - other Orca removal errors produce a visible refusal and retain records
+ok - Orca teardown closes local and recorded remote terminals, leaves path-only remote matches, and reports the count
+ok - Orca teardown refuses and keeps the worktree when a swept terminal will not close
+ok - Orca teardown refuses and keeps the worktree when the post-close listing fails
+ok - Orca teardown still refuses an unverified close when a paired environment also cannot be listed
+exit=0 secs=364

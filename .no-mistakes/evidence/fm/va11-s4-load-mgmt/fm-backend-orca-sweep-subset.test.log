@@ -1,0 +1,5 @@
+ok - fm_backend_orca_close_worktree_terminals: closes local and recorded remote terminals, counts path-only remote matches
+ok - fm_backend_orca_close_worktree_terminals: a failed close refuses and unreadable lists are distinct
+ok - fm_backend_orca_close_worktree_terminals: a local session not proved dead is left open and refuses
+ok - fm_backend_orca_close_worktree_terminals: an unreadable post-close re-list refuses distinctly
+exit=0
