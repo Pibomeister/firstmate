@@ -1123,6 +1123,7 @@ tests/fm-session-start-drift.test.sh 13657
 tests/fm-soak-record.test.sh 35000
 tests/fm-stop-policy-live-e2e.test.sh 60
 tests/fm-stop-policy.test.sh 36274
+tests/fm-stall-ledger.test.sh 20000
 tests/fm-wake-ledger.test.sh 25000
 EOF
 }
