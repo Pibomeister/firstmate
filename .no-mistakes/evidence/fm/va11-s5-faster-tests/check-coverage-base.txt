@@ -1,0 +1,4 @@
+fm-test-run: coverage guard: largest portable serial shard packs 794783ms above the 780000ms target
+fm-test-run: refresh CI hints and rebalance or add shards; do not raise the job timeout: docs/fm-test-portable-shards.md
+bash bin/fm-test-run.sh --check-coverage  47.40s user 80.34s system 40% cpu 5:14.73 total
+exit=1

@@ -1,0 +1,29 @@
+$ /bin/bash bin/fm-test-run.sh --check-coverage (stock macOS Bash 3.2 entry)
+FM_TEST_COVERAGE ok total=392 parallel=26 parallel_max_ms=1418942 parallel_imbalance_ms=589 parallel_unhinted=0 serial=350 serial_shards=24 serial_unhinted=0 serial_max_ms=770057 serial_budget_ms=780000 serial_oversized=0 herdr=16
+/bin/bash bin/fm-test-run.sh --check-coverage  4.36s user 1.57s system 23% cpu 25.126 total
+exit=0
+
+$ /bin/bash -x trace of re-exec (first lines)
++ /opt/homebrew/bin/bash -c '[ "${BASH_VERSINFO[0]:-0}" -ge 5 ]'
++ exec /opt/homebrew/bin/bash bin/fm-test-run.sh --check-coverage
+
+$ FM_TEST_RUN_NO_REEXEC=1 /bin/bash bin/fm-test-run.sh --check-coverage
+FM_TEST_COVERAGE ok total=392 parallel=26 parallel_max_ms=1418942 parallel_imbalance_ms=589 parallel_unhinted=0 serial=350 serial_shards=24 serial_unhinted=0 serial_max_ms=770057 serial_budget_ms=780000 serial_oversized=0 herdr=16
+FM_TEST_RUN_NO_REEXEC=1 /bin/bash bin/fm-test-run.sh --check-coverage  6.19s user 1.71s system 20% cpu 37.632 total
+exit=0
++ set -eu
++ '[' 3 -lt 5 ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ _fm_seam_bash5=
++ '[' 0 = 1 ']'
++ for _fm_bash_candidate in '"$_fm_seam_bash5"' /opt/homebrew/bin/bash /usr/local/bin/bash
++ '[' -n '' ']'
++ continue
++ for _fm_bash_candidate in '"$_fm_seam_bash5"' /opt/homebrew/bin/bash /usr/local/bin/bash
++ '[' -n /opt/homebrew/bin/bash ']'
++ '[' -x /opt/homebrew/bin/bash ']'
++ /opt/homebrew/bin/bash -c '[ "${BASH_VERSINFO[0]:-0}" -ge 5 ]'
++ unset _fm_seam_bash5
++ FM_TEST_RUN_BASH_REEXEC=1
++ exec /opt/homebrew/bin/bash bin/fm-test-run.sh --help
