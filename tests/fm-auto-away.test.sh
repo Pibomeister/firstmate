@@ -296,6 +296,9 @@ at "$EARLY" captain-message
 at "$NIGHT" check
 at "$NIGHT" enter "$EARLY" >/dev/null
 assert_present "$FM_HOME/state/.afk-contract" 'scheduled entry did not enter away mode'
+# A re-handled wake repeats entry while the posture holds.
+[ -z "$(at "$((NIGHT + 60))" enter "$EARLY")" ] || fail 'a repeated entry announced twice'
+assert_present "$FM_HOME/state/.auto-away-request" 'a repeated entry released a fulfilled request'
 # A return whose activity stamp failed still lifts the posture.
 "$ROOT/bin/fm-afk-contract.sh" archive >/dev/null
 at "$((NIGHT + 300))" check

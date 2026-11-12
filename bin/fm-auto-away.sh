@@ -18,7 +18,8 @@
 #
 # A failed or obsolete entry releases its matching request under the lock, so
 # a failed entry, including one before launch, leaves a later check free to
-# retry, while a successful entry keeps it; enter reports each distinct
+# retry. A request stays fulfilled while a posture or pending return holds, so
+# a successful or repeated entry keeps it; enter reports each distinct
 # failure once and stays silent while it repeats unchanged. The failure record
 # holds the next retry time and the failure signature: a new signature retries
 # at the next check, an unchanged one only after ENTRY_BACKOFF seconds.
@@ -67,9 +68,16 @@ fail() {
   exit 1
 }
 
+# An away or quiet posture, or a pending return, blocks automatic entry.
+posture_held() {
+  [ -e "$STATE/.afk-contract" ] || [ -e "$STATE/.afk" ] \
+    || [ -e "$STATE/.afk-return-catchup" ] || [ -e "$STATE/.quiet-exit-pending" ]
+}
+
 # Only a failed or obsolete entry frees its own request for a later check;
-# a successful entry keeps it, so a stale stamp cannot request entry again.
+# a fulfilled one is kept, so a stale stamp cannot request entry again.
 release_request() {
+  ! posture_held || return 0
   [ "$(cat "$REQUEST" 2>/dev/null || true)" != "$ENTRY_ACTIVITY" ] || rm -f "$REQUEST"
 }
 
@@ -171,8 +179,7 @@ due() {
   local CLOCK_DUE=0
   REASON=
   [ "$ENABLED" = on ] || return 1
-  [ ! -e "$STATE/.afk-contract" ] && [ ! -e "$STATE/.afk" ] || return 1
-  [ ! -e "$STATE/.afk-return-catchup" ] && [ ! -e "$STATE/.quiet-exit-pending" ] || return 1
+  ! posture_held || return 1
   read_activity || return 1
   [ "$NOW" -ge "$LAST" ] || return 1
   if [ "$AT" != off ]; then
