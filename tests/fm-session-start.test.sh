@@ -4328,11 +4328,22 @@ PY
     out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
     baseline_before=$(cat "$home/state/.session-start-shared-baseline")
     mv "$git_home/.config/git/config" "$xdg_cfg_backup"
+    cat > "$eio_bin/FakeEIO.pm" <<'PM'
+package FakeEIO;
+use Errno qw(EIO);
+BEGIN {
+  *CORE::GLOBAL::lstat = sub (;$) {
+    $! = EIO;
+    return ();
+  };
+}
+1;
+PM
     cat > "$eio_bin/perl" <<SH
 #!/usr/bin/env bash
 for arg in "\$@"; do
   if [ "\$arg" = "$git_home/.config/git/config" ]; then
-    exit 1
+    exec "$real_perl" "-I$eio_bin" -MFakeEIO "\$@"
   fi
 done
 exec "$real_perl" "\$@"
@@ -4358,7 +4369,107 @@ PY
     assert_not_contains "$out" "SHARED_STATE:" "restoring after transient lookup failure alarmed despite preserved baseline"
   fi
 
-  pass "session start preserves shared-state baseline byte-for-byte across missing python3, locks, timeouts, corruption, unreadable files, inaccessible parent directories, and transient lookup failures"
+  # 10. No-interpreter fallback (both perl and python3 absent): unclassified missing-target lookup
+  # with an accessible parent returns unknown (no false removal alarm, baseline preserved), while an
+  # inaccessible parent directory still reports unreadable.
+  local nointerp_bin env_cfg_backup
+  nointerp_bin="$TMP_ROOT/shared-preserve-nointerp-bin"
+  env_cfg_backup="$TMP_ROOT/shared-preserve-env-config.bak"
+  mkdir -p "$nointerp_bin"
+  (
+    IFS=':'
+    for dir in $fakebin $BASE_PATH; do
+      [ -d "$dir" ] || continue
+      for cmd in "$dir"/*; do
+        [ -e "$cmd" ] || continue
+        base=${cmd##*/}
+        [ "$base" = perl ] || [ "$base" = python3 ] && continue
+        [ -e "$nointerp_bin/$base" ] || ln -s "$cmd" "$nointerp_bin/$base"
+      done
+    done
+  )
+  out=$(env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
+    GIT_CONFIG_GLOBAL="$git_home/env-cfg-dir/config" \
+    HOME="$git_home" XDG_CONFIG_HOME="$git_home/.config" NM_HOME="$nm_home" \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
+    "$SESSION_START")
+  baseline_before=$(cat "$home/state/.session-start-shared-baseline")
+  mv "$git_home/env-cfg-dir/config" "$env_cfg_backup"
+  chmod 000 "$db"
+  if [ ! -r "$db" ]; then
+    out=$(env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
+      GIT_CONFIG_GLOBAL="$git_home/env-cfg-dir/config" \
+      HOME="$git_home" XDG_CONFIG_HOME="$git_home/.config" NM_HOME="$nm_home" \
+      FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$nointerp_bin" \
+      "$SESSION_START")
+    chmod 600 "$db"
+    assert_not_contains "$out" "global git config changed" \
+      "no-interpreter fallback false-alarmed missing target as removed"
+    assert_contains "$out" "SHARED_STATE: shared no-mistakes database schema changed since the last session start ($db: unreadable)" \
+      "no-interpreter fallback suppressed simultaneous unreadable state.sqlite alarm"
+    [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
+      || fail "no-interpreter fallback mutated .session-start-shared-baseline"
+  else
+    chmod 600 "$db"
+  fi
+  chmod 000 "$git_home/env-cfg-dir"
+  if [ ! -x "$git_home/env-cfg-dir" ]; then
+    out=$(env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
+      GIT_CONFIG_GLOBAL="$git_home/env-cfg-dir/config" \
+      HOME="$git_home" XDG_CONFIG_HOME="$git_home/.config" NM_HOME="$nm_home" \
+      FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$nointerp_bin" \
+      "$SESSION_START")
+    chmod 700 "$git_home/env-cfg-dir"
+    assert_contains "$out" "SHARED_STATE: global git config changed since the last session start ($git_home/env-cfg-dir/config: unreadable)" \
+      "no-interpreter fallback did not report unreadable parent directory"
+    [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
+      || fail "no-interpreter unreadable parent directory mutated .session-start-shared-baseline"
+  else
+    chmod 700 "$git_home/env-cfg-dir"
+  fi
+  mv "$env_cfg_backup" "$git_home/env-cfg-dir/config"
+
+  # 11. Failed baseline file read while both snapshots succeed with drifted resources:
+  # preserves baseline byte-for-byte so the drift still alarms once baseline read recovers.
+  local real_cat failcat_bin
+  real_cat=$(command -v cat || true)
+  if [ -n "$real_cat" ]; then
+    failcat_bin="$TMP_ROOT/shared-preserve-failcat-bin"
+    mkdir -p "$failcat_bin"
+    out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+    baseline_before=$(cat "$home/state/.session-start-shared-baseline")
+    cat > "$failcat_bin/cat" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  if [ "\$arg" = "$home/state/.session-start-shared-baseline" ]; then
+    exit 1
+  fi
+done
+exec "$real_cat" "\$@"
+SH
+    chmod +x "$failcat_bin/cat"
+    git config --file "$git_home/.gitconfig" user.email drift-during-baseline-read-failure@example.invalid
+    python3 - "$db" <<'PY'
+import sqlite3, sys
+conn = sqlite3.connect(sys.argv[1])
+conn.execute("ALTER TABLE runs ADD COLUMN during_baseline_read_failure TEXT")
+conn.commit()
+conn.close()
+PY
+    out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$failcat_bin:$fakebin:$BASE_PATH")
+    [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
+      || fail "failed baseline read replaced .session-start-shared-baseline and swallowed drift"
+    out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+    assert_contains "$out" "SHARED_STATE: global git config changed since the last session start ($git_home/.gitconfig)" \
+      "drift during failed baseline read did not alarm once baseline read recovered"
+    assert_contains "$out" "SHARED_STATE: shared no-mistakes database schema changed since the last session start ($db)" \
+      "DB schema drift during failed baseline read did not alarm once baseline read recovered"
+    git config --file "$git_home/.gitconfig" user.email valid@example.invalid
+    cp "$db_backup" "$db"
+    out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  fi
+
+  pass "session start preserves shared-state baseline byte-for-byte across missing python3, locks, timeouts, corruption, unreadable files, inaccessible parent directories, transient lookup failures, no-interpreter fallback, and failed baseline reads"
 }
 
 test_context_digest_absent_empty_present

@@ -977,57 +977,72 @@ fm_session_start_endpoint_read() {  # <backend> <target> [expected-label]
 }
 
 hash_file_sha256() {
-  local file=$1 digest
+  local file=$1 raw digest
   [ -f "$file" ] || return 1
   if command -v shasum >/dev/null 2>&1; then
-    digest=$(shasum -a 256 "$file" 2>/dev/null | awk '
-      length($1) == 64 && $1 !~ /[^[:xdigit:]]/ { print "sha256:" $1; found=1; exit }
-      END { if (!found) exit 1 }
-    ') && [ -n "$digest" ] && { printf '%s\n' "$digest"; return 0; }
+    if raw=$(shasum -a 256 "$file" 2>/dev/null) \
+      && digest=$(printf '%s\n' "$raw" | awk '
+        length($1) == 64 && $1 !~ /[^[:xdigit:]]/ { print "sha256:" $1; found=1; exit }
+        END { if (!found) exit 1 }
+      ') && [ -n "$digest" ]; then
+      printf '%s\n' "$digest"
+      return 0
+    fi
   fi
   if command -v sha256sum >/dev/null 2>&1; then
-    digest=$(sha256sum "$file" 2>/dev/null | awk '
-      length($1) == 64 && $1 !~ /[^[:xdigit:]]/ { print "sha256:" $1; found=1; exit }
-      END { if (!found) exit 1 }
-    ') && [ -n "$digest" ] && { printf '%s\n' "$digest"; return 0; }
+    if raw=$(sha256sum "$file" 2>/dev/null) \
+      && digest=$(printf '%s\n' "$raw" | awk '
+        length($1) == 64 && $1 !~ /[^[:xdigit:]]/ { print "sha256:" $1; found=1; exit }
+        END { if (!found) exit 1 }
+      ') && [ -n "$digest" ]; then
+      printf '%s\n' "$digest"
+      return 0
+    fi
   fi
   return 1
 }
 
 # Called only when [ ! -e "$path" ] && [ ! -L "$path" ].
 # Distinguishes confirmed absence (ENOENT -> 0) from permission or traversal blocks
-# (EACCES/EPERM/ENOTDIR/ELOOP -> 2, non-recordable unreadable) and transient lookup
-# errors (any other errno -> 1, skip without alarming or updating baseline).
+# (EACCES/EPERM/ENOTDIR/ELOOP -> 2, non-recordable unreadable) and transient or
+# unclassified lookup errors (any other errno, or missing perl/python3 without a
+# proven ancestor block -> 1, skip without alarming or updating baseline).
 classify_missing_path() {
-  local path=$1 rc cur parent
+  local path=$1 verdict='' cur parent
   if command -v perl >/dev/null 2>&1; then
-    rc=0
     # shellcheck disable=SC2016  # Perl code uses its own @ARGV/$!, not shell expansion.
-    perl -MErrno=ENOENT,EACCES,EPERM,ENOTDIR,ELOOP -e '
+    verdict=$(perl -MErrno=ENOENT,EACCES,EPERM,ENOTDIR,ELOOP -e '
       my @s = lstat($ARGV[0]);
-      exit 1 if @s;
-      exit 0 if $!{ENOENT};
-      exit 2 if $!{EACCES} || $!{EPERM} || $!{ENOTDIR} || $!{ELOOP};
-      exit 1;
-    ' "$path" 2>/dev/null || rc=$?
-    return "$rc"
+      if (@s) { print "transient\n"; exit 0; }
+      if ($!{ENOENT}) { print "absent\n"; exit 0; }
+      if ($!{EACCES} || $!{EPERM} || $!{ENOTDIR} || $!{ELOOP}) { print "unreadable\n"; exit 0; }
+      print "transient\n";
+    ' "$path" 2>/dev/null) || verdict=''
+    case "$verdict" in
+      absent) return 0 ;;
+      unreadable) return 2 ;;
+      transient) return 1 ;;
+    esac
   fi
   if command -v python3 >/dev/null 2>&1; then
-    rc=0
     # shellcheck disable=SC2016  # Python code uses its own sys.argv, not shell expansion.
-    python3 -c '
+    verdict=$(python3 -c '
 import errno, os, sys
 try:
     os.lstat(sys.argv[1])
-    sys.exit(1)
+    print("transient")
 except FileNotFoundError:
-    sys.exit(0)
+    print("absent")
 except PermissionError:
-    sys.exit(2)
+    print("unreadable")
 except OSError as exc:
-    sys.exit(2 if exc.errno in (errno.ENOTDIR, errno.ELOOP) else 1)
-' "$path" 2>/dev/null || rc=$?
-    return "$rc"
+    print("unreadable" if exc.errno in (errno.ENOTDIR, errno.ELOOP) else "transient")
+' "$path" 2>/dev/null) || verdict=''
+    case "$verdict" in
+      absent) return 0 ;;
+      unreadable) return 2 ;;
+      transient) return 1 ;;
+    esac
   fi
   cur=$path
   while :; do
@@ -1035,7 +1050,7 @@ except OSError as exc:
     [ -n "$parent" ] && [ "$parent" != "$cur" ] || return 1
     if [ -L "$parent" ] || [ -e "$parent" ]; then
       if [ -d "$parent" ] && [ -x "$parent" ]; then
-        return 0
+        return 1
       fi
       return 2
     fi
@@ -1153,10 +1168,14 @@ for row in rows:
     h.update(("%s\x1f%s\x1f%s\x1f%s\x1e" % row).encode("utf-8"))
 print("sha256:" + h.hexdigest())
 ' "$db_path" 2>/dev/null) || rc=$?
-  if [ "$rc" -eq 0 ] && [ -n "$out" ]; then
-    printf '%s\n%s\n' "$db_path" "$out"
-    return 0
-  fi
+  case "$out" in
+    sha256:*)
+      if [ "$rc" -eq 0 ]; then
+        printf '%s\n%s\n' "$db_path" "$out"
+        return 0
+      fi
+      ;;
+  esac
   if [ "$rc" -eq 2 ] && [ "$out" = corrupt ]; then
     printf '%s\ncorrupt\n' "$db_path"
     return 2
@@ -1166,7 +1185,7 @@ print("sha256:" + h.hexdigest())
 
 # Scope and line-format contract: see step 2 of the file header above.
 check_shared_state_since_last_start() {
-  local prev_git_slots='' prev_git_state='' prev_nm_path='' prev_nm_schema='' baseline_ok=0 baseline_miss_rc=0
+  local prev_git_slots='' prev_git_state='' prev_nm_path='' prev_nm_schema='' baseline_raw='' baseline_ok=0 baseline_miss_rc=0
   local git_snap='' git_rc=0 git_ok=0 curr_git_slots='' curr_git_state=''
   local nm_snap='' nm_rc=0 nm_ok=0 curr_nm_path='' curr_nm_schema=''
   local git_alarm=0 nm_alarm=0
@@ -1175,23 +1194,45 @@ check_shared_state_since_last_start() {
     classify_missing_path "$SHARED_BASELINE_FILE" || baseline_miss_rc=$?
     [ "$baseline_miss_rc" -eq 0 ] && baseline_ok=1
   elif [ -f "$SHARED_BASELINE_FILE" ] && [ ! -L "$SHARED_BASELINE_FILE" ] && [ -r "$SHARED_BASELINE_FILE" ]; then
-    prev_git_slots=$(sed -n '1p' "$SHARED_BASELINE_FILE" 2>/dev/null || true)
-    prev_git_state=$(sed -n '2p' "$SHARED_BASELINE_FILE" 2>/dev/null || true)
-    prev_nm_path=$(sed -n '3p' "$SHARED_BASELINE_FILE" 2>/dev/null || true)
-    prev_nm_schema=$(sed -n '4p' "$SHARED_BASELINE_FILE" 2>/dev/null || true)
-    baseline_ok=1
+    if baseline_raw=$(cat "$SHARED_BASELINE_FILE" 2>/dev/null) \
+      && prev_git_slots=$(printf '%s\n' "$baseline_raw" | sed -n '1p') \
+      && prev_git_state=$(printf '%s\n' "$baseline_raw" | sed -n '2p') \
+      && prev_nm_path=$(printf '%s\n' "$baseline_raw" | sed -n '3p') \
+      && prev_nm_schema=$(printf '%s\n' "$baseline_raw" | sed -n '4p') \
+      && [ -z "$(printf '%s\n' "$baseline_raw" | sed -n '5p')" ] \
+      && [ -n "$prev_git_slots" ] && [ -n "$prev_git_state" ] \
+      && [ -n "$prev_nm_path" ] && [ -n "$prev_nm_schema" ]; then
+      baseline_ok=1
+    else
+      prev_git_slots=''
+      prev_git_state=''
+      prev_nm_path=''
+      prev_nm_schema=''
+    fi
   fi
   git_snap=$(global_git_config_snapshot) || git_rc=$?
   if [ "$git_rc" -eq 0 ] || [ "$git_rc" -eq 2 ]; then
-    curr_git_slots=$(printf '%s\n' "$git_snap" | sed -n '1p')
-    curr_git_state=$(printf '%s\n' "$git_snap" | sed -n '2p')
-    [ "$git_rc" -eq 0 ] && git_ok=1
+    if curr_git_slots=$(printf '%s\n' "$git_snap" | sed -n '1p') \
+      && curr_git_state=$(printf '%s\n' "$git_snap" | sed -n '2p') \
+      && [ -n "$curr_git_slots" ] && [ -n "$curr_git_state" ]; then
+      [ "$git_rc" -eq 0 ] && git_ok=1
+    else
+      curr_git_slots=''
+      curr_git_state=''
+      git_rc=1
+    fi
   fi
   nm_snap=$(nm_db_schema_snapshot) || nm_rc=$?
   if [ "$nm_rc" -eq 0 ] || [ "$nm_rc" -eq 2 ]; then
-    curr_nm_path=$(printf '%s\n' "$nm_snap" | sed -n '1p')
-    curr_nm_schema=$(printf '%s\n' "$nm_snap" | sed -n '2p')
-    [ "$nm_rc" -eq 0 ] && nm_ok=1
+    if curr_nm_path=$(printf '%s\n' "$nm_snap" | sed -n '1p') \
+      && curr_nm_schema=$(printf '%s\n' "$nm_snap" | sed -n '2p') \
+      && [ -n "$curr_nm_path" ] && [ -n "$curr_nm_schema" ]; then
+      [ "$nm_rc" -eq 0 ] && nm_ok=1
+    else
+      curr_nm_path=''
+      curr_nm_schema=''
+      nm_rc=1
+    fi
   fi
   if [ -n "$prev_git_slots" ] && [ -n "$prev_git_state" ] \
     && [ "$curr_git_slots" = "$prev_git_slots" ] && [ -n "$curr_git_state" ] \
