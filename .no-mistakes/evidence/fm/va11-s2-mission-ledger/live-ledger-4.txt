@@ -1,0 +1,28 @@
+$ [FM_NOW=1794522657] fm-ledger.sh depth --scheduled
+[exit 0]
+$ [FM_NOW=1794524757] fm-ledger.sh depth --scheduled
+ready-depth 17:00: 1 active project(s) below 3 ready: beta(ready=1); refill each ready queue (bin/fm-ledger.sh plan)
+[exit 0]
+$ [FM_NOW=1794526859] fm-ledger.sh depth --scheduled
+[exit 0]
+$ [FM_NOW=1794546119] fm-ledger.sh depth --scheduled
+ready-depth 23:00: 1 active project(s) below 3 ready: beta(ready=1); refill each ready queue (bin/fm-ledger.sh plan)
+[exit 0]
+## at= key ignored (fixed times)
+$ [FM_NOW=1794508201] fm-ledger.sh depth --scheduled
+[exit 0]
+## min-ready=0 arm --if-enabled disarms; min-ready=2
+$ [FM_NOW=1794508201] fm-ledger.sh depth
+SHORT beta ready=1 min=2 in_flight=0 blocked=0 held=0
+[exit 3]
+$ [FM_NOW=1794508201] fm-ledger.sh arm
+registered: state/ready-depth.check.sh
+[exit 0]
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.sjY070/state/ready-depth.check.sh
+#!/usr/bin/env bash
+# fm-ledger: mission ledger ready-depth check
+export FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.sjY070
+$ [FM_NOW=1794508201] fm-ledger.sh arm --if-enabled
+unregistered: state/ready-depth.check.sh
+[exit 0]
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.sjY070/state/ready-depth.check.sh: No such file or directory

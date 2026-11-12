@@ -1,0 +1,46 @@
+$ fm-ledger.sh intake --mint --project alpha --title Ship the widget --source order:1794464074-f84c2a5c
+filed ship-the-widget-ab project=alpha source=order:1794464074-f84c2a5c
+[exit 0]
+$ fm-ledger.sh unfiled
+[exit 0]
+$ fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.sjY070/data/handoff-A.md --note Continue from handoff-20261111T1405Z.md
+fm-ledger: the in-flight note names an earlier handoff document; a handoff never continues another one - file what that document still carries as ledger items and drop the reference
+[exit 1]
+$ fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.sjY070/data/handoff-A.md --note worker running alpha item two; PR pending review
+handoff: wrote 1 open order(s) into /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.sjY070/data/handoff-A.md
+handoff: wrote /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.sjY070/data/handoff-A.md from the ledger
+[exit 0]
+----- handoff-A.md -----
+# Session handoff 2026-11-12T06:14:46Z (fm-lab.sjY070)
+
+Written by bin/fm-ledger.sh handoff from the mission ledger.
+The ledger is authoritative and this document is complete on its own: it never continues an earlier handoff.
+Read live state with bin/fm-ledger.sh plan, bin/fm-dispatch-log.sh open, and bin/fm-order.sh pickup.
+
+## In flight now
+
+worker running alpha item two; PR pending review
+
+## Ledger plan at handoff
+
+PLAN at 2026-11-12T06:14:46Z (ready target 3 per active project; live view: bin/fm-ledger.sh plan)
+project alpha active ready=3 in_flight=0 blocked=0 held=0
+  ready     ledger-s2-item-two-96  kind=task priority=0  Ledger S2 item two
+  ready     ledger-s2-item-one-43  kind=task priority=1  Ledger S2 item one
+  ready     ship-the-widget-ab  kind=task priority=-  Ship the widget
+project beta active ready=1 in_flight=0 blocked=0 held=0 SHORT
+  ready     beta-ask-8c  kind=task priority=-  Beta ask
+
+## Open captain goals at handoff
+
+none open
+
+CAPTAIN ORDERS at handoff (2026-11-12T06:14:46Z):
+1 open captain order(s) - each is durable; ack it before acting:
+  1794464074-f84c2a5c pending kind=order age=12s from=test :: Ship the widget kind=hold now
+Pending: bin/fm-order.sh ack <id> reads it (skip means another session already has it - never run it twice).
+Acked-unfinished: an earlier session read it; bin/fm-order.sh show <id>, check whether its work started, then finish it.
+Finish each with: bin/fm-order.sh finish <id> done|parked <outcome>
+$ fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.sjY070/data/handoff-A.md --note again
+fm-ledger: the handoff document already exists: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.sjY070/data/handoff-A.md; write a new one
+[exit 1]

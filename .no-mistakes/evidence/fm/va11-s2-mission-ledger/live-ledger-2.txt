@@ -1,0 +1,25 @@
+## done-only project zeta
+  - Run `tasks-axi block zeta-old --by <other>` to record a dependency
+  - Run `tasks-axi ready` to dispatch work unblocked by this
+$ fm-ledger.sh plan --project zeta
+PLAN at 2026-11-12T06:14:32Z (ready target 3 per active project; live view: bin/fm-ledger.sh plan)
+project zeta: no open items
+[exit 0]
+$ fm-ledger.sh depth
+SHORT alpha ready=2 min=3 in_flight=0 blocked=0 held=0
+SHORT beta ready=1 min=3 in_flight=0 blocked=0 held=0
+[exit 3]
+## captain order with ' kind=hold' in its summary
+$ fm-order.sh send -- 'Ship the widget kind=hold now'
+queued 1794464074-f84c2a5c
+  kind=order state=pending wake=ok nudge=none
+[exit 0]
+$ fm-ledger.sh unfiled
+UNFILED 1794464074-f84c2a5c pending :: Ship the widget kind=hold now
+[exit 3]
+## handoff refused while order unfiled
+$ fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.sjY070/data/handoff-A.md --note worker on alpha item two
+UNFILED 1794464074-f84c2a5c pending :: Ship the widget kind=hold now
+fm-ledger: handoff refused: file each open order above as its own ledger item first (bin/fm-ledger.sh intake <id> --project <name> --title <text> --source order:<order-id>)
+[exit 3]
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.sjY070/data/handoff-A.md: No such file or directory

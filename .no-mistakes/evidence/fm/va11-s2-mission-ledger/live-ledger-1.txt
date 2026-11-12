@@ -1,0 +1,66 @@
+$ fm-ledger.sh intake --mint --project alpha --title Ledger S2 item one --source proposal:velocity-audit#S2 --priority 1
+filed ledger-s2-item-one-43 project=alpha source=proposal:velocity-audit#S2
+[exit 0]
+$ fm-ledger.sh intake --mint --project alpha --title Ledger S2 item two --source proposal:velocity-audit#S2 --priority 0
+filed ledger-s2-item-two-96 project=alpha source=proposal:velocity-audit#S2
+[exit 0]
+$ fm-ledger.sh intake --mint --project alpha --title Ledger S2 item one --source proposal:velocity-audit#S2 --priority 1
+replay ledger-s2-item-one-43
+[exit 0]
+$ fm-ledger.sh intake --mint --project beta --title Beta ask --source ask:chat-1
+filed beta-ask-8c project=beta source=ask:chat-1
+[exit 0]
+$ fm-ledger.sh plan
+PLAN at 2026-11-12T06:14:13Z (ready target 3 per active project; live view: bin/fm-ledger.sh plan)
+project alpha active ready=2 in_flight=0 blocked=0 held=0 SHORT
+  ready     ledger-s2-item-two-96  kind=task priority=0  Ledger S2 item two
+  ready     ledger-s2-item-one-43  kind=task priority=1  Ledger S2 item one
+project beta active ready=1 in_flight=0 blocked=0 held=0 SHORT
+  ready     beta-ask-8c  kind=task priority=-  Beta ask
+[exit 0]
+$ fm-ledger.sh next
+NEXT ledger-s2-item-two-96 project=alpha kind=task priority=0
+task:
+  id: ledger-s2-item-two-96
+  title: Ledger S2 item two
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: task
+  repo: alpha
+  priority: 0
+  created: 2026-11-12
+  closed: "-"
+  deps: none
+  links: none
+  body: "Ledger source: proposal:velocity-audit#S2"
+[exit 0]
+$ fm-ledger.sh next --project beta
+NEXT beta-ask-8c project=beta kind=task priority=-
+task:
+  id: beta-ask-8c
+  title: Beta ask
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: task
+  repo: beta
+  priority: "-"
+  created: 2026-11-12
+  closed: "-"
+  deps: none
+  links: none
+  body: "Ledger source: ask:chat-1"
+[exit 0]
+$ fm-ledger.sh depth
+SHORT alpha ready=2 min=3 in_flight=0 blocked=0 held=0
+SHORT beta ready=1 min=3 in_flight=0 blocked=0 held=0
+[exit 3]

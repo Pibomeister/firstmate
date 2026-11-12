@@ -1,4 +1,4 @@
-ok - a firing is gated until a fresh launch record names a live successor; stale, dead, or request-only blocks (133, 116)
+ok - a firing rejects stale, dead, request-only and unacknowledged live successor records
 ok - a second mate's handoff escalates to its parent once and its stop is never successor-gated (133, 116)
 ok - default threshold: silent at 16% left, fires at 15% left before auto-compact
 ok - threshold is configurable, 0 turns it off, and an unusable value keeps the default
