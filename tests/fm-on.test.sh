@@ -380,7 +380,12 @@ expect_dir "$REMOTE_ROOT/bin"
 if [ -d "$ACCOUNT_HOME/.local/bin" ] && [ ! -L "$ACCOUNT_HOME/.local/bin" ]; then
   expect_dir "$ACCOUNT_HOME/.local/bin"
 fi
-for candidate in "${NVM_CHILD_DIRS[@]}"; do expect_dir "$candidate"; done
+# Bash 3.2 with set -u treats an empty "${array[@]}" as unbound and aborts
+# the script. This host has no matching nvm bin, and the EXIT trap's cleanup
+# then reports that abort as success, so the later transport cases never run.
+if [ "${#NVM_CHILD_DIRS[@]}" -gt 0 ]; then
+  for candidate in "${NVM_CHILD_DIRS[@]}"; do expect_dir "$candidate"; done
+fi
 for candidate in "${DISCOVERED_DIRS[@]}"; do expect_dir "$candidate"; done
 for fixed in /usr/bin /bin /usr/sbin /sbin; do expect_dir "$fixed"; done
 
@@ -459,9 +464,9 @@ out=$(HOME="$DOCTOR_HOME" PATH="$DOCTOR_BIN:/usr/bin:/bin:/usr/sbin:/sbin" "$ROO
 rc=$?
 set -e
 [ "$rc" -ne 0 ] || fail "the remote doctor passed with a missing required tool"
-assert_contains "$out" 'required herdr=MISSING' "the remote doctor did not mark a missing required tool"
+assert_contains "$out" 'required backend=MISSING' "the remote doctor did not mark a missing required tool"
 assert_contains "$out" 'required tasks-axi=MISSING' "the remote doctor did not mark every missing required tool"
-assert_contains "$out" 'required tools do not resolve on the remote runtime PATH: herdr tasks-axi treehouse harness' "the remote doctor did not name the missing tools"
+assert_contains "$out" 'required tools do not resolve on the remote runtime PATH: backend tasks-axi treehouse harness' "the remote doctor did not name the missing tools"
 assert_contains "$out" '.local/bin' "the remote doctor did not offer the wrapper escape hatch"
 ln -sf "$(command -v git)" "$DOCTOR_BIN/git"
 # The direct doctor fixture needs the complete required tool set. These stubs
