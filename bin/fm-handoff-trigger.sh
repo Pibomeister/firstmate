@@ -9,9 +9,8 @@
 # off to a live successor it launches with bin/fm-handoff-launch.sh (a second
 # mate asks its parent to relaunch it instead), and report that it is ready to
 # restart. It fires
-# at most once per context cycle, so a session that keeps working past the
-# threshold is not nagged again, and a session that auto-compacts anyway is told
-# again before its next auto-compact.
+# at most once per session (see ONCE PER SESSION below), so a session that
+# keeps working past the threshold, or auto-compacts anyway, is not told again.
 #
 # CONTEXT LEFT. Claude Code does not hand hooks its own "% until auto-compact"
 # figure, and the status line's context_window.remaining_percentage measures

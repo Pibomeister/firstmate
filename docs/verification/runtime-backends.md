@@ -112,7 +112,7 @@ How Claude Code resolves the window and records a compaction, read from the inst
 - Per-model keys match on the canonical model name, which drops `[1m]` and a date suffix.
 - The settings schema takes an integer from 100000 to 1000000 and treats any other value as unset. Only a `modelSettings` entry also accepts `auto`.
 - The configured window is capped to the model's window, and no hook input names that window.
-- A compaction appends a `{"type":"system","subtype":"compact_boundary"}` record to the same session transcript. The trigger counts these records to re-arm once per context cycle, and it reads no usage from before the last one.
+- A compaction appends a `{"type":"system","subtype":"compact_boundary"}` record to the same session transcript. The trigger counts these records to arm its successor gate once per context cycle, and it reads no usage from before the last one.
 
 So the status-line `remaining_percentage` is not context left before auto-compact.
 With a 1M-token model and `autoCompactWindow` 250000, compaction fires near 217000 tokens while the status line still reads about 78% remaining.
