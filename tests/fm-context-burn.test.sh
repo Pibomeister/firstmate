@@ -393,6 +393,7 @@ test_autopark_recovers_from_interrupted_publication() {
   # after the append, before the completion mark) must not publish twice.
   printf 'pending 999999 70000\n' > "$home/state/.context-autopark.s1"
   out=$(record_at "$home" 71160 captain s1 8)
+  assert_not_contains "$out" "park-handoff:" "an already-queued claim was emitted again"
   assert_equals 1 "$(wake_count "$home" context-autopark-s1)" "a second wake after an interrupted completion"
   assert_contains "$(cat "$home/state/.context-autopark.s1")" "done" "an already-queued claim was not completed in place"
 
@@ -437,6 +438,32 @@ test_autopark_recovers_from_interrupted_publication() {
   out=$(record_at "$home" 73100 captain s1 20)
   assert_contains "$out" "park-handoff: s1 at 20% context left" "20% left did not trigger a percent-left=20 auto-park"
   pass "auto-park reclaims a dead claim, respects a live one, stays once per session, and honors a configured threshold"
+}
+
+# A recorder killed after its append but before its completion mark leaves a
+# dead pending claim. Once the drain has acknowledged (and so deleted) that
+# wake, the queue no longer shows it; the wake ledger still does, so the
+# next sample must not publish the action again.
+test_autopark_consumed_wake_is_not_republished() {
+  local home=$TMP_ROOT/autopark-acked out ack
+  prepare "$home"
+  out=$(record_at "$home" 74000 captain s1 12)
+  assert_contains "$out" "park-handoff: s1 at 12% context left" "first sample did not emit"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$ROOT/bin/fm-wake-drain.sh" > "$home/drain.out" 2> "$home/drain.err" || fail "drain failed: $(cat "$home/drain.err")"
+  ack=$(sed -n 's/^WAKE_ACK_REQUIRED: .*run bin\/fm-wake-drain\.sh //p' "$home/drain.err")
+  [ -n "$ack" ] || fail "drain printed no acknowledgement command: $(cat "$home/drain.err")"
+  # shellcheck disable=SC2086
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$ROOT/bin/fm-wake-drain.sh" $ack > /dev/null 2>&1 || fail "acknowledgement failed"
+  assert_equals 0 "$(wake_count "$home" context-autopark-s1)" "the acknowledged wake is still queued"
+
+  printf 'pending 999999 74000\n' > "$home/state/.context-autopark.s1"
+  out=$(record_at "$home" 74100 captain s1 9)
+  assert_not_contains "$out" "park-handoff:" "a consumed wake was emitted again after an interrupted completion"
+  assert_equals 0 "$(wake_count "$home" context-autopark-s1)" "a consumed wake was queued again after an interrupted completion"
+  assert_contains "$(cat "$home/state/.context-autopark.s1")" "done" "the interrupted claim was not completed in place"
+  pass "auto-park never republishes a wake the drain already consumed"
 }
 
 test_report_line() {
@@ -521,6 +548,7 @@ fm_test_run \
   test_unknown_session_and_dedupe \
   test_autopark_at_low_context_once_per_session \
   test_autopark_recovers_from_interrupted_publication \
+  test_autopark_consumed_wake_is_not_republished \
   test_auto_turn_type_from_tailed_transcript \
   test_report_line \
   test_pane_footer_above_statusline \

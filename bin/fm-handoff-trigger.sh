@@ -3,8 +3,9 @@
 #
 # Registered in tracked .claude/settings.json as a PostToolUse, a
 # UserPromptSubmit, and a Stop command hook. When the session's context left before
-# auto-compact falls to the configured percentage (default 15), the session
-# receives ONE instruction, as hook additionalContext, to write its handoff
+# auto-compact falls to the configured percentage (default 15), and the
+# turn-end recorder has emitted the session's park-then-handoff action, the
+# session receives ONE instruction, as hook additionalContext, to write its handoff
 # from the mission ledger (bin/fm-ledger.sh handoff) before auto-compact, hand
 # off to a live successor it launches with bin/fm-handoff-launch.sh (a second
 # mate asks its parent to relaunch it instead), and report that it is ready to
@@ -68,17 +69,23 @@
 # Cursor load this Claude settings file too; Grok is excluded by the settings
 # entry and Cursor by its payload marker, because the trigger is Claude-only.
 #
-# ONCE PER SESSION. At or below the threshold the hook always arms the cycle
-# marker state/.handoff-trigger.<session-id>.<count> (a cycle is one session id
-# plus the count of compact boundary records in its transcript, so a
-# compaction arms a new one; the restart gate below reads it), with an
-# exclusive create so concurrent hook calls from parallel tool calls arm it
-# once. It emits the instruction only when it also wins the per-session
-# park-then-handoff claim state/.context-autopark.<session> that
-# bin/fm-context-burn.sh's turn-end recorder shares: whichever channel claims
-# first emits the action, and the other stays silent for the rest of the
-# session, including after a compaction, while the successor gate stays armed.
-# Arming also removes markers older than 30 days.
+# PARK FIRST. bin/fm-context-burn.sh's turn-end recorder is the single
+# emitter of the low-context park-then-handoff action and the only writer of
+# its per-session claim state/.context-autopark.<session>; this hook only
+# reads that claim. Until it reads `done`, the session has not yet been told
+# to park its open captain questions, so the hook stays silent and arms
+# nothing, and a handoff never starts ahead of the park. Once it reads
+# `done`, the hook's instruction follows that action rather than repeating it.
+#
+# ONCE PER SESSION. At or below the threshold, once the park claim is done,
+# the hook arms the cycle marker state/.handoff-trigger.<session-id>.<count>
+# (a cycle is one session id plus the count of compact boundary records in
+# its transcript, so a compaction arms a new one; the restart gate below
+# reads it), with an exclusive create so concurrent hook calls from parallel
+# tool calls arm it once. It sends the instruction only when that arming is
+# the session's first, so a session that auto-compacts anyway keeps its
+# successor gate armed without being told again. Arming also removes markers
+# older than 30 days.
 #
 # RESTART GATE (Stop). A session is handing off once the trigger has fired in
 # its current context cycle, or once it ran `bin/fm-order.sh handoff --doc`
@@ -229,7 +236,6 @@ publish_compact_point
 [ "$PERCENT" -gt 0 ] || exit 0
 [ -n "$MARKER" ] || exit 0
 [ -e "$MARKER" ] && exit 0
-AUTOPARK="$STATE/.context-autopark.$(printf '%s' "$SESSION_ID" | tr -c 'A-Za-z0-9_' '_')"
 [ -n "$COMPACT_AT" ] || exit 0
 
 # shellcheck source=bin/fm-warm-compact-lib.sh
@@ -240,18 +246,24 @@ case "$TOKENS" in '' | *[!0-9]*) exit 0 ;; esac
 LEFT=$(fm_compact_left_percent "$TOKENS" "$COMPACT_AT")
 [ "$LEFT" -le "$PERCENT" ] || exit 0
 
+# Read-only: wait for the recorder's park-then-handoff action (PARK FIRST above).
+case "$(cat "$STATE/.context-autopark.$(printf '%s' "$SESSION_ID" | tr -c 'A-Za-z0-9_' '_')" 2>/dev/null)" in
+  done\ *) ;;
+  *) exit 0 ;;
+esac
+
+# Marker names carry no dot inside the session part, so this glob matches
+# only this session's earlier cycles.
+FIRED_BEFORE=0
+for prior in "${MARKER%.*}".*; do
+  [ -e "$prior" ] && { FIRED_BEFORE=1; break; }
+done
 # Arm this context cycle's gate; a concurrent call that loses exits.
 ( set -o noclobber; printf '%s\n' "$(date +%s) tokens=$TOKENS compact_at=$COMPACT_AT" > "$MARKER" ) 2>/dev/null || exit 0
 find "$STATE" -maxdepth 1 -name '.handoff-trigger.*' -type f -mtime +30 -exec rm -f {} + 2>/dev/null
-# Emit only for the session's first park-then-handoff claim across both channels.
-# Publish the claim atomically (a fully written temp file hard-linked into
-# place), so a hook killed mid-claim never leaves an empty marker behind.
-AUTOPARK_TMP=$(mktemp "$AUTOPARK.XXXXXX" 2>/dev/null) || exit 0
-printf 'done %s hook\n' "$(date +%s)" > "$AUTOPARK_TMP" 2>/dev/null || { rm -f "$AUTOPARK_TMP"; exit 0; }
-ln "$AUTOPARK_TMP" "$AUTOPARK" 2>/dev/null || { rm -f "$AUTOPARK_TMP"; exit 0; }
-rm -f "$AUTOPARK_TMP"
+[ "$FIRED_BEFORE" -eq 0 ] || exit 0
 
-MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). Park first, then hand off: park every open captain question as a held backlog item through bin/fm-captain-hold.sh (hold the work item the question gates, or create one captain-held task per genuine question) without asking the captain or waiting for an answer, and keep working on everything the parked questions do not gate. Then write your session handoff now, before auto-compact, from the mission ledger: file every open ask, approved proposal, and captain order that has no backlog item yet as its own item with bin/fm-ledger.sh intake, bring each item's note current, and persist every decision and piece of durable knowledge this session holds (the stow skill covers this). Then write a new handoff with bin/fm-ledger.sh handoff --doc <new handoff file> --note-file <short note of what is in flight right now>: it adds that note to the ledger plan, never continues an earlier handoff, and records the document with bin/fm-order.sh handoff --doc. If bin/fm-ledger.sh cannot read the backlog, do not skip the handoff: write a new handoff document yourself with the in-flight note, the open work, and bin/fm-dispatch-log.sh open, record it with bin/fm-order.sh handoff --doc <that file>, and say in it that the ledger was unreadable. Then hand off to a successor and report that this session is ready to restart."
+MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). This follows the park-then-handoff action already queued for this session, which parks every open captain question first; with those parked, write your session handoff now, before auto-compact, from the mission ledger: file every open ask, approved proposal, and captain order that has no backlog item yet as its own item with bin/fm-ledger.sh intake, bring each item's note current, and persist every decision and piece of durable knowledge this session holds (the stow skill covers this). Then write a new handoff with bin/fm-ledger.sh handoff --doc <new handoff file> --note-file <short note of what is in flight right now>: it adds that note to the ledger plan, never continues an earlier handoff, and records the document with bin/fm-order.sh handoff --doc. If bin/fm-ledger.sh cannot read the backlog, do not skip the handoff: write a new handoff document yourself with the in-flight note, the open work, and bin/fm-dispatch-log.sh open, record it with bin/fm-order.sh handoff --doc <that file>, and say in it that the ledger was unreadable. Then hand off to a successor and report that this session is ready to restart."
 if fm_root_is_secondmate_home "$FM_ROOT"; then
   MESSAGE="$MESSAGE This is a second mate, so never launch your own successor: append to your parent channel that your handoff is written, name the handoff document, and ask the parent to relaunch you, once, then end this turn."
 else

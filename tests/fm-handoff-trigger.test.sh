@@ -2,8 +2,8 @@
 # Behavior tests for the early handoff trigger (bin/fm-handoff-trigger.sh,
 # docs/configuration.md "Early handoff trigger"): the threshold, its
 # configuration, the auto-compact point derived from Claude's settings, the
-# once-per-session guarantee shared with the turn-end recorder (including
-# concurrent hook calls), and the scope that
+# once-per-session guarantee (including concurrent hook calls), the wait for
+# the turn-end recorder's park-then-handoff action, and the scope that
 # keeps worker worktrees and Cursor payloads inert. The hook runs for real
 # against synthetic Claude transcripts.
 set -u
@@ -46,12 +46,27 @@ append_usage() {
 # hook's stdout for one payload, with Claude's settings isolated to the lab.
 run_hook() {
   local root=$1 session=$2 file=$3 event=${4:-PostToolUse} extra=${5:-.}
+  [ "${NO_PARK:-}" = 1 ] || [ "$event" = Stop ] || park_session "$root" "$session"
   jq -nc --arg s "$session" --arg t "$file" --arg e "$event" \
     '{session_id: $s, transcript_path: $t, hook_event_name: $e, tool_name: "Bash"}' \
     | jq -c "$extra" \
     | env -u CLAUDE_AUTOCOMPACT_PCT_OVERRIDE -u CLAUDE_CODE_AUTO_COMPACT_WINDOW -u FM_HOME -u FM_STATE_OVERRIDE -u FM_CONFIG_OVERRIDE \
       FM_ROOT_OVERRIDE="$root" CLAUDE_CONFIG_DIR="$CLAUDE_HOME" CLAUDE_PROJECT_DIR="$root" \
       ${HOOK_ENV:+"$HOOK_ENV"} bash "$HOOK"
+}
+
+# park_session <root> <session>: the turn-end recorder emits this session's
+# park-then-handoff action through its real command; the hook waits for that
+# (bin/fm-handoff-trigger.sh "PARK FIRST"). run_hook does this first unless
+# NO_PARK=1, so the firing tests exercise the handoff that follows the park.
+park_session() {
+  local safe
+  [ -n "$2" ] && [ -d "$1/state" ] || return 0
+  safe=$(printf '%s' "$2" | tr -c 'A-Za-z0-9_' '_')
+  [ -e "$1/state/.context-autopark.$safe" ] && return 0
+  mkdir -p "$1/data"
+  env -u FM_CONFIG_OVERRIDE FM_HOME="$1" FM_STATE_OVERRIDE="$1/state" FM_DATA_OVERRIDE="$1/data" \
+    "$ROOT/bin/fm-context-burn.sh" record --turn-type captain --session "$2" --percent 1 >/dev/null 2>&1 || true
 }
 
 reset_lab() {
@@ -81,8 +96,8 @@ test_threshold_default_15() {
   expect_fire "$out" PostToolUse "15% left meets the default threshold"
   printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("about 15% of context is left") and test("85000 of 100000 tokens")' >/dev/null \
     || fail "instruction must name the measured context left: $out"
-  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("Park first, then hand off") and test("bin/fm-captain-hold.sh") and test("without asking")' >/dev/null \
-    || fail "instruction must order parking captain questions before the handoff: $out"
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("follows the park-then-handoff action already queued") and (test("fm-captain-hold") | not)' >/dev/null \
+    || fail "instruction must follow the queued park action, not repeat it: $out"
   pass "default threshold: silent at 16% left, fires at 15% left before auto-compact"
 }
 
@@ -143,37 +158,71 @@ autopark_wakes() { # <key>
   awk -F '\t' -v key="$1" '$4 == key { n++ } END { print n + 0 }' "$PRIMARY/state/.wake-queue"
 }
 
-test_one_park_handoff_across_hook_and_recorder() {
+# The recorder is the single emitter of the park-then-handoff action: the hook
+# never writes its claim, stays silent and leaves the successor gate unarmed
+# until the claim is done, then sends only the handoff that follows the park.
+test_hook_waits_for_the_recorders_park() {
   local t="$TMP_ROOT/t-share" out rc
   reset_lab
   mkdir -p "$PRIMARY/data"
   printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
-
-  transcript "$t" 90000
-  expect_fire "$(run_hook "$PRIMARY" s-hook-first "$t")" PostToolUse "hook first"
-  out=$(record_burn s-hook-first 10)
-  assert_not_contains "$out" "park-handoff:" "the recorder repeated the hook's park-then-handoff"
-  assert_equals 0 "$(autopark_wakes context-autopark-s_hook_first)" "recorder wake after the hook fired"
-  printf '{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}\n' >> "$t"
-  append_usage "$t" 88000
-  expect_silent "$(run_hook "$PRIMARY" s-hook-first "$t")" "hook after compaction once the hook fired"
-
-  transcript "$t" 90000
-  out=$(record_burn s-rec-first 12)
-  assert_contains "$out" "at 12% context left" "recorder first did not emit"
-  assert_equals 1 "$(autopark_wakes context-autopark-s_rec_first)" "recorder first wake"
-  expect_silent "$(run_hook "$PRIMARY" s-rec-first "$t")" "hook after the recorder fired"
-  printf '{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}\n' >> "$t"
-  append_usage "$t" 88000
-  expect_silent "$(run_hook "$PRIMARY" s-rec-first "$t")" "hook after compaction once the recorder fired"
-  [ -e "$PRIMARY/state/.handoff-trigger.s-rec-first.0" ] || fail "a silent hook after the recorder fired did not arm the cycle gate"
-  [ -e "$PRIMARY/state/.handoff-trigger.s-rec-first.1" ] || fail "a silent hook after compaction did not arm the new cycle gate"
   rm -f "$PRIMARY/state/.handoff-successor"
+
+  transcript "$t" 90000
+  expect_silent "$(NO_PARK=1 run_hook "$PRIMARY" s-share "$t")" "hook before the recorder's park"
+  [ ! -e "$PRIMARY/state/.handoff-trigger.s-share.0" ] || fail "the hook armed the successor gate before the park"
+  [ ! -e "$PRIMARY/state/.context-autopark.s_share" ] || fail "the hook wrote the park claim"
   rc=0
-  run_hook "$PRIMARY" s-rec-first "$t" Stop >/dev/null 2>&1 || rc=$?
-  [ "$rc" -eq 2 ] || fail "recorder first: a stop without a verified successor must stay blocked (rc=$rc)"
-  assert_equals 1 "$(autopark_wakes context-autopark-s_rec_first)" "recorder wake count after the hook stayed silent"
-  pass "hook-first and recorder-first each emit park-then-handoff exactly once per session, and the successor gate stays armed"
+  NO_PARK=1 run_hook "$PRIMARY" s-share "$t" Stop >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "a stop before the park must not be gated (rc=$rc)"
+
+  out=$(record_burn s-share 10)
+  assert_contains "$out" "park-handoff: s_share at 10% context left" "the recorder did not emit the park"
+  assert_equals 1 "$(autopark_wakes context-autopark-s_share)" "park wake"
+  out=$(NO_PARK=1 run_hook "$PRIMARY" s-share "$t" UserPromptSubmit)
+  expect_fire "$out" UserPromptSubmit "hook after the park"
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("fm-captain-hold") | not' >/dev/null \
+    || fail "the hook repeated the park instruction: $out"
+  [ -e "$PRIMARY/state/.handoff-trigger.s-share.0" ] || fail "the hook did not arm the successor gate after the park"
+  out=$(record_burn s-share 8)
+  assert_not_contains "$out" "park-handoff:" "the recorder emitted the park twice"
+
+  printf '{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}\n' >> "$t"
+  append_usage "$t" 88000
+  expect_silent "$(NO_PARK=1 run_hook "$PRIMARY" s-share "$t")" "hook after compaction"
+  [ -e "$PRIMARY/state/.handoff-trigger.s-share.1" ] || fail "a compaction did not arm the new cycle's successor gate"
+  rc=0
+  run_hook "$PRIMARY" s-share "$t" Stop >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 2 ] || fail "a stop after the park without a verified successor must stay blocked (rc=$rc)"
+  assert_equals 1 "$(autopark_wakes context-autopark-s_share)" "park wakes for the session"
+  pass "the hook waits for the recorder's single park, then hands off once with the successor gate armed"
+}
+
+# A hook call racing the recorder's sample: the park is emitted exactly once,
+# only by the recorder, and the hook's handoff still arrives exactly once.
+test_racing_hook_and_recorder_emit_the_park_once() {
+  local t="$TMP_ROOT/t-mixed" s fired
+  reset_lab
+  mkdir -p "$PRIMARY/data"
+  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$t" 90000
+  for s in m1 m2 m3 m4 m5 m6; do
+    NO_PARK=1 run_hook "$PRIMARY" "s-$s" "$t" > "$TMP_ROOT/mixed-hook.$s" &
+    record_burn "s-$s" 10 > "$TMP_ROOT/mixed-rec.$s" &
+    wait
+    assert_equals 1 "$(autopark_wakes "context-autopark-s_$s")" "park wakes for racing $s"
+    assert_contains "$(cat "$TMP_ROOT/mixed-rec.$s")" "park-handoff:" "the recorder did not emit for racing $s"
+    NO_PARK=1 run_hook "$PRIMARY" "s-$s" "$t" UserPromptSubmit > "$TMP_ROOT/mixed-hook2.$s"
+    fired=0
+    for out in "$(cat "$TMP_ROOT/mixed-hook.$s")" "$(cat "$TMP_ROOT/mixed-hook2.$s")"; do
+      [ -n "$out" ] || continue
+      printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | test("fm-captain-hold") | not' >/dev/null \
+        || fail "the hook repeated the park instruction for racing $s: $out"
+      fired=$((fired + 1))
+    done
+    assert_equals 1 "$fired" "hook handoff instructions for racing $s"
+  done
+  pass "a hook racing the recorder never emits the park, and the handoff follows exactly once"
 }
 
 test_fires_once_under_concurrency() {
@@ -678,7 +727,8 @@ test_threshold_default_15
 test_threshold_configurable
 test_fires_once_per_context_cycle
 test_compaction_rearms_only_the_gate
-test_one_park_handoff_across_hook_and_recorder
+test_hook_waits_for_the_recorders_park
+test_racing_hook_and_recorder_emit_the_park_once
 test_fires_once_under_concurrency
 test_compact_point_from_claude_settings
 test_window_precedence_matches_claude

@@ -59,11 +59,14 @@
 # while a claim whose recorder died before the append finished is
 # reclaimed by the next sample instead of suppressing the action for the
 # rest of the session. The claim lifecycle runs under the wake-queue lock,
-# and reclaiming checks the queue for an already-published wake before
-# appending, so interruption at any point in publication neither loses
-# nor duplicates the action. The Claude early handoff hook
-# (bin/fm-handoff-trigger.sh) claims the same marker, so whichever channel
-# claims first emits the action and the other stays silent for the session.
+# and reclaiming first looks for an already-published wake, both in the
+# queue and in the wake ledger (state/wake-ledger.tsv, which records the key
+# of every row an acknowledgement removes), so interruption at any point in
+# publication neither loses nor duplicates the action, even after the wake
+# was consumed. This recorder is the only emitter of the action and the
+# only writer of that marker: the Claude early handoff hook
+# (bin/fm-handoff-trigger.sh) only reads it, and sends its own handoff
+# instruction only once the marker shows the action was emitted.
 # Markers older than 30 days are pruned.
 #
 # FM_CONTEXT_BURN_NOW overrides the clock. Under FM_TEST_SEAM=1, pane capture
@@ -324,6 +327,13 @@ autopark_threshold() {
   printf '%s\n' "$threshold"
 }
 
+# autopark_published <key>: the wake is still queued, or the wake ledger
+# lists its key among removed rows.
+autopark_published() {
+  awk -F '\t' -v k="$1" '$4 == k { found = 1 } END { exit !found }' "$FM_WAKE_QUEUE" 2>/dev/null && return 0
+  grep -qF "\"$1\"" "$(fm_wake_ledger_path "$STATE")" 2>/dev/null
+}
+
 queue_autopark() { # <session> <safe> <percent>
   local session=$1 safe=$2 percent=$3 marker key payload claim claim_pid claim_epoch emitted=0
   marker="$STATE/.context-autopark.$safe"
@@ -338,11 +348,13 @@ queue_autopark() { # <session> <safe> <percent>
   # present whose owner is dead (or older than 300 seconds, which bounds
   # pid reuse), and any empty or malformed claim left by a writer killed
   # mid-write, is reclaimed here instead of suppressing the session.
-  # Reclaiming first checks the queue for this session's already-published
-  # wake, so a recorder killed after the append but before the completion
-  # mark does not publish a second one.
+  # Reclaiming first checks for this session's already-published wake, so a
+  # recorder killed after the append but before the completion mark does not
+  # publish a second one, even once the drain has consumed the first.
   # shellcheck source=bin/fm-wake-lib.sh
   . "$SCRIPT_DIR/fm-wake-lib.sh"
+  # shellcheck source=bin/fm-wake-ledger-lib.sh
+  . "$SCRIPT_DIR/fm-wake-ledger-lib.sh"
   fm_wake_queue_lock_acquire || return 0
   claim=$(cat "$marker" 2>/dev/null || true)
   case "$claim" in
@@ -370,9 +382,8 @@ queue_autopark() { # <session> <safe> <percent>
       return 0
       ;;
   esac
-  if [ -e "$marker" ] && awk -F '\t' -v k="$key" '$4 == k { found = 1 } END { exit !found }' "$FM_WAKE_QUEUE" 2>/dev/null; then
+  if [ -e "$marker" ] && autopark_published "$key"; then
     printf 'done %s\n' "$NOW" > "$marker" 2>/dev/null || true
-    emitted=1
   elif printf 'pending %s %s\n' "$$" "$NOW" > "$marker" 2>/dev/null \
     && fm_wake_append_locked check "$key" "$payload"; then
     printf 'done %s\n' "$NOW" > "$marker" 2>/dev/null || true
