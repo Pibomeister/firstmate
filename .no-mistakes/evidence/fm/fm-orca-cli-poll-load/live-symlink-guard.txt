@@ -1,0 +1,2 @@
+== symlinked cache dir: CLI boots for 3 calls:        3
+files written via symlink:        0

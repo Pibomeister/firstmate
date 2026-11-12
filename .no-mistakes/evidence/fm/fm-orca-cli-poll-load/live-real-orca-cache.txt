@@ -1,0 +1,28 @@
+== 5 homes ask 'orca status --json' within the TTL
+call 1 rc=0
+call 2 rc=0
+call 3 rc=0
+call 4 rc=0
+call 5 rc=0
+CLI boots: 1
+== 4 parallel 'terminal list' readers
+reader 1 rc=0
+reader 4 rc=0
+reader 2 rc=0
+reader 3 rc=0
+CLI boots for terminal list: 1
+readers got identical output
+== terminal existence for real handle and a bogus handle (one shared list)
+real handle rc=0
+bogus handle rc=1
+CLI boots for terminal list after exists checks: 1
+== after TTL expiry a read boots the CLI again
+CLI boots for status: 2
+== disabled cache (FM_ORCA_CLI_CACHE=0) runs every call
+CLI boots for status: 5
+1794473785 status --json
+1794473786 terminal list --json --limit 5000
+1794473791 status --json
+1794473791 status --json
+1794473791 status --json
+1794473791 status --json

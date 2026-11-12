@@ -1,0 +1,20 @@
+1..17
+ok - fm_orca_cli: a repeated read reuses one CLI result
+ok - fm_orca_cli: a read past the TTL boots the CLI again
+ok - fm_orca_cli: a mutating command drops cached reads
+ok - fm_orca_cli: a read taken during a mutation is dropped when it finishes
+ok - fm_orca_cli: a symlinked cache directory is not used
+ok - fm_orca_cli: the cache key includes the arguments
+ok - fm_orca_cli: a failed read is not reused
+ok - fm_orca_cli: ok:false JSON is not reused
+ok - fm_orca_cli: terminal wait is not cached and does not drop cached reads
+ok - fm_orca_terminal_exists: two ids share one terminal list
+ok - fm_orca_terminal_exists: a complete list can report absence
+ok - fm_orca_terminal_exists: a truncated list is not absence
+ok - fm_orca_cli: a disabled cache does not call, store, or invalidate
+ok - fm_orca_cli: FM_TEST_SEAM=1 leaves the cache off unless it is forced on
+ok - fm_orca_cli: one in-flight read serves a second caller
+ok - fm_backend_target_exists: Orca existence shares one terminal list
+ok - fm_backend_target_exists: a disabled cache keeps the one-line terminal read
+FM_TEST_COMPLETE
+bash tests/fm-orca-cli-cache.test.sh  1.89s user 1.93s system 29% cpu 12.783 total
