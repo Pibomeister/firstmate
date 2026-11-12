@@ -741,14 +741,18 @@ case "$1 $2" in
   "environment list") printf '{"ok":true,"result":{"environments":[]}}\n' ;;
   "terminal list")
     printf '{"ok":true,"result":{"terminals":[{"handle":"term-fail","worktreePath":"%s"}]}}\n' "${FM_SWEEP_WT:?}" ;;
-  "terminal close") exit 1 ;;
+  "terminal show")
+    printf '{"ok":true,"result":{"terminal":{"handle":"%s","connected":false,"writable":false,"executionHostId":"local","ptyId":"","worktreePath":"%s","exitCause":{"kind":"exited"}}}}\n' "$4" "${FM_SWEEP_WT:?}" ;;
+  "terminal close") printf '%s\n' "$*" >> "${FM_SWEEP_LOG:?}"; exit 1 ;;
   *) exit 1 ;;
 esac
 SH
   chmod +x "$fb2/orca"
-  out=$( PATH="$fb2:$PATH" FM_SWEEP_WT="$wt" \
+  out=$( PATH="$fb2:$PATH" FM_SWEEP_WT="$wt" FM_SWEEP_LOG="$CASE_DIR/sweep-fail.log" \
     bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_close_worktree_terminals "$1"' "$ROOT" "$wt" 2>&1 )
   status=$?
+  grep -q 'terminal close --terminal term-fail' "$CASE_DIR/sweep-fail.log" 2>/dev/null \
+    || fail "the dead local terminal was never closed, so the failed-close path did not run"
   [ "$status" -eq 1 ] || fail "a failed close should exit 1, got $status: $out"
   [ "$out" = "closed=0 environments=1 remote_matched=0" ] || fail "with no paired environment only the local Orca should count, got '$out'"
   cat > "$fb2/orca" <<'SH'
@@ -758,14 +762,19 @@ case "$1 $2" in
   "terminal list")
     case "$*" in *--environment*) exit 1 ;; esac
     printf '{"ok":true,"result":{"terminals":[{"handle":"term-fail","worktreePath":"%s"}]}}\n' "${FM_SWEEP_WT:?}" ;;
-  "terminal close") exit 1 ;;
+  "terminal show")
+    printf '{"ok":true,"result":{"terminal":{"handle":"%s","connected":false,"writable":false,"executionHostId":"local","ptyId":"","worktreePath":"%s","exitCause":{"kind":"exited"}}}}\n' "$4" "${FM_SWEEP_WT:?}" ;;
+  "terminal close") printf '%s\n' "$*" >> "${FM_SWEEP_LOG:?}"; exit 1 ;;
   *) exit 1 ;;
 esac
 SH
   chmod +x "$fb2/orca"
-  out=$( PATH="$fb2:$PATH" FM_SWEEP_WT="$wt" \
+  out=$( PATH="$fb2:$PATH" FM_SWEEP_WT="$wt" FM_SWEEP_LOG="$CASE_DIR/sweep-fail-env.log" \
     bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_close_worktree_terminals "$1"' "$ROOT" "$wt" 2>&1 )
   status=$?
+  grep -q 'terminal close --terminal term-fail' "$CASE_DIR/sweep-fail-env.log" 2>/dev/null \
+    || fail "the dead local terminal was never closed before the paired environment failed"
+  [ "$out" = "closed=0 environments=2 remote_matched=0" ] || fail "a failed close should count nothing as closed, got '$out'"
   [ "$status" -eq 1 ] || fail "a failed close should still refuse when a later environment cannot be listed, got $status: $out"
   cat > "$fb2/orca" <<'SH'
 #!/usr/bin/env bash
