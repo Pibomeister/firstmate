@@ -1,0 +1,3 @@
+tests/fm-terminal-reap.test.sh: line 27: 39909 Killed: 9               ( exec -a "$1" bash "$spawner" "$2" "$pidfile" ) > /dev/null 2>&1 < /dev/null
+tests/fm-terminal-reap.test.sh: line 27: 40482 Killed: 9               ( exec -a "$1" bash "$spawner" "$2" "$pidfile" ) > /dev/null 2>&1 < /dev/null
+tests/fm-terminal-reap.test.sh: line 27: 40834 Killed: 9               ( exec -a "$1" bash "$spawner" "$2" "$pidfile" ) > /dev/null 2>&1 < /dev/null

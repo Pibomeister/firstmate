@@ -1,0 +1,116 @@
+lab /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-casco-live.wrUVo5
+real git /usr/bin/git
+orca on PATH: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-casco-live.wrUVo5/bin/orca
+captain handle is set in the environment and must never be closed
+
+$ product_env env ORCA_TERMINAL_HANDLE=term_from_env bash {run-worktree}/bin/fm-lane-register.sh n11-g1 --repo /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/register/repo
+exit 1
+--- stdout ---
+--- stderr ---
+fm-lane-register: --terminal is required when the lane has no recorded terminal
+
+$ product_env bash {run-worktree}/bin/fm-lane-register.sh ../escape --repo /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/register/repo --terminal term_named
+exit 2
+--- stdout ---
+--- stderr ---
+fm-lane-register: invalid lane id: ../escape
+
+$ product_env env ORCA_TERMINAL_HANDLE=term_from_env bash {run-worktree}/bin/fm-lane-register.sh n11-g1 --repo /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/register/repo --terminal term_named
+exit 0
+--- stdout ---
+registered n11-g1 repo=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/register/repo terminal=term_named worktree=-
+--- stderr ---
+
+$ product_env env ORCA_TERMINAL_HANDLE=term_other bash {run-worktree}/bin/fm-lane-register.sh n11-g1 --worktree /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/register/wt
+exit 0
+--- stdout ---
+registered n11-g1 repo=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/register/repo terminal=term_named worktree=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/register/wt
+--- stderr ---
+young pid 1216 etime [00:00] comm [bash]
+foreign pid 1263
+
+$ product_env bash {run-worktree}/bin/fm-terminal-reap.sh --no-browsers
+exit 0
+--- stdout ---
+reap	terminal	external-lane-exited	term-exited	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/reap-default/repo	n11-exited (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/reap-default/home); n11-exited
+keep	terminal	young	term-young	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/reap-default/repo	n11-young (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/reap-default/home); n11-young
+keep	terminal	foreign	term-foreign	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/reap-default/repo	n11-g9
+summary: mode=dry-run terminals=3 reap=1 keep=2 browsers=0 reap=0 keep=0
+--- stderr ---
+
+$ product_env bash {run-worktree}/bin/fm-terminal-reap.sh --apply --no-browsers
+exit 0
+--- stdout ---
+closed	terminal	external-lane-exited	term-exited	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/reap-default/repo	n11-exited (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/reap-default/home); n11-exited
+keep	terminal	young	term-young	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/reap-default/repo	n11-young (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/reap-default/home); n11-young
+keep	terminal	foreign	term-foreign	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/reap-default/repo	n11-g9
+summary: mode=apply terminals=3 closed=1 skipped=0 failed=0 keep=2 browsers=0 stopped=0 skipped=0 failed=0 reap=0 keep=0
+--- stderr ---
+idle pid 15100 comm [bash] args [bash -c read -r _ <> "$1" _ /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-casco-live.wrUVo5/fifo.VUPlgL]
+agent pid 15127 comm [/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-casco-live.wrUVo5/claude-bin/claude] args [/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-casco-live.wrUVo5/claude-bin/claude 600]
+
+$ product_env bash {run-worktree}/bin/fm-terminal-reap.sh --min-age 0 --no-browsers
+exit 0
+--- stdout ---
+reap	terminal	external-lane	term-idle	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/reap-idle/repo	n11-idle (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/reap-idle/home); n11-idle
+keep	terminal	live-agent	term-agent	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/reap-idle/repo	n11-agent (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/reap-idle/home); n11-agent
+keep	terminal	foreign	term-foreign	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/reap-idle/repo	n11-g9
+summary: mode=dry-run terminals=3 reap=1 keep=2 browsers=0 reap=0 keep=0
+--- stderr ---
+
+$ product_env bash {run-worktree}/bin/fm-terminal-reap.sh --apply --min-age 0 --no-browsers
+exit 0
+--- stdout ---
+closed	terminal	external-lane	term-idle	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/reap-idle/repo	n11-idle (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/reap-idle/home); n11-idle
+keep	terminal	live-agent	term-agent	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/reap-idle/repo	n11-agent (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/reap-idle/home); n11-agent
+keep	terminal	foreign	term-foreign	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/reap-idle/repo	n11-g9
+summary: mode=apply terminals=3 closed=1 skipped=0 failed=0 keep=2 browsers=0 stopped=0 skipped=0 failed=0 reap=0 keep=0
+--- stderr ---
+
+$ product_env bash {run-worktree}/bin/fm-worktree-cleanup.sh --dry-run
+exit 0
+--- stdout ---
+worktree-cleanup: dry-run /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/clean/wt pull request MERGED https://github.com/example/repo/pull/7
+--- stderr ---
+
+$ product_env bash {run-worktree}/bin/fm-worktree-cleanup.sh
+exit 0
+--- stdout ---
+worktree-cleanup: remove /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/clean/wt pull request MERGED https://github.com/example/repo/pull/7
+worktree-cleanup: forget lane n11-g1 worktree removed
+--- stderr ---
+
+$ product_env bash {run-worktree}/bin/fm-worktree-cleanup.sh
+exit 0
+--- stdout ---
+worktree-cleanup: report /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/tracked/wt uncommitted tracked changes
+--- stderr ---
+
+$ product_env bash {run-worktree}/bin/fm-worktree-cleanup.sh
+exit 0
+--- stdout ---
+worktree-cleanup: report /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/untracked/wt untracked files
+--- stderr ---
+
+$ product_env bash {run-worktree}/bin/fm-worktree-cleanup.sh /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/target/repo
+exit 0
+--- stdout ---
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/target/repo main checkout
+worktree-cleanup: report /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/target/wt registered lane n11-g1 terminal is open
+--- stderr ---
+
+$ product_env bash {run-worktree}/bin/fm-worktree-cleanup.sh /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/target/repo
+exit 0
+--- stdout ---
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/target/repo main checkout
+worktree-cleanup: remove /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/target/wt pull request MERGED https://github.com/example/repo/pull/11
+worktree-cleanup: forget lane n11-g1 worktree removed
+--- stderr ---
+
+$ product_env bash {run-worktree}/bin/fm-worktree-cleanup.sh
+exit 0
+--- stdout ---
+worktree-cleanup: remove /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/gitdirect/wt pull request MERGED https://github.com/example/repo/pull/12
+worktree-cleanup: forget lane n11-g1 worktree removed
+--- stderr ---
+LIVE_DONE fails=0

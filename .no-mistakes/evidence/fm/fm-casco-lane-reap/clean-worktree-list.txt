@@ -1,0 +1,8 @@
+worktree /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/clean/repo
+HEAD 2732daf69c17a0b3a1c37ae293dba54a9c7ab993
+branch refs/heads/main
+
+worktree /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.wrUVo5/clean/sibling
+HEAD 2732daf69c17a0b3a1c37ae293dba54a9c7ab993
+branch refs/heads/sibling
+

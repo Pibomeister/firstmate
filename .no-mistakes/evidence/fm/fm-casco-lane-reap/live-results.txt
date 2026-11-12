@@ -1,0 +1,90 @@
+PASS first registration without --terminal exits 1
+PASS refusal names --terminal
+PASS refused first registration writes no record
+PASS a lane id with a path separator is refused
+PASS a refused lane id leaves no record
+PASS explicit --terminal registers the lane
+PASS the recorded terminal is the explicit handle, not ORCA_TERMINAL_HANDLE
+PASS the recorded repo is the main checkout
+PASS an amend records the worktree without a new --terminal
+PASS the amend keeps the terminal recorded at registration
+PASS the amend records the linked worktree
+PASS the amend keeps the repo
+PASS default-floor dry run exits 0
+PASS an exited registered pane is reaped at the default floor
+PASS a registered shell younger than the default floor is kept
+PASS an unregistered tab in the lane repository is kept
+PASS the dry run closes no pane
+PASS default-floor apply exits 0
+PASS apply closes the exited registered pane
+PASS apply asks Orca to close only the exited pane
+PASS apply never closes the captain terminal
+PASS idle dry run exits 0
+PASS an idle registered shell is reaped
+PASS a registered lane still running an agent is kept
+PASS an unregistered tab is still kept when the floor is lowered
+PASS the idle dry run closes no pane
+PASS idle apply exits 0
+PASS apply closes the idle registered pane
+PASS apply leaves the live agent pane open
+PASS apply asks Orca to close only the idle pane
+PASS idle apply never closes the captain terminal
+PASS dry run over a merged clean lane exits 0
+PASS dry run finishes inside the pass budget
+PASS dry run names the merged pull request
+PASS dry run leaves the worktree in place
+PASS dry run leaves the lane record
+PASS dry run does not ask Orca to remove the worktree
+PASS dry run does not run git worktree remove
+PASS cleanup of a merged clean lane exits 0
+PASS clean removal finishes inside the pass budget
+PASS cleanup reports the worktree removed
+PASS cleanup drops the lane record in its report
+PASS the merged clean worktree directory is gone
+PASS git no longer lists the removed worktree
+PASS the branch is kept
+PASS an unregistered sibling worktree is kept
+PASS the lane record is deleted after removal
+PASS Orca is asked to remove the listed worktree
+PASS the script does not also call git worktree remove when Orca lists the worktree
+PASS the Orca removal is not --force
+PASS the recorded Orca removal command has no --force
+PASS cleanup of a dirty tracked lane exits 0
+PASS tracked pass finishes inside the pass budget
+PASS uncommitted tracked changes are reported
+PASS a worktree with uncommitted tracked changes is kept
+PASS a dirty tracked lane keeps its record
+PASS Orca is not asked to remove a dirty tracked worktree
+PASS git worktree remove is not run for uncommitted tracked changes
+PASS dirty tracked removal is not forced
+PASS cleanup of an untracked lane exits 0
+PASS untracked pass finishes inside the pass budget
+PASS a non-ignored untracked file is reported
+PASS a worktree with a non-ignored untracked file is kept
+PASS an untracked lane keeps its record
+PASS Orca is not asked to remove a worktree with untracked files
+PASS git worktree remove is not run for untracked files
+PASS untracked removal is not forced
+PASS clone-path pass with an open lane terminal exits 0
+PASS open-terminal pass finishes inside the pass budget
+PASS clone-path pass reports the lane terminal open
+PASS clone-path pass keeps the worktree while the lane terminal is listed
+PASS clone-path pass keeps the open lane record
+PASS clone-path pass does not remove a worktree whose terminal is open
+PASS clone-path pass leaves a lane of another repository unchanged
+PASS clone-path pass after the lane terminal closes exits 0
+PASS closed-terminal pass finishes inside the pass budget
+PASS clone-path pass removes the clean worktree after the lane terminal closes
+PASS clone-path pass deletes the lane record after removal
+PASS clone-path pass asks Orca to remove the worktree once the terminal is gone
+PASS clone-path removal is not --force
+PASS removing one clone's lane leaves the other lane record unchanged
+PASS git-direct cleanup exits 0
+PASS git-direct pass finishes inside the pass budget
+PASS git worktree remove deletes the merged clean worktree
+PASS the script runs git worktree remove
+PASS git worktree remove is not passed --force
+PASS Orca worktree rm is not used when Orca does not list the worktree
+PASS git worktree remove keeps the branch
+PASS git-direct removal deletes the lane record
+fails=0
