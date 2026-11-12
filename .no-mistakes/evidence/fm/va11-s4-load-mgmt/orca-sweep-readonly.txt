@@ -1,0 +1,10 @@
+### live Orca: sweep a worktree path with no terminals (read-only list path)
+closed=0 environments=5 remote_matched=0
+exit=2
+### orca environment list
+75e0730e-8a5c-4d9f-b9ef-800ae8a5d84c 0dc2e463-a306-4b72-9362-07d21baadbee dfd0c0d1-57e0-4f3f-833b-2eca5f4c0e22 54eb5af4-596f-41e0-8eb0-23156723f948
+local rc=0 ok=true n=78 trunc=false 
+75e0730e-8a5c-4d9f-b9ef-800ae8a5d84c rc=0 ok=true n=42 trunc=false 
+0dc2e463-a306-4b72-9362-07d21baadbee rc=1 ok=false n=0 trunc=undefined {"code":"remote_runtime_unavailable","message":"Could not connect to the remote Orca runtime at ws://100.124.22.98:6768:
+dfd0c0d1-57e0-4f3f-833b-2eca5f4c0e22 rc=0 ok=true n=5 trunc=false 
+54eb5af4-596f-41e0-8eb0-23156723f948 rc=0 ok=true n=53 trunc=false 

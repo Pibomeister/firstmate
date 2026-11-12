@@ -1,0 +1,7 @@
+### apply, --browsers --browser-min-age 0 (only candidate: own orphan 22371)
+stopped	browser	owner-gone	22371	/private/tmp/fmbr.igmcLi/orphan	/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --user-data-dir=/tmp/fmbr.igmcLi/orphan/prof --no-first-run --no-default-browser-che
+summary: mode=apply terminals=78 closed=0 skipped=0 failed=0 keep=78 browsers=1 stopped=1 skipped=0 failed=0 reap=0 keep=0
+exit=0
+### after
+22397     1 bash -c "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --user-data-dir=/tmp/fmbr.igmcLi/live/prof --no-first-run --no-default-browser-check about:blank; sleep 1
+22437 22397 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --user-data-dir=/tmp/fmbr.igmcLi/live/prof --no-first-run --no-default-browser-check about:blank

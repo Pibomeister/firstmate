@@ -1,0 +1,3 @@
+ok - fm_backend_orca_close_worktree_terminals: closes local and recorded remote terminals, counts path-only remote matches
+ok - fm_backend_orca_close_worktree_terminals: a failed close refuses and unreadable lists are distinct
+bash $o  1.27s user 1.09s system 24% cpu 9.511 total

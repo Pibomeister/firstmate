@@ -1,0 +1,82 @@
+### dry run, --browser-min-age 0
+keep	terminal	foreign	term_2ff1835d-c188-4ec6-b433-3ba88ad334a5	~/Documents/Casco	Linear backlog work
+keep	terminal	foreign	term_86879af5-5858-477d-ad0a-5e4607bfccd2	~/Documents/Casco	Casco captain handoff pickup
+keep	terminal	foreign	term_43fb4f12-498c-4d27-8f11-469964862c43	~/orca/projects/firstmate	Firstmate handoff successor session
+keep	terminal	foreign	term_7ec9be1b-912f-4ca7-8ab9-5773dbbb966d	~/orca/projects/firstmate	⠋ Codex
+keep	terminal	foreign	term_e1af86bf-5247-4ba0-8e8e-fe6755c69f16	~/orca/projects/Abaco	dev01: firstmate
+keep	terminal	foreign	term_65a32fe0-681f-4bd2-be0a-7d8fcae8851e	~/orca/projects/Abaco	dev01: firstmate
+keep	terminal	foreign	term_574bf2ca-67ee-4e87-bd37-0546a5e419f6	~/orca/projects/Abaco	gb-moises-scratch
+keep	terminal	foreign	term_6e5e2d07-180c-4482-a0f4-eab7c2f7b5cc	~/orca/projects/Abaco	gb-moises-v2-copy
+keep	terminal	foreign	term_d0231856-fad7-4d6b-b89b-8b023fe58372	~/Documents/Casco	Casco lane n10-s startup
+keep	terminal	foreign	term_80188dcf-8cd0-494f-8c9c-829abc9a7039	~/Documents/Casco	Casco lane n10-f startup
+keep	terminal	foreign	term_fe085f43-0146-4517-a1d9-728db6ab07af	~/Documents/Casco	Casco lane n10-v2 startup
+keep	terminal	foreign	term_232027e7-768d-4811-ac36-37c35333c760	~/Documents/Casco	Casco AFK lane n11-g1 startup
+keep	terminal	foreign	term_016ac64d-7830-43fd-b3ff-3e86d9e390da	~/Documents/Casco	Casco AFK lane n11-g3
+keep	terminal	foreign	term_b7bf336a-6063-4564-948f-39789085f4d3	~/Documents/Casco	Casco AFK lane n11-g4 startup
+keep	terminal	foreign	term_596bdb3e-a467-4ad6-ae1c-8c964295fd76	~/Documents/Casco	Casco AFK lane n11-g5
+keep	terminal	foreign	term_791e33ec-dab3-45d3-9e8a-75a6e60f940a	~/Documents/Casco	Casco AFK lane n11-g6
+keep	terminal	foreign	term_8ff5879c-7485-4572-8ff9-8216d6246bf3	~/Documents/Casco	Casco AFK lane n11-g7
+keep	terminal	foreign	term_2c544dc6-80b1-48f8-9d3b-5567e1ce685e	~/Documents/Casco	Casco AFK lane n11-g8
+keep	terminal	foreign	term_72856269-38ec-4e92-906e-bc9c9695f766	~/Documents/Casco	Casco captain M4 reboot pickup
+keep	terminal	foreign	term_06bb2e8c-d663-4f90-988d-28feffd2a358	~/Documents/Casco	Read lane files and log start
+keep	terminal	foreign	term_01c389f0-14ce-4fd6-81bc-d0eb6372a147	~/orca/projects/firstmate	m4ops
+keep	terminal	foreign	term_6625fc8c-a6af-46ea-8157-fa2b53a7fa57	~/orca/projects/firstmate	supervision-audit
+keep	terminal	foreign	term_07fc24f0-bab1-43ae-914a-f77c58999027	~/orca/projects/firstmate	sup-writer-main
+keep	terminal	foreign	term_400d73b4-f172-43c7-8311-40fc1f4afce5	~/orca/projects/firstmate	sup-writer-secondary
+keep	terminal	foreign	term_8689fa46-1e2d-4f92-9204-fe9864d8aec1	~/orca/projects/firstmate	Development velocity audit
+keep	terminal	foreign	term_265b93c5-c2fc-4eb3-9a40-2e0dcdc3983a	~/orca/projects/firstmate	Run daily Orca cleanup | firstmate
+keep	terminal	task	term_60d14359-f25f-4b0c-8fda-9a760137d6cd	~/orca/workspaces/firstmate-fork/fm-fm-compaction-first	fm-compaction-first (~/orca/projects/firstmate)
+keep	terminal	task	term_56dd7921-2ec4-432b-8412-fb6a47de7c04	~/orca/workspaces/firstmate-fork/fm-phaseB-a-20261110	phaseB-a-20261110 (~/orca/projects/firstmate)
+keep	terminal	task	term_9eb054c8-0941-4a71-a8a2-85585ffe191a	~/orca/workspaces/agent-kit/fm-ak-runner-audit-stay-autonomous	ak-runner-audit-stay-autonomous (~/orca/workspaces/firstmate/agent-kit-mate)
+keep	terminal	task	term_3db03322-90fe-4bf0-91ea-9140a8d8a03b	~/orca/workspaces/shipcontent-v2/fm-sc-footage-picture-attach	sc-footage-picture-attach (~/orca/workspaces/firstmate/shipcontent-mate)
+keep	terminal	task	term_f5c51354-22bc-4465-b857-85d7edd85a4d	~/orca/workspaces/shipcontent-v2/fm-sc-elevenlabs-connect	sc-elevenlabs-connect (~/orca/workspaces/firstmate/shipcontent-mate)
+keep	terminal	foreign	term_103805ac-3ebc-4aea-94a6-8458f6c0a47d	~/orca/workspaces/Casco/468-njdep-wetlands	Terminal 1
+keep	terminal	foreign	term_79f0ac88-c29f-4214-b9fb-9403d6e51615	~/orca/workspaces/Casco/473-create-invitation	Terminal 1
+keep	terminal	foreign	term_e815a51a-4b42-4231-a43f-a63bb4e9c0cc	~/orca/workspaces/Casco/first-run-11e8e0b5	Terminal 1
+keep	terminal	foreign	term_5a659744-7b35-49db-903c-4e63d2097dfd	~/orca/workspaces/Casco/geocodio-missing-key-reason	Terminal 1
+keep	terminal	foreign	term_1293b2fd-6a96-4baf-a5f3-6202c2b03f67	~/orca/workspaces/Casco/nwi-non-excavated-distance	Terminal 1
+keep	terminal	task-worktree	term_6d438d8b-3726-4e5e-94cf-66e114ce18f7	~/orca/workspaces/agent-kit/fm-ak-rr-t2-scorer-merge	ak-rr-t2-scorer-merge (~/orca/workspaces/firstmate/agent-kit-mate); Terminal 1
+keep	terminal	task	term_0389eda7-1c2a-472f-b432-cb02533d5b81	~/orca/workspaces/agent-kit/fm-ak-rr-t2-scorer-merge	ak-rr-t2-scorer-merge (~/orca/workspaces/firstmate/agent-kit-mate)
+keep	terminal	task-worktree	term_206ce894-e1cc-4fc5-b965-86223b90b1b3	~/orca/workspaces/agent-kit/fm-ak-rr-t3-depth-map	ak-rr-t3-depth-map (~/orca/workspaces/firstmate/agent-kit-mate); Terminal 1
+keep	terminal	task	term_e6a443c4-8ea9-4f34-9467-6b355698cdfb	~/orca/workspaces/agent-kit/fm-ak-rr-t3-depth-map	ak-rr-t3-depth-map (~/orca/workspaces/firstmate/agent-kit-mate)
+keep	terminal	task-worktree	term_2b66ef7f-40d3-41d9-a53f-0974d24b893d	~/orca/workspaces/agent-kit/fm-ak-rr-t6-delivery-docs	ak-rr-t6-delivery-docs (~/orca/workspaces/firstmate/agent-kit-mate); Terminal 1
+keep	terminal	task	term_21bcdede-c053-4e73-8d7d-a7a9faee370e	~/orca/workspaces/agent-kit/fm-ak-rr-t6-delivery-docs	ak-rr-t6-delivery-docs (~/orca/workspaces/firstmate/agent-kit-mate)
+keep	terminal	task-worktree	term_2b654bd5-7447-4d7e-812f-9590bc415aeb	~/orca/workspaces/agent-kit/fm-ak-rr-t4-reviewer-role	ak-rr-t4-reviewer-role (~/orca/workspaces/firstmate/agent-kit-mate); Terminal 1
+keep	terminal	task	term_2bf87330-6f6d-4142-89df-925557ce438b	~/orca/workspaces/agent-kit/fm-ak-rr-t4-reviewer-role	ak-rr-t4-reviewer-role (~/orca/workspaces/firstmate/agent-kit-mate)
+keep	terminal	foreign	term_a6b29bbf-bf57-4f67-81ec-dc220df16c66	~/orca/workspaces/Casco/ny-wetlands-caveat-on-screen	Terminal 1
+keep	terminal	foreign	term_1b7fc895-4b0c-4abd-a84d-31b0b47e3aa3	~/orca/workspaces/Casco/njdep-contamination	Terminal 1
+keep	terminal	task-worktree	term_f25ee3c7-1cc3-4176-9ac5-9745d478c5a7	~/orca/workspaces/firstmate-fork/fm-va11-s4-load-mgmt	va11-s4-load-mgmt (~/orca/projects/firstmate); Terminal 1
+keep	terminal	task	term_8e50d56a-775b-49f7-8853-cd4bbd07a70e	~/orca/workspaces/firstmate-fork/fm-va11-s4-load-mgmt	va11-s4-load-mgmt (~/orca/projects/firstmate)
+keep	terminal	task-worktree	term_8e0896df-b689-4acc-aca7-f00baf0e27ae	~/orca/workspaces/firstmate-fork/fm-va11-s2-mission-ledger	va11-s2-mission-ledger (~/orca/projects/firstmate); Terminal 1
+keep	terminal	task	term_ff6f9fb6-ed33-4f81-b416-fc4f351fc77b	~/orca/workspaces/firstmate-fork/fm-va11-s2-mission-ledger	va11-s2-mission-ledger (~/orca/projects/firstmate)
+keep	terminal	task-worktree	term_bc06ff69-a7e3-497f-978d-bbf57dea04e1	~/orca/workspaces/shipcontent-v2/fm-sc-voice-audio-flow	sc-voice-audio-flow (~/orca/workspaces/firstmate/shipcontent-mate); Terminal 1
+keep	terminal	task	term_febea6ef-1e74-4199-a9ff-8c3f9a464b8e	~/orca/workspaces/shipcontent-v2/fm-sc-voice-audio-flow	sc-voice-audio-flow (~/orca/workspaces/firstmate/shipcontent-mate)
+keep	terminal	task-worktree	term_b0587226-bd32-4883-a054-5099352f6f7e	~/orca/workspaces/firstmate-fork/fm-va11-s7-auto-away	va11-s7-auto-away (~/orca/projects/firstmate); Terminal 1
+keep	terminal	task	term_07155b15-1fa7-439b-bfa8-3ff803fb5b37	~/orca/workspaces/firstmate-fork/fm-va11-s7-auto-away	va11-s7-auto-away (~/orca/projects/firstmate)
+keep	terminal	task-worktree	term_1a84a03a-4eb7-40a4-9f56-408fcefc6a1e	~/orca/workspaces/firstmate-fork/fm-va11-n-worker-instr	va11-n-worker-instr (~/orca/projects/firstmate); Terminal 1
+keep	terminal	task	term_32adf18f-7d5a-4d11-ac0e-327b16ffcebd	~/orca/workspaces/firstmate-fork/fm-va11-n-worker-instr	va11-n-worker-instr (~/orca/projects/firstmate)
+keep	terminal	foreign	term_195c2ffd-290f-4069-bee0-d9b602d230b0	~/orca/workspaces/Casco/cas-233-maps	Terminal 1
+keep	terminal	task-worktree	term_0587e721-0c3a-470f-9832-c2c574f59b5b	~/orca/workspaces/fluxkeep/fm-fluxkeep-nm-drop-suite-test	fluxkeep-nm-drop-suite-test (~/orca/workspaces/firstmate/fluxkeep-mate); Terminal 1
+keep	terminal	task	term_98efd02c-e706-42f6-a21a-ba475df4d696	~/orca/workspaces/fluxkeep/fm-fluxkeep-nm-drop-suite-test	fluxkeep-nm-drop-suite-test (~/orca/workspaces/firstmate/fluxkeep-mate)
+keep	terminal	task-worktree	term_5fea6f13-369e-4f22-8570-2ac5b69623e1	~/orca/workspaces/shipcontent-v2/fm-sc-o5-suite-walk	sc-o5-suite-walk (~/orca/workspaces/firstmate/shipcontent-mate); Terminal 1
+keep	terminal	task	term_a5b49f0c-081d-45a6-9a68-4c118d3e2215	~/orca/workspaces/shipcontent-v2/fm-sc-o5-suite-walk	sc-o5-suite-walk (~/orca/workspaces/firstmate/shipcontent-mate)
+keep	terminal	task-worktree	term_101bad92-9882-4da6-bc9f-b5ebbdaae581	~/orca/workspaces/shipcontent-v2/fm-sc-o3-acp-cursor	sc-o3-acp-cursor (~/orca/workspaces/firstmate/shipcontent-mate); Terminal 1
+keep	terminal	task	term_865f98d3-2eb9-479d-9504-2abee6b417f2	~/orca/workspaces/shipcontent-v2/fm-sc-o3-acp-cursor	sc-o3-acp-cursor (~/orca/workspaces/firstmate/shipcontent-mate)
+keep	terminal	task-worktree	term_d7471e07-6669-42df-b62c-47f78e02c05d	~/orca/workspaces/shipcontent-v2/fm-sc-changelog-fragments	sc-changelog-fragments (~/orca/workspaces/firstmate/shipcontent-mate); Terminal 1
+keep	terminal	task	term_8d111dc7-428c-49c7-b7de-0725e23a9464	~/orca/workspaces/shipcontent-v2/fm-sc-changelog-fragments	sc-changelog-fragments (~/orca/workspaces/firstmate/shipcontent-mate)
+keep	terminal	task-worktree	term_faa48dcc-d419-44c6-9408-7049bede6768	~/orca/workspaces/agent-kit/fm-ak-s6-unattended-supervisor	ak-s6-unattended-supervisor (~/orca/workspaces/firstmate/agent-kit-mate); Terminal 1
+keep	terminal	task	term_06184f9f-45e4-4ded-b21c-a1fde502d73c	~/orca/workspaces/agent-kit/fm-ak-s6-unattended-supervisor	ak-s6-unattended-supervisor (~/orca/workspaces/firstmate/agent-kit-mate)
+keep	terminal	task-worktree	term_cd02fcc1-5427-4174-9a1c-61103b13c2e4	~/orca/workspaces/agent-kit/fm-ak-o5-drop-suite-walk	ak-o5-drop-suite-walk (~/orca/workspaces/firstmate/agent-kit-mate); Terminal 1
+keep	terminal	task	term_15d3a064-cfbc-418a-b01b-52531e3930fb	~/orca/workspaces/agent-kit/fm-ak-o5-drop-suite-walk	ak-o5-drop-suite-walk (~/orca/workspaces/firstmate/agent-kit-mate)
+keep	terminal	task-worktree	term_fcfc56c1-3557-4ff0-a1cf-0e210fc4a3cc	~/orca/workspaces/agent-kit/fm-ak-o9-bundle-review-coverage	ak-o9-bundle-review-coverage (~/orca/workspaces/firstmate/agent-kit-mate); Terminal 1
+keep	terminal	task	term_cbba2ef4-bde7-4839-a073-9396d9a97bc0	~/orca/workspaces/agent-kit/fm-ak-o9-bundle-review-coverage	ak-o9-bundle-review-coverage (~/orca/workspaces/firstmate/agent-kit-mate)
+keep	terminal	task-worktree	term_9748d61c-5ef1-4417-bd1e-960a169049ef	~/orca/workspaces/quota-axi/fm-qa-model-pool-catalog	qa-model-pool-catalog (~/orca/projects/firstmate); Terminal 1
+keep	terminal	task	term_1eae684c-f9ef-4904-be59-5ee64cc2bb3a	~/orca/workspaces/quota-axi/fm-qa-model-pool-catalog	qa-model-pool-catalog (~/orca/projects/firstmate)
+keep	terminal	task-worktree	term_ad86ac78-2691-43fb-b8a1-c7e153095a9c	~/orca/workspaces/shipcontent-v2/fm-sc-prod-sequence-670	sc-prod-sequence-670 (~/orca/workspaces/firstmate/shipcontent-mate); Terminal 1
+keep	terminal	task	term_2e1366f1-43c0-482c-a9c0-690926a513aa	~/orca/workspaces/shipcontent-v2/fm-sc-prod-sequence-670	sc-prod-sequence-670 (~/orca/workspaces/firstmate/shipcontent-mate)
+keep	terminal	foreign	term_a17f0fcb-9029-4148-9cc5-bbc137a46210	~/orca/workspaces/Casco/n11-g10-304	Terminal 1
+keep	terminal	foreign	term_8855c347-7d0a-45bb-8682-8045e422d389	~/Documents/Casco	Casco AFK crew lane n11-g10
+keep	terminal	foreign	term_4d22deeb-9756-48ed-9338-5ca47a763810	~/orca/projects/firstmate	Firstmate handoff successor session
+reap	browser	owner-gone	22371	/private/tmp/fmbr.igmcLi/orphan	/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --user-data-dir=/tmp/fmbr.igmcLi/orphan/prof --no-first-run --no-default-browser-che
+summary: mode=dry-run terminals=78 reap=0 keep=78 browsers=1 reap=1 keep=0
+exit=0
