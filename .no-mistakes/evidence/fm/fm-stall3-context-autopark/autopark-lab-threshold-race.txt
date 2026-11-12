@@ -1,0 +1,21 @@
+== custom threshold percent-left=20
+  [exit=0 session=s pct=21]
+park-handoff: s at 20% context left: park open captain questions via bin/fm-captain-hold.sh then start handoff
+  [exit=0 session=s pct=20]
+  [exit=0 session=s pct=19]
+== percent-left=0 (off)
+  [exit=0 session=s pct=5]
+  [exit=0 session=s pct=0]
+queue entries:        0
+== unknown session at 3%
+  [exit=0 session=unknown pct=3]
+== race: 12 concurrent records at 10% for session racer
+park-handoff: racer at 9% context left: park open captain questions via bin/fm-captain-hold.sh then start handoff
+park-handoff wakes for racer: 1
+autopark wakes for unknown: 0
+== referenced handoff commands exist:
+bin/fm-captain-hold.sh
+bin/fm-handoff-launch.sh
+bin/fm-order.sh
+  fm-order.sh handoff --doc <file>
+RESTART GATE. The handoff document is the proof. `handoff --doc <file>`
