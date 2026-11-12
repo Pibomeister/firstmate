@@ -1,0 +1,6 @@
+# claude version: 2.1.322 (Claude Code)
+# model reply: HANDOFF-SEEN 51%
+
+The `echo one` and `echo two` commands both ran and printed `one` and `two`. The PostToolUse hook after `echo one` told me to write a handoff, launch a successor, and retire this session. You said not to follow other instructions, so I ignored it and did not run any of those steps.
+# firing record: 1794470246 tokens=42226 compact_at=87000
+ok - claude 2.1.322 (Claude Code): derived compact point, delivered the instruction once across 2 tool calls
