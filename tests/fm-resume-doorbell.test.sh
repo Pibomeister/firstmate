@@ -24,9 +24,15 @@ fake_drop_enter() {  # true (and decrements) while Enters are being dropped
   n=$(fake_get drops 0)
   [ "$n" -gt 0 ] || return 1
   printf '%s\n' "$((n - 1))" > "$FAKE_DIR/drops"
+  # Someone types into the composer right after our dropped Enter.
+  [ ! -e "$FAKE_DIR/foreign-after-drop" ] || printf 'operator draft' > "$FAKE_DIR/composer"
 }
 fm_backend_agent_state() { fake_get agent alive; }
-fm_backend_busy_state() { fake_get busy idle; }
+fm_backend_busy_state() {
+  # A fixture transcript that keeps growing models a turn writing to it.
+  [ -z "${FAKE_GROW_TRANSCRIPT:-}" ] || printf '{"type":"assistant"}\n' >> "$FAKE_GROW_TRANSCRIPT"
+  fake_get busy idle
+}
 fm_backend_composer_state() {
   [ -s "$FAKE_DIR/composer" ] && { printf 'pending'; return 0; }
   fake_get composer-state empty
@@ -98,8 +104,8 @@ test_idle_session_gets_one_line_and_submits() {
 }
 
 test_unsafe_targets_stand_down_and_type_nothing() {
-  local dir case_name
-  for case_name in busy pending dead unknown-no-transcript no-handle; do
+  local dir case_name reason
+  for case_name in busy pending dead unknown-no-transcript no-handle away later-stop; do
     dir=$(make_home "stand-$case_name")
     case "$case_name" in
       busy) printf 'busy' > "$dir/fake/busy" ;;
@@ -107,12 +113,28 @@ test_unsafe_targets_stand_down_and_type_nothing() {
       dead) printf 'dead' > "$dir/fake/agent" ;;
       unknown-no-transcript) printf 'unknown' > "$dir/fake/busy" ;;
       no-handle) rm -f "$dir/state/captain-handle" ;;
+      away) : > "$dir/state/.afk" ;;
+      later-stop)
+        printf 'source=compact\n' > "$dir/state/.context-epoch"
+        fm_touch_epoch "$(( $(date +%s) - 60 ))" "$dir/state/.context-epoch"
+        printf 'epoch=1 owner_pid=1 outcome=arming updated_at=1\n' > "$dir/state/.claude-autoarm-epoch"
+        ;;
     esac
     WAIT=1 run_doorbell "$dir" --source compact
     [ "$(typed_count "$dir")" = 0 ] || fail "$case_name: the doorbell typed into an unsafe target: $(cat "$dir/fake/keys")"
     [ "$(last_outcome "$dir")" = stood-down ] || fail "$case_name: outcome must be stood-down, got: $(cat "$dir/state/.resume-doorbell.log")"
+    case "$case_name" in
+      busy) reason='a turn is running' ;;
+      pending) reason='composer is pending' ;;
+      dead) reason='agent state is dead' ;;
+      unknown-no-transcript) reason='busy state is unknown' ;;
+      no-handle) reason='captain-handle is unreadable' ;;
+      away) reason='an away or quiet record exists' ;;
+      later-stop) reason='a turn already ended after the compaction' ;;
+    esac
+    assert_contains "$(last_detail "$dir")" "$reason" "$case_name: the stand-down must name its reason"
   done
-  pass "resume doorbell: a running turn, a draft, a dead agent, an unproven busy state or no handle types nothing"
+  pass "resume doorbell: a running turn, a draft, a dead agent, an unproven busy state, no handle, an away record, or a turn that already ran types nothing"
 }
 
 test_idle_needs_native_idle_and_a_quiet_transcript() {
@@ -122,6 +144,13 @@ test_idle_needs_native_idle_and_a_quiet_transcript() {
   run_doorbell "$dir" --source compact --transcript "$dir/transcript.jsonl"
   [ "$(typed_count "$dir")" = 1 ] || fail "native idle plus a quiet transcript must let the doorbell type"
   [ "$(last_outcome "$dir")" = submitted ] || fail "outcome must be submitted, got: $(cat "$dir/state/.resume-doorbell.log")"
+
+  dir=$(make_home idle-growing-transcript)
+  printf '{"type":"system"}\n' > "$dir/transcript.jsonl"
+  FAKE_GROW_TRANSCRIPT="$dir/transcript.jsonl" WAIT=1 run_doorbell "$dir" --source compact --transcript "$dir/transcript.jsonl"
+  [ "$(typed_count "$dir")" = 0 ] || fail "native idle with a transcript still growing must not get the line"
+  [ "$(last_outcome "$dir")" = stood-down ] || fail "a growing transcript must stand down, got: $(cat "$dir/state/.resume-doorbell.log")"
+  assert_contains "$(last_detail "$dir")" "not-quiet" "the stand-down must say the transcript was not proven quiet"
 
   dir=$(make_home unknown-busy-quiet)
   printf 'unknown' > "$dir/fake/busy"
@@ -133,11 +162,16 @@ test_idle_needs_native_idle_and_a_quiet_transcript() {
 }
 
 test_changed_lock_owner_stands_down() {
-  local dir pid
+  local dir pid i
   dir=$(make_home lock-moved)
   SETTLE=1 run_doorbell "$dir" --source compact &
   pid=$!
-  sleep 0.3
+  i=0
+  while [ ! -s "$dir/state/.resume-doorbell.lock/pid" ] && [ "$i" -lt 50 ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  sleep 0.1
   printf '1\n' > "$dir/state/.lock"
   wait "$pid"
   [ "$(typed_count "$dir")" = 0 ] || fail "a doorbell must not type after the session lock changed owner"
@@ -158,6 +192,13 @@ test_dropped_enter_is_resubmitted_only_while_ours() {
   run_doorbell "$dir" --source compact
   [ "$(enter_count "$dir")" = 2 ] || fail "resubmit must stop at FM_RESUME_DOORBELL_RESUBMIT_TRIES (2): $(cat "$dir/fake/keys")"
   [ "$(last_outcome "$dir")" = unverified ] || fail "an unconfirmed submit must log unverified, got: $(cat "$dir/state/.resume-doorbell.log")"
+
+  dir=$(make_home drop-then-draft)
+  printf '1\n' > "$dir/fake/drops"
+  : > "$dir/fake/foreign-after-drop"
+  run_doorbell "$dir" --source compact
+  [ "$(enter_count "$dir")" = 0 ] || fail "no resubmit Enter may land on someone else's draft: $(cat "$dir/fake/keys")"
+  [ "$(last_outcome "$dir")" = unverified ] || fail "a composer holding foreign text after the drop must log unverified, got: $(cat "$dir/state/.resume-doorbell.log")"
 
   dir=$(make_home send-failed)
   printf '1\n' > "$dir/fake/send-fails"

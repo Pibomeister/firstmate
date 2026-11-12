@@ -3,11 +3,9 @@
 # compaction, with no model call.
 #
 # An idle auto compaction runs the SessionStart hook (source=compact), whose
-# context re-emit (bin/fm-sessionstart-run.sh) reaches the model only when its
-# next turn starts - and nothing starts one. bin/fm-sessionstart-run.sh
-# launches this script detached for a completed lock owner with open
-# supervision work after a Claude auto compaction; it never runs on clear, a
-# manual /compact, resume or startup (docs/sessionstart-nudge.md).
+# context re-emit reaches the model only when its next turn starts - and
+# nothing starts one. bin/fm-sessionstart-run.sh launches this script detached;
+# docs/sessionstart-nudge.md owns when.
 #
 # It waits FM_RESUME_DOORBELL_SETTLE_SECS (default 20) for the session to
 # settle, then polls every FM_RESUME_DOORBELL_POLL_SECS (default 5), at most
@@ -23,10 +21,11 @@
 # 1.5, clear of the paste window), and reports submitted only once the composer
 # reads empty or the agent reads busy.
 #
-# It stands down, typing nothing, when the session lock changes owner, the
-# handle is unreadable, the agent is not alive, the composer is not empty, a
-# turn is running, idleness cannot be proven before the wait limit, or another
-# doorbell holds state/.resume-doorbell.lock. Every run appends one row to
+# It stands down, typing nothing, when the session lock changes owner, an away
+# or quiet record exists, a Stop claimed after the compaction (a turn already
+# ran), the handle is unreadable, the agent is not alive, the composer is not
+# empty, a turn is running, idleness cannot be proven before the wait limit, or
+# another doorbell holds state/.resume-doorbell.lock. Every run appends one row to
 # state/.resume-doorbell.log:
 #   <utc-iso>\t<epoch>\t<source>\t<backend>:<target>\t<outcome>\t<detail>
 # with outcome submitted, unverified, stood-down or failed. It never kills,
@@ -132,6 +131,14 @@ transcript_size() {
 idle_reason() {  # <previous-size>
   local prev=$1 agent busy composer size
   [ "$(sed -n '1p' "$STATE/.lock" 2>/dev/null || true)" = "$LOCK_PID" ] || { printf 'the session lock changed owner'; return 0; }
+  kill -0 "$LOCK_PID" 2>/dev/null || { printf 'the session lock changed owner'; return 0; }
+  if [ -e "$STATE/.afk" ] || [ -e "$STATE/.afk-contract" ]; then
+    printf 'an away or quiet record exists'; return 0
+  fi
+  # A Stop that claimed after this compaction means a turn already ran.
+  if [ -e "$STATE/.context-epoch" ] && [ "$STATE/.claude-autoarm-epoch" -nt "$STATE/.context-epoch" ]; then
+    printf 'a turn already ended after the compaction'; return 0
+  fi
   agent=$(fm_backend_agent_state "$BACKEND" "$TARGET" 2>/dev/null || printf unknown)
   [ "$agent" = alive ] || { printf 'agent state is %s' "$agent"; return 0; }
   composer=$(fm_backend_composer_state "$BACKEND" "$TARGET" 2>/dev/null || printf unknown)
@@ -160,7 +167,7 @@ while :; do
   reason=$(idle_reason "$prev")
   [ -n "$reason" ] || break
   case "$reason" in
-    'the session lock changed owner'|'agent state is '*|'composer is '*|'a turn is running'|'busy state is '*)
+    'the session lock changed owner'|'agent state is '*|'composer is '*|'a turn is running'|'busy state is '*|'an away or quiet record exists'|'a turn already ended after the compaction')
       finish stood-down "$reason" ;;
   esac
   prev=$(transcript_size)
