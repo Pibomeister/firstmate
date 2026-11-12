@@ -106,6 +106,15 @@ case "${FM_FAKE_SSH_MODE:-normal}" in
     "$FM_FAKE_REMOTE_ENTRYPOINT" "$@"
     exit 255
     ;;
+  blip)
+    case "$count" in ''|*[!0-9]*) count=0 ;; esac
+    if [ "$count" -lt 2 ]; then
+      cat >/dev/null
+      printf '%s\n' 'ssh: connect to host remote-mac port 22: Connection refused' >&2
+      exit 255
+    fi
+    exec "$FM_FAKE_REMOTE_ENTRYPOINT" "$@"
+    ;;
   *) exec "$FM_FAKE_REMOTE_ENTRYPOINT" "$@" ;;
 esac
 SH
@@ -213,6 +222,40 @@ assert_contains "$out" "root=$REMOTE_ROOT" "remote root was not explicit"
 assert_contains "$out" 'secret=absent' "the primary ambient environment crossed the transport"
 assert_contains "$out" 'worker=1' "the fixed entrypoint executed outside the remote job worker"
 pass "the fixed entrypoint runs every command in the worker's explicit environment"
+
+: > "$SSH_COUNT"
+BLIP_SLEEP="$TMP_ROOT/blip-sleep"
+: > "$BLIP_SLEEP"
+set +e
+BLIP_OUT=$(FM_BLIP_NOW=1000 FM_BLIP_SLEEP_LOG="$BLIP_SLEEP" FM_FAKE_SSH_MODE=blip \
+  fm_on ios fm-probe-two.sh 2>"$TMP_ROOT/blip-err")
+BLIP_RC=$?
+set -e
+[ "$BLIP_RC" -eq 0 ] || fail "a refused SSH connection that cleared was reported as a failure (got $BLIP_RC)"
+[ "$(cat "$SSH_COUNT")" -eq 3 ] || fail "a refused SSH connection was not retried twice before success (count $(cat "$SSH_COUNT"))"
+assert_equals $'2\n4' "$(cat "$BLIP_SLEEP")" "a refused SSH connection did not back off 2s then 4s"
+assert_contains "$BLIP_OUT" "home=$REMOTE_HOME" "a recovered SSH call did not return the remote result"
+[ "$(printf '%s\n' "$BLIP_OUT" | grep -c '^home=')" -eq 1 ] \
+  || fail "a recovered SSH call repeated the remote result: $BLIP_OUT"
+if grep -q 'Connection refused' "$TMP_ROOT/blip-err"; then
+  fail "a recovered SSH call kept the refused-connection text"
+fi
+pass "a refused SSH connection is retried until the remote command succeeds"
+
+: > "$SSH_COUNT"
+: > "$BLIP_SLEEP"
+printf 'payload one\n' > "$TMP_ROOT/blip-stdin"
+set +e
+FM_BLIP_NOW=2000 FM_BLIP_SLEEP_LOG="$BLIP_SLEEP" FM_FAKE_SSH_MODE=blip \
+  fm_on --stdin ios fm-probe-one.sh "$REMOTE_HOME/blip-argv.bin" 0 'retried' \
+  < "$TMP_ROOT/blip-stdin" > "$TMP_ROOT/blip-stdin-out" 2>"$TMP_ROOT/blip-stdin-err"
+BLIP_RC=$?
+set -e
+[ "$BLIP_RC" -eq 0 ] || fail "stdin replay across a refused SSH connection failed (got $BLIP_RC)"
+[ "$(cat "$SSH_COUNT")" -eq 3 ] || fail "stdin replay did not retry the refused SSH connection"
+assert_grep 'stdin: payload one' "$TMP_ROOT/blip-stdin-out" \
+  "a later SSH attempt did not see the caller's stdin again"
+pass "a refused SSH connection replays the caller's stdin on the successful attempt"
 
 # The child PATH is the entrypoint's own composition, so it is asserted on the
 # PATH a real child receives rather than on the script that builds it. The
