@@ -90,6 +90,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `backends/herdr.sh`      | Herdr session-provider adapter with its own required CI lane                         |
 | `backends/zellij.sh`     | Experimental zellij session-provider adapter                                         |
 | `backends/orca.sh`       | Experimental Orca backend adapter owning both worktree and terminal                  |
+| `fm-orca-cli-cache.sh`   | Share read-only Orca CLI results across supervision sweeps for a few seconds         |
 | `backends/cmux.sh`       | Experimental cmux session-provider adapter                                           |
 | `backends/paseo.sh`      | Experimental Paseo session-provider adapter                                          |
 | `backends/rex.sh`        | Experimental Rex session-provider adapter                                            |

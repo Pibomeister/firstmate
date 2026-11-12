@@ -477,7 +477,7 @@ family_for_basename_var() {
     fm-backend-zellij.test.sh|fm-backend-zellij-smoke.test.sh)
       REPLY_FAMILY=zellij
       ;;
-    fm-backend-orca.test.sh|fm-terminal-reap.test.sh)
+    fm-backend-orca.test.sh|fm-orca-cli-cache.test.sh|fm-terminal-reap.test.sh)
       REPLY_FAMILY=orca
       ;;
     fm-backend-tern.test.sh|fm-backend-tern-smoke.test.sh)
