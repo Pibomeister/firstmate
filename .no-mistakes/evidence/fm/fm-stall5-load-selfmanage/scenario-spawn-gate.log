@@ -1,0 +1,14 @@
+### A: real host load, config: lanes 4, max-load1 16
+{ 94.17 141.50 155.41 }
+deferred: lane capacity of this home (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.WWTGrI/config/lane-capacity) does not admit another lane: load: 94.17 at or over its ceiling 16 (max-load1)
+exit=75
+### B: lane cap 2 with 2 lanes holding a place (w-high, w-low; w-new is PR-ready), max-load1 1000
+deferred: lane capacity of this home (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.WWTGrI/config/lane-capacity) does not admit another lane: full: 2 of 2 lanes hold a place
+exit=75
+### after: no task record, no worktree, backlog still queued
+ls: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.WWTGrI/state/task-new.meta: No such file or directory
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.WWTGrI/projects/demo  a3df993 [main]
+  state: queued
+fm-w-high
+fm-w-low
+fm-w-new

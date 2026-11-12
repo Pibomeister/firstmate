@@ -1,0 +1,26 @@
+== pane w-high
+ ▐▛███▛█   Claude Code v2.1.322
+▝▜██████▀  Opus 5.5 · Claude Ultra
+ ▝▝   ▝▝   ~/.no-mistakes/worktrees/075d7f40c28a/01M77FKWZDE4Y9C2Y8EKVXQV0W
+────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)
+== pane w-low
+     'w-low.inbox' 2>/dev/null | head
+✽ Cascading… (10s · ↓ 439 tokens · thought for 1s)
+  #1 : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in you…   [-]
+  ┃
+────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)
+== pane w-new
+     "$FM_TASK_INBOX"/*.msg; do echo "=== $f"; cat "$f"; done
+· Transfiguring… (5s · ↓ 225 tokens · thought for 1s)
+  #1 : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in you…   [-]
+  ┃
+────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)

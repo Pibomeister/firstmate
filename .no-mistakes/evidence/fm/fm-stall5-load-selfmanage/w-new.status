@@ -1,0 +1,2 @@
+paused [key=load-relief] [at=1794475209]: load relief: load 200 at or over ceiling 16 for 61s; interrupted in place, work preserved, resumes when load falls
+resolved [key=load-relief] [at=1794475318]: load relief lifted (load 5 below 12); resumed by steer

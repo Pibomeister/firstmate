@@ -1,0 +1,5 @@
+paused [key=load-relief] [at=1794475263]: load relief: load 200 at or over ceiling 16 for 61s; interrupted in place, work preserved, resumes when load falls
+resolved [key=load-relief] [at=1794475292]: load relief lifted (load 5 below 12); resumed by steer
+paused [key=load-relief] [at=1794475292]: load relief: lab fixture pause
+resolved [key=load-relief] [at=1794475446]: load relief lifted (load 5 below 12); resumed by steer
+resolved [key=load-relief] [at=1794475449]: load relief lifted (load 5 below 12); resumed by steer

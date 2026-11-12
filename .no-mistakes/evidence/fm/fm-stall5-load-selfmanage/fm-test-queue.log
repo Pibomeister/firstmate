@@ -19,3 +19,4 @@ ok - fm-test-queue.sh: a lost ticket counter never lets a new run jump the line
 ok - fm-test-queue.sh: commands keep set, empty, and unset locales and the caller's umask
 ok - fm-test-queue.sh: metadata is private and failed probes warn without bypassing slots
 ok - fm-test-queue.sh: terminal foreground, background, input, interrupt, and stop/resume work
+exit=0

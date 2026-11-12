@@ -1,0 +1,10 @@
+### phase 1: lane-capacity present, load 200: high-since after 2s = 1794475291
+### phase 2: lane-capacity removed, one pause record for w-high, load 5
+RESULT: record still present after 120s
+paused [key=load-relief] [at=1794475292]: load relief: lab fixture pause
+watcher stopped
+config/lane-capacity: absent
+w-high
+RESULT: watcher's relief check resumed w-high after 11s with lane-capacity absent (watcher armed 3 times)
+resolved [key=load-relief] [at=1794475446]: load relief lifted (load 5 below 12); resumed by steer
+watcher stopped

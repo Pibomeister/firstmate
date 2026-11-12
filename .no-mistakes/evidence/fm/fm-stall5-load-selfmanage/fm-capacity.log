@@ -12,9 +12,10 @@ ok - a beat with missing fields keeps its fields aligned and limits fall back to
 ok - the lane footprint memory rule applies only with min-avail-gb
 ok - limits close lanes with named reasons, and --admit exits 0, 75, or 1
 ok - a lane that recorded its ready PR frees its place in the admission verdict
-ok - the spawn gate holds only on the lane cap and one load ceiling
+ok - the spawn gate holds only on the lane cap and one load ceiling, and never counts the spawner's own record
 ok - publish is opt-in, private, throttled, records boots, and publishes an invalid config as invalid
 ok - captain presence and quota runway publish derived words only, unknown when unreadable
 ok - the watcher publishes lane facts only for an opted-in home
 ok - real host probes produce a well-formed report
 # all fm-capacity tests passed
+exit=0

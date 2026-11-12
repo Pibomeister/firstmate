@@ -1,0 +1,6 @@
+### pass 1: load 200, t0
+load-relief: load=200 at or over ceiling=16; sustained window started
+exit=0
+### pass 2: load 200, t0+61
+fm-load-relief: interrupt for w-new returned 3; its pause record is kept as uncertain because delivery is unproven: error: refusing fleet lifecycle from inside a no-mistakes gate worktree (~/.no-mistakes/repos/075d7f40c28a.git)
+exit=0

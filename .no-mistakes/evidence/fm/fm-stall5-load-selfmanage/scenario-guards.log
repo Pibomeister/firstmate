@@ -1,0 +1,14 @@
+### setup: w-low (prio 4) has an open needs-decision; w-new (prio 4) recorded a ready PR; w-high is prio 1
+### pass A: load 200 t1
+load-relief: load=200 at or over ceiling=16; sustained window started
+exit=0
+### pass B: load 200 t1+61
+load-relief: paused w-high load=200 ceiling=16 sustained=61s
+exit=0
+### paused records:
+w-high
+### dry-run resume preview at load 5
+load-relief: would resume w-high load=5 resume-below=12
+### pass C: load 5 resumes
+load-relief: resumed w-high load=5 resume-below=12
+exit=0

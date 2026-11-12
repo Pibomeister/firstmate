@@ -1,0 +1,36 @@
+### pass 3: load 200, t0+62 (fresh window needed)
+load-relief: load=200 at or over ceiling=16 for 1s of 60s; no pause yet
+exit=0
+### pass 4: load 200, t0+123
+load-relief: paused w-low load=200 ceiling=16 sustained=62s
+exit=0
+### paused records:
+w-low
+w-new
+### pass 5: load 14 (between resume level 12 and ceiling 16)
+exit=0
+w-low
+w-new
+### pass 6: load 5 (below resume level)
+load-relief: resumed w-low load=5 resume-below=12
+exit=0
+w-new
+### pass 7: load 5
+load-relief: resumed w-new load=5 resume-below=12
+exit=0
+### remaining records:
+### status lines
+==> /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.WWTGrI/state/w-low.status <==
+paused [key=load-relief] [at=1794475271]: load relief: load 200 at or over ceiling 16 for 62s; interrupted in place, work preserved, resumes when load falls
+resolved [key=load-relief] [at=1794475288]: load relief lifted (load 5 below 12); resumed by steer
+
+==> /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.WWTGrI/state/w-new.status <==
+paused [key=load-relief] [at=1794475209]: load relief: load 200 at or over ceiling 16 for 61s; interrupted in place, work preserved, resumes when load falls
+resolved [key=load-relief] [at=1794475318]: load relief lifted (load 5 below 12); resumed by steer
+### inbox
+w-low.inbox
+w-new.inbox
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.WWTGrI/state/w-low.inbox:
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.WWTGrI/state/w-low.inbox/handled:
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.WWTGrI/state/w-new.inbox:
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.WWTGrI/state/w-new.inbox/handled:

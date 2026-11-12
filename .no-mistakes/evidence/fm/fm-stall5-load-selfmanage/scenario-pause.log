@@ -1,0 +1,6 @@
+### pass 1: load 200, t0
+load-relief: load=200 at or over ceiling=16; sustained window started
+exit=0
+### pass 2: load 200, t0+61
+load-relief: paused w-new load=200 ceiling=16 sustained=61s
+exit=0

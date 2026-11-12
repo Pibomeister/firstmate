@@ -6,6 +6,15 @@ ok - a worker waiting on a captain decision is never paused
 ok - a pause record for a finished or removed task is dropped without a steer
 ok - max-load1 parses with the same tab-tolerant grammar as fm-capacity
 ok - resume waits under 75% of the ceiling and lifts one pause per pass, highest priority first
-ok - the pause record precedes the interrupt and is removed when the interrupt is not delivered
+ok - a nonzero interrupt keeps an uncertain pause record, surfaces the error, and the resume pass resolves it
+ok - an uncertain interrupt counts toward pause-per-check, so one pass never reaches past the limit
+ok - a meta with no backend= is the default tmux backend and a harness variant maps to its family
+ok - a buried open decision keeps a worker unpaused even when its latest verb is working
+ok - a decision raised after a pause defers its resume until answered
+ok - a worker whose backend cannot deliver its interrupt is never a candidate and the window restarts
+ok - a stale high-since only restarts the sustained window
+ok - the resume pass runs without lane-capacity and with a malformed relief config, printing the refusal
+ok - a pause record whose spawn_gen no longer matches is dropped without a steer
 ok - an explicit resume-below at or over the ceiling refuses rather than silently disabling relief
 ok - without config/lane-capacity a check is a no-op
+exit=0
