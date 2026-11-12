@@ -959,6 +959,31 @@ write_padded_markdown() {
 # A context file over the inline limit prints as an indexed pointer plus an
 # outline (headings, or registry items for a title-only list file); the
 # learnings files print the pointer alone; a small file still prints whole.
+test_full_digest_compact_keeps_auto_away_activity() {
+  local rec root home fakebin source
+  rec=$(new_world auto-away-compact)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  # No completed-startup receipt: a clear or compact runs the full digest.
+  for source in compact clear; do
+    rm -f "$home/state/.session-start-complete"
+    printf '1000000000\n' > "$home/state/.captain-message-epoch"
+    env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
+      FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
+      "$SESSION_START" --source "$source" >/dev/null
+    [ "$(cat "$home/state/.captain-message-epoch")" = 1000000000 ] \
+      || fail "a full-digest $source recorded captain activity"
+    assert_present "$home/state/auto-away.check-trust" "a full-digest $source did not register automatic away checks"
+  done
+  run_session_start "$home" "$root" "$fakebin:$BASE_PATH" >/dev/null
+  [ "$(cat "$home/state/.captain-message-epoch")" != 1000000000 ] \
+    || fail "a captain-opened session start did not record captain activity"
+  pass "a full-digest clear or compact keeps the automatic-away activity stamp; a session start records it"
+}
+
 test_context_large_files_are_indexed() {
   local rec root home fakebin out learn_section i
   rec=$(new_world context-indexed)
@@ -3926,6 +3951,7 @@ EOF
 }
 
 test_context_digest_absent_empty_present
+test_full_digest_compact_keeps_auto_away_activity
 test_context_large_files_are_indexed
 test_context_outline_multibyte_stays_within_byte_bound
 test_backlog_in_flight_rows_listed_once

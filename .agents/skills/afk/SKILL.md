@@ -22,6 +22,7 @@ Hold-for-return is the default and the only reach profile this release records: 
 
 `bin/fm-auto-away.sh` owns the scheduled trigger and its activity stamp; [configuration](../../../docs/configuration.md#automatic-away-mode-configauto-away) owns the defaults and settings.
 On a `check: auto-away` wake, run the exact `bin/fm-auto-away.sh enter <activity>` command it carries.
+A wake reading `auto-away check failed:` carries no entry command: report the named problem to the captain as a blocker on automatic entry.
 This guarded command rechecks the trigger and writes the same record as plain `/afk`, with no away words or new authority.
 If it prints nothing, the request is obsolete or a posture already exists: acknowledge the wake without announcing or starting another session.
 If it prints the entry announcement, continue at step 2 below, then announce automatic entry once with its trigger and the ordinary reach statement from step 3.

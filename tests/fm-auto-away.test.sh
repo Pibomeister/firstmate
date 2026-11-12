@@ -213,6 +213,60 @@ printf 'silence-seconds=oops\n' >> "$FM_HOME/config/auto-away"
 if at "$EARLY" check >/dev/null 2>&1; then fail 'invalid configuration was accepted'; fi
 assert_absent "$FM_HOME/state/.wake-queue" 'invalid configuration queued entry'
 
+world gnu-date
+# GNU date reads -r as a reference file; only -d @epoch converts an epoch.
+REAL_DATE=$(command -v date)
+mkdir -p "$FM_HOME/bin"
+cat > "$FM_HOME/bin/date" <<STUB
+#!/usr/bin/env bash
+[ "\$1" != -r ] || { echo "date: \$2: No such file or directory" >&2; exit 1; }
+if [ "\$1" = -d ] && [[ "\$2" = @* ]]; then
+  e=\${2#@}; shift 2
+  "$REAL_DATE" -r "\$e" "\$@" 2>/dev/null || exec "$REAL_DATE" -d "@\$e" "\$@"
+  exit
+fi
+exec "$REAL_DATE" "\$@"
+STUB
+chmod +x "$FM_HOME/bin/date"
+printf 'silence-seconds=0\n' >> "$FM_HOME/config/auto-away"
+at "$EARLY" captain-message
+out=$(PATH="$FM_HOME/bin:$PATH" at "$NIGHT" check)
+[ -z "$out" ] || fail "GNU date check reported a failure: $out"
+assert_grep 'auto-away clock' "$FM_HOME/state/.wake-queue" 'GNU date on a Darwin-style host missed the clock trigger'
+
+world broken-date
+mkdir -p "$FM_HOME/bin"
+printf '#!/usr/bin/env bash\ncase " $* " in *" -r "*|*" -d "*) exit 1 ;; esac\nexec %q "$@"\n' "$REAL_DATE" > "$FM_HOME/bin/date"
+chmod +x "$FM_HOME/bin/date"
+at "$EARLY" captain-message
+out=$(PATH="$FM_HOME/bin:$PATH" at "$((EARLY + 7200))" check || true)
+assert_contains "$out" 'auto-away check failed: cannot convert epoch' 'clock conversion failure was not reported on stdout'
+assert_grep 'auto-away silence' "$FM_HOME/state/.wake-queue" 'clock conversion failure blocked the silence trigger'
+
+world shim-failure
+at "$EARLY" arm >/dev/null
+[ -z "$(FM_AUTO_AWAY_NOW="$((EARLY + 60))" bash "$FM_HOME/state/auto-away.check.sh" 2>/dev/null)" ] || fail 'successful scheduled check was not silent'
+printf 'silence-seconds=oops\n' >> "$FM_HOME/config/auto-away"
+out=$(FM_AUTO_AWAY_NOW="$NIGHT" bash "$FM_HOME/state/auto-away.check.sh" 2>/dev/null || true)
+assert_contains "$out" 'auto-away check failed: silence-seconds must be' 'scheduled check failure was not reported on stdout'
+
+world failed-entry
+cp -R "$ROOT/bin" "$FM_HOME/failbin"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$FM_HOME/failbin/fm-afk-launch.sh"
+at "$EARLY" captain-message
+at "$NIGHT" check
+if FM_AUTO_AWAY_NOW="$NIGHT" "$FM_HOME/failbin/fm-auto-away.sh" enter "$EARLY" >/dev/null 2>&1; then
+  fail 'failed automatic entry reported success'
+fi
+at "$((NIGHT + 60))" check
+[ "$(wc -l < "$FM_HOME/state/.wake-queue" | tr -d ' ')" = 2 ] || fail 'failed entry stranded its receipt and blocked a retry'
+
+world entry-arguments
+if FM_AFK_MODE=away "$ROOT/bin/fm-afk-launch.sh" enter-auto --words 'ship it' >/dev/null 2>&1; then
+  fail 'enter-auto accepted arguments'
+fi
+assert_absent "$FM_HOME/state/.afk-contract" 'enter-auto with arguments wrote an away record'
+
 world instructions
 for harness in claude codex cursor grok pi pi-signed opencode omp agy muse unknown; do
   out=$("$ROOT/bin/fm-supervision-instructions.sh" --harness "$harness")
@@ -221,6 +275,10 @@ for harness in claude codex cursor grok pi pi-signed opencode omp agy muse unkno
   if [[ "$out" = *'bin/fm-auto-away.sh captain-message'* ]]; then fail "$harness read-only mode asks for activity writes"; fi
 done
 touch "$FM_HOME/.fm-secondmate-home"
+for harness in claude pi; do
+  out=$("$ROOT/bin/fm-supervision-instructions.sh" --harness "$harness")
+  if [[ "$out" = *'bin/fm-auto-away.sh captain-message'* ]]; then fail "$harness secondmate home asks for activity writes"; fi
+done
 at "$EARLY" arm >/dev/null
 assert_absent "$FM_HOME/state/auto-away.check.sh" 'secondmate armed primary-only automatic entry'
 

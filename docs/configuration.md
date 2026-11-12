@@ -817,7 +817,8 @@ The first scheduled check after a crossing queues entry, including a missed cloc
 No extra timer or daemon is installed; the normal check cadence and primary-turn availability bound entry latency.
 
 `config/auto-away` is an optional, local, gitignored file of `key=value` lines.
-Blank lines and lines beginning with `#` are ignored; malformed settings fail visibly instead of executing configuration as shell code.
+Blank lines and lines beginning with `#` are ignored; malformed settings fail visibly instead of executing configuration as shell code, and a scheduled check reports each failure, including a local-time conversion failure that skips only the clock trigger, as a `check` wake.
+A failed automatic entry clears its request receipt, so a later check queues it again.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -829,7 +830,7 @@ Blank lines and lines beginning with `#` are ignored; malformed settings fail vi
 The emitted supervision instructions require `captain-message` on each genuine captain message on every primary harness.
 This explicit activity boundary avoids treating operational prompts, watcher wakes, output changes, or compactions as human activity.
 It depends on main following those instructions, rather than on a vendor transcript parser.
-A captain-opened locked session start counts as captain activity, because the captain's opening message arrives before the instruction to record it; a clock crossing missed while no session ran therefore never fires when a session opens. A re-emitted digest after a clear or compaction, a handoff successor recorded in `state/.handoff-successor`, and a watchdog restart keep the last activity stamp, so they move neither trigger. A watchdog restart is recognized by the restart prompt the session-lock holder was launched with, so a home watched by another home's watchdog is covered, and also by a pending restart row for the home's canonical path in its own watchdog ledger. An absent or unreadable activity stamp never proves silence.
+A captain-opened locked session start counts as captain activity, because the captain's opening message arrives before the instruction to record it; a clock crossing missed while no session ran therefore never fires when a session opens. A clear or compaction, whether it re-emits the digest or runs a full one, a handoff successor recorded in `state/.handoff-successor`, and a watchdog restart keep the last activity stamp, so they move neither trigger. A watchdog restart is recognized by the restart prompt the session-lock holder was launched with, so a home watched by another home's watchdog is covered, and also by a pending restart row for the home's canonical path in its own watchdog ledger. An absent or unreadable activity stamp never proves silence.
 A new message cancels a pending request, and the normal return path records activity before clearing away mode, so the same clock crossing cannot immediately put a returned captain away again.
 An existing away or quiet record, legacy mode flag, or pending return blocks automatic entry.
 Secondmate homes do not arm this feature.

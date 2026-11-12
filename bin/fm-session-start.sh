@@ -1186,9 +1186,10 @@ if [ "$READ_ONLY" -eq 1 ]; then
   [ -n "$GUARD_OUT" ] && printf '%s\n' "$GUARD_OUT"
 else
   # Register the automatic away trigger on the existing slow-check scheduler.
-  # A clear/compact re-emit is not a session start (bin/fm-auto-away.sh arm).
+  # A clear or compact, re-emitted or not, is not a session start
+  # (bin/fm-auto-away.sh arm).
   AUTO_AWAY_START=--session-start
-  [ "$REEMIT" -eq 0 ] || AUTO_AWAY_START=
+  case "$REEMIT:$SESSION_SOURCE" in 0:compact|0:clear|1:*) AUTO_AWAY_START= ;; esac
   AUTO_AWAY_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
     "$SCRIPT_DIR/fm-auto-away.sh" arm ${AUTO_AWAY_START:+"$AUTO_AWAY_START"} 2>&1) || printf 'AUTO AWAY: %s\n' "$AUTO_AWAY_OUT"
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-branch-outcome.sh" seed-tail >/dev/null 2>&1 || true

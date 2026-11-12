@@ -20,10 +20,10 @@
 # only for genuine captain input, never for operational wakes. A captain-opened
 # session start arms with --session-start and counts as captain activity,
 # because the opening message precedes the instruction to record it; a trigger
-# missed while no session ran therefore never fires on session open. A re-emit
-# after clear or compact arms without it; a handoff successor or a watchdog
-# restart, including one run by another home's watchdog, is detected at arm. Both preserve the last stamp, so both deadlines
-# hold.
+# missed while no session ran therefore never fires on session open. A clear or
+# compact, re-emitted or full, arms without it; a handoff successor or a watchdog
+# restart, including one run by another home's watchdog, is detected at arm.
+# All of these preserve the last stamp, so both deadlines hold.
 # An existing quiet or away posture is never replaced.
 # The AFK launch owner's lock serializes entry against explicit /afk and /quiet.
 # Test-only clock: FM_TEST_SEAM=1 FM_AUTO_AWAY_NOW=<epoch>.
@@ -39,7 +39,13 @@ REQUEST="$STATE/.auto-away-request"
 LOCK="$STATE/.auto-away.lock"
 
 usage() { sed -n '2,9s/^# \{0,1\}//p' "$0"; }
-fail() { printf 'fm-auto-away: %s\n' "$1" >&2; exit 1; }
+# The watcher turns only check stdout into a wake, so a check reports there.
+fail() {
+  if [ "$CMD" = check ]; then printf 'auto-away check failed: %s\n' "$1"
+  else printf 'fm-auto-away: %s\n' "$1" >&2
+  fi
+  exit 1
+}
 
 # Parse values, never source configuration as shell code.
 read_config() {
@@ -82,9 +88,25 @@ now() {
 }
 
 local_date() { # <epoch> <format>
-  if [ "$_FM_UNAME" = Darwin ]; then date -r "$1" "$2"
-  else date -d "@$1" "$2"
+  date -d "@$1" "$2" 2>/dev/null || date -r "$1" "$2" 2>/dev/null
+}
+
+# Sets CLOCK_DUE=1 when the daily boundary passed since LAST.
+clock_due() {
+  local stamp clock today seconds boundary previous hour minute second
+  stamp=$(local_date "$NOW" '+%Y%m%d %H:%M %H %M %S') || return 1
+  read -r today clock hour minute second <<< "$stamp"
+  boundary="$today ${AT}"
+  if [[ "$clock" < "$AT" ]]; then
+    # Prior local noon is safely on the previous date on either side of a
+    # DST transition; subtracting 86400 near midnight need not be.
+    seconds=$((10#$hour * 3600 + 10#$minute * 60 + 10#$second))
+    previous=$(local_date "$((NOW - seconds - 43200))" '+%Y%m%d') || return 1
+    boundary="$previous ${AT}"
   fi
+  stamp=$(local_date "$LAST" '+%Y%m%d %H:%M') || return 1
+  [[ "$stamp" < "$boundary" ]] && CLOCK_DUE=1
+  return 0
 }
 
 read_activity() {
@@ -105,7 +127,7 @@ write_record() { # <path> <value>
 }
 
 due() {
-  local stamp clock today seconds boundary previous hour minute second
+  local CLOCK_DUE=0
   REASON=
   [ "$ENABLED" = on ] || return 1
   [ ! -e "$STATE/.afk-contract" ] && [ ! -e "$STATE/.afk" ] || return 1
@@ -113,18 +135,8 @@ due() {
   read_activity || return 1
   [ "$NOW" -ge "$LAST" ] || return 1
   if [ "$AT" != off ]; then
-    stamp=$(local_date "$NOW" '+%Y%m%d %H:%M %H %M %S') || return 1
-    read -r today clock hour minute second <<< "$stamp"
-    boundary="$today ${AT}"
-    if [[ "$clock" < "$AT" ]]; then
-      # Prior local noon is safely on the previous date on either side of a
-      # DST transition; subtracting 86400 near midnight need not be.
-      seconds=$((10#$hour * 3600 + 10#$minute * 60 + 10#$second))
-      previous=$(local_date "$((NOW - seconds - 43200))" '+%Y%m%d') || return 1
-      boundary="$previous ${AT}"
-    fi
-    stamp=$(local_date "$LAST" '+%Y%m%d %H:%M') || return 1
-    if [[ "$stamp" < "$boundary" ]]; then REASON=clock; return 0; fi
+    clock_due || CLOCK_ERROR='cannot convert epoch to local time; clock trigger skipped'
+    if [ "$CLOCK_DUE" = 1 ]; then REASON=clock; return 0; fi
   fi
   if [ "$SILENCE" -gt 0 ] && [ $((NOW - LAST)) -ge "$SILENCE" ]; then
     REASON=silence
@@ -178,7 +190,9 @@ arm() {
   printf 'armed: state/auto-away.check.sh\n'
 }
 
-case "${1:-check}" in
+CMD=${1:-check}
+CLOCK_ERROR=
+case "$CMD" in
   --help|-h|help) usage; exit 0 ;;
   arm) [ "$#" -eq 1 ] || { [ "$#" -eq 2 ] && [ "$2" = --session-start ]; } || { usage >&2; exit 2; } ;;
   check|captain-message) [ "$#" -le 1 ] || { usage >&2; exit 2; } ;;
@@ -218,10 +232,15 @@ case "${1:-check}" in
         write_record "$REQUEST" "$request" || fail 'cannot save entry request receipt'
       fi
     fi
+    [ -z "$CLOCK_ERROR" ] || fail "$CLOCK_ERROR"
     ;;
   enter)
     if due && [ "$LAST" = "$2" ]; then
-      FM_AFK_MODE=away "$SCRIPT_DIR/fm-afk-launch.sh" enter-auto
+      # A failed entry must not strand its receipt, or no later check retries.
+      if ! FM_AFK_MODE=away "$SCRIPT_DIR/fm-afk-launch.sh" enter-auto; then
+        [ "$(cat "$REQUEST" 2>/dev/null || true)" != "$2" ] || rm -f "$REQUEST"
+        exit 1
+      fi
     elif [ "$(cat "$REQUEST" 2>/dev/null || true)" = "$2" ]; then
       # A changed setting can invalidate a queued request without a new
       # message. Let its next real crossing publish a fresh request.

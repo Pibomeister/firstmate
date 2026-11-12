@@ -334,6 +334,21 @@ test_return_is_mode_agnostic_for_quiet_mode() {
   pass "/quiet off's return path behaves identically for a quiet-content flag as for a legacy away-content one"
 }
 
+test_return_continues_when_activity_stamp_fails() {
+  local dir out
+  dir="$TMP_ROOT/stamp-failure-return"
+  install_runner "$dir"
+  printf 'quiet\n%s\n' "$(date +%s)" > "$dir/home/state/.afk"
+  : > "$dir/home/state/.fake-drain"
+  mkdir "$dir/home/state/.captain-message-epoch"
+
+  out=$(run_return "$dir" begin 2>&1) || fail "an activity stamp failure aborted the return: $out"
+  assert_contains "$out" 'could not record automatic-away activity' "the stamp failure was not reported"
+  assert_contains "$out" 'catch-up clear' "the return did not finish after a stamp failure"
+  [ ! -e "$dir/home/state/.afk" ] || fail "a stamp failure left the away flag behind"
+  pass "an automatic-away activity stamp failure warns and the ordinary return still completes"
+}
+
 test_check_retries_recorded_terminal_teardown() {
   local dir gate out rc
   dir="$TMP_ROOT/terminal-teardown"
@@ -1529,6 +1544,7 @@ test_captain_decision_does_not_masquerade_as_firstmate_blocker
 test_evidence_publication_failure_preserves_wake_for_redrain
 test_away_reentry_refuses_pending_return_gate
 test_return_is_mode_agnostic_for_quiet_mode
+test_return_continues_when_activity_stamp_fails
 test_check_retries_recorded_terminal_teardown
 test_unreadable_superseded_archive_keeps_return_gated
 test_missing_final_archive_keeps_retained_contract_gated

@@ -84,7 +84,8 @@
 #                              the mandate. On Pi this is the whole entry.
 #   fm-afk-launch.sh enter-auto
 #                              The automatic trigger's entry: same as a plain
-#                              enter, but silent when any posture already exists.
+#                              enter with no words, but silent when any posture
+#                              already exists. It rejects every argument.
 #                              The launch lock makes this check atomic with
 #                              explicit /afk and /quiet entry.
 #   fm-afk-launch.sh start     Capture the captain pane, then (unless the daemon
@@ -1026,10 +1027,15 @@ fm_afk_launch_main() {
   case "${1:-start}" in
     enter) shift; fm_afk_launch_enter "$@" ;;
     enter-auto)
+      # Automatic entry carries no away words, so it accepts no arguments.
+      if [ "$#" -ne 1 ]; then
+        fm_afk_launch_log "enter-auto takes no arguments"
+        return 2
+      fi
       # Automatic entry must not refresh a manual entry or replace quiet mode.
       # This check runs under the same launch lock as every explicit entry.
       if [ ! -e "$FM_AFK_LAUNCH_STATE/.afk-contract" ] && [ ! -e "$FM_AFK_LAUNCH_STATE/.afk" ]; then
-        shift; fm_afk_launch_enter "$@"
+        fm_afk_launch_enter
       fi
       ;;
     propose|confirm)

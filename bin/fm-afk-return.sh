@@ -1009,7 +1009,8 @@ main() {
   # The ordinary return is genuine captain activity. Record it before lifting
   # the posture so the scheduler cannot immediately re-enter on the old stamp.
   if [ "$mode" = begin ]; then
-    "$SCRIPT_DIR/fm-auto-away.sh" captain-message || return 1
+    "$SCRIPT_DIR/fm-auto-away.sh" captain-message \
+      || printf 'fm-afk-return: warning: could not record automatic-away activity; continuing the return\n' >&2
   fi
   fm_lock_acquire_wait "$LOCK"
   trap 'fm_lock_release "$LOCK"' EXIT
