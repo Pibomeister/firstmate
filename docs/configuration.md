@@ -3583,6 +3583,7 @@ FM_CREW_STATE_NM_TIMEOUT=10   # seconds allowed per no-mistakes query inside fm-
 FM_CREW_STATE_PANE_TIMEOUT=3   # seconds bounding each backend pane read inside fm-crew-state.sh (the readability probe and the busy-state tail); a probe that hits the bound reads unknown with the endpoint unreachable; invalid or zero values use 3
 FM_TEARDOWN_NM_TIMEOUT=10    # seconds allowed per no-mistakes query or abort inside fm-teardown.sh
 FM_CREW_STATE_RUNS_LIMIT=200  # plain runs-ledger rows scanned for fallback attribution; does not change the CLI's AXI overview window (selection owner: bin/fm-nm-run-lib.sh)
+FM_NM_SNAPSHOT_TTL=5   # seconds a cached read-only no-mistakes state-database snapshot (state/.nm-status-snapshot.json) is reused across fm-crew-state.sh reads in one sweep; bin/fm-nm-run-lib.sh owns the schema guard and the fallback to the no-mistakes CLI
 FM_TEARDOWN_NM_RUNS_LIMIT=200  # recent no-mistakes run rows scanned to prove an unresolved-head parked run belongs to teardown's task
 FM_HEARTBEAT_BIN=bin/fm-heartbeat.sh     # test override for the ledger publisher the watcher's heartbeat ticker launches each cycle
 FM_CREW_STATE_BIN=bin/fm-crew-state.sh   # test override for the current-state reader used by watcher triage: the working/paused classification, the wedge timer's parked-gate wait evidence, and its opt-in validating-run deferral

@@ -748,3 +748,798 @@ fm_nm_runs_newest_for_branch() {  # <branch> <runs-list-output>
   done <<< "$list"
   return 0
 }
+
+# --- read-only SQLite status snapshot (one snapshot per supervision sweep) --
+# Reads <NM_HOME>/state.sqlite strictly read-only (?mode=ro + PRAGMA
+# query_only=ON) behind a schema-version and column-contract guard, caching
+# one short-lived snapshot across crewmate reads in a supervision sweep and
+# failing closed (returning 1) when the database is absent, unreadable,
+# corrupt, or uses an unknown schema version so callers fall back to the
+# daemon/CLI calls. Never creates or writes state.sqlite.
+# A capture reads only the worktree's own repository: its runs, plus step rows
+# for the newest and newest-active run of each branch. Each repository entry
+# and the repos map are reused until FM_NM_SNAPSHOT_TTL seconds old.
+# Active steps are marked quiet after <NM_HOME>/config.yaml's
+# step_quiet_warning (the CLI default 10m when absent); an unparseable or
+# non-positive value falls back to the CLI.
+FM_NM_SNAPSHOT_SCHEMA_VERSION=2
+FM_NM_SQLITE_USER_VERSION=0
+FM_NM_SNAPSHOT_TTL=${FM_NM_SNAPSHOT_TTL:-5}
+
+fm_nm_status_snapshot_path() {  # [state_dir]
+  if [ -n "${1:-}" ]; then
+    printf '%s/.nm-status-snapshot.json\n' "$1"
+  elif [ -n "${STATE:-}" ]; then
+    printf '%s/.nm-status-snapshot.json\n' "$STATE"
+  fi
+}
+
+# Populate NM_SNAPSHOT_STATUS_OUT, NM_SNAPSHOT_OVERVIEW_OUT,
+# NM_SNAPSHOT_SELECTED_ID, NM_SNAPSHOT_SELECTED_OUT, NM_SNAPSHOT_RUNS_LIST,
+# and NM_SNAPSHOT_CI_LOG for worktree $1 and branch $2 from the read-only
+# SQLite status snapshot. Returns 0 when the snapshot is valid and matched the
+# worktree's repository, or 1 on any schema-guard or read failure so the
+# caller falls back to the no-mistakes CLI.
+# shellcheck disable=SC2034 # Out-parameters read by callers (fm-crew-state.sh).
+fm_nm_snapshot_load_worktree() {  # <worktree> <branch> <timeout_secs> <runs_limit> [snapshot_file]
+  local wt=$1 branch=$2 timeout_secs=${3:-10} runs_limit=${4:-50} snapshot_file=${5:-}
+  local db_path out line section=""
+  NM_SNAPSHOT_STATUS_OUT=""
+  NM_SNAPSHOT_OVERVIEW_OUT=""
+  NM_SNAPSHOT_SELECTED_ID=""
+  NM_SNAPSHOT_SELECTED_OUT=""
+  NM_SNAPSHOT_RUNS_LIST=""
+  NM_SNAPSHOT_CI_LOG=""
+  case "$timeout_secs" in ''|*[!0-9]*) timeout_secs=10 ;; esac
+  case "$runs_limit" in ''|*[!0-9]*) runs_limit=50 ;; esac
+  db_path=$(fm_nm_state_db "$wt")
+  [ -f "$db_path" ] && [ -r "$db_path" ] || return 1
+  out=$(fm_nm_bounded "$wt" "$timeout_secs" python3 - \
+    "$wt" "$branch" "$runs_limit" "$snapshot_file" "$db_path" \
+    "$FM_NM_SNAPSHOT_SCHEMA_VERSION" "$FM_NM_SQLITE_USER_VERSION" "$FM_NM_SNAPSHOT_TTL" 2>/dev/null <<'PY'
+import datetime
+import fcntl
+import json
+import os
+import re
+import sqlite3
+import subprocess
+import sys
+import time
+from contextlib import closing
+from pathlib import Path
+
+wt, branch, runs_limit_s, snapshot_file, database, schema_ver_s, user_ver_s, ttl_s = sys.argv[1:]
+runs_limit = int(runs_limit_s)
+expected_schema_ver = int(schema_ver_s)
+expected_user_ver = int(user_ver_s)
+ttl = float(ttl_s)
+now = time.time()
+
+REQUIRED_COLUMNS = {
+    "repos": {"id", "working_path"},
+    "runs": {
+        "id", "repo_id", "branch", "status", "head_sha", "pr_url",
+        "gates_json", "error", "awaiting_agent_since", "created_at",
+    },
+    "step_results": {
+        "run_id", "step_name", "step_order", "status", "duration_ms",
+        "findings_json", "log_path", "last_activity_at", "last_activity",
+        "override_reason", "skip_reason",
+    },
+}
+KNOWN_RUN_STATUSES = {
+    "pending", "running", "fixing", "ci", "awaiting_approval",
+    "fix_review", "completed", "failed", "cancelled", "checks_passed_released",
+}
+KNOWN_STEP_STATUSES = {
+    "pending", "running", "fixing", "awaiting_approval", "fix_review",
+    "completed", "failed", "cancelled", "skipped",
+}
+CI_MARKER_RE = re.compile(
+    r"CI checks passed|repository declares no CI \(no_ci: true\)|"
+    r"no CI checks reported - still monitoring|no CI checks reported yet|"
+    r"checks failed|issues detected|CI checks running"
+)
+
+
+GATE_STEP_STATUSES = ("awaiting_approval", "fix_review")
+DEFAULT_STEP_QUIET_WARNING = "10m"
+GO_DURATION_UNITS = {
+    "ns": 1e-9, "us": 1e-6, "\u00b5s": 1e-6, "\u03bcs": 1e-6,
+    "ms": 1e-3, "s": 1.0, "m": 60.0, "h": 3600.0,
+}
+GO_DURATION_PART_RE = re.compile(r"([0-9]*\.?[0-9]+)(ns|us|\u00b5s|\u03bcs|ms|s|m|h)")
+
+
+def parse_go_duration(text: str) -> float:
+    text = text.strip()
+    if not text:
+        raise ValueError("empty duration")
+    pos, total = 0, 0.0
+    for m in GO_DURATION_PART_RE.finditer(text):
+        if m.start() != pos:
+            raise ValueError("invalid duration")
+        total += float(m.group(1)) * GO_DURATION_UNITS[m.group(2)]
+        pos = m.end()
+    if pos != len(text):
+        raise ValueError("invalid duration")
+    return total
+
+
+def load_step_quiet_warning(db_path: str) -> float:
+    value = DEFAULT_STEP_QUIET_WARNING
+    config_path = os.path.join(os.path.dirname(db_path), "config.yaml")
+    if os.path.isfile(config_path):
+        with open(config_path, "r", encoding="utf-8") as fh:
+            for raw in fh:
+                m = re.match(r"step_quiet_warning\s*:\s*(.*?)\s*(?:#.*)?$", raw.rstrip("\n"))
+                if m:
+                    value = m.group(1).strip().strip("\"'")
+    seconds = parse_go_duration(value)
+    if seconds <= 0:
+        raise ValueError("non-positive step_quiet_warning")
+    return seconds
+
+
+def is_fresh(captured_at, ref_now=None) -> bool:
+    if ttl < 0 or isinstance(captured_at, bool) or not isinstance(captured_at, (int, float)):
+        return False
+    cur = now if ref_now is None else ref_now
+    age = cur - float(captured_at)
+    return -60 <= age <= ttl
+
+
+def load_cached_snapshot(snap_path: str, db_real: str):
+    if not snap_path or not os.path.isfile(snap_path):
+        return None
+    try:
+        with open(snap_path, "r", encoding="utf-8") as fh:
+            snap = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if (not isinstance(snap, dict)
+            or snap.get("schema_version") != expected_schema_ver
+            or snap.get("db_user_version") != expected_user_ver
+            or snap.get("db_path") != db_real
+            or not isinstance(snap.get("repos"), dict)
+            or not isinstance(snap.get("repo_snapshots"), dict)):
+        return None
+    return snap
+
+
+def summarize_findings(findings_json: str, gate: bool):
+    try:
+        items = parse_findings_list(findings_json)
+    except (ValueError, TypeError):
+        return None, None
+    return len(items), (items if gate else [])
+
+
+def capture_repo_from_sqlite(db_real: str):
+    uri = Path(db_real).as_uri() + "?mode=ro"
+    with closing(sqlite3.connect(uri, uri=True, timeout=30)) as db:
+        db.execute("PRAGMA query_only = ON")
+        db.execute("BEGIN")
+        u_row = db.execute("PRAGMA user_version").fetchone()
+        if not u_row or not isinstance(u_row[0], int) or u_row[0] != expected_user_ver:
+            raise ValueError("schema user_version mismatch")
+        for tbl_row in db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('schema_version', 'schema_migrations')"
+        ).fetchall():
+            tname = tbl_row[0]
+            v_rows = db.execute(f"SELECT * FROM {tname}").fetchall()
+            for v_row in v_rows:
+                if v_row and str(v_row[0]) != str(expected_user_ver):
+                    raise ValueError("schema version table mismatch")
+        for table_name, req_cols in REQUIRED_COLUMNS.items():
+            cols = {
+                row[1]
+                for row in db.execute(f"PRAGMA table_info({table_name})").fetchall()
+                if len(row) > 1 and isinstance(row[1], str)
+            }
+            if not req_cols.issubset(cols):
+                raise ValueError(f"missing required columns on {table_name}")
+        repos = {}
+        for repo_id, working_path in db.execute("SELECT id, working_path FROM repos").fetchall():
+            if not isinstance(repo_id, str) or not isinstance(working_path, str) or not working_path:
+                raise ValueError("invalid repo row")
+            repos[repo_id] = working_path
+
+        repo_id = resolve_repo_id(repos, db)
+        if not repo_id:
+            return repos, None, None
+
+        runs = []
+        newest_by_branch = {}
+        newest_active_by_branch = {}
+        for r in db.execute(
+            "SELECT id, branch, status, head_sha, pr_url, gates_json, "
+            "error, awaiting_agent_since, created_at "
+            "FROM runs WHERE repo_id = ? ORDER BY created_at DESC, id DESC",
+            (repo_id,),
+        ).fetchall():
+            rid, br, st, head_sha, pr_url, gates_json, err, awaiting, created_at = r
+            runs.append({
+                "id": rid,
+                "repo_id": repo_id,
+                "branch": br,
+                "status": st,
+                "head_sha": head_sha,
+                "pr_url": pr_url if isinstance(pr_url, str) else "",
+                "gates_json": gates_json if isinstance(gates_json, str) else "",
+                "error": err if isinstance(err, str) else "",
+                "awaiting_agent_since": int(awaiting) if isinstance(awaiting, int) else 0,
+                "created_at": created_at,
+            })
+            if isinstance(rid, str) and isinstance(br, str):
+                newest_by_branch.setdefault(br, rid)
+                if isinstance(st, str) and overview_status_word(st) in ("pending", "running"):
+                    newest_active_by_branch.setdefault(br, rid)
+
+        rendered_ids = sorted(set(newest_by_branch.values()) | set(newest_active_by_branch.values()))
+        steps_by_run = {rid: [] for rid in rendered_ids}
+        for start in range(0, len(rendered_ids), 500):
+            part = rendered_ids[start:start + 500]
+            for srow in db.execute(
+                "SELECT run_id, step_name, step_order, status, duration_ms, findings_json, "
+                "log_path, last_activity_at, last_activity, override_reason, skip_reason "
+                f"FROM step_results WHERE run_id IN ({','.join('?' * len(part))}) "
+                "ORDER BY run_id, step_order ASC",
+                part,
+            ).fetchall():
+                sstatus = srow[3] if isinstance(srow[3], str) else ""
+                fcount, gate_findings = summarize_findings(
+                    srow[5] if isinstance(srow[5], str) else "", sstatus in GATE_STEP_STATUSES
+                )
+                steps_by_run[srow[0]].append({
+                    "step_name": srow[1] if isinstance(srow[1], str) else "",
+                    "step_order": int(srow[2]) if isinstance(srow[2], int) else 0,
+                    "status": sstatus,
+                    "duration_ms": int(srow[4]) if isinstance(srow[4], int) and srow[4] >= 0 else 0,
+                    "findings_count": fcount,
+                    "gate_findings": gate_findings,
+                    "log_path": srow[6] if isinstance(srow[6], str) else "",
+                    "last_activity_at": int(srow[7]) if isinstance(srow[7], int) else 0,
+                    "last_activity": srow[8] if isinstance(srow[8], str) else "",
+                    "override_reason": srow[9] if isinstance(srow[9], str) else "",
+                    "skip_reason": srow[10] if isinstance(srow[10], str) else "",
+                })
+        for run in runs:
+            if run["id"] in steps_by_run:
+                run["steps"] = steps_by_run[run["id"]]
+
+    return repos, repo_id, runs
+
+
+def write_snapshot_atomic(snap_path: str, snap: dict) -> None:
+    if not snap_path:
+        return
+    tmp_path = ""
+    try:
+        parent = os.path.dirname(snap_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        tmp_path = f"{snap_path}.tmp.{os.getpid()}"
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            json.dump(snap, fh, ensure_ascii=False)
+        os.replace(tmp_path, snap_path)
+    except OSError:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
+def git_out(args):
+    try:
+        res = subprocess.run(
+            ["git", "-C", wt] + args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if res.returncode == 0:
+            return res.stdout.strip()
+    except Exception:
+        pass
+    return ""
+
+
+WT_CANDIDATES = None
+
+
+def get_worktree_candidates():
+    global WT_CANDIDATES
+    if WT_CANDIDATES is not None:
+        return WT_CANDIDATES
+    candidates = []
+    def add_cand(p):
+        if not p:
+            return
+        for v in (p, os.path.realpath(p)):
+            if v and v not in candidates:
+                candidates.append(v)
+
+    top = git_out(["rev-parse", "--show-toplevel"])
+    add_cand(top)
+    add_cand(wt)
+    common = git_out(["rev-parse", "--git-common-dir"])
+    if common:
+        if not os.path.isabs(common):
+            common = os.path.normpath(os.path.join(top or wt, common))
+        if os.path.basename(os.path.normpath(common)) == ".git":
+            add_cand(os.path.dirname(os.path.normpath(common)))
+    wt_list = git_out(["worktree", "list", "--porcelain"])
+    if wt_list:
+        for line in wt_list.splitlines():
+            if line.startswith("worktree "):
+                add_cand(line[9:].strip())
+                break
+    WT_CANDIDATES = candidates
+    return WT_CANDIDATES
+
+
+def connect_ro(db_real: str):
+    uri = Path(db_real).as_uri() + "?mode=ro"
+    db = sqlite3.connect(uri, uri=True, timeout=30)
+    try:
+        db.execute("PRAGMA query_only = ON")
+    except sqlite3.Error:
+        db.close()
+        raise
+    return db
+
+
+def nm_layout_repo_ids():
+    paths = []
+    for cand in get_worktree_candidates():
+        if cand:
+            paths.append(cand)
+    common = git_out(["rev-parse", "--git-common-dir"])
+    if common:
+        if not os.path.isabs(common):
+            top = git_out(["rev-parse", "--show-toplevel"]) or wt
+            common = os.path.normpath(os.path.join(top, common))
+        paths.append(common)
+        try:
+            paths.append(os.path.realpath(common))
+        except OSError:
+            pass
+    ids = []
+    for path in paths:
+        parts = os.path.normpath(path).split(os.sep)
+        for i, part in enumerate(parts):
+            rid = ""
+            if part == "worktrees" and i + 2 < len(parts):
+                rid = parts[i + 1]
+            elif part == "repos" and i + 1 < len(parts):
+                name = parts[i + 1]
+                if name.endswith(".git") and name != ".git":
+                    rid = name[:-4]
+            if rid and rid not in ids:
+                ids.append(rid)
+    return ids
+
+
+def worktree_dir_confirms(db, repo_id: str) -> bool:
+    cols = {
+        row[1]
+        for row in db.execute("PRAGMA table_info(runs)").fetchall()
+        if len(row) > 1 and isinstance(row[1], str)
+    }
+    if "worktree_dir" not in cols:
+        return False
+    cand = set()
+    for path in get_worktree_candidates():
+        if not path:
+            continue
+        cand.add(os.path.normpath(path))
+        try:
+            cand.add(os.path.realpath(path))
+        except OSError:
+            pass
+    if not cand:
+        return False
+    for (wdir,) in db.execute(
+        "SELECT worktree_dir FROM runs WHERE repo_id = ? AND worktree_dir IS NOT NULL AND worktree_dir != ''",
+        (repo_id,),
+    ):
+        if not isinstance(wdir, str) or not wdir:
+            continue
+        if os.path.normpath(wdir) in cand:
+            return True
+        try:
+            if os.path.realpath(wdir) in cand:
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def resolve_repo_id(repos_map: dict, db=None):
+    candidates = get_worktree_candidates()
+    by_exact = {}
+    by_real = {}
+    for rid, wpath in repos_map.items():
+        by_exact.setdefault(wpath, []).append(rid)
+        by_real.setdefault(os.path.realpath(wpath), []).append(rid)
+
+    ambiguous = False
+    for cand in candidates:
+        exact = by_exact.get(cand, [])
+        if len(exact) > 1:
+            ambiguous = True
+        elif len(exact) == 1:
+            return exact[0]
+        real = by_real.get(cand, [])
+        if len(real) > 1:
+            ambiguous = True
+        elif len(real) == 1:
+            return real[0]
+    if ambiguous or db is None:
+        return None
+    ids = nm_layout_repo_ids()
+    if len(ids) != 1 or ids[0] not in repos_map:
+        return None
+    if not worktree_dir_confirms(db, ids[0]):
+        return None
+    return ids[0]
+
+
+def parse_findings_list(findings_json: str):
+    if not findings_json:
+        return []
+    data = json.loads(findings_json)
+    if isinstance(data, dict):
+        items = data.get("findings")
+        if items is None:
+            return []
+        if not isinstance(items, list):
+            raise ValueError("invalid findings list")
+        return items
+    if isinstance(data, list):
+        return data
+    raise ValueError("invalid findings_json")
+
+
+def clean_scalar(val: str) -> str:
+    return val.replace("\r", " ").replace("\n", " ").replace(",", "_").strip()
+
+
+def format_run_detail(run: dict) -> str:
+    rid = run["id"]
+    br = run["branch"]
+    raw_st = run["status"]
+    if raw_st not in KNOWN_RUN_STATUSES:
+        raise ValueError("invalid run row")
+    st = "completed" if raw_st == "checks_passed_released" else raw_st
+    head_sha = run["head_sha"]
+    pr_url = run.get("pr_url") or ""
+    awaiting = int(run.get("awaiting_agent_since") or 0)
+    steps = run.get("steps")
+    if not isinstance(steps, list):
+        raise ValueError("run steps not captured")
+    gates_json = run.get("gates_json") or ""
+
+    lines = [
+        f'id: {json.dumps(rid, ensure_ascii=False)}',
+        f'branch: {json.dumps(br, ensure_ascii=False)}',
+        f'status: {json.dumps(st, ensure_ascii=False)}',
+    ]
+
+    gate_step = ""
+    gate_status = ""
+    gate_findings = []
+    for s in steps:
+        sname = s.get("step_name") or ""
+        sst = s.get("status") or ""
+        if sst not in KNOWN_STEP_STATUSES or not sname:
+            raise ValueError("invalid step row")
+        if not isinstance(s.get("findings_count"), int):
+            raise ValueError("invalid findings_json")
+        if not gate_step and sst in GATE_STEP_STATUSES:
+            gate_step = sname
+            gate_status = sst
+            gate_findings = s.get("gate_findings")
+            if not isinstance(gate_findings, list):
+                raise ValueError("invalid findings_json")
+
+    if not gate_step and gates_json and gates_json not in ("{}", "[]"):
+        gdata = json.loads(gates_json)
+        if isinstance(gdata, dict):
+            gate_step = str(gdata.get("step") or "")
+            gate_status = str(gdata.get("status") or "")
+            if isinstance(gdata.get("findings"), list):
+                gate_findings = gdata["findings"]
+
+    is_terminal = raw_st in ("completed", "failed", "cancelled", "checks_passed_released")
+    if not is_terminal and (awaiting > 0 or gate_step or gate_status in ("awaiting_approval", "fix_review")):
+        if awaiting > 0:
+            lines.append("awaiting_agent: parked")
+
+    lines.append(f'head: {json.dumps(head_sha[:8], ensure_ascii=False)}')
+    lines.append(f'head_sha: {json.dumps(head_sha, ensure_ascii=False)}')
+    if pr_url:
+        lines.append(f'pr: {json.dumps(pr_url, ensure_ascii=False)}')
+
+    if is_terminal:
+        if raw_st == "failed":
+            outcome = "failed"
+        elif raw_st == "cancelled":
+            outcome = "cancelled"
+        elif raw_st == "checks_passed_released":
+            outcome = "checks-passed"
+        else:
+            has_override = any(bool((s.get("override_reason") or "").strip()) for s in steps)
+            has_skip = any(
+                (s.get("step_name") in ("pr", "ci"))
+                and s.get("status") == "skipped"
+                and bool((s.get("skip_reason") or "").strip())
+                for s in steps
+            )
+            if has_override:
+                outcome = "passed-with-override"
+            elif has_skip:
+                outcome = "passed-with-skips"
+            else:
+                outcome = "passed"
+        lines.append(f"outcome: {outcome}")
+
+    if steps:
+        lines.append(f"steps[{len(steps)}]{{step,status,findings,duration_ms}}:")
+        for s in steps:
+            dur = int(s.get("duration_ms") or 0)
+            lines.append(f'  {clean_scalar(s["step_name"])},{clean_scalar(s["status"])},{s["findings_count"]},{dur}')
+
+    active_steps = [s for s in steps if s.get("status") in ("running", "fixing")]
+    if active_steps and not is_terminal:
+        lines.append(f"active_steps[{len(active_steps)}]{{step,status,round,last_activity}}:")
+        for s in active_steps:
+            last_act = (s.get("last_activity") or "").replace("\r", " ").replace("\n", " ").strip()
+            last_at = int(s.get("last_activity_at") or 0)
+            if "quiet" not in last_act and last_at > 0 and (now - last_at) > step_quiet_after:
+                last_act = f"quiet: {last_act or 'running'}"
+            elif not last_act:
+                last_act = "running"
+            lines.append(
+                f'  {clean_scalar(s["step_name"])},{clean_scalar(s["status"])},starting,{json.dumps(last_act, ensure_ascii=False)}'
+            )
+
+    if not is_terminal and (gate_step or gate_status in ("awaiting_approval", "fix_review")):
+        lines.append("gate:")
+        if gate_step:
+            lines.append(f'  step: {json.dumps(gate_step, ensure_ascii=False)}')
+        if gate_status:
+            lines.append(f'  status: {json.dumps(gate_status, ensure_ascii=False)}')
+        if gate_findings:
+            lines.append(f"  findings[{len(gate_findings)}]{{id,severity,file,action,description}}:")
+            for idx, f in enumerate(gate_findings, 1):
+                if not isinstance(f, dict):
+                    continue
+                fid = clean_scalar(str(f.get("id") or f"f{idx}"))
+                sev = clean_scalar(str(f.get("severity") or "warning"))
+                ffile = clean_scalar(str(f.get("file") or ""))
+                raw_act = f.get("action")
+                if raw_act is None:
+                    raw_act = f.get("authority") or ""
+                act = clean_scalar(str(raw_act))
+                desc = str(f.get("description") or "").replace("\r", " ").replace("\n", " ").strip()
+                lines.append(f'    {fid},{sev},{ffile},{act},{json.dumps(desc, ensure_ascii=False)}')
+
+    return "\n".join(lines)
+
+
+def overview_status_word(raw_st: str) -> str:
+    if raw_st == "checks_passed_released":
+        return "completed"
+    if raw_st in ("fixing", "ci", "awaiting_approval", "fix_review"):
+        return "running"
+    return raw_st
+
+
+def format_created_at(val) -> str:
+    if isinstance(val, (int, float)) or (isinstance(val, str) and re.fullmatch(r"[0-9]+", val.strip())):
+        ts = int(val)
+        dt = datetime.datetime.fromtimestamp(ts)
+        return dt.strftime("%Y-%m-%d %H:%M")
+    if isinstance(val, str):
+        m = re.match(r"^([0-9]{4}-[0-9]{2}-[0-9]{2})[T ]([0-9]{2}:[0-9]{2})", val.strip())
+        if m:
+            return f"{m.group(1)} {m.group(2)}"
+    raise ValueError("invalid created_at")
+
+
+def read_ci_log_for_run(run: dict, db_real: str) -> str:
+    if not run:
+        return ""
+    nm_home = os.path.dirname(db_real)
+    candidates = []
+    for s in run.get("steps") or []:
+        if s.get("step_name") == "ci":
+            lp = (s.get("log_path") or "").strip()
+            if lp:
+                candidates.append(lp)
+    default_log = os.path.join(nm_home, "logs", run["id"], "ci.log")
+    if default_log not in candidates:
+        candidates.append(default_log)
+    for path in candidates:
+        if not os.path.exists(path):
+            continue
+        if not os.path.isfile(path) or not os.access(path, os.R_OK):
+            return ""
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                matched = [ln.rstrip("\r\n") for ln in fh if CI_MARKER_RE.search(ln)]
+            if matched:
+                return matched[-1]
+        except OSError:
+            return ""
+    return ""
+
+
+try:
+    step_quiet_after = load_step_quiet_warning(database)
+    db_real = os.path.realpath(database)
+    get_worktree_candidates()
+    repos = None
+    repo_id = None
+    repo_runs = None
+    lock_fh = None
+    try:
+        if snapshot_file:
+            try:
+                parent = os.path.dirname(snapshot_file)
+                if parent:
+                    os.makedirs(parent, exist_ok=True)
+                lock_fh = open(f"{snapshot_file}.lock", "a+", encoding="utf-8")
+                fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+            except OSError:
+                if lock_fh is not None:
+                    lock_fh.close()
+                    lock_fh = None
+        now = time.time()
+        snap = load_cached_snapshot(snapshot_file, db_real)
+        if snap is not None and is_fresh(snap.get("repos_captured_at"), now):
+            cached_id = resolve_repo_id(snap["repos"])
+            if not cached_id:
+                try:
+                    with closing(connect_ro(db_real)) as confirm_db:
+                        cached_id = resolve_repo_id(snap["repos"], confirm_db)
+                except (sqlite3.Error, OSError, ValueError):
+                    cached_id = None
+            entry = snap["repo_snapshots"].get(cached_id) if cached_id else None
+            if isinstance(entry, dict) and is_fresh(entry.get("captured_at"), now) and isinstance(entry.get("runs"), list):
+                repos, repo_id, repo_runs = snap["repos"], cached_id, entry["runs"]
+        if repo_runs is None:
+            repos, repo_id, repo_runs = capture_repo_from_sqlite(db_real)
+            if not repo_id:
+                sys.exit(1)
+            now = time.time()
+            snap = load_cached_snapshot(snapshot_file, db_real)
+            kept = {}
+            if snap is not None:
+                for kid, kentry in snap["repo_snapshots"].items():
+                    if kid != repo_id and kid in repos and isinstance(kentry, dict) and is_fresh(kentry.get("captured_at"), now):
+                        kept[kid] = kentry
+            kept[repo_id] = {"captured_at": now, "runs": repo_runs}
+            write_snapshot_atomic(snapshot_file, {
+                "schema_version": expected_schema_ver,
+                "db_user_version": expected_user_ver,
+                "db_path": db_real,
+                "repos_captured_at": now,
+                "repos": repos,
+                "repo_snapshots": kept,
+            })
+    finally:
+        if lock_fh is not None:
+            try:
+                fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+            lock_fh.close()
+    repo_path = repos[repo_id]
+
+    for r in repo_runs:
+        rid = r.get("id")
+        br = r.get("branch")
+        st = r.get("status")
+        head_sha = r.get("head_sha")
+        if (not isinstance(rid, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", rid)
+                or not isinstance(br, str) or not br
+                or not isinstance(st, str) or not re.fullmatch(r"[a-z_-]+", st)
+                or st not in KNOWN_RUN_STATUSES
+                or not isinstance(head_sha, str) or not re.fullmatch(r"[a-fA-F0-9]{7,40}", head_sha)):
+            raise ValueError("invalid run row")
+
+    overview_lines = [
+        f"repo: {json.dumps(repo_path, ensure_ascii=False)}",
+        f"count: {len(repo_runs)} of {len(repo_runs)} total",
+        f"runs[{len(repo_runs)}]{{id,branch,status,head,pr}}:",
+    ]
+    for r in repo_runs:
+        ov_st = overview_status_word(r["status"])
+        row_vals = [r["id"], r["branch"], ov_st, r["head_sha"], r.get("pr_url") or ""]
+        overview_lines.append("  " + ",".join(json.dumps(v, ensure_ascii=False) for v in row_vals))
+    overview_out = "\n".join(overview_lines)
+
+    branch_runs = [r for r in repo_runs if r["branch"] == branch]
+    if not branch_runs:
+        status_out = f"current_branch: {json.dumps(branch, ensure_ascii=False)}\nruns_on_current_branch: 0"
+        selected_id = ""
+        selected_out = ""
+        ci_log_out = ""
+    else:
+        selected_run = branch_runs[0]
+        selected_id = selected_run["id"]
+        selected_out = format_run_detail(selected_run)
+        active_branch_runs = [
+            r for r in branch_runs
+            if overview_status_word(r["status"]) in ("pending", "running")
+        ]
+        status_run = active_branch_runs[0] if active_branch_runs else selected_run
+        status_out = format_run_detail(status_run)
+        ci_log_out = read_ci_log_for_run(selected_run, db_real)
+
+    runs_list_lines = []
+    for r in repo_runs[:runs_limit]:
+        ov_st = overview_status_word(r["status"])
+        br = r["branch"]
+        sha7 = r["head_sha"][:7]
+        dt_str = format_created_at(r.get("created_at"))
+        pr = (r.get("pr_url") or "").strip()
+        if pr.startswith("https://"):
+            runs_list_lines.append(f"{ov_st} {br} {sha7} {dt_str} {pr}")
+        else:
+            runs_list_lines.append(f"{ov_st} {br} {sha7} {dt_str}")
+    runs_list_out = "\n".join(runs_list_lines)
+
+    print("__FM_NM_SECTION_STATUS__")
+    if status_out:
+        print(status_out)
+    print("__FM_NM_SECTION_OVERVIEW__")
+    if overview_out:
+        print(overview_out)
+    print("__FM_NM_SECTION_SELECTED_ID__")
+    if selected_id:
+        print(selected_id)
+    print("__FM_NM_SECTION_SELECTED__")
+    if selected_out:
+        print(selected_out)
+    print("__FM_NM_SECTION_RUNS_LIST__")
+    if runs_list_out:
+        print(runs_list_out)
+    print("__FM_NM_SECTION_CI_LOG__")
+    if ci_log_out:
+        print(ci_log_out)
+    print("__FM_NM_SECTION_END__")
+except Exception:
+    sys.exit(1)
+PY
+  ) || return 1
+
+  while IFS= read -r line; do
+    case "$line" in
+      __FM_NM_SECTION_STATUS__) section=status; continue ;;
+      __FM_NM_SECTION_OVERVIEW__) section=overview; continue ;;
+      __FM_NM_SECTION_SELECTED_ID__) section=selected_id; continue ;;
+      __FM_NM_SECTION_SELECTED__) section=selected; continue ;;
+      __FM_NM_SECTION_RUNS_LIST__) section=runs_list; continue ;;
+      __FM_NM_SECTION_CI_LOG__) section=ci_log; continue ;;
+      __FM_NM_SECTION_END__) section=end; break ;;
+    esac
+    case "$section" in
+      status) NM_SNAPSHOT_STATUS_OUT="${NM_SNAPSHOT_STATUS_OUT:+$NM_SNAPSHOT_STATUS_OUT$'\n'}$line" ;;
+      overview) NM_SNAPSHOT_OVERVIEW_OUT="${NM_SNAPSHOT_OVERVIEW_OUT:+$NM_SNAPSHOT_OVERVIEW_OUT$'\n'}$line" ;;
+      selected_id) NM_SNAPSHOT_SELECTED_ID="$line" ;;
+      selected) NM_SNAPSHOT_SELECTED_OUT="${NM_SNAPSHOT_SELECTED_OUT:+$NM_SNAPSHOT_SELECTED_OUT$'\n'}$line" ;;
+      runs_list) NM_SNAPSHOT_RUNS_LIST="${NM_SNAPSHOT_RUNS_LIST:+$NM_SNAPSHOT_RUNS_LIST$'\n'}$line" ;;
+      ci_log) NM_SNAPSHOT_CI_LOG="${NM_SNAPSHOT_CI_LOG:+$NM_SNAPSHOT_CI_LOG$'\n'}$line" ;;
+    esac
+  done <<< "$out"
+  [ "$section" = end ] || return 1
+  return 0
+}

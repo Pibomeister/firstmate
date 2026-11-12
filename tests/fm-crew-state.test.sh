@@ -6769,6 +6769,777 @@ test_captured_completed_history() {
   pass 'captured completed status yields to synthetic subsequent development'
 }
 
+init_full_nm_sqlite() {  # <sqlite_path> <repo_working_path> <head_a> [head_b]
+  python3 - "$1" "$2" "$3" "${4:-}" <<'PY'
+import json
+import os
+import sqlite3
+import sys
+
+db_path, repo_path, head_a, head_b = sys.argv[1:]
+with sqlite3.connect(db_path) as db:
+    db.execute("PRAGMA user_version = 0")
+    db.execute("""
+        CREATE TABLE repos (
+            id TEXT PRIMARY KEY,
+            working_path TEXT NOT NULL,
+            upstream_url TEXT,
+            fork_url TEXT,
+            default_branch TEXT,
+            created_at INTEGER
+        )
+    """)
+    db.execute("""
+        CREATE TABLE runs (
+            id TEXT PRIMARY KEY,
+            repo_id TEXT NOT NULL,
+            branch TEXT NOT NULL,
+            head_sha TEXT NOT NULL,
+            base_sha TEXT,
+            worktree_dir TEXT,
+            submitted_head_sha TEXT,
+            no_mistakes_version TEXT,
+            no_mistakes_build_sha TEXT,
+            review_approved_head_sha TEXT,
+            status TEXT NOT NULL,
+            pr_url TEXT,
+            pr_state TEXT,
+            pr_state_observed_at INTEGER,
+            ci_ready_at INTEGER,
+            ci_ready_no_ci INTEGER,
+            last_pushed_sha TEXT,
+            push_target_kind TEXT,
+            push_target_fingerprint TEXT,
+            push_ref TEXT,
+            last_pushed_at INTEGER,
+            push_generation INTEGER,
+            push_active INTEGER,
+            terminal_head_verified_at INTEGER,
+            gates_json TEXT,
+            error TEXT,
+            awaiting_agent_since INTEGER,
+            parked_ms INTEGER,
+            launch_nonce TEXT,
+            launch_validation_generation INTEGER,
+            launch_intent_digest TEXT,
+            launch_receipt_claimed_at INTEGER,
+            pr_base_branch TEXT,
+            pi_profile TEXT,
+            created_at INTEGER,
+            updated_at INTEGER,
+            intent TEXT,
+            intent_source TEXT,
+            intent_session_id TEXT,
+            intent_score INTEGER,
+            ci_rerun_state TEXT,
+            custody_returned_at INTEGER,
+            verification_plan TEXT,
+            omit_intent INTEGER
+        )
+    """)
+    db.execute("""
+        CREATE TABLE step_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id TEXT NOT NULL,
+            step_name TEXT NOT NULL,
+            step_order INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            exit_code INTEGER,
+            duration_ms INTEGER,
+            log_path TEXT,
+            findings_json TEXT,
+            error TEXT,
+            started_at INTEGER,
+            round_started_at INTEGER,
+            completed_at INTEGER,
+            last_activity_at INTEGER,
+            last_activity TEXT,
+            agent_pid INTEGER,
+            auto_fix_limit INTEGER,
+            ci_fix_attempts INTEGER,
+            override_reason TEXT,
+            skip_reason TEXT,
+            approval_reason TEXT
+        )
+    """)
+    db.execute(
+        "INSERT INTO repos (id, working_path, default_branch, created_at) VALUES (?, ?, 'main', 1775000000)",
+        ("repo-1", repo_path),
+    )
+    findings_a = json.dumps({
+        "findings": [{
+            "id": "scope-check",
+            "severity": "warning",
+            "file": "bin/fm-crew-state.sh",
+            "action": "ask-user",
+            "description": "Confirm scope with captain",
+        }]
+    })
+    db.execute(
+        "INSERT INTO runs (id, repo_id, branch, head_sha, status, pr_url, gates_json, error, awaiting_agent_since, created_at) "
+        "VALUES (?, 'repo-1', 'fm/ship-a', ?, 'running', '', '', '', 1775000100, 1775000100)",
+        ("01M7SNAPSHOTA0000000000001", head_a),
+    )
+    db.executemany(
+        "INSERT INTO step_results (run_id, step_name, step_order, status, duration_ms, findings_json, log_path, last_activity_at, last_activity, override_reason, skip_reason) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', '')",
+        [
+            ("01M7SNAPSHOTA0000000000001", "intent", 1, "completed", 120, "", "", 1775000101, "status: completed"),
+            ("01M7SNAPSHOTA0000000000001", "review", 2, "awaiting_approval", 4500, findings_a, "", 1775000105, "awaiting approval"),
+            ("01M7SNAPSHOTA0000000000001", "test", 3, "pending", 0, "", "", 0, ""),
+        ],
+    )
+    if head_b:
+        db.execute(
+            "INSERT INTO runs (id, repo_id, branch, head_sha, status, pr_url, gates_json, error, awaiting_agent_since, created_at) "
+            "VALUES (?, 'repo-1', 'fm/ship-b', ?, 'running', 'https://github.com/org/repo/pull/42', '', '', 0, 1775000200)",
+            ("01M7SNAPSHOTB0000000000002", head_b),
+        )
+        db.executemany(
+            "INSERT INTO step_results (run_id, step_name, step_order, status, duration_ms, findings_json, log_path, last_activity_at, last_activity, override_reason, skip_reason) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', '')",
+            [
+                ("01M7SNAPSHOTB0000000000002", "intent", 1, "completed", 100, "", "", 1775000201, "status: completed"),
+                ("01M7SNAPSHOTB0000000000002", "review", 2, "completed", 2100, "", "", 1775000203, "status: completed"),
+                ("01M7SNAPSHOTB0000000000002", "pr", 3, "completed", 900, "", "", 1775000204, "status: completed"),
+                ("01M7SNAPSHOTB0000000000002", "ci", 4, "running", 0, "", "", 1775000205, "log: all CI checks passed - still monitoring until merged or closed"),
+            ],
+        )
+        ci_log_dir = os.path.join(os.path.dirname(db_path), "logs", "01M7SNAPSHOTB0000000000002")
+        os.makedirs(ci_log_dir, exist_ok=True)
+        with open(os.path.join(ci_log_dir, "ci.log"), "w", encoding="utf-8") as fh:
+            fh.write("[ci] all CI checks passed - still monitoring until merged or closed\n")
+PY
+}
+
+test_status_snapshot_readonly_and_shared_across_sweep() {
+  local d=$TMP_ROOT/snap-sweep head_a head_b before after out_a out_b out_a2 snap_cap_1 snap_cap_2 snap_cap_3
+  reset_fakes
+  mkdir -p "$d/state"
+  make_repo_on_branch "$d/wt" fm/ship-a
+  make_repo_on_branch "$d/wt-b" fm/ship-b
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/snap-sweep.meta" "window=fm:fm-snap-sweep" "worktree=$d/wt" "kind=ship"
+  fm_write_meta "$d/state/ship-b.meta" "window=fm:fm-ship-b" "worktree=$d/wt-b" "kind=ship"
+  printf 'working [at=1700000000]: validating\n' > "$d/state/snap-sweep.status"
+  printf 'working [at=1700000000]: validating\n' > "$d/state/ship-b.status"
+
+  NM_HOME="$d/nm-home"
+  export NM_HOME
+  mkdir -p "$NM_HOME"
+  head_a=$(git -C "$d/wt" rev-parse HEAD)
+  head_b=$(git -C "$d/wt-b" rev-parse HEAD)
+  init_full_nm_sqlite "$NM_HOME/state.sqlite" "$d/wt" "$head_a" "$head_b"
+  python3 - "$NM_HOME/state.sqlite" "$d/wt-b" <<'PY'
+import sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as db:
+    db.execute("INSERT INTO repos (id, working_path, default_branch, created_at) VALUES ('repo-2', ?, 'main', 1775000000)", (sys.argv[2],))
+    db.execute("UPDATE runs SET repo_id = 'repo-2' WHERE id = '01M7SNAPSHOTB0000000000002'")
+PY
+
+  # Fail if no-mistakes CLI is invoked at all during the snapshot-backed sweep.
+  cat > "$d/fakebin/no-mistakes" <<'EOF'
+#!/usr/bin/env bash
+echo "unexpected-cli-call: $*" >> "${FM_NM_CLI_LOG}"
+exit 99
+EOF
+  chmod +x "$d/fakebin/no-mistakes"
+  export FM_NM_CLI_LOG="$d/nm-cli.log"
+
+  chmod 0444 "$NM_HOME/state.sqlite"
+  before=$(git hash-object "$NM_HOME/state.sqlite")
+  FM_NM_SNAPSHOT_TTL=60
+  # A loaded host can push one bounded snapshot read past the default 10 s
+  # bound, which correctly falls back to the CLI; widen the bound so this
+  # sweep proves cache reuse rather than host speed.
+  FM_CREW_STATE_NM_TIMEOUT=120
+  export FM_NM_SNAPSHOT_TTL FM_CREW_STATE_NM_TIMEOUT
+  local repo_cap='import json,sys; print(json.load(open(sys.argv[1]))["repo_snapshots"][sys.argv[2]]["captured_at"])'
+
+  out_a=$(run_crew_state "$d" snap-sweep)
+  [ ! -e "$d/nm-cli.log" ] || fail "status snapshot invoked no-mistakes CLI on first read"
+  [ -f "$d/state/.nm-status-snapshot.json" ] || fail "status snapshot file was not written"
+  snap_cap_1=$(python3 -c "$repo_cap" "$d/state/.nm-status-snapshot.json" repo-1)
+
+  out_b=$(run_crew_state "$d" ship-b)
+  [ ! -e "$d/nm-cli.log" ] || fail "status snapshot invoked no-mistakes CLI on second read in sweep"
+  snap_cap_2=$(python3 -c "$repo_cap" "$d/state/.nm-status-snapshot.json" repo-1)
+  [ "$snap_cap_1" = "$snap_cap_2" ] || fail "another repository's read dropped or recaptured the cached repository entry"
+  python3 -c "$repo_cap" "$d/state/.nm-status-snapshot.json" repo-2 >/dev/null \
+    || fail "second repository's read did not join the shared status snapshot"
+
+  out_a2=$(run_crew_state "$d" snap-sweep)
+  [ ! -e "$d/nm-cli.log" ] || fail "status snapshot invoked no-mistakes CLI on repeat read in sweep"
+  snap_cap_3=$(python3 -c "$repo_cap" "$d/state/.nm-status-snapshot.json" repo-1)
+  [ "$snap_cap_1" = "$snap_cap_3" ] || fail "repeat crew read in sweep did not reuse the cached status snapshot"
+  [ "$out_a" = "$out_a2" ] || fail "cached status snapshot changed the crew report"
+  unset FM_NM_SNAPSHOT_TTL FM_CREW_STATE_NM_TIMEOUT
+
+  after=$(git hash-object "$NM_HOME/state.sqlite")
+  [ "$before" = "$after" ] || fail "status snapshot modified state.sqlite"
+  chmod 0644 "$NM_HOME/state.sqlite"
+
+  assert_contains "$out_a" "state: parked" "snapshot reports parked state for gate-held run"
+  assert_contains "$out_a" "source: run-step" "snapshot attributes gate-held run to run-step"
+  assert_contains "$out_a" "parked at review: 1 finding(s)" "snapshot renders gate step and finding count"
+  assert_contains "$out_a" " · ask-user: authority decision" "snapshot detects ask-user authority from findings_json"
+  assert_contains "$out_a" "run: 01M7SNAPSHOTA0000000000001" "snapshot preserves selected run id"
+
+  assert_contains "$out_b" "state: done" "snapshot reports done when ci step log marker is green"
+  assert_contains "$out_b" "checks green: PR ready for review (still monitoring for merge/close): https://github.com/org/repo/pull/42" "snapshot surfaces green CI monitoring detail and PR URL"
+  assert_contains "$out_b" "pr=https://github.com/org/repo/pull/42" "snapshot surfaces terminal PR field"
+  unset FM_NM_CLI_LOG
+  pass "read-only SQLite status snapshot serves a multi-crew sweep with zero CLI calls and zero DB writes"
+}
+
+test_status_snapshot_schema_version_guard_falls_back_to_daemon() {
+  local d=$TMP_ROOT/snap-guard head before after out
+  reset_fakes
+  mkdir -p "$d/state"
+  make_repo_on_branch "$d/wt" fm/ship-a
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/snap-guard.meta" "window=fm:fm-snap-guard" "worktree=$d/wt" "kind=ship"
+  head=$(git -C "$d/wt" rev-parse HEAD)
+  NM_HOME="$d/nm-home"
+  export NM_HOME
+  mkdir -p "$NM_HOME"
+  init_full_nm_sqlite "$NM_HOME/state.sqlite" "$d/wt" "$head"
+
+  # Set an unknown PRAGMA user_version (e.g. a future no-mistakes schema migration).
+  python3 - "$NM_HOME/state.sqlite" <<'PY'
+import sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as db:
+    db.execute("PRAGMA user_version = 99")
+PY
+  FM_FAKE_AXI_HOME="repo: $d/wt
+count: 1 of 1 total
+runs[1]{id,branch,status,head,pr}:
+  01M7DAEMONFALLBACK00000001,fm/ship-a,running,$head,\"\""
+  FM_FAKE_AXI_STATUS="id: 01M7DAEMONFALLBACK00000001
+branch: fm/ship-a
+status: running
+head: $head"
+  FM_FAKE_AXI_STATUS_RUN=$FM_FAKE_AXI_STATUS
+
+  before=$(git hash-object "$NM_HOME/state.sqlite")
+  out=$(run_crew_state "$d" snap-guard)
+  after=$(git hash-object "$NM_HOME/state.sqlite")
+  [ "$before" = "$after" ] || fail "schema-version guard modified state.sqlite"
+  assert_contains "$out" "state: working" "unknown user_version falls back to daemon status"
+  assert_contains "$out" "run: 01M7DAEMONFALLBACK00000001" "daemon fallback supplies the run id"
+
+  # Restore user_version=0 but drop required step_results table to verify column/table contract guard.
+  python3 - "$NM_HOME/state.sqlite" <<'PY'
+import sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as db:
+    db.execute("PRAGMA user_version = 0")
+    db.execute("DROP TABLE step_results")
+PY
+  before=$(git hash-object "$NM_HOME/state.sqlite")
+  out=$(run_crew_state "$d" snap-guard)
+  after=$(git hash-object "$NM_HOME/state.sqlite")
+  [ "$before" = "$after" ] || fail "table-contract guard modified state.sqlite"
+  assert_contains "$out" "state: working" "missing required table falls back to daemon status"
+  assert_contains "$out" "run: 01M7DAEMONFALLBACK00000001" "daemon fallback supplies run id when schema contract fails"
+  pass "schema-version guard rejects unknown user_version and missing tables, falling back to the daemon without writing DB"
+}
+
+test_status_snapshot_read_failure_falls_back_to_daemon() {
+  local d=$TMP_ROOT/snap-fallback head before after out
+  reset_fakes
+  mkdir -p "$d/state"
+  make_repo_on_branch "$d/wt" fm/ship-a
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/snap-fallback.meta" "window=fm:fm-snap-fallback" "worktree=$d/wt" "kind=ship"
+  head=$(git -C "$d/wt" rev-parse HEAD)
+  NM_HOME="$d/nm-home"
+  export NM_HOME
+  mkdir -p "$NM_HOME"
+
+  FM_FAKE_AXI_HOME="repo: $d/wt
+count: 1 of 1 total
+runs[1]{id,branch,status,head,pr}:
+  01M7READFALLBACK0000000001,fm/ship-a,running,$head,\"\""
+  FM_FAKE_AXI_STATUS="id: 01M7READFALLBACK0000000001
+branch: fm/ship-a
+status: running
+head: $head"
+  FM_FAKE_AXI_STATUS_RUN=$FM_FAKE_AXI_STATUS
+
+  # 1. Corrupt non-SQLite database file.
+  printf 'not a sqlite database\n' > "$NM_HOME/state.sqlite"
+  before=$(git hash-object "$NM_HOME/state.sqlite")
+  out=$(run_crew_state "$d" snap-fallback)
+  after=$(git hash-object "$NM_HOME/state.sqlite")
+  [ "$before" = "$after" ] || fail "corrupt DB fallback modified state.sqlite"
+  assert_contains "$out" "state: working" "corrupt state.sqlite falls back to daemon call"
+  assert_contains "$out" "run: 01M7READFALLBACK0000000001" "corrupt state.sqlite fallback uses daemon run id"
+
+  # 2. Unreadable database file (chmod 000).
+  rm -f "$NM_HOME/state.sqlite"
+  init_full_nm_sqlite "$NM_HOME/state.sqlite" "$d/wt" "$head"
+  chmod 0000 "$NM_HOME/state.sqlite"
+  out=$(run_crew_state "$d" snap-fallback)
+  chmod 0644 "$NM_HOME/state.sqlite"
+  assert_contains "$out" "state: working" "unreadable state.sqlite falls back to daemon call"
+  assert_contains "$out" "run: 01M7READFALLBACK0000000001" "unreadable state.sqlite fallback uses daemon run id"
+
+  # 3. Missing database file is never created.
+  rm -f "$NM_HOME/state.sqlite"
+  out=$(run_crew_state "$d" snap-fallback)
+  [ ! -e "$NM_HOME/state.sqlite" ] || fail "missing state.sqlite was created by read path"
+  assert_contains "$out" "state: working" "missing state.sqlite falls back to daemon call"
+  pass "read failures (corrupt, unreadable, missing state.sqlite) fall back to the daemon without creating or writing the DB"
+}
+
+test_status_snapshot_stale_snapshot_is_rejected() {
+  local d=$TMP_ROOT/snap-stale head out
+  reset_fakes
+  mkdir -p "$d/state"
+  make_repo_on_branch "$d/wt" fm/ship-a
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/snap-stale.meta" "window=fm:fm-snap-stale" "worktree=$d/wt" "kind=ship"
+  head=$(git -C "$d/wt" rev-parse HEAD)
+  NM_HOME="$d/nm-home"
+  export NM_HOME
+  mkdir -p "$NM_HOME"
+  init_full_nm_sqlite "$NM_HOME/state.sqlite" "$d/wt" "$head"
+
+  # Capture initial snapshot (run is parked at review).
+  out=$(run_crew_state "$d" snap-stale)
+  assert_contains "$out" "state: parked" "initial snapshot captures parked state"
+  [ -f "$d/state/.nm-status-snapshot.json" ] || fail "initial snapshot file missing"
+
+  # Case A: Backdate the cached snapshot's capture times so it is stale past
+  # TTL, and update state.sqlite so the run is failed. The expired timestamps
+  # force a refresh.
+  python3 - "$d/state/.nm-status-snapshot.json" "$NM_HOME/state.sqlite" <<'PY'
+import json, sqlite3, sys, time
+snap_path, db_path = sys.argv[1:]
+with open(snap_path, "r", encoding="utf-8") as fh:
+    snap = json.load(fh)
+snap["repos_captured_at"] = time.time() - 3600
+for entry in snap["repo_snapshots"].values():
+    entry["captured_at"] = time.time() - 3600
+with open(snap_path, "w", encoding="utf-8") as fh:
+    json.dump(snap, fh)
+with sqlite3.connect(db_path) as db:
+    db.execute("UPDATE runs SET status = 'failed', awaiting_agent_since = 0 WHERE id = '01M7SNAPSHOTA0000000000001'")
+    db.execute("UPDATE step_results SET status = 'failed', findings_json = '' WHERE run_id = '01M7SNAPSHOTA0000000000001' AND step_name = 'review'")
+PY
+  out=$(run_crew_state "$d" snap-stale)
+  assert_contains "$out" "state: failed" "expired stale snapshot is discarded and refreshed from state.sqlite"
+  assert_contains "$out" "run failed" "refreshed snapshot reports current failed status"
+
+  # Case B: Within the TTL window, a snapshot written in an older snapshot
+  # format is rejected, so the advanced state.sqlite (a new running run) is
+  # read at once.
+  python3 - "$NM_HOME/state.sqlite" "$head" "$d/state/.nm-status-snapshot.json" <<'PY'
+import json, sqlite3, sys
+db_path, head, snap_path = sys.argv[1:]
+with open(snap_path, "r", encoding="utf-8") as fh:
+    snap = json.load(fh)
+snap["schema_version"] = 1
+with open(snap_path, "w", encoding="utf-8") as fh:
+    json.dump(snap, fh)
+with sqlite3.connect(db_path) as db:
+    db.execute(
+        "INSERT INTO runs (id, repo_id, branch, head_sha, status, pr_url, gates_json, error, awaiting_agent_since, created_at) "
+        "VALUES ('01M7SNAPSHOTA0000000000099', 'repo-1', 'fm/ship-a', ?, 'running', '', '', '', 0, 1775000999)",
+        (head,),
+    )
+    db.execute(
+        "INSERT INTO step_results (run_id, step_name, step_order, status, duration_ms, findings_json, log_path, last_activity_at, last_activity, override_reason, skip_reason) "
+        "VALUES ('01M7SNAPSHOTA0000000000099', 'test', 1, 'running', 0, '', '', 1775000999, 'running', '', '')"
+    )
+PY
+  out=$(run_crew_state "$d" snap-stale)
+  assert_contains "$out" "state: working" "snapshot stale relative to updated state.sqlite is refreshed immediately"
+  assert_contains "$out" "run: 01M7SNAPSHOTA0000000000099" "refreshed snapshot selects the newer live run"
+  pass "stale snapshots (expired TTL or older snapshot format) are rejected and refreshed"
+}
+
+# no-mistakes' AXI status marks a running step quiet only after the configured
+# step_quiet_warning (default 10m, per its shipped config.yaml); an unparseable
+# value makes the CLI itself error, so the snapshot must defer to the CLI.
+test_status_snapshot_quiet_uses_configured_step_quiet_warning() {
+  local d=$TMP_ROOT/snap-quiet head nm_home
+  mkdir -p "$d"
+  make_repo_on_branch "$d/wt" fm/ship-a
+  head=$(git -C "$d/wt" rev-parse HEAD)
+  nm_home="$d/nm-home"
+  mkdir -p "$nm_home"
+  init_full_nm_sqlite "$nm_home/state.sqlite" "$d/wt" "$head"
+  python3 - "$nm_home/state.sqlite" <<'PY'
+import sqlite3, sys, time
+with sqlite3.connect(sys.argv[1]) as db:
+    db.execute("UPDATE step_results SET status = 'running', findings_json = '', last_activity_at = ?, last_activity = 'agent working' "
+               "WHERE run_id = '01M7SNAPSHOTA0000000000001' AND step_name = 'review'", (int(time.time()) - 240,))
+PY
+  snap_status() {  # <snapshot_file>
+    (
+      NM_HOME=$nm_home FM_NM_SNAPSHOT_TTL=0
+      # shellcheck source=/dev/null
+      . "$ROOT/bin/fm-nm-run-lib.sh"
+      fm_nm_snapshot_load_worktree "$d/wt" fm/ship-a 30 50 "$1" || exit 1
+      printf '%s\n' "$NM_SNAPSHOT_STATUS_OUT"
+    )
+  }
+  local out
+  out=$(snap_status "$d/snap1.json") || fail "snapshot read failed with default quiet warning"
+  assert_contains "$out" '"agent working"' "step silent 4m is not quiet under the 10m default"
+  case "$out" in *'quiet: agent working'*) fail "snapshot marked a 4m-silent step quiet under the 10m default" ;; esac
+  printf '# comment\nstep_quiet_warning: "3m"\n' > "$nm_home/config.yaml"
+  out=$(snap_status "$d/snap2.json") || fail "snapshot read failed with 3m quiet warning"
+  assert_contains "$out" '"quiet: agent working"' "step silent 4m is quiet under a configured 3m warning"
+  printf 'step_quiet_warning: "soon"\n' > "$nm_home/config.yaml"
+  if snap_status "$d/snap3.json" >/dev/null; then
+    fail "unparseable step_quiet_warning did not fall back to the CLI"
+  fi
+  pass "snapshot quiet marking follows no-mistakes' step_quiet_warning"
+}
+
+test_status_snapshot_moved_live_run_reads_cli() {
+  local d=$TMP_ROOT/snap-moved head out
+  reset_fakes
+  mkdir -p "$d/state"
+  make_repo_on_branch "$d/wt" fm/ship-a
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/snap-moved.meta" "window=fm:fm-snap-moved" "worktree=$d/wt" "kind=ship"
+  head=$(git -C "$d/wt" rev-parse HEAD)
+  NM_HOME="$d/nm-home"
+  export NM_HOME
+  mkdir -p "$NM_HOME"
+  init_full_nm_sqlite "$NM_HOME/state.sqlite" "$d/wt" 0123456789abcdef0123456789abcdef01234567
+
+  FM_FAKE_AXI_HOME="repo: $d/wt
+count: 1 of 1 total
+runs[1]{id,branch,status,head,pr}:
+  01M7CLIMOVEDHEAD0000000001,fm/ship-a,running,$head,\"\""
+  FM_FAKE_AXI_STATUS="id: 01M7CLIMOVEDHEAD0000000001
+branch: fm/ship-a
+status: running
+head: $head"
+  FM_FAKE_AXI_STATUS_RUN=$FM_FAKE_AXI_STATUS
+
+  out=$(run_crew_state "$d" snap-moved)
+  assert_contains "$out" "state: working" "live run on a moved head is read from the CLI"
+  assert_contains "$out" "run: 01M7CLIMOVEDHEAD0000000001" "CLI detail replaces the snapshot for a moved live run"
+  pass "a live snapshot run whose head differs from the worktree falls back to the CLI"
+}
+
+test_status_snapshot_missing_ci_log_falls_back_to_cli_not_last_activity() {
+  local d=$TMP_ROOT/snap-ci-log-fallback head out ci_log
+  reset_fakes
+  mkdir -p "$d/state"
+  make_repo_on_branch "$d/wt-b" fm/ship-b
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/ship-b.meta" "window=fm:fm-ship-b" "worktree=$d/wt-b" "kind=ship"
+  printf 'working [at=1700000000]: validating\n' > "$d/state/ship-b.status"
+  head=$(git -C "$d/wt-b" rev-parse HEAD)
+  NM_HOME="$d/nm-home"
+  export NM_HOME
+  mkdir -p "$NM_HOME"
+  init_full_nm_sqlite "$NM_HOME/state.sqlite" "$d/wt-b" "$head" "$head"
+  ci_log="$NM_HOME/logs/01M7SNAPSHOTB0000000000002/ci.log"
+
+  # 1. Missing ci.log with historical "checks passed" in step_results.last_activity
+  #    and an empty CLI log response must stay unknown (working), never done.
+  rm -f "$ci_log"
+  FM_FAKE_CI_LOGS=""
+  export FM_FAKE_CI_LOGS
+  out=$(run_crew_state "$d" ship-b)
+  assert_contains "$out" "state: working" "missing ci.log with empty CLI fallback keeps CI state unknown (working)"
+  assert_contains "$out" "validating (running)" "missing ci.log without CLI marker reports active run working detail"
+  case "$out" in
+    *"state: done"*|*"checks green"*)
+      fail "missing ci.log trusted historical last_activity 'checks passed': $out" ;;
+  esac
+
+  # 2. Unreadable ci.log (chmod 0000) with empty CLI fallback must also stay unknown.
+  printf '[ci] all CI checks passed - still monitoring until merged or closed\n' > "$ci_log"
+  chmod 0000 "$ci_log"
+  out=$(run_crew_state "$d" ship-b)
+  chmod 0644 "$ci_log"
+  rm -f "$ci_log"
+  assert_contains "$out" "state: working" "unreadable ci.log with empty CLI fallback keeps CI state unknown"
+  case "$out" in
+    *"state: done"*|*"checks green"*)
+      fail "unreadable ci.log trusted historical last_activity 'checks passed': $out" ;;
+  esac
+
+  # 3. Missing ci.log with a populated CLI axi logs response uses the CLI fallback.
+  FM_FAKE_CI_LOGS="[ci] all CI checks passed - still monitoring until merged or closed"
+  out=$(run_crew_state "$d" ship-b)
+  assert_contains "$out" "state: done" "missing ci.log falls back to CLI axi logs when available"
+  assert_contains "$out" "checks green: PR ready for review" "CLI axi logs fallback supplies green CI marker"
+  unset FM_FAKE_CI_LOGS
+  pass "missing or unreadable CI log returns empty snapshot CI result, runs CLI fallback, and never trusts historical last_activity"
+}
+
+test_status_snapshot_concurrent_writers_preserve_all_repos() {
+  local d=$TMP_ROOT/snap-concurrent h1 h2 h3 h4 i pid pids=() rc=0
+  reset_fakes
+  mkdir -p "$d/state"
+  make_repo_on_branch "$d/wt-1" fm/ship-a
+  for i in 2 3 4; do
+    make_repo_on_branch "$d/wt-$i" "fm/ship-$i"
+  done
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/ship-1a.meta" "window=fm:fm-ship-1a" "worktree=$d/wt-1" "kind=ship"
+  fm_write_meta "$d/state/ship-1b.meta" "window=fm:fm-ship-1b" "worktree=$d/wt-1" "kind=ship"
+  fm_write_meta "$d/state/ship-2.meta" "window=fm:fm-ship-2" "worktree=$d/wt-2" "kind=ship"
+  fm_write_meta "$d/state/ship-3.meta" "window=fm:fm-ship-3" "worktree=$d/wt-3" "kind=ship"
+  fm_write_meta "$d/state/ship-4.meta" "window=fm:fm-ship-4" "worktree=$d/wt-4" "kind=ship"
+  for name in ship-1a ship-1b ship-2 ship-3 ship-4; do
+    printf 'working [at=1700000000]: validating\n' > "$d/state/$name.status"
+  done
+
+  h1=$(git -C "$d/wt-1" rev-parse HEAD)
+  h2=$(git -C "$d/wt-2" rev-parse HEAD)
+  h3=$(git -C "$d/wt-3" rev-parse HEAD)
+  h4=$(git -C "$d/wt-4" rev-parse HEAD)
+  NM_HOME="$d/nm-home"
+  export NM_HOME
+  mkdir -p "$NM_HOME"
+  init_full_nm_sqlite "$NM_HOME/state.sqlite" "$d/wt-1" "$h1"
+  python3 - "$NM_HOME/state.sqlite" "$d/wt-2" "$h2" "$d/wt-3" "$h3" "$d/wt-4" "$h4" <<'PY'
+import sqlite3, sys
+db_path, wt2, h2, wt3, h3, wt4, h4 = sys.argv[1:]
+with sqlite3.connect(db_path) as db:
+    for idx, (wt, head) in enumerate([(wt2, h2), (wt3, h3), (wt4, h4)], start=2):
+        repo_id = f"repo-{idx}"
+        run_id = f"01M7SNAPSHOTCONC000000000{idx}"
+        branch = f"fm/ship-{idx}"
+        db.execute(
+            "INSERT INTO repos (id, working_path, default_branch, created_at) VALUES (?, ?, 'main', 1775000000)",
+            (repo_id, wt),
+        )
+        db.execute(
+            "INSERT INTO runs (id, repo_id, branch, head_sha, status, pr_url, gates_json, error, awaiting_agent_since, created_at) "
+            "VALUES (?, ?, ?, ?, 'running', '', '', '', 0, 1775000300)",
+            (run_id, repo_id, branch, head),
+        )
+        db.execute(
+            "INSERT INTO step_results (run_id, step_name, step_order, status, duration_ms, findings_json, log_path, last_activity_at, last_activity, override_reason, skip_reason) "
+            "VALUES (?, 'test', 1, 'running', 0, '', '', 1775000305, 'running tests', '', '')",
+            (run_id,),
+        )
+PY
+
+  cat > "$d/fakebin/no-mistakes" <<'EOF'
+#!/usr/bin/env bash
+echo "unexpected-cli-call: $*" >> "${FM_NM_CLI_LOG}"
+exit 99
+EOF
+  chmod +x "$d/fakebin/no-mistakes"
+  export FM_NM_CLI_LOG="$d/nm-cli.log"
+  FM_NM_SNAPSHOT_TTL=60
+  FM_CREW_STATE_NM_TIMEOUT=120
+  export FM_NM_SNAPSHOT_TTL FM_CREW_STATE_NM_TIMEOUT
+
+  for name in ship-1a ship-1b ship-2 ship-3 ship-4; do
+    (
+      run_crew_state "$d" "$name" > "$d/out-$name.txt"
+    ) &
+    pids+=("$!")
+  done
+  for pid in "${pids[@]}"; do
+    wait "$pid" || rc=1
+  done
+  unset FM_NM_SNAPSHOT_TTL FM_CREW_STATE_NM_TIMEOUT FM_NM_CLI_LOG
+  [ "$rc" -eq 0 ] || fail "concurrent run_crew_state processes failed"
+  [ ! -e "$d/nm-cli.log" ] || fail "concurrent snapshot sweep unexpectedly called no-mistakes CLI"
+
+  assert_contains "$(cat "$d/out-ship-1a.txt")" "state: parked" "ship-1a concurrent read succeeded"
+  assert_contains "$(cat "$d/out-ship-1b.txt")" "state: parked" "ship-1b concurrent read succeeded"
+  for i in 2 3 4; do
+    assert_contains "$(cat "$d/out-ship-$i.txt")" "state: working" "ship-$i concurrent read succeeded"
+    assert_contains "$(cat "$d/out-ship-$i.txt")" "run: 01M7SNAPSHOTCONC000000000$i" "ship-$i selected its repo run"
+  done
+
+  python3 - "$d/state/.nm-status-snapshot.json" <<'PY' || fail "concurrent writers lost a repository snapshot entry"
+import json, sys
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    snap = json.load(fh)
+repos = snap.get("repo_snapshots", {})
+expected = {"repo-1", "repo-2", "repo-3", "repo-4"}
+missing = expected - set(repos.keys())
+if missing:
+    raise SystemExit(f"missing repo_snapshots keys: {sorted(missing)}")
+for rid in expected:
+    if not repos[rid].get("runs"):
+        raise SystemExit(f"empty runs for {rid}")
+PY
+  pass "concurrent snapshot writers serialize via file lock and preserve all repository entries"
+}
+
+# A no-mistakes task worktree lives at worktrees/<repo_id>/<run_id> of a bare
+# repo at repos/<repo_id>.git. repos.working_path stays the main checkout, which
+# git's candidate list does not emit (the bare repo is listed first). The
+# snapshot still has to bind that repo when a run's worktree_dir is this
+# checkout, and has to fall back when it is not.
+test_status_snapshot_linked_worktree_distinct_main_checkout() {
+  local d=$TMP_ROOT/snap-linked-main bare wt head before after out
+  reset_fakes
+  mkdir -p "$d/state" "$d/repos" "$d/worktrees/repo-task"
+  git -C "$d" init -q -b main seed
+  git -C "$d/seed" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -q --allow-empty -m init
+  git clone -q --bare "$d/seed" "$d/repos/repo-task.git"
+  bare=$d/repos/repo-task.git
+  git -C "$bare" worktree add -q -b fm/ship-a "$d/worktrees/repo-task/01M7LINKEDWT000000000001"
+  wt=$(git -C "$d/worktrees/repo-task/01M7LINKEDWT000000000001" rev-parse --show-toplevel)
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/snap-linked-main.meta" "window=fm:fm-snap-linked-main" "worktree=$wt" "kind=ship"
+  head=$(git -C "$wt" rev-parse HEAD)
+  NM_HOME="$d/nm-home"
+  export NM_HOME
+  mkdir -p "$NM_HOME"
+  git -C "$d" init -q -b main main-checkout
+  init_full_nm_sqlite "$NM_HOME/state.sqlite" "$d/main-checkout" "$head"
+  python3 - "$NM_HOME/state.sqlite" "$wt" <<'PY'
+import sqlite3, sys
+db_path, wt = sys.argv[1:]
+with sqlite3.connect(db_path) as db:
+    db.execute("UPDATE repos SET id = 'repo-task' WHERE id = 'repo-1'")
+    db.execute(
+        "UPDATE runs SET repo_id = 'repo-task', worktree_dir = ? WHERE id = '01M7SNAPSHOTA0000000000001'",
+        (wt,),
+    )
+PY
+
+  cat > "$d/fakebin/no-mistakes" <<'EOF'
+#!/usr/bin/env bash
+echo "unexpected-cli-call: $*" >> "${FM_NM_CLI_LOG}"
+exit 99
+EOF
+  chmod +x "$d/fakebin/no-mistakes"
+  export FM_NM_CLI_LOG="$d/nm-cli.log"
+  FM_NM_SNAPSHOT_TTL=60
+  FM_CREW_STATE_NM_TIMEOUT=120
+  export FM_NM_SNAPSHOT_TTL FM_CREW_STATE_NM_TIMEOUT
+
+  before=$(git hash-object "$NM_HOME/state.sqlite")
+  out=$(run_crew_state "$d" snap-linked-main)
+  after=$(git hash-object "$NM_HOME/state.sqlite")
+  [ "$before" = "$after" ] || fail "linked-worktree snapshot read modified state.sqlite"
+  [ ! -e "$d/nm-cli.log" ] || fail "linked worktree with a distinct main checkout called no-mistakes CLI"
+  assert_contains "$out" "state: parked" "snapshot binds a task worktree whose registered working_path is the main checkout"
+  assert_contains "$out" "run: 01M7SNAPSHOTA0000000000001" "snapshot selects the run recorded for that task worktree"
+  [ -f "$d/state/.nm-status-snapshot.json" ] || fail "linked-worktree snapshot was not cached"
+
+  python3 - "$NM_HOME/state.sqlite" "$d/main-checkout" <<'PY'
+import sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as db:
+    db.execute(
+        "UPDATE runs SET worktree_dir = ? WHERE id = '01M7SNAPSHOTA0000000000001'",
+        (sys.argv[2],),
+    )
+PY
+  before=$(git hash-object "$NM_HOME/state.sqlite")
+  out=$(run_crew_state "$d" snap-linked-main)
+  after=$(git hash-object "$NM_HOME/state.sqlite")
+  [ "$before" = "$after" ] || fail "cached linked-worktree confirm modified state.sqlite"
+  [ -e "$d/nm-cli.log" ] || fail "a cached snapshot ignored a worktree_dir that is not this checkout"
+  assert_not_contains "$out" "state: parked" "a worktree_dir for another checkout does not keep the cached snapshot"
+  assert_not_contains "$out" "run: 01M7SNAPSHOTA0000000000001" "a mismatched worktree_dir does not keep the cached run"
+
+  rm -f "$d/nm-cli.log" "$d/state/.nm-status-snapshot.json"
+  before=$(git hash-object "$NM_HOME/state.sqlite")
+  out=$(run_crew_state "$d" snap-linked-main)
+  after=$(git hash-object "$NM_HOME/state.sqlite")
+  [ "$before" = "$after" ] || fail "cold linked-worktree confirm modified state.sqlite"
+  [ -e "$d/nm-cli.log" ] || fail "a cold snapshot ignored a worktree_dir that is not this checkout"
+  assert_not_contains "$out" "state: parked" "a cold read does not bind when worktree_dir is another checkout"
+  unset FM_NM_CLI_LOG FM_NM_SNAPSHOT_TTL FM_CREW_STATE_NM_TIMEOUT
+  pass "a task worktree binds by repo id and worktree_dir when working_path is the main checkout"
+}
+
+test_status_snapshot_foreign_branch_unknown_status_falls_back_to_cli() {
+  local d=$TMP_ROOT/snap-foreign-unknown head before after out
+  reset_fakes
+  mkdir -p "$d/state"
+  make_repo_on_branch "$d/wt" fm/ship-a
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/snap-foreign-unknown.meta" "window=fm:fm-snap-foreign-unknown" "worktree=$d/wt" "kind=ship"
+  head=$(git -C "$d/wt" rev-parse HEAD)
+  NM_HOME="$d/nm-home"
+  export NM_HOME
+  mkdir -p "$NM_HOME"
+  init_full_nm_sqlite "$NM_HOME/state.sqlite" "$d/wt" "$head"
+
+  # A newer row on another branch of the same repository carries handed_off,
+  # a status the snapshot vocabulary does not record. The crew's own branch
+  # row stays a known running gate. The whole snapshot still has to give way.
+  python3 - "$NM_HOME/state.sqlite" "$head" <<'PY'
+import sqlite3, sys
+db_path, head = sys.argv[1:]
+with sqlite3.connect(db_path) as db:
+    db.execute(
+        "INSERT INTO runs (id, repo_id, branch, head_sha, status, pr_url, gates_json, error, awaiting_agent_since, created_at) "
+        "VALUES ('01M7FOREIGNHANDEDOFF000001', 'repo-1', 'fm/va11-s7-auto-away', ?, 'handed_off', '', '', '', 0, 1775000500)",
+        (head,),
+    )
+PY
+
+  FM_FAKE_AXI_HOME="repo: $d/wt
+count: 1 of 1 total
+runs[1]{id,branch,status,head,pr}:
+  01M7FOREIGNFALLBACK0000001,fm/ship-a,running,$head,\"\""
+  FM_FAKE_AXI_STATUS="id: 01M7FOREIGNFALLBACK0000001
+branch: fm/ship-a
+status: running
+head: $head"
+  FM_FAKE_AXI_STATUS_RUN=$FM_FAKE_AXI_STATUS
+
+  before=$(git hash-object "$NM_HOME/state.sqlite")
+  out=$(run_crew_state "$d" snap-foreign-unknown)
+  after=$(git hash-object "$NM_HOME/state.sqlite")
+  [ "$before" = "$after" ] || fail "foreign-branch unknown-status fallback modified state.sqlite"
+  assert_contains "$out" "state: working" "unknown run status on another branch falls back to the CLI"
+  assert_contains "$out" "run: 01M7FOREIGNFALLBACK0000001" "CLI fallback supplies the run id when any branch has an unknown status"
+  assert_not_contains "$out" "run: 01M7SNAPSHOTA0000000000001" "an unknown status on another branch does not keep the snapshot run"
+  pass "an unknown status on any branch rejects the snapshot and falls back to the CLI"
+}
+
+test_status_snapshot_own_branch_unknown_status_falls_back_to_cli() {
+  local d=$TMP_ROOT/snap-own-unknown head before after out
+  reset_fakes
+  mkdir -p "$d/state"
+  make_repo_on_branch "$d/wt" fm/ship-a
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/snap-own-unknown.meta" "window=fm:fm-snap-own-unknown" "worktree=$d/wt" "kind=ship"
+  head=$(git -C "$d/wt" rev-parse HEAD)
+  NM_HOME="$d/nm-home"
+  export NM_HOME
+  mkdir -p "$NM_HOME"
+  init_full_nm_sqlite "$NM_HOME/state.sqlite" "$d/wt" "$head"
+
+  python3 - "$NM_HOME/state.sqlite" <<'PY'
+import sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as db:
+    db.execute("UPDATE runs SET status = 'handed_off', awaiting_agent_since = 0 WHERE id = '01M7SNAPSHOTA0000000000001'")
+PY
+
+  FM_FAKE_AXI_HOME="repo: $d/wt
+count: 1 of 1 total
+runs[1]{id,branch,status,head,pr}:
+  01M7OWNBRANCHFALLBACK00001,fm/ship-a,running,$head,\"\""
+  FM_FAKE_AXI_STATUS="id: 01M7OWNBRANCHFALLBACK00001
+branch: fm/ship-a
+status: running
+head: $head"
+  FM_FAKE_AXI_STATUS_RUN=$FM_FAKE_AXI_STATUS
+
+  before=$(git hash-object "$NM_HOME/state.sqlite")
+  out=$(run_crew_state "$d" snap-own-unknown)
+  after=$(git hash-object "$NM_HOME/state.sqlite")
+  [ "$before" = "$after" ] || fail "own-branch unknown-status fallback modified state.sqlite"
+  assert_contains "$out" "state: working" "unknown run status on crew's own branch falls back to CLI"
+  assert_contains "$out" "run: 01M7OWNBRANCHFALLBACK00001" "CLI fallback supplies the run id when crew's own branch has unknown status"
+  pass "an unknown status on the crew's own branch rejects the snapshot and falls back to the CLI"
+}
+
 test_captured_axi_status_shapes
 test_captured_inventory_replay
 test_captured_authority_transition
@@ -7004,5 +7775,16 @@ test_newer_failed_run_is_not_hidden_by_older_live_run
 test_live_ledger_row_after_selection_reports_unknown
 test_unverifiable_run_selection_reports_unknown
 test_legacy_conflicting_run_records_report_unknown
+test_status_snapshot_readonly_and_shared_across_sweep
+test_status_snapshot_schema_version_guard_falls_back_to_daemon
+test_status_snapshot_read_failure_falls_back_to_daemon
+test_status_snapshot_stale_snapshot_is_rejected
+test_status_snapshot_moved_live_run_reads_cli
+test_status_snapshot_quiet_uses_configured_step_quiet_warning
+test_status_snapshot_missing_ci_log_falls_back_to_cli_not_last_activity
+test_status_snapshot_concurrent_writers_preserve_all_repos
+test_status_snapshot_linked_worktree_distinct_main_checkout
+test_status_snapshot_foreign_branch_unknown_status_falls_back_to_cli
+test_status_snapshot_own_branch_unknown_status_falls_back_to_cli
 
 echo "all fm-crew-state tests passed"
