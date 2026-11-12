@@ -1,0 +1,119 @@
+lab=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-live-autopark.Hoaa95
+contract: default percent-left is 15; a shown pane footer is the sample; at or below the threshold the recorder emits one park-then-handoff wake and never asks the captain; the hook reads that claim and only then sends one handoff and arms the successor gate.
+
+=== pane shows 16% left while the transcript would be 4% left ===
+stdout: <empty>
+row: 80000	stall4	captain	16
+PASS: sample records the pane's 16, not the transcript's 4
+PASS: 16% left did not emit park-then-handoff
+PASS: 16% left left no wake and no claim
+
+=== pane shows 15% left: the boundary parks once ===
+stdout: park-handoff: stall4 at 15% context left: park open captain questions via bin/fm-captain-hold.sh then start handoff
+row: 80010	stall4	captain	15
+wake: 1794507721	1	check	context-autopark-stall4	check: context autopark session stall4 at 15% context left: park every open captain question as a held backlog item through bin/fm-captain-hold.sh (hold the work item the question gates, or create one captain-held task per genuine question) and then start the handoff/successor path - record the handoff with bin/fm-order.sh handoff --doc <handoff file> and launch the successor with bin/fm-handoff-launch.sh <handoff file> (a second mate asks its parent to relaunch it instead) - without asking the captain or waiting for an answer; keep working on everything the parked questions do not gate
+PASS: sample records the pane's 15
+PASS: 15% left printed the park-then-handoff line
+PASS: wake names captain-hold
+PASS: wake names the handoff launch
+PASS: wake says to continue without asking the captain
+PASS: one park wake at 15% left
+PASS: claim is done after the wake
+
+=== the stall: pane shows 4% left on the same session ===
+stdout: <empty>
+row: 80020	stall4	captain	4
+PASS: the 4% footer is recorded
+PASS: 4% on the same session did not emit a second park
+PASS: still one park wake after the 4% sample
+
+=== drain presents that one park wake ===
+drain stdout:
+  1794507721	1	check	context-autopark-stall4	check: context autopark session stall4 at 15% context left: park every open captain question as a held backlog item through bin/fm-captain-hold.sh (hold the work item the question gates, or create one captain-held task per genuine question) and then start the handoff/successor path - record the handoff with bin/fm-order.sh handoff --doc <handoff file> and launch the successor with bin/fm-handoff-launch.sh <handoff file> (a second mate asks its parent to relaunch it instead) - without asking the captain or waiting for an answer; keep working on everything the parked questions do not gate
+drain stderr:
+  WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 60550.1794507721.SntbI9
+PASS: drain presents the park-without-asking wake
+
+=== hook before any park, transcript at 96000 of 100000 (4% left) ===
+hook stdout: <empty>
+hook rc: 0
+PASS: hook is silent before the recorder parks
+PASS: a silent hook armed nothing and wrote no park claim
+stop-before rc: 0
+stop-before stderr: 
+PASS: Stop before the park is not gated
+
+=== turn-end record with the footer hidden: transcript 4% left parks once ===
+stdout: park-handoff: stall4 at 4% context left: park open captain questions via bin/fm-captain-hold.sh then start handoff
+row: 81000	stall4	captain	4
+PASS: hidden footer records 4% left from 96000 of 100000
+PASS: 4% left with the footer hidden emits park-then-handoff
+PASS: hidden-footer wake continues without asking the captain
+
+=== hook after the park sends one handoff and arms the gate ===
+hook stdout: {
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptSubmit",
+    "additionalContext": "Firstmate early handoff trigger, from this home's tracked Claude hook: about 4% of context is left before auto-compact (96000 of 100000 tokens). This follows the park-then-handoff action already queued for this session, which parks every open captain question first; with those parked, write your full session handoff now, before auto-compact: persist every open work record, decision, and piece of durable knowledge this session holds (the stow skill covers this), record the handoff with bin/fm-order.sh handoff --doc <handoff file>, then hand off to a successor and report that this session is ready to restart. Launch your successor with bin/fm-handoff-launch.sh <handoff file>. Run it with the Bash tool's run_in_background=true, because a foreground tool timeout cannot cover its setup plus the ten-minute protocol deadline, and collect the launcher's exit status and output before reporting readiness. It requires the successor to read the document, write its nonce-bound acknowledgement with bin/fm-handoff-ack.sh, and take the session lock before state/.handoff-successor clears this turn's gate. The successor confirms the handoff sha256 and stops on a mismatch. The lock transfers while this session is still alive, so do not wait for an external exit. The successor then runs bin/fm-session-start.sh. After verified transfer, end this turn and retire the predecessor session. If both attempts fail within ten minutes, the launcher emits handoff_failed; report that failure instead of claiming readiness. A failure with reason=unresolved is not final: a later handoff_ack with reason=lock_transferred for the same nonce means the transfer committed. Do not run /compact. This instruction fires once per session."
+  }
+}
+hook rc: 0
+PASS: hook names 4% left and follows the queued park without repeating it
+PASS: hook armed the successor gate after the park
+PASS: a second hook call in the same cycle stays silent
+PASS: recorder did not emit the park a second time
+PASS: still one park wake after the hook
+
+=== Stop after the park, with no successor, stays blocked ===
+stop-after rc: 2
+stop-after stderr: Firstmate restart gate: no verified successor acknowledgement and lock transfer is recorded in state/.handoff-successor. Run bin/fm-handoff-launch.sh <handoff document path>. A live PID alone does not clear this gate. The successor confirms the handoff sha256 and stops on a mismatch. The lock transfers while this session is still alive, so do not wait for an external exit.
+PASS: Stop without a successor is blocked
+PASS: the block tells the session to launch the successor
+
+=== compaction re-arms the gate and does not repeat the instruction or the park ===
+post-compact hook stdout: <empty>
+PASS: compaction stays silent and arms the new cycle's successor gate
+PASS: compaction did not queue another park
+PASS: Stop in the new cycle is still blocked without a successor
+
+=== percent-left=0 at 4% stays off ===
+PASS: percent-left=0 does not park at 4%
+PASS: percent-left=0 queued no wake
+
+=== an unknown session at 4% never parks ===
+PASS: unknown session did not park
+
+=== a dead pending claim is reclaimed; a live one is not ===
+PASS: a dead pending claim was reclaimed and parked
+PASS: a reclaimed claim did not park twice
+PASS: a live pending claim suppressed a concurrent sample
+PASS: a live claim queued no wake
+
+=== eight concurrent samples publish one wake ===
+PASS: eight concurrent samples published one park wake
+
+=== context recovering above the threshold does not allow a second park ===
+PASS: first drop to 15% parked
+PASS: a recovery and a second drop to 4% did not park again
+PASS: still one wake after recovery
+
+=== a hook racing the recorder emits the park once, and the handoff once ===
+PASS: race race1: one park wake and one handoff
+PASS: race race2: one park wake and one handoff
+PASS: race race3: one park wake and one handoff
+PASS: race race4: one park wake and one handoff
+
+FAILS=0
+RESULT: pass
+
+=== a consumed park wake is not published again ===
+first stdout: park-handoff: stall4 at 4% context left: park open captain questions via bin/fm-captain-hold.sh then start handoff
+PASS: first 4% sample parked
+ack command: --ack-through 1 --recovery-generation 18664.1794507787.WwUFX8
+PASS: acknowledgement removed the park wake from the queue
+second stdout: <empty>
+claim: done 86100
+PASS: a consumed wake was not emitted again
+PASS: a consumed wake was not queued again
+PASS: the interrupted claim was completed in place
+CONSUMED_FAILS=0
