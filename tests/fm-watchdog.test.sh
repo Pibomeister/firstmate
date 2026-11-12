@@ -4547,6 +4547,85 @@ test_dialog_keys_stop_after_two_failures() {
 # A ticking status percentage under the dialog's input box is not part of the
 # dialog. One dismiss key, then a changed percentage, must not send another.
 # A changed row above the footer still may.
+# The launchd watchdog runs with only FM_HOME and PATH, so no UTF-8 locale.
+# A C-locale awk reads a bracket of box glyphs as bytes; `─` then matches a
+# bottom-border bracket and the survey reads as stale. Detection and the
+# watchdog's own dismissal must hold with every locale variable unset.
+# Orca delivers a raw Escape byte only to a recorded Droid terminal
+# (fm_control_backend_supports_key; bin/backends/orca.sh refuses it elsewhere,
+# because it interrupts a Claude turn). The feedback dismiss path must honor
+# that gate: no Escape reaches a Claude or Codex terminal on Orca, while the
+# ordinary literal 0 still goes out and tmux still gets its Escape.
+test_feedback_escape_honors_backend_key_gate() {
+  local claude_modal claude_survey codex_feedback dir state log out
+  claude_modal=$'Submit feedback / bug report\nDescribe the issue below:\n\nPress Enter to continue · Esc to cancel'
+  claude_survey=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss'
+  codex_feedback=$'How was this?\n\n ❯ 1. bug         Crash, error message, hang, or broken UI/behavior\n   2. bad_result  Output was off-target, incorrect, incomplete, or unhelpful\n   3. other       Slowness, feature suggestion, UX feedback, or anything else\n\nPress enter to confirm or esc to go back'
+  dir="$TMP_ROOT/escape-gate-$CASE_N"
+  log="$dir/sent.log"
+  gate_run() {  # <fn-and-args...>; SCREEN in env
+    bash -c '
+      . "$1/bin/fm-control-lib.sh"
+      shift
+      fm_backend_source() { return 0; }
+      fm_backend_send_key() { printf "KEY:%s:%s\n" "$1" "$3" >> "$GATE_LOG"; }
+      fm_backend_orca_send_literal() { printf "LITERAL:orca:%s\n" "$(printf "%s" "$2" | od -An -c | tr -d " ")" >> "$GATE_LOG"; }
+      fm_backend_tmux_send_literal() { printf "LITERAL:tmux:%s\n" "$2" >> "$GATE_LOG"; }
+      fm_control_capture_feedback_pane() { printf "%s\n" "$SCREEN"; }
+      rc=0; "$@" || rc=$?
+      printf "%s\n" "$rc"
+    ' _ "$ROOT" "$@"
+  }
+  check() {  # <label> <backend> <harness> <screen> <expected-rc> <expected-log>
+    rm -rf "$dir"; mkdir -p "$dir/state"; : > "$log"
+    out=$(GATE_LOG="$log" SCREEN="$4" gate_run fm_control_dismiss_feedback_dialog "$dir/state" "$2" term-1 "$3" "$4" "" 0 5)
+    assert_equals "$5" "$out" "$1: helper return code"
+    assert_equals "$6" "$(cat "$log")" "$1: keys sent"
+    if [ "$5" = 5 ]; then
+      assert_equals "" "$(find "$dir/state" -name '.feedback-*' 2>/dev/null)" "$1: no marker or claim left behind"
+    fi
+  }
+  check "Claude bug report on Orca" orca claude "$claude_modal" 5 ""
+  check "Codex feedback on Orca" orca codex "$codex_feedback" 5 ""
+  check "Claude survey on Orca" orca claude "$claude_survey" 4 "LITERAL:orca:0"
+  check "Claude bug report on tmux" tmux claude "$claude_modal" 4 "KEY:tmux:Escape"
+  rm -rf "$dir"; mkdir -p "$dir"; : > "$log"
+  out=$(GATE_LOG="$log" SCREEN= gate_run fm_control_send_feedback_dismiss orca term-1 Escape "" claude)
+  assert_equals 5 "$out" "the sender refuses Escape for Claude on Orca"
+  assert_equals "" "$(cat "$log")" "the sender sends no byte for Claude on Orca"
+  pass "feedback dismiss: Escape honors the backend key gate, so no Escape reaches a non-Droid Orca terminal"
+}
+
+test_feedback_dialog_detection_without_a_locale() {
+  local survey_rule survey_box boxed_stale near screen
+  nolocale_lib() {
+    env -u LANG -u LC_ALL -u LC_CTYPE -u LC_COLLATE /bin/bash -c '. "$1/bin/fm-watchdog-lib.sh"; shift; "$@"' _ "$ROOT" "$@"
+  }
+  survey_rule=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n────────────────────────────────────────\n❯\xc2\xa0\n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main'
+  survey_box=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n╭──────────────────────────────╮\n│ >                            │\n╰──────────────────────────────╯\n  ? for shortcuts'
+  boxed_stale=$'● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n╭──────────────────────────────╮\n│ >                            │\n╰──────────────────────────────╯\n● Done.\n╭──────────────────────────────╮\n│ >                            │\n╰──────────────────────────────╯'
+  near=$'● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good'
+  # The divergence this case guards: the UTF-8 run and the no-locale run must
+  # agree, and the no-locale environment really has no locale set.
+  assert_equals "" "$(nolocale_lib printenv LANG LC_ALL LC_CTYPE)" "the no-locale environment carries no locale variable"
+  for screen in "$survey_rule" "$survey_box"; do
+    assert_equals $'claude-session-feedback\t0' "$(nolocale_lib fm_control_feedback_dialog_dismiss claude "$screen")" "no locale: the Claude session survey chooses 0/Dismiss: $screen"
+    assert_equals $'claude-session-feedback\t0' "$(lib fm_control_feedback_dialog_dismiss claude "$screen")" "UTF-8: the Claude session survey chooses 0/Dismiss: $screen"
+    assert_equals feedback "$(nolocale_lib fm_wd_pane_dialog "$screen")" "no locale: the watchdog classifies the survey as feedback: $screen"
+  done
+  ! nolocale_lib fm_control_feedback_dialog_dismiss claude "$boxed_stale" || fail "no locale: a survey above a newer input box matched"
+  ! nolocale_lib fm_control_feedback_dialog_dismiss claude "$near" || fail "no locale: a survey with no 0: Dismiss choice matched"
+
+  # One real watchdog pass with no locale presses 0 on the home pane's survey.
+  make_home "$survey_rule"
+  env -u LANG -u LC_ALL -u LC_CTYPE -u LC_COLLATE \
+    FM_TEST_SEAM=1 FM_WD_TEST_COMPOSER=empty FM_WD_NOW="$BASE" FM_HOME="$H" /bin/bash "$WD" once >/dev/null 2>&1 \
+    || fail "no locale: watchdog pass failed"
+  assert_equals 1 "$(ledger | awk -F'\t' '$5 == "dialog" && $6 == "key" && $7 == "pending" && $8 ~ /^press 0: dismiss the feedback survey/' | wc -l | tr -d ' ')" \
+    "no locale: the watchdog pressed 0 on the survey once: $(ledger)"
+  pass "feedback dialogs: detection and the watchdog's dismissal hold with no locale set"
+}
+
 test_statusline_percentage_does_not_rearm_feedback_dismiss() {
   local dir state fake keys pane rc screen
   dir="$TMP_ROOT/statusline-dismiss-$CASE_N"
@@ -8036,6 +8115,8 @@ fm_test_run \
   test_mtime_uses_the_platform_stat_dialect \
   test_dismissed_dialog_in_scrollback_is_not_showing \
   test_dialog_keys_stop_after_two_failures \
+  test_feedback_dialog_detection_without_a_locale \
+  test_feedback_escape_honors_backend_key_gate \
   test_statusline_percentage_does_not_rearm_feedback_dismiss \
   test_loop_verdicts \
   test_stall_proof_and_text_guards \

@@ -1768,6 +1768,10 @@ wd_handle_dialog() {
           wd_rec "$id" dialog key failed "key delivery failed"
           return 1
           ;;
+        5)
+          wd_gap "feedback dialog needs $FM_CONTROL_FEEDBACK_DISMISS_KEY, which the $O_BACKEND backend cannot deliver to ${O_HARNESS:-this harness}; no key pressed"
+          return 0
+          ;;
         *)
           wd_rec "$id" dialog key pending "press $FM_CONTROL_FEEDBACK_DISMISS_KEY: dismiss the feedback survey"
           wd_rec "$id" dialog key failed "dialog still showing"
