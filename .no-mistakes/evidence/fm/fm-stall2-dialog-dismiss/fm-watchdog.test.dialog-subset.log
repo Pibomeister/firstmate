@@ -1,0 +1,7 @@
+1..4
+ok - dialog key rate window is per pane: a worker's key does not block the home pane's key
+ok - Orca feedback and model-switch dialogs are still read from scrollback
+ok - Orca feedback dismiss: a cleared survey records done
+ok - model-switch dialog: the judge and its refusals are rate-limited in every mode and stop after two failed keys
+FM_TEST_COMPLETE
+exit=0

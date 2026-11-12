@@ -1,0 +1,31 @@
+=== mode=fullclear: pane BEFORE watcher ===
+● Done. I updated the parser and ran the tests.
+● How is Claude doing this session? (optional)
+  1: Bad    2: Fine   3: Good   0: Dismiss
+╭──────────────────────────────╮
+│ >                            │
+╰──────────────────────────────╯
+  ? for shortcuts
+(watcher exited after 37s)
+--- watcher run 1 output: stale: lab:fm-w1
+(watcher still polling after 40s; stopping it)
+--- watcher run 2 output: 
+(watcher still polling after 40s; stopping it)
+--- watcher run 3 output: 
+=== pane AFTER watcher ===
+● Done. I updated the parser and ran the tests.
+╭──────────────────────────────╮
+│ >                            │
+╰──────────────────────────────╯
+  ? for shortcuts
+=== scrollback (history) rows containing the survey ===
+2:● How is Claude doing this session? (optional)
+3:  1: Bad    2: Fine   3: Good   0: Dismiss
+=== bytes the TUI received (hex, one read per line) ===
+30
+count=1
+=== watcher triage log lines about feedback ===
+[2026-11-12T02:57:00-0600] auto-dismissed feedback dialog (claude-session-feedback key=0): lab:fm-w1
+=== feedback markers ===
+.feedback-claim-lab_fm-w1-3571183689_391
+.feedback-dismissed-lab_fm-w1

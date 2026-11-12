@@ -1,0 +1,24 @@
+=== mode=nearmiss: pane BEFORE watcher ===
+● Done. I updated the parser and ran the tests.
+● How is Claude doing this session? (optional)
+  1: Bad    2: Fine   3: Good
+╭──────────────────────────────╮
+│ >                            │
+╰──────────────────────────────╯
+  ? for shortcuts
+(watcher exited after 14s)
+--- watcher run 1 output: stale: lab:fm-w1
+(watcher still polling after 40s; stopping it)
+--- watcher run 2 output: 
+=== pane AFTER watcher ===
+● Done. I updated the parser and ran the tests.
+● How is Claude doing this session? (optional)
+  1: Bad    2: Fine   3: Good
+╭──────────────────────────────╮
+│ >                            │
+╰──────────────────────────────╯
+  ? for shortcuts
+=== bytes the TUI received (hex, one read per line) ===
+count=0
+=== watcher triage log lines about feedback ===
+=== feedback markers ===

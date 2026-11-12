@@ -1,0 +1,137 @@
+=== scenario survey (dialog=survey sticky=0)
+--- pane before:
+● Done. I updated the parser and ran the tests.
+● How is Claude doing this session? (optional)
+  1: Bad    2: Fine   3: Good   0: Dismiss
+╭──────────────────────────────╮
+│ >                            │
+╰──────────────────────────────╯
+  ? for shortcuts
+--- call1 rc=0 id=claude-session-feedback key=0
+--- pane after:
+● Done. I updated the parser and ran the tests.
+● How is Claude doing this session? (optional)
+  1: Bad    2: Fine   3: Good   0: Dismiss
+╭──────────────────────────────╮
+│ >                            │
+╰──────────────────────────────╯
+  ? for shortcuts
+● Done. I updated the parser and ran the tests.
+╭──────────────────────────────╮
+│ >                            │
+╰──────────────────────────────╯
+  ? for shortcuts
+--- bytes received by the TUI (hex, one per keystroke):
+30
+(end, 1 keystrokes)
+
+=== scenario draft (dialog=draft sticky=0)
+--- pane before:
+● Done. I updated the parser and ran the tests.
+● Bug report drafted: parser crashes on empty input
+  1 to review · 2 to send · 0 to dismiss
+╭──────────────────────────────╮
+│ >                            │
+╰──────────────────────────────╯
+  ? for shortcuts
+--- call1 rc=0 id=claude-bug-report-draft key=0
+--- pane after:
+● Done. I updated the parser and ran the tests.
+● Bug report drafted: parser crashes on empty input
+  1 to review · 2 to send · 0 to dismiss
+╭──────────────────────────────╮
+│ >                            │
+╰──────────────────────────────╯
+  ? for shortcuts
+● Done. I updated the parser and ran the tests.
+╭──────────────────────────────╮
+│ >                            │
+╰──────────────────────────────╯
+  ? for shortcuts
+--- bytes received by the TUI (hex, one per keystroke):
+30
+(end, 1 keystrokes)
+
+=== scenario modal (dialog=modal sticky=0)
+--- pane before:
+● Done. I updated the parser and ran the tests.
+Submit feedback / bug report
+  Describe the issue below:
+  >
+  Enter to continue · Esc to cancel
+╭──────────────────────────────╮
+│ >                            │
+╰──────────────────────────────╯
+  ? for shortcuts
+--- call1 rc=0 id=claude-bug-report-dialog key=Escape
+--- pane after:
+● Done. I updated the parser and ran the tests.
+Submit feedback / bug report
+  Describe the issue below:
+  >
+  Enter to continue · Esc to cancel
+╭──────────────────────────────╮
+│ >                            │
+╰──────────────────────────────╯
+  ? for shortcuts
+● Done. I updated the parser and ran the tests.
+╭──────────────────────────────╮
+│ >                            │
+╰──────────────────────────────╯
+  ? for shortcuts
+--- bytes received by the TUI (hex, one per keystroke):
+1b
+(end, 1 keystrokes)
+
+=== scenario quoted (dialog=quoted sticky=0)
+--- pane before:
+● Done. I updated the parser and ran the tests.
+● The doc says the survey reads "How is Claude doing this session?"
+  1: Bad    2: Fine   3: Good   0: Dismiss
+  and I will now continue editing the file to fix the issue.
+╭──────────────────────────────╮
+│ >                            │
+╰──────────────────────────────╯
+  ? for shortcuts
+--- call1 rc=1 id= key=
+--- pane after:
+● Done. I updated the parser and ran the tests.
+● The doc says the survey reads "How is Claude doing this session?"
+  1: Bad    2: Fine   3: Good   0: Dismiss
+  and I will now continue editing the file to fix the issue.
+╭──────────────────────────────╮
+│ >                            │
+╰──────────────────────────────╯
+  ? for shortcuts
+--- bytes received by the TUI (hex, one per keystroke):
+(end, 0 keystrokes)
+
+=== scenario sticky (dialog=survey sticky=1)
+--- pane before:
+● Done. I updated the parser and ran the tests.
+● How is Claude doing this session? (optional)
+  1: Bad    2: Fine   3: Good   0: Dismiss
+╭──────────────────────────────╮
+│ >                            │
+╰──────────────────────────────╯
+  ? for shortcuts
+--- call1 rc=4 id=claude-session-feedback key=0
+--- call2 (same unchanged pane) rc=2
+--- pane after:
+● Done. I updated the parser and ran the tests.
+● How is Claude doing this session? (optional)
+  1: Bad    2: Fine   3: Good   0: Dismiss
+╭──────────────────────────────╮
+│ >                            │
+╰──────────────────────────────╯
+  ? for shortcuts
+--- bytes received by the TUI (hex, one per keystroke):
+30
+(end, 1 keystrokes)
+
+=== scenario race (two concurrent callers, same survey pane)
+caller B rc=2
+caller A rc=4
+--- bytes received:
+30
+(end, 1 keystrokes)

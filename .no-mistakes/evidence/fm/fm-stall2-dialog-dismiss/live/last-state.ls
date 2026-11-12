@@ -1,0 +1,24 @@
+total 112
+drwxr-xr-x@ 23 eduardopicazo  staff   736 Nov 12 02:59 .
+drwx------@  9 eduardopicazo  staff   288 Nov 12 02:59 ..
+-rw-r--r--@  1 eduardopicazo  staff     3 Nov 12 02:59 .count-lab_fm-w1
+-rw-------@  1 eduardopicazo  staff    16 Nov 12 02:59 .fm-lab-tmux-dir
+-rw-r--r--@  1 eduardopicazo  staff    32 Nov 12 02:59 .hash-lab_fm-w1
+-rw-r--r--@  1 eduardopicazo  staff     2 Nov 12 02:59 .heartbeat-streak
+drwx------@  7 eduardopicazo  staff   224 Nov 12 02:59 .heartbeat-work.LhKhYx
+-rw-------@  1 eduardopicazo  staff    25 Nov 12 02:59 .inactive-outcome-reconcile
+-rw-r--r--@  1 eduardopicazo  staff     0 Nov 12 02:59 .last-check
+-rw-r--r--@  1 eduardopicazo  staff     0 Nov 12 02:59 .last-heartbeat
+-rw-r--r--@  1 eduardopicazo  staff     0 Nov 12 02:59 .last-watcher-beat
+-rw-r--r--@  1 eduardopicazo  staff     0 Nov 12 02:59 .last-worktree-cleanup
+-rw-r--r--@  1 eduardopicazo  staff     0 Nov 12 02:59 .secondmate-liveness-tick
+-rw-r--r--@  1 eduardopicazo  staff    32 Nov 12 02:59 .stale-lab_fm-w1
+-rw-r--r--@  1 eduardopicazo  staff    11 Nov 12 02:59 .stale-since-lab_fm-w1
+-rw-r--r--@  1 eduardopicazo  staff   157 Nov 12 02:59 .watch-deliveries.log
+-rw-r--r--@  1 eduardopicazo  staff    78 Nov 12 02:59 .watch-triage.log
+-rw-------@  1 eduardopicazo  staff    41 Nov 12 02:59 .watcher-down
+-rw-------@  1 eduardopicazo  staff    32 Nov 12 02:59 .watcher-stage
+-rw-------@  1 eduardopicazo  staff  4007 Nov 12 02:59 heartbeat.json
+-rw-------@  1 eduardopicazo  staff  1367 Nov 12 02:59 home-summary.json
+drwxr-xr-x@  2 eduardopicazo  staff    64 Nov 12 02:59 terminal-outcomes
+-rw-r--r--@  1 eduardopicazo  staff    55 Nov 12 02:59 w1.meta

@@ -1,0 +1,21 @@
+=== mode=modal: pane BEFORE watcher ===
+● Done.
+Submit feedback / bug report
+Describe the issue below:
+Press Enter to continue · Esc to cancel
+(watcher exited after 40s)
+--- watcher run 1 output: stale: lab:fm-w1
+=== pane AFTER watcher ===
+● Done. I updated the parser and ran the tests.
+╭──────────────────────────────╮
+│ >                            │
+╰──────────────────────────────╯
+  ? for shortcuts
+=== bytes the TUI received (hex, one read per line) ===
+1b
+count=1
+=== watcher triage log lines about feedback ===
+[2026-11-12T02:59:17-0600] auto-dismissed feedback dialog (claude-bug-report-dialog key=Escape): lab:fm-w1
+=== feedback markers ===
+.feedback-claim-lab_fm-w1-3199543335_106
+.feedback-dismissed-lab_fm-w1

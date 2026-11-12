@@ -1,0 +1,38 @@
+=== watcher cycle against live tmux pane (dialog=survey)
+--- pane before:
+● Done. I updated the parser and ran the tests.
+● How is Claude doing this session? (optional)
+  1: Bad    2: Fine   3: Good   0: Dismiss
+╭──────────────────────────────╮
+│ >                           │
+╰──────────────────────────────╯
+  ? for shortcuts
+--- watcher cycle 1 exit=0 stdout=[]
+    marker=468485585_390 claims=1
+    scrollback -S -40 now:
+      ● Done. I updated the parser and ran the tests.
+      ╭──────────────────────────────╮
+      │ >                           │
+      ╰──────────────────────────────╯
+        ? for shortcuts
+--- watcher cycle 2 exit=0 stdout=[]
+    marker=468485585_390 claims=1
+    scrollback -S -40 now:
+      ● Done. I updated the parser and ran the tests.
+      ╭──────────────────────────────╮
+      │ >                           │
+      ╰──────────────────────────────╯
+        ? for shortcuts
+--- pane after:
+● Done. I updated the parser and ran the tests.
+╭──────────────────────────────╮
+│ >                           │
+╰──────────────────────────────╯
+  ? for shortcuts
+--- watcher triage log lines mentioning feedback:
+[2026-11-12T02:33:39-0600] auto-dismissed feedback dialog (claude-session-feedback key=0): test:fm-survey
+.feedback-claim-test_fm-survey-468485585_390
+.feedback-dismissed-test_fm-survey
+--- bytes received by the TUI:
+30
+(end, 1 keystrokes)

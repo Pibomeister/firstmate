@@ -1,0 +1,58 @@
+=== watcher cycle against live tmux pane (dialog=modal)
+--- pane before:
+● Done. I updated the parser and ran the tests.
+Submit feedback / bug report
+  Describe the issue below:
+  >
+  Enter to continue · Esc to cancel
+╭──────────────────────────────╮
+│ >                            │
+╰──────────────────────────────╯
+  ? for shortcuts
+--- watcher cycle 1 exit=0 stdout=[]
+    marker=2739162641_397 claims=1
+    scrollback -S -40 now:
+      ● Done. I updated the parser and ran the tests.
+      Submit feedback / bug report
+        Describe the issue below:
+        >
+        Enter to continue · Esc to cancel
+      ╭──────────────────────────────╮
+      │ >                            │
+      ╰──────────────────────────────╯
+        ? for shortcuts
+      ● Done. I updated the parser and ran the tests.
+      ╭──────────────────────────────╮
+      │ >                            │
+      ╰──────────────────────────────╯
+        ? for shortcuts
+--- watcher cycle 2 exit=0 stdout=[]
+    marker=2739162641_397 claims=1
+    scrollback -S -40 now:
+      ● Done. I updated the parser and ran the tests.
+      Submit feedback / bug report
+        Describe the issue below:
+        >
+        Enter to continue · Esc to cancel
+      ╭──────────────────────────────╮
+      │ >                            │
+      ╰──────────────────────────────╯
+        ? for shortcuts
+      ● Done. I updated the parser and ran the tests.
+      ╭──────────────────────────────╮
+      │ >                            │
+      ╰──────────────────────────────╯
+        ? for shortcuts
+--- pane after:
+● Done. I updated the parser and ran the tests.
+╭──────────────────────────────╮
+│ >                            │
+╰──────────────────────────────╯
+  ? for shortcuts
+--- watcher triage log lines mentioning feedback:
+[2026-11-12T02:44:17-0600] auto-dismissed feedback dialog (claude-bug-report-dialog key=Escape): test:fm-survey
+.feedback-claim-test_fm-survey-2739162641_397
+.feedback-dismissed-test_fm-survey
+--- bytes received by the TUI:
+1b
+(end, 1 keystrokes)

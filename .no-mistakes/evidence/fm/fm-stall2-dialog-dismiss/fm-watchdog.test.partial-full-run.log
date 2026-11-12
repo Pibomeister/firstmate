@@ -1,0 +1,14 @@
+1..99
+ok - dialogs need their structure, and each kind is told apart
+ok - feedback and bug-report dialogs: exact per-harness signatures auto-dismiss when idle without submitting, near-misses and unknown dialogs do not
+ok - mtime: native and available GNU stat give numeric ages through scan
+ok - a dismissed dialog that only remains in scrollback is not read as showing
+ok - dialog keys stop after two failures in an hour, so a misread screen is never typed into repeatedly
+ok - loop verdicts: loop, rapid, near, and work-between
+ok - stall proof needs two signals and no veto; merge and deploy text is refused
+ok - frozen pane: proven by records, nudged once with a record-backed doorbell, then rate-limited
+ok - boundary: never types into a pane on the do-not-touch list
+ok - draft rows: from the prompt row to the rule, and no footer word cuts them
+ok - boundary: never accepts a merge autosuggestion, while ordinary unsent text is submitted
+ok - boundary: a draft whose whole text cannot be read never gets Enter
+ok - boundary: a quoted row inside a taller draft never earns Enter or a partial note
