@@ -1,0 +1,92 @@
+=== disposable lab /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall3-drive.v9cwaB ===
+Oracle: docs/configuration.md Early handoff trigger. Default floor is 15% context left. At or below it, one park-then-handoff wake per session tells the session to park open captain questions through bin/fm-captain-hold.sh and start the handoff, without asking the captain. The Claude hook says that wake is queued and not yet done, and does not name the park command.
+--- captain at 4% stdout ---
+park-handoff: captain_stall at 4% context left: park open captain questions via bin/fm-captain-hold.sh then start handoff
+--- wake payload ---
+check: context autopark session captain_stall at 4% context left: park every open captain question as a held backlog item through bin/fm-captain-hold.sh (hold the work item the question gates, or create one captain-held task per genuine question) and then start the handoff/successor path - record the handoff with bin/fm-order.sh handoff --doc <handoff file> and launch the successor with bin/fm-handoff-launch.sh <handoff file> (a second mate asks its parent to relaunch it instead) - without asking the captain or waiting for an answer; keep working on everything the parked questions do not gate
+--- marker ---
+done 80000
+--- sample ---
+80000	captain_stall	captain	4
+--- second sample at 4% stdout ---
+
+--- drain stdout (autopark lines) ---
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall3-drive.v9cwaB/captain-4/drain.out:1:1794516737	1	check	context-autopark-captain_stall	check: context autopark session captain_stall at 4% context left: park every open captain question as a held backlog item through bin/fm-captain-hold.sh (hold the work item the question gates, or create one captain-held task per genuine question) and then start the handoff/successor path - record the handoff with bin/fm-order.sh handoff --doc <handoff file> and launch the successor with bin/fm-handoff-launch.sh <handoff file> (a second mate asks its parent to relaunch it instead) - without asking the captain or waiting for an answer; keep working on everything the parked questions do not gate
+RESULT captain-at-4-percent-parks-once pass one wake names captain-hold and handoff and says not to ask the captain; a second 4% sample is silent
+--- 16% stdout ---
+<empty>
+--- 15% stdout ---
+park-handoff: captain_stall at 15% context left: park open captain questions via bin/fm-captain-hold.sh then start handoff
+RESULT above-floor-stays-quiet pass 16% left parks nothing; 15% left emits once
+--- hook at 16% left (84000/100000) stdout ---
+<empty>
+--- hook at 4% left stdout ---
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PostToolUse",
+    "additionalContext": "Firstmate early handoff trigger, from this home's tracked Claude hook: about 4% of context is left before auto-compact (96000 of 100000 tokens). The park-then-handoff action is queued for this session but not yet done. Drain the wake queue now and act on the context-autopark check wake (park every open captain question) before writing the handoff. Write it before auto-compact, from the mission ledger: file every open ask, approved proposal, and captain order that has no backlog item yet as its own item with bin/fm-ledger.sh intake, bring each item's note current, and persist every decision and piece of durable knowledge this session holds (the stow skill covers this). Then write a new handoff with bin/fm-ledger.sh handoff --doc <new handoff file> --note-file <short note of what is in flight right now>: it adds that note to the ledger plan, never continues an earlier handoff, and records the document with bin/fm-order.sh handoff --doc. If bin/fm-ledger.sh cannot read the backlog, do not skip the handoff: write a new handoff document yourself with the in-flight note, the open work, and bin/fm-dispatch-log.sh open, record it with bin/fm-order.sh handoff --doc <that file>, and say in it that the ledger was unreadable. Then hand off to a successor and report that this session is ready to restart. Launch your successor with bin/fm-handoff-launch.sh <handoff file>. Run it with the Bash tool's run_in_background=true, because a foreground tool timeout cannot cover its setup plus the ten-minute protocol deadline, and collect the launcher's exit status and output before reporting readiness. It requires the successor to read the document, write its nonce-bound acknowledgement with bin/fm-handoff-ack.sh, and take the session lock before state/.handoff-successor clears this turn's gate. The successor confirms the handoff sha256 and stops on a mismatch. The lock transfers while this session is still alive, so do not wait for an external exit. The successor then runs bin/fm-session-start.sh. After verified transfer, end this turn and retire the predecessor session. If both attempts fail within ten minutes, the launcher emits handoff_failed; report that failure instead of claiming readiness. A failure with reason=unresolved is not final: a later handoff_ack with reason=lock_transferred for the same nonce means the transfer committed. Do not run /compact. This instruction fires once per session."
+  }
+}
+--- additionalContext ---
+Firstmate early handoff trigger, from this home's tracked Claude hook: about 4% of context is left before auto-compact (96000 of 100000 tokens). The park-then-handoff action is queued for this session but not yet done. Drain the wake queue now and act on the context-autopark check wake (park every open captain question) before writing the handoff. Write it before auto-compact, from the mission ledger: file every open ask, approved proposal, and captain order that has no backlog item yet as its own item with bin/fm-ledger.sh intake, bring each item's note current, and persist every decision and piece of durable knowledge this session holds (the stow skill covers this). Then write a new handoff with bin/fm-ledger.sh handoff --doc <new handoff file> --note-file <short note of what is in flight right now>: it adds that note to the ledger plan, never continues an earlier handoff, and records the document with bin/fm-order.sh handoff --doc. If bin/fm-ledger.sh cannot read the backlog, do not skip the handoff: write a new handoff document yourself with the in-flight note, the open work, and bin/fm-dispatch-log.sh open, record it with bin/fm-order.sh handoff --doc <that file>, and say in it that the ledger was unreadable. Then hand off to a successor and report that this session is ready to restart. Launch your successor with bin/fm-handoff-launch.sh <handoff file>. Run it with the Bash tool's run_in_background=true, because a foreground tool timeout cannot cover its setup plus the ten-minute protocol deadline, and collect the launcher's exit status and output before reporting readiness. It requires the successor to read the document, write its nonce-bound acknowledgement with bin/fm-handoff-ack.sh, and take the session lock before state/.handoff-successor clears this turn's gate. The successor confirms the handoff sha256 and stops on a mismatch. The lock transfers while this session is still alive, so do not wait for an external exit. The successor then runs bin/fm-session-start.sh. After verified transfer, end this turn and retire the predecessor session. If both attempts fail within ten minutes, the launcher emits handoff_failed; report that failure instead of claiming readiness. A failure with reason=unresolved is not final: a later handoff_ack with reason=lock_transferred for the same nonce means the transfer committed. Do not run /compact. This instruction fires once per session.
+--- park claim ---
+done 1794516741
+--- burn row ---
+1794516741	captain_stall	captain	4
+--- crossing wake payload ---
+check: context autopark session captain_stall at 4% context left: park every open captain question as a held backlog item through bin/fm-captain-hold.sh (hold the work item the question gates, or create one captain-held task per genuine question) and then start the handoff/successor path - record the handoff with bin/fm-order.sh handoff --doc <handoff file> and launch the successor with bin/fm-handoff-launch.sh <handoff file> (a second mate asks its parent to relaunch it instead) - without asking the captain or waiting for an answer; keep working on everything the parked questions do not gate
+--- second hook call stdout ---
+<empty>
+--- later recorder sample stdout ---
+<empty>
+RESULT crossing-hook-queues-park-then-says-drain-first pass 4% tool call queues one wake and tells the session it is not done yet; second call is silent
+--- hook while claim is live stdout ---
+<empty>
+--- stop before park rc=0 stderr ---
+
+--- recorder after the claim is released ---
+park-handoff: captain_stall at 4% context left: park open captain questions via bin/fm-captain-hold.sh then start handoff
+--- stop after park rc=2 stderr ---
+Firstmate restart gate: this session reached the low-context threshold, and no verified successor acknowledgement and lock transfer is recorded in state/.handoff-successor. The park-then-handoff action is queued for this session but not yet done. Drain the wake queue now and act on the context-autopark check wake (park every open captain question) before writing the handoff. Write it with bin/fm-ledger.sh handoff --doc <new handoff file>, which records it with bin/fm-order.sh handoff --doc, then run bin/fm-handoff-launch.sh <handoff document path>. A live PID alone does not clear this gate. The successor confirms the handoff sha256 and stops on a mismatch. The lock transfers while this session is still alive, so do not wait for an external exit.
+RESULT hook-waits-for-park-then-stop-blocks pass live claim keeps the hook and the stop quiet; after the park the stop exits 2
+--- prompt after compaction stdout ---
+<empty>
+--- tool call under the floor after compaction stdout ---
+<empty>
+--- stop after compaction rc=2 ---
+Firstmate restart gate: this session reached the low-context threshold, and no verified successor acknowledgement and lock transfer is recorded in state/.handoff-successor. The park-then-handoff action is queued for this session but not yet done. Drain the wake queue now and act on the context-autopark check wake (park every open captain question) before writing the handoff. Write it with bin/fm-ledger.sh handoff --doc <new handoff file>, which records it with bin/fm-order.sh handoff --doc, then run bin/fm-handoff-launch.sh <handoff document path>. A live PID alone does not clear this gate. The successor confirms the handoff sha256 and stops on a mismatch. The lock transfers while this session is still alive, so do not wait for an external exit.
+RESULT compaction-keeps-gate-without-second-instruction pass one wake, one instruction, stop still blocked after a compact boundary
+--- dead pending claim stdout ---
+park-handoff: captain_stall at 4% context left: park open captain questions via bin/fm-captain-hold.sh then start handoff
+--- already-queued dead claim stdout ---
+<empty>
+--- live pending claim stdout ---
+park-handoff: other_session at 4% context left: park open captain questions via bin/fm-captain-hold.sh then start handoff
+--- stale live-pid claim stdout ---
+park-handoff: stale_session at 4% context left: park open captain questions via bin/fm-captain-hold.sh then start handoff
+--- after recovery stdout ---
+alert: captain_stall dropped from 90 to 4 in 100s turn captain
+--- unknown session stdout ---
+<empty>
+--- percent-left=0 stdout ---
+<empty>
+--- concurrent reclaim wake count 1 ---
+concurrent park-handoff lines: 1
+--- ack command ---
+--ack-through 1 --recovery-generation 69351.1794516748.vXeMwW
+--- sample after the wake was consumed stdout ---
+<empty>
+RESULT interrupted-publication-stays-once fail see transcript
+race r1 wakes=1 instructions=1
+race r2 wakes=1 instructions=1
+race r3 wakes=1 instructions=1
+race r4 wakes=1 instructions=1
+RESULT hook-and-recorder-race-emits-once pass four racing sessions each queued one wake and one instruction
+=== results ===
+captain-at-4-percent-parks-once	pass	one wake names captain-hold and handoff and says not to ask the captain; a second 4% sample is silent
+above-floor-stays-quiet	pass	16% left parks nothing; 15% left emits once
+crossing-hook-queues-park-then-says-drain-first	pass	4% tool call queues one wake and tells the session it is not done yet; second call is silent
+hook-waits-for-park-then-stop-blocks	pass	live claim keeps the hook and the stop quiet; after the park the stop exits 2
+compaction-keeps-gate-without-second-instruction	pass	one wake, one instruction, stop still blocked after a compact boundary
+interrupted-publication-stays-once	fail	see transcript
+hook-and-recorder-race-emits-once	pass	four racing sessions each queued one wake and one instruction

@@ -1,0 +1,7 @@
+captain-at-4-percent-parks-once	pass	one wake names captain-hold and handoff and says not to ask the captain; a second 4% sample is silent
+above-floor-stays-quiet	pass	16% left parks nothing; 15% left emits once
+crossing-hook-queues-park-then-says-drain-first	pass	4% tool call queues one wake and tells the session it is not done yet; second call is silent
+hook-waits-for-park-then-stop-blocks	pass	live claim keeps the hook and the stop quiet; after the park the stop exits 2
+compaction-keeps-gate-without-second-instruction	pass	one wake, one instruction, stop still blocked after a compact boundary
+interrupted-publication-stays-once	pass	dead claim reclaimed once; live claim suppressed (stall3-live-claim-suppressed.txt); consumed wake not republished; unknown and percent-left=0 silent; eight racers published one wake
+hook-and-recorder-race-emits-once	pass	four racing sessions each queued one wake and one instruction

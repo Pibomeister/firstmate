@@ -4,7 +4,9 @@ ok - default threshold: silent at 16% left, fires at 15% left before auto-compac
 ok - threshold is configurable, 0 turns it off, and an unusable value keeps the default
 ok - fires once per cycle across tool calls and prompts, and again for a new session
 ok - the instruction fires once per session, and a compaction re-arms only the successor gate
-ok - hook-first and recorder-first each emit park-then-handoff exactly once per session, and the successor gate stays armed
+ok - the crossing tool call parks, hands off and arms the gate at once, and a compaction before the stop drops none of it
+ok - the hook never hands off ahead of the park, and a park recorded at turn end gates that stop
+ok - a hook racing the recorder queues one park wake and one handoff instruction
 ok - eight concurrent hook calls for one session fire exactly once
 ok - compact point derives from Claude's autoCompactWindow layers and override, and a pin wins
 ok - the settings layers resolve the way Claude resolves them, on canonical model names

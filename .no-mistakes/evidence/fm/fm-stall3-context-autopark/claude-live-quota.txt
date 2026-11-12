@@ -1,0 +1,10 @@
+claude --version: 2.1.322 (Claude Code)
+claude auth status: loggedIn true, authMethod claude.ai (account identifiers omitted)
+claude -p --model haiku --dangerously-skip-permissions --output-format json:
+  exit 1
+  is_error true
+  api_error_status 429
+  api_error usage_limit_reached
+  result: You've hit your weekly limit · resets Nov 15 at 4pm (America/Mexico_City)
+tests/fm-handoff-trigger-live-e2e.test.sh with FM_HANDOFF_TRIGGER_LIVE_E2E=1:
+  not ok - claude -p failed (stderr empty; the refusal is on stdout, same 429)
