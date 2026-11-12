@@ -1,0 +1,3 @@
+keys=["no_ci", "document", "commands", "test"]
+Scope the test evidence to the changed surface. Run the colocated tests/<subject>.test.sh for every changed bin/ script or library when one exists, and any test that exercises the changed behavior, and run a live Herdr, lab-home, or harness scenario only when the change touches the behavior that scenario proves. A change to prose, skills, or brief text with no other executable behavior needs only the tests that render or check that text. Scoping chooses which evidence to gather; it never skips the Test step or leaves a changed behavior without evidence.
+still has lab runbook: true

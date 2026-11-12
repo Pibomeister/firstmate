@@ -1,0 +1,16 @@
+registered: nm-deadbeefdeadbeefdeadbeefdeadbeef (no-mistakes, task=t-lab)
+reg=0
+--- list after register, listener never started:
+SOURCE                       ADAPTER      OWNER      PENDING
+nm-deadbeefdeadbeefdeadbeefdeadbeef no-mistakes  task:t-lab/dead 0
+--- start listener:
+ensure=0
+SOURCE                       ADAPTER      OWNER      PENDING
+nm-deadbeefdeadbeefdeadbeefdeadbeef no-mistakes  task:t-lab/listening 0
+--- listener process killed:
+69853 65907 /bin/sleep 600
+SOURCE                       ADAPTER      OWNER      PENDING
+nm-deadbeefdeadbeefdeadbeefdeadbeef no-mistakes  task:t-lab/dead 0
+--- retire:
+retired: nm-deadbeefdeadbeefdeadbeefdeadbeef
+no sources registered
