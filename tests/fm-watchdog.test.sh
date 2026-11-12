@@ -3716,6 +3716,16 @@ test_feedback_and_bug_report_dialog_dismissal() {
     ! lib fm_control_feedback_dialog_dismiss "" "$near_miss" || fail "near-miss matched feedback dismissal: $near_miss"
     assert_equals "" "$(lib fm_wd_pane_dialog "$near_miss")" "near-miss is not classified as a dialog: $near_miss"
   done
+  # 3b. A TUI that full-clears its screen pushes the closed dialog and its input
+  #     box into scrollback, then draws a clean prompt below. The newer prompt
+  #     proves the dialog is stale; dismissing it would type 0 into the composer.
+  local stale_boxed stale_bare stale_rule
+  stale_boxed=$'● Done. I updated the parser and ran the tests.\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n╭──────────────────────────────╮\n│ >                            │\n╰──────────────────────────────╯\n  ? for shortcuts\n● Done. I updated the parser and ran the tests.\n╭──────────────────────────────╮\n│ >                            │\n╰──────────────────────────────╯\n  ? for shortcuts'
+  stale_bare=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n> \nsome work\n> '
+  stale_rule=$'some work\n● Bug report drafted: tool timeout on large file\n  1 to review · 2 to send · 0 to dismiss\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main\nsome work\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main'
+  for screen in "$stale_boxed" "$stale_bare" "$stale_rule"; do
+    ! lib fm_control_feedback_dialog_dismiss claude "$screen" || fail "stale dialog above a newer prompt matched feedback dismissal: $screen"
+  done
   ! lib fm_control_feedback_dialog_dismiss "" "$unknown_picker" || fail "unknown picker matched feedback dismissal"
   assert_equals question "$(lib fm_wd_pane_dialog "$unknown_picker")" "unknown picker still classifies as question"
 

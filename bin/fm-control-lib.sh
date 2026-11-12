@@ -1064,14 +1064,21 @@ fm_control_feedback_dialog_dismiss() {  # <harness> <screen>
         if (r ~ /^[ \t]*(← for agents[ \t]+·[ \t]+)?\? for shortcuts([ \t]|$)/) return 1
         return 0
       }
+      # Rows below the input box under the dialog (statusLine, mode hints) are
+      # ignored, but a later prompt row means a newer screen was drawn after
+      # it, so the dialog is a stale scrollback copy rather than live.
+      function no_prompt_after(idx,   k) {
+        for (k = idx + 1; k <= m; k++) if (is_prompt_row(tail[k])) return 0
+        return 1
+      }
       function no_output_after(idx,   j, seen_top_border, seen_prompt) {
         if (idx <= 0) return 0
         seen_top_border = 0
         seen_prompt = 0
         for (j = idx + 1; j <= m; j++) {
           if (seen_prompt) {
-            if (is_border_row(tail[j])) return 1
-            if (!seen_top_border) return 1
+            if (is_border_row(tail[j])) return no_prompt_after(j)
+            if (!seen_top_border) return no_prompt_after(j - 1)
             if (!is_chrome_row(tail[j])) return 0
             continue
           }
@@ -1080,7 +1087,7 @@ fm_control_feedback_dialog_dismiss() {  # <harness> <screen>
             continue
           }
           if (is_border_row(tail[j])) {
-            if (tail[j] ~ /^[ \t]*[╰└]/) return 1
+            if (tail[j] ~ /^[ \t]*[╰└]/) return no_prompt_after(j)
             seen_top_border = 1
             continue
           }
