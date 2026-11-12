@@ -818,7 +818,12 @@ No extra timer or daemon is installed; the normal check cadence and primary-turn
 
 `config/auto-away` is an optional, local, gitignored file of `key=value` lines.
 Blank lines and lines beginning with `#` are ignored; malformed settings fail visibly instead of executing configuration as shell code, and a scheduled check reports each failure, including a local-time conversion failure that skips only the clock trigger, as a `check` wake once, staying silent until the failure changes or a clean check clears it.
-A failed or obsolete automatic entry releases its matching request receipt, so a failed entry, including a configuration or staging failure before launch, leaves a later scheduled check free to queue another retry until entry succeeds or a new captain message arrives; a successful entry, or a repeated entry while its away posture or pending return still holds, keeps the receipt, so a stale activity stamp cannot request entry again after the captain returns. The entry command reports each distinct failure, keyed by its message or by the launcher's exit status and first error line, once, and the next check retries it at once; an unchanged repeat prints nothing and holds the next retry for 1800 seconds. A success, a new captain message, or a captain-opened session start clears the record.
+A failed or obsolete automatic entry releases its matching request receipt, so a failed entry, including a configuration or staging failure before launch, leaves a later scheduled check free to queue another retry until entry succeeds or a new captain message arrives.
+A successful entry records fulfillment in that receipt, even if the originating check did not save its pending receipt.
+The fulfilled receipt blocks both scheduled requests and entry replays after return, including when the return could not record activity; a new captain message or captain-opened session start clears it.
+A present configuration that cannot be read reports a failure and permits no automatic entry; it never falls back to enabled defaults.
+The entry command reports each distinct failure, keyed by its message or by the launcher's exit status and first error line, once, and the next check retries it at once; an unchanged repeat prints nothing and holds the next retry for 1800 seconds.
+A success, a new captain message, or a captain-opened session start clears the failure record.
 
 | Key | Default | Meaning |
 | --- | --- | --- |

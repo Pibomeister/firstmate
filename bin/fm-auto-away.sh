@@ -18,8 +18,10 @@
 #
 # A failed or obsolete entry releases its matching request under the lock, so
 # a failed entry, including one before launch, leaves a later check free to
-# retry. A request stays fulfilled while a posture or pending return holds, so
-# a successful or repeated entry keeps it; enter reports each distinct
+# retry. The request record is an activity stamp while pending, and the stamp
+# followed by " fulfilled" after success. Fulfillment rejects replay even after
+# a return whose activity stamp failed; captain activity clears it.
+# A successful or repeated entry keeps it; enter reports each distinct
 # failure once and stays silent while it repeats unchanged. The failure record
 # holds the next retry time and the failure signature: a new signature retries
 # at the next check, an unchanged one only after ENTRY_BACKOFF seconds.
@@ -77,8 +79,10 @@ posture_held() {
 # Only a failed or obsolete entry frees its own request for a later check;
 # a fulfilled one is kept, so a stale stamp cannot request entry again.
 release_request() {
+  local receipt
   ! posture_held || return 0
-  [ "$(cat "$REQUEST" 2>/dev/null || true)" != "$ENTRY_ACTIVITY" ] || rm -f "$REQUEST"
+  receipt=$(cat "$REQUEST" 2>/dev/null || true)
+  [ "${receipt%% *}" != "$ENTRY_ACTIVITY" ] || rm -f "$REQUEST"
 }
 
 # Report a failure signature once; an unchanged repeat backs off silently.
@@ -114,7 +118,7 @@ read_config() {
         timezone) ZONE=$value ;;
         *) fail "unknown config/auto-away key: $key" ;;
       esac
-    done < "$CONFIG/auto-away"
+    done < "$CONFIG/auto-away" || fail 'cannot read config/auto-away'
   fi
   case "$ENABLED" in on|off) ;; *) fail 'enabled must be on or off' ;; esac
   [[ "$AT" = off || "$AT" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]] || fail 'time must be HH:MM or off'
@@ -267,6 +271,11 @@ fm_lock_acquire_wait "$LOCK" || fail 'cannot acquire activity lock'
 trap 'fm_lock_release "$LOCK"' EXIT
 LOCKED=1
 NOW=$(now)
+# A completed return may have failed to stamp activity. The original wake is
+# still fulfilled, even after its posture has gone and a handler replays it.
+if [ "$CMD" = enter ] && [ "$(cat "$REQUEST" 2>/dev/null || true)" = "$ENTRY_ACTIVITY fulfilled" ]; then
+  exit 0
+fi
 [ "$CMD" = captain-message ] || read_config
 case "${1:-check}" in
   captain-message)
@@ -282,7 +291,8 @@ case "${1:-check}" in
       retry=$(cat "$ENTRY_FAILURE" 2>/dev/null || true)
       retry=${retry%% *}
       [[ "$retry" =~ ^[0-9]{1,10}$ ]] || retry=0
-      if [ "$(cat "$REQUEST" 2>/dev/null || true)" != "$request" ] && [ "$NOW" -ge "$retry" ]; then
+      receipt=$(cat "$REQUEST" 2>/dev/null || true)
+      if [ "${receipt%% *}" != "$request" ] && [ "$NOW" -ge "$retry" ]; then
         fm_wake_append check auto-away \
           "check: auto-away $REASON trigger; load /afk and run bin/fm-auto-away.sh enter $LAST; only if it prints an entry, finish /afk supervision setup and announce it once." \
           || fail 'cannot queue automatic entry'
@@ -304,6 +314,7 @@ case "${1:-check}" in
       [ "$status" != 0 ] || cat "$errors" >&2
       rm -f "$errors"
       [ "$status" = 0 ] || entry_failed "$signature"
+      write_record "$REQUEST" "$2 fulfilled" || fail 'cannot save fulfilled entry receipt'
       rm -f "$ENTRY_FAILURE"
     else
       release_request

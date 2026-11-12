@@ -213,6 +213,35 @@ printf 'silence-seconds=oops\n' >> "$FM_HOME/config/auto-away"
 if at "$EARLY" check >/dev/null 2>&1; then fail 'invalid configuration was accepted'; fi
 assert_absent "$FM_HOME/state/.wake-queue" 'invalid configuration queued entry'
 
+world unreadable-config
+at "$EARLY" captain-message
+at "$NIGHT" check
+printf 'enabled=off\ntime=off\nsilence-seconds=0\ntimezone=UTC\n' > "$FM_HOME/config/auto-away"
+chmod 000 "$FM_HOME/config/auto-away"
+if [ -r "$FM_HOME/config/auto-away" ]; then
+  chmod 600 "$FM_HOME/config/auto-away"
+  printf '# skip unreadable configuration: this user can read mode-000 files\n'
+else
+  if out=$(at "$NIGHT" check 2>/dev/null); then
+    chmod 600 "$FM_HOME/config/auto-away"
+    fail 'an unreadable disabled configuration was accepted as defaults'
+  fi
+  assert_contains "$out" 'auto-away check failed: cannot read config/auto-away' 'an unreadable configuration failure was not visible to the watcher'
+  out=$(at "$((NIGHT + 60))" check 2>/dev/null || true)
+  [ -z "$out" ] || fail 'an unchanged configuration read failure was reported twice'
+  if out=$(at "$NIGHT" enter "$EARLY" 2>/dev/null); then fail 'entry accepted an unreadable disabled configuration'; fi
+  assert_contains "$out" 'auto-away entry failed: cannot read config/auto-away' 'an unreadable entry configuration bypassed failure handling'
+  assert_absent "$FM_HOME/state/.afk-contract" 'an unreadable disabled configuration entered away mode'
+  chmod 600 "$FM_HOME/config/auto-away"
+  at "$((NIGHT + 120))" check
+  [ "$(wc -l < "$FM_HOME/state/.wake-queue" | tr -d ' ')" = 1 ] || fail 'restoring a disabled configuration queued entry'
+  printf 'timezone=UTC\n' > "$FM_HOME/config/auto-away"
+  at "$((NIGHT + 300))" check
+  [ "$(wc -l < "$FM_HOME/state/.wake-queue" | tr -d ' ')" = 2 ] || fail 'restoring readable enabled configuration did not permit a retry'
+  at "$((NIGHT + 300))" enter "$EARLY" >/dev/null
+  assert_present "$FM_HOME/state/.afk-contract" 'entry did not recover after configuration readability was restored'
+fi
+
 world gnu-date
 # GNU date reads -r as a reference file; only -d @epoch converts an epoch.
 REAL_DATE=$(command -v date)
@@ -303,6 +332,18 @@ assert_present "$FM_HOME/state/.auto-away-request" 'a repeated entry released a 
 "$ROOT/bin/fm-afk-contract.sh" archive >/dev/null
 at "$((NIGHT + 300))" check
 [ "$(wc -l < "$FM_HOME/state/.wake-queue" | tr -d ' ')" = 1 ] || fail 'a successful entry let a stale stamp request entry again after return'
+[ -z "$(at "$((NIGHT + 301))" enter "$EARLY")" ] || fail 'a fulfilled entry replay announced again after return'
+assert_absent "$FM_HOME/state/.afk-contract" 'a fulfilled entry replay re-entered away after return'
+
+world interrupted-request-receipt
+at "$EARLY" captain-message
+# A check can publish its wake and be interrupted before saving the receipt.
+at "$NIGHT" enter "$EARLY" >/dev/null
+"$ROOT/bin/fm-afk-contract.sh" archive >/dev/null
+[ -z "$(at "$((NIGHT + 300))" enter "$EARLY")" ] || fail 'entry without an originating receipt replayed after return'
+assert_absent "$FM_HOME/state/.afk-contract" 'a fulfilled entry without an originating receipt re-entered away'
+at "$((NIGHT + 300))" check
+assert_absent "$FM_HOME/state/.wake-queue" 'a fulfilled entry without an originating receipt queued another wake'
 
 world prelaunch-failure
 at "$EARLY" captain-message
