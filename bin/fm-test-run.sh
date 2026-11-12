@@ -933,6 +933,7 @@ tests/fm-remote-secondmate-parent-binding.test.sh 83979
 tests/fm-remote-secondmate-relaunch.test.sh 1037
 tests/fm-remote-secondmate-trace-context.test.sh 157409
 tests/fm-remote-transport-lanes.test.sh 77333
+tests/fm-resume-doorbell.test.sh 6000
 tests/fm-review-check.test.sh 1931
 tests/fm-rovo-harness.test.sh 20426
 tests/fm-rovo-signals-live-e2e.test.sh 73

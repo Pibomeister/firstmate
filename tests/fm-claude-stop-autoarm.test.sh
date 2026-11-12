@@ -449,6 +449,61 @@ test_inert_when_fleet_idle() {
 
 # --- the armed cycle ----------------------------------------------------------
 
+# The 2026-11-11/12 stall, end to end with real processes: the watchdog's
+# managed-hold watcher holds this home's lock with a fresh beacon, a main wake
+# row is queued, and the Claude primary ends a turn. The real Stop hook runs the
+# real arm, which attaches to that holder. The hook must exit 2 with the rewake
+# banner and the reason on its own, so an idle captain starts a turn with no
+# human typing. Before the fix the attached arm followed the holder forever and
+# the hook never returned.
+test_idle_claude_with_queued_wake_under_managed_hold_rewakes() {
+  local dir out pid status i watch_pid
+  dir=$(make_primary_dir "$TMP_ROOT/managed-hold-stall")
+  cp -R "$ROOT/bin/." "$dir/bin/"
+  fm_test_track_watcher_state "$dir/state"
+  : > "$dir/state/task.meta"
+  env -u TMUX -u TMUX_PANE -u HERDR_PANE_ID -u HERDR_SESSION -u HERDR_ENV \
+    FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_ROOT_OVERRIDE="$dir" \
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_WATCH_MANAGED_HOLD=1 "$dir/bin/fm-watch.sh" --managed-hold > "$dir/watch.out" 2>&1 &
+  watch_pid=$!
+  i=0
+  while [ "$i" -lt 100 ]; do
+    [ "$(cat "$dir/state/.watch.lock/pid" 2>/dev/null || true)" = "$watch_pid" ] \
+      && [ -e "$dir/state/.last-watcher-beat" ] && break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$(cat "$dir/state/.watch.lock/pid" 2>/dev/null || true)" = "$watch_pid" ] \
+    || fail "the managed-hold watcher did not take the fixture lock: $(cat "$dir/watch.out")"
+  FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" bash -c '. "$1"; fm_wake_append check stall-fixture "check: stall fixture queued wake"' \
+    _ "$dir/bin/fm-wake-lib.sh" || fail "could not queue the fixture wake"
+  out="$dir/hook.out"
+  FM_ARM_ATTACH_POLL=0.2 run_autoarm_bg "$dir" "$out"
+  pid=$RUN_AUTOARM_BG_PID
+  i=0
+  while [ "$i" -lt 200 ] && kill -0 "$pid" 2>/dev/null; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    pkill -TERM -P "$pid" 2>/dev/null || true
+    kill -TERM "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    kill -TERM "$watch_pid" 2>/dev/null || true
+    fail "the Stop hook was still waiting after 20s with a queued wake under a live managed-hold watcher (the stall): $(cat "$out")"
+  fi
+  wait "$pid"; status=$?
+  kill -0 "$watch_pid" 2>/dev/null || fail "the rewake must leave the managed-hold watcher running"
+  FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" "$dir/bin/fm-watch-arm.sh" --stop >/dev/null 2>&1 || true
+  kill -TERM "$watch_pid" 2>/dev/null || true
+  expect_code 2 "$status" "the Stop hook must exit 2 so the idle primary rewakes: $(cat "$out")"
+  assert_contains "$(cat "$out")" "firstmate watcher wake" "the rewake must carry the wake banner"
+  assert_contains "$(cat "$out")" "check: rearm-resurface" "the rewake must carry the queued-work reason"
+  [ "$(epoch_outcome "$dir")" = rewake ] || fail "the epoch must record outcome=rewake, got: $(epoch_outcome "$dir")"
+  pass "auto-arm: an idle Claude with a queued wake under a live managed-hold watcher rewakes on its own"
+}
+
 test_actionable_close_rewakes_with_reason() {
   local dir out status
   dir=$(make_primary_dir "$TMP_ROOT/actionable")
@@ -1241,7 +1296,7 @@ record_autoarm_epoch() {
   local dir=$1 seq=$2 owner=$3 outcome=$4
   printf 'epoch=%s owner_pid=%s outcome=%s updated_at=1\n' "$seq" "$owner" "$outcome" \
     > "$dir/state/.claude-autoarm-epoch"
-  touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
+  fm_touch_epoch "$(( $(date +%s) - 3600 ))" "$dir/state/.claude-autoarm-epoch"
 }
 
 epoch_field() {
@@ -1570,11 +1625,46 @@ record_autoarm_v2_claim() {
     "$gen" "$owner" "$outcome" "$identity" > "$dir/state/.claude-autoarm-epoch"
 }
 
+# Run one Stop firing against a live, identity-matched arming claim owned by a
+# session-descended sleeper, with a fresh watcher beacon. The claim's ledger
+# entry is aged <epoch-age> seconds; <context-age>, when not "-", writes
+# state/.context-epoch that many seconds old. Sets OPEN_CLAIM_OUT and
+# OPEN_CLAIM_STATUS; extra args are env assignments for the hook.
+OPEN_CLAIM_OUT=
+OPEN_CLAIM_STATUS=
+run_open_claim_case() {  # <dir> <epoch-age> <context-age|-> [env...]
+  local dir=$1 epoch_age=$2 context_age=$3 now
+  shift 3
+  now=$(date +%s)
+  : > "$dir/state/epoch-age-ref"
+  fm_touch_epoch "$((now - epoch_age))" "$dir/state/epoch-age-ref"
+  if [ "$context_age" != - ]; then
+    printf 'source=compact\nlock_pid=1\nat=1\n' > "$dir/state/.context-epoch"
+    fm_touch_epoch "$((now - context_age))" "$dir/state/.context-epoch"
+  fi
+  OPEN_CLAIM_STATUS=0
+  OPEN_CLAIM_OUT=$(printf '%s\n' '{"session_id":"sess-autoarm","stop_hook_active":false}' \
+    | env "$@" FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" "$FAKE_CLAUDE" -c '
+        printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+        sleep 60 &
+        owner=$!
+        identity=$(. "$FM_HOME/bin/fm-wake-lib.sh"; fm_pid_identity "$owner") || exit 97
+        printf "epoch=464 owner_pid=%s outcome=arming updated_at=1\n%s\n" "$owner" "$identity" \
+          > "$FM_HOME/state/.claude-autoarm-epoch"
+        touch -r "$FM_HOME/state/epoch-age-ref" "$FM_HOME/state/.claude-autoarm-epoch"
+        "$FM_HOME/bin/fm-claude-stop-autoarm.sh" 2>&1
+        rc=$?
+        kill "$owner" 2>/dev/null
+        exit "$rc"
+      ') || OPEN_CLAIM_STATUS=$?
+}
+
 # A live open generation claim needs no lock to keep the gate closed: the
-# ledger alone defers a concurrent firing, however old the entry, while the
-# watcher keeps beating the beacon. The owner is a child of the lock-holding
-# session, as a real concurrent hook is; an owner outside that session is the
-# orphan case tested below.
+# ledger alone defers a concurrent firing while the watcher keeps beating the
+# beacon, even past grace, as long as the entry is younger than the Stop hook's
+# timeout and no compact or clear context epoch followed it. The owner is a
+# child of the lock-holding session, as a real concurrent hook is; an owner
+# outside that session is the orphan case tested below.
 test_open_generation_claim_defers_without_any_lock() {
   local dir out status
   dir=$(make_primary_dir "$TMP_ROOT/v2-open-claim")
@@ -1582,26 +1672,50 @@ test_open_generation_claim_defers_without_any_lock() {
   write_arm_fixture "$dir" actionable
   : > "$dir/state/.last-watcher-beat"
   assert_absent "$dir/state/.claude-autoarm.lock" "this case must start with no owner lock at all"
-  out=$(printf '%s\n' '{"session_id":"sess-autoarm","stop_hook_active":false}' \
-    | FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" "$FAKE_CLAUDE" -c '
-        printf "%s\n" "$$" > "$FM_HOME/state/.lock"
-        sleep 60 &
-        owner=$!
-        identity=$(. "$FM_HOME/bin/fm-wake-lib.sh"; fm_pid_identity "$owner") || exit 97
-        printf "epoch=464 owner_pid=%s outcome=arming updated_at=1\n%s\n" "$owner" "$identity" \
-          > "$FM_HOME/state/.claude-autoarm-epoch"
-        touch -t 202001010000 "$FM_HOME/state/.claude-autoarm-epoch"
-        "$FM_HOME/bin/fm-claude-stop-autoarm.sh" 2>&1
-        rc=$?
-        kill "$owner" 2>/dev/null
-        exit "$rc"
-      '); status=$?
+  run_open_claim_case "$dir" 3600 -
+  out=$OPEN_CLAIM_OUT
+  status=$OPEN_CLAIM_STATUS
   [ "$status" -ne 97 ] || fail "could not record a v2 claim for the session-owned sleeper"
   expect_code 0 "$status" "a live open generation claim must keep the single-flight gate closed with no lock held"
   [ -z "$out" ] || fail "deferring to an open generation claim produced output: $out"
   assert_absent "$dir/state/arm-ran" "an open generation claim was superseded and double-armed"
   [ "$(epoch_field "$dir" epoch)" = 464 ] || fail "deferred firing rewrote the open claim's ledger entry"
   pass "auto-arm: a live open generation claim defers concurrent firings with no lock held"
+}
+
+# The 2026-11-10 wedge: a Stop hook parked on an arm that never returns keeps
+# its arming claim live and identity-matched, and the managed-hold watcher keeps
+# the beacon fresh, so every later Stop deferred to it for 30 hours. A claim at
+# least the hook timeout old, or one taken before the lock owner's latest
+# compact or clear context epoch, is not open: the next firing supersedes it.
+test_parked_claim_past_hook_timeout_or_context_epoch_is_superseded() {
+  local dir label epoch_age context_age env_arg
+  for label in timeout custom-timeout context-epoch; do
+    dir=$(make_primary_dir "$TMP_ROOT/v2-parked-claim-$label")
+    : > "$dir/state/task1.meta"
+    write_arm_fixture "$dir" actionable
+    : > "$dir/state/.last-watcher-beat"
+    env_arg=FM_AUTOARM_HOOK_TIMEOUT=
+    context_age=-
+    case "$label" in
+      timeout) epoch_age=28800 ;;
+      custom-timeout) epoch_age=700; env_arg=FM_AUTOARM_HOOK_TIMEOUT=600 ;;
+      context-epoch) epoch_age=3600; context_age=60 ;;
+    esac
+    run_open_claim_case "$dir" "$epoch_age" "$context_age" "$env_arg"
+    [ "$OPEN_CLAIM_STATUS" -ne 97 ] || fail "$label: could not record a v2 claim for the session-owned sleeper"
+    expect_code 2 "$OPEN_CLAIM_STATUS" "$label: a parked claim must be superseded and the new generation must rewake: $OPEN_CLAIM_OUT"
+    [ -e "$dir/state/arm-ran" ] || fail "$label: the superseding generation did not arm"
+    [ "$(epoch_field "$dir" epoch)" -gt 464 ] || fail "$label: the ledger did not advance past the parked claim"
+  done
+  dir=$(make_primary_dir "$TMP_ROOT/v2-parked-claim-older-context")
+  : > "$dir/state/task1.meta"
+  write_arm_fixture "$dir" actionable
+  : > "$dir/state/.last-watcher-beat"
+  run_open_claim_case "$dir" 3600 7200
+  expect_code 0 "$OPEN_CLAIM_STATUS" "a context epoch older than the claim must leave it open"
+  assert_absent "$dir/state/arm-ran" "a claim newer than the context epoch was superseded"
+  pass "auto-arm: a parked claim past the hook timeout or older than a context epoch is superseded despite a fresh beacon"
 }
 
 # The 2026-08-26 watcher flap in the generation model: a live, identity-matched
@@ -1616,7 +1730,7 @@ test_stuck_generation_claim_is_superseded_and_rearms() {
   sleep 60 &
   pid=$!
   record_autoarm_v2_claim "$dir" 464 "$pid" arming "$pid" || fail "could not record a v2 claim"
-  touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
+  fm_touch_epoch "$(( $(date +%s) - 3600 ))" "$dir/state/.claude-autoarm-epoch"
   touch -t 202001010000 "$dir/state/.last-watcher-beat"
   out=$(run_autoarm "$dir" 2>/dev/null); status=$?
   kill "$pid" 2>/dev/null || true
@@ -1887,7 +2001,7 @@ test_identityless_ledger_never_defers() {
   pid=$!
   printf 'epoch=464 owner_pid=%s outcome=arming updated_at=1\n' "$pid" \
     > "$dir/state/.claude-autoarm-epoch"
-  touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
+  fm_touch_epoch "$(( $(date +%s) - 3600 ))" "$dir/state/.claude-autoarm-epoch"
   : > "$dir/state/.last-watcher-beat"
   out=$(run_autoarm "$dir" 2>/dev/null); status=$?
   kill -0 "$pid" 2>/dev/null || fail "the unrelated live pid on an identityless ledger must never be signalled"
@@ -2564,6 +2678,7 @@ test_inert_when_afk
 test_stale_lock_recovery_preserves_afk_and_need_gates
 test_resolves_outermost_claude_pid_in_nested_bgspare_chain
 test_inert_when_fleet_idle
+test_idle_claude_with_queued_wake_under_managed_hold_rewakes
 test_actionable_close_rewakes_with_reason
 test_actionable_close_with_live_successor_rewakes_once
 test_stopfailure_close_rewakes_paced_per_cooldown
@@ -2600,6 +2715,7 @@ test_terminal_check_claim_is_never_reclaimed
 test_stuck_live_legacy_owner_is_retired_and_reclaimed
 test_stopped_legacy_owner_is_reclaimed_with_term_pending
 test_open_generation_claim_defers_without_any_lock
+test_parked_claim_past_hook_timeout_or_context_epoch_is_superseded
 test_stuck_generation_claim_is_superseded_and_rearms
 test_orphaned_claim_from_dead_session_is_superseded_by_replacement
 test_resumed_same_id_session_supersedes_the_orphan

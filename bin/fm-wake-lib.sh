@@ -232,6 +232,38 @@ fm_grok_holding_watcher() {  # <pid>
   fi
 }
 
+# True when <pid> is the watchdog's managed-hold watcher (bin/fm-monitor-watchdog.sh
+# runs `fm-watch.sh --managed-hold` as its arm's child). That watcher survives
+# every wake, so an arm attached to it never sees its cycle end.
+fm_managed_holding_watcher() {  # <pid>
+  local pid=$1 proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc} args
+  if [ -r "$proc_root/$pid/cmdline" ]; then
+    [ "$(tr '\000' '\n' < "$proc_root/$pid/cmdline" | tail -n 1)" = --managed-hold ]
+  else
+    args=$(ps -ww -o args= -p "$pid" 2>/dev/null) || return 1
+    case "$args" in *' --managed-hold') return 0 ;; esac
+    return 1
+  fi
+}
+
+# Highest queue sequence among the rows main would drain, or 0. Read without
+# the queue lock, like fm_wake_actor_pending_count, whose ownership split this
+# mirrors: a row a live branch grant reserves is not main's.
+fm_wake_main_max_seq() {  # [<rows-file> <owner-file>]
+  local rows=${1:-$STATE/.branch-eligible-rows} owner=${2:-$STATE/.branch-eligible-owner} grant='' max
+  [ -f "$FM_WAKE_QUEUE" ] || { printf '0\n'; return 0; }
+  if fm_wake_branch_grant_live "$rows" "$owner"; then
+    grant=$rows
+  fi
+  max=$(awk -F '\t' -v seqs="$grant" '
+    BEGIN { if (seqs != "") while ((getline line < seqs) > 0) reserved[line] = 1 }
+    NF >= 5 && $2 ~ /^[0-9]+$/ && !($2 in reserved) && $2 + 0 > m { m = $2 + 0 }
+    END { print m + 0 }
+  ' "$FM_WAKE_QUEUE" 2>/dev/null) || max=0
+  case "$max" in ''|*[!0-9]*) max=0 ;; esac
+  printf '%s\n' "$max"
+}
+
 fm_watcher_lock_matches_pid() {
   local state=$1 watch_path=$2 pid=$3 home=${4:-$FM_HOME} lockdir lock_home lock_path lock_identity current_identity
   FM_WATCHER_MATCHED_IDENTITY=
@@ -2344,6 +2376,14 @@ fm_failure_episode_reset() {
 #     than the guard grace, which proves the owner hung mid-arm with nothing
 #     supervising (every legitimate arming phase with no watcher is bounded in
 #     seconds, while a healthy hours-long cycle keeps the beacon beating).
+#     A fresh beacon alone does not keep a claim open, because the watchdog's
+#     managed-hold watcher beats forever: an arming entry at least
+#     FM_AUTOARM_HOOK_TIMEOUT seconds old (default 28800, the Stop hook's
+#     registered timeout, past which the harness no longer delivers its exit 2)
+#     is closed, and so is an entry older than state/.context-epoch, which the
+#     completed lock owner writes at each compact or clear session open
+#     (bin/fm-sessionstart-run.sh). The next Stop then takes the next generation
+#     and the parked owner goes silent when its arm returns.
 #     The reachability test is what makes a claim deliverable: a hook whose
 #     session exited mid-cycle stays alive, reparented to init, with no parent
 #     to receive its exit 2, so deferring to it leaves the home deaf until a
@@ -2476,6 +2516,7 @@ fm_pid_descends_from() {  # <pid> <ancestor>
 # the legacy shim, and anything else must not defer.
 fm_autoarm_claim_open() {  # <state-dir> [grace]
   local state=$1 grace=${2:-${FM_GUARD_GRACE:-300}} epoch current lock_pid lock_identity recorded
+  local hook_timeout epoch_age
   epoch="$state/.claude-autoarm-epoch"
   case "$grace" in
     ''|*[!0-9]*|0) grace=300 ;;
@@ -2498,7 +2539,17 @@ fm_autoarm_claim_open() {  # <state-dir> [grace]
     recorded=$(fm_session_lock_recorded_session_id "$state" 2>/dev/null || true)
     [ -n "$recorded" ] && [ "$recorded" = "$FM_AUTOARM_OWNER_SESSION_ID" ] || return 1
   fi
-  if [ "$(fm_path_age "$epoch")" -ge "$grace" ] \
+  # Hook-timeout and context-epoch bounds: see the generation-claim contract above.
+  hook_timeout=${FM_AUTOARM_HOOK_TIMEOUT:-28800}
+  case "$hook_timeout" in
+    ''|*[!0-9]*|0) hook_timeout=28800 ;;
+  esac
+  epoch_age=$(fm_path_age "$epoch")
+  [ "$epoch_age" -lt "$hook_timeout" ] || return 1
+  if [ -e "$state/.context-epoch" ] && [ "$(fm_path_age "$state/.context-epoch")" -lt "$epoch_age" ]; then
+    return 1
+  fi
+  if [ "$epoch_age" -ge "$grace" ] \
     && [ "$(fm_path_age "$state/.last-watcher-beat")" -ge "$grace" ]; then
     return 1
   fi

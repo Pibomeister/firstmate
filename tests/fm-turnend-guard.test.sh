@@ -1480,7 +1480,7 @@ seed_claude_failure() {
   local dir=$1 outcome=${2:-failed-suppressed}
   : > "$dir/state/.claude-autoarm-failure-notified"
   printf 'epoch=3 owner_pid=999 outcome=%s updated_at=1\n' "$outcome" > "$dir/state/.claude-autoarm-epoch"
-  touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
+  fm_touch_epoch "$(( $(date +%s) - 3600 ))" "$dir/state/.claude-autoarm-epoch"
 }
 
 seed_claude_budget() {
@@ -1728,7 +1728,7 @@ test_hook_claude_mode_blocks_on_abandoned_autoarm_claim() {
   pid=$!
   record_autoarm_owner "$dir" "$pid"
   printf 'epoch=464 owner_pid=%s outcome=rewake updated_at=1\n' "$pid" > "$dir/state/.claude-autoarm-epoch"
-  touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
+  fm_touch_epoch "$(( $(date +%s) - 3600 ))" "$dir/state/.claude-autoarm-epoch"
   out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" false); status=$?
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
@@ -1756,7 +1756,7 @@ test_hook_claude_mode_blocks_on_pid_reused_arming_claim() {
   identity=$(fm_test_pid_identity "$$") || fail "could not compute a claim pid-identity"
   printf '%s\n' "$identity" > "$dir/state/.claude-autoarm.lock/pid-identity"
   printf 'epoch=464 owner_pid=%s outcome=arming updated_at=1\n' "$pid" > "$dir/state/.claude-autoarm-epoch"
-  touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
+  fm_touch_epoch "$(( $(date +%s) - 3600 ))" "$dir/state/.claude-autoarm-epoch"
   : > "$dir/state/.last-watcher-beat"
   out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" false); status=$?
   kill "$pid" 2>/dev/null || true
@@ -1781,7 +1781,7 @@ test_hook_claude_mode_blocks_on_stuck_arming_claim() {
   identity=$(fm_test_pid_identity "$pid") || fail "could not compute a claim pid-identity"
   printf '%s\n' "$identity" > "$dir/state/.claude-autoarm.lock/pid-identity"
   printf 'epoch=464 owner_pid=%s outcome=arming updated_at=1\n' "$pid" > "$dir/state/.claude-autoarm-epoch"
-  touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
+  fm_touch_epoch "$(( $(date +%s) - 3600 ))" "$dir/state/.claude-autoarm-epoch"
   touch -t 202001010000 "$dir/state/.last-watcher-beat"
   out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" false); status=$?
   kill "$pid" 2>/dev/null || true
@@ -1805,7 +1805,7 @@ test_hook_claude_mode_allows_on_open_generation_claim() {
   identity=$(fm_test_pid_identity "$pid") || fail "could not compute a claim pid-identity"
   printf 'epoch=464 owner_pid=%s outcome=arming updated_at=1\n%s\n' "$pid" "$identity" \
     > "$dir/state/.claude-autoarm-epoch"
-  touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
+  fm_touch_epoch "$(( $(date +%s) - 3600 ))" "$dir/state/.claude-autoarm-epoch"
   : > "$dir/state/.last-watcher-beat"
   [ ! -e "$dir/state/.claude-autoarm.lock" ] || fail "this case must start with no owner lock at all"
   out=$(run_hook_claude "$dir" false); status=$?
@@ -1828,7 +1828,7 @@ test_hook_claude_mode_blocks_on_stuck_generation_claim() {
   identity=$(fm_test_pid_identity "$pid") || fail "could not compute a claim pid-identity"
   printf 'epoch=464 owner_pid=%s outcome=arming updated_at=1\n%s\n' "$pid" "$identity" \
     > "$dir/state/.claude-autoarm-epoch"
-  touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
+  fm_touch_epoch "$(( $(date +%s) - 3600 ))" "$dir/state/.claude-autoarm-epoch"
   touch -t 202001010000 "$dir/state/.last-watcher-beat"
   out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" false); status=$?
   kill "$pid" 2>/dev/null || true
@@ -1852,7 +1852,7 @@ test_hook_claude_mode_terminal_fail_open_clears_abandoned_claim() {
   pid=$!
   record_autoarm_owner "$dir" "$pid"
   printf 'epoch=3 owner_pid=%s outcome=failed-suppressed updated_at=1\n' "$pid" > "$dir/state/.claude-autoarm-epoch"
-  touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
+  fm_touch_epoch "$(( $(date +%s) - 3600 ))" "$dir/state/.claude-autoarm-epoch"
   out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" false); status=$?
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
@@ -2036,7 +2036,7 @@ test_hook_claude_mode_frozen_epoch_without_verified_failure_spends_budget_and_ke
   dir=$(make_primary_dir "$TMP_ROOT/hook-claude-frozen-unverified")
   : > "$dir/state/task1.meta"
   printf 'epoch=7 owner_pid=999 outcome=clean updated_at=1\n' > "$dir/state/.claude-autoarm-epoch"
-  touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
+  fm_touch_epoch "$(( $(date +%s) - 3600 ))" "$dir/state/.claude-autoarm-epoch"
   for i in 1 2 3 4 5; do
     out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=100 run_hook_claude "$dir" false); status=$?
     expect_code 2 "$status" "frozen unverified stop $i must keep blocking"
@@ -2314,7 +2314,7 @@ test_hook_claude_mode_stale_rewake_epoch_blocks() {
   dir=$(make_primary_dir "$TMP_ROOT/hook-claude-stale-epoch")
   : > "$dir/state/task1.meta"
   printf 'epoch=3 owner_pid=999 outcome=rewake updated_at=1\n' > "$dir/state/.claude-autoarm-epoch"
-  touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
+  fm_touch_epoch "$(( $(date +%s) - 3600 ))" "$dir/state/.claude-autoarm-epoch"
   out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" false); status=$?
   expect_code 2 "$status" "--claude mode must not treat an ancient rewake epoch as this event's recovery"
   pass "fm-turnend-guard --claude: stale rewake epoch does not allow a blind stop"

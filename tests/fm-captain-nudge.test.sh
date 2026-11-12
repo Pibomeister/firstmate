@@ -455,6 +455,57 @@ test_once_submits_own_unsent_prompt_only() {
   pass "fm-captain-nudge: submits only its own unsent fixed prompt, Enter only"
 }
 
+# A fake herdr whose pinned pane is gone (herdr restarted, the captain moved)
+# while the live captain pane shows a real Claude primary's idle composer.
+make_handle_herdr() {  # <bin-dir>
+  mkdir -p "$1"
+  cat > "$1/herdr" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >> "$FAKE_HERDR_LOG"
+[ "$1" = pane ] && [ "$2" = read ] || exit 0
+case "$3" in
+  "$FAKE_HERDR_LIVE_PANE") cat "$FAKE_HERDR_SCREEN_FILE" ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$1/herdr"
+}
+
+# The 2026-11-10 stall: the host nudge pinned herdr pane w4:p18, which no
+# longer existed, so every pass logged skip_read_failed and the primary in
+# w4:p5G was never nudged. The pane fixture keeps the composer frame of a real
+# read-only capture of that primary taken mid-turn (conversation text
+# replaced); the composer classifier must read its empty composer as empty.
+test_herdr_dead_pin_follows_the_homes_live_captain_handle() {
+  local home bin cap fmhome log
+  bin="$TMP_ROOT/handle-herdr-bin"
+  make_handle_herdr "$bin"
+  fmhome="$TMP_ROOT/handle-fm-home"
+  mkdir -p "$fmhome/state" "$TMP_ROOT/handle-queue"
+  printf 'backend=herdr\ntarget=default:w4:p5G\nat=1\n' > "$fmhome/state/captain-handle"
+  printf -- '- [ ] open item\n' > "$TMP_ROOT/handle-queue/backlog.md"
+  cap=$(jq -nc --arg fm "$fmhome" --arg q "$TMP_ROOT/handle-queue/backlog.md" \
+    '[{id:"factory", owner:"goodword", backend:"herdr", pane:"w4:p18", title:"", session:"", fm_home:$fm, open_work:{repos:[], queue_file:$q}}]')
+  home=$(write_home herdr-dead-pin "$cap")
+  log="$TMP_ROOT/handle-herdr.log"
+  : > "$log"
+  PATH="$bin:$PATH" FAKE_HERDR_LOG="$log" FAKE_HERDR_LIVE_PANE=w4:p5G \
+    FAKE_HERDR_SCREEN_FILE="$ROOT/tests/fixtures/claude-herdr-primary-empty-composer.screen.txt" \
+    FM_NUDGE_NOW=2000000000 run_once "$home" >/dev/null 2>&1
+  [ "$(last_event "$home")" != skip_read_failed ] \
+    || fail "a dead pinned pane must fall back to the home's live captain handle, not fail the read"
+  grep -qx 'pane read w4:p5G --source visible --session default' "$log" \
+    || fail "the nudge did not read the live handle's pane in its session: $(cat "$log")"
+  PATH="$bin:$PATH" FAKE_HERDR_LOG="$log" FAKE_HERDR_LIVE_PANE=w4:p5G \
+    FAKE_HERDR_SCREEN_FILE="$ROOT/tests/fixtures/claude-herdr-primary-empty-composer.screen.txt" \
+    FM_NUDGE_NOW=$((2000000000 + 25 * 60)) run_once "$home" >/dev/null 2>&1
+  [ "$(last_event "$home")" = nudge ] \
+    || fail "an idle live primary with open work and an empty composer must be nudged: $(tail -n 1 "$home/state/nudge.jsonl")"
+  grep -q $'^herdr\tw4:p5G\t' "$home/send.log" \
+    || fail "the nudge must type into the live handle's pane: $(cat "$home/send.log" 2>/dev/null)"
+  pass "fm-captain-nudge: a dead pinned herdr pane follows the home's live captain handle, and a real Claude pane's empty composer reads empty"
+}
+
 fm_test_run \
   test_help_and_usage \
   test_decide_nudge_happy_path \
@@ -481,4 +532,5 @@ fm_test_run \
   test_example_configs_parse \
   test_expand_path_literal_tilde \
   test_herdr_idle_tracks_screen_change_not_heartbeat \
-  test_once_submits_own_unsent_prompt_only
+  test_once_submits_own_unsent_prompt_only \
+  test_herdr_dead_pin_follows_the_homes_live_captain_handle

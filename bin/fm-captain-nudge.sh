@@ -217,6 +217,22 @@ herdr_resolve_pane() {  # <captain-json> -> pane_id
   ' 2>/dev/null
 }
 
+# The live captain terminal a firstmate home recorded at its last session start
+# (bin/fm-order.sh claim-handle writes <fm_home>/state/captain-handle). Prints
+# "<session>\t<pane>" for a herdr handle, or returns 1.
+herdr_live_handle() {  # <fm_home>
+  local home=$1 f backend target
+  [ -n "$home" ] || return 1
+  home=$(fm_nudge_expand_path "$home")
+  f=$home/state/captain-handle
+  [ -r "$f" ] || return 1
+  backend=$(sed -n 's/^backend=//p' "$f" | head -n 1)
+  target=$(sed -n 's/^target=//p' "$f" | head -n 1)
+  [ "$backend" = herdr ] || return 1
+  case "$target" in *:*:*) ;; *) return 1 ;; esac
+  printf '%s\t%s\n' "${target%%:*}" "${target#*:}"
+}
+
 herdr_screen_change_epoch() {  # <captain-id> <screen> -> epoch the screen last changed
   local id=$1 screen=$2 f sum prev_sum prev_at now
   f=$CFG_STATE/captains/$id.screen
@@ -386,7 +402,7 @@ observe_fixture() {  # <captain-json> -> observation fields via globals
 }
 
 observe_live() {  # <captain-json>
-  local cap=$1 backend handle last pane session fmhome row
+  local cap=$1 backend handle last pane session fmhome row read_ok
   backend=$(fm_nudge_json_get "$cap" '.backend' '') || true
   fmhome=$(fm_nudge_json_get "$cap" '.fm_home // ""' '') || true
   OBS_SCREEN=''
@@ -409,10 +425,24 @@ observe_live() {  # <captain-json>
       OBS_DRAFT=$(orca_draft "$handle") || OBS_DRAFT=''
       ;;
     herdr)
-      pane=$(herdr_resolve_pane "$cap") || return 1
+      pane=$(herdr_resolve_pane "$cap") || pane=''
       session=$(fm_nudge_json_get "$cap" '.session // ""' '') || true
+      read_ok=0
+      if [ -n "$pane" ] && OBS_SCREEN=$(herdr_read_screen "$pane" "$session"); then
+        read_ok=1
+      fi
+      # A pinned pane goes stale when herdr restarts or the captain moves. When
+      # it cannot be read, follow the live captain terminal the named home
+      # recorded at its last session start instead of failing every pass.
+      if [ "$read_ok" = 0 ] && row=$(herdr_live_handle "$fmhome") \
+        && [ "${row#*$'\t'}" != "$pane" ]; then
+        session=${row%%$'\t'*}
+        pane=${row#*$'\t'}
+        OBS_SCREEN=$(herdr_read_screen "$pane" "$session") || OBS_SCREEN=''
+      fi
+      [ -n "$pane" ] || return 1
       OBS_TARGET=$pane
-      OBS_SCREEN=$(herdr_read_screen "$pane" "$session") || OBS_SCREEN=''
+      OBS_SESSION=$session
       # Herdr has no lastOutputAt; a cron-written heartbeat.json is not
       # captain activity. Track when the visible screen last changed.
       if [ -n "$OBS_SCREEN" ]; then
@@ -474,7 +504,7 @@ process_captain() {  # <captain-json> [force]
     [ "$cool_left" -lt 0 ] && cool_left=0
   fi
 
-  OBS_SCREEN=''; OBS_LAST_AT=''; OBS_TARGET=''; OBS_DRAFT=''
+  OBS_SCREEN=''; OBS_LAST_AT=''; OBS_TARGET=''; OBS_DRAFT=''; OBS_SESSION=''
   OBS_DIALOG=''; OBS_COMPOSER=''; OBS_HB=''; OBS_COMMIT=''
   if [ "$backend" = fixture ]; then
     observe_fixture "$cap"
@@ -511,7 +541,8 @@ process_captain() {  # <captain-json> [force]
     extra=$(jq -nc --arg t "${OBS_TARGET:-}" --arg b "$backend" '{target:$t, backend:$b}')
     decision=$(jq -nc '{event:"nudge",severity:"info",reason:"submitted own fixed prompt left unsent in composer (Enter only)",should_send:true}')
     if cfg_mode_is_act; then
-      session=$(fm_nudge_json_get "$cap" '.session // ""' '') || true
+      session=${OBS_SESSION:-}
+      [ -n "$session" ] || session=$(fm_nudge_json_get "$cap" '.session // ""' '') || true
       if ! send_enter_only "$backend" "${OBS_TARGET:-$id}" "$session"; then
         decision=$(jq -nc '{event:"blocker",severity:"medium",reason:"submit of pending fixed prompt failed",should_send:false}')
       fi
@@ -587,7 +618,8 @@ process_captain() {  # <captain-json> [force]
   emit_event "$id" "$owner" "$decision" "$idle" "$open_sum" "$extra" >/dev/null
 
   if fm_nudge_json_bool "$decision" '.should_send' && cfg_mode_is_act; then
-    session=$(fm_nudge_json_get "$cap" '.session // ""' '') || true
+    session=${OBS_SESSION:-}
+    [ -n "$session" ] || session=$(fm_nudge_json_get "$cap" '.session // ""' '') || true
     if send_fixed_prompt "$backend" "${OBS_TARGET:-$id}" "$session"; then
       send_ok=1
     else
