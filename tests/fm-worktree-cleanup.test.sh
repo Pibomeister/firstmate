@@ -276,6 +276,98 @@ test_untracked_files_are_reported() {
   pass "non-ignored untracked files are reported"
 }
 
+test_landed_caches_and_profiles_are_pruned() {
+  begin_case caches
+  publish_pr MERGED
+  mkdir -p "$CASE_WT/.cache/x" "$CASE_WT/playwright_chromiumdev_profile-1" "$CASE_WT/node_modules/.cache"
+  printf 'cache\n' > "$CASE_WT/.cache/x/f"
+  printf 'profile\n' > "$CASE_WT/playwright_chromiumdev_profile-1/f"
+  printf 'cache\n' > "$CASE_WT/node_modules/.cache/f"
+  capture_clean "$CASE_DIR"
+  assert_removed
+  assert_out "prune caches"
+  assert_out "pull request MERGED $PR_URL"
+  pass "landed worktree caches and browser profiles are pruned before removal"
+}
+
+test_cache_beside_real_untracked_work_is_kept() {
+  begin_case cache-mixed
+  publish_pr MERGED
+  mkdir -p "$CASE_WT/.cache"
+  printf 'cache\n' > "$CASE_WT/.cache/f"
+  printf 'note\n' > "$CASE_WT/notes.txt"
+  capture_clean "$CASE_DIR"
+  assert_kept
+  [ -f "$CASE_WT/.cache/f" ] || fail "a cache beside real untracked work was pruned"
+  assert_out "untracked files"
+  pass "a cache beside real untracked work keeps the worktree and the cache"
+}
+
+test_open_pr_caches_are_kept() {
+  begin_case cache-open
+  publish_pr OPEN
+  mkdir -p "$CASE_WT/.cache"
+  printf 'cache\n' > "$CASE_WT/.cache/f"
+  capture_clean "$CASE_DIR"
+  assert_kept
+  [ -f "$CASE_WT/.cache/f" ] || fail "an open pull request's cache was pruned"
+  pass "unlanded work keeps its caches"
+}
+
+test_cache_root_holding_tracked_files_is_kept() {
+  begin_case cache-tracked
+  mkdir -p "$CASE_WT/.playwright"
+  printf 'config\n' > "$CASE_WT/.playwright/config.json"
+  git -C "$CASE_WT" add .playwright/config.json
+  git -C "$CASE_WT" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm 'track playwright config'
+  printf 'cache\n' > "$CASE_WT/.playwright/cache.bin"
+  publish_pr MERGED
+  capture_clean "$CASE_DIR"
+  assert_kept
+  [ -f "$CASE_WT/.playwright/config.json" ] || fail "a tracked file inside a cache root was deleted"
+  [ -f "$CASE_WT/.playwright/cache.bin" ] || fail "a cache root holding tracked files was pruned"
+  pass "a cache root holding tracked files keeps the worktree"
+}
+
+test_profile_directory_with_a_space_is_pruned() {
+  begin_case cache-space
+  publish_pr MERGED
+  mkdir -p "$CASE_WT/playwright_chromiumdev_profile 1"
+  printf 'profile\n' > "$CASE_WT/playwright_chromiumdev_profile 1/f"
+  capture_clean "$CASE_DIR"
+  assert_removed
+  assert_out "prune caches"
+  pass "a browser profile directory whose name holds a space is pruned whole"
+}
+
+test_low_disk_alarm_is_logged() {
+  begin_case diskalarm
+  publish_pr MERGED
+  cat > "$CASE_DIR/bin/df" <<'SH'
+#!/bin/sh
+printf '%s\n' 'Filesystem 1024-blocks Used Available Capacity Mounted' '/dev/disk 1000000 900000 4000000 20% /'
+SH
+  chmod +x "$CASE_DIR/bin/df"
+  FM_TEST_SEAM=1 FM_DISK_ALARM_VOLUME="$CASE_DIR" capture_clean "$CASE_DIR"
+  assert_out "disk-alarm: level=stop"
+  pass "a low-disk reading is logged by the cleanup pass"
+}
+
+test_closed_unmerged_pr_keeps_worktree_and_caches() {
+  begin_case closed-unmerged
+  printf 'work\n' > "$CASE_WT/feature.txt"
+  git -C "$CASE_WT" add feature.txt
+  git -C "$CASE_WT" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm 'unmerged feature work'
+  mkdir -p "$CASE_WT/.cache"
+  printf 'cache\n' > "$CASE_WT/.cache/f"
+  publish_pr CLOSED
+  capture_clean "$CASE_DIR"
+  assert_kept
+  [ -f "$CASE_WT/.cache/f" ] || fail "a closed unmerged pull request's cache was pruned"
+  assert_out "closed pull request did not land"
+  pass "a closed, unmerged pull request keeps the worktree and its caches"
+}
+
 test_ignored_private_files_do_not_block_removal() {
   begin_case ignored
   commit_ignore_rules "$CASE_REPO" "$CASE_WT" || fail "could not commit ignore rules"
@@ -799,6 +891,13 @@ fm_test_run \
   test_closed_pr_removes_worktree_keeps_branch \
   test_tracked_changes_are_reported \
   test_untracked_files_are_reported \
+  test_landed_caches_and_profiles_are_pruned \
+  test_cache_beside_real_untracked_work_is_kept \
+  test_open_pr_caches_are_kept \
+  test_cache_root_holding_tracked_files_is_kept \
+  test_profile_directory_with_a_space_is_pruned \
+  test_low_disk_alarm_is_logged \
+  test_closed_unmerged_pr_keeps_worktree_and_caches \
   test_ignored_private_files_do_not_block_removal \
   test_dry_run_changes_nothing \
   test_main_checkout_is_skipped \

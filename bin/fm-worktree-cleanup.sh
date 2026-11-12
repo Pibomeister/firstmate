@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Remove linked git worktrees whose pull request is merged or closed.
+# Remove linked git worktrees whose pull request is merged, or closed while
+# the worktree HEAD is already on the default branch. A closed pull request
+# whose worktree HEAD is not on the default branch proves nothing about
+# landing and never permits removal or cache pruning.
 #
 # One decision line per linked worktree, and one line for each main checkout
 # the scan sees. A main checkout is never removed. A worktree that a task record
@@ -10,8 +13,9 @@
 # installed Orca cannot be read, the worktree is reported and left in place. A
 # worktree with a live process whose working directory is inside it is skipped.
 # When that scan cannot be completed, the worktree is reported and left in place.
-# Uncommitted tracked changes and non-ignored untracked files are reported
-# and left in place. Ignored files, including private .env, .work, and .omc
+# Uncommitted tracked changes, and non-ignored untracked files other than the
+# caches and browser profiles named below, are reported and left in place.
+# Ignored files, including private .env, .work, and .omc
 # files, do not block removal. Decision lines name the worktree and the
 # reason. They never include file contents.
 # Only pull requests whose head repository owner is the base repository owner
@@ -20,6 +24,17 @@
 # request's head commit is reported and left in place. A head commit that is
 # missing locally is fetched from origin's refs/pull/<n>/head, and a worktree is
 # reported and left in place when that fetch does not produce it.
+# A worktree whose only untracked files are caches or browser profiles (a
+# top-level `.cache`, `.playwright`, `ms-playwright`, `.ms-playwright`, or
+# `.puppeteer` directory, a `playwright_chromiumdev_profile*` or
+# `puppeteer_dev_chrome_profile*` directory, or `node_modules/.cache`) does not
+# stay behind for them: once every landed proof below has passed, those
+# directories are pruned and the tree must then read clean before removal.
+# Any other untracked file, and any tracked change, still leaves the worktree
+# in place. A dry run reports the prune instead of deleting.
+# Each pass first reads bin/fm-disk-alarm.sh and logs its line when the level
+# is warn, pause, stop, or unreadable. That reading never blocks the pass,
+# because pruning is what frees the space.
 # Removal is `git worktree remove`, or `orca worktree rm` for a worktree Orca
 # lists so that its list stays correct, never with --force, followed by
 # `git worktree prune`. A refusal is reported. Orca removes the directory after
@@ -220,6 +235,68 @@ dirt_kind() {
     esac
   done < "$status_file"
   printf '%s' "$kind"
+}
+
+# cache_root_of <untracked-path>: print the cache or browser-profile root to
+# prune for a known cache path, or nothing for any other path.
+cache_root_of() {
+  local p=$1 top
+  top=${p%%/*}
+  case "$top" in
+    .cache|.playwright|ms-playwright|.ms-playwright|.puppeteer|playwright_chromiumdev_profile*|puppeteer_dev_chrome_profile*)
+      printf '%s' "$top" ;;
+    node_modules)
+      case "$p" in node_modules/.cache|node_modules/.cache/*) printf 'node_modules/.cache' ;; esac ;;
+  esac
+}
+
+# prune_landed_caches <worktree>: 0 when the tree holds no untracked files
+# beyond known caches and profiles (pruning them, unless this is a dry run),
+# 1 when another untracked file is present, 2 when the tree cannot be read.
+# Callers must already have proved the work has landed.
+prune_landed_caches() {
+  local wt=$1 status_file=$SCRATCH/prune-status line path root
+  local roots=() seen=' '
+  git -C "$wt" status --porcelain=v1 --untracked-files=all -z > "$status_file" || return 2
+  while IFS= read -r -d '' line; do
+    case "$line" in
+      '') continue ;;
+      \?\?*) ;;
+      *) return 1 ;;
+    esac
+    path=${line#\?\? }
+    root=$(cache_root_of "$path")
+    [ -n "$root" ] || return 1
+    case "$seen" in *" $root "*) ;; *) seen="$seen$root "; roots+=("$root") ;; esac
+  done < "$status_file"
+  [ "${#roots[@]}" -gt 0 ] || return 0
+  # A cache root that also holds tracked files is not pruned: deleting the
+  # root would destroy tracked work the status scan never listed.
+  for root in "${roots[@]}"; do
+    [ -z "$(git -C "$wt" ls-files -- "$root")" ] || return 1
+  done
+  if [ "$DRY" -eq 1 ]; then
+    emit "worktree-cleanup: dry-run prune caches $wt: ${roots[*]}"
+    return 0
+  fi
+  for root in "${roots[@]}"; do
+    rm -rf -- "${wt:?}/${root:?}" || return 2
+  done
+  emit "worktree-cleanup: prune caches $wt: ${roots[*]}"
+  [ "$(dirt_kind "$wt")" = clean ] || return 1
+  return 0
+}
+
+# default_branch_ref <worktree>: print the ref that names the default
+# branch (origin/HEAD, else origin/main, else a local main or master), or
+# fail when none can be named.
+default_branch_ref() {
+  local wt=$1 ref
+  ref=$(git -C "$wt" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null) && { printf '%s' "$ref"; return 0; }
+  for ref in origin/main origin/master main master; do
+    git -C "$wt" rev-parse --verify --quiet "$ref" >/dev/null 2>&1 && { printf '%s' "$ref"; return 0; }
+  done
+  return 1
 }
 
 pr_rows() {
@@ -468,10 +545,7 @@ consider_worktree() {
       emit "worktree-cleanup: report $phys uncommitted tracked changes"
       return 0
       ;;
-    untracked)
-      emit "worktree-cleanup: report $phys untracked files"
-      return 0
-      ;;
+    untracked) ;; # caches and profiles are judged after the landed proofs
     clean) ;;
     *)
       emit "worktree-cleanup: report $phys cannot read worktree status"
@@ -527,6 +601,16 @@ EOF
     emit "worktree-cleanup: report $phys commits not on PR head"
     return 0
   fi
+  # A closed pull request proves nothing about landing by itself. Only a
+  # merged pull request, or a closed one whose worktree HEAD is already an
+  # ancestor of the default branch, may proceed.
+  if [ "$chosen_state" = CLOSED ]; then
+    default_ref=$(default_branch_ref "$phys") || default_ref=''
+    if [ -z "$default_ref" ] || ! git -C "$phys" merge-base --is-ancestor "$current" "$default_ref" >/dev/null 2>&1; then
+      emit "worktree-cleanup: report $phys closed pull request did not land on the default branch"
+      return 0
+    fi
+  fi
   if ! pids=$(fm_control_pids_with_cwd_under "$phys"); then
     emit "worktree-cleanup: report $phys cannot tell whether a process is using it"
     return 0
@@ -535,6 +619,13 @@ EOF
     emit "worktree-cleanup: skip $phys live process"
     return 0
   fi
+  prune_landed_caches "$phys" || {
+    case $? in
+      1) emit "worktree-cleanup: report $phys untracked files" ;;
+      *) emit "worktree-cleanup: report $phys cannot read worktree status" ;;
+    esac
+    return 0
+  }
   remove_worktree "$repo" "$phys" "$chosen_state" "$chosen_url" "$orca_listed"
 }
 
@@ -601,6 +692,14 @@ run_target() {
   }
   collect_repo "$resolved"
 }
+
+if [ -x "$SCRIPT_DIR/fm-disk-alarm.sh" ]; then
+  alarm_line=$("$SCRIPT_DIR/fm-disk-alarm.sh" 2>/dev/null || true)
+  case "$alarm_line" in
+    *'level=warn'*|*'level=pause'*|*'level=stop'*|*'level=unreadable'*)
+      emit "worktree-cleanup: $alarm_line" ;;
+  esac
+fi
 
 if [ -n "$TARGET" ]; then
   run_target "$TARGET"

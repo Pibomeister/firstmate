@@ -3,7 +3,8 @@
 # classify each by owner, and close only the orphans.
 #
 # Usage:
-#   fm-terminal-reap.sh [--apply] [--browsers] [--min-age <seconds>] [--no-browsers]
+#   fm-terminal-reap.sh [--apply] [--browsers] [--min-age <seconds>]
+#     [--browser-min-age <seconds>] [--no-browsers]
 #   fm-terminal-reap.sh --schedule-plist
 #     Print an hourly macOS LaunchAgent (no immediate run). Save as
 #     ~/Library/LaunchAgents/dev.firstmate.terminal-reap.plist, then bootstrap
@@ -20,9 +21,12 @@
 #                    bridges are shared by every client of their socket, so a
 #                    browser judged owner-gone may still serve another live
 #                    worker (no socket probe is made)
-#   --min-age <s>    never reap a terminal session or browser younger than this
-#                    many seconds (default 1800), so a session that is still
+#   --min-age <s>    never reap a terminal session younger than this many
+#                    seconds (default 1800), so a session that is still
 #                    launching its agent is never mistaken for an idle one
+#   --browser-min-age <s>
+#                    never reap a browser younger than this many seconds
+#                    (default 3600, one hour)
 #   --no-browsers    classify terminals only
 #   Live helpers whose whole title matches sup-writer-* are always kept.
 #
@@ -89,19 +93,23 @@
 # after node), and
 # automation browsers whose parent has exited: a browser executable (Chrome,
 # Chromium, Edge, Firefox, a headless shell, or any file inside a browser's .app
-# bundle, such as its crash handler), started with --headless or
-# --remote-debugging-pipe or from a Playwright or Puppeteer build. The
+# bundle, such as its crash handler, or in the GoogleUpdater.app that Chrome
+# starts), started with --headless or
+# --remote-debugging-pipe or from a Playwright or Puppeteer build. A browser
+# with any live parent is never listed. The
 # executable is the command line's first word, or, for a path with spaces, its
 # shortest prefix that is an existing file. Another program is never listed, even when a
 # browser, daemon, or bridge path or --headless is among its arguments. Each root is
 # judged by its working directory, together with every process under it:
 #   keep task          it works in a recorded task's worktree
 #   keep home          it works in a home root
-#   keep young         it is younger than --min-age
+#   keep young         it is younger than --browser-min-age
 #   keep unknown       its working directory could not be read or looked up
-#   keep owner-live    some other process still works in that directory
-#   reap owner-gone    its directory is gone, or nothing but browsers (and
-#                      terminals this run reaps) still works there
+#   keep owner-live    some other process still works in that directory,
+#                      including a browser whose own parent is still alive
+#   reap owner-gone    its directory is gone, or nothing but browsers
+#                      reparented to pid 1 (and terminals this run reaps)
+#                      still works there
 # Agent-browser daemons and chrome-devtools-axi bridges serve every client of
 # their socket, so owner-gone judges only the directory, not other clients; for
 # that reason only --apply --browsers stops browsers.
@@ -143,6 +151,7 @@ usage() { sed -n '2,/^# .*2 on a usage error/p' "$0" | sed 's/^# \{0,1\}//'; }
 
 APPLY=0
 MIN_AGE=1800
+BROWSER_MIN_AGE=3600
 BROWSERS=1
 STOP_BROWSERS=0
 SCHEDULE=0
@@ -153,6 +162,10 @@ while [ "$#" -gt 0 ]; do
       [ "$#" -ge 2 ] || { echo "error: --min-age needs a value" >&2; exit 2; }
       MIN_AGE=$2; shift
       ;;
+    --browser-min-age)
+      [ "$#" -ge 2 ] || { echo "error: --browser-min-age needs a value" >&2; exit 2; }
+      BROWSER_MIN_AGE=$2; shift
+      ;;
     --no-browsers) BROWSERS=0 ;;
     --browsers) STOP_BROWSERS=1 ;;
     --schedule-plist) SCHEDULE=1 ;;
@@ -162,6 +175,7 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 case "$MIN_AGE" in ''|*[!0-9]*) echo "error: --min-age must be whole seconds" >&2; exit 2 ;; esac
+case "$BROWSER_MIN_AGE" in ''|*[!0-9]*) echo "error: --browser-min-age must be whole seconds" >&2; exit 2 ;; esac
 
 command -v node >/dev/null 2>&1 || { echo "error: node is required" >&2; exit 1; }
 if [ "$SCHEDULE" = 1 ]; then
@@ -305,10 +319,11 @@ read_inventory() {
 # prints `handle prelim pid path title`; prelim is a final keep class or
 # `candidate`, and every candidate is in a home root. Mode browsers prints `pid verdict class cwd descendants detail`.
 classify_node() {
-  node - "$1" "$WORK" "$MIN_AGE" "$CWD_SCAN_OK" <<'JS'
+  node - "$1" "$WORK" "$MIN_AGE" "$CWD_SCAN_OK" "$BROWSER_MIN_AGE" <<'JS'
 const fs = require("fs");
-const [mode, work, minAgeRaw, scanOk] = process.argv.slice(2);
+const [mode, work, minAgeRaw, scanOk, browserMinAgeRaw] = process.argv.slice(2);
 const minAge = Number(minAgeRaw);
+const browserMinAge = Number(browserMinAgeRaw);
 const read = (f) => fs.readFileSync(`${work}/${f}`, "utf8");
 const clean = (s) => String(s == null ? "" : s).replace(/[\t\r\n]+/g, " ").trim();
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return p; } };
@@ -399,7 +414,7 @@ if (mode === "terminals") {
   }
 } else if (mode === "browsers") {
   const browserName = /^(Google Chrome( for Testing)?|Chromium|chrome|chromium|chromium-browser|chrome-headless-shell|headless_shell|chrome_crashpad_handler|msedge|Microsoft Edge|firefox)$/;
-  const browserBundle = /\/(Google Chrome( for Testing)?|Chromium|Microsoft Edge|Firefox)\.app\/Contents\//;
+  const browserBundle = /\/(Google Chrome( for Testing)?|Chromium|Microsoft Edge|Firefox|GoogleUpdater)\.app\/Contents\//;
   const isFile = (f) => { try { return fs.statSync(f).isFile(); } catch (_) { return false; } };
   // executable: the command line's executable path. A path with spaces is
   // one word only up to the shortest prefix that is an existing file, so
@@ -413,6 +428,10 @@ if (mode === "terminals") {
     return a.split(" ")[0];
   };
   const daemonScript = /^((\S*\/)?node(js)? )?(\S*\/agent-browser\/(\S*\/)?daemon\.js|\S*\/chrome-devtools-axi-bridge(\.js)?)( |$)/;
+  const isBrowserProc = (p) => {
+    const exe = executable(p.args);
+    return browserName.test(exe.split("/").pop()) || (isFile(exe) && browserBundle.test(exe));
+  };
   const isRoot = (p) => {
     const a = p.args;
     // A daemon or bridge is named by the script node runs, never by an
@@ -423,8 +442,7 @@ if (mode === "terminals") {
     // inside a browser's .app bundle, such as its crash handler), run
     // headless, pipe-debugged, or from a Playwright or Puppeteer build. A
     // browser path passed as an argument to another program never counts.
-    const exe = executable(a);
-    if (!browserName.test(exe.split("/").pop()) && !(isFile(exe) && browserBundle.test(exe))) return false;
+    if (!isBrowserProc(p)) return false;
     return /((^| )(--headless(=\S*)?|--remote-debugging-pipe)( |$)|\/ms-playwright\/|puppeteer_dev_chrome_profile|playwright_chromiumdev_profile)/.test(a);
   };
   const matched = new Set([...procs.values()].filter(isRoot).map((p) => p.pid));
@@ -452,13 +470,18 @@ if (mode === "terminals") {
     if (scanOk !== "1" || !dir) cls = "unknown";
     else if (rec) cls = "task";
     else if (homes.some((h) => under(dir, h))) cls = "home";
-    else if (!(p.age >= minAge)) cls = "young";
+    else if (!(p.age >= browserMinAge)) cls = "young";
     else if (presence(dir) === "unknown") cls = "unknown";
     else if (presence(dir) === "gone") { verdict = "reap"; cls = "owner-gone"; }
     else {
       let live = false;
       for (const [pid, d] of cwd) {
+        // A browser reparented to pid 1, such as a crash handler, is part
+        // of a browser, not an owner. A browser whose parent is still
+        // alive is still using this directory.
         if (family.has(pid) || exclude.has(pid)) continue;
+        const owner = procs.get(pid);
+        if (owner && isBrowserProc(owner) && owner.ppid === 1) continue;
         if (under(d, dir)) { live = true; break; }
       }
       if (live) cls = "owner-live"; else { verdict = "reap"; cls = "owner-gone"; }

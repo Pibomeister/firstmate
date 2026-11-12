@@ -594,6 +594,104 @@ fm_backend_orca_kill() {  # <terminal-id>
   orca terminal close --terminal "$1" --json >/dev/null 2>&1 || true
 }
 
+# fm_backend_orca_close_worktree_terminals: close every Orca terminal whose
+# worktree path is <path> on the local Orca, and count matching terminals on
+# every saved paired Orca environment (`orca environment list`). On a paired
+# environment, and for a locally listed terminal whose executionHostId names
+# another host, only the task's own recorded terminal handle, matched exactly,
+# is closed: a path match alone on another host does not prove this task owns
+# that terminal, because the same path layout exists on every Orca host and
+# that host's own teardown owns its worktree, so a path-only remote match is
+# counted and reported for its own cleanup instead of being closed from here.
+# Prints `closed=<n> environments=<count> remote_matched=<n>` on stdout,
+# where environments counts every Orca actually listed (local included) and
+# remote_matched counts the path-only remote matches left open.
+# A close counts only when a re-list of its environment no longer names the
+# handle, because Orca's close exit status carries no authority. A terminal
+# hosted on this machine is closed only when fm_backend_orca_agent_state
+# proves its session dead or missing: a session that is alive, ambiguous, or
+# unreadable may be running a worker that has moved elsewhere, so it is left
+# open and the sweep refuses. A recorded handle whose executionHostId names
+# another host cannot be proved from this machine; it is closed on that same
+# re-list proof. Exit 0 when every listed environment was read
+# completely and every terminal closed from here is gone; exit 1 when one
+# is still listed after its close or its session could not be proved dead;
+# exit 2 when an environment or terminal list could not be read completely,
+# so the caller can warn that the counts are a floor; exit 3 when the
+# post-close re-list itself could not be read, so the caller must refuse
+# rather than report a close it never verified.
+fm_backend_orca_close_worktree_terminals() {  # <worktree-path> [recorded-terminal-handle]
+  fm_backend_orca_tool_check || return 2
+  command -v node >/dev/null 2>&1 || return 2
+  local target=$1 recorded=${2:-} envs env list closed=0 env_count=0 remote_matched=0 rc=0 matches handles proves h relist remaining
+  local -a env_args
+  envs=$(orca environment list --json 2>/dev/null | node -e '
+let d; try { d = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (_) { process.exit(1); }
+if (!d || d.ok === false || !d.result || !Array.isArray(d.result.environments)) process.exit(1);
+for (const e of d.result.environments) if (e && typeof e.id === "string" && e.id) console.log(e.id);') || { envs=; rc=2; }
+  while IFS= read -r env; do
+    [ -n "$env" ] || continue
+    env_count=$((env_count + 1))
+    env_args=()
+    [ "$env" = local ] || env_args=(--environment "$env")
+    list=$(orca terminal list ${env_args[@]+"${env_args[@]}"} --limit 100000 --json 2>/dev/null) || { [ "$rc" != 0 ] || rc=2; continue; }
+    # shellcheck disable=SC2016  # Single quotes are deliberate: ${...} belongs to the Node snippet.
+    matches=$(printf '%s' "$list" | node -e '
+const fs = require("fs");
+let d; try { d = JSON.parse(fs.readFileSync(0, "utf8")); } catch (_) { process.exit(1); }
+if (!d || d.ok === false || !d.result || !Array.isArray(d.result.terminals) || d.result.truncated === true) process.exit(1);
+const [target, env, recorded] = process.argv.slice(1);
+const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return p; } };
+for (const t of d.result.terminals) {
+  if (!(t && typeof t.handle === "string" && t.handle && typeof t.worktreePath === "string" && real(t.worktreePath) === real(target))) continue;
+  const remote = env !== "local" || (t.executionHostId || "local") !== "local";
+  if (!remote) console.log(`prove ${t.handle}`);
+  else console.log(recorded && t.handle === recorded ? `close ${t.handle}` : `match ${t.handle}`);
+}' "$target" "$env" "$recorded") || { [ "$rc" != 0 ] || rc=2; continue; }
+    handles=$(printf '%s\n' "$matches" | sed -n 's/^close //p')
+    proves=$(printf '%s\n' "$matches" | sed -n 's/^prove //p')
+    remote_matched=$((remote_matched + $(printf '%s\n' "$matches" | grep -c '^match ')))
+    if [ -n "$proves" ]; then
+      # Only a session proved dead or missing is this task's to close; any
+      # other state may be a worker running elsewhere, so leave it listed.
+      while IFS= read -r h; do
+        [ -n "$h" ] || continue
+        case "$(fm_backend_orca_agent_state "$h")" in
+          dead|missing) handles="$handles
+$h" ;;
+          *) rc=1 ;;
+        esac
+      done <<EOF
+$proves
+EOF
+    fi
+    handles=$(printf '%s\n' "$handles" | sed '/^$/d')
+    [ -n "$handles" ] || continue
+    while IFS= read -r h; do
+      [ -n "$h" ] || continue
+      orca terminal close --terminal "$h" ${env_args[@]+"${env_args[@]}"} --json >/dev/null 2>&1 || true
+    done <<EOF
+$handles
+EOF
+    relist=$(orca terminal list ${env_args[@]+"${env_args[@]}"} --limit 100000 --json 2>/dev/null) || { rc=3; continue; }
+    remaining=$(printf '%s' "$relist" | WANTED_HANDLES="$handles" node -e '
+const fs = require("fs");
+let d; try { d = JSON.parse(fs.readFileSync(0, "utf8")); } catch (_) { process.exit(1); }
+if (!d || d.ok === false || !d.result || !Array.isArray(d.result.terminals) || d.result.truncated === true) process.exit(1);
+const wanted = new Set(String(process.env.WANTED_HANDLES || "").split("\n").filter(Boolean));
+let n = 0;
+for (const t of d.result.terminals) if (t && wanted.has(t.handle)) n++;
+process.stdout.write(String(n) + "\n");') || { rc=3; continue; }
+    closed=$((closed + $(printf '%s\n' "$handles" | grep -c .) - remaining))
+    [ "$remaining" -eq 0 ] || rc=1
+  done <<EOF
+local
+$envs
+EOF
+  printf 'closed=%s environments=%s remote_matched=%s\n' "$closed" "$env_count" "$remote_matched"
+  return "$rc"
+}
+
 # --- Recovery-grade agent state and endpoint absence ------------------------
 #
 # Orca's terminal API never names the processes behind a terminal, so the
