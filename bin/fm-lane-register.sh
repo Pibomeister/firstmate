@@ -3,7 +3,7 @@
 # outside Firstmate, so the existing reap and cleanup passes can see it.
 #
 # Usage:
-#   FM_HOME=<home> fm-lane-register.sh <id> --repo <clone> [--terminal <handle>] [--worktree <path>]
+#   FM_HOME=<home> fm-lane-register.sh <id> --repo <clone> --terminal <handle> [--worktree <path>]
 #   FM_HOME=<home> fm-lane-register.sh <id> --worktree <path>
 #   fm-lane-register.sh --help
 #
@@ -13,8 +13,10 @@
 #   <id>               letters, digits, dot, underscore, and dash, starting
 #                      with a letter or digit, at most 64 characters
 #   --repo <clone>     the main checkout the lane's worktree belongs to
-#   --terminal <h>     the lane's Orca terminal handle; defaults to
-#                      $ORCA_TERMINAL_HANDLE when the record has none
+#   --terminal <h>     the lane's Orca terminal handle. Required on a first
+#                      registration and when the record has no terminal. An
+#                      amend of a lane that already records one may omit it
+#                      and keeps the recorded handle. No environment default.
 #   --worktree <path>  the lane's linked worktree of <clone>; it must exist
 #
 # FM_HOME must name the firstmate home explicitly, so a launcher never
@@ -117,7 +119,7 @@ fi
 [ -n "$REPO" ] || REPO=$(field repo)
 [ -n "$REPO" ] || die "--repo is required for a lane that is not registered yet"
 [ -n "$TERMINAL" ] || TERMINAL=$(field terminal)
-[ -n "$TERMINAL" ] || TERMINAL=${ORCA_TERMINAL_HANDLE:-}
+[ -n "$TERMINAL" ] || die "--terminal is required when the lane has no recorded terminal"
 [ -n "$WORKTREE" ] || WORKTREE=$(field worktree)
 one_line repo "$REPO"
 one_line terminal "$TERMINAL"

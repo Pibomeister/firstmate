@@ -49,34 +49,66 @@ test_register_then_amend_with_the_worktree() {
   pass "a lane registers at launch and later amends its worktree, keeping every other field"
 }
 
-test_terminal_defaults_to_the_orca_handle() {
-  setup orcahandle
+test_first_registration_requires_an_explicit_terminal() {
+  local before
+  setup explicit
   RC=0
-  ORCA_TERMINAL_HANDLE=term_from_env FM_HOME="$HOME_DIR" bash "$REG" n11-g1 --repo "$REPO" >/dev/null 2>"$CASE/err" || RC=$?
-  [ "$RC" = 0 ] || fail "registration failed: $(cat "$CASE/err")"
-  [ "$(field terminal)" = term_from_env ] || fail "the terminal did not default to ORCA_TERMINAL_HANDLE"
-  pass "the terminal handle defaults to the Orca terminal the launcher runs in"
+  ORCA_TERMINAL_HANDLE=term_from_env FM_HOME="$HOME_DIR" \
+    bash "$REG" n11-g1 --repo "$REPO" >/dev/null 2>"$CASE/err" || RC=$?
+  ERR=$(cat "$CASE/err")
+  [ "$RC" = 1 ] || fail "a first registration without --terminal must be refused, got $RC: $ERR"
+  case "$ERR" in
+    *"fm-lane-register: --terminal is required"*) ;;
+    *) fail "the refusal did not say --terminal is required: $ERR" ;;
+  esac
+  [ ! -e "$RECORD" ] || fail "a refused first registration wrote a record"
+  [ -z "$(ls -A "$HOME_DIR/state/external-lanes" 2>/dev/null)" ] || fail "a refused first registration left a file behind"
+
+  mkdir -p "$HOME_DIR/state/external-lanes"
+  printf 'repo=%s\nterminal=\nworktree=\nregistered=1\nupdated=1\n' "$REPO" > "$RECORD"
+  before=$(cat "$RECORD")
+  RC=0
+  ORCA_TERMINAL_HANDLE=term_from_env FM_HOME="$HOME_DIR" \
+    bash "$REG" n11-g1 --worktree "$WT" >/dev/null 2>"$CASE/err" || RC=$?
+  ERR=$(cat "$CASE/err")
+  [ "$RC" = 1 ] || fail "a lane with no recorded terminal must be refused, got $RC: $ERR"
+  [ "$(cat "$RECORD")" = "$before" ] || fail "the refusal changed the record"
+
+  RC=0
+  ORCA_TERMINAL_HANDLE=term_from_env FM_HOME="$HOME_DIR" \
+    bash "$REG" n11-g1 --terminal term_named >/dev/null 2>"$CASE/err" || RC=$?
+  [ "$RC" = 0 ] || fail "naming --terminal on that lane failed: $(cat "$CASE/err")"
+  [ "$(field terminal)" = term_named ] || fail "the environment handle was recorded instead of --terminal"
+
+  RC=0
+  ORCA_TERMINAL_HANDLE=term_other FM_HOME="$HOME_DIR" \
+    bash "$REG" n11-g1 --worktree "$WT" >/dev/null 2>"$CASE/err" || RC=$?
+  [ "$RC" = 0 ] || fail "an amend with --worktree failed: $(cat "$CASE/err")"
+  [ "$(field terminal)" = term_named ] || fail "the amend replaced the terminal recorded at registration"
+  [ "$(field worktree)" = "$WT" ] || fail "the amend did not record the worktree"
+  [ "$(field repo)" = "$REPO" ] || fail "the amend dropped the repo"
+  pass "a first registration names --terminal, and an amend keeps that handle"
 }
 
 test_refusals_write_nothing() {
   local other
   setup refuse
   RC=0
-  env -u FM_HOME bash "$REG" n11-g1 --repo "$REPO" >/dev/null 2>&1 || RC=$?
+  env -u FM_HOME bash "$REG" n11-g1 --repo "$REPO" --terminal term_abc >/dev/null 2>&1 || RC=$?
   [ "$RC" = 1 ] || fail "a registration without FM_HOME must be refused, got $RC"
-  register n11-g1 --worktree "$WT"
+  register n11-g1 --terminal term_abc --worktree "$WT"
   [ "$RC" = 1 ] || fail "a first registration without --repo must be refused, got $RC"
-  register n11-g1 --repo "$WT"
+  register n11-g1 --repo "$WT" --terminal term_abc
   [ "$RC" = 1 ] || fail "a linked worktree as --repo must be refused, got $RC"
-  register n11-g1 --repo "$REPO" --worktree "$REPO"
+  register n11-g1 --repo "$REPO" --terminal term_abc --worktree "$REPO"
   [ "$RC" = 1 ] || fail "the main checkout as --worktree must be refused, got $RC"
   fm_git_init_commit "$CASE/other"
   other=$(cd "$CASE/other" && pwd -P)
-  register n11-g1 --repo "$other" --worktree "$WT"
+  register n11-g1 --repo "$other" --terminal term_abc --worktree "$WT"
   [ "$RC" = 1 ] || fail "a worktree of another repository must be refused, got $RC"
-  register ../escape --repo "$REPO"
+  register ../escape --repo "$REPO" --terminal term_abc
   [ "$RC" = 2 ] || fail "a lane id with a path separator must be refused, got $RC"
-  register n11-g1 --repo relative/path
+  register n11-g1 --repo relative/path --terminal term_abc
   [ "$RC" = 1 ] || fail "a relative --repo must be refused, got $RC"
   [ ! -e "$RECORD" ] || fail "a refused registration wrote a record"
   [ -z "$(ls -A "$HOME_DIR/state/external-lanes" 2>/dev/null)" ] || fail "a refused registration left a file behind"
@@ -85,5 +117,5 @@ test_refusals_write_nothing() {
 
 fm_test_run \
   test_register_then_amend_with_the_worktree \
-  test_terminal_defaults_to_the_orca_handle \
+  test_first_registration_requires_an_explicit_terminal \
   test_refusals_write_nothing
