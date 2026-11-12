@@ -97,9 +97,11 @@
 #                          ci-monitoring, absent or unreadable run, or a home
 #                          without that flag, escalates unchanged.
 #                          A pane whose recorded endpoint holds no agent at all is
-#                          not a wedge and is reported ONCE instead of escalating
-#                          on that cadence forever (wedge_dead_record); only the
-#                          two recovery-grade verdicts license it, and every other
+#                          not a wedge: wedge_dead_record reports it once, or
+#                          relaunches an eligible ship or scout (the check lines
+#                          below; docs/architecture.md owns eligibility), instead
+#                          of escalating on that cadence forever; only the two
+#                          recovery-grade verdicts license it, and every other
 #                          verdict escalates unchanged.
 #                          Where config/wedge-evidence-guards lists operator
 #                          guards, a live pane about to escalate whose guard
@@ -122,14 +124,14 @@
 #                          work stays silent until return
 #                          (busy_turn_bound_check owns that split);
 #                          every other pane goes through the same wedge timer,
-#                          the dead-record probe above included, and surfaces
-#                          with the same "stale: ..." reason, escalation
-#                          count, and demand-deep-inspection marker for a live
-#                          agent (the reason names model-stream silence when a
-#                          silent stream crossed the bound), for human
-#                          inspection only - never an automatic interrupt,
-#                          signal, or restart of the worker or its
-#                          tool process.
+#                          the dead-record probe above included. A live agent
+#                          surfaces with the same "stale: ..." reason, escalation
+#                          count, and demand-deep-inspection marker (the reason
+#                          names model-stream silence when a silent stream
+#                          crossed the bound), for human inspection only -
+#                          never an automatic interrupt, signal, or restart of
+#                          the worker or its tool process. A proven-gone
+#                          endpoint takes the dead-record path above instead.
 #   stale: <window> (declared pause on a parked run - ...)
 #                          a worker's own `paused:` line still stands while its
 #                          no-mistakes run is parked on an ask-user finding;
@@ -240,8 +242,9 @@
 #                          the wedge threshold's dead-record probe read `dead`,
 #                          or `missing` where relaunch can reclaim the endpoint,
 #                          for a ship or scout with a live recorded worktree,
-#                          no terminal status, and no deliberate stop, and
-#                          bin/fm-control.sh relaunch replaced the agent with a
+#                          no terminal status, no captain-held decision, and no
+#                          deliberate stop, and bin/fm-control.sh relaunch
+#                          replaced the agent with a
 #                          note built from its status log (crew_auto_relaunch);
 #                          one wake per relaunch, ledgered in
 #                          state/.crew-relaunch-<id>
@@ -543,10 +546,11 @@ case "$WATCH_HELPER_BUDGET" in ''|*[!0-9]*|0) WATCH_HELPER_BUDGET=120 ;; esac
 # is crossed, busy_turn_over_age routes the pane through
 # busy_turn_bound_check, which hands a crossed bound to the same
 # STALE_ESCALATE_SECS-paced wedge_timer_check used for a provably-working
-# non-busy stale - so it escalates via the existing stale reason, escalation
-# counter, and demand-deep-inspection marker for human inspection only, never an
-# automatic interrupt, signal, or restart - unless the task has a declared
-# wait, which takes the long pause cadence instead. Set generously above
+# non-busy stale. A live agent escalates via the existing stale reason,
+# escalation counter, and demand-deep-inspection marker, for human
+# inspection only, never an automatic interrupt, signal, or restart.
+# A proven-gone endpoint takes the dead-record path, which can relaunch.
+# A declared wait takes the long pause cadence instead. Set generously above
 # any legitimate interval without observable progress, including silent long
 # tool calls, builds, or test runs.
 BUSY_TURN_MAX_SECS=${FM_BUSY_TURN_MAX_SECS:-3600}
