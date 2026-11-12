@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Remove linked git worktrees whose pull request is merged, or closed with
-# its head already on the default branch. A closed, unmerged pull request
-# proves nothing about landing and never permits removal or cache pruning.
+# Remove linked git worktrees whose pull request is merged, or closed while
+# the worktree HEAD is already on the default branch. A closed pull request
+# whose worktree HEAD is not on the default branch proves nothing about
+# landing and never permits removal or cache pruning.
 #
 # One decision line per linked worktree, and one line for each main checkout
 # the scan sees. A main checkout is never removed. A worktree that a task record
@@ -12,8 +13,9 @@
 # installed Orca cannot be read, the worktree is reported and left in place. A
 # worktree with a live process whose working directory is inside it is skipped.
 # When that scan cannot be completed, the worktree is reported and left in place.
-# Uncommitted tracked changes and non-ignored untracked files are reported
-# and left in place. Ignored files, including private .env, .work, and .omc
+# Uncommitted tracked changes, and non-ignored untracked files other than the
+# caches and browser profiles named below, are reported and left in place.
+# Ignored files, including private .env, .work, and .omc
 # files, do not block removal. Decision lines name the worktree and the
 # reason. They never include file contents.
 # Only pull requests whose head repository owner is the base repository owner
@@ -31,8 +33,8 @@
 # Any other untracked file, and any tracked change, still leaves the worktree
 # in place. A dry run reports the prune instead of deleting.
 # Each pass first reads bin/fm-disk-alarm.sh and logs its line when the level
-# is warn, pause, stop, or unreadable; low disk never blocks pruning, because
-# pruning is what frees the space.
+# is warn, pause, stop, or unreadable. That reading never blocks the pass,
+# because pruning is what frees the space.
 # Removal is `git worktree remove`, or `orca worktree rm` for a worktree Orca
 # lists so that its list stays correct, never with --force, followed by
 # `git worktree prune`. A refusal is reported. Orca removes the directory after
@@ -599,9 +601,9 @@ EOF
     emit "worktree-cleanup: report $phys commits not on PR head"
     return 0
   fi
-  # A closed pull request proves nothing about landing: its work may have
-  # been abandoned unmerged. Only a merged pull request, or a closed one
-  # whose head is already an ancestor of the default branch, may proceed.
+  # A closed pull request proves nothing about landing by itself. Only a
+  # merged pull request, or a closed one whose worktree HEAD is already an
+  # ancestor of the default branch, may proceed.
   if [ "$chosen_state" = CLOSED ]; then
     default_ref=$(default_branch_ref "$phys") || default_ref=''
     if [ -z "$default_ref" ] || ! git -C "$phys" merge-base --is-ancestor "$current" "$default_ref" >/dev/null 2>&1; then

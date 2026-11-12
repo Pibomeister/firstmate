@@ -193,9 +193,12 @@
 # another host does not prove this task owns that terminal
 # (bin/backends/orca.sh's fm_backend_orca_close_worktree_terminals owns the
 # proof); it prints the closed count and warns about path-only remote
-# matches left to that host's own cleanup. A terminal still listed after its
-# close refuses, while an environment that cannot be listed warns that the
-# count is a floor.
+# matches left to that host's own cleanup. A session that is not proved dead
+# or missing, a terminal still listed after its close, or a post-close
+# listing that could not be read refuses. An environment that cannot be
+# listed at all only warns that the count is a floor, because the recorded
+# endpoint is already closed and Orca's own worktree removal remains the
+# guard for the workspace it owns.
 # A Herdr presentation journal never authorizes cleanup. Teardown still closes
 # only the exact task pane from ordinary endpoint metadata and never calls
 # `workspace close`. It retires the non-authoritative journal only when a
@@ -4134,19 +4137,8 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
     fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" \
       || { endpoint_close_refusal "$ID" "$BACKEND" "$T" 0; exit 1; }
   fi
-  # Close every other Orca terminal this task opened in its worktree on the
-  # local Orca, count matches on every saved paired environment and close
-  # there only this task's recorded terminal handle (a path match alone on
-  # another host does not prove this task owns that terminal; that host's own
-  # teardown owns it), and report the count.
-  # A terminal hosted on this machine is closed only when its session is
-  # proved dead or missing. A recorded handle hosted on another machine is
-  # closed on the re-list proof alone. A terminal still listed after its
-  # close, a session that could not be proved dead, or a post-close listing
-  # that could not be read refuses like the recorded endpoint above; an
-  # environment that cannot be listed at all only warns, because the recorded
-  # endpoint is already closed and Orca's own worktree removal below remains
-  # the guard for the workspace it owns.
+  # The header owns which terminals this sweep closes and when it refuses
+  # or only warns. The recorded handle is what proves a remote close.
   if [ -n "$WT" ] && [ -d "$WT" ] && fm_backend_source orca; then
     orca_sweep_rc=0
     orca_sweep_out=$(fm_backend_orca_close_worktree_terminals "$WT" "$T_ORCA") || orca_sweep_rc=$?
