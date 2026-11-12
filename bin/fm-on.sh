@@ -15,10 +15,10 @@
 # because remote staging captures stdin to EOF and an open caller stream would
 # block staging indefinitely; a payload caller passes --stdin to forward its
 # own stream as the job's bounded input. stdout and stderr remain separate, and
-# ssh's exit status is returned unchanged. Transient transport blips are retried
-# by bin/fm-blip-retry-lib.sh before that status is returned. Exit 255 without
-# a transient signature is unknown completion and must be reconciled by the
-# caller, never blindly repeated by this layer.
+# ssh's exit status is returned unchanged. An exit 255 whose stderr shows ssh
+# never connected is retried by bin/fm-blip-retry-lib.sh first. Any other exit
+# 255, including a session that dropped mid-run, is unknown completion and must
+# be reconciled by the caller, never blindly repeated by this layer.
 #
 # The SSH alias keeps normal public-key and strict host-key policy in ~/.ssh.
 # This command explicitly disables agent forwarding, forwarding setup, and
@@ -156,5 +156,5 @@ fm_on_ssh_once() {
   fi
 }
 rc=0
-fm_blip_retry fm_on_ssh_once || rc=$?
+fm_blip_retry --connect-only --status 255 fm_on_ssh_once || rc=$?
 exit "$rc"

@@ -3,20 +3,28 @@
 #
 # Sourced, never executed. This is the single owner of that retry.
 #
-#   fm_blip_retry <command> [args...]
+#   fm_blip_retry [--connect-only] [--status <n>] <command> [args...]
 #       Run the command. Success returns its status and passes its stdout and
 #       stderr through. A definite failure is returned at once, once: not
 #       found, permission denied, or a usage error. A transient failure is
-#       retried: connection refused, connection reset, timeout, a missing
-#       socket, or an HTTP 5xx. The wait starts at FM_BLIP_RETRY_BASE_SECS
-#       (default 2), doubles each time, and is capped at
-#       FM_BLIP_RETRY_CAP_SECS (default 32). Retries stop once
+#       retried: connection refused, connection reset, timed out, a missing
+#       socket, or an HTTP 5xx, service unavailable, or bad gateway. The wait
+#       starts at FM_BLIP_RETRY_BASE_SECS (default 2), doubles each time, and
+#       is capped at FM_BLIP_RETRY_CAP_SECS (default 32). Retries stop once
 #       FM_BLIP_RETRY_BUDGET_SECS (default 300) have elapsed since the first
 #       attempt, and that failing attempt is then reported once. Earlier
 #       attempts are discarded. A wait that would pass the budget is shortened
 #       to the time remaining; the next attempt does not start after the
 #       budget. Each attempt sees the caller's stdin. A caller that must
 #       replay stdin across attempts has to spool it first.
+#
+#       --connect-only is for a command that is not safe to repeat once it
+#       may have taken effect. Only the attempt's stderr is classified, and
+#       only a failure to connect at all is transient: connection refused,
+#       could not resolve the host, no route, a connect that timed out, a
+#       connection closed before the session began, or a missing socket. A
+#       reset, a mid-session timeout, or an HTTP 5xx is reported once.
+#       --status <n> also limits retries to attempts that exited with n.
 #
 #       Unset overrides use the defaults. A set override must be an integer.
 #       The base and the cap must be >= 1, and the cap must be >= the base.
@@ -61,36 +69,63 @@ fm_blip_sleep() {
   sleep "$secs"
 }
 
-# 0 when the failure text is a transient blip. Definite answers win, so a
-# permission or usage failure is not retried just because it also says timeout.
-# A missing socket is transient even when its text also says it was not found.
-fm_blip_text_is_transient() {
-  local text
-  text=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
-  case "$text" in
-    *'permission denied'*|*'usage error'*|*'usage:'*) return 1 ;;
+fm_blip_text_lower() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
+# 0 when the text names a definite answer that no retry can change.
+fm_blip_text_is_definite() {
+  case "$1" in
+    *'permission denied'*|*'usage error'*|*'usage:'*) return 0 ;;
   esac
-  case "$text" in
+  return 1
+}
+
+# 0 when the text names a missing socket, even when it also says not found.
+fm_blip_text_is_missing_socket() {
+  case "$1" in
     *'socket missing'*|*'socket is missing'*|*'missing socket'*|*'control socket'*) return 0 ;;
     *socket*'not found'*|*'not found'*socket*) return 0 ;;
-    *'no such file or directory'*)
-      case "$text" in
-        *socket*) return 0 ;;
-      esac
-      ;;
+    *socket*'no such file or directory'*|*'no such file or directory'*socket*) return 0 ;;
   esac
+  return 1
+}
+
+# 0 when the failure text is a transient blip. Definite answers win, so a
+# permission or usage failure is not retried just because it also timed out.
+fm_blip_text_is_transient() {
+  local text
+  text=$(fm_blip_text_lower "$1")
+  fm_blip_text_is_definite "$text" && return 1
+  fm_blip_text_is_missing_socket "$text" && return 0
   case "$text" in
     *'not found'*) return 1 ;;
   esac
   case "$text" in
     *'connection refused'*|*'connection reset'*|*'econnrefused'*|*'econnreset'*) return 0 ;;
-    *'timed out'*|*'etimedout'*|*'timeout'*) return 0 ;;
-    *'service unavailable'*|*'bad gateway'*) return 0 ;;
-    *' 5xx'*|*'5xx '*|*'5xx'*) return 0 ;;
+    *'timed out'*|*'etimedout'*) return 0 ;;
+    *'service unavailable'*|*'bad gateway'*|*'gateway timeout'*) return 0 ;;
   esac
-  if printf '%s\n' "$text" | grep -Eq '(^|[^0-9])(status|http|error|code)[^0-9]{0,16}5[0-9][0-9]([^0-9]|$)'; then
+  if printf '%s\n' "$text" | grep -Eq '(^|[^a-z])(http(/[0-9.]+)?|status( code)?)[ :=]+5[0-9][0-9]([^0-9]|$)'; then
     return 0
   fi
+  return 1
+}
+
+# 0 when the failure text proves the command never reached its target, so a
+# repeat cannot duplicate an action that already landed.
+fm_blip_text_is_connect_failure() {
+  local text
+  text=$(fm_blip_text_lower "$1")
+  fm_blip_text_is_definite "$text" && return 1
+  fm_blip_text_is_missing_socket "$text" && return 0
+  case "$text" in
+    *'connection refused'*|*'econnrefused'*) return 0 ;;
+    *'could not resolve'*|*'name or service not known'*|*'nodename nor servname'*) return 0 ;;
+    *'no route to host'*|*'network is unreachable'*|*'ehostunreach'*|*'enetunreach'*) return 0 ;;
+    *'connect to host'*'timed out'*|*'connection timed out'*|*'connect etimedout'*) return 0 ;;
+    *'connection closed by'*|*'kex_exchange_identification'*) return 0 ;;
+  esac
   return 1
 }
 
@@ -120,7 +155,20 @@ fm_blip_retry_emit() { # <dir>
 
 fm_blip_retry() {
   local start now elapsed delay wait base cap budget rc=0 attempt=0
-  local dir text errexit=0
+  local dir text errexit=0 connect_only=0 status=
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --connect-only) connect_only=1; shift ;;
+      --status)
+        case "${2:-}" in
+          ''|*[!0-9]*) printf 'fm-blip-retry: --status needs an integer\n' >&2; return 2 ;;
+        esac
+        status=$2
+        shift 2
+        ;;
+      *) break ;;
+    esac
+  done
   [ "$#" -ge 1 ] || { printf 'fm-blip-retry: command required\n' >&2; return 2; }
   base=$(fm_blip_retry_number FM_BLIP_RETRY_BASE_SECS 2 1) || return 2
   cap=$(fm_blip_retry_number FM_BLIP_RETRY_CAP_SECS 32 1) || return 2
@@ -157,9 +205,15 @@ fm_blip_retry() {
       fm_blip_retry_emit "$dir"
       return 0
     fi
-    text=$(cat "$dir/out" "$dir/err")
-    if ! fm_blip_text_is_transient "$text"; then
+    if [ -n "$status" ] && [ "$rc" -ne "$status" ]; then
       break
+    fi
+    if [ "$connect_only" -eq 1 ]; then
+      text=$(cat "$dir/err")
+      fm_blip_text_is_connect_failure "$text" || break
+    else
+      text=$(cat "$dir/out" "$dir/err")
+      fm_blip_text_is_transient "$text" || break
     fi
     now=$(fm_blip_now) || { fm_blip_retry_emit "$dir"; return 1; }
     elapsed=$((now - start))

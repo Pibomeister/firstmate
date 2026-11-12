@@ -190,9 +190,15 @@ fm_backend_orca_blip() {
   fm_blip_retry fm_backend_orca_invoke "$@"
 }
 
+# An Orca mutation may land before its reply is lost, so it is repeated only
+# when the CLI never connected.
+fm_backend_orca_blip_mutation() {
+  fm_blip_retry --connect-only fm_backend_orca_invoke "$@"
+}
+
 fm_backend_orca_run_json() {
   local out
-  out=$(fm_backend_orca_blip "$@") || return 1
+  out=$(fm_backend_orca_blip_mutation "$@") || return 1
   printf '%s' "$out" | fm_backend_orca_json_ok
 }
 
@@ -204,7 +210,7 @@ fm_backend_orca_repo_ensure() {  # <project-path>
     printf '%s' "$repo_id"
     return 0
   fi
-  out=$(fm_backend_orca_blip orca repo add --path "$project" --json) || return 1
+  out=$(fm_backend_orca_blip_mutation orca repo add --path "$project" --json) || return 1
   repo_id=$(printf '%s' "$out" | fm_backend_orca_json_get repo-id) || {
     echo "error: orca repo add did not return a repo id for $project" >&2
     return 1
@@ -215,7 +221,7 @@ fm_backend_orca_repo_ensure() {  # <project-path>
 fm_backend_orca_worktree_create() {  # <project-path> <name>
   local project=$1 name=$2 repo_id out wt_id wt_path terminal
   repo_id=$(fm_backend_orca_repo_ensure "$project") || return 1
-  out=$(fm_backend_orca_blip orca worktree create --repo "id:$repo_id" --name "$name" --no-parent --setup skip --json) || return 1
+  out=$(fm_backend_orca_blip_mutation orca worktree create --repo "id:$repo_id" --name "$name" --no-parent --setup skip --json) || return 1
   wt_id=$(printf '%s' "$out" | fm_backend_orca_json_get worktree-id) || {
     echo "error: orca worktree create did not return a worktree id for $name" >&2
     return 1
@@ -241,7 +247,7 @@ fm_backend_orca_worktree_create() {  # <project-path> <name>
 fm_backend_orca_terminal_create() {  # <worktree-id> <title>
   local worktree_id=$1 title=$2 out terminal
   fm_backend_orca_tool_check || return 1
-  out=$(fm_backend_orca_blip orca terminal create --worktree "id:$worktree_id" --title "$title" --json) || return 1
+  out=$(fm_backend_orca_blip_mutation orca terminal create --worktree "id:$worktree_id" --title "$title" --json) || return 1
   terminal=$(printf '%s' "$out" | fm_backend_orca_json_get terminal-handle) || {
     echo "error: orca terminal create did not return a terminal handle for $title" >&2
     return 1

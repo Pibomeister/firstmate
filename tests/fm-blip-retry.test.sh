@@ -129,6 +129,107 @@ test_missing_socket_is_retried_even_when_text_says_not_found() {
   pass "a missing socket is retried even when the text says it was not found"
 }
 
+blip_expect_once() { # <text> <label>
+  blip_reset
+  BLIP_FAILS=5
+  BLIP_TEXT=$1
+  blip_run
+  [ "$BLIP_RC" -ne 0 ] || fail "$2 was treated as success"
+  assert_equals 1 "$(cat "$BLIP_COUNT")" "$2 was retried"
+  [ ! -s "$BLIP_SLEEP" ] || fail "$2 waited before returning: $(cat "$BLIP_SLEEP")"
+}
+
+test_definite_texts_near_transient_words_fail_once() {
+  blip_expect_once 'invalid --timeout-ms value' 'a timeout option error'
+  blip_expect_once 'error: line 512 malformed' 'a parse error that names line 512'
+  blip_expect_once 'error code 501 not implemented' 'an error code 501'
+  blip_expect_once 'usage: orca terminal read --terminal <id>' 'a usage error'
+  blip_expect_once 'worktree not found' 'a missing worktree'
+  pass "definite errors that mention timeouts or 5NN numbers fail once"
+}
+
+test_real_transient_texts_retry() {
+  local text
+  for text in 'request timed out' 'connect ETIMEDOUT 10.0.0.1:443' 'HTTP/1.1 502 Bad Gateway' \
+    'status: 504' 'service unavailable' 'read ECONNRESET'; do
+    blip_reset
+    BLIP_FAILS=1
+    BLIP_TEXT=$text
+    blip_run
+    assert_equals 0 "$BLIP_RC" "transient text '$text' was not retried to success"
+    assert_equals 2 "$(cat "$BLIP_COUNT")" "transient text '$text' was not retried exactly once"
+  done
+  pass "timed-out, reset, and real HTTP 5xx failures are retried"
+}
+
+blip_connect_run() {
+  set +e
+  fm_blip_retry --connect-only "$@" blip_stub >"$BLIP_OUT" 2>"$BLIP_ERR"
+  BLIP_RC=$?
+  set -e
+}
+
+test_connect_only_retries_a_failure_to_connect() {
+  local text
+  for text in 'connect ECONNREFUSED /tmp/orca.sock' 'ssh: Could not resolve hostname remote-mac' \
+    'ssh: connect to host remote-mac port 22: Operation timed out' \
+    'Connection closed by 10.0.0.2 port 22' 'orca socket missing'; do
+    blip_reset
+    BLIP_FAILS=1
+    BLIP_TEXT=$text
+    blip_connect_run
+    assert_equals 0 "$BLIP_RC" "connect failure '$text' was not retried to success"
+    assert_equals 2 "$(cat "$BLIP_COUNT")" "connect failure '$text' was not retried exactly once"
+  done
+  pass "a command that never connected is retried in connect-only mode"
+}
+
+test_connect_only_does_not_repeat_a_call_that_may_have_landed() {
+  local text
+  for text in 'Timeout, server not responding.' \
+    'Read from remote host remote-mac: Connection reset by peer' \
+    'request timed out' 'HTTP 503' 'permission denied'; do
+    blip_reset
+    BLIP_FAILS=5
+    BLIP_TEXT=$text
+    blip_connect_run
+    [ "$BLIP_RC" -ne 0 ] || fail "connect-only '$text' was treated as success"
+    assert_equals 1 "$(cat "$BLIP_COUNT")" "connect-only repeated a call after '$text'"
+    [ ! -s "$BLIP_SLEEP" ] || fail "connect-only waited after '$text'"
+  done
+  pass "connect-only mode does not repeat a call whose reply was lost"
+}
+
+blip_stdout_only() {
+  local n
+  n=$(cat "$BLIP_COUNT")
+  n=$((n + 1))
+  printf '%s\n' "$n" > "$BLIP_COUNT"
+  printf 'ssh: connect to host x port 22: Connection refused\n'
+  return 255
+}
+
+test_connect_only_ignores_stdout() {
+  blip_reset
+  set +e
+  fm_blip_retry --connect-only blip_stdout_only >"$BLIP_OUT" 2>"$BLIP_ERR"
+  BLIP_RC=$?
+  set -e
+  assert_equals 255 "$BLIP_RC" "connect-only replaced the exit status"
+  assert_equals 1 "$(cat "$BLIP_COUNT")" "connect-only classified the command's own stdout"
+  pass "connect-only mode never classifies the command's stdout"
+}
+
+test_status_limits_which_exits_retry() {
+  blip_reset
+  BLIP_FAILS=5
+  BLIP_TEXT='ssh: connect to host remote-mac port 22: Connection refused'
+  blip_connect_run --status 255
+  [ "$BLIP_RC" -ne 0 ] || fail "a status-limited failure was treated as success"
+  assert_equals 1 "$(cat "$BLIP_COUNT")" "an exit other than the named status was retried"
+  pass "--status limits retries to the named exit status"
+}
+
 blip_bare() {
   local n
   n=$(cat "$BLIP_COUNT")
@@ -236,6 +337,74 @@ SH
   pass "an Orca terminal send does not retry permission denied"
 }
 
+blip_orca_stub_dir() { # <name>
+  local dir
+  dir=$(fm_test_tmproot "$1")
+  mkdir -p "$dir/bin"
+  printf '0\n' > "$dir/count"
+  : > "$dir/sleep"
+  cat > "$dir/bin/orca" <<'SH'
+#!/usr/bin/env bash
+n=$(cat "$FM_BLIP_ORCA_COUNT")
+n=$((n + 1))
+printf '%s\n' "$n" > "$FM_BLIP_ORCA_COUNT"
+if [ "$n" -le "${FM_BLIP_ORCA_FAILS:-2}" ]; then
+  printf '%s\n' "${FM_BLIP_ORCA_ERROR:-connect ECONNREFUSED}" >&2
+  exit 1
+fi
+printf '%s\n' '{"ok":true,"result":{"terminal":{"handle":"term-9"}}}'
+SH
+  chmod +x "$dir/bin/orca"
+  printf '%s' "$dir"
+}
+
+blip_orca_call() { # <dir> <error> <shell snippet>
+  set +e
+  PATH="$1/bin:$PATH" \
+    FM_BLIP_ORCA_COUNT="$1/count" \
+    FM_BLIP_ORCA_FAILS=5 \
+    FM_BLIP_ORCA_ERROR="$2" \
+    FM_BLIP_NOW=7000 \
+    FM_BLIP_SLEEP_LOG="$1/sleep" \
+    bash -c '. "$0/bin/backends/orca.sh"; '"$3" "$ROOT" >"$1/out" 2>"$1/err"
+  BLIP_RC=$?
+  set -e
+}
+
+test_orca_mutations_do_not_repeat_after_a_lost_reply() {
+  local dir err call
+  for call in 'fm_backend_orca_send_literal term-1 hello' 'fm_backend_orca_send_text_line term-1 hello' \
+    'fm_backend_orca_send_key term-1 C-c' 'fm_backend_orca_terminal_create wt-1 title'; do
+    for err in 'request timed out' 'read ECONNRESET' 'HTTP 503 Service Unavailable'; do
+      dir=$(blip_orca_stub_dir fm-blip-orca-mutation)
+      blip_orca_call "$dir" "$err" "$call"
+      [ "$BLIP_RC" -ne 0 ] || fail "'$call' treated '$err' as success"
+      assert_equals 1 "$(cat "$dir/count")" "'$call' was repeated after '$err'"
+      [ ! -s "$dir/sleep" ] || fail "'$call' waited after '$err'"
+    done
+  done
+  pass "Orca sends and creates are not repeated after a reply that may have been lost"
+}
+
+test_orca_reads_retry_a_timed_out_reply() {
+  local dir
+  dir=$(blip_orca_stub_dir fm-blip-orca-read)
+  set +e
+  PATH="$dir/bin:$PATH" \
+    FM_BLIP_ORCA_COUNT="$dir/count" \
+    FM_BLIP_ORCA_FAILS=1 \
+    FM_BLIP_ORCA_ERROR='request timed out' \
+    FM_BLIP_NOW=8000 \
+    FM_BLIP_SLEEP_LOG="$dir/sleep" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_blip orca terminal read --terminal term-1 --json' "$ROOT" \
+    >"$dir/out" 2>"$dir/err"
+  BLIP_RC=$?
+  set -e
+  assert_equals 0 "$BLIP_RC" "an Orca read did not recover from a timed-out reply"
+  assert_equals 2 "$(cat "$dir/count")" "an Orca read did not retry a timed-out reply"
+  pass "an Orca read retries a timed-out reply"
+}
+
 fm_test_run \
   test_transient_failures_retry_until_success \
   test_budget_reports_the_failing_attempt_once \
@@ -244,7 +413,15 @@ fm_test_run \
   test_backoff_doubles_until_the_cap \
   test_http_5xx_is_retried \
   test_missing_socket_is_retried_even_when_text_says_not_found \
+  test_definite_texts_near_transient_words_fail_once \
+  test_real_transient_texts_retry \
+  test_connect_only_retries_a_failure_to_connect \
+  test_connect_only_does_not_repeat_a_call_that_may_have_landed \
+  test_connect_only_ignores_stdout \
+  test_status_limits_which_exits_retry \
   test_bare_failure_without_transient_text_is_not_retried \
   test_invalid_override_fails_before_the_command \
   test_orca_send_retries_a_transient_cli_blip \
-  test_orca_send_does_not_retry_permission_denied
+  test_orca_send_does_not_retry_permission_denied \
+  test_orca_mutations_do_not_repeat_after_a_lost_reply \
+  test_orca_reads_retry_a_timed_out_reply

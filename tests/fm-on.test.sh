@@ -75,6 +75,13 @@ cat > "$REMOTE_ROOT/bin/fm-mutate.sh" <<'SH'
 #!/usr/bin/env bash
 printf 'mutation\n' >> "$1"
 SH
+cat > "$REMOTE_ROOT/bin/fm-mutate-flaky.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'mutation\n' >> "$1"
+printf 'upstream request timed out: HTTP 503 Service Unavailable\n'
+printf 'upstream request timed out: HTTP 503 Service Unavailable\n' >&2
+exit 255
+SH
 chmod +x "$REMOTE_ROOT/bin"/*.sh
 chmod +x "$REMOTE_ROOT/bin/tasks-axi"
 git -C "$REMOTE_ROOT" init -q -b main
@@ -104,6 +111,11 @@ case "${FM_FAKE_SSH_MODE:-normal}" in
   unreachable) exit 255 ;;
   ambiguous)
     "$FM_FAKE_REMOTE_ENTRYPOINT" "$@"
+    exit 255
+    ;;
+  dropped)
+    "$FM_FAKE_REMOTE_ENTRYPOINT" "$@"
+    printf '%s\n' "${FM_FAKE_SSH_DROP_TEXT:-Timeout, server not responding.}" >&2
     exit 255
     ;;
   blip)
@@ -587,5 +599,33 @@ set -e
 [ "$(cat "$SSH_COUNT")" -eq 1 ] || fail "ambiguous completion was retried"
 [ "$(grep -c mutation "$REMOTE_HOME/mutations")" -eq 1 ] || fail "ambiguous mutation did not execute exactly once"
 pass "unreachable and ambiguous transport failures are surfaced without retry"
+
+for drop_text in 'Timeout, server not responding.' \
+  'Read from remote host remote-mac: Connection reset by peer'; do
+  : > "$SSH_COUNT"
+  rm -f "$REMOTE_HOME/mutations"
+  set +e
+  FM_BLIP_NOW=3000 FM_FAKE_SSH_MODE=dropped FM_FAKE_SSH_DROP_TEXT="$drop_text" \
+    fm_on ios fm-mutate.sh "$REMOTE_HOME/mutations" >/dev/null 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -eq 255 ] || fail "a dropped session did not surface status 255 after '$drop_text' (got $rc)"
+  [ "$(cat "$SSH_COUNT")" -eq 1 ] || fail "a dropped session was retried after '$drop_text'"
+  [ "$(grep -c mutation "$REMOTE_HOME/mutations")" -eq 1 ] \
+    || fail "a dropped session ran the mutation more than once after '$drop_text'"
+done
+pass "a session that drops after the remote command ran is not repeated"
+
+: > "$SSH_COUNT"
+rm -f "$REMOTE_HOME/mutations"
+set +e
+FM_BLIP_NOW=4000 fm_on ios fm-mutate-flaky.sh "$REMOTE_HOME/mutations" >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" -eq 255 ] || fail "a remote command's own failure status was replaced (got $rc)"
+[ "$(cat "$SSH_COUNT")" -eq 1 ] || fail "a remote command that printed timed out and HTTP 503 was re-run"
+[ "$(grep -c mutation "$REMOTE_HOME/mutations")" -eq 1 ] \
+  || fail "a remote command that printed timed out and HTTP 503 ran more than once"
+pass "a remote command that reports a timeout or HTTP 503 itself runs once"
 
 echo "ALL TESTS PASSED"

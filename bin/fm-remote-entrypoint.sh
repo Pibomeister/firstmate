@@ -16,9 +16,8 @@
 #
 # stdin is captured as bounded job input. The completed worker result is relayed
 # with stdout and stderr kept separate and its exit status preserved. An SSH
-# disconnect remains unknown completion to fm-on.sh unless its text is a
-# transient blip bin/fm-blip-retry-lib.sh retries. The final status is still
-# OpenSSH's. The shared library header owns job fields, bounds, PATH,
+# disconnect remains unknown completion to fm-on.sh, which retries only an ssh
+# that never connected. The final status is still OpenSSH's. The shared library header owns job fields, bounds, PATH,
 # LaunchAgent contract, and worker environment.
 #
 # A staged job whose caller goes away is cancelled rather than abandoned: any
