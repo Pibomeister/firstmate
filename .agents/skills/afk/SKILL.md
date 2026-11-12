@@ -24,7 +24,7 @@ Hold-for-return is the default and the only reach profile this release records: 
 On a `check: auto-away` wake, run the exact `bin/fm-auto-away.sh enter <activity>` command it carries.
 A wake reading `auto-away check failed:` carries no entry command: report the named problem to the captain as a blocker on automatic entry.
 This guarded command rechecks the trigger and writes the same record as plain `/afk`, with no away words or new authority.
-If it prints nothing, the request is obsolete, a posture already exists, or an already reported entry failure repeated: acknowledge the wake without announcing or starting another session.
+If it prints nothing, the request is obsolete or already fulfilled, a posture already exists, or an already reported entry failure repeated: acknowledge the wake without announcing or starting another session.
 If it prints `auto-away entry failed:` and exits nonzero, report that failure to the captain once as a blocker on automatic entry; a later scheduled check retries on its own.
 If it prints the entry announcement, continue at step 2 below, then announce automatic entry once with its trigger and the ordinary reach statement from step 3.
 Do not repeat step 1: the record already stands.
