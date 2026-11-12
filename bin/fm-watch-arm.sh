@@ -536,8 +536,14 @@ attached_holder_live() {
 # Only at the stall bound, where the watcher's own re-arm evicts a live holder,
 # does it fail with the typed stalled-holder line so its owner's retry replaces it.
 # A Grok arm can report queued work without ending its tagged holding watcher.
+# The watchdog's managed-hold watcher never ends its cycle on a wake either, so
+# an arm attached to one (the Claude Stop hook's foreground arm, or a supervision
+# host cycle) reports main's queued rows the same way, outside away mode and
+# never as the watchdog's own managed-hold arm. A handling successor
+# (FM_WATCH_PREDECESSOR_ARM_PID set) reports only rows newer than the highest
+# main row queued when it attached: its predecessor already delivered those.
 attach_and_wait() {
-  local attached_pid=$1 age successor actor=main
+  local attached_pid=$1 age successor actor=main managed_floor=0
   trap 'handle_attached_signal HUP 129' HUP
   trap 'handle_attached_signal TERM 143' TERM
   trap 'handle_attached_signal INT 130' INT
@@ -545,6 +551,9 @@ attach_and_wait() {
     # shellcheck source=bin/fm-lease-lib.sh
     . "$SCRIPT_DIR/fm-lease-lib.sh"
     actor=$(fm_lease_actor 2>/dev/null) || actor=main
+  fi
+  if [ -n "${FM_WATCH_PREDECESSOR_ARM_PID:-}" ]; then
+    managed_floor=$(fm_wake_main_max_seq)
   fi
   while :; do
     if arm_ground_gone; then
@@ -561,6 +570,14 @@ attach_and_wait() {
       if [ "${FM_WATCH_GROK_CONTINUITY:-}" = 1 ] && [ ! -e "$STATE/.afk" ] \
         && fm_grok_holding_watcher "$attached_pid" \
         && [ "$(fm_wake_actor_pending_count "$actor")" -gt 0 ]; then
+        cycle_log_append 0 none attached-delivered-wake "attached:$attached_pid"
+        printf '%s\n' 'check: rearm-resurface'
+        return 0
+      fi
+      if [ "${FM_WATCH_MANAGED_HOLD:-}" != 1 ] && [ ! -e "$STATE/.afk" ] \
+        && fm_managed_holding_watcher "$attached_pid" \
+        && [ "$(fm_wake_actor_pending_count main)" -gt 0 ] \
+        && [ "$(fm_wake_main_max_seq)" -gt "$managed_floor" ]; then
         cycle_log_append 0 none attached-delivered-wake "attached:$attached_pid"
         printf '%s\n' 'check: rearm-resurface'
         return 0
