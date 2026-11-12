@@ -1177,6 +1177,25 @@ test_exit_records_the_intentional_stop_marker_for_crew_only() {
   pass "fm-control exit: a ship or scout records its intentional stop for the watcher, a secondmate does not"
 }
 
+# A refused exit leaves the agent running, so the stop marker it wrote first
+# must go with the refusal or the watcher would leave a later crash dead; a
+# marker an earlier deliberate stop left belongs to that stop and stays.
+test_refused_exit_leaves_no_intentional_stop_marker() {
+  local dir out rc
+  dir=$(new_case stop-marker-refused)
+  add_task "$dir" t1 claude ship
+  : > "$dir/fake/windows"
+  out=$(run_control "$dir" t1 exit); rc=$?
+  expect_code 1 "$rc" "an exit whose endpoint cannot be proven gone must refuse"$'\n'"$out"
+  [ ! -e "$dir/home/state/.crew-stopped-t1" ] \
+    || fail "a refused exit left its intentional-stop marker: $(cat "$dir/home/state/.crew-stopped-t1" 2>&1)"
+  printf '1\texit\n' > "$dir/home/state/.crew-stopped-t1"
+  out=$(run_control "$dir" t1 exit); rc=$?
+  expect_code 1 "$rc" "the repeated exit should refuse the same way"$'\n'"$out"
+  [ "$(cat "$dir/home/state/.crew-stopped-t1" 2>/dev/null)" = "$(printf '1\texit')" ] \
+    || fail "a refused exit removed or rewrote the marker an earlier deliberate stop left"
+  pass "fm-control exit: a refused exit removes only the stop marker it wrote itself"
+}
 test_missing_tmux_endpoint_refuses_rather_than_claiming_a_stop() {
   local dir out rc
   dir=$(new_case gone)
@@ -1976,6 +1995,7 @@ test_resume_is_refused_with_its_reason
 test_relaunch_only_flags_are_rejected_on_other_verbs
 test_already_stopped_exit_is_idempotent
 test_exit_records_the_intentional_stop_marker_for_crew_only
+test_refused_exit_leaves_no_intentional_stop_marker
 test_missing_tmux_endpoint_refuses_rather_than_claiming_a_stop
 test_closed_orca_terminal_exit_reports_endpoint_gone
 test_closed_orca_terminal_exit_refuses_without_the_worktree_scan

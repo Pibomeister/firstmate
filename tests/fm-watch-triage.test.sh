@@ -2471,17 +2471,22 @@ crew_relaunch_wakes() {  # <state> <task> <relaunched|failed>
 }
 
 # A stand-in for bin/fm-control.sh that records each call and its note, and
-# renders the replacement's first frame the way a real relaunch would.
-fake_crew_control() {  # <case-dir> <exit-code>
+# renders the replacement's first frame the way a real relaunch would. A
+# successful call records a new spawn generation, as a real relaunch does;
+# keep-pane leaves the dead display exactly as it was.
+fake_crew_control() {  # <case-dir> <exit-code> [keep-pane]
+  local render="printf 'replacement %s is starting\\n' \"\$n\" > \"$1/pane.txt\""
+  [ "${3-}" = keep-pane ] && render=':'
   cat > "$1/fake-control" <<SH
 #!/usr/bin/env bash
 printf '%s\n' "\$1 \$2 \$3" >> "$1/control.calls"
 printf '%s\n' "\$4" > "$1/control.note"
+n=\$(awk 'END { print NR }' "$1/control.calls")
 # Each replacement renders its own frame: without a busy gen, the pane hash is
 # what tells one incarnation's death from the next.
-printf 'replacement %s is starting\n' "\$(awk 'END { print NR }' "$1/control.calls")" > "$1/pane.txt"
-[ "$2" -eq 0 ] || echo "fm-control: relaunch refused for the test" >&2
-exit "$2"
+$render
+[ "$2" -eq 0 ] || { echo "fm-control: relaunch refused for the test" >&2; exit "$2"; }
+printf 'spawn_gen=s%s.relaunch\n' "\$n" >> "$1/state/wedge.meta"
 SH
   chmod +x "$1/fake-control"
 }
@@ -2556,6 +2561,44 @@ test_dead_crew_agent_auto_relaunches_from_its_checkpoint_within_a_bound() {
   pass "a dead ship agent with a live worktree auto-relaunches from its checkpoint at most twice an hour, then reports the pause once"
 }
 
+# A successor on a harness with no busy gen that dies into the same dead display
+# as the agent it replaced, with no live read in between: the once-marker must
+# not absorb it as the death already handled, so it spends the second attempt
+# and, past the bound, the ordinary report still fires once.
+test_dead_crew_successor_with_an_identical_dead_display_is_still_handled() {
+  local dir state fakebin out capture window round
+  local failed='state: failed · source: run-step · run failed'
+  window="test:fm-wedge"
+  dir=$(crew_relaunch_fixture auto-relaunch-same-hash 'working: still compiling')
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  fake_crew_control "$dir" 0 keep-pane
+  FM_CONTROL_BIN="$dir/fake-control"; export FM_CONTROL_BIN
+  gone_endpoint_env dead; export FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS
+
+  for round in 1 2; do
+    : > "$out"
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" exit \
+      || fail "the successor's death with an unchanged dead display was absorbed (round $round): $(cat "$out")"
+    grep -F "check: wedge auto-relaunched from its checkpoint after its agent died in $window (relaunch $round of 2 in 3600s)" "$out" >/dev/null \
+      || fail "relaunch $round did not wake with its auto-relaunch outcome: $(cat "$out")"
+    [ "$(control_calls "$dir")" -eq "$round" ] || fail "round $round made $(control_calls "$dir") relaunch calls"
+    ack_stopped_cycle "$state" || fail "could not acknowledge relaunch $round"
+  done
+
+  : > "$out"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" exit \
+    || fail "the third death with an unchanged dead display was never reported: $(cat "$out")"
+  grep -F 'automatic relaunch paused after 2 relaunches in 3600s, so recover it by hand' "$out" >/dev/null \
+    || fail "the report past the bound did not name the pause: $(cat "$out")"
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 1 ] || fail "the report past the bound was not one stale wake"
+  [ "$(control_calls "$dir")" -eq 2 ] || fail "the bound did not stop a third relaunch"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the paused report"
+  : > "$out"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" absorb \
+    || fail "the paused report re-alarmed: $(cat "$out")"
+  unset FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS FM_CONTROL_BIN
+  pass "a successor that dies into the dead display it replaced still spends the next relaunch, then reports the pause once"
+}
 test_dead_crew_auto_relaunch_failures_and_exclusions_report_once() {
   local dir state fakebin out capture window spec name
   local failed='state: failed · source: run-step · run failed'
@@ -5712,6 +5755,7 @@ fm_test_run \
   test_wedge_escalation_resets_when_pane_becomes_active \
   test_gone_endpoint_reports_once_instead_of_escalating_forever \
   test_dead_crew_agent_auto_relaunches_from_its_checkpoint_within_a_bound \
+  test_dead_crew_successor_with_an_identical_dead_display_is_still_handled \
   test_dead_crew_auto_relaunch_failures_and_exclusions_report_once \
   test_dead_crew_with_backlog_captain_hold_is_not_auto_relaunched \
   test_signal_death_and_reclaimable_missing_endpoint_auto_relaunch \

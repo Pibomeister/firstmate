@@ -82,7 +82,8 @@
 #   detached, is the dead worker's own work in progress: that relaunch skips
 #   only the resync (the owner needs a clean copy), keeps every change in
 #   place, and launches with a "# Dirty-copy relaunch" section telling the
-#   replacement to finish or commit them before it resyncs. Nothing is
+#   replacement to finish or commit them before it resyncs with the same
+#   --refuse-diverged owner call, so a diverged branch is refused. Nothing is
 #   stashed, reset, or discarded; a dirty copy on another branch still refuses.
 #   The origin pre-probe is bounded to 120 seconds; a timeout refuses launch.
 #   Ship/scout launches always put fm-dod-lib.sh's current worker role scope
@@ -4990,7 +4991,7 @@ relaunch_dirty_section() {
   printf 'The published-head resync was skipped for this launch because it needs a clean copy, so the branch may still be behind or diverged from origin.\n'
   printf 'Review them with `git status` and `git diff`, then finish and commit them on %s.\n' "$BRANCH"
   printf 'If `no-mistakes axi status` shows an active run on this branch, do not commit; report `blocked:` naming the uncommitted paths instead.\n'
-  printf 'Once the copy is clean, and only if origin already has %s, run `%s %s %s %s` before you start or reattach a no-mistakes run; on exit 3 follow its monitoring-only lines, and on any other nonzero exit report a blocker with its output.\n' \
+  printf 'Once the copy is clean, and only if origin already has %s, run `%s %s %s %s --refuse-diverged` before you start or reattach a no-mistakes run; on exit 3 follow its monitoring-only lines, and on any other nonzero exit report a blocker with its output.\n' \
     "$BRANCH" "$resync_q" "$id_q" "$wt_q" "$branch_q"
   printf 'Uncommitted paths at relaunch (first 20):\n'
   printf '%s\n' "$RELAUNCH_DIRTY" | head -n 20 | sed 's/^/    /'

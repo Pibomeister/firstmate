@@ -41,7 +41,8 @@
 #              every uncommitted change. A ship or scout first records the stop
 #              as deliberate in state/.crew-stopped-<id>, so the watcher's
 #              automatic relaunch leaves it stopped until a later relaunch or
-#              fresh spawn clears that marker. Interrupts first when the task reads
+#              fresh spawn clears that marker; a refused exit removes it
+#              again, so a later crash still relaunches. Interrupts first when the task reads
 #              busy, then submits the harness's exit command. Postcondition:
 #              the backend's recovery-grade classifier reports the agent gone.
 #              Already-stopped is success (idempotent). A proven usage-limit
@@ -282,6 +283,7 @@ die() {  # <message>
 CONTROL_LOCK=
 CONTROL_LOCK_HELD=0
 RELAUNCH_ACTIVE=0
+CREW_STOP_MARKER_PENDING=
 RELAUNCH_PHASE=start
 RELAUNCH_META_LOCK=
 RELAUNCH_META_LOCK_HELD=0
@@ -311,6 +313,11 @@ control_cleanup() {
   # the next lifecycle command for this task writes the same path.
   if [ -n "${FM_COMPOSER_DIALOG_SINK:-}" ]; then
     rm -f "$FM_COMPOSER_DIALOG_SINK"
+  fi
+  # An exit that ends here without stopping the agent was refused, so its
+  # stop marker must not keep the watcher from reviving a later crash.
+  if [ -n "$CREW_STOP_MARKER_PENDING" ]; then
+    rm -f -- "$CREW_STOP_MARKER_PENDING" || true
   fi
   if [ "$CONTROL_LOCK_HELD" = 1 ]; then
     CONTROL_LOCK_HELD=0
@@ -1901,13 +1908,18 @@ case "$VERB" in
     ;;
   exit)
     # Recorded before the stop is attempted, so the watcher can never read
-    # the stopped agent as a crash and relaunch it in between; a refused stop
-    # keeps the marker too, since the request itself was deliberate.
-    if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
-      printf '%s\texit\n' "$(date +%s)" > "$STATE/.crew-stopped-$ID" \
+    # the stopped agent as a crash and relaunch it in between. A refused stop
+    # leaves the agent running, so control_cleanup removes the marker on any
+    # exit before the stop succeeded. A marker an earlier deliberate stop left
+    # is not this attempt's to remove, so it stays as it was.
+    if { [ "$KIND" = ship ] || [ "$KIND" = scout ]; } \
+       && [ ! -e "$STATE/.crew-stopped-$ID" ] && [ ! -L "$STATE/.crew-stopped-$ID" ]; then
+      CREW_STOP_MARKER_PENDING=$STATE/.crew-stopped-$ID
+      printf '%s\texit\n' "$(date +%s)" > "$CREW_STOP_MARKER_PENDING" \
         || die "could not record task $ID's intentional stop at $STATE/.crew-stopped-$ID; refusing to stop an agent the watcher could then relaunch"
     fi
     result=$(do_exit)
+    CREW_STOP_MARKER_PENDING=
     echo "$result $ID harness=$HARNESS backend=$BACKEND endpoint=$T worktree=$WT"
     ;;
   relaunch)

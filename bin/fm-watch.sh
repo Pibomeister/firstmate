@@ -2178,7 +2178,8 @@ wedge_defer_validating() {  # <window> <since-file> <triage-label> <idle-age> <t
 # attempt ledger state/.crew-relaunch-<id> (one row per attempt and per outcome)
 # is both the durable record and the bound's input, and the per-task lock makes
 # its count-then-append atomic. Returns 0 when it ran a relaunch, with the check
-# wake's key and reason in CREW_RELAUNCH_KEY and CREW_RELAUNCH_REASON; returns 1
+# wake's key and reason in CREW_RELAUNCH_KEY and CREW_RELAUNCH_REASON and
+# CREW_RELAUNCH_OK set to 1 only when that relaunch succeeded; returns 1
 # when the record is not eligible or the bound holds, leaving a suffix for the
 # ordinary stale reason in CREW_RELAUNCH_NOTE (empty when nothing was tried).
 # A deliberate stop is never revived: the intentional-stop marker that
@@ -2188,7 +2189,7 @@ wedge_defer_validating() {  # <window> <since-file> <triage-label> <idle-age> <t
 # which only a signal does.
 crew_auto_relaunch() {  # <window> <task> <idle-age> <dead|missing>
   local win=$1 task=$2 age=$3 verdict=$4 meta kind backend wt statusf last ledger lock now attempts note out rc=0 detail gen what
-  CREW_RELAUNCH_KEY='' CREW_RELAUNCH_REASON='' CREW_RELAUNCH_NOTE=''
+  CREW_RELAUNCH_KEY='' CREW_RELAUNCH_REASON='' CREW_RELAUNCH_NOTE='' CREW_RELAUNCH_OK=0
   [ "$CREW_RELAUNCH_MAX_ATTEMPTS" -gt 0 ] || return 1
   case "$task" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
   meta="$STATE/$task.meta"
@@ -2263,6 +2264,7 @@ Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mist
     "${FM_CONTROL_BIN:-$SCRIPT_DIR/fm-control.sh}" "$task" relaunch --note "$note" </dev/null 2>&1) || rc=$?
   if [ "$rc" -eq 0 ]; then
     printf '%s\trelaunched\n' "$now" >> "$ledger" 2>/dev/null || true
+    CREW_RELAUNCH_OK=1
     CREW_RELAUNCH_KEY="crew-relaunch-$task-$now"
     CREW_RELAUNCH_REASON="check: $task auto-relaunched from its checkpoint after $what (relaunch $attempts of $CREW_RELAUNCH_MAX_ATTEMPTS in ${CREW_RELAUNCH_WINDOW_SECS}s) - its local copy was kept; reconcile its current state rather than relaunching it again"
   else
@@ -2304,16 +2306,19 @@ Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mist
 # death is reported in full even when its dead display hashes identically to the
 # reported one. Only when no incarnation token is readable for the task does the
 # pane hash stand in as the discriminator - an unreadable token must never mean
-# re-report on every threshold, so that fallback keeps today's hash-keyed absorb,
-# with the residual that a record-less successor dying into a byte-identical dead
-# display stays absorbed. Under one unchanged incarnation a dead pane's static
+# re-report on every threshold, so that fallback keeps today's hash-keyed absorb
+# for a reported display. Under one unchanged incarnation a dead pane's static
 # display absorbs on every threshold either way.
 # A first `dead` or `missing` report for an eligible ship or scout is replaced
 # by one crew_auto_relaunch attempt and its check wake, under the same
-# once-marker.
+# once-marker. A successful relaunch on the hash fallback keys the marker to the
+# successor's spawn generation instead: the successor can die into a
+# byte-identical dead display with no live read in between, and the old hash
+# would absorb that death without spending the next attempt or, past the bound,
+# the ordinary report. A failed relaunch keeps the hash, so it is reported once.
 # Returns 0 when it has handled the window, 1 to escalate on the unchanged path.
 wedge_dead_record() {  # <window> <since-file> <triage-label> <idle-age> <pane-hash> <task>
-  local win=$1 since_file=$2 label=$3 age=$4 hash=$5 task=$6 key marker agent_state detail reason gen id
+  local win=$1 since_file=$2 label=$3 age=$4 hash=$5 task=$6 key marker agent_state detail reason gen id successor
   key=$(window_key "$win")
   marker="$STATE/.dead-reported-$key"
   agent_state=$(fm_backend_agent_state "$(window_backend "$win")" "$win" 2>/dev/null) || agent_state=unreadable
@@ -2328,6 +2333,8 @@ wedge_dead_record() {  # <window> <since-file> <triage-label> <idle-age> <pane-h
   id=$hash
   if gen=$(fm_busy_current_gen "$STATE" "$task"); then
     id=$gen
+  else
+    gen=''
   fi
   if [ "$(cat "$marker" 2>/dev/null || true)" = "$agent_state $id" ]; then
     triage_log "absorbed $label (agent $agent_state, already reported once, idle ${age}s): $win"
@@ -2336,7 +2343,12 @@ wedge_dead_record() {  # <window> <since-file> <triage-label> <idle-age> <pane-h
   CREW_RELAUNCH_NOTE=''
   if crew_auto_relaunch "$win" "$task" "$age" "$agent_state"; then
     fm_wake_append check "$CREW_RELAUNCH_KEY" "$CREW_RELAUNCH_REASON" || exit 1
-    printf '%s %s' "$agent_state" "$id" > "$marker"
+    successor=$id
+    if [ -z "$gen" ] && [ "$CREW_RELAUNCH_OK" = 1 ]; then
+      successor=$(fm_meta_get "$STATE/$task.meta" spawn_gen 2>/dev/null || true)
+      successor="relaunched:${successor:-$CREW_RELAUNCH_KEY}"
+    fi
+    printf '%s %s' "$agent_state" "$successor" > "$marker"
     clear_write_tracking "$key"
     wake "$CREW_RELAUNCH_REASON"
     return 0

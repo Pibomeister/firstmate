@@ -2601,7 +2601,7 @@ test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head() {
   assert_grep '# Dirty-copy relaunch' "$launch" "the replacement was not told its copy is dirty"
   assert_grep 'never stash, reset, check out over, clean, or discard them' "$launch" "the dirty-copy section does not protect the edits"
   assert_grep 'uncommitted.txt' "$launch" "the dirty-copy section does not list the uncommitted paths"
-  assert_grep "fm-pr-resync.sh rl91 $dir/wt task-rl91" "$launch" "the dirty-copy section does not name the later resync"
+  assert_grep "fm-pr-resync.sh rl91 $dir/wt task-rl91 --refuse-diverged" "$launch" "the dirty-copy section does not name the later resync with its divergence refusal"
 
   out=$(run_spawn "$dir" rl91 --relaunch --pr-branch task-rl91)
   assert_contains "$out" "--pr-branch and --from-branch apply only to a fresh launch" "--relaunch accepted --pr-branch"
