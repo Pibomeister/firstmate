@@ -10,6 +10,8 @@
 # A mutating command is never stored and drops every cached result before it
 # runs and again after it finishes. `terminal wait` is neither stored nor a mutation. Any other command
 # is run as-is and leaves the cache untouched.
+# Each fill uses its own staging files, so two fills in one shell cannot publish each other's output.
+# A replay whose stdout cannot be read is a miss and the caller runs the CLI.
 #
 # Cached reads: status; diagnostics memory; repo show; worktree list and
 # show; terminal list, read, and show.
@@ -156,10 +158,12 @@ fm_orca_cli_cache_invalidate() {
   return 0
 }
 
-# Run a command that changes Orca state, then drop the cache whatever its
-# exit status, so a read that filled during the change cannot be reused.
+# Drop cached reads before a state change and again after it, whatever its
+# exit status, so a read from before the change cannot be reused while it
+# runs or after it finishes.
 fm_orca_cli_mutation() { # <command...>
   local rc=0
+  fm_orca_cli_cache_invalidate
   "$@" || rc=$?
   fm_orca_cli_cache_invalidate
   return "$rc"
@@ -226,9 +230,9 @@ fm_orca_cli_try_replay() { # <dir> <key> -> 0 hit, 1 miss
   [ "$now" -lt "$exp" ] || return 1
   rc=$(tr -cd '0-9' < "$entry/rc")
   [ "$rc" = 0 ] || return 1
-  cat "$entry/stdout"
+  cat "$entry/stdout" || return 1
   if [ -f "$entry/stderr" ]; then
-    cat "$entry/stderr" >&2
+    cat "$entry/stderr" >&2 || return 1
   fi
   return 0
 }
@@ -238,14 +242,12 @@ fm_orca_cli_fill() { # <dir> <key> <lock> <orca-args...>
   shift 3
   local gen outf errf rc cacheable ttl now nowgen stage dest
   gen=$(fm_orca_cli_read_gen "$dir")
-  outf=$dir/staging/out.$$
-  errf=$dir/staging/err.$$
-  : > "$outf" || {
+  outf=$(mktemp "$dir/staging/out.XXXXXX") || {
     fm_orca_cli_lock_release "$lock"
     command orca "$@" || return $?
     return 0
   }
-  : > "$errf" || {
+  errf=$(mktemp "$dir/staging/err.XXXXXX") || {
     rm -f "$outf"
     fm_orca_cli_lock_release "$lock"
     command orca "$@" || return $?
@@ -264,10 +266,9 @@ fm_orca_cli_fill() { # <dir> <key> <lock> <orca-args...>
     nowgen=$(fm_orca_cli_read_gen "$dir")
     if [ "$nowgen" = "$gen" ]; then
       now=$(date +%s)
-      stage=$dir/staging/pub.$$
-      mkdir -p "$stage" || true
+      stage=$(mktemp -d "$dir/staging/pub.XXXXXX") || stage=
       dest=$dir/g/$gen/$key
-      if [ -d "$stage" ] \
+      if [ -n "$stage" ] \
         && cp "$outf" "$stage/stdout" \
         && cp "$errf" "$stage/stderr" \
         && printf '%s\n' "$rc" > "$stage/rc" \
@@ -276,7 +277,7 @@ fm_orca_cli_fill() { # <dir> <key> <lock> <orca-args...>
         && rm -rf "$dest" \
         && mv "$stage" "$dest"; then
         :
-      else
+      elif [ -n "$stage" ]; then
         rm -rf "$stage"
       fi
     fi
@@ -371,7 +372,6 @@ fm_orca_cli() {
   kind=$(fm_orca_cli_classify "$@")
   case "$kind" in
     mutate)
-      fm_orca_cli_cache_invalidate
       fm_orca_cli_mutation command orca "$@"
       ;;
     read)

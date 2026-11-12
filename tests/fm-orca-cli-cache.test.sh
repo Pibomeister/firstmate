@@ -49,6 +49,33 @@ if [ "${1:-} ${2:-}" = "terminal list" ]; then
   cat "${FM_ORCA_LIST:?}"
   exit "${FM_ORCA_LIST_EXIT:-0}"
 fi
+if [ "${1:-} ${2:-}" = "terminal read" ] && [ -n "${FM_ORCA_DISTINCT:-}" ]; then
+  term=
+  prev=
+  for a in "$@"; do
+    if [ "$prev" = "--terminal" ]; then
+      term=$a
+    fi
+    prev=$a
+  done
+  mkdir -p "${FM_ORCA_RENDEZVOUS:?}"
+  touch "${FM_ORCA_RENDEZVOUS}/$term"
+  i=0
+  while [ ! -f "${FM_ORCA_RENDEZVOUS}/term-a" ] || [ ! -f "${FM_ORCA_RENDEZVOUS}/term-b" ]; do
+    i=$((i + 1))
+    [ "$i" -gt 400 ] && break
+    sleep 0.05
+  done
+  printf '%s\n' "{\"ok\":true,\"result\":{\"text\":\"$term\"}}"
+  touch "${FM_ORCA_RENDEZVOUS}/wrote-$term"
+  i=0
+  while [ ! -f "${FM_ORCA_RENDEZVOUS}/wrote-term-a" ] || [ ! -f "${FM_ORCA_RENDEZVOUS}/wrote-term-b" ]; do
+    i=$((i + 1))
+    [ "$i" -gt 400 ] && break
+    sleep 0.05
+  done
+  exit 0
+fi
 if [ "${1:-} ${2:-}" = "terminal read" ]; then
   if [ -n "${FM_ORCA_READ_BODY:-}" ]; then
     printf '%s\n' "$FM_ORCA_READ_BODY"
@@ -150,6 +177,83 @@ test_read_during_mutation_is_not_reused_after_it() {
   run_cli terminal read --terminal term-a --limit 1 --json >/dev/null
   assert_equals 3 "$(calls)" "a read taken while the send ran was reused after the send finished"
   pass "fm_orca_cli: a read taken during a mutation is dropped when it finishes"
+}
+
+test_direct_mutation_drops_the_cache_before_the_command() {
+  local body i
+  setup_case pre-mutate
+  CACHE_SWITCH=1
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"before"}}'
+  run_cli terminal read --terminal term-a --limit 1 --json >/dev/null
+  FM_ORCA_HOLD="$CASE/hold"
+  PATH="$CASE/fakebin:$PATH" \
+    FM_ORCA_CLI_CACHE=1 \
+    FM_ORCA_CLI_CACHE_TTL=3 \
+    FM_ORCA_CLI_CACHE_DIR="$FM_ORCA_CLI_CACHE_DIR" \
+    FM_ORCA_LOG="$LOG" \
+    FM_ORCA_COUNT="$COUNT" \
+    FM_ORCA_LIST="$LIST" \
+    FM_ORCA_READ_BODY="$FM_ORCA_READ_BODY" \
+    FM_ORCA_HOLD="$FM_ORCA_HOLD" \
+    bash -c '. "$1"; fm_orca_cli_mutation command orca "$@"' \
+    _ "$ROOT/bin/fm-orca-cli-cache.sh" terminal send --terminal term-a --text x --json >/dev/null &
+  i=0
+  while [ ! -f "$FM_ORCA_HOLD" ] && [ "$i" -lt 200 ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  [ -f "$FM_ORCA_HOLD" ] || fail "the direct mutation never reached the CLI"
+  FM_ORCA_HOLD=
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"during"}}'
+  body=$(run_cli terminal read --terminal term-a --limit 1 --json)
+  touch "$CASE/hold.release"
+  wait
+  assert_equals '{"ok":true,"result":{"text":"during"}}' "$body" \
+    "a read reused the result cached before the direct mutation started"
+  pass "fm_orca_cli_mutation: a cached read is dropped before the command runs"
+}
+
+test_two_fills_in_one_shell_keep_their_own_bodies() {
+  local a b
+  setup_case split-fill
+  mkdir -p "$CASE/rendezvous"
+  PATH="$CASE/fakebin:$PATH" \
+    FM_ORCA_CLI_CACHE=1 \
+    FM_ORCA_CLI_CACHE_TTL=3 \
+    FM_ORCA_CLI_CACHE_DIR="$FM_ORCA_CLI_CACHE_DIR" \
+    FM_ORCA_LOG="$LOG" \
+    FM_ORCA_COUNT="$COUNT" \
+    FM_ORCA_LIST="$LIST" \
+    FM_ORCA_DISTINCT=1 \
+    FM_ORCA_RENDEZVOUS="$CASE/rendezvous" \
+    bash -c '. "$1"; ( fm_orca_cli terminal read --terminal term-a --limit 1 --json > "$2/a.out"; : ) & ( fm_orca_cli terminal read --terminal term-b --limit 1 --json > "$2/b.out"; : ) & wait' \
+    _ "$ROOT/bin/fm-orca-cli-cache.sh" "$CASE"
+  a=$(cat "$CASE/a.out")
+  b=$(cat "$CASE/b.out")
+  assert_equals '{"ok":true,"result":{"text":"term-a"}}' "$a" \
+    "the term-a fill returned another fill's body"
+  assert_equals '{"ok":true,"result":{"text":"term-b"}}' "$b" \
+    "the term-b fill returned another fill's body"
+  assert_equals 2 "$(calls)" "the two fills did not both reach the CLI"
+  pass "fm_orca_cli: two fills in one shell keep their own bodies"
+}
+
+test_unreadable_cached_stdout_is_a_miss() {
+  local body entry
+  setup_case unreadable
+  CACHE_SWITCH=1
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"first"}}'
+  run_cli terminal read --terminal term-a --limit 1 --json >/dev/null
+  entry=$(find "$FM_ORCA_CLI_CACHE_DIR" -type f -name stdout | head -n 1)
+  [ -n "$entry" ] || fail "the read was not stored"
+  chmod 000 "$entry" || fail "could not make the cached stdout unreadable"
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"second"}}'
+  body=$(run_cli terminal read --terminal term-a --limit 1 --json)
+  chmod u+r "$entry" 2>/dev/null || true
+  assert_equals '{"ok":true,"result":{"text":"second"}}' "$body" \
+    "an unreadable cache entry was served as an empty hit"
+  assert_equals 2 "$(calls)" "an unreadable cache entry was not read again from the CLI"
+  pass "fm_orca_cli: an unreadable cached stdout is a miss"
 }
 
 test_symlinked_cache_dir_is_bypassed() {
@@ -339,6 +443,9 @@ fm_test_run \
   test_ttl_expiry_reads_again \
   test_mutation_invalidates_cached_read \
   test_read_during_mutation_is_not_reused_after_it \
+  test_direct_mutation_drops_the_cache_before_the_command \
+  test_two_fills_in_one_shell_keep_their_own_bodies \
+  test_unreadable_cached_stdout_is_a_miss \
   test_symlinked_cache_dir_is_bypassed \
   test_different_args_do_not_share_a_read \
   test_failed_read_is_not_cached \
