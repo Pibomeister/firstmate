@@ -1,0 +1,14 @@
+== S12 compaction / clear / reemit keep the old stamp; captain-opened start refreshes it
+session-start --source compact rc=2
+  stamp kept? yes
+session-start --source clear rc=2
+  stamp kept? yes
+session-start --reemit --source compact rc=2
+  stamp kept? yes
+session-start  rc=0
+  plain start: stamp age 3s
+== S13 handoff successor start does not count as captain activity
+armed: state/auto-away.check.sh
+  stamp kept? yes
+armed: state/auto-away.check.sh
+  without successor record: stamp age 0s

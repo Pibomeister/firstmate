@@ -1,0 +1,12 @@
+== S3 silence only: config time=off, stamp 7300s old
+sweep: rc=0 stdout=[]
+1794464443	2	check	auto-away	check: auto-away silence trigger; load /afk and run bin/fm-auto-away.sh enter 1794457142; only if it prints an entry, finish /afk supervision setup and announce it once.
+== S3 negative: stamp 7000s old (under 2h) -> nothing
+sweep: rc=0 stdout=[]
+rows: 0
+== S4 clock trigger: time=00:15 (5 min ago), stamp 15 min old
+sweep: rc=0 stdout=[]
+1794464444	3	check	auto-away	check: auto-away clock trigger; load /afk and run bin/fm-auto-away.sh enter 1794463544; only if it prints an entry, finish /afk supervision setup and announce it once.
+== S4 negative: stamp 1 min old (after boundary) -> nothing
+sweep: rc=0 stdout=[]
+rows: 0

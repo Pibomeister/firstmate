@@ -1,0 +1,25 @@
+== S9 malformed config reported once on stdout across sweeps, cleared when fixed
+sweep: rc=1 stdout=[auto-away check failed: time must be HH:MM or off]
+sweep: rc=1 stdout=[]
+sweep: rc=1 stdout=[]
+-- changed failure (non-zone file):
+sweep: rc=1 stdout=[auto-away check failed: unknown timezone: zone.tab]
+sweep: rc=1 stdout=[]
+-- fixed:
+sweep: rc=0 stdout=[]
+failure receipt present? no
+-- same failure after clear reports again:
+sweep: rc=1 stdout=[auto-away check failed: time must be HH:MM or off]
+== S10 enter-auto rejects arguments (no away words)
+fm-afk-launch: enter-auto takes no arguments
+rc=2 afk-contract? no
+== S11 enabled=off: arm unregisters, check queues nothing on stale stamp
+arm rc=0
+(no auto-away check files)
+check rc=0 rows=0
+-- off-start with old stamp stamps activity (captain-opened):
+stamp age: 0s
+armed: state/auto-away.check.sh
+re-armed
+sweep: rc=0 stdout=[]
+rows after enable+check: 0

@@ -1,0 +1,6 @@
+== S12 compaction/clear/reemit vs captain-opened start (zsh word-split fixed)
+start [--source compact] rc=0 armed-this-run=yes stamp=kept
+start [--source clear] rc=0 armed-this-run=yes stamp=kept
+start [--reemit --source compact] rc=0 armed-this-run=yes stamp=kept
+start [--source startup] rc=0 armed-this-run=yes stamp=refreshed
+start [] rc=0 armed-this-run=yes stamp=refreshed

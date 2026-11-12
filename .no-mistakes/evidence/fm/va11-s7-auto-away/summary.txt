@@ -1,0 +1,4 @@
+fm-supervision-instructions exit=0
+fm-auto-away exit=0
+fm-afk-launch exit=0
+fm-afk-return exit=0

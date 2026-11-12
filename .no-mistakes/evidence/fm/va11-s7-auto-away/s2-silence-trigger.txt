@@ -1,0 +1,8 @@
+== S2 silence trigger: stamp 7348s old
+sweep: rc=0 stdout=[]
+queue:
+1794464430	1	check	auto-away	check: auto-away clock trigger; load /afk and run bin/fm-auto-away.sh enter 1794457082; only if it prints an entry, finish /afk supervision setup and announce it once.
+request receipt: 1794457082
+== second sweep (must not duplicate)
+sweep: rc=0 stdout=[]
+auto-away rows: 1
