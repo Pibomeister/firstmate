@@ -616,7 +616,7 @@ wd_nudge() {
 # only when the key changed the pane. A dialog that left refreshes the observation.
 wd_key() {
   local symptom=$1 key=$2 why=$3 id after
-  wd_rate_open "$symptom" key "$(cfgi key-secs 120)" || return 1
+  wd_rate_open "$symptom" key "$(cfgi key-secs 120)" "${O_REC_SUBJECT:-$O_TAG}" || return 1
   id=$(wd_id)
   if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_rec "$id" "$symptom" key refused "endpoint is on do-not-touch"; return 1; fi
   if [ "$(wd_mode)" != act ]; then wd_rec "$id" "$symptom" key dry-run "would press $key: $why"; return 1; fi

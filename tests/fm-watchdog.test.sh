@@ -754,6 +754,22 @@ mode=dry-run'
   pass "model-switch dialog: the judge and its refusals are rate-limited in every mode and stop after two failed keys"
 }
 
+test_worker_dialog_key_does_not_close_home_key_window() {
+  local stuck=$'Switch to another model?\n\n ❯ 1. Wait\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  local home_canon
+  make_home "$stuck" 'models=claude:haiku'
+  fake_models "$H" ok:"OPTION 1" absent
+  transcript 100 "Working."
+  home_canon=$(cd -P "$H" && pwd -P)
+  mkdir -p "$H/state/watchdog"
+  printf '%s\tw1\t%s\tworker:other\tdialog\tkey\tpending\tpress 0: dismiss the feedback survey\n' \
+    "$((BASE - 10))" "$home_canon" > "$H/state/watchdog/actions.tsv"
+  run_wd 0 once >/dev/null 2>&1 || fail "pass 0 failed"
+  assert_equals 1 "$(ledger | awk -F'\t' '$4 != "worker:other" && $5 == "dialog" && $6 == "key" && $7 == "pending"' | wc -l | tr -d ' ')" \
+    "a worker's recent dialog key does not hold back the home pane's model-switch key: $(ledger | cut -f4-8)"
+  pass "dialog key rate window is per pane: a worker's key does not block the home pane's key"
+}
+
 test_secret_looking_decision_reaches_no_council() {
   local sentinel=FAKESENTINEL42 rec_dirs
   make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
@@ -3933,6 +3949,7 @@ fm_test_run \
   test_secret_looking_decision_reaches_no_council \
   test_secret_looking_model_switch_dialog_is_held \
   test_model_switch_judge_is_rate_limited \
+  test_worker_dialog_key_does_not_close_home_key_window \
   test_usage_limit_unknown_harness_queues \
   test_claude_pinned_secondmate_with_tooling_gets_no_codex_pick \
   test_ordinary_home_claude_json_mcp_blocks_the_move \
