@@ -1,0 +1,6 @@
+returned; posture=0
+queued rows 5 -> 6
+enter exit=1 stdout=[auto-away entry failed: unknown config/auto-away key: bogus]
+after repair (no captain activity), check: rows 6 -> 7
+retry enter exit=0 first line: Away posture recorded at 2026-11-12T07:08:39Z: hold-for-retu
+posture=.afk-contract  entry-failure record=cleared

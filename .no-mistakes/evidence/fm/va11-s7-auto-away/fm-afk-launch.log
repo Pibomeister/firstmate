@@ -90,9 +90,9 @@ ok - record read: malformed record fails closed without acting on a partial id
 fm-afk-launch: daemon terminal record is malformed; refusing to act on it
 fm-afk-launch: malformed daemon terminal record; refusing to stop away mode
 ok - stop: malformed terminal record preserves away state and fails closed
-fm-afk-launch: failed to create detached tmux daemon session 'fm-afk-daemon-46610888-98827-26495-1794463955'
+fm-afk-launch: failed to create detached tmux daemon session 'fm-afk-daemon-1077065240-83257-6438-1794467688'
 ok - tmux launch: planned exact target is recorded before creation and removed on failure
-fm-afk-launch: failed to create detached tmux daemon session 'fm-afk-daemon-2147588880-138-1695-1794463955'
+fm-afk-launch: failed to create detached tmux daemon session 'fm-afk-daemon-3770915876-84082-4409-1794467688'
 ok - tmux launch: unique names eliminate collision teardown
 ok - stop validation: malformed record causes no daemon or state side effects
 ok - launcher lock: incomplete metadata fails acquisition and releases lock
@@ -109,7 +109,7 @@ ok - clear failure: native entry aborts and restores prior state
 fm-afk-launch: reconciling leaked daemon terminal tmux:exact-session
 fm-afk-launch: terminal close command failed, but exact absence was confirmed
 ok - confirmed absence: cleanup succeeds and removes the stale record
-fm-afk-launch: rollback restoration incomplete; backup retained at /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-afk-restore-fail.cKRMwF/state/.afk-launch-backup.pxkIqN
+fm-afk-launch: rollback restoration incomplete; backup retained at /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-afk-restore-fail.QCVNWV/state/.afk-launch-backup.ucFfam
 ok - rollback restore: incomplete restoration retains its recovery backup
 fm-afk-launch: an away-posture record is required; run enter before starting the daemon
 ok - flag failure: lifecycle aborts without active state
@@ -127,3 +127,4 @@ ok - tmux e2e: daemon session killed by exact id on stop
 ok - tmux e2e: record + .afk cleared on stop
 skip: rex CLI not found at $REX_BIN_DIR, on PATH, or at the server bundle path
 skip: Rex CLI or jq unavailable (rex e2e)
+exit=0

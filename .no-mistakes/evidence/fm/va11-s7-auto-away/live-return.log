@@ -1,0 +1,20 @@
+== captain returns: fm-afk-return.sh begin
+Waiting on you:
+  (nothing)
+Tried and failed, or could not be fixed:
+  (nothing)
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 0 task(s) live at return.
+catch-up health: GAP: watcher downtime was detected during the away window (recovery marker present)
+catch-up health: GAP: the watcher beat was 999999s old at return (grace 300s)
+catch-up wake: 1794467219 1 check auto-away check: auto-away silence trigger; load /afk and run bin/fm-auto-away.sh enter 1794467209; only if it prints an entry, finish /afk supervision setup and announce it once.
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 7820.1794467219.UWoX4W
+fm-afk-return: catch-up clear; ordinary captain work may proceed
+exit=0
+activity before=1794467209 after=1794467251
+request after return=ABSENT
+posture files now: 

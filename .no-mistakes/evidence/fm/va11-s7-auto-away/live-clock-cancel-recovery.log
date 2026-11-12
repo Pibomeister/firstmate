@@ -1,0 +1,18 @@
+### Scenario: 23:00-style clock trigger (boundary = local now-60s in America/Mexico_City), silence disabled
+config: time=01:06 silence-seconds=0 timezone=America/Mexico_City 
+check exit=0 stdout=[] rows 1 -> 2
+check: auto-away clock trigger; load /af
+### Adversarial: boundary not yet reached (time=01:17 local), stamp after previous boundary -> no wake
+check exit=0 rows 2 -> 2
+### Scenario: captain message cancels a queued request
+queued: rows 2 -> 3 request=1794467177
+captain-message exit=0
+stale enter exit=0 stdout=[] posture=0
+### Adversarial: invalid config at entry time, then repair without activity -> retry wake
+queued rows 3 -> 4
+enter exit=1 stdout=[auto-away entry failed: unknown config/auto-away key: bogus] request=ABSENT
+after repair, check: rows 4 -> 5
+bin/fm-auto-away.sh: line 94: printf: write error: Broken pipe
+retry enter stdout=[Away posture recorded at 2026-11-12T07:08:03Z: hold-for-return only. No phone channel is configured; anything that needs you waits for your return. No away instructions were recorded; the away session acts on standing authority only, and anything that needs you waits for your return. Destructive, irreversible, and security-sensitive actions are never pre-authorizable, whatever the words say. Expected return: not given. Spend cap: 4 concurrent workers.] posture=.afk-contract 
+### Adversarial: malformed config surfaces on scheduled check stdout once
+1st exit=1 [auto-away check failed: enabled must be on or off]; 2nd exit=1 []

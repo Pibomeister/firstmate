@@ -1,0 +1,11 @@
+### fresh primary session start (captain-opened)
+exit=0 digest_bytes=   15982
+37:- Before handling each genuine captain message (never a wake, hook, or startup), run bin/fm-auto-away.sh captain-message; a check: auto-away wake loads /afk.
+registered: auto-away.check-trust auto-away.check.sh  activity=present
+### compaction re-arm keeps old stamp
+exit=0 stamp_after=1700000000
+### secondmate home excluded
+arm exit=0 registered=0 stamp=0
+instruction lines in secondmate render: 0
+instruction lines in primary render: 1
+cleaned

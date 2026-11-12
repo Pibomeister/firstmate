@@ -37,3 +37,4 @@ ok - a later failed probe does not change the trip-row error count
 ok - the return brief excludes prior-session latch rows
 ok - the return brief retains in-window trips and failed turns across a main restart
 ok - a return with only the legacy away flag still renders the brief and measures the window from the flag
+exit=0
