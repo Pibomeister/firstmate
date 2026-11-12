@@ -552,6 +552,7 @@ for (const e of d.result.environments) if (e && typeof e.id === "string" && e.id
     env_args=()
     [ "$env" = local ] || env_args=(--environment "$env")
     list=$(orca terminal list ${env_args[@]+"${env_args[@]}"} --limit 100000 --json 2>/dev/null) || { [ "$rc" = 1 ] || rc=2; continue; }
+    # shellcheck disable=SC2016  # Single quotes are deliberate: ${...} belongs to the Node snippet.
     matches=$(printf '%s' "$list" | node -e '
 const fs = require("fs");
 let d; try { d = JSON.parse(fs.readFileSync(0, "utf8")); } catch (_) { process.exit(1); }
