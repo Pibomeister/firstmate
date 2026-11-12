@@ -326,27 +326,41 @@ test_run_compact_records_context_epoch_and_starts_one_doorbell() {
   grep -qx "lock_pid=$(sed -n 1p "$root/state/.lock")" "$root/state/.context-epoch" \
     || fail "context epoch did not record the session-lock pid"
   [ "$(doorbell_runs "$root")" = 1 ] || fail "an auto compaction with open work must start exactly one doorbell: $(cat "$root/state/doorbell-ran" 2>/dev/null)"
+  # Only the newest boundary decides: a manual one before it does not matter.
+  root="$TMP_ROOT/run-doorbell-manual-then-auto"
+  make_doorbell_primary "$root" manual
+  printf '{"type":"system","subtype":"compact_boundary","compactMetadata":{"trigger":"auto","preTokens":1}}\n' \
+    >> "$root/transcript.jsonl"
+  run_hook_claude_payload "$root" \
+    "{\"source\":\"compact\",\"transcript_path\":\"$root/transcript.jsonl\"}" >/dev/null
+  [ "$(doorbell_runs "$root")" = 1 ] || fail "an auto boundary after a manual one must start one doorbell"
   grep -qF -- "--transcript $root/transcript.jsonl" "$root/state/doorbell-ran" \
     || fail "the doorbell must receive the payload's transcript path"
   pass "run wrapper: an idle Claude auto compaction records the context epoch and starts one resume doorbell"
 }
 
 test_run_doorbell_skips_manual_clear_idle_and_disabled() {
-  local root case_name payload
-  for case_name in manual clear no-work disabled codex non-owner; do
+  local root case_name payload other_pid
+  for case_name in manual auto-then-manual clear no-work disabled codex non-owner away; do
     root="$TMP_ROOT/run-doorbell-$case_name"
     if [ "$case_name" = manual ]; then
       make_doorbell_primary "$root" manual
+    elif [ "$case_name" = auto-then-manual ]; then
+      make_doorbell_primary "$root" auto
+      printf '{"type":"system","subtype":"compact_boundary","compactMetadata":{"trigger":"manual","preTokens":1}}\n' \
+        >> "$root/transcript.jsonl"
     else
       make_doorbell_primary "$root" auto
     fi
     payload="{\"source\":\"compact\",\"transcript_path\":\"$root/transcript.jsonl\"}"
     [ "$case_name" != clear ] || payload="{\"source\":\"clear\",\"transcript_path\":\"$root/transcript.jsonl\"}"
     [ "$case_name" != no-work ] || : > "$root/state/.wake-queue"
+    [ "$case_name" != away ] || : > "$root/state/.afk"
     if [ "$case_name" = non-owner ]; then
       # Another live session holds the lock: this open is not the completed owner.
       sleep 120 >/dev/null 2>&1 &
-      printf '%s\n' "$!" > "$root/state/.lock"
+      other_pid=$!
+      printf '%s\n' "$other_pid" > "$root/state/.lock"
       rm -f "$root/state/.context-epoch"
     fi
     if [ "$case_name" = disabled ]; then
@@ -362,11 +376,12 @@ test_run_doorbell_skips_manual_clear_idle_and_disabled() {
         || fail "a completed owner's clear must still record the context epoch"
     fi
     if [ "$case_name" = non-owner ]; then
-      kill "$(cat "$root/state/.lock")" 2>/dev/null || true
+      kill "$other_pid" 2>/dev/null || true
+      wait "$other_pid" 2>/dev/null || true
       assert_absent "$root/state/.context-epoch" "a compact by a session that does not own the lock must not record a context epoch"
     fi
   done
-  pass "run wrapper: a manual compact, a clear, a home with no open work, FM_RESUME_DOORBELL=0, a non-Claude harness, or a non-owner starts no doorbell"
+  pass "run wrapper: a manual compact, a clear, a home with no open work, FM_RESUME_DOORBELL=0, a non-Claude harness, a non-owner, or an away record starts no doorbell"
 }
 
 test_run_rebuild_forwards_source_to_drifted_instruction_refresh() {

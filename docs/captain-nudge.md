@@ -96,4 +96,4 @@ Host notes:
 - Herdr refuses a client whose protocol is newer than the running server. Install with `PATH` putting the herdr binary that matches the server first (for example `PATH="$HOME/.local/bin:$PATH" bin/fm-captain-nudge.sh install ...`); the unit records that `PATH`.
 - Herdr has no last-output time, so a Herdr captain's idle time is how long its visible screen has been unchanged (tracked in `state_dir/captains/<id>.screen`). The first pass after install starts that clock.
 - A Herdr `pane` pin goes stale when herdr restarts or the captain moves.
-  When the pinned pane cannot be read and the captain names `fm_home`, the nudge reads and types into the live captain terminal that home recorded in `state/captain-handle` at its last session start.
+  When an explicit `pane` pin cannot be read and the captain names `fm_home`, the nudge reads and types into the live captain terminal that home recorded in `state/captain-handle` at its last session start, provided the session that recorded it still holds the home's lock.

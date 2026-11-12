@@ -219,13 +219,18 @@ herdr_resolve_pane() {  # <captain-json> -> pane_id
 
 # The live captain terminal a firstmate home recorded at its last session start
 # (bin/fm-order.sh claim-handle writes <fm_home>/state/captain-handle). Prints
-# "<session>\t<pane>" for a herdr handle, or returns 1.
+# "<session>\t<pane>" for a herdr handle, or returns 1. The handle counts only
+# while the session that recorded it still holds the home: state/.lock names a
+# live pid and the handle is not older than that lock.
 herdr_live_handle() {  # <fm_home>
-  local home=$1 f backend target
+  local home=$1 f backend target lock_pid
   [ -n "$home" ] || return 1
   home=$(fm_nudge_expand_path "$home")
   f=$home/state/captain-handle
   [ -r "$f" ] || return 1
+  lock_pid=$(sed -n '1p' "$home/state/.lock" 2>/dev/null | tr -cd '0-9')
+  [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null || return 1
+  [ ! "$home/state/.lock" -nt "$f" ] || return 1
   backend=$(sed -n 's/^backend=//p' "$f" | head -n 1)
   target=$(sed -n 's/^target=//p' "$f" | head -n 1)
   [ "$backend" = herdr ] || return 1
@@ -298,7 +303,9 @@ send_fixed_prompt() {  # <backend> <target> [session]
   text=${text%$'\n'}
   fm_nudge_send_allowed_text "$text" || die "refusing to send anything but the fixed prompt"
   if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_NUDGE_SEND_LOG:-}" ]; then
-    printf '%s\t%s\t%s\n' "$backend" "$target" "$text" >> "$FM_NUDGE_SEND_LOG"
+    { printf '%s\t%s\t%s' "$backend" "$target" "$text"
+      [ -z "$session" ] || printf '\t%s' "$session"
+      printf '\n'; } >> "$FM_NUDGE_SEND_LOG"
     return 0
   fi
   case "$backend" in
@@ -331,7 +338,9 @@ send_fixed_prompt() {  # <backend> <target> [session]
 send_enter_only() {  # <backend> <target> [session]
   local backend=$1 target=$2 session=${3:-}
   if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_NUDGE_SEND_LOG:-}" ]; then
-    printf '%s\t%s\t%s\n' "$backend" "$target" "<Enter>" >> "$FM_NUDGE_SEND_LOG"
+    { printf '%s\t%s\t%s' "$backend" "$target" "<Enter>"
+      [ -z "$session" ] || printf '\t%s' "$session"
+      printf '\n'; } >> "$FM_NUDGE_SEND_LOG"
     return 0
   fi
   case "$backend" in
@@ -430,12 +439,15 @@ observe_live() {  # <captain-json>
       read_ok=0
       if [ -n "$pane" ] && OBS_SCREEN=$(herdr_read_screen "$pane" "$session"); then
         read_ok=1
+      else
+        OBS_SCREEN=''
       fi
       # A pinned pane goes stale when herdr restarts or the captain moves. When
-      # it cannot be read, follow the live captain terminal the named home
-      # recorded at its last session start instead of failing every pass.
-      if [ "$read_ok" = 0 ] && row=$(herdr_live_handle "$fmhome") \
-        && [ "${row#*$'\t'}" != "$pane" ]; then
+      # an explicit pin cannot be read, follow the live captain terminal the
+      # named home recorded at its last session start instead of failing every
+      # pass. A title selector that matched nothing never falls back.
+      if [ "$read_ok" = 0 ] && [ -n "$pane" ] && row=$(herdr_live_handle "$fmhome") \
+        && [ "$row" != "$session"$'\t'"$pane" ]; then
         session=${row%%$'\t'*}
         pane=${row#*$'\t'}
         OBS_SCREEN=$(herdr_read_screen "$pane" "$session") || OBS_SCREEN=''

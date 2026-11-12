@@ -194,6 +194,9 @@ resume_work_open() {
 resume_doorbell_bin() {
   local bin harness
   [ "${FM_RESUME_DOORBELL:-1}" != 0 ] || return 0
+  # Under an away or quiet record an unmarked line reads as the captain
+  # returning, and that posture owns supervision anyway.
+  [ ! -e "$STATE/.afk" ] && [ ! -e "$STATE/.afk-contract" ] || return 0
   [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] && [ -r "$TRANSCRIPT" ] || return 0
   command -v jq >/dev/null 2>&1 || return 0
   [ "$(grep -F 'compact_boundary' "$TRANSCRIPT" 2>/dev/null \
