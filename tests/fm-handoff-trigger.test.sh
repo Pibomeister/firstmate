@@ -114,7 +114,7 @@ test_fires_once_per_context_cycle() {
   pass "fires once per cycle across tool calls and prompts, and again for a new session"
 }
 
-test_compaction_does_not_rearm() {
+test_compaction_rearms_only_the_gate() {
   local t="$TMP_ROOT/t-cycle"
   reset_lab
   printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
@@ -125,8 +125,10 @@ test_compaction_does_not_rearm() {
   printf '{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}\n' >> "$t"
   expect_silent "$(run_hook "$PRIMARY" s-cycle "$t" UserPromptSubmit)" "pre-compaction usage must not fire in the new cycle"
   append_usage "$t" 88000
+  [ ! -e "$PRIMARY/state/.handoff-trigger.s-cycle.1" ] || fail "pre-compaction usage armed the new cycle"
   expect_silent "$(run_hook "$PRIMARY" s-cycle "$t")" "new cycle at the threshold in the same session"
-  pass "the trigger fires once per session: a compaction does not re-arm it"
+  [ -e "$PRIMARY/state/.handoff-trigger.s-cycle.1" ] || fail "the new cycle at the threshold did not arm its successor gate"
+  pass "the instruction fires once per session, and a compaction re-arms only the successor gate"
 }
 
 # record_burn <session> <percent>: the turn-end recorder's sample for this lab
@@ -142,7 +144,7 @@ autopark_wakes() { # <key>
 }
 
 test_one_park_handoff_across_hook_and_recorder() {
-  local t="$TMP_ROOT/t-share" out
+  local t="$TMP_ROOT/t-share" out rc
   reset_lab
   mkdir -p "$PRIMARY/data"
   printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
@@ -164,9 +166,14 @@ test_one_park_handoff_across_hook_and_recorder() {
   printf '{"type":"system","subtype":"compact_boundary","content":"Conversation compacted"}\n' >> "$t"
   append_usage "$t" 88000
   expect_silent "$(run_hook "$PRIMARY" s-rec-first "$t")" "hook after compaction once the recorder fired"
-  [ ! -e "$PRIMARY/state/.handoff-trigger.s-rec-first.0" ] || fail "a silent hook must not claim the cycle marker"
+  [ -e "$PRIMARY/state/.handoff-trigger.s-rec-first.0" ] || fail "a silent hook after the recorder fired did not arm the cycle gate"
+  [ -e "$PRIMARY/state/.handoff-trigger.s-rec-first.1" ] || fail "a silent hook after compaction did not arm the new cycle gate"
+  rm -f "$PRIMARY/state/.handoff-successor"
+  rc=0
+  run_hook "$PRIMARY" s-rec-first "$t" Stop >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 2 ] || fail "recorder first: a stop without a verified successor must stay blocked (rc=$rc)"
   assert_equals 1 "$(autopark_wakes context-autopark-s_rec_first)" "recorder wake count after the hook stayed silent"
-  pass "hook-first and recorder-first each emit park-then-handoff exactly once per session across both channels"
+  pass "hook-first and recorder-first each emit park-then-handoff exactly once per session, and the successor gate stays armed"
 }
 
 test_fires_once_under_concurrency() {
@@ -670,7 +677,7 @@ test_secondmate_handoff_escalates_to_its_parent
 test_threshold_default_15
 test_threshold_configurable
 test_fires_once_per_context_cycle
-test_compaction_does_not_rearm
+test_compaction_rearms_only_the_gate
 test_one_park_handoff_across_hook_and_recorder
 test_fires_once_under_concurrency
 test_compact_point_from_claude_settings

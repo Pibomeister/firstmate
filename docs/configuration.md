@@ -495,7 +495,7 @@ On Orca, failed panes remain available for diagnosis; on every backend, a failed
 The lock transfers while the predecessor is still alive, so the handoff does not wait for an external exit.
 The successor confirms the handoff sha256 and stops on a mismatch.
 A second mate never launches its own successor: it appends one relaunch request to its parent channel and stops.
-It fires at most once per session, and it shares that once-per-session claim with the low-context auto-park below, so a session gets the park-then-handoff instruction from only one of the two.
+It fires at most once per session, and it shares that once-per-session claim with the low-context auto-park below, so a session gets the park-then-handoff instruction from only one of the two. That claim removes only the duplicate instruction: whenever the hook sees context left at or below the threshold it still arms the successor gate below for the current context cycle, including after a compaction or when the recorder emitted first.
 
 The trigger is on by default at 15% context left, wherever it can resolve the auto-compact point.
 The file is local to each home, is not inherited, and is read at every hook call, so a change needs no restart.
