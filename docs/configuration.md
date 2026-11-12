@@ -478,7 +478,7 @@ This feature does not set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` or any other autocom
 ## Early handoff trigger (config/handoff-trigger)
 
 A Claude primary session receives one instruction to write its full handoff when its context left before auto-compact falls to a set percentage.
-The instruction asks the session to file its open asks, proposals, and orders as ledger items, persist its decisions and durable knowledge, write the handoff from the ledger with `bin/fm-ledger.sh handoff`, hand off to a successor, and report that it is ready to restart, so a session can restart from a handoff instead of compacting.
+The instruction asks the session to file its open asks, proposals, and orders as ledger items, persist its decisions and durable knowledge, write the handoff from the ledger with `bin/fm-ledger.sh handoff` (or, when the backlog cannot be read, write the document by hand and record it with `bin/fm-order.sh handoff --doc`), hand off to a successor, and report that it is ready to restart, so a session can restart from a handoff instead of compacting.
 A primary launches its successor with `bin/fm-handoff-launch.sh <handoff file>` on the home's recorded Orca or tmux backend.
 The launcher and `bin/fm-handoff-ack.sh` implement the acknowledgement and lock-transfer contract owned by `bin/fm-handoff-lib.sh`; its header defines the records and watchdog events.
 The launcher refuses rather than guess when the backend or harness cannot be determined, and it never kills or interrupts the current session.

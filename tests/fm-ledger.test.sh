@@ -97,6 +97,42 @@ test_intake_files_one_item_per_ask_and_replays() {
   pass "intake files each ask as its own queued item, replays retries, and refuses unknown sources"
 }
 
+test_intake_replay_key_and_existing_ids() {
+  new_home intake-key
+  local out rc rows
+  ledger intake s-a --project alpha --title "Share the widget" --source ask:chat >/dev/null || fail "first intake refused"
+  out=$(ledger intake s-b --project beta --title "Share the widget" --source ask:chat) \
+    || fail "the same ask for another project was refused: $out"
+  [ "$out" = "filed s-b project=beta source=ask:chat" ] || fail "the same ask for another project replayed instead of filing: $out"
+  out=$(ledger intake s-c --project alpha --title "Share the widget" --source ask:chat) \
+    || fail "the same ask under another explicit id was refused: $out"
+  [ "$out" = "filed s-c project=alpha source=ask:chat" ] || fail "an explicit new id replayed an item with another id: $out"
+  out=$(ledger intake s-a --project alpha --title "Share the widget" --source ask:chat)
+  [ "$out" = "replay s-a" ] || fail "an exact retry did not replay: $out"
+  out=$(ledger intake --mint --project alpha --title 'Escape a\tb\\c' --source ask:chat) || fail "a title with backslashes was refused: $out"
+  local bid=${out#filed }
+  bid=${bid%% *}
+  out=$(ledger intake --mint --project alpha --title 'Escape a\tb\\c' --source ask:chat)
+  [ "$out" = "replay $bid" ] || fail "a retry of a title with backslashes did not replay: $out"
+
+  tasks add taken "someone else's item" --repo alpha >/dev/null || fail "seed add failed"
+  rows=$(grep -c "" "$HOME_DIR/data/ledger-intake.tsv")
+  out=$(ledger intake taken --project alpha --title "A new ask" --source ask:chat 2>&1); rc=$?
+  expect_code 1 "$rc" "intake under an id that already names an item"
+  assert_contains "$out" "item taken already exists" "the refusal names the existing item"
+  [ "$(grep -c "" "$HOME_DIR/data/ledger-intake.tsv")" = "$rows" ] || fail "a refused intake wrote an intake record"
+  out=$(tasks show taken --full)
+  assert_contains "$out" "title: someone else's item" "a refused intake left the existing item unchanged"
+
+  # An intake that filed its item but stopped before writing its record.
+  rm -f "$HOME_DIR/data/ledger-intake.tsv"
+  out=$(ledger intake s-a --project alpha --title "Share the widget" --source ask:chat) \
+    || fail "a retry after a lost intake record was refused: $out"
+  [ "$out" = "replay s-a" ] || fail "a retry after a lost intake record did not replay: $out"
+  assert_contains "$(cat "$HOME_DIR/data/ledger-intake.tsv")" "s-a" "the replay rewrote the lost intake record"
+  pass "intake replays only the same source, project, title, and id, and refuses an id that names another item"
+}
+
 test_plan_groups_orders_and_marks_short() {
   new_home plan
   seed_fleet
@@ -186,6 +222,58 @@ test_done_items_are_history_not_work() {
   pass "done items are not counted as active or blocked work"
 }
 
+# fake_tasks_axi <mode>: put a tasks-axi first on PATH that runs the real one,
+# then for `ready` appends a public-followup table naming a-wait (mode
+# followups), or fails every call (mode broken).
+FAKE_BIN=
+fake_tasks_axi() {
+  local real
+  real=$(command -v tasks-axi)
+  FAKE_BIN="$TMP_ROOT/fake-bin-$1"
+  mkdir -p "$FAKE_BIN"
+  case "$1" in
+    followups)
+      cat > "$FAKE_BIN/tasks-axi" <<EOF
+#!/usr/bin/env bash
+"$real" "\$@" || exit \$?
+[ "\${1:-}" = ready ] || exit 0
+printf 'ready_public_followups[1]{id,state,kind,repo,title}:\n  a-wait,ready,followup,alpha,promised final reply\n'
+EOF
+      ;;
+    broken)
+      printf '#!/usr/bin/env bash\necho "backlog unavailable" >&2\nexit 1\n' > "$FAKE_BIN/tasks-axi"
+      ;;
+  esac
+  chmod +x "$FAKE_BIN/tasks-axi"
+}
+
+test_public_followups_are_not_ready_work() {
+  new_home followups
+  seed_fleet
+  fake_tasks_axi followups
+  local out
+  out=$(PATH="$FAKE_BIN:$PATH" ledger plan --project alpha) || fail "plan failed: $out"
+  assert_contains "$out" "blocked   a-wait" "a public follow-up row does not make a blocked item ready"
+  assert_contains "$out" "project alpha active ready=3 in_flight=1 blocked=1 held=1" "public follow-ups are not counted as ready"
+  pass "public-followup obligations in the ready listing are never counted as ready work"
+}
+
+test_failed_scheduled_evaluation_is_retried() {
+  new_home retry
+  seed_fleet
+  fake_tasks_axi broken
+  local out
+  out=$(PATH="$FAKE_BIN:$PATH" ledger_at $((SLOT_1700 + 60)) depth --scheduled)
+  assert_contains "$out" "ready-depth 17:00: the depth check failed" "a failed evaluation is reported"
+  [ ! -e "$HOME_DIR/state/.ready-depth-slot" ] || fail "a failed evaluation recorded the slot"
+  out=$(PATH="$FAKE_BIN:$PATH" ledger_at $((SLOT_1700 + 120)) depth --scheduled)
+  [ -z "$out" ] || fail "the same failure was reported twice: $out"
+  out=$(ledger_at $((SLOT_1700 + 180)) depth --scheduled)
+  assert_contains "$out" "ready-depth 17:00: 1 active project(s) below 3 ready: gamma(ready=1)" "the next sweep retries the slot"
+  [ "$(cat "$HOME_DIR/state/.ready-depth-slot")" = "$SLOT_1700" ] || fail "the completed evaluation did not record the slot"
+  pass "a failed scheduled evaluation is reported once and retried on the next sweep"
+}
+
 test_scheduled_depth_fires_once_per_slot() {
   new_home scheduled
   seed_fleet
@@ -233,7 +321,8 @@ test_unfiled_lists_open_orders_without_items() {
   tasks add old-item "old item for order $mentioned" --repo alpha >/dev/null
   out=$(ledger unfiled); rc=$?
   expect_code 3 "$rc" "unfiled with one unfiled order"
-  [ "$out" = "UNFILED $loose pending :: never filed"$'\n'"UNFILED $tricky pending :: summary says kind=hold" ] \
+  # Orders sent in the same second sort by their random id suffix, so compare as a set.
+  [ "$(printf '%s\n' "$out" | LC_ALL=C sort)" = "$(printf '%s\n' "UNFILED $loose pending :: never filed" "UNFILED $tricky pending :: summary says kind=hold" | LC_ALL=C sort)" ] \
     || fail "unfiled must list only the never-filed orders, whatever their summary says: $out"
   pass "unfiled lists only open orders that no ledger item records"
 }
@@ -291,6 +380,9 @@ test_arm_registers_the_scheduled_check() {
 
 fm_test_run \
   test_intake_files_one_item_per_ask_and_replays \
+  test_intake_replay_key_and_existing_ids \
+  test_public_followups_are_not_ready_work \
+  test_failed_scheduled_evaluation_is_retried \
   test_plan_groups_orders_and_marks_short \
   test_next_is_read_only_and_exits_3_when_empty \
   test_depth_reports_short_active_projects \

@@ -32,10 +32,14 @@
 # The item is added with `fm-tasks-axi.sh add --queue` (or `--mint`), its body
 # starts with the line `Ledger source: <source>`, and one TSV row is appended
 # to <data>/ledger-intake.tsv:
-#   <utc-iso>\t<epoch>\t<source>\t<item-id>\t<title>
-# A retry with the same source and the same title prints `replay <item-id>`
-# and files nothing, so intake is safe to repeat. Success prints
-# `filed <item-id> project=<name> source=<source>`.
+#   <utc-iso>\t<epoch>\t<source>\t<item-id>\t<project>\t<title>
+# A retry with the same source, project, and title (and the same id, when one
+# is given) prints `replay <item-id>` and files nothing, so intake is safe to
+# repeat. Success prints `filed <item-id> project=<name> source=<source>`.
+# An explicit <id> that already names a backlog item is refused (exit 1) and
+# nothing is filed, unless that item is this same ask from an intake that
+# stopped before writing its record; then the record is written and the result
+# is `replay <item-id>`.
 #
 # UNFILED. `unfiled` lists every open captain order (pending or acked, kind
 # order; holds are standing limits, not work) that no ledger item records:
@@ -81,11 +85,12 @@
 #   ready-depth <HH:MM>: <k> active project(s) below <m> ready: <name>(ready=<n>) ...
 # A scheduled time counts as passed for 6 hours after it; one that passed
 # longer ago (the watcher was down) is skipped. The last evaluated time is
-# recorded in <state>/.ready-depth-slot. Times are the captain's local wall
+# recorded in <state>/.ready-depth-slot only after its evaluation completes,
+# so a failed or interrupted evaluation is retried on the next sweep. Times are the captain's local wall
 # clock: the zone is bin/fm-quiet-hours-lib.sh's configured quiet-hours zone.
 # A failed evaluation prints one diagnostic line, recorded in
 # <state>/.ready-depth-error so the same failure is reported once, not on
-# every sweep.
+# every sweep, while each sweep keeps retrying.
 #
 # HANDOFF. `handoff` writes a new session handoff document from the ledger
 # plus a short note of what is in flight right now, and never continues an
@@ -193,9 +198,10 @@ load_config() {
 
 # toon_rows <col>...: read a tasks-axi TOON listing on stdin and print the named
 # columns of each table row, tab-separated, with quoting and escapes decoded and
-# a tasks-axi cut note shortened to " [truncated]".
+# a tasks-axi cut note shortened to " [truncated]". With TOON_TABLE set, only
+# rows of the table of that name are read.
 toon_rows() {
-  awk -v want="$*" '
+  awk -v want="$*" -v table="${TOON_TABLE:-}" '
     function parse(line, f,   n, i, c, nx, inq, cur) {
       n = 0; cur = ""; inq = 0
       sub(/^ +/, "", line)
@@ -223,6 +229,9 @@ toon_rows() {
     }
     BEGIN { nw = split(want, w, " ") }
     /^[A-Za-z_]+\[[0-9]+\]\{.*\}:$/ {
+      name = $0
+      sub(/\[.*/, "", name)
+      if (table != "" && name != table) { rows = 0; next }
       hdr = $0
       sub(/^[^{]*\{/, "", hdr); sub(/\}:$/, "", hdr)
       nc = split(hdr, cols, ",")
@@ -257,7 +266,9 @@ load_backlog() {
   out=$(tasks list --fields priority,held 2>&1) || die "backlog read failed: $(clean "$out")"
   OPEN_ROWS=$(printf '%s\n' "$out" | toon_rows id state kind repo title priority held)
   out=$(tasks ready 2>&1) || die "backlog ready read failed: $(clean "$out")"
-  READY_IDS=" $(printf '%s\n' "$out" | toon_rows id | tr '\n' ' ')"
+  # Only the `ready` table is dispatchable work; tasks-axi lists public-followup
+  # obligations in a separate ready_public_followups table that is never work.
+  READY_IDS=" $(printf '%s\n' "$out" | TOON_TABLE=ready toon_rows id | tr '\n' ' ')"
 }
 
 # classified_rows: print `<project>\t<group>\t<rank>\t<seq>\t<id>\t<kind>\t<priority>\t<title>`
@@ -414,8 +425,11 @@ valid_source() {
   return 0
 }
 
-intake_replay_id() {  # <source> <title>: an existing item filed from this source with this title
-  local src=$1 title=$2 id
+# intake_replay_id <source> <project> <title> <id-or-empty>: an existing item
+# filed from this source for this project with this title (and this id, when
+# one is given). The values reach awk through ENVIRON so backslashes stay literal.
+intake_replay_id() {
+  local id
   [ -f "$INTAKE_LOG" ] || return 1
   while IFS= read -r id; do
     [ -n "$id" ] || continue
@@ -423,15 +437,24 @@ intake_replay_id() {  # <source> <title>: an existing item filed from this sourc
     printf '%s\n' "$id"
     return 0
   done <<EOF
-$(awk -F '\t' -v s="$src" -v t="$(clean "$title")" '$3 == s && $5 == t { print $4 }' "$INTAKE_LOG")
+$(FM_LEDGER_S=$1 FM_LEDGER_P=$2 FM_LEDGER_T=$(clean "$3") FM_LEDGER_I=$4 awk -F '\t' '
+  $3 == ENVIRON["FM_LEDGER_S"] && $5 == ENVIRON["FM_LEDGER_P"] && $6 == ENVIRON["FM_LEDGER_T"] &&
+    (ENVIRON["FM_LEDGER_I"] == "" || $4 == ENVIRON["FM_LEDGER_I"]) { print $4 }' "$INTAKE_LOG")
 EOF
   return 1
+}
+
+record_intake() {  # <source> <item-id> <project> <title>
+  local now
+  now=$(fm_now)
+  mkdir -p "$DATA"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(iso_of "$now")" "$now" "$1" "$2" "$3" "$(clean "$4")" >> "$INTAKE_LOG"
 }
 
 cmd_intake() {
   local id='' mint=0 project='' title='' source='' kind='' priority='' body='' body_file='' have_body=0
   local -a blocked=() args=()
-  local out new_id tmp now
+  local out new_id tmp already first repo got_title
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --mint) mint=1; shift ;;
@@ -480,7 +503,7 @@ cmd_intake() {
         || die "no captain goal ${source#goal:} in the dispatch ledger"
       ;;
   esac
-  if new_id=$(intake_replay_id "$source" "$title"); then
+  if new_id=$(intake_replay_id "$source" "$project" "$title" "$id"); then
     printf 'replay %s\n' "$new_id"
     return 0
   fi
@@ -505,9 +528,24 @@ cmd_intake() {
   new_id=$(printf '%s' "$out" | jq -r '.id // .task.id // empty' 2>/dev/null)
   [ -n "$new_id" ] || new_id=$id
   [ -n "$new_id" ] || die "backlog add printed no item id: $(clean "$out")"
-  now=$(fm_now)
-  mkdir -p "$DATA"
-  printf '%s\t%s\t%s\t%s\t%s\n' "$(iso_of "$now")" "$now" "$source" "$new_id" "$(clean "$title")" >> "$INTAKE_LOG" \
+  already=$(printf '%s' "$out" | jq -r '.already // false' 2>/dev/null)
+  if [ "$already" = true ]; then
+    # tasks-axi left an existing item unchanged. It is this ask only when an
+    # earlier intake filed it and stopped before its intake record was written:
+    # same project, same title, and a body that starts with this source.
+    repo=$(printf '%s' "$out" | jq -r '.task.repo // empty' 2>/dev/null)
+    got_title=$(printf '%s' "$out" | jq -r '.task.title // empty' 2>/dev/null)
+    first=$(printf '%s' "$out" | jq -r '.task.body // empty' 2>/dev/null | sed -n 1p)
+    if [ "$repo" = "$project" ] && [ "$(clean "$got_title")" = "$(clean "$title")" ] \
+      && [ "$first" = "Ledger source: $source" ]; then
+      record_intake "$source" "$new_id" "$project" "$title" \
+        || die "item $new_id exists, but the intake record could not be written to $INTAKE_LOG"
+      printf 'replay %s\n' "$new_id"
+      return 0
+    fi
+    die "item $new_id already exists and was left unchanged, so this ask is not filed; use another id or --mint"
+  fi
+  record_intake "$source" "$new_id" "$project" "$title" \
     || die "item $new_id was filed, but the intake record could not be written to $INTAKE_LOG"
   printf 'filed %s project=%s source=%s\n' "$new_id" "$project" "$source"
 }
@@ -611,16 +649,21 @@ cmd_depth_scheduled() {
   last=$(cat "$SLOT_FILE" 2>/dev/null)
   case "$last" in '' | *[!0-9]*) last=0 ;; esac
   [ "$last" -lt "$epoch" ] || return 0
-  printf '%s\n' "$epoch" > "$SLOT_FILE" || return 0
-  [ $((now - epoch)) -le "$SLOT_GRACE" ] || return 0
+  if [ $((now - epoch)) -gt "$SLOT_GRACE" ]; then
+    printf '%s\n' "$epoch" > "$SLOT_FILE"
+    return 0
+  fi
+  # The slot is recorded only once an evaluation completes, so a failed or
+  # interrupted one is retried on the next sweep instead of being lost.
   rc=0
   out=$("$0" depth 2>&1) || rc=$?
   case "$rc" in
-    0) rm -f "$ERROR_FILE"; return 0 ;;
-    3) ;;
+    0 | 3) ;;
     *) report_error_once "ready-depth $label: the depth check failed: $(clean "$out")"; return 0 ;;
   esac
+  printf '%s\n' "$epoch" > "$SLOT_FILE" || return 0
   rm -f "$ERROR_FILE"
+  [ "$rc" -eq 3 ] || return 0
   count=$(printf '%s\n' "$out" | grep -c '^SHORT ')
   names=$(printf '%s\n' "$out" | awk '/^SHORT / { sub(/^ready=/, "", $3); printf " %s(ready=%s)", $2, $3 }')
   printf 'ready-depth %s: %s active project(s) below %s ready:%s; refill each ready queue (bin/fm-ledger.sh plan)\n' \
