@@ -63,6 +63,27 @@
 #       a row below the last prompt row. Above it, the phrase matches only on a
 #       row that opens by stating the usage limit (fm_wd_usage_limit_text), so
 #       conversation output that quotes the phrase is not a match.
+#   fm_wd_limit_screen <screen>
+#       Returns 0 when the last 12 non-blank rows hold a row that opens by
+#       stating a provider limit (fm_wd_usage_limit_text), such as Claude's
+#       `You've hit your weekly limit · resets ...`, or the auto-wait footer
+#       fm_wd_usage_limit_autowait accepts. It adds no phrase of its own.
+#   fm_wd_transcript_limit <transcript.jsonl> <now>
+#       Prints `<weekly|session|other>\t<resets-epoch>` and returns 0 when the
+#       newest assistant record in the transcript tail is a Claude usage-limit
+#       record (`"apiError":"usage_limit_reached"`) whose reset is after <now>.
+#       The reset is rate_limit_info.resetsAt, else quotaLimits.resetsAt, else
+#       the record time plus five hours. seven_day* is weekly, five_hour* is
+#       session, any other type is other. Exit 1 otherwise.
+#   fm_wd_account_limit_reset <config-dir> <now> [days]
+#       Prints the newest reset epoch after <now> among the usage-limit records
+#       in the last 64 KiB of each top-level session transcript under
+#       <config-dir>/projects modified in the last <days> (default 7), and
+#       returns 0: that account is at its own limit. Exit 1 when none is found.
+#   fm_wd_handoff_in_progress <claim-file> <lock-pid> <now> <max-secs>
+#       Returns 0 when <claim-file> is a version 1 verified-handoff claim
+#       (bin/fm-handoff-lib.sh) from <lock-pid> whose deadline is after <now>
+#       and at most <max-secs> away, so a successor is still due.
 #   fm_wd_dialog_options <screen>
 #       Prints `<number>\t<text>` for each numbered option of the dialog.
 #   fm_wd_dialog_text <screen>
@@ -244,6 +265,57 @@ fm_wd_usage_limit_autowait() {  # <screen>
       }
     }')
   return 1
+}
+
+fm_wd_limit_screen() {  # <screen>
+  local row
+  [ -n "${1-}" ] || return 1
+  fm_wd_usage_limit_autowait "$1" && return 0
+  while IFS= read -r row; do
+    fm_wd_usage_limit_text "$row" && return 0
+  done < <(_fm_wd_tail_rows "$1" 12)
+  return 1
+}
+
+fm_wd_transcript_limit() {  # <transcript> <now>
+  local f=$1 now=$2 row kind reset
+  [ -f "$f" ] || return 1
+  row=$(tail -c 262144 "$f" 2>/dev/null | jq -R -r '
+    fromjson? | select(type == "object" and .type == "assistant") |
+    [(.apiError // "-"),
+     ((.apiErrorParams.rate_limit_info.rateLimitType // .quotaLimits.rateLimitType // "-") | tostring),
+     ((.apiErrorParams.rate_limit_info.resetsAt // .quotaLimits.resetsAt //
+       ((.timestamp // "" | tostring | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601? // 0) + 18000)) | floor | tostring)] | @tsv' 2>/dev/null | tail -n 1)
+  [ -n "$row" ] || return 1
+  IFS=$'\t' read -r kind row reset <<EOF
+$row
+EOF
+  [ "$kind" = usage_limit_reached ] || return 1
+  case "$reset" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$reset" -gt "$now" ] || return 1
+  case "$row" in seven_day*) kind=weekly ;; five_hour*) kind=session ;; *) kind=other ;; esac
+  printf '%s\t%s\n' "$kind" "$reset"
+}
+
+fm_wd_account_limit_reset() {  # <config-dir> <now> [days]
+  local dir=$1 now=$2 days=${3:-7} reset
+  [ -d "$dir/projects" ] || return 1
+  reset=$(find "$dir/projects" -mindepth 2 -maxdepth 2 -name '*.jsonl' -mtime -"$days" -print0 2>/dev/null |
+    perl -0 -ne 'chomp; open(my $f, "<", $_) or next; my $s = -s $f; seek($f, $s > 65536 ? $s - 65536 : 0, 0);
+      local $/; my $b = <$f>; close $f; $b = "" unless defined $b;
+      for (split /\n/, $b) { print "$_\n" if index($_, q("apiError":"usage_limit_reached")) >= 0 }' 2>/dev/null |
+    jq -R -r 'fromjson? | (.apiErrorParams.rate_limit_info.resetsAt // .quotaLimits.resetsAt // empty) | numbers | floor' 2>/dev/null |
+    sort -n | tail -n 1)
+  case "$reset" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$reset" -gt "$now" ] || return 1
+  printf '%s\n' "$reset"
+}
+
+fm_wd_handoff_in_progress() {  # <claim-file> <lock-pid> <now> <max-secs>
+  local claim=$1 pid=$2 now=$3 max=$4 deadline
+  [ -n "$pid" ] && [ -f "$claim" ] && [ ! -L "$claim" ] || return 1
+  deadline=$(jq -er --arg p "$pid" 'select(.version == 1 and (.predecessor_pid | tostring) == $p) | .deadline | numbers | floor' "$claim" 2>/dev/null) || return 1
+  [ "$deadline" -gt "$now" ] && [ $((deadline - now)) -le "$max" ]
 }
 
 fm_wd_quota_status_line() {  # <line>

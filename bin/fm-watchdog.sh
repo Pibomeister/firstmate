@@ -34,6 +34,9 @@
 #                                captain, rewritten each pass and by pickup.
 #   <watched home>/state/monitor-status  one-line record of that home's monitor
 #                                unit status, rewritten atomically each pass and by monitor-read.
+#   <parent home>/config/secondmate-accounts/<id>/claude-account  a second mate's
+#                                Claude account pin, rewritten atomically by an account failover.
+# Read only: <watched home>/state/.handoff-pending, the verified handoff claim.
 #
 # Test seams, honoured only with FM_TEST_SEAM=1: FM_WD_NOW fixes the clock and
 # FM_WD_TEST_COMPOSER replaces the composer verdict for a plain test pane.
@@ -390,7 +393,7 @@ wd_publish_captain() {
 # saves the comparable parts to state/watchdog/subjects/<home-basename>-<path-cksum>.
 wd_observe() {
   local home=$1 parent=$2 id=$3 st now hb prev meta row hb_sid hb_wpid='' hb_wsid='' ctx dt hb_at=0 cb='' ct=''
-  local footer_text='' footer_src='' reading
+  local footer_text='' footer_src='' reading view=''
   st=$home/state
   now=$(wd_now)
   O_HOME=$home O_PARENT=$parent O_ID=$id O_TAG=$(wd_tag "$home") O_KEY=$(wd_state_key "$home")
@@ -400,6 +403,7 @@ wd_observe() {
   C_BACKEND='' C_TARGET='' C_MOVED=''
   O_LOOP=none O_LOOP_N=0 O_EVENTS='' O_RESTART_REQ=0 O_OWED_N=0 O_OWED_AGE=0
   O_AFK=0 O_DAEMON=unknown O_PREV_COMPOSER='' O_PREV_SIG='' O_COMPOSER_TEXT='' O_COMPOSER_ABOVE='' O_DRAFT=''
+  O_CLAUDE=0 O_ACCOUNT='' O_LIMIT_KIND='' O_LIMIT_RESET='' O_LIMIT_KINDS='' O_HANDOFF=0
   hb=$st/heartbeat.json
   hb_sid='' ctx=''
   if [ -f "$hb" ] && row=$(jq -r 'def known: if type == "object" then "-" else . end;
@@ -459,7 +463,6 @@ EOF
     O_PANE=$(wd_capture "$O_BACKEND" "$O_TARGET" 60) || O_PANE=''
   fi
   if [ -n "$O_PANE" ]; then
-    local view
     O_SIG=$(wd_pane_sig "$O_PANE")
     if [ "$O_SIG" = "$p_sig" ] && [ -n "$p_since" ]; then O_PANE_STATIC=$((now - p_since)); else p_since=$now; fi
     O_DIALOG=$(wd_observe_dialog "$O_BACKEND" "$O_TARGET") || O_DIALOG=''
@@ -478,6 +481,9 @@ EOF
   else
     O_TRANSCRIPT=''
   fi
+  wd_observe_account "$meta"
+  wd_observe_limit "$view" "$now"
+  if fm_wd_handoff_in_progress "$st/.handoff-pending" "$O_LOCK_PID" "$now" 600; then O_HANDOFF=1; fi
   # One shared context reading (bin/fm-context-reading-lib.sh): the derived
   # percentage owns the restart decision when it exists, else the footer; the
   # full-window status percentage is never read.
@@ -521,13 +527,73 @@ EOF
   printf 'sig=%s\nsince=%s\ncpu=%s\ncpu_at=%s\ncomposer=%s\nterm=%s\nterm_owner=%s\n' "$O_SIG" "${p_since:-$now}" "$cpu" "$now" "$O_COMPOSER" "$p_term" "$p_term_owner" > "$prev.tmp" && mv "$prev.tmp" "$prev"
 }
 
+# wd_canon_dir <dir>: the physical path of an existing directory.
+wd_canon_dir() {
+  [ -n "${1-}" ] && [ -d "$1" ] && (cd -P -- "$1" 2>/dev/null && pwd -P)
+}
+
+# wd_observe_account <meta-or-empty>: O_CLAUDE is 1 for a Claude session, read
+# from its transcript (only Claude transcripts are found), its usage-limit
+# auto-wait footer, or a second mate's meta harness, and a meta naming another
+# harness wins. O_ACCOUNT is the Claude
+# config dir the session runs on: the dir holding its transcript, else the
+# meta's account (ordinary is $HOME/.claude), else empty.
+wd_observe_account() {
+  local meta=$1 a
+  if [ -n "$O_TRANSCRIPT" ]; then
+    O_CLAUDE=1
+    O_ACCOUNT=$(wd_canon_dir "${O_TRANSCRIPT%/projects/*}") || O_ACCOUNT=''
+  fi
+  [ "$O_AUTOWAIT" = 0 ] || O_CLAUDE=1
+  [ -n "$meta" ] && [ -f "$meta" ] || return 0
+  a=$(fm_wd_conf_get "$meta" harness '')
+  case "$a" in
+    claude) O_CLAUDE=1 ;;
+    '') return 0 ;;
+    *) O_CLAUDE=0 O_ACCOUNT=''; return 0 ;;
+  esac
+  [ -z "$O_ACCOUNT" ] || return 0
+  a=$(fm_wd_conf_get "$meta" account '')
+  [ "$a" != ordinary ] || a=$HOME/.claude
+  O_ACCOUNT=$(wd_canon_dir "$a") || O_ACCOUNT=''
+}
+
+# wd_observe_limit <view> <now>: O_LIMIT_KINDS names the independent signals
+# that a Claude session sits on a usage limit. rendered: the pane shows the
+# limit message, its picker, or the auto-wait footer. filesystem: the session's
+# transcript ends on a live limit record, or, with no such transcript, its
+# account's own transcripts record a live limit. records: the heartbeat is
+# older than heartbeat-frozen-secs. Empty unless rendered or filesystem holds.
+wd_observe_limit() {
+  local view=$1 now=$2 row rendered=0 fs=0 hb_secs
+  [ "$O_CLAUDE" = 1 ] || return 0
+  if [ -n "$O_TRANSCRIPT" ] && row=$(fm_wd_transcript_limit "$O_TRANSCRIPT" "$now"); then
+    IFS=$'\t' read -r O_LIMIT_KIND O_LIMIT_RESET <<EOF
+$row
+EOF
+    fs=1
+  fi
+  if [ "$O_DIALOG" = usage-limit ] || [ "$O_AUTOWAIT" = 1 ] || { [ -n "$view" ] && fm_wd_limit_screen "$view"; }; then
+    rendered=1
+  fi
+  if [ "$fs" = 0 ] && [ "$rendered" = 1 ] && [ -n "$O_ACCOUNT" ] && row=$(fm_wd_account_limit_reset "$O_ACCOUNT" "$now"); then
+    O_LIMIT_KIND=account O_LIMIT_RESET=$row fs=1
+  fi
+  [ $((rendered + fs)) -gt 0 ] || return 0
+  [ "$rendered" = 0 ] || O_LIMIT_KINDS=rendered
+  [ "$fs" = 0 ] || O_LIMIT_KINDS="${O_LIMIT_KINDS:+$O_LIMIT_KINDS }filesystem"
+  hb_secs=$(cfgi heartbeat-frozen-secs 600)
+  if [ "$hb_secs" -gt 0 ] && [ "$O_HB_AGE" != unknown ] && [ "$O_HB_AGE" -ge "$hb_secs" ]; then O_LIMIT_KINDS="$O_LIMIT_KINDS records"; fi
+}
+
 wd_print_observation() {
   printf '%s\n' "subject $O_TAG ($O_HOME)" \
     "  endpoint=${O_BACKEND:-none}:${O_TARGET:-none} session=${O_SESSION:-none} lock_pid=${O_LOCK_PID:-none} alive=$O_ALIVE instance=$O_INSTANCE owner=$O_OWNER" \
     "  captain=${C_BACKEND:-none}:${C_TARGET:-none} moved_at=${C_MOVED:-none}" \
     "  pane_static=${O_PANE_STATIC}s dialog=${O_DIALOG:-none} usage_limit_autowait=$O_AUTOWAIT composer=$O_COMPOSER turn_running=$O_TURN cpu_busy=$O_CPU_BUSY" \
     "  transcript_age=${O_TR_AGE}s loop=$O_LOOP/$O_LOOP_N restart_requested=$O_RESTART_REQ ctx=${O_CTX:-unknown}${O_CTX_SRC:+ ($O_CTX_SRC)}${O_CTX_READING:+ [$O_CTX_READING]}" \
-    "  owed=$O_OWED_N oldest=${O_OWED_AGE}s afk=$O_AFK daemon=$O_DAEMON heartbeat_age=${O_HB_AGE}s"
+    "  owed=$O_OWED_N oldest=${O_OWED_AGE}s afk=$O_AFK daemon=$O_DAEMON heartbeat_age=${O_HB_AGE}s handoff_in_progress=$O_HANDOFF" \
+    "  claude=$O_CLAUDE account=${O_ACCOUNT:-unknown} limit=${O_LIMIT_KIND:-none}${O_LIMIT_RESET:+ resets $(fm_wd_iso "$O_LIMIT_RESET")} limit_signals=${O_LIMIT_KINDS:-none}"
 }
 
 # --- actions -------------------------------------------------------------------
@@ -777,9 +843,142 @@ wd_restart_gate() {  # <symptom> <kind>...  -> 0 to proceed; records the refusal
     wd_gap "$symptom: restart held; last restart was $(((now - last) / 60))m ago"
     return 1
   fi
-  if [ "$(cfg restart off)" != on ]; then wd_rec "$id" "$symptom" restart refused "restart is off; stall proven by $*"; return 1; fi
-  if [ "$(wd_mode)" != act ]; then wd_rec "$id" "$symptom" restart dry-run "would restart; stall proven by $*"; return 1; fi
+  if [ "$(cfg restart off)" != on ]; then wd_rec "$id" "$symptom" restart refused "restart is off; stall proven by $*$(wd_account_note)"; return 1; fi
+  if [ "$(wd_mode)" != act ]; then wd_rec "$id" "$symptom" restart dry-run "would restart; stall proven by $*$(wd_account_note)"; return 1; fi
   return 0
+}
+
+# wd_account_note: for a would-be failover restart, the account it would use.
+wd_account_note() {
+  [ -n "${WD_FAILOVER:-}" ] && [ "$O_CLAUDE" = 1 ] || return 0
+  [ "$WD_FAILOVER" = failover ] || [ "$O_PARENT" = - ] || return 0
+  wd_choose_account "$WD_FAILOVER"
+  printf '; account: %s' "$WD_ACCT_WHY"
+}
+
+# wd_account_declared <canonical-dir>: a Claude pin value, where ordinary names
+# $HOME/.claude, the dir Claude uses with CLAUDE_CONFIG_DIR unset.
+wd_account_declared() {
+  local home_dir
+  home_dir=$(wd_canon_dir "$HOME/.claude") || home_dir=''
+  if [ -n "$home_dir" ] && [ "$1" = "$home_dir" ]; then printf 'ordinary\n'; else printf '%s\n' "$1"; fi
+}
+
+# wd_choose_account failover|keep: sets WD_ACCT_DIR, WD_ACCT_DECLARED, and
+# WD_ACCT_WHY. keep reuses the session's own account when it is known and
+# records no live limit. Otherwise the first claude-config-dirs entry, in
+# order, that is not the limited account, records no live limit, and passes
+# Claude's own sign-in check wins. Nothing here signs in or prompts; returns 1
+# with every refusal reason in WD_ACCT_WHY when no account is usable.
+wd_choose_account() {  # failover|keep
+  local how=$1 now cur d reasons='' exe reset declared root seen=' '
+  WD_ACCT_DIR='' WD_ACCT_DECLARED='' WD_ACCT_WHY=''
+  now=$(wd_now)
+  cur=$O_ACCOUNT
+  if [ "$how" = keep ] && [ -n "$cur" ] && ! fm_wd_account_limit_reset "$cur" "$now" >/dev/null; then
+    WD_ACCT_DIR=$cur WD_ACCT_DECLARED=$(wd_account_declared "$cur") WD_ACCT_WHY="kept the session's account $cur"
+    return 0
+  fi
+  if ! exe=$(command -v claude 2>/dev/null) || [ -z "$exe" ]; then
+    WD_ACCT_WHY="no usable Claude account: no claude executable to check sign-in"
+    return 1
+  fi
+  for d in $(cfg claude-config-dirs "" | tr ',' ' '); do
+    if ! d=$(wd_canon_dir "$d"); then reasons="$reasons; a listed dir is missing"; continue; fi
+    case "$seen" in *" $d "*) continue ;; esac
+    seen="$seen$d "
+    if [ "$how" = failover ] && [ "$d" = "$cur" ]; then reasons="$reasons; $d is the limited account"; continue; fi
+    if reset=$(fm_wd_account_limit_reset "$d" "$now"); then reasons="$reasons; $d is at its limit until $(fm_wd_iso "$reset")"; continue; fi
+    declared=$(wd_account_declared "$d")
+    root=$d
+    [ "$declared" != ordinary ] || root=''
+    if ! fm_worker_account_check claude "$declared" "$root" "$exe" "" "claude-config-dirs" 2>/dev/null; then
+      reasons="$reasons; $d is not signed in"
+      continue
+    fi
+    reasons=${reasons#; }
+    WD_ACCT_DIR=$d WD_ACCT_DECLARED=$declared
+    WD_ACCT_WHY="chose $d over ${cur:-an unknown account}${reasons:+ ($reasons)}"
+    return 0
+  done
+  reasons=${reasons#; }
+  WD_ACCT_WHY="no usable Claude account in claude-config-dirs${reasons:+: $reasons}"
+  return 1
+}
+
+# wd_restart_account <symptom>: picks the account for a restart that
+# WD_FAILOVER asks for. Returns 1 when the restart must not run: failover with
+# account-failover off, or with no usable account. Both hold once per nudge-secs.
+wd_restart_account() {  # <symptom>
+  local symptom=$1
+  WD_ACCT_DIR='' WD_ACCT_DECLARED='' WD_ACCT_WHY=''
+  [ -n "${WD_FAILOVER:-}" ] && [ "$O_CLAUDE" = 1 ] || return 0
+  # A second mate's relaunch applies its own pin; only a failover rewrites it.
+  [ "$WD_FAILOVER" = failover ] || [ "$O_PARENT" = - ] || return 0
+  if [ "$WD_FAILOVER" = failover ] && [ "$(cfg account-failover on)" != on ]; then
+    WD_ACCT_WHY="account-failover is off, and a restart on the limited account stops at the same limit"
+  elif wd_choose_account "$WD_FAILOVER"; then
+    wd_rec "$(wd_id)" "$symptom" failover "done" "$WD_ACCT_WHY"
+    return 0
+  elif [ "$WD_FAILOVER" = keep ]; then
+    wd_gap "$symptom restart runs without an account choice: $WD_ACCT_WHY"
+    return 0
+  fi
+  wd_rate_open "$symptom" failover "$(cfgi nudge-secs 900)" && wd_rec "$(wd_id)" "$symptom" failover held "$WD_ACCT_WHY"
+  wd_gap "$symptom: no restart; $WD_ACCT_WHY"
+  return 1
+}
+
+# wd_pin_secondmate <id> <symptom>: points the second mate's own account pin at
+# the failover account, atomically, so the relaunch applies it. An unreadable or
+# malformed pin is left alone and the relaunch does not run.
+wd_pin_secondmate() {  # <id> <symptom>
+  local id=$1 symptom=$2 dir file old rc=0 tmp
+  dir=$O_PARENT/config/secondmate-accounts/$O_ID
+  file=$dir/claude-account
+  old=$(fm_worker_account_read claude "$file" 2>/dev/null) || rc=$?
+  case "$rc" in
+    0) old=${old%%$'\t'*} ;;
+    3) old=absent ;;
+    *) wd_rec "$id" "$symptom" pin failed "$file is unreadable or malformed; left unchanged"; return 1 ;;
+  esac
+  if [ "$old" = "$WD_ACCT_DECLARED" ]; then wd_rec "$id" "$symptom" pin "done" "$file already names $old"; return 0; fi
+  if mkdir -p "$dir" && tmp=$(mktemp "$dir/.claude-account.XXXXXX") && printf '%s\n' "$WD_ACCT_DECLARED" > "$tmp" && mv -f "$tmp" "$file"; then
+    wd_rec "$id" "$symptom" pin "done" "$file: $old -> $WD_ACCT_DECLARED"
+    return 0
+  fi
+  [ -z "${tmp:-}" ] || rm -f "$tmp"
+  wd_rec "$id" "$symptom" pin failed "could not write $file"
+  return 1
+}
+
+# wd_stop_limit_picker <id> <symptom>: fm-control never closes a pane on a
+# usage-limit picker, so a failover first ends that session with TERM, as a
+# primary restart does. Returns 1 when the session did not stop.
+wd_stop_limit_picker() {  # <id> <symptom>
+  local id=$1 symptom=$2 i=0
+  [ "$O_DIALOG" = usage-limit ] || return 0
+  if [ "$O_ALIVE" != 1 ] || [ "$O_INSTANCE" != match ]; then
+    wd_rec "$id" "$symptom" restart failed "usage-limit picker on a session whose lock anchor is not proven; left running"
+    return 1
+  fi
+  kill -TERM "$O_LOCK_PID" 2>/dev/null || true
+  while wd_pid_alive "$O_LOCK_PID" && [ "$i" -lt 30 ]; do sleep 1; i=$((i + 1)); done
+  if wd_pid_alive "$O_LOCK_PID"; then
+    wd_rec "$id" "$symptom" restart failed "session pid $O_LOCK_PID on a usage-limit picker did not stop on TERM; left running"
+    return 1
+  fi
+}
+
+# wd_account_prefix: shell statements that select WD_ACCT_DIR for a primary
+# restart-command, shedding the environment credentials Claude ranks above it.
+wd_account_prefix() {
+  [ -n "$WD_ACCT_DIR" ] || return 0
+  if [ "$WD_ACCT_DECLARED" = ordinary ]; then
+    printf 'unset %s CLAUDE_CONFIG_DIR; ' "$FM_WORKER_ACCOUNT_CLAUDE_SHED"
+  else
+    printf 'unset %s; export CLAUDE_CONFIG_DIR=%s; ' "$FM_WORKER_ACCOUNT_CLAUDE_SHED" "$(printf '%q' "$WD_ACCT_DIR")"
+  fi
 }
 
 wd_restart_available() {
@@ -842,15 +1041,23 @@ wd_write_handoff() {  # <symptom> -> prints path
   printf '%s\n' "$path"
 }
 
+# WD_FAILOVER, when set, picks the Claude account: failover leaves a limited
+# account, keep reuses the session's own (wd_choose_account).
 wd_restart() {  # <symptom> <kind>...
-  local symptom=$1 id handoff token cmd yolo_cmd yolo_note prompt pid i sess
+  local symptom=$1 id handoff token cmd yolo_cmd yolo_note prompt pid i sess acct_note=''
   shift
   wd_restart_gate "$symptom" "$@" || return 0
+  wd_restart_account "$symptom" || return 0
   id=$(wd_id)
+  [ -z "$WD_ACCT_DIR" ] || acct_note=" account=$WD_ACCT_DIR"
   handoff=$(wd_write_handoff "$symptom")
   if [ "$O_PARENT" != - ]; then
-    wd_rec "$id" "$symptom" restart pending "second mate relaunch through its parent; handoff=$handoff"
+    wd_rec "$id" "$symptom" restart pending "second mate relaunch through its parent;$acct_note handoff=$handoff"
     WD_RESTARTED=1
+    wd_stop_limit_picker "$id" "$symptom" || return 0
+    if [ -n "$WD_ACCT_DIR" ]; then
+      wd_pin_secondmate "$id" "$symptom" || { wd_rec "$id" "$symptom" restart failed "account pin not written; no relaunch"; return 0; }
+    fi
     if FM_HOME=$O_PARENT fm_run_timed "$(cfgi relaunch-timeout-secs 900)" "$SCRIPT_DIR/fm-control.sh" "$O_ID" relaunch --note-file "$handoff" >/dev/null 2>&1; then
       wd_rec "$id" "$symptom" restart "done" "relaunched through fm-control"
     else
@@ -861,6 +1068,15 @@ wd_restart() {  # <symptom> <kind>...
   fi
   cmd=$(cfg restart-command "")
   if [ -z "$cmd" ]; then wd_rec "$id" "$symptom" restart refused "no restart-command configured"; return 0; fi
+  case "$cmd" in
+    *CLAUDE_CONFIG_DIR*)
+      if [ "${WD_FAILOVER:-}" = failover ] && [ -n "$WD_ACCT_DIR" ]; then
+        wd_rec "$id" "$symptom" restart refused "restart-command sets CLAUDE_CONFIG_DIR itself, so the failover account cannot apply"
+        return 0
+      fi
+      [ -z "$WD_ACCT_DIR" ] || wd_gap "$symptom restart keeps the account restart-command sets"
+      WD_ACCT_DIR='' acct_note='' ;;
+  esac
   yolo_cmd=$(wd_restart_command_yolo "$cmd")
   yolo_note=''
   if [ "$yolo_cmd" != "$cmd" ]; then cmd=$yolo_cmd; yolo_note=' restart-command: --yolo added by default'; fi
@@ -873,7 +1089,7 @@ wd_restart() {  # <symptom> <kind>...
   fi
   token=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
   pid=$O_LOCK_PID
-  wd_rec "$id" "$symptom" restart pending "token=$token old_pid=$pid handoff=$handoff$yolo_note"
+  wd_rec "$id" "$symptom" restart pending "token=$token old_pid=$pid$acct_note handoff=$handoff$yolo_note"
   WD_RESTARTED=1
   if [ "$O_ALIVE" = 1 ]; then
     kill -TERM "$pid" 2>/dev/null || true
@@ -885,6 +1101,7 @@ wd_restart() {  # <symptom> <kind>...
     fi
   fi
   prompt="Watchdog restart of this firstmate home. Read $handoff first, then take over as the session-start contract says. After you hold the session lock, run: FM_HOME=$O_HOME $SCRIPT_DIR/fm-watchdog.sh pickup $token"
+  cmd="$(wd_account_prefix)$cmd"
   case "$O_BACKEND" in
     orca) fm_run_timed 60 orca terminal create --worktree "path:$O_HOME" --title "firstmate captain" --command "$cmd $(printf '%q' "$prompt")" --json >/dev/null 2>&1 ;;
     tmux)
@@ -1082,8 +1299,87 @@ wd_page_captain_autowait() {
 }
 
 wd_handle_captain_autowait() {
-  wd_gap "usage-limit auto-wait on $O_TAG; the primary takes no turns until the reset. The watchdog does not kill or relaunch the primary. Run bin/fm-quota-reroute.sh suggest, then launch a successor on the named pick manually."
+  if [ "$(cfg restart off)" = on ] && [ "$(wd_mode)" = act ]; then
+    wd_gap "usage-limit auto-wait on $O_TAG; the primary takes no turns until the reset. The watchdog restarts it on another signed-in Claude account once the limit is proven and an account is usable; until then, run bin/fm-quota-reroute.sh suggest, then launch a successor on the named pick manually."
+  else
+    wd_gap "usage-limit auto-wait on $O_TAG; the primary takes no turns until the reset. With restart off or in dry-run, the watchdog does not kill or relaunch the primary. Run bin/fm-quota-reroute.sh suggest, then launch a successor on the named pick manually."
+  fi
   wd_page_captain_autowait
+}
+
+# wd_limit_frozen: the limit is proven by the usage-limit picker, the
+# auto-wait footer, or two signals. Limit text alone on the pane can be
+# conversation, so it leaves the session to the rest of the ladder.
+wd_limit_frozen() {
+  [ -n "$O_LIMIT_KINDS" ] || return 1
+  if [ "$O_DIALOG" = usage-limit ] || [ "$O_AUTOWAIT" = 1 ]; then return 0; fi
+  case "$O_LIMIT_KINDS" in *' '*) return 0 ;; esac
+  return 1
+}
+
+# wd_handle_limit_frozen: a Claude session on a usage limit takes no turn
+# until the reset, so it is frozen. The restart leaves the limited account;
+# while it cannot run, the auto-wait page or the limit dialog path still runs.
+wd_handle_limit_frozen() {
+  local what
+  what="${O_LIMIT_KIND:-usage} limit${O_LIMIT_RESET:+ resets $(fm_wd_iso "$O_LIMIT_RESET")}; signals $O_LIMIT_KINDS; account ${O_ACCOUNT:-unknown}"
+  wd_rate_open limit-frozen detect "$(cfgi nudge-secs 900)" && wd_rec "$(wd_id)" limit-frozen detect held "$what"
+  if [ "$O_HANDOFF" = 1 ]; then
+    wd_gap "usage limit ($what) during a verified handoff; no restart until it ends"
+  else
+    # A turn waiting on the limit does no work, so it never vetoes the restart.
+    # shellcheck disable=SC2086  # O_LIMIT_KINDS is a word list
+    O_TURN=0 WD_FAILOVER=failover wd_restart limit-frozen $O_LIMIT_KINDS
+    [ "$WD_RESTARTED" = 1 ] && return 0
+  fi
+  if [ "$O_PARENT" = - ] && [ "$O_AUTOWAIT" = 1 ]; then
+    wd_handle_captain_autowait
+  elif [ "$O_DIALOG" = usage-limit ]; then
+    wd_handle_dialog
+  fi
+}
+
+# wd_heartbeat_frozen: the lock owner runs but its heartbeat is older than
+# heartbeat-frozen-secs.
+wd_heartbeat_frozen() {
+  local secs
+  secs=$(cfgi heartbeat-frozen-secs 600)
+  [ "$O_OWNER" = live ] && [ "$secs" -gt 0 ] && [ "$O_HB_AGE" != unknown ] && [ "$O_HB_AGE" -ge "$secs" ]
+}
+
+# wd_handle_heartbeat_frozen: one nudge per stale heartbeat, then, after
+# heartbeat-restart-secs with no transcript progress, a restart on the
+# session's own account. A transcript that advanced after the nudge proves the
+# session responsive, which holds the restart.
+wd_handle_heartbeat_frozen() {
+  local now stale_at last since kinds
+  now=$(wd_now)
+  stale_at=$((now - O_HB_AGE))
+  wd_rate_open heartbeat-frozen detect "$(cfgi nudge-secs 900)" &&
+    wd_rec "$(wd_id)" heartbeat-frozen detect held "heartbeat ${O_HB_AGE}s old; lock pid $O_LOCK_PID live"
+  if [ "$O_HANDOFF" = 1 ]; then wd_gap "heartbeat $((O_HB_AGE / 60))m old during a verified handoff; nothing typed"; return 0; fi
+  if [ "$O_TURN" = 1 ]; then wd_gap "heartbeat $((O_HB_AGE / 60))m old during a running turn; treated as busy"; return 0; fi
+  last=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" heartbeat-frozen nudge '^(pending|dry-run|held|refused)$')
+  if [ -z "$last" ] || [ "$last" -lt "$stale_at" ]; then
+    wd_nudge heartbeat-frozen "this session's heartbeat is $((O_HB_AGE / 60)) minutes old while its lock is live. Re-arm supervision as the session-start contract says, then drain the wake queue and act on it."
+    return 0
+  fi
+  since=$((now - last))
+  if [ "$since" -lt "$(cfgi heartbeat-restart-secs 240)" ]; then
+    wd_gap "heartbeat $((O_HB_AGE / 60))m old; nudged ${since}s ago, restart considered after $(cfgi heartbeat-restart-secs 240)s"
+    return 0
+  fi
+  if [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -lt "$since" ]; then
+    wd_rate_open heartbeat-frozen responsive "$(cfgi nudge-secs 900)" &&
+      wd_rec "$(wd_id)" heartbeat-frozen responsive held "transcript advanced ${O_TR_AGE}s ago, after the nudge; no restart"
+    wd_gap "heartbeat $((O_HB_AGE / 60))m old, but the session answered the nudge; no restart"
+    return 0
+  fi
+  kinds=records
+  [ "$O_TR_AGE" = unknown ] || kinds="$kinds filesystem"
+  if [ -n "$O_PANE" ] && [ "$O_PANE_STATIC" -ge $((since - $(cfgi interval-secs 120))) ]; then kinds="$kinds rendered"; fi
+  # shellcheck disable=SC2086  # kinds is a word list
+  WD_FAILOVER=keep wd_restart heartbeat-frozen $kinds
 }
 
 # Aged open decisions get one rolled-up nudge per window; once that nudge has
@@ -1494,6 +1790,9 @@ wd_handle_subject() {
     else
       wd_gap "lock holder is dead; restart needs ${frozen}s of transcript quiet; nothing typed"
     fi
+  elif wd_limit_frozen; then
+    symptom='limit-frozen'
+    wd_handle_limit_frozen
   elif [ "$O_PARENT" = - ] && [ "$O_AUTOWAIT" = 1 ]; then
     symptom='usage-limit-autowait'
     wd_handle_captain_autowait
@@ -1503,6 +1802,9 @@ wd_handle_subject() {
   elif { [ "$O_RESTART_REQ" = 1 ] || { [ -n "$O_CTX" ] && [ "$O_CTX" -le "$(cfgi restart-at-percent 8)" ]; }; } && wd_restart_available && ! wd_handoff_undeliverable; then
     symptom='restart-requested'
     wd_requested_restart "$quiet"
+  elif wd_heartbeat_frozen; then
+    symptom='heartbeat-frozen'
+    wd_handle_heartbeat_frozen
   elif { [ "$O_LOOP" = rapid ] && [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -le "$(cfgi rapid-loop-secs 180)" ]; } \
        || { { [ "$O_LOOP" = loop ] || [ "$O_LOOP" = rapid ]; } && [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$owed" ]; }; then
     symptom='timer-loop'
@@ -1527,7 +1829,7 @@ wd_handle_subject() {
   fi
   # A restart this pass stopped the recorded session, so its old endpoint gets nothing more.
   if [ "$WD_RESTARTED" = 1 ]; then WD_SYMPTOM=$symptom; return 0; fi
-  if [ "$dead" = 1 ] || [ "$symptom" = usage-limit-autowait ]; then reachable=0; fi
+  case "$dead:$symptom" in 1:*|*:usage-limit-autowait|*:limit-frozen) reachable=0 ;; esac
   if [ "$reachable" = 1 ] && [ "$O_AFK" = 1 ] && [ "$O_DAEMON" = 0 ]; then
     [ -n "$symptom" ] || symptom='daemon-dead'
     wd_nudge daemon-dead "away mode is on but the away daemon is not running. Re-arm it with bin/fm-afk-start.sh on this session's own terminal."
@@ -1540,7 +1842,7 @@ wd_handle_subject() {
     wd_handle_quota
   fi
   # Recurrence: three real or would-be actions on one symptom in a day files an issue.
-  if [ -n "$symptom" ] && [ "$symptom" != usage-limit-autowait ] && [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" "$symptom" '*' '^(pending|dry-run)$' "$(( $(wd_now) - 86400 ))")" -ge 3 ]; then
+  if [ -n "$symptom" ] && [ "$symptom" != usage-limit-autowait ] && [ "$symptom" != limit-frozen ] && [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" "$symptom" '*' '^(pending|dry-run)$' "$(( $(wd_now) - 86400 ))")" -ge 3 ]; then
     wd_self_heal "$symptom" "Watchdog: $symptom recurs on $O_TAG" "$symptom handled 3 or more times in 24h"
   fi
   WD_SYMPTOM=${symptom:-ok}

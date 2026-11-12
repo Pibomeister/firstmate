@@ -150,7 +150,7 @@ SH
   jq -n --arg t "$T" --arg s "$SID" --argjson e "$BASE" --argjson p "$LOCKPID" \
     '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
     > "$H/state/heartbeat.json"
-  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\n%s\n' "$H/claude" "$extra" > "$H/config/watchdog"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nheartbeat-frozen-secs=0\n%s\n' "$H/claude" "$extra" > "$H/config/watchdog"
   sleep 0.5
 }
 
@@ -3637,6 +3637,224 @@ test_primary_ordinary_idle_is_not_paged() {
   pass "usage-limit auto-wait: an ordinary idle primary is not paged"
 }
 
+# --- limit-frozen and heartbeat-frozen restarts --------------------------------
+
+# limit_record <reset-epoch> [rate-limit-type] [transcript]: appends the record
+# Claude writes when a turn stops at a usage limit.
+limit_record() {
+  local reset=$1 type=${2:-seven_day} f=${3:-$H/claude/projects/p/$SID.jsonl} iso
+  iso=$(date -u -r "$BASE" +%Y-%m-%dT%H:%M:%S.000Z 2>/dev/null || date -u -d "@$BASE" +%Y-%m-%dT%H:%M:%S.000Z)
+  mkdir -p "$(dirname "$f")"
+  jq -cn --arg ts "$iso" --argjson r "$reset" --arg t "$type" \
+    '{type:"assistant",isApiErrorMessage:true,model:"<synthetic>",apiError:"usage_limit_reached",apiErrorParams:{rate_limit_info:{status:"rejected",resetsAt:$r,rateLimitType:$t}},timestamp:$ts,message:{content:[{type:"text",text:"You have hit your weekly limit"}]}}' >> "$f"
+}
+
+# fake_claude_auth <dir|ordinary>...: a claude CLI whose `auth status` passes
+# only for the listed config dirs; ordinary means CLAUDE_CONFIG_DIR unset.
+fake_claude_auth() {
+  local d
+  : > "$TMP_ROOT/signed-in"
+  for d in "$@"; do
+    if [ "$d" = ordinary ]; then printf 'ordinary\n'; else (cd -P "$d" && pwd -P); fi >> "$TMP_ROOT/signed-in"
+  done
+  cat > "$FAKEBIN/claude" <<SH
+#!/usr/bin/env bash
+[ "\$1 \$2" = "auth status" ] || exit 1
+if [ -n "\${CLAUDE_CONFIG_DIR+x}" ]; then d=\$(cd -P "\$CLAUDE_CONFIG_DIR" 2>/dev/null && pwd -P) || exit 1; else d=ordinary; fi
+grep -Fxq "\$d" "$TMP_ROOT/signed-in"
+SH
+  chmod +x "$FAKEBIN/claude"
+}
+
+# write_env_captain: a restart-command that records the Claude account it was
+# launched on, takes the lock, and proves pickup.
+write_env_captain() {
+  cat > "$TMP_ROOT/env-captain.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "${CLAUDE_CONFIG_DIR-unset}" > "$PWD/launched-account.txt"
+p="$*"
+printf '%s\n' "$$" > "$PWD/state/.lock"
+eval "${p##*run: }" > "$PWD/pickup.out" 2>&1
+exec sleep 100000
+SH
+  chmod +x "$TMP_ROOT/env-captain.sh"
+}
+
+canon() { (cd -P "$1" && pwd -P); }
+
+LIMIT_PANE=$'work output\n  ⎿  You’ve hit your weekly limit · resets Nov 15 at 4pm (America/Mexico_City)\n❯ \n  ? for shortcuts'
+
+test_limit_and_handoff_detectors() {
+  local d="$TMP_ROOT/limit-lib" now=1793000000 f claim
+  mkdir -p "$d/acct/projects/p" "$d/empty"
+  f="$d/acct/projects/p/s.jsonl"
+  printf '%s\n' '{"type":"user","message":{"content":"hi"}}' > "$f"
+  printf '%s\n' '{"type":"assistant","isApiErrorMessage":true,"apiError":"usage_limit_reached","apiErrorParams":{"rate_limit_info":{"resetsAt":1793008800,"rateLimitType":"seven_day"}},"timestamp":"2026-10-23T16:48:30.134Z"}' >> "$f"
+  assert_equals "weekly	1793008800" "$(lib fm_wd_transcript_limit "$f" "$now")" "a live weekly limit record is read"
+  lib fm_wd_transcript_limit "$f" 1794000000 && fail "a limit past its reset still reads as live"
+  assert_equals 1793008800 "$(lib fm_wd_account_limit_reset "$d/acct" "$now")" "the account's live limit is found"
+  lib fm_wd_account_limit_reset "$d/acct" 1794000000 && fail "an account past its reset still reads as limited"
+  lib fm_wd_account_limit_reset "$d/empty" "$now" && fail "an account with no transcripts reads as limited"
+  printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"Back to work."}]}}' >> "$f"
+  lib fm_wd_transcript_limit "$f" "$now" && fail "a turn after the limit record still reads as limited"
+  printf '%s\n' '{"type":"assistant","apiError":"usage_limit_reached","quotaLimits":{"resetsAt":1793001000,"rateLimitType":"five_hour"}}' >> "$f"
+  assert_equals "session	1793001000" "$(lib fm_wd_transcript_limit "$f" "$now")" "a five-hour limit is a session limit"
+  lib fm_wd_limit_screen "$LIMIT_PANE" || fail "the weekly limit screen is not detected"
+  lib fm_wd_limit_screen $'work output\nUsage limit reached. Continuing automatically at 4:00 AM\n❯ ' || fail "the auto-wait footer is not a limit screen"
+  lib fm_wd_limit_screen $'I read that you hit your weekly limit yesterday.\n❯ \n  ? for shortcuts' && fail "a quoted limit phrase reads as a limit screen"
+  claim="$d/claim.json"
+  jq -n --argjson d "$((now + 300))" '{version:1,nonce:"n",handoff:"h.md",sha256:"x",predecessor_pid:4242,predecessor_start:"s",deadline:$d}' > "$claim"
+  lib fm_wd_handoff_in_progress "$claim" 4242 "$now" 600 || fail "a fresh handoff claim for the lock pid is not in progress"
+  lib fm_wd_handoff_in_progress "$claim" 4243 "$now" 600 && fail "another pid's handoff claim counts"
+  lib fm_wd_handoff_in_progress "$claim" 4242 "$((now + 301))" 600 && fail "an expired handoff claim counts"
+  lib fm_wd_handoff_in_progress "$claim" 4242 "$((now - 400))" 600 && fail "a handoff claim longer than ten minutes counts"
+  lib fm_wd_handoff_in_progress "$d/absent.json" 4242 "$now" 600 && fail "a missing claim counts"
+  pass "detectors: live limit records, account limits, limit screens, and verified handoff claims"
+}
+
+test_limit_frozen_primary_fails_over_to_a_signed_in_account() {
+  local acct2
+  make_home "$LIMIT_PANE" "restart=on
+restart-command=$TMP_ROOT/env-captain.sh"
+  write_env_captain
+  transcript 100 "Working."
+  limit_record "$((BASE + 86400))"
+  acct2="$TMP_ROOT/acct2-$CASE_N"
+  mkdir -p "$acct2/projects"
+  printf 'claude-config-dirs=%s,%s\n' "$H/claude" "$acct2" >> "$H/config/watchdog"
+  fake_claude_auth "$H/claude" "$acct2"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows limit-frozen detect held)" "the limit is recorded on sight: $(ledger | cut -f5-8)"
+  assert_grep 'weekly limit resets' "$H/state/watchdog/actions.tsv" "the detect row names the limit kind and reset"
+  assert_equals 0 "$(ledger_rows limit-frozen restart pending)" "no restart before the CPU reading proves idle"
+  run_wd 300 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows limit-frozen failover "done")" "the failover picked an account: $(ledger | cut -f5-8)"
+  assert_grep "chose $(canon "$acct2") over $(canon "$H/claude")" "$H/state/watchdog/actions.tsv" "the failover names both accounts"
+  assert_grep "is the limited account" "$H/state/watchdog/actions.tsv" "the failover says why the current account was passed over"
+  assert_equals 1 "$(ledger_rows limit-frozen restart pending)" "a proven limit restarts: $(ledger | cut -f5-8)"
+  wait_pickup || fail "the restarted captain never proved pickup: $(ledger | cut -f5-8)"
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  kill -0 "$LOCKPID" 2>/dev/null && fail "the limited session still runs"
+  assert_equals "$(canon "$acct2")" "$(cat "$H/launched-account.txt")" "the new session runs on the failover account"
+  run_wd 400 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows limit-frozen restart "done")" "the pickup was verified: $(ledger | cut -f5-8)"
+  rm -f "$FAKEBIN/claude"
+  pass "limit frozen: a primary on a weekly limit restarts on another signed-in Claude account"
+}
+
+test_limit_frozen_without_a_usable_account_holds_once() {
+  local acct2
+  make_home "$LIMIT_PANE" "restart=on
+restart-command=$TMP_ROOT/env-captain.sh"
+  write_env_captain
+  transcript 100 "Working."
+  limit_record "$((BASE + 86400))"
+  acct2="$TMP_ROOT/acct2-$CASE_N"
+  mkdir -p "$acct2/projects"
+  printf 'claude-config-dirs=%s,%s\n' "$H/claude" "$acct2" >> "$H/config/watchdog"
+  fake_claude_auth "$H/claude"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 300 once >/dev/null 2>&1
+  run_wd 600 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows limit-frozen failover held)" "no usable account holds once per window: $(ledger | cut -f5-8)"
+  assert_grep "$(canon "$acct2") is not signed in" "$H/state/watchdog/actions.tsv" "the hold names the signed-out account"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "restart"' | wc -l | tr -d ' ')" "no restart without a usable account: $(ledger | cut -f5-8)"
+  wd_pid_alive_check "$LOCKPID" || fail "the session was stopped with no account to move to"
+  assert_grep 'no usable Claude account' "$H/data/watchdog/status.md" "the status file reports the hold"
+  [ ! -s "$H/typed.log" ] || fail "the watchdog typed into a limited pane: $(cat "$H/typed.log")"
+
+  make_home "$LIMIT_PANE" "restart=on
+account-failover=off
+restart-command=$TMP_ROOT/env-captain.sh"
+  transcript 100 "Working."
+  limit_record "$((BASE + 86400))"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 300 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows limit-frozen failover held)" "account-failover off holds: $(ledger | cut -f5-8)"
+  assert_grep 'account-failover is off' "$H/state/watchdog/actions.tsv" "the hold names the setting"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "restart"' | wc -l | tr -d ' ')" "account-failover off never restarts: $(ledger | cut -f5-8)"
+  rm -f "$FAKEBIN/claude"
+  pass "limit frozen: with no usable account, or failover off, the restart holds once per window and nothing is stopped"
+}
+
+test_limit_frozen_second_mate_rewrites_its_pin_then_relaunches() {
+  local parent mate fakehome pin
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home "$LIMIT_PANE"
+  mate=$H
+  transcript 100 "Working."
+  limit_record "$((BASE + 86400))"
+  fakehome="$TMP_ROOT/fakehome-$CASE_N"
+  mkdir -p "$fakehome/.claude/projects"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  pin="$parent/config/secondmate-accounts/ghost-mate/claude-account"
+  mkdir -p "$(dirname "$pin")"
+  printf '%s\n' "$mate/claude" > "$pin"
+  printf 'mode=act\nclaude-config-dirs=%s,%s\nkey-settle-secs=1\nmodels=\nheartbeat-frozen-secs=0\nrestart=on\nrelaunch-timeout-secs=20\n' "$mate/claude" "$fakehome/.claude" > "$parent/config/watchdog"
+  fake_claude_auth ordinary
+  H=$parent
+  HOME=$fakehome run_wd 0 once >/dev/null 2>&1
+  HOME=$fakehome run_wd 300 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows limit-frozen failover "done")" "the second mate failover picked an account: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows limit-frozen restart pending)" "the second mate relaunch ran: $(ledger | cut -f5-8)"
+  assert_equals ordinary "$(cat "$pin")" "the default Claude dir is pinned as the ordinary account"
+  assert_equals 1 "$(ledger_rows limit-frozen pin "done")" "the pin rewrite is recorded: $(ledger | cut -f5-8)"
+  assert_grep "-> ordinary" "$H/state/watchdog/actions.tsv" "the pin row names the new value"
+  rm -f "$FAKEBIN/claude"
+  pass "limit frozen: a second mate's account pin moves to the failover account before its relaunch"
+}
+
+test_heartbeat_frozen_nudges_then_restarts_on_its_own_account() {
+  make_home $'Captain session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=600
+restart=on
+restart-command=$TMP_ROOT/env-captain.sh"
+  write_env_captain
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen detect held)" "a stale heartbeat with a live lock is recorded: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows heartbeat-frozen nudge pending)" "the session is nudged first: $(ledger | cut -f5-8)"
+  run_wd 800 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "restart"' | wc -l | tr -d ' ')" "no restart inside heartbeat-restart-secs: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows heartbeat-frozen nudge pending)" "one nudge per stale heartbeat"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen restart pending)" "an unanswered nudge restarts: $(ledger | cut -f5-8)"
+  assert_grep "account=$(canon "$H/claude")" "$H/state/watchdog/actions.tsv" "the restart keeps the session's account"
+  wait_pickup || fail "the restarted captain never proved pickup: $(ledger | cut -f5-8)"
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  assert_equals "$(canon "$H/claude")" "$(cat "$H/launched-account.txt")" "the new session runs on the same account"
+  pass "heartbeat frozen: one nudge, then a restart on the session's own account"
+}
+
+test_heartbeat_frozen_holds_for_a_responsive_session_or_a_handoff() {
+  local cfg="heartbeat-frozen-secs=600
+restart=on
+restart-command=$TMP_ROOT/env-captain.sh"
+  make_home $'Captain session\n❯ \n  ? for shortcuts' "$cfg"
+  write_env_captain
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  fm_touch_epoch "$((BASE + 750))" "$H/claude/projects/p/$SID.jsonl"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen responsive held)" "a transcript that moved after the nudge is responsive: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "restart"' | wc -l | tr -d ' ')" "a responsive session is not restarted: $(ledger | cut -f5-8)"
+  wd_pid_alive_check "$LOCKPID" || fail "a responsive session was stopped"
+
+  make_home $'Captain session\n❯ \n  ? for shortcuts' "$cfg"
+  transcript 3000 "Working."
+  jq -n --argjson p "$LOCKPID" --argjson d "$((BASE + 1000))" \
+    '{version:1,nonce:"n",handoff:"h.md",sha256:"x",predecessor_pid:$p,predecessor_start:"s",deadline:$d}' > "$H/state/.handoff-pending"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  run_wd 950 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "nudge" || $6 == "restart"' | wc -l | tr -d ' ')" "a verified handoff gets no nudge or restart: $(ledger | cut -f5-8)"
+  assert_grep 'during a verified handoff' "$H/data/watchdog/status.md" "the hold is reported"
+  [ ! -s "$H/typed.log" ] || fail "the watchdog typed during a handoff: $(cat "$H/typed.log")"
+  pass "heartbeat frozen: a session that answers the nudge, or one in a verified handoff, is not restarted"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -3739,4 +3957,10 @@ fm_test_run \
   test_tmux_restart_survives_a_closed_session \
   test_status_file_short_and_staleness_visible \
   test_manager_units \
-  test_never_merges_deploys_or_messages_owner
+  test_never_merges_deploys_or_messages_owner \
+  test_limit_and_handoff_detectors \
+  test_limit_frozen_primary_fails_over_to_a_signed_in_account \
+  test_limit_frozen_without_a_usable_account_holds_once \
+  test_limit_frozen_second_mate_rewrites_its_pin_then_relaunches \
+  test_heartbeat_frozen_nudges_then_restarts_on_its_own_account \
+  test_heartbeat_frozen_holds_for_a_responsive_session_or_a_handoff
