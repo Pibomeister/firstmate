@@ -66,8 +66,9 @@
 # form the handoff uses: every in-flight row, at most n ready rows with the
 # remainder counted, and blocked and held items as one id list each.
 #
-# NEXT. `next` is read-only and needs no supervisor: it prints the first ready
-# item of the plan (of one project with --project) as
+# NEXT. `next` is read-only and needs no supervisor: it prints the
+# highest-priority ready item across every project (of one project with
+# --project), with backlog order breaking ties, as
 #   NEXT <id> project=<name> kind=<kind> priority=<p>
 # followed by `fm-tasks-axi.sh show <id> --full`. A worker or second mate runs
 # it to see what comes next; it dispatches nothing. It exits 3 when nothing is
