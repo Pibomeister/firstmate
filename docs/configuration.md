@@ -491,6 +491,9 @@ Two fresh terminal attempts share one ten-minute budget; the launcher emits a pa
 A missing or invalid acknowledgement cannot move the predecessor's live lock.
 On Orca, failed panes remain available for diagnosis; on every backend, a failed attempt's expired claim cannot take ownership.
 `bin/fm-captain-locate.sh` reports the verified lock holder and its terminal handle for supervisor discovery; its header owns the output format.
+The lock transfers while the predecessor is still alive, so the handoff does not wait for an external exit.
+The successor confirms the handoff sha256 and stops on a mismatch.
+`bin/fm-handoff-pickup.sh` is the successor command for a launch record written before that transfer: it ends the predecessor only after the lock pid and process start time still match, then takes the session lock.
 A second mate never launches its own successor: it appends one relaunch request to its parent channel and stops.
 It fires at most once per context cycle: a session that auto-compacts anyway is told again before its next auto-compact.
 
@@ -531,7 +534,7 @@ The gate has limits: it runs only for a Claude primary, so a non-Claude primary,
 Open orders there stay durable and appear in the next session's digest.
 A new context (startup, resume, clear, or compact) clears the recorded handoff, so the gate never reads a document written before that context opened.
 `bin/fm-order.sh` owns the captain-order gate.
-`bin/fm-handoff-trigger.sh` owns the measurement, the once-per-cycle record, and the successor gate, with coverage in [`tests/fm-handoff-trigger.test.sh`](../tests/fm-handoff-trigger.test.sh); `bin/fm-handoff-launch.sh` owns the successor launch, with coverage in [`tests/fm-handoff-launch.test.sh`](../tests/fm-handoff-launch.test.sh); [runtime-backends verification](verification/runtime-backends.md#claude-early-handoff-trigger) records the Claude Code evidence.
+`bin/fm-handoff-trigger.sh` owns the measurement, the once-per-cycle record, and the successor gate, with coverage in [`tests/fm-handoff-trigger.test.sh`](../tests/fm-handoff-trigger.test.sh); `bin/fm-handoff-launch.sh` owns the successor launch, with coverage in [`tests/fm-handoff-launch.test.sh`](../tests/fm-handoff-launch.test.sh); `bin/fm-handoff-pickup.sh` owns completion when a launch record names the successor before the lock moves, with coverage in [`tests/fm-handoff-pickup.test.sh`](../tests/fm-handoff-pickup.test.sh); [runtime-backends verification](verification/runtime-backends.md#claude-early-handoff-trigger) records the Claude Code evidence.
 
 ## Context reading (config/context-reading)
 

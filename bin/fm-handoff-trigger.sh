@@ -83,7 +83,9 @@
 # handoff before it reports ready to restart. A session the trigger fired on
 # is also blocked until fm-handoff-lib.sh validates the completed successor's
 # acknowledgement, digest, process instance and lock ownership. The completion
-# record must be newer than this cycle's trigger marker. A second mate never launches its own
+# record must be newer than this cycle's trigger marker. The successor confirms
+# the handoff sha256 and stops on a mismatch. The lock transfers while this
+# session is still alive, so no external exit is required. A second mate never launches its own
 # successor and is not gated: its trigger instruction has it append one
 # relaunch request to its parent channel and stop.
 # An ordinary stop is never gated.
@@ -205,7 +207,7 @@ if [ "$EVENT" = Stop ]; then
     . "$SCRIPT_DIR/fm-handoff-lib.sh"
     if [ "$MARKER" -nt "$LAUNCH" ] || ! fm_handoff_completed "$LAUNCH"; then
       fm_stop_policy_allows_stop "$PAYLOAD" charge && exit 0
-      printf '%s\n' 'Firstmate restart gate: no verified successor acknowledgement and lock transfer is recorded in state/.handoff-successor. Run bin/fm-handoff-launch.sh <handoff document path>. A live PID alone does not clear this gate.' >&2
+      printf '%s\n' 'Firstmate restart gate: no verified successor acknowledgement and lock transfer is recorded in state/.handoff-successor. Run bin/fm-handoff-launch.sh <handoff document path>. A live PID alone does not clear this gate. The successor confirms the handoff sha256 and stops on a mismatch. The lock transfers while this session is still alive, so do not wait for an external exit.' >&2
       exit 2
     fi
   fi
@@ -239,7 +241,7 @@ MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: 
 if fm_root_is_secondmate_home "$FM_ROOT"; then
   MESSAGE="$MESSAGE This is a second mate, so never launch your own successor: append to your parent channel that your handoff is written, name the handoff document, and ask the parent to relaunch you, once, then end this turn."
 else
-  MESSAGE="$MESSAGE Launch your successor with bin/fm-handoff-launch.sh <handoff file>. Run it with the Bash tool's run_in_background=true, because a foreground tool timeout cannot cover its setup plus the ten-minute protocol deadline, and collect the launcher's exit status and output before reporting readiness. It requires the successor to read the document, write its nonce-bound acknowledgement with bin/fm-handoff-ack.sh, and take the session lock before state/.handoff-successor clears this turn's gate. The successor then runs bin/fm-session-start.sh. After verified transfer, end this turn and retire the predecessor session. If both attempts fail within ten minutes, the launcher emits handoff_failed; report that failure instead of claiming readiness. A failure with reason=unresolved is not final: a later handoff_ack with reason=lock_transferred for the same nonce means the transfer committed."
+  MESSAGE="$MESSAGE Launch your successor with bin/fm-handoff-launch.sh <handoff file>. Run it with the Bash tool's run_in_background=true, because a foreground tool timeout cannot cover its setup plus the ten-minute protocol deadline, and collect the launcher's exit status and output before reporting readiness. It requires the successor to read the document, write its nonce-bound acknowledgement with bin/fm-handoff-ack.sh, and take the session lock before state/.handoff-successor clears this turn's gate. The successor confirms the handoff sha256 and stops on a mismatch. The lock transfers while this session is still alive, so do not wait for an external exit. The successor then runs bin/fm-session-start.sh. After verified transfer, end this turn and retire the predecessor session. If both attempts fail within ten minutes, the launcher emits handoff_failed; report that failure instead of claiming readiness. A failure with reason=unresolved is not final: a later handoff_ack with reason=lock_transferred for the same nonce means the transfer committed."
 fi
 MESSAGE="$MESSAGE Do not run /compact. This instruction fires once per context cycle."
 # Durable captain orders are part of the handoff: name each open order and the
