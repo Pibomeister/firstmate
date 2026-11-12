@@ -695,6 +695,8 @@ case "$1 $2" in
           printf '{"ok":true,"result":{"terminals":[{"handle":"term-local","worktreePath":"%s"},{"handle":"term-hosted","executionHostId":"ssh-host","worktreePath":"%s"},{"handle":"term-other","worktreePath":"/elsewhere"}],"truncated":false}}\n' "${FM_SWEEP_WT:?}" "${FM_SWEEP_WT:?}"
         fi ;;
     esac ;;
+  "terminal show")
+    printf '{"ok":true,"result":{"terminal":{"handle":"%s","connected":false,"writable":false,"executionHostId":"local","ptyId":"","worktreePath":"%s","exitCause":{"kind":"exited"}}}}\n' "$4" "${FM_SWEEP_WT:?}" ;;
   "terminal close")
     env=local
     [ "${5:-}" != --environment ] || env=$6
@@ -775,6 +777,8 @@ case "$1 $2" in
     else
       printf '{"ok":true,"result":{"terminals":[{"handle":"term-local","worktreePath":"%s"}]}}\n' "${FM_SWEEP_WT:?}"
     fi ;;
+  "terminal show")
+    printf '{"ok":true,"result":{"terminal":{"handle":"%s","connected":false,"writable":false,"executionHostId":"local","ptyId":"","worktreePath":"%s","exitCause":{"kind":"exited"}}}}\n' "$4" "${FM_SWEEP_WT:?}" ;;
   "terminal close") printf '%s\n' "$*" >> "${FM_SWEEP_LOG:?}"; : > "${FM_SWEEP_LOG:?}.closed"; printf '{"ok":true,"result":{}}\n' ;;
   *) exit 1 ;;
 esac
@@ -802,6 +806,66 @@ SH
   status=$?
   [ "$status" -eq 2 ] || fail "a truncated terminal list should exit 2, got $status: $out"
   pass "fm_backend_orca_close_worktree_terminals: a failed close refuses and unreadable lists are distinct"
+}
+
+test_close_worktree_terminals_keeps_a_live_local_session() {
+  orca_case sweep-live
+  local wt="$CASE_DIR/wt" fb2="$CASE_DIR/sweepbin" out status live_pid
+  mkdir -p "$wt" "$fb2"
+  sleep 60 &
+  live_pid=$!
+  cat > "$fb2/orca" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_SWEEP_LOG:?}"
+case "$1 $2" in
+  "environment list") printf '{"ok":true,"result":{"environments":[]}}\n' ;;
+  "terminal list")
+    printf '{"ok":true,"result":{"terminals":[{"handle":"term-live","worktreePath":"%s"}],"truncated":false}}\n' "${FM_SWEEP_WT:?}" ;;
+  "terminal show")
+    printf '{"ok":true,"result":{"terminal":{"handle":"%s","connected":true,"writable":true,"executionHostId":"local","ptyId":"pty-live","worktreePath":"%s"}}}\n' "$4" "${FM_SWEEP_WT:?}" ;;
+  "diagnostics memory")
+    printf '{"ok":true,"result":{"worktrees":[{"sessions":[{"sessionId":"pty-live","pid":%s}]}]}}\n' "${FM_SWEEP_LIVE_PID:?}" ;;
+  "terminal close") printf '{"ok":true,"result":{}}\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fb2/orca"
+  out=$( PATH="$fb2:$PATH" FM_SWEEP_LOG="$CASE_DIR/sweep.log" FM_SWEEP_WT="$wt" FM_SWEEP_LIVE_PID="$live_pid" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_close_worktree_terminals "$1"' "$ROOT" "$wt" 2>&1 )
+  status=$?
+  kill "$live_pid" 2>/dev/null || true
+  [ "$status" -eq 1 ] || fail "a local terminal whose session is not proved dead should refuse, got $status: $out"
+  [ "$out" = "closed=0 environments=1 remote_matched=0" ] || fail "a live local session should close nothing, got '$out'"
+  ! grep -q 'terminal close' "$CASE_DIR/sweep.log" || fail "a terminal whose session was not proved dead was closed"
+  pass "fm_backend_orca_close_worktree_terminals: a local session not proved dead is left open and refuses"
+}
+
+test_close_worktree_terminals_refuses_an_unreadable_relist() {
+  orca_case sweep-relist
+  local wt="$CASE_DIR/wt" fb2="$CASE_DIR/sweepbin" out status
+  mkdir -p "$wt" "$fb2"
+  cat > "$fb2/orca" <<'SH'
+#!/usr/bin/env bash
+count_file="${FM_SWEEP_LOG:?}.count"
+case "$1 $2" in
+  "environment list") printf '{"ok":true,"result":{"environments":[]}}\n' ;;
+  "terminal list")
+    n=$(( $(cat "$count_file" 2>/dev/null || echo 0) + 1 ))
+    printf '%s\n' "$n" > "$count_file"
+    [ "$n" -ge 2 ] && exit 1
+    printf '{"ok":true,"result":{"terminals":[{"handle":"term-local","worktreePath":"%s"}],"truncated":false}}\n' "${FM_SWEEP_WT:?}" ;;
+  "terminal show")
+    printf '{"ok":true,"result":{"terminal":{"handle":"%s","connected":false,"writable":false,"executionHostId":"local","ptyId":"","worktreePath":"%s","exitCause":{"kind":"exited"}}}}\n' "$4" "${FM_SWEEP_WT:?}" ;;
+  "terminal close") printf '{"ok":true,"result":{}}\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fb2/orca"
+  out=$( PATH="$fb2:$PATH" FM_SWEEP_LOG="$CASE_DIR/sweep.log" FM_SWEEP_WT="$wt" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_close_worktree_terminals "$1"' "$ROOT" "$wt" 2>&1 )
+  status=$?
+  [ "$status" -eq 3 ] || fail "a post-close listing that cannot be read should exit 3, got $status: $out"
+  pass "fm_backend_orca_close_worktree_terminals: an unreadable post-close re-list refuses distinctly"
 }
 
 test_remove_worktree_refuses_empty_id() {
@@ -2800,6 +2864,8 @@ test_send_key_refuses_unknown_key
 test_kill_is_best_effort_close
 test_close_worktree_terminals_counts_across_environments
 test_close_worktree_terminals_refuses_a_failed_close
+test_close_worktree_terminals_keeps_a_live_local_session
+test_close_worktree_terminals_refuses_an_unreadable_relist
 test_kill_refuses_when_the_orca_cli_is_absent
 test_remove_worktree_refuses_empty_id
 test_remove_worktree_accepts_missing_selector_when_recorded_path_is_absent

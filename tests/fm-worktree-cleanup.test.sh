@@ -353,6 +353,21 @@ SH
   pass "a low-disk reading is logged by the cleanup pass"
 }
 
+test_closed_unmerged_pr_keeps_worktree_and_caches() {
+  begin_case closed-unmerged
+  printf 'work\n' > "$CASE_WT/feature.txt"
+  git -C "$CASE_WT" add feature.txt
+  git -C "$CASE_WT" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm 'unmerged feature work'
+  mkdir -p "$CASE_WT/.cache"
+  printf 'cache\n' > "$CASE_WT/.cache/f"
+  publish_pr CLOSED
+  capture_clean "$CASE_DIR"
+  assert_kept
+  [ -f "$CASE_WT/.cache/f" ] || fail "a closed unmerged pull request's cache was pruned"
+  assert_out "closed pull request did not land"
+  pass "a closed, unmerged pull request keeps the worktree and its caches"
+}
+
 test_ignored_private_files_do_not_block_removal() {
   begin_case ignored
   commit_ignore_rules "$CASE_REPO" "$CASE_WT" || fail "could not commit ignore rules"
@@ -882,6 +897,7 @@ fm_test_run \
   test_cache_root_holding_tracked_files_is_kept \
   test_profile_directory_with_a_space_is_pruned \
   test_low_disk_alarm_is_logged \
+  test_closed_unmerged_pr_keeps_worktree_and_caches \
   test_ignored_private_files_do_not_block_removal \
   test_dry_run_changes_nothing \
   test_main_checkout_is_skipped \

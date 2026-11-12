@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Remove linked git worktrees whose pull request is merged or closed.
+# Remove linked git worktrees whose pull request is merged, or closed with
+# its head already on the default branch. A closed, unmerged pull request
+# proves nothing about landing and never permits removal or cache pruning.
 #
 # One decision line per linked worktree, and one line for each main checkout
 # the scan sees. A main checkout is never removed. A worktree that a task record
@@ -281,6 +283,18 @@ prune_landed_caches() {
   emit "worktree-cleanup: prune caches $wt: ${roots[*]}"
   [ "$(dirt_kind "$wt")" = clean ] || return 1
   return 0
+}
+
+# default_branch_ref <worktree>: print the ref that names the default
+# branch (origin/HEAD, else origin/main, else a local main or master), or
+# fail when none can be named.
+default_branch_ref() {
+  local wt=$1 ref
+  ref=$(git -C "$wt" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null) && { printf '%s' "$ref"; return 0; }
+  for ref in origin/main origin/master main master; do
+    git -C "$wt" rev-parse --verify --quiet "$ref" >/dev/null 2>&1 && { printf '%s' "$ref"; return 0; }
+  done
+  return 1
 }
 
 pr_rows() {
@@ -584,6 +598,16 @@ EOF
   if ! git -C "$phys" merge-base --is-ancestor "$current" "$chosen_head" >/dev/null 2>&1; then
     emit "worktree-cleanup: report $phys commits not on PR head"
     return 0
+  fi
+  # A closed pull request proves nothing about landing: its work may have
+  # been abandoned unmerged. Only a merged pull request, or a closed one
+  # whose head is already an ancestor of the default branch, may proceed.
+  if [ "$chosen_state" = CLOSED ]; then
+    default_ref=$(default_branch_ref "$phys") || default_ref=''
+    if [ -z "$default_ref" ] || ! git -C "$phys" merge-base --is-ancestor "$current" "$default_ref" >/dev/null 2>&1; then
+      emit "worktree-cleanup: report $phys closed pull request did not land on the default branch"
+      return 0
+    fi
   fi
   if ! pids=$(fm_control_pids_with_cwd_under "$phys"); then
     emit "worktree-cleanup: report $phys cannot tell whether a process is using it"
