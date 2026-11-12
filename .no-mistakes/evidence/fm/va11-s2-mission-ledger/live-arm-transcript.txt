@@ -1,0 +1,12 @@
+$ fm-ledger.sh arm --if-enabled
+registered: state/ready-depth.check.sh
+[exit 0]
+ready-depth.check-trust
+ready-depth.check.sh
+$ run installed shim
+ready-depth 23:00: 1 active project(s) below 3 ready: beta(ready=1); refill each ready queue (bin/fm-ledger.sh plan)
+[exit 0]
+$ min-ready=0 -> arm --if-enabled disarms
+unregistered: state/ready-depth.check.sh
+[exit 0]
+shim removed

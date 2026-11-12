@@ -1,4 +1,4 @@
-1..12
+1..13
 ok - intake files each ask as its own queued item, replays retries, and refuses unknown sources
 ok - intake replays only the same source, project, title, and id, and refuses an id that names another item
 ok - public-followup obligations in the ready listing are never counted as ready work
@@ -11,4 +11,5 @@ ok - the scheduled check reports a thin ready queue once per check time in the c
 ok - unfiled lists only open orders that no ledger item records
 ok - handoff writes a self-contained document from the ledger and refuses unfiled orders and delta chains
 ok - arm installs and registers the scheduled check, and min-ready=0 disarms it
+ok - arm and disarm never replace or remove a task's check that shares the ready-depth name
 FM_TEST_COMPLETE
