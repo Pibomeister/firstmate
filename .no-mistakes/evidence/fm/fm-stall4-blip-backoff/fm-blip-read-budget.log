@@ -1,0 +1,6 @@
+1..4
+ok - an offline host returns within the short budget on the liveness poll
+ok - an offline host returns within the short budget on fm-crew-state
+ok - an offline host returns within the short budget on the pending-reply tick
+ok - an offline host returns within the short budget on the fleet snapshot
+FM_TEST_COMPLETE

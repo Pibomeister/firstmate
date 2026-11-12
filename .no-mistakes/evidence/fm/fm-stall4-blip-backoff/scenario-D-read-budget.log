@@ -1,0 +1,9 @@
+## Scenario D: host stays down, read-only probe (FM_BLIP_READ=1)
+ssh: connect to host 127.0.0.1 port 64046: Connection refused
+rc=255
+elapsed=15s
+attempt offsets (s):
+  +0
+  +2
+  +6
+  +14

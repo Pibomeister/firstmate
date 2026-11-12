@@ -1,0 +1,16 @@
+## Scenario F: Orca app unreachable for ~6s, then back; send text line to a terminal
+rc=0 elapsed=6s
+orca call offsets:
+  +0 terminal send --terminal t1 --text hello agent --enter --json
+  +2 terminal send --terminal t1 --text hello agent --enter --json
+  +6 terminal send --terminal t1 --text hello agent --enter --json
+deliveries:        1
+
+## Scenario G: Orca stays unreachable; supervision terminal read (capture)
+This terminal could not connect to Orca.
+runtime_unavailable
+rc=1 elapsed=15s calls=       3
+
+## Scenario H: Orca reply lost after the send was delivered (timed out)
+request timed out waiting for Orca reply
+rc=1 elapsed=0s calls=       1 deliveries=       1

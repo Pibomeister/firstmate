@@ -1,0 +1,3 @@
+## Scenario E: host stays down, mutating call, default budget (FM_BLIP_RETRY_* unset)
+(run stopped at +110s before the 300s budget ended; partial attempt offsets)
++0 +2 +6 +14 +30 +62 +95 

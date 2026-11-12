@@ -1,0 +1,43 @@
+ok - fm-on --stdin preserves argv, stdin, stdout, stderr, and exit status without shell interpretation
+ok - fm-on defaults the remote command's stdin to /dev/null
+ok - fm-on arms a bounded SSH dead-peer detection window by default (15s x 3 = 45s)
+ok - fm-on's dead-peer detection window is env-overridable
+ok - fm-on rejects invalid dead-peer settings before launching ssh
+ok - the fixed entrypoint runs every command in the worker's explicit environment
+ok - a refused SSH connection is retried until the remote command succeeds
+ok - a refused SSH connection replays the caller's stdin on the successful attempt
+ok - FM_BLIP_READ=1 returns an offline host within the short read budget
+ok - a call that changes something keeps retrying past the short read budget
+ok - the entrypoint composes a deduplicated discovered child PATH (kept 21 existing, omitted 7 absent)
+ok - read-only doctor inspects worker gaps over plain SSH without repair
+ok - the remote doctor reports the same PATH the entrypoint hands its children
+ok - the remote doctor derives tool readiness from the installed worker
+not ok - the remote doctor did not mark a missing required tool (missing: 'required herdr=MISSING')
+--- output ---
+mode=check
+path=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-on.sOHTaO/doctor-bin:/usr/bin:/bin:/usr/sbin:/sbin
+entrypoint=no
+note: not launched through the fixed remote entrypoint; the reported PATH is this caller environment.
+platform=linux
+required git=/usr/bin/git
+required jq=/usr/bin/jq
+required backend=MISSING
+required tasks-axi=MISSING
+required treehouse=MISSING
+required harness=MISSING
+optional tmux=absent
+optional no-mistakes=absent
+optional gh=absent
+check backend=human: neither the herdr nor the rex CLI resolves on the remote runtime PATH
+check gui-session=skip: no Aqua login session applies on linux
+check remote-job-worker=fixable: the Linux remote job worker is not running
+check remote-job-worker-loaded=skip: Aqua launch agents do not apply on linux
+check remote-job-probe=fixable: the remote job worker has not reported a fresh probe
+check entrypoint-link=skip: this run did not come through the fixed remote entrypoint
+action: backend: install herdr from https://herdr.dev or Rex on that account, or add a ~/.local/bin wrapper for one; a remote second mate needs one session-provider backend
+action: remote-job-worker: rerun this command with --fix to start it
+action: remote-job-probe: rerun this command with --fix to restart the worker, then rerun through fm-on.sh
+error: required tools do not resolve on the remote runtime PATH: backend tasks-axi treehouse harness
+fix: install each one where it resolves on the path reported above, or put a wrapper script for it in /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-on.sOHTaO/doctor-home/.local/bin, which is always on that PATH.
+fix: tools in an unselected nvm version or outside the discovered asdf or mise paths need an absolute wrapper; see docs/remote-secondmates.md for the wrapper recipe.
+error: this host is not ready for a remote second mate; unresolved: backend remote-job-worker remote-job-probe

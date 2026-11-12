@@ -1,0 +1,6 @@
+## Scenario C: remote command itself exits 255 with connect-like words in its own stderr
+error: upstream connection refused, could not resolve backend
+rc=255
+elapsed=1s
+ssh attempts:        1
+remote executions:        1

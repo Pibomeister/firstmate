@@ -1,0 +1,6 @@
+## Scenario B: remote command runs, then its sshd session is killed (mid-session drop) on a mutating call
+Connection to 127.0.0.1 closed by remote host.
+rc=255
+elapsed=0s
+ssh attempts:        1
+remote executions:        1
