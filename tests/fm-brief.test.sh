@@ -576,6 +576,55 @@ test_no_mistakes_dod_green_detection() {
   pass "fm-brief.sh: no-mistakes DOD detects a green PR from the drive call, not a status poll"
 }
 
+# Repeat runs, not single runs, are the validation overhead: a worker that fixes
+# one finding per round, pushes each follow-up fix as its own run, or rewrites a
+# validated head pays a full review again each time. Every no-mistakes variant
+# renders the convergence lines; a mode without the pipeline renders none.
+test_no_mistakes_dod_convergence_lines() {
+  local home id brief variant
+  home="$TMP_ROOT/convergence-home"
+  mkdir -p "$home/data"
+  for variant in default:--mode:no-mistakes manual:--pr:manual gerrit:--forge:gerrit; do
+    id="brief-converge-${variant%%:*}"
+    case "$variant" in
+      default*) FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1 ;;
+      manual*) FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes --pr manual >/dev/null 2>&1 ;;
+      gerrit*) FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes --forge gerrit >/dev/null 2>&1 ;;
+    esac
+    brief="$home/data/$id/brief.md"
+    assert_present "$brief" "$variant brief was not scaffolded"
+    assert_grep "run the repository's own lint command" "$brief" \
+      "$variant no-mistakes DOD must require a lint preflight before each run"
+    assert_grep "the targeted tests that cover your change, sending any heavy suite through the machine-wide test line" "$brief" \
+      "$variant no-mistakes DOD must require targeted tests, heavy ones through the test line"
+    assert_grep "never replaces, skips, or narrows a pipeline step, and the gate still runs in full" "$brief" \
+      "$variant no-mistakes DOD must keep the full gate after the preflight"
+    assert_grep "no-mistakes axi respond --action fix --findings <ids to fix> --ignore <ids to decline>\` call, so one fix round covers them all" "$brief" \
+      "$variant no-mistakes DOD must answer every fix-gate finding in one round"
+    assert_grep "firstmate's decision then returns one exact response command that covers every finding" "$brief" \
+      "$variant no-mistakes DOD must fold ask-user and other findings into one round"
+    assert_grep "end that file with one line \`other: fix=<ids> decline=<ids>\`" "$brief" \
+      "$variant no-mistakes DOD must record the worker's choice for non-ask-user findings"
+    assert_grep "The one exception is a captain-ordered supersession that firstmate steers you through" "$brief" \
+      "$variant no-mistakes DOD must carve the supersession sequence out of commit-on-top"
+    assert_grep "commit on top of it, never rebase, amend, squash, reset, or force-push it" "$brief" \
+      "$variant no-mistakes DOD must keep follow-up work on top of a validated head"
+    assert_grep "before you start one run for all of them, not one run per fix" "$brief" \
+      "$variant no-mistakes DOD must batch follow-up fixes into one run"
+    assert_grep "every decision the captain already made on this task, in the captain's words" "$brief" \
+      "$variant no-mistakes DOD must carry settled captain decisions into --intent"
+    assert_grep "a decision made by firstmate or by you is still not captain intent" "$brief" \
+      "$variant no-mistakes DOD must keep non-captain decisions out of --intent"
+  done
+  id="brief-converge-direct"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode direct-PR >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "direct-PR brief was not scaffolded"
+  assert_no_grep "one fix round covers them all" "$brief" \
+    "direct-PR brief must not render no-mistakes gate convergence lines"
+  pass "fm-brief.sh: every no-mistakes DOD renders the run-convergence lines"
+}
+
 test_ask_user_escalation_format() {
   local home id brief mode other_id other_brief
   home="$TMP_ROOT/ask-user-home"
@@ -1933,6 +1982,7 @@ test_delivery_flags_are_refused_where_they_do_not_apply
 test_faster_paths_use_configured_authority_without_stacked_review
 test_no_mistakes_dod_wording
 test_no_mistakes_dod_green_detection
+test_no_mistakes_dod_convergence_lines
 test_pr_based_dod_requires_non_draft
 test_ask_user_escalation_format
 test_ship_project_memory_wording
