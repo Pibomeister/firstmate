@@ -1,0 +1,4 @@
+stopped	browser	owner-gone	31115	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/gone-dir	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/browser-bin/chrome-headless-shell -c sleep 600 & wait /var/folders/93/6w1bxqxn2yb92mt6rmt5zb
+keep	browser	owner-live	31624	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/pw-profile	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/ms-playwright/chromium/chrome_crashpad_handler -c sleep 600 & wait /var/folders/93/6w1bxqxn2
+keep	browser	owner-live	32174	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/owned-dir	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/browser-bin/chrome-headless-shell -c sleep 600 & wait /var/folders/93/6w1bxqxn2yb92mt6rmt5zb
+summary: mode=apply terminals=0 closed=0 skipped=0 failed=0 keep=0 browsers=6 stopped=1 skipped=0 failed=0 reap=0 keep=5

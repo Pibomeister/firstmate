@@ -1,0 +1,110 @@
+lab=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY
+real-disk: disk-alarm: level=ok free_kib=92154504 volume=/System/Volumes/Data
+=== browsers ===
+ps orphan 31115     1 00:01 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/browser-bin/chrome-headless-shell -c sleep 600 & wait /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/browser-bin/chrome-headless-shell --headless
+ps owned 31239 31224 00:01 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/browser-bin/chrome-headless-shell -c sleep 600 & wait /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/browser-bin/chrome-headless-shell --headless
+ps handler 31624     1 00:00 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/ms-playwright/chromium/chrome_crashpad_handler -c sleep 600 & wait /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/ms-playwright/chromium/chrome_crashpad_handler --headless
+ps live 31758 31743 00:00 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/browser-bin/chrome-headless-shell -c sleep 600 & wait /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/browser-bin/chrome-headless-shell --headless
+ps beside 32174     1 00:00 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/browser-bin/chrome-headless-shell -c sleep 600 & wait /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/browser-bin/chrome-headless-shell --headless
+ps profile-worker 32245 30272 00:00 bash /tmp/fm-s4-live.sh
+--- reap dry-run default age (1h) ---
+keep	browser	young	31115	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/gone-dir	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/browser-bin/chrome-headless-shell -c sleep 600 & wait /var/folders/93/6w1bxqxn2yb92mt6rmt5zb
+keep	browser	young	31624	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/pw-profile	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/ms-playwright/chromium/chrome_crashpad_handler -c sleep 600 & wait /var/folders/93/6w1bxqxn2
+keep	browser	young	32174	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/owned-dir	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/browser-bin/chrome-headless-shell -c sleep 600 & wait /var/folders/93/6w1bxqxn2yb92mt6rmt5zb
+summary: mode=dry-run terminals=0 reap=0 keep=0 browsers=6 reap=0 keep=6
+young-stderr: 
+young-orphan-line: keep	browser	young	31115	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/gone-dir	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/browser-bin/chrome-headless-shell -c sleep 600 & wait /var/folders/93/6w1bxqxn2yb92mt6rmt5zb
+PASS orphan younger than one hour is kept
+--- reap dry-run age 0 ---
+reap	browser	owner-gone	31115	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/gone-dir	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/browser-bin/chrome-headless-shell -c sleep 600 & wait /var/folders/93/6w1bxqxn2yb92mt6rmt5zb
+keep	browser	owner-live	31624	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/pw-profile	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/ms-playwright/chromium/chrome_crashpad_handler -c sleep 600 & wait /var/folders/93/6w1bxqxn2
+keep	browser	owner-live	32174	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/owned-dir	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/browser-bin/chrome-headless-shell -c sleep 600 & wait /var/folders/93/6w1bxqxn2yb92mt6rmt5zb
+summary: mode=dry-run terminals=0 reap=0 keep=0 browsers=6 reap=1 keep=5
+age0-stderr: 
+PASS orphaned headless chrome past the age floor is reap owner-gone
+PASS headless chrome with a live parent is not a reap candidate
+PASS headless chrome under a live parent in a profile is not a reap candidate
+PASS a live worker in the profile keeps the reparented crash handler
+PASS a live-parent chrome in the same directory keeps an orphaned chrome
+--- reap apply age 0 ---
+stopped	browser	owner-gone	31115	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/gone-dir	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/browser-bin/chrome-headless-shell -c sleep 600 & wait /var/folders/93/6w1bxqxn2yb92mt6rmt5zb
+keep	browser	owner-live	31624	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/pw-profile	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/ms-playwright/chromium/chrome_crashpad_handler -c sleep 600 & wait /var/folders/93/6w1bxqxn2
+keep	browser	owner-live	32174	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/owned-dir	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/browser-bin/chrome-headless-shell -c sleep 600 & wait /var/folders/93/6w1bxqxn2yb92mt6rmt5zb
+summary: mode=apply terminals=0 closed=0 skipped=0 failed=0 keep=0 browsers=6 stopped=1 skipped=0 failed=0 reap=0 keep=5
+apply-stderr: 
+PASS apply stops the ownerless orphan
+PASS ownerless orphan process is gone
+PASS live-parent chrome still running
+PASS profile chrome with a live parent still running
+PASS crash handler still running beside the live worker
+PASS orphan beside a live chrome still running
+PASS profile worker still running
+PASS outside worker still running
+=== orca sweep ===
+sweep1 rc=0 out=closed=2 environments=2 remote_matched=3
+sweep1 log:
+environment list --json
+terminal list --limit 100000 --json
+terminal show --terminal term-local --json
+terminal close --terminal term-local --json
+terminal list --limit 100000 --json
+terminal list --environment env-remote --limit 100000 --json
+terminal close --terminal term-remote-own --environment env-remote --json
+terminal list --environment env-remote --limit 100000 --json
+PASS a host-remote terminal that is not the recorded handle was only counted
+PASS path-only host-remote terminal was only counted
+PASS path-only paired terminal was only counted
+PASS another worktree was ignored
+PASS recorded paired terminal and dead local terminal closed; three path-only remote matches counted
+sweep1b rc=0 out=closed=2 environments=1 remote_matched=1
+environment list --json
+terminal list --limit 100000 --json
+terminal show --terminal term-local --json
+terminal close --terminal term-hosted --json
+terminal close --terminal term-local --json
+terminal list --limit 100000 --json
+PASS hosted recorded terminal closed from the local list on the re-list proof
+PASS path-only hosted terminal stayed open
+sweep2 rc=1 out=closed=0 environments=1 remote_matched=0
+environment list --json
+terminal list --limit 100000 --json
+terminal show --terminal term-live --json
+diagnostics memory --json
+PASS a live local session was left open
+PASS the live session process is still running
+sweep3 rc=1 out=closed=0 environments=1 remote_matched=0
+environment list --json
+terminal list --limit 100000 --json
+terminal show --terminal term-fail --json
+terminal close --terminal term-fail --json
+terminal list --limit 100000 --json
+sweep4 rc=3 out=closed=0 environments=1 remote_matched=0
+=== worktree cleanup ===
+landed-dry: worktree-cleanup: disk-alarm: level=stop free_kib=4000000 volume=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/case-landed
+worktree-cleanup: dry-run prune caches /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/case-landed/linked: .cache node_modules/.cache playwright_chromiumdev_profile 1
+worktree-cleanup: dry-run /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/case-landed/linked pull request MERGED https://github.com/example/repo/pull/7
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/case-landed/repo main checkout
+PASS dry-run reports the cache prune
+landed-run: worktree-cleanup: disk-alarm: level=stop free_kib=4000000 volume=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s4-live.Q1rIrY/case-landed
+worktree-cleanup: prune caches /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/case-landed/linked: .cache node_modules/.cache playwright_chromiumdev_profile 1
+worktree-cleanup: remove /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/case-landed/linked pull request MERGED https://github.com/example/repo/pull/7
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/case-landed/repo main checkout
+PASS low-disk alarm is logged
+PASS landed caches were pruned
+PASS landed worktree removal was reported
+PASS landed worktree directory is gone
+PASS the feature branch was kept
+closed-unmerged: worktree-cleanup: report /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/case-closed/linked closed pull request did not land on the default branch
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/case-closed/repo main checkout
+PASS closed unmerged pull request is reported
+open-pr: worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/case-open/linked pull request is open
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/case-open/repo main checkout
+PASS open pull request is kept
+notes: worktree-cleanup: report /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/case-notes/linked untracked files
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/case-notes/repo main checkout
+PASS real untracked work is reported
+live-worker: worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/case-live/linked live process
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/case-live/repo main checkout
+PASS a live process keeps the worktree
+PASS the worker process is still running
+=== summary fails=0 ===

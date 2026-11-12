@@ -1,0 +1,2 @@
+worktree-cleanup: report /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/case-notes/linked untracked files
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/case-notes/repo main checkout

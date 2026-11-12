@@ -1,0 +1,2 @@
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/case-open/linked pull request is open
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-s4-live.Q1rIrY/case-open/repo main checkout
