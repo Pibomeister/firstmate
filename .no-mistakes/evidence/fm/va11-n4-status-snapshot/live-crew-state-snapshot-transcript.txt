@@ -1,0 +1,32 @@
+=== Scenario 1: sweep of two ships from one read-only snapshot ===
+--- live-a (1.2s)
+state: parked · source: run-step · parked at review: 1 finding(s) · ask-user: authority decision · run: 01M7SNAPSHOTA0000000000001
+--- live-b (1.14s)
+state: done · source: run-step · checks green: PR ready for review (still monitoring for merge/close): https://github.com/org/repo/pull/42 · run: 01M7SNAPSHOTB0000000000002 · pr=https://github.com/org/repo/pull/42
+--- live-a (0.88s)
+state: parked · source: run-step · parked at review: 1 finding(s) · ask-user: authority decision · run: 01M7SNAPSHOTA0000000000001
+CLI calls during sweep: 0
+snapshot file: /tmp/fm-lab.2sUwBX/state/.nm-status-snapshot.json
+state.sqlite sha before=aa6cf43dc6554c8975f472c6af687bcac850a802 after=aa6cf43dc6554c8975f472c6af687bcac850a802
+=== Scenario 2 (adversarial): unknown schema user_version=99 -> fallback to daemon CLI ===
+state: working · source: run-step · validating (running) · run: 01M7DAEMONFALLBACK00000001
+CLI calls:
+cli-call: axi status
+cli-call: axi
+cli-call: axi status --run 01M7DAEMONFALLBACK00000001
+sqlite unchanged: yes
+=== Scenario 3 (adversarial): corrupt DB -> fallback, no write ===
+state: working · source: run-step · validating (running) · run: 01M7DAEMONFALLBACK00000001
+CLI calls:        3
+sqlite unchanged: yes
+=== Scenario 4 (adversarial): missing DB is never created ===
+state: working · source: run-step · validating (running) · run: 01M7DAEMONFALLBACK00000001
+db created? no
+CLI calls:        3
+=== Scenario 5: stale snapshot past TTL is refreshed ===
+state: parked · source: run-step · parked at review: 1 finding(s) · ask-user: authority decision · run: 01M7SNAPSHOTA0000000000001
+-- after DB change + backdated snapshot:
+state: failed · source: run-step · run failed · run: 01M7SNAPSHOTA0000000000001
+-- within TTL, DB change not yet seen? (fresh snapshot reused):
+state: failed · source: run-step · run failed · run: 01M7SNAPSHOTA0000000000001
+CLI calls: 0
