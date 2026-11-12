@@ -163,6 +163,53 @@ test_tab_separated_max_load1_sets_ceiling() {
   pass "max-load1 parses with the same tab-tolerant grammar as fm-capacity"
 }
 
+pause_record() {  # <home> <id> <paused-epoch> [priority]
+  mkdir -p "$1/state/load-relief/paused"
+  printf 'id=%s\npaused_epoch=%s\n%s' "$2" "$3" "${4:+priority=$4
+}" > "$1/state/load-relief/paused/$2"
+}
+
+test_resume_waits_below_hysteresis_and_staggers() {
+  local home log
+  home=$(make_home stagger)
+  log="$TMP_ROOT/stagger.log"
+  add_worker "$home" p-low 100 4
+  add_worker "$home" p-high 200 1
+  add_worker "$home" legacy-old 300 -
+  add_worker "$home" legacy-new 400 -
+  pause_record "$home" p-low 1000 4
+  pause_record "$home" p-high 1001 1
+  pause_record "$home" legacy-old 900
+  pause_record "$home" legacy-new 950
+  run_relief "$home" stagger 17 2000 >/dev/null
+  assert_equals "" "$(cat "$log")" "a load of 17 under ceiling 20 but over its 75% resume level (15) resumed a worker"
+  run_relief "$home" stagger 5 2010 >/dev/null
+  assert_equals "send p-high" "$(cut -d' ' -f1-2 "$log")" "the first resume pass did not lift exactly the highest-priority pause"
+  run_relief "$home" stagger 5 2020 >/dev/null
+  run_relief "$home" stagger 5 2030 >/dev/null
+  run_relief "$home" stagger 5 2040 >/dev/null
+  assert_equals "send p-high
+send p-low
+send legacy-new
+send legacy-old" "$(cut -d' ' -f1-2 "$log")" "resume did not go one per pass, by priority, then newest unprioritized pause"
+  pass "resume waits under 75% of the ceiling and lifts one pause per pass, highest priority first"
+}
+
+test_failed_interrupt_leaves_no_record() {
+  local home
+  home=$(make_home failint)
+  add_worker "$home" w 100 4
+  cat > "$TMP_ROOT/failint-control" <<'SH'
+#!/usr/bin/env bash
+[ -f "$FM_HOME/state/load-relief/paused/$1" ] && printf 'record-present %s\n' "$1" >> "$FM_RELIEF_LOG"
+exit 1
+SH
+  sustained_pass "$home" failint 1000 >/dev/null
+  assert_equals "record-present w" "$(cat "$TMP_ROOT/failint.log")" "the pause record was not written before the interrupt"
+  assert_absent "$home/state/load-relief/paused/w" "a record survived an undelivered interrupt"
+  pass "the pause record precedes the interrupt and is removed when the interrupt is not delivered"
+}
+
 test_no_lane_capacity_is_a_noop() {
   local home out rc=0
   home=$(make_home noop)
@@ -181,4 +228,6 @@ test_missing_priority_is_never_paused
 test_waiting_worker_is_not_paused_and_decision_survives
 test_finished_pause_record_dropped_without_steer
 test_tab_separated_max_load1_sets_ceiling
+test_resume_waits_below_hysteresis_and_staggers
+test_failed_interrupt_leaves_no_record
 test_no_lane_capacity_is_a_noop

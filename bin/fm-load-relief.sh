@@ -11,9 +11,13 @@
 # interrupt through bin/fm-control.sh (the agent stays alive, its worktree
 # and unlanded work untouched), writes a durable record under
 # state/load-relief/paused/<id>, and appends one paused: line to the task's
-# status file. When a later pass reads load below the resume level, it lifts
-# every load-relief pause: the record is removed and bin/fm-send.sh steers
-# the worker to resume. Nothing is killed, exited, or discarded. A successful
+# status file. The record is written before the interrupt and removed again
+# when the interrupt is not delivered, so an interrupted worker always has
+# one. When a later pass reads load below the resume level, it lifts one
+# load-relief pause per pass, highest priority (smallest priority number)
+# first and, among records without a priority, the most recently paused
+# first: the record is removed and bin/fm-send.sh steers the worker to
+# resume. Nothing is killed, exited, or discarded. A successful
 # pause restarts the sustained window, so each further pause needs a fresh
 # full window over the ceiling. Both status lines carry [key=load-relief], so
 # lifting a pause never closes another open decision on that worker. A pause
@@ -29,7 +33,8 @@
 # then the logical core count. config/load-relief holds one key=value per
 # line (# comments and blank lines ignored):
 #   ceiling=<positive number>       load at or over this starts the window
-#   resume-below=<positive number>  load under this lifts pauses (default ceiling)
+#   resume-below=<positive number>  load under this lifts pauses (default 75%
+#                                   of the ceiling)
 #   sustain-secs=<uint>             seconds at or over ceiling before a pause
 #                                   (default 300)
 #   pause-per-check=<uint>          workers paused per sustained pass (default 1)
@@ -46,7 +51,7 @@
 # or captain-held are never candidates.
 #
 # State under state/load-relief/: high-since (epoch the current over-ceiling
-# stretch began) and paused/<id> (key=value: id, paused_epoch, load,
+# stretch began) and paused/<id> (key=value: id, paused_epoch, priority, load,
 # ceiling). A check that finds load under the ceiling clears high-since.
 #
 # Test seams, honoured only with FM_TEST_SEAM=1: FM_LOAD_RELIEF_LOAD_FILE
@@ -148,7 +153,7 @@ is_uint "$cores" && [ "$cores" -gt 0 ] || cores=
 [ -n "$ceiling" ] || ceiling=${cores:-}
 [ -n "$ceiling" ] || die "no load ceiling: set max-load1 in config/lane-capacity or ceiling in config/load-relief"
 is_positive_number "$ceiling" || die "load ceiling '$ceiling' is not a positive number"
-[ -n "$resume_below" ] || resume_below=$ceiling
+[ -n "$resume_below" ] || resume_below=$(awk -v c="$ceiling" 'BEGIN { print c * 0.75 }')
 
 # --- load probe ---------------------------------------------------------------
 load1=
@@ -192,6 +197,7 @@ write_high_since() {
 if num_lt "$load1" "$resume_below"; then
   [ "$dry_run" -eq 0 ] && rm -f "$RELIEF_DIR/high-since"
   if [ -d "$PAUSED_DIR" ]; then
+    resumable=
     for record in "$PAUSED_DIR"/*; do
       [ -f "$record" ] || continue
       id=$(basename "$record")
@@ -203,18 +209,33 @@ if num_lt "$load1" "$resume_below"; then
         fi
         continue
       fi
-      if [ "$dry_run" -eq 1 ]; then
-        echo "load-relief: would resume $id load=$load1 resume-below=$resume_below"
-        continue
-      fi
-      if FM_HOME="$FM_HOME" "$send_cmd" "$id" "Host load has fallen to $load1 (resume level $resume_below). Your load-relief pause is lifted; resume your task from where you left off." >/dev/null 2>&1; then
-        rm -f "$record"
-        printf 'resolved [key=load-relief] [at=%s]: load relief lifted (load %s below %s); resumed by steer\n' "$now" "$load1" "$resume_below" >> "$STATE/$id.status" 2>/dev/null || true
-        echo "load-relief: resumed $id load=$load1 resume-below=$resume_below"
+      rprio=$(meta_get "$record" priority)
+      repoch=$(meta_get "$record" paused_epoch)
+      is_uint "$repoch" || repoch=0
+      if is_uint "$rprio"; then
+        resumable="$resumable$(printf '0\t%s\t0\t%s' "$((10#$rprio))" "$id")
+"
       else
-        echo "fm-load-relief: resume steer for $id was not confirmed delivered; its pause record is kept" >&2
+        resumable="$resumable$(printf '1\t0\t%s\t%s' "$repoch" "$id")
+"
       fi
     done
+    while IFS="$(printf '\t')" read -r _rank _prio _epoch id; do
+      [ -n "$id" ] || continue
+      if [ "$dry_run" -eq 1 ]; then
+        echo "load-relief: would resume $id load=$load1 resume-below=$resume_below"
+        break
+      fi
+      if FM_HOME="$FM_HOME" "$send_cmd" "$id" "Host load has fallen to $load1 (resume level $resume_below). Your load-relief pause is lifted; resume your task from where you left off." >/dev/null 2>&1; then
+        rm -f "$PAUSED_DIR/$id"
+        printf 'resolved [key=load-relief] [at=%s]: load relief lifted (load %s below %s); resumed by steer\n' "$now" "$load1" "$resume_below" >> "$STATE/$id.status" 2>/dev/null || true
+        echo "load-relief: resumed $id load=$load1 resume-below=$resume_below"
+        break
+      fi
+      echo "fm-load-relief: resume steer for $id was not confirmed delivered; its pause record is kept" >&2
+    done <<EOF
+$(printf '%s' "$resumable" | sort -t "$(printf '\t')" -k1,1n -k2,2n -k3,3nr)
+EOF
   fi
   exit 0
 fi
@@ -271,15 +292,20 @@ while IFS="$(printf '\t')" read -r _prio _epoch id; do
     paused=$((paused + 1))
     continue
   fi
+  mkdir -p "$PAUSED_DIR" || die "cannot create $PAUSED_DIR"
+  if ! { printf 'id=%s\npaused_epoch=%s\npriority=%s\nload=%s\nceiling=%s\n' "$id" "$now" "$_prio" "$load1" "$ceiling" > "$PAUSED_DIR/$id.tmp.$$" \
+      && mv "$PAUSED_DIR/$id.tmp.$$" "$PAUSED_DIR/$id"; }; then
+    rm -f "$PAUSED_DIR/$id.tmp.$$"
+    echo "fm-load-relief: cannot write the pause record for $id; it was not interrupted" >&2
+    continue
+  fi
   if FM_HOME="$FM_HOME" "$control_cmd" "$id" interrupt >/dev/null 2>&1; then
-    mkdir -p "$PAUSED_DIR" || die "cannot create $PAUSED_DIR"
-    printf 'id=%s\npaused_epoch=%s\nload=%s\nceiling=%s\n' "$id" "$now" "$load1" "$ceiling" > "$PAUSED_DIR/$id.tmp.$$" \
-      && mv "$PAUSED_DIR/$id.tmp.$$" "$PAUSED_DIR/$id"
     printf 'paused [key=load-relief] [at=%s]: load relief: load %s at or over ceiling %s for %ss; interrupted in place, work preserved, resumes when load falls\n' \
       "$now" "$load1" "$ceiling" "$elapsed" >> "$STATE/$id.status" 2>/dev/null || true
     echo "load-relief: paused $id load=$load1 ceiling=$ceiling sustained=${elapsed}s"
     paused=$((paused + 1))
   else
+    rm -f "$PAUSED_DIR/$id"
     echo "fm-load-relief: interrupt for $id was not delivered; it was not paused" >&2
   fi
 done <<EOF
