@@ -2397,6 +2397,57 @@ test_dialog_keys_stop_after_two_failures() {
   pass "dialog keys stop after two failures in an hour, so a misread screen is never typed into repeatedly"
 }
 
+# A ticking status percentage under the dialog's input box is not part of the
+# dialog. One dismiss key, then a changed percentage, must not send another.
+# A changed row above the footer still may.
+test_statusline_percentage_does_not_rearm_feedback_dismiss() {
+  local dir state fake keys pane rc screen
+  dir="$TMP_ROOT/statusline-dismiss-$CASE_N"
+  state="$dir/state"
+  fake="$dir/fakebin"
+  keys="$dir/keys.log"
+  pane="$dir/pane.txt"
+  mkdir -p "$state" "$fake"
+  cat > "$fake/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  capture-pane) cat "$FM_TEST_WATCH_PANE"; exit 0 ;;
+  send-keys)
+    shift
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) shift; printf 'LITERAL:%s\n' "${1:-}" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+        *) printf 'KEY:%s\n' "$1" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+      esac
+    done
+    exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$fake/tmux"
+  : > "$keys"
+  survey_screen() {  # <above> <percent>
+    printf '%s\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  Context left until auto-compact: %s%% · ◯ IDE connected\n' "$1" "$2"
+  }
+  dismiss_once() {
+    screen=$(survey_screen "$1" "$2")
+    printf '%s\n' "$screen" > "$pane"
+    rc=0
+    PATH="$fake:$PATH" FM_TEST_WATCH_PANE="$pane" FM_TEST_WATCH_KEYS="$keys" \
+      bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-pct" claude "$3" "fm-pct" 0.1' \
+      _ "$ROOT" "$state" "$screen" >/dev/null 2>&1 || rc=$?
+    printf '%s\n' "$rc"
+  }
+  assert_equals 4 "$(dismiss_once "work output 1" 8)" "the first sticky survey records a sent key that left the dialog up"
+  assert_equals "LITERAL:0" "$(cat "$keys")" "the first poll sends one dismiss key"
+  assert_equals 2 "$(dismiss_once "work output 1" 7)" "a changed auto-compact percentage does not authorize another key"
+  assert_equals "LITERAL:0" "$(cat "$keys")" "the percentage tick sends no second dismiss key"
+  assert_equals 4 "$(dismiss_once "work output 2" 7)" "a changed row above the footer still authorizes one more key"
+  assert_equals $'LITERAL:0\nLITERAL:0' "$(cat "$keys")" "the row above the footer receives the second dismiss key and nothing else"
+  pass "feedback dismiss: a statusline percentage tick does not send another key"
+}
+
 status_actions() {
   awk '/^## Actions/ { f = 1; next } /^## / { f = 0 } f && /^- /' "$H/data/watchdog/status.md" | wc -l | tr -d ' '
 }
@@ -4040,6 +4091,7 @@ fm_test_run \
   test_mtime_uses_the_platform_stat_dialect \
   test_dismissed_dialog_in_scrollback_is_not_showing \
   test_dialog_keys_stop_after_two_failures \
+  test_statusline_percentage_does_not_rearm_feedback_dismiss \
   test_loop_verdicts \
   test_stall_proof_and_text_guards \
   test_frozen_pane_nudges_once_then_rate_limits \

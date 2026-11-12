@@ -808,12 +808,15 @@ dismiss_pane_feedback_dialog() {  # <window> <screen>
       triage_log "auto-dismissed feedback dialog ($FM_CONTROL_FEEDBACK_DIALOG_ID key=$FM_CONTROL_FEEDBACK_DISMISS_KEY): $w"
       return 0
       ;;
-    4)
-      triage_log "feedback dialog still showing after dismiss ($FM_CONTROL_FEEDBACK_DIALOG_ID key=$FM_CONTROL_FEEDBACK_DISMISS_KEY): $w"
+    1)
       return 1
       ;;
+    4)
+      triage_log "feedback dialog still showing after dismiss ($FM_CONTROL_FEEDBACK_DIALOG_ID key=$FM_CONTROL_FEEDBACK_DISMISS_KEY): $w"
+      return 2
+      ;;
     *)
-      return 1
+      return 2
       ;;
   esac
 }
@@ -839,7 +842,7 @@ inbox_steer_busy() {  # <window> <backend> <task> <tail40>
 # Runs for secondmates too: their pane-staleness exemption is about quiet panes
 # being healthy, while an unacknowledged instruction can still be a stuck steer.
 inbox_steer_check() {  # <window> <task>
-  local w=$1 task=$2 action verb rec count tail40 reason='' ring_rc backend agent_state recover_rc=1 stuck_busy=0 age
+  local w=$1 task=$2 action verb rec count tail40 reason='' ring_rc backend agent_state recover_rc=1 stuck_busy=0 age dismiss_rc=0
   action=$(fm_task_inbox_due_action "$STATE" "$task") || return 0
   verb=${action%% *}
   [ "$verb" != quiet ] || return 0
@@ -898,8 +901,13 @@ inbox_steer_check() {  # <window> <task>
   elif [ "$verb" != retry ] && ! fm_task_inbox_clear_busy "$STATE" "$task"; then
     reason="stale: $w (steering-inbox busy bookkeeping unwritable: ${rec%/*}/.busy-state cannot be reset after a non-busy check; inspect the inbox directory)"
     verb=escalate
-  elif dismiss_pane_feedback_dialog "$w" "$tail40"; then
-    sleep 0.2
+  else
+    dismiss_pane_feedback_dialog "$w" "$tail40" || dismiss_rc=$?
+    case "$dismiss_rc" in
+      0) sleep 0.2 ;;
+      1) ;;
+      *) return 0 ;;
+    esac
   fi
   case "$verb" in
     ring)

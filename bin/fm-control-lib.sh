@@ -1037,8 +1037,8 @@ fm_control_harness_turnend_auth_path() {  # <harness> <token>
 # live at the bottom of the screen. The dismiss key is always a skip/dismiss/
 # cancel key (`0` or `Escape`), never a submit/send choice (`1`, `2`, `3`, `y`,
 # `Enter`) and never feedback text.
-fm_control_feedback_dialog_dismiss() {  # <harness> <screen>
-  local harness=${1-} screen=${2-} family='' lib
+fm_control_feedback_dialog_dismiss() {  # <harness> <screen> [mode]
+  local harness=${1-} screen=${2-} mode=${3:-id} family='' lib
   [ -n "$screen" ] || return 1
   # Claude draws its empty prompt as `❯`+NBSP; awk regex escapes for that
   # byte pair are locale-dependent, so map Unicode spaces to ASCII first.
@@ -1055,7 +1055,7 @@ fm_control_feedback_dialog_dismiss() {  # <harness> <screen>
   fi
   printf '%s\n' "$screen" \
     | LC_ALL=C sed -e $'s/\033\\[[0-9;?<>=]*[ -\\/]*[@-~]//g' -e $'s/\033\\][^\a]*\a//g' -e $'s/\r//g' \
-    | awk -v fam="$family" '
+    | awk -v fam="$family" -v mode="$mode" '
       function is_border_row(r) {
         return (r ~ /^[ \t]*[│┃─━╭╮╰╯┌┐└┘| \t-]+[ \t]*$/)
       }
@@ -1089,8 +1089,16 @@ fm_control_feedback_dialog_dismiss() {  # <harness> <screen>
         seen_prompt = 0
         for (j = idx + 1; j <= m; j++) {
           if (seen_prompt) {
-            if (is_border_row(tail[j])) return no_prompt_after(j)
-            if (!seen_top_border) return no_prompt_after(j - 1)
+            if (is_border_row(tail[j])) {
+              if (!no_prompt_after(j)) return 0
+              marker_cut = j
+              return 1
+            }
+            if (!seen_top_border) {
+              if (!no_prompt_after(j - 1)) return 0
+              marker_cut = j - 1
+              return 1
+            }
             if (!is_chrome_row(tail[j])) return 0
             continue
           }
@@ -1099,13 +1107,30 @@ fm_control_feedback_dialog_dismiss() {  # <harness> <screen>
             continue
           }
           if (is_border_row(tail[j])) {
-            if (tail[j] ~ /^[ \t]*[╰└]/) return no_prompt_after(j)
+            if (tail[j] ~ /^[ \t]*[╰└]/) {
+              if (!no_prompt_after(j)) return 0
+              marker_cut = j
+              return 1
+            }
             seen_top_border = 1
             continue
           }
           if (!is_chrome_row(tail[j])) return 0
         }
+        marker_cut = m
         return 1
+      }
+      function finish(id, key, footer,   i, row) {
+        if (mode == "marker") {
+          for (i = 1; i <= marker_cut; i++) {
+            row = tail[i]
+            if (i >= footer) gsub(/[0-9]/, "", row)
+            print row
+          }
+          exit 0
+        }
+        print id "\t" key
+        exit 0
       }
       NF { rows[++n] = $0 }
       END {
@@ -1136,22 +1161,10 @@ fm_control_feedback_dialog_dismiss() {  # <harness> <screen>
             if (r ~ /^[ \t]*((●|•|[*])[ \t]+)?(What went well\?|What went wrong\?|Tell us more)[ \t]*\(optional\)[ \t]*$/) h_follow = i
             if (h_follow > 0 && i > h_follow && r ~ /^[ \t]*enter to (skip|send) · esc to (skip|clear)[ \t]*$/) f_follow = i
           }
-          if (f_survey > 0 && no_output_after(f_survey)) {
-            print "claude-session-feedback\t0"
-            exit 0
-          }
-          if (f_draft > 0 && no_output_after(f_draft)) {
-            print "claude-bug-report-draft\t0"
-            exit 0
-          }
-          if (f_modal > 0 && no_output_after(f_modal)) {
-            print "claude-bug-report-dialog\tEscape"
-            exit 0
-          }
-          if (f_follow > 0 && no_output_after(f_follow)) {
-            print "claude-survey-followup\tEscape"
-            exit 0
-          }
+          if (f_survey > 0 && no_output_after(f_survey)) finish("claude-session-feedback", "0", f_survey)
+          if (f_draft > 0 && no_output_after(f_draft)) finish("claude-bug-report-draft", "0", f_draft)
+          if (f_modal > 0 && no_output_after(f_modal)) finish("claude-bug-report-dialog", "Escape", f_modal)
+          if (f_follow > 0 && no_output_after(f_follow)) finish("claude-survey-followup", "Escape", f_follow)
         }
 
         # 2. Antigravity CLI (agy) known CLI experience survey
@@ -1167,10 +1180,7 @@ fm_control_feedback_dialog_dismiss() {  # <harness> <screen>
               f_agy = i
             }
           }
-          if (f_agy > 0 && no_output_after(f_agy)) {
-            print "agy-cli-feedback\t0"
-            exit 0
-          }
+          if (f_agy > 0 && no_output_after(f_agy)) finish("agy-cli-feedback", "0", f_agy)
         }
 
         # 3. Codex CLI known /feedback modal dialogs
@@ -1187,14 +1197,8 @@ fm_control_feedback_dialog_dismiss() {  # <harness> <screen>
             if (h_up > 0 && i > h_up && r ~ /The following files will be sent:/) b_up = i
             if (h_up > 0 && b_up > 0 && i > b_up && r ~ /^[ \t]*((❯|›|>)[ \t]*(1[.][ \t]*)?(Yes|No)|[0-9]+[.][ \t]*No|Press enter to confirm or esc to go back|Enter to (confirm|select) · Esc to cancel)[ \t]*$/) f_up = i
           }
-          if (f_cx > 0 && no_output_after(f_cx)) {
-            print "codex-feedback-dialog\tEscape"
-            exit 0
-          }
-          if (f_up > 0 && no_output_after(f_up)) {
-            print "codex-upload-logs\tEscape"
-            exit 0
-          }
+          if (f_cx > 0 && no_output_after(f_cx)) finish("codex-feedback-dialog", "Escape", f_cx)
+          if (f_up > 0 && no_output_after(f_up)) finish("codex-upload-logs", "Escape", f_up)
         }
 
         exit 1
@@ -1242,11 +1246,15 @@ fm_control_feedback_window_key() {  # <backend> [<target>]
   printf '%s' "${key//./_}"
 }
 
-fm_control_feedback_pane_hash() {  # <screen>
-  printf '%s\n' "${1-}" \
-    | LC_ALL=C sed -e $'s/\033\\[[0-9;?<>=]*[ -\\/]*[@-~]//g' -e $'s/\033\\][^\a]*\a//g' -e $'s/\r//g' \
-    | awk 'NF { r[++n] = $0 } END { s = n - 17; if (s < 1) s = 1; for (i = s; i <= n; i++) print r[i] }' \
-    | cksum | awk '{ print $1 "_" $2 }'
+fm_control_feedback_pane_hash() {  # <screen> [harness]
+  local text rc=0
+  text=$(fm_control_feedback_dialog_dismiss "${2-}" "${1-}" marker) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    text=$(printf '%s\n' "${1-}" \
+      | LC_ALL=C sed -e $'s/\033\\[[0-9;?<>=]*[ -\\/]*[@-~]//g' -e $'s/\033\\][^\a]*\a//g' -e $'s/\r//g' \
+      | awk 'NF { r[++n] = $0 } END { s = n - 17; if (s < 1) s = 1; for (i = s; i <= n; i++) print r[i] }')
+  fi
+  printf '%s\n' "$text" | cksum | awk '{ print $1 "_" $2 }'
 }
 
 fm_control_capture_feedback_pane() {  # <backend> <target> [<expected-label>]
@@ -1359,7 +1367,7 @@ fm_control_dismiss_feedback_dialog() {
   FM_CONTROL_FEEDBACK_DIALOG_ID=$dialog_id
   FM_CONTROL_FEEDBACK_DISMISS_KEY=$dismiss_key
   wkey=$(fm_control_feedback_window_key "$backend" "$target")
-  phash=$(fm_control_feedback_pane_hash "$screen")
+  phash=$(fm_control_feedback_pane_hash "$screen" "$harness")
   [ -n "$wkey" ] && [ -n "$phash" ] || return 1
   mkdir -p "$state_dir" 2>/dev/null || return 1
   marker="$state_dir/.feedback-dismissed-$wkey"
@@ -1398,7 +1406,7 @@ fm_control_dismiss_feedback_dialog() {
   FM_CONTROL_FEEDBACK_DIALOG_ID=$dialog_id
   # shellcheck disable=SC2034
   FM_CONTROL_FEEDBACK_DISMISS_KEY=$dismiss_key
-  phash=$(fm_control_feedback_pane_hash "$live")
+  phash=$(fm_control_feedback_pane_hash "$live" "$harness")
   if [ "$prev_marker" = "$phash" ]; then
     fm_control_release_feedback_claim "$claim"
     return 2
