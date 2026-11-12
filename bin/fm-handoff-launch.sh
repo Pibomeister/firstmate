@@ -219,8 +219,6 @@ for attempt in 1 2; do
           HANDOFF_STARTED=1
           fm_handoff_event "$event" "$NONCE" "$attempt" "$PRED_PID" "$(fm_handoff_endpoint_handle || true)" awaiting_ack
           fm_run_timed "$remaining" "${BACKEND_EXEC[@]}" tmux "${TMUX_TARGET[@]}" -c "$FM_HOME" -n firstmate claude "${PERM_ARGS[@]}" "$PROMPT" > "$STATE/.handoff-launch-result" 2>&1 || true
-        else
-          fail_handoff deadline
         fi
         ;;
     esac

@@ -107,6 +107,15 @@ chmod +x "$FAKEBIN/orca"
 cat > "$FAKEBIN/tmux" <<'EOF'
 #!/usr/bin/env bash
 set -eu
+# Exhaust only the first attempt's setup window, then let the fresh retry
+# use the same backend normally. Record the nonce to prove replacement.
+case "$FM_HANDOFF_LAB_MODE:$1" in
+  tmux-display-timeout:display-message|tmux-has-timeout:has-session)
+    if [ ! -e "$FM_HOME/state/tmux-setup-nonce" ]; then
+      jq -r .nonce "$FM_HOME/state/.handoff-pending" > "$FM_HOME/state/tmux-setup-nonce"
+      exec "$FM_HANDOFF_REAL_SLEEP" "$FM_TEST_STUB_MAX_BLOCK_SECONDS"
+    fi ;;
+esac
 case "$1" in
   display-message) echo lab; exit 0 ;;
   has-session) exit 0 ;;
@@ -269,7 +278,7 @@ run_case() {
   local mode=$1 limit
   test_cleanup_processes
   rm -f "$LAB/state/".* "$LAB/state/attempts" "$LAB/state/handoff-events.log" "$LAB/state/"successor-*.out "$LAB/rc" "$LAB/ack.out" \
-    "$LAB/state/tmux-target" "$LAB/state/polling" "$LAB/state/session.keep" "$LAB/state/lock.keep" "$LAB/state/claim-held" \
+    "$LAB/state/tmux-target" "$LAB/state/tmux-setup-nonce" "$LAB/state/polling" "$LAB/state/session.keep" "$LAB/state/lock.keep" "$LAB/state/claim-held" \
     "$LAB/state/claim-wait" "$LAB/state/no-claim-wait" "$LAB/state/premature" "$LAB/state/retire-delayed" "$LAB/state/claim-busy" "$LAB/state/claim-released" "$LAB/state/second-signal-killed" \
     "$LAB/launcher.pid" "$LAB/pred.pid" 2>/dev/null || true
   printf '%s\n' "${2:-orca}" > "$LAB/config/backend"
@@ -657,6 +666,28 @@ unset TMUX
 [ "$(cat "$LAB/rc")" = 0 ] || fail "tmux inside a session must transfer: $(cat "$LAB/launch.out")"
 [ "$(cat "$LAB/state/tmux-target")" = '=lab:' ] || fail 'inside tmux the successor must open in the current session'
 pass 'tmux inside a session opens the successor in that session'
+
+# An expired setup window must revoke attempt 1 and spend the reserved retry
+# budget on a fresh claim, rather than exit before any successor launches.
+for mode in tmux-display-timeout tmux-has-timeout; do
+  export TMUX=/tmp/lab-tmux,1,0
+  run_case "$mode" tmux
+  unset TMUX
+  [ -s "$LAB/state/tmux-setup-nonce" ] || fail "$mode must enter the hung setup probe"
+  [ "$(cat "$LAB/rc")" = 0 ] || fail "$mode must complete its fresh retry: $(cat "$LAB/launch.out")"
+  nonce=$(sed -n 's/^nonce=//p' "$LAB/state/.handoff-successor")
+  [ "$nonce" != "$(cat "$LAB/state/tmux-setup-nonce")" ] || fail "$mode must replace the expired claim nonce"
+  [ "$(cat "$LAB/state/attempts")" = 1 ] || fail "$mode must launch one successor after setup recovers"
+  grep -q " event=handoff_retry nonce=$nonce attempt=2 " "$LAB/state/handoff-events.log" \
+    || fail "$mode must announce the actual second-attempt launch"
+  [ "$(grep -c ' event=handoff_failed ' "$LAB/state/handoff-events.log" || true)" = 0 ] \
+    || fail "$mode must not fail while the retry can complete"
+  [ "$(cat "$LAB/state/.lock")" != "$(cat "$LAB/pred.pid")" ] || fail "$mode must transfer the lock"
+  [ ! -e "$LAB/state/.handoff-pending" ] || fail "$mode must retire its pending claim"
+  assert_contains "$(bash "$ROOT/bin/fm-captain-locate.sh")" 'handle=%9' "$mode discovers the retry successor"
+  cat "$LAB/state/handoff-events.log"
+  pass "DRILL $mode: expired setup starts a fresh verified retry within the shared budget"
+done
 
 # A signal after the successor's committed transfer records completion only.
 run_case interrupt-after-ack
