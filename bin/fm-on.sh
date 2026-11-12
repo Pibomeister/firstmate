@@ -156,5 +156,5 @@ fm_on_ssh_once() {
   fi
 }
 rc=0
-fm_blip_retry --connect-only --status 255 fm_on_ssh_once || rc=$?
+fm_blip_retry --ssh-connect fm_on_ssh_once || rc=$?
 exit "$rc"

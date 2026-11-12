@@ -220,35 +220,72 @@ test_connect_only_ignores_stdout() {
   pass "connect-only mode never classifies the command's stdout"
 }
 
-test_status_limits_which_exits_retry() {
+test_ssh_connect_retries_only_exit_255() {
   blip_reset
   BLIP_FAILS=5
   BLIP_TEXT='ssh: connect to host remote-mac port 22: Connection refused'
-  blip_connect_run --status 255
-  [ "$BLIP_RC" -ne 0 ] || fail "a status-limited failure was treated as success"
-  assert_equals 1 "$(cat "$BLIP_COUNT")" "an exit other than the named status was retried"
-  pass "--status limits retries to the named exit status"
+  set +e
+  fm_blip_retry --ssh-connect blip_stub >"$BLIP_OUT" 2>"$BLIP_ERR"
+  BLIP_RC=$?
+  set -e
+  [ "$BLIP_RC" -ne 0 ] || fail "an ssh-connect failure with exit 1 was treated as success"
+  assert_equals 1 "$(cat "$BLIP_COUNT")" "an ssh-connect exit other than 255 was retried"
+  pass "--ssh-connect retries only an ssh exit 255"
 }
 
-blip_linux_drop() {
+BLIP_SSH_TEXT=''
+BLIP_SSH_FAILS=5
+
+blip_ssh() {
   local n
   n=$(cat "$BLIP_COUNT")
   n=$((n + 1))
   printf '%s\n' "$n" > "$BLIP_COUNT"
-  printf 'Read from remote host remote-mac: Connection timed out\n' >&2
-  return 255
+  if [ "$n" -le "$BLIP_SSH_FAILS" ]; then
+    printf '%s\n' "$BLIP_SSH_TEXT" >&2
+    return 255
+  fi
+  printf 'ready\n'
 }
 
-test_connect_only_does_not_repeat_a_linux_mid_session_timeout() {
+blip_ssh_run() { # <text> <fails>
   blip_reset
+  BLIP_SSH_TEXT=$1
+  BLIP_SSH_FAILS=$2
   set +e
-  fm_blip_retry --connect-only --status 255 blip_linux_drop >"$BLIP_OUT" 2>"$BLIP_ERR"
+  fm_blip_retry --ssh-connect blip_ssh >"$BLIP_OUT" 2>"$BLIP_ERR"
   BLIP_RC=$?
   set -e
-  assert_equals 255 "$BLIP_RC" "a Linux mid-session timeout lost its ssh status"
-  assert_equals 1 "$(cat "$BLIP_COUNT")" "a Linux mid-session timeout was repeated"
-  [ ! -s "$BLIP_SLEEP" ] || fail "a Linux mid-session timeout waited before returning"
-  pass "a Linux mid-session ssh timeout is not repeated"
+}
+
+test_ssh_connect_retries_a_pre_session_failure() {
+  local text
+  for text in 'ssh: connect to host remote-mac port 22: Connection refused' \
+    'ssh: connect to host remote-mac port 22: Operation timed out' \
+    'ssh: connect to host remote-mac port 22: No route to host' \
+    'ssh: Could not resolve hostname remote-mac: nodename nor servname provided, or not known'; do
+    blip_ssh_run "$text" 1
+    assert_equals 0 "$BLIP_RC" "pre-session ssh failure '$text' was not retried to success"
+    assert_equals 2 "$(cat "$BLIP_COUNT")" "pre-session ssh failure '$text' was not retried exactly once"
+  done
+  pass "an ssh that never opened a session is retried"
+}
+
+test_ssh_connect_does_not_repeat_a_session_that_may_have_run() {
+  local text
+  for text in 'packet_write_wait: Connection to remote-mac port 22: No route to host' \
+    'Read from remote host remote-mac: No route to host' \
+    'Read from remote host remote-mac: Network is unreachable' \
+    'Read from remote host remote-mac: Connection timed out' \
+    'Timeout, server not responding.' \
+    'error: upstream connection refused' \
+    'could not resolve hostname api.example.com'; do
+    blip_ssh_run "$text" 5
+    assert_equals 255 "$BLIP_RC" "ssh status 255 was replaced after '$text'"
+    assert_equals 1 "$(cat "$BLIP_COUNT")" "an ssh session was repeated after '$text'"
+    [ ! -s "$BLIP_SLEEP" ] || fail "an ssh session waited after '$text'"
+  done
+  pass "an ssh drop or remote stderr text is never retried"
 }
 
 blip_bare() {
@@ -505,8 +542,9 @@ fm_test_run \
   test_connect_only_retries_a_failure_to_connect \
   test_connect_only_does_not_repeat_a_call_that_may_have_landed \
   test_connect_only_ignores_stdout \
-  test_status_limits_which_exits_retry \
-  test_connect_only_does_not_repeat_a_linux_mid_session_timeout \
+  test_ssh_connect_retries_only_exit_255 \
+  test_ssh_connect_retries_a_pre_session_failure \
+  test_ssh_connect_does_not_repeat_a_session_that_may_have_run \
   test_bare_failure_without_transient_text_is_not_retried \
   test_invalid_override_fails_before_the_command \
   test_orca_send_retries_a_transient_cli_blip \

@@ -3,7 +3,7 @@
 #
 # Sourced, never executed. This is the single owner of that retry.
 #
-#   fm_blip_retry [--connect-only] [--read] [--status <n>] <command> [args...]
+#   fm_blip_retry [--connect-only|--ssh-connect] [--read] <command> [args...]
 #       Run the command. Success returns its status and passes its stdout and
 #       stderr through. A definite failure is returned at once, once: not
 #       found, permission denied, or a usage error. A transient failure is
@@ -24,7 +24,13 @@
 #       could not resolve the host, no route, a connect that timed out, a
 #       connection closed before the session began, or a missing socket. A
 #       reset, a mid-session timeout, or an HTTP 5xx is reported once.
-#       --status <n> also limits retries to attempts that exited with n.
+#
+#       --ssh-connect is the same rule for an ssh command whose stderr also
+#       carries the remote command's own stderr. Only an exit 255 is retried,
+#       and only when a stderr line is one ssh prints before any session
+#       exists: `ssh: connect to host <h> port <n>: ` followed by refused,
+#       timed out, no route, or unreachable, or `ssh: Could not resolve
+#       hostname`. No other text is classified.
 #
 #       --read is for a read-only probe on a supervision path, where a long
 #       wait would stall the sweep that called it. Its budget is
@@ -137,6 +143,13 @@ fm_blip_text_is_connect_failure() {
   return 1
 }
 
+# 0 when a stderr line is ssh's own report that it never opened a session.
+fm_blip_text_is_ssh_connect_failure() {
+  fm_blip_text_lower "$1" | grep -Eq \
+    -e '^ssh: connect to host [^ ]+ port [0-9]+: (connection refused|(operation|connection) timed out|no route to host|(network|host) is unreachable)' \
+    -e '^ssh: could not resolve hostname '
+}
+
 fm_blip_retry_number() { # <name> <default> <minimum>
   local name=$1 default=$2 min=$3 value
   value=${!name-}
@@ -163,18 +176,12 @@ fm_blip_retry_emit() { # <dir>
 
 fm_blip_retry() {
   local start now elapsed delay wait base cap budget rc=0 attempt=0
-  local dir text errexit=0 connect_only=0 status='' read_only=0
+  local dir text errexit=0 connect_only=0 ssh_connect=0 read_only=0
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --connect-only) connect_only=1; shift ;;
+      --ssh-connect) ssh_connect=1; shift ;;
       --read) read_only=1; shift ;;
-      --status)
-        case "${2:-}" in
-          ''|*[!0-9]*) printf 'fm-blip-retry: --status needs an integer\n' >&2; return 2 ;;
-        esac
-        status=$2
-        shift 2
-        ;;
       *) break ;;
     esac
   done
@@ -218,10 +225,10 @@ fm_blip_retry() {
       fm_blip_retry_emit "$dir"
       return 0
     fi
-    if [ -n "$status" ] && [ "$rc" -ne "$status" ]; then
-      break
-    fi
-    if [ "$connect_only" -eq 1 ]; then
+    if [ "$ssh_connect" -eq 1 ]; then
+      [ "$rc" -eq 255 ] || break
+      fm_blip_text_is_ssh_connect_failure "$(cat "$dir/err")" || break
+    elif [ "$connect_only" -eq 1 ]; then
       text=$(cat "$dir/err")
       fm_blip_text_is_connect_failure "$text" || break
     else
