@@ -1123,6 +1123,8 @@ def format_run_detail(run: dict) -> str:
     rid = run["id"]
     br = run["branch"]
     raw_st = run["status"]
+    if raw_st not in KNOWN_RUN_STATUSES:
+        raise ValueError("invalid run row")
     st = "completed" if raw_st == "checks_passed_released" else raw_st
     head_sha = run["head_sha"]
     pr_url = run.get("pr_url") or ""
@@ -1351,7 +1353,8 @@ try:
         head_sha = r.get("head_sha")
         if (not isinstance(rid, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", rid)
                 or not isinstance(br, str) or not br
-                or not isinstance(st, str) or st not in KNOWN_RUN_STATUSES
+                or not isinstance(st, str) or not re.fullmatch(r"[a-z_-]+", st)
+                or (br == branch and st not in KNOWN_RUN_STATUSES)
                 or not isinstance(head_sha, str) or not re.fullmatch(r"[a-fA-F0-9]{7,40}", head_sha)):
             raise ValueError("invalid run row")
 

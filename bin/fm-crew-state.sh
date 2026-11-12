@@ -220,8 +220,10 @@
 #      classified by step 4. Backends with no classifier keep reading a failed
 #      capture as gone. The fallback's own comment owns the per-verdict rules.
 #
-# Read-only and side-effect free. Always exits 0 on a successful read regardless
-# of state; exit 2 only on a usage error (no id).
+# Read-only against the worktree, backend, and no-mistakes state database; the
+# only filesystem write is the short-lived snapshot cache under
+# $STATE/.nm-status-snapshot.json (and its lock file). Always exits 0 on a
+# successful read regardless of state; exit 2 only on a usage error (no id).
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

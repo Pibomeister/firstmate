@@ -7374,6 +7374,90 @@ PY
   pass "concurrent snapshot writers serialize via file lock and preserve all repository entries"
 }
 
+test_status_snapshot_foreign_branch_unknown_status_still_engages() {
+  local d=$TMP_ROOT/snap-foreign-unknown head before after out
+  reset_fakes
+  mkdir -p "$d/state"
+  make_repo_on_branch "$d/wt" fm/ship-a
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/snap-foreign-unknown.meta" "window=fm:fm-snap-foreign-unknown" "worktree=$d/wt" "kind=ship"
+  printf 'working [at=1700000000]: validating\n' > "$d/state/snap-foreign-unknown.status"
+  head=$(git -C "$d/wt" rev-parse HEAD)
+  NM_HOME="$d/nm-home"
+  export NM_HOME
+  mkdir -p "$NM_HOME"
+  init_full_nm_sqlite "$NM_HOME/state.sqlite" "$d/wt" "$head"
+
+  # Insert a newer run on a foreign branch in the same repository with status
+  # 'handed_off' (not in KNOWN_RUN_STATUSES).
+  python3 - "$NM_HOME/state.sqlite" "$head" <<'PY'
+import sqlite3, sys
+db_path, head = sys.argv[1:]
+with sqlite3.connect(db_path) as db:
+    db.execute(
+        "INSERT INTO runs (id, repo_id, branch, head_sha, status, pr_url, gates_json, error, awaiting_agent_since, created_at) "
+        "VALUES ('01M7FOREIGNHANDEDOFF000001', 'repo-1', 'fm/va11-s7-auto-away', ?, 'handed_off', '', '', '', 0, 1775000500)",
+        (head,),
+    )
+PY
+
+  cat > "$d/fakebin/no-mistakes" <<'EOF'
+#!/usr/bin/env bash
+echo "unexpected-cli-call: $*" >> "${FM_NM_CLI_LOG}"
+exit 99
+EOF
+  chmod +x "$d/fakebin/no-mistakes"
+  export FM_NM_CLI_LOG="$d/nm-cli.log"
+
+  before=$(git hash-object "$NM_HOME/state.sqlite")
+  out=$(run_crew_state "$d" snap-foreign-unknown)
+  after=$(git hash-object "$NM_HOME/state.sqlite")
+  unset FM_NM_CLI_LOG
+  [ "$before" = "$after" ] || fail "foreign-branch unknown-status snapshot read modified state.sqlite"
+  [ ! -e "$d/nm-cli.log" ] || fail "foreign-branch handed_off status disabled the snapshot and called no-mistakes CLI"
+  assert_contains "$out" "state: parked" "snapshot still engages for crew branch when foreign branch has handed_off status"
+  assert_contains "$out" "run: 01M7SNAPSHOTA0000000000001" "snapshot attributes crew's own branch run despite foreign handed_off row"
+  pass "an unknown status on a foreign branch does not disable the status snapshot"
+}
+
+test_status_snapshot_own_branch_unknown_status_falls_back_to_cli() {
+  local d=$TMP_ROOT/snap-own-unknown head before after out
+  reset_fakes
+  mkdir -p "$d/state"
+  make_repo_on_branch "$d/wt" fm/ship-a
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/snap-own-unknown.meta" "window=fm:fm-snap-own-unknown" "worktree=$d/wt" "kind=ship"
+  head=$(git -C "$d/wt" rev-parse HEAD)
+  NM_HOME="$d/nm-home"
+  export NM_HOME
+  mkdir -p "$NM_HOME"
+  init_full_nm_sqlite "$NM_HOME/state.sqlite" "$d/wt" "$head"
+
+  python3 - "$NM_HOME/state.sqlite" <<'PY'
+import sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as db:
+    db.execute("UPDATE runs SET status = 'handed_off', awaiting_agent_since = 0 WHERE id = '01M7SNAPSHOTA0000000000001'")
+PY
+
+  FM_FAKE_AXI_HOME="repo: $d/wt
+count: 1 of 1 total
+runs[1]{id,branch,status,head,pr}:
+  01M7OWNBRANCHFALLBACK00001,fm/ship-a,running,$head,\"\""
+  FM_FAKE_AXI_STATUS="id: 01M7OWNBRANCHFALLBACK00001
+branch: fm/ship-a
+status: running
+head: $head"
+  FM_FAKE_AXI_STATUS_RUN=$FM_FAKE_AXI_STATUS
+
+  before=$(git hash-object "$NM_HOME/state.sqlite")
+  out=$(run_crew_state "$d" snap-own-unknown)
+  after=$(git hash-object "$NM_HOME/state.sqlite")
+  [ "$before" = "$after" ] || fail "own-branch unknown-status fallback modified state.sqlite"
+  assert_contains "$out" "state: working" "unknown run status on crew's own branch falls back to CLI"
+  assert_contains "$out" "run: 01M7OWNBRANCHFALLBACK00001" "CLI fallback supplies the run id when crew's own branch has unknown status"
+  pass "an unknown status on the crew's own branch rejects the snapshot and falls back to the CLI"
+}
+
 test_captured_axi_status_shapes
 test_captured_inventory_replay
 test_captured_authority_transition
@@ -7617,5 +7701,7 @@ test_status_snapshot_moved_live_run_reads_cli
 test_status_snapshot_quiet_uses_configured_step_quiet_warning
 test_status_snapshot_missing_ci_log_falls_back_to_cli_not_last_activity
 test_status_snapshot_concurrent_writers_preserve_all_repos
+test_status_snapshot_foreign_branch_unknown_status_still_engages
+test_status_snapshot_own_branch_unknown_status_falls_back_to_cli
 
 echo "all fm-crew-state tests passed"
