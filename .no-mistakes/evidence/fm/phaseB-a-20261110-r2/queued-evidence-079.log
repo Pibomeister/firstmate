@@ -1,0 +1,183 @@
+fm-test-queue: ticket 1375, position 5: waiting behind 4 earlier ticket(s)
+fm-test-queue: ticket 1375, position 4: waiting behind 3 earlier ticket(s)
+fm-test-queue: ticket 1375, position 3: waiting behind 2 earlier ticket(s)
+fm-test-queue: ticket 1375, position 2: waiting behind 1 earlier ticket(s)
+fm-test-queue: ticket 1375, position 1: all 1 slot(s) busy
+fm-test-queue: ticket 1375 served
+tested_sha=231b1730b44581398fe93f9517b79f4fa9bfd2b7
+started_at=2026-11-12T04:25:12Z
+
+COMMAND bash {run-worktree}/tests/fm-handoff-launch.test.sh
+ok - tmux resume discovers %32 and preserves explicit metadata precedence
+ok - tmux resume discovers old_endpoint and preserves explicit metadata precedence
+ok - orca resume discovers term_new and preserves explicit metadata precedence
+ok - orca resume discovers term_explicit and preserves explicit metadata precedence
+HANDOFF v1 ts=1794457530 event=handoff_started nonce=f9bb0ceb607a03f82958d01bb145105b attempt=1 pid=41486 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794457530 event=handoff_failed nonce=f9bb0ceb607a03f82958d01bb145105b attempt=1 pid=41486 handle=none reason=interrupted
+ok - DRILL interrupt: one failure on stdout and log, predecessor lock retained
+HANDOFF v1 ts=1794457533 event=handoff_started nonce=7a236964b6e9ec3e5720e95cffb531cf attempt=1 pid=46915 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794457533 event=handoff_failed nonce=7a236964b6e9ec3e5720e95cffb531cf attempt=1 pid=46915 handle=none reason=error
+ok - DRILL error-exit: one failure on stdout and log, predecessor lock retained
+ok - supervisor endpoint metadata retains precedence and generation
+ok - a transfer that rolls back after its verdict preserves predecessor leases
+ok - a lease retirement error after commit keeps the committed transfer
+ok - an interruption during lease retirement after commit keeps the committed transfer
+ok - a transfer interrupted after its line-1 write restores predecessor ownership and leases
+ok - a second signal during transaction rollback preserves ownership and releases its locks
+ok - a sidecar-less transfer interrupted after its line-1 write restores the predecessor
+ok - discovery reports only committed endpoints across an uncommitted transfer
+ok - lock endpoints follow supervisor-target precedence for nested and inherited terminals
+ok - verified successor ack transfers the lock while predecessor remains alive; discovery follows it
+ok - discovery reports a pid and handle only from one unchanged snapshot
+ok - a completed handoff retires its claim, so later refused sessions emit no reject
+ok - foreign launch is refused and dead lock holders are not captain endpoints
+ok - tmux launches direct argv outside tmux in its home session and transfers the verified lock
+ok - tmux inside a session opens the successor in that session
+HANDOFF v1 ts=1794457667 event=handoff_retry nonce=4dfaa0a143bebb2170b38318822431df attempt=2 pid=54100 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794457674 event=handoff_ack nonce=4dfaa0a143bebb2170b38318822431df attempt=0 pid=17545 handle=%9 reason=lock_transferred
+ok - DRILL tmux-display-timeout: expired setup starts a fresh verified retry within the shared budget
+HANDOFF v1 ts=1794457723 event=handoff_retry nonce=85a8b790f6a63eff88440448ea0004eb attempt=2 pid=53114 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794457728 event=handoff_ack nonce=85a8b790f6a63eff88440448ea0004eb attempt=0 pid=6696 handle=%9 reason=lock_transferred
+ok - DRILL tmux-has-timeout: expired setup starts a fresh verified retry within the shared budget
+HANDOFF v1 ts=1794457733 event=handoff_started nonce=40e9fe96f5d7b87f91084853a47903dc attempt=1 pid=33710 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794457738 event=handoff_ack nonce=40e9fe96f5d7b87f91084853a47903dc attempt=0 pid=40588 handle=term_lab_1 reason=lock_transferred
+ok - DRILL interrupt-after-ack: one completion outcome, no contradictory failure
+ok - DRILL precommit: completion waits for the committed transfer, not an uncommitted read
+HANDOFF v1 ts=1794457751 event=handoff_started nonce=e383cdfacbf5f3c7f9c783f3e8532d7a attempt=1 pid=77075 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794457763 event=handoff_failed nonce=e383cdfacbf5f3c7f9c783f3e8532d7a attempt=1 pid=77075 handle=none reason=interrupted
+HANDOFF v1 ts=1794457763 event=handoff_reject nonce=e383cdfacbf5f3c7f9c783f3e8532d7a attempt=0 pid=0 handle=term_lab_1 reason=missing_claim
+ok - DRILL cleanup-contention: failure is reported only after the claim is fenced
+ok - DRILL cleanup-second-signal: a second signal during cleanup still emits exactly one failure
+HANDOFF v1 ts=1794457768 event=handoff_reject nonce=6a3a911fae1f9666a87ea855f74cf964 attempt=0 pid=0 handle=term_lab_1 reason=missing_claim
+HANDOFF v1 ts=1794457830 event=handoff_started nonce=4466235554968c14afe4f7484305ec70 attempt=1 pid=25243 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794457841 event=handoff_retry nonce=43d5d2eef90deed8c7dda5f8ce054fec attempt=2 pid=25243 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794457851 event=handoff_failed nonce=43d5d2eef90deed8c7dda5f8ce054fec attempt=2 pid=25243 handle=none reason=deadline
+ok - DRILL slow-claim: a slow initial claim still fails within the total budget
+HANDOFF v1 ts=1794457855 event=handoff_started nonce=a4f63c9dcec8c94ef3c9ca9de2e3c227 attempt=1 pid=67474 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794457944 event=handoff_failed nonce=a4f63c9dcec8c94ef3c9ca9de2e3c227 attempt=1 pid=67474 handle=none reason=unresolved
+HANDOFF v1 ts=1794457944 event=handoff_ack nonce=a4f63c9dcec8c94ef3c9ca9de2e3c227 attempt=0 pid=78450 handle=term_lab_1 reason=lock_transferred
+ok - DRILL delayed-successor: a busy claim at the deadline is unresolved, then settled by the ack
+HANDOFF v1 ts=1794457948 event=handoff_started nonce=a40bb608c77f0a8eb43d4d857f692909 attempt=1 pid=88305 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794457951 event=handoff_ack nonce=a40bb608c77f0a8eb43d4d857f692909 attempt=0 pid=98825 handle=term_lab_1 reason=stale_takeover
+ok - DRILL pred-dies: the successor takes the stale lock and the log names that path
+ok - unsupported backends and unenforceable permission posture refuse before launch
+HANDOFF v1 ts=1794457961 event=handoff_started nonce=909e340b4249c3d12e3287120d82dc97 attempt=1 pid=41798 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794458001 event=handoff_retry nonce=93b1c71fba9df3ace8e41d7924316b15 attempt=2 pid=41798 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794458041 event=handoff_failed nonce=93b1c71fba9df3ace8e41d7924316b15 attempt=2 pid=41798 handle=none reason=deadline
+ok - DRILL exit: failed within lab deadline, retried once, predecessor lock preserved
+HANDOFF v1 ts=1794458043 event=handoff_started nonce=09d07fba8148c9bf3797ecd10f8085f3 attempt=1 pid=38597 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794458083 event=handoff_retry nonce=f67a5b8c374082d8a9d654308e79ce43 attempt=2 pid=38597 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794458123 event=handoff_failed nonce=f67a5b8c374082d8a9d654308e79ce43 attempt=2 pid=38597 handle=none reason=deadline
+zsh:1: parse error near `)'
+zsh:1: parse error near `)'
+ok - DRILL parse: failed within lab deadline, retried once, predecessor lock preserved
+HANDOFF v1 ts=1794458125 event=handoff_started nonce=f25ec51ab5dcbf4e7bd3a15ce4cba4ab attempt=1 pid=96513 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794458126 event=handoff_reject nonce=none attempt=0 pid=4630 handle=term_lab_1 reason=lock_held_unbound
+HANDOFF v1 ts=1794458166 event=handoff_retry nonce=f2cc8039cbcb856f3b9974f44da18214 attempt=2 pid=96513 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794458167 event=handoff_reject nonce=none attempt=0 pid=18612 handle=term_lab_2 reason=lock_held_unbound
+HANDOFF v1 ts=1794458205 event=handoff_failed nonce=f2cc8039cbcb856f3b9974f44da18214 attempt=2 pid=96513 handle=none reason=deadline
+ok - DRILL reject: failed within lab deadline, retried once, predecessor lock preserved
+HANDOFF v1 ts=1794458207 event=handoff_started nonce=c0f6a2a206cd19c492e588ce2c108d40 attempt=1 pid=25045 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794458208 event=handoff_reject nonce=c0f6a2a206cd19c492e588ce2c108d40 attempt=0 pid=31023 handle=term_lab_1 reason=lock_held
+HANDOFF v1 ts=1794458248 event=handoff_retry nonce=cfd47d73d614c8faf0cf8658e52f9a13 attempt=2 pid=25045 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794458248 event=handoff_reject nonce=cfd47d73d614c8faf0cf8658e52f9a13 attempt=0 pid=46523 handle=term_lab_2 reason=lock_held
+HANDOFF v1 ts=1794458287 event=handoff_failed nonce=cfd47d73d614c8faf0cf8658e52f9a13 attempt=2 pid=25045 handle=none reason=deadline
+ok - DRILL no-ack: failed within lab deadline, retried once, predecessor lock preserved
+HANDOFF v1 ts=1794458289 event=handoff_started nonce=2962780ded923ac14f180e23ad0a431e attempt=1 pid=59862 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794458291 event=handoff_reject nonce=2962780ded923ac14f180e23ad0a431e attempt=0 pid=65453 handle=term_lab_1 reason=lock_held
+HANDOFF v1 ts=1794458291 event=handoff_reject nonce=2962780ded923ac14f180e23ad0a431e attempt=0 pid=0 handle=term_lab_1 reason=lock_refused
+HANDOFF v1 ts=1794458329 event=handoff_retry nonce=f34c4e69dc665a72ab2df32bc8d07326 attempt=2 pid=59862 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794458331 event=handoff_reject nonce=f34c4e69dc665a72ab2df32bc8d07326 attempt=0 pid=80631 handle=term_lab_2 reason=lock_held
+HANDOFF v1 ts=1794458331 event=handoff_reject nonce=f34c4e69dc665a72ab2df32bc8d07326 attempt=0 pid=0 handle=term_lab_2 reason=lock_refused
+HANDOFF v1 ts=1794458369 event=handoff_failed nonce=f34c4e69dc665a72ab2df32bc8d07326 attempt=2 pid=59862 handle=none reason=deadline
+ok - DRILL unprovable: failed within lab deadline, retried once, predecessor lock preserved
+HANDOFF v1 ts=1794458371 event=handoff_started nonce=67b6f53db6f2873ba59669df12bdacb5 attempt=1 pid=18669 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794458372 event=handoff_reject nonce=67b6f53db6f2873ba59669df12bdacb5 attempt=0 pid=0 handle=term_lab_1 reason=hash_mismatch
+HANDOFF v1 ts=1794458411 event=handoff_retry nonce=14f4bc87eebec1a8f7b36fa2a9a04842 attempt=2 pid=18669 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794458411 event=handoff_reject nonce=14f4bc87eebec1a8f7b36fa2a9a04842 attempt=0 pid=0 handle=term_lab_2 reason=hash_mismatch
+HANDOFF v1 ts=1794458451 event=handoff_failed nonce=14f4bc87eebec1a8f7b36fa2a9a04842 attempt=2 pid=18669 handle=none reason=deadline
+ok - DRILL wrong-sha: failed within lab deadline, retried once, predecessor lock preserved
+HANDOFF v1 ts=1794458454 event=handoff_started nonce=607c21658bc5ddd35f0f8940e68d16f5 attempt=1 pid=91579 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794458454 event=handoff_reject nonce=00000000000000000000000000000000 attempt=0 pid=0 handle=term_lab_1 reason=stale_nonce
+HANDOFF v1 ts=1794458493 event=handoff_retry nonce=4cb50f229e15d25cb218f4647d8d71dd attempt=2 pid=91579 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794458493 event=handoff_reject nonce=00000000000000000000000000000000 attempt=0 pid=0 handle=term_lab_2 reason=stale_nonce
+HANDOFF v1 ts=1794458533 event=handoff_failed nonce=4cb50f229e15d25cb218f4647d8d71dd attempt=2 pid=91579 handle=none reason=deadline
+ok - DRILL stale: failed within lab deadline, retried once, predecessor lock preserved
+HANDOFF v1 ts=1794458536 event=handoff_started nonce=f02081fadb61b64b6bbbbad410144b20 attempt=1 pid=25443 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794458536 event=handoff_reject nonce=f02081fadb61b64b6bbbbad410144b20 attempt=0 pid=0 handle=term_lab_1 reason=expired_claim
+HANDOFF v1 ts=1794458575 event=handoff_retry nonce=5b8b64bc18aa932bd0f26270837b6212 attempt=2 pid=25443 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794458575 event=handoff_reject nonce=5b8b64bc18aa932bd0f26270837b6212 attempt=0 pid=0 handle=term_lab_2 reason=expired_claim
+HANDOFF v1 ts=1794458615 event=handoff_failed nonce=5b8b64bc18aa932bd0f26270837b6212 attempt=2 pid=25443 handle=none reason=deadline
+ok - DRILL expired: failed within lab deadline, retried once, predecessor lock preserved
+HANDOFF v1 ts=1794458618 event=handoff_started nonce=516ea3edbdb18d68fb1687bf34ec74d7 attempt=1 pid=83892 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794458658 event=handoff_retry nonce=e1633204f5ed6ea500934cded42b08ed attempt=2 pid=83892 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1794458697 event=handoff_failed nonce=e1633204f5ed6ea500934cded42b08ed attempt=2 pid=83892 handle=none reason=deadline
+ok - DRILL hung-launch: failed within lab deadline, retried once, predecessor lock preserved
+SUITE_RESULT suite=fm-handoff-launch.test.sh exit=0
+
+COMMAND bash {run-worktree}/tests/fm-handoff-trigger.test.sh
+ok - a firing rejects stale, dead, request-only and unacknowledged live successor records
+ok - a second mate's handoff escalates to its parent once and its stop is never successor-gated (133, 116)
+ok - default threshold: silent at 16% left, fires at 15% left before auto-compact
+ok - threshold is configurable, 0 turns it off, and an unusable value keeps the default
+ok - fires once per cycle across tool calls and prompts, and again for a new session
+ok - a compaction re-arms the trigger for one more firing, and stale usage cannot spend it
+ok - eight concurrent hook calls for one session fire exactly once
+ok - compact point derives from Claude's autoCompactWindow layers and override, and a pin wins
+ok - the settings layers resolve the way Claude resolves them, on canonical model names
+ok - only integers from 100000 to 1000000 count as a settings window
+ok - CLAUDE_CODE_AUTO_COMPACT_WINDOW overrides settings the way Claude reads it
+ok - an unresolvable compact point or unreadable usage stays silent rather than guessing
+ok - inert in a crew worktree, for Cursor payloads, other events, and a home without state; live in the primary
+ok - a firing names every open captain order, and the stop is gated until the handoff lists them
+ok - a recorded handoff gates the stop even with the trigger off, and an ordinary stop is never gated
+ok - a handoff record gates only the session that wrote it, never another session's stop in the same home
+ok - a caller outside any harness reads the captain's handoff, and a second harness session does not
+SUITE_RESULT suite=fm-handoff-trigger.test.sh exit=0
+
+COMMAND bash {run-worktree}/tests/fm-session-lock-ancestry.test.sh
+ok - session-lock: Stop binds checkpoint descendants and rejects foreign or absent thread identity
+ok - session-lock: a daemon-served owner's Stop is its own by payload thread; another thread stays foreign
+ok - session-lock: a version-named Claude Code session is identified from its install path and argv[0]
+ok - session-lock: a version-suffixed muse session is identified, and substring decoys are not
+ok - session-lock: a harness that is pid 1 of its own namespace is examined, not skipped
+ok - session-lock: ordinary script paths under a harness directory are not harness processes
+ok - session-lock: ownership stops at the first non-harness gap above the contiguous run
+ok - session-lock: a live version-named session holding the lock is not mistaken for a stale owner
+ok - session-lock: a trusted same-session id keeps owning a recycled background chain, and nothing weaker does
+ok - session-lock: a trusted id anchors the lock on the model-loop process, anything else on the outermost pid
+ok - session-lock: a daemon-parented Codex tool shell anchors off the daemon and owns by thread id
+ok - session-lock: a direct Codex TUI launch anchors on the TUI, directly or through its code-mode host
+ok - session-lock: two Codex sessions sharing one daemon never cross-own each other's locks
+ok - session-lock: a Codex thread id is trusted only inside a Codex session, and only when its published ids agree
+ok - session-lock: real argv and separate environment fields bind only their own thread
+ok - session-lock: a mismatched kernel start time cannot inherit ownership or leases
+ok - session-lock: daemon restart re-anchors dead and reused instances while preserving same-thread leases
+ok - session-lock: retained idle and errored threads need endpoint stop proof; active threads refuse
+ok - session-lock e2e: a daemon-parented Codex session acquires and keeps its lock by thread id, never on the daemon
+ok - session-lock e2e: a dead session's daemon-anchored lock is reclaimed by its replacement through fm-lock.sh
+ok - session-lock e2e: daemon thread state protects live owners and permits replacement while the daemon lives
+ok - session-lock: a Windows session is identified from its published pid across the severed parent link
+ok - session-lock: a published Windows pid is confirmed against the process table before it is trusted
+ok - session-lock: a tagged Windows pid is never resolved against the Cygwin process table
+ok - session-lock: a published identity is accepted by every gate that reads the lock
+ok - session-lock: a live tagged lock holder is a live foreign owner to a second Windows session
+ok - session-lock: a published Windows Claude pid is accepted only with its session id
+ok - session-lock: a Windows /clear keeps the lock and re-keys its session id
+ok - session-lock: a Windows-tagged lock stays inert off Windows
+ok - session-lock: a task lease follows a live tagged lock holder and goes stale when it exits
+ok - session-lock: a harness in the local process table resolves untagged when ps has no -o option
+ok - session-lock e2e: a version-named session claims the home and arms supervision
+ok - session-lock e2e: a session parented by a harness-named daemon claims the home and arms supervision
+ok - session-lock e2e: a version-named session under a harness-named daemon keeps its own lock
+ok - session-lock e2e: a background session keeps its lock and its supervision across a recycled helper chain and a same-process session-id change
+ok - session-lock: a same-session confirmation waits for the claim lock and refreshes a re-keyed id
+ok - session-lock: a waiting confirmation does not steal another session's lock
+ok - session-lock: a failed lock write restores the previous sidecar
+ok - session-lock: a failed lock write removes a newly created sidecar
+ok - session-lock: a verified reclaim keeps the new sidecar beside the new pid
+ok - session-lock: a re-anchor keeps both supervision actors' task leases live
+ok - session-lock: a re-anchor during a rewake turn keeps the mid-turn auto-arm proof healthy
+SUITE_RESULT suite=fm-session-lock-ancestry.test.sh exit=0
+All three suites passed at the expected pipeline head.
+final_exit=0

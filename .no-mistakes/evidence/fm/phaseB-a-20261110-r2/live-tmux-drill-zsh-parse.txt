@@ -1,0 +1,35 @@
+=== mode=zsh-parse head=231b1730b44581398fe93f9517b79f4fa9bfd2b7 budget=60s
+--- launcher rc / elapsed s
+1 61
+--- launcher stdout (versioned events)
+HANDOFF v1 ts=1794453493 event=handoff_started nonce=d1212380a02432890eb1ed6d791f51ca attempt=1 pid=43437 handle=%0 reason=awaiting_ack
+HANDOFF v1 ts=1794453523 event=handoff_retry nonce=fc84f99591e1d1269e54349a635a1332 attempt=2 pid=43437 handle=%0 reason=awaiting_ack
+HANDOFF v1 ts=1794453553 event=handoff_failed nonce=fc84f99591e1d1269e54349a635a1332 attempt=2 pid=43437 handle=none reason=deadline
+--- launcher stderr
+--- state/handoff-events.log
+HANDOFF v1 ts=1794453493 event=handoff_started nonce=d1212380a02432890eb1ed6d791f51ca attempt=1 pid=43437 handle=%0 reason=awaiting_ack
+HANDOFF v1 ts=1794453523 event=handoff_retry nonce=fc84f99591e1d1269e54349a635a1332 attempt=2 pid=43437 handle=%0 reason=awaiting_ack
+HANDOFF v1 ts=1794453553 event=handoff_failed nonce=fc84f99591e1d1269e54349a635a1332 attempt=2 pid=43437 handle=none reason=deadline
+--- successor argv log
+successor argv count=2
+[--dangerously-skip-permissions]
+[Firstmate handoff successor. Read the entire document at /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.mImHR2/data/handoff.md. Its sha256 must be 85b9997444caa84b2c9f8e780a1c73cedcfe76398a3c1593a517b8cd27a4955b. Before doing any project work or starting a read-only session, run this exact acknowledgement command: FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.mImHR2 bash {run-worktree}/bin/fm-handoff-ack.sh d1212380a02432890eb1ed6d791f51ca 85b9997444caa84b2c9f8e780a1c73cedcfe76398a3c1593a517b8cd27a4955b . It writes your harness pid, lock pid, terminal handle and document hash, and transfers the predecessor lock only after validation. If it refuses, emit no claim of readiness and exit; it records handoff_reject. After success run FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.mImHR2 bash {run-worktree}/bin/fm-session-start.sh and continue the document. nonce=d1212380a02432890eb1ed6d791f51ca]
+successor argv count=2
+[--dangerously-skip-permissions]
+[Firstmate handoff successor. Read the entire document at /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.mImHR2/data/handoff.md. Its sha256 must be 85b9997444caa84b2c9f8e780a1c73cedcfe76398a3c1593a517b8cd27a4955b. Before doing any project work or starting a read-only session, run this exact acknowledgement command: FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.mImHR2 bash {run-worktree}/bin/fm-handoff-ack.sh fc84f99591e1d1269e54349a635a1332 85b9997444caa84b2c9f8e780a1c73cedcfe76398a3c1593a517b8cd27a4955b . It writes your harness pid, lock pid, terminal handle and document hash, and transfers the predecessor lock only after validation. If it refuses, emit no claim of readiness and exit; it records handoff_reject. After success run FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.mImHR2 bash {run-worktree}/bin/fm-session-start.sh and continue the document. nonce=fc84f99591e1d1269e54349a635a1332]
+--- successor zsh log
+Firstmate captain ready in Orca (term_43fb4f12-498c-4d27-8f11-469964862c43).
+zsh:1: command not found: it
+zsh rc=127
+--- successor ack output
+--- ack records
+--- predecessor pid: 43437  lock line1: 43437
+--- pending claim present: no
+--- .handoff-successor:
+none
+--- tmux windows
+primary:0 bash pane=%0 dead=0 cmd=bash
+primary:1 firstmate pane=%2 dead=0 cmd=bash
+--- fm-captain-locate.sh
+CAPTAIN v1 pid=43437 handle=%0 state=held
+locate rc=0

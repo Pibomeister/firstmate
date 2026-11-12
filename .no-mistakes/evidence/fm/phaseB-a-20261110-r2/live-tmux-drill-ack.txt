@@ -1,0 +1,31 @@
+=== mode=ack head=231b1730b44581398fe93f9517b79f4fa9bfd2b7 budget=60s
+--- launcher rc / elapsed s
+0 6
+--- launcher stdout (versioned events)
+HANDOFF v1 ts=1794453599 event=handoff_started nonce=b16167b3cec35b170bc966cd02061184 attempt=1 pid=22005 handle=%0 reason=awaiting_ack
+--- launcher stderr
+--- state/handoff-events.log
+HANDOFF v1 ts=1794453599 event=handoff_started nonce=b16167b3cec35b170bc966cd02061184 attempt=1 pid=22005 handle=%0 reason=awaiting_ack
+HANDOFF v1 ts=1794453603 event=handoff_ack nonce=b16167b3cec35b170bc966cd02061184 attempt=0 pid=30225 handle=%1 reason=lock_transferred
+--- successor argv log
+successor argv count=2
+--- successor zsh log
+--- successor ack output
+HANDOFF v1 ts=1794453603 event=handoff_ack nonce=b16167b3cec35b170bc966cd02061184 attempt=0 pid=30225 handle=%1 reason=lock_transferred
+ack rc=0
+--- ack records
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.rRh4Z9/data/handoff-ack-b16167b3cec35b170bc966cd02061184.json
+{"version":1,"nonce":"b16167b3cec35b170bc966cd02061184","sha256":"85b9997444caa84b2c9f8e780a1c73cedcfe76398a3c1593a517b8cd27a4955b","harness_pid":30225,"fm_lock_pid":30225,"harness_start":"1794453599.875462","terminal_handle":"%1"}
+--- predecessor pid: 22005  lock line1: 30225
+--- pending claim present: no
+--- .handoff-successor:
+pid=30225
+nonce=b16167b3cec35b170bc966cd02061184
+handoff=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.rRh4Z9/data/handoff.md
+sha256=85b9997444caa84b2c9f8e780a1c73cedcfe76398a3c1593a517b8cd27a4955b
+--- tmux windows
+primary:0 bash pane=%0 dead=0 cmd=bash
+primary:1 firstmate pane=%1 dead=0 cmd=bash
+--- fm-captain-locate.sh
+CAPTAIN v1 pid=30225 handle=%1 state=held
+locate rc=0

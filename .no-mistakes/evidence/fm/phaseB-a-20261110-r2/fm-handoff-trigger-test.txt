@@ -1,0 +1,3 @@
+HEAD=231b1730b44581398fe93f9517b79f4fa9bfd2b7
+fm-test-queue: ticket 1370, position 7: waiting behind 6 earlier ticket(s)
+Terminated: 15
