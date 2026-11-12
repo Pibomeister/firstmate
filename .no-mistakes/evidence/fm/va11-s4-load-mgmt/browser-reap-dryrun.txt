@@ -1,28 +1,25 @@
-orphan_pid=1713 (ppid 1, cwd /tmp/fm-browser-cwd.FJbrLJ/orphan)  owned_pid=1994 (parent argv0 'claude')
-## default (browser-min-age 3600), dry run
-keep	browser	young	1713	/private/tmp/fm-browser-cwd.FJbrLJ/orphan	/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --user-data-dir=/tmp/fm-browser-cwd.FJbrLJ/orphan/profile --no-first-run about:blank
-keep	browser	live-ancestor	1994	/private/tmp/fm-browser-cwd.FJbrLJ/owned	/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --user-data-dir=/tmp/fm-browser-cwd.FJbrLJ/owned/profile --no-first-run about:blank
+### orphan pid=53651 (ppid 1), parented chrome pid=53767 (ppid 53679 bash)
+### default (browser-min-age 3600), dry run
 reap	browser	owner-gone	8872	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
 reap	browser	owner-gone	17840	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
 reap	browser	owner-gone	20361	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
 reap	browser	owner-gone	46650	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+keep	browser	young	53651	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-reapwork.lG6eXM/orphan	/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --no-first-run --user-data-dir=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-
 reap	browser	owner-gone	59418	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
 reap	browser	owner-gone	71800	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
 reap	browser	owner-gone	79459	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
 reap	browser	owner-gone	84189	/Users/eduardopicazo/.no-mistakes/worktrees/d4cb77c98cd3/01M75Q3E5GTWHEA93XDX762KNN	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
-summary: mode=dry-run terminals=0 reap=0 keep=0 browsers=10 reap=8 keep=2
+summary: mode=dry-run terminals=78 reap=0 keep=78 browsers=9 reap=8 keep=1
 rc=0
-
-## --browser-min-age 0, dry run
-keep	browser	owner-live	1713	/private/tmp/fm-browser-cwd.FJbrLJ/orphan	/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --user-data-dir=/tmp/fm-browser-cwd.FJbrLJ/orphan/profile --no-first-run about:blank
-keep	browser	live-ancestor	1994	/private/tmp/fm-browser-cwd.FJbrLJ/owned	/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --user-data-dir=/tmp/fm-browser-cwd.FJbrLJ/owned/profile --no-first-run about:blank
+### --browser-min-age 0, dry run
 reap	browser	owner-gone	8872	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
 reap	browser	owner-gone	17840	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
 reap	browser	owner-gone	20361	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
 reap	browser	owner-gone	46650	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
+keep	browser	owner-live	53651	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-reapwork.lG6eXM/orphan	/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --no-first-run --user-data-dir=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-
 reap	browser	owner-gone	59418	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
 reap	browser	owner-gone	71800	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
 reap	browser	owner-gone	79459	/Users/eduardopicazo/.no-mistakes/worktrees/dae650f15fc0/01M73W9H1AB6ZH9YHGSW4CN25G	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
 reap	browser	owner-gone	84189	/Users/eduardopicazo/.no-mistakes/worktrees/d4cb77c98cd3/01M75Q3E5GTWHEA93XDX762KNN	node /opt/homebrew/lib/node_modules/agent-browser/bin/../dist/daemon.js
-summary: mode=dry-run terminals=0 reap=0 keep=0 browsers=10 reap=8 keep=2
+summary: mode=dry-run terminals=78 reap=0 keep=78 browsers=9 reap=8 keep=1
 rc=0

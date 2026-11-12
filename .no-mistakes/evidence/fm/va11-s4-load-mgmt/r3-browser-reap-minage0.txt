@@ -1,0 +1,9 @@
+## dry run --browser-min-age 0 (orphan=orphan-chrome-cwd.d2sXI8 live-parent=liveparent-chrome-cwd.9QTgWn)
+exit=0
+reap	browser	owner-gone	93726	/private/tmp/orphan-chrome-cwd.d2sXI8	/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --user-data-dir=/tmp/orphan-chrome-cwd.d2sXI8/profile --no-first-run --remot
+summary: mode=dry-run terminals=78 reap=0 keep=78 browsers=10 reap=10 keep=0
+## live-parent chrome listed?
+0
+## live-parent ppid chain
+10616 68539 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Ve
+68539 68391 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --user-data-dir=/tmp/liveparent-chrome-cwd.9QTgWn/profile --no-first-run --remote-debugging-port=0 about:blank

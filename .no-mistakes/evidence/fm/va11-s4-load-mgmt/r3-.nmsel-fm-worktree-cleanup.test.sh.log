@@ -1,0 +1,9 @@
+1..6
+ok - landed worktree caches and browser profiles are pruned before removal
+ok - a cache beside real untracked work keeps the worktree and the cache
+ok - unlanded work keeps its caches
+ok - a cache root holding tracked files keeps the worktree
+ok - a browser profile directory whose name holds a space is pruned whole
+ok - a low-disk reading is logged by the cleanup pass
+FM_TEST_COMPLETE
+.nmsel-fm-worktree-cleanup.test.sh rc=0

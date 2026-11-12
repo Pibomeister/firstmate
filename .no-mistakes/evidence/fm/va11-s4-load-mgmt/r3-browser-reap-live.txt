@@ -1,0 +1,12 @@
+## processes
+38149 93726 00:34 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/157.0.8103.51/Helpers/Google Chrome Helper (Ape
+10616 68539 00:13 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/157.0.8103.51/Helpers/Google Chrome Helper (Ape
+
+## crash handlers / updaters sharing orphan cwd
+
+## dry run --browser-min-age 0
+exit=
+
+## dry run default (1 h floor)
+keep	browser	young	93726	/private/tmp/orphan-chrome-cwd.d2sXI8	/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --user-data-dir=/tmp/orphan-chrome-cwd.d2sXI8/profile --no-first-run --remote-debugg
+summary: mode=dry-run terminals=78 reap=0 keep=78 browsers=10 reap=8 keep=2

@@ -1,4 +1,10 @@
-### live sweep against the real local Orca + paired 'Abaco Hetzner' environment, worktree path with no terminals: /tmp/fm-sweep-empty.ISqi
-closed=0 environments=5
-exit=2
-Note: 5 = local + 4 paired (Abaco Hetzner, GrokBot, M3 Max MBP, Mac Studio). GrokBot's terminal list fails (exit 1, unreachable), so the sweep returns exit 2 = count is a floor, as its contract states. Nothing was closed.
+$ fm_backend_orca_close_worktree_terminals "/Users/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M76C2AACDJ49MYJE75VD8SKT"   # real Orca, local + paired environments, path with no terminals
+closed=0 environments=5 remote_matched=0
+rc=2
+( timeout 300 bash -c  _ "$PWD" 2>&1; )  1.61s user 0.57s system 6% cpu 33.872 total
+
+paired environments known to Orca:
+ - 75e0730e-8a5c-4d9f-b9ef-800ae8a5d84c Abaco Hetzner
+ - 0dc2e463-a306-4b72-9362-07d21baadbee GrokBot
+ - dfd0c0d1-57e0-4f3f-833b-2eca5f4c0e22 M3 Max MBP
+ - 54eb5af4-596f-41e0-8eb0-23156723f948 Mac Studio

@@ -1,0 +1,86 @@
+### dry run (disk alarm volume forced unreadable via test seam)
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wtclean.cQNthb/repo main checkout
+worktree-cleanup: dry-run prune caches /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wtclean.cQNthb/wt: .cache node_modules/.cache playwright_chromiumdev_profile-abc
+worktree-cleanup: dry-run /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wtclean.cQNthb/wt pull request MERGED https://github.com/Pibomeister/firstmate/pull/223
+worktree-cleanup: stop budget reached
+rc=0
+caches still present: .agents
+.cache
+.ci-evidence
+.claude
+.codex
+.cursor
+.git
+.gitattributes
+.github
+.gitignore
+.greptile
+.grok
+.live-check
+.no-mistakes.yaml
+.omp
+.opencode
+.pi
+.tasks.toml
+AGENTS.md
+CLAUDE.md
+CONTRIBUTING.md
+GROK_BOT.md
+LICENSE
+README.md
+VISION.md
+assets
+bin
+docs
+node_modules
+playwright_chromiumdev_profile-abc
+skills
+tests
+### real pass
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wtclean.cQNthb/repo main checkout
+worktree-cleanup: prune caches /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wtclean.cQNthb/wt: .cache node_modules/.cache playwright_chromiumdev_profile-abc
+worktree-cleanup: remove /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wtclean.cQNthb/wt pull request MERGED https://github.com/Pibomeister/firstmate/pull/223
+worktree-cleanup: stop budget reached
+rc=0
+wt exists? no
+wt2 contents: .agents
+.cache
+.ci-evidence
+.claude
+.codex
+.cursor
+.git
+.gitattributes
+.github
+.gitignore
+.greptile
+.grok
+.live-check
+.no-mistakes.yaml
+.omp
+.opencode
+.pi
+.tasks.toml
+AGENTS.md
+CLAUDE.md
+CONTRIBUTING.md
+GROK_BOT.md
+LICENSE
+README.md
+VISION.md
+assets
+bin
+docs
+my-notes.txt
+skills
+tests
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wtclean.cQNthb/repo  499014c [main]
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wtclean.cQNthb/wt2   499014c [fm/fm-ak-unattended-launch]
++ fm/fm-ak-unattended-launch
+  fm/fm-pr-merge-argmax
+### pass with disk-alarm volume = 20 MB disposable disk image (test seam), second worktree has my-notes.txt + .cache
+worktree-cleanup: disk-alarm: level=stop free_kib=19964 volume=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-wtclean.cQNthb/vol
+worktree-cleanup: skip /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wtclean.cQNthb/repo main checkout
+worktree-cleanup: report /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wtclean.cQNthb/wt2 commits not on PR head
+rc=0
+wt2 exists? yes notes: notes cache kept: z
