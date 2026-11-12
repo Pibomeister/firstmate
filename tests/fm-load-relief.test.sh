@@ -112,15 +112,30 @@ test_priority_tie_pauses_newest_dispatch() {
   pass "a priority tie pauses the newest dispatch first"
 }
 
-test_missing_priority_is_never_paused() {
-  local home out
+test_unprioritized_pauses_first_and_absent_never() {
+  local home
   home=$(make_home noprio)
-  add_worker "$home" unset-prio 100 -
-  add_worker "$home" not-in-backlog 200 absent
-  out=$(sustained_pass "$home" noprio 1000)
-  assert_equals "" "$(cat "$TMP_ROOT/noprio.log")" "a task with no priority was paused"
-  assert_contains "$out" "no live worker to pause" "the pass did not report that nothing was pausable"
-  pass "a task with no backlog priority is never paused, even as the only candidate"
+  printf 'sustain-secs=60\npause-per-check=4\n' > "$home/config/load-relief"
+  add_worker "$home" numbered 900 4
+  add_worker "$home" old-unset 100 -
+  add_worker "$home" new-unset 200 -
+  add_worker "$home" not-in-backlog 950 absent
+  sustained_pass "$home" noprio 1000 >/dev/null
+  assert_equals "$(printf 'control new-unset interrupt\ncontrol old-unset interrupt\ncontrol numbered interrupt')" \
+    "$(cat "$TMP_ROOT/noprio.log")" "pause order was not unprioritized newest-first, then numbered"
+  [ ! -f "$home/state/load-relief/paused/not-in-backlog" ] || fail "a task with no backlog item was paused"
+  pass "an item with no numeric priority pauses before a numbered one, newest first; no backlog item is never paused"
+}
+
+test_pr_ready_lane_is_not_paused() {
+  local home
+  home=$(make_home prready)
+  add_worker "$home" ready 900 9
+  printf 'pr=https://example.invalid/pr/1\n' >> "$home/state/ready.meta"
+  add_worker "$home" working 100 1
+  sustained_pass "$home" prready 1000 >/dev/null
+  assert_equals "control working interrupt" "$(cat "$TMP_ROOT/prready.log")" "a lane with a ready PR was paused"
+  pass "a lane with a ready PR is never paused, even as the first candidate"
 }
 
 test_waiting_worker_is_not_paused_and_decision_survives() {
@@ -239,7 +254,8 @@ test_no_lane_capacity_is_a_noop() {
 
 test_sustained_high_pauses_lowest_then_falling_resumes
 test_priority_tie_pauses_newest_dispatch
-test_missing_priority_is_never_paused
+test_unprioritized_pauses_first_and_absent_never
+test_pr_ready_lane_is_not_paused
 test_waiting_worker_is_not_paused_and_decision_survives
 test_finished_pause_record_dropped_without_steer
 test_tab_separated_max_load1_sets_ceiling
