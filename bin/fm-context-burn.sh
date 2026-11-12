@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# fm-context-burn.sh - record the external auto-compact footer and point at a report.
+# fm-context-burn.sh - record the external auto-compact percent, emit the
+# low-context park-then-handoff action, and point at a report.
 #
 # Usage:
 #   fm-context-burn.sh record --turn-type <type> [--percent <0-100>] [--session <id>]
@@ -9,7 +10,9 @@
 # record appends one sample to state/context-burn.tsv:
 #   epoch, session, turn_type, percent
 # The percent is the external "N% until auto-compact" figure, never a model's
-# self-estimate. Pass --percent only for a footer already read from the pane.
+# self-estimate. Pass --percent when the caller already measured that figure:
+# a pane footer, or the derived percent the handoff hook computed for the
+# call that crosses the threshold.
 # Without it, and only inside a genuine primary home, record reads the
 # supervisor pane footer with the parser bin/fm-heartbeat.sh uses, taking the
 # line above the input box when one is drawn. Claude Code
@@ -53,12 +56,13 @@
 # question - the session inventories its own open questions, the way the
 # captain-hold lifecycle requires - it only emits the action at the
 # threshold. A session id of "unknown" never emits it. The per-session
-# marker state/.context-autopark.<session> records a `pending <pid>`
-# claim while the wake is being queued and `done` once it is queued, so a
-# session that recovers context and drops again does not emit it twice,
-# while a claim whose recorder died before the append finished is
-# reclaimed by the next sample instead of suppressing the action for the
-# rest of the session. The claim lifecycle runs under the wake-queue lock,
+# marker state/.context-autopark.<session> records `pending <pid> <epoch>`
+# while the wake is being queued and `done <epoch>` once it is queued, so a
+# session that recovers context and drops again does not emit it twice.
+# The next sample reclaims a pending claim when its pid is dead or its epoch
+# is more than 300 seconds old, and it reclaims an empty or malformed claim,
+# instead of suppressing the action for the rest of the session. The claim
+# lifecycle runs under the wake-queue lock,
 # and reclaiming first looks for an already-published wake, both in the
 # queue and in the wake ledger (state/wake-ledger.tsv, which records the key
 # of every row an acknowledgement removes), so interruption at any point in
