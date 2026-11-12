@@ -7374,22 +7374,103 @@ PY
   pass "concurrent snapshot writers serialize via file lock and preserve all repository entries"
 }
 
-test_status_snapshot_foreign_branch_unknown_status_still_engages() {
+# A no-mistakes task worktree lives at worktrees/<repo_id>/<run_id> of a bare
+# repo at repos/<repo_id>.git. repos.working_path stays the main checkout, which
+# git's candidate list does not emit (the bare repo is listed first). The
+# snapshot still has to bind that repo when a run's worktree_dir is this
+# checkout, and has to fall back when it is not.
+test_status_snapshot_linked_worktree_distinct_main_checkout() {
+  local d=$TMP_ROOT/snap-linked-main bare wt head before after out
+  reset_fakes
+  mkdir -p "$d/state" "$d/repos" "$d/worktrees/repo-task"
+  git -C "$d" init -q -b main seed
+  git -C "$d/seed" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -q --allow-empty -m init
+  git clone -q --bare "$d/seed" "$d/repos/repo-task.git"
+  bare=$d/repos/repo-task.git
+  git -C "$bare" worktree add -q -b fm/ship-a "$d/worktrees/repo-task/01M7LINKEDWT000000000001"
+  wt=$(git -C "$d/worktrees/repo-task/01M7LINKEDWT000000000001" rev-parse --show-toplevel)
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/snap-linked-main.meta" "window=fm:fm-snap-linked-main" "worktree=$wt" "kind=ship"
+  head=$(git -C "$wt" rev-parse HEAD)
+  NM_HOME="$d/nm-home"
+  export NM_HOME
+  mkdir -p "$NM_HOME"
+  git -C "$d" init -q -b main main-checkout
+  init_full_nm_sqlite "$NM_HOME/state.sqlite" "$d/main-checkout" "$head"
+  python3 - "$NM_HOME/state.sqlite" "$wt" <<'PY'
+import sqlite3, sys
+db_path, wt = sys.argv[1:]
+with sqlite3.connect(db_path) as db:
+    db.execute("UPDATE repos SET id = 'repo-task' WHERE id = 'repo-1'")
+    db.execute(
+        "UPDATE runs SET repo_id = 'repo-task', worktree_dir = ? WHERE id = '01M7SNAPSHOTA0000000000001'",
+        (wt,),
+    )
+PY
+
+  cat > "$d/fakebin/no-mistakes" <<'EOF'
+#!/usr/bin/env bash
+echo "unexpected-cli-call: $*" >> "${FM_NM_CLI_LOG}"
+exit 99
+EOF
+  chmod +x "$d/fakebin/no-mistakes"
+  export FM_NM_CLI_LOG="$d/nm-cli.log"
+  FM_NM_SNAPSHOT_TTL=60
+  FM_CREW_STATE_NM_TIMEOUT=120
+  export FM_NM_SNAPSHOT_TTL FM_CREW_STATE_NM_TIMEOUT
+
+  before=$(git hash-object "$NM_HOME/state.sqlite")
+  out=$(run_crew_state "$d" snap-linked-main)
+  after=$(git hash-object "$NM_HOME/state.sqlite")
+  [ "$before" = "$after" ] || fail "linked-worktree snapshot read modified state.sqlite"
+  [ ! -e "$d/nm-cli.log" ] || fail "linked worktree with a distinct main checkout called no-mistakes CLI"
+  assert_contains "$out" "state: parked" "snapshot binds a task worktree whose registered working_path is the main checkout"
+  assert_contains "$out" "run: 01M7SNAPSHOTA0000000000001" "snapshot selects the run recorded for that task worktree"
+  [ -f "$d/state/.nm-status-snapshot.json" ] || fail "linked-worktree snapshot was not cached"
+
+  python3 - "$NM_HOME/state.sqlite" "$d/main-checkout" <<'PY'
+import sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as db:
+    db.execute(
+        "UPDATE runs SET worktree_dir = ? WHERE id = '01M7SNAPSHOTA0000000000001'",
+        (sys.argv[2],),
+    )
+PY
+  before=$(git hash-object "$NM_HOME/state.sqlite")
+  out=$(run_crew_state "$d" snap-linked-main)
+  after=$(git hash-object "$NM_HOME/state.sqlite")
+  [ "$before" = "$after" ] || fail "cached linked-worktree confirm modified state.sqlite"
+  [ -e "$d/nm-cli.log" ] || fail "a cached snapshot ignored a worktree_dir that is not this checkout"
+  assert_not_contains "$out" "state: parked" "a worktree_dir for another checkout does not keep the cached snapshot"
+  assert_not_contains "$out" "run: 01M7SNAPSHOTA0000000000001" "a mismatched worktree_dir does not keep the cached run"
+
+  rm -f "$d/nm-cli.log" "$d/state/.nm-status-snapshot.json"
+  before=$(git hash-object "$NM_HOME/state.sqlite")
+  out=$(run_crew_state "$d" snap-linked-main)
+  after=$(git hash-object "$NM_HOME/state.sqlite")
+  [ "$before" = "$after" ] || fail "cold linked-worktree confirm modified state.sqlite"
+  [ -e "$d/nm-cli.log" ] || fail "a cold snapshot ignored a worktree_dir that is not this checkout"
+  assert_not_contains "$out" "state: parked" "a cold read does not bind when worktree_dir is another checkout"
+  unset FM_NM_CLI_LOG FM_NM_SNAPSHOT_TTL FM_CREW_STATE_NM_TIMEOUT
+  pass "a task worktree binds by repo id and worktree_dir when working_path is the main checkout"
+}
+
+test_status_snapshot_foreign_branch_unknown_status_falls_back_to_cli() {
   local d=$TMP_ROOT/snap-foreign-unknown head before after out
   reset_fakes
   mkdir -p "$d/state"
   make_repo_on_branch "$d/wt" fm/ship-a
   make_fakebin "$d" >/dev/null
   fm_write_meta "$d/state/snap-foreign-unknown.meta" "window=fm:fm-snap-foreign-unknown" "worktree=$d/wt" "kind=ship"
-  printf 'working [at=1700000000]: validating\n' > "$d/state/snap-foreign-unknown.status"
   head=$(git -C "$d/wt" rev-parse HEAD)
   NM_HOME="$d/nm-home"
   export NM_HOME
   mkdir -p "$NM_HOME"
   init_full_nm_sqlite "$NM_HOME/state.sqlite" "$d/wt" "$head"
 
-  # Insert a newer run on a foreign branch in the same repository with status
-  # 'handed_off' (not in KNOWN_RUN_STATUSES).
+  # A newer row on another branch of the same repository carries handed_off,
+  # a status the snapshot vocabulary does not record. The crew's own branch
+  # row stays a known running gate. The whole snapshot still has to give way.
   python3 - "$NM_HOME/state.sqlite" "$head" <<'PY'
 import sqlite3, sys
 db_path, head = sys.argv[1:]
@@ -7401,23 +7482,24 @@ with sqlite3.connect(db_path) as db:
     )
 PY
 
-  cat > "$d/fakebin/no-mistakes" <<'EOF'
-#!/usr/bin/env bash
-echo "unexpected-cli-call: $*" >> "${FM_NM_CLI_LOG}"
-exit 99
-EOF
-  chmod +x "$d/fakebin/no-mistakes"
-  export FM_NM_CLI_LOG="$d/nm-cli.log"
+  FM_FAKE_AXI_HOME="repo: $d/wt
+count: 1 of 1 total
+runs[1]{id,branch,status,head,pr}:
+  01M7FOREIGNFALLBACK0000001,fm/ship-a,running,$head,\"\""
+  FM_FAKE_AXI_STATUS="id: 01M7FOREIGNFALLBACK0000001
+branch: fm/ship-a
+status: running
+head: $head"
+  FM_FAKE_AXI_STATUS_RUN=$FM_FAKE_AXI_STATUS
 
   before=$(git hash-object "$NM_HOME/state.sqlite")
   out=$(run_crew_state "$d" snap-foreign-unknown)
   after=$(git hash-object "$NM_HOME/state.sqlite")
-  unset FM_NM_CLI_LOG
-  [ "$before" = "$after" ] || fail "foreign-branch unknown-status snapshot read modified state.sqlite"
-  [ ! -e "$d/nm-cli.log" ] || fail "foreign-branch handed_off status disabled the snapshot and called no-mistakes CLI"
-  assert_contains "$out" "state: parked" "snapshot still engages for crew branch when foreign branch has handed_off status"
-  assert_contains "$out" "run: 01M7SNAPSHOTA0000000000001" "snapshot attributes crew's own branch run despite foreign handed_off row"
-  pass "an unknown status on a foreign branch does not disable the status snapshot"
+  [ "$before" = "$after" ] || fail "foreign-branch unknown-status fallback modified state.sqlite"
+  assert_contains "$out" "state: working" "unknown run status on another branch falls back to the CLI"
+  assert_contains "$out" "run: 01M7FOREIGNFALLBACK0000001" "CLI fallback supplies the run id when any branch has an unknown status"
+  assert_not_contains "$out" "run: 01M7SNAPSHOTA0000000000001" "an unknown status on another branch does not keep the snapshot run"
+  pass "an unknown status on any branch rejects the snapshot and falls back to the CLI"
 }
 
 test_status_snapshot_own_branch_unknown_status_falls_back_to_cli() {
@@ -7701,7 +7783,8 @@ test_status_snapshot_moved_live_run_reads_cli
 test_status_snapshot_quiet_uses_configured_step_quiet_warning
 test_status_snapshot_missing_ci_log_falls_back_to_cli_not_last_activity
 test_status_snapshot_concurrent_writers_preserve_all_repos
-test_status_snapshot_foreign_branch_unknown_status_still_engages
+test_status_snapshot_linked_worktree_distinct_main_checkout
+test_status_snapshot_foreign_branch_unknown_status_falls_back_to_cli
 test_status_snapshot_own_branch_unknown_status_falls_back_to_cli
 
 echo "all fm-crew-state tests passed"

@@ -946,7 +946,7 @@ def capture_repo_from_sqlite(db_real: str):
                 raise ValueError("invalid repo row")
             repos[repo_id] = working_path
 
-        repo_id = resolve_repo_id(repos)
+        repo_id = resolve_repo_id(repos, db)
         if not repo_id:
             return repos, None, None
 
@@ -1083,7 +1083,84 @@ def get_worktree_candidates():
     return WT_CANDIDATES
 
 
-def resolve_repo_id(repos_map: dict):
+def connect_ro(db_real: str):
+    uri = Path(db_real).as_uri() + "?mode=ro"
+    db = sqlite3.connect(uri, uri=True, timeout=30)
+    try:
+        db.execute("PRAGMA query_only = ON")
+    except sqlite3.Error:
+        db.close()
+        raise
+    return db
+
+
+def nm_layout_repo_ids():
+    paths = []
+    for cand in get_worktree_candidates():
+        if cand:
+            paths.append(cand)
+    common = git_out(["rev-parse", "--git-common-dir"])
+    if common:
+        if not os.path.isabs(common):
+            top = git_out(["rev-parse", "--show-toplevel"]) or wt
+            common = os.path.normpath(os.path.join(top, common))
+        paths.append(common)
+        try:
+            paths.append(os.path.realpath(common))
+        except OSError:
+            pass
+    ids = []
+    for path in paths:
+        parts = os.path.normpath(path).split(os.sep)
+        for i, part in enumerate(parts):
+            rid = ""
+            if part == "worktrees" and i + 2 < len(parts):
+                rid = parts[i + 1]
+            elif part == "repos" and i + 1 < len(parts):
+                name = parts[i + 1]
+                if name.endswith(".git") and name != ".git":
+                    rid = name[:-4]
+            if rid and rid not in ids:
+                ids.append(rid)
+    return ids
+
+
+def worktree_dir_confirms(db, repo_id: str) -> bool:
+    cols = {
+        row[1]
+        for row in db.execute("PRAGMA table_info(runs)").fetchall()
+        if len(row) > 1 and isinstance(row[1], str)
+    }
+    if "worktree_dir" not in cols:
+        return False
+    cand = set()
+    for path in get_worktree_candidates():
+        if not path:
+            continue
+        cand.add(os.path.normpath(path))
+        try:
+            cand.add(os.path.realpath(path))
+        except OSError:
+            pass
+    if not cand:
+        return False
+    for (wdir,) in db.execute(
+        "SELECT worktree_dir FROM runs WHERE repo_id = ? AND worktree_dir IS NOT NULL AND worktree_dir != ''",
+        (repo_id,),
+    ):
+        if not isinstance(wdir, str) or not wdir:
+            continue
+        if os.path.normpath(wdir) in cand:
+            return True
+        try:
+            if os.path.realpath(wdir) in cand:
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def resolve_repo_id(repos_map: dict, db=None):
     candidates = get_worktree_candidates()
     by_exact = {}
     by_real = {}
@@ -1091,12 +1168,26 @@ def resolve_repo_id(repos_map: dict):
         by_exact.setdefault(wpath, []).append(rid)
         by_real.setdefault(os.path.realpath(wpath), []).append(rid)
 
+    ambiguous = False
     for cand in candidates:
-        if cand in by_exact and len(by_exact[cand]) == 1:
-            return by_exact[cand][0]
-        if cand in by_real and len(by_real[cand]) == 1:
-            return by_real[cand][0]
-    return None
+        exact = by_exact.get(cand, [])
+        if len(exact) > 1:
+            ambiguous = True
+        elif len(exact) == 1:
+            return exact[0]
+        real = by_real.get(cand, [])
+        if len(real) > 1:
+            ambiguous = True
+        elif len(real) == 1:
+            return real[0]
+    if ambiguous or db is None:
+        return None
+    ids = nm_layout_repo_ids()
+    if len(ids) != 1 or ids[0] not in repos_map:
+        return None
+    if not worktree_dir_confirms(db, ids[0]):
+        return None
+    return ids[0]
 
 
 def parse_findings_list(findings_json: str):
@@ -1314,6 +1405,12 @@ try:
         snap = load_cached_snapshot(snapshot_file, db_real)
         if snap is not None and is_fresh(snap.get("repos_captured_at"), now):
             cached_id = resolve_repo_id(snap["repos"])
+            if not cached_id:
+                try:
+                    with closing(connect_ro(db_real)) as confirm_db:
+                        cached_id = resolve_repo_id(snap["repos"], confirm_db)
+                except (sqlite3.Error, OSError, ValueError):
+                    cached_id = None
             entry = snap["repo_snapshots"].get(cached_id) if cached_id else None
             if isinstance(entry, dict) and is_fresh(entry.get("captured_at"), now) and isinstance(entry.get("runs"), list):
                 repos, repo_id, repo_runs = snap["repos"], cached_id, entry["runs"]
@@ -1354,7 +1451,7 @@ try:
         if (not isinstance(rid, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", rid)
                 or not isinstance(br, str) or not br
                 or not isinstance(st, str) or not re.fullmatch(r"[a-z_-]+", st)
-                or (br == branch and st not in KNOWN_RUN_STATUSES)
+                or st not in KNOWN_RUN_STATUSES
                 or not isinstance(head_sha, str) or not re.fullmatch(r"[a-fA-F0-9]{7,40}", head_sha)):
             raise ValueError("invalid run row")
 
