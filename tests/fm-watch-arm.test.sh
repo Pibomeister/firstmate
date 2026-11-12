@@ -2422,6 +2422,136 @@ test_detach_hold_refuses_away_mode_and_reports_failure() {
   pass "detach-hold: state/.afk refuses it, and a dead watcher exits with a FAILED line"
 }
 
+# --- managed-hold holder: an attached arm reports queued work -----------------
+# The watchdog's managed-hold watcher stays alive across wakes, so an arm that
+# attached to it (the Claude Stop hook's foreground arm) never sees the cycle
+# end. It must report main's queued rows itself, or the primary idles with the
+# queue full and the beacon fresh (the 2026-11-11/12 stall).
+
+# Start a real managed-hold watcher as the singleton holder, as the watchdog does.
+start_managed_seed_watcher() {  # <state> <fakebin> <watch-out>
+  local state=$1 fakebin=$2 out=$3 i
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_WATCH_MANAGED_HOLD=1 \
+    "$WATCH" --managed-hold > "$out" &
+  SEED_PID=$!
+  i=0
+  while [ "$i" -lt 60 ]; do
+    [ "$(cat "$state/.watch.lock/pid" 2>/dev/null || true)" = "$SEED_PID" ] \
+      && [ -e "$state/.last-watcher-beat" ] && break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$(cat "$state/.watch.lock/pid" 2>/dev/null || true)" = "$SEED_PID" ] \
+    || fail "managed-hold seed watcher did not take the lock"
+}
+
+queue_main_wake() {  # <state> <key> <payload>
+  FM_STATE_OVERRIDE="$1" bash -c '. "$1"; fm_wake_append check "$2" "$3"' \
+    _ "$ROOT/bin/fm-wake-lib.sh" "$2" "$3" || fail "could not queue the fixture wake"
+}
+
+# Attach a real arm with extra environment (VAR=value ...) to the live holder.
+start_attached_arm_env() {  # <state> <fakebin> <arm-out> <env...>
+  local state=$1 fakebin=$2 armout=$3 i
+  shift 3
+  env "$@" PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_ARM_ATTACH_POLL=0.1 \
+    FM_ARM_CONFIRM_TIMEOUT=5 "$WATCH_ARM" > "$armout" &
+  ARM_PID=$!
+  i=0
+  while [ "$i" -lt 80 ]; do
+    grep -qF "watcher: attached pid=$SEED_PID" "$armout" 2>/dev/null && break
+    is_live_non_zombie "$ARM_PID" || break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  grep -qF "watcher: attached pid=$SEED_PID" "$armout" \
+    || fail "arm did not attach to the managed-hold watcher: $(cat "$armout")"
+}
+
+stop_seed() {
+  kill -TERM "$SEED_PID" 2>/dev/null || true
+  wait_for_exit "$SEED_PID" 50 >/dev/null 2>&1 || true
+}
+
+test_attached_arm_reports_queued_wake_under_managed_hold() {
+  local dir state fakebin out armout status
+  dir=$(make_case managed-hold-queued)
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  armout="$dir/arm.out"
+  start_managed_seed_watcher "$state" "$fakebin" "$out"
+  queue_main_wake "$state" fixture-queued 'check: fixture queued wake'
+  start_attached_arm_env "$state" "$fakebin" "$armout" FM_WATCH_MANAGED_HOLD=
+  # One attach poll is 0.1s; allow 5s for a loaded host.
+  wait_for_exit "$ARM_PID" 50
+  status=$?
+  expect_code 0 "$status" "an arm attached to a managed-hold holder must exit 0 once main has queued work: $(cat "$armout")"
+  grep -qx 'check: rearm-resurface' "$armout" \
+    || fail "attached arm did not report the queued work: $(cat "$armout")"
+  is_live_non_zombie "$SEED_PID" \
+    || fail "reporting queued work must leave the managed-hold watcher running"
+  grep -q 'reason=attached-delivered-wake' "$state/.watch-cycle-exits.log" \
+    || fail "the managed-hold report was not classified in the lifecycle ledger"
+  stop_seed
+  pass "watch-arm: an arm attached to a managed-hold holder reports main's queued work and exits 0"
+}
+
+test_attached_arm_keeps_following_managed_hold_when_not_reportable() {
+  local dir state fakebin out armout variant
+  for variant in empty managed afk; do
+    dir=$(make_case "managed-hold-follow-$variant")
+    state="$dir/state"
+    fakebin="$dir/fakebin"
+    out="$dir/watch.out"
+    armout="$dir/arm.out"
+    start_managed_seed_watcher "$state" "$fakebin" "$out"
+    [ "$variant" = empty ] || queue_main_wake "$state" "fixture-$variant" 'check: fixture queued wake'
+    if [ "$variant" = managed ]; then
+      start_attached_arm_env "$state" "$fakebin" "$armout" FM_WATCH_MANAGED_HOLD=1
+    else
+      [ "$variant" != afk ] || : > "$state/.afk"
+      start_attached_arm_env "$state" "$fakebin" "$armout" FM_WATCH_MANAGED_HOLD=
+    fi
+    sleep 3
+    is_live_non_zombie "$ARM_PID" \
+      || fail "$variant: the attached arm must keep following the holder: $(cat "$armout")"
+    ! grep -qx 'check: rearm-resurface' "$armout" \
+      || fail "$variant: the attached arm reported work it must not report: $(cat "$armout")"
+    kill -TERM "$ARM_PID" 2>/dev/null || true
+    wait_for_exit "$ARM_PID" 50 >/dev/null 2>&1 || true
+    stop_seed
+  done
+  pass "watch-arm: an empty queue, the watchdog's own managed arm, and away mode keep following the managed-hold holder"
+}
+
+test_handling_successor_reports_only_newer_rows_under_managed_hold() {
+  local dir state fakebin out armout status
+  dir=$(make_case managed-hold-successor)
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  armout="$dir/arm.out"
+  start_managed_seed_watcher "$state" "$fakebin" "$out"
+  queue_main_wake "$state" fixture-delivered 'check: fixture delivered wake'
+  start_attached_arm_env "$state" "$fakebin" "$armout" FM_WATCH_MANAGED_HOLD= FM_WATCH_PREDECESSOR_ARM_PID=999999
+  sleep 3
+  is_live_non_zombie "$ARM_PID" \
+    || fail "a handling successor must not re-report the row its predecessor delivered: $(cat "$armout")"
+  queue_main_wake "$state" fixture-newer 'check: fixture newer wake'
+  wait_for_exit "$ARM_PID" 50
+  status=$?
+  expect_code 0 "$status" "a handling successor must report a newer queued row: $(cat "$armout")"
+  grep -qx 'check: rearm-resurface' "$armout" \
+    || fail "handling successor did not report the newer row: $(cat "$armout")"
+  stop_seed
+  pass "watch-arm: a handling successor under a managed-hold holder reports only rows newer than its attach"
+}
+
+test_attached_arm_reports_queued_wake_under_managed_hold
+test_attached_arm_keeps_following_managed_hold_when_not_reportable
+test_handling_successor_reports_only_newer_rows_under_managed_hold
 test_detach_hold_leaves_a_hold_behind_the_arm
 test_detach_hold_refuses_away_mode_and_reports_failure
 test_grok_one_stale_notice_leaves_the_watcher_holding_the_lock
