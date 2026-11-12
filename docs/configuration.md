@@ -810,6 +810,59 @@ An Orca supervisor terminal has no native busy signal, so the daemon's busy guar
 
 Selecting any other supervisor backend, including `zellij`, `cmux`, or `tern`, refuses at daemon startup instead of trying tmux injection primitives against a non-tmux pane.
 
+## Automatic away mode (`config/auto-away`)
+
+The primary home's locked session start arms `bin/fm-auto-away.sh` on the existing authenticated watcher-check scheduler.
+It requests plain `/afk` at 23:00 in the configured local zone, or after 7200 seconds without a genuine captain message.
+The first scheduled check after a crossing queues entry, including a missed clock crossing on the previous local date.
+No extra timer or daemon is installed; the normal check cadence and primary-turn availability bound entry latency.
+
+`config/auto-away` is an optional, local, gitignored file of `key=value` lines.
+Blank lines and lines beginning with `#` are ignored.
+Malformed settings fail visibly instead of executing configuration as shell code.
+A scheduled check reports each distinct failure once as a `check` wake and stays silent while that same failure remains.
+A local-time conversion failure skips only the clock trigger.
+A check keeps that failure receipt when it does not evaluate the clock because a posture or pending return is present, the activity stamp is missing or unreadable, or the stamp is in the future.
+A check that finishes after converting the time, or that has `time=off` or `enabled=off`, clears it.
+Any other check-failure receipt is cleared by the next check that completes without reporting a failure.
+A failed automatic entry, including a configuration or staging failure before launch, releases its matching request receipt, and so does an entry that is obsolete because the trigger, the settings, or the activity stamp no longer match.
+A later scheduled check can queue another retry once that entry's retry time has arrived, until entry succeeds, a new captain message arrives, or a captain-opened session start clears it.
+An entry that is obsolete only because an away or quiet posture is already in place keeps that receipt.
+A successful entry records fulfillment in that receipt as the activity stamp followed by ` fulfilled`, even if the originating check did not save its pending receipt.
+The fulfilled receipt blocks both scheduled requests and entry replays after return, including when the return could not record activity.
+`enabled=off` drops a pending receipt on the next check, and on an arm that is not a captain-opened session start, so a request that never entered can queue again after automatic entry is turned back on.
+That check or arm leaves a fulfilled receipt in place.
+A new captain message or a captain-opened session start clears the receipt.
+A present configuration that cannot be read reports a failure and permits no automatic entry; it never falls back to enabled defaults.
+A captain-opened session start still records its activity when the configuration is malformed or unreadable, so repairing it later cannot fire on the stamp from before that start.
+The entry command reports each distinct failure, keyed by its message or by the launcher's exit status and first error line, once, and the next check retries that new failure at once.
+An unchanged repeat prints nothing and holds the next retry for 1800 seconds.
+A success, a new captain message, or a captain-opened session start clears the failure record.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `on` | `off` disables automatic entry; the next arm, including a clear or compact, retires its check, and a captain-opened start still records activity. |
+| `time` | `23:00` | Local daily trigger in 24-hour `HH:MM`, or `off` to disable this trigger. |
+| `silence-seconds` | `7200` | Silence window in seconds; `0` disables this trigger. |
+| `timezone` | `local` | Host process local zone, or an IANA zone file such as `America/Mexico_City` (a non-zone data file such as `zone.tab` is rejected); set this when the host and captain use different zones. |
+
+The emitted supervision instructions require `captain-message` on each genuine captain message on every primary harness.
+This explicit activity boundary avoids treating operational prompts, watcher wakes, output changes, or compactions as human activity.
+It depends on main following those instructions, rather than on a vendor transcript parser.
+A captain-opened locked session start counts as captain activity, because the captain's opening message arrives before the instruction to record it, so a clock crossing missed while no session ran never fires when a session opens.
+A clear or compaction, whether it re-emits the digest or runs a full one, a handoff successor recorded in `state/.handoff-successor`, and a watchdog restart keep the last activity stamp, so they move neither trigger.
+A watchdog restart is recognized by the restart prompt the session-lock holder was launched with, so a home watched by another home's watchdog is covered, and also by a pending restart row for the home's canonical path in its own watchdog ledger.
+An absent or unreadable activity stamp never proves silence.
+A new message cancels a pending request, and the normal return path records activity before clearing away mode, so the same clock crossing cannot immediately put a returned captain away again.
+An existing away or quiet record, legacy mode flag, or pending return blocks automatic entry.
+Secondmate homes do not arm this feature.
+While that check stays registered, an idle primary home still needs a live watcher, as [turnend-guard](turnend-guard.md#supervision-need) describes, and it is never parked.
+`enabled=off` retires the check on the next arm, including a clear or compact.
+
+The [`afk` skill](../.agents/skills/afk/SKILL.md#automatic-entry) owns entry completion, the single announcement, and ordinary return behavior.
+The automatic entry carries no away words and grants no new approval authority.
+`bin/fm-auto-away.sh --help` owns the commands; `tests/fm-auto-away.test.sh` exercises the triggers, cancellation, deduplication, timezone, and check binding.
+
 ## Away-mode wedge alarm channels (config/wedge-alarm)
 
 See [`wedge-alarm.md`](wedge-alarm.md) for away and quiet alert behavior, channels, overrides, defaults, failure handling, verification, and a copyable config.

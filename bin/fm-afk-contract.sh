@@ -29,6 +29,8 @@
 # response, because the captain who typed /afk may not look at the screen again.
 # The read-back is printed after the record exists; it is informational, never a
 # gate, and never asks for a go.
+# The configured automatic trigger (bin/fm-auto-away.sh) uses this same entry
+# with no words, after revalidating its scheduled request in main's turn.
 #
 # THE RECORD IS THE WORDS. The captain's away words are the whole mandate: they
 # are recorded verbatim, read back as plain sentences by firstmate after entry,
