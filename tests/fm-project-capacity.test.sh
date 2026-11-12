@@ -649,8 +649,48 @@ SH
   pass "an Orca spawn takes the shared project lock whenever a same-origin clone is capped and defers before creating anything"
 }
 
+test_lane_capacity_defers_spawn_past_home_cap() {
+  local case_dir home out rc=0 before worktrees
+  case_dir=$(make_case lane-cap task-c)
+  home="$case_dir/home"
+  printf '1\n' > "$home/config/lane-capacity"
+  write_live "$home" live-a "$case_dir/project"
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a spawn past the lane cap was not deferred: $out"
+  assert_contains "$out" "deferred: lane capacity" "the lane deferral did not name lane capacity"
+  assert_nothing_created "$case_dir" "$home" task-c "$before" "$worktrees"
+  pass "a spawn past the home lane cap is deferred with exit 75 and creates nothing"
+}
+
+test_lane_load_ceiling_defers_spawn_with_stubbed_load() {
+  local case_dir home out rc=0 before worktrees
+  case_dir=$(make_case lane-load task-c)
+  home="$case_dir/home"
+  printf '9\nmax-load1 20\n' > "$home/config/lane-capacity"
+  cat > "$case_dir/fakebin/sysctl" <<'SH'
+#!/usr/bin/env bash
+case "${2:-}" in
+  vm.loadavg) echo "{ 200.00 1.00 1.00 }" ;;
+  hw.logicalcpu) echo 16 ;;
+  *) exec /usr/bin/sysctl "$@" ;;
+esac
+SH
+  chmod +x "$case_dir/fakebin/sysctl"
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a spawn under a stubbed load of 200 was not deferred: $out"
+  assert_contains "$out" "deferred: lane capacity" "the load deferral did not name lane capacity"
+  assert_nothing_created "$case_dir" "$home" task-c "$before" "$worktrees"
+  pass "a spawn under a stubbed load over max-load1 is deferred with exit 75 and creates nothing"
+}
+
 test_undeclared_capacity_keeps_dispatch_uncapped
 test_available_capacity_admits_the_worker
+test_lane_capacity_defers_spawn_past_home_cap
+test_lane_load_ceiling_defers_spawn_with_stubbed_load
 test_exhausted_capacity_defers_without_leaving_anything_behind
 test_spaced_project_name_is_declared
 test_hash_prefixed_project_name_is_declared
