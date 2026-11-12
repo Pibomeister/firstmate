@@ -43,7 +43,7 @@
 #                       when this session actually holds the lock. Detect-only
 #                       diagnostics always run, including
 #                       `SHARED_STATE: global git config changed since the last
-#                       session start (<path>) - ...` and
+#                       session start (<detail>) - ...` and
 #                       `SHARED_STATE: shared no-mistakes database schema
 #                       changed since the last session start (<detail>) - ...`
 #                       against state/.session-start-shared-baseline for global
@@ -994,11 +994,68 @@ hash_file_sha256() {
   return 1
 }
 
-git_config_slot_state() {  # <path> -> absent | sha256:<hex> (rc 0), unreadable (rc 2), or hash failure (rc 1)
-  local path=$1 digest
+# Called only when [ ! -e "$path" ] && [ ! -L "$path" ].
+# Distinguishes confirmed absence (ENOENT -> 0) from permission or traversal blocks
+# (EACCES/EPERM/ENOTDIR/ELOOP -> 2, non-recordable unreadable) and transient lookup
+# errors (any other errno -> 1, skip without alarming or updating baseline).
+classify_missing_path() {
+  local path=$1 rc cur parent
+  if command -v perl >/dev/null 2>&1; then
+    rc=0
+    # shellcheck disable=SC2016  # Perl code uses its own @ARGV/$!, not shell expansion.
+    perl -MErrno=ENOENT,EACCES,EPERM,ENOTDIR,ELOOP -e '
+      my @s = lstat($ARGV[0]);
+      exit 1 if @s;
+      exit 0 if $!{ENOENT};
+      exit 2 if $!{EACCES} || $!{EPERM} || $!{ENOTDIR} || $!{ELOOP};
+      exit 1;
+    ' "$path" 2>/dev/null || rc=$?
+    return "$rc"
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    rc=0
+    # shellcheck disable=SC2016  # Python code uses its own sys.argv, not shell expansion.
+    python3 -c '
+import errno, os, sys
+try:
+    os.lstat(sys.argv[1])
+    sys.exit(1)
+except FileNotFoundError:
+    sys.exit(0)
+except PermissionError:
+    sys.exit(2)
+except OSError as exc:
+    sys.exit(2 if exc.errno in (errno.ENOTDIR, errno.ELOOP) else 1)
+' "$path" 2>/dev/null || rc=$?
+    return "$rc"
+  fi
+  cur=$path
+  while :; do
+    parent=$(dirname "$cur" 2>/dev/null) || return 1
+    [ -n "$parent" ] && [ "$parent" != "$cur" ] || return 1
+    if [ -L "$parent" ] || [ -e "$parent" ]; then
+      if [ -d "$parent" ] && [ -x "$parent" ]; then
+        return 0
+      fi
+      return 2
+    fi
+    cur=$parent
+  done
+}
+
+git_config_slot_state() {  # <path> -> absent | sha256:<hex> (rc 0), unreadable (rc 2), or lookup/hash failure (rc 1)
+  local path=$1 digest miss_rc=0
   if [ ! -e "$path" ] && [ ! -L "$path" ]; then
-    printf 'absent\n'
-    return 0
+    classify_missing_path "$path" || miss_rc=$?
+    if [ "$miss_rc" -eq 0 ]; then
+      printf 'absent\n'
+      return 0
+    fi
+    if [ "$miss_rc" -eq 2 ]; then
+      printf 'unreadable\n'
+      return 2
+    fi
+    return 1
   fi
   if [ -f "$path" ] && [ -r "$path" ]; then
     digest=$(hash_file_sha256 "$path" 2>/dev/null) || return 1
@@ -1013,7 +1070,7 @@ git_config_slot_state() {  # <path> -> absent | sha256:<hex> (rc 0), unreadable 
 # Prints two lines: <slots-key>, <state-value>.
 # Returns 0 when every watched slot is absent, devnull, or hashed cleanly;
 # returns 2 when at least one slot is unreadable (so drift can still alarm without
-# overwriting the baseline); returns 1 when hashing fails.
+# overwriting the baseline); returns 1 when lookup or hashing fails transiently.
 global_git_config_snapshot() {
   local slot_state slot_rc=0 xdg_file home_file home_dir xdg_state xdg_rc=0 home_state home_rc=0
   if [ "${GIT_CONFIG_GLOBAL+x}" = x ]; then
@@ -1044,15 +1101,23 @@ global_git_config_snapshot() {
 # Prints two lines: <db-path>, <schema-state>.
 # Returns 0 on recordable states (absent | sha256:<hex>), 2 on actionable non-recordable
 # states (corrupt | unreadable) so they alarm without overwriting the baseline, and 1 on
-# transient OperationalError/OSError, timeout, or missing python3 so no false alarm or
-# baseline mutation occurs.
+# transient OperationalError/OSError, lookup error, timeout, or missing python3 so no
+# false alarm or baseline mutation occurs.
 nm_db_schema_snapshot() {
-  local db_path out rc
+  local db_path out rc miss_rc=0
   db_path=$(fm_nm_state_db "$FM_HOME")
   [ -n "$db_path" ] || return 1
   if [ ! -e "$db_path" ] && [ ! -L "$db_path" ]; then
-    printf '%s\nabsent\n' "$db_path"
-    return 0
+    classify_missing_path "$db_path" || miss_rc=$?
+    if [ "$miss_rc" -eq 0 ]; then
+      printf '%s\nabsent\n' "$db_path"
+      return 0
+    fi
+    if [ "$miss_rc" -eq 2 ]; then
+      printf '%s\nunreadable\n' "$db_path"
+      return 2
+    fi
+    return 1
   fi
   if [ ! -f "$db_path" ] || [ ! -r "$db_path" ]; then
     printf '%s\nunreadable\n' "$db_path"
@@ -1099,22 +1164,22 @@ print("sha256:" + h.hexdigest())
   return 1
 }
 
-# Detect-only comparison runs on every session start; only a full locked start
-# (not read-only, not --reemit) whose git and database snapshots both succeed
-# writes or updates state/.session-start-shared-baseline.
-# It watches only global/XDG git config and the no-mistakes state database schema;
-# system git config and per-clone .git/config are not watched, though the brief rule forbids them too.
+# Scope and line-format contract: see step 2 of the file header above.
 check_shared_state_since_last_start() {
-  local prev_git_slots='' prev_git_state='' prev_nm_path='' prev_nm_schema=''
+  local prev_git_slots='' prev_git_state='' prev_nm_path='' prev_nm_schema='' baseline_ok=0 baseline_miss_rc=0
   local git_snap='' git_rc=0 git_ok=0 curr_git_slots='' curr_git_state=''
   local nm_snap='' nm_rc=0 nm_ok=0 curr_nm_path='' curr_nm_schema=''
   local git_alarm=0 nm_alarm=0
-  local report_label xdg_path home_path prev_xdg prev_home curr_xdg curr_home nm_detail tmp
-  if [ -f "$SHARED_BASELINE_FILE" ] && [ ! -L "$SHARED_BASELINE_FILE" ]; then
+  local report_label xdg_path home_path xdg_label home_label prev_xdg prev_home curr_xdg curr_home xdg_bad home_bad nm_detail tmp
+  if [ ! -e "$SHARED_BASELINE_FILE" ] && [ ! -L "$SHARED_BASELINE_FILE" ]; then
+    classify_missing_path "$SHARED_BASELINE_FILE" || baseline_miss_rc=$?
+    [ "$baseline_miss_rc" -eq 0 ] && baseline_ok=1
+  elif [ -f "$SHARED_BASELINE_FILE" ] && [ ! -L "$SHARED_BASELINE_FILE" ] && [ -r "$SHARED_BASELINE_FILE" ]; then
     prev_git_slots=$(sed -n '1p' "$SHARED_BASELINE_FILE" 2>/dev/null || true)
     prev_git_state=$(sed -n '2p' "$SHARED_BASELINE_FILE" 2>/dev/null || true)
     prev_nm_path=$(sed -n '3p' "$SHARED_BASELINE_FILE" 2>/dev/null || true)
     prev_nm_schema=$(sed -n '4p' "$SHARED_BASELINE_FILE" 2>/dev/null || true)
+    baseline_ok=1
   fi
   git_snap=$(global_git_config_snapshot) || git_rc=$?
   if [ "$git_rc" -eq 0 ] || [ "$git_rc" -eq 2 ]; then
@@ -1140,6 +1205,7 @@ check_shared_state_since_last_start() {
       env:*)
         report_label=${curr_git_slots#env:}
         [ -n "$report_label" ] || report_label='<empty>'
+        [ "$curr_git_state" = unreadable ] && report_label="$report_label: unreadable"
         ;;
       xdg:*'|home:'*)
         xdg_path=${curr_git_slots#xdg:}
@@ -1147,22 +1213,30 @@ check_shared_state_since_last_start() {
         home_path=${curr_git_slots#*|home:}
         curr_xdg=${curr_git_state%%|*}
         curr_home=${curr_git_state#*|}
+        xdg_label=$xdg_path
+        home_label=$home_path
+        [ "$curr_xdg" = unreadable ] && xdg_label="$xdg_path: unreadable"
+        [ "$curr_home" = unreadable ] && home_label="$home_path: unreadable"
         if [ -n "$prev_git_state" ] && [ "$curr_git_slots" = "$prev_git_slots" ]; then
           prev_xdg=${prev_git_state%%|*}
           prev_home=${prev_git_state#*|}
-          if [ "$curr_xdg" != "$prev_xdg" ] && [ "$curr_home" != "$prev_home" ]; then
-            report_label="$xdg_path, $home_path"
-          elif [ "$curr_xdg" != "$prev_xdg" ]; then
-            report_label="$xdg_path"
+          xdg_bad=0
+          home_bad=0
+          { [ "$curr_xdg" != "$prev_xdg" ] || [ "$curr_xdg" = unreadable ]; } && xdg_bad=1
+          { [ "$curr_home" != "$prev_home" ] || [ "$curr_home" = unreadable ]; } && home_bad=1
+          if [ "$xdg_bad" -eq 1 ] && [ "$home_bad" -eq 1 ]; then
+            report_label="$xdg_label, $home_label"
+          elif [ "$xdg_bad" -eq 1 ]; then
+            report_label="$xdg_label"
           else
-            report_label="$home_path"
+            report_label="$home_label"
           fi
         elif [ "$curr_xdg" = unreadable ] && [ "$curr_home" = unreadable ]; then
-          report_label="$xdg_path, $home_path"
+          report_label="$xdg_label, $home_label"
         elif [ "$curr_xdg" = unreadable ]; then
-          report_label="$xdg_path"
+          report_label="$xdg_label"
         else
-          report_label="$home_path"
+          report_label="$home_label"
         fi
         ;;
       *)
@@ -1187,7 +1261,8 @@ check_shared_state_since_last_start() {
     esac
     printf 'SHARED_STATE: shared no-mistakes database schema changed since the last session start (%s) - workers must never alter shared databases; inspect no-mistakes version and state database before dispatching pipeline runs\n' "$nm_detail"
   fi
-  if [ "$READ_ONLY" -eq 0 ] && [ "$REEMIT" -eq 0 ] && [ "$git_ok" -eq 1 ] && [ "$nm_ok" -eq 1 ]; then
+  if [ "$READ_ONLY" -eq 0 ] && [ "$REEMIT" -eq 0 ] && [ "$baseline_ok" -eq 1 ] \
+    && [ "$git_ok" -eq 1 ] && [ "$nm_ok" -eq 1 ]; then
     tmp=$(mktemp "$STATE/.session-start-shared-baseline.XXXXXX" 2>/dev/null || true)
     if [ -n "$tmp" ]; then
       if ! { printf '%s\n%s\n%s\n%s\n' \

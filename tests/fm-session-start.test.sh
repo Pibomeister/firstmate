@@ -4228,7 +4228,137 @@ SH
   out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
   assert_not_contains "$out" "SHARED_STATE:" "restored valid state.sqlite alarmed despite preserved baseline"
 
-  pass "session start preserves shared-state baseline byte-for-byte across missing python3, locks, timeouts, corruption, and unreadable files"
+  # 7. Parent-directory search-permission removal (EACCES) on NM_HOME: must NOT record absent,
+  # must emit repeated unreadable diagnostics across starts, and must preserve baseline bytes
+  # even with simultaneous git config drift.
+  chmod 000 "$nm_home"
+  if [ ! -x "$nm_home" ]; then
+    git config --file "$git_home/.gitconfig" user.email edited-during-nm-dir-eacces@example.invalid
+    out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+    local out2
+    git config --file "$git_home/.gitconfig" user.email valid@example.invalid
+    out2=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+    chmod 700 "$nm_home"
+    assert_contains "$out" "SHARED_STATE: global git config changed since the last session start ($git_home/.gitconfig)" \
+      "inaccessible NM_HOME parent directory suppressed simultaneous git config alarm"
+    assert_contains "$out" "SHARED_STATE: shared no-mistakes database schema changed since the last session start ($db: unreadable)" \
+      "inaccessible NM_HOME parent directory did not report unreadable state.sqlite on first start"
+    assert_contains "$out2" "SHARED_STATE: shared no-mistakes database schema changed since the last session start ($db: unreadable)" \
+      "inaccessible NM_HOME parent directory went silent on second start (recorded as absent)"
+    [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
+      || fail "inaccessible NM_HOME parent directory mutated .session-start-shared-baseline"
+    out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+    assert_not_contains "$out" "SHARED_STATE:" "restoring NM_HOME search permission alarmed despite preserved baseline"
+  else
+    chmod 700 "$nm_home"
+  fi
+
+  # 8. Parent-directory search-permission removal (EACCES) on XDG git config directory AND
+  # GIT_CONFIG_GLOBAL parent directory: repeated unreadable diagnostics and byte-for-byte baseline
+  # preservation, including simultaneous state.sqlite DDL drift.
+  mkdir -p "$git_home/.config/git"
+  git config --file "$git_home/.config/git/config" user.name valid-xdg
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  baseline_before=$(cat "$home/state/.session-start-shared-baseline")
+  chmod 000 "$git_home/.config/git"
+  if [ ! -x "$git_home/.config/git" ]; then
+    python3 - "$db" <<'PY'
+import sqlite3, sys
+conn = sqlite3.connect(sys.argv[1])
+conn.execute("ALTER TABLE runs ADD COLUMN during_git_eacces TEXT")
+conn.commit()
+conn.close()
+PY
+    out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+    cp "$db_backup" "$db"
+    local out_xdg2
+    out_xdg2=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+    chmod 700 "$git_home/.config/git"
+    assert_contains "$out" "SHARED_STATE: global git config changed since the last session start ($git_home/.config/git/config: unreadable)" \
+      "inaccessible XDG git parent directory did not report unreadable XDG config on first start"
+    assert_contains "$out" "SHARED_STATE: shared no-mistakes database schema changed since the last session start ($db)" \
+      "inaccessible XDG git parent directory suppressed simultaneous state.sqlite DDL alarm"
+    assert_contains "$out_xdg2" "SHARED_STATE: global git config changed since the last session start ($git_home/.config/git/config: unreadable)" \
+      "inaccessible XDG git parent directory went silent on second start (recorded as absent)"
+    [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
+      || fail "inaccessible XDG git parent directory mutated .session-start-shared-baseline"
+    out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+    assert_not_contains "$out" "SHARED_STATE:" "restoring XDG git directory search permission alarmed despite preserved baseline"
+  else
+    chmod 700 "$git_home/.config/git"
+  fi
+
+  mkdir -p "$git_home/env-cfg-dir"
+  git config --file "$git_home/env-cfg-dir/config" user.name env-valid
+  out=$(env GIT_CONFIG_GLOBAL="$git_home/env-cfg-dir/config" \
+    HOME="$git_home" XDG_CONFIG_HOME="$git_home/.config" NM_HOME="$nm_home" \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
+    "$SESSION_START")
+  baseline_before=$(cat "$home/state/.session-start-shared-baseline")
+  chmod 000 "$git_home/env-cfg-dir"
+  if [ ! -x "$git_home/env-cfg-dir" ]; then
+    out=$(env GIT_CONFIG_GLOBAL="$git_home/env-cfg-dir/config" \
+      HOME="$git_home" XDG_CONFIG_HOME="$git_home/.config" NM_HOME="$nm_home" \
+      FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
+      "$SESSION_START")
+    local out_env2
+    out_env2=$(env GIT_CONFIG_GLOBAL="$git_home/env-cfg-dir/config" \
+      HOME="$git_home" XDG_CONFIG_HOME="$git_home/.config" NM_HOME="$nm_home" \
+      FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
+      "$SESSION_START")
+    chmod 700 "$git_home/env-cfg-dir"
+    assert_contains "$out" "SHARED_STATE: global git config changed since the last session start ($git_home/env-cfg-dir/config: unreadable)" \
+      "inaccessible GIT_CONFIG_GLOBAL parent directory did not report unreadable config"
+    assert_contains "$out_env2" "SHARED_STATE: global git config changed since the last session start ($git_home/env-cfg-dir/config: unreadable)" \
+      "inaccessible GIT_CONFIG_GLOBAL parent directory went silent on second start"
+    [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
+      || fail "inaccessible GIT_CONFIG_GLOBAL parent directory mutated .session-start-shared-baseline"
+  else
+    chmod 700 "$git_home/env-cfg-dir"
+  fi
+
+  # 9. Transient lookup failure (non-ENOENT, non-permission errno such as EIO) on a watched path:
+  # skips silently without recording absent or suppressing simultaneous drift in the other resource.
+  local real_perl eio_bin xdg_cfg_backup
+  real_perl=$(command -v perl || true)
+  if [ -n "$real_perl" ]; then
+    eio_bin="$TMP_ROOT/shared-preserve-eio-bin"
+    mkdir -p "$eio_bin"
+    xdg_cfg_backup="$TMP_ROOT/shared-preserve-xdg-config.bak"
+    out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+    baseline_before=$(cat "$home/state/.session-start-shared-baseline")
+    mv "$git_home/.config/git/config" "$xdg_cfg_backup"
+    cat > "$eio_bin/perl" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  if [ "\$arg" = "$git_home/.config/git/config" ]; then
+    exit 1
+  fi
+done
+exec "$real_perl" "\$@"
+SH
+    chmod +x "$eio_bin/perl"
+    python3 - "$db" <<'PY'
+import sqlite3, sys
+conn = sqlite3.connect(sys.argv[1])
+conn.execute("ALTER TABLE runs ADD COLUMN during_transient_eio TEXT")
+conn.commit()
+conn.close()
+PY
+    out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$eio_bin:$fakebin:$BASE_PATH")
+    mv "$xdg_cfg_backup" "$git_home/.config/git/config"
+    cp "$db_backup" "$db"
+    assert_not_contains "$out" "global git config changed" \
+      "transient lookup failure on XDG git config false-alarmed as absent or removed"
+    assert_contains "$out" "SHARED_STATE: shared no-mistakes database schema changed since the last session start ($db)" \
+      "transient git lookup failure suppressed simultaneous state.sqlite DDL alarm"
+    [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
+      || fail "transient lookup failure mutated .session-start-shared-baseline"
+    out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+    assert_not_contains "$out" "SHARED_STATE:" "restoring after transient lookup failure alarmed despite preserved baseline"
+  fi
+
+  pass "session start preserves shared-state baseline byte-for-byte across missing python3, locks, timeouts, corruption, unreadable files, inaccessible parent directories, and transient lookup failures"
 }
 
 test_context_digest_absent_empty_present
