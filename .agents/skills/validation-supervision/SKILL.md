@@ -26,7 +26,8 @@ Outside that supersession sequence, `bin/fm-pr-resync.sh <task-id> <worktree> <b
 
 An ask-user finding returns as `needs-decision`; firstmate loads `ask-user-authority` and either decides or escalates per that skill.
 Send the same worker one exact decision naming the decision key, step, action, affected finding IDs, instructions where needed, and exact response command, passing `--resolve-key` so the worker's open decision record closes at answer time.
-Cover every finding the gate holds in that one response command, so one fix round settles them all, and relay a captain's answer in the captain's words so the worker can carry it into a later run's `--intent`.
+Cover every finding the gate holds in that one response command - your decision on the ask-user IDs plus the worker's choice for every other finding from its snapshot's `other:` line, through `--findings` and `--ignore` - so one fix round settles them all.
+Relay a captain's answer in the captain's words and append those words to the brief's `## Captain's intent` as AGENTS.md section 7 requires, so this worker or any replacement carries it into a later run's `--intent`.
 Require the matching `resolved` event, forbid `--yes`, and require the worker to process every synchronous return until completion or a genuinely new escalation.
 Resume fleet supervision immediately after the decision lands.
 

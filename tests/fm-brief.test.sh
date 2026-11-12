@@ -599,8 +599,14 @@ test_no_mistakes_dod_convergence_lines() {
       "$variant no-mistakes DOD must require targeted tests, heavy ones through the test line"
     assert_grep "never replaces, skips, or narrows a pipeline step, and the gate still runs in full" "$brief" \
       "$variant no-mistakes DOD must keep the full gate after the preflight"
-    assert_grep "no-mistakes axi respond --action fix --findings <id1>,<id2>,...\` call, so one fix round covers them all" "$brief" \
+    assert_grep "no-mistakes axi respond --action fix --findings <ids to fix> --ignore <ids to decline>\` call, so one fix round covers them all" "$brief" \
       "$variant no-mistakes DOD must answer every fix-gate finding in one round"
+    assert_grep "firstmate's decision then returns one exact response command that covers every finding" "$brief" \
+      "$variant no-mistakes DOD must fold ask-user and other findings into one round"
+    assert_grep "end that file with one line \`other: fix=<ids> decline=<ids>\`" "$brief" \
+      "$variant no-mistakes DOD must record the worker's choice for non-ask-user findings"
+    assert_grep "The one exception is a captain-ordered supersession that firstmate steers you through" "$brief" \
+      "$variant no-mistakes DOD must carve the supersession sequence out of commit-on-top"
     assert_grep "commit on top of it, never rebase, amend, squash, reset, or force-push it" "$brief" \
       "$variant no-mistakes DOD must keep follow-up work on top of a validated head"
     assert_grep "before you start one run for all of them, not one run per fix" "$brief" \

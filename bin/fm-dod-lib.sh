@@ -421,6 +421,7 @@ fm_ask_user_escalation_block() {  # <data-dir> <task-id>
    For a no-mistakes ask-user gate specifically, escalate all ask-user findings as one event plus one snapshot file, using that same shape even when the gate holds only a single ask-user finding: write only the ask-user findings, verbatim and unparaphrased (id, severity, file, line, description, authority), to \`$data/$id/nm-<run>-findings.txt\`, then report the gate with
    \`needs-decision [at=<epoch>] [key=nm-<run>-<step>]: ask-user findings=<id1>,<id2>,... file=$data/$id/nm-<run>-findings.txt\`
    naming every ask-user finding id from that gate. The status line only points at the file; it never restates or summarizes a finding's content.
+   When the gate also holds findings that are not ask-user, end that file with one line \`other: fix=<ids> decline=<ids>\` giving your choice for each of them, so firstmate's one response command can cover every finding.
 EOF
 }
 
@@ -479,8 +480,10 @@ When the captain's intent refers to a report, decision, or PR ("do items 1, 2, 3
 This replaces the no-mistakes skill's advice to enrich \`--intent\` with decisions and tradeoffs; that advice does not apply to Firstmate-dispatched work.
 Do carry into \`--intent\` every decision the captain already made on this task, in the captain's words as firstmate relayed them - a later clarification, or the captain's answer to an earlier ask-user finding - so the reviewer does not raise again what the captain settled; a decision made by firstmate or by you is still not captain intent.
 Do not hand-edit, commit, or fix findings yourself while a run is active - the pipeline applies every fix.
-At a fix gate, select every finding you want fixed in one \`no-mistakes axi respond --action fix --findings <id1>,<id2>,...\` call, so one fix round covers them all instead of one finding per round; when the gate also holds ask-user findings, escalate those first, and once firstmate's decision returns use its exact response command as that one round.
+At a fix gate, answer every finding the gate shows in one \`no-mistakes axi respond --action fix --findings <ids to fix> --ignore <ids to decline>\` call, so one fix round covers them all instead of one finding per round.
+When the gate also holds ask-user findings, escalate them first with your choice for the gate's other findings in the snapshot's \`other:\` line; firstmate's decision then returns one exact response command that covers every finding, and you run it as that one round.
 Once a run has pushed this branch, its head with every pipeline fix commit is the base for follow-up work: commit on top of it, never rebase, amend, squash, reset, or force-push it, and collect every follow-up fix you know of into commits before you start one run for all of them, not one run per fix.
+The one exception is a captain-ordered supersession that firstmate steers you through, which replaces the obsolete work from its pre-invalidation base under that steer.
 When \`branch_sync\` reports this branch diverged from or rewritten against the pipeline's published head, never archive, reset, or sync it by hand: run \`$resync_q $task_q "\$(git rev-parse --show-toplevel)" $branch_q\`; on exit 3 follow its monitoring-only lines, and on any other nonzero exit report a blocker with its output.
 
 $drive_block
