@@ -784,7 +784,9 @@ test_orca_other_remove_error_is_visible_and_retains_records() {
 # recorded terminal and a path-only match. The fake Orca logs every call to
 # FM_ORCA_SWEEP_LOG, records each successful close per environment so later
 # lists drop that handle, fails a close for any handle named in
-# FM_ORCA_FAIL_HANDLE, and removes the worktree directory on `worktree rm`.
+# FM_ORCA_FAIL_HANDLE, fails every paired-environment list when
+# FM_ORCA_REMOTE_LIST_FAIL=1, and removes the worktree directory on
+# `worktree rm`.
 configure_orca_sweep_case() {  # <case-dir>
   local case_dir=$1
   configure_orca_teardown_case "$case_dir"
@@ -809,6 +811,7 @@ case "${1:-} ${2:-}" in
     fi
     case "$*" in
       *--environment*)
+        [ "${FM_ORCA_REMOTE_LIST_FAIL:-0}" != 1 ] || exit 1
         remote='{"handle":"term-remote-1","worktreePath":"'"$FM_ORCA_RECORDED_PATH"'"}'
         grep -qx 'env-remote term-task-x1' "$closed_file" \
           || remote="$remote"',{"handle":"term-task-x1","worktreePath":"'"$FM_ORCA_RECORDED_PATH"'"}'
@@ -880,6 +883,26 @@ test_orca_teardown_refuses_when_the_post_close_list_fails() {
   [ "$(cat "$case_dir/state/task-x1.meta")" = "$meta_before" ] \
     || fail "orca-sweep-relist-fails: refusal changed task metadata"
   pass "Orca teardown refuses and keeps the worktree when the post-close listing fails"
+}
+
+test_orca_teardown_refuses_when_the_post_close_list_and_a_remote_list_fail() {
+  local case_dir rc=0 meta_before
+  case_dir=$(make_case orca-sweep-relist-and-remote-fail)
+  write_meta "$case_dir" local-only ship
+  configure_orca_sweep_case "$case_dir"
+  meta_before=$(cat "$case_dir/state/task-x1.meta")
+
+  FM_ORCA_RECORDED_PATH="$case_dir/wt" FM_ORCA_SWEEP_LOG="$case_dir/orca.log" FM_ORCA_RELIST_FAIL=1 FM_ORCA_REMOTE_LIST_FAIL=1 \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  [ "$rc" -ne 0 ] || fail "orca-sweep-relist-and-remote-fail: teardown accepted a close it could not verify"
+  if grep -q "worktree rm" "$case_dir/orca.log"; then
+    fail "orca-sweep-relist-and-remote-fail: an unreadable paired environment turned an unverified close into a warning"
+  fi
+  [ -d "$case_dir/wt" ] || fail "orca-sweep-relist-and-remote-fail: the worktree was removed"
+  [ "$(cat "$case_dir/state/task-x1.meta")" = "$meta_before" ] \
+    || fail "orca-sweep-relist-and-remote-fail: refusal changed task metadata"
+  pass "Orca teardown still refuses an unverified close when a paired environment also cannot be listed"
 }
 
 test_orca_teardown_refuses_when_a_swept_terminal_will_not_close() {
@@ -6788,6 +6811,7 @@ test_orca_other_remove_error_is_visible_and_retains_records
 test_orca_teardown_sweeps_task_terminals_on_every_environment
 test_orca_teardown_refuses_when_a_swept_terminal_will_not_close
 test_orca_teardown_refuses_when_the_post_close_list_fails
+test_orca_teardown_refuses_when_the_post_close_list_and_a_remote_list_fail
 test_local_only_fork_remote_allows
 test_teardown_closes_the_backlog_item_itself
 test_teardown_closes_a_gerrit_task_with_its_change_url_as_a_note

@@ -557,7 +557,7 @@ for (const e of d.result.environments) if (e && typeof e.id === "string" && e.id
     env_count=$((env_count + 1))
     env_args=()
     [ "$env" = local ] || env_args=(--environment "$env")
-    list=$(orca terminal list ${env_args[@]+"${env_args[@]}"} --limit 100000 --json 2>/dev/null) || { [ "$rc" = 1 ] || rc=2; continue; }
+    list=$(orca terminal list ${env_args[@]+"${env_args[@]}"} --limit 100000 --json 2>/dev/null) || { [ "$rc" != 0 ] || rc=2; continue; }
     # shellcheck disable=SC2016  # Single quotes are deliberate: ${...} belongs to the Node snippet.
     matches=$(printf '%s' "$list" | node -e '
 const fs = require("fs");
@@ -569,7 +569,7 @@ for (const t of d.result.terminals) {
   if (!(t && typeof t.handle === "string" && t.handle && typeof t.worktreePath === "string" && real(t.worktreePath) === real(target))) continue;
   const remote = env !== "local" || (t.executionHostId || "local") !== "local";
   console.log(!remote || (recorded && t.handle === recorded) ? `close ${t.handle}` : `match ${t.handle}`);
-}' "$target" "$env" "$recorded") || { [ "$rc" = 1 ] || rc=2; continue; }
+}' "$target" "$env" "$recorded") || { [ "$rc" != 0 ] || rc=2; continue; }
     handles=$(printf '%s\n' "$matches" | sed -n 's/^close //p')
     remote_matched=$((remote_matched + $(printf '%s\n' "$matches" | grep -c '^match ')))
     [ -n "$handles" ] || continue
