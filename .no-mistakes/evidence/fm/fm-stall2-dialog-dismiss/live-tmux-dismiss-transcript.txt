@@ -1,137 +1,146 @@
-=== scenario survey (dialog=survey sticky=0)
---- pane before:
-● Done. I updated the parser and ran the tests.
+=== scenario survey (mode=survey harness=claude) ===
+--- pane before call 1 ---
+> fix the flaky test
+● Done. The test now passes.
 ● How is Claude doing this session? (optional)
   1: Bad    2: Fine   3: Good   0: Dismiss
-╭──────────────────────────────╮
-│ >                            │
-╰──────────────────────────────╯
+╭──────────────────────────────────────────╮
+│ >                                        │
+╰──────────────────────────────────────────╯
   ? for shortcuts
---- call1 rc=0 id=claude-session-feedback key=0
---- pane after:
-● Done. I updated the parser and ran the tests.
-● How is Claude doing this session? (optional)
-  1: Bad    2: Fine   3: Good   0: Dismiss
-╭──────────────────────────────╮
-│ >                            │
-╰──────────────────────────────╯
+call 1 rc=0 dialog=claude-session-feedback key=0
+--- pane after ---
+╭──────────────────────────────────────────╮
+│ >                                        │
+╰──────────────────────────────────────────╯
   ? for shortcuts
-● Done. I updated the parser and ran the tests.
-╭──────────────────────────────╮
-│ >                            │
-╰──────────────────────────────╯
-  ? for shortcuts
---- bytes received by the TUI (hex, one per keystroke):
-30
-(end, 1 keystrokes)
-
-=== scenario draft (dialog=draft sticky=0)
---- pane before:
-● Done. I updated the parser and ran the tests.
-● Bug report drafted: parser crashes on empty input
-  1 to review · 2 to send · 0 to dismiss
-╭──────────────────────────────╮
-│ >                            │
-╰──────────────────────────────╯
-  ? for shortcuts
---- call1 rc=0 id=claude-bug-report-draft key=0
---- pane after:
-● Done. I updated the parser and ran the tests.
-● Bug report drafted: parser crashes on empty input
-  1 to review · 2 to send · 0 to dismiss
-╭──────────────────────────────╮
-│ >                            │
-╰──────────────────────────────╯
-  ? for shortcuts
-● Done. I updated the parser and ran the tests.
-╭──────────────────────────────╮
-│ >                            │
-╰──────────────────────────────╯
-  ? for shortcuts
---- bytes received by the TUI (hex, one per keystroke):
-30
-(end, 1 keystrokes)
-
-=== scenario modal (dialog=modal sticky=0)
---- pane before:
-● Done. I updated the parser and ran the tests.
+--- bytes received by TUI (hex) ---
+KEY:30
+(end)
+=== scenario modal (mode=modal harness=claude) ===
+--- pane before call 1 ---
 Submit feedback / bug report
-  Describe the issue below:
-  >
-  Enter to continue · Esc to cancel
-╭──────────────────────────────╮
-│ >                            │
-╰──────────────────────────────╯
+Describe the issue below:
+Press Enter to continue · Esc to cancel
+call 1 rc=0 dialog=claude-bug-report-dialog key=Escape
+--- pane after ---
+╭──────────────────────────────────────────╮
+│ >                                        │
+╰──────────────────────────────────────────╯
   ? for shortcuts
---- call1 rc=0 id=claude-bug-report-dialog key=Escape
---- pane after:
-● Done. I updated the parser and ran the tests.
-Submit feedback / bug report
-  Describe the issue below:
-  >
-  Enter to continue · Esc to cancel
-╭──────────────────────────────╮
-│ >                            │
-╰──────────────────────────────╯
-  ? for shortcuts
-● Done. I updated the parser and ran the tests.
-╭──────────────────────────────╮
-│ >                            │
-╰──────────────────────────────╯
-  ? for shortcuts
---- bytes received by the TUI (hex, one per keystroke):
-1b
-(end, 1 keystrokes)
-
-=== scenario quoted (dialog=quoted sticky=0)
---- pane before:
-● Done. I updated the parser and ran the tests.
-● The doc says the survey reads "How is Claude doing this session?"
-  1: Bad    2: Fine   3: Good   0: Dismiss
-  and I will now continue editing the file to fix the issue.
-╭──────────────────────────────╮
-│ >                            │
-╰──────────────────────────────╯
-  ? for shortcuts
---- call1 rc=1 id= key=
---- pane after:
-● Done. I updated the parser and ran the tests.
-● The doc says the survey reads "How is Claude doing this session?"
-  1: Bad    2: Fine   3: Good   0: Dismiss
-  and I will now continue editing the file to fix the issue.
-╭──────────────────────────────╮
-│ >                            │
-╰──────────────────────────────╯
-  ? for shortcuts
---- bytes received by the TUI (hex, one per keystroke):
-(end, 0 keystrokes)
-
-=== scenario sticky (dialog=survey sticky=1)
---- pane before:
-● Done. I updated the parser and ran the tests.
+--- bytes received by TUI (hex) ---
+KEY:1b
+(end)
+=== scenario sticky (mode=sticky harness=claude) ===
+--- pane before call 1 ---
+> fix the flaky test
+● Done. The test now passes.
 ● How is Claude doing this session? (optional)
   1: Bad    2: Fine   3: Good   0: Dismiss
-╭──────────────────────────────╮
-│ >                            │
-╰──────────────────────────────╯
+╭──────────────────────────────────────────╮
+│ >                                        │
+╰──────────────────────────────────────────╯
   ? for shortcuts
---- call1 rc=4 id=claude-session-feedback key=0
---- call2 (same unchanged pane) rc=2
---- pane after:
-● Done. I updated the parser and ran the tests.
+call 1 rc=4 dialog=claude-session-feedback key=0
+--- pane before call 2 ---
+> fix the flaky test
+● Done. The test now passes.
 ● How is Claude doing this session? (optional)
   1: Bad    2: Fine   3: Good   0: Dismiss
-╭──────────────────────────────╮
-│ >                            │
-╰──────────────────────────────╯
+╭──────────────────────────────────────────╮
+│ >                                        │
+╰──────────────────────────────────────────╯
   ? for shortcuts
---- bytes received by the TUI (hex, one per keystroke):
-30
-(end, 1 keystrokes)
-
-=== scenario race (two concurrent callers, same survey pane)
-caller B rc=2
-caller A rc=4
---- bytes received:
-30
-(end, 1 keystrokes)
+call 2 rc=2 dialog=claude-session-feedback key=0
+--- pane before call 3 ---
+> fix the flaky test
+● Done. The test now passes.
+● How is Claude doing this session? (optional)
+  1: Bad    2: Fine   3: Good   0: Dismiss
+╭──────────────────────────────────────────╮
+│ >                                        │
+╰──────────────────────────────────────────╯
+  ? for shortcuts
+call 3 rc=2 dialog=claude-session-feedback key=0
+--- pane after ---
+> fix the flaky test
+● Done. The test now passes.
+● How is Claude doing this session? (optional)
+  1: Bad    2: Fine   3: Good   0: Dismiss
+╭──────────────────────────────────────────╮
+│ >                                        │
+╰──────────────────────────────────────────╯
+  ? for shortcuts
+--- bytes received by TUI (hex) ---
+KEY:30
+(end)
+=== scenario normal (mode=normal harness=claude) ===
+--- pane before call 1 ---
+● The survey options were 1: Bad 2: Fine 3: Good 0: Dismiss earlier.
+● How is Claude doing this session?
+  1: Bad    2: Fine   3: Good   0: Dismiss
+● Continuing work on the task now.
+● Running tests...
+call 1 rc=1 dialog=none key=none
+--- pane after ---
+● The survey options were 1: Bad 2: Fine 3: Good 0: Dismiss earlier.
+● How is Claude doing this session?
+  1: Bad    2: Fine   3: Good   0: Dismiss
+● Continuing work on the task now.
+● Running tests...
+--- bytes received by TUI (hex) ---
+(end)
+=== scenario stale (mode=stale harness=claude) ===
+--- pane before call 1 ---
+> fix the flaky test
+● Done. The test now passes.
+● How is Claude doing this session? (optional)
+  1: Bad    2: Fine   3: Good   0: Dismiss
+╭──────────────────────────────────────────╮
+│ >                                        │
+╰──────────────────────────────────────────╯
+  ? for shortcuts
+> next task please
+● Working on it.
+╭──────────────────────────────────────────╮
+│ >                                        │
+╰──────────────────────────────────────────╯
+call 1 rc=1 dialog=none key=none
+--- pane after ---
+> fix the flaky test
+● Done. The test now passes.
+● How is Claude doing this session? (optional)
+  1: Bad    2: Fine   3: Good   0: Dismiss
+╭──────────────────────────────────────────╮
+│ >                                        │
+╰──────────────────────────────────────────╯
+  ? for shortcuts
+> next task please
+● Working on it.
+╭──────────────────────────────────────────╮
+│ >                                        │
+╰──────────────────────────────────────────╯
+--- bytes received by TUI (hex) ---
+(end)
+=== scenario wrongharness (mode=survey harness=codex) ===
+--- pane before call 1 ---
+> fix the flaky test
+● Done. The test now passes.
+● How is Claude doing this session? (optional)
+  1: Bad    2: Fine   3: Good   0: Dismiss
+╭──────────────────────────────────────────╮
+│ >                                        │
+╰──────────────────────────────────────────╯
+  ? for shortcuts
+call 1 rc=1 dialog=none key=none
+--- pane after ---
+> fix the flaky test
+● Done. The test now passes.
+● How is Claude doing this session? (optional)
+  1: Bad    2: Fine   3: Good   0: Dismiss
+╭──────────────────────────────────────────╮
+│ >                                        │
+╰──────────────────────────────────────────╯
+  ? for shortcuts
+--- bytes received by TUI (hex) ---
+(end)

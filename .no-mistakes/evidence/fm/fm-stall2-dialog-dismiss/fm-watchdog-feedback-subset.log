@@ -1,0 +1,11 @@
+1..8
+ok - dialogs need their structure, and each kind is told apart
+{run-worktree}/bin/fm-timeout-lib.sh: child setpgid (95701 to 95701): Operation not permitted
+ok - feedback and bug-report dialogs: exact per-harness signatures auto-dismiss when idle without submitting, near-misses and unknown dialogs do not
+ok - a dismissed dialog that only remains in scrollback is not read as showing
+ok - dialog keys stop after two failures in an hour, so a misread screen is never typed into repeatedly
+ok - dialog key rate window is per pane: a worker's key does not block the home pane's key
+ok - Orca feedback and model-switch dialogs are still read from scrollback
+ok - Orca feedback dismiss: a cleared survey records done
+ok - dialog: a key that clears the dialog is recorded as done
+FM_TEST_COMPLETE

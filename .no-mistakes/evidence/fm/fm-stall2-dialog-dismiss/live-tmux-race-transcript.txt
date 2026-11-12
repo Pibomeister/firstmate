@@ -1,0 +1,13 @@
+=== scenario race: 4 concurrent callers (watcher/daemon/watchdog stand-ins) see the same survey ===
+caller 3 rc=2
+caller 1 rc=2
+caller 4 rc=2
+caller 2 rc=0
+--- bytes received by TUI (hex) ---
+KEY:30
+(end)
+--- pane after ---
+╭──────────────────────────────────────────╮
+│ >                                        │
+╰──────────────────────────────────────────╯
+  ? for shortcuts

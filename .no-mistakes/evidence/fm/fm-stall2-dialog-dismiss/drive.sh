@@ -1,45 +1,33 @@
 #!/usr/bin/env bash
+# Live scenario driver: real tmux (isolated TMUX_TMPDIR) + real fm-control-lib helper.
 set -u
-ROOT=$1; E=$2
-export TMUX_TMPDIR=$(mktemp -d /tmp/fbd-live/tmux.XXXX); unset TMUX
-. "$ROOT/bin/fm-backend.sh"
-. "$ROOT/bin/fm-control-lib.sh"
-fm_backend_source tmux
-ST=$(mktemp -d /tmp/fbd-live/state.XXXX)
-run() { # name kind sticky
-  local name=$1 kind=$2 sticky=${3:-0} log=/tmp/fbd-live/$1.keys
+WT={run-worktree}
+export TMUX_TMPDIR=$(mktemp -d /tmp/fbtest/tmux.XXXX)
+unset TMUX
+ST=$(mktemp -d /tmp/fbtest/state.XXXX)
+. "$WT/bin/fm-backend.sh"
+. "$WT/bin/fm-control-lib.sh"
+run() { # <name> <mode> <harness> [calls]
+  local name=$1 mode=$2 harness=$3 calls=${4:-1} log=/tmp/fbtest/$1.keys i rc scr
   : > "$log"
-  tmux new-session -d -s "$name" -x 100 -y 30 "/tmp/fbd-live/tui.sh $kind $log $sticky"
-  sleep 0.6
-  local before; before=$(fm_backend_capture tmux "$name:0" 60)
-  echo "=== scenario $name (dialog=$kind sticky=$sticky)"
-  echo "--- pane before:"; printf '%s\n' "$before" | sed '/^$/d'
-  local rc=0
-  fm_control_dismiss_feedback_dialog "$ST" tmux "$name:0" claude "$before" "" 0.5 || rc=$?
-  echo "--- call1 rc=$rc id=$FM_CONTROL_FEEDBACK_DIALOG_ID key=$FM_CONTROL_FEEDBACK_DISMISS_KEY"
-  if [ "$sticky" = 1 ]; then
-    sleep 0.3; local again; again=$(fm_backend_capture tmux "$name:0" 60); rc=0
-    fm_control_dismiss_feedback_dialog "$ST" tmux "$name:0" claude "$again" "" 0.5 || rc=$?
-    echo "--- call2 (same unchanged pane) rc=$rc"
-  fi
-  sleep 0.3
-  echo "--- pane after:"; fm_backend_capture tmux "$name:0" 60 | sed '/^$/d'
-  echo "--- bytes received by the TUI (hex, one per keystroke):"; cat "$log"; echo "(end, $(wc -l < "$log" | tr -d ' ') keystrokes)"
-  echo
+  tmux new-session -d -s "$name" -x 100 -y 30 "python3 /tmp/fbtest/fake_tui.py $mode $log"
+  sleep 0.8
+  echo "=== scenario $name (mode=$mode harness=$harness) ==="
+  for i in $(seq 1 "$calls"); do
+    scr=$(tmux capture-pane -p -t "$name" -S -40)
+    echo "--- pane before call $i ---"; printf '%s\n' "$scr" | grep -v '^$'
+    rc=0; fm_control_dismiss_feedback_dialog "$ST" tmux "$name" "$harness" "$scr" "" 0.4 || rc=$?
+    echo "call $i rc=$rc dialog=${FM_CONTROL_FEEDBACK_DIALOG_ID:-none} key=${FM_CONTROL_FEEDBACK_DISMISS_KEY:-none}"
+    sleep 0.3
+  done
+  echo "--- pane after ---"; tmux capture-pane -p -t "$name" | grep -v '^$'
+  echo "--- bytes received by TUI (hex) ---"; cat "$log"; echo "(end)"
+  tmux kill-session -t "$name"
 }
-run survey survey
-run draft draft
-run modal modal
-run quoted quoted
-run sticky survey 1
-# concurrent claim: two callers capture the same pane and race
-log=/tmp/fbd-live/race.keys; : > $log
-tmux new-session -d -s race -x 100 -y 30 "/tmp/fbd-live/tui.sh survey $log 1"; sleep 0.6
-scr=$(fm_backend_capture tmux race:0 60)
-echo "=== scenario race (two concurrent callers, same survey pane)"
-( fm_control_dismiss_feedback_dialog "$ST" tmux race:0 claude "$scr" "" 0.5; echo "caller A rc=$?" ) &
-( fm_control_dismiss_feedback_dialog "$ST" tmux race:0 claude "$scr" "" 0.5; echo "caller B rc=$?" ) &
-wait
-echo "--- bytes received:"; cat $log; echo "(end, $(wc -l < $log | tr -d ' ') keystrokes)"
-tmux kill-server
-rm -rf "$TMUX_TMPDIR" "$ST"
+run survey survey claude 1
+run modal modal claude 1
+run sticky sticky claude 3
+run normal normal claude 1
+run stale stale claude 1
+run wrongharness survey codex 1
+tmux kill-server 2>/dev/null; rm -rf "$TMUX_TMPDIR" "$ST"
