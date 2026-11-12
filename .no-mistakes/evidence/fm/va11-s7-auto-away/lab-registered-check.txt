@@ -1,0 +1,8 @@
+== sweep 1 (stamp 3h old, real clock Wed Nov 11 19:59:26 CST 2026)
+check rc=0 stdout=[]
+queue:
+1794448767	1	check	auto-away	check: auto-away silence trigger; load /afk and run bin/fm-auto-away.sh enter 1794437881; only if it prints an entry, finish /afk supervision setup and announce it once.
+receipt=1794437881 stamp=1794437881
+== sweep 2 (dedupe)
+check rc=0 stdout=[]
+queue lines=       1

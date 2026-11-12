@@ -1,0 +1,3 @@
+local TZ=CST; activity 22:30=1794457800
+at 22:59:59 rc=0 queue=
+at 23:00:00 rc=0 queue=check: auto-away clock trigger; load /afk and run bin/fm-auto-away.sh enter 1794457800; only if it prints an entry, finish /afk supervision setup and announce it once.

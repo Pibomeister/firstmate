@@ -1,0 +1,2 @@
+full-digest compact (no startup receipt) rc=0 digest-lines=186 stamp=1794400000 (expected 1794400000) shim=armed
+full-digest clear (no startup receipt) rc=0 digest-lines=186 stamp=1794400000 (expected 1794400000) shim=armed
