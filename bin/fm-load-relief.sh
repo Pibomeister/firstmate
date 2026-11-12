@@ -43,10 +43,11 @@
 #
 # Priority: the priority: field that bin/fm-tasks-axi.sh show <id> reports
 # for the task's backlog item (the value add --priority N sets; a larger N is
-# lower priority, so it pauses first). A task with no backlog item or no
-# priority value is never paused. Ties break by newest dispatch first (the
-# epoch in the meta spawn_gen, else the meta file's mtime), which has the
-# least progress to lose. Already load-paused workers, secondmates, and tasks
+# lower priority, so it pauses first). A task with no backlog item is never
+# paused; an item with no numeric priority counts as the lowest priority and
+# pauses first. Lanes that recorded a ready PR (pr=) are never paused. Ties
+# break by newest dispatch first (the epoch in the meta spawn_gen, else the
+# meta file's mtime), which has the least progress to lose. Already load-paused workers, secondmates, and tasks
 # whose latest status event is done, failed, needs-decision, blocked, paused,
 # or captain-held are never candidates.
 #
@@ -264,8 +265,8 @@ if [ "$elapsed" -lt "$sustain_secs" ]; then
   exit 0
 fi
 
-# Candidates, worst priority first: larger backlog priority number, then
-# newest dispatch. One tab-separated sortable row each.
+# Candidates, worst priority first: items without a numeric priority, then
+# larger backlog priority number, then newest dispatch. One tab-separated sortable row each.
 candidates=$(mktemp "${TMPDIR:-/tmp}/fm-load-relief.XXXXXX") || die "cannot create a temporary file"
 trap 'rm -f "$candidates"' EXIT
 for meta in "$STATE"/*.meta; do
@@ -278,18 +279,21 @@ for meta in "$STATE"/*.meta; do
   case "$(latest_verb "$id")" in
     done|failed|needs-decision|blocked|paused|captain-held) continue ;;
   esac
+  grep -q '^pr=..*' "$meta" 2>/dev/null && continue
   prio=$(FM_HOME="$FM_HOME" "$tasks_cmd" show "$id" 2>/dev/null | sed -n 's/^  priority: //p' | head -1)
-  is_uint "$prio" || continue
+  [ -n "$prio" ] || continue
+  if is_uint "$prio"; then rank=1; prio=$((10#$prio)); else rank=0; prio=0; fi
   gen=$(meta_get "$meta" spawn_gen)
   epoch=$(printf '%s' "$gen" | sed -n 's/^s\([0-9][0-9]*\).*/\1/p')
   is_uint "$epoch" || epoch=$(file_mtime "$meta")
   is_uint "$epoch" || epoch=0
-  printf '%s\t%s\t%s\n' "$((10#$prio))" "$epoch" "$id" >> "$candidates"
+  printf '%s\t%s\t%s\t%s\n' "$rank" "$prio" "$epoch" "$id" >> "$candidates"
 done
 
 paused=0
-while IFS="$(printf '\t')" read -r _prio _epoch id; do
+while IFS="$(printf '\t')" read -r _rank _prio _epoch id; do
   [ -n "$id" ] || continue
+  [ "$_rank" = 1 ] || _prio=
   [ "$paused" -lt "$pause_per_check" ] || break
   if [ "$dry_run" -eq 1 ]; then
     echo "load-relief: would pause $id load=$load1 ceiling=$ceiling sustained=${elapsed}s"
@@ -313,7 +317,7 @@ while IFS="$(printf '\t')" read -r _prio _epoch id; do
     echo "fm-load-relief: interrupt for $id was not delivered; it was not paused" >&2
   fi
 done <<EOF
-$(sort -t "$(printf '\t')" -k1,1nr -k2,2nr "$candidates")
+$(sort -t "$(printf '\t')" -k1,1n -k2,2nr -k3,3nr "$candidates")
 EOF
 [ "$paused" -eq 0 ] || write_high_since "$now"
 [ "$paused" -gt 0 ] || echo "load-relief: load=$load1 sustained ${elapsed}s over ceiling=$ceiling; no live worker to pause"

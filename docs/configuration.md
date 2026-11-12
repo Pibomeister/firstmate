@@ -1045,7 +1045,7 @@ Publishing is best-effort and never changes what the watcher does.
 The other holds in the verdict stay advisory for spawns.
 The watcher also runs `bin/fm-load-relief.sh check` detached beside the publish while the file exists.
 After load stays at or over the ceiling for the sustained window, that check interrupts exactly one lowest-priority live worker in place per pass - never killing it or touching its work - records the pause under `state/load-relief/paused/`, and, while a later check reads load below the resume level (75% of the ceiling unless set), steers one paused worker per pass to resume, highest priority first.
-Priority is the `priority` field of the task's backlog item, with the largest number paused first; a task with no priority is never paused, and ties pause the newest dispatch first.
+Priority is the `priority` field of the task's backlog item, with the largest number paused first; an item with no numeric priority counts as the lowest and pauses before any numbered one, a task with no backlog item or a lane with a ready PR is never paused, and ties pause the newest dispatch first.
 The ceiling is `max-load1` above unless the optional `config/load-relief` file sets `ceiling`, `resume-below`, `sustain-secs`, or `pause-per-check`.
 [`bin/fm-load-relief.sh`](../bin/fm-load-relief.sh) owns that file's format, the priority order, and the pause records.
 The script's header owns the report line, the published document's fields, the verdict, the beat freshness rules, the host-constraint thresholds, and the probe fallbacks.
