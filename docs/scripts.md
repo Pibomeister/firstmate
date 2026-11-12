@@ -19,7 +19,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-health-verdict.sh`   | Print one read-only health verdict for a home (`ok`, `stale`, `dead`, `unconfirmed` or `unknown`) from the heartbeat ledger, the captain record's lock verdict and the watcher beat, and with `--write` record it in `state/health-verdict`. The mid-turn exemption uses the caller's own supervision model, so a caller on a different harness than the home's primary must set `FM_SUPERVISION_MODEL` |
 | `fm-health-lib.sh`       | Shared health predicates, starting with the open-work test that the heartbeat floor and the health verdict both read |
 | `fm-ready-pr-discovery.sh` | List read-only the no-mistakes runs parked with a PR ready or at a gate in every registered repo, owned or orphan |
-| `fm-context-burn.sh`     | Record each turn's external until-auto-compact percent, from the pane footer or else the transcript formula, and name a long report by path and sha256 |
+| `fm-context-burn.sh`     | Record each turn's external until-auto-compact percent, from the pane footer or else the transcript formula, emit the low-context park-then-handoff action once per session, and name a long report by path and sha256 |
 | `fm-context-footer-lib.sh` | Parse the external auto-compact footer percent shared by the heartbeat ledger, the context-burn recorder and the shared context reading |
 | `fm-context-reading-lib.sh` | Read a Claude session's context from outside it: the footer, the derived token percentage from the published auto-compact point, the owning reading, and their disagreement |
 | `fm-captain-inbox-lib.sh` | Compute the unread captain inbox note age shared by the heartbeat ledger and `fm-inbox.sh ready` |
