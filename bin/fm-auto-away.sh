@@ -8,23 +8,16 @@
 #   fm-auto-away.sh enter <activity>    revalidate a request and run AFK entry
 #   fm-auto-away.sh captain-message     record a genuine captain message
 #
-# docs/configuration.md owns config/auto-away and its defaults. No extra timer
-# or daemon runs here. The watcher executes the authenticated shim at its normal
-# check cadence. Requests go directly to the durable wake queue, before their
-# de-duplication receipt is saved, so an interrupted check cannot lose a request.
+# docs/configuration.md owns config/auto-away, its defaults, the request
+# receipt, and the entry-failure retry. No extra timer or daemon runs here.
+# The watcher executes the authenticated shim at its normal check cadence.
+# Requests go directly to the durable wake queue, before their de-duplication
+# receipt is saved, so an interrupted check cannot lose a request.
 # Entry is handled in main's turn, where /afk can launch the correct supervision
 # path and announce once. It rechecks both the activity stamp and the triggers:
 # a message that arrived after a queued request cancels that request.
-#
-# A failed or obsolete entry releases its matching request under the lock, so
-# a failed entry, including one before launch, leaves a later check free to
-# retry. The request record is an activity stamp while pending, and the stamp
-# followed by " fulfilled" after success. Fulfillment rejects replay even after
-# a return whose activity stamp failed; captain activity clears it.
-# A successful or repeated entry keeps it; enter reports each distinct
-# failure once and stays silent while it repeats unchanged. The failure record
-# holds the next retry time and the failure signature: a new signature retries
-# at the next check, an unchanged one only after ENTRY_BACKOFF seconds.
+# Receipt changes run under the activity lock.
+# A lock failure leaves the receipt in place.
 #
 # captain-message is the harness-independent activity boundary, called by main
 # only for genuine captain input, never for operational wakes. A captain-opened
@@ -32,8 +25,9 @@
 # because the opening message precedes the instruction to record it; a trigger
 # missed while no session ran therefore never fires on session open. A clear or
 # compact, re-emitted or full, arms without it; a disabled or unreadable
-# configuration still records a captain-opened start, which also clears pending
-# entry state as a captain message does. A handoff successor or a watchdog restart, including one run by
+# configuration still records a captain-opened start, which also clears the
+# request receipt and the entry-failure record, as a captain message does.
+# A handoff successor or a watchdog restart, including one run by
 # another home's watchdog, is detected at arm. Automated starts and re-arms
 # preserve the last stamp, so both deadlines hold.
 # An existing quiet or away posture is never replaced.
@@ -54,8 +48,8 @@ ENTRY_FAILURE="$STATE/.auto-away-entry-failure"
 ENTRY_BACKOFF=1800
 
 usage() { sed -n '2,9s/^# \{0,1\}//p' "$0"; }
-# The watcher turns only check stdout into a wake, so a check reports there,
-# once per distinct failure until a clean check clears the receipt.
+# The watcher turns only check stdout into a wake, so a check reports there
+# once per distinct failure. docs/configuration.md owns when that receipt clears.
 fail() {
   if [ "$CMD" = check ]; then
     if [ -d "$STATE" ] && [ ! -L "$STATE" ]; then
@@ -76,8 +70,9 @@ posture_held() {
     || [ -e "$STATE/.afk-return-catchup" ] || [ -e "$STATE/.quiet-exit-pending" ]
 }
 
-# Only a failed or obsolete entry frees its own request for a later check;
-# a fulfilled one is kept, so a stale stamp cannot request entry again.
+# A failed entry, or an obsolete one with no posture in place, frees its own
+# request for a later check. A posture already in place keeps the receipt,
+# including a fulfilled one, so a stale stamp cannot request entry again.
 release_request() {
   local receipt
   ! posture_held || return 0
