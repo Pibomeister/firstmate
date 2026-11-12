@@ -1,0 +1,202 @@
+LAB=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab-blip.SS1sH0
+===== read-only fm-on recovers after two real connection refusals =====
+rc=0 elapsed_ms=6663 ssh_count=3 side_effects=0
+-- stdout --
+probe-recovered
+-- stderr --
+-- ssh log --
+1794510757 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+1794510759 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+1794510763 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+PASS read-only fm-on recovers after two real connection refusals
+===== mutating fm-on runs one real refused connection and stops =====
+rc=255 elapsed_ms=170 ssh_count=1 side_effects=0
+-- stdout --
+-- stderr --
+ssh: connect to host 127.0.0.1 port 1: Connection refused
+-- ssh log --
+1794510763 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+PASS mutating fm-on runs one real refused connection and stops
+===== read-only fm-on gives up on a refused host inside 15 seconds =====
+rc=255 elapsed_ms=15463 ssh_count=4 side_effects=0
+-- stdout --
+-- stderr --
+ssh: connect to host 127.0.0.1 port 1: Connection refused
+-- ssh log --
+1794510764 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+1794510766 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+1794510770 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+1794510778 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+PASS read-only fm-on gives up on a refused host inside 15 seconds
+===== read-only fm-on does not repeat after: Read from remote host 127.0.0.1: Connection timed out =====
+rc=255 elapsed_ms=281 ssh_count=1 side_effects=1
+-- stdout --
+-- stderr --
+Read from remote host 127.0.0.1: Connection timed out
+-- ssh log --
+1794510779 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+PASS read-only fm-on does not repeat after: Read from remote host 127.0.0.1: Connection timed out
+===== read-only fm-on does not repeat after: packet_write_wait: Connection to 127.0.0.1 port 22: No route to host =====
+rc=255 elapsed_ms=219 ssh_count=1 side_effects=1
+-- stdout --
+-- stderr --
+packet_write_wait: Connection to 127.0.0.1 port 22: No route to host
+-- ssh log --
+1794510780 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+PASS read-only fm-on does not repeat after: packet_write_wait: Connection to 127.0.0.1 port 22: No route to host
+===== read-only fm-on does not repeat after: Read from remote host 127.0.0.1: Network is unreachable =====
+rc=255 elapsed_ms=231 ssh_count=1 side_effects=1
+-- stdout --
+-- stderr --
+Read from remote host 127.0.0.1: Network is unreachable
+-- ssh log --
+1794510780 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+PASS read-only fm-on does not repeat after: Read from remote host 127.0.0.1: Network is unreachable
+===== read-only fm-on does not repeat after: Timeout, server not responding. =====
+rc=255 elapsed_ms=177 ssh_count=1 side_effects=1
+-- stdout --
+-- stderr --
+Timeout, server not responding.
+-- ssh log --
+1794510780 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+PASS read-only fm-on does not repeat after: Timeout, server not responding.
+===== read-only fm-on does not repeat after: ssh: connect to host 127.0.0.1 port 22: Connection reset by peer =====
+rc=255 elapsed_ms=203 ssh_count=1 side_effects=1
+-- stdout --
+-- stderr --
+ssh: connect to host 127.0.0.1 port 22: Connection reset by peer
+-- ssh log --
+1794510780 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+PASS read-only fm-on does not repeat after: ssh: connect to host 127.0.0.1 port 22: Connection reset by peer
+===== read-only fm-on does not repeat after: kex_exchange_identification: Connection closed by remote host =====
+rc=255 elapsed_ms=345 ssh_count=1 side_effects=1
+-- stdout --
+-- stderr --
+kex_exchange_identification: Connection closed by remote host
+-- ssh log --
+1794510781 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+PASS read-only fm-on does not repeat after: kex_exchange_identification: Connection closed by remote host
+===== read-only fm-on does not repeat a remote 503 that already ran =====
+rc=255 elapsed_ms=192 ssh_count=1 side_effects=1
+-- stdout --
+-- stderr --
+error: upstream timed out
+HTTP 503 Service Unavailable
+-- ssh log --
+1794510781 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+PASS read-only fm-on does not repeat a remote 503 that already ran
+===== read-only fm-on retries pre-session text: ssh: connect to host 127.0.0.1 port 22: Operation timed out =====
+rc=0 elapsed_ms=2219 ssh_count=2 side_effects=0
+-- stdout --
+probe-recovered
+-- stderr --
+-- ssh log --
+1794510781 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+1794510783 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+PASS read-only fm-on retries pre-session text: ssh: connect to host 127.0.0.1 port 22: Operation timed out
+===== read-only fm-on retries pre-session text: ssh: connect to host 127.0.0.1 port 22: No route to host =====
+rc=0 elapsed_ms=2311 ssh_count=2 side_effects=0
+-- stdout --
+probe-recovered
+-- stderr --
+-- ssh log --
+1794510784 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+1794510786 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+PASS read-only fm-on retries pre-session text: ssh: connect to host 127.0.0.1 port 22: No route to host
+===== read-only fm-on retries pre-session text: ssh: Could not resolve hostname fm-blip-nx.invalid: nodename nor servname provided, or not known =====
+rc=0 elapsed_ms=2294 ssh_count=2 side_effects=0
+-- stdout --
+probe-recovered
+-- stderr --
+-- ssh log --
+1794510786 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+1794510788 -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- 127.0.0.1 fm-remote-entrypoint.sh 1 L3RtcC9mbS1yZW1vdGUtcm9vdA== L3RtcC9mbS1yZW1vdGUtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQBwcm9iZQA=
+PASS read-only fm-on retries pre-session text: ssh: Could not resolve hostname fm-blip-nx.invalid: nodename nor servname provided, or not known
+===== real ssh could-not-resolve =====
+rc=255 elapsed_ms=15496 ssh_count=4
+-- stderr --
+ssh: Could not resolve hostname fm-blip-nx.invalid: nodename nor servname provided, or not known
+PASS real unresolved hostname was retried inside the read budget
+DRIVER_SSH_DONE
+===== Orca capture gives up on a connect failure inside 15 real seconds =====
+rc=1 elapsed_ms=15124 orca_count=3
+-- stdout --
+-- stderr --
+This terminal could not connect to Orca.
+runtime_unavailable
+-- orca log --
+terminal read --terminal term-live-probe --limit 5 --json
+terminal read --terminal term-live-probe --limit 5 --json
+terminal read --terminal term-live-probe --limit 5 --json
+PASS Orca capture gives up on a connect failure inside 15 real seconds
+===== Orca terminal send does not retry a connect failure =====
+rc=1 elapsed_ms=536 orca_count=1
+-- stdout --
+-- stderr --
+This terminal could not connect to Orca.
+runtime_unavailable
+-- orca log --
+terminal send --terminal term-live-probe --text do-not-send --json
+PASS Orca terminal send does not retry a connect failure
+===== Orca worktree removal does not retry a connect failure =====
+rc=1 elapsed_ms=912 orca_count=1
+-- stdout --
+-- stderr --
+connect ECONNREFUSED
+-- orca log --
+worktree rm --worktree id:wt-live-missing --force --json
+PASS Orca worktree removal does not retry a connect failure
+===== Orca worktree show retries an HTTP 503 with real backoff and then returns the path =====
+rc=0 elapsed_ms=6905 orca_count=3
+-- stdout --
+/tmp/fm-blip-recovered-- stderr --
+-- orca log --
+worktree show --worktree id:wt-live --json
+worktree show --worktree id:wt-live --json
+worktree show --worktree id:wt-live --json
+PASS Orca worktree show retries an HTTP 503 with real backoff and then returns the path
+===== Orca read returns once for definite text: permission denied =====
+rc=1 elapsed_ms=317 orca_count=1
+-- stdout --
+-- stderr --
+permission denied
+-- orca log --
+worktree show --worktree id:wt-live --json
+PASS Orca read returns once for definite text: permission denied
+===== Orca read returns once for definite text: invalid --timeout-ms value =====
+rc=1 elapsed_ms=480 orca_count=1
+-- stdout --
+-- stderr --
+invalid --timeout-ms value
+-- orca log --
+worktree show --worktree id:wt-live --json
+PASS Orca read returns once for definite text: invalid --timeout-ms value
+===== Orca read returns once for definite text: error: line 512 malformed =====
+rc=1 elapsed_ms=415 orca_count=1
+-- stdout --
+-- stderr --
+error: line 512 malformed
+-- orca log --
+worktree show --worktree id:wt-live --json
+PASS Orca read returns once for definite text: error: line 512 malformed
+===== Orca read returns once for definite text: error code 501 not implemented =====
+rc=1 elapsed_ms=432 orca_count=1
+-- stdout --
+-- stderr --
+error code 501 not implemented
+-- orca log --
+worktree show --worktree id:wt-live --json
+PASS Orca read returns once for definite text: error code 501 not implemented
+===== Orca read-only show is still retrying after 15 seconds =====
+alive_at_18s=1 orca_count=4 elapsed_ms=18104
+PASS Orca read-only show keeps the long budget past 15 seconds (stopped the probe at 18104ms, count=4)
+===== real Orca CLI stale-handle read is returned once =====
+rc=1 elapsed_ms=1122 orca_count=1
+-- stdout --
+-- stderr --
+terminal_handle_stale
+terminal_handle_stale
+-- orca log --
+terminal read --terminal term_fm_blip_probe_absent --limit 1 --json
+PASS real Orca CLI stale-handle read is returned once
+DRIVER_ORCA_DONE
