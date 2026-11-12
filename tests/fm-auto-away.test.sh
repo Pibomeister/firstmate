@@ -291,6 +291,16 @@ assert_contains "$out" 'hold-for-return only' 'entry did not recover once the fa
 assert_present "$FM_HOME/state/.afk-contract" 'recovered entry did not write the away record'
 assert_absent "$FM_HOME/state/.auto-away-entry-failure" 'successful entry kept the failure record'
 
+world return-stamp-failed
+at "$EARLY" captain-message
+at "$NIGHT" check
+at "$NIGHT" enter "$EARLY" >/dev/null
+assert_present "$FM_HOME/state/.afk-contract" 'scheduled entry did not enter away mode'
+# A return whose activity stamp failed still lifts the posture.
+"$ROOT/bin/fm-afk-contract.sh" archive >/dev/null
+at "$((NIGHT + 300))" check
+[ "$(wc -l < "$FM_HOME/state/.wake-queue" | tr -d ' ')" = 1 ] || fail 'a successful entry let a stale stamp request entry again after return'
+
 world prelaunch-failure
 at "$EARLY" captain-message
 at "$NIGHT" check

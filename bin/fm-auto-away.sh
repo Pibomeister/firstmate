@@ -16,9 +16,9 @@
 # path and announce once. It rechecks both the activity stamp and the triggers:
 # a message that arrived after a queued request cancels that request.
 #
-# Entry consumes its matching request under the lock before anything can fail,
-# so a failed entry, including one before launch, leaves a later check free to
-# retry; enter reports each distinct
+# A failed or obsolete entry releases its matching request under the lock, so
+# a failed entry, including one before launch, leaves a later check free to
+# retry, while a successful entry keeps it; enter reports each distinct
 # failure once and stays silent while it repeats unchanged. The failure record
 # holds the next retry time and the failure signature: a new signature retries
 # at the next check, an unchanged one only after ENTRY_BACKOFF seconds.
@@ -67,9 +67,16 @@ fail() {
   exit 1
 }
 
+# Only a failed or obsolete entry frees its own request for a later check;
+# a successful entry keeps it, so a stale stamp cannot request entry again.
+release_request() {
+  [ "$(cat "$REQUEST" 2>/dev/null || true)" != "$ENTRY_ACTIVITY" ] || rm -f "$REQUEST"
+}
+
 # Report a failure signature once; an unchanged repeat backs off silently.
 entry_failed() { # <signature>
   local previous
+  release_request
   previous=$(cat "$ENTRY_FAILURE" 2>/dev/null || true)
   if [ "${previous#* }" = "$1" ]; then
     write_record "$ENTRY_FAILURE" "$((NOW + ENTRY_BACKOFF)) $1" || true
@@ -232,6 +239,7 @@ CLOCK_ERROR=
 CLOCK_OK=0
 LOCKED=0
 NOW=
+ENTRY_ACTIVITY=${2:-}
 case "$CMD" in
   --help|-h|help) usage; exit 0 ;;
   arm) [ "$#" -eq 1 ] || { [ "$#" -eq 2 ] && [ "$2" = --session-start ]; } || { usage >&2; exit 2; } ;;
@@ -252,9 +260,6 @@ fm_lock_acquire_wait "$LOCK" || fail 'cannot acquire activity lock'
 trap 'fm_lock_release "$LOCK"' EXIT
 LOCKED=1
 NOW=$(now)
-if [ "$CMD" = enter ] && [ "$(cat "$REQUEST" 2>/dev/null || true)" = "$2" ]; then
-  rm -f "$REQUEST"
-fi
 [ "$CMD" = captain-message ] || read_config
 case "${1:-check}" in
   captain-message)
@@ -293,6 +298,8 @@ case "${1:-check}" in
       rm -f "$errors"
       [ "$status" = 0 ] || entry_failed "$signature"
       rm -f "$ENTRY_FAILURE"
+    else
+      release_request
     fi
     ;;
 esac
