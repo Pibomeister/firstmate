@@ -7154,6 +7154,46 @@ PY
   pass "stale snapshots (expired TTL or older snapshot format) are rejected and refreshed"
 }
 
+# no-mistakes' AXI status marks a running step quiet only after the configured
+# step_quiet_warning (default 10m, per its shipped config.yaml); an unparseable
+# value makes the CLI itself error, so the snapshot must defer to the CLI.
+test_status_snapshot_quiet_uses_configured_step_quiet_warning() {
+  local d=$TMP_ROOT/snap-quiet head nm_home
+  mkdir -p "$d"
+  make_repo_on_branch "$d/wt" fm/ship-a
+  head=$(git -C "$d/wt" rev-parse HEAD)
+  nm_home="$d/nm-home"
+  mkdir -p "$nm_home"
+  init_full_nm_sqlite "$nm_home/state.sqlite" "$d/wt" "$head"
+  python3 - "$nm_home/state.sqlite" <<'PY'
+import sqlite3, sys, time
+with sqlite3.connect(sys.argv[1]) as db:
+    db.execute("UPDATE step_results SET status = 'running', findings_json = '', last_activity_at = ?, last_activity = 'agent working' "
+               "WHERE run_id = '01M7SNAPSHOTA0000000000001' AND step_name = 'review'", (int(time.time()) - 240,))
+PY
+  snap_status() {  # <snapshot_file>
+    (
+      NM_HOME=$nm_home FM_NM_SNAPSHOT_TTL=0
+      # shellcheck source=/dev/null
+      . "$ROOT/bin/fm-nm-run-lib.sh"
+      fm_nm_snapshot_load_worktree "$d/wt" fm/ship-a 30 50 "$1" || exit 1
+      printf '%s\n' "$NM_SNAPSHOT_STATUS_OUT"
+    )
+  }
+  local out
+  out=$(snap_status "$d/snap1.json") || fail "snapshot read failed with default quiet warning"
+  assert_contains "$out" '"agent working"' "step silent 4m is not quiet under the 10m default"
+  case "$out" in *'quiet: agent working'*) fail "snapshot marked a 4m-silent step quiet under the 10m default" ;; esac
+  printf '# comment\nstep_quiet_warning: "3m"\n' > "$nm_home/config.yaml"
+  out=$(snap_status "$d/snap2.json") || fail "snapshot read failed with 3m quiet warning"
+  assert_contains "$out" '"quiet: agent working"' "step silent 4m is quiet under a configured 3m warning"
+  printf 'step_quiet_warning: "soon"\n' > "$nm_home/config.yaml"
+  if snap_status "$d/snap3.json" >/dev/null; then
+    fail "unparseable step_quiet_warning did not fall back to the CLI"
+  fi
+  pass "snapshot quiet marking follows no-mistakes' step_quiet_warning"
+}
+
 test_status_snapshot_moved_live_run_reads_cli() {
   local d=$TMP_ROOT/snap-moved head out
   reset_fakes
@@ -7423,5 +7463,6 @@ test_status_snapshot_schema_version_guard_falls_back_to_daemon
 test_status_snapshot_read_failure_falls_back_to_daemon
 test_status_snapshot_stale_snapshot_is_rejected
 test_status_snapshot_moved_live_run_reads_cli
+test_status_snapshot_quiet_uses_configured_step_quiet_warning
 
 echo "all fm-crew-state tests passed"

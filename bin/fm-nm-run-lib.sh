@@ -759,14 +759,15 @@ fm_nm_runs_newest_for_branch() {  # <branch> <runs-list-output>
 # A capture reads only the worktree's own repository: its runs, plus step rows
 # for the newest and newest-active run of each branch. Each repository entry
 # and the repos map are reused until FM_NM_SNAPSHOT_TTL seconds old.
+# Active steps are marked quiet after <NM_HOME>/config.yaml's
+# step_quiet_warning (the CLI default 10m when absent); an unparseable or
+# non-positive value falls back to the CLI.
 FM_NM_SNAPSHOT_SCHEMA_VERSION=2
-FM_NM_SQLITE_USER_VERSION=${FM_NM_SQLITE_USER_VERSION:-0}
+FM_NM_SQLITE_USER_VERSION=0
 FM_NM_SNAPSHOT_TTL=${FM_NM_SNAPSHOT_TTL:-5}
 
 fm_nm_status_snapshot_path() {  # [state_dir]
-  if [ -n "${FM_NM_STATUS_SNAPSHOT:-}" ]; then
-    printf '%s\n' "$FM_NM_STATUS_SNAPSHOT"
-  elif [ -n "${1:-}" ]; then
+  if [ -n "${1:-}" ]; then
     printf '%s/.nm-status-snapshot.json\n' "$1"
   elif [ -n "${STATE:-}" ]; then
     printf '%s/.nm-status-snapshot.json\n' "$STATE"
@@ -842,6 +843,42 @@ CI_MARKER_RE = re.compile(
 
 
 GATE_STEP_STATUSES = ("awaiting_approval", "fix_review")
+DEFAULT_STEP_QUIET_WARNING = "10m"
+GO_DURATION_UNITS = {
+    "ns": 1e-9, "us": 1e-6, "\u00b5s": 1e-6, "\u03bcs": 1e-6,
+    "ms": 1e-3, "s": 1.0, "m": 60.0, "h": 3600.0,
+}
+GO_DURATION_PART_RE = re.compile(r"([0-9]*\.?[0-9]+)(ns|us|\u00b5s|\u03bcs|ms|s|m|h)")
+
+
+def parse_go_duration(text: str) -> float:
+    text = text.strip()
+    if not text:
+        raise ValueError("empty duration")
+    pos, total = 0, 0.0
+    for m in GO_DURATION_PART_RE.finditer(text):
+        if m.start() != pos:
+            raise ValueError("invalid duration")
+        total += float(m.group(1)) * GO_DURATION_UNITS[m.group(2)]
+        pos = m.end()
+    if pos != len(text):
+        raise ValueError("invalid duration")
+    return total
+
+
+def load_step_quiet_warning(db_path: str) -> float:
+    value = DEFAULT_STEP_QUIET_WARNING
+    config_path = os.path.join(os.path.dirname(db_path), "config.yaml")
+    if os.path.isfile(config_path):
+        with open(config_path, "r", encoding="utf-8") as fh:
+            for raw in fh:
+                m = re.match(r"step_quiet_warning\s*:\s*(.*?)\s*(?:#.*)?$", raw.rstrip("\n"))
+                if m:
+                    value = m.group(1).strip().strip("\"'")
+    seconds = parse_go_duration(value)
+    if seconds <= 0:
+        raise ValueError("non-positive step_quiet_warning")
+    return seconds
 
 
 def is_fresh(captured_at) -> bool:
@@ -1153,7 +1190,7 @@ def format_run_detail(run: dict) -> str:
         for s in active_steps:
             last_act = (s.get("last_activity") or "").replace("\r", " ").replace("\n", " ").strip()
             last_at = int(s.get("last_activity_at") or 0)
-            if "quiet" not in last_act and last_at > 0 and (now - last_at) > 180:
+            if "quiet" not in last_act and last_at > 0 and (now - last_at) > step_quiet_after:
                 last_act = f"quiet: {last_act or 'running'}"
             elif not last_act:
                 last_act = "running"
@@ -1234,6 +1271,7 @@ def read_ci_log_for_run(run: dict, db_real: str) -> str:
 
 
 try:
+    step_quiet_after = load_step_quiet_warning(database)
     db_real = os.path.realpath(database)
     snap = load_cached_snapshot(snapshot_file, db_real)
     repos = None
