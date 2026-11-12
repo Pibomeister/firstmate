@@ -1,11 +1,3 @@
-fm-test-queue: ticket 1427, position 7: waiting behind 6 earlier ticket(s)
-fm-test-queue: ticket 1427, position 6: waiting behind 5 earlier ticket(s)
-fm-test-queue: ticket 1427, position 5: waiting behind 4 earlier ticket(s)
-fm-test-queue: ticket 1427, position 4: waiting behind 3 earlier ticket(s)
-fm-test-queue: ticket 1427, position 3: waiting behind 2 earlier ticket(s)
-fm-test-queue: ticket 1427, position 2: waiting behind 1 earlier ticket(s)
-fm-test-queue: ticket 1427, position 1: all 1 slot(s) busy
-fm-test-queue: ticket 1427 served
 ok - context digest distinguishes ABSENT, empty-but-present, and populated files
 ok - a full-digest clear or compact keeps the automatic-away activity stamp; a session start records it
 ok - large context files print indexed pointers and bounded outlines; small files still print whole
@@ -17,7 +9,7 @@ ok - a large wake presentation prints whole when the save path is a directory
 ok - a drain section after a bounded one prints whole inline on a large presentation
 ok - a large wake presentation keeps each latest direct annotation inline and leaves out only the unread backlog and historical lines
 ok - a large wake presentation keeps one latest annotation per status file when a worker repeats its status line
-ok - a large home's digest stays under 30 KB with every safety signal intact (29649 bytes)
+ok - a large home's digest stays under 30 KB with every safety signal intact (29644 bytes)
 ok - a lock refusal prints a loud read-only banner, skips every mutating step, and still completes the digest
 ok - session start stays read-only when lock ownership cannot be published
 ok - locked session start freezes trace context and lock refusal leaves it unchanged
@@ -40,6 +32,7 @@ ok - work under way renders one line per live task with the full-detail pointer 
 ok - work under way takes a fallback PR URL only from the task's ready line
 ok - orphan status logs render as one line each with the full-log pointer
 ok - tmux endpoint liveness is reported per task: alive for a live window, dead for a gone one
+{run-worktree}/bin/fm-timeout-lib.sh: child setpgid (34083 to 34083): Operation not permitted
 ok - herdr endpoint liveness is reported per task: alive, dead for exit 1, dead for any other probe status
 skip: /proc not readable (the read-death shape needs process ancestry)
 ok - a hung per-task endpoint read hits its configured bound, reports the task, and leaves nothing stuck
@@ -81,3 +74,11 @@ ok - --reemit reprints the digest without repeating startup's mutating sweeps an
 ok - --reemit puts its read cue in the first 2000 characters and a normal start omits it
 ok - true-start AGENTS baselines stay immutable while every drifted Pi compact re-emits the current contract
 ok - read-only Pi compact refreshes against the rebuilding session identity without mutation
+ok - Codex reset sources do not claim an unavailable instruction-refresh channel
+ok - instruction baselines require SHA-256 and successful startup completion
+ok - --reemit re-verifies lock ownership and keeps repair ownership with whoever holds it
+ok - session start warns once, before its lock stage, about an affected running bash
+ok - session start lists overdue goals, and only a lock-holding session is told to act on them
+ok - an order sent mid-restart is named by the new captain's session start and read once
+# fm-session-start.test.sh: all assertions passed
+exit=0
