@@ -105,9 +105,11 @@
 #   keep home          it works in a home root
 #   keep young         it is younger than --browser-min-age
 #   keep unknown       its working directory could not be read or looked up
-#   keep owner-live    some other process still works in that directory
-#   reap owner-gone    its directory is gone, or nothing but browsers (and
-#                      terminals this run reaps) still works there
+#   keep owner-live    some other process still works in that directory,
+#                      including a browser whose own parent is still alive
+#   reap owner-gone    its directory is gone, or nothing but browsers
+#                      reparented to pid 1 (and terminals this run reaps)
+#                      still works there
 # Agent-browser daemons and chrome-devtools-axi bridges serve every client of
 # their socket, so owner-gone judges only the directory, not other clients; for
 # that reason only --apply --browsers stops browsers.
@@ -474,10 +476,12 @@ if (mode === "terminals") {
     else {
       let live = false;
       for (const [pid, d] of cwd) {
-        // A browser process outside the root's tree, such as a crash
-        // handler reparented to pid 1, is part of a browser, not an owner.
+        // A browser reparented to pid 1, such as a crash handler, is part
+        // of a browser, not an owner. A browser whose parent is still
+        // alive is still using this directory.
         if (family.has(pid) || exclude.has(pid)) continue;
-        if (procs.has(pid) && isBrowserProc(procs.get(pid))) continue;
+        const owner = procs.get(pid);
+        if (owner && isBrowserProc(owner) && owner.ppid === 1) continue;
         if (under(d, dir)) { live = true; break; }
       }
       if (live) cls = "owner-live"; else { verdict = "reap"; cls = "owner-gone"; }

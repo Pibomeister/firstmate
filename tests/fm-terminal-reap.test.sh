@@ -833,6 +833,34 @@ test_browsers_reap_only_old_orphans() {
   cwd_row "$stable" "$FX/stable-dir"
   cwd_row "$handler" "$FX/stable-dir"
   cwd_row "$updater" "$FX/stable-dir"
+  # A worker outside the profile has a live headless Chrome inside it, and
+  # Chrome has reparented that profile's crash handler to pid 1. The Chrome
+  # is the owner. The same is true of an orphaned Chrome beside another
+  # live-parent Chrome in one directory.
+  local profile worker shared live_chrome live_parent handler_pw orphan_beside live_beside
+  profile="$FX/pw-profile"
+  worker="$FX/worker-repo"
+  shared="$FX/shared-dir"
+  mkdir -p "$profile" "$worker" "$shared"
+  spawn_headless_under "node" "$chrome"; live_chrome=$PID
+  live_parent=$(ps -o ppid= -p "$live_chrome" | tr -d ' ')
+  [ -n "$live_parent" ] || fail "the live Chrome has no parent"
+  cwd_row "$live_chrome" "$profile"
+  cwd_row "$live_parent" "$worker"
+  handler_pw="$TMP_ROOT/ms-playwright/chromium-1/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Helpers/chrome_crashpad_handler"
+  mkdir -p "${handler_pw%/*}"; : > "$handler_pw"
+  ( exec -a "$handler_pw" bash -c 'sleep 600 & wait' "$handler_pw" --database="$profile/Crashpad" ) >/dev/null 2>&1 </dev/null &
+  handler_pw=$!
+  disown "$handler_pw" 2>/dev/null || true
+  TRACKED_PIDS+=("$handler_pw")
+  await_exec "$handler_pw"
+  : > "$FX/ppid1-$handler_pw"
+  cwd_row "$handler_pw" "$profile"
+  fake_headless "$chrome"; orphan_beside=$PID
+  : > "$FX/ppid1-$orphan_beside"
+  cwd_row "$orphan_beside" "$shared"
+  spawn_headless_under "node" "$chrome"; live_beside=$PID
+  cwd_row "$live_beside" "$shared"
   sleep 1.2
   run_reap --browser-min-age 3600
   [ "$RC" = 0 ] || fail "the browser dry run must exit 0, got $RC: $(cat "$FX/stderr")"
@@ -843,9 +871,17 @@ test_browsers_reap_only_old_orphans() {
   expect "$orphan" "reap owner-gone" "an orphaned headless browser older than the floor is reaped"
   expect "$stable" "reap owner-gone" "an orphaned stable Chrome is reaped even beside its reparented crash handlers"
   expect "$owned" "" "a headless browser with a live parent is never a reap candidate at any age"
+  expect "$handler_pw" "keep owner-live" "a live worker's Chrome in that directory keeps the reparented crash handler"
+  expect "$live_chrome" "" "a headless browser with a live parent is never a reap candidate"
+  expect "$orphan_beside" "keep owner-live" "a live-parent browser in the same directory keeps an orphaned Chrome"
+  expect "$live_beside" "" "a headless browser with a live parent is never a reap candidate"
   run_reap --apply --browsers --browser-min-age 0
   [ "$RC" = 0 ] || fail "the browser apply must exit 0, got $RC: $(cat "$FX/stderr")"
   kill -0 "$owned" 2>/dev/null || fail "an apply stopped a browser whose parent is still live"
+  kill -0 "$handler_pw" 2>/dev/null || fail "an apply stopped a crash handler while the worker's browser still runs"
+  kill -0 "$live_chrome" 2>/dev/null || fail "an apply stopped a browser whose parent is still live"
+  kill -0 "$orphan_beside" 2>/dev/null || fail "an apply stopped an orphaned browser while another live browser still uses its directory"
+  kill -0 "$live_beside" 2>/dev/null || fail "an apply stopped a browser whose parent is still live"
   pass "fm-terminal-reap: only orphaned headless browsers past the age floor are reaped"
 }
 

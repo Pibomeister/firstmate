@@ -4139,13 +4139,14 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
   # there only this task's recorded terminal handle (a path match alone on
   # another host does not prove this task owns that terminal; that host's own
   # teardown owns it), and report the count.
-  # A local terminal is closed only when its session is proved dead or
-  # missing. A terminal still listed after its close, a session that could
-  # not be proved dead, or a post-close listing that could not be read
-  # refuses like the recorded endpoint above; an environment that cannot be
-  # listed at all only warns, because the recorded endpoint is already
-  # closed and Orca's own worktree removal below remains the guard for the
-  # workspace it owns.
+  # A terminal hosted on this machine is closed only when its session is
+  # proved dead or missing. A recorded handle hosted on another machine is
+  # closed on the re-list proof alone. A terminal still listed after its
+  # close, a session that could not be proved dead, or a post-close listing
+  # that could not be read refuses like the recorded endpoint above; an
+  # environment that cannot be listed at all only warns, because the recorded
+  # endpoint is already closed and Orca's own worktree removal below remains
+  # the guard for the workspace it owns.
   if [ -n "$WT" ] && [ -d "$WT" ] && fm_backend_source orca; then
     orca_sweep_rc=0
     orca_sweep_out=$(fm_backend_orca_close_worktree_terminals "$WT" "$T_ORCA") || orca_sweep_rc=$?

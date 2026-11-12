@@ -532,11 +532,13 @@ fm_backend_orca_kill() {  # <terminal-id>
 # where environments counts every Orca actually listed (local included) and
 # remote_matched counts the path-only remote matches left open.
 # A close counts only when a re-list of its environment no longer names the
-# handle, because Orca's close exit status carries no authority. A local
-# terminal is closed only when fm_backend_orca_agent_state proves its
-# session dead or missing: a session that is alive, ambiguous, or unreadable
-# may be running a worker that has moved elsewhere, so it is left open and
-# the sweep refuses. Exit 0 when every listed environment was read
+# handle, because Orca's close exit status carries no authority. A terminal
+# hosted on this machine is closed only when fm_backend_orca_agent_state
+# proves its session dead or missing: a session that is alive, ambiguous, or
+# unreadable may be running a worker that has moved elsewhere, so it is left
+# open and the sweep refuses. A recorded handle whose executionHostId names
+# another host cannot be proved from this machine; it is closed on that same
+# re-list proof. Exit 0 when every listed environment was read
 # completely and every terminal closed from here is gone; exit 1 when one
 # is still listed after its close or its session could not be proved dead;
 # exit 2 when an environment or terminal list could not be read completely,
@@ -546,7 +548,7 @@ fm_backend_orca_kill() {  # <terminal-id>
 fm_backend_orca_close_worktree_terminals() {  # <worktree-path> [recorded-terminal-handle]
   fm_backend_orca_tool_check || return 2
   command -v node >/dev/null 2>&1 || return 2
-  local target=$1 recorded=${2:-} envs env list closed=0 env_count=0 remote_matched=0 rc=0 matches handles h relist remaining proven
+  local target=$1 recorded=${2:-} envs env list closed=0 env_count=0 remote_matched=0 rc=0 matches handles proves h relist remaining
   local -a env_args
   envs=$(orca environment list --json 2>/dev/null | node -e '
 let d; try { d = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (_) { process.exit(1); }
@@ -568,29 +570,28 @@ const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return p; }
 for (const t of d.result.terminals) {
   if (!(t && typeof t.handle === "string" && t.handle && typeof t.worktreePath === "string" && real(t.worktreePath) === real(target))) continue;
   const remote = env !== "local" || (t.executionHostId || "local") !== "local";
-  console.log(!remote || (recorded && t.handle === recorded) ? `close ${t.handle}` : `match ${t.handle}`);
+  if (!remote) console.log(`prove ${t.handle}`);
+  else console.log(recorded && t.handle === recorded ? `close ${t.handle}` : `match ${t.handle}`);
 }' "$target" "$env" "$recorded") || { [ "$rc" != 0 ] || rc=2; continue; }
     handles=$(printf '%s\n' "$matches" | sed -n 's/^close //p')
+    proves=$(printf '%s\n' "$matches" | sed -n 's/^prove //p')
     remote_matched=$((remote_matched + $(printf '%s\n' "$matches" | grep -c '^match ')))
-    [ -n "$handles" ] || continue
-    if [ "$env" = local ]; then
+    if [ -n "$proves" ]; then
       # Only a session proved dead or missing is this task's to close; any
-      # other state may be a worker running elsewhere, so leave it listed
-      # and let the re-list below refuse.
-      proven=''
+      # other state may be a worker running elsewhere, so leave it listed.
       while IFS= read -r h; do
         [ -n "$h" ] || continue
         case "$(fm_backend_orca_agent_state "$h")" in
-          dead|missing) proven="$proven$h
-" ;;
+          dead|missing) handles="$handles
+$h" ;;
           *) rc=1 ;;
         esac
       done <<EOF
-$handles
+$proves
 EOF
-      handles=$proven
-      [ -n "$handles" ] || continue
     fi
+    handles=$(printf '%s\n' "$handles" | sed '/^$/d')
+    [ -n "$handles" ] || continue
     while IFS= read -r h; do
       [ -n "$h" ] || continue
       orca terminal close --terminal "$h" ${env_args[@]+"${env_args[@]}"} --json >/dev/null 2>&1 || true
@@ -605,7 +606,7 @@ if (!d || d.ok === false || !d.result || !Array.isArray(d.result.terminals) || d
 const wanted = new Set(String(process.env.WANTED_HANDLES || "").split("\n").filter(Boolean));
 let n = 0;
 for (const t of d.result.terminals) if (t && wanted.has(t.handle)) n++;
-console.log(n);') || { rc=3; continue; }
+process.stdout.write(String(n) + "\n");') || { rc=3; continue; }
     closed=$((closed + $(printf '%s\n' "$handles" | grep -c .) - remaining))
     [ "$remaining" -eq 0 ] || rc=1
   done <<EOF
