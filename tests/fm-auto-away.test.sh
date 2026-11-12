@@ -262,22 +262,78 @@ assert_contains "$out" 'auto-away check failed: silence-seconds must be' 'a fail
 
 world failed-entry
 cp -R "$ROOT/bin" "$FM_HOME/failbin"
-printf '#!/usr/bin/env bash\nexit 1\n' > "$FM_HOME/failbin/fm-afk-launch.sh"
+# shellcheck disable=SC2016
+printf '#!/usr/bin/env bash\nerr=$(cat %q 2>/dev/null || true)\n[ -n "$err" ] || exec %q "$@"\nprintf "%%s\\n" "$err" >&2\nexit 1\n' \
+  "$FM_HOME/launch-error" "$ROOT/bin/fm-afk-launch.sh" > "$FM_HOME/failbin/fm-afk-launch.sh"
+failing_enter() { FM_AUTO_AWAY_NOW="$1" "$FM_HOME/failbin/fm-auto-away.sh" enter "$EARLY" 2>/dev/null; }
+queued() { wc -l < "$FM_HOME/state/.wake-queue" | tr -d ' '; }
 at "$EARLY" captain-message
 at "$NIGHT" check
-if FM_AUTO_AWAY_NOW="$NIGHT" "$FM_HOME/failbin/fm-auto-away.sh" enter "$EARLY" >/dev/null 2>&1; then
-  fail 'failed automatic entry reported success'
-fi
+printf 'launch lock busy\n' > "$FM_HOME/launch-error"
+if out=$(failing_enter "$NIGHT"); then fail 'failed automatic entry reported success'; fi
+assert_contains "$out" 'auto-away entry failed: exit 1: launch lock busy' 'first entry failure was not reported'
 at "$((NIGHT + 60))" check
-[ "$(wc -l < "$FM_HOME/state/.wake-queue" | tr -d ' ')" = 2 ] || fail 'failed entry stranded its receipt and blocked a retry'
-if FM_AUTO_AWAY_NOW="$((NIGHT + 60))" "$FM_HOME/failbin/fm-auto-away.sh" enter "$EARLY" >/dev/null 2>&1; then
-  fail 'repeated failed automatic entry reported success'
-fi
-for sweep in 1 2 3; do at "$((NIGHT + 60 + sweep * 300))" check; done
-[ "$(wc -l < "$FM_HOME/state/.wake-queue" | tr -d ' ')" = 2 ] || fail 'a repeated entry failure queued another retry'
-at "$((NIGHT + 1200))" captain-message
-at "$((NIGHT + 1200 + 7200))" check
-[ "$(wc -l < "$FM_HOME/state/.wake-queue" | tr -d ' ')" = 3 ] || fail 'a new activity stamp did not request entry after a failed one'
+[ "$(queued)" = 2 ] || fail 'failed entry stranded its receipt and blocked a retry'
+out=$(failing_enter "$((NIGHT + 60))") || fail 'an unchanged entry failure exited nonzero after it was reported'
+[ -z "$out" ] || fail "an unchanged entry failure was reported again: $out"
+at "$((NIGHT + 360))" check
+[ "$(queued)" = 3 ] || fail 'an unchanged entry failure permanently suppressed retries'
+printf 'cannot write away record\n' > "$FM_HOME/launch-error"
+if out=$(failing_enter "$((NIGHT + 360))"); then fail 'changed entry failure reported success'; fi
+assert_contains "$out" 'auto-away entry failed: exit 1: cannot write away record' 'a changed entry failure was not reported'
+at "$((NIGHT + 660))" check
+[ "$(queued)" = 4 ] || fail 'a changed entry failure blocked its retry'
+rm -f "$FM_HOME/launch-error"
+out=$(failing_enter "$((NIGHT + 660))")
+assert_contains "$out" 'hold-for-return only' 'entry did not recover once the failure cleared without new activity'
+assert_present "$FM_HOME/state/.afk-contract" 'recovered entry did not write the away record'
+assert_absent "$FM_HOME/state/.auto-away-entry-failure" 'successful entry kept the failure record'
+
+world off-start
+printf 'enabled=off\n' >> "$FM_HOME/config/auto-away"
+at "$((EARLY - 172800))" captain-message
+at "$EARLY" arm --session-start >/dev/null
+printf 'timezone=UTC\n' > "$FM_HOME/config/auto-away"
+at "$((EARLY + 300))" arm >/dev/null
+at "$((EARLY + 600))" check
+assert_absent "$FM_HOME/state/.wake-queue" 'a captain-opened start with automatic entry off kept a days-old stamp'
+
+world off-successor
+printf 'enabled=off\n' >> "$FM_HOME/config/auto-away"
+at "$((EARLY - 7200))" captain-message
+printf '4242\n' > "$FM_HOME/state/.lock"
+printf 'pid=4242\n' > "$FM_HOME/state/.handoff-successor"
+at "$((EARLY - 600))" arm --session-start >/dev/null
+printf 'timezone=UTC\n' > "$FM_HOME/config/auto-away"
+at "$EARLY" check
+assert_grep 'auto-away silence' "$FM_HOME/state/.wake-queue" 'a handoff successor with automatic entry off counted as captain activity'
+
+world zone-data
+for data in zone.tab tzdata.zi; do
+  [ -f "/usr/share/zoneinfo/$data" ] || continue
+  printf 'timezone=%s\n' "$data" > "$FM_HOME/config/auto-away"
+  out=$(at "$EARLY" check || true)
+  assert_contains "$out" "unknown timezone: $data" "non-zone file $data was accepted as a timezone"
+  rm -f "$FM_HOME/state/.auto-away-failure"
+done
+
+world idle-supervision
+# shellcheck source=/dev/null
+. "$ROOT/bin/fm-supervision-lib.sh"
+# shellcheck source=/dev/null
+. "$ROOT/bin/fm-stop-policy-lib.sh"
+mkdir -p "$FM_HOME/data/orders/parked"
+printf 'kind=hold\n' > "$FM_HOME/data/orders/parked/one.order"
+fm_stop_policy_parked "$FM_HOME/state" "$FM_HOME" "$ROOT/bin" || fail 'fixture home did not park before arming'
+at "$EARLY" arm --session-start >/dev/null
+fm_supervision_status "$FM_HOME/state"
+[ "$FM_SUP_NEEDED" = true ] || fail 'an armed idle home reported no supervision need'
+if fm_stop_policy_parked "$FM_HOME/state" "$FM_HOME" "$ROOT/bin"; then fail 'an armed idle home parked'; fi
+printf 'enabled=off\n' >> "$FM_HOME/config/auto-away"
+at "$((EARLY + 60))" arm --session-start >/dev/null
+fm_supervision_status "$FM_HOME/state"
+[ "$FM_SUP_NEEDED" = false ] || fail 'a disabled idle home still reported supervision need'
+fm_stop_policy_parked "$FM_HOME/state" "$FM_HOME" "$ROOT/bin" || fail 'a disabled idle home did not park'
 
 world entry-arguments
 if FM_AFK_MODE=away "$ROOT/bin/fm-afk-launch.sh" enter-auto --words 'ship it' >/dev/null 2>&1; then

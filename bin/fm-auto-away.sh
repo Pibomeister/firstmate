@@ -16,12 +16,16 @@
 # path and announce once. It rechecks both the activity stamp and the triggers:
 # a message that arrived after a queued request cancels that request.
 #
+# A failed entry leaves a later check free to retry; enter reports each distinct
+# failure once and stays silent while it repeats unchanged.
+#
 # captain-message is the harness-independent activity boundary, called by main
 # only for genuine captain input, never for operational wakes. A captain-opened
 # session start arms with --session-start and counts as captain activity,
 # because the opening message precedes the instruction to record it; a trigger
 # missed while no session ran therefore never fires on session open. A clear or
-# compact, re-emitted or full, arms without it; a handoff successor or a watchdog
+# compact, re-emitted or full, arms without it; a disabled feature still records
+# a captain-opened start; a handoff successor or a watchdog
 # restart, including one run by another home's watchdog, is detected at arm.
 # All of these preserve the last stamp, so both deadlines hold.
 # An existing quiet or away posture is never replaced.
@@ -81,7 +85,8 @@ read_config() {
   [[ "$SILENCE" =~ ^(0|[1-9][0-9]{0,8})$ ]] || fail 'silence-seconds must be 0 or a positive integer (at most 9 digits)'
   if [ "$ZONE" != local ]; then
     case "$ZONE" in ''|/*|*..*) fail 'timezone must be local or an IANA zone name' ;; esac
-    [ -f "/usr/share/zoneinfo/$ZONE" ] || fail "unknown timezone: $ZONE"
+    [ -f "/usr/share/zoneinfo/$ZONE" ] \
+      && [ "$(head -c 4 "/usr/share/zoneinfo/$ZONE" 2>/dev/null)" = TZif ] || fail "unknown timezone: $ZONE"
     export TZ="$ZONE"
   fi
 }
@@ -174,14 +179,14 @@ automated_start() {
 
 arm() {
   local shim="$STATE/auto-away.check.sh" tmp
+  if [ "$SESSION_START" = 1 ] && automated_start; then SESSION_START=0; fi
+  if [ "$SESSION_START" = 1 ] || ! read_activity; then
+    write_record "$ACTIVITY" "$NOW" || fail 'cannot record session start activity'
+  fi
   if [ "$ENABLED" = off ]; then
     "$SCRIPT_DIR/fm-check-unregister.sh" auto-away >/dev/null
     rm -f "$REQUEST"
     return
-  fi
-  if [ "$SESSION_START" = 1 ] && automated_start; then SESSION_START=0; fi
-  if [ "$SESSION_START" = 1 ] || ! read_activity; then
-    write_record "$ACTIVITY" "$NOW" || fail 'cannot record session start activity'
   fi
   if [ -L "$shim" ] || { [ -e "$shim" ] && [ ! -f "$shim" ]; }; then
     fail 'unsafe check shim'
@@ -226,7 +231,7 @@ NOW=$(now)
 case "${1:-check}" in
   captain-message)
     write_record "$ACTIVITY" "$NOW" || fail 'cannot record captain activity'
-    rm -f "$REQUEST"
+    rm -f "$REQUEST" "$ENTRY_FAILURE"
     ;;
   arm) arm ;;
   check)
@@ -245,14 +250,21 @@ case "${1:-check}" in
     ;;
   enter)
     if due && [ "$LAST" = "$2" ]; then
-      # A first failed entry releases its receipt so one later check retries;
-      # a repeat failure for the same activity keeps it and stays quiet.
-      if ! FM_AFK_MODE=away "$SCRIPT_DIR/fm-afk-launch.sh" enter-auto; then
-        if [ "$(cat "$ENTRY_FAILURE" 2>/dev/null || true)" != "$2" ] \
-            && write_record "$ENTRY_FAILURE" "$2" \
-            && [ "$(cat "$REQUEST" 2>/dev/null || true)" = "$2" ]; then
-          rm -f "$REQUEST"
-        fi
+      # Every failed entry releases its receipt so a later check retries; the
+      # failure is reported once per distinct signature, until success clears it.
+      errors=$(mktemp "$STATE/.auto-away-entry.XXXXXX") || fail 'cannot stage entry errors'
+      status=0
+      FM_AFK_MODE=away "$SCRIPT_DIR/fm-afk-launch.sh" enter-auto 2>"$errors" || status=$?
+      signature="exit $status: $(head -n 1 "$errors")"
+      [ "$status" != 0 ] || cat "$errors" >&2
+      rm -f "$errors"
+      if [ "$status" = 0 ]; then
+        rm -f "$ENTRY_FAILURE"
+      else
+        [ "$(cat "$REQUEST" 2>/dev/null || true)" != "$2" ] || rm -f "$REQUEST"
+        [ "$(cat "$ENTRY_FAILURE" 2>/dev/null || true)" != "$signature" ] || exit 0
+        write_record "$ENTRY_FAILURE" "$signature" || true
+        printf 'auto-away entry failed: %s\n' "$signature"
         exit 1
       fi
     elif [ "$(cat "$REQUEST" 2>/dev/null || true)" = "$2" ]; then

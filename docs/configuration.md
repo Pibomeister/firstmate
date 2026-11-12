@@ -818,14 +818,14 @@ No extra timer or daemon is installed; the normal check cadence and primary-turn
 
 `config/auto-away` is an optional, local, gitignored file of `key=value` lines.
 Blank lines and lines beginning with `#` are ignored; malformed settings fail visibly instead of executing configuration as shell code, and a scheduled check reports each failure, including a local-time conversion failure that skips only the clock trigger, as a `check` wake once, staying silent until the failure changes or a clean check clears it.
-A failed automatic entry clears its request receipt once, so a later check queues one retry; a repeat failure for the same activity stamp stays quiet until a new activity stamp, such as a new captain message.
+A failed automatic entry always clears its request receipt, so the next scheduled check queues another retry until entry succeeds or a new captain message arrives. The entry command reports each distinct failure, keyed by its exit status and first error line, once; an unchanged repeat prints nothing, and a success or a new captain message clears the record.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `enabled` | `on` | `off` disables automatic entry; the next session start retires its check. |
+| `enabled` | `on` | `off` disables automatic entry; the next session start retires its check and still records a captain-opened start as activity. |
 | `time` | `23:00` | Local daily trigger in 24-hour `HH:MM`, or `off` to disable this trigger. |
 | `silence-seconds` | `7200` | Silence window in seconds; `0` disables this trigger. |
-| `timezone` | `local` | Host process local zone, or an IANA zone such as `America/Mexico_City`; set this when the host and captain use different zones. |
+| `timezone` | `local` | Host process local zone, or an IANA zone file such as `America/Mexico_City` (a non-zone data file such as `zone.tab` is rejected); set this when the host and captain use different zones. |
 
 The emitted supervision instructions require `captain-message` on each genuine captain message on every primary harness.
 This explicit activity boundary avoids treating operational prompts, watcher wakes, output changes, or compactions as human activity.
@@ -834,6 +834,7 @@ A captain-opened locked session start counts as captain activity, because the ca
 A new message cancels a pending request, and the normal return path records activity before clearing away mode, so the same clock crossing cannot immediately put a returned captain away again.
 An existing away or quiet record, legacy mode flag, or pending return blocks automatic entry.
 Secondmate homes do not arm this feature.
+An armed check is a registered custom check, so an idle primary home with no fleet work still needs a live watcher and is never parked while it is armed; `enabled=off` retires the check at the next session start.
 
 The [`afk` skill](../.agents/skills/afk/SKILL.md#automatic-entry) owns entry completion, the single announcement, and ordinary return behavior.
 The automatic entry carries no away words and grants no new approval authority.
