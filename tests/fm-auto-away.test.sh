@@ -348,6 +348,43 @@ at "$((NIGHT + 300))" check
 [ -z "$(at "$((NIGHT + 301))" enter "$EARLY")" ] || fail 'a fulfilled entry replay announced again after return'
 assert_absent "$FM_HOME/state/.afk-contract" 'a fulfilled entry replay re-entered away after return'
 
+world disable-keeps-fulfilled
+# A fulfilled receipt is the backstop after a return that could not record
+# activity. Turning the feature off must not delete it (docs/configuration.md).
+at "$EARLY" captain-message
+at "$NIGHT" check
+at "$NIGHT" enter "$EARLY" >/dev/null
+assert_present "$FM_HOME/state/.afk-contract" 'scheduled entry did not enter away mode'
+"$ROOT/bin/fm-afk-contract.sh" archive >/dev/null
+[ "$(cat "$FM_HOME/state/.captain-message-epoch")" = "$EARLY" ] || fail 'archiving the away record recorded activity'
+printf 'enabled=off\n' >> "$FM_HOME/config/auto-away"
+at "$((NIGHT + 300))" check
+at "$((NIGHT + 360))" arm >/dev/null
+[ "$(cat "$FM_HOME/state/.auto-away-request")" = "$EARLY fulfilled" ] || fail 'disabling automatic entry dropped a fulfilled receipt'
+printf 'timezone=UTC\n' > "$FM_HOME/config/auto-away"
+at "$((NIGHT + 600))" check
+[ "$(wc -l < "$FM_HOME/state/.wake-queue" | tr -d ' ')" = 1 ] || fail 'disabling automatic entry let a stale stamp request entry again'
+[ -z "$(at "$((NIGHT + 601))" enter "$EARLY")" ] || fail 'disabling automatic entry let a fulfilled entry replay'
+assert_absent "$FM_HOME/state/.afk-contract" 'disabling automatic entry re-entered away after return'
+
+world disable-drops-pending
+# A request that never entered is dropped while disabled, so re-enabling can
+# queue it again. The activity stamp stays at 22:00, so the clock stays due.
+at "$EARLY" captain-message
+at "$NIGHT" check
+printf 'enabled=off\n' >> "$FM_HOME/config/auto-away"
+at "$((NIGHT + 60))" check
+assert_absent "$FM_HOME/state/.auto-away-request" 'a disabled check kept a request that never entered'
+printf 'timezone=UTC\n' > "$FM_HOME/config/auto-away"
+at "$((NIGHT + 120))" check
+[ "$(wc -l < "$FM_HOME/state/.wake-queue" | tr -d ' ')" = 2 ] || fail 'a never-entered request dropped by a disabled check did not queue again'
+printf 'enabled=off\n' >> "$FM_HOME/config/auto-away"
+at "$((NIGHT + 180))" arm >/dev/null
+assert_absent "$FM_HOME/state/.auto-away-request" 'a disabled re-arm kept a request that never entered'
+printf 'timezone=UTC\n' > "$FM_HOME/config/auto-away"
+at "$((NIGHT + 240))" check
+[ "$(wc -l < "$FM_HOME/state/.wake-queue" | tr -d ' ')" = 3 ] || fail 'a never-entered request dropped by a disabled re-arm did not queue again'
+
 world interrupted-request-receipt
 at "$EARLY" captain-message
 # A check can publish its wake and be interrupted before saving the receipt.

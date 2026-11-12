@@ -85,6 +85,15 @@ release_request() {
   [ "${receipt%% *}" != "$ENTRY_ACTIVITY" ] || rm -f "$REQUEST"
 }
 
+# enabled=off drops a pending stamp so a never-entered request can queue again.
+# A fulfilled receipt stays until captain activity clears it.
+drop_pending_request() {
+  case "$(cat "$REQUEST" 2>/dev/null || true)" in
+    *' fulfilled') return 0 ;;
+  esac
+  rm -f "$REQUEST"
+}
+
 # Report a failure signature once; an unchanged repeat backs off silently.
 entry_failed() { # <signature>
   local previous
@@ -233,7 +242,7 @@ arm() {
   local shim="$STATE/auto-away.check.sh" tmp
   if [ "$ENABLED" = off ]; then
     "$SCRIPT_DIR/fm-check-unregister.sh" auto-away >/dev/null
-    rm -f "$REQUEST"
+    drop_pending_request
     return
   fi
   if [ -L "$shim" ] || { [ -e "$shim" ] && [ ! -f "$shim" ]; }; then
@@ -291,7 +300,7 @@ case "${1:-check}" in
     ;;
   arm) arm ;;
   check)
-    [ "$ENABLED" != off ] || rm -f "$REQUEST"
+    [ "$ENABLED" != off ] || drop_pending_request
     [ "$ENABLED" = on ] && [ "$AT" != off ] || CLOCK_OK=1
     if due; then
       request=$LAST
