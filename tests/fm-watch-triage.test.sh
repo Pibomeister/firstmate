@@ -25,6 +25,26 @@ set -u
 # shellcheck source=tests/watch-triage-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/watch-triage-helpers.sh"
 
+# Each watcher cycle in this suite is a whole bin/fm-watch.sh process, and on a
+# loaded host one cycle can outlast the helpers' standard 100-poll (10s)
+# budget, so a healthy watcher was reaped before it decided and the case
+# reported a false "did not surface". Every wait of at least that standard
+# budget, reap's TERM wait included, gets FM_TEST_WAIT_EXIT_POLLS polls
+# instead (default 1200, 120s). The wait still returns the moment the watcher
+# exits, so a passing case costs nothing extra; the shorter budgets some cases
+# expect to expire keep their value.
+eval "fm_triage_base_wait_for_exit() $(declare -f wait_for_exit | tail -n +2)"
+wait_for_exit() {  # <pid> [polls]
+  local polls=${2:-50} floor=${FM_TEST_WAIT_EXIT_POLLS:-1200}
+  case "$floor" in
+    ''|*[!0-9]*) fail "FM_TEST_WAIT_EXIT_POLLS must be a whole number of polls, got '$floor'" ;;
+  esac
+  if [ "$polls" -ge 100 ] && [ "$polls" -lt "$floor" ]; then
+    polls=$floor
+  fi
+  fm_triage_base_wait_for_exit "$1" "$polls"
+}
+
 TMP_ROOT=$(fm_test_tmproot fm-watch-triage-tests)
 
 # Wait up to <limit> 0.1s ticks while <pid> stays alive; 0 if still alive, 1 if it died.
