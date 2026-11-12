@@ -1043,6 +1043,7 @@ Publishing is best-effort and never changes what the watcher does.
 `bin/fm-spawn.sh` runs that verdict for every fresh ship or scout spawn, so a spawn past the lane cap, or on a host whose load is at or over the core count or any `max-load1`, is deferred with exit 75 before anything is created and its backlog item stays queued.
 The watcher also runs `bin/fm-load-relief.sh check` detached beside the publish while the file exists.
 After load stays at or over the ceiling for the sustained window, that check interrupts exactly one lowest-priority live worker in place per pass - never killing it or touching its work - records the pause under `state/load-relief/paused/`, and steers the worker to resume when a later check reads load below the resume level.
+Priority is the `priority` field of the task's backlog item, with the largest number paused first; a task with no priority is never paused, and ties pause the newest dispatch first.
 The ceiling is `max-load1` above unless the optional `config/load-relief` file sets `ceiling`, `resume-below`, `sustain-secs`, or `pause-per-check`.
 [`bin/fm-load-relief.sh`](../bin/fm-load-relief.sh) owns that file's format, the priority order, and the pause records.
 The script's header owns the report line, the published document's fields, the verdict, the beat freshness rules, the host-constraint thresholds, and the probe fallbacks.

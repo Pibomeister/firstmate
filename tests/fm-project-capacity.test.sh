@@ -677,7 +677,8 @@ case "${2:-}" in
   *) exec /usr/bin/sysctl "$@" ;;
 esac
 SH
-  chmod +x "$case_dir/fakebin/sysctl"
+  printf '#!/usr/bin/env bash\necho Darwin\n' > "$case_dir/fakebin/uname"
+  chmod +x "$case_dir/fakebin/sysctl" "$case_dir/fakebin/uname"
   before=$(call_count "$case_dir")
   worktrees=$(worktree_list "$case_dir")
   out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
