@@ -1,0 +1,86 @@
+live_cache_before=missing
+real_orca=/opt/homebrew/bin/orca
+work=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-orca-cache-live.OYQqaZ
+=== 1-2 overlapping real terminal list polls, then a third inside the TTL ===
+overlap rc=0/0 calls=1 hash_a=55b779cfb69630303ec8f6205a7b50b32293194144932f16cfe140abc4881ac1 hash_b=55b779cfb69630303ec8f6205a7b50b32293194144932f16cfe140abc4881ac1 bytes=127406 elapsed=-0.001
+PASS two overlapping real terminal-list polls share one Orca CLI boot and the same stdout
+third rc=0 calls=1 hash=55b779cfb69630303ec8f6205a7b50b32293194144932f16cfe140abc4881ac1 hit_seconds=0.0
+cache_dir_mode=0 owner=501 uid=501
+PASS a later real terminal-list poll inside the default 3s TTL does not boot the Orca CLI
+NOTE cache dir mode assertion used BSD stat -f %Mp, which prints 0 on this host. Remeasured below: mode is 700.
+=== 3 real terminal list after TTL boots again ===
+ttl rc=0/0 calls=2
+PASS a real terminal-list poll after the 1s TTL boots the Orca CLI again
+=== 4 real list during a mutation is not replayed afterwards ===
+gen_during_wait=1
+mutation sleep_rc=0 before=0 during=0 after=0 calls=3 gen_after=2
+PASS a real terminal list taken during a mutation is not replayed after the mutation finishes
+=== 5 classified send and direct mutation drop cached bytes ===
+send_rc=0 calls=4 during={"ok":true,"result":{"text":"during"}} after={"ok":true,"result":{"text":"after"}}
+PASS fm_orca_cli terminal send drops a cached read before the send and again after it
+direct_rc=0 calls=4 gen=2 during={"ok":true,"result":{"text":"during"}} after={"ok":true,"result":{"text":"after"}}
+PASS fm_orca_cli_mutation drops a cached read before the command and again after it
+=== 6 symlink, foreign owner, chmod failure, private TMPDIR ===
+symlink calls=2 elsewhere=
+PASS a symlinked cache directory is not used and receives no writes
+foreign calls=2 mode_before=0 0 mode_after=0 0 extras=0/0
+PASS a cache directory owned by another user is not used and is not modified
+uchg calls=2 kids=
+PASS a cache directory whose mode cannot be set to 700 is not used
+default_dir_mode=0 owner=501 symlink=no calls=1
+NOTE default-dir mode assertion used BSD stat -f %Mp, which prints 0 on this host. Owner was 501 and the second read did not boot the CLI. Remeasured below: mode is 700.
+=== 7 real existence and backend target_exists ===
+oracle_rc=0 handle_extract_rc=0 absent_present_in_oracle_rc=1 oracle_bytes=128567
+exists present_rc=0 absent_rc=1 calls=1
+PASS two real terminal-existence checks share one list: a listed id is present and an unlisted id is absent
+backend present_rc=0 absent_rc=1 calls=1
+PASS fm_backend_target_exists reports the same real present and absent results without another CLI boot
+truncated_rc=2 calls=1
+PASS a truncated terminal list is not reported as absence
+cache_off_rc=0 invocations:
+terminal read --terminal <redacted-handle> --limit 1 --json
+cache_off has_read=yes has_list=no
+PASS with the cache disabled, fm_backend_target_exists uses a one-line terminal read and does not call terminal list
+disabled_gen=4 exists_rc=2 calls=0
+PASS a disabled cache does not call the CLI, does not replay, and does not invalidate
+=== 8 stderr atomic replay, distinct fills, failed and ok:false, wait, test seam ===
+stderr_hit calls=1 out={"ok":true,"result":{"text":"cached"}} err=cached-stderr
+PASS a cache hit replays stdout and stderr together
+missing_stderr calls=2 out={"ok":true,"result":{"text":"fresh"}} err=fresh-stderr
+PASS a missing cached stderr is a miss and does not emit the cached stdout
+split calls=2 a={"ok":true,"result":{"text":"term-a"}} b={"ok":true,"result":{"text":"term-b"}}
+PASS two different terminal reads in one shell keep their own bodies
+failed_read rc=1/1 calls=2
+PASS a failed read is not reused
+ok_false calls=2
+PASS ok:false JSON is not reused
+wait calls=2 body={"ok":true,"result":{"text":"kept"}}
+PASS terminal wait is not cached and does not drop a cached read
+seam_off_calls=2 forced_total_calls=3
+PASS FM_TEST_SEAM=1 leaves the cache off unless FM_ORCA_CLI_CACHE=1 forces it on
+=== 9 real missing-terminal read is not reused when it fails or is ok:false ===
+probe_status=rc=1
+status rc=1
+kind nonjson
+missing_terminal_read calls=2 kind=ok-false
+PASS a real missing-terminal read that is not a successful ok result is not reused
+live_cache_after=missing
+PASS the host Orca CLI cache directory outside this run was left unchanged
+FAILS=2 from the stat -f %Mp misread only; both directory-mode checks passed on remeasure (Lp=700). No product check failed.
+
+=== remeasure: directory mode and poll duration ===
+BSD stat -f %Mp prints 0 on this host, so the two mode lines above are not a mode of 0.
+A cache directory filled by one real `terminal list --json --limit 5000` through fm_orca_cli:
+  stat -f p=40700 Lp=700 Sp=drwx------
+  ls -ld: drwx------
+The default path $TMPDIR/fm-orca-cli-cache-<uid> under a private TMPDIR, after two disposable reads that booted the CLI once:
+  stat -f p=40700 Lp=700 Sp=drwx------ u=501
+Timed real terminal list through fm_orca_cli with the cache forced on and FM_TEST_SEAM unset:
+  cold_s=0.979 rc=0 boots=1
+  hot_s=0.081 rc=0 boots still 1
+  stdout identical
+The host cache path ${TMPDIR}/fm-orca-cli-cache-<uid> was absent before and after this run.
+
+=== colocated tests/fm-orca-cli-cache.test.sh ===
+exit 0
+1..23 all ok, ending FM_TEST_COMPLETE
