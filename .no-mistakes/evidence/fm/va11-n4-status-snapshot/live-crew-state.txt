@@ -1,0 +1,76 @@
+### Scenario 1: snapshot path, fake no-mistakes first on PATH (logs and exits 99 if called)
+--- crew read 1
+state: parked · source: run-step · parked at review: 1 finding(s) · ask-user: authority decision · run: 01M7LIVESNAP0000000000001
+(exit=0)
+real 1.60
+snapshot repo captured_at: {'76d23dfc11ee': 1794444814.265724}
+--- crew read 2
+state: parked · source: run-step · parked at review: 1 finding(s) · ask-user: authority decision · run: 01M7LIVESNAP0000000000001
+(exit=0)
+real 1.60
+snapshot repo captured_at: {'76d23dfc11ee': 1794444814.265724}
+--- crew read 3
+state: parked · source: run-step · parked at review: 1 finding(s) · ask-user: authority decision · run: 01M7LIVESNAP0000000000001
+(exit=0)
+real 1.79
+snapshot repo captured_at: {'76d23dfc11ee': 1794444814.265724}
+--- CLI calls during snapshot reads:
+(none)
+state.sqlite sha before=5925620e610f9a853234b2a107e1fa14009e1814 after=5925620e610f9a853234b2a107e1fa14009e1814
+
+### Scenario 2: unknown schema (user_version=7 set on the disposable DB) -> guard rejects snapshot, falls back to the REAL no-mistakes CLI (logging wrapper)
+state: parked · source: run-step · parked at review: 1 finding(s) · ask-user: authority decision · run: 01M7LIVESNAP0000000000001
+(exit=0)
+real 2.24
+--- real CLI calls made:
+real-cli-call: axi status
+real-cli-call: axi
+real-cli-call: axi status --run 01M7LIVESNAP0000000000001
+--- snapshot file present after guard rejection?
+ls: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-snaplive.BDjfsY/lab2/state/.nm-status-snapshot.json: No such file or directory
+
+### Scenario 3: stale snapshot. lab1 holds a cached snapshot (parked). The run then fails in state.sqlite.
+--- real CLI now says:
+run:
+  id: "01M7LIVESNAP0000000000001"
+  branch: fm/live-snap
+  status: failed
+  head: 2b6045bc
+  head_sha: 2b6045bc6a34fbac49e4e1fa13836131fab78107
+  verification_plan: none
+  findings: 1 awaiting
+  steps[9]{step,status,findings,duration_ms}:
+    intent,completed,0,0
+    rebase,completed,0,0
+    review,completed,1,0
+    test,failed,0,0
+    document,pending,0,0
+    lint,pending,0,0
+    push,pending,0,0
+--- crew read inside TTL (60s) from cached snapshot:
+state: parked · source: run-step · parked at review: 1 finding(s) · ask-user: authority decision · run: 01M7LIVESNAP0000000000001
+(exit=0)
+--- crew read with TTL=2s after the snapshot aged >2s (stale snapshot must be discarded and recaptured):
+state: failed · source: run-step · run failed · run: 01M7LIVESNAP0000000000001
+(exit=0)
+--- CLI calls during these snapshot reads:
+(none)
+
+### Scenario 4: read failure. Daemon stopped, WAL checkpointed away; files in NM_HOME:
+config.yaml daemon.lock logs repos servers state.sqlite update-check.json worktrees 
+--- crew read with fake CLI (exit 99) - snapshot read fails, falls back to CLI:
+state: unknown · source: none · backend unreachable (tmux endpoint state: unreadable)
+(exit=0)
+--- CLI fallback calls attempted:
+cli-call: axi status
+--- NM_HOME files after read (reader must not create -wal/-shm or modify DB):
+config.yaml daemon.lock logs repos servers state.sqlite update-check.json worktrees 
+sha before=698185c9c574682b646e73663b276f385c69b338 after=698185c9c574682b646e73663b276f385c69b338
+--- crew read with REAL CLI as fallback:
+state: failed · source: run-step · run failed · run: 01M7LIVESNAP0000000000001
+(exit=0)
+--- real CLI calls:
+real-cli-call: axi status
+real-cli-call: axi
+real-cli-call: axi status --run 01M7LIVESNAP0000000000001
+real-cli-call: runs --limit 200
