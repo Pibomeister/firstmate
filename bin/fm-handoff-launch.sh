@@ -151,12 +151,10 @@ SUCCESSOR_CMD="claude $PERM_FLAG $(printf '%q' "$PROMPT")"
 # Pids whose command line already carries the handoff path (this launcher
 # and its ancestors do), so only a pid appearing after the launch counts.
 pids_carrying_handoff() {
-  ps -eo pid=,args= 2>/dev/null | while IFS= read -r line || [ -n "$line" ]; do
-    line=${line#"${line%%[![:space:]]*}"}
-    pid=${line%% *}
-    case "$pid" in *[!0-9]* | '') continue ;; esac
-    case "$line" in *"$HANDOFF"*) printf '%s\n' "$pid" ;; esac
-  done
+  ps -eo pid=,args= 2>/dev/null | HANDOFF_NEEDLE="$HANDOFF" awk '
+    BEGIN { handoff = ENVIRON["HANDOFF_NEEDLE"] }
+    $1 ~ /^[0-9]+$/ && index($0, handoff) { print $1 }
+  '
 }
 BASELINE=" $(pids_carrying_handoff | tr '\n' ' ')"
 
