@@ -997,6 +997,44 @@ test_registered_lane_with_open_terminal_is_kept() {
   pass "a registered lane's worktree is kept while its terminal is open"
 }
 
+test_targeted_pass_keeps_a_registered_lane_until_its_terminal_closes() {
+  local other other_wt other_record other_before
+  begin_lane_case lane-target
+  publish_pr MERGED
+  lane_orca_json term-lane
+  other="$CASE_DIR/other-repo"
+  other_wt="$CASE_DIR/other-wt"
+  fm_git_worktree "$other" "$other_wt" other
+  other=$(cd "$other" && pwd -P) || fail "could not resolve the other repository"
+  other_wt=$(cd "$other_wt" && pwd -P) || fail "could not resolve the other worktree"
+  other_record="$CASE_DIR/state/external-lanes/n11-g2.lane"
+  FM_HOME="$CASE_DIR" "$ROOT/bin/fm-lane-register.sh" n11-g2 --repo "$other" \
+    --terminal term-other --worktree "$other_wt" >/dev/null \
+    || fail "the other lane could not be registered"
+  git -C "$other" worktree remove "$other_wt" \
+    || fail "could not remove the other lane's worktree"
+  other_before=$(cat "$other_record")
+  capture_pass "$CASE_DIR" "$CASE_REPO"
+  assert_kept
+  [ ! -e "$CASE_DIR/orca.json.rm" ] || fail "the targeted pass removed a lane worktree whose terminal is open"
+  assert_out "registered lane $LANE_ID terminal is open"
+  [ -f "$LANE_RECORD" ] || fail "a kept lane lost its record"
+  [ -f "$other_record" ] || fail "the targeted pass forgot a lane whose worktree is not in the clone"
+  [ "$(cat "$other_record")" = "$other_before" ] || fail "the targeted pass changed a lane whose worktree is not in the clone"
+  lane_orca_json ""
+  capture_pass "$CASE_DIR" "$CASE_REPO"
+  wait_gone "$CASE_WT" || fail "the targeted pass left the lane worktree after its terminal closed"
+  grep -F -- "--worktree path:$CASE_WT" "$CASE_DIR/orca.json.rm" >/dev/null \
+    || fail "Orca was not asked to remove the lane worktree"
+  if grep -F -- '--force' "$CASE_DIR/orca.json.rm" >/dev/null; then
+    fail "the lane worktree was removed with --force"
+  fi
+  [ ! -e "$LANE_RECORD" ] || fail "the lane record outlived its removed worktree"
+  [ -f "$other_record" ] || fail "the targeted pass forgot a lane whose worktree is not in the clone"
+  [ "$(cat "$other_record")" = "$other_before" ] || fail "the targeted pass changed a lane whose worktree is not in the clone"
+  pass "a clone-path pass keeps a registered lane while its terminal is open, then removes the clean worktree and the record"
+}
+
 test_registered_lane_dry_run_changes_nothing() {
   begin_lane_case lane-dry
   publish_pr MERGED
@@ -1066,5 +1104,6 @@ fm_test_run \
   test_registered_lane_with_tracked_changes_is_kept \
   test_registered_lane_with_untracked_file_is_kept \
   test_registered_lane_with_open_terminal_is_kept \
+  test_targeted_pass_keeps_a_registered_lane_until_its_terminal_closes \
   test_registered_lane_dry_run_changes_nothing \
   test_spent_lane_record_is_forgotten

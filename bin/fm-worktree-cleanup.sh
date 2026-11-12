@@ -59,14 +59,16 @@
 # ($FM_HOME/projects, or $FM_PROJECTS_OVERRIDE). A directory that is not the
 # root of its own work tree is skipped. An explicit project argument is a clone
 # path. Linked worktrees of that clone are included wherever they live.
-# A pass with no project argument also covers each external lane registered in
-# this home's state/external-lanes/ (bin/fm-lane-register.sh owns the record):
-# the registered worktree of the registered repository gets every check above,
-# and is also reported and left in place while Orca still lists the lane's
-# registered terminal. Other worktrees of that repository are read only for the
-# nesting check. After it removes a lane's worktree, the pass deletes the
-# lane's record; it also deletes a record whose worktree is gone, or that names
-# no worktree, once Orca no longer lists its terminal.
+# A registered external lane (this home's state/external-lanes/, which
+# bin/fm-lane-register.sh owns) is judged with the checks above when the pass
+# collected its worktree: every registered worktree on a pass with no project
+# argument, and a registered worktree of the named clone on a clone-path pass.
+# Either pass reports that worktree and leaves it in place while Orca still
+# lists the lane's registered terminal, and deletes the lane's record after it
+# removes the worktree. A pass with no project argument also reads the lane
+# repository's other worktrees for the nesting check, and deletes a record
+# whose worktree is gone, or that names no worktree, once Orca no longer lists
+# its terminal. A clone-path pass leaves every other lane record alone.
 #
 # Usage:
 #   fm-worktree-cleanup.sh [--dry-run] [scan] [<clone-path>]
@@ -818,6 +820,43 @@ EOF
   done
 }
 
+# tag_registered_lanes: mark a worktree this pass already collected with its
+# lane id when the registration names that same repository and path. A lane
+# whose worktree this pass did not collect is left untouched.
+tag_registered_lanes() {
+  local rec id repo wt root snap row path record_repo rest
+  [ -d "$LANE_DIR" ] && [ ! -L "$LANE_DIR" ] || return 0
+  if [ ! -r "$LANE_DIR" ] || [ ! -x "$LANE_DIR" ]; then
+    emit "worktree-cleanup: report $LANE_DIR registered lanes cannot be read"
+    return 0
+  fi
+  snap=$SCRATCH/lane-tag
+  cp -- "$RECORDS" "$snap"
+  for rec in "$LANE_DIR"/*.lane; do
+    [ -f "$rec" ] || continue
+    id=${rec##*/}
+    id=${id%.lane}
+    if [ ! -r "$rec" ]; then
+      emit "worktree-cleanup: report lane $id record cannot be read"
+      continue
+    fi
+    repo=$(fm_meta_get "$rec" repo)
+    wt=$(fm_meta_get "$rec" worktree)
+    [ -n "$repo" ] && [ -n "$wt" ] || continue
+    root=$(clone_root_path "$repo") || continue
+    while IFS= read -r row; do
+      [ -n "$row" ] || continue
+      IFS=$'\037' read -r path record_repo rest <<EOF
+$row
+EOF
+      same_path "$path" "$wt" || continue
+      same_path "$record_repo" "$root" || continue
+      awk -F $'\037' -v p="$path" '$1 != p' "$RECORDS" > "$RECORDS.new" && mv -f -- "$RECORDS.new" "$RECORDS"
+      printf '%s%s\n' "${row%$'\037'}" $'\037'"$id" >> "$RECORDS"
+    done < "$snap"
+  done
+}
+
 run_target() {
   local raw=$1 resolved
   resolved=$(clone_root_path "$raw") || {
@@ -825,6 +864,7 @@ run_target() {
     exit 1
   }
   collect_repo "$resolved"
+  tag_registered_lanes
 }
 
 if [ -x "$SCRIPT_DIR/fm-disk-alarm.sh" ]; then
