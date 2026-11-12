@@ -26,8 +26,10 @@
 # process instance. Daemon-served Codex records also carry codex_daemon_pid
 # and codex_daemon_start for the lifetime query owned by the shared library.
 # Valid FM_SESSION_ENDPOINT_META from a secondmate launch contributes the
-# Orca backend, terminal, worktree, and spawn_gen fields; a same-id publication
-# preserves those fields when no new endpoint metadata is supplied.
+# Orca backend, terminal, worktree, and spawn_gen fields with precedence over
+# terminal environment variables. A primary's current terminal replaces a
+# previous sidecar endpoint on re-publication; otherwise its Orca or tmux
+# endpoint is preserved for the same trusted session id.
 # Confirmed-own acquisition leaves a matching anchor instance's sidecar
 # byte-identical; otherwise it republishes the record. A same-session
 # confirmation keeps a live line 1 that is in this session's harness ancestry,
@@ -46,7 +48,9 @@
 # warning and the re-anchor still completes. A busy lease-command lock past
 # LEASE_LOCK_WAIT seconds instead refuses acquisition without re-anchoring.
 # A foreign replacement retires the previous session's task leases under that
-# same lease-command lock before publishing its new anchor.
+# same lease-command lock before publishing its new anchor. A verified handoff
+# from a live predecessor retires them only after line 1 verifies as the
+# successor, so a refused or rolled-back transfer keeps the predecessor's leases.
 #
 # Usage: fm-lock.sh           acquire; exit 1 unless ownership is verified
 #        fm-lock.sh status    print holder and liveness; always exits 0.
@@ -71,6 +75,8 @@ mkdir -p "$STATE" 2>/dev/null || {
 # Stop auto-arm applies the exact same identity contract.
 # shellcheck source=bin/fm-session-lock-lib.sh
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
+# shellcheck source=bin/fm-handoff-lib.sh
+. "$SCRIPT_DIR/fm-handoff-lib.sh"
 
 if [ "${1:-}" = "status" ]; then
   fm_session_lock_inspect "$STATE"
@@ -147,10 +153,23 @@ restore_uncommitted_lock_session() {
         2) rm -f "$LOCK_SESSION" "$LOCK_SESSION_PREV" 2>/dev/null || true ;;
       esac
       ;;
-    2) rm -f "$LOCK_SESSION" "$LOCK_SESSION_PREV" 2>/dev/null || true ;;
+    2)
+      if verified_handoff_transfer && [ -n "$LOCK_LINE_PRE" ]; then
+        cp -f "$LOCK_LINE_PRE" "$LOCK" 2>/dev/null || true
+        case "$LOCK_SESSION_KIND" in
+          1) mv -f "$LOCK_SESSION_PREV" "$LOCK_SESSION" 2>/dev/null || true ;;
+          *) rm -f "$LOCK_SESSION" "$LOCK_SESSION_PREV" 2>/dev/null || true ;;
+        esac
+      else
+        rm -f "$LOCK_SESSION" "$LOCK_SESSION_PREV" 2>/dev/null || true
+      fi
+      ;;
   esac
   LOCK_SESSION_PHASE=0
   LOCK_SESSION_KIND=0
+}
+verified_handoff_transfer() {
+  [ -z "$REANCHOR" ] && [ "${HANDOFF_TAKEOVER:-}" = verified_transfer ] && [ -n "${FM_HANDOFF_NONCE:-}" ]
 }
 commit_lock_session() {
   LOCK_SESSION_PHASE=0
@@ -158,6 +177,9 @@ commit_lock_session() {
   rm -f "$LOCK_SESSION_PREV" 2>/dev/null || true
 }
 on_lock_exit() {
+  # Complete ownership restoration and lock release after the first signal.
+  trap '' HUP INT TERM
+  trap - EXIT
   restore_uncommitted_lock_session
   [ -n "$LOCK_LINE_PRE" ] && rm -f "$LOCK_LINE_PRE"
   release_autoarm_lock
@@ -180,7 +202,7 @@ remember_lock_session() {
 }
 
 publish_lock_endpoint() {
-  local trusted=$1 recorded=$2 candidate=${FM_SESSION_ENDPOINT_META:-} source='' field value
+  local trusted=$1 recorded=$2 candidate=${FM_SESSION_ENDPOINT_META:-} source='' field value endpoint_backend=tmux explicit=0
   if [ -n "$trusted" ] && [ "$trusted" = "$recorded" ]; then
     source=$LOCK_SESSION
   fi
@@ -189,9 +211,18 @@ publish_lock_endpoint() {
     && [ "$(sed -n 's/^worktree=//p' "$candidate")" = "${FM_HOME%/}" ] \
     && [ -n "$(sed -n 's/^terminal=//p' "$candidate")" ]; then
     source=$candidate
+    explicit=1
+  fi
+  # A resumed primary can move terminals while retaining its trusted id.
+  # Its live terminal outranks its old sidecar, but not explicit launch metadata.
+  if [ "$explicit" -eq 0 ] && value=$(fm_handoff_endpoint_handle); then
+    case "$value" in *[!A-Za-z0-9_.:%-]*) return 1 ;; esac
+    [ -n "${TMUX_PANE:-}" ] || endpoint_backend=orca
+    printf 'backend=%s\nterminal=%s\nworktree=%s\n' "$endpoint_backend" "$value" "${FM_HOME%/}"
+    return 0
   fi
   [ -n "$source" ] && [ -f "$source" ] && [ ! -L "$source" ] || return 0
-  [ "$(sed -n 's/^backend=//p' "$source")" = orca ] || return 0
+  case "$(sed -n 's/^backend=//p' "$source")" in orca|tmux) ;; *) return 0 ;; esac
   value=$(sed -n 's/^worktree=//p' "$source")
   [ -n "$value" ] && [ "$value" = "${FM_HOME%/}" ] || return 0
   [ -n "$(sed -n 's/^terminal=//p' "$source")" ] || return 0
@@ -285,7 +316,17 @@ confirm_own_lock() {  # <recorded-pid>
 }
 
 refuse_live_owner() {  # <recorded-pid>
-  local recorded
+  local recorded deadline nonce
+  if [ -f "$STATE/.handoff-pending" ] \
+    && deadline=$(jq -er '.deadline | numbers' "$STATE/.handoff-pending" 2>/dev/null) \
+    && [ "$(date +%s)" -lt "$deadline" ]; then
+    nonce=$(jq -r '.nonce // ""' "$STATE/.handoff-pending" 2>/dev/null)
+    if [ -n "$nonce" ] && [ "${FM_HANDOFF_NONCE:-}" = "$nonce" ]; then
+      fm_handoff_event handoff_reject "$nonce" 0 "$me" "$(fm_handoff_endpoint_handle || true)" lock_held >&2
+    else
+      fm_handoff_event handoff_reject none 0 "$me" "$(fm_handoff_endpoint_handle || true)" lock_held_unbound >&2
+    fi
+  fi
   if recorded=$(fm_session_lock_recorded_session_id "$STATE"); then
     echo "error: another live firstmate session holds the lock (pid $1, session $recorded); operate read-only until resolved" >&2
   else
@@ -294,13 +335,42 @@ refuse_live_owner() {  # <recorded-pid>
   exit 1
 }
 
+retire_previous_leases() {
+  local lease task
+  for lease in "$STATE"/.lease-*; do
+    [ -f "$lease" ] || [ -L "$lease" ] || continue
+    task=${lease##*/.lease-}
+    fm_lease_valid_id "$task" || continue
+    rm -f -- "$lease" || return 1
+  done
+}
+
+# A handoff successor needs a valid ack while the recorded owner is live.
+# A proven-dead owner takes the ordinary stale path only while the presented
+# nonce's claim is still pending and unexpired; a pid that still exists
+# without a live owner verdict is doubt and refuses. The verdict is taken
+# once, under both locks, before any task lease is retired.
+HANDOFF_TAKEOVER=verified_transfer
+handoff_transfer_refused() {  # <recorded-pid>
+  [ -n "${FM_HANDOFF_NONCE:-}" ] || return 1
+  if fm_session_lock_recorded_owner_live "$STATE"; then
+    ! fm_handoff_can_transfer "$me" "$1"
+    return
+  fi
+  case "$1" in ''|*[!0-9]*) return 0 ;; esac
+  ! kill -0 "$1" 2>/dev/null || return 0
+  fm_handoff_claim_live "$FM_HANDOFF_NONCE" || return 0
+  HANDOFF_TAKEOVER=stale_takeover
+  return 1
+}
+
 if [ -f "$LOCK" ] && [ ! -L "$LOCK" ]; then
   old=$(cat "$LOCK" 2>/dev/null || true)
   if fm_session_lock_owned_by_self "$STATE"; then
     confirm_own_lock "$old"
     old=$(cat "$LOCK" 2>/dev/null || true)
   fi
-  if [ -z "$REANCHOR" ] && fm_session_lock_recorded_owner_live "$STATE"; then
+  if [ -z "$REANCHOR" ] && fm_session_lock_recorded_owner_live "$STATE" && ! fm_handoff_can_transfer "$me" "$old"; then
     refuse_live_owner "$old"
   fi
 fi
@@ -331,7 +401,7 @@ if [ -e "$LOCK" ] || [ -L "$LOCK" ]; then
   if [ -z "$REANCHOR" ] && fm_session_lock_recorded_owner_live "$STATE"; then
     fm_session_lock_owned_by_self "$STATE" && confirm_own_lock "$old"
     old=$(cat "$LOCK" 2>/dev/null || true)
-    if [ -z "$REANCHOR" ] && fm_session_lock_recorded_owner_live "$STATE"; then
+    if [ -z "$REANCHOR" ] && fm_session_lock_recorded_owner_live "$STATE" && ! fm_handoff_can_transfer "$me" "$old"; then
       refuse_live_owner "$old"
     fi
   fi
@@ -340,26 +410,32 @@ fi
 # that session's resume own this lock. If the sidecar changes before line 1 is
 # written, a failure restores the previous sidecar. If line 1 is written but
 # not yet verified, a failure removes the sidecar and leaves the lock
-# ancestry-only. After line 1 verifies as this session's anchor, a later
-# signal leaves the published pair in place, except on the re-anchor path:
-# there a HUP, INT, or TERM during the lease move or the bounded
-# .claude-autoarm.lock wait, before commit_lock_session, still runs
-# restore_uncommitted_lock_session with phase 2 and removes the sidecar.
+# ancestry-only, except on a verified transfer, where it restores the
+# predecessor's line 1 and its prior sidecar, or its absence, under the held
+# locks. On the re-anchor path a HUP, INT, or TERM during the lease
+# move or the bounded .claude-autoarm.lock wait, before commit_lock_session,
+# still runs restore_uncommitted_lock_session with phase 2 and removes the
+# sidecar. A verified transfer retires the predecessor's leases only after
+# commit_lock_session, still under the lease lock and with signals ignored, so
+# a rolled-back transfer keeps them and a committed one reports success; a
+# lease left by a failed retirement reads as stale against a non-owner pid.
 if [ -z "$REANCHOR" ]; then
   fm_lock_acquire_wait_max "$LEASE_LOCK" "$LEASE_LOCK_WAIT" || {
     echo "error: cannot retire the previous session's task leases; operate read-only until resolved" >&2
     exit 1
   }
   LEASE_LOCK_HELD=1
-  for lease in "$STATE"/.lease-*; do
-    [ -f "$lease" ] || [ -L "$lease" ] || continue
-    task=${lease##*/.lease-}
-    fm_lease_valid_id "$task" || continue
-    rm -f -- "$lease" || {
+  # The ack must still be valid at the actual mutation, after waiting for
+  # leases. Both claim and lease locks are held through publication.
+  if handoff_transfer_refused "${old:-}"; then
+    refuse_live_owner "${old:-}"
+  fi
+  if ! verified_handoff_transfer; then
+    retire_previous_leases || {
       echo "error: cannot retire a previous session task lease; operate read-only until resolved" >&2
       exit 1
     }
-  done
+  fi
 fi
 publish_lock_session_or_die
 if [ -f "$LOCK" ]; then
@@ -410,7 +486,15 @@ if [ -n "$REANCHOR" ] && fm_autoarm_ledger_read "$STATE" && [ "$FM_AUTOARM_SESSI
   fi
   release_autoarm_lock
 fi
-commit_lock_session
+if verified_handoff_transfer; then
+  trap '' HUP INT TERM
+  commit_lock_session
+  retire_previous_leases \
+    || echo "warning: a previous session task lease could not be retired, so it reads as stale" >&2
+else
+  commit_lock_session
+fi
 release_lease_lock
 release_claim_lock
+[ -z "${FM_HANDOFF_NONCE:-}" ] || echo "handoff_takeover=$HANDOFF_TAKEOVER"
 echo "lock acquired: harness pid $me"

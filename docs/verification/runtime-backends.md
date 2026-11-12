@@ -138,6 +138,38 @@ Claude records a delivered instruction as one `hook_additional_context` attachme
 Primed by the guard's prompt to follow no other instruction, the model called the context tool-result content and did not act on it, so the instruction names its source.
 The guard does not prove that an unprimed session writes its handoff.
 
+### Verified successor lock transfer
+
+Verified on 2026-11-10 on macOS arm64 with Bash 3.2.57.
+The executable regression uses real harness-shaped processes and the production acknowledgement, session-lock, discovery, and Stop-hook entrypoints.
+Its Orca and tmux transport shims check argument boundaries; live model startup and server receipts are outside this fixture's evidence.
+The installed Orca 1.4.255 `agent launch --help` exposes the prompt argument and terminal surface used by the launcher.
+`bin/fm-handoff-lib.sh` owns the acknowledgement and watchdog wire contracts.
+
+Refresh the transaction regression and failure drill with:
+
+```sh
+bash bin/fm-test-run.sh tests/fm-handoff-launch.test.sh
+```
+
+Selected output:
+
+```text
+ok - supervisor endpoint metadata retains precedence and generation
+ok - verified successor ack transfers the lock while predecessor remains alive; discovery follows it
+ok - tmux launches direct argv outside tmux in its home session and transfers the verified lock
+ok - tmux resume discovers %32 and preserves explicit metadata precedence
+ok - orca resume discovers term_new and preserves explicit metadata precedence
+ok - DRILL interrupt: one failure on stdout and log, predecessor lock retained
+ok - DRILL error-exit: one failure on stdout and log, predecessor lock retained
+```
+
+The regression also requires the actual Stop gate to reject a changed acknowledgement and each failure drill to retain the predecessor lock after one retry.
+The resume fixtures keep the previous process alive while a new process with the same trusted session id takes the anchor.
+The interruption hits during the redirected backend call; the error drill fails the poll operation after launch.
+Both require exactly one failure on the original stdout and in the durable event log.
+The shared session-lock ancestry suite passed on the same host; it covers other supported primary harness identities, re-keys, task leases, and rewake ownership through their existing integration surfaces.
+
 ## Codex model catalog max validation
 
 Verified on 2026-10-27 with codex-cli 0.162.1 on macOS arm64.

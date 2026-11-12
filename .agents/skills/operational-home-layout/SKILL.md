@@ -86,6 +86,7 @@ data/                personal fleet records; LOCAL, gitignored as a whole
   <id>/status.log <id>/status.<N>.log <id>/children/<child>/...  optional teardown archives; see docs/architecture.md "Task status archives"
   pipeline-spend.jsonl  optional per-task no-mistakes pipeline spend, written only when config/pipeline-spend is present; bin/fm-pipeline-spend.sh owns the schema
   orders/            durable captain orders and holds, their event log, and the sweep lock; bin/fm-order.sh owns the lifecycle
+  handoff-ack-<nonce>.json  a handoff successor's acknowledgement written by bin/fm-handoff-ack.sh; bin/fm-handoff-lib.sh owns the schema
   failure-classes/<key>.jsonl  append-only failure-class records from refuted claims, one file per class, shared by every task; docs/claim-ledger.md owns the schema
 projects/            cloned repos; gitignored; read-only except under hard rule 1's concrete captain-approved project operation exception
 state/               runtime records and signals; gitignored
@@ -109,7 +110,8 @@ state/               runtime records and signals; gitignored
   <id>.reconcile-nudged  epoch second of the last inventory-reconcile nudge sent to this secondmate; bin/fm-secondmate-reconcile.sh owns its per-home cooldown window
   <id>.backlog-close  the exact backlog transition a teardown recorded before removing the task's record, so an interrupted cleanup can still be finished at the next session start; bin/fm-backlog-transition-lib.sh owns its format and replay, and a landed transition removes it
   captain-handle .order-handoff .order-sweep  the current captain terminal that order senders resolve at send time, the recorded handoff the restart gate reads, and the watcher's order-sweep throttle stamp; bin/fm-order.sh owns the handle and record
-  .handoff-successor                         the successor launch record (pid, handoff path) bin/fm-handoff-launch.sh writes and the handoff trigger's successor gate reads; bin/fm-handoff-trigger.sh owns it
+  .handoff-successor                         the verified successor record bin/fm-handoff-launch.sh writes only after the acknowledged lock transfer, read by the handoff trigger's successor gate; bin/fm-handoff-lib.sh owns its fields
+  .handoff-pending handoff-events.log        the predecessor's pending handoff claim and the append-only versioned HANDOFF v1 event log the box watchdog reads; bin/fm-handoff-lib.sh owns both formats
   compact-point                              the auto-compact point the handoff trigger last resolved, named for its session, read by bin/fm-context-reading-lib.sh; bin/fm-handoff-trigger.sh owns it
   monitor-status                             the home's monitor unit status, rewritten by each watchdog pass and by a session start whose watchdog unit is not enabled; docs/watchdog.md "Layer check chain" owns the format
   launch-charter.md  a secondmate home's launch copy of its charter with the standing captain holds appended; written by bin/fm-spawn.sh, so the charter itself never changes

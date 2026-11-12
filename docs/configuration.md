@@ -102,6 +102,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Explicitly installed content-addressed extension packages under `data/extensions/packages/`.
 - Failure-class records under `data/failure-classes/` ([`claim-ledger.md`](claim-ledger.md)).
 - Durable captain orders and holds under `data/orders/` (`bin/fm-order.sh`).
+- Successor handoff acknowledgements, `data/handoff-ack-<nonce>.json` (`bin/fm-handoff-lib.sh`).
 
 `state/` holds runtime records:
 
@@ -118,7 +119,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Relay guard pass status, action log, probe streaks, relay logs, and pass lock under `state/relay-guard/` (`bin/fm-relay-guard.sh`).
 - The default host-health beacon log, `state/host-health-beacon.log` (`bin/fm-host-health.sh`).
 - The scheduled terminal-cleanup logs, `state/terminal-reap.log` and `state/terminal-reap.err`, written by the hourly LaunchAgent that `bin/fm-terminal-reap.sh --schedule-plist` prints.
-- The current captain handle, `state/captain-handle`, that order senders resolve at send time, and this session's handoff record, `state/.order-handoff`, that the restart gate reads (`bin/fm-order.sh`), plus the successor launch record, `state/.handoff-successor`, that the handoff trigger's successor gate reads, and the auto-compact point, `state/compact-point`, that the handoff trigger publishes for outside context readers (`bin/fm-handoff-trigger.sh`).
+- The current captain handle, `state/captain-handle`, that order senders resolve at send time, and this session's handoff record, `state/.order-handoff`, that the restart gate reads (`bin/fm-order.sh`), plus the verified successor record, `state/.handoff-successor`, that the handoff trigger's successor gate reads, the pending handoff claim, `state/.handoff-pending`, and the versioned handoff event log, `state/handoff-events.log` (`bin/fm-handoff-lib.sh`), and the auto-compact point, `state/compact-point`, that the handoff trigger publishes for outside context readers (`bin/fm-handoff-trigger.sh`).
 
 `config/` holds local gitignored operating choices, including explicit extension bindings under `config/extensions.d/`.
 
@@ -477,11 +478,19 @@ This feature does not set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` or any other autocom
 
 A Claude primary session receives one instruction to write its full handoff when its context left before auto-compact falls to a set percentage.
 The instruction asks the session to persist its open work records, decisions, and durable knowledge, record the handoff, hand off to a successor, and report that it is ready to restart, so a session can restart from a handoff instead of compacting.
-A primary launches its successor with `bin/fm-handoff-launch.sh <handoff file>`, which starts the successor in a new terminal on the home's recorded backend, verifies that the new successor harness pid is live, and records it in `state/.handoff-successor` as `pid=<successor pid>` and `handoff=<handoff document path>`; the gate reads only that record, so any other launcher, such as an operator, must write the same record for the stop to clear.
+A primary launches its successor with `bin/fm-handoff-launch.sh <handoff file>` on the home's recorded Orca or tmux backend.
+The launcher and `bin/fm-handoff-ack.sh` implement the acknowledgement and lock-transfer contract owned by `bin/fm-handoff-lib.sh`; its header defines the records and watchdog events.
 The launcher refuses rather than guess when the backend or harness cannot be determined, and it never kills or interrupts the current session.
-The launcher verifies only the live successor pid; the successor confirms the handoff sha256 at pickup and stops on a mismatch.
-The successor's launch prompt tells it to confirm the handoff document's sha256, wait until the predecessor's harness pid (line 1 of `state/.lock`) is dead, and then run `bin/fm-session-start.sh` to take the session lock.
-The predecessor then ends its turn; it cannot exit itself, so its process is ended by the captain, by a leash or operator `/exit` in its pane, or by the watchdog restart path, and the successor takes the lock only after that pid dies.
+Its `--help` owns background-launch and unfinished-exit behavior.
+Orca uses `orca agent launch` with a prompt argument; tmux executes direct argv.
+Orca owns the agent's permission posture; an explicit `auto` home setting currently refuses rather than substituting a shell launch.
+The successor reads the handoff and acknowledges it before running session start.
+The predecessor remains alive until the acknowledgement is validated and the lock transfers under the existing claim and task-lease locks.
+The predecessor then ends its turn and retires; it must not continue fleet mutations after the transfer.
+Two fresh terminal attempts share one ten-minute budget; the launcher emits a parseable failure if neither completes.
+A missing or invalid acknowledgement cannot move the predecessor's live lock.
+On Orca, failed panes remain available for diagnosis; on every backend, a failed attempt's expired claim cannot take ownership.
+`bin/fm-captain-locate.sh` reports the verified lock holder and its terminal handle for supervisor discovery; its header owns the output format.
 A second mate never launches its own successor: it appends one relaunch request to its parent channel and stops.
 It fires at most once per context cycle: a session that auto-compacts anyway is told again before its next auto-compact.
 
@@ -515,7 +524,7 @@ It never writes the handoff, compacts, or restarts the session.
 
 The same hook enforces the captain-order restart gate at each Stop of a session that is handing off: the trigger fired in this context cycle, or the session ran `bin/fm-order.sh handoff --doc` (stow, a restart, or `percent-left=0`).
 It blocks such a stop once per turn while the recorded handoff document omits an open captain order, and it never gates an ordinary stop.
-A primary session the trigger fired on is also blocked once per turn until `state/.handoff-successor` is newer than the firing and names a successor pid that is alive now, so that handoff turn cannot end on ready to restart with no successor launched; a second mate's stop is not gated this way, because its parent owns the relaunch.
+A primary session the trigger fired on is also blocked once per turn until `state/.handoff-successor` is newer than the firing and records a successor whose acknowledgement, process instance, and lock ownership `bin/fm-handoff-lib.sh` validates, so that handoff turn cannot end on ready to restart without a verified transfer; a live pid alone does not clear it; a second mate's stop is not gated this way, because its parent owns the relaunch.
 The handoff record belongs to the session that wrote it, so another session's stop in the same home is never gated by it.
 A caller outside any harness session, such as a restarting leash or sender, reads the record as the captain's, so its `bin/fm-order.sh gate` check clears when the captain's handoff lists every open order.
 The gate has limits: it runs only for a Claude primary, so a non-Claude primary, or a home with no resolvable auto-compact window that never runs `handoff --doc`, is not gated.

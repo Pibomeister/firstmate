@@ -1,212 +1,253 @@
 #!/usr/bin/env bash
-# fm-handoff-launch.sh - launch the successor primary session for a handoff.
-#
-# The Claude handoff Stop gate (bin/fm-handoff-trigger.sh) refuses to end a
-# handing-off primary's turn until state/.handoff-successor names a live
-# successor pid. This script is the firstmate-owned launcher that creates
-# that successor, so a handoff turn ends with a successor under way instead
-# of waiting for a manual launch (issue 116).
-#
-# Given a written handoff document, it:
-#   1. resolves the home's recorded backend (bin/fm-backend.sh
-#      fm_backend_name: FM_BACKEND, config/backend, runtime detection,
-#      default tmux) and refuses rather than guess when no supported
-#      successor launcher exists for it - currently orca and tmux,
-#      mirroring bin/fm-watchdog.sh's restart launch;
-#   2. resolves the current primary's harness (bin/fm-harness.sh) and
-#      refuses unless it is claude, the only harness the handoff gate
-#      serves; the successor runs the lowercase claude binary with the
-#      permission flag config/claude-permission-mode selects for this
-#      home (bin/fm-spawn.sh's resolution: bypass, the default, is
-#      --dangerously-skip-permissions; auto is --permission-mode auto);
-#   3. launches the successor in a NEW terminal on that backend with a
-#      prompt naming the handoff path and the document's sha256 (and its
-#      sha8 prefix): confirm the hash, wait until the predecessor harness
-#      pid (line 1 of state/.lock) is dead, then run
-#      bin/fm-session-start.sh to take the session lock;
-#   4. waits for the new harness pid to appear (a live process whose
-#      command line carries the handoff path and was not there before the
-#      launch), then writes state/.handoff-successor as pid=<pid> and
-#      handoff=<path> so the Stop gate passes. It verifies only that live
-#      successor pid; the successor confirms the handoff sha256 at pickup
-#      and stops on a mismatch.
-#
-# On tmux the successor opens in the primary's own tmux session when the
-# launcher runs inside one, otherwise in firstmate-<home basename>, as
-# bin/fm-watchdog.sh's restart launch names it.
-#
-# It never kills, interrupts, or signals the current session beyond a
-# kill -0 liveness read; the predecessor is ended by the captain, a
-# leash or operator /exit, or the watchdog restart path, and the
-# successor waits for that pid to die before session start. A second
-# mate home is refused: a second mate asks its parent to relaunch it.
-# When the successor never appears, nothing is recorded and the launch
-# fails loudly, leaving the Stop gate blocked rather than satisfied.
-#
-# Test seam, honoured only with FM_TEST_SEAM=1: FM_HANDOFF_TEST_HARNESS
-# pins the resolved primary harness, and
-# FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS bounds the successor wait.
-#
-# Usage: fm-handoff-launch.sh <handoff-file>
-#        fm-handoff-launch.sh -h|--help
-set -u
-
+# fm-handoff-launch.sh <handoff-file> - verified primary Claude handoff.
+# Only the current lock owner can prepare a claim. Launches via Orca agent
+# argv (never a shell command string), or tmux's direct argv execution.
+# Two fresh terminals share a total 600-second deadline. After acquiring the
+# initial claim lock, the first gets half the remaining time, up to 300 seconds,
+# and the retry gets the rest.
+# Setup and cleanup add to that budget, so a foreground tool timeout of 600
+# seconds cannot cover it. Run in the background and collect the exit status
+# and output before reporting readiness.
+# A successor must read the document and call fm-handoff-ack.sh with its nonce
+# and digest. fm-lock.sh validates that ack before moving the live lock.
+# The predecessor is never killed. On Orca, failed attempts retain their panes
+# for diagnosis. A failed attempt's nonce expires and cannot take ownership.
+# Every unfinished exit after handoff_started emits one handoff_failed event,
+# unless the lock already moved to a successor with a valid ack: that exit
+# records completion instead. Completion and failure are decided only while
+# holding .lock.acquire, so an uncommitted transfer is never reported. An exit
+# waits for that lock until 10 seconds past the claim deadline. If the lock is
+# still busy then, a successor transaction may yet commit, so the exit emits
+# handoff_failed reason=unresolved: not final, settled by a later handoff_ack
+# reason=lock_transferred for the same nonce.
+# Outputs only the versioned events owned by fm-handoff-lib.sh. Other errors
+# go to stderr. state/.handoff-successor is written only after lock verification.
+# Test-only: FM_TEST_SEAM=1 enables FM_HANDOFF_TEST_HARNESS and
+# FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS (total budget, minimum 4 seconds).
+# Usage: fm-handoff-launch.sh <handoff-file> | --help
+set -eu
+umask 077
 case "${1:-}" in
-  -h | --help) sed -n '2,${/^#/!q;p;}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h|--help) sed -n '2,${/^#/!q;p;}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
 esac
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
+FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
-
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
-
-[ $# -eq 1 ] && [ -n "$1" ] || die "usage: fm-handoff-launch.sh <handoff-file>"
+[ $# -eq 1 ] && [ -r "$1" ] && [ -f "$1" ] || die 'supply a readable handoff document'
 HANDOFF=$1
-[ -f "$HANDOFF" ] && [ -r "$HANDOFF" ] || die "handoff document is not a readable file: $HANDOFF"
-case "$HANDOFF" in
-  /*) ;;
-  *) HANDOFF="$(pwd -P)/$HANDOFF" ;;
-esac
-
+case "$HANDOFF" in /*) ;; *) HANDOFF="$(pwd -P)/$HANDOFF" ;; esac
+case "$HANDOFF" in *$'\n'*|*$'\r'*) die 'handoff path must be one line' ;; esac
 # shellcheck source=bin/fm-primary-scope-lib.sh
 . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
-if fm_root_is_secondmate_home "$FM_HOME"; then
-  die "this is a second mate home; a second mate asks its parent to relaunch it and never launches its own successor"
-fi
-
-# The harness must be determined, not guessed: the launcher runs as the
-# primary's own subprocess, so its harness is the primary's.
-if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_HANDOFF_TEST_HARNESS:-}" ]; then
-  HARNESS=$FM_HANDOFF_TEST_HARNESS
-else
-  HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null) || HARNESS=''
-fi
-case "$HARNESS" in
-  claude) ;;
-  '') die "cannot determine the current primary's harness; refusing to launch a successor" ;;
-  *) die "the current primary runs harness '$HARNESS', not claude; the handoff successor launcher serves a claude primary only" ;;
-esac
-command -v claude >/dev/null 2>&1 || die "the lowercase claude binary is not on PATH; refusing to launch a successor"
-
-# The backend must be the home's recorded one, with a supported launcher.
+fm_root_is_secondmate_home "$FM_HOME" && die 'a second mate asks its parent to relaunch it'
+# shellcheck source=bin/fm-wake-lib.sh
+. "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-session-lock-lib.sh
+. "$SCRIPT_DIR/fm-session-lock-lib.sh"
+# shellcheck source=bin/fm-handoff-lib.sh
+. "$SCRIPT_DIR/fm-handoff-lib.sh"
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$SCRIPT_DIR/fm-timeout-lib.sh"
 # shellcheck source=bin/fm-backend.sh
 . "$SCRIPT_DIR/fm-backend.sh"
-BACKEND=$(fm_backend_name 2>/dev/null) || BACKEND=''
-[ -n "$BACKEND" ] || die "cannot determine the home's recorded backend; refusing to launch a successor"
-case "$BACKEND" in
-  orca) command -v orca >/dev/null 2>&1 || die "backend orca is recorded but the orca binary is not on PATH" ;;
-  tmux) command -v tmux >/dev/null 2>&1 || die "backend tmux is recorded but the tmux binary is not on PATH" ;;
-  *)
-    if fm_backend_is_known "$BACKEND"; then
-      die "no successor launcher for backend '$BACKEND' yet (supported: orca, tmux); refusing to guess another backend"
-    fi
-    die "backend '$BACKEND' is not a known backend; refusing to launch a successor"
-    ;;
-esac
-
-# The predecessor pid anchors the successor's wait and must be real.
-[ -f "$STATE/.lock" ] || die "no session lock at $STATE/.lock; cannot name the predecessor pid the successor must wait for"
-PRED_PID=$(head -n 1 "$STATE/.lock" 2>/dev/null | tr -cd '0-9')
-[ -n "$PRED_PID" ] || die "state/.lock names no predecessor pid; refusing to launch a successor"
-kill -0 "$PRED_PID" 2>/dev/null || die "predecessor pid $PRED_PID from state/.lock is not alive; refusing to launch a successor"
-
-# Permission posture: the same flag the home's config gives a claude launch.
-CLAUDE_PERMISSION_MODE=bypass
+fm_session_lock_owned_by_self "$STATE" || die 'only the current session lock owner can launch its successor'
+PRED_PID=$(cat "$STATE/.lock")
+case "$PRED_PID" in ''|*[!0-9]*) die 'verified successor launch currently requires a POSIX process anchor' ;; esac
+PRED_START=$(fm_session_process_start "$PRED_PID") || die 'cannot identify predecessor instance'
+HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null) || HARNESS=
+if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_HANDOFF_TEST_HARNESS:-}" ]; then HARNESS=$FM_HANDOFF_TEST_HARNESS; fi
+[ "$HARNESS" = claude ] || die "successor launcher serves claude only, resolved '$HARNESS'"
+BACKEND=$(fm_backend_name) || die 'cannot determine backend'
+case "$BACKEND" in orca|tmux) command -v "$BACKEND" >/dev/null || die "missing backend $BACKEND" ;; *) die "no successor launcher for backend '$BACKEND'" ;; esac
+PERMISSION_MODE=bypass
 if [ -e "$CONFIG/claude-permission-mode" ]; then
-  [ -f "$CONFIG/claude-permission-mode" ] && [ -r "$CONFIG/claude-permission-mode" ] \
-    || die "config/claude-permission-mode must be a readable regular file holding one of: bypass, auto"
-  CLAUDE_PERMISSION_MODE=$(tr -d '[:space:]' <"$CONFIG/claude-permission-mode" || true)
-  case "$CLAUDE_PERMISSION_MODE" in
-    bypass | auto) ;;
-    *) die "config/claude-permission-mode holds '$CLAUDE_PERMISSION_MODE'; accepted values are: bypass (--dangerously-skip-permissions, the default when the file is absent), auto (--permission-mode auto)" ;;
-  esac
+  PERMISSION_MODE=$(tr -d '[:space:]' < "$CONFIG/claude-permission-mode")
 fi
-case "$CLAUDE_PERMISSION_MODE" in
-  auto) PERM_FLAG='--permission-mode auto' ;;
-  *) PERM_FLAG='--dangerously-skip-permissions' ;;
+case "$PERMISSION_MODE" in
+  bypass) PERM_ARGS=(--dangerously-skip-permissions) ;;
+  auto) PERM_ARGS=(--permission-mode auto) ;;
+  *) die 'invalid config/claude-permission-mode' ;;
 esac
-
-# Hash confirmation material for the successor prompt.
-if command -v sha256sum >/dev/null 2>&1; then
-  SHA256=$(sha256sum "$HANDOFF" 2>/dev/null | awk '{print $1}')
-elif command -v shasum >/dev/null 2>&1; then
-  SHA256=$(shasum -a 256 "$HANDOFF" 2>/dev/null | awk '{print $1}')
-else
-  die "neither sha256sum nor shasum is available; the successor could not confirm the handoff hash"
+# Orca owns its agent permission configuration; do not substitute a terminal
+# shell command to carry permission flags that agent launch does not expose.
+if [ "$BACKEND" = orca ] && [ "$PERMISSION_MODE" != bypass ]; then
+  die 'Orca agent launch owns permission posture; explicit auto mode needs an Orca agent configured for auto before handoff'
 fi
-case "$SHA256" in
-  *[!0-9a-f]* | '') die "could not hash the handoff document: $HANDOFF" ;;
-esac
-[ "${#SHA256}" -eq 64 ] || die "could not hash the handoff document: $HANDOFF"
-SHA8=${SHA256:0:8}
-
-LAUNCH_RECORD="$STATE/.handoff-successor"
-
-PROMPT="Firstmate handoff successor for home $FM_HOME. The handoff document is $HANDOFF with sha256 $SHA256 (sha8 $SHA8). Confirm that hash before acting (sha256sum or shasum -a 256 on the document) and stop if it does not match. Wait until predecessor harness pid $PRED_PID is dead, then run FM_HOME=$FM_HOME $FM_ROOT/bin/fm-session-start.sh to take the session lock and continue from the handoff document."
-SUCCESSOR_CMD="claude $PERM_FLAG $(printf '%q' "$PROMPT")"
-
-# Pids whose command line already carries the handoff path (this launcher
-# and its ancestors do), so only a pid appearing after the launch counts.
-pids_carrying_handoff() {
-  ps -eo pid=,args= 2>/dev/null | HANDOFF_NEEDLE="$HANDOFF" awk '
-    BEGIN { handoff = ENVIRON["HANDOFF_NEEDLE"] }
-    $1 ~ /^[0-9]+$/ && index($0, handoff) { print $1 }
-  '
-}
-BASELINE=" $(pids_carrying_handoff | tr '\n' ' ')"
-
-case "$BACKEND" in
-  orca)
-    orca terminal create --worktree "path:$FM_HOME" --title "firstmate captain" \
-      --command "$SUCCESSOR_CMD" --json >/dev/null 2>&1 \
-      || die "orca failed to create the successor terminal; no successor was launched"
-    ;;
-  tmux)
-    SESS=''
-    [ -z "${TMUX:-}" ] || SESS=$(tmux display-message -p '#{session_name}' 2>/dev/null) || SESS=''
-    SESS=${SESS:-firstmate-$(basename "$FM_HOME")}
-    if tmux has-session -t "=$SESS" >/dev/null 2>&1; then
-      tmux new-window -d -t "=$SESS:" -c "$FM_HOME" -n firstmate "$SUCCESSOR_CMD" >/dev/null 2>&1 \
-        || die "tmux failed to open the successor window; no successor was launched"
-    else
-      tmux new-session -d -s "$SESS" -c "$FM_HOME" -n firstmate "$SUCCESSOR_CMD" >/dev/null 2>&1 \
-        || die "tmux failed to create the successor session; no successor was launched"
-    fi
-    ;;
-esac
-
-TIMEOUT=60
+TIMEOUT=600
 if [ "${FM_TEST_SEAM:-}" = 1 ]; then
   case "${FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS:-}" in
-    '' | *[!0-9]*) ;;
-    *) TIMEOUT=$FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS ;;
+    ''|*[!0-9]*) ;; *) TIMEOUT=$FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS ;;
   esac
 fi
-
-SUCC_PID=''
-waited=0
-while [ "$waited" -le "$TIMEOUT" ]; do
-  # The newest matching pid wins: a terminal may start a shell wrapper
-  # first, and the harness it launches carries the higher pid.
-  for pid in $(pids_carrying_handoff); do
-    case "$BASELINE" in *" $pid "*) continue ;; esac
-    [ "$pid" != "$$" ] || continue
-    [ "$pid" != "$PRED_PID" ] || continue
-    if kill -0 "$pid" 2>/dev/null && [ "$pid" -gt "${SUCC_PID:-0}" ]; then
-      SUCC_PID=$pid
+[ "$TIMEOUT" -ge 4 ] || die 'handoff budget must be at least four seconds'
+SHA256=$(fm_handoff_hash "$HANDOFF") || die 'cannot hash handoff'
+mkdir -p "$FM_HOME/data"
+fm_lock_try_acquire "$STATE/.handoff-launch.lock" || die 'a handoff launcher already owns this home'
+NONCE=
+CLAIM_HELD=0
+HANDOFF_STARTED=0
+HANDOFF_COMPLETE=0
+HANDOFF_FAIL_REQUESTED=0
+HANDOFF_FAILURE_REASON=error
+attempt=0
+# A signal may arrive inside a call whose stdout is redirected to the backend
+# receipt. Keep the event stream on its original descriptor, out of that receipt.
+exec 9>&1
+# Keep the existing hard-bound timeout mechanism. The constant exec wrapper
+# closes our event descriptor in the backend process; all launch data stays argv.
+# shellcheck disable=SC2016 # Expansion belongs to the fixed child wrapper.
+BACKEND_EXEC=(bash -c 'exec 9>&-; exec "$@"' handoff-launch)
+cleanup() {
+  local rc=$? wait=10
+  trap - EXIT
+  trap '' HUP INT TERM
+  set +e
+  if [ -n "$NONCE" ] && [ "$CLAIM_HELD" != 1 ]; then
+    [ $(( ${CLAIM_DEADLINE:-0} - $(date +%s) + 10 )) -le "$wait" ] || wait=$(( CLAIM_DEADLINE - $(date +%s) + 10 ))
+    if fm_lock_acquire_wait_max "$STATE/.lock.acquire" "$wait"; then
+      CLAIM_HELD=1
+    else
+      HANDOFF_FAILURE_REASON=unresolved
     fi
-  done
-  [ -n "$SUCC_PID" ] && break
-  [ "$waited" -lt "$TIMEOUT" ] || break
-  sleep 1
-  waited=$((waited + 1))
-done
-[ -n "$SUCC_PID" ] || die "the successor never appeared within ${TIMEOUT}s on backend $BACKEND; state/.handoff-successor left unwritten"
+  fi
+  if [ "$HANDOFF_COMPLETE" -eq 0 ] && [ "$CLAIM_HELD" = 1 ] && [ -n "$NONCE" ] \
+    && transfer_committed && record_completion; then
+    rc=0
+  fi
+  if [ "$HANDOFF_COMPLETE" -eq 0 ] \
+    && { [ "$HANDOFF_STARTED" -eq 1 ] || [ "$HANDOFF_FAIL_REQUESTED" -eq 1 ]; }; then
+    fm_handoff_event handoff_failed "$NONCE" "$attempt" "$PRED_PID" none "$HANDOFF_FAILURE_REASON" >&9
+  fi
+  if [ "$CLAIM_HELD" = 1 ] && [ -n "$NONCE" ] \
+    && [ "$(jq -r '.nonce // ""' "$STATE/.handoff-pending" 2>/dev/null)" = "$NONCE" ]; then
+    rm -f "$STATE/.handoff-pending"
+  fi
+  if [ "$CLAIM_HELD" = 1 ]; then fm_lock_release "$STATE/.lock.acquire"; fi
+  fm_lock_release "$STATE/.handoff-launch.lock"
+  exec 9>&-
+  exit "$rc"
+}
+trap cleanup EXIT
+trap 'HANDOFF_FAILURE_REASON=interrupted; exit 1' HUP INT TERM
+rm -f "$STATE/.handoff-successor"
+DEADLINE=$(( $(date +%s) + TIMEOUT ))
+MONO_DEADLINE=$((SECONDS + TIMEOUT))
 
-tmp=$(mktemp "$STATE/.handoff-successor.XXXXXX") || die "cannot stage the successor record in $STATE"
-printf 'pid=%s\nhandoff=%s\n' "$SUCC_PID" "$HANDOFF" > "$tmp" || { rm -f "$tmp"; die "cannot write the successor record in $STATE"; }
-mv "$tmp" "$LAUNCH_RECORD" || { rm -f "$tmp"; die "cannot record the successor in $LAUNCH_RECORD"; }
-printf 'successor launched: pid=%s backend=%s handoff=%s sha8=%s\n' "$SUCC_PID" "$BACKEND" "$HANDOFF" "$SHA8"
+fail_handoff() {
+  HANDOFF_FAILURE_REASON=$1
+  HANDOFF_FAIL_REQUESTED=1
+  exit 1
+}
+
+take_claim() {
+  local left=$((MONO_DEADLINE - SECONDS))
+  if [ "$left" -gt 0 ]; then
+    fm_lock_acquire_wait_max "$STATE/.lock.acquire" "$left" || return 1
+  else
+    fm_lock_try_acquire "$STATE/.lock.acquire" || return 1
+  fi
+  CLAIM_HELD=1
+}
+
+transfer_committed() {
+  local pid
+  pid=$(cat "$STATE/.lock" 2>/dev/null) || return 1
+  [ "$pid" != "$PRED_PID" ] && fm_handoff_ack_valid "$NONCE" "$HANDOFF" "$SHA256" "$pid" \
+    && fm_session_lock_anchor_instance_matches "$STATE"
+}
+
+record_completion() {
+  local record_tmp
+  record_tmp=$(mktemp "$STATE/.handoff-successor.XXXXXX")
+  printf 'pid=%s\nnonce=%s\nhandoff=%s\nsha256=%s\n' "$(cat "$STATE/.lock")" "$NONCE" "$HANDOFF" "$SHA256" > "$record_tmp"
+  if ! fm_handoff_completed "$record_tmp"; then rm -f "$record_tmp"; return 1; fi
+  mv "$record_tmp" "$STATE/.handoff-successor" || return 1
+  HANDOFF_COMPLETE=1
+}
+
+for attempt in 1 2; do
+  if ! take_claim; then
+    fail_handoff claim_busy
+  fi
+  if [ "$(cat "$STATE/.lock")" != "$PRED_PID" ] || ! fm_session_lock_owned_by_self "$STATE"; then
+    die 'predecessor no longer owns the lock'
+  fi
+  NONCE=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+  remaining=$((MONO_DEADLINE - SECONDS))
+  [ "$remaining" -gt 0 ] || fail_handoff deadline
+  ATTEMPT_END=$((SECONDS + remaining / 2))
+  [ "$attempt" = 1 ] || ATTEMPT_END=$MONO_DEADLINE
+  [ "$ATTEMPT_END" -le "$MONO_DEADLINE" ] || ATTEMPT_END=$MONO_DEADLINE
+  CLAIM_DEADLINE=$(( $(date +%s) + ATTEMPT_END - SECONDS ))
+  [ "$CLAIM_DEADLINE" -le "$DEADLINE" ] || CLAIM_DEADLINE=$DEADLINE
+  tmp=$(mktemp "$STATE/.handoff-pending.XXXXXX")
+  jq -n --arg nonce "$NONCE" --arg doc "$HANDOFF" --arg sha "$SHA256" \
+    --arg start "$PRED_START" --argjson pid "$PRED_PID" --argjson deadline "$CLAIM_DEADLINE" \
+    '{version:1,nonce:$nonce,handoff:$doc,sha256:$sha,predecessor_pid:$pid,predecessor_start:$start,deadline:$deadline}' > "$tmp"
+  mv "$tmp" "$STATE/.handoff-pending"
+  fm_lock_release "$STATE/.lock.acquire"
+  CLAIM_HELD=0
+  event=handoff_started
+  [ "$attempt" = 1 ] || event=handoff_retry
+  printf -v ACK_CMD 'FM_HOME=%q bash %q %q %q' "$FM_HOME" "$SCRIPT_DIR/fm-handoff-ack.sh" "$NONCE" "$SHA256"
+  printf -v START_CMD 'FM_HOME=%q bash %q' "$FM_HOME" "$SCRIPT_DIR/fm-session-start.sh"
+  PROMPT="Firstmate handoff successor. Read the entire document at $HANDOFF. Its sha256 must be $SHA256. Before doing any project work or starting a read-only session, run this exact acknowledgement command: $ACK_CMD . It writes your harness pid, lock pid, terminal handle and document hash, and transfers the predecessor lock only after validation. If it refuses, emit no claim of readiness and exit; it records handoff_reject. After success run $START_CMD and continue the document. nonce=$NONCE"
+  remaining=$((ATTEMPT_END - SECONDS))
+  if [ "$remaining" -gt 0 ]; then
+    case "$BACKEND" in
+      orca)
+        HANDOFF_STARTED=1
+        fm_handoff_event "$event" "$NONCE" "$attempt" "$PRED_PID" "$(fm_handoff_endpoint_handle || true)" awaiting_ack
+        fm_run_timed "$remaining" "${BACKEND_EXEC[@]}" orca agent launch --agent claude --worktree "path:$FM_HOME" \
+          --surface terminal --prompt "$PROMPT" --json > "$STATE/.handoff-launch-result" 2>&1 || true
+        ;;
+      tmux)
+        SESS=
+        if [ -n "${TMUX:-}" ]; then
+          SESS=$(fm_run_timed "$remaining" "${BACKEND_EXEC[@]}" tmux display-message -p '#{session_name}' 2>/dev/null) || SESS=
+        fi
+        SESS=${SESS:-firstmate-$(basename "$FM_HOME")}
+        TMUX_TARGET=(new-session -d -s "$SESS")
+        remaining=$((ATTEMPT_END - SECONDS))
+        if [ "$remaining" -gt 0 ] && fm_run_timed "$remaining" "${BACKEND_EXEC[@]}" tmux has-session -t "=$SESS" >/dev/null 2>&1; then
+          TMUX_TARGET=(new-window -d -t "=$SESS:")
+        fi
+        remaining=$((ATTEMPT_END - SECONDS))
+        if [ "$remaining" -gt 0 ]; then
+          HANDOFF_STARTED=1
+          fm_handoff_event "$event" "$NONCE" "$attempt" "$PRED_PID" "$(fm_handoff_endpoint_handle || true)" awaiting_ack
+          fm_run_timed "$remaining" "${BACKEND_EXEC[@]}" tmux "${TMUX_TARGET[@]}" -c "$FM_HOME" -n firstmate claude "${PERM_ARGS[@]}" "$PROMPT" > "$STATE/.handoff-launch-result" 2>&1 || true
+        fi
+        ;;
+    esac
+  else
+    fail_handoff deadline
+  fi
+  while :; do
+    # Check success before the deadline: a transfer that committed just before
+    # expiry must be accepted even if the parent was scheduled after expiry.
+    if transfer_committed; then
+      take_claim || fail_handoff claim_busy
+      if transfer_committed && record_completion; then exit 0; fi
+      fm_lock_release "$STATE/.lock.acquire"
+      CLAIM_HELD=0
+    fi
+    [ "$SECONDS" -lt "$ATTEMPT_END" ] || break
+    sleep 0.2
+  done
+  # Revoke the attempt under the very same lock the successor uses for CAS.
+  if ! take_claim; then
+    fail_handoff claim_busy
+  fi
+  if [ "$(cat "$STATE/.lock")" != "$PRED_PID" ]; then
+    # A transfer may have raced the final inspection; do not launch another.
+    if record_completion; then exit 0; fi
+    fail_handoff ownership_changed
+  fi
+  rm -f "$STATE/.handoff-pending"
+  fm_lock_release "$STATE/.lock.acquire"
+  CLAIM_HELD=0
+done
+fail_handoff deadline
