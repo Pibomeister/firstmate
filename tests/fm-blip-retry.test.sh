@@ -405,6 +405,72 @@ test_orca_reads_retry_a_timed_out_reply() {
   pass "an Orca read retries a timed-out reply"
 }
 
+blip_sum() { # <file>
+  awk '{ total += $1 } END { print total + 0 }' "$1"
+}
+
+test_orca_capture_gives_up_within_the_short_read_budget() {
+  local dir
+  dir=$(blip_orca_stub_dir fm-blip-orca-capture)
+  set +e
+  PATH="$dir/bin:$PATH" \
+    FM_BLIP_ORCA_COUNT="$dir/count" \
+    FM_BLIP_ORCA_FAILS=99 \
+    FM_BLIP_ORCA_ERROR='connect ECONNREFUSED /tmp/orca.sock' \
+    FM_BLIP_NOW=9000 \
+    FM_BLIP_SLEEP_LOG="$dir/sleep" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_capture term-1 40' "$ROOT" \
+    >"$dir/out" 2>"$dir/err"
+  BLIP_RC=$?
+  set -e
+  [ "$BLIP_RC" -ne 0 ] || fail "an Orca capture against a refused connection reported success"
+  [ "$(blip_sum "$dir/sleep")" -le 15 ] \
+    || fail "an Orca capture waited past the 15-second read budget: $(tr '\n' ' ' < "$dir/sleep")"
+  [ "$(cat "$dir/count")" -gt 1 ] || fail "an Orca capture did not retry a refused connection at all"
+  assert_contains "$(cat "$dir/err")" 'ECONNREFUSED' "an Orca capture hid the refused-connection error"
+  pass "an Orca capture against a refused connection gives up within the short read budget"
+}
+
+test_orca_draft_present_holds_within_the_short_read_budget() {
+  local dir
+  dir=$(blip_orca_stub_dir fm-blip-orca-draft)
+  set +e
+  PATH="$dir/bin:$PATH" \
+    FM_BLIP_ORCA_COUNT="$dir/count" \
+    FM_BLIP_ORCA_FAILS=99 \
+    FM_BLIP_ORCA_ERROR='connect ECONNREFUSED /tmp/orca.sock' \
+    FM_BLIP_NOW=9500 \
+    FM_BLIP_SLEEP_LOG="$dir/sleep" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_draft_present term-1' "$ROOT" \
+    >"$dir/out" 2>"$dir/err"
+  BLIP_RC=$?
+  set -e
+  assert_equals 0 "$BLIP_RC" "an unreadable Orca draft probe did not hold"
+  [ "$(blip_sum "$dir/sleep")" -le 15 ] \
+    || fail "an Orca draft probe waited past the 15-second read budget: $(tr '\n' ' ' < "$dir/sleep")"
+  pass "an unreadable Orca draft probe still holds within the short read budget"
+}
+
+test_orca_send_retries_past_the_short_read_budget() {
+  local dir
+  dir=$(blip_orca_stub_dir fm-blip-orca-send-long)
+  set +e
+  PATH="$dir/bin:$PATH" \
+    FM_BLIP_ORCA_COUNT="$dir/count" \
+    FM_BLIP_ORCA_FAILS=5 \
+    FM_BLIP_ORCA_ERROR='connect ECONNREFUSED /tmp/orca.sock' \
+    FM_BLIP_NOW=9800 \
+    FM_BLIP_SLEEP_LOG="$dir/sleep" \
+    bash -c '. "$0/bin/backends/orca.sh"; fm_backend_orca_send_literal term-1 hello' "$ROOT" \
+    >"$dir/out" 2>"$dir/err"
+  BLIP_RC=$?
+  set -e
+  assert_equals 0 "$BLIP_RC" "an Orca send gave up before its 5-minute budget"
+  assert_equals 6 "$(cat "$dir/count")" "an Orca send did not retry through five refused connections"
+  assert_equals $'2\n4\n8\n16\n32' "$(cat "$dir/sleep")" "an Orca send did not keep doubling past 15 seconds"
+  pass "an Orca send keeps retrying past the short read budget"
+}
+
 fm_test_run \
   test_transient_failures_retry_until_success \
   test_budget_reports_the_failing_attempt_once \
@@ -424,4 +490,7 @@ fm_test_run \
   test_orca_send_retries_a_transient_cli_blip \
   test_orca_send_does_not_retry_permission_denied \
   test_orca_mutations_do_not_repeat_after_a_lost_reply \
-  test_orca_reads_retry_a_timed_out_reply
+  test_orca_reads_retry_a_timed_out_reply \
+  test_orca_capture_gives_up_within_the_short_read_budget \
+  test_orca_draft_present_holds_within_the_short_read_budget \
+  test_orca_send_retries_past_the_short_read_budget

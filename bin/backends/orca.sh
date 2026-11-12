@@ -190,6 +190,12 @@ fm_backend_orca_blip() {
   fm_blip_retry fm_backend_orca_invoke "$@"
 }
 
+# A terminal read feeds supervision probes, so it gets the short read budget
+# and then fails as one attempt would.
+fm_backend_orca_blip_read() {
+  fm_blip_retry --read fm_backend_orca_invoke "$@"
+}
+
 # An Orca mutation may land before its reply is lost, so it is repeated only
 # when the CLI never connected.
 fm_backend_orca_blip_mutation() {
@@ -365,7 +371,7 @@ fm_backend_orca_worktree_path() {
 fm_backend_orca_capture() {  # <terminal-id> <lines>
   local terminal=$1 lines=${2:-40} out
   fm_backend_orca_tool_check || return 1
-  out=$(fm_backend_orca_blip orca terminal read --terminal "$terminal" --limit "$lines" --json) || return 1
+  out=$(fm_backend_orca_blip_read orca terminal read --terminal "$terminal" --limit "$lines" --json) || return 1
   fm_backend_orca_json_text "$out"
 }
 
@@ -379,7 +385,7 @@ fm_backend_orca_visible_capture() {  # <terminal-id> [expected-label]
     return 1
   }
   fm_backend_orca_tool_check || return 1
-  out=$(fm_backend_orca_blip orca terminal read --terminal "$terminal" --screen --json) || return 1
+  out=$(fm_backend_orca_blip_read orca terminal read --terminal "$terminal" --screen --json) || return 1
   fm_backend_orca_json_text "$out" screen
 }
 
@@ -446,7 +452,7 @@ fm_backend_orca_composer_capture() {  # <terminal-id> [expected-label]
 # A failed read proves nothing, so it holds too.
 fm_backend_orca_draft_present() {  # <terminal-id>
   local out
-  out=$(fm_backend_orca_blip orca terminal read --terminal "$1" --limit "$FM_COMPOSER_CAPTURE_LINES" --json 2>/dev/null) || return 0
+  out=$(fm_backend_orca_blip_read orca terminal read --terminal "$1" --limit "$FM_COMPOSER_CAPTURE_LINES" --json 2>/dev/null) || return 0
   printf '%s' "$out" | node -e '
 let data;
 try { data = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (err) { process.exit(0); }

@@ -3,7 +3,7 @@
 #
 # Sourced, never executed. This is the single owner of that retry.
 #
-#   fm_blip_retry [--connect-only] [--status <n>] <command> [args...]
+#   fm_blip_retry [--connect-only] [--read] [--status <n>] <command> [args...]
 #       Run the command. Success returns its status and passes its stdout and
 #       stderr through. A definite failure is returned at once, once: not
 #       found, permission denied, or a usage error. A transient failure is
@@ -26,6 +26,11 @@
 #       reset, a mid-session timeout, or an HTTP 5xx is reported once.
 #       --status <n> also limits retries to attempts that exited with n.
 #
+#       --read is for a read-only probe on a supervision path, where a long
+#       wait would stall the sweep that called it. Its budget is
+#       FM_BLIP_RETRY_READ_BUDGET_SECS (default 15) instead of the 300-second
+#       budget, and it then fails exactly as a single attempt would.
+#
 #       Unset overrides use the defaults. A set override must be an integer.
 #       The base and the cap must be >= 1, and the cap must be >= the base.
 #       The budget may be 0, which runs one attempt and does not retry.
@@ -38,6 +43,9 @@
 #       set, receives one line per wait. Any other state uses the real clock
 #       and sleep. The seam is how a test crosses the five-minute budget
 #       without waiting.
+
+FM_BLIP_RETRY_BUDGET_DEFAULT=300
+FM_BLIP_RETRY_READ_BUDGET_DEFAULT=15
 
 fm_blip_now() {
   if [ "${FM_TEST_SEAM:-}" = 1 ]; then
@@ -155,10 +163,11 @@ fm_blip_retry_emit() { # <dir>
 
 fm_blip_retry() {
   local start now elapsed delay wait base cap budget rc=0 attempt=0
-  local dir text errexit=0 connect_only=0 status=
+  local dir text errexit=0 connect_only=0 status='' read_only=0
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --connect-only) connect_only=1; shift ;;
+      --read) read_only=1; shift ;;
       --status)
         case "${2:-}" in
           ''|*[!0-9]*) printf 'fm-blip-retry: --status needs an integer\n' >&2; return 2 ;;
@@ -172,7 +181,11 @@ fm_blip_retry() {
   [ "$#" -ge 1 ] || { printf 'fm-blip-retry: command required\n' >&2; return 2; }
   base=$(fm_blip_retry_number FM_BLIP_RETRY_BASE_SECS 2 1) || return 2
   cap=$(fm_blip_retry_number FM_BLIP_RETRY_CAP_SECS 32 1) || return 2
-  budget=$(fm_blip_retry_number FM_BLIP_RETRY_BUDGET_SECS 300 0) || return 2
+  if [ "$read_only" -eq 1 ]; then
+    budget=$(fm_blip_retry_number FM_BLIP_RETRY_READ_BUDGET_SECS "$FM_BLIP_RETRY_READ_BUDGET_DEFAULT" 0) || return 2
+  else
+    budget=$(fm_blip_retry_number FM_BLIP_RETRY_BUDGET_SECS "$FM_BLIP_RETRY_BUDGET_DEFAULT" 0) || return 2
+  fi
   [ "$cap" -ge "$base" ] || {
     printf 'fm-blip-retry: FM_BLIP_RETRY_CAP_SECS is below FM_BLIP_RETRY_BASE_SECS\n' >&2
     return 2
