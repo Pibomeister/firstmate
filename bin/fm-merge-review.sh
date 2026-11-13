@@ -61,7 +61,7 @@
 # Receipts live in the home, one directory per pull request and head:
 #   data/merge-review/<provider>/<host>/<path>/<number>/<head>/
 # GitHub repository paths use lowercase identity; other forges retain case.
-#     .complete            exists only after a review batch finishes
+#     .complete            unique generation digest after a batch finishes
 #     <seat>.receipt       key=value, format=fm-merge-review-receipt-v1: url,
 #                          head, base, base_ref, seat, family, harness,
 #                          harness_version, requested_model, reported_model,
@@ -394,7 +394,10 @@ mr_store_dir() {
 # approved.
 mr_check() {
   local store receipt review seat approvals='' blocks='' invalid='' families='' family_count=0 state reason=''
+  local complete_before='' complete_after='' busy_before=0
   store=$(mr_store_dir)
+  if [ -e "$store/.run.lock" ] || [ -L "$store/.run.lock" ]; then busy_before=1; fi
+  complete_before=$(cat "$store/.complete" 2>/dev/null) || complete_before=
   if [ -d "$store" ]; then
     for receipt in "$store"/*.receipt; do
       { [ -e "$receipt" ] || [ -L "$receipt" ]; } || continue
@@ -424,14 +427,16 @@ mr_check() {
       fi
     done
   fi
+  complete_after=$(cat "$store/.complete" 2>/dev/null) || complete_after=
   if [ -n "$blocks" ]; then
     state=blocked
   elif [ -n "$invalid" ]; then
     state=incomplete
     reason='stored review evidence is invalid'
-  elif [ -e "$store/.run.lock" ] || [ -L "$store/.run.lock" ] || [ ! -f "$store/.complete" ]; then
+  elif [ "$busy_before" -eq 1 ] || [ -e "$store/.run.lock" ] || [ -L "$store/.run.lock" ] ||
+    ! [[ "$complete_before" =~ ^[0-9a-f]{64}$ ]] || [ "$complete_before" != "$complete_after" ]; then
     state=incomplete
-    reason='the review batch has not completed'
+    reason='the review batch is incomplete or changed during the check'
   elif [ "$family_count" -ge 2 ]; then
     state=approved
   else
@@ -746,7 +751,7 @@ mr_run_cleanup() {
 }
 
 mr_run() {  # <repo> <base-ref> <intent-file>
-  local repo=$1 base_ref=$2 intent=$3 i pids='' pid holder families identity reviewer_parent
+  local repo=$1 base_ref=$2 intent=$3 i pids='' pid holder families identity reviewer_parent complete_sha
   if [ -z "${FM_TASK_ID:-}" ] || ! fm_pr_task_id_valid "$FM_TASK_ID"; then
     mr_die 'run belongs in a background worker: FM_TASK_ID is not set, so this is not a spawned ship or scout worker. A supervisor dispatches the worker and reads check.'
   fi
@@ -890,7 +895,11 @@ mr_run() {  # <repo> <base-ref> <intent-file>
   fi
 
   mr_run_owns_lock || mr_die 'the review run generation changed; refusing to finalize'
-  : > "$MR_STORE/.complete" || mr_die 'cannot record the completed review batch'
+  complete_sha=$(mr_sha256 "$MR_LOCK/generation") || mr_die 'cannot hash the completed review batch'
+  if ! printf '%s\n' "$complete_sha" > "$MR_RECORDS/complete" ||
+    ! mv "$MR_RECORDS/complete" "$MR_STORE/.complete"; then
+    mr_die 'cannot record the completed review batch'
+  fi
   MR_LOCK=
   rm -rf "$MR_STORE/.run.lock"
   mr_check

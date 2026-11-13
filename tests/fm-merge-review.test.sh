@@ -669,6 +669,42 @@ test_stale_reclamation_is_serialized() {
   pass "stale-lock reclamation is serialized, and recovery proceeds once its owner releases"
 }
 
+test_check_rejects_a_batch_changed_after_receipt_enumeration() {
+  local reader_pid reader_rc=0 writer_rc=0 i=0 ready=0
+  make_case snapshot-race "${TWO_SEATS[@]}" 'seat=xai:grok:grok-test'
+  echo fail > "$STUB/grok.mode"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || fail "snapshot-race: initial two-family approval failed"
+  ln -s "$(command -v awk)" "$FAKEBIN/real-awk"
+  cat > "$FAKEBIN/awk" <<'SH'
+#!/usr/bin/env bash
+stub=$FM_TEST_REVIEW_STUB
+if [ "${2:-}" = k=format ] && [ -e "$stub/awk.wait" ] && [ ! -e "$stub/awk.waiting" ]; then
+  : > "$stub/awk.waiting"
+  while [ -e "$stub/awk.wait" ]; do sleep 0.1; done
+fi
+exec "$(dirname "$0")/real-awk" "$@"
+SH
+  chmod +x "$FAKEBIN/awk"
+  : > "$STUB/awk.wait"
+  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" FM_TEST_REVIEW_STUB="$STUB" PATH="$FAKEBIN:$PATH" \
+    bash "$MERGE_REVIEW" check "$PR_URL" --head "$HEAD_SHA" > "$CASE/reader.out" 2> "$CASE/reader.err" &
+  reader_pid=$!
+  while [ "$i" -lt 300 ]; do
+    if [ -e "$STUB/awk.waiting" ]; then ready=1; break; fi
+    sleep 0.1; i=$((i + 1))
+  done
+  echo block > "$STUB/grok.mode"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || writer_rc=$?
+  rm "$STUB/awk.wait"
+  wait "$reader_pid" || reader_rc=$?
+  assert_equals 1 "$ready" "snapshot-race: reader never reached the post-enumeration barrier"
+  expect_code 1 "$writer_rc" "snapshot-race: new batch did not record its BLOCK"
+  assert_grep 'merge-review: blocked' "$CASE/stdout" "snapshot-race: new dissent was not committed"
+  expect_code 1 "$reader_rc" "snapshot-race: old enumeration cannot approve a completed newer batch"
+  assert_no_grep 'merge-review: approved' "$CASE/reader.out" "snapshot-race: reader missed concurrent dissent"
+  pass "check cannot approve when publication changes the completed batch after receipt enumeration"
+}
+
 test_covers_follows_the_require_lines() {
   local rc=0
   make_case covers-none
@@ -763,6 +799,7 @@ fm_test_run \
   test_publication_cannot_replace_a_review_recorded_during_the_call \
   test_a_replaced_run_cannot_complete_or_unlock_its_successor \
   test_stale_reclamation_is_serialized \
+  test_check_rejects_a_batch_changed_after_receipt_enumeration \
   test_covers_follows_the_require_lines \
   test_run_refuses_what_it_cannot_review \
   test_intent_reaches_the_prompt_the_receipt_binds
