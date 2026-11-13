@@ -35,6 +35,10 @@
 #   incomplete  anything else.
 # A receipt belongs to one head, so a changed head has no receipts and is
 # incomplete. There is no waiver flag.
+# The line is one physical line:
+#   merge-review: <approved|blocked|incomplete> head=<full-sha>
+#     approvals=<seat:verdict,...|none> blocks=<seat,...|none> [reason="<text>"]
+#     [invalid="<seat (why); ...>"] url=<pr-url>
 #
 # A review counts only when its last non-empty line is exactly one of
 #   VERDICT: APPROVE <full-sha>
