@@ -49,6 +49,7 @@ printf '%s|%s\n' "$PWD" "$(printf '%s' "$*" | tr '\n' ' ')" >> "$stub/$tool.call
 } > "$stub/$tool.saw"
 head=$(printf '%s\n' "$prompt" | sed -n 's/^Head commit under review: //p' | head -1)
 if [ -e "$stub/$tool.wait" ]; then
+  printf '%s\n' "$$" > "$stub/$tool.pid"
   : > "$stub/$tool.waiting"
   while [ -e "$stub/$tool.wait" ]; do sleep 0.1; done
 fi
@@ -490,6 +491,122 @@ test_an_unfinished_batch_stays_incomplete_after_lock_cleanup() {
   pass "lock cleanup alone cannot approve an unfinished batch, and recovery retains valid reviews"
 }
 
+test_github_url_case_cannot_select_another_review() {
+  local rc=0 alias=https://github.com/Example/Repo/pull/7
+  make_case url-case "${TWO_SEATS[@]}"
+  echo block > "$STUB/agy.mode"
+  run_review run "$alias" --head "$HEAD_SHA" --repo "$REPO" && fail "url-case: initial dissent approved"
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 1 "$rc" "url-case: equivalent URL with stored dissent"
+  assert_grep 'merge-review: blocked' "$CASE/stdout" "url-case: casing lost the stored dissent"
+  echo approve > "$STUB/agy.mode"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "url-case: a case alias cannot reroll dissent"
+  assert_equals 1 "$(calls agy)" "url-case: case alias selected a new review"
+  pass "GitHub URL case aliases share the same dissent and cannot reroll it"
+}
+
+test_dangling_configuration_cannot_disable_the_gate() {
+  local rc=0
+  make_case dangling-config "${TWO_SEATS[@]}" 'require=*'
+  rm "$HOME_DIR/config/merge-review"
+  ln -s "$CASE/absent" "$HOME_DIR/config/merge-review"
+  run_supervisor covers "$PR_URL" || rc=$?
+  expect_code 2 "$rc" "dangling-config: unreadable symlink must be an error, not no requirement"
+  assert_grep 'not a readable file' "$CASE/stderr" "dangling-config: refusal did not name the invalid config"
+  pass "a dangling merge-review configuration symlink refuses instead of disabling the gate"
+}
+
+test_invalid_configuration_parent_cannot_disable_the_gate() {
+  local rc=0
+  make_case config-parent "${TWO_SEATS[@]}" 'require=*'
+  rm "$HOME_DIR/config/merge-review"
+  rmdir "$HOME_DIR/config"
+  printf 'not a directory\n' > "$HOME_DIR/config"
+  run_supervisor covers "$PR_URL" || rc=$?
+  expect_code 2 "$rc" "config-parent: an invalid config directory cannot mean no gate"
+  pass "an invalid configuration parent refuses instead of hiding the gate"
+}
+
+test_searchable_configuration_parent_needs_no_directory_listing() {
+  local rc=0
+  make_case config-searchable "${TWO_SEATS[@]}" 'require=*'
+  chmod 111 "$HOME_DIR/config"
+  run_supervisor covers "$PR_URL" || rc=$?
+  chmod 700 "$HOME_DIR/config"
+  expect_code 0 "$rc" "config-searchable: a readable config in a searchable directory must still work"
+  pass "config lookup works without directory-listing permission"
+}
+
+test_interruption_stops_reviewers_before_unlocking() {
+  local run_pid rc=0 i=0 ready=0 reviewer_pid='' state='' alive=0
+  make_case interrupted "${TWO_SEATS[@]}"
+  : > "$STUB/agy.wait"
+  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" FM_TASK_ID=review-w1 \
+    FM_TEST_REVIEW_STUB="$STUB" PATH="$FAKEBIN:$PATH" \
+    bash "$MERGE_REVIEW" run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" > "$CASE/interrupted.out" 2>&1 &
+  run_pid=$!
+  while [ "$i" -lt 300 ]; do
+    if [ -e "$STUB/agy.waiting" ]; then ready=1; break; fi
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ ! -f "$STUB/agy.pid" ] || reviewer_pid=$(cat "$STUB/agy.pid")
+  kill -TERM "$run_pid" 2>/dev/null || true
+  wait "$run_pid" || rc=$?
+  if [ -n "$reviewer_pid" ]; then
+    state=$(ps -o stat= -p "$reviewer_pid" 2>/dev/null | tr -d '[:space:]')
+    case "$state" in '' | *Z*) ;; *) alive=1 ;; esac
+  fi
+  # Release the fixture even on the unfixed path before an assertion exits.
+  rm -f "$STUB/agy.wait"
+  if [ "$alive" -eq 1 ]; then
+    kill -TERM "$reviewer_pid" 2>/dev/null || true
+    sleep 0.2
+  fi
+  assert_equals 1 "$ready" "interrupted: reviewer barrier was not reached"
+  expect_code 143 "$rc" "interrupted: run did not acknowledge TERM"
+  assert_equals 0 "$alive" "interrupted: parent unlocked while a reviewer was still alive"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "interrupted: a clean recovery run must finish"
+  pass "interrupted runs stop reviewer writers before releasing their lock, and recovery can finish"
+}
+
+test_publication_cannot_replace_a_review_recorded_during_the_call() {
+  local receipt review raw run_pid rc=0 i=0 ready=0
+  make_case immutable "${TWO_SEATS[@]}"
+  echo block > "$STUB/agy.mode"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" && fail "immutable: initial dissent approved"
+  receipt="$(store_dir)/google.agy.gemini-test-high.receipt"
+  review="$(store_dir)/google.agy.gemini-test-high.review.md"
+  raw="$(store_dir)/google.agy.gemini-test-high.raw.json"
+  mv "$receipt" "$CASE/saved.receipt"
+  mv "$review" "$CASE/saved.review"
+  mv "$raw" "$CASE/saved.raw"
+  echo approve > "$STUB/agy.mode"
+  : > "$STUB/agy.wait"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" &
+  run_pid=$!
+  while [ "$i" -lt 300 ]; do
+    if [ -e "$STUB/agy.waiting" ]; then ready=1; break; fi
+    sleep 0.1
+    i=$((i + 1))
+  done
+  # Simulate a concurrent valid dissent arriving after the model call began.
+  cp "$CASE/saved.review" "$review"
+  cp "$CASE/saved.raw" "$raw"
+  cp "$CASE/saved.receipt" "$receipt"
+  rm "$STUB/agy.wait"
+  wait "$run_pid" || rc=$?
+  assert_equals 1 "$ready" "immutable: concurrent call did not reach the barrier"
+  expect_code 1 "$rc" "immutable: concurrent publication must not replace recorded dissent"
+  assert_grep 'merge-review: blocked' "$CASE/stdout" "immutable: existing BLOCK was overwritten"
+  assert_grep "VERDICT: BLOCK $HEAD_SHA" "$review" "immutable: blocking review text was overwritten"
+  pass "a model call cannot overwrite a valid dissent recorded while it was running"
+}
+
 test_covers_follows_the_require_lines() {
   local rc=0
   make_case covers-none
@@ -576,6 +693,12 @@ fm_test_run \
   test_damaged_dissent_never_approves_or_gets_replaced \
   test_check_waits_for_the_complete_review_batch \
   test_an_unfinished_batch_stays_incomplete_after_lock_cleanup \
+  test_github_url_case_cannot_select_another_review \
+  test_dangling_configuration_cannot_disable_the_gate \
+  test_invalid_configuration_parent_cannot_disable_the_gate \
+  test_searchable_configuration_parent_needs_no_directory_listing \
+  test_interruption_stops_reviewers_before_unlocking \
+  test_publication_cannot_replace_a_review_recorded_during_the_call \
   test_covers_follows_the_require_lines \
   test_run_refuses_what_it_cannot_review \
   test_intent_reaches_the_prompt_the_receipt_binds

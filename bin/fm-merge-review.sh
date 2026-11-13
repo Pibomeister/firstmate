@@ -19,7 +19,9 @@
 #         called only while fewer than two model families hold a valid review.
 #         <dir> must already contain the head commit; run never fetches.
 #         A seat that already holds a valid receipt at this head is not called
-#         again, so a rerun cannot replace a BLOCK with a new roll.
+#         again, so a rerun cannot replace a BLOCK with a new roll. Interrupted
+#         runs stop their reviewers before releasing the lock; stale writers
+#         are fenced by run identity, and publication never replaces evidence.
 # check   Deterministic and safe for a supervisor: it recomputes every digest,
 #         re-reads each verdict from the stored review text, and prints one
 #         line. bin/fm-pr-merge.sh calls it before a covered merge.
@@ -58,6 +60,7 @@
 #
 # Receipts live in the home, one directory per pull request and head:
 #   data/merge-review/<provider>/<host>/<path>/<number>/<head>/
+# GitHub repository paths use lowercase identity; other forges retain case.
 #     .complete            exists only after a review batch finishes
 #     <seat>.receipt       key=value, format=fm-merge-review-receipt-v1: url,
 #                          head, base, base_ref, seat, family, harness,
@@ -192,7 +195,11 @@ mr_seat_add() {  # <seat|spare> <spec> <line-number>
 mr_config_load() {
   local line key val n=0
   local LC_ALL=C
-  [ -e "$MR_CONFIG" ] || return 0
+  if [ -e "$FM_HOME/config" ] || [ -L "$FM_HOME/config" ]; then
+    { [ -d "$FM_HOME/config" ] && [ -x "$FM_HOME/config" ]; } \
+      || mr_die 'config is not a searchable directory'
+  fi
+  { [ -e "$MR_CONFIG" ] || [ -L "$MR_CONFIG" ]; } || return 0
   { [ -f "$MR_CONFIG" ] && [ -r "$MR_CONFIG" ]; } || mr_die "config/merge-review is not a readable file"
   MR_CONFIGURED=1
   while IFS= read -r line || [ -n "$line" ]; do
@@ -303,7 +310,7 @@ MR_R_FAMILY=
 MR_R_SEAT=
 MR_R_REASON=
 mr_receipt_valid() {  # <receipt>
-  local receipt=$1 dir seat idx review prompt diff value verdict harness identity reported requested
+  local receipt=$1 dir seat idx review prompt diff value verdict harness identity reported requested expected_url=$FM_PR_URL
   MR_R_VERDICT=
   MR_R_FAMILY=
   MR_R_SEAT=
@@ -312,7 +319,12 @@ mr_receipt_valid() {  # <receipt>
   seat=$(basename "$receipt" .receipt)
   MR_R_SEAT=$seat
   [ "$(mr_receipt_get "$receipt" format)" = "$MR_FORMAT" ] || { MR_R_REASON='unknown receipt format'; return 1; }
-  [ "$(mr_receipt_get "$receipt" url)" = "$FM_PR_URL" ] || { MR_R_REASON='the receipt names another pull request'; return 1; }
+  value=$(mr_receipt_get "$receipt" url)
+  if [ "$FM_PR_PROVIDER" = github ]; then
+    value=$(mr_lower "$value")
+    expected_url=$(mr_lower "$expected_url")
+  fi
+  [ "$value" = "$expected_url" ] || { MR_R_REASON='the receipt names another pull request'; return 1; }
   [ "$(mr_receipt_get "$receipt" head)" = "$MR_HEAD" ] || { MR_R_REASON='the receipt names another head'; return 1; }
   [ "$(mr_receipt_get "$receipt" seat)" = "$seat" ] || { MR_R_REASON='the receipt names another seat'; return 1; }
   idx=$(mr_seat_index "$seat") || { MR_R_REASON='the seat is not declared in config/merge-review'; return 1; }
@@ -356,8 +368,9 @@ mr_receipt_valid() {  # <receipt>
 
   if [ "$MR_POST" = on ] && [ "$verdict" != BLOCK ]; then
     value=$(mr_receipt_get "$receipt" posted)
+    [ "$FM_PR_PROVIDER" != github ] || value=$(mr_lower "$value")
     case "$value" in
-      "$FM_PR_URL#"?*) ;;
+      "$expected_url#"?*) ;;
       *) MR_R_REASON='the review is not posted on the pull request'; return 1 ;;
     esac
   fi
@@ -366,8 +379,10 @@ mr_receipt_valid() {  # <receipt>
 }
 
 mr_store_dir() {
+  local path=$FM_PR_PATH
+  [ "$FM_PR_PROVIDER" != github ] || path=$(mr_lower "$path")
   printf '%s/data/merge-review/%s/%s/%s/%s/%s\n' \
-    "$FM_HOME" "$FM_PR_PROVIDER" "$FM_PR_HOST" "$FM_PR_PATH" "$FM_PR_NUMBER" "$MR_HEAD"
+    "$FM_HOME" "$FM_PR_PROVIDER" "$FM_PR_HOST" "$path" "$FM_PR_NUMBER" "$MR_HEAD"
 }
 
 # Print the one verdict line for the stored receipts and return 0 only on
@@ -453,9 +468,9 @@ mr_seat_fail() {  # <seat-id> <epoch> <exit> <reason>
     printf 'exit=%s\n' "$3"
     printf 'reason=%s\n' "$4"
   } > "$MR_STORE/$id.failed.$at"
-  [ ! -f "$MR_STORE/$id.raw.json.new" ] || mv -f "$MR_STORE/$id.raw.json.new" "$MR_STORE/$id.failed.$at.raw.json"
-  [ ! -f "$MR_STORE/$id.stderr.new" ] || mv -f "$MR_STORE/$id.stderr.new" "$MR_STORE/$id.failed.$at.stderr"
-  rm -f "$MR_STORE/$id.review.md.new"
+  [ ! -f "$MR_RECORDS/$id.raw.json.new" ] || mv -f "$MR_RECORDS/$id.raw.json.new" "$MR_STORE/$id.failed.$at.raw.json"
+  [ ! -f "$MR_RECORDS/$id.stderr.new" ] || mv -f "$MR_RECORDS/$id.stderr.new" "$MR_STORE/$id.failed.$at.stderr"
+  rm -f "$MR_RECORDS/$id.review.md.new"
   printf 'seat %s: no valid review (%s)\n' "$id" "$4"
   return 1
 }
@@ -477,9 +492,9 @@ mr_seat_call() {  # <seat-index>
     printf 'seat %s: existing review evidence is invalid; refusing to replace it\n' "$id"
     return 1
   fi
-  raw="$MR_STORE/$id.raw.json.new"
-  err="$MR_STORE/$id.stderr.new"
-  review="$MR_STORE/$id.review.md.new"
+  raw="$MR_RECORDS/$id.raw.json.new"
+  err="$MR_RECORDS/$id.stderr.new"
+  review="$MR_RECORDS/$id.review.md.new"
   started=$(date +%s)
   rm -f "$raw" "$err" "$review"
 
@@ -541,8 +556,14 @@ mr_seat_call() {  # <seat-index>
   [ "$(mr_file_bytes "$review")" -ge "$MR_MIN_REVIEW_BYTES" ] \
     || { mr_seat_fail "$id" "$started" "$rc" 'the review is a bare verdict'; return 1; }
 
-  mv -f "$review" "$MR_STORE/$id.review.md"
-  mv -f "$raw" "$MR_STORE/$id.raw.json"
+  if [ "$(cat "$MR_STORE/.run.lock/generation" 2>/dev/null)" != "$MR_RECORDS" ]; then
+    mr_seat_fail "$id" "$started" 1 'the owning review run has ended'
+    return 1
+  fi
+  if ! ln "$review" "$MR_STORE/$id.review.md" || ! ln "$raw" "$MR_STORE/$id.raw.json"; then
+    mr_seat_fail "$id" "$started" 1 'review evidence already exists; refusing to replace it'
+    return 1
+  fi
   rm -f "$err"
   {
     printf 'format=%s\n' "$MR_FORMAT"
@@ -567,8 +588,11 @@ mr_seat_call() {  # <seat-index>
     printf 'diff_sha256=%s\n' "$MR_DIFF_SHA"
     printf 'reviewer_task=%s\n' "$FM_TASK_ID"
     printf 'posted=\n'
-  } > "$MR_STORE/$id.receipt.new"
-  mv -f "$MR_STORE/$id.receipt.new" "$MR_STORE/$id.receipt"
+  } > "$MR_RECORDS/$id.receipt.new"
+  ln "$MR_RECORDS/$id.receipt.new" "$MR_STORE/$id.receipt" || {
+    mr_seat_fail "$id" "$started" 1 'a receipt already exists; refusing to replace it'
+    return 1
+  }
   printf 'seat %s: %s\n' "$id" "$verdict"
 }
 
@@ -604,8 +628,8 @@ mr_seat_post() {  # <seat-id>
     fi
   } > "$body"
   out=$(GH_HOST="$FM_PR_HOST" gh pr comment "$FM_PR_URL" --body-file "$body" 2>/dev/null | tail -1 | tr -d '\r')
-  case "$out" in
-    "$FM_PR_URL#"?*) ;;
+  case "$(mr_lower "$out")" in
+    "$(mr_lower "$FM_PR_URL")#"?*) ;;
     *)
       printf 'seat %s: not posted (the forge returned no comment URL)\n' "$id"
       return 1
@@ -680,15 +704,34 @@ mr_write_prompt() {  # <file> <intent-file-or-empty>
 }
 
 MR_WORK=
+MR_RECORDS=
 MR_STORE=
 MR_LOCK=
+mr_stop_reviewers() {  # <run-lock>
+  local lock=$1 pid identity
+  [ -f "$lock/children" ] || return 0
+  while IFS="$(printf '\t')" read -r pid identity; do
+    [ -n "$identity" ] || return 1
+    fm_watcher_stop_tree "$pid" "$identity" 1 || true
+    wait "$pid" 2>/dev/null || true
+    if fm_pid_alive "$pid" && [ "$(fm_pid_identity_line "$pid")" = "$identity" ]; then
+      return 1
+    fi
+  done < "$lock/children"
+}
+
 mr_run_cleanup() {
+  local unlock=1
+  if [ -n "$MR_LOCK" ]; then
+    rm -f "$MR_LOCK/generation"
+    mr_stop_reviewers "$MR_LOCK" || unlock=0
+  fi
   [ -z "$MR_WORK" ] || rm -rf "$MR_WORK"
-  [ -z "$MR_LOCK" ] || rm -rf "$MR_LOCK"
+  [ -z "$MR_LOCK" ] || { [ "$unlock" -eq 0 ] || rm -rf "$MR_LOCK"; }
 }
 
 mr_run() {  # <repo> <base-ref> <intent-file>
-  local repo=$1 base_ref=$2 intent=$3 i pids='' pid holder families
+  local repo=$1 base_ref=$2 intent=$3 i pids='' pid holder families identity reviewer_parent
   if [ -z "${FM_TASK_ID:-}" ] || ! fm_pr_task_id_valid "$FM_TASK_ID"; then
     mr_die 'run belongs in a background worker: FM_TASK_ID is not set, so this is not a spawned ship or scout worker. A supervisor dispatches the worker and reads check.'
   fi
@@ -726,6 +769,8 @@ mr_run() {  # <repo> <base-ref> <intent-file>
     [ "$(mr_file_bytes "$intent")" -le 32768 ] || mr_die '--intent-file is larger than 32768 bytes'
   fi
 
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$SCRIPT_DIR/fm-wake-lib.sh"
   MR_STORE=$(mr_store_dir)
   mkdir -p "$MR_STORE" || mr_die "cannot create $MR_STORE"
   if ! mkdir "$MR_STORE/.run.lock" 2>/dev/null; then
@@ -734,6 +779,8 @@ mr_run() {  # <repo> <base-ref> <intent-file>
       '' | *[!0-9]*) mr_die "another run holds $MR_STORE/.run.lock" ;;
     esac
     ! kill -0 "$holder" 2>/dev/null || mr_die "another run (pid $holder) is reviewing this head"
+    rm -f "$MR_STORE/.run.lock/generation"
+    mr_stop_reviewers "$MR_STORE/.run.lock" || mr_die 'a previous reviewer is still running'
     rm -rf "$MR_STORE/.run.lock"
     mkdir "$MR_STORE/.run.lock" 2>/dev/null || mr_die "another run holds $MR_STORE/.run.lock"
   fi
@@ -743,6 +790,8 @@ mr_run() {  # <repo> <base-ref> <intent-file>
   trap 'exit 143' TERM
   printf '%s\n' "$$" > "$MR_LOCK/pid"
   rm -f "$MR_STORE/.complete" || mr_die 'cannot reset the review batch completion marker'
+  MR_RECORDS=$(mktemp -d "$MR_LOCK/records.XXXXXX") || mr_die 'cannot create review records directory'
+  printf '%s\n' "$MR_RECORDS" > "$MR_LOCK/generation"
 
   MR_WORK=$(mktemp -d "${TMPDIR:-/tmp}/fm-merge-review.XXXXXX") || mr_die 'cannot create a temporary directory'
   mkdir "$MR_WORK/snapshot"
@@ -764,7 +813,18 @@ mr_run() {  # <repo> <base-ref> <intent-file>
         printf 'seat %s: kept the review already recorded at this head\n' "${MR_SEAT_ID[$i]}"
       else
         mr_seat_call "$i" &
-        pids="$pids $!"
+        pid=$!
+        identity=$(fm_pid_identity_line "$pid") || identity=
+        reviewer_parent=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d '[:space:]')
+        if [ "$reviewer_parent" = "$$" ]; then
+          if [ -z "$identity" ]; then
+            kill -KILL "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            mr_die 'cannot record reviewer process identity'
+          fi
+          printf '%s\t%s\n' "$pid" "$identity" >> "$MR_LOCK/children"
+        fi
+        pids="$pids $pid"
       fi
     fi
     i=$((i + 1))
@@ -780,7 +840,19 @@ mr_run() {  # <repo> <base-ref> <intent-file>
       if mr_seat_has_receipt "$i"; then
         printf 'seat %s: kept the review already recorded at this head\n' "${MR_SEAT_ID[$i]}"
       else
-        mr_seat_call "$i" || true
+        mr_seat_call "$i" &
+        pid=$!
+        identity=$(fm_pid_identity_line "$pid") || identity=
+        reviewer_parent=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d '[:space:]')
+        if [ "$reviewer_parent" = "$$" ]; then
+          if [ -z "$identity" ]; then
+            kill -KILL "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            mr_die 'cannot record reviewer process identity'
+          fi
+          printf '%s\t%s\n' "$pid" "$identity" >> "$MR_LOCK/children"
+        fi
+        wait "$pid" || true
       fi
     fi
     i=$((i + 1))
