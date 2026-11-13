@@ -2029,6 +2029,7 @@ FIXTURE
           while [ ! -f "$GROUP_EVIDENCE/watchdog.continue" ]; do sleep 0.1; done
         fi
       fi
+      # shellcheck disable=SC2064 # Forward the existing trap arguments unchanged.
       builtin trap "$@"
     }
     export -f trap
