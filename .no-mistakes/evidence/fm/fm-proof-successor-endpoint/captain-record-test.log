@@ -1,0 +1,12 @@
+1..10
+ok - a lock-session heartbeat no older than the lock write updates the captain record
+ok - a lock-session heartbeat older than the lock write does not update the recorded terminal
+ok - a daemon-written lock-session heartbeat updates the record and leaves the terminal unchanged
+ok - a lock-session heartbeat from a known non-owner writer leaves the terminal unchanged
+ok - a current-session child heartbeat naming a new pane updates the captain record
+ok - a child heartbeat from a prior session yields no endpoint mismatch
+ok - during a mismatch the parent record wins
+ok - a handoff lock sidecar names the successor pane when the heartbeat does not
+ok - a symlink home still names the successor pane recorded in the lock sidecar
+ok - an unknown lock endpoint is not an address
+FM_TEST_COMPLETE

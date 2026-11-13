@@ -1,0 +1,10 @@
+1..8
+ok - a Herdr session records its pane when it takes the lock
+ok - a session with no confident endpoint records unknown
+ok - a new session records unknown instead of the predecessor terminal
+ok - the same trusted session keeps its endpoint when the new process has none
+ok - explicit endpoint metadata still outranks a live Herdr pane
+ok - a present but illegal endpoint fails publication
+ok - a Herdr successor ack records its pane and leaves the predecessor alive
+ok - an acknowledgement with no endpoint does not take the lock
+FM_TEST_COMPLETE

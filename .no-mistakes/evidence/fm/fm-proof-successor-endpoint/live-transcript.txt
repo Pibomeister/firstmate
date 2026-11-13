@@ -1,0 +1,57 @@
+=== successor inside a real tmux pane ===
+PASS  predecessor recorded its own Orca handle before the handoff
+tmux pane id: %0
+PASS  successor ack recorded the real tmux pane %0
+PASS  predecessor handle is gone from the sidecar
+PASS  handoff ack file names the same pane
+PASS  predecessor process stayed alive through the transfer
+PASS  captain locate names the successor pane: CAPTAIN v1 pid=61578 handle=%0 state=held
+=== fleet snapshot and view ===
+PASS  fleet snapshot names tmux %0
+PASS  fleet view names tmux %0
+PASS  fleet view does not show the predecessor handle
+=== fleet reader rejects a foreign worktree, a symlink, an illegal token, and unknown ===
+PASS  a sidecar whose worktree is another home is not this session's endpoint
+PASS  a symlinked lock sidecar is not an endpoint
+PASS  the same sidecar content is published once it is a regular file
+PASS  an illegal recorded token is not shown as a pane
+PASS  an absent sidecar renders as one word, unknown
+=== watchdog uses the sidecar only when the heartbeat does not prove a terminal ===
+retired pane id: %1
+PASS  watchdog names the lock sidecar pane when the heartbeat session is not the owner
+PASS  a proving heartbeat outranks the lock sidecar
+=== cleanup finds the recorded handle and ignores unknown ===
+reap concrete rc=0
+PASS  cleanup keeps the recorded successor handle as main-lock and does not keep unrecorded terminals
+PASS  a session with no confident terminal records unknown
+PASS  captain locate does not treat unknown as a handle: CAPTAIN v1 pid=43230 handle=none state=held
+PASS  fleet view renders a recorded unknown endpoint as absence
+PASS  watchdog does not adopt a pane when the lock endpoint is unknown
+reap unknown rc=0
+PASS  cleanup does not treat unknown as a terminal to keep
+=== watchdog still finds an endpoint recorded through a symlink home ===
+symlink sidecar worktree=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/successor-live.pSxJbn/link-home
+PASS  a lock taken through a symlink home records the Herdr pane
+PASS  watchdog finds the endpoint when the home path is a symlink to the recorded worktree
+PASS  fleet view finds the endpoint through the same symlink home
+=== boundaries: no inheritance, same-session keep, illegal target, refused ack, explicit metadata ===
+PASS  a Herdr-injected environment is recorded as backend herdr
+/tmp/successor-live.sh: line 84: 97670 Terminated: 15          env -u ORCA_TERMINAL_HANDLE -u TMUX -u TMUX_PANE -u ZELLIJ -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION -u FM_SUPERVISOR_TARGET -u FM_SUPERVISOR_BACKEND -u FM_SESSION_ENDPOINT_META -u TERM_PROGRAM "$@"
+PASS  a new session records unknown instead of the Herdr predecessor pane
+/tmp/successor-live.sh: line 84:  9286 Terminated: 15          env -u ORCA_TERMINAL_HANDLE -u TMUX -u TMUX_PANE -u ZELLIJ -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION -u FM_SUPERVISOR_TARGET -u FM_SUPERVISOR_BACKEND -u FM_SESSION_ENDPOINT_META -u TERM_PROGRAM "$@"
+PASS  the same trusted session keeps its Herdr endpoint with no live terminal
+PASS  an illegal live target fails the lock and is not recorded
+PASS  an acknowledgement with no endpoint leaves the predecessor lock and pane
+PASS  explicit launch metadata outranks the live tmux pane %2
+=== summary fails=0 ===
+ALL LIVE SCENARIOS PASSED
+/tmp/successor-live.sh: line 19: 53029 Terminated: 15          clear_supervisor_env FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_ROOT_OVERRIDE="$ROOT" ROOT="$ROOT" FM_LOCK_SESSION="$session" FM_TEST_SUITE_PID="$$" PATH="$FAKEBIN:$PATH" "$@" claude "$TMP/hold.sh"
+/tmp/successor-live.sh: line 19: 26582 Terminated: 15          bash -c 'read -r _ <> "$1"' _ "$fifo" > /dev/null 2>&1 < /dev/null
+/tmp/successor-live.sh: line 19: 43215 Terminated: 15          clear_supervisor_env FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_ROOT_OVERRIDE="$ROOT" ROOT="$ROOT" FM_LOCK_SESSION="$session" FM_TEST_SUITE_PID="$$" PATH="$FAKEBIN:$PATH" "$@" claude "$TMP/hold.sh"
+/tmp/successor-live.sh: line 19: 54273 Terminated: 15          bash -c 'read -r _ <> "$1"' _ "$fifo" > /dev/null 2>&1 < /dev/null
+/tmp/successor-live.sh: line 19: 64201 Terminated: 15          clear_supervisor_env FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_ROOT_OVERRIDE="$ROOT" ROOT="$ROOT" FM_LOCK_SESSION="$session" FM_TEST_SUITE_PID="$$" PATH="$FAKEBIN:$PATH" "$@" claude "$TMP/hold.sh"
+/tmp/successor-live.sh: line 19:  1555 Terminated: 15          clear_supervisor_env FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_ROOT_OVERRIDE="$ROOT" ROOT="$ROOT" FM_LOCK_SESSION="$session" FM_TEST_SUITE_PID="$$" PATH="$FAKEBIN:$PATH" "$@" claude "$TMP/hold.sh"
+/tmp/successor-live.sh: line 19: 13079 Terminated: 15          clear_supervisor_env FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_ROOT_OVERRIDE="$ROOT" ROOT="$ROOT" FM_LOCK_SESSION="$session" FM_TEST_SUITE_PID="$$" PATH="$FAKEBIN:$PATH" "$@" claude "$TMP/hold.sh"
+/tmp/successor-live.sh: line 19: 21050 Terminated: 15          clear_supervisor_env FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_ROOT_OVERRIDE="$ROOT" ROOT="$ROOT" FM_LOCK_SESSION="$session" FM_TEST_SUITE_PID="$$" PATH="$FAKEBIN:$PATH" "$@" claude "$TMP/hold.sh"
+/tmp/successor-live.sh: line 19: 23753 Terminated: 15          clear_supervisor_env FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_ROOT_OVERRIDE="$ROOT" ROOT="$ROOT" FM_LOCK_SESSION="$session" FM_TEST_SUITE_PID="$$" PATH="$FAKEBIN:$PATH" "$@" claude "$TMP/hold.sh"
+/tmp/successor-live.sh: line 19: 26911 Terminated: 15          clear_supervisor_env FM_HOME="$ACKNONE" FM_STATE_OVERRIDE="$ACKNONE/state" FM_ROOT_OVERRIDE="$ROOT" ROOT="$ROOT" FM_LOCK_SESSION="succ..none" FM_ACK_NONCE="$NONCE2" FM_ACK_SHA="$SHA2" FM_TEST_SUITE_PID="$$" PATH="$FAKEBIN:$PATH" claude "$TMP/ack.sh"

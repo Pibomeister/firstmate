@@ -1,0 +1,11 @@
+owner=session:succ..tmux
+lock_pid=61578
+session=succ..tmux
+alive=live
+usage_limit_autowait=0
+backend=tmux
+target=%1
+moved_at=1794527446
+lock_at=1794527438
+checked_at=1794527446
+source=watchdog

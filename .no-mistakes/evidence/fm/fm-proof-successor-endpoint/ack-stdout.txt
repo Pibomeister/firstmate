@@ -1,0 +1,1 @@
+HANDOFF v1 ts=1794527438 event=handoff_ack nonce=ab0123456789abcd attempt=0 pid=61578 handle=%0 reason=lock_transferred
