@@ -234,15 +234,25 @@ Each row is one line of three TAB-separated fields.
 `epoch` is the watchdog clock in seconds, taken after the heartbeat file is read.
 `home` is the canonical absolute path of the watched home, the same value as the `home` column of the action ledger.
 The age is `epoch` minus the `published_epoch` of that home's `state/heartbeat.json`.
-The heartbeat is read only when it is a regular file with schema `fm-heartbeat.v1` and a positive integer `published_epoch` written as plain decimal digits, 15 at most.
+The heartbeat is read only when it is a regular file, or a symbolic link to one, that `jq` parses as one JSON document with schema `fm-heartbeat.v1`.
+Its key `published_epoch`, spelled with no escape, must hold a positive integer written as plain decimal digits, 15 at most.
+A document that holds a second key named `published_epoch` at any depth is not read.
 An age of exactly 600 seconds is not a gap, and the limit follows no `config/watchdog` key.
-A gap row and its observation row share one epoch and go out in one write, gap row first.
+A gap row and its observation row share one epoch, and the gap row is appended first.
+The rows of one reading are not guaranteed to go out in one write.
+So a reader must not assume the two rows are adjacent, and a gap row can stand without its observation row when the append is cut short.
 
 A heartbeat that is absent, not read, or stamped later than the clock writes no row for that home.
 So a home with no observation row in a span was not measured there, and nothing is written to stand in for a missing reading.
-An append that fails writes no row, adds an open gap to the status file, prints one line on standard error, and does not fail the pass.
-Before an append, a last line that has no newline is closed with three TABs and a newline, so a torn line has more than three fields.
-Only a newline-terminated line of exactly three fields is a row.
+An append that cannot start writes no row.
+An append that fails after it started can leave the whole lines it already wrote and one torn line, which the next append closes.
+Either failure queues an open gap for that home, prints one line on standard error for that home, and does not fail the pass.
+The status file drops a repeated open-gap line, keeps a limited number of them, and cannot be rewritten when the owner home is full or read-only, so the standard error line is the report that is always made.
+Before an append, when the file does not end with a newline or its last byte cannot be read, three TABs and a newline are written first.
+So a torn line is closed to more than two TAB bytes, and a file that cannot be read but ended with a newline gets a line of three TABs.
+Two passes at the same time can each close the same torn line, which leaves a line of three TABs, or one pass can join its first row to a torn piece.
+A joined line holds more than two TAB bytes, or its first field has 11 digits or more.
+A row is a newline-terminated line that holds exactly two TAB bytes and no NUL byte, so a reader must count the TAB bytes and must not split on runs of them.
 
 The record never judges a handoff: a gap row is written during one, so a consumer of the record must exclude handoffs itself.
 It measures heartbeat age only, so it does not replace the `alive` verdict of the [captain record](#captain-record).

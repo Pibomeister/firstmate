@@ -103,17 +103,24 @@
 #       Prints the summed numeric cost column, in dollars.
 #   fm_wd_iso <epoch>
 #       Prints the UTC ISO-8601 time.
+#   fm_wd_epoch_ok <value>
+#       Returns 0 for a positive integer in plain decimal digits, 15 at most,
+#       with no leading zero.
 #   fm_wd_heartbeat_published <heartbeat-file>
 #       Prints the published_epoch of a heartbeat and returns 0 only when the
-#       file is a regular file holding one fm-heartbeat.v1 document whose
-#       published_epoch is a positive integer written as plain decimal digits,
-#       15 at most. Anything else is unread: it prints nothing and returns 1.
+#       file is a regular file, or a link to one, that jq parses as exactly one
+#       JSON document: an fm-heartbeat.v1 object whose key published_epoch,
+#       spelled with no escape, holds a positive integer written as plain
+#       decimal digits, 15 at most, and which holds no other key of that name
+#       at any depth. The file is read once. Anything else is unread: it prints
+#       nothing and returns 1.
 #   fm_wd_supervisor_gap_rows <home> <now> <published-epoch>
 #       Prints the supervisor-gap rows of one heartbeat reading (docs/watchdog.md
 #       "Supervisor-gap record"): the gap row when now - published-epoch is over
 #       600, then the observation row. Prints nothing and returns 1 when either
 #       epoch is not a positive integer of at most 15 digits, when the age is
-#       negative, or when the home is empty or holds a TAB or a newline.
+#       negative, or when the home is empty or holds a TAB, a newline or a
+#       carriage return.
 
 FM_WD_REFUSED_TEXT_RE='(^|[^be])merg|[rd]emerg|deploy|releas|publish|(^|[^a-z])force.?push|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
 FM_WD_RESERVED_RE="$FM_WD_REFUSED_TEXT_RE"'|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|delet|destroy|wipe)'
@@ -509,18 +516,33 @@ fm_wd_epoch_ok() {  # <value>
 fm_wd_heartbeat_published() {  # <heartbeat-file>
   local v
   [ -f "$1" ] || return 1
-  v=$(jq -r 'if type == "object" and .schema == "fm-heartbeat.v1" then .published_epoch else null end
-    | select(type == "number" and . > 0 and . == floor and . < 1e15) | floor | tostring' "$1" 2>/dev/null) || return 1
+  # One read of the raw text: the watcher replaces the file by rename, so a
+  # second open could see another stamp. jq may print 1.7e9 or 1700000000.0 as
+  # the same integer, so the text must also hold the stamp as those plain
+  # digits. In valid JSON a quote that follows { or , opens a string or closes
+  # one, and a closing quote is followed only by whitespace, a colon, a comma, a
+  # bracket, a brace or the end of the text. So neither pattern can match from
+  # inside a string, and an array element is never followed by a colon: the two
+  # patterns see key tokens only, which are one key of that name in the whole
+  # text, spelled plainly or with \u escapes, and the plain spelling with the
+  # plain digits as its value. The first pattern also matches another key only
+  # when that key holds a \u escape and no character outside a-z and _, which
+  # keeps a large heartbeat fast.
+  v=$(jq -Rrs '. as $text
+    | (try fromjson catch null)
+    | if type == "object" and .schema == "fm-heartbeat.v1" then .published_epoch else empty end
+    | select(type == "number" and . > 0 and . == floor and . < 1e15) | floor | tostring
+    | select(. as $v | $text
+        | ([scan("[{,][ \t\r\n]*(\"published_epoch\"|\"[a-z_]*(?:\\\\u[0-9a-fA-F]{4}[a-z_]*)+\")[ \t\r\n]*:")[0]
+            | fromjson | select(. == "published_epoch")] | length == 1)
+          and test("[{,][ \t\r\n]*\"published_epoch\"[ \t\r\n]*:[ \t\r\n]*" + $v + "[ \t\r\n]*[,}]"))' "$1" 2>/dev/null) || return 1
   fm_wd_epoch_ok "$v" || return 1
-  # jq may print 1.7e9 or 1700000000.0 as the same integer, so the file must also
-  # hold the stamp as those plain digits.
-  tr -d ' \t\r\n' < "$1" 2>/dev/null | grep -Eq "\"published_epoch\":${v}[,}]" || return 1
   printf '%s\n' "$v"
 }
 
 fm_wd_supervisor_gap_rows() {  # <home> <now> <published-epoch>
   local home=$1 now=$2 pub=$3 age
-  case "$home" in ''|*$'\t'*|*$'\n'*) return 1 ;; esac
+  case "$home" in ''|*$'\t'*|*$'\n'*|*$'\r'*) return 1 ;; esac
   fm_wd_epoch_ok "$now" && fm_wd_epoch_ok "$pub" || return 1
   age=$((now - pub))
   [ "$age" -ge 0 ] || return 1

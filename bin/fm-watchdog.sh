@@ -644,16 +644,20 @@ wd_gap() {  # <text>
 
 # wd_score_gap: appends the supervisor-gap rows of the subject wd_observe just
 # read (docs/watchdog.md "Supervisor-gap record"). A heartbeat that is not read
-# writes nothing. A torn last line is closed first, in the same write.
+# writes nothing. A last line that is not closed is closed first: the newline
+# count sees a NUL byte, which a command substitution drops, and a tail that
+# cannot be read counts as not closed. A child process writes the record, so a
+# failed write leaves no row bytes in this shell's output buffer for the next
+# builtin write to send to another file.
 wd_score_gap() {
   local f=$STATE/night-score/supervisor-gap.tsv pub now rows close=''
   pub=$(fm_wd_heartbeat_published "$O_HOME/state/heartbeat.json") || return 0
   now=$(wd_now)
   rows=$(fm_wd_supervisor_gap_rows "$O_HOME" "$now" "$pub") || return 0
-  if [ -s "$f" ] && [ -n "$(tail -c 1 "$f" 2>/dev/null)" ]; then close=$'\t\t\t\n'; fi
-  if ! { mkdir -p "${f%/*}" && printf '%s%s\n' "$close" "$rows" >> "$f"; } 2>/dev/null; then
-    wd_gap "supervisor-gap record not written; this pass is unmeasured"
-    printf 'fm-watchdog: supervisor-gap record not written for %s: cannot append to %s\n' "$O_TAG" "$f" >&2
+  if [ -s "$f" ] && [ "$(tail -c 1 "$f" 2>/dev/null | wc -l)" -eq 0 ]; then close=$'\t\t\t\n'; fi
+  if ! { mkdir -p "${f%/*}" && cat >> "$f" <<< "$close$rows"; } 2>/dev/null; then
+    wd_gap "supervisor-gap record append failed"
+    printf 'fm-watchdog: supervisor-gap record append failed for %s: %s\n' "$O_TAG" "$f" >&2
   fi
 }
 

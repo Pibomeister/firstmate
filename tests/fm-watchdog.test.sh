@@ -2394,6 +2394,17 @@ gap_no_rows() {
   assert_equals "" "$out" "$label: no row"
 }
 
+# gap_report <label> <stderr-text>: a failed append is the open gap in the status
+# file and the whole of standard error, one line.
+gap_report() {
+  assert_grep "supervisor-gap record append failed" "$H/data/watchdog/status.md" "$1 is an open gap in the status file"
+  assert_equals 1 "$(printf '%s\n' "$2" | wc -l | tr -d ' ')" "$1 is one standard error line: $2"
+  case "$2" in
+    'fm-watchdog: supervisor-gap record append failed for '*) ;;
+    *) fail "$1 is not named on standard error: $2" ;;
+  esac
+}
+
 test_supervisor_gap_rows_from_one_reading() {
   assert_equals $'1000\tobserved\t/h' "$(lib fm_wd_supervisor_gap_rows /h 1000 1000)" "age 0 is one observation row"
   assert_equals $'1000\tobserved\t/h' "$(lib fm_wd_supervisor_gap_rows /h 1000 400)" "age 600 is not a gap"
@@ -2412,17 +2423,34 @@ test_supervisor_gap_rows_from_one_reading() {
   gap_no_rows "an empty home" "" 1000 400
   gap_no_rows "a home with a TAB" $'/h\tx' 1000 400
   gap_no_rows "a home with a newline" $'/h\nx' 1000 400
+  gap_no_rows "a home with a carriage return" $'/h\rx' 1000 400
   pass "supervisor-gap rows: an observation per reading, a gap row over 600 s, and no row for an invalid reading"
 }
 
 test_supervisor_gap_heartbeat_stamp_reading() {
-  local d="$TMP_ROOT/hb-stamp" f out doc
-  mkdir -p "$d/dir.json"
+  local d="$TMP_ROOT/hb-stamp" f out doc t0
+  mkdir -p "$d/dir.json" "$d/shim"
   f="$d/heartbeat.json"
   printf '{"schema":"fm-heartbeat.v1","generated_epoch":5,"published_epoch":1794000000}\n' > "$f"
   assert_equals 1794000000 "$(lib fm_wd_heartbeat_published "$f")" "a published heartbeat prints its stamp"
   printf '{\n  "schema": "fm-heartbeat.v1",\n  "published_epoch": 1794000000\n}\n' > "$f"
   assert_equals 1794000000 "$(lib fm_wd_heartbeat_published "$f")" "an indented heartbeat prints its stamp"
+  # A heartbeat of real size, about 90 KB and indented: a text check that matches
+  # each key or each space of it takes from seconds to a minute.
+  jq -n '{schema:"fm-heartbeat.v1",published_epoch:1794000000,tasks:[range(900) | {id:"task-\(.)",state:"working",note:"x y z"}]}' > "$d/large.json"
+  t0=$SECONDS
+  assert_equals 1794000000 "$(lib fm_wd_heartbeat_published "$d/large.json")" "a heartbeat of real size prints its stamp"
+  [ "$((SECONDS - t0))" -lt 20 ] || fail "a heartbeat of real size took $((SECONDS - t0)) s to read"
+  ln -s "$f" "$d/link.json"
+  assert_equals 1794000000 "$(lib fm_wd_heartbeat_published "$d/link.json")" "a link to a heartbeat prints its stamp"
+  printf '{"schema":"fm-heartbeat.v1","published_epoch":999999999999999}\n' > "$f"
+  assert_equals 999999999999999 "$(lib fm_wd_heartbeat_published "$f")" "a 15-digit stamp is read"
+  printf '{"schema":"fm-heartbeat.v1","published_epoch":1794000000,"task":"caf\351 \377"}\n' > "$f"
+  assert_equals 1794000000 "$(lib fm_wd_heartbeat_published "$f")" "bytes that are not UTF-8 in another field do not hide the stamp"
+  printf '%s\n' '{"schema":"fm-heartbeat.v1","published_epoch":1794000000,"note":"x,\"published_epoch\":5}","names":["published_epoch"]}' > "$f"
+  assert_equals 1794000000 "$(lib fm_wd_heartbeat_published "$f")" "the name of the stamp inside a string value is not a second key"
+  printf '%s\n' '{"schema":"fm-heartbeat.v1","published_epoch":1794000000,"n":"x,","m":"{ ","k,":1,"a":["x,","published_epoch"]}' > "$f"
+  assert_equals 1794000000 "$(lib fm_wd_heartbeat_published "$f")" "a string that ends in a comma or a brace starts no key"
   for doc in '{"schema":"fm-heartbeat.v1","generated_epoch":1794000000}' \
     '{"schema":"fm-heartbeat.v1","published_epoch":0}' \
     '{"schema":"fm-heartbeat.v1","published_epoch":-1794000000}' \
@@ -2437,6 +2465,15 @@ test_supervisor_gap_heartbeat_stamp_reading() {
     '{"schema":"fm-heartbeat.v2","published_epoch":1794000000}' \
     '{"published_epoch":1794000000}' \
     '[{"schema":"fm-heartbeat.v1","published_epoch":1794000000}]' \
+    $'{}\n{"schema":"fm-heartbeat.v1","published_epoch":1794000000}' \
+    $'{"schema":"fm-heartbeat.v1","published_epoch":1794000000}\nnull' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1.794e9,"nested":{"published_epoch":1794000000}}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1794000000,"nested":{"published_epoch":1794000000}}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1000,"published_epoch":2000}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1794000000,"published_epoch":1.794e9}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1794000000,"\u0070ublished_epoch":1.794e9}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1.794e9,"pub lished_epoch":1794000000}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1794000000.0,"x\"published_epoch":1794000000}' \
     '1794000000' \
     'not json' \
     ''; do
@@ -2444,15 +2481,33 @@ test_supervisor_gap_heartbeat_stamp_reading() {
     if out=$(lib fm_wd_heartbeat_published "$f"); then fail "an unread heartbeat was accepted: $doc"; fi
     assert_equals "" "$out" "an unread heartbeat prints nothing: $doc"
   done
+  printf '{"schema":"fm-heartbeat.v1","published_epoch":1794000000}\n\0' > "$f"
+  if out=$(lib fm_wd_heartbeat_published "$f" 2>/dev/null); then fail "a heartbeat with a NUL byte after the document was accepted"; fi
+  assert_equals "" "$out" "a heartbeat with a NUL byte after the document prints nothing"
+  # The watcher replaces the heartbeat by rename while a reading is under way:
+  # this jq replaces it as soon as it has read it.
+  cat > "$d/shim/jq" <<'SH'
+#!/usr/bin/env bash
+"$REAL_JQ" "$@"
+rc=$?
+printf '{"schema":"fm-heartbeat.v1","published_epoch":1794000015}\n' > "$HB.new" && mv "$HB.new" "$HB"
+exit "$rc"
+SH
+  chmod +x "$d/shim/jq"
+  printf '{"schema":"fm-heartbeat.v1","published_epoch":1794000000}\n' > "$f"
+  out=$(REAL_JQ=$(command -v jq) HB="$f" PATH="$d/shim:$PATH" lib fm_wd_heartbeat_published "$f") \
+    || fail "a heartbeat replaced during the reading was not read"
+  assert_equals 1794000000 "$out" "a heartbeat replaced during the reading prints the stamp that was read"
+  assert_equals 1794000015 "$(jq -r .published_epoch "$f")" "the reading under test did see the heartbeat replaced"
   if out=$(lib fm_wd_heartbeat_published "$d/absent.json"); then fail "an absent heartbeat was accepted"; fi
   assert_equals "" "$out" "an absent heartbeat prints nothing"
   if out=$(lib fm_wd_heartbeat_published "$d/dir.json"); then fail "a directory was accepted"; fi
   assert_equals "" "$out" "a directory prints nothing"
-  pass "supervisor-gap reading: only a positive integer published_epoch of an fm-heartbeat.v1 file is read"
+  pass "supervisor-gap reading: only the one positive integer published_epoch of one fm-heartbeat.v1 document is read, from one read of the file"
 }
 
 test_supervisor_gap_record_follows_published_heartbeat_age() {
-  local home obs gap
+  local home obs gap first
   make_home $'Captain session\n> '
   transcript 100 "Working."
   home=$(canon "$H")
@@ -2469,11 +2524,13 @@ test_supervisor_gap_record_follows_published_heartbeat_age() {
   gap="$((BASE + 20))"$'\t'"$home"$'\theartbeat_age=601'
   obs="$((BASE + 20))"$'\tobserved\t'"$home"
   assert_equals "$gap"$'\n'"$obs" "$(gap_rows "$H" | tail -n +3)" "an age of 601 adds the gap row, then the observation row"
+  first=$(gap_rows "$H")
   jq -n --argjson pid "$LOCKPID" --argjson deadline "$((BASE + 500))" \
     '{version:1,nonce:"n1",handoff:"data/handoff.md",sha256:"0",predecessor_pid:$pid,predecessor_start:"x",deadline:$deadline}' \
     > "$H/state/.handoff-pending"
   run_wd 20 once >/dev/null 2>&1
-  assert_equals "$gap"$'\n'"$obs" "$(gap_rows "$H" | tail -n +5)" "a handoff claim in the home does not remove or change the gap row"
+  assert_equals "$first" "$(gap_rows "$H" | head -n 4)" "a handoff claim in the home leaves the rows already written unchanged"
+  assert_equals "$gap"$'\n'"$obs" "$(gap_rows "$H" | tail -n +5)" "a pass during a handoff claim still appends the gap row"
   rm -f "$H/state/.handoff-pending"
   run_wd 20 once --dry-run >/dev/null 2>&1
   assert_equals "$gap"$'\n'"$obs" "$(gap_rows "$H" | tail -n +7)" "a dry-run pass appends the same rows"
@@ -2552,33 +2609,73 @@ test_supervisor_gap_torn_line_and_failed_append() {
   [ "$(awk -F'\t' 'NR == 1 { print NF }' "$rec")" -ge 4 ] || fail "the closed torn line still reads as a three-field row: $(head -n 1 "$rec")"
   assert_equals "$row" "$(tail -n 1 "$rec")" "the row after a torn line is whole"
 
+  printf '%s\tobserved\t/torn/ho\0' "$((BASE - 120))" > "$rec"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 2 "$(wc -l < "$rec" | tr -d ' ')" "a torn line that ends in a NUL byte is closed"
+  # Counted in bytes: an awk that stops at the NUL would see three fields.
+  assert_equals 5 "$(head -n 1 "$rec" | tr -cd '\t' | wc -c | tr -d ' ')" "the closed NUL-ended line holds its two TABs and the three closing TABs"
+  assert_equals "$row" "$(tail -n 1 "$rec")" "the row after a NUL-ended torn line is whole"
+
   if [ "$(id -u)" != 0 ]; then
+    printf '%s\tobserved\t/torn/ho' "$((BASE - 120))" > "$rec"
+    chmod 200 "$rec"
+    run_wd 0 once >/dev/null 2>&1
+    chmod 644 "$rec"
+    assert_equals 2 "$(wc -l < "$rec" | tr -d ' ')" "a record whose last byte cannot be read is closed before the append"
+    assert_equals "$row" "$(tail -n 1 "$rec")" "the row after an unreadable tail is whole"
+
     printf '%s\tobserved\t/torn/ho' "$((BASE - 120))" > "$rec"
     chmod 444 "$rec"
     before=$(cksum < "$rec")
     err=$(run_wd 0 once 2>&1 >/dev/null) || fail "a torn record that cannot take the repair fails the pass: $err"
     assert_equals "$before" "$(cksum < "$rec")" "a torn record that cannot be written keeps its bytes: no repair and no row"
-    assert_grep "supervisor-gap record not written" "$H/data/watchdog/status.md" "the failed repair of a torn line is an open gap"
-    assert_equals 1 "$(printf '%s\n' "$err" | grep -c 'supervisor-gap record')" "the failed repair of a torn line is one standard error line: $err"
+    gap_report "the refused repair of a torn line" "$err"
     chmod 644 "$rec"
   fi
 
   rm -rf "$H/state/night-score"
   mkdir -p "$H/state/night-score/supervisor-gap.tsv"
-  err=$(run_wd 0 once 2>&1 >/dev/null) || fail "a record that cannot take the repair fails the pass: $err"
-  assert_equals "" "$(find "$rec" -mindepth 1)" "nothing is appended when the repair cannot be written"
-  assert_grep "supervisor-gap record not written" "$H/data/watchdog/status.md" "the failed repair is an open gap"
-  assert_equals 1 "$(printf '%s\n' "$err" | grep -c 'supervisor-gap record')" "the failed repair is one standard error line: $err"
+  err=$(run_wd 0 once 2>&1 >/dev/null) || fail "a directory in place of the record fails the pass: $err"
+  assert_equals "" "$(find "$rec" -mindepth 1)" "nothing is appended when a directory stands in place of the record"
+  gap_report "the append to a directory" "$err"
 
   rm -rf "$H/state/night-score"
   : > "$H/state/night-score"
   before=$(ledger)
   err=$(run_wd 0 once 2>&1 >/dev/null) || fail "a record that cannot be appended fails the pass: $err"
   [ -f "$H/state/night-score" ] && [ ! -s "$H/state/night-score" ] || fail "a row was written although the record cannot be appended"
-  assert_grep "supervisor-gap record not written" "$H/data/watchdog/status.md" "the failed append is an open gap in the status file"
-  assert_equals 1 "$(printf '%s\n' "$err" | grep -c 'supervisor-gap record')" "the failed append is one standard error line: $err"
+  gap_report "the append with no record directory" "$err"
   assert_equals "$before" "$(ledger)" "the failed append takes no action"
-  pass "supervisor-gap record: a torn line never joins a row, and a failed append is reported with no row and no failed pass"
+
+  # A write that fails after the record opened, where the system has a full device.
+  if [ -c /dev/full ]; then
+    rm -f "$H/state/night-score"
+    mkdir -p "$H/state/night-score"
+    ln -s /dev/full "$rec"
+    err=$(run_wd 0 once 2>&1 >/dev/null) || fail "a record on a full device fails the pass: $err"
+    gap_report "the write to a full device" "$err"
+  else
+    printf '# not run here: this system has no /dev/full, so the write to a full device is checked on Linux only\n'
+  fi
+
+  # A write that fails after it started: the record is 16 bytes under a file-size
+  # limit, so the rows do not fit. Where the system still lets the append land
+  # whole, there is no failed write to check.
+  rm -rf "$H/state/night-score"
+  mkdir -p "$H/state/night-score"
+  awk 'BEGIN { for (i = 0; i < 65535; i++) print "padding-line\t\t\t" }' > "$rec"
+  publish "$H" "$((BASE - 700))"
+  err=$( (trap '' XFSZ; ulimit -f 1024; run_wd 0 once) 2>&1 >/dev/null) || fail "a write cut short by a size limit fails the pass: $err"
+  if [ "$(tail -n 1 "$rec")" != "$row" ]; then
+    gap_report "the write cut short by a size limit" "$err"
+    assert_no_grep "$(printf '\tobserved\t')" "$H/data/watchdog/status.md" "the row of a failed write does not go to the status file"
+    run_wd 5 once >/dev/null 2>&1
+    assert_equals "$((BASE + 5))"$'\t'"$home"$'\theartbeat_age=705\n'"$((BASE + 5))"$'\tobserved\t'"$home" "$(awk -F'\t' 'NF == 3' "$rec")" \
+      "after a write cut short, the next pass closes what it left and appends whole rows"
+  else
+    printf '# not run here: the size-limited append landed whole, so the write that fails after it started is checked on Linux only\n'
+  fi
+  pass "supervisor-gap record: a torn line never joins a row, and a failed append is reported and does not fail the pass"
 }
 
 test_status_file_short_and_staleness_visible() {
