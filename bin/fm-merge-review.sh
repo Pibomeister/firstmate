@@ -29,12 +29,14 @@
 # Verdict rule (check, and the last line run prints):
 #   approved    at least two valid receipts at this exact head approve, they
 #               come from two different declared model families, and no valid
-#               receipt at this head says BLOCK.
+#               receipt at this head says BLOCK. The batch must be complete,
+#               with no active run or invalid stored review evidence.
 #   blocked     a valid receipt at this head says BLOCK. Approvals never
 #               outvote it. Only a new head, with new reviews, clears it.
 #   incomplete  anything else.
 # A receipt belongs to one head, so a changed head has no receipts and is
-# incomplete. There is no waiver flag.
+# incomplete. Invalid or orphaned review evidence cannot be replaced by a
+# rerun; it keeps the head incomplete. There is no waiver flag.
 # The line is one physical line:
 #   merge-review: <approved|blocked|incomplete> head=<full-sha>
 #     approvals=<seat:verdict,...|none> blocks=<seat,...|none> [reason="<text>"]
@@ -56,6 +58,7 @@
 #
 # Receipts live in the home, one directory per pull request and head:
 #   data/merge-review/<provider>/<host>/<path>/<number>/<head>/
+#     .complete            exists only after a review batch finishes
 #     <seat>.receipt       key=value, format=fm-merge-review-receipt-v1: url,
 #                          head, base, base_ref, seat, family, harness,
 #                          harness_version, requested_model, reported_model,
@@ -370,11 +373,11 @@ mr_store_dir() {
 # Print the one verdict line for the stored receipts and return 0 only on
 # approved.
 mr_check() {
-  local store receipt approvals='' blocks='' invalid='' families='' family_count=0 state reason=''
+  local store receipt review seat approvals='' blocks='' invalid='' families='' family_count=0 state reason=''
   store=$(mr_store_dir)
   if [ -d "$store" ]; then
     for receipt in "$store"/*.receipt; do
-      [ -f "$receipt" ] || continue
+      { [ -e "$receipt" ] || [ -L "$receipt" ]; } || continue
       if mr_receipt_valid "$receipt"; then
         if [ "$MR_R_VERDICT" = BLOCK ]; then
           blocks="${blocks:+$blocks,}$MR_R_SEAT"
@@ -392,9 +395,23 @@ mr_check() {
         invalid="${invalid:+$invalid; }$MR_R_SEAT ($MR_R_REASON)"
       fi
     done
+    for review in "$store"/*.review.md; do
+      { [ -e "$review" ] || [ -L "$review" ]; } || continue
+      receipt="${review%.review.md}.receipt"
+      if [ ! -e "$receipt" ] && [ ! -L "$receipt" ]; then
+        seat=$(basename "$review" .review.md)
+        invalid="${invalid:+$invalid; }$seat (the review receipt is missing)"
+      fi
+    done
   fi
   if [ -n "$blocks" ]; then
     state=blocked
+  elif [ -n "$invalid" ]; then
+    state=incomplete
+    reason='stored review evidence is invalid'
+  elif [ -e "$store/.run.lock" ] || [ -L "$store/.run.lock" ] || [ ! -f "$store/.complete" ]; then
+    state=incomplete
+    reason='the review batch has not completed'
   elif [ "$family_count" -ge 2 ]; then
     state=approved
   else
@@ -455,6 +472,11 @@ mr_seat_call() {  # <seat-index>
   harness=${MR_SEAT_HARNESS[$i]}
   model=${MR_SEAT_MODEL[$i]}
   effort=${MR_SEAT_EFFORT[$i]}
+  if [ -e "$MR_STORE/$id.receipt" ] || [ -L "$MR_STORE/$id.receipt" ] ||
+    [ -e "$MR_STORE/$id.review.md" ] || [ -L "$MR_STORE/$id.review.md" ]; then
+    printf 'seat %s: existing review evidence is invalid; refusing to replace it\n' "$id"
+    return 1
+  fi
   raw="$MR_STORE/$id.raw.json.new"
   err="$MR_STORE/$id.stderr.new"
   review="$MR_STORE/$id.review.md.new"
@@ -720,6 +742,7 @@ mr_run() {  # <repo> <base-ref> <intent-file>
   trap 'exit 130' INT
   trap 'exit 143' TERM
   printf '%s\n' "$$" > "$MR_LOCK/pid"
+  rm -f "$MR_STORE/.complete" || mr_die 'cannot reset the review batch completion marker'
 
   MR_WORK=$(mktemp -d "${TMPDIR:-/tmp}/fm-merge-review.XXXXXX") || mr_die 'cannot create a temporary directory'
   mkdir "$MR_WORK/snapshot"
@@ -773,6 +796,9 @@ mr_run() {  # <repo> <base-ref> <intent-file>
     done
   fi
 
+  : > "$MR_STORE/.complete" || mr_die 'cannot record the completed review batch'
+  MR_LOCK=
+  rm -rf "$MR_STORE/.run.lock"
   mr_check
 }
 

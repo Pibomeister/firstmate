@@ -48,6 +48,10 @@ printf '%s|%s\n' "$PWD" "$(printf '%s' "$*" | tr '\n' ' ')" >> "$stub/$tool.call
   git rev-parse --git-dir >/dev/null 2>&1 && echo repo=yes || echo repo=no
 } > "$stub/$tool.saw"
 head=$(printf '%s\n' "$prompt" | sed -n 's/^Head commit under review: //p' | head -1)
+if [ -e "$stub/$tool.wait" ]; then
+  : > "$stub/$tool.waiting"
+  while [ -e "$stub/$tool.wait" ]; do sleep 0.1; done
+fi
 mode=$(cat "$stub/$tool.mode" 2>/dev/null || echo approve)
 reported=$(cat "$stub/$tool.model" 2>/dev/null || echo "$model-build")
 body='Summary: the change adds one feature file and nothing else.
@@ -413,6 +417,79 @@ test_unposted_block_cannot_be_outvoted_or_replaced() {
   pass "an unposted block defeats two posted approval families and survives publication retry"
 }
 
+test_damaged_dissent_never_approves_or_gets_replaced() {
+  local mode receipt review rc
+  for mode in review receipt missing-receipt unreadable-receipt unreadable-review; do
+    make_case "damaged-$mode" "${TWO_SEATS[@]}" 'seat=xai:grok:grok-test'
+    echo block > "$STUB/agy.mode"
+    run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" && fail "damaged-$mode: initial BLOCK approved"
+    receipt="$(store_dir)/google.agy.gemini-test-high.receipt"
+    review="$(store_dir)/google.agy.gemini-test-high.review.md"
+    case "$mode" in
+      review) printf '\ncorrupted\n' >> "$review" ;;
+      receipt) printf 'format=corrupted\n' > "$receipt" ;;
+      missing-receipt) rm "$receipt" ;;
+      unreadable-receipt) rm "$receipt"; ln -s "$CASE/absent" "$receipt" ;;
+      unreadable-review) rm "$review"; ln -s "$CASE/absent" "$review" ;;
+    esac
+    rc=0
+    run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+    expect_code 1 "$rc" "damaged-$mode: damaged dissent must not permit approval"
+    assert_no_grep 'merge-review: approved' "$CASE/stdout" "damaged-$mode: check approved"
+
+    echo approve > "$STUB/agy.mode"
+    rc=0
+    run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+    expect_code 1 "$rc" "damaged-$mode: rerun must keep damaged dissent fail-closed"
+    assert_equals 1 "$(calls agy)" "damaged-$mode: rerun replaced the damaged dissent"
+    assert_no_grep 'merge-review: approved' "$CASE/stdout" "damaged-$mode: rerun approved"
+  done
+  pass "corrupt, missing, and unreadable dissent never approves or gets rerolled"
+}
+
+test_check_waits_for_the_complete_review_batch() {
+  local run_pid rc=0 i=0 store ready=0
+  make_case active-batch "${TWO_SEATS[@]}" 'seat=xai:grok:grok-test'
+  echo block > "$STUB/grok.mode"
+  : > "$STUB/grok.wait"
+  store=$(store_dir)
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" &
+  run_pid=$!
+  while [ "$i" -lt 300 ]; do
+    if [ -f "$store/anthropic.claude.claude-test-1.receipt" ] &&
+      [ -f "$store/google.agy.gemini-test-high.receipt" ] && [ -e "$STUB/grok.waiting" ]; then ready=1; break; fi
+    sleep 0.1
+    i=$((i + 1))
+  done
+  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" bash "$MERGE_REVIEW" check "$PR_URL" --head "$HEAD_SHA" \
+    > "$CASE/early-check" 2>&1 || rc=$?
+  # Release and reap the owned job before assertions can terminate the test.
+  rm "$STUB/grok.wait"
+  wait "$run_pid" && fail "active-batch: completed BLOCK approved"
+  assert_equals 1 "$ready" "active-batch: two approvals and a pending third reviewer were not established"
+  expect_code 1 "$rc" "active-batch: two fast approvals must wait for the pending third reviewer"
+  assert_grep 'merge-review: incomplete' "$CASE/early-check" "active-batch: active batch approved"
+  assert_grep 'merge-review: blocked' "$CASE/stdout" "active-batch: final dissent missing"
+  pass "check cannot approve while a third seat in the active batch has not answered"
+}
+
+test_an_unfinished_batch_stays_incomplete_after_lock_cleanup() {
+  local rc=0
+  make_case unfinished "${TWO_SEATS[@]}"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || fail "unfinished: initial run did not approve"
+  # An interrupted run clears its lock without finishing the batch.
+  rm -f "$(store_dir)/.complete"
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 1 "$rc" "unfinished: receipts without a completed batch cannot approve"
+  assert_grep 'merge-review: incomplete' "$CASE/stdout" "unfinished: cleared lock alone approved"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "unfinished: rerun can complete the batch using the stored reviews"
+  assert_equals 1 "$(calls claude)" "unfinished: first valid review was rerolled"
+  assert_equals 1 "$(calls agy)" "unfinished: second valid review was rerolled"
+  pass "lock cleanup alone cannot approve an unfinished batch, and recovery retains valid reviews"
+}
+
 test_covers_follows_the_require_lines() {
   local rc=0
   make_case covers-none
@@ -496,6 +573,9 @@ fm_test_run \
   test_a_receipt_counts_only_while_its_seat_is_declared \
   test_posting_is_off_by_default_and_required_when_on \
   test_unposted_block_cannot_be_outvoted_or_replaced \
+  test_damaged_dissent_never_approves_or_gets_replaced \
+  test_check_waits_for_the_complete_review_batch \
+  test_an_unfinished_batch_stays_incomplete_after_lock_cleanup \
   test_covers_follows_the_require_lines \
   test_run_refuses_what_it_cannot_review \
   test_intent_reaches_the_prompt_the_receipt_binds
