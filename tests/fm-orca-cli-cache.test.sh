@@ -131,6 +131,61 @@ run_exists() {
     bash -c '. "$1"; shift; fm_orca_terminal_exists "$@"' _ "$ROOT/bin/fm-orca-cli-cache.sh" "$@"
 }
 
+run_draft_present() {
+  PATH="$CASE/fakebin:$PATH" \
+    FM_ORCA_CLI_CACHE="${CACHE_SWITCH:-1}" \
+    FM_ORCA_CLI_CACHE_TTL="${CACHE_TTL:-3}" \
+    FM_ORCA_CLI_CACHE_DIR="$FM_ORCA_CLI_CACHE_DIR" \
+    FM_ORCA_LOG="$LOG" FM_ORCA_COUNT="$COUNT" FM_ORCA_LIST="$LIST" \
+    FM_ORCA_READ_BODY="${FM_ORCA_READ_BODY:-}" \
+    FM_ORCA_READ_EXIT="${FM_ORCA_READ_EXIT:-0}" \
+    FM_COMPOSER_CAPTURE_LINES=7 \
+    bash -c '. "$1/bin/fm-backend.sh"; fm_backend_source orca; fm_backend_orca_draft_present term-a' _ "$ROOT"
+}
+
+test_draft_probe_does_not_reuse_an_empty_snapshot() {
+  local body
+  setup_case live-draft
+  CACHE_TTL=120
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"prompt","draft":""}}'
+  run_cli terminal read --terminal term-a --limit 7 --json >/dev/null
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"prompt","draft":"operator input"}}'
+  run_draft_present || fail "draft clearance reused an empty snapshot after input appeared"
+  assert_equals 2 "$(calls)" "draft clearance did not read the live terminal"
+  body=$(run_cli terminal read --terminal term-a --limit 7 --json)
+  assert_equals '{"ok":true,"result":{"text":"prompt","draft":""}}' "$body" \
+    "draft clearance changed the ordinary polling cache"
+  assert_equals 2 "$(calls)" "ordinary polling stopped reusing its snapshot"
+  FM_ORCA_READ_EXIT=1
+  run_draft_present || fail "a failed live draft read did not hold the send"
+  FM_ORCA_READ_EXIT=0
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"prompt","draft":""}}'
+  if run_draft_present; then
+    fail "an empty live draft did not clear after the failed read"
+  fi
+  pass "fm_backend_orca_draft_present: live input and read failures hold despite an empty cached snapshot"
+}
+
+test_zero_ttl_bypasses_an_existing_entry() {
+  local body
+  setup_case zero-ttl
+  CACHE_TTL=120
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"cached"}}'
+  run_cli terminal read --terminal term-a --limit 1 --json >/dev/null
+  CACHE_TTL=0
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"fresh"}}'
+  body=$(run_cli terminal read --terminal term-a --limit 1 --json)
+  assert_equals '{"ok":true,"result":{"text":"fresh"}}' "$body" \
+    "zero TTL replayed a result stored by a positive-TTL caller"
+  assert_equals 2 "$(calls)" "zero TTL did not reach the CLI"
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"newer"}}'
+  body=$(run_cli terminal read --terminal term-a --limit 1 --json)
+  assert_equals '{"ok":true,"result":{"text":"newer"}}' "$body" \
+    "zero TTL stored or replayed a previous live result"
+  assert_equals 3 "$(calls)" "a second zero-TTL read did not reach the CLI"
+  pass "fm_orca_cli: zero TTL bypasses stored results on every read"
+}
+
 test_cache_hit_reuses_one_read() {
   local first second
   setup_case hit
@@ -503,6 +558,8 @@ test_target_exists_reads_one_line_when_cache_is_off() {
 }
 
 fm_test_run \
+  test_draft_probe_does_not_reuse_an_empty_snapshot \
+  test_zero_ttl_bypasses_an_existing_entry \
   test_cache_hit_reuses_one_read \
   test_ttl_expiry_reads_again \
   test_mutation_invalidates_cached_read \

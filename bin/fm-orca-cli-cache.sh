@@ -220,6 +220,7 @@ process.exit(0);
 
 fm_orca_cli_try_replay() { # <dir> <key> -> 0 hit, 1 miss
   local dir=$1 key=$2 gen entry now exp rc out err
+  [ "$(fm_orca_cli_ttl)" -gt 0 ] || return 1
   gen=$(fm_orca_cli_read_gen "$dir")
   entry=$dir/g/$gen/$key
   [ -f "$entry/stdout" ] && [ -f "$entry/stderr" ] && [ -f "$entry/rc" ] && [ -f "$entry/expires" ] || return 1

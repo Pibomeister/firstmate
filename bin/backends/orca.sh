@@ -483,10 +483,10 @@ fm_backend_orca_composer_capture() {  # <terminal-id> [expected-label]
 # exposes nothing that separates the two, so this is a pre-send hold only. It
 # stays out of composer_state: typing replaces a ghost, so worker sends need no
 # hold, and a post-Enter retry on a ghost could submit that suggestion.
-# A failed read proves nothing, so it holds too.
+# This pre-send hold uses a fresh read; failed reads hold too.
 fm_backend_orca_draft_present() {  # <terminal-id>
   local out
-  out=$(fm_backend_orca_blip_read fm_orca_cli terminal read --terminal "$1" --limit "$FM_COMPOSER_CAPTURE_LINES" --json 2>/dev/null) || return 0
+  out=$(FM_ORCA_CLI_CACHE=0 fm_backend_orca_blip_read fm_orca_cli terminal read --terminal "$1" --limit "$FM_COMPOSER_CAPTURE_LINES" --json 2>/dev/null) || return 0
   printf '%s' "$out" | node -e '
 let data;
 try { data = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (err) { process.exit(0); }
