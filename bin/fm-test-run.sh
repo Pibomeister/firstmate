@@ -766,7 +766,7 @@ list_portable_serial() {
 # Measured portable-serial script durations in milliseconds, from the CI timing
 # artifacts recorded in docs/fm-test-portable-shards.md. Each value is the
 # slowest successful sample in the referenced complete/partial CI runs, with
-# the native-Windows exception documented there.
+# the native-host exceptions documented there.
 # Refreshed with successful samples from runs 41747763452, 41730727306,
 # and 41699536822. Host/mirror split hints include margin on per-case log times.
 # These are balance hints only: the shard
@@ -920,6 +920,7 @@ tests/fm-on.test.sh 18771
 tests/fm-opencode-abs-cwd-rail-live-e2e.test.sh 55
 tests/fm-opencode-primary-live-e2e.test.sh 69
 tests/fm-operational-input.test.sh 2856
+tests/fm-orca-cli-cache.test.sh 18043
 tests/fm-order.test.sh 12265
 tests/fm-parent-channel-scan-exclusion.test.sh 4265
 tests/fm-park.test.sh 2189
