@@ -12,3 +12,4 @@ ok - report prints one path and sha under data and refuses the rest
 ok - the pane footer is read above the input box and its statusLine
 ok - an unmeasured record outside a primary home writes nothing
 FM_TEST_COMPLETE
+EXIT:0

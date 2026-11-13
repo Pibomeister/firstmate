@@ -18,3 +18,4 @@ ok - a firing names every open captain order, and the stop is gated until the ha
 ok - a recorded handoff gates the stop even with the trigger off, and an ordinary stop is never gated
 ok - a handoff record gates only the session that wrote it, never another session's stop in the same home
 ok - a caller outside any harness reads the captain's handoff, and a second harness session does not
+EXIT:0
