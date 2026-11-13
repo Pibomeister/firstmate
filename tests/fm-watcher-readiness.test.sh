@@ -39,7 +39,7 @@ done
 beat="$FM_READINESS_STATE/.last-watcher-beat"
 now_ms=$(python3 -c 'import time; print(int(time.time()*1000))')
 if [ -e "$beat" ]; then
-  m=$(stat -f %m "$beat" 2>/dev/null || stat -c %Y "$beat")
+  m=$(stat -c %Y "$beat" 2>/dev/null || stat -f %m "$beat")
 else
   m=0
 fi
@@ -51,7 +51,7 @@ printf '%s\t%s\t%s\t%s\t%s\tstart\n' "$seq" "$target" "$now_ms" "$m" "$age_ms" >
 sleep "$FM_READINESS_CAPTURE_SLEEP"
 now_ms=$(python3 -c 'import time; print(int(time.time()*1000))')
 if [ -e "$beat" ]; then
-  m=$(stat -f %m "$beat" 2>/dev/null || stat -c %Y "$beat")
+  m=$(stat -c %Y "$beat" 2>/dev/null || stat -f %m "$beat")
 else
   m=0
 fi
@@ -131,6 +131,32 @@ summarize_captures() {  # <log> <grace-seconds>
   ' "$1"
 }
 
+test_capture_accepts_gnu_stat() {
+  local dir state log
+  dir=$(make_case gnu-stat)
+  state="$dir/state"
+  log="$dir/capture.log"
+  install_capture_tmux "$dir"
+  touch "$state/.last-watcher-beat"
+  cat > "$dir/fakebin/stat" <<'SH'
+#!/usr/bin/env bash
+case "$1" in
+  -c) printf '946684800\n' ;;
+  -f) printf '  File: fixture\n'; exit 1 ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$dir/fakebin/stat"
+  PATH="$dir/fakebin:$PATH" FM_READINESS_STATE="$state" \
+    FM_READINESS_LOG="$log" FM_READINESS_CAPTURE_SLEEP=0 \
+    "$dir/fakebin/tmux" capture-pane -t fixture > "$dir/capture.out" 2> "$dir/capture.err" \
+    || fail "capture rejected GNU stat: $(cat "$dir/capture.err")"
+  awk -F '\t' 'NF != 6 || $4 != "946684800" { bad = 1 }
+    END { exit (bad || NR != 2) }' "$log" \
+    || fail "capture timestamps were not numeric GNU stat results: $(cat "$log")"
+  pass "capture records numeric timestamps when BSD stat emits text before failing"
+}
+
 test_stuck_subordinate_still_becomes_stale() {
   local dir state log out pid i age health=0 started
   dir=$(make_case stuck-subordinate)
@@ -160,7 +186,7 @@ test_stuck_subordinate_still_becomes_stale() {
   age=0
   while [ "$i" -lt 40 ]; do
     if [ -e "$state/.last-watcher-beat" ]; then
-      age=$(( $(date +%s) - $(stat -f %m "$state/.last-watcher-beat" 2>/dev/null || stat -c %Y "$state/.last-watcher-beat") ))
+      age=$(( $(date +%s) - $(stat -c %Y "$state/.last-watcher-beat" 2>/dev/null || stat -f %m "$state/.last-watcher-beat") ))
     fi
     [ "$age" -ge "$READINESS_GRACE" ] && break
     sleep 0.25
@@ -312,6 +338,7 @@ SH
 }
 
 fm_test_run \
+  test_capture_accepts_gnu_stat \
   test_stuck_subordinate_still_becomes_stale \
   test_progressing_records_stay_ready_across_grace \
   test_starter_surfaces_stale_holder_refusal
