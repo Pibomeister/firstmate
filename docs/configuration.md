@@ -18,6 +18,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Host identity, credential, and reachability probes for an outside watchdog | [Host-health probe](#host-health-probe) |
 | Machine-wide heavy test admission | [`fm-test-queue.sh` header](../bin/fm-test-queue.sh) |
 | Review bots on owned GitHub pull requests | [Contribution review bots](#contribution-review-bots-configcontribution-review-bots) |
+| Two-model review before a merge | [Merge review](#merge-review-configmerge-review) |
 | Per-run overrides and tuning | [Environment variables](#environment-variables) |
 
 ## FM_HOME
@@ -104,6 +105,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Durable captain orders and holds under `data/orders/` (`bin/fm-order.sh`).
 - Successor handoff acknowledgements, `data/handoff-ack-<nonce>.json` (`bin/fm-handoff-lib.sh`).
 - The mission ledger's intake record `data/ledger-intake.tsv`, which says where each filed backlog item came from (`bin/fm-ledger.sh`).
+- Merge review receipts under `data/merge-review/`, one directory per pull request and head commit (`bin/fm-merge-review.sh`).
 
 `state/` holds runtime records:
 
@@ -1042,6 +1044,41 @@ A remote secondmate is refused from a home with a lane budget, because a local l
 A Claude or Codex child whose usage is unknown at teardown is recorded as a folded unknown in the lane, and every later launch is refused naming it until an operator clears that entry; teardown keeps the child record only when the lane itself cannot be locked or written.
 Native counters arrive after charged work, so a stop can overshoot and an interrupt can remain unconfirmed.
 [`fm-task-budget.sh`'s header and help](../bin/fm-task-budget.sh) own counter definitions, executable interfaces, binding, attempt deduplication, and state mechanics.
+
+## Merge review (config/merge-review)
+
+The optional local, gitignored `config/merge-review` file opts this home into the two-model merge review: two independent model reviews of a pull request at one exact head commit, run by a background worker and read by the supervisor as one verdict line.
+With the file absent, no review runs and `bin/fm-pr-merge.sh` merges as before.
+
+The file holds `key=value` lines.
+Blank lines and lines that start with `#` are ignored.
+Any other malformed line is an error that refuses both a review run and a covered merge, so a typing mistake never merges unreviewed work.
+
+| Key | Value | Meaning |
+| --- | --- | --- |
+| `seat` | `<family>:<harness>:<model>[:<effort>]` | A reviewer that every run calls. |
+| `spare` | the same form | A reviewer called only while fewer than two model families hold a valid review, for example after a seat's call failed. |
+| `require` | `<host>/<repository path>` or `*` | A repository whose merges through `bin/fm-pr-merge.sh` need `--expected-head` and an approved review at that head. Repeatable, and matched without regard to letter case. |
+| `post` | `on` or `off` (default `off`) | With `on`, each review is also posted as a pull request comment and counts only with that comment's URL. Posting works on GitHub only. |
+| `timeout` | 60 to 14400 seconds (default 1800) | The bound on one reviewer call. |
+
+`<family>` is this home's own name for a model family, such as `anthropic` or `google`.
+Two reviews from one family count as one, so a run needs seats from at least two families.
+`<harness>` is `claude`, `agy`, or `grok`, the tools whose read-only one-shot call `tests/fm-merge-review-live.test.sh` checks.
+Leave `<effort>` out for a model whose name already carries its effort.
+
+```text
+seat=anthropic:claude:<model>
+seat=google:agy:<model>
+spare=xai:grok:<model>
+require=github.com/<owner>/<repository>
+post=on
+```
+
+`bin/fm-merge-review.sh` owns the verdict rule, the receipt format under `data/merge-review/`, the model identity evidence, and the limits of a local receipt.
+The `ship-landing` skill owns when a supervisor dispatches the review worker.
+This file holds only merges that go through `bin/fm-pr-merge.sh` for a repository a `require` line names; a merge made any other way, or in an unlisted repository, is not checked.
+The file is a home-local setting and is not inherited by secondmate homes.
 
 ## PR health monitor (config/pr-health-monitor)
 

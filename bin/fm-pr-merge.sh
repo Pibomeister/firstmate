@@ -219,6 +219,14 @@
 # explicit captain instruction and never skips the live green check, the
 # away-record read, or a captain hold.
 #
+# When this home's config/merge-review covers the pull request's repository,
+# the merge also needs --expected-head and an approved two-model merge review
+# at that exact head. bin/fm-merge-review.sh check owns that rule and has no
+# waiver flag here. The check runs before any forge read or write, so a
+# missing, blocked, or other-head review refuses with nothing recorded, and a
+# config that cannot be read refuses rather than merging unreviewed. A home
+# without that file, or a repository it does not list, keeps the behavior above.
+#
 # Usage: fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--update-branch] [--expected-head <full-sha>] [--allow-red <check-name>] [--allow-missing <check-name>] [--allow-no-pipeline] [-- <extra forge merge args>]
 #
 # On GitLab, this script confirms the MR is actually merged before reporting it;
@@ -416,6 +424,30 @@ if [ "${#ALLOW_MISSING[@]}" -gt 0 ]; then
       ;;
   esac
 fi
+
+# The two-model merge review, when this home requires one for this repository.
+# bin/fm-merge-review.sh owns the rule; this gate only asks it, before any
+# forge call, and offers no flag that skips it.
+merge_review_rc=0
+FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-merge-review.sh" covers "$URL" || merge_review_rc=$?
+case "$merge_review_rc" in
+  1) ;;
+  0)
+    if [ -z "$EXPECTED_HEAD" ]; then
+      echo "error: $URL needs a two-model merge review at an exact head because config/merge-review covers its repository; pass --expected-head <full-sha> naming the reviewed commit" >&2
+      exit 1
+    fi
+    merge_review_line=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-merge-review.sh" check "$URL" --head "$EXPECTED_HEAD") || {
+      echo "error: $URL has no approved two-model merge review at $EXPECTED_HEAD (${merge_review_line:-no verdict line}); a background worker runs bin/fm-merge-review.sh run for that head" >&2
+      exit 1
+    }
+    echo "$merge_review_line" >&2
+    ;;
+  *)
+    echo "error: cannot tell whether $URL needs a merge review (bin/fm-merge-review.sh covers exited $merge_review_rc); correct config/merge-review before merging" >&2
+    exit 1
+    ;;
+esac
 
 caller_has_merge_method() {
   local arg
