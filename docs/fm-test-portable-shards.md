@@ -31,6 +31,8 @@ The drain, hook, and park packing weights are the slowest successful Ubuntu samp
 The native-Windows-only `tests/fm-pi-windows-shell-invocation.test.sh` retains its separate 5121 ms measurement from 2026-09-06T21:02Z instead of a portable capability skip.
 The ten serial scripts that upstream sync part 2 brought over (the hc backend, liveness and smoke suites, Claude account quota, Codex stop park, Herdr projected cd, Herdr install, live-lab isolation, OSC 7501, and the Linux runner test) carry the donor repository's serial hints unchanged; they are provisional until this fork's own Ubuntu timing artifacts replace them.
 The 29 serial hints added on 2026-11-11 to close the `serial_unhinted` gap (the live-guard skips at 60 ms, `tests/fm-spawn-ak-lifecycle-policy.test.sh`, and the other previously unhinted scripts) are local weights, not Ubuntu timing-artifact maxima; they are provisional until CI timing artifacts replace them.
+The watcher-readiness suite's 41841 ms hint is a successful local measurement on 2026-11-13; it is provisional until Ubuntu CI timing artifacts replace it.
+The five serial hints added on 2026-11-13 (`fm-auto-away`, `fm-blip-read-budget`, `fm-blip-retry`, `fm-ledger`, and `fm-successor-endpoint`) are successful macOS arm64 measurements, also provisional until Ubuntu timing artifacts replace them.
 The provisional `tests/fm-orca-cli-cache.test.sh` hint is 18043 ms from a successful macOS arm64 run on 2026-11-13 with Bash 5.3.9 at `249a92bad108b92fbb6c7095b7ec06b31a2c4a83`, using `bash bin/fm-test-run.sh --json <timing-json> tests/fm-backend.test.sh tests/fm-orca-cli-cache.test.sh`; the cache script exited 0 without a capability skip.
 Former provisional local hints for polytoken, approval-failover, Kimi live-guard skip, tap-verify, read-repetition, Antigravity primary, worktree-cleanup, order, and watchdog-live now use Ubuntu timing-artifact maxima from the 2026-11-03 refresh.
 `tests/fm-watchdog.test.sh` is 527813 ms from that refresh.
@@ -51,7 +53,7 @@ Its fifteen serial jobs took 16m56s to 19m50s, its parallel jobs took 16m58s and
 Herdr took 12m02s and stock macOS Bash took 9m21s.
 These are observed job durations, not queue delay or a percentile estimate.
 
-The serial layout now packs twenty-four separate runners against a thirteen-minute script budget, leaving two minutes below the fifteen-minute healthy-job target for setup and variance.
+The serial layout now packs twenty-five separate runners against a thirteen-minute script budget, leaving two minutes below the fifteen-minute healthy-job target for setup and variance.
 The former 29-case host suite took 896663 ms in that green run.
 Its five dialog-mirror cases now live in `tests/fm-supervision-host-mirror.test.sh`; every case and assertion is retained.
 The per-case log timestamps attribute about 414 seconds to those cases and 483 seconds to the remainder, including final cleanup.
@@ -164,7 +166,7 @@ No fast mode, path skips, or paid runner provisioning is part of this layout.
 
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay, but the three watch-triage members still sum to about 32 minutes of CI test time.
 The immediate packing target is the runner's modeled script budget, not a claim that more shards alone can make an indivisible script faster.
-The layout uses thirty-three long-lived Linux jobs (twenty-four serial, two parallel, Herdr, six lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+The layout uses thirty-four long-lived Linux jobs (twenty-five serial, two parallel, Herdr, six lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
 The workflow retains per-PR supersession and keeps only the newest of close main pushes' runs, without changing the compliance workflow's event semantics.
 

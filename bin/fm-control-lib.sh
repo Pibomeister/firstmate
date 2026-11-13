@@ -1028,3 +1028,385 @@ fm_control_harness_turnend_auth_path() {  # <harness> <token>
     *) return 0 ;;
   esac
 }
+
+# fm_control_feedback_dialog_dismiss <harness> <screen>
+# Inspects the tail of <screen> for an exact known feedback or bug-report dialog
+# signature belonging to <harness> (or any supported feedback-dialog harness
+# when <harness> is empty). Prints `<dialog-id>\t<dismiss-key>` and returns 0 on
+# match, or returns 1 with no output when no known feedback/bug-report dialog is
+# live at the bottom of the screen. The dismiss key is always a skip/dismiss/
+# cancel key (`0` or `Escape`), never a submit/send choice (`1`, `2`, `3`, `y`,
+# `Enter`) and never feedback text.
+fm_control_feedback_dialog_dismiss() {  # <harness> <screen> [mode]
+  local harness=${1-} screen=${2-} mode=${3:-id} family='' lib
+  [ -n "$screen" ] || return 1
+  # Claude draws its empty prompt as `❯`+NBSP; awk regex escapes for that
+  # byte pair are locale-dependent, so map Unicode spaces to ASCII first.
+  lib=${BASH_SOURCE[0]}
+  # shellcheck source=bin/fm-composer-lib.sh
+  command -v fm_composer_normalize_spaces_var >/dev/null 2>&1 || . "${lib%/*}/fm-composer-lib.sh"
+  fm_composer_normalize_spaces_var screen
+  if [ -n "$harness" ]; then
+    family=$(fm_control_harness_family "$harness" 2>/dev/null) || return 1
+    case "$family" in
+      claude|agy|codex) ;;
+      *) return 1 ;;
+    esac
+  fi
+  printf '%s\n' "$screen" \
+    | LC_ALL=C sed -e $'s/\033\\[[0-9;?<>=]*[ -\\/]*[@-~]//g' -e $'s/\033\\][^\a]*\a//g' -e $'s/\r//g' \
+    | awk -v fam="$family" -v mode="$mode" '
+      function is_border_row(r) {
+        return (r ~ /^[ \t]*[│┃─━╭╮╰╯┌┐└┘| \t-]+[ \t]*$/)
+      }
+      function is_prompt_row(r) {
+        return (r ~ /^[ \t]*((│|┃|[|])[ \t]+)?(❯|›|⟩|→|❭|>)[ \t]*((│|┃|[|])[ \t]*)?$/)
+      }
+      function is_any_prompt_row(r) {
+        if (is_prompt_row(r)) return 1
+        return (r ~ /^[ \t]*((│|┃|[|])[ \t]+)?(❯|›|⟩|→|❭|>)[ \t]+/)
+      }
+      function is_chrome_row(r) {
+        if (r ~ /^[ \t]*$/) return 1
+        if (is_border_row(r)) return 1
+        if (is_prompt_row(r)) return 1
+        if (r ~ /^[ \t]*(⏵|⏸)/) return 1
+        if (r ~ /^[ \t]*(← for agents[ \t]+·[ \t]+)?\? for shortcuts([ \t]|$)/) return 1
+        return 0
+      }
+      # Rows below the input box under the dialog (statusLine, mode hints) are
+      # ignored, but a later input box or prompt row (empty or populated) means
+      # a newer screen was drawn after it, so the dialog is stale history.
+      function no_prompt_after(idx,   k) {
+        for (k = idx + 1; k <= m; k++) {
+          if (is_any_prompt_row(tail[k]) || is_border_row(tail[k])) return 0
+        }
+        return 1
+      }
+      function no_output_after(idx,   j, seen_top_border, seen_prompt) {
+        if (idx <= 0) return 0
+        seen_top_border = 0
+        seen_prompt = 0
+        for (j = idx + 1; j <= m; j++) {
+          if (seen_prompt) {
+            if (is_border_row(tail[j])) {
+              if (!no_prompt_after(j)) return 0
+              marker_cut = j
+              return 1
+            }
+            if (!seen_top_border) {
+              if (!no_prompt_after(j - 1)) return 0
+              marker_cut = j - 1
+              return 1
+            }
+            if (!is_chrome_row(tail[j])) return 0
+            continue
+          }
+          if (is_prompt_row(tail[j])) {
+            seen_prompt = 1
+            continue
+          }
+          if (is_border_row(tail[j])) {
+            if (tail[j] ~ /^[ \t]*[╰└]/) {
+              if (!no_prompt_after(j)) return 0
+              marker_cut = j
+              return 1
+            }
+            seen_top_border = 1
+            continue
+          }
+          if (!is_chrome_row(tail[j])) return 0
+        }
+        marker_cut = m
+        return 1
+      }
+      function finish(id, key, footer,   i, row) {
+        if (mode == "marker") {
+          for (i = 1; i <= marker_cut; i++) {
+            row = tail[i]
+            if (i >= footer) gsub(/[0-9]/, "", row)
+            print row
+          }
+          exit 0
+        }
+        print id "\t" key
+        exit 0
+      }
+      NF { rows[++n] = $0 }
+      END {
+        if (n == 0) exit 1
+        s = n - 18 + 1
+        if (s < 1) s = 1
+        m = 0
+        for (i = s; i <= n; i++) tail[++m] = rows[i]
+
+        # 1. Claude known feedback / bug-report dialogs
+        if (fam == "" || fam == "claude") {
+          h_survey = 0; f_survey = 0
+          h_draft = 0; f_draft = 0
+          h_modal = 0; b_modal = 0; f_modal = 0
+          h_follow = 0; f_follow = 0
+          for (i = 1; i <= m; i++) {
+            r = tail[i]
+            if (r ~ /^[ \t]*((●|•|[*])[ \t]+)?(How is Claude doing( this session)?\?|How was Claude'\''s recollection\?|How well did Claude use its memory\?|How well is Claude following the instructions you gave earlier in this conversation\?|How helpful has [A-Za-z0-9_.-]+ plugin been\?)([ \t]*\(optional\))?[ \t]*$/) h_survey = i
+            if (h_survey > 0 && i >= h_survey && r ~ /^[ \t]*1:[ \t]*Bad[ \t]+2:[ \t]*(Fine|Good)[ \t]+3:[ \t]*Good[ \t]+0:[ \t]*Dismiss[ \t]*$/) f_survey = i
+
+            if (r ~ /^[ \t]*((●|•|[*])[ \t]+)?(Bug report|Product feedback|Feature request|Feedback) drafted:[ \t]+[^ \t]/) h_draft = i
+            if (h_draft > 0 && i > h_draft && r ~ /^[ \t]*1 to review · 2 to send · 0 to dismiss[ \t]*$/) f_draft = i
+
+            if (r ~ /^[ \t]*(Submit feedback \/ bug report|Report a bug or share your conversation)[ \t]*$/) h_modal = i
+            if (h_modal > 0 && i > h_modal && r ~ /(Describe the issue below:|How much session history should we include\?|This report will include:|An archive will be saved to disk containing:|This shared conversation will include:)/) b_modal = i
+            if (h_modal > 0 && b_modal > 0 && i >= b_modal && r ~ /^[ \t]*((Enter|Press Enter|Edit and press Enter) to (continue|choose|submit|save|share|retry(, or)?) · (↑\/↓ to navigate · )?)?Esc to cancel[ \t]*$/) f_modal = i
+
+            if (r ~ /^[ \t]*((●|•|[*])[ \t]+)?(What went well\?|What went wrong\?|Tell us more)[ \t]*\(optional\)[ \t]*$/) h_follow = i
+            if (h_follow > 0 && i > h_follow && r ~ /^[ \t]*enter to (skip|send) · esc to (skip|clear)[ \t]*$/) f_follow = i
+          }
+          if (f_survey > 0 && no_output_after(f_survey)) finish("claude-session-feedback", "0", f_survey)
+          if (f_draft > 0 && no_output_after(f_draft)) finish("claude-bug-report-draft", "0", f_draft)
+          if (f_modal > 0 && no_output_after(f_modal)) finish("claude-bug-report-dialog", "Escape", f_modal)
+          if (f_follow > 0 && no_output_after(f_follow)) finish("claude-survey-followup", "Escape", f_follow)
+        }
+
+        # 2. Antigravity CLI (agy) known CLI experience survey
+        if (fam == "" || fam == "agy") {
+          h_agy = 0; f_agy = 0
+          for (i = 1; i <= m; i++) {
+            r = tail[i]
+            if (r ~ /^[ \t]*((│|┃|[|])[ \t]+)?((●|•|[*]|✦)[ \t]+)?How'\''s the CLI experience so far\? Help us improve:[ \t]+\[1\][ \t]*Good[ \t]+\[2\][ \t]*Fine[ \t]+\[3\][ \t]*Bad[ \t]+\[0\][ \t]*Skip([ \t]+(│|┃|[|]))?[ \t]*$/) {
+              h_agy = i; f_agy = i
+            } else if (r ~ /^[ \t]*((│|┃|[|])[ \t]+)?((●|•|[*]|✦)[ \t]+)?How'\''s the CLI experience so far\? Help us improve:([ \t]+(│|┃|[|]))?[ \t]*$/) {
+              h_agy = i
+            } else if (h_agy > 0 && i > h_agy && r ~ /^[ \t]*((│|┃|[|])[ \t]+)?\[1\][ \t]*Good[ \t]+\[2\][ \t]*Fine[ \t]+\[3\][ \t]*Bad[ \t]+\[0\][ \t]*Skip([ \t]+(│|┃|[|]))?[ \t]*$/) {
+              f_agy = i
+            }
+          }
+          if (f_agy > 0 && no_output_after(f_agy)) finish("agy-cli-feedback", "0", f_agy)
+        }
+
+        # 3. Codex CLI known /feedback modal dialogs
+        if (fam == "" || fam == "codex") {
+          h_cx = 0; b_cx = 0; f_cx = 0
+          h_up = 0; b_up = 0; f_up = 0
+          for (i = 1; i <= m; i++) {
+            r = tail[i]
+            if (r ~ /^[ \t]*How was this\?[ \t]*$/) h_cx = i
+            if (h_cx > 0 && i > h_cx && r ~ /(Crash, error message, hang, or broken UI\/behavior|Output was off-target, incorrect, incomplete, or unhelpful|Slowness, feature suggestion, UX feedback, or anything else)/) b_cx = i
+            if (h_cx > 0 && b_cx > 0 && i > b_cx && r ~ /^[ \t]*(Press enter to confirm or esc to (go back|cancel)|Enter to (select|confirm) · (↑\/↓ to navigate · )?Esc to cancel|enter to (submit|confirm|select) · esc to (cancel|go back))[ \t]*$/) f_cx = i
+
+            if (r ~ /^[ \t]*Upload logs\?[ \t]*$/) h_up = i
+            if (h_up > 0 && i > h_up && r ~ /The following files will be sent:/) b_up = i
+            if (h_up > 0 && b_up > 0 && i > b_up && r ~ /^[ \t]*((❯|›|>)[ \t]*(1[.][ \t]*)?(Yes|No)|[0-9]+[.][ \t]*No|Press enter to confirm or esc to go back|Enter to (confirm|select) · Esc to cancel)[ \t]*$/) f_up = i
+          }
+          if (f_cx > 0 && no_output_after(f_cx)) finish("codex-feedback-dialog", "Escape", f_cx)
+          if (f_up > 0 && no_output_after(f_up)) finish("codex-upload-logs", "Escape", f_up)
+        }
+
+        exit 1
+      }
+    '
+}
+
+# fm_control_send_feedback_dismiss <backend> <target> <dismiss-key> [<expected-label>]
+# Delivers the dismiss choice resolved by fm_control_feedback_dialog_dismiss to
+# <backend>:<target> without ever pressing Enter or typing feedback text.
+# Only `0` (literal single-key skip/dismiss) and `Escape` are permitted.
+fm_control_send_feedback_dismiss() {  # <backend> <target> <dismiss-key> [<expected-label>]
+  local backend=${1-} target=${2-} key=${3-} label=${4-} fn
+  [ -n "$backend" ] && [ -n "$target" ] && [ -n "$key" ] || return 1
+  if declare -F fm_backend_source >/dev/null 2>&1; then
+    fm_backend_source "$backend" >/dev/null 2>&1 || return 1
+  fi
+  case "$key" in
+    Escape)
+      if [ "$backend" = orca ] && declare -F fm_backend_orca_send_literal >/dev/null 2>&1; then
+        fm_backend_orca_send_literal "$target" $'\033'
+      else
+        fm_backend_send_key "$backend" "$target" Escape "$label"
+      fi
+      ;;
+    0)
+      fn="fm_backend_${backend}_send_literal"
+      if declare -F "$fn" >/dev/null 2>&1; then
+        "$fn" "$target" 0 "$label"
+      else
+        return 1
+      fi
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+fm_control_feedback_window_key() {  # <backend> [<target>]
+  local key=${1-}
+  [ "$#" -lt 2 ] || key="${1-}_${2-}"
+  key=${key//:/_}
+  key=${key//\//_}
+  printf '%s' "${key//./_}"
+}
+
+fm_control_feedback_pane_hash() {  # <screen> [harness]
+  local text rc=0
+  text=$(fm_control_feedback_dialog_dismiss "${2-}" "${1-}" marker) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    text=$(printf '%s\n' "${1-}" \
+      | LC_ALL=C sed -e $'s/\033\\[[0-9;?<>=]*[ -\\/]*[@-~]//g' -e $'s/\033\\][^\a]*\a//g' -e $'s/\r//g' \
+      | awk 'NF { r[++n] = $0 } END { s = n - 17; if (s < 1) s = 1; for (i = s; i <= n; i++) print r[i] }')
+  fi
+  printf '%s\n' "$text" | cksum | awk '{ print $1 "_" $2 }'
+}
+
+fm_control_capture_feedback_pane() {  # <backend> <target> [<expected-label>]
+  local backend=${1-} target=${2-} label=${3-}
+  [ -n "$backend" ] && [ -n "$target" ] || return 1
+  if declare -F fm_backend_source >/dev/null 2>&1; then
+    fm_backend_source "$backend" >/dev/null 2>&1 || return 1
+  fi
+  if declare -F fm_backend_visible_capture_supported >/dev/null 2>&1 \
+    && fm_backend_visible_capture_supported "$backend" 2>/dev/null; then
+    fm_backend_visible_capture "$backend" "$target" ${label:+"$label"} 2>/dev/null
+    return $?
+  fi
+  if [ "$backend" = orca ] \
+    && declare -F fm_backend_orca_recorded_droid >/dev/null 2>&1 \
+    && fm_backend_orca_recorded_droid "$target" "$label" 2>/dev/null; then
+    fm_backend_visible_capture "$backend" "$target" ${label:+"$label"} 2>/dev/null
+    return $?
+  fi
+  fm_backend_capture "$backend" "$target" 60 ${label:+"$label"} 2>/dev/null
+}
+
+FM_CONTROL_FEEDBACK_DIALOG_ID=
+FM_CONTROL_FEEDBACK_DISMISS_KEY=
+FM_CONTROL_FEEDBACK_AFTER_PANE=
+
+fm_control_release_feedback_claim() {  # <claim-dir>
+  local claim=${1-} lib=${BASH_SOURCE[0]}
+  [ -n "$claim" ] || return 0
+  # shellcheck source=/dev/null
+  command -v fm_lock_release >/dev/null 2>&1 || FM_STATE_OVERRIDE="${claim%/*}" . "${lib%/*}/fm-wake-lib.sh"
+  fm_lock_release "$claim"
+}
+
+fm_control_acquire_feedback_claim() {  # <claim-dir>
+  local claim=${1-} lib=${BASH_SOURCE[0]} owner_pid='' owner_epoch='' rc=0
+  [ -n "$claim" ] || return 1
+  # shellcheck source=/dev/null
+  command -v fm_lock_try_acquire >/dev/null 2>&1 || FM_STATE_OVERRIDE="${claim%/*}" . "${lib%/*}/fm-wake-lib.sh"
+  if [ -f "$claim/owner" ]; then
+    fm_lock_try_acquire_steal_mutex "$claim.steal" || return 1
+    if [ -f "$claim/owner" ]; then
+      IFS=' ' read -r owner_pid owner_epoch < "$claim/owner" 2>/dev/null || true
+      case "$owner_pid" in
+        ''|*[!0-9]*) rc=1 ;;
+        *)
+          if fm_pid_alive "$owner_pid"; then
+            rc=1
+          else
+            rm -f "$claim/owner" && rmdir "$claim" || rc=1
+          fi
+          ;;
+      esac
+    fi
+    fm_lock_release "$claim.steal"
+    [ "$rc" -eq 0 ] || return 1
+  fi
+  fm_lock_try_acquire "$claim"
+}
+
+# fm_control_dismiss_feedback_dialog <state-dir> <backend> <target> <harness> <screen> [<expected-label>] [<settle-secs>] [<call-timeout-secs>]
+# Shared claim-and-dismiss helper called by the watcher's two sites, the
+# daemon's two sites, and the watchdog. Serializes dismissal per
+# (<backend>, <target>) with an owner-tracked lock directory
+# ($state/.feedback-claim-<window_key>) held from live capture through
+# post-send verification; never removes another live caller's active claim,
+# and uses the wake library's serialized recovery of dead owners.
+# Requires a non-empty live capture that still matches a supported feedback
+# dialog before sending any key. The one-key marker
+# ($state/.feedback-dismissed-<window_key>) hashes the dialog through its input
+# box, with digits stripped from the footer downward, so a status tick is not
+# a new pane. It is written when the post-send capture still shows the dialog
+# or is empty, and removed when a later live capture shows the dialog is gone. Each
+# backend send and capture is bounded by <call-timeout-secs> (default 20). A
+# failed send releases the lock without recording the marker so a later tick
+# can retry.
+# Returns:
+#   0 - claimed, sent key, re-captured, and verified the dialog is gone
+#   1 - <screen> does not match a known feedback/bug-report dialog for <harness>
+#   2 - already claimed, live capture empty/failed/cleared, or unchanged sticky dialog; no key sent
+#   3 - claimed, but key delivery failed
+#   4 - claimed and key sent, but re-capture did not prove the dialog gone
+fm_control_dismiss_feedback_dialog() {
+  local state_dir=${1-} backend=${2-} target=${3-} harness=${4-} screen=${5-}
+  local label=${6-} settle=${7-0.2} call_timeout=${8:-20}
+  local spec dialog_id dismiss_key wkey phash marker claim live after prev_marker lib
+  FM_CONTROL_FEEDBACK_DIALOG_ID=
+  FM_CONTROL_FEEDBACK_DISMISS_KEY=
+  FM_CONTROL_FEEDBACK_AFTER_PANE=
+  [ -n "$state_dir" ] && [ -n "$backend" ] && [ -n "$target" ] && [ -n "$screen" ] || return 1
+  spec=$(fm_control_feedback_dialog_dismiss "$harness" "$screen") || spec=
+  dialog_id=${spec%%$'\t'*}
+  dismiss_key=${spec#*$'\t'}
+  FM_CONTROL_FEEDBACK_DIALOG_ID=$dialog_id
+  FM_CONTROL_FEEDBACK_DISMISS_KEY=$dismiss_key
+  wkey=$(fm_control_feedback_window_key "$backend" "$target")
+  [ -n "$wkey" ] || return 1
+  marker="$state_dir/.feedback-dismissed-$wkey"
+  claim="$state_dir/.feedback-claim-$wkey"
+  [ -n "$spec" ] || [ -f "$marker" ] || return 1
+  mkdir -p "$state_dir" 2>/dev/null || return 1
+  if ! fm_control_acquire_feedback_claim "$claim"; then
+    return 2
+  fi
+  lib=${BASH_SOURCE[0]}
+  # shellcheck source=bin/fm-timeout-lib.sh
+  command -v fm_run_timed_fn >/dev/null 2>&1 || . "${lib%/*}/fm-timeout-lib.sh"
+  live=$(fm_run_timed_fn "$call_timeout" fm_control_capture_feedback_pane "$backend" "$target" "$label") || live=
+  if [ -z "$live" ]; then
+    fm_control_release_feedback_claim "$claim"
+    return 2
+  fi
+  if ! spec=$(fm_control_feedback_dialog_dismiss "$harness" "$live"); then
+    FM_CONTROL_FEEDBACK_AFTER_PANE=$live
+    rm -f "$marker"
+    fm_control_release_feedback_claim "$claim"
+    [ -n "$dialog_id" ] || return 1
+    return 2
+  fi
+  if [ -z "$dialog_id" ]; then
+    fm_control_release_feedback_claim "$claim"
+    return 1
+  fi
+  dialog_id=${spec%%$'\t'*}
+  dismiss_key=${spec#*$'\t'}
+  # shellcheck disable=SC2034
+  FM_CONTROL_FEEDBACK_DIALOG_ID=$dialog_id
+  # shellcheck disable=SC2034
+  FM_CONTROL_FEEDBACK_DISMISS_KEY=$dismiss_key
+  phash=$(fm_control_feedback_pane_hash "$live" "$harness")
+  prev_marker=$(cat "$marker" 2>/dev/null || true)
+  if [ "$prev_marker" = "$phash" ]; then
+    fm_control_release_feedback_claim "$claim"
+    return 2
+  fi
+  if ! fm_run_timed_fn "$call_timeout" fm_control_send_feedback_dismiss "$backend" "$target" "$dismiss_key" "$label" >/dev/null 2>&1; then
+    fm_control_release_feedback_claim "$claim"
+    return 3
+  fi
+  case "$settle" in
+    ''|0|0.0) ;;
+    *) sleep "$settle" ;;
+  esac
+  after=$(fm_run_timed_fn "$call_timeout" fm_control_capture_feedback_pane "$backend" "$target" "$label") || after=
+  # shellcheck disable=SC2034
+  FM_CONTROL_FEEDBACK_AFTER_PANE=$after
+  if [ -z "$after" ] || fm_control_feedback_dialog_dismiss "$harness" "$after" >/dev/null 2>&1; then
+    printf '%s\n' "$phash" > "$marker"
+    fm_control_release_feedback_claim "$claim"
+    return 4
+  fi
+  rm -f "$marker"
+  fm_control_release_feedback_claim "$claim"
+  return 0
+}

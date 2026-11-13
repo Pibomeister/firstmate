@@ -227,6 +227,10 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 # (fm_busy_classify).
 # shellcheck source=bin/fm-busy-lib.sh
 . "$FM_DAEMON_DIR/fm-busy-lib.sh"
+if ! declare -F fm_control_feedback_dialog_dismiss >/dev/null 2>&1; then
+  # shellcheck source=/dev/null # Analyzed separately as a canonical lint root.
+  . "$FM_DAEMON_DIR/fm-control-lib.sh"
+fi
 
 # --- tunables ---------------------------------------------------------------
 # Supervisor backends this daemon knows how to inject into today. rex goes
@@ -840,8 +844,9 @@ task_window_harness() {  # <window> <state>
 }
 
 # stale_window_is_busy: 0 when the semantic busy-state contract
-# (bin/fm-busy-lib.sh) reports busy, 2 when the endpoint is gone, 3 for T3
-# native uncertainty, and 1 otherwise. Uncertainty cannot prove work resumed.
+# (bin/fm-busy-lib.sh) reports busy, or when a known feedback dialog on this
+# pane was just dismissed, 2 when the endpoint is gone, 3 for T3 native
+# uncertainty, and 1 otherwise. Uncertainty cannot prove work resumed.
 # A T3 thread is gone only when the adapter reads it missing (archived or 404);
 # its verdict is native, so a failed transcript read is uncertainty, not removal.
 # Other backends treat a failed capture as gone.
@@ -860,8 +865,14 @@ stale_window_is_busy() {  # <window> <state>
   case "$verdict" in
     busy\ *) return 0 ;;
     unknown\ t3code-native) return 3 ;;
-    *) return 1 ;;
   esac
+  if [ -n "$tail40" ] && [ -n "$harness" ]; then
+    if fm_control_dismiss_feedback_dialog "$state" "$backend" "$win" "$harness" "$tail40" "$label" 0.2 "$DAEMON_PROBE_BUDGET"; then
+      log "auto-dismissed feedback dialog ($FM_CONTROL_FEEDBACK_DIALOG_ID key=$FM_CONTROL_FEEDBACK_DISMISS_KEY): $win"
+      return 0
+    fi
+  fi
+  return 1
 }
 
 escalate_add() {  # <state> <distilled-item>
@@ -1842,6 +1853,18 @@ inject_msg() {  # <message> [state] [exact] [request-id]
   composer=$(fm_backend_composer_state "$backend" "$target" 2>/dev/null)
   if [ "$composer" = empty ] && [ "$backend" = orca ] && fm_backend_orca_draft_present "$target"; then
     composer="pending-unproven"
+  fi
+  if [ "$composer" != empty ] && [ "$backend" != t3code ]; then
+    local sup_screen
+    sup_screen=$(fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_capture "$backend" "$target" 40 2>/dev/null || true)
+    if [ -n "$sup_screen" ] \
+      && fm_control_dismiss_feedback_dialog "$state" "$backend" "$target" "$(fm_daemon_primary_harness)" "$sup_screen" "" 0.2 "$DAEMON_PROBE_BUDGET"; then
+      log "auto-dismissed feedback dialog ($FM_CONTROL_FEEDBACK_DIALOG_ID key=$FM_CONTROL_FEEDBACK_DISMISS_KEY): $target"
+      composer=$(fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_composer_state "$backend" "$target" 2>/dev/null || true)
+      if [ "$composer" = empty ] && [ "$backend" = orca ] && fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_orca_draft_present "$target"; then
+        composer="pending-unproven"
+      fi
+    fi
   fi
   if [ "$composer" != empty ]; then
     case "$composer" in
