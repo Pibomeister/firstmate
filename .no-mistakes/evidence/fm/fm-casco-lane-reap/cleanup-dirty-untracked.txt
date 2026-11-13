@@ -1,0 +1,17 @@
+=== cleanup-dirty-untracked ===
+command: FM_HOME=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/clean-untracked bin/fm-worktree-cleanup.sh 
+rc=0
+--- stdout ---
+worktree-cleanup: report /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/clean-untracked/linked untracked files
+--- stderr ---
+--- orca argv ---
+terminal list --limit 100000 --json
+terminal list --limit 100000 --json
+worktree list --limit 100000 --json
+--- git argv ---
+-C /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/clean-untracked/repo rev-parse --show-toplevel
+-C /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/clean-untracked/repo -c core.quotePath=false worktree list --porcelain
+-C /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/clean-untracked/linked rev-parse --absolute-git-dir
+-C /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/clean-untracked/linked rev-parse --path-format=absolute --git-common-dir
+-C /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/clean-untracked/linked status --porcelain=v1 --untracked-files=all -z
+PASS a registered Casco lane with an untracked file and a cache is kept and reported

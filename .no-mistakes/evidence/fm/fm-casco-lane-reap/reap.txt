@@ -1,0 +1,28 @@
+=== reap ===
+agent pid=43122 ps=43122 bash bash -c "$1" 600; : _ /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/reap/agent-bin/claude 
+child=43122 bash             bash -c "$1" 600; : _ /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/reap/agent-bin/claude
+43148 /private/var/fol /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/reap/agent-bin/claude 600
+command: FM_HOME=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/reap/home bin/fm-terminal-reap.sh --apply --no-browsers --min-age 0
+rc=0
+--- stdout ---
+closed	terminal	external-lane	term-lane-idle	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/reap/casco	lane-idle (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/reap/home); n11-g1
+closed	terminal	external-lane-exited	term-lane-exited	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/reap/casco	lane-exited (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/reap/home); n11-g3
+keep	terminal	no-session	term-lane-live	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/reap/casco	lane-live (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/reap/home); n11-g4
+keep	terminal	live-agent	term-lane-agent	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/reap/casco	lane-agent (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/reap/home); n11-g5
+keep	terminal	foreign	term-casco-tab	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/reap/casco	n11-g9
+keep	terminal	foreign	term-lane-moved	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/reap/elsewhere	n11-g6
+keep	terminal	foreign	term-lane-other	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-casco-live.1TLojw/reap/casco	n11-g7
+summary: mode=apply terminals=7 closed=2 skipped=0 failed=0 keep=5 browsers=0 stopped=0 skipped=0 failed=0 reap=0 keep=0
+--- stderr ---
+--- closed handles ---
+term-lane-idle
+term-lane-exited
+PASS an idle registered Casco lane is closed
+PASS an exited registered Casco lane is closed
+PASS a registered lane Orca still calls connected is kept
+PASS a registered lane still running an agent is kept
+PASS an unregistered tab in the lane repository is kept
+PASS a registered handle rooted outside the lane repository is kept
+PASS another home's registered lane is kept
+closed set: [term-lane-exited term-lane-idle ]
+PASS apply closes exactly the idle and exited registered lanes

@@ -1,0 +1,8 @@
+1..5
+ok - a lane registers at launch and later amends its worktree, keeping every other field
+ok - a first registration names --terminal, and an amend keeps that handle
+ok - every refused registration writes nothing
+ok - a worktree registers to one lane, and that lane may amend it again
+ok - a registration refuses a symlinked lanes directory and writes nothing
+FM_TEST_COMPLETE
+EXIT:0

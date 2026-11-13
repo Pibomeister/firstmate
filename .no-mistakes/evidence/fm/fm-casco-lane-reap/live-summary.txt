@@ -1,0 +1,18 @@
+PASS a first registration without --terminal is refused and writes nothing
+PASS the recorded handle is the explicit --terminal, not ORCA_TERMINAL_HANDLE
+PASS an amend keeps the handle named at registration and records the worktree
+PASS an idle registered Casco lane is closed
+PASS an exited registered Casco lane is closed
+PASS a registered lane Orca still calls connected is kept
+PASS a registered lane still running an agent is kept
+PASS an unregistered tab in the lane repository is kept
+PASS a registered handle rooted outside the lane repository is kept
+PASS another home's registered lane is kept
+PASS apply closes exactly the idle and exited registered lanes
+PASS a merged clean Casco worktree Orca lists is removed without --force, the branch stays, and the record is dropped
+PASS a merged clean Casco worktree Orca does not list is removed with git worktree remove and no --force
+PASS a registered Casco lane with uncommitted tracked changes is kept and reported
+PASS a registered Casco lane with an untracked file and a cache is kept and reported
+PASS a clone-path pass keeps a registered lane while its terminal is listed at the main checkout
+PASS once that terminal is gone, the clone-path pass removes the clean worktree without --force and leaves the other lane
+failures=0
