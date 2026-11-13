@@ -37,8 +37,11 @@
 # since to the first sample and from the last sample to until, fails. A
 # handoff does not cover a gap. A window with no primary sample fails
 # heartbeat-missing. A secondmate sample does not fill that gap.
-# A human intervention fails the window. The counted events are an order sent,
-# an inbox note still waiting, and a stall closed with recoverer human.
+# A human intervention fails the window when that row's own epoch is inside it.
+# The counted rows are an order sent and an inbox note still waiting. An order
+# or note outside the window does not make a later close human. A stall whose
+# recoverer field is already human still fails, and that close is cited as an
+# intervention when its recover epoch is inside the window.
 # Exactly 600 seconds of duration does not count. Exactly 1200 seconds of
 # recovery latency passes. Exactly 1800 seconds of duration passes. Exactly
 # 600 seconds of age passes. Exactly 600 seconds between samples passes.

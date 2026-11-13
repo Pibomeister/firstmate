@@ -34,9 +34,23 @@
 # before it takes the lock. The lock is <state>/.stall-ledger.lock, taken with
 # fm_lock_acquire_wait for the reconcile only.
 #
-# Status lines are not stall evidence. One open stall is kept per class and
-# subject. Heartbeat evidence wins over a progress marker, then a stale wake,
-# then a watchdog row, and the earliest start wins a tie.
+# One open stall is kept per class and subject. Source priority selects which
+# evidence is recorded: heartbeat, then a progress marker, then a stale wake,
+# then a watchdog row, and the earliest start wins a tie. The recorded start
+# and detect are the earliest values in that set, so a later source cannot
+# move them forward.
+# A watchdog row that is not a finished restart, nudge, or key is not recovery.
+# The episode stays open while that condition is still evidenced. A later task
+# status line that shows the task working, or a captain record whose
+# usage-limit auto-wait has ended, ends it with recoverer -. A missing epoch
+# stays unverified. A fresh heartbeat does not end a usage-limit auto-wait,
+# and a page, suggestion, refusal, or failed row does not.
+# The close records that end epoch. An already-open stall keeps its recorded
+# start and detect. A stall first seen in this observe uses the earliest start
+# and detect, and its recovery field is that end epoch.
+# A progress marker may carry the episode onset in its third field. That onset
+# is the stall start. A marker without it keeps the first field, and no earlier
+# start is invented.
 
 FM_STALL_LEDGER_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)"
 # shellcheck source=bin/fm-clock-lib.sh
@@ -158,6 +172,14 @@ _fm_stall_opens() {
 _fm_stall_open_for() { # <class> <subject>
   _fm_stall_opens | awk -F '\t' -v c="$1" -v s="$2" '
     $1 == c && $2 == s { found = 1; exit }
+    END { exit !found }
+  '
+}
+
+# Prints "ref start detect" for the open stall of this class and subject.
+_fm_stall_open_row() { # <class> <subject>
+  _fm_stall_opens | awk -F '\t' -v c="$1" -v s="$2" '
+    $1 == c && $2 == s { print $3, $4, $5; found = 1; exit }
     END { exit !found }
   '
 }
@@ -358,7 +380,7 @@ _fm_stall_handoffs() {
 }
 
 _fm_stall_progress() {
-  local marker task line observed idle detect
+  local marker task line observed onset idle detect rest
   for marker in "$STATE"/.secondmate-wake-progress-*; do
     [ -f "$marker" ] && [ ! -L "$marker" ] || continue
     task=${marker##*/}
@@ -367,14 +389,24 @@ _fm_stall_progress() {
     IFS= read -r line < "$marker" || continue
     observed=${line%%[[:space:]]*}
     _fm_stall_is_num "$observed" || continue
-    if [ "$FM_STALL_NOW" -ge "$observed" ]; then
-      idle=$((FM_STALL_NOW - observed))
+    onset=$observed
+    case "$line" in
+      *[[:space:]]*[[:space:]]*)
+        rest=${line#*[[:space:]]}
+        rest=${rest#*[[:space:]]}
+        onset=${rest%%[[:space:]]*}
+        ;;
+    esac
+    _fm_stall_is_num "$onset" || onset=$observed
+    [ "$onset" -le "$observed" ] || onset=$observed
+    if [ "$FM_STALL_NOW" -ge "$onset" ]; then
+      idle=$((FM_STALL_NOW - onset))
     else
       idle=0
     fi
     [ "$idle" -gt 600 ] || continue
-    detect=$((observed + 601))
-    printf '2\tsecondmate\t%s\t%s\t%s\n' "$task" "$observed" "$detect" >> "$FM_STALL_WORK/signals.tsv" || return 1
+    detect=$((onset + 601))
+    printf '2\tsecondmate\t%s\t%s\t%s\n' "$task" "$onset" "$detect" >> "$FM_STALL_WORK/signals.tsv" || return 1
   done
 }
 
@@ -490,9 +522,95 @@ _fm_stall_wd_rows() {
   }' "$file"
 }
 
+_fm_stall_wd_lib() {
+  command -v fm_wd_quota_status_line >/dev/null 2>&1 && return 0
+  # shellcheck source=bin/fm-watchdog-lib.sh
+  . "$FM_STALL_LEDGER_LIB_DIR/fm-watchdog-lib.sh"
+}
+
+# A working, done, or resolved status line after the last watchdog row is
+# resumption. Prints its at epoch. Return 2 when that epoch is before detect.
+_fm_stall_status_resumed() { # <subject> <last-epoch> <detect>
+  local task=$1 last=$2 detect=$3 file line at
+  case "$task" in
+    ''|-) return 1 ;;
+    *[!A-Za-z0-9._-]*) return 1 ;;
+  esac
+  file=$STATE/$task.status
+  [ -f "$file" ] && [ ! -L "$file" ] || return 1
+  line=$(tail -n 1 "$file" 2>/dev/null || true)
+  case "$line" in
+    working\ *|done\ *|resolved\ *) ;;
+    *) return 1 ;;
+  esac
+  at=$(printf '%s' "$line" | sed -n 's/.*\[at=\([0-9][0-9]*\)\].*/\1/p')
+  _fm_stall_is_num "$at" || return 1
+  [ "$at" -gt "$last" ] || return 1
+  [ "$at" -le "$FM_STALL_NOW" ] || return 1
+  [ "$at" -ge "$detect" ] || return 2
+  printf '%s\n' "$at"
+}
+
+# 0 and an epoch: the condition ended at that epoch, after detect.
+# 2: it ended before this episode was a stall. 1: still unverified or active.
+_fm_stall_wd_resolved() { # <symptom> <subject> <last-epoch> <detect>
+  local symptom=$1 task=$2 last=$3 detect=$4 file flag checked at rc=0 line stat_task
+  _fm_stall_is_num "$last" || return 1
+  _fm_stall_is_num "$detect" || return 1
+  case "$symptom" in
+    usage-limit-autowait)
+      file=$STATE/watchdog/captain
+      [ -f "$file" ] && [ ! -L "$file" ] || return 1
+      _fm_stall_wd_lib || return 1
+      flag=$(fm_wd_conf_get "$file" usage_limit_autowait '')
+      checked=$(fm_wd_conf_get "$file" checked_at '')
+      [ "$flag" = 0 ] || return 1
+      _fm_stall_is_num "$checked" || return 1
+      [ "$checked" -gt "$last" ] || return 1
+      [ "$checked" -le "$FM_STALL_NOW" ] || return 1
+      [ "$checked" -ge "$detect" ] || return 2
+      printf '%s\n' "$checked"
+      ;;
+    quota|quota:*)
+      # quota:<task> names the status file. A bare quota row uses the subject.
+      stat_task=$task
+      case "$symptom" in
+        quota:*) stat_task=${symptom#quota:} ;;
+      esac
+      case "$stat_task" in
+        ''|-) return 1 ;;
+        *[!A-Za-z0-9._-]*) return 1 ;;
+      esac
+      file=$STATE/$stat_task.status
+      [ -f "$file" ] && [ ! -L "$file" ] || return 1
+      _fm_stall_wd_lib || return 1
+      line=$(tail -n 1 "$file" 2>/dev/null || true)
+      if fm_wd_quota_status_line "$line"; then
+        return 1
+      fi
+      at=$(_fm_stall_status_resumed "$stat_task" "$last" "$detect") || rc=$?
+      [ "$rc" -eq 0 ] || return "$rc"
+      printf '%s\n' "$at"
+      ;;
+    frozen|timer-loop|usage-limit)
+      file=$STATE/watchdog/captain
+      if [ -f "$file" ] && [ ! -L "$file" ]; then
+        _fm_stall_wd_lib || return 1
+        flag=$(fm_wd_conf_get "$file" usage_limit_autowait '')
+        [ "$flag" = 1 ] && return 1
+      fi
+      at=$(_fm_stall_status_resumed "$task" "$last" "$detect") || rc=$?
+      [ "$rc" -eq 0 ] || return "$rc"
+      printf '%s\n' "$at"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 _fm_stall_watchdog() {
   local file epoch _id home subject symptom action phase detail
-  local cls sub key extra start detect estart edetect norm
+  local cls sub key extra start detect estart edetect esymptom elast norm
+  local res res_rc
   file=$STATE/watchdog/actions.tsv
   [ -f "$file" ] && [ ! -L "$file" ] || return 0
   while IFS=$'\036' read -r epoch _id home subject symptom action phase detail || [ -n "${epoch:-}" ]; do
@@ -507,36 +625,55 @@ _fm_stall_watchdog() {
     key=$FM_STALL_WORK/ep/${cls}__${sub}
     if _fm_stall_wd_terminates "$phase" "$action"; then
       if [ -f "$key" ]; then
-        read -r estart edetect < "$key" || true
+        read -r estart edetect esymptom elast < "$key" || true
         rm -f -- "$key"
         if _fm_stall_is_num "$estart" && _fm_stall_is_num "$edetect" && [ "$epoch" -gt "$estart" ]; then
           if [ $((epoch - estart)) -gt 600 ]; then
-            printf '%s\t%s\t%s\t%s\t%s\n' "$cls" "$sub" "$estart" "$edetect" "$epoch" >> "$FM_STALL_WORK/done.tsv" || return 1
+            printf '%s\t%s\t%s\t%s\t%s\twatchdog\n' "$cls" "$sub" "$estart" "$edetect" "$epoch" >> "$FM_STALL_WORK/done.tsv" || return 1
           fi
         fi
       fi
       continue
     fi
-    if [ ! -f "$key" ]; then
-      extra=$(_fm_stall_wd_extra "$detail")
-      if [ "$extra" -gt "$epoch" ]; then
-        start=0
-      else
-        start=$((epoch - extra))
-      fi
-      detect=$epoch
-      printf '%s %s\n' "$start" "$detect" > "$key" || return 1
+    extra=$(_fm_stall_wd_extra "$detail")
+    if [ "$extra" -gt "$epoch" ]; then
+      start=0
+    else
+      start=$((epoch - extra))
     fi
+    if [ ! -f "$key" ]; then
+      printf '%s %s %s %s\n' "$start" "$epoch" "$symptom" "$epoch" > "$key" || return 1
+      continue
+    fi
+    read -r estart edetect esymptom elast < "$key" || continue
+    _fm_stall_is_num "$estart" || estart=$start
+    _fm_stall_is_num "$edetect" || edetect=$epoch
+    _fm_stall_is_num "$elast" || elast=$epoch
+    [ "$start" -lt "$estart" ] && estart=$start
+    [ "$epoch" -lt "$edetect" ] && edetect=$epoch
+    [ "$epoch" -gt "$elast" ] && elast=$epoch
+    printf '%s %s %s %s\n' "$estart" "$edetect" "$esymptom" "$elast" > "$key" || return 1
   done < <(_fm_stall_wd_rows "$file")
   for key in "$FM_STALL_WORK/ep"/*; do
     [ -f "$key" ] || continue
-    read -r estart edetect < "$key" || continue
+    read -r estart edetect esymptom elast < "$key" || continue
     _fm_stall_is_num "$estart" || continue
     _fm_stall_is_num "$edetect" || continue
-    [ $((FM_STALL_NOW - estart)) -gt 600 ] || continue
     cls=${key##*/}
     sub=${cls#*__}
     cls=${cls%%__*}
+    res_rc=0
+    res=$(_fm_stall_wd_resolved "$esymptom" "$sub" "$elast" "$edetect") || res_rc=$?
+    if [ "$res_rc" -eq 2 ]; then
+      continue
+    fi
+    if [ "$res_rc" -eq 0 ] && _fm_stall_is_num "$res"; then
+      if [ $((res - estart)) -gt 600 ]; then
+        printf '%s\t%s\t%s\t%s\t%s\t-\n' "$cls" "$sub" "$estart" "$edetect" "$res" >> "$FM_STALL_WORK/done.tsv" || return 1
+      fi
+      continue
+    fi
+    [ $((FM_STALL_NOW - estart)) -gt 600 ] || continue
     printf '4\t%s\t%s\t%s\t%s\n' "$cls" "$sub" "$estart" "$edetect" >> "$FM_STALL_WORK/signals.tsv" || return 1
   done
 }
@@ -552,14 +689,8 @@ _fm_stall_signal_has() { # <class> <subject> [prio]
 
 _fm_stall_attribute() { # <class> <subject> <detect> <now>
   local cls=$1 sub=$2 detect=$3 now=$4
-  if [ -f "$FM_STALL_LEDGER" ] && awk -F '\t' -v c="$cls" -v s="$sub" -v lo="$detect" -v hi="$now" '
-      NF == 10 && $2 == "intervention" && $1 ~ /^[0-9]+$/ && $1 + 0 > lo + 0 && $1 + 0 <= hi + 0 &&
-        $3 == c && ($4 == s || $4 == "-" || s == "-") { found = 1; exit }
-      END { exit !found }
-    ' "$FM_STALL_LEDGER"; then
-    printf 'human\n'
-    return 0
-  fi
+  # Intervention rows are scored from their own epoch. They do not change the
+  # recoverer of a close, so a pre-window order cannot fail the window twice.
   if _fm_stall_wd_done_for "$cls" "$sub" "$detect" "$now"; then
     printf 'watchdog\n'
     return 0
@@ -591,18 +722,21 @@ _fm_stall_wd_done_for() { # <class> <subject> <detect> <now>
 
 _fm_stall_choose_signals() {
   awk -F '\t' '
-    NF == 5 && $1 ~ /^[0-9]+$/ && $4 ~ /^[0-9]+$/ {
+    NF == 5 && $1 ~ /^[0-9]+$/ && $4 ~ /^[0-9]+$/ && $5 ~ /^[0-9]+$/ {
       key = $2 "\t" $3
-      if (!(key in prio) || $1 + 0 < prio[key] + 0 || ($1 + 0 == prio[key] + 0 && $4 + 0 < start[key] + 0)) {
+      if (!(key in minstart) || $4 + 0 < minstart[key] + 0) minstart[key] = $4 + 0
+      if (!(key in mindetect) || $5 + 0 < mindetect[key] + 0) mindetect[key] = $5 + 0
+      if (!(key in prio) || $1 + 0 < prio[key] + 0 || ($1 + 0 == prio[key] + 0 && $4 + 0 < pstart[key] + 0)) {
         prio[key] = $1 + 0
-        start[key] = $4 + 0
-        row[key] = $0
+        pstart[key] = $4 + 0
+        cls[key] = $2
+        subject[key] = $3
         order[key] = NR
       }
     }
     END {
       n = 0
-      for (k in row) { n++; keys[n] = k }
+      for (k in prio) { n++; keys[n] = k }
       for (i = 1; i <= n; i++) {
         for (j = i + 1; j <= n; j++) {
           if (order[keys[j]] + 0 < order[keys[i]] + 0) {
@@ -610,32 +744,90 @@ _fm_stall_choose_signals() {
           }
         }
       }
-      for (i = 1; i <= n; i++) print row[keys[i]]
+      for (i = 1; i <= n; i++) {
+        k = keys[i]
+        print prio[k] "\t" cls[k] "\t" subject[k] "\t" minstart[k] "\t" mindetect[k]
+      }
     }
   ' "$FM_STALL_WORK/signals.tsv"
 }
 
+# Earliest start and detect already collected for this class and subject.
+# Prints "start detect", or nothing when this observe has no signal.
+_fm_stall_signal_bounds() { # <class> <subject>
+  local cls=$1 sub=$2
+  [ -s "$FM_STALL_WORK/signals.tsv" ] || return 1
+  awk -F '\t' -v c="$cls" -v s="$sub" '
+    NF == 5 && $2 == c && $3 == s && $4 ~ /^[0-9]+$/ && $5 ~ /^[0-9]+$/ {
+      if (!seen || $4 + 0 < start) start = $4 + 0
+      if (!seen || $5 + 0 < detect) detect = $5 + 0
+      seen = 1
+    }
+    END { if (seen) print start, detect; else exit 1 }
+  ' "$FM_STALL_WORK/signals.tsv"
+}
+
+# Earliest start and detect for one done row. A signal can only move them back.
+_fm_stall_tighten() { # <class> <subject> <start> <detect>
+  local cls=$1 sub=$2 start=$3 detect=$4 bounds bstart bdetect
+  bounds=$(_fm_stall_signal_bounds "$cls" "$sub") || true
+  if [ -n "${bounds:-}" ]; then
+    bstart=${bounds%% *}
+    bdetect=${bounds#* }
+    if _fm_stall_is_num "$bstart" && [ "$bstart" -lt "$start" ]; then
+      start=$bstart
+    fi
+    if _fm_stall_is_num "$bdetect" && [ "$bdetect" -lt "$detect" ]; then
+      detect=$bdetect
+    fi
+  fi
+  printf '%s %s\n' "$start" "$detect"
+}
+
 _fm_stall_reconcile() {
-  local cls sub start detect ended ref dur rec prio
+  local cls sub start detect ended ref dur rec prio who
+  local open_rc open_line open_ref open_start open_detect tight
   if [ -s "$FM_STALL_WORK/done.tsv" ]; then
-    while IFS=$(printf '\t') read -r cls sub start detect ended || [ -n "${cls:-}" ]; do
+    while IFS=$(printf '\t') read -r cls sub start detect ended who || [ -n "${cls:-}" ]; do
       _fm_stall_is_num "$start" || continue
       _fm_stall_is_num "$detect" || continue
       _fm_stall_is_num "$ended" || continue
+      case "$who" in
+        watchdog|-) ;;
+        *) who=watchdog ;;
+      esac
+      open_rc=0
+      open_line=$(_fm_stall_open_row "$cls" "$sub") || open_rc=$?
+      if [ "$open_rc" -eq 0 ] && [ -n "$open_line" ]; then
+        open_ref=${open_line%% *}
+        open_start=${open_line#* }
+        open_detect=${open_start#* }
+        open_start=${open_start%% *}
+        _fm_stall_is_num "$open_start" || continue
+        _fm_stall_is_num "$open_detect" || continue
+        if [ "$ended" -ge "$open_start" ]; then
+          dur=$((ended - open_start))
+        else
+          dur=0
+        fi
+        _fm_stall_append "$FM_STALL_NOW" stall-close "$cls" "$sub" "$open_start" "$open_detect" "$who" "$ended" "$dur" "$open_ref" || return 1
+        continue
+      fi
+      tight=$(_fm_stall_tighten "$cls" "$sub" "$start" "$detect") || true
+      if [ -n "$tight" ]; then
+        start=${tight%% *}
+        detect=${tight#* }
+      fi
+      _fm_stall_is_num "$start" || continue
+      _fm_stall_is_num "$detect" || continue
       [ $((ended - start)) -gt 600 ] || continue
       ref="$cls:$sub:$start"
       if _fm_stall_ref_exists "$ref"; then
         continue
       fi
-      if _fm_stall_open_for "$cls" "$sub"; then
-        continue
-      fi
-      if _fm_stall_signal_has "$cls" "$sub" 1; then
-        continue
-      fi
       dur=$((ended - start))
       _fm_stall_append "$FM_STALL_NOW" stall-open "$cls" "$sub" "$start" "$detect" - - - "$ref" || return 1
-      _fm_stall_append "$FM_STALL_NOW" stall-close "$cls" "$sub" "$start" "$detect" watchdog "$ended" "$dur" "$ref" || return 1
+      _fm_stall_append "$FM_STALL_NOW" stall-close "$cls" "$sub" "$start" "$detect" "$who" "$ended" "$dur" "$ref" || return 1
     done < "$FM_STALL_WORK/done.tsv"
   fi
   _fm_stall_opens > "$FM_STALL_WORK/opens.tsv" || return 1

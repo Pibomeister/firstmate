@@ -544,6 +544,256 @@ test_observe_throttles_inside_a_minute() {
   pass "observe skips a second pass inside the minute and records the next one"
 }
 
+test_prewindow_order_does_not_make_the_close_human() {
+  local home ledger
+  home=$(new_home prewindow)
+  ledger=$(ledger_of "$home")
+  mkdir -p "$home/data/orders"
+  printf '8000\n' > "$home/state/.stall-ledger-born"
+  printf '2026-11-12T00:00:00Z\t9700\tcap\tsent\tabcd1234\tbefore kickoff\n' > "$home/data/orders/log.tsv"
+  write_hb "$home/state/heartbeat.json" 8899
+  observe_ok "$home" 9600
+  awk -F '\t' '
+    $2 == "stall-open" && $3 == "primary" && $5 == 8899 && $6 == 9500 { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "the stale heartbeat did not open at published_epoch"
+  assert_contains "$(cat "$ledger")" "order:cap" "the pre-window order is recorded"
+  write_hb "$home/state/heartbeat.json" 10600
+  observe_ok "$home" 10600
+  awk -F '\t' '
+    $2 == "stall-close" && $7 == "firstmate" && $8 == 10600 { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "the close was not firstmate at the fresh heartbeat"
+  awk -F '\t' '$2 == "stall-close" && $7 == "human" { found = 1 } END { exit (found ? 1 : 0) }' "$ledger" \
+    || fail "a pre-window order became the close recoverer"
+  run_score "$home" 10000 11200
+  assert_equals 0 "$RC" "the order at 9700 is outside the window"
+  assert_equals PASS "$OUT" "duration 1701 and latency 1100 pass"
+  assert_not_contains "$OUT" $'intervention\t' "the pre-window order is not cited"
+  pass "a pre-window order stays in the ledger and does not make the close human"
+}
+
+test_watchdog_close_uses_the_done_epoch() {
+  local home ledger start detect recover
+  home=$(new_home wd-stamp)
+  ledger=$(ledger_of "$home")
+  mkdir -p "$home/state/watchdog"
+  printf '%s\n' "$T0" > "$home/state/.stall-ledger-born"
+  start=$((T0 - 600))
+  detect=$T0
+  recover=$((T0 + 1150))
+  printf '%s\tid1\t\tprimary\tfrozen\trestart\theld\theld\n' "$T0" > "$home/state/watchdog/actions.tsv"
+  observe_ok "$home" "$((T0 + 700))"
+  assert_equals 1 "$(count_rows "$ledger" stall-open)" "the held row opens one stall"
+  assert_equals 0 "$(count_rows "$ledger" stall-close)" "held is not recovery"
+  printf '%s\tid2\t\tprimary\tfrozen\trestart\tdone\trestarted\n' "$recover" >> "$home/state/watchdog/actions.tsv"
+  observe_ok "$home" "$((T0 + 1210))"
+  assert_equals 1 "$(count_rows "$ledger" stall-close)" "the later observe closes once"
+  awk -F '\t' -v start="$start" -v detect="$detect" -v recover="$recover" '
+    $2 == "stall-close" && $5 == start && $6 == detect && $7 == "watchdog" && $8 == recover { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "the close was stamped at the observe clock instead of the restart"
+  primary_cover "$ledger" "$T0" "$((T0 + 2000))"
+  run_score "$home" "$T0" "$((T0 + 2000))"
+  assert_equals 0 "$RC" "duration 1750 and latency 1150 pass when recover is the restart"
+  assert_equals PASS "$OUT" "stamping the close at the later observe would fail both bars"
+  pass "an already-open watchdog stall closes at the restart epoch"
+}
+
+test_watchdog_keeps_the_earlier_start() {
+  local home ledger start detect row_at recover
+  home=$(new_home wd-early)
+  ledger=$(ledger_of "$home")
+  mkdir -p "$home/state/watchdog"
+  printf '%s\n' "$T0" > "$home/state/.stall-ledger-born"
+  start=$((T0 + 7600))
+  detect=$((T0 + 9901))
+  row_at=$((T0 + 10000))
+  recover=$((T0 + 10500))
+  write_hb "$home/state/heartbeat.json" "$((T0 + 9300))"
+  printf '%s\tid1\t\tprimary\tfrozen\trestart\theld\tfrozen 40 minutes\n' "$row_at" > "$home/state/watchdog/actions.tsv"
+  observe_ok "$home" "$row_at"
+  awk -F '\t' -v start="$start" -v detect="$detect" '
+    $2 == "stall-open" && $3 == "primary" && $5 == start && $6 == detect { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "the open kept the heartbeat start instead of the 40 minute onset"
+  assert_equals 0 "$(count_rows "$ledger" stall-close)" "a held row does not close"
+  printf '%s\tid2\t\tprimary\tfrozen\trestart\tdone\trestarted\n' "$recover" >> "$home/state/watchdog/actions.tsv"
+  write_hb "$home/state/heartbeat.json" "$recover"
+  observe_ok "$home" "$recover"
+  assert_equals 1 "$(count_rows "$ledger" stall-open)" "the restart does not open a second stall"
+  awk -F '\t' -v start="$start" -v detect="$detect" -v recover="$recover" '
+    $2 == "stall-close" && $5 == start && $6 == detect && $7 == "watchdog" && $8 == recover { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "the close dropped the earlier start or the restart epoch"
+  primary_cover "$ledger" "$((T0 + 10001))" "$((T0 + 12000))"
+  run_score "$home" "$((T0 + 10001))" "$((T0 + 12000))"
+  assert_equals 1 "$RC" "duration 2900 fails"
+  printf '%s\n' "$OUT" | awk -F '\t' -v start="$start" '
+    $1 == "stall-duration" && $6 == start { found = 1 }
+    END { exit !found }
+  ' || fail "stall-duration did not cite the 40 minute onset"
+  assert_not_contains "$OUT" "stall-recovery" "latency from the earlier detect is inside 1200 seconds"
+  pass "a 40 minute watchdog onset stays earlier than a later heartbeat"
+}
+
+test_progress_onset_is_not_the_ring_time() {
+  local home ledger onset
+  home=$(new_home onset)
+  ledger=$(ledger_of "$home")
+  onset=$T0
+  printf '%s\t100-1\t%s\n' "$((T0 + 180))" "$onset" > "$home/state/.secondmate-wake-progress-mate1"
+  write_hb "$home/state/heartbeat.json" "$((T0 + 1900))"
+  observe_ok "$home" "$((T0 + 1900))"
+  awk -F '\t' -v onset="$onset" -v detect="$((onset + 601))" '
+    $2 == "stall-open" && $3 == "secondmate" && $4 == "mate1" && $5 == onset && $6 == detect { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "the stall started at the ring time instead of the onset"
+  rm -f "$home/state/.secondmate-wake-progress-mate1"
+  observe_ok "$home" "$((T0 + 1900))"
+  awk -F '\t' -v recover="$((T0 + 1900))" '
+    $2 == "stall-close" && $4 == "mate1" && $7 == "agentkit" && $8 == recover { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "clearing the marker did not close as agentkit"
+  primary_cover "$ledger" "$T0" "$((T0 + 2500))"
+  run_score "$home" "$T0" "$((T0 + 2500))"
+  assert_equals 1 "$RC" "duration 1900 and latency 1299 fail"
+  assert_contains "$OUT" $'stall-duration\t' "the true onset fails stall-duration"
+  assert_contains "$OUT" $'stall-recovery\t' "the true onset fails stall-recovery"
+
+  home=$(new_home onset-legacy)
+  ledger=$(ledger_of "$home")
+  printf '%s\trow\n' "$((T0 + 180))" > "$home/state/.secondmate-wake-progress-mate1"
+  observe_ok "$home" "$((T0 + 1900))"
+  rm -f "$home/state/.secondmate-wake-progress-mate1"
+  observe_ok "$home" "$((T0 + 1900))"
+  awk -F '\t' -v start="$((T0 + 180))" '
+    $2 == "stall-open" && $5 == start { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "a two-field marker invented an earlier onset"
+  primary_cover "$ledger" "$T0" "$((T0 + 2500))"
+  run_score "$home" "$T0" "$((T0 + 2500))"
+  assert_equals 0 "$RC" "a ring-time start of 180 seconds passes both stall bars"
+  assert_equals PASS "$OUT" "the legacy marker stays inside the bars"
+  pass "a progress onset is kept, and a two-field marker does not invent one"
+}
+
+test_progress_marker_retains_onset_across_rings() {
+  local home marker got
+  home=$(new_home marker-writer)
+  marker=$home/state/.secondmate-wake-progress-mate1
+  # shellcheck disable=SC2016 # $1 is the argument of the inner bash, not this script.
+  env FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_ROOT_OVERRIDE="$ROOT" \
+    /bin/bash -c '. "$1" && fm_wake_secondmate_progress_marker_write mate1 0 100-1 && fm_wake_secondmate_progress_marker_write mate1 180 100-1' \
+    _ "$ROOT/bin/fm-wake-lib.sh" || fail "the same-key rewrite failed"
+  got=$(cat "$marker")
+  assert_equals "$(printf '180\t100-1\t0')" "$got" "the rewrite kept the first onset"
+  # shellcheck disable=SC2016 # $1 is the argument of the inner bash, not this script.
+  env FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_ROOT_OVERRIDE="$ROOT" \
+    /bin/bash -c '. "$1" && fm_wake_secondmate_progress_marker_write mate1 200 100-2' \
+    _ "$ROOT/bin/fm-wake-lib.sh" || fail "the new-key write failed"
+  got=$(cat "$marker")
+  assert_equals "$(printf '200\t100-2')" "$got" "a new key starts at the new clock"
+  pass "a progress marker keeps the onset of one wake episode"
+}
+
+test_quota_and_autowait_close_only_on_evidence() {
+  local home ledger actions recover
+  home=$(new_home quota-live)
+  ledger=$(ledger_of "$home")
+  actions=$home/state/watchdog/actions.tsv
+  mkdir -p "$home/state/watchdog"
+  printf '%s\n' "$T0" > "$home/state/.stall-ledger-born"
+  printf '%s\tid1\t\tworker1\tquota\tsuggest\theld\tqueued until reset\n' "$T0" > "$actions"
+  printf 'blocked [at=%s]: quota floor until reset\n' "$T0" > "$home/state/worker1.status"
+  write_hb "$home/state/heartbeat.json" "$((T0 + 700))"
+  observe_ok "$home" "$((T0 + 700))"
+  assert_equals 1 "$(count_rows "$ledger" stall-open worker1)" "a quota hold opens a stall"
+  assert_equals 0 "$(count_rows "$ledger" stall-close)" "a fresh heartbeat does not end a quota hold"
+  printf 'working back\n' > "$home/state/worker1.status"
+  observe_ok "$home" "$((T0 + 800))"
+  assert_equals 0 "$(count_rows "$ledger" stall-close)" "a status line with no epoch stays unverified"
+  recover=$((T0 + 900))
+  printf 'working [at=%s]: back\n' "$recover" > "$home/state/worker1.status"
+  observe_ok "$home" "$((T0 + 1000))"
+  awk -F '\t' -v recover="$recover" '
+    $2 == "stall-close" && $3 == "worker" && $4 == "worker1" && $7 == "-" && $8 == recover { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "the working status did not close at its at epoch"
+  observe_ok "$home" "$((T0 + 1100))"
+  assert_equals 1 "$(count_rows "$ledger" stall-close)" "the next observe does not close again"
+  assert_equals 1 "$(count_rows "$ledger" stall-open)" "the next observe does not open again"
+
+  home=$(new_home quota-task)
+  ledger=$(ledger_of "$home")
+  actions=$home/state/watchdog/actions.tsv
+  mkdir -p "$home/state/watchdog"
+  printf '%s\n' "$T0" > "$home/state/.stall-ledger-born"
+  printf '%s\tid1\t\tprimary\tquota:worker1\tsuggest\theld\tqueued until reset\n' "$T0" > "$actions"
+  printf 'blocked [at=%s]: quota floor until reset\n' "$T0" > "$home/state/worker1.status"
+  observe_ok "$home" "$((T0 + 700))"
+  assert_equals 1 "$(count_rows "$ledger" stall-open)" "quota:worker1 opens from the task status"
+  assert_equals 0 "$(count_rows "$ledger" stall-close)" "a live quota:worker1 row stays open"
+  recover=$((T0 + 900))
+  printf 'working [at=%s]: back\n' "$recover" > "$home/state/worker1.status"
+  observe_ok "$home" "$((T0 + 1000))"
+  awk -F '\t' -v recover="$recover" '
+    $2 == "stall-close" && $3 == "primary" && $4 == "-" && $7 == "-" && $8 == recover { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "quota:worker1 did not close the primary episode from the task status"
+
+  home=$(new_home autowait)
+  ledger=$(ledger_of "$home")
+  actions=$home/state/watchdog/actions.tsv
+  mkdir -p "$home/state/watchdog"
+  printf '%s\n' "$T0" > "$home/state/.stall-ledger-born"
+  printf '%s\tid1\t\tprimary\tusage-limit-autowait\tpage\tdone\towner paged\n' "$T0" > "$actions"
+  write_hb "$home/state/heartbeat.json" "$((T0 + 700))"
+  observe_ok "$home" "$((T0 + 700))"
+  assert_equals 1 "$(count_rows "$ledger" stall-open)" "a page is not the end of an auto-wait"
+  assert_equals 0 "$(count_rows "$ledger" stall-close)" "owner paged is not recovery"
+  printf 'usage_limit_autowait=1\nchecked_at=%s\n' "$((T0 + 800))" > "$home/state/watchdog/captain"
+  observe_ok "$home" "$((T0 + 800))"
+  assert_equals 0 "$(count_rows "$ledger" stall-close)" "autowait=1 stays open"
+  recover=$((T0 + 900))
+  printf 'usage_limit_autowait=0\nchecked_at=%s\n' "$recover" > "$home/state/watchdog/captain"
+  observe_ok "$home" "$((T0 + 1000))"
+  awk -F '\t' -v recover="$recover" '
+    $2 == "stall-close" && $3 == "primary" && $4 == "-" && $7 == "-" && $8 == recover { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "autowait=0 did not close at checked_at"
+
+  home=$(new_home frozen-work)
+  ledger=$(ledger_of "$home")
+  actions=$home/state/watchdog/actions.tsv
+  mkdir -p "$home/state/watchdog"
+  printf '%s\n' "$T0" > "$home/state/.stall-ledger-born"
+  printf '%s\tid1\t\tworker1\tfrozen\trestart\trefused\trestart is off\n' "$T0" > "$actions"
+  observe_ok "$home" "$((T0 + 700))"
+  assert_equals 1 "$(count_rows "$ledger" stall-open worker1)" "a refused restart stays open"
+  assert_equals 0 "$(count_rows "$ledger" stall-close)" "refused is not recovery"
+  recover=$((T0 + 900))
+  printf 'working [at=%s]: back\n' "$recover" > "$home/state/worker1.status"
+  observe_ok "$home" "$((T0 + 1000))"
+  awk -F '\t' -v recover="$recover" '
+    $2 == "stall-close" && $4 == "worker1" && $7 == "-" && $8 == recover { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "a later working status did not close the refused restart"
+
+  home=$(new_home frozen-wait)
+  ledger=$(ledger_of "$home")
+  actions=$home/state/watchdog/actions.tsv
+  mkdir -p "$home/state/watchdog"
+  printf '%s\n' "$T0" > "$home/state/.stall-ledger-born"
+  printf '%s\tid1\t\tworker1\tfrozen\trestart\trefused\trestart is off\n' "$T0" > "$actions"
+  printf 'usage_limit_autowait=1\nchecked_at=%s\n' "$((T0 + 800))" > "$home/state/watchdog/captain"
+  printf 'working [at=%s]: back\n' "$((T0 + 900))" > "$home/state/worker1.status"
+  observe_ok "$home" "$((T0 + 1000))"
+  assert_equals 1 "$(count_rows "$ledger" stall-open worker1)" "autowait keeps a frozen row open"
+  assert_equals 0 "$(count_rows "$ledger" stall-close)" "a working status does not end an auto-wait"
+  pass "quota, auto-wait, and a refused restart close only on later evidence"
+}
+
 test_usage_and_unknown_commands() {
   local home out rc=0
   home=$(new_home usage)
@@ -579,4 +829,10 @@ fm_test_run \
   test_score_fails_a_human_recoverer \
   test_score_parent_reads_secondmate_ledger \
   test_observe_throttles_inside_a_minute \
+  test_prewindow_order_does_not_make_the_close_human \
+  test_watchdog_close_uses_the_done_epoch \
+  test_watchdog_keeps_the_earlier_start \
+  test_progress_onset_is_not_the_ring_time \
+  test_progress_marker_retains_onset_across_rings \
+  test_quota_and_autowait_close_only_on_evidence \
   test_usage_and_unknown_commands

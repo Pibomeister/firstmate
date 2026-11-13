@@ -2977,7 +2977,8 @@ fm_wake_queued_carries_locked() {
 }
 
 fm_wake_secondmate_progress_marker_write() { # <task> <observed-at> <oldest-row-key>
-  local task=$1 observed_at=$2 oldest_row_key=$3 marker tmp
+  local task=$1 observed_at=$2 oldest_row_key=$3 marker tmp existing onset
+  local old_at old_key old_rest
   case "$task" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
   case "$observed_at" in ''|*[!0-9]*) return 1 ;; esac
   case "$oldest_row_key" in ''|*[!0-9-]*) return 1 ;; esac
@@ -2985,9 +2986,32 @@ fm_wake_secondmate_progress_marker_write() { # <task> <observed-at> <oldest-row-
   if [ -e "$marker" ] || [ -L "$marker" ]; then
     [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
   fi
+  onset=$observed_at
+  if [ -f "$marker" ]; then
+    IFS= read -r existing < "$marker" || existing=
+    old_at=${existing%%[[:space:]]*}
+    old_rest=${existing#*[[:space:]]}
+    old_key=${old_rest%%[[:space:]]*}
+    if [ "$old_key" = "$oldest_row_key" ]; then
+      case "$old_rest" in
+        *[[:space:]]*)
+          onset=${old_rest#*[[:space:]]}
+          onset=${onset%%[[:space:]]*}
+          ;;
+        *) onset=$old_at ;;
+      esac
+      case "$onset" in ''|*[!0-9]*) onset=$old_at ;; esac
+      case "$onset" in ''|*[!0-9]*) onset=$observed_at ;; esac
+      [ "$onset" -le "$observed_at" ] || onset=$observed_at
+    fi
+  fi
   tmp=$(mktemp "$STATE/.secondmate-wake-progress.XXXXXX") || return 1
-  if ! printf '%s\t%s\n' "$observed_at" "$oldest_row_key" > "$tmp" || ! chmod 0600 "$tmp" \
-    || ! _fm_atomic_replace "$tmp" "$marker"; then
+  if [ "$onset" = "$observed_at" ]; then
+    printf '%s\t%s\n' "$observed_at" "$oldest_row_key" > "$tmp" || { rm -f -- "$tmp"; return 1; }
+  else
+    printf '%s\t%s\t%s\n' "$observed_at" "$oldest_row_key" "$onset" > "$tmp" || { rm -f -- "$tmp"; return 1; }
+  fi
+  if ! chmod 0600 "$tmp" || ! _fm_atomic_replace "$tmp" "$marker"; then
     rm -f -- "$tmp"
     return 1
   fi
