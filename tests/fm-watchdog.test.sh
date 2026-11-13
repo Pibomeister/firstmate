@@ -3713,6 +3713,132 @@ test_primary_ordinary_idle_is_not_paged() {
   pass "usage-limit auto-wait: an ordinary idle primary is not paged"
 }
 
+# shellcheck disable=SC2016
+test_feedback_claim_recovery_serializes_contenders() {
+  local dir claim dead_pid pid_a pid_b rc_a rc_b
+  dir=$(fm_test_tmproot feedback-recovery)
+  claim="$dir/claim"
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" -c '. "$1/bin/fm-control-lib.sh"; printf "%s\n" "$$" > "$2/dead-pid"; fm_control_acquire_feedback_claim "$2/claim"' _ "$ROOT" "$dir" &
+  dead_pid=$!
+  wait "$dead_pid" || fail "the initial owner could not acquire the claim"
+  dead_pid=$(cat "$dir/dead-pid")
+  cat > "$dir/contender.sh" <<'SH'
+#!/usr/bin/env bash
+set -u
+root=$1 dir=$2 who=$3 dead_pid=$4
+. "$root/bin/fm-control-lib.sh"
+kill() {
+  if [ "${1:-}" = -0 ] && [ "${2:-}" = "$dead_pid" ]; then
+    : > "$dir/$who.observed"
+    local n=0
+    if [ "$who" = a ]; then
+      while [ ! -f "$dir/b.observed" ] && [ "$n" -lt 100 ]; do sleep 0.02; n=$((n + 1)); done
+    else
+      while [ ! -f "$dir/a.acquired" ] && [ "$n" -lt 100 ]; do sleep 0.02; n=$((n + 1)); done
+    fi
+    return 1
+  fi
+  builtin kill "$@"
+}
+if fm_control_acquire_feedback_claim "$dir/claim"; then
+  : > "$dir/$who.acquired"
+  if [ "$who" = a ]; then
+    n=0
+    while [ ! -f "$dir/b.finished" ] && [ "$n" -lt 150 ]; do sleep 0.02; n=$((n + 1)); done
+  fi
+  fm_control_release_feedback_claim "$dir/claim"
+  rc=0
+else
+  rc=1
+fi
+: > "$dir/$who.finished"
+exit "$rc"
+SH
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" "$dir/contender.sh" "$ROOT" "$dir" a "$dead_pid" > "$dir/a.log" 2>&1 &
+  pid_a=$!
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" "$dir/contender.sh" "$ROOT" "$dir" b "$dead_pid" > "$dir/b.log" 2>&1 &
+  pid_b=$!
+  rc_a=0; wait "$pid_a" || rc_a=$?
+  rc_b=0; wait "$pid_b" || rc_b=$?
+  [ -f "$dir/a.observed" ] && [ -f "$dir/b.observed" ] || fail "both contenders must inspect the dead owner"
+  assert_equals 0 "$rc_a" "the first contender recovers the stale claim"
+  assert_equals 1 "$rc_b" "a contender with a stale observation cannot reclaim a fresh live claim"
+  [ ! -e "$dir/b.acquired" ] || fail "two contenders held the claim simultaneously"
+  pass "feedback claim: competing stale recovery preserves the fresh owner"
+}
+
+# shellcheck disable=SC2016
+test_feedback_claim_recovers_legacy_owner() {
+  local dir dead_pid rc=0
+  dir=$(fm_test_tmproot feedback-legacy)
+  mkdir -p "$dir/claim"
+  printf '%s 0\n' "$$" > "$dir/claim/owner"
+  touch -t 200101010101 "$dir/claim"
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" -c '. "$1/bin/fm-control-lib.sh"; fm_control_acquire_feedback_claim "$2"' _ "$ROOT" "$dir/claim" || rc=$?
+  assert_equals 1 "$rc" "an old-format claim with a live owner is preserved regardless of age"
+  "$BASH" -c 'exit 0' &
+  dead_pid=$!
+  wait "$dead_pid"
+  printf '%s 0\n' "$dead_pid" > "$dir/claim/owner"
+  rc=0
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" -c '. "$1/bin/fm-control-lib.sh"; fm_control_acquire_feedback_claim "$2" && fm_control_release_feedback_claim "$2"' _ "$ROOT" "$dir/claim" || rc=$?
+  assert_equals 0 "$rc" "a dead old-format owner does not strand feedback dismissal after an upgrade"
+  pass "feedback claim: legacy owners are recovered only after they exit"
+}
+
+# shellcheck disable=SC2016
+test_feedback_claim_release_preserves_another_owner() {
+  local dir holder n=0 rc=0
+  dir=$(fm_test_tmproot feedback-release)
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" -c '. "$1/bin/fm-control-lib.sh"; fm_control_acquire_feedback_claim "$2/claim" || exit 1; : > "$2/ready"; sleep 30' _ "$ROOT" "$dir" &
+  holder=$!
+  LOCK_PIDS="$LOCK_PIDS $holder"
+  while [ ! -f "$dir/ready" ] && [ "$n" -lt 100 ]; do sleep 0.02; n=$((n + 1)); done
+  [ -f "$dir/ready" ] || fail "the live owner could not acquire its claim"
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" -c '. "$1/bin/fm-control-lib.sh"; fm_control_release_feedback_claim "$2"' _ "$ROOT" "$dir/claim"
+  [ -d "$dir/claim" ] || fail "release removed another process's claim"
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" -c '. "$1/bin/fm-control-lib.sh"; fm_control_acquire_feedback_claim "$2"' _ "$ROOT" "$dir/claim" || rc=$?
+  assert_equals 1 "$rc" "another process cannot acquire the preserved live claim"
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  pass "feedback claim: release preserves another live owner"
+}
+
+test_feedback_uncertain_dismissal_reopens() {
+  local dir mode
+  dir=$(fm_test_tmproot feedback-reopen)
+  for mode in sticky empty; do
+    cat > "$dir/check.sh" <<'SH'
+set -u
+root=$1 dir=$2 mode=$3
+mkdir -p "$dir"
+. "$root/bin/fm-control-lib.sh"
+screen=$'How was this?\n\n 1. bug         Crash, error message, hang, or broken UI/behavior\n 2. bad_result  Output was off-target, incorrect, incomplete, or unhelpful\n 3. other       Slowness, feature suggestion, UX feedback, or anything else\n\nPress enter to confirm or esc to go back'
+printf '%s\n' "$screen" > "$dir/pane"
+fm_control_capture_feedback_pane() { cat "$dir/pane"; }
+fm_control_send_feedback_dismiss() {
+  printf '%s\n' "$3" >> "$dir/keys"
+  if [ "$mode" = empty ]; then : > "$dir/pane"; fi
+}
+rc=0
+fm_control_dismiss_feedback_dialog "$dir/state" tmux test codex "$screen" '' 0 5 || rc=$?
+[ "$rc" = 4 ] || exit 10
+printf 'working\n> \n' > "$dir/pane"
+rc=0
+fm_control_dismiss_feedback_dialog "$dir/state" tmux test codex "$(cat "$dir/pane")" '' 0 5 || rc=$?
+[ "$rc" = 1 ] || { printf 'clear observation rc=%s\n' "$rc"; exit 11; }
+printf '%s\n' "$screen" > "$dir/pane"
+rc=0
+fm_control_dismiss_feedback_dialog "$dir/state" tmux test codex "$screen" '' 0 5 || rc=$?
+[ "$rc" = 4 ] || exit 12
+SH
+    FM_STATE_OVERRIDE="$dir/$mode/state" "$BASH" "$dir/check.sh" "$ROOT" "$dir/$mode" "$mode" </dev/null
+    assert_equals 0 "$?" "a $mode post-send capture is rearmed by a later clear observation"
+    assert_equals $'Escape\nEscape' "$(cat "$dir/$mode/keys")" "an identical reopened dialog gets a new dismiss key after $mode verification"
+  done
+  pass "feedback dismiss: a later clear observation rearms an uncertain dismissal"
+}
+
 test_feedback_and_bug_report_dialog_dismissal() {
   local agy_survey agy_multiline claude_survey claude_survey_statusline claude_survey_autocompact claude_draft claude_modal_input claude_modal_scope claude_modal_consent claude_followup codex_feedback codex_upload near_miss unknown_picker
   agy_survey=$'work output\nHow\'s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip\n> \n  ? for shortcuts'
@@ -4087,6 +4213,10 @@ fi
 
 fm_test_run \
   test_dialog_detection \
+  test_feedback_claim_recovery_serializes_contenders \
+  test_feedback_claim_recovers_legacy_owner \
+  test_feedback_claim_release_preserves_another_owner \
+  test_feedback_uncertain_dismissal_reopens \
   test_feedback_and_bug_report_dialog_dismissal \
   test_mtime_uses_the_platform_stat_dialect \
   test_dismissed_dialog_in_scrollback_is_not_showing \

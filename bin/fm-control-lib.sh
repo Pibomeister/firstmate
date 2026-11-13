@@ -1282,54 +1282,37 @@ FM_CONTROL_FEEDBACK_DISMISS_KEY=
 FM_CONTROL_FEEDBACK_AFTER_PANE=
 
 fm_control_release_feedback_claim() {  # <claim-dir>
-  local claim=${1-}
+  local claim=${1-} lib=${BASH_SOURCE[0]}
   [ -n "$claim" ] || return 0
-  rm -f "$claim/owner" 2>/dev/null || true
-  rmdir "$claim" 2>/dev/null || true
+  # shellcheck source=/dev/null
+  command -v fm_lock_release >/dev/null 2>&1 || FM_STATE_OVERRIDE="${claim%/*}" . "${lib%/*}/fm-wake-lib.sh"
+  fm_lock_release "$claim"
 }
 
-fm_control_acquire_feedback_claim() {  # <claim-dir> [<max-age-secs>]
-  local claim=${1-} max_age=${2:-120} now owner_pid='' owner_epoch='' claim_mtime=''
+fm_control_acquire_feedback_claim() {  # <claim-dir>
+  local claim=${1-} lib=${BASH_SOURCE[0]} owner_pid='' owner_epoch='' rc=0
   [ -n "$claim" ] || return 1
-  now=$(date +%s)
-  if mkdir "$claim" 2>/dev/null; then
-    printf '%s %s\n' "$$" "$now" > "$claim/owner" 2>/dev/null || true
-    return 0
+  # shellcheck source=/dev/null
+  command -v fm_lock_try_acquire >/dev/null 2>&1 || FM_STATE_OVERRIDE="${claim%/*}" . "${lib%/*}/fm-wake-lib.sh"
+  if [ -f "$claim/owner" ]; then
+    fm_lock_try_acquire_steal_mutex "$claim.steal" || return 1
+    if [ -f "$claim/owner" ]; then
+      IFS=' ' read -r owner_pid owner_epoch < "$claim/owner" 2>/dev/null || true
+      case "$owner_pid" in
+        ''|*[!0-9]*) rc=1 ;;
+        *)
+          if fm_pid_alive "$owner_pid"; then
+            rc=1
+          else
+            rm -f "$claim/owner" && rmdir "$claim" || rc=1
+          fi
+          ;;
+      esac
+    fi
+    fm_lock_release "$claim.steal"
+    [ "$rc" -eq 0 ] || return 1
   fi
-  IFS=' ' read -r owner_pid owner_epoch < "$claim/owner" 2>/dev/null || true
-  if [ -z "$owner_pid" ]; then
-    sleep 0.05
-    IFS=' ' read -r owner_pid owner_epoch < "$claim/owner" 2>/dev/null || true
-  fi
-  case "$owner_pid" in
-    ''|*[!0-9]*)
-      claim_mtime=$(LC_ALL=C stat -f %m "$claim" 2>/dev/null || LC_ALL=C stat -c %Y "$claim" 2>/dev/null || printf '%s' "$now")
-      if [ $((now - claim_mtime)) -lt 2 ]; then
-        return 1
-      fi
-      ;;
-    *)
-      if kill -0 "$owner_pid" 2>/dev/null || ps -p "$owner_pid" >/dev/null 2>&1; then
-        case "$owner_epoch" in
-          ''|*[!0-9]*) return 1 ;;
-          *)
-            if [ $((now - owner_epoch)) -le "$max_age" ]; then
-              return 1
-            fi
-            ;;
-        esac
-      fi
-      ;;
-  esac
-  local reclaim="$claim.reclaim.$$"
-  mv "$claim" "$reclaim" 2>/dev/null || return 1
-  rm -f "$reclaim/owner" 2>/dev/null || true
-  rmdir "$reclaim" 2>/dev/null || true
-  if mkdir "$claim" 2>/dev/null; then
-    printf '%s %s\n' "$$" "$now" > "$claim/owner" 2>/dev/null || true
-    return 0
-  fi
-  return 1
+  fm_lock_try_acquire "$claim"
 }
 
 # fm_control_dismiss_feedback_dialog <state-dir> <backend> <target> <harness> <screen> [<expected-label>] [<settle-secs>] [<call-timeout-secs>]
@@ -1338,13 +1321,13 @@ fm_control_acquire_feedback_claim() {  # <claim-dir> [<max-age-secs>]
 # (<backend>, <target>) with an owner-tracked lock directory
 # ($state/.feedback-claim-<window_key>) held from live capture through
 # post-send verification; never removes another live caller's active claim,
-# and atomically reclaims a lock left behind by a dead or expired owner.
+# and uses the wake library's serialized recovery of dead owners.
 # Requires a non-empty live capture that still matches a supported feedback
 # dialog before sending any key. The one-key marker
 # ($state/.feedback-dismissed-<window_key>) hashes the dialog through its input
 # box, with digits stripped from the footer downward, so a status tick is not
 # a new pane. It is written when the post-send capture still shows the dialog
-# or is empty, and removed when that capture shows the dialog is gone. Each
+# or is empty, and removed when a later live capture shows the dialog is gone. Each
 # backend send and capture is bounded by <call-timeout-secs> (default 20). A
 # failed send releases the lock without recording the marker so a later tick
 # can retry.
@@ -1358,39 +1341,27 @@ fm_control_dismiss_feedback_dialog() {
   local state_dir=${1-} backend=${2-} target=${3-} harness=${4-} screen=${5-}
   local label=${6-} settle=${7-0.2} call_timeout=${8:-20}
   local spec dialog_id dismiss_key wkey phash marker claim live after prev_marker lib
-  local timeout_int settle_int max_claim_age
   FM_CONTROL_FEEDBACK_DIALOG_ID=
   FM_CONTROL_FEEDBACK_DISMISS_KEY=
   FM_CONTROL_FEEDBACK_AFTER_PANE=
   [ -n "$state_dir" ] && [ -n "$backend" ] && [ -n "$target" ] && [ -n "$screen" ] || return 1
-  spec=$(fm_control_feedback_dialog_dismiss "$harness" "$screen") || return 1
+  spec=$(fm_control_feedback_dialog_dismiss "$harness" "$screen") || spec=
   dialog_id=${spec%%$'\t'*}
   dismiss_key=${spec#*$'\t'}
   FM_CONTROL_FEEDBACK_DIALOG_ID=$dialog_id
   FM_CONTROL_FEEDBACK_DISMISS_KEY=$dismiss_key
   wkey=$(fm_control_feedback_window_key "$backend" "$target")
-  phash=$(fm_control_feedback_pane_hash "$screen" "$harness")
-  [ -n "$wkey" ] && [ -n "$phash" ] || return 1
-  mkdir -p "$state_dir" 2>/dev/null || return 1
+  [ -n "$wkey" ] || return 1
   marker="$state_dir/.feedback-dismissed-$wkey"
   claim="$state_dir/.feedback-claim-$wkey"
-  timeout_int=${call_timeout%%.*}
-  case "$timeout_int" in ''|*[!0-9]*) timeout_int=20 ;; esac
-  settle_int=${settle%%.*}
-  case "$settle_int" in ''|*[!0-9]*) settle_int=1 ;; esac
-  max_claim_age=$((3 * timeout_int + settle_int + 30))
-  [ "$max_claim_age" -ge 60 ] || max_claim_age=60
-  if ! fm_control_acquire_feedback_claim "$claim" "$max_claim_age"; then
+  [ -n "$spec" ] || [ -f "$marker" ] || return 1
+  mkdir -p "$state_dir" 2>/dev/null || return 1
+  if ! fm_control_acquire_feedback_claim "$claim"; then
     return 2
   fi
   lib=${BASH_SOURCE[0]}
   # shellcheck source=bin/fm-timeout-lib.sh
   command -v fm_run_timed_fn >/dev/null 2>&1 || . "${lib%/*}/fm-timeout-lib.sh"
-  prev_marker=$(cat "$marker" 2>/dev/null || true)
-  if [ "$prev_marker" = "$phash" ]; then
-    fm_control_release_feedback_claim "$claim"
-    return 2
-  fi
   live=$(fm_run_timed_fn "$call_timeout" fm_control_capture_feedback_pane "$backend" "$target" "$label") || live=
   if [ -z "$live" ]; then
     fm_control_release_feedback_claim "$claim"
@@ -1400,7 +1371,12 @@ fm_control_dismiss_feedback_dialog() {
     FM_CONTROL_FEEDBACK_AFTER_PANE=$live
     rm -f "$marker"
     fm_control_release_feedback_claim "$claim"
+    [ -n "$dialog_id" ] || return 1
     return 2
+  fi
+  if [ -z "$dialog_id" ]; then
+    fm_control_release_feedback_claim "$claim"
+    return 1
   fi
   dialog_id=${spec%%$'\t'*}
   dismiss_key=${spec#*$'\t'}
@@ -1409,6 +1385,7 @@ fm_control_dismiss_feedback_dialog() {
   # shellcheck disable=SC2034
   FM_CONTROL_FEEDBACK_DISMISS_KEY=$dismiss_key
   phash=$(fm_control_feedback_pane_hash "$live" "$harness")
+  prev_marker=$(cat "$marker" 2>/dev/null || true)
   if [ "$prev_marker" = "$phash" ]; then
     fm_control_release_feedback_claim "$claim"
     return 2
