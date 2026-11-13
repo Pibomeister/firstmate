@@ -515,8 +515,9 @@ case "$PARKED_GATE_READ_TIMEOUT" in ''|*[!0-9]*|0) PARKED_GATE_READ_TIMEOUT=10 ;
 WATCH_LOCK_WAIT=${FM_WATCH_LOCK_WAIT:-}
 case "$WATCH_LOCK_WAIT" in ''|*[!0-9]*|0) WATCH_LOCK_WAIT=10 ;; esac
 # Bound for a helper script the poll loop runs synchronously (fleet ledger,
-# Herdr groups, process-event reconcile, inactive-outcome scan); each already
-# tolerates failure, so a helper stopped at the bound is skipped for the cycle.
+# stall ledger, Herdr groups, process-event reconcile, inactive-outcome scan);
+# each already tolerates failure, so a helper stopped at the bound is skipped
+# for the cycle.
 WATCH_HELPER_BUDGET=${FM_WATCH_HELPER_BUDGET:-}
 case "$WATCH_HELPER_BUDGET" in ''|*[!0-9]*|0) WATCH_HELPER_BUDGET=120 ;; esac
 # A busy pane is unconditional proof of liveness with no built-in duration bound,
@@ -4809,6 +4810,36 @@ resurface_after_downtime() {
   wake "check: rearm-resurface"
 }
 
+# Stall ledger: at most one observe per minute. The stamp check skips the
+# helper on the polls in between. A ledger failure never stops supervision.
+stall_ledger_tick() {
+  local min stamp now age
+  min=${FM_STALL_LEDGER_MIN_SECS:-60}
+  case "$min" in
+    ''|*[!0-9]*) min=60 ;;
+  esac
+  stamp=$STATE/.stall-ledger-observed
+  if [ "$min" -gt 0 ] && [ -f "$stamp" ] && [ ! -L "$stamp" ]; then
+    now=$(fm_watch_now)
+    age=$(cat "$stamp" 2>/dev/null || true)
+    case "$now" in
+      ''|*[!0-9]*) ;;
+      *)
+        case "$age" in
+          ''|*[!0-9]*) ;;
+          *)
+            if [ "$now" -ge "$age" ] && [ $((now - age)) -lt "$min" ]; then
+              return 0
+            fi
+            ;;
+        esac
+        ;;
+    esac
+  fi
+  fm_run_timed "$WATCH_HELPER_BUDGET" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+    "$SCRIPT_DIR/fm-stall-ledger.sh" observe >/dev/null 2>&1 || true
+}
+
 while :; do
   if [ "${FM_WATCH_SECONDMATE_HOLD:-}" = 1 ]; then
     if fm_secondmate_watch_binding_valid; then
@@ -4881,6 +4912,7 @@ while :; do
   # Opt-in fleet activity ledger (docs/fleet-ledger.md): pick up newly appended
   # status lines before this cycle can exit on a wake. Off costs one file test.
   [ ! -e "$CONFIG/fleet-ledger" ] || fm_run_timed "$WATCH_HELPER_BUDGET" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-fleet-ledger.sh" capture || true
+  stall_ledger_tick || true
   # Opt-in Herdr project groups (docs/herdr-backend.md "Project groups"):
   # display-only tags and agents view, never a wake. Off costs one file test.
   [ ! -e "$CONFIG/herdr-project-groups" ] || fm_run_timed "$WATCH_HELPER_BUDGET" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-herdr-groups.sh" sync || true
