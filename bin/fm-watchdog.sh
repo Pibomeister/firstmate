@@ -782,19 +782,27 @@ wd_decision_reserved() {  # <task> <key> <summary>
 # wd_council_record <task> <key>: the final council record of one decision, as
 # `ruled|no-ruling TAB answer TAB path TAB seats`; nothing when it has none.
 wd_council_record() {
-  local name=$O_KEY-$1-$2.md f kind
-  if [ -f "$OUT/rulings/$name" ]; then kind=ruled f=$OUT/rulings/$name
-  elif [ -f "$OUT/no-rulings/$name" ]; then kind=no-ruling f=$OUT/no-rulings/$name
-  else return 0; fi
-  printf '%s\t%s\t%s\t%s\n' "$kind" "$(sed -n 's/^- ruling: \(PROCEED [A-Za-z0-9]*\) (.*/\1/p' "$f" | head -n 1)" "$f" \
-    "$(sed -n 's/^- seats://p' "$f" | head -n 1)"
+  local name f kind
+  # Colon is excluded from task/key; old filenames need the same identity check.
+  for name in "$O_KEY-$1:$2.md" "$O_KEY-$1-$2.md"; do
+    for f in "$OUT/rulings/$name" "$OUT/no-rulings/$name"; do
+      [ -f "$f" ] || continue
+      grep -Fxq -- "- home: $O_HOME" "$f" || continue
+      grep -Fxq -- "- task: $1" "$f" || continue
+      grep -Fxq -- "- key: $2" "$f" || continue
+      case "$f" in "$OUT/rulings/"*) kind=ruled ;; *) kind=no-ruling ;; esac
+      printf '%s\t%s\t%s\t%s\n' "$kind" "$(sed -n 's/^- ruling: \(PROCEED [A-Za-z0-9]*\) (.*/\1/p' "$f" | head -n 1)" "$f" \
+        "$(sed -n 's/^- seats://p' "$f" | head -n 1)"
+      return 0
+    done
+  done
 }
 
 # wd_council <task> <key> <summary>: blind seats; prints
 # `outcome TAB answer TAB record TAB seats`.
 #   unanimous  every seat gave the same PROCEED; a ruling file is written.
 #   no-ruling  a seat answered and the seats did not all agree; a record is written.
-#   failed     no seat answered; nothing is written, so a later convening may run.
+#   failed     no seat answered or publication failed; a later convening may run.
 #   refused    the seats span fewer than two model families; no seat is called.
 #   busy       another convening of this decision is running.
 # A ruling or no-ruling record is final for its task and key: the caller checks
@@ -809,7 +817,7 @@ wd_council() {
   WD_CALL_TIMEOUT=$(cfgi council-timeout-secs "$(cfgi judge-timeout-secs 120)")
   # One convening per decision at a time. A lock is live while its owner runs and
   # is younger than a council can take; an ownerless lock is live for a minute.
-  lock=$WD/council-locks/$O_KEY-$task-$key
+  lock=$WD/council-locks/$O_KEY-$task:$key
   mkdir -p "$WD/council-locks"
   if ! mkdir "$lock" 2>/dev/null; then
     p=$(cat "$lock/pid" 2>/dev/null)
@@ -852,19 +860,25 @@ Reply with exactly one line: PROCEED <label> or HOLD."
   if [ "$answered" -eq 0 ]; then rm -rf "$lock"; printf 'failed\t\t\t%s\n' "$answers"; return 0; fi
   if [ "$unanimous" = 1 ]; then dir=$OUT/rulings; else dir=$OUT/no-rulings; fi
   mkdir -p "$dir"
-  record=$dir/$O_KEY-$task-$key.md
-  {
+  record=$dir/$O_KEY-$task:$key.md
+  if {
     if [ "$unanimous" = 1 ]; then
-      printf '# Watchdog council ruling\n\n'
+      printf '# Watchdog council ruling\n\n' &&
       printf -- '- home: %s\n- task: %s\n- key: %s\n- ruling: %s (unanimous, %s blind seats)\n' "$O_HOME" "$task" "$key" "$first" "$i"
     else
-      printf '# Watchdog council record - no ruling\n\n'
+      printf '# Watchdog council record - no ruling\n\n' &&
       printf -- '- home: %s\n- task: %s\n- key: %s\n- ruling: none (not unanimous, %s blind seats; held for the owner)\n' "$O_HOME" "$task" "$key" "$i"
-    fi
-    printf -- '- seats:%s\n- seat models: %s\n- at: %s\n\n' "$answers" "$seats" "$(fm_wd_iso "$(wd_now)")"
+    fi &&
+    printf -- '- seats:%s\n- seat models: %s\n- at: %s\n\n' "$answers" "$seats" "$(fm_wd_iso "$(wd_now)")" &&
     printf 'Record:\n\n%s\n' "$summary"
-  } > "$record.tmp" && mv "$record.tmp" "$record"
-  rm -rf "$lock"
+  } > "$record.tmp" && [ ! -d "$record" ] && mv "$record.tmp" "$record"; then
+    rm -rf "$lock"
+  else
+    rm -f "$record.tmp" 2>/dev/null
+    rm -rf "$lock"
+    printf 'failed\t\t\t%s\n' "$answers"
+    return 0
+  fi
   if [ "$unanimous" = 1 ]; then
     printf 'unanimous\t%s\t%s\t%s\n' "$first" "$record" "$answers"
   else
@@ -879,7 +893,7 @@ wd_council_ledger() {  # <id> <task> <key> <result>
     no-ruling*) wd_rec "$1" "decision:$3" council "done" "no ruling;$(printf '%s' "$4" | cut -f4)" ;;
     refused*) wd_rec "$1" "decision:$3" council refused "council seats span fewer than two model families" ;;
     busy*) wd_rec "$1" "decision:$3" council held "another council on $2 $3 is running" ;;
-    *) wd_rec "$1" "decision:$3" council failed "no seat answered;$(printf '%s' "$4" | cut -f4)" ;;
+    *) wd_rec "$1" "decision:$3" council failed "no final council record;$(printf '%s' "$4" | cut -f4)" ;;
   esac
 }
 

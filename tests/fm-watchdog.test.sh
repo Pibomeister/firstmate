@@ -700,7 +700,7 @@ council-seats=claude:haiku,agy:flash'
   ledger | grep -F 'ship-it' | grep -Eq 'council|ruling' && fail "a merge decision reached council"
   assert_grep "held for the owner" "$H/data/watchdog/status.md" "held decisions are reported as gaps"
   ls "$H/data/watchdog/rulings/"*cache-layout*.md >/dev/null 2>&1 || fail "no ruling file for a unanimous council"
-  assert_grep "unanimous" "$H/data/watchdog/rulings/$(home_key)-t1-cache-layout.md" "ruling records unanimity"
+  assert_grep "unanimous" "$H/data/watchdog/rulings/$(home_key)-t1:cache-layout.md" "ruling records unanimity"
   assert_equals 2 "$(grep -cE '^(claude|agy) -p' "$H/model.log")" "each blind seat was called once"
   pass "boundary: owner-reserved holds stay held; an ordinary decision is settled by a unanimous blind council"
 }
@@ -868,7 +868,7 @@ council-seats=claude:haiku,agy:flash'
   run_wd 2000 once >/dev/null 2>&1 || fail "second pass failed"
   assert_equals 1 "$(ledger_rows decision:cache-layout council "done")" "the council convened for real: $(ledger | cut -f5-8)"
   assert_equals 0 "$(ledger_rows decision:cache-layout council dry-run)" "no dry-run council row"
-  assert_present "$H/data/watchdog/rulings/$(home_key)-t1-cache-layout.md" "the ruling file exists"
+  assert_present "$H/data/watchdog/rulings/$(home_key)-t1:cache-layout.md" "the ruling file exists"
   assert_equals 1 "$(ledger_rows ruling:cache-layout nudge pending)" "the ruling nudge is delivered"
   assert_equals 0 "$(ledger | awk -F'\t' '($6 == "key" || $6 == "enter" || $6 == "restart") && $7 == "pending"' | wc -l | tr -d ' ')" "no key, Enter, or restart acted"
   pass "decisions=act: the decision nudge, council, and ruling nudge act while the rest of the ladder stays dry-run"
@@ -923,7 +923,7 @@ council-seats=claude:haiku,agy:flash'
   printf 'needs-decision [at=%s] [key=cache-layout]: A flat keys or B nested keys?\n' "$((BASE - 9000))" > "$H/state/t1.status"
   run_wd 0 once >/dev/null 2>&1
   run_wd 2000 once >/dev/null 2>&1
-  rec="$H/data/watchdog/no-rulings/$(home_key)-t1-cache-layout.md"
+  rec="$H/data/watchdog/no-rulings/$(home_key)-t1:cache-layout.md"
   assert_present "$rec" "a split council leaves a durable record"
   assert_grep "seat1=PROCEED A" "$rec" "the record names the first seat's answer"
   assert_grep "seat2=PROCEED B" "$rec" "the record names the dissenting seat's answer"
@@ -941,7 +941,7 @@ council-seats=claude:haiku,agy:flash'
   printf 'needs-decision [at=%s] [key=cache-layout]: A (recommended) flat keys or B nested keys?\n' "$((BASE - 9000))" > "$H/state/t1.status"
   run_wd 0 once >/dev/null 2>&1
   run_wd 2000 once >/dev/null 2>&1
-  assert_present "$H/data/watchdog/rulings/$(home_key)-t1-cache-layout.md" "the unanimous council ruled"
+  assert_present "$H/data/watchdog/rulings/$(home_key)-t1:cache-layout.md" "the unanimous council ruled"
   run_wd 30000 once >/dev/null 2>&1
   run_wd 32000 once >/dev/null 2>&1
   assert_equals 2 "$(seat_calls)" "a ruled key is never put to council again"
@@ -963,8 +963,8 @@ council-seats=claude:haiku,agy:flash'
   # The first late pass repeats the rolled-up nudge; the council runs a window after it.
   run_wd 30000 once >/dev/null 2>&1
   run_wd 32000 once >/dev/null 2>&1
-  assert_present "$H/data/watchdog/no-rulings/$(home_key)-t1-cache-layout.md" "one answer and one failed seat is a final no-ruling"
-  assert_grep "seat2=FAILED" "$H/data/watchdog/no-rulings/$(home_key)-t1-cache-layout.md" "the record names the failed seat"
+  assert_present "$H/data/watchdog/no-rulings/$(home_key)-t1:cache-layout.md" "one answer and one failed seat is a final no-ruling"
+  assert_grep "seat2=FAILED" "$H/data/watchdog/no-rulings/$(home_key)-t1:cache-layout.md" "the record names the failed seat"
   [ ! -e "$H/data/watchdog/rulings" ] || fail "one seat ruled alone"
   pass "council: no answer at all is retried later; a partial answer is final and holds"
 }
@@ -996,7 +996,7 @@ council-seats=claude:haiku,agy:flash'
   out=$(run_wd 0 council --task t1 --key s1-cache --record-file "$H/record.txt" 2>/dev/null) || fail "council command failed"
   assert_contains "$out" "council=ruled" "a unanimous council rules: $out"
   assert_contains "$out" "answer=PROCEED A" "the answer is printed: $out"
-  assert_contains "$out" "record=$H/data/watchdog/rulings/$(home_key)-t1-s1-cache.md" "the record path is printed: $out"
+  assert_contains "$out" "record=$H/data/watchdog/rulings/$(home_key)-t1:s1-cache.md" "the record path is printed: $out"
   assert_equals 2 "$(seat_calls)" "each seat was called once"
   assert_equals 1 "$(ledger_rows decision:s1-cache council "done")" "the convening is in the ledger"
   fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
@@ -1011,7 +1011,7 @@ council-seats=claude:haiku,agy:flash'
   out=$(run_wd 200 council --task t2 --key index-shape 2>/dev/null) || fail "council on an open decision failed"
   assert_contains "$out" "council=no-ruling" "a split council prints no ruling: $out"
   assert_contains "$out" "answer=none" "a split council prints no answer: $out"
-  assert_grep "one index or B two" "$H/data/watchdog/no-rulings/$(home_key)-t2-index-shape.md" "the open decision's record was the question"
+  assert_grep "one index or B two" "$H/data/watchdog/no-rulings/$(home_key)-t2:index-shape.md" "the open decision's record was the question"
   run_wd 300 council --task t2 --key not-open >/dev/null 2>&1 && fail "a key with no record and no open decision was accepted"
   # Owner-reserved and secret-looking records never reach a seat.
   : > "$H/model.log"
@@ -1030,6 +1030,92 @@ council-seats=claude:haiku,agy:flash'
   run_wd 500 council --key s1-cache --record-file "$H/record.txt" >/dev/null 2>&1; assert_equals 2 "$?" "a missing task is a usage error"
   run_wd 500 council --task t1 --key 'bad/key' --record-file "$H/record.txt" >/dev/null 2>&1; assert_equals 2 "$?" "a key with a path separator is a usage error"
   pass "council command: rules at once through the same seats and holds, replays a recorded outcome, and types nothing"
+}
+
+test_council_keeps_dashed_decision_identities_separate() {
+  local out first second
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A (recommended) flat keys or B nested keys?\n' > "$H/record.txt"
+  out=$(run_wd 0 council --task a-b --key c --record-file "$H/record.txt" 2>&1) || fail "first council failed: $out"
+  assert_contains "$out" "answer=PROCEED A" "the first decision rules A"
+  first=${out#*record=}; first=${first%% prior=*}
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  out=$(run_wd 10 council --task a --key b-c --record-file "$H/record.txt" 2>/dev/null) || fail "second council failed"
+  assert_contains "$out" "answer=PROCEED B" "a distinct dashed identity must convene its own council: $out"
+  assert_contains "$out" "prior=0" "the second decision is not a replay"
+  second=${out#*record=}; second=${second%% prior=*}
+  [ "$first" != "$second" ] || fail "different decisions share a record path"
+  assert_equals 4 "$(seat_calls)" "both decisions convened independently"
+  out=$(run_wd 20 council --task a-b --key c --record-file "$H/record.txt" 2>/dev/null) || fail "first replay failed"
+  assert_contains "$out" "answer=PROCEED A" "the first decision retains its own answer"
+  assert_contains "$out" "prior=1" "the first decision replays"
+  assert_equals 4 "$(seat_calls)" "a replay calls no seat"
+  pass "council: dashed task and key fields identify distinct decisions"
+}
+
+test_council_checks_stored_identity_and_replays_legacy_records() {
+  local out legacy record
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  printf 'A flat keys or B (recommended) nested keys?\n' > "$H/record.txt"
+  legacy="$H/data/watchdog/rulings/$(home_key)-a-b-c.md"
+  mkdir -p "$(dirname "$legacy")"
+  printf -- '- home: %s\n- task: a-b\n- key: c\n- ruling: PROCEED A (unanimous, 2 blind seats)\n- seats: seat1=PROCEED A seat2=PROCEED A\n' "$H" > "$legacy"
+  out=$(run_wd 0 council --task a-b --key c --record-file "$H/record.txt" 2>/dev/null) || fail "legacy replay failed"
+  assert_contains "$out" "answer=PROCEED A" "a matching legacy record retains its ruling"
+  assert_contains "$out" "prior=1" "a matching legacy record replays"
+  assert_equals 0 "$(seat_calls)" "legacy replay calls no seat"
+  out=$(run_wd 10 council --task a --key b-c --record-file "$H/record.txt" 2>/dev/null) || fail "distinct council failed"
+  assert_contains "$out" "answer=PROCEED B" "a legacy record for another identity cannot replay: $out"
+  record=${out#*record=}; record=${record%% prior=*}
+  cp "$legacy" "$record"
+  out=$(run_wd 20 council --task a --key b-c --record-file "$H/record.txt" 2>/dev/null) || fail "identity check failed"
+  assert_contains "$out" "answer=PROCEED B" "a new filename also needs a matching stored identity: $out"
+  assert_contains "$out" "prior=0" "a mismatched record is not replayed"
+  assert_equals 4 "$(seat_calls)" "both mismatched records required a fresh council"
+  pass "council: stored identity is checked for new and legacy filenames"
+}
+
+test_council_requires_durable_publication() {
+  local fault out record real_mv
+  real_mv=$(command -v mv)
+  for fault in write publish directory; do
+    make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+    fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+    printf 'A (recommended) flat keys or B nested keys?\n' > "$H/record.txt"
+    record="$H/data/watchdog/rulings/$(home_key)-t1:s1-cache.md"
+    mkdir -p "$(dirname "$record")"
+    if [ "$fault" = write ]; then
+      mkdir "$record.tmp"
+    elif [ "$fault" = directory ]; then
+      mkdir "$record"
+    else
+      cat > "$FAKEBIN/mv" <<SH
+#!/usr/bin/env bash
+case "\$1" in *.md.tmp) exit 1 ;; esac
+exec "$real_mv" "\$@"
+SH
+      chmod +x "$FAKEBIN/mv"
+    fi
+    out=$(run_wd 0 council --task t1 --key s1-cache --record-file "$H/record.txt" 2>/dev/null) || fail "council command failed"
+    rm -f "$FAKEBIN/mv"
+    assert_contains "$out" "council=failed" "$fault failure must not report a ruling: $out"
+    assert_contains "$out" "answer=none record=none" "an unpublished result cannot be applied"
+    [ ! -f "$record" ] || fail "a failed publication left a final record"
+    assert_equals 1 "$(ledger_rows decision:s1-cache council failed)" "persistence failure is recorded as failed"
+    assert_equals 0 "$(find "$H/state/watchdog/council-locks" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')" "persistence failure releases its lock"
+    rm -rf "$record.tmp"
+    [ "$fault" != directory ] || rmdir "$record"
+    out=$(run_wd 10 council --task t1 --key s1-cache --record-file "$H/record.txt" 2>/dev/null) || fail "retry failed"
+    assert_contains "$out" "council=ruled" "a retry can publish after storage recovers"
+    assert_present "$record" "the recovered council has a durable record"
+    assert_equals 4 "$(seat_calls)" "the unpublished decision is convened again"
+  done
+  pass "council: write, rename, and directory-target failures cannot return a successful ruling"
 }
 
 test_council_command_honours_the_dry_run_switch() {
@@ -1052,7 +1138,7 @@ test_council_runs_one_at_a_time_per_decision() {
 council-seats=claude:haiku,agy:flash'
   fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
   printf 'A (recommended) ship plus filed follow-up, or B one more fix round?\n' > "$H/record.txt"
-  lock="$H/state/watchdog/council-locks/$(home_key)-t1-s1-cache"
+  lock="$H/state/watchdog/council-locks/$(home_key)-t1:s1-cache"
   mkdir -p "$lock"
   printf '%s\n' "$LOCKPID" > "$lock/pid"
   out=$(run_wd 0 council --task t1 --key s1-cache --record-file "$H/record.txt" 2>/dev/null) || fail "council command failed under a live lock"
@@ -2196,7 +2282,7 @@ council-seats=claude:haiku,agy:flash'
   printf 'needs-decision [at=%s] [key=cache-layout]: T (recommended) flat keys or B nested keys?\n' "$((BASE - 9000))" > "$H/state/t1.status"
   run_wd 0 once >/dev/null 2>&1
   run_wd 2000 once >/dev/null 2>&1
-  [ -f "$H/data/watchdog/rulings/$(home_key)-t1-cache-layout.md" ] || fail "a verdict ending in T read as failed: $(cat "$H/state/watchdog/model-calls.tsv")"
+  [ -f "$H/data/watchdog/rulings/$(home_key)-t1:cache-layout.md" ] || fail "a verdict ending in T read as failed: $(cat "$H/state/watchdog/model-calls.tsv")"
   pass "sed blank classes keep a trailing t in options, homes, and verdicts"
 }
 
@@ -4938,6 +5024,9 @@ fm_test_run \
   test_council_with_no_answer_is_not_a_convening \
   test_council_calls_use_their_own_budget_and_time_limit \
   test_council_command_rules_now_once_and_types_nothing \
+  test_council_keeps_dashed_decision_identities_separate \
+  test_council_checks_stored_identity_and_replays_legacy_records \
+  test_council_requires_durable_publication \
   test_council_command_honours_the_dry_run_switch \
   test_council_runs_one_at_a_time_per_decision \
   test_judge_fallback_and_spend_cap \
