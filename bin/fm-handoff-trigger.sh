@@ -95,9 +95,11 @@
 # successor gate armed without being told again. Arming also removes markers
 # older than 30 days.
 #
-# RESTART GATE (Stop). Once this session's park claim is done, each Stop
-# first arms the current cycle's marker, so a compaction between the
-# crossing and the stop does not drop the successor gate. A session is
+# RESTART GATE (Stop). A Stop that finds context left at or below the
+# threshold before the park claim is done runs the recorder itself, as the
+# crossing call above does. Once this session's park claim is done, each Stop
+# arms the current cycle's marker, so a compaction between the crossing and
+# the stop does not drop the successor gate. A session is
 # handing off once the trigger has fired in its current context cycle, or once it ran `bin/fm-order.sh handoff --doc`
 # (stow, a restart, or a home with percent-left=0). On each Stop of a session
 # handing off, the hook runs `bin/fm-order.sh gate`; when the recorded handoff
@@ -210,6 +212,17 @@ autopark_done() {
   return 1
 }
 PARK_PENDING='The park-then-handoff action is queued for this session but not yet done. Drain the wake queue now and act on the context-autopark check wake (park every open captain question) before writing the handoff.'
+# shellcheck source=bin/fm-compact-point-lib.sh
+. "$SCRIPT_DIR/fm-compact-point-lib.sh"
+# shellcheck source=bin/fm-warm-compact-lib.sh
+. "$SCRIPT_DIR/fm-warm-compact-lib.sh"
+# record_crossing: hand this call's payload and measured LEFT to the recorder,
+# the park claim's only writer, so the park wake is queued in this call.
+record_crossing() {
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+    "$SCRIPT_DIR/fm-context-burn.sh" record --turn-type auto --session "$SESSION_ID" --percent "$LEFT" \
+    <<<"$PAYLOAD" >/dev/null 2>&1 || true
+}
 if [ "$EVENT" = Stop ]; then
   # Shared quota/park policy also covers this parallel Stop writer.
   # shellcheck source=bin/fm-stop-policy-lib.sh
@@ -218,10 +231,26 @@ if [ "$EVENT" = Stop ]; then
   # trigger fired in this cycle, or this session recorded a handoff document
   # (bin/fm-order.sh handing-off), which also covers percent-left=0. Another
   # session's handoff record in the same home never gates this stop.
+  # A turn whose final reply is the first to reach the threshold has no
+  # later tool call or prompt, and the turn-end recorder registered beside
+  # this hook may still be running, so this stop measures and records the
+  # crossing itself rather than racing it.
   # A session whose park-then-handoff action was emitted owes a successor in
-  # every context cycle, so this stop arms the current cycle's marker first:
-  # the stop that recorded the low sample, or one after a compaction, cannot
+  # every context cycle, so this stop then arms the current cycle's marker:
+  # the stop that crossed the threshold, or one after a compaction, cannot
   # end before the successor gate passes.
+  if [ "$PERCENT" -gt 0 ] && [ -n "$MARKER" ] && ! autopark_done; then
+    COMPACT_AT=$(fm_compact_at_tokens "$TRANSCRIPT" "$CONFIG/handoff-trigger") || COMPACT_AT=
+    TOKENS=
+    [ -z "$COMPACT_AT" ] || TOKENS=$(fm_warm_compact_context_tokens "$TRANSCRIPT") || TOKENS=
+    case "$TOKENS" in
+      '' | *[!0-9]*) ;;
+      *)
+        LEFT=$(fm_compact_left_percent "$TOKENS" "$COMPACT_AT")
+        [ "$LEFT" -gt "$PERCENT" ] || record_crossing
+        ;;
+    esac
+  fi
   if [ "$PERCENT" -gt 0 ] && [ -n "$MARKER" ] && autopark_done; then
     ( set -o noclobber; printf '%s stop\n' "$(date +%s)" > "$MARKER" ) 2>/dev/null || true
   fi
@@ -254,8 +283,6 @@ if [ "$EVENT" = Stop ]; then
   fi
   exit 0
 fi
-# shellcheck source=bin/fm-compact-point-lib.sh
-. "$SCRIPT_DIR/fm-compact-point-lib.sh"
 COMPACT_AT=
 [ -z "$SESSION_ID" ] || [ -z "$TRANSCRIPT" ] ||
   COMPACT_AT=$(fm_compact_at_tokens "$TRANSCRIPT" "$CONFIG/handoff-trigger") || COMPACT_AT=
@@ -266,8 +293,6 @@ publish_compact_point
 [ -e "$MARKER" ] && exit 0
 [ -n "$COMPACT_AT" ] || exit 0
 
-# shellcheck source=bin/fm-warm-compact-lib.sh
-. "$SCRIPT_DIR/fm-warm-compact-lib.sh"
 TOKENS=$(fm_warm_compact_context_tokens "$TRANSCRIPT") || exit 0
 case "$TOKENS" in '' | *[!0-9]*) exit 0 ;; esac
 
@@ -279,9 +304,7 @@ LEFT=$(fm_compact_left_percent "$TOKENS" "$COMPACT_AT")
 # low sample to record. The recorder stays the claim's only writer; this hook hands it this
 # payload and measurement, then reads the claim it published.
 if ! autopark_done; then
-  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
-    "$SCRIPT_DIR/fm-context-burn.sh" record --turn-type auto --session "$SESSION_ID" --percent "$LEFT" \
-    <<<"$PAYLOAD" >/dev/null 2>&1 || true
+  record_crossing
   autopark_done || exit 0
 fi
 

@@ -224,13 +224,14 @@ test_hook_never_hands_off_ahead_of_the_park() {
   sleeper=$!
   printf 'pending %s %s\n' "$sleeper" "$(date +%s)" > "$PRIMARY/state/.context-autopark.s_share"
   out=$(NO_PARK=1 run_hook "$PRIMARY" s-share "$t")
-  kill "$sleeper" 2>/dev/null; wait "$sleeper" 2>/dev/null
   expect_silent "$out" "hook while another recorder holds the park claim"
   [ ! -e "$PRIMARY/state/.handoff-trigger.s-share.0" ] || fail "the hook armed the successor gate before the park"
   assert_equals 0 "$(autopark_wakes context-autopark-s_share)" "park wake while another recorder holds the claim"
   rc=0
   NO_PARK=1 run_hook "$PRIMARY" s-share "$t" Stop >/dev/null 2>&1 || rc=$?
+  kill "$sleeper" 2>/dev/null; wait "$sleeper" 2>/dev/null
   [ "$rc" -eq 0 ] || fail "a stop before the park must not be gated (rc=$rc)"
+  assert_equals 0 "$(autopark_wakes context-autopark-s_share)" "park wake from a stop while another recorder holds the claim"
 
   rm -f "$PRIMARY/state/.context-autopark.s_share"
   out=$(record_burn s-share 9)
@@ -242,6 +243,31 @@ test_hook_never_hands_off_ahead_of_the_park() {
   [ -e "$PRIMARY/state/.handoff-trigger.s-share.0" ] || fail "the stop did not arm the cycle's gate"
   assert_equals 1 "$(autopark_wakes context-autopark-s_share)" "park wakes for the session"
   pass "the hook never hands off ahead of the park, and a park recorded at turn end gates that stop"
+}
+
+# A turn whose final reply is the first to reach the threshold: no tool call
+# or prompt follows, so the stop itself queues the park through the recorder
+# and gates that stop, without waiting for the turn-end recorder beside it.
+test_crossing_stop_parks_and_gates_itself() {
+  local t="$TMP_ROOT/t-stopx" rc
+  reset_lab
+  mkdir -p "$PRIMARY/data"
+  printf 'compact-at-tokens=100000\n' > "$PRIMARY/config/handoff-trigger"
+  rm -f "$PRIMARY/state/.handoff-successor"
+  transcript "$t" 84000
+  rc=0
+  NO_PARK=1 run_hook "$PRIMARY" s-stopx "$t" Stop >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "a stop above the threshold must not be gated (rc=$rc)"
+  [ ! -e "$PRIMARY/state/.context-autopark.s_stopx" ] || fail "a stop above the threshold recorded a park"
+  append_usage "$t" 90000
+  rc=0
+  NO_PARK=1 run_hook "$PRIMARY" s-stopx "$t" Stop >/dev/null 2>"$TMP_ROOT/stopx.err" || rc=$?
+  [ "$rc" -eq 2 ] || fail "the stop that crosses the threshold must stay blocked without a verified successor (rc=$rc)"
+  expect_park_still_queued "$(cat "$TMP_ROOT/stopx.err")" "the crossing stop block"
+  assert_equals 1 "$(autopark_wakes context-autopark-s_stopx)" "park wake from the crossing stop"
+  assert_contains "$(cat "$PRIMARY/state/.context-autopark.s_stopx")" "done" "the crossing stop did not complete the park claim"
+  [ -e "$PRIMARY/state/.handoff-trigger.s-stopx.0" ] || fail "the crossing stop did not arm the cycle's gate"
+  pass "a stop that crosses the threshold queues the park itself and gates that stop"
 }
 
 # A hook call racing the recorder's sample: exactly one context-autopark wake
@@ -413,7 +439,7 @@ test_scope() {
   cp "$PRIMARY/config/handoff-trigger" "$worktree/config/"
   expect_silent "$(run_hook "$worktree" s-crew "$TMP_ROOT/t-95")" "crew worktree"
   expect_silent "$(run_hook "$PRIMARY" s-cursor "$TMP_ROOT/t-95" PostToolUse '. + {cursor_version: "2026.08.11"}')" "Cursor payload"
-  expect_silent "$(run_hook "$PRIMARY" s-stop "$TMP_ROOT/t-95" Stop)" "Stop event"
+  expect_silent "$(run_hook "$PRIMARY" s-stop "$TMP_ROOT/t-95" Stop 2>/dev/null)" "Stop event"
   expect_silent "$(run_hook "$PRIMARY" '' "$TMP_ROOT/t-95")" "payload without a session id"
   rm -rf "$PRIMARY/state.bak"; mv "$PRIMARY/state" "$PRIMARY/state.bak"
   expect_silent "$(run_hook "$PRIMARY" s-nostate "$TMP_ROOT/t-95")" "primary without its state dir"
@@ -439,9 +465,11 @@ test_names_open_captain_orders_and_gates_the_stop() {
     || fail "could not send the order fixture"
   order_id=$(find "$PRIMARY/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
 
-  # Before the trigger fires in this session, a stop is never gated.
+  # Above the threshold, before the trigger fires in this session, a stop is
+  # never gated; a stop at or below it is the crossing and parks itself.
+  transcript "$TMP_ROOT/t-80" 80000
   rc=0
-  run_hook "$PRIMARY" s-orders "$TMP_ROOT/t-90" Stop >/dev/null 2>&1 || rc=$?
+  run_hook "$PRIMARY" s-orders "$TMP_ROOT/t-80" Stop >/dev/null 2>&1 || rc=$?
   [ "$rc" -eq 0 ] || fail "a stop before the handoff trigger fired must not be gated (rc=$rc)"
 
   out=$(run_hook "$PRIMARY" s-orders "$TMP_ROOT/t-90")
@@ -776,6 +804,7 @@ test_fires_once_per_context_cycle
 test_compaction_rearms_only_the_gate
 test_crossing_tool_call_parks_and_hands_off_at_once
 test_hook_never_hands_off_ahead_of_the_park
+test_crossing_stop_parks_and_gates_itself
 test_racing_hook_and_recorder_emit_the_park_once
 test_fires_once_under_concurrency
 test_compact_point_from_claude_settings

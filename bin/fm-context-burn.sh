@@ -42,7 +42,9 @@
 # reading of "more than about 30 points". The wake is not repeated for that
 # session until a later sample is no longer such a drop. A session id of
 # "unknown" is recorded and never alerts. An identical session, turn type, and
-# percent within 2 seconds is not written again.
+# percent within 2 seconds is not written again and raises no second alert, but
+# still reaches the auto-park check below, so a duplicate sample from a racing
+# or retried caller never skips the park.
 #
 # LOW-CONTEXT AUTO-PARK. When a recorded sample falls to the handoff
 # threshold or below (the `percent-left` line of config/handoff-trigger,
@@ -50,12 +52,13 @@
 # owns that file), record emits the park-then-handoff action exactly once
 # per session: it prints one `park-handoff:` line and queues one check wake
 # (key context-autopark-<session>) telling the session to park every open
-# captain question as a held backlog item through bin/fm-captain-hold.sh and
-# then start the existing handoff/successor path without asking the captain
-# or waiting for an answer. This script never decides what is a captain
-# question - the session inventories its own open questions, the way the
-# captain-hold lifecycle requires - it only emits the action at the
-# threshold. A session id of "unknown" never emits it. The per-session
+# captain question as a held backlog item through bin/fm-captain-hold.sh,
+# without asking the captain or waiting for an answer, and then start the
+# early handoff path (docs/configuration.md "Early handoff trigger"). This
+# script never decides what is a captain question - the session inventories
+# its own open questions, the way the captain-hold lifecycle requires - it
+# only emits the action at the threshold. A session id of "unknown" never
+# emits it. The per-session
 # marker state/.context-autopark.<session> records `pending <pid> <epoch>`
 # while the wake is being queued and `done <epoch>` once it is queued, so a
 # session that recovers context and drops again does not emit it twice.
@@ -344,7 +347,7 @@ queue_autopark() { # <session> <safe> <percent>
   local session=$1 safe=$2 percent=$3 marker key payload claim claim_pid claim_epoch emitted=0
   marker="$STATE/.context-autopark.$safe"
   key="context-autopark-$safe"
-  payload="check: context autopark session ${session} at ${percent}% context left: park every open captain question as a held backlog item through bin/fm-captain-hold.sh (hold the work item the question gates, or create one captain-held task per genuine question) and then start the handoff/successor path - record the handoff with bin/fm-order.sh handoff --doc <handoff file> and launch the successor with bin/fm-handoff-launch.sh <handoff file> (a second mate asks its parent to relaunch it instead) - without asking the captain or waiting for an answer; keep working on everything the parked questions do not gate"
+  payload="check: context autopark session ${session} at ${percent}% context left: without asking the captain or waiting for an answer, park every open captain question as a held backlog item through bin/fm-captain-hold.sh (hold the work item the question gates, or create one captain-held task per genuine question), then start the early handoff path - write a new handoff with bin/fm-ledger.sh handoff --doc <new handoff file> --note-file <short in-flight note>, which records it with bin/fm-order.sh handoff --doc, and launch the successor with bin/fm-handoff-launch.sh <handoff file> on a Claude primary (a second mate asks its parent to relaunch it instead; any other primary reports that it is ready to restart); until then keep working on everything the parked questions do not gate, and after a verified lock transfer end the turn and retire this session"
   find "$STATE" -maxdepth 1 -name '.context-autopark.*' -type f -mtime +30 -exec rm -f {} + 2>/dev/null
   # The whole claim lifecycle - claim check, wake append, completion mark -
   # runs under the wake-queue lock, the lock bin/fm-wake-lib.sh documents for
@@ -405,7 +408,7 @@ queue_autopark() { # <session> <safe> <percent>
 
 cmd_record() {
   local turn_type='' session='' percent='' payload_file='' payload=''
-  local safe='' last_epoch='' last_session='' last_type='' last_percent=''
+  local safe='' last_epoch='' last_session='' last_type='' last_percent='' duplicate=0
   PAYLOAD_SESSION=
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -501,18 +504,21 @@ EOF
         if [ "$last_session" = "$session" ] && [ "$last_type" = "$turn_type" ] \
           && [ "$last_percent" = "$percent" ] && [ $((NOW - last_epoch)) -le "$DEDUPE" ] \
           && [ $((NOW - last_epoch)) -ge 0 ]; then
-          exit 0
+          duplicate=1
         fi
         ;;
     esac
   fi
 
-  printf '%s\t%s\t%s\t%s\n' "$NOW" "$session" "$turn_type" "$percent" >> "$STATE/context-burn.tsv"
+  [ "$duplicate" -eq 1 ] ||
+    printf '%s\t%s\t%s\t%s\n' "$NOW" "$session" "$turn_type" "$percent" >> "$STATE/context-burn.tsv"
   safe=$(sanitize_id "$session")
   if [ "$session" = unknown ]; then
     exit 0
   fi
-  if alert_for_log "$session"; then
+  if [ "$duplicate" -eq 1 ]; then
+    :
+  elif alert_for_log "$session"; then
     queue_alert "$session" "$safe"
   else
     clear_alert_marker "$safe"

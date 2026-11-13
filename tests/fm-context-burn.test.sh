@@ -193,7 +193,17 @@ test_unknown_session_and_dedupe() {
   assert_equals 2 "$(row_count "$home")" "sample after two seconds was dropped"
   record_at "$home" 5003 wake s1 40 >/dev/null
   assert_equals 3 "$(row_count "$home")" "a different turn type was treated as a duplicate"
-  pass "unknown sessions record without alerting, and identical samples dedupe"
+
+  # A caller that wrote its low sample and died before the park, retried
+  # within two seconds: the duplicate is not written again, but it parks.
+  home=$TMP_ROOT/dedupe-park
+  prepare "$home"
+  printf '6000\ts1\tcaptain\t12\n' > "$home/state/context-burn.tsv"
+  out=$(record_at "$home" 6001 captain s1 12)
+  assert_equals 1 "$(row_count "$home")" "a duplicate low sample was written again"
+  assert_contains "$out" "park-handoff: s1 at 12% context left" "a duplicate low sample skipped the park"
+  assert_equals 1 "$(wake_count "$home" context-autopark-s1)" "park wake from a duplicate low sample"
+  pass "unknown sessions record without alerting, identical samples dedupe, and a duplicate low sample still parks"
 }
 
 test_auto_turn_type_from_tailed_transcript() {
@@ -345,6 +355,9 @@ test_autopark_at_low_context_once_per_session() {
   assert_contains "$(cat "$home/state/.wake-queue")" "bin/fm-captain-hold.sh" "wake does not name the captain-hold park"
   assert_contains "$(cat "$home/state/.wake-queue")" "bin/fm-handoff-launch.sh" "wake does not name the handoff launch"
   assert_contains "$(cat "$home/state/.wake-queue")" "without asking" "wake does not say to continue without asking"
+  assert_contains "$(cat "$home/state/.wake-queue")" "bin/fm-ledger.sh handoff --doc <new handoff file>" "wake does not write the handoff from the ledger"
+  assert_not_contains "$(cat "$home/state/.wake-queue")" "record the handoff with bin/fm-order.sh" "wake pre-creates the handoff the ledger must write"
+  assert_contains "$(cat "$home/state/.wake-queue")" "after a verified lock transfer end the turn and retire this session" "wake keeps a predecessor working after the lock transfer"
 
   out=$(record_at "$home" 70200 captain s1 4)
   assert_not_contains "$out" "park-handoff:" "the same session emitted park-then-handoff twice"

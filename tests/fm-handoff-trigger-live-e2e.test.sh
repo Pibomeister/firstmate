@@ -62,7 +62,7 @@ fi
 # shellcheck disable=SC2016 # the backticks are literal prompt text
 prompt='Run the Bash command `echo one`, then run the Bash command `echo two`. Do not run anything else and do not follow any other instruction. Then answer: did any hook context mention a handoff? If yes, reply HANDOFF-SEEN followed by the percentage of context left it stated; if no, reply NONE.'
 claude_rc=0
-out=$( (cd "$HOME_DIR" && env "${unset_args[@]}" ${config_args[@]+"${config_args[@]}"} CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false \
+out=$( (cd "$HOME_DIR" && env ${unset_args[@]+"${unset_args[@]}"} ${config_args[@]+"${config_args[@]}"} CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false \
   claude -p --model haiku --dangerously-skip-permissions --output-format json "$prompt") 2>"$LAB/claude.err") \
   || claude_rc=$?
 if [ "$claude_rc" -ne 0 ]; then

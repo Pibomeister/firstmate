@@ -498,7 +498,7 @@ A second mate never launches its own successor: it appends one relaunch request 
 It fires at most once per session, and only after the low-context auto-park below has emitted the session's park-then-handoff action.
 The instruction says that action is queued for this session but not yet done, and tells the session to drain the wake queue now and act on the context-autopark check wake, parking every open captain question, before writing the handoff.
 The hook never repeats the park procedure and never names `bin/fm-captain-hold.sh`.
-When a tool call or prompt finds context left at or below the threshold before that action was emitted, the hook runs the recorder below itself with that call's measurement, so the park wake is queued in the turn that crosses the threshold rather than only at its turn end.
+When a tool call, prompt, or stop finds context left at or below the threshold before that action was emitted, the hook runs the recorder below itself with that call's measurement, so the park wake is queued by the call that crosses the threshold rather than left to a later call or to the turn-end recorder that runs beside the hook.
 The recorder stays the only writer of the action's per-session record; until that record shows the action was emitted, the hook stays silent and arms nothing.
 From then on, whenever the hook sees context left at or below the threshold, and on every stop of that session, it arms the successor gate below for the current context cycle, including after a compaction, without sending its instruction again.
 
