@@ -2548,12 +2548,17 @@ test_changed_shared_fixture_selects_its_readers
 test_changed_t3_sources_select_their_readers
 test_concurrent_runs_are_ordered_longest_first
 test_per_script_timeout_bounds_a_hang
-test_a_script_that_signals_its_group_cannot_reach_the_caller
-test_a_contained_script_keeps_stdin_status_and_leftovers
-test_a_terminated_runner_takes_its_script_with_it
-test_a_terminated_runner_does_not_wait_forever_for_a_stubborn_script
-test_a_group_signal_before_watchdog_initialization_keeps_cleanup
-test_a_killed_runner_does_not_orphan_its_script
+case "$(uname -s)" in
+  MINGW*|MSYS*) pass "skip: POSIX process-group ownership is unavailable on native Windows" ;;
+  *)
+    test_a_script_that_signals_its_group_cannot_reach_the_caller
+    test_a_contained_script_keeps_stdin_status_and_leftovers
+    test_a_terminated_runner_takes_its_script_with_it
+    test_a_terminated_runner_does_not_wait_forever_for_a_stubborn_script
+    test_a_group_signal_before_watchdog_initialization_keeps_cleanup
+    test_a_killed_runner_does_not_orphan_its_script
+    ;;
+esac
 test_changed_bound_gives_slow_watcher_suites_headroom
 test_max_wall_ms_is_a_result_not_advice
 test_jobs_parallel_scheduler_and_failure_propagation
