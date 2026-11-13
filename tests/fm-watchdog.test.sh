@@ -754,6 +754,22 @@ mode=dry-run'
   pass "model-switch dialog: the judge and its refusals are rate-limited in every mode and stop after two failed keys"
 }
 
+test_worker_dialog_key_does_not_close_home_key_window() {
+  local stuck=$'Switch to another model?\n\n ❯ 1. Wait\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  local home_canon
+  make_home "$stuck" 'models=claude:haiku'
+  fake_models "$H" ok:"OPTION 1" absent
+  transcript 100 "Working."
+  home_canon=$(cd -P "$H" && pwd -P)
+  mkdir -p "$H/state/watchdog"
+  printf '%s\tw1\t%s\tworker:other\tdialog\tkey\tpending\tpress 0: dismiss the feedback survey\n' \
+    "$((BASE - 10))" "$home_canon" > "$H/state/watchdog/actions.tsv"
+  run_wd 0 once >/dev/null 2>&1 || fail "pass 0 failed"
+  assert_equals 1 "$(ledger | awk -F'\t' '$4 != "worker:other" && $5 == "dialog" && $6 == "key" && $7 == "pending"' | wc -l | tr -d ' ')" \
+    "a worker's recent dialog key does not hold back the home pane's model-switch key: $(ledger | cut -f4-8)"
+  pass "dialog key rate window is per pane: a worker's key does not block the home pane's key"
+}
+
 test_secret_looking_decision_reaches_no_council() {
   local sentinel=FAKESENTINEL42 rec_dirs
   make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
@@ -2362,14 +2378,74 @@ SH
 }
 
 test_dialog_keys_stop_after_two_failures() {
-  make_home $'work output\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss'
+  make_home $'work output 1\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss'
   run_wd 0 once >/dev/null 2>&1
+  # The shared claim never sends a second key on the same pane hash.
+  run_wd 150 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows dialog key pending)" "the shared claim never sends a second key on the same pane"
+  printf '%s\n' $'work output 2\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss' > "$H/screen.txt"
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$T" "$H/agent.sh"
+  sleep 0.3
   run_wd 200 once >/dev/null 2>&1
+  printf '%s\n' $'work output 3\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss' > "$H/screen.txt"
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$T" "$H/agent.sh"
+  sleep 0.3
   run_wd 400 once >/dev/null 2>&1
   assert_equals 2 "$(ledger_rows dialog key failed)" "two keys that left the dialog showing are recorded as failed"
   assert_equals 2 "$(ledger_rows dialog key pending)" "no third key is pressed within the hour"
   assert_grep "no more keys pressed" "$H/data/watchdog/status.md" "the stuck dialog is reported"
   pass "dialog keys stop after two failures in an hour, so a misread screen is never typed into repeatedly"
+}
+
+# A ticking status percentage under the dialog's input box is not part of the
+# dialog. One dismiss key, then a changed percentage, must not send another.
+# A changed row above the footer still may.
+test_statusline_percentage_does_not_rearm_feedback_dismiss() {
+  local dir state fake keys pane rc screen
+  dir="$TMP_ROOT/statusline-dismiss-$CASE_N"
+  state="$dir/state"
+  fake="$dir/fakebin"
+  keys="$dir/keys.log"
+  pane="$dir/pane.txt"
+  mkdir -p "$state" "$fake"
+  cat > "$fake/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  capture-pane) cat "$FM_TEST_WATCH_PANE"; exit 0 ;;
+  send-keys)
+    shift
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) shift; printf 'LITERAL:%s\n' "${1:-}" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+        *) printf 'KEY:%s\n' "$1" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+      esac
+    done
+    exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$fake/tmux"
+  : > "$keys"
+  survey_screen() {  # <above> <percent>
+    printf '%s\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  Context left until auto-compact: %s%% · ◯ IDE connected\n' "$1" "$2"
+  }
+  dismiss_once() {
+    screen=$(survey_screen "$1" "$2")
+    printf '%s\n' "$screen" > "$pane"
+    rc=0
+    PATH="$fake:$PATH" FM_TEST_WATCH_PANE="$pane" FM_TEST_WATCH_KEYS="$keys" \
+      bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-pct" claude "$3" "fm-pct" 0.1' \
+      _ "$ROOT" "$state" "$screen" >/dev/null 2>&1 || rc=$?
+    printf '%s\n' "$rc"
+  }
+  assert_equals 4 "$(dismiss_once "work output 1" 8)" "the first sticky survey records a sent key that left the dialog up"
+  assert_equals "LITERAL:0" "$(cat "$keys")" "the first poll sends one dismiss key"
+  assert_equals 2 "$(dismiss_once "work output 1" 7)" "a changed auto-compact percentage does not authorize another key"
+  assert_equals "LITERAL:0" "$(cat "$keys")" "the percentage tick sends no second dismiss key"
+  assert_equals 4 "$(dismiss_once "work output 2" 7)" "a changed row above the footer still authorizes one more key"
+  assert_equals $'LITERAL:0\nLITERAL:0' "$(cat "$keys")" "the row above the footer receives the second dismiss key and nothing else"
+  pass "feedback dismiss: a statusline percentage tick does not send another key"
 }
 
 status_actions() {
@@ -4037,6 +4113,561 @@ test_primary_ordinary_idle_is_not_paged() {
   pass "usage-limit auto-wait: an ordinary idle primary is not paged"
 }
 
+# shellcheck disable=SC2016
+test_feedback_claim_recovery_serializes_contenders() {
+  local dir claim dead_pid pid_a pid_b rc_a rc_b
+  dir=$(fm_test_tmproot feedback-recovery)
+  claim="$dir/claim"
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" -c '. "$1/bin/fm-control-lib.sh"; printf "%s\n" "$$" > "$2/dead-pid"; fm_control_acquire_feedback_claim "$2/claim"' _ "$ROOT" "$dir" &
+  dead_pid=$!
+  wait "$dead_pid" || fail "the initial owner could not acquire the claim"
+  dead_pid=$(cat "$dir/dead-pid")
+  cat > "$dir/contender.sh" <<'SH'
+#!/usr/bin/env bash
+set -u
+root=$1 dir=$2 who=$3 dead_pid=$4
+. "$root/bin/fm-control-lib.sh"
+kill() {
+  if [ "${1:-}" = -0 ] && [ "${2:-}" = "$dead_pid" ]; then
+    : > "$dir/$who.observed"
+    local n=0
+    if [ "$who" = a ]; then
+      while [ ! -f "$dir/b.observed" ] && [ "$n" -lt 100 ]; do sleep 0.02; n=$((n + 1)); done
+    else
+      while [ ! -f "$dir/a.acquired" ] && [ "$n" -lt 100 ]; do sleep 0.02; n=$((n + 1)); done
+    fi
+    return 1
+  fi
+  builtin kill "$@"
+}
+if fm_control_acquire_feedback_claim "$dir/claim"; then
+  : > "$dir/$who.acquired"
+  if [ "$who" = a ]; then
+    n=0
+    while [ ! -f "$dir/b.finished" ] && [ "$n" -lt 150 ]; do sleep 0.02; n=$((n + 1)); done
+  fi
+  fm_control_release_feedback_claim "$dir/claim"
+  rc=0
+else
+  rc=1
+fi
+: > "$dir/$who.finished"
+exit "$rc"
+SH
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" "$dir/contender.sh" "$ROOT" "$dir" a "$dead_pid" > "$dir/a.log" 2>&1 &
+  pid_a=$!
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" "$dir/contender.sh" "$ROOT" "$dir" b "$dead_pid" > "$dir/b.log" 2>&1 &
+  pid_b=$!
+  rc_a=0; wait "$pid_a" || rc_a=$?
+  rc_b=0; wait "$pid_b" || rc_b=$?
+  [ -f "$dir/a.observed" ] && [ -f "$dir/b.observed" ] || fail "both contenders must inspect the dead owner"
+  assert_equals 0 "$rc_a" "the first contender recovers the stale claim"
+  assert_equals 1 "$rc_b" "a contender with a stale observation cannot reclaim a fresh live claim"
+  [ ! -e "$dir/b.acquired" ] || fail "two contenders held the claim simultaneously"
+  pass "feedback claim: competing stale recovery preserves the fresh owner"
+}
+
+# shellcheck disable=SC2016
+test_feedback_claim_recovers_legacy_owner() {
+  local dir dead_pid rc=0
+  dir=$(fm_test_tmproot feedback-legacy)
+  mkdir -p "$dir/claim"
+  printf '%s 0\n' "$$" > "$dir/claim/owner"
+  touch -t 200101010101 "$dir/claim"
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" -c '. "$1/bin/fm-control-lib.sh"; fm_control_acquire_feedback_claim "$2"' _ "$ROOT" "$dir/claim" || rc=$?
+  assert_equals 1 "$rc" "an old-format claim with a live owner is preserved regardless of age"
+  "$BASH" -c 'exit 0' &
+  dead_pid=$!
+  wait "$dead_pid"
+  printf '%s 0\n' "$dead_pid" > "$dir/claim/owner"
+  rc=0
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" -c '. "$1/bin/fm-control-lib.sh"; fm_control_acquire_feedback_claim "$2" && fm_control_release_feedback_claim "$2"' _ "$ROOT" "$dir/claim" || rc=$?
+  assert_equals 0 "$rc" "a dead old-format owner does not strand feedback dismissal after an upgrade"
+  pass "feedback claim: legacy owners are recovered only after they exit"
+}
+
+# shellcheck disable=SC2016
+test_feedback_claim_release_preserves_another_owner() {
+  local dir holder n=0 rc=0
+  dir=$(fm_test_tmproot feedback-release)
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" -c '. "$1/bin/fm-control-lib.sh"; fm_control_acquire_feedback_claim "$2/claim" || exit 1; : > "$2/ready"; sleep 30' _ "$ROOT" "$dir" &
+  holder=$!
+  LOCK_PIDS="$LOCK_PIDS $holder"
+  while [ ! -f "$dir/ready" ] && [ "$n" -lt 100 ]; do sleep 0.02; n=$((n + 1)); done
+  [ -f "$dir/ready" ] || fail "the live owner could not acquire its claim"
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" -c '. "$1/bin/fm-control-lib.sh"; fm_control_release_feedback_claim "$2"' _ "$ROOT" "$dir/claim"
+  [ -d "$dir/claim" ] || fail "release removed another process's claim"
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" -c '. "$1/bin/fm-control-lib.sh"; fm_control_acquire_feedback_claim "$2"' _ "$ROOT" "$dir/claim" || rc=$?
+  assert_equals 1 "$rc" "another process cannot acquire the preserved live claim"
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  pass "feedback claim: release preserves another live owner"
+}
+
+test_watchdog_rearms_uncertain_feedback_on_primary_and_worker() {
+  local subject target marker n
+  for subject in primary worker; do
+    make_home $'working\n> ' $'key-secs=0\nkey-settle-secs=0'
+    target=$T
+    if [ "$subject" = worker ]; then
+      worker_pane feedback ship $'working\n> '
+      printf 'harness=codex\n' >> "$H/state/feedback.meta"
+      target=$WP
+    fi
+    printf '%s\n' $'How was this?\n\n 1. bug         Crash, error message, hang, or broken UI/behavior\n 2. bad_result  Output was off-target, incorrect, incomplete, or unhelpful\n 3. other       Slowness, feature suggestion, UX feedback, or anything else\n\nPress enter to confirm or esc to go back' > "$H/feedback.txt"
+    cat > "$H/dialog.sh" <<'SH'
+#!/usr/bin/env bash
+home=$1
+for i in 1 2; do
+  printf '\033[2J\033[H'
+  cat "$home/feedback.txt"
+  stty -echo raw
+  dd bs=1 count=1 of="$home/key-$i" 2>/dev/null
+  stty sane -echo
+  while [ ! -e "$home/clear-$i" ]; do sleep 0.02; done
+  printf '\033[2J\033[Hworking\n> \n'
+  : > "$home/ready-$i"
+  while [ ! -e "$home/reopen" ]; do sleep 0.02; done
+done
+SH
+    "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$target" "bash '$H/dialog.sh' '$H'"
+    sleep 0.2
+    run_wd 0 once >/dev/null 2>&1 || fail "$subject initial uncertain dismissal failed"
+    assert_equals 1 "$(wc -c < "$H/key-1" | tr -d ' ')" "$subject receives its first dismiss key"
+    marker=$(find "$H/state" -maxdepth 1 -name '.feedback-dismissed-*' | head -n 1)
+    [ -f "$marker" ] || fail "$subject uncertain dismissal did not retain a marker"
+    : > "$H/clear-1"
+    n=0
+    while [ ! -e "$H/ready-1" ] && [ "$n" -lt 100 ]; do sleep 0.02; n=$((n + 1)); done
+    [ -f "$H/ready-1" ] || fail "$subject dialog never cleared"
+    cp "$H/config/watchdog" "$H/watchdog-original"
+    printf 'do-not-touch=%s\n' "$target" >> "$H/config/watchdog"
+    run_wd 1 once >/dev/null 2>&1 || fail "$subject do-not-touch observation failed"
+    [ -f "$marker" ] || fail "$subject do-not-touch observation changed the marker"
+    cp "$H/watchdog-original" "$H/config/watchdog"
+    run_wd 2 once --dry-run >/dev/null 2>&1 || fail "$subject dry-run observation failed"
+    [ -f "$marker" ] || fail "$subject dry-run observation changed the marker"
+    run_wd 2 scan >/dev/null 2>&1 || fail "$subject scan observation failed"
+    [ -f "$marker" ] || fail "$subject scan observation changed the marker"
+    wrap_tmux_visible fail
+    run_wd 2 once >/dev/null 2>&1 || fail "$subject failed viewport observation failed"
+    [ -f "$marker" ] || fail "$subject failed viewport cleared the marker"
+    wrap_tmux_visible blank
+    run_wd 3 once >/dev/null 2>&1 || fail "$subject empty viewport observation failed"
+    [ -f "$marker" ] || fail "$subject empty viewport cleared the marker"
+    restore_fake_tmux
+    run_wd 4 once >/dev/null 2>&1 || fail "$subject absent-dialog observation failed"
+    [ ! -f "$marker" ] || fail "$subject absent-dialog observation did not clear the marker"
+    : > "$H/reopen"
+    sleep 0.2
+    run_wd 4000 once >/dev/null 2>&1 || fail "$subject reopened-dialog pass failed"
+    assert_equals 1 "$(wc -c < "$H/key-2" | tr -d ' ')" "$subject identical reopening receives a new dismiss key"
+  done
+  pass "watchdog: primary and worker absence observations rearm uncertain dialogs with capture and do-not-touch guards"
+}
+
+test_feedback_uncertain_dismissal_reopens() {
+  local dir mode
+  dir=$(fm_test_tmproot feedback-reopen)
+  for mode in sticky empty; do
+    cat > "$dir/check.sh" <<'SH'
+set -u
+root=$1 dir=$2 mode=$3
+mkdir -p "$dir"
+. "$root/bin/fm-control-lib.sh"
+screen=$'How was this?\n\n 1. bug         Crash, error message, hang, or broken UI/behavior\n 2. bad_result  Output was off-target, incorrect, incomplete, or unhelpful\n 3. other       Slowness, feature suggestion, UX feedback, or anything else\n\nPress enter to confirm or esc to go back'
+printf '%s\n' "$screen" > "$dir/pane"
+fm_control_capture_feedback_pane() { cat "$dir/pane"; }
+fm_control_send_feedback_dismiss() {
+  printf '%s\n' "$3" >> "$dir/keys"
+  if [ "$mode" = empty ]; then : > "$dir/pane"; fi
+}
+rc=0
+fm_control_dismiss_feedback_dialog "$dir/state" tmux test codex "$screen" '' 0 5 || rc=$?
+[ "$rc" = 4 ] || exit 10
+printf 'working\n> \n' > "$dir/pane"
+rc=0
+fm_control_dismiss_feedback_dialog "$dir/state" tmux test codex "$(cat "$dir/pane")" '' 0 5 || rc=$?
+[ "$rc" = 1 ] || { printf 'clear observation rc=%s\n' "$rc"; exit 11; }
+printf '%s\n' "$screen" > "$dir/pane"
+rc=0
+fm_control_dismiss_feedback_dialog "$dir/state" tmux test codex "$screen" '' 0 5 || rc=$?
+[ "$rc" = 4 ] || exit 12
+SH
+    FM_STATE_OVERRIDE="$dir/$mode/state" "$BASH" "$dir/check.sh" "$ROOT" "$dir/$mode" "$mode" </dev/null
+    assert_equals 0 "$?" "a $mode post-send capture is rearmed by a later clear observation"
+    assert_equals $'Escape\nEscape' "$(cat "$dir/$mode/keys")" "an identical reopened dialog gets a new dismiss key after $mode verification"
+  done
+  pass "feedback dismiss: a later clear observation rearms an uncertain dismissal"
+}
+
+test_feedback_and_bug_report_dialog_dismissal() {
+  local agy_survey agy_multiline claude_survey claude_survey_statusline claude_survey_autocompact claude_draft claude_modal_input claude_modal_scope claude_modal_consent claude_followup codex_feedback codex_upload near_miss unknown_picker
+  agy_survey=$'work output\nHow\'s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip\n> \n  ? for shortcuts'
+  agy_multiline=$'work output\nHow\'s the CLI experience so far? Help us improve:\n  [1] Good  [2] Fine  [3] Bad  [0] Skip'
+  claude_survey=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss'
+  claude_survey_statusline=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n────────────────────────────────────────\n❯\xc2\xa0\n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main'
+  claude_survey_autocompact=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  Context left until auto-compact: 8% · ◯ IDE connected'
+  claude_draft=$'some work\n● Bug report drafted: tool timeout on large file\n  1 to review · 2 to send · 0 to dismiss'
+  claude_modal_input=$'Submit feedback / bug report\nDescribe the issue below:\n\nPress Enter to continue · Esc to cancel'
+  claude_modal_scope=$'Report a bug or share your conversation\nHow much session history should we include?\n ❯ 1. This session only\n   2. Last 5 sessions\n\nEnter to choose · Esc to cancel'
+  claude_modal_consent=$'Submit feedback / bug report\nThis report will include:\n- Your feedback / bug description: hang\n\nEnter to submit · ↑/↓ to navigate · Esc to cancel'
+  claude_followup=$'● What went wrong? (optional)\n\n  enter to send · esc to skip'
+  codex_feedback=$'How was this?\n\n ❯ 1. bug         Crash, error message, hang, or broken UI/behavior\n   2. bad_result  Output was off-target, incorrect, incomplete, or unhelpful\n   3. other       Slowness, feature suggestion, UX feedback, or anything else\n\nPress enter to confirm or esc to go back'
+  codex_upload=$'Upload logs?\nThe following files will be sent:\n  • codex-logs.log\n\n ❯ 1. Yes\n   2. No\n\nPress enter to confirm or esc to go back'
+  unknown_picker=$'Which plan should I follow?\n ❯ 1. Plan A (Recommended)\n   2. Plan B\n\nEnter to select · ↑/↓ to navigate · Esc to cancel'
+
+  # 1. Exact per-harness signatures choose only the skip/dismiss key (0 or Escape), never submit.
+  assert_equals $'agy-cli-feedback\t0' "$(lib fm_control_feedback_dialog_dismiss agy "$agy_survey")" "agy single-line CLI survey chooses 0/Skip"
+  assert_equals $'agy-cli-feedback\t0' "$(lib fm_control_feedback_dialog_dismiss agy "$agy_multiline")" "agy two-line CLI survey chooses 0/Skip"
+  assert_equals $'claude-session-feedback\t0' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_survey")" "claude session survey chooses 0/Dismiss"
+  assert_equals $'claude-session-feedback\t0' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_survey_statusline")" "claude session survey with statusLine under input box chooses 0/Dismiss"
+  assert_equals $'claude-session-feedback\t0' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_survey_autocompact")" "claude session survey with auto-compact row under input box chooses 0/Dismiss"
+  assert_equals $'claude-bug-report-draft\t0' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_draft")" "claude drafted bug report card chooses 0/dismiss"
+  assert_equals $'claude-bug-report-dialog\tEscape' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_modal_input")" "claude bug report input step chooses Escape"
+  assert_equals $'claude-bug-report-dialog\tEscape' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_modal_scope")" "claude bug report scope step chooses Escape"
+  assert_equals $'claude-bug-report-dialog\tEscape' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_modal_consent")" "claude bug report consent step chooses Escape"
+  assert_equals $'claude-survey-followup\tEscape' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_followup")" "claude survey follow-up chooses Escape"
+  assert_equals $'codex-feedback-dialog\tEscape' "$(lib fm_control_feedback_dialog_dismiss codex "$codex_feedback")" "codex feedback picker chooses Escape"
+  assert_equals $'codex-upload-logs\tEscape' "$(lib fm_control_feedback_dialog_dismiss codex "$codex_upload")" "codex upload logs prompt chooses Escape"
+
+  local screen
+  for screen in "$agy_survey" "$agy_multiline" "$claude_survey" "$claude_survey_statusline" "$claude_survey_autocompact" "$claude_draft" "$claude_modal_input" "$claude_modal_scope" "$claude_modal_consent" "$claude_followup" "$codex_feedback" "$codex_upload"; do
+    assert_equals feedback "$(lib fm_wd_pane_dialog "$screen")" "fm_wd_pane_dialog classifies known feedback/bug-report fixture as feedback"
+  done
+
+  # 2. Per-harness scoping: a signature from another harness is never matched.
+  ! lib fm_control_feedback_dialog_dismiss claude "$agy_survey" || fail "claude adapter matched agy survey"
+  ! lib fm_control_feedback_dialog_dismiss codex "$agy_survey" || fail "codex adapter matched agy survey"
+  ! lib fm_control_feedback_dialog_dismiss pi "$agy_survey" || fail "pi adapter matched agy survey"
+  ! lib fm_control_feedback_dialog_dismiss agy "$claude_survey" || fail "agy adapter matched claude survey"
+  ! lib fm_control_feedback_dialog_dismiss codex "$claude_draft" || fail "codex adapter matched claude bug report draft"
+  ! lib fm_control_feedback_dialog_dismiss claude "$codex_feedback" || fail "claude adapter matched codex feedback dialog"
+
+  # 3. Near-miss texts, altered footers, and unknown dialogs are never dismissed.
+  for near_miss in \
+    $'Log: How\'s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip' \
+    $'How\'s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad' \
+    $'● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good' \
+    $'● Bug report drafted: tool timeout\n  1 to review · 2 to send' \
+    $'Submit feedback / bug report\nDescribe the issue below:\n\nPress Enter to continue' \
+    $'How was this?\n\n ❯ 1. bug         Crash, error message, hang, or broken UI/behavior\n\nDo not press esc to close' \
+    $'How was this?\n\n ❯ 1. bug         Crash, error message, hang, or broken UI/behavior\n\nPress space to continue or esc to close' \
+    $'Upload logs?\nThe following files will be sent:\n  • codex-logs.log\n\nPress space to confirm' \
+    $'How\'s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip\nnew work output after survey\n> '; do
+    ! lib fm_control_feedback_dialog_dismiss "" "$near_miss" || fail "near-miss matched feedback dismissal: $near_miss"
+    assert_equals "" "$(lib fm_wd_pane_dialog "$near_miss")" "near-miss is not classified as a dialog: $near_miss"
+  done
+  # 3b. A TUI that full-clears its screen pushes the closed dialog and its input
+  #     box into scrollback, then draws a clean or populated prompt below. The
+  #     later input box proves the dialog is stale; dismissing it would type 0
+  #     into the composer or corrupt an existing draft.
+  local stale_boxed stale_bare stale_rule stale_boxed_draft stale_bare_draft stale_rule_draft
+  stale_boxed=$'● Done. I updated the parser and ran the tests.\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n╭──────────────────────────────╮\n│ >                            │\n╰──────────────────────────────╯\n  ? for shortcuts\n● Done. I updated the parser and ran the tests.\n╭──────────────────────────────╮\n│ >                            │\n╰──────────────────────────────╯\n  ? for shortcuts'
+  stale_bare=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n> \nsome work\n> '
+  stale_rule=$'some work\n● Bug report drafted: tool timeout on large file\n  1 to review · 2 to send · 0 to dismiss\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main\nsome work\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main'
+  stale_boxed_draft=$'● Done. I updated the parser and ran the tests.\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n╭──────────────────────────────╮\n│ >                            │\n╰──────────────────────────────╯\n  ? for shortcuts\n● Done. I updated the parser and ran the tests.\n╭──────────────────────────────╮\n│ > existing draft             │\n╰──────────────────────────────╯\n  ? for shortcuts'
+  stale_bare_draft=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n> \nsome work\n> existing draft'
+  stale_rule_draft=$'some work\n● Bug report drafted: tool timeout on large file\n  1 to review · 2 to send · 0 to dismiss\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main\nsome work\n────────────────────────────────────────\n❯ existing draft\n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main'
+  for screen in "$stale_boxed" "$stale_bare" "$stale_rule" "$stale_boxed_draft" "$stale_bare_draft" "$stale_rule_draft"; do
+    ! lib fm_control_feedback_dialog_dismiss claude "$screen" || fail "stale dialog above a newer prompt matched feedback dismissal: $screen"
+  done
+  ! lib fm_control_feedback_dialog_dismiss "" "$unknown_picker" || fail "unknown picker matched feedback dismissal"
+  assert_equals question "$(lib fm_wd_pane_dialog "$unknown_picker")" "unknown picker still classifies as question"
+
+  # 4. Watchdog auto-dismisses worker feedback and bug-report dialogs without submitting,
+  #    enforces per-harness scoping on worker panes, preserves the home pane's composer
+  #    state (home draft + worker dialog in one pass), and does not let worker failures
+  #    consume the primary home pane's two-failure cap.
+  make_home $'Captain session\n────────────────────────────────────────\n❯ home draft in progress\n────────────────────────────────────────\n  ? for shortcuts'
+  transcript 100 "Working."
+  local home_canon
+  home_canon=$(cd -P "$H" && pwd -P)
+  mkdir -p "$H/state/watchdog"
+  printf '%s\tw1\t%s\tworker:other\tdialog\tkey\tfailed\tstuck\n%s\tw2\t%s\tworker:other\tdialog\tkey\tfailed\tstuck\n' \
+    "$((BASE - 200))" "$home_canon" "$((BASE - 100))" "$home_canon" > "$H/state/watchdog/actions.tsv"
+  cat > "$H/worker-agy.sh" <<SH
+#!/usr/bin/env bash
+printf '%s\n' 'How'\''s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip'
+stty -echo raw
+dd bs=1 count=1 of="$H/worker-agy.key" 2>/dev/null
+stty sane -echo
+clear
+printf '> \n'
+exec sleep 100000
+SH
+  chmod +x "$H/worker-agy.sh"
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "wkagy${CASE_N}" -x 160 -y 40 "$H/worker-agy.sh"
+  WP=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" list-panes -t "=wkagy${CASE_N}" -F '#{pane_id}' | head -n 1)
+  printf 'kind=ship\nharness=agy\nbackend=tmux\nwindow=%s\nendpoint_task_id=agyw\n' "$WP" > "$H/state/agyw.meta"
+  cat > "$H/worker-mismatch.sh" <<SH
+#!/usr/bin/env bash
+printf '%s\n' 'How'\''s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip'
+stty -echo
+exec cat >> "$H/worker-mismatch.key"
+SH
+  chmod +x "$H/worker-mismatch.sh"
+  : > "$H/worker-mismatch.key"
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "wkmis${CASE_N}" -x 160 -y 40 "$H/worker-mismatch.sh"
+  local WP_MIS
+  WP_MIS=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" list-panes -t "=wkmis${CASE_N}" -F '#{pane_id}' | head -n 1)
+  printf 'kind=ship\nharness=claude\nbackend=tmux\nwindow=%s\nendpoint_task_id=misw\n' "$WP_MIS" > "$H/state/misw.meta"
+  sleep 0.5
+  local post_worker_state
+  post_worker_state=$(
+    FM_TEST_SEAM=1 FM_WD_NOW="$BASE" FM_HOME="$H" bash -c '
+      HOME_T=$2
+      . "$1"
+      fm_backend_composer_state() {
+        if [ "$2" = "$HOME_T" ]; then printf "pending\n"; else printf "empty\n"; fi
+      }
+      mkdir -p "$WD" "$OUT"
+      WD_GAPS=$(mktemp "$WD/.gaps.XXXXXX")
+      wd_observe "$FM_HOME" - primary
+      O_DRAFT="home-orca-draft"
+      WD_SYMPTOM=ok WD_RESTARTED=0
+      wd_handle_subject
+      wd_visit_worker_dialogs page
+      rm -f "$WD_GAPS"
+      printf "%s|%s|%s\n" "$O_COMPOSER" "$O_DRAFT" "$(printf "%s" "$O_COMPOSER_TEXT" | tr "\n" " ")"
+    ' _ "$WD" "$T"
+  ) || fail "watchdog worker feedback pass failed"
+  assert_equals "0" "$(cat "$H/worker-agy.key" 2>/dev/null)" "worker agy survey received literal 0 and nothing else"
+  assert_equals "" "$(cat "$H/worker-mismatch.key" 2>/dev/null)" "claude worker showing an agy survey receives no key"
+  assert_equals 0 "$(awk -F'\t' '$4 == "worker:misw"' "$H/state/watchdog/actions.tsv" | wc -l | tr -d ' ')" \
+    "mismatched-harness worker records no dialog key action"
+  assert_equals 1 "$(awk -F'\t' '$4 == "worker:agyw" && $5 == "dialog" && $6 == "key" && $7 == "done"' "$H/state/watchdog/actions.tsv" | wc -l | tr -d ' ')" \
+    "worker agy feedback dismissal recorded done despite another worker's two failures: $(ledger)"
+  assert_grep "composer=pending" "$H/state/watchdog/subjects/$(home_key)" \
+    "home subject recorded pending composer"
+  assert_contains "$post_worker_state" "pending|home-orca-draft|" \
+    "worker feedback dismissal did not overwrite the home pane's O_COMPOSER or O_DRAFT"
+  assert_contains "$post_worker_state" "home draft in progress" \
+    "worker feedback dismissal did not overwrite the home pane's O_COMPOSER_TEXT"
+  [ ! -s "$H/typed.log" ] || fail "home pane with draft was typed into during worker dialog dismissal: $(cat "$H/typed.log")"
+
+  # 5. Watcher (fm-watch.sh) auto-dismisses an idle worker's feedback dialog and logs the dismissal, but leaves a busy worker alone.
+  local wdir wstate wfake wout
+  wdir="$TMP_ROOT/watch-feedback-$CASE_N"
+  wstate="$wdir/state"
+  wfake="$wdir/fakebin"
+  wout="$wdir/watch.out"
+  mkdir -p "$wstate" "$wfake" "$wdir/config"
+  printf 'window=test:fm-agy\nkind=ship\nharness=agy\nbackend=tmux\n' > "$wstate/agy.meta"
+  cat > "$wfake/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  list-windows) printf 'fm-agy\n'; exit 0 ;;
+  capture-pane) cat "$FM_TEST_WATCH_PANE"; exit 0 ;;
+  send-keys)
+    shift
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) shift; printf 'LITERAL:%s\n' "${1:-}" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+        *) printf 'KEY:%s\n' "$1" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+      esac
+    done
+    [ -z "${FM_TEST_WATCH_CLEAR_ON_SEND:-}" ] || printf 'work output\n> \n' > "$FM_TEST_WATCH_PANE"
+    exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$wfake/tmux"
+  printf '%s\n' "$agy_survey" > "$wdir/pane-idle.txt"
+  : > "$wdir/keys.log"
+  PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-idle.txt" FM_TEST_WATCH_KEYS="$wdir/keys.log" FM_TEST_WATCH_CLEAR_ON_SEND=1 \
+    FM_HOME="$wdir" FM_STATE_OVERRIDE="$wstate" FM_CONFIG_OVERRIDE="$wdir/config" \
+    FM_WATCH_ONCE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    bash "$ROOT/bin/fm-watch.sh" > "$wout" 2>&1 || fail "fm-watch.sh once failed on idle feedback pane: $(cat "$wout")"
+  assert_equals "LITERAL:0" "$(cat "$wdir/keys.log")" "watcher sent only literal 0 (never Enter or submit) on idle agy survey"
+  assert_grep "auto-dismissed feedback dialog (agy-cli-feedback key=0): test:fm-agy" "$wstate/.watch-triage.log" \
+    "watcher logged the feedback dismissal"
+
+  # 6. Shared atomic claim: when two callers race on one pane (even with different
+  #    status-row snapshots), serialization sends the dismiss key at most once.
+  local rstate="$wdir/race-state" pid1 pid2
+  mkdir -p "$rstate"
+  printf '%s\n' "$claude_survey_statusline" > "$wdir/pane-race.txt"
+  : > "$wdir/race-keys.log"
+  cat > "$wfake/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  capture-pane) cat "$FM_TEST_WATCH_PANE"; exit 0 ;;
+  send-keys)
+    sleep 0.1
+    shift
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) shift; printf 'LITERAL:%s\n' "${1:-}" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+        *) printf 'KEY:%s\n' "$1" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+      esac
+    done
+    printf 'work output\n> \n' > "$FM_TEST_WATCH_PANE"
+    exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$wfake/tmux"
+  (
+    PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-race.txt" FM_TEST_WATCH_KEYS="$wdir/race-keys.log" \
+      bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" claude "$3" "fm-agy" 0.1' \
+      _ "$ROOT" "$rstate" "$claude_survey_statusline" >/dev/null 2>&1 || true
+  ) &
+  pid1=$!
+  (
+    PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-race.txt" FM_TEST_WATCH_KEYS="$wdir/race-keys.log" \
+      bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" claude "$3" "fm-agy" 0.1' \
+      _ "$ROOT" "$rstate" "$claude_survey_autocompact" >/dev/null 2>&1 || true
+  ) &
+  pid2=$!
+  wait "$pid1" "$pid2"
+  assert_equals "LITERAL:0" "$(cat "$wdir/race-keys.log")" "concurrent callers racing with different snapshots on one pane send the dismiss key exactly once"
+
+  # 7. A key delivery that fails leaves the dialog retryable on the next tick.
+  local fstate="$wdir/fail-state" frc=0
+  mkdir -p "$fstate"
+  printf '%s\n' "$agy_survey" > "$wdir/pane-fail.txt"
+  : > "$wdir/fail-keys.log"
+  : > "$wdir/send-fails-once"
+  cat > "$wfake/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  capture-pane) cat "$FM_TEST_WATCH_PANE"; exit 0 ;;
+  send-keys)
+    if [ -e "$FM_TEST_SEND_FAILS_ONCE" ]; then rm -f "$FM_TEST_SEND_FAILS_ONCE"; exit 1; fi
+    shift
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) shift; printf 'LITERAL:%s\n' "${1:-}" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+        *) printf 'KEY:%s\n' "$1" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+      esac
+    done
+    printf 'work output\n> \n' > "$FM_TEST_WATCH_PANE"
+    exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$wfake/tmux"
+  PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-fail.txt" FM_TEST_WATCH_KEYS="$wdir/fail-keys.log" FM_TEST_SEND_FAILS_ONCE="$wdir/send-fails-once" \
+    bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1' \
+    _ "$ROOT" "$fstate" "$agy_survey" >/dev/null 2>&1 || frc=$?
+  assert_equals 3 "$frc" "a failed key delivery reports delivery failure"
+  assert_equals "" "$(cat "$wdir/fail-keys.log")" "no key reached the pane on the failed delivery"
+  frc=0
+  PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-fail.txt" FM_TEST_WATCH_KEYS="$wdir/fail-keys.log" FM_TEST_SEND_FAILS_ONCE="$wdir/send-fails-once" \
+    bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1' \
+    _ "$ROOT" "$fstate" "$agy_survey" >/dev/null 2>&1 || frc=$?
+  assert_equals 0 "$frc" "the next tick retries the unchanged dialog after a failed delivery and clears it"
+  assert_equals "LITERAL:0" "$(cat "$wdir/fail-keys.log")" "the retry sends the dismiss key once"
+
+  # 7b. After a verified dismissal clears .feedback-dismissed-*, an identical dialog
+  #     reappearing later on the same endpoint is dismissed again.
+  printf '%s\n' "$agy_survey" > "$wdir/pane-fail.txt"
+  : > "$wdir/fail-keys.log"
+  frc=0
+  PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-fail.txt" FM_TEST_WATCH_KEYS="$wdir/fail-keys.log" \
+    bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1' \
+    _ "$ROOT" "$fstate" "$agy_survey" >/dev/null 2>&1 || frc=$?
+  assert_equals 0 "$frc" "an identical dialog reappearing after a verified dismissal is dismissed again"
+  assert_equals "LITERAL:0" "$(cat "$wdir/fail-keys.log")" "the reopened identical dialog receives its dismiss key"
+
+  # 7c. A failed, empty, or timed-out live pre-send capture refuses to send any key.
+  local cstate="$wdir/cap-state" cap_mode
+  mkdir -p "$cstate"
+  for cap_mode in fail empty timeout; do
+    : > "$wdir/cap-keys.log"
+    cat > "$wfake/tmux" <<SH
+#!/usr/bin/env bash
+case "\${1:-}" in
+  capture-pane)
+    case "$cap_mode" in
+      fail) exit 1 ;;
+      empty) exit 0 ;;
+      timeout) sleep 5; exit 0 ;;
+    esac ;;
+  send-keys)
+    printf 'SENT\n' >> "$wdir/cap-keys.log"
+    exit 0 ;;
+esac
+exit 0
+SH
+    chmod +x "$wfake/tmux"
+    frc=0
+    PATH="$wfake:$PATH" bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1 1' \
+      _ "$ROOT" "$cstate" "$agy_survey" >/dev/null 2>&1 || frc=$?
+    assert_equals 2 "$frc" "live capture mode '$cap_mode' refuses dismissal with rc 2"
+    assert_equals "" "$(cat "$wdir/cap-keys.log")" "live capture mode '$cap_mode' sends zero keys"
+  done
+
+  # 7d. An interrupted claimant (dead owner PID) or expired stale claim is recovered
+  #     by a subsequent caller on the same endpoint.
+  local kstate="$wdir/kill-state" dead_pid
+  mkdir -p "$kstate"
+  printf '%s\n' "$agy_survey" > "$wdir/pane-kill.txt"
+  : > "$wdir/kill-keys.log"
+  cat > "$wfake/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  capture-pane)
+    if [ -e "${FM_TEST_HOLD_CLAIM:-}" ]; then
+      : > "$FM_TEST_HOLD_CLAIM.ready"
+      sleep 30
+    fi
+    cat "$FM_TEST_WATCH_PANE"
+    exit 0 ;;
+  send-keys)
+    shift
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) shift; printf 'LITERAL:%s\n' "${1:-}" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+        *) printf 'KEY:%s\n' "$1" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+      esac
+    done
+    printf 'work output\n> \n' > "$FM_TEST_WATCH_PANE"
+    exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$wfake/tmux"
+  : > "$wdir/hold-claim"
+  (
+    PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-kill.txt" FM_TEST_WATCH_KEYS="$wdir/kill-keys.log" FM_TEST_HOLD_CLAIM="$wdir/hold-claim" \
+      bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1 20' \
+      _ "$ROOT" "$kstate" "$agy_survey" >/dev/null 2>&1
+  ) &
+  dead_pid=$!
+  local wait_i=0
+  while [ ! -e "$wdir/hold-claim.ready" ] && [ "$wait_i" -lt 40 ]; do
+    sleep 0.05
+    wait_i=$((wait_i + 1))
+  done
+  kill -9 "$dead_pid" 2>/dev/null || true
+  wait "$dead_pid" 2>/dev/null || true
+  rm -f "$wdir/hold-claim" "$wdir/hold-claim.ready"
+  [ -d "$kstate/.feedback-claim-tmux_test_fm-agy" ] || fail "killed claimant did not leave a claim directory behind"
+  frc=0
+  PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-kill.txt" FM_TEST_WATCH_KEYS="$wdir/kill-keys.log" \
+    bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1' \
+    _ "$ROOT" "$kstate" "$agy_survey" >/dev/null 2>&1 || frc=$?
+  assert_equals 0 "$frc" "subsequent caller recovers a claim left by a terminated owner and dismisses the dialog"
+  assert_equals "LITERAL:0" "$(cat "$wdir/kill-keys.log")" "recovered claim sends the dismiss key once"
+
+  # Busy worker showing `esc to cancel` alongside the text is not touched.
+  printf '%s\n  esc to cancel\n' "$agy_survey" > "$wdir/pane-busy.txt"
+  : > "$wdir/keys.log"
+  rm -rf "$wstate"/.feedback-dismissed-* "$wstate"/.feedback-claim-*
+  PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-busy.txt" FM_TEST_WATCH_KEYS="$wdir/keys.log" \
+    FM_HOME="$wdir" FM_STATE_OVERRIDE="$wstate" FM_CONFIG_OVERRIDE="$wdir/config" \
+    FM_WATCH_ONCE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    bash "$ROOT/bin/fm-watch.sh" > "$wout" 2>&1 || fail "fm-watch.sh once failed on busy pane"
+  assert_equals "" "$(cat "$wdir/keys.log")" "watcher sends no key while the worker is busy"
+  pass "feedback and bug-report dialogs: exact per-harness signatures auto-dismiss when idle without submitting, near-misses and unknown dialogs do not"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -4044,9 +4675,16 @@ fi
 
 fm_test_run \
   test_dialog_detection \
+  test_feedback_claim_recovery_serializes_contenders \
+  test_feedback_claim_recovers_legacy_owner \
+  test_feedback_claim_release_preserves_another_owner \
+  test_watchdog_rearms_uncertain_feedback_on_primary_and_worker \
+  test_feedback_uncertain_dismissal_reopens \
+  test_feedback_and_bug_report_dialog_dismissal \
   test_mtime_uses_the_platform_stat_dialect \
   test_dismissed_dialog_in_scrollback_is_not_showing \
   test_dialog_keys_stop_after_two_failures \
+  test_statusline_percentage_does_not_rearm_feedback_dismiss \
   test_loop_verdicts \
   test_stall_proof_and_text_guards \
   test_frozen_pane_nudges_once_then_rate_limits \
@@ -4109,6 +4747,7 @@ fm_test_run \
   test_secret_looking_decision_reaches_no_council \
   test_secret_looking_model_switch_dialog_is_held \
   test_model_switch_judge_is_rate_limited \
+  test_worker_dialog_key_does_not_close_home_key_window \
   test_usage_limit_unknown_harness_queues \
   test_claude_pinned_secondmate_with_tooling_gets_no_codex_pick \
   test_ordinary_home_claude_json_mcp_blocks_the_move \
