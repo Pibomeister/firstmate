@@ -232,6 +232,45 @@ test_after_both_episodes_close_the_next_report_escalates() {
   pass "a report after both episodes close escalates normally"
 }
 
+test_a_concurrent_delta_cannot_overtake_the_initial_notification() {
+  local h first second i held=0 first_rc=0 second_rc=0
+  h=$(new_home ordered-delivery)
+  local STUB="$h/blocking-deliver"
+  cat > "$STUB" <<SH
+#!/usr/bin/env bash
+case "\$1" in
+  'escalation: '*)
+    touch "$h/first-sending"
+    for i in \$(seq 1 400); do [ ! -e "$h/release-first" ] || break; sleep 0.05; done
+    [ -e "$h/release-first" ] || exit 1 ;;
+esac
+printf '%s\n' "\$1" >> "\$FM_ESCALATE_LOG"
+SH
+  chmod +x "$STUB"
+  esc "$h" "$T0" --subject effect --signal stall-detection --state second-detection > "$h/first.out" 2> "$h/first.err" &
+  first=$!
+  for i in $(seq 1 400); do [ ! -e "$h/first-sending" ] || break; sleep 0.05; done
+  ( touch "$h/second-started"; esc "$h" "$T0" --subject effect --signal stall-detection --state restart-failed ) > "$h/second.out" 2> "$h/second.err" &
+  second=$!
+  for i in $(seq 1 400); do [ ! -e "$h/second-started" ] || break; sleep 0.05; done
+  [ ! -e "$h/state/.incident-ledger.lock" ] || held=1
+  if [ "$held" = 0 ]; then
+    for i in $(seq 1 200); do [ ! -s "$h/sent.log" ] || break; sleep 0.05; done
+  fi
+  touch "$h/release-first"
+  wait "$first" || first_rc=$?
+  wait "$second" || second_rc=$?
+  assert_present "$h/first-sending" "the first delivery was paused"
+  assert_present "$h/second-started" "a second producer was started before that delivery resumed"
+  assert_equals 0 "$first_rc" "first report completes: $(cat "$h/first.err")"
+  assert_equals 0 "$second_rc" "second report completes: $(cat "$h/second.err")"
+  assert_equals 1 "$held" "the decision lock must remain held through its notification"
+  assert_contains "$(sed -n 1p "$h/sent.log")" 'state=second-detection' "the initial escalation delivers first"
+  assert_contains "$(sed -n 2p "$h/sent.log")" 'old=second-detection new=restart-failed' "the later delta follows its initial escalation"
+  assert_equals 2 "$(sent "$h")" "both notifications are delivered once"
+  pass "concurrent reports deliver the initial escalation before its delta"
+}
+
 test_the_first_released_notification_is_an_escalation_after_a_state_change() {
   local h out cause
   h=$(new_home first-released-change)
@@ -495,6 +534,7 @@ test_the_wake_lib_accepts_incident_and_refuses_unknown_kinds() {
 }
 
 fm_test_run \
+  test_a_concurrent_delta_cannot_overtake_the_initial_notification \
   test_the_first_released_notification_is_an_escalation_after_a_state_change \
   test_a_withheld_state_is_released_after_another_state_escalated \
   test_three_passes_over_one_exception_send_once \

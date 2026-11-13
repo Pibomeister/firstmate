@@ -8,7 +8,7 @@ This page owns the behavior and the boundaries.
 ## What the gate guarantees
 
 A signal owner reports each transition of one subject to the gate, and the gate alone writes it to `state/incident-ledger.tsv`.
-The gate reads that ledger under its lock before every send.
+The gate keeps the ledger lock through each bounded notification attempt, so concurrent reports cannot deliver a later transition first.
 It keeps no other dedupe state, so a supervisor restart between two reports changes nothing.
 
 Only a state whose class is an exception class escalates.

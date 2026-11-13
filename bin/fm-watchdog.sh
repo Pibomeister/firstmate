@@ -789,17 +789,24 @@ wd_decision_reserved() {  # <task> <key> <summary>
 # wd_council_record <task> <key>: the final council record of one decision, as
 # `ruled|no-ruling TAB answer TAB path TAB seats`; nothing when it has none.
 wd_council_record() {
-  local name f kind
+  local name f kind header answer
   # Colon is excluded from task/key; old filenames need the same identity check.
   for name in "$O_KEY-$1:$2.md" "$O_KEY-$1-$2.md"; do
     for f in "$OUT/rulings/$name" "$OUT/no-rulings/$name"; do
       [ -f "$f" ] || continue
-      grep -Fxq -- "- home: $O_HOME" "$f" || continue
-      grep -Fxq -- "- task: $1" "$f" || continue
-      grep -Fxq -- "- key: $2" "$f" || continue
+      header=$(awk '/^Record:$/ { exit } /^$/ { if (meta) exit; next } /^- / { meta=1 } meta { print }' "$f")
+      FM_WD_RECORD_HOME="$O_HOME" FM_WD_RECORD_TASK="$1" FM_WD_RECORD_KEY="$2" awk '
+        /^- home: / { h++; if (substr($0,9) != ENVIRON["FM_WD_RECORD_HOME"]) bad=1 }
+        /^- task: / { t++; if (substr($0,9) != ENVIRON["FM_WD_RECORD_TASK"]) bad=1 }
+        /^- key: / { k++; if (substr($0,8) != ENVIRON["FM_WD_RECORD_KEY"]) bad=1 }
+        /^- ruling: / { r++ }
+        /^- seats:/ { s++ }
+        END { exit (bad || h != 1 || t != 1 || k != 1 || r != 1 || s != 1) }
+      ' <<< "$header" || continue
       case "$f" in "$OUT/rulings/"*) kind=ruled ;; *) kind=no-ruling ;; esac
-      printf '%s\t%s\t%s\t%s\n' "$kind" "$(sed -n 's/^- ruling: \(PROCEED [A-Za-z0-9]*\) (.*/\1/p' "$f" | head -n 1)" "$f" \
-        "$(sed -n 's/^- seats://p' "$f" | head -n 1)"
+      answer=$(sed -n 's/^- ruling: \(PROCEED [A-Za-z0-9]*\) (.*/\1/p' <<< "$header")
+      case "$kind:$answer" in ruled:|no-ruling:?*) continue ;; esac
+      printf '%s\t%s\t%s\t%s\n' "$kind" "$answer" "$f" "$(sed -n 's/^- seats://p' <<< "$header")"
       return 0
     done
   done

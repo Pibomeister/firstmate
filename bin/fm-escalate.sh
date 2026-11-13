@@ -303,7 +303,6 @@ report() {
     }
     count=$(fm_incident_ledger_episode_rows "$STATE" "$HOME_F" "$SUBJECT_F" "$SIGNAL_F" "$episode" \
       | awk -F '\t' '$11 == "escalate" || $11 == "delta" { n++ } END { print n + 0 }')
-    fm_incident_ledger_unlock "$STATE"
     out_tid=$tid
     out_action=$action
     crash_at after-append
@@ -335,6 +334,7 @@ report() {
       send=$(send_message "$cmsg")
     fi
   fi
+  if [ "$suppressed" -eq 0 ]; then fm_incident_ledger_unlock "$STATE"; fi
   printf 'transition=%s action=%s wake=%s send=%s\n' "$out_tid" "$out_action" "$wake" "$send"
 }
 

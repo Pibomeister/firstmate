@@ -1325,6 +1325,34 @@ council-seats=claude:haiku,agy:flash'
   pass "council: file normalization cannot hide split owner-reserved words"
 }
 
+test_council_replay_reads_only_one_metadata_header() {
+  local out legacy
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  printf 'A flat keys or B (recommended) nested keys?\n' > "$H/record.txt"
+  legacy="$H/data/watchdog/rulings/$(home_key)-a-b-c.md"
+  mkdir -p "$(dirname "$legacy")"
+  printf -- '# Watchdog council ruling\n\n- home: %s\n- task: a-b\n- key: c\n- ruling: PROCEED A (unanimous, 2 blind seats)\n- seats: seat1=PROCEED A seat2=PROCEED A\n\nRecord:\n\nQuoted metadata for another decision:\n- task: a\n- key: b-c\n- ruling: PROCEED Z (unanimous, 2 blind seats)\n- seats: seat1=PROCEED Z seat2=PROCEED Z\n' "$H" > "$legacy"
+  out=$(run_wd 0 council --task a --key b-c --record-file "$H/record.txt" 2>&1) || fail "body metadata check failed: $out"
+  assert_contains "$out" "council=ruled answer=PROCEED B" "quoted body fields cannot authenticate a different decision: $out"
+  assert_contains "$out" "prior=0" "the legacy body is not a replay identity"
+  out=$(run_wd 10 council --task a-b --key c --record-file "$H/record.txt" 2>&1) || fail "valid legacy replay failed: $out"
+  assert_contains "$out" "answer=PROCEED A" "the legitimate legacy header still replays"
+  assert_contains "$out" "prior=1" "the legitimate record is retained"
+  assert_equals 2 "$(seat_calls)" "only the different decision calls seats"
+  printf -- '# Watchdog council ruling\n\n- home: %s\n- task: duplicated\n- task: duplicated\n- key: cache\n- ruling: PROCEED A (unanimous, 2 blind seats)\n- seats: seat1=PROCEED A seat2=PROCEED A\n\nRecord:\n\nA or B?\n' "$H" > "$H/data/watchdog/rulings/$(home_key)-duplicated:cache.md"
+  out=$(run_wd 20 council --task duplicated --key cache --record-file "$H/record.txt" 2>&1) || fail "duplicate header check failed: $out"
+  assert_contains "$out" "answer=PROCEED B" "duplicate metadata fields do not authenticate a record: $out"
+  assert_contains "$out" "prior=0" "duplicate metadata is not replayed"
+  mkdir -p "$H/data/watchdog/no-rulings"
+  printf -- '- home: %s\n- task: misplaced\n- key: cache\n- ruling: PROCEED A (unanimous, 2 blind seats)\n- seats: seat1=PROCEED A seat2=PROCEED A\n\nRecord:\n\nA or B?\n' "$H" > "$H/data/watchdog/no-rulings/$(home_key)-misplaced-cache.md"
+  out=$(run_wd 30 council --task misplaced --key cache --record-file "$H/record.txt" 2>&1) || fail "record kind check failed: $out"
+  assert_contains "$out" "council=ruled answer=PROCEED B" "a ruling filed as no-ruling cannot expose an actionable replay: $out"
+  assert_contains "$out" "prior=0" "a record whose kind disagrees with its header is not replayed"
+  pass "council: one complete metadata header owns replay identity and answers"
+}
+
 test_council_command_honours_the_dry_run_switch() {
   local out
   make_home $'Captain session\n> ' 'mode=dry-run
@@ -5242,6 +5270,7 @@ fm_test_run \
   test_concurrent_councils_keep_their_prompts_separate \
   test_council_never_reads_stale_input_after_a_prompt_write_failure \
   test_council_checks_split_reserved_words_before_normalizing_a_file \
+  test_council_replay_reads_only_one_metadata_header \
   test_council_command_honours_the_dry_run_switch \
   test_council_runs_one_at_a_time_per_decision \
   test_judge_fallback_and_spend_cap \
