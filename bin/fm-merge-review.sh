@@ -5,7 +5,7 @@
 # Usage:
 #   fm-merge-review.sh run <pr-url> --head <full-sha> --repo <dir>
 #                          [--base <commit-ish>] [--intent-file <file>]
-#   fm-merge-review.sh check <pr-url> --head <full-sha>
+#   fm-merge-review.sh check <pr-url> --head <full-sha> [--base <merge-base-sha>]
 #   fm-merge-review.sh covers <pr-url>
 #
 # run     A task worker runs this, never a supervisor session: it refuses
@@ -78,8 +78,9 @@
 #
 # Limits. Receipts are local files: check proves they are whole and bound to
 # the head, not who wrote them. Reviewers cannot run tests; test evidence comes
-# from the delivery pipeline. The diff uses the base the caller names; check
-# cannot confirm it is the pull request's base. A reviewer reads the change as
+# from the delivery pipeline. The diff uses the base the caller names.
+# fm-pr-merge.sh independently verifies that base against the live forge
+# before accepting the review. A reviewer reads the change as
 # untrusted material: the prompt says so, which lowers but does not remove the
 # chance that text in the change steers a verdict. With post=on a review is also
 # posted as a pull request comment. Approvals count only with that comment's
@@ -326,6 +327,10 @@ mr_receipt_valid() {  # <receipt>
   fi
   [ "$value" = "$expected_url" ] || { MR_R_REASON='the receipt names another pull request'; return 1; }
   [ "$(mr_receipt_get "$receipt" head)" = "$MR_HEAD" ] || { MR_R_REASON='the receipt names another head'; return 1; }
+  value=$(mr_receipt_get "$receipt" base)
+  fm_pr_head_valid "$value" || { MR_R_REASON='the review merge base is invalid'; return 1; }
+  { [ -z "$MR_EXPECTED_BASE" ] || [ "$value" = "$MR_EXPECTED_BASE" ]; } \
+    || { MR_R_REASON='the review merge base is not the live merge base'; return 1; }
   [ "$(mr_receipt_get "$receipt" seat)" = "$seat" ] || { MR_R_REASON='the receipt names another seat'; return 1; }
   idx=$(mr_seat_index "$seat") || { MR_R_REASON='the seat is not declared in config/merge-review'; return 1; }
   harness=${MR_SEAT_HARNESS[$idx]}
@@ -707,6 +712,12 @@ MR_WORK=
 MR_RECORDS=
 MR_STORE=
 MR_LOCK=
+MR_RECLAIM=
+mr_run_owns_lock() {
+  [ -n "$MR_LOCK" ] && [ "$(cat "$MR_LOCK/pid" 2>/dev/null)" = "$$" ] &&
+    [ "$(cat "$MR_LOCK/generation" 2>/dev/null)" = "$MR_RECORDS" ]
+}
+
 mr_stop_reviewers() {  # <run-lock>
   local lock=$1 pid identity
   [ -f "$lock/children" ] || return 0
@@ -721,13 +732,17 @@ mr_stop_reviewers() {  # <run-lock>
 }
 
 mr_run_cleanup() {
-  local unlock=1
-  if [ -n "$MR_LOCK" ]; then
+  local unlock=1 owns=0
+  if mr_run_owns_lock; then
+    owns=1
     rm -f "$MR_LOCK/generation"
-    mr_stop_reviewers "$MR_LOCK" || unlock=0
   fi
-  [ -z "$MR_WORK" ] || rm -rf "$MR_WORK"
-  [ -z "$MR_LOCK" ] || { [ "$unlock" -eq 0 ] || rm -rf "$MR_LOCK"; }
+  if [ -n "$MR_WORK" ]; then
+    mr_stop_reviewers "$MR_WORK" || unlock=0
+    [ "$unlock" -eq 0 ] || rm -rf "$MR_WORK"
+  fi
+  if [ "$owns" -eq 1 ] && [ "$unlock" -eq 1 ]; then rm -rf "$MR_LOCK"; fi
+  [ -z "$MR_RECLAIM" ] || fm_lock_release "$MR_RECLAIM"
 }
 
 mr_run() {  # <repo> <base-ref> <intent-file>
@@ -773,7 +788,12 @@ mr_run() {  # <repo> <base-ref> <intent-file>
   . "$SCRIPT_DIR/fm-wake-lib.sh"
   MR_STORE=$(mr_store_dir)
   mkdir -p "$MR_STORE" || mr_die "cannot create $MR_STORE"
+  trap mr_run_cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
   if ! mkdir "$MR_STORE/.run.lock" 2>/dev/null; then
+    MR_RECLAIM="$MR_STORE/.reclaim.lock"
+    fm_lock_try_acquire "$MR_RECLAIM" || { MR_RECLAIM=; mr_die 'another worker is recovering this review run'; }
     holder=$(cat "$MR_STORE/.run.lock/pid" 2>/dev/null || true)
     case "$holder" in
       '' | *[!0-9]*) mr_die "another run holds $MR_STORE/.run.lock" ;;
@@ -783,17 +803,18 @@ mr_run() {  # <repo> <base-ref> <intent-file>
     mr_stop_reviewers "$MR_STORE/.run.lock" || mr_die 'a previous reviewer is still running'
     rm -rf "$MR_STORE/.run.lock"
     mkdir "$MR_STORE/.run.lock" 2>/dev/null || mr_die "another run holds $MR_STORE/.run.lock"
+    fm_lock_release "$MR_RECLAIM"
+    MR_RECLAIM=
   fi
   MR_LOCK="$MR_STORE/.run.lock"
-  trap mr_run_cleanup EXIT
-  trap 'exit 130' INT
-  trap 'exit 143' TERM
   printf '%s\n' "$$" > "$MR_LOCK/pid"
   rm -f "$MR_STORE/.complete" || mr_die 'cannot reset the review batch completion marker'
   MR_RECORDS=$(mktemp -d "$MR_LOCK/records.XXXXXX") || mr_die 'cannot create review records directory'
   printf '%s\n' "$MR_RECORDS" > "$MR_LOCK/generation"
 
   MR_WORK=$(mktemp -d "${TMPDIR:-/tmp}/fm-merge-review.XXXXXX") || mr_die 'cannot create a temporary directory'
+  : > "$MR_WORK/children"
+  ln -s "$MR_WORK/children" "$MR_LOCK/children" || mr_die 'cannot publish the reviewer ledger'
   mkdir "$MR_WORK/snapshot"
   git -C "$repo" archive --format=tar "$MR_HEAD" | tar -x -C "$MR_WORK/snapshot" \
     || mr_die "cannot snapshot $MR_HEAD from $repo"
@@ -822,7 +843,7 @@ mr_run() {  # <repo> <base-ref> <intent-file>
             wait "$pid" 2>/dev/null || true
             mr_die 'cannot record reviewer process identity'
           fi
-          printf '%s\t%s\n' "$pid" "$identity" >> "$MR_LOCK/children"
+          printf '%s\t%s\n' "$pid" "$identity" >> "$MR_WORK/children"
         fi
         pids="$pids $pid"
       fi
@@ -850,7 +871,7 @@ mr_run() {  # <repo> <base-ref> <intent-file>
             wait "$pid" 2>/dev/null || true
             mr_die 'cannot record reviewer process identity'
           fi
-          printf '%s\t%s\n' "$pid" "$identity" >> "$MR_LOCK/children"
+          printf '%s\t%s\n' "$pid" "$identity" >> "$MR_WORK/children"
         fi
         wait "$pid" || true
       fi
@@ -868,6 +889,7 @@ mr_run() {  # <repo> <base-ref> <intent-file>
     done
   fi
 
+  mr_run_owns_lock || mr_die 'the review run generation changed; refusing to finalize'
   : > "$MR_STORE/.complete" || mr_die 'cannot record the completed review batch'
   MR_LOCK=
   rm -rf "$MR_STORE/.run.lock"
@@ -893,6 +915,7 @@ fm_pr_url_parse "$1" || mr_die 'the pull request URL must be the canonical full 
 shift
 
 MR_HEAD=
+MR_EXPECTED_BASE=
 MR_BASE=
 MR_BASE_REF=
 MR_DIFF_SHA=
@@ -927,8 +950,12 @@ case "$MR_COMMAND" in
     exit $?
     ;;
   check)
-    [ -z "$MR_ARG_REPO$MR_ARG_BASE$MR_ARG_INTENT" ] || mr_die 'check takes only the pull request URL and --head'
+    [ -z "$MR_ARG_REPO$MR_ARG_INTENT" ] || mr_die 'check takes only the pull request URL, --head, and --base'
     fm_pr_head_valid "$MR_HEAD" || mr_die '--head requires a full lowercase commit sha'
+    if [ -n "$MR_ARG_BASE" ]; then
+      fm_pr_head_valid "$MR_ARG_BASE" || mr_die 'check --base requires a full merge-base sha'
+      MR_EXPECTED_BASE=$MR_ARG_BASE
+    fi
     mr_check
     exit $?
     ;;

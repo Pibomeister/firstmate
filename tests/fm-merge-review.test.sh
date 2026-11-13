@@ -607,6 +607,68 @@ test_publication_cannot_replace_a_review_recorded_during_the_call() {
   pass "a model call cannot overwrite a valid dissent recorded while it was running"
 }
 
+test_a_replaced_run_cannot_complete_or_unlock_its_successor() {
+  local run_pid i=0 ready=0 rc=0 kept=0 completed=0 store
+  make_case generation-owner "${TWO_SEATS[@]}" 'seat=xai:grok:grok-test'
+  : > "$STUB/grok.wait"
+  store=$(store_dir)
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" &
+  run_pid=$!
+  while [ "$i" -lt 300 ]; do
+    if [ -f "$store/anthropic.claude.claude-test-1.receipt" ] &&
+      [ -f "$store/google.agy.gemini-test-high.receipt" ] && [ -e "$STUB/grok.waiting" ]; then ready=1; break; fi
+    sleep 0.1; i=$((i + 1))
+  done
+  mv "$store/.run.lock" "$CASE/previous-lock"
+  mkdir "$store/.run.lock"
+  printf '%s\n' "$$" > "$store/.run.lock/pid"
+  printf 'successor-generation\n' > "$store/.run.lock/generation"
+  rm "$STUB/grok.wait"
+  wait "$run_pid" || rc=$?
+  [ ! -d "$store/.run.lock" ] || kept=1
+  [ ! -e "$store/.complete" ] || completed=1
+  rm -rf "$store/.run.lock"
+  assert_equals 1 "$ready" "generation-owner: active batch was not established"
+  expect_code 2 "$rc" "generation-owner: a replaced run must refuse finalization"
+  assert_equals 1 "$kept" "generation-owner: old finalizer removed its successor's lock"
+  assert_equals 0 "$completed" "generation-owner: old finalizer marked an incomplete batch complete"
+  pass "a replaced generation cannot complete the batch or remove its successor's lock"
+}
+
+test_stale_reclamation_is_serialized() {
+  local holder_pid i=0 ready=0 rc=0 store dead_pid
+  make_case reclaim-owner "${TWO_SEATS[@]}"
+  store=$(store_dir)
+  mkdir -p "$store/.run.lock"
+  sleep 0 & dead_pid=$!
+  wait "$dead_pid"
+  printf '%s\n' "$dead_pid" > "$store/.run.lock/pid"
+  : > "$CASE/hold-reclaim"
+  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" bash -c '
+    . "$1/bin/fm-wake-lib.sh"
+    fm_lock_try_acquire "$2" || exit 1
+    : > "$3"
+    while [ -e "$4" ]; do sleep 0.1; done
+    fm_lock_release "$2"
+  ' _ "$ROOT" "$store/.reclaim.lock" "$CASE/reclaim-ready" "$CASE/hold-reclaim" &
+  holder_pid=$!
+  while [ "$i" -lt 300 ]; do
+    if [ -e "$CASE/reclaim-ready" ]; then ready=1; break; fi
+    sleep 0.1; i=$((i + 1))
+  done
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  rm "$CASE/hold-reclaim"
+  wait "$holder_pid"
+  assert_equals 1 "$ready" "reclaim-owner: competing reclamation was not established"
+  expect_code 2 "$rc" "reclaim-owner: a competing reclaimer must refuse before touching the run"
+  assert_equals 0 "$(calls claude)" "reclaim-owner: competing reclamation launched a reviewer"
+  assert_equals 0 "$(calls agy)" "reclaim-owner: competing reclamation launched a reviewer"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "reclaim-owner: recovery must finish after the competing reclaimer releases"
+  pass "stale-lock reclamation is serialized, and recovery proceeds once its owner releases"
+}
+
 test_covers_follows_the_require_lines() {
   local rc=0
   make_case covers-none
@@ -699,6 +761,8 @@ fm_test_run \
   test_searchable_configuration_parent_needs_no_directory_listing \
   test_interruption_stops_reviewers_before_unlocking \
   test_publication_cannot_replace_a_review_recorded_during_the_call \
+  test_a_replaced_run_cannot_complete_or_unlock_its_successor \
+  test_stale_reclamation_is_serialized \
   test_covers_follows_the_require_lines \
   test_run_refuses_what_it_cannot_review \
   test_intent_reaches_the_prompt_the_receipt_binds
