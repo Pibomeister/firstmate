@@ -2001,6 +2001,68 @@ SH
   pass "a terminated runner bounds cleanup of TERM-ignoring descendants"
 }
 
+# Delay registration in the non-leader watchdog to drive the startup race.
+# Inherited dispositions must already protect it while registration is delayed.
+test_a_group_signal_before_watchdog_initialization_keeps_cleanup() {
+  local tmp repo evidence script=tests/fm-group-watchdog-race-fixture.test.sh runner_pid script_pid rc
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-watchdog-race.XXXXXX")
+  repo=$(group_fixture_repo "$tmp")
+  evidence="$tmp/evidence"
+  cat >"$repo/$script" <<'FIXTURE'
+#!/usr/bin/env bash
+trap '' TERM
+echo $$ >"$GROUP_EVIDENCE/script.pid"
+while [ ! -s "$GROUP_EVIDENCE/watchdog.starting" ]; do sleep 0.1; done
+kill -TERM 0
+echo sent >"$GROUP_EVIDENCE/script.signalled"
+while :; do sleep 1; done
+FIXTURE
+  chmod +x "$repo/$script"
+  (
+    trap() {
+      local pid pgid
+      if [ "$#" -eq 4 ] && [ "$1" = '' ]; then
+        pid=$(/bin/sh -c 'echo "$PPID"')
+        pgid=$(ps -o pgid= -p "$pid" | tr -d '[:space:]')
+        if [ "$pid" != "$pgid" ]; then
+          echo starting >"$GROUP_EVIDENCE/watchdog.starting"
+          while [ ! -f "$GROUP_EVIDENCE/watchdog.continue" ]; do sleep 0.1; done
+        fi
+      fi
+      builtin trap "$@"
+    }
+    export -f trap
+    exec env TMPDIR="$tmp/tmp" GROUP_EVIDENCE="$evidence" \
+      "$repo/bin/fm-test-run.sh" "$script"
+  ) >"$tmp/out" 2>"$tmp/err" &
+  runner_pid=$!
+  if ! wait_for_files 300 "$evidence/script.pid" "$evidence/script.signalled"; then
+    kill -KILL "$runner_pid" 2>/dev/null || true
+    fail "the watchdog startup fixture did not signal its group: $(cat "$tmp/out" "$tmp/err")"
+  fi
+  script_pid=$(cat "$evidence/script.pid")
+  sleep 0.3
+  touch "$evidence/watchdog.continue"
+  kill -TERM "$runner_pid"
+  if ! wait_for_pid_gone "$runner_pid" 150; then
+    kill -KILL "$runner_pid" 2>/dev/null || true
+    wait "$runner_pid" 2>/dev/null || true
+    kill -KILL -- "-$script_pid" 2>/dev/null || true
+    fail "the signalled fixture prevented runner cancellation"
+  fi
+  set +e
+  wait "$runner_pid"
+  rc=$?
+  set -e
+  assert_equals 143 "$rc" "cancellation after an early group signal must preserve TERM status"
+  if ! wait_for_pid_gone "$script_pid" 150; then
+    kill -KILL -- "-$script_pid" 2>/dev/null || true
+    fail "a group signal killed the watchdog before its handlers were installed"
+  fi
+  rm -rf "$tmp"
+  pass "a group signal before watchdog initialization cannot disable cleanup"
+}
+
 # A hard kill gives the runner no chance to pass anything on. Without a
 # per-script bound nothing else would ever end the script, so its group must
 # end with the runner, including a process that ignores TERM.
@@ -2489,6 +2551,7 @@ test_a_script_that_signals_its_group_cannot_reach_the_caller
 test_a_contained_script_keeps_stdin_status_and_leftovers
 test_a_terminated_runner_takes_its_script_with_it
 test_a_terminated_runner_does_not_wait_forever_for_a_stubborn_script
+test_a_group_signal_before_watchdog_initialization_keeps_cleanup
 test_a_killed_runner_does_not_orphan_its_script
 test_changed_bound_gives_slow_watcher_suites_headroom
 test_max_wall_ms_is_a_result_not_advice

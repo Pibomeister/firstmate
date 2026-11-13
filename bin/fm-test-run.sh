@@ -2923,6 +2923,8 @@ script_group_leader() {  # <link> <command...>
     printf 'fm-test-run: could not give %s its own process group; not running it\n' "$*" >&2
     exit 125
   fi
+  # The watch must inherit ignored signals before either child can run.
+  trap '' INT HUP TERM
   (
     # A line means the owner released the group. End of file with no line means
     # the owner is gone, and then nothing else would ever end this group.
@@ -2938,6 +2940,7 @@ script_group_leader() {  # <link> <command...>
     done
     kill -KILL -- "-$group" 2>/dev/null || true
   ) </dev/null >/dev/null 2>&1 &
+  trap - INT HUP TERM
   exec "$@" 7<&-
 }
 
