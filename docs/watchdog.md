@@ -217,6 +217,68 @@ A terminal that only becomes known is not a move, and a lock rewrite proven back
 A supervisor that restarts captains itself treats a `live` record, or a `moved_at` newer than its own evidence, as a captain already in place.
 A pane the record does not name is not the live captain, and an empty terminal means the captain's pane is not proven yet.
 
+## Supervisor-gap record
+
+Each `once` or `run` pass appends to `state/night-score/supervisor-gap.tsv` under the owner home, for every home that pass read.
+The record is the evidence that the watchdog itself read a home's published heartbeat, so a reader can tell a clean reading from no reading.
+`scan` appends nothing, and a dry-run pass appends the same rows as any other pass.
+The file is append-only, and the watchdog never rotates it.
+
+Each row is one line of three TAB-separated fields.
+
+| Row | Field 1 | Field 2 | Field 3 | Written when |
+| --- | --- | --- | --- | --- |
+| Observation | epoch | `observed` | home | The pass read that home's heartbeat age |
+| Gap | epoch | home | `heartbeat_age=<seconds>` | That age is over 600 seconds |
+
+`epoch` is the watchdog clock in seconds, taken after the heartbeat file is read.
+`home` is the canonical absolute path of the watched home, the same value as the `home` column of the action ledger.
+The age is `epoch` minus the `published_epoch` of that home's `state/heartbeat.json`.
+The heartbeat is read only when it is a regular file, and not a symbolic link, that `jq` parses as one JSON document with schema `fm-heartbeat.v1`.
+Its top-level key `published_epoch`, spelled with no escape, must hold a positive integer written as plain decimal digits, 15 at most.
+A document that holds a second key named `published_epoch` at any depth is not read.
+An age of exactly 600 seconds is not a gap, and the limit follows no `config/watchdog` key.
+A gap row and its observation row share one epoch, and the gap row is appended first.
+Each append starts with one line of three TABs, which is not a row, and the rows follow it.
+That line closes a piece that a cut append left, so the rows start on their own line.
+The append reads nothing in the file first, so no other pass can write between a check and the rows.
+The append is not guaranteed to be one write.
+So a reader must not assume the two rows are adjacent, and a gap row can stand without its observation row when the append is cut short.
+
+A heartbeat that is absent, not read, or stamped later than the clock writes no row for that home.
+A clock that does not have exactly 10 digits writes no row, and neither does a home that is empty or holds a TAB, a newline or a carriage return.
+So a home with no observation row in a span was not measured there, and nothing is written to stand in for a missing reading.
+An append that cannot start writes no row.
+An append that fails after it started can leave the whole lines it already wrote and one cut piece.
+The next append closes that piece to a line of more than two TAB bytes.
+A cut append can also continue after another pass appended, and then the rest of it lands after the bytes of that pass.
+The first line of the rest can then be the end of a cut line, or a line that joins a piece that the other pass left.
+The end of a cut line is not a row: it has fewer than two TAB bytes, or its first field is empty or has fewer than 10 digits.
+The lines after the first line are rows, so a gap row that was cut or joined can be lost while its observation row stays.
+A joined line can also pass the row rule and not be a true reading.
+Such a line can be an observation row whose home is the first part of the true home path.
+All these cases need a write that is cut and then continues, and another pass that appends between the two parts.
+A row is a newline-terminated line that holds exactly two TAB bytes, no NUL byte, and a first field of exactly 10 ASCII digits, 0 to 9.
+So a reader must count the TAB bytes, must not split on runs of them, and must check the first field.
+The watchdog clock has 10 digits until the year 2286.
+
+A failed append queues an open gap for that home and writes one report line to standard error, and it does not fail the pass.
+The line names the directory name of the home and the record path.
+Neither report is certain.
+The status file drops a repeated open-gap line and keeps a limited number of them.
+The status file is in the owner home.
+Under the launchd service, standard error goes to `state/watchdog/run.log`, which is in the owner home too.
+Under the systemd service, standard error goes to the journal.
+So a full owner home can lose the open gap, and under launchd the standard error line too, and then the only sign in that home is a status file that is missing or not updated.
+On a full owner home, other failed writes of the pass print their own lines where standard error can still be written.
+On bash 3.2, a report line that could not be written stays in the shell and can come out with a later write or command substitution of the same pass.
+When the pass cannot create its work files under `state/watchdog`, as on a read-only owner home, it fails before it reads a home and appends nothing.
+
+The record never judges a handoff: a gap row is written during one, so a consumer of the record must exclude handoffs itself.
+It measures heartbeat age only, so it does not replace the `alive` verdict of the [captain record](#captain-record).
+A registered home that runs no watcher gets a gap row on every pass while an old heartbeat file exists.
+A gap that starts and ends between two passes is not seen.
+
 ## Configuration (config/watchdog)
 
 `config/watchdog` is local and gitignored, with one `key=value` per line.

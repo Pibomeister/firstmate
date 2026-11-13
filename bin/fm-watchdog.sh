@@ -27,6 +27,7 @@
 #   state/watchdog/near-loop/<home-basename>-<path-cksum>  epoch, evidence cksum, and answer of the last near-loop judgment.
 #   state/watchdog/escalated/<home-basename>-<path-cksum>  present after a restart loop; remove it to clear.
 #   state/watchdog/last-read     epoch of the last ack-read.
+#   state/night-score/supervisor-gap.tsv  append-only supervisor-gap record of every watched home; docs/watchdog.md owns its rows.
 #   data/watchdog/status.md      the short status file, rewritten atomically after each pass.
 #   data/watchdog/handoffs/, data/watchdog/rulings/  restart handoffs and council rulings.
 # A restarted session writes <its home>/state/watchdog/pickups/<token>.
@@ -639,6 +640,26 @@ wd_key() {
 
 wd_gap() {  # <text>
   printf '%s\n' "- $O_TAG: $1" >> "$WD_GAPS"
+}
+
+# wd_score_gap: appends the supervisor-gap rows of the subject wd_observe just
+# read (docs/watchdog.md "Supervisor-gap record"). A heartbeat that is not read
+# writes nothing, and a clock that does not have exactly 10 digits writes
+# nothing. Each append starts with a line of three TABs, which is not a row: it
+# closes whatever a cut append left, with no check of the last byte, so no other
+# pass can put bytes between a check and the rows. A child process writes the
+# record, so a failed write leaves no row bytes in this shell's output buffer
+# for the next builtin write to send to another file. The two report lines are
+# builtin writes, like every other report of the pass.
+wd_score_gap() {
+  local f=$STATE/night-score/supervisor-gap.tsv pub now rows
+  pub=$(fm_wd_heartbeat_published "$O_HOME/state/heartbeat.json") || return 0
+  now=$(wd_now)
+  rows=$(fm_wd_supervisor_gap_rows "$O_HOME" "$now" "$pub") || return 0
+  if ! { mkdir -p "${f%/*}" && cat >> "$f" <<< $'\t\t\t\n'"$rows"; } 2>/dev/null; then
+    wd_gap "supervisor-gap record append failed"
+    printf 'fm-watchdog: supervisor-gap record append failed for %s: %s\n' "$O_TAG" "$f" >&2
+  fi
 }
 
 # --- cheap model judge ---------------------------------------------------------
@@ -1674,6 +1695,7 @@ wd_once() {  # [home-filter]
     [ -z "$filter" ] || [ "$home" = "$filter" ] || continue
     wd_monitor_read "$home"
     wd_observe "$home" "$parent" "$id"
+    wd_score_gap
     WD_SYMPTOM=ok WD_RESTARTED=0
     wd_handle_subject
     wd_visit_worker_dialogs page
