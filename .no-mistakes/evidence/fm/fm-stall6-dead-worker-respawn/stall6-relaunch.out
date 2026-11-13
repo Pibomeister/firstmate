@@ -1,0 +1,1 @@
+check: stall6 auto-relaunched from its checkpoint after its agent died in stalllab:fm-stall6 (relaunch 1 of 2 in 3600s) - its local copy was kept; reconcile its current state rather than relaunching it again

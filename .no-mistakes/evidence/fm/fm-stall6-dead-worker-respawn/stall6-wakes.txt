@@ -1,0 +1,10 @@
+stale: stalllab:fm-stall6 (idle 3s, possible wedge, escalation 1)
+2026-11-12T23:41:52Z PASS hung: live agent escalated and was not relaunched
+check: stall6 auto-relaunch failed after its agent died in stalllab:fm-stall6 (exit 1): error: stall6 was relaunched on claude but no running agent could be confirmed; its work is preserved at /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall6.DwwaOM/lab/wt - recover it by hand, and check for unlanded work before any cleanup
+2026-11-12T23:42:52Z PASS failed relaunch was not retried
+check: stall6 auto-relaunched from its checkpoint after its agent died in stalllab:fm-stall6 (relaunch 1 of 2 in 3600s) - its local copy was kept; reconcile its current state rather than relaunching it again
+2026-11-12T23:43:08Z PASS relaunch kept the dirty copy and named it in the brief
+stale: stalllab:fm-stall6 (idle 2s, agent dead - the endpoint is still there with no agent running in it, so this is not a wedge; reported once and not re-escalated while it stays that way - reconcile this record, and check for unlanded work before any cleanup; automatic relaunch skipped because the worker was stopped on purpose (state/.crew-stopped-stall6))
+2026-11-12T23:43:16Z PASS deliberate stop was not relaunched
+2026-11-12T23:43:16Z ALL LIVE SCENARIOS PASSED
+2026-11-12T23:43:16Z cleanup exit=0

@@ -1,0 +1,59 @@
+2026-11-12T23:28:27Z lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall6.BSewgR/lab
+2026-11-12T23:28:27Z tmux dir /tmp/fml.1DAsk0
+2026-11-12T23:28:27Z worktree /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall6.BSewgR/lab/wt branch fm/stall6 dirty=?? dirty-notes.txt
+2026-11-12T23:28:27Z pane PATH /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall6.BSewgR/lab/bin:/usr/bin:/bin
+2026-11-12T23:28:27Z host claude ~/.local/bin/claude
+2026-11-12T23:28:28Z window stalllab:fm-stall6
+2026-11-12T23:28:29Z agent state while stand-in is up: alive
+2026-11-12T23:28:29Z pane tty /dev/ttys001
+22076 22076 23680 /bin/bash /bin/bash --noprofile --norc
+23680 23680 23680 claude    claude 99999
+2026-11-12T23:28:29Z window key stalllab_fm-stall6
+2026-11-12T23:28:29Z seeded stale hash 4eedb61340c40d61c5487be3559a7c15
+2026-11-12T23:28:29Z claude mode sleep
+2026-11-12T23:28:29Z watcher start hung budget=90s
+2026-11-12T23:28:36Z watcher hung exited 0 after 7s
+2026-11-12T23:28:36Z ----- hung output -----
+stale: stalllab:fm-stall6 (idle 3s, possible wedge, escalation 1)
+2026-11-12T23:28:36Z agent state after hung probe: alive
+2026-11-12T23:28:36Z PASS hung: live agent escalated and was not relaunched
+2026-11-12T23:28:36Z killing pid 23680 comm claude on /dev/ttys001
+2026-11-12T23:28:38Z agent state after outside kill: dead
+2026-11-12T23:28:38Z pane tty /dev/ttys001
+22076 22076 22076 /bin/bash /bin/bash --noprofile --norc
+2026-11-12T23:28:38Z claude mode exit1
+2026-11-12T23:28:38Z busy-gen before failed relaunch: g1794526118.55204.27958
+2026-11-12T23:28:38Z seeded stale hash 9d56302013c86b0206d2afbedb9ba890
+2026-11-12T23:28:38Z watcher start fail1 budget=150s
+2026-11-12T23:29:04Z watcher fail1 exited 0 after 26s
+2026-11-12T23:29:04Z ----- fail1 output -----
+check: stall6 auto-relaunch failed after its agent died in stalllab:fm-stall6 (exit 1): error: stall6 was relaunched on claude but no running agent could be confirmed; its work is preserved at /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall6.BSewgR/lab/wt - recover it by hand, and check for unlanded work before any cleanup
+2026-11-12T23:29:04Z ledger after failed attempt:
+1794526123	attempt
+1794526123	failed
+2026-11-12T23:29:04Z dead marker: dead g1794526128.89180.17448
+2026-11-12T23:29:04Z busy-gen after: g1794526128.89180.17448
+2026-11-12T23:29:04Z note: busy-gen survived the failed relaunch
+2026-11-12T23:29:04Z re-seeded hash 5a22eac8b256b1a0c9c48087a1ba5a48 and left the dead marker in place
+2026-11-12T23:29:04Z watcher start fail2 budget=90s
+2026-11-12T23:30:35Z watcher fail2 still alive after 90s; stopping it
+2026-11-12T23:30:36Z ----- fail2 output (timeout) -----
+2026-11-12T23:30:36Z attempts after second probe: 1
+2026-11-12T23:30:36Z PASS failed relaunch was not retried
+2026-11-12T23:30:36Z claude mode sleep
+2026-11-12T23:30:36Z seeded stale hash 5a22eac8b256b1a0c9c48087a1ba5a48
+2026-11-12T23:30:36Z watcher start relaunch budget=180s
+2026-11-12T23:30:57Z watcher relaunch exited 0 after 21s
+2026-11-12T23:30:57Z ----- relaunch output -----
+check: stall6 auto-relaunched from its checkpoint after its agent died in stalllab:fm-stall6 (relaunch 1 of 2 in 3600s) - its local copy was kept; reconcile its current state rather than relaunching it again
+2026-11-12T23:30:57Z agent state after relaunch probe: alive
+2026-11-12T23:30:57Z pane tty /dev/ttys001
+22076 22076 46055 /bin/bash /bin/bash --noprofile --norc
+46055 46055 46055 claude    claude 99999
+2026-11-12T23:30:57Z stub log:
+2026-11-12T23:30:57Z ledger:
+1794526245	attempt
+1794526245	relaunched
+2026-11-12T23:30:58Z FAIL: replacement process is not the sleep stand-in: /bin/bash --noprofile --norc
+claude 99999
+2026-11-12T23:30:58Z cleanup exit=1

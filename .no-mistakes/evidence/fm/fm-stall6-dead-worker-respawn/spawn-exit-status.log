@@ -1,0 +1,4 @@
+ok - the launch records the agent's clean or SIGTERM exit status with its spawn_gen in both allowlist postures
+ok - a fresh spawn clears the intentional-stop marker
+ok - fm-control exit records the intentional stop and a later relaunch clears it
+ok - skipped: fish is not installed, so the allowlist-absent launch was not executed under fish

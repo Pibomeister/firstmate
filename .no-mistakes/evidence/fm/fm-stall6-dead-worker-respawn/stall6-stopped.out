@@ -1,0 +1,1 @@
+stale: stalllab:fm-stall6 (idle 2s, agent dead - the endpoint is still there with no agent running in it, so this is not a wedge; reported once and not re-escalated while it stays that way - reconcile this record, and check for unlanded work before any cleanup; automatic relaunch skipped because the worker was stopped on purpose (state/.crew-stopped-stall6))
