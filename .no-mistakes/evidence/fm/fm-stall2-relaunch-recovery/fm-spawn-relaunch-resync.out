@@ -1,0 +1,6 @@
+1..3
+ok - fm-spawn --relaunch: no-mistakes divergence refuses, behind advances, and explicit worker-owned modes skip resync despite a no-mistakes remote
+ok - fm-spawn --relaunch: under an active run the replacement launches with the owner's monitoring-only contract
+ok - fm-spawn --relaunch: a clean strictly-ahead run_pipeline verdict launches and keeps the local commit
+FM_TEST_COMPLETE
+EXIT:0

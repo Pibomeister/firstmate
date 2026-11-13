@@ -1,0 +1,85 @@
+CASE clean-ahead
+RC=0
+HEAD_BEFORE=3b8f1bdbc45d2e9768fc990136a819cdae9be462
+HEAD_AFTER=3b8f1bdbc45d2e9768fc990136a819cdae9be462
+HEAD_KEPT=yes
+REFS_KEPT=yes
+ORIGIN_KEPT=yes
+CALLS:
+axi sync --check
+axi sync --check
+TRANSCRIPT:
+fm-pr-resync: result=ahead:1 archive=- custody=settled head=3b8f1bdbc45d2e9768fc990136a819cdae9be462
+
+CASE dirty-ahead
+RC=1
+HEAD_BEFORE=64901590721eec6bc29c91079bcd49ffe096bf5f
+HEAD_AFTER=64901590721eec6bc29c91079bcd49ffe096bf5f
+HEAD_KEPT=yes
+REFS_KEPT=yes
+ORIGIN_KEPT=yes
+CALLS:
+axi sync --check
+TRANSCRIPT:
+branch_sync:
+  state: local_ahead
+  changed: false
+  pipeline:
+    run: "01RUN"
+    status: running
+    current_head: ""
+  relation: ahead
+  safety: blocked_local_ahead
+  next_action:
+    code: run_pipeline
+    command: no-mistakes axi run
+fm-pr-resync: refused: no-mistakes custody is local_ahead/blocked_local_ahead (next_action run_pipeline), not a verdict this owner settles
+fm-pr-resync: changed: nothing; no commit was made unreachable
+fm-pr-resync: result=planned:none archive=- custody=refused head=64901590721eec6bc29c91079bcd49ffe096bf5f
+
+CASE active-ahead
+RC=3
+HEAD_BEFORE=adcdf99e83f6c658628c9457d6e4723d2180cb73
+HEAD_AFTER=adcdf99e83f6c658628c9457d6e4723d2180cb73
+HEAD_KEPT=yes
+REFS_KEPT=yes
+ORIGIN_KEPT=yes
+CALLS:
+axi sync --check
+TRANSCRIPT:
+fm-pr-resync: monitoring-only: A no-mistakes run holds custody of branch task-keep.
+fm-pr-resync: monitoring-only: You may reattach the active run with `no-mistakes axi run` (no flags), answer the gates it presents under your brief's gate and ask-user rules, and make your brief's CI-ready report through its named-head check.
+fm-pr-resync: monitoring-only: Do not edit, commit, start, rerun or abort a run, begin a new phase, or take any other outward action until `{run-worktree}/bin/fm-pr-resync.sh t-keep /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-resync-drive.gHrwN5/active-ahead/repo task-keep` exits 0 against the published head.
+fm-pr-resync: changed: nothing
+fm-pr-resync: result=planned:none archive=- custody=pipeline-active head=adcdf99e83f6c658628c9457d6e4723d2180cb73
+
+CASE diverged-ahead-verdict
+RC=1
+HEAD_KEPT=yes
+REFS_KEPT=NO
+ARCHIVES_BEFORE=<none>
+ARCHIVES_AFTER=<none>
+CALLS:
+axi sync --check
+TRANSCRIPT:
+branch_sync:
+  state: local_ahead
+  changed: false
+  pipeline:
+    run: "01RUN"
+    status: running
+    current_head: ""
+  relation: ahead
+  safety: blocked_local_ahead
+  next_action:
+    code: run_pipeline
+    command: no-mistakes axi run
+fm-pr-resync: refused: no-mistakes custody is local_ahead/blocked_local_ahead (next_action run_pipeline), not a verdict this owner settles
+fm-pr-resync: changed: nothing; no commit was made unreachable
+fm-pr-resync: result=planned:archive-advance archive=- custody=refused head=5ddf356bd1dfdc638782866d102f4bc6520f3663
+
+NOTE diverged-ahead-verdict refs:
+The local branch refs/heads/task-keep stayed at the pre-rebase commit (5ddf356 published).
+No refs/heads/archive ref was created. refs/remotes/origin/task-keep moved because the owner
+fetches the published head before the custody refusal. That fetch is the existing published-head
+read, and the local commit was not archived or advanced.

@@ -1,0 +1,4 @@
+1..1
+ok - fm-control relaunch: delivery and concurrent task metadata publication serialize
+FM_TEST_COMPLETE
+EXIT:0

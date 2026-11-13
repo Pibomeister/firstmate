@@ -1,0 +1,33 @@
+branch_sync:
+  state: legacy_unbound
+  changed: false
+  local:
+    branch: task-probe
+    head: 2f49e1e71e95b75003a00e53b27cf1c01a27e9bd
+    clean: true
+  pipeline:
+    run: ""
+    status: ""
+    phase: ""
+    submitted_head: ""
+    current_head: ""
+    pushed_head: ""
+    pushed_at: 0
+    push_generation: 0
+  target:
+    kind: ""
+    remote: ""
+    url: ""
+    ref: ""
+  remote:
+    observed_head: ""
+    freshness: unknown
+    observed_at: 0
+  relation: unknown
+  safety: blocked_legacy_unbound
+  pr_state: ""
+  note: no exact successful pipeline push binding exists for the checked-out branch
+error: no exact successful pipeline push binding exists for the checked-out branch
+fm-pr-resync: refused: no-mistakes custody is legacy_unbound/blocked_legacy_unbound (next_action none), not a verdict this owner settles
+fm-pr-resync: changed: nothing; no commit was made unreachable
+fm-pr-resync: result=planned:none archive=- custody=refused head=2f49e1e71e95b75003a00e53b27cf1c01a27e9bd
