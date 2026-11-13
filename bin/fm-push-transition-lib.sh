@@ -173,6 +173,18 @@ fm_secondmate_watch_status() {
   fm_watcher_healthy "$STATE" "$FM_PUSH_TRANSITION_LIB_DIR/fm-watch.sh" "${FM_GUARD_GRACE:-300}" "$FM_HOME"
 }
 
+# Relay the contender's own stale-holder refusal. The line is the one the
+# detached watcher already wrote; this does not invent a second diagnosis.
+# Returns 0 when a line was printed.
+fm_secondmate_watch_relay_stale_refusal() {
+  local log line
+  log="$STATE/.secondmate-watch.log"
+  [ -f "$log" ] && [ ! -L "$log" ] || return 1
+  line=$(grep -F 'heartbeat is stale' "$log" 2>/dev/null | tail -n 1) || true
+  [ -n "$line" ] || return 1
+  printf '%s\n' "$line" >&2
+}
+
 fm_secondmate_watch_start() {
   local pid identity tmp deadline monitor=0
   fm_secondmate_watch_selected || { echo 'secondmate watcher: unsupported home, route or ownership mode' >&2; return 1; }
@@ -215,8 +227,14 @@ fm_secondmate_watch_start() {
   deadline=$(( $(date +%s) + 10 ))
   while [ "$(date +%s)" -lt "$deadline" ]; do
     fm_secondmate_watch_status && return 0
+    # The contender has already refused this live holder. Waiting out the
+    # deadline would not make it the ready watcher.
+    if fm_secondmate_watch_relay_stale_refusal; then
+      return 1
+    fi
     sleep 0.2
   done
+  fm_secondmate_watch_relay_stale_refusal || true
   return 1
 }
 
