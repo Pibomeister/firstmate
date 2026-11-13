@@ -434,12 +434,15 @@ watch_lock_age() {  # <path>; retain fm_path_age's future-mtime semantics
   fm_watch_now now
   echo $(( now - m ))
 }
-# The liveness beacon is touched once per cycle, immediately before the
-# terminal wait below (event_wait_or_sleep) as well as at the top of the next
-# one, so a healthy cycle's beacon can legitimately age up to POLL seconds
-# between touches. fm_poll_derived_grace (bin/fm-wake-lib.sh, already sourced
-# transitively above) is the single owner of the max(300, poll+60)
-# derivation - see docs/turnend-guard.md "Guard grace and the poll cadence".
+# The liveness beacon is touched at the start of each cycle, when a
+# pane-staleness record begins after the previous record has returned, and
+# when that scan returns. A subordinate that has not returned does not refresh
+# it, so a stuck capture still ages past grace. After the scan, the beacon can
+# still age through the rest of the cycle and the terminal wait, up to one
+# in-flight record plus POLL seconds. fm_poll_derived_grace
+# (bin/fm-wake-lib.sh, already sourced transitively above) is the single owner
+# of the max(300, poll+60) derivation - see docs/turnend-guard.md
+# "Guard grace and the poll cadence".
 # This recomputes the library default above now that the real configured
 # POLL is known.
 WATCHER_STALE_GRACE=${FM_WATCHER_STALE_GRACE:-${FM_GUARD_GRACE:-$(fm_poll_derived_grace "$POLL")}}
@@ -3869,6 +3872,14 @@ procevent_surface_after_output() {
   return "$status"
 }
 
+# Refresh the beacon at a completed pane-staleness boundary. The previous
+# record has returned, or the scan itself has. A capture that has not returned
+# never reaches the next call. This is not a timer.
+# docs/turnend-guard.md "Guard grace and the poll cadence" owns the contract.
+watch_record_progress_beat() {
+  touch "$STATE/.last-watcher-beat"
+}
+
 # watch_stage <name>: record which part of its poll this watcher is in, as one
 # line "<pid>\t<epoch>\t<stage>" in state/.watcher-stage, so the guard's
 # watcher-down banner can name where a stalled watcher stopped (bin/fm-guard.sh).
@@ -5287,6 +5298,7 @@ EOF
   watch_stage pane-staleness
   parked_gate_scan_begin
   while IFS= read -r w; do
+    watch_record_progress_beat
     kind=$(window_kind "$w")
     task=$(window_to_task "$w" "$STATE")
     # Steering-inbox loss detection runs before the secondmate stale
@@ -5584,6 +5596,7 @@ EOF
       fi
     fi
   done < <(recorded_windows)
+  watch_record_progress_beat
   parked_gate_scan_end
 
   # Heartbeat: the watcher runs a cheap fleet-scan at a regular cadence no matter
