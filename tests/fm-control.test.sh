@@ -284,6 +284,7 @@ run_control() {
     FM_FAKE_INTERRUPT_STOPS_AGENT="${FM_FAKE_INTERRUPT_STOPS_AGENT:-}" \
     FM_FAKE_SECOND_CTRL_C_STOPS_AGENT="${FM_FAKE_SECOND_CTRL_C_STOPS_AGENT:-}" \
     FM_FAKE_DEVIN_PICKER_STUCK="${FM_FAKE_DEVIN_PICKER_STUCK:-}" \
+    FM_CONTROL_EXPECTED_SPAWN_GEN="${FM_CONTROL_EXPECTED_SPAWN_GEN:-}" \
     FM_TEST_ORCA_BOOT_EPOCH="${FM_TEST_ORCA_BOOT_EPOCH:-2000}" \
     "$CONTROL" "$@" 2>&1
 }
@@ -1005,6 +1006,22 @@ test_unknown_task_is_refused() {
   expect_code 1 "$rc" "an unknown task should refuse"
   assert_contains "$out" "no task 't2'" "the refusal should name the missing task"
   pass "fm-control: an unrecorded task id is refused"
+}
+
+test_expected_spawn_gen_binds_interrupt() {
+  local dir out rc
+  dir=$(new_case genbind)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  printf 'spawn_gen=s100.1\n' >> "$dir/home/state/t1.meta"
+  out=$(FM_CONTROL_EXPECTED_SPAWN_GEN=s999.1 run_control "$dir" t1 interrupt); rc=$?
+  expect_code 1 "$rc" "an interrupt bound to a stale spawn_gen should refuse"
+  assert_contains "$out" "spawn_gen no longer matches" "the stale-generation refusal should name the binding"
+  [ -z "$(keys_sent "$dir")" ] || fail "a stale-generation interrupt must send no keys"
+  out=$(FM_CONTROL_EXPECTED_SPAWN_GEN=s100.1 run_control "$dir" t1 interrupt); rc=$?
+  expect_code 0 "$rc" "an interrupt bound to the current spawn_gen should proceed: $out"
+  assert_contains "$(keys_sent "$dir")" "Escape" "the bound interrupt did not deliver its key"
+  pass "fm-control: FM_CONTROL_EXPECTED_SPAWN_GEN refuses a relaunched worker and admits the recorded generation"
 }
 
 test_record_bound_to_another_task_is_refused() {
@@ -1947,6 +1964,7 @@ test_state_verified_backends_are_exactly_tmux_herdr_orca_and_rex
 test_window_label_is_refused_with_the_exact_id
 test_explicit_endpoint_is_refused
 test_unknown_task_is_refused
+test_expected_spawn_gen_binds_interrupt
 test_record_bound_to_another_task_is_refused
 test_remote_secondmate_is_refused_by_placement
 test_interrupt_and_exit_lock_before_task_state_resolution

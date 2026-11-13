@@ -1086,6 +1086,7 @@ The optional local, gitignored `config/lane-capacity` file says how many ship an
 `bin/fm-capacity.sh` reads it to report how many lanes are open for queued work, alongside running lanes, 1-minute load against logical cores, free memory, and free disk.
 With the file absent nothing changes: the report prints counts and host figures only, never invents a target, never advises holding dispatch, and nothing is published; a malformed value is reported as invalid rather than guessed.
 Persistent secondmates hold no lane.
+A lane whose task has recorded its ready PR frees its place, as project capacity does, while it still counts among the running lanes.
 The file is a per-machine choice and is not inherited by secondmate homes, so each home owns its own numbers.
 
 The first non-comment line is the cap, one non-negative integer, so a file holding only that integer keeps its earlier meaning.
@@ -1111,9 +1112,19 @@ A pressure file is any producer of the `lookout.beat` 1.x shape, read by its own
 `quota-provider` is the only key that makes the script reach the network, through `quota-axi`, bounded to five seconds.
 
 While the file exists, the watcher runs `bin/fm-capacity.sh --publish` detached at most every 30 seconds, writing this home's lane facts to `state/lane-capacity.json`: its lanes, its cap and limits, its machine's pressure and boots, its watcher's freshness, and its own admission verdict.
-Publishing is best-effort and never changes what the watcher does; no spawn reads the verdict.
-`bin/fm-capacity.sh --admit` is an advisory check of the same verdict: it exits 0 when the verdict admits or the file is absent, and reports the reasons on stderr with exit 75 when it does not.
-No Firstmate script calls it.
+Publishing is best-effort and never changes what the watcher does.
+`bin/fm-capacity.sh --admit` is the same verdict as an exit status: it exits 0 when the verdict admits or the file is absent, and reports the reasons on stderr with exit 75 when it does not.
+`bin/fm-spawn.sh` instead runs the narrower `bin/fm-capacity.sh --spawn-gate` for every fresh ship or scout spawn: a spawn past the lane cap, counting only lanes that hold a place and never the spawning task's own record, or on a host whose load is at or over one ceiling - `max-load1` when set, else the logical core count - is deferred with exit 75 before anything is created and its backlog item stays queued.
+The other holds in the verdict stay advisory for spawns.
+The watcher also runs `bin/fm-load-relief.sh check` detached beside the publish while the file exists.
+After load stays at or over the ceiling for the sustained window, that check interrupts exactly one lowest-priority live worker in place per pass - never killing it or touching its work - records the pause under `state/load-relief/paused/`, and, while a later check reads load below the resume level (75% of the ceiling unless set), steers one paused worker per pass to resume, highest priority first.
+Priority is the `priority` field of the task's backlog item, with the largest number paused first; an item with no numeric priority counts as the lowest and pauses before any numbered one, a task with no backlog item or a lane with a ready PR is never paused, and ties pause the newest dispatch first.
+Only a worker whose recorded backend can deliver its harness's interrupt key is a candidate, so on the Orca backend only Droid and Grok workers are ever paused.
+A worker with an open decision or a captain hold is never paused or resumed, judged by the authoritative open-decision fold over its whole status file rather than its latest line.
+An interrupt that returns nonzero keeps its pause record as uncertain, because delivery is unproven, appends a keyed `paused:` line that says so, and counts toward the per-pass pause limit; the resume pass resolves it.
+The resume pass runs even when the lane-capacity file is removed or the relief config is malformed: while a pause record exists, the watcher keeps running the check every 30 seconds without the lane-capacity file, so a paused worker is never stranded by a broken opt-in.
+The ceiling is `max-load1` above unless the optional `config/load-relief` file sets `ceiling`, `resume-below`, `sustain-secs`, or `pause-per-check`.
+[`bin/fm-load-relief.sh`](../bin/fm-load-relief.sh) owns that file's format, the priority order, and the pause records.
 The script's header owns the report line, the published document's fields, the verdict, the beat freshness rules, the host-constraint thresholds, and the probe fallbacks.
 
 ## Disk alarm

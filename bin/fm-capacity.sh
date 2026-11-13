@@ -7,6 +7,7 @@
 #   fm-capacity.sh --json     the fm-lane-capacity.v1 document on stdout
 #   fm-capacity.sh --publish  write that document to state/lane-capacity.json
 #   fm-capacity.sh --admit    this home's own admission verdict as an exit status
+#   fm-capacity.sh --spawn-gate  the fresh-spawn verdict bin/fm-spawn.sh enforces
 #
 # It reads this home's state/*.meta, the optional config/lane-capacity, the
 # pressure files and reserve flags that file names, and the host's own probes.
@@ -33,7 +34,11 @@
 # malformed file reports target=invalid reason=invalid-target, names the
 # problem and its line on stderr, and exits 1.
 #
-# With a target, free_lanes is target minus lanes (never below 0), unless a
+# With a target, free_lanes is target minus the lanes that hold a place
+# (never below 0): a lane whose record carries a pr= line has recorded its
+# ready PR, waits on review or merge, and frees its place exactly as the
+# project-capacity gate releases one (bin/fm-project-capacity-lib.sh). It is
+# still counted in lanes and in lanes.pr_ready. That holds unless a
 # constraint holds, in which case free_lanes=0 and reason names every
 # constraint, comma-separated, in this order:
 #   cpu       probe basis: 1-minute load average >= logical cores
@@ -94,8 +99,8 @@
 #     when it cannot be read),
 #   limits {min_avail_gb, min_disk_gb, max_load1} (null when unset),
 #   verdict {admit, free_lanes, reasons[]}.
-# verdict.admit is true only with a valid cap, lanes under it, and no
-# constraint; its reasons are the constraints in words. The document carries
+# verdict.admit is true only with a valid cap, the lanes holding a place
+# (lanes minus pr_ready) under it, and no constraint; its reasons are the constraints in words. The document carries
 # labels and derived states only, never paths, addresses, commands, or tokens:
 # a beat's own why and error text is published as counts (pressure_why=N,
 # beat_errors=N), and an invalid config line by its line number and a fixed
@@ -110,12 +115,23 @@
 # --admit exits 0 when config/lane-capacity is absent or the verdict admits,
 # and 75 with one `deferred:` line on stderr when it does not.
 #
+# --spawn-gate [<task-id>] is narrower and is the only verdict that blocks a
+# fresh spawn: the named spawning task's own record never counts against it.
+# It exits 0 when config/lane-capacity is absent, when the lanes holding a
+# place are under the cap, and when load1 is under one load ceiling -
+# max-load1 when set, else the logical core count (the ceiling
+# bin/fm-load-relief.sh uses). An unreadable load or core probe imposes no
+# load hold. Otherwise it exits 75 with one `deferred:` line naming the cause.
+# The memory, disk, pressure, reserve, battery, and core-count cpu holds stay
+# advisory in the report, the document, and --admit; bin/fm-disk-alarm.sh
+# owns the spawn disk gate.
+#
 # Environment: FM_HOME, FM_STATE_OVERRIDE, FM_CONFIG_OVERRIDE, and
 # FM_PROJECTS_OVERRIDE resolve the home exactly as the other bin/ scripts do.
 #
 # Exit status: 0 on a report, 1 on an invalid config/lane-capacity (report,
-# --json, --admit), 2 on a usage error or --json without jq, 75 on an --admit
-# deferral.
+# --json, --admit, --spawn-gate), 2 on a usage error or --json without jq, 75
+# on an --admit or --spawn-gate deferral.
 set -u
 export LC_ALL=C
 
@@ -141,9 +157,13 @@ case "${1:-}" in
   --json) mode=json ;;
   --publish) mode=publish ;;
   --admit) mode=admit ;;
-  *) echo "usage: fm-capacity.sh [--json|--publish|--admit|--help]" >&2; exit 2 ;;
+  --spawn-gate) mode=spawn-gate ;;
+  *) echo "usage: fm-capacity.sh [--json|--publish|--admit|--spawn-gate|--help]" >&2; exit 2 ;;
 esac
-[ "$#" -le 1 ] || { echo "usage: fm-capacity.sh [--json|--publish|--admit|--help]" >&2; exit 2; }
+[ "$#" -le 1 ] || { [ "$mode" = spawn-gate ] && [ "$#" -le 2 ]; } || { echo "usage: fm-capacity.sh [--json|--publish|--admit|--spawn-gate [<task-id>]|--help]" >&2; exit 2; }
+# --spawn-gate's optional task id names the spawning task, whose own stale
+# record (a fresh re-dispatch of the same id) never counts against itself.
+SPAWN_GATE_ID=${2:-}
 
 is_uint() {
   case "$1" in ''|*[!0-9]*) return 1 ;; esac
@@ -165,7 +185,7 @@ file_mtime() {
 now=$(date +%s)
 
 case "$mode" in
-  admit|publish) [ -e "$LANE_CONFIG" ] || exit 0 ;;
+  admit|publish|spawn-gate) [ -e "$LANE_CONFIG" ] || exit 0 ;;
 esac
 if [ "$mode" = publish ]; then
   interval=${FM_LANE_CAPACITY_PUBLISH_INTERVAL:-30}
@@ -190,6 +210,9 @@ pr_ready=0
 lane_ids=
 for meta in "$STATE"/*.meta; do
   [ -f "$meta" ] || continue
+  if [ "$mode" = spawn-gate ] && [ -n "$SPAWN_GATE_ID" ] && [ "$(basename "$meta" .meta)" = "$SPAWN_GATE_ID" ]; then
+    continue
+  fi
   if grep -qx 'kind=secondmate' "$meta" 2>/dev/null; then
     secondmates=$((secondmates + 1))
   else
@@ -308,6 +331,24 @@ case "$v" in [0-9]*) load1=$v ;; esac
 cores=$(getconf _NPROCESSORS_ONLN 2>/dev/null) || cores=
 is_uint "$cores" || cores=$(sysctl -n hw.logicalcpu 2>/dev/null) || cores=
 is_uint "$cores" && [ "$cores" -gt 0 ] || cores=unknown
+
+if [ "$mode" = spawn-gate ]; then
+  [ "$target" != invalid ] || { echo "fm-capacity: $target_error" >&2; exit 1; }
+  gate_reasons=
+  holding=$((lanes - pr_ready))
+  [ "$holding" -lt "$target" ] || gate_reasons="full: $holding of $target lanes hold a place"
+  if [ -n "$max_load1" ]; then
+    gate_ceiling=$max_load1 gate_basis=max-load1
+  else
+    gate_ceiling=$cores gate_basis="logical cores"
+  fi
+  if [ "$load1" != unknown ] && [ "$gate_ceiling" != unknown ] && ! num_lt "$load1" "$gate_ceiling"; then
+    gate_reasons="${gate_reasons:+$gate_reasons; }load: $load1 at or over its ceiling $gate_ceiling ($gate_basis)"
+  fi
+  [ -n "$gate_reasons" ] || exit 0
+  echo "deferred: lane capacity of this home ($LANE_CONFIG) does not admit another lane: $gate_reasons" >&2
+  exit 75
+fi
 
 mem_free_pct=unknown
 probe_avail_gb=
@@ -530,7 +571,7 @@ case "$target" in
   none) reason=no-target ;;
   invalid) reason=invalid-target ;;
   *)
-    free_lanes=$((target - lanes))
+    free_lanes=$((target - lanes + pr_ready))
     [ "$free_lanes" -ge 0 ] || free_lanes=0
     if [ -n "$constraints" ]; then
       free_lanes=0
@@ -540,7 +581,7 @@ case "$target" in
       admit=true
     else
       reason=full
-      reasons="full: $lanes of $target lanes
+      reasons="full: $((lanes - pr_ready)) of $target lanes
 "
       pub_reasons=$reasons
     fi
@@ -566,7 +607,7 @@ if [ "$mode" = report ]; then
   case "$target" in
     none) echo "Lanes: $lanes running, no target set (config/lane-capacity absent)." ;;
     invalid) echo "Lanes: $lanes running, target unreadable ($target_error)." ;;
-    *) echo "Lanes: $lanes running of $target target, $free_lanes open." ;;
+    *) echo "Lanes: $lanes running of $target target$([ "$pr_ready" -eq 0 ] || printf ' (%s with a ready PR, holding no place)' "$pr_ready"), $free_lanes open." ;;
   esac
   [ "$secondmates" -eq 0 ] || echo "Secondmates: $secondmates (hold no lane)."
   mem_text="${mem_free_pct}%"; [ "$mem_free_pct" != unknown ] || mem_text=unknown

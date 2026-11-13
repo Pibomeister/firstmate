@@ -208,6 +208,13 @@
 #   FM_CONTROL_EXIT_WAIT         alive->dead wait after the exit command (30)
 #   FM_CONTROL_LAUNCH_WAIT       dead->alive wait after a relaunch (90)
 #   FM_CONTROL_EXIT_RETRIES      Enter retries for the exit command (3)
+#   FM_CONTROL_EXPECTED_SPAWN_GEN  internal callers may require the task's
+#                                recorded spawn_gen to still match this value;
+#                                checked under the per-task lifecycle lock
+#                                after the record is read, so a worker
+#                                relaunched since the caller selected it is
+#                                refused rather than acted on. Unset or empty
+#                                does not change ordinary control calls.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -443,6 +450,11 @@ if [ ! -f "$META" ]; then
       ;;
   esac
   die "no task '$ID' in $STATE (fm-control resolves an exact task id only)"
+fi
+
+if [ -n "${FM_CONTROL_EXPECTED_SPAWN_GEN:-}" ] \
+  && [ "$(fm_meta_get "$META" spawn_gen)" != "$FM_CONTROL_EXPECTED_SPAWN_GEN" ]; then
+  die "task $ID's spawn_gen no longer matches the caller's expected generation; refusing to act on a relaunched worker"
 fi
 
 # A remotely placed secondmate records its endpoint on ANOTHER host, so every

@@ -401,6 +401,62 @@ CFG
   pass "limits close lanes with named reasons, and --admit exits 0, 75, or 1"
 }
 
+test_pr_ready_lanes_free_their_place() {
+  local home fakebin out rc i
+  home=$(make_home prready 4 0)
+  fakebin=$(make_probes "$TMP_ROOT/p-prready" 0.50 60 8 20971520)
+  printf '4\n' > "$home/config/lane-capacity"
+  out=$(run_capacity_jq "$home" "$fakebin" --admit); rc=$?
+  expect_code 75 "$rc" "four busy lanes at a cap of 4 must defer: $out"
+  i=0
+  while [ "$i" -lt 4 ]; do
+    printf 'pr=https://github.com/o/r/pull/%s\n' "$i" >> "$home/state/ship-$i.meta"
+    i=$((i + 1))
+  done
+  out=$(run_capacity_jq "$home" "$fakebin" --admit); rc=$?
+  expect_code 0 "$rc" "four PR-ready lanes at a cap of 4 must admit: $out"
+  out=$(run_capacity_jq "$home" "$fakebin")
+  assert_contains "$out" 'capacity: free_lanes=4 reason=ok lanes=4 target=4 ' "PR-ready lanes must still be counted but hold no place"
+  pass "a lane that recorded its ready PR frees its place in the admission verdict"
+}
+
+test_spawn_gate_uses_one_load_ceiling() {
+  local home fakebin out rc
+  home=$(make_home spawngate 1 0)
+  fakebin=$(make_probes "$TMP_ROOT/p-spawngate" 24.00 5 16 20971520)
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 0 "$rc" "the spawn gate without config must admit: $out"
+  printf '4\nmax-load1 40\nreserve-flag %s/reserved.flag\n' "$home" > "$home/config/lane-capacity"
+  : > "$home/reserved.flag"
+  out=$(run_capacity_jq "$home" "$fakebin" --admit); rc=$?
+  expect_code 75 "$rc" "the advisory verdict must still hold for cpu, memory, and reserve: $out"
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 0 "$rc" "load 24 under max-load1 40 with advisory holds must admit a spawn: $out"
+  fakebin=$(make_probes "$TMP_ROOT/p-spawngate-hot" 41.00 60 16 20971520)
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 75 "$rc" "load 41 over max-load1 40 must defer a spawn"
+  assert_contains "$out" 'load: 41.00 at or over its ceiling 40 (max-load1)' "the deferral must name the load ceiling"
+  printf '4\n' > "$home/config/lane-capacity"
+  fakebin=$(make_probes "$TMP_ROOT/p-spawngate-cores" 16.00 60 16 20971520)
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 75 "$rc" "without max-load1, load at the core count must defer"
+  assert_contains "$out" 'ceiling 16 (logical cores)' "the deferral must name the core-count ceiling"
+  printf '1\n' > "$home/config/lane-capacity"
+  fakebin=$(make_probes "$TMP_ROOT/p-spawngate-full" 0.50 60 16 20971520)
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 75 "$rc" "a full lane cap must defer"
+  assert_contains "$out" 'full: 1 of 1 lanes hold a place' "the deferral must name the lane cap"
+  printf '1\nbogus 1\n' > "$home/config/lane-capacity"
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 1 "$rc" "an invalid declaration must refuse"
+  printf '1\n' > "$home/config/lane-capacity"
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate ship-0); rc=$?
+  expect_code 0 "$rc" "the spawning task's own record must not count against itself: $out"
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate other-task); rc=$?
+  expect_code 75 "$rc" "another task's record must still count at a full cap"
+  pass "the spawn gate holds only on the lane cap and one load ceiling, and never counts the spawner's own record"
+}
+
 test_publish_document() {
   local home fakebin rc doc mode i
   home=$(make_home publish 2 1)
@@ -421,7 +477,7 @@ test_publish_document() {
   assert_equals 'fm-lane-capacity.v1|lanes-a|2|1|ship-0,ship-1|6|ok|alpha,beta|probe|19.2|32|0.06|4|null|null' \
     "$(printf '%s\n' "$doc" | jq -r '[.schema,.home,.lanes.count,.lanes.pr_ready,(.lanes.ids | join(",")),.cap.target,.cap.status,(.projects | join(",")),.pressure.basis,.pressure.avail_gb,.pressure.total_gb,.pressure.runq_per_core,.limits.min_avail_gb,.limits.max_load1,.quota] | map(tostring) | join("|")')" \
     "the published document must carry lanes, cap, projects, and probe pressure"
-  assert_equals 'true|4|not-configured|not-configured|1791484127|[1791484127]|true' \
+  assert_equals 'true|5|not-configured|not-configured|1791484127|[1791484127]|true' \
     "$(printf '%s\n' "$doc" | jq -r '[.verdict.admit,.verdict.free_lanes,.reserve.flag,.captain,.boot_id,(.boots | tojson),(.watcher_beat_age_s < 60)] | map(tostring) | join("|")')" \
     "the published document must carry the verdict, boots, and watcher age"
   mode=$(stat -c %a "$home/state/lane-capacity.json" 2>/dev/null || /usr/bin/stat -f %Lp "$home/state/lane-capacity.json")
@@ -547,6 +603,8 @@ test_several_pressure_files
 test_beat_with_missing_fields
 test_cap_only_memory_rule_unchanged
 test_limits_and_admit
+test_pr_ready_lanes_free_their_place
+test_spawn_gate_uses_one_load_ceiling
 test_publish_document
 test_captain_and_quota
 test_watcher_publishes_only_when_opted_in
