@@ -2376,6 +2376,211 @@ status_actions() {
   awk '/^## Actions/ { f = 1; next } /^## / { f = 0 } f && /^- /' "$H/data/watchdog/status.md" | wc -l | tr -d ' '
 }
 
+# --- supervisor-gap record -----------------------------------------------------
+
+gap_rows() { cat "$1/state/night-score/supervisor-gap.tsv" 2>/dev/null; }
+canon() { (cd -P "$1" && pwd -P); }
+# publish <home> <json-value>: stamps the fixture heartbeat with a published_epoch.
+publish() {
+  jq --argjson p "$2" '.published_epoch = $p' "$1/state/heartbeat.json" > "$1/state/heartbeat.json.new" \
+    && mv "$1/state/heartbeat.json.new" "$1/state/heartbeat.json"
+}
+
+# gap_no_rows <label> <home> <now> <published-epoch>: the builder refuses the reading.
+gap_no_rows() {
+  local label=$1 out
+  shift
+  if out=$(lib fm_wd_supervisor_gap_rows "$@"); then fail "$label: the builder accepted it"; fi
+  assert_equals "" "$out" "$label: no row"
+}
+
+test_supervisor_gap_rows_from_one_reading() {
+  assert_equals $'1000\tobserved\t/h' "$(lib fm_wd_supervisor_gap_rows /h 1000 1000)" "age 0 is one observation row"
+  assert_equals $'1000\tobserved\t/h' "$(lib fm_wd_supervisor_gap_rows /h 1000 400)" "age 600 is not a gap"
+  assert_equals $'1000\t/h\theartbeat_age=601\n1000\tobserved\t/h' "$(lib fm_wd_supervisor_gap_rows /h 1000 399)" \
+    "age 601 is the gap row, then the observation row"
+  gap_no_rows "a stamp later than the clock" /h 1000 1001
+  gap_no_rows "a zero stamp" /h 1000 0
+  gap_no_rows "a negative stamp" /h 1000 -5
+  gap_no_rows "a fractional stamp" /h 1000 1.5
+  gap_no_rows "a stamp that is not a number" /h 1000 abc
+  gap_no_rows "an empty stamp" /h 1000 ""
+  gap_no_rows "a zero-padded stamp" /h 1000 0400
+  gap_no_rows "a stamp too long for shell arithmetic" /h 1000 99999999999999999999
+  gap_no_rows "a clock that is not a number" /h now 400
+  gap_no_rows "a zero clock" /h 0 0
+  gap_no_rows "an empty home" "" 1000 400
+  gap_no_rows "a home with a TAB" $'/h\tx' 1000 400
+  gap_no_rows "a home with a newline" $'/h\nx' 1000 400
+  pass "supervisor-gap rows: an observation per reading, a gap row over 600 s, and no row for an invalid reading"
+}
+
+test_supervisor_gap_heartbeat_stamp_reading() {
+  local d="$TMP_ROOT/hb-stamp" f out doc
+  mkdir -p "$d/dir.json"
+  f="$d/heartbeat.json"
+  printf '{"schema":"fm-heartbeat.v1","generated_epoch":5,"published_epoch":1794000000}\n' > "$f"
+  assert_equals 1794000000 "$(lib fm_wd_heartbeat_published "$f")" "a published heartbeat prints its stamp"
+  printf '{\n  "schema": "fm-heartbeat.v1",\n  "published_epoch": 1794000000\n}\n' > "$f"
+  assert_equals 1794000000 "$(lib fm_wd_heartbeat_published "$f")" "an indented heartbeat prints its stamp"
+  for doc in '{"schema":"fm-heartbeat.v1","generated_epoch":1794000000}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":0}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":-1794000000}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1794000000.5}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":"1794000000"}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":null}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":true}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1e30}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1.794e9}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1794000000.0}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1234567890123456}' \
+    '{"schema":"fm-heartbeat.v2","published_epoch":1794000000}' \
+    '{"published_epoch":1794000000}' \
+    '[{"schema":"fm-heartbeat.v1","published_epoch":1794000000}]' \
+    '1794000000' \
+    'not json' \
+    ''; do
+    printf '%s\n' "$doc" > "$f"
+    if out=$(lib fm_wd_heartbeat_published "$f"); then fail "an unread heartbeat was accepted: $doc"; fi
+    assert_equals "" "$out" "an unread heartbeat prints nothing: $doc"
+  done
+  if out=$(lib fm_wd_heartbeat_published "$d/absent.json"); then fail "an absent heartbeat was accepted"; fi
+  assert_equals "" "$out" "an absent heartbeat prints nothing"
+  if out=$(lib fm_wd_heartbeat_published "$d/dir.json"); then fail "a directory was accepted"; fi
+  assert_equals "" "$out" "a directory prints nothing"
+  pass "supervisor-gap reading: only a positive integer published_epoch of an fm-heartbeat.v1 file is read"
+}
+
+test_supervisor_gap_record_follows_published_heartbeat_age() {
+  local home obs gap
+  make_home $'Captain session\n> '
+  transcript 100 "Working."
+  home=$(canon "$H")
+  publish "$H" "$BASE"
+  run_wd 0 scan >/dev/null 2>&1
+  assert_absent "$H/state/night-score/supervisor-gap.tsv" "scan writes no record"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "$BASE"$'\tobserved\t'"$home" "$(gap_rows "$H")" "a fresh heartbeat is one observation row"
+  publish "$H" "$((BASE - 590))"
+  run_wd 10 once >/dev/null 2>&1
+  assert_equals "$((BASE + 10))"$'\tobserved\t'"$home" "$(gap_rows "$H" | tail -n +2)" "an age of exactly 600 adds one observation row and no gap row"
+  publish "$H" "$((BASE - 581))"
+  run_wd 20 once >/dev/null 2>&1
+  gap="$((BASE + 20))"$'\t'"$home"$'\theartbeat_age=601'
+  obs="$((BASE + 20))"$'\tobserved\t'"$home"
+  assert_equals "$gap"$'\n'"$obs" "$(gap_rows "$H" | tail -n +3)" "an age of 601 adds the gap row, then the observation row"
+  jq -n --argjson pid "$LOCKPID" --argjson deadline "$((BASE + 500))" \
+    '{version:1,nonce:"n1",handoff:"data/handoff.md",sha256:"0",predecessor_pid:$pid,predecessor_start:"x",deadline:$deadline}' \
+    > "$H/state/.handoff-pending"
+  run_wd 20 once >/dev/null 2>&1
+  assert_equals "$gap"$'\n'"$obs" "$(gap_rows "$H" | tail -n +5)" "a handoff claim in the home does not remove or change the gap row"
+  rm -f "$H/state/.handoff-pending"
+  run_wd 20 once --dry-run >/dev/null 2>&1
+  assert_equals "$gap"$'\n'"$obs" "$(gap_rows "$H" | tail -n +7)" "a dry-run pass appends the same rows"
+  assert_equals 8 "$(gap_rows "$H" | wc -l | tr -d ' ')" "the record holds the rows of the five passes and nothing else"
+  pass "supervisor-gap record: each action pass appends the reading, a gap row over 600 s, and scan appends nothing"
+}
+
+test_supervisor_gap_unread_heartbeat_writes_no_row() {
+  local doc saved
+  make_home $'Captain session\n> '
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "" "$(gap_rows "$H")" "a heartbeat with no published_epoch writes no row"
+  publish "$H" "$((BASE + 1))"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "" "$(gap_rows "$H")" "a heartbeat stamped later than the clock writes no row"
+  saved=$(cat "$H/state/heartbeat.json")
+  for doc in 0 -5 1794000000.5 '"1794000000"' null; do
+    publish "$H" "$doc"
+    run_wd 0 once >/dev/null 2>&1
+    assert_equals "" "$(gap_rows "$H")" "published_epoch $doc writes no row"
+  done
+  printf '%s\n' "$saved" | jq --argjson p "$BASE" '.schema = "fm-heartbeat.v2" | .published_epoch = $p' > "$H/state/heartbeat.json"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "" "$(gap_rows "$H")" "another schema writes no row"
+  printf 'not json\n' > "$H/state/heartbeat.json"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "" "$(gap_rows "$H")" "a heartbeat that is not JSON writes no row"
+  rm -f "$H/state/heartbeat.json"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "" "$(gap_rows "$H")" "an absent heartbeat writes no row"
+  printf '%s\n' "$saved" | jq --argjson p "$BASE" '.published_epoch = $p' > "$H/state/heartbeat.json"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "$BASE"$'\tobserved\t'"$(canon "$H")" "$(gap_rows "$H")" "the same home is recorded once its heartbeat is read"
+  pass "supervisor-gap record: a heartbeat that was not read leaves the home with no row"
+}
+
+test_supervisor_gap_rows_name_each_watched_home() {
+  local parent mate p m
+  make_home $'Captain session\n> '
+  parent=$H
+  transcript 100 "Working."
+  make_home $'Mate session\n> '
+  mate=$H
+  transcript 100 "Working."
+  p=$(canon "$parent")
+  m=$(canon "$mate")
+  publish "$parent" "$BASE"
+  publish "$mate" "$((BASE - 700))"
+  printf -- '- gap-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  H=$parent
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "$BASE"$'\tobserved\t'"$p" "$(gap_rows "$parent" | awk -F'\t' -v h="$p" '$2 == h || $3 == h')" "the owner home has its observation row"
+  assert_equals "$BASE"$'\t'"$m"$'\theartbeat_age=700\n'"$BASE"$'\tobserved\t'"$m" "$(gap_rows "$parent" | awk -F'\t' -v h="$m" '$2 == h || $3 == h')" \
+    "the second mate has its gap row and its observation row in the owner home's record"
+  assert_equals 3 "$(gap_rows "$parent" | wc -l | tr -d ' ')" "one unfiltered pass writes the rows of both homes only"
+  assert_absent "$mate/state/night-score/supervisor-gap.tsv" "the second mate's own home holds no record"
+  run_wd 5 once --home "$mate" >/dev/null 2>&1
+  assert_equals "$((BASE + 5))"$'\t'"$m"$'\theartbeat_age=705\n'"$((BASE + 5))"$'\tobserved\t'"$m" "$(gap_rows "$parent" | tail -n +4)" \
+    "a pass filtered to the second mate appends the second mate's rows only"
+  pass "supervisor-gap record: the owner home's record names each home the pass read, and a filtered pass names one"
+}
+
+test_supervisor_gap_torn_line_and_failed_append() {
+  local home rec row err before
+  make_home $'Captain session\n> '
+  transcript 100 "Working."
+  home=$(canon "$H")
+  rec="$H/state/night-score/supervisor-gap.tsv"
+  row="$BASE"$'\tobserved\t'"$home"
+  publish "$H" "$BASE"
+  mkdir -p "$H/state/night-score"
+  printf '%s\tobserved\t/torn/ho' "$((BASE - 120))" > "$rec"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 2 "$(wc -l < "$rec" | tr -d ' ')" "the torn line is closed and the new row is on its own line"
+  [ "$(awk -F'\t' 'NR == 1 { print NF }' "$rec")" -ge 4 ] || fail "the closed torn line still reads as a three-field row: $(head -n 1 "$rec")"
+  assert_equals "$row" "$(tail -n 1 "$rec")" "the row after a torn line is whole"
+
+  if [ "$(id -u)" != 0 ]; then
+    printf '%s\tobserved\t/torn/ho' "$((BASE - 120))" > "$rec"
+    chmod 444 "$rec"
+    before=$(cksum < "$rec")
+    err=$(run_wd 0 once 2>&1 >/dev/null) || fail "a torn record that cannot take the repair fails the pass: $err"
+    assert_equals "$before" "$(cksum < "$rec")" "a torn record that cannot be written keeps its bytes: no repair and no row"
+    assert_grep "supervisor-gap record not written" "$H/data/watchdog/status.md" "the failed repair of a torn line is an open gap"
+    assert_equals 1 "$(printf '%s\n' "$err" | grep -c 'supervisor-gap record')" "the failed repair of a torn line is one standard error line: $err"
+    chmod 644 "$rec"
+  fi
+
+  rm -rf "$H/state/night-score"
+  mkdir -p "$H/state/night-score/supervisor-gap.tsv"
+  err=$(run_wd 0 once 2>&1 >/dev/null) || fail "a record that cannot take the repair fails the pass: $err"
+  assert_equals "" "$(find "$rec" -mindepth 1)" "nothing is appended when the repair cannot be written"
+  assert_grep "supervisor-gap record not written" "$H/data/watchdog/status.md" "the failed repair is an open gap"
+  assert_equals 1 "$(printf '%s\n' "$err" | grep -c 'supervisor-gap record')" "the failed repair is one standard error line: $err"
+
+  rm -rf "$H/state/night-score"
+  : > "$H/state/night-score"
+  before=$(ledger)
+  err=$(run_wd 0 once 2>&1 >/dev/null) || fail "a record that cannot be appended fails the pass: $err"
+  [ -f "$H/state/night-score" ] && [ ! -s "$H/state/night-score" ] || fail "a row was written although the record cannot be appended"
+  assert_grep "supervisor-gap record not written" "$H/data/watchdog/status.md" "the failed append is an open gap in the status file"
+  assert_equals 1 "$(printf '%s\n' "$err" | grep -c 'supervisor-gap record')" "the failed append is one standard error line: $err"
+  assert_equals "$before" "$(ledger)" "the failed append takes no action"
+  pass "supervisor-gap record: a torn line never joins a row, and a failed append is reported with no row and no failed pass"
+}
+
 test_status_file_short_and_staleness_visible() {
   make_home $'Captain session\n> '
   local i
@@ -3737,6 +3942,12 @@ fm_test_run \
   test_claude_judge_keeps_the_default_login \
   test_unknown_heartbeat_endpoint_is_not_reported_ok \
   test_tmux_restart_survives_a_closed_session \
+  test_supervisor_gap_rows_from_one_reading \
+  test_supervisor_gap_heartbeat_stamp_reading \
+  test_supervisor_gap_record_follows_published_heartbeat_age \
+  test_supervisor_gap_unread_heartbeat_writes_no_row \
+  test_supervisor_gap_rows_name_each_watched_home \
+  test_supervisor_gap_torn_line_and_failed_append \
   test_status_file_short_and_staleness_visible \
   test_manager_units \
   test_never_merges_deploys_or_messages_owner

@@ -217,6 +217,38 @@ A terminal that only becomes known is not a move, and a lock rewrite proven back
 A supervisor that restarts captains itself treats a `live` record, or a `moved_at` newer than its own evidence, as a captain already in place.
 A pane the record does not name is not the live captain, and an empty terminal means the captain's pane is not proven yet.
 
+## Supervisor-gap record
+
+Each `once` or `run` pass appends to `state/night-score/supervisor-gap.tsv` under the owner home, for every home that pass read.
+The record is the evidence that the watchdog itself read a home's published heartbeat, so a reader can tell a clean reading from no reading.
+`scan` appends nothing, and a dry-run pass appends the same rows as any other pass.
+The file is append-only, and the watchdog never rotates it.
+
+Each row is one line of three TAB-separated fields.
+
+| Row | Field 1 | Field 2 | Field 3 | Written when |
+| --- | --- | --- | --- | --- |
+| Observation | epoch | `observed` | home | The pass read that home's heartbeat age |
+| Gap | epoch | home | `heartbeat_age=<seconds>` | That age is over 600 seconds |
+
+`epoch` is the watchdog clock in seconds, taken after the heartbeat file is read.
+`home` is the canonical absolute path of the watched home, the same value as the `home` column of the action ledger.
+The age is `epoch` minus the `published_epoch` of that home's `state/heartbeat.json`.
+The heartbeat is read only when it is a regular file with schema `fm-heartbeat.v1` and a positive integer `published_epoch` written as plain decimal digits, 15 at most.
+An age of exactly 600 seconds is not a gap, and the limit follows no `config/watchdog` key.
+A gap row and its observation row share one epoch and go out in one write, gap row first.
+
+A heartbeat that is absent, not read, or stamped later than the clock writes no row for that home.
+So a home with no observation row in a span was not measured there, and nothing is written to stand in for a missing reading.
+An append that fails writes no row, adds an open gap to the status file, prints one line on standard error, and does not fail the pass.
+Before an append, a last line that has no newline is closed with three TABs and a newline, so a torn line has more than three fields.
+Only a newline-terminated line of exactly three fields is a row.
+
+The record never judges a handoff: a gap row is written during one, so a consumer of the record must exclude handoffs itself.
+It measures heartbeat age only, so it does not replace the `alive` verdict of the [captain record](#captain-record).
+A registered home that runs no watcher gets a gap row on every pass while an old heartbeat file exists.
+A gap that starts and ends between two passes is not seen.
+
 ## Configuration (config/watchdog)
 
 `config/watchdog` is local and gitignored, with one `key=value` per line.
