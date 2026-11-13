@@ -205,6 +205,7 @@ An unchanged owner keeps the recorded terminal while none is proven now, but onl
 After a lock rewrite the old terminal is never carried forward.
 The endpoint in the new lock sidecar names the primary captain when the heartbeat does not prove one.
 The token `unknown` is not an address, and a sidecar whose worktree is not this home is not an address.
+A symlink or a doubled slash that lands on this home is this home.
 A proving heartbeat still outranks the sidecar when it names a different pane.
 A heartbeat that does not prove the terminal does not keep its pane for capture.
 A new owner stamps `moved_at` with `lock_at`.

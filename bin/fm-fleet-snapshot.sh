@@ -15,8 +15,11 @@
 #   fm_home: resolved operational home.
 #   session: {endpoint:{backend,target}} from state/.lock-session, the endpoint
 #     recorded when the primary session took the lock.
-#     Unknown, absent, a worktree that is not this home, or an illegal token is
-#     backend and target "unknown", never a guessed pane.
+#     Both fields stay "unknown" unless the sidecar is a regular file, its
+#     worktree string equals this command's FM_HOME with one trailing slash
+#     removed, and both tokens are non-empty and neither unknown nor illegal.
+#     A refused sidecar is never replaced with a guessed pane.
+#     That worktree comparison does not resolve symlinks.
 #   roots: resolved root/config/data/state/projects directories.
 #   backlog: {path,present,records[]} where records are ordered as written in
 #     data/backlog.md and cover In flight, Queued, and Done.

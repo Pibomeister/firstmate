@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # fm-captain-locate.sh - read-only discovery from this home's verified lock.
 # stdout: CAPTAIN v1 pid=<lock-pid-or-0> handle=<token-or-none> state=<held|free|stale|unknown|unreadable>
+# A recorded terminal of unknown, or any token that is not a handle, is handle=none.
+# unknown is the absence of an endpoint, not a terminal name.
 # Exit 0 only for a held lock with its anchor-bound endpoint; otherwise exit 1.
 # The pid and handle come from one snapshot of the lock and its sidecar; a
 # change to either file during discovery reports state=unknown and handle=none.

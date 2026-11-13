@@ -391,12 +391,16 @@ wd_publish_captain() {
 # line, when both name this home. unknown, empty, an illegal token, and a
 # different worktree are not addresses.
 wd_lock_endpoint() {
-  local side=$1/.lock-session backend terminal worktree
+  local side=$1/.lock-session backend terminal worktree home_phys side_phys
   [ -f "$side" ] && [ ! -L "$side" ] || return 1
   backend=$(sed -n 's/^backend=//p' "$side")
   terminal=$(sed -n 's/^terminal=//p' "$side")
   worktree=$(sed -n 's/^worktree=//p' "$side")
-  [ "$worktree" = "${2%/}" ] || return 1
+  # The subject home is the physical path. The lock records the FM_HOME it was
+  # given, which may be a symlink or a doubled slash for that same directory.
+  home_phys=$(cd -P -- "$2" 2>/dev/null && pwd -P) || return 1
+  side_phys=$(cd -P -- "$worktree" 2>/dev/null && pwd -P) || return 1
+  [ "$side_phys" = "$home_phys" ] || return 1
   case "$backend" in ''|unknown|*[!A-Za-z0-9_-]*) return 1 ;; esac
   case "$terminal" in ''|unknown|*[!A-Za-z0-9_.:%-]*) return 1 ;; esac
   printf '%s\n%s\n' "$backend" "$terminal"
