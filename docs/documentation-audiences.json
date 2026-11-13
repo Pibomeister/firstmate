@@ -426,6 +426,10 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": "docs/escalation-gate.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "docs/extension-bindings.md",
       "audience": "maintainer-architecture"
     },
