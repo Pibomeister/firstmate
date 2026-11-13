@@ -15,6 +15,11 @@
 #       Returns 0 when the text names an owner-reserved category (merge, release,
 #       deploy, spend, money, sign-in, credential, secret, security, production
 #       data, PII, delete, destroy, force-push). Those holds stay held.
+#   fm_wd_seat_family <harness:model>
+#       Prints the model family of one council seat: anthropic, google, openai,
+#       or unknown. The model name decides; a name it does not know falls back
+#       to the harness's own family; anything else is unknown, and an unknown
+#       seat never counts toward the two families a ruling needs.
 #   fm_wd_text_allowed <text>
 #       Returns 0 only when the watchdog may type or file this text: it refuses
 #       merge, deploy, release, publish, and force-push words, so no typed answer
@@ -187,6 +192,21 @@ fm_wd_reserved() {  # <text>
 
 fm_wd_text_allowed() {  # <text>
   ! _fm_wd_guard_view "$1" | LC_ALL=C grep -Eq "$FM_WD_REFUSED_TEXT_RE"
+}
+
+fm_wd_seat_family() {  # <harness:model>
+  local h=${1%%:*} m
+  m=$(fm_wd_lower "${1#*:}")
+  case "$m" in
+    *claude*|*haiku*|*sonnet*|*opus*|*fable*|*mythos*) printf 'anthropic\n'; return 0 ;;
+    *gemini*|*flash*|*carbon*) printf 'google\n'; return 0 ;;
+    *gpt*|*codex*|o[0-9]*) printf 'openai\n'; return 0 ;;
+  esac
+  case "$h" in
+    claude) printf 'anthropic\n' ;;
+    agy) printf 'google\n' ;;
+    *) printf 'unknown\n' ;;
+  esac
 }
 
 fm_wd_paste_placeholder() {  # <composer-window>

@@ -101,8 +101,8 @@ These checks run on every pass as well:
 - An away record with a dead away daemon gets a nudge to re-arm it.
 - A watcher heartbeat older than `watcher-stale-secs` is reported as a gap.
 - Decisions open longer than `decision-secs` get one rolled-up nudge per home.
-  A window later, the oldest unsettled decision goes to a council of blind seats, at most `council-per-pass` per home per pass and once per decision per `council-secs`.
-  A unanimous `PROCEED` writes a ruling file under `data/watchdog/rulings/` and nudges the session to apply it; anything short of unanimity holds.
+  A window later, the oldest unsettled decision goes to a council of blind seats, at most `council-per-pass` per home per pass.
+  [The decision council](#the-decision-council) owns what a council needs, what it records, and when it acts.
 - A task whose latest status is a quota pause or block, or a pane showing a usage-limit picker, gets a ledger row and a gap that names the eligible candidate from `reroute-candidates` when `quota-axi` and `bin/fm-quota-reroute.sh` find one.
   The Signals paragraph in [`bin/fm-quota-reroute.sh`](../bin/fm-quota-reroute.sh) owns Claude-tooling.
   [`bin/fm-watchdog.sh`](../bin/fm-watchdog.sh) owns that picker observation.
@@ -136,12 +136,41 @@ A second mate restart goes through its parent with `bin/fm-control.sh <id> relau
 A captain quit on purpose leaves the same dead lock as a crash, so the watchdog restarts it. To stop a home from being restarted, list it in `do-not-touch`.
 Restarting `max-restarts` times in a day stops further restarts for that home, writes `state/watchdog/escalated/<home-basename>-<path-cksum>`, and files a self-heal issue; remove that file after review to re-enable restarts.
 
+## The decision council
+
+The decision path is the decision nudge, the council, and the ruling nudge.
+It acts when `decisions=act`, and an unset `decisions` follows `mode`, so a home can let the decision path act while key presses, Enter, and restarts stay a dry run.
+Any other `decisions` value is a dry run, which records `would convene council` and calls no seat.
+
+A council is a set of blind seats that each answer `PROCEED <label>` or `HOLD` to one decision record.
+The seats must span at least two model families, read from each seat's model name and then its harness.
+A seat whose family is unknown does not count, and seats of one family are refused with no model call and a gap.
+A council seat uses `council-call-max-usd` and `council-timeout-secs`, which default to the judge's own limits, and it counts against `daily-max-usd` like every other call.
+
+Each decision gets one council, for its task and key.
+
+- A unanimous `PROCEED` writes a ruling file under `data/watchdog/rulings/` and nudges the session to apply it.
+  The supervisor applies a ruling; the watchdog never sends one to a worker.
+  A ruling whose decision is still open stays in the status file as an unapplied ruling.
+- Any other outcome in which a seat answered writes a record under `data/watchdog/no-rulings/` with every seat's answer, and the decision is held for the owner as a gap on every pass.
+  The dissent is in that record and in the ledger row.
+- A council in which no seat answered records nothing final, so a later pass may convene it again after `council-secs`.
+
+A ruling or no-ruling record is final: no later pass and no repeated command convenes that task and key again.
+Removing the record file is the only way to allow a new council, and that is the owner's or the supervisor's act.
+A council records agreement as evidence for the supervisor; it is never the owner's approval.
+
+`fm-watchdog.sh council` convenes the same council on demand, for a supervisor that needs a ruling now rather than after the age windows.
+It applies the same holds, the same seats, the same spend cap and call log, and the same one-council rule, so a repeated call returns the recorded outcome and reaches no seat.
+It types nothing into any pane.
+[`ask-user-authority`](../.agents/skills/ask-user-authority/SKILL.md) owns when a supervisor calls it for a repeated review finding.
+
 ## Hard boundaries
 
 The watchdog never merges, never deploys, never spends beyond existing caps, never messages the owner except the away permission page below, never accepts a `merge #...` autosuggestion, never tears down work, never types into panes on the `do-not-touch` list, and owner-reserved holds stay held.
 
 - No typed text or pressed Enter can carry a merge, deploy, release, publish, or force-push word. A letter before the word does not change this, so `redeploy`, `automerge`, `prerelease`, and `republish` are refused; `emerge` and `submerge` are not merge words. Text with `push` followed later, on one row or across joined rows, by `--force`, `--force-with-lease`, a `-f` flag, or a `+` refspec such as `+main` is a force-push. The guard also reads a multi-row text joined with spaces and joined with nothing, so a continued command, a soft wrap, or a split word is refused; a handoff keeps the original rows.
-- A decision keyed `captain-hold-*`, listed in `reserved-keys`, or naming money, merges, releases, deploys, credentials, security, production data, or deletion in its task, key, or summary is never nudged, put to council, or answered; it appears as a held gap.
+- A decision keyed `captain-hold-*`, listed in `reserved-keys`, or naming money, merges, releases, deploys, credentials, security, production data, or deletion in its task, key, or summary is never nudged, put to council, or answered; it appears as a held gap. The `council` command holds it the same way.
 - A decision whose task, key, or summary looks like a secret is held the same way, with no council and no ruling file. The gap omits a task or key name that looks like a secret.
 - A nudge whose text names a merge, deploy, or release word is not sent and appears as a held gap.
 - A nudge goes out only onto a composer read as empty. An unknown composer, an Orca draft, or a failed draft read holds the nudge as a gap. A held nudge counts toward `max-nudges`, so a frozen session still reaches the restart proof with nothing typed. A stable clean draft gets Enter once before that ladder.
@@ -289,11 +318,14 @@ An absent file means dry-run on the owner home alone.
 | --- | --- | --- |
 | `homes` | the owner home | Comma-separated homes to watch, each with its registered second mates |
 | `mode` | `dry-run` | `act` takes actions; anything else records them as `dry-run` |
+| `decisions` | the `mode` value | `act` lets the decision nudge, the council, and the ruling nudge act; any other value keeps them a dry run |
 | `restart` | `off` | `on` allows restarts when `mode=act` |
 | `restart-command` | none | Starts a new captain session and appends the prompt as one argument. When the command word, after any leading `NAME=value`, `env`, `exec`, or `command` and again after `&&`, `||`, `;`, or `|`, is `muse`, `muse-bin`, or `muse-bin-*`, or a path ending in one of them, with one layer of surrounding quotes removed, and the command carries none of `--yolo`, `--disable-approval`, `--approval-mode never`, or `--approval-mode=never`, `--yolo` is inserted as the first argument after the first such word. Any other command runs unchanged, even when another word names muse. |
 | `do-not-touch` | none | Comma-separated homes, home names, or terminal targets never typed into or restarted |
 | `models` | `claude:haiku,agy:gemini-3.8-flash-low` | Ordered judge models; empty disables the judge |
-| `council-seats` | the `models` list | Comma-separated blind council seats |
+| `council-seats` | the `models` list | Comma-separated blind council seats, which must span two model families |
+| `council-call-max-usd` | the `judge-call-max-usd` value | Per-call Claude budget for a council seat |
+| `council-timeout-secs` | the `judge-timeout-secs` value | Per-call time bound for a council seat |
 | `daily-max-usd` | `1.00` | Metered model spend cap over the last day |
 | `judge-call-max-usd` | `0.05` | Per-call Claude budget |
 | `judge-max-chars` | `6000` | Prompt size bound |
@@ -318,7 +350,7 @@ An absent file means dry-run on the owner home alone.
 | `nudge-secs` | `900` | Minimum time between nudges for one symptom, between judge calls about a model-switch picker, between away permission pages for one home pane or one worker pane, and between primary usage-limit auto-wait pages |
 | `key-secs` | `120` | Minimum time between dialog keys on one pane |
 | `enter-secs` | `300` | Minimum time between recorded decisions on unsent input; a real Enter goes at most once in two hours |
-| `council-secs` | `21600` | Minimum time between councils on one decision |
+| `council-secs` | `21600` | Minimum time before a council that no seat answered is convened again |
 | `council-per-pass` | `1` | Councils per home per pass |
 | `quota-secs` | `600` | Quota park age before a reroute nudge |
 | `restart-secs` | `7200` | Minimum time between restarts of one home |

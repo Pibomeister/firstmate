@@ -831,6 +831,240 @@ council-seats=claude:haiku,agy:flash'
   pass "council needs unanimity; a split vote holds"
 }
 
+# How many council or judge seats were really called in this home.
+seat_calls() {
+  local c
+  c=$(grep -cE '^(claude|agy) -p' "$H/model.log" 2>/dev/null)
+  printf '%s\n' "${c:-0}"
+}
+
+test_seat_family_derivation() {
+  assert_equals anthropic "$(lib fm_wd_seat_family claude:haiku)" "a claude alias is Anthropic"
+  assert_equals anthropic "$(lib fm_wd_seat_family claude:claude-fable-5-2)" "a full claude id is Anthropic"
+  assert_equals anthropic "$(lib fm_wd_seat_family agy:claude-opus-5-5)" "the model name wins over the harness"
+  assert_equals google "$(lib fm_wd_seat_family agy:gemini-4-carbon-high)" "a gemini id is Google"
+  assert_equals google "$(lib fm_wd_seat_family agy:flash)" "a gemini alias is Google"
+  assert_equals google "$(lib fm_wd_seat_family agy:some-new-name)" "an unnamed model falls back to its harness"
+  assert_equals openai "$(lib fm_wd_seat_family agy:gpt-9)" "a gpt id is OpenAI"
+  assert_equals unknown "$(lib fm_wd_seat_family other:model)" "an unknown harness and model has no family"
+  assert_equals unknown "$(lib fm_wd_seat_family '')" "an empty seat has no family"
+  pass "council seats: the model family comes from the model name, then the harness, else unknown"
+}
+
+test_decisions_act_while_everything_else_stays_dry_run() {
+  make_home $'Captain session\n> ' 'mode=dry-run
+decisions=act
+models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  owe_input 4000
+  printf 'needs-decision [at=%s] [key=cache-layout]: A (recommended) flat keys or B nested keys?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1 || fail "first pass failed"
+  assert_equals 1 "$(ledger_rows decisions nudge pending)" "the decision nudge is delivered: $(ledger | cut -f5-8)"
+  wait_typed ": fm-op " || wait_typed "operational-inbox" || fail "the decision nudge never reached the pane: $(cat "$H/typed.log")"
+  assert_equals 0 "$(ledger_rows unread-input nudge pending)" "another symptom's nudge stays a dry run"
+  assert_equals 1 "$(ledger_rows unread-input nudge dry-run)" "the other symptom is recorded as a dry run: $(ledger | cut -f5-8)"
+  run_wd 2000 once >/dev/null 2>&1 || fail "second pass failed"
+  assert_equals 1 "$(ledger_rows decision:cache-layout council "done")" "the council convened for real: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows decision:cache-layout council dry-run)" "no dry-run council row"
+  assert_present "$H/data/watchdog/rulings/$(home_key)-t1-cache-layout.md" "the ruling file exists"
+  assert_equals 1 "$(ledger_rows ruling:cache-layout nudge pending)" "the ruling nudge is delivered"
+  assert_equals 0 "$(ledger | awk -F'\t' '($6 == "key" || $6 == "enter" || $6 == "restart") && $7 == "pending"' | wc -l | tr -d ' ')" "no key, Enter, or restart acted"
+  pass "decisions=act: the decision nudge, council, and ruling nudge act while the rest of the ladder stays dry-run"
+}
+
+test_decisions_key_follows_mode_and_can_hold_it_back() {
+  make_home $'Captain session\n> ' 'mode=dry-run
+models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  printf 'needs-decision [at=%s] [key=cache-layout]: A (recommended) flat keys or B nested keys?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 2000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows decision:cache-layout council dry-run)" "with no decisions key, mode=dry-run keeps the council a dry run"
+  assert_equals 0 "$(seat_calls)" "a dry run calls no seat"
+  make_home $'Captain session\n> ' 'decisions=dry-run
+models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  printf 'needs-decision [at=%s] [key=cache-layout]: A (recommended) flat keys or B nested keys?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows decisions nudge dry-run)" "decisions=dry-run holds the decision nudge back under mode=act"
+  run_wd 2000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows decision:cache-layout council dry-run)" "decisions=dry-run holds the council back under mode=act"
+  [ ! -e "$H/data/watchdog/rulings" ] || fail "a dry run wrote a ruling"
+  pass "decisions: an unset key follows mode; decisions=dry-run holds the decision path back on its own"
+}
+
+test_one_family_council_is_refused_without_a_call() {
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,claude:sonnet'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  printf 'needs-decision [at=%s] [key=cache-layout]: A (recommended) flat keys or B nested keys?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 2000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows decision:cache-layout council refused)" "a one-family council is refused: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(seat_calls)" "a refused council calls no seat"
+  assert_grep "two model families" "$H/data/watchdog/status.md" "the refusal is a visible gap"
+  [ ! -e "$H/data/watchdog/rulings" ] && [ ! -e "$H/data/watchdog/no-rulings" ] || fail "a refused council wrote a record"
+  pass "boundary: two seats of one model family give no ruling, call no model, and show as a gap"
+}
+
+test_council_outcome_is_final_for_its_decision() {
+  local rec
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED B"
+  transcript 100 "Working."
+  printf 'needs-decision [at=%s] [key=cache-layout]: A flat keys or B nested keys?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 2000 once >/dev/null 2>&1
+  rec="$H/data/watchdog/no-rulings/$(home_key)-t1-cache-layout.md"
+  assert_present "$rec" "a split council leaves a durable record"
+  assert_grep "seat1=PROCEED A" "$rec" "the record names the first seat's answer"
+  assert_grep "seat2=PROCEED B" "$rec" "the record names the dissenting seat's answer"
+  assert_equals 2 "$(seat_calls)" "each seat was called once"
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  run_wd 30000 once >/dev/null 2>&1
+  run_wd 60000 once >/dev/null 2>&1
+  assert_equals 2 "$(seat_calls)" "a decided key is never put to council again"
+  [ ! -e "$H/data/watchdog/rulings" ] || fail "a later pass turned a split into a ruling"
+  assert_grep "held for the owner after a council gave no ruling" "$H/data/watchdog/status.md" "the hold stays visible on later passes"
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  printf 'needs-decision [at=%s] [key=cache-layout]: A (recommended) flat keys or B nested keys?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 2000 once >/dev/null 2>&1
+  assert_present "$H/data/watchdog/rulings/$(home_key)-t1-cache-layout.md" "the unanimous council ruled"
+  run_wd 30000 once >/dev/null 2>&1
+  run_wd 32000 once >/dev/null 2>&1
+  assert_equals 2 "$(seat_calls)" "a ruled key is never put to council again"
+  assert_grep "unapplied council ruling" "$H/data/watchdog/status.md" "a ruling on a still-open decision stays visible"
+  pass "council: one convening per decision; a split is recorded with its dissent and held, a ruling is never re-rolled"
+}
+
+test_council_with_no_answer_is_not_a_convening() {
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" fail fail
+  transcript 100 "Working."
+  printf 'needs-decision [at=%s] [key=cache-layout]: A (recommended) flat keys or B nested keys?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 2000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows decision:cache-layout council failed)" "an unanswered council is recorded as failed: $(ledger | cut -f5-8)"
+  [ ! -e "$H/data/watchdog/no-rulings" ] || fail "a council no seat answered left a final record"
+  fake_models "$H" ok:"PROCEED A" fail
+  # The first late pass repeats the rolled-up nudge; the council runs a window after it.
+  run_wd 30000 once >/dev/null 2>&1
+  run_wd 32000 once >/dev/null 2>&1
+  assert_present "$H/data/watchdog/no-rulings/$(home_key)-t1-cache-layout.md" "one answer and one failed seat is a final no-ruling"
+  assert_grep "seat2=FAILED" "$H/data/watchdog/no-rulings/$(home_key)-t1-cache-layout.md" "the record names the failed seat"
+  [ ! -e "$H/data/watchdog/rulings" ] || fail "one seat ruled alone"
+  pass "council: no answer at all is retried later; a partial answer is final and holds"
+}
+
+test_council_calls_use_their_own_budget_and_time_limit() {
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash
+council-call-max-usd=0.50
+council-timeout-secs=300'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  printf 'cache layout: A (recommended) flat keys or B nested keys?\n' > "$H/record.txt"
+  run_wd 0 council --task t1 --key s1-cache --record-file "$H/record.txt" >/dev/null 2>&1 || fail "council command failed"
+  assert_grep "max-budget-usd 0.50" "$H/model.log" "the council seat got the council budget"
+  assert_grep "print-timeout 300s" "$H/model.log" "the council seat got the council time limit"
+  : > "$H/model.log"
+  printf 'is this a loop?' | run_wd 10 judge loop '(LOOP|WORK)' >/dev/null 2>&1
+  assert_grep "max-budget-usd 0.05" "$H/model.log" "a judge call keeps the judge budget"
+  pass "council: council-call-max-usd and council-timeout-secs apply to council seats only"
+}
+
+test_council_command_rules_now_once_and_types_nothing() {
+  local out sentinel=FAKESENTINEL43
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  printf 'Third review round on the cache theme. A (recommended) ship plus filed follow-up, or B one more fix round?\n' > "$H/record.txt"
+  out=$(run_wd 0 council --task t1 --key s1-cache --record-file "$H/record.txt" 2>/dev/null) || fail "council command failed"
+  assert_contains "$out" "council=ruled" "a unanimous council rules: $out"
+  assert_contains "$out" "answer=PROCEED A" "the answer is printed: $out"
+  assert_contains "$out" "record=$H/data/watchdog/rulings/$(home_key)-t1-s1-cache.md" "the record path is printed: $out"
+  assert_equals 2 "$(seat_calls)" "each seat was called once"
+  assert_equals 1 "$(ledger_rows decision:s1-cache council "done")" "the convening is in the ledger"
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  out=$(run_wd 100 council --task t1 --key s1-cache --record-file "$H/record.txt" 2>/dev/null) || fail "repeat council command failed"
+  assert_contains "$out" "council=ruled" "a repeat call returns the recorded outcome: $out"
+  assert_contains "$out" "answer=PROCEED A" "a repeat call cannot change the answer: $out"
+  assert_contains "$out" "prior=1" "a repeat call is marked as a replay: $out"
+  assert_equals 2 "$(seat_calls)" "a repeat call reaches no seat"
+  # An open decision's own record is the default record.
+  printf 'needs-decision [at=%s] [key=index-shape]: A (recommended) one index or B two?\n' "$((BASE - 60))" > "$H/state/t2.status"
+  fake_models "$H" ok:"PROCEED A" ok:"HOLD"
+  out=$(run_wd 200 council --task t2 --key index-shape 2>/dev/null) || fail "council on an open decision failed"
+  assert_contains "$out" "council=no-ruling" "a split council prints no ruling: $out"
+  assert_contains "$out" "answer=none" "a split council prints no answer: $out"
+  assert_grep "one index or B two" "$H/data/watchdog/no-rulings/$(home_key)-t2-index-shape.md" "the open decision's record was the question"
+  run_wd 300 council --task t2 --key not-open >/dev/null 2>&1 && fail "a key with no record and no open decision was accepted"
+  # Owner-reserved and secret-looking records never reach a seat.
+  : > "$H/model.log"
+  : > "$H/prompt.log"
+  printf 'merge PR #5 now, A yes or B wait?\n' > "$H/reserved.txt"
+  out=$(run_wd 400 council --task t1 --key s1-ship --record-file "$H/reserved.txt" 2>/dev/null) || fail "held council command failed"
+  assert_contains "$out" "council=held" "an owner-reserved record is held: $out"
+  out=$(run_wd 410 council --task t1 --key captain-hold-x --record-file "$H/record.txt" 2>/dev/null) || fail "held council command failed"
+  assert_contains "$out" "council=held" "an owner hold key is held: $out"
+  printf 'push failed for https://x-access-token:%s@example.invalid/o/r; A or B?\n' "$sentinel" > "$H/secret.txt"
+  out=$(run_wd 420 council --task t1 --key s1-push --record-file "$H/secret.txt" 2>/dev/null) || fail "held council command failed"
+  assert_contains "$out" "council=held" "a secret-looking record is held: $out"
+  assert_equals 0 "$(seat_calls)" "a held record reaches no seat"
+  if grep -rFq "$sentinel" "$H/state/watchdog" "$H/data/watchdog" "$H/model.log" "$H/prompt.log" 2>/dev/null; then fail "the withheld text reached a record or a model"; fi
+  assert_equals "" "$(cat "$H/typed.log")" "the council command types nothing into the pane"
+  run_wd 500 council --key s1-cache --record-file "$H/record.txt" >/dev/null 2>&1; assert_equals 2 "$?" "a missing task is a usage error"
+  run_wd 500 council --task t1 --key 'bad/key' --record-file "$H/record.txt" >/dev/null 2>&1; assert_equals 2 "$?" "a key with a path separator is a usage error"
+  pass "council command: rules at once through the same seats and holds, replays a recorded outcome, and types nothing"
+}
+
+test_council_command_honours_the_dry_run_switch() {
+  local out
+  make_home $'Captain session\n> ' 'mode=dry-run
+models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A (recommended) ship plus filed follow-up, or B one more fix round?\n' > "$H/record.txt"
+  out=$(run_wd 0 council --task t1 --key s1-cache --record-file "$H/record.txt" 2>/dev/null) || fail "dry-run council command failed"
+  assert_contains "$out" "council=dry-run" "a dry-run home convenes nothing: $out"
+  assert_equals 0 "$(seat_calls)" "a dry run calls no seat"
+  [ ! -e "$H/data/watchdog/rulings" ] || fail "a dry run wrote a ruling"
+  pass "council command: a home whose decision path is a dry run gets no council"
+}
+
+test_council_runs_one_at_a_time_per_decision() {
+  local out lock
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A (recommended) ship plus filed follow-up, or B one more fix round?\n' > "$H/record.txt"
+  lock="$H/state/watchdog/council-locks/$(home_key)-t1-s1-cache"
+  mkdir -p "$lock"
+  printf '%s\n' "$LOCKPID" > "$lock/pid"
+  out=$(run_wd 0 council --task t1 --key s1-cache --record-file "$H/record.txt" 2>/dev/null) || fail "council command failed under a live lock"
+  assert_contains "$out" "council=busy" "a running council on the same decision is not joined: $out"
+  assert_equals 0 "$(seat_calls)" "a busy council calls no seat"
+  printf '999999\n' > "$lock/pid"
+  out=$(run_wd 10 council --task t1 --key s1-cache --record-file "$H/record.txt" 2>/dev/null) || fail "council command failed past a dead lock"
+  assert_contains "$out" "council=ruled" "a lock whose owner is gone does not block the council: $out"
+  [ ! -e "$lock" ] || fail "the council left its lock behind"
+  pass "council: one convening of a decision at a time; a dead owner's lock is cleared"
+}
+
 test_judge_fallback_and_spend_cap() {
   make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
 daily-max-usd=0.01'
@@ -4696,6 +4930,16 @@ fm_test_run \
   test_terminal_service_loss_is_agent_gone \
   test_owner_reserved_holds_stay_held_and_council_settles_the_rest \
   test_split_council_gives_no_ruling \
+  test_seat_family_derivation \
+  test_decisions_act_while_everything_else_stays_dry_run \
+  test_decisions_key_follows_mode_and_can_hold_it_back \
+  test_one_family_council_is_refused_without_a_call \
+  test_council_outcome_is_final_for_its_decision \
+  test_council_with_no_answer_is_not_a_convening \
+  test_council_calls_use_their_own_budget_and_time_limit \
+  test_council_command_rules_now_once_and_types_nothing \
+  test_council_command_honours_the_dry_run_switch \
+  test_council_runs_one_at_a_time_per_decision \
   test_judge_fallback_and_spend_cap \
   test_no_model_still_acts_and_reports_gap \
   test_timer_loop_needs_owed_input \
