@@ -1118,6 +1118,139 @@ SH
   pass "council: write, rename, and directory-target failures cannot return a successful ruling"
 }
 
+test_council_checks_the_complete_record_before_calling_seats() {
+  local out
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  { printf 'A flat keys or B nested keys? '; printf '%2100s' x; printf ' Deploy to production data after owner approval.\n'; } > "$H/record.txt"
+  out=$(run_wd 0 council --task t1 --key long-record --record-file "$H/record.txt" 2>&1) || fail "long reserved record failed: $out"
+  assert_contains "$out" "council=held answer=none" "a reserved condition after 2000 characters must hold: $out"
+  assert_equals 0 "$(seat_calls)" "no seat sees a reserved record's safe-looking prefix"
+  { printf 'needs-decision [at=%s] [key=long-status]: A flat keys or B nested keys? ' "$BASE"; printf '%600s' x; printf ' Deploy to production data after owner approval.\n'; } > "$H/state/t1.status"
+  out=$(run_wd 10 council --task t1 --key long-status 2>&1) || fail "long status decision failed: $out"
+  assert_contains "$out" "council=held answer=none" "a reserved condition after 500 characters in a status record must hold: $out"
+  assert_equals 0 "$(seat_calls)" "no status decision is judged from a truncated prefix"
+  printf 'A flat keys or B nested keys? %2100s' x > "$H/record.txt"
+  out=$(run_wd 20 council --task t1 --key oversized --record-file "$H/record.txt" 2>&1) || fail "oversized record failed: $out"
+  assert_contains "$out" "council=refused answer=none" "an oversized ordinary record is refused, not silently shortened: $out"
+  assert_equals 0 "$(seat_calls)" "oversized records call no seat"
+  assert_grep 'record exceeds 2000 characters' "$H/state/watchdog/actions.tsv" "the refusal explains the context limit"
+  pass "council: complete file and status records are checked; oversized context is refused"
+}
+
+test_council_never_shortens_a_prompt_to_the_judge_limit() {
+  local out
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash
+judge-max-chars=64'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A (recommended) flat keys or B nested keys?\n' > "$H/record.txt"
+  out=$(run_wd 0 council --task t1 --key prompt-limit --record-file "$H/record.txt" 2>&1) || fail "bounded prompt failed: $out"
+  assert_contains "$out" "council=failed answer=none record=none" "an undersized judge limit cannot turn a partial question into a ruling: $out"
+  assert_equals 0 "$(seat_calls)" "no seat is asked a truncated council prompt"
+  pass "council: a configured judge limit never removes part of a decision prompt"
+}
+
+test_council_dry_run_withholds_an_existing_ruling() {
+  local out
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A (recommended) flat keys or B nested keys?\n' > "$H/record.txt"
+  out=$(run_wd 0 council --task t1 --key replay-mode --record-file "$H/record.txt" 2>&1) || fail "active council failed: $out"
+  assert_contains "$out" "council=ruled answer=PROCEED A" "active mode creates a ruling"
+  printf '\ndecisions=dry-run\n' >> "$H/config/watchdog"
+  out=$(run_wd 10 council --task t1 --key replay-mode --record-file "$H/record.txt" 2>&1) || fail "dry-run replay failed: $out"
+  assert_contains "$out" "council=dry-run answer=none record=none" "dry-run never exposes an actionable replay: $out"
+  assert_equals 2 "$(seat_calls)" "dry-run replay calls no extra seats"
+  assert_present "$H/data/watchdog/rulings/$(home_key)-t1:replay-mode.md" "dry-run preserves the existing record"
+  pass "council: dry-run withholds actionable prior rulings without deleting them"
+}
+
+test_council_does_not_expire_a_live_owner() {
+  local out lock
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A (recommended) flat keys or B nested keys?\n' > "$H/record.txt"
+  lock="$H/state/watchdog/council-locks/$(home_key)-t1:live-owner"
+  mkdir -p "$lock"
+  printf '%s\n' "$LOCKPID" > "$lock/pid"
+  fm_touch_epoch "$((BASE - 10000))" "$lock"
+  out=$(run_wd 0 council --task t1 --key live-owner --record-file "$H/record.txt" 2>&1) || fail "aged live-owner council failed: $out"
+  assert_contains "$out" "council=busy" "a live owner's age does not authorize stealing its council: $out"
+  assert_equals 0 "$(seat_calls)" "a live council owner excludes all contenders"
+  assert_equals "$LOCKPID" "$(cat "$lock/pid")" "the live owner's lock survives"
+  pass "council: a live owner is never replaced solely because its lock is old"
+}
+
+test_council_stale_reclaim_excludes_a_second_contender() {
+  local lock real_cat first second i tool first_rc=0 second_rc=0
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A (recommended) flat keys or B nested keys?\n' > "$H/record.txt"
+  lock="$H/state/watchdog/council-locks/$(home_key)-t1:stale-race"
+  mkdir -p "$lock"
+  printf '999999\n' > "$lock/pid"
+  : > "$H/started.log"
+  real_cat=$(command -v cat)
+  cat > "$FAKEBIN/cat" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = "$lock/pid" ] && [ -n "\${RACER:-}" ]; then
+  value=\$("$real_cat" "\$@")
+  if [ "\$value" = 999999 ] && [ ! -e "$H/seen.\$RACER" ]; then
+    touch "$H/seen.\$RACER"
+    for i in \$(seq 1 400); do [ ! -e "$H/go.\$RACER" ] || break; sleep 0.05; done
+    [ -e "$H/go.\$RACER" ] || exit 1
+  fi
+  printf '%s\n' "\$value"
+else
+  exec "$real_cat" "\$@"
+fi
+SH
+  chmod +x "$FAKEBIN/cat"
+  for tool in claude agy; do
+    mv "$FAKEBIN/$tool" "$FAKEBIN/$tool.seat"
+    cat > "$FAKEBIN/$tool" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$RACER" >> "$H/started.log"
+for i in \$(seq 1 400); do [ ! -e "$H/release-seats" ] || break; sleep 0.05; done
+[ -e "$H/release-seats" ] || exit 1
+exec "$FAKEBIN/$tool.seat" "\$@"
+SH
+    chmod +x "$FAKEBIN/$tool"
+  done
+  RACER=one run_wd 0 council --task t1 --key stale-race --record-file "$H/record.txt" > "$H/first.out" 2> "$H/first.err" &
+  first=$!
+  RACER=two run_wd 0 council --task t1 --key stale-race --record-file "$H/record.txt" > "$H/second.out" 2> "$H/second.err" &
+  second=$!
+  LOCK_PIDS="$LOCK_PIDS $first $second"
+  for i in $(seq 1 400); do [ ! -e "$H/seen.one" ] || [ ! -e "$H/seen.two" ] || break; sleep 0.05; done
+  touch "$H/go.one"
+  for i in $(seq 1 400); do [ "$(wc -l < "$H/started.log" 2>/dev/null || printf 0)" -lt 2 ] || break; sleep 0.05; done
+  touch "$H/go.two"
+  for i in $(seq 1 400); do
+    grep -q 'council=busy' "$H/second.out" && break
+    [ "$(wc -l < "$H/started.log" 2>/dev/null || printf 0)" -lt 4 ] || break
+    sleep 0.05
+  done
+  touch "$H/release-seats"
+  wait "$first" || first_rc=$?
+  wait "$second" || second_rc=$?
+  rm -f "$FAKEBIN/cat"
+  for tool in claude agy; do mv "$FAKEBIN/$tool.seat" "$FAKEBIN/$tool"; done
+  assert_present "$H/seen.one" "the first contender observed the stale owner"
+  assert_present "$H/seen.two" "the second contender also observed that same stale owner"
+  assert_equals 0 "$first_rc" "the first council command completes: $(cat "$H/first.err")"
+  assert_equals 0 "$second_rc" "the second council command completes: $(cat "$H/second.err")"
+  assert_grep 'council=ruled' "$H/first.out" "the first stale-lock claimant convenes"
+  assert_grep 'council=busy' "$H/second.out" "the second stale reader must not remove the replacement owner's lock"
+  assert_equals 2 "$(seat_calls)" "only one council's two seats were called"
+  pass "council: simultaneous stale readers cannot replace the winning live owner"
+}
+
 test_council_command_honours_the_dry_run_switch() {
   local out
   make_home $'Captain session\n> ' 'mode=dry-run
@@ -5027,6 +5160,11 @@ fm_test_run \
   test_council_keeps_dashed_decision_identities_separate \
   test_council_checks_stored_identity_and_replays_legacy_records \
   test_council_requires_durable_publication \
+  test_council_checks_the_complete_record_before_calling_seats \
+  test_council_never_shortens_a_prompt_to_the_judge_limit \
+  test_council_dry_run_withholds_an_existing_ruling \
+  test_council_does_not_expire_a_live_owner \
+  test_council_stale_reclaim_excludes_a_second_contender \
   test_council_command_honours_the_dry_run_switch \
   test_council_runs_one_at_a_time_per_decision \
   test_judge_fallback_and_spend_cap \

@@ -9,7 +9,8 @@
 #   judge <purpose> <answer-ere>  Bounded cheap-model call; prompt on stdin; prints the answer.
 #   council --task <id> --key <key> [--home <path>] [--record-file <file>]
 #                                 One blind council on one decision, now. The record is the
-#                                 file, else the task's open decision of that key. Prints
+#                                 complete file, else its complete open decision; records over
+#                                 2000 characters are refused. Dry-run never returns an answer. Prints
 #                                 council=<ruled|no-ruling|held|dry-run|refused|busy|failed>
 #                                 answer=<PROCEED x|none> record=<path|none> prior=<0|1> seats=<answers>.
 #   status                        Print the status file.
@@ -281,7 +282,7 @@ wd_open_decisions() {  # <state> <now>
       [ -n "$key" ] || continue
       at=$(grep -F "[key=$key]" "$f" 2>/dev/null | tail -n 1 | sed -n 's/.*\[at=\([0-9][0-9]*\)\].*/\1/p')
       [ -n "$at" ] || at=$(wd_mtime "$f")
-      printf '%s\t%s\t%s\t%s\t%s\n' "$task" "$key" "$verb" "$((now - at))" "$(printf '%s' "$summary" | tr '\t' ' ' | cut -c1-500)"
+      printf '%s\t%s\t%s\t%s\t%s\n' "$task" "$key" "$verb" "$((now - at))" "$(printf '%s' "$summary" | tr '\t' ' ')"
     done
   done
 }
@@ -710,7 +711,11 @@ wd_judge_one() {  # <model> <purpose> <answer-ere> <prompt>  -> prints the answe
   fi
   scratch=$WD/judge-scratch
   mkdir -p "$scratch"
-  prompt=$(printf '%s' "$prompt" | cut -c1-"$(cfgi judge-max-chars 6000)")
+  if [ "$purpose" = council ]; then
+    [ "${#prompt}" -le "$(cfgi judge-max-chars 6000)" ] || return 1
+  else
+    prompt=$(printf '%s' "$prompt" | cut -c1-"$(cfgi judge-max-chars 6000)")
+  fi
   case "$h" in
     claude)
       command -v claude >/dev/null 2>&1 || return 4
@@ -808,29 +813,23 @@ wd_council_record() {
 # A ruling or no-ruling record is final for its task and key: the caller checks
 # wd_council_record first, and this function never overwrites one.
 wd_council() {
-  local task=$1 key=$2 summary=$3 seats seat i=0 tmp answers='' first='' unanimous=1 answered=0 record prompt a fams lock p dir age
+  local task=$1 key=$2 summary=$3 seats seat i=0 tmp answers='' first='' unanimous=1 answered=0 record prompt a fams lock dir
   local WD_CALL_MAX_USD WD_CALL_TIMEOUT
+  if [ "${#summary}" -gt 2000 ]; then
+    printf 'refused\t\t\trecord exceeds 2000 characters\n'
+    return 0
+  fi
   seats=$(cfg council-seats "$(wd_models | tr '\n' ',')")
   fams=$(for seat in $(printf '%s' "$seats" | tr ',' ' '); do fm_wd_seat_family "$seat"; done | grep -v '^unknown$' | sort -u | wc -l | tr -d ' ')
-  if [ "$fams" -lt 2 ]; then printf 'refused\t\t\t\n'; return 0; fi
+  if [ "$fams" -lt 2 ]; then printf 'refused\t\t\tcouncil seats span fewer than two model families\n'; return 0; fi
   WD_CALL_MAX_USD=$(cfg council-call-max-usd "$(cfg judge-call-max-usd 0.05)")
   WD_CALL_TIMEOUT=$(cfgi council-timeout-secs "$(cfgi judge-timeout-secs 120)")
-  # One convening per decision at a time. A lock is live while its owner runs and
-  # is younger than a council can take; an ownerless lock is live for a minute.
+  # Shared owner-identity locking serializes stale reclamation without expiring live owners.
   lock=$WD/council-locks/$O_KEY-$task:$key
   mkdir -p "$WD/council-locks"
-  if ! mkdir "$lock" 2>/dev/null; then
-    p=$(cat "$lock/pid" 2>/dev/null)
-    age=$(( $(date +%s) - $(wd_mtime "$lock" || printf '0') ))
-    if { wd_pid_alive "$p" && [ "$age" -lt $((WD_CALL_TIMEOUT + 120)) ]; } || { [ -z "$p" ] && [ "$age" -lt 60 ]; }; then
-      printf 'busy\t\t\t\n'; return 0
-    fi
-    rm -rf "$lock"
-    mkdir "$lock" 2>/dev/null || { printf 'busy\t\t\t\n'; return 0; }
-  fi
-  printf '%s\n' "$$" > "$lock/pid"
-  if [ -n "$(wd_council_record "$task" "$key")" ]; then rm -rf "$lock"; printf 'busy\t\t\t\n'; return 0; fi
-  tmp=$(mktemp -d "$WD/council.XXXXXX") || { rm -rf "$lock"; return 1; }
+  if ! fm_lock_try_acquire "$lock"; then printf 'busy\t\t\t\n'; return 0; fi
+  if [ -n "$(wd_council_record "$task" "$key")" ]; then fm_lock_release "$lock"; printf 'busy\t\t\t\n'; return 0; fi
+  tmp=$(mktemp -d "$WD/council.XXXXXX") || { fm_lock_release "$lock"; return 1; }
   prompt="You are one blind seat on a council for an autonomous software team. The owner is away. A worker parked this decision:
 task: $task
 key: $key
@@ -857,7 +856,7 @@ Reply with exactly one line: PROCEED <label> or HOLD."
     if [ -z "$first" ]; then first=$a; elif [ "$a" != "$first" ]; then unanimous=0; fi
   done
   rm -rf "$tmp"
-  if [ "$answered" -eq 0 ]; then rm -rf "$lock"; printf 'failed\t\t\t%s\n' "$answers"; return 0; fi
+  if [ "$answered" -eq 0 ]; then fm_lock_release "$lock"; printf 'failed\t\t\t%s\n' "$answers"; return 0; fi
   if [ "$unanimous" = 1 ]; then dir=$OUT/rulings; else dir=$OUT/no-rulings; fi
   mkdir -p "$dir"
   record=$dir/$O_KEY-$task:$key.md
@@ -872,10 +871,10 @@ Reply with exactly one line: PROCEED <label> or HOLD."
     printf -- '- seats:%s\n- seat models: %s\n- at: %s\n\n' "$answers" "$seats" "$(fm_wd_iso "$(wd_now)")" &&
     printf 'Record:\n\n%s\n' "$summary"
   } > "$record.tmp" && [ ! -d "$record" ] && mv "$record.tmp" "$record"; then
-    rm -rf "$lock"
+    fm_lock_release "$lock"
   else
     rm -f "$record.tmp" 2>/dev/null
-    rm -rf "$lock"
+    fm_lock_release "$lock"
     printf 'failed\t\t\t%s\n' "$answers"
     return 0
   fi
@@ -891,7 +890,7 @@ wd_council_ledger() {  # <id> <task> <key> <result>
   case "$4" in
     unanimous*) wd_rec "$1" "decision:$3" council "done" "$(printf '%s' "$4" | cut -f2,4)" ;;
     no-ruling*) wd_rec "$1" "decision:$3" council "done" "no ruling;$(printf '%s' "$4" | cut -f4)" ;;
-    refused*) wd_rec "$1" "decision:$3" council refused "council seats span fewer than two model families" ;;
+    refused*) wd_rec "$1" "decision:$3" council refused "$(printf '%s' "$4" | cut -f4)" ;;
     busy*) wd_rec "$1" "decision:$3" council held "another council on $2 $3 is running" ;;
     *) wd_rec "$1" "decision:$3" council failed "no final council record;$(printf '%s' "$4" | cut -f4)" ;;
   esac
@@ -924,7 +923,7 @@ cmd_council() {
   O_HOME=$home O_TAG=$(wd_tag "$home") O_KEY=$(wd_state_key "$home")
   if [ -n "$file" ]; then
     [ -f "$file" ] || die "no such record file: $file" 2
-    summary=$(tr '\t\r\n' '   ' < "$file" | cut -c1-2000)
+    summary=$(tr '\t\r\n' '   ' < "$file")
   else
     summary=$(wd_open_decisions "$home/state" "$(wd_now)" 2>/dev/null | awk -F'\t' -v t="$task" -v k="$key" '$1 == t && $2 == k { print $5; exit }')
   fi
@@ -939,14 +938,14 @@ cmd_council() {
     wd_council_line held '' '' 0 ''
     return 0
   fi
-  rec=$(wd_council_record "$task" "$key")
-  if [ -n "$rec" ]; then
-    wd_council_line "$(printf '%s' "$rec" | cut -f1)" "$(printf '%s' "$rec" | cut -f2)" "$(printf '%s' "$rec" | cut -f3)" 1 "$(printf '%s' "$rec" | cut -f4 | sed 's/^ //')"
-    return 0
-  fi
   if [ "$(wd_decisions_mode)" != act ]; then
     wd_rec "$id" "decision:$key" council dry-run "would convene council on $task $key"
     wd_council_line dry-run '' '' 0 ''
+    return 0
+  fi
+  rec=$(wd_council_record "$task" "$key")
+  if [ -n "$rec" ]; then
+    wd_council_line "$(printf '%s' "$rec" | cut -f1)" "$(printf '%s' "$rec" | cut -f2)" "$(printf '%s' "$rec" | cut -f3)" 1 "$(printf '%s' "$rec" | cut -f4 | sed 's/^ //')"
     return 0
   fi
   wd_rec "$id" "decision:$key" council pending "$task $key (on demand)"
@@ -1442,9 +1441,9 @@ wd_handle_decisions() {
       unanimous*)
         wd_nudge "ruling:$key" "a unanimous blind council ruled $(printf '%s' "$res" | cut -f2) on decision $key from $task. Ruling file: $(printf '%s' "$res" | cut -f3). Apply it with fm-send --resolve-key if it stands, or record why not." ;;
       no-ruling*) wd_gap "council gave no ruling on $task $key; held for the owner, record $(printf '%s' "$res" | cut -f3)" ;;
-      refused*) wd_gap "no council on $task $key: council-seats must span two model families; held" ;;
+      refused*) wd_gap "no council on $task $key: $(printf '%s' "$res" | cut -f4); held" ;;
       busy*) ;;
-      *) wd_gap "no council seat answered on $task $key; held" ;;
+      *) wd_gap "council did not publish a final record on $task $key; held" ;;
     esac
   done < "$WD/.decisions-aged"
 }

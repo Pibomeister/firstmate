@@ -140,9 +140,10 @@ Restarting `max-restarts` times in a day stops further restarts for that home, w
 
 The decision path is the decision nudge, the council, and the ruling nudge.
 It acts when `decisions=act`, and an unset `decisions` follows `mode`, so a home can let the decision path act while key presses, Enter, and restarts stay a dry run.
-Any other `decisions` value is a dry run, which records `would convene council` and calls no seat.
+Any other `decisions` value is a dry run, which records `would convene council`, calls no seat, and returns no actionable answer even when a prior ruling exists.
 
 A council is a set of blind seats that each answer `PROCEED <label>` or `HOLD` to one decision record.
+The complete record is checked for reserved conditions; a record beyond the council context limit is refused rather than shortened.
 The seats must span at least two model families, read from each seat's model name and then its harness.
 A seat whose family is unknown does not count, and seats of one family are refused with no model call and a gap.
 A council seat uses `council-call-max-usd` and `council-timeout-secs`, which default to the judge's own limits, and it counts against `daily-max-usd` like every other call.
@@ -161,7 +162,8 @@ Removing the record file is the only way to allow a new council, and that is the
 A council records agreement as evidence for the supervisor; it is never the owner's approval.
 
 `fm-watchdog.sh council` convenes the same council on demand, for a supervisor that needs a ruling now rather than after the age windows.
-It applies the same holds, the same seats, the same spend cap and call log, and the same one-council rule, so a repeated call returns the recorded outcome and reaches no seat.
+It applies the same holds, the same seats, the same spend cap and call log, and the same one-council rule.
+In active decision mode, a repeated call returns the recorded outcome and reaches no seat.
 It types nothing into any pane.
 [`ask-user-authority`](../.agents/skills/ask-user-authority/SKILL.md) owns when a supervisor calls it for a repeated review finding.
 
