@@ -794,16 +794,38 @@ wd_council_record() {
   for name in "$O_KEY-$1:$2.md" "$O_KEY-$1-$2.md"; do
     for f in "$OUT/rulings/$name" "$OUT/no-rulings/$name"; do
       [ -f "$f" ] || continue
+      case "$f" in "$OUT/rulings/"*) kind=ruled ;; *) kind=no-ruling ;; esac
       header=$(awk '/^Record:$/ { exit } /^$/ { if (meta) exit; next } /^- / { meta=1 } meta { print }' "$f")
-      FM_WD_RECORD_HOME="$O_HOME" FM_WD_RECORD_TASK="$1" FM_WD_RECORD_KEY="$2" awk '
+      FM_WD_RECORD_HOME="$O_HOME" FM_WD_RECORD_TASK="$1" FM_WD_RECORD_KEY="$2" FM_WD_RECORD_KIND="$kind" awk '
         /^- home: / { h++; if (substr($0,9) != ENVIRON["FM_WD_RECORD_HOME"]) bad=1 }
         /^- task: / { t++; if (substr($0,9) != ENVIRON["FM_WD_RECORD_TASK"]) bad=1 }
         /^- key: / { k++; if (substr($0,8) != ENVIRON["FM_WD_RECORD_KEY"]) bad=1 }
-        /^- ruling: / { r++ }
-        /^- seats:/ { s++ }
-        END { exit (bad || h != 1 || t != 1 || k != 1 || r != 1 || s != 1) }
+        /^- ruling: / { r++; ruling=substr($0,11) }
+        /^- seats:/ { s++; seats=substr($0,9) }
+        END {
+          if (bad || h != 1 || t != 1 || k != 1 || r != 1 || s != 1) exit 1
+          kind=ENVIRON["FM_WD_RECORD_KIND"]
+          if (kind == "ruled") {
+            if (ruling !~ /^PROCEED [A-Za-z0-9]{1,3} \(unanimous, [0-9]+ blind seats\)$/) exit 1
+            answer=ruling; sub(/ \(.*/, "", answer)
+          } else if (ruling !~ /^none \(not unanimous, [0-9]+ blind seats; held for the owner\)$/) exit 1
+          count=ruling; sub(/^.*unanimous, /, "", count); sub(/ blind seats.*$/, "", count); count+=0
+          sub(/^ /, "", seats)
+          n=split(seats, votes, / seat/)
+          if (count < 2 || n != count) exit 1
+          agreed=1; answered=0
+          for (i=1; i<=n; i++) {
+            prefix=(i == 1 ? "seat" i "=" : i "=")
+            if (index(votes[i], prefix) != 1) exit 1
+            vote=substr(votes[i],length(prefix)+1)
+            if (vote !~ /^(PROCEED [A-Za-z0-9]{1,3}|HOLD|FAILED)$/) exit 1
+            if (vote != "FAILED") answered++
+            if (i == 1) first=vote; else if (vote != first) agreed=0
+            if (kind == "ruled" && vote != answer) exit 1
+          }
+          if (kind == "no-ruling" && (!answered || (agreed && first ~ /^PROCEED /))) exit 1
+        }
       ' <<< "$header" || continue
-      case "$f" in "$OUT/rulings/"*) kind=ruled ;; *) kind=no-ruling ;; esac
       answer=$(sed -n 's/^- ruling: \(PROCEED [A-Za-z0-9]*\) (.*/\1/p' <<< "$header")
       case "$kind:$answer" in ruled:|no-ruling:?*) continue ;; esac
       printf '%s\t%s\t%s\t%s\n' "$kind" "$answer" "$f" "$(sed -n 's/^- seats://p' <<< "$header")"

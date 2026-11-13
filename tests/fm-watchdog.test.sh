@@ -1353,6 +1353,39 @@ council-seats=claude:haiku,agy:flash'
   pass "council: one complete metadata header owns replay identity and answers"
 }
 
+test_council_replay_validates_the_recorded_vote_outcome() {
+  local out folder ruling seats task seat i=0
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  printf 'A flat keys or B (recommended) nested keys?\n' > "$H/record.txt"
+  mkdir -p "$H/data/watchdog/rulings" "$H/data/watchdog/no-rulings"
+  while IFS=$'\t' read -r folder ruling seats; do
+    i=$((i + 1))
+    task="invalid$i"
+    printf -- '- home: %s\n- task: %s\n- key: cache\n- ruling: %s\n- seats: %s\n\nRecord:\n\nA or B?\n' "$H" "$task" "$ruling" "$seats" > "$H/data/watchdog/$folder/$(home_key)-$task:cache.md"
+    out=$(run_wd 0 council --task "$task" --key cache --record-file "$H/record.txt" 2>&1) || fail "invalid vote check failed: $out"
+    assert_contains "$out" "council=ruled answer=PROCEED B" "contradictory or malformed votes must not authenticate a replay: $ruling; $seats; $out"
+    assert_contains "$out" "prior=0" "an invalid outcome is not replayed"
+  done <<'EOF'
+rulings	PROCEED A (not unanimous, 2 blind seats)	seat1=PROCEED A seat2=HOLD
+no-rulings	PROCEED A	seat1=PROCEED A seat2=HOLD
+rulings	PROCEED A (unanimous, 2 blind seats)	seat1=PROCEED A seat2=HOLD
+rulings	PROCEED A (unanimous, 3 blind seats)	seat1=PROCEED A seat2=PROCEED A
+no-rulings	none (not unanimous, 2 blind seats; held for the owner)	seat1=PROCEED A seat2=PROCEED A
+no-rulings	none (not unanimous, 2 blind seats; held for the owner)	seat1=FAILED seat2=FAILED
+EOF
+  {
+    printf -- '- home: %s\n- task: many-seats\n- key: cache\n- ruling: PROCEED A (unanimous, 10 blind seats)\n- seats:' "$H"
+    for seat in $(seq 1 10); do printf ' seat%s=PROCEED A' "$seat"; done
+    printf '\n\nRecord:\n\nA or B?\n'
+  } > "$H/data/watchdog/rulings/$(home_key)-many-seats:cache.md"
+  out=$(run_wd 10 council --task many-seats --key cache --record-file "$H/record.txt" 2>&1) || fail "valid vote count failed: $out"
+  assert_contains "$out" "answer=PROCEED A" "a valid ten-seat record keeps its answer: $out"
+  assert_contains "$out" "prior=1" "a valid multi-digit seat count remains replayable"
+  pass "council: replay requires a supported outcome consistent with its seat votes"
+}
+
 test_council_command_honours_the_dry_run_switch() {
   local out
   make_home $'Captain session\n> ' 'mode=dry-run
@@ -5271,6 +5304,7 @@ fm_test_run \
   test_council_never_reads_stale_input_after_a_prompt_write_failure \
   test_council_checks_split_reserved_words_before_normalizing_a_file \
   test_council_replay_reads_only_one_metadata_header \
+  test_council_replay_validates_the_recorded_vote_outcome \
   test_council_command_honours_the_dry_run_switch \
   test_council_runs_one_at_a_time_per_decision \
   test_judge_fallback_and_spend_cap \
