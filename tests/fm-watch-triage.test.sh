@@ -2480,6 +2480,7 @@ fake_crew_control() {  # <case-dir> <exit-code> [keep-pane]
   cat > "$1/fake-control" <<SH
 #!/usr/bin/env bash
 printf '%s\n' "\$1 \$2 \$3" >> "$1/control.calls"
+printf '%s\n' "\${FM_CONTROL_EXPECT_SPAWN_GEN-unset}" > "$1/control.expected-gen"
 printf '%s\n' "\$4" > "$1/control.note"
 n=\$(awk 'END { print NR }' "$1/control.calls")
 # Each replacement renders its own frame: without a busy gen, the pane hash is
@@ -2518,6 +2519,10 @@ test_dead_crew_agent_auto_relaunches_from_its_checkpoint_within_a_bound() {
     : > "$out"
     wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" exit \
       || fail "a dead ship agent was never handled at the wedge threshold (round $round): $(cat "$out")"
+    case "$round" in
+      1) [ "$(cat "$dir/control.expected-gen")" = '' ] || fail "legacy generation was not passed to lifecycle control" ;;
+      2) [ "$(cat "$dir/control.expected-gen")" = s1.relaunch ] || fail "observed generation was not passed to lifecycle control" ;;
+    esac
     grep -F "check: wedge auto-relaunched from its checkpoint after its agent died in $window (relaunch $round of 2 in 3600s)" "$out" >/dev/null \
       || fail "relaunch $round did not wake with its auto-relaunch outcome: $(cat "$out")"
     [ "$(crew_relaunch_wakes "$state" wedge relaunched)" -eq 1 ] \

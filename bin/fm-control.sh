@@ -210,6 +210,9 @@
 #   FM_CONTROL_ARM_WAIT          wait for an armed interrupt's rendered proof
 #                                after the press gap (1.5)
 #   FM_CONTROL_EXIT_WAIT         alive->dead wait after the exit command (30)
+#   FM_CONTROL_EXPECT_SPAWN_GEN  Watcher-only expected generation (empty for legacy
+#                               records); recheck generation and stop/clean-exit
+#                               evidence under the lifecycle lock when set.
 #   FM_CONTROL_LAUNCH_WAIT       dead->alive wait after a relaunch (90)
 #   FM_CONTROL_EXIT_RETRIES      Enter retries for the exit command (3)
 set -eu
@@ -453,6 +456,19 @@ if [ ! -f "$META" ]; then
       ;;
   esac
   die "no task '$ID' in $STATE (fm-control resolves an exact task id only)"
+fi
+
+# Watcher observations must still hold after acquiring the lifecycle lock.
+if [ "$VERB" = relaunch ] && [ "${FM_CONTROL_EXPECT_SPAWN_GEN+x}" = x ]; then
+  [ "$(fm_meta_get "$META" spawn_gen 2>/dev/null || true)" = "$FM_CONTROL_EXPECT_SPAWN_GEN" ] \
+    || die "automatic relaunch cancelled: task $ID has a different worker generation"
+  if [ -e "$STATE/.crew-stopped-$ID" ] || [ -L "$STATE/.crew-stopped-$ID" ]; then
+    die "automatic relaunch cancelled: task $ID was stopped on purpose"
+  fi
+  if [ -n "$FM_CONTROL_EXPECT_SPAWN_GEN" ] \
+    && [ "$(cat "$STATE/$ID.agent-exit" 2>/dev/null || true)" = "$FM_CONTROL_EXPECT_SPAWN_GEN"$'\t'0 ]; then
+    die "automatic relaunch cancelled: task $ID exited cleanly with status 0"
+  fi
 fi
 
 # A remotely placed secondmate records its endpoint on ANOTHER host, so every

@@ -2191,8 +2191,8 @@ wedge_defer_validating() {  # <window> <since-file> <triage-label> <idle-age> <t
 # recorded for this incarnation's spawn_gen (bin/fm-spawn.sh), both skip it.
 # No record for the current incarnation means the wrapper died with its agent,
 # which only a signal does.
-crew_auto_relaunch() {  # <window> <task> <idle-age> <dead|missing>
-  local win=$1 task=$2 age=$3 verdict=$4 meta kind backend wt statusf last ledger lock now attempts note out rc=0 detail gen what
+crew_auto_relaunch() {  # <window> <task> <idle-age> <dead|missing> <spawn-gen>
+  local win=$1 task=$2 age=$3 verdict=$4 gen=$5 meta kind backend wt statusf last ledger lock now attempts note out rc=0 detail what
   CREW_RELAUNCH_KEY='' CREW_RELAUNCH_REASON='' CREW_RELAUNCH_NOTE='' CREW_RELAUNCH_OK=0
   [ "$CREW_RELAUNCH_MAX_ATTEMPTS" -gt 0 ] || return 1
   case "$task" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
@@ -2225,7 +2225,6 @@ crew_auto_relaunch() {  # <window> <task> <idle-age> <dead|missing>
     CREW_RELAUNCH_NOTE="; automatic relaunch skipped because the worker was stopped on purpose (state/.crew-stopped-$task)"
     return 1
   fi
-  gen=$(fm_meta_get "$meta" spawn_gen 2>/dev/null || true)
   if [ -n "$gen" ] && [ "$(cat "$STATE/$task.agent-exit" 2>/dev/null || true)" = "$gen"$'\t'0 ]; then
     CREW_RELAUNCH_NOTE="; automatic relaunch skipped because the agent exited cleanly with status 0"
     return 1
@@ -2264,7 +2263,7 @@ The local copy, its commits, and any uncommitted changes were left exactly as th
 Its newest status events, oldest first:
 $(tail -n 5 "$statusf" 2>/dev/null | sed 's/^/    /')
 Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mistakes axi status\` for any run on this branch, then continue from that checkpoint."
-  out=$(FM_HOME=$FM_HOME FM_SPAWN_NO_GUARD=1 fm_run_timed_fn "$CREW_RELAUNCH_TIMEOUT" \
+  out=$(FM_HOME=$FM_HOME FM_SPAWN_NO_GUARD=1 FM_CONTROL_EXPECT_SPAWN_GEN=$gen fm_run_timed_fn "$CREW_RELAUNCH_TIMEOUT" \
     "${FM_CONTROL_BIN:-$SCRIPT_DIR/fm-control.sh}" "$task" relaunch --note "$note" </dev/null 2>&1) || rc=$?
   if [ "$rc" -eq 0 ]; then
     printf '%s\trelaunched\n' "$now" >> "$ledger" 2>/dev/null || true
@@ -2323,9 +2322,10 @@ Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mist
 # probe reads, so that same dead agent is absorbed rather than retried.
 # Returns 0 when it has handled the window, 1 to escalate on the unchanged path.
 wedge_dead_record() {  # <window> <since-file> <triage-label> <idle-age> <pane-hash> <task>
-  local win=$1 since_file=$2 label=$3 age=$4 hash=$5 task=$6 key marker agent_state detail reason gen id successor next
+  local win=$1 since_file=$2 label=$3 age=$4 hash=$5 task=$6 key marker agent_state detail reason gen id successor next expected_gen
   key=$(window_key "$win")
   marker="$STATE/.dead-reported-$key"
+  expected_gen=$(fm_meta_get "$STATE/$task.meta" spawn_gen 2>/dev/null || true)
   agent_state=$(fm_backend_agent_state "$(window_backend "$win")" "$win" 2>/dev/null) || agent_state=unreadable
   case "$agent_state" in
     dead) detail='the endpoint is still there with no agent running in it' ;;
@@ -2346,7 +2346,7 @@ wedge_dead_record() {  # <window> <since-file> <triage-label> <idle-age> <pane-h
     return 0
   fi
   CREW_RELAUNCH_NOTE=''
-  if crew_auto_relaunch "$win" "$task" "$age" "$agent_state"; then
+  if crew_auto_relaunch "$win" "$task" "$age" "$agent_state" "$expected_gen"; then
     fm_wake_append check "$CREW_RELAUNCH_KEY" "$CREW_RELAUNCH_REASON" || exit 1
     successor=$id
     if [ "$CREW_RELAUNCH_OK" != 1 ]; then

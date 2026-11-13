@@ -3519,6 +3519,40 @@ SH
   pass "fm-control relaunch: a vanished watcher scratch file does not fail the child-record checkpoint"
 }
 
+test_automatic_relaunch_rechecks_lifecycle_state_under_lock() {
+  local dir out rc scenario
+  for scenario in stopped replaced clean; do
+    dir=$(new_case "auto-$scenario" rl-auto)
+    add_ship_task "$dir" rl-auto codex
+    printf 'spawn_gen=observed-worker\n' >> "$dir/home/state/rl-auto.meta"
+    case "$scenario" in
+      stopped)
+        out=$(run_control "$dir" rl-auto exit)
+        expect_code 0 "$?" "the intervening exit should succeed"$'\n'"$out"
+        ;;
+      replaced)
+        sed 's/^spawn_gen=.*/spawn_gen=replacement-worker/' "$dir/home/state/rl-auto.meta" > "$dir/replacement.meta"
+        mv "$dir/replacement.meta" "$dir/home/state/rl-auto.meta"
+        ;;
+      clean)
+        printf 'observed-worker\t0\n' > "$dir/home/state/rl-auto.agent-exit"
+        ;;
+    esac
+    cp "$dir/home/state/rl-auto.meta" "$dir/before.meta"
+    cp "$dir/home/data/rl-auto/brief.md" "$dir/before.brief"
+    cp "$dir/fake/command" "$dir/before.command"
+    rc=0
+    out=$(FM_CONTROL_EXPECT_SPAWN_GEN=observed-worker run_control "$dir" rl-auto relaunch --note "stale automatic recovery") || rc=$?
+    expect_code 1 "$rc" "automatic relaunch must refuse after $scenario"$'\n'"$out"
+    assert_contains "$out" "automatic relaunch cancelled" "the refusal should explain the stale recovery"
+    cmp -s "$dir/before.meta" "$dir/home/state/rl-auto.meta" || fail "$scenario changed the task record"
+    cmp -s "$dir/before.brief" "$dir/home/data/rl-auto/brief.md" || fail "$scenario appended a stale checkpoint note"
+    cmp -s "$dir/before.command" "$dir/fake/command" || fail "$scenario touched the current agent"
+    [ ! -e "$dir/home/state/rl-auto.control-relaunch" ] || fail "$scenario started a relaunch transaction"
+  done
+  pass "automatic relaunch rechecks intervening stop, replacement, and clean exit under the lifecycle lock"
+}
+
 test_concurrent_relaunch_is_refused() {
   local dir out rc lock holder i
   dir=$(new_case lock rl19)
@@ -4883,6 +4917,7 @@ test_secondmate_relaunch_checkpoints_child_work_and_spares_the_charter
 test_secondmate_relaunch_refuses_an_unmarked_home
 test_secondmate_checkpoint_refuses_unreadable_child_state
 test_secondmate_checkpoint_ignores_a_vanished_scratch_find_walk
+test_automatic_relaunch_rechecks_lifecycle_state_under_lock
 test_concurrent_relaunch_is_refused
 test_direct_spawn_relaunch_participates_in_the_lifecycle_lock
 test_promotion_participates_in_the_lifecycle_lock_before_metadata_resolution
