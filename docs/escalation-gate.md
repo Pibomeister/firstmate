@@ -20,9 +20,9 @@ A routine recovery writes its record and sends nothing.
 An episode runs from the first exception of a subject and signal to the routine state that closes it.
 Within one episode:
 
-- The first exception sends one escalation.
-- A repeat of an unchanged state sends nothing.
-- A change to a state not yet escalated sends one delta that names the old and new states.
+- The first exception not held by a cause sends one escalation.
+- A repeat of a state already escalated sends nothing.
+- After an escalation, a change to a state not yet escalated sends one delta that names the last escalated state and the new state.
 - A return to a state already escalated writes a row and sends nothing, because a delta is an escalation.
 - A routine state closes the episode and sends one closure record, and nothing follows it in that episode.
 
@@ -34,7 +34,8 @@ An event can touch two incident keys, such as a dead primary and the stall it ca
 The effect names the cause with `--cause`, and the gate records one of the two as an escalation and the other without a send.
 Both arrival orders give one escalation, because the gate reads only the ledger.
 A producer that reports both sends the cause first.
-When the episode that suppressed a report closes while the suppressed state persists, the next report of that state escalates once, so the condition still surfaces.
+Once the suppressing episode closes, an exception state not yet escalated sends on its next report.
+It sends an escalation if its episode has sent none, or a delta from the last escalated state otherwise.
 
 ## Wakes
 

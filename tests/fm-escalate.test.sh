@@ -232,6 +232,40 @@ test_after_both_episodes_close_the_next_report_escalates() {
   pass "a report after both episodes close escalates normally"
 }
 
+test_the_first_released_notification_is_an_escalation_after_a_state_change() {
+  local h out cause
+  h=$(new_home first-released-change)
+  cause=$(ikey "$h" primary health-verdict dead)
+  esc "$h" "$T0" --subject primary --signal health-verdict --state dead > /dev/null || fail "cause failed"
+  esc "$h" "$T0" --subject effect --signal stall-detection --state second-detection --cause "$cause" > /dev/null || fail "withheld state failed"
+  esc "$h" "$T0" --subject primary --signal health-verdict --state ok > /dev/null || fail "cause close failed"
+  out=$(esc "$h" "$T0" --subject effect --signal stall-detection --state restart-failed --cause "$cause") || fail "changed release failed"
+  expect_line "$out" t4 escalate none sent "the episode's first notification cannot be a delta from an unsent state"
+  assert_equals e1 "$(col "$h" 4 8)" "the first released notification stays in the existing episode"
+  assert_equals 3 "$(sent "$h")" "cause, closure, and the first released exception each send once"
+  pass "an episode's first notification is an escalation even after a withheld state changed"
+}
+
+test_a_withheld_state_is_released_after_another_state_escalated() {
+  local h out cause
+  h=$(new_home prior-escalation)
+  cause=$(ikey "$h" primary health-verdict dead)
+  esc "$h" "$T0" --subject effect --signal stall-detection --state second-detection > /dev/null || fail "initial state failed"
+  esc "$h" "$T0" --subject primary --signal health-verdict --state dead > /dev/null || fail "cause failed"
+  out=$(esc "$h" "$T0" --subject effect --signal stall-detection --state restart-failed --cause "$cause" --wake) || fail "withheld state failed"
+  expect_line "$out" t3 record 1 none "the new state is withheld while its cause holds"
+  esc "$h" "$T0" --subject primary --signal health-verdict --state ok > /dev/null || fail "cause close failed"
+  out=$(esc "$h" "$T0" --subject effect --signal stall-detection --state restart-failed --cause "$cause" --wake) || fail "release failed"
+  expect_line "$out" t5 delta 2 sent "the withheld state must send its own delta after the cause clears"
+  assert_equals e1 "$(col "$h" 5 8)" "the released state stays in its episode"
+  assert_grep 'old=second-detection new=restart-failed' "$h/sent.log" "the released delta names the last sent state and the withheld state"
+  out=$(esc "$h" "$T0" --subject effect --signal stall-detection --state restart-failed --cause "$cause" --wake) || fail "released repeat failed"
+  expect_line "$out" t5 none none none "the released state sends and wakes only once"
+  assert_equals 4 "$(sent "$h")" "initial effect, cause, closure, and released state each send once"
+  assert_equals 5 "$(rows "$h")" "a repeat adds no ledger row"
+  pass "a different prior escalation cannot suppress a withheld state's later release"
+}
+
 test_suppressed_effect_escalates_once_after_the_cause_clears() {
   local h out cause
   h=$(new_home cause-clears)
@@ -461,6 +495,8 @@ test_the_wake_lib_accepts_incident_and_refuses_unknown_kinds() {
 }
 
 fm_test_run \
+  test_the_first_released_notification_is_an_escalation_after_a_state_change \
+  test_a_withheld_state_is_released_after_another_state_escalated \
   test_three_passes_over_one_exception_send_once \
   test_routine_states_record_and_send_nothing \
   test_class_map_decides_the_class \

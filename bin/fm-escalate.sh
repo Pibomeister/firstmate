@@ -20,17 +20,18 @@
 # Decision, against the latest ledger row of (home, subject, signal):
 #   same state, suppressed   append nothing; print transition=none action=none.
 #                            Suppressed means the state is routine, or the open
-#                            episode already holds an escalate or delta row, or
+#                            episode already escalated this state, or
 #                            a cause rule below still holds.
 #   same state, released     the exception state repeats, its open episode holds
-#                            no escalate or delta row, and no cause rule holds
-#                            any more: append one escalate row.
+#                            no escalation of this state, and no cause rule holds
+#                            any more: append an escalate row, or a delta from
+#                            the last sent state when the episode already sent another state.
 #   any other report         append one row. A routine state closes an open
 #                            episode (action closure, one closure record sent) or
 #                            is a record row; the first exception of an episode
-#                            opens episode e<N> (escalate); a later state not yet
-#                            escalated in the episode is a delta that names the
-#                            old and new states; every other case is a record row.
+#                            opens episode e<N>; its first send is an escalation,
+#                            and later states not yet escalated are deltas from
+#                            the last escalated state; every other case is a record row.
 # Cause rules. --cause names an incident key (home|subject|signal|state). A
 # report is a record row when that key is open (its latest row has that state
 # and belongs to an open episode), or when an open episode of another
@@ -243,7 +244,7 @@ report() {
     # Same state.
     if [ "$exc" -eq 0 ]; then
       suppressed=1
-    elif episode_has "$HOME_F" "$SUBJECT_F" "$SIGNAL_F" "$R_EPISODE" 'escalate|delta'; then
+    elif episode_has "$HOME_F" "$SUBJECT_F" "$SIGNAL_F" "$R_EPISODE" 'escalate|delta' "$(_fm_incident_field "$STATE_ARG")"; then
       suppressed=1
     elif cause_holds; then
       suppressed=1
@@ -257,6 +258,9 @@ report() {
     else
       action=escalate
       episode=$R_EPISODE
+      if episode_has "$HOME_F" "$SUBJECT_F" "$SIGNAL_F" "$episode" 'escalate|delta'; then
+        action='delta'
+      fi
     fi
   else
     if [ "$exc" -eq 0 ]; then
@@ -273,8 +277,10 @@ report() {
         action=record
       elif episode_has "$HOME_F" "$SUBJECT_F" "$SIGNAL_F" "$episode" 'escalate|delta' "$(_fm_incident_field "$STATE_ARG")"; then
         action=record
-      else
+      elif episode_has "$HOME_F" "$SUBJECT_F" "$SIGNAL_F" "$episode" 'escalate|delta'; then
         action='delta'
+      else
+        action=escalate
       fi
     else
       episode=$(next_episode)
@@ -287,6 +293,10 @@ report() {
   fi
 
   if [ "$suppressed" -eq 0 ]; then
+    if [ "$action" = delta ]; then
+      prev_state=$(fm_incident_ledger_episode_rows "$STATE" "$HOME_F" "$SUBJECT_F" "$SIGNAL_F" "$episode" \
+        | awk -F '\t' '$11 == "escalate" || $11 == "delta" { s = $6 } END { print s }')
+    fi
     tid=$(fm_incident_ledger_append_locked "$STATE" "$HOME_F" "$SUBJECT_F" "$SIGNAL_F" "$STATE_ARG" "$class" "$episode" "$CAUSE" "" "$action") || {
       fm_incident_ledger_unlock "$STATE"
       fail 'cannot append the incident-ledger row'

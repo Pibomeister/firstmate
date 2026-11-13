@@ -699,7 +699,7 @@ wd_score_gap() {
 # A council sets WD_CALL_MAX_USD and WD_CALL_TIMEOUT for its seats; every other
 # call keeps the judge's own budget and time limit.
 wd_judge_one() {  # <model> <purpose> <answer-ere> <prompt>  -> prints the answer
-  local model=$1 purpose=$2 re=$3 prompt=$4 h m out ans cost='' tin='' tout='' rc=0 spent cap scratch acct pin secs usd
+  local model=$1 purpose=$2 re=$3 prompt=$4 h m out ans cost='' tin='' tout='' rc=0 spent cap scratch acct pin secs usd prompt_file
   secs=${WD_CALL_TIMEOUT:-$(cfgi judge-timeout-secs 120)}
   usd=${WD_CALL_MAX_USD:-$(cfg judge-call-max-usd 0.05)}
   h=${model%%:*} m=${model#*:}
@@ -729,15 +729,17 @@ wd_judge_one() {  # <model> <purpose> <answer-ere> <prompt>  -> prints the answe
       fi
       # The timed runner detaches stdin, so the prompt reaches claude through a
       # redirect inside the timed command rather than a pipe into the runner.
-      printf '%s' "$prompt" > "$scratch/prompt.txt"
+      prompt_file=$(mktemp "$scratch/prompt.XXXXXX") || return 1
+      printf '%s' "$prompt" > "$prompt_file" || { rm -f "$prompt_file"; return 1; }
       # shellcheck disable=SC2016  # Expanded by the timed child shell.
       # With no account set, the CLI's own default stays in force: naming the default
       # directory explicitly makes the real CLI report that it is not logged in.
       # An ordinary account means the variable is unset.
       out=$( (cd "$scratch" && { if [ "$acct" = ordinary ]; then unset CLAUDE_CONFIG_DIR; elif [ -n "$acct" ]; then export CLAUDE_CONFIG_DIR="$acct"; fi; } && \
-        fm_run_timed "$secs" bash -c 'f=$1; shift; exec "$@" < "$f"' _ "$scratch/prompt.txt" \
+        fm_run_timed "$secs" bash -c 'f=$1; shift; exec "$@" < "$f"' _ "$prompt_file" \
         claude -p --model "$m" --output-format json --tools "" \
         --setting-sources "" --strict-mcp-config --no-session-persistence --max-budget-usd "$usd") 2>/dev/null) || rc=$?
+      rm -f "$prompt_file"
       ans=$(printf '%s' "$out" | jq -r '.result // empty' 2>/dev/null)
       cost=$(printf '%s' "$out" | jq -r '.total_cost_usd // empty' 2>/dev/null)
       tin=$(printf '%s' "$out" | jq -r '.usage.input_tokens // empty' 2>/dev/null)
@@ -923,7 +925,7 @@ cmd_council() {
   O_HOME=$home O_TAG=$(wd_tag "$home") O_KEY=$(wd_state_key "$home")
   if [ -n "$file" ]; then
     [ -f "$file" ] || die "no such record file: $file" 2
-    summary=$(tr '\t\r\n' '   ' < "$file")
+    summary=$(cat "$file") || die "cannot read record file: $file"
   else
     summary=$(wd_open_decisions "$home/state" "$(wd_now)" 2>/dev/null | awk -F'\t' -v t="$task" -v k="$key" '$1 == t && $2 == k { print $5; exit }')
   fi
@@ -938,6 +940,7 @@ cmd_council() {
     wd_council_line held '' '' 0 ''
     return 0
   fi
+  summary=$(printf '%s' "$summary" | tr '\t\r\n' '   ')
   if [ "$(wd_decisions_mode)" != act ]; then
     wd_rec "$id" "decision:$key" council dry-run "would convene council on $task $key"
     wd_council_line dry-run '' '' 0 ''

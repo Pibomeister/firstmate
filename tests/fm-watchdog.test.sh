@@ -1186,7 +1186,7 @@ council-seats=claude:haiku,agy:flash'
 }
 
 test_council_stale_reclaim_excludes_a_second_contender() {
-  local lock real_cat first second i tool first_rc=0 second_rc=0
+  local lock real_cat first second i tool previous_lock_pids first_rc=0 second_rc=0
   make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
 council-seats=claude:haiku,agy:flash'
   fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
@@ -1226,6 +1226,7 @@ SH
   first=$!
   RACER=two run_wd 0 council --task t1 --key stale-race --record-file "$H/record.txt" > "$H/second.out" 2> "$H/second.err" &
   second=$!
+  previous_lock_pids=$LOCK_PIDS
   LOCK_PIDS="$LOCK_PIDS $first $second"
   for i in $(seq 1 400); do [ ! -e "$H/seen.one" ] || [ ! -e "$H/seen.two" ] || break; sleep 0.05; done
   touch "$H/go.one"
@@ -1239,6 +1240,7 @@ SH
   touch "$H/release-seats"
   wait "$first" || first_rc=$?
   wait "$second" || second_rc=$?
+  LOCK_PIDS=$previous_lock_pids
   rm -f "$FAKEBIN/cat"
   for tool in claude agy; do mv "$FAKEBIN/$tool.seat" "$FAKEBIN/$tool"; done
   assert_present "$H/seen.one" "the first contender observed the stale owner"
@@ -1249,6 +1251,78 @@ SH
   assert_grep 'council=busy' "$H/second.out" "the second stale reader must not remove the replacement owner's lock"
   assert_equals 2 "$(seat_calls)" "only one council's two seats were called"
   pass "council: simultaneous stale readers cannot replace the winning live owner"
+}
+
+test_concurrent_councils_keep_their_prompts_separate() {
+  local one two previous_lock_pids rc_one=0 rc_two=0
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A (recommended) flat keys or B nested keys?\n' > "$H/record.txt"
+  mv "$FAKEBIN/claude" "$FAKEBIN/claude.seat"
+  cat > "$FAKEBIN/claude" <<SH
+#!/usr/bin/env bash
+touch "$H/entered.\$RACER"
+for i in \$(seq 1 400); do [ ! -e "$H/entered.one" ] || [ ! -e "$H/entered.two" ] || break; sleep 0.05; done
+[ -e "$H/entered.one" ] && [ -e "$H/entered.two" ] || exit 1
+cat > "$H/read.\$RACER"
+exec "$FAKEBIN/claude.seat" "\$@" < "$H/read.\$RACER"
+SH
+  chmod +x "$FAKEBIN/claude"
+  RACER=one run_wd 0 council --task alpha --key layout --record-file "$H/record.txt" > "$H/one.out" 2> "$H/one.err" &
+  one=$!
+  RACER=two run_wd 0 council --task beta --key layout --record-file "$H/record.txt" > "$H/two.out" 2> "$H/two.err" &
+  two=$!
+  previous_lock_pids=$LOCK_PIDS
+  LOCK_PIDS="$LOCK_PIDS $one $two"
+  wait "$one" || rc_one=$?
+  wait "$two" || rc_two=$?
+  LOCK_PIDS=$previous_lock_pids
+  mv "$FAKEBIN/claude.seat" "$FAKEBIN/claude"
+  assert_equals 0 "$rc_one" "alpha command completes: $(cat "$H/one.err")"
+  assert_equals 0 "$rc_two" "beta command completes: $(cat "$H/two.err")"
+  assert_present "$H/entered.one" "alpha's seat was live during the overlap"
+  assert_present "$H/entered.two" "beta's seat was live during the overlap"
+  assert_grep 'task: alpha' "$H/read.one" "alpha's seat must read alpha's complete prompt"
+  assert_grep 'task: beta' "$H/read.two" "beta's seat must read beta's complete prompt"
+  assert_equals 4 "$(seat_calls)" "each council called its own two seats"
+  assert_equals 0 "$(find "$H/state/watchdog/judge-scratch" -type f | wc -l | tr -d ' ')" "completed model calls clean up their prompt files"
+  pass "council: concurrent decisions never share or retain a seat input file"
+}
+
+test_council_never_reads_stale_input_after_a_prompt_write_failure() {
+  local out scratch
+  if [ "$(id -u)" = 0 ]; then pass "prompt write failure # SKIP root can write permission-denied fixtures"; return; fi
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A (recommended) flat keys or B nested keys?\n' > "$H/record.txt"
+  scratch="$H/state/watchdog/judge-scratch"
+  mkdir -p "$scratch"
+  printf 'task: stale-other-decision\nrecord: A or B?\n' > "$scratch/prompt.txt"
+  chmod 400 "$scratch/prompt.txt"
+  chmod 500 "$scratch"
+  out=$(run_wd 0 council --task t1 --key prompt-write --record-file "$H/record.txt" 2>&1)
+  chmod 700 "$scratch"
+  chmod 600 "$scratch/prompt.txt"
+  assert_contains "$out" "council=no-ruling answer=none" "a failed input write cannot use stale input to rule: $out"
+  assert_equals 1 "$(seat_calls)" "only the seat that needs no input file was called"
+  assert_not_contains "$(cat "$H/prompt.log")" 'stale-other-decision' "no seat read an earlier decision"
+  pass "council: failed prompt publication cannot run a seat against stale input"
+}
+
+test_council_checks_split_reserved_words_before_normalizing_a_file() {
+  local out record
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  for record in $'A (recommended) de\nploy the service or B wait?' $'A (recommended) mer\nge the change or B wait?'; do
+    printf '%s\n' "$record" > "$H/record.txt"
+    out=$(run_wd 0 council --task t1 --key split-record --record-file "$H/record.txt" 2>&1) || fail "split-word hold failed: $out"
+    assert_contains "$out" "council=held answer=none" "a reserved word split over file rows must hold: $out"
+  done
+  assert_equals 0 "$(seat_calls)" "no seat sees an owner-reserved record after row normalization"
+  pass "council: file normalization cannot hide split owner-reserved words"
 }
 
 test_council_command_honours_the_dry_run_switch() {
@@ -5165,6 +5239,9 @@ fm_test_run \
   test_council_dry_run_withholds_an_existing_ruling \
   test_council_does_not_expire_a_live_owner \
   test_council_stale_reclaim_excludes_a_second_contender \
+  test_concurrent_councils_keep_their_prompts_separate \
+  test_council_never_reads_stale_input_after_a_prompt_write_failure \
+  test_council_checks_split_reserved_words_before_normalizing_a_file \
   test_council_command_honours_the_dry_run_switch \
   test_council_runs_one_at_a_time_per_decision \
   test_judge_fallback_and_spend_cap \
