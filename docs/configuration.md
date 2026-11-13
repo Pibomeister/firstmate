@@ -1059,7 +1059,7 @@ Any other malformed line is an error that refuses both a review run and a covere
 | `seat` | `<family>:<harness>:<model>[:<effort>]` | A reviewer that every run calls. |
 | `spare` | the same form | A reviewer called only while fewer than two model families hold a valid review, for example after a seat's call failed. |
 | `require` | `<host>/<repository path>` or `*` | A repository whose merges through `bin/fm-pr-merge.sh` need `--expected-head` and an approved review at that head. Repeatable, and matched without regard to letter case. |
-| `post` | `on` or `off` (default `off`) | With `on`, each review is also posted as a pull request comment and counts only with that comment's URL. Posting works on GitHub only. |
+| `post` | `on` or `off` (default `off`) | With `on`, each review is also posted as a pull request comment; approvals count only with that comment's URL, while a valid BLOCK still blocks if posting fails. Posting works on GitHub only. |
 | `timeout` | 60 to 14400 seconds (default 1800) | The bound on one reviewer call. |
 
 `<family>` is this home's own name for a model family, such as `anthropic` or `google`.

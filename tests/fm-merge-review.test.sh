@@ -87,6 +87,9 @@ write_gh_stub() {  # <fakebin>
 stub=$FM_TEST_REVIEW_STUB
 printf '%s\n' "$*" >> "$stub/gh.calls"
 [ ! -e "$stub/gh.fail" ] || exit 1
+if [ -e "$stub/gh.fail-block" ] && grep -q "VERDICT: BLOCK " "$5"; then
+  exit 1
+fi
 [ "$1 $2" = "pr comment" ] || exit 1
 n=$(wc -l < "$stub/gh.calls" | tr -d ' ')
 cp "$5" "$stub/gh.body.$n"
@@ -381,6 +384,35 @@ test_posting_is_off_by_default_and_required_when_on() {
   pass "reviews are posted only with post=on, and then count only with the comment URL"
 }
 
+test_unposted_block_cannot_be_outvoted_or_replaced() {
+  local rc=0
+  make_case post-block "${TWO_SEATS[@]}" 'seat=xai:grok:grok-test' 'post=on'
+  echo block > "$STUB/agy.mode"
+  : > "$STUB/gh.fail-block"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "post-block: two posted approvals cannot outvote an unposted block"
+  assert_grep "merge-review: blocked head=$HEAD_SHA" "$CASE/stdout" "post-block: the unposted block was discarded"
+  assert_grep "blocks=google.agy.gemini-test-high" "$CASE/stdout" "post-block: the dissenting seat is missing"
+  assert_grep "approvals=anthropic.claude.claude-test-1:APPROVE,xai.grok.grok-test:APPROVE" "$CASE/stdout" \
+    "post-block: both posted approvals must be present to exercise the bypass"
+
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 1 "$rc" "post-block: the supervisor must block too"
+  assert_grep "merge-review: blocked" "$CASE/stdout" "post-block: supervisor discarded the unposted block"
+
+  echo approve > "$STUB/agy.mode"
+  rm -f "$STUB/gh.fail-block"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "post-block: publishing the stored block must not replace it"
+  assert_equals 1 "$(calls agy)" "post-block: the blocking reviewer was called again"
+  assert_grep "merge-review: blocked" "$CASE/stdout" "post-block: retry lost the block"
+  assert_grep "posted=$PR_URL#issuecomment-" "$(store_dir)/google.agy.gemini-test-high.receipt" \
+    "post-block: the retry did not publish the stored block"
+  pass "an unposted block defeats two posted approval families and survives publication retry"
+}
+
 test_covers_follows_the_require_lines() {
   local rc=0
   make_case covers-none
@@ -463,6 +495,7 @@ fm_test_run \
   test_tampered_receipts_do_not_count \
   test_a_receipt_counts_only_while_its_seat_is_declared \
   test_posting_is_off_by_default_and_required_when_on \
+  test_unposted_block_cannot_be_outvoted_or_replaced \
   test_covers_follows_the_require_lines \
   test_run_refuses_what_it_cannot_review \
   test_intent_reaches_the_prompt_the_receipt_binds

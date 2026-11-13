@@ -76,8 +76,9 @@
 # cannot confirm it is the pull request's base. A reviewer reads the change as
 # untrusted material: the prompt says so, which lowers but does not remove the
 # chance that text in the change steers a verdict. With post=on a review is also
-# posted as a pull request comment and counts only with that comment's URL;
-# posting is implemented for GitHub only, so other forges stay incomplete.
+# posted as a pull request comment. Approvals count only with that comment's
+# URL; a valid BLOCK still blocks if posting fails. Posting is implemented for
+# GitHub only, so other forges cannot approve with post=on.
 #
 # docs/configuration.md "Merge review (config/merge-review)" owns the config
 # keys. The ship-landing skill owns when a supervisor dispatches the worker.
@@ -350,7 +351,7 @@ mr_receipt_valid() {  # <receipt>
   { [[ "$value" =~ ^[0-9a-f]{64}$ ]] && [ -f "$diff" ] && [ "$(mr_sha256 "$diff")" = "$value" ]; } \
     || { MR_R_REASON='the diff is missing or changed'; return 1; }
 
-  if [ "$MR_POST" = on ]; then
+  if [ "$MR_POST" = on ] && [ "$verdict" != BLOCK ]; then
     value=$(mr_receipt_get "$receipt" posted)
     case "$value" in
       "$FM_PR_URL#"?*) ;;
