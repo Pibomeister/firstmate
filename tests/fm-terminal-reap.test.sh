@@ -921,6 +921,21 @@ build_lanes() {  # <case>
   fi
   idle_term term-casco-tab pty-casco-tab "$CASCO" "n11-g9"
   show term-casco-tab pty-casco-tab "$CASCO"
+  # A registered handle whose pane Orca roots outside the lane's repository
+  # and worktree is not trusted as that lane.
+  FM_HOME="$HOME_DIR" bash "$ROOT/bin/fm-lane-register.sh" lane-moved \
+    --repo "$CASCO" --terminal term-lane-moved >/dev/null || fail "could not register term-lane-moved"
+  mkdir -p "$FX/elsewhere"
+  idle_term term-lane-moved pty-lane-moved "$FX/elsewhere" "n11-g6"
+  show term-lane-moved pty-lane-moved "$FX/elsewhere"
+  # A lane another home registered is that home's to reap.
+  mkdir -p "$FX/sm-home/state" "$HOME_DIR/data"
+  printf -- '- sm1 - Test secondmate (home: %s; scope: tests; projects: alpha; added 2026-01-01)\n' "$FX/sm-home" \
+    > "$HOME_DIR/data/secondmates.md"
+  FM_HOME="$FX/sm-home" bash "$ROOT/bin/fm-lane-register.sh" lane-other \
+    --repo "$CASCO" --terminal term-lane-other >/dev/null || fail "could not register term-lane-other"
+  idle_term term-lane-other pty-lane-other "$CASCO" "n11-g7"
+  show term-lane-other pty-lane-other "$CASCO"
   fixture_write
 }
 
@@ -933,6 +948,8 @@ test_registered_external_lanes_are_reaped() {
   expect term-lane-exited "reap external-lane-exited" "a registered lane whose pane exited is reaped"
   expect term-lane-live "keep no-session" "a registered lane with no session that Orca still calls connected is kept"
   expect term-casco-tab "keep foreign" "an unregistered tab in the lane repository is never firstmate's"
+  expect term-lane-moved "keep foreign" "a registered handle rooted outside its lane's repository and worktree is not trusted"
+  expect term-lane-other "keep foreign" "another home's registered lane is not this home's to reap"
   if [ -n "$STANDIN" ]; then
     expect term-lane-agent "keep live-agent" "a registered lane still running its agent is kept"
   fi

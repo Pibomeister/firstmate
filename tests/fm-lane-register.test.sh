@@ -115,7 +115,39 @@ test_refusals_write_nothing() {
   pass "every refused registration writes nothing"
 }
 
+test_a_worktree_belongs_to_one_lane() {
+  local before
+  setup one-owner
+  register n11-g1 --repo "$REPO" --terminal term_abc --worktree "$WT"
+  [ "$RC" = 0 ] || fail "the first lane could not register: $ERR"
+  register n11-g2 --repo "$REPO" --terminal term_def --worktree "$WT"
+  [ "$RC" = 1 ] || fail "a second lane naming the same worktree must be refused, got $RC"
+  case "$ERR" in
+    *"already registered by lane n11-g1"*) ;;
+    *) fail "the refusal did not name the lane that owns the worktree: $ERR" ;;
+  esac
+  [ ! -e "$HOME_DIR/state/external-lanes/n11-g2.lane" ] || fail "the refused lane wrote a record"
+  before=$(cat "$RECORD")
+  register n11-g1 --worktree "$WT"
+  [ "$RC" = 0 ] || fail "the owning lane could not amend its own worktree: $ERR"
+  [ "$(field terminal)" = term_abc ] || fail "the amend lost the terminal"
+  [ -n "$before" ] || fail "the first record was empty"
+  pass "a worktree registers to one lane, and that lane may amend it again"
+}
+
+test_a_symlinked_lanes_directory_is_refused() {
+  setup symlinked
+  mkdir -p "$CASE/elsewhere"
+  ln -s "$CASE/elsewhere" "$HOME_DIR/state/external-lanes"
+  register n11-g1 --repo "$REPO" --terminal term_abc
+  [ "$RC" = 1 ] || fail "a symlinked lanes directory must be refused, got $RC"
+  [ -z "$(ls -A "$CASE/elsewhere")" ] || fail "the registration wrote through the symlink"
+  pass "a registration refuses a symlinked lanes directory and writes nothing"
+}
+
 fm_test_run \
   test_register_then_amend_with_the_worktree \
   test_first_registration_requires_an_explicit_terminal \
-  test_refusals_write_nothing
+  test_refusals_write_nothing \
+  test_a_worktree_belongs_to_one_lane \
+  test_a_symlinked_lanes_directory_is_refused

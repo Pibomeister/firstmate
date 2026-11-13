@@ -44,11 +44,13 @@
 #
 # Owners. The script reads this home's state/*.meta records and, through each
 # home's data/secondmates.md, every local secondmate home's records, read-only.
-# A record's terminal= handle and worktree= path mark a recorded task. Each
-# home's state/external-lanes/*.lane records (bin/fm-lane-register.sh) name
-# lanes an external launcher started; their terminal= handles mark registered
-# lanes. Remote secondmate homes are not read; their terminals run on another
-# host.
+# A record's terminal= handle and worktree= path mark a recorded task. This
+# home's own state/external-lanes/*.lane records (bin/fm-lane-register.sh)
+# name lanes an external launcher started; a terminal is a registered lane
+# only when its handle is a record's terminal= and Orca roots it in that
+# record's repo= or worktree= path. Other homes' lane records are not read,
+# so a lane is reaped only by the home whose cleanup also forgets it. Remote
+# secondmate homes are not read; their terminals run on another host.
 #
 # Terminal verdicts, first match wins (every keep is final):
 #   keep remote        the terminal runs on another execution host
@@ -56,7 +58,8 @@
 #   keep task          its handle is a recorded task or secondmate endpoint
 #   keep task-worktree it runs in a recorded task's worktree; that task's own
 #                      cleanup owns it, whether or not its work has landed
-#   (registered lane)  its handle is a registered external lane's: the
+#   (registered lane)  its handle is a registered external lane's and it is
+#                      rooted in that lane's repository or worktree: the
 #                      unowned-task and foreign rules below do not apply, and
 #                      the registration replaces the title proof. With a
 #                      session it is judged by the rules from no-session
@@ -300,14 +303,15 @@ JS
       [ -z "$worktree" ] || worktree=$(phys "$worktree")
       printf 'rec\t%s\t%s\t%s\t%s\n' "$home" "$id" "$terminal" "$worktree"
     done
-    if ! absent "$home/state/external-lanes"; then
+    if [ "$home" = "$(phys "$FM_HOME")" ] && ! absent "$home/state/external-lanes"; then
       [ -d "$home/state/external-lanes" ] && [ -r "$home/state/external-lanes" ] && [ -x "$home/state/external-lanes" ] || return 1
       for meta in "$home"/state/external-lanes/*.lane; do
         [ -f "$meta" ] || continue
         [ -r "$meta" ] || return 1
         id=${meta##*/}; id=${id%.lane}
         terminal=$(fm_meta_get "$meta" terminal)
-        [ -z "$terminal" ] || printf 'lane\t%s\t%s\t%s\n' "$home" "$id" "$terminal"
+        [ -z "$terminal" ] || printf 'lane\t%s\t%s\t%s\t%s\t%s\n' "$home" "$id" "$terminal" \
+          "$(fm_meta_get "$meta" repo)" "$(fm_meta_get "$meta" worktree)"
       done
     fi
     reg="$home/data/secondmates.md"
@@ -373,7 +377,7 @@ for (const line of read("owners.tsv").split("\n")) {
   if (f[0] === "home") homes.push(f[1]);
   else if (f[0] === "reap-home") reapHomes.push(f[1]);
   else if (f[0] === "rec") recs.push({ home: f[1], id: f[2], terminal: f[3], worktree: f[4] });
-  else if (f[0] === "lane") lanes.push({ home: f[1], id: f[2], terminal: f[3] });
+  else if (f[0] === "lane") lanes.push({ home: f[1], id: f[2], terminal: f[3], repo: f[4] || "", worktree: f[5] || "" });
 }
 const recFor = (pred) => recs.find(pred);
 
@@ -434,7 +438,10 @@ if (mode === "terminals") {
     if (wt && (r = recFor((x) => x.worktree && x.worktree === wt))) {
       prelim = "task-worktree"; detail = `${r.id} (${r.home}); ${title}`; emit(); continue;
     }
-    const lane = lanes.find((x) => x.terminal === handle);
+    // A registration is trusted only for a pane rooted in the lane's own
+    // repository or worktree, so a wrong handle cannot claim another pane.
+    const lane = wt ? lanes.find((x) => x.terminal === handle
+      && ((x.repo && under(wt, x.repo)) || (x.worktree && under(wt, x.worktree)))) : undefined;
     if (lane) { prelim = "external"; detail = `${lane.id} (${lane.home}); ${title}`; }
     else if (wt && /^fm-/.test(wt.split("/").pop())) { prelim = "unowned-task"; emit(); continue; }
     else if (!(wt && reapHomes.includes(wt))) { prelim = "foreign"; emit(); continue; }
@@ -610,10 +617,14 @@ recorded_now() {
     END { exit found ? 0 : 1 }'
 }
 
-# lane_now <handle>: 0 when the owner read recorded_now just refreshed still
-# registers <handle> as an external lane.
+# lane_now <handle> <path>: 0 when the owner read recorded_now just refreshed
+# still registers <handle> as an external lane rooted where <path> is.
 lane_now() {
-  awk -F'\t' -v h="$1" '$1 == "lane" && $4 == h { found = 1 } END { exit found ? 0 : 1 }' "$WORK/owners.tsv"
+  LANE_HANDLE=$1 LANE_PATH=$(phys "$2") awk -F'\t' '
+    function under(p, r) { return r != "" && (p == r || index(p, r "/") == 1) }
+    $1 == "lane" && $4 == ENVIRON["LANE_HANDLE"] \
+      && (under(ENVIRON["LANE_PATH"], $5) || under(ENVIRON["LANE_PATH"], $6)) { found = 1 }
+    END { exit found ? 0 : 1 }' "$WORK/owners.tsv"
 }
 
 # current_title <handle>: the terminal's title from a fresh Orca listing; exit 1
@@ -639,7 +650,7 @@ close_terminal() {  # <handle> <path> <pid> [external] -> closed|skipped:<why>|f
     1) ;;
     *) printf 'skipped\tnow-unreadable-records'; return 0 ;;
   esac
-  if [ -n "$external" ] && ! lane_now "$handle"; then printf 'skipped\tnow-unregistered'; return 0; fi
+  if [ -n "$external" ] && ! lane_now "$handle" "$path"; then printf 'skipped\tnow-unregistered'; return 0; fi
   state=$(fm_backend_orca_agent_state "$handle")
   case "$state" in
     dead|missing) ;;
@@ -682,7 +693,7 @@ FACTS
     1) ;;
     *) printf 'skipped\tnow-unreadable-records'; return 0 ;;
   esac
-  if [ -n "$external" ] && ! lane_now "$handle"; then printf 'skipped\tnow-unregistered'; return 0; fi
+  if [ -n "$external" ] && ! lane_now "$handle" "$path"; then printf 'skipped\tnow-unregistered'; return 0; fi
   if [ -z "$pid" ]; then
     [ "$(fm_backend_orca_agent_state "$handle")" = missing ] || { printf 'skipped\tnow-not-exited'; return 0; }
   else

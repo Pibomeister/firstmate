@@ -17,7 +17,8 @@
 #                      registration and when the record has no terminal. An
 #                      amend of a lane that already records one may omit it
 #                      and keeps the recorded handle. No environment default.
-#   --worktree <path>  the lane's linked worktree of <clone>; it must exist
+#   --worktree <path>  the lane's linked worktree of <clone>; it must exist,
+#                      and no other registered lane may name it
 #
 # FM_HOME must name the firstmate home explicitly, so a launcher never
 # registers against whichever home this checkout happens to be. The record is
@@ -25,14 +26,16 @@
 # lines: repo=, terminal=, worktree=, registered=<epoch>, updated=<epoch>.
 #
 # What registration changes:
-#   bin/fm-terminal-reap.sh  treats a registered handle as a lane this home
-#                            may close once its pane has exited or holds only
-#                            an idle shell, with every existing re-proof; a
-#                            task record still wins over a registration
+#   bin/fm-terminal-reap.sh  treats a registered handle, when Orca roots its
+#                            pane in <clone> or the worktree, as a lane this
+#                            home may close once its pane has exited or holds
+#                            only an idle shell, with every existing re-proof;
+#                            a task record still wins over a registration
 #   bin/fm-worktree-cleanup.sh  adds the registered worktree to its pass with
 #                            every existing check (landed-work proof on a
 #                            merged or closed pull request, dirty and
-#                            untracked files kept and reported, no --force),
+#                            untracked files kept and reported, caches
+#                            included, no --force),
 #                            keeps it while the lane's terminal is still
 #                            listed, and deletes the record after it removes
 #                            the worktree
@@ -85,6 +88,7 @@ esac
 [ -d "$FM_HOME/state" ] && [ ! -L "$FM_HOME/state" ] || die "not a firstmate home: $FM_HOME"
 LANES="$FM_HOME/state/external-lanes"
 RECORD="$LANES/$ID.lane"
+[ ! -L "$LANES" ] || die "the lanes directory is a symlink: $LANES"
 
 # A value holds no newline, so a record line is always one key=value pair.
 one_line() {
@@ -147,6 +151,19 @@ if [ -n "$WORKTREE" ]; then
   [ "$top" -ef "$WORKTREE" ] || die "--worktree is not the top of its worktree: $WORKTREE"
   wt_common=$(common_dir "$WORKTREE") || die "--worktree git directory cannot be read: $WORKTREE"
   [ "$wt_common" = "$repo_common" ] || die "--worktree is not a worktree of $REPO: $WORKTREE"
+  for other in "$LANES"/*.lane; do
+    [ -f "$other" ] && [ "$other" != "$RECORD" ] || continue
+    other_id=${other##*/}
+    other_id=${other_id%.lane}
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in
+        worktree=*)
+          [ "${line#worktree=}" != "$WORKTREE" ] \
+            || die "--worktree is already registered by lane $other_id: $WORKTREE"
+          ;;
+      esac
+    done < "$other"
+  done
 fi
 
 now=$(date +%s)

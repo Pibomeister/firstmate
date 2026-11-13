@@ -1056,6 +1056,119 @@ test_spent_lane_record_is_forgotten() {
   pass "a lane whose worktree and terminal are both gone is forgotten"
 }
 
+test_registered_lane_cache_files_are_kept() {
+  begin_lane_case lane-cache
+  publish_pr MERGED
+  mkdir -p "$CASE_WT/.cache"
+  printf 'cache\n' > "$CASE_WT/.cache/x"
+  capture_pass "$CASE_DIR"
+  assert_kept
+  [ -f "$CASE_WT/.cache/x" ] || fail "an untracked cache file in a registered lane was deleted"
+  [ ! -e "$CASE_DIR/orca.json.rm" ] || fail "Orca was asked to remove a lane worktree with untracked files"
+  assert_out "report $CASE_WT untracked files"
+  case "$CAP_OUT" in
+    *"prune caches"*) fail "caches were pruned in a registered lane: $CAP_OUT" ;;
+  esac
+  [ -f "$LANE_RECORD" ] || fail "a kept lane lost its record"
+  pass "a registered lane's untracked cache files are kept, not pruned, and reported"
+}
+
+test_registered_lane_orca_does_not_list_is_removed_by_git() {
+  begin_lane_case lane-git
+  publish_pr MERGED
+  jq -n --arg repo "$CASE_REPO" '{ok: true, result: {
+    worktrees: [], terminals: [{worktreePath: $repo, handle: "term-captain"}], truncated: false}}' \
+    > "$CASE_DIR/orca.json"
+  capture_pass "$CASE_DIR"
+  assert_removed
+  [ ! -e "$CASE_DIR/orca.json.rm" ] || fail "Orca was asked to remove a worktree it does not list"
+  assert_out "remove $CASE_WT pull request MERGED $PR_URL"
+  assert_out "forget lane $LANE_ID worktree removed"
+  assert_branch "$CASE_REPO" feature
+  [ ! -e "$LANE_RECORD" ] || fail "the lane record outlived its removed worktree"
+  pass "a registered lane's worktree that Orca does not list is removed with git worktree remove"
+}
+
+# path_without_orca <dir>: a PATH directory holding every command on PATH
+# except orca, so a pass can run on a host with no Orca installed.
+path_without_orca() {
+  local out=$1 d f name
+  mkdir -p "$out"
+  local IFS=:
+  for d in $PATH; do
+    [ -d "$d" ] || continue
+    for f in "$d"/*; do
+      name=${f##*/}
+      [ "$name" != orca ] && [ -x "$f" ] && [ ! -e "$out/$name" ] || continue
+      ln -s "$f" "$out/$name"
+    done
+  done
+}
+
+test_lane_record_is_kept_when_orca_is_absent() {
+  local saved=$PATH
+  begin_lane_case lane-no-orca
+  printf '[]\n' > "$CASE_DIR/pr.json"
+  git -C "$CASE_REPO" worktree remove "$CASE_WT"
+  rm -f "$CASE_DIR/bin/orca"
+  path_without_orca "$CASE_DIR/path"
+  ! PATH="$CASE_DIR/path" command -v orca >/dev/null 2>&1 || fail "the test PATH still has orca"
+  PATH="$CASE_DIR/path" capture_pass "$CASE_DIR"
+  [ "$PATH" = "$saved" ] || fail "the test PATH leaked out of the pass"
+  [ -f "$LANE_RECORD" ] || fail "a lane record was forgotten while Orca could not say its pane closed"
+  case "$CAP_OUT" in
+    *"forget lane"*) fail "a lane was forgotten with no Orca: $CAP_OUT" ;;
+  esac
+  pass "without Orca, a lane's pane is never read as closed and its record is kept"
+}
+
+test_worktree_two_lanes_name_is_kept() {
+  begin_lane_case lane-twice
+  publish_pr MERGED
+  cp "$LANE_RECORD" "$CASE_DIR/state/external-lanes/n11-g2.lane"
+  capture_pass "$CASE_DIR"
+  assert_kept
+  [ ! -e "$CASE_DIR/orca.json.rm" ] || fail "a worktree two lanes name was removed"
+  assert_out "names a worktree another lane also names"
+  [ -f "$LANE_RECORD" ] && [ -f "$CASE_DIR/state/external-lanes/n11-g2.lane" ] \
+    || fail "a conflicted lane lost its record"
+  pass "a worktree that two lanes name is kept and reported"
+}
+
+test_task_record_beats_a_lane_registration() {
+  begin_lane_case lane-task
+  publish_pr MERGED
+  printf 'worktree=%s\n' "$CASE_WT" > "$CASE_DIR/state/task.meta"
+  capture_pass "$CASE_DIR"
+  assert_kept
+  assert_out "report $CASE_WT task record owns it"
+  [ -f "$LANE_RECORD" ] || fail "a lane whose worktree a task owns lost its record"
+  pass "a task record owns a worktree even when a lane registered it"
+}
+
+test_lane_inside_a_registered_project_keeps_the_lane_checks() {
+  local dir repo wt
+  dir=$(make_case lane-project)
+  install_gh "$dir/bin"
+  install_orca "$dir"
+  mkdir -p "$dir/projects"
+  fm_git_worktree "$dir/projects/repo" "$dir/linked" feature
+  repo=$(cd "$dir/projects/repo" && pwd -P) || fail "could not resolve the project"
+  wt=$(cd "$dir/linked" && pwd -P) || fail "could not resolve the worktree"
+  CASE_DIR=$dir CASE_REPO=$repo CASE_WT=$wt
+  FM_HOME="$dir" "$ROOT/bin/fm-lane-register.sh" n11-g1 --repo "$repo" \
+    --terminal term-lane --worktree "$wt" >/dev/null || fail "the lane could not be registered"
+  publish_pr MERGED
+  lane_orca_json term-lane
+  capture_pass "$dir"
+  assert_kept
+  [ ! -e "$dir/orca.json.rm" ] || fail "a project worktree a lane registered was removed while its terminal is open"
+  assert_out "registered lane n11-g1 terminal is open"
+  [ "$(printf '%s\n' "$CAP_OUT" | grep -cF -- "$wt ")" -eq 1 ] \
+    || fail "the project worktree was judged more than once: $CAP_OUT"
+  pass "a lane worktree inside a registered project is judged once, with the lane checks"
+}
+
 fm_test_run \
   test_merged_pr_removes_worktree_keeps_branch_and_prunes \
   test_closed_pr_removes_worktree_keeps_branch \
@@ -1106,4 +1219,10 @@ fm_test_run \
   test_registered_lane_with_open_terminal_is_kept \
   test_targeted_pass_keeps_a_registered_lane_until_its_terminal_closes \
   test_registered_lane_dry_run_changes_nothing \
-  test_spent_lane_record_is_forgotten
+  test_spent_lane_record_is_forgotten \
+  test_registered_lane_cache_files_are_kept \
+  test_registered_lane_orca_does_not_list_is_removed_by_git \
+  test_lane_record_is_kept_when_orca_is_absent \
+  test_worktree_two_lanes_name_is_kept \
+  test_task_record_beats_a_lane_registration \
+  test_lane_inside_a_registered_project_keeps_the_lane_checks

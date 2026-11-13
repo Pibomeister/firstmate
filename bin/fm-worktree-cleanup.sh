@@ -64,11 +64,16 @@
 # collected its worktree: every registered worktree on a pass with no project
 # argument, and a registered worktree of the named clone on a clone-path pass.
 # Either pass reports that worktree and leaves it in place while Orca still
-# lists the lane's registered terminal, and deletes the lane's record after it
-# removes the worktree. A pass with no project argument also reads the lane
-# repository's other worktrees for the nesting check, and deletes a record
-# whose worktree is gone, or that names no worktree, once Orca no longer lists
-# its terminal. A clone-path pass leaves every other lane record alone.
+# lists the lane's registered terminal, or when Orca is not installed or cannot
+# be read. A registered lane's untracked files, caches and profiles included,
+# are never pruned: the worktree is kept and reported unless it is clean when
+# it is removed. A worktree two lane records name is kept and reported. Either
+# pass deletes the lane's record after it removes the worktree. A pass with no
+# project argument also reads each lane repository's other worktrees once for
+# the nesting check, and deletes a record whose worktree is gone, or that names
+# no worktree, or whose repository and worktree are both gone, once Orca no
+# longer lists its terminal. A clone-path pass leaves every other lane record
+# alone.
 #
 # Usage:
 #   fm-worktree-cleanup.sh [--dry-run] [scan] [<clone-path>]
@@ -415,9 +420,11 @@ load_orca_handles() {
 }
 
 # 0 when Orca lists the terminal handle, 1 when it does not, 2 when the list
-# cannot be read. The list loads at most once in a pass.
+# cannot be read or Orca is not installed, so a lane's pane is never read as
+# closed without Orca's word. The list loads at most once in a pass.
 orca_lists_handle() {
   local list=$SCRATCH/orca-handles handle=$1 line
+  command -v orca >/dev/null 2>&1 || return 2
   if [ ! -e "$list" ] && [ ! -e "$list.failed" ]; then
     load_orca_handles "$list" || : > "$list.failed"
   fi
@@ -614,7 +621,14 @@ consider_worktree() {
       emit "worktree-cleanup: report $phys uncommitted tracked changes"
       return 0
       ;;
-    untracked) ;; # caches and profiles are judged after the landed proofs
+    untracked)
+      # A registered lane keeps every untracked file, caches included: an
+      # external lane's files are never pruned.
+      if [ -n "$lane" ]; then
+        emit "worktree-cleanup: report $phys untracked files"
+        return 0
+      fi
+      ;; # caches and profiles are judged after the landed proofs
     clean) ;;
     *)
       emit "worktree-cleanup: report $phys cannot read worktree status"
@@ -688,13 +702,24 @@ EOF
     emit "worktree-cleanup: skip $phys live process"
     return 0
   fi
-  prune_landed_caches "$phys" || {
-    case $? in
-      1) emit "worktree-cleanup: report $phys untracked files" ;;
-      *) emit "worktree-cleanup: report $phys cannot read worktree status" ;;
+  if [ -n "$lane" ]; then
+    # Re-read just before removal: a lane is removed only while it is clean.
+    kind=$(dirt_kind "$phys") || kind=''
+    case "$kind" in
+      clean) ;;
+      tracked) emit "worktree-cleanup: report $phys uncommitted tracked changes"; return 0 ;;
+      untracked) emit "worktree-cleanup: report $phys untracked files"; return 0 ;;
+      *) emit "worktree-cleanup: report $phys cannot read worktree status"; return 0 ;;
     esac
-    return 0
-  }
+  else
+    prune_landed_caches "$phys" || {
+      case $? in
+        1) emit "worktree-cleanup: report $phys untracked files" ;;
+        *) emit "worktree-cleanup: report $phys cannot read worktree status" ;;
+      esac
+      return 0
+    }
+  fi
   remove_worktree "$repo" "$phys" "$chosen_state" "$chosen_url" "$orca_listed" "$lane"
 }
 
@@ -758,17 +783,123 @@ same_path() {
   [ "$1" = "$2" ] || [ "$1" -ef "$2" ]
 }
 
+# lane_fields <record>: set LANE_REPO, LANE_WT, and LANE_TERM from a lane
+# record in one read, with no subshell per field.
+lane_fields() {
+  local line
+  LANE_REPO='' LANE_WT='' LANE_TERM=''
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      repo=*) LANE_REPO=${line#repo=} ;;
+      worktree=*) LANE_WT=${line#worktree=} ;;
+      terminal=*) LANE_TERM=${line#terminal=} ;;
+    esac
+  done < "$1" 2>/dev/null || :
+}
+
+# lane_repo_rows <repo>: set LANE_ROWS to a file of the repository's worktree
+# rows and LANE_PATHS to their paths, each joined by the unit separator, or
+# return 1 when <repo> is not a clone root. Each repository is resolved and
+# read at most once in a pass however many lanes it holds.
+LANE_REPO_LIST=()
+LANE_PATH_LIST=()
+lane_repo_rows() {
+  local i=0 root path rest
+  while [ "$i" -lt "${#LANE_REPO_LIST[@]}" ]; do
+    if [ "${LANE_REPO_LIST[$i]}" = "$1" ]; then
+      [ -n "${LANE_PATH_LIST[$i]}" ] || return 1
+      LANE_ROWS=$SCRATCH/lane-repo-$i
+      LANE_PATHS=${LANE_PATH_LIST[$i]}
+      return 0
+    fi
+    i=$((i + 1))
+  done
+  LANE_REPO_LIST+=("$1")
+  if ! root=$(clone_root_path "$1"); then
+    LANE_PATH_LIST+=('')
+    return 1
+  fi
+  LANE_ROWS=$SCRATCH/lane-repo-$i
+  : > "$LANE_ROWS"
+  collect_repo "$root" "$LANE_ROWS"
+  LANE_PATHS=$'\037'
+  while IFS=$'\037' read -r path rest; do
+    LANE_PATHS="$LANE_PATHS$path"$'\037'
+  done < "$LANE_ROWS"
+  LANE_PATH_LIST+=("$LANE_PATHS")
+}
+
+# lane_tag <path> <id>: record that lane <id> registered worktree <path>. A
+# path two lanes name is marked as conflicted and reported, so it is kept.
+LANE_TAGGED=$'\037'
+lane_tag() {
+  case "$LANE_TAGGED" in
+    *$'\037'"$1"$'\037'*)
+      emit "worktree-cleanup: report $1 registered lane $2 names a worktree another lane also names"
+      printf '%s\037-\n' "$1" >> "$SCRATCH/lane-tags"
+      ;;
+    *)
+      LANE_TAGGED="$LANE_TAGGED$1"$'\037'
+      printf '%s\037%s\n' "$1" "$2" >> "$SCRATCH/lane-tags"
+      ;;
+  esac
+}
+
+# merge_lane_tags [<rows-file>...]: tag each registered worktree's row in the
+# pass with its lane id, adding it from <rows-file> when the pass has no row
+# for it yet. Every other row of those files only feeds the nesting check, and
+# a row the pass already judges is not added again. A conflicted path is moved
+# out of the pass so nothing judges it.
+merge_lane_tags() {
+  local tags=$SCRATCH/lane-tags
+  [ -s "$tags" ] || return 0
+  LANE_TAGS=$tags LANE_RECS=$RECORDS LANE_RECS_NEW=$RECORDS.new LANE_NESTED=$NESTED \
+    LC_ALL=C awk -F $'\037' -v OFS=$'\037' '
+      FILENAME == ENVIRON["LANE_TAGS"] {
+        if ($2 == "-") conf[$1] = 1; else id[$1] = $2
+        next
+      }
+      FILENAME == ENVIRON["LANE_RECS"] {
+        have[$1] = 1
+        if ($1 in conf) { print >> (ENVIRON["LANE_NESTED"]); next }
+        if ($1 in id) $6 = id[$1]
+        print > (ENVIRON["LANE_RECS_NEW"])
+        next
+      }
+      {
+        if (($1 in have) || ($1 in seen)) next
+        seen[$1] = 1
+        if (($1 in id) && !($1 in conf)) { $6 = id[$1]; print > (ENVIRON["LANE_RECS_NEW"]) }
+        else print >> (ENVIRON["LANE_NESTED"])
+      }
+      END { printf "" > (ENVIRON["LANE_RECS_NEW"]) }' "$tags" "$RECORDS" "$@" \
+    && mv -f -- "$RECORDS.new" "$RECORDS"
+}
+
+# lane_terminal_closed <handle>: 0 when the lane's pane is provably gone (no
+# handle was registered, or Orca does not list it); 1 when it is listed or
+# Orca cannot be read.
+lane_terminal_closed() {
+  local rc=0
+  [ -n "$1" ] || return 0
+  orca_lists_handle "$1" || rc=$?
+  [ "$rc" -eq 1 ]
+}
+
 # collect_lanes: add each registered external lane's worktree to the pass,
-# tagged with its lane id. The lane's whole repository is read so the nesting
-# check still sees its other worktrees, but only the registered one is judged.
-# A lane with no worktree left to judge and no listed terminal is forgotten.
+# tagged with its lane id. Each lane repository is read once so the nesting
+# check still sees its other worktrees, but only the registered ones are
+# judged. A lane with no worktree left to judge and no listed terminal is
+# forgotten, including one whose repository is gone with its worktree.
 collect_lanes() {
-  local rec id repo wt root all row path rest handle rc found
+  local rec id repo wt path rest handle found
+  local lane_files=()
   [ -d "$LANE_DIR" ] && [ ! -L "$LANE_DIR" ] || return 0
   if [ ! -r "$LANE_DIR" ] || [ ! -x "$LANE_DIR" ]; then
     emit "worktree-cleanup: report $LANE_DIR registered lanes cannot be read"
     return 0
   fi
+  : > "$SCRATCH/lane-tags"
   for rec in "$LANE_DIR"/*.lane; do
     [ -f "$rec" ] || continue
     id=${rec##*/}
@@ -777,61 +908,65 @@ collect_lanes() {
       emit "worktree-cleanup: report lane $id record cannot be read"
       continue
     fi
-    repo=$(fm_meta_get "$rec" repo)
-    wt=$(fm_meta_get "$rec" worktree)
+    lane_fields "$rec"
+    repo=$LANE_REPO wt=$LANE_WT handle=$LANE_TERM
     found=0
     if [ -n "$wt" ]; then
-      if ! root=$(clone_root_path "$repo"); then
-        emit "worktree-cleanup: report $wt registered lane $id repository is unavailable"
+      if ! lane_repo_rows "$repo"; then
+        if [ ! -e "$wt" ] && [ ! -e "$repo" ] && lane_terminal_closed "$handle"; then
+          forget_lane "$id" "repository and worktree are gone"
+        else
+          emit "worktree-cleanup: report $wt registered lane $id repository is unavailable"
+        fi
         continue
       fi
-      all=$SCRATCH/lane-all
-      : > "$all"
-      collect_repo "$root" "$all"
-      while IFS= read -r row; do
-        IFS=$'\037' read -r path rest <<EOF
-$row
-EOF
-        if same_path "$path" "$wt"; then
+      case "$LANE_PATHS" in
+        *$'\037'"$wt"$'\037'*)
           found=1
-          awk -F $'\037' -v p="$path" '$1 != p' "$RECORDS" > "$RECORDS.new" && mv -f -- "$RECORDS.new" "$RECORDS"
-          printf '%s%s\n' "${row%$'\037'}" $'\037'"$id" >> "$RECORDS"
-        else
-          printf '%s\n' "$row" >> "$NESTED"
-        fi
-      done < "$all"
+          lane_tag "$wt" "$id"
+          ;;
+        *)
+          # The registered path may name the worktree another way.
+          while IFS=$'\037' read -r path rest; do
+            if same_path "$path" "$wt"; then
+              found=1
+              lane_tag "$path" "$id"
+              break
+            fi
+          done < "$LANE_ROWS"
+          ;;
+      esac
+      case " ${lane_files[*]:-} " in
+        *" $LANE_ROWS "*) ;;
+        *) lane_files+=("$LANE_ROWS") ;;
+      esac
       if [ "$found" -eq 0 ] && [ -e "$wt" ]; then
         emit "worktree-cleanup: report $wt registered lane $id is not a worktree of its repository"
         continue
       fi
     fi
     [ "$found" -eq 0 ] || continue
-    handle=$(fm_meta_get "$rec" terminal)
-    if [ -n "$handle" ]; then
-      rc=0
-      orca_lists_handle "$handle" || rc=$?
-      [ "$rc" -eq 1 ] || continue
-    fi
+    lane_terminal_closed "$handle" || continue
     if [ -n "$wt" ]; then
       forget_lane "$id" "worktree is gone"
     else
       forget_lane "$id" "no worktree was registered"
     fi
   done
+  [ "${#lane_files[@]}" -eq 0 ] || merge_lane_tags "${lane_files[@]}"
 }
 
 # tag_registered_lanes: mark a worktree this pass already collected with its
 # lane id when the registration names that same repository and path. A lane
 # whose worktree this pass did not collect is left untouched.
 tag_registered_lanes() {
-  local rec id repo wt root snap row path record_repo rest
+  local rec id repo wt root path record_repo rest
   [ -d "$LANE_DIR" ] && [ ! -L "$LANE_DIR" ] || return 0
   if [ ! -r "$LANE_DIR" ] || [ ! -x "$LANE_DIR" ]; then
     emit "worktree-cleanup: report $LANE_DIR registered lanes cannot be read"
     return 0
   fi
-  snap=$SCRATCH/lane-tag
-  cp -- "$RECORDS" "$snap"
+  : > "$SCRATCH/lane-tags"
   for rec in "$LANE_DIR"/*.lane; do
     [ -f "$rec" ] || continue
     id=${rec##*/}
@@ -844,17 +979,15 @@ tag_registered_lanes() {
     wt=$(fm_meta_get "$rec" worktree)
     [ -n "$repo" ] && [ -n "$wt" ] || continue
     root=$(clone_root_path "$repo") || continue
-    while IFS= read -r row; do
-      [ -n "$row" ] || continue
-      IFS=$'\037' read -r path record_repo rest <<EOF
-$row
-EOF
+    while IFS=$'\037' read -r path record_repo rest; do
+      [ -n "$path" ] || continue
       same_path "$path" "$wt" || continue
       same_path "$record_repo" "$root" || continue
-      awk -F $'\037' -v p="$path" '$1 != p' "$RECORDS" > "$RECORDS.new" && mv -f -- "$RECORDS.new" "$RECORDS"
-      printf '%s%s\n' "${row%$'\037'}" $'\037'"$id" >> "$RECORDS"
-    done < "$snap"
+      lane_tag "$path" "$id"
+      break
+    done < "$RECORDS"
   done
+  merge_lane_tags
 }
 
 run_target() {
