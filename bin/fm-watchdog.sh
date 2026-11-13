@@ -1027,6 +1027,17 @@ wd_ladder_nudge_then_restart() {  # <symptom> <nudge-body> <kind>...
   fi
 }
 
+wd_rearm_feedback_dialog() {  # <backend> <target> <harness> <screen> [expected-label]
+  local backend=$1 target=$2 harness=$3 screen=$4 label=${5-}
+  [ -n "$screen" ] && [ "$(wd_mode)" = act ] || return 0
+  wd_do_not_touch "$O_HOME" "$target" && return 0
+  fm_control_feedback_dialog_dismiss "$harness" "$screen" >/dev/null 2>&1 && return 0
+  if [ -z "$label" ]; then
+    case "${O_ID:-}" in ''|-) ;; *) label=fm-$O_ID ;; esac
+  fi
+  fm_control_dismiss_feedback_dialog "$O_HOME/state" "$backend" "$target" "$harness" "$screen" "$label" 0 "$(cfgi call-timeout-secs 20)" >/dev/null 2>&1 || true
+}
+
 wd_handle_dialog() {
   local opts pick n text key dialog_pane id label='' rc=0
   # Two keys that did not clear a dialog within the hour stop the presses, so a
@@ -1547,6 +1558,7 @@ wd_visit_worker_dialogs() {
       printf '  worker %s endpoint=%s:%s dialog=%s\n' "$id" "$backend" "$target" "${dialog:-none}"
       continue
     fi
+    wd_rearm_feedback_dialog "$backend" "$target" "${harness:-unknown}" "$screen" "fm-$id"
     case "$dialog" in
       feedback)
         O_BACKEND=$backend
@@ -1600,6 +1612,7 @@ wd_visit_worker_dialogs() {
 # wd_handle_subject: one symptom per pass, by precedence, then the side checks.
 wd_handle_subject() {
   local symptom='' quiet frozen owed dead=0 reachable=1
+  wd_rearm_feedback_dialog "$O_BACKEND" "$O_TARGET" "${O_HARNESS:-}" "$O_PANE"
   if fm_wd_open_pending "$LEDGER" | awk -F'\t' -v h="$O_HOME" '$2 == h && $4 == "restart" { f = 1 } END { exit !f }'; then
     WD_SYMPTOM='restart-awaiting-pickup'
     return 0

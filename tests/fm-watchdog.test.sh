@@ -3804,6 +3804,68 @@ test_feedback_claim_release_preserves_another_owner() {
   pass "feedback claim: release preserves another live owner"
 }
 
+test_watchdog_rearms_uncertain_feedback_on_primary_and_worker() {
+  local subject target marker n
+  for subject in primary worker; do
+    make_home $'working\n> ' $'key-secs=0\nkey-settle-secs=0'
+    target=$T
+    if [ "$subject" = worker ]; then
+      worker_pane feedback ship $'working\n> '
+      printf 'harness=codex\n' >> "$H/state/feedback.meta"
+      target=$WP
+    fi
+    printf '%s\n' $'How was this?\n\n 1. bug         Crash, error message, hang, or broken UI/behavior\n 2. bad_result  Output was off-target, incorrect, incomplete, or unhelpful\n 3. other       Slowness, feature suggestion, UX feedback, or anything else\n\nPress enter to confirm or esc to go back' > "$H/feedback.txt"
+    cat > "$H/dialog.sh" <<'SH'
+#!/usr/bin/env bash
+home=$1
+for i in 1 2; do
+  printf '\033[2J\033[H'
+  cat "$home/feedback.txt"
+  stty -echo raw
+  dd bs=1 count=1 of="$home/key-$i" 2>/dev/null
+  stty sane -echo
+  while [ ! -e "$home/clear-$i" ]; do sleep 0.02; done
+  printf '\033[2J\033[Hworking\n> \n'
+  : > "$home/ready-$i"
+  while [ ! -e "$home/reopen" ]; do sleep 0.02; done
+done
+SH
+    "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$target" "bash '$H/dialog.sh' '$H'"
+    sleep 0.2
+    run_wd 0 once >/dev/null 2>&1 || fail "$subject initial uncertain dismissal failed"
+    assert_equals 1 "$(wc -c < "$H/key-1" | tr -d ' ')" "$subject receives its first dismiss key"
+    marker=$(find "$H/state" -maxdepth 1 -name '.feedback-dismissed-*' | head -n 1)
+    [ -f "$marker" ] || fail "$subject uncertain dismissal did not retain a marker"
+    : > "$H/clear-1"
+    n=0
+    while [ ! -e "$H/ready-1" ] && [ "$n" -lt 100 ]; do sleep 0.02; n=$((n + 1)); done
+    [ -f "$H/ready-1" ] || fail "$subject dialog never cleared"
+    cp "$H/config/watchdog" "$H/watchdog-original"
+    printf 'do-not-touch=%s\n' "$target" >> "$H/config/watchdog"
+    run_wd 1 once >/dev/null 2>&1 || fail "$subject do-not-touch observation failed"
+    [ -f "$marker" ] || fail "$subject do-not-touch observation changed the marker"
+    cp "$H/watchdog-original" "$H/config/watchdog"
+    run_wd 2 once --dry-run >/dev/null 2>&1 || fail "$subject dry-run observation failed"
+    [ -f "$marker" ] || fail "$subject dry-run observation changed the marker"
+    run_wd 2 scan >/dev/null 2>&1 || fail "$subject scan observation failed"
+    [ -f "$marker" ] || fail "$subject scan observation changed the marker"
+    wrap_tmux_visible fail
+    run_wd 2 once >/dev/null 2>&1 || fail "$subject failed viewport observation failed"
+    [ -f "$marker" ] || fail "$subject failed viewport cleared the marker"
+    wrap_tmux_visible blank
+    run_wd 3 once >/dev/null 2>&1 || fail "$subject empty viewport observation failed"
+    [ -f "$marker" ] || fail "$subject empty viewport cleared the marker"
+    restore_fake_tmux
+    run_wd 4 once >/dev/null 2>&1 || fail "$subject absent-dialog observation failed"
+    [ ! -f "$marker" ] || fail "$subject absent-dialog observation did not clear the marker"
+    : > "$H/reopen"
+    sleep 0.2
+    run_wd 4000 once >/dev/null 2>&1 || fail "$subject reopened-dialog pass failed"
+    assert_equals 1 "$(wc -c < "$H/key-2" | tr -d ' ')" "$subject identical reopening receives a new dismiss key"
+  done
+  pass "watchdog: primary and worker absence observations rearm uncertain dialogs with capture and do-not-touch guards"
+}
+
 test_feedback_uncertain_dismissal_reopens() {
   local dir mode
   dir=$(fm_test_tmproot feedback-reopen)
@@ -4216,6 +4278,7 @@ fm_test_run \
   test_feedback_claim_recovery_serializes_contenders \
   test_feedback_claim_recovers_legacy_owner \
   test_feedback_claim_release_preserves_another_owner \
+  test_watchdog_rearms_uncertain_feedback_on_primary_and_worker \
   test_feedback_uncertain_dismissal_reopens \
   test_feedback_and_bug_report_dialog_dismissal \
   test_mtime_uses_the_platform_stat_dialect \
