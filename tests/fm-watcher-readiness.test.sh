@@ -284,6 +284,8 @@ SH
   owner=$(cat "$dir/owner.pid")
   printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"w1:p1","shell_pid":%s,"foreground_process_group_id":%s,"foreground_processes":[{"pid":%s,"name":"codex","argv0":"codex"}]}}}\n' \
     "$shell" "$owner" "$owner" > "$dir/process-info.json"
+  printf '%s\n' 'watcher: lock held by live pid 1 but heartbeat is stale for 9s (>1s); OLD-MARKER' \
+    > "$dir/state/.secondmate-watch.log"
   : > "$dir/start"
   i=0
   while [ ! -s "$dir/start.rc" ] && [ "$i" -lt 400 ]; do
@@ -304,6 +306,8 @@ SH
     || fail "starter hid the stale-holder refusal: ${out}"$'\n'"${log}"
   printf '%s\n' "$out" | grep -F "lock held by live pid ${holder}" >/dev/null \
     || fail "starter refusal did not name the live holder ${holder}: ${out}"
+  printf '%s\n' "$out" | grep -F 'OLD-MARKER' >/dev/null \
+    && fail "starter relayed a refusal from before this launch: ${out}"
   pass "supported starter surfaces the live stale-holder refusal and exits 1"
 }
 

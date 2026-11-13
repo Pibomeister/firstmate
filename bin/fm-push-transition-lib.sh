@@ -219,6 +219,10 @@ fm_secondmate_watch_start() {
       return 1
     fi
   fi
+  # The child's redirect truncates only after fork. Remove a previous
+  # attempt's file in this process first, or the first poll can relay a
+  # refusal this launch did not write.
+  rm -f "$STATE/.secondmate-watch.log"
   case $- in *m*) monitor=1 ;; esac
   set -m
   nohup "$FM_PUSH_TRANSITION_LIB_DIR/fm-watch.sh" --secondmate-hold >"$STATE/.secondmate-watch.log" 2>&1 </dev/null &
