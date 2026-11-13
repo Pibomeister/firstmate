@@ -25,6 +25,38 @@ set -u
 # shellcheck source=tests/watch-triage-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/watch-triage-helpers.sh"
 
+# Each watcher cycle in this suite is a whole bin/fm-watch.sh process, and on a
+# loaded host one cycle can outlast the helpers' standard 100-poll (10s)
+# budget, so a healthy watcher was reaped before it decided and the case
+# reported a false "did not surface" or "was not absorbed". Every wait of at
+# least that standard budget - an exit wait, reap's TERM wait, a poll-cycle
+# wait, or a wait for state the watcher or a fixture writes - gets
+# FM_TEST_WAIT_POLLS polls instead (default 1200, 120s). Each wait still
+# returns the moment its condition holds, so a passing case costs nothing
+# extra; the shorter budgets some cases expect to expire keep their value.
+FM_TRIAGE_WAIT_FLOOR=${FM_TEST_WAIT_POLLS:-1200}
+case "$FM_TRIAGE_WAIT_FLOOR" in
+  ''|*[!0-9]*)
+    printf 'not ok - FM_TEST_WAIT_POLLS must be a whole number of polls, got %s\n' "'$FM_TRIAGE_WAIT_FLOOR'" >&2
+    exit 1
+    ;;
+esac
+load_tolerant_polls() {  # <polls>: the budget a wait of <polls> polls actually gets
+  if [ "$1" -ge 100 ] && [ "$1" -lt "$FM_TRIAGE_WAIT_FLOOR" ]; then
+    printf '%s\n' "$FM_TRIAGE_WAIT_FLOOR"
+  else
+    printf '%s\n' "$1"
+  fi
+}
+eval "fm_triage_base_wait_for_exit() $(declare -f wait_for_exit | tail -n +2)"
+wait_for_exit() {  # <pid> [polls]
+  fm_triage_base_wait_for_exit "$1" "$(load_tolerant_polls "${2:-50}")"
+}
+eval "fm_triage_base_wait_poll_cycle() $(declare -f wait_poll_cycle | tail -n +2)"
+wait_poll_cycle() {  # <state> <pid> [limit-ticks]
+  fm_triage_base_wait_poll_cycle "$1" "$2" "$(load_tolerant_polls "${3:-300}")"
+}
+
 TMP_ROOT=$(fm_test_tmproot fm-watch-triage-tests)
 
 # Wait up to <limit> 0.1s ticks while <pid> stays alive; 0 if still alive, 1 if it died.
@@ -814,8 +846,9 @@ churn_config() {  # <dir> [off]
 # than a poll cycle so the assertion lands inside the FIRST poll, long before an
 # unchanging fixture pane could reach the stale backbone.
 wait_for_absorbed() {  # <state> <pid> <needle>
-  local state=$1 pid=$2 needle=$3 i=0
-  while [ "$i" -lt 100 ]; do
+  local state=$1 pid=$2 needle=$3 i=0 limit
+  limit=$(load_tolerant_polls 100)
+  while [ "$i" -lt "$limit" ]; do
     grep -Fq "$needle" "$state/.watch-triage.log" 2>/dev/null && return 0
     kill -0 "$pid" 2>/dev/null || return 1
     sleep 0.1
@@ -859,7 +892,7 @@ test_turn_ended_churning_pane_absorbed() {
 }
 
 test_turn_ended_churn_resets_prior_stale_classification() {
-  local dir state fakebin out capture_file window key old_hash active_hash pid i
+  local dir state fakebin out capture_file window key old_hash active_hash pid i limit
   dir=$(make_case turn-ended-churn-resets-stale); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; capture_file="$dir/pane.txt"
   window="test:fm-codexreturned"
@@ -881,8 +914,8 @@ test_turn_ended_churn_resets_prior_stale_classification() {
   pid=$!
   wait_for_absorbed "$state" "$pid" "absorbed benign signal:" \
     || { reap "$pid"; fail "a churning turn-end with prior stale state was not absorbed: $(cat "$out")"; }
-  i=0
-  while [ "$i" -lt 100 ] && [ "$(cat "$state/.hash-$key" 2>/dev/null || true)" != "$active_hash" ]; do
+  i=0; limit=$(load_tolerant_polls 100)
+  while [ "$i" -lt "$limit" ] && [ "$(cat "$state/.hash-$key" 2>/dev/null || true)" != "$active_hash" ]; do
     kill -0 "$pid" 2>/dev/null || { reap "$pid"; fail "watcher exited before recording the active pane"; }
     sleep 0.1
     i=$((i + 1))
@@ -2426,6 +2459,338 @@ test_gone_endpoint_reports_once_instead_of_escalating_forever() {
   pass "a record whose endpoint is dead or missing reports itself once and is never re-escalated"
 }
 
+# A ship whose agent died in its existing endpoint, with its recorded worktree
+# still on disk, is relaunched from its checkpoint instead of only reported. The
+# bound is per task: past FM_CREW_RELAUNCH_MAX_ATTEMPTS relaunches in the window
+# the ordinary once-only dead report returns and names the pause.
+crew_relaunch_wakes() {  # <state> <task> <relaunched|failed>
+  local prefix="crew-relaunch-$2-"
+  [ "$3" = failed ] && prefix="crew-relaunch-failed-$2-"
+  awk -F '\t' -v p="$prefix" '$3 == "check" && index($4, p) == 1 { n++ } END { print n + 0 }' \
+    "$1/.wake-queue" 2>/dev/null || echo 0
+}
+
+# A stand-in for bin/fm-control.sh that records each call and its note, and
+# renders the replacement's first frame the way a real relaunch would. A
+# successful call records a new spawn generation, as a real relaunch does;
+# keep-pane leaves the dead display exactly as it was.
+fake_crew_control() {  # <case-dir> <exit-code> [keep-pane]
+  local render="printf 'replacement %s is starting\\n' \"\$n\" > \"$1/pane.txt\""
+  [ "${3-}" = keep-pane ] && render=':'
+  cat > "$1/fake-control" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$1 \$2 \$3" >> "$1/control.calls"
+printf '%s\n' "\${FM_CONTROL_EXPECT_SPAWN_GEN-unset}" > "$1/control.expected-gen"
+printf '%s\n' "\$4" > "$1/control.note"
+n=\$(awk 'END { print NR }' "$1/control.calls")
+# Each replacement renders its own frame: without a busy gen, the pane hash is
+# what tells one incarnation's death from the next.
+$render
+[ "$2" -eq 0 ] || { echo "fm-control: relaunch refused for the test" >&2; exit "$2"; }
+printf 'spawn_gen=s%s.relaunch\n' "\$n" >> "$1/state/wedge.meta"
+SH
+  chmod +x "$1/fake-control"
+}
+
+crew_relaunch_fixture() {  # <name> <status-log> [<status-age> <timer-age>]
+  local dir
+  dir=$(wedge_threshold_fixture "$1" "$2" "${3:-0}" ${4:+"$4"}) || return 1
+  mkdir -p "$dir/wt"
+  # Aged so the worktree-write deferral, which runs first, sees no new writes.
+  set_mtime "$(( $(date +%s) - 86400 ))" "$dir/wt"
+  printf 'worktree=%s\n' "$dir/wt" >> "$dir/state/wedge.meta"
+  printf '%s\n' "$dir"
+}
+
+control_calls() { awk 'END { print NR + 0 }' "$1/control.calls" 2>/dev/null || echo 0; }
+
+test_dead_crew_agent_auto_relaunches_from_its_checkpoint_within_a_bound() {
+  local dir state fakebin out capture window round
+  local failed='state: failed · source: run-step · run failed'
+  local working='state: working · source: run-step · ci running'
+  window="test:fm-wedge"
+  dir=$(crew_relaunch_fixture auto-relaunch 'working: still compiling')
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  fake_crew_control "$dir" 0
+  FM_CONTROL_BIN="$dir/fake-control"; export FM_CONTROL_BIN
+
+  for round in 1 2; do
+    gone_endpoint_env dead; export FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS
+    : > "$out"
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" exit \
+      || fail "a dead ship agent was never handled at the wedge threshold (round $round): $(cat "$out")"
+    case "$round" in
+      1) [ "$(cat "$dir/control.expected-gen")" = '' ] || fail "legacy generation was not passed to lifecycle control" ;;
+      2) [ "$(cat "$dir/control.expected-gen")" = s1.relaunch ] || fail "observed generation was not passed to lifecycle control" ;;
+    esac
+    grep -F "check: wedge auto-relaunched from its checkpoint after its agent died in $window (relaunch $round of 2 in 3600s)" "$out" >/dev/null \
+      || fail "relaunch $round did not wake with its auto-relaunch outcome: $(cat "$out")"
+    [ "$(crew_relaunch_wakes "$state" wedge relaunched)" -eq 1 ] \
+      || fail "relaunch $round queued $(crew_relaunch_wakes "$state" wedge relaunched) check rows instead of one"
+    [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] \
+      || fail "an auto-relaunched agent was also reported stale on round $round"
+    [ "$(control_calls "$dir")" -eq "$round" ] || fail "round $round made $(control_calls "$dir") relaunch calls"
+    ack_stopped_cycle "$state" || fail "could not acknowledge relaunch $round"
+
+    # The replacement comes up and renders a new frame before it, too, dies.
+    FM_TEST_PANE_COMMAND=grok FM_TEST_TMUX_WINDOWS=fm-wedge
+    : > "$out"
+    FM_TEST_STALE_ESCALATE=999 wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" absorb \
+      || fail "the replacement after relaunch $round did not absorb: $(cat "$out")"
+  done
+  grep -Fx 'wedge relaunch --note' "$dir/control.calls" >/dev/null \
+    || fail "the relaunch did not go through fm-control relaunch with a note: $(cat "$dir/control.calls")"
+  grep -F 'working: still compiling' "$dir/control.note" >/dev/null \
+    || fail "the relaunch note does not carry the task's status log: $(cat "$dir/control.note")"
+  grep -F 'uncommitted changes were left exactly as the previous worker had them' "$dir/control.note" >/dev/null \
+    || fail "the relaunch note does not tell the replacement its copy was kept"
+  [ "$(grep -c "$(printf '\tattempt$')" "$state/.crew-relaunch-wedge")" -eq 2 ] \
+    && [ "$(grep -c "$(printf '\trelaunched$')" "$state/.crew-relaunch-wedge")" -eq 2 ] \
+    || fail "the relaunch ledger does not hold two attempts and two outcomes: $(cat "$state/.crew-relaunch-wedge")"
+
+  # Third death inside the window: no relaunch, and the once-only report names the pause.
+  gone_endpoint_env dead
+  : > "$out"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" exit \
+    || fail "a dead agent past the bound was never reported: $(cat "$out")"
+  grep -F 'automatic relaunch paused after 2 relaunches in 3600s, so recover it by hand' "$out" >/dev/null \
+    || fail "the report past the bound did not name the pause: $(cat "$out")"
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 1 ] || fail "the report past the bound was not one stale wake"
+  [ "$(control_calls "$dir")" -eq 2 ] || fail "the bound did not stop a third relaunch"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the paused report"
+  : > "$out"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" absorb \
+    || fail "the paused report re-alarmed: $(cat "$out")"
+  [ "$(control_calls "$dir")" -eq 2 ] || fail "a later threshold relaunched past the bound"
+  unset FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS FM_CONTROL_BIN
+  pass "a dead ship agent with a live worktree auto-relaunches from its checkpoint at most twice an hour, then reports the pause once"
+}
+
+# A successor on a harness with no busy gen that dies into the same dead display
+# as the agent it replaced, with no live read in between: the once-marker must
+# not absorb it as the death already handled, so it spends the second attempt
+# and, past the bound, the ordinary report still fires once.
+test_dead_crew_successor_with_an_identical_dead_display_is_still_handled() {
+  local dir state fakebin out capture window round
+  local failed='state: failed · source: run-step · run failed'
+  window="test:fm-wedge"
+  dir=$(crew_relaunch_fixture auto-relaunch-same-hash 'working: still compiling')
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  fake_crew_control "$dir" 0 keep-pane
+  FM_CONTROL_BIN="$dir/fake-control"; export FM_CONTROL_BIN
+  gone_endpoint_env dead; export FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS
+
+  for round in 1 2; do
+    : > "$out"
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" exit \
+      || fail "the successor's death with an unchanged dead display was absorbed (round $round): $(cat "$out")"
+    grep -F "check: wedge auto-relaunched from its checkpoint after its agent died in $window (relaunch $round of 2 in 3600s)" "$out" >/dev/null \
+      || fail "relaunch $round did not wake with its auto-relaunch outcome: $(cat "$out")"
+    [ "$(control_calls "$dir")" -eq "$round" ] || fail "round $round made $(control_calls "$dir") relaunch calls"
+    ack_stopped_cycle "$state" || fail "could not acknowledge relaunch $round"
+  done
+
+  : > "$out"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" exit \
+    || fail "the third death with an unchanged dead display was never reported: $(cat "$out")"
+  grep -F 'automatic relaunch paused after 2 relaunches in 3600s, so recover it by hand' "$out" >/dev/null \
+    || fail "the report past the bound did not name the pause: $(cat "$out")"
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 1 ] || fail "the report past the bound was not one stale wake"
+  [ "$(control_calls "$dir")" -eq 2 ] || fail "the bound did not stop a third relaunch"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the paused report"
+  : > "$out"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" absorb \
+    || fail "the paused report re-alarmed: $(cat "$out")"
+  unset FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS FM_CONTROL_BIN
+  pass "a successor that dies into the dead display it replaced still spends the next relaunch, then reports the pause once"
+}
+test_dead_crew_auto_relaunch_failures_and_exclusions_report_once() {
+  local dir state fakebin out capture window spec name
+  local failed='state: failed · source: run-step · run failed'
+  window="test:fm-wedge"
+
+  dir=$(crew_relaunch_fixture auto-relaunch-failed 'working: still compiling')
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  fake_crew_control "$dir" 1
+  FM_CONTROL_BIN="$dir/fake-control"; export FM_CONTROL_BIN
+  gone_endpoint_env dead; export FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" exit \
+    || fail "a failed auto-relaunch was never reported: $(cat "$out")"
+  grep -F "check: wedge auto-relaunch failed after its agent died in $window (exit 1): fm-control: relaunch refused for the test" "$out" >/dev/null \
+    || fail "a failed auto-relaunch did not name its failure: $(cat "$out")"
+  [ "$(crew_relaunch_wakes "$state" wedge failed)" -eq 1 ] || fail "a failed auto-relaunch did not queue one check row"
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] || fail "a failed auto-relaunch was also reported stale"
+  grep -q "$(printf '\tfailed$')" "$state/.crew-relaunch-wedge" || fail "a failed auto-relaunch was not ledgered"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the failed auto-relaunch"
+  # A failed relaunch leaves the dead display as it was.
+  printf 'waiting at the gate' > "$capture"
+  : > "$out"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" absorb \
+    || fail "a failed auto-relaunch retried or re-alarmed on a later threshold: $(cat "$out")"
+  [ "$(control_calls "$dir")" -eq 1 ] || fail "a failed auto-relaunch was retried for the same dead agent"
+
+  # Records that must keep the ordinary report and never call relaunch: a gone
+  # tmux endpoint whose record carries no server identity cannot be reclaimed,
+  # and a worker stopped through fm-control exit or one whose agent exited 0 in
+  # this incarnation was stopped on purpose.
+  for spec in missing nowt 'done' disabled stopped clean-exit; do
+    name="auto-relaunch-skip-$spec"
+    if [ "$spec" = 'done' ]; then
+      dir=$(crew_relaunch_fixture "$name" 'done: PR ready' 2000 600)
+    else
+      dir=$(crew_relaunch_fixture "$name" 'working: still compiling')
+    fi
+    state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+    fake_crew_control "$dir" 0
+    FM_CONTROL_BIN="$dir/fake-control"
+    gone_endpoint_env dead
+    case "$spec" in
+      missing) gone_endpoint_env missing ;;
+      nowt) rmdir "$dir/wt" ;;
+      disabled) FM_CREW_RELAUNCH_MAX_ATTEMPTS=0; export FM_CREW_RELAUNCH_MAX_ATTEMPTS ;;
+      stopped) printf '%s\texit\n' "$(date +%s)" > "$state/.crew-stopped-wedge" ;;
+      clean-exit)
+        printf 'spawn_gen=s1.clean\n' >> "$state/wedge.meta"
+        printf 's1.clean\t0\n' > "$state/wedge.agent-exit"
+        ;;
+    esac
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" exit \
+      || fail "$spec: the dead-record report never fired: $(cat "$out")"
+    unset FM_CREW_RELAUNCH_MAX_ATTEMPTS
+    grep -F 'so this is not a wedge' "$out" >/dev/null || fail "$spec: the ordinary dead-record report is missing: $(cat "$out")"
+    case "$spec" in
+      stopped)
+        grep -F 'automatic relaunch skipped because the worker was stopped on purpose' "$out" >/dev/null \
+          || fail "stopped: the report does not name the deliberate stop: $(cat "$out")"
+        ;;
+      clean-exit)
+        grep -F 'automatic relaunch skipped because the agent exited cleanly with status 0' "$out" >/dev/null \
+          || fail "clean-exit: the report does not name the clean exit: $(cat "$out")"
+        ;;
+    esac
+    [ "$(control_calls "$dir")" -eq 0 ] || fail "$spec: an excluded record was auto-relaunched"
+    [ "$(crew_relaunch_wakes "$state" wedge relaunched)" -eq 0 ] || fail "$spec: an excluded record queued a relaunch wake"
+  done
+  unset FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS FM_CONTROL_BIN
+  pass "a failed auto-relaunch reports once without retrying, and an unreclaimable missing endpoint, a gone worktree, a finished task, a disabled bound, an fm-control exit, or a clean exit 0 keeps the ordinary report"
+}
+
+# A harness that had a busy gen can lose that file when relaunch fails after
+# arming a replacement and then retiring it. The once-marker has to hold the
+# identity the next probe reads, the pane hash once the gen is gone, or the
+# same dead agent is relaunched again. The wrong behavior is a second control
+# call for an unchanged dead display.
+test_failed_busy_gen_relaunch_is_not_retried() {
+  local dir state fakebin out capture window
+  local failed='state: failed · source: run-step · run failed'
+  window="test:fm-wedge"
+  dir=$(crew_relaunch_fixture auto-relaunch-busy-gen-failed 'working: still compiling')
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  printf 'g1.dead\n' > "$state/wedge.busy-gen"
+  cat > "$dir/fake-control" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$1 \$2 \$3" >> "$dir/control.calls"
+rm -f "$state/wedge.busy-gen"
+echo "fm-control: relaunch refused for the test" >&2
+exit 1
+SH
+  chmod +x "$dir/fake-control"
+  FM_CONTROL_BIN="$dir/fake-control"; export FM_CONTROL_BIN
+  gone_endpoint_env dead; export FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" exit \
+    || fail "a failed busy-gen auto-relaunch was never reported: $(cat "$out")"
+  grep -F "check: wedge auto-relaunch failed after its agent died in $window (exit 1): fm-control: relaunch refused for the test" "$out" >/dev/null \
+    || fail "a failed busy-gen auto-relaunch did not name its failure: $(cat "$out")"
+  [ "$(crew_relaunch_wakes "$state" wedge failed)" -eq 1 ] || fail "a failed busy-gen auto-relaunch did not queue one check row"
+  [ "$(control_calls "$dir")" -eq 1 ] || fail "the first failure made $(control_calls "$dir") relaunch calls"
+  [ ! -e "$state/wedge.busy-gen" ] || fail "the failed relaunch left the busy gen in place, so the next probe would not change identity"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the failed busy-gen auto-relaunch"
+  : > "$out"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" absorb \
+    || fail "a failed busy-gen auto-relaunch retried or re-alarmed on a later threshold: $(cat "$out")"
+  [ "$(control_calls "$dir")" -eq 1 ] || fail "a failed busy-gen auto-relaunch was retried for the same dead agent ($(control_calls "$dir") calls)"
+  [ "$(crew_relaunch_wakes "$state" wedge failed)" -eq 0 ] || fail "the later threshold queued another failed-relaunch wake"
+  unset FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS FM_CONTROL_BIN
+  pass "a failed auto-relaunch that drops the busy gen is absorbed on the next probe instead of retried"
+}
+
+# A worker whose decision sits with the captain as a backlog hold stays stopped
+# even on the escalation-cap path, which probes for a dead agent before it reads
+# the hold as a wait: relaunching it would answer the captain's call for them.
+test_dead_crew_with_backlog_captain_hold_is_not_auto_relaunched() {
+  local dir state fakebin out capture window
+  local failed='state: failed · source: run-step · run failed'
+  command -v tasks-axi >/dev/null 2>&1 \
+    || { echo "skip: tasks-axi not found (captain-held auto-relaunch exclusion)"; return 0; }
+  window="test:fm-wedge"
+  dir=$(crew_relaunch_fixture auto-relaunch-skip-held 'working: still compiling')
+  mkdir -p "$dir/data"
+  fm_test_tasks_toml "$dir/.tasks.toml" || fail "could not write the backlog config"
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$dir/data/backlog.md"
+  (cd "$dir" && tasks-axi add wedge 'waiting on a captain call' --file data/backlog.md) >/dev/null 2>&1 \
+    || fail "could not file the backlog item"
+  run_hold "$dir" hold wedge --reason 'awaiting the captain on the release call' \
+    || fail "could not hold the backlog item for the captain"
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  date +%s > "$state/.wedge-permanent-$(watch_window_key "$window")"
+  fake_crew_control "$dir" 0
+  FM_CONTROL_BIN="$dir/fake-control"; export FM_CONTROL_BIN
+  gone_endpoint_env dead; export FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS
+  FM_HOME="$dir" FM_DATA_OVERRIDE="$dir/data" FM_WEDGE_MAX_ESCALATIONS=1 \
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" exit \
+    || fail "a dead captain-held worker was never reported: $(cat "$out")"
+  grep -F "automatic relaunch skipped because the worker's decision is held for the captain" "$out" >/dev/null \
+    || fail "the report does not name the captain hold: $(cat "$out")"
+  [ "$(control_calls "$dir")" -eq 0 ] || fail "a dead captain-held worker was auto-relaunched"
+  [ "$(crew_relaunch_wakes "$state" wedge relaunched)" -eq 0 ] || fail "a captain-held worker queued a relaunch wake"
+  unset FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS FM_CONTROL_BIN
+  pass "a dead worker whose decision is held for the captain keeps the ordinary report instead of an automatic relaunch"
+}
+
+# The two deaths that are not deliberate still relaunch: an agent the launch
+# wrapper saw end on SIGTERM (status 143) in this incarnation, even when an older
+# incarnation's record says it exited 0, and a gone tmux endpoint whose record
+# carries the server identity relaunch's absence proof reads.
+test_signal_death_and_reclaimable_missing_endpoint_auto_relaunch() {
+  local dir state fakebin out capture window spec
+  local failed='state: failed · source: run-step · run failed'
+  window="test:fm-wedge"
+  for spec in sigterm missing-reclaim; do
+    dir=$(crew_relaunch_fixture "auto-relaunch-$spec" 'working: still compiling')
+    state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+    fake_crew_control "$dir" 0
+    FM_CONTROL_BIN="$dir/fake-control"; export FM_CONTROL_BIN
+    case "$spec" in
+      sigterm)
+        gone_endpoint_env dead
+        printf 'spawn_gen=s2.now\n' >> "$state/wedge.meta"
+        printf 's2.now\t143\n' > "$state/wedge.agent-exit"
+        ;;
+      missing-reclaim)
+        gone_endpoint_env missing
+        printf 'tmux_socket=%s\ntmux_server_pid=4242\ntmux_server_identity=4242:1\ntmux_window_id=@7\n' \
+          "$dir/tmux.sock" >> "$state/wedge.meta"
+        ;;
+    esac
+    export FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$failed" exit \
+      || fail "$spec: the dead-record probe never handled the record: $(cat "$out")"
+    if [ "$spec" = sigterm ]; then
+      grep -F "check: wedge auto-relaunched from its checkpoint after its agent died in $window" "$out" >/dev/null \
+        || fail "sigterm: a signal death did not auto-relaunch: $(cat "$out")"
+    else
+      grep -F "check: wedge auto-relaunched from its checkpoint after its endpoint $window disappeared" "$out" >/dev/null \
+        || fail "missing-reclaim: a reclaimable missing endpoint did not auto-relaunch: $(cat "$out")"
+      grep -F 'recorded endpoint gone' "$dir/control.note" >/dev/null \
+        || fail "missing-reclaim: the relaunch note does not say the endpoint was gone: $(cat "$dir/control.note")"
+    fi
+    [ "$(control_calls "$dir")" -eq 1 ] || fail "$spec: made $(control_calls "$dir") relaunch calls instead of one"
+    [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] || fail "$spec: an auto-relaunched record was also reported stale"
+  done
+  unset FM_TEST_PANE_COMMAND FM_TEST_TMUX_WINDOWS FM_CONTROL_BIN
+  pass "a SIGTERM death and a reclaimable missing endpoint auto-relaunch from the checkpoint"
+}
+
 # The load-bearing direction. A genuinely wedged LIVE agent must escalate exactly
 # as it did before, and so must every verdict short of proof: an unattributable
 # foreground process (`ambiguous`) and an unreadable endpoint keep the identical
@@ -2943,7 +3308,7 @@ test_wedge_escalation_resets_when_pane_becomes_active() {
 # watcher inside the bound; the released lock and acknowledgeable stop record
 # prove its cleanup still ran.
 test_term_stops_a_watcher_blocked_inside_a_poll() {
-  local dir state fakebin out fifo window sig pid holder i rc
+  local dir state fakebin out fifo window sig pid holder i rc limit
   dir=$(make_case term-blocked-poll); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; fifo="$dir/pane.fifo"; window="test:fm-blocked-capture"
   mkfifo "$fifo"
@@ -2958,8 +3323,8 @@ test_term_stops_a_watcher_blocked_inside_a_poll() {
     FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 \
     FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
   pid=$!
-  i=0
-  while [ ! -e "$dir/capture-blocked" ] && [ "$i" -lt 300 ]; do
+  i=0; limit=$(load_tolerant_polls 300)
+  while [ ! -e "$dir/capture-blocked" ] && [ "$i" -lt "$limit" ]; do
     sleep 0.1
     i=$((i + 1))
   done
@@ -2997,7 +3362,7 @@ test_term_stops_a_watcher_blocked_inside_a_poll() {
 # frees the lock <release-ticks> tenths of a second later. The caller's environment
 # reaches the watcher; its wait_for_exit code lands in HELD_MARKER_LOCK_RC.
 term_watcher_with_held_marker_lock() {  # <dir> [release-ticks]
-  local dir=$1 release_ticks=${2:-} successor=0 state fakebin out capture_file window sig pid holder i
+  local dir=$1 release_ticks=${2:-} successor=0 state fakebin out capture_file window sig pid holder i limit
   state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:fm-held-marker-lock"
   printf 'Working...' > "$capture_file"
@@ -3065,8 +3430,8 @@ term_watcher_with_held_marker_lock() {  # <dir> [release-ticks]
     "$dir/release-marker-lock" "$dir/marker-lock-contended" \
     "$release_ticks" &
   holder=$!
-  i=0
-  while [ ! -e "$dir/marker-lock-held" ] && [ "$i" -lt 100 ]; do
+  i=0; limit=$(load_tolerant_polls 100)
+  while [ ! -e "$dir/marker-lock-held" ] && [ "$i" -lt "$limit" ]; do
     sleep 0.1
     i=$((i + 1))
   done
@@ -4133,11 +4498,12 @@ pe_case() {  # <dir> <command>...
 # source so the fixture holds exactly the reported end state: one durably
 # captured, unhandled, queued result and no remaining poll work.
 seed_captured_procevent_result() {  # <dir>
-  local dir=$1 i=0
+  local dir=$1 i=0 limit
+  limit=$(load_tolerant_polls 100)
   pe_case "$dir" register lavish delivery-src -- \
     /bin/sh -c 'printf "session:\n  file: /a.html\n  status: waiting\n"' >/dev/null || return 1
   pe_case "$dir" reconcile >/dev/null || return 1
-  while [ "$i" -lt 100 ]; do
+  while [ "$i" -lt "$limit" ]; do
     [ -s "$dir/state/.wake-queue" ] && break
     sleep 0.1
     i=$((i + 1))
@@ -4150,7 +4516,7 @@ seed_captured_procevent_result() {  # <dir>
   # runner's last milliseconds. The bound keeps a runner that never releases a
   # real failure at retire rather than a hang here.
   i=0
-  while [ "$i" -lt 100 ]; do
+  while [ "$i" -lt "$limit" ]; do
     [ -e "$dir/claims/delivery-src.claim" ] || break
     sleep 0.1
     i=$((i + 1))
@@ -4498,7 +4864,7 @@ test_procevent_marker_failure_exits_and_replays() {
 # --- heartbeat: no-change absorbed, backstop surfaces a missed status --------
 
 test_heartbeat_no_change_absorbed() {
-  local dir state fakebin out pid i sig
+  local dir state fakebin out pid i sig limit
   dir=$(make_case heartbeat-absorb); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
   printf 'working: routine heartbeat history\n' > "$state/routine.status"
   sig=$(seen_sig "$state/routine.status"); printf '%s' "$sig" > "$state/.seen-routine_status"
@@ -4512,8 +4878,8 @@ test_heartbeat_no_change_absorbed() {
   # The heartbeat fires on the first poll whose .last-heartbeat has aged past
   # FM_HEARTBEAT, which need not be the first completed cycle, so wait for the
   # absorbed heartbeat itself rather than assuming one cycle produced it.
-  i=0
-  while [ "$i" -lt 200 ]; do
+  i=0; limit=$(load_tolerant_polls 200)
+  while [ "$i" -lt "$limit" ]; do
     [ "$(cat "$state/.heartbeat-streak" 2>/dev/null || echo 0)" -ge 1 ] && break
     kill -0 "$pid" 2>/dev/null || break
     sleep 0.1
@@ -5432,6 +5798,12 @@ fm_test_run \
   test_wedge_escalation_marks_demand_deep_inspection_after_threshold \
   test_wedge_escalation_resets_when_pane_becomes_active \
   test_gone_endpoint_reports_once_instead_of_escalating_forever \
+  test_dead_crew_agent_auto_relaunches_from_its_checkpoint_within_a_bound \
+  test_dead_crew_successor_with_an_identical_dead_display_is_still_handled \
+  test_dead_crew_auto_relaunch_failures_and_exclusions_report_once \
+  test_failed_busy_gen_relaunch_is_not_retried \
+  test_dead_crew_with_backlog_captain_hold_is_not_auto_relaunched \
+  test_signal_death_and_reclaimable_missing_endpoint_auto_relaunch \
   test_live_and_unproven_endpoints_still_wedge_escalate \
   test_wedge_guards_absent_config_keeps_the_unchanged_ladder \
   test_wedge_guard_critical_defers_one_window_at_a_time_up_to_the_cap \

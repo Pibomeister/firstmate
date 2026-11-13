@@ -78,6 +78,13 @@
 #   divergence: exit 0 proceeds, exit 3 launches with the monitoring-only
 #   contract, and any other exit leaves the branch as-is and refuses the
 #   relaunch. An explicit direct-PR or local-only relaunch never resyncs.
+#   A recorded copy with uncommitted changes, on the recorded branch or still
+#   detached, is the dead worker's own work in progress: that relaunch skips
+#   only the resync (the owner needs a clean copy), keeps every change in
+#   place, and launches with a "# Dirty-copy relaunch" section telling the
+#   replacement to finish or commit them before it resyncs with the same
+#   --refuse-diverged owner call, so a diverged branch is refused. Nothing is
+#   stashed, reset, or discarded; a dirty copy on another branch still refuses.
 #   The origin pre-probe is bounded to 120 seconds; a timeout refuses launch.
 #   Ship/scout launches always put fm-dod-lib.sh's current worker role scope
 #   first in the private launch-brief overlay, including the exact task-owned
@@ -1118,6 +1125,7 @@ PR_BRANCH_SET=0
 FROM_BRANCH=
 FROM_BRANCH_SET=0
 RELAUNCH_MONITOR=
+RELAUNCH_DIRTY=
 BUDGET_IH=''
 BUDGET_IS=''
 BUDGET_FH=''
@@ -4935,13 +4943,24 @@ spawn_pr_resync() {  # <worktree> <branch>
 # Ship relaunch: resync the recorded worktree through bin/fm-pr-resync.sh when
 # origin has the recorded branch; exit 3 keeps the owner's monitoring-only lines.
 relaunch_pr_resync() {
-  local out rc=0
+  local out rc=0 porcelain cur
   case "$MODE" in
     no-mistakes) ;;
     '') git -C "$RELAUNCH_WT" remote get-url no-mistakes >/dev/null 2>&1 || return 0 ;;
     *) return 0 ;;
   esac
   git -C "$RELAUNCH_WT" remote get-url origin >/dev/null 2>&1 || return 0
+  # Checked before any network read so a dead worker's own edits never wait on
+  # origin; a copy on some other branch falls through to the owner's refusal.
+  if porcelain=$(git -C "$RELAUNCH_WT" status --porcelain --untracked-files=all 2>/dev/null) \
+    && [ -n "$porcelain" ]; then
+    cur=$(git -C "$RELAUNCH_WT" symbolic-ref -q --short HEAD 2>/dev/null)
+    if [ -z "$cur" ] || [ "$cur" = "$BRANCH" ]; then
+      RELAUNCH_DIRTY=$porcelain
+      echo "fm-spawn: $ID's local copy $RELAUNCH_WT has uncommitted changes from its previous worker; skipping the published-head resync and launching with every change kept in place" >&2
+      return 0
+    fi
+  fi
   fm_nm_bounded "$RELAUNCH_WT" 120 git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" >/dev/null 2>&1 || rc=$?
   [ "$rc" -ne 2 ] || return 0
   [ "$rc" -eq 0 ] || {
@@ -4956,6 +4975,26 @@ relaunch_pr_resync() {
   esac
   echo "error: $ID cannot relaunch: bin/fm-pr-resync.sh exited $rc on $BRANCH (output above); the branch was left as-is unless the owner reported a change" >&2
   return 1
+}
+
+# shellcheck disable=SC2016 # The rendered section carries literal backticks.
+relaunch_dirty_section() {
+  local resync_q wt_q id_q branch_q total
+  printf -v resync_q '%q' "$FM_ROOT/bin/fm-pr-resync.sh"
+  printf -v wt_q '%q' "$RELAUNCH_WT"
+  printf -v id_q '%q' "$ID"
+  printf -v branch_q '%q' "$BRANCH"
+  total=$(printf '%s\n' "$RELAUNCH_DIRTY" | wc -l | tr -d '[:space:]')
+  printf '\n# Dirty-copy relaunch\n'
+  printf 'This local copy holds %s uncommitted path(s) left by the previous worker on this task; they are this task'"'"'s own work in progress.\n' "$total"
+  printf 'Keep them: never stash, reset, check out over, clean, or discard them.\n'
+  printf 'The published-head resync was skipped for this launch because it needs a clean copy, so the branch may still be behind or diverged from origin.\n'
+  printf 'Review them with `git status` and `git diff`, then finish and commit them on %s.\n' "$BRANCH"
+  printf 'If `no-mistakes axi status` shows an active run on this branch, do not commit; report `blocked:` naming the uncommitted paths instead.\n'
+  printf 'Once the copy is clean, and only if origin already has %s, run `%s %s %s %s --refuse-diverged` before you start or reattach a no-mistakes run; on exit 3 follow its monitoring-only lines, and on any other nonzero exit report a blocker with its output.\n' \
+    "$BRANCH" "$resync_q" "$id_q" "$wt_q" "$branch_q"
+  printf 'Uncommitted paths at relaunch (first 20):\n'
+  printf '%s\n' "$RELAUNCH_DIRTY" | head -n 20 | sed 's/^/    /'
 }
 
 if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
@@ -5047,6 +5086,9 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
       fi &&
       if [ -n "$RELAUNCH_MONITOR" ]; then
         printf '\n# Monitoring-only relaunch\n%s\n' "$RELAUNCH_MONITOR"
+      fi &&
+      if [ -n "$RELAUNCH_DIRTY" ]; then
+        relaunch_dirty_section
       fi
   } >"$BRIEF_TMP" || {
     rm -f -- "$BRIEF_TMP"
@@ -8706,6 +8748,11 @@ if [ "$RELAUNCH" -eq 1 ]; then
   rm -f -- "$STATE_REAL/$ID.droid-session-end" ||
     echo "warning: could not retire the prior Droid stop marker of $ID; it names a retired generation, so it proves nothing about the replacement" >&2
 fi
+# A published replacement or fresh record ends any deliberate stop that
+# `fm-control.sh <id> exit` recorded, so the watcher's automatic relaunch
+# covers the new worker again.
+rm -f -- "$STATE/.crew-stopped-$ID" ||
+  echo "warning: could not clear the intentional-stop marker of $ID; the watcher will not auto-relaunch it until state/.crew-stopped-$ID is removed" >&2
 # A dispatch or relaunch keeps the per-task meta lock through launch delivery.
 # The backlog mutation is deliberately the final fallible commit below, so
 # teardown cannot remove a relaunched record while its replacement worker is
@@ -9045,10 +9092,19 @@ fi
 # first word is a plain path to a harness with a launch template; a wrapper,
 # assignment prefix, quoted or expanded path, compound command, or unknown
 # adapter hides what actually runs, so it passes none and gets no reporter.
-# Its stderr stays on the pane so a config warning reaches the user. The `disarm` after the agent
-# command retires the reporter when the agent exits, because the pane shell
-# that sourced the launch outlives it. Newlines, not `;`, delimit the agent
-# command, so a raw launch ending in a separator or a comment stays intact.
+# Its stderr stays on the pane so a config warning reaches the user. The disarm
+# after the agent command retires the reporter when the agent exits, because the
+# pane shell that sourced the launch outlives it. Newlines, not `;`, delimit the
+# agent command, so a raw launch ending in a separator or a comment stays intact.
+# Before the agent, the pane writes a one-line snippet in its own syntax
+# (bin/fm-agent-exit-snippet.sh). After the agent, the launch sources that
+# snippet, whose first command reads this command's exit status into
+# state/<id>.agent-exit with this incarnation's spawn_gen. The watcher's
+# automatic relaunch reads that record to tell a clean exit from a crash or a
+# signal death (bin/fm-watch.sh crew_auto_relaunch). The launch file stays free
+# of that status spelling and of a bare assignment, so a fish pane can parse it.
+# A clean exit always reaches that source; a wrapper killed together with its
+# agent writes nothing.
 OSC7501_AGENT_BIN=
 if [ "$RAW_LAUNCH" = 0 ]; then
   case "$HARNESS" in
@@ -9068,9 +9124,9 @@ else
       ;;
   esac
 fi
-LAUNCH="$(shell_quote "$FM_ROOT/bin/fm-osc7501.sh") arm --task $(shell_quote "$ID") --harness $(shell_quote "$HARNESS") --backend $(shell_quote "$BACKEND") --kind $(shell_quote "$KIND") --state $(shell_quote "$STATE_REAL") --config $(shell_quote "$CONFIG") --target $(shell_quote "$T") --agent-bin $(shell_quote "$OSC7501_AGENT_BIN") >/dev/null || true
+LAUNCH="$(shell_quote "$FM_ROOT/bin/fm-agent-exit-snippet.sh") $(shell_quote "$LAUNCH_DIR/agent-exit.$SPAWN_GEN.sh") $(shell_quote "$SPAWN_GEN") $(shell_quote "$STATE_REAL/$ID.agent-exit") || true; $(shell_quote "$FM_ROOT/bin/fm-osc7501.sh") arm --task $(shell_quote "$ID") --harness $(shell_quote "$HARNESS") --backend $(shell_quote "$BACKEND") --kind $(shell_quote "$KIND") --state $(shell_quote "$STATE_REAL") --config $(shell_quote "$CONFIG") --target $(shell_quote "$T") --agent-bin $(shell_quote "$OSC7501_AGENT_BIN") >/dev/null || true
 $LAUNCH
-$(shell_quote "$FM_ROOT/bin/fm-osc7501.sh") disarm --state $(shell_quote "$STATE_REAL") >/dev/null 2>/dev/null || true"
+. $(shell_quote "$LAUNCH_DIR/agent-exit.$SPAWN_GEN.sh") || true; $(shell_quote "$FM_ROOT/bin/fm-osc7501.sh") disarm --state $(shell_quote "$STATE_REAL") >/dev/null 2>/dev/null || true"
 if [ "$LAVISH_AXI_HOST_CONFIG_PRESENT" = 1 ]; then
   LAUNCH="export LAVISH_AXI_HOST=$(shell_quote "$LAVISH_AXI_HOST"); $LAUNCH"
 fi

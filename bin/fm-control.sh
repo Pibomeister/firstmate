@@ -38,7 +38,11 @@
 #              only after the first press rendered a running turn, and
 #              otherwise reports `cancel=not-running` having sent one press.
 #   exit       Stop the agent, preserving its terminal endpoint, worktree, and
-#              every uncommitted change. Interrupts first when the task reads
+#              every uncommitted change. A ship or scout first records the stop
+#              as deliberate in state/.crew-stopped-<id>, so the watcher's
+#              automatic relaunch leaves it stopped until a later relaunch or
+#              fresh spawn clears that marker; a refused exit removes it
+#              again, so a later crash still relaunches. Interrupts first when the task reads
 #              busy, then submits the harness's exit command. Postcondition:
 #              the backend's recovery-grade classifier reports the agent gone.
 #              Already-stopped is success (idempotent). A proven usage-limit
@@ -206,6 +210,9 @@
 #   FM_CONTROL_ARM_WAIT          wait for an armed interrupt's rendered proof
 #                                after the press gap (1.5)
 #   FM_CONTROL_EXIT_WAIT         alive->dead wait after the exit command (30)
+#   FM_CONTROL_EXPECT_SPAWN_GEN  Watcher-only expected generation (empty for legacy
+#                               records); recheck generation and stop/clean-exit
+#                               evidence under the lifecycle lock when set.
 #   FM_CONTROL_LAUNCH_WAIT       dead->alive wait after a relaunch (90)
 #   FM_CONTROL_EXIT_RETRIES      Enter retries for the exit command (3)
 set -eu
@@ -279,6 +286,7 @@ die() {  # <message>
 CONTROL_LOCK=
 CONTROL_LOCK_HELD=0
 RELAUNCH_ACTIVE=0
+CREW_STOP_MARKER_PENDING=
 RELAUNCH_PHASE=start
 RELAUNCH_META_LOCK=
 RELAUNCH_META_LOCK_HELD=0
@@ -308,6 +316,11 @@ control_cleanup() {
   # the next lifecycle command for this task writes the same path.
   if [ -n "${FM_COMPOSER_DIALOG_SINK:-}" ]; then
     rm -f "$FM_COMPOSER_DIALOG_SINK"
+  fi
+  # An exit that ends here without stopping the agent was refused, so its
+  # stop marker must not keep the watcher from reviving a later crash.
+  if [ -n "$CREW_STOP_MARKER_PENDING" ]; then
+    rm -f -- "$CREW_STOP_MARKER_PENDING" || true
   fi
   if [ "$CONTROL_LOCK_HELD" = 1 ]; then
     CONTROL_LOCK_HELD=0
@@ -443,6 +456,19 @@ if [ ! -f "$META" ]; then
       ;;
   esac
   die "no task '$ID' in $STATE (fm-control resolves an exact task id only)"
+fi
+
+# Watcher observations must still hold after acquiring the lifecycle lock.
+if [ "$VERB" = relaunch ] && [ "${FM_CONTROL_EXPECT_SPAWN_GEN+x}" = x ]; then
+  [ "$(fm_meta_get "$META" spawn_gen 2>/dev/null || true)" = "$FM_CONTROL_EXPECT_SPAWN_GEN" ] \
+    || die "automatic relaunch cancelled: task $ID has a different worker generation"
+  if [ -e "$STATE/.crew-stopped-$ID" ] || [ -L "$STATE/.crew-stopped-$ID" ]; then
+    die "automatic relaunch cancelled: task $ID was stopped on purpose"
+  fi
+  if [ -n "$FM_CONTROL_EXPECT_SPAWN_GEN" ] \
+    && [ "$(cat "$STATE/$ID.agent-exit" 2>/dev/null || true)" = "$FM_CONTROL_EXPECT_SPAWN_GEN"$'\t'0 ]; then
+    die "automatic relaunch cancelled: task $ID exited cleanly with status 0"
+  fi
 fi
 
 # A remotely placed secondmate records its endpoint on ANOTHER host, so every
@@ -1897,7 +1923,19 @@ case "$VERB" in
     echo "interrupt-delivered $ID harness=$HARNESS backend=$BACKEND verified=$proof"
     ;;
   exit)
+    # Recorded before the stop is attempted, so the watcher can never read
+    # the stopped agent as a crash and relaunch it in between. A refused stop
+    # leaves the agent running, so control_cleanup removes the marker on any
+    # exit before the stop succeeded. A marker an earlier deliberate stop left
+    # is not this attempt's to remove, so it stays as it was.
+    if { [ "$KIND" = ship ] || [ "$KIND" = scout ]; } \
+       && [ ! -e "$STATE/.crew-stopped-$ID" ] && [ ! -L "$STATE/.crew-stopped-$ID" ]; then
+      CREW_STOP_MARKER_PENDING=$STATE/.crew-stopped-$ID
+      printf '%s\texit\n' "$(date +%s)" > "$CREW_STOP_MARKER_PENDING" \
+        || die "could not record task $ID's intentional stop at $STATE/.crew-stopped-$ID; refusing to stop an agent the watcher could then relaunch"
+    fi
     result=$(do_exit)
+    CREW_STOP_MARKER_PENDING=
     echo "$result $ID harness=$HARNESS backend=$BACKEND endpoint=$T worktree=$WT"
     ;;
   relaunch)

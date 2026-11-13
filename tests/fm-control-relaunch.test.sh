@@ -2527,7 +2527,7 @@ stale_published_task() {  # <case-dir> <id>: ship task on task-<id>, stale again
 }
 
 test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head() {
-  local dir out mode local_sha
+  local dir out mode local_sha launch
   dir=$(new_case prresync rl90)
   stale_published_task "$dir" rl90
   out=$(run_spawn "$dir" rl90 --relaunch)
@@ -2588,15 +2588,33 @@ test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head() {
   dir=$(new_case prresync-dirty rl91)
   stale_published_task "$dir" rl91
   printf 'keep\n' > "$dir/wt/uncommitted.txt"
+  printf 'edited\n' >> "$dir/wt/a.txt"
   out=$(run_spawn "$dir" rl91 --relaunch)
-  assert_contains "$out" "cannot relaunch: bin/fm-pr-resync.sh exited 1" "a dirty worktree did not refuse the relaunch"$'\n'"$out"
-  assert_not_contains "$out" "spawned rl91" "a refused relaunch still launched"
-  [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$STALE_SHA" ] || fail "a refused relaunch moved the branch"
-  assert_grep 'keep' "$dir/wt/uncommitted.txt" "a refused relaunch discarded local work"
+  assert_contains "$out" "spawned rl91" "a dirty task-owned copy did not relaunch"$'\n'"$out"
+  assert_contains "$out" "skipping the published-head resync" "a dirty relaunch did not say it skipped the resync"
+  assert_not_contains "$out" "fm-pr-resync:" "a dirty relaunch invoked the network resync owner"
+  [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$STALE_SHA" ] || fail "a dirty relaunch moved the branch"
+  assert_grep 'keep' "$dir/wt/uncommitted.txt" "a dirty relaunch discarded an untracked file"
+  assert_grep 'edited' "$dir/wt/a.txt" "a dirty relaunch discarded a tracked edit"
+  [ -z "$(git -C "$dir/wt" stash list)" ] || fail "a dirty relaunch stashed local work"
+  launch="$dir/home/data/rl91/launch-brief.md"
+  assert_grep '# Dirty-copy relaunch' "$launch" "the replacement was not told its copy is dirty"
+  assert_grep 'never stash, reset, check out over, clean, or discard them' "$launch" "the dirty-copy section does not protect the edits"
+  assert_grep 'uncommitted.txt' "$launch" "the dirty-copy section does not list the uncommitted paths"
+  assert_grep "fm-pr-resync.sh rl91 $dir/wt task-rl91 --refuse-diverged" "$launch" "the dirty-copy section does not name the later resync with its divergence refusal"
 
   out=$(run_spawn "$dir" rl91 --relaunch --pr-branch task-rl91)
   assert_contains "$out" "--pr-branch and --from-branch apply only to a fresh launch" "--relaunch accepted --pr-branch"
-  pass "fm-spawn --relaunch: no-mistakes divergence refuses, behind advances, and explicit worker-owned modes skip resync despite a no-mistakes remote"
+
+  dir=$(new_case prresync-dirty-other rl98)
+  stale_published_task "$dir" rl98
+  git -C "$dir/wt" switch -q -c unrelated
+  printf 'keep\n' > "$dir/wt/uncommitted.txt"
+  out=$(run_spawn "$dir" rl98 --relaunch)
+  assert_not_contains "$out" "spawned rl98" "a dirty copy on another branch launched"$'\n'"$out"
+  assert_contains "$out" "cannot relaunch" "a dirty copy on another branch was not refused"$'\n'"$out"
+  assert_grep 'keep' "$dir/wt/uncommitted.txt" "a refused relaunch discarded local work"
+  pass "fm-spawn --relaunch: no-mistakes divergence refuses, behind advances, a dirty task-owned copy relaunches untouched without resync, and explicit worker-owned modes skip resync despite a no-mistakes remote"
 }
 
 # A successor launched with --from-branch keeps its brief's Setup "Source
@@ -3499,6 +3517,40 @@ SH
   [ "$(journal_field "$dir" sm6 children)" = 2 ] \
     || fail "readable child metas must still be counted, got '$(journal_field "$dir" sm6 children)'"
   pass "fm-control relaunch: a vanished watcher scratch file does not fail the child-record checkpoint"
+}
+
+test_automatic_relaunch_rechecks_lifecycle_state_under_lock() {
+  local dir out rc scenario
+  for scenario in stopped replaced clean; do
+    dir=$(new_case "auto-$scenario" rl-auto)
+    add_ship_task "$dir" rl-auto codex
+    printf 'spawn_gen=observed-worker\n' >> "$dir/home/state/rl-auto.meta"
+    case "$scenario" in
+      stopped)
+        out=$(run_control "$dir" rl-auto exit)
+        expect_code 0 "$?" "the intervening exit should succeed"$'\n'"$out"
+        ;;
+      replaced)
+        sed 's/^spawn_gen=.*/spawn_gen=replacement-worker/' "$dir/home/state/rl-auto.meta" > "$dir/replacement.meta"
+        mv "$dir/replacement.meta" "$dir/home/state/rl-auto.meta"
+        ;;
+      clean)
+        printf 'observed-worker\t0\n' > "$dir/home/state/rl-auto.agent-exit"
+        ;;
+    esac
+    cp "$dir/home/state/rl-auto.meta" "$dir/before.meta"
+    cp "$dir/home/data/rl-auto/brief.md" "$dir/before.brief"
+    cp "$dir/fake/command" "$dir/before.command"
+    rc=0
+    out=$(FM_CONTROL_EXPECT_SPAWN_GEN=observed-worker run_control "$dir" rl-auto relaunch --note "stale automatic recovery") || rc=$?
+    expect_code 1 "$rc" "automatic relaunch must refuse after $scenario"$'\n'"$out"
+    assert_contains "$out" "automatic relaunch cancelled" "the refusal should explain the stale recovery"
+    cmp -s "$dir/before.meta" "$dir/home/state/rl-auto.meta" || fail "$scenario changed the task record"
+    cmp -s "$dir/before.brief" "$dir/home/data/rl-auto/brief.md" || fail "$scenario appended a stale checkpoint note"
+    cmp -s "$dir/before.command" "$dir/fake/command" || fail "$scenario touched the current agent"
+    [ ! -e "$dir/home/state/rl-auto.control-relaunch" ] || fail "$scenario started a relaunch transaction"
+  done
+  pass "automatic relaunch rechecks intervening stop, replacement, and clean exit under the lifecycle lock"
 }
 
 test_concurrent_relaunch_is_refused() {
@@ -4865,6 +4917,7 @@ test_secondmate_relaunch_checkpoints_child_work_and_spares_the_charter
 test_secondmate_relaunch_refuses_an_unmarked_home
 test_secondmate_checkpoint_refuses_unreadable_child_state
 test_secondmate_checkpoint_ignores_a_vanished_scratch_find_walk
+test_automatic_relaunch_rechecks_lifecycle_state_under_lock
 test_concurrent_relaunch_is_refused
 test_direct_spawn_relaunch_participates_in_the_lifecycle_lock
 test_promotion_participates_in_the_lifecycle_lock_before_metadata_resolution
