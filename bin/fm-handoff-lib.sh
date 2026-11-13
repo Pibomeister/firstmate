@@ -33,16 +33,14 @@
 # shellcheck source=bin/fm-supervisor-target-lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fm-supervisor-target-lib.sh"
 
-# This session's terminal under the supervisor-target precedence: a tmux pane
-# first, then an Orca handle only inside an Orca terminal (fm_supervisor_in_orca).
+# This session's terminal. discover_supervisor_target owns the precedence and
+# refuses the legacy tmux fallback; an unresolved endpoint is not a handle.
 fm_handoff_endpoint_handle() {
-  if [ -n "${TMUX_PANE:-}" ]; then
-    printf '%s' "$TMUX_PANE"
-  elif fm_supervisor_in_orca; then
-    printf '%s' "$ORCA_TERMINAL_HANDLE"
-  else
-    return 1
-  fi
+  local target rc=0
+  target=$(discover_supervisor_target 2>/dev/null) || rc=$?
+  [ "$rc" -eq 0 ] || return 1
+  case "$target" in ''|*[!A-Za-z0-9_.:%-]*) return 1 ;; esac
+  printf '%s' "$target"
 }
 
 fm_handoff_event() { # <event> <nonce> <attempt> <pid> <handle> <reason>

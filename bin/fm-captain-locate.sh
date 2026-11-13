@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # fm-captain-locate.sh - read-only discovery from this home's verified lock.
 # stdout: CAPTAIN v1 pid=<lock-pid-or-0> handle=<token-or-none> state=<held|free|stale|unknown|unreadable>
+# A recorded terminal of unknown, or any token that is not a handle, is handle=none.
+# unknown is the absence of an endpoint, not a terminal name.
 # Exit 0 only for a held lock with its anchor-bound endpoint; otherwise exit 1.
 # The pid and handle come from one snapshot of the lock and its sidecar; a
 # change to either file during discovery reports state=unknown and handle=none.
@@ -35,7 +37,8 @@ if [ "$FM_LOCK_INSPECT_STATE" = held ] && [ "$lock_snap" = "${FM_LOCK_INSPECT_PI
     && [ "$(printf '%s\n' "$session_snap" | sed -n 's/^anchor_pid=//p')" = "$lock_snap" ] \
     && [ "$(fm_session_process_start "$lock_snap" 2>/dev/null || true)" = "$anchor_start" ]; then
     handle=$(printf '%s\n' "$session_snap" | sed -n 's/^terminal=//p')
-    case "$handle" in ''|*[!A-Za-z0-9_.:%-]*) handle=none ;; esac
+    # unknown is the recorded absence of an endpoint, not a terminal name.
+    case "$handle" in ''|unknown|*[!A-Za-z0-9_.:%-]*) handle=none ;; esac
   fi
 fi
 if [ "$claim_busy" -eq 1 ] || claim_lock_busy \

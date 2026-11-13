@@ -131,8 +131,10 @@
 # unreadable fact skips the close.
 # Environment: FM_HOME selects the home; FM_ROOT_OVERRIDE as elsewhere.
 # Home roots visible in Orca's local terminal inventory are also read for task
-# records. Lock sidecar endpoints are always kept, including stale records;
-# a lock pid inside a terminal's process tree also keeps that terminal.
+# records. A concrete lock-sidecar terminal is always kept, including a stale record.
+# The token unknown is recorded absence, not a terminal this run keeps or closes.
+# So is a token that contains a character a handle cannot.
+# A lock pid inside a terminal's process tree also keeps that terminal.
 set -u
 
 SCRIPT_DIR=$(CDPATH='' cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
@@ -264,7 +266,11 @@ JS
     if ! absent "$home/state/.lock-session"; then
       [ -r "$home/state/.lock-session" ] || return 1
       terminal=$(fm_meta_get "$home/state/.lock-session" terminal)
-      printf 'rec\t%s\tmain-lock\t%s\t\n' "$home" "$terminal"
+      # unknown is recorded absence, not a terminal this run may close or keep.
+      case "$terminal" in
+        unknown|*[!A-Za-z0-9_.:%-]*) ;;
+        *) printf 'rec\t%s\tmain-lock\t%s\t\n' "$home" "$terminal" ;;
+      esac
     fi
     if ! absent "$home/state/.lock"; then
       [ -r "$home/state/.lock" ] || return 1

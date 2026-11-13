@@ -224,6 +224,57 @@ test_parent_record_wins_during_a_mismatch() {
   pass "during a mismatch the parent record wins"
 }
 
+test_lock_sidecar_names_the_successor_pane() {
+  local home="$TMP_ROOT/sidecar" old new out
+  new_home "$home" 00000000-0000-4000-8000-0000000000e2
+  old=$(new_pane)
+  new=$(new_pane)
+  printf '%s\nbackend=tmux\nterminal=%s\nworktree=%s\n' \
+    00000000-0000-4000-8000-0000000000e2 "$new" "$home" > "$home/state/.lock-session"
+  fm_touch_epoch "$LOCK_AT" "$home/state/.lock" "$home/state/.lock-session"
+  heartbeat "$home" "$old" 00000000-0000-4000-8000-0000000000e1 "$((BASE + 5))" owner
+  out=$(scan "$home" 20)
+  assert_equals "tmux:$new" "$(endpoint_of "$out" "$home")" \
+    "the pass reads the lock sidecar pane, not the retired heartbeat"
+  assert_equals "tmux $new" "$(terminal "$home")" "the captain record names the successor pane"
+  assert_not_contains "$out" "endpoint=tmux:$old" "the retired pane is not the endpoint"
+  pass "a handoff lock sidecar names the successor pane when the heartbeat does not"
+}
+
+test_symlink_worktree_still_names_the_successor_pane() {
+  local home="$TMP_ROOT/symlink-target" link="$TMP_ROOT/symlink-home" pane other out phys
+  new_home "$home" 00000000-0000-4000-8000-0000000000e4
+  ln -s "$home" "$link"
+  phys=$(cd -P -- "$home" && pwd -P)
+  pane=$(new_pane)
+  other=$(new_pane)
+  printf '%s\nbackend=tmux\nterminal=%s\nworktree=%s\n' \
+    00000000-0000-4000-8000-0000000000e4 "$pane" "$link" > "$home/state/.lock-session"
+  fm_touch_epoch "$LOCK_AT" "$home/state/.lock" "$home/state/.lock-session"
+  heartbeat "$home" "$other" 00000000-0000-4000-8000-0000000000e5 "$((BASE + 5))" owner
+  out=$(scan "$link" 20)
+  assert_equals "tmux:$pane" "$(endpoint_of "$out" "$phys")" \
+    "the pass reads the sidecar through the symlink, not the retired heartbeat"
+  assert_equals "tmux $pane" "$(terminal "$phys")" "the captain record names the pane behind the symlink"
+  assert_not_contains "$out" "endpoint=tmux:$other" "the retired pane is not the endpoint"
+  pass "a symlink home still names the successor pane recorded in the lock sidecar"
+}
+
+test_unknown_lock_endpoint_is_not_an_address() {
+  local home="$TMP_ROOT/unknown-ep" pane out
+  new_home "$home" 00000000-0000-4000-8000-0000000000e3
+  pane=$(new_pane)
+  printf '%s\nbackend=unknown\nterminal=unknown\nworktree=%s\n' \
+    00000000-0000-4000-8000-0000000000e3 "$home" > "$home/state/.lock-session"
+  fm_touch_epoch "$LOCK_AT" "$home/state/.lock" "$home/state/.lock-session"
+  heartbeat "$home" "$pane" 00000000-0000-4000-8000-0000000000e4 "$((BASE + 5))" owner
+  out=$(scan "$home" 20)
+  assert_equals "none:none" "$(endpoint_of "$out" "$home")" "unknown is not a pane"
+  assert_equals "" "$(field "$home" backend)$(field "$home" target)" "the captain record stays empty"
+  assert_not_contains "$out" "endpoint=unknown:unknown" "the token unknown is not printed as an endpoint"
+  pass "an unknown lock endpoint is not an address"
+}
+
 fm_test_run \
   test_lock_session_heartbeat_updates_the_record \
   test_heartbeat_older_than_the_lock_write_proves_no_terminal \
@@ -231,4 +282,7 @@ fm_test_run \
   test_foreign_writer_heartbeat_never_changes_the_terminal \
   test_current_session_child_heartbeat_names_a_new_pane \
   test_prior_session_child_heartbeat_yields_no_mismatch \
-  test_parent_record_wins_during_a_mismatch
+  test_parent_record_wins_during_a_mismatch \
+  test_lock_sidecar_names_the_successor_pane \
+  test_symlink_worktree_still_names_the_successor_pane \
+  test_unknown_lock_endpoint_is_not_an_address
