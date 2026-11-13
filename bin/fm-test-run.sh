@@ -1082,6 +1082,7 @@ tests/fm-usage-limit-pane-pending.test.sh 4000
 tests/fm-watchdog-live.test.sh 89
 tests/fm-watchdog.test.sh 527813
 tests/fm-watcher-lock.test.sh 73024
+tests/fm-watcher-readiness.test.sh 41841
 tests/fm-watcher-replacement.test.sh 97325
 tests/fm-worker-account-live-e2e.test.sh 3496
 tests/fm-worker-account.test.sh 78443
