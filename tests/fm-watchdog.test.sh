@@ -223,11 +223,52 @@ SH
   fi
 }
 
+# wd_current_test: the test function on the call stack (the caller of
+# fm_test_run's dispatch), or nothing outside a test.
+wd_current_test() {
+  local i
+  for ((i = 1; i < ${#FUNCNAME[@]}; i++)); do
+    if [ "${FUNCNAME[i]}" = fm_test_run ]; then
+      printf '%s' "${FUNCNAME[i - 1]}"
+      return 0
+    fi
+  done
+}
+
+# Every pane holds a pseudo-terminal until its session ends, and a full run
+# builds about 180 homes. The host's PTY limit (kern.tty.ptmx_max on macOS) is
+# shared with every other terminal on the machine, so a busy host ran out
+# mid-suite: tmux printed "fork failed: Device not configured" and a later case
+# failed on an empty ledger. The first home of each test therefore ends every
+# session the earlier tests left; no test creates a session before its first
+# home, and no test reads another test's panes.
+WD_HOMES_TEST=''
+wd_release_earlier_tests_sessions() {
+  local current
+  current=$(wd_current_test)
+  [ "$current" != "$WD_HOMES_TEST" ] || return 0
+  WD_HOMES_TEST=$current
+  local pid waited=0
+  pid=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" list-sessions -F '#{pid}' 2>/dev/null | head -n 1) || true
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" kill-server >/dev/null 2>&1 || true
+  # The server exits after kill-server returns. A session started on the same
+  # socket before it has gone reaches the dying server and fails with "server
+  # exited unexpectedly", so the next home would never draw its screen. Only
+  # the process is awaited: tmux leaves its socket file behind, and the next
+  # new-session starts a fresh server on it.
+  while [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; do
+    waited=$((waited + 1))
+    [ "$waited" -le 100 ] || fail "harness: the tmux server on $SOCKET did not exit after kill-server"
+    sleep 0.1
+  done
+}
+
 # make_home <screen-text> [extra-config]: builds a disposable home whose captain
 # pane shows <screen-text> and then echoes everything typed into typed.log.
 # Sets H (home), T (pane target), LOCKPID, SID.
 make_home() {
   local screen=$1 extra=${2:-} sess
+  wd_release_earlier_tests_sessions
   CASE_N=$((CASE_N + 1))
   H="$TMP_ROOT/home$CASE_N"
   SID="00000000-0000-4000-8000-00000000000$CASE_N"
@@ -4590,15 +4631,33 @@ test_feedback_escape_honors_backend_key_gate() {
   check "Claude survey on Orca" orca claude "$claude_survey" 4 "LITERAL:orca:0"
   check "Claude bug report on tmux" tmux claude "$claude_modal" 4 "KEY:tmux:Escape"
   rm -rf "$dir"; mkdir -p "$dir"; : > "$log"
-  out=$(GATE_LOG="$log" SCREEN= gate_run fm_control_send_feedback_dismiss orca term-1 Escape "" claude)
+  out=$(GATE_LOG="$log" SCREEN='' gate_run fm_control_send_feedback_dismiss orca term-1 Escape "" claude)
   assert_equals 5 "$out" "the sender refuses Escape for Claude on Orca"
   assert_equals "" "$(cat "$log")" "the sender sends no byte for Claude on Orca"
   pass "feedback dismiss: Escape honors the backend key gate, so no Escape reaches a non-Droid Orca terminal"
 }
 
+# Earlier tests' panes must not pile up: each held a pseudo-terminal, and a
+# full run on a busy host ran out of them. This runs after other tests built
+# homes, so their sessions existed; the first home here must end them, while a
+# second home in the same test keeps the first one's pane.
+test_earlier_tests_sessions_are_released() {
+  local first_sess sessions
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "leftover-$CASE_N" -x 80 -y 24 "sleep 100000"
+  make_home $'idle\n❯ '
+  first_sess="wd$CASE_N"
+  sessions=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" list-sessions -F '#{session_name}' 2>/dev/null)
+  assert_equals "$first_sess" "$sessions" "the first home of a test leaves only its own session"
+  make_home $'idle\n❯ '
+  sessions=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" list-sessions -F '#{session_name}' 2>/dev/null | sort | tr '\n' ' ')
+  assert_equals "$(printf '%s\n' "$first_sess" "wd$CASE_N" | sort | tr '\n' ' ')" "$sessions" "a second home in the same test keeps the first home's session"
+  pass "harness: earlier tests' tmux sessions end at the next test's first home, so a full run does not exhaust the host's terminals"
+}
+
 test_feedback_dialog_detection_without_a_locale() {
   local survey_rule survey_box boxed_stale near screen
   nolocale_lib() {
+    # shellcheck disable=SC2016 # $1 and $@ expand in the child bash, not here.
     env -u LANG -u LC_ALL -u LC_CTYPE -u LC_COLLATE /bin/bash -c '. "$1/bin/fm-watchdog-lib.sh"; shift; "$@"' _ "$ROOT" "$@"
   }
   survey_rule=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n────────────────────────────────────────\n❯\xc2\xa0\n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main'
@@ -6131,7 +6190,7 @@ SH
 # Guard, not proof. tmux already uses a true viewport on main, so this case
 # still passes there. The Orca scrollback false-positive is the proof case.
 test_home_usage_limit_ignores_grok_in_scrollback() {
-  local parent mate user snap grok picker mate_t observe history view
+  local parent mate user snap grok picker mate_t history view
   grok=$'                                                                                             █\n\n  ┃\n  ┃  You hit your weekly limit.\n  ┃\n  ┃\n  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build\n  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again\n  ┃\n  ┃  ↑/↓ navigate · y copy                                                  Enter:submit\n  ┃\n\n  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss'
   picker=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
   observe() { bash -c '. "$1/bin/fm-watchdog-lib.sh"; . "$1/bin/fm-composer-lib.sh"; shift; "$@"' _ "$ROOT" "$@"; }
@@ -6215,7 +6274,7 @@ SH
 }
 
 test_orca_usage_limit_does_not_relaunch_from_scrollback() {
-  local parent mate user snap grok grok_json observe
+  local parent mate user snap grok grok_json
   grok=$'                                                                                             █\n\n  ┃\n  ┃  You hit your weekly limit.\n  ┃\n  ┃\n  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build\n  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again\n  ┃\n  ┃  ↑/↓ navigate · y copy                                                  Enter:submit\n  ┃\n\n  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss'
   grok_json=$(printf '%s\n' "$grok" | jq -Rs 'split("\n")')
   observe() { bash -c '. "$1/bin/fm-watchdog-lib.sh"; . "$1/bin/fm-composer-lib.sh"; shift; "$@"' _ "$ROOT" "$@"; }
@@ -8115,6 +8174,7 @@ fm_test_run \
   test_mtime_uses_the_platform_stat_dialect \
   test_dismissed_dialog_in_scrollback_is_not_showing \
   test_dialog_keys_stop_after_two_failures \
+  test_earlier_tests_sessions_are_released \
   test_feedback_dialog_detection_without_a_locale \
   test_feedback_escape_honors_backend_key_gate \
   test_statusline_percentage_does_not_rearm_feedback_dismiss \

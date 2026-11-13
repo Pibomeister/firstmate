@@ -2569,8 +2569,8 @@ wd_quota_name_pick_rated() {  # <id> <subject-label> [task-id]
 }
 
 wd_handle_quota() {
-  local task age line pick
-  wd_quota_floors "$O_HOME/state" "$(wd_now)" | while IFS=$'\t' read -r task age line; do
+  local task age pick
+  wd_quota_floors "$O_HOME/state" "$(wd_now)" | while IFS=$'\t' read -r task age _; do
     [ "$age" -ge "$(cfgi quota-secs 600)" ] || continue
     pick=$(wd_quota_pick "$task") || pick=none
     if [ -n "$pick" ] && [ "$pick" != none ]; then
