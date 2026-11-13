@@ -34,8 +34,13 @@
 # read-only `no-mistakes axi sync --check` before anything moves, again just
 # before the move, and after it. continue_active_run exits 3. Settled verdicts:
 # synchronized, already_synchronized, user_owned, custody_returned/gate_ready,
-# or no push binding for the branch (blocked_wrong_branch with no run). It acts
-# only on native next_action codes, with fixed commands: recover_custody runs
+# or no push binding for the branch (blocked_wrong_branch with no run). A clean
+# worktree whose published head is a strict ancestor of local HEAD is also
+# settled when the native verdict is local_ahead / blocked_local_ahead /
+# run_pipeline: the unpublished commits stay, and this owner does not run the
+# pipeline. Any other relation, a dirty tree, or any other state, safety, or
+# next action keeps the refusal below. It acts only on native next_action
+# codes, with fixed commands: recover_custody runs
 # `no-mistakes axi sync --recover`, adding --keep-local only when the native
 # command carries it and its recovery block proves (proof: verified) a
 # refs/heads/archive/<task>-* archive at preserved_head with the local head as
@@ -48,7 +53,8 @@
 # must read settled; anything else refuses and prints the native output.
 # It never force-pushes, force-moves or deletes a ref, starts, aborts or
 # cancels a run, discards a pipeline commit, or administers the daemon.
-# A verdict outside that handled set (settled, blocked_diverged,
+# A verdict outside that handled set (settled, the clean strict-ahead
+# local_ahead / blocked_local_ahead / run_pipeline case, blocked_diverged,
 # blocked_remote_rewritten, blocked_recover_manual_reconciliation, a
 # recover_custody or adopt_published offer, continue_active_run) refuses before
 # any archive or advance; a detached switch or branch creation before it is
@@ -149,6 +155,15 @@ handled() {  # verdicts the git step or a native-offered action can settle
   case "$v_safety" in blocked_diverged|blocked_remote_rewritten|blocked_recover_manual_reconciliation) return 0 ;; esac
   case "$v_code" in recover_custody|adopt_published) return 0 ;; esac
   return 1
+}
+# Unpublished local commits on a clean strict-ahead branch. The native
+# run_pipeline command belongs to the worker after launch; this owner never runs it.
+ahead_kept() {
+  [ "$rel" = ahead ] || return 1
+  [ "$v_state" = local_ahead ] || return 1
+  [ "$v_safety" = blocked_local_ahead ] || return 1
+  [ "$v_code" = run_pipeline ] || return 1
+  clean
 }
 rec() { fm_nm_branch_sync_nested "$v_out" recovery "$1"; }
 keep_local_proven() {
@@ -269,7 +284,7 @@ g remote get-url no-mistakes >/dev/null 2>&1 && gate=1
 if [ "$gate" -eq 1 ]; then
   nm_check
   [ "$v_code" != continue_active_run ] || monitoring_only "$result"
-  handled || unsettled
+  ahead_kept || handled || unsettled
 fi
 [ "$check_mode" -eq 0 ] || finish 0 "$result" none
 
@@ -316,6 +331,7 @@ nm_check
 [ "$v_safety" != blocked_recover_manual_reconciliation ] || bind_pipeline_head
 settled && finish 0 "$result" settled
 [ "$v_code" != continue_active_run ] || monitoring_only "$result"
+ahead_kept && finish 0 "$result" settled
 case "$v_code:$v_cmd" in
   "recover_custody:no-mistakes axi sync --recover") run_fixed axi sync --recover ;;
   "recover_custody:no-mistakes axi sync --recover --keep-local")

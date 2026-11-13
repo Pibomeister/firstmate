@@ -4932,8 +4932,8 @@ spawn_pr_resync() {  # <worktree> <branch>
   return 1
 }
 
-# Ship relaunch: resync the recorded worktree to the recorded branch's published
-# head when origin has that branch; exit 3 keeps the owner's monitoring-only lines.
+# Ship relaunch: resync the recorded worktree through bin/fm-pr-resync.sh when
+# origin has the recorded branch; exit 3 keeps the owner's monitoring-only lines.
 relaunch_pr_resync() {
   local out rc=0
   case "$MODE" in

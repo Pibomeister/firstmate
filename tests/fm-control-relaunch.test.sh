@@ -2642,6 +2642,44 @@ SH
   pass "fm-spawn --relaunch: under an active run the replacement launches with the owner's monitoring-only contract"
 }
 
+# The relaunch caller already treats owner exit 0 as launch. A clean unpublished
+# commit with the native local_ahead run_pipeline verdict must use that exit,
+# not a new flag or a delivery-mode change, and must not move any ref.
+test_spawn_relaunch_keeps_a_clean_local_ahead_commit() {
+  local dir out local_sha refs_before refs_after
+  dir=$(new_case prresync-ahead rl98)
+  add_ship_task "$dir" rl98 claude
+  printf 'branch=task-rl98\n' >> "$dir/home/state/rl98.meta"
+  printf 'zsh' > "$dir/fake/command"
+  printf 'a\n' > "$dir/wt/a.txt"
+  git -C "$dir/wt" add a.txt
+  git -C "$dir/wt" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm a
+  git -C "$dir/wt" push -q origin task-rl98
+  printf 'local\n' > "$dir/wt/local.txt"
+  git -C "$dir/wt" add local.txt
+  git -C "$dir/wt" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm local
+  local_sha=$(git -C "$dir/wt" rev-parse HEAD)
+  git -C "$dir/proj" remote add no-mistakes "$dir/proj.origin.git"
+  cat > "$dir/fakebin/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+[ "${1:-} ${2:-}" = "axi sync" ] || exit 0
+printf '%s\n' 'branch_sync:' '  state: local_ahead' '  changed: false' '  pipeline:' '    run: "01RUN"' \
+  '    status: running' '    current_head: ""' '  relation: ahead' '  safety: blocked_local_ahead' \
+  '  next_action:' '    code: run_pipeline' '    command: no-mistakes axi run'
+SH
+  chmod +x "$dir/fakebin/no-mistakes"
+  refs_before=$(git -C "$dir/wt" for-each-ref --format='%(refname) %(objectname)' refs/heads)
+  out=$(run_spawn "$dir" rl98 --relaunch)
+  refs_after=$(git -C "$dir/wt" for-each-ref --format='%(refname) %(objectname)' refs/heads)
+  assert_contains "$out" "spawned rl98" "a clean ahead relaunch did not launch"$'\n'"$out"
+  assert_contains "$out" "result=ahead:1" "a clean ahead relaunch did not report the unpublished commit"
+  assert_contains "$out" "custody=settled" "a clean ahead relaunch did not settle custody"
+  assert_not_contains "$out" "Monitoring-only relaunch" "a run_pipeline relaunch was treated as monitoring-only"
+  [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$local_sha" ] || fail "a clean ahead relaunch moved HEAD"
+  [ "$refs_before" = "$refs_after" ] || fail "a clean ahead relaunch moved a ref"
+  pass "fm-spawn --relaunch: a clean strictly-ahead run_pipeline verdict launches and keeps the local commit"
+}
+
 test_spawn_relaunch_origin_probe_timeout_refuses() {
   local dir out before
   dir=$(new_case prprobe-timeout rl94)
@@ -4795,6 +4833,7 @@ test_spawn_relaunch_without_a_harness_reuses_the_recorded_one
 test_spawn_relaunch_of_promoted_scout_uses_the_recorded_branch
 test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head
 test_spawn_relaunch_under_an_active_run_is_monitoring_only
+test_spawn_relaunch_keeps_a_clean_local_ahead_commit
 test_spawn_relaunch_origin_probe_timeout_refuses
 test_spawn_relaunch_of_a_successor_ignores_its_source_line
 test_promoted_scout_relaunch_receives_the_current_delivery_contract

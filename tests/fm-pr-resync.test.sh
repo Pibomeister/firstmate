@@ -584,6 +584,94 @@ assert_equals "" "$(archives)" "detached existing unsettled: no archive"
 assert_contains "$OUT" "changed: switched the detached worktree from $A to $B" "detached existing unsettled: switch reported"
 pass "an unsettled verdict after a detached switch refuses and reports the switch"
 
+# A clean branch strictly ahead of the published head, with the native
+# local_ahead / blocked_local_ahead / run_pipeline verdict, stays put and
+# settles. Every neighboring predicate still refuses or keeps its own path.
+AHEAD_RUN=$(bs local_ahead blocked_local_ahead run_pipeline 'no-mistakes axi run --intent "<what the user set out to accomplish>"' 01RUN)
+heads() { git -C "$WT" for-each-ref --format='%(refname) %(objectname)' refs/heads; }
+
+fixture ahead-run; gate; cm "$WT" local1; L=$(ref "refs/heads/$B"); HEADS=$(heads)
+resp 1 0 "$AHEAD_RUN"; resp 2 0 "$AHEAD_RUN"; run_owner "$B" --refuse-diverged
+expect_code 0 "$RC" "ahead run_pipeline: exit"
+assert_equals "$L" "$(ref "refs/heads/$B")" "ahead run_pipeline: local commit kept"
+assert_equals "$L" "$(ref HEAD)" "ahead run_pipeline: HEAD kept"
+assert_equals "$HEADS" "$(heads)" "ahead run_pipeline: no ref movement"
+assert_equals "$(printf '%s\n' 'axi sync --check' 'axi sync --check')" "$(calls)" "ahead run_pipeline: read-only checks only"
+assert_equals "fm-pr-resync: result=ahead:1 archive=- custody=settled head=$L" "$LAST" "ahead run_pipeline: result line"
+pass "a clean strictly-ahead run_pipeline verdict settles and keeps the local commit"
+
+fixture ahead-recheck; gate; cm "$WT" local1; L=$(ref "refs/heads/$B"); HEADS=$(heads)
+resp 1 0 "$AHEAD_RUN"; resp 2 1 "$(bs pipeline_owned blocked_some_new_verdict inspect_and_reconcile_manually 'no-mistakes axi status' 01RUN)"
+run_owner "$B" --refuse-diverged
+expect_code 1 "$RC" "ahead recheck changed: exit"
+assert_equals "$L" "$(ref HEAD)" "ahead recheck changed: HEAD kept"
+assert_equals "$HEADS" "$(heads)" "ahead recheck changed: no ref movement"
+assert_contains "$OUT" "blocked_some_new_verdict" "ahead recheck changed: native output"
+pass "a changed custody recheck refuses the ahead exception and keeps the commit"
+
+fixture ahead-dirty; gate; cm "$WT" local1; L=$(ref "refs/heads/$B"); printf 'x\n' > "$WT/untracked"; HEADS=$(heads)
+resp 1 0 "$AHEAD_RUN"; run_owner "$B" --refuse-diverged
+expect_code 1 "$RC" "dirty ahead: exit"
+assert_equals "$L" "$(ref HEAD)" "dirty ahead: HEAD kept"
+assert_equals "$HEADS" "$(heads)" "dirty ahead: no ref movement"
+assert_contains "$OUT" "not a verdict this owner settles" "dirty ahead: refused"
+pass "a dirty tree does not gain the ahead run_pipeline exception"
+
+fixture equal-ahead-verdict; gate; HEADS=$(heads)
+resp 1 0 "$AHEAD_RUN"; run_owner "$B" --refuse-diverged
+expect_code 1 "$RC" "equal with ahead verdict: exit"
+assert_equals "$A" "$(ref HEAD)" "equal with ahead verdict: HEAD kept"
+assert_equals "$HEADS" "$(heads)" "equal with ahead verdict: no ref movement"
+pass "an equal branch does not gain the ahead run_pipeline exception"
+
+fixture behind-ahead-verdict; gate; cm "$D/pipe" fix; git -C "$D/pipe" push -q origin "$B"; HEADS=$(heads)
+resp 1 0 "$AHEAD_RUN"; run_owner "$B" --refuse-diverged
+expect_code 1 "$RC" "behind with ahead verdict: exit"
+assert_equals "$A" "$(ref "refs/heads/$B")" "behind with ahead verdict: branch not advanced"
+assert_equals "$HEADS" "$(heads)" "behind with ahead verdict: no ref movement"
+pass "a behind branch does not gain the ahead run_pipeline exception"
+
+fixture diverged-ahead-verdict; gate; rebase_publish; HEADS=$(heads)
+resp 1 0 "$AHEAD_RUN"; run_owner
+expect_code 1 "$RC" "diverged with ahead verdict: exit"
+assert_equals "$A" "$(ref "refs/heads/$B")" "diverged with ahead verdict: branch unchanged"
+assert_equals "" "$(archives)" "diverged with ahead verdict: no archive"
+assert_equals "$HEADS" "$(heads)" "diverged with ahead verdict: no ref movement"
+pass "a diverged branch does not gain the ahead run_pipeline exception"
+
+for bad in safety state code; do
+  case "$bad" in
+    safety) V=$(bs local_ahead blocked_other run_pipeline 'no-mistakes axi run' 01RUN) ;;
+    state) V=$(bs pipeline_owned blocked_local_ahead run_pipeline 'no-mistakes axi run' 01RUN) ;;
+    code) V=$(bs local_ahead blocked_local_ahead inspect_and_reconcile_manually 'no-mistakes axi status' 01RUN) ;;
+  esac
+  fixture "ahead-bad-$bad"; gate; cm "$WT" local1; L=$(ref "refs/heads/$B"); HEADS=$(heads)
+  resp 1 0 "$V"; run_owner "$B" --refuse-diverged
+  expect_code 1 "$RC" "ahead bad $bad: exit"
+  assert_equals "$L" "$(ref HEAD)" "ahead bad $bad: HEAD kept"
+  assert_equals "$HEADS" "$(heads)" "ahead bad $bad: no ref movement"
+  pass "an ahead branch with a mismatched $bad does not gain the exception"
+done
+
+fixture manual-diverged; gate; rebase_publish; HEADS=$(heads)
+MANUAL=$(bs pipeline_owned blocked_recover_manual_reconciliation inspect_and_reconcile_manually 'no-mistakes axi status' 01RUN "$A")
+resp 1 1 "$MANUAL"; resp 2 1 "$MANUAL"; run_owner "$B" --refuse-diverged
+expect_code 1 "$RC" "diverged manual reconciliation: exit"
+assert_equals "$A" "$(ref "refs/heads/$B")" "diverged manual reconciliation: branch unchanged"
+assert_equals "" "$(archives)" "diverged manual reconciliation: no archive"
+assert_equals "$HEADS" "$(heads)" "diverged manual reconciliation: no ref movement"
+assert_contains "$OUT" "branch was left as-is" "diverged manual reconciliation: existing refusal"
+pass "a diverged manual-reconciliation verdict stays refused under the relaunch flag"
+
+fixture ahead-monitor; gate; cm "$WT" local1; L=$(ref "refs/heads/$B"); HEADS=$(heads)
+resp 1 0 "$ACTIVE"; run_owner "$B" --refuse-diverged
+expect_code 3 "$RC" "ahead active run: exit"
+assert_equals "$L" "$(ref HEAD)" "ahead active run: HEAD kept"
+assert_equals "$HEADS" "$(heads)" "ahead active run: no ref movement"
+assert_contains "$OUT" "monitoring-only" "ahead active run: monitoring contract"
+assert_contains "$LAST" "custody=pipeline-active" "ahead active run: result line"
+pass "an active run on an ahead branch stays monitoring-only"
+
 for bad_timeout in 0 00 invalid; do
   FM_PR_RESYNC_TIMEOUT=$bad_timeout run_owner
   expect_code 2 "$RC" "invalid network bound $bad_timeout: usage"
