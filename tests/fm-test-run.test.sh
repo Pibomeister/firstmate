@@ -1957,6 +1957,50 @@ SH
   pass "TERM to the runner is passed on to its running script"
 }
 
+test_a_terminated_runner_does_not_wait_forever_for_a_stubborn_script() {
+  local tmp repo evidence script=tests/fm-group-term-stubborn-fixture.test.sh runner_pid script_pid stubborn_pid rc
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-group-term-stubborn.XXXXXX")
+  repo=$(group_fixture_repo "$tmp")
+  evidence="$tmp/evidence"
+  cat >"$repo/$script" <<'SH'
+#!/usr/bin/env bash
+trap '' TERM
+sh -c 'trap "" TERM; echo $$ >"$1"; while :; do sleep 1; done' _ "$GROUP_EVIDENCE/stubborn.pid" &
+echo $$ >"$GROUP_EVIDENCE/script.pid"
+while :; do sleep 1; done
+SH
+  chmod +x "$repo/$script"
+
+  TMPDIR="$tmp/tmp" GROUP_EVIDENCE="$evidence" \
+    "$repo/bin/fm-test-run.sh" "$script" >"$tmp/out" 2>"$tmp/err" &
+  runner_pid=$!
+  if ! wait_for_files 1200 "$evidence/script.pid" "$evidence/stubborn.pid"; then
+    kill -KILL "$runner_pid" 2>/dev/null || true
+    fail "the stubborn fixture script never started: $(cat "$tmp/out" "$tmp/err")"
+  fi
+  script_pid=$(cat "$evidence/script.pid")
+  stubborn_pid=$(cat "$evidence/stubborn.pid")
+  kill -TERM "$runner_pid"
+  if ! wait_for_pid_gone "$runner_pid" 150; then
+    kill -KILL "$runner_pid" 2>/dev/null || true
+    wait "$runner_pid" 2>/dev/null || true
+    kill -KILL -- "-$script_pid" 2>/dev/null || true
+    fail "a terminated runner waited indefinitely for a script that ignores TERM"
+  fi
+  set +e
+  wait "$runner_pid"
+  rc=$?
+  set -e
+  assert_equals 143 "$rc" "a terminated runner must preserve TERM status even if its script ignores TERM"
+  if ! wait_for_pid_gone "$script_pid" 150 || ! wait_for_pid_gone "$stubborn_pid" 150; then
+    kill -KILL -- "-$script_pid" 2>/dev/null || true
+    fail "a terminated runner left TERM-ignoring descendants running"
+  fi
+
+  rm -rf "$tmp"
+  pass "a terminated runner bounds cleanup of TERM-ignoring descendants"
+}
+
 # A hard kill gives the runner no chance to pass anything on. Without a
 # per-script bound nothing else would ever end the script, so its group must
 # end with the runner, including a process that ignores TERM.
@@ -2444,6 +2488,7 @@ test_per_script_timeout_bounds_a_hang
 test_a_script_that_signals_its_group_cannot_reach_the_caller
 test_a_contained_script_keeps_stdin_status_and_leftovers
 test_a_terminated_runner_takes_its_script_with_it
+test_a_terminated_runner_does_not_wait_forever_for_a_stubborn_script
 test_a_killed_runner_does_not_orphan_its_script
 test_changed_bound_gives_slow_watcher_suites_headroom
 test_max_wall_ms_is_a_result_not_advice
