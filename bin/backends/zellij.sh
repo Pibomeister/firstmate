@@ -445,6 +445,20 @@ fm_backend_zellij_send_literal() {  # <target> <text> [expected-label]
   fm_backend_zellij_cli "$FM_BACKEND_ZELLIJ_SESSION" action paste --pane-id "$FM_BACKEND_ZELLIJ_PANE" -- "$2" >/dev/null 2>&1
 }
 
+# fm_backend_zellij_write_chars: type the feedback-dialog shortcut `0` as raw
+# keystrokes. Bracketed paste inserts `0` into the dialog's comment field, so
+# the Dismiss/Skip binding never runs. Official `write-chars` is the non-paste
+# character action (`zellij action write-chars --pane-id <id> <chars>`).
+# Anything other than the single shortcut is refused and nothing is sent.
+fm_backend_zellij_write_chars() {  # <target> <chars> [expected-label]
+  case "$2" in
+    0) ;;
+    *) return 1 ;;
+  esac
+  fm_backend_zellij_target_ready "$1" "${3:-}" || return 1
+  fm_backend_zellij_cli "$FM_BACKEND_ZELLIJ_SESSION" action write-chars --pane-id "$FM_BACKEND_ZELLIJ_PANE" -- "$2" >/dev/null 2>&1
+}
+
 # fm_backend_zellij_normalize_key: map firstmate's key vocabulary (Enter,
 # Escape, C-c, as used by fm-send.sh --key and stuck-crewmate-recovery) onto
 # zellij's verified `action send-keys` names. Verified empirically: "Enter"

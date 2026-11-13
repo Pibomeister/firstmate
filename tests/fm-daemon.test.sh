@@ -3930,6 +3930,7 @@ test_inject_msg_herdr_composer_guard_defers() {
   (
     fm_backend_target_exists() { return 0; }
     pane_is_busy() { return 1; }
+    fm_backend_visible_capture() { printf '%s\n' '❯ '; }
     fm_backend_composer_state() { [ "$1" = herdr ] && [ "$2" = "default:w1:p2" ] || fail "unexpected composer_state args: $1 $2"; printf 'pending'; }
     fm_backend_send_text_submit() { fail "send_text_submit should not run when the composer-guard defers"; }
     if FM_SUPERVISOR_BACKEND=herdr FM_SUPERVISOR_TARGET="default:w1:p2" inject_msg "hello" "$state"; then
@@ -3964,6 +3965,7 @@ test_inject_msg_herdr_submits_through_backend_dispatch() {
     fm_backend_target_exists() { return 0; }
     pane_is_busy() { return 1; }
     fm_backend_composer_state() { printf 'empty'; }
+    fm_backend_visible_capture() { printf '%s\n' '❯ '; }
     fm_backend_send_text_submit() {
       [ "$1" = herdr ] && [ "$2" = "default:w1:p2" ] || fail "unexpected send_text_submit args: $1 $2"
       printf '%s\n' "$3" > "$dir/sent.log"
@@ -3990,6 +3992,7 @@ test_inject_msg_defers_on_dead_shell_unknown() {
   (
     fm_backend_target_exists() { return 0; }
     pane_is_busy() { return 1; }
+    fm_backend_visible_capture() { printf '%s\n' '❯ '; }
     fm_backend_composer_state() { printf 'unknown'; }
     fm_backend_send_text_submit() { fail "send_text_submit must NOT run when the composer is a dead shell (unknown)"; }
     if FM_SUPERVISOR_BACKEND=herdr FM_SUPERVISOR_TARGET="default:w1:p2" inject_msg "hello" "$state"; then
@@ -3997,6 +4000,105 @@ test_inject_msg_defers_on_dead_shell_unknown() {
     fi
   ) || fail "dead-shell inject_msg subshell failed"
   pass "inject_msg: defers on a dead-shell/unreadable composer (unknown), never typing the escalation into a shell"
+}
+
+# Away inject must not type a digest or press Enter into a feedback dialog
+# whose composer is the idle prompt. The oracle is the sent log: a blocked
+# dialog may receive the dismiss shortcut and nothing else; a pane with no
+# dialog, or a near miss, receives the digest and Enter; a pending composer
+# receives neither.
+test_inject_msg_withholds_digest_when_empty_composer_shows_feedback_dialog() {
+  local nb=$'\xc2\xa0' survey draft near pending empty_box
+  survey=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n────────────────────────────────────────\n❯'"$nb"$'\n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main'
+  draft=$'some work\n● Bug report drafted: tool timeout on large file\n  1 to review · 2 to send · 0 to dismiss\n────────────────────────────────────────\n❯'"$nb"$'\n────────────────────────────────────────'
+  near=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good\n────────────────────────────────────────\n❯ \n────────────────────────────────────────'
+  pending=$'╭─────────────────╮\n│ > human draft   │\n╰─────────────────╯\n'
+  empty_box=$'╭─────╮\n│ >   │\n╰─────╯\n'
+
+  inject_screen() {  # <name> <screen> <cursor-row> <token> <expect: blocked|delivered|silent>
+    local name=$1 screen=$2 cursor=$3 token=$4 expect=$5
+    local dir state fakebin sent capture rc=0 delivered
+    dir=$(make_supercase "inject-dialog-$name")
+    state="$dir/state"
+    fakebin="$dir/fakebin"
+    sent="$dir/sent.log"
+    capture="$dir/pane.txt"
+    printf '%s\n' "$screen" > "$capture"
+    : > "$sent"
+    cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  display-message)
+    for _a in "$@"; do
+      case "$_a" in *cursor_y*) printf '%s\n' "${FM_FAKE_TMUX_CURSOR_Y:-0}"; exit 0 ;; esac
+    done
+    printf 'fakepane\n'
+    exit 0 ;;
+  list-windows)
+    printf '@0|0|supervisor\n'
+    exit 0 ;;
+  capture-pane)
+    cat "${FM_FAKE_TMUX_CAPTURE:?}"
+    exit 0 ;;
+  send-keys)
+    shift
+    lit=0
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -t) shift ;;
+        -l) lit=1 ;;
+        Enter) printf '[ENTER]\n' >> "${FM_FAKE_TMUX_SENT:?}" ;;
+        *) [ "$lit" = 1 ] && printf '%s\n' "$1" >> "${FM_FAKE_TMUX_SENT:?}" ;;
+      esac
+      shift
+    done
+    exit 0 ;;
+esac
+exit 1
+SH
+    chmod +x "$fakebin/tmux"
+    afk_enter "$state"
+    PATH="$fakebin:$PATH" FM_FAKE_TMUX_CAPTURE="$capture" FM_FAKE_TMUX_CURSOR_Y="$cursor" \
+      FM_FAKE_TMUX_SENT="$sent" FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=firstmate:0 \
+      FM_INJECT_CONFIRM_SLEEP=0 FM_INJECT_CONFIRM_RETRIES=1 \
+      inject_msg "needs-decision: $token" "$state" || rc=$?
+    delivered=$(delivered_digest "$sent" 2>/dev/null || true)
+    case "$expect" in
+      blocked)
+        [ "$rc" -ne 0 ] || fail "$name: inject submitted into a feedback dialog"
+        [ "${INJECT_SUBMIT_ATTEMPTED:-0}" -eq 0 ] || fail "$name: inject attempted a submit into a feedback dialog"
+        if printf '%s\n' "$delivered" | grep -F "$token" >/dev/null; then
+          fail "$name: digest text was delivered into the dialog: $delivered"
+        fi
+        if grep -F '[ENTER]' "$sent" >/dev/null; then
+          fail "$name: Enter was delivered into the dialog: $(cat "$sent")"
+        fi
+        [ "$(cat "$sent")" = "0" ] || fail "$name: expected only the dismiss shortcut, got: $(cat "$sent")"
+        ;;
+      delivered)
+        [ "$rc" -eq 0 ] || fail "$name: inject withheld a pane with no feedback dialog (${INJECT_LAST_FAILURE:-rc=$rc})"
+        printf '%s\n' "$delivered" | grep -F "$token" >/dev/null \
+          || fail "$name: the digest was not delivered: $delivered"
+        grep -F '[ENTER]' "$sent" >/dev/null \
+          || fail "$name: Enter was not delivered: $(cat "$sent")"
+        ;;
+      silent)
+        [ "$rc" -ne 0 ] || fail "$name: inject submitted into a pending composer"
+        [ ! -s "$sent" ] || fail "$name: a pending composer received input: $(cat "$sent")"
+        printf '%s\n' "$delivered" | grep -F "$token" >/dev/null \
+          && fail "$name: digest text was delivered into a pending composer"
+        ;;
+      *) fail "unknown expect $expect" ;;
+    esac
+  }
+
+  inject_screen survey "$survey" 4 'survey-stall-token' blocked
+  inject_screen draft "$draft" 4 'draft-stall-token' blocked
+  inject_screen pending "$pending" 1 'pending-stall-token' silent
+  inject_screen nodialog "$empty_box" 1 'nodialog-stall-token' delivered
+  inject_screen nearmiss "$near" 4 'nearmiss-stall-token' delivered
+  pass "inject_msg: an empty-composer feedback dialog receives no digest or Enter; a pending composer, a clear pane, and a near miss keep their own outcomes"
 }
 
 test_inject_msg_defers_on_unrecognized_composer_state() {
@@ -4007,6 +4109,7 @@ test_inject_msg_defers_on_unrecognized_composer_state() {
   (
     fm_backend_target_exists() { return 0; }
     pane_is_busy() { return 1; }
+    fm_backend_visible_capture() { printf '%s\n' '❯ '; }
     fm_backend_composer_state() { printf 'future-state'; }
     fm_backend_send_text_submit() { fail "send_text_submit must not run for an unrecognized composer state"; }
     if FM_SUPERVISOR_BACKEND=herdr FM_SUPERVISOR_TARGET="default:w1:p2" inject_msg "hello" "$state"; then
@@ -4185,6 +4288,7 @@ test_home_claude_settings_disable_prompt_suggestion
 test_inject_msg_orca_composer_guard_defers
 test_inject_msg_orca_missing_terminal_defers
 test_inject_msg_defers_on_dead_shell_unknown
+test_inject_msg_withholds_digest_when_empty_composer_shows_feedback_dialog
 test_inject_msg_defers_on_unrecognized_composer_state
 
 # The Claude background-task exit picker names itself on the stale reason.

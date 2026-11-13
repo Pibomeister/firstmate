@@ -645,6 +645,64 @@ test_send_key_normalizes_and_targets_pane() {
   pass "fm_backend_zellij_send_key: normalizes the key (Escape -> Esc) and targets the explicit pane id"
 }
 
+# The dismiss shortcut is a key, not text. Bracketed paste would insert `0`
+# into the survey comment field; write-chars is the documented non-paste
+# character action. Ordinary literal sends stay on paste, and Escape stays a
+# named key. Neither path may press Enter.
+test_feedback_dismiss_zero_uses_write_chars_not_paste() {
+  local dir fb log
+  dir="$TMP_ROOT/dismiss-write-chars"; mkdir -p "$dir/responses"
+  zellij_pane_response "$dir" 1 7 3
+  fb=$(make_zellij_fakebin "$dir")
+  PATH="$fb:$PATH" FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
+    FM_ZELLIJ_SESSION_LIST="firstmate" \
+    bash -c '. "$0/bin/fm-backend.sh"; . "$0/bin/fm-control-lib.sh"; fm_control_send_feedback_dismiss zellij firstmate:7 0 "" claude' "$ROOT"
+  expect_code 0 $? "dismiss 0 should succeed"
+  log=$(cat "$dir/log")
+  assert_contains "$log" $'\x1f''write-chars'$'\x1f''--pane-id'$'\x1f''7'$'\x1f''--'$'\x1f''0' \
+    "dismiss 0 did not emit write-chars for the shortcut"
+  assert_not_contains "$log" $'\x1f''paste' "dismiss 0 must not bracketed-paste the shortcut"
+  assert_not_contains "$log" $'\x1f''Enter' "dismiss 0 must not press Enter"
+  assert_not_contains "$log" $'\x1f''send-keys' "dismiss 0 must not go through the named-key path"
+
+  dir="$TMP_ROOT/dismiss-escape"; mkdir -p "$dir/responses"
+  zellij_pane_response "$dir" 1 7 3
+  fb=$(make_zellij_fakebin "$dir")
+  PATH="$fb:$PATH" FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
+    FM_ZELLIJ_SESSION_LIST="firstmate" \
+    bash -c '. "$0/bin/fm-backend.sh"; . "$0/bin/fm-control-lib.sh"; fm_control_send_feedback_dismiss zellij firstmate:7 Escape "" claude' "$ROOT"
+  expect_code 0 $? "dismiss Escape should succeed"
+  log=$(cat "$dir/log")
+  assert_contains "$log" $'\x1f''send-keys'$'\x1f''--pane-id'$'\x1f''7'$'\x1f''Esc' \
+    "dismiss Escape did not emit the named Esc key"
+  assert_not_contains "$log" $'\x1f''write-chars' "dismiss Escape must not use write-chars"
+  assert_not_contains "$log" $'\x1f''paste' "dismiss Escape must not paste"
+  assert_not_contains "$log" $'\x1f''Enter' "dismiss Escape must not press Enter"
+
+  dir="$TMP_ROOT/literal-zero-stays-paste"; mkdir -p "$dir/responses"
+  zellij_pane_response "$dir" 1 7 3
+  fb=$(make_zellij_fakebin "$dir")
+  PATH="$fb:$PATH" FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
+    FM_ZELLIJ_SESSION_LIST="firstmate" \
+    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_send_literal firstmate:7 0' "$ROOT"
+  expect_code 0 $? "a literal 0 should still succeed"
+  log=$(cat "$dir/log")
+  assert_contains "$log" $'\x1f''paste'$'\x1f''--pane-id'$'\x1f''7'$'\x1f''--'$'\x1f''0' \
+    "ordinary literal 0 must stay on bracketed paste"
+  assert_not_contains "$log" $'\x1f''write-chars' "ordinary literal 0 must not switch to write-chars"
+
+  dir="$TMP_ROOT/write-chars-refuses-text"; mkdir -p "$dir/responses"
+  : > "$dir/log"
+  fb=$(make_zellij_fakebin "$dir")
+  if PATH="$fb:$PATH" FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
+    FM_ZELLIJ_SESSION_LIST="firstmate" \
+    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_write_chars firstmate:7 "feedback text"' "$ROOT"; then
+    fail "write-chars must refuse anything other than the single shortcut 0"
+  fi
+  [ ! -s "$dir/log" ] || fail "a refused write-chars call must not invoke zellij: $(cat "$dir/log")"
+  pass "zellij feedback dismiss: shortcut 0 is write-chars, Escape is a named key, and paste never submits it"
+}
+
 test_send_literal_uses_paste_separator_for_option_shaped_text() {
   local dir fb
   dir="$TMP_ROOT/sendliteral"; mkdir -p "$dir/responses"
@@ -1372,6 +1430,7 @@ test_capture_large_reads_use_full_scrollback_and_trim
 test_capture_fails_when_pane_absent
 test_capture_fails_when_session_absent
 test_send_key_normalizes_and_targets_pane
+test_feedback_dismiss_zero_uses_write_chars_not_paste
 test_send_literal_uses_paste_separator_for_option_shaped_text
 test_send_text_line_clears_partial_input_when_enter_fails
 test_send_text_line_reports_unsafe_input_when_cleanup_fails

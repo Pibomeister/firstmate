@@ -1248,11 +1248,17 @@ fm_control_send_feedback_dismiss() {  # <backend> <target> <dismiss-key> [<expec
       fm_backend_send_key "$backend" "$target" Escape "$label"
       ;;
     0)
-      fn="fm_backend_${backend}_send_literal"
-      if declare -F "$fn" >/dev/null 2>&1; then
-        "$fn" "$target" 0 "$label"
+      # Zellij's literal send is bracketed paste, which inserts `0` into the
+      # comment field instead of running the Dismiss/Skip binding.
+      if [ "$backend" = zellij ]; then
+        fm_backend_zellij_write_chars "$target" 0 "$label"
       else
-        return 1
+        fn="fm_backend_${backend}_send_literal"
+        if declare -F "$fn" >/dev/null 2>&1; then
+          "$fn" "$target" 0 "$label"
+        else
+          return 1
+        fi
       fi
       ;;
     *)
