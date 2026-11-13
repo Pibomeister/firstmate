@@ -51,7 +51,7 @@ Its fifteen serial jobs took 16m56s to 19m50s, its parallel jobs took 16m58s and
 Herdr took 12m02s and stock macOS Bash took 9m21s.
 These are observed job durations, not queue delay or a percentile estimate.
 
-The serial layout now packs twenty-four separate runners against a thirteen-minute script budget, leaving two minutes below the fifteen-minute healthy-job target for setup and variance.
+The serial layout now packs twenty-five separate runners against a thirteen-minute script budget, leaving two minutes below the fifteen-minute healthy-job target for setup and variance.
 The former 29-case host suite took 896663 ms in that green run.
 Its five dialog-mirror cases now live in `tests/fm-supervision-host-mirror.test.sh`; every case and assertion is retained.
 The per-case log timestamps attribute about 414 seconds to those cases and 483 seconds to the remainder, including final cleanup.
@@ -164,7 +164,7 @@ No fast mode, path skips, or paid runner provisioning is part of this layout.
 
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay, but the three watch-triage members still sum to about 32 minutes of CI test time.
 The immediate packing target is the runner's modeled script budget, not a claim that more shards alone can make an indivisible script faster.
-The layout uses thirty-three long-lived Linux jobs (twenty-four serial, two parallel, Herdr, six lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+The layout uses thirty-four long-lived Linux jobs (twenty-five serial, two parallel, Herdr, six lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
 The workflow retains per-PR supersession and keeps only the newest of close main pushes' runs, without changing the compliance workflow's event semantics.
 
