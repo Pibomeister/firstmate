@@ -302,6 +302,7 @@
 #   A prioritized fresh worker is admitted past an exhausted project-capacity
 #   declaration without stopping an existing lane, and priority= is recorded in
 #   task metadata so supervision can apply its priority-specific contract.
+#   Relaunch preserves that recorded priority and refuses --priority overrides.
 #   It never bypasses disk, backend, isolation, task token-budget, or other
 #   safety gates.
 #   Project capacity: when this machine declares how many workers a project
