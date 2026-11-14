@@ -68,6 +68,10 @@ FM_BACKLOG_ROW_ERROR=
 # the row is not held.
 # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
 FM_BACKLOG_ROW_HOLD_KIND=
+# Set by fm_backlog_row_probe on a found row: 0-4, empty when the row carries
+# no explicit priority.
+# shellcheck disable=SC2034 # Output global, read by the sourcing caller.
+FM_BACKLOG_ROW_PRIORITY=
 # Set by fm_backlog_close_marker_replay: closed | closed_incomplete | retained |
 # retained_incomplete | answered | stale | noop.
 # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
@@ -423,16 +427,18 @@ fm_backlog_row_list() {  # <resolved-data-dir> [flag...]
 }
 
 fm_backlog_row_probe() {  # <data-dir> <id>
-  local data authorized_data=$1 id=$2 out state held blocked hold_kind command_status source_status
+  local data authorized_data=$1 id=$2 out state held blocked hold_kind priority command_status source_status
   if ! data=$(fm_backlog_data_absolute "$1"); then
     FM_BACKLOG_ROW_RESULT=error
     FM_BACKLOG_ROW_STATE=
+    FM_BACKLOG_ROW_PRIORITY=
     FM_BACKLOG_ROW_ERROR="data directory cannot be resolved: $1"
     return 1
   fi
   FM_BACKLOG_ROW_RESULT=error
   FM_BACKLOG_ROW_STATE=
   FM_BACKLOG_ROW_HOLD_KIND=
+  FM_BACKLOG_ROW_PRIORITY=
   FM_BACKLOG_ROW_ERROR=
   fm_backlog_source_present "$data" "$authorized_data"
   source_status=$?
@@ -462,6 +468,7 @@ fm_backlog_row_probe() {  # <data-dir> <id>
   held=$(printf '%s\n' "$out" | sed -n 's/^  held: *//p' | head -1)
   blocked=$(printf '%s\n' "$out" | sed -n 's/^  blocked: *//p' | head -1)
   hold_kind=$(printf '%s\n' "$out" | sed -n 's/^  hold_kind: *//p' | head -1)
+  priority=$(printf '%s\n' "$out" | sed -n 's/^  priority: *//p' | head -1)
   if [ -z "$state" ]; then
     FM_BACKLOG_ROW_ERROR="tasks-axi show $id returned no state"
     return 1
@@ -471,6 +478,15 @@ fm_backlog_row_probe() {  # <data-dir> <id>
   case "$hold_kind" in
     ''|'"-"'|-) FM_BACKLOG_ROW_HOLD_KIND= ;;
     *) FM_BACKLOG_ROW_HOLD_KIND=$hold_kind ;;
+  esac
+  case "$priority" in
+    ''|'"-"'|-) FM_BACKLOG_ROW_PRIORITY= ;;
+    [0-4]) FM_BACKLOG_ROW_PRIORITY=$priority ;;
+    *)
+      FM_BACKLOG_ROW_ERROR="tasks-axi show $id returned invalid priority $priority"
+      FM_BACKLOG_ROW_RESULT=error
+      return 1
+      ;;
   esac
   return 0
 }

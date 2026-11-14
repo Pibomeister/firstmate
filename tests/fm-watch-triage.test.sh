@@ -5706,6 +5706,46 @@ test_closed_exit_picker_drops_saved_dialog_name() {
   pass "a closed picker drops the saved dialog name, and the stale stays ordinary"
 }
 
+test_p0_blocker_surfaces_exact_text_once_at_ten_minutes() {
+  local dir state fakebin capture_file window key status_line before_out due_out repeat_out
+  dir=$(make_case p0-blocker-ten-minutes); state="$dir/state"; fakebin="$dir/fakebin"
+  capture_file="$dir/pane.txt"; window="test:fm-p0-worker"
+  before_out="$dir/before.out"; due_out="$dir/due.out"; repeat_out="$dir/repeat.out"
+  status_line='blocked [at=1000]: deployment key is unavailable'
+  mkdir -p "$dir/config"
+  printf 'window=%s\nkind=ship\nharness=codex\npriority=0\n' "$window" > "$state/p0-worker.meta"
+  printf '%s\n' "$status_line" > "$state/p0-worker.status"
+  prime_status_seen "$state" "$state/p0-worker.status"
+  printf 'rendering before the deadline' > "$capture_file"
+
+  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" FM_WATCH_NOW=1599 \
+    FM_WATCH_HANDLING_SUCCESSOR=1 FM_WATCH_ONCE=1 FM_POLL=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$WATCH" > "$before_out" || fail "the P0 pre-deadline cycle failed: $(cat "$before_out")"
+  grep -F 'P0 blocker open' "$before_out" >/dev/null \
+    && fail "the P0 blocker surfaced before ten minutes: $(cat "$before_out")"
+
+  printf 'rendering at the deadline' > "$capture_file"
+  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" FM_WATCH_NOW=1600 \
+    FM_WATCH_HANDLING_SUCCESSOR=1 FM_WATCH_ONCE=1 FM_POLL=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$WATCH" > "$due_out" || fail "the P0 deadline cycle failed: $(cat "$due_out")"
+  grep -Fx "stale: $window (P0 blocker open for 600s: $status_line)" "$due_out" >/dev/null \
+    || fail "the ten-minute alarm did not preserve the exact blocker text: $(cat "$due_out")"
+  key=$(watch_window_key "$window")
+  assert_present "$state/.p0-blocker-surfaced-$key" "the P0 alarm left no once-only marker"
+  ack_stopped_cycle "$state" >/dev/null || fail "the first P0 alarm could not be acknowledged"
+
+  printf 'rendering after the deadline' > "$capture_file"
+  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" FM_WATCH_NOW=1700 \
+    FM_WATCH_HANDLING_SUCCESSOR=1 FM_WATCH_ONCE=1 FM_POLL=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$WATCH" > "$repeat_out" || fail "the P0 repeat cycle failed: $(cat "$repeat_out")"
+  grep -F 'P0 blocker open' "$repeat_out" >/dev/null \
+    && fail "the same P0 blocker surfaced more than once: $(cat "$repeat_out")"
+  pass "a P0 blocker surfaces its exact status text once at the ten-minute bound"
+}
+
 
 # CI's stock macOS Bash lane sets FM_TEST_STOCK_BASH=1 to run just the bash-3.2
 # churn-deferral regression. The rest of this file is not a 3.2 snapshot suite.
@@ -5853,4 +5893,5 @@ fm_test_run \
   test_exit_picker_wedge_keeps_climbing \
   test_quoted_exit_picker_stays_ordinary_stale \
   test_secondmate_exit_picker_stays_quiet \
-  test_closed_exit_picker_drops_saved_dialog_name
+  test_closed_exit_picker_drops_saved_dialog_name \
+  test_p0_blocker_surfaces_exact_text_once_at_ten_minutes

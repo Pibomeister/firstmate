@@ -137,6 +137,12 @@
 #                          no-mistakes run is parked on an ask-user finding;
 #                          surfaced at once, in both postures, and the worker is
 #                          rung through its steering inbox (parked_gate_notice)
+#   stale: <window> (P0 blocker open for <seconds>s: <exact status line>)
+#                          a priority=0 worker's newest status event has remained
+#                          `blocked:` for at least ten minutes; emitted once for
+#                          that exact declaration even if the pane stays busy or
+#                          changes, and checked on every ordinary supervision
+#                          cycle before the quiet-pane classifier
 #                          At escalation time a T3 Code thread whose shared
 #                          classification still reads running resets the timer
 #                          while its latest turn boundary is under
@@ -528,6 +534,10 @@ TURNEND_CHURN_ABSORB_SECS=${FM_TURNEND_CHURN_ABSORB_SECS:-900}  # longest a task
 # wake) and never double-triages - and never runs the costly provably-working read,
 # except the bounded one parked_gate_away_read spends on an idle `paused:` pane.
 STALE_ESCALATE_SECS=${FM_STALE_ESCALATE_SECS:-240}  # idle secs before a provably-working stale escalates as a possible wedge
+# P0 work has an additional wall-clock blocker guarantee independent of ordinary
+# quiet-pane timing. This is intentionally fixed at ten minutes: ordinary work
+# keeps the existing STALE_ESCALATE_SECS ladder and gains no second timer.
+P0_BLOCKER_SECS=600
 # Hard wall-clock bound on that away-posture parked-gate read, so a no-mistakes
 # that stops answering costs a poll at most this long (parked_gate_away_read).
 PARKED_GATE_READ_TIMEOUT=${FM_PARKED_GATE_READ_TIMEOUT:-}
@@ -654,6 +664,43 @@ captain_held_silenced() {  # <status-line>
 
 hash_pane() {
   if command -v md5 >/dev/null 2>&1; then md5 -q; else md5sum | cut -d' ' -f1; fi
+}
+
+# A P0 blocker is inspected on every supervision cycle, independently of pane
+# churn and busy state. The worker's exact newest status line is the declaration
+# and the alarm text, while its `[at=<epoch>]` stamp is the authoritative start;
+# legacy unstamped lines fall back to the status file mtime. One marker scoped to
+# that declaration makes the ten-minute surface once-only. A later status event
+# clears it, so a genuinely new blocker earns its own ten-minute bound.
+p0_blocker_alarm() {  # <window> <task>
+  local win=$1 task=$2 meta statusf last verb opened now age marker scope reason
+  [ -n "$task" ] || return 0
+  meta="$STATE/$task.meta"
+  [ "$(fm_meta_get "$meta" priority 2>/dev/null || true)" = 0 ] || return 0
+  statusf="$STATE/$task.status"
+  marker="$STATE/.p0-blocker-surfaced-$(window_key "$win")"
+  last=$(last_status_line "$statusf")
+  status_line_verb "$last" verb
+  if [ "$verb" != blocked ]; then
+    rm -f "$marker"
+    return 0
+  fi
+  if ! opened=$(status_line_at_epoch "$last"); then
+    opened=$(stat_mtime "$statusf") || return 0
+  fi
+  fm_watch_now now
+  [ "$opened" -le "$now" ] || return 0
+  age=$((now - opened))
+  [ "$age" -ge "$P0_BLOCKER_SECS" ] || return 0
+  scope="$opened:$last"
+  [ "$(cat "$marker" 2>/dev/null || true)" != "$scope" ] || return 0
+  reason="stale: $win (P0 blocker open for ${age}s: $last)"
+  fm_wake_append stale "$win" "$reason" || exit 1
+  printf '%s' "$scope" > "$marker" || {
+    echo "error: P0 blocker wake was queued for $task but its once-only marker could not be written" >&2
+    exit 1
+  }
+  wake "$reason"
 }
 
 # window_is_busy: 0 when the semantic busy-state contract (bin/fm-busy-lib.sh)
@@ -5503,6 +5550,7 @@ EOF
     watch_record_progress_beat
     kind=$(window_kind "$w")
     task=$(window_to_task "$w" "$STATE")
+    p0_blocker_alarm "$w" "$task"
     # Steering-inbox loss detection runs before the secondmate stale
     # exemption below, because a mate's steers land in an inbox too.
     [ -z "$task" ] || inbox_steer_check "$w" "$task"
