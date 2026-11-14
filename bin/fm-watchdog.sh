@@ -1445,6 +1445,7 @@ wd_handle_captain_autowait() {
 # had a full window, the oldest decision without a recent council gets one.
 wd_handle_decisions() {
   local st=$O_HOME/state now task key verb age summary secs res aged=0 keys='' id cap ran=0 nudged held=0 held_keys=''
+  local oversized=0 refused_at
   local rec split=0 split_keys='' ruled=0 ruled_keys='' WD_NUDGE_MODE
 
   WD_NUDGE_MODE=$(wd_decisions_mode)
@@ -1459,6 +1460,14 @@ wd_handle_decisions() {
     if wd_decision_reserved "$task" "$key" "$summary"; then
       held=$((held + 1))
       [ "$held" -gt 3 ] || fm_secret_like "$task/$key" || held_keys="$held_keys${held_keys:+, }$task/$key"
+      continue
+    fi
+    if [ "${#summary}" -gt "$WD_COUNCIL_MAX_CHARS" ]; then
+      oversized=$((oversized + 1))
+      refused_at=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" "decision:$key" council '^refused$')
+      if [ -z "$refused_at" ] || [ $((now - refused_at)) -ge "$(cfgi council-secs 21600)" ]; then
+        wd_rec "$(wd_id)" "decision:$key" council refused "record exceeds $WD_COUNCIL_MAX_CHARS characters"
+      fi
       continue
     fi
     rec=$(wd_council_record "$task" "$key")
@@ -1478,6 +1487,7 @@ wd_handle_decisions() {
   [ "$held" -eq 0 ] || wd_gap "$held decisions held for the owner (never touched)${held_keys:+, e.g. $held_keys}"
   [ "$split" -eq 0 ] || wd_gap "$split decisions held for the owner after a council gave no ruling (records under data/watchdog/no-rulings/), e.g. $split_keys"
   [ "$ruled" -eq 0 ] || wd_gap "$ruled open decisions have an unapplied council ruling (under data/watchdog/rulings/), e.g. $ruled_keys"
+  [ "$oversized" -eq 0 ] || wd_gap "$oversized decisions refused: record exceeds $WD_COUNCIL_MAX_CHARS characters"
   [ "$aged" -gt 0 ] || return 0
   [ "$O_TURN" = 1 ] && return 0
   nudged=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" decisions nudge '^(pending|dry-run)$')
@@ -1488,6 +1498,10 @@ wd_handle_decisions() {
   [ $((now - nudged)) -ge "$secs" ] || return 0
   while IFS=$'\t' read -r task key summary; do
     [ "$ran" -lt "$cap" ] || break
+    if [ "${#summary}" -gt "$WD_COUNCIL_MAX_CHARS" ]; then
+      wd_gap "council refused: record exceeds $WD_COUNCIL_MAX_CHARS characters"
+      continue
+    fi
     [ -z "$(wd_council_record "$task" "$key")" ] || continue
     fm_wd_rate_ok "$LEDGER" "$O_HOME" "decision:$key" council "$(cfgi council-secs 21600)" "$now" || continue
     ran=$((ran + 1))

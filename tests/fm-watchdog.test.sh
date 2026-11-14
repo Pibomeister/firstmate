@@ -1506,6 +1506,34 @@ council-seats=claude:haiku,agy:flash'
   pass "council: seats use the same required field separator as other metadata"
 }
 
+test_automatic_decisions_refuse_oversized_recorded_context() {
+  local out
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  SID=00000000-0000-4000-8000-000000000099
+  printf '%s\n' "$SID" > "$H/state/.lock-session"
+  jq --arg sid "$SID" '.primary.session.trusted_id=$sid | .primary.writer.session_id=$sid' "$H/state/heartbeat.json" > "$H/state/heartbeat.new"
+  mv "$H/state/heartbeat.new" "$H/state/heartbeat.json"
+  fm_touch_epoch "$((BASE - 1))" "$H/state/.lock-session"
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  printf 'A flat keys or B nested keys?\n' > "$H/record.txt"
+  out=$(run_wd 0 council --task t1 --key cache --record-file "$H/record.txt" 2>&1) || fail "initial automatic record failed: $out"
+  assert_contains "$out" "answer=PROCEED A" "the decision already has a ruling"
+  { printf 'needs-decision [at=%s] [key=cache]: A' "$((BASE - 9000))"; printf '%2000s\n' x; } > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1 || fail "oversized automatic pass failed"
+  assert_grep 'record exceeds 2000 characters' "$H/data/watchdog/status.md" "automatic processing refuses oversized recorded context"
+  assert_not_contains "$(cat "$H/data/watchdog/status.md")" 'unapplied council ruling' "an oversized context is excluded from ruling handling"
+  assert_equals 1 "$(ledger_rows decision:cache council refused)" "the oversized decision is recorded as refused"
+  run_wd 10 once >/dev/null 2>&1 || fail "repeated oversized pass failed"
+  assert_equals 1 "$(ledger_rows decision:cache council refused)" "a stable refusal is rate-limited"
+  { printf 'needs-decision [at=%s] [key=cache]: A' "$((BASE - 9000))"; printf '%1999s\n' x; } > "$H/state/t1.status"
+  run_wd 20 once >/dev/null 2>&1 || fail "valid boundary automatic pass failed"
+  assert_grep 'unapplied council ruling' "$H/data/watchdog/status.md" "the valid boundary still recognizes its stored ruling"
+  assert_equals 2 "$(seat_calls)" "refusal and valid automatic replay call no new seats"
+  pass "automatic decisions: context size is checked before either recorded-outcome lookup"
+}
+
 test_council_command_honours_the_dry_run_switch() {
   local out
   make_home $'Captain session\n> ' 'mode=dry-run
@@ -5431,6 +5459,7 @@ fm_test_run \
   test_council_rejects_malformed_or_unknown_header_content \
   test_council_refuses_oversized_context_before_replay \
   test_council_requires_the_seats_field_separator \
+  test_automatic_decisions_refuse_oversized_recorded_context \
   test_council_command_honours_the_dry_run_switch \
   test_council_runs_one_at_a_time_per_decision \
   test_judge_fallback_and_spend_cap \
