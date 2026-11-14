@@ -939,7 +939,7 @@ tests/fm-on.test.sh 18771
 tests/fm-opencode-abs-cwd-rail-live-e2e.test.sh 55
 tests/fm-opencode-primary-live-e2e.test.sh 69
 tests/fm-operational-input.test.sh 2856
-tests/fm-orca-cli-cache.test.sh 18043
+tests/fm-orca-cli-cache.test.sh 32339
 tests/fm-order.test.sh 12265
 tests/fm-parent-channel-scan-exclusion.test.sh 4265
 tests/fm-park.test.sh 2189
