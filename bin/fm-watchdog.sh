@@ -7,6 +7,12 @@
 #                                 One scan and action pass, then rewrite the status file.
 #   scan [--home <path>]          One observation pass; prints each subject and its workers' dialog reads; no action.
 #   judge <purpose> <answer-ere>  Bounded cheap-model call; prompt on stdin; prints the answer.
+#   council --task <id> --key <key> [--home <path>] [--record-file <file>]
+#                                 One blind council on one decision, now. The record is the
+#                                 complete file, else its complete open decision; records over
+#                                 2000 characters are refused. Dry-run never returns an answer. Prints
+#                                 council=<ruled|no-ruling|held|dry-run|refused|busy|failed>
+#                                 answer=<PROCEED x|none> record=<path|none> prior=<0|1> seats=<answers>.
 #   status                        Print the status file.
 #   ack-read                      Record that the status file was read now.
 #   pickup <token>                Run by a restarted session to prove it took over.
@@ -30,6 +36,10 @@
 #   state/night-score/supervisor-gap.tsv  append-only supervisor-gap record of every watched home; docs/watchdog.md owns its rows.
 #   data/watchdog/status.md      the short status file, rewritten atomically after each pass.
 #   data/watchdog/handoffs/, data/watchdog/rulings/  restart handoffs and council rulings.
+#   data/watchdog/no-rulings/    the record of each council that gave no ruling.
+#   state/watchdog/council-locks/  one owner-identity lock per running council.
+# Council locators are Git blob IDs of NUL-separated home/task/key tuples;
+# authenticated legacy filenames remain readable. Hashing uses the code root.
 # A restarted session writes <its home>/state/watchdog/pickups/<token>.
 #   <watched home>/state/watchdog/captain  key=value record of that home's live
 #                                captain, rewritten each pass and by pickup.
@@ -51,6 +61,7 @@ WD=$STATE/watchdog
 OUT=$OWNER_HOME/data/watchdog
 LEDGER=$WD/actions.tsv
 CALLS=$WD/model-calls.tsv
+WD_COUNCIL_MAX_CHARS=2000
 
 # shellcheck source=bin/fm-watchdog-lib.sh
 . "$SCRIPT_DIR/fm-watchdog-lib.sh"
@@ -94,6 +105,20 @@ wd_mode() {
     *) printf 'dry-run\n' ;;
   esac
 }
+
+# The decision path has its own switch: the decision nudge, the council, and the
+# ruling nudge. An unset `decisions` follows `mode`; any value but `act` is a dry run.
+wd_decisions_mode() {
+  case "${WD_FORCE_DRY:-}:$(cfg decisions '')" in
+    1:*) printf 'dry-run\n' ;;
+    *:) wd_mode ;;
+    *:act) printf 'act\n' ;;
+    *) printf 'dry-run\n' ;;
+  esac
+}
+
+# The mode one nudge runs under: the decision path sets WD_NUDGE_MODE for its own.
+wd_nudge_mode() { printf '%s\n' "${WD_NUDGE_MODE:-$(wd_mode)}"; }
 
 # GNU stat's -f writes filesystem data, so select the platform dialect once.
 if [ "$(uname -s)" = Darwin ]; then
@@ -260,7 +285,7 @@ wd_open_decisions() {  # <state> <now>
       [ -n "$key" ] || continue
       at=$(grep -F "[key=$key]" "$f" 2>/dev/null | tail -n 1 | sed -n 's/.*\[at=\([0-9][0-9]*\)\].*/\1/p')
       [ -n "$at" ] || at=$(wd_mtime "$f")
-      printf '%s\t%s\t%s\t%s\t%s\n' "$task" "$key" "$verb" "$((now - at))" "$(printf '%s' "$summary" | tr '\t' ' ' | cut -c1-500)"
+      printf '%s\t%s\t%s\t%s\t%s\n' "$task" "$key" "$verb" "$((now - at))" "$(printf '%s' "$summary" | tr '\t' ' ')"
     done
   done
 }
@@ -605,12 +630,12 @@ wd_nudge() {
     wd_rate_open "$symptom" nudge "$(cfgi nudge-secs 900)" && wd_rec "$(wd_id)" "$symptom" nudge refused "text names a merge, deploy, or release word"
     return 0
   fi
-  if [ "$(wd_mode)" = act ] && [ "$O_COMPOSER" != empty ]; then wd_gap "$symptom held; composer is $O_COMPOSER, so nothing is typed"; fi
+  if [ "$(wd_nudge_mode)" = act ] && [ "$O_COMPOSER" != empty ]; then wd_gap "$symptom held; composer is $O_COMPOSER, so nothing is typed"; fi
   wd_rate_open "$symptom" nudge "$(cfgi nudge-secs 900)" || return 0
   id=$(wd_id)
   if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_rec "$id" "$symptom" nudge refused "endpoint is on do-not-touch"; return 0; fi
   if [ -z "$O_TARGET" ]; then wd_rec "$id" "$symptom" nudge refused "no recorded endpoint"; return 0; fi
-  if [ "$(wd_mode)" != act ]; then wd_rec "$id" "$symptom" nudge dry-run "$body"; return 0; fi
+  if [ "$(wd_nudge_mode)" != act ]; then wd_rec "$id" "$symptom" nudge dry-run "$body"; return 0; fi
   if [ -n "$O_DIALOG" ] || [ "$O_COMPOSER" != empty ]; then
     wd_rec "$id" "$symptom" nudge held "composer is $O_COMPOSER${O_DIALOG:+, dialog $O_DIALOG}; nothing typed"
     return 0
@@ -674,8 +699,12 @@ wd_score_gap() {
 
 # --- cheap model judge ---------------------------------------------------------
 
+# A council sets WD_CALL_MAX_USD and WD_CALL_TIMEOUT for its seats; every other
+# call keeps the judge's own budget and time limit.
 wd_judge_one() {  # <model> <purpose> <answer-ere> <prompt>  -> prints the answer
-  local model=$1 purpose=$2 re=$3 prompt=$4 h m out ans cost='' tin='' tout='' rc=0 spent cap scratch acct pin
+  local model=$1 purpose=$2 re=$3 prompt=$4 h m out ans cost='' tin='' tout='' rc=0 spent cap scratch acct pin secs usd prompt_file
+  secs=${WD_CALL_TIMEOUT:-$(cfgi judge-timeout-secs 120)}
+  usd=${WD_CALL_MAX_USD:-$(cfg judge-call-max-usd 0.05)}
   h=${model%%:*} m=${model#*:}
   spent=$(fm_wd_spent_since "$CALLS" "$(( $(wd_now) - 86400 ))")
   cap=$(cfg daily-max-usd 1.00)
@@ -685,7 +714,11 @@ wd_judge_one() {  # <model> <purpose> <answer-ere> <prompt>  -> prints the answe
   fi
   scratch=$WD/judge-scratch
   mkdir -p "$scratch"
-  prompt=$(printf '%s' "$prompt" | cut -c1-"$(cfgi judge-max-chars 6000)")
+  if [ "$purpose" = council ]; then
+    [ "${#prompt}" -le "$(cfgi judge-max-chars 6000)" ] || return 1
+  else
+    prompt=$(printf '%s' "$prompt" | cut -c1-"$(cfgi judge-max-chars 6000)")
+  fi
   case "$h" in
     claude)
       command -v claude >/dev/null 2>&1 || return 4
@@ -699,23 +732,25 @@ wd_judge_one() {  # <model> <purpose> <answer-ere> <prompt>  -> prints the answe
       fi
       # The timed runner detaches stdin, so the prompt reaches claude through a
       # redirect inside the timed command rather than a pipe into the runner.
-      printf '%s' "$prompt" > "$scratch/prompt.txt"
+      prompt_file=$(mktemp "$scratch/prompt.XXXXXX") || return 1
+      printf '%s' "$prompt" > "$prompt_file" || { rm -f "$prompt_file"; return 1; }
       # shellcheck disable=SC2016  # Expanded by the timed child shell.
       # With no account set, the CLI's own default stays in force: naming the default
       # directory explicitly makes the real CLI report that it is not logged in.
       # An ordinary account means the variable is unset.
       out=$( (cd "$scratch" && { if [ "$acct" = ordinary ]; then unset CLAUDE_CONFIG_DIR; elif [ -n "$acct" ]; then export CLAUDE_CONFIG_DIR="$acct"; fi; } && \
-        fm_run_timed "$(cfgi judge-timeout-secs 120)" bash -c 'f=$1; shift; exec "$@" < "$f"' _ "$scratch/prompt.txt" \
+        fm_run_timed "$secs" bash -c 'f=$1; shift; exec "$@" < "$f"' _ "$prompt_file" \
         claude -p --model "$m" --output-format json --tools "" \
-        --setting-sources "" --strict-mcp-config --no-session-persistence --max-budget-usd "$(cfg judge-call-max-usd 0.05)") 2>/dev/null) || rc=$?
+        --setting-sources "" --strict-mcp-config --no-session-persistence --max-budget-usd "$usd") 2>/dev/null) || rc=$?
+      rm -f "$prompt_file"
       ans=$(printf '%s' "$out" | jq -r '.result // empty' 2>/dev/null)
       cost=$(printf '%s' "$out" | jq -r '.total_cost_usd // empty' 2>/dev/null)
       tin=$(printf '%s' "$out" | jq -r '.usage.input_tokens // empty' 2>/dev/null)
       tout=$(printf '%s' "$out" | jq -r '.usage.output_tokens // empty' 2>/dev/null) ;;
     agy)
       command -v agy >/dev/null 2>&1 || return 4
-      out=$( (cd "$scratch" && fm_run_timed "$(cfgi judge-timeout-secs 120)" agy -p "$prompt" --model "$m" --output-format json \
-        --disable-slash-commands --print-timeout "$(cfgi judge-timeout-secs 120)s") 2>/dev/null) || rc=$?
+      out=$( (cd "$scratch" && fm_run_timed "$secs" agy -p "$prompt" --model "$m" --output-format json \
+        --disable-slash-commands --print-timeout "${secs}s") 2>/dev/null) || rc=$?
       ans=$(printf '%s' "$out" | jq -r '.response // empty' 2>/dev/null)
       tin=$(printf '%s' "$out" | jq -r '.usage.input_tokens // empty' 2>/dev/null)
       tout=$(printf '%s' "$out" | jq -r '.usage.output_tokens // empty' 2>/dev/null)
@@ -747,11 +782,107 @@ wd_judge() {
 
 # --- council -------------------------------------------------------------------
 
-# wd_council <task> <key> <summary>: blind seats; a unanimous PROCEED writes a ruling.
+# 0 when a decision is the owner's: never nudged, put to council, or answered.
+wd_decision_reserved() {  # <task> <key> <summary>
+  case "$2" in captain-hold-*) return 0 ;; esac
+  fm_wd_reserved "$1 $2 $3" || fm_secret_like "$1 $2 $3" ||
+    printf ',%s,' "$(cfg reserved-keys '')" | grep -Fq ",$2,"
+}
+
+wd_council_key() {  # <task> <key>: portable locator; record metadata authenticates identity.
+  local digest
+  digest=$(unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR
+    printf '%s\0%s\0%s' "$O_HOME" "$1" "$2" | git -C "$SCRIPT_DIR" hash-object --stdin) || return 1
+  printf 'council-%s\n' "$digest"
+}
+
+# wd_council_record <task> <key>: the final council record of one decision, as
+# `ruled|no-ruling TAB answer TAB path TAB seats`; nothing when it has none.
+wd_council_record() {
+  local name f kind header answer locator
+  locator=$(wd_council_key "$1" "$2") || return 1
+  for name in "$locator.md" "$O_KEY-$1:$2.md" "$O_KEY-$1-$2.md"; do
+    for f in "$OUT/rulings/$name" "$OUT/no-rulings/$name"; do
+      [ -f "$f" ] || continue
+      case "$f" in "$OUT/rulings/"*) kind=ruled ;; *) kind=no-ruling ;; esac
+      header=$(sed '/^Record:$/,$d' "$f")
+      FM_WD_RECORD_HOME="$O_HOME" FM_WD_RECORD_TASK="$1" FM_WD_RECORD_KEY="$2" FM_WD_RECORD_KIND="$kind" awk '
+        /^[[:space:]]*$/ { if (meta) ended=1; next }
+        ended { bad=1 }
+        /^# Watchdog council ruling$/ {
+          title++; if (meta || ENVIRON["FM_WD_RECORD_KIND"] != "ruled") bad=1; next
+        }
+        /^# Watchdog council record - no ruling$/ {
+          title++; if (meta || ENVIRON["FM_WD_RECORD_KIND"] != "no-ruling") bad=1; next
+        }
+        /^- / { meta=1 }
+        /^- home: / { h++; if (substr($0,9) != ENVIRON["FM_WD_RECORD_HOME"]) bad=1; next }
+        /^- task: / { t++; if (substr($0,9) != ENVIRON["FM_WD_RECORD_TASK"]) bad=1; next }
+        /^- key: / { k++; if (substr($0,8) != ENVIRON["FM_WD_RECORD_KEY"]) bad=1; next }
+        /^- ruling: / { r++; ruling=substr($0,11); next }
+        /^- seats: / { s++; seats=substr($0,10); next }
+        /^- seat models: .+$/ { model_fields++; next }
+        /^- at: .+$/ { at_fields++; next }
+        { bad=1 }
+        END {
+          if (bad || h != 1 || t != 1 || k != 1 || r != 1 || s != 1 || title > 1 || model_fields > 1 || at_fields > 1) exit 1
+          kind=ENVIRON["FM_WD_RECORD_KIND"]
+          if (kind == "ruled") {
+            if (ruling !~ /^PROCEED [A-Za-z0-9]{1,3} \(unanimous, [0-9]+ blind seats\)$/) exit 1
+            answer=ruling; sub(/ \(.*/, "", answer)
+          } else if (ruling !~ /^none \(not unanimous, [0-9]+ blind seats; held for the owner\)$/) exit 1
+          count=ruling; sub(/^.*unanimous, /, "", count); sub(/ blind seats.*$/, "", count); count+=0
+          n=split(seats, votes, / seat/)
+          if (count < 2 || n != count) exit 1
+          agreed=1; answered=0
+          for (i=1; i<=n; i++) {
+            prefix=(i == 1 ? "seat" i "=" : i "=")
+            if (index(votes[i], prefix) != 1) exit 1
+            vote=substr(votes[i],length(prefix)+1)
+            if (vote !~ /^(PROCEED [A-Za-z0-9]{1,3}|HOLD|FAILED)$/) exit 1
+            if (vote != "FAILED") answered++
+            if (i == 1) first=vote; else if (vote != first) agreed=0
+            if (kind == "ruled" && vote != answer) exit 1
+          }
+          if (kind == "no-ruling" && (!answered || (agreed && first ~ /^PROCEED /))) exit 1
+        }
+      ' <<< "$header" || continue
+      answer=$(sed -n 's/^- ruling: \(PROCEED [A-Za-z0-9]*\) (.*/\1/p' <<< "$header")
+      case "$kind:$answer" in ruled:|no-ruling:?*) continue ;; esac
+      printf '%s\t%s\t%s\t%s\n' "$kind" "$answer" "$f" "$(sed -n 's/^- seats://p' <<< "$header")"
+      return 0
+    done
+  done
+}
+
+# wd_council <task> <key> <summary>: blind seats; prints
+# `outcome TAB answer TAB record TAB seats`.
+#   unanimous  every seat gave the same PROCEED; a ruling file is written.
+#   no-ruling  a seat answered and the seats did not all agree; a record is written.
+#   failed     no seat answered or publication failed; a later convening may run.
+#   refused    the seats span fewer than two model families; no seat is called.
+#   busy       another convening of this decision is running.
+# A ruling or no-ruling record is final for its task and key: the caller checks
+# wd_council_record first, and this function never overwrites one.
 wd_council() {
-  local task=$1 key=$2 summary=$3 seats seat i=0 tmp answers='' first='' unanimous=1 ruling prompt
+  local task=$1 key=$2 summary=$3 seats seat i=0 tmp answers='' first='' unanimous=1 answered=0 record prompt a fams lock dir locator
+  local WD_CALL_MAX_USD WD_CALL_TIMEOUT
+  if [ "${#summary}" -gt "$WD_COUNCIL_MAX_CHARS" ]; then
+    printf 'refused\t\t\trecord exceeds %s characters\n' "$WD_COUNCIL_MAX_CHARS"
+    return 0
+  fi
   seats=$(cfg council-seats "$(wd_models | tr '\n' ',')")
-  tmp=$(mktemp -d "$WD/council.XXXXXX") || return 1
+  fams=$(for seat in $(printf '%s' "$seats" | tr ',' ' '); do fm_wd_seat_family "$seat"; done | grep -v '^unknown$' | sort -u | wc -l | tr -d ' ')
+  if [ "$fams" -lt 2 ]; then printf 'refused\t\t\tcouncil seats span fewer than two model families\n'; return 0; fi
+  WD_CALL_MAX_USD=$(cfg council-call-max-usd "$(cfg judge-call-max-usd 0.05)")
+  WD_CALL_TIMEOUT=$(cfgi council-timeout-secs "$(cfgi judge-timeout-secs 120)")
+  # Shared owner-identity locking serializes stale reclamation without expiring live owners.
+  locator=$(wd_council_key "$task" "$key") || return 1
+  lock=$WD/council-locks/$locator
+  mkdir -p "$WD/council-locks"
+  if ! fm_lock_try_acquire "$lock"; then printf 'busy\t\t\t\n'; return 0; fi
+  if [ -n "$(wd_council_record "$task" "$key")" ]; then fm_lock_release "$lock"; printf 'busy\t\t\t\n'; return 0; fi
+  tmp=$(mktemp -d "$WD/council.XXXXXX") || { fm_lock_release "$lock"; return 1; }
   prompt="You are one blind seat on a council for an autonomous software team. The owner is away. A worker parked this decision:
 task: $task
 key: $key
@@ -768,24 +899,124 @@ Reply with exactly one line: PROCEED <label> or HOLD."
   [ "$i" -ge 2 ] || unanimous=0
   for seat in $(seq 1 "$i"); do
     a=$(head -n 1 "$tmp/$seat" 2>/dev/null)
-    answers="$answers seat$seat=${a:-FAILED}"
-    case "$a" in PROCEED*) ;; *) unanimous=0 ;; esac
+    a=${a:-FAILED}
+    answers="$answers seat$seat=$a"
+    case "$a" in
+      PROCEED*) answered=$((answered + 1)) ;;
+      HOLD) answered=$((answered + 1)); unanimous=0 ;;
+      *) unanimous=0 ;;
+    esac
     if [ -z "$first" ]; then first=$a; elif [ "$a" != "$first" ]; then unanimous=0; fi
   done
   rm -rf "$tmp"
-  if [ "$unanimous" = 1 ]; then
-    mkdir -p "$OUT/rulings"
-    ruling=$OUT/rulings/$O_KEY-$task-$key.md
-    {
-      printf '# Watchdog council ruling\n\n'
-      printf -- '- home: %s\n- task: %s\n- key: %s\n- ruling: %s (unanimous, %s blind seats)\n- seats:%s\n- at: %s\n\n' \
-        "$O_HOME" "$task" "$key" "$first" "$i" "$answers" "$(fm_wd_iso "$(wd_now)")"
-      printf 'Record:\n\n%s\n' "$summary"
-    } > "$ruling"
-    printf 'unanimous\t%s\t%s\t%s\n' "$first" "$ruling" "$answers"
+  if [ "$answered" -eq 0 ]; then fm_lock_release "$lock"; printf 'failed\t\t\t%s\n' "$answers"; return 0; fi
+  if [ "$unanimous" = 1 ]; then dir=$OUT/rulings; else dir=$OUT/no-rulings; fi
+  mkdir -p "$dir"
+  record=$dir/$locator.md
+  if {
+    if [ "$unanimous" = 1 ]; then
+      printf '# Watchdog council ruling\n\n' &&
+      printf -- '- home: %s\n- task: %s\n- key: %s\n- ruling: %s (unanimous, %s blind seats)\n' "$O_HOME" "$task" "$key" "$first" "$i"
+    else
+      printf '# Watchdog council record - no ruling\n\n' &&
+      printf -- '- home: %s\n- task: %s\n- key: %s\n- ruling: none (not unanimous, %s blind seats; held for the owner)\n' "$O_HOME" "$task" "$key" "$i"
+    fi &&
+    printf -- '- seats:%s\n- seat models: %s\n- at: %s\n\n' "$answers" "$seats" "$(fm_wd_iso "$(wd_now)")" &&
+    printf 'Record:\n\n%s\n' "$summary"
+  } > "$record.tmp" && [ ! -d "$record" ] && mv "$record.tmp" "$record"; then
+    fm_lock_release "$lock"
   else
-    printf 'no-ruling\t\t\t%s\n' "$answers"
+    rm -f "$record.tmp" 2>/dev/null
+    fm_lock_release "$lock"
+    printf 'failed\t\t\t%s\n' "$answers"
+    return 0
   fi
+  if [ "$unanimous" = 1 ]; then
+    printf 'unanimous\t%s\t%s\t%s\n' "$first" "$record" "$answers"
+  else
+    printf 'no-ruling\t\t%s\t%s\n' "$record" "$answers"
+  fi
+}
+
+# One ledger row for a council result, closing the pending row of the same id.
+wd_council_ledger() {  # <id> <task> <key> <result>
+  case "$4" in
+    unanimous*) wd_rec "$1" "decision:$3" council "done" "$(printf '%s' "$4" | cut -f2,4)" ;;
+    no-ruling*) wd_rec "$1" "decision:$3" council "done" "no ruling;$(printf '%s' "$4" | cut -f4)" ;;
+    refused*) wd_rec "$1" "decision:$3" council refused "$(printf '%s' "$4" | cut -f4)" ;;
+    busy*) wd_rec "$1" "decision:$3" council held "another council on $2 $3 is running" ;;
+    *) wd_rec "$1" "decision:$3" council failed "no final council record;$(printf '%s' "$4" | cut -f4)" ;;
+  esac
+}
+
+wd_council_line() {  # <outcome> <answer> <record> <prior> <seats>
+  printf 'council=%s answer=%s record=%s prior=%s seats=%s\n' "$1" "${2:-none}" "${3:-none}" "$4" "${5:-none}"
+}
+
+# cmd_council: one convening on demand, for a supervisor that needs a ruling now.
+# Prints `council=<outcome> answer=<PROCEED x|none> record=<path|none> prior=<0|1> seats=<answers>`.
+# It types nothing and nudges nobody; the caller applies the result.
+cmd_council() {
+  local task='' key='' home='' file='' summary res id rec
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --task) task=${2:?--task needs a task id}; shift ;;
+      --key) key=${2:?--key needs a decision key}; shift ;;
+      --home) home=$(cd -P -- "${2:?--home needs a path}" && pwd -P) || die "no such home: $2" 2; shift ;;
+      --record-file) file=${2:?--record-file needs a path}; shift ;;
+      *) die "unknown council option: $1" 2 ;;
+    esac
+    shift
+  done
+  [ -n "$task" ] && [ -n "$key" ] || die "usage: council --task <id> --key <key> [--home <path>] [--record-file <file>]" 2
+  case "$task$key" in *[!A-Za-z0-9._-]*) die "task and key may hold only letters, digits, dot, underscore, and dash" 2 ;; esac
+  [ -n "$home" ] || home=$(cd -P -- "$OWNER_HOME" && pwd -P)
+  wd_subjects | awk -F'\t' -v h="$home" '$1 == h { f = 1 } END { exit !f }' || die "not a watched home: $home" 2
+  mkdir -p "$WD"
+  O_HOME=$home O_TAG=$(wd_tag "$home") O_KEY=$(wd_state_key "$home")
+  if [ -n "$file" ]; then
+    [ -f "$file" ] || die "no such record file: $file" 2
+    summary=$(cat "$file") || die "cannot read record file: $file"
+  else
+    summary=$(wd_open_decisions "$home/state" "$(wd_now)" 2>/dev/null | awk -F'\t' -v t="$task" -v k="$key" '$1 == t && $2 == k { print $5; exit }')
+  fi
+  [ -n "$summary" ] || die "no record: $task has no open decision $key and no --record-file was given"
+  id=$(wd_id)
+  if wd_decision_reserved "$task" "$key" "$summary"; then
+    if fm_secret_like "$task $key $summary"; then
+      wd_rec "$id" "decision" council held "an owner-reserved or secret-looking record; no seat saw it"
+    else
+      wd_rec "$id" "decision:$key" council held "$task $key is the owner's; no seat saw it"
+    fi
+    wd_council_line held '' '' 0 ''
+    return 0
+  fi
+  summary=$(printf '%s' "$summary" | tr '\t\r\n' '   ')
+  if [ "${#summary}" -gt "$WD_COUNCIL_MAX_CHARS" ]; then
+    wd_rec "$id" "decision:$key" council refused "record exceeds $WD_COUNCIL_MAX_CHARS characters"
+    wd_council_line refused '' '' 0 ''
+    return 0
+  fi
+  if [ "$(wd_decisions_mode)" != act ]; then
+    wd_rec "$id" "decision:$key" council dry-run "would convene council on $task $key"
+    wd_council_line dry-run '' '' 0 ''
+    return 0
+  fi
+  rec=$(wd_council_record "$task" "$key")
+  if [ -n "$rec" ]; then
+    wd_council_line "$(printf '%s' "$rec" | cut -f1)" "$(printf '%s' "$rec" | cut -f2)" "$(printf '%s' "$rec" | cut -f3)" 1 "$(printf '%s' "$rec" | cut -f4 | sed 's/^ //')"
+    return 0
+  fi
+  wd_rec "$id" "decision:$key" council pending "$task $key (on demand)"
+  res=$(wd_council "$task" "$key" "$summary")
+  wd_council_ledger "$id" "$task" "$key" "$res"
+  case "$res" in
+    unanimous*) wd_council_line ruled "$(printf '%s' "$res" | cut -f2)" "$(printf '%s' "$res" | cut -f3)" 0 "$(printf '%s' "$res" | cut -f4 | sed 's/^ //')" ;;
+    no-ruling*) wd_council_line no-ruling '' "$(printf '%s' "$res" | cut -f3)" 0 "$(printf '%s' "$res" | cut -f4 | sed 's/^ //')" ;;
+    refused*) wd_council_line refused '' '' 0 '' ;;
+    busy*) wd_council_line busy '' '' 0 '' ;;
+    *) wd_council_line failed '' '' 0 "$(printf '%s' "$res" | cut -f4 | sed 's/^ //')" ;;
+  esac
 }
 
 # --- restart -------------------------------------------------------------------
@@ -1214,7 +1445,10 @@ wd_handle_captain_autowait() {
 # had a full window, the oldest decision without a recent council gets one.
 wd_handle_decisions() {
   local st=$O_HOME/state now task key verb age summary secs res aged=0 keys='' id cap ran=0 nudged held=0 held_keys=''
+  local oversized=0 refused_at
+  local rec split=0 split_keys='' ruled=0 ruled_keys='' WD_NUDGE_MODE
 
+  WD_NUDGE_MODE=$(wd_decisions_mode)
   now=$(wd_now)
   secs=$(cfgi decision-secs 1800)
   cap=$(cfgi council-per-pass 1)
@@ -1223,18 +1457,37 @@ wd_handle_decisions() {
   while IFS=$'\t' read -r task key verb age summary; do
     [ -n "$key" ] || continue
     [ "$age" -ge "$secs" ] || continue
-    if case "$key" in captain-hold-*) true ;; *) false ;; esac || fm_wd_reserved "$task $key $summary" ||
-       fm_secret_like "$task $key $summary" ||
-       printf ',%s,' "$(cfg reserved-keys '')" | grep -Fq ",$key,"; then
+    if wd_decision_reserved "$task" "$key" "$summary"; then
       held=$((held + 1))
       [ "$held" -gt 3 ] || fm_secret_like "$task/$key" || held_keys="$held_keys${held_keys:+, }$task/$key"
       continue
     fi
+    if [ "${#summary}" -gt "$WD_COUNCIL_MAX_CHARS" ]; then
+      oversized=$((oversized + 1))
+      refused_at=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" "decision:$key" council '^refused$')
+      if [ -z "$refused_at" ] || [ $((now - refused_at)) -ge "$(cfgi council-secs 21600)" ]; then
+        wd_rec "$(wd_id)" "decision:$key" council refused "record exceeds $WD_COUNCIL_MAX_CHARS characters"
+      fi
+      continue
+    fi
+    rec=$(wd_council_record "$task" "$key")
+    case "$rec" in
+      no-ruling*)
+        split=$((split + 1))
+        [ "$split" -gt 3 ] || split_keys="$split_keys${split_keys:+, }$task/$key"
+        continue ;;
+      ruled*)
+        ruled=$((ruled + 1))
+        [ "$ruled" -gt 3 ] || ruled_keys="$ruled_keys${ruled_keys:+, }$task/$key" ;;
+    esac
     aged=$((aged + 1))
     [ "$aged" -gt 5 ] || keys="$keys${keys:+, }$task/$key"
     printf '%s\t%s\t%s\n' "$task" "$key" "$summary" >> "$WD/.decisions-aged"
   done < "$WD/.decisions"
   [ "$held" -eq 0 ] || wd_gap "$held decisions held for the owner (never touched)${held_keys:+, e.g. $held_keys}"
+  [ "$split" -eq 0 ] || wd_gap "$split decisions held for the owner after a council gave no ruling (records under data/watchdog/no-rulings/), e.g. $split_keys"
+  [ "$ruled" -eq 0 ] || wd_gap "$ruled open decisions have an unapplied council ruling (under data/watchdog/rulings/), e.g. $ruled_keys"
+  [ "$oversized" -eq 0 ] || wd_gap "$oversized decisions refused: record exceeds $WD_COUNCIL_MAX_CHARS characters"
   [ "$aged" -gt 0 ] || return 0
   [ "$O_TURN" = 1 ] && return 0
   nudged=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" decisions nudge '^(pending|dry-run)$')
@@ -1245,17 +1498,25 @@ wd_handle_decisions() {
   [ $((now - nudged)) -ge "$secs" ] || return 0
   while IFS=$'\t' read -r task key summary; do
     [ "$ran" -lt "$cap" ] || break
+    if [ "${#summary}" -gt "$WD_COUNCIL_MAX_CHARS" ]; then
+      wd_gap "council refused: record exceeds $WD_COUNCIL_MAX_CHARS characters"
+      continue
+    fi
+    [ -z "$(wd_council_record "$task" "$key")" ] || continue
     fm_wd_rate_ok "$LEDGER" "$O_HOME" "decision:$key" council "$(cfgi council-secs 21600)" "$now" || continue
     ran=$((ran + 1))
     id=$(wd_id)
-    if [ "$(wd_mode)" != act ]; then wd_rec "$id" "decision:$key" council dry-run "would convene council on $task $key"; continue; fi
+    if [ "$WD_NUDGE_MODE" != act ]; then wd_rec "$id" "decision:$key" council dry-run "would convene council on $task $key"; continue; fi
     wd_rec "$id" "decision:$key" council pending "$task $key"
     res=$(wd_council "$task" "$key" "$summary")
+    wd_council_ledger "$id" "$task" "$key" "$res"
     case "$res" in
       unanimous*)
-        wd_rec "$id" "decision:$key" council "done" "$(printf '%s' "$res" | cut -f2,4)"
         wd_nudge "ruling:$key" "a unanimous blind council ruled $(printf '%s' "$res" | cut -f2) on decision $key from $task. Ruling file: $(printf '%s' "$res" | cut -f3). Apply it with fm-send --resolve-key if it stands, or record why not." ;;
-      *) wd_rec "$id" "decision:$key" council "done" "no ruling;$(printf '%s' "$res" | cut -f4)"; wd_gap "council gave no ruling on $task $key; held" ;;
+      no-ruling*) wd_gap "council gave no ruling on $task $key; held for the owner, record $(printf '%s' "$res" | cut -f3)" ;;
+      refused*) wd_gap "no council on $task $key: $(printf '%s' "$res" | cut -f4); held" ;;
+      busy*) ;;
+      *) wd_gap "council did not publish a final record on $task $key; held" ;;
     esac
   done < "$WD/.decisions-aged"
 }
@@ -1913,7 +2174,7 @@ manager_status() {
   return 1
 }
 
-usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; }
 
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 cmd=${1:-}
@@ -1939,6 +2200,7 @@ case "$cmd" in
     [ "$#" -eq 2 ] || die "usage: judge <purpose> <answer-ere> < prompt" 2
     mkdir -p "$WD"
     wd_judge "$1" "$2" "$(cat)" ;;
+  council) cmd_council "$@" ;;
   status) cat "$OUT/status.md" 2>/dev/null || die "no status file yet" ;;
   ack-read) mkdir -p "$WD" && wd_now > "$WD/last-read" ;;
   pickup) cmd_pickup "$@" ;;

@@ -2895,7 +2895,7 @@ fm_wake_append_locked() {
   shift 3
   [ -z "$guard" ] || shift
   case "$kind" in
-    signal|stale|check|heartbeat) ;;
+    signal|stale|check|heartbeat|incident) ;;
     *) printf 'fm_wake_append: invalid wake kind: %s\n' "$kind" >&2; return 2 ;;
   esac
 
@@ -2948,7 +2948,7 @@ fm_wake_append_locked() {
 fm_wake_queued_keys() {
   local kind=$1
   case "$kind" in
-    signal|stale|check|heartbeat) ;;
+    signal|stale|check|heartbeat|incident) ;;
     *) printf 'fm_wake_queued_keys: invalid wake kind: %s\n' "$kind" >&2; return 2 ;;
   esac
   fm_wake_queue_lock_acquire || return $?
