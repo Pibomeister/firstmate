@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# fm-context-burn.sh - record the external auto-compact footer and point at a report.
+# fm-context-burn.sh - record the external auto-compact percent, emit the
+# low-context park-then-handoff action, and point at a report.
 #
 # Usage:
 #   fm-context-burn.sh record --turn-type <type> [--percent <0-100>] [--session <id>]
@@ -9,7 +10,9 @@
 # record appends one sample to state/context-burn.tsv:
 #   epoch, session, turn_type, percent
 # The percent is the external "N% until auto-compact" figure, never a model's
-# self-estimate. Pass --percent only for a footer already read from the pane.
+# self-estimate. Pass --percent when the caller already measured that figure:
+# a pane footer, or the derived percent the handoff hook computed for the
+# call that crosses the threshold.
 # Without it, and only inside a genuine primary home, record reads the
 # supervisor pane footer with the parser bin/fm-heartbeat.sh uses, taking the
 # line above the input box when one is drawn. Claude Code
@@ -39,7 +42,41 @@
 # reading of "more than about 30 points". The wake is not repeated for that
 # session until a later sample is no longer such a drop. A session id of
 # "unknown" is recorded and never alerts. An identical session, turn type, and
-# percent within 2 seconds is not written again.
+# percent within 2 seconds is not written again and raises no second alert, but
+# still reaches the auto-park check below, so a duplicate sample from a racing
+# or retried caller never skips the park.
+#
+# LOW-CONTEXT AUTO-PARK. When a recorded sample falls to the handoff
+# threshold or below (the `percent-left` line of config/handoff-trigger,
+# default 15, 0 turns this off; docs/configuration.md "Early handoff trigger"
+# owns that file), record emits the park-then-handoff action exactly once
+# per session: it prints one `park-handoff:` line and queues one check wake
+# (key context-autopark-<session>) telling the session to park every open
+# captain question as a held backlog item through bin/fm-captain-hold.sh,
+# without asking the captain or waiting for an answer, and then start the
+# early handoff path (docs/configuration.md "Early handoff trigger"). This
+# script never decides what is a captain question - the session inventories
+# its own open questions, the way the captain-hold lifecycle requires - it
+# only emits the action at the threshold. A session id of "unknown" never
+# emits it. The per-session
+# marker state/.context-autopark.<session> records `pending <pid> <epoch>`
+# while the wake is being queued and `done <epoch>` once it is queued, so a
+# session that recovers context and drops again does not emit it twice.
+# The next sample reclaims a pending claim when its pid is dead or its epoch
+# is more than 300 seconds old, and it reclaims an empty or malformed claim,
+# instead of suppressing the action for the rest of the session. The claim
+# lifecycle runs under the wake-queue lock,
+# and reclaiming first looks for an already-published wake, both in the
+# queue and in the wake ledger (state/wake-ledger.tsv, which records the key
+# of every row an acknowledgement removes), so interruption at any point in
+# publication neither loses nor duplicates the action, even after the wake
+# was consumed. This recorder is the only emitter of the action and the
+# only writer of that marker: the Claude early handoff hook
+# (bin/fm-handoff-trigger.sh) runs this record command itself on the tool
+# call or prompt that crosses the threshold, otherwise only reads the marker,
+# and sends its own handoff instruction only once it shows the action was
+# emitted.
+# Markers older than 30 days are pruned.
 #
 # FM_CONTEXT_BURN_NOW overrides the clock. Under FM_TEST_SEAM=1, pane capture
 # and the primary-home check are skipped unless FM_CONTEXT_BURN_CAPTURE=1.
@@ -284,9 +321,94 @@ clear_alert_marker() { # <safe>
   rm -f "$STATE/.context-burn-alert.$1"
 }
 
+autopark_threshold() {
+  local file="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/handoff-trigger" line key value threshold=15
+  if [ -f "$file" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      key=${line%%=*}
+      value=${line#*=}
+      case "$value" in '' | *[!0-9]*) continue ;; esac
+      case "$key" in
+        percent-left) [ "${#value}" -le 2 ] && threshold=$((10#$value)) ;;
+      esac
+    done < "$file"
+  fi
+  printf '%s\n' "$threshold"
+}
+
+# autopark_published <key>: the wake is still queued, or the wake ledger
+# lists its key among removed rows.
+autopark_published() {
+  awk -F '\t' -v k="$1" '$4 == k { found = 1 } END { exit !found }' "$FM_WAKE_QUEUE" 2>/dev/null && return 0
+  grep -qF "\"$1\"" "$(fm_wake_ledger_path "$STATE")" 2>/dev/null
+}
+
+queue_autopark() { # <session> <safe> <percent>
+  local session=$1 safe=$2 percent=$3 marker key payload claim claim_pid claim_epoch emitted=0
+  marker="$STATE/.context-autopark.$safe"
+  key="context-autopark-$safe"
+  payload="check: context autopark session ${session} at ${percent}% context left: without asking the captain or waiting for an answer, park every open captain question as a held backlog item through bin/fm-captain-hold.sh (hold the work item the question gates, or create one captain-held task per genuine question), then start the early handoff path - write a new handoff with bin/fm-ledger.sh handoff --doc <new handoff file> --note-file <short in-flight note>, which records it with bin/fm-order.sh handoff --doc, and launch the successor with bin/fm-handoff-launch.sh <handoff file> on a Claude primary (a second mate asks its parent to relaunch it instead; any other primary reports that it is ready to restart); until then keep working on everything the parked questions do not gate, and after a verified lock transfer end the turn and retire this session"
+  find "$STATE" -maxdepth 1 -name '.context-autopark.*' -type f -mtime +30 -exec rm -f {} + 2>/dev/null
+  # The whole claim lifecycle - claim check, wake append, completion mark -
+  # runs under the wake-queue lock, the lock bin/fm-wake-lib.sh documents for
+  # committing another durable record atomically with an append. A claim
+  # observed under that lock is therefore finished or orphaned: a live
+  # writer finishes before releasing it, so any `pending` claim still
+  # present whose owner is dead (or older than 300 seconds, which bounds
+  # pid reuse), and any empty or malformed claim left by a writer killed
+  # mid-write, is reclaimed here instead of suppressing the session.
+  # Reclaiming first checks for this session's already-published wake, so a
+  # recorder killed after the append but before the completion mark does not
+  # publish a second one, even once the drain has consumed the first.
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$SCRIPT_DIR/fm-wake-lib.sh"
+  # shellcheck source=bin/fm-wake-ledger-lib.sh
+  . "$SCRIPT_DIR/fm-wake-ledger-lib.sh"
+  fm_wake_queue_lock_acquire || return 0
+  claim=$(cat "$marker" 2>/dev/null || true)
+  case "$claim" in
+    done\ *)
+      fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+      return 0
+      ;;
+    pending\ *)
+      claim_pid=$(printf '%s' "$claim" | awk '{print $2}')
+      claim_epoch=$(printf '%s' "$claim" | awk '{print $3}')
+      case "$claim_epoch" in '' | *[!0-9]*) claim_epoch=0 ;; esac
+      if [ "$NOW" -ge "$claim_epoch" ] && [ $((NOW - claim_epoch)) -le 300 ]; then
+        case "$claim_pid" in
+          '' | *[!0-9]*) ;;
+          *) kill -0 "$claim_pid" 2>/dev/null && { fm_lock_release "$FM_WAKE_QUEUE_LOCK"; return 0; } ;;
+        esac
+      fi
+      ;;
+    '')
+      ;;
+    *[!0-9]*)
+      ;;
+    *)
+      fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+      return 0
+      ;;
+  esac
+  if [ -e "$marker" ] && autopark_published "$key"; then
+    printf 'done %s\n' "$NOW" > "$marker" 2>/dev/null || true
+  elif printf 'pending %s %s\n' "$$" "$NOW" > "$marker" 2>/dev/null \
+    && fm_wake_append_locked check "$key" "$payload"; then
+    printf 'done %s\n' "$NOW" > "$marker" 2>/dev/null || true
+    emitted=1
+  else
+    rm -f "$marker"
+  fi
+  fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+  [ "$emitted" -eq 1 ] || return 0
+  printf 'park-handoff: %s at %s%% context left: park open captain questions via bin/fm-captain-hold.sh then start handoff\n' \
+    "$session" "$percent"
+}
+
 cmd_record() {
   local turn_type='' session='' percent='' payload_file='' payload=''
-  local safe='' last_epoch='' last_session='' last_type='' last_percent=''
+  local safe='' last_epoch='' last_session='' last_type='' last_percent='' duplicate=0
   PAYLOAD_SESSION=
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -382,21 +504,29 @@ EOF
         if [ "$last_session" = "$session" ] && [ "$last_type" = "$turn_type" ] \
           && [ "$last_percent" = "$percent" ] && [ $((NOW - last_epoch)) -le "$DEDUPE" ] \
           && [ $((NOW - last_epoch)) -ge 0 ]; then
-          exit 0
+          duplicate=1
         fi
         ;;
     esac
   fi
 
-  printf '%s\t%s\t%s\t%s\n' "$NOW" "$session" "$turn_type" "$percent" >> "$STATE/context-burn.tsv"
+  [ "$duplicate" -eq 1 ] ||
+    printf '%s\t%s\t%s\t%s\n' "$NOW" "$session" "$turn_type" "$percent" >> "$STATE/context-burn.tsv"
   safe=$(sanitize_id "$session")
   if [ "$session" = unknown ]; then
     exit 0
   fi
-  if alert_for_log "$session"; then
+  if [ "$duplicate" -eq 1 ]; then
+    :
+  elif alert_for_log "$session"; then
     queue_alert "$session" "$safe"
   else
     clear_alert_marker "$safe"
+  fi
+  local autopark_at
+  autopark_at=$(autopark_threshold)
+  if [ "$autopark_at" -gt 0 ] && [ "$percent" -le "$autopark_at" ]; then
+    queue_autopark "$session" "$safe" "$percent"
   fi
 }
 

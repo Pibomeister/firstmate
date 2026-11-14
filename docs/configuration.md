@@ -496,7 +496,12 @@ On Orca, failed panes remain available for diagnosis; on every backend, a failed
 The lock transfers while the predecessor is still alive, so the handoff does not wait for an external exit.
 The successor confirms the handoff sha256 and stops on a mismatch.
 A second mate never launches its own successor: it appends one relaunch request to its parent channel and stops.
-It fires at most once per context cycle: a session that auto-compacts anyway is told again before its next auto-compact.
+It fires at most once per session, and only after the low-context auto-park below has emitted the session's park-then-handoff action.
+The instruction says that action is queued for this session but not yet done, and tells the session to drain the wake queue now and act on the context-autopark check wake, parking every open captain question, before writing the handoff.
+The hook never repeats the park procedure and never names `bin/fm-captain-hold.sh`.
+When a tool call, prompt, or stop finds context left at or below the threshold before that action was emitted, the hook runs the recorder below itself with that call's measurement, so the park wake is queued by the call that crosses the threshold rather than left to a later call or to the turn-end recorder that runs beside the hook.
+The recorder stays the only writer of the action's per-session record; until that record shows the action was emitted, the hook stays silent and arms nothing.
+From then on, whenever the hook sees context left at or below the threshold, and on every stop of that session, it arms the successor gate below for the current context cycle, including after a compaction, without sending its instruction again.
 
 The trigger is on by default at 15% context left, wherever it can resolve the auto-compact point.
 The file is local to each home, is not inherited, and is read at every hook call, so a change needs no restart.
@@ -504,6 +509,11 @@ It may hold these lines, each optional:
 
 - `percent-left=<n>` fires at or below `n`% context left (default 15); `0` turns the trigger off.
 - `compact-at-tokens=<n>` is the auto-compact point in tokens, used instead of the point derived from Claude's settings. `bin/fm-context-burn.sh` uses the same point when the pane footer is not shown.
+
+The same `percent-left` threshold also drives the low-context auto-park in `bin/fm-context-burn.sh`, which runs on every harness's turn-end record and also from the Claude hook above on the call that crosses the threshold, and `0` emits nothing.
+When a recorded sample falls to that threshold or below, the recorder emits the park-then-handoff action exactly once per session: one queued check wake tells the session to park every open captain question as a held backlog item through `bin/fm-captain-hold.sh` and then start the handoff or successor path above, without asking the captain or waiting for an answer.
+The recorder never decides what counts as a captain question; the session inventories its own open questions when it acts on the wake.
+`bin/fm-context-burn.sh` is the only emitter of that action and the only writer of its per-session record, with coverage in [`tests/fm-context-burn.test.sh`](../tests/fm-context-burn.test.sh).
 
 Blank lines and lines that start with `#` are ignored, and an unusable value keeps its default.
 
@@ -529,13 +539,14 @@ It never writes the handoff, compacts, or restarts the session.
 The same hook enforces the captain-order restart gate at each Stop of a session that is handing off: the trigger fired in this context cycle, or the session ran `bin/fm-order.sh handoff --doc` (stow, a restart, or `percent-left=0`).
 It blocks such a stop once per turn while the recorded handoff document omits an open captain order, and it never gates an ordinary stop.
 A primary session the trigger fired on is also blocked once per turn until `state/.handoff-successor` is newer than the firing and records a successor whose acknowledgement, process instance, and lock ownership `bin/fm-handoff-lib.sh` validates, so that handoff turn cannot end on ready to restart without a verified transfer; a live pid alone does not clear it; a second mate's stop is not gated this way, because its parent owns the relaunch.
+That block says the park-then-handoff action is queued for this session but not yet done, and tells the session to drain the wake queue and act on the context-autopark check wake before writing the handoff.
 The handoff record belongs to the session that wrote it, so another session's stop in the same home is never gated by it.
 A caller outside any harness session, such as a restarting leash or sender, reads the record as the captain's, so its `bin/fm-order.sh gate` check clears when the captain's handoff lists every open order.
 The gate has limits: it runs only for a Claude primary, so a non-Claude primary, or a home with no resolvable auto-compact window that never runs `handoff --doc`, is not gated.
 Open orders there stay durable and appear in the next session's digest.
 A new context (startup, resume, clear, or compact) clears the recorded handoff, so the gate never reads a document written before that context opened.
 `bin/fm-order.sh` owns the captain-order gate.
-`bin/fm-handoff-trigger.sh` owns the measurement, the once-per-cycle record, and the successor gate, with coverage in [`tests/fm-handoff-trigger.test.sh`](../tests/fm-handoff-trigger.test.sh); `bin/fm-handoff-launch.sh` owns the successor launch, with coverage in [`tests/fm-handoff-launch.test.sh`](../tests/fm-handoff-launch.test.sh); [runtime-backends verification](verification/runtime-backends.md#claude-early-handoff-trigger) records the Claude Code evidence.
+`bin/fm-handoff-trigger.sh` owns the measurement, the once-per-session firing, and the successor gate, with coverage in [`tests/fm-handoff-trigger.test.sh`](../tests/fm-handoff-trigger.test.sh); `bin/fm-handoff-launch.sh` owns the successor launch, with coverage in [`tests/fm-handoff-launch.test.sh`](../tests/fm-handoff-launch.test.sh); [runtime-backends verification](verification/runtime-backends.md#claude-early-handoff-trigger) records the Claude Code evidence.
 
 ## Context reading (config/context-reading)
 

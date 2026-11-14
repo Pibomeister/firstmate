@@ -193,7 +193,17 @@ test_unknown_session_and_dedupe() {
   assert_equals 2 "$(row_count "$home")" "sample after two seconds was dropped"
   record_at "$home" 5003 wake s1 40 >/dev/null
   assert_equals 3 "$(row_count "$home")" "a different turn type was treated as a duplicate"
-  pass "unknown sessions record without alerting, and identical samples dedupe"
+
+  # A caller that wrote its low sample and died before the park, retried
+  # within two seconds: the duplicate is not written again, but it parks.
+  home=$TMP_ROOT/dedupe-park
+  prepare "$home"
+  printf '6000\ts1\tcaptain\t12\n' > "$home/state/context-burn.tsv"
+  out=$(record_at "$home" 6001 captain s1 12)
+  assert_equals 1 "$(row_count "$home")" "a duplicate low sample was written again"
+  assert_contains "$out" "park-handoff: s1 at 12% context left" "a duplicate low sample skipped the park"
+  assert_equals 1 "$(wake_count "$home" context-autopark-s1)" "park wake from a duplicate low sample"
+  pass "unknown sessions record without alerting, identical samples dedupe, and a duplicate low sample still parks"
 }
 
 test_auto_turn_type_from_tailed_transcript() {
@@ -330,6 +340,145 @@ test_auto_turn_type_from_tailed_transcript() {
   pass "auto turn type comes from the tailed transcript"
 }
 
+test_autopark_at_low_context_once_per_session() {
+  local home=$TMP_ROOT/autopark out
+  prepare "$home"
+  out=$(record_at "$home" 70000 captain s1 16)
+  assert_not_contains "$out" "park-handoff:" "16% left triggered auto-park"
+  assert_equals 0 "$(wake_count "$home" context-autopark-s1)" "wake at 16% left"
+  [ ! -e "$home/state/.context-autopark.s1" ] || fail "marker at 16% left"
+
+  out=$(record_at "$home" 70100 captain s1 15)
+  assert_contains "$out" "park-handoff: s1 at 15% context left" "15% left did not emit park-then-handoff"
+  assert_equals 1 "$(wake_count "$home" context-autopark-s1)" "wake missing at 15% left"
+  [ -e "$home/state/.context-autopark.s1" ] || fail "marker missing at 15% left"
+  assert_contains "$(cat "$home/state/.wake-queue")" "bin/fm-captain-hold.sh" "wake does not name the captain-hold park"
+  assert_contains "$(cat "$home/state/.wake-queue")" "bin/fm-handoff-launch.sh" "wake does not name the handoff launch"
+  assert_contains "$(cat "$home/state/.wake-queue")" "without asking" "wake does not say to continue without asking"
+  assert_contains "$(cat "$home/state/.wake-queue")" "bin/fm-ledger.sh handoff --doc <new handoff file>" "wake does not write the handoff from the ledger"
+  assert_not_contains "$(cat "$home/state/.wake-queue")" "record the handoff with bin/fm-order.sh" "wake pre-creates the handoff the ledger must write"
+  assert_contains "$(cat "$home/state/.wake-queue")" "after a verified lock transfer end the turn and retire this session" "wake keeps a predecessor working after the lock transfer"
+
+  out=$(record_at "$home" 70200 captain s1 4)
+  assert_not_contains "$out" "park-handoff:" "the same session emitted park-then-handoff twice"
+  assert_equals 1 "$(wake_count "$home" context-autopark-s1)" "the same session queued park-then-handoff twice"
+
+  out=$(record_at "$home" 70300 captain s2 15)
+  assert_contains "$out" "park-handoff: s2 at 15% context left" "a new session did not emit park-then-handoff"
+  assert_equals 1 "$(wake_count "$home" context-autopark-s2)" "wake missing for the new session"
+
+  out=$(record_at "$home" 70400 captain unknown 5)
+  assert_not_contains "$out" "park-handoff:" "an unknown session emitted park-then-handoff"
+  assert_equals 0 "$(wake_count "$home" context-autopark-unknown)" "wake for an unknown session"
+
+  home=$TMP_ROOT/autopark-off
+  prepare "$home"
+  mkdir -p "$home/config"
+  printf 'percent-left=0\n' > "$home/config/handoff-trigger"
+  out=$(record_at "$home" 70500 captain s1 5)
+  assert_not_contains "$out" "park-handoff:" "percent-left=0 did not turn auto-park off"
+  assert_equals 0 "$(wake_count "$home" context-autopark-s1)" "wake with auto-park off"
+  pass "auto-park: silent at 16% left, park-then-handoff once per session at 15% and below"
+}
+
+test_autopark_recovers_from_interrupted_publication() {
+  local home=$TMP_ROOT/autopark-crash out sleeper
+  prepare "$home"
+  # A claim left by a recorder that died before the wake was queued (dead
+  # pid) must be reclaimed, not suppress the action for the whole session.
+  printf 'pending 999999 70000\n' > "$home/state/.context-autopark.s1"
+  out=$(record_at "$home" 71000 captain s1 15)
+  assert_contains "$out" "park-handoff: s1 at 15% context left" "a dead pending claim suppressed the action"
+  assert_equals 1 "$(wake_count "$home" context-autopark-s1)" "wake after reclaiming a dead claim"
+  assert_contains "$(cat "$home/state/.context-autopark.s1")" "done" "marker was not completed after the wake"
+  out=$(record_at "$home" 71100 captain s1 9)
+  assert_not_contains "$out" "park-handoff:" "a reclaimed claim emitted twice"
+  assert_equals 1 "$(wake_count "$home" context-autopark-s1)" "second wake after reclaim"
+
+  # An empty marker (a recorder killed between creating the claim and
+  # writing it) is incomplete publication, not a completed claim.
+  : > "$home/state/.context-autopark.s3"
+  out=$(record_at "$home" 71150 captain s3 12)
+  assert_contains "$out" "park-handoff: s3 at 12% context left" "an empty claim suppressed the action"
+  assert_equals 1 "$(wake_count "$home" context-autopark-s3)" "wake after reclaiming an empty claim"
+
+  # A dead claim whose wake already reached the queue (a recorder killed
+  # after the append, before the completion mark) must not publish twice.
+  printf 'pending 999999 70000\n' > "$home/state/.context-autopark.s1"
+  out=$(record_at "$home" 71160 captain s1 8)
+  assert_not_contains "$out" "park-handoff:" "an already-queued claim was emitted again"
+  assert_equals 1 "$(wake_count "$home" context-autopark-s1)" "a second wake after an interrupted completion"
+  assert_contains "$(cat "$home/state/.context-autopark.s1")" "done" "an already-queued claim was not completed in place"
+
+  # Eight concurrent samples racing to reclaim one dead claim publish once.
+  home=$TMP_ROOT/autopark-race
+  prepare "$home"
+  printf 'pending 999999 70000\n' > "$home/state/.context-autopark.s1"
+  local i
+  for i in 1 2 3 4 5 6 7 8; do
+    record_at "$home" 71300 captain s1 10 > "$home/race.$i" &
+  done
+  wait
+  assert_equals 1 "$(wake_count "$home" context-autopark-s1)" "concurrent reclaim of a dead claim published more than one wake"
+
+  home=$TMP_ROOT/autopark-crash
+  # A claim held by a live recorder still suppresses a concurrent sample.
+  sleep 30 &
+  sleeper=$!
+  printf 'pending %s 71200\n' "$sleeper" > "$home/state/.context-autopark.s2"
+  out=$(record_at "$home" 71200 captain s2 10)
+  kill "$sleeper" 2>/dev/null; wait "$sleeper" 2>/dev/null
+  assert_not_contains "$out" "park-handoff:" "a live pending claim did not suppress a concurrent sample"
+  assert_equals 0 "$(wake_count "$home" context-autopark-s2)" "wake from a concurrent sample"
+
+  # Context recovering and dropping again does not emit a second time.
+  home=$TMP_ROOT/autopark-recover
+  prepare "$home"
+  out=$(record_at "$home" 72000 captain s1 15)
+  assert_contains "$out" "park-handoff:" "first drop did not emit"
+  record_at "$home" 72100 captain s1 90 >/dev/null
+  out=$(record_at "$home" 72200 captain s1 10)
+  assert_not_contains "$out" "park-handoff:" "a session that recovered and dropped again emitted twice"
+  assert_equals 1 "$(wake_count "$home" context-autopark-s1)" "wake after recovery and second drop"
+
+  # A configured non-default threshold moves the boundary.
+  home=$TMP_ROOT/autopark-20
+  prepare "$home"
+  mkdir -p "$home/config"
+  printf 'percent-left=20\n' > "$home/config/handoff-trigger"
+  out=$(record_at "$home" 73000 captain s1 21)
+  assert_not_contains "$out" "park-handoff:" "21% left triggered a percent-left=20 auto-park"
+  out=$(record_at "$home" 73100 captain s1 20)
+  assert_contains "$out" "park-handoff: s1 at 20% context left" "20% left did not trigger a percent-left=20 auto-park"
+  pass "auto-park reclaims a dead claim, respects a live one, stays once per session, and honors a configured threshold"
+}
+
+# A recorder killed after its append but before its completion mark leaves a
+# dead pending claim. Once the drain has acknowledged (and so deleted) that
+# wake, the queue no longer shows it; the wake ledger still does, so the
+# next sample must not publish the action again.
+test_autopark_consumed_wake_is_not_republished() {
+  local home=$TMP_ROOT/autopark-acked out ack
+  prepare "$home"
+  out=$(record_at "$home" 74000 captain s1 12)
+  assert_contains "$out" "park-handoff: s1 at 12% context left" "first sample did not emit"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$ROOT/bin/fm-wake-drain.sh" > "$home/drain.out" 2> "$home/drain.err" || fail "drain failed: $(cat "$home/drain.err")"
+  ack=$(sed -n 's/^WAKE_ACK_REQUIRED: .*run bin\/fm-wake-drain\.sh //p' "$home/drain.err")
+  [ -n "$ack" ] || fail "drain printed no acknowledgement command: $(cat "$home/drain.err")"
+  # shellcheck disable=SC2086
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$ROOT/bin/fm-wake-drain.sh" $ack > /dev/null 2>&1 || fail "acknowledgement failed"
+  assert_equals 0 "$(wake_count "$home" context-autopark-s1)" "the acknowledged wake is still queued"
+
+  printf 'pending 999999 74000\n' > "$home/state/.context-autopark.s1"
+  out=$(record_at "$home" 74100 captain s1 9)
+  assert_not_contains "$out" "park-handoff:" "a consumed wake was emitted again after an interrupted completion"
+  assert_equals 0 "$(wake_count "$home" context-autopark-s1)" "a consumed wake was queued again after an interrupted completion"
+  assert_contains "$(cat "$home/state/.context-autopark.s1")" "done" "the interrupted claim was not completed in place"
+  pass "auto-park never republishes a wake the drain already consumed"
+}
+
 test_report_line() {
   local home=$TMP_ROOT/report out status sum
   prepare "$home"
@@ -410,6 +559,9 @@ fm_test_run \
   test_drop_window_and_freshness \
   test_alert_once_then_again_after_recovery \
   test_unknown_session_and_dedupe \
+  test_autopark_at_low_context_once_per_session \
+  test_autopark_recovers_from_interrupted_publication \
+  test_autopark_consumed_wake_is_not_republished \
   test_auto_turn_type_from_tailed_transcript \
   test_report_line \
   test_pane_footer_above_statusline \

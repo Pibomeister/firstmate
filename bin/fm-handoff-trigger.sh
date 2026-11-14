@@ -3,15 +3,18 @@
 #
 # Registered in tracked .claude/settings.json as a PostToolUse, a
 # UserPromptSubmit, and a Stop command hook. When the session's context left before
-# auto-compact falls to the configured percentage (default 15), the session
-# receives ONE instruction, as hook additionalContext, to write its handoff
-# from the mission ledger (bin/fm-ledger.sh handoff) before auto-compact, hand
-# off to a live successor it launches with bin/fm-handoff-launch.sh (a second
-# mate asks its parent to relaunch it instead), and report that it is ready to
-# restart. It fires
-# at most once per context cycle, so a session that keeps working past the
-# threshold is not nagged again, and a session that auto-compacts anyway is told
-# again before its next auto-compact.
+# auto-compact falls to the configured percentage (default 15), and the
+# turn-end recorder has emitted the session's park-then-handoff action (the
+# hook runs it on the crossing call; see PARK FIRST below), the session
+# receives ONE instruction, as hook additionalContext. That instruction says
+# the action is queued but not yet done, and tells the session to drain the
+# wake queue and act on the context-autopark check wake before it writes its
+# handoff from the mission ledger (bin/fm-ledger.sh handoff) before
+# auto-compact, then hand off to a live successor it launches with
+# bin/fm-handoff-launch.sh (a second mate asks its parent to relaunch it
+# instead) and report that it is ready to restart. It fires at most once per
+# session (see ONCE PER SESSION below), so a session that keeps working past
+# the threshold, or auto-compacts anyway, is not told again.
 #
 # CONTEXT LEFT. Claude Code does not hand hooks its own "% until auto-compact"
 # figure, and the status line's context_window.remaining_percentage measures
@@ -69,14 +72,35 @@
 # Cursor load this Claude settings file too; Grok is excluded by the settings
 # entry and Cursor by its payload marker, because the trigger is Claude-only.
 #
-# ONCE PER CONTEXT CYCLE. A cycle is one session id plus the count of compact
-# boundary records in its transcript, so a compaction re-arms the trigger. The
-# first firing in a cycle creates state/.handoff-trigger.<session-id>.<count>
-# with an exclusive create, so concurrent hook calls from parallel tool calls
-# still fire once. A firing also removes markers older than 30 days.
+# PARK FIRST. bin/fm-context-burn.sh's turn-end recorder is the single
+# emitter of the low-context park-then-handoff action and the only writer of
+# its per-session claim state/.context-autopark.<session>; this hook only
+# reads that claim. At or below the threshold with no done claim, the hook
+# runs the recorder itself with its payload and measured percent, so the
+# turn that crosses the threshold queues the park wake at once, then re-reads
+# the claim. Until it reads `done` (a live recorder still publishing, or the
+# recorder failed), the hook stays silent and arms nothing, so the handoff
+# instruction never starts before that wake is queued. Once it reads `done`,
+# the instruction says the action is queued but not yet done and tells the
+# session to drain the wake queue and act on the context-autopark check wake
+# before writing the handoff. The hook does not repeat the park procedure.
 #
-# RESTART GATE (Stop). A session is handing off once the trigger has fired in
-# its current context cycle, or once it ran `bin/fm-order.sh handoff --doc`
+# ONCE PER SESSION. At or below the threshold, once the park claim is done,
+# the hook arms the cycle marker state/.handoff-trigger.<session-id>.<count>
+# (a cycle is one session id plus the count of compact boundary records in
+# its transcript, so a compaction arms a new one; the restart gate below
+# reads it), with an exclusive create so concurrent hook calls from parallel
+# tool calls arm it once. It sends the instruction only when that arming is
+# the session's first, so a session that auto-compacts anyway keeps its
+# successor gate armed without being told again. Arming also removes markers
+# older than 30 days.
+#
+# RESTART GATE (Stop). A Stop that finds context left at or below the
+# threshold before the park claim is done runs the recorder itself, as the
+# crossing call above does. Once this session's park claim is done, each Stop
+# arms the current cycle's marker, so a compaction between the crossing and
+# the stop does not drop the successor gate. A session is
+# handing off once the trigger has fired in its current context cycle, or once it ran `bin/fm-order.sh handoff --doc`
 # (stow, a restart, or a home with percent-left=0). On each Stop of a session
 # handing off, the hook runs `bin/fm-order.sh gate`; when the recorded handoff
 # document does not name every open captain order it blocks that stop (exit 2,
@@ -177,6 +201,28 @@ if [ -n "$SESSION_ID" ] && [ -n "$TRANSCRIPT" ]; then
     *) MARKER="$STATE/.handoff-trigger.$(printf '%s' "$SESSION_ID" | tr -c 'A-Za-z0-9_-' '_').$BOUNDARIES" ;;
   esac
 fi
+# The recorder's per-session park-then-handoff claim (PARK FIRST above); read only.
+AUTOPARK=
+[ -z "$SESSION_ID" ] || AUTOPARK="$STATE/.context-autopark.$(printf '%s' "$SESSION_ID" | tr -c 'A-Za-z0-9_' '_')"
+autopark_done() {
+  [ -n "$AUTOPARK" ] || return 1
+  case "$(cat "$AUTOPARK" 2>/dev/null)" in
+    done\ *) return 0 ;;
+  esac
+  return 1
+}
+PARK_PENDING='The park-then-handoff action is queued for this session but not yet done. Drain the wake queue now and act on the context-autopark check wake (park every open captain question) before writing the handoff.'
+# shellcheck source=bin/fm-compact-point-lib.sh
+. "$SCRIPT_DIR/fm-compact-point-lib.sh"
+# shellcheck source=bin/fm-warm-compact-lib.sh
+. "$SCRIPT_DIR/fm-warm-compact-lib.sh"
+# record_crossing: hand this call's payload and measured LEFT to the recorder,
+# the park claim's only writer, so the park wake is queued in this call.
+record_crossing() {
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+    "$SCRIPT_DIR/fm-context-burn.sh" record --turn-type auto --session "$SESSION_ID" --percent "$LEFT" \
+    <<<"$PAYLOAD" >/dev/null 2>&1 || true
+}
 if [ "$EVENT" = Stop ]; then
   # Shared quota/park policy also covers this parallel Stop writer.
   # shellcheck source=bin/fm-stop-policy-lib.sh
@@ -185,6 +231,29 @@ if [ "$EVENT" = Stop ]; then
   # trigger fired in this cycle, or this session recorded a handoff document
   # (bin/fm-order.sh handing-off), which also covers percent-left=0. Another
   # session's handoff record in the same home never gates this stop.
+  # A turn whose final reply is the first to reach the threshold has no
+  # later tool call or prompt, and the turn-end recorder registered beside
+  # this hook may still be running, so this stop measures and records the
+  # crossing itself rather than racing it.
+  # A session whose park-then-handoff action was emitted owes a successor in
+  # every context cycle, so this stop then arms the current cycle's marker:
+  # the stop that crossed the threshold, or one after a compaction, cannot
+  # end before the successor gate passes.
+  if [ "$PERCENT" -gt 0 ] && [ -n "$MARKER" ] && ! autopark_done; then
+    COMPACT_AT=$(fm_compact_at_tokens "$TRANSCRIPT" "$CONFIG/handoff-trigger") || COMPACT_AT=
+    TOKENS=
+    [ -z "$COMPACT_AT" ] || TOKENS=$(fm_warm_compact_context_tokens "$TRANSCRIPT") || TOKENS=
+    case "$TOKENS" in
+      '' | *[!0-9]*) ;;
+      *)
+        LEFT=$(fm_compact_left_percent "$TOKENS" "$COMPACT_AT")
+        [ "$LEFT" -gt "$PERCENT" ] || record_crossing
+        ;;
+    esac
+  fi
+  if [ "$PERCENT" -gt 0 ] && [ -n "$MARKER" ] && autopark_done; then
+    ( set -o noclobber; printf '%s stop\n' "$(date +%s)" > "$MARKER" ) 2>/dev/null || true
+  fi
   { [ -n "$MARKER" ] && [ -e "$MARKER" ]; } ||
     FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" handing-off 2>/dev/null || exit 0
   [ "$(printf '%s' "$PAYLOAD" | jq -r '.stop_hook_active // false' 2>/dev/null)" != true ] || exit 0
@@ -208,14 +277,12 @@ if [ "$EVENT" = Stop ]; then
     . "$SCRIPT_DIR/fm-handoff-lib.sh"
     if [ "$MARKER" -nt "$LAUNCH" ] || ! fm_handoff_completed "$LAUNCH"; then
       fm_stop_policy_allows_stop "$PAYLOAD" charge && exit 0
-      printf '%s\n' 'Firstmate restart gate: no verified successor acknowledgement and lock transfer is recorded in state/.handoff-successor. Run bin/fm-handoff-launch.sh <handoff document path>. A live PID alone does not clear this gate. The successor confirms the handoff sha256 and stops on a mismatch. The lock transfers while this session is still alive, so do not wait for an external exit.' >&2
+      printf '%s\n' "Firstmate restart gate: this session reached the low-context threshold, and no verified successor acknowledgement and lock transfer is recorded in state/.handoff-successor. ${PARK_PENDING} Write it with bin/fm-ledger.sh handoff --doc <new handoff file>, which records it with bin/fm-order.sh handoff --doc, then run bin/fm-handoff-launch.sh <handoff document path>. A live PID alone does not clear this gate. The successor confirms the handoff sha256 and stops on a mismatch. The lock transfers while this session is still alive, so do not wait for an external exit." >&2
       exit 2
     fi
   fi
   exit 0
 fi
-# shellcheck source=bin/fm-compact-point-lib.sh
-. "$SCRIPT_DIR/fm-compact-point-lib.sh"
 COMPACT_AT=
 [ -z "$SESSION_ID" ] || [ -z "$TRANSCRIPT" ] ||
   COMPACT_AT=$(fm_compact_at_tokens "$TRANSCRIPT" "$CONFIG/handoff-trigger") || COMPACT_AT=
@@ -226,25 +293,39 @@ publish_compact_point
 [ -e "$MARKER" ] && exit 0
 [ -n "$COMPACT_AT" ] || exit 0
 
-# shellcheck source=bin/fm-warm-compact-lib.sh
-. "$SCRIPT_DIR/fm-warm-compact-lib.sh"
 TOKENS=$(fm_warm_compact_context_tokens "$TRANSCRIPT") || exit 0
 case "$TOKENS" in '' | *[!0-9]*) exit 0 ;; esac
 
 LEFT=$(fm_compact_left_percent "$TOKENS" "$COMPACT_AT")
 [ "$LEFT" -le "$PERCENT" ] || exit 0
 
-# Claim the one firing for this context cycle; a concurrent call that loses exits.
+# The turn that crosses the threshold must queue the park wake now, not at its
+# turn end: an auto-compact before the next prompt would otherwise leave no
+# low sample to record. The recorder stays the claim's only writer; this hook hands it this
+# payload and measurement, then reads the claim it published.
+if ! autopark_done; then
+  record_crossing
+  autopark_done || exit 0
+fi
+
+# Marker names carry no dot inside the session part, so this glob matches
+# only this session's earlier cycles.
+FIRED_BEFORE=0
+for prior in "${MARKER%.*}".*; do
+  [ -e "$prior" ] && { FIRED_BEFORE=1; break; }
+done
+# Arm this context cycle's gate; a concurrent call that loses exits.
 ( set -o noclobber; printf '%s\n' "$(date +%s) tokens=$TOKENS compact_at=$COMPACT_AT" > "$MARKER" ) 2>/dev/null || exit 0
 find "$STATE" -maxdepth 1 -name '.handoff-trigger.*' -type f -mtime +30 -exec rm -f {} + 2>/dev/null
+[ "$FIRED_BEFORE" -eq 0 ] || exit 0
 
-MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). Write your session handoff now, before auto-compact, from the mission ledger: file every open ask, approved proposal, and captain order that has no backlog item yet as its own item with bin/fm-ledger.sh intake, bring each item's note current, and persist every decision and piece of durable knowledge this session holds (the stow skill covers this). Then write a new handoff with bin/fm-ledger.sh handoff --doc <new handoff file> --note-file <short note of what is in flight right now>: it adds that note to the ledger plan, never continues an earlier handoff, and records the document with bin/fm-order.sh handoff --doc. If bin/fm-ledger.sh cannot read the backlog, do not skip the handoff: write a new handoff document yourself with the in-flight note, the open work, and bin/fm-dispatch-log.sh open, record it with bin/fm-order.sh handoff --doc <that file>, and say in it that the ledger was unreadable. Then hand off to a successor and report that this session is ready to restart."
+MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). ${PARK_PENDING} Write it before auto-compact, from the mission ledger: file every open ask, approved proposal, and captain order that has no backlog item yet as its own item with bin/fm-ledger.sh intake, bring each item's note current, and persist every decision and piece of durable knowledge this session holds (the stow skill covers this). Then write a new handoff with bin/fm-ledger.sh handoff --doc <new handoff file> --note-file <short note of what is in flight right now>: it adds that note to the ledger plan, never continues an earlier handoff, and records the document with bin/fm-order.sh handoff --doc. If bin/fm-ledger.sh cannot read the backlog, do not skip the handoff: write a new handoff document yourself with the in-flight note, the open work, and bin/fm-dispatch-log.sh open, record it with bin/fm-order.sh handoff --doc <that file>, and say in it that the ledger was unreadable. Then hand off to a successor and report that this session is ready to restart."
 if fm_root_is_secondmate_home "$FM_ROOT"; then
   MESSAGE="$MESSAGE This is a second mate, so never launch your own successor: append to your parent channel that your handoff is written, name the handoff document, and ask the parent to relaunch you, once, then end this turn."
 else
   MESSAGE="$MESSAGE Launch your successor with bin/fm-handoff-launch.sh <handoff file>. Run it with the Bash tool's run_in_background=true, because a foreground tool timeout cannot cover its setup plus the ten-minute protocol deadline, and collect the launcher's exit status and output before reporting readiness. It requires the successor to read the document, write its nonce-bound acknowledgement with bin/fm-handoff-ack.sh, and take the session lock before state/.handoff-successor clears this turn's gate. The successor confirms the handoff sha256 and stops on a mismatch. The lock transfers while this session is still alive, so do not wait for an external exit. The successor then runs bin/fm-session-start.sh. After verified transfer, end this turn and retire the predecessor session. If both attempts fail within ten minutes, the launcher emits handoff_failed; report that failure instead of claiming readiness. A failure with reason=unresolved is not final: a later handoff_ack with reason=lock_transferred for the same nonce means the transfer committed."
 fi
-MESSAGE="$MESSAGE Do not run /compact. This instruction fires once per context cycle."
+MESSAGE="$MESSAGE Do not run /compact. This instruction fires once per session."
 # Durable captain orders are part of the handoff: name each open order and the
 # command that writes them into the handoff document (bin/fm-order.sh owns the
 # list and the restart gate this hook enforces on Stop).
