@@ -663,6 +663,28 @@ The portable regression `tests/fm-kimi-harness.test.sh` replays the recorded pan
 Each case is non-vacuous: dropping the 2.3.0 option pair from the complete-dialog test fails the plain case, making the announcement test never fire fails the root `.mcp.json` case, and making the page test never fire fails the paged case.
 The 2.0.0 wording keeps its existing cases in the same suite.
 
+## Claude idle auto compaction and the resume doorbell
+
+Verified on 2026-11-12 on Linux x86_64 with Claude Code 2.1.322 under Herdr, read-only from a primary session transcript.
+These facts back the compact routing in `bin/fm-sessionstart-run.sh` and `bin/fm-resume-doorbell.sh`.
+
+Command, run over the session transcript:
+
+```text
+grep -F compact_boundary <transcript>.jsonl | jq -c 'select(.subtype == "compact_boundary") | {type, subtype, trigger: .compactMetadata.trigger}'
+```
+
+Output, one line per compaction, the same for an in-turn and an idle automatic compaction:
+
+```text
+{"type":"system","subtype":"compact_boundary","trigger":"auto"}
+```
+
+- After an idle automatic compaction the session ran the `SessionStart` hook with source `compact`, showed "Compacted while idle, before the prompt cache expired", and started no turn by itself.
+- An in-turn and an idle automatic compaction carry the same trigger, so the doorbell tells them apart by a native idle busy state plus a quiet transcript, never by the trigger.
+- Whether the boundary record reaches the transcript before the `SessionStart` hook runs is not verified. If it does not, a manual compaction that follows an automatic one reads the older `auto` boundary and starts the doorbell, which still types only into a provably idle session.
+- No live guard exercises this yet; rerun the command above on a real transcript after an idle compaction to refresh it.
+
 ## Claude workspace trust
 
 Verified 2026-09-03 on Claude Code 2.1.259.

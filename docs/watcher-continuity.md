@@ -408,6 +408,11 @@ Branch acknowledgement retiring the check-row receipts of exactly its granted se
 An attached arm follows verified identity-matched successors and resolves the same way when that chain ends without one.
 It does this because it holds no handle on the watcher's stdout and cannot read the reason line itself.
 
+The watchdog's managed-hold watcher (`fm-watch.sh --managed-hold`, run by `bin/fm-monitor-watchdog.sh`) never ends its cycle on a wake, so an arm attached to it would follow it forever while the beacon stays fresh.
+Such an arm reports main's queued work itself: while the holder is managed-hold, away mode is off, and main has pending wake rows, it prints `check: rearm-resurface` and exits zero, which is how a Claude Stop hook parked on it rewakes the primary.
+The watchdog's own arm (`FM_WATCH_MANAGED_HOLD=1`) never takes this branch.
+A handling successor (`FM_WATCH_PREDECESSOR_ARM_PID` set) reports only rows newer than the highest main row queued when it attached, because its predecessor already delivered those.
+
 ### Terminal-delivery ledger
 
 Before releasing its singleton lock after printing an actionable reason, the watcher records that reason with its PID and process identity in `state/.watch-deliveries.log`.

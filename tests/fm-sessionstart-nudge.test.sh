@@ -274,6 +274,116 @@ test_run_clear_and_compact_reemit() {
   pass "run wrapper: clear and compact re-emit the digest without repeating startup sweeps"
 }
 
+# A Claude SessionStart payload on stdin, as the hook delivers it. The resume
+# doorbell is replaced by a recorder stub through the FM_TEST_SEAM hook, and
+# every terminal variable is scrubbed so nothing can reach a real pane.
+run_hook_claude_payload() {  # <root> <payload> [env...]
+  local root=$1 payload=$2
+  shift 2
+  printf '%s\n' "$payload" | env -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
+    -u TMUX -u TMUX_PANE -u HERDR_PANE_ID -u HERDR_SESSION -u HERDR_ENV -u HERDR_SOCKET_PATH \
+    -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID -u ORCA_TERMINAL_HANDLE \
+    CLAUDECODE=1 FM_TEST_SEAM=1 FM_RESUME_DOORBELL_BIN="$root/doorbell-stub" \
+    FM_RESUME_DOORBELL_TEST_HARNESS=claude "$@" \
+    FM_GATE_REFUSE_BYPASS=0 FM_ROOT_OVERRIDE="$root" FM_HOME="$root" PATH="$RUN_PATH" "$RUN"
+}
+
+make_doorbell_primary() {  # <root> <trigger>
+  local root=$1 trigger=$2
+  make_run_primary "$root"
+  run_hook "$root" --source startup </dev/null >/dev/null
+  assert_present "$root/state/.session-start-complete" "startup did not publish the completion proof"
+  # shellcheck disable=SC2016 # the stub expands $* and FM_STATE_OVERRIDE when it runs
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "$FM_STATE_OVERRIDE/doorbell-ran"\n' > "$root/doorbell-stub"
+  chmod +x "$root/doorbell-stub"
+  printf '{"type":"system","subtype":"compact_boundary","compactMetadata":{"trigger":"%s","preTokens":1}}\n' \
+    "$trigger" > "$root/transcript.jsonl"
+  FM_STATE_OVERRIDE="$root/state" bash -c '. "$1"; fm_wake_append check doorbell-fixture "check: doorbell fixture"' \
+    _ "$ROOT/bin/fm-wake-lib.sh" || fail "could not queue the open-work fixture wake"
+}
+
+doorbell_runs() {  # <root> [expected]: count of stub launches, polling up to 10s for <expected>
+  local i=0 n
+  while :; do
+    n=$({ cat "$1/state/doorbell-ran" 2>/dev/null || true; } | grep -c -- '--source compact')
+    [ "$n" -lt "${2:-1}" ] || break
+    [ "$i" -lt 100 ] || break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  printf '%s\n' "$n"
+}
+
+test_run_compact_records_context_epoch_and_starts_one_doorbell() {
+  local root status=0
+  root="$TMP_ROOT/run-doorbell-auto"
+  make_doorbell_primary "$root" auto
+  run_hook_claude_payload "$root" \
+    "{\"source\":\"compact\",\"transcript_path\":\"$root/transcript.jsonl\"}" >/dev/null || status=$?
+  expect_code 0 "$status" "run wrapper compact with a payload"
+  assert_present "$root/state/.context-epoch" "a completed owner's compact did not record the context epoch"
+  grep -qx 'source=compact' "$root/state/.context-epoch" || fail "context epoch did not record its source"
+  grep -qx "lock_pid=$(sed -n 1p "$root/state/.lock")" "$root/state/.context-epoch" \
+    || fail "context epoch did not record the session-lock pid"
+  [ "$(doorbell_runs "$root")" = 1 ] || fail "an auto compaction with open work must start exactly one doorbell: $(cat "$root/state/doorbell-ran" 2>/dev/null)"
+  # Only the newest boundary decides: a manual one before it does not matter.
+  root="$TMP_ROOT/run-doorbell-manual-then-auto"
+  make_doorbell_primary "$root" manual
+  printf '{"type":"system","subtype":"compact_boundary","compactMetadata":{"trigger":"auto","preTokens":1}}\n' \
+    >> "$root/transcript.jsonl"
+  run_hook_claude_payload "$root" \
+    "{\"source\":\"compact\",\"transcript_path\":\"$root/transcript.jsonl\"}" >/dev/null
+  [ "$(doorbell_runs "$root")" = 1 ] || fail "an auto boundary after a manual one must start one doorbell"
+  grep -qF -- "--transcript $root/transcript.jsonl" "$root/state/doorbell-ran" \
+    || fail "the doorbell must receive the payload's transcript path"
+  pass "run wrapper: an idle Claude auto compaction records the context epoch and starts one resume doorbell"
+}
+
+test_run_doorbell_skips_manual_clear_idle_and_disabled() {
+  local root case_name payload other_pid
+  for case_name in manual auto-then-manual clear no-work disabled codex non-owner away; do
+    root="$TMP_ROOT/run-doorbell-$case_name"
+    if [ "$case_name" = manual ]; then
+      make_doorbell_primary "$root" manual
+    elif [ "$case_name" = auto-then-manual ]; then
+      make_doorbell_primary "$root" auto
+      printf '{"type":"system","subtype":"compact_boundary","compactMetadata":{"trigger":"manual","preTokens":1}}\n' \
+        >> "$root/transcript.jsonl"
+    else
+      make_doorbell_primary "$root" auto
+    fi
+    payload="{\"source\":\"compact\",\"transcript_path\":\"$root/transcript.jsonl\"}"
+    [ "$case_name" != clear ] || payload="{\"source\":\"clear\",\"transcript_path\":\"$root/transcript.jsonl\"}"
+    [ "$case_name" != no-work ] || : > "$root/state/.wake-queue"
+    [ "$case_name" != away ] || : > "$root/state/.afk"
+    if [ "$case_name" = non-owner ]; then
+      # Another live session holds the lock: this open is not the completed owner.
+      sleep 120 >/dev/null 2>&1 &
+      other_pid=$!
+      printf '%s\n' "$other_pid" > "$root/state/.lock"
+      rm -f "$root/state/.context-epoch"
+    fi
+    if [ "$case_name" = disabled ]; then
+      run_hook_claude_payload "$root" "$payload" FM_RESUME_DOORBELL=0 >/dev/null
+    elif [ "$case_name" = codex ]; then
+      run_hook_claude_payload "$root" "$payload" FM_RESUME_DOORBELL_TEST_HARNESS=codex >/dev/null
+    else
+      run_hook_claude_payload "$root" "$payload" >/dev/null
+    fi
+    [ "$(doorbell_runs "$root")" = 0 ] || fail "$case_name: no doorbell may start: $(cat "$root/state/doorbell-ran")"
+    if [ "$case_name" = clear ]; then
+      grep -qx 'source=clear' "$root/state/.context-epoch" 2>/dev/null \
+        || fail "a completed owner's clear must still record the context epoch"
+    fi
+    if [ "$case_name" = non-owner ]; then
+      kill "$other_pid" 2>/dev/null || true
+      wait "$other_pid" 2>/dev/null || true
+      assert_absent "$root/state/.context-epoch" "a compact by a session that does not own the lock must not record a context epoch"
+    fi
+  done
+  pass "run wrapper: a manual compact, a clear, a home with no open work, FM_RESUME_DOORBELL=0, a non-Claude harness, a non-owner, or an away record starts no doorbell"
+}
+
 test_run_rebuild_forwards_source_to_drifted_instruction_refresh() {
   local root="$TMP_ROOT/run-instruction-refresh" baseline compact_out clear_out resume_out
   make_run_primary "$root"
@@ -1137,6 +1247,8 @@ test_namespace_pid1_lock_holder_is_silent
 test_opencode_plugin_delivers_exact_nudge_once
 test_run_startup_runs_the_full_digest
 test_run_clear_and_compact_reemit
+test_run_compact_records_context_epoch_and_starts_one_doorbell
+test_run_doorbell_skips_manual_clear_idle_and_disabled
 test_run_rebuild_forwards_source_to_drifted_instruction_refresh
 test_run_new_context_clears_the_order_handoff_record
 test_run_compact_without_completion_refreshes_before_finishing_startup

@@ -24,6 +24,10 @@
 # no doorbell: its wakes stay queued until the next captain message starts a turn.
 # FM_WATCH_MANAGED_HOLD=1 is the watchdog's foreground-owner variant: its
 # watcher remains this arm's child after a wake, with no detached successor.
+# Any other arm attached to such a managed-hold holder prints
+# `check: rearm-resurface` and exits 0 once main has pending wake rows (outside
+# away mode) instead of following it forever; with FM_WATCH_PREDECESSOR_ARM_PID
+# set it reports only rows newer than the highest one pending at attach.
 # On a harness with a PreToolUse-equivalent hook, bin/fm-arm-pretool-check.sh
 # applies the command-position policy before the command runs; see
 # docs/arm-pretool-check.md for the blessed tree and deny reason codes. It is a
@@ -536,8 +540,16 @@ attached_holder_live() {
 # Only at the stall bound, where the watcher's own re-arm evicts a live holder,
 # does it fail with the typed stalled-holder line so its owner's retry replaces it.
 # A Grok arm can report queued work without ending its tagged holding watcher.
+# The watchdog's managed-hold watcher never ends its cycle on a wake either, so
+# an arm attached to one (the Claude Stop hook's foreground arm, or a supervision
+# host cycle) reports main's queued rows the same way, outside away mode and
+# never as the watchdog's own managed-hold arm. Any pending main row counts,
+# an unsequenced one included, because only a main drain retires it. A handling
+# successor (FM_WATCH_PREDECESSOR_ARM_PID set) reports only rows newer than the
+# highest main row queued when it attached: its predecessor already delivered
+# those, and the next foreground arm still reports any row it skips.
 attach_and_wait() {
-  local attached_pid=$1 age successor actor=main
+  local attached_pid=$1 age successor actor=main managed_floor=0
   trap 'handle_attached_signal HUP 129' HUP
   trap 'handle_attached_signal TERM 143' TERM
   trap 'handle_attached_signal INT 130' INT
@@ -545,6 +557,9 @@ attach_and_wait() {
     # shellcheck source=bin/fm-lease-lib.sh
     . "$SCRIPT_DIR/fm-lease-lib.sh"
     actor=$(fm_lease_actor 2>/dev/null) || actor=main
+  fi
+  if [ -n "${FM_WATCH_PREDECESSOR_ARM_PID:-}" ]; then
+    managed_floor=$(fm_wake_main_max_seq)
   fi
   while :; do
     if arm_ground_gone; then
@@ -561,6 +576,15 @@ attach_and_wait() {
       if [ "${FM_WATCH_GROK_CONTINUITY:-}" = 1 ] && [ ! -e "$STATE/.afk" ] \
         && fm_grok_holding_watcher "$attached_pid" \
         && [ "$(fm_wake_actor_pending_count "$actor")" -gt 0 ]; then
+        cycle_log_append 0 none attached-delivered-wake "attached:$attached_pid"
+        printf '%s\n' 'check: rearm-resurface'
+        return 0
+      fi
+      if [ "${FM_WATCH_MANAGED_HOLD:-}" != 1 ] && [ ! -e "$STATE/.afk" ] \
+        && fm_managed_holding_watcher "$attached_pid" \
+        && [ "$(fm_wake_actor_pending_count main)" -gt 0 ] \
+        && { [ -z "${FM_WATCH_PREDECESSOR_ARM_PID:-}" ] \
+          || [ "$(fm_wake_main_max_seq)" -gt "$managed_floor" ]; }; then
         cycle_log_append 0 none attached-delivered-wake "attached:$attached_pid"
         printf '%s\n' 'check: rearm-resurface'
         return 0

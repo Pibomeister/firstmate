@@ -27,7 +27,11 @@
 #   startup, new            full digest - this process has not taken the helm
 #   clear, compact          `--reemit` digest only when this lock owner recorded
 #                           a completed full startup; otherwise a full digest,
-#                           so a startup killed mid-sweep is finished first
+#                           so a startup killed mid-sweep is finished first.
+#                           A completed owner's clear or compact also writes
+#                           state/.context-epoch, and a Claude auto compact with
+#                           open work starts one detached bin/fm-resume-doorbell.sh
+#                           (FM_RESUME_DOORBELL=0 disables it; docs/sessionstart-nudge.md)
 #   resume, reload, fork    delegate to the nudge wrapper. Prior context is
 #                           restored on these, so re-running is redundant when
 #                           this process still holds the lock (the nudge stays
@@ -137,6 +141,94 @@ if [ -z "$SOURCE" ] && [ ! -t 0 ]; then
   ')
 fi
 
+# The payload's transcript_path, parsed the same quote-split way as `source`.
+TRANSCRIPT=$(printf '%s' "${PAYLOAD:-}" | awk '
+  BEGIN { RS = "\"" }
+  seen == 2 { print; exit }
+  seen == 1 && $0 ~ /^[[:space:]]*:[[:space:]]*$/ { seen = 2; next }
+  seen == 1 { seen = 0 }
+  $0 == "transcript_path" { seen = 1 }
+')
+
+# A compact or clear by the completed lock owner starts a new context. Record
+# it as state/.context-epoch so a Stop-hook claim taken before it stops
+# deferring later Stops (fm_autoarm_claim_open in bin/fm-wake-lib.sh).
+record_context_epoch() {
+  local tmp lock_pid
+  lock_pid=$(sed -n '1p' "$STATE/.lock" 2>/dev/null || true)
+  tmp=$(mktemp "$STATE/.context-epoch.XXXXXX" 2>/dev/null) || return 0
+  if printf 'source=%s\nlock_pid=%s\nat=%s\n' "$SOURCE" "$lock_pid" "$(date +%s)" > "$tmp" \
+    && mv -f "$tmp" "$STATE/.context-epoch"; then
+    return 0
+  fi
+  rm -f "$tmp" 2>/dev/null || true
+  return 0
+}
+
+# Open supervision work the resumed session must pick up: needed supervision,
+# a pending wake row, or an open captain order.
+resume_work_open() {
+  local data order
+  # shellcheck source=bin/fm-supervision-lib.sh
+  . "$SCRIPT_DIR/fm-supervision-lib.sh" || return 1
+  fm_supervision_status "$STATE"
+  [ "$FM_SUP_NEEDED" = true ] && return 0
+  [ "$FM_SUP_QUEUE_PENDING" = true ] && return 0
+  data=${FM_DATA_OVERRIDE:-$FM_HOME/data}
+  for order in "$data"/orders/pending/*.order "$data"/orders/acked/*.order; do
+    [ -e "$order" ] && return 0
+  done
+  return 1
+}
+
+# An idle Claude auto compaction re-emits context but starts no turn, so a
+# primary with open work would sit idle. Start one detached, model-free resume
+# doorbell (bin/fm-resume-doorbell.sh) that types a fixed resume line only into
+# a provably idle session with an empty composer. Only a Claude auto
+# compaction qualifies: a manual /compact (including the supervision host's
+# warm compact) has someone at the keyboard, and other harnesses deliver their
+# own post-compaction message. FM_RESUME_DOORBELL=0 turns it off. Test seam,
+# honoured only with FM_TEST_SEAM=1: FM_RESUME_DOORBELL_BIN replaces the launched
+# program and FM_RESUME_DOORBELL_TEST_HARNESS pins the resolved harness.
+# Prints the doorbell program when this open qualifies, else nothing.
+resume_doorbell_bin() {
+  local bin harness
+  [ "${FM_RESUME_DOORBELL:-1}" != 0 ] || return 0
+  # Under an away or quiet record an unmarked line reads as the captain
+  # returning, and that posture owns supervision anyway.
+  [ ! -e "$STATE/.afk" ] && [ ! -e "$STATE/.afk-contract" ] || return 0
+  [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] && [ -r "$TRANSCRIPT" ] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  [ "$(grep -F 'compact_boundary' "$TRANSCRIPT" 2>/dev/null \
+    | jq -Rr 'fromjson? | select(.type == "system" and .subtype == "compact_boundary") | .compactMetadata.trigger // empty' 2>/dev/null \
+    | tail -n 1)" = auto ] || return 0
+  if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_RESUME_DOORBELL_TEST_HARNESS:-}" ]; then
+    harness=$FM_RESUME_DOORBELL_TEST_HARNESS
+  else
+    harness=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null) || harness=
+  fi
+  [ "$harness" = claude ] || return 0
+  resume_work_open || return 0
+  bin="$SCRIPT_DIR/fm-resume-doorbell.sh"
+  if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_RESUME_DOORBELL_BIN:-}" ]; then
+    bin=$FM_RESUME_DOORBELL_BIN
+  fi
+  [ -x "$bin" ] || return 0
+  printf '%s\n' "$bin"
+}
+
+launch_resume_doorbell() {  # <program>
+  local bin=$1
+  # Detached from the hook: its own process group, stdio away from the hook's
+  # pipes, so the SessionStart hook returns at once.
+  (
+    set -m 2>/dev/null || true
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+      nohup "$bin" --source compact --transcript "$TRANSCRIPT" </dev/null >/dev/null 2>&1 &
+  ) || true
+  return 0
+}
+
 case "$SOURCE" in
   resume|reload|fork)
     if fm_session_lock_owned_by_self "$STATE"; then
@@ -146,7 +238,13 @@ case "$SOURCE" in
     ;;
   clear|compact)
     if session_start_completed; then
+      record_context_epoch
+      # Decide before the re-emit: its wake drain may move the queued rows
+      # that prove open work.
+      DOORBELL_BIN=
+      [ "$SOURCE" != compact ] || DOORBELL_BIN=$(resume_doorbell_bin)
       "$SCRIPT_DIR/fm-session-start.sh" --reemit --source "$SOURCE" || true
+      [ -z "$DOORBELL_BIN" ] || launch_resume_doorbell "$DOORBELL_BIN"
     else
       "$SCRIPT_DIR/fm-session-start.sh" --source "$SOURCE" || true
     fi

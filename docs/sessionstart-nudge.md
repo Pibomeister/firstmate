@@ -74,6 +74,15 @@ A re-emit (`--reemit`) reprints the digest for a process that already has the he
 | `resume`, `reload`, `fork` | Delegate to the nudge wrapper | Prior context is restored, so re-running is redundant when the lock is still ours and an instruction is enough when a new process resumed an old session. |
 | unreadable or unrecognized | Full digest | Taking the helm redundantly is cheap and idempotent; not taking it is the bug this tier exists to fix. |
 
+### Context epoch and resume doorbell
+
+A `clear` or `compact` re-emit by the completed lock owner first writes `state/.context-epoch`, so a Stop-hook claim taken before it stops deferring later Stops ([`docs/turnend-guard.md`](turnend-guard.md)).
+A re-emit adds context but starts no turn, so an idle automatic compaction would otherwise leave a primary with open work sitting idle.
+For a Claude `compact` whose payload transcript shows the newest compact boundary with trigger `auto`, while supervision is needed, a wake row is queued, or a captain order is open, the wrapper starts one detached `bin/fm-resume-doorbell.sh`.
+It never starts on `clear`, a manual `/compact` (including the supervision host's warm compact), another harness, under an away or quiet record, or with `FM_RESUME_DOORBELL=0`.
+The doorbell types one fixed resume line into the terminal recorded in `state/captain-handle`, only when that session is provably idle with an empty composer, confirms the submit, and logs each outcome to `state/.resume-doorbell.log`; its header owns the exact checks and settings.
+Proving idle needs a backend that reports a native busy state, so on a backend without one (tmux, zellij, orca, cmux, paseo) the doorbell stands down and an idle auto compaction there still starts no turn.
+
 ### Change from the previous nudge matcher
 
 This routing deliberately inverts the previous nudge matcher, which fired on `startup|resume|clear` and excluded `compact`.
