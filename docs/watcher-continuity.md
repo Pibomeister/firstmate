@@ -3,7 +3,8 @@
 This document explains how Firstmate keeps the watcher re-armed after a wake, how wakes are ordered and acknowledged, and which tests and live evidence cover that contract.
 Read it when debugging a supervision gap or changing a harness's re-arm path.
 
-Except for Grok's handling successor below, the watcher remains intentionally one-shot: one actionable reason closes one watcher cycle.
+Except for Grok's handling successor below, the watcher remains intentionally one-shot: an actionable wake closes one watcher cycle.
+The [P0 alarm contract](../bin/fm-watch.sh) permits multiple due blocker reasons in that wake.
 Must-work continuity now lives above that process boundary instead of depending on the model remembering a re-arm step.
 In this document, an arm is one run of `bin/fm-watch-arm.sh`, which starts a watcher cycle or attaches to one and returns the cycle's reason.
 

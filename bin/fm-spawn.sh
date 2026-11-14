@@ -303,8 +303,9 @@
 #   caller's explicit intake authority and is not presented as row-verified.
 #   Every explicit priority 0-4 preempts; this is not restricted to P0 or P1.
 #   A prioritized fresh worker is admitted past an exhausted project-capacity
-#   declaration without stopping an existing lane, and priority= is recorded in
-#   task metadata so supervision can apply its priority-specific contract.
+#   declaration or away spend cap without stopping an existing lane, and
+#   priority= is recorded in task metadata so supervision can apply its
+#   priority-specific contract.
 #   Relaunch preserves that recorded priority and refuses --priority overrides.
 #   It never bypasses disk, backend, isolation, task token-budget, or other
 #   safety gates.
@@ -2496,8 +2497,8 @@ fi
 # this same entrypoint), so only a fresh spawn refuses the branch actor
 # (contract: bin/fm-lease-lib.sh; no-op in homes without a branch actor). While
 # the away-posture record exists main is parked and a fresh spawn of queued
-# work relocates to the branch, under the record's spend cap below - the same
-# cap main meets in that posture. Queued means a dispatchable backlog item:
+# work relocates to the branch, under the same admission contract below that
+# main meets in that posture. Queued means a dispatchable backlog item:
 # one already queued at entry, or one the branch filed itself because the
 # captain's away words explicitly call for that work (its backlog note cites
 # the words); filing the item the captain asked for is not inventing work.
