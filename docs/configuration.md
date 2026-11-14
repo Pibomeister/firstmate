@@ -119,6 +119,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Per-task claim ledgers, `state/<id>.claims.jsonl` ([`claim-ledger.md`](claim-ledger.md)).
 - Relay guard pass status, action log, probe streaks, relay logs, and pass lock under `state/relay-guard/` (`bin/fm-relay-guard.sh`).
 - The default host-health beacon log, `state/host-health-beacon.log` (`bin/fm-host-health.sh`).
+- Registered external lanes under `state/external-lanes/`, one record per lane that a launcher outside Firstmate started (`bin/fm-lane-register.sh`).
 - The scheduled terminal-cleanup logs, `state/terminal-reap.log` and `state/terminal-reap.err`, written by the hourly LaunchAgent that `bin/fm-terminal-reap.sh --schedule-plist` prints.
 - The current captain handle, `state/captain-handle`, that order senders resolve at send time, and this session's handoff record, `state/.order-handoff`, that the restart gate reads (`bin/fm-order.sh`), plus the verified successor record, `state/.handoff-successor`, that the handoff trigger's successor gate reads, the pending handoff claim, `state/.handoff-pending`, and the versioned handoff event log, `state/handoff-events.log` (`bin/fm-handoff-lib.sh`), and the auto-compact point, `state/compact-point`, that the handoff trigger publishes for outside context readers (`bin/fm-handoff-trigger.sh`).
 

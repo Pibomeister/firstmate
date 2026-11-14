@@ -44,7 +44,12 @@
 #
 # Owners. The script reads this home's state/*.meta records and, through each
 # home's data/secondmates.md, every local secondmate home's records, read-only.
-# A record's terminal= handle and worktree= path mark a recorded task. Remote
+# A record's terminal= handle and worktree= path mark a recorded task. This
+# home's own state/external-lanes/*.lane records (bin/fm-lane-register.sh)
+# name lanes an external launcher started; a terminal is a registered lane
+# only when its handle is a record's terminal= and Orca roots it in that
+# record's repo= or worktree= path. Other homes' lane records are not read,
+# so a lane is reaped only by the home whose cleanup also forgets it. Remote
 # secondmate homes are not read; their terminals run on another host.
 #
 # Terminal verdicts, first match wins (every keep is final):
@@ -53,6 +58,16 @@
 #   keep task          its handle is a recorded task or secondmate endpoint
 #   keep task-worktree it runs in a recorded task's worktree; that task's own
 #                      cleanup owns it, whether or not its work has landed
+#   (registered lane)  its handle is a registered external lane's and it is
+#                      rooted in that lane's repository or worktree: the
+#                      unowned-task and foreign rules below do not apply, and
+#                      the registration replaces the title proof. With a
+#                      session it is judged by the rules from no-session
+#                      through busy and unreadable, and an idle shell is
+#                      reap external-lane. With no session in Orca's sweep it
+#                      is reap external-lane-exited only when Orca's own
+#                      record shows the pane exited (fm_backend_orca_agent_state
+#                      reads missing), and keep no-session otherwise
 #   keep unowned-task  it runs in a firstmate task worktree (a directory whose
 #                      name starts with fm-, the spawn's own naming), present or
 #                      gone, that no task record of this home or its local
@@ -85,8 +100,8 @@
 #                      not balance is always the captain's
 # "Idle" means the session's process tree holds shells and nothing else
 # (fm_backend_orca_tree_state's dead verdict). This home reaps only idle
-# firstmate sessions in its own roots; every terminal in a task worktree,
-# recorded or not, is kept.
+# firstmate sessions in its own roots and idle or exited registered lanes;
+# every other terminal in a task worktree, recorded or not, is kept.
 #
 # Browser roots are agent-browser daemons and chrome-devtools-axi bridges, each
 # named by the script node runs (the command line's first word, or the second
@@ -123,12 +138,14 @@
 # are re-read (an unreadable record skips the close),
 # fm_backend_orca_agent_state must still report dead or missing, and the fresh
 # title must still name a firstmate session and must not match the helper
-# seed. A terminal Orca still reports
+# seed; a registered lane needs no such title, but must still be registered.
+# A terminal Orca still reports
 # connected must still be rooted at the session pid it was classified with,
 # whichever of those two states was read (a replaced session is skipped), and
 # the last read before the close requires
-# that session, if it still runs, to hold shells and nothing else. Any change or
-# unreadable fact skips the close.
+# that session, if it still runs, to hold shells and nothing else. A lane
+# classified with no session must still be disconnected and still read missing
+# at that last read. Any change or unreadable fact skips the close.
 # Environment: FM_HOME selects the home; FM_ROOT_OVERRIDE as elsewhere.
 # Home roots visible in Orca's local terminal inventory are also read for task
 # records. A concrete lock-sidecar terminal is always kept, including a stale record.
@@ -286,6 +303,17 @@ JS
       [ -z "$worktree" ] || worktree=$(phys "$worktree")
       printf 'rec\t%s\t%s\t%s\t%s\n' "$home" "$id" "$terminal" "$worktree"
     done
+    if [ "$home" = "$(phys "$FM_HOME")" ] && ! absent "$home/state/external-lanes"; then
+      [ -d "$home/state/external-lanes" ] && [ -r "$home/state/external-lanes" ] && [ -x "$home/state/external-lanes" ] || return 1
+      for meta in "$home"/state/external-lanes/*.lane; do
+        [ -f "$meta" ] || continue
+        [ -r "$meta" ] || return 1
+        id=${meta##*/}; id=${id%.lane}
+        terminal=$(fm_meta_get "$meta" terminal)
+        [ -z "$terminal" ] || printf 'lane\t%s\t%s\t%s\t%s\t%s\n' "$home" "$id" "$terminal" \
+          "$(fm_meta_get "$meta" repo)" "$(fm_meta_get "$meta" worktree)"
+      done
+    fi
     reg="$home/data/secondmates.md"
     if absent "$home/data" || absent "$reg"; then continue; fi
     [ -f "$reg" ] && [ -r "$reg" ] || return 1
@@ -322,8 +350,9 @@ read_inventory() {
 }
 
 # classify_node <mode>: the JSON and table joins, in one place. Mode terminals
-# prints `handle prelim pid path title`; prelim is a final keep class or
-# `candidate`, and every candidate is in a home root. Mode browsers prints `pid verdict class cwd descendants detail`.
+# prints `handle prelim pid path title`; prelim is a final keep class,
+# `candidate` for a terminal in a home root, or `external` for a registered
+# external lane, whose pid is empty when Orca's sweep names no session for it. Mode browsers prints `pid verdict class cwd descendants detail`.
 classify_node() {
   node - "$1" "$WORK" "$MIN_AGE" "$CWD_SCAN_OK" "$BROWSER_MIN_AGE" <<'JS'
 const fs = require("fs");
@@ -342,12 +371,13 @@ const under = (p, root) => p === root || p.startsWith(root + "/");
 // Bash `read` merges adjacent tabs, so an empty field is written as "-".
 const row = (fields) => fields.map((f) => (String(f) === "" ? "-" : String(f))).join("\t") + "\n";
 
-const homes = [], reapHomes = [], recs = [];
+const homes = [], reapHomes = [], recs = [], lanes = [];
 for (const line of read("owners.tsv").split("\n")) {
   const f = line.split("\t");
   if (f[0] === "home") homes.push(f[1]);
   else if (f[0] === "reap-home") reapHomes.push(f[1]);
   else if (f[0] === "rec") recs.push({ home: f[1], id: f[2], terminal: f[3], worktree: f[4] });
+  else if (f[0] === "lane") lanes.push({ home: f[1], id: f[2], terminal: f[3], repo: f[4] || "", worktree: f[5] || "" });
 }
 const recFor = (pred) => recs.find(pred);
 
@@ -408,9 +438,17 @@ if (mode === "terminals") {
     if (wt && (r = recFor((x) => x.worktree && x.worktree === wt))) {
       prelim = "task-worktree"; detail = `${r.id} (${r.home}); ${title}`; emit(); continue;
     }
-    if (wt && /^fm-/.test(wt.split("/").pop())) { prelim = "unowned-task"; emit(); continue; }
-    if (!(wt && reapHomes.includes(wt))) { prelim = "foreign"; emit(); continue; }
+    // A registration is trusted only for a pane rooted in the lane's own
+    // repository or worktree, so a wrong handle cannot claim another pane.
+    const lane = wt ? lanes.find((x) => x.terminal === handle
+      && ((x.repo && under(wt, x.repo)) || (x.worktree && under(wt, x.worktree)))) : undefined;
+    if (lane) { prelim = "external"; detail = `${lane.id} (${lane.home}); ${title}`; }
+    else if (wt && /^fm-/.test(wt.split("/").pop())) { prelim = "unowned-task"; emit(); continue; }
+    else if (!(wt && reapHomes.includes(wt))) { prelim = "foreign"; emit(); continue; }
     const sp = pidOf.get(clean(t.ptyId));
+    // A registered lane with no session is judged later from Orca's own
+    // record of the terminal: an exited pane is reapable, anything else kept.
+    if (lane && !(Number.isInteger(sp) && sp > 1) && !dup.has(clean(t.ptyId))) { emit(); continue; }
     if (!Number.isInteger(sp) || sp <= 1 || dup.has(clean(t.ptyId))) { prelim = "no-session"; emit(); continue; }
     pid = String(sp);
     const p = procs.get(sp);
@@ -525,10 +563,21 @@ keep_listed() {
   return 1
 }
 
-# judge_terminal <pid> <title> -> `<action> <class>` for a home-root candidate
-# and, for a reap, the session's pids on fd 3 so browsers can discount them.
+# judge_terminal <pid> <title> [<handle>] -> `<action> <class>` for a
+# home-root candidate, or for a registered external lane when <handle> is
+# given, and, for a reap, the session's pids on fd 3 so browsers can discount
+# them. A lane's registration replaces the firstmate-title proof; a lane with
+# no session is reapable only when Orca reports its pane exited.
 judge_terminal() {
-  local pid=$1 title=$2 state tree
+  local pid=$1 title=$2 lane=${3:-} state tree
+  if [ -n "$lane" ] && { [ -z "$pid" ] || [ "$pid" = - ]; }; then
+    state=$(fm_backend_orca_agent_state "$lane")
+    case "$state" in
+      missing) printf 'reap\texternal-lane-exited' ;;
+      *) printf 'keep\tno-session' ;;
+    esac
+    return 0
+  fi
   tree=$(fm_backend_orca_process_tree "$pid") || { printf 'keep\tunreadable'; return 0; }
   if lock_in_tree "$tree"; then printf 'keep\tmain-lock'; return 0; fi
   if printf '%s\n' "$tree" | cut -f1 | grep -qx "$$"; then printf 'keep\tself'; return 0; fi
@@ -539,6 +588,11 @@ judge_terminal() {
     dead) ;;
     *) printf 'keep\tunreadable'; return 0 ;;
   esac
+  if [ -n "$lane" ]; then
+    printf 'reap\texternal-lane'
+    printf '%s\n' "$tree" | cut -f1 >&3
+    return 0
+  fi
   firstmate_title "$title" || { printf 'keep\tcaptain'; return 0; }
   printf 'reap\tidle-session'
   printf '%s\n' "$tree" | cut -f1 >&3
@@ -563,6 +617,16 @@ recorded_now() {
     END { exit found ? 0 : 1 }'
 }
 
+# lane_now <handle> <path>: 0 when the owner read recorded_now just refreshed
+# still registers <handle> as an external lane rooted where <path> is.
+lane_now() {
+  LANE_HANDLE=$1 LANE_PATH=$(phys "$2") awk -F'\t' '
+    function under(p, r) { return r != "" && (p == r || index(p, r "/") == 1) }
+    $1 == "lane" && $4 == ENVIRON["LANE_HANDLE"] \
+      && (under(ENVIRON["LANE_PATH"], $5) || under(ENVIRON["LANE_PATH"], $6)) { found = 1 }
+    END { exit found ? 0 : 1 }' "$WORK/owners.tsv"
+}
+
 # current_title <handle>: the terminal's title from a fresh Orca listing; exit 1
 # when the listing is unreadable or no longer holds the terminal.
 current_title() {  # <handle>
@@ -575,9 +639,10 @@ if (!t) process.exit(1);
 process.stdout.write(typeof t.title === "string" ? t.title.replace(/[\t\r\n]+/g, " ") : "");' "$1"
 }
 
-close_terminal() {  # <handle> <path> <pid> -> closed|skipped:<why>|failed:<why>
-  local handle=$1 path=$2 pid=$3 state out facts pty now title
+close_terminal() {  # <handle> <path> <pid> [external] -> closed|skipped:<why>|failed:<why>
+  local handle=$1 path=$2 pid=$3 external=${4:-} state out facts pty now title
   local rec=0
+  [ "$pid" != - ] || pid=
   case "$handle" in term_f25f1bc6|term_f25f1bc6-*) printf 'skipped\tprotected'; return 0 ;; esac
   recorded_now "$handle" "$path" || rec=$?
   case "$rec" in
@@ -585,6 +650,7 @@ close_terminal() {  # <handle> <path> <pid> -> closed|skipped:<why>|failed:<why>
     1) ;;
     *) printf 'skipped\tnow-unreadable-records'; return 0 ;;
   esac
+  if [ -n "$external" ] && ! lane_now "$handle" "$path"; then printf 'skipped\tnow-unregistered'; return 0; fi
   state=$(fm_backend_orca_agent_state "$handle")
   case "$state" in
     dead|missing) ;;
@@ -593,7 +659,9 @@ close_terminal() {  # <handle> <path> <pid> -> closed|skipped:<why>|failed:<why>
   # A home-root tab is the captain's unless its title still names a firstmate
   # session; it may have been renamed since the listing.
   title=$(current_title "$handle") || { printf 'skipped\tnow-unreadable'; return 0; }
-  firstmate_title "$title" || { printf 'skipped\tnow-retitled'; return 0; }
+  if [ -z "$external" ]; then
+    firstmate_title "$title" || { printf 'skipped\tnow-retitled'; return 0; }
+  fi
   if keep_listed "$title"; then printf 'skipped\thelper'; return 0; fi
   # A connected terminal must still be rooted at the classified session pid,
   # whether the liveness read said dead or missing: a session that exited may
@@ -607,6 +675,8 @@ FACTS
   case "$connected" in
     false) ;;
     true)
+      # A lane classified with no session must still have none.
+      [ -n "$pid" ] || { printf 'skipped\tnow-connected'; return 0; }
       now=$(fm_backend_orca_session_pid "$pty") || { printf 'skipped\tnow-unreadable'; return 0; }
       [ "$now" = "$pid" ] || { printf 'skipped\tnow-replaced'; return 0; }
       ;;
@@ -623,7 +693,12 @@ FACTS
     1) ;;
     *) printf 'skipped\tnow-unreadable-records'; return 0 ;;
   esac
-  fm_backend_orca_pid_absent "$pid" || absent=$?
+  if [ -n "$external" ] && ! lane_now "$handle" "$path"; then printf 'skipped\tnow-unregistered'; return 0; fi
+  if [ -z "$pid" ]; then
+    [ "$(fm_backend_orca_agent_state "$handle")" = missing ] || { printf 'skipped\tnow-not-exited'; return 0; }
+  else
+    fm_backend_orca_pid_absent "$pid" || absent=$?
+  fi
   case "$absent" in
     0) ;;
     1)
@@ -703,11 +778,13 @@ declare -i N_REAP=0 N_KEEP=0 N_DONE=0 N_SKIP=0 N_FAIL=0 B_REAP=0 B_KEEP=0 B_DONE
 : > "$WORK/terminal-verdicts.tsv"
 while IFS=$'\t' read -r handle prelim pid path detail; do
   [ -n "$handle" ] || continue
-  if [ "$prelim" = candidate ]; then
-    if keep_listed "$detail"; then
+  if [ "$prelim" = candidate ] || [ "$prelim" = external ]; then
+    lane='' title=$detail
+    if [ "$prelim" = external ]; then lane=$handle; title=${detail#*; }; fi
+    if keep_listed "$title"; then
       verdict=$'keep\thelper'
     else
-      verdict=$(judge_terminal "$pid" "$detail" 3>>"$WORK/exclude.txt")
+      verdict=$(judge_terminal "$pid" "$detail" "$lane" 3>>"$WORK/exclude.txt")
     fi
   else
     verdict=$'keep\t'"$prelim"
@@ -744,7 +821,8 @@ fi
 while IFS=$'\t' read -r action class handle pid path detail; do
   N_TOTAL+=1
   if [ "$action" = reap ] && [ "$APPLY" = 1 ]; then
-    result=$(close_terminal "$handle" "$path" "$pid")
+    case "$class" in external-lane*) external=1 ;; *) external= ;; esac
+    result=$(close_terminal "$handle" "$path" "$pid" "$external")
     case "$result" in closed*) N_DONE+=1 ;; skipped*) N_SKIP+=1 ;; *) N_FAIL+=1 ;; esac
     action=${result%%$'\t'*}
     why=${result#*$'\t'}
