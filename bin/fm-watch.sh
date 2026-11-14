@@ -147,11 +147,14 @@
 #                          per opening even if unrelated events or pane changes
 #                          occur, and collected for every worker before other
 #                          wake-producing work on each supervision cycle.
-#                          Keyed and keyless blockers retain their original
-#                          stamped opening time when the same note is repeated;
-#                          resolving another key does not close them. Unknown
-#                          opening times cannot be aged. Resolution or terminal
-#                          closure retires the episode; a reopen starts anew.
+#                          Keyed blockers retain their first unresolved opening
+#                          time across note updates; keyless same-note repeats
+#                          retain theirs too. Missing/malformed or future opening
+#                          timestamps surface immediately as explicit P0 blocker
+#                          timestamp diagnostics without claiming an elapsed age.
+#                          Resolving another key does not close them. Opening
+#                          event identities preserve once-only delivery across
+#                          note updates and distinguish identical reopens.
 #                          The incremental fold avoids rereading unchanged logs;
 #                          declaration text is read only for due, unsurfaced
 #                          blockers. Independent of open-decision reminders.
@@ -676,7 +679,7 @@ hash_pane() {
 
 p0_blocker_alarm() {  # <window> <task>
   local win=$1 task=$2 meta statusf last opened now age marker scope reason
-  local open origins='' key verb until note origin_key number surfaced scopes=''
+  local open origins='' key verb until opening note origin_key number surfaced scopes='' detail
   [ -n "$task" ] || return 0
   meta="$STATE/$task.meta"
   [ "$(fm_meta_get "$meta" priority 2>/dev/null || true)" = 0 ] || return 0
@@ -689,10 +692,9 @@ p0_blocker_alarm() {  # <window> <task>
   open=$(status_open_decisions_incremental "$statusf" '' timed-all) || exit 1
   surfaced=$(cat "$marker" 2>/dev/null || true)
   fm_watch_now now
-  while IFS=$'\t' read -r key verb opened until note; do
+  while IFS=$'\t' read -r key verb opened until opening note; do
     [ "$verb" = blocked ] || continue
-    case "$opened" in ''|unknown|*[!0-9]*) continue ;; esac
-    scope="$key:$opened:$note"
+    scope="$key:$opening"
     case "$surfaced" in
       "$scope"|"$scope"$'\n'*|*$'\n'"$scope"|*$'\n'"$scope"$'\n'*)
         scopes="${scopes:+$scopes
@@ -700,9 +702,18 @@ p0_blocker_alarm() {  # <window> <task>
         continue
         ;;
     esac
-    [ "$opened" -le "$now" ] || continue
-    age=$((now - opened))
-    [ "$age" -ge "$P0_BLOCKER_SECS" ] || continue
+    case "$opened" in
+      ''|unknown|*[!0-9]*) detail='P0 blocker opening timestamp missing or malformed' ;;
+      *)
+        if [ "$opened" -gt "$now" ]; then
+          detail='P0 blocker opening timestamp is in the future'
+        else
+          age=$((now - opened))
+          [ "$age" -ge "$P0_BLOCKER_SECS" ] || continue
+          detail="P0 blocker open for ${age}s"
+        fi
+        ;;
+    esac
     [ -n "$origins" ] || origins=$(_fm_status_open_decision_origins "$statusf") || exit 1
     last=
     while IFS=$'\t' read -r origin_key number; do
@@ -713,7 +724,7 @@ p0_blocker_alarm() {  # <window> <task>
 $origins
 EOF
     [ -n "$last" ] || continue
-    reason="stale: $win (P0 blocker open for ${age}s: $last)"
+    reason="stale: $win ($detail: $last)"
     fm_wake_append stale "$win" "$reason" || exit 1
     scopes="${scopes:+$scopes
 }$scope"

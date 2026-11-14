@@ -298,7 +298,10 @@
 #   --priority records the backlog priority selected at intake for a fresh ship
 #   or scout.
 #   Where the tasks-axi backlog gate applies, omission for a prioritized row or
-#   disagreement with that row is refused before launch.
+#   disagreement with that row is refused before launch. When automatic backlog
+#   enforcement does not apply (including a manual backend), --priority is the
+#   caller's explicit intake authority and is not presented as row-verified.
+#   Every explicit priority 0-4 preempts; this is not restricted to P0 or P1.
 #   A prioritized fresh worker is admitted past an exhausted project-capacity
 #   declaration without stopping an existing lane, and priority= is recorded in
 #   task metadata so supervision can apply its priority-specific contract.
@@ -315,8 +318,8 @@
 #   publication. A spawn that finds
 #   every place held prints one `deferred:` line and exits 75 before any brief
 #   render, endpoint, worktree, record, or backlog move exists, so the task stays
-#   exactly as queued as it was, unless this fresh spawn carries a verified
-#   backlog priority; an unreadable declaration refuses with exit 1.
+#   exactly as queued as it was, unless this fresh spawn carries an explicit
+#   priority; an unreadable declaration refuses with exit 1.
 #   Lane capacity admission is deferred with bin/fm-capacity.sh's
 #   --spawn-gate support (see the note at the project-capacity gate below).
 #   A batch reports such a pair as `batch: DEFERRED` and exits 75 when nothing

@@ -206,6 +206,50 @@ test_p0_origins_only_for_due_unsurfaced_blockers() {
   pass 'P0 origin reads occur only for due unsurfaced blockers, including keyless reopens'
 }
 
+test_p0_keyed_note_updates_keep_first_opening() {
+  reset_case
+  printf 'priority=0\nkind=ship\nwindow=test:worker\n' > "$STATE/worker.meta"
+  printf 'blocked [key=key] [at=1000]: attempt one\n' > "$STATE/worker.status"
+  FM_WATCH_NOW=1500 p0_blocker_alarm test:worker worker
+  printf 'blocked [key=key] [at=1500]: attempt two\n' >> "$STATE/worker.status"
+  FM_WATCH_NOW=1599 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 0 ] || fail 'updated blocker alarmed early'
+  FM_WATCH_NOW=1600 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 1 ] || fail 'note update restarted the unresolved keyed opening age'
+  grep -F 'open for 600s: blocked [key=key] [at=1500]: attempt two' "$FM_WAKE_QUEUE" >/dev/null \
+    || fail 'alarm did not retain opening age and show the latest blocker text'
+  printf 'blocked [key=key] [at=1700]: attempt three\n' >> "$STATE/worker.status"
+  FM_WATCH_NOW=1800 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 1 ] || fail 'a note update republished an already surfaced opening'
+  pass 'unresolved keyed blocker age and once-only alarm survive note updates'
+}
+
+test_p0_invalid_opening_time_is_explicit_and_reopens() {
+  local declaration diagnostic
+  for declaration in \
+    'blocked [key=key]: need key' \
+    'blocked [key=key] [at=<epoch>]: need key' \
+    'blocked [key=key] [at=10:30]: need key' \
+    'blocked [key=key] [at=2000]: need key'; do
+    reset_case
+    printf 'priority=0\nkind=ship\nwindow=test:worker\n' > "$STATE/worker.meta"
+    printf '%s\n' "$declaration" > "$STATE/worker.status"
+    FM_WATCH_NOW=1600 p0_blocker_alarm test:worker worker
+    [ "$(count_wakes)" = 1 ] || fail "invalid opening time silently suppressed the alarm: $declaration"
+    diagnostic='P0 blocker opening timestamp missing or malformed'
+    case "$declaration" in *'[at=2000]'*) diagnostic='P0 blocker opening timestamp is in the future' ;; esac
+    grep -F "$diagnostic: $declaration" "$FM_WAKE_QUEUE" >/dev/null \
+      || fail 'invalid opening did not surface explicitly with exact declaration text'
+    grep -F 'open for ' "$FM_WAKE_QUEUE" >/dev/null && fail 'invalid opening invented an elapsed time'
+    FM_WATCH_NOW=1700 p0_blocker_alarm test:worker worker
+    [ "$(count_wakes)" = 1 ] || fail 'unchanged invalid opening repeated'
+    printf 'resolved [key=key] [at=1800]: answered\n%s\n' "$declaration" >> "$STATE/worker.status"
+    FM_WATCH_NOW=1900 p0_blocker_alarm test:worker worker
+    [ "$(count_wakes)" = 2 ] || fail 'identical malformed reopen was mistaken for its resolved predecessor'
+  done
+  pass 'invalid timestamps surface explicitly once per opening without invented ages'
+}
+
 test_invalid_settings() {
   reset_case
   touch "$CONFIG/open-decision-reminders"
@@ -412,6 +456,7 @@ fm_test_run test_disabled test_oldest_and_backoff test_numeric_keys_are_distinct
   test_numeric_tasks_are_distinct test_resolution_and_reopen \
   test_wait_exemptions test_unknown_times_and_keyless test_timed_fold_is_incremental \
   test_p0_origins_only_for_due_unsurfaced_blockers \
+  test_p0_keyed_note_updates_keep_first_opening test_p0_invalid_opening_time_is_explicit_and_reopens \
   test_invalid_settings test_timed_cursor_retirement test_watcher_loop \
   test_away_age_route test_away_age_page_and_staleness \
   test_away_confirmation_change_keeps_decision_open test_interrupted_claim_retries_page \
