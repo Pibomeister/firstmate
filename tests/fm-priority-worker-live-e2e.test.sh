@@ -98,7 +98,8 @@ export FM_HOME="$TMP_ROOT/home" HOME="$TMP_ROOT/user-home" FM_SPAWN_NO_GUARD=1
   "while :; do echo progress >> '$TMP_ROOT/progress'; sleep 1; done"
 printf 'window=proof:fm-ordinary\nbackend=tmux\nkind=ship\nharness=codex\nproject=%s\nworktree=%s\n' \
   "$TMP_ROOT/project" "$TMP_ROOT/project" > "$FM_HOME/state/ordinary.meta"
-export TMUX="$SOCKET,$("$REAL_TMUX" -S "$SOCKET" display-message -p '#{pid}'),0"
+TMUX="$SOCKET,$("$REAL_TMUX" -S "$SOCKET" display-message -p '#{pid}'),0"
+export TMUX
 wait_file() {
   local i
   for ((i=0; i<300; i++)); do [ ! -s "$1" ] || return 0; sleep 0.1; done
