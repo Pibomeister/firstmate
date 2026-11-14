@@ -61,6 +61,7 @@ WD=$STATE/watchdog
 OUT=$OWNER_HOME/data/watchdog
 LEDGER=$WD/actions.tsv
 CALLS=$WD/model-calls.tsv
+WD_COUNCIL_MAX_CHARS=2000
 
 # shellcheck source=bin/fm-watchdog-lib.sh
 . "$SCRIPT_DIR/fm-watchdog-lib.sh"
@@ -819,7 +820,7 @@ wd_council_record() {
         /^- task: / { t++; if (substr($0,9) != ENVIRON["FM_WD_RECORD_TASK"]) bad=1; next }
         /^- key: / { k++; if (substr($0,8) != ENVIRON["FM_WD_RECORD_KEY"]) bad=1; next }
         /^- ruling: / { r++; ruling=substr($0,11); next }
-        /^- seats:/ { s++; seats=substr($0,9); next }
+        /^- seats: / { s++; seats=substr($0,10); next }
         /^- seat models: .+$/ { model_fields++; next }
         /^- at: .+$/ { at_fields++; next }
         { bad=1 }
@@ -831,7 +832,6 @@ wd_council_record() {
             answer=ruling; sub(/ \(.*/, "", answer)
           } else if (ruling !~ /^none \(not unanimous, [0-9]+ blind seats; held for the owner\)$/) exit 1
           count=ruling; sub(/^.*unanimous, /, "", count); sub(/ blind seats.*$/, "", count); count+=0
-          sub(/^ /, "", seats)
           n=split(seats, votes, / seat/)
           if (count < 2 || n != count) exit 1
           agreed=1; answered=0
@@ -867,8 +867,8 @@ wd_council_record() {
 wd_council() {
   local task=$1 key=$2 summary=$3 seats seat i=0 tmp answers='' first='' unanimous=1 answered=0 record prompt a fams lock dir locator
   local WD_CALL_MAX_USD WD_CALL_TIMEOUT
-  if [ "${#summary}" -gt 2000 ]; then
-    printf 'refused\t\t\trecord exceeds 2000 characters\n'
+  if [ "${#summary}" -gt "$WD_COUNCIL_MAX_CHARS" ]; then
+    printf 'refused\t\t\trecord exceeds %s characters\n' "$WD_COUNCIL_MAX_CHARS"
     return 0
   fi
   seats=$(cfg council-seats "$(wd_models | tr '\n' ',')")
@@ -992,6 +992,11 @@ cmd_council() {
     return 0
   fi
   summary=$(printf '%s' "$summary" | tr '\t\r\n' '   ')
+  if [ "${#summary}" -gt "$WD_COUNCIL_MAX_CHARS" ]; then
+    wd_rec "$id" "decision:$key" council refused "record exceeds $WD_COUNCIL_MAX_CHARS characters"
+    wd_council_line refused '' '' 0 ''
+    return 0
+  fi
   if [ "$(wd_decisions_mode)" != act ]; then
     wd_rec "$id" "decision:$key" council dry-run "would convene council on $task $key"
     wd_council_line dry-run '' '' 0 ''

@@ -1472,6 +1472,40 @@ council-seats=claude:haiku,agy:flash'
   pass "council: only supported well-formed metadata fields authenticate a record"
 }
 
+test_council_refuses_oversized_context_before_replay() {
+  local out
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A flat keys or B nested keys?\n' > "$H/record.txt"
+  out=$(run_wd 0 council --task replay-size --key cache --record-file "$H/record.txt" 2>&1) || fail "initial size record failed: $out"
+  assert_contains "$out" "answer=PROCEED A" "the initial council rules A"
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  printf '%2001s' x > "$H/record.txt"
+  out=$(run_wd 10 council --task replay-size --key cache --record-file "$H/record.txt" 2>&1) || fail "oversized replay check failed: $out"
+  assert_contains "$out" "council=refused answer=none record=none" "oversized context cannot return an actionable replay: $out"
+  printf '%2000s' x > "$H/record.txt"
+  out=$(run_wd 20 council --task replay-size --key cache --record-file "$H/record.txt" 2>&1) || fail "boundary replay failed: $out"
+  assert_contains "$out" "answer=PROCEED A" "the supported boundary preserves the recorded answer"
+  assert_contains "$out" "prior=1" "the valid record survives an oversized call"
+  assert_equals 2 "$(seat_calls)" "size refusal and replay call no new seats"
+  pass "council: size validation precedes replay and preserves valid recorded outcomes"
+}
+
+test_council_requires_the_seats_field_separator() {
+  local out record
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  printf 'A flat keys or B nested keys?\n' > "$H/record.txt"
+  record=$(council_fixture_record seats-format cache) || fail "cannot prepare seats fixture"
+  printf -- '- home: %s\n- task: seats-format\n- key: cache\n- ruling: PROCEED A (unanimous, 2 blind seats)\n- seats:seat1=PROCEED A seat2=PROCEED A\n\nRecord:\n\nA or B?\n' "$H" > "$record"
+  out=$(run_wd 0 council --task seats-format --key cache --record-file "$H/record.txt" 2>&1) || fail "seats grammar check failed: $out"
+  assert_contains "$out" "answer=PROCEED B" "a malformed seats field does not authenticate: $out"
+  assert_contains "$out" "prior=0" "missing metadata separator is not replayed"
+  pass "council: seats use the same required field separator as other metadata"
+}
+
 test_council_command_honours_the_dry_run_switch() {
   local out
   make_home $'Captain session\n> ' 'mode=dry-run
@@ -5395,6 +5429,8 @@ fm_test_run \
   test_council_rejects_additional_metadata_blocks \
   test_council_uses_portable_identity_paths \
   test_council_rejects_malformed_or_unknown_header_content \
+  test_council_refuses_oversized_context_before_replay \
+  test_council_requires_the_seats_field_separator \
   test_council_command_honours_the_dry_run_switch \
   test_council_runs_one_at_a_time_per_decision \
   test_judge_fallback_and_spend_cap \
