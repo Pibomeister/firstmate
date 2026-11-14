@@ -5725,6 +5725,9 @@ test_p0_blocker_surfaces_exact_text_once_at_ten_minutes() {
   grep -F 'P0 blocker open' "$before_out" >/dev/null \
     && fail "the P0 blocker surfaced before ten minutes: $(cat "$before_out")"
 
+  status_line='blocked [at=1500]: deployment key is unavailable'
+  printf '%s\n' "$status_line" 'resolved [key=other] [at=1599]: unrelated answer' >> "$state/p0-worker.status"
+  prime_status_seen "$state" "$state/p0-worker.status"
   printf 'rendering at the deadline' > "$capture_file"
   PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/config" \
     FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" FM_WATCH_NOW=1600 \
@@ -5736,6 +5739,8 @@ test_p0_blocker_surfaces_exact_text_once_at_ten_minutes() {
   assert_present "$state/.p0-blocker-surfaced-$key" "the P0 alarm left no once-only marker"
   ack_stopped_cycle "$state" >/dev/null || fail "the first P0 alarm could not be acknowledged"
 
+  printf '%s\n' 'blocked [at=1650]: deployment key is unavailable' >> "$state/p0-worker.status"
+  prime_status_seen "$state" "$state/p0-worker.status"
   printf 'rendering after the deadline' > "$capture_file"
   PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/config" \
     FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" FM_WATCH_NOW=1700 \

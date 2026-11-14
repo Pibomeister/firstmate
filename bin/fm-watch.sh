@@ -668,7 +668,7 @@ hash_pane() {
 
 p0_blocker_alarm() {  # <window> <task>
   local win=$1 task=$2 meta statusf last opened now age marker scope reason
-  local open origins key verb until note origin_key number surfaced scopes=''
+  local open origins='' key verb until note origin_key number surfaced scopes=''
   [ -n "$task" ] || return 0
   meta="$STATE/$task.meta"
   [ "$(fm_meta_get "$meta" priority 2>/dev/null || true)" = 0 ] || return 0
@@ -678,26 +678,12 @@ p0_blocker_alarm() {  # <window> <task>
     rm -f "$marker"
     return 0
   fi
-  open=$(status_open_decisions_incremental "$statusf" '' timed) || exit 1
-  origins=$(_fm_status_open_decision_origins "$statusf") || exit 1
+  open=$(status_open_decisions_incremental "$statusf" '' timed-all) || exit 1
   surfaced=$(cat "$marker" 2>/dev/null || true)
   fm_watch_now now
   while IFS=$'\t' read -r key verb opened until note; do
     [ "$verb" = blocked ] || continue
-    last=
-    while IFS=$'\t' read -r origin_key number; do
-      [ "$origin_key" = "$key" ] || continue
-      last=$(sed -n "${number}p" "$statusf")
-      break
-    done <<EOF
-$origins
-EOF
-    [ -n "$last" ] || continue
-    case "$opened" in
-      ''|unknown|*[!0-9]*)
-        opened=$(status_line_at_epoch "$last") || opened=$(stat_mtime "$statusf") || continue
-        ;;
-    esac
+    case "$opened" in ''|unknown|*[!0-9]*) continue ;; esac
     scope="$key:$opened:$note"
     case "$surfaced" in
       "$scope"|"$scope"$'\n'*|*$'\n'"$scope"|*$'\n'"$scope"$'\n'*)
@@ -709,6 +695,16 @@ EOF
     [ "$opened" -le "$now" ] || continue
     age=$((now - opened))
     [ "$age" -ge "$P0_BLOCKER_SECS" ] || continue
+    [ -n "$origins" ] || origins=$(_fm_status_open_decision_origins "$statusf") || exit 1
+    last=
+    while IFS=$'\t' read -r origin_key number; do
+      [ "$origin_key" = "$key" ] || continue
+      last=$(sed -n "${number}p" "$statusf")
+      break
+    done <<EOF
+$origins
+EOF
+    [ -n "$last" ] || continue
     reason="stale: $win (P0 blocker open for ${age}s: $last)"
     fm_wake_append stale "$win" "$reason" || exit 1
     scopes="${scopes:+$scopes
