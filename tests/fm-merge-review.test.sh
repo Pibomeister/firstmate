@@ -894,11 +894,15 @@ test_snapshot_refuses_paths_the_filesystem_cannot_distinguish() {
 
 test_temp_directory_cannot_place_reviewers_inside_a_repository() {
   local mode temp rc
-  for mode in checkout symlink bare; do
+  for mode in checkout symlink bare bare-symlink; do
     make_case "temp-isolation-$mode" "${TWO_SEATS[@]}"
-    if [ "$mode" = bare ]; then
+    if [ "$mode" = bare ] || [ "$mode" = bare-symlink ]; then
       git init --bare --quiet "$CASE/temp.git"
       temp="$CASE/temp.git"
+      if [ "$mode" = bare-symlink ]; then
+        rm "$temp/HEAD"
+        ln -s refs/heads/main "$temp/HEAD"
+      fi
     else
       mkdir "$REPO/private-temp"
       temp="$REPO/private-temp"

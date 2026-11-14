@@ -830,7 +830,8 @@ mr_run() {  # <repo> <base-ref> <intent-file>
   MR_WORK=$review_parent
   while :; do
     if [ -e "$review_parent/.git" ] || [ -L "$review_parent/.git" ] ||
-      { [ -f "$review_parent/HEAD" ] && [ -d "$review_parent/objects" ] && [ -d "$review_parent/refs" ]; }; then
+      { { [ -f "$review_parent/HEAD" ] || [ -L "$review_parent/HEAD" ]; } &&
+        [ -d "$review_parent/objects" ] && [ -d "$review_parent/refs" ]; }; then
       mr_die 'temporary review directory is inside a repository; use a TMPDIR outside repositories'
     fi
     [ "$review_parent" != / ] || break
