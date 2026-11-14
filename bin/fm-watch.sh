@@ -700,7 +700,8 @@ p0_blocker_alarm() {  # <window> <task>
     echo "error: P0 blocker wake was queued for $task but its once-only marker could not be written" >&2
     exit 1
   }
-  wake "$reason"
+  P0_BLOCKER_ALARMS="${P0_BLOCKER_ALARMS:+$P0_BLOCKER_ALARMS
+}$reason"
 }
 
 # window_is_busy: 0 when the semantic busy-state contract (bin/fm-busy-lib.sh)
@@ -5129,6 +5130,14 @@ while :; do
   # alive. Supervision scripts warn when this goes stale with tasks in flight.
   touch "$STATE/.last-watcher-beat"
 
+  P0_BLOCKER_ALARMS=
+  while IFS= read -r w; do
+    watch_record_progress_beat
+    task=$(window_to_task "$w" "$STATE")
+    p0_blocker_alarm "$w" "$task"
+  done < <(recorded_windows)
+  [ -z "$P0_BLOCKER_ALARMS" ] || wake "$P0_BLOCKER_ALARMS"
+
   fleet_heartbeat_publish_detached
 
   for budget_meta in "$STATE"/*.meta; do
@@ -5550,7 +5559,6 @@ EOF
     watch_record_progress_beat
     kind=$(window_kind "$w")
     task=$(window_to_task "$w" "$STATE")
-    p0_blocker_alarm "$w" "$task"
     # Steering-inbox loss detection runs before the secondmate stale
     # exemption below, because a mate's steers land in an inbox too.
     [ -z "$task" ] || inbox_steer_check "$w" "$task"

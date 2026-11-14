@@ -4609,16 +4609,27 @@ test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it() {
     pass "skipped: installed tasks-axi predates ${FM_TASKS_AXI_MIN}, so dispatch refuses automatic backlog transitions"
     return 0
   }
-  dir=$(new_case reverify rl40)
-  add_ship_task "$dir" rl40 claude
-  seed_backlog "$dir" rl40 in_flight
-  break_tasks_axi_start "$dir"
+  local priority
+  for priority in ordinary 0 1 2 3 4; do
+    dir=$(new_case "reverify-$priority" rl40)
+    add_ship_task "$dir" rl40 claude
+    seed_backlog "$dir" rl40 in_flight
+    if [ "$priority" != ordinary ]; then
+      tasks-axi update rl40 --priority "$priority" --file "$dir/home/data/backlog.md" >/dev/null
+      printf 'priority=%s\n' "$priority" >> "$dir/home/state/rl40.meta"
+    fi
+    break_tasks_axi_start "$dir"
 
-  out=$(run_control "$dir" rl40 relaunch --note "picking the work back up") || rc=$?
-  expect_code 0 "$rc" "a relaunch must not re-run a transition the row already reflects"$'\n'"$out"
-  [ "$(backlog_state "$dir" rl40)" = in_flight ] \
-    || fail "a relaunch changed an already In-flight item to $(backlog_state "$dir" rl40)"
-  pass "relaunch re-reads the backlog item instead of blindly re-running the transition"
+    rc=0
+    out=$(run_control "$dir" rl40 relaunch --note "picking the work back up") || rc=$?
+    expect_code 0 "$rc" "a $priority relaunch must not re-run a transition the row already reflects"$'\n'"$out"
+    [ "$(backlog_state "$dir" rl40)" = in_flight ] \
+      || fail "a relaunch changed an already In-flight item to $(backlog_state "$dir" rl40)"
+    if [ "$priority" != ordinary ]; then
+      assert_equals "$priority" "$(meta_field "$dir" rl40 priority)" "relaunch lost its priority"
+    fi
+  done
+  pass "relaunch preserves ordinary and prioritized In-flight items without rewriting the transition"
 }
 
 test_relaunch_moves_a_drifted_item_back_in_flight() {

@@ -5712,11 +5712,11 @@ if fm_backlog_transition_applies "$CONFIG" "$DATA" "$KIND"; then
     echo "error: task $ID's backlog item could not be read before dispatch ($FM_BACKLOG_ROW_ERROR)" >&2
     exit 1
   fi
-  if [ "$PRIORITY_SET" -eq 0 ] && [ -n "$BACKLOG_ROW_PRIORITY" ]; then
+  if [ "$RELAUNCH" -eq 0 ] && [ "$PRIORITY_SET" -eq 0 ] && [ -n "$BACKLOG_ROW_PRIORITY" ]; then
     echo "error: task $ID has backlog priority $BACKLOG_ROW_PRIORITY; pass --priority $BACKLOG_ROW_PRIORITY so its dedicated worker cannot wait behind ordinary lanes" >&2
     exit 1
   fi
-  if [ "$PRIORITY_SET" -eq 1 ] && [ "$PRIORITY" != "$BACKLOG_ROW_PRIORITY" ]; then
+  if [ "$RELAUNCH" -eq 0 ] && [ "$PRIORITY_SET" -eq 1 ] && [ "$PRIORITY" != "$BACKLOG_ROW_PRIORITY" ]; then
     echo "error: task $ID priority mismatch: its backlog row is ${BACKLOG_ROW_PRIORITY:--}, but this spawn passed --priority $PRIORITY" >&2
     exit 1
   fi

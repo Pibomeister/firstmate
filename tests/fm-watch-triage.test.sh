@@ -5747,6 +5747,41 @@ test_p0_blocker_surfaces_exact_text_once_at_ten_minutes() {
 }
 
 
+test_p0_alarms_scan_all_workers_before_sibling_signals() {
+  local dir state fakebin out id window status_line
+  dir=$(make_case p0-sibling-signals); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/out"
+  mkdir -p "$dir/config"
+  for id in p0-first p0-second; do
+    window="test:fm-$id"
+    status_line="blocked [at=1000]: $id needs a deployment key"
+    printf 'window=%s\nkind=ship\nharness=codex\npriority=0\n' "$window" > "$state/$id.meta"
+    printf '%s\n' "$status_line" > "$state/$id.status"
+    prime_status_seen "$state" "$state/$id.status"
+  done
+  printf 'window=test:fm-sibling\nkind=ship\nharness=codex\n' > "$state/sibling.meta"
+  printf 'blocked [at=1600]: a fresh sibling signal\n' > "$state/sibling.status"
+
+  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_WATCH_NOW=1600 FM_WATCH_HANDLING_SUCCESSOR=1 FM_WATCH_ONCE=1 \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$WATCH" > "$out" || fail "the P0 scan failed: $(cat "$out")"
+  for id in p0-first p0-second; do
+    grep -Fx "stale: test:fm-$id (P0 blocker open for 600s: blocked [at=1000]: $id needs a deployment key)" "$out" >/dev/null \
+      || fail "the sibling signal or another alarm starved $id: $(cat "$out")"
+    grep -F "$id needs a deployment key" "$state/.wake-queue" >/dev/null \
+      || fail "$id's alarm was not queued"
+  done
+  ack_stopped_cycle "$state" >/dev/null || fail "the P0 alarms could not be acknowledged"
+  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_WATCH_NOW=1601 FM_WATCH_HANDLING_SUCCESSOR=1 FM_WATCH_ONCE=1 \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$WATCH" > "$out" || fail "the sibling cycle failed: $(cat "$out")"
+  grep -F 'signal:' "$out" >/dev/null || fail "the sibling signal was lost: $(cat "$out")"
+  pass "all due P0 alarms surface before sibling signals, which remain deliverable"
+}
+
+
 # CI's stock macOS Bash lane sets FM_TEST_STOCK_BASH=1 to run just the bash-3.2
 # churn-deferral regression. The rest of this file is not a 3.2 snapshot suite.
 # Adding another stock-bash case means adding it to this list, not to ci.yml.
@@ -5894,4 +5929,5 @@ fm_test_run \
   test_quoted_exit_picker_stays_ordinary_stale \
   test_secondmate_exit_picker_stays_quiet \
   test_closed_exit_picker_drops_saved_dialog_name \
-  test_p0_blocker_surfaces_exact_text_once_at_ten_minutes
+  test_p0_blocker_surfaces_exact_text_once_at_ten_minutes \
+  test_p0_alarms_scan_all_workers_before_sibling_signals
