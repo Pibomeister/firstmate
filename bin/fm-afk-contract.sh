@@ -130,9 +130,9 @@
 #
 # SPEND CAP (spend_max_concurrent_workers; this script is its one owner, for
 # both the number written at entry and the counting rule behind it).
-# The cap bounds how many ordinary workers this home runs concurrently while an
-# away record stands; bin/fm-spawn.sh enforces it by refusing a fresh ordinary
-# spawn once the home already holds that many. An ordinary worker record is
+# bin/fm-spawn.sh owns admission against this cap, including its priority
+# exception; the cap is not an absolute bound on concurrent workers.
+# An ordinary worker record for this counting rule is
 # every state/*.meta whose kind is not secondmate, counted by
 # fm_afk_contract_live_ordinary_workers and exposed as `live-workers`, which is
 # the one implementation both the entry default and that refusal read, so the

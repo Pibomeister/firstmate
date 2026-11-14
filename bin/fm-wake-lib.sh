@@ -3140,10 +3140,10 @@ fm_wake_print_deduped() {
       if ($3 == "heartbeat") {
         dedupe = "heartbeat"
       }
-      # A check payload is the event itself, not a newer view of one state,
-      # and the acknowledgement consumes every row it hides: collapse only
-      # identical check rows.
-      if ($3 == "check") {
+      # Check payloads and once-only P0 alarms are events, not newer views of
+      # one state. Acknowledgement consumes every hidden row, so collapse only
+      # identical payloads for these events, including invalid-time P0 alarms.
+      if ($3 == "check" || ($3 == "stale" && index($5, " (P0 blocker "))) {
         dedupe = dedupe SUBSEP $5
       }
       if (!(dedupe in seen)) {

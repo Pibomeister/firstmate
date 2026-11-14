@@ -208,7 +208,8 @@ An unregistered project or absent registry resolves to `no-mistakes` with yolo o
 Record the resulting mode, `yolo` merge posture, and the one-line reason for any deviation in the backlog item note.
 
 Treat file or subsystem overlap as a risk signal rather than an automatic reason to wait, and dispatch isolated work immediately with no concurrency cap when each change can be independently implemented and validated and the selected delivery path can reconcile ordinary rebases or conflicts.
-A project's declared machine capacity (`config/project-capacity`) still bounds that dispatch: a spawn beyond it exits 75 without launching, and its item stays queued rather than blocked.
+A P0 or any other backlog-prioritized order preempts ordinary queue order: give it a dedicated worker immediately, pass its backlog priority to `fm-spawn.sh --priority`, and keep every existing lane running in parallel rather than stopping one to make room.
+A project's declared machine capacity (`config/project-capacity`) bounds ordinary dispatch: a spawn beyond it exits 75 without launching and its item stays queued rather than blocked, while a prioritized spawn is admitted as the explicit preemption lane without displacing a holder.
 `bin/fm-spawn.sh` reads `bin/fm-disk-alarm.sh` before every fresh crewmate or scout launch, including when crew-dispatch resolution runs first.
 Tell the captain when that reading warns.
 A refusal is not retried on this host, so place the work on another host or cloud.
@@ -287,6 +288,8 @@ No turn ends blind while work is under way, including turns described as holding
 - After any supervision-branch acknowledgement succeeds or reports that a sequence is already processed, never acknowledge that sequence again or retry the refusal.
 - A status line is a wake event, not current state; use `bin/fm-crew-state.sh` when current state matters, especially before re-escalating an old decision, blocker, or pause.
 - `bin/fm-classify-lib.sh` owns the distinction between declared `paused:` waits and `blocked:` events needing firstmate action; `bin/fm-brief.sh` owns worker declaration instructions.
+- Inspect every prioritized worker on every supervision cycle until it is terminal, and resolve any question from the order, code, or evidence already in hand instead of letting that lane park for an answer it can derive.
+- Handle the P0 blocker alarm in that cycle while other lanes continue; `bin/fm-watch.sh` owns its timing, open-episode tracking, and blocker-text stale wake.
 
 Handle actionable wakes as follows:
 
@@ -385,7 +388,7 @@ A decision is simply a task held for the captain: create the task with `bin/fm-t
 When a main-side thread such as a pending captain decision or relay reminder is worth durable tracking, file it as its own work item and hold it through that wrapper.
 Captain calls discovered by investigations or visual reviews follow `captain-hold-lifecycle`, which owns their completion gate and recorded-answer rules.
 When the automatic transition gate applies, dispatch and completion move the item themselves - `bin/fm-spawn.sh` and `bin/fm-teardown.sh` own those transitions and refuse rather than report success without them - so what remains yours is filing the item before dispatch, recording decisions, and keeping notes current; `docs/configuration.md` owns gate applicability and the manual-backend exception.
-Re-evaluate queued work after every teardown and heartbeat, and also after a recorded PR-ready handoff when `config/project-capacity` caps that project, dispatching items only when dependencies, time gates, and project capacity have cleared.
+Re-evaluate queued work after every teardown and heartbeat, and also after a recorded PR-ready handoff when `config/project-capacity` caps that project, applying section 7's intake and priority-preemption policy.
 The backlog is the mission ledger: `bin/fm-ledger.sh plan` and `next` show each project's plan and next ready item to anyone, supervisor or not, and a `ready-depth` notification means refilling each named project's ready queue with approved work before the night.
 Write every session handoff with `bin/fm-ledger.sh handoff`: the ledger plus a short in-flight note, never a continuation of an earlier handoff.
 When `config/lane-capacity` exists, `bin/fm-capacity.sh` reports open lanes and host headroom for that re-evaluation.

@@ -536,6 +536,42 @@ test_parked_run_wake_reaches_supervision_despite_the_declared_pause() {
   pass "a declared pause on a parked run reaches supervision instead of being classified as the pause it contradicts"
 }
 
+test_p0_alarm_reaches_supervision_after_blocker_signal() {
+  local dir state mode task=p0-alarm win reason buffer declaration
+  for mode in away quiet; do
+    dir=$(make_supercase "p0-alarm-$mode"); state="$dir/state"
+    win="sess:fm-$task"; buffer="$state/.subsuper-escalations"
+    printf '%s\n' "$mode" > "$state/.afk"
+    fm_write_meta "$state/$task.meta" "window=$win" "backend=tmux" "harness=codex" "priority=0" "kind=ship"
+    printf 'blocked [at=1000]: need deployment key\n' > "$state/$task.status"
+    FM_ESCALATE_BATCH_SECS=999999 handle_wake "signal: $state/$task.status" "$state" \
+      || fail "$mode blocker signal failed"
+    [ -s "$buffer" ] || fail "$mode control blocker signal never reached supervision"
+    : > "$buffer"
+    reason=$(PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" bash -c '
+      . "$1"; FM_WATCH_NOW=1600 p0_blocker_alarm "$2" "$3"; printf "%s\n" "$P0_BLOCKER_ALARMS"
+    ' _ "$ROOT/bin/fm-watch.sh" "$win" "$task") || fail "$mode alarm mint failed"
+    [ -n "$reason" ] || fail "$mode watcher did not mint the due alarm"
+    FM_ESCALATE_BATCH_SECS=999999 handle_wake "$reason" "$state" || fail "$mode alarm routing failed"
+    [ "$(cat "$buffer")" = "${reason#stale: }" ] \
+      || fail "$mode silently absorbed the P0 alarm after seeing its blocker signal"
+    [ ! -e "$state/.subsuper-stale-$task" ] || fail "$mode alarm entered ordinary stale recovery"
+    # Invalid-time alarms use the same P0 delivery path, without a fake age.
+    declaration='blocked [key=bad] [at=<epoch>]: need signing key'
+    printf '%s\n' "$declaration" >> "$state/$task.status"
+    : > "$buffer"
+    reason=$(PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" bash -c '
+      . "$1"; FM_WATCH_NOW=1601 p0_blocker_alarm "$2" "$3"; printf "%s\n" "$P0_BLOCKER_ALARMS"
+    ' _ "$ROOT/bin/fm-watch.sh" "$win" "$task") || fail "$mode invalid-time alarm mint failed"
+    case "$reason" in *"P0 blocker opening timestamp missing or malformed: $declaration"*) ;;
+      *) fail "$mode did not mint the explicit invalid-time alarm" ;;
+    esac
+    FM_ESCALATE_BATCH_SECS=999999 handle_wake "$reason" "$state" || fail "$mode invalid-time routing failed"
+    [ "$(cat "$buffer")" = "${reason#stale: }" ] || fail "$mode lost the invalid-time alarm"
+  done
+  pass "away and quiet preserve real P0 alarm verdicts after the blocker signal"
+}
+
 test_catchall_buffer_failure_preserves_position() {
   local dir state buffer out
   dir=$(make_supercase catchall-write-failure); state="$dir/state"
@@ -3762,6 +3798,11 @@ test_inject_msg_defers_on_unrecognized_composer_state() {
   pass "inject_msg: unrecognized composer states defer by default"
 }
 
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit
+fi
+
 test_afk_start_refuses_when_flag_cannot_be_written
 test_afk_start_ignores_stale_pidfile_without_lock
 test_afk_start_refuses_tern_supervisor_backend
@@ -3852,6 +3893,7 @@ test_busy_inbox_escalation_reaches_supervision reset away
 test_busy_inbox_escalation_reaches_supervision reset quiet
 test_busy_inbox_dispatch_preserves_other_stale_reasons
 test_parked_run_wake_reaches_supervision_despite_the_declared_pause
+test_p0_alarm_reaches_supervision_after_blocker_signal
 test_catchall_buffer_failure_preserves_position
 test_durable_wake_failure_retains_entire_batch
 test_missing_status_stale_is_acknowledged_without_diagnostic

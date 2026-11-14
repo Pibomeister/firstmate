@@ -1694,8 +1694,10 @@ handle_wake() {  # <reason> <state>
     # The parked-run reason is the watcher's own crew-state verdict (its
     # parked_gate_notice): classify_stale reads only the status log, where that
     # pane is a declared pause, so classifying it again would absorb the one
-    # wake that says the pause no longer holds.
-    stale:*" (unread firstmate instruction: stuck-busy "*|stale:*" (steering-inbox busy bookkeeping unwritable: "*|stale:*" (declared pause on a parked run - "*)
+    # wake that says the pause no longer holds. P0 alarms likewise re-raise an
+    # unresolved blocker after its signal was already classified; preserve the
+    # watcher verdict rather than suppressing it as an already-seen event.
+    stale:*" (unread firstmate instruction: stuck-busy "*|stale:*" (steering-inbox busy bookkeeping unwritable: "*|stale:*" (declared pause on a parked run - "*|stale:*" (P0 blocker "*)
               decision="escalate|${reason#stale: }" ;;
     stale:*)  kind=stale; arg="${reason#stale: }"; stale_detail="${arg#"$arg"}"
               case "$arg" in *" ("*) stale_detail="${arg#*" ("}"; arg="${arg%% \(*}" ;; esac
