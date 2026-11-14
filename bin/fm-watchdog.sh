@@ -808,14 +808,23 @@ wd_council_record() {
       FM_WD_RECORD_HOME="$O_HOME" FM_WD_RECORD_TASK="$1" FM_WD_RECORD_KEY="$2" FM_WD_RECORD_KIND="$kind" awk '
         /^[[:space:]]*$/ { if (meta) ended=1; next }
         ended { bad=1 }
+        /^# Watchdog council ruling$/ {
+          title++; if (meta || ENVIRON["FM_WD_RECORD_KIND"] != "ruled") bad=1; next
+        }
+        /^# Watchdog council record - no ruling$/ {
+          title++; if (meta || ENVIRON["FM_WD_RECORD_KIND"] != "no-ruling") bad=1; next
+        }
         /^- / { meta=1 }
-        /^- home: / { h++; if (substr($0,9) != ENVIRON["FM_WD_RECORD_HOME"]) bad=1 }
-        /^- task: / { t++; if (substr($0,9) != ENVIRON["FM_WD_RECORD_TASK"]) bad=1 }
-        /^- key: / { k++; if (substr($0,8) != ENVIRON["FM_WD_RECORD_KEY"]) bad=1 }
-        /^- ruling: / { r++; ruling=substr($0,11) }
-        /^- seats:/ { s++; seats=substr($0,9) }
+        /^- home: / { h++; if (substr($0,9) != ENVIRON["FM_WD_RECORD_HOME"]) bad=1; next }
+        /^- task: / { t++; if (substr($0,9) != ENVIRON["FM_WD_RECORD_TASK"]) bad=1; next }
+        /^- key: / { k++; if (substr($0,8) != ENVIRON["FM_WD_RECORD_KEY"]) bad=1; next }
+        /^- ruling: / { r++; ruling=substr($0,11); next }
+        /^- seats:/ { s++; seats=substr($0,9); next }
+        /^- seat models: .+$/ { model_fields++; next }
+        /^- at: .+$/ { at_fields++; next }
+        { bad=1 }
         END {
-          if (bad || h != 1 || t != 1 || k != 1 || r != 1 || s != 1) exit 1
+          if (bad || h != 1 || t != 1 || k != 1 || r != 1 || s != 1 || title > 1 || model_fields > 1 || at_fields > 1) exit 1
           kind=ENVIRON["FM_WD_RECORD_KIND"]
           if (kind == "ruled") {
             if (ruling !~ /^PROCEED [A-Za-z0-9]{1,3} \(unanimous, [0-9]+ blind seats\)$/) exit 1
