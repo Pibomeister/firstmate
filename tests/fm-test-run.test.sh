@@ -1635,6 +1635,45 @@ test_changed_shared_fixture_selects_its_readers() {
 
 # Suites outside backend-dispatch source the T3 fake and the T3 adapter, so a
 # change to either selects the suites that read them as well.
+test_changed_herdr_lab_helpers_select_owned_and_live_e2e() {
+  local tmp repo listed
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-owned-xdg.XXXXXX")
+  repo="$tmp/repo"
+  init_changed_fixture_repo "$repo"
+  : >"$repo/bin/fm-herdr-lab.sh"
+  : >"$repo/tests/herdr-test-safety.sh"
+  printf '#!/usr/bin/env bash\n# tests/herdr-test-safety.sh\n' >"$repo/tests/fm-herdr-owned-xdg.test.sh"
+  printf '#!/usr/bin/env bash\n# tests/herdr-test-safety.sh\n' >"$repo/tests/fm-herdr-owned-xdg-live-e2e.test.sh"
+  printf '#!/usr/bin/env bash\n# tests/herdr-test-safety.sh\n' >"$repo/tests/fm-herdr-secondmate-watch-live-e2e.test.sh"
+  chmod +x "$repo/tests/fm-herdr-owned-xdg.test.sh" \
+    "$repo/tests/fm-herdr-owned-xdg-live-e2e.test.sh" \
+    "$repo/tests/fm-herdr-secondmate-watch-live-e2e.test.sh"
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm herdr-lab-helpers
+
+  printf '\n' >>"$repo/tests/herdr-test-safety.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/fm-herdr-owned-xdg.test.sh" \
+    "tests/herdr-test-safety.sh must select the owned-xdg suite"
+  assert_contains "$listed" "tests/fm-herdr-owned-xdg-live-e2e.test.sh" \
+    "tests/herdr-test-safety.sh must select the owned-xdg live e2e"
+  assert_contains "$listed" "tests/fm-herdr-secondmate-watch-live-e2e.test.sh" \
+    "tests/herdr-test-safety.sh must select the secondmate live e2e"
+  git -C "$repo" add tests/herdr-test-safety.sh
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm helper-touch
+
+  printf '\n' >>"$repo/bin/fm-herdr-lab.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/fm-herdr-owned-xdg.test.sh" \
+    "bin/fm-herdr-lab.sh must select the owned-xdg suite"
+  assert_contains "$listed" "tests/fm-herdr-owned-xdg-live-e2e.test.sh" \
+    "bin/fm-herdr-lab.sh must select the owned-xdg live e2e"
+  assert_contains "$listed" "tests/fm-herdr-secondmate-watch-live-e2e.test.sh" \
+    "bin/fm-herdr-lab.sh must select the secondmate live e2e, not only the basename fallback"
+  rm -rf "$tmp"
+  pass "herdr lab helper and wrapper changes select the owned-xdg suite, the owned-xdg live e2e, and the secondmate live e2e"
+}
+
 test_changed_t3_sources_select_their_readers() {
   local tmp repo listed
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-t3.XXXXXX")
@@ -2545,6 +2584,7 @@ test_jobs_requires_proven_isolated
 test_jobs_admits_a_concurrent_safe_family
 test_unmapped_new_test_never_inherits_family_concurrency
 test_changed_shared_fixture_selects_its_readers
+test_changed_herdr_lab_helpers_select_owned_and_live_e2e
 test_changed_t3_sources_select_their_readers
 test_concurrent_runs_are_ordered_longest_first
 test_per_script_timeout_bounds_a_hang

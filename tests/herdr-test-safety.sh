@@ -33,7 +33,7 @@ HERDR_TEST_SAFETY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # the per-home container path. A suite that means to exercise a launcher-bound
 # spawn sets HERDR_PANE_ID itself, to a pane it created in its own lab session.
 herdr_forget_inherited_pane() {
-  unset HERDR_ENV HERDR_PANE_ID HERDR_TAB_ID HERDR_WORKSPACE_ID HERDR_SOCKET_PATH HERDR_SESSION
+  fm_herdr_lab_forget_inherited
 }
 
 herdr_refuse_if_default() { # <session>
@@ -42,4 +42,28 @@ herdr_refuse_if_default() { # <session>
 
 herdr_safe_stop_and_delete() { # <session>
   fm_herdr_lab_teardown "$1"
+}
+
+herdr_fixture_create() {
+  fm_herdr_lab_fixture_create
+}
+
+herdr_fixture_apply() { # <xdg-root>
+  fm_herdr_lab_fixture_apply "$1"
+}
+
+herdr_fixture_start() { # <xdg-root>
+  fm_herdr_lab_fixture_start "$1"
+}
+
+herdr_fixture_check() { # <xdg-root>
+  fm_herdr_lab_fixture_check "$1"
+}
+
+herdr_fixture_stop() { # <xdg-root>
+  fm_herdr_lab_fixture_stop "$1"
+}
+
+herdr_fixture_cleanup() { # <xdg-root>
+  fm_herdr_lab_fixture_cleanup "$1"
 }

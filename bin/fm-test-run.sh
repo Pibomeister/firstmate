@@ -342,7 +342,7 @@ family_for_basename_var() {
     fm-agent-kit-pin.test.sh|fm-documentation-audiences.test.sh|fm-ensure-agents-md.test.sh|fm-forge-detect.test.sh|fm-grok-harness.test.sh|\
     fm-fork-free-helpers.test.sh|\
     fm-harness-precedence.test.sh|fm-install-herdr.test.sh|\
-    fm-kimi-harness.test.sh|fm-devin-harness.test.sh|fm-commandcode-harness.test.sh|fm-cortex-harness.test.sh|fm-muse-harness.test.sh|fm-rovo-harness.test.sh|fm-agy-harness.test.sh|fm-droid-harness.test.sh|fm-omp-harness.test.sh|fm-polytoken-harness.test.sh|fm-herdr-lab.test.sh|fm-lint.test.sh|\
+    fm-kimi-harness.test.sh|fm-devin-harness.test.sh|fm-commandcode-harness.test.sh|fm-cortex-harness.test.sh|fm-muse-harness.test.sh|fm-rovo-harness.test.sh|fm-agy-harness.test.sh|fm-droid-harness.test.sh|fm-omp-harness.test.sh|fm-polytoken-harness.test.sh|fm-herdr-lab.test.sh|fm-herdr-owned-xdg.test.sh|fm-lint.test.sh|\
     fm-lint-workflows.test.sh|\
     fm-operational-input.test.sh|fm-pi-primary-types.test.sh|fm-read-repetition.test.sh|\
     fm-calm-claude-mod.test.sh|\
@@ -380,7 +380,7 @@ family_for_basename_var() {
     fm-backend-herdr-focus-flash-e2e.test.sh|\
     fm-backend-herdr-stale-active-tab-e2e.test.sh|\
     fm-backend-herdr-agent-exit-shell-e2e.test.sh|\
-    fm-herdr-attached-viewer-live-e2e.test.sh|fm-herdr-session-cleanup-e2e.test.sh|\
+    fm-herdr-attached-viewer-live-e2e.test.sh|fm-herdr-owned-xdg-live-e2e.test.sh|fm-herdr-session-cleanup-e2e.test.sh|\
     fm-backend-herdr-smoke.test.sh|fm-backend-herdr-workspace-per-home-e2e.test.sh|\
     fm-control-herdr-smoke.test.sh)
       REPLY_FAMILY=real-herdr-gated
@@ -1734,10 +1734,12 @@ families_for_changed_path() {
     bin/fm-test-linux.sh|tests/linux/Dockerfile)
       printf '%s\n' "__script__:fm-test-linux.test.sh"
       ;;
-    bin/backends/herdr*|bin/fm-herdr-lab.sh|tests/herdr-test-safety.sh|tests/herdr-client-pair-fixture.sh)
+    bin/backends/herdr*|bin/fm-herdr-lab.sh|bin/fm-herdr-owned-xdg.sh|tests/herdr-test-safety.sh|tests/herdr-client-pair-fixture.sh|tests/herdr-owned-xdg.sh)
       printf '%s\n' real-herdr-gated
       printf '%s\n' backend-dispatch
       printf '%s\n' pure-contract-unit
+      printf '%s\n' "__script__:fm-herdr-owned-xdg-live-e2e.test.sh"
+      printf '%s\n' "__script__:fm-herdr-secondmate-watch-live-e2e.test.sh"
       ;;
     bin/fm-herdr-session-cleanup.sh)
       printf '%s\n' session-bootstrap
