@@ -5782,6 +5782,62 @@ test_p0_alarms_scan_all_workers_before_sibling_signals() {
 }
 
 
+test_p0_blocker_fold_preserves_open_keys_and_ages() {
+  local dir state fakebin out window id now key status_line
+  dir=$(make_case p0-blocker-fold); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/out"; window=test:fm-p0-fold; id=p0-fold
+  mkdir -p "$dir/config"
+  printf 'window=%s\nkind=ship\nharness=codex\npriority=0\n' "$window" > "$state/$id.meta"
+  printf '%s\n' \
+    'blocked [key=deploy] [at=1000]: missing credentials' \
+    'blocked [key=network] [at=1000]: missing route' \
+    'needs-decision [key=other] [at=1001]: choose region' \
+    'blocked [key=deploy] [at=1500]: missing credentials' \
+    'resolved [key=other] [at=1599]: region selected' > "$state/$id.status"
+  for now in 1599 1600 1700 1800 2600 2700; do
+    case "$now" in
+      1700)
+        printf '%s\n' 'resolved [key=network] [at=1650]: route ready' >> "$state/$id.status"
+        ;;
+      1800)
+        printf '%s\n' 'resolved [key=deploy] [at=1750]: credentials ready' >> "$state/$id.status"
+        ;;
+      2600)
+        printf '%s\n' 'blocked [key=deploy] [at=2000]: missing credentials' >> "$state/$id.status"
+        ;;
+      2700)
+        printf '%s\n' 'done [at=2650]: deployed' >> "$state/$id.status"
+        ;;
+    esac
+    prime_status_seen "$state" "$state/$id.status"
+    PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/config" \
+      FM_WATCH_NOW="$now" FM_WATCH_HANDLING_SUCCESSOR=1 FM_WATCH_ONCE=1 \
+      FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+      "$WATCH" > "$out" || fail "the blocker fold cycle at $now failed: $(cat "$out")"
+    case "$now" in
+      1600|2600)
+        status_line='blocked [key=deploy] [at=1500]: missing credentials'
+        [ "$now" != 2600 ] || status_line='blocked [key=deploy] [at=2000]: missing credentials'
+        grep -Fx "stale: $window (P0 blocker open for 600s: $status_line)" "$out" >/dev/null \
+          || fail "the fold lost the deploy opening time at $now: $(cat "$out")"
+        if [ "$now" = 1600 ]; then
+          grep -Fx "stale: $window (P0 blocker open for 600s: blocked [key=network] [at=1000]: missing route)" "$out" >/dev/null \
+            || fail "another open key was hidden: $(cat "$out")"
+        fi
+        ack_stopped_cycle "$state" >/dev/null || fail "the folded alarms could not be acknowledged"
+        ;;
+      *)
+        grep -F 'P0 blocker open' "$out" >/dev/null \
+          && fail "an early, resolved, or previously surfaced blocker alarmed at $now: $(cat "$out")"
+        ;;
+    esac
+  done
+  key=$(watch_window_key "$window")
+  assert_absent "$state/.p0-blocker-surfaced-$key" "a terminal task retained blocker alarm state"
+  pass "P0 alarms follow open keys, retain opening ages, and retire resolved episodes"
+}
+
+
 # CI's stock macOS Bash lane sets FM_TEST_STOCK_BASH=1 to run just the bash-3.2
 # churn-deferral regression. The rest of this file is not a 3.2 snapshot suite.
 # Adding another stock-bash case means adding it to this list, not to ci.yml.
@@ -5930,4 +5986,5 @@ fm_test_run \
   test_secondmate_exit_picker_stays_quiet \
   test_closed_exit_picker_drops_saved_dialog_name \
   test_p0_blocker_surfaces_exact_text_once_at_ten_minutes \
-  test_p0_alarms_scan_all_workers_before_sibling_signals
+  test_p0_alarms_scan_all_workers_before_sibling_signals \
+  test_p0_blocker_fold_preserves_open_keys_and_ages

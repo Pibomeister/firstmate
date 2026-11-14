@@ -138,11 +138,11 @@
 #                          surfaced at once, in both postures, and the worker is
 #                          rung through its steering inbox (parked_gate_notice)
 #   stale: <window> (P0 blocker open for <seconds>s: <exact status line>)
-#                          a priority=0 worker's newest status event has remained
-#                          `blocked:` for at least ten minutes; emitted once for
-#                          that exact declaration even if the pane stays busy or
-#                          changes, and checked on every ordinary supervision
-#                          cycle before the quiet-pane classifier
+#                          a priority=0 worker has an open blocker aged at least
+#                          ten minutes in the canonical status fold; emitted once
+#                          per opening even if unrelated events or pane changes
+#                          occur, and collected for every worker before other
+#                          wake-producing work on each supervision cycle
 #                          At escalation time a T3 Code thread whose shared
 #                          classification still reads running resets the timer
 #                          while its latest turn boundary is under
@@ -666,42 +666,66 @@ hash_pane() {
   if command -v md5 >/dev/null 2>&1; then md5 -q; else md5sum | cut -d' ' -f1; fi
 }
 
-# A P0 blocker is inspected on every supervision cycle, independently of pane
-# churn and busy state. The worker's exact newest status line is the declaration
-# and the alarm text, while its `[at=<epoch>]` stamp is the authoritative start;
-# legacy unstamped lines fall back to the status file mtime. One marker scoped to
-# that declaration makes the ten-minute surface once-only. A later status event
-# clears it, so a genuinely new blocker earns its own ten-minute bound.
 p0_blocker_alarm() {  # <window> <task>
-  local win=$1 task=$2 meta statusf last verb opened now age marker scope reason
+  local win=$1 task=$2 meta statusf last opened now age marker scope reason
+  local open origins key verb until note origin_key number surfaced scopes=''
   [ -n "$task" ] || return 0
   meta="$STATE/$task.meta"
   [ "$(fm_meta_get "$meta" priority 2>/dev/null || true)" = 0 ] || return 0
   statusf="$STATE/$task.status"
   marker="$STATE/.p0-blocker-surfaced-$(window_key "$win")"
-  last=$(last_status_line "$statusf")
-  status_line_verb "$last" verb
-  if [ "$verb" != blocked ]; then
+  if [ ! -f "$statusf" ] || [ ! -r "$statusf" ] || [ -L "$statusf" ]; then
     rm -f "$marker"
     return 0
   fi
-  if ! opened=$(status_line_at_epoch "$last"); then
-    opened=$(stat_mtime "$statusf") || return 0
-  fi
+  open=$(status_open_decisions_incremental "$statusf" '' timed) || exit 1
+  origins=$(_fm_status_open_decision_origins "$statusf") || exit 1
+  surfaced=$(cat "$marker" 2>/dev/null || true)
   fm_watch_now now
-  [ "$opened" -le "$now" ] || return 0
-  age=$((now - opened))
-  [ "$age" -ge "$P0_BLOCKER_SECS" ] || return 0
-  scope="$opened:$last"
-  [ "$(cat "$marker" 2>/dev/null || true)" != "$scope" ] || return 0
-  reason="stale: $win (P0 blocker open for ${age}s: $last)"
-  fm_wake_append stale "$win" "$reason" || exit 1
-  printf '%s' "$scope" > "$marker" || {
-    echo "error: P0 blocker wake was queued for $task but its once-only marker could not be written" >&2
-    exit 1
-  }
-  P0_BLOCKER_ALARMS="${P0_BLOCKER_ALARMS:+$P0_BLOCKER_ALARMS
+  while IFS=$'\t' read -r key verb opened until note; do
+    [ "$verb" = blocked ] || continue
+    last=
+    while IFS=$'\t' read -r origin_key number; do
+      [ "$origin_key" = "$key" ] || continue
+      last=$(sed -n "${number}p" "$statusf")
+      break
+    done <<EOF
+$origins
+EOF
+    [ -n "$last" ] || continue
+    case "$opened" in
+      ''|unknown|*[!0-9]*)
+        opened=$(status_line_at_epoch "$last") || opened=$(stat_mtime "$statusf") || continue
+        ;;
+    esac
+    scope="$key:$opened:$note"
+    case "$surfaced" in
+      "$scope"|"$scope"$'\n'*|*$'\n'"$scope"|*$'\n'"$scope"$'\n'*)
+        scopes="${scopes:+$scopes
+}$scope"
+        continue
+        ;;
+    esac
+    [ "$opened" -le "$now" ] || continue
+    age=$((now - opened))
+    [ "$age" -ge "$P0_BLOCKER_SECS" ] || continue
+    reason="stale: $win (P0 blocker open for ${age}s: $last)"
+    fm_wake_append stale "$win" "$reason" || exit 1
+    scopes="${scopes:+$scopes
+}$scope"
+    P0_BLOCKER_ALARMS="${P0_BLOCKER_ALARMS:+$P0_BLOCKER_ALARMS
 }$reason"
+  done <<EOF
+$open
+EOF
+  if [ -n "$scopes" ]; then
+    printf '%s' "$scopes" > "$marker" || {
+      echo "error: P0 blocker wakes were queued for $task but their once-only marker could not be written" >&2
+      exit 1
+    }
+  else
+    rm -f "$marker"
+  fi
 }
 
 # window_is_busy: 0 when the semantic busy-state contract (bin/fm-busy-lib.sh)
