@@ -132,15 +132,29 @@
 #                          never an automatic interrupt, signal, or restart of
 #                          the worker or its tool process. A proven-gone
 #                          endpoint takes the dead-record path above instead.
+#                          At escalation time a T3 Code thread whose shared
+#                          classification still reads running resets the timer
+#                          while its latest turn boundary is under
+#                          BUSY_TURN_MAX_SECS old (wedge_defer_t3code_running).
 #   stale: <window> (declared pause on a parked run - ...)
 #                          a worker's own `paused:` line still stands while its
 #                          no-mistakes run is parked on an ask-user finding;
 #                          surfaced at once, in both postures, and the worker is
 #                          rung through its steering inbox (parked_gate_notice)
-#                          At escalation time a T3 Code thread whose shared
-#                          classification still reads running resets the timer
-#                          while its latest turn boundary is under
-#                          BUSY_TURN_MAX_SECS old (wedge_defer_t3code_running).
+#   stale: <window> (P0 blocker open for <seconds>s: <exact status line>)
+#                          a priority=0 worker has an open blocker aged at least
+#                          ten minutes in the canonical status fold; emitted once
+#                          per opening even if unrelated events or pane changes
+#                          occur, and collected for every worker before other
+#                          wake-producing work on each supervision cycle.
+#                          Keyed and keyless blockers retain their original
+#                          stamped opening time when the same note is repeated;
+#                          resolving another key does not close them. Unknown
+#                          opening times cannot be aged. Resolution or terminal
+#                          closure retires the episode; a reopen starts anew.
+#                          The incremental fold avoids rereading unchanged logs;
+#                          declaration text is read only for due, unsurfaced
+#                          blockers. Independent of open-decision reminders.
 #   stale: <window> (unread firstmate instruction: ...)
 #   stale: <window> (steering-inbox ladder bookkeeping unwritable: ...)
 #   stale: <window> (steering-inbox busy bookkeeping unwritable: ...)
@@ -528,6 +542,10 @@ TURNEND_CHURN_ABSORB_SECS=${FM_TURNEND_CHURN_ABSORB_SECS:-900}  # longest a task
 # wake) and never double-triages - and never runs the costly provably-working read,
 # except the bounded one parked_gate_away_read spends on an idle `paused:` pane.
 STALE_ESCALATE_SECS=${FM_STALE_ESCALATE_SECS:-240}  # idle secs before a provably-working stale escalates as a possible wedge
+# P0 work has an additional wall-clock blocker guarantee independent of ordinary
+# quiet-pane timing. This is intentionally fixed at ten minutes: ordinary work
+# keeps the existing STALE_ESCALATE_SECS ladder and gains no second timer.
+P0_BLOCKER_SECS=600
 # Hard wall-clock bound on that away-posture parked-gate read, so a no-mistakes
 # that stops answering costs a poll at most this long (parked_gate_away_read).
 PARKED_GATE_READ_TIMEOUT=${FM_PARKED_GATE_READ_TIMEOUT:-}
@@ -654,6 +672,64 @@ captain_held_silenced() {  # <status-line>
 
 hash_pane() {
   if command -v md5 >/dev/null 2>&1; then md5 -q; else md5sum | cut -d' ' -f1; fi
+}
+
+p0_blocker_alarm() {  # <window> <task>
+  local win=$1 task=$2 meta statusf last opened now age marker scope reason
+  local open origins='' key verb until note origin_key number surfaced scopes=''
+  [ -n "$task" ] || return 0
+  meta="$STATE/$task.meta"
+  [ "$(fm_meta_get "$meta" priority 2>/dev/null || true)" = 0 ] || return 0
+  statusf="$STATE/$task.status"
+  marker="$STATE/.p0-blocker-surfaced-$(window_key "$win")"
+  if [ ! -f "$statusf" ] || [ ! -r "$statusf" ] || [ -L "$statusf" ]; then
+    rm -f "$marker"
+    return 0
+  fi
+  open=$(status_open_decisions_incremental "$statusf" '' timed-all) || exit 1
+  surfaced=$(cat "$marker" 2>/dev/null || true)
+  fm_watch_now now
+  while IFS=$'\t' read -r key verb opened until note; do
+    [ "$verb" = blocked ] || continue
+    case "$opened" in ''|unknown|*[!0-9]*) continue ;; esac
+    scope="$key:$opened:$note"
+    case "$surfaced" in
+      "$scope"|"$scope"$'\n'*|*$'\n'"$scope"|*$'\n'"$scope"$'\n'*)
+        scopes="${scopes:+$scopes
+}$scope"
+        continue
+        ;;
+    esac
+    [ "$opened" -le "$now" ] || continue
+    age=$((now - opened))
+    [ "$age" -ge "$P0_BLOCKER_SECS" ] || continue
+    [ -n "$origins" ] || origins=$(_fm_status_open_decision_origins "$statusf") || exit 1
+    last=
+    while IFS=$'\t' read -r origin_key number; do
+      [ "$origin_key" = "$key" ] || continue
+      last=$(sed -n "${number}p" "$statusf")
+      break
+    done <<EOF
+$origins
+EOF
+    [ -n "$last" ] || continue
+    reason="stale: $win (P0 blocker open for ${age}s: $last)"
+    fm_wake_append stale "$win" "$reason" || exit 1
+    scopes="${scopes:+$scopes
+}$scope"
+    P0_BLOCKER_ALARMS="${P0_BLOCKER_ALARMS:+$P0_BLOCKER_ALARMS
+}$reason"
+  done <<EOF
+$open
+EOF
+  if [ -n "$scopes" ]; then
+    printf '%s' "$scopes" > "$marker" || {
+      echo "error: P0 blocker wakes were queued for $task but their once-only marker could not be written" >&2
+      exit 1
+    }
+  else
+    rm -f "$marker"
+  fi
 }
 
 # window_is_busy: 0 when the semantic busy-state contract (bin/fm-busy-lib.sh)
@@ -5081,6 +5157,14 @@ while :; do
   # Liveness beacon for fm-guard.sh: a fresh mtime here means a watcher is
   # alive. Supervision scripts warn when this goes stale with tasks in flight.
   touch "$STATE/.last-watcher-beat"
+
+  P0_BLOCKER_ALARMS=
+  while IFS= read -r w; do
+    watch_record_progress_beat
+    task=$(window_to_task "$w" "$STATE")
+    p0_blocker_alarm "$w" "$task"
+  done < <(recorded_windows)
+  [ -z "$P0_BLOCKER_ALARMS" ] || wake "$P0_BLOCKER_ALARMS"
 
   fleet_heartbeat_publish_detached
 

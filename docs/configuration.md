@@ -1274,6 +1274,7 @@ The flag is a home-local supervision-noise preference and is not inherited by se
 ## Open-decision reminders (config/open-decision-reminders)
 
 The optional local, gitignored `config/open-decision-reminders` presence flag enables a default-off watcher backstop for unanswered keyed `needs-decision` and `blocked` records.
+The always-on P0 blocker alarm is independent of this flag; [`bin/fm-watch.sh`](../bin/fm-watch.sh) owns its timing and wake contract.
 On each poll, the watcher queues at most one `check: open decision overdue: <task> key=<key> age=<seconds>s` wake for the oldest eligible overdue key, independently of pane state or supervision-branch classification.
 Declared `paused:` waits and tasks already held for the captain are exempt.
 Resolving a key stops its reminders, and a later opening starts a new reminder episode.
@@ -2034,7 +2035,7 @@ Per-machine Cursor `cli-config.json` attribution-off is not this contract: it do
 
 ## Project capacity (config/project-capacity)
 
-The optional local, gitignored `config/project-capacity` tells Firstmate how many workers a project can run at once on this machine, for a project whose machine-local resource - a heavy test suite, a local editor stack, a device - only serves a few workers at a time.
+The optional local, gitignored `config/project-capacity` bounds ordinary worker admission for a project on this machine, for a project whose machine-local resource - a heavy test suite, a local editor stack, a device - only serves a few workers at a time.
 Without it, dispatch stays uncapped as `AGENTS.md` section 7 describes, and a surplus worker is launched only to spend full-context turns waiting for the resource.
 The file lives in the machine's root Firstmate home, so every local secondmate home reads the same limit, and it holds one line per project:
 
@@ -2050,9 +2051,10 @@ A name that is `#`, or that begins with `#` and a space, cannot be declared, bec
 A place is held by every ship or scout on that project in the root home or any local secondmate home registered under it, including one working in a separate clone of the same origin, until its ready PR is recorded or it is cleaned up; a local-only ship or a scout holds its place until cleanup.
 The declaration is matched by the spawning clone's directory name, so clones of the same origin share the cap only when they use that same directory name.
 A clone of that origin under a different directory name finds no declaration and is not capped, though its workers are still counted as holders for a same-origin clone that is capped.
-When every place is held, `bin/fm-spawn.sh` launches nothing, creates no record, leaves the backlog item queued, prints one `deferred:` line naming the holders, and exits 75, so Firstmate dispatches the item again once a place frees.
-A malformed or unreadable file refuses every fresh ship or scout spawn until it is fixed, rather than guessing the intended limit, and so does a local home's state directory or task record that cannot be read while counting a capped project's holders.
-Firstmate cannot see which part of a worker's life uses the resource, so the number bounds whole workers from launch to handoff, and the tightest resource every worker needs should decide it.
+When every place is held, an ordinary `bin/fm-spawn.sh` launch creates no record, leaves the backlog item queued, prints one `deferred:` line naming the holders, and exits 75, so Firstmate dispatches the item again once a place frees.
+Prioritized orders follow the preemption policy in `AGENTS.md` section 7; [`bin/fm-spawn.sh`](../bin/fm-spawn.sh) owns priority admission and its backlog validation.
+A malformed or unreadable file refuses every fresh ship or scout spawn until it is fixed, rather than guessing the intended limit, and an ordinary spawn also refuses if a local home's state directory or task record cannot be read while counting a capped project's holders.
+Firstmate cannot see which part of a worker's life uses the resource, so ordinary admission counts whole workers from launch to handoff, and the tightest resource every worker needs should decide it.
 [`bin/fm-project-capacity-lib.sh`](../bin/fm-project-capacity-lib.sh) owns the file format, what holds a place, and why concurrent spawns cannot both take the last one.
 
 ## Crew dispatch profiles (config/crew-dispatch.json)

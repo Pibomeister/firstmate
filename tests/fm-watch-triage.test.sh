@@ -5706,6 +5706,142 @@ test_closed_exit_picker_drops_saved_dialog_name() {
   pass "a closed picker drops the saved dialog name, and the stale stays ordinary"
 }
 
+test_p0_blocker_surfaces_exact_text_once_at_ten_minutes() {
+  local dir state fakebin capture_file window key status_line before_out due_out repeat_out
+  dir=$(make_case p0-blocker-ten-minutes); state="$dir/state"; fakebin="$dir/fakebin"
+  capture_file="$dir/pane.txt"; window="test:fm-p0-worker"
+  before_out="$dir/before.out"; due_out="$dir/due.out"; repeat_out="$dir/repeat.out"
+  status_line='blocked [at=1000]: deployment key is unavailable'
+  mkdir -p "$dir/config"
+  printf 'window=%s\nkind=ship\nharness=codex\npriority=0\n' "$window" > "$state/p0-worker.meta"
+  printf '%s\n' "$status_line" > "$state/p0-worker.status"
+  prime_status_seen "$state" "$state/p0-worker.status"
+  printf 'rendering before the deadline' > "$capture_file"
+
+  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" FM_WATCH_NOW=1599 \
+    FM_WATCH_HANDLING_SUCCESSOR=1 FM_WATCH_ONCE=1 FM_POLL=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$WATCH" > "$before_out" || fail "the P0 pre-deadline cycle failed: $(cat "$before_out")"
+  grep -F 'P0 blocker open' "$before_out" >/dev/null \
+    && fail "the P0 blocker surfaced before ten minutes: $(cat "$before_out")"
+
+  status_line='blocked [at=1500]: deployment key is unavailable'
+  printf '%s\n' "$status_line" 'resolved [key=other] [at=1599]: unrelated answer' >> "$state/p0-worker.status"
+  prime_status_seen "$state" "$state/p0-worker.status"
+  printf 'rendering at the deadline' > "$capture_file"
+  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" FM_WATCH_NOW=1600 \
+    FM_WATCH_HANDLING_SUCCESSOR=1 FM_WATCH_ONCE=1 FM_POLL=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$WATCH" > "$due_out" || fail "the P0 deadline cycle failed: $(cat "$due_out")"
+  grep -Fx "stale: $window (P0 blocker open for 600s: $status_line)" "$due_out" >/dev/null \
+    || fail "the ten-minute alarm did not preserve the exact blocker text: $(cat "$due_out")"
+  key=$(watch_window_key "$window")
+  assert_present "$state/.p0-blocker-surfaced-$key" "the P0 alarm left no once-only marker"
+  ack_stopped_cycle "$state" >/dev/null || fail "the first P0 alarm could not be acknowledged"
+
+  printf '%s\n' 'blocked [at=1650]: deployment key is unavailable' >> "$state/p0-worker.status"
+  prime_status_seen "$state" "$state/p0-worker.status"
+  printf 'rendering after the deadline' > "$capture_file"
+  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" FM_WATCH_NOW=1700 \
+    FM_WATCH_HANDLING_SUCCESSOR=1 FM_WATCH_ONCE=1 FM_POLL=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$WATCH" > "$repeat_out" || fail "the P0 repeat cycle failed: $(cat "$repeat_out")"
+  grep -F 'P0 blocker open' "$repeat_out" >/dev/null \
+    && fail "the same P0 blocker surfaced more than once: $(cat "$repeat_out")"
+  pass "a P0 blocker surfaces its exact status text once at the ten-minute bound"
+}
+
+
+test_p0_alarms_scan_all_workers_before_sibling_signals() {
+  local dir state fakebin out id window status_line
+  dir=$(make_case p0-sibling-signals); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/out"
+  mkdir -p "$dir/config"
+  for id in p0-first p0-second; do
+    window="test:fm-$id"
+    status_line="blocked [at=1000]: $id needs a deployment key"
+    printf 'window=%s\nkind=ship\nharness=codex\npriority=0\n' "$window" > "$state/$id.meta"
+    printf '%s\n' "$status_line" > "$state/$id.status"
+    prime_status_seen "$state" "$state/$id.status"
+  done
+  printf 'window=test:fm-sibling\nkind=ship\nharness=codex\n' > "$state/sibling.meta"
+  printf 'blocked [at=1600]: a fresh sibling signal\n' > "$state/sibling.status"
+
+  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_WATCH_NOW=1600 FM_WATCH_HANDLING_SUCCESSOR=1 FM_WATCH_ONCE=1 \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$WATCH" > "$out" || fail "the P0 scan failed: $(cat "$out")"
+  for id in p0-first p0-second; do
+    grep -Fx "stale: test:fm-$id (P0 blocker open for 600s: blocked [at=1000]: $id needs a deployment key)" "$out" >/dev/null \
+      || fail "the sibling signal or another alarm starved $id: $(cat "$out")"
+    grep -F "$id needs a deployment key" "$state/.wake-queue" >/dev/null \
+      || fail "$id's alarm was not queued"
+  done
+  ack_stopped_cycle "$state" >/dev/null || fail "the P0 alarms could not be acknowledged"
+  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_WATCH_NOW=1601 FM_WATCH_HANDLING_SUCCESSOR=1 FM_WATCH_ONCE=1 \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$WATCH" > "$out" || fail "the sibling cycle failed: $(cat "$out")"
+  grep -F 'signal:' "$out" >/dev/null || fail "the sibling signal was lost: $(cat "$out")"
+  pass "all due P0 alarms surface before sibling signals, which remain deliverable"
+}
+
+
+test_p0_blocker_fold_preserves_open_keys_and_ages() {
+  local dir state fakebin out window id now key status_line
+  dir=$(make_case p0-blocker-fold); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/out"; window=test:fm-p0-fold; id=p0-fold
+  mkdir -p "$dir/config"
+  printf 'window=%s\nkind=ship\nharness=codex\npriority=0\n' "$window" > "$state/$id.meta"
+  printf '%s\n' \
+    'blocked [key=deploy] [at=1000]: missing credentials' \
+    'blocked [key=network] [at=1000]: missing route' \
+    'needs-decision [key=other] [at=1001]: choose region' \
+    'blocked [key=deploy] [at=1500]: missing credentials' \
+    'resolved [key=other] [at=1599]: region selected' > "$state/$id.status"
+  for now in 1599 1600 1700 1800 2600 2700; do
+    case "$now" in
+      1700)
+        printf '%s\n' 'resolved [key=network] [at=1650]: route ready' >> "$state/$id.status"
+        ;;
+      1800)
+        printf '%s\n' 'resolved [key=deploy] [at=1750]: credentials ready' >> "$state/$id.status"
+        ;;
+      2600)
+        printf '%s\n' 'blocked [key=deploy] [at=2000]: missing credentials' >> "$state/$id.status"
+        ;;
+      2700)
+        printf '%s\n' 'done [at=2650]: deployed' >> "$state/$id.status"
+        ;;
+    esac
+    prime_status_seen "$state" "$state/$id.status"
+    PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/config" \
+      FM_WATCH_NOW="$now" FM_WATCH_HANDLING_SUCCESSOR=1 FM_WATCH_ONCE=1 \
+      FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+      "$WATCH" > "$out" || fail "the blocker fold cycle at $now failed: $(cat "$out")"
+    case "$now" in
+      1600|2600)
+        status_line='blocked [key=deploy] [at=1500]: missing credentials'
+        [ "$now" != 2600 ] || status_line='blocked [key=deploy] [at=2000]: missing credentials'
+        grep -Fx "stale: $window (P0 blocker open for 600s: $status_line)" "$out" >/dev/null \
+          || fail "the fold lost the deploy opening time at $now: $(cat "$out")"
+        if [ "$now" = 1600 ]; then
+          grep -Fx "stale: $window (P0 blocker open for 600s: blocked [key=network] [at=1000]: missing route)" "$out" >/dev/null \
+            || fail "another open key was hidden: $(cat "$out")"
+        fi
+        ack_stopped_cycle "$state" >/dev/null || fail "the folded alarms could not be acknowledged"
+        ;;
+      *)
+        grep -F 'P0 blocker open' "$out" >/dev/null \
+          && fail "an early, resolved, or previously surfaced blocker alarmed at $now: $(cat "$out")"
+        ;;
+    esac
+  done
+  key=$(watch_window_key "$window")
+  assert_absent "$state/.p0-blocker-surfaced-$key" "a terminal task retained blocker alarm state"
+  pass "P0 alarms follow open keys, retain opening ages, and retire resolved episodes"
+}
+
 
 # CI's stock macOS Bash lane sets FM_TEST_STOCK_BASH=1 to run just the bash-3.2
 # churn-deferral regression. The rest of this file is not a 3.2 snapshot suite.
@@ -5853,4 +5989,7 @@ fm_test_run \
   test_exit_picker_wedge_keeps_climbing \
   test_quoted_exit_picker_stays_ordinary_stale \
   test_secondmate_exit_picker_stays_quiet \
-  test_closed_exit_picker_drops_saved_dialog_name
+  test_closed_exit_picker_drops_saved_dialog_name \
+  test_p0_blocker_surfaces_exact_text_once_at_ten_minutes \
+  test_p0_alarms_scan_all_workers_before_sibling_signals \
+  test_p0_blocker_fold_preserves_open_keys_and_ages

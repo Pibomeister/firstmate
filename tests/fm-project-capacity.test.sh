@@ -270,6 +270,28 @@ test_exhausted_capacity_defers_without_leaving_anything_behind() {
   pass "a spawn beyond capacity is deferred before any record, brief, endpoint, worktree, or backlog move exists"
 }
 
+test_prioritized_spawn_preempts_capacity_without_stopping_other_lanes() {
+  local case_dir home pane out rc=0
+  case_dir=$(make_case priority-preemption task-p0)
+  home="$case_dir/home"
+  declare_capacity "$home" "project 2"
+  write_live "$home" live-a "$case_dir/project"
+  write_live "$home" live-b "$case_dir/project"
+  if [ "$HAVE_TASKS_AXI" = 1 ]; then
+    tasks-axi update task-p0 --priority 0 --file "$home/data/backlog.md" >/dev/null
+  fi
+  pane=$(new_worktree "$case_dir" task-p0)
+  out=$(run_spawn "$case_dir" "$home" "$pane" task-p0 "$case_dir/project" \
+    --mode no-mistakes --yolo off --priority 0) || rc=$?
+  expect_code 0 "$rc" "a P0 spawn waited behind full ordinary lanes: $out"
+  assert_contains "$out" "spawned task-p0" "the P0 did not receive its dedicated worker"
+  assert_equals 0 "$(sed -n 's/^priority=//p' "$home/state/task-p0.meta")" \
+    "the dedicated worker did not retain its P0 identity for supervision"
+  assert_present "$home/state/live-a.meta" "priority preemption stopped the first existing lane"
+  assert_present "$home/state/live-b.meta" "priority preemption stopped the second existing lane"
+  pass "a prioritized order gets a dedicated worker immediately while full ordinary lanes keep running"
+}
+
 # The capacity is the last field, so a project whose clone directory name holds
 # spaces can be declared. An indented '#' line is still a comment.
 test_spaced_project_name_is_declared() {
@@ -652,6 +674,7 @@ SH
 test_undeclared_capacity_keeps_dispatch_uncapped
 test_available_capacity_admits_the_worker
 test_exhausted_capacity_defers_without_leaving_anything_behind
+test_prioritized_spawn_preempts_capacity_without_stopping_other_lanes
 test_spaced_project_name_is_declared
 test_hash_prefixed_project_name_is_declared
 test_symlinked_home_counts_each_worker_once

@@ -6,7 +6,7 @@
 # use at the same time: a heavy test suite, a local editor stack, a device.
 # Firstmate cannot see which part of a worker's life touches that resource, so
 # the captain declares how many workers the project admits on this machine, and
-# bin/fm-spawn.sh defers a fresh worker beyond that number instead of launching
+# bin/fm-spawn.sh defers a fresh ordinary worker beyond that number instead of launching
 # it only to spend full-context turns retrying the resource. A deferred task
 # keeps its queued backlog item and is dispatched again when a place frees.
 # Without a declaration nothing changes and dispatch stays uncapped
@@ -14,7 +14,8 @@
 #
 # This file is the single owner of the declaration format, of what holds a
 # place, and of the admission verdict. docs/configuration.md "Project capacity"
-# is the operator reference, and bin/fm-spawn.sh owns where the check runs.
+# is the operator reference, and bin/fm-spawn.sh owns where the check runs and
+# its priority-preemption exception.
 #
 # Declaration: config/project-capacity in the local root Firstmate home (the home
 # bin/fm-wake-lib.sh's fm_firstmate_root_home resolves), so every home on this

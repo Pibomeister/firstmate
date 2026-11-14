@@ -890,7 +890,7 @@ _fm_status_kind() {
   case "$kind" in ship|scout|secondmate) printf '%s' "$kind" ;; *) printf unknown ;; esac
 }
 
-_fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb> <kind> [timed]
+_fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb> <kind> [timed|timed-all]
   local open=$1 line=$2 resolve=$3 held=$4 kind=$5 verb key note unstamped
   local timed=${6:-} epoch until old_key old_verb old_epoch old_note
   # Both colon tests below ask where the head ends, the same question the note
@@ -926,17 +926,17 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
   case "$verb" in
     needs-decision|blocked)
       note=$(status_line_note "$line")
-      if [ "$timed" = timed ]; then
+      if [ "$timed" = timed ] || [ "$timed" = timed-all ]; then
         # The timed view adds emission-time and deferral-date columns, without
-        # changing any open/closed rule. Keyless or unstamped events have
-        # unknown age. A republish of a still-open key with the same verb and
-        # note keeps the open row's earlier time, so its age and reminder
+        # changing any open/closed rule. The timed-all view also ages keyless
+        # events; unstamped events have unknown age. A republish of a still-open
+        # key with the same verb and note keeps its earlier time, so its age and reminder
         # schedule survive; a resolution has already dropped the key, so a
         # reopen takes its own time. The deferral column always comes from the
         # newest line; it is `-` when absent and `?` when malformed, never
         # empty, so a TAB-split read cannot collapse it.
         epoch=unknown
-        if [ -n "$(_fm_decision_key "$line" '')" ]; then
+        if [ "$timed" = timed-all ] || [ -n "$(_fm_decision_key "$line" '')" ]; then
           _fm_status_at_epoch "$line" epoch || epoch=unknown
         fi
         _fm_status_until_date "$line" until || case $? in 1) until=- ;; *) until='?' ;; esac
@@ -1256,8 +1256,9 @@ EOF
 #
 # The cursor format is `version` (FM_OPEN_DECISIONS_FOLD_VERSION plus the task
 # kind, as `<n>:<kind>`), `offset`, `ident`, then the folded open set.
-# The optional timed view uses a separate `.timed` cursor and adds `:timed3`
-# to the version; status_open_decisions_incremental owns its row format.
+# Optional timed views use separate cursors: `.timed` with version suffix
+# `:timed3`, or `.timed-all` with `:timed-all1` to age keyless events too.
+# status_open_decisions_incremental owns their row format.
 # FM_OPEN_DECISIONS_FOLD_VERSION must be bumped whenever
 # _fm_decision_fold_line semantics change, so persisted state from an older
 # interpretation is discarded and rebuilt from byte 0; the kind suffix does the
@@ -1415,11 +1416,11 @@ _fm_status_read_span() {  # <status-file> <start-offset> <byte-length>
   ' "$f" "$start" "$length"
 }
 
-status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [timed]
+status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [timed|timed-all]
   local f=$1 captured_end=${2:-} cf offset ident open='' trusted_open='' cursor_data first rest offset_line ident_line
   local version='' size actual_size cur_ident resolve held chunk_file chunk_size line cursor_dirty=0
   local target_cursor kind fold_version timed=${3:-}
-  case "$timed" in ''|timed) ;; *) return 2 ;; esac
+  case "$timed" in ''|timed|timed-all) ;; *) return 2 ;; esac
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 0
   kind=$(_fm_status_kind "$f")
   fold_version="$FM_OPEN_DECISIONS_FOLD_VERSION:$kind"
@@ -1428,7 +1429,10 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
   # Timed rows are <key> TAB <verb> TAB <epoch-or-unknown> TAB
   # <until-date, `-` absent, `?` malformed> TAB <note>. The suffix number
   # retires timed cursors persisted under an older row format or epoch rule.
-  if [ "$timed" = timed ]; then cf="$cf.timed"; fold_version="$fold_version:timed3"; fi
+  case "$timed" in
+    timed) cf="$cf.timed"; fold_version="$fold_version:timed3" ;;
+    timed-all) cf="$cf.timed-all"; fold_version="$fold_version:timed-all1" ;;
+  esac
   offset=0
   ident=''
   if [ -f "$cf" ] && [ -r "$cf" ] && [ ! -L "$cf" ]; then
@@ -1881,6 +1885,8 @@ status_retire_presentation_task() {  # <state> <task-id> [<archive-file>]
     && [ ! -L "$state/.$task.open-decisions-cursor" ] \
     && [ ! -e "$state/.$task.open-decisions-cursor.timed" ] \
     && [ ! -L "$state/.$task.open-decisions-cursor.timed" ] \
+    && [ ! -e "$state/.$task.open-decisions-cursor.timed-all" ] \
+    && [ ! -L "$state/.$task.open-decisions-cursor.timed-all" ] \
     && [ ! -e "$home_appends" ] && [ ! -L "$home_appends" ] \
     && [ ! -e "$home_appends_lock" ] && [ ! -L "$home_appends_lock" ] \
     && [ ! -e "$signal_marker" ] && [ ! -L "$signal_marker" ] \
@@ -1951,6 +1957,7 @@ EOF
   if [ "$rc" -eq 0 ]; then
     rm -f -- "$state/$task.status" "$state/.$task.open-decisions-cursor" \
       "$state/.$task.open-decisions-cursor.timed" \
+      "$state/.$task.open-decisions-cursor.timed-all" \
       "$home_appends" "$signal_marker" "$heartbeat_marker" "$daemon_marker" || rc=1
     fm_lock_remove_path "$home_appends_lock" 2>/dev/null || true
   fi

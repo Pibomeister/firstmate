@@ -163,6 +163,49 @@ test_timed_fold_is_incremental() {
   pass "quiet polls reuse the timed fold and only new status bytes are folded"
 }
 
+
+test_p0_origins_only_for_due_unsurfaced_blockers() {
+  reset_case
+  printf 'priority=0\nkind=ship\nwindow=test:worker\n' > "$STATE/worker.meta"
+  printf 'blocked [at=1000]: credentials missing\n' > "$STATE/worker.status"
+  P0_BLOCKER_ALARMS=
+  export FM_OPEN_DECISIONS_READ_PROBE="$TMP_ROOT/p0-fold.reads"
+  : > "$FM_OPEN_DECISIONS_READ_PROBE"
+  (
+    _fm_status_open_decision_origins() { fail 'an early P0 alarm reconstructed history'; }
+    FM_WATCH_NOW=1599 p0_blocker_alarm test:worker worker
+  ) || fail 'early blocker scan failed'
+  [ "$(count_wakes)" = 0 ] || fail 'keyless blocker alarmed early'
+  FM_WATCH_NOW=1600 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 1 ] || fail 'due keyless blocker did not alarm'
+  (
+    _fm_status_open_decision_origins() { fail 'a surfaced P0 alarm reconstructed history'; }
+    FM_WATCH_NOW=1700 p0_blocker_alarm test:worker worker
+  ) || fail 'surfaced blocker scan failed'
+  printf 'resolved [key=default] [at=1800]: answered\nblocked [at=2000]: credentials missing\n' >> "$STATE/worker.status"
+  (
+    _fm_status_open_decision_origins() { fail 'a reopened early P0 alarm reconstructed history'; }
+    FM_WATCH_NOW=2599 p0_blocker_alarm test:worker worker
+  ) || fail 'reopened early blocker scan failed'
+  FM_WATCH_NOW=2600 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 2 ] || fail 'reopened keyless blocker did not get its own deadline'
+  printf 'done [at=2700]: finished\n' >> "$STATE/worker.status"
+  (
+    _fm_status_open_decision_origins() { fail 'a terminal P0 task reconstructed history'; }
+    FM_WATCH_NOW=2800 p0_blocker_alarm test:worker worker
+  ) || fail 'terminal blocker scan failed'
+  printf 'needs-decision [key=region] [at=2900]: choose\n' >> "$STATE/worker.status"
+  (
+    _fm_status_open_decision_origins() { fail 'a P0 task without blockers reconstructed history'; }
+    FM_WATCH_NOW=3600 p0_blocker_alarm test:worker worker
+  ) || fail 'non-blocker scan failed'
+  [ "$(count_wakes)" = 2 ] || fail 'an ineligible blocker scan queued an alarm'
+  [ "$(wc -l < "$FM_OPEN_DECISIONS_READ_PROBE" | tr -d ' ')" = 4 ] \
+    || fail 'unchanged P0 scans reread status history'
+  unset FM_OPEN_DECISIONS_READ_PROBE
+  pass 'P0 origin reads occur only for due unsurfaced blockers, including keyless reopens'
+}
+
 test_invalid_settings() {
   reset_case
   touch "$CONFIG/open-decision-reminders"
@@ -182,8 +225,10 @@ test_timed_cursor_retirement() {
   touch "$CONFIG/open-decision-reminders"
   printf 'blocked [at=1000] [key=api]: help\n' > "$STATE/worker.status"
   open_decision_reminder_tick 1200
+  status_open_decisions_incremental "$STATE/worker.status" '' timed-all >/dev/null
   status_retire_presentation_task "$STATE" worker
   [ ! -e "$STATE/.worker.open-decisions-cursor.timed" ] || fail "task retirement left its timed cursor"
+  [ ! -e "$STATE/.worker.open-decisions-cursor.timed-all" ] || fail "task retirement left its timed-all cursor"
   open_decision_reminder_tick 1600
   [ "$(count_wakes)" = 1 ] || fail "retired task kept generating reminders"
   pass "task retirement removes the timed cursor and ends reminders"
@@ -358,9 +403,15 @@ test_away_page_retries_after_channel_configured() {
   pass 'pending page retries when a channel becomes available'
 }
 
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit
+fi
+
 fm_test_run test_disabled test_oldest_and_backoff test_numeric_keys_are_distinct \
   test_numeric_tasks_are_distinct test_resolution_and_reopen \
   test_wait_exemptions test_unknown_times_and_keyless test_timed_fold_is_incremental \
+  test_p0_origins_only_for_due_unsurfaced_blockers \
   test_invalid_settings test_timed_cursor_retirement test_watcher_loop \
   test_away_age_route test_away_age_page_and_staleness \
   test_away_confirmation_change_keeps_decision_open test_interrupted_claim_retries_page \
