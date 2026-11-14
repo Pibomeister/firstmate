@@ -37,7 +37,9 @@
 #   data/watchdog/status.md      the short status file, rewritten atomically after each pass.
 #   data/watchdog/handoffs/, data/watchdog/rulings/  restart handoffs and council rulings.
 #   data/watchdog/no-rulings/    the record of each council that gave no ruling.
-#   state/watchdog/council-locks/  one directory per council that is running now.
+#   state/watchdog/council-locks/  one owner-identity lock per running council.
+# Council locators are Git blob IDs of NUL-separated home/task/key tuples;
+# authenticated legacy filenames remain readable. Hashing uses the code root.
 # A restarted session writes <its home>/state/watchdog/pickups/<token>.
 #   <watched home>/state/watchdog/captain  key=value record of that home's live
 #                                captain, rewritten each pass and by pickup.
@@ -786,17 +788,27 @@ wd_decision_reserved() {  # <task> <key> <summary>
     printf ',%s,' "$(cfg reserved-keys '')" | grep -Fq ",$2,"
 }
 
+wd_council_key() {  # <task> <key>: portable locator; record metadata authenticates identity.
+  local digest
+  digest=$(unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR
+    printf '%s\0%s\0%s' "$O_HOME" "$1" "$2" | git -C "$SCRIPT_DIR" hash-object --stdin) || return 1
+  printf 'council-%s\n' "$digest"
+}
+
 # wd_council_record <task> <key>: the final council record of one decision, as
 # `ruled|no-ruling TAB answer TAB path TAB seats`; nothing when it has none.
 wd_council_record() {
-  local name f kind header answer
-  # Colon is excluded from task/key; old filenames need the same identity check.
-  for name in "$O_KEY-$1:$2.md" "$O_KEY-$1-$2.md"; do
+  local name f kind header answer locator
+  locator=$(wd_council_key "$1" "$2") || return 1
+  for name in "$locator.md" "$O_KEY-$1:$2.md" "$O_KEY-$1-$2.md"; do
     for f in "$OUT/rulings/$name" "$OUT/no-rulings/$name"; do
       [ -f "$f" ] || continue
       case "$f" in "$OUT/rulings/"*) kind=ruled ;; *) kind=no-ruling ;; esac
-      header=$(awk '/^Record:$/ { exit } /^$/ { if (meta) exit; next } /^- / { meta=1 } meta { print }' "$f")
+      header=$(sed '/^Record:$/,$d' "$f")
       FM_WD_RECORD_HOME="$O_HOME" FM_WD_RECORD_TASK="$1" FM_WD_RECORD_KEY="$2" FM_WD_RECORD_KIND="$kind" awk '
+        /^[[:space:]]*$/ { if (meta) ended=1; next }
+        ended { bad=1 }
+        /^- / { meta=1 }
         /^- home: / { h++; if (substr($0,9) != ENVIRON["FM_WD_RECORD_HOME"]) bad=1 }
         /^- task: / { t++; if (substr($0,9) != ENVIRON["FM_WD_RECORD_TASK"]) bad=1 }
         /^- key: / { k++; if (substr($0,8) != ENVIRON["FM_WD_RECORD_KEY"]) bad=1 }
@@ -844,7 +856,7 @@ wd_council_record() {
 # A ruling or no-ruling record is final for its task and key: the caller checks
 # wd_council_record first, and this function never overwrites one.
 wd_council() {
-  local task=$1 key=$2 summary=$3 seats seat i=0 tmp answers='' first='' unanimous=1 answered=0 record prompt a fams lock dir
+  local task=$1 key=$2 summary=$3 seats seat i=0 tmp answers='' first='' unanimous=1 answered=0 record prompt a fams lock dir locator
   local WD_CALL_MAX_USD WD_CALL_TIMEOUT
   if [ "${#summary}" -gt 2000 ]; then
     printf 'refused\t\t\trecord exceeds 2000 characters\n'
@@ -856,7 +868,8 @@ wd_council() {
   WD_CALL_MAX_USD=$(cfg council-call-max-usd "$(cfg judge-call-max-usd 0.05)")
   WD_CALL_TIMEOUT=$(cfgi council-timeout-secs "$(cfgi judge-timeout-secs 120)")
   # Shared owner-identity locking serializes stale reclamation without expiring live owners.
-  lock=$WD/council-locks/$O_KEY-$task:$key
+  locator=$(wd_council_key "$task" "$key") || return 1
+  lock=$WD/council-locks/$locator
   mkdir -p "$WD/council-locks"
   if ! fm_lock_try_acquire "$lock"; then printf 'busy\t\t\t\n'; return 0; fi
   if [ -n "$(wd_council_record "$task" "$key")" ]; then fm_lock_release "$lock"; printf 'busy\t\t\t\n'; return 0; fi
@@ -890,7 +903,7 @@ Reply with exactly one line: PROCEED <label> or HOLD."
   if [ "$answered" -eq 0 ]; then fm_lock_release "$lock"; printf 'failed\t\t\t%s\n' "$answers"; return 0; fi
   if [ "$unanimous" = 1 ]; then dir=$OUT/rulings; else dir=$OUT/no-rulings; fi
   mkdir -p "$dir"
-  record=$dir/$O_KEY-$task:$key.md
+  record=$dir/$locator.md
   if {
     if [ "$unanimous" = 1 ]; then
       printf '# Watchdog council ruling\n\n' &&

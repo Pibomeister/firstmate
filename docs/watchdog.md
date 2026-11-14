@@ -157,7 +157,7 @@ Each decision gets one council, for its task and key.
   The dissent is in that record and in the ledger row.
 - A council in which no seat answered records nothing final, so a later pass may convene it again after `council-secs`.
 
-A ruling or no-ruling record is final: no later pass and no repeated command convenes that task and key again.
+A valid ruling or no-ruling record is final: no later pass and no repeated command convenes that task and key again.
 Removing the record file is the only way to allow a new council, and that is the owner's or the supervisor's act.
 A council records agreement as evidence for the supervisor; it is never the owner's approval.
 
