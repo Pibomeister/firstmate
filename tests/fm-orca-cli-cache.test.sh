@@ -112,6 +112,123 @@ calls() {
   wc -l < "$COUNT" | tr -d ' '
 }
 
+start_lock_holder() {
+  local lock=$1 label=$2 i=0
+  cat > "$CASE/$label-holder.sh" <<'SH'
+#!/usr/bin/env bash
+set -u
+. "$1"
+fm_orca_cli_lock_acquire "$2" 15 || exit 1
+touch "$3"
+i=0
+while [ ! -f "$4" ] && [ "$i" -lt 1200 ]; do
+  sleep 0.05
+  i=$((i + 1))
+done
+fm_orca_cli_lock_release "$2"
+SH
+  bash "$CASE/$label-holder.sh" "$ROOT/bin/fm-orca-cli-cache.sh" "$lock" \
+    "$CASE/$label-ready" "$CASE/$label-release" > "$CASE/$label.log" 2>&1 &
+  HOLDER_PID=$!
+  while [ ! -f "$CASE/$label-ready" ] && [ "$i" -lt 200 ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  [ -f "$CASE/$label-ready" ] || fail "the lock holder did not start"
+}
+
+test_live_lock_cannot_be_displaced_by_age() {
+  local lock holder rc=0
+  setup_case live-lock
+  lock="$FM_ORCA_CLI_CACHE_DIR/held.lock"
+  start_lock_holder "$lock" live
+  holder=$HOLDER_PID
+  fm_touch_epoch "$(( $(date +%s) - 30 ))" "$lock"
+  bash -c '. "$1"; fm_orca_cli_lock_acquire "$2" 15' _ \
+    "$ROOT/bin/fm-orca-cli-cache.sh" "$lock" || rc=$?
+  touch "$CASE/live-release"
+  wait "$holder"
+  assert_equals 1 "$rc" "an aged lock was taken away from a live process"
+  pass "Orca cache locks keep a live owner regardless of age"
+}
+
+test_old_owner_cannot_release_a_replacement_lock() {
+  local lock old new rc=0
+  setup_case replaced-lock
+  lock="$FM_ORCA_CLI_CACHE_DIR/held.lock"
+  start_lock_holder "$lock" old
+  old=$HOLDER_PID
+  rm -rf "$lock"
+  start_lock_holder "$lock" new
+  new=$HOLDER_PID
+  touch "$CASE/old-release"
+  wait "$old"
+  bash -c '. "$1"; fm_orca_cli_lock_acquire "$2" 15' _ \
+    "$ROOT/bin/fm-orca-cli-cache.sh" "$lock" || rc=$?
+  touch "$CASE/new-release"
+  wait "$new"
+  assert_equals 1 "$rc" "a previous owner removed the replacement process's lock"
+  pass "Orca cache lock release preserves a replacement owner"
+}
+
+test_dead_lock_owner_can_be_reclaimed() {
+  local lock
+  setup_case dead-lock
+  lock="$FM_ORCA_CLI_CACHE_DIR/held.lock"
+  bash -c '. "$1"; fm_orca_cli_lock_acquire "$2" 15' _ \
+    "$ROOT/bin/fm-orca-cli-cache.sh" "$lock" || fail "the original owner did not claim its lock"
+  fm_touch_epoch "$(( $(date +%s) - 30 ))" "$lock"
+  bash -c '. "$1"; fm_orca_cli_lock_acquire "$2" 15 || exit 1; fm_orca_cli_lock_release "$2"' _ \
+    "$ROOT/bin/fm-orca-cli-cache.sh" "$lock" || fail "a provably dead owner's lock was not recovered"
+  pass "Orca cache locks recover a provably dead owner"
+}
+
+test_malformed_lock_identity_is_not_reclaimed() {
+  local lock rc=0
+  setup_case malformed-lock
+  lock="$FM_ORCA_CLI_CACHE_DIR/held.lock"
+  mkdir "$lock"
+  touch "$lock/owner.2"
+  bash -c '. "$1"; fm_orca_cli_lock_acquire "$2" 15' _ \
+    "$ROOT/bin/fm-orca-cli-cache.sh" "$lock" || rc=$?
+  assert_equals 2 "$rc" "a marker without an ownership nonce was treated as a valid owner"
+  [ -f "$lock/owner.2" ] || fail "malformed ownership was removed without proof"
+  pass "Orca cache locks leave malformed ownership unclaimed"
+}
+
+test_displaced_fill_cannot_overwrite_a_newer_snapshot() {
+  local reader lock body i=0
+  setup_case displaced-fill
+  CACHE_TTL=120
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"before"}}'
+  FM_ORCA_HOLD="$CASE/held"
+  run_cli terminal read --terminal term-a --limit 1 --json > "$CASE/old.out" &
+  reader=$!
+  while [ ! -f "$FM_ORCA_HOLD" ] && [ "$i" -lt 200 ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  [ -f "$FM_ORCA_HOLD" ] || fail "the old fill did not start"
+  lock=
+  for lock in "$FM_ORCA_CLI_CACHE_DIR/locks/"*; do
+    case "${lock##*/}" in *.*) continue ;; esac
+    [ -e "$lock" ] && break
+  done
+  [ -d "$lock" ] || fail "the old fill owns no lock"
+  rm -rf "$lock"
+  FM_ORCA_HOLD=
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"after"}}'
+  run_cli terminal read --terminal term-a --limit 1 --json >/dev/null
+  touch "$CASE/held.release"
+  wait "$reader"
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"latest"}}'
+  body=$(run_cli terminal read --terminal term-a --limit 1 --json)
+  assert_equals '{"ok":true,"result":{"text":"after"}}' "$body" \
+    "a displaced fill overwrote the newer published snapshot"
+  assert_equals 2 "$(calls)" "the replacement snapshot was not retained"
+  pass "a displaced Orca cache fill cannot overwrite a newer owner's result"
+}
+
 # Run fm_orca_cli inside a fresh bash so the helper sees this case's PATH.
 run_cli() {
   PATH="$CASE/fakebin:$PATH" \
@@ -262,6 +379,7 @@ test_pending_generation_invalidation_disables_replay() {
     "a mutation whose invalidation timed out left an old snapshot reusable"
   assert_equals 3 "$(calls)" "the read after failed invalidation did not reach the CLI"
   fm_touch_epoch "$(( $(date +%s) - 30 ))" "$FM_ORCA_CLI_CACHE_DIR/gen.lock"
+  rmdir "$FM_ORCA_CLI_CACHE_DIR/gen.lock"
   run_cli terminal send --terminal term-a --text y --json >/dev/null
   FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"recovered"}}'
   run_cli terminal read --terminal term-a --limit 1 --json >/dev/null
@@ -281,6 +399,7 @@ test_failed_generation_publish_rejects_an_old_inflight_result() {
     mkdir "$FM_ORCA_CLI_CACHE_DIR/gen"
   else
     {
+      # shellcheck disable=SC2016 # Expansion belongs to the generated shim.
       printf '%s\n' '#!/usr/bin/env bash' 'for last; do :; done' \
         '[ "$last" != "$FM_ORCA_CLI_CACHE_DIR/gen" ] || exit 1'
       printf 'exec %q "$@"\n' "$real_mv"
@@ -690,6 +809,11 @@ if [ "$#" -gt 0 ]; then
 fi
 
 fm_test_run \
+  test_live_lock_cannot_be_displaced_by_age \
+  test_old_owner_cannot_release_a_replacement_lock \
+  test_dead_lock_owner_can_be_reclaimed \
+  test_malformed_lock_identity_is_not_reclaimed \
+  test_displaced_fill_cannot_overwrite_a_newer_snapshot \
   test_live_capture_proofs_ignore_cached_snapshots \
   test_pending_generation_invalidation_disables_replay \
   test_failed_generation_publish_rejects_an_old_inflight_result \

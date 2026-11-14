@@ -79,15 +79,6 @@ fm_orca_cli_ttl() {
   esac
 }
 
-fm_orca_cli_mtime() {
-  local m
-  m=$(stat -f %m "$1" 2>/dev/null) || m=$(stat -c %Y "$1" 2>/dev/null) || m=0
-  case "$m" in
-    ''|*[!0-9]*) m=0 ;;
-  esac
-  printf '%s' "$m"
-}
-
 fm_orca_cli_read_gen() {
   local raw
   raw=0
@@ -113,46 +104,116 @@ fm_orca_cli_cache_prepare() {
   printf '%s' "$dir"
 }
 
-# Steal only a lock whose directory is older than <stale> seconds.
-fm_orca_cli_lock_acquire() { # <lockdir> <stale-secs>
-  local lock=$1 stale=$2 now mtime age
-  if mkdir "$lock" 2>/dev/null; then
-    return 0
-  fi
-  now=$(date +%s)
-  mtime=$(fm_orca_cli_mtime "$lock")
-  [ "$mtime" -gt 0 ] || return 1
-  age=$((now - mtime))
-  [ "$age" -ge "$stale" ] || return 1
-  rm -rf "$lock"
-  if mkdir "$lock" 2>/dev/null; then
-    return 0
-  fi
-  return 1
+fm_orca_cli_current_pid() { # <output-variable>
+  local _fm_orca_pid_value=${BASHPID:-}
+  [ -n "$_fm_orca_pid_value" ] || _fm_orca_pid_value=$(exec /bin/sh -c 'echo "$PPID"')
+  printf -v "$1" '%s' "$_fm_orca_pid_value"
 }
 
-fm_orca_cli_lock_release() {
-  rmdir "$1" 2>/dev/null || rm -rf "$1"
+fm_orca_cli_lock_identity() { # <lockdir>: PID and unique owner marker
+  local lock=$1 pid='' token='' marker suffix count=0
+  [ -d "$lock" ] && [ ! -L "$lock" ] || return 1
+  for marker in "$lock"/owner.*; do
+    [ -e "$marker" ] || [ -L "$marker" ] || continue
+    [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
+    count=$((count + 1))
+    [ "$count" -eq 1 ] || return 1
+    token=${marker##*/}
+    case "$token" in owner.*.*) ;; *) return 1 ;; esac
+    suffix=${token#owner.}
+    pid=${suffix%%.*}
+    suffix=${suffix#*.}
+    case "$pid" in ''|*[!0-9]*|0|1) return 1 ;; esac
+    [ "${#pid}" -le 10 ] || return 1
+    case "$suffix" in ''|*[!A-Za-z0-9]*) return 1 ;; esac
+  done
+  [ "$count" -eq 1 ] || return 1
+  printf '%s\t%s\n' "$pid" "$token"
+}
+
+fm_orca_cli_lock_owned() { # <lockdir> <owner-marker>
+  local identity pid token current
+  identity=$(fm_orca_cli_lock_identity "$1") || return 1
+  IFS=$'\t' read -r pid token <<< "$identity"
+  fm_orca_cli_current_pid current
+  [ "$pid" = "$current" ] && [ "$token" = "$2" ]
+}
+
+# Age never displaces a live owner. Unknown ownership falls back to the CLI.
+# Dead-owner recovery is serialized by that owner's unique marker.
+fm_orca_cli_lock_acquire() { # <lockdir> [legacy-age] [owner-output-variable]
+  local lock=$1 output=${3:-} identity pid token current claim='' marker old_token='' new_token
+  if [ -e "$lock" ] || [ -L "$lock" ]; then
+    identity=$(fm_orca_cli_lock_identity "$lock") || return 2
+    IFS=$'\t' read -r pid token <<< "$identity"
+    fm_orca_cli_current_pid current
+    [ "$pid" != "$current" ] || return 2
+    kill -0 "$pid" 2>/dev/null && return 1
+    claim="$lock.reclaim.$token"
+    mkdir "$claim" 2>/dev/null || return 2
+    if [ "$(fm_orca_cli_lock_identity "$lock" 2>/dev/null)" != "$identity" ] \
+      || kill -0 "$pid" 2>/dev/null; then
+      rmdir "$claim" 2>/dev/null || true
+      return 1
+    fi
+    old_token=$token
+  else
+    mkdir "$lock" 2>/dev/null || return 1
+  fi
+  fm_orca_cli_current_pid current
+  marker=$(mktemp "$lock/owner.$current.XXXXXXXXXXXX") || {
+    [ -z "$claim" ] || rmdir "$claim" 2>/dev/null || true
+    return 2
+  }
+  new_token=${marker##*/}
+  if [ -n "$old_token" ] && ! rm -f "$lock/$old_token"; then
+    rm -f "$marker" 2>/dev/null || true
+    rmdir "$claim" 2>/dev/null || true
+    return 2
+  fi
+  [ -z "$claim" ] || rmdir "$claim" 2>/dev/null || true
+  [ -z "$output" ] || printf -v "$output" '%s' "$new_token"
+  return 0
+}
+
+fm_orca_cli_lock_release() { # <lockdir> [owner-marker]
+  local lock=$1 expected=${2:-} identity pid token current
+  identity=$(fm_orca_cli_lock_identity "$lock") || return 0
+  IFS=$'\t' read -r pid token <<< "$identity"
+  fm_orca_cli_current_pid current
+  [ "$pid" = "$current" ] || return 0
+  [ -z "$expected" ] || [ "$token" = "$expected" ] || return 0
+  rm -rf "$lock" 2>/dev/null || true
 }
 
 fm_orca_cli_cache_invalidate() {
-  local dir lock gen next old i stage
+  local dir lock gen next old i stage held_token='' lock_rc pending_output=${1:-} pending_token=${2:-}
+  [ -z "$pending_output" ] || printf -v "$pending_output" '%s' ''
   fm_orca_cli_cache_enabled || return 0
   dir=$(fm_orca_cli_cache_prepare) || return 0
   lock=$dir/gen.lock
-  i=0
-  while ! fm_orca_cli_lock_acquire "$lock" 15; do
-    i=$((i + 1))
-    [ "$i" -gt 40 ] && return 1
-    sleep 0.05
-  done
+  if [ -n "$pending_token" ] && fm_orca_cli_lock_owned "$lock" "$pending_token"; then
+    held_token=$pending_token
+  else
+    i=0
+    while :; do
+      if fm_orca_cli_lock_acquire "$lock" 15 held_token; then break; else lock_rc=$?; fi
+      [ "$lock_rc" -eq 1 ] || return 1
+      i=$((i + 1))
+      [ "$i" -gt 40 ] && return 1
+      sleep 0.05
+    done
+  fi
+  [ -z "$pending_output" ] || printf -v "$pending_output" '%s' "$held_token"
   if [ -e "$dir/gen" ] || [ -L "$dir/gen" ]; then
     [ -f "$dir/gen" ] && [ ! -L "$dir/gen" ] || return 1
   fi
   gen=$(fm_orca_cli_read_gen "$dir")
   next=$((gen + 1))
   stage=$(mktemp "$dir/staging/gen.XXXXXX") || return 1
-  if ! printf '%s\n' "$next" > "$stage" || ! mv -f "$stage" "$dir/gen"; then
+  if ! printf '%s\n' "$next" > "$stage" \
+    || ! fm_orca_cli_lock_owned "$lock" "$held_token" \
+    || ! mv -f "$stage" "$dir/gen"; then
     rm -f "$stage"
     return 1
   fi
@@ -163,7 +224,8 @@ fm_orca_cli_cache_invalidate() {
       rm -rf "$old"
     done
   fi
-  fm_orca_cli_lock_release "$lock"
+  fm_orca_cli_lock_release "$lock" "$held_token"
+  [ -z "$pending_output" ] || printf -v "$pending_output" '%s' ''
   return 0
 }
 
@@ -171,10 +233,10 @@ fm_orca_cli_cache_invalidate() {
 # exit status, so a read from before the change cannot be reused while it
 # runs or after it finishes.
 fm_orca_cli_mutation() { # <command...>
-  local rc=0
-  fm_orca_cli_cache_invalidate || true
+  local rc=0 pending_generation=''
+  fm_orca_cli_cache_invalidate pending_generation || true
   "$@" || rc=$?
-  fm_orca_cli_cache_invalidate || true
+  fm_orca_cli_cache_invalidate pending_generation "$pending_generation" || true
   return "$rc"
 }
 
@@ -250,19 +312,19 @@ fm_orca_cli_try_replay() { # <dir> <key> -> 0 hit, 1 miss
   return 0
 }
 
-fm_orca_cli_fill() { # <dir> <key> <lock> <orca-args...>
-  local dir=$1 key=$2 lock=$3
-  shift 3
+fm_orca_cli_fill() { # <dir> <key> <lock> <owner-marker> <orca-args...>
+  local dir=$1 key=$2 lock=$3 held_token=$4
+  shift 4
   local gen outf errf rc cacheable ttl now nowgen stage dest
   gen=$(fm_orca_cli_read_gen "$dir")
   outf=$(mktemp "$dir/staging/out.XXXXXX") || {
-    fm_orca_cli_lock_release "$lock"
+    fm_orca_cli_lock_release "$lock" "$held_token"
     command orca "$@" || return $?
     return 0
   }
   errf=$(mktemp "$dir/staging/err.XXXXXX") || {
     rm -f "$outf"
-    fm_orca_cli_lock_release "$lock"
+    fm_orca_cli_lock_release "$lock" "$held_token"
     command orca "$@" || return $?
     return 0
   }
@@ -277,7 +339,7 @@ fm_orca_cli_fill() { # <dir> <key> <lock> <orca-args...>
   fi
   if [ "$cacheable" -eq 1 ]; then
     nowgen=$(fm_orca_cli_read_gen "$dir")
-    if [ "$nowgen" = "$gen" ]; then
+    if [ "$nowgen" = "$gen" ] && fm_orca_cli_lock_owned "$lock" "$held_token"; then
       now=$(date +%s)
       stage=$(mktemp -d "$dir/staging/pub.XXXXXX") || stage=
       dest=$dir/g/$gen/$key
@@ -287,6 +349,7 @@ fm_orca_cli_fill() { # <dir> <key> <lock> <orca-args...>
         && printf '%s\n' "$rc" > "$stage/rc" \
         && printf '%s\n' $((now + ttl)) > "$stage/expires" \
         && mkdir -p "$dir/g/$gen" \
+        && fm_orca_cli_lock_owned "$lock" "$held_token" \
         && rm -rf "$dest" \
         && mv "$stage" "$dest"; then
         :
@@ -296,12 +359,12 @@ fm_orca_cli_fill() { # <dir> <key> <lock> <orca-args...>
     fi
   fi
   rm -f "$outf" "$errf"
-  fm_orca_cli_lock_release "$lock"
+  fm_orca_cli_lock_release "$lock" "$held_token"
   return "$rc"
 }
 
 fm_orca_cli_cached() {
-  local key dir lock i
+  local key dir lock i held_token='' lock_rc
   if [ "$(fm_orca_cli_ttl)" -eq 0 ]; then
     command orca "$@" || return $?
     return 0
@@ -318,7 +381,14 @@ fm_orca_cli_cached() {
     return 0
   fi
   lock=$dir/locks/$key
-  if ! fm_orca_cli_lock_acquire "$lock" 15; then
+  if fm_orca_cli_lock_acquire "$lock" 15 held_token; then
+    :
+  else
+    lock_rc=$?
+    if [ "$lock_rc" -eq 2 ]; then
+      command orca "$@" || return $?
+      return 0
+    fi
     i=0
     while [ "$i" -lt 60 ]; do
       if fm_orca_cli_try_replay "$dir" "$key"; then
@@ -328,16 +398,16 @@ fm_orca_cli_cached() {
       sleep 0.05
       i=$((i + 1))
     done
-    if ! fm_orca_cli_lock_acquire "$lock" 15; then
+    if ! fm_orca_cli_lock_acquire "$lock" 15 held_token; then
       command orca "$@" || return $?
       return 0
     fi
   fi
   if fm_orca_cli_try_replay "$dir" "$key"; then
-    fm_orca_cli_lock_release "$lock"
+    fm_orca_cli_lock_release "$lock" "$held_token"
     return 0
   fi
-  fm_orca_cli_fill "$dir" "$key" "$lock" "$@"
+  fm_orca_cli_fill "$dir" "$key" "$lock" "$held_token" "$@"
 }
 
 fm_orca_cli_classify() {
