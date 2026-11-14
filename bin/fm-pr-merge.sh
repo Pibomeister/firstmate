@@ -219,6 +219,14 @@
 # explicit captain instruction and never skips the live green check, the
 # away-record read, or a captain hold.
 #
+# When this home's config/merge-review covers the pull request's repository,
+# the merge also needs --expected-head and an approved two-model merge review
+# at that exact head. bin/fm-merge-review.sh check owns that rule and has no
+# waiver flag here. The check runs before any forge read or write, so a
+# missing, blocked, or other-head review refuses with nothing recorded, and a
+# config that cannot be read refuses rather than merging unreviewed. A home
+# without that file, or a repository it does not list, keeps the behavior above.
+#
 # Usage: fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--update-branch] [--expected-head <full-sha>] [--allow-red <check-name>] [--allow-missing <check-name>] [--allow-no-pipeline] [-- <extra forge merge args>]
 #
 # On GitLab, this script confirms the MR is actually merged before reporting it;
@@ -416,6 +424,33 @@ if [ "${#ALLOW_MISSING[@]}" -gt 0 ]; then
       ;;
   esac
 fi
+
+# The two-model merge review, when this home requires one for this repository.
+# bin/fm-merge-review.sh owns the rule. Check the head locally first, then
+# bind the receipts to the live forge merge base during preflight.
+# No flag skips either check.
+merge_review_rc=0
+MERGE_REVIEW_REQUIRED=false
+FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-merge-review.sh" covers "$URL" || merge_review_rc=$?
+case "$merge_review_rc" in
+  1) ;;
+  0)
+    MERGE_REVIEW_REQUIRED=true
+    if [ -z "$EXPECTED_HEAD" ]; then
+      echo "error: $URL needs a two-model merge review at an exact head because config/merge-review covers its repository; pass --expected-head <full-sha> naming the reviewed commit" >&2
+      exit 1
+    fi
+    merge_review_line=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-merge-review.sh" check "$URL" --head "$EXPECTED_HEAD") || {
+      echo "error: $URL has no approved two-model merge review at $EXPECTED_HEAD (${merge_review_line:-no verdict line}); a background worker runs bin/fm-merge-review.sh run for that head" >&2
+      exit 1
+    }
+    echo "$merge_review_line" >&2
+    ;;
+  *)
+    echo "error: cannot tell whether $URL needs a merge review (bin/fm-merge-review.sh covers exited $merge_review_rc); correct config/merge-review before merging" >&2
+    exit 1
+    ;;
+esac
 
 caller_has_merge_method() {
   local arg
@@ -661,6 +696,16 @@ note_expected_head() {
   fi
 }
 
+verify_merge_review_scope() {  # <live-merge-base> <live-head>
+  [ "$MERGE_REVIEW_REQUIRED" = true ] || return 0
+  fm_pr_head_valid "$1" || { echo "error: could not verify the live merge base for $URL" >&2; return 1; }
+  local verdict
+  verdict=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-merge-review.sh" check "$URL" --head "$2" --base "$1") || {
+    printf 'error: review merge base does not authorize the current diff for %s (%s)\n' "$URL" "$verdict" >&2
+    return 1
+  }
+}
+
 gitlab_verify_mergeable() {
   local json fields line pipeline_waived
   local total=0 named=0 refusals=''
@@ -769,6 +814,11 @@ FIELDS
     printf 'error: refusing to merge %s\n' "$URL" >&2
     printf '%s' "$refusals" >&2
     return 1
+  fi
+  if [ "$MERGE_REVIEW_REQUIRED" = true ]; then
+    [ "$(printf '%s' "$json" | jq -r '.diff_refs.head_sha // empty')" = "$live_head" ] \
+      || { echo "error: could not verify the live merge base at the current GitLab head" >&2; return 1; }
+    verify_merge_review_scope "$(printf '%s' "$json" | jq -r '.diff_refs.base_sha // empty')" "$live_head" || return 1
   fi
   if [ "$pipeline_waived" = true ]; then
     printf 'verified: %s is open and mergeable at head %s, with no head pipeline, waived by --allow-no-pipeline\n' \
@@ -910,6 +960,9 @@ FIELDS
     printf 'error: refusing to merge %s\n' "$URL" >&2
     printf '%s' "$refusals" >&2
     return 1
+  fi
+  if [ "$MERGE_REVIEW_REQUIRED" = true ]; then
+    verify_merge_review_scope "$(printf '%s' "$pr_json" | jq -r '.merge_base // empty')" "$live_head" || return 1
   fi
   printf 'verified: %s is open and mergeable, with a successful combined status at head %s\n' \
     "$URL" "$live_head" >&2
@@ -1150,7 +1203,7 @@ github_required_checks_missing() {
 github_verify_mergeable() {
   local json fields line red failed name covered missing unreported producers runs pending
   local total=0 named=0 refusals='' mergeable_refusal=''
-  local state='' draft='' mergeable='' merge_state='' live_head='' base=''
+  local state='' draft='' mergeable='' merge_state='' live_head='' base='' base_head='' merge_base=''
   FM_PR_GITHUB_BEHIND=false
   FM_PR_GITHUB_CHECKS_PENDING=false
   FM_PR_GITHUB_CHECKS_FAILED=false
@@ -1158,7 +1211,7 @@ github_verify_mergeable() {
   FM_PR_GITHUB_UNREPORTED=false
   FM_PR_GITHUB_LIVE_HEAD=
 
-  if ! json=$(gh pr view "$URL" --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup 2>/dev/null) \
+  if ! json=$(gh pr view "$URL" --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,baseRefOid,statusCheckRollup 2>/dev/null) \
     || [ -z "$json" ]; then
     echo "error: could not read the GitHub pull request state before merging" >&2
     return 1
@@ -1330,6 +1383,13 @@ EOF
   fi
   printf 'verified: %s is open and mergeable, with every unwaived required check reported and every unwaived check green at head %s\n' \
     "$URL" "$live_head" >&2
+  if [ "$MERGE_REVIEW_REQUIRED" = true ]; then
+    base_head=$(printf '%s' "$json" | jq -r '.baseRefOid // empty')
+    fm_pr_head_valid "$base_head" || { echo "error: could not verify the GitHub base commit for review scope" >&2; return 1; }
+    merge_base=$(gh api "repos/$PR_OWNER/$PR_REPO/compare/$base_head...$live_head" --jq '.merge_base_commit.sha // empty' 2>/dev/null) \
+      || { echo "error: could not verify the live GitHub merge base" >&2; return 1; }
+    verify_merge_review_scope "$merge_base" "$live_head" || return 1
+  fi
   FM_PR_MERGE_HEAD=$live_head
   FM_PR_GITHUB_BASE=$base
 }

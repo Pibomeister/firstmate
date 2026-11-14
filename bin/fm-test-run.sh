@@ -446,7 +446,8 @@ family_for_basename_var() {
     fm-backend-rex-composer-live-e2e.test.sh|\
     fm-warm-compact-herdr-live-e2e.test.sh|\
     fm-watch-wedge-cap-live.test.sh|fm-read-repetition-live.test.sh|\
-    fm-watchdog-live.test.sh|fm-usage-limit-pane-live.test.sh)
+    fm-watchdog-live.test.sh|fm-usage-limit-pane-live.test.sh|\
+    fm-merge-review-live.test.sh)
       REPLY_FAMILY=live-harness-optin
       ;;
     fm-backend-herdr.test.sh|fm-backend-tmux-smoke.test.sh|fm-backend.test.sh|\
@@ -466,7 +467,7 @@ family_for_basename_var() {
       ;;
     fm-check-unregister.test.sh|fm-pipeline-spend.test.sh|fm-pr-check-security.test.sh|\
     fm-pr-health.test.sh|fm-pr-merge.test.sh|fm-pr-reviewers.test.sh|fm-pr-state.test.sh|\
-    fm-review-diff.test.sh|fm-teardown.test.sh|fm-x-mode.test.sh)
+    fm-merge-review.test.sh|fm-review-diff.test.sh|fm-teardown.test.sh|fm-x-mode.test.sh)
       REPLY_FAMILY=pr-forge
       ;;
     fm-afk-contract.test.sh|fm-afk-inject-e2e.test.sh|fm-afk-return.test.sh|fm-auto-away.test.sh|\
@@ -928,6 +929,8 @@ tests/fm-live-lab.test.sh 81645
 tests/fm-mail-check.test.sh 8048
 tests/fm-mail.test.sh 11504
 tests/fm-merge-local.test.sh 8251
+tests/fm-merge-review-live.test.sh 60
+tests/fm-merge-review.test.sh 8500
 tests/fm-monitor-watchdog-manager.test.sh 336
 tests/fm-monitor-watchdog.test.sh 56986
 tests/fm-muse-harness.test.sh 58029
@@ -2019,6 +2022,10 @@ families_for_changed_path() {
     bin/fm-teardown.sh)
       printf '%s\n' pr-forge
       printf '%s\n' "__script__:fm-backend-t3code.test.sh"
+      ;;
+    bin/fm-merge-review.sh)
+      printf '%s\n' pr-forge
+      printf '%s\n' "__script__:fm-merge-review-live.test.sh"
       ;;
     bin/fm-pr-*|bin/fm-merge-local.sh|bin/fm-review-diff.sh|\
     bin/fm-x-*|bin/fm-check*|bin/fm-pipeline-spend.sh)
