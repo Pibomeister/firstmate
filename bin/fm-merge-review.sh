@@ -18,7 +18,9 @@
 #         seat once, in parallel, as a one-shot model call with read-only tools
 #         in a temporary directory outside every repository. A spare seat is
 #         called only while fewer than two model families hold a valid review.
-#         <dir> must already contain the head commit; run never fetches.
+#         <dir> must already contain the head and tree objects; run never fetches.
+#         Replacement refs and archival ignore/substitution attributes do not
+#         alter the reviewed commit or snapshot.
 #         A seat that already holds a valid receipt at this head is not called
 #         again, so a rerun cannot replace a BLOCK with a new roll. Interrupted
 #         runs stop their reviewers before releasing the lock; stale writers
@@ -752,7 +754,7 @@ mr_run_cleanup() {
 }
 
 mr_run() {  # <repo> <base-ref> <intent-file>
-  local repo=$1 base_ref=$2 intent=$3 i pids='' pid holder families identity reviewer_parent complete_sha
+  local repo=$1 base_ref=$2 intent=$3 i pids='' pid holder families identity reviewer_parent complete_sha object_dir object_format=sha1
   if [ -z "${FM_TASK_ID:-}" ] || ! fm_pr_task_id_valid "$FM_TASK_ID"; then
     mr_die 'run belongs in a background worker: FM_TASK_ID is not set, so this is not a spawned ship or scout worker. A supervisor dispatches the worker and reads check.'
   fi
@@ -774,15 +776,15 @@ mr_run() {  # <repo> <base-ref> <intent-file>
     *) mr_die 'config/merge-review must declare seats from at least two model families' ;;
   esac
 
-  git -C "$repo" rev-parse --git-dir >/dev/null 2>&1 || mr_die "--repo $repo is not a git repository"
-  [ "$(git -C "$repo" rev-parse --verify --quiet "$MR_HEAD^{commit}" 2>/dev/null)" = "$MR_HEAD" ] \
+  git --no-replace-objects -C "$repo" rev-parse --git-dir >/dev/null 2>&1 || mr_die "--repo $repo is not a git repository"
+  [ "$(git --no-replace-objects -C "$repo" rev-parse --verify --quiet "$MR_HEAD^{commit}" 2>/dev/null)" = "$MR_HEAD" ] \
     || mr_die "the head commit $MR_HEAD is not in $repo; fetch it there first"
   if [ -z "$base_ref" ]; then
-    base_ref=$(git -C "$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) \
+    base_ref=$(git --no-replace-objects -C "$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) \
       || mr_die 'no --base given and the repository has no origin/HEAD; pass --base <commit-ish>'
   fi
   MR_BASE_REF=$base_ref
-  MR_BASE=$(git -C "$repo" merge-base "$base_ref" "$MR_HEAD" 2>/dev/null) \
+  MR_BASE=$(git --no-replace-objects -C "$repo" merge-base "$base_ref" "$MR_HEAD" 2>/dev/null) \
     || mr_die "cannot find a merge base between $base_ref and $MR_HEAD"
   [ "$MR_BASE" != "$MR_HEAD" ] || mr_die "the head $MR_HEAD is already contained in $base_ref; there is nothing to review"
   if [ -n "$intent" ]; then
@@ -822,9 +824,20 @@ mr_run() {  # <repo> <base-ref> <intent-file>
   : > "$MR_WORK/children"
   ln -s "$MR_WORK/children" "$MR_LOCK/children" || mr_die 'cannot publish the reviewer ledger'
   mkdir "$MR_WORK/snapshot"
-  git -C "$repo" archive --format=tar "$MR_HEAD" | tar -x -C "$MR_WORK/snapshot" \
+  object_dir=$(git --no-replace-objects -C "$repo" rev-parse --git-path objects) || mr_die 'cannot locate the source objects'
+  case "$object_dir" in /*) ;; *) object_dir="$repo/$object_dir" ;; esac
+  object_dir=$(cd "$object_dir" && pwd -P) || mr_die 'cannot resolve the source objects directory'
+  [ "${#MR_HEAD}" -ne 64 ] || object_format=sha256
+  # Override archive attributes without changing the source repository.
+  GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_PARAMETERS='' GIT_CONFIG_COUNT=0 GIT_DEFAULT_HASH="$object_format" \
+    git -c init.defaultBranch=main init --bare --quiet --template= "$MR_WORK/archive.git" || mr_die 'cannot initialize the snapshot object view'
+  mkdir -p "$MR_WORK/archive.git/info" || mr_die 'cannot prepare snapshot attributes'
+  printf '* -export-ignore -export-subst\n' > "$MR_WORK/archive.git/info/attributes" || mr_die 'cannot write snapshot attributes'
+  GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_PARAMETERS='' GIT_CONFIG_COUNT=0 GIT_OBJECT_DIRECTORY="$object_dir" \
+    git --no-replace-objects -c core.attributesFile=/dev/null --git-dir="$MR_WORK/archive.git" \
+      archive --format=tar "$MR_HEAD" | tar -x -C "$MR_WORK/snapshot" \
     || mr_die "cannot snapshot $MR_HEAD from $repo"
-  git -C "$repo" diff --no-ext-diff --no-textconv --ignore-submodules=none \
+  git --no-replace-objects -C "$repo" diff --no-ext-diff --no-textconv --ignore-submodules=none \
     --submodule=short --full-index --binary "$MR_BASE" "$MR_HEAD" > "$MR_WORK/diff.patch" \
     || mr_die "cannot build the diff from $MR_BASE to $MR_HEAD"
   [ -s "$MR_WORK/diff.patch" ] || mr_die "the diff from $MR_BASE to $MR_HEAD is empty"

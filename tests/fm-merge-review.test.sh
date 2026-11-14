@@ -47,6 +47,8 @@ printf '%s|%s\n' "$PWD" "$(printf '%s' "$*" | tr '\n' ' ')" >> "$stub/$tool.call
   [ -f snapshot/feature.txt ] && echo snapshot=yes || echo snapshot=no
   git rev-parse --git-dir >/dev/null 2>&1 && echo repo=yes || echo repo=no
 } > "$stub/$tool.saw"
+[ ! -f snapshot/feature.txt ] || cp snapshot/feature.txt "$stub/$tool.feature"
+[ ! -f snapshot/README.md ] || cp snapshot/README.md "$stub/$tool.readme"
 head=$(printf '%s\n' "$prompt" | sed -n 's/^Head commit under review: //p' | head -1)
 if [ -e "$stub/$tool.wait" ]; then
   printf '%s\n' "$$" > "$stub/$tool.pid"
@@ -761,6 +763,56 @@ SH
   pass "review diff bypasses external diff and text conversion without hiding file content"
 }
 
+test_snapshot_preserves_committed_files_despite_archive_attributes() {
+  local mode
+  for mode in ignore subst; do
+    make_case "archive-$mode" "${TWO_SEATS[@]}"
+    # shellcheck disable=SC2016 # This Git placeholder must remain literal.
+    printf 'literal $Format:%%H$\n' > "$REPO/README.md"
+    if [ "$mode" = ignore ]; then printf 'feature.txt export-ignore\n' > "$REPO/.gitattributes";
+    else printf 'README.md export-subst\n' > "$REPO/.gitattributes"; fi
+    git -C "$REPO" add README.md .gitattributes
+    git -C "$REPO" commit -qm 'archival attributes'
+    HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
+    run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || fail "archive-$mode: review run failed"
+    assert_present "$STUB/claude.feature" "archive-$mode: snapshot omitted a committed file"
+    assert_equals 'the feature' "$(cat "$STUB/claude.feature")" "archive-$mode: snapshot changed committed bytes"
+    # shellcheck disable=SC2016 # Expected bytes must not undergo Git substitution.
+    assert_equals 'literal $Format:%H$' "$(cat "$STUB/claude.readme")" "archive-$mode: snapshot applied export substitution"
+  done
+  pass "review snapshot ignores export-ignore and export-subst while preserving committed bytes"
+}
+
+test_local_replacement_refs_cannot_substitute_the_named_commit() {
+  local tree replacement receipt patch
+  make_case replace-commit "${TWO_SEATS[@]}"
+  printf 'masked feature\n' > "$REPO/feature.txt"
+  git -C "$REPO" add feature.txt
+  tree=$(git -C "$REPO" write-tree)
+  replacement=$(printf 'replacement commit\n' | git -C "$REPO" commit-tree "$tree" -p "$(git -C "$REPO" rev-parse origin/main)")
+  git -C "$REPO" read-tree "$HEAD_SHA"
+  printf 'the feature\n' > "$REPO/feature.txt"
+  git -C "$REPO" replace "$HEAD_SHA" "$replacement"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || fail 'replace-commit: review run failed'
+  receipt="$(store_dir)/anthropic.claude.claude-test-1.receipt"
+  patch="$(store_dir)/diff.$(sed -n 's/^diff_sha256=//p' "$receipt").patch"
+  assert_grep '+the feature' "$patch" 'replace-commit: diff used replacement content instead of the named commit'
+  assert_equals 'the feature' "$(cat "$STUB/claude.feature")" 'replace-commit: snapshot used replacement content'
+  pass "local replacement refs cannot substitute the review diff or snapshot for the named head"
+}
+
+test_snapshot_supports_sha256_object_repositories() {
+  if ! git init --bare --quiet --object-format=sha256 "$TMP_ROOT/sha256-capability.git" > "$TMP_ROOT/sha256-probe.out" 2>&1; then
+    pass "SHA-256 snapshot # SKIP installed Git cannot create SHA-256 repositories"
+    return
+  fi
+  GIT_DEFAULT_HASH=sha256 make_case snapshot-sha256 "${TWO_SEATS[@]}"
+  assert_equals 64 "${#HEAD_SHA}" "snapshot-sha256: fixture did not use SHA-256 objects"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || fail "snapshot-sha256: review could not read the SHA-256 source objects: $(cat "$CASE/stderr")"
+  assert_equals 'the feature' "$(cat "$STUB/claude.feature")" "snapshot-sha256: snapshot changed committed bytes"
+  pass "canonical snapshot reads SHA-256 source repositories without changing object format"
+}
+
 test_covers_follows_the_require_lines() {
   local rc=0
   make_case covers-none
@@ -859,6 +911,9 @@ fm_test_run \
   test_fresh_acquisition_respects_the_reclamation_mutex \
   test_diff_includes_submodules_despite_git_configuration \
   test_diff_does_not_execute_external_or_text_conversion_tools \
+  test_snapshot_preserves_committed_files_despite_archive_attributes \
+  test_local_replacement_refs_cannot_substitute_the_named_commit \
+  test_snapshot_supports_sha256_object_repositories \
   test_covers_follows_the_require_lines \
   test_run_refuses_what_it_cannot_review \
   test_intent_reaches_the_prompt_the_receipt_binds
