@@ -57,7 +57,7 @@ No grant covers delegation, because no phase operation exposes this skill —
 [`policies/invocation.yaml`](../../references/shared/policies/invocation.yaml) records model-invoked skills as exposing none by construction. What
 authority governs here is the ticket rather than the caller: the approval the ticket carries, and the
 charter checkpoint the run took before its build phase opened. A skill that cannot see either stops
-rather than treating its own invocation as the approval. Under the unattended policy (ADR-0014) that approval is a recorded unattended advance, a ticket whose class makes a human the author is built by the agent with its true class recorded (an exception to ruling `delegation-class-is-authority-not-finding`), and each gate is recorded with its evidence command, as [the unattended-lifecycle reference](../../references/shared/references/unattended-lifecycle/REFERENCE.md) says.
+rather than treating its own invocation as the approval. Under the unattended policy (ADR-0014) that approval is a recorded unattended advance, a ticket whose class makes a human the author is built by the agent with its true class recorded (an exception to ruling `delegation-class-is-authority-not-finding`), and each gate is recorded with its evidence command, as [the unattended-lifecycle reference](../../references/shared/references/unattended-lifecycle/REFERENCE.md) says. An unscored ticket (the delegation reference's coverage limit) is built the same way with no class recorded and its implementer seat still declared.
 
 ## Inputs
 
@@ -147,15 +147,15 @@ absence is recorded ([`policies/limits.yaml`](../../references/shared/policies/l
     When a runner assigned the implementer seat, declare it by appending
     `--class <delegation class> --author-kind <human|agent> --host <host adapter id> --seat-id <implementer seat>`;
     the seat is recorded on this gate, not on a receipt, and stays declared for commits descended
-    from the recorded one. After an amend or rebase, pass the flags again.
+    from the recorded one. After an amend or rebase, pass the flags again. An unscored ticket has no class to pass: declare the seat with `--author-kind <human|agent> --host <host adapter id> --seat-id <implementer seat>` and no `--class`, never a derived one or a seeded default, so a receipt that seat wrote is still refused.
     Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
     branch-named v1 run when none was opened) and records default to the repository's git directory.
     A binding's brief supplies `--dir` for the run opened with it.
 14. A committed ticket then runs the trail, steps 14 to 16, a resumed run by the work-trail
     protocol's resume rule; steps 12 and 13 never wait on it (ruling
     `work-trail-is-account-not-evidence`). One stopped before its commit gets no audit or published
-    stretch, as the report says; a failed receipt publish stops the build as before, short of the
-    trail. Each prepared stretch is handled and sent as the work-trail protocol's build steps say;
+    stretch, as the report says; a configured knowledgebase (exit 1) failing a receipt publish stops the build short of the
+    trail, while under a knowledgebase coverage limit the receipts are named as not published and the build goes on. Each prepared stretch is handled and sent as the work-trail protocol's build steps say;
     none it holds back is sent. A refused or failed trail publish is never repaired or resent and is
     not itself a build gate; the protocol's stop conditions describe shared-file failures that
     can block later required receipts. The trail writes no gate record; `complete` does not depend on it.
@@ -275,8 +275,8 @@ stands, and every open finding with its adjudication. It is not a pass and the t
 or a check seat that cannot be filled independently. Returns what is missing and the lane that owns
 it, never a narrowed version of the work.
 
-`failed`: no writable worktree, the branch is checked out elsewhere, or the knowledgebase refuses a
-receipt, ticket result or check result. The worktree and the ledger are left intact for the resume.
+`failed`: no writable worktree, the branch is checked out elsewhere, or a configured knowledgebase refuses a
+receipt, ticket result or check result. The worktree and the ledger are left intact for the resume. A knowledgebase coverage limit — `.cursor/bin/ak kb check` exit 3 (kb.unbound, kb.unregistered), a publish exit 3 (kb.read-only), kb.in-repo-missing, or a missing or unknown `.cursor/bin/ak kb` command — never stops this phase under any policy: reads are unavailable, each skipped publish is named in the result as not published, and only exit 1 stops.
 
 `cancelled`: the caller withdrew the ticket mid-run. The branch, the worktree and the recorded
 rulings are kept rather than cleaned up, because the next run reads them instead of re-deriving them.

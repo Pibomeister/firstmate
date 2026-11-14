@@ -125,7 +125,8 @@ receipt's (`common#/$defs/revision_ref`); an uncommitted edit on the same revisi
 9. Never rewrite a recorded receipt. To correct one, record a new passed or failed receipt for the
    same check, covering every criterion it supports, whose `supersedes` names its `{id, hash}`.
 10. Claim exactly what the receipts support, and publish the matrix and the receipts through the
-    knowledgebase adapter's `publishArtifact` operation with a run-artifact placement. Return the
+    knowledgebase adapter's `publishArtifact` operation with a run-artifact placement (under a
+    knowledgebase coverage limit, skip it and name them as not published). Return the
     receipts and matrix exactly as artifacts. Do not add a prose approval over them; each criterion's
     outcome is the verdict. Publish a successful newly discovered recipe as a content-addressed
     `verification-recipe` artifact for later runs.
@@ -232,15 +233,30 @@ is reported, not accommodated.
 ## Stop conditions
 
 `complete`: every acceptance criterion has an outcome and a reason where that outcome is not a pass,
-and the receipts are published. A run whose checks all failed is complete; the failures are the
-result.
+and the receipts are published (or, under a knowledgebase coverage limit, named as not published).
+A run whose checks all failed is complete; the failures are the result.
 
 `needs-input`: the claim resolves to no acceptance criterion, or no revision was named. Returns the
 criterion or the revision it would need, and no partial matrix presented as a verdict.
 
+Under the unattended policy, a ticket that declares no acceptance criteria and no verification at
+all is a coverage limit, never `needs-input`: record it once naming its cause and verify with the
+repository checks actually run, the project's declared test command among them when it declares one
+(its verification recipes, [`schemas/project.schema.json`](../../references/shared/schemas/project.schema.json)). The independent verifier seat records
+each on the `verify` gate with its real command, exit status and output digest, declaring itself
+with `--author-kind`, `--host` and `--seat-id`; a verify must always declare an independent seat, so
+the build's implementer seat, or no seat, is refused. The gate
+counts those checks and nothing else, and records the limit on its ship decision and in the ship
+disclosure. A ticket that declares criteria or verification the gate cannot read is judged like any
+other. Outside the policy it is `unavailable`.
+
 `failed`: the repository is unreadable at the named revision, the environment cannot be identified,
-or the knowledgebase refuses the write. The receipts are returned unpublished with the refusal rather
-than written to a path in the repository.
+or a configured knowledgebase refuses the write. The receipts are returned unpublished with the
+refusal rather than written to a path in the repository.
+
+A knowledgebase coverage limit — `.cursor/bin/ak kb check` exit 3 (kb.unbound, kb.unregistered), a publish exit 3 (kb.read-only), kb.in-repo-missing, or a
+missing or unknown `.cursor/bin/ak kb` command — never stops this phase under any policy: reads are unavailable,
+each skipped publish is named in the result as not published, and only exit 1 stops.
 
 `cancelled`: the caller withdrew the claim mid-run. Receipts already taken are kept and published as
 what they are — evidence about the checks that ran — because a completed check is a fact whether or

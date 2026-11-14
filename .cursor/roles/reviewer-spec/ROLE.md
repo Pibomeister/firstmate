@@ -110,6 +110,10 @@ nothing to report.
   Misunderstood item: return `empty` rather than manufacturing a nit.
 - A requirements source cannot be identified at any priority level: return `unavailable`, naming
   what was searched. An unidentifiable spec is not an approved one.
+- Under a knowledgebase coverage limit (`ak kb check` exit 3, or a missing or unknown `ak kb`
+  command) the project-record level is named as not read and the search continues at the next
+  level. The limit alone never makes this lane unavailable. A configured knowledgebase that cannot
+  be used (`ak kb check` exit 1) does: return `unavailable`, naming it.
 - The packet, the diff or the receipts could not be supplied: return `unavailable`, naming what
   was missing. It is never downgraded to `empty`.
 

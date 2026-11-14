@@ -1,7 +1,7 @@
 # adapters/runner-contract — host-neutral runner contract
 
 The local implementation is `src/runner/`; this file remains the host-neutral contract. The
-implementation exposes a supervisor-owned service and a worker-facing `ak runner call` client.
+implementation exposes a supervisor-owned service and a worker-facing `.cursor/bin/ak runner call` client.
 Its service must run with a state directory and charter outside the worker's writable scope.
 
 Neither coding-agent host this package targets can validate a delegated grant, attest that two seats
@@ -388,10 +388,10 @@ task-scoped service. Firstmate owns the process, two distinct 32-character-or-lo
 active charter, the seat configuration and the state directory. The supervisor token lives in a
 mode-0600 file outside the Firstmate home, outside the worker root and outside every git checkout and
 git directory, by default `~/.config/agent-kit/runner/<run>/admin.token`; its path is never written
-into a brief or any other worker-visible file. `serve` and `ak firstmate seat-judge` refuse a token
+into a brief or any other worker-visible file. `serve` and `.cursor/bin/ak firstmate seat-judge` refuse a token
 file that breaks any of these rules. The worker token comes from `AK_RUNNER_WORKER_TOKEN`. The endpoint refuses another run id. Firstmate passes only `AK_RUNNER_SOCKET` and
 `AK_RUNNER_TOKEN` (the worker token) to a Claude Code or Codex worker. Both use
-`ak runner call <verb> --json <request-file>`; the service checks the token and verb before
+`.cursor/bin/ak runner call <verb> --json <request-file>`; the service checks the token and verb before
 touching run state. `start` first validates the autopilot.start standing grant against the
 captain-approved charter (ADR-0007) and records `start_authority` before any seat dispatch.
 `start`, `collect`, `revision`, `judge`, `answer`, `cancel`, `verify`, `charge`, `effect`, `event` and

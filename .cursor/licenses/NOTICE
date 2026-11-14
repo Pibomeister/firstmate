@@ -30,9 +30,11 @@ of the catalog donors listed below.
 
 The review-isolation probe adapts child-session joining and spawn-argument
 inspection from google/elephant-goldfish-model, Copyright 2026 Google LLC, under
-the Apache License 2.0. The files were modified; provenance/adaptations.yaml
-states the change for each. bin/ak carries that probe (src/review-isolation-probe/
-and the doctor host-version check that imports it). The license text is
+the Apache License 2.0. super-bound's independent ticket cold read adapts the
+zero-decision rule and the proposed-files rule from the same pin. The files were
+modified; provenance/adaptations.yaml states the change for each. bin/ak carries
+that probe (src/review-isolation-probe/ and the doctor host-version check that
+imports it). The license text is
 provenance/licenses/google_elephant-goldfish-model.LICENSE. It is not one of the
 catalog donors listed below.
 

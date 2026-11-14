@@ -1,0 +1,4 @@
+{
+  "name": "agent-kit",
+  "install": "bash tools/cursor/install.sh"
+}

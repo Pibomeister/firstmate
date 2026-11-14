@@ -300,7 +300,7 @@ and `project`). No schema inspects values, so a token pasted as a value under `d
    and would move the ticket to that scope. `updateStatus` refuses a status `statuses` does not map
    rather than guessing a name the backend's workflow may lack.
 6. **Credentials are the operator's.** Nothing in this package stores, prints or echoes one, and
-   nothing token-bearing is committed. `ak tracker check [<project-dir>]` verifies the last half:
+   nothing token-bearing is committed. `.cursor/bin/ak tracker check [<project-dir>]` verifies the last half:
    the binding's shape and backend, and that `token_file` is non-blank, inside the folder, ignored
    by a `.gitignore` there (a later `!` rule that un-ignores it does not count) whose rule is
    committed at `HEAD` (a rule only in the working tree or only staged does not count), untracked and
@@ -363,6 +363,6 @@ implementation, not claims that one was tested. Items 7 and 10 exist.
 9. **No global credential** *(contract test, not yet written)* — with `token_file` absent or blank, the operation refuses and the
    tool is never invoked.
 10. **The secret stays out of git** — `tests/tracker-binding.test.ts` builds fixture repositories
-    and asserts `ak tracker check` flags a secret that is tracked, not ignored (including un-ignored
+    and asserts `.cursor/bin/ak tracker check` flags a secret that is tracked, not ignored (including un-ignored
     by a `!` rule), in history, blank or absent, and never prints its contents (§5). Item 9's
     tool-side half is verified offline for `linear-linearis` in that binding's document, §3.

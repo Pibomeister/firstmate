@@ -9,28 +9,42 @@ each result obliges. The contract this condenses is [`adapters/knowledgebase/CON
 ## Check first
 
 ```sh
-ak kb check
+.cursor/bin/ak kb check
 ```
 
-Run it in the project folder, which may be a task copy. A current `ak` on `PATH` is a prerequisite:
-a missing command, or a usage error from an older `ak`, is `needs-input` naming that prerequisite,
-and is not an unavailable knowledgebase.
+Run it in the project folder, which may be a task copy. A missing or unknown `.cursor/bin/ak kb` command, such
+as a sandbox where only `node <bundle>/bin/ak-gate.mjs` is reachable and it has no `kb`
+subcommand, or a usage error from an older CLI, is read as exit 3: a coverage limit naming that
+prerequisite.
 
 | Exit | Meaning | What the run does |
 |---|---|---|
 | 0 | bound: the output names the knowledgebase, its path and the project id | reads and publishes through the commands below |
-| 3 | no knowledgebase configured | a read is **unavailable**, reported as a coverage limit, and the run continues to the point where it must read or publish; a publish **refuses** |
+| 0 | `bound, read-only` (backend `in-repo`): the project's own committed wiki | reads; every publish exits 3 `kb.read-only`, a coverage limit (ruling `kb-binding-is-a-locator`) |
+| 3 | no knowledgebase configured | a coverage limit: a read is **unavailable** and a publish is **skipped**, and the run continues |
 | 1 | a knowledgebase is configured and cannot be used | `failed`: stop and report the message, never proceed from memory |
 
-Exit 3 has two causes and the output says which. Report it in these words rather than as a missing
-adapter or a missing file:
+**A coverage limit never stops align, bound, scout, build, verify, review or ship**, under any
+policy: attended, Firstmate or unattended. Record it once with its cause. Reads return unavailable
+and the phase continues from the repository and the run's own records. Each skipped publish
+(`publishArtifact`, a `kb-document` page, a draft) is named in the run result as not published.
+Gate evidence still goes through `node <bundle>/bin/ak-gate.mjs record`, which needs no
+knowledgebase. Of these results only exit 1 stops.
+
+Exit 3 has these causes and the output says which; a missing or unknown command is reported as that
+prerequisite. Report exit 3 in these words rather than as a missing adapter or a missing file:
 
 - **`kb.unbound`** — the project commits no `ak.kb.yaml`. The setup step is committing one at the
   project root.
 - **`kb.unregistered`** — the project is bound, and this machine has not been told where that
-  knowledgebase is checked out. The setup step is `ak kb register <knowledgebase-id> <path>`.
+  knowledgebase is checked out. The setup step is `.cursor/bin/ak kb register <knowledgebase-id> <path>`.
+- **`kb.in-repo-missing`** — an `in-repo` binding with nothing to read at the revision it would
+  read; the message names which cause and its fix ([`adapters/knowledgebase/backends/in-repo.md`](../../adapters/knowledgebase/backends/in-repo.md),
+  "A missing knowledgebase").
+- **`kb.read-only`** — from a publish only: the binding is read-only, nothing was written, and the
+  record is named as not published (ruling `kb-binding-is-a-locator`).
 
-Both are the operator's to do. An agent does not create a knowledgebase, write `ak.kb.yaml` or
+The first three are the operator's to do. An agent does not create a knowledgebase, write `ak.kb.yaml` or
 register a path unless a human asks for exactly that. **`ak.install.yaml` is not a cause.** That
 file sets which adapters an install attaches, which only decides packaged mode ceilings; its absence
 is the default install and never makes a knowledgebase unavailable.
@@ -56,7 +70,7 @@ directory holding `ak.kb.yaml`, searching no higher than `git rev-parse --show-t
 ## Reading: `readContext`
 
 ```sh
-ak kb read --kind concept,system,adr --scope <scope>
+.cursor/bin/ak kb read --kind concept,system,adr --scope <scope>
 ```
 
 `--kind` takes any of the nine kinds: `adr`, `concept`, `foundation`, `gotcha`, `pattern`, `prd`,
@@ -71,21 +85,22 @@ JSON: the pages at that scope and every scope above it, most specific first, eac
   into whatever consumes the read.
 - Cite what was read by `ref` and `content_hash`, not by a file path in the knowledgebase.
 - A page whose `status` is `proposed` or `unreviewed` has not been accepted by a human. It is
-  context, not a settled decision.
+  context, not a settled decision. `superseded`, `deprecated` and `rejected` are not settled either:
+  they record a decision that was replaced, retired or declined, and only `accepted` stands.
 
 ## Publishing: `publishArtifact`
 
 A curated page, one of the nine kinds:
 
 ```sh
-ak kb publish document --kind adr --scope <scope> --id <kebab-id> --title "<one line>" \
+.cursor/bin/ak kb publish document --kind adr --scope <scope> --id <kebab-id> --title "<one line>" \
   --file <page.md> [--run <run-id>]
 ```
 
 A run artifact, one of the envelope schemas:
 
 ```sh
-ak kb publish artifact --file <artifact.json> --run <run-id> [--link <record-ref>]…
+.cursor/bin/ak kb publish artifact --file <artifact.json> --run <run-id> [--link <record-ref>]…
 ```
 
 For `trail` and `trail-audit`, use the work-trail protocol's publication boundary and resume rule.
@@ -112,6 +127,6 @@ Write the page or artifact to a scratch file outside the repository and pass its
 ## The other five operations
 
 `recordDecision`, `linkCodeEvidence`, `requestImpactAnalysis`, `linkPullRequests` and
-`proposeLesson` are not carried by any binding yet: `ak kb record-decision` and its siblings refuse
+`proposeLesson` are not carried by any binding yet: `.cursor/bin/ak kb record-decision` and its siblings refuse
 and write nothing. Report the refusal by the operation's name. A decision card is the one case with
-a path: it is a `decision` run artifact and publishes through `ak kb publish artifact`.
+a path: it is a `decision` run artifact and publishes through `.cursor/bin/ak kb publish artifact`.

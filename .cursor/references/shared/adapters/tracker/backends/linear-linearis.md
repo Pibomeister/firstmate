@@ -31,7 +31,7 @@ statuses:                        # the team's own workflow state names
 ```
 
 `defaults.team` is required and `defaults.project` is optional; no other key is read
-([`schemas/tracker-backends/linear-linearis.schema.json`](../../../schemas/tracker-backends/linear-linearis.schema.json), which `ak tracker check` applies after the
+([`schemas/tracker-backends/linear-linearis.schema.json`](../../../schemas/tracker-backends/linear-linearis.schema.json), which `.cursor/bin/ak tracker check` applies after the
 generic [`schemas/tracker-binding.schema.json`](../../../schemas/tracker-binding.schema.json)). Statuses are configured per team in Linear, so the names
 under `statuses` are the project's to state and none is assumed.
 
@@ -62,7 +62,7 @@ that module and `USAGE.md` name for silencing it.
 
 **The project root** is the nearest directory at or above the working directory holding
 `ak.tracker.yaml`, searching no higher than `git rev-parse --show-toplevel`. It is the same
-definition `ak tracker check` uses, so a call made from `src/` of a bound project reaches that
+definition `.cursor/bin/ak tracker check` uses, so a call made from `src/` of a bound project reaches that
 project's binding and no other. No binding up to the top level: the operation follows CONTRACT §2
 as an unbound folder.
 
@@ -125,7 +125,7 @@ Each line is load-bearing:
 - **The subshell** makes every `exit` a refusal of this call, not of the operator's shell, and
   scopes the `unset` and the `trap`.
 - **`GIT_*` is unset first.** A git hook, or anything else that sets `GIT_DIR` or `GIT_WORK_TREE`,
-  would otherwise make `--show-toplevel` name another repository; `ak tracker check` strips the same
+  would otherwise make `--show-toplevel` name another repository; `.cursor/bin/ak tracker check` strips the same
   variables.
 - **`cd` to the binding root, or stop.** The working directory must be inside the top level, both
   resolved with `pwd -P`, and the upward search stops at the top level or at `/`, whichever comes
@@ -225,7 +225,7 @@ performs these steps in order and stops at the first that fails:
 5. **Write the binding**, `ak.tracker.yaml`, with the team and optional project the human names.
 6. **Gitignore the secret**: add the token file's path to the project's `.gitignore` and commit
    that rule, since an uncommitted rule protects only this checkout. Then confirm with
-   `ak tracker check`, or where `ak` is not on hand with the plain-git checks in
+   `.cursor/bin/ak tracker check`, or where the agent-kit CLI is not on hand with the plain-git checks in
    [the tracker-of-record reference](../../../references/tracker-of-record/REFERENCE.md).
    A token file already tracked or found in history stops setup, and the human is told to rotate
    the token: untracking it does not remove it from history.

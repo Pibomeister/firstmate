@@ -418,6 +418,10 @@
           },
           "then": { "required": ["paraphrase", "raw_output"] },
           "x-validator-rule": "review.comprehension-paraphrase-stored-by-hash"
+        },
+        {
+          "description": "When an indexed project sets review.comprehension to shadow, a covered comprehension lane is not required, its verdict is approve or no-opinion, cited findings from that lane are advisory, and those findings are absent from unresolved_blockers. Off and a missing project keep existing reviews valid. An unknown or non-string review.comprehension value is reported. (phase 1b, GS-004h)",
+          "x-validator-rule": "review.comprehension-shadow-findings-stay-fyi"
         }
       ]
     },

@@ -135,7 +135,7 @@ replayed: linearis offers no idempotency key. Live round-trips against Linear ar
 
 ## Checking the secret with plain git
 
-Where `ak tracker check` is not on hand, from the project folder, with `$f` the token file:
+Where `.cursor/bin/ak tracker check` cannot be run, from the project folder, with `$f` the token file:
 
 ```sh
 printf './%s\0' "$f" | git check-ignore -q -z --stdin --no-index     # exit 0: ignored
@@ -153,4 +153,4 @@ git --literal-pathspecs log --all --full-history --format=%h -1 -- "$f"   # any 
 
 `--all` covers every commit reachable from a ref, not unreachable objects. The token file must be
 readable by its owner only (no group or other bits; `chmod 600` sets that), as checked by both
-`ak tracker check` and `ak doctor`.
+`.cursor/bin/ak tracker check` and `ak doctor`.

@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/cold-read.schema.json",
+  "title": "Ticket cold read",
+  "description": "An independent read of one implementation ticket: what the reader would build, every decision the ticket leaves open, terms it could not resolve, codebase claims marked already present or proposed by the ticket, and whether each readiness criterion's named evidence was found. A path or name the ticket proposes is not a defect for being absent at the stated revision. The record is a run artifact cited from the ticket when the project setting is on. A cited read satisfies review.cold_read on only when status is complete or unavailable. A draft or missing status does not. Raising the class on an unavailable read is a later phase (GS-004k). Not yet backed by live probe evidence (phase 1b, GS-004g).",
+  "type": "object",
+  "required": ["ticket", "state"],
+  "properties": {
+    "schema": { "const": "cold-read" },
+    "status": {
+      "description": "draft while the read is in flight; complete once stored; unavailable when the host could not give the reader a separate context.",
+      "enum": ["draft", "complete", "unavailable"]
+    },
+    "ticket": {
+      "description": "The implementation ticket that was read, bound by hash.",
+      "$ref": "common.schema.json#/$defs/artifact_ref"
+    },
+    "paraphrase": {
+      "description": "What the reader would build from the ticket alone.",
+      "$ref": "common.schema.json#/$defs/nonempty_string"
+    },
+    "decisions": {
+      "description": "Every decision the reader would have to make that the ticket does not settle. Each listed decision is an unsettled design choice, never the absence of a proposed path.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/decision" }
+    },
+    "unresolved_terms": {
+      "description": "Terms the reader could not resolve from the ticket and the checkout it was given.",
+      "$ref": "common.schema.json#/$defs/string_list"
+    },
+    "claims": {
+      "description": "Each claim the reader makes about the codebase, labelled exists or proposed. A proposed claim whose target is absent at the stated revision is not a finding.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/claim" },
+      "x-validator-rule": "cold-read.proposed-absent-is-not-a-finding"
+    },
+    "readiness": {
+      "description": "One observation per specification-readiness criterion: whether the reader found the evidence that criterion names, and where.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "acceptance_criteria",
+        "interfaces",
+        "examples",
+        "non_goals",
+        "existing_pattern",
+        "verification_path"
+      ],
+      "properties": {
+        "acceptance_criteria": { "$ref": "#/$defs/readiness_observation" },
+        "interfaces": { "$ref": "#/$defs/readiness_observation" },
+        "examples": { "$ref": "#/$defs/readiness_observation" },
+        "non_goals": { "$ref": "#/$defs/readiness_observation" },
+        "existing_pattern": { "$ref": "#/$defs/readiness_observation" },
+        "verification_path": { "$ref": "#/$defs/readiness_observation" }
+      }
+    },
+    "state": {
+      "description": "covered when the reader returned; unavailable when the host could not provide a separate context. Unavailable with reason is a result, not an empty pass.",
+      "enum": ["covered", "unavailable"]
+    },
+    "reason": {
+      "description": "Why the read is unavailable. Required in that state.",
+      "$ref": "common.schema.json#/$defs/nonempty_string"
+    }
+  },
+  "$defs": {
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": {
+          "description": "The unsettled choice, in the reader's words.",
+          "$ref": "common.schema.json#/$defs/nonempty_string"
+        },
+        "claim": {
+          "description": "When this decision is about a recorded claim, the claim's id. A proposed claim must not be cited here as absent.",
+          "$ref": "common.schema.json#/$defs/kebab_id"
+        },
+        "kind": {
+          "description": "unsettled is a design choice the ticket does not settle. absent names a missing existing helper. unresolved-term is a name the reader could not resolve. absent on a proposed claim is refused.",
+          "enum": ["unsettled", "absent", "unresolved-term"]
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "target", "kind"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+        "target": {
+          "description": "The path, glob or symbol the claim is about.",
+          "$ref": "common.schema.json#/$defs/nonempty_string"
+        },
+        "kind": {
+          "description": "exists: the ticket treats this as already in the tree. proposed: the ticket lists it as something the work produces, or it is a path in allowed_changes that is not at the stated revision.",
+          "enum": ["exists", "proposed"]
+        },
+        "observed": {
+          "description": "Whether the target was present at the stated revision. proposed and absent together are valid and are not a finding.",
+          "enum": ["present", "absent"]
+        }
+      }
+    },
+    "readiness_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["found"],
+      "properties": {
+        "found": { "type": "boolean" },
+        "where": {
+          "description": "Where the reader found the evidence the criterion names. Required when found is true.",
+          "$ref": "common.schema.json#/$defs/nonempty_string"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "found": { "const": true } }, "required": ["found"] },
+          "then": { "required": ["where"] }
+        }
+      ]
+    }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/envelope" },
+    {
+      "description": "A covered read returns the paraphrase, the claim list, the decision list, unresolved terms and one observation per readiness criterion.",
+      "if": { "properties": { "state": { "const": "covered" } }, "required": ["state"] },
+      "then": { "required": ["paraphrase", "decisions", "unresolved_terms", "claims", "readiness"] }
+    },
+    {
+      "description": "An unavailable read states why, and cannot be read as coverage.",
+      "if": { "properties": { "state": { "const": "unavailable" } }, "required": ["state"] },
+      "then": { "required": ["reason"] }
+    },
+    {
+      "description": "status unavailable if and only if state is unavailable.",
+      "if": { "properties": { "status": { "const": "unavailable" } }, "required": ["status"] },
+      "then": { "properties": { "state": { "const": "unavailable" } }, "required": ["state"] }
+    },
+    {
+      "description": "state unavailable if and only if status is unavailable.",
+      "if": { "properties": { "state": { "const": "unavailable" } }, "required": ["state"] },
+      "then": { "properties": { "status": { "const": "unavailable" } }, "required": ["status"] }
+    },
+    {
+      "description": "status complete requires state covered.",
+      "if": { "properties": { "status": { "const": "complete" } }, "required": ["status"] },
+      "then": { "properties": { "state": { "const": "covered" } }, "required": ["state"] }
+    }
+  ]
+}

@@ -104,6 +104,11 @@ nothing to report.
   `empty`, or return them explicitly marked non-binding. Do not convert taste into a violation.
 - The designated standards source, the packet, the diff or the receipts could not be supplied:
   return `unavailable`, naming what was missing. It is never downgraded to `empty`.
+- Under a knowledgebase coverage limit (`.cursor/bin/ak kb check` exit 3, or a missing or unknown `.cursor/bin/ak kb`
+  command) the project has no standards this seat can read: review against the baseline patterns
+  and name the coverage limit. The limit alone never makes this lane unavailable. A configured
+  knowledgebase that cannot be used (`.cursor/bin/ak kb check` exit 1) is a standards source that could not be
+  supplied, and returns `unavailable`.
 
 ## Rationalizations this seat makes
 

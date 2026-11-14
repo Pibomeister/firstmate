@@ -11,7 +11,7 @@ evidence the layer below can show (research/dossiers/learning.md).
 
 ## When to use
 
-- The `ak learn` runtime applies it to every judge reply before writing a pattern page, a working
+- The `.cursor/bin/ak learn` runtime applies it to every judge reply before writing a pattern page, a working
   memory, a lesson or a skill candidate.
 - `compound` applies it when it reads ledger patterns and lessons as evidence for a lesson it is
   capturing: a ledger entry supports a lesson only where it passed this gate.
@@ -27,7 +27,7 @@ evidence the layer below can show (research/dossiers/learning.md).
 
 ## Invoked by
 
-The `ak learn` runtime under the opt-in `learning` profile (ruling
+The `.cursor/bin/ak learn` runtime under the opt-in `learning` profile (ruling
 `learning-runtime-is-host-adapter`), and the skills `compound` and `compound-refresh` when that
 profile is installed. A protocol holds no authority of its own and never widens the authority it
 was called with (ruling `entrypoint-phase-operation-split`; protocol [`phase-operations`](../phase-operations/PROTOCOL.md)).

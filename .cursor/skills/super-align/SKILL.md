@@ -70,11 +70,11 @@ and never as an approval; record the `align` gate as [the unattended-lifecycle r
   first and run its check: it gives the commands and tells an unconfigured knowledgebase from a
   broken one. An empty result is a fact, not an error — say the project has recorded none and
   continue. An unavailable adapter is a coverage limit: name missing `kb-read` and the cause the
-  check printed — no committed `ak.kb.yaml`, or a knowledgebase this machine has not registered —
-  never a missing `ak.install.yaml`, which no knowledgebase depends on. Continue the interview
-  through the six-field restatement, then stop before publication with `needs-input` naming both
-  `kb-read` and `kb-write` and that setup step. A configured knowledgebase that fails or cannot be
-  reached returns `failed`; stop and report it rather than proceeding from memory.
+  check printed — no committed `ak.kb.yaml`, a knowledgebase this machine has not registered, or a
+  missing or unknown `.cursor/bin/ak kb` command — never a missing `ak.install.yaml`, which no knowledgebase
+  depends on. Continue the interview through approval; at publication name `kb-write` and that
+  setup step, and each page as not published. A configured knowledgebase that fails or cannot be
+  reached (exit 1) returns `failed`; stop and report it rather than proceeding from memory.
 - At `align.run` only: a `charter` ([`schemas/charter.schema.json`](../../references/shared/schemas/charter.schema.json)) listing the `align-answer`
   checkpoint category. Absent, or listing a different category: `needs-input`.
 - Facts about the codebase are this skill's own job to find. A fact the agent could look up is
@@ -121,10 +121,10 @@ and never as an approval; record the `align` gate as [the unattended-lifecycle r
     collector or running service.
 12. On an explicit yes (under the unattended policy, the recorded step 11 advance), publish the settled vocabulary as a `concept` page and the direction as an
     `adr` with status `proposed`. On a fork the human cannot settle, publish a `type: decision`
-    ticket instead and say what it blocks. If the knowledgebase adapter was unavailable, publish
-    nothing and return `needs-input` naming `kb-read`, `kb-write` and the setup step the check
-    printed; the completed interview is returned in the session so publication can resume without
-    repeating it.
+    ticket instead and say what it blocks. Under a knowledgebase coverage limit, skip publication,
+    name each page as not published with `kb-write` and the setup step the check printed, and
+    return the completed interview in the session so publication can resume without repeating it;
+    the phase continues.
 
 ## Hard gates
 
@@ -151,7 +151,7 @@ answer, and no implementation file is written in that operation.
 | "They said 'whatever you think is best', so that is a yes." | That answer hands the decision back; it agrees to nothing, and the human has not yet seen a direction to agree to. | Restate the direction in the six fields and ask again for a yes or a change. |
 | "It grew while I worked, but I'm nearly done — re-classifying now wastes a round." | Hidden complexity upgrades the classification and nothing downgrades it; "nearly done" is when the upgrade matters most. | Stop, say the classification moved and why, and run the heavier path. |
 | "The ask is clear enough — more questions would waste their time." | An ask that is clear to the agent is the shape of an assumption, not of agreement. | Run the frontier round. If you can already predict the next three answers, say so and go to the restatement. |
-| "The knowledgebase is not configured, so the interview cannot start." | Unavailable is not failed. The adapter contract makes missing `kb-read` a reported limitation, while the questions themselves need only the human channel. | Name missing `kb-read`, run the interview, and stop at publication with `needs-input` naming both `kb-read` and `kb-write`. |
+| "The knowledgebase is not configured, so the interview cannot start." | Unavailable is not failed. The adapter contract makes missing `kb-read` a reported limitation, while the questions themselves need only the human channel. | Name missing `kb-read`, run the interview, and at publication name `kb-write` and each page as not published, then continue. |
 
 ## Outputs
 
@@ -182,11 +182,13 @@ performed is `failed`, never complete.
 
 - `complete` — the human approved the restated direction (under the unattended policy, a recorded
   unattended advance, never an approval), and every published artifact's read-back matched what was sent.
-- `needs-input` — a start by neither the typed command nor a validated grant, no request, no
-  explicit approval (outside the unattended policy, whose recorded advance stands in), a question outside the charter at `align.run`, a fork only the human can
-  settle, or publication reached an unavailable knowledgebase adapter. The first returns the
-  command to type and nothing else. The unavailable-adapter result names `kb-read` and `kb-write`
-  and returns the completed interview without publishing it.
+- `needs-input` — a start by none of the typed command, a validated grant, a passing bypass check and the unattended policy's passing `unattended check`, no request, no
+  explicit approval (outside the unattended policy, whose recorded advance stands in), a question outside the charter at `align.run`, or a fork only the human can
+  settle. The first returns the command to type and nothing else.
+- A knowledgebase coverage limit — `.cursor/bin/ak kb check` exit 3 (kb.unbound, kb.unregistered), a publish exit 3 (kb.read-only), kb.in-repo-missing, or a
+  missing or unknown `.cursor/bin/ak kb` command — never stops this phase under any policy: reads are
+  unavailable, each skipped publish is named in the result as not published, and of these results
+  only exit 1 stops.
 - `cap-reached` — the runner-supplied alignment budget is exhausted. Returns the settled part of the
   tree and the open frontier, and decides none of it.
 - `cancelled` — the human ends the run. Nothing is published.

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-kit.local/schemas/kb-backends/in-repo.schema.json",
+  "title": "Knowledgebase binding: in-repo",
+  "description": "What adapters/knowledgebase/backends/in-repo.md reads from ak.kb.yaml, applied by `.cursor/bin/ak kb check` after the generic schemas/kb-binding.schema.json has passed. The knowledgebase is a directory of pages committed in the project's own repository, read only, so the locator names a path relative to the project folder and never a machine path, and the directory each kind is read from. The revision read is the merge-base of the checkout's HEAD and the remote's default branch (refs/remotes/origin/HEAD); the binding cannot name another, because a binding a branch commits could name that branch itself (docs/decisions/0010-file-backed-knowledgebase.md, amendment of 2026-11-09). `.cursor/bin/ak kb check` also refuses a kind map in which one directory equals or contains another (kb.binding-invalid), which a schema cannot say.",
+  "type": "object",
+  "required": ["locator"],
+  "$defs": {
+    "relative_dir": {
+      "description": "A directory as forward-slash segments relative to where it is read from: no leading slash, no backslash, no segment that is `.`, and no `..` anywhere.",
+      "type": "string",
+      "pattern": "^(?!\\.\\.?(?:/|$))[A-Za-z0-9._-]+(?:/(?!\\.\\.?(?:/|$))[A-Za-z0-9._-]+)*$",
+      "not": { "pattern": "\\.\\." }
+    }
+  },
+  "properties": {
+    "locator": {
+      "type": "object",
+      "required": ["knowledgebase", "path", "kinds"],
+      "propertyNames": { "enum": ["knowledgebase", "path", "kinds"] },
+      "properties": {
+        "knowledgebase": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+        "path": { "$ref": "#/$defs/relative_dir" },
+        "kinds": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "enum": ["adr", "concept", "foundation", "gotcha", "pattern", "prd", "process", "sop", "system"]
+          },
+          "additionalProperties": { "$ref": "#/$defs/relative_dir" }
+        }
+      }
+    }
+  }
+}
