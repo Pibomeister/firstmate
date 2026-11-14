@@ -754,7 +754,7 @@ mr_run_cleanup() {
 }
 
 mr_run() {  # <repo> <base-ref> <intent-file>
-  local repo=$1 base_ref=$2 intent=$3 i pids='' pid holder families identity reviewer_parent complete_sha object_dir object_format=sha1
+  local repo=$1 base_ref=$2 intent=$3 i pids='' pid holder families identity reviewer_parent complete_sha object_dir object_format=sha1 repo_root
   if [ -z "${FM_TASK_ID:-}" ] || ! fm_pr_task_id_valid "$FM_TASK_ID"; then
     mr_die 'run belongs in a background worker: FM_TASK_ID is not set, so this is not a spawned ship or scout worker. A supervisor dispatches the worker and reads check.'
   fi
@@ -777,6 +777,8 @@ mr_run() {  # <repo> <base-ref> <intent-file>
   esac
 
   git --no-replace-objects -C "$repo" rev-parse --git-dir >/dev/null 2>&1 || mr_die "--repo $repo is not a git repository"
+  repo_root=$(git --no-replace-objects -C "$repo" rev-parse --show-toplevel 2>/dev/null) || repo_root=$repo
+  repo=$(cd "$repo_root" && pwd -P) || mr_die 'cannot resolve the repository root'
   [ "$(git --no-replace-objects -C "$repo" rev-parse --verify --quiet "$MR_HEAD^{commit}" 2>/dev/null)" = "$MR_HEAD" ] \
     || mr_die "the head commit $MR_HEAD is not in $repo; fetch it there first"
   if [ -z "$base_ref" ]; then
@@ -837,7 +839,7 @@ mr_run() {  # <repo> <base-ref> <intent-file>
     git --no-replace-objects -c core.attributesFile=/dev/null --git-dir="$MR_WORK/archive.git" \
       archive --format=tar "$MR_HEAD" | tar -x -C "$MR_WORK/snapshot" \
     || mr_die "cannot snapshot $MR_HEAD from $repo"
-  git --no-replace-objects -C "$repo" diff --no-ext-diff --no-textconv --ignore-submodules=none \
+  git --no-replace-objects -C "$repo" diff --no-relative --no-ext-diff --no-textconv --ignore-submodules=none \
     --submodule=short --full-index --binary "$MR_BASE" "$MR_HEAD" > "$MR_WORK/diff.patch" \
     || mr_die "cannot build the diff from $MR_BASE to $MR_HEAD"
   [ -s "$MR_WORK/diff.patch" ] || mr_die "the diff from $MR_BASE to $MR_HEAD is empty"

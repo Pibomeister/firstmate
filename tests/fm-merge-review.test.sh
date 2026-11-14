@@ -813,6 +813,35 @@ test_snapshot_supports_sha256_object_repositories() {
   pass "canonical snapshot reads SHA-256 source repositories without changing object format"
 }
 
+test_subdirectory_and_relative_config_cannot_omit_changes() {
+  local receipt patch
+  make_case relative-diff "${TWO_SEATS[@]}"
+  mkdir -p "$REPO/src" "$REPO/scripts"
+  printf 'inside source\n' > "$REPO/src/input.txt"
+  printf 'outside source\n' > "$REPO/scripts/tool.sh"
+  git -C "$REPO" add src scripts
+  git -C "$REPO" commit -qm 'changes inside and outside the supplied subdirectory'
+  HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
+  git -C "$REPO" config diff.relative true
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO/src" || fail "relative-diff: review run failed"
+  receipt="$(store_dir)/anthropic.claude.claude-test-1.receipt"
+  patch="$(store_dir)/diff.$(sed -n 's/^diff_sha256=//p' "$receipt").patch"
+  assert_grep 'diff --git a/scripts/tool.sh b/scripts/tool.sh' "$patch" "relative-diff: changes outside the supplied directory were omitted"
+  assert_grep 'diff --git a/src/input.txt b/src/input.txt' "$patch" "relative-diff: paths are not relative to the repository root"
+  pass "repository subdirectories and diff.relative cannot filter changes out of a review"
+}
+
+test_review_still_accepts_bare_source_repositories() {
+  local base
+  make_case bare-source "${TWO_SEATS[@]}"
+  base=$(git -C "$REPO" rev-parse origin/main)
+  git clone --bare --quiet "$REPO" "$CASE/source.git"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$CASE/source.git" --base "$base" \
+    || fail "bare-source: review failed: $(cat "$CASE/stderr")"
+  assert_equals 'the feature' "$(cat "$STUB/claude.feature")" "bare-source: snapshot changed the committed bytes"
+  pass "normalizing review input paths keeps bare source repositories supported"
+}
+
 test_covers_follows_the_require_lines() {
   local rc=0
   make_case covers-none
@@ -914,6 +943,8 @@ fm_test_run \
   test_snapshot_preserves_committed_files_despite_archive_attributes \
   test_local_replacement_refs_cannot_substitute_the_named_commit \
   test_snapshot_supports_sha256_object_repositories \
+  test_subdirectory_and_relative_config_cannot_omit_changes \
+  test_review_still_accepts_bare_source_repositories \
   test_covers_follows_the_require_lines \
   test_run_refuses_what_it_cannot_review \
   test_intent_reaches_the_prompt_the_receipt_binds
