@@ -1256,8 +1256,9 @@ EOF
 #
 # The cursor format is `version` (FM_OPEN_DECISIONS_FOLD_VERSION plus the task
 # kind, as `<n>:<kind>`), `offset`, `ident`, then the folded open set.
-# The optional timed view uses a separate `.timed` cursor and adds `:timed3`
-# to the version; status_open_decisions_incremental owns its row format.
+# Optional timed views use separate cursors: `.timed` with version suffix
+# `:timed3`, or `.timed-all` with `:timed-all1` to age keyless events too.
+# status_open_decisions_incremental owns their row format.
 # FM_OPEN_DECISIONS_FOLD_VERSION must be bumped whenever
 # _fm_decision_fold_line semantics change, so persisted state from an older
 # interpretation is discarded and rebuilt from byte 0; the kind suffix does the

@@ -132,6 +132,10 @@
 #                          never an automatic interrupt, signal, or restart of
 #                          the worker or its tool process. A proven-gone
 #                          endpoint takes the dead-record path above instead.
+#                          At escalation time a T3 Code thread whose shared
+#                          classification still reads running resets the timer
+#                          while its latest turn boundary is under
+#                          BUSY_TURN_MAX_SECS old (wedge_defer_t3code_running).
 #   stale: <window> (declared pause on a parked run - ...)
 #                          a worker's own `paused:` line still stands while its
 #                          no-mistakes run is parked on an ask-user finding;
@@ -142,11 +146,15 @@
 #                          ten minutes in the canonical status fold; emitted once
 #                          per opening even if unrelated events or pane changes
 #                          occur, and collected for every worker before other
-#                          wake-producing work on each supervision cycle
-#                          At escalation time a T3 Code thread whose shared
-#                          classification still reads running resets the timer
-#                          while its latest turn boundary is under
-#                          BUSY_TURN_MAX_SECS old (wedge_defer_t3code_running).
+#                          wake-producing work on each supervision cycle.
+#                          Keyed and keyless blockers retain their original
+#                          stamped opening time when the same note is repeated;
+#                          resolving another key does not close them. Unknown
+#                          opening times cannot be aged. Resolution or terminal
+#                          closure retires the episode; a reopen starts anew.
+#                          The incremental fold avoids rereading unchanged logs;
+#                          declaration text is read only for due, unsurfaced
+#                          blockers. Independent of open-decision reminders.
 #   stale: <window> (unread firstmate instruction: ...)
 #   stale: <window> (steering-inbox ladder bookkeeping unwritable: ...)
 #   stale: <window> (steering-inbox busy bookkeeping unwritable: ...)

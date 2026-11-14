@@ -289,7 +289,7 @@ No turn ends blind while work is under way, including turns described as holding
 - A status line is a wake event, not current state; use `bin/fm-crew-state.sh` when current state matters, especially before re-escalating an old decision, blocker, or pause.
 - `bin/fm-classify-lib.sh` owns the distinction between declared `paused:` waits and `blocked:` events needing firstmate action; `bin/fm-brief.sh` owns worker declaration instructions.
 - Inspect every prioritized worker on every supervision cycle until it is terminal, and resolve any question from the order, code, or evidence already in hand instead of letting that lane park for an answer it can derive.
-- A P0 worker whose exact `blocked:` declaration remains open for ten minutes produces the watcher's once-only blocker-text stale wake; handle it in that cycle while other lanes continue.
+- Handle the P0 blocker alarm in that cycle while other lanes continue; `bin/fm-watch.sh` owns its timing, open-episode tracking, and blocker-text stale wake.
 
 Handle actionable wakes as follows:
 
