@@ -20,7 +20,8 @@
 #         called only while fewer than two model families hold a valid review.
 #         <dir> must already contain the head and tree objects; run never fetches.
 #         Replacement refs and archival ignore/substitution attributes do not
-#         alter the reviewed commit or snapshot.
+#         alter the reviewed commit or snapshot. Filesystem path collisions
+#         and repository-enclosed temporary directories refuse before any seat.
 #         A seat that already holds a valid receipt at this head is not called
 #         again, so a rerun cannot replace a BLOCK with a new roll. Interrupted
 #         runs stop their reviewers before releasing the lock; stale writers
@@ -63,7 +64,7 @@
 #
 # Receipts live in the home, one directory per pull request and head:
 #   data/merge-review/<provider>/<host>/<path>/<number>/<head>/
-# GitHub repository paths use lowercase identity; other forges retain case.
+# GitHub and Forgejo paths use lowercase identity; other forges retain case.
 #     .complete            unique generation digest after a batch finishes
 #     <seat>.receipt       key=value, format=fm-merge-review-receipt-v1: url,
 #                          head, base, base_ref, seat, family, harness,
@@ -142,7 +143,7 @@ mr_trim() {  # <text>
 }
 
 mr_lower() {  # <text>
-  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+  printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]'
 }
 
 mr_sha256() {  # <file>
@@ -324,10 +325,9 @@ mr_receipt_valid() {  # <receipt>
   MR_R_SEAT=$seat
   [ "$(mr_receipt_get "$receipt" format)" = "$MR_FORMAT" ] || { MR_R_REASON='unknown receipt format'; return 1; }
   value=$(mr_receipt_get "$receipt" url)
-  if [ "$FM_PR_PROVIDER" = github ]; then
-    value=$(mr_lower "$value")
-    expected_url=$(mr_lower "$expected_url")
-  fi
+  case "$FM_PR_PROVIDER" in
+    github | forgejo) value=$(mr_lower "$value"); expected_url=$(mr_lower "$expected_url") ;;
+  esac
   [ "$value" = "$expected_url" ] || { MR_R_REASON='the receipt names another pull request'; return 1; }
   [ "$(mr_receipt_get "$receipt" head)" = "$MR_HEAD" ] || { MR_R_REASON='the receipt names another head'; return 1; }
   value=$(mr_receipt_get "$receipt" base)
@@ -376,7 +376,7 @@ mr_receipt_valid() {  # <receipt>
 
   if [ "$MR_POST" = on ] && [ "$verdict" != BLOCK ]; then
     value=$(mr_receipt_get "$receipt" posted)
-    [ "$FM_PR_PROVIDER" != github ] || value=$(mr_lower "$value")
+    case "$FM_PR_PROVIDER" in github | forgejo) value=$(mr_lower "$value") ;; esac
     case "$value" in
       "$expected_url#"?*) ;;
       *) MR_R_REASON='the review is not posted on the pull request'; return 1 ;;
@@ -388,7 +388,7 @@ mr_receipt_valid() {  # <receipt>
 
 mr_store_dir() {
   local path=$FM_PR_PATH
-  [ "$FM_PR_PROVIDER" != github ] || path=$(mr_lower "$path")
+  case "$FM_PR_PROVIDER" in github | forgejo) path=$(mr_lower "$path") ;; esac
   printf '%s/data/merge-review/%s/%s/%s/%s/%s\n' \
     "$FM_HOME" "$FM_PR_PROVIDER" "$FM_PR_HOST" "$path" "$FM_PR_NUMBER" "$MR_HEAD"
 }
@@ -513,7 +513,7 @@ mr_seat_call() {  # <seat-index>
 
   command -v "$harness" >/dev/null 2>&1 \
     || { mr_seat_fail "$id" "$started" 127 "the $harness tool is not installed"; return 1; }
-  version=$(mr_harness_version "$harness")
+  version=$(cd "$MR_WORK" && mr_harness_version "$harness")
 
   case "$harness" in
     claude)
@@ -755,12 +755,15 @@ mr_run_cleanup() {
 
 mr_run() {  # <repo> <base-ref> <intent-file>
   local repo=$1 base_ref=$2 intent=$3 i pids='' pid holder families identity reviewer_parent complete_sha object_dir object_format=sha1 repo_root
+  local review_parent entry_path duplicate_ids
   if [ -z "${FM_TASK_ID:-}" ] || ! fm_pr_task_id_valid "$FM_TASK_ID"; then
     mr_die 'run belongs in a background worker: FM_TASK_ID is not set, so this is not a spawned ship or scout worker. A supervisor dispatches the worker and reads check.'
   fi
   [ "$MR_CONFIGURED" -eq 1 ] || mr_die 'config/merge-review is absent, so no reviewer seat is declared'
   command -v jq >/dev/null 2>&1 || mr_die 'jq is required'
   mr_sha256 "$0" >/dev/null || mr_die 'shasum or sha256sum is required'
+  unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_PREFIX GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES \
+    || mr_die 'cannot isolate Git repository location variables'
 
   families=
   i=0
@@ -823,6 +826,16 @@ mr_run() {  # <repo> <base-ref> <intent-file>
   MR_RECLAIM=
 
   MR_WORK=$(mktemp -d "${TMPDIR:-/tmp}/fm-merge-review.XXXXXX") || mr_die 'cannot create a temporary directory'
+  review_parent=$(cd "$MR_WORK" && pwd -P) || mr_die 'cannot resolve the temporary review directory'
+  MR_WORK=$review_parent
+  while :; do
+    if [ -e "$review_parent/.git" ] || [ -L "$review_parent/.git" ] ||
+      { [ -f "$review_parent/HEAD" ] && [ -d "$review_parent/objects" ] && [ -d "$review_parent/refs" ]; }; then
+      mr_die 'temporary review directory is inside a repository; use a TMPDIR outside repositories'
+    fi
+    [ "$review_parent" != / ] || break
+    fm_dirname_to review_parent "$review_parent"
+  done
   : > "$MR_WORK/children"
   ln -s "$MR_WORK/children" "$MR_LOCK/children" || mr_die 'cannot publish the reviewer ledger'
   mkdir "$MR_WORK/snapshot"
@@ -837,8 +850,20 @@ mr_run() {  # <repo> <base-ref> <intent-file>
   printf '* -export-ignore -export-subst\n' > "$MR_WORK/archive.git/info/attributes" || mr_die 'cannot write snapshot attributes'
   GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_PARAMETERS='' GIT_CONFIG_COUNT=0 GIT_OBJECT_DIRECTORY="$object_dir" \
     git --no-replace-objects -c core.attributesFile=/dev/null --git-dir="$MR_WORK/archive.git" \
-      archive --format=tar "$MR_HEAD" | tar -x -C "$MR_WORK/snapshot" \
+      archive --format=tar "$MR_HEAD" | TAR_OPTIONS='' tar -x -C "$MR_WORK/snapshot" \
     || mr_die "cannot snapshot $MR_HEAD from $repo"
+  git --no-replace-objects -C "$repo" ls-tree --full-tree -r -t -z --name-only "$MR_HEAD" |
+    while IFS= read -r -d '' entry_path; do printf '%s/%s\0' "$MR_WORK/snapshot" "$entry_path"; done > "$MR_WORK/snapshot.paths" \
+    || mr_die 'cannot enumerate committed snapshot paths'
+  if [ -s "$MR_WORK/snapshot.paths" ]; then
+    if stat -c '%d:%i' "$MR_WORK/snapshot" >/dev/null 2>&1; then
+      xargs -0 stat -c '%d:%i' < "$MR_WORK/snapshot.paths" > "$MR_WORK/snapshot.ids" || mr_die 'cannot verify snapshot paths'
+    else
+      xargs -0 stat -f '%d:%i' < "$MR_WORK/snapshot.paths" > "$MR_WORK/snapshot.ids" || mr_die 'cannot verify snapshot paths'
+    fi
+    duplicate_ids=$(LC_ALL=C sort "$MR_WORK/snapshot.ids" | uniq -d) || mr_die 'cannot verify snapshot path identities'
+    [ -z "$duplicate_ids" ] || mr_die 'snapshot has colliding Git paths on this filesystem'
+  fi
   git --no-replace-objects -C "$repo" diff --no-relative --no-ext-diff --no-textconv --ignore-submodules=none \
     --submodule=short --full-index --binary "$MR_BASE" "$MR_HEAD" > "$MR_WORK/diff.patch" \
     || mr_die "cannot build the diff from $MR_BASE to $MR_HEAD"

@@ -842,6 +842,101 @@ test_review_still_accepts_bare_source_repositories() {
   pass "normalizing review input paths keeps bare source repositories supported"
 }
 
+test_forgejo_url_case_cannot_select_another_review() {
+  local rc=0 alias=https://forgejo.example/Example/Repo/pulls/7 canonical=https://forgejo.example/example/repo/pulls/7
+  make_case forgejo-url-case "${TWO_SEATS[@]}"
+  echo block > "$STUB/agy.mode"
+  run_review run "$alias" --head "$HEAD_SHA" --repo "$REPO" && fail "forgejo-case: initial dissent approved"
+  run_supervisor check "$canonical" --head "$HEAD_SHA" || rc=$?
+  expect_code 1 "$rc" "forgejo-case: equivalent URL with stored dissent"
+  assert_grep 'merge-review: blocked' "$CASE/stdout" "forgejo-case: casing lost the stored dissent"
+  echo approve > "$STUB/agy.mode"
+  rc=0
+  run_review run "$canonical" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "forgejo-case: a case alias cannot reroll dissent"
+  assert_equals 1 "$(calls agy)" "forgejo-case: casing selected another model call"
+  pass "Forgejo URL case aliases retain the same recorded dissent"
+}
+
+test_snapshot_refuses_paths_the_filesystem_cannot_distinguish() {
+  local layout upper lower upper_tree lower_tree subtree tree probe expected rc
+  for layout in files directories; do
+    make_case "snapshot-collision-$layout" "${TWO_SEATS[@]}"
+    upper=$(printf 'upper contents\n' | git -C "$REPO" hash-object -w --stdin)
+    lower=$(printf 'lower contents\n' | git -C "$REPO" hash-object -w --stdin)
+    if [ "$layout" = files ]; then
+      subtree=$(printf '100644 blob %s\tConfig.py\n100644 blob %s\tconfig.py\n' "$upper" "$lower" | git -C "$REPO" mktree)
+    else
+      upper_tree=$(printf '100644 blob %s\tone.py\n' "$upper" | git -C "$REPO" mktree)
+      lower_tree=$(printf '100644 blob %s\ttwo.py\n' "$lower" | git -C "$REPO" mktree)
+      subtree=$(printf '040000 tree %s\tApi\n040000 tree %s\tapi\n' "$upper_tree" "$lower_tree" | git -C "$REPO" mktree)
+    fi
+    tree=$({ git -C "$REPO" ls-tree "$HEAD_SHA"; printf '040000 tree %s\tsrc\n' "$subtree"; } | git -C "$REPO" mktree)
+    HEAD_SHA=$(printf 'case-distinct committed paths\n' | git -C "$REPO" commit-tree "$tree" -p "$HEAD_SHA")
+    mkdir -p "$CASE/review-temp/probe/snapshot"
+    probe="$CASE/review-temp/probe/snapshot"
+    : > "$probe/CaseProbe"
+    expected=0
+    [ ! -e "$probe/caseprobe" ] || expected=2
+    rm "$probe/CaseProbe"
+    rc=0
+    TMPDIR="$CASE/review-temp" run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+    expect_code "$expected" "$rc" "snapshot-collision-$layout: result must match the snapshot filesystem's path capability"
+    if [ "$expected" -eq 2 ]; then
+      assert_grep 'snapshot has colliding Git paths' "$CASE/stderr" "snapshot-collision-$layout: collision diagnostic missing: $(cat "$CASE/stderr")"
+      assert_equals 0 "$(calls claude)" "snapshot-collision-$layout: reviewer received collapsed paths"
+    else
+      assert_equals 1 "$(calls claude)" "snapshot-collision-$layout: representable paths were not reviewed"
+    fi
+  done
+  pass "snapshot refuses file or directory aliases only when the filesystem cannot represent distinct Git paths"
+}
+
+test_temp_directory_cannot_place_reviewers_inside_a_repository() {
+  local mode temp rc
+  for mode in checkout symlink bare; do
+    make_case "temp-isolation-$mode" "${TWO_SEATS[@]}"
+    if [ "$mode" = bare ]; then
+      git init --bare --quiet "$CASE/temp.git"
+      temp="$CASE/temp.git"
+    else
+      mkdir "$REPO/private-temp"
+      temp="$REPO/private-temp"
+      if [ "$mode" = symlink ]; then ln -s "$temp" "$CASE/temp-alias"; temp="$CASE/temp-alias"; fi
+    fi
+    rc=0
+    TMPDIR="$temp" run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+    expect_code 2 "$rc" "temp-isolation-$mode: repository-enclosed TMPDIR must refuse"
+    assert_grep 'temporary review directory is inside a repository' "$CASE/stderr" "temp-isolation-$mode: isolation diagnostic missing"
+    assert_equals 0 "$(calls claude)" "temp-isolation-$mode: reviewer started inside a repository"
+    assert_equals 0 "$(calls agy)" "temp-isolation-$mode: reviewer started inside a repository"
+  done
+  pass "TMPDIR cannot place reviewers under a checkout, a symlinked checkout path, or a bare repository"
+}
+
+test_inherited_git_location_does_not_enter_reviewer_context() {
+  make_case git-environment "${TWO_SEATS[@]}"
+  GIT_DIR="$REPO/.git" run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" \
+    || fail "git-environment: declared repository review failed: $(cat "$CASE/stderr")"
+  assert_equals 'false' "$(git -C "$REPO" rev-parse --is-bare-repository)" "git-environment: snapshot initialization altered the source repository"
+  assert_grep 'repo=no' "$STUB/claude.saw" "git-environment: inherited GIT_DIR leaked repository context to the reviewer"
+  assert_grep 'repo=no' "$STUB/agy.saw" "git-environment: inherited GIT_DIR leaked repository context to the reviewer"
+  pass "inherited Git location variables neither alter the declared source nor enter reviewer context"
+}
+
+test_snapshot_keeps_distinct_links_and_identical_regular_files() {
+  make_case snapshot-distinct "${TWO_SEATS[@]}"
+  cp "$REPO/feature.txt" "$REPO/copy.txt"
+  ln -s feature.txt "$REPO/first-link"
+  ln -s feature.txt "$REPO/second-link"
+  git -C "$REPO" add copy.txt first-link second-link
+  git -C "$REPO" commit -qm 'distinct nodes with identical content or link targets'
+  HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" \
+    || fail "snapshot-distinct: distinct filesystem nodes must remain accepted: $(cat "$CASE/stderr")"
+  pass "snapshot accepts distinct regular files and symlinks even when their bytes or targets match"
+}
+
 test_covers_follows_the_require_lines() {
   local rc=0
   make_case covers-none
@@ -945,6 +1040,11 @@ fm_test_run \
   test_snapshot_supports_sha256_object_repositories \
   test_subdirectory_and_relative_config_cannot_omit_changes \
   test_review_still_accepts_bare_source_repositories \
+  test_forgejo_url_case_cannot_select_another_review \
+  test_snapshot_refuses_paths_the_filesystem_cannot_distinguish \
+  test_temp_directory_cannot_place_reviewers_inside_a_repository \
+  test_inherited_git_location_does_not_enter_reviewer_context \
+  test_snapshot_keeps_distinct_links_and_identical_regular_files \
   test_covers_follows_the_require_lines \
   test_run_refuses_what_it_cannot_review \
   test_intent_reaches_the_prompt_the_receipt_binds
