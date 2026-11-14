@@ -419,7 +419,7 @@ fm_backend_orca_visible_capture() {  # <terminal-id> [expected-label]
     return 1
   }
   fm_backend_orca_tool_check || return 1
-  out=$(fm_backend_orca_blip_read fm_orca_cli terminal read --terminal "$terminal" --screen --json) || return 1
+  out=$(FM_ORCA_CLI_CACHE=0 fm_backend_orca_blip_read fm_orca_cli terminal read --terminal "$terminal" --screen --json) || return 1
   fm_backend_orca_json_text "$out" screen
 }
 
@@ -474,7 +474,7 @@ fm_backend_orca_recorded_droid() {  # <terminal-id> <expected-label>
 # scrollback is what let a stale startup banner (codex's bordered
 # "permissions" box) compete with - and once outrank - the live composer.
 fm_backend_orca_composer_capture() {  # <terminal-id> [expected-label]
-  fm_backend_orca_capture "$1" "$FM_COMPOSER_CAPTURE_LINES"
+  FM_ORCA_CLI_CACHE=0 fm_backend_orca_capture "$1" "$FM_COMPOSER_CAPTURE_LINES"
 }
 
 # fm_backend_orca_draft_present: Orca lifts the text on the cursor's prompt row
@@ -725,7 +725,7 @@ EOF
 fm_backend_orca_terminal_facts() {  # <terminal-id>
   local terminal=$1 out rc=0
   fm_backend_orca_tool_check 2>/dev/null || return 1
-  out=$(fm_orca_cli terminal show --terminal "$terminal" --json 2>/dev/null) || rc=$?
+  out=$(FM_ORCA_CLI_CACHE=0 fm_orca_cli terminal show --terminal "$terminal" --json 2>/dev/null) || rc=$?
   printf '%s' "$out" | node -e '
 const fs = require("fs");
 const handle = process.argv[1];
@@ -765,7 +765,7 @@ fm_backend_orca_session_pid() {  # <pty-id>
   local pty=$1 out
   [ -n "$pty" ] || return 2
   fm_backend_orca_tool_check 2>/dev/null || return 2
-  out=$(fm_orca_cli diagnostics memory --json 2>/dev/null) || return 2
+  out=$(FM_ORCA_CLI_CACHE=0 fm_orca_cli diagnostics memory --json 2>/dev/null) || return 2
   printf '%s' "$out" | node -e '
 const fs = require("fs");
 const pty = process.argv[1];

@@ -13,6 +13,8 @@
 # Each fill uses its own staging files, so two fills in one shell cannot publish each other's output.
 # A replay reads stdout and stderr before it emits either.
 # A missing stream or a failed read is a miss, emits nothing, and the caller runs the CLI.
+# Pending generation invalidation bypasses replay; a failed generation write
+# retains its lock until recovery can publish a new generation.
 #
 # Cached reads: status; diagnostics memory; repo show; worktree list and
 # show; terminal list, read, and show.
@@ -134,20 +136,26 @@ fm_orca_cli_lock_release() {
 }
 
 fm_orca_cli_cache_invalidate() {
-  local dir lock gen next old i
+  local dir lock gen next old i stage
   fm_orca_cli_cache_enabled || return 0
   dir=$(fm_orca_cli_cache_prepare) || return 0
   lock=$dir/gen.lock
   i=0
   while ! fm_orca_cli_lock_acquire "$lock" 15; do
     i=$((i + 1))
-    [ "$i" -gt 40 ] && return 0
+    [ "$i" -gt 40 ] && return 1
     sleep 0.05
   done
+  if [ -e "$dir/gen" ] || [ -L "$dir/gen" ]; then
+    [ -f "$dir/gen" ] && [ ! -L "$dir/gen" ] || return 1
+  fi
   gen=$(fm_orca_cli_read_gen "$dir")
   next=$((gen + 1))
-  printf '%s\n' "$next" > "$dir/gen.next.$$"
-  mv -f "$dir/gen.next.$$" "$dir/gen"
+  stage=$(mktemp "$dir/staging/gen.XXXXXX") || return 1
+  if ! printf '%s\n' "$next" > "$stage" || ! mv -f "$stage" "$dir/gen"; then
+    rm -f "$stage"
+    return 1
+  fi
   if [ -d "$dir/g" ]; then
     for old in "$dir/g"/*; do
       [ -e "$old" ] || continue
@@ -164,9 +172,9 @@ fm_orca_cli_cache_invalidate() {
 # runs or after it finishes.
 fm_orca_cli_mutation() { # <command...>
   local rc=0
-  fm_orca_cli_cache_invalidate
+  fm_orca_cli_cache_invalidate || true
   "$@" || rc=$?
-  fm_orca_cli_cache_invalidate
+  fm_orca_cli_cache_invalidate || true
   return "$rc"
 }
 
@@ -220,7 +228,7 @@ process.exit(0);
 
 fm_orca_cli_try_replay() { # <dir> <key> -> 0 hit, 1 miss
   local dir=$1 key=$2 gen entry now exp rc out err
-  [ "$(fm_orca_cli_ttl)" -gt 0 ] || return 1
+  [ ! -e "$dir/gen.lock" ] && [ ! -L "$dir/gen.lock" ] || return 1
   gen=$(fm_orca_cli_read_gen "$dir")
   entry=$dir/g/$gen/$key
   [ -f "$entry/stdout" ] && [ -f "$entry/stderr" ] && [ -f "$entry/rc" ] && [ -f "$entry/expires" ] || return 1
@@ -294,6 +302,10 @@ fm_orca_cli_fill() { # <dir> <key> <lock> <orca-args...>
 
 fm_orca_cli_cached() {
   local key dir lock i
+  if [ "$(fm_orca_cli_ttl)" -eq 0 ]; then
+    command orca "$@" || return $?
+    return 0
+  fi
   key=$(fm_orca_cli_cache_key "$@") || {
     command orca "$@" || return $?
     return 0

@@ -24,6 +24,8 @@ setup_case() { # <name>
   FM_ORCA_LIST_EXIT=0
   FM_ORCA_READ_BODY=
   FM_ORCA_READ_ERR=
+  FM_ORCA_SHOW_BODY=
+  FM_ORCA_MEMORY_BODY=
   FM_ORCA_HOLD=
   printf '%s\n' '{"ok":true,"result":{"truncated":false,"terminals":[{"handle":"term-a","id":"id-a"},{"handle":"term-b"}]}}' > "$LIST"
   cat > "$CASE/fakebin/orca" <<'SH'
@@ -49,6 +51,14 @@ fi
 if [ "${1:-} ${2:-}" = "terminal list" ]; then
   cat "${FM_ORCA_LIST:?}"
   exit "${FM_ORCA_LIST_EXIT:-0}"
+fi
+if [ "${1:-} ${2:-}" = "terminal show" ] && [ -n "${FM_ORCA_SHOW_BODY:-}" ]; then
+  printf '%s\n' "$FM_ORCA_SHOW_BODY"
+  exit 0
+fi
+if [ "${1:-} ${2:-}" = "diagnostics memory" ] && [ -n "${FM_ORCA_MEMORY_BODY:-}" ]; then
+  printf '%s\n' "$FM_ORCA_MEMORY_BODY"
+  exit 0
 fi
 if [ "${1:-} ${2:-}" = "terminal read" ] && [ -n "${FM_ORCA_DISTINCT:-}" ]; then
   term=
@@ -114,6 +124,8 @@ run_cli() {
     FM_ORCA_LIST_EXIT="${FM_ORCA_LIST_EXIT:-0}" \
     FM_ORCA_READ_BODY="${FM_ORCA_READ_BODY:-}" \
     FM_ORCA_READ_ERR="${FM_ORCA_READ_ERR:-}" \
+    FM_ORCA_SHOW_BODY="${FM_ORCA_SHOW_BODY:-}" \
+    FM_ORCA_MEMORY_BODY="${FM_ORCA_MEMORY_BODY:-}" \
     FM_ORCA_READ_EXIT="${FM_ORCA_READ_EXIT:-0}" \
     FM_ORCA_HOLD="${FM_ORCA_HOLD:-}" \
     bash -c '. "$1"; shift; fm_orca_cli "$@"' _ "$ROOT/bin/fm-orca-cli-cache.sh" "$@"
@@ -131,7 +143,7 @@ run_exists() {
     bash -c '. "$1"; shift; fm_orca_terminal_exists "$@"' _ "$ROOT/bin/fm-orca-cli-cache.sh" "$@"
 }
 
-run_draft_present() {
+run_backend_probe() {
   PATH="$CASE/fakebin:$PATH" \
     FM_ORCA_CLI_CACHE="${CACHE_SWITCH:-1}" \
     FM_ORCA_CLI_CACHE_TTL="${CACHE_TTL:-3}" \
@@ -139,8 +151,58 @@ run_draft_present() {
     FM_ORCA_LOG="$LOG" FM_ORCA_COUNT="$COUNT" FM_ORCA_LIST="$LIST" \
     FM_ORCA_READ_BODY="${FM_ORCA_READ_BODY:-}" \
     FM_ORCA_READ_EXIT="${FM_ORCA_READ_EXIT:-0}" \
+    FM_ORCA_SHOW_BODY="${FM_ORCA_SHOW_BODY:-}" \
+    FM_ORCA_MEMORY_BODY="${FM_ORCA_MEMORY_BODY:-}" \
+    FM_STATE_OVERRIDE="$CASE/state" \
     FM_COMPOSER_CAPTURE_LINES=7 \
-    bash -c '. "$1/bin/fm-backend.sh"; fm_backend_source orca; fm_backend_orca_draft_present term-a' _ "$ROOT"
+    bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; shift; fm_backend_source orca; "$@"' _ "$ROOT" "$@"
+}
+
+test_live_capture_proofs_ignore_cached_snapshots() {
+  local body
+  setup_case live-composer
+  CACHE_TTL=120
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"before"}}'
+  run_cli terminal read --terminal term-a --limit 7 --json >/dev/null
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"after"}}'
+  body=$(run_backend_probe fm_backend_orca_composer_capture term-a)
+  assert_equals after "$body" "the composer proof reused an old frame"
+
+  setup_case live-feedback
+  CACHE_TTL=120
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"before"}}'
+  run_cli terminal read --terminal term-a --limit 60 --json >/dev/null
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"after"}}'
+  body=$(run_backend_probe fm_control_capture_feedback_pane orca term-a)
+  assert_equals after "$body" "the action-time dialog recapture reused an old frame"
+
+  setup_case live-viewport
+  CACHE_TTL=120
+  mkdir -p "$CASE/state"
+  printf 'harness=droid\nterminal=term-a\n' > "$CASE/state/task-aa.meta"
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"terminal":{"source":"screen","tail":["before"],"draft":""}}}'
+  run_cli terminal read --terminal term-a --screen --json >/dev/null
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"terminal":{"source":"screen","tail":["after"],"draft":""}}}'
+  body=$(run_backend_probe fm_backend_orca_visible_capture term-a fm-task-aa)
+  assert_equals after "$body" "the current viewport reused an old frame"
+  pass "action-time capture proofs read current frames despite cached observations"
+}
+
+test_session_proofs_ignore_cached_terminal_facts() {
+  local facts pid
+  setup_case live-session
+  CACHE_TTL=120
+  FM_ORCA_SHOW_BODY='{"ok":true,"result":{"terminal":{"handle":"term-a","connected":true,"writable":true,"executionHostId":"local","ptyId":"pty-old","worktreePath":"/fixture"}}}'
+  run_cli terminal show --terminal term-a --json >/dev/null
+  FM_ORCA_SHOW_BODY='{"ok":true,"result":{"terminal":{"handle":"term-a","connected":true,"writable":true,"executionHostId":"local","ptyId":"pty-new","worktreePath":"/fixture"}}}'
+  facts=$(run_backend_probe fm_backend_orca_terminal_facts term-a)
+  assert_contains "$facts" $'\x1fpty-new\x1f' "the final terminal proof reused the replaced session"
+  FM_ORCA_MEMORY_BODY='{"ok":true,"result":{"worktrees":[{"sessions":[{"sessionId":"pty-new","pid":111111}]}]}}'
+  run_cli diagnostics memory --json >/dev/null
+  FM_ORCA_MEMORY_BODY='{"ok":true,"result":{"worktrees":[{"sessions":[{"sessionId":"pty-new","pid":222222}]}]}}'
+  pid=$(run_backend_probe fm_backend_orca_session_pid pty-new)
+  assert_equals 222222 "$pid" "the final process proof reused the replaced process"
+  pass "Orca session proofs read current terminal and process facts despite cached observations"
 }
 
 test_draft_probe_does_not_reuse_an_empty_snapshot() {
@@ -150,17 +212,17 @@ test_draft_probe_does_not_reuse_an_empty_snapshot() {
   FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"prompt","draft":""}}'
   run_cli terminal read --terminal term-a --limit 7 --json >/dev/null
   FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"prompt","draft":"operator input"}}'
-  run_draft_present || fail "draft clearance reused an empty snapshot after input appeared"
+  run_backend_probe fm_backend_orca_draft_present term-a || fail "draft clearance reused an empty snapshot after input appeared"
   assert_equals 2 "$(calls)" "draft clearance did not read the live terminal"
   body=$(run_cli terminal read --terminal term-a --limit 7 --json)
   assert_equals '{"ok":true,"result":{"text":"prompt","draft":""}}' "$body" \
     "draft clearance changed the ordinary polling cache"
   assert_equals 2 "$(calls)" "ordinary polling stopped reusing its snapshot"
   FM_ORCA_READ_EXIT=1
-  run_draft_present || fail "a failed live draft read did not hold the send"
+  run_backend_probe fm_backend_orca_draft_present term-a || fail "a failed live draft read did not hold the send"
   FM_ORCA_READ_EXIT=0
   FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"prompt","draft":""}}'
-  if run_draft_present; then
+  if run_backend_probe fm_backend_orca_draft_present term-a; then
     fail "an empty live draft did not clear after the failed read"
   fi
   pass "fm_backend_orca_draft_present: live input and read failures hold despite an empty cached snapshot"
@@ -184,6 +246,70 @@ test_zero_ttl_bypasses_an_existing_entry() {
     "zero TTL stored or replayed a previous live result"
   assert_equals 3 "$(calls)" "a second zero-TTL read did not reach the CLI"
   pass "fm_orca_cli: zero TTL bypasses stored results on every read"
+}
+
+test_pending_generation_invalidation_disables_replay() {
+  local body
+  setup_case pending-generation
+  CACHE_TTL=120
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"before"}}'
+  run_cli terminal read --terminal term-a --limit 1 --json >/dev/null
+  mkdir "$FM_ORCA_CLI_CACHE_DIR/gen.lock"
+  run_cli terminal send --terminal term-a --text x --json >/dev/null
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"after"}}'
+  body=$(run_cli terminal read --terminal term-a --limit 1 --json)
+  assert_equals '{"ok":true,"result":{"text":"after"}}' "$body" \
+    "a mutation whose invalidation timed out left an old snapshot reusable"
+  assert_equals 3 "$(calls)" "the read after failed invalidation did not reach the CLI"
+  fm_touch_epoch "$(( $(date +%s) - 30 ))" "$FM_ORCA_CLI_CACHE_DIR/gen.lock"
+  run_cli terminal send --terminal term-a --text y --json >/dev/null
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"recovered"}}'
+  run_cli terminal read --terminal term-a --limit 1 --json >/dev/null
+  body=$(run_cli terminal read --terminal term-a --limit 1 --json)
+  assert_equals '{"ok":true,"result":{"text":"recovered"}}' "$body" \
+    "generation recovery did not publish the current snapshot"
+  assert_equals 5 "$(calls)" "cache reuse did not resume after generation recovery"
+  pass "fm_orca_cli: pending invalidation bypasses snapshots and successful recovery restores reuse"
+}
+
+test_failed_generation_publish_rejects_an_old_inflight_result() {
+  local real_mv reader body i failure=${1:-rename}
+  setup_case failed-generation
+  CACHE_TTL=120
+  real_mv=$(command -v mv)
+  if [ "$failure" = directory ]; then
+    mkdir "$FM_ORCA_CLI_CACHE_DIR/gen"
+  else
+    {
+      printf '%s\n' '#!/usr/bin/env bash' 'for last; do :; done' \
+        '[ "$last" != "$FM_ORCA_CLI_CACHE_DIR/gen" ] || exit 1'
+      printf 'exec %q "$@"\n' "$real_mv"
+    } > "$CASE/fakebin/mv"
+    chmod +x "$CASE/fakebin/mv"
+  fi
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"before"}}'
+  FM_ORCA_HOLD="$CASE/read-held"
+  run_cli terminal read --terminal term-a --limit 1 --json > "$CASE/held.out" &
+  reader=$!
+  i=0
+  while [ ! -f "$FM_ORCA_HOLD" ] && [ "$i" -lt 200 ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  [ -f "$FM_ORCA_HOLD" ] || fail "the in-flight read did not start"
+  FM_ORCA_HOLD=
+  run_cli terminal send --terminal term-a --text x --json >/dev/null
+  touch "$CASE/read-held.release"
+  wait "$reader"
+  FM_ORCA_READ_BODY='{"ok":true,"result":{"text":"after"}}'
+  body=$(run_cli terminal read --terminal term-a --limit 1 --json)
+  assert_equals '{"ok":true,"result":{"text":"after"}}' "$body" \
+    "a failed generation publication let an old in-flight result survive a mutation"
+  pass "fm_orca_cli: a failed generation publication cannot make an old in-flight result reusable"
+}
+
+test_generation_directory_rejects_an_old_inflight_result() {
+  test_failed_generation_publish_rejects_an_old_inflight_result directory
 }
 
 test_cache_hit_reuses_one_read() {
@@ -557,7 +683,18 @@ test_target_exists_reads_one_line_when_cache_is_off() {
   pass "fm_backend_target_exists: a disabled cache keeps the one-line terminal read"
 }
 
+# Optional arguments select existing case functions for focused regressions.
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit
+fi
+
 fm_test_run \
+  test_live_capture_proofs_ignore_cached_snapshots \
+  test_pending_generation_invalidation_disables_replay \
+  test_failed_generation_publish_rejects_an_old_inflight_result \
+  test_generation_directory_rejects_an_old_inflight_result \
+  test_session_proofs_ignore_cached_terminal_facts \
   test_draft_probe_does_not_reuse_an_empty_snapshot \
   test_zero_ttl_bypasses_an_existing_entry \
   test_cache_hit_reuses_one_read \

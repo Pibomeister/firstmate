@@ -1259,6 +1259,7 @@ fm_control_feedback_pane_hash() {  # <screen> [harness]
 
 fm_control_capture_feedback_pane() {  # <backend> <target> [<expected-label>]
   local backend=${1-} target=${2-} label=${3-}
+  local -x FM_ORCA_CLI_CACHE_TTL=0
   [ -n "$backend" ] && [ -n "$target" ] || return 1
   if declare -F fm_backend_source >/dev/null 2>&1; then
     fm_backend_source "$backend" >/dev/null 2>&1 || return 1
