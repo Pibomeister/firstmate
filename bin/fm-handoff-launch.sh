@@ -52,6 +52,8 @@ fm_root_is_secondmate_home "$FM_HOME" && die 'a second mate asks its parent to r
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 # shellcheck source=bin/fm-backend.sh
 . "$SCRIPT_DIR/fm-backend.sh"
+# shellcheck source=bin/fm-orca-cli-cache.sh
+. "$SCRIPT_DIR/fm-orca-cli-cache.sh"
 fm_session_lock_owned_by_self "$STATE" || die 'only the current session lock owner can launch its successor'
 PRED_PID=$(cat "$STATE/.lock")
 case "$PRED_PID" in ''|*[!0-9]*) die 'verified successor launch currently requires a POSIX process anchor' ;; esac
@@ -200,7 +202,7 @@ for attempt in 1 2; do
       orca)
         HANDOFF_STARTED=1
         fm_handoff_event "$event" "$NONCE" "$attempt" "$PRED_PID" "$(fm_handoff_endpoint_handle || true)" awaiting_ack
-        fm_run_timed "$remaining" "${BACKEND_EXEC[@]}" orca agent launch --agent claude --worktree "path:$FM_HOME" \
+        fm_orca_cli_mutation fm_run_timed "$remaining" "${BACKEND_EXEC[@]}" orca agent launch --agent claude --worktree "path:$FM_HOME" \
           --surface terminal --prompt "$PROMPT" --json > "$STATE/.handoff-launch-result" 2>&1 || true
         ;;
       tmux)

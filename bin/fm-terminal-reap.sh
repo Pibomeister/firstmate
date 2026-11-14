@@ -635,7 +635,7 @@ FACTS
       ;;
     *) printf 'skipped\tnow-unreadable'; return 0 ;;
   esac
-  out=$(orca terminal close --terminal "$handle" --json 2>/dev/null) || true
+  out=$(fm_orca_cli_mutation orca terminal close --terminal "$handle" --json 2>/dev/null) || true
   if printf '%s' "$out" | node -e '
 let d; try { d = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (_) { process.exit(1); }
 process.exit(d && d.ok === true ? 0 : 1);'; then

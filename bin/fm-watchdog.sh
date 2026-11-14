@@ -81,6 +81,10 @@ WD_COUNCIL_MAX_CHARS=2000
 . "$SCRIPT_DIR/fm-classify-lib.sh"
 # shellcheck source=bin/fm-backend.sh
 . "$SCRIPT_DIR/fm-backend.sh"
+# Direct `orca` execs below cannot see a shell function. Invalidate after a
+# send or create so a cached supervision read is not served past that mutation.
+# shellcheck source=bin/fm-orca-cli-cache.sh
+. "$SCRIPT_DIR/fm-orca-cli-cache.sh"
 # shellcheck source=bin/fm-warm-compact-lib.sh
 . "$SCRIPT_DIR/fm-warm-compact-lib.sh"
 # shellcheck source=bin/fm-context-footer-lib.sh
@@ -315,7 +319,7 @@ wd_read_composer() {
     if fm_backend_source orca >/dev/null 2>&1; then
       fm_run_timed_fn 10 fm_backend_orca_draft_present "$O_TARGET" >/dev/null 2>&1 || rc=$?
     fi
-    [ "$rc" = 1 ] || O_COMPOSER=pending-unproven
+    [ "$rc" = 1 ] || O_COMPOSER='pending-unproven'
   fi
   O_DRAFT=''
   O_COMPOSER_TEXT=$(printf '%s\n' "$O_PANE" | fm_wd_strip_ansi | awk 'NF { r[++n] = $0 } END { for (i = n - 7; i <= n; i++) if (i > 0) print r[i] }')
@@ -657,7 +661,7 @@ wd_key() {
   if [ "$(wd_mode)" != act ]; then wd_rec "$id" "$symptom" key dry-run "would press $key: $why"; return 1; fi
   wd_rec "$id" "$symptom" key pending "press $key: $why"
   case "$O_BACKEND:$key" in
-    orca:[0-9]) fm_run_timed 10 orca terminal send --terminal "$O_TARGET" --text "$key" --json >/dev/null 2>&1 ;;
+    orca:[0-9]) fm_orca_cli_mutation fm_run_timed 10 orca terminal send --terminal "$O_TARGET" --text "$key" --json >/dev/null 2>&1 ;;
     tmux:[0-9]) fm_run_timed 10 tmux send-keys -t "$O_TARGET" -l "$key" >/dev/null 2>&1 ;;
     *) fm_run_timed_fn 10 fm_backend_send_key "$O_BACKEND" "$O_TARGET" "$key" >/dev/null 2>&1 ;;
   esac || { wd_rec "$id" "$symptom" key failed "key delivery failed"; return 1; }
@@ -1192,7 +1196,7 @@ wd_restart() {  # <symptom> <kind>...
   fi
   prompt="Watchdog restart of this firstmate home. Read $handoff first, then take over as the session-start contract says. After you hold the session lock, run: FM_HOME=$O_HOME $SCRIPT_DIR/fm-watchdog.sh pickup $token"
   case "$O_BACKEND" in
-    orca) fm_run_timed 60 orca terminal create --worktree "path:$O_HOME" --title "firstmate captain" --command "$cmd $(printf '%q' "$prompt")" --json >/dev/null 2>&1 ;;
+    orca) fm_orca_cli_mutation fm_run_timed 60 orca terminal create --worktree "path:$O_HOME" --title "firstmate captain" --command "$cmd $(printf '%q' "$prompt")" --json >/dev/null 2>&1 ;;
     tmux)
       if fm_run_timed 10 tmux has-session -t "=$sess" >/dev/null 2>&1; then
         fm_run_timed 30 tmux new-window -d -t "=$sess:" -c "$O_HOME" -n firstmate "$cmd $(printf '%q' "$prompt")" >/dev/null 2>&1
