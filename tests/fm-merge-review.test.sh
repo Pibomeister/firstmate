@@ -636,13 +636,16 @@ test_a_replaced_run_cannot_complete_or_unlock_its_successor() {
 }
 
 test_stale_reclamation_is_serialized() {
-  local holder_pid i=0 ready=0 rc=0 store dead_pid
-  make_case reclaim-owner "${TWO_SEATS[@]}"
+  local holder_pid i=0 ready=0 rc=0 store dead_pid mode=${1:-stale}
+  make_case "reclaim-owner-$mode" "${TWO_SEATS[@]}"
   store=$(store_dir)
-  mkdir -p "$store/.run.lock"
-  sleep 0 & dead_pid=$!
-  wait "$dead_pid"
-  printf '%s\n' "$dead_pid" > "$store/.run.lock/pid"
+  mkdir -p "$store"
+  if [ "$mode" = stale ]; then
+    mkdir "$store/.run.lock"
+    sleep 0 & dead_pid=$!
+    wait "$dead_pid"
+    printf '%s\n' "$dead_pid" > "$store/.run.lock/pid"
+  fi
   : > "$CASE/hold-reclaim"
   FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" bash -c '
     . "$1/bin/fm-wake-lib.sh"
@@ -703,6 +706,59 @@ SH
   expect_code 1 "$reader_rc" "snapshot-race: old enumeration cannot approve a completed newer batch"
   assert_no_grep 'merge-review: approved' "$CASE/reader.out" "snapshot-race: reader missed concurrent dissent"
   pass "check cannot approve when publication changes the completed batch after receipt enumeration"
+}
+
+test_fresh_acquisition_respects_the_reclamation_mutex() {
+  test_stale_reclamation_is_serialized fresh
+}
+
+test_diff_includes_submodules_despite_git_configuration() {
+  local old new receipt patch
+  make_case diff-submodule "${TWO_SEATS[@]}"
+  old=$(git -C "$REPO" rev-parse origin/main)
+  new=$HEAD_SHA
+  git -C "$REPO" update-index --add --cacheinfo "160000,$old,module"
+  git -C "$REPO" commit -qm 'base submodule'
+  git -C "$REPO" update-ref refs/remotes/origin/main HEAD
+  git -C "$REPO" update-index --cacheinfo "160000,$new,module"
+  printf 'ordinary change\n' >> "$REPO/feature.txt"
+  git -C "$REPO" add feature.txt
+  git -C "$REPO" commit -qm 'update submodule and ordinary file'
+  HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
+  git -C "$REPO" config diff.ignoreSubmodules all
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || fail "diff-submodule: review run failed"
+  receipt="$(store_dir)/anthropic.claude.claude-test-1.receipt"
+  patch="$(store_dir)/diff.$(sed -n 's/^diff_sha256=//p' "$receipt").patch"
+  assert_grep "Subproject commit $new" "$patch" "diff-submodule: reviewer diff omitted the new gitlink"
+  pass "review diff includes submodule changes despite diff.ignoreSubmodules=all"
+}
+
+test_diff_does_not_execute_external_or_text_conversion_tools() {
+  local mode receipt patch
+  for mode in external textconv; do
+    make_case "diff-$mode" "${TWO_SEATS[@]}"
+    cat > "$CASE/mask-diff" <<'SH'
+#!/usr/bin/env bash
+: > "$FM_TEST_REVIEW_STUB/converter-called"
+printf 'masked content\n'
+SH
+    chmod +x "$CASE/mask-diff"
+    if [ "$mode" = external ]; then
+      git -C "$REPO" config diff.external "$CASE/mask-diff"
+    else
+      git -C "$REPO" config diff.mask.textconv "$CASE/mask-diff"
+      printf '*.txt diff=mask\n' > "$REPO/.gitattributes"
+      git -C "$REPO" add .gitattributes
+      git -C "$REPO" commit -qm 'configure text conversion'
+      HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
+    fi
+    run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || fail "diff-$mode: review run failed"
+    assert_absent "$STUB/converter-called" "diff-$mode: review diff executed a configured converter"
+    receipt="$(store_dir)/anthropic.claude.claude-test-1.receipt"
+    patch="$(store_dir)/diff.$(sed -n 's/^diff_sha256=//p' "$receipt").patch"
+    assert_grep '+the feature' "$patch" "diff-$mode: reviewer diff did not preserve the actual file change"
+  done
+  pass "review diff bypasses external diff and text conversion without hiding file content"
 }
 
 test_covers_follows_the_require_lines() {
@@ -800,6 +856,9 @@ fm_test_run \
   test_a_replaced_run_cannot_complete_or_unlock_its_successor \
   test_stale_reclamation_is_serialized \
   test_check_rejects_a_batch_changed_after_receipt_enumeration \
+  test_fresh_acquisition_respects_the_reclamation_mutex \
+  test_diff_includes_submodules_despite_git_configuration \
+  test_diff_does_not_execute_external_or_text_conversion_tools \
   test_covers_follows_the_require_lines \
   test_run_refuses_what_it_cannot_review \
   test_intent_reaches_the_prompt_the_receipt_binds

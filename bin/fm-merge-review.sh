@@ -12,7 +12,8 @@
 #         unless FM_TASK_ID marks the caller as a spawned ship or scout worker.
 #         It snapshots <full-sha> from the git repository at <dir>, builds the
 #         diff from the merge base with <commit-ish> (default: the repository's
-#         origin/HEAD), and writes the reviewer prompt itself, so the calling
+#         origin/HEAD), includes submodule and binary changes without external
+#         diff or text-conversion tools, and writes the prompt itself, so the calling
 #         session never writes or edits a review. It then calls each configured
 #         seat once, in parallel, as a one-shot model call with read-only tools
 #         in a temporary directory outside every repository. A spare seat is
@@ -796,9 +797,9 @@ mr_run() {  # <repo> <base-ref> <intent-file>
   trap mr_run_cleanup EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
+  MR_RECLAIM="$MR_STORE/.reclaim.lock"
+  fm_lock_try_acquire "$MR_RECLAIM" || { MR_RECLAIM=; mr_die 'another worker is initializing or recovering this review run'; }
   if ! mkdir "$MR_STORE/.run.lock" 2>/dev/null; then
-    MR_RECLAIM="$MR_STORE/.reclaim.lock"
-    fm_lock_try_acquire "$MR_RECLAIM" || { MR_RECLAIM=; mr_die 'another worker is recovering this review run'; }
     holder=$(cat "$MR_STORE/.run.lock/pid" 2>/dev/null || true)
     case "$holder" in
       '' | *[!0-9]*) mr_die "another run holds $MR_STORE/.run.lock" ;;
@@ -808,14 +809,14 @@ mr_run() {  # <repo> <base-ref> <intent-file>
     mr_stop_reviewers "$MR_STORE/.run.lock" || mr_die 'a previous reviewer is still running'
     rm -rf "$MR_STORE/.run.lock"
     mkdir "$MR_STORE/.run.lock" 2>/dev/null || mr_die "another run holds $MR_STORE/.run.lock"
-    fm_lock_release "$MR_RECLAIM"
-    MR_RECLAIM=
   fi
   MR_LOCK="$MR_STORE/.run.lock"
   printf '%s\n' "$$" > "$MR_LOCK/pid"
   rm -f "$MR_STORE/.complete" || mr_die 'cannot reset the review batch completion marker'
   MR_RECORDS=$(mktemp -d "$MR_LOCK/records.XXXXXX") || mr_die 'cannot create review records directory'
   printf '%s\n' "$MR_RECORDS" > "$MR_LOCK/generation"
+  fm_lock_release "$MR_RECLAIM"
+  MR_RECLAIM=
 
   MR_WORK=$(mktemp -d "${TMPDIR:-/tmp}/fm-merge-review.XXXXXX") || mr_die 'cannot create a temporary directory'
   : > "$MR_WORK/children"
@@ -823,7 +824,8 @@ mr_run() {  # <repo> <base-ref> <intent-file>
   mkdir "$MR_WORK/snapshot"
   git -C "$repo" archive --format=tar "$MR_HEAD" | tar -x -C "$MR_WORK/snapshot" \
     || mr_die "cannot snapshot $MR_HEAD from $repo"
-  git -C "$repo" diff "$MR_BASE" "$MR_HEAD" > "$MR_WORK/diff.patch" \
+  git -C "$repo" diff --no-ext-diff --no-textconv --ignore-submodules=none \
+    --submodule=short --full-index --binary "$MR_BASE" "$MR_HEAD" > "$MR_WORK/diff.patch" \
     || mr_die "cannot build the diff from $MR_BASE to $MR_HEAD"
   [ -s "$MR_WORK/diff.patch" ] || mr_die "the diff from $MR_BASE to $MR_HEAD is empty"
   mr_write_prompt "$MR_WORK/prompt.md" "$intent"
