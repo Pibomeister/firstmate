@@ -4342,6 +4342,23 @@ SH
   pass "quota guard: by default the watchdog checks at kickoff and every two hours"
 }
 
+test_quota_guard_nudge_names_each_move_with_a_quoted_home() {
+  local home="$TMP_ROOT/owner home" out cmd
+  mkdir -p "$home"
+  out=$(FM_HOME="$home" bash -c '. "$1"; O_HOME=$2; wd_quota_guard_nudge_text "$3"' _ "$WD" "$home" \
+    "quota-guard: act trigger=kickoff window=3600s pools=2 ok=0 unknown=0 short=1 exhausted=1 steer=1 failover=2") ||
+    fail "the nudge text could not be built: $out"
+  assert_contains "$out" "Move each steered worker with bin/fm-control.sh relaunch on its named pick." \
+    "a check with a steered worker names the worker relaunch"
+  assert_contains "$out" "run bin/fm-supervisor-failover.sh primary <handoff-file> --reason quota_guard in the background" \
+    "a check with a supervisor failover names the primary's command"
+  cmd=${out#*for a second mate, run }
+  cmd=${cmd%% --reason quota_guard.*}
+  assert_equals "FM_HOME=$(printf '%q' "$home") bin/fm-supervisor-failover.sh secondmate <id>" "$cmd" \
+    "the second mate command quotes the owning home"
+  assert_contains "$out" "Never change an account pin, sign in, or spend." "the nudge keeps its limits"
+  pass "quota guard: the nudge names each move, and the second mate command quotes its home"
+}
 test_quota_guard_act_nudges_after_any_check() {
   local snap root
   make_home $'Captain session\n> '
@@ -5965,6 +5982,7 @@ fm_test_run \
   test_worker_usage_limit_names_a_pick \
   test_quota_guard_checks_at_kickoff_and_periodically \
   test_quota_guard_act_nudges_after_any_check \
+  test_quota_guard_nudge_names_each_move_with_a_quoted_home \
   test_quota_guard_nudge_retries_a_failed_send_and_skips_a_dead_primary \
   test_quota_guard_nudge_skips_a_holder_that_died_during_the_check \
   test_autowait_footers_on_a_mate_and_a_worker_are_limit_warnings \

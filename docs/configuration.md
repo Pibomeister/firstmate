@@ -545,6 +545,7 @@ A new context (startup, resume, clear, or compact) clears the recorded handoff, 
 When a supervisor's pool runs short or out, `bin/fm-supervisor-failover.sh primary <handoff file>` or `FM_HOME=<home> bin/fm-supervisor-failover.sh secondmate <id>` replaces it while keeping its home, task records, and checks.
 The watchdog's quota guard nudge names these commands to the primary when a check finds a supervisor pool short or exhausted ([quota guard](watchdog.md)); the primary runs them, and nothing else does.
 It first tries another signed-in Claude account with headroom, for a primary on tmux only, and then a comparable model on another verified runtime with measured headroom.
+Stale quota data or an applicable scope that is not measured is never headroom, as the quota guard judges it.
 A primary is replaced through the verified handoff above, and a secondmate through `bin/fm-control.sh <id> relaunch`.
 It never signs in, spends, or edits an account pin, and it reports the replacement and the reason, or that no candidate has headroom.
 Its `--help` owns the candidate order, refusals, and output, and [`tests/fm-supervisor-failover.test.sh`](../tests/fm-supervisor-failover.test.sh) covers them.

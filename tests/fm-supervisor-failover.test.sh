@@ -134,6 +134,24 @@ assert_contains "$OUT" 'candidate harness=codex model=gpt-5.5 account=ambient ve
 delegate_is 'unmeasured codex' fm-handoff-launch.sh --harness agy --reason claude_pool_exhausted --model gemini-3-pro "$LAB/data/handoff.md"
 pass 'unmeasured quota: a candidate without a measured headroom reading is skipped'
 
+# Stale data and an unmeasured applicable scope are unknown, never headroom,
+# as the quota guard judges them, so a short-pool failover cannot land there.
+quota_fixture codex 60 through_reset | jq '.providers[0].state = {status: "stale", stale: true, error: "rate limited"}' > "$QUOTA/codex.json"
+failover tmux primary "$LAB/data/handoff.md"
+assert_contains "$OUT" 'candidate harness=codex model=gpt-5.5 account=ambient verdict=unknown why=stale_codex_quota' 'stale quota is unknown'
+delegate_is 'stale codex' fm-handoff-launch.sh --harness agy --reason claude_pool_exhausted --model gemini-3-pro "$LAB/data/handoff.md"
+quota_fixture codex 60 through_reset | jq '.providers[0].state = {status: "error", stale: false}' > "$QUOTA/codex.json"
+failover tmux primary "$LAB/data/handoff.md"
+assert_contains "$OUT" 'candidate harness=codex model=gpt-5.5 account=ambient verdict=unknown why=codex_quota_error' 'a quota read that is not fresh is unknown'
+quota_fixture codex 60 through_reset | jq '.attention = [{provider: "codex", kind: "stale_snapshot"}]' > "$QUOTA/codex.json"
+failover tmux primary "$LAB/data/handoff.md"
+assert_contains "$OUT" 'candidate harness=codex model=gpt-5.5 account=ambient verdict=unknown why=codex_quota_attention_stale_snapshot' 'a stale attention entry is unknown'
+quota_fixture codex 60 through_reset | jq '.providers[0].quotaSemantics.effectiveAvailability += [{scope: "model:gpt-5.5", status: "unknown", runway: {status: "unknown"}}]' > "$QUOTA/codex.json"
+failover tmux primary "$LAB/data/handoff.md"
+assert_contains "$OUT" 'candidate harness=codex model=gpt-5.5 account=ambient verdict=unknown why=headroom_unknown_on_model:gpt-5.5' 'an unmeasured model scope beside a known one is unknown'
+delegate_is 'mixed codex' fm-handoff-launch.sh --harness agy --reason claude_pool_exhausted --model gemini-3-pro "$LAB/data/handoff.md"
+pass 'stale or partly unmeasured quota: the candidate is skipped and the next one takes over'
+
 # agy is skipped for a primary whose home agy does not trust, so a later
 # candidate still takes over instead of a handoff the launcher would refuse.
 quota_fixture codex 60 through_reset > "$QUOTA/codex.json"
