@@ -624,7 +624,15 @@ EOF
     || fail "a failed acknowledgement reported success"
   [ "$(cat "$state/.supervise-daemon.acks")" = "gen7	3" ] \
     || fail "a failed acknowledgement stayed named: $(cat "$state/.supervise-daemon.acks" 2>&1)"
-  pass "the daemon names each acknowledgement it makes and drops a failed one"
+  # A directory where the record goes makes the append fail.
+  rm -f "$dir/ack-fails" "$state/.supervise-daemon.acks"
+  mkdir "$state/.supervise-daemon.acks"
+  printf '5\n' > "$dir/through"
+  ! FM_DAEMON_DIR="$fakebin" handle_durable_wakes fallback "$state" 2>/dev/null \
+    || fail "an acknowledgement the daemon could not name reported success"
+  [ "$(cat "$dir/acked")" = 3 ] || fail "an acknowledgement the daemon could not name was made: $(cat "$dir/acked")"
+  rmdir "$state/.supervise-daemon.acks"
+  pass "the daemon names each acknowledgement it makes, drops a failed one, and makes none it cannot name"
 }
 test_transient_unreadable_signal_recovers_without_advancing() {
   local dir state fakebin out key

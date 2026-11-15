@@ -44,6 +44,8 @@ SH
   chmod +x "$FAKEBIN/quota-axi" "$FAKEBIN/tmux"
   printf '{"schemaVersion":5,"providers":[]}\n' > "$CASE/main.json"
   printf '{"schemaVersion":6,"providers":[]}\n' > "$CASE/claude.json"
+  # The primary is a supervisor only while its session-lock holder is live.
+  printf '%s\n' "$$" > "$HOME_DIR/state/.lock"
 }
 
 # scope <runway-status> [usableRunwaySeconds]: one known all_models row.
@@ -134,7 +136,7 @@ test_short_supervisor_pool_steers_its_workers_off() {
   assert_contains "$out" "steer: alive pool=codex:codex-home pick=claude opus why=keep short pool for its supervisors" \
     "the live worker on the short pool is steered to the candidate"
   assert_not_contains "$out" "steer: gone" "a worker with no live endpoint is not moved"
-  assert_not_contains "$out" "other" "a worker on a pool no supervisor uses is not judged"
+  assert_not_contains "$out" "other" "a worker on a pool no supervisor uses gets no move or pool line"
   assert_not_contains "$out" "failover:" "a short supervisor pool keeps its supervisor"
   pass "a short supervisor pool moves its live workers off first"
 }
@@ -327,7 +329,36 @@ test_primary_account_carries_to_a_later_check() {
   printf '%s\n' "$(sleep 0 & echo "$!")" > "$HOME_DIR/state/.lock"
   out=$(run_tool check --window-secs 28800)
   assert_not_contains "$out" "supervisors=primary" "a new lock holder that is not live carries nothing over"
+  out=$(run_tool check --primary-harness claude --primary-account "$CASE/acct-b" --window-secs 28800)
+  assert_not_contains "$out" "supervisors=primary" "a named harness does not make a dead primary a supervisor"
+  assert_not_contains "$out" "failover: primary" "a dead primary gets no failover"
   pass "a check with no primary harness or account keeps the last ones for the same session"
+}
+
+test_pick_skips_a_pool_a_worker_off_the_supervisor_pools_holds() {
+  local out
+  new_case off-pool
+  mkdir -p "$CASE/acct b"
+  snapshot "$CASE/claude.json" 6 \
+    "$(claude_row ordinary "$CASE/user-home/.claude" "$(scope exhausted_now)")" \
+    "$(claude_row acct-b "$CASE/acct b" "$(scope through_reset)" |
+      jq -c '.quotaSemantics.effectiveAvailability += [{scope: "model:opus", status: "known", effectivePercentRemaining: 0, runway: {status: "exhausted_now"}}]')"
+  printf 'ordinary\n%s\n' "$CASE/acct b" > "$HOME_DIR/config/claude-accounts"
+  printf '%%1\n%%2\n' > "$CASE/panes"
+  worker "$HOME_DIR/state" busy claude sonnet %1
+  worker "$HOME_DIR/state" heavy claude opus %2 "$CASE/acct b"
+  out=$(run_tool check --primary-harness claude --window-secs 28800)
+  assert_grep "profiles=$CASE/acct b config=" "$CASE/reads" "an account root with a space is read as one profile"
+  assert_contains "$out" "quota-guard: act trigger=manual window=28800s pools=1 " \
+    "a pool only an off-pool worker runs on is not a report pool"
+  assert_contains "$out" "steer: busy pool=claude:ordinary pick=none (no reroute candidate off this pool) why=keep exhausted pool for its supervisors" \
+    "a worker is not moved onto an account another live worker's model leaves exhausted"
+  assert_not_contains "$out" "heavy" "a worker off every supervisor pool gets no move"
+  printf '%%1\n' > "$CASE/panes"
+  out=$(run_tool check --primary-harness claude --window-secs 28800)
+  assert_contains "$out" "steer: busy pool=claude:ordinary pick=account $CASE/acct b why=keep exhausted pool for its supervisors" \
+    "the same account is the pick once no live worker holds it short"
+  pass "a pick skips a pool that a worker off the supervisor pools leaves exhausted"
 }
 test_limit_dialogs_are_recorded_with_account_and_model() {
   local rows rc
@@ -376,7 +407,7 @@ test_tick_runs_at_kickoff_and_periodically() {
   assert_equals "" "$out" "a tick before the period prints nothing"
   out=$(RUN_NOW=$((NOW + 7200)) run_tool tick --primary-harness claude --window-secs 600)
   assert_contains "$out" "quota-guard: ok trigger=periodic" "a tick after two hours is a periodic check"
-  printf '4242\n' > "$HOME_DIR/state/.lock"
+  printf '%s\n' "$PPID" > "$HOME_DIR/state/.lock"
   out=$(RUN_NOW=$((NOW + 7300)) run_tool tick --primary-harness claude --window-secs 600)
   assert_contains "$out" "quota-guard: ok trigger=kickoff" "a new session-lock holder is a kickoff"
   printf 'quota-guard-every-secs=60\n' > "$HOME_DIR/config/watchdog"
@@ -423,6 +454,7 @@ fm_test_run \
   test_unrecorded_model_with_a_short_model_scope_is_unknown \
   test_account_pick_skips_a_pool_another_member_holds_short \
   test_primary_account_carries_to_a_later_check \
+  test_pick_skips_a_pool_a_worker_off_the_supervisor_pools_holds \
   test_provider_prefixed_model_binds_its_model_scope \
   test_limit_dialogs_are_recorded_with_account_and_model \
   test_warning_records_then_checks \

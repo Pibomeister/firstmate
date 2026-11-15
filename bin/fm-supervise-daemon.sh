@@ -1887,8 +1887,12 @@ handle_durable_wakes() {  # <watcher-reason> <state>
   fi
   # The watchdog reads wake-ledger ack rows as the session's own activity, so
   # the daemon names its own acknowledgement first and takes the name back if
-  # the acknowledgement fails.
-  note_daemon_ack "$state" "$ack_generation" "$ack_through"
+  # the acknowledgement fails. An acknowledgement it cannot name would read as
+  # the session's own activity, so it is not made.
+  if ! note_daemon_ack "$state" "$ack_generation" "$ack_through"; then
+    log "could not record the daemon's acknowledgement; retaining durable wakes"
+    return 1
+  fi
   if ! "$FM_DAEMON_DIR/fm-wake-drain.sh" --ack-through "$ack_through" \
     --recovery-generation "$ack_generation"; then
     unnote_daemon_ack "$state" "$ack_generation" "$ack_through"
@@ -1897,10 +1901,11 @@ handle_durable_wakes() {  # <watcher-reason> <state>
 }
 
 # note_daemon_ack <state> <generation> <through>: records one acknowledgement
-# this daemon makes in state/.supervise-daemon.acks, keeping the newest 200.
+# this daemon makes in state/.supervise-daemon.acks, keeping the newest 200;
+# fails when the record cannot be appended.
 note_daemon_ack() {
   local f=$1/.supervise-daemon.acks tmp
-  printf '%s\t%s\n' "$2" "$3" >> "$f" 2>/dev/null || return 0
+  printf '%s\t%s\n' "$2" "$3" >> "$f" 2>/dev/null || return 1
   [ "$(wc -l < "$f" 2>/dev/null | tr -d ' ')" -gt 400 ] || return 0
   tmp=$(mktemp "$1/.supervise-daemon.acks.XXXXXX" 2>/dev/null) || return 0
   if tail -n 200 "$f" > "$tmp" 2>/dev/null; then mv "$tmp" "$f" 2>/dev/null || rm -f "$tmp"; else rm -f "$tmp"; fi

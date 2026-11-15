@@ -1769,10 +1769,14 @@ wd_quota_guard_pass() {
   local rc=0 rec=$O_HOME/state/quota-guard/last acct at
   wd_quota_guard_on || return 0
   set -- tick
-  [ -z "$O_HARNESS" ] || set -- "$@" --primary-harness "$O_HARNESS"
-  if acct=$(wd_primary_account); then set -- "$@" --primary-account "$acct"; fi
+  # Only a live primary is named, so a dead one is never kept as a supervisor.
+  if [ "$O_ALIVE" = 1 ]; then
+    [ -z "$O_HARNESS" ] || set -- "$@" --primary-harness "$O_HARNESS"
+    if acct=$(wd_primary_account); then set -- "$@" --primary-account "$acct"; fi
+  fi
   wd_quota_guard "$O_HOME" "$@" || rc=$?
-  if [ -n "$WD_QG_LINE" ]; then
+  # A check that printed its result but could not save it is still a failure.
+  if [ -n "$WD_QG_LINE" ] && { [ "$rc" = 0 ] || [ "$rc" = 3 ]; }; then
     wd_rec "$(wd_id)" quota-guard check "done" "$WD_QG_LINE"
   elif [ "$rc" != 0 ]; then
     wd_gap "quota guard check failed (exit $rc)"
@@ -1793,9 +1797,9 @@ wd_quota_guard_pass() {
 # the subject or its worker, once per nudge-secs, and unless quota-guard=off
 # checks quota now. A second mate's dialog is recorded in its parent home. Only
 # a recorded dialog starts the window, so a failed record is tried again on the
-# next pass.
+# next pass; a check that fails after the record is a gap, not a failed record.
 wd_quota_guard_warning() {
-  local task=${1-} home=$O_HOME subject cmd=record-dialog rc=0 last acct=''
+  local task=${1-} home=$O_HOME subject rc=0 last acct=''
   last=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" quota-guard warning '^done$' "${O_REC_SUBJECT:-$O_TAG}")
   [ -z "$last" ] || [ $(( $(wd_now) - last )) -ge "$(cfgi nudge-secs 900)" ] || return 0
   if [ "${O_PARENT:-}" != - ] && [ -n "${O_ID:-}" ] && [ "$O_ID" != - ]; then
@@ -1804,24 +1808,36 @@ wd_quota_guard_warning() {
   elif [ -n "$task" ]; then subject=$task
   else subject=primary
   fi
-  ! wd_quota_guard_on || cmd=warning
-  set -- "$cmd" --subject "$subject"
+  set -- record-dialog --subject "$subject"
   [ "${O_PARENT:-}" != - ] || acct=$(wd_primary_account) || acct=''
   if [ "$subject" = primary ] && [ -n "${O_HARNESS:-}" ]; then set -- "$@" --harness "$O_HARNESS"; fi
   if [ "$subject" = primary ] && [ -n "$acct" ]; then set -- "$@" --account "$acct"; fi
-  if [ "$home" = "$O_HOME" ] && [ "${O_PARENT:-}" = - ] && [ "$cmd" = warning ]; then
+  wd_quota_guard "$home" "$@" || rc=$?
+  if [ "$rc" != 0 ]; then
+    wd_rec "$(wd_id)" quota-guard warning failed "limit dialog on $subject not recorded (exit $rc)"
+    wd_gap "limit dialog on $subject not recorded (exit $rc)"
+    return 0
+  fi
+  if ! wd_quota_guard_on; then
+    wd_rec "$(wd_id)" quota-guard warning "done" "limit dialog on $subject recorded"
+    return 0
+  fi
+  set -- check --trigger warning
+  # Only a live primary is named, so a dead one is never kept as a supervisor.
+  if [ "$home" = "$O_HOME" ] && [ "${O_PARENT:-}" = - ] && [ "${O_ALIVE:-0}" = 1 ]; then
     [ -z "${O_HARNESS:-}" ] || set -- "$@" --primary-harness "$O_HARNESS"
     [ -z "$acct" ] || set -- "$@" --primary-account "$acct"
   fi
+  rc=0
   wd_quota_guard "$home" "$@" || rc=$?
+  case "$rc" in 0|3) ;; *) WD_QG_LINE= ;; esac
+  wd_rec "$(wd_id)" quota-guard warning "done" "limit dialog on $subject recorded${WD_QG_LINE:+; $WD_QG_LINE}"
   case "$rc" in
-    0|3) wd_rec "$(wd_id)" quota-guard warning "done" "limit dialog on $subject recorded${WD_QG_LINE:+; $WD_QG_LINE}" ;;
-    *) wd_rec "$(wd_id)" quota-guard warning failed "limit dialog on $subject not recorded (exit $rc)"
-       wd_gap "limit dialog on $subject not recorded (exit $rc)" ;;
+    0) ;;
+    3) [ -z "$WD_QG_LINE" ] || wd_gap "$WD_QG_LINE" ;;
+    *) wd_gap "quota guard check after the limit dialog on $subject failed (exit $rc)" ;;
   esac
-  [ "$rc" != 3 ] || [ -z "$WD_QG_LINE" ] || wd_gap "$WD_QG_LINE"
 }
-
 wd_unsent_is_stable() {
   [ "$O_COMPOSER" = pending ] && [ "$O_PREV_COMPOSER" = pending ] && [ "$O_SIG" = "$O_PREV_SIG" ] && [ "$O_TURN" = 0 ]
 }
@@ -2221,7 +2237,8 @@ wd_once() {  # [home-filter]
     wd_score_activity
     WD_SYMPTOM=ok WD_RESTARTED=0
     wd_handle_subject
-    [ "$parent" != - ] || wd_quota_guard_pass
+    # A home whose restart awaits pickup gets no action, quota checks included.
+    [ "$parent" != - ] || [ "$WD_SYMPTOM" = restart-awaiting-pickup ] || wd_quota_guard_pass
     wd_visit_worker_dialogs page
     wd_health_line >> "$health"
   done

@@ -2146,6 +2146,34 @@ restart-command=/bin/true"
   pass "boundary: a home whose restart awaits pickup gets no action until the restart closes"
 }
 
+test_no_quota_check_while_restart_awaits_pickup() {
+  make_home $'Captain session\n> ' "restart=on
+max-nudges=0
+pickup-secs=600
+restart-command=/bin/true
+quota-guard-every-secs=100"
+  grep -v '^quota-guard=' "$H/config/watchdog" > "$H/watchdog.conf" && mv "$H/watchdog.conf" "$H/config/watchdog"
+  wd_quota_snapshot "$H/quota.json"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$H/quota.json"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  transcript 3000 "Working." "Testing." "Green."
+  owe_input 3000
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows frozen restart pending)" "the proven stall restarts"
+  local before
+  before=$(ledger | wc -l | tr -d ' ')
+  rm -f "$H/state/.wake-queue"
+  # A quota check is due on every pass here, so only the hold keeps it away.
+  run_wd 1120 once >/dev/null 2>&1
+  assert_equals "$before" "$(ledger | wc -l | tr -d ' ')" "no quota check runs while the restart awaits pickup: $(ledger | cut -f1,5-7)"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "boundary: a home whose restart awaits pickup gets no quota check either"
+}
+
 test_dead_captain_restarts_despite_its_anchor() {
   make_home $'Captain session\n> ' "restart=on
 restart-command=$TMP_ROOT/fake-captain.sh"
@@ -4430,6 +4458,36 @@ SH
   rm -f "$FAKEBIN/quota-axi"
   pass "quota guard: a limit dialog that failed to record is tried again on the next pass"
 }
+test_failed_warning_check_records_the_dialog_once() {
+  local snap dialog
+  dialog=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  make_home $'Captain session\n> ' 'reroute-candidates=codex:gpt-5.4'
+  grep -v '^quota-guard=' "$H/config/watchdog" > "$H/watchdog.conf" && mv "$H/watchdog.conf" "$H/config/watchdog"
+  mkdir -p "$H/wt" "$H/user/.claude"
+  worker_pane limit ship "$dialog"
+  printf 'harness=claude\nworktree=%s\nmodel=default\n' "$H/wt" >> "$H/state/limit.meta"
+  snap="$H/quota.json"
+  wd_quota_snapshot "$snap"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  transcript 100 "Working."
+  sleep 0.5
+  # A file where the guard's state directory goes makes every check fail.
+  printf 'x\n' > "$H/state/quota-guard"
+  HOME="$H/user" run_wd 0 once >/dev/null 2>&1 || fail "failing-check pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard warning "done")" "a recorded dialog is done even when its check fails: $(ledger | cut -f4-8)"
+  assert_equals 0 "$(ledger_rows quota-guard warning failed)" "a failed check after the record is no failed record: $(ledger | cut -f4-8)"
+  assert_grep "quota guard check after the limit dialog on limit failed" "$H/data/watchdog/status.md" "the failed check is a gap"
+  assert_equals 0 "$(ledger_rows quota-guard check "done")" "a check that could not save its result is no done check: $(ledger | cut -f4-8)"
+  assert_grep "quota guard check failed (exit 1)" "$H/data/watchdog/status.md" "the pass's failed check is a gap"
+  HOME="$H/user" run_wd 1 once >/dev/null 2>&1 || fail "second failing-check pass failed"
+  assert_equals 1 "$(wc -l < "$H/state/quota-limit-dialogs.tsv" | tr -d ' ')" "a failing check never records the dialog again"
+  rm -f "$FAKEBIN/quota-axi" "$H/state/quota-guard"
+  pass "quota guard: a limit warning whose check fails records its dialog once"
+}
 test_worker_usage_limit_names_a_pick() {
   local snap dialog calls
   dialog=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
@@ -5782,6 +5840,7 @@ fm_test_run \
   test_captain_record_follows_the_lock_owner \
   test_captain_record_ignores_a_heartbeat_written_outside_the_owner \
   test_no_action_while_restart_awaits_pickup \
+  test_no_quota_check_while_restart_awaits_pickup \
   test_dead_captain_restarts_despite_its_anchor \
   test_watchdog_allows_muse_restart_with_approval_flag \
   test_watchdog_adds_yolo_to_bare_muse_restart \
@@ -5830,6 +5889,7 @@ fm_test_run \
   test_quota_guard_nudge_retries_a_failed_send_and_skips_a_dead_primary \
   test_autowait_footers_on_a_mate_and_a_worker_are_limit_warnings \
   test_failed_limit_dialog_record_is_retried \
+  test_failed_warning_check_records_the_dialog_once \
   test_grok_weekly_limit_on_a_secondmate_names_a_pick \
   test_home_usage_limit_ignores_grok_in_scrollback \
   test_orca_usage_limit_does_not_relaunch_from_scrollback \

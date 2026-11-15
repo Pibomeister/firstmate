@@ -120,20 +120,22 @@ These checks run on every pass as well:
   The live runbook is [`verification/quota-reroute.md`](verification/quota-reroute.md).
 - Unless `quota-guard=off`, a primary home's quota guard runs at kickoff, every `quota-guard-every-secs`, and on each limit warning.
   Kickoff is the first check of a home, or the first pass after a supervisor's session lock changed holder.
+  A home whose restart awaits pickup gets no check on that pass.
   A limit warning is a usage-limit picker or auto-wait footer on a supervisor pane or on a recorded worker pane.
   A second mate on the auto-wait is handled like an auto-wait primary, except that its footer is a limit warning instead of a page: nothing is typed into its pane on that pass, and the side checks are skipped.
   The guard reads `quota-axi` for every pool a supervisor runs on, and stale or unmeasured quota counts as unknown, never as headroom.
   The primary is judged on the Claude account that holds its transcript, a provider-prefixed model such as OMP's `openai-codex/gpt-5.4` is judged on its bare model's scope, and a supervisor with no recorded model is unknown while any model scope of its pool is short or exhausted.
   A check that a second mate's or worker's warning runs keeps the primary harness and account the last check recorded, while the same session-lock holder is live.
+  The primary is a supervisor only while its session-lock holder is live, even when a caller names its harness.
   A check that names a move writes a ledger row, and a live primary gets one nudge with the report path for each such check, whether a pass or a limit warning ran it.
   A nudge whose record or submit failed does not count, so a later pass sends it again once `nudge-secs` has passed.
   While the last check is not ok, its result line stays a gap.
   The guard names a move for each worker on a short or exhausted supervisor pool first, so that pool is kept for its supervisors.
   A supervisor whose pool is still exhausted gets a failover pick: another signed-in Claude account with headroom first, then a reroute candidate on another pool.
-  A pick needs a fresh ok read of its own on a pool no other member finds short, exhausted, or unknown, and a second mate, which relaunches on its own pin, gets only a reroute candidate.
+  A pick needs a fresh ok read of its own on a pool no other member finds short, exhausted, or unknown, counting live workers on pools no supervisor uses, and a second mate, which relaunches on its own pin, gets only a reroute candidate.
   A Claude candidate is judged on the account the relaunching home's pin names, a second mate's own pin first.
   It never changes an account pin, opens a sign-in, relaunches anything, or spends.
-  Every limit warning is recorded with its subject, account, and model, whether the guard is on or off, at most once per `nudge-secs` per pane; a record that failed is tried again on the next pass, and a second mate's warning is recorded in its parent home.
+  Every limit warning is recorded with its subject, account, and model, whether the guard is on or off, at most once per `nudge-secs` per pane; a record that failed is tried again on the next pass, a check that fails after the record is a gap that never records the dialog again, and a second mate's warning is recorded in its parent home.
   [`bin/fm-quota-guard.sh`](../bin/fm-quota-guard.sh) owns the pools, verdicts, moves, and files.
 
 A nudge is written as a record-backed operational input in the subject's own home and typed into its pane as the record's doorbell.

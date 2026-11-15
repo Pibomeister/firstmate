@@ -21,7 +21,8 @@
 #   --primary-harness <name>     This home's primary harness; default the one
 #                                the last check recorded for the same live
 #                                session-lock holder, else that holder's
-#                                harness.
+#                                harness. Naming it never makes a primary
+#                                whose lock holder is not live a supervisor.
 #   --primary-account <entry>    The primary's Claude account, `ordinary` or a
 #                                config root; default the one the last check
 #                                recorded for the same live session-lock
@@ -37,7 +38,9 @@
 # home exists. Only the pools the supervisors run on are read. The workers are
 # the ship and scout records (state/<id>.meta) of this home and of each
 # registered second mate's home that are on one of those pools and whose
-# recorded endpoint still exists (fm_backend_target_exists). A member's pool is its
+# recorded endpoint still exists (fm_backend_target_exists). A live worker on
+# any other pool is judged too, only so a pick never lands on a pool it leaves
+# short; it gets no move and no pool line. A member's pool is its
 # quota provider (fm_quota_provider_for_harness in bin/fm-quota-axi-lib.sh)
 # plus its account: the recorded account= for Claude (ordinary when absent),
 # the quota_lane of FM_QUOTA_ROW_JQ for Codex and Pi, otherwise default. A
@@ -239,11 +242,13 @@ primary_defaults() {
   [ -n "$PRIMARY_ACCOUNT" ] || PRIMARY_ACCOUNT=ordinary
 }
 
+# primary_harness: the primary is a supervisor only while its session-lock
+# holder is live, even when the caller names its harness.
 primary_harness() {
   local pid
-  if [ -n "$PRIMARY_HARNESS" ]; then printf '%s\n' "$PRIMARY_HARNESS"; return 0; fi
   pid=$(lock_pid "$FM_HOME")
   pid_alive "$pid" || return 1
+  if [ -n "$PRIMARY_HARNESS" ]; then printf '%s\n' "$PRIMARY_HARNESS"; return 0; fi
   fm_harness_path_name "$(fm_ps_comm "$pid" 2>/dev/null)" 2>/dev/null || printf 'unknown\n'
 }
 
@@ -431,7 +436,7 @@ classify() {
 }
 
 pool_status() {  # <pool>
-  awk -F'\t' -v p="$1" '$1 == p { print $2; exit }' "$WORK/pools.tsv"
+  awk -F'\t' -v p="$1" '$1 == p { print $2; exit }' "$WORK/all-pools.tsv"
 }
 
 # home_config <home>: the config directory a home launches its workers from.
@@ -527,11 +532,35 @@ window_secs() {
   ' "${until%%:*}" "${until#*:}" "$NOW" 2>/dev/null || die "quota-guard-window-until must be HH:MM: $until" 1
 }
 
+# aggregate_pools <0|1>: one row per pool of members.tsv, the worst member
+# verdict with its runway and reason, and the supervisors and workers on it.
+# With 0 only the supervisor pools the report shows; with 1 also the pools
+# only workers off every supervisor pool run on, which picks avoid.
+aggregate_pools() {
+  awk -F'\t' -v all="$1" '
+    function rank(s) { return s == "exhausted" ? 3 : s == "short" ? 2 : s == "unknown" ? 1 : 0 }
+    $1 == "other" && !all { next }
+    {
+      p = $11 ":" $12
+      if (!(p in seen)) { seen[p] = 1; order[++n] = p; st[p] = $13; rw[p] = $14; why[p] = $15 }
+      else if (rank($13) > rank(st[p])) { st[p] = $13; rw[p] = $14; why[p] = $15 }
+      if ($1 == "supervisor") sup[p] = sup[p] (sup[p] == "" ? "" : ",") $2
+      else wrk[p] = wrk[p] (wrk[p] == "" ? "" : ",") $2
+    }
+    END {
+      for (i = 1; i <= n; i++) {
+        p = order[i]
+        printf "%s\t%s\t%s\t%s\t%s\t%s\n", p, st[p], rw[p], (sup[p] == "" ? "-" : sup[p]), (wrk[p] == "" ? "-" : wrk[p]), why[p]
+      }
+    }' "$WORK/members.tsv"
+}
+
 # --- commands ----------------------------------------------------------------
 
 cmd_check() {
   local role label id home harness model kind account wt mate provider pacct pool st runway why
-  local npools=0 nok=0 nunk=0 nshort=0 nexh=0 nsteer=0 nfail=0 verdict result line p
+  local npools=0 nok=0 nunk=0 nshort=0 nexh=0 nsteer=0 nfail=0 verdict result line p root
+  local -a roots=()
   WORK=$(mktemp -d "${TMPDIR:-/tmp}/fm-quota-guard.XXXXXX") || die "cannot create a scratch directory" 1
   trap 'rm -rf "$WORK"' EXIT
   NOW=$(fm_now)
@@ -548,43 +577,33 @@ cmd_check() {
   awk -F'\t' '{ print $11 ":" $12 }' "$WORK/raw.tsv" > "$WORK/sup-pools"
   workers | while IFS=$'\t' read -r label id home harness model kind account wt meta; do
     IFS=$'\t' read -r provider pacct <<< "$(member_pool "$harness" "$model" "$account")"
-    grep -qxF "$provider:$pacct" "$WORK/sup-pools" || continue
     worker_live "$meta" || continue
-    printf 'worker\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t-\t%s\t%s\n' \
-      "$label" "$id" "$home" "$harness" "$model" "$kind" "$account" "$wt" \
+    # A worker off every supervisor pool gets no move, but its verdict still
+    # keeps a pick from landing on the pool it leaves short.
+    role=worker
+    grep -qxF "$provider:$pacct" "$WORK/sup-pools" || role=other
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t-\t%s\t%s\n' \
+      "$role" "$label" "$id" "$home" "$harness" "$model" "$kind" "$account" "$wt" \
       "$provider" "$pacct" >> "$WORK/raw.tsv"
   done
-  # shellcheck disable=SC2046  # one account root per word; roots hold no blanks
-  read_claude $( { awk -F'\t' '$11 == "claude" { print $12 }' "$WORK/raw.tsv"
-    fm_worker_account_list claude "$CONFIG" 2>/dev/null
-    mates | while IFS=$'\t' read -r _ home; do fm_worker_account_list claude "$home/config" 2>/dev/null; done
-    claude_pins
+  while IFS= read -r root; do roots+=("$root"); done < <(
+    { awk -F'\t' '$11 == "claude" { print $12 }' "$WORK/raw.tsv"
+      fm_worker_account_list claude "$CONFIG" 2>/dev/null
+      mates | while IFS=$'\t' read -r _ home; do fm_worker_account_list claude "$home/config" 2>/dev/null; done
+      claude_pins
     } | awk 'NF && !seen[$0]++')
+  read_claude ${roots[@]+"${roots[@]}"}
   while IFS=$'\t' read -r role label id home harness model kind account wt mate provider pacct; do
     IFS=$'\t' read -r st runway why <<< "$(classify "$provider" "$pacct" "$model")"
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
       "$role" "$label" "$id" "$home" "$harness" "$model" "$kind" "$account" "$wt" "$mate" \
       "$provider" "$pacct" "$st" "$runway" "$(flat "$why")" >> "$WORK/members.tsv"
   done < "$WORK/raw.tsv"
-  # One row per pool: the worst member verdict, its runway and reason, and the
-  # supervisors and workers on it.
-  awk -F'\t' '
-    function rank(s) { return s == "exhausted" ? 3 : s == "short" ? 2 : s == "unknown" ? 1 : 0 }
-    {
-      p = $11 ":" $12
-      if (!(p in seen)) { seen[p] = 1; order[++n] = p; st[p] = $13; rw[p] = $14; why[p] = $15 }
-      else if (rank($13) > rank(st[p])) { st[p] = $13; rw[p] = $14; why[p] = $15 }
-      if ($1 == "supervisor") sup[p] = sup[p] (sup[p] == "" ? "" : ",") $2
-      else wrk[p] = wrk[p] (wrk[p] == "" ? "" : ",") $2
-    }
-    END {
-      for (i = 1; i <= n; i++) {
-        p = order[i]
-        printf "%s\t%s\t%s\t%s\t%s\t%s\n", p, st[p], rw[p], (sup[p] == "" ? "-" : sup[p]), (wrk[p] == "" ? "-" : wrk[p]), why[p]
-      }
-    }' "$WORK/members.tsv" > "$WORK/pools.tsv"
+  aggregate_pools 0 > "$WORK/pools.tsv"
+  aggregate_pools 1 > "$WORK/all-pools.tsv"
   : > "$WORK/moves.txt"
   while IFS=$'\t' read -r role label id home harness model kind account wt mate provider pacct st runway why; do
+    [ "$role" != other ] || continue
     pool=$provider:$pacct
     p=$(pool_status "$pool")
     if [ "$role" = worker ]; then
