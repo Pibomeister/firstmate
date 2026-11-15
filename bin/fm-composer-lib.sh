@@ -2678,8 +2678,11 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
 
 # A terminal confirmation on the last non-blank row, such as
 # `rm: remove regular file 'x'?`, `Continue? [y/N]`, `Are you sure?`, or a typed
-# confirmation such as Terraform's `Enter a value:` or `Type DELETE to
-# confirm:`: typed text and Enter would answer it. Prints the lowered row.
+# confirmation such as Terraform's `Enter a value:`, `Type DELETE to
+# confirm:`, or gh's `? Type owner/repo to confirm deletion:`, with the BSD
+# `rm`, `cp`, and `mv` forms (`remove a.txt?`, `overwrite b? (y/n [n])`), git's
+# hunk prompts (`[y,n,q,a,d,e,?]?`), and a bare `>` under `To proceed, type`:
+# typed text and Enter would answer it. Prints the lowered row.
 fm_composer_confirm_input() {  # <screen> -> row
   local last
   last=$(printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
@@ -2690,7 +2693,12 @@ fm_composer_confirm_input() {  # <screen> -> row
       print last
     }')
   [ -n "$last" ] || return 1
-  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[a-z0-9_ -]{1,40}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
+  if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*>$' \
+    && printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk 'NF { r[++n] = tolower($0) } END { for (i = n - 4; i < n; i++) if (i > 0 && r[i] ~ /to proceed, type/) f = 1; exit !f }'; then
+    printf '%s\n' "$last"
+    return 0
+  fi
+  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|^[[:space:]]*(remove|examine files in directory|recursively remove|override [^ ]+[[:space:]]+[^ ]+[[:space:]]+for|overwrite) .+\?([[:space:]]*\(y/n \[[yn]\]\))?$|\(y/n \[[yn]\]\)$|\[y,n(,[a-z?/]+)*\]\?$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[^:>?"'"'"'`]{1,100}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
   printf '%s\n' "$last"
 }
 

@@ -162,6 +162,17 @@ run_wd() {  # <offset-secs> <args>...
 
 TF_DESTROY=$'Plan: 0 to add, 0 to change, 3 to destroy.\n\nDo you really want to destroy all resources?\n  Terraform will destroy all your managed infrastructure, as shown above.\n  There is no undo. Only \'yes\' will be accepted to confirm.\n\n  Enter a value: '
 TYPE_DELETE=$'This permanently removes project acme.\nType DELETE to confirm:'
+# BSD rm, cp, and mv, gh, git hunk, and Heroku destructive confirmations.
+DESTRUCTIVE_CONFIRMS=(
+  $'work\nremove a.txt? '
+  $'work\nexamine files in directory d? '
+  $'work\nrecursively remove d? '
+  $'work\noverride r--r--r--  dev/staff for a.txt? '
+  $'work\noverwrite b? (y/n [n]) '
+  $'work\n? Type acme/repo to confirm deletion: '
+  $'work\nDiscard this hunk from worktree [y,n,q,a,d,e,?]? '
+  $' !    WARNING: This will destroy acme\n !    To proceed, type acme or re-run this command with\n !    --confirm acme\n\n> '
+)
 
 ledger() { cat "$H/state/watchdog/actions.tsv" 2>/dev/null; }
 ledger_rows() {  # <action> <phase> [subject]
@@ -226,6 +237,14 @@ test_hardstop_categories() {
   assert_equals $'hardstop\tdestructive' "$(printf '%s\n' "$TF_DESTROY" | classify claude)" "a typed Terraform destroy confirmation is a destructive stop"
   assert_equals $'hardstop\tdestructive' "$(printf '%s\n' "$TYPE_DELETE" | classify claude)" "a typed DELETE confirmation is a destructive stop"
   assert_equals $'hold\tconfirm' "$(printf 'work\nType "acme" to continue:\n' | classify claude)" "any other typed confirmation is held"
+  assert_equals $'hold\tconfirm' "$(printf 'work\nType my.app to confirm:\n' | classify claude)" "a typed name with a dot is a held confirmation"
+  assert_equals $'hold\tconfirm' "$(printf 'work\nStage this hunk [y,n,q,a,d,e,?]? \n' | classify claude)" "a git stage-hunk prompt is a held confirmation"
+  for c in "${DESTRUCTIVE_CONFIRMS[@]}"; do
+    assert_equals $'hardstop\tdestructive' "$(printf '%s\n' "$c" | classify claude)" "this confirmation is a destructive stop: $c"
+  done
+  for c in $'work\n> ' $'work\nplease remove that line?' $'work\nI typed it to confirm it works.'; do
+    printf '%s\n' "$c" | classify claude >/dev/null && fail "this is not a confirmation: $c"
+  done
   assert_equals $'hardstop\tdestructive' "$(printf 'work\nDiscard changes? [y/N]\n' | classify claude)" "a discard confirmation is a destructive stop"
   for c in 'Username [dev]:' 'Email: (this IS public)' 'Email address:'; do
     assert_equals $'hardstop\tsign-in' "$(printf 'work\n%s\n' "$c" | classify claude)" "$c is a sign-in stop"
@@ -332,7 +351,8 @@ test_send_guard_blocks_renumbered_pickers_and_secret_inputs() {
     $'work\nrm: remove regular file \'important.txt\'?' $'work\nContinue with paid usage? [y/N]' $'work\nAre you sure?' \
     $'work\nUsername (dev):' "$TF_DESTROY" "$TYPE_DELETE" $'work\nUsername [dev]:' $'work\nEmail address:' $' Continue with paid usage?\n ❯ Yes\n   No\n\n Enter to confirm · Esc to cancel' \
     $' Select login method:\n ❯ 1. Claude account\n   2. API key\n\n Enter to continue · Esc to go back' \
-    $' Continue with paid usage?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel'; do
+    $' Continue with paid usage?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel' \
+    "${DESTRUCTIVE_CONFIRMS[@]}" $'work\nType my.app to confirm:' $'work\nStage this hunk [y,n,q,a,d,e,?]? '; do
     name=$(bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$screen") \
       || fail "every submit refuses this screen: $screen"
     [ -n "$name" ] || fail "the refusal names the dialog for: $screen"
@@ -396,9 +416,13 @@ test_prompt_after_escape_gets_no_instruction() {
   worker nf claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/tf-after.txt"
   printf '%s\n' "$TYPE_DELETE" > "$H/del-after.txt"
   worker nd claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/del-after.txt"
+  printf 'work output\n? Type acme/widget to confirm deletion: \n' > "$H/gh-after.txt"
+  worker ng claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/gh-after.txt"
+  printf 'work output\noverwrite current.db? (y/n [n]) \n' > "$H/cp-after.txt"
+  worker no claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/cp-after.txt"
   run_wd 0 once >/dev/null 2>&1 || fail "the watchdog pass failed"
   local id
-  for id in nt np nk nu nf nd; do
+  for id in nt np nk nu nf nd ng no; do
     assert_equals "$ESC" "$(typed "$id")" "only the one Escape reaches worker $id: $(typed "$id" | od -c | head -3)"
     assert_equals '' "$(inbox_text "$id")" "no instruction, and so no doorbell, goes to worker $id"
     assert_equals 0 "$(ledger_rows steer "done" "worker:$id")" "no steer is recorded for worker $id"
@@ -410,7 +434,9 @@ test_prompt_after_escape_gets_no_instruction() {
   assert_equals 1 "$(status_rows nf blocked permission-prompt-hardstop)" "a typed Terraform destroy confirmation behind the declined prompt is a hard stop"
   assert_equals 1 "$(status_rows nd blocked permission-prompt-hardstop)" "a typed DELETE confirmation behind the declined prompt is a hard stop"
   assert_grep "shows a destructive prompt after a declined tool call" "$H/state/nf.status" "the typed confirmation stop names its category"
-  for id in nf nd; do
+  assert_equals 1 "$(status_rows ng blocked permission-prompt-hardstop)" "a typed gh deletion confirmation behind the declined prompt is a hard stop"
+  assert_equals 1 "$(status_rows no blocked permission-prompt-hardstop)" "a BSD overwrite confirmation behind the declined prompt is a hard stop"
+  for id in nf nd ng no; do
     FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
     sleep 1
     assert_equals "$ESC" "$(typed "$id")" "a later doorbell types nothing into the typed confirmation on worker $id: $(typed "$id" | od -c | head -3)"
@@ -439,14 +465,20 @@ test_doorbell_never_types_into_a_prompt() {
   worker d2 claude "$H/2fa.txt"
   printf "work output\nrm: remove regular file 'important.txt'?\n" > "$H/rmc.txt"
   worker dr claude "$H/rmc.txt"
+  printf 'work output\n? Type acme/widget to confirm deletion: \n' > "$H/ghdel.txt"
+  worker dg claude "$H/ghdel.txt"
+  printf 'work output\nremove important.txt? \n' > "$H/bsdrm.txt"
+  worker dm claude "$H/bsdrm.txt"
+  printf 'work output\noverwrite current.db? (y/n [n]) \n' > "$H/bsdcp.txt"
+  worker do claude "$H/bsdcp.txt"
   local id
-  for id in db dt ds dp dw d2 dr; do
+  for id in db dt ds dp dw d2 dr dg dm do; do
     FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
     assert_contains "$(inbox_text "$id")" "steer for $id" "the steer for worker $id is durably recorded"
     sleep 1
     assert_equals '' "$(typed "$id")" "the doorbell types nothing into the prompt on worker $id: $(typed "$id" | od -c | head -3)"
   done
-  pass "doorbell: a steer to a worker on a tool-approval prompt, a trust picker, a secret or sign-in input, or a terminal confirmation is recorded and types nothing"
+  pass "doorbell: a steer to a worker on a tool-approval prompt, a trust picker, a secret or sign-in input, or a GNU, BSD, or typed terminal confirmation is recorded and types nothing"
 }
 
 test_declining_dialogs_on_workers_get_no_key() {

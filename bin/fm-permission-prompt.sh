@@ -260,7 +260,7 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
       rows=$(_fm_wd_tail_rows "$screen" 8)
       if cat=$(fm_pp_hardstop_category "$rows"); then
         printf 'hardstop\t%s\n' "$cat"
-      elif fm_wd_lower "$rows" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)|(^|[^a-z])(remov|discard)'; then
+      elif fm_wd_lower "$rows" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)|(^|[^a-z])(remov|discard|delet|overwrit|override|examine files)'; then
         printf 'hardstop\tdestructive\n'
       else
         printf 'hold\tconfirm\n'
