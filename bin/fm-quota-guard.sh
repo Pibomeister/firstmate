@@ -44,7 +44,9 @@
 # short; it gets no move and no pool line. A member's pool is its
 # quota provider (fm_quota_provider_for_harness in bin/fm-quota-axi-lib.sh)
 # plus its account: the recorded account= for Claude (ordinary when absent),
-# the quota_lane of FM_QUOTA_ROW_JQ for Codex and Pi, otherwise default. A
+# the quota_lane of FM_QUOTA_ROW_JQ for Codex and Pi (a Pi member on a recorded
+# root other than ~/.pi/agent is pi-root:<root>, always unknown, because
+# quota-axi has no read scoped to one Pi root), otherwise default. A
 # second mate's harness, model, and account come from this home's
 # state/<id>.meta. A harness with no quota provider is an unmeasured pool.
 #
@@ -282,6 +284,16 @@ member_pool() {
     printf 'claude\t%s\n' "${account:-ordinary}"
     return 0
   fi
+  # quota-axi has no read scoped to one Pi root (Codex, for one, reads its own
+  # home before Pi's store), so a Pi member pinned to another root is its own
+  # pool, which classify judges unknown, never the ambient read's verdict.
+  case "$harness" in
+    pi|pi-signed)
+      if [ -n "$account" ] && [ "$account" != ordinary ] && [ "${account%/}" != "${HOME:-}/.pi/agent" ]; then
+        printf '%s\tpi-root:%s\n' "$provider" "$account"
+        return 0
+      fi ;;
+  esac
   lane=$(jq -rn --arg h "$harness" --arg m "$model" "$FM_QUOTA_ROW_JQ"' quota_lane($h; $m)' 2>/dev/null) || lane=
   printf '%s\t%s\n' "$provider" "${lane:-default}"
 }
@@ -447,6 +459,9 @@ classify() {
         return 0
       fi ;;
     *)
+      case "$account" in
+        pi-root:*) printf 'unknown\t-\tno quota read scoped to Pi root %s\n' "${account#pi-root:}"; return 0 ;;
+      esac
       if [ -n "$MAIN_ERR" ]; then printf 'unknown\t-\t%s\n' "$MAIN_ERR"; return 0; fi
       snap=$MAIN_SNAP
       [ "$account" = default ] || lane=$account ;;
@@ -476,6 +491,17 @@ dest_claude_account() {
   cfg=$(fm_worker_account_config claude "$(home_config "$1")" "$mate" 2>/dev/null) || return 1
   row=$(fm_worker_account_resolve claude "$cfg" config/claude-account 2>/dev/null) || return 1
   if [ -z "$row" ]; then printf 'ordinary\n'; else printf '%s\n' "${row%%$'\t'*}"; fi
+}
+
+# dest_pi_root <home> <mate|->: the Pi root a relaunch in that home lands on,
+# from its pin (a second mate's own pin first); empty when the home has no
+# pin. Fails when the pin cannot be read.
+dest_pi_root() {
+  local cfg row mate=
+  [ "$2" = - ] || mate=$2
+  cfg=$(fm_worker_account_config pi "$(home_config "$1")" "$mate" 2>/dev/null) || return 1
+  row=$(fm_worker_account_resolve pi "$cfg" config/pi-account 2>/dev/null) || return 1
+  printf '%s\n' "${row%%$'\t'*}"
 }
 
 # claude_pins: every account a Claude relaunch from this home or a second mate
@@ -526,6 +552,8 @@ pick() {
       fi
     elif [ "${cand%%:*}" = claude ]; then
       dacct=$(dest_claude_account "$home" "$mate") || continue
+    elif [ "${cand%%:*}" = pi ] || [ "${cand%%:*}" = pi-signed ]; then
+      dacct=$(dest_pi_root "$home" "$mate") || continue
     fi
     IFS=$'\t' read -r cprov cacct <<< "$(member_pool "${cand%%:*}" "${cand#*:}" "$dacct")"
     cpool=$cprov:$cacct

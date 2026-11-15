@@ -344,7 +344,7 @@ test_codex_primary_proven_by_its_session_stays_a_supervisor() {
   printf '%s\n' "$dead" > "$HOME_DIR/state/.lock"
   printf '%s\n' "$sid" > "$HOME_DIR/state/.lock-session"
   # macOS hides a platform binary's environment, so the bound process is python.
-  env CODEX_THREAD_ID="$sid" CODEX_SESSION_ID="$sid" python3 -c 'import time; time.sleep(600)' >/dev/null 2>&1 &
+  env CODEX_THREAD_ID="$sid" CODEX_SESSION_ID="$sid" python3 -c 'import time; time.sleep(120)' >/dev/null 2>&1 &
   bound=$!
   for _ in $(seq 1 20); do python3 "$ROOT/bin/fm-session-process.py" bound "$bound" "$sid" && break; sleep 0.1; done
   python3 "$ROOT/bin/fm-session-process.py" bound "$bound" "$sid" || { kill "$bound" 2>/dev/null; fail "the fixture process is not bound to session $sid"; }
@@ -439,6 +439,31 @@ test_listed_home_claude_candidate_names_its_account() {
     "a keyed provider-wide read is judged on the declared account too"
   pass "a Claude candidate in a home with an account list names its account"
 }
+test_pi_member_pinned_to_its_own_root_is_its_own_pool() {
+  local out
+  new_case pi-root
+  mkdir -p "$CASE/pi-b"
+  snapshot "$CASE/main.json" 5 \
+    "$(provider_row codex "$(scope exhausted_now)")" \
+    "$(provider_row pi "$(scope through_reset)")"
+  register_mate zenith-mate pi "$CASE/pi-b"
+  register_mate casco-mate pi
+  printf 'model=openai-codex/gpt-5.4\n' >> "$HOME_DIR/state/zenith-mate.meta"
+  printf 'model=openai-codex/gpt-5.4\n' >> "$HOME_DIR/state/casco-mate.meta"
+  out=$(run_tool check --primary-harness codex --window-secs 28800 --candidate pi:openai-codex/gpt-5.4)
+  assert_contains "$out" "pool: pi:pi-root:$CASE/pi-b status=unknown runway=- supervisors=zenith-mate workers=- why=no quota read scoped to Pi root $CASE/pi-b" \
+    "a Pi member pinned to another root never takes the ambient read's verdict"
+  assert_contains "$out" "pool: pi:openai-codex status=ok runway=through_reset supervisors=casco-mate workers=-" \
+    "an unpinned Pi member is judged on the ambient read"
+  assert_contains "$out" "failover: primary pool=codex:codex-home pick=pi openai-codex/gpt-5.4" \
+    "a Pi candidate with no pin lands on the ambient root, which has headroom"
+  printf '%s\nopenai-codex\n' "$CASE/pi-b" > "$HOME_DIR/config/pi-account"
+  out=$(run_tool check --primary-harness codex --window-secs 28800 --candidate pi:openai-codex/gpt-5.4)
+  assert_contains "$out" "failover: primary pool=codex:codex-home pick=none (no reroute candidate off this pool) why=supervisor pool exhausted" \
+    "a Pi candidate relaunched on a pinned root has no read of its own, so it is no pick"
+  pass "a Pi member pinned to its own root is judged as its own unknown pool"
+}
+
 test_limit_dialogs_are_recorded_with_account_and_model() {
   local rows rc
   new_case dialogs
@@ -538,6 +563,7 @@ fm_test_run \
   test_provider_prefixed_model_binds_its_model_scope \
   test_sole_keyless_claude_lane_is_the_ordinary_account \
   test_listed_home_claude_candidate_names_its_account \
+  test_pi_member_pinned_to_its_own_root_is_its_own_pool \
   test_limit_dialogs_are_recorded_with_account_and_model \
   test_warning_records_then_checks \
   test_tick_runs_at_kickoff_and_periodically \
