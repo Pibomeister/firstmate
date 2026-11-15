@@ -122,7 +122,7 @@ fm_failover_quota_check() {
 fm_failover_agy_trusted() {
   local dir=$1 logical store="${HOME:-}/.gemini/antigravity-cli/settings.json"
   [ -n "${HOME:-}" ] && [ -f "$store" ] || return 1
-  logical=$(CDPATH= cd -- "$dir" 2>/dev/null && pwd -L) || return 1
+  logical=$(CDPATH='' cd -- "$dir" 2>/dev/null && pwd -L) || return 1
   [ -n "$logical" ] || return 1
   jq -e --arg logical "$logical" --arg exact "$dir" \
     '(.trustedWorkspaces | type) == "array" and ((.trustedWorkspaces | index($logical)) != null) and ($exact == $logical or ((.trustedWorkspaces | index($exact)) != null))' \

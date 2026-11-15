@@ -21,6 +21,9 @@
 # codex follows config/codex-approval-mode and config/codex-permission-mode on
 # tmux; on Orca, Orca owns the agent's posture, so a non-bypass setting refuses.
 # agy launches on tmux only, and only into a home agy already trusts.
+# A tmux pane does not inherit this session's environment, so without
+# --account a claude successor gets this session's CLAUDE_CONFIG_DIR when set,
+# and a codex successor gets its CODEX_HOME, or has it cleared when unset.
 # Two fresh terminals share a total 600-second deadline. After acquiring the
 # initial claim lock, the first gets half the remaining time, up to 300 seconds,
 # and the retry gets the rest.
@@ -186,6 +189,13 @@ if [ -n "$SUCC_ACCOUNT" ]; then
     LAUNCH_ENV+=(-u CLAUDE_CONFIG_DIR)
     ACCOUNT_ROOT="${HOME:?HOME is required to measure the ordinary account}/.claude"
   fi
+else
+  case "$SUCC_HARNESS" in
+    claude) [ -z "${CLAUDE_CONFIG_DIR:-}" ] || LAUNCH_ENV=(env "CLAUDE_CONFIG_DIR=$CLAUDE_CONFIG_DIR") ;;
+    codex)
+      if [ -n "${CODEX_HOME:-}" ]; then LAUNCH_ENV=("CODEX_HOME=$CODEX_HOME"); else LAUNCH_ENV=(-u CODEX_HOME); fi
+      ;;
+  esac
 fi
 quota_rc=0
 QUOTA_LINE=$(fm_failover_quota_check "$SUCC_HARNESS" "${SUCC_MODEL:-default}" "$ACCOUNT_ROOT") || quota_rc=$?
@@ -294,7 +304,7 @@ record_completion() {
 successor_argv() {
   case "$SUCC_HARNESS" in
     claude) SUCC_ARGV=(${LAUNCH_ENV[@]+"${LAUNCH_ENV[@]}"} claude "${PERM_ARGS[@]}" ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "$PROMPT") ;;
-    codex) SUCC_ARGV=("${MARKER_ENV[@]}" codex ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "${PERM_ARGS[@]}" "$PROMPT") ;;
+    codex) SUCC_ARGV=("${MARKER_ENV[@]}" "${LAUNCH_ENV[@]}" codex ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "${PERM_ARGS[@]}" "$PROMPT") ;;
     agy) SUCC_ARGV=("${MARKER_ENV[@]}" agy --prompt-interactive "$PROMPT" ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "${PERM_ARGS[@]}") ;;
   esac
 }

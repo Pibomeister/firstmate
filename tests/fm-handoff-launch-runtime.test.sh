@@ -101,7 +101,7 @@ printf '# handoff\nRead this document.\n' > "$LAB/data/handoff.md"
 export ROOT FM_HOME="$LAB" FM_STATE_OVERRIDE="$LAB/state" FM_CONFIG_OVERRIDE="$LAB/config"
 export FM_ROOT_OVERRIDE="$ROOT" FM_HANDOFF_TEST_HARNESS=claude FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=120
 export PATH="$FAKEBIN:$PATH" FM_TEST_PIDS="$TMP_ROOT/pids" FM_TEST_QUOTA="$QUOTA" HOME="$TMP_ROOT/user"
-unset FM_BACKEND FM_SESSION_ENDPOINT_META CLAUDE_PID CLAUDE_CODE_SESSION_ID CLAUDE_CONFIG_DIR TMUX TMUX_PANE ZELLIJ
+unset FM_BACKEND FM_SESSION_ENDPOINT_META CLAUDE_PID CLAUDE_CODE_SESSION_ID CLAUDE_CONFIG_DIR CODEX_HOME TMUX TMUX_PANE ZELLIJ
 unset HERDR_ENV HERDR_PANE_ID HERDR_SESSION FM_SUPERVISOR_TARGET FM_SUPERVISOR_BACKEND QUOTA_AXI_SNAPSHOT
 export TERM_PROGRAM=Orca
 
@@ -173,7 +173,7 @@ PINS_BEFORE=$(pins_digest)
 quota_fixture codex 55 through_reset > "$QUOTA/codex.json"
 run_case tmux --harness codex --model gpt-5.5 --reason claude_pool_exhausted
 assert_transferred_to codex 'codex successor'
-argv_is 'codex successor' "${MARKERS[@]}" codex --model gpt-5.5 --dangerously-bypass-approvals-and-sandbox PROMPT
+argv_is 'codex successor' "${MARKERS[@]}" -u CODEX_HOME codex --model gpt-5.5 --dangerously-bypass-approvals-and-sandbox PROMPT
 assert_contains "$(cat "$LAB/state/.handoff-successor")" 'successor=harness=codex model=gpt-5.5 account=ambient reason=claude_pool_exhausted verdict=ok scope=all_models remaining=55' \
   'the completion record names the replacement runtime, model, reason, and quota'
 assert_contains "$(cat "$LAB/state/supervisor-failover.log")" 'event=successor_ready' 'the failover log records the verified successor'
@@ -184,7 +184,7 @@ pass 'claude to codex: verified lock transfer onto codex with the replacement an
 printf 'restricted\n' > "$LAB/config/codex-permission-mode"
 run_case tmux --harness codex
 assert_transferred_to codex 'restricted codex successor'
-argv_is 'restricted codex successor' "${MARKERS[@]}" codex --sandbox workspace-write --ask-for-approval on-request PROMPT
+argv_is 'restricted codex successor' "${MARKERS[@]}" -u CODEX_HOME codex --sandbox workspace-write --ask-for-approval on-request PROMPT
 rm "$LAB/config/codex-permission-mode"
 pass 'codex successor follows config/codex-permission-mode on tmux'
 
@@ -216,12 +216,12 @@ pass 'claude to agy: trusted home transfers on tmux; untrusted home and orca ref
 # path differs from that logical cwd, both must be trusted.
 link="$TMP_ROOT/home-link"
 ln -s "$LAB" "$link"
-logical=$(CDPATH= cd -- "$link" && pwd -L)
-physical=$(CDPATH= cd -P -- "$link" && pwd -P)
+logical=$(CDPATH='' cd -- "$link" && pwd -L)
+physical=$(CDPATH='' cd -P -- "$link" && pwd -P)
 [ "$logical" = "$link" ] || fail "logical cwd '$logical' must be the -c path '$link'"
 [ "$logical" != "$physical" ] || fail "symlink fixture did not split logical '$logical' from physical '$physical'"
 alt="$link/."
-alt_logical=$(CDPATH= cd -- "$alt" && pwd -L)
+alt_logical=$(CDPATH='' cd -- "$alt" && pwd -L)
 [ "$alt" != "$alt_logical" ] || fail "expected '$alt' to differ from its logical cwd '$alt_logical'"
 saved_home=$FM_HOME
 jq -n --arg p "$physical" '{trustedWorkspaces:[$p]}' > "$HOME/.gemini/antigravity-cli/settings.json"
@@ -260,6 +260,27 @@ assert_transferred_to claude 'account switch'
 argv_is 'account switch' "${SHED[@]}" "CLAUDE_CONFIG_DIR=$TMP_ROOT/acctB" claude --dangerously-skip-permissions PROMPT
 assert_contains "$(cat "$QUOTA/reads")" "claude profile=1 root=$TMP_ROOT/acctB" 'the preflight measured only the chosen account'
 pass 'claude account switch: the successor runs on the chosen declared account'
+
+# A tmux pane does not inherit this session's store, so the launch names it.
+mkdir -p "$TMP_ROOT/session-claude" "$TMP_ROOT/session-codex"
+quota_fixture claude 40 through_reset > "$QUOTA/claude.json"
+quota_fixture codex 55 through_reset > "$QUOTA/codex.json"
+export CLAUDE_CONFIG_DIR="$TMP_ROOT/session-claude" CODEX_HOME="$TMP_ROOT/session-codex"
+run_case tmux
+assert_transferred_to claude 'session claude store'
+argv_is 'session claude store' env "CLAUDE_CONFIG_DIR=$TMP_ROOT/session-claude" claude --dangerously-skip-permissions PROMPT
+run_case tmux --harness codex
+assert_transferred_to codex 'session codex home'
+argv_is 'session codex home' "${MARKERS[@]}" "CODEX_HOME=$TMP_ROOT/session-codex" codex --dangerously-bypass-approvals-and-sandbox PROMPT
+run_case tmux --harness claude --account "$TMP_ROOT/acctB"
+assert_transferred_to claude 'account over session store'
+argv_is 'account over session store' "${SHED[@]}" "CLAUDE_CONFIG_DIR=$TMP_ROOT/acctB" claude --dangerously-skip-permissions PROMPT
+unset CLAUDE_CONFIG_DIR CODEX_HOME
+run_case tmux
+assert_transferred_to claude 'no session claude store'
+argv_is 'no session claude store' claude --dangerously-skip-permissions PROMPT
+rm -f "$QUOTA/claude.json" "$QUOTA/codex.json"
+pass 'tmux successor store: the session CLAUDE_CONFIG_DIR and CODEX_HOME are forwarded, and --account wins'
 
 run_case tmux --account "$TMP_ROOT/acctC"
 [ "$(cat "$LAB/rc")" != 0 ] && [ ! -e "$LAB/state/attempts" ] || fail 'a signed-out account must refuse before launch'

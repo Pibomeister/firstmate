@@ -485,6 +485,7 @@ The launcher and `bin/fm-handoff-ack.sh` implement the acknowledgement and lock-
 The launcher refuses rather than guess when the backend or harness cannot be determined, and it never kills or interrupts the current session.
 Its `--help` owns background-launch and unfinished-exit behavior.
 Orca uses `orca agent launch` with a prompt argument; tmux executes direct argv.
+A tmux pane does not inherit the session's environment, so a tmux successor launched without an account choice is given the session's own `CLAUDE_CONFIG_DIR` or `CODEX_HOME`.
 Orca owns the agent's permission posture; an explicit `auto` home setting currently refuses rather than substituting a shell launch.
 The successor may run on Codex, on agy, or on another signed-in `config/claude-accounts` entry, without changing any account pin, sign-in, or spend setting; the launcher's `--help` owns the options and their backend limits.
 Before any claim, the launcher reads the successor's own quota: an exhausted pool refuses before anything launches and the predecessor keeps the lock, while an unmeasured pool is disclosed and does not block.
