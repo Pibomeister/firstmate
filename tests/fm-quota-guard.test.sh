@@ -439,6 +439,35 @@ test_listed_home_claude_candidate_names_its_account() {
     "a keyed provider-wide read is judged on the declared account too"
   pass "a Claude candidate in a home with an account list names its account"
 }
+test_lock_change_during_a_check_is_a_kickoff_that_carries_nothing() {
+  local out newpid
+  new_case lock-swap
+  mkdir -p "$CASE/acct-b"
+  snapshot "$CASE/claude.json" 6 \
+    "$(claude_row ordinary "$CASE/user-home/.claude" "$(scope through_reset)")" \
+    "$(claude_row acct-b "$CASE/acct-b" "$(scope through_reset)")"
+  sleep 120 &
+  newpid=$!
+  # The first read stands in for a primary restart that lands mid-check.
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+[ -e '$CASE/swapped' ] || { : > '$CASE/swapped'; printf '%s\n' '$newpid' > '$HOME_DIR/state/.lock'; }
+case " \$* " in
+  *" --provider claude "*) cat '$CASE/claude.json' ;;
+  *) cat '$CASE/main.json' ;;
+esac
+SH
+  run_tool check --primary-harness claude --primary-account "$CASE/acct-b" --window-secs 28800 >/dev/null
+  assert_grep "primary_lock=$$" "$HOME_DIR/state/quota-guard/last" \
+    "the check records the lock owner it judged, not the one that took over mid-check"
+  out=$(run_tool tick --window-secs 28800)
+  assert_contains "$out" "trigger=kickoff" "the new session's first tick is a kickoff"
+  assert_not_contains "$out" "claude:$CASE/acct-b" "the new session inherits no account from the old one"
+  kill "$newpid" 2>/dev/null
+  wait "$newpid" 2>/dev/null
+  pass "a lock change during a check makes the next tick a kickoff that carries nothing over"
+}
+
 test_pi_member_pinned_to_its_own_root_is_its_own_pool() {
   local out
   new_case pi-root
@@ -564,6 +593,7 @@ fm_test_run \
   test_sole_keyless_claude_lane_is_the_ordinary_account \
   test_listed_home_claude_candidate_names_its_account \
   test_pi_member_pinned_to_its_own_root_is_its_own_pool \
+  test_lock_change_during_a_check_is_a_kickoff_that_carries_nothing \
   test_limit_dialogs_are_recorded_with_account_and_model \
   test_warning_records_then_checks \
   test_tick_runs_at_kickoff_and_periodically \

@@ -203,6 +203,11 @@ parse_opts() {  # <command> <args...>
     esac
   done
   [ -n "$CANDIDATES" ] || CANDIDATES=$(fm_wd_conf_get "$WD_CONF" reroute-candidates '')
+  # The lock owners as this command found them: a check that a supervisor's
+  # restart overlaps records the old owners, so the next tick is a kickoff and
+  # the new session inherits nothing.
+  START_LOCKS=$(lock_fingerprint)
+  START_PRIMARY_LOCK=$(lock_pid "$FM_HOME")
   primary_defaults
 }
 
@@ -243,8 +248,7 @@ lock_fingerprint() {
 # so a check a second mate's or worker's warning runs judges the primary as the
 # primary's own check did.
 primary_defaults() {
-  local rec=$GUARD/last pid
-  pid=$(lock_pid "$FM_HOME")
+  local rec=$GUARD/last pid=$START_PRIMARY_LOCK
   if primary_live "$pid" && [ "$(fm_wd_conf_get "$rec" primary_lock '')" = "$pid" ]; then
     [ -n "$PRIMARY_HARNESS" ] || PRIMARY_HARNESS=$(fm_wd_conf_get "$rec" primary_harness '')
     [ -n "$PRIMARY_ACCOUNT" ] || PRIMARY_ACCOUNT=$(fm_wd_conf_get "$rec" primary_account '')
@@ -263,8 +267,7 @@ primary_live() {
 # primary_harness: the primary is a supervisor only while its session-lock
 # owner is live, even when the caller names its harness.
 primary_harness() {
-  local pid
-  pid=$(lock_pid "$FM_HOME")
+  local pid=$START_PRIMARY_LOCK
   primary_live "$pid" || return 1
   if [ -n "$PRIMARY_HARNESS" ]; then printf '%s\n' "$PRIMARY_HARNESS"; return 0; fi
   if [ -n "$FM_SESSION_LOCK_OWNER_HARNESS" ]; then printf '%s\n' "$FM_SESSION_LOCK_OWNER_HARNESS"; return 0; fi
@@ -737,7 +740,7 @@ cmd_check() {
   mkdir -p "$GUARD" || die "cannot create $GUARD" 1
   { cp "$WORK/report.txt" "$GUARD/.report.tmp" && mv -f "$GUARD/.report.tmp" "$GUARD/report.txt"; } || die "cannot write $GUARD/report.txt" 1
   { printf 'at=%s\ntrigger=%s\nverdict=%s\nlocks=%s\nprimary_lock=%s\nprimary_harness=%s\nprimary_account=%s\nresult=%s\n' \
-      "$NOW" "$TRIGGER" "$verdict" "$(lock_fingerprint)" "$(lock_pid "$FM_HOME")" "$PRIMARY_HARNESS" "$PRIMARY_ACCOUNT" "$result" > "$GUARD/.last.tmp" &&
+      "$NOW" "$TRIGGER" "$verdict" "$START_LOCKS" "$START_PRIMARY_LOCK" "$PRIMARY_HARNESS" "$PRIMARY_ACCOUNT" "$result" > "$GUARD/.last.tmp" &&
     mv -f "$GUARD/.last.tmp" "$GUARD/last"; } || die "cannot write $GUARD/last" 1
   printf '%s\t%s\t%s\t%s\n' "$NOW" "$TRIGGER" "$verdict" "$result" >> "$GUARD/checks.tsv" || die "cannot append $GUARD/checks.tsv" 1
   [ "$verdict" != act ] || return 3
@@ -750,7 +753,7 @@ cmd_tick() {
   every=$(fm_wd_conf_int "$WD_CONF" quota-guard-every-secs 7200)
   last_at=$(fm_wd_conf_get "$GUARD/last" at '' | tr -cd '0-9')
   if [ -z "$last_at" ]; then TRIGGER=kickoff
-  elif [ "$(fm_wd_conf_get "$GUARD/last" locks '')" != "$(lock_fingerprint)" ]; then TRIGGER=kickoff
+  elif [ "$(fm_wd_conf_get "$GUARD/last" locks '')" != "$START_LOCKS" ]; then TRIGGER=kickoff
   elif [ $((now - last_at)) -ge "$every" ]; then TRIGGER=periodic
   else return 0
   fi

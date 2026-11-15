@@ -120,6 +120,7 @@ These checks run on every pass as well:
   The live runbook is [`verification/quota-reroute.md`](verification/quota-reroute.md).
 - Unless `quota-guard=off`, a primary home's quota guard runs at kickoff, every `quota-guard-every-secs`, and on each limit warning.
   Kickoff is the first check of a home, or the first pass after a supervisor's session lock changed holder.
+  A check records the lock holders it started with, so a holder change that lands during a check still makes the next pass a kickoff, and the new session inherits no primary harness or account.
   A home whose restart awaits pickup gets no check on that pass, nor does the pass that starts its restart, and a worker's or second mate's limit warning that would check it is only recorded.
   A limit warning is a usage-limit picker or auto-wait footer on a supervisor pane or on a recorded worker pane.
   A second mate on the auto-wait is handled like an auto-wait primary, except that its footer is a limit warning instead of a page: nothing is typed into its pane on that pass, and the side checks are skipped.
