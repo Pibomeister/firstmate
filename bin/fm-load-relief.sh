@@ -46,7 +46,11 @@
 # restarts the window. Both status lines carry [key=load-relief], so lifting
 # a pause never closes another open decision on that worker. A pause record
 # whose task has no meta, whose spawn_gen no longer matches the record, or
-# whose latest status is done or failed, is dropped without a steer.
+# whose latest status is done or failed, is dropped without a steer. That
+# latest status is read past this script's own [key=load-relief] lines, and
+# none is appended once the worker's own latest line is done or failed, so a
+# terminal outcome that lands beside one of them is never masked; fm-crew-state
+# likewise keeps a done or failed that a trailing load-relief line follows.
 #
 # The watcher runs one detached check beside its lane-capacity publish while
 # config/lane-capacity exists, and every 30 s while state/load-relief/paused/
@@ -271,8 +275,18 @@ file_mtime() {
   is_uint "$m" && printf '%s\n' "$m"
 }
 
+# latest_verb <id>: the verb of the worker's own latest status line, read past
+# this script's paused/resolved [key=load-relief] bookkeeping, so a done or
+# failed that lands just before one of those appends is still seen.
 latest_verb() {
-  status_line_verb "$(last_status_line "$STATE/$1.status")"
+  status_line_verb "$(last_status_line_without_key "$STATE/$1.status" load-relief)"
+}
+
+# own_terminal <id>: the worker's own latest line is done or failed; no
+# load-relief line is appended after it.
+own_terminal() {
+  case "$(latest_verb "$1")" in done|failed) return 0 ;; esac
+  return 1
 }
 
 # tasks_show <id>: the one recorded backlog read per task per pass; prints
@@ -349,7 +363,7 @@ drop_record() {
     wait_line=$(status_declared_wait_line "$STATE/$id.status")
     if [ -n "$wait_line" ] && status_is_paused "$wait_line"; then
       key=$(_fm_decision_key "$wait_line" '') || key=
-      if [ "$key" = load-relief ]; then
+      if [ "$key" = load-relief ] && ! own_terminal "$id"; then
         printf 'resolved [key=load-relief] [at=%s]: load relief record dropped; the worker was relaunched, so this pause does not apply to it\n' "$now" >> "$STATE/$id.status" 2>/dev/null || true
       fi
     fi
@@ -449,7 +463,8 @@ resume_pass() {
       # Resolve the pause line before dropping the record: a pass killed
       # between the two leaves a record whose next resume is only a repeat
       # steer, never a pause line with no record left to close it.
-      printf 'resolved [key=load-relief] [at=%s]: load relief lifted (load %s below %s); resumed by steer\n' "$now" "$load1" "$level" >> "$STATE/$id.status" 2>/dev/null || true
+      own_terminal "$id" \
+        || printf 'resolved [key=load-relief] [at=%s]: load relief lifted (load %s below %s); resumed by steer\n' "$now" "$load1" "$level" >> "$STATE/$id.status" 2>/dev/null || true
       rm -f "$PAUSED_DIR/$id"
       fm_lock_release "$control_lock" || true
       control_lock=
@@ -687,8 +702,7 @@ while IFS="$(printf '\t')" read -r _rank _prio _epoch id gen; do
   # The worker may have finished or recorded its PR while the interrupt was
   # admitted: a paused line would then mask that outcome, and a later resume
   # would steer a finished task, so neither is written.
-  if { case "$(latest_verb "$id")" in done|failed) true ;; *) false ;; esac; } \
-    || grep -q '^pr=..*' "$STATE/$id.meta" 2>/dev/null; then
+  if own_terminal "$id" || grep -q '^pr=..*' "$STATE/$id.meta" 2>/dev/null; then
     rm -f "$PAUSED_DIR/$id"
     echo "load-relief: $id finished or recorded its PR during the interrupt (control exit $control_rc); no pause is recorded"
     continue

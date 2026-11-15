@@ -1026,6 +1026,21 @@ test_expected_spawn_gen_binds_interrupt() {
   pass "fm-control: FM_CONTROL_EXPECTED_SPAWN_GEN refuses a relaunched worker and admits the recorded generation"
 }
 
+test_unremovable_stale_lease_refuses_with_exit_6() {
+  local dir out rc
+  dir=$(new_case stalelease)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  # A stale lease the guard cannot remove (a directory where the lease file
+  # belongs) is a lease refusal before anything is sent, so it exits 6.
+  mkdir -p "$dir/home/state/.lease-t1/held"
+  out=$(run_control "$dir" t1 interrupt); rc=$?
+  expect_code 6 "$rc" "an unremovable stale lease should refuse with the lease exit: $out"
+  assert_contains "$out" "could not be removed" "the refusal should name the stale lease"
+  [ -z "$(keys_sent "$dir")" ] || fail "a refused interrupt must send no keys"
+  pass "fm-control: a stale lease the guard cannot remove refuses with exit 6 before sending anything"
+}
+
 test_required_record_token_binds_interrupt() {
   local dir out rc rec
   dir=$(new_case recbind)
@@ -2031,6 +2046,7 @@ test_explicit_endpoint_is_refused
 test_unknown_task_is_refused
 test_expected_spawn_gen_binds_interrupt
 test_required_record_token_binds_interrupt
+test_unremovable_stale_lease_refuses_with_exit_6
 test_record_bound_to_another_task_is_refused
 test_remote_secondmate_is_refused_by_placement
 test_interrupt_and_exit_lock_before_task_state_resolution

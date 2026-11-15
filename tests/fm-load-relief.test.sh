@@ -629,6 +629,41 @@ SH
   pass "a worker that finishes or records its PR while its interrupt is admitted gets no record and no pause line"
 }
 
+test_done_before_the_pause_line_is_not_resumed() {
+  local home how
+  for how in paused resolved; do
+    home=$(make_home "tail$how")
+    add_worker "$home" w 100 4
+    pause_record "$home" w 900 4
+    # The worker's done landed just before relief's own bookkeeping line.
+    printf 'working [at=800]: on it\ndone [at=950]: finished\n%s [key=load-relief] [at=951]: load relief bookkeeping\n' "$how" > "$home/state/w.status"
+    run_relief "$home" "tail$how" 5 2000 >/dev/null
+    assert_not_contains "$(cat "$TMP_ROOT/tail$how.log")" "send w" "a worker whose done preceded a load-relief $how line was steered to resume"
+    assert_absent "$home/state/load-relief/paused/w" "a finished worker kept its pause record behind a load-relief $how line"
+    sustained_pass "$home" "tail$how" 3000 >/dev/null
+    assert_not_contains "$(cat "$TMP_ROOT/tail$how.log")" "control w" "a finished worker was interrupted behind a load-relief $how line"
+  done
+  pass "a done that precedes relief's own paused or resolved line is still seen, so the finished worker is neither resumed nor paused"
+}
+
+test_done_during_resume_steer_stays_the_last_line() {
+  local home
+  home=$(make_home doneresume)
+  add_worker "$home" w 100 4
+  pause_record "$home" w 900 4
+  printf 'paused [key=load-relief] [at=900]: load relief: interrupted in place\n' > "$home/state/w.status"
+  cat > "$TMP_ROOT/doneresume-send" <<'SH'
+#!/usr/bin/env bash
+printf 'send %s\n' "$*" >> "$FM_RELIEF_LOG"
+printf 'done [at=1999]: finished\n' >> "$FM_HOME/state/$1.status"
+SH
+  run_relief "$home" doneresume 5 2000 >/dev/null
+  assert_contains "$(cat "$TMP_ROOT/doneresume.log")" "send w" "the resume steer never ran"
+  assert_absent "$home/state/load-relief/paused/w" "the resumed worker's pause record was kept"
+  assert_contains "$(tail -n 1 "$home/state/w.status")" "done [at=1999]" "a resolved line was appended after a done that landed during the resume steer"
+  pass "a worker that finishes during its resume steer keeps done as its last status line"
+}
+
 test_relaunch_during_interrupt_writes_no_pause() {
   local home log out verdict
   for verdict in 1 0; do
@@ -761,6 +796,8 @@ test_candidate_relaunched_after_selection_is_not_interrupted
 test_not_found_backlog_item_lifts_its_pause
 test_overlapping_check_does_not_act
 test_relaunch_during_interrupt_writes_no_pause
+test_done_before_the_pause_line_is_not_resumed
+test_done_during_resume_steer_stays_the_last_line
 test_generationless_worker_is_never_paused
 test_generationless_record_does_not_bind_a_bound_worker
 test_outcome_during_interrupt_writes_no_pause
