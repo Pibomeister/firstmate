@@ -40,7 +40,9 @@
 # over unchanged. Run it in the background like the launcher.
 # A secondmate is relaunched in its own home through bin/fm-control.sh <id>
 # relaunch --harness --model --note, which owns the stop, the checkpoint, and
-# every pre-stop refusal.
+# every pre-stop refusal. Its harness pin is left unchanged, so a later
+# relaunch without --harness, such as the watcher's automatic one, returns the
+# secondmate to its configured runtime.
 #
 # Output (stdout): one `candidate ...` line per evaluated candidate, then
 # `choice ...`, then the delegate's own output and `replaced ...` or
