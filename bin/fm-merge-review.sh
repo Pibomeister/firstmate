@@ -511,6 +511,39 @@ mr_harness_version() {  # <harness>
   "$1" --version 2>/dev/null | head -1 | tr -d '\r' | cut -c1-80
 }
 
+# Claude refuses nested -p calls when a worker session has already marked the shell.
+mr_claude_env() {
+  unset CLAUDECODE 2>/dev/null || true
+  local name
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    unset "$name" 2>/dev/null || true
+  done < <(compgen -v | grep '^CLAUDE_CODE_' || true)
+}
+
+mr_reviewer_child_exited() {  # <pid>
+  local stat
+  stat=$(ps -o stat= -p "$1" 2>/dev/null | tr -d '[:space:]')
+  case "$stat" in
+    '' | Z* | z*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+mr_record_reviewer_child() {  # <pid>
+  local pid=$1 identity reviewer_parent
+  identity=$(fm_pid_identity_line "$pid") || identity=
+  reviewer_parent=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d '[:space:]')
+  [ "$reviewer_parent" = "$$" ] || return 0
+  if [ -z "$identity" ]; then
+    mr_reviewer_child_exited "$pid" && return 0
+    kill -KILL "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    mr_die 'cannot record reviewer process identity'
+  fi
+  printf '%s\t%s\n' "$pid" "$identity" >> "$MR_WORK/children"
+}
+
 mr_seat_fail() {  # <seat-id> <epoch> <exit> <reason>
   local id=$1 at=$2
   {
@@ -553,20 +586,23 @@ mr_seat_call() {  # <seat-index>
 
   command -v "$harness" >/dev/null 2>&1 \
     || { mr_seat_fail "$id" "$started" 127 "the $harness tool is not installed"; return 1; }
-  version=$(cd "$MR_WORK" && mr_harness_version "$harness")
-
   case "$harness" in
     claude)
+      version=$(cd "$MR_WORK" && mr_claude_env && mr_harness_version "$harness")
       cmd=(claude -p --model "$model" --output-format json --tools "Read,Grep,Glob"
         --setting-sources "" --strict-mcp-config --no-session-persistence)
       [ -z "$effort" ] || cmd+=(--effort "$effort")
       # shellcheck disable=SC2016  # $1 and $@ belong to the inner shell.
-      ( cd "$MR_WORK" && fm_run_timed "$MR_TIMEOUT" bash -c 'f=$1; shift; exec "$@" < "$f"' _ \
+      ( cd "$MR_WORK" && mr_claude_env && fm_run_timed "$MR_TIMEOUT" bash -c '
+        unset CLAUDECODE 2>/dev/null || true
+        for _v in $(compgen -v | grep "^CLAUDE_CODE_" || true); do unset "$_v" 2>/dev/null || true; done
+        f=$1; shift; exec "$@" < "$f"' _ \
         "$MR_WORK/prompt.md" "${cmd[@]}" ) > "$raw" 2> "$err" || rc=$?
       text_filter='if (.is_error // false) then empty else (.result // empty) end'
       models_filter='(.modelUsage // {}) | keys | join(",")'
       ;;
     grok)
+      version=$(cd "$MR_WORK" && mr_harness_version "$harness")
       cmd=(grok --cwd "$MR_WORK" --prompt-file "$MR_WORK/prompt.md" -m "$model" --output-format json
         --permission-mode plan --no-subagents --disable-web-search)
       [ -z "$effort" ] || cmd+=(--reasoning-effort "$effort")
@@ -575,6 +611,7 @@ mr_seat_call() {  # <seat-index>
       models_filter='(.modelUsage // {}) | keys | join(",")'
       ;;
     agy)
+      version=$(cd "$MR_WORK" && mr_harness_version "$harness")
       # Plan mode is what makes agy read-only here: a headless call cannot be
       # asked for the write permission, so agy denies the write.
       cmd=(agy -p "$(cat "$MR_WORK/prompt.md")" --model "$model" --output-format json
@@ -784,7 +821,7 @@ mr_stop_reviewers() {  # <run-lock>
   [ -f "$lock/children" ] || return 0
   while IFS="$(printf '\t')" read -r pid identity; do
     [ -n "$identity" ] || return 1
-    fm_watcher_stop_tree "$pid" "$identity" 1 || true
+    fm_watcher_stop_tree "$pid" "$(fm_pid_identity "$pid" 2>/dev/null || true)" 1 || true
     wait "$pid" 2>/dev/null || true
     if fm_pid_alive "$pid" && [ "$(fm_pid_identity_line "$pid")" = "$identity" ]; then
       return 1
@@ -942,16 +979,7 @@ mr_run() {  # <repo> <base-ref> <intent-file>
       else
         mr_seat_call "$i" &
         pid=$!
-        identity=$(fm_pid_identity_line "$pid") || identity=
-        reviewer_parent=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d '[:space:]')
-        if [ "$reviewer_parent" = "$$" ]; then
-          if [ -z "$identity" ]; then
-            kill -KILL "$pid" 2>/dev/null || true
-            wait "$pid" 2>/dev/null || true
-            mr_die 'cannot record reviewer process identity'
-          fi
-          printf '%s\t%s\n' "$pid" "$identity" >> "$MR_WORK/children"
-        fi
+        mr_record_reviewer_child "$pid"
         pids="$pids $pid"
       fi
     fi
@@ -970,16 +998,7 @@ mr_run() {  # <repo> <base-ref> <intent-file>
       else
         mr_seat_call "$i" &
         pid=$!
-        identity=$(fm_pid_identity_line "$pid") || identity=
-        reviewer_parent=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d '[:space:]')
-        if [ "$reviewer_parent" = "$$" ]; then
-          if [ -z "$identity" ]; then
-            kill -KILL "$pid" 2>/dev/null || true
-            wait "$pid" 2>/dev/null || true
-            mr_die 'cannot record reviewer process identity'
-          fi
-          printf '%s\t%s\n' "$pid" "$identity" >> "$MR_WORK/children"
-        fi
+        mr_record_reviewer_child "$pid"
         wait "$pid" || true
       fi
     fi

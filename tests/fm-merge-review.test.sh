@@ -997,6 +997,20 @@ test_run_refuses_what_it_cannot_review() {
   pass "run refuses a missing or abbreviated head, an empty change, and a non-PR URL before any call"
 }
 
+test_fast_exiting_seat_continues_the_batch() {
+  local rc=0
+  make_case fast-claude "${THREE_SEATS[@]}"
+  cat > "$FAKEBIN/claude" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  chmod +x "$FAKEBIN/claude"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "fast-claude: the batch continued ($(cat "$CASE/stderr"))"
+  assert_grep "merge-review: approved head=$HEAD_SHA" "$CASE/stdout" "fast-claude: agy and the spare did not approve"
+  pass "a seat that exits before identity is recorded does not abort the run"
+}
+
 test_leading_zero_timeout_runs_every_seat() {
   make_case timeout-leading-zero "${TWO_SEATS[@]}" 'timeout=090'
   run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" \
@@ -1133,6 +1147,7 @@ fm_test_run \
   test_snapshot_keeps_distinct_links_and_identical_regular_files \
   test_covers_follows_the_require_lines \
   test_run_refuses_what_it_cannot_review \
+  test_fast_exiting_seat_continues_the_batch \
   test_leading_zero_timeout_runs_every_seat \
   test_stale_receipt_base_refreshes_approvals \
   test_stale_spare_approval_is_dropped_before_the_run_starts \
