@@ -134,6 +134,13 @@
 #       integer of at most 15 digits with no leading zero, when the age is
 #       negative, or when the home is empty or holds a TAB, a newline or a
 #       carriage return.
+#   fm_wd_last_wake_ack <wake-ledger> <now> [daemon-acks]
+#       Prints the epoch of the newest `ack` row (bin/fm-wake-ledger-lib.sh owns
+#       the rows) among the last 2000 rows of a wake ledger, skipping a row
+#       stamped later than now and a row whose generation and through value
+#       the away daemon named in its daemon-acks file
+#       (bin/fm-supervise-daemon.sh). Prints nothing and returns 1 when there is
+#       none.
 
 FM_WD_REFUSED_TEXT_RE='(^|[^be])merg|[rd]emerg|deploy|releas|publish|(^|[^a-z])force.?push|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
 FM_WD_RESERVED_RE="$FM_WD_REFUSED_TEXT_RE"'|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|delet|destroy|wipe)'
@@ -593,4 +600,17 @@ fm_wd_supervisor_gap_rows() {  # <home> <now> <published-epoch>
   [ "$age" -ge 0 ] || return 1
   [ "$age" -le 600 ] || printf '%s\t%s\theartbeat_age=%s\n' "$now" "$home" "$age"
   printf '%s\tobserved\t%s\n' "$now" "$home"
+}
+
+fm_wd_last_wake_ack() {  # <wake-ledger> <now> [daemon-acks]
+  local v acks=${3:-}
+  [ -f "$1" ] || return 1
+  fm_wd_epoch_ok "$2" || return 1
+  [ -n "$acks" ] && [ -f "$acks" ] && [ -r "$acks" ] || acks=/dev/null
+  v=$(tail -n 2000 "$1" 2>/dev/null | LC_ALL=C awk -F'\t' -v now="$2" -v acks="$acks" '
+    BEGIN { while ((getline line < acks) > 0) daemon[line] = 1 }
+    $2 == "ack" && !(($3 "\t" $4) in daemon) && $1 ~ /^[1-9][0-9]*$/ && length($1) <= 15 && $1 + 0 <= now + 0 && $1 + 0 > m + 0 { m = $1 }
+    END { if (m != "") print m }')
+  [ -n "$v" ] || return 1
+  printf '%s\n' "$v"
 }

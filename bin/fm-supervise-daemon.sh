@@ -174,6 +174,9 @@
 #                                   (default 20); a pane server that does not
 #                                   answer fails startup, and in the loop the
 #                                   tick goes on to its watcher check
+#          Names each wake acknowledgement it makes, as its generation and
+#          through value, in state/.supervise-daemon.acks, so the watchdog does
+#          not read the daemon's ack rows as the session's activity.
 #          Logs each wake to state/.supervise-daemon.log (size-capped). Single
 #          instance via portable lock on state/.supervise-daemon.lock. Trapped
 #          SIGTERM/SIGINT shut down once the step in progress returns (bounded
@@ -1882,8 +1885,53 @@ handle_durable_wakes() {  # <watcher-reason> <state>
     log "wake drain omitted its generation-bound acknowledgement; retaining durable wakes"
     return 1
   fi
-  "$FM_DAEMON_DIR/fm-wake-drain.sh" --ack-through "$ack_through" \
-    --recovery-generation "$ack_generation"
+  # The watchdog reads wake-ledger ack rows as the session's own activity, so
+  # the daemon names its own acknowledgement first and takes the name back if
+  # the acknowledgement fails. An acknowledgement it cannot name would read as
+  # the session's own activity, so it is not made.
+  if ! note_daemon_ack "$state" "$ack_generation" "$ack_through"; then
+    log "could not record the daemon's acknowledgement; retaining durable wakes"
+    return 1
+  fi
+  if ! "$FM_DAEMON_DIR/fm-wake-drain.sh" --ack-through "$ack_through" \
+    --recovery-generation "$ack_generation"; then
+    # The drain can commit its ack row and fail afterwards, in claim cleanup;
+    # that row is still the daemon's, so its name stays.
+    daemon_ack_committed "$state" "$ack_generation" "$ack_through" ||
+      unnote_daemon_ack "$state" "$ack_generation" "$ack_through"
+    return 1
+  fi
+}
+
+# daemon_ack_committed <state> <generation> <through>: the wake ledger holds
+# an ack row for exactly that generation and through value.
+daemon_ack_committed() {
+  [ -f "$1/wake-ledger.tsv" ] || return 1
+  tail -n 2000 "$1/wake-ledger.tsv" 2>/dev/null |
+    LC_ALL=C awk -F'\t' -v g="$2" -v t="$3" '$2 == "ack" && $3 == g && $4 == t { f = 1 } END { exit !f }'
+}
+
+# note_daemon_ack <state> <generation> <through>: records one acknowledgement
+# this daemon makes in state/.supervise-daemon.acks, keeping the newest 2000,
+# as many as the wake-ledger rows the watchdog reads, so every daemon ack row
+# it can see is still named; fails when the record cannot be appended.
+note_daemon_ack() {
+  local f=$1/.supervise-daemon.acks tmp
+  printf '%s\t%s\n' "$2" "$3" >> "$f" 2>/dev/null || return 1
+  [ "$(wc -l < "$f" 2>/dev/null | tr -d ' ')" -gt 4000 ] || return 0
+  tmp=$(mktemp "$1/.supervise-daemon.acks.XXXXXX" 2>/dev/null) || return 0
+  if tail -n 2000 "$f" > "$tmp" 2>/dev/null; then mv "$tmp" "$f" 2>/dev/null || rm -f "$tmp"; else rm -f "$tmp"; fi
+}
+
+unnote_daemon_ack() {  # <state> <generation> <through>
+  local f=$1/.supervise-daemon.acks tmp
+  [ -f "$f" ] || return 0
+  tmp=$(mktemp "$1/.supervise-daemon.acks.XXXXXX" 2>/dev/null) || return 0
+  if awk -F'\t' -v g="$2" -v t="$3" '!($1 == g && $2 == t)' "$f" > "$tmp" 2>/dev/null; then
+    mv "$tmp" "$f" 2>/dev/null || rm -f "$tmp"
+  else
+    rm -f "$tmp"
+  fi
 }
 
 # --- log --------------------------------------------------------------------

@@ -192,7 +192,7 @@ wd_home() {
   jq -n --arg s "$SID" --argjson e "$BASE" --argjson p "$LOCKPID" \
     '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:"%1",present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
     > "$H/state/heartbeat.json"
-  printf 'mode=dry-run\nclaude-config-dirs=%s\nmodels=\nrestart=on\nrestart-command=/bin/true\n' "$H/claude" > "$H/config/watchdog"
+  printf 'mode=dry-run\nclaude-config-dirs=%s\nmodels=\nrestart=on\nrestart-command=/bin/true\nquota-guard=off\n' "$H/claude" > "$H/config/watchdog"
   usage_transcript "$H/claude/projects/p/$SID.jsonl" "$2"
   fm_touch_epoch "$((BASE - 3000))" "$H/claude/projects/p/$SID.jsonl"
 }

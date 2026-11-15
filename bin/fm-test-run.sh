@@ -502,7 +502,7 @@ family_for_basename_var() {
       ;;
     fm-branch-supervision.test.sh|fm-busy-adapter-wiring.test.sh|\
     fm-busy-state.test.sh|fm-capacity.test.sh|fm-captain-record.test.sh|fm-disk-alarm.test.sh|fm-classify-corr-token.test.sh|\
-    fm-claude-account-quota.test.sh|\
+    fm-claude-account-quota.test.sh|fm-quota-guard.test.sh|\
     fm-claude-stop-autoarm.test.sh|fm-cursor-harness.test.sh|\
     fm-dispatch-resolve.test.sh|\
     fm-extension-binding.test.sh|fm-gitignore-config.test.sh|fm-health-verdict.test.sh|\
@@ -1114,6 +1114,7 @@ tests/fm-backend-hc-liveness-live-e2e.test.sh 9000
 tests/fm-backend-hc-smoke.test.sh 3700
 tests/fm-backend-hc.test.sh 4000
 tests/fm-claude-account-quota.test.sh 2492
+tests/fm-quota-guard.test.sh 44000
 tests/fm-codex-stop-park.test.sh 35000
 tests/fm-herdr-projected-cd-live-e2e.test.sh 28000
 tests/fm-install-herdr.test.sh 1000
@@ -1139,6 +1140,7 @@ tests/fm-escalation-class-map.test.sh 6000
 tests/fm-incident-ledger.test.sh 30626
 tests/fm-kiro-harness.test.sh 35000
 tests/fm-kiro-signals-live-e2e.test.sh 60
+tests/fm-lane-register.test.sh 52000
 tests/fm-lane-vitals.test.sh 9527
 tests/fm-layer-chain.test.sh 29492
 tests/fm-procevent-factory.test.sh 25000
@@ -1820,6 +1822,7 @@ families_for_changed_path() {
       printf '%s\n' watcher-wake-lock
       printf '%s\n' "__script__:fm-backend-t3code.test.sh"
       printf '%s\n' "__script__:fm-watchdog.test.sh"
+      printf '%s\n' "__script__:fm-quota-guard.test.sh"
       printf '%s\n' "__script__:fm-watchdog-live.test.sh"
       printf '%s\n' "__script__:fm-usage-limit-pane-live.test.sh"
       printf '%s\n' "__script__:fm-usage-limit-pane-pending.test.sh"
@@ -1888,6 +1891,7 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-dispatch-resolve.test.sh"
       printf '%s\n' "__script__:fm-capacity.test.sh"
       printf '%s\n' "__script__:fm-claude-account-quota.test.sh"
+      printf '%s\n' "__script__:fm-quota-guard.test.sh"
       ;;
     bin/fm-procevent-quota.sh)
       printf '%s\n' "__script__:fm-procevent-quota.test.sh"
@@ -1901,6 +1905,10 @@ families_for_changed_path() {
       ;;
     bin/fm-claude-account-quota.sh)
       printf '%s\n' "__script__:fm-claude-account-quota.test.sh"
+      ;;
+    bin/fm-quota-guard.sh)
+      printf '%s\n' "__script__:fm-quota-guard.test.sh"
+      printf '%s\n' "__script__:fm-watchdog.test.sh"
       ;;
     bin/fm-dispatch-resolve.sh)
       printf '%s\n' "__script__:fm-dispatch-resolve.test.sh"
