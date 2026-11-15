@@ -172,6 +172,26 @@ DESTRUCTIVE_CONFIRMS=(
   $'work\n? Type acme/repo to confirm deletion: '
   $'work\nDiscard this hunk from worktree [y,n,q,a,d,e,?]? '
   $' !    WARNING: This will destroy acme\n !    To proceed, type acme or re-run this command with\n !    --confirm acme\n\n> '
+  $'The following packages will be REMOVED:\n\n  numpy-1.26\n\nProceed ([y]/n)? '
+  $'work\n< rm ./a.txt > ? '
+  $'work\nrm a b ?...'
+  $'work\noverride r--r--r-- dev/staff uchg for a.txt? '
+  $'? Do you still want to push changes? This deletes the users table (Use arrow keys)\n❯ No, abort\n  Yes, I want to remove 1 table,'
+)
+# openssl, gpg pinentry, Heroku, and inquirer credential and sign-in inputs.
+PINENTRY=$'work\n┌──────────────────────────────────────────┐\n│ Please enter the passphrase to unlock    │\n│ the OpenPGP secret key                   │\n│                                          │\n│ Passphrase: ____________________________ │\n│                                          │\n│       <OK>                  <Cancel>     │\n└──────────────────────────────────────────┘'
+SECRET_INPUTS=(
+  $'work\nEnter PEM pass phrase:'
+  $'work\nVerifying - Enter PEM pass phrase:'
+  $'work\nEnter pass phrase for key.pem:'
+  "$PINENTRY"
+)
+SIGNIN_INPUTS=(
+  $'work\nheroku: Press any key to open up the browser to login or q to exit: '
+  $'? Log in to Vercel (Use arrow keys)\n❯ Continue with GitHub\n  Continue with GitLab\n  Continue with Email'
+  $'work\nEnter your username:'
+  $'work\nEnter your email address:'
+  $'work\n? Enter your email address: ›'
 )
 
 ledger() { cat "$H/state/watchdog/actions.tsv" 2>/dev/null; }
@@ -242,7 +262,14 @@ test_hardstop_categories() {
   for c in "${DESTRUCTIVE_CONFIRMS[@]}"; do
     assert_equals $'hardstop\tdestructive' "$(printf '%s\n' "$c" | classify claude)" "this confirmation is a destructive stop: $c"
   done
-  for c in $'work\n> ' $'work\nplease remove that line?' $'work\nI typed it to confirm it works.'; do
+  for c in "${SECRET_INPUTS[@]}"; do
+    assert_equals $'hardstop\tcredential' "$(printf '%s\n' "$c" | classify claude)" "this input is a credential stop: $c"
+  done
+  for c in "${SIGNIN_INPUTS[@]}"; do
+    assert_equals $'hardstop\tsign-in' "$(printf '%s\n' "$c" | classify claude)" "this input is a sign-in stop: $c"
+  done
+  assert_equals $'hold\tconfirm' "$(printf 'work\nPress any key to continue\n' | classify claude)" "a press-any-key wait is held"
+  for c in $'work\n> ' $'work\nplease remove that line?' $'work\nI typed it to confirm it works.' $'work\nI will press any key now.' $'work\n┌────────────┐\n│ All done   │\n└────────────┘'; do
     printf '%s\n' "$c" | classify claude >/dev/null && fail "this is not a confirmation: $c"
   done
   assert_equals $'hardstop\tdestructive' "$(printf 'work\nDiscard changes? [y/N]\n' | classify claude)" "a discard confirmation is a destructive stop"
@@ -352,7 +379,7 @@ test_send_guard_blocks_renumbered_pickers_and_secret_inputs() {
     $'work\nUsername (dev):' "$TF_DESTROY" "$TYPE_DELETE" $'work\nUsername [dev]:' $'work\nEmail address:' $' Continue with paid usage?\n ❯ Yes\n   No\n\n Enter to confirm · Esc to cancel' \
     $' Select login method:\n ❯ 1. Claude account\n   2. API key\n\n Enter to continue · Esc to go back' \
     $' Continue with paid usage?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel' \
-    "${DESTRUCTIVE_CONFIRMS[@]}" $'work\nType my.app to confirm:' $'work\nStage this hunk [y,n,q,a,d,e,?]? '; do
+    "${DESTRUCTIVE_CONFIRMS[@]}" "${SECRET_INPUTS[@]}" "${SIGNIN_INPUTS[@]}" $'work\nPress any key to continue' $'work\nType my.app to confirm:' $'work\nStage this hunk [y,n,q,a,d,e,?]? '; do
     name=$(bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$screen") \
       || fail "every submit refuses this screen: $screen"
     [ -n "$name" ] || fail "the refusal names the dialog for: $screen"
@@ -420,9 +447,11 @@ test_prompt_after_escape_gets_no_instruction() {
   worker ng claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/gh-after.txt"
   printf 'work output\noverwrite current.db? (y/n [n]) \n' > "$H/cp-after.txt"
   worker no claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/cp-after.txt"
+  printf 'work output\nEnter your username:\n' > "$H/un-after.txt"
+  worker ne claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/un-after.txt"
   run_wd 0 once >/dev/null 2>&1 || fail "the watchdog pass failed"
   local id
-  for id in nt np nk nu nf nd ng no; do
+  for id in nt np nk nu nf nd ng no ne; do
     assert_equals "$ESC" "$(typed "$id")" "only the one Escape reaches worker $id: $(typed "$id" | od -c | head -3)"
     assert_equals '' "$(inbox_text "$id")" "no instruction, and so no doorbell, goes to worker $id"
     assert_equals 0 "$(ledger_rows steer "done" "worker:$id")" "no steer is recorded for worker $id"
@@ -436,7 +465,8 @@ test_prompt_after_escape_gets_no_instruction() {
   assert_grep "shows a destructive prompt after a declined tool call" "$H/state/nf.status" "the typed confirmation stop names its category"
   assert_equals 1 "$(status_rows ng blocked permission-prompt-hardstop)" "a typed gh deletion confirmation behind the declined prompt is a hard stop"
   assert_equals 1 "$(status_rows no blocked permission-prompt-hardstop)" "a BSD overwrite confirmation behind the declined prompt is a hard stop"
-  for id in nf nd ng no; do
+  assert_equals 1 "$(status_rows ne blocked permission-prompt-hardstop)" "a prefixed username input behind the declined prompt is a hard stop"
+  for id in nf nd ng no ne; do
     FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
     sleep 1
     assert_equals "$ESC" "$(typed "$id")" "a later doorbell types nothing into the typed confirmation on worker $id: $(typed "$id" | od -c | head -3)"
@@ -470,9 +500,17 @@ test_doorbell_never_types_into_a_prompt() {
   printf 'work output\nremove important.txt? \n' > "$H/bsdrm.txt"
   worker dm claude "$H/bsdrm.txt"
   printf 'work output\noverwrite current.db? (y/n [n]) \n' > "$H/bsdcp.txt"
-  worker do claude "$H/bsdcp.txt"
+  worker dc claude "$H/bsdcp.txt"
+  printf 'work output\nEnter PEM pass phrase:\n' > "$H/pem.txt"
+  worker dk claude "$H/pem.txt"
+  printf 'work output\nheroku: Press any key to open up the browser to login or q to exit: \n' > "$H/hk.txt"
+  worker dh claude "$H/hk.txt"
+  printf '%s\n' "$PINENTRY" > "$H/pin.txt"
+  worker de claude "$H/pin.txt"
+  printf 'work output\n? Enter your email address: ›\n' > "$H/em.txt"
+  worker du claude "$H/em.txt"
   local id
-  for id in db dt ds dp dw d2 dr dg dm do; do
+  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du; do
     FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
     assert_contains "$(inbox_text "$id")" "steer for $id" "the steer for worker $id is durably recorded"
     sleep 1

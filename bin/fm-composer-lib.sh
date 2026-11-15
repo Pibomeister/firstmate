@@ -2655,13 +2655,29 @@ fm_composer_picker_rows() {  # rows on stdin
 # The one detector of a secret or sign-in input on the last non-blank row, such
 # as a password, PIN, API key, one-time code, verification code, browser
 # sign-in, or git username prompt. Only the last row counts, so conversation
-# that mentions a password is never an input. Prints credential or sign-in.
+# that mentions a password is never an input, except inside a closing box
+# border, such as gpg's pinentry, where the input row sits in the box above
+# it. openssl's two-word `pass phrase` reads as passphrase. Prints credential
+# or sign-in.
 fm_composer_secret_input() {  # <screen> -> credential|sign-in
   local last
+  if printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
+    NF { r[++n] = tolower($0) }
+    END {
+      if (!n || r[n] !~ /^[ \t]*(└|╰|\+)(─|━|-)+(┘|╯|\+)[ \t\r]*$/) exit 1
+      for (i = n - 1; i > 0 && i > n - 12; i--) {
+        if (r[i] ~ /^[ \t]*(┌|╭|\+)(─|━|-)+/) break
+        if (r[i] ~ /(passphrase|pass phrase|password|passcode|pin)[ \t]*:/) f = 1
+      }
+      exit !f
+    }'; then
+    printf 'credential\n'; return 0
+  fi
   last=$(printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
     /[^ \t\r]/ { last = tolower($0) }
     END {
       gsub(/\r/, "", last)
+      gsub(/pass phrase/, "passphrase", last)
       # A trailing input cursor or mask is not part of the label.
       sub(/[ \t]*((›|❯|▌|█|•|\*)[ \t]*)*$/, "", last)
       print last
@@ -2670,7 +2686,7 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
   if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+)?(\[sudo\][[:space:]]+)?(password|passphrase|passcode|pin|otp|2fa([[:space:]]+code)?|mfa([[:space:]]+code)?|one.time[[:space:]]+(code|password))([[:space:]]+for[[:space:]][^:]*)?[:>?]$|(enter|type|input|provide|paste)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(password|passphrase|passcode|pin|api[[:space:]_-]?key|access[[:space:]_-]?key|private[[:space:]_-]?key|token|secret|otp|2fa|mfa|one.time|authenticator|security)[^:>?]*[:>?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?(mfa|2fa|otp|two.factor)[[:space:]]+code([[:space:]]+for[[:space:]].*)?[:>?]$|two.factor([[:space:]]+[a-z]+)?[[:space:]]+code[:>?]$|authenticator([[:space:]]+app)?[[:space:]]+code[:>?]$|^[^:]{0,30}[[:space:]]pin[:>?]$|(password|passphrase|passcode)([[:space:]]+for[[:space:]].*)?[^:]{0,40}[:>]$|(api[[:space:]_-]?key|access[[:space:]_-]?key|token|secret)[^:>?]{0,30}[:>?]$'; then
     printf 'credential\n'; return 0
   fi
-  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:?]*[>:?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(code|(authentication|verification|security|login|sign.?in|device|authori[sz]ation)[[:space:]]+code)[^:>?]*[:>?]$|(authentication|security|login|verification|device) code[^:>?]{0,30}[:>?]$|^[[:space:]]*(\?[[:space:]]+)?username for .*[:>?]$|^[[:space:]]*(\?[[:space:]]+)?(username|user name|login|email|e-mail|email address)([[:space:]]*(\([^)]*\)|\[[^]]*\]))?[:>]([[:space:]]*\([^)]*\))?$|press enter to open .*(browser|github\.com|login)'; then
+  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:?]*[>:?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(code|(authentication|verification|security|login|sign.?in|device|authori[sz]ation)[[:space:]]+code)[^:>?]*[:>?]$|(authentication|security|login|verification|device) code[^:>?]{0,30}[:>?]$|^[[:space:]]*(\?[[:space:]]+)?username for .*[:>?]$|^[[:space:]]*(\?[[:space:]]+)?(username|user name|login|email|e-mail|email address)([[:space:]]*(\([^)]*\)|\[[^]]*\]))?[:>]([[:space:]]*\([^)]*\))?$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(username|user name|login|email|e-mail|email address)[^:>?]*[:>?]$|press (enter|return|any key)[^:]*(browser|github\.com|log.?in|sign.?in)'; then
     printf 'sign-in\n'; return 0
   fi
   return 1
@@ -2681,8 +2697,11 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
 # confirmation such as Terraform's `Enter a value:`, `Type DELETE to
 # confirm:`, or gh's `? Type owner/repo to confirm deletion:`, with the BSD
 # `rm`, `cp`, and `mv` forms (`remove a.txt?`, `overwrite b? (y/n [n])`), git's
-# hunk prompts (`[y,n,q,a,d,e,?]?`), and a bare `>` under `To proceed, type`:
-# typed text and Enter would answer it. Prints the lowered row.
+# hunk prompts (`[y,n,q,a,d,e,?]?`), conda's `Proceed ([y]/n)?`, `find -ok`'s
+# `< rm ./a.txt > ?`, `xargs -p`'s `rm a ?...`, `Press any key`, a bare `>`
+# under `To proceed, type`, and an arrow-key list such as inquirer's
+# `? Log in (Use arrow keys)` above a selected option: typed text and Enter
+# would answer it. Prints the lowered row.
 fm_composer_confirm_input() {  # <screen> -> row
   local last
   last=$(printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
@@ -2693,12 +2712,25 @@ fm_composer_confirm_input() {  # <screen> -> row
       print last
     }')
   [ -n "$last" ] || return 1
+  if printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
+    NF { r[++n] = tolower($0) }
+    END {
+      for (i = n - 13; i <= n; i++) {
+        if (i < 1) continue
+        if (r[i] ~ /\(use arrow keys|\[use arrows to move/) q = i
+        else if (q && r[i] ~ /^[ \t]*(❯|›|>)[ \t]*[^ \t]/) f = 1
+      }
+      exit !f
+    }'; then
+    printf '%s\n' "$last"
+    return 0
+  fi
   if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*>$' \
     && printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk 'NF { r[++n] = tolower($0) } END { for (i = n - 4; i < n; i++) if (i > 0 && r[i] ~ /to proceed, type/) f = 1; exit !f }'; then
     printf '%s\n' "$last"
     return 0
   fi
-  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|^[[:space:]]*(remove|examine files in directory|recursively remove|override [^ ]+[[:space:]]+[^ ]+[[:space:]]+for|overwrite) .+\?([[:space:]]*\(y/n \[[yn]\]\))?$|\(y/n \[[yn]\]\)$|\[y,n(,[a-z?/]+)*\]\?$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[^:>?"'"'"'`]{1,100}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
+  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|^[[:space:]]*(remove|examine files in directory|recursively remove|override .+ for|overwrite) .+\?([[:space:]]*\(y/n \[[yn]\]\))?$|\((\[y\]/n|y/\[n\])\)[[:space:]]*\?$|^[[:space:]]*<.*>[[:space:]]*\?$|[[:space:]]\?\.\.\.$|^[[:space:]]*(press|hit) any key|\(y/n \[[yn]\]\)$|\[y,n(,[a-z?/]+)*\]\?$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[^:>?"'"'"'`]{1,100}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
   printf '%s\n' "$last"
 }
 
