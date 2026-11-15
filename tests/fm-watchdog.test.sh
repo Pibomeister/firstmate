@@ -4369,6 +4369,10 @@ SH
     "the primary is judged on the account that holds its transcript: $(cat "$H/state/quota-guard/report.txt" 2>&1)"
   assert_equals 1 "$(ledger_rows quota-guard nudge pending)" "an act check nudges the primary: $(ledger | cut -f4-8)"
   grep -rqs "quota-guard: act trigger=kickoff" "$H/state/operational-inbox" || fail "the act nudge does not name the kickoff check"
+  grep -rqsF "run bin/fm-supervisor-failover.sh primary <handoff-file> --reason quota_guard in the background" "$H/state/operational-inbox" ||
+    fail "a supervisor failover nudge does not name the failover command: $(cat "$H"/state/operational-inbox/* 2>&1)"
+  ! grep -rqsF "fm-control.sh relaunch" "$H/state/operational-inbox" ||
+    fail "a nudge with no worker move names the worker relaunch: $(cat "$H"/state/operational-inbox/* 2>&1)"
   FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 1000 once >/dev/null 2>&1 || fail "quota guard quiet pass failed"
   assert_equals 1 "$(ledger_rows quota-guard nudge pending)" "a check already nudged is not nudged again: $(ledger | cut -f4-8)"
   # A limit warning runs its own check between passes; the next pass nudges it

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Behavior tests for bin/fm-quota-guard.sh: every supervisor pool is read and
 # judged against the window, stale quota is unknown, workers are moved off a
-# short supervisor pool, an exhausted supervisor gets a failover pick, limit
+# short supervisor pool, a short or exhausted supervisor gets a failover pick, limit
 # dialogs are recorded, and tick runs at kickoff and periodically.
 #
 # A fake quota-axi answers a --provider claude read from $CASE/claude.json and
@@ -116,7 +116,7 @@ test_stale_quota_is_unknown_not_headroom() {
   pass "stale quota data reads as unknown, not as headroom"
 }
 
-test_short_supervisor_pool_steers_its_workers_off() {
+test_short_supervisor_pool_steers_its_workers_and_fails_over() {
   local out rc
   new_case short
   snapshot "$CASE/main.json" 5 \
@@ -129,16 +129,17 @@ test_short_supervisor_pool_steers_its_workers_off() {
   worker "$HOME_DIR/state" other claude default %2
   out=$(run_tool check --primary-harness codex --window-secs 28800 --candidate claude:opus); rc=$?
   expect_code 3 "$rc" "a short supervisor pool with a worker on it needs a move: $out"
-  assert_contains "$out" "quota-guard: act trigger=manual window=28800s pools=1 ok=0 unknown=0 short=1 exhausted=0 steer=1 failover=0" \
-    "only the supervisor pool is judged, and one worker is moved"
+  assert_contains "$out" "quota-guard: act trigger=manual window=28800s pools=1 ok=0 unknown=0 short=1 exhausted=0 steer=1 failover=1" \
+    "only the supervisor pool is judged, one worker is moved, and the supervisor fails over"
   assert_contains "$out" "pool: codex:codex-home status=short runway=3600 supervisors=primary workers=alive why=all_models runs out in 3600s, inside the 28800s window" \
     "the pool names its runway and members"
   assert_contains "$out" "steer: alive pool=codex:codex-home pick=claude opus why=keep short pool for its supervisors" \
     "the live worker on the short pool is steered to the candidate"
   assert_not_contains "$out" "steer: gone" "a worker with no live endpoint is not moved"
   assert_not_contains "$out" "other" "a worker on a pool no supervisor uses gets no move or pool line"
-  assert_not_contains "$out" "failover:" "a short supervisor pool keeps its supervisor"
-  pass "a short supervisor pool moves its live workers off first"
+  assert_contains "$out" "failover: primary pool=codex:codex-home pick=claude opus why=supervisor pool short" \
+    "a short supervisor pool fails its supervisor over before the pool runs out"
+  pass "a short supervisor pool moves its live workers off and fails its supervisor over"
 }
 
 test_exhausted_supervisor_fails_over_to_another_account() {
@@ -568,7 +569,7 @@ test_window_defaults_to_the_morning() {
   new_case window
   snapshot "$CASE/claude.json" 6 "$(claude_row ordinary "$CASE/user-home/.claude" "$(scope projected_exhaustion 30000)")"
   out=$(run_tool check --primary-harness claude)
-  assert_contains "$out" "quota-guard: unknown trigger=manual window=35200s pools=1 ok=0 unknown=0 short=1" \
+  assert_contains "$out" "quota-guard: act trigger=manual window=35200s pools=1 ok=0 unknown=0 short=1" \
     "the window runs to 08:00 local time, so a 30000s runway is short"
   printf 'quota-guard-window-secs=1800\n' > "$HOME_DIR/config/watchdog"
   out=$(run_tool check --primary-harness claude)
@@ -590,7 +591,7 @@ test_no_quota_axi_is_unknown() {
 
 fm_test_run \
   test_stale_quota_is_unknown_not_headroom \
-  test_short_supervisor_pool_steers_its_workers_off \
+  test_short_supervisor_pool_steers_its_workers_and_fails_over \
   test_exhausted_supervisor_fails_over_to_another_account \
   test_exhausted_supervisor_with_no_way_out_names_none \
   test_stale_candidate_is_not_a_failover_pick \
