@@ -3,6 +3,7 @@
 #
 # Usage:
 #   fm-load-relief.sh check [--dry-run]
+#   fm-load-relief.sh levels
 #   fm-load-relief.sh --help
 #
 # One check pass reads the host 1-minute load once. When the load stays at or
@@ -87,10 +88,47 @@
 # to the steer as FM_SEND_EXPECTED_SPAWN_GEN, so a worker relaunched
 # since selection is never interrupted or steered for its predecessor.
 #
+# Every eligibility check is repeated at the action boundary: just before
+# each interrupt the worker is re-read as a fresh candidate (finished
+# status, ready PR, open decision, captain hold, backlog item, spawn_gen),
+# and just before each resume steer its record is re-read the same way, so
+# a decision or hold raised while an earlier action ran is never acted
+# over. A backlog answer of NOT_FOUND (code: NOT_FOUND) is a definite
+# answer, not a failed read: such a worker is never paused, and a paused
+# worker whose item is gone has no hold, so its pause is lifted.
+#
+# A refused interrupt whose worker was relaunched meanwhile (its spawn_gen
+# changed) proves this pass paused nothing: the record is dropped and no
+# paused: line is written. A successful interrupt rechecks spawn_gen before
+# its paused: line is appended. Every non-dry pass first drops records whose
+# task has no meta, a different spawn_gen, or a done/failed latest status,
+# whatever the load; a record dropped because its worker was relaunched
+# while a load-relief pause is still its declared wait also appends a
+# resolved [key=load-relief] line, so no false pause outlives the record.
+#
+# Single flight: a non-dry check holds the per-home lock
+# state/load-relief/.check.lock for its whole pass (bin/fm-wake-lib.sh
+# fm_lock_try_acquire, which reclaims a dead holder's lock). A second check
+# that finds the lock held exits 0 without acting, so overlapping passes -
+# including one left running by a replaced watcher - never interleave a
+# resume with an interrupt. Each non-dry check that took the lock records
+# its outcome in state/load-relief/last-check (key=value: at, exit, then one
+# stderr= line per diagnostic line) and still prints its diagnostics, so a
+# refusal stays readable when the watcher discards the output.
+#
+# levels prints the load levels this home's relief uses, for the spawn gate
+# in bin/fm-capacity.sh, without probing load or acting:
+#   ceiling=<number>       empty when no ceiling and no core count exist
+#   resume_below=<number>
+#   basis=<load-relief ceiling|max-load1|logical cores>
+#   paused=<count of pause records>
+# It exits 1 when config/load-relief or config/lane-capacity is malformed or
+# unreadable, and 0 otherwise.
+#
 # State under state/load-relief/: high-since (epoch the current over-ceiling
-# stretch began) and paused/<id> (key=value: id, paused_epoch, priority,
-# load, ceiling, spawn_gen, state paused|uncertain). A check that finds load
-# under the ceiling clears high-since.
+# stretch began), paused/<id> (key=value: id, paused_epoch, priority,
+# load, ceiling, spawn_gen, state paused|uncertain), .check.lock, and
+# last-check. A check that finds load under the ceiling clears high-since.
 #
 # Test seams, honoured only with FM_TEST_SEAM=1: FM_LOAD_RELIEF_LOAD_FILE
 # names a file whose first word stands in for load1, FM_LOAD_RELIEF_NOW
@@ -102,8 +140,8 @@
 # Environment: FM_HOME, FM_STATE_OVERRIDE, FM_CONFIG_OVERRIDE, and
 # FM_DATA_OVERRIDE resolve the home exactly as the other bin/ scripts do.
 #
-# Exit status: 0 on a completed pass (including a no-op), 1 on a refusal,
-# 2 on a usage error.
+# Exit status: 0 on a completed pass (including a no-op or a pass skipped
+# because another holds the lock), 1 on a refusal, 2 on a usage error.
 set -u
 export LC_ALL=C
 
@@ -122,13 +160,18 @@ RELIEF_DIR="$STATE/load-relief"
 PAUSED_DIR="$RELIEF_DIR/paused"
 
 dry_run=0
+mode=check
 case "${1:-}" in
   -h|--help) sed -n '2,/^set -u/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
   check)
     [ "${2:-}" = --dry-run ] && dry_run=1
     [ $# -le 2 ] || { echo "usage: fm-load-relief.sh check [--dry-run]" >&2; exit 2; }
     ;;
-  *) echo "usage: fm-load-relief.sh check [--dry-run] | --help" >&2; exit 2 ;;
+  levels)
+    mode=levels
+    [ $# -eq 1 ] || { echo "usage: fm-load-relief.sh levels" >&2; exit 2; }
+    ;;
+  *) echo "usage: fm-load-relief.sh check [--dry-run] | levels | --help" >&2; exit 2 ;;
 esac
 
 is_uint() { case "$1" in ''|*[!0-9]*) return 1 ;; esac; }
@@ -145,17 +188,40 @@ if [ "${FM_TEST_SEAM:-}" = 1 ] && is_uint "${FM_LOAD_RELIEF_NOW:-}"; then
   now=$FM_LOAD_RELIEF_NOW
 fi
 
-# --- load probe and cores (independent of any config) -------------------------
-load1=
-if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_LOAD_RELIEF_LOAD_FILE:-}" ]; then
-  load1=$(awk 'NR==1{print $1}' "$FM_LOAD_RELIEF_LOAD_FILE" 2>/dev/null) || load1=
-elif [ "$(uname -s 2>/dev/null)" = Darwin ]; then
-  load1=$(sysctl -n vm.loadavg 2>/dev/null | tr -d '{}' | awk '{print $1}') || load1=
-else
-  load1=$(awk '{print $1}' /proc/loadavg 2>/dev/null) || load1=
+# --- single flight and outcome record (non-dry check only) -----------------------
+candidates=
+errlog=
+lock_held=0
+CHECK_LOCK="$RELIEF_DIR/.check.lock"
+relief_cleanup() {
+  local rc=$?
+  [ -z "$candidates" ] || rm -f "$candidates"
+  if [ -n "$errlog" ]; then
+    exec 2>&3 3>&-
+    cat "$errlog" >&2 2>/dev/null || true
+    if ! { { printf 'at=%s\nexit=%s\n' "$now" "$rc"; sed 's/^/stderr=/' "$errlog"; } > "$RELIEF_DIR/last-check.tmp.$$" \
+      && mv "$RELIEF_DIR/last-check.tmp.$$" "$RELIEF_DIR/last-check"; } 2>/dev/null; then
+      rm -f "$RELIEF_DIR/last-check.tmp.$$"
+    fi
+    rm -f "$errlog"
+  fi
+  [ "$lock_held" -eq 0 ] || fm_lock_release "$CHECK_LOCK" || true
+}
+trap relief_cleanup EXIT
+if [ "$mode" = check ] && [ "$dry_run" -eq 0 ]; then
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$SCRIPT_DIR/fm-wake-lib.sh"
+  mkdir -p "$RELIEF_DIR" || die "cannot create $RELIEF_DIR"
+  if ! fm_lock_try_acquire "$CHECK_LOCK"; then
+    echo "fm-load-relief: another check pass holds $CHECK_LOCK (pid ${FM_LOCK_HELD_PID:-unknown}); this pass made no change" >&2
+    exit 0
+  fi
+  lock_held=1
+  errlog=$(mktemp "${TMPDIR:-/tmp}/fm-load-relief-err.XXXXXX") || die "cannot create a temporary file"
+  exec 3>&2 2>>"$errlog"
 fi
-case "$load1" in [0-9]*) ;; *) echo "fm-load-relief: load probe unavailable; no action" >&2; exit 0 ;; esac
 
+# --- core count (independent of any config) -------------------------------------
 cores=
 if [ "${FM_TEST_SEAM:-}" = 1 ] && is_uint "${FM_LOAD_RELIEF_CORES:-}"; then
   cores=$FM_LOAD_RELIEF_CORES
@@ -191,6 +257,12 @@ latest_verb() {
 # never mistaken for a task with no backlog item or no hold.
 tasks_show() {
   FM_HOME="$FM_HOME" "$tasks_cmd" show "$1" 2>/dev/null
+}
+
+# show_not_found <show-output>: the backlog answered that it has no such
+# item (code: NOT_FOUND), a definite answer rather than a failed read.
+show_not_found() {
+  printf '%s\n' "$1" | grep -qx 'code: NOT_FOUND'
 }
 
 # worker_waiting <id> <show-output>: the worker has an open decision or a
@@ -231,12 +303,81 @@ write_high_since() {
   printf '%s\n' "$1" > "$RELIEF_DIR/high-since.tmp.$$" && mv "$RELIEF_DIR/high-since.tmp.$$" "$RELIEF_DIR/high-since"
 }
 
+# record_stale <id>: 0 when the pause record no longer describes a live
+# paused worker - no meta, a different spawn_gen, or a done/failed latest
+# status. Prints "relaunched" when the spawn_gen differs.
+record_stale() {
+  local id=$1 rgen mgen
+  [ -f "$STATE/$id.meta" ] || return 0
+  rgen=$(meta_get "$PAUSED_DIR/$id" spawn_gen)
+  mgen=$(meta_get "$STATE/$id.meta" spawn_gen)
+  if [ -n "$rgen" ] && [ "$rgen" != "$mgen" ]; then echo relaunched; return 0; fi
+  case "$(latest_verb "$id")" in done|failed) return 0 ;; esac
+  return 1
+}
+
+# drop_record <id> <why>: remove a stale pause record. When the worker was
+# relaunched and a load-relief pause is still its declared wait, append the
+# matching resolved line so no false pause outlives the record.
+drop_record() {
+  local id=$1 why=$2 wait_line key
+  rm -f "$PAUSED_DIR/$id"
+  if [ "$why" = relaunched ]; then
+    wait_line=$(status_declared_wait_line "$STATE/$id.status")
+    if [ -n "$wait_line" ] && status_is_paused "$wait_line"; then
+      key=$(_fm_decision_key "$wait_line" '') || key=
+      if [ "$key" = load-relief ]; then
+        printf 'resolved [key=load-relief] [at=%s]: load relief record dropped; the worker was relaunched, so this pause does not apply to it\n' "$now" >> "$STATE/$id.status" 2>/dev/null || true
+      fi
+    fi
+  fi
+  echo "load-relief: dropped pause record for finished, removed, or replaced $id"
+}
+
+# sweep_records: drop every stale pause record, whatever the load (non-dry).
+sweep_records() {
+  local record id why
+  [ "$dry_run" -eq 0 ] || return 0
+  [ -d "$PAUSED_DIR" ] || return 0
+  for record in "$PAUSED_DIR"/*; do
+    [ -f "$record" ] || continue
+    id=$(basename "$record")
+    case "$id" in *[!A-Za-z0-9._-]*|*.tmp.*|*.bak) continue ;; esac
+    why=$(record_stale "$id") || continue
+    drop_record "$id" "$why"
+  done
+}
+
+# resume_state <id>: classify one pause record now. Returns 0 when the worker
+# may be steered, 1 when its record is kept without a steer (an open decision
+# or hold, or a failed backlog read), and 2 when the record is stale (see
+# record_stale) and is dropped without a steer. A backlog answer of
+# NOT_FOUND is no hold: the item was removed or handed off, and the pause
+# this relief made is still its own to lift. Called while collecting
+# records and again just before each steer.
+resume_state() {
+  local id=$1 show show_rc
+  [ -f "$PAUSED_DIR/$id" ] || return 2
+  record_stale "$id" >/dev/null && return 2
+  show=$(tasks_show "$id") && show_rc=0 || show_rc=$?
+  if [ "$show_rc" -ne 0 ]; then
+    if show_not_found "$show"; then
+      show=
+    else
+      echo "fm-load-relief: backlog read for $id failed; its pause record is kept until a read succeeds" >&2
+      return 1
+    fi
+  fi
+  worker_waiting "$id" "$show" && return 1
+  return 0
+}
+
 # resume_pass <resume-level>: lift at most one pause while load is under the
 # level. Records for removed, finished, or incarnation-mismatched tasks are
 # dropped without a steer; a worker with an open decision keeps its record
-# and is not steered.
+# and is not steered. Each record is rechecked just before its steer.
 resume_pass() {
-  local level=$1 record id show show_rc rgen mgen rprio repoch resumable stale
+  local level=$1 record id rgen rprio repoch resumable rstate
   num_lt "$load1" "$level" || return 0
   [ "$dry_run" -eq 0 ] && rm -f "$RELIEF_DIR/high-since"
   [ -d "$PAUSED_DIR" ] || return 0
@@ -244,27 +385,9 @@ resume_pass() {
   for record in "$PAUSED_DIR"/*; do
     [ -f "$record" ] || continue
     id=$(basename "$record")
-    case "$id" in *[!A-Za-z0-9._-]*) continue ;; esac
-    show=$(tasks_show "$id") && show_rc=0 || show_rc=$?
-    rgen=$(meta_get "$record" spawn_gen)
-    mgen=
-    [ -f "$STATE/$id.meta" ] && mgen=$(meta_get "$STATE/$id.meta" spawn_gen)
-    stale=0
-    [ -f "$STATE/$id.meta" ] || stale=1
-    if [ -n "$rgen" ] && [ "$rgen" != "$mgen" ]; then stale=1; fi
-    case "$(latest_verb "$id")" in done|failed) stale=1 ;; esac
-    if [ "$stale" -eq 1 ]; then
-      if [ "$dry_run" -eq 0 ]; then
-        rm -f "$record"
-        echo "load-relief: dropped pause record for finished, removed, or replaced $id"
-      fi
-      continue
-    fi
-    if [ "$show_rc" -ne 0 ]; then
-      echo "fm-load-relief: backlog read for $id failed; its pause record is kept until a read succeeds" >&2
-      continue
-    fi
-    worker_waiting "$id" "$show" && continue
+    case "$id" in *[!A-Za-z0-9._-]*|*.tmp.*|*.bak) continue ;; esac
+    resume_state "$id" && rstate=0 || rstate=$?
+    [ "$rstate" -eq 0 ] || continue
     rprio=$(meta_get "$record" priority)
     repoch=$(meta_get "$record" paused_epoch)
     is_uint "$repoch" || repoch=0
@@ -282,6 +405,9 @@ resume_pass() {
       echo "load-relief: would resume $id load=$load1 resume-below=$level"
       break
     fi
+    # Action boundary: re-read the record exactly as selection did.
+    resume_state "$id" && rstate=0 || rstate=$?
+    [ "$rstate" -eq 0 ] || continue
     rgen=$(meta_get "$PAUSED_DIR/$id" spawn_gen)
     if FM_SEND_EXPECTED_SPAWN_GEN="$rgen" FM_HOME="$FM_HOME" "$send_cmd" "$id" "Host load has fallen to $load1 (resume level $level). Your load-relief pause is lifted; resume your task from where you left off." >/dev/null 2>&1; then
       rm -f "$PAUSED_DIR/$id"
@@ -299,10 +425,12 @@ EOF
 lane_present=0
 [ -e "$LANE_CONFIG" ] && lane_present=1
 ceiling=
+basis=
 resume_below=
 sustain_secs=300
 pause_per_check=1
 config_error=
+ceiling_missing=0
 if [ "$lane_present" -eq 1 ]; then
   if [ ! -r "$LANE_CONFIG" ]; then
     config_error="config/lane-capacity is unreadable; refusing to guess the load ceiling"
@@ -312,7 +440,7 @@ if [ "$lane_present" -eq 1 ]; then
       line=$(printf '%s' "$line" | tr '\t\r' '  ' | sed 's/^ *//; s/ *$//')
       [ "${line%% *}" = max-load1 ] || continue
       value=$(printf '%s' "${line#* }" | sed 's/^ *//')
-      [ -z "$ceiling" ] && ceiling=$value
+      [ -z "$ceiling" ] && ceiling=$value && basis=max-load1
     done < "$LANE_CONFIG"
   fi
 fi
@@ -329,7 +457,7 @@ if [ -e "$RELIEF_CONFIG" ]; then
       key=${line%%=*} value=${line#*=}
       if [ "$key" = "$line" ]; then config_error="config/load-relief line $lineno: expected key=value"; break; fi
       case "$key" in
-        ceiling) is_positive_number "$value" || { config_error="config/load-relief line $lineno: ceiling needs a positive number"; break; }; ceiling=$value ;;
+        ceiling) is_positive_number "$value" || { config_error="config/load-relief line $lineno: ceiling needs a positive number"; break; }; ceiling=$value; basis="load-relief ceiling" ;;
         resume-below) is_positive_number "$value" || { config_error="config/load-relief line $lineno: resume-below needs a positive number"; break; }; resume_below=$value ;;
         sustain-secs) is_uint "$value" || { config_error="config/load-relief line $lineno: sustain-secs needs a non-negative integer"; break; }; sustain_secs=$((10#$value)) ;;
         pause-per-check) is_uint "$value" && [ "$value" -ge 1 ] || { config_error="config/load-relief line $lineno: pause-per-check needs a positive integer"; break; }; pause_per_check=$((10#$value)) ;;
@@ -338,24 +466,60 @@ if [ -e "$RELIEF_CONFIG" ]; then
     done < "$RELIEF_CONFIG"
   fi
 fi
-[ -n "$ceiling" ] || ceiling=${cores:-}
-if [ -z "$ceiling" ] || ! is_positive_number "$ceiling"; then
-  [ -n "$config_error" ] || config_error="no load ceiling: set max-load1 in config/lane-capacity or ceiling in config/load-relief"
-  ceiling=${cores:-}
+if [ -n "$ceiling" ] && ! is_positive_number "$ceiling"; then
+  [ -n "$config_error" ] || config_error="config/lane-capacity: max-load1 '$ceiling' needs a positive number"
+  ceiling=
+fi
+if [ -z "$ceiling" ] && [ -n "$cores" ]; then
+  ceiling=$cores
+  basis="logical cores"
+fi
+if [ -z "$ceiling" ]; then
+  [ -n "$config_error" ] || { config_error="no load ceiling: set max-load1 in config/lane-capacity or ceiling in config/load-relief"; ceiling_missing=1; }
+  basis=
 fi
 if [ -n "$resume_below" ]; then
   if [ -n "$ceiling" ] && ! num_lt "$resume_below" "$ceiling"; then
     [ -n "$config_error" ] || config_error="config/load-relief: resume-below $resume_below must be under the load ceiling $ceiling"
     resume_below=$(awk -v c="$ceiling" 'BEGIN { print c * 0.75 }')
   fi
-else
-  resume_below=$(awk -v c="${ceiling:-0}" 'BEGIN { print c * 0.75 }')
+elif [ -n "$ceiling" ]; then
+  resume_below=$(awk -v c="$ceiling" 'BEGIN { print c * 0.75 }')
 fi
+
+if [ "$mode" = levels ]; then
+  npaused=0
+  if [ -d "$PAUSED_DIR" ]; then
+    for record in "$PAUSED_DIR"/*; do
+      [ -f "$record" ] || continue
+      case "$(basename "$record")" in *[!A-Za-z0-9._-]*|*.tmp.*|*.bak) continue ;; esac
+      npaused=$((npaused + 1))
+    done
+  fi
+  printf 'ceiling=%s\nresume_below=%s\nbasis=%s\npaused=%s\n' "$ceiling" "$resume_below" "$basis" "$npaused"
+  if [ -n "$config_error" ] && [ "$ceiling_missing" -eq 0 ]; then
+    echo "fm-load-relief: $config_error" >&2
+    exit 1
+  fi
+  exit 0
+fi
+
+# --- load probe ------------------------------------------------------------------
+load1=
+if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_LOAD_RELIEF_LOAD_FILE:-}" ]; then
+  load1=$(awk 'NR==1{print $1}' "$FM_LOAD_RELIEF_LOAD_FILE" 2>/dev/null) || load1=
+elif [ "$(uname -s 2>/dev/null)" = Darwin ]; then
+  load1=$(sysctl -n vm.loadavg 2>/dev/null | tr -d '{}' | awk '{print $1}') || load1=
+else
+  load1=$(awk '{print $1}' /proc/loadavg 2>/dev/null) || load1=
+fi
+case "$load1" in [0-9]*) ;; *) echo "fm-load-relief: load probe unavailable; no action" >&2; exit 0 ;; esac
 
 # The resume pass runs before any refusal, on the best-effort level.
 [ -z "$config_error" ] || echo "fm-load-relief: $config_error" >&2
-resume_pass "$resume_below"
-if num_lt "$load1" "$resume_below"; then exit 0; fi
+sweep_records
+[ -z "$resume_below" ] || resume_pass "$resume_below"
+if [ -n "$resume_below" ] && num_lt "$load1" "$resume_below"; then exit 0; fi
 if [ "$lane_present" -eq 0 ]; then exit 0; fi
 [ -z "$config_error" ] || exit 1
 is_positive_number "$ceiling" || die "load ceiling '$ceiling' is not a positive number"
@@ -388,24 +552,34 @@ fi
 # Candidates, worst priority first: items without a numeric priority, then
 # larger backlog priority number, then newest dispatch. Only workers whose
 # recorded backend can deliver the interrupt are candidates at all.
+# pause_candidate <id>: 0 when the worker may be paused now, leaving its
+# backlog read in PC_SHOW. Called while building candidates and again just
+# before each interrupt, so a change since selection is honoured.
+PC_SHOW=
+pause_candidate() {
+  local id=$1 meta=$STATE/$1.meta
+  PC_SHOW=
+  [ -f "$meta" ] || return 1
+  case "$(meta_get "$meta" kind)" in ship|scout|'') ;; *) return 1 ;; esac
+  [ -f "$PAUSED_DIR/$id" ] && return 1
+  case "$(latest_verb "$id")" in done|failed) return 1 ;; esac
+  grep -q '^pr=..*' "$meta" 2>/dev/null && return 1
+  interrupt_eligible "$meta" || return 1
+  PC_SHOW=$(tasks_show "$id") || return 1
+  [ -n "$PC_SHOW" ] || return 1
+  show_not_found "$PC_SHOW" && return 1
+  worker_waiting "$id" "$PC_SHOW" && return 1
+  printf '%s\n' "$PC_SHOW" | grep -q '^  priority: ' || return 1
+  return 0
+}
+
 candidates=$(mktemp "${TMPDIR:-/tmp}/fm-load-relief.XXXXXX") || die "cannot create a temporary file"
-trap 'rm -f "$candidates"' EXIT
 for meta in "$STATE"/*.meta; do
   [ -f "$meta" ] || continue
   id=$(basename "$meta" .meta)
   case "$id" in *[!A-Za-z0-9._-]*) continue ;; esac
-  kind=$(meta_get "$meta" kind)
-  case "$kind" in ship|scout|'') ;; *) continue ;; esac
-  [ -f "$PAUSED_DIR/$id" ] && continue
-  case "$(latest_verb "$id")" in
-    done|failed) continue ;;
-  esac
-  grep -q '^pr=..*' "$meta" 2>/dev/null && continue
-  interrupt_eligible "$meta" || continue
-  show=$(tasks_show "$id") || continue
-  [ -n "$show" ] || continue
-  worker_waiting "$id" "$show" && continue
-  prio=$(printf '%s\n' "$show" | sed -n 's/^  priority: //p' | head -1)
+  pause_candidate "$id" || continue
+  prio=$(printf '%s\n' "$PC_SHOW" | sed -n 's/^  priority: //p' | head -1)
   [ -n "$prio" ] || continue
   if is_uint "$prio"; then rank=1; prio=$((10#$prio)); else rank=0; prio=0; fi
   gen=$(meta_get "$meta" spawn_gen)
@@ -425,8 +599,12 @@ while IFS="$(printf '\t')" read -r _rank _prio _epoch id gen; do
     paused=$((paused + 1))
     continue
   fi
-  current_gen=
-  [ -f "$STATE/$id.meta" ] && current_gen=$(meta_get "$STATE/$id.meta" spawn_gen)
+  # Action boundary: re-read the worker exactly as selection did.
+  if ! pause_candidate "$id"; then
+    echo "load-relief: $id is no longer eligible (finished, ready PR, decision, hold, or backlog change since selection); it was not interrupted"
+    continue
+  fi
+  current_gen=$(meta_get "$STATE/$id.meta" spawn_gen)
   if [ "$current_gen" != "$gen" ]; then
     echo "load-relief: $id was relaunched since selection (spawn_gen changed); it was not interrupted"
     continue
@@ -439,6 +617,15 @@ while IFS="$(printf '\t')" read -r _rank _prio _epoch id gen; do
     continue
   fi
   control_out=$(FM_CONTROL_EXPECTED_SPAWN_GEN="$gen" FM_HOME="$FM_HOME" "$control_cmd" "$id" interrupt 2>&1) && control_rc=0 || control_rc=$?
+  current_gen=
+  [ -f "$STATE/$id.meta" ] && current_gen=$(meta_get "$STATE/$id.meta" spawn_gen)
+  if [ "$current_gen" != "$gen" ]; then
+    # The worker was relaunched during the interrupt: a refusal proves no
+    # pause landed, and a delivered interrupt reached only the predecessor.
+    rm -f "$PAUSED_DIR/$id"
+    echo "load-relief: $id was relaunched during the interrupt (control exit $control_rc); no pause is recorded for its replacement"
+    continue
+  fi
   if [ "$control_rc" -eq 0 ]; then
     printf 'paused [key=load-relief] [at=%s]: load relief: load %s at or over ceiling %s for %ss; interrupted in place, work preserved, resumes when load falls\n' \
       "$now" "$load1" "$ceiling" "$elapsed" >> "$STATE/$id.status" 2>/dev/null || true

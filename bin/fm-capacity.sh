@@ -118,13 +118,16 @@
 # --spawn-gate [<task-id>] is narrower and is the only verdict that blocks a
 # fresh spawn: the named spawning task's own record never counts against it.
 # It exits 0 when config/lane-capacity is absent, when the lanes holding a
-# place are under the cap, and when load1 is under one load ceiling -
-# max-load1 when set, else the logical core count (the ceiling
-# bin/fm-load-relief.sh uses). An unreadable load or core probe imposes no
-# load hold. Otherwise it exits 75 with one `deferred:` line naming the cause.
-# The memory, disk, pressure, reserve, battery, and core-count cpu holds stay
-# advisory in the report, the document, and --admit; bin/fm-disk-alarm.sh
-# owns the spawn disk gate.
+# place are under the cap, and when load1 is under the load level that
+# bin/fm-load-relief.sh levels reports: its ceiling (config/load-relief
+# ceiling, else max-load1, else the logical core count) while no worker is
+# paused for load, and its resume level while any is, so a new spawn never
+# takes the room a paused worker is waiting for. An unreadable load or core
+# probe imposes no load hold; a malformed config/load-relief makes the gate
+# exit 1. Otherwise it exits 75 with one `deferred:` line naming the cause.
+# The memory, disk, pressure, reserve, battery, and report-only cpu holds
+# stay advisory in the report, the document, and --admit;
+# bin/fm-disk-alarm.sh owns the spawn disk gate.
 #
 # Environment: FM_HOME, FM_STATE_OVERRIDE, FM_CONFIG_OVERRIDE, and
 # FM_PROJECTS_OVERRIDE resolve the home exactly as the other bin/ scripts do.
@@ -277,6 +280,7 @@ parse_lane_config() {
     case "$key" in
       min-avail-gb|min-disk-gb|max-load1)
         is_num "$value" || { config_error "$lineno" "$key needs a non-negative number"; return 1; }
+        if [ "$key" = max-load1 ] && ! num_lt 0 "$value"; then config_error "$lineno" "max-load1 needs a positive number"; return 1; fi
         case "$key" in
           min-avail-gb) min_avail_gb=$value ;;
           min-disk-gb) min_disk_gb=$value ;;
@@ -337,13 +341,19 @@ if [ "$mode" = spawn-gate ]; then
   gate_reasons=
   holding=$((lanes - pr_ready))
   [ "$holding" -lt "$target" ] || gate_reasons="full: $holding of $target lanes hold a place"
-  if [ -n "$max_load1" ]; then
-    gate_ceiling=$max_load1 gate_basis=max-load1
-  else
-    gate_ceiling=$cores gate_basis="logical cores"
-  fi
-  if [ "$load1" != unknown ] && [ "$gate_ceiling" != unknown ] && ! num_lt "$load1" "$gate_ceiling"; then
-    gate_reasons="${gate_reasons:+$gate_reasons; }load: $load1 at or over its ceiling $gate_ceiling ($gate_basis)"
+  levels=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-load-relief.sh" levels) || { echo "fm-capacity: the load-relief levels are unreadable; refusing to guess the load ceiling" >&2; exit 1; }
+  gate_ceiling=$(printf '%s\n' "$levels" | sed -n 's/^ceiling=//p')
+  gate_resume=$(printf '%s\n' "$levels" | sed -n 's/^resume_below=//p')
+  gate_basis=$(printf '%s\n' "$levels" | sed -n 's/^basis=//p')
+  gate_paused=$(printf '%s\n' "$levels" | sed -n 's/^paused=//p')
+  is_uint "$gate_paused" || gate_paused=0
+  if [ "$load1" != unknown ]; then
+    if [ "$gate_paused" -gt 0 ] && [ -n "$gate_resume" ]; then
+      num_lt "$load1" "$gate_resume" \
+        || gate_reasons="${gate_reasons:+$gate_reasons; }load: $load1 at or over the load-relief resume level $gate_resume while $gate_paused worker(s) stay paused for load"
+    elif [ -n "$gate_ceiling" ] && ! num_lt "$load1" "$gate_ceiling"; then
+      gate_reasons="${gate_reasons:+$gate_reasons; }load: $load1 at or over its ceiling $gate_ceiling ($gate_basis)"
+    fi
   fi
   [ -n "$gate_reasons" ] || exit 0
   echo "deferred: lane capacity of this home ($LANE_CONFIG) does not admit another lane: $gate_reasons" >&2

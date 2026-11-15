@@ -13,7 +13,8 @@ RELIEF="$ROOT/bin/fm-load-relief.sh"
 
 # The tasks seam prints the `show` shape tasks-axi itself prints (a
 # two-space-indented priority: field, "-" when unset) from <home>/prios,
-# one "<id> <priority>" per line; an id absent there is not in the backlog.
+# one "<id> <priority>" per line; an id absent there is not in the backlog
+# and gets tasks-axi's own NOT_FOUND answer on stdout with exit 1.
 make_home() {  # <name>
   local home="$TMP_ROOT/$1"
   mkdir -p "$home/state" "$home/config" "$home/data"
@@ -31,7 +32,7 @@ SH
 #!/usr/bin/env bash
 [ "$1" = show ] || exit 2
 prio=$(awk -v id="$2" '$1 == id { print $2; found = 1 } END { exit !found }' "$FM_HOME/prios") || {
-  printf 'error: "Task \\"%s\\" not found in this backlog"\n' "$2"; exit 1; }
+  printf 'error: "Task \\"%s\\" not found in this backlog"\ncode: NOT_FOUND\nhelp[1]: Run `tasks-axi list` to see existing tasks\n' "$2"; exit 1; }
 printf 'task:\n  id: %s\n  title: t\n  state: in_flight\n  kind: task\n  priority: %s\n  body: ""\n' "$2" "$prio"
 SH
   chmod +x "$TMP_ROOT/$1-control" "$TMP_ROOT/$1-send" "$TMP_ROOT/$1-tasks"
@@ -468,8 +469,190 @@ test_unrelated_resolution_does_not_hide_a_standing_external_pause() {
   pass "an unrelated resolution hides neither a standing external pause from the pause pass nor from the resume pass"
 }
 
+run_levels() {  # <home>
+  FM_HOME="$1" FM_TEST_SEAM=1 FM_LOAD_RELIEF_CORES=16 "$RELIEF" levels 2>&1
+}
+
+test_not_found_backlog_item_lifts_its_pause() {
+  local home log
+  home=$(make_home notfound)
+  log="$TMP_ROOT/notfound.log"
+  add_worker "$home" gone 100 absent
+  pause_record "$home" gone 900 4
+  sustained_pass "$home" notfound 1000 >/dev/null
+  assert_not_contains "$(cat "$log")" "control gone" "a worker whose backlog item is not found was paused"
+  run_relief "$home" notfound 5 2000 >/dev/null
+  assert_contains "$(cat "$log")" "send gone" "a paused worker whose backlog item is gone stayed paused"
+  assert_absent "$home/state/load-relief/paused/gone" "the pause record of a worker whose item is gone was kept"
+  pass "a NOT_FOUND backlog answer is no hold: such a worker is never paused, and its existing pause is lifted"
+}
+
+test_overlapping_check_does_not_act() {
+  local home log out rc i first_pid
+  home=$(make_home overlap)
+  log="$TMP_ROOT/overlap.log"
+  add_worker "$home" w 100 4
+  cat > "$TMP_ROOT/overlap-control" <<SH
+#!/usr/bin/env bash
+printf 'control %s\n' "\$*" >> "\$FM_RELIEF_LOG"
+i=0
+while [ ! -f "$TMP_ROOT/overlap.release" ] && [ "\$i" -lt 600 ]; do sleep 0.1; i=\$((i + 1)); done
+SH
+  run_relief "$home" overlap 200 1000 >/dev/null
+  run_relief "$home" overlap 200 1061 > "$TMP_ROOT/overlap.first" &
+  first_pid=$!
+  i=0
+  while ! grep -q 'control w interrupt' "$log" 2>/dev/null && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
+  assert_contains "$(cat "$log")" "control w interrupt" "setup: the first check never reached its interrupt"
+  rc=0; out=$(run_relief "$home" overlap 5 1062) || rc=$?
+  expect_code 0 "$rc" "an overlapping check did not exit 0: $out"
+  assert_contains "$out" "another check pass holds" "an overlapping check did not report the lock"
+  assert_not_contains "$(cat "$log")" "send w" "an overlapping check resumed a worker another pass was pausing"
+  : > "$TMP_ROOT/overlap.release"
+  wait "$first_pid"
+  assert_present "$home/state/load-relief/paused/w" "the first pass lost its pause record to the overlapping check"
+  rc=0; out=$(run_relief "$home" overlap 5 1100) || rc=$?
+  assert_contains "$(cat "$log")" "send w" "the lock was not released after the first pass"
+  pass "a check that finds another pass holding the per-home lock exits 0 without acting"
+}
+
+test_relaunch_during_interrupt_writes_no_pause() {
+  local home log out verdict
+  for verdict in 1 0; do
+    home=$(make_home "midrelaunch$verdict")
+    log="$TMP_ROOT/midrelaunch$verdict.log"
+    add_worker "$home" w 100 4
+    cat > "$TMP_ROOT/midrelaunch$verdict-control" <<SH
+#!/usr/bin/env bash
+printf 'control %s\n' "\$*" >> "\$FM_RELIEF_LOG"
+sed -i.bak 's/^spawn_gen=.*/spawn_gen=s999.1/' "\$FM_HOME/state/w.meta"
+rm -f "\$FM_HOME/state/w.meta.bak"
+exit $verdict
+SH
+    out=$(sustained_pass "$home" "midrelaunch$verdict" 1000)
+    assert_equals "control w interrupt" "$(cat "$log")" "setup: the interrupt was not attempted"
+    assert_absent "$home/state/load-relief/paused/w" "a pause record survived a relaunch during the interrupt (control exit $verdict)"
+    assert_not_contains "$(cat "$home/state/w.status" 2>/dev/null)" "paused [key=load-relief]" "a pause line landed on the replacement worker (control exit $verdict)"
+    assert_contains "$out" "w was relaunched during the interrupt" "the relaunch during the interrupt was not reported (control exit $verdict)"
+  done
+  pass "a worker relaunched during its interrupt gets no pause record and no paused line, refused or delivered"
+}
+
+test_eligibility_change_after_selection_blocks_the_interrupt() {
+  local home log change
+  for change in decision ready-pr finished; do
+    home=$(make_home "late$change")
+    log="$TMP_ROOT/late$change.log"
+    printf 'sustain-secs=60\npause-per-check=2\n' > "$home/config/load-relief"
+    add_worker "$home" first 300 9
+    add_worker "$home" second 200 8
+    case "$change" in
+      decision) printf 'needs-decision [key=q] [at=5]: which way\n' > "$home/late-line"; printf 'second.status\n' > "$home/late-file" ;;
+      ready-pr) printf 'pr=https://example.invalid/pr/2\n' > "$home/late-line"; printf 'second.meta\n' > "$home/late-file" ;;
+      finished) printf 'done [at=5]: finished\n' > "$home/late-line"; printf 'second.status\n' > "$home/late-file" ;;
+    esac
+    cat > "$home/late-act" <<'ACT'
+cat "$FM_HOME/late-line" >> "$FM_HOME/state/$(cat "$FM_HOME/late-file")"
+ACT
+    cat > "$TMP_ROOT/late$change-control" <<'SH'
+#!/usr/bin/env bash
+printf 'control %s\n' "$*" >> "$FM_RELIEF_LOG"
+if [ "$1" = first ]; then . "$FM_HOME/late-act"; fi
+exit 0
+SH
+    sustained_pass "$home" "late$change" 1000 >/dev/null
+    assert_equals "control first interrupt" "$(cat "$log")" "a worker that became ineligible ($change) after selection was interrupted"
+    assert_absent "$home/state/load-relief/paused/second" "a pause record was written for a worker that became ineligible ($change)"
+  done
+  pass "a decision, ready PR, or finished status that lands after selection blocks that worker's interrupt"
+}
+
+test_hold_raised_before_resume_steer_blocks_it() {
+  local home log
+  home=$(make_home latehold)
+  log="$TMP_ROOT/latehold.log"
+  add_worker "$home" w 100 4
+  pause_record "$home" w 900 4
+  # The first backlog read (selection) has no hold; every later one is held.
+  cat > "$TMP_ROOT/latehold-tasks" <<'SH'
+#!/usr/bin/env bash
+[ "$1" = show ] || exit 2
+n=$(cat "$FM_HOME/reads" 2>/dev/null || echo 0)
+echo $((n + 1)) > "$FM_HOME/reads"
+held=no
+[ "$n" -ge 1 ] && held=yes
+printf 'task:\n  id: %s\n  title: t\n  state: in_flight\n  kind: task\n  priority: 4\n  held: %s\n  body: ""\n' "$2" "$held"
+SH
+  run_relief "$home" latehold 5 2000 >/dev/null
+  assert_equals "" "$(cat "$log")" "a worker held after selection was still steered to resume"
+  assert_present "$home/state/load-relief/paused/w" "the held worker's pause record was dropped"
+  pass "a captain hold raised between resume selection and the steer keeps the worker paused"
+}
+
+test_relaunched_record_drop_clears_its_pause_line() {
+  local home
+  home=$(make_home dropclear)
+  add_worker "$home" w 100 4
+  mkdir -p "$home/state/load-relief/paused"
+  printf 'id=w\npaused_epoch=900\npriority=4\nspawn_gen=s50.1\nstate=paused\n' > "$home/state/load-relief/paused/w"
+  printf 'paused [key=load-relief] [at=900]: load relief: interrupted in place\n' > "$home/state/w.status"
+  run_relief "$home" dropclear 200 1000 >/dev/null
+  assert_absent "$home/state/load-relief/paused/w" "a mismatched record survived a high-load pass"
+  assert_contains "$(cat "$home/state/w.status")" "resolved [key=load-relief]" "the false load-relief pause on the replacement was not resolved"
+  assert_equals "" "$(cat "$TMP_ROOT/dropclear.log")" "dropping a mismatched record steered or interrupted a worker"
+  pass "a record dropped because its worker was relaunched is swept at any load and resolves its pause line"
+}
+
+test_last_check_records_the_outcome() {
+  local home out rc
+  home=$(make_home lastcheck)
+  printf 'bogus=1\n' > "$home/config/load-relief"
+  rc=0; out=$(run_relief "$home" lastcheck 18 1000) || rc=$?
+  expect_code 1 "$rc" "a malformed relief config did not refuse: $out"
+  assert_contains "$out" "unknown key 'bogus'" "the refusal no longer reaches the caller's stderr"
+  assert_contains "$(cat "$home/state/load-relief/last-check")" "exit=1" "last-check did not record the refusal's exit status"
+  assert_contains "$(cat "$home/state/load-relief/last-check")" "stderr=fm-load-relief: config/load-relief line 1: unknown key 'bogus'" "last-check did not record the refusal text"
+  printf 'sustain-secs=60\n' > "$home/config/load-relief"
+  run_relief "$home" lastcheck 5 1010 >/dev/null
+  assert_contains "$(cat "$home/state/load-relief/last-check")" "exit=0" "last-check did not record a clean pass"
+  assert_absent "$home/state/load-relief/.check.lock" "a finished pass left its lock behind"
+  pass "each non-dry check records its exit status and diagnostics in last-check and releases its lock"
+}
+
+test_levels_reports_the_relief_levels() {
+  local home out rc
+  home=$(make_home levels)
+  out=$(run_levels "$home")
+  assert_equals "$(printf 'ceiling=20\nresume_below=15\nbasis=max-load1\npaused=0')" "$out" "levels did not report the max-load1 ceiling"
+  printf 'ceiling=30\nresume-below=10\n' > "$home/config/load-relief"
+  pause_record "$home" w 900 4
+  out=$(run_levels "$home")
+  assert_equals "$(printf 'ceiling=30\nresume_below=10\nbasis=load-relief ceiling\npaused=1')" "$out" "levels did not report the load-relief ceiling and the paused count"
+  : > "$home/config/load-relief"
+  printf '4\n' > "$home/config/lane-capacity"
+  out=$(run_levels "$home")
+  assert_equals "$(printf 'ceiling=16\nresume_below=12\nbasis=logical cores\npaused=1')" "$out" "levels did not fall back to the core count"
+  printf 'bogus=1\n' > "$home/config/load-relief"
+  rc=0; out=$(run_levels "$home") || rc=$?
+  expect_code 1 "$rc" "levels accepted a malformed relief config: $out"
+  : > "$home/config/load-relief"
+  printf '4\nmax-load1 0\n' > "$home/config/lane-capacity"
+  rc=0; out=$(run_levels "$home") || rc=$?
+  expect_code 1 "$rc" "levels accepted max-load1 0: $out"
+  assert_contains "$out" "max-load1 '0' needs a positive number" "levels did not name the zero max-load1"
+  pass "levels reports the ceiling, resume level, basis, and paused count, and refuses a malformed config"
+}
+
 test_spawn_gen_binding_is_passed_to_interrupt_and_resume
 test_candidate_relaunched_after_selection_is_not_interrupted
+test_not_found_backlog_item_lifts_its_pause
+test_overlapping_check_does_not_act
+test_relaunch_during_interrupt_writes_no_pause
+test_eligibility_change_after_selection_blocks_the_interrupt
+test_hold_raised_before_resume_steer_blocks_it
+test_relaunched_record_drop_clears_its_pause_line
+test_last_check_records_the_outcome
+test_levels_reports_the_relief_levels
 test_backlog_read_failure_blocks_pause_and_preserves_existing_pause
 test_unrelated_resolution_does_not_hide_a_standing_external_pause
 test_sustained_high_pauses_lowest_then_falling_resumes

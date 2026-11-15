@@ -457,6 +457,35 @@ test_spawn_gate_uses_one_load_ceiling() {
   pass "the spawn gate holds only on the lane cap and one load ceiling, and never counts the spawner's own record"
 }
 
+test_spawn_gate_follows_load_relief_levels() {
+  local home fakebin out rc
+  home=$(make_home relieflevels 1 0)
+  printf '4\nmax-load1 20\n' > "$home/config/lane-capacity"
+  fakebin=$(make_probes "$TMP_ROOT/p-relieflevels" 18.00 60 16 20971520)
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 0 "$rc" "load 18 under max-load1 20 with no paused worker must admit: $out"
+  mkdir -p "$home/state/load-relief/paused"
+  printf 'id=w\npaused_epoch=1\n' > "$home/state/load-relief/paused/w"
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 75 "$rc" "load 18 over the resume level 15 while a worker is paused must defer"
+  assert_contains "$out" 'load: 18.00 at or over the load-relief resume level 15 while 1 worker(s) stay paused for load' "the deferral must name the resume level and the paused worker"
+  rm -r "$home/state/load-relief/paused"
+  printf 'ceiling=10\n' > "$home/config/load-relief"
+  fakebin=$(make_probes "$TMP_ROOT/p-relieflevels-12" 12.00 60 16 20971520)
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 75 "$rc" "load 12 over a load-relief ceiling of 10 must defer"
+  assert_contains "$out" 'load: 12.00 at or over its ceiling 10 (load-relief ceiling)' "the deferral must name the load-relief ceiling"
+  printf 'bogus=1\n' > "$home/config/load-relief"
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 1 "$rc" "a malformed config/load-relief must refuse the spawn gate: $out"
+  rm "$home/config/load-relief"
+  printf '4\nmax-load1 0\n' > "$home/config/lane-capacity"
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 1 "$rc" "max-load1 0 must be refused"
+  assert_contains "$out" 'line 2: max-load1 needs a positive number' "the refusal must name the zero max-load1"
+  pass "the spawn gate uses the load-relief ceiling, holds at the resume level while a worker is paused, and refuses a malformed or zero level"
+}
+
 test_publish_document() {
   local home fakebin rc doc mode i
   home=$(make_home publish 2 1)
@@ -605,6 +634,7 @@ test_cap_only_memory_rule_unchanged
 test_limits_and_admit
 test_pr_ready_lanes_free_their_place
 test_spawn_gate_uses_one_load_ceiling
+test_spawn_gate_follows_load_relief_levels
 test_publish_document
 test_captain_and_quota
 test_watcher_publishes_only_when_opted_in
