@@ -209,6 +209,21 @@ failover tmux secondmate mate-o --candidate agy:gemini-3-pro --candidate codex:g
 assert_contains "$OUT" 'candidate harness=agy model=gemini-3-pro account=none skip=agy_unverified_on_orca' 'agy is skipped on the secondmate orca backend'
 delegate_is 'orca secondmate under tmux' fm-control.sh mate-o relaunch --harness codex --model gpt-5.5 \
   --note 'Supervisor failover: claude pool ran out (claude_pool_exhausted); relaunched on codex gpt-5.5 (verdict=ok scope=all_models remaining=45 runway=through_reset).'
+printf 'kind=secondmate\nharness=claude\nmodel=opus\nbackend=herdr\nworktree=%s\n' "$TMP_ROOT/mate" > "$LAB/state/mate-h.meta"
+saved_path=$PATH noagy_path=''
+IFS=: read -r -a path_dirs <<< "$PATH"
+for d in "${path_dirs[@]}"; do
+  [ "$d" = "$FAKEBIN" ] || [ -x "$d/agy" ] || noagy_path=${noagy_path:+$noagy_path:}$d
+done
+PATH="$FAKEBIN:$noagy_path"
+mv "$FAKEBIN/agy" "$TMP_ROOT/agy.hidden"
+failover tmux secondmate mate-h --candidate agy:gemini-3-pro --candidate codex:gpt-5.5
+mv "$TMP_ROOT/agy.hidden" "$FAKEBIN/agy"
+PATH=$saved_path
+[ "$RC" = 0 ] || fail "a herdr secondmate without agy must fall through to codex: $OUT"
+assert_contains "$OUT" 'candidate harness=agy model=gemini-3-pro account=none skip=executable_missing' 'a missing agy is skipped on herdr'
+delegate_is 'herdr secondmate without agy' fm-control.sh mate-h relaunch --harness codex --model gpt-5.5 \
+  --note 'Supervisor failover: claude pool ran out (claude_pool_exhausted); relaunched on codex gpt-5.5 (verdict=ok scope=all_models remaining=45 runway=through_reset).'
 pass 'secondmate backend: agy eligibility follows the secondmate record, not the parent home'
 
 # A secondmate Claude candidate is eligible only when its pin resolves. A pin

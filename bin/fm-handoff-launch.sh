@@ -19,7 +19,9 @@
 # state/supervisor-failover.log and kept in the pending claim and in
 # state/.handoff-successor as successor=.
 # codex follows config/codex-approval-mode and config/codex-permission-mode on
-# tmux; on Orca, Orca owns the agent's posture, so a non-bypass setting refuses.
+# tmux, and starts through bin/fm-codex-launch.sh as fm-spawn's Codex launches
+# do, so its tool shells keep TMUX_PANE for the acknowledgement; on Orca, Orca
+# owns the agent's posture, so a non-bypass setting refuses.
 # agy launches on tmux only, and only into a home agy already trusts.
 # A tmux pane does not inherit this session's environment, so without
 # --account a claude successor gets this session's CLAUDE_CONFIG_DIR when set,
@@ -304,7 +306,7 @@ record_completion() {
 successor_argv() {
   case "$SUCC_HARNESS" in
     claude) SUCC_ARGV=(${LAUNCH_ENV[@]+"${LAUNCH_ENV[@]}"} claude "${PERM_ARGS[@]}" ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "$PROMPT") ;;
-    codex) SUCC_ARGV=("${MARKER_ENV[@]}" "${LAUNCH_ENV[@]}" codex ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "${PERM_ARGS[@]}" "$PROMPT") ;;
+    codex) SUCC_ARGV=("${MARKER_ENV[@]}" "${LAUNCH_ENV[@]}" FM_CODEX_BIN= "$SCRIPT_DIR/fm-codex-launch.sh" ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "${PERM_ARGS[@]}" "$PROMPT") ;;
     agy) SUCC_ARGV=("${MARKER_ENV[@]}" agy --prompt-interactive "$PROMPT" ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "${PERM_ARGS[@]}") ;;
   esac
 }

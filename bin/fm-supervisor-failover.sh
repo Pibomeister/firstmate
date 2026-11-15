@@ -50,7 +50,8 @@
 # `failed rc=<n> ...`. The choice and result are also appended to
 # state/supervisor-failover.log.
 # Exit 0 on a replacement, 1 when no candidate is eligible,
-# 2 for a usage or configuration error, otherwise the delegate's exit status.
+# 2 for a usage or configuration error, otherwise the delegate's exit status,
+# which can also be 1; the final `none` or `failed` line tells them apart.
 # Test-only: FM_TEST_SEAM=1 enables FM_HANDOFF_TEST_HARNESS (the primary's
 # current harness) and FM_SUPERVISOR_FAILOVER_TEST_BIN (a directory holding
 # the fm-handoff-launch.sh and fm-control.sh to delegate to).
@@ -213,7 +214,7 @@ for c in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
       continue
     fi
   fi
-  if [ "$BACKEND" = tmux ] && ! command -v "$harness" >/dev/null 2>&1; then
+  if { [ "$BACKEND" = tmux ] || [ "$BACKEND" = herdr ]; } && ! command -v "$harness" >/dev/null 2>&1; then
     report "$harness" "$model" none 'skip=executable_missing'
     continue
   fi

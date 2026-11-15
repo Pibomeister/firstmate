@@ -56,7 +56,7 @@ done
 printf '%s\n' "$@" > "$FM_HOME/state/argv"
 echo 1 > "$FM_HOME/state/attempts"
 harness=''
-for a; do case "$a" in claude|codex|agy) harness=$a; break ;; esac; done
+for a; do case "$a" in claude|codex|agy) harness=$a; break ;; */fm-codex-launch.sh) harness=codex; break ;; esac; done
 [ -n "$harness" ] || exit 95
 TMUX_PANE=%9 "$harness" "$FM_HOME/successor.sh" >/dev/null 2>&1 &
 echo "$!" >> "$FM_TEST_PIDS"
@@ -173,7 +173,7 @@ PINS_BEFORE=$(pins_digest)
 quota_fixture codex 55 through_reset > "$QUOTA/codex.json"
 run_case tmux --harness codex --model gpt-5.5 --reason claude_pool_exhausted
 assert_transferred_to codex 'codex successor'
-argv_is 'codex successor' "${MARKERS[@]}" -u CODEX_HOME codex --model gpt-5.5 --dangerously-bypass-approvals-and-sandbox PROMPT
+argv_is 'codex successor' "${MARKERS[@]}" -u CODEX_HOME FM_CODEX_BIN= "$ROOT/bin/fm-codex-launch.sh" --model gpt-5.5 --dangerously-bypass-approvals-and-sandbox PROMPT
 assert_contains "$(cat "$LAB/state/.handoff-successor")" 'successor=harness=codex model=gpt-5.5 account=ambient reason=claude_pool_exhausted verdict=ok scope=all_models remaining=55' \
   'the completion record names the replacement runtime, model, reason, and quota'
 assert_contains "$(cat "$LAB/state/supervisor-failover.log")" 'event=successor_ready' 'the failover log records the verified successor'
@@ -184,7 +184,7 @@ pass 'claude to codex: verified lock transfer onto codex with the replacement an
 printf 'restricted\n' > "$LAB/config/codex-permission-mode"
 run_case tmux --harness codex
 assert_transferred_to codex 'restricted codex successor'
-argv_is 'restricted codex successor' "${MARKERS[@]}" -u CODEX_HOME codex --sandbox workspace-write --ask-for-approval on-request PROMPT
+argv_is 'restricted codex successor' "${MARKERS[@]}" -u CODEX_HOME FM_CODEX_BIN= "$ROOT/bin/fm-codex-launch.sh" --sandbox workspace-write --ask-for-approval on-request PROMPT
 rm "$LAB/config/codex-permission-mode"
 pass 'codex successor follows config/codex-permission-mode on tmux'
 
@@ -271,7 +271,7 @@ assert_transferred_to claude 'session claude store'
 argv_is 'session claude store' env "CLAUDE_CONFIG_DIR=$TMP_ROOT/session-claude" claude --dangerously-skip-permissions PROMPT
 run_case tmux --harness codex
 assert_transferred_to codex 'session codex home'
-argv_is 'session codex home' "${MARKERS[@]}" "CODEX_HOME=$TMP_ROOT/session-codex" codex --dangerously-bypass-approvals-and-sandbox PROMPT
+argv_is 'session codex home' "${MARKERS[@]}" "CODEX_HOME=$TMP_ROOT/session-codex" FM_CODEX_BIN= "$ROOT/bin/fm-codex-launch.sh" --dangerously-bypass-approvals-and-sandbox PROMPT
 run_case tmux --harness claude --account "$TMP_ROOT/acctB"
 assert_transferred_to claude 'account over session store'
 argv_is 'account over session store' "${SHED[@]}" "CLAUDE_CONFIG_DIR=$TMP_ROOT/acctB" claude --dangerously-skip-permissions PROMPT
