@@ -1589,6 +1589,13 @@ wd_pp_stop() {
   WD_PP_STOPPED=1
   mark=$(wd_pp_mark "$id")
   prev=$(cat "$mark.open" 2>/dev/null) || prev=
+  # A key another writer resolved, such as an fm-send --resolve-key answer, is
+  # no longer open, so the marker no longer de-duplicates it.
+  if [ -n "$prev" ] && ! status_open_decisions "$O_HOME/state/$id.status" 2>/dev/null \
+    | awk -F'\t' -v k="${prev%% *}" '$1 == k { f = 1 } END { exit !f }'; then
+    rm -f "$mark.open"
+    prev=
+  fi
   [ "${prev%% *}" != "$key" ] || return 0
   if [ "$(wd_permission_mode)" != act ]; then
     wd_rate_open permission-prompt report "$(cfgi nudge-secs 900)" "$O_REC_SUBJECT" \

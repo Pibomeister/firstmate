@@ -75,7 +75,7 @@ if ! declare -F fm_secret_like >/dev/null 2>&1; then
   . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-secret-lib.sh"
 fi
 
-FM_PP_CREDENTIAL_RE='password|--reveal|(^|[^a-z])op[[:space:]]+item|aws[[:space:]]+configure|(^|[^a-z])(otp|2fa|mfa)([^a-z]|$)|one.time (code|password)|passphrase|passcode|api.?key|access.?token|auth.?token|bearer|token|secret|keychain|credential|private.?key|id_(rsa|dsa|ecdsa|ed25519)|hosts\.yml|(^|[^a-z])printenv([^a-z]|$)|ssh-add|\.ssh/|\.netrc|\.npmrc|\.pgpass|authori[sz]ation:|(^|[^a-z])cookie:|\.docker/config\.json|curl[^|;&]*[[:space:]](-u|--user)([[:space:]=]|$)|(^|[^a-z])\.env([^a-z]|$)|kubectl[^|;&]*[[:space:]]config[[:space:]]+(view|get-users|set-credentials)|kubeconfig|\.kube/config|\.aws/|\.git-credentials|(^|[^a-z])vault[[:space:]]+(read|kv|login|token)|1password|op (read|signin)|security (find|add|delete)-|(^|[^a-z])gpg|(^|[^a-z])sudo([^a-z]|$)'
+FM_PP_CREDENTIAL_RE='password|--reveal|(^|[^a-z])op[[:space:]]+item|aws[[:space:]]+configure|(^|[^a-z])(otp|2fa|mfa)([^a-z]|$)|one.time (code|password)|passphrase|passcode|api.?key|access.?token|auth.?token|bearer|token|secret|keychain|credential|private.?key|id_(rsa|dsa|ecdsa|ed25519)|hosts\.yml|(^|[^a-z])printenv([^a-z]|$)|ssh-add|\.ssh/|\.netrc|\.npmrc|\.pgpass|authori[sz]ation:|(^|[^a-z])cookie:|\.docker/config\.json|curl[^|;&]*[[:space:]](-u|--user)([[:space:]=]|$)|(^|[^a-z])\.env([^a-z]|$)|kubectl[^|;&]*[[:space:]]config[[:space:]]+(view|get-users|set-credentials)|kubeconfig|\.kube/config|\.aws/|\.git-credentials|(^|[^a-z])vault[[:space:]]+(read|kv|login|token)|(^|[^a-z])(pass|gopass)[[:space:]]+(show|-c|otp|git|cat)([[:space:]]|$)|(^|[^a-z])(bw|lpass|keepassxc-cli)[[:space:]]+(get|show|export)|1password|op (read|signin)|security (find|add|delete)-|(^|[^a-z])gpg|(^|[^a-z])sudo([^a-z]|$)'
 FM_PP_SIGNIN_RE='sign.?in|log.?in|/login|authenticat|oauth|paste (the )?(authorization |authentication )?code|verification code|device code|browser didn.t open|select login method|not logged in|re-?authori[sz]e|session expired'
 FM_PP_SPEND_RE='add funds|paid[[:space:]]+(usage|credits?|plan|tier|model|request)|credits?[[:space:]]+to[[:space:]]+continue|use[[:space:]]+(your[[:space:]]+|extra[[:space:]]+|more[[:space:]]+)?credits|(^|[^a-z])charg(e|ed|es|ing)([^a-z]|$)|buy (more )?credits|purchase|payment|billing|upgrade (your |to )?(plan|max|pro)|extra usage|pay.as.you.go|overage|spend|credit card|subscribe|top.?up'
 FM_PP_DESTRUCTIVE_RE='(^|[^a-z])(rm|rmdir|unlink|shred|srm)([[:space:]]|$)|--recursive|(^|[[:space:]])--force([[:space:]=-]|$)|git[[:space:]]([^|;&]*[[:space:]])?(restore|clean|rm)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?reset[^|;&]*[[:space:]]--(hard|merge|keep)|git[[:space:]]([^|;&]*[[:space:]])?checkout[^|;&]*[[:space:]](-f|--force|\.|--)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?switch[^|;&]*[[:space:]](-f|--discard-changes)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?push[^|;&]*([[:space:]]-f([[:space:]]|$)|[[:space:]:]\+|[[:space:]]:[^[:space:]]|--delete|--mirror|--prune|[[:space:]]-d([[:space:]]|$))|git[[:space:]]([^|;&]*[[:space:]])?update-ref[^|;&]*[[:space:]]-d([[:space:]]|$)|s3[[:space:]]+rb([[:space:]]|$)|tmux[^|;&]*[[:space:]]kill-(server|session|pane|window)|git[[:space:]]([^|;&]*[[:space:]])?branch[^|;&]*[[:space:]]-(d|-delete)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?stash[[:space:]]+(drop|clear)|git[[:space:]]([^|;&]*[[:space:]])?(filter-branch|filter-repo|reflog[[:space:]]+expire)|worktree[[:space:]]+(remove|prune)|find[[:space:]].*-delete|(^|[^a-z])prune([^a-z]|$)|drop[[:space:]]+(table|database|schema)|truncate|(^|[^a-z])(delet|destroy|wipe|erase|overwrit)|mkfs|(^|[^a-z])dd[[:space:]]+if=|(chmod|chown|chgrp)([[:space:]][^|;&]*)?[[:space:]](-[a-z]*r|--recursive)|chmod[^|;&]*777|(^|[^a-z])mv[[:space:]]+(-[a-z]*f|--force)|(^|[[:space:];&|(])(:|true)[[:space:]]*>[^>&]|>[[:space:]]*/dev/(r?disk|sd|nvme)|kill[[:space:]]+-9|pkill|killall'
@@ -133,6 +133,9 @@ fm_pp_hardstop_category() {  # <text>
   # The rows joined with spaces and with nothing, so a soft-wrapped command
   # such as `--ha` over `rd` still reads as one word.
   t=$(_fm_wd_guard_view "${1-}" | tr '\n\t' '  ')
+  # The text again with shell quotes and backslashes removed, so a quoted
+  # argument such as "--hard" or HEAD:"main" reads as the word it is.
+  t="$t $(printf '%s' "$t" | tr -d "\"'\\\\")"
   if printf '%s' "$t" | LC_ALL=C grep -Eq "$FM_PP_CREDENTIAL_RE"; then printf 'credential\n'; return 0; fi
   # The fleet's one secret detector, which also knows a URL with credentials
   # in it, such as https://user:pass@host.
@@ -245,8 +248,19 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
   case "$dialog" in
     permission|question) ;;
     '')
-      cat=$(fm_pp_bottom_input "$screen") || return 1
-      printf 'hardstop\t%s\n' "$cat"
+      if cat=$(fm_pp_bottom_input "$screen"); then
+        printf 'hardstop\t%s\n' "$cat"; return 0
+      fi
+      # A terminal yes-or-no confirmation is never answered: a hard stop when
+      # its row names one, and otherwise held.
+      rows=$(fm_composer_confirm_input "$screen") || return 1
+      if cat=$(fm_pp_hardstop_category "$rows"); then
+        printf 'hardstop\t%s\n' "$cat"
+      elif printf '%s' "$rows" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)'; then
+        printf 'hardstop\tdestructive\n'
+      else
+        printf 'hold\tconfirm\n'
+      fi
       return 0
       ;;
     usage-limit|model-switch)

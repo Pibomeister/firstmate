@@ -211,10 +211,15 @@ test_hardstop_categories() {
   assert_equals $'hardstop\tspend' "$(bash_prompt_with 'echo Use paid credits to continue' | classify claude)" "paid-credit wording is a spend stop"
   assert_equals $'hardstop\trelease' "$(bash_prompt_with 'git push origin main' | classify claude)" "a push to main is a release stop"
   assert_equals $'hardstop\tcredential' "$(bash_prompt_with 'op item get gh --reveal' | classify claude)" "a revealed vault item is a credential stop"
-  for c in 'kubectl config view --raw' 'curl https://alice:example-pass@internal.example.test' 'git clone https://bot:pat123@git.example.test/r.git'; do
+  for c in 'kubectl config view --raw' 'curl https://alice:example-pass@internal.example.test' 'git clone https://bot:pat123@git.example.test/r.git' 'pass show github' 'bw get password gh'; do
     assert_equals $'hardstop\tcredential' "$(bash_prompt_with "$c" | classify claude)" "$c is a credential stop"
   done
   assert_equals $'route\ttool-approval' "$(bash_prompt_with 'git push -u origin fm/feature-x' | classify claude)" "a feature-branch push still routes"
+  assert_equals $'hardstop\tdestructive' "$(bash_prompt_with 'git reset "--hard" HEAD' | classify claude)" "a quoted --hard is still a destructive stop"
+  assert_equals $'hardstop\trelease' "$(bash_prompt_with 'git push origin HEAD:"main"' | classify claude)" "a quoted push to main is still a release stop"
+  assert_equals $'hardstop\tdestructive' "$(printf "work\nrm: remove regular file 'important.txt'?\n" | classify claude)" "a terminal remove confirmation is a destructive stop"
+  assert_equals $'hardstop\tspend' "$(printf 'work\nContinue with paid usage? [y/N]\n' | classify claude)" "a one-line paid-usage confirmation is a spend stop"
+  assert_equals $'hold\tconfirm' "$(printf 'work\nProceed? (y/n)\n' | classify claude)" "any other terminal confirmation is held"
   for c in 'git push origin feature' 'tmux ls' 'curl https://example.com' 'mv a.txt b.txt' 'npm test > out.log' 'ln -sf a b' 'cp -rf a b' 'set -euo pipefail' 'git checkout -b fm/new' 'env FOO=1 npm test'; do
     assert_equals $'route\ttool-approval' "$(bash_prompt_with "$c" | classify claude)" "$c still routes"
   done
@@ -305,6 +310,9 @@ test_send_guard_blocks_renumbered_pickers_and_secret_inputs() {
     $'work\nEnter your API key >' $'work\n? Enter your API key: ›' $'work\nPassword:' $'work\nPIN:' $'work\nEnter your verification code:' \
     $'work\nPassword for \'https://dev@github.com\':' $'work\nUsername for \'https://github.com\':' $'work\nPaste code here if prompted >' $'work\nEnter verification code:' $'work\nOTP:' $'work\nEnter your authentication code:' \
     $'work\nPress Enter to open browser to sign in' $'work\n2FA:' $'work\nMFA:' $'work\nEnter code:' \
+    $'work\n    Username for \'https://github.com\':' $'work\nEnter MFA code for arn:aws:iam::123456789012:mfa/user:' $'work\nUsername:' $'work\nLogin:' \
+    $'work\nTwo-factor code:' $'work\nAuthenticator app code:' $'work\nSecurity key PIN:' \
+    $'work\nrm: remove regular file \'important.txt\'?' $'work\nContinue with paid usage? [y/N]' $'work\nAre you sure?' \
     $' Continue with paid usage?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel'; do
     name=$(bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$screen") \
       || fail "every submit refuses this screen: $screen"
@@ -321,7 +329,7 @@ test_send_guard_blocks_renumbered_pickers_and_secret_inputs() {
     && fail "a quoted trust picker above a normal composer does not block"
   bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" $'work\nthe token refresh is fixed\n❯ ' >/dev/null \
     && fail "conversation that mentions a token is not a secret input"
-  pass "send guard: a renumbered or re-glyphed declining picker, a numbered picker, and a secret or sign-in input refuse every submit"
+  pass "send guard: a renumbered or re-glyphed declining picker, a numbered picker, a secret or sign-in input, and a terminal confirmation refuse every submit"
 }
 
 # --- the watchdog route ----------------------------------------------------------
@@ -389,14 +397,16 @@ test_doorbell_never_types_into_a_prompt() {
   worker dw claude "$H/browser.txt"
   printf 'work output\n2FA:\n' > "$H/2fa.txt"
   worker d2 claude "$H/2fa.txt"
+  printf "work output\nrm: remove regular file 'important.txt'?\n" > "$H/rmc.txt"
+  worker dr claude "$H/rmc.txt"
   local id
-  for id in db dt ds dp dw d2; do
+  for id in db dt ds dp dw d2 dr; do
     FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
     assert_contains "$(inbox_text "$id")" "steer for $id" "the steer for worker $id is durably recorded"
     sleep 1
     assert_equals '' "$(typed "$id")" "the doorbell types nothing into the prompt on worker $id: $(typed "$id" | od -c | head -3)"
   done
-  pass "doorbell: a steer to a worker on a tool-approval prompt, a trust picker, or a secret or sign-in input is recorded and types nothing"
+  pass "doorbell: a steer to a worker on a tool-approval prompt, a trust picker, a secret or sign-in input, or a terminal confirmation is recorded and types nothing"
 }
 
 test_declining_dialogs_on_workers_get_no_key() {
@@ -570,6 +580,24 @@ council-seats=claude:haiku,agy:flash'
   pass "hard stop after Escape: the keyed blocked line is the owner's and never reaches a council"
 }
 
+test_externally_resolved_hardstop_reopens() {
+  make_home
+  printf 'work output\nEnter your password:\n' > "$H/pw.txt"
+  worker xr claude "$H/pw.txt"
+  run_wd 0 once >/dev/null 2>&1 || fail "the watchdog pass failed"
+  assert_equals 1 "$(status_rows xr blocked permission-prompt-hardstop)" "the password input is a hard stop"
+  FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" xr --resolve-key permission-prompt-hardstop "the password was entered" >/dev/null 2>&1
+  assert_equals 1 "$(grep -c '^resolved .*\[key=permission-prompt-hardstop\]' "$H/state/xr.status")" "the answer closes the hard stop: $(cat "$H/state/xr.status")"
+  printf 'work output\nEnter your 2FA code:\n' > "$H/2fa.txt"
+  repaint xr "$H/2fa.txt"
+  run_wd 300 once >/dev/null 2>&1
+  assert_equals 2 "$(status_rows xr blocked permission-prompt-hardstop)" "a new hard stop after an outside answer is reported again: $(cat "$H/state/xr.status")"
+  run_wd 600 once >/dev/null 2>&1
+  assert_equals 2 "$(status_rows xr blocked permission-prompt-hardstop)" "the reopened hard stop is still reported only once"
+  assert_equals '' "$(typed xr)" "no key reaches either input"
+  pass "hard stop: a key another writer resolved does not hide the next hard stop"
+}
+
 test_unknown_harness_dry_run_and_off() {
   make_home
   worker nh - "$FIX/claude-2.1.325-bash-prompt.txt" "$FIX/claude-2.1.325-after-escape.txt"
@@ -622,4 +650,5 @@ fm_test_run \
   test_trust_dialog_relaunches_without_a_key \
   test_hardstop_prompts_are_never_answered \
   test_hardstop_never_reaches_council \
+  test_externally_resolved_hardstop_reopens \
   test_unknown_harness_dry_run_and_off
