@@ -282,7 +282,7 @@ test_mtime_uses_the_platform_stat_dialect() {
   make_home $'Captain session\n> '
   transcript 3000 "Working." "Testing." "Green."
   out=$(run_wd 0 scan 2>&1) || fail "native stat scan failed: $out"
-  assert_contains "$out" 'transcript_age=3000s' "native stat returns the transcript's age"
+  assert_contains "$out" 'activity_age=3000s (transcript)' "native stat returns the transcript's age"
   if [ "$(uname -s)" = Linux ]; then
     gnu=$(command -v stat)
   elif command -v gstat >/dev/null 2>&1; then
@@ -302,7 +302,7 @@ case "\${1:-}" in ''|-s) printf 'Linux\n' ;; *) exec "$real_uname" "\$@" ;; esac
 SH
     chmod +x "$statbin/stat" "$statbin/uname"
     out=$(PATH="$statbin:$PATH" run_wd 0 scan 2>&1) || fail "GNU stat scan failed: $out"
-    assert_contains "$out" 'transcript_age=3000s' "GNU stat returns a numeric transcript age"
+    assert_contains "$out" 'activity_age=3000s (transcript)' "GNU stat returns a numeric transcript age"
   else
     printf 'note: GNU stat unavailable; native stat checked\n'
   fi
@@ -3007,6 +3007,91 @@ test_no_activity_source_is_not_reported_ok() {
   pass "a subject with no activity source reads as a gap, not ok"
 }
 
+# act_rows <owner-home>: the supervisor-activity record.
+act_rows() { cat "$1/state/night-score/supervisor-activity.tsv" 2>/dev/null; }
+
+test_second_mate_activity_sources() {
+  local parent mate m tag out led
+  make_home $'Captain session\n> '
+  parent=$H
+  transcript 100 "Working."
+  make_home $'Mate session\n> '
+  mate=$H
+  m=$(canon "$mate")
+  tag=$(basename "$m")
+  printf -- '- act-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  printf 'harness=codex\n' > "$parent/state/act-mate.meta"
+  H=$parent
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=unknowns' "a mate with no record has no activity source: $out"
+  run_wd 0 once >/dev/null 2>&1
+  assert_grep "$tag: NO-ACTIVITY-SOURCE" "$parent/data/watchdog/status.md" "the sourceless mate is reported"
+  assert_equals "$BASE"$'\t'"$m"$'\tnone\t-' "$(act_rows "$parent" | awk -F'\t' -v h="$m" '$2 == h')" "the record names a mate with no source"
+
+  # A Codex mate: its own drain acknowledgement is the source. Other removal
+  # rows, a malformed stamp, and a stamp later than the clock do not count.
+  led=$mate/state/wake-ledger.tsv
+  {
+    printf '%s\tack\tg1\t4\t4\t["a"]\n' "$((BASE - 400))"
+    printf '%s\tack\tg1\t5\t5\t["b"]\n' "$((BASE - 120))"
+    printf '%s\tconsumed\tg1\t5\t5\t["b"]\n' "$((BASE - 10))"
+    printf '%s\tretired\t-\t-\t6\t["c"]\n' "$((BASE - 5))"
+    printf '0%s\tack\tg1\t7\t7\t["d"]\n' "$((BASE - 2))"
+    printf '%s\tack\tg1\t8\t8\t["e"]\n' "$((BASE + 500))"
+  } > "$led"
+  assert_equals "$((BASE - 120))" "$(lib fm_wd_last_wake_ack "$led" "$BASE")" "the newest ack row not later than the clock"
+  lib fm_wd_last_wake_ack "$mate/state/absent.tsv" "$BASE" >/dev/null && fail "an absent ledger has no ack"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=120s (wake-ack)' "a Codex mate reads its last acknowledgement: $out"
+
+  # A Claude mate: its parent-side busy record, only from a trusted source of
+  # the current incarnation.
+  printf 'harness=claude\n' > "$parent/state/act-mate.meta"
+  printf 'g7\n' > "$parent/state/act-mate.busy-gen"
+  printf 'v1 gen=g7 seq=3 state=idle source=claude-hook event=stop ts=%s\n' "$((BASE - 60))" > "$parent/state/act-mate.busy-state"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=60s (busy-state)' "a Claude mate reads its busy record: $out"
+  printf 'v1 gen=g7 seq=4 state=idle source=pi-ext event=stop ts=%s\n' "$((BASE - 30))" > "$parent/state/act-mate.busy-state"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=120s (wake-ack)' "a source the harness does not trust is no activity: $out"
+  printf 'v1 gen=g6 seq=5 state=idle source=claude-hook event=stop ts=%s\n' "$((BASE - 30))" > "$parent/state/act-mate.busy-state"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=120s (wake-ack)' "a stale incarnation is no activity: $out"
+
+  : > "$parent/state/act-mate.turn-ended"
+  fm_touch_epoch "$((BASE - 20))" "$parent/state/act-mate.turn-ended"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=20s (turn-ended)' "the newest source wins: $out"
+  run_wd 10 once >/dev/null 2>&1
+  assert_grep "$tag: ok, last turn 0m ago via turn-ended" "$parent/data/watchdog/status.md" "a mate with a source reads ok"
+  assert_no_grep "$tag: NO-ACTIVITY-SOURCE" "$parent/data/watchdog/status.md" "the mate is no longer sourceless"
+  assert_equals "$((BASE + 10))"$'\t'"$m"$'\tturn-ended\t30' "$(act_rows "$parent" | awk -F'\t' -v h="$m" '$2 == h' | tail -n 1)" "the record names the source and its age"
+  assert_equals "$((BASE + 10))"$'\t'"$(canon "$parent")"$'\ttranscript\t110' "$(act_rows "$parent" | awk -F'\t' -v h="$(canon "$parent")" '$2 == h' | tail -n 1)" "the owner home has its own row"
+  assert_absent "$mate/state/night-score/supervisor-activity.tsv" "the second mate's own home holds no record"
+  out=$(run_wd 20 scan >/dev/null 2>&1; act_rows "$parent" | wc -l | tr -d ' ')
+  assert_equals 4 "$out" "scan appends nothing"
+  pass "second mate: a drain acknowledgement, a trusted busy record, or a turn-ended marker is an activity source"
+}
+
+test_second_mate_freeze_is_seen_without_a_transcript() {
+  local parent mate
+  make_home $'Captain session\n> '
+  parent=$H
+  transcript 100 "Working."
+  make_home $'Mate session\n> '
+  mate=$H
+  printf -- '- frozen-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  printf 'harness=codex\n' > "$parent/state/frozen-mate.meta"
+  printf '%s\tack\tg1\t4\t4\t["a"]\n' "$((BASE - 3000))" > "$mate/state/wake-ledger.tsv"
+  owe_input 3000
+  H=$parent
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows frozen nudge pending)" "a first sight is no stall"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows frozen nudge pending)" "a frozen Codex mate with owed input gets one nudge: $(ledger | cut -f5-8)"
+  pass "second mate: a mate with no transcript is seen to freeze through its activity source"
+}
+
 test_claude_judge_keeps_the_default_login() {
   make_home $'Captain session\n> ' 'models=claude:haiku'
   fake_models "$H" ok:WORK absent
@@ -4131,6 +4216,36 @@ SH
   pass "usage-limit: an unreadable claude-account pin gets no pick"
 }
 
+test_quota_guard_checks_at_kickoff_and_periodically() {
+  local snap
+  make_home $'Captain session\n> ' 'quota-guard=on'
+  snap="$H/quota.json"
+  wd_quota_snapshot "$snap"
+  : > "$H/quota-axi.calls"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$H/quota-axi.calls"
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1 || fail "quota guard kickoff pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard check "done")" "the first pass is a kickoff check: $(ledger | cut -f4-8)"
+  assert_grep "trigger=kickoff" "$H/state/quota-guard/last" "the kickoff check is on record"
+  assert_grep "quota-guard: unknown trigger=kickoff" "$H/data/watchdog/status.md" \
+    "a check that is not ok stays a gap"
+  run_wd 60 once >/dev/null 2>&1 || fail "quota guard quiet pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard check "done")" "no check is due inside the period"
+  assert_grep "quota-guard: unknown trigger=kickoff" "$H/data/watchdog/status.md" \
+    "the last check's verdict stays a gap while it is not ok"
+  run_wd 7300 once >/dev/null 2>&1 || fail "quota guard periodic pass failed"
+  assert_equals 2 "$(ledger_rows quota-guard check "done")" "a check runs again after two hours"
+  assert_grep "trigger=periodic" "$H/state/quota-guard/last" "the periodic check is on record"
+  assert_no_grep "allow-keychain-prompt" "$H/quota-axi.calls" "the guard never opens a sign-in prompt"
+  [ ! -s "$H/typed.log" ] || fail "an unknown verdict typed into the pane: $(cat "$H/typed.log")"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota guard: the watchdog checks at kickoff and every two hours"
+}
 test_worker_usage_limit_names_a_pick() {
   local snap dialog calls
   dialog=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
@@ -4182,7 +4297,12 @@ SH
     "a worker pane-text usage-limit must queue until reset"
   assert_not_contains "$(cat "$H/data/watchdog/status.md")" "Supervisor relaunches" \
     "a worker pane-text usage-limit must not send the supervisor to relaunch"
+  assert_grep "	limit	ordinary	default	claude" "$H/state/quota-limit-dialogs.tsv" \
+    "a worker's limit dialog is recorded with its account and model"
+  assert_grep "	limit2	ordinary	default	claude" "$H/state/quota-limit-dialogs.tsv" \
+    "each worker's limit dialog is recorded"
   HOME="$H/user" run_wd 1 once >/dev/null 2>&1 || fail "rate-limited worker usage-limit pass failed"
+  assert_equals 2 "$(wc -l < "$H/state/quota-limit-dialogs.tsv" | tr -d ' ')" "a dialog is recorded once per nudge-secs"
   assert_equals 2 "$(ledger_rows quota suggest held)" "nudge-secs must not add another worker pick: $(ledger | cut -f4-8)"
   calls=$(wc -l < "$H/quota-axi.calls" | tr -d ' ')
   assert_equals 1 "$calls" "a rate-limited pass must not call quota-axi again"
@@ -5521,6 +5641,7 @@ fm_test_run \
   test_usage_limit_claude_without_tooling_names_a_pick \
   test_unreadable_claude_account_pin_gets_no_pick \
   test_worker_usage_limit_names_a_pick \
+  test_quota_guard_checks_at_kickoff_and_periodically \
   test_grok_weekly_limit_on_a_secondmate_names_a_pick \
   test_home_usage_limit_ignores_grok_in_scrollback \
   test_orca_usage_limit_does_not_relaunch_from_scrollback \
@@ -5539,6 +5660,8 @@ fm_test_run \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \
   test_no_activity_source_is_not_reported_ok \
+  test_second_mate_activity_sources \
+  test_second_mate_freeze_is_seen_without_a_transcript \
   test_claude_judge_keeps_the_default_login \
   test_unknown_heartbeat_endpoint_is_not_reported_ok \
   test_tmux_restart_survives_a_closed_session \

@@ -44,7 +44,7 @@ Each pass reads only existing records and the recorded pane:
 
 - the pane capture, its composer state, and the backend's busy verdict;
 - the session lock holder, its liveness, its instance identity, and its CPU time between passes;
-- the session transcript's age and its last assistant texts and tool calls;
+- the activity source's age, and the session transcript's last assistant texts and tool calls;
 - the wake queue, captain inbox notes, and open decision records;
 - the heartbeat age, the away record, and the away daemon's pid;
 - the context left, from the shared context reading (`bin/fm-context-reading-lib.sh`): the derived token percentage when the session's transcript and auto-compact point exist, else the auto-compact footer from the heartbeat, else from the pane.
@@ -81,17 +81,25 @@ A home whose restart awaits pickup gets no action at all until that restart clos
 
 | Symptom | Proof | Action |
 | --- | --- | --- |
-| Agent gone | Lock owner dead: the lock pid has exited and the shared lock contract does not prove the recorded session live | Restart once the transcript has been quiet for `frozen-secs`. Nothing is typed into the endpoint of a dead holder, and the other checks wait until it is live again. |
+| Agent gone | Lock owner dead: the lock pid has exited and the shared lock contract does not prove the recorded session live | Restart once the activity source has been quiet for `frozen-secs`. Nothing is typed into the endpoint of a dead holder, and the other checks wait until it is live again. |
 | Usage-limit auto-wait | A primary pane whose composer zone holds Claude's usage-limit auto-wait footer (`Continuing automatically at <reset>`). The phrase counts on a row below the last prompt row, or above it only on a row that opens by stating the usage limit, so conversation that quotes the phrase does not match. That session takes no turn until the reset, so no in-pane remedy exists | The captain record for that home carries `usage_limit_autowait=1` for that pass. The owner is paged through the home's alert channels at most once per `nudge-secs`, and the page carries no pane text. The page and the status gap name the manual successor path: run `bin/fm-quota-reroute.sh suggest`, then launch a successor on the named pick. The watchdog never kills, relaunches, or types into that primary. On that pass it also skips the away-daemon, decision, council, and quota-floor checks below, because each of them would type into the same pane. The auto-wait is a provider quota condition, so its pages never count toward a self-heal issue. An ordinary idle primary is not paged. |
 | Blocking dialog | Dialog structure on the visible screen | Feedback or bug-report dialog: only an exact known Claude, Antigravity, or Codex dialog at the bottom of the screen counts, and when the pane's harness is recorded only that harness's dialog counts, and the watchdog presses that dialog's skip key (`0` or `Escape`), never a send choice, `Enter`, or text. It presses at most one skip key while that dialog, through its input box, stays the same; a digit in the footer or in the rows under it does not count as a change, so a ticking status line does not authorize another key. The press goes through the claim shared with the watcher and the away daemon (`fm_control_dismiss_feedback_dialog` in `bin/fm-control-lib.sh`). A dialog still showing after that key is reported as a gap. Model picker: the judge picks an option that keeps work going without spending, signing in, or buying; a picker that names an owner-reserved category or whose text looks like a secret is held as a gap and no model sees it. Words count from the rows below a rule above the options, or from all the last rows when no rule proves the boundary, so a picker under conversation with such a word also holds. A permission phrase counts across those same rows, so an unproven dialog with such a phrase is left alone and reported, and gets no key. Model and limit words count from the ruled rows above the options, or else from the paragraph above the options. An option label never counts. Only a row that opens by stating the limit or the switch proves a limit picker, such as `You have hit your weekly limit`, `Usage limit reached`, or `Switch to another model`. A bare model name, the word credits, or a bare `rate limit`, `usage limit`, `limit reached`, or `limit resets` does not. A usage-limit picker is not judged and gets no key: the watchdog writes a ledger row and a gap that names the eligible candidate from `reroute-candidates` when `quota-axi` and `bin/fm-quota-reroute.sh` find one. A recorded ship or scout worker pane of that home gets this same usage-limit handling, once per home or worker per `nudge-secs`, and the watchdog sends it no key. Any other picker is an unproven question: it gets no key and is reported as a gap. Permission: never answered, reported as a gap. While the home's away record is in away mode, not quiet mode, the owner is also paged through the home's alert channels, because nobody else will answer the dialog. The page carries no dialog text. A recorded ship or scout worker pane of that home gets this same permission page, with its own `nudge-secs` window, and the watchdog sends it no key. The ledger row records which dialog fired, with its text withheld when it looks like a secret. With alerts off or no channel, the page is recorded as refused and reported as a gap. The judge is asked about a picker at most once per `nudge-secs`, including in dry-run, and each answer comes from the pane of that pass. After two keys in an hour on one pane that leave the dialog showing, no more keys are pressed on that pane, no judge is asked, and the gap is reported. |
 | Restart requested | `state/.watchdog-restart-request`, or context left at or below `restart-at-percent`. The owning reading decides: the derived percentage when it exists, else the footer. With neither, the context is unknown and never asks for a restart by itself. A heartbeat footer counts only for the current session and under `watcher-stale-secs`. The low-context nudge, and so its ledger row, names both readings. | This applies only while a restart can run. Restart off, an escalated home, `do-not-touch`, no activity source, no `restart-command`, a backend with no launcher, a missing lock holder or mismatched anchor, or a time inside `restart-secs` is a gap, and the symptoms below still act. So is low context when the composer cannot take the nudge. A stable draft is handled as unsent input first, so the nudge can be delivered. Low context first nudges the session to write a full `data/handoff-*.md` and then `state/.watchdog-restart-request`. A handoff newer than the nudge plus the request file allows the restart after `restart-quiet-secs` of quiet. After `handoff-wait-secs` without both, the restart uses the lean handoff and the status file records the gap. A request with no earlier nudge restarts after the quiet time. The wait starts only when the nudge is delivered, and a nudge older than twice `handoff-wait-secs` no longer counts, so a later low asks again. |
 | Timer loop | Three of the last five assistant texts repeat with only timer tools between them. A rapid burst is recovered without waiting input when the transcript has moved within `rapid-loop-secs`; older repeats need input that has waited `owed-input-secs`. An old burst with no waiting input is no loop. | Nudge, then restart, without claiming input is waiting. Near repeats go to the judge first, and only once input has waited `owed-input-secs`, with the recent assistant texts and tool calls. Events that look like a secret or name an owner-reserved category go to no model and leave the near repeat unconfirmed, with a reported gap. Only a `LOOP` answer takes this row. Any other answer, or no answer, leaves the rows below to run. An answer stands for `owed-input-secs`, and after that for as long as those events stay the same. |
-| Frozen | Pane and transcript unchanged for `frozen-secs` while input has waited as long | Nudge, then restart. A running turn holds instead. |
+| Frozen | Pane and activity source unchanged for `frozen-secs` while input has waited as long | Nudge, then restart. A running turn holds instead. |
 | Unsent input | The composer holds the same pending text on two passes with no running turn | Press Enter once per two hours, unless a row from the first prompt row to the end of the window names a merge, deploy, release, publish, or force push; that refusal is reported as a gap. Rule and footer rows hide nothing from this check, and conversation rows above the first prompt row do not count. Enter also needs the whole draft proven. A bordered last prompt row needs a closed box with both borders inside the window. A plain last prompt row needs two equal rules of 40 or more characters at column 0 around it. Draft rows sit indented under the prompt glyph, so such a rule is the harness's. Any other draft gets no Enter and a reported gap: a plain or bare composer, an indented composer such as Grok or Cursor, a left-bar composer, a Claude composer on a named session whose top rule carries a title, a paste placeholder, or a draft taller than the read window or the capture. These are reported gaps and not supported coverage. |
 | Unread input | Input has waited `owed-input-secs` with no running turn | Nudge. |
 
-The frozen, agent-gone, and restart paths need a session transcript, and only the Claude transcript layout is read.
-A subject with no readable transcript has no activity source, so those restarts are unavailable for it; its health line reads `NO-ACTIVITY-SOURCE` instead of `ok`, and the status file lists the gap.
+The frozen, agent-gone, and restart paths need an activity source, the newest of these stamps that is not later than the watchdog clock:
+
+- `transcript`: the modification time of the session's Claude transcript, the only transcript layout read;
+- `wake-ack`: the newest `ack` row among the last 2000 rows of the home's own `state/wake-ledger.tsv` (`bin/fm-wake-ledger-lib.sh` owns the rows), written when the session acknowledges a handled wake;
+- `busy-state`: for a second mate, the `ts` of the parent's `state/<id>.busy-state` record when the record is valid for the current incarnation and its source is trusted for the harness in the parent's `state/<id>.meta` (`bin/fm-busy-lib.sh` owns the record);
+- `turn-ended`: for a second mate, the modification time of the parent's `state/<id>.turn-ended` marker.
+
+The timer-loop row still reads only the transcript, so a home with no transcript gets no loop check.
+A subject with none of these sources has no activity source, so those restarts are unavailable for it; its health line reads `NO-ACTIVITY-SOURCE` instead of `ok`, and the status file lists the gap.
+A healthy line names the source of its last turn.
 A subject with no recorded terminal endpoint has no pane view.
 That includes a primary whose lock sidecar names no concrete endpoint, and a heartbeat whose terminal is unknown or whose session is not the one holding the lock when that sidecar also names none.
 Its health line reads `NO-ENDPOINT` instead of `ok`, and the status file lists the gap.
@@ -109,6 +117,17 @@ These checks run on every pass as well:
   The verb header in [`bin/fm-control.sh`](../bin/fm-control.sh) owns close policy.
   The watchdog never changes the runtime.
   The live runbook is [`verification/quota-reroute.md`](verification/quota-reroute.md).
+- With `quota-guard=on`, a primary home's quota guard runs at kickoff, every `quota-guard-every-secs`, and on each limit warning.
+  Kickoff is the first check of a home, or the first pass after a supervisor's session lock changed holder.
+  A limit warning is a usage-limit picker or auto-wait footer on a supervisor pane or on a recorded worker pane.
+  The guard reads `quota-axi` for every pool a supervisor runs on, and stale or unmeasured quota counts as unknown, never as headroom.
+  A check that names a move writes a ledger row and nudges the primary with the report path.
+  While the last check is not ok, its result line stays a gap.
+  The guard names a move for each worker on a short or exhausted supervisor pool first, so that pool is kept for its supervisors.
+  A supervisor whose pool is still exhausted gets a failover pick: another signed-in Claude account with headroom first, then a reroute candidate on another pool.
+  It never changes an account pin, opens a sign-in, relaunches anything, or spends.
+  Every limit warning is recorded with its subject, account, and model, whether the guard is on or off, at most once per `nudge-secs` per pane; a second mate's warning is recorded in its parent home.
+  [`bin/fm-quota-guard.sh`](../bin/fm-quota-guard.sh) owns the pools, verdicts, moves, and files.
 
 A nudge is written as a record-backed operational input in the subject's own home and typed into its pane as the record's doorbell.
 It is never a captain inbox note, so a session cannot mistake it for the owner.
@@ -310,6 +329,15 @@ It measures heartbeat age only, so it does not replace the `alive` verdict of th
 A registered home that runs no watcher gets a gap row on every pass while an old heartbeat file exists.
 A gap that starts and ends between two passes is not seen.
 
+## Supervisor-activity record
+
+Each `once` or `run` pass also appends one row per home it read to `state/night-score/supervisor-activity.tsv` under the owner home, so a stall reader can tell a measured session from one with no activity source.
+`scan` appends nothing, a dry-run pass appends the same rows as any other pass, and the file is append-only.
+Each row is four TAB-separated fields: the watchdog clock in seconds, the canonical home path, the activity source named in the symptoms section above or `none`, and the age of that source in seconds or `-` with `none`.
+A clock that does not have exactly 10 digits writes no row, and neither does a home that is empty or holds a TAB, a newline or a carriage return.
+A failed append is an open gap for that home and does not fail the pass.
+An old age is not a stall by itself: an idle second mate is healthy, and the frozen symptom also needs owed input.
+
 ## Configuration (config/watchdog)
 
 `config/watchdog` is local and gitignored, with one `key=value` per line.
@@ -335,7 +363,12 @@ An absent file means dry-run on the owner home alone.
 | `claude-config-dir` | the owner home's `config/claude-account`, then the inherited environment and the CLI's own default | Claude config directory for judge calls |
 | `claude-config-dirs` | none | Extra Claude config directories searched for session transcripts |
 | `reserved-keys` | none | Comma-separated decision keys always held for the owner |
-| `reroute-candidates` | none | Comma-separated `harness:model` candidates for quota reroute nudges |
+| `reroute-candidates` | none | Comma-separated `harness:model` candidates for quota reroute nudges and quota guard moves |
+| `quota-guard` | `off` | `on` runs the quota guard at kickoff, periodically, and on each limit warning |
+| `quota-guard-every-secs` | `7200` | Time between periodic quota guard checks |
+| `quota-guard-window-secs` | none | Horizon a supervisor pool must last; empty uses `quota-guard-window-until` |
+| `quota-guard-window-until` | `08:00` | Local time the night window ends when `quota-guard-window-secs` is empty |
+| `quota-guard-timeout-secs` | `300` | Bound on one quota guard call |
 | `issue-repo` | none | `owner/repo` for self-heal issues; empty reports a gap instead |
 | `interval-secs` | `120` | Seconds between passes in `run` |
 | `frozen-secs` | `900` | Quiet time that counts as frozen |

@@ -1,0 +1,273 @@
+#!/usr/bin/env bash
+# Behavior tests for bin/fm-quota-guard.sh: every supervisor pool is read and
+# judged against the window, stale quota is unknown, workers are moved off a
+# short supervisor pool, an exhausted supervisor gets a failover pick, limit
+# dialogs are recorded, and tick runs at kickoff and periodically.
+#
+# A fake quota-axi answers a --provider claude read from $CASE/claude.json and
+# any other read from $CASE/main.json, and logs its arguments and the Claude
+# account environment of every read. A fake tmux reports the pane ids listed
+# in $CASE/panes as live.
+set -u
+
+# shellcheck source=tests/lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
+
+TMP_ROOT=$(fm_test_tmproot fm-quota-guard)
+TOOL="$ROOT/bin/fm-quota-guard.sh"
+NOW=1700000000
+
+# new_case <name> -> sets CASE HOME_DIR FAKEBIN
+new_case() {
+  CASE="$TMP_ROOT/$1"
+  HOME_DIR="$CASE/home"
+  FAKEBIN="$CASE/fakebin"
+  mkdir -p "$HOME_DIR/config" "$HOME_DIR/state" "$HOME_DIR/data" "$FAKEBIN" "$CASE/user-home/.claude"
+  : > "$CASE/panes"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+printf 'profiles=%s config=%s snapshot=%s args=%s\n' "\${QUOTA_AXI_CLAUDE_PROFILES-unset}" "\${CLAUDE_CONFIG_DIR-unset}" "\${QUOTA_AXI_SNAPSHOT-unset}" "\$*" >> '$CASE/reads'
+case " \$* " in
+  *" --provider claude "*) cat '$CASE/claude.json' ;;
+  *) cat '$CASE/main.json' ;;
+esac
+SH
+  cat > "$FAKEBIN/tmux" <<SH
+#!/usr/bin/env bash
+case "\$1" in
+  list-panes) cat '$CASE/panes' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$FAKEBIN/quota-axi" "$FAKEBIN/tmux"
+  printf '{"schemaVersion":5,"providers":[]}\n' > "$CASE/main.json"
+  printf '{"schemaVersion":6,"providers":[]}\n' > "$CASE/claude.json"
+}
+
+# scope <runway-status> [usableRunwaySeconds]: one known all_models row.
+scope() {
+  jq -cn --arg runway "$1" --arg seconds "${2:-}" '{
+    scope: "all_models", status: "known", effectivePercentRemaining: 40,
+    runway: ({status: $runway} + (if $seconds == "" then {} else {usableRunwaySeconds: ($seconds | tonumber), projectionConfidence: "established"} end))
+  }'
+}
+
+# provider_row <provider> <scope-json> [stale]: one provider row.
+provider_row() {
+  jq -cn --arg p "$1" --argjson s "$2" --arg stale "${3:-}" '{
+    provider: $p,
+    state: (if $stale == "" then {status: "fresh", stale: false} else {status: "fresh", stale: true, error: "last read failed"} end),
+    quotaSemantics: {status: "known", effectiveAvailability: [$s]}
+  }'
+}
+
+# claude_row <key> <root> <scope-json> [stale]: one Claude account lane.
+claude_row() {
+  provider_row claude "$3" "${4:-}" | jq -c --arg k "$1" --arg r "$2" '. + {accountKey: $k, accountLocator: {path: $r}}'
+}
+
+# snapshot <file> <schema> <row-json>...
+snapshot() {
+  local file=$1 schema=$2
+  shift 2
+  printf '%s\n' "$@" | jq -s --argjson v "$schema" '{schemaVersion: $v, providers: .}' > "$file"
+}
+
+run_tool() {
+  env -i HOME="$CASE/user-home" PATH="$FAKEBIN:$PATH" TZ=UTC FM_HOME="$HOME_DIR" \
+    FM_TEST_SEAM=1 FM_NOW="${RUN_NOW:-$NOW}" "$TOOL" "$@" 2>&1
+}
+
+# register_mate <id> <harness> [account]: a registered second mate whose
+# record lives in this home.
+register_mate() {
+  local id=$1 home="$CASE/$1-home"
+  mkdir -p "$home/state" "$home/config"
+  printf -- '- %s - test scope (home: %s; projects: alpha)\n' "$id" "$home" >> "$HOME_DIR/data/secondmates.md"
+  fm_write_secondmate_meta "$HOME_DIR/state/$id.meta" "$home" "" alpha "$2"
+  [ -z "${3:-}" ] || printf 'account=%s\n' "$3" >> "$HOME_DIR/state/$id.meta"
+}
+
+# worker <dir> <id> <harness> <model> <pane> [account]
+worker() {
+  local dir=$1 id=$2
+  fm_write_meta "$dir/$id.meta" "window=$5" "harness=$3" "model=$4" "kind=ship" "worktree=$CASE/wt-$id"
+  [ -z "${6:-}" ] || printf 'account=%s\n' "$6" >> "$dir/$id.meta"
+}
+
+test_stale_quota_is_unknown_not_headroom() {
+  local out rc
+  new_case stale
+  snapshot "$CASE/claude.json" 6 "$(claude_row ordinary "$CASE/user-home/.claude" "$(scope through_reset)" stale)"
+  out=$(run_tool check --primary-harness claude --window-secs 28800); rc=$?
+  expect_code 0 "$rc" "an unknown pool is not an act verdict: $out"
+  assert_contains "$out" "quota-guard: unknown trigger=manual window=28800s pools=1 ok=0 unknown=1 short=0 exhausted=0 steer=0 failover=0" \
+    "stale data must count as unknown, never ok"
+  assert_contains "$out" "pool: claude:ordinary status=unknown runway=- supervisors=primary workers=- why=stale quota data (last read failed)" \
+    "the pool line must name the stale read"
+  assert_grep "args=--provider claude --json --full --no-credential-refresh" "$CASE/reads" \
+    "Claude accounts are read with no credential refresh"
+  assert_no_grep "allow-keychain-prompt" "$CASE/reads" "the guard never asks for a keychain prompt"
+  assert_equals "$out" "$(cat "$HOME_DIR/state/quota-guard/report.txt")" "the report file holds the full output"
+  pass "stale quota data reads as unknown, not as headroom"
+}
+
+test_short_supervisor_pool_steers_its_workers_off() {
+  local out rc
+  new_case short
+  snapshot "$CASE/main.json" 5 \
+    "$(provider_row codex "$(scope projected_exhaustion 3600)")" \
+    "$(provider_row claude "$(scope through_reset)")"
+  snapshot "$CASE/claude.json" 6 "$(claude_row ordinary "$CASE/user-home/.claude" "$(scope through_reset)")"
+  printf '%%1\n%%2\n' > "$CASE/panes"
+  worker "$HOME_DIR/state" alive codex gpt-5.4 %1
+  worker "$HOME_DIR/state" gone codex gpt-5.4 %9
+  worker "$HOME_DIR/state" other claude default %2
+  out=$(run_tool check --primary-harness codex --window-secs 28800 --candidate claude:opus); rc=$?
+  expect_code 3 "$rc" "a short supervisor pool with a worker on it needs a move: $out"
+  assert_contains "$out" "quota-guard: act trigger=manual window=28800s pools=1 ok=0 unknown=0 short=1 exhausted=0 steer=1 failover=0" \
+    "only the supervisor pool is judged, and one worker is moved"
+  assert_contains "$out" "pool: codex:codex-home status=short runway=3600 supervisors=primary workers=alive why=all_models runs out in 3600s, inside the 28800s window" \
+    "the pool names its runway and members"
+  assert_contains "$out" "steer: alive pool=codex:codex-home pick=claude opus why=keep short pool for its supervisors" \
+    "the live worker on the short pool is steered to the candidate"
+  assert_not_contains "$out" "steer: gone" "a worker with no live endpoint is not moved"
+  assert_not_contains "$out" "other" "a worker on a pool no supervisor uses is not judged"
+  assert_not_contains "$out" "failover:" "a short supervisor pool keeps its supervisor"
+  pass "a short supervisor pool moves its live workers off first"
+}
+
+test_exhausted_supervisor_fails_over_to_another_account() {
+  local out rc before
+  new_case exhausted
+  register_mate zenith-mate claude "$CASE/acct-b"
+  snapshot "$CASE/claude.json" 6 \
+    "$(claude_row ordinary "$CASE/user-home/.claude" "$(scope exhausted_now)")" \
+    "$(claude_row acct-b "$CASE/acct-b" "$(scope through_reset)")"
+  printf 'ordinary\n%s\n' "$CASE/acct-b" > "$HOME_DIR/config/claude-accounts"
+  printf 'ordinary\n' > "$HOME_DIR/config/claude-account"
+  printf '%%1\n' > "$CASE/panes"
+  worker "$HOME_DIR/state" busy claude default %1
+  before=$(cd "$HOME_DIR/config" && ls -l)
+  out=$(run_tool check --primary-harness claude --window-secs 28800); rc=$?
+  expect_code 3 "$rc" "an exhausted supervisor pool needs a move: $out"
+  assert_contains "$out" "quota-guard: act trigger=manual window=28800s pools=2 ok=1 unknown=0 short=0 exhausted=1 steer=1 failover=1" \
+    "both Claude pools are judged"
+  assert_contains "$out" "pool: claude:ordinary status=exhausted runway=0 supervisors=primary workers=busy why=all_models exhausted now" \
+    "the exhausted pool names its supervisor and worker"
+  assert_contains "$out" "pool: claude:$CASE/acct-b status=ok runway=through_reset supervisors=zenith-mate workers=- why=every scope runs through its reset" \
+    "the second mate's own account is its own pool"
+  assert_contains "$out" "steer: busy pool=claude:ordinary pick=account $CASE/acct-b why=keep exhausted pool for its supervisors" \
+    "the worker moves to the account with headroom"
+  assert_contains "$out" "failover: primary pool=claude:ordinary pick=account $CASE/acct-b why=supervisor pool exhausted" \
+    "the supervisor fails over to another signed-in account first"
+  assert_equals 1 "$(grep -c -- '--provider claude' "$CASE/reads")" "every Claude account is read in one call"
+  assert_grep "profiles=$CASE/acct-b config=unset snapshot=unset" "$CASE/reads" \
+    "the Claude read names the account roots and sheds the inherited account"
+  assert_equals "ordinary" "$(cat "$HOME_DIR/config/claude-account")" "the account pin is never changed"
+  assert_equals "$before" "$(cd "$HOME_DIR/config" && ls -l)" "the guard writes nothing under config"
+  pass "an exhausted supervisor pool fails over to another signed-in account with headroom"
+}
+
+test_exhausted_supervisor_with_no_way_out_names_none() {
+  local out rc
+  new_case none
+  snapshot "$CASE/claude.json" 6 "$(claude_row ordinary "$CASE/user-home/.claude" "$(scope exhausted_now)")"
+  out=$(run_tool check --primary-harness claude --window-secs 28800); rc=$?
+  expect_code 3 "$rc" "an exhausted supervisor still needs the failover path: $out"
+  assert_contains "$out" "failover: primary pool=claude:ordinary pick=none (no reroute candidate off this pool) why=supervisor pool exhausted" \
+    "with no account and no candidate the pick is none"
+  pass "an exhausted supervisor with no account or candidate names no pick"
+}
+
+test_limit_dialogs_are_recorded_with_account_and_model() {
+  local rows rc
+  new_case dialogs
+  register_mate casco-mate claude
+  worker "$HOME_DIR/state" task1 claude opus %1 "$CASE/acct-b"
+  worker "$CASE/casco-mate-home/state" child codex gpt-5.4 %2
+  run_tool record-dialog --subject task1 >/dev/null; rc=$?
+  expect_code 0 "$rc" "a task's dialog is recorded"
+  run_tool record-dialog --subject primary --harness claude >/dev/null
+  run_tool record-dialog --subject casco-mate/child >/dev/null
+  run_tool record-dialog --subject casco-mate >/dev/null
+  rows=$(cat "$HOME_DIR/state/quota-limit-dialogs.tsv")
+  assert_contains "$rows" "$NOW	task1	$CASE/acct-b	opus	claude" "the task's account and model come from its record"
+  assert_contains "$rows" "$NOW	primary	ordinary	-	claude" "the primary's Claude account defaults to ordinary"
+  assert_contains "$rows" "$NOW	casco-mate/child	codex-home	gpt-5.4	codex" "a second mate's worker is found in that mate's home"
+  assert_contains "$rows" "$NOW	casco-mate	ordinary	-	claude" "a second mate's own dialog uses its record here"
+  run_tool record-dialog --subject 'bad id' >/dev/null; rc=$?
+  expect_code 2 "$rc" "a malformed subject is refused"
+  assert_absent "$HOME_DIR/state/quota-guard" "recording a dialog does not run a check"
+  pass "each limit dialog is recorded with its account and model"
+}
+
+test_warning_records_then_checks() {
+  local out rc
+  new_case warning
+  snapshot "$CASE/claude.json" 6 "$(claude_row ordinary "$CASE/user-home/.claude" "$(scope through_reset)")"
+  out=$(run_tool warning --subject primary --harness claude --primary-harness claude --window-secs 600); rc=$?
+  expect_code 0 "$rc" "a warning with headroom is ok: $out"
+  assert_contains "$out" "quota-guard: ok trigger=warning window=600s pools=1 ok=1" "a warning checks at once"
+  assert_grep "primary	ordinary	-	claude" "$HOME_DIR/state/quota-limit-dialogs.tsv" "a warning also records the dialog"
+  pass "a limit warning records the dialog and checks quota"
+}
+
+test_tick_runs_at_kickoff_and_periodically() {
+  local out rows
+  new_case tick
+  snapshot "$CASE/claude.json" 6 "$(claude_row ordinary "$CASE/user-home/.claude" "$(scope through_reset)")"
+  out=$(run_tool tick --primary-harness claude --window-secs 600)
+  assert_contains "$out" "quota-guard: ok trigger=kickoff" "the first tick is a kickoff check"
+  out=$(RUN_NOW=$((NOW + 60)) run_tool tick --primary-harness claude --window-secs 600)
+  assert_equals "" "$out" "a tick before the period prints nothing"
+  out=$(RUN_NOW=$((NOW + 7200)) run_tool tick --primary-harness claude --window-secs 600)
+  assert_contains "$out" "quota-guard: ok trigger=periodic" "a tick after two hours is a periodic check"
+  printf '4242\n' > "$HOME_DIR/state/.lock"
+  out=$(RUN_NOW=$((NOW + 7300)) run_tool tick --primary-harness claude --window-secs 600)
+  assert_contains "$out" "quota-guard: ok trigger=kickoff" "a new session-lock holder is a kickoff"
+  printf 'quota-guard-every-secs=60\n' > "$HOME_DIR/config/watchdog"
+  out=$(RUN_NOW=$((NOW + 7400)) run_tool tick --primary-harness claude --window-secs 600)
+  assert_contains "$out" "quota-guard: ok trigger=periodic" "the period comes from config"
+  rows=$(cut -f 2 "$HOME_DIR/state/quota-guard/checks.tsv" | tr '\n' ' ')
+  assert_equals "kickoff periodic kickoff periodic " "$rows" "every check is logged with its trigger"
+  pass "tick checks at kickoff and every period, and stays quiet between"
+}
+
+test_window_defaults_to_the_morning() {
+  local out
+  new_case window
+  snapshot "$CASE/claude.json" 6 "$(claude_row ordinary "$CASE/user-home/.claude" "$(scope projected_exhaustion 30000)")"
+  out=$(run_tool check --primary-harness claude)
+  assert_contains "$out" "quota-guard: unknown trigger=manual window=35200s pools=1 ok=0 unknown=0 short=1" \
+    "the window runs to 08:00 local time, so a 30000s runway is short"
+  printf 'quota-guard-window-secs=1800\n' > "$HOME_DIR/config/watchdog"
+  out=$(run_tool check --primary-harness claude)
+  assert_contains "$out" "quota-guard: ok trigger=manual window=1800s" "a configured window wins"
+  pass "the window defaults to the next morning and follows config"
+}
+
+test_no_quota_axi_is_unknown() {
+  local out rc
+  new_case missing
+  rm -f "$FAKEBIN/quota-axi"
+  out=$(env -i HOME="$CASE/user-home" PATH="$FAKEBIN:/usr/bin:/bin" FM_HOME="$HOME_DIR" \
+    "$TOOL" check --primary-harness claude --window-secs 600 2>&1); rc=$?
+  expect_code 0 "$rc" "a missing quota-axi is unknown, not a failure: $out"
+  assert_contains "$out" "pool: claude:ordinary status=unknown runway=- supervisors=primary workers=- why=quota-axi not installed" \
+    "the missing tool is named"
+  pass "a missing quota-axi reads as unknown"
+}
+
+fm_test_run \
+  test_stale_quota_is_unknown_not_headroom \
+  test_short_supervisor_pool_steers_its_workers_off \
+  test_exhausted_supervisor_fails_over_to_another_account \
+  test_exhausted_supervisor_with_no_way_out_names_none \
+  test_limit_dialogs_are_recorded_with_account_and_model \
+  test_warning_records_then_checks \
+  test_tick_runs_at_kickoff_and_periodically \
+  test_window_defaults_to_the_morning \
+  test_no_quota_axi_is_unknown
