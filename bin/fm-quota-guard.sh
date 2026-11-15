@@ -86,15 +86,18 @@
 # exhausted, or unknown, with --kind secondmate for a supervisor; else none. A
 # Claude candidate's pool is the account the relaunching home's pin names (for
 # a second mate, its config/secondmate-accounts pin first), never assumed to be
-# the ordinary account. Firstmate, or the second mate that owns a worker,
-# relaunches through bin/fm-control.sh <id> relaunch --account <entry>, or
-# --harness and --model; this script never relaunches anything.
+# the ordinary account; a worker in a home that declares config/claude-accounts
+# has no pin, so its Claude candidate names the first declared account with
+# headroom, and the pick ends in account <entry> for --account. Firstmate, or
+# the second mate that owns a worker, relaunches through bin/fm-control.sh <id>
+# relaunch --account <entry>, or --harness and --model (and --account when the
+# pick names one); this script never relaunches anything.
 #
 # Output, first line the result line the main session reads:
 #   quota-guard: <ok|unknown|act> trigger=<t> window=<n>s pools=<n> ok=<n> unknown=<n> short=<n> exhausted=<n> steer=<n> failover=<n>
 #   pool: <provider>:<account> status=<s> runway=<secs|through_reset|-> supervisors=<ids|-> workers=<ids|-> why=<text>
-#   steer: <id|mate/id> pool=<pool> pick=<account <entry>|<harness> <model>|none> why=<text>
-#   failover: <id> pool=<pool> pick=<account <entry>|<harness> <model>|none> why=<text>
+#   steer: <id|mate/id> pool=<pool> pick=<account <entry>|<harness> <model> [account <entry>]|none> why=<text>
+#   failover: <id> pool=<pool> pick=<account <entry>|<harness> <model> [account <entry>]|none> why=<text>
 # act means at least one steer or failover line. The primary's id is primary.
 #
 # Files, under FM_HOME:
@@ -495,11 +498,20 @@ pick() {
   [ "$model" = default ] || set -- "$@" --from-model "$model"
   [ "$wt" = - ] || set -- "$@" --worktree "$wt"
   if [ "$harness" = claude ] && [ "$kind" = secondmate ] && [ "$mate" != - ]; then set -- "$@" --mate "$mate"; fi
-  local n=0
+  local n=0 home_list
+  home_list=$(fm_worker_account_list claude "$(home_config "$home")" 2>/dev/null) || home_list=
+  : > "$WORK/cand-accounts"
   for cand in $(printf '%s' "$CANDIDATES" | tr ',' ' '); do
-    # A Claude candidate lands on the pin of the home that relaunches it.
+    # A Claude candidate lands on the pin of the home that relaunches it. Under
+    # a declared account list a worker's Claude relaunch must name --account,
+    # so the candidate takes the first declared account with headroom.
     dacct=
-    if [ "${cand%%:*}" = claude ]; then dacct=$(dest_claude_account "$home" "$mate") || continue; fi
+    if [ "${cand%%:*}" = claude ] && [ "$kind" != secondmate ] && [ -n "$home_list" ]; then
+      dacct=$(list_account_for "$home_list" "${cand#*:}" "$pool") || continue
+      printf '%s\t%s\n' "$cand" "$dacct" >> "$WORK/cand-accounts"
+    elif [ "${cand%%:*}" = claude ]; then
+      dacct=$(dest_claude_account "$home" "$mate") || continue
+    fi
     IFS=$'\t' read -r cprov cacct <<< "$(member_pool "${cand%%:*}" "${cand#*:}" "$dacct")"
     cpool=$cprov:$cacct
     [ "$cpool" != "$pool" ] || continue
@@ -517,7 +529,27 @@ pick() {
     printf 'none (%s)\n' "${err:-no eligible reroute candidate}"
     return 0
   fi
+  case "$out" in
+    'claude '*)
+      dacct=$(awk -F'\t' -v c="claude:${out#claude }" '$1 == c { print $2; exit }' "$WORK/cand-accounts")
+      [ -z "$dacct" ] || out="$out account $dacct" ;;
+  esac
   printf '%s\n' "$out"
+}
+
+# list_account_for <entries> <model> <pool>: the first declared Claude account
+# off <pool> whose pool no member finds short, exhausted, or unknown and whose
+# own read for <model> is ok.
+list_account_for() {
+  local entry
+  while IFS= read -r entry; do
+    [ -n "$entry" ] && [ "claude:$entry" != "$3" ] || continue
+    case "$(pool_status "claude:$entry")" in short|exhausted|unknown) continue ;; esac
+    [ "$(classify claude "$entry" "$2" | cut -f 1)" = ok ] || continue
+    printf '%s\n' "$entry"
+    return 0
+  done <<< "$1"
+  return 1
 }
 
 window_secs() {

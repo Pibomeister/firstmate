@@ -1818,8 +1818,10 @@ wd_quota_guard_warning() {
     wd_gap "limit dialog on $subject not recorded (exit $rc)"
     return 0
   fi
-  # A home whose restart awaits pickup gets no check; its dialog is still recorded.
-  if ! wd_quota_guard_on || [ "${WD_SYMPTOM:-}" = restart-awaiting-pickup ]; then
+  # A home whose restart awaits pickup gets no check; its dialog is still
+  # recorded. A second mate's warning checks its parent, so the parent's hold
+  # is the one that counts.
+  if ! wd_quota_guard_on || wd_home_awaits_restart "$home"; then
     wd_rec "$(wd_id)" quota-guard warning "done" "limit dialog on $subject recorded"
     return 0
   fi
@@ -2071,11 +2073,16 @@ wd_visit_worker_dialogs() {
   unset O_REC_SUBJECT
 }
 
+# wd_home_awaits_restart <home>: a restart of that home is still pending pickup.
+wd_home_awaits_restart() {
+  fm_wd_open_pending "$LEDGER" | awk -F'\t' -v h="$1" '$2 == h && $4 == "restart" { f = 1 } END { exit !f }'
+}
+
 # wd_handle_subject: one symptom per pass, by precedence, then the side checks.
 wd_handle_subject() {
   local symptom='' quiet frozen owed dead=0 reachable=1
   wd_rearm_feedback_dialog "$O_BACKEND" "$O_TARGET" "${O_HARNESS:-}" "$O_PANE"
-  if fm_wd_open_pending "$LEDGER" | awk -F'\t' -v h="$O_HOME" '$2 == h && $4 == "restart" { f = 1 } END { exit !f }'; then
+  if wd_home_awaits_restart "$O_HOME"; then
     WD_SYMPTOM='restart-awaiting-pickup'
     return 0
   fi

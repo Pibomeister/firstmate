@@ -379,6 +379,24 @@ test_sole_keyless_claude_lane_is_the_ordinary_account() {
     "a read that names another root binds no keyless lane, even to the ordinary account"
   pass "a sole Claude lane with no locator is the ordinary account"
 }
+test_listed_home_claude_candidate_names_its_account() {
+  local out
+  new_case listed-candidate
+  mkdir -p "$CASE/acct-b"
+  snapshot "$CASE/main.json" 5 \
+    "$(provider_row codex "$(scope projected_exhaustion 3600)")" \
+    "$(provider_row claude "$(scope through_reset)")"
+  snapshot "$CASE/claude.json" 6 \
+    "$(claude_row ordinary "$CASE/user-home/.claude" "$(scope exhausted_now)")" \
+    "$(claude_row acct-b "$CASE/acct-b" "$(scope through_reset)")"
+  printf 'ordinary\n%s\n' "$CASE/acct-b" > "$HOME_DIR/config/claude-accounts"
+  printf '%%1\n' > "$CASE/panes"
+  worker "$HOME_DIR/state" alive codex gpt-5.4 %1
+  out=$(run_tool check --primary-harness codex --window-secs 28800 --candidate claude:opus)
+  assert_contains "$out" "steer: alive pool=codex:codex-home pick=claude opus account $CASE/acct-b why=keep short pool for its supervisors" \
+    "under a declared account list a Claude candidate names the declared account with headroom"
+  pass "a Claude candidate in a home with an account list names its account"
+}
 test_limit_dialogs_are_recorded_with_account_and_model() {
   local rows rc
   new_case dialogs
@@ -476,6 +494,7 @@ fm_test_run \
   test_pick_skips_a_pool_a_worker_off_the_supervisor_pools_holds \
   test_provider_prefixed_model_binds_its_model_scope \
   test_sole_keyless_claude_lane_is_the_ordinary_account \
+  test_listed_home_claude_candidate_names_its_account \
   test_limit_dialogs_are_recorded_with_account_and_model \
   test_warning_records_then_checks \
   test_tick_runs_at_kickoff_and_periodically \

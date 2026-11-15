@@ -1895,9 +1895,20 @@ handle_durable_wakes() {  # <watcher-reason> <state>
   fi
   if ! "$FM_DAEMON_DIR/fm-wake-drain.sh" --ack-through "$ack_through" \
     --recovery-generation "$ack_generation"; then
-    unnote_daemon_ack "$state" "$ack_generation" "$ack_through"
+    # The drain can commit its ack row and fail afterwards, in claim cleanup;
+    # that row is still the daemon's, so its name stays.
+    daemon_ack_committed "$state" "$ack_generation" "$ack_through" ||
+      unnote_daemon_ack "$state" "$ack_generation" "$ack_through"
     return 1
   fi
+}
+
+# daemon_ack_committed <state> <generation> <through>: the wake ledger holds
+# an ack row for exactly that generation and through value.
+daemon_ack_committed() {
+  [ -f "$1/wake-ledger.tsv" ] || return 1
+  tail -n 2000 "$1/wake-ledger.tsv" 2>/dev/null |
+    LC_ALL=C awk -F'\t' -v g="$2" -v t="$3" '$2 == "ack" && $3 == g && $4 == t { f = 1 } END { exit !f }'
 }
 
 # note_daemon_ack <state> <generation> <through>: records one acknowledgement

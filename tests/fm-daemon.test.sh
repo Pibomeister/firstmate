@@ -609,7 +609,11 @@ test_daemon_names_its_own_acknowledgements() {
   mkdir -p "$fakebin"
   cat > "$fakebin/fm-wake-drain.sh" <<EOF
 #!/usr/bin/env bash
-if [ "\${1:-}" = --ack-through ]; then [ ! -e "$dir/ack-fails" ] || exit 1; printf '%s\n' "\$2" >> "$dir/acked"; exit 0; fi
+if [ "\${1:-}" = --ack-through ]; then
+  [ ! -e "$dir/ack-fails" ] || exit 1
+  if [ -e "$dir/ack-commits-then-fails" ]; then printf '1700000000\tack\t%s\t%s\n' "\$4" "\$2" >> "$state/wake-ledger.tsv"; exit 1; fi
+  printf '%s\n' "\$2" >> "$dir/acked"; exit 0
+fi
 printf '1\t1\tstale\tmissing-r9\tstale: sess:fm-missing-r9\n'
 printf 'WAKE_ACK_REQUIRED: ordinary --ack-through %s --recovery-generation gen7\n' "\$(cat "$dir/through")" >&2
 EOF
@@ -624,6 +628,15 @@ EOF
     || fail "a failed acknowledgement reported success"
   [ "$(cat "$state/.supervise-daemon.acks")" = "gen7	3" ] \
     || fail "a failed acknowledgement stayed named: $(cat "$state/.supervise-daemon.acks" 2>&1)"
+  # A drain that commits its ack row and then fails keeps the daemon's name on it.
+  rm -f "$dir/ack-fails"
+  : > "$dir/ack-commits-then-fails"
+  printf '6\n' > "$dir/through"
+  ! FM_DAEMON_DIR="$fakebin" handle_durable_wakes fallback "$state" 2>/dev/null \
+    || fail "a drain that failed after its ack row reported success"
+  [ "$(cat "$state/.supervise-daemon.acks")" = "gen7	3
+gen7	6" ] || fail "a committed acknowledgement lost its daemon name: $(cat "$state/.supervise-daemon.acks" 2>&1)"
+  rm -f "$dir/ack-commits-then-fails"
   # A directory where the record goes makes the append fail.
   rm -f "$dir/ack-fails" "$state/.supervise-daemon.acks"
   mkdir "$state/.supervise-daemon.acks"

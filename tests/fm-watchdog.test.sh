@@ -2182,6 +2182,43 @@ SH
   pass "boundary: a home whose restart awaits pickup gets no quota check either"
 }
 
+test_mate_warning_holds_while_its_parent_restart_awaits_pickup() {
+  local parent mate autowait
+  autowait=$'work output\nUsage limit reached. Continuing automatically at 4:00 AM\n❯ \n  ? for shortcuts'
+  make_home $'Captain session\n> ' "restart=on
+max-nudges=0
+pickup-secs=600
+restart-command=/bin/true
+quota-guard-every-secs=100"
+  parent=$H
+  grep -v '^quota-guard=' "$parent/config/watchdog" > "$parent/watchdog.conf" && mv "$parent/watchdog.conf" "$parent/config/watchdog"
+  wd_quota_snapshot "$parent/quota.json"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$parent/quota.json"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  transcript 3000 "Working." "Testing." "Green."
+  owe_input 3000
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows frozen restart pending)" "the proven stall restarts"
+  rm -f "$parent/state/.wake-queue"
+  make_home "$autowait"
+  mate=$H
+  transcript 100 "Working."
+  H=$parent
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  printf 'harness=claude\nkind=secondmate\nhome=%s\nworktree=%s\nmodel=default\n' "$mate" "$mate" > "$parent/state/ghost-mate.meta"
+  sleep 0.5
+  run_wd 1120 once >/dev/null 2>&1
+  assert_grep "	ghost-mate	ordinary	default	claude" "$parent/state/quota-limit-dialogs.tsv" \
+    "the second mate's limit dialog is still recorded in its parent: $(cat "$parent/state/quota-limit-dialogs.tsv" 2>&1)"
+  assert_no_grep "trigger=warning" "$parent/state/quota-guard/last" \
+    "a second mate's warning runs no check in a parent whose restart awaits pickup"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "boundary: a second mate's limit warning runs no check while its parent's restart awaits pickup"
+}
 test_dead_captain_restarts_despite_its_anchor() {
   make_home $'Captain session\n> ' "restart=on
 restart-command=$TMP_ROOT/fake-captain.sh"
@@ -5849,6 +5886,7 @@ fm_test_run \
   test_captain_record_ignores_a_heartbeat_written_outside_the_owner \
   test_no_action_while_restart_awaits_pickup \
   test_no_quota_check_while_restart_awaits_pickup \
+  test_mate_warning_holds_while_its_parent_restart_awaits_pickup \
   test_dead_captain_restarts_despite_its_anchor \
   test_watchdog_allows_muse_restart_with_approval_flag \
   test_watchdog_adds_yolo_to_bare_muse_restart \

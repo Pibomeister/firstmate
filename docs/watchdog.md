@@ -120,7 +120,7 @@ These checks run on every pass as well:
   The live runbook is [`verification/quota-reroute.md`](verification/quota-reroute.md).
 - Unless `quota-guard=off`, a primary home's quota guard runs at kickoff, every `quota-guard-every-secs`, and on each limit warning.
   Kickoff is the first check of a home, or the first pass after a supervisor's session lock changed holder.
-  A home whose restart awaits pickup gets no check on that pass, and a worker's limit warning in it is only recorded.
+  A home whose restart awaits pickup gets no check on that pass, and a worker's or second mate's limit warning that would check it is only recorded.
   A limit warning is a usage-limit picker or auto-wait footer on a supervisor pane or on a recorded worker pane.
   A second mate on the auto-wait is handled like an auto-wait primary, except that its footer is a limit warning instead of a page: nothing is typed into its pane on that pass, and the side checks are skipped.
   The guard reads `quota-axi` for every pool a supervisor runs on, and stale or unmeasured quota counts as unknown, never as headroom.
@@ -133,7 +133,7 @@ These checks run on every pass as well:
   The guard names a move for each worker on a short or exhausted supervisor pool first, so that pool is kept for its supervisors.
   A supervisor whose pool is still exhausted gets a failover pick: another signed-in Claude account with headroom first, then a reroute candidate on another pool.
   A pick needs a fresh ok read of its own on a pool no other member finds short, exhausted, or unknown, counting live workers on pools no supervisor uses, and a second mate, which relaunches on its own pin, gets only a reroute candidate.
-  A Claude candidate is judged on the account the relaunching home's pin names, a second mate's own pin first.
+  A Claude candidate is judged on the account the relaunching home's pin names, a second mate's own pin first; in a home that declares `config/claude-accounts`, a worker's Claude candidate names the first declared account with headroom, so its relaunch passes `--account`.
   It never changes an account pin, opens a sign-in, relaunches anything, or spends.
   Every limit warning is recorded with its subject, account, and model, whether the guard is on or off, at most once per `nudge-secs` per pane; a record that failed is tried again on the next pass, a check that fails after the record is a gap that never records the dialog again, and a second mate's warning is recorded in its parent home.
   [`bin/fm-quota-guard.sh`](../bin/fm-quota-guard.sh) owns the pools, verdicts, moves, and files.
