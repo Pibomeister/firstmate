@@ -182,6 +182,44 @@ test_exhausted_supervisor_with_no_way_out_names_none() {
   pass "an exhausted supervisor with no account or candidate names no pick"
 }
 
+test_stale_candidate_is_not_a_failover_pick() {
+  local out rc
+  new_case stale-candidate
+  snapshot "$CASE/claude.json" 6 "$(claude_row ordinary "$CASE/user-home/.claude" "$(scope exhausted_now)")"
+  snapshot "$CASE/main.json" 5 "$(provider_row codex "$(scope through_reset)" stale)"
+  out=$(run_tool check --primary-harness claude --window-secs 28800 --candidate codex:gpt-5.4); rc=$?
+  expect_code 3 "$rc" "an exhausted supervisor still needs the failover path: $out"
+  assert_contains "$out" "failover: primary pool=claude:ordinary pick=none (no reroute candidate off this pool) why=supervisor pool exhausted" \
+    "a candidate whose quota is stale is not headroom"
+  snapshot "$CASE/main.json" 5 "$(provider_row codex "$(scope through_reset)")"
+  out=$(run_tool check --primary-harness claude --window-secs 28800 --candidate codex:gpt-5.4)
+  assert_contains "$out" "failover: primary pool=claude:ordinary pick=codex gpt-5.4 why=supervisor pool exhausted" \
+    "the same candidate with a fresh read is the pick"
+  pass "a stale candidate is never named as a failover pick"
+}
+
+test_second_mate_picks_follow_its_own_pin_and_home() {
+  local out mate_home
+  new_case mate-picks
+  register_mate zenith-mate claude
+  mate_home="$CASE/zenith-mate-home"
+  snapshot "$CASE/claude.json" 6 \
+    "$(claude_row ordinary "$CASE/user-home/.claude" "$(scope exhausted_now)")" \
+    "$(claude_row acct-b "$CASE/acct-b" "$(scope through_reset)")" \
+    "$(claude_row acct-c "$CASE/acct-c" "$(scope through_reset)")"
+  snapshot "$CASE/main.json" 5 "$(provider_row codex "$(scope through_reset)")"
+  printf 'ordinary\n%s\n' "$CASE/acct-b" > "$HOME_DIR/config/claude-accounts"
+  printf 'ordinary\n%s\n' "$CASE/acct-c" > "$mate_home/config/claude-accounts"
+  printf '%%1\n' > "$CASE/panes"
+  worker "$mate_home/state" child claude default %1
+  out=$(run_tool check --primary-harness codex --window-secs 28800 --candidate codex:gpt-5.4)
+  assert_contains "$out" "failover: zenith-mate pool=claude:ordinary pick=codex gpt-5.4 why=supervisor pool exhausted" \
+    "a second mate relaunches on its own pin, so its failover is a model pick, not an account"
+  assert_contains "$out" "steer: zenith-mate/child pool=claude:ordinary pick=account $CASE/acct-c why=keep exhausted pool for its supervisors" \
+    "a mate's worker moves to an account its own home declares"
+  assert_not_contains "$out" "pick=account $CASE/acct-b" "no move names an account its home cannot launch"
+  pass "a second mate gets a model failover and its worker an account from the mate's home"
+}
 test_limit_dialogs_are_recorded_with_account_and_model() {
   local rows rc
   new_case dialogs
@@ -266,6 +304,8 @@ fm_test_run \
   test_short_supervisor_pool_steers_its_workers_off \
   test_exhausted_supervisor_fails_over_to_another_account \
   test_exhausted_supervisor_with_no_way_out_names_none \
+  test_stale_candidate_is_not_a_failover_pick \
+  test_second_mate_picks_follow_its_own_pin_and_home \
   test_limit_dialogs_are_recorded_with_account_and_model \
   test_warning_records_then_checks \
   test_tick_runs_at_kickoff_and_periodically \

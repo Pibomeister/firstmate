@@ -1691,8 +1691,8 @@ wd_quota_name_pick() {  # <id> <subject> [task-id]
 }
 
 wd_quota_name_pick_rated() {  # <id> <subject-label> [task-id]
+  wd_quota_guard_warning "${3-}"
   if fm_wd_rate_ok "$LEDGER" "$O_HOME" quota suggest "$(cfgi nudge-secs 900)" "$(wd_now)" "${O_REC_SUBJECT:-$O_TAG}"; then
-    wd_quota_guard_warning "${3-}"
     wd_quota_name_pick "$1" "$2" "${3-}"
   else
     wd_gap "usage-limit on $2; next pick waits for nudge-secs"
@@ -1714,7 +1714,7 @@ wd_handle_quota() {
 
 # --- quota guard (bin/fm-quota-guard.sh) -------------------------------------
 
-wd_quota_guard_on() { [ "$(cfg quota-guard off)" = on ]; }
+wd_quota_guard_on() { [ "$(cfg quota-guard on)" != off ]; }
 
 # wd_quota_guard <home> <command> [args...]: one bounded guard call for that
 # home with this watchdog's config and candidates. Sets WD_QG_LINE to the
@@ -1752,11 +1752,14 @@ wd_quota_guard_pass() {
 }
 
 # wd_quota_guard_warning [task-id]: records the limit dialog this pass saw on
-# the subject or its worker, once per nudge-secs, and with quota-guard=on
-# checks quota now. A second mate's dialog is recorded in its parent home.
+# the subject or its worker, once per nudge-secs, and unless quota-guard=off
+# checks quota now. A second mate's dialog is recorded in its parent home. Only
+# a recorded dialog starts the window, so a failed record is tried again on the
+# next pass.
 wd_quota_guard_warning() {
-  local task=${1-} home=$O_HOME subject cmd=record-dialog rc=0
-  fm_wd_rate_ok "$LEDGER" "$O_HOME" quota-guard warning "$(cfgi nudge-secs 900)" "$(wd_now)" "${O_REC_SUBJECT:-$O_TAG}" || return 0
+  local task=${1-} home=$O_HOME subject cmd=record-dialog rc=0 last
+  last=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" quota-guard warning '^done$' "${O_REC_SUBJECT:-$O_TAG}")
+  [ -z "$last" ] || [ $(( $(wd_now) - last )) -ge "$(cfgi nudge-secs 900)" ] || return 0
   if [ "${O_PARENT:-}" != - ] && [ -n "${O_ID:-}" ] && [ "$O_ID" != - ]; then
     home=$O_PARENT
     if [ -n "$task" ]; then subject=$O_ID/$task; else subject=$O_ID; fi

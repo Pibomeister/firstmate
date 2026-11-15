@@ -63,11 +63,12 @@
 #
 # Moves. A worker on a short or exhausted supervisor pool gets a steer line, so
 # the pool is kept for its supervisors. A supervisor on an exhausted pool gets a failover
-# line. Each move names one pick: first, for a Claude member, another
-# config/claude-accounts entry whose own read is ok; then the
-# bin/fm-quota-reroute.sh suggest pick among the candidates that are not on
-# that pool or on another short or exhausted pool, with --kind secondmate for a
-# supervisor; else none. Firstmate, or the second mate that owns a worker,
+# line. Each move names one pick: first, for a Claude worker or the primary,
+# another config/claude-accounts entry of its own home whose own read is ok (a
+# second mate relaunches on its own pin, so it never gets an account pick);
+# then the bin/fm-quota-reroute.sh suggest pick among the candidates whose own
+# read is ok and that are not on that pool or on another pool that is short,
+# exhausted, or unknown, with --kind secondmate for a supervisor; else none. Firstmate, or the second mate that owns a worker,
 # relaunches through bin/fm-control.sh <id> relaunch --account <entry>, or
 # --harness and --model; this script never relaunches anything.
 #
@@ -392,12 +393,19 @@ pool_status() {  # <pool>
   awk -F'\t' -v p="$1" '$1 == p { print $2; exit }' "$WORK/pools.tsv"
 }
 
+# home_config <home>: the config directory a home launches its workers from.
+home_config() {
+  if [ "$1" = "$FM_HOME" ]; then printf '%s\n' "$CONFIG"; else printf '%s/config\n' "$1"; fi
+}
+
 # pick <provider> <account> <pool> <harness> <model> <kind> <worktree> <mate> <home>
+# A second mate relaunches on its own pin, so it never gets an account pick; a
+# worker gets only an account its own home declares.
 pick() {
   local provider=$1 account=$2 pool=$3 harness=$4 model=$5 kind=$6 wt=$7 mate=$8 home=$9
-  local entry st cand cpool cstat out err listed
-  if [ "$provider" = claude ]; then
-    listed=$(fm_worker_account_list claude "$CONFIG" 2>/dev/null) || listed=
+  local entry st cand cprov cacct cpool cstat out err listed
+  if [ "$provider" = claude ] && [ "$mate" = - ]; then
+    listed=$(fm_worker_account_list claude "$(home_config "$home")" 2>/dev/null) || listed=
     while IFS= read -r entry; do
       [ -n "$entry" ] && [ "$entry" != "$account" ] || continue
       st=$(classify claude "$entry" "$model" | cut -f 1)
@@ -411,10 +419,13 @@ pick() {
   if [ "$harness" = claude ] && [ "$kind" = secondmate ] && [ "$mate" != - ]; then set -- "$@" --mate "$mate"; fi
   local n=0
   for cand in $(printf '%s' "$CANDIDATES" | tr ',' ' '); do
-    cpool=$(member_pool "${cand%%:*}" "${cand#*:}" "" | tr '\t' ':')
+    IFS=$'\t' read -r cprov cacct <<< "$(member_pool "${cand%%:*}" "${cand#*:}" "")"
+    cpool=$cprov:$cacct
     [ "$cpool" != "$pool" ] || continue
-    cstat=$(pool_status "$cpool")
-    case "$cstat" in short|exhausted) continue ;; esac
+    case "$(pool_status "$cpool")" in short|exhausted|unknown) continue ;; esac
+    # Only a candidate whose own read is ok is headroom; stale or unmeasured is not.
+    cstat=$(classify "$cprov" "$cacct" "${cand#*:}" | cut -f 1)
+    [ "$cstat" = ok ] || continue
     set -- "$@" --candidate "$cand"
     n=$((n + 1))
   done
@@ -477,7 +488,9 @@ cmd_check() {
   done
   # shellcheck disable=SC2046  # one account root per word; roots hold no blanks
   read_claude $( { awk -F'\t' '$11 == "claude" { print $12 }' "$WORK/raw.tsv"
-    fm_worker_account_list claude "$CONFIG" 2>/dev/null; } | awk 'NF && !seen[$0]++')
+    fm_worker_account_list claude "$CONFIG" 2>/dev/null
+    mates | while IFS=$'\t' read -r _ home; do fm_worker_account_list claude "$home/config" 2>/dev/null; done
+    } | awk 'NF && !seen[$0]++')
   while IFS=$'\t' read -r role label id home harness model kind account wt mate provider pacct; do
     IFS=$'\t' read -r st runway why <<< "$(classify "$provider" "$pacct" "$model")"
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \

@@ -117,7 +117,7 @@ These checks run on every pass as well:
   The verb header in [`bin/fm-control.sh`](../bin/fm-control.sh) owns close policy.
   The watchdog never changes the runtime.
   The live runbook is [`verification/quota-reroute.md`](verification/quota-reroute.md).
-- With `quota-guard=on`, a primary home's quota guard runs at kickoff, every `quota-guard-every-secs`, and on each limit warning.
+- Unless `quota-guard=off`, a primary home's quota guard runs at kickoff, every `quota-guard-every-secs`, and on each limit warning.
   Kickoff is the first check of a home, or the first pass after a supervisor's session lock changed holder.
   A limit warning is a usage-limit picker or auto-wait footer on a supervisor pane or on a recorded worker pane.
   The guard reads `quota-axi` for every pool a supervisor runs on, and stale or unmeasured quota counts as unknown, never as headroom.
@@ -125,8 +125,9 @@ These checks run on every pass as well:
   While the last check is not ok, its result line stays a gap.
   The guard names a move for each worker on a short or exhausted supervisor pool first, so that pool is kept for its supervisors.
   A supervisor whose pool is still exhausted gets a failover pick: another signed-in Claude account with headroom first, then a reroute candidate on another pool.
+  A pick needs a fresh ok read of its own, and a second mate, which relaunches on its own pin, gets only a reroute candidate.
   It never changes an account pin, opens a sign-in, relaunches anything, or spends.
-  Every limit warning is recorded with its subject, account, and model, whether the guard is on or off, at most once per `nudge-secs` per pane; a second mate's warning is recorded in its parent home.
+  Every limit warning is recorded with its subject, account, and model, whether the guard is on or off, at most once per `nudge-secs` per pane; a record that failed is tried again on the next pass, and a second mate's warning is recorded in its parent home.
   [`bin/fm-quota-guard.sh`](../bin/fm-quota-guard.sh) owns the pools, verdicts, moves, and files.
 
 A nudge is written as a record-backed operational input in the subject's own home and typed into its pane as the record's doorbell.
@@ -364,7 +365,7 @@ An absent file means dry-run on the owner home alone.
 | `claude-config-dirs` | none | Extra Claude config directories searched for session transcripts |
 | `reserved-keys` | none | Comma-separated decision keys always held for the owner |
 | `reroute-candidates` | none | Comma-separated `harness:model` candidates for quota reroute nudges and quota guard moves |
-| `quota-guard` | `off` | `on` runs the quota guard at kickoff, periodically, and on each limit warning |
+| `quota-guard` | `on` | `off` stops the quota guard checks at kickoff, periodically, and on each limit warning; limit dialogs are still recorded |
 | `quota-guard-every-secs` | `7200` | Time between periodic quota guard checks |
 | `quota-guard-window-secs` | none | Horizon a supervisor pool must last; empty uses `quota-guard-window-until` |
 | `quota-guard-window-until` | `08:00` | Local time the night window ends when `quota-guard-window-secs` is empty |

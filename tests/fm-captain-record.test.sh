@@ -61,7 +61,7 @@ new_home() {
   cat "$home/lockpid" > "$home/state/.lock"
   printf '%s\n' "$sid" > "$home/state/.lock-session"
   fm_touch_epoch "$LOCK_AT" "$home/state/.lock" "$home/state/.lock-session"
-  printf 'mode=dry-run\nmodels=\n' > "$home/config/watchdog"
+  printf 'mode=dry-run\nmodels=\nquota-guard=off\n' > "$home/config/watchdog"
 }
 
 # heartbeat <home> <pane> <session> <epoch> <writer>: writer is `owner` (the

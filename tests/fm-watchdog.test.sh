@@ -150,7 +150,7 @@ SH
   jq -n --arg t "$T" --arg s "$SID" --argjson e "$BASE" --argjson p "$LOCKPID" \
     '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
     > "$H/state/heartbeat.json"
-  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\n%s\n' "$H/claude" "$extra" > "$H/config/watchdog"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nquota-guard=off\n%s\n' "$H/claude" "$extra" > "$H/config/watchdog"
   sleep 0.5
 }
 
@@ -1892,7 +1892,7 @@ wait_pickup() {
 
 # End the lock holder, then stamp the anchor a real bin/fm-lock.sh writes for it.
 kill_holder_with_anchor() {
-  printf '%s\nanchor_pid=%s\nanchor_start=Sat Nov  1 02:00:00 2026\n' "$SID" "$LOCKPID" > "$H/state/.lock-session"
+  printf '%s\nanchor_pid=%s\nanchor_start=Sat Nov  1 02:00:00 2026\nbackend=tmux\nterminal=%s\nworktree=%s\n' "$SID" "$LOCKPID" "$T" "$H" > "$H/state/.lock-session"
   kill "$LOCKPID" 2>/dev/null
   while kill -0 "$LOCKPID" 2>/dev/null; do sleep 0.1; done
 }
@@ -4218,7 +4218,9 @@ SH
 
 test_quota_guard_checks_at_kickoff_and_periodically() {
   local snap
-  make_home $'Captain session\n> ' 'quota-guard=on'
+  make_home $'Captain session\n> '
+  # The guard runs by default, so this home carries no quota-guard key at all.
+  grep -v '^quota-guard=' "$H/config/watchdog" > "$H/watchdog.conf" && mv "$H/watchdog.conf" "$H/config/watchdog"
   snap="$H/quota.json"
   wd_quota_snapshot "$snap"
   : > "$H/quota-axi.calls"
@@ -4244,7 +4246,38 @@ SH
   assert_no_grep "allow-keychain-prompt" "$H/quota-axi.calls" "the guard never opens a sign-in prompt"
   [ ! -s "$H/typed.log" ] || fail "an unknown verdict typed into the pane: $(cat "$H/typed.log")"
   rm -f "$FAKEBIN/quota-axi"
-  pass "quota guard: the watchdog checks at kickoff and every two hours"
+  pass "quota guard: by default the watchdog checks at kickoff and every two hours"
+}
+
+test_failed_limit_dialog_record_is_retried() {
+  local snap dialog
+  dialog=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  make_home $'Captain session\n> ' 'reroute-candidates=codex:gpt-5.4'
+  mkdir -p "$H/wt" "$H/user/.claude"
+  worker_pane limit ship "$dialog"
+  printf 'harness=claude\nworktree=%s\nmodel=default\n' "$H/wt" >> "$H/state/limit.meta"
+  snap="$H/quota.json"
+  wd_quota_snapshot "$snap"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  transcript 100 "Working."
+  sleep 0.5
+  # A directory where the record file goes makes the append fail.
+  mkdir -p "$H/state/quota-limit-dialogs.tsv"
+  HOME="$H/user" run_wd 0 once >/dev/null 2>&1 || fail "failing-record pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard warning failed)" "a dialog that cannot be recorded is a failed row: $(ledger | cut -f4-8)"
+  assert_grep "limit dialog on limit not recorded" "$H/data/watchdog/status.md" "a failed record is a gap"
+  rmdir "$H/state/quota-limit-dialogs.tsv"
+  HOME="$H/user" run_wd 1 once >/dev/null 2>&1 || fail "retry pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard warning "done")" "a failed record is tried again on the next pass: $(ledger | cut -f4-8)"
+  assert_grep "	limit	ordinary	default	claude" "$H/state/quota-limit-dialogs.tsv" "the retried dialog is recorded"
+  HOME="$H/user" run_wd 2 once >/dev/null 2>&1 || fail "rate-limited pass failed"
+  assert_equals 1 "$(wc -l < "$H/state/quota-limit-dialogs.tsv" | tr -d ' ')" "a recorded dialog waits nudge-secs"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota guard: a limit dialog that failed to record is tried again on the next pass"
 }
 test_worker_usage_limit_names_a_pick() {
   local snap dialog calls
@@ -5642,6 +5675,7 @@ fm_test_run \
   test_unreadable_claude_account_pin_gets_no_pick \
   test_worker_usage_limit_names_a_pick \
   test_quota_guard_checks_at_kickoff_and_periodically \
+  test_failed_limit_dialog_record_is_retried \
   test_grok_weekly_limit_on_a_secondmate_names_a_pick \
   test_home_usage_limit_ignores_grok_in_scrollback \
   test_orca_usage_limit_does_not_relaunch_from_scrollback \
