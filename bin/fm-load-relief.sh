@@ -446,8 +446,11 @@ resume_pass() {
     fi
     rgen=$(meta_get "$PAUSED_DIR/$id" spawn_gen)
     if FM_SEND_EXPECTED_SPAWN_GEN="$rgen" FM_HOME="$FM_HOME" "$send_cmd" "$id" "Host load has fallen to $load1 (resume level $level). Your load-relief pause is lifted; resume your task from where you left off." >/dev/null 2>&1; then
-      rm -f "$PAUSED_DIR/$id"
+      # Resolve the pause line before dropping the record: a pass killed
+      # between the two leaves a record whose next resume is only a repeat
+      # steer, never a pause line with no record left to close it.
       printf 'resolved [key=load-relief] [at=%s]: load relief lifted (load %s below %s); resumed by steer\n' "$now" "$load1" "$level" >> "$STATE/$id.status" 2>/dev/null || true
+      rm -f "$PAUSED_DIR/$id"
       fm_lock_release "$control_lock" || true
       control_lock=
       echo "load-relief: resumed $id load=$load1 resume-below=$level"
