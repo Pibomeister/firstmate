@@ -197,6 +197,18 @@ test_hardstop_categories() {
   assert_equals $'hardstop\tdestructive' "$(bash_prompt_with 'rm -rf build/' | classify claude)" "a recursive remove is a destructive stop"
   assert_equals $'hardstop\tdestructive' "$(bash_prompt_with 'git reset --hard origin/main' | classify claude)" "a hard reset is a destructive stop"
   assert_equals $'hardstop\trelease' "$(bash_prompt_with 'gh pr merge 12 --squash' | classify claude)" "a merge is a release stop"
+  local c
+  for c in 'rm report.txt' 'rm --recursive --force build/' 'git restore src/app.py' 'git checkout -f main' 'find . -name x -delete'; do
+    assert_equals $'hardstop\tdestructive' "$(bash_prompt_with "$c" | classify claude)" "$c is a destructive stop"
+  done
+  assert_equals $'hardstop\tspend' "$(bash_prompt_with 'echo Use paid credits to continue' | classify claude)" "paid-credit wording is a spend stop"
+  for c in 'Enter your password:' 'Enter your passphrase:' 'Password for dev@build:'; do
+    assert_equals $'hardstop\tcredential' "$(printf 'work\n%s\n' "$c" | classify claude)" "$c is a credential stop"
+  done
+  assert_equals $'hardstop\tspend' "$(printf ' Continue with paid usage?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel\n' | classify claude)" \
+    "a paid-usage picker is a spend stop"
+  assert_equals $'hardstop\tdestructive' "$(printf ' Delete the database?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel\n' | classify claude)" \
+    "a destructive question picker is a destructive stop"
   assert_equals $'hardstop\tcredential' "$(printf 'work\n[sudo] password for dev:\n' | classify claude)" "a sudo password input is a credential stop"
   assert_equals $'hardstop\tsign-in' "$(printf 'Browser opened\nPaste code here if prompted >\n' | classify claude)" "a pasted sign-in code is a sign-in stop"
   assert_equals $'hardstop\tsign-in' "$(printf ' Select login method:\n\n ❯ 1. Claude account with subscription\n   2. Anthropic Console account\n\n Enter to confirm · Esc to cancel\n' | classify claude)" \
@@ -225,6 +237,24 @@ test_tool_approval_is_declined_and_steered() {
   assert_no_grep "permission dialog waiting on worker ok" "$H/data/watchdog/status.md" "a declined prompt is not a waiting gap"
   assert_equals '' "$(cat "$CALLS_LOG")" "no merge, notifier, or model tool ran"
   pass "tool approval: one Escape, verified gone, then a durable rewrite instruction"
+}
+
+test_prompt_after_escape_gets_no_instruction() {
+  make_home
+  worker nt claude "$FIX/claude-2.1.325-bash-prompt.txt" "$FIX/claude-2.1.325-trust.txt"
+  printf 'work output\nEnter your password:\n' > "$H/pw-after.txt"
+  worker np claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/pw-after.txt"
+  run_wd 0 once >/dev/null 2>&1 || fail "the watchdog pass failed"
+  local id
+  for id in nt np; do
+    assert_equals "$ESC" "$(typed "$id")" "only the one Escape reaches worker $id: $(typed "$id" | od -c | head -3)"
+    assert_equals '' "$(inbox_text "$id")" "no instruction, and so no doorbell, goes to worker $id"
+    assert_equals 0 "$(ledger_rows steer "done" "worker:$id")" "no steer is recorded for worker $id"
+  done
+  assert_equals 1 "$(status_rows nt blocked permission-prompt-held)" "a trust dialog behind the declined prompt is held"
+  assert_equals 1 "$(status_rows np blocked permission-prompt-hardstop)" "a password input behind the declined prompt is a hard stop"
+  assert_grep "shows a credential prompt after a declined tool call" "$H/state/np.status" "the hard stop names its category"
+  pass "after Escape: a trust dialog or credential input behind the prompt gets no instruction, no doorbell, and a keyed blocked line"
 }
 
 test_repeated_or_capped_prompts_hold() {
@@ -346,6 +376,7 @@ fm_test_run \
   test_declining_cursor_dialogs_never_route \
   test_hardstop_categories \
   test_tool_approval_is_declined_and_steered \
+  test_prompt_after_escape_gets_no_instruction \
   test_repeated_or_capped_prompts_hold \
   test_trust_dialog_relaunches_without_a_key \
   test_hardstop_prompts_are_never_answered \

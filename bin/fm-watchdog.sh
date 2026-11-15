@@ -1632,7 +1632,7 @@ wd_pp_steer() {
 # tool-approval prompt, verified gone, then the rewrite instruction. A repeated
 # prompt, the hourly cap, or a do-not-touch endpoint holds instead.
 wd_pp_decline() {
-  local id=$1 harness=$2 hash=$3 mark cap n rid live after verdict
+  local id=$1 harness=$2 hash=$3 mark cap n rid live after after_dialog verdict
   mark=$(wd_pp_mark "$id")
   if grep -Fxq -- "$hash" "$mark.declined" 2>/dev/null; then
     wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id repeated a tool call whose permission prompt was already declined; nothing was answered"
@@ -1676,6 +1676,20 @@ wd_pp_decline() {
   wd_rec "$rid" permission-prompt decline "done" "the prompt left the pane"
   mkdir -p "$WD/permission"
   printf '%s\n' "$hash" >> "$mark.declined"
+  # The steer's doorbell types a line and Enter, so it rings only when the
+  # screen after Escape shows no dialog and no prompt of any kind.
+  after_dialog=$(fm_wd_pane_dialog "$after" "$harness") || after_dialog=
+  if verdict=$(fm_pp_classify "$after" "$harness" "$after_dialog"); then
+    case "$verdict" in
+      hardstop*) wd_pp_stop "$id" permission-prompt-hardstop "after-$hash" "worker $id shows a ${verdict#*$'\t'} prompt after a declined tool call; nothing was answered, and no instruction was sent" ;;
+      *) wd_pp_stop "$id" permission-prompt-held "after-$hash" "worker $id shows another permission prompt after a declined tool call (${verdict#*$'\t'}); nothing was answered, and no instruction was sent" ;;
+    esac
+    return 1
+  fi
+  if [ -n "$after_dialog" ]; then
+    wd_pp_stop "$id" permission-prompt-held "after-$hash" "worker $id shows a $after_dialog dialog after a declined tool call; nothing was answered, and no instruction was sent"
+    return 1
+  fi
   wd_pp_steer "$id" "$hash" || return 1
   wd_pp_clear "$id"
 }

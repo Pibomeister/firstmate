@@ -27,8 +27,8 @@
 #       The prompt names a credential, a sign-in, paid usage, a destructive
 #       command, a merge or release, or another owner-reserved category
 #       (fm_wd_reserved). Never answered. Any other question picker is checked
-#       for the credential, sign-in, and spend categories only and otherwise
-#       has no verdict, and a screen with no picker is checked only for a
+#       for every one of these categories in its prompt rows and otherwise has
+#       no verdict, and a screen with no picker is checked only for a
 #       credential or sign-in input on its last row.
 #   route tool-approval
 #       A Claude tool-approval prompt whose structure is proven on a worker with
@@ -46,9 +46,8 @@
 #   fm_pp_prompt_rows <screen>
 #       Prints the prompt rows: everything below the last full-width rule above
 #       the question or first option row, else fm_wd_dialog_text's own rows.
-#   fm_pp_hardstop_category <text> [account]
-#       Prints the first hard-stop category the text names; `account` limits
-#       the check to credential, sign-in, and spend. Exit 1 when none.
+#   fm_pp_hardstop_category <text>
+#       Prints the first hard-stop category the text names. Exit 1 when none.
 #   fm_pp_bottom_input <screen>
 #       Prints `credential` or `sign-in` when the last non-blank row is a
 #       password, passphrase, token, API key, or pasted sign-in code input.
@@ -64,8 +63,8 @@ fi
 
 FM_PP_CREDENTIAL_RE='password|passphrase|passcode|api.?key|access.?token|auth.?token|bearer|token|secret|keychain|credential|private.?key|ssh-add|\.ssh/|\.netrc|\.npmrc|(^|[^a-z])\.env([^a-z]|$)|1password|op (read|signin)|security (find|add|delete)-|(^|[^a-z])gpg|(^|[^a-z])sudo([^a-z]|$)'
 FM_PP_SIGNIN_RE='sign.?in|log.?in|/login|authenticat|oauth|paste (the )?(authorization |authentication )?code|verification code|device code|browser didn.t open|select login method|not logged in|re-?authori[sz]e|session expired'
-FM_PP_SPEND_RE='add funds|buy (more )?credits|purchase|payment|billing|upgrade (your |to )?(plan|max|pro)|extra usage|pay.as.you.go|overage|spend|credit card|subscribe|top.?up'
-FM_PP_DESTRUCTIVE_RE='(^|[^a-z])rm[[:space:]]+-[a-z]*[rf]|git[[:space:]]+reset[[:space:]]+--hard|git[[:space:]]+clean[[:space:]]+-[a-z]*f|git[[:space:]]+push[^|;&]*([[:space:]]-f([[:space:]]|$)|--force|[[:space:]]\+)|branch[[:space:]]+-d|git[[:space:]]+checkout[[:space:]]+--[[:space:]]|git[[:space:]]+stash[[:space:]]+(drop|clear)|worktree[[:space:]]+(remove|prune)|drop[[:space:]]+(table|database|schema)|truncate|(^|[^a-z])(delet|destroy|wipe|erase|overwrit)|mkfs|(^|[^a-z])dd[[:space:]]+if=|chmod[[:space:]]+-r|chown[[:space:]]+-r|kill[[:space:]]+-9|pkill|killall'
+FM_PP_SPEND_RE='add funds|paid[[:space:]]+(usage|credits?|plan|tier|model|request)|credits?[[:space:]]+to[[:space:]]+continue|use[[:space:]]+(your[[:space:]]+|extra[[:space:]]+|more[[:space:]]+)?credits|(^|[^a-z])charg(e|ed|es|ing)([^a-z]|$)|buy (more )?credits|purchase|payment|billing|upgrade (your |to )?(plan|max|pro)|extra usage|pay.as.you.go|overage|spend|credit card|subscribe|top.?up'
+FM_PP_DESTRUCTIVE_RE='(^|[^a-z])(rm|rmdir|unlink|shred|srm)([[:space:]]|$)|--recursive|git[[:space:]]+(restore|rm|switch[[:space:]]+(-f|--discard-changes|--force))([[:space:]]|$)|git[[:space:]]+checkout[[:space:]]+(-f|--force|\.)([[:space:]]|$)|find[[:space:]].*-delete|git[[:space:]]+reset[[:space:]]+--hard|git[[:space:]]+clean[[:space:]]+-[a-z]*f|git[[:space:]]+push[^|;&]*([[:space:]]-f([[:space:]]|$)|--force|[[:space:]]\+)|branch[[:space:]]+-d|git[[:space:]]+checkout[[:space:]]+--[[:space:]]|git[[:space:]]+stash[[:space:]]+(drop|clear)|worktree[[:space:]]+(remove|prune)|drop[[:space:]]+(table|database|schema)|truncate|(^|[^a-z])(delet|destroy|wipe|erase|overwrit)|mkfs|(^|[^a-z])dd[[:space:]]+if=|chmod[[:space:]]+-r|chown[[:space:]]+-r|kill[[:space:]]+-9|pkill|killall'
 FM_PP_RELEASE_RE='(^|[^be])merg|deploy|releas|publish|production|(^|[^a-z])prod([^a-z]|$)|gh[[:space:]]+release|npm[[:space:]]+publish'
 
 # The prompt rows below the last full-width rule above the question or first
@@ -96,13 +95,12 @@ fm_pp_hash() {  # <screen>
   fm_pp_prompt_rows "${1-}" | cksum | awk '{ print $1 }'
 }
 
-fm_pp_hardstop_category() {  # <text> [account]
+fm_pp_hardstop_category() {  # <text>
   local t
   t=$(fm_wd_lower "${1-}" | tr '\n\t' '  ')
   if printf '%s' "$t" | LC_ALL=C grep -Eq "$FM_PP_CREDENTIAL_RE"; then printf 'credential\n'; return 0; fi
   if printf '%s' "$t" | LC_ALL=C grep -Eq "$FM_PP_SIGNIN_RE"; then printf 'sign-in\n'; return 0; fi
   if printf '%s' "$t" | LC_ALL=C grep -Eq "$FM_PP_SPEND_RE"; then printf 'spend\n'; return 0; fi
-  [ "${2-}" = account ] && return 1
   if printf '%s' "$t" | LC_ALL=C grep -Eq "$FM_PP_DESTRUCTIVE_RE"; then printf 'destructive\n'; return 0; fi
   if printf '%s' "$t" | LC_ALL=C grep -Eq "$FM_PP_RELEASE_RE"; then printf 'release\n'; return 0; fi
   if fm_wd_reserved "${1-}"; then printf 'reserved\n'; return 0; fi
@@ -116,7 +114,7 @@ fm_pp_bottom_input() {  # <screen>
   last=$(_fm_wd_tail_rows "${1-}" 1)
   last=$(fm_wd_lower "$last" | sed -e 's/[[:space:]]*$//')
   [ -n "$last" ] || return 1
-  if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\[sudo\][[:space:]]+)?(password|passphrase|passcode|pin)([[:space:]]+for[[:space:]][^:]*)?:$|enter[[:space:]]+(the[[:space:]]+)?(password|passphrase|pin)[^:]*:$|(api[[:space:]_-]?key|token|secret)[^:]{0,30}:$'; then
+  if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\[sudo\][[:space:]]+)?(password|passphrase|passcode|pin)([[:space:]]+for[[:space:]][^:]*)?:$|(enter|type|input|provide)[[:space:]]+((your|the|a)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(password|passphrase|passcode|pin)[^:]*:$|(password|passphrase|passcode)[^:]{0,40}:$|(api[[:space:]_-]?key|token|secret)[^:]{0,30}:$'; then
     printf 'credential\n'; return 0
   fi
   if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:]*[>:]$|verification code[^:]*:$|device code[^:]*:$'; then
@@ -187,7 +185,7 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
     return 0
   fi
   if [ "$dialog" = question ]; then
-    cat=$(fm_pp_hardstop_category "$rows" account) || return 1
+    cat=$(fm_pp_hardstop_category "$rows") || return 1
     printf 'hardstop\t%s\n' "$cat"
     return 0
   fi
