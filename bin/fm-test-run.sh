@@ -1138,6 +1138,7 @@ tests/fm-escalation-class-map.test.sh 6000
 tests/fm-incident-ledger.test.sh 30626
 tests/fm-kiro-harness.test.sh 35000
 tests/fm-kiro-signals-live-e2e.test.sh 60
+tests/fm-lane-register.test.sh 52000
 tests/fm-lane-vitals.test.sh 9527
 tests/fm-layer-chain.test.sh 29492
 tests/fm-procevent-factory.test.sh 25000
