@@ -70,7 +70,7 @@ fi
 FM_PP_CREDENTIAL_RE='password|--reveal|(^|[^a-z])op[[:space:]]+item|aws[[:space:]]+configure|(^|[^a-z])(otp|2fa|mfa)([^a-z]|$)|one.time (code|password)|passphrase|passcode|api.?key|access.?token|auth.?token|bearer|token|secret|keychain|credential|private.?key|id_(rsa|dsa|ecdsa|ed25519)|hosts\.yml|(^|[^a-z])printenv([^a-z]|$)|ssh-add|\.ssh/|\.netrc|\.npmrc|\.pgpass|authori[sz]ation:|(^|[^a-z])cookie:|\.docker/config\.json|curl[^|;&]*[[:space:]](-u|--user)([[:space:]=]|$)|(^|[^a-z])\.env([^a-z]|$)|1password|op (read|signin)|security (find|add|delete)-|(^|[^a-z])gpg|(^|[^a-z])sudo([^a-z]|$)'
 FM_PP_SIGNIN_RE='sign.?in|log.?in|/login|authenticat|oauth|paste (the )?(authorization |authentication )?code|verification code|device code|browser didn.t open|select login method|not logged in|re-?authori[sz]e|session expired'
 FM_PP_SPEND_RE='add funds|paid[[:space:]]+(usage|credits?|plan|tier|model|request)|credits?[[:space:]]+to[[:space:]]+continue|use[[:space:]]+(your[[:space:]]+|extra[[:space:]]+|more[[:space:]]+)?credits|(^|[^a-z])charg(e|ed|es|ing)([^a-z]|$)|buy (more )?credits|purchase|payment|billing|upgrade (your |to )?(plan|max|pro)|extra usage|pay.as.you.go|overage|spend|credit card|subscribe|top.?up'
-FM_PP_DESTRUCTIVE_RE='(^|[^a-z])(rm|rmdir|unlink|shred|srm)([[:space:]]|$)|--recursive|(^|[[:space:]])--force([[:space:]=-]|$)|git[[:space:]]([^|;&]*[[:space:]])?(restore|clean|rm)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?reset[^|;&]*[[:space:]]--(hard|merge|keep)|git[[:space:]]([^|;&]*[[:space:]])?checkout[^|;&]*[[:space:]](-f|--force|\.|--)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?switch[^|;&]*[[:space:]](-f|--discard-changes)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?push[^|;&]*([[:space:]]-f([[:space:]]|$)|[[:space:]:]\+|[[:space:]]:[^[:space:]]|--delete|--mirror|--prune|[[:space:]]-d([[:space:]]|$))|git[[:space:]]([^|;&]*[[:space:]])?update-ref[^|;&]*[[:space:]]-d([[:space:]]|$)|s3[[:space:]]+rb([[:space:]]|$)|tmux[^|;&]*[[:space:]]kill-(server|session|pane|window)|git[[:space:]]([^|;&]*[[:space:]])?branch[^|;&]*[[:space:]]-(d|-delete)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?stash[[:space:]]+(drop|clear)|git[[:space:]]([^|;&]*[[:space:]])?(filter-branch|filter-repo|reflog[[:space:]]+expire)|worktree[[:space:]]+(remove|prune)|find[[:space:]].*-delete|(^|[^a-z])prune([^a-z]|$)|drop[[:space:]]+(table|database|schema)|truncate|(^|[^a-z])(delet|destroy|wipe|erase|overwrit)|mkfs|(^|[^a-z])dd[[:space:]]+if=|(chmod|chown|chgrp)([[:space:]][^|;&]*)?[[:space:]](-[a-z]*r|--recursive)|chmod[^|;&]*777|(^|[^a-z])(mv|cp|ln)[[:space:]]+(-[a-z]*f|--force)|(^|[[:space:];&|(])(:|true)[[:space:]]*>[^>&]|>[[:space:]]*/dev/(r?disk|sd|nvme)|kill[[:space:]]+-9|pkill|killall'
+FM_PP_DESTRUCTIVE_RE='(^|[^a-z])(rm|rmdir|unlink|shred|srm)([[:space:]]|$)|--recursive|(^|[[:space:]])--force([[:space:]=-]|$)|git[[:space:]]([^|;&]*[[:space:]])?(restore|clean|rm)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?reset[^|;&]*[[:space:]]--(hard|merge|keep)|git[[:space:]]([^|;&]*[[:space:]])?checkout[^|;&]*[[:space:]](-f|--force|\.|--)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?switch[^|;&]*[[:space:]](-f|--discard-changes)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?push[^|;&]*([[:space:]]-f([[:space:]]|$)|[[:space:]:]\+|[[:space:]]:[^[:space:]]|--delete|--mirror|--prune|[[:space:]]-d([[:space:]]|$))|git[[:space:]]([^|;&]*[[:space:]])?update-ref[^|;&]*[[:space:]]-d([[:space:]]|$)|s3[[:space:]]+rb([[:space:]]|$)|tmux[^|;&]*[[:space:]]kill-(server|session|pane|window)|git[[:space:]]([^|;&]*[[:space:]])?branch[^|;&]*[[:space:]]-(d|-delete)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?stash[[:space:]]+(drop|clear)|git[[:space:]]([^|;&]*[[:space:]])?(filter-branch|filter-repo|reflog[[:space:]]+expire)|worktree[[:space:]]+(remove|prune)|find[[:space:]].*-delete|(^|[^a-z])prune([^a-z]|$)|drop[[:space:]]+(table|database|schema)|truncate|(^|[^a-z])(delet|destroy|wipe|erase|overwrit)|mkfs|(^|[^a-z])dd[[:space:]]+if=|(chmod|chown|chgrp)([[:space:]][^|;&]*)?[[:space:]](-[a-z]*r|--recursive)|chmod[^|;&]*777|(^|[^a-z])mv[[:space:]]+(-[a-z]*f|--force)|(^|[[:space:];&|(])(:|true)[[:space:]]*>[^>&]|>[[:space:]]*/dev/(r?disk|sd|nvme)|kill[[:space:]]+-9|pkill|killall'
 FM_PP_RELEASE_RE='git[[:space:]]([^|;&]*[[:space:]])?push[^|;&]*[[:space:]:/](main|master|trunk|release[^[:space:]]*)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?push[^|;&]*([[:space:]:/]v[0-9]+\.[0-9]|--tags)|refs/(heads/(main|master|trunk)|tags/)|git[[:space:]]([^|;&]*[[:space:]])?tag([[:space:]]|$)|(^|[^be])merg|deploy|releas|publish|production|(^|[^a-z])prod([^a-z]|$)|gh[[:space:]]+release|npm[[:space:]]+publish|twine[[:space:]]+upload|terraform[[:space:]]+apply|kubectl[[:space:]]+(apply|delete|rollout)|helm[[:space:]]+(install|upgrade)|docker[[:space:]]+push'
 
 # The prompt rows below the nearest full-width rule above the last row, when a
@@ -93,6 +93,13 @@ _fm_pp_ruled_rows() {  # <screen>
         else if (r[i] ~ /^[ \t]*(─|━){20,}[ \t]*$/ && dashed % 2 == 0) { top = i; break }
       }
       if (!top) exit 1
+      # A proven box has at most its two dashed rows, and no other rule above
+      # it encloses a dashed row, which would put this rule inside a command.
+      if (dashed > 2) exit 1
+      for (i = top - 1; i >= floor; i--) {
+        if (r[i] ~ /^[ \t]*(─|━){20,}[ \t]*$/) break
+        if (r[i] ~ /^[ \t]*(╌){20,}[ \t]*$/) { for (j = i - 1; j >= floor; j--) if (r[j] ~ /^[ \t]*(─|━){20,}[ \t]*$/) exit 1; break }
+      }
       anchor = 0
       for (i = top + 1; i <= last; i++) {
         if (r[i] ~ /^[ \t]*(❯|›|>)?[ \t]*1[.)][ \t]/ || tolower(r[i]) ~ /do you want to |would you like to /) anchor = i
@@ -115,13 +122,22 @@ fm_pp_hash() {  # <screen>
 
 fm_pp_hardstop_category() {  # <text>
   local t
-  t=$(fm_wd_lower "${1-}" | tr '\n\t' '  ')
+  # The rows joined with spaces and with nothing, so a soft-wrapped command
+  # such as `--ha` over `rd` still reads as one word.
+  t=$(_fm_wd_guard_view "${1-}" | tr '\n\t' '  ')
   if printf '%s' "$t" | LC_ALL=C grep -Eq "$FM_PP_CREDENTIAL_RE"; then printf 'credential\n'; return 0; fi
-  # A bare environment dump prints every exported secret.
-  if fm_wd_lower "${1-}" | LC_ALL=C grep -Eq '^[[:space:]]*(env|set|export[[:space:]]+-p|declare[[:space:]]+-x)[[:space:]]*($|[|>;&])'; then printf 'credential\n'; return 0; fi
+  # An environment dump, bare, wrapped, or with options, prints every
+  # exported secret.
+  if fm_wd_lower "${1-}" | LC_ALL=C grep -Eq '(^|[;&|(][[:space:]]*)[[:space:]]*((command|builtin|exec|sudo|nohup)[[:space:]]+)*(([^[:space:]]*/)?(env|printenv)([[:space:]]+-[^[:space:]|;&>]*)*|set|export[[:space:]]+-p|declare[[:space:]]+-[a-z]*x|typeset[[:space:]]+-[a-z]*x|compgen[[:space:]]+-e)[[:space:]]*($|[|>;&)])'; then printf 'credential\n'; return 0; fi
   if printf '%s' "$t" | LC_ALL=C grep -Eq "$FM_PP_SIGNIN_RE"; then printf 'sign-in\n'; return 0; fi
   if printf '%s' "$t" | LC_ALL=C grep -Eq "$FM_PP_SPEND_RE"; then printf 'spend\n'; return 0; fi
   if printf '%s' "$t" | LC_ALL=C grep -Eq "$FM_PP_DESTRUCTIVE_RE"; then printf 'destructive\n'; return 0; fi
+  # A checkout can restore files over local changes, and a path cannot be told
+  # from a branch name, so only a checkout that creates a branch is not one.
+  if printf '%s' "$t" | LC_ALL=C grep -Eq 'git[[:space:]]([^|;&]*[[:space:]])?checkout([[:space:]]|$)' \
+    && ! printf '%s' "$t" | LC_ALL=C grep -Eq 'git[[:space:]]([^|;&]*[[:space:]])?checkout[[:space:]]+(-[bc]|--orphan)[[:space:]]'; then
+    printf 'destructive\n'; return 0
+  fi
   if printf '%s' "$t" | LC_ALL=C grep -Eq "$FM_PP_RELEASE_RE"; then printf 'release\n'; return 0; fi
   if fm_wd_reserved "${1-}"; then printf 'reserved\n'; return 0; fi
   return 1
@@ -148,10 +164,10 @@ fm_pp_bottom_input() {  # <screen>
     esac
   done
   [ -n "$last" ] || return 1
-  if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+)?(\[sudo\][[:space:]]+)?(password|passphrase|passcode|pin)([[:space:]]+for[[:space:]][^:]*)?[:>?]$|(enter|type|input|provide|paste)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(password|passphrase|passcode|pin|api[[:space:]_-]?key|access[[:space:]_-]?key|private[[:space:]_-]?key|token|secret|otp|2fa|mfa|one.time|authenticator|security)[^:>?]*[:>?]$|(password|passphrase|passcode)([[:space:]]+for[[:space:]].*)?[^:]{0,40}[:>]$|(api[[:space:]_-]?key|access[[:space:]_-]?key|token|secret)[^:>?]{0,30}[:>?]$'; then
+  if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+)?(\[sudo\][[:space:]]+)?(password|passphrase|passcode|pin|otp|2fa([[:space:]]+code)?|mfa([[:space:]]+code)?|one.time[[:space:]]+(code|password))([[:space:]]+for[[:space:]][^:]*)?[:>?]$|(enter|type|input|provide|paste)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(password|passphrase|passcode|pin|api[[:space:]_-]?key|access[[:space:]_-]?key|private[[:space:]_-]?key|token|secret|otp|2fa|mfa|one.time|authenticator|security)[^:>?]*[:>?]$|(password|passphrase|passcode)([[:space:]]+for[[:space:]].*)?[^:]{0,40}[:>]$|(api[[:space:]_-]?key|access[[:space:]_-]?key|token|secret)[^:>?]{0,30}[:>?]$'; then
     printf 'credential\n'; return 0
   fi
-  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:]*[>:]$|verification code[^:]*:$|device code[^:]*:$|^username for .*:$|press enter to open .*(browser|github\.com|login)'; then
+  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:]*[>:]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(authentication|verification|security|login|sign.?in|device|authori[sz]ation)[[:space:]]+code[^:>?]*[:>?]$|(authentication|security|login) code[^:]*:$|verification code[^:]*:$|device code[^:]*:$|^username for .*:$|press enter to open .*(browser|github\.com|login)'; then
     printf 'sign-in\n'; return 0
   fi
   return 1

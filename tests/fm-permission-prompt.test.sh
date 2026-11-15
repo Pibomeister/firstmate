@@ -212,7 +212,7 @@ test_hardstop_categories() {
   assert_equals $'hardstop\trelease' "$(bash_prompt_with 'git push origin main' | classify claude)" "a push to main is a release stop"
   assert_equals $'hardstop\tcredential' "$(bash_prompt_with 'op item get gh --reveal' | classify claude)" "a revealed vault item is a credential stop"
   assert_equals $'route\ttool-approval' "$(bash_prompt_with 'git push -u origin fm/feature-x' | classify claude)" "a feature-branch push still routes"
-  for c in 'git push origin feature' 'tmux ls' 'curl https://example.com' 'mv a.txt b.txt' 'npm test > out.log'; do
+  for c in 'git push origin feature' 'tmux ls' 'curl https://example.com' 'mv a.txt b.txt' 'npm test > out.log' 'ln -sf a b' 'cp -rf a b' 'set -euo pipefail' 'git checkout -b fm/new' 'env FOO=1 npm test'; do
     assert_equals $'route\ttool-approval' "$(bash_prompt_with "$c" | classify claude)" "$c still routes"
   done
   for c in 'Enter your password:' 'Enter your passphrase:' 'Password for dev@build:' "Password for 'https://x@github.com':" 'Enter OTP:'; do
@@ -225,20 +225,21 @@ test_hardstop_categories() {
     "a destructive question picker is a destructive stop"
   assert_equals $'hardstop\tcredential' "$(printf 'work\n[sudo] password for dev:\n' | classify claude)" "a sudo password input is a credential stop"
   assert_equals $'hardstop\tsign-in' "$(printf 'Browser opened\nPaste code here if prompted >\n' | classify claude)" "a pasted sign-in code is a sign-in stop"
+  assert_equals $'hardstop\tsign-in' "$(printf 'work\nEnter your authentication code:\n' | classify claude)" "an authentication code input is a sign-in stop"
   assert_equals $'hardstop\tsign-in' "$(printf ' Select login method:\n\n ❯ 1. Claude account with subscription\n   2. Anthropic Console account\n\n Enter to confirm · Esc to cancel\n' | classify claude)" \
     "a login picker is a sign-in stop"
   assert_equals $'hardstop\tspend' "$(printf ' You have reached your limit. Add funds to continue?\n ❯ 1. Buy more credits\n   2. Wait\n\n Enter to confirm · Esc to cancel\n' | classify claude)" \
     "an add-funds picker is a spend stop"
-  for c in 'git clean --force -d' 'git -C /tmp/probe reset --hard HEAD' 'git checkout --quiet -- src/app.py' 'git checkout HEAD -- f' 'chmod 777 -R .' 'chmod -R 000 .' 'chown -R root .' 'git push origin :feature' 'git update-ref -d refs/heads/x' 'aws s3 rb s3://bucket' 'tmux kill-server' 'tmux kill-pane -t other' ': > important.txt' 'mv -f backup.db current.db'; do
+  for c in 'git clean --force -d' 'git -C /tmp/probe reset --hard HEAD' 'git checkout --quiet -- src/app.py' 'git checkout HEAD -- f' 'chmod 777 -R .' 'chmod -R 000 .' 'chown -R root .' 'git push origin :feature' 'git update-ref -d refs/heads/x' 'aws s3 rb s3://bucket' 'tmux kill-server' 'tmux kill-pane -t other' ': > important.txt' 'mv -f backup.db current.db' 'git checkout HEAD important.txt' 'git checkout important.txt' 'git checkout --pathspec-from-file=paths.txt'; do
     assert_equals $'hardstop\tdestructive' "$(bash_prompt_with "$c" | classify claude)" "$c is a destructive stop"
   done
   for c in 'git push origin HEAD:refs/heads/main' 'git tag v1.2.0' 'git push --tags' 'git push origin v1.2.0' 'terraform apply' 'twine upload dist/x'; do
     assert_equals $'hardstop\trelease' "$(bash_prompt_with "$c" | classify claude)" "$c is a release stop"
   done
-  for c in 'cat id_rsa' 'cat ~/.config/gh/hosts.yml' 'printenv' 'env' 'curl -u user:pass https://example.com' 'cat ~/.docker/config.json' 'curl -H "Authorization: Basic dXNlcjpwYXNz" https://example.com'; do
+  for c in 'cat id_rsa' 'cat ~/.config/gh/hosts.yml' 'printenv' 'env' 'curl -u user:pass https://example.com' 'cat ~/.docker/config.json' 'curl -H "Authorization: Basic dXNlcjpwYXNz" https://example.com' 'command env' 'env -0' '/usr/bin/env'; do
     assert_equals $'hardstop\tcredential' "$(bash_prompt_with "$c" | classify claude)" "$c is a credential stop"
   done
-  for c in 'Enter your API key >' '? Enter your API key: ›' 'Token: ****' "Password for 'https://dev@github.com':"; do
+  for c in 'Enter your API key >' '? Enter your API key: ›' 'Token: ****' "Password for 'https://dev@github.com':" 'OTP:' '2FA code:'; do
     assert_equals $'hardstop\tcredential' "$(printf 'work\n%s\n' "$c" | classify claude)" "$c is a credential stop"
   done
   assert_equals $'hardstop\tspend' "$(printf ' You have hit your limit\n ❯ 1. Add funds\n   2. Wait for reset\n\n Enter to confirm · Esc to cancel\n' | classify claude usage-limit)" \
@@ -271,6 +272,12 @@ test_structure_decides_not_words() {
     "a full-width rule inside a heredoc never hides the command above it"
   assert_equals $'hold\tunproven' "$(bash_prompt | awk -v d="$dashes" '/^ touch \/tmp/ { print " cat <<EOF"; print d; print " EOF"; next } { print }' | classify claude)" \
     "a command box whose boundary cannot be proven is held"
+  assert_equals $'hold\tunproven' "$(bash_prompt | awk -v rule="$rule" -v d="$dashes" '/^ touch \/tmp/ { print " rm -rf ~/work && cat <<EOF"; print rule; print d; print " EOF"; next } { print }' | classify claude)" \
+    "a rule and a dashed row inside a command never hide the command above them"
+  assert_equals $'hardstop\tdestructive' "$(bash_prompt | awk '/^ touch \/tmp/ { print " git reset --ha"; print "rd HEAD"; next } { print }' | classify claude)" \
+    "a soft-wrapped destructive command is still a stop"
+  assert_equals $'hardstop\tcredential' "$(bash_prompt | awk '/^ touch \/tmp/ { print " cat ~/.ss"; print "h/id_ed25519"; next } { print }' | classify claude)" \
+    "a soft-wrapped credential read is still a stop"
   pass "structure, not words: conversation above a prompt and phrases inside a command never change its verdict"
 }
 
@@ -293,7 +300,7 @@ test_send_guard_blocks_renumbered_pickers_and_secret_inputs() {
     $' Allow external CLAUDE.md file imports?\n   1. Yes, allow external imports\n ❯ 2. No, disable external imports\n\n Enter to confirm · Esc to cancel' \
     $' Quick safety check\n   1. Yes, I trust this folder\n ❯ 2. No, exit\n\n Some other footer' \
     $'work\nEnter your API key >' $'work\n? Enter your API key: ›' $'work\nPassword:' $'work\nPIN:' $'work\nEnter your verification code:' \
-    $'work\nPassword for \'https://dev@github.com\':' $'work\nUsername for \'https://github.com\':' $'work\nPaste code here if prompted >' $'work\nEnter verification code:' \
+    $'work\nPassword for \'https://dev@github.com\':' $'work\nUsername for \'https://github.com\':' $'work\nPaste code here if prompted >' $'work\nEnter verification code:' $'work\nOTP:' $'work\nEnter your authentication code:' \
     $' Continue with paid usage?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel'; do
     name=$(bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$screen") \
       || fail "every submit refuses this screen: $screen"
@@ -329,7 +336,20 @@ test_tool_approval_is_declined_and_steered() {
   assert_equals 0 "$(status_rows ok blocked permission-prompt-held)" "a declined prompt is not reported as blocked"
   assert_no_grep "permission dialog waiting on worker ok" "$H/data/watchdog/status.md" "a declined prompt is not a waiting gap"
   assert_equals '' "$(cat "$CALLS_LOG")" "no merge, notifier, or model tool ran"
-  pass "tool approval: one Escape, verified gone, then a durable rewrite instruction"
+  local mark
+  mark=$(find "$H/state/watchdog/permission" -name '*-ok.declined' 2>/dev/null | head -n 1)
+  [ -n "$mark" ] || fail "the declined checksum is kept"
+  mark=${mark%-ok.declined}
+  worker lk claude "$FIX/claude-2.1.325-bash-prompt.txt" "$FIX/claude-2.1.325-after-escape.txt"
+  mkdir "$mark-lk.lock"
+  run_wd 200 once >/dev/null 2>&1
+  assert_equals '' "$(typed lk)" "a worker another pass is acting on gets no key"
+  assert_contains "$(ledger | awk -F'\t' '$7 == "refused" { print $8 }')" "another watchdog pass is acting on worker lk" "the overlap is recorded"
+  rmdir "$mark-lk.lock"
+  run_wd 400 once >/dev/null 2>&1
+  assert_equals 1 "$(typed lk | tr -cd '\033' | wc -c | tr -d ' ')" "once the other pass is done, the prompt gets its one Escape"
+  [ ! -e "$mark-lk.lock" ] || fail "the pass releases its lock"
+  pass "tool approval: one Escape, verified gone, then a durable rewrite instruction, and one pass at a time per worker"
 }
 
 test_prompt_after_escape_gets_no_instruction() {
@@ -454,6 +474,14 @@ test_trust_dialog_relaunches_without_a_key() {
   run_wd 0 once >/dev/null 2>&1
   assert_equals '' "$(typed ag)" "no key reaches the Antigravity trust picker"
   assert_equals 1 "$(grep -c '^ag relaunch --note ' "$H/control.log" 2>/dev/null || true)" "the Antigravity worker is relaunched through fm-control: $(ledger | cut -f4-8)"
+  make_home
+  : > "$H/control.refuse"
+  printf 'Accessing workspace:\n\n/work/project\n\nDo you trust the contents of this project?\n\nAntigravity CLI requires permission to read, edit, and execute files here.\n\n> Yes, I trust this folder\n  No, exit\n' > "$H/agy-trust.txt"
+  worker ar agy "$H/agy-trust.txt"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals '' "$(typed ar)" "a refused Antigravity relaunch types nothing"
+  assert_equals 1 "$(status_rows ar blocked permission-prompt-held)" "a refused Antigravity relaunch is reported as held"
+  assert_grep "waiting on worker ar" "$H/data/watchdog/status.md" "a held Antigravity trust picker still gets the waiting gap"
   pass "trust dialog: no key, a controlled relaunch once per window, and a refusal is reported"
 }
 
@@ -486,10 +514,12 @@ test_hardstop_prompts_are_never_answered() {
   worker rm claude "$H/rm.txt" "$FIX/claude-2.1.325-after-escape.txt"
   worker spend claude "$H/spend.txt"
   worker signin claude "$H/signin.txt"
+  printf 'Signing in\nOTP:\n' > "$H/otp.txt"
+  worker otp claude "$H/otp.txt"
   run_wd 0 once >/dev/null 2>&1 || fail "the watchdog pass failed"
   run_wd 300 once >/dev/null 2>&1
   local id
-  for id in cred rm spend signin; do
+  for id in cred rm spend signin otp; do
     assert_equals '' "$(typed "$id")" "no key reaches the $id prompt"
     assert_equals 1 "$(status_rows "$id" blocked permission-prompt-hardstop)" "the $id prompt is reported once as a hard stop"
   done
@@ -500,6 +530,7 @@ test_hardstop_prompts_are_never_answered() {
   assert_no_grep "find-generic-password" "$H/state/cred.status" "the blocked line carries no prompt text"
   assert_equals 0 "$(ledger_rows decline pending)" "no hard stop is declined"
   assert_grep "waiting on worker signin" "$H/data/watchdog/status.md" "a sign-in input with no dialog label still gets the waiting gap"
+  assert_grep "waiting on worker otp" "$H/data/watchdog/status.md" "a one-time code input still gets the waiting gap"
   assert_equals '' "$(cat "$H/control.log" 2>/dev/null)" "no hard stop is relaunched"
 
   printf 'work output\n> \n' > "$H/plain.txt"

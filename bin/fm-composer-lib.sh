@@ -2603,12 +2603,14 @@ fm_composer_blocking_dialog() {  # <screen> -> dialog name
     return 0
   fi
   # The Antigravity workspace-trust picker, whose heading bin/fm-spawn.sh waits
-  # on: Enter would answer it, whichever row is selected.
+  # on, with its answer rows ending the screen: Enter would answer it, whichever
+  # row is selected. The same bound as bin/fm-permission-prompt.sh applies.
   if printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
     /^[ \t]*Do you trust the contents of this project\?[ \t\r]*$/ { head = 1; yes = 0; quoted = 0; next }
-    head && /^[ \t]*(❯|›|>)?[ \t]*([0-9]+\.[ \t]*)?Yes, I trust this folder[ \t\r]*$/ { yes = 1 }
+    head && /^[ \t]*(❯|›|>)?[ \t]*([0-9]+\.[ \t]*)?Yes, I trust this folder[ \t\r]*$/ { yes = 1; after = 0; next }
     head && yes && (/^[ \t]*(─|━){20,}[ \t\r]*$/ || /\? for shortcuts/) { quoted = 1 }
-    END { exit !(head && yes && !quoted) }
+    head && yes && /[^ \t\r]/ { after++ }
+    END { exit !(head && yes && !quoted && after < 4) }
   '; then
     printf '%s' 'Antigravity workspace-trust picker'
     return 0

@@ -1584,6 +1584,7 @@ wd_pp_status() {
 # rows keep changing (a spinner or a clock) does not append a line every pass.
 wd_pp_stop() {
   local id=$1 key=$2 hash=$3 text=$4 mark prev
+  WD_PP_STOPPED=1
   mark=$(wd_pp_mark "$id")
   prev=$(cat "$mark.open" 2>/dev/null) || prev=
   [ "${prev%% *}" != "$key" ] || return 0
@@ -1740,12 +1741,32 @@ wd_pp_relaunch() {
   return 1
 }
 
+# wd_pp_lock <id>: one pass at a time may press a key on or relaunch one
+# worker, so overlapping run and once passes never both send an Escape. A lock
+# left by a pass that died is taken over after 20 minutes, longer than the
+# relaunch timeout.
+wd_pp_lock() {
+  local lock
+  lock=$(wd_pp_mark "$1").lock
+  mkdir -p "$WD/permission"
+  mkdir "$lock" 2>/dev/null && return 0
+  if [ -n "$(find "$lock" -maxdepth 0 -mmin +20 2>/dev/null)" ]; then
+    rmdir "$lock" 2>/dev/null
+    mkdir "$lock" 2>/dev/null && return 0
+  fi
+  return 1
+}
+
+wd_pp_unlock() {
+  rmdir "$(wd_pp_mark "$1").lock" 2>/dev/null || true
+}
+
 # wd_permission_prompt <id> <harness> <screen> <dialog>: the unattended route
 # for one worker pane. 0 = the prompt left the pane; 1 = a prompt still waits;
 # 2 = no prompt verdict, or `permission-route=off`.
 wd_permission_prompt() {
-  local id=$1 harness=$2 screen=$3 dialog=$4 verdict kind reason hash
-  WD_PP_KIND=
+  local id=$1 harness=$2 screen=$3 dialog=$4 verdict kind reason hash rc
+  WD_PP_STOPPED=
   [ "$(wd_permission_mode)" != off ] || return 2
   if ! verdict=$(fm_pp_classify "$screen" "$harness" "$dialog"); then
     wd_pp_clear "$id"
@@ -1753,7 +1774,6 @@ wd_permission_prompt() {
   fi
   kind=${verdict%%$'\t'*}
   reason=${verdict#*$'\t'}
-  WD_PP_KIND=$kind
   hash=$(fm_pp_hash "$screen")
   case "$kind" in
     hardstop)
@@ -1762,8 +1782,15 @@ wd_permission_prompt() {
     hold)
       wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id waits on a permission prompt the watchdog does not answer ($reason); nothing was answered"
       return 1 ;;
-    trust) wd_pp_relaunch "$id" "$hash" ;;
-    route) wd_pp_decline "$id" "$harness" "$hash" ;;
+    trust|route)
+      if ! wd_pp_lock "$id"; then
+        wd_rec "$(wd_id)" permission-prompt report refused "another watchdog pass is acting on worker $id; nothing was pressed"
+        return 1
+      fi
+      if [ "$kind" = trust ]; then wd_pp_relaunch "$id" "$hash"; else wd_pp_decline "$id" "$harness" "$hash"; fi
+      rc=$?
+      wd_pp_unlock "$id"
+      return "$rc" ;;
     *) return 2 ;;
   esac
 }
@@ -2389,9 +2416,8 @@ wd_visit_worker_dialogs() {
     # A held prompt or hard stop on a screen the dialog reader did not label
     # permission, such as a password input or a declining picker, still gets
     # the waiting gap and the away page. A decline that only waits for its
-    # next pass does not.
-    if [ "$prompt" = 1 ] && [ "$dialog" != permission ] \
-      && { [ "${WD_PP_KIND:-}" = hardstop ] || [ "${WD_PP_KIND:-}" = hold ]; }; then
+    # next pass, with no blocked line, does not.
+    if [ "$prompt" = 1 ] && [ "$dialog" != permission ] && [ -n "${WD_PP_STOPPED:-}" ]; then
       O_BACKEND=$backend
       O_TARGET=$target
       O_PANE=$screen
