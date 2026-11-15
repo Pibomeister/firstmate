@@ -165,9 +165,10 @@
 #              and rebinds through --relaunch.
 #
 # Every verb exits 5 when another lifecycle action already holds the task's
-# lock, state/.control-<id>.lock, and 6 when the supervision lease guard
-# refuses (bin/fm-lease-lib.sh); both refusals come before anything reaches
-# the agent, so a caller may treat them as proof that nothing was sent.
+# lock, state/.control-<id>.lock, 6 when the supervision lease guard refuses
+# (bin/fm-lease-lib.sh), and 7 when FM_CONTROL_REQUIRE_RECORD's token check
+# fails; all three refusals come before anything reaches the agent, so a
+# caller may treat them as proof that nothing was sent.
 #
 # Teardown and discard are NOT verbs here and never will be. `exit` stops an
 # agent and preserves everything else; removing a worktree, killing an
@@ -230,6 +231,14 @@
 #                                It applies to every verb (load relief binds
 #                                interrupts with it); the relaunch-only
 #                                FM_CONTROL_EXPECT_SPAWN_GEN above is separate.
+#   FM_CONTROL_REQUIRE_RECORD, FM_CONTROL_REQUIRE_TOKEN  internal callers may
+#                                require that file to still hold the line
+#                                token=<FM_CONTROL_REQUIRE_TOKEN>, checked under
+#                                the lifecycle lock; otherwise exit 7 before
+#                                anything is sent. Load relief binds each
+#                                interrupt to its own pause record this way, so
+#                                an interrupt that outlived its pass cannot
+#                                land after that record was resumed or replaced.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -489,6 +498,11 @@ fi
 if [ -n "${FM_CONTROL_EXPECTED_SPAWN_GEN:-}" ] \
   && [ "$(fm_meta_get "$META" spawn_gen)" != "$FM_CONTROL_EXPECTED_SPAWN_GEN" ]; then
   die "task $ID's spawn_gen no longer matches the caller's expected generation; refusing to act on a relaunched worker"
+fi
+if [ -n "${FM_CONTROL_REQUIRE_RECORD:-}" ] \
+  && ! grep -qxF -- "token=${FM_CONTROL_REQUIRE_TOKEN:-}" "$FM_CONTROL_REQUIRE_RECORD" 2>/dev/null; then
+  echo "error: task $ID's caller record $FM_CONTROL_REQUIRE_RECORD no longer holds the caller's token; refusing to act for a record that was resumed or replaced" >&2
+  exit 7
 fi
 
 # A remotely placed secondmate records its endpoint on ANOTHER host, so every

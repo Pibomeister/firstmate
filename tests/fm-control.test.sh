@@ -285,6 +285,8 @@ run_control() {
     FM_FAKE_SECOND_CTRL_C_STOPS_AGENT="${FM_FAKE_SECOND_CTRL_C_STOPS_AGENT:-}" \
     FM_FAKE_DEVIN_PICKER_STUCK="${FM_FAKE_DEVIN_PICKER_STUCK:-}" \
     FM_CONTROL_EXPECTED_SPAWN_GEN="${FM_CONTROL_EXPECTED_SPAWN_GEN:-}" \
+    FM_CONTROL_REQUIRE_RECORD="${FM_CONTROL_REQUIRE_RECORD:-}" \
+    FM_CONTROL_REQUIRE_TOKEN="${FM_CONTROL_REQUIRE_TOKEN:-}" \
     FM_TEST_ORCA_BOOT_EPOCH="${FM_TEST_ORCA_BOOT_EPOCH:-2000}" \
     "$CONTROL" "$@" 2>&1
 }
@@ -1022,6 +1024,29 @@ test_expected_spawn_gen_binds_interrupt() {
   expect_code 0 "$rc" "an interrupt bound to the current spawn_gen should proceed: $out"
   assert_contains "$(keys_sent "$dir")" "Escape" "the bound interrupt did not deliver its key"
   pass "fm-control: FM_CONTROL_EXPECTED_SPAWN_GEN refuses a relaunched worker and admits the recorded generation"
+}
+
+test_required_record_token_binds_interrupt() {
+  local dir out rc rec
+  dir=$(new_case recbind)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  rec="$dir/home/pause-record"
+  # A record that is gone (resumed) or carries another token (replaced) is
+  # refused under the lock before any key, as an interrupt that outlived its
+  # pass would find it.
+  out=$(FM_CONTROL_REQUIRE_RECORD="$rec" FM_CONTROL_REQUIRE_TOKEN=tok-a run_control "$dir" t1 interrupt); rc=$?
+  expect_code 7 "$rc" "an interrupt bound to a removed record should refuse with exit 7"
+  assert_contains "$out" "no longer holds the caller's token" "the refusal should name the record binding"
+  printf 'id=t1\ntoken=tok-b\nstate=paused\n' > "$rec"
+  out=$(FM_CONTROL_REQUIRE_RECORD="$rec" FM_CONTROL_REQUIRE_TOKEN=tok-a run_control "$dir" t1 interrupt); rc=$?
+  expect_code 7 "$rc" "an interrupt bound to a replaced record should refuse with exit 7"
+  [ -z "$(keys_sent "$dir")" ] || fail "a refused record-bound interrupt must send no keys"
+  printf 'id=t1\ntoken=tok-a\nstate=paused\n' > "$rec"
+  out=$(FM_CONTROL_REQUIRE_RECORD="$rec" FM_CONTROL_REQUIRE_TOKEN=tok-a run_control "$dir" t1 interrupt); rc=$?
+  expect_code 0 "$rc" "an interrupt bound to its still-current record should proceed: $out"
+  assert_contains "$(keys_sent "$dir")" "Escape" "the record-bound interrupt did not deliver its key"
+  pass "fm-control: FM_CONTROL_REQUIRE_RECORD refuses a removed or replaced record and admits the current one"
 }
 
 test_record_bound_to_another_task_is_refused() {
@@ -2005,6 +2030,7 @@ test_window_label_is_refused_with_the_exact_id
 test_explicit_endpoint_is_refused
 test_unknown_task_is_refused
 test_expected_spawn_gen_binds_interrupt
+test_required_record_token_binds_interrupt
 test_record_bound_to_another_task_is_refused
 test_remote_secondmate_is_refused_by_placement
 test_interrupt_and_exit_lock_before_task_state_resolution

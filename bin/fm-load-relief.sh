@@ -18,6 +18,13 @@
 # An interrupt bin/fm-control.sh refuses before anything is sent (exit 5,
 # another lifecycle action holds the task; exit 6, the lease guard) drops the
 # record, appends nothing, and does not count toward the per-pass limit.
+# Each record carries a fresh token=, and the interrupt passes it as
+# FM_CONTROL_REQUIRE_RECORD/FM_CONTROL_REQUIRE_TOKEN: fm-control checks it
+# under the same lifecycle lock the resume holds, so an interrupt that
+# outlived its pass and reaches the lock after a resume, or after a newer
+# pause replaced its record, exits 7 having sent nothing; a record holding
+# another pass's token stays as it is, and one still holding this pass's
+# own token is dropped with no paused: line.
 # Any other nonzero interrupt keeps the record as state=uncertain, appends a keyed
 # paused: line saying delivery is unproven, and counts toward the per-pass
 # pause limit: delivery may already have happened, so the record is never
@@ -136,7 +143,7 @@
 #
 # State under state/load-relief/: high-since (epoch the current over-ceiling
 # stretch began), paused/<id> (key=value: id, paused_epoch, priority,
-# load, ceiling, spawn_gen, state paused|uncertain), .check.lock, and
+# load, ceiling, spawn_gen, token, state paused|uncertain), .check.lock, and
 # last-check. A check that finds load under the ceiling clears high-since.
 #
 # Test seams, honoured only with FM_TEST_SEAM=1: FM_LOAD_RELIEF_LOAD_FILE
@@ -638,13 +645,15 @@ while IFS="$(printf '\t')" read -r _rank _prio _epoch id gen; do
     continue
   fi
   mkdir -p "$PAUSED_DIR" || die "cannot create $PAUSED_DIR"
-  if ! { printf 'id=%s\npaused_epoch=%s\npriority=%s\nload=%s\nceiling=%s\nspawn_gen=%s\nstate=paused\n' "$id" "$now" "$_prio" "$load1" "$ceiling" "$gen" > "$PAUSED_DIR/$id.tmp.$$" \
+  token="$now.$$.$RANDOM$RANDOM"
+  if ! { printf 'id=%s\npaused_epoch=%s\npriority=%s\nload=%s\nceiling=%s\nspawn_gen=%s\ntoken=%s\nstate=paused\n' "$id" "$now" "$_prio" "$load1" "$ceiling" "$gen" "$token" > "$PAUSED_DIR/$id.tmp.$$" \
       && mv "$PAUSED_DIR/$id.tmp.$$" "$PAUSED_DIR/$id"; }; then
     rm -f "$PAUSED_DIR/$id.tmp.$$"
     echo "fm-load-relief: cannot write the pause record for $id; it was not interrupted" >&2
     continue
   fi
-  control_out=$(FM_CONTROL_EXPECTED_SPAWN_GEN="$gen" FM_HOME="$FM_HOME" "$control_cmd" "$id" interrupt 2>&1) && control_rc=0 || control_rc=$?
+  control_out=$(FM_CONTROL_EXPECTED_SPAWN_GEN="$gen" FM_CONTROL_REQUIRE_RECORD="$PAUSED_DIR/$id" FM_CONTROL_REQUIRE_TOKEN="$token" \
+    FM_HOME="$FM_HOME" "$control_cmd" "$id" interrupt 2>&1) && control_rc=0 || control_rc=$?
   current_gen=
   [ -f "$STATE/$id.meta" ] && current_gen=$(meta_get "$STATE/$id.meta" spawn_gen)
   if [ "$current_gen" != "$gen" ]; then
@@ -652,6 +661,12 @@ while IFS="$(printf '\t')" read -r _rank _prio _epoch id gen; do
     # pause landed, and a delivered interrupt reached only the predecessor.
     rm -f "$PAUSED_DIR/$id"
     echo "load-relief: $id was relaunched during the interrupt (control exit $control_rc); no pause is recorded for its replacement"
+    continue
+  fi
+  if [ "$control_rc" -eq 7 ]; then
+    # Only a record still holding this pass's own token is ours to drop.
+    ! grep -qxF -- "token=$token" "$PAUSED_DIR/$id" 2>/dev/null || rm -f "$PAUSED_DIR/$id"
+    echo "load-relief: $id was not interrupted: its pause record changed before the interrupt could act (control exit 7); no pause is recorded by this pass"
     continue
   fi
   if [ "$control_rc" -eq 5 ] || [ "$control_rc" -eq 6 ]; then

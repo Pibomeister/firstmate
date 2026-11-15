@@ -553,6 +553,32 @@ test_control_refusal_before_delivery_records_no_pause() {
   pass "an interrupt refused before anything was sent records no pause and writes no line"
 }
 
+test_interrupt_is_bound_to_its_own_pause_record() {
+  local home log
+  home=$(make_home tokbind)
+  log="$TMP_ROOT/tokbind.log"
+  add_worker "$home" w 100 4
+  cat > "$TMP_ROOT/tokbind-control" <<'SH'
+#!/usr/bin/env bash
+printf 'control %s record=%s token=%s held=%s\n' "$*" "${FM_CONTROL_REQUIRE_RECORD:-}" "${FM_CONTROL_REQUIRE_TOKEN:-}" \
+  "$(grep -c -xF -- "token=${FM_CONTROL_REQUIRE_TOKEN:-none}" "${FM_CONTROL_REQUIRE_RECORD:-/dev/null}" 2>/dev/null)" >> "$FM_RELIEF_LOG"
+SH
+  sustained_pass "$home" tokbind 1000 >/dev/null
+  assert_contains "$(cat "$log")" "record=$home/state/load-relief/paused/w token=" "the interrupt was not bound to the worker's pause record"
+  assert_contains "$(cat "$log")" "held=1" "the interrupt's token was not the one its pause record holds"
+  assert_not_contains "$(cat "$log")" "token= " "the interrupt carried an empty token"
+  printf 'echo "error: record changed" >&2\nexit 7\n' >> "$TMP_ROOT/tokbind-control"
+  : > "$log"
+  rm -f "$home/state/load-relief/paused/w"
+  : > "$home/state/w.status"
+  printf 'sustain-secs=60\n' > "$home/config/load-relief"
+  rm -f "$home/state/load-relief/high-since"
+  sustained_pass "$home" tokbind 3000 >/dev/null
+  assert_absent "$home/state/load-relief/paused/w" "a token refusal left this pass's own pause record behind"
+  assert_not_contains "$(cat "$home/state/w.status")" "paused [key=load-relief]" "an interrupt refused for a changed record wrote a pause line"
+  pass "each interrupt is bound to its own pause record's token, and a token refusal writes no pause line"
+}
+
 test_relaunch_during_interrupt_writes_no_pause() {
   local home log out verdict
   for verdict in 1 0; do
@@ -685,6 +711,7 @@ test_candidate_relaunched_after_selection_is_not_interrupted
 test_not_found_backlog_item_lifts_its_pause
 test_overlapping_check_does_not_act
 test_relaunch_during_interrupt_writes_no_pause
+test_interrupt_is_bound_to_its_own_pause_record
 test_control_refusal_before_delivery_records_no_pause
 test_resume_waits_for_an_in_flight_lifecycle_action
 test_eligibility_change_after_selection_blocks_the_interrupt
