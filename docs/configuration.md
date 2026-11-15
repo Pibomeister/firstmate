@@ -485,7 +485,10 @@ The launcher and `bin/fm-handoff-ack.sh` implement the acknowledgement and lock-
 The launcher refuses rather than guess when the backend or harness cannot be determined, and it never kills or interrupts the current session.
 Its `--help` owns background-launch and unfinished-exit behavior.
 Orca uses `orca agent launch` with a prompt argument; tmux executes direct argv.
+A tmux pane does not inherit the session's environment, so a tmux successor launched without an account choice is given the session's own `CLAUDE_CONFIG_DIR` or `CODEX_HOME`.
 Orca owns the agent's permission posture; an explicit `auto` home setting currently refuses rather than substituting a shell launch.
+The successor may run on Codex, on agy, or on another signed-in `config/claude-accounts` entry, without changing any account pin, sign-in, or spend setting; the launcher's `--help` owns the options and their backend limits.
+Before any claim, the launcher reads the successor's own quota: an exhausted pool refuses before anything launches and the predecessor keeps the lock, while an unmeasured pool is disclosed and does not block.
 The successor reads the handoff and acknowledges it before running session start.
 The predecessor remains alive until the acknowledgement is validated and the lock transfers under the existing claim and task-lease locks.
 The predecessor then ends its turn and retires; it must not continue fleet mutations after the transfer.
@@ -535,7 +538,19 @@ The gate has limits: it runs only for a Claude primary, so a non-Claude primary,
 Open orders there stay durable and appear in the next session's digest.
 A new context (startup, resume, clear, or compact) clears the recorded handoff, so the gate never reads a document written before that context opened.
 `bin/fm-order.sh` owns the captain-order gate.
-`bin/fm-handoff-trigger.sh` owns the measurement, the once-per-cycle record, and the successor gate, with coverage in [`tests/fm-handoff-trigger.test.sh`](../tests/fm-handoff-trigger.test.sh); `bin/fm-handoff-launch.sh` owns the successor launch, with coverage in [`tests/fm-handoff-launch.test.sh`](../tests/fm-handoff-launch.test.sh); [runtime-backends verification](verification/runtime-backends.md#claude-early-handoff-trigger) records the Claude Code evidence.
+`bin/fm-handoff-trigger.sh` owns the measurement, the once-per-cycle record, and the successor gate, with coverage in [`tests/fm-handoff-trigger.test.sh`](../tests/fm-handoff-trigger.test.sh); `bin/fm-handoff-launch.sh` owns the successor launch, with coverage in [`tests/fm-handoff-launch.test.sh`](../tests/fm-handoff-launch.test.sh) and [`tests/fm-handoff-launch-runtime.test.sh`](../tests/fm-handoff-launch-runtime.test.sh); [runtime-backends verification](verification/runtime-backends.md#claude-early-handoff-trigger) records the Claude Code evidence.
+
+### Supervisor failover
+
+When a supervisor's pool runs out, `bin/fm-supervisor-failover.sh primary <handoff file>` or `FM_HOME=<home> bin/fm-supervisor-failover.sh secondmate <id>` replaces it while keeping its home, task records, and checks.
+It first tries another signed-in Claude account with headroom, for a primary on tmux only, and then a comparable model on another verified runtime with measured headroom.
+A primary is replaced through the verified handoff above, and a secondmate through `bin/fm-control.sh <id> relaunch`.
+It never signs in, spends, or edits an account pin, and it reports the replacement and the reason, or that no candidate has headroom.
+Its `--help` owns the candidate order, refusals, and output, and [`tests/fm-supervisor-failover.test.sh`](../tests/fm-supervisor-failover.test.sh) covers them.
+
+The comparable models come from `--candidate` or from `config/supervisor-failover-candidates`, which is local to each home and not inherited.
+Each line is one `<harness>:<model>`, such as `codex:gpt-5.5`, in preference order; blank lines and lines that start with `#` are ignored.
+List only models of the supervisor's own reasoning class, because the script never invents a candidate or judges model strength.
 
 ## Context reading (config/context-reading)
 

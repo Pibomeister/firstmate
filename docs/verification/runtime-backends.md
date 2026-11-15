@@ -170,6 +170,33 @@ The interruption hits during the redirected backend call; the error drill fails 
 Both require exactly one failure on the original stdout and in the durable event log.
 The shared session-lock ancestry suite passed on the same host; it covers other supported primary harness identities, re-keys, task leases, and rewake ownership through their existing integration surfaces.
 
+### Successor runtime choice and supervisor failover
+
+Verified on 2026-11-15 UTC on macOS arm64 with Bash 3.2.57.
+The successor regression runs the production launcher, acknowledgement, and session lock against Codex-, agy-, and Claude-named processes, with fake Orca and tmux transports, a fake `claude auth status`, and quota-axi fixtures.
+The failover regression runs the production choice against fake delegates, so the handoff and relaunch it requests are proven by their own suites.
+The installed Orca 1.4.258 `agent launch --help` exposes the `--agent codex` and `--model` arguments the launcher passes; live Codex and agy model startup is outside this fixture's evidence.
+
+Refresh both with:
+
+```sh
+bash bin/fm-test-run.sh tests/fm-handoff-launch-runtime.test.sh tests/fm-supervisor-failover.test.sh
+```
+
+Selected output:
+
+```text
+ok - claude to codex: verified lock transfer onto codex with the replacement and reason recorded
+ok - claude to agy: trusted home transfers on tmux; untrusted home and orca refuse before launch
+ok - claude account switch: the successor runs on the chosen declared account
+ok - exhausted_now veto: no successor launches onto an exhausted pool and the predecessor keeps the lock
+ok - pin preservation: no account pin or account list changed
+ok - account switch: another signed-in Claude account with headroom takes over first
+ok - claude to codex: no Claude account has headroom, so a comparable Codex model takes over
+ok - exhausted veto: with every pool exhausted nothing launches
+ok - secondmate: relaunched onto codex through fm-control in its own home
+```
+
 ## Codex model catalog max validation
 
 Verified on 2026-10-27 with codex-cli 0.162.1 on macOS arm64.

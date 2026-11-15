@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # Shared verified-handoff contract. Callers source session-lock-lib and wake-lib.
 # Pending claim: state/.handoff-pending JSON version=1, nonce, handoff, sha256,
-# predecessor_pid/start, deadline (Unix seconds). Only the owning predecessor
+# predecessor_pid/start, deadline (Unix seconds), successor (the launcher's
+# runtime choice and quota verdict, informational). Only the owning predecessor
 # creates it. The successor reads the document and calls fm-handoff-ack.sh.
 # Ack: data/handoff-ack-<nonce>.json version=1, nonce, harness_pid, fm_lock_pid,
 # harness_start, terminal_handle, sha256. fm_lock_pid is the proposed anchor;
 # it becomes authoritative only after fm-lock.sh validates it under .lock.acquire
 # and .fm-lease-command.lock and replaces the predecessor. An ack alone never
 # clears the Stop gate. Expired/nonmatching claims cannot transfer a live lock.
-# The completed state/.handoff-successor carries pid, nonce, handoff, sha256.
+# The completed state/.handoff-successor carries pid, nonce, handoff, sha256,
+# and the same informational successor line.
 #
 # Watchdog wire format (stdout and append-only state/handoff-events.log):
 # HANDOFF v1 ts=<epoch> event=<handoff_started|handoff_retry|handoff_ack|handoff_failed|handoff_reject>

@@ -17,6 +17,12 @@ mkdir -p "$LAB/state" "$LAB/config" "$LAB/data" "$LAB/bin" "$FAKEBIN"
 git init -q "$LAB"
 : > "$LAB/AGENTS.md"
 ln -s /bin/bash "$FAKEBIN/claude"
+# The successor quota preflight reads an unmeasured pool, which never blocks,
+# rather than this host's real accounts.
+printf '#!/bin/sh
+exit 1
+' > "$FAKEBIN/quota-axi"
+chmod +x "$FAKEBIN/quota-axi"
 # shellcheck disable=SC2090 # These are data values, never shell commands.
 export LAB ROOT
 export FM_HOME="$LAB" FM_STATE_OVERRIDE="$LAB/state" FM_CONFIG_OVERRIDE="$LAB/config"
