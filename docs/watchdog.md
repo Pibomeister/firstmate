@@ -126,7 +126,7 @@ These checks run on every pass as well:
   A second mate on the auto-wait is handled like an auto-wait primary, except that its footer is a limit warning instead of a page: nothing is typed into its pane on that pass, and the side checks are skipped.
   The guard reads `quota-axi` for every pool a supervisor runs on, and stale or unmeasured quota counts as unknown, never as headroom.
   `quota-axi` has no read scoped to one Pi root, so a Pi member or Pi reroute candidate pinned to a root other than `~/.pi/agent` is its own pool and reads as unknown.
-  The primary is judged on the Claude account that holds its transcript, a provider-prefixed model such as OMP's `openai-codex/gpt-5.4` is judged on its bare model's scope, and a supervisor with no recorded model is unknown while any model scope of its pool is short or exhausted.
+  The primary is judged on the Claude account that holds its transcript, a provider-prefixed model such as OMP's `openai-codex/gpt-5.4` is judged on its bare model's scope, and a supervisor with no recorded model is unknown while any model scope of its pool is short, exhausted, or has no projected runway.
   A check that a second mate's or worker's warning runs keeps the primary harness and account the last check recorded, while the same session-lock holder is live.
   The primary is a supervisor only while its session-lock owner is live, even when a caller names its harness; a Codex owner whose lock pid exited stays live while the shared lock contract still proves its recorded session live.
   A check that names a move writes a ledger row, and a live primary gets one nudge with the report path for each such check, whether a pass or a limit warning ran it.

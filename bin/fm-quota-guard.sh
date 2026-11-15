@@ -72,8 +72,8 @@
 #              state.status other than fresh), an attention entry naming stale
 #              or headroom_unknown, an unknown scope, or a runway with no time.
 #              A member with no recorded model is also unknown when any model
-#              or product scope of its row is short or exhausted, because it
-#              may run on that model. Unknown is never counted as headroom.
+#              or product scope of its row is short, exhausted, or has no
+#              projected runway, because it may run on that model. Unknown is never counted as headroom.
 #   ok         every scope runs through its reset or past the window.
 # The window is --window-secs, else quota-guard-window-secs, else the seconds
 # until the next quota-guard-window-until local time (default 08:00).
@@ -431,7 +431,8 @@ CLASSIFY_JQ='
         [($p.quotaSemantics.effectiveAvailability // [])[]
           | select(((.scope // "") | tostring | test("^(model|product):")) and
             (.runway.status == "exhausted_now" or
-             ((.runway.usableRunwaySeconds | type) == "number" and .runway.usableRunwaySeconds < $window)))
+             ((.runway.usableRunwaySeconds | type) == "number" and .runway.usableRunwaySeconds < $window) or
+             ((.runway.status == "through_reset" or ((.runway.usableRunwaySeconds | type) == "number")) | not)))
           | .scope]
       else [] end) as $hidden |
     if ($rows | length) == 0 then ["unknown", "-", "no applicable quota scope"]
@@ -441,7 +442,7 @@ CLASSIFY_JQ='
     elif $min != null and $min < $window then
       ([$rows[] | select(.runway.usableRunwaySeconds == $min) | .scope] | first) as $s |
       ["short", ($min | floor | tostring), "\($s) runs out in \(secs($min)), inside the \($window)s window"]
-    elif ($hidden | length) > 0 then ["unknown", "-", "model not recorded, and \($hidden[0]) is short or exhausted"]
+    elif ($hidden | length) > 0 then ["unknown", "-", "model not recorded, and \($hidden[0]) is short, exhausted, or unmeasured"]
     elif any($rows[]; .status != "known") then
       ["unknown", "-", "headroom unknown on \([$rows[] | select(.status != "known") | .scope] | first)"]
     elif any($rows[]; (.runway.status == "through_reset" or ((.runway.usableRunwaySeconds | type) == "number")) | not) then

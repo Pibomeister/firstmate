@@ -256,14 +256,26 @@ test_unrecorded_model_with_a_short_model_scope_is_unknown() {
     jq -c '.quotaSemantics.effectiveAvailability += [{scope: "model:opus", status: "known", effectivePercentRemaining: 0, runway: {status: "exhausted_now"}}]')
   snapshot "$CASE/claude.json" 6 "$row"
   out=$(run_tool check --primary-harness claude --window-secs 28800)
-  assert_contains "$out" "pool: claude:ordinary status=unknown runway=- supervisors=primary workers=- why=model not recorded, and model:opus is short or exhausted" \
+  assert_contains "$out" "pool: claude:ordinary status=unknown runway=- supervisors=primary workers=- why=model not recorded, and model:opus is short, exhausted, or unmeasured" \
     "a supervisor with no recorded model may be on the exhausted model"
   row=$(claude_row ordinary "$CASE/user-home/.claude" "$(scope through_reset)" |
     jq -c '.quotaSemantics.effectiveAvailability += [{scope: "model:opus", status: "known", effectivePercentRemaining: 90, runway: {status: "through_reset"}}]')
   snapshot "$CASE/claude.json" 6 "$row"
   out=$(run_tool check --primary-harness claude --window-secs 28800)
   assert_contains "$out" "pool: claude:ordinary status=ok" "a model scope with headroom leaves the pool ok"
-  pass "an unrecorded model is unknown while any model scope is short or exhausted"
+  row=$(claude_row ordinary "$CASE/user-home/.claude" "$(scope through_reset)" |
+    jq -c '.quotaSemantics.effectiveAvailability += [{scope: "model:opus", status: "unknown", runway: {status: "unknown"}}]')
+  snapshot "$CASE/claude.json" 6 "$row"
+  out=$(run_tool check --primary-harness claude --window-secs 28800)
+  assert_contains "$out" "pool: claude:ordinary status=unknown runway=- supervisors=primary workers=- why=model not recorded, and model:opus is short, exhausted, or unmeasured" \
+    "a supervisor with no recorded model may be on a model whose headroom is unknown"
+  row=$(claude_row ordinary "$CASE/user-home/.claude" "$(scope through_reset)" |
+    jq -c '.quotaSemantics.effectiveAvailability += [{scope: "product:claude_code", status: "known", effectivePercentRemaining: 50, runway: {status: "unknown"}}]')
+  snapshot "$CASE/claude.json" 6 "$row"
+  out=$(run_tool check --primary-harness claude --window-secs 28800)
+  assert_contains "$out" "why=model not recorded, and product:claude_code is short, exhausted, or unmeasured" \
+    "a known scope whose runway cannot be projected is not headroom either"
+  pass "an unrecorded model is unknown while any model scope is short, exhausted, or unmeasured"
 }
 test_account_pick_skips_a_pool_another_member_holds_short() {
   local out
