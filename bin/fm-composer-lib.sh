@@ -2670,15 +2670,16 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
   if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+)?(\[sudo\][[:space:]]+)?(password|passphrase|passcode|pin|otp|2fa([[:space:]]+code)?|mfa([[:space:]]+code)?|one.time[[:space:]]+(code|password))([[:space:]]+for[[:space:]][^:]*)?[:>?]$|(enter|type|input|provide|paste)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(password|passphrase|passcode|pin|api[[:space:]_-]?key|access[[:space:]_-]?key|private[[:space:]_-]?key|token|secret|otp|2fa|mfa|one.time|authenticator|security)[^:>?]*[:>?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?(mfa|2fa|otp|two.factor)[[:space:]]+code([[:space:]]+for[[:space:]].*)?[:>?]$|two.factor([[:space:]]+[a-z]+)?[[:space:]]+code[:>?]$|authenticator([[:space:]]+app)?[[:space:]]+code[:>?]$|^[^:]{0,30}[[:space:]]pin[:>?]$|(password|passphrase|passcode)([[:space:]]+for[[:space:]].*)?[^:]{0,40}[:>]$|(api[[:space:]_-]?key|access[[:space:]_-]?key|token|secret)[^:>?]{0,30}[:>?]$'; then
     printf 'credential\n'; return 0
   fi
-  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:?]*[>:?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(code|(authentication|verification|security|login|sign.?in|device|authori[sz]ation)[[:space:]]+code)[^:>?]*[:>?]$|(authentication|security|login|verification|device) code[^:>?]{0,30}[:>?]$|^[[:space:]]*(\?[[:space:]]+)?username for .*[:>?]$|^[[:space:]]*(\?[[:space:]]+)?(username|user name|login|email|e-mail)([[:space:]]*\([^)]*\))?[:>]$|press enter to open .*(browser|github\.com|login)'; then
+  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:?]*[>:?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(code|(authentication|verification|security|login|sign.?in|device|authori[sz]ation)[[:space:]]+code)[^:>?]*[:>?]$|(authentication|security|login|verification|device) code[^:>?]{0,30}[:>?]$|^[[:space:]]*(\?[[:space:]]+)?username for .*[:>?]$|^[[:space:]]*(\?[[:space:]]+)?(username|user name|login|email|e-mail|email address)([[:space:]]*(\([^)]*\)|\[[^]]*\]))?[:>]([[:space:]]*\([^)]*\))?$|press enter to open .*(browser|github\.com|login)'; then
     printf 'sign-in\n'; return 0
   fi
   return 1
 }
 
-# A terminal yes-or-no confirmation on the last non-blank row, such as
-# `rm: remove regular file 'x'?`, `Continue? [y/N]`, or `Are you sure?`: typed
-# text and Enter would answer it. Prints the lowered row.
+# A terminal confirmation on the last non-blank row, such as
+# `rm: remove regular file 'x'?`, `Continue? [y/N]`, `Are you sure?`, or a typed
+# confirmation such as Terraform's `Enter a value:` or `Type DELETE to
+# confirm:`: typed text and Enter would answer it. Prints the lowered row.
 fm_composer_confirm_input() {  # <screen> -> row
   local last
   last=$(printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
@@ -2689,7 +2690,7 @@ fm_composer_confirm_input() {  # <screen> -> row
       print last
     }')
   [ -n "$last" ] || return 1
-  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|(^|[[:space:]])(continue|proceed)\?$' || return 1
+  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[a-z0-9_ -]{1,40}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
   printf '%s\n' "$last"
 }
 

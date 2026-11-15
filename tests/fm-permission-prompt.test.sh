@@ -157,8 +157,11 @@ repaint() {
 run_wd() {  # <offset-secs> <args>...
   local off=$1
   shift
-  FM_TEST_SEAM=1 FM_WD_TEST_COMPOSER=empty FM_WD_TEST_CONTROL="$H/control.sh" FM_WD_NOW=$((BASE + off)) FM_HOME="$H" bash "$WD" "$@"
+  FM_TEST_SEAM=1 FM_WD_TEST_COMPOSER="${PP_COMPOSER:-empty}" FM_WD_TEST_CONTROL="$H/control.sh" FM_WD_NOW=$((BASE + off)) FM_HOME="$H" bash "$WD" "$@"
 }
+
+TF_DESTROY=$'Plan: 0 to add, 0 to change, 3 to destroy.\n\nDo you really want to destroy all resources?\n  Terraform will destroy all your managed infrastructure, as shown above.\n  There is no undo. Only \'yes\' will be accepted to confirm.\n\n  Enter a value: '
+TYPE_DELETE=$'This permanently removes project acme.\nType DELETE to confirm:'
 
 ledger() { cat "$H/state/watchdog/actions.tsv" 2>/dev/null; }
 ledger_rows() {  # <action> <phase> [subject]
@@ -220,6 +223,16 @@ test_hardstop_categories() {
   assert_equals $'hardstop\tdestructive' "$(printf "work\nrm: remove regular file 'important.txt'?\n" | classify claude)" "a terminal remove confirmation is a destructive stop"
   assert_equals $'hardstop\tspend' "$(printf 'work\nContinue with paid usage? [y/N]\n' | classify claude)" "a one-line paid-usage confirmation is a spend stop"
   assert_equals $'hold\tconfirm' "$(printf 'work\nProceed? (y/n)\n' | classify claude)" "any other terminal confirmation is held"
+  assert_equals $'hardstop\tdestructive' "$(printf '%s\n' "$TF_DESTROY" | classify claude)" "a typed Terraform destroy confirmation is a destructive stop"
+  assert_equals $'hardstop\tdestructive' "$(printf '%s\n' "$TYPE_DELETE" | classify claude)" "a typed DELETE confirmation is a destructive stop"
+  assert_equals $'hold\tconfirm' "$(printf 'work\nType "acme" to continue:\n' | classify claude)" "any other typed confirmation is held"
+  assert_equals $'hardstop\tdestructive' "$(printf 'work\nDiscard changes? [y/N]\n' | classify claude)" "a discard confirmation is a destructive stop"
+  for c in 'Username [dev]:' 'Email: (this IS public)' 'Email address:'; do
+    assert_equals $'hardstop\tsign-in' "$(printf 'work\n%s\n' "$c" | classify claude)" "$c is a sign-in stop"
+  done
+  for c in 'should I continue?' 'the bug: continue?'; do
+    printf 'work\n%s\n' "$c" | classify claude >/dev/null && fail "conversation ending in $c is not a confirmation"
+  done
   assert_equals $'hardstop\tsign-in' "$(printf 'work\nUsername (dev):\n' | classify claude)" "a login input with a default value is a sign-in stop"
   assert_equals $'hardstop\tspend' "$(printf ' Continue with paid usage?\n ❯ Yes\n   No\n\n Enter to confirm · Esc to cancel\n' | classify claude)" "an unnumbered paid-usage picker is a spend stop"
   assert_equals $'hardstop\tspend' "$({ cat "$FIX/claude-2.1.325-trust.txt"; printf '%s\n' '────────────────────────────────' '❯ ' '────────────────────────────────' ' Continue with paid usage?' ' ❯ Yes' '   No' '' ' Enter to confirm · Esc to cancel'; } | classify claude)" \
@@ -317,7 +330,7 @@ test_send_guard_blocks_renumbered_pickers_and_secret_inputs() {
     $'work\n    Username for \'https://github.com\':' $'work\nEnter MFA code for arn:aws:iam::123456789012:mfa/user:' $'work\nUsername:' $'work\nLogin:' \
     $'work\nTwo-factor code:' $'work\nAuthenticator app code:' $'work\nSecurity key PIN:' \
     $'work\nrm: remove regular file \'important.txt\'?' $'work\nContinue with paid usage? [y/N]' $'work\nAre you sure?' \
-    $'work\nUsername (dev):' $' Continue with paid usage?\n ❯ Yes\n   No\n\n Enter to confirm · Esc to cancel' \
+    $'work\nUsername (dev):' "$TF_DESTROY" "$TYPE_DELETE" $'work\nUsername [dev]:' $'work\nEmail address:' $' Continue with paid usage?\n ❯ Yes\n   No\n\n Enter to confirm · Esc to cancel' \
     $' Select login method:\n ❯ 1. Claude account\n   2. API key\n\n Enter to continue · Esc to go back' \
     $' Continue with paid usage?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel'; do
     name=$(bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$screen") \
@@ -379,9 +392,13 @@ test_prompt_after_escape_gets_no_instruction() {
   worker nk claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/key-after.txt"
   printf 'work output\nUsername (dev):\n' > "$H/user-after.txt"
   worker nu claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/user-after.txt"
+  printf '%s\n' "$TF_DESTROY" > "$H/tf-after.txt"
+  worker nf claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/tf-after.txt"
+  printf '%s\n' "$TYPE_DELETE" > "$H/del-after.txt"
+  worker nd claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/del-after.txt"
   run_wd 0 once >/dev/null 2>&1 || fail "the watchdog pass failed"
   local id
-  for id in nt np nk nu; do
+  for id in nt np nk nu nf nd; do
     assert_equals "$ESC" "$(typed "$id")" "only the one Escape reaches worker $id: $(typed "$id" | od -c | head -3)"
     assert_equals '' "$(inbox_text "$id")" "no instruction, and so no doorbell, goes to worker $id"
     assert_equals 0 "$(ledger_rows steer "done" "worker:$id")" "no steer is recorded for worker $id"
@@ -390,8 +407,22 @@ test_prompt_after_escape_gets_no_instruction() {
   assert_equals 1 "$(status_rows np blocked permission-prompt-hardstop)" "a password input behind the declined prompt is a hard stop"
   assert_equals 1 "$(status_rows nk blocked permission-prompt-hardstop)" "an API-key input behind the declined prompt is a hard stop"
   assert_equals 1 "$(status_rows nu blocked permission-prompt-hardstop)" "a login input with a default value behind the declined prompt is a hard stop"
+  assert_equals 1 "$(status_rows nf blocked permission-prompt-hardstop)" "a typed Terraform destroy confirmation behind the declined prompt is a hard stop"
+  assert_equals 1 "$(status_rows nd blocked permission-prompt-hardstop)" "a typed DELETE confirmation behind the declined prompt is a hard stop"
+  assert_grep "shows a destructive prompt after a declined tool call" "$H/state/nf.status" "the typed confirmation stop names its category"
+  for id in nf nd; do
+    FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
+    sleep 1
+    assert_equals "$ESC" "$(typed "$id")" "a later doorbell types nothing into the typed confirmation on worker $id: $(typed "$id" | od -c | head -3)"
+  done
   assert_grep "shows a credential prompt after a declined tool call" "$H/state/np.status" "the hard stop names its category"
-  pass "after Escape: a trust dialog or credential input behind the prompt gets no instruction, no doorbell, and a keyed blocked line"
+  make_home
+  worker nc claude "$FIX/claude-2.1.325-bash-prompt.txt" "$FIX/claude-2.1.325-after-escape.txt"
+  PP_COMPOSER=unknown run_wd 0 once >/dev/null 2>&1 || fail "the watchdog pass failed"
+  assert_equals "$ESC" "$(typed nc)" "only the one Escape reaches a worker whose composer is not proven empty"
+  assert_equals '' "$(inbox_text nc)" "no instruction goes to a composer that is not proven empty"
+  assert_equals 1 "$(status_rows nc blocked permission-prompt-held)" "a composer that is not proven empty after Escape is held"
+  pass "after Escape: a trust dialog, credential input, typed destructive confirmation, or unproven composer gets no instruction, no doorbell, and a keyed blocked line"
 }
 
 test_doorbell_never_types_into_a_prompt() {

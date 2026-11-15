@@ -253,12 +253,14 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
       if cat=$(fm_pp_bottom_input "$screen"); then
         printf 'hardstop\t%s\n' "$cat"; return 0
       fi
-      # A terminal yes-or-no confirmation is never answered: a hard stop when
-      # its row names one, and otherwise held.
-      rows=$(fm_composer_confirm_input "$screen") || return 1
+      # A terminal confirmation is never answered: a hard stop when it or the
+      # few rows above it, which state what it confirms, name one, and
+      # otherwise held.
+      fm_composer_confirm_input "$screen" >/dev/null || return 1
+      rows=$(_fm_wd_tail_rows "$screen" 8)
       if cat=$(fm_pp_hardstop_category "$rows"); then
         printf 'hardstop\t%s\n' "$cat"
-      elif printf '%s' "$rows" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)'; then
+      elif fm_wd_lower "$rows" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)|(^|[^a-z])(remov|discard)'; then
         printf 'hardstop\tdestructive\n'
       else
         printf 'hold\tconfirm\n'

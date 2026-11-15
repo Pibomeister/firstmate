@@ -1714,6 +1714,15 @@ wd_pp_decline() {
     wd_pp_stop "$id" permission-prompt-held "after-$hash" "worker $id shows a $after_dialog dialog after a declined tool call; nothing was answered, and no instruction was sent"
     return 1
   fi
+  # The doorbell types into the composer, so the instruction goes only when
+  # the composer after Escape is proven empty, never on an unread screen.
+  # The read runs in a subshell so the pass's own composer reading stays.
+  local composer
+  composer=$(wd_read_composer; printf '%s' "$O_COMPOSER")
+  if [ "$composer" != empty ]; then
+    wd_pp_stop "$id" permission-prompt-held "after-$hash" "worker $id shows no proven empty composer after a declined tool call (it reads $composer); nothing was answered, and no instruction was sent"
+    return 1
+  fi
   wd_pp_steer "$id" "$hash" || return 1
   wd_pp_clear "$id"
 }
