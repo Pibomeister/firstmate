@@ -238,7 +238,7 @@ mr_config_load() {
         esac
         { [ "$val" -ge 60 ] && [ "$val" -le 14400 ]; } \
           || mr_die "config/merge-review line $n: timeout must be 60 to 14400 seconds"
-        MR_TIMEOUT=$val
+        MR_TIMEOUT=$((10#$val))
         ;;
       *) mr_die "config/merge-review line $n: unknown key \"$key\"" ;;
     esac
@@ -280,6 +280,37 @@ mr_receipt_get() {  # <receipt> <key>
     { i = index($0, "="); if (i == 0) next
       if (substr($0, 1, i - 1) == k) { print substr($0, i + 1); exit } }
   ' "$1" 2>/dev/null
+}
+
+# True when the receipt's stored merge base is the one the current run compares.
+mr_receipt_live_base() {  # <receipt>
+  local base
+  [ -n "$MR_BASE" ] || return 0
+  base=$(mr_receipt_get "$1" base)
+  [ "$base" = "$MR_BASE" ]
+}
+
+# Drop a stale approval seat's evidence when the live merge base moved but the
+# head did not. A prior BLOCK at another base is kept for the reviewer record.
+mr_seat_drop_stale_approval() {  # <seat-id>
+  local id=$1 receipt base verdict saved_post=$MR_POST
+  receipt="$MR_STORE/$id.receipt"
+  if [ ! -e "$receipt" ] && [ ! -L "$receipt" ]; then
+    return 1
+  fi
+  MR_POST=off
+  if ! mr_receipt_valid "$receipt"; then
+    MR_POST=$saved_post
+    return 1
+  fi
+  MR_POST=$saved_post
+  [ -n "$MR_BASE" ] || return 1
+  base=$(mr_receipt_get "$receipt" base)
+  [ "$base" != "$MR_BASE" ] || return 1
+  verdict=$(mr_receipt_get "$receipt" verdict)
+  [ "$verdict" = BLOCK ] && return 1
+  rm -f "$receipt" "$MR_STORE/$id.review.md" "$MR_STORE/$id.raw.json" "$MR_STORE/$id.comment.md"
+  return 0
 }
 
 # Print the verdict a review text carries for <head>, read from its last
@@ -500,6 +531,7 @@ mr_seat_call() {  # <seat-index>
   harness=${MR_SEAT_HARNESS[$i]}
   model=${MR_SEAT_MODEL[$i]}
   effort=${MR_SEAT_EFFORT[$i]}
+  mr_seat_drop_stale_approval "$id" || true
   if [ -e "$MR_STORE/$id.receipt" ] || [ -L "$MR_STORE/$id.receipt" ] ||
     [ -e "$MR_STORE/$id.review.md" ] || [ -L "$MR_STORE/$id.review.md" ]; then
     printf 'seat %s: existing review evidence is invalid; refusing to replace it\n' "$id"
@@ -662,6 +694,7 @@ mr_reviewed_families() {
   for receipt in "$MR_STORE"/*.receipt; do
     [ -f "$receipt" ] || continue
     mr_receipt_valid "$receipt" || continue
+    mr_receipt_live_base "$receipt" || continue
     case ",$families," in
       *",$MR_R_FAMILY,"*) ;;
       *)
@@ -675,10 +708,22 @@ mr_reviewed_families() {
 }
 
 mr_seat_has_receipt() {  # <seat-index>
-  local receipt="$MR_STORE/${MR_SEAT_ID[$1]}.receipt" saved_post=$MR_POST rc=0
+  local receipt="$MR_STORE/${MR_SEAT_ID[$1]}.receipt" saved_post=$MR_POST rc=0 verdict
   [ -f "$receipt" ] || return 1
   MR_POST=off
-  mr_receipt_valid "$receipt" || rc=1
+  if mr_receipt_valid "$receipt"; then
+    if mr_receipt_live_base "$receipt"; then
+      rc=0
+    else
+      verdict=$(mr_receipt_get "$receipt" verdict)
+      case "$verdict" in
+        BLOCK) rc=0 ;;
+        *) rc=1 ;;
+      esac
+    fi
+  else
+    rc=1
+  fi
   MR_POST=$saved_post
   return "$rc"
 }
@@ -945,6 +990,7 @@ mr_run() {  # <repo> <base-ref> <intent-file>
   fi
   MR_LOCK=
   rm -rf "$MR_STORE/.run.lock"
+  MR_EXPECTED_BASE=$MR_BASE
   mr_check
 }
 

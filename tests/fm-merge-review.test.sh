@@ -997,6 +997,62 @@ test_run_refuses_what_it_cannot_review() {
   pass "run refuses a missing or abbreviated head, an empty change, and a non-PR URL before any call"
 }
 
+test_leading_zero_timeout_runs_every_seat() {
+  make_case timeout-leading-zero "${TWO_SEATS[@]}" 'timeout=090'
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" \
+    || fail "timeout-leading-zero: run failed: $(cat "$CASE/stderr")"
+  assert_equals 1 "$(calls claude)" "timeout-leading-zero: claude did not run"
+  assert_equals 1 "$(calls agy)" "timeout-leading-zero: agy did not run"
+  pass "timeout values with leading zeros still launch each seat"
+}
+
+test_stale_receipt_base_refreshes_approvals() {
+  local rc=0 store live_base
+  make_case stale-scope "${TWO_SEATS[@]}"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" \
+    || fail "stale-scope: the first run did not approve"
+  store=$(store_dir)
+  live_base=$(sed -n 's/^base=//p' "$store/anthropic.claude.claude-test-1.receipt")
+  sed "s/^base=.*$/base=$OTHER_HEAD/" "$store/anthropic.claude.claude-test-1.receipt" > "$CASE/r" \
+    && cp "$CASE/r" "$store/anthropic.claude.claude-test-1.receipt"
+  sed "s/^base=.*$/base=$OTHER_HEAD/" "$store/google.agy.gemini-test-high.receipt" > "$CASE/r" \
+    && cp "$CASE/r" "$store/google.agy.gemini-test-high.receipt"
+  assert_equals "$OTHER_HEAD" "$(sed -n 's/^base=//p' "$store/anthropic.claude.claude-test-1.receipt")" \
+    "stale-scope: the stale base was not written"
+
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "stale-scope: rerun after the merge base moved ($(cat "$CASE/stderr"))"
+  assert_equals 2 "$(calls claude)" "stale-scope: claude was not called again for the new scope"
+  assert_equals 2 "$(calls agy)" "stale-scope: agy was not called again for the new scope"
+  assert_equals "$live_base" "$(sed -n 's/^base=//p' "$store/anthropic.claude.claude-test-1.receipt")" \
+    "stale-scope: the refreshed receipt did not record the live merge base"
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" --base "$live_base" || rc=$?
+  expect_code 0 "$rc" "stale-scope: check at the live merge base"
+  pass "stale approval receipts are replaced when the live merge base changes"
+}
+
+test_stale_block_at_another_base_is_not_replaced() {
+  local rc=0 store
+  make_case stale-block "${TWO_SEATS[@]}" 'seat=xai:grok:grok-test'
+  echo block > "$STUB/agy.mode"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "stale-block: the blocking run"
+  store=$(store_dir)
+  sed "s/^base=.*$/base=$OTHER_HEAD/" "$store/google.agy.gemini-test-high.receipt" > "$CASE/r" \
+    && cp "$CASE/r" "$store/google.agy.gemini-test-high.receipt"
+
+  echo approve > "$STUB/agy.mode"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "stale-block: rerun must not approve at the new scope"
+  assert_equals 1 "$(calls agy)" "stale-block: the blocking seat was called again"
+  assert_no_grep 'merge-review: approved' "$CASE/stdout" "stale-block: the rerun approved"
+  assert_present "$(store_dir)/google.agy.gemini-test-high.review.md" \
+    "stale-block: the prior block text was removed"
+  pass "a BLOCK at another merge base is kept on disk and cannot be rolled forward"
+}
+
 test_intent_reaches_the_prompt_the_receipt_binds() {
   local store prompt
   make_case intent "${TWO_SEATS[@]}"
@@ -1051,4 +1107,7 @@ fm_test_run \
   test_snapshot_keeps_distinct_links_and_identical_regular_files \
   test_covers_follows_the_require_lines \
   test_run_refuses_what_it_cannot_review \
+  test_leading_zero_timeout_runs_every_seat \
+  test_stale_receipt_base_refreshes_approvals \
+  test_stale_block_at_another_base_is_not_replaced \
   test_intent_reaches_the_prompt_the_receipt_binds
