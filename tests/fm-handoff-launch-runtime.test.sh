@@ -211,6 +211,49 @@ run_case orca --harness agy
 [ "$(cat "$LAB/rc")" = 1 ] && [ ! -e "$LAB/state/attempts" ] || fail 'agy on orca must refuse before launch'
 pass 'claude to agy: trusted home transfers on tmux; untrusted home and orca refuse before launch'
 
+# agy compares the pane's logical cwd, and the successor is started with
+# tmux -c $FM_HOME. A physical-only trust entry must not count. When the -c
+# path differs from that logical cwd, both must be trusted.
+link="$TMP_ROOT/home-link"
+ln -s "$LAB" "$link"
+logical=$(CDPATH= cd -- "$link" && pwd -L)
+physical=$(CDPATH= cd -P -- "$link" && pwd -P)
+[ "$logical" = "$link" ] || fail "logical cwd '$logical' must be the -c path '$link'"
+[ "$logical" != "$physical" ] || fail "symlink fixture did not split logical '$logical' from physical '$physical'"
+alt="$link/."
+alt_logical=$(CDPATH= cd -- "$alt" && pwd -L)
+[ "$alt" != "$alt_logical" ] || fail "expected '$alt' to differ from its logical cwd '$alt_logical'"
+saved_home=$FM_HOME
+jq -n --arg p "$physical" '{trustedWorkspaces:[$p]}' > "$HOME/.gemini/antigravity-cli/settings.json"
+FM_HOME=$link
+run_case tmux --harness agy --model gemini-3-pro
+FM_HOME=$saved_home
+[ "$(cat "$LAB/rc")" = 1 ] || fail "physical-only trust must refuse a logical home: $(cat "$LAB/launch.err")"
+[ ! -e "$LAB/state/attempts" ] || fail 'physical-only trust must not launch'
+assert_contains "$(cat "$LAB/launch.err")" 'agy does not trust' 'physical-only trust must name the trust gap'
+jq -n --arg l "$logical" '{trustedWorkspaces:[$l]}' > "$HOME/.gemini/antigravity-cli/settings.json"
+FM_HOME=$link
+run_case tmux --harness agy --model gemini-3-pro
+FM_HOME=$saved_home
+assert_transferred_to agy 'logical agy trust'
+argv_is 'logical agy trust' "${MARKERS[@]}" agy --prompt-interactive PROMPT --model gemini-3-pro --dangerously-skip-permissions
+jq -n --arg l "$alt_logical" '{trustedWorkspaces:[$l]}' > "$HOME/.gemini/antigravity-cli/settings.json"
+FM_HOME=$alt
+run_case tmux --harness agy --model gemini-3-pro
+FM_HOME=$saved_home
+[ "$(cat "$LAB/rc")" = 1 ] && [ ! -e "$LAB/state/attempts" ] || fail "logical-only trust must refuse when the -c path differs: $(cat "$LAB/launch.err")"
+jq -n --arg e "$alt" '{trustedWorkspaces:[$e]}' > "$HOME/.gemini/antigravity-cli/settings.json"
+FM_HOME=$alt
+run_case tmux --harness agy --model gemini-3-pro
+FM_HOME=$saved_home
+[ "$(cat "$LAB/rc")" = 1 ] && [ ! -e "$LAB/state/attempts" ] || fail "the exact -c path alone must refuse when it is not the logical cwd: $(cat "$LAB/launch.err")"
+jq -n --arg l "$alt_logical" --arg e "$alt" '{trustedWorkspaces:[$l,$e]}' > "$HOME/.gemini/antigravity-cli/settings.json"
+FM_HOME=$alt
+run_case tmux --harness agy --model gemini-3-pro
+FM_HOME=$saved_home
+assert_transferred_to agy 'logical and exact -c trust'
+pass 'agy trust: physical-only does not count; the logical cwd and a differing -c path must both be trusted'
+
 # Claude account switch: a signed-in declared account with headroom.
 run_case tmux --harness claude --account "$TMP_ROOT/acctB" --reason claude_account_switch
 assert_transferred_to claude 'account switch'

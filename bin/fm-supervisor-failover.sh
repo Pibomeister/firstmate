@@ -12,7 +12,6 @@
 #                                (docs/configuration.md "Supervisor failover").
 #   --reason <token>             why the supervisor needs replacing
 #                                (default: <current harness>_pool_exhausted)
-#   --dry-run                    evaluate and print the choice; launch nothing
 #
 # The captain declares which models are comparable: a candidate must keep the
 # supervisor's reasoning class, so this script never invents one, and an empty
@@ -28,8 +27,9 @@
 #   2. each candidate whose harness is claude, codex, or agy and differs from
 #      the current one. Muse and every other adapter are refused, and agy needs
 #      the tmux backend.
-# A candidate with exhausted or unmeasured quota, a missing executable, or no
-# sign-in is skipped with its reason; nothing here signs in, spends, or edits
+# A candidate with exhausted or unmeasured quota, a missing executable, no
+# sign-in, or a secondmate Claude pin that does not resolve is skipped with
+# its reason; nothing here signs in, spends, or edits
 # config/claude-account, config/claude-accounts, config/pi-account, or any
 # secondmate pin.
 # A primary hands off through bin/fm-handoff-launch.sh --harness --model
@@ -42,9 +42,9 @@
 #
 # Output (stdout): one `candidate ...` line per evaluated candidate, then
 # `choice ...`, then the delegate's own output and `replaced ...` or
-# `failed rc=<n> ...`; --dry-run prints `would-replace ...` instead. The
-# choice and result are also appended to state/supervisor-failover.log.
-# Exit 0 on a replacement or dry-run choice, 1 when no candidate is eligible,
+# `failed rc=<n> ...`. The choice and result are also appended to
+# state/supervisor-failover.log.
+# Exit 0 on a replacement, 1 when no candidate is eligible,
 # 2 for a usage or configuration error, otherwise the delegate's exit status.
 # Test-only: FM_TEST_SEAM=1 enables FM_HANDOFF_TEST_HARNESS (the primary's
 # current harness) and FM_SUPERVISOR_FAILOVER_TEST_BIN (a directory holding
@@ -64,12 +64,10 @@ TARGET=$2
 shift 2
 CANDIDATES=()
 REASON=''
-DRY_RUN=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --candidate) [ -n "${2:-}" ] || die '--candidate needs <harness:model>'; CANDIDATES+=("$2"); shift 2 ;;
     --reason) [ -n "${2:-}" ] || die '--reason needs a token'; REASON=$2; shift 2 ;;
-    --dry-run) DRY_RUN=1; shift ;;
     *) die "unexpected argument: $1" ;;
   esac
 done
@@ -142,12 +140,12 @@ FROM="$(fm_failover_token "$FROM_HARNESS"):$(fm_failover_token "$FROM_MODEL"):$(
 LOG_SCOPE=$SCOPE
 [ "$SCOPE" = primary ] || LOG_SCOPE="secondmate:$TARGET"
 
-CHOICE_HARNESS='' CHOICE_MODEL='' CHOICE_ACCOUNT='' CHOICE_QUOTA='' CHOICE_VIA=''
+CHOICE_HARNESS='' CHOICE_MODEL='' CHOICE_ACCOUNT='' CHOICE_REPORT_ACCOUNT='' CHOICE_VIA='' CHOICE_QUOTA=''
 report() { # <harness> <model> <account> <result>
   printf 'candidate harness=%s model=%s account=%s %s\n' "$1" "$(fm_failover_token "$2")" "$(fm_failover_token "$3")" "$4"
 }
-take() { # <harness> <model> <account> <via> <quota>
-  CHOICE_HARNESS=$1 CHOICE_MODEL=$2 CHOICE_ACCOUNT=$3 CHOICE_VIA=$4 CHOICE_QUOTA=$5
+take() { # <harness> <model> <launch-account> <report-account> <via> <quota>
+  CHOICE_HARNESS=$1 CHOICE_MODEL=$2 CHOICE_ACCOUNT=$3 CHOICE_REPORT_ACCOUNT=$4 CHOICE_VIA=$5 CHOICE_QUOTA=$6
 }
 
 # Step 1: another signed-in Claude account (primary only).
@@ -173,7 +171,7 @@ if [ "$SCOPE" = primary ]; then
     [ -n "$root" ] || root="${HOME:?HOME is required to measure the ordinary account}/.claude"
     if quota=$(fm_failover_quota_check claude default "$root"); then
       report claude default "$entry" "$quota"
-      take claude default "$entry" account_switch "$quota"
+      take claude default "$entry" "$entry" account_switch "$quota"
     else
       report claude default "$entry" "$quota"
     fi
@@ -207,7 +205,11 @@ for c in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
   if [ "$harness" = claude ] && [ "$SCOPE" = secondmate ]; then
     account=pin
     selected=$(fm_worker_account_config claude "$CONFIG" "$TARGET") || exit 2
-    if selection=$(fm_worker_account_resolve claude "$selected" "claude account pin" 2>/dev/null) && [ -n "$selection" ]; then
+    if ! selection=$(fm_worker_account_resolve claude "$selected" "claude account pin" 2>&1); then
+      report "$harness" "$model" pin "skip=pin_unresolved why=$(fm_failover_token "$selection")"
+      continue
+    fi
+    if [ -n "$selection" ]; then
       root=${selection#*$'\t'}
       root=${root%%$'\t'*}
       [ -n "$root" ] || root="${HOME:?HOME is required}/.claude"
@@ -215,7 +217,7 @@ for c in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
   fi
   if quota=$(fm_failover_quota_check "$harness" "$model" "$root"); then
     report "$harness" "$model" "$account" "$quota"
-    take "$harness" "$model" '' runtime_switch "$quota"
+    take "$harness" "$model" '' "$account" runtime_switch "$quota"
   else
     report "$harness" "$model" "$account" "$quota"
   fi
@@ -226,11 +228,7 @@ if [ -z "$CHOICE_HARNESS" ]; then
   printf 'none scope=%s from=%s reason=no_eligible_runtime\n' "$LOG_SCOPE" "$FROM"
   exit 1
 fi
-CHOICE="scope=$LOG_SCOPE from=$FROM harness=$CHOICE_HARNESS model=$(fm_failover_token "$CHOICE_MODEL") account=$(fm_failover_token "${CHOICE_ACCOUNT:-ambient}") via=$CHOICE_VIA reason=$REASON $CHOICE_QUOTA"
-if [ "$DRY_RUN" = 1 ]; then
-  printf 'would-replace %s\n' "$CHOICE"
-  exit 0
-fi
+CHOICE="scope=$LOG_SCOPE from=$FROM harness=$CHOICE_HARNESS model=$(fm_failover_token "$CHOICE_MODEL") account=$(fm_failover_token "$CHOICE_REPORT_ACCOUNT") via=$CHOICE_VIA reason=$REASON $CHOICE_QUOTA"
 printf 'choice %s\n' "$CHOICE"
 fm_failover_log "event=failover_choice $CHOICE"
 

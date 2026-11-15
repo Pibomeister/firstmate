@@ -151,18 +151,19 @@ no_delegate 'exhausted fleet'
 assert_contains "$(cat "$LAB/state/supervisor-failover.log")" 'event=failover_none' 'the dead end is logged'
 pass 'exhausted veto: with every pool exhausted nothing launches'
 
-# Dry run and a failing delegate.
+# A failing delegate is reported with its status. --dry-run is not a mode.
 quota_fixture agy 50 through_reset model:gemini > "$QUOTA/agy.json"
-failover tmux primary "$LAB/data/handoff.md" --dry-run
-[ "$RC" = 0 ] || fail "dry run must succeed: $OUT"
-assert_contains "$OUT" 'would-replace scope=primary' 'dry run prints the choice'
-no_delegate 'dry run'
-[ ! -e "$LAB/state/supervisor-failover.log" ] || fail 'dry run must not log a choice'
 FM_TEST_DELEGATE_RC=3 failover tmux primary "$LAB/data/handoff.md"
 [ "$RC" = 3 ] || fail "a failed handoff must return its exit status, got $RC"
 assert_contains "$OUT" 'failed rc=3 scope=primary' 'the failure is reported'
 assert_contains "$(cat "$LAB/state/supervisor-failover.log")" 'event=failover_result result=failed rc=3' 'the failure is logged'
-pass 'dry run launches nothing; a failed handoff is reported with its status'
+pass 'a failed handoff is reported with its status'
+unset FM_TEST_DELEGATE_RC
+failover tmux primary "$LAB/data/handoff.md" --dry-run
+[ "$RC" = 2 ] || fail "--dry-run must be refused, got $RC: $OUT"
+assert_contains "$OUT" 'unexpected argument: --dry-run' 'an unknown mode is a usage error'
+no_delegate 'refused dry-run'
+pass 'dry-run is refused and nothing launches'
 
 # A secondmate relaunches in its own home through fm-control, with no account step.
 printf 'kind=secondmate\nharness=claude\nmodel=opus\nworktree=%s\n' "$TMP_ROOT/mate" > "$LAB/state/mate-a.meta"
@@ -181,6 +182,40 @@ RC=0
 OUT=$(env -u FM_HOME bash "$ROOT/bin/fm-supervisor-failover.sh" secondmate mate-a --candidate codex:gpt-5.5 2>&1) || RC=$?
 [ "$RC" = 2 ] || fail "a secondmate failover without an explicit home must refuse: $OUT"
 pass 'secondmate: relaunched onto codex through fm-control in its own home'
+
+# A secondmate Claude candidate is eligible only when its pin resolves. A pin
+# that does not resolve is skipped even when the ambient account has headroom.
+# A resolved pin is the account that is measured and reported, and relaunch
+# does not receive --account.
+printf 'kind=secondmate\nharness=codex\nmodel=gpt-5.5\nworktree=%s\n' "$TMP_ROOT/mate" > "$LAB/state/mate-b.meta"
+pin_root="$TMP_ROOT/mate-pin"
+mkdir -p "$LAB/config/secondmate-accounts/mate-b" "$pin_root"
+printf '%s\n' '/no/such/claude-root' > "$LAB/config/secondmate-accounts/mate-b/claude-account"
+quota_fixture claude 90 through_reset > "$QUOTA/claude.json"
+quota_fixture agy 40 through_reset model:gemini > "$QUOTA/agy.json"
+failover tmux secondmate mate-b --candidate claude:opus --candidate agy:gemini-3-pro
+[ "$RC" = 0 ] || fail "a broken pin must fall through to the next runtime: $OUT"
+assert_contains "$OUT" 'candidate harness=claude model=opus account=pin skip=pin_unresolved why=error:' \
+  'a pin that cannot be resolved is skipped with its error'
+assert_contains "$OUT" 'no/such/claude-root' 'the skip names the pin that failed'
+assert_not_contains "$(cat "$QUOTA/reads")" 'claude ' 'a broken pin must not be measured as the ambient account'
+assert_contains "$OUT" 'replaced scope=secondmate:mate-b from=codex:gpt-5.5:pin harness=agy model=gemini-3-pro account=ambient' \
+  'the next runtime takes over'
+delegate_is 'broken pin falls through' fm-control.sh mate-b relaunch --harness agy --model gemini-3-pro \
+  --note 'Supervisor failover: codex pool ran out (codex_pool_exhausted); relaunched on agy gemini-3-pro (verdict=ok scope=model:gemini remaining=40 runway=through_reset).'
+pass 'secondmate claude: an unresolvable pin is skipped and does not win on the ambient account'
+
+quota_fixture claude 70 through_reset > "$pin_root/quota.json"
+printf '%s\n' "$pin_root" > "$LAB/config/secondmate-accounts/mate-b/claude-account"
+failover tmux secondmate mate-b --candidate claude:opus --candidate codex:gpt-5.5
+[ "$RC" = 0 ] || fail "a resolved pin with headroom must take over: $OUT"
+assert_contains "$OUT" 'replaced scope=secondmate:mate-b from=codex:gpt-5.5:pin harness=claude model=opus account=pin via=runtime_switch' \
+  'the replacement names the pin, not the ambient account'
+assert_contains "$(cat "$QUOTA/reads")" "claude profile=1 root=$pin_root" 'quota is read for the resolved pin'
+delegate_is 'resolved pin' fm-control.sh mate-b relaunch --harness claude --model opus \
+  --note 'Supervisor failover: codex pool ran out (codex_pool_exhausted); relaunched on claude opus (verdict=ok scope=all_models remaining=70 runway=through_reset).'
+rm -rf "$LAB/config/secondmate-accounts"
+pass 'secondmate claude: a resolved pin is reported as pin and relaunch does not pass --account'
 
 [ "$(pins_digest)" = "$PINS_BEFORE" ] || fail 'account pins and the account list must be unchanged'
 [ ! -e "$LAB/config/claude-account" ] || fail 'no Claude pin may be created'

@@ -114,14 +114,17 @@ fm_failover_quota_check() {
 }
 
 # fm_failover_agy_trusted <dir>
-# True when agy's own store already trusts <dir> (logical or resolved path).
-# agy shows a folder-trust dialog for any other folder, and no launch flag
-# suppresses it, so a successor must not start there unattended.
+# True when agy's own store trusts the logical cwd of <dir> (pwd -L) and, when
+# it differs, the exact <dir> a tmux -c launch passes. agy compares the pane's
+# logical working directory; a physical-only entry still parks on the
+# folder-trust dialog, and no launch flag suppresses it, so a successor must
+# not start there unattended.
 fm_failover_agy_trusted() {
-  local dir=$1 real store="${HOME:-}/.gemini/antigravity-cli/settings.json"
+  local dir=$1 logical store="${HOME:-}/.gemini/antigravity-cli/settings.json"
   [ -n "${HOME:-}" ] && [ -f "$store" ] || return 1
-  real=$(cd "$dir" 2>/dev/null && pwd -P) || real=$dir
-  jq -e --arg a "$dir" --arg b "$real" \
-    '(.trustedWorkspaces | type) == "array" and ((.trustedWorkspaces | index($a)) != null or (.trustedWorkspaces | index($b)) != null)' \
+  logical=$(CDPATH= cd -- "$dir" 2>/dev/null && pwd -L) || return 1
+  [ -n "$logical" ] || return 1
+  jq -e --arg logical "$logical" --arg exact "$dir" \
+    '(.trustedWorkspaces | type) == "array" and ((.trustedWorkspaces | index($logical)) != null) and ($exact == $logical or ((.trustedWorkspaces | index($exact)) != null))' \
     "$store" >/dev/null 2>&1
 }
