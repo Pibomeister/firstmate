@@ -79,8 +79,10 @@
 # until the next quota-guard-window-until local time (default 08:00).
 #
 # Moves. A worker on a short or exhausted supervisor pool gets a steer line, so
-# the pool is kept for its supervisors. A supervisor on an exhausted pool gets a failover
-# line. Each move names one pick: first, for a Claude worker or the primary,
+# the pool is kept for its supervisors. A supervisor on a short or exhausted
+# pool gets a failover line, so it can hand off before the pool runs out; the
+# watchdog's nudge names bin/fm-supervisor-failover.sh for it, which makes its
+# own choice. Each move names one pick: first, for a Claude worker or the primary,
 # another config/claude-accounts entry of its own home whose own read is ok and
 # whose pool is not short, exhausted, or unknown (a second mate relaunches on
 # its own pin, so it never gets an account pick);
@@ -715,9 +717,11 @@ cmd_check() {
       line=$(pick "$provider" "$pacct" "$pool" "$harness" "$model" "$kind" "$wt" - "$home")
       printf 'steer: %s pool=%s pick=%s why=keep %s pool for its supervisors\n' "$label" "$pool" "$line" "$p" >> "$WORK/moves.txt"
     else
-      [ "$p" = exhausted ] || continue
+      # A short pool fails its supervisor over before the pool runs out, while
+      # the supervisor can still take the turn that hands off.
+      case "$p" in short|exhausted) ;; *) continue ;; esac
       line=$(pick "$provider" "$pacct" "$pool" "$harness" "$model" "$kind" "$wt" "$mate" "$FM_HOME")
-      printf 'failover: %s pool=%s pick=%s why=supervisor pool exhausted\n' "$label" "$pool" "$line" >> "$WORK/moves.txt"
+      printf 'failover: %s pool=%s pick=%s why=supervisor pool %s\n' "$label" "$pool" "$line" "$p" >> "$WORK/moves.txt"
     fi
   done < "$WORK/members.tsv"
   while IFS=$'\t' read -r pool st runway _ _ _; do

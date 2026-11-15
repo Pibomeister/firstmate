@@ -1774,6 +1774,22 @@ wd_quota_guard_nudged_since() {
     END { for (id in ok) exit 0; exit 1 }' "$LEDGER"
 }
 
+# wd_quota_guard_nudge_text <result-line>: the nudge for a check that named
+# moves. A worker moves on its named pick, while a supervisor goes through
+# bin/fm-supervisor-failover.sh, which owns the verified handoff and makes its
+# own choice among the comparable models the captain declared. A count the
+# line does not carry names both ways.
+wd_quota_guard_nudge_text() {
+  local result=$1 text steer fail qhome
+  steer=$(printf '%s\n' "$result" | sed -n 's/.* steer=\([0-9][0-9]*\).*/\1/p')
+  fail=$(printf '%s\n' "$result" | sed -n 's/.* failover=\([0-9][0-9]*\).*/\1/p')
+  qhome=$(printf '%q' "$O_HOME")
+  text="$result. The moves are in $O_HOME/state/quota-guard/report.txt."
+  [ "$steer" = 0 ] || text="$text Move each steered worker with bin/fm-control.sh relaunch on its named pick."
+  [ "$fail" = 0 ] || text="$text Fail each supervisor over with bin/fm-supervisor-failover.sh, which chooses from config/supervisor-failover-candidates: for the primary, write a handoff document and run bin/fm-supervisor-failover.sh primary <handoff-file> --reason quota_guard in the background; for a second mate, run FM_HOME=$qhome bin/fm-supervisor-failover.sh secondmate <id> --reason quota_guard."
+  printf '%s Never change an account pin, sign in, or spend.\n' "$text"
+}
+
 # wd_quota_guard_pass: a primary home's kickoff and periodic quota check, then
 # the standing verdict of its last check as a gap while it is not ok. A check
 # that named moves, whichever pass or warning ran it, nudges a live primary
@@ -1804,7 +1820,7 @@ wd_quota_guard_pass() {
      [ "$WD_RESTARTED" != 1 ] && [ "$WD_SYMPTOM" != usage-limit-autowait ] &&
      wd_same_live_owner "$O_HOME/state"; then
     if ! wd_quota_guard_nudged_since "$at"; then
-      wd_nudge quota-guard "$(fm_wd_conf_get "$rec" result ''). The moves are in $O_HOME/state/quota-guard/report.txt. Move each worker or supervisor with bin/fm-control.sh relaunch on its named pick; never change an account pin, sign in, or spend."
+      wd_nudge quota-guard "$(wd_quota_guard_nudge_text "$(fm_wd_conf_get "$rec" result '')")"
     fi
   fi
 }

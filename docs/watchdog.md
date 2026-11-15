@@ -130,11 +130,12 @@ These checks run on every pass as well:
   A check that a second mate's or worker's warning runs keeps the primary harness and account the last check recorded, while the same session-lock holder is live.
   The primary is a supervisor only while its session-lock owner is live, even when a caller names its harness; a Codex owner whose lock pid exited stays live while the shared lock contract still proves its recorded session live.
   A check that names a move writes a ledger row, and a live primary gets one nudge with the report path for each such check, whether a pass or a limit warning ran it.
+  The nudge asks the primary to move each steered worker with `bin/fm-control.sh relaunch` on its pick, and to fail each supervisor over with `bin/fm-supervisor-failover.sh`, which makes its own choice from `config/supervisor-failover-candidates` ([supervisor failover](configuration.md#supervisor-failover)).
   Before that nudge the watchdog reads the lock again, so a primary whose lock holder died or changed while the check ran is not nudged.
   A nudge whose record or submit failed does not count, so a later pass sends it again once `nudge-secs` has passed.
   While the last check is not ok, its result line stays a gap.
   The guard names a move for each worker on a short or exhausted supervisor pool first, so that pool is kept for its supervisors.
-  A supervisor whose pool is still exhausted gets a failover pick: another signed-in Claude account with headroom first, then a reroute candidate on another pool.
+  A supervisor whose pool is short or exhausted gets a failover pick, so it can hand off before its pool runs out: another signed-in Claude account with headroom first, then a reroute candidate on another pool.
   A pick needs a fresh ok read of its own on a pool no other member finds short, exhausted, or unknown, counting live workers on pools no supervisor uses, and a second mate, which relaunches on its own pin, gets only a reroute candidate.
   A Claude candidate is judged on the account the relaunching home's pin names, a second mate's own pin first; in a home that declares `config/claude-accounts`, a worker's Claude candidate names the first declared account with headroom, so its relaunch passes `--account`, and the reroute choice judges that candidate on the declared account's own read.
   It never changes an account pin, opens a sign-in, relaunches anything, or spends.
