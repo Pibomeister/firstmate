@@ -179,9 +179,11 @@ test_tab_separated_max_load1_sets_ceiling() {
   pass "max-load1 parses with the same tab-tolerant grammar as fm-capacity"
 }
 
-pause_record() {  # <home> <id> <paused-epoch> [priority]
+pause_record() {  # <home> <id> <paused-epoch> [priority]; binds the worker's spawn_gen
+  local gen=
+  [ ! -f "$1/state/$2.meta" ] || gen=$(sed -n 's/^spawn_gen=//p' "$1/state/$2.meta" | head -1)
   mkdir -p "$1/state/load-relief/paused"
-  printf 'id=%s\npaused_epoch=%s\n%s' "$2" "$3" "${4:+priority=$4
+  printf 'id=%s\npaused_epoch=%s\nspawn_gen=%s\n%s' "$2" "$3" "$gen" "${4:+priority=$4
 }" > "$1/state/load-relief/paused/$2"
 }
 
@@ -579,6 +581,54 @@ SH
   pass "each interrupt is bound to its own pause record's token, and a token refusal writes no pause line"
 }
 
+test_generationless_worker_is_never_paused() {
+  local home
+  home=$(make_home nogen)
+  fm_write_meta "$home/state/legacy.meta" "kind=ship" "backend=tmux" "harness=claude"
+  printf 'legacy 9\n' >> "$home/prios"
+  add_worker "$home" bound 100 1
+  sustained_pass "$home" nogen 1000 >/dev/null
+  assert_not_contains "$(cat "$TMP_ROOT/nogen.log")" "control legacy" "a worker with no spawn_gen was interrupted"
+  assert_contains "$(cat "$TMP_ROOT/nogen.log")" "control bound interrupt" "the generation-bound worker was not paused instead"
+  pass "a worker with no spawn_gen is never paused, so no interrupt runs unbound"
+}
+
+test_generationless_record_does_not_bind_a_bound_worker() {
+  local home
+  home=$(make_home nogenrec)
+  add_worker "$home" w 100 4
+  mkdir -p "$home/state/load-relief/paused"
+  printf 'id=w\npaused_epoch=900\nstate=paused\n' > "$home/state/load-relief/paused/w"
+  run_relief "$home" nogenrec 5 2000 >/dev/null
+  assert_not_contains "$(cat "$TMP_ROOT/nogenrec.log")" "send w" "a record with no spawn_gen steered a generation-bound worker"
+  assert_absent "$home/state/load-relief/paused/w" "a record with no spawn_gen was kept for a generation-bound worker"
+  pass "a pause record whose spawn_gen differs from the worker's, even empty, is dropped rather than resumed"
+}
+
+test_outcome_during_interrupt_writes_no_pause() {
+  local home how
+  for how in finished pr; do
+    home=$(make_home "admit$how")
+    add_worker "$home" w 100 4
+    if [ "$how" = finished ]; then
+      printf 'done [at=1]: finished\n' > "$home/late-line"; printf 'w.status\n' > "$home/late-file"
+    else
+      printf 'pr=https://example.invalid/pull/1\n' > "$home/late-line"; printf 'w.meta\n' > "$home/late-file"
+    fi
+    # The outcome lands while the interrupt is being admitted.
+    cat >> "$TMP_ROOT/admit$how-control" <<'SH'
+cat "$FM_HOME/late-line" >> "$FM_HOME/state/$(cat "$FM_HOME/late-file")"
+printf 'wait=%s\n' "${FM_LEASE_COMMAND_LOCK_WAIT:-}" >> "$FM_RELIEF_LOG"
+SH
+    sustained_pass "$home" "admit$how" 1000 >/dev/null
+    assert_contains "$(cat "$TMP_ROOT/admit$how.log")" "control w interrupt" "the interrupt never ran ($how)"
+    assert_contains "$(cat "$TMP_ROOT/admit$how.log")" "wait=1" "the interrupt's lease wait was not bounded ($how)"
+    assert_absent "$home/state/load-relief/paused/w" "a worker whose outcome landed during the interrupt kept a pause record ($how)"
+    assert_not_contains "$(cat "$home/state/w.status" 2>/dev/null)" "paused [key=load-relief]" "a pause line masked an outcome that landed during the interrupt ($how)"
+  done
+  pass "a worker that finishes or records its PR while its interrupt is admitted gets no record and no pause line"
+}
+
 test_relaunch_during_interrupt_writes_no_pause() {
   local home log out verdict
   for verdict in 1 0; do
@@ -711,6 +761,9 @@ test_candidate_relaunched_after_selection_is_not_interrupted
 test_not_found_backlog_item_lifts_its_pause
 test_overlapping_check_does_not_act
 test_relaunch_during_interrupt_writes_no_pause
+test_generationless_worker_is_never_paused
+test_generationless_record_does_not_bind_a_bound_worker
+test_outcome_during_interrupt_writes_no_pause
 test_interrupt_is_bound_to_its_own_pause_record
 test_control_refusal_before_delivery_records_no_pause
 test_resume_waits_for_an_in_flight_lifecycle_action

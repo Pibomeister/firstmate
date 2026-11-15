@@ -18,6 +18,11 @@
 # An interrupt bin/fm-control.sh refuses before anything is sent (exit 5,
 # another lifecycle action holds the task; exit 6, the lease guard) drops the
 # record, appends nothing, and does not count toward the per-pass limit.
+# The interrupt waits at most 1s for the lease-command lock
+# (FM_LEASE_COMMAND_LOCK_WAIT), keeping the gap after the last eligibility
+# check short; a worker that finished or recorded its PR inside that gap
+# gets no record and no paused: line. A worker with no spawn_gen is never
+# paused, and a record's spawn_gen must equal the worker's exactly.
 # Each record carries a fresh token=, and the interrupt passes it as
 # FM_CONTROL_REQUIRE_RECORD/FM_CONTROL_REQUIRE_TOKEN: fm-control checks it
 # under the same lifecycle lock the resume holds, so an interrupt that
@@ -329,7 +334,7 @@ record_stale() {
   [ -f "$STATE/$id.meta" ] || return 0
   rgen=$(meta_get "$PAUSED_DIR/$id" spawn_gen)
   mgen=$(meta_get "$STATE/$id.meta" spawn_gen)
-  if [ -n "$rgen" ] && [ "$rgen" != "$mgen" ]; then echo relaunched; return 0; fi
+  if [ "$rgen" != "$mgen" ]; then echo relaunched; return 0; fi
   case "$(latest_verb "$id")" in done|failed) return 0 ;; esac
   return 1
 }
@@ -596,6 +601,8 @@ pause_candidate() {
   PC_SHOW=
   [ -f "$meta" ] || return 1
   case "$(meta_get "$meta" kind)" in ship|scout|'') ;; *) return 1 ;; esac
+  # No spawn_gen means no identity to bind the interrupt and resume to.
+  [ -n "$(meta_get "$meta" spawn_gen)" ] || return 1
   [ -f "$PAUSED_DIR/$id" ] && return 1
   case "$(latest_verb "$id")" in done|failed) return 1 ;; esac
   grep -q '^pr=..*' "$meta" 2>/dev/null && return 1
@@ -653,7 +660,7 @@ while IFS="$(printf '\t')" read -r _rank _prio _epoch id gen; do
     continue
   fi
   control_out=$(FM_CONTROL_EXPECTED_SPAWN_GEN="$gen" FM_CONTROL_REQUIRE_RECORD="$PAUSED_DIR/$id" FM_CONTROL_REQUIRE_TOKEN="$token" \
-    FM_HOME="$FM_HOME" "$control_cmd" "$id" interrupt 2>&1) && control_rc=0 || control_rc=$?
+    FM_LEASE_COMMAND_LOCK_WAIT=1 FM_HOME="$FM_HOME" "$control_cmd" "$id" interrupt 2>&1) && control_rc=0 || control_rc=$?
   current_gen=
   [ -f "$STATE/$id.meta" ] && current_gen=$(meta_get "$STATE/$id.meta" spawn_gen)
   if [ "$current_gen" != "$gen" ]; then
@@ -672,6 +679,15 @@ while IFS="$(printf '\t')" read -r _rank _prio _epoch id gen; do
   if [ "$control_rc" -eq 5 ] || [ "$control_rc" -eq 6 ]; then
     rm -f "$PAUSED_DIR/$id"
     echo "load-relief: $id was not interrupted: its lifecycle control refused before sending anything (control exit $control_rc); no pause is recorded"
+    continue
+  fi
+  # The worker may have finished or recorded its PR while the interrupt was
+  # admitted: a paused line would then mask that outcome, and a later resume
+  # would steer a finished task, so neither is written.
+  if { case "$(latest_verb "$id")" in done|failed) true ;; *) false ;; esac; } \
+    || grep -q '^pr=..*' "$STATE/$id.meta" 2>/dev/null; then
+    rm -f "$PAUSED_DIR/$id"
+    echo "load-relief: $id finished or recorded its PR during the interrupt (control exit $control_rc); no pause is recorded"
     continue
   fi
   if [ "$control_rc" -eq 0 ]; then
