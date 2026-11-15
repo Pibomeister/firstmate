@@ -2079,6 +2079,11 @@ wd_handle_subject() {
   elif [ "$O_PARENT" = - ] && [ "$O_AUTOWAIT" = 1 ]; then
     symptom='usage-limit-autowait'
     wd_handle_captain_autowait
+  elif [ "$O_PARENT" != - ] && [ "$O_LIMIT_FOOTER" = 1 ]; then
+    # A second mate on the auto-wait takes no turn until the reset either, so
+    # nothing is typed into it; its footer is a limit warning, not a page.
+    symptom='usage-limit-autowait'
+    wd_quota_guard_warning
   elif [ -n "$O_DIALOG" ] && [ "$O_DIALOG" != unknown ]; then
     symptom=dialog
     wd_handle_dialog
@@ -2217,9 +2222,6 @@ wd_once() {  # [home-filter]
     WD_SYMPTOM=ok WD_RESTARTED=0
     wd_handle_subject
     [ "$parent" != - ] || wd_quota_guard_pass
-    # A second mate's auto-wait footer is a limit warning too; only the primary's
-    # gets the auto-wait handling above.
-    [ "$parent" = - ] || [ "$O_LIMIT_FOOTER" != 1 ] || wd_quota_guard_warning
     wd_visit_worker_dialogs page
     wd_health_line >> "$health"
   done

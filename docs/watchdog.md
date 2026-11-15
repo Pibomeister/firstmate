@@ -121,11 +121,12 @@ These checks run on every pass as well:
 - Unless `quota-guard=off`, a primary home's quota guard runs at kickoff, every `quota-guard-every-secs`, and on each limit warning.
   Kickoff is the first check of a home, or the first pass after a supervisor's session lock changed holder.
   A limit warning is a usage-limit picker or auto-wait footer on a supervisor pane or on a recorded worker pane.
+  A second mate on the auto-wait is handled like an auto-wait primary, except that its footer is a limit warning instead of a page: nothing is typed into its pane on that pass, and the side checks are skipped.
   The guard reads `quota-axi` for every pool a supervisor runs on, and stale or unmeasured quota counts as unknown, never as headroom.
-  The primary is judged on the Claude account that holds its transcript, and a supervisor with no recorded model is unknown while any model scope of its pool is short or exhausted.
+  The primary is judged on the Claude account that holds its transcript, a provider-prefixed model such as OMP's `openai-codex/gpt-5.4` is judged on its bare model's scope, and a supervisor with no recorded model is unknown while any model scope of its pool is short or exhausted.
   A check that a second mate's or worker's warning runs keeps the primary harness and account the last check recorded, while the same session-lock holder is live.
   A check that names a move writes a ledger row, and a live primary gets one nudge with the report path for each such check, whether a pass or a limit warning ran it.
-  A nudge whose record or submit failed does not count, so the next pass sends it again.
+  A nudge whose record or submit failed does not count, so a later pass sends it again once `nudge-secs` has passed.
   While the last check is not ok, its result line stays a gap.
   The guard names a move for each worker on a short or exhausted supervisor pool first, so that pool is kept for its supervisors.
   A supervisor whose pool is still exhausted gets a failover pick: another signed-in Claude account with headroom first, then a reroute candidate on another pool.

@@ -4365,6 +4365,11 @@ test_autowait_footers_on_a_mate_and_a_worker_are_limit_warnings() {
   make_home "$autowait"
   mate=$H
   transcript 100 "Working."
+  # Input that has waited long enough would draw an unread-input nudge, and an
+  # away record with a dead daemon would draw a daemon-dead side check.
+  owe_input 1000
+  : > "$mate/state/.afk"
+  printf '999999\n' > "$mate/state/.supervise-daemon.pid"
   H=$parent
   printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
   {
@@ -4389,6 +4394,8 @@ test_autowait_footers_on_a_mate_and_a_worker_are_limit_warnings() {
   assert_grep "pool: claude:$parent/claude status=exhausted runway=0 supervisors=primary" "$parent/state/quota-guard/report.txt" \
     "the second mate's check judges the primary on its own account: $(cat "$parent/state/quota-guard/report.txt" 2>&1)"
   [ ! -s "$mate/typed.log" ] || fail "the watchdog typed into the second mate's auto-wait pane: $(cat "$mate/typed.log")"
+  assert_equals 0 "$(ledger | awk -F'\t' -v m="$(basename "$mate")" '$4 == m && $6 == "nudge"' | wc -l | tr -d ' ')" \
+    "a second mate on the auto-wait gets no nudge: $(ledger | cut -f4-8)"
   [ ! -s "$parent/worker-waiter.typed" ] || fail "the watchdog typed into the worker's auto-wait pane: $(cat "$parent/worker-waiter.typed")"
   rm -f "$FAKEBIN/quota-axi"
   pass "quota guard: an auto-wait footer on a second mate or a worker is a limit warning judged on the primary's account"

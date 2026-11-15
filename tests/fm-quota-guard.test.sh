@@ -288,6 +288,19 @@ test_account_pick_skips_a_pool_another_member_holds_short() {
   pass "an account pick skips a pool that another member's model leaves exhausted"
 }
 
+test_provider_prefixed_model_binds_its_model_scope() {
+  local out
+  new_case prefixed-model
+  register_mate zenith-mate omp
+  printf 'model=openai-codex/gpt-5.4\n' >> "$HOME_DIR/state/zenith-mate.meta"
+  snapshot "$CASE/main.json" 5 "$(provider_row codex "$(scope through_reset)" |
+    jq -c '.quotaSemantics.effectiveAvailability += [{scope: "model:gpt-5.4", status: "known", effectivePercentRemaining: 0, runway: {status: "exhausted_now"}}]')"
+  out=$(run_tool check --window-secs 28800)
+  assert_contains "$out" "status=exhausted runway=0 supervisors=zenith-mate workers=- why=model:gpt-5.4 exhausted now" \
+    "an OMP model is judged on the scope of its bare model name"
+  assert_contains "$out" "failover: zenith-mate pool=codex:" "the exhausted second mate gets the failover path"
+  pass "a provider-prefixed model is judged on its own model scope"
+}
 test_primary_account_carries_to_a_later_check() {
   local out
   new_case primary-account
@@ -410,6 +423,7 @@ fm_test_run \
   test_unrecorded_model_with_a_short_model_scope_is_unknown \
   test_account_pick_skips_a_pool_another_member_holds_short \
   test_primary_account_carries_to_a_later_check \
+  test_provider_prefixed_model_binds_its_model_scope \
   test_limit_dialogs_are_recorded_with_account_and_model \
   test_warning_records_then_checks \
   test_tick_runs_at_kickoff_and_periodically \

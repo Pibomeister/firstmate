@@ -423,8 +423,10 @@ classify() {
       snap=$MAIN_SNAP
       [ "$account" = default ] || lane=$account ;;
   esac
+  # A provider-prefixed model (OMP's openai-codex/gpt-5.4) names its scope by
+  # the bare model, as bin/fm-dispatch-resolve.sh reads it.
   jq -r --slurpfile snap "$snap" --arg provider "$provider" --arg lane "$lane" \
-    --arg model "$model" --argjson window "$WINDOW" -n "$FM_QUOTA_ROW_JQ$CLASSIFY_JQ" 2>/dev/null ||
+    --arg model "${model##*/}" --argjson window "$WINDOW" -n "$FM_QUOTA_ROW_JQ$CLASSIFY_JQ" 2>/dev/null ||
     printf 'unknown\t-\tquota row could not be judged\n'
 }
 
