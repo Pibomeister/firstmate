@@ -321,7 +321,8 @@ fm_lease_clear_stale() {
 }
 
 # fm_lease_guard <task> <action-label>: refuse (exit FM_LEASE_REFUSE_EXIT) when
-# a live lease held by the OTHER actor exists for <task>. Once engaged (the
+# a live lease held by the OTHER actor exists for <task>, or when a stale lease
+# cannot be removed. Once engaged (the
 # guard semantics above), a successful guard retains the command lock across
 # the caller's mutation; the caller must invoke fm_lease_guard_release from its
 # EXIT cleanup. This closes the check/use race with a concurrent claim.
@@ -344,7 +345,11 @@ fm_lease_guard() {
     FM_LEASE_GUARD_LOCK=$lock
   fi
   if ! fm_lease_live "$task"; then
-    fm_lease_clear_stale "$task" || { fm_lease_guard_release; return 1; }
+    if ! fm_lease_clear_stale "$task"; then
+      fm_lease_guard_release
+      echo "error: $action refused - task '$task' has a stale lease (state/.lease-$task) that could not be removed; nothing was done" >&2
+      exit "$FM_LEASE_REFUSE_EXIT"
+    fi
     return 0
   fi
   lease_actor=$FM_LEASE_ACTOR

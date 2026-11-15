@@ -172,6 +172,34 @@ last_status_line() {  # <status-file> [<previous-event-var>]
   printf '%s\n' "${scan##*$'\n'}"
 }
 
+# The last status event whose decision key is not <key>, read over the same
+# window as last_status_line (empty if missing/blank). A supervisor library
+# that appends its own keyed bookkeeping lines - load relief's paused and
+# resolved [key=load-relief] - reads the task's own latest declaration past
+# them, however the two writers' appends interleave.
+last_status_line_without_key() {  # <status-file> <key>
+  local f=$1 key=$2 scan=''
+  [ -f "$f" ] && [ -r "$f" ] || return 0
+  if ! scan=$(tail -n "$FM_CLASSIFY_EVENT_WINDOW_LINES" "$f" 2>/dev/null | _fm_status_drop_key "$key" | _fm_status_event_scan); then
+    scan=$(_fm_status_drop_key "$key" < "$f" | _fm_status_event_scan) || :
+  fi
+  printf '%s\n' "${scan##*$'\n'}"
+}
+
+# Copy stdin to stdout without the lines whose decision key is <key>.
+_fm_status_drop_key() {  # <key>
+  local line k
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      *"[key=$1]"*)
+        k=$(_fm_decision_key "$line" '' 2>/dev/null) || k=
+        [ "$k" = "$1" ] && continue
+        ;;
+    esac
+    printf '%s\n' "$line"
+  done
+}
+
 # 0 when <verb> is exactly one recognized status verb, with no leftover token.
 _fm_status_verb_recognized() {  # <verb>
   case "$1" in

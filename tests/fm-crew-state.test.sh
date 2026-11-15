@@ -3420,6 +3420,35 @@ SH
   pass "no timeout command uses perl bound"
 }
 
+# A load-relief bookkeeping line appended just after a terminal line never
+# replaces that outcome; one after a nonterminal line is still the state.
+test_trailing_load_relief_line_keeps_the_terminal_outcome() {
+  reset_fakes
+  local d out tail verb
+  for verb in 'done' failed; do
+    for tail in 'paused [key=load-relief] [at=951]: load relief: interrupted in place' \
+                'resolved [key=load-relief] [at=952]: load relief lifted; resumed by steer'; do
+      d=$(new_case "relief-tail-$verb-${tail%% *}")
+      make_repo_on_branch "$d/wt" fm/relief-s
+      make_fakebin "$d" >/dev/null
+      fm_write_meta "$d/state/relief-s.meta" "window=fm:fm-relief-s" "worktree=$d/wt" "kind=scout" "harness=claude"
+      arm_idle_record "$d/state" relief-s
+      printf 'working [at=800]: on it\n%s [at=950]: the outcome\n%s\n' "$verb" "$tail" > "$d/state/relief-s.status"
+      out=$(run_crew_state "$d" relief-s)
+      assert_contains "$out" "state: $verb" "a trailing '${tail%% *}' load-relief line masked $verb"
+    done
+  done
+  d=$(new_case relief-tail-working)
+  make_repo_on_branch "$d/wt" fm/relief-s
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/relief-s.meta" "window=fm:fm-relief-s" "worktree=$d/wt" "kind=scout" "harness=claude"
+  arm_idle_record "$d/state" relief-s
+  printf 'working [at=800]: on it\npaused [key=load-relief] [at=951]: load relief: interrupted in place\n' > "$d/state/relief-s.status"
+  out=$(run_crew_state "$d" relief-s)
+  assert_contains "$out" "state: paused" "a load-relief pause after a nonterminal line was not the current state"
+  pass "a trailing load-relief line keeps a done or failed outcome and stays the state after a nonterminal line"
+}
+
 # (i) kind=scout skips the run lookup entirely (its deliverable is a report).
 test_scout_skips_run_lookup() {
   reset_fakes
@@ -7651,6 +7680,7 @@ test_dead_window_still_reports_terminal_run_step
 test_dead_window_still_reports_active_run_step
 test_no_timeout_uses_perl_bound
 test_scout_skips_run_lookup
+test_trailing_load_relief_line_keeps_the_terminal_outcome
 test_torn_down_worktree
 test_remote_alive_with_log_uses_status_log
 test_remote_alive_idle_is_healthy_not_gone

@@ -3841,9 +3841,12 @@ surface_nonterminal_stale() {  # <window> <hash> [dialog-name] [queued-reason]
 # and a marker cleared there would ring a worker that acknowledged the notice
 # and did nothing once per turn, forever.
 #
-# Never rung: a secondmate; a `captain-held` wait, which is the captain's; and a
+# Never rung: a secondmate; a `captain-held` wait, which is the captain's; a
 # gate this run already has an open `needs-decision` for, which the worker has
-# escalated and now rightly waits on.
+# escalated and now rightly waits on; and a pause bin/fm-load-relief.sh made
+# ([key=load-relief]), which only that script lifts - ringing the worker there
+# would undo the pause while load stays high. Its resume appends the matching
+# resolved line, so the worker's own wait, and this notice, return with it.
 PARKED_GATE_STEER="Your no-mistakes run is parked at a gate that is waiting on you while your status still declares a pause: run \`no-mistakes axi status\` now, then answer the gate or escalate its ask-user findings as your brief directs, instead of waiting."
 PARKED_GATE_REASON=
 parked_gate_notice() {  # <window> <task> <crew-state-line>
@@ -3858,6 +3861,7 @@ parked_gate_notice() {  # <window> <task> <crew-state-line>
   fi
   pause=$(status_declared_wait_line "$STATE/$task.status")
   status_is_paused "$pause" || return 0
+  [ "$(_fm_decision_key "$pause" '' 2>/dev/null || true)" != load-relief ] || return 0
   pause=$(grep -nFx -- "$pause" "$STATE/$task.status") || return 0
   pause=${pause##*$'\n'}
   notice=$(_fm_open_decisions_file_ident "$STATE/$task.status") || return 0
@@ -4802,6 +4806,40 @@ lane_capacity_publish_detached() {
   LANE_CAPACITY_PID=$!
 }
 
+# Automatic load relief (bin/fm-load-relief.sh owns the contract): one
+# detached check beside the capacity publish while the same opt-in file
+# exists, and every 30 s while a pause record exists without it, so removing
+# the opt-in never strands a paused worker; single-flight like the publish.
+LOAD_RELIEF_PID=
+LOAD_RELIEF_LAST=0
+load_relief_interval_due() {
+  local now
+  fm_watch_now now
+  [ $((now - LOAD_RELIEF_LAST)) -ge 30 ]
+}
+load_relief_records_due() {
+  local f
+  for f in "$STATE/load-relief/paused"/*; do
+    [ -f "$f" ] || continue
+    load_relief_interval_due
+    return
+  done
+  return 1
+}
+load_relief_check_detached() {
+  if [ -n "$LOAD_RELIEF_PID" ]; then
+    if kill -0 "$LOAD_RELIEF_PID" 2>/dev/null; then
+      return 0
+    fi
+    wait "$LOAD_RELIEF_PID" 2>/dev/null || true
+    LOAD_RELIEF_PID=
+  fi
+  FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
+    "$SCRIPT_DIR/fm-load-relief.sh" check </dev/null >/dev/null 2>&1 &
+  LOAD_RELIEF_PID=$!
+  fm_watch_now LOAD_RELIEF_LAST
+}
+
 # Self-watching heartbeat ledger: publish state/heartbeat.json detached and
 # single-flight so no read can hold a poll. bin/fm-heartbeat.sh's header owns the
 # document and its bounds. An independent single-flight ticker launches one
@@ -5110,8 +5148,14 @@ while :; do
     home_summary_refresh_detached
   fi
   # Opt-in lane capacity facts: off costs one file test.
+  # A relief pass runs at most every 30s on its own clock, so a capacity
+  # document that never appears (no jq, a failed write) cannot run one per
+  # poll and resume every paused worker at once.
   if [ -e "$CONFIG/lane-capacity" ] && [ "$(age_of "$STATE/lane-capacity.json")" -ge 30 ]; then
     lane_capacity_publish_detached
+    ! load_relief_interval_due || load_relief_check_detached
+  elif [ ! -e "$CONFIG/lane-capacity" ] && load_relief_records_due; then
+    load_relief_check_detached
   fi
 
   # Durable captain orders: off (no pending order) costs one glob.

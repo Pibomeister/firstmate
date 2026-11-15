@@ -356,6 +356,14 @@ map_log_state() {  # <line>
 }
 
 LOG_LINE=$(status_current_line "$LOG" "$KIND")
+# Load relief (bin/fm-load-relief.sh) appends its own paused and resolved
+# [key=load-relief] lines without the worker's lock, so one can land just
+# after the worker's done or failed. Such a trailing bookkeeping line never
+# replaces the terminal outcome before it.
+if [ "$(_fm_decision_key "$LOG_LINE" '' 2>/dev/null)" = load-relief ]; then
+  _own_line=$(last_status_line_without_key "$LOG" load-relief)
+  case "$(status_line_verb "$_own_line")" in done|failed) LOG_LINE=$_own_line ;; esac
+fi
 LOG_VERB=$(status_line_verb "$LOG_LINE")
 
 # --- remote secondmate: the true source is the remote endpoint ---------------
