@@ -38,7 +38,13 @@
 # worktree whose published head is a strict ancestor of local HEAD is also
 # settled when the native verdict is local_ahead / blocked_local_ahead /
 # run_pipeline: the unpublished commits stay, and this owner does not run the
-# pipeline. Any other relation, a dirty tree, or any other state, safety, or
+# pipeline. A clean worktree strictly behind the published head is also handled
+# when the native verdict is behind / safe_fast_forward / sync
+# (`no-mistakes axi sync`) and names that verified head as both its live
+# remote head and its pipeline-pushed head, with the local head as its own:
+# the git step makes the same strict fast-forward the native sync would, then
+# HEAD must equal that pipeline-pushed head and the fresh check must read
+# settled. Any other relation, a dirty tree, or any other state, safety, or
 # next action keeps the refusal below. It acts only on native next_action
 # codes, with fixed commands: recover_custody runs
 # `no-mistakes axi sync --recover`, adding --keep-local only when the native
@@ -54,7 +60,8 @@
 # It never force-pushes, force-moves or deletes a ref, starts, aborts or
 # cancels a run, discards a pipeline commit, or administers the daemon.
 # A verdict outside that handled set (settled, the clean strict-ahead
-# local_ahead / blocked_local_ahead / run_pipeline case, blocked_diverged,
+# local_ahead / blocked_local_ahead / run_pipeline case, the clean behind
+# safe_fast_forward / sync case, blocked_diverged,
 # blocked_remote_rewritten, blocked_recover_manual_reconciliation, a
 # recover_custody or adopt_published offer, continue_active_run) refuses before
 # any archive or advance; a detached switch or branch creation before it is
@@ -163,6 +170,20 @@ ahead_kept() {
   [ "$v_state" = local_ahead ] || return 1
   [ "$v_safety" = blocked_local_ahead ] || return 1
   [ "$v_code" = run_pipeline ] || return 1
+  clean
+}
+# A clean strictly-behind branch the native plan offers to fast-forward to its
+# own live pipeline push binding; the git step advances it to that same head.
+ff_offered() {
+  [ "$rel" = behind ] || return 1
+  [ "$v_state" = behind ] || return 1
+  [ "$(fm_nm_strip_quotes "$(fm_nm_field "$v_out" relation)")" = behind ] || return 1
+  [ "$v_safety" = safe_fast_forward ] || return 1
+  [ "$v_code:$v_cmd" = "sync:no-mistakes axi sync" ] || return 1
+  [ "$(fm_nm_branch_sync_nested "$v_out" pipeline pushed_head)" = "$pub" ] || return 1
+  [ "$(fm_nm_branch_sync_nested "$v_out" remote observed_head)" = "$pub" ] || return 1
+  [ "$(fm_nm_branch_sync_nested "$v_out" remote freshness)" = live ] || return 1
+  [ "$(fm_nm_branch_sync_nested "$v_out" local head)" = "$local_head" ] || return 1
   clean
 }
 rec() { fm_nm_branch_sync_nested "$v_out" recovery "$1"; }
@@ -279,12 +300,12 @@ else rel=diverged action=archive-advance
 fi
 result=planned:$action
 
-gate=0
+gate=0 ff=0
 g remote get-url no-mistakes >/dev/null 2>&1 && gate=1
 if [ "$gate" -eq 1 ]; then
   nm_check
   [ "$v_code" != continue_active_run ] || monitoring_only "$result"
-  ahead_kept || handled || unsettled
+  if ff_offered; then ff=1; else ahead_kept || handled || unsettled; fi
 fi
 [ "$check_mode" -eq 0 ] || finish 0 "$result" none
 
@@ -297,7 +318,7 @@ case "$rel" in
     if [ "$gate" -eq 1 ]; then
       nm_check
       [ "$v_code" != continue_active_run ] || monitoring_only "$result"
-      handled || unsettled
+      if [ "$ff" -eq 1 ]; then ff_offered || unsettled; else handled || unsettled; fi
     fi
     [ "$rel" != diverged ] || [ "$refuse_diverged" -eq 0 ] \
       || refuse "branch $branch diverged from the published head; the branch was left as-is"
@@ -327,6 +348,8 @@ esac
 
 # --- e: custody ---------------------------------------------------------------------
 [ "$gate" -eq 1 ] || finish 0 "$result" none
+[ "$ff" -eq 0 ] || [ "$(g rev-parse -q --verify HEAD)" = "$pub" ] \
+  || refuse "HEAD is not the pipeline-pushed head $pub after the fast-forward"
 nm_check
 [ "$v_safety" != blocked_recover_manual_reconciliation ] || bind_pipeline_head
 settled && finish 0 "$result" settled

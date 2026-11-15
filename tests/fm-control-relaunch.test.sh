@@ -2698,6 +2698,59 @@ SH
   pass "fm-spawn --relaunch: a clean strictly-ahead run_pipeline verdict launches and keeps the local commit"
 }
 
+# A clean copy left behind its own pipeline-pushed head by a failed pr step
+# carries the native behind / safe_fast_forward / sync verdict; the relaunch
+# fast-forwards it through the owner and launches without manual sync.
+test_spawn_relaunch_fast_forwards_a_clean_branch_behind_its_pipeline_push() {
+  local dir out old
+  dir=$(new_case prresync-ff rl99)
+  add_ship_task "$dir" rl99 claude
+  printf 'branch=task-rl99\n' >> "$dir/home/state/rl99.meta"
+  printf 'zsh' > "$dir/fake/command"
+  printf 'a\n' > "$dir/wt/a.txt"
+  git -C "$dir/wt" add a.txt
+  git -C "$dir/wt" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm a
+  git -C "$dir/wt" push -q origin task-rl99
+  old=$(git -C "$dir/wt" rev-parse HEAD)
+  git clone -q "$dir/proj.origin.git" "$dir/pipe"
+  git -C "$dir/pipe" switch -q task-rl99
+  printf 'fix\n' > "$dir/pipe/fix.txt"
+  git -C "$dir/pipe" add fix.txt
+  git -C "$dir/pipe" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm fix
+  git -C "$dir/pipe" push -q origin task-rl99
+  PUBLISHED_SHA=$(git -C "$dir/pipe" rev-parse HEAD)
+  git -C "$dir/proj" remote add no-mistakes "$dir/proj.origin.git"
+  printf '%s\n' "$PUBLISHED_SHA" > "$dir/fake/published"
+  cat > "$dir/fakebin/no-mistakes" <<SH
+#!/usr/bin/env bash
+[ "\${1:-} \${2:-}" = "axi sync" ] || exit 0
+printf '%s\n' "\$*" >> '$dir/fake/nm-calls'
+head=\$(git rev-parse HEAD) pub=\$(cat '$dir/fake/published')
+if [ "\$head" = "\$pub" ]; then
+  printf '%s\n' 'branch_sync:' '  state: synchronized' '  changed: false' '  relation: equal' \
+    '  safety: already_synchronized'
+  exit 0
+fi
+printf '%s\n' 'branch_sync:' '  state: behind' '  changed: false' '  local:' '    branch: task-rl99' \
+  "    head: \$head" '    clean: true' '  pipeline:' '    run: "01RUN"' '    status: failed' '    phase: pr' \
+  "    current_head: \$pub" "    pushed_head: \$pub" '  remote:' "    observed_head: \$pub" '    freshness: live' \
+  '  relation: behind' '  safety: safe_fast_forward' '  next_action:' '    code: sync' '    command: no-mistakes axi sync'
+SH
+  chmod +x "$dir/fakebin/no-mistakes"
+  out=$(run_spawn "$dir" rl99 --relaunch)
+  assert_contains "$out" "spawned rl99" "a clean safe fast-forward relaunch did not launch"$'\n'"$out"
+  assert_contains "$out" "result=advanced archive=- custody=settled head=$PUBLISHED_SHA" "a clean safe fast-forward relaunch did not settle"
+  assert_not_contains "$out" "not a verdict this owner settles" "a clean safe fast-forward relaunch was refused"
+  assert_not_contains "$out" "Monitoring-only relaunch" "a safe fast-forward relaunch was treated as monitoring-only"
+  [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$PUBLISHED_SHA" ] \
+    || fail "a safe fast-forward relaunch did not reach the pipeline-pushed head (was $old)"
+  [ -z "$(git -C "$dir/wt" status --porcelain)" ] || fail "a safe fast-forward relaunch left the copy dirty"
+  [ -z "$(git -C "$dir/wt" for-each-ref --format='%(refname)' refs/heads/archive/)" ] \
+    || fail "a safe fast-forward relaunch created an archive"
+  ! grep -qv '^axi sync --check$' "$dir/fake/nm-calls" || fail "a safe fast-forward relaunch ran a mutating no-mistakes command"
+  pass "fm-spawn --relaunch: a clean branch behind its own pipeline push fast-forwards and launches without manual sync"
+}
+
 test_spawn_relaunch_origin_probe_timeout_refuses() {
   local dir out before
   dir=$(new_case prprobe-timeout rl94)
@@ -4886,6 +4939,7 @@ test_spawn_relaunch_of_promoted_scout_uses_the_recorded_branch
 test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head
 test_spawn_relaunch_under_an_active_run_is_monitoring_only
 test_spawn_relaunch_keeps_a_clean_local_ahead_commit
+test_spawn_relaunch_fast_forwards_a_clean_branch_behind_its_pipeline_push
 test_spawn_relaunch_origin_probe_timeout_refuses
 test_spawn_relaunch_of_a_successor_ignores_its_source_line
 test_promoted_scout_relaunch_receives_the_current_delivery_contract
