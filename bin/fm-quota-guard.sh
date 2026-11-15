@@ -18,12 +18,17 @@
 #   --window-secs <n>            Horizon a pool must last; default from config.
 #   --snapshot <file>            A captured quota-axi --json snapshot for the
 #                                pools that are not Claude accounts.
-#   --primary-harness <name>     This home's primary harness; default the
-#                                live session-lock holder's harness.
+#   --primary-harness <name>     This home's primary harness; default the one
+#                                the last check recorded for the same live
+#                                session-lock holder, else that holder's
+#                                harness.
 #   --primary-account <entry>    The primary's Claude account, `ordinary` or a
-#                                config root; default ordinary. The watchdog
-#                                passes the root that holds the primary's
-#                                transcript.
+#                                config root; default the one the last check
+#                                recorded for the same live session-lock
+#                                holder, else ordinary. The watchdog passes
+#                                the root that holds the primary's transcript,
+#                                and a check a second mate's or worker's
+#                                warning runs keeps both.
 #   --candidate <harness:model>  Reroute candidate, repeatable; default the
 #                                reroute-candidates key of config/watchdog.
 #
@@ -68,8 +73,9 @@
 # Moves. A worker on a short or exhausted supervisor pool gets a steer line, so
 # the pool is kept for its supervisors. A supervisor on an exhausted pool gets a failover
 # line. Each move names one pick: first, for a Claude worker or the primary,
-# another config/claude-accounts entry of its own home whose own read is ok (a
-# second mate relaunches on its own pin, so it never gets an account pick);
+# another config/claude-accounts entry of its own home whose own read is ok and
+# whose pool is not short, exhausted, or unknown (a second mate relaunches on
+# its own pin, so it never gets an account pick);
 # then the bin/fm-quota-reroute.sh suggest pick among the candidates whose own
 # read is ok and that are not on that pool or on another pool that is short,
 # exhausted, or unknown, with --kind secondmate for a supervisor; else none. A
@@ -87,7 +93,9 @@
 # act means at least one steer or failover line. The primary's id is primary.
 #
 # Files, under FM_HOME:
-#   state/quota-guard/last        key=value: at, trigger, verdict, locks, result.
+#   state/quota-guard/last        key=value: at, trigger, verdict, locks,
+#                                 primary_lock, primary_harness,
+#                                 primary_account, result.
 #   state/quota-guard/report.txt  the full output of the last check.
 #   state/quota-guard/checks.tsv  append-only: epoch, trigger, verdict, result line.
 #   state/quota-limit-dialogs.tsv append-only: epoch, subject, account, model,
@@ -139,7 +147,7 @@ usage() {
 }
 flat() { printf '%s' "$1" | tr '\t\r\n' '   '; }
 
-TRIGGER=manual WINDOW='' SNAPSHOT='' PRIMARY_HARNESS='' PRIMARY_ACCOUNT=ordinary
+TRIGGER=manual WINDOW='' SNAPSHOT='' PRIMARY_HARNESS='' PRIMARY_ACCOUNT=''
 SUBJECT='' D_HARNESS='' D_ACCOUNT='' D_MODEL=''
 CANDIDATES=''
 
@@ -182,6 +190,7 @@ parse_opts() {  # <command> <args...>
     esac
   done
   [ -n "$CANDIDATES" ] || CANDIDATES=$(fm_wd_conf_get "$WD_CONF" reroute-candidates '')
+  primary_defaults
 }
 
 # --- members -----------------------------------------------------------------
@@ -214,6 +223,20 @@ lock_fingerprint() {
     out="$out,$id=$(lock_pid "$home")"
   done < <(mates)
   printf '%s\n' "$out"
+}
+
+# primary_defaults: a command that names no primary harness or account keeps
+# the ones the last check recorded while the same session-lock holder is live,
+# so a check a second mate's or worker's warning runs judges the primary as the
+# primary's own check did.
+primary_defaults() {
+  local rec=$GUARD/last pid
+  pid=$(lock_pid "$FM_HOME")
+  if pid_alive "$pid" && [ "$(fm_wd_conf_get "$rec" primary_lock '')" = "$pid" ]; then
+    [ -n "$PRIMARY_HARNESS" ] || PRIMARY_HARNESS=$(fm_wd_conf_get "$rec" primary_harness '')
+    [ -n "$PRIMARY_ACCOUNT" ] || PRIMARY_ACCOUNT=$(fm_wd_conf_get "$rec" primary_account '')
+  fi
+  [ -n "$PRIMARY_ACCOUNT" ] || PRIMARY_ACCOUNT=ordinary
 }
 
 primary_harness() {
@@ -446,6 +469,8 @@ pick() {
     listed=$(fm_worker_account_list claude "$(home_config "$home")" 2>/dev/null) || listed=
     while IFS= read -r entry; do
       [ -n "$entry" ] && [ "$entry" != "$account" ] || continue
+      # Another member's model can leave the account's pool short or unknown.
+      case "$(pool_status "claude:$entry")" in short|exhausted|unknown) continue ;; esac
       st=$(classify claude "$entry" "$model" | cut -f 1)
       if [ "$st" = ok ]; then printf 'account %s\n' "$entry"; return 0; fi
     done <<< "$listed"
@@ -590,7 +615,8 @@ cmd_check() {
   cat "$WORK/report.txt"
   mkdir -p "$GUARD" || die "cannot create $GUARD" 1
   { cp "$WORK/report.txt" "$GUARD/.report.tmp" && mv -f "$GUARD/.report.tmp" "$GUARD/report.txt"; } || die "cannot write $GUARD/report.txt" 1
-  { printf 'at=%s\ntrigger=%s\nverdict=%s\nlocks=%s\nresult=%s\n' "$NOW" "$TRIGGER" "$verdict" "$(lock_fingerprint)" "$result" > "$GUARD/.last.tmp" &&
+  { printf 'at=%s\ntrigger=%s\nverdict=%s\nlocks=%s\nprimary_lock=%s\nprimary_harness=%s\nprimary_account=%s\nresult=%s\n' \
+      "$NOW" "$TRIGGER" "$verdict" "$(lock_fingerprint)" "$(lock_pid "$FM_HOME")" "$PRIMARY_HARNESS" "$PRIMARY_ACCOUNT" "$result" > "$GUARD/.last.tmp" &&
     mv -f "$GUARD/.last.tmp" "$GUARD/last"; } || die "cannot write $GUARD/last" 1
   printf '%s\t%s\t%s\t%s\n' "$NOW" "$TRIGGER" "$verdict" "$result" >> "$GUARD/checks.tsv" || die "cannot append $GUARD/checks.tsv" 1
   [ "$verdict" != act ] || return 3
@@ -629,7 +655,9 @@ record_dialog() {
     [ -n "$D_MODEL" ] || D_MODEL=$(fm_meta_get "$meta" model 2>/dev/null) || D_MODEL=
     [ -n "$D_ACCOUNT" ] || D_ACCOUNT=$(fm_meta_get "$meta" account 2>/dev/null) || D_ACCOUNT=
   fi
-  if [ -z "$D_ACCOUNT" ] && [ "$D_HARNESS" = claude ]; then D_ACCOUNT=ordinary; fi
+  if [ -z "$D_ACCOUNT" ] && [ "$D_HARNESS" = claude ]; then
+    if [ "$SUBJECT" = primary ]; then D_ACCOUNT=$PRIMARY_ACCOUNT; else D_ACCOUNT=ordinary; fi
+  fi
   if [ -z "$D_ACCOUNT" ] && [ -n "$D_HARNESS" ]; then
     D_ACCOUNT=$(member_pool "$D_HARNESS" "${D_MODEL:-default}" "" | cut -f 2)
   fi

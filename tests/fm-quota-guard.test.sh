@@ -263,6 +263,59 @@ test_unrecorded_model_with_a_short_model_scope_is_unknown() {
   assert_contains "$out" "pool: claude:ordinary status=ok" "a model scope with headroom leaves the pool ok"
   pass "an unrecorded model is unknown while any model scope is short or exhausted"
 }
+test_account_pick_skips_a_pool_another_member_holds_short() {
+  local out
+  new_case account-pool
+  register_mate zenith-mate claude "$CASE/acct-b"
+  printf 'model=opus\n' >> "$HOME_DIR/state/zenith-mate.meta"
+  mkdir -p "$CASE/acct-b"
+  snapshot "$CASE/claude.json" 6 \
+    "$(claude_row ordinary "$CASE/user-home/.claude" "$(scope exhausted_now)")" \
+    "$(claude_row acct-b "$CASE/acct-b" "$(scope through_reset)" |
+      jq -c '.quotaSemantics.effectiveAvailability += [{scope: "model:opus", status: "known", effectivePercentRemaining: 0, runway: {status: "exhausted_now"}}]')"
+  printf 'ordinary\n%s\n' "$CASE/acct-b" > "$HOME_DIR/config/claude-accounts"
+  printf '%%1\n' > "$CASE/panes"
+  worker "$HOME_DIR/state" busy claude sonnet %1
+  out=$(run_tool check --primary-harness claude --window-secs 28800)
+  assert_contains "$out" "pool: claude:$CASE/acct-b status=exhausted runway=0 supervisors=zenith-mate workers=- why=model:opus exhausted now" \
+    "the second mate's model leaves its account's pool exhausted"
+  assert_contains "$out" "steer: busy pool=claude:ordinary pick=none (no reroute candidate off this pool) why=keep exhausted pool for its supervisors" \
+    "a worker is not moved onto a pool a supervisor already finds exhausted"
+  sed 's/^model=opus$/model=sonnet/' "$HOME_DIR/state/zenith-mate.meta" > "$CASE/meta" && mv "$CASE/meta" "$HOME_DIR/state/zenith-mate.meta"
+  out=$(run_tool check --primary-harness claude --window-secs 28800)
+  assert_contains "$out" "steer: busy pool=claude:ordinary pick=account $CASE/acct-b why=keep exhausted pool for its supervisors" \
+    "the same account is the pick once its pool is ok"
+  pass "an account pick skips a pool that another member's model leaves exhausted"
+}
+
+test_primary_account_carries_to_a_later_check() {
+  local out
+  new_case primary-account
+  register_mate zenith-mate claude
+  mkdir -p "$CASE/acct-b"
+  printf '%s\n' "$$" > "$HOME_DIR/state/.lock"
+  snapshot "$CASE/claude.json" 6 \
+    "$(claude_row ordinary "$CASE/user-home/.claude" "$(scope through_reset)")" \
+    "$(claude_row acct-b "$CASE/acct-b" "$(scope exhausted_now)")"
+  out=$(run_tool check --primary-harness claude --primary-account "$CASE/acct-b" --window-secs 28800)
+  assert_contains "$out" "pool: claude:$CASE/acct-b status=exhausted runway=0 supervisors=primary" \
+    "the primary is judged on the account it was given"
+  assert_grep "primary_account=$CASE/acct-b" "$HOME_DIR/state/quota-guard/last" "the check records the primary's account"
+  # A second mate's warning names no primary harness or account; the check keeps
+  # the last ones while the same session-lock holder is live.
+  out=$(run_tool warning --subject zenith-mate --window-secs 28800)
+  assert_contains "$out" "pool: claude:$CASE/acct-b status=exhausted runway=0 supervisors=primary workers=-" \
+    "a later check without the account still judges the primary on it"
+  assert_contains "$out" "pool: claude:ordinary status=ok runway=through_reset supervisors=zenith-mate" \
+    "the second mate stays on its own account"
+  run_tool record-dialog --subject primary --harness claude >/dev/null
+  assert_grep "	primary	$CASE/acct-b	-	claude" "$HOME_DIR/state/quota-limit-dialogs.tsv" \
+    "a primary dialog with no account named is recorded on the last known account"
+  printf '%s\n' "$(sleep 0 & echo "$!")" > "$HOME_DIR/state/.lock"
+  out=$(run_tool check --window-secs 28800)
+  assert_not_contains "$out" "supervisors=primary" "a new lock holder that is not live carries nothing over"
+  pass "a check with no primary harness or account keeps the last ones for the same session"
+}
 test_limit_dialogs_are_recorded_with_account_and_model() {
   local rows rc
   new_case dialogs
@@ -355,6 +408,8 @@ fm_test_run \
   test_second_mate_picks_follow_its_own_pin_and_home \
   test_claude_candidate_lands_on_the_relaunching_pin \
   test_unrecorded_model_with_a_short_model_scope_is_unknown \
+  test_account_pick_skips_a_pool_another_member_holds_short \
+  test_primary_account_carries_to_a_later_check \
   test_limit_dialogs_are_recorded_with_account_and_model \
   test_warning_records_then_checks \
   test_tick_runs_at_kickoff_and_periodically \

@@ -4309,6 +4309,90 @@ SH
   pass "quota guard: every act check nudges the primary once, whichever path ran it"
 }
 
+# quota_guard_exhausted_root <root>: a fake quota-axi on which only the Claude
+# account at <root> is exhausted.
+quota_guard_exhausted_root() {
+  local root=$1 snap="$H/claude-quota.json"
+  jq -n --arg r "$root" '{schemaVersion: 6, providers: [{provider: "claude", accountKey: "acct", accountLocator: {path: $r},
+    state: {status: "fresh", stale: false},
+    quotaSemantics: {status: "known", effectiveAvailability: [{scope: "all_models", status: "known", effectivePercentRemaining: 0, runway: {status: "exhausted_now"}}]}}]}' > "$snap"
+  wd_quota_snapshot "$H/quota.json"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *" --provider claude "*) cat "$snap" ;;
+  *) cat "$H/quota.json" ;;
+esac
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+}
+
+test_quota_guard_nudge_retries_a_failed_send_and_skips_a_dead_primary() {
+  make_home $'Captain session\n> '
+  grep -v '^quota-guard=' "$H/config/watchdog" > "$H/watchdog.conf" && mv "$H/watchdog.conf" "$H/config/watchdog"
+  transcript 100 "Working."
+  quota_guard_exhausted_root "$H/claude"
+  # A file where the inbox directory goes makes the nudge's record fail.
+  printf 'x\n' > "$H/state/operational-inbox"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 0 once >/dev/null 2>&1 || fail "failing-nudge pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard nudge failed)" "the nudge whose record failed is a failed row: $(ledger | cut -f4-8)"
+  rm -f "$H/state/operational-inbox"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 1000 once >/dev/null 2>&1 || fail "retry pass failed"
+  assert_equals 2 "$(ledger_rows quota-guard nudge pending)" "a nudge that never reached the primary is sent again: $(ledger | cut -f4-8)"
+  grep -rqs "quota-guard: act trigger=kickoff" "$H/state/operational-inbox" || fail "the retried nudge does not name the kickoff check"
+  FM_HOME="$H" FM_TEST_SEAM=1 FM_NOW=$((BASE + 1100)) FM_QUOTA_GUARD_CONF="$H/config/watchdog" "$ROOT/bin/fm-quota-guard.sh" \
+    warning --subject primary --harness claude --primary-harness claude --primary-account "$H/claude" >/dev/null 2>&1
+  assert_grep "trigger=warning" "$H/state/quota-guard/last" "the warning check is on record"
+  kill "$LOCKPID" 2>/dev/null
+  sleep 0.5
+  ! kill -0 "$LOCKPID" 2>/dev/null || fail "the lock holder is still alive"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 2000 once >/dev/null 2>&1 || fail "dead-primary pass failed"
+  assert_equals 2 "$(ledger_rows quota-guard nudge pending)" "a primary whose lock holder is dead is not nudged: $(ledger | cut -f4-8)"
+  # Only the earlier nudge's progress check may land now; no new nudge starts.
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 == "quota-guard" && $6 == "nudge" && $7 != "failed" && $1 >= '"$((BASE + 2000))" | wc -l | tr -d ' ')" \
+    "no nudge of any phase starts for a dead primary: $(ledger | cut -f4-8)"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota guard: a nudge that failed is sent again, and a dead primary is never nudged"
+}
+
+test_autowait_footers_on_a_mate_and_a_worker_are_limit_warnings() {
+  local parent mate autowait
+  autowait=$'work output\nUsage limit reached. Continuing automatically at 4:00 AM\n❯ \n  ? for shortcuts'
+  make_home $'Captain session\n> '
+  parent=$H
+  grep -v '^quota-guard=' "$parent/config/watchdog" > "$parent/watchdog.conf" && mv "$parent/watchdog.conf" "$parent/config/watchdog"
+  transcript 100 "Working."
+  make_home "$autowait"
+  mate=$H
+  transcript 100 "Working."
+  H=$parent
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  {
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "home=$mate"
+    echo "worktree=$mate"
+    echo "model=default"
+  } > "$parent/state/ghost-mate.meta"
+  mkdir -p "$parent/wt"
+  worker_pane waiter ship "$autowait"
+  printf 'harness=claude\nworktree=%s\nmodel=default\n' "$parent/wt" >> "$parent/state/waiter.meta"
+  # Only the account that holds the primary's transcript is exhausted.
+  quota_guard_exhausted_root "$parent/claude"
+  sleep 0.5
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 0 once >/dev/null 2>&1 || fail "auto-wait footer pass failed"
+  assert_grep "	ghost-mate	ordinary	default	claude" "$parent/state/quota-limit-dialogs.tsv" \
+    "a second mate's auto-wait footer is recorded as a limit dialog in its parent: $(cat "$parent/state/quota-limit-dialogs.tsv" 2>&1)"
+  assert_grep "	waiter	ordinary	default	claude" "$parent/state/quota-limit-dialogs.tsv" \
+    "a worker's auto-wait footer is recorded as a limit dialog"
+  assert_grep "trigger=warning" "$parent/state/quota-guard/last" "the second mate's warning checks quota"
+  assert_grep "pool: claude:$parent/claude status=exhausted runway=0 supervisors=primary" "$parent/state/quota-guard/report.txt" \
+    "the second mate's check judges the primary on its own account: $(cat "$parent/state/quota-guard/report.txt" 2>&1)"
+  [ ! -s "$mate/typed.log" ] || fail "the watchdog typed into the second mate's auto-wait pane: $(cat "$mate/typed.log")"
+  [ ! -s "$parent/worker-waiter.typed" ] || fail "the watchdog typed into the worker's auto-wait pane: $(cat "$parent/worker-waiter.typed")"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota guard: an auto-wait footer on a second mate or a worker is a limit warning judged on the primary's account"
+}
 test_failed_limit_dialog_record_is_retried() {
   local snap dialog
   dialog=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
@@ -5736,6 +5820,8 @@ fm_test_run \
   test_worker_usage_limit_names_a_pick \
   test_quota_guard_checks_at_kickoff_and_periodically \
   test_quota_guard_act_nudges_after_any_check \
+  test_quota_guard_nudge_retries_a_failed_send_and_skips_a_dead_primary \
+  test_autowait_footers_on_a_mate_and_a_worker_are_limit_warnings \
   test_failed_limit_dialog_record_is_retried \
   test_grok_weekly_limit_on_a_secondmate_names_a_pick \
   test_home_usage_limit_ignores_grok_in_scrollback \

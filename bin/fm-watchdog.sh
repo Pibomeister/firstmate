@@ -474,7 +474,7 @@ wd_observe() {
   now=$(wd_now)
   O_HOME=$home O_PARENT=$parent O_ID=$id O_TAG=$(wd_tag "$home") O_KEY=$(wd_state_key "$home")
   O_BACKEND='' O_TARGET='' O_HARNESS='' O_SESSION='' O_HB_AGE=unknown O_CTX='' O_CTX_SRC='' O_CTX_READING=''
-  O_PANE='' O_DIALOG_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_AUTOWAIT=0 O_COMPOSER=unknown O_TURN=unknown
+  O_PANE='' O_DIALOG_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_AUTOWAIT=0 O_LIMIT_FOOTER=0 O_COMPOSER=unknown O_TURN=unknown
   O_LOCK_PID='' O_ALIVE=0 O_INSTANCE=unknown O_OWNER=none O_CPU_BUSY=unknown O_TRANSCRIPT='' O_TR_AGE=unknown O_ACT_AGE=unknown O_ACT_SRC=''
   C_BACKEND='' C_TARGET='' C_MOVED=''
   O_LOOP=none O_LOOP_N=0 O_EVENTS='' O_RESTART_REQ=0 O_OWED_N=0 O_OWED_AGE=0
@@ -576,7 +576,9 @@ EOF
     O_DIALOG=$(wd_observe_dialog "$O_BACKEND" "$O_TARGET" "" "$O_HARNESS") || O_DIALOG=''
     view=$(wd_view "$O_BACKEND" "$O_TARGET") || view=$O_PANE
     O_DIALOG_PANE=$view
-    if [ "$parent" = - ] && fm_wd_usage_limit_autowait "$view"; then O_AUTOWAIT=1; fi
+    if fm_wd_usage_limit_autowait "$view"; then
+      if [ "$parent" = - ]; then O_AUTOWAIT=1; else O_LIMIT_FOOTER=1; fi
+    fi
     wd_read_composer
     O_TURN=$(wd_turn_running "$O_BACKEND" "$O_TARGET" "$O_PANE")
     [ -n "$footer_text" ] || { footer_text=$(_fm_wd_tail_rows "$O_PANE" 10); footer_src=pane; }
@@ -1745,12 +1747,26 @@ wd_primary_account() {
   fi
 }
 
+# wd_quota_guard_nudged_since <epoch>: 0 when a quota-guard nudge to this
+# subject was delivered or recorded as a dry run at or after that time. A nudge
+# whose record or submit failed does not count; one that only saw no transcript
+# progress afterward was delivered.
+wd_quota_guard_nudged_since() {
+  [ -f "$LEDGER" ] || return 1
+  awk -F'\t' -v h="$O_HOME" -v subj="${O_REC_SUBJECT:-$O_TAG}" -v at="$1" '
+    $3 == h && $4 == subj && $5 == "quota-guard" && $6 == "nudge" {
+      if (($7 == "pending" || $7 == "dry-run") && $1 + 0 >= at + 0) ok[$2] = 1
+      else if ($7 == "failed" && $8 !~ /no transcript progress/) delete ok[$2]
+    }
+    END { for (id in ok) exit 0; exit 1 }' "$LEDGER"
+}
+
 # wd_quota_guard_pass: a primary home's kickoff and periodic quota check, then
 # the standing verdict of its last check as a gap while it is not ok. A check
-# that named moves, whichever pass or warning ran it, nudges the primary until
-# one nudge after that check is delivered or recorded as a dry run.
+# that named moves, whichever pass or warning ran it, nudges a live primary
+# until one nudge after that check is delivered or recorded as a dry run.
 wd_quota_guard_pass() {
-  local rc=0 rec=$O_HOME/state/quota-guard/last acct at nudged
+  local rc=0 rec=$O_HOME/state/quota-guard/last acct at
   wd_quota_guard_on || return 0
   set -- tick
   [ -z "$O_HARNESS" ] || set -- "$@" --primary-harness "$O_HARNESS"
@@ -1765,9 +1781,9 @@ wd_quota_guard_pass() {
     act|unknown) wd_gap "$(fm_wd_conf_get "$rec" result '') (checked $(fm_wd_iso "$(fm_wd_conf_get "$rec" at 0)"))" ;;
   esac
   at=$(fm_wd_conf_get "$rec" at '' | tr -cd '0-9')
-  if [ "$(fm_wd_conf_get "$rec" verdict '')" = act ] && [ -n "$at" ] && [ "$WD_RESTARTED" != 1 ] && [ "$WD_SYMPTOM" != usage-limit-autowait ]; then
-    nudged=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" quota-guard nudge '^(pending|dry-run)$' "${O_REC_SUBJECT:-$O_TAG}")
-    if [ -z "$nudged" ] || [ "$nudged" -lt "$at" ]; then
+  if [ "$(fm_wd_conf_get "$rec" verdict '')" = act ] && [ -n "$at" ] && [ "$O_ALIVE" = 1 ] &&
+     [ "$WD_RESTARTED" != 1 ] && [ "$WD_SYMPTOM" != usage-limit-autowait ]; then
+    if ! wd_quota_guard_nudged_since "$at"; then
       wd_nudge quota-guard "$(fm_wd_conf_get "$rec" result ''). The moves are in $O_HOME/state/quota-guard/report.txt. Move each worker or supervisor with bin/fm-control.sh relaunch on its named pick; never change an account pin, sign in, or spend."
     fi
   fi
@@ -1983,6 +1999,11 @@ wd_visit_worker_dialogs() {
       continue
     fi
     wd_rearm_feedback_dialog "$backend" "$target" "${harness:-unknown}" "$screen" "fm-$id"
+    if [ -z "$dialog" ] && fm_wd_usage_limit_autowait "$screen"; then
+      O_REC_SUBJECT="worker:$id"
+      wd_quota_guard_warning "$id"
+      unset O_REC_SUBJECT
+    fi
     case "$dialog" in
       feedback)
         O_BACKEND=$backend
@@ -2196,6 +2217,9 @@ wd_once() {  # [home-filter]
     WD_SYMPTOM=ok WD_RESTARTED=0
     wd_handle_subject
     [ "$parent" != - ] || wd_quota_guard_pass
+    # A second mate's auto-wait footer is a limit warning too; only the primary's
+    # gets the auto-wait handling above.
+    [ "$parent" = - ] || [ "$O_LIMIT_FOOTER" != 1 ] || wd_quota_guard_warning
     wd_visit_worker_dialogs page
     wd_health_line >> "$health"
   done
