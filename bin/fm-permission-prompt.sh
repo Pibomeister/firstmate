@@ -9,8 +9,8 @@
 #
 # It prints one line `<verdict>\t<reason>` and exits 0, or prints nothing and
 # exits 1 when the bottom of the screen holds no prompt this file recognizes.
-# --dialog passes the fm_wd_pane_dialog verdict the caller already has; it is
-# computed from the screen when absent.
+# --dialog passes the fm_wd_pane_dialog verdict the caller already has, or
+# `none` when the caller saw no dialog; it is computed from the screen when absent.
 #
 # Verdicts, checked in this order:
 #   hold <external-imports|bypass-confirm|hooks-review>
@@ -19,8 +19,9 @@
 #       records a permanent decline), Claude's bypass-permissions confirmation
 #       (the cursor sits on `No, exit`), and Codex's hook-review modal. No key.
 #   trust workspace
-#       Claude's or Antigravity's workspace-trust dialog. Its cursor sits on the
-#       declining `No, exit`, so Enter would exit. No key: the watchdog asks
+#       Claude's or Antigravity's workspace-trust dialog. Claude's cursor sits on
+#       the declining `No, exit`, so Enter would exit, and Antigravity's
+#       preselects its safe answer; either way no key: the watchdog asks
 #       bin/fm-control.sh for a controlled relaunch, whose spawn pre-registers
 #       the worktree's trust entry. Other harnesses get `hold trust-unregistered`.
 #   hardstop <credential|sign-in|spend|destructive|release|reserved>
@@ -61,11 +62,11 @@ if ! declare -F fm_wd_pane_dialog >/dev/null 2>&1; then
   . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-watchdog-lib.sh"
 fi
 
-FM_PP_CREDENTIAL_RE='password|passphrase|passcode|api.?key|access.?token|auth.?token|bearer|token|secret|keychain|credential|private.?key|ssh-add|\.ssh/|\.netrc|\.npmrc|(^|[^a-z])\.env([^a-z]|$)|1password|op (read|signin)|security (find|add|delete)-|(^|[^a-z])gpg|(^|[^a-z])sudo([^a-z]|$)'
+FM_PP_CREDENTIAL_RE='password|--reveal|(^|[^a-z])op[[:space:]]+item|aws[[:space:]]+configure|(^|[^a-z])(otp|2fa|mfa)([^a-z]|$)|one.time (code|password)|passphrase|passcode|api.?key|access.?token|auth.?token|bearer|token|secret|keychain|credential|private.?key|ssh-add|\.ssh/|\.netrc|\.npmrc|(^|[^a-z])\.env([^a-z]|$)|1password|op (read|signin)|security (find|add|delete)-|(^|[^a-z])gpg|(^|[^a-z])sudo([^a-z]|$)'
 FM_PP_SIGNIN_RE='sign.?in|log.?in|/login|authenticat|oauth|paste (the )?(authorization |authentication )?code|verification code|device code|browser didn.t open|select login method|not logged in|re-?authori[sz]e|session expired'
 FM_PP_SPEND_RE='add funds|paid[[:space:]]+(usage|credits?|plan|tier|model|request)|credits?[[:space:]]+to[[:space:]]+continue|use[[:space:]]+(your[[:space:]]+|extra[[:space:]]+|more[[:space:]]+)?credits|(^|[^a-z])charg(e|ed|es|ing)([^a-z]|$)|buy (more )?credits|purchase|payment|billing|upgrade (your |to )?(plan|max|pro)|extra usage|pay.as.you.go|overage|spend|credit card|subscribe|top.?up'
-FM_PP_DESTRUCTIVE_RE='(^|[^a-z])(rm|rmdir|unlink|shred|srm)([[:space:]]|$)|--recursive|git[[:space:]]+(restore|rm|switch[[:space:]]+(-f|--discard-changes|--force))([[:space:]]|$)|git[[:space:]]+checkout[[:space:]]+(-f|--force|\.)([[:space:]]|$)|find[[:space:]].*-delete|git[[:space:]]+reset[[:space:]]+--hard|git[[:space:]]+clean[[:space:]]+-[a-z]*f|git[[:space:]]+push[^|;&]*([[:space:]]-f([[:space:]]|$)|--force|[[:space:]]\+)|branch[[:space:]]+-d|git[[:space:]]+checkout[[:space:]]+--[[:space:]]|git[[:space:]]+stash[[:space:]]+(drop|clear)|worktree[[:space:]]+(remove|prune)|drop[[:space:]]+(table|database|schema)|truncate|(^|[^a-z])(delet|destroy|wipe|erase|overwrit)|mkfs|(^|[^a-z])dd[[:space:]]+if=|chmod[[:space:]]+-r|chown[[:space:]]+-r|kill[[:space:]]+-9|pkill|killall'
-FM_PP_RELEASE_RE='(^|[^be])merg|deploy|releas|publish|production|(^|[^a-z])prod([^a-z]|$)|gh[[:space:]]+release|npm[[:space:]]+publish'
+FM_PP_DESTRUCTIVE_RE='(^|[^a-z])(rm|rmdir|unlink|shred|srm)([[:space:]]|$)|--recursive|git[[:space:]]+(restore|rm|switch[[:space:]]+(-f|--discard-changes|--force))([[:space:]]|$)|git[[:space:]]+checkout[[:space:]]+(-f|--force|\.)([[:space:]]|$)|find[[:space:]].*-delete|(^|[^a-z])prune([^a-z]|$)|git[[:space:]]+reset[[:space:]]+--hard|git[[:space:]]+clean[[:space:]]+-[a-z]*f|git[[:space:]]+push[^|;&]*([[:space:]]-f([[:space:]]|$)|--force|[[:space:]]\+)|branch[[:space:]]+-d|git[[:space:]]+checkout[[:space:]]+--[[:space:]]|git[[:space:]]+stash[[:space:]]+(drop|clear)|worktree[[:space:]]+(remove|prune)|drop[[:space:]]+(table|database|schema)|truncate|(^|[^a-z])(delet|destroy|wipe|erase|overwrit)|mkfs|(^|[^a-z])dd[[:space:]]+if=|chmod[[:space:]]+-r|chown[[:space:]]+-r|kill[[:space:]]+-9|pkill|killall'
+FM_PP_RELEASE_RE='git[[:space:]]+push[^|;&]*[[:space:]:](main|master|trunk|release[^[:space:]]*)([[:space:]]|$)|(^|[^be])merg|deploy|releas|publish|production|(^|[^a-z])prod([^a-z]|$)|gh[[:space:]]+release|npm[[:space:]]+publish'
 
 # The prompt rows below the last full-width rule above the question or first
 # option row. Without that rule the boundary is unproven and the rows come from
@@ -114,10 +115,10 @@ fm_pp_bottom_input() {  # <screen>
   last=$(_fm_wd_tail_rows "${1-}" 1)
   last=$(fm_wd_lower "$last" | sed -e 's/[[:space:]]*$//')
   [ -n "$last" ] || return 1
-  if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\[sudo\][[:space:]]+)?(password|passphrase|passcode|pin)([[:space:]]+for[[:space:]][^:]*)?:$|(enter|type|input|provide)[[:space:]]+((your|the|a)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(password|passphrase|passcode|pin)[^:]*:$|(password|passphrase|passcode)[^:]{0,40}:$|(api[[:space:]_-]?key|token|secret)[^:]{0,30}:$'; then
+  if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\[sudo\][[:space:]]+)?(password|passphrase|passcode|pin)([[:space:]]+for[[:space:]][^:]*)?:$|(enter|type|input|provide)[[:space:]]+((your|the|a)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(password|passphrase|passcode|pin)[^:]*:$|(password|passphrase|passcode)([[:space:]]+for[[:space:]].*)?[^:]{0,40}:$|(enter|type)[[:space:]]+(the[[:space:]]+|your[[:space:]]+)?(otp|2fa|mfa|one.time|authenticator|security)[^:]*:$|(api[[:space:]_-]?key|token|secret)[^:]{0,30}:$'; then
     printf 'credential\n'; return 0
   fi
-  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:]*[>:]$|verification code[^:]*:$|device code[^:]*:$'; then
+  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:]*[>:]$|verification code[^:]*:$|device code[^:]*:$|^username for .*:$|press enter to open .*(browser|github\.com|login)'; then
     printf 'sign-in\n'; return 0
   fi
   return 1
@@ -154,7 +155,9 @@ _fm_pp_claude_tool_approval() {  # <screen>
 fm_pp_classify() {  # <screen> <harness> [<dialog>]
   local screen=${1-} harness=${2-} dialog=${3-} rows text cat
   [ -n "$screen" ] || return 1
-  if [ -z "$dialog" ]; then
+  if [ "$dialog" = none ]; then
+    dialog=
+  elif [ -z "$dialog" ]; then
     dialog=$(fm_wd_pane_dialog "$screen" "$harness") || dialog=
   fi
   case "$dialog" in

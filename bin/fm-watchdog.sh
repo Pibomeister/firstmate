@@ -1580,12 +1580,13 @@ wd_pp_status() {
 }
 
 # wd_pp_stop <id> <key> <prompt-hash> <text>: report a prompt nothing will
-# answer as blocked, once per prompt. A changed prompt reports again.
+# answer as blocked, once per key while that line stays open, so a prompt whose
+# rows keep changing (a spinner or a clock) does not append a line every pass.
 wd_pp_stop() {
   local id=$1 key=$2 hash=$3 text=$4 mark prev
   mark=$(wd_pp_mark "$id")
   prev=$(cat "$mark.open" 2>/dev/null) || prev=
-  [ "$prev" != "$key $hash" ] || return 0
+  [ "${prev%% *}" != "$key" ] || return 0
   if [ "$(wd_permission_mode)" != act ]; then
     wd_rate_open permission-prompt report "$(cfgi nudge-secs 900)" "$O_REC_SUBJECT" \
       && wd_rec "$(wd_id)" permission-prompt report dry-run "would write blocked [key=$key]: $text"
@@ -1679,7 +1680,7 @@ wd_pp_decline() {
   # The steer's doorbell types a line and Enter, so it rings only when the
   # screen after Escape shows no dialog and no prompt of any kind.
   after_dialog=$(fm_wd_pane_dialog "$after" "$harness") || after_dialog=
-  if verdict=$(fm_pp_classify "$after" "$harness" "$after_dialog"); then
+  if verdict=$(fm_pp_classify "$after" "$harness" "${after_dialog:-none}"); then
     case "$verdict" in
       hardstop*) wd_pp_stop "$id" permission-prompt-hardstop "after-$hash" "worker $id shows a ${verdict#*$'\t'} prompt after a declined tool call; nothing was answered, and no instruction was sent" ;;
       *) wd_pp_stop "$id" permission-prompt-held "after-$hash" "worker $id shows another permission prompt after a declined tool call (${verdict#*$'\t'}); nothing was answered, and no instruction was sent" ;;
@@ -2364,7 +2365,7 @@ wd_visit_worker_dialogs() {
           O_BACKEND=$backend
           O_TARGET=$target
           O_REC_SUBJECT="worker:$id"
-          wd_permission_prompt "$id" "$harness" "$screen" "$dialog"
+          wd_permission_prompt "$id" "$harness" "$screen" "${dialog:-none}"
           prompt=$?
           unset O_REC_SUBJECT
         fi

@@ -137,7 +137,14 @@ SH
     printf 'kind=ship\nbackend=tmux\nwindow=%s\nendpoint_task_id=%s\n' "$WP" "$id"
     [ "$harness" = - ] || printf 'harness=%s\n' "$harness"
   } > "$H/state/$id.meta"
-  sleep 0.3
+  # Wait until the fake worker has painted its screen, so a loaded host never
+  # hands the watchdog an empty pane.
+  local n=0
+  until "$REAL_TMUX" -f /dev/null -L "$SOCKET" capture-pane -p -t "$WP" 2>/dev/null | grep -q '[^[:space:]]'; do
+    n=$((n + 1))
+    [ "$n" -lt 100 ] || fail "worker $id never painted its screen"
+    sleep 0.1
+  done
 }
 
 # repaint <id> <screen-file>: the worker now shows another screen.
@@ -198,13 +205,17 @@ test_hardstop_categories() {
   assert_equals $'hardstop\tdestructive' "$(bash_prompt_with 'git reset --hard origin/main' | classify claude)" "a hard reset is a destructive stop"
   assert_equals $'hardstop\trelease' "$(bash_prompt_with 'gh pr merge 12 --squash' | classify claude)" "a merge is a release stop"
   local c
-  for c in 'rm report.txt' 'rm --recursive --force build/' 'git restore src/app.py' 'git checkout -f main' 'find . -name x -delete'; do
+  for c in 'rm report.txt' 'rm --recursive --force build/' 'git restore src/app.py' 'git checkout -f main' 'find . -name x -delete' 'docker system prune -af'; do
     assert_equals $'hardstop\tdestructive' "$(bash_prompt_with "$c" | classify claude)" "$c is a destructive stop"
   done
   assert_equals $'hardstop\tspend' "$(bash_prompt_with 'echo Use paid credits to continue' | classify claude)" "paid-credit wording is a spend stop"
-  for c in 'Enter your password:' 'Enter your passphrase:' 'Password for dev@build:'; do
+  assert_equals $'hardstop\trelease' "$(bash_prompt_with 'git push origin main' | classify claude)" "a push to main is a release stop"
+  assert_equals $'hardstop\tcredential' "$(bash_prompt_with 'op item get gh --reveal' | classify claude)" "a revealed vault item is a credential stop"
+  assert_equals $'route\ttool-approval' "$(bash_prompt_with 'git push -u origin fm/feature-x' | classify claude)" "a feature-branch push still routes"
+  for c in 'Enter your password:' 'Enter your passphrase:' 'Password for dev@build:' "Password for 'https://x@github.com':" 'Enter OTP:'; do
     assert_equals $'hardstop\tcredential' "$(printf 'work\n%s\n' "$c" | classify claude)" "$c is a credential stop"
   done
+  assert_equals $'hardstop\tsign-in' "$(printf "work\nUsername for 'https://github.com':\n" | classify claude)" "a git username input is a sign-in stop"
   assert_equals $'hardstop\tspend' "$(printf ' Continue with paid usage?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel\n' | classify claude)" \
     "a paid-usage picker is a spend stop"
   assert_equals $'hardstop\tdestructive' "$(printf ' Delete the database?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel\n' | classify claude)" \
@@ -255,6 +266,40 @@ test_prompt_after_escape_gets_no_instruction() {
   assert_equals 1 "$(status_rows np blocked permission-prompt-hardstop)" "a password input behind the declined prompt is a hard stop"
   assert_grep "shows a credential prompt after a declined tool call" "$H/state/np.status" "the hard stop names its category"
   pass "after Escape: a trust dialog or credential input behind the prompt gets no instruction, no doorbell, and a keyed blocked line"
+}
+
+test_doorbell_never_types_into_a_prompt() {
+  make_home
+  worker db claude "$FIX/claude-2.1.325-bash-prompt.txt"
+  worker dt claude "$FIX/claude-2.1.325-trust.txt"
+  local id
+  for id in db dt; do
+    FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
+    assert_contains "$(inbox_text "$id")" "steer for $id" "the steer for worker $id is durably recorded"
+    sleep 1
+    assert_equals '' "$(typed "$id")" "the doorbell types nothing into the prompt on worker $id: $(typed "$id" | od -c | head -3)"
+  done
+  pass "doorbell: a steer to a worker on a tool-approval prompt or a trust picker is recorded and types nothing"
+}
+
+test_declining_dialogs_on_workers_get_no_key() {
+  local id
+  make_home
+  printf '%s\n' '────────────────────────────────────────' ' Allow external CLAUDE.md file imports?' ' ❯ 1. No, disable external imports' '   2. Yes, allow external imports' '' ' Enter to confirm · Esc to cancel' > "$H/imports.txt"
+  printf '%s\n' ' WARNING: Claude Code running in Bypass Permissions mode' ' ❯ 1. No, exit' '   2. Yes, I accept' '' ' Enter to confirm · Esc to cancel' > "$H/bypass.txt"
+  worker im claude "$H/imports.txt"
+  worker by claude "$H/bypass.txt"
+  worker dn claude "$FIX/claude-2.1.325-bash-prompt.txt" "$FIX/claude-2.1.325-after-escape.txt"
+  printf 'do-not-touch=%s\n' "$WP" >> "$H/config/watchdog"
+  run_wd 0 once >/dev/null 2>&1 || fail "the watchdog pass failed"
+  for id in im by dn; do
+    assert_equals '' "$(typed "$id")" "no key reaches worker $id"
+    assert_equals 1 "$(status_rows "$id" blocked permission-prompt-held)" "worker $id is reported as held"
+  done
+  assert_grep "external-imports" "$H/state/im.status" "the imports dialog names its reason"
+  assert_grep "bypass-confirm" "$H/state/by.status" "the bypass confirmation names its reason"
+  assert_grep "do-not-touch" "$H/state/dn.status" "the do-not-touch hold names its reason"
+  pass "declining dialogs and do-not-touch workers: no key and one keyed held line"
 }
 
 test_repeated_or_capped_prompts_hold() {
@@ -377,6 +422,8 @@ fm_test_run \
   test_hardstop_categories \
   test_tool_approval_is_declined_and_steered \
   test_prompt_after_escape_gets_no_instruction \
+  test_doorbell_never_types_into_a_prompt \
+  test_declining_dialogs_on_workers_get_no_key \
   test_repeated_or_capped_prompts_hold \
   test_trust_dialog_relaunches_without_a_key \
   test_hardstop_prompts_are_never_answered \

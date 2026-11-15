@@ -2575,6 +2575,29 @@ fm_composer_blocking_dialog() {  # <screen> -> dialog name
     printf '%s' 'Grok weekly-limit choice'
     return 0
   fi
+  # Recorded 2026-11-14 on Claude Code 2.1.325: a tool-approval prompt under
+  # `--permission-mode default`, whose selected row is 1. Yes, so Enter would
+  # approve the tool call. tests/fixtures/permission-prompt/ holds the capture.
+  if printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
+    /^[ \t]*Do you want to (proceed|make this edit to .+|create .+)\?[ \t\r]*$/ { heading = 1 }
+    heading && /^[ \t]*❯ 1\. Yes[ \t\r]*$/ { selected = 1 }
+    /[^ \t\r]/ { last = $0 }
+    END { exit !(selected && last ~ /^[ \t]*Esc to cancel( · [^·]+)*[ \t\r]*$/) }
+  '; then
+    printf '%s' 'Claude tool-approval prompt'
+    return 0
+  fi
+  # Recorded 2026-11-14 on Claude Code 2.1.325: the folder-trust picker, whose
+  # selected row is No, exit, and the external-imports picker, whose selected
+  # row is No, disable external imports. Enter would choose either one.
+  if printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
+    /^[ \t]*❯ (1\. )?(No, exit|No, disable external imports)[ \t\r]*$/ { selected = 1 }
+    /[^ \t\r]/ { last = $0 }
+    END { exit !(selected && last ~ /^[ \t]*Enter to confirm · Esc to cancel[ \t\r]*$/) }
+  '; then
+    printf '%s' 'Claude declining-cursor picker'
+    return 0
+  fi
   return 1
 }
 

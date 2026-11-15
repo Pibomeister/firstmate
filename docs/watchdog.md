@@ -161,6 +161,7 @@ The text says it comes from the automated watchdog.
 
 On each pass the watchdog reads the screen of every recorded ship or scout worker pane through `bin/fm-permission-prompt.sh`, which names one verdict for a prompt there.
 The watchdog never selects a yes option, never presses Enter or a digit on a permission prompt, and never types text into one.
+Every submit refuses a pane that shows the recorded Claude tool-approval prompt or a picker whose cursor rests on `No, exit` or `No, disable external imports` (`fm_composer_blocking_dialog` in `bin/fm-composer-lib.sh`), so neither an inbox doorbell nor a re-ring can press Enter on one.
 Escape is the only key it sends, and only to a proven tool-approval prompt.
 
 | Verdict | What the screen shows | What the watchdog does |
@@ -174,7 +175,7 @@ Each prompt is identified by a checksum of its rows.
 The same prompt declined once is held the second time, and at most `permission-decline-cap` declines go to one worker in an hour; past either guard the prompt is held.
 A prompt still showing after Escape is recorded as failed and held.
 A worker on the `do-not-touch` list is held, never declined or relaunched.
-Each blocked line is written once per prompt, and a `resolved` line with the same key closes it once the worker no longer shows that prompt.
+Each blocked line is written once per key while it stays open, and a `resolved` line with the same key closes it once the worker no longer shows a prompt.
 `state/watchdog/permission/` keeps the open prompt and the declined checksums for each worker.
 Dry-run records what would happen in the ledger and writes no status line and sends no key; `permission-route=off` keeps the report-only gap and page.
 
@@ -247,7 +248,8 @@ The watchdog never merges, never deploys, never spends beyond existing caps, nev
 - The only outward actions are a rate-limited self-heal issue through `bin/fm-self-heal-issue.sh`, on the repository named in `issue-repo` and under that script's own publication gate, the away permission page, and the primary usage-limit auto-wait page.
 - The away permission page goes only to the home's own [alert channels](wedge-alarm.md#channels), at most once per `nudge-secs` for the home pane and once per `nudge-secs` for each recorded ship or scout worker pane, and carries no dialog text.
 - A restart stops one session process and opens a new terminal; it never removes a worktree, branch, file, or task.
-- A worker permission prompt never gets a yes, Enter, a digit, or text. Escape goes only to a proven Claude tool-approval prompt, and credential, sign-in, spend, destructive, release, and owner-reserved prompts get no key and a `permission-prompt-hardstop` blocked line.
+- A worker permission prompt never gets a yes, Enter, a digit, or text.
+  Escape goes only to a proven Claude tool-approval prompt, and credential, sign-in, spend, destructive, release, and owner-reserved prompts get no key and a `permission-prompt-hardstop` blocked line.
 - `tests/fm-watchdog.test.sh` proves each boundary with its own case, and `tests/fm-permission-prompt.test.sh` proves the worker permission-prompt route.
 
 Every action is rate-limited and recorded in `state/watchdog/actions.tsv` as `pending` before it runs, then closed as `done` or `failed`.
