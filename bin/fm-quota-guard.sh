@@ -21,7 +21,9 @@
 #   --primary-harness <name>     This home's primary harness; default the
 #                                live session-lock holder's harness.
 #   --primary-account <entry>    The primary's Claude account, `ordinary` or a
-#                                config root; default ordinary.
+#                                config root; default ordinary. The watchdog
+#                                passes the root that holds the primary's
+#                                transcript.
 #   --candidate <harness:model>  Reroute candidate, repeatable; default the
 #                                reroute-candidates key of config/watchdog.
 #
@@ -37,8 +39,8 @@
 # second mate's harness, model, and account come from this home's
 # state/<id>.meta. A harness with no quota provider is an unmeasured pool.
 #
-# Reads. Every Claude account in use or declared in config/claude-accounts is
-# read in one quota-axi --provider claude --json --full --no-credential-refresh
+# Reads. Every Claude account in use, declared in config/claude-accounts, or
+# named by a pin a Claude relaunch would read is read in one quota-axi --provider claude --json --full --no-credential-refresh
 # call with QUOTA_AXI_CLAUDE_PROFILES naming each account root, and with
 # QUOTA_AXI_SNAPSHOT, CLAUDE_CONFIG_DIR, and the credentials Claude ranks above a
 # stored login (FM_WORKER_ACCOUNT_CLAUDE_SHED) removed, so the selected lane is
@@ -56,7 +58,9 @@
 #   unknown    no row, a failed read, stale data (state.stale, or a
 #              state.status other than fresh), an attention entry naming stale
 #              or headroom_unknown, an unknown scope, or a runway with no time.
-#              Unknown is never counted as headroom.
+#              A member with no recorded model is also unknown when any model
+#              or product scope of its row is short or exhausted, because it
+#              may run on that model. Unknown is never counted as headroom.
 #   ok         every scope runs through its reset or past the window.
 # The window is --window-secs, else quota-guard-window-secs, else the seconds
 # until the next quota-guard-window-until local time (default 08:00).
@@ -68,7 +72,10 @@
 # second mate relaunches on its own pin, so it never gets an account pick);
 # then the bin/fm-quota-reroute.sh suggest pick among the candidates whose own
 # read is ok and that are not on that pool or on another pool that is short,
-# exhausted, or unknown, with --kind secondmate for a supervisor; else none. Firstmate, or the second mate that owns a worker,
+# exhausted, or unknown, with --kind secondmate for a supervisor; else none. A
+# Claude candidate's pool is the account the relaunching home's pin names (for
+# a second mate, its config/secondmate-accounts pin first), never assumed to be
+# the ordinary account. Firstmate, or the second mate that owns a worker,
 # relaunches through bin/fm-control.sh <id> relaunch --account <entry>, or
 # --harness and --model; this script never relaunches anything.
 #
@@ -353,6 +360,14 @@ CLASSIFY_JQ='
   else
     quota_applicable($p; $model) as $rows |
     ([$rows[] | select(.status == "known") | .runway.usableRunwaySeconds | numbers] | min) as $min |
+    ((($model // "") | sub("^model:"; "")) as $mt |
+      if $mt == "" or $mt == "default" then
+        [($p.quotaSemantics.effectiveAvailability // [])[]
+          | select(((.scope // "") | tostring | test("^(model|product):")) and
+            (.runway.status == "exhausted_now" or
+             ((.runway.usableRunwaySeconds | type) == "number" and .runway.usableRunwaySeconds < $window)))
+          | .scope]
+      else [] end) as $hidden |
     if ($rows | length) == 0 then ["unknown", "-", "no applicable quota scope"]
     elif any($rows[]; .runway.status == "exhausted_now") then
       ([$rows[] | select(.runway.status == "exhausted_now") | .scope] | first) as $s |
@@ -360,6 +375,7 @@ CLASSIFY_JQ='
     elif $min != null and $min < $window then
       ([$rows[] | select(.runway.usableRunwaySeconds == $min) | .scope] | first) as $s |
       ["short", ($min | floor | tostring), "\($s) runs out in \(secs($min)), inside the \($window)s window"]
+    elif ($hidden | length) > 0 then ["unknown", "-", "model not recorded, and \($hidden[0]) is short or exhausted"]
     elif any($rows[]; .status != "known") then
       ["unknown", "-", "headroom unknown on \([$rows[] | select(.status != "known") | .scope] | first)"]
     elif any($rows[]; (.runway.status == "through_reset" or ((.runway.usableRunwaySeconds | type) == "number")) | not) then
@@ -398,12 +414,34 @@ home_config() {
   if [ "$1" = "$FM_HOME" ]; then printf '%s\n' "$CONFIG"; else printf '%s/config\n' "$1"; fi
 }
 
+# dest_claude_account <home> <mate|->: the Claude account a relaunch in that
+# home uses, from the pin the launch reads (a second mate's own pin first);
+# ordinary when the home has no pin. Fails when the pin cannot be read.
+dest_claude_account() {
+  local cfg row mate=
+  [ "$2" = - ] || mate=$2
+  cfg=$(fm_worker_account_config claude "$(home_config "$1")" "$mate" 2>/dev/null) || return 1
+  row=$(fm_worker_account_resolve claude "$cfg" config/claude-account 2>/dev/null) || return 1
+  if [ -z "$row" ]; then printf 'ordinary\n'; else printf '%s\n' "${row%%$'\t'*}"; fi
+}
+
+# claude_pins: every account a Claude relaunch from this home or a second mate
+# home would land on, so each candidate destination has its own read.
+claude_pins() {
+  local id home
+  dest_claude_account "$FM_HOME" - || true
+  while IFS=$'\t' read -r id home; do
+    dest_claude_account "$FM_HOME" "$id" || true
+    dest_claude_account "$home" - || true
+  done < <(mates)
+}
+
 # pick <provider> <account> <pool> <harness> <model> <kind> <worktree> <mate> <home>
 # A second mate relaunches on its own pin, so it never gets an account pick; a
 # worker gets only an account its own home declares.
 pick() {
   local provider=$1 account=$2 pool=$3 harness=$4 model=$5 kind=$6 wt=$7 mate=$8 home=$9
-  local entry st cand cprov cacct cpool cstat out err listed
+  local entry st cand cprov cacct cpool cstat out err listed dacct
   if [ "$provider" = claude ] && [ "$mate" = - ]; then
     listed=$(fm_worker_account_list claude "$(home_config "$home")" 2>/dev/null) || listed=
     while IFS= read -r entry; do
@@ -419,7 +457,10 @@ pick() {
   if [ "$harness" = claude ] && [ "$kind" = secondmate ] && [ "$mate" != - ]; then set -- "$@" --mate "$mate"; fi
   local n=0
   for cand in $(printf '%s' "$CANDIDATES" | tr ',' ' '); do
-    IFS=$'\t' read -r cprov cacct <<< "$(member_pool "${cand%%:*}" "${cand#*:}" "")"
+    # A Claude candidate lands on the pin of the home that relaunches it.
+    dacct=
+    if [ "${cand%%:*}" = claude ]; then dacct=$(dest_claude_account "$home" "$mate") || continue; fi
+    IFS=$'\t' read -r cprov cacct <<< "$(member_pool "${cand%%:*}" "${cand#*:}" "$dacct")"
     cpool=$cprov:$cacct
     [ "$cpool" != "$pool" ] || continue
     case "$(pool_status "$cpool")" in short|exhausted|unknown) continue ;; esac
@@ -490,6 +531,7 @@ cmd_check() {
   read_claude $( { awk -F'\t' '$11 == "claude" { print $12 }' "$WORK/raw.tsv"
     fm_worker_account_list claude "$CONFIG" 2>/dev/null
     mates | while IFS=$'\t' read -r _ home; do fm_worker_account_list claude "$home/config" 2>/dev/null; done
+    claude_pins
     } | awk 'NF && !seen[$0]++')
   while IFS=$'\t' read -r role label id home harness model kind account wt mate provider pacct; do
     IFS=$'\t' read -r st runway why <<< "$(classify "$provider" "$pacct" "$model")"
@@ -577,6 +619,7 @@ record_dialog() {
     if [ -f "$STATE/$SUBJECT.meta" ]; then meta=$STATE/$SUBJECT.meta
     else
       while IFS=$'\t' read -r id home; do
+        case "$SUBJECT" in */*) [ "$id" = "${SUBJECT%%/*}" ] || continue ;; esac
         if [ -f "$home/state/${SUBJECT#*/}.meta" ]; then meta=$home/state/${SUBJECT#*/}.meta; break; fi
       done < <(mates)
     fi

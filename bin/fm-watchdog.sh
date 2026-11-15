@@ -454,11 +454,12 @@ _wd_act_take() {
 wd_activity() {
   local now=$1 at=0 src='' ps
   [ -z "$O_TRANSCRIPT" ] || _wd_act_take "$(wd_mtime "$O_TRANSCRIPT")" transcript
-  _wd_act_take "$(fm_wd_last_wake_ack "$O_HOME/state/wake-ledger.tsv" "$now")" wake-ack
+  _wd_act_take "$(fm_wd_last_wake_ack "$O_HOME/state/wake-ledger.tsv" "$now" "$O_HOME/state/.supervise-daemon.acks")" wake-ack
   if [ "$O_PARENT" != - ]; then
     ps=$O_PARENT/state
     _wd_act_take "$(fm_busy_record_ts "$ps" "$O_ID" "$O_HARNESS" 2>/dev/null)" busy-state
     [ ! -f "$ps/$O_ID.turn-ended" ] || _wd_act_take "$(wd_mtime "$ps/$O_ID.turn-ended")" turn-ended
+    _wd_act_take "$(wd_lock_at "$O_HOME/state")" session-lock
   fi
   [ -z "$src" ] || O_ACT_AGE=$((now - at)) O_ACT_SRC=$src
 }
@@ -1730,25 +1731,46 @@ wd_quota_guard() {
   return "$rc"
 }
 
+# wd_primary_account: the Claude account root that holds the primary's
+# transcript, or ordinary for ~/.claude; fails when no transcript was read.
+wd_primary_account() {
+  local root
+  [ -n "$O_TRANSCRIPT" ] || return 1
+  root=${O_TRANSCRIPT%/projects/*}
+  [ -n "$root" ] && [ "$root" != "$O_TRANSCRIPT" ] || return 1
+  if [ "$(cd -P -- "$root" 2>/dev/null && pwd -P)" = "$(cd -P -- "${HOME:-}/.claude" 2>/dev/null && pwd -P)" ]; then
+    printf 'ordinary\n'
+  else
+    printf '%s\n' "$root"
+  fi
+}
+
 # wd_quota_guard_pass: a primary home's kickoff and periodic quota check, then
-# the standing verdict of its last check as a gap while it is not ok.
+# the standing verdict of its last check as a gap while it is not ok. A check
+# that named moves, whichever pass or warning ran it, nudges the primary until
+# one nudge after that check is delivered or recorded as a dry run.
 wd_quota_guard_pass() {
-  local rc=0 rec=$O_HOME/state/quota-guard/last
+  local rc=0 rec=$O_HOME/state/quota-guard/last acct at nudged
   wd_quota_guard_on || return 0
   set -- tick
   [ -z "$O_HARNESS" ] || set -- "$@" --primary-harness "$O_HARNESS"
+  if acct=$(wd_primary_account); then set -- "$@" --primary-account "$acct"; fi
   wd_quota_guard "$O_HOME" "$@" || rc=$?
   if [ -n "$WD_QG_LINE" ]; then
     wd_rec "$(wd_id)" quota-guard check "done" "$WD_QG_LINE"
-    if [ "$rc" = 3 ] && [ "$WD_RESTARTED" != 1 ] && [ "$WD_SYMPTOM" != usage-limit-autowait ]; then
-      wd_nudge quota-guard "$WD_QG_LINE. The moves are in $O_HOME/state/quota-guard/report.txt. Move each worker or supervisor with bin/fm-control.sh relaunch on its named pick; never change an account pin, sign in, or spend."
-    fi
   elif [ "$rc" != 0 ]; then
     wd_gap "quota guard check failed (exit $rc)"
   fi
   case "$(fm_wd_conf_get "$rec" verdict '')" in
     act|unknown) wd_gap "$(fm_wd_conf_get "$rec" result '') (checked $(fm_wd_iso "$(fm_wd_conf_get "$rec" at 0)"))" ;;
   esac
+  at=$(fm_wd_conf_get "$rec" at '' | tr -cd '0-9')
+  if [ "$(fm_wd_conf_get "$rec" verdict '')" = act ] && [ -n "$at" ] && [ "$WD_RESTARTED" != 1 ] && [ "$WD_SYMPTOM" != usage-limit-autowait ]; then
+    nudged=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" quota-guard nudge '^(pending|dry-run)$' "${O_REC_SUBJECT:-$O_TAG}")
+    if [ -z "$nudged" ] || [ "$nudged" -lt "$at" ]; then
+      wd_nudge quota-guard "$(fm_wd_conf_get "$rec" result ''). The moves are in $O_HOME/state/quota-guard/report.txt. Move each worker or supervisor with bin/fm-control.sh relaunch on its named pick; never change an account pin, sign in, or spend."
+    fi
+  fi
 }
 
 # wd_quota_guard_warning [task-id]: records the limit dialog this pass saw on
@@ -1757,7 +1779,7 @@ wd_quota_guard_pass() {
 # a recorded dialog starts the window, so a failed record is tried again on the
 # next pass.
 wd_quota_guard_warning() {
-  local task=${1-} home=$O_HOME subject cmd=record-dialog rc=0 last
+  local task=${1-} home=$O_HOME subject cmd=record-dialog rc=0 last acct=''
   last=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" quota-guard warning '^done$' "${O_REC_SUBJECT:-$O_TAG}")
   [ -z "$last" ] || [ $(( $(wd_now) - last )) -ge "$(cfgi nudge-secs 900)" ] || return 0
   if [ "${O_PARENT:-}" != - ] && [ -n "${O_ID:-}" ] && [ "$O_ID" != - ]; then
@@ -1768,9 +1790,12 @@ wd_quota_guard_warning() {
   fi
   ! wd_quota_guard_on || cmd=warning
   set -- "$cmd" --subject "$subject"
+  [ "${O_PARENT:-}" != - ] || acct=$(wd_primary_account) || acct=''
   if [ "$subject" = primary ] && [ -n "${O_HARNESS:-}" ]; then set -- "$@" --harness "$O_HARNESS"; fi
-  if [ "$home" = "$O_HOME" ] && [ "${O_PARENT:-}" = - ] && [ -n "${O_HARNESS:-}" ] && [ "$cmd" = warning ]; then
-    set -- "$@" --primary-harness "$O_HARNESS"
+  if [ "$subject" = primary ] && [ -n "$acct" ]; then set -- "$@" --account "$acct"; fi
+  if [ "$home" = "$O_HOME" ] && [ "${O_PARENT:-}" = - ] && [ "$cmd" = warning ]; then
+    [ -z "${O_HARNESS:-}" ] || set -- "$@" --primary-harness "$O_HARNESS"
+    [ -z "$acct" ] || set -- "$@" --primary-account "$acct"
   fi
   wd_quota_guard "$home" "$@" || rc=$?
   case "$rc" in

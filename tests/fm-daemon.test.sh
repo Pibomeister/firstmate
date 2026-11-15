@@ -603,6 +603,29 @@ EOF
   pass "missing-status stale wakes remain ordinary and acknowledgeable"
 }
 
+test_daemon_names_its_own_acknowledgements() {
+  local dir state fakebin
+  dir=$(make_supercase durable-ack-names); state="$dir/state"; fakebin="$dir/daemon-bin"
+  mkdir -p "$fakebin"
+  cat > "$fakebin/fm-wake-drain.sh" <<EOF
+#!/usr/bin/env bash
+if [ "\${1:-}" = --ack-through ]; then [ ! -e "$dir/ack-fails" ] || exit 1; printf '%s\n' "\$2" >> "$dir/acked"; exit 0; fi
+printf '1\t1\tstale\tmissing-r9\tstale: sess:fm-missing-r9\n'
+printf 'WAKE_ACK_REQUIRED: ordinary --ack-through %s --recovery-generation gen7\n' "\$(cat "$dir/through")" >&2
+EOF
+  chmod +x "$fakebin/fm-wake-drain.sh"
+  printf '3\n' > "$dir/through"
+  FM_DAEMON_DIR="$fakebin" handle_durable_wakes fallback "$state" || fail "the wake was not acknowledged"
+  [ "$(cat "$state/.supervise-daemon.acks")" = "gen7	3" ] \
+    || fail "the daemon did not name its acknowledgement: $(cat "$state/.supervise-daemon.acks" 2>&1)"
+  : > "$dir/ack-fails"
+  printf '4\n' > "$dir/through"
+  ! FM_DAEMON_DIR="$fakebin" handle_durable_wakes fallback "$state" 2>/dev/null \
+    || fail "a failed acknowledgement reported success"
+  [ "$(cat "$state/.supervise-daemon.acks")" = "gen7	3" ] \
+    || fail "a failed acknowledgement stayed named: $(cat "$state/.supervise-daemon.acks" 2>&1)"
+  pass "the daemon names each acknowledgement it makes and drops a failed one"
+}
 test_transient_unreadable_signal_recovers_without_advancing() {
   local dir state fakebin out key
   dir=$(make_supercase durable-unreadable); state="$dir/state"; fakebin="$dir/daemon-bin"
@@ -3855,6 +3878,7 @@ test_parked_run_wake_reaches_supervision_despite_the_declared_pause
 test_catchall_buffer_failure_preserves_position
 test_durable_wake_failure_retains_entire_batch
 test_missing_status_stale_is_acknowledged_without_diagnostic
+test_daemon_names_its_own_acknowledgements
 test_transient_unreadable_signal_recovers_without_advancing
 test_permission_recovery_reclassifies_catchall_status
 test_permanent_classification_failure_is_reported_and_acknowledged

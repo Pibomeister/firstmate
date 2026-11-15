@@ -2823,6 +2823,8 @@ test_second_mate_restart_ends_the_pass() {
   make_home $'Mate session\n> '
   mate=$H
   transcript 3000 "Working." "Testing." "Green."
+  # The mate's session took its lock before it wrote that transcript.
+  fm_touch_epoch "$((BASE - 5000))" "$mate/state/.lock" "$mate/state/.lock-session"
   : > "$mate/state/.watchdog-restart-request"
   fm_touch_epoch "$((BASE - 10))" "$mate/state/.watchdog-restart-request"
   printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
@@ -3017,16 +3019,26 @@ test_second_mate_activity_sources() {
   transcript 100 "Working."
   make_home $'Mate session\n> '
   mate=$H
+  MATE_LOCKPID=$LOCKPID MATE_SID=$SID
   m=$(canon "$mate")
   tag=$(basename "$m")
   printf -- '- act-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
   printf 'harness=codex\n' > "$parent/state/act-mate.meta"
+  rm -f "$mate/state/.lock" "$mate/state/.lock-session"
   H=$parent
   out=$(run_wd 0 scan --home "$m" 2>&1)
   assert_contains "$out" 'activity_age=unknowns' "a mate with no record has no activity source: $out"
   run_wd 0 once >/dev/null 2>&1
-  assert_grep "$tag: NO-ACTIVITY-SOURCE" "$parent/data/watchdog/status.md" "the sourceless mate is reported"
+  assert_grep "$tag: no activity source" "$parent/data/watchdog/status.md" "the sourceless mate is reported"
   assert_equals "$BASE"$'\t'"$m"$'\tnone\t-' "$(act_rows "$parent" | awk -F'\t' -v h="$m" '$2 == h')" "the record names a mate with no source"
+
+  # A mate whose session took its lock and has not acknowledged a wake yet: the
+  # lock is the source, so a harness with no other record is still measured.
+  printf '%s\n' "$MATE_LOCKPID" > "$mate/state/.lock"
+  printf '%s\n' "$MATE_SID" > "$mate/state/.lock-session"
+  fm_touch_epoch "$((BASE - 900))" "$mate/state/.lock" "$mate/state/.lock-session"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=900s (session-lock)' "a freshly started mate reads its session lock: $out"
 
   # A Codex mate: its own drain acknowledgement is the source. Other removal
   # rows, a malformed stamp, and a stamp later than the clock do not count.
@@ -3043,6 +3055,12 @@ test_second_mate_activity_sources() {
   lib fm_wd_last_wake_ack "$mate/state/absent.tsv" "$BASE" >/dev/null && fail "an absent ledger has no ack"
   out=$(run_wd 0 scan --home "$m" 2>&1)
   assert_contains "$out" 'activity_age=120s (wake-ack)' "a Codex mate reads its last acknowledgement: $out"
+  # An acknowledgement the away daemon made is not the session's own activity.
+  printf 'g1\t5\n' > "$mate/state/.supervise-daemon.acks"
+  assert_equals "$((BASE - 400))" "$(lib fm_wd_last_wake_ack "$led" "$BASE" "$mate/state/.supervise-daemon.acks")" "the daemon's ack row is skipped"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=400s (wake-ack)' "the daemon's acknowledgement does not count for the mate: $out"
+  rm -f "$mate/state/.supervise-daemon.acks"
 
   # A Claude mate: its parent-side busy record, only from a trusted source of
   # the current incarnation.
@@ -3070,7 +3088,7 @@ test_second_mate_activity_sources() {
   assert_absent "$mate/state/night-score/supervisor-activity.tsv" "the second mate's own home holds no record"
   out=$(run_wd 20 scan >/dev/null 2>&1; act_rows "$parent" | wc -l | tr -d ' ')
   assert_equals 4 "$out" "scan appends nothing"
-  pass "second mate: a drain acknowledgement, a trusted busy record, or a turn-ended marker is an activity source"
+  pass "second mate: its session lock, a drain acknowledgement, a trusted busy record, or a turn-ended marker is an activity source"
 }
 
 test_second_mate_freeze_is_seen_without_a_transcript() {
@@ -4247,6 +4265,48 @@ SH
   [ ! -s "$H/typed.log" ] || fail "an unknown verdict typed into the pane: $(cat "$H/typed.log")"
   rm -f "$FAKEBIN/quota-axi"
   pass "quota guard: by default the watchdog checks at kickoff and every two hours"
+}
+
+test_quota_guard_act_nudges_after_any_check() {
+  local snap root
+  make_home $'Captain session\n> '
+  grep -v '^quota-guard=' "$H/config/watchdog" > "$H/watchdog.conf" && mv "$H/watchdog.conf" "$H/config/watchdog"
+  transcript 100 "Working."
+  # The lock holder here is not a harness process, so each pass names it. The
+  # primary's transcript lives under $H/claude, so its account is that root, not
+  # the ordinary ~/.claude; only that lane is exhausted.
+  root="$H/claude"
+  snap="$H/claude-quota.json"
+  jq -n --arg r "$root" '{schemaVersion: 6, providers: [{provider: "claude", accountKey: "acct", accountLocator: {path: $r},
+    state: {status: "fresh", stale: false},
+    quotaSemantics: {status: "known", effectiveAvailability: [{scope: "all_models", status: "known", effectivePercentRemaining: 0, runway: {status: "exhausted_now"}}]}}]}' > "$snap"
+  wd_quota_snapshot "$H/quota.json"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *" --provider claude "*) cat "$snap" ;;
+  *) cat "$H/quota.json" ;;
+esac
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 0 once >/dev/null 2>&1 || fail "quota guard kickoff pass failed"
+  assert_grep "pool: claude:$root status=exhausted runway=0 supervisors=primary" "$H/state/quota-guard/report.txt" \
+    "the primary is judged on the account that holds its transcript: $(cat "$H/state/quota-guard/report.txt" 2>&1)"
+  assert_equals 1 "$(ledger_rows quota-guard nudge pending)" "an act check nudges the primary: $(ledger | cut -f4-8)"
+  grep -rqs "quota-guard: act trigger=kickoff" "$H/state/operational-inbox" || fail "the act nudge does not name the kickoff check"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 1000 once >/dev/null 2>&1 || fail "quota guard quiet pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard nudge pending)" "a check already nudged is not nudged again: $(ledger | cut -f4-8)"
+  # A limit warning runs its own check between passes; the next pass nudges it
+  # even though no periodic check is due.
+  FM_HOME="$H" FM_TEST_SEAM=1 FM_NOW=$((BASE + 1100)) FM_QUOTA_GUARD_CONF="$H/config/watchdog" "$ROOT/bin/fm-quota-guard.sh" \
+    warning --subject primary --harness claude --primary-harness claude --primary-account "$root" >/dev/null 2>&1
+  assert_grep "trigger=warning" "$H/state/quota-guard/last" "the warning check is on record"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 2000 once >/dev/null 2>&1 || fail "quota guard pass after a warning failed"
+  assert_equals 1 "$(ledger_rows quota-guard check "done")" "the pass runs no check of its own after the warning check: $(ledger | cut -f4-8)"
+  assert_equals 2 "$(ledger_rows quota-guard nudge pending)" "a warning's act check nudges on the next pass: $(ledger | cut -f4-8)"
+  grep -rqs "quota-guard: act trigger=warning" "$H/state/operational-inbox" || fail "the second nudge does not name the warning check"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota guard: every act check nudges the primary once, whichever path ran it"
 }
 
 test_failed_limit_dialog_record_is_retried() {
@@ -5675,6 +5735,7 @@ fm_test_run \
   test_unreadable_claude_account_pin_gets_no_pick \
   test_worker_usage_limit_names_a_pick \
   test_quota_guard_checks_at_kickoff_and_periodically \
+  test_quota_guard_act_nudges_after_any_check \
   test_failed_limit_dialog_record_is_retried \
   test_grok_weekly_limit_on_a_secondmate_names_a_pick \
   test_home_usage_limit_ignores_grok_in_scrollback \

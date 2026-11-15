@@ -93,9 +93,10 @@ A home whose restart awaits pickup gets no action at all until that restart clos
 The frozen, agent-gone, and restart paths need an activity source, the newest of these stamps that is not later than the watchdog clock:
 
 - `transcript`: the modification time of the session's Claude transcript, the only transcript layout read;
-- `wake-ack`: the newest `ack` row among the last 2000 rows of the home's own `state/wake-ledger.tsv` (`bin/fm-wake-ledger-lib.sh` owns the rows), written when the session acknowledges a handled wake;
+- `wake-ack`: the newest `ack` row among the last 2000 rows of the home's own `state/wake-ledger.tsv` (`bin/fm-wake-ledger-lib.sh` owns the rows), except a row the away daemon named as its own in `state/.supervise-daemon.acks`, so only the session's own acknowledgement of a handled wake counts;
 - `busy-state`: for a second mate, the `ts` of the parent's `state/<id>.busy-state` record when the record is valid for the current incarnation and its source is trusted for the harness in the parent's `state/<id>.meta` (`bin/fm-busy-lib.sh` owns the record);
-- `turn-ended`: for a second mate, the modification time of the parent's `state/<id>.turn-ended` marker.
+- `turn-ended`: for a second mate, the modification time of the parent's `state/<id>.turn-ended` marker;
+- `session-lock`: for a second mate, the newest modification time of its home's `state/.lock` and `state/.lock-session`, which its session writes when it takes the lock, so a mate that has not yet acknowledged a wake is still measured.
 
 The timer-loop row still reads only the transcript, so a home with no transcript gets no loop check.
 A subject with none of these sources has no activity source, so those restarts are unavailable for it; its health line reads `NO-ACTIVITY-SOURCE` instead of `ok`, and the status file lists the gap.
@@ -121,11 +122,13 @@ These checks run on every pass as well:
   Kickoff is the first check of a home, or the first pass after a supervisor's session lock changed holder.
   A limit warning is a usage-limit picker or auto-wait footer on a supervisor pane or on a recorded worker pane.
   The guard reads `quota-axi` for every pool a supervisor runs on, and stale or unmeasured quota counts as unknown, never as headroom.
-  A check that names a move writes a ledger row and nudges the primary with the report path.
+  The primary is judged on the Claude account that holds its transcript, and a supervisor with no recorded model is unknown while any model scope of its pool is short or exhausted.
+  A check that names a move writes a ledger row, and the primary gets one nudge with the report path for each such check, whether a pass or a limit warning ran it.
   While the last check is not ok, its result line stays a gap.
   The guard names a move for each worker on a short or exhausted supervisor pool first, so that pool is kept for its supervisors.
   A supervisor whose pool is still exhausted gets a failover pick: another signed-in Claude account with headroom first, then a reroute candidate on another pool.
   A pick needs a fresh ok read of its own, and a second mate, which relaunches on its own pin, gets only a reroute candidate.
+  A Claude candidate is judged on the account the relaunching home's pin names, a second mate's own pin first.
   It never changes an account pin, opens a sign-in, relaunches anything, or spends.
   Every limit warning is recorded with its subject, account, and model, whether the guard is on or off, at most once per `nudge-secs` per pane; a record that failed is tried again on the next pass, and a second mate's warning is recorded in its parent home.
   [`bin/fm-quota-guard.sh`](../bin/fm-quota-guard.sh) owns the pools, verdicts, moves, and files.

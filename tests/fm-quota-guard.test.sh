@@ -220,21 +220,68 @@ test_second_mate_picks_follow_its_own_pin_and_home() {
   assert_not_contains "$out" "pick=account $CASE/acct-b" "no move names an account its home cannot launch"
   pass "a second mate gets a model failover and its worker an account from the mate's home"
 }
+test_claude_candidate_lands_on_the_relaunching_pin() {
+  local out
+  new_case candidate-pin
+  register_mate zenith-mate codex
+  mkdir -p "$CASE/acct-b" "$HOME_DIR/config/secondmate-accounts/zenith-mate"
+  snapshot "$CASE/main.json" 5 \
+    "$(provider_row codex "$(scope exhausted_now)")" \
+    "$(provider_row claude "$(scope through_reset)")"
+  snapshot "$CASE/claude.json" 6 \
+    "$(claude_row ordinary "$CASE/user-home/.claude" "$(scope through_reset)")" \
+    "$(claude_row acct-b "$CASE/acct-b" "$(scope exhausted_now)")"
+  printf 'ordinary\n' > "$HOME_DIR/config/claude-account"
+  printf '%s\n' "$CASE/acct-b" > "$HOME_DIR/config/secondmate-accounts/zenith-mate/claude-account"
+  out=$(run_tool check --primary-harness codex --window-secs 28800 --candidate claude:opus)
+  assert_contains "$out" "failover: primary pool=codex:codex-home pick=claude opus why=supervisor pool exhausted" \
+    "the primary relaunches on the ordinary pin, which has headroom"
+  assert_contains "$out" "failover: zenith-mate pool=codex:codex-home pick=none (no reroute candidate off this pool) why=supervisor pool exhausted" \
+    "the mate relaunches on its own exhausted pin, so Claude is no way out for it"
+  assert_grep "profiles=$CASE/acct-b " "$CASE/reads" "the mate's pin is read even though nothing runs on it yet"
+  printf '%s\n' "$CASE/acct-b" > "$HOME_DIR/config/claude-account"
+  rm -rf "$HOME_DIR/config/secondmate-accounts"
+  out=$(run_tool check --primary-harness codex --window-secs 28800 --candidate claude:opus)
+  assert_contains "$out" "failover: primary pool=codex:codex-home pick=none (no reroute candidate off this pool) why=supervisor pool exhausted" \
+    "a home pin on an exhausted account rules Claude out for the primary"
+  pass "a Claude candidate is judged on the account its relaunch would land on"
+}
+
+test_unrecorded_model_with_a_short_model_scope_is_unknown() {
+  local out row
+  new_case hidden-model
+  row=$(claude_row ordinary "$CASE/user-home/.claude" "$(scope through_reset)" |
+    jq -c '.quotaSemantics.effectiveAvailability += [{scope: "model:opus", status: "known", effectivePercentRemaining: 0, runway: {status: "exhausted_now"}}]')
+  snapshot "$CASE/claude.json" 6 "$row"
+  out=$(run_tool check --primary-harness claude --window-secs 28800)
+  assert_contains "$out" "pool: claude:ordinary status=unknown runway=- supervisors=primary workers=- why=model not recorded, and model:opus is short or exhausted" \
+    "a supervisor with no recorded model may be on the exhausted model"
+  row=$(claude_row ordinary "$CASE/user-home/.claude" "$(scope through_reset)" |
+    jq -c '.quotaSemantics.effectiveAvailability += [{scope: "model:opus", status: "known", effectivePercentRemaining: 90, runway: {status: "through_reset"}}]')
+  snapshot "$CASE/claude.json" 6 "$row"
+  out=$(run_tool check --primary-harness claude --window-secs 28800)
+  assert_contains "$out" "pool: claude:ordinary status=ok" "a model scope with headroom leaves the pool ok"
+  pass "an unrecorded model is unknown while any model scope is short or exhausted"
+}
 test_limit_dialogs_are_recorded_with_account_and_model() {
   local rows rc
   new_case dialogs
   register_mate casco-mate claude
+  register_mate dorado-mate claude
   worker "$HOME_DIR/state" task1 claude opus %1 "$CASE/acct-b"
   worker "$CASE/casco-mate-home/state" child codex gpt-5.4 %2
+  worker "$CASE/dorado-mate-home/state" child claude sonnet %3 "$CASE/acct-d"
   run_tool record-dialog --subject task1 >/dev/null; rc=$?
   expect_code 0 "$rc" "a task's dialog is recorded"
   run_tool record-dialog --subject primary --harness claude >/dev/null
   run_tool record-dialog --subject casco-mate/child >/dev/null
+  run_tool record-dialog --subject dorado-mate/child >/dev/null
   run_tool record-dialog --subject casco-mate >/dev/null
   rows=$(cat "$HOME_DIR/state/quota-limit-dialogs.tsv")
   assert_contains "$rows" "$NOW	task1	$CASE/acct-b	opus	claude" "the task's account and model come from its record"
   assert_contains "$rows" "$NOW	primary	ordinary	-	claude" "the primary's Claude account defaults to ordinary"
   assert_contains "$rows" "$NOW	casco-mate/child	codex-home	gpt-5.4	codex" "a second mate's worker is found in that mate's home"
+  assert_contains "$rows" "$NOW	dorado-mate/child	$CASE/acct-d	sonnet	claude" "the same task id in another mate's home is that mate's worker"
   assert_contains "$rows" "$NOW	casco-mate	ordinary	-	claude" "a second mate's own dialog uses its record here"
   run_tool record-dialog --subject 'bad id' >/dev/null; rc=$?
   expect_code 2 "$rc" "a malformed subject is refused"
@@ -306,6 +353,8 @@ fm_test_run \
   test_exhausted_supervisor_with_no_way_out_names_none \
   test_stale_candidate_is_not_a_failover_pick \
   test_second_mate_picks_follow_its_own_pin_and_home \
+  test_claude_candidate_lands_on_the_relaunching_pin \
+  test_unrecorded_model_with_a_short_model_scope_is_unknown \
   test_limit_dialogs_are_recorded_with_account_and_model \
   test_warning_records_then_checks \
   test_tick_runs_at_kickoff_and_periodically \
