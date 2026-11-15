@@ -2167,9 +2167,17 @@ SH
   local before
   before=$(ledger | wc -l | tr -d ' ')
   rm -f "$H/state/.wake-queue"
+  # A worker on the auto-wait footer is a limit warning, which is only recorded.
+  mkdir -p "$H/wt"
+  worker_pane waiter ship $'work output\nUsage limit reached. Continuing automatically at 4:00 AM\n❯ \n  ? for shortcuts'
+  printf 'harness=claude\nworktree=%s\nmodel=default\n' "$H/wt" >> "$H/state/waiter.meta"
+  sleep 0.5
   # A quota check is due on every pass here, so only the hold keeps it away.
   run_wd 1120 once >/dev/null 2>&1
-  assert_equals "$before" "$(ledger | wc -l | tr -d ' ')" "no quota check runs while the restart awaits pickup: $(ledger | cut -f1,5-7)"
+  assert_equals "$before" "$(ledger | awk -F'\t' '!($5 == "quota-guard" && $6 == "warning")' | wc -l | tr -d ' ')" \
+    "no quota check runs while the restart awaits pickup: $(ledger | cut -f1,5-7)"
+  assert_grep "	waiter	ordinary	default	claude" "$H/state/quota-limit-dialogs.tsv" "the worker's limit dialog is still recorded"
+  assert_no_grep "trigger=warning" "$H/state/quota-guard/last" "the worker's limit warning runs no check while the restart awaits pickup"
   rm -f "$FAKEBIN/quota-axi"
   pass "boundary: a home whose restart awaits pickup gets no quota check either"
 }

@@ -120,7 +120,7 @@ These checks run on every pass as well:
   The live runbook is [`verification/quota-reroute.md`](verification/quota-reroute.md).
 - Unless `quota-guard=off`, a primary home's quota guard runs at kickoff, every `quota-guard-every-secs`, and on each limit warning.
   Kickoff is the first check of a home, or the first pass after a supervisor's session lock changed holder.
-  A home whose restart awaits pickup gets no check on that pass.
+  A home whose restart awaits pickup gets no check on that pass, and a worker's limit warning in it is only recorded.
   A limit warning is a usage-limit picker or auto-wait footer on a supervisor pane or on a recorded worker pane.
   A second mate on the auto-wait is handled like an auto-wait primary, except that its footer is a limit warning instead of a page: nothing is typed into its pane on that pass, and the side checks are skipped.
   The guard reads `quota-axi` for every pool a supervisor runs on, and stale or unmeasured quota counts as unknown, never as headroom.

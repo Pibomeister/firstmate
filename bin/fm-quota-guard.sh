@@ -53,8 +53,10 @@
 # QUOTA_AXI_SNAPSHOT, CLAUDE_CONFIG_DIR, and the credentials Claude ranks above a
 # stored login (FM_WORKER_ACCOUNT_CLAUDE_SHED) removed, so the selected lane is
 # the ordinary account (~/.claude). Each account binds only to the lane whose
-# accountLocator.path is its root; no lane is an unknown account, never another
-# account's row. Every other pool binds to its quota_row of one quota-axi --json
+# accountLocator.path is its root; when no other root is read, the ordinary
+# account also binds the sole lane, which quota-axi reports with no locator;
+# no lane is an unknown account, never another account's row. Every other
+# pool binds to its quota_row of one quota-axi --json
 # --no-credential-refresh snapshot, or of --snapshot. Each read is bounded by
 # FM_QUOTA_GUARD_READ_SECS (default 60). A read that fails but still prints a
 # valid snapshot is kept, so a rate-limited account reads as its own stale row.
@@ -342,10 +344,11 @@ claude_root() {  # <account>
 # CLAUDE_SNAP, or CLAUDE_ERR when no valid snapshot came back.
 read_claude() {
   local a roots='' v
-  CLAUDE_SNAP=$WORK/claude.json CLAUDE_ERR=
+  CLAUDE_SNAP=$WORK/claude.json CLAUDE_ERR='' CLAUDE_PROFILED=0
   for a in "$@"; do
     [ "$a" = ordinary ] || roots="$roots${roots:+:}$a"
   done
+  [ -z "$roots" ] || CLAUDE_PROFILED=1
   if ! command -v quota-axi >/dev/null 2>&1; then CLAUDE_ERR="quota-axi not installed"; return 0; fi
   set -- env -u QUOTA_AXI_SNAPSHOT -u CLAUDE_CONFIG_DIR -u QUOTA_AXI_CLAUDE_PROFILES
   for v in $FM_WORKER_ACCOUNT_CLAUDE_SHED; do set -- "$@" -u "$v"; done
@@ -364,9 +367,14 @@ claude_snap() {
   key=claude-$(printf '%s' "$1" | cksum | cut -d ' ' -f 1)
   file=$WORK/$key.json
   if [ ! -e "$file" ]; then
-    jq -c --arg root "${root%/}" '
-      [.providers[]? | select(.provider == "claude" and
-        (((.accountLocator.path // "") | sub("/+$"; "")) == $root))] |
+    # A read that names no other root reports only the selected profile, which
+    # this read pins to the ordinary account, in the keyless shape that names
+    # no locator.
+    jq -c --arg root "${root%/}" --argjson ordinary "$([ "$1" = ordinary ] && [ "$CLAUDE_PROFILED" = 0 ] && echo true || echo false)" '
+      [.providers[]? | select(.provider == "claude")] as $lanes |
+      [$lanes[] | select(((.accountLocator.path // "") | sub("/+$"; "")) == $root)] |
+      if length == 0 and $ordinary and ($lanes | length) == 1 and $lanes[0].accountLocator == null
+      then $lanes else . end |
       if length == 1 then {schemaVersion: 5, providers: .} else empty end
     ' "$CLAUDE_SNAP" > "$file" 2>/dev/null || : > "$file"
   fi

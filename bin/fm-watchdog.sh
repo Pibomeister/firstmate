@@ -1818,7 +1818,8 @@ wd_quota_guard_warning() {
     wd_gap "limit dialog on $subject not recorded (exit $rc)"
     return 0
   fi
-  if ! wd_quota_guard_on; then
+  # A home whose restart awaits pickup gets no check; its dialog is still recorded.
+  if ! wd_quota_guard_on || [ "${WD_SYMPTOM:-}" = restart-awaiting-pickup ]; then
     wd_rec "$(wd_id)" quota-guard warning "done" "limit dialog on $subject recorded"
     return 0
   fi

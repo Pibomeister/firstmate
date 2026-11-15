@@ -360,6 +360,25 @@ test_pick_skips_a_pool_a_worker_off_the_supervisor_pools_holds() {
     "the same account is the pick once no live worker holds it short"
   pass "a pick skips a pool that a worker off the supervisor pools leaves exhausted"
 }
+test_sole_keyless_claude_lane_is_the_ordinary_account() {
+  local out rc
+  new_case sole-lane
+  # A read of one account is the legacy shape: schema 5, no key, no locator.
+  snapshot "$CASE/claude.json" 5 "$(provider_row claude "$(scope exhausted_now)")"
+  out=$(run_tool check --primary-harness claude --window-secs 28800); rc=$?
+  expect_code 3 "$rc" "an exhausted sole lane needs a move: $out"
+  assert_contains "$out" "pool: claude:ordinary status=exhausted runway=0 supervisors=primary workers=- why=all_models exhausted now" \
+    "a sole lane with no locator is the ordinary account's own row"
+  assert_contains "$out" "failover: primary pool=claude:ordinary" "the exhausted primary gets the failover path"
+  out=$(run_tool check --primary-harness claude --primary-account "$CASE/acct-b" --window-secs 28800)
+  assert_contains "$out" "pool: claude:$CASE/acct-b status=unknown runway=- supervisors=primary workers=- why=no quota lane for Claude account $CASE/acct-b" \
+    "another account never binds the keyless lane"
+  printf 'ordinary\n%s\n' "$CASE/acct-b" > "$HOME_DIR/config/claude-accounts"
+  out=$(run_tool check --primary-harness claude --primary-account ordinary --window-secs 28800)
+  assert_contains "$out" "pool: claude:ordinary status=unknown runway=- supervisors=primary workers=- why=no quota lane for Claude account ordinary" \
+    "a read that names another root binds no keyless lane, even to the ordinary account"
+  pass "a sole Claude lane with no locator is the ordinary account"
+}
 test_limit_dialogs_are_recorded_with_account_and_model() {
   local rows rc
   new_case dialogs
@@ -456,6 +475,7 @@ fm_test_run \
   test_primary_account_carries_to_a_later_check \
   test_pick_skips_a_pool_a_worker_off_the_supervisor_pools_holds \
   test_provider_prefixed_model_binds_its_model_scope \
+  test_sole_keyless_claude_lane_is_the_ordinary_account \
   test_limit_dialogs_are_recorded_with_account_and_model \
   test_warning_records_then_checks \
   test_tick_runs_at_kickoff_and_periodically \

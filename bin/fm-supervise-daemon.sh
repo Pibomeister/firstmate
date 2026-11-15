@@ -1901,14 +1901,15 @@ handle_durable_wakes() {  # <watcher-reason> <state>
 }
 
 # note_daemon_ack <state> <generation> <through>: records one acknowledgement
-# this daemon makes in state/.supervise-daemon.acks, keeping the newest 200;
-# fails when the record cannot be appended.
+# this daemon makes in state/.supervise-daemon.acks, keeping the newest 2000,
+# as many as the wake-ledger rows the watchdog reads, so every daemon ack row
+# it can see is still named; fails when the record cannot be appended.
 note_daemon_ack() {
   local f=$1/.supervise-daemon.acks tmp
   printf '%s\t%s\n' "$2" "$3" >> "$f" 2>/dev/null || return 1
-  [ "$(wc -l < "$f" 2>/dev/null | tr -d ' ')" -gt 400 ] || return 0
+  [ "$(wc -l < "$f" 2>/dev/null | tr -d ' ')" -gt 4000 ] || return 0
   tmp=$(mktemp "$1/.supervise-daemon.acks.XXXXXX" 2>/dev/null) || return 0
-  if tail -n 200 "$f" > "$tmp" 2>/dev/null; then mv "$tmp" "$f" 2>/dev/null || rm -f "$tmp"; else rm -f "$tmp"; fi
+  if tail -n 2000 "$f" > "$tmp" 2>/dev/null; then mv "$tmp" "$f" 2>/dev/null || rm -f "$tmp"; else rm -f "$tmp"; fi
 }
 
 unnote_daemon_ack() {  # <state> <generation> <through>
