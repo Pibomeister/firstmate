@@ -2615,15 +2615,11 @@ fm_composer_blocking_dialog() {  # <screen> -> dialog name
     printf '%s' 'Antigravity workspace-trust picker'
     return 0
   fi
-  # A numbered picker whose cursor rests on any option above a confirm, select,
-  # or cancel footer: typed text and Enter would choose that option, such as
-  # paid usage or a tool-approval option other than 1. Yes.
-  if printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
-    /^[ \t]*(❯|›|>)[ \t]*[0-9]+\.[ \t]+[^ \t]/ { selected = 1 }
-    /[^ \t\r]/ { last = $0 }
-    END { exit !(selected && last ~ /^[ \t]*(Enter to (confirm|select)|Esc to cancel)( · [^·]+)*[ \t\r]*$/) }
-  '; then
-    printf '%s' 'numbered option picker'
+  # Any picker whose cursor rests on an option, numbered or not, above a picker
+  # footer: typed text and Enter would choose that option, such as paid usage,
+  # a login method, or a tool-approval option other than 1. Yes.
+  if printf '%s\n' "$screen" | fm_composer_strip_ansi | tr -d '\r' | fm_composer_picker_rows; then
+    printf '%s' 'option picker'
     return 0
   fi
   # A secret or sign-in input on the last row: typed text and Enter would go
@@ -2638,6 +2634,22 @@ fm_composer_blocking_dialog() {  # <screen> -> dialog name
     return 0
   fi
   return 1
+}
+
+# The one picker structure, read from screen rows with styling removed: the
+# last non-blank row is a recorded picker footer and a selected row sits in the
+# last 14 non-blank rows above it. Claude Code 2.1.316's folder-trust picker has
+# no numbers, so a cursor glyph before any text counts; a bare `>` needs a
+# number. The watchdog's dialog detector (fm_wd_pane_dialog) and the submit
+# guard both read it, so every picker the watchdog stops on blocks every submit.
+fm_composer_picker_rows() {  # rows on stdin
+  LC_ALL=C awk '
+    NF { r[++n] = $0 }
+    END {
+      s = n - 13; if (s < 1) s = 1
+      for (i = s; i <= n; i++) if (r[i] ~ /(❯|›)[ \t]*[^ \t]/ || r[i] ~ />[ \t]*[0-9]+[.)][ \t]/) selected = 1
+      exit !(n && selected && r[n] ~ /(Enter to (confirm|select|submit|continue)|Esc to (cancel|exit|go back)|↑\/↓ to (navigate|select)|Tab:next answer)/)
+    }'
 }
 
 # The one detector of a secret or sign-in input on the last non-blank row, such
@@ -2658,7 +2670,7 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
   if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+)?(\[sudo\][[:space:]]+)?(password|passphrase|passcode|pin|otp|2fa([[:space:]]+code)?|mfa([[:space:]]+code)?|one.time[[:space:]]+(code|password))([[:space:]]+for[[:space:]][^:]*)?[:>?]$|(enter|type|input|provide|paste)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(password|passphrase|passcode|pin|api[[:space:]_-]?key|access[[:space:]_-]?key|private[[:space:]_-]?key|token|secret|otp|2fa|mfa|one.time|authenticator|security)[^:>?]*[:>?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?(mfa|2fa|otp|two.factor)[[:space:]]+code([[:space:]]+for[[:space:]].*)?[:>?]$|two.factor([[:space:]]+[a-z]+)?[[:space:]]+code[:>?]$|authenticator([[:space:]]+app)?[[:space:]]+code[:>?]$|^[^:]{0,30}[[:space:]]pin[:>?]$|(password|passphrase|passcode)([[:space:]]+for[[:space:]].*)?[^:]{0,40}[:>]$|(api[[:space:]_-]?key|access[[:space:]_-]?key|token|secret)[^:>?]{0,30}[:>?]$'; then
     printf 'credential\n'; return 0
   fi
-  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:?]*[>:?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(code|(authentication|verification|security|login|sign.?in|device|authori[sz]ation)[[:space:]]+code)[^:>?]*[:>?]$|(authentication|security|login|verification|device) code[^:>?]{0,30}[:>?]$|^[[:space:]]*(\?[[:space:]]+)?username for .*[:>?]$|^[[:space:]]*(\?[[:space:]]+)?(username|user name|login|email)[:>]$|press enter to open .*(browser|github\.com|login)'; then
+  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:?]*[>:?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(code|(authentication|verification|security|login|sign.?in|device|authori[sz]ation)[[:space:]]+code)[^:>?]*[:>?]$|(authentication|security|login|verification|device) code[^:>?]{0,30}[:>?]$|^[[:space:]]*(\?[[:space:]]+)?username for .*[:>?]$|^[[:space:]]*(\?[[:space:]]+)?(username|user name|login|email|e-mail)([[:space:]]*\([^)]*\))?[:>]$|press enter to open .*(browser|github\.com|login)'; then
     printf 'sign-in\n'; return 0
   fi
   return 1

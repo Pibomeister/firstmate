@@ -220,7 +220,9 @@ _fm_pp_trust_dialog() {  # <screen>
         else if (yes && r[i] ~ /[^ \t]/) after++
         if (yes && (r[i] ~ /^[ \t]*(─|━){20,}[ \t]*$/ || r[i] ~ /\? for shortcuts/)) quoted = 1
       }
-      if (claude && yes && no && r[last] ~ /^[ \t]*Enter to confirm · Esc to cancel[ \t]*$/) { print "ok"; exit 0 }
+      # Claude: the answer rows end the screen above its footer, with no
+      # composer or later picker below them.
+      if (claude && yes && no && !quoted && after < 4 && r[last] ~ /^[ \t]*Enter to confirm · Esc to cancel[ \t]*$/) { print "ok"; exit 0 }
       # Antigravity: the answer rows end the screen, with no composer below.
       if (agy && yes && !quoted && after < 4) { print "ok"; exit 0 }
       exit 1

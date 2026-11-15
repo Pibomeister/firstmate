@@ -220,6 +220,10 @@ test_hardstop_categories() {
   assert_equals $'hardstop\tdestructive' "$(printf "work\nrm: remove regular file 'important.txt'?\n" | classify claude)" "a terminal remove confirmation is a destructive stop"
   assert_equals $'hardstop\tspend' "$(printf 'work\nContinue with paid usage? [y/N]\n' | classify claude)" "a one-line paid-usage confirmation is a spend stop"
   assert_equals $'hold\tconfirm' "$(printf 'work\nProceed? (y/n)\n' | classify claude)" "any other terminal confirmation is held"
+  assert_equals $'hardstop\tsign-in' "$(printf 'work\nUsername (dev):\n' | classify claude)" "a login input with a default value is a sign-in stop"
+  assert_equals $'hardstop\tspend' "$(printf ' Continue with paid usage?\n ❯ Yes\n   No\n\n Enter to confirm · Esc to cancel\n' | classify claude)" "an unnumbered paid-usage picker is a spend stop"
+  assert_equals $'hardstop\tspend' "$({ cat "$FIX/claude-2.1.325-trust.txt"; printf '%s\n' '────────────────────────────────' '❯ ' '────────────────────────────────' ' Continue with paid usage?' ' ❯ Yes' '   No' '' ' Enter to confirm · Esc to cancel'; } | classify claude)" \
+    "a trust dialog left in scrollback above a current paid-usage picker is not read as the trust dialog"
   for c in 'git push origin feature' 'tmux ls' 'curl https://example.com' 'mv a.txt b.txt' 'npm test > out.log' 'ln -sf a b' 'cp -rf a b' 'set -euo pipefail' 'git checkout -b fm/new' 'env FOO=1 npm test'; do
     assert_equals $'route\ttool-approval' "$(bash_prompt_with "$c" | classify claude)" "$c still routes"
   done
@@ -313,6 +317,8 @@ test_send_guard_blocks_renumbered_pickers_and_secret_inputs() {
     $'work\n    Username for \'https://github.com\':' $'work\nEnter MFA code for arn:aws:iam::123456789012:mfa/user:' $'work\nUsername:' $'work\nLogin:' \
     $'work\nTwo-factor code:' $'work\nAuthenticator app code:' $'work\nSecurity key PIN:' \
     $'work\nrm: remove regular file \'important.txt\'?' $'work\nContinue with paid usage? [y/N]' $'work\nAre you sure?' \
+    $'work\nUsername (dev):' $' Continue with paid usage?\n ❯ Yes\n   No\n\n Enter to confirm · Esc to cancel' \
+    $' Select login method:\n ❯ 1. Claude account\n   2. API key\n\n Enter to continue · Esc to go back' \
     $' Continue with paid usage?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel'; do
     name=$(bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$screen") \
       || fail "every submit refuses this screen: $screen"
@@ -371,9 +377,11 @@ test_prompt_after_escape_gets_no_instruction() {
   worker np claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/pw-after.txt"
   printf 'work output\n? Enter your API key: ›\n' > "$H/key-after.txt"
   worker nk claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/key-after.txt"
+  printf 'work output\nUsername (dev):\n' > "$H/user-after.txt"
+  worker nu claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/user-after.txt"
   run_wd 0 once >/dev/null 2>&1 || fail "the watchdog pass failed"
   local id
-  for id in nt np nk; do
+  for id in nt np nk nu; do
     assert_equals "$ESC" "$(typed "$id")" "only the one Escape reaches worker $id: $(typed "$id" | od -c | head -3)"
     assert_equals '' "$(inbox_text "$id")" "no instruction, and so no doorbell, goes to worker $id"
     assert_equals 0 "$(ledger_rows steer "done" "worker:$id")" "no steer is recorded for worker $id"
@@ -381,6 +389,7 @@ test_prompt_after_escape_gets_no_instruction() {
   assert_equals 1 "$(status_rows nt blocked permission-prompt-held)" "a trust dialog behind the declined prompt is held: $(cat "$H/state/nt.status" 2>&1; ledger | grep nt | cut -f4-8)"
   assert_equals 1 "$(status_rows np blocked permission-prompt-hardstop)" "a password input behind the declined prompt is a hard stop"
   assert_equals 1 "$(status_rows nk blocked permission-prompt-hardstop)" "an API-key input behind the declined prompt is a hard stop"
+  assert_equals 1 "$(status_rows nu blocked permission-prompt-hardstop)" "a login input with a default value behind the declined prompt is a hard stop"
   assert_grep "shows a credential prompt after a declined tool call" "$H/state/np.status" "the hard stop names its category"
   pass "after Escape: a trust dialog or credential input behind the prompt gets no instruction, no doorbell, and a keyed blocked line"
 }
@@ -534,10 +543,12 @@ test_hardstop_prompts_are_never_answered() {
   worker signin claude "$H/signin.txt"
   printf 'Signing in\nOTP:\n' > "$H/otp.txt"
   worker otp claude "$H/otp.txt"
+  { cat "$FIX/claude-2.1.325-trust.txt"; printf '%s\n' '────────────────────────────────' '❯ ' '────────────────────────────────' ' Continue with paid usage?' ' ❯ Yes' '   No' '' ' Enter to confirm · Esc to cancel'; } > "$H/stale.txt"
+  worker stale claude "$H/stale.txt"
   run_wd 0 once >/dev/null 2>&1 || fail "the watchdog pass failed"
   run_wd 300 once >/dev/null 2>&1
   local id
-  for id in cred rm spend signin otp; do
+  for id in cred rm spend signin otp stale; do
     assert_equals '' "$(typed "$id")" "no key reaches the $id prompt"
     assert_equals 1 "$(status_rows "$id" blocked permission-prompt-hardstop)" "the $id prompt is reported once as a hard stop"
   done
