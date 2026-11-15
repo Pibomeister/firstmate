@@ -2580,7 +2580,7 @@ fm_composer_blocking_dialog() {  # <screen> -> dialog name
   # approve the tool call. tests/fixtures/permission-prompt/ holds the capture.
   if printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
     /^[ \t]*Do you want to (proceed|make this edit to .+|create .+)\?[ \t\r]*$/ { heading = 1 }
-    heading && /^[ \t]*❯ 1\. Yes[ \t\r]*$/ { selected = 1 }
+    heading && /^[ \t]*(❯|›|>)[ \t]*1\.[ \t]+Yes[ \t\r]*$/ { selected = 1 }
     /[^ \t\r]/ { last = $0 }
     END { exit !(selected && last ~ /^[ \t]*Esc to cancel( · [^·]+)*[ \t\r]*$/) }
   '; then
@@ -2589,13 +2589,28 @@ fm_composer_blocking_dialog() {  # <screen> -> dialog name
   fi
   # Recorded 2026-11-14 on Claude Code 2.1.325: the folder-trust picker, whose
   # selected row is No, exit, and the external-imports picker, whose selected
-  # row is No, disable external imports. Enter would choose either one.
+  # row is No, disable external imports. Enter would choose either one. Any
+  # option number and cursor glyph count, so a renumbered picker still blocks.
   if printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
-    /^[ \t]*❯ (1\. )?(No, exit|No, disable external imports)[ \t\r]*$/ { selected = 1 }
+    /^[ \t]*(❯|›|>)[ \t]*([0-9]+\.[ \t]*)?(No, exit|No, disable external imports)[ \t\r]*$/ { selected = 1 }
     /[^ \t\r]/ { last = $0 }
     END { exit !(selected && last ~ /^[ \t]*Enter to confirm · Esc to cancel[ \t\r]*$/) }
   '; then
     printf '%s' 'Claude declining-cursor picker'
+    return 0
+  fi
+  # A secret input on the last row, such as a password, passphrase, API key,
+  # or one-time code prompt: typed text and Enter would go into the secret.
+  if printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
+    /[^ \t\r]/ { last = tolower($0) }
+    END {
+      sub(/[ \t\r]*((›|❯|▌|█|•|\*)[ \t\r]*)*$/, "", last)
+      exit !(last ~ /^[ \t]*(\? )?(\[sudo\] )?(password|passphrase|passcode)( for [^:]*)?[:>?]$/ ||
+             last ~ /(enter|type|input|provide|paste) ((your|the|a|an) )?([a-z0-9_.-]+ )?(password|passphrase|passcode|pin|api[ _-]?key|access[ _-]?key|private[ _-]?key|token|secret|otp|2fa|mfa|one.time|authenticator)[^:>?]*[:>?]$/ ||
+             last ~ /(api[ _-]?key|access[ _-]?key|token|secret)[^:>?]{0,30}[:>?]$/)
+    }
+  '; then
+    printf '%s' 'secret input'
     return 0
   fi
   return 1

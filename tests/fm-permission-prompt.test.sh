@@ -226,9 +226,59 @@ test_hardstop_categories() {
     "a login picker is a sign-in stop"
   assert_equals $'hardstop\tspend' "$(printf ' You have reached your limit. Add funds to continue?\n ❯ 1. Buy more credits\n   2. Wait\n\n Enter to confirm · Esc to cancel\n' | classify claude)" \
     "an add-funds picker is a spend stop"
+  for c in 'git clean --force -d' 'git -C /tmp/probe reset --hard HEAD' 'git checkout --quiet -- src/app.py' 'git checkout HEAD -- f' 'chmod 777 -R .'; do
+    assert_equals $'hardstop\tdestructive' "$(bash_prompt_with "$c" | classify claude)" "$c is a destructive stop"
+  done
+  for c in 'git push origin HEAD:refs/heads/main' 'git tag v1.2.0' 'git push --tags' 'git push origin v1.2.0' 'terraform apply' 'twine upload dist/x'; do
+    assert_equals $'hardstop\trelease' "$(bash_prompt_with "$c" | classify claude)" "$c is a release stop"
+  done
+  for c in 'cat id_rsa' 'cat ~/.config/gh/hosts.yml' 'printenv' 'env'; do
+    assert_equals $'hardstop\tcredential' "$(bash_prompt_with "$c" | classify claude)" "$c is a credential stop"
+  done
+  for c in 'Enter your API key >' '? Enter your API key: ›' 'Token: ****'; do
+    assert_equals $'hardstop\tcredential' "$(printf 'work\n%s\n' "$c" | classify claude)" "$c is a credential stop"
+  done
+  assert_equals $'hardstop\tspend' "$(printf ' You have hit your limit\n ❯ 1. Add funds\n   2. Wait for reset\n\n Enter to confirm · Esc to cancel\n' | classify claude usage-limit)" \
+    "a usage-limit picker that offers paid usage is a spend stop"
+  printf ' Switch model?\n ❯ 1. Opus\n   2. Sonnet\n\n Enter to confirm · Esc to cancel\n' | classify claude model-switch >/dev/null \
+    && fail "an ordinary model-switch picker is left to its own handler"
   printf ' Which plan should I follow?\n ❯ 1. Plan A\n   2. Plan B\n\n Enter to select · ↑/↓ to navigate · Esc to cancel\n' | classify claude >/dev/null \
     && fail "an ordinary question picker is not a permission prompt"
   pass "hard stops: credential, sign-in, spend, destructive, and release prompts are named and never routed"
+}
+
+test_structure_decides_not_words() {
+  local listed
+  listed=$({ sed -n '1,8p' "$FIX/claude-2.1.325-bash-prompt.txt"; printf '  1. Clean the build\n  2. Run the tests\n'; sed -n '9,$p' "$FIX/claude-2.1.325-bash-prompt.txt"; })
+  assert_equals $'hardstop\tdestructive' "$(printf '%s\n' "$listed" | sed 's#touch /tmp/probe/fm-perm-probe2.txt#rm -rf build/#' | classify claude)" \
+    "a numbered list in the conversation never hides the prompt rows"
+  assert_equals $'hardstop\tcredential' "$(printf '%s\n' "$listed" | sed 's#touch /tmp/probe/fm-perm-probe2.txt#cat ~/.ssh/id_ed25519#' | classify claude)" \
+    "a credential read under a numbered list is still a stop"
+  assert_equals $'route\ttool-approval' "$(bash_prompt_with "grep -rn 'Yes, I trust this folder' bin/" | classify claude)" \
+    "a command that searches for a trust phrase is a tool prompt, not a trust dialog"
+  assert_equals $'route\ttool-approval' "$(bash_prompt_with "rg 'quick safety check' tests/" | classify claude)" \
+    "a command that names the trust heading is a tool prompt, not a trust dialog"
+  assert_equals $'hardstop\tdestructive' "$(bash_prompt_with 'rm -rf /tmp/probe; echo quick safety check' | classify claude)" \
+    "a trust phrase never turns a destructive command into a relaunch"
+  assert_equals $'hardstop\tdestructive' "$(bash_prompt_with 'rm -rf build; echo allow external imports' | classify claude)" \
+    "an imports phrase never turns a destructive command into a hold"
+  pass "structure, not words: conversation above a prompt and phrases inside a command never change its verdict"
+}
+
+test_send_guard_blocks_renumbered_pickers_and_secret_inputs() {
+  local screen name
+  for screen in \
+    $' Quick safety check\n   1. Yes, I trust this folder\n ❯ 2. No, exit\n\n Enter to confirm · Esc to cancel' \
+    $' Quick safety check\n > No, exit\n   Yes, I trust this folder\n\n Enter to confirm · Esc to cancel' \
+    $' Allow external CLAUDE.md file imports?\n   1. Yes, allow external imports\n ❯ 2. No, disable external imports\n\n Enter to confirm · Esc to cancel' \
+    $'work\nEnter your API key >' $'work\n? Enter your API key: ›' $'work\nPassword:'; do
+    name=$(bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$screen") \
+      || fail "every submit refuses this screen: $screen"
+    [ -n "$name" ] || fail "the refusal names the dialog for: $screen"
+  done
+  bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" $'work\nthe token refresh is fixed\n❯ ' >/dev/null \
+    && fail "conversation that mentions a token is not a secret input"
+  pass "send guard: a renumbered or re-glyphed declining picker and a secret input refuse every submit"
 }
 
 # --- the watchdog route ----------------------------------------------------------
@@ -255,15 +305,18 @@ test_prompt_after_escape_gets_no_instruction() {
   worker nt claude "$FIX/claude-2.1.325-bash-prompt.txt" "$FIX/claude-2.1.325-trust.txt"
   printf 'work output\nEnter your password:\n' > "$H/pw-after.txt"
   worker np claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/pw-after.txt"
+  printf 'work output\n? Enter your API key: ›\n' > "$H/key-after.txt"
+  worker nk claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/key-after.txt"
   run_wd 0 once >/dev/null 2>&1 || fail "the watchdog pass failed"
   local id
-  for id in nt np; do
+  for id in nt np nk; do
     assert_equals "$ESC" "$(typed "$id")" "only the one Escape reaches worker $id: $(typed "$id" | od -c | head -3)"
     assert_equals '' "$(inbox_text "$id")" "no instruction, and so no doorbell, goes to worker $id"
     assert_equals 0 "$(ledger_rows steer "done" "worker:$id")" "no steer is recorded for worker $id"
   done
-  assert_equals 1 "$(status_rows nt blocked permission-prompt-held)" "a trust dialog behind the declined prompt is held"
+  assert_equals 1 "$(status_rows nt blocked permission-prompt-held)" "a trust dialog behind the declined prompt is held: $(cat "$H/state/nt.status" 2>&1; ledger | grep nt | cut -f4-8)"
   assert_equals 1 "$(status_rows np blocked permission-prompt-hardstop)" "a password input behind the declined prompt is a hard stop"
+  assert_equals 1 "$(status_rows nk blocked permission-prompt-hardstop)" "an API-key input behind the declined prompt is a hard stop"
   assert_grep "shows a credential prompt after a declined tool call" "$H/state/np.status" "the hard stop names its category"
   pass "after Escape: a trust dialog or credential input behind the prompt gets no instruction, no doorbell, and a keyed blocked line"
 }
@@ -402,6 +455,13 @@ test_unknown_harness_dry_run_and_off() {
   assert_equals 1 "$(ledger_rows decline dry-run worker:dr)" "dry-run records what it would do: $(ledger | cut -f4-8)"
   [ ! -e "$H/state/dr.status" ] || fail "dry-run wrote a status line: $(cat "$H/state/dr.status")"
 
+  make_home
+  sed -i.bak 's/^mode=act$/mode=dry-run/' "$H/config/watchdog"
+  worker dm claude "$FIX/claude-2.1.325-bash-prompt.txt" "$FIX/claude-2.1.325-after-escape.txt"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals '' "$(typed dm)" "an unset permission-route follows mode=dry-run and presses nothing"
+  assert_equals 1 "$(ledger_rows decline dry-run worker:dm)" "mode=dry-run records what it would do: $(ledger | cut -f4-8)"
+
   make_home 'permission-route=off'
   worker of claude "$FIX/claude-2.1.325-bash-prompt.txt" "$FIX/claude-2.1.325-after-escape.txt"
   run_wd 0 once >/dev/null 2>&1
@@ -420,6 +480,8 @@ fm_test_run \
   test_real_claude_prompts_classify \
   test_declining_cursor_dialogs_never_route \
   test_hardstop_categories \
+  test_structure_decides_not_words \
+  test_send_guard_blocks_renumbered_pickers_and_secret_inputs \
   test_tool_approval_is_declined_and_steered \
   test_prompt_after_escape_gets_no_instruction \
   test_doorbell_never_types_into_a_prompt \

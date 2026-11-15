@@ -1633,7 +1633,7 @@ wd_pp_steer() {
 # tool-approval prompt, verified gone, then the rewrite instruction. A repeated
 # prompt, the hourly cap, or a do-not-touch endpoint holds instead.
 wd_pp_decline() {
-  local id=$1 harness=$2 hash=$3 mark cap n rid live after after_dialog verdict
+  local id=$1 harness=$2 hash=$3 mark cap n rid live after after_dialog verdict tries=0
   mark=$(wd_pp_mark "$id")
   if grep -Fxq -- "$hash" "$mark.declined" 2>/dev/null; then
     wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id repeated a tool call whose permission prompt was already declined; nothing was answered"
@@ -1667,8 +1667,18 @@ wd_pp_decline() {
     wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows a tool-approval prompt, and the Escape key could not be delivered; nothing was answered"
     return 1
   fi
+  # A slow redraw gets three looks before the decline counts as failed; no
+  # second key is pressed.
   sleep "$(cfgi key-settle-secs 2)"
-  after=$(wd_capture "$O_BACKEND" "$O_TARGET" 60) || after=
+  while :; do
+    after=$(wd_capture "$O_BACKEND" "$O_TARGET" 60) || after=
+    if [ -n "$after" ] && ! { fm_pp_classify "$after" "$harness" >/dev/null && [ "$(fm_pp_hash "$after")" = "$hash" ]; }; then
+      break
+    fi
+    tries=$((tries + 1))
+    [ "$tries" -lt 3 ] || break
+    sleep 1
+  done
   if [ -z "$after" ] || { fm_pp_classify "$after" "$harness" >/dev/null && [ "$(fm_pp_hash "$after")" = "$hash" ]; }; then
     wd_rec "$rid" permission-prompt decline failed "the prompt still shows after Escape"
     wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id still shows a tool-approval prompt after one Escape; nothing more is pressed"
@@ -2360,7 +2370,7 @@ wd_visit_worker_dialogs() {
     fi
     prompt=2
     case "$dialog" in
-      permission|question|'')
+      permission|question|usage-limit|model-switch|'')
         if [ -n "$screen" ]; then
           O_BACKEND=$backend
           O_TARGET=$target
