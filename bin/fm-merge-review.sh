@@ -428,7 +428,7 @@ mr_store_dir() {
 # approved.
 mr_check() {
   local store receipt review seat approvals='' blocks='' invalid='' families='' family_count=0 state reason=''
-  local complete_before='' complete_after='' busy_before=0
+  local complete_before='' complete_after='' busy_before=0 value MR_LIVE_BASE=''
   store=$(mr_store_dir)
   if [ -e "$store/.run.lock" ] || [ -L "$store/.run.lock" ]; then busy_before=1; fi
   complete_before=$(cat "$store/.complete" 2>/dev/null) || complete_before=
@@ -436,6 +436,14 @@ mr_check() {
     for receipt in "$store"/*.receipt; do
       { [ -e "$receipt" ] || [ -L "$receipt" ]; } || continue
       if mr_receipt_valid "$receipt"; then
+        if [ -z "$MR_EXPECTED_BASE" ]; then
+          value=$(mr_receipt_get "$receipt" base)
+          if [ -n "$MR_LIVE_BASE" ] && [ "$value" != "$MR_LIVE_BASE" ]; then
+            invalid="${invalid:+$invalid; }$MR_R_SEAT (the review merge base disagrees with another receipt)"
+            continue
+          fi
+          MR_LIVE_BASE=$value
+        fi
         if [ "$MR_R_VERDICT" = BLOCK ]; then
           blocks="${blocks:+$blocks,}$MR_R_SEAT"
         else
@@ -919,6 +927,12 @@ mr_run() {  # <repo> <base-ref> <intent-file>
   MR_PROMPT_SHA=$(mr_sha256 "$MR_WORK/prompt.md")
   cp "$MR_WORK/diff.patch" "$MR_STORE/diff.$MR_DIFF_SHA.patch"
   cp "$MR_WORK/prompt.md" "$MR_STORE/prompt.$MR_PROMPT_SHA.md"
+
+  i=0
+  while [ "$i" -lt "$MR_SEAT_N" ]; do
+    mr_seat_drop_stale_approval "${MR_SEAT_ID[$i]}" || true
+    i=$((i + 1))
+  done
 
   i=0
   while [ "$i" -lt "$MR_SEAT_N" ]; do

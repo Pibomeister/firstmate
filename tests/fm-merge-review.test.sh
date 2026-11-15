@@ -1032,6 +1032,32 @@ test_stale_receipt_base_refreshes_approvals() {
   pass "stale approval receipts are replaced when the live merge base changes"
 }
 
+test_stale_spare_approval_is_dropped_before_the_run_starts() {
+  local rc=0 store
+  make_case stale-spare "${THREE_SEATS[@]}"
+  echo fail > "$STUB/claude.mode"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "stale-spare: agy and the spare approve ($(cat "$CASE/stderr"))"
+  store=$(store_dir)
+  assert_present "$store/xai.grok.grok-test.receipt" "stale-spare: the spare receipt is missing"
+  sed "s/^base=.*$/base=$OTHER_HEAD/" "$store/xai.grok.grok-test.receipt" > "$CASE/r" \
+    && cp "$CASE/r" "$store/xai.grok.grok-test.receipt"
+  sed "s/^base=.*$/base=$OTHER_HEAD/" "$store/google.agy.gemini-test-high.receipt" > "$CASE/r" \
+    && cp "$CASE/r" "$store/google.agy.gemini-test-high.receipt"
+
+  echo approve > "$STUB/claude.mode"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "stale-spare: rerun after stale spare and agy receipts"
+  assert_equals 2 "$(calls claude)" "stale-spare: claude was not called for the new scope"
+  assert_equals 2 "$(calls agy)" "stale-spare: agy was not called for the new scope"
+  assert_equals 1 "$(calls grok)" "stale-spare: the spare was called again"
+  assert_absent "$store/xai.grok.grok-test.receipt" "stale-spare: the stale spare receipt was kept"
+  assert_present "$store/google.agy.gemini-test-high.receipt" "stale-spare: agy did not refresh"
+  assert_grep "merge-review: approved head=$HEAD_SHA" "$CASE/stdout" "stale-spare: the rerun did not approve"
+  pass "a stale spare approval is dropped before seats run so a rerun can finish"
+}
+
 test_stale_block_at_another_base_is_not_replaced() {
   local rc=0 store
   make_case stale-block "${TWO_SEATS[@]}" 'seat=xai:grok:grok-test'
@@ -1109,5 +1135,6 @@ fm_test_run \
   test_run_refuses_what_it_cannot_review \
   test_leading_zero_timeout_runs_every_seat \
   test_stale_receipt_base_refreshes_approvals \
+  test_stale_spare_approval_is_dropped_before_the_run_starts \
   test_stale_block_at_another_base_is_not_replaced \
   test_intent_reaches_the_prompt_the_receipt_binds
