@@ -235,6 +235,13 @@ pass 'secondmate claude: an unresolvable pin is skipped and does not win on the 
 
 quota_fixture claude 70 through_reset > "$pin_root/quota.json"
 printf '%s\n' "$pin_root" > "$LAB/config/secondmate-accounts/mate-b/claude-account"
+failover tmux secondmate mate-b --candidate claude:opus --candidate agy:gemini-3-pro
+[ "$RC" = 0 ] || fail "a signed-out pin must fall through: $OUT"
+assert_contains "$OUT" 'candidate harness=claude model=opus account=pin skip=pin_unresolved' 'a signed-out pin is skipped'
+assert_contains "$OUT" 'not_signed_in' 'the skip names the missing sign-in'
+delegate_is 'signed-out pin falls through' fm-control.sh mate-b relaunch --harness agy --model gemini-3-pro \
+  --note 'Supervisor failover: codex pool ran out (codex_pool_exhausted); relaunched on agy gemini-3-pro (verdict=ok scope=model:gemini remaining=40 runway=through_reset).'
+touch "$pin_root/signed-in"
 failover tmux secondmate mate-b --candidate claude:opus --candidate codex:gpt-5.5
 [ "$RC" = 0 ] || fail "a resolved pin with headroom must take over: $OUT"
 assert_contains "$OUT" 'replaced scope=secondmate:mate-b from=codex:gpt-5.5:pin harness=claude model=opus account=pin via=runtime_switch' \
@@ -244,6 +251,24 @@ delegate_is 'resolved pin' fm-control.sh mate-b relaunch --harness claude --mode
   --note 'Supervisor failover: codex pool ran out (codex_pool_exhausted); relaunched on claude opus (verdict=ok scope=all_models remaining=70 runway=through_reset).'
 rm -rf "$LAB/config/secondmate-accounts"
 pass 'secondmate claude: a resolved pin is reported as pin and relaunch does not pass --account'
+
+# Under config/claude-accounts a secondmate needs its own pin, so with none the
+# Claude candidate is skipped rather than measured on the ambient account.
+failover tmux secondmate mate-b --candidate claude:opus --candidate agy:gemini-3-pro
+[ "$RC" = 0 ] || fail "a missing required pin must fall through: $OUT"
+assert_contains "$OUT" 'candidate harness=claude model=opus account=pin skip=pin_unresolved' 'a missing required pin is skipped'
+assert_contains "$OUT" 'needs_its_own_pin' 'the skip names the missing secondmate pin'
+assert_not_contains "$(cat "$QUOTA/reads")" 'claude ' 'a missing pin is never measured as the ambient account'
+delegate_is 'missing pin falls through' fm-control.sh mate-b relaunch --harness agy --model gemini-3-pro \
+  --note 'Supervisor failover: codex pool ran out (codex_pool_exhausted); relaunched on agy gemini-3-pro (verdict=ok scope=model:gemini remaining=40 runway=through_reset).'
+pass 'secondmate claude: a missing required pin is skipped and the next runtime takes over'
+
+failover tmux primary "$LAB/data/handoff.md" --candidate codex:-x
+[ "$RC" = 2 ] || fail "a dash-led model id must be refused: $OUT"
+failover herdr primary "$LAB/data/handoff.md" --candidate codex:gpt-5.5
+[ "$RC" = 2 ] || fail "a primary on a backend without a successor launcher must refuse: $OUT"
+no_delegate 'unsupported primary backend'
+pass 'usage refusals: a dash-led model id and a primary backend the launcher cannot serve'
 
 [ "$(pins_digest)" = "$PINS_BEFORE" ] || fail 'account pins and the account list must be unchanged'
 [ ! -e "$LAB/config/claude-account" ] || fail 'no Claude pin may be created'

@@ -30,8 +30,9 @@
 #      the handoff launcher requires. A secondmate is judged on the backend its
 #      record names, where fm-control relaunches agy on tmux or herdr only.
 # A candidate with exhausted or unmeasured quota, a missing executable, no
-# sign-in, or a secondmate Claude pin that does not resolve is skipped with
-# its reason; nothing here signs in, spends, or edits
+# sign-in, or a secondmate Claude launch that fm-control's account rules would
+# refuse (a missing, unresolvable, or signed-out pin) is skipped with its
+# reason; nothing here signs in, spends, or edits
 # config/claude-account, config/claude-accounts, config/pi-account, or any
 # secondmate pin.
 # A primary hands off through bin/fm-handoff-launch.sh --harness --model
@@ -112,7 +113,7 @@ if [ "${#CANDIDATES[@]}" -eq 0 ] && [ -e "$CONFIG/supervisor-failover-candidates
 fi
 for c in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
   case "$c" in
-    ''|:*|*[!A-Za-z0-9._/:-]*) die "invalid candidate '$c': expected <harness:model>" ;;
+    ''|:*|*:-*|*[!A-Za-z0-9._/:-]*) die "invalid candidate '$c': expected <harness:model>" ;;
   esac
 done
 
@@ -121,6 +122,7 @@ if [ "$SCOPE" = primary ]; then
   # shellcheck source=bin/fm-primary-scope-lib.sh
   . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
   fm_root_is_secondmate_home "$FM_HOME" && die 'a second mate asks its parent to relaunch it'
+  case "$BACKEND" in orca|tmux) ;; *) die "the handoff launcher has no successor launcher for backend '$BACKEND'" ;; esac
   [ -f "$TARGET" ] && [ -r "$TARGET" ] || die 'supply a readable handoff document'
   FROM_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null) || FROM_HARNESS=unknown
   if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_HANDOFF_TEST_HARNESS:-}" ]; then FROM_HARNESS=$FM_HANDOFF_TEST_HARNESS; fi
@@ -218,13 +220,14 @@ for c in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
   root=''
   account=ambient
   if [ "$harness" = claude ] && [ "$SCOPE" = secondmate ]; then
-    account=pin
-    selected=$(fm_worker_account_config claude "$CONFIG" "$TARGET") || exit 2
-    if ! selection=$(fm_worker_account_resolve claude "$selected" "claude account pin" 2>&1); then
+    # fm-control applies these launch account rules before it stops the
+    # secondmate, so a candidate they refuse must not win here.
+    if ! selection=$(fm_worker_account_select claude "$CONFIG" "$model" claude '' "$TARGET" 2>&1); then
       report "$harness" "$model" pin "skip=pin_unresolved why=$(fm_failover_token "$selection")"
       continue
     fi
     if [ -n "$selection" ]; then
+      account=pin
       root=${selection#*$'\t'}
       root=${root%%$'\t'*}
       [ -n "$root" ] || root="${HOME:?HOME is required}/.claude"
