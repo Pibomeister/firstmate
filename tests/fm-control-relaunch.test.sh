@@ -2699,25 +2699,22 @@ SH
 }
 
 # A clean copy left behind its own pipeline-pushed head by a failed pr step
-# carries the native behind / safe_fast_forward / sync verdict; the relaunch
+# carries the native behind / safe_fast_forward / sync verdict; a relaunch
 # fast-forwards it through the owner and launches without manual sync.
-test_spawn_relaunch_fast_forwards_a_clean_branch_behind_its_pipeline_push() {
-  local dir out old
-  dir=$(new_case prresync-ff rl99)
-  add_ship_task "$dir" rl99 claude
-  printf 'branch=task-rl99\n' >> "$dir/home/state/rl99.meta"
-  printf 'zsh' > "$dir/fake/command"
+behind_pipeline_push_task() {  # <case-dir> <id>: clean ship copy one pipeline commit behind origin
+  local dir=$1 id=$2
+  add_ship_task "$dir" "$id" claude
+  printf 'branch=task-%s\n' "$id" >> "$dir/home/state/$id.meta"
   printf 'a\n' > "$dir/wt/a.txt"
   git -C "$dir/wt" add a.txt
   git -C "$dir/wt" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm a
-  git -C "$dir/wt" push -q origin task-rl99
-  old=$(git -C "$dir/wt" rev-parse HEAD)
+  git -C "$dir/wt" push -q origin "task-$id"
   git clone -q "$dir/proj.origin.git" "$dir/pipe"
-  git -C "$dir/pipe" switch -q task-rl99
+  git -C "$dir/pipe" switch -q "task-$id"
   printf 'fix\n' > "$dir/pipe/fix.txt"
   git -C "$dir/pipe" add fix.txt
   git -C "$dir/pipe" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm fix
-  git -C "$dir/pipe" push -q origin task-rl99
+  git -C "$dir/pipe" push -q origin "task-$id"
   PUBLISHED_SHA=$(git -C "$dir/pipe" rev-parse HEAD)
   git -C "$dir/proj" remote add no-mistakes "$dir/proj.origin.git"
   printf '%s\n' "$PUBLISHED_SHA" > "$dir/fake/published"
@@ -2731,24 +2728,51 @@ if [ "\$head" = "\$pub" ]; then
     '  safety: already_synchronized'
   exit 0
 fi
-printf '%s\n' 'branch_sync:' '  state: behind' '  changed: false' '  local:' '    branch: task-rl99' \
+printf '%s\n' 'branch_sync:' '  state: behind' '  changed: false' '  local:' '    branch: task-$id' \
   "    head: \$head" '    clean: true' '  pipeline:' '    run: "01RUN"' '    status: failed' '    phase: pr' \
   "    current_head: \$pub" "    pushed_head: \$pub" '  remote:' "    observed_head: \$pub" '    freshness: live' \
   '  relation: behind' '  safety: safe_fast_forward' '  next_action:' '    code: sync' '    command: no-mistakes axi sync'
 SH
   chmod +x "$dir/fakebin/no-mistakes"
+}
+
+assert_fast_forwarded_relaunch() {  # <case-dir> <output> <label>
+  local dir=$1 out=$2 label=$3
+  assert_contains "$out" "result=advanced archive=- custody=settled head=$PUBLISHED_SHA" "$label did not settle"$'\n'"$out"
+  assert_not_contains "$out" "not a verdict this owner settles" "$label was refused"
+  assert_not_contains "$out" "Monitoring-only relaunch" "$label was treated as monitoring-only"
+  [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$PUBLISHED_SHA" ] \
+    || fail "$label did not reach the pipeline-pushed head"
+  [ -z "$(git -C "$dir/wt" status --porcelain)" ] || fail "$label left the copy dirty"
+  [ -z "$(git -C "$dir/wt" for-each-ref --format='%(refname)' refs/heads/archive/)" ] \
+    || fail "$label created an archive"
+  [ -s "$dir/fake/nm-calls" ] || fail "$label never read branch custody"
+  ! grep -qv '^axi sync --check$' "$dir/fake/nm-calls" || fail "$label ran a mutating no-mistakes command"
+}
+
+test_spawn_relaunch_fast_forwards_a_clean_branch_behind_its_pipeline_push() {
+  local dir out
+  dir=$(new_case prresync-ff rl99)
+  behind_pipeline_push_task "$dir" rl99
+  printf 'zsh' > "$dir/fake/command"
   out=$(run_spawn "$dir" rl99 --relaunch)
   assert_contains "$out" "spawned rl99" "a clean safe fast-forward relaunch did not launch"$'\n'"$out"
-  assert_contains "$out" "result=advanced archive=- custody=settled head=$PUBLISHED_SHA" "a clean safe fast-forward relaunch did not settle"
-  assert_not_contains "$out" "not a verdict this owner settles" "a clean safe fast-forward relaunch was refused"
-  assert_not_contains "$out" "Monitoring-only relaunch" "a safe fast-forward relaunch was treated as monitoring-only"
-  [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$PUBLISHED_SHA" ] \
-    || fail "a safe fast-forward relaunch did not reach the pipeline-pushed head (was $old)"
-  [ -z "$(git -C "$dir/wt" status --porcelain)" ] || fail "a safe fast-forward relaunch left the copy dirty"
-  [ -z "$(git -C "$dir/wt" for-each-ref --format='%(refname)' refs/heads/archive/)" ] \
-    || fail "a safe fast-forward relaunch created an archive"
-  ! grep -qv '^axi sync --check$' "$dir/fake/nm-calls" || fail "a safe fast-forward relaunch ran a mutating no-mistakes command"
+  assert_fast_forwarded_relaunch "$dir" "$out" "a safe fast-forward spawn relaunch"
   pass "fm-spawn --relaunch: a clean branch behind its own pipeline push fast-forwards and launches without manual sync"
+}
+
+test_control_relaunch_fast_forwards_a_clean_branch_behind_its_pipeline_push() {
+  local dir out rc
+  dir=$(new_case ctl-ff rl99c)
+  behind_pipeline_push_task "$dir" rl99c
+  out=$(run_control "$dir" rl99c relaunch --note "pr step failed after the push"); rc=$?
+  expect_code 0 "$rc" "a safe fast-forward fm-control relaunch should succeed"$'\n'"$out"
+  assert_contains "$out" "relaunched rl99c harness=claude from=claude" "the fm-control relaunch outcome is missing"
+  assert_fast_forwarded_relaunch "$dir" "$out" "a safe fast-forward fm-control relaunch"
+  [ "$(journal_field "$dir" rl99c phase)" = complete ] \
+    || fail "the safe fast-forward relaunch transaction should end complete"
+  assert_grep "Firstmate operational input waiting: read" "$dir/fake/literal" "the replacement should have been launched"
+  pass "fm-control relaunch: a clean branch behind its own pipeline push fast-forwards and relaunches without manual sync"
 }
 
 test_spawn_relaunch_origin_probe_timeout_refuses() {
@@ -4940,6 +4964,7 @@ test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head
 test_spawn_relaunch_under_an_active_run_is_monitoring_only
 test_spawn_relaunch_keeps_a_clean_local_ahead_commit
 test_spawn_relaunch_fast_forwards_a_clean_branch_behind_its_pipeline_push
+test_control_relaunch_fast_forwards_a_clean_branch_behind_its_pipeline_push
 test_spawn_relaunch_origin_probe_timeout_refuses
 test_spawn_relaunch_of_a_successor_ignores_its_source_line
 test_promoted_scout_relaunch_receives_the_current_delivery_contract
