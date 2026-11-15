@@ -64,7 +64,7 @@
 #
 # Receipts live in the home, one directory per pull request and head:
 #   data/merge-review/<provider>/<host>/<path>/<number>/<head>/
-# GitHub and Forgejo paths use lowercase identity; other forges retain case.
+# GitHub, GitLab, and Forgejo paths use lowercase identity; Gerrit retains case.
 #     .complete            unique generation digest after a batch finishes
 #     <seat>.receipt       key=value, format=fm-merge-review-receipt-v1: url,
 #                          head, base, base_ref, seat, family, harness,
@@ -357,7 +357,7 @@ mr_receipt_valid() {  # <receipt>
   [ "$(mr_receipt_get "$receipt" format)" = "$MR_FORMAT" ] || { MR_R_REASON='unknown receipt format'; return 1; }
   value=$(mr_receipt_get "$receipt" url)
   case "$FM_PR_PROVIDER" in
-    github | forgejo) value=$(mr_lower "$value"); expected_url=$(mr_lower "$expected_url") ;;
+    github | gitlab | forgejo) value=$(mr_lower "$value"); expected_url=$(mr_lower "$expected_url") ;;
   esac
   [ "$value" = "$expected_url" ] || { MR_R_REASON='the receipt names another pull request'; return 1; }
   [ "$(mr_receipt_get "$receipt" head)" = "$MR_HEAD" ] || { MR_R_REASON='the receipt names another head'; return 1; }
@@ -407,7 +407,7 @@ mr_receipt_valid() {  # <receipt>
 
   if [ "$MR_POST" = on ] && [ "$verdict" != BLOCK ]; then
     value=$(mr_receipt_get "$receipt" posted)
-    case "$FM_PR_PROVIDER" in github | forgejo) value=$(mr_lower "$value") ;; esac
+    case "$FM_PR_PROVIDER" in github | gitlab | forgejo) value=$(mr_lower "$value") ;; esac
     case "$value" in
       "$expected_url#"?*) ;;
       *) MR_R_REASON='the review is not posted on the pull request'; return 1 ;;
@@ -419,7 +419,7 @@ mr_receipt_valid() {  # <receipt>
 
 mr_store_dir() {
   local path=$FM_PR_PATH
-  case "$FM_PR_PROVIDER" in github | forgejo) path=$(mr_lower "$path") ;; esac
+  case "$FM_PR_PROVIDER" in github | gitlab | forgejo) path=$(mr_lower "$path") ;; esac
   printf '%s/data/merge-review/%s/%s/%s/%s/%s\n' \
     "$FM_HOME" "$FM_PR_PROVIDER" "$FM_PR_HOST" "$path" "$FM_PR_NUMBER" "$MR_HEAD"
 }
@@ -588,7 +588,7 @@ mr_seat_call() {  # <seat-index>
         --setting-sources "" --strict-mcp-config --no-session-persistence)
       [ -z "$effort" ] || cmd+=(--effort "$effort")
       # shellcheck disable=SC2016  # $1 and $@ belong to the inner shell.
-      ( cd "$MR_WORK" && mr_claude_env && fm_run_timed "$MR_TIMEOUT" bash -c '
+      ( cd "$MR_WORK" && mr_claude_env && FM_EXEC_TIMED_OWNER_PID="$MR_RUN_OWNER" fm_exec_timed "$MR_TIMEOUT" 5 bash -c '
         unset CLAUDECODE 2>/dev/null || true
         f=$1; shift; exec "$@" < "$f"' _ \
         "$MR_WORK/prompt.md" "${cmd[@]}" ) > "$raw" 2> "$err" || rc=$?
@@ -600,7 +600,7 @@ mr_seat_call() {  # <seat-index>
       cmd=(grok --cwd "$MR_WORK" --prompt-file "$MR_WORK/prompt.md" -m "$model" --output-format json
         --permission-mode plan --no-subagents --disable-web-search)
       [ -z "$effort" ] || cmd+=(--reasoning-effort "$effort")
-      ( cd "$MR_WORK" && fm_run_timed "$MR_TIMEOUT" "${cmd[@]}" ) > "$raw" 2> "$err" < /dev/null || rc=$?
+      ( cd "$MR_WORK" && FM_EXEC_TIMED_OWNER_PID="$MR_RUN_OWNER" fm_exec_timed "$MR_TIMEOUT" 5 "${cmd[@]}" ) > "$raw" 2> "$err" < /dev/null || rc=$?
       text_filter='.text // empty'
       models_filter='(.modelUsage // {}) | keys | join(",")'
       ;;
@@ -611,7 +611,7 @@ mr_seat_call() {  # <seat-index>
       cmd=(agy -p "$(cat "$MR_WORK/prompt.md")" --model "$model" --output-format json
         --mode plan --sandbox --print-timeout "${MR_TIMEOUT}s")
       [ -z "$effort" ] || cmd+=(--effort "$effort")
-      ( cd "$MR_WORK" && fm_run_timed "$((MR_TIMEOUT + 30))" "${cmd[@]}" ) > "$raw" 2> "$err" < /dev/null || rc=$?
+      ( cd "$MR_WORK" && FM_EXEC_TIMED_OWNER_PID="$MR_RUN_OWNER" fm_exec_timed "$((MR_TIMEOUT + 30))" 5 "${cmd[@]}" ) > "$raw" 2> "$err" < /dev/null || rc=$?
       text_filter='if .status == "SUCCESS" then (.response // empty) else empty end'
       models_filter='""'
       ;;
@@ -810,8 +810,8 @@ mr_run_owns_lock() {
     [ "$(cat "$MR_LOCK/generation" 2>/dev/null)" = "$MR_RECORDS" ]
 }
 
-mr_stop_reviewers() {  # <run-lock>
-  local lock=$1 pid identity live
+mr_stop_reviewers() {  # <run-lock|work-dir>
+  local lock=$1 pid identity live ledger rc line spid sidentity
   [ -f "$lock/children" ] || return 0
   while IFS="$(printf '\t')" read -r pid identity; do
     [ -n "$pid" ] || continue
@@ -824,11 +824,20 @@ mr_stop_reviewers() {  # <run-lock>
       wait "$pid" 2>/dev/null || true
       continue
     fi
-    fm_watcher_stop_tree "$pid" "$(fm_pid_identity "$pid")" 1 || true
+    ledger=$(mktemp "${TMPDIR:-/tmp}/fm-mr-stop.XXXXXX") || return 1
+    printf '%s\t%s\n' "$pid" "$identity" > "$ledger"
+    fm_snapshot_descendants "$pid" "$ledger"
+    rc=0
+    fm_reap_ledger "$ledger" 1 || rc=$?
+    while IFS= read -r line; do
+      spid=${line%%	*}
+      sidentity=${line#*	}
+      fm_pid_alive "$spid" || continue
+      [ "$(fm_pid_identity_line "$spid")" = "$sidentity" ] && rc=1
+    done < "$ledger"
+    rm -f "$ledger" "$ledger.pids" "$ledger.next" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
-    if fm_pid_alive "$pid" && [ "$(fm_pid_identity_line "$pid")" = "$identity" ]; then
-      return 1
-    fi
+    [ "$rc" -eq 0 ] || return 1
   done < "$lock/children"
 }
 
@@ -848,7 +857,8 @@ mr_run_cleanup() {
 
 mr_run() {  # <repo> <base-ref> <intent-file>
   local repo=$1 base_ref=$2 intent=$3 i pids='' pid holder families identity reviewer_parent complete_sha object_dir object_format=sha1 repo_root
-  local review_parent entry_path duplicate_ids
+  local review_parent entry_path duplicate_ids workdir
+  MR_RUN_OWNER=$$
   if [ -z "${FM_TASK_ID:-}" ] || ! fm_pr_task_id_valid "$FM_TASK_ID"; then
     mr_die 'run belongs in a background worker: FM_TASK_ID is not set, so this is not a spawned ship or scout worker. A supervisor dispatches the worker and reads check.'
   fi
@@ -897,6 +907,7 @@ mr_run() {  # <repo> <base-ref> <intent-file>
   trap mr_run_cleanup EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
+  trap 'exit 129' HUP
   MR_RECLAIM="$MR_STORE/.reclaim.lock"
   fm_lock_try_acquire "$MR_RECLAIM" || { MR_RECLAIM=; mr_die 'another worker is initializing or recovering this review run'; }
   if ! mkdir "$MR_STORE/.run.lock" 2>/dev/null; then
@@ -906,7 +917,13 @@ mr_run() {  # <repo> <base-ref> <intent-file>
     esac
     ! kill -0 "$holder" 2>/dev/null || mr_die "another run (pid $holder) is reviewing this head"
     rm -f "$MR_STORE/.run.lock/generation"
-    mr_stop_reviewers "$MR_STORE/.run.lock" || mr_die 'a previous reviewer is still running'
+    workdir=$(cat "$MR_STORE/.run.lock/workdir" 2>/dev/null || true)
+    if [ -n "$workdir" ] && [ -d "$workdir" ]; then
+      mr_stop_reviewers "$workdir" || mr_die 'a previous reviewer is still running'
+      rm -rf "$workdir"
+    else
+      mr_stop_reviewers "$MR_STORE/.run.lock" || mr_die 'a previous reviewer is still running'
+    fi
     rm -rf "$MR_STORE/.run.lock"
     mkdir "$MR_STORE/.run.lock" 2>/dev/null || mr_die "another run holds $MR_STORE/.run.lock"
   fi
@@ -932,6 +949,7 @@ mr_run() {  # <repo> <base-ref> <intent-file>
   done
   : > "$MR_WORK/children"
   ln -s "$MR_WORK/children" "$MR_LOCK/children" || mr_die 'cannot publish the reviewer ledger'
+  printf '%s\n' "$MR_WORK" > "$MR_LOCK/workdir"
   mkdir "$MR_WORK/snapshot"
   object_dir=$(git --no-replace-objects -C "$repo" rev-parse --git-path objects) || mr_die 'cannot locate the source objects'
   case "$object_dir" in /*) ;; *) object_dir="$repo/$object_dir" ;; esac
@@ -958,7 +976,8 @@ mr_run() {  # <repo> <base-ref> <intent-file>
     duplicate_ids=$(LC_ALL=C sort "$MR_WORK/snapshot.ids" | uniq -d) || mr_die 'cannot verify snapshot path identities'
     [ -z "$duplicate_ids" ] || mr_die 'snapshot has colliding Git paths on this filesystem'
   fi
-  git --no-replace-objects -C "$repo" diff --no-relative --no-ext-diff --no-textconv --ignore-submodules=none \
+  git --no-replace-objects -C "$repo" -c core.attributesFile="$MR_WORK/archive.git/info/attributes" \
+    diff --no-relative --no-ext-diff --no-textconv --ignore-submodules=none \
     --submodule=short --full-index --binary "$MR_BASE" "$MR_HEAD" > "$MR_WORK/diff.patch" \
     || mr_die "cannot build the diff from $MR_BASE to $MR_HEAD"
   [ -s "$MR_WORK/diff.patch" ] || mr_die "the diff from $MR_BASE to $MR_HEAD is empty"

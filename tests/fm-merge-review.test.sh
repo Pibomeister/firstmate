@@ -842,6 +842,23 @@ test_review_still_accepts_bare_source_repositories() {
   pass "normalizing review input paths keeps bare source repositories supported"
 }
 
+test_gitlab_url_case_cannot_select_another_review() {
+  local rc=0 alias=https://gitlab.example/Group/Repo/-/merge_requests/7
+  canonical=https://gitlab.example/group/repo/-/merge_requests/7
+  make_case gitlab-url-case "${TWO_SEATS[@]}"
+  echo block > "$STUB/agy.mode"
+  run_review run "$alias" --head "$HEAD_SHA" --repo "$REPO" && fail "gitlab-case: initial dissent approved"
+  run_supervisor check "$canonical" --head "$HEAD_SHA" || rc=$?
+  expect_code 1 "$rc" "gitlab-case: equivalent URL with stored dissent"
+  assert_grep 'merge-review: blocked' "$CASE/stdout" "gitlab-case: casing lost the stored dissent"
+  echo approve > "$STUB/agy.mode"
+  rc=0
+  run_review run "$canonical" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "gitlab-case: a case alias cannot reroll dissent"
+  assert_equals 1 "$(calls agy)" "gitlab-case: casing selected another model call"
+  pass "GitLab URL case aliases retain the same recorded dissent"
+}
+
 test_forgejo_url_case_cannot_select_another_review() {
   local rc=0 alias=https://forgejo.example/Example/Repo/pulls/7 canonical=https://forgejo.example/example/repo/pulls/7
   make_case forgejo-url-case "${TWO_SEATS[@]}"
@@ -1162,6 +1179,7 @@ fm_test_run \
   test_snapshot_supports_sha256_object_repositories \
   test_subdirectory_and_relative_config_cannot_omit_changes \
   test_review_still_accepts_bare_source_repositories \
+  test_gitlab_url_case_cannot_select_another_review \
   test_forgejo_url_case_cannot_select_another_review \
   test_snapshot_refuses_paths_the_filesystem_cannot_distinguish \
   test_temp_directory_cannot_place_reviewers_inside_a_repository \
