@@ -88,6 +88,8 @@ printf '%s\n' "$TMP_ROOT/acctA" "$TMP_ROOT/acctC" "$TMP_ROOT/acctB" > "$LAB/conf
 export CLAUDE_CONFIG_DIR="$TMP_ROOT/acctA"
 quota_fixture codex 60 through_reset > "$QUOTA/codex.json"
 quota_fixture agy 50 through_reset model:gemini > "$QUOTA/agy.json"
+mkdir -p "$HOME/.gemini/antigravity-cli"
+jq -n --arg h "$LAB" '{trustedWorkspaces:[$h]}' > "$HOME/.gemini/antigravity-cli/settings.json"
 PINS_BEFORE=$(pins_digest)
 
 failover tmux primary "$LAB/data/handoff.md" --candidate codex:gpt-5.5
@@ -131,6 +133,17 @@ failover tmux primary "$LAB/data/handoff.md"
 assert_contains "$OUT" 'candidate harness=codex model=gpt-5.5 account=ambient verdict=unknown why=no_valid_codex_snapshot' 'unmeasured quota is reported'
 delegate_is 'unmeasured codex' fm-handoff-launch.sh --harness agy --reason claude_pool_exhausted --model gemini-3-pro "$LAB/data/handoff.md"
 pass 'unmeasured quota: a candidate without a measured headroom reading is skipped'
+
+# agy is skipped for a primary whose home agy does not trust, so a later
+# candidate still takes over instead of a handoff the launcher would refuse.
+quota_fixture codex 60 through_reset > "$QUOTA/codex.json"
+mv "$HOME/.gemini/antigravity-cli/settings.json" "$TMP_ROOT/agy-settings.json"
+failover tmux primary "$LAB/data/handoff.md" --candidate agy:gemini-3-pro --candidate codex:gpt-5.5
+mv "$TMP_ROOT/agy-settings.json" "$HOME/.gemini/antigravity-cli/settings.json"
+[ "$RC" = 0 ] || fail "an untrusted agy home must fall through to codex: $OUT"
+assert_contains "$OUT" 'candidate harness=agy model=gemini-3-pro account=none skip=agy_untrusted_home' 'the untrusted home is the reason agy is skipped'
+delegate_is 'untrusted agy' fm-handoff-launch.sh --harness codex --reason claude_pool_exhausted --model gpt-5.5 "$LAB/data/handoff.md"
+pass 'agy trust: an untrusted home skips agy and the next candidate takes over'
 
 # On Orca no account can be selected and agy is unverified.
 quota_fixture codex 60 through_reset > "$QUOTA/codex.json"
@@ -182,6 +195,21 @@ RC=0
 OUT=$(env -u FM_HOME bash "$ROOT/bin/fm-supervisor-failover.sh" secondmate mate-a --candidate codex:gpt-5.5 2>&1) || RC=$?
 [ "$RC" = 2 ] || fail "a secondmate failover without an explicit home must refuse: $OUT"
 pass 'secondmate: relaunched onto codex through fm-control in its own home'
+
+# A secondmate is judged on its own recorded backend, not this home's.
+quota_fixture agy 50 through_reset model:gemini > "$QUOTA/agy.json"
+printf 'kind=secondmate\nharness=claude\nmodel=opus\nbackend=tmux\nworktree=%s\n' "$TMP_ROOT/mate" > "$LAB/state/mate-t.meta"
+failover orca secondmate mate-t --candidate agy:gemini-3-pro --candidate codex:gpt-5.5
+[ "$RC" = 0 ] || fail "a tmux secondmate under an orca home must reach agy: $OUT"
+delegate_is 'tmux secondmate under orca' fm-control.sh mate-t relaunch --harness agy --model gemini-3-pro \
+  --note 'Supervisor failover: claude pool ran out (claude_pool_exhausted); relaunched on agy gemini-3-pro (verdict=ok scope=model:gemini remaining=50 runway=through_reset).'
+printf 'kind=secondmate\nharness=claude\nmodel=opus\nbackend=orca\nworktree=%s\n' "$TMP_ROOT/mate" > "$LAB/state/mate-o.meta"
+failover tmux secondmate mate-o --candidate agy:gemini-3-pro --candidate codex:gpt-5.5
+[ "$RC" = 0 ] || fail "an orca secondmate must fall through to codex: $OUT"
+assert_contains "$OUT" 'candidate harness=agy model=gemini-3-pro account=none skip=agy_unverified_on_orca' 'agy is skipped on the secondmate orca backend'
+delegate_is 'orca secondmate under tmux' fm-control.sh mate-o relaunch --harness codex --model gpt-5.5 \
+  --note 'Supervisor failover: claude pool ran out (claude_pool_exhausted); relaunched on codex gpt-5.5 (verdict=ok scope=all_models remaining=45 runway=through_reset).'
+pass 'secondmate backend: agy eligibility follows the secondmate record, not the parent home'
 
 # A secondmate Claude candidate is eligible only when its pin resolves. A pin
 # that does not resolve is skipped even when the ambient account has headroom.

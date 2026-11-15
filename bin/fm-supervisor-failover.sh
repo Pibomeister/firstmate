@@ -25,8 +25,10 @@
 #      A secondmate runs on its own account pin, which only the captain
 #      changes, so it has no account step.
 #   2. each candidate whose harness is claude, codex, or agy and differs from
-#      the current one. Muse and every other adapter are refused, and agy needs
-#      the tmux backend.
+#      the current one. Muse and every other adapter are refused. For a
+#      primary, agy needs the tmux backend and a home agy already trusts, as
+#      the handoff launcher requires. A secondmate is judged on the backend its
+#      record names, where fm-control relaunches agy on tmux or herdr only.
 # A candidate with exhausted or unmeasured quota, a missing executable, no
 # sign-in, or a secondmate Claude pin that does not resolve is skipped with
 # its reason; nothing here signs in, spends, or edits
@@ -134,6 +136,8 @@ else
   FROM_MODEL=$(fm_meta_get "$META" model)
   FROM_MODEL=${FROM_MODEL:-default}
   FROM_ACCOUNT=pin
+  BACKEND=$(fm_meta_get "$META" backend)
+  BACKEND=${BACKEND:-tmux}
 fi
 [ -n "$REASON" ] || REASON="$(fm_failover_token "$FROM_HARNESS")_pool_exhausted"
 FROM="$(fm_failover_token "$FROM_HARNESS"):$(fm_failover_token "$FROM_MODEL"):$(fm_failover_token "$FROM_ACCOUNT")"
@@ -192,9 +196,18 @@ for c in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
     report "$harness" "$model" none 'skip=same_runtime_as_current'
     continue
   fi
-  if [ "$harness" = agy ] && [ "$BACKEND" != tmux ]; then
-    report "$harness" "$model" none "skip=agy_unverified_on_$(fm_failover_token "$BACKEND")"
-    continue
+  if [ "$harness" = agy ]; then
+    case "$SCOPE:$BACKEND" in
+      primary:tmux | secondmate:tmux | secondmate:herdr) ;;
+      *)
+        report "$harness" "$model" none "skip=agy_unverified_on_$(fm_failover_token "$BACKEND")"
+        continue
+        ;;
+    esac
+    if [ "$SCOPE" = primary ] && ! fm_failover_agy_trusted "$FM_HOME"; then
+      report "$harness" "$model" none 'skip=agy_untrusted_home'
+      continue
+    fi
   fi
   if [ "$BACKEND" = tmux ] && ! command -v "$harness" >/dev/null 2>&1; then
     report "$harness" "$model" none 'skip=executable_missing'
