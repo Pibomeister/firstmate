@@ -514,11 +514,6 @@ mr_harness_version() {  # <harness>
 # Claude refuses nested -p calls when a worker session has already marked the shell.
 mr_claude_env() {
   unset CLAUDECODE 2>/dev/null || true
-  local name
-  while IFS= read -r name; do
-    [ -n "$name" ] || continue
-    unset "$name" 2>/dev/null || true
-  done < <(compgen -v | grep '^CLAUDE_CODE_' || true)
 }
 
 mr_reviewer_child_exited() {  # <pid>
@@ -595,7 +590,6 @@ mr_seat_call() {  # <seat-index>
       # shellcheck disable=SC2016  # $1 and $@ belong to the inner shell.
       ( cd "$MR_WORK" && mr_claude_env && fm_run_timed "$MR_TIMEOUT" bash -c '
         unset CLAUDECODE 2>/dev/null || true
-        for _v in $(compgen -v | grep "^CLAUDE_CODE_" || true); do unset "$_v" 2>/dev/null || true; done
         f=$1; shift; exec "$@" < "$f"' _ \
         "$MR_WORK/prompt.md" "${cmd[@]}" ) > "$raw" 2> "$err" || rc=$?
       text_filter='if (.is_error // false) then empty else (.result // empty) end'
@@ -817,11 +811,20 @@ mr_run_owns_lock() {
 }
 
 mr_stop_reviewers() {  # <run-lock>
-  local lock=$1 pid identity
+  local lock=$1 pid identity live
   [ -f "$lock/children" ] || return 0
   while IFS="$(printf '\t')" read -r pid identity; do
+    [ -n "$pid" ] || continue
     [ -n "$identity" ] || return 1
-    fm_watcher_stop_tree "$pid" "$(fm_pid_identity "$pid" 2>/dev/null || true)" 1 || true
+    live=$(fm_pid_identity_line "$pid" 2>/dev/null) || live=
+    if [ -n "$live" ] && [ "$live" != "$identity" ]; then
+      continue
+    fi
+    if [ -z "$live" ]; then
+      wait "$pid" 2>/dev/null || true
+      continue
+    fi
+    fm_watcher_stop_tree "$pid" "$(fm_pid_identity "$pid")" 1 || true
     wait "$pid" 2>/dev/null || true
     if fm_pid_alive "$pid" && [ "$(fm_pid_identity_line "$pid")" = "$identity" ]; then
       return 1

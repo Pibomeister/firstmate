@@ -1093,6 +1093,28 @@ test_stale_block_at_another_base_is_not_replaced() {
   pass "a BLOCK at another merge base is kept on disk and cannot be rolled forward"
 }
 
+test_stop_reviewers_skips_a_mismatched_recorded_identity() {
+  local victim lock alive=0
+  lock="$TMP_ROOT/stop-identity-lock"
+  mkdir -p "$lock"
+  sleep 300 &
+  victim=$!
+  printf '%s\t%s\n' "$victim" 'starttime=0 cmdline-hex=deadbeef' > "$lock/children"
+  bash -c '
+    lock=$1
+    root=$2
+    # shellcheck source=bin/fm-wake-lib.sh
+    . "$root/bin/fm-wake-lib.sh"
+    eval "$(sed -n "/^mr_stop_reviewers()/,/^}/p" "$root/bin/fm-merge-review.sh")"
+    mr_stop_reviewers "$lock"
+  ' _ "$lock" "$ROOT"
+  kill -0 "$victim" 2>/dev/null && alive=1
+  kill -TERM "$victim" 2>/dev/null || true
+  wait "$victim" 2>/dev/null || true
+  assert_equals 1 "$alive" "stop-identity: a recycled pid slot must not be signalled"
+  pass "interrupted cleanup skips children whose live identity no longer matches the ledger"
+}
+
 test_intent_reaches_the_prompt_the_receipt_binds() {
   local store prompt
   make_case intent "${TWO_SEATS[@]}"
@@ -1147,6 +1169,7 @@ fm_test_run \
   test_snapshot_keeps_distinct_links_and_identical_regular_files \
   test_covers_follows_the_require_lines \
   test_run_refuses_what_it_cannot_review \
+  test_stop_reviewers_skips_a_mismatched_recorded_identity \
   test_fast_exiting_seat_continues_the_batch \
   test_leading_zero_timeout_runs_every_seat \
   test_stale_receipt_base_refreshes_approvals \
