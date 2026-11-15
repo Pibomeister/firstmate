@@ -4130,6 +4130,28 @@ The watchdog ran a real Orca restart, the new session's pickup was verified, tha
 Act mode stays off on every other machine until rollout.
 A repeat live test is owed, because later fixes change the restart paths.
 
+### 2026-11-14 worker permission prompts
+
+Verified on 2026-11-14 on macOS (Darwin 25.6.0, arm64) with Claude Code 2.1.325 and tmux 3.6a.
+The behavior contract is owned by [the watchdog page](../watchdog.md#worker-permission-prompts).
+A real Claude Code session on a private tmux socket, started with `--permission-mode default`, raised a Bash tool-approval prompt for a `touch` command.
+Its rows are a `Do you want to proceed?` question under a rule, `❯ 1. Yes` as the only cursor row, a `No` option, and the footer `Esc to cancel · Tab to amend`.
+Pressing Escape cancelled the tool call without running it: the file was not created, and the pane showed `Interrupted · What should Claude do instead?` above an empty composer.
+The folder-trust picker in a new folder rendered with the cursor on `❯ No, exit`.
+The heredoc-with-backtick command that raised a prompt in the original incident raised none in bypass mode on this version.
+Sanitized copies of those three screens are the fixtures in `tests/fixtures/permission-prompt/`, and `tests/fm-permission-prompt.test.sh` classifies them and drives the watchdog route against tmux panes that react to Escape the same way.
+
+```sh
+bash bin/fm-test-run.sh tests/fm-permission-prompt.test.sh
+ok - real Claude 2.1.325 prompts: tool approval routes only on claude, trust relaunches, and the cancelled screen is clear
+ok - tool approval: one Escape, verified gone, then a durable rewrite instruction
+ok - hard stops: credential, destructive, spend, and sign-in prompts get no key and one keyed blocked line
+```
+
+`tests/fm-watchdog-live.test.sh` now also asserts that `bin/fm-permission-prompt.sh` names the real folder-trust picker a trust dialog, and that assertion passed against Claude Code 2.1.325.
+That same run failed its later check that the home's waiting permission dialog is reported as a gap, and an unmodified copy of the prior commit fails the same check: the guard's heartbeat no longer gives the watchdog a home terminal endpoint, so the home pane is not read.
+No Codex or Antigravity tool-approval prompt was captured, so those prompts are held rather than declined.
+
 ## Merge review reviewer tools
 
 Verified on 2026-11-13 (UTC) on macOS (Darwin 25.6.0, arm64) with Claude Code 2.1.323, Antigravity `agy` 1.5.8, and Grok 1.0.77.
