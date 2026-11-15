@@ -1636,11 +1636,12 @@ wd_pp_decline() {
   local id=$1 harness=$2 hash=$3 mark cap n rid live after after_dialog verdict tries=0
   mark=$(wd_pp_mark "$id")
   if grep -Fxq -- "$hash" "$mark.declined" 2>/dev/null; then
-    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id repeated a tool call whose permission prompt was already declined; nothing was answered"
+    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows a tool-approval prompt that already got its one Escape; nothing more is pressed"
     return 1
   fi
   cap=$(cfgi permission-decline-cap 3)
-  n=$(fm_wd_count_since "$LEDGER" "$O_HOME" permission-prompt decline '^done$' "$(( $(wd_now) - 3600 ))" "$O_REC_SUBJECT")
+  # Every attempt counts, so a failed or unconfirmed Escape uses the cap too.
+  n=$(fm_wd_count_since "$LEDGER" "$O_HOME" permission-prompt decline '^pending$' "$(( $(wd_now) - 3600 ))" "$O_REC_SUBJECT")
   if [ "$n" -ge "$cap" ]; then
     wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id had $n permission prompts declined within an hour, the cap; nothing more is answered"
     return 1
@@ -1661,6 +1662,10 @@ wd_pp_decline() {
     wd_rec "$rid" permission-prompt decline refused "the prompt changed before the key; nothing was pressed"
     return 1
   fi
+  # The checksum is kept before the key, so one prompt gets at most one Escape
+  # even when delivery or the check after it fails.
+  mkdir -p "$WD/permission"
+  printf '%s\n' "$hash" >> "$mark.declined"
   wd_rec "$rid" permission-prompt decline pending "press Escape on a claude tool-approval prompt"
   if ! fm_run_timed_fn 10 fm_control_send_feedback_dismiss "$O_BACKEND" "$O_TARGET" Escape "fm-$id" >/dev/null 2>&1; then
     wd_rec "$rid" permission-prompt decline failed "key delivery failed"
@@ -1685,8 +1690,6 @@ wd_pp_decline() {
     return 1
   fi
   wd_rec "$rid" permission-prompt decline "done" "the prompt left the pane"
-  mkdir -p "$WD/permission"
-  printf '%s\n' "$hash" >> "$mark.declined"
   # The steer's doorbell types a line and Enter, so it rings only when the
   # screen after Escape shows no dialog and no prompt of any kind.
   after_dialog=$(fm_wd_pane_dialog "$after" "$harness") || after_dialog=
@@ -2381,6 +2384,20 @@ wd_visit_worker_dialogs() {
         fi
         ;;
     esac
+    # A held prompt or hard stop on a screen the dialog reader did not label
+    # permission, such as a password input or a declining picker, still gets
+    # the waiting gap and the away page.
+    if [ "$prompt" = 1 ] && [ "$dialog" != permission ]; then
+      O_BACKEND=$backend
+      O_TARGET=$target
+      O_PANE=$screen
+      O_DIALOG=permission
+      O_REC_SUBJECT="worker:$id"
+      wd_gap "permission prompt waiting on worker $id; the watchdog does not answer it"
+      wd_page_permission
+      O_DIALOG=$saved_dialog
+      unset O_REC_SUBJECT
+    fi
     case "$dialog" in
       feedback)
         O_BACKEND=$backend

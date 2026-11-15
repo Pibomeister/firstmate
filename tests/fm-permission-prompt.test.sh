@@ -212,6 +212,9 @@ test_hardstop_categories() {
   assert_equals $'hardstop\trelease' "$(bash_prompt_with 'git push origin main' | classify claude)" "a push to main is a release stop"
   assert_equals $'hardstop\tcredential' "$(bash_prompt_with 'op item get gh --reveal' | classify claude)" "a revealed vault item is a credential stop"
   assert_equals $'route\ttool-approval' "$(bash_prompt_with 'git push -u origin fm/feature-x' | classify claude)" "a feature-branch push still routes"
+  for c in 'git push origin feature' 'tmux ls' 'curl https://example.com'; do
+    assert_equals $'route\ttool-approval' "$(bash_prompt_with "$c" | classify claude)" "$c still routes"
+  done
   for c in 'Enter your password:' 'Enter your passphrase:' 'Password for dev@build:' "Password for 'https://x@github.com':" 'Enter OTP:'; do
     assert_equals $'hardstop\tcredential' "$(printf 'work\n%s\n' "$c" | classify claude)" "$c is a credential stop"
   done
@@ -226,16 +229,16 @@ test_hardstop_categories() {
     "a login picker is a sign-in stop"
   assert_equals $'hardstop\tspend' "$(printf ' You have reached your limit. Add funds to continue?\n ❯ 1. Buy more credits\n   2. Wait\n\n Enter to confirm · Esc to cancel\n' | classify claude)" \
     "an add-funds picker is a spend stop"
-  for c in 'git clean --force -d' 'git -C /tmp/probe reset --hard HEAD' 'git checkout --quiet -- src/app.py' 'git checkout HEAD -- f' 'chmod 777 -R .'; do
+  for c in 'git clean --force -d' 'git -C /tmp/probe reset --hard HEAD' 'git checkout --quiet -- src/app.py' 'git checkout HEAD -- f' 'chmod 777 -R .' 'chmod -R 000 .' 'chown -R root .' 'git push origin :feature' 'git update-ref -d refs/heads/x' 'aws s3 rb s3://bucket' 'tmux kill-server'; do
     assert_equals $'hardstop\tdestructive' "$(bash_prompt_with "$c" | classify claude)" "$c is a destructive stop"
   done
   for c in 'git push origin HEAD:refs/heads/main' 'git tag v1.2.0' 'git push --tags' 'git push origin v1.2.0' 'terraform apply' 'twine upload dist/x'; do
     assert_equals $'hardstop\trelease' "$(bash_prompt_with "$c" | classify claude)" "$c is a release stop"
   done
-  for c in 'cat id_rsa' 'cat ~/.config/gh/hosts.yml' 'printenv' 'env'; do
+  for c in 'cat id_rsa' 'cat ~/.config/gh/hosts.yml' 'printenv' 'env' 'curl -u user:pass https://example.com' 'cat ~/.docker/config.json'; do
     assert_equals $'hardstop\tcredential' "$(bash_prompt_with "$c" | classify claude)" "$c is a credential stop"
   done
-  for c in 'Enter your API key >' '? Enter your API key: ›' 'Token: ****'; do
+  for c in 'Enter your API key >' '? Enter your API key: ›' 'Token: ****' "Password for 'https://dev@github.com':"; do
     assert_equals $'hardstop\tcredential' "$(printf 'work\n%s\n' "$c" | classify claude)" "$c is a credential stop"
   done
   assert_equals $'hardstop\tspend' "$(printf ' You have hit your limit\n ❯ 1. Add funds\n   2. Wait for reset\n\n Enter to confirm · Esc to cancel\n' | classify claude usage-limit)" \
@@ -271,14 +274,17 @@ test_send_guard_blocks_renumbered_pickers_and_secret_inputs() {
     $' Quick safety check\n   1. Yes, I trust this folder\n ❯ 2. No, exit\n\n Enter to confirm · Esc to cancel' \
     $' Quick safety check\n > No, exit\n   Yes, I trust this folder\n\n Enter to confirm · Esc to cancel' \
     $' Allow external CLAUDE.md file imports?\n   1. Yes, allow external imports\n ❯ 2. No, disable external imports\n\n Enter to confirm · Esc to cancel' \
-    $'work\nEnter your API key >' $'work\n? Enter your API key: ›' $'work\nPassword:'; do
+    $' Quick safety check\n   1. Yes, I trust this folder\n ❯ 2. No, exit\n\n Some other footer' \
+    $'work\nEnter your API key >' $'work\n? Enter your API key: ›' $'work\nPassword:' $'work\nPIN:' $'work\nEnter your verification code:' \
+    $'work\nPassword for \'https://dev@github.com\':' $'work\nUsername for \'https://github.com\':' $'work\nPaste code here if prompted >' $'work\nEnter verification code:' \
+    $' Continue with paid usage?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel'; do
     name=$(bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$screen") \
       || fail "every submit refuses this screen: $screen"
     [ -n "$name" ] || fail "the refusal names the dialog for: $screen"
   done
   bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" $'work\nthe token refresh is fixed\n❯ ' >/dev/null \
     && fail "conversation that mentions a token is not a secret input"
-  pass "send guard: a renumbered or re-glyphed declining picker and a secret input refuse every submit"
+  pass "send guard: a renumbered or re-glyphed declining picker, a numbered picker, and a secret or sign-in input refuse every submit"
 }
 
 # --- the watchdog route ----------------------------------------------------------
@@ -325,8 +331,12 @@ test_doorbell_never_types_into_a_prompt() {
   make_home
   worker db claude "$FIX/claude-2.1.325-bash-prompt.txt"
   worker dt claude "$FIX/claude-2.1.325-trust.txt"
+  printf ' Continue with paid usage?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel\n' > "$H/paid.txt"
+  worker ds claude "$H/paid.txt"
+  printf 'work output\nEnter your password:\n' > "$H/pw.txt"
+  worker dp claude "$H/pw.txt"
   local id
-  for id in db dt; do
+  for id in db dt ds dp; do
     FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
     assert_contains "$(inbox_text "$id")" "steer for $id" "the steer for worker $id is durably recorded"
     sleep 1
@@ -382,7 +392,13 @@ test_repeated_or_capped_prompts_hold() {
   assert_equals '' "$(typed rep)" "a prompt past the hourly cap gets no key"
   assert_equals 2 "$(status_rows rep blocked permission-prompt-held)" "the cap is reported as held"
   assert_grep "cap; nothing more is answered" "$H/state/rep.status" "the held line names the cap"
-  pass "decline guard: a repeated prompt and a prompt past the cap are held, each reported once"
+  worker stuck claude "$FIX/claude-2.1.325-bash-prompt.txt"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(typed stuck | tr -cd '\033' | wc -c | tr -d ' ')" "a prompt that stays after Escape got one Escape"
+  assert_equals 1 "$(ledger_rows decline failed worker:stuck)" "the failed decline is recorded"
+  run_wd 1300 once >/dev/null 2>&1
+  assert_equals 1 "$(typed stuck | tr -cd '\033' | wc -c | tr -d ' ')" "the same prompt never gets a second Escape on a later pass"
+  pass "decline guard: a repeated prompt, a prompt past the cap, and a prompt that stays after Escape are held, each reported once"
 }
 
 test_trust_dialog_relaunches_without_a_key() {
@@ -431,6 +447,7 @@ test_hardstop_prompts_are_never_answered() {
   assert_grep "shows a sign-in prompt" "$H/state/signin.status" "the sign-in input names its category"
   assert_no_grep "find-generic-password" "$H/state/cred.status" "the blocked line carries no prompt text"
   assert_equals 0 "$(ledger_rows decline pending)" "no hard stop is declined"
+  assert_grep "waiting on worker signin" "$H/data/watchdog/status.md" "a sign-in input with no dialog label still gets the waiting gap"
   assert_equals '' "$(cat "$H/control.log" 2>/dev/null)" "no hard stop is relaunched"
 
   printf 'work output\n> \n' > "$H/plain.txt"

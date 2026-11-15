@@ -2591,26 +2591,39 @@ fm_composer_blocking_dialog() {  # <screen> -> dialog name
   # selected row is No, exit, and the external-imports picker, whose selected
   # row is No, disable external imports. Enter would choose either one. Any
   # option number and cursor glyph count, so a renumbered picker still blocks.
+  # A selected declining row near the bottom blocks whatever the footer says.
   if printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
-    /^[ \t]*(❯|›|>)[ \t]*([0-9]+\.[ \t]*)?(No, exit|No, disable external imports)[ \t\r]*$/ { selected = 1 }
-    /[^ \t\r]/ { last = $0 }
-    END { exit !(selected && last ~ /^[ \t]*Enter to confirm · Esc to cancel[ \t\r]*$/) }
+    /[^ \t\r]/ { n++ }
+    /^[ \t]*(❯|›|>)[ \t]*([0-9]+\.[ \t]*)?(No, exit|No, disable external imports)[ \t\r]*$/ { at = n }
+    END { exit !(at && n - at < 8) }
   '; then
     printf '%s' 'Claude declining-cursor picker'
     return 0
   fi
-  # A secret input on the last row, such as a password, passphrase, API key,
-  # or one-time code prompt: typed text and Enter would go into the secret.
+  # A numbered picker whose cursor rests on an option above a confirm or select
+  # footer: typed text and Enter would choose that option, such as paid usage.
+  if printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
+    /^[ \t]*(❯|›|>)[ \t]*[0-9]+\.[ \t]+[^ \t]/ { selected = 1 }
+    /[^ \t\r]/ { last = $0 }
+    END { exit !(selected && last ~ /^[ \t]*Enter to (confirm|select)( · [^·]+)*[ \t\r]*$/) }
+  '; then
+    printf '%s' 'numbered option picker'
+    return 0
+  fi
+  # A secret or sign-in input on the last row, such as a password, PIN, API
+  # key, one-time code, verification code, or git username prompt: typed text
+  # and Enter would go into it.
   if printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
     /[^ \t\r]/ { last = tolower($0) }
     END {
       sub(/[ \t\r]*((›|❯|▌|█|•|\*)[ \t\r]*)*$/, "", last)
-      exit !(last ~ /^[ \t]*(\? )?(\[sudo\] )?(password|passphrase|passcode)( for [^:]*)?[:>?]$/ ||
-             last ~ /(enter|type|input|provide|paste) ((your|the|a|an) )?([a-z0-9_.-]+ )?(password|passphrase|passcode|pin|api[ _-]?key|access[ _-]?key|private[ _-]?key|token|secret|otp|2fa|mfa|one.time|authenticator)[^:>?]*[:>?]$/ ||
-             last ~ /(api[ _-]?key|access[ _-]?key|token|secret)[^:>?]{0,30}[:>?]$/)
+      exit !(last ~ /^[ \t]*(\? )?(\[sudo\] )?(password|passphrase|passcode)( for .*)?[:>?]$/ ||
+             last ~ /^[ \t]*(\? )?(pin|otp|2fa code|mfa code|username for .*)[:>?]$/ ||
+             last ~ /(enter|type|input|provide|paste) ((your|the|a|an) )?([a-z0-9_.-]+ )?(password|passphrase|passcode|pin|api[ _-]?key|access[ _-]?key|private[ _-]?key|token|secret|otp|2fa|mfa|one.time|authenticator|verification|device code|authori[sz]ation code|authentication code|code)[^:>?]*[:>?]$/ ||
+             last ~ /(api[ _-]?key|access[ _-]?key|token|secret|verification code|device code|paste (the )?(authorization |authentication )?code)[^:>?]{0,30}[:>?]$/)
     }
   '; then
-    printf '%s' 'secret input'
+    printf '%s' 'secret or sign-in input'
     return 0
   fi
   return 1
