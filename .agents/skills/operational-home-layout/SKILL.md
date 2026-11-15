@@ -74,6 +74,7 @@ config/escalation  optional escalation settings as key=value lines, currently th
 config/mission-ledger  optional key=value settings for the mission ledger's ready-depth check, currently min-ready (default 3; 0 turns the scheduled check off); LOCAL, gitignored, and not inherited; see docs/configuration.md "Mission ledger"
 config/watched-tools.json  optional list of the tools this home depends on, read by the update check armed with bin/fm-tool-update-check.sh; LOCAL, gitignored, firstmate-maintained but human-editable, and NOT inherited by secondmate homes; see docs/configuration.md "Watched tool updates"
 config/watch.env     optional home-local watcher tuning as exported shell assignments; LOCAL, gitignored, never removed by bootstrap; loaded by bin/fm-watch-arm.sh before x-mode.env; see docs/configuration.md "Relay (.env)"
+config/supervisor-failover-candidates  optional captain-declared comparable supervisor models, one <harness>:<model> per line in preference order, read by bin/fm-supervisor-failover.sh; LOCAL, gitignored, and not inherited; see docs/configuration.md "Supervisor failover"
 config/usage-warner  optional Claude usage-window thresholds for the opt-in macOS threshold warner armed with bin/fm-usage-warner.sh; LOCAL, gitignored, and NOT inherited by secondmate homes; see docs/configuration.md "Local Claude usage warner"
 config/x-mode.env    generated Relay watcher cadence; LOCAL, gitignored; source before arming watcher when present
 data/                personal fleet records; LOCAL, gitignored as a whole
@@ -115,6 +116,7 @@ state/               runtime records and signals; gitignored
   captain-handle .order-handoff .order-sweep  the current captain terminal that order senders resolve at send time, the recorded handoff the restart gate reads, and the watcher's order-sweep throttle stamp; bin/fm-order.sh owns the handle and record
   .handoff-successor                         the verified successor record bin/fm-handoff-launch.sh writes only after the acknowledged lock transfer, read by the handoff trigger's successor gate; bin/fm-handoff-lib.sh owns its fields
   .handoff-pending handoff-events.log        the predecessor's pending handoff claim and the append-only versioned HANDOFF v1 event log the box watchdog reads; bin/fm-handoff-lib.sh owns both formats
+  supervisor-failover.log                    append-only SUPERVISOR v1 lines recording each successor quota preflight, veto, and verified successor, and each failover choice and result; bin/fm-supervisor-failover-lib.sh owns the format
   compact-point                              the auto-compact point the handoff trigger last resolved, named for its session, read by bin/fm-context-reading-lib.sh; bin/fm-handoff-trigger.sh owns it
   monitor-status                             the home's monitor unit status, rewritten by each watchdog pass and by a session start whose watchdog unit is not enabled; docs/watchdog.md "Layer check chain" owns the format
   launch-charter.md  a secondmate home's launch copy of its charter with the standing captain holds appended; written by bin/fm-spawn.sh, so the charter itself never changes

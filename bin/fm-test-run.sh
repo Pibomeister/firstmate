@@ -1125,6 +1125,8 @@ tests/fm-captain-record.test.sh 18894
 tests/fm-codex-stop-thread-live-e2e.test.sh 60
 tests/fm-context-reading.test.sh 15142
 tests/fm-handoff-launch.test.sh 5980
+tests/fm-handoff-launch-runtime.test.sh 82167
+tests/fm-supervisor-failover.test.sh 39563
 tests/fm-hc-lab.test.sh 4348
 tests/fm-health-verdict.test.sh 10966
 tests/fm-hermes-gateway-coexistence-live-e2e.test.sh 60
