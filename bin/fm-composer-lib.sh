@@ -2626,21 +2626,36 @@ fm_composer_blocking_dialog() {  # <screen> -> dialog name
     printf '%s' 'numbered option picker'
     return 0
   fi
-  # A secret or sign-in input on the last row, such as a password, PIN, API
-  # key, one-time code, verification code, or git username prompt: typed text
-  # and Enter would go into it.
-  if printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
-    /[^ \t\r]/ { last = tolower($0) }
-    END {
-      sub(/[ \t\r]*((›|❯|▌|█|•|\*)[ \t\r]*)*$/, "", last)
-      exit !(last ~ /^[ \t]*(\? )?(\[sudo\] )?(password|passphrase|passcode)( for .*)?[:>?]$/ ||
-             last ~ /^[ \t]*(\? )?(pin|otp|2fa code|mfa code|username for .*)[:>?]$/ ||
-             last ~ /(enter|type|input|provide|paste) ((your|the|a|an) )?([a-z0-9_.-]+ )?(password|passphrase|passcode|pin|api[ _-]?key|access[ _-]?key|private[ _-]?key|token|secret|otp|2fa|mfa|one.time|authenticator|verification|device code|authori[sz]ation code|authentication code|code)[^:>?]*[:>?]$/ ||
-             last ~ /(api[ _-]?key|access[ _-]?key|token|secret|verification code|device code|paste (the )?(authorization |authentication )?code)[^:>?]{0,30}[:>?]$/)
-    }
-  '; then
+  # A secret or sign-in input on the last row: typed text and Enter would go
+  # into it. bin/fm-permission-prompt.sh reads the same detector, so every
+  # input the watchdog stops on is also one no sender types into.
+  if fm_composer_secret_input "$screen" >/dev/null; then
     printf '%s' 'secret or sign-in input'
     return 0
+  fi
+  return 1
+}
+
+# The one detector of a secret or sign-in input on the last non-blank row, such
+# as a password, PIN, API key, one-time code, verification code, browser
+# sign-in, or git username prompt. Only the last row counts, so conversation
+# that mentions a password is never an input. Prints credential or sign-in.
+fm_composer_secret_input() {  # <screen> -> credential|sign-in
+  local last
+  last=$(printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
+    /[^ \t\r]/ { last = tolower($0) }
+    END {
+      gsub(/\r/, "", last)
+      # A trailing input cursor or mask is not part of the label.
+      sub(/[ \t]*((›|❯|▌|█|•|\*)[ \t]*)*$/, "", last)
+      print last
+    }')
+  [ -n "$last" ] || return 1
+  if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+)?(\[sudo\][[:space:]]+)?(password|passphrase|passcode|pin|otp|2fa([[:space:]]+code)?|mfa([[:space:]]+code)?|one.time[[:space:]]+(code|password))([[:space:]]+for[[:space:]][^:]*)?[:>?]$|(enter|type|input|provide|paste)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(password|passphrase|passcode|pin|api[[:space:]_-]?key|access[[:space:]_-]?key|private[[:space:]_-]?key|token|secret|otp|2fa|mfa|one.time|authenticator|security)[^:>?]*[:>?]$|(password|passphrase|passcode)([[:space:]]+for[[:space:]].*)?[^:]{0,40}[:>]$|(api[[:space:]_-]?key|access[[:space:]_-]?key|token|secret)[^:>?]{0,30}[:>?]$'; then
+    printf 'credential\n'; return 0
+  fi
+  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:?]*[>:?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(code|(authentication|verification|security|login|sign.?in|device|authori[sz]ation)[[:space:]]+code)[^:>?]*[:>?]$|(authentication|security|login|verification|device) code[^:>?]{0,30}[:>?]$|^(\?[[:space:]]+)?username for .*[:>?]$|press enter to open .*(browser|github\.com|login)'; then
+    printf 'sign-in\n'; return 0
   fi
   return 1
 }

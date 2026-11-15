@@ -66,8 +66,16 @@ if ! declare -F fm_wd_pane_dialog >/dev/null 2>&1; then
   # shellcheck source=bin/fm-watchdog-lib.sh
   . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-watchdog-lib.sh"
 fi
+if ! declare -F fm_composer_secret_input >/dev/null 2>&1; then
+  # shellcheck source=bin/fm-composer-lib.sh
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-composer-lib.sh"
+fi
+if ! declare -F fm_secret_like >/dev/null 2>&1; then
+  # shellcheck source=bin/fm-secret-lib.sh
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-secret-lib.sh"
+fi
 
-FM_PP_CREDENTIAL_RE='password|--reveal|(^|[^a-z])op[[:space:]]+item|aws[[:space:]]+configure|(^|[^a-z])(otp|2fa|mfa)([^a-z]|$)|one.time (code|password)|passphrase|passcode|api.?key|access.?token|auth.?token|bearer|token|secret|keychain|credential|private.?key|id_(rsa|dsa|ecdsa|ed25519)|hosts\.yml|(^|[^a-z])printenv([^a-z]|$)|ssh-add|\.ssh/|\.netrc|\.npmrc|\.pgpass|authori[sz]ation:|(^|[^a-z])cookie:|\.docker/config\.json|curl[^|;&]*[[:space:]](-u|--user)([[:space:]=]|$)|(^|[^a-z])\.env([^a-z]|$)|1password|op (read|signin)|security (find|add|delete)-|(^|[^a-z])gpg|(^|[^a-z])sudo([^a-z]|$)'
+FM_PP_CREDENTIAL_RE='password|--reveal|(^|[^a-z])op[[:space:]]+item|aws[[:space:]]+configure|(^|[^a-z])(otp|2fa|mfa)([^a-z]|$)|one.time (code|password)|passphrase|passcode|api.?key|access.?token|auth.?token|bearer|token|secret|keychain|credential|private.?key|id_(rsa|dsa|ecdsa|ed25519)|hosts\.yml|(^|[^a-z])printenv([^a-z]|$)|ssh-add|\.ssh/|\.netrc|\.npmrc|\.pgpass|authori[sz]ation:|(^|[^a-z])cookie:|\.docker/config\.json|curl[^|;&]*[[:space:]](-u|--user)([[:space:]=]|$)|(^|[^a-z])\.env([^a-z]|$)|kubectl[^|;&]*[[:space:]]config[[:space:]]+(view|get-users|set-credentials)|kubeconfig|\.kube/config|\.aws/|\.git-credentials|(^|[^a-z])vault[[:space:]]+(read|kv|login|token)|1password|op (read|signin)|security (find|add|delete)-|(^|[^a-z])gpg|(^|[^a-z])sudo([^a-z]|$)'
 FM_PP_SIGNIN_RE='sign.?in|log.?in|/login|authenticat|oauth|paste (the )?(authorization |authentication )?code|verification code|device code|browser didn.t open|select login method|not logged in|re-?authori[sz]e|session expired'
 FM_PP_SPEND_RE='add funds|paid[[:space:]]+(usage|credits?|plan|tier|model|request)|credits?[[:space:]]+to[[:space:]]+continue|use[[:space:]]+(your[[:space:]]+|extra[[:space:]]+|more[[:space:]]+)?credits|(^|[^a-z])charg(e|ed|es|ing)([^a-z]|$)|buy (more )?credits|purchase|payment|billing|upgrade (your |to )?(plan|max|pro)|extra usage|pay.as.you.go|overage|spend|credit card|subscribe|top.?up'
 FM_PP_DESTRUCTIVE_RE='(^|[^a-z])(rm|rmdir|unlink|shred|srm)([[:space:]]|$)|--recursive|(^|[[:space:]])--force([[:space:]=-]|$)|git[[:space:]]([^|;&]*[[:space:]])?(restore|clean|rm)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?reset[^|;&]*[[:space:]]--(hard|merge|keep)|git[[:space:]]([^|;&]*[[:space:]])?checkout[^|;&]*[[:space:]](-f|--force|\.|--)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?switch[^|;&]*[[:space:]](-f|--discard-changes)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?push[^|;&]*([[:space:]]-f([[:space:]]|$)|[[:space:]:]\+|[[:space:]]:[^[:space:]]|--delete|--mirror|--prune|[[:space:]]-d([[:space:]]|$))|git[[:space:]]([^|;&]*[[:space:]])?update-ref[^|;&]*[[:space:]]-d([[:space:]]|$)|s3[[:space:]]+rb([[:space:]]|$)|tmux[^|;&]*[[:space:]]kill-(server|session|pane|window)|git[[:space:]]([^|;&]*[[:space:]])?branch[^|;&]*[[:space:]]-(d|-delete)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?stash[[:space:]]+(drop|clear)|git[[:space:]]([^|;&]*[[:space:]])?(filter-branch|filter-repo|reflog[[:space:]]+expire)|worktree[[:space:]]+(remove|prune)|find[[:space:]].*-delete|(^|[^a-z])prune([^a-z]|$)|drop[[:space:]]+(table|database|schema)|truncate|(^|[^a-z])(delet|destroy|wipe|erase|overwrit)|mkfs|(^|[^a-z])dd[[:space:]]+if=|(chmod|chown|chgrp)([[:space:]][^|;&]*)?[[:space:]](-[a-z]*r|--recursive)|chmod[^|;&]*777|(^|[^a-z])mv[[:space:]]+(-[a-z]*f|--force)|(^|[[:space:];&|(])(:|true)[[:space:]]*>[^>&]|>[[:space:]]*/dev/(r?disk|sd|nvme)|kill[[:space:]]+-9|pkill|killall'
@@ -126,6 +134,9 @@ fm_pp_hardstop_category() {  # <text>
   # such as `--ha` over `rd` still reads as one word.
   t=$(_fm_wd_guard_view "${1-}" | tr '\n\t' '  ')
   if printf '%s' "$t" | LC_ALL=C grep -Eq "$FM_PP_CREDENTIAL_RE"; then printf 'credential\n'; return 0; fi
+  # The fleet's one secret detector, which also knows a URL with credentials
+  # in it, such as https://user:pass@host.
+  if fm_secret_like "$t"; then printf 'credential\n'; return 0; fi
   # An environment dump, bare, wrapped, or with options, prints every
   # exported secret.
   if fm_wd_lower "${1-}" | LC_ALL=C grep -Eq '(^|[;&|(][[:space:]]*)[[:space:]]*((command|builtin|exec|sudo|nohup)[[:space:]]+)*(([^[:space:]]*/)?(env|printenv)([[:space:]]+-[^[:space:]|;&>]*)*|set|export[[:space:]]+-p|declare[[:space:]]+-[a-z]*x|typeset[[:space:]]+-[a-z]*x|compgen[[:space:]]+-e)[[:space:]]*($|[|>;&)])'; then printf 'credential\n'; return 0; fi
@@ -144,33 +155,10 @@ fm_pp_hardstop_category() {  # <text>
 }
 
 # Only the last non-blank row counts, and only as an input waiting for typed
-# secret text, so conversation that mentions a password is never a prompt.
+# secret text, so conversation that mentions a password is never a prompt. The
+# send guard in bin/fm-composer-lib.sh reads the same detector.
 fm_pp_bottom_input() {  # <screen>
-  local last
-  last=$(_fm_wd_tail_rows "${1-}" 1)
-  last=$(fm_wd_lower "$last")
-  # A trailing input cursor or mask is not part of the label.
-  while :; do
-    case "$last" in
-      *' ') last=${last%' '} ;;
-      *$'\t') last=${last%$'\t'} ;;
-      *'›') last=${last%'›'} ;;
-      *'❯') last=${last%'❯'} ;;
-      *'▌') last=${last%'▌'} ;;
-      *'█') last=${last%'█'} ;;
-      *'•') last=${last%'•'} ;;
-      *'*') last=${last%'*'} ;;
-      *) break ;;
-    esac
-  done
-  [ -n "$last" ] || return 1
-  if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+)?(\[sudo\][[:space:]]+)?(password|passphrase|passcode|pin|otp|2fa([[:space:]]+code)?|mfa([[:space:]]+code)?|one.time[[:space:]]+(code|password))([[:space:]]+for[[:space:]][^:]*)?[:>?]$|(enter|type|input|provide|paste)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(password|passphrase|passcode|pin|api[[:space:]_-]?key|access[[:space:]_-]?key|private[[:space:]_-]?key|token|secret|otp|2fa|mfa|one.time|authenticator|security)[^:>?]*[:>?]$|(password|passphrase|passcode)([[:space:]]+for[[:space:]].*)?[^:]{0,40}[:>]$|(api[[:space:]_-]?key|access[[:space:]_-]?key|token|secret)[^:>?]{0,30}[:>?]$'; then
-    printf 'credential\n'; return 0
-  fi
-  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:]*[>:]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(authentication|verification|security|login|sign.?in|device|authori[sz]ation)[[:space:]]+code[^:>?]*[:>?]$|(authentication|security|login) code[^:]*:$|verification code[^:]*:$|device code[^:]*:$|^username for .*:$|press enter to open .*(browser|github\.com|login)'; then
-    printf 'sign-in\n'; return 0
-  fi
-  return 1
+  fm_composer_secret_input "${1-}"
 }
 
 # A Claude tool-approval prompt, proven by its rows rather than its words.

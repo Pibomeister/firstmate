@@ -894,7 +894,9 @@ wd_judge() {
 
 # 0 when a decision is the owner's: never nudged, put to council, or answered.
 wd_decision_reserved() {  # <task> <key> <summary>
-  case "$2" in captain-hold-*) return 0 ;; esac
+  # A permission-prompt hard stop is a credential, sign-in, spend, or
+  # destructive prompt, so it is the owner's whatever its summary says.
+  case "$2" in captain-hold-*|permission-prompt-hardstop) return 0 ;; esac
   fm_wd_reserved "$1 $2 $3" || fm_secret_like "$1 $2 $3" ||
     printf ',%s,' "$(cfg reserved-keys '')" | grep -Fq ",$2,"
 }

@@ -211,6 +211,9 @@ test_hardstop_categories() {
   assert_equals $'hardstop\tspend' "$(bash_prompt_with 'echo Use paid credits to continue' | classify claude)" "paid-credit wording is a spend stop"
   assert_equals $'hardstop\trelease' "$(bash_prompt_with 'git push origin main' | classify claude)" "a push to main is a release stop"
   assert_equals $'hardstop\tcredential' "$(bash_prompt_with 'op item get gh --reveal' | classify claude)" "a revealed vault item is a credential stop"
+  for c in 'kubectl config view --raw' 'curl https://alice:example-pass@internal.example.test' 'git clone https://bot:pat123@git.example.test/r.git'; do
+    assert_equals $'hardstop\tcredential' "$(bash_prompt_with "$c" | classify claude)" "$c is a credential stop"
+  done
   assert_equals $'route\ttool-approval' "$(bash_prompt_with 'git push -u origin fm/feature-x' | classify claude)" "a feature-branch push still routes"
   for c in 'git push origin feature' 'tmux ls' 'curl https://example.com' 'mv a.txt b.txt' 'npm test > out.log' 'ln -sf a b' 'cp -rf a b' 'set -euo pipefail' 'git checkout -b fm/new' 'env FOO=1 npm test'; do
     assert_equals $'route\ttool-approval' "$(bash_prompt_with "$c" | classify claude)" "$c still routes"
@@ -301,6 +304,7 @@ test_send_guard_blocks_renumbered_pickers_and_secret_inputs() {
     $' Quick safety check\n   1. Yes, I trust this folder\n ❯ 2. No, exit\n\n Some other footer' \
     $'work\nEnter your API key >' $'work\n? Enter your API key: ›' $'work\nPassword:' $'work\nPIN:' $'work\nEnter your verification code:' \
     $'work\nPassword for \'https://dev@github.com\':' $'work\nUsername for \'https://github.com\':' $'work\nPaste code here if prompted >' $'work\nEnter verification code:' $'work\nOTP:' $'work\nEnter your authentication code:' \
+    $'work\nPress Enter to open browser to sign in' $'work\n2FA:' $'work\nMFA:' $'work\nEnter code:' \
     $' Continue with paid usage?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel'; do
     name=$(bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$screen") \
       || fail "every submit refuses this screen: $screen"
@@ -381,14 +385,18 @@ test_doorbell_never_types_into_a_prompt() {
   worker ds claude "$H/paid.txt"
   printf 'work output\nEnter your password:\n' > "$H/pw.txt"
   worker dp claude "$H/pw.txt"
+  printf 'work output\nPress Enter to open browser to sign in\n' > "$H/browser.txt"
+  worker dw claude "$H/browser.txt"
+  printf 'work output\n2FA:\n' > "$H/2fa.txt"
+  worker d2 claude "$H/2fa.txt"
   local id
-  for id in db dt ds dp; do
+  for id in db dt ds dp dw d2; do
     FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
     assert_contains "$(inbox_text "$id")" "steer for $id" "the steer for worker $id is durably recorded"
     sleep 1
     assert_equals '' "$(typed "$id")" "the doorbell types nothing into the prompt on worker $id: $(typed "$id" | od -c | head -3)"
   done
-  pass "doorbell: a steer to a worker on a tool-approval prompt or a trust picker is recorded and types nothing"
+  pass "doorbell: a steer to a worker on a tool-approval prompt, a trust picker, or a secret or sign-in input is recorded and types nothing"
 }
 
 test_declining_dialogs_on_workers_get_no_key() {
@@ -540,6 +548,28 @@ test_hardstop_prompts_are_never_answered() {
   pass "hard stops: credential, destructive, spend, and sign-in prompts get no key and one keyed blocked line"
 }
 
+test_hardstop_never_reaches_council() {
+  make_home 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  printf 'work output\n Delete the build cache?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel\n' > "$H/rm-after.txt"
+  worker hc claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/rm-after.txt"
+  : > "$CALLS_LOG"
+  run_wd 0 once >/dev/null 2>&1 || fail "the watchdog pass failed"
+  assert_equals "$ESC" "$(typed hc)" "only the one Escape reaches the worker"
+  assert_equals 1 "$(status_rows hc blocked permission-prompt-hardstop)" "the destructive prompt after Escape is a hard stop: $(cat "$H/state/hc.status" 2>&1)"
+  run_wd 2000 once >/dev/null 2>&1
+  run_wd 4500 once >/dev/null 2>&1
+  run_wd 7000 once >/dev/null 2>&1
+  assert_equals "$ESC" "$(typed hc)" "no later pass types into the destructive prompt"
+  assert_equals 0 "$(grep -cE '^(claude|agy) ' "$CALLS_LOG")" "no council or judge seat is called: $(cat "$CALLS_LOG")"
+  assert_equals '' "$(ledger | awk -F'\t' '$5 ~ /permission-prompt-hardstop/ && $6 == "council" && $7 != "held"')" "no council convenes on the hard stop: $(ledger | cut -f4-8)"
+  local out
+  out=$(run_wd 7100 council --task hc --key permission-prompt-hardstop 2>&1) || true
+  assert_contains "$out" "held" "a direct council request on the hard stop is held for the owner: $out"
+  assert_equals 0 "$(grep -cE '^(claude|agy) ' "$CALLS_LOG")" "the direct request calls no seat either"
+  pass "hard stop after Escape: the keyed blocked line is the owner's and never reaches a council"
+}
+
 test_unknown_harness_dry_run_and_off() {
   make_home
   worker nh - "$FIX/claude-2.1.325-bash-prompt.txt" "$FIX/claude-2.1.325-after-escape.txt"
@@ -591,4 +621,5 @@ fm_test_run \
   test_repeated_or_capped_prompts_hold \
   test_trust_dialog_relaunches_without_a_key \
   test_hardstop_prompts_are_never_answered \
+  test_hardstop_never_reaches_council \
   test_unknown_harness_dry_run_and_off
