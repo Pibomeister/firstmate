@@ -2591,21 +2591,35 @@ fm_composer_blocking_dialog() {  # <screen> -> dialog name
   # selected row is No, exit, and the external-imports picker, whose selected
   # row is No, disable external imports. Enter would choose either one. Any
   # option number and cursor glyph count, so a renumbered picker still blocks.
-  # A selected declining row near the bottom blocks whatever the footer says.
+  # A selected declining row near the bottom blocks whatever the footer says,
+  # unless a composer rule or shortcut row below it shows the row is quoted.
   if printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
     /[^ \t\r]/ { n++ }
-    /^[ \t]*(❯|›|>)[ \t]*([0-9]+\.[ \t]*)?(No, exit|No, disable external imports)[ \t\r]*$/ { at = n }
-    END { exit !(at && n - at < 8) }
+    /^[ \t]*(❯|›|>)[ \t]*([0-9]+\.[ \t]*)?(No, exit|No, disable external imports)[ \t\r]*$/ { at = n; quoted = 0; next }
+    at && (/^[ \t]*(─|━){20,}[ \t\r]*$/ || /\? for shortcuts/) { quoted = 1 }
+    END { exit !(at && !quoted && n - at < 8) }
   '; then
     printf '%s' 'Claude declining-cursor picker'
     return 0
   fi
-  # A numbered picker whose cursor rests on an option above a confirm or select
-  # footer: typed text and Enter would choose that option, such as paid usage.
+  # The Antigravity workspace-trust picker, whose heading bin/fm-spawn.sh waits
+  # on: Enter would answer it, whichever row is selected.
+  if printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
+    /^[ \t]*Do you trust the contents of this project\?[ \t\r]*$/ { head = 1; yes = 0; quoted = 0; next }
+    head && /^[ \t]*(❯|›|>)?[ \t]*([0-9]+\.[ \t]*)?Yes, I trust this folder[ \t\r]*$/ { yes = 1 }
+    head && yes && (/^[ \t]*(─|━){20,}[ \t\r]*$/ || /\? for shortcuts/) { quoted = 1 }
+    END { exit !(head && yes && !quoted) }
+  '; then
+    printf '%s' 'Antigravity workspace-trust picker'
+    return 0
+  fi
+  # A numbered picker whose cursor rests on any option above a confirm, select,
+  # or cancel footer: typed text and Enter would choose that option, such as
+  # paid usage or a tool-approval option other than 1. Yes.
   if printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
     /^[ \t]*(❯|›|>)[ \t]*[0-9]+\.[ \t]+[^ \t]/ { selected = 1 }
     /[^ \t\r]/ { last = $0 }
-    END { exit !(selected && last ~ /^[ \t]*Enter to (confirm|select)( · [^·]+)*[ \t\r]*$/) }
+    END { exit !(selected && last ~ /^[ \t]*(Enter to (confirm|select)|Esc to cancel)( · [^·]+)*[ \t\r]*$/) }
   '; then
     printf '%s' 'numbered option picker'
     return 0

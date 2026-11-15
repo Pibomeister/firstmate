@@ -212,7 +212,7 @@ test_hardstop_categories() {
   assert_equals $'hardstop\trelease' "$(bash_prompt_with 'git push origin main' | classify claude)" "a push to main is a release stop"
   assert_equals $'hardstop\tcredential' "$(bash_prompt_with 'op item get gh --reveal' | classify claude)" "a revealed vault item is a credential stop"
   assert_equals $'route\ttool-approval' "$(bash_prompt_with 'git push -u origin fm/feature-x' | classify claude)" "a feature-branch push still routes"
-  for c in 'git push origin feature' 'tmux ls' 'curl https://example.com'; do
+  for c in 'git push origin feature' 'tmux ls' 'curl https://example.com' 'mv a.txt b.txt' 'npm test > out.log'; do
     assert_equals $'route\ttool-approval' "$(bash_prompt_with "$c" | classify claude)" "$c still routes"
   done
   for c in 'Enter your password:' 'Enter your passphrase:' 'Password for dev@build:' "Password for 'https://x@github.com':" 'Enter OTP:'; do
@@ -229,13 +229,13 @@ test_hardstop_categories() {
     "a login picker is a sign-in stop"
   assert_equals $'hardstop\tspend' "$(printf ' You have reached your limit. Add funds to continue?\n ❯ 1. Buy more credits\n   2. Wait\n\n Enter to confirm · Esc to cancel\n' | classify claude)" \
     "an add-funds picker is a spend stop"
-  for c in 'git clean --force -d' 'git -C /tmp/probe reset --hard HEAD' 'git checkout --quiet -- src/app.py' 'git checkout HEAD -- f' 'chmod 777 -R .' 'chmod -R 000 .' 'chown -R root .' 'git push origin :feature' 'git update-ref -d refs/heads/x' 'aws s3 rb s3://bucket' 'tmux kill-server'; do
+  for c in 'git clean --force -d' 'git -C /tmp/probe reset --hard HEAD' 'git checkout --quiet -- src/app.py' 'git checkout HEAD -- f' 'chmod 777 -R .' 'chmod -R 000 .' 'chown -R root .' 'git push origin :feature' 'git update-ref -d refs/heads/x' 'aws s3 rb s3://bucket' 'tmux kill-server' 'tmux kill-pane -t other' ': > important.txt' 'mv -f backup.db current.db'; do
     assert_equals $'hardstop\tdestructive' "$(bash_prompt_with "$c" | classify claude)" "$c is a destructive stop"
   done
   for c in 'git push origin HEAD:refs/heads/main' 'git tag v1.2.0' 'git push --tags' 'git push origin v1.2.0' 'terraform apply' 'twine upload dist/x'; do
     assert_equals $'hardstop\trelease' "$(bash_prompt_with "$c" | classify claude)" "$c is a release stop"
   done
-  for c in 'cat id_rsa' 'cat ~/.config/gh/hosts.yml' 'printenv' 'env' 'curl -u user:pass https://example.com' 'cat ~/.docker/config.json'; do
+  for c in 'cat id_rsa' 'cat ~/.config/gh/hosts.yml' 'printenv' 'env' 'curl -u user:pass https://example.com' 'cat ~/.docker/config.json' 'curl -H "Authorization: Basic dXNlcjpwYXNz" https://example.com'; do
     assert_equals $'hardstop\tcredential' "$(bash_prompt_with "$c" | classify claude)" "$c is a credential stop"
   done
   for c in 'Enter your API key >' '? Enter your API key: ›' 'Token: ****' "Password for 'https://dev@github.com':"; do
@@ -265,7 +265,24 @@ test_structure_decides_not_words() {
     "a trust phrase never turns a destructive command into a relaunch"
   assert_equals $'hardstop\tdestructive' "$(bash_prompt_with 'rm -rf build; echo allow external imports' | classify claude)" \
     "an imports phrase never turns a destructive command into a hold"
+  local rule dashes
+  rule=$(printf '─%.0s' $(seq 1 30)); dashes=$(printf '╌%.0s' $(seq 1 30))
+  assert_equals $'hardstop\tdestructive' "$(bash_prompt | awk -v rule="$rule" '/^ touch \/tmp/ { print " rm -rf build && cat <<EOF"; print rule; print " EOF"; next } { print }' | classify claude)" \
+    "a full-width rule inside a heredoc never hides the command above it"
+  assert_equals $'hold\tunproven' "$(bash_prompt | awk -v d="$dashes" '/^ touch \/tmp/ { print " cat <<EOF"; print d; print " EOF"; next } { print }' | classify claude)" \
+    "a command box whose boundary cannot be proven is held"
   pass "structure, not words: conversation above a prompt and phrases inside a command never change its verdict"
+}
+
+test_antigravity_trust_screen_classifies() {
+  local agy=$'Accessing workspace:\n\n/work/project\n\nDo you trust the contents of this project?\n\nAntigravity CLI requires permission to read, edit, and execute files here.\n\n> Yes, I trust this folder\n  No, exit'
+  assert_equals $'trust\tworkspace' "$(printf '%s\n' "$agy" | classify agy)" "the recorded Antigravity trust screen is a trust dialog"
+  assert_equals $'hold\ttrust-unregistered' "$(printf '%s\n' "$agy" | classify codex)" "on another harness it is held"
+  printf '%s\n\nok\n>\n? for shortcuts\n' "$agy" | classify agy >/dev/null \
+    && fail "a quoted trust screen above a composer is not a trust dialog"
+  bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$agy" >/dev/null \
+    || fail "every submit refuses the Antigravity trust picker"
+  pass "Antigravity trust: its recorded screen is read before the dialog detector, held off agy, and refuses every submit"
 }
 
 test_send_guard_blocks_renumbered_pickers_and_secret_inputs() {
@@ -282,6 +299,15 @@ test_send_guard_blocks_renumbered_pickers_and_secret_inputs() {
       || fail "every submit refuses this screen: $screen"
     [ -n "$name" ] || fail "the refusal names the dialog for: $screen"
   done
+  local n
+  for n in 2 3 4; do
+    screen=$(bash_prompt_with 'rm -rf build/' | sed -e 's/^ ❯ 1\. Yes$/   1. Yes/' -e "s/^   $n\./ ❯ $n./")
+    bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$screen" >/dev/null \
+      || fail "every submit refuses a tool-approval prompt with option $n selected"
+  done
+  screen=$(cat "$FIX/claude-2.1.325-trust.txt"; printf '%s\n' '────────────────────────────────' '❯ ' '────────────────────────────────' '  ? for shortcuts')
+  bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$screen" >/dev/null \
+    && fail "a quoted trust picker above a normal composer does not block"
   bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" $'work\nthe token refresh is fixed\n❯ ' >/dev/null \
     && fail "conversation that mentions a token is not a secret input"
   pass "send guard: a renumbered or re-glyphed declining picker, a numbered picker, and a secret or sign-in input refuse every submit"
@@ -421,7 +447,33 @@ test_trust_dialog_relaunches_without_a_key() {
   assert_contains "$(ledger | awk -F'\t' '$6 == "relaunch" && $7 == "failed" { print $8 }')" "blocked on a prompt" "the refusal reason is kept"
   assert_equals 1 "$(status_rows tq blocked permission-prompt-held)" "a refused relaunch is reported as held"
   assert_equals '' "$(typed tq)" "a refused relaunch types nothing"
+
+  make_home
+  printf 'Accessing workspace:\n\n/work/project\n\nDo you trust the contents of this project?\n\nAntigravity CLI requires permission to read, edit, and execute files here.\n\n> Yes, I trust this folder\n  No, exit\n' > "$H/agy-trust.txt"
+  worker ag agy "$H/agy-trust.txt"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals '' "$(typed ag)" "no key reaches the Antigravity trust picker"
+  assert_equals 1 "$(grep -c '^ag relaunch --note ' "$H/control.log" 2>/dev/null || true)" "the Antigravity worker is relaunched through fm-control: $(ledger | cut -f4-8)"
   pass "trust dialog: no key, a controlled relaunch once per window, and a refusal is reported"
+}
+
+test_failed_declines_count_toward_cap() {
+  make_home 'permission-decline-cap=2'
+  bash_prompt_with 'touch /tmp/probe/a.txt' > "$H/a.txt"
+  bash_prompt_with 'touch /tmp/probe/b.txt' > "$H/b.txt"
+  bash_prompt_with 'touch /tmp/probe/c.txt' > "$H/c.txt"
+  worker cap claude "$H/a.txt"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(typed cap | tr -cd '\033' | wc -c | tr -d ' ')" "the first prompt that stays after Escape got one Escape"
+  repaint cap "$H/b.txt"
+  run_wd 300 once >/dev/null 2>&1
+  assert_equals 1 "$(typed cap | tr -cd '\033' | wc -c | tr -d ' ')" "a second distinct prompt got one Escape"
+  assert_equals 2 "$(ledger_rows decline failed worker:cap)" "both failed declines are recorded: $(ledger | cut -f4-8)"
+  repaint cap "$H/c.txt"
+  run_wd 600 once >/dev/null 2>&1
+  assert_equals 0 "$(typed cap | tr -cd '\033' | wc -c | tr -d ' ')" "a third prompt past the cap gets no key"
+  assert_equals 1 "$(status_rows cap blocked permission-prompt-held)" "the worker stays reported as held by one open line"
+  pass "decline cap: failed declines count toward the hourly cap"
 }
 
 test_hardstop_prompts_are_never_answered() {
@@ -499,6 +551,8 @@ fm_test_run \
   test_hardstop_categories \
   test_structure_decides_not_words \
   test_send_guard_blocks_renumbered_pickers_and_secret_inputs \
+  test_antigravity_trust_screen_classifies \
+  test_failed_declines_count_toward_cap \
   test_tool_approval_is_declined_and_steered \
   test_prompt_after_escape_gets_no_instruction \
   test_doorbell_never_types_into_a_prompt \

@@ -1745,6 +1745,7 @@ wd_pp_relaunch() {
 # 2 = no prompt verdict, or `permission-route=off`.
 wd_permission_prompt() {
   local id=$1 harness=$2 screen=$3 dialog=$4 verdict kind reason hash
+  WD_PP_KIND=
   [ "$(wd_permission_mode)" != off ] || return 2
   if ! verdict=$(fm_pp_classify "$screen" "$harness" "$dialog"); then
     wd_pp_clear "$id"
@@ -1752,6 +1753,7 @@ wd_permission_prompt() {
   fi
   kind=${verdict%%$'\t'*}
   reason=${verdict#*$'\t'}
+  WD_PP_KIND=$kind
   hash=$(fm_pp_hash "$screen")
   case "$kind" in
     hardstop)
@@ -2386,8 +2388,10 @@ wd_visit_worker_dialogs() {
     esac
     # A held prompt or hard stop on a screen the dialog reader did not label
     # permission, such as a password input or a declining picker, still gets
-    # the waiting gap and the away page.
-    if [ "$prompt" = 1 ] && [ "$dialog" != permission ]; then
+    # the waiting gap and the away page. A decline that only waits for its
+    # next pass does not.
+    if [ "$prompt" = 1 ] && [ "$dialog" != permission ] \
+      && { [ "${WD_PP_KIND:-}" = hardstop ] || [ "${WD_PP_KIND:-}" = hold ]; }; then
       O_BACKEND=$backend
       O_TARGET=$target
       O_PANE=$screen

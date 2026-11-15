@@ -67,18 +67,19 @@ if ! declare -F fm_wd_pane_dialog >/dev/null 2>&1; then
   . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-watchdog-lib.sh"
 fi
 
-FM_PP_CREDENTIAL_RE='password|--reveal|(^|[^a-z])op[[:space:]]+item|aws[[:space:]]+configure|(^|[^a-z])(otp|2fa|mfa)([^a-z]|$)|one.time (code|password)|passphrase|passcode|api.?key|access.?token|auth.?token|bearer|token|secret|keychain|credential|private.?key|id_(rsa|dsa|ecdsa|ed25519)|hosts\.yml|(^|[^a-z])printenv([^a-z]|$)|ssh-add|\.ssh/|\.netrc|\.npmrc|\.pgpass|\.docker/config\.json|curl[^|;&]*[[:space:]](-u|--user)([[:space:]=]|$)|(^|[^a-z])\.env([^a-z]|$)|1password|op (read|signin)|security (find|add|delete)-|(^|[^a-z])gpg|(^|[^a-z])sudo([^a-z]|$)'
+FM_PP_CREDENTIAL_RE='password|--reveal|(^|[^a-z])op[[:space:]]+item|aws[[:space:]]+configure|(^|[^a-z])(otp|2fa|mfa)([^a-z]|$)|one.time (code|password)|passphrase|passcode|api.?key|access.?token|auth.?token|bearer|token|secret|keychain|credential|private.?key|id_(rsa|dsa|ecdsa|ed25519)|hosts\.yml|(^|[^a-z])printenv([^a-z]|$)|ssh-add|\.ssh/|\.netrc|\.npmrc|\.pgpass|authori[sz]ation:|(^|[^a-z])cookie:|\.docker/config\.json|curl[^|;&]*[[:space:]](-u|--user)([[:space:]=]|$)|(^|[^a-z])\.env([^a-z]|$)|1password|op (read|signin)|security (find|add|delete)-|(^|[^a-z])gpg|(^|[^a-z])sudo([^a-z]|$)'
 FM_PP_SIGNIN_RE='sign.?in|log.?in|/login|authenticat|oauth|paste (the )?(authorization |authentication )?code|verification code|device code|browser didn.t open|select login method|not logged in|re-?authori[sz]e|session expired'
 FM_PP_SPEND_RE='add funds|paid[[:space:]]+(usage|credits?|plan|tier|model|request)|credits?[[:space:]]+to[[:space:]]+continue|use[[:space:]]+(your[[:space:]]+|extra[[:space:]]+|more[[:space:]]+)?credits|(^|[^a-z])charg(e|ed|es|ing)([^a-z]|$)|buy (more )?credits|purchase|payment|billing|upgrade (your |to )?(plan|max|pro)|extra usage|pay.as.you.go|overage|spend|credit card|subscribe|top.?up'
-FM_PP_DESTRUCTIVE_RE='(^|[^a-z])(rm|rmdir|unlink|shred|srm)([[:space:]]|$)|--recursive|(^|[[:space:]])--force([[:space:]=-]|$)|git[[:space:]]([^|;&]*[[:space:]])?(restore|clean|rm)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?reset[^|;&]*[[:space:]]--(hard|merge|keep)|git[[:space:]]([^|;&]*[[:space:]])?checkout[^|;&]*[[:space:]](-f|--force|\.|--)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?switch[^|;&]*[[:space:]](-f|--discard-changes)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?push[^|;&]*([[:space:]]-f([[:space:]]|$)|[[:space:]:]\+|[[:space:]]:[^[:space:]]|--delete|--mirror|--prune|[[:space:]]-d([[:space:]]|$))|git[[:space:]]([^|;&]*[[:space:]])?update-ref[^|;&]*[[:space:]]-d([[:space:]]|$)|s3[[:space:]]+rb([[:space:]]|$)|tmux[^|;&]*[[:space:]]kill-(server|session)|git[[:space:]]([^|;&]*[[:space:]])?branch[^|;&]*[[:space:]]-(d|-delete)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?stash[[:space:]]+(drop|clear)|git[[:space:]]([^|;&]*[[:space:]])?(filter-branch|filter-repo|reflog[[:space:]]+expire)|worktree[[:space:]]+(remove|prune)|find[[:space:]].*-delete|(^|[^a-z])prune([^a-z]|$)|drop[[:space:]]+(table|database|schema)|truncate|(^|[^a-z])(delet|destroy|wipe|erase|overwrit)|mkfs|(^|[^a-z])dd[[:space:]]+if=|(chmod|chown|chgrp)([[:space:]][^|;&]*)?[[:space:]](-[a-z]*r|--recursive)|chmod[^|;&]*777|kill[[:space:]]+-9|pkill|killall'
+FM_PP_DESTRUCTIVE_RE='(^|[^a-z])(rm|rmdir|unlink|shred|srm)([[:space:]]|$)|--recursive|(^|[[:space:]])--force([[:space:]=-]|$)|git[[:space:]]([^|;&]*[[:space:]])?(restore|clean|rm)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?reset[^|;&]*[[:space:]]--(hard|merge|keep)|git[[:space:]]([^|;&]*[[:space:]])?checkout[^|;&]*[[:space:]](-f|--force|\.|--)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?switch[^|;&]*[[:space:]](-f|--discard-changes)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?push[^|;&]*([[:space:]]-f([[:space:]]|$)|[[:space:]:]\+|[[:space:]]:[^[:space:]]|--delete|--mirror|--prune|[[:space:]]-d([[:space:]]|$))|git[[:space:]]([^|;&]*[[:space:]])?update-ref[^|;&]*[[:space:]]-d([[:space:]]|$)|s3[[:space:]]+rb([[:space:]]|$)|tmux[^|;&]*[[:space:]]kill-(server|session|pane|window)|git[[:space:]]([^|;&]*[[:space:]])?branch[^|;&]*[[:space:]]-(d|-delete)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?stash[[:space:]]+(drop|clear)|git[[:space:]]([^|;&]*[[:space:]])?(filter-branch|filter-repo|reflog[[:space:]]+expire)|worktree[[:space:]]+(remove|prune)|find[[:space:]].*-delete|(^|[^a-z])prune([^a-z]|$)|drop[[:space:]]+(table|database|schema)|truncate|(^|[^a-z])(delet|destroy|wipe|erase|overwrit)|mkfs|(^|[^a-z])dd[[:space:]]+if=|(chmod|chown|chgrp)([[:space:]][^|;&]*)?[[:space:]](-[a-z]*r|--recursive)|chmod[^|;&]*777|(^|[^a-z])(mv|cp|ln)[[:space:]]+(-[a-z]*f|--force)|(^|[[:space:];&|(])(:|true)[[:space:]]*>[^>&]|>[[:space:]]*/dev/(r?disk|sd|nvme)|kill[[:space:]]+-9|pkill|killall'
 FM_PP_RELEASE_RE='git[[:space:]]([^|;&]*[[:space:]])?push[^|;&]*[[:space:]:/](main|master|trunk|release[^[:space:]]*)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?push[^|;&]*([[:space:]:/]v[0-9]+\.[0-9]|--tags)|refs/(heads/(main|master|trunk)|tags/)|git[[:space:]]([^|;&]*[[:space:]])?tag([[:space:]]|$)|(^|[^be])merg|deploy|releas|publish|production|(^|[^a-z])prod([^a-z]|$)|gh[[:space:]]+release|npm[[:space:]]+publish|twine[[:space:]]+upload|terraform[[:space:]]+apply|kubectl[[:space:]]+(apply|delete|rollout)|helm[[:space:]]+(install|upgrade)|docker[[:space:]]+push'
 
 # The prompt rows below the nearest full-width rule above the last row, when a
 # question or first option row sits below that rule. Conversation above the rule,
-# such as a numbered list, never becomes part of the prompt. Without that rule
-# the boundary is unproven and the rows come from the watchdog's own dialog rows,
-# which stop at the last 14 non-blank rows.
-fm_pp_prompt_rows() {  # <screen>
+# such as a numbered list, never becomes part of the prompt. A rule with an odd
+# number of dashed command-box rows below it sits inside a command preview, such
+# as a heredoc, so the search goes on to the rule above it. Without a proven
+# rule the boundary is unproven and this returns 1.
+_fm_pp_ruled_rows() {  # <screen>
   local rows
   rows=$(printf '%s\n' "${1-}" | fm_wd_strip_ansi | awk '
     { r[NR] = $0 }
@@ -86,8 +87,11 @@ fm_pp_prompt_rows() {  # <screen>
       last = NR
       while (last > 0 && r[last] !~ /[^ \t]/) last--
       floor = last - 60; if (floor < 1) floor = 1
-      top = 0
-      for (i = last; i >= floor; i--) if (r[i] ~ /^[ \t]*(─|━){20,}[ \t]*$/) { top = i; break }
+      top = 0; dashed = 0
+      for (i = last; i >= floor; i--) {
+        if (r[i] ~ /^[ \t]*(╌){20,}[ \t]*$/) dashed++
+        else if (r[i] ~ /^[ \t]*(─|━){20,}[ \t]*$/ && dashed % 2 == 0) { top = i; break }
+      }
       if (!top) exit 1
       anchor = 0
       for (i = top + 1; i <= last; i++) {
@@ -95,8 +99,14 @@ fm_pp_prompt_rows() {  # <screen>
       }
       if (!anchor) exit 1
       for (i = top + 1; i <= last; i++) if (r[i] ~ /[^ \t]/) print r[i]
-    }') && [ -n "$rows" ] && { printf '%s\n' "$rows"; return 0; }
-  _fm_wd_dialog_rows "${1-}" all
+    }') && [ -n "$rows" ] || return 1
+  printf '%s\n' "$rows"
+}
+
+# The proven prompt rows, or else the watchdog's own dialog rows, which stop at
+# the last 14 non-blank rows.
+fm_pp_prompt_rows() {  # <screen>
+  _fm_pp_ruled_rows "${1-}" || _fm_wd_dialog_rows "${1-}" all
 }
 
 fm_pp_hash() {  # <screen>
@@ -177,9 +187,10 @@ _fm_pp_claude_tool_approval() {  # <screen>
 
 # A workspace-trust dialog, proven by its rows rather than its words: the
 # lowest heading row and the trust answer as an option row below it, with no
-# tool-approval question below it. Claude's also needs its No, exit row and recorded footer (2.1.325);
-# Antigravity's heading is the one bin/fm-spawn.sh waits on. A command that
-# mentions a trust phrase is not one.
+# tool-approval question below it. Claude's also needs its No, exit row and
+# recorded footer (2.1.325). Antigravity's heading is the one bin/fm-spawn.sh
+# waits on, and its answer rows must end the screen with no composer below. A
+# command that mentions a trust phrase is not one.
 _fm_pp_trust_dialog() {  # <screen>
   local rows
   rows=$(printf '%s\n' "${1-}" | fm_wd_strip_ansi | awk '
@@ -194,14 +205,17 @@ _fm_pp_trust_dialog() {  # <screen>
         if (r[i] ~ /^[ \t]*Do you trust the contents of this project\?[ \t]*$/) { agy = 1; head = i; break }
       }
       if (!head) exit 1
-      no = 0; yes = 0
+      no = 0; yes = 0; quoted = 0; after = 0
       for (i = head; i <= last; i++) {
         if (r[i] ~ /^[ \t]*Do you want to /) exit 1
         if (r[i] ~ /^[ \t]*(❯|›|>)?[ \t]*([0-9]+\.[ \t]*)?No, exit[ \t]*$/) no = 1
-        if (r[i] ~ /^[ \t]*(❯|›|>)?[ \t]*([0-9]+\.[ \t]*)?Yes, I trust this folder[ \t]*$/) yes = 1
+        if (r[i] ~ /^[ \t]*(❯|›|>)?[ \t]*([0-9]+\.[ \t]*)?Yes, I trust this folder[ \t]*$/) { yes = 1; after = 0 }
+        else if (yes && r[i] ~ /[^ \t]/) after++
+        if (yes && (r[i] ~ /^[ \t]*(─|━){20,}[ \t]*$/ || r[i] ~ /\? for shortcuts/)) quoted = 1
       }
       if (claude && yes && no && r[last] ~ /^[ \t]*Enter to confirm · Esc to cancel[ \t]*$/) { print "ok"; exit 0 }
-      if (agy && yes) { print "ok"; exit 0 }
+      # Antigravity: the answer rows end the screen, with no composer below.
+      if (agy && yes && !quoted && after < 4) { print "ok"; exit 0 }
       exit 1
     }') || return 1
   [ "$rows" = ok ]
@@ -210,6 +224,15 @@ _fm_pp_trust_dialog() {  # <screen>
 fm_pp_classify() {  # <screen> <harness> [<dialog>]
   local screen=${1-} harness=${2-} dialog=${3-} rows text cat
   [ -n "$screen" ] || return 1
+  # A proven trust dialog is read first, because the Antigravity picker has no
+  # footer the watchdog's dialog detector recognizes.
+  if _fm_pp_trust_dialog "$screen"; then
+    case "$harness" in
+      claude|agy) printf 'trust\tworkspace\n' ;;
+      *) printf 'hold\ttrust-unregistered\n' ;;
+    esac
+    return 0
+  fi
   if [ "$dialog" = none ]; then
     dialog=
   elif [ -z "$dialog" ]; then
@@ -235,19 +258,16 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
   # Only a proven structure leads to an action. A tool-approval prompt is
   # checked for every hard-stop category in its own rows and nothing else.
   if _fm_pp_claude_tool_approval "$screen"; then
+    # The whole command must be read, so an unproven boundary only holds.
+    if ! rows=$(_fm_pp_ruled_rows "$screen"); then
+      printf 'hold\tunproven\n'; return 0
+    fi
     if cat=$(fm_pp_hardstop_category "$rows"); then
       printf 'hardstop\t%s\n' "$cat"; return 0
     fi
     case "$harness" in
       claude) printf 'route\ttool-approval\n' ;;
       *) printf 'hold\tunknown-harness\n' ;;
-    esac
-    return 0
-  fi
-  if _fm_pp_trust_dialog "$screen"; then
-    case "$harness" in
-      claude|agy) printf 'trust\tworkspace\n' ;;
-      *) printf 'hold\ttrust-unregistered\n' ;;
     esac
     return 0
   fi
