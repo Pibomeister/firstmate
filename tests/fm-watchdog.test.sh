@@ -4430,6 +4430,33 @@ test_quota_guard_nudge_retries_a_failed_send_and_skips_a_dead_primary() {
   pass "quota guard: a nudge that failed is sent again, and a dead primary is never nudged"
 }
 
+test_quota_guard_nudge_skips_a_holder_that_died_during_the_check() {
+  make_home $'Captain session\n> '
+  grep -v '^quota-guard=' "$H/config/watchdog" > "$H/watchdog.conf" && mv "$H/watchdog.conf" "$H/config/watchdog"
+  transcript 100 "Working."
+  quota_guard_exhausted_root "$H/claude"
+  # The Claude read comes after the guard judged the primary live, so the
+  # holder dies while the check is still running.
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *" --provider claude "*)
+    kill "$LOCKPID" 2>/dev/null
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do kill -0 "$LOCKPID" 2>/dev/null || break; sleep 0.1; done
+    cat "$H/claude-quota.json" ;;
+  *) cat "$H/quota.json" ;;
+esac
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 0 once >/dev/null 2>&1 || fail "quota guard kickoff pass failed"
+  assert_grep "quota-guard: act trigger=kickoff" "$H/state/quota-guard/report.txt" \
+    "the check judged the primary while it was live: $(cat "$H/state/quota-guard/report.txt" 2>&1)"
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 == "quota-guard" && $6 == "nudge"' | wc -l | tr -d ' ')" \
+    "a holder that died during the check is not nudged: $(ledger | cut -f4-8)"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota guard: a primary whose holder died during the check gets no nudge"
+}
+
 test_autowait_footers_on_a_mate_and_a_worker_are_limit_warnings() {
   local parent mate autowait
   autowait=$'work output\nUsage limit reached. Continuing automatically at 4:00 AM\n❯ \n  ? for shortcuts'
@@ -5935,6 +5962,7 @@ fm_test_run \
   test_quota_guard_checks_at_kickoff_and_periodically \
   test_quota_guard_act_nudges_after_any_check \
   test_quota_guard_nudge_retries_a_failed_send_and_skips_a_dead_primary \
+  test_quota_guard_nudge_skips_a_holder_that_died_during_the_check \
   test_autowait_footers_on_a_mate_and_a_worker_are_limit_warnings \
   test_failed_limit_dialog_record_is_retried \
   test_failed_warning_check_records_the_dialog_once \

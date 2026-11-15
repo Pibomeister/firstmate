@@ -365,6 +365,19 @@ wd_read_owner() {
   fi
 }
 
+# wd_same_live_owner <state-dir>: the lock still names the owner wd_read_owner
+# observed (same pid and recorded session, and the same anchor instance when it
+# matched), and that owner is still live.
+wd_same_live_owner() {
+  local st=$1 pid sess
+  pid=$(head -n 1 "$st/.lock" 2>/dev/null | tr -cd '0-9')
+  [ -n "$pid" ] && [ "$pid" = "$O_LOCK_PID" ] || return 1
+  sess=$(fm_session_lock_recorded_session_id "$st" 2>/dev/null) || sess=''
+  [ "$sess" = "$O_SESSION" ] || return 1
+  if [ "$O_INSTANCE" = match ]; then fm_session_lock_anchor_instance_matches "$st" 2>/dev/null || return 1; fi
+  wd_pid_alive "$pid" || fm_session_lock_recorded_owner_live "$st" >/dev/null 2>&1
+}
+
 # wd_lock_at <state-dir>: the newest mtime of the session lock files, else 0.
 wd_lock_at() {
   local f t at=0
@@ -1785,8 +1798,11 @@ wd_quota_guard_pass() {
     act|unknown) wd_gap "$(fm_wd_conf_get "$rec" result '') (checked $(fm_wd_iso "$(fm_wd_conf_get "$rec" at 0)"))" ;;
   esac
   at=$(fm_wd_conf_get "$rec" at '' | tr -cd '0-9')
+  # The check can run long, so the owner observed before it must still hold the
+  # lock and be live before a nudge is sent.
   if [ "$(fm_wd_conf_get "$rec" verdict '')" = act ] && [ -n "$at" ] && [ "$O_ALIVE" = 1 ] &&
-     [ "$WD_RESTARTED" != 1 ] && [ "$WD_SYMPTOM" != usage-limit-autowait ]; then
+     [ "$WD_RESTARTED" != 1 ] && [ "$WD_SYMPTOM" != usage-limit-autowait ] &&
+     wd_same_live_owner "$O_HOME/state"; then
     if ! wd_quota_guard_nudged_since "$at"; then
       wd_nudge quota-guard "$(fm_wd_conf_get "$rec" result ''). The moves are in $O_HOME/state/quota-guard/report.txt. Move each worker or supervisor with bin/fm-control.sh relaunch on its named pick; never change an account pin, sign in, or spend."
     fi
