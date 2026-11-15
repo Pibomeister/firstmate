@@ -140,6 +140,9 @@ quota_fixture codex 60 through_reset | jq '.providers[0].state = {status: "stale
 failover tmux primary "$LAB/data/handoff.md"
 assert_contains "$OUT" 'candidate harness=codex model=gpt-5.5 account=ambient verdict=unknown why=stale_codex_quota' 'stale quota is unknown'
 delegate_is 'stale codex' fm-handoff-launch.sh --harness agy --reason claude_pool_exhausted --model gemini-3-pro "$LAB/data/handoff.md"
+quota_fixture codex 0 exhausted_now | jq '.providers[0].state = {status: "stale", stale: true}' > "$QUOTA/codex.json"
+failover tmux primary "$LAB/data/handoff.md"
+assert_contains "$OUT" 'candidate harness=codex model=gpt-5.5 account=ambient verdict=unknown why=stale_codex_quota' 'stale data that reads exhausted is unknown, not exhausted'
 quota_fixture codex 60 through_reset | jq '.providers[0].state = {status: "error", stale: false}' > "$QUOTA/codex.json"
 failover tmux primary "$LAB/data/handoff.md"
 assert_contains "$OUT" 'candidate harness=codex model=gpt-5.5 account=ambient verdict=unknown why=codex_quota_error' 'a quota read that is not fresh is unknown'

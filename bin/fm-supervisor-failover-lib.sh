@@ -9,15 +9,17 @@
 #
 # The preflight reads quota-axi for the successor's provider and judges the
 # rows that bound its model with FM_QUOTA_ROW_JQ:
-#   verdict=exhausted  an applicable runway reads exhausted_now, or a known
-#                      scope has 0% left. A successor is never launched here.
+#   verdict=exhausted  on fresh data, an applicable runway reads
+#                      exhausted_now, or a known scope has 0% left. A
+#                      successor is never launched here.
 #   verdict=ok         every applicable scope is known on fresh data and has
 #                      headroom; the line names the tightest scope, its
 #                      percent left, and runway.
 #   verdict=unknown    quota-axi is missing, gave no valid snapshot, its row is
 #                      stale (state.stale, a state.status other than fresh, or
-#                      an attention entry naming stale or headroom_unknown), or
-#                      an applicable scope is not known; the line names why.
+#                      an attention entry naming stale or headroom_unknown),
+#                      even one that reads exhausted, or an applicable scope
+#                      is not known; the line names why.
 #                      Unknown is never headroom, as bin/fm-quota-guard.sh
 #                      judges it.
 # A Claude read with an explicit account root runs quota-axi --profile-only
@@ -94,11 +96,11 @@ fm_failover_quota_verdict() {
       ([(.attention // [])[]?, ($p.attention // [])[]?
         | select(type == "object" and ((.provider // $provider) == $provider)
           and (((.kind // "") | tostring) | test("stale|headroom_unknown")))] | first) as $att |
-      if $x != null then "verdict=exhausted scope=\($x.scope | tok) runway=exhausted_now"
-      elif $z != null then "verdict=exhausted scope=\($z.scope | tok) remaining=0"
-      elif $p.state.stale == true then "verdict=unknown why=stale_\($provider)_quota"
+      if $p.state.stale == true then "verdict=unknown why=stale_\($provider)_quota"
       elif (($p.state.status // "fresh") != "fresh") then "verdict=unknown why=\($provider)_quota_\($p.state.status | tok)"
       elif $att != null then "verdict=unknown why=\($provider)_quota_attention_\($att.kind | tok)"
+      elif $x != null then "verdict=exhausted scope=\($x.scope | tok) runway=exhausted_now"
+      elif $z != null then "verdict=exhausted scope=\($z.scope | tok) remaining=0"
       elif ($k | length) == 0 then "verdict=unknown why=no_known_\($provider)_scope"
       elif $u != null then "verdict=unknown why=headroom_unknown_on_\($u.scope | tok)"
       else ($k | min_by(.effectivePercentRemaining)) as $m |
