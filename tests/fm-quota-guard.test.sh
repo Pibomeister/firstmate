@@ -335,6 +335,34 @@ test_primary_account_carries_to_a_later_check() {
   pass "a check with no primary harness or account keeps the last ones for the same session"
 }
 
+test_codex_primary_proven_by_its_session_stays_a_supervisor() {
+  local out sid=00000000-0000-4000-8000-0000000000c1 bound dead
+  new_case codex-session-owner
+  snapshot "$CASE/main.json" 5 "$(provider_row codex "$(scope exhausted_now)")"
+  dead=$(sleep 0 & echo "$!")
+  wait "$dead" 2>/dev/null
+  printf '%s\n' "$dead" > "$HOME_DIR/state/.lock"
+  printf '%s\n' "$sid" > "$HOME_DIR/state/.lock-session"
+  # macOS hides a platform binary's environment, so the bound process is python.
+  env CODEX_THREAD_ID="$sid" CODEX_SESSION_ID="$sid" python3 -c 'import time; time.sleep(600)' >/dev/null 2>&1 &
+  bound=$!
+  for _ in $(seq 1 20); do python3 "$ROOT/bin/fm-session-process.py" bound "$bound" "$sid" && break; sleep 0.1; done
+  python3 "$ROOT/bin/fm-session-process.py" bound "$bound" "$sid" || { kill "$bound" 2>/dev/null; fail "the fixture process is not bound to session $sid"; }
+  out=$(run_tool check --window-secs 28800)
+  assert_contains "$out" "pool: codex:codex-home status=exhausted runway=0 supervisors=primary" \
+    "a Codex primary whose lock pid exited is live through its recorded session"
+  assert_contains "$out" "failover: primary pool=codex:codex-home" "the live Codex primary gets the failover path"
+  run_tool check --primary-harness claude --window-secs 28800 >/dev/null
+  out=$(run_tool check --window-secs 28800)
+  assert_contains "$out" "supervisors=primary workers=- why=no quota lane for Claude account ordinary" \
+    "a later check keeps the recorded harness while the recorded session stays live"
+  kill "$bound" 2>/dev/null
+  wait "$bound" 2>/dev/null
+  out=$(run_tool check --window-secs 28800)
+  assert_not_contains "$out" "supervisors=primary" "once no process holds the recorded session the primary is gone"
+  pass "a Codex primary proven live by its recorded session stays a supervisor"
+}
+
 test_pick_skips_a_pool_a_worker_off_the_supervisor_pools_holds() {
   local out
   new_case off-pool
@@ -395,6 +423,20 @@ test_listed_home_claude_candidate_names_its_account() {
   out=$(run_tool check --primary-harness codex --window-secs 28800 --candidate claude:opus)
   assert_contains "$out" "steer: alive pool=codex:codex-home pick=claude opus account $CASE/acct-b why=keep short pool for its supervisors" \
     "under a declared account list a Claude candidate names the declared account with headroom"
+  # The provider-wide read reports the ordinary account, which is exhausted;
+  # the chooser must judge the candidate on the declared account it lands on.
+  snapshot "$CASE/main.json" 5 \
+    "$(provider_row codex "$(scope projected_exhaustion 3600)")" \
+    "$(provider_row claude "$(scope exhausted_now)")"
+  out=$(run_tool check --primary-harness codex --window-secs 28800 --candidate claude:opus)
+  assert_contains "$out" "steer: alive pool=codex:codex-home pick=claude opus account $CASE/acct-b why=keep short pool for its supervisors" \
+    "an exhausted ordinary account in the provider-wide read does not reject the declared account"
+  snapshot "$CASE/main.json" 6 \
+    "$(provider_row codex "$(scope projected_exhaustion 3600)" | jq -c '. + {accountKey: "codex-home"}')" \
+    "$(provider_row claude "$(scope exhausted_now)" | jq -c '. + {accountKey: "default"}')"
+  out=$(run_tool check --primary-harness codex --window-secs 28800 --candidate claude:opus)
+  assert_contains "$out" "steer: alive pool=codex:codex-home pick=claude opus account $CASE/acct-b why=keep short pool for its supervisors" \
+    "a keyed provider-wide read is judged on the declared account too"
   pass "a Claude candidate in a home with an account list names its account"
 }
 test_limit_dialogs_are_recorded_with_account_and_model() {
@@ -491,6 +533,7 @@ fm_test_run \
   test_unrecorded_model_with_a_short_model_scope_is_unknown \
   test_account_pick_skips_a_pool_another_member_holds_short \
   test_primary_account_carries_to_a_later_check \
+  test_codex_primary_proven_by_its_session_stays_a_supervisor \
   test_pick_skips_a_pool_a_worker_off_the_supervisor_pools_holds \
   test_provider_prefixed_model_binds_its_model_scope \
   test_sole_keyless_claude_lane_is_the_ordinary_account \

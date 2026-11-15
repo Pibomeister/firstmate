@@ -2245,8 +2245,11 @@ wd_once() {  # [home-filter]
     wd_score_activity
     WD_SYMPTOM=ok WD_RESTARTED=0
     wd_handle_subject
-    # A home whose restart awaits pickup gets no action, quota checks included.
-    [ "$parent" != - ] || [ "$WD_SYMPTOM" = restart-awaiting-pickup ] || wd_quota_guard_pass
+    # A home whose restart awaits pickup gets no action, quota checks included,
+    # and the ledger is read again so that holds from the pass that starts it.
+    if [ "$parent" = - ] && ! wd_home_awaits_restart "$home"; then
+      wd_quota_guard_pass
+    fi
     wd_visit_worker_dialogs page
     wd_health_line >> "$health"
   done

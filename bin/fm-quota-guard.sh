@@ -22,7 +22,7 @@
 #                                the last check recorded for the same live
 #                                session-lock holder, else that holder's
 #                                harness. Naming it never makes a primary
-#                                whose lock holder is not live a supervisor.
+#                                whose lock owner is not live a supervisor.
 #   --primary-account <entry>    The primary's Claude account, `ordinary` or a
 #                                config root; default the one the last check
 #                                recorded for the same live session-lock
@@ -34,7 +34,8 @@
 #                                reroute-candidates key of config/watchdog.
 #
 # Members. The supervisors are this home's primary, when its session lock has a
-# live holder, and every second mate registered in data/secondmates.md whose
+# live owner (a live lock pid, or a Codex owner whose recorded session
+# fm_session_lock_recorded_owner_live still proves live), and every second mate registered in data/secondmates.md whose
 # home exists. Only the pools the supervisors run on are read. The workers are
 # the ship and scout records (state/<id>.meta) of this home and of each
 # registered second mate's home that are on one of those pools and whose
@@ -88,7 +89,9 @@
 # a second mate, its config/secondmate-accounts pin first), never assumed to be
 # the ordinary account; a worker in a home that declares config/claude-accounts
 # has no pin, so its Claude candidate names the first declared account with
-# headroom, and the pick ends in account <entry> for --account. Firstmate, or
+# headroom, and the pick ends in account <entry> for --account. The suggest
+# snapshot carries the Claude lane of the account the Claude candidates land
+# on, so the chooser rechecks them against that account. Firstmate, or
 # the second mate that owns a worker, relaunches through bin/fm-control.sh <id>
 # relaunch --account <entry>, or --harness and --model (and --account when the
 # pick names one); this script never relaunches anything.
@@ -240,20 +243,29 @@ lock_fingerprint() {
 primary_defaults() {
   local rec=$GUARD/last pid
   pid=$(lock_pid "$FM_HOME")
-  if pid_alive "$pid" && [ "$(fm_wd_conf_get "$rec" primary_lock '')" = "$pid" ]; then
+  if primary_live "$pid" && [ "$(fm_wd_conf_get "$rec" primary_lock '')" = "$pid" ]; then
     [ -n "$PRIMARY_HARNESS" ] || PRIMARY_HARNESS=$(fm_wd_conf_get "$rec" primary_harness '')
     [ -n "$PRIMARY_ACCOUNT" ] || PRIMARY_ACCOUNT=$(fm_wd_conf_get "$rec" primary_account '')
   fi
   [ -n "$PRIMARY_ACCOUNT" ] || PRIMARY_ACCOUNT=ordinary
 }
 
+# primary_live <lock-pid>: the primary's session-lock owner is live, either as
+# its lock pid or, for a Codex owner whose anchor pid exited, through the
+# recorded session the shared lock contract still proves live.
+primary_live() {
+  FM_SESSION_LOCK_OWNER_HARNESS=
+  pid_alive "$1" || fm_session_lock_recorded_owner_live "$FM_HOME/state" >/dev/null 2>&1
+}
+
 # primary_harness: the primary is a supervisor only while its session-lock
-# holder is live, even when the caller names its harness.
+# owner is live, even when the caller names its harness.
 primary_harness() {
   local pid
   pid=$(lock_pid "$FM_HOME")
-  pid_alive "$pid" || return 1
+  primary_live "$pid" || return 1
   if [ -n "$PRIMARY_HARNESS" ]; then printf '%s\n' "$PRIMARY_HARNESS"; return 0; fi
+  if [ -n "$FM_SESSION_LOCK_OWNER_HARNESS" ]; then printf '%s\n' "$FM_SESSION_LOCK_OWNER_HARNESS"; return 0; fi
   fm_harness_path_name "$(fm_ps_comm "$pid" 2>/dev/null)" 2>/dev/null || printf 'unknown\n'
 }
 
@@ -494,21 +506,24 @@ pick() {
     done <<< "$listed"
   fi
   [ -z "$MAIN_ERR" ] || { printf 'none (%s)\n' "$MAIN_ERR"; return 0; }
-  set -- suggest --snapshot "$MAIN_SNAP" --from-harness "$harness" --kind "$kind"
+  set -- suggest --from-harness "$harness" --kind "$kind"
   [ "$model" = default ] || set -- "$@" --from-model "$model"
   [ "$wt" = - ] || set -- "$@" --worktree "$wt"
   if [ "$harness" = claude ] && [ "$kind" = secondmate ] && [ "$mate" != - ]; then set -- "$@" --mate "$mate"; fi
-  local n=0 home_list
+  local n=0 home_list cand_acct='' snap=$MAIN_SNAP csnap
   home_list=$(fm_worker_account_list claude "$(home_config "$home")" 2>/dev/null) || home_list=
   : > "$WORK/cand-accounts"
   for cand in $(printf '%s' "$CANDIDATES" | tr ',' ' '); do
     # A Claude candidate lands on the pin of the home that relaunches it. Under
     # a declared account list a worker's Claude relaunch must name --account,
-    # so the candidate takes the first declared account with headroom.
+    # so the candidate takes the first declared account with headroom. The
+    # snapshot handed to the chooser carries one Claude lane, so every later
+    # Claude candidate is judged on the account the first one took.
     dacct=
     if [ "${cand%%:*}" = claude ] && [ "$kind" != secondmate ] && [ -n "$home_list" ]; then
-      dacct=$(list_account_for "$home_list" "${cand#*:}" "$pool") || continue
-      printf '%s\t%s\n' "$cand" "$dacct" >> "$WORK/cand-accounts"
+      if [ -n "$cand_acct" ]; then dacct=$cand_acct
+      else dacct=$(list_account_for "$home_list" "${cand#*:}" "$pool") || continue
+      fi
     elif [ "${cand%%:*}" = claude ]; then
       dacct=$(dest_claude_account "$home" "$mate") || continue
     fi
@@ -519,10 +534,27 @@ pick() {
     # Only a candidate whose own read is ok is headroom; stale or unmeasured is not.
     cstat=$(classify "$cprov" "$cacct" "${cand#*:}" | cut -f 1)
     [ "$cstat" = ok ] || continue
+    if [ "$cprov" = claude ]; then
+      cand_acct=$cacct
+      [ -z "$home_list" ] || [ "$kind" = secondmate ] || printf '%s\t%s\n' "$cand" "$dacct" >> "$WORK/cand-accounts"
+    fi
     set -- "$@" --candidate "$cand"
     n=$((n + 1))
   done
   [ "$n" -gt 0 ] || { printf 'none (no reroute candidate off this pool)\n'; return 0; }
+  # The chooser rechecks every candidate against the snapshot, so its Claude
+  # lane must be the account the Claude candidates land on, not whichever
+  # account the provider-wide read happened to report.
+  if [ -n "$cand_acct" ] && csnap=$(claude_snap "$cand_acct"); then
+    snap=$WORK/pick-snap.json
+    jq -c --slurpfile c "$csnap" '
+      ($c[0].providers[0] | if $v == 6 then . + {accountKey: "default"} else del(.accountKey, .accountLocator) end) as $row |
+      .providers = ([.providers[]? | select(.provider != "claude")] + [$row]) |
+      if (.attention | type) == "array" then .attention |= map(select((.provider // "") != "claude")) else . end
+    ' --argjson v "$(jq -r '.schemaVersion' "$MAIN_SNAP")" "$MAIN_SNAP" > "$snap" 2>/dev/null ||
+      { printf 'none (quota snapshot for the Claude candidate could not be built)\n'; return 0; }
+  fi
+  set -- "$@" --snapshot "$snap"
   out=$(FM_HOME=$home FM_CONFIG_OVERRIDE=$home/config "$SCRIPT_DIR/fm-quota-reroute.sh" "$@" 2>"$WORK/reroute.err") || out=none
   if [ -z "$out" ] || [ "$out" = none ]; then
     err=$(awk 'sub(/^error: /, "") { print; exit }' "$WORK/reroute.err" 2>/dev/null)

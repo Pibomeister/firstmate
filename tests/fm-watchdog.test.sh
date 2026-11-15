@@ -2164,6 +2164,8 @@ SH
   run_wd 0 once >/dev/null 2>&1
   run_wd 1000 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows frozen restart pending)" "the proven stall restarts"
+  assert_equals 1 "$(ledger_rows quota-guard check "done")" \
+    "the pass that starts the restart runs no quota check: $(ledger | cut -f1,5-7)"
   local before
   before=$(ledger | wc -l | tr -d ' ')
   rm -f "$H/state/.wake-queue"
