@@ -121,8 +121,9 @@
 # place are under the cap, and when load1 is under the load level that
 # bin/fm-load-relief.sh levels reports: its ceiling (config/load-relief
 # ceiling, else max-load1, else the logical core count) while no worker is
-# paused for load, and its resume level while any is, so a new spawn never
-# takes the room a paused worker is waiting for. An unreadable load or core
+# paused for load, and its resume level while any record is kept - including
+# one held for an open decision or captain hold - so a new spawn never takes
+# the room a paused worker is waiting for. An unreadable load or core
 # probe imposes no load hold; a malformed config/load-relief makes the gate
 # exit 1. Otherwise it exits 75 with one `deferred:` line naming the cause.
 # The memory, disk, pressure, reserve, battery, and report-only cpu holds

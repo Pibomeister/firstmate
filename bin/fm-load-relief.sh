@@ -15,7 +15,10 @@
 # its worktree and unlanded work untouched), and appends one paused: line to
 # the task's status file. A meta with no backend= is the default tmux
 # backend, and the recorded harness is mapped to its adapter family first.
-# A nonzero interrupt keeps the record as state=uncertain, appends a keyed
+# An interrupt bin/fm-control.sh refuses before anything is sent (exit 5,
+# another lifecycle action holds the task; exit 6, the lease guard) drops the
+# record, appends nothing, and does not count toward the per-pass limit.
+# Any other nonzero interrupt keeps the record as state=uncertain, appends a keyed
 # paused: line saying delivery is unproven, and counts toward the per-pass
 # pause limit: delivery may already have happened, so the record is never
 # dropped on an unproven failure, and the resume pass resolves it by steering
@@ -106,6 +109,12 @@
 # while a load-relief pause is still its declared wait also appends a
 # resolved [key=load-relief] line, so no false pause outlives the record.
 #
+# Each resume steer is sent under the worker's own lifecycle lock,
+# state/.control-<id>.lock, the lock bin/fm-control.sh holds through an
+# interrupt: a resume whose worker has a lifecycle action in flight waits
+# for a later pass, so an interrupt that outlived its pass can never land
+# after the resume and leave the worker stopped with no record.
+#
 # Single flight: a non-dry check holds the per-home lock
 # state/load-relief/.check.lock for its whole pass (bin/fm-wake-lib.sh
 # fm_lock_try_acquire, which reclaims a dead holder's lock). A second check
@@ -192,6 +201,7 @@ fi
 candidates=
 errlog=
 lock_held=0
+control_lock=
 CHECK_LOCK="$RELIEF_DIR/.check.lock"
 relief_cleanup() {
   local rc=$?
@@ -205,6 +215,7 @@ relief_cleanup() {
     fi
     rm -f "$errlog"
   fi
+  [ -z "$control_lock" ] || fm_lock_release "$control_lock" || true
   [ "$lock_held" -eq 0 ] || fm_lock_release "$CHECK_LOCK" || true
 }
 trap relief_cleanup EXIT
@@ -405,16 +416,33 @@ resume_pass() {
       echo "load-relief: would resume $id load=$load1 resume-below=$level"
       break
     fi
+    # Hold the worker's lifecycle lock (the one bin/fm-control.sh holds
+    # through an interrupt) from the recheck to the record removal, so an
+    # interrupt still in flight - even one an earlier, dead pass started -
+    # can never land after this resume.
+    if ! fm_lock_try_acquire "$STATE/.control-$id.lock"; then
+      echo "load-relief: a lifecycle action is running for $id; its resume waits for a later pass"
+      continue
+    fi
+    control_lock="$STATE/.control-$id.lock"
     # Action boundary: re-read the record exactly as selection did.
     resume_state "$id" && rstate=0 || rstate=$?
-    [ "$rstate" -eq 0 ] || continue
+    if [ "$rstate" -ne 0 ]; then
+      fm_lock_release "$control_lock" || true
+      control_lock=
+      continue
+    fi
     rgen=$(meta_get "$PAUSED_DIR/$id" spawn_gen)
     if FM_SEND_EXPECTED_SPAWN_GEN="$rgen" FM_HOME="$FM_HOME" "$send_cmd" "$id" "Host load has fallen to $load1 (resume level $level). Your load-relief pause is lifted; resume your task from where you left off." >/dev/null 2>&1; then
       rm -f "$PAUSED_DIR/$id"
       printf 'resolved [key=load-relief] [at=%s]: load relief lifted (load %s below %s); resumed by steer\n' "$now" "$load1" "$level" >> "$STATE/$id.status" 2>/dev/null || true
+      fm_lock_release "$control_lock" || true
+      control_lock=
       echo "load-relief: resumed $id load=$load1 resume-below=$level"
       break
     fi
+    fm_lock_release "$control_lock" || true
+    control_lock=
     echo "fm-load-relief: resume steer for $id was not confirmed delivered; its pause record is kept" >&2
   done <<EOF
 $(printf '%s' "$resumable" | sort -t "$(printf '\t')" -k1,1n -k2,2n -k3,3nr)
@@ -624,6 +652,11 @@ while IFS="$(printf '\t')" read -r _rank _prio _epoch id gen; do
     # pause landed, and a delivered interrupt reached only the predecessor.
     rm -f "$PAUSED_DIR/$id"
     echo "load-relief: $id was relaunched during the interrupt (control exit $control_rc); no pause is recorded for its replacement"
+    continue
+  fi
+  if [ "$control_rc" -eq 5 ] || [ "$control_rc" -eq 6 ]; then
+    rm -f "$PAUSED_DIR/$id"
+    echo "load-relief: $id was not interrupted: its lifecycle control refused before sending anything (control exit $control_rc); no pause is recorded"
     continue
   fi
   if [ "$control_rc" -eq 0 ]; then

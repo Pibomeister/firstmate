@@ -516,6 +516,43 @@ SH
   pass "a check that finds another pass holding the per-home lock exits 0 without acting"
 }
 
+test_resume_waits_for_an_in_flight_lifecycle_action() {
+  local home log holder
+  home=$(make_home inflight)
+  log="$TMP_ROOT/inflight.log"
+  add_worker "$home" w 100 4
+  pause_record "$home" w 900 4
+  # A live process holds the worker's lifecycle lock, as an orphaned
+  # interrupt from a dead pass would.
+  sleep 60 &
+  holder=$!
+  mkdir -p "$home/state/.control-w.lock"
+  printf '%s\n' "$holder" > "$home/state/.control-w.lock/pid"
+  run_relief "$home" inflight 5 2000 >/dev/null
+  assert_not_contains "$(cat "$log")" "send w" "a worker was resumed while a lifecycle action held its lock"
+  assert_present "$home/state/load-relief/paused/w" "the pause record was dropped while a lifecycle action held the lock"
+  kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+  run_relief "$home" inflight 5 2010 >/dev/null
+  assert_contains "$(cat "$log")" "send w" "the resume did not proceed once the lifecycle lock was free"
+  assert_absent "$home/state/.control-w.lock" "the resume left the worker's lifecycle lock behind"
+  pass "a resume waits while the worker's lifecycle lock is held, and proceeds and releases it afterwards"
+}
+
+test_control_refusal_before_delivery_records_no_pause() {
+  local home code log
+  for code in 5 6; do
+    home=$(make_home "refuse$code")
+    log="$TMP_ROOT/refuse$code.log"
+    printf 'echo "error: refused" >&2\nexit %s\n' "$code" >> "$TMP_ROOT/refuse$code-control"
+    add_worker "$home" w 100 4
+    sustained_pass "$home" "refuse$code" 1000 >/dev/null
+    assert_contains "$(cat "$log")" "control w interrupt" "the refused interrupt was never attempted (exit $code)"
+    assert_absent "$home/state/load-relief/paused/w" "a control refusal before delivery left a pause record (exit $code)"
+    assert_not_contains "$(cat "$home/state/w.status" 2>/dev/null)" "paused [key=load-relief]" "a control refusal before delivery wrote a pause line (exit $code)"
+  done
+  pass "an interrupt refused before anything was sent records no pause and writes no line"
+}
+
 test_relaunch_during_interrupt_writes_no_pause() {
   local home log out verdict
   for verdict in 1 0; do
@@ -648,6 +685,8 @@ test_candidate_relaunched_after_selection_is_not_interrupted
 test_not_found_backlog_item_lifts_its_pause
 test_overlapping_check_does_not_act
 test_relaunch_during_interrupt_writes_no_pause
+test_control_refusal_before_delivery_records_no_pause
+test_resume_waits_for_an_in_flight_lifecycle_action
 test_eligibility_change_after_selection_blocks_the_interrupt
 test_hold_raised_before_resume_steer_blocks_it
 test_relaunched_record_drop_clears_its_pause_line

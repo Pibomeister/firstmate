@@ -164,6 +164,11 @@
 #              An explicit --harness or --model is a quota or operator replace
 #              and rebinds through --relaunch.
 #
+# Every verb exits 5 when another lifecycle action already holds the task's
+# lock, state/.control-<id>.lock, and 6 when the supervision lease guard
+# refuses (bin/fm-lease-lib.sh); both refusals come before anything reaches
+# the agent, so a caller may treat them as proof that nothing was sent.
+#
 # Teardown and discard are NOT verbs here and never will be. `exit` stops an
 # agent and preserves everything else; removing a worktree, killing an
 # endpoint, or discarding work stays with bin/fm-teardown.sh, which owns the
@@ -449,7 +454,7 @@ fm_lease_guard "$ID" "lifecycle control (fm-control)"
 CONTROL_LOCK="$STATE/.control-$ID.lock"
 trap control_cleanup EXIT
 fm_lock_try_acquire "$CONTROL_LOCK" \
-  || die "another lifecycle action is already running for task $ID"
+  || { echo "error: another lifecycle action is already running for task $ID" >&2; exit 5; }
 CONTROL_LOCK_HELD=1
 # do_exit runs in a command substitution. That subshell does not run this
 # EXIT trap, so the parent has to hold the path the trap removes. Set it

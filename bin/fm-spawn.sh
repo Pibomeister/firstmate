@@ -4906,8 +4906,11 @@ if [ -n "$SPAWN_PROJECT_CAPACITY" ]; then
 fi
 # Lane capacity and host-load admission (bin/fm-capacity.sh --spawn-gate owns
 # the verdict: the config/lane-capacity lane cap, counting only lanes that hold
-# a place, plus one 1-minute load ceiling - max-load1 when set, else the
-# logical core count; the other capacity holds stay advisory).
+# a place, plus one 1-minute load level from bin/fm-load-relief.sh levels -
+# its ceiling, or its resume level while a worker is paused for load; the other
+# capacity holds stay advisory). The lane cap is best-effort across concurrent
+# spawns for different projects: each reads the lanes before either records
+# its own, so two at once can pass one place over the cap.
 # A fresh ship or scout that verdict does not admit is deferred here, before
 # any brief render, endpoint, worktree, record, or backlog move exists, so the
 # task stays queued; exit 75 is that deferral and exit 1 its unreadable-config
@@ -4921,7 +4924,7 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
     0) ;;
     75) exit 75 ;;
     *)
-      echo "error: spawn refused: lane capacity admission failed (fm-capacity.sh --spawn-gate exited $lane_admit_rc); fix config/lane-capacity so the captain's worker limits are known" >&2
+      echo "error: spawn refused: lane capacity admission failed (fm-capacity.sh --spawn-gate exited $lane_admit_rc); fix config/lane-capacity or config/load-relief, as its message above names, so the captain's worker limits are known" >&2
       exit 1
       ;;
   esac

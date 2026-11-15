@@ -1105,7 +1105,7 @@ test_interrupt_and_exit_lock_before_task_state_resolution() {
     out=$(run_control "$case_dir" t1 "$verb"); rc=$?
     kill "$holder" 2>/dev/null || true
     wait "$holder" 2>/dev/null || true
-    expect_code 1 "$rc" "$verb should refuse a held lifecycle lock"
+    expect_code 5 "$rc" "$verb should refuse a held lifecycle lock with its distinct exit"
     assert_contains "$out" "another lifecycle action is already running" \
       "$verb should serialize before reading mutable task state"
     [ -z "$(literals "$case_dir")" ] || fail "contended $verb must type no command"
