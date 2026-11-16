@@ -196,6 +196,17 @@ ZYPPER_CONT=$'Continue? [y/n/v/...? shows all options] (y): '
 GLAB_HOST=$'? GitLab hostname: '
 WANDB_CHOICE=$'wandb: (1) Create a W&B account\nwandb: (2) Use an existing W&B account\nwandb: Enter your choice: '
 DENO_ALLOW=$'┏ ⚠️  Deno requests read access to "/etc".\n┠─ Requested by `Deno.readFile()` API.\n┗ Allow? [y/n/A] (y = yes, allow; n = no, deny; A = allow all read permissions) > '
+ECHO_OTP=$'Enter OTP: 123456'
+ECHO_MFA=$'MFA token code: 123456'
+ECHO_NPMUSER=$'npm username: alice'
+ECHO_NPMEMAIL=$'Email: (this IS public) a@example.com'
+ECHO_PIPUSER=$'User for pypi.example.com: alice'
+ECHO_GITUSER=$'Username for \'https://github.com\': alice'
+CP_UNWRITABLE=$'cp: unwritable \'current.db\' (mode 0444, r--r--r--); try anyway? '
+RM_INACCESSIBLE=$'rm: attempt removal of inaccessible directory \'cache\'? '
+RM_FR=$'rm : supprimer \'cache.txt\' du type fichier ? '
+CP_FR=$'cp : voulez-vous écraser \'current.db\' ? '
+MERGETOOL_HIT=$'Normal merge conflict for \'a.c\':\n  {local}: modified file\n  {remote}: modified file\nHit return to start merge resolution tool (vimdiff): '
 NPM_AGAIN=$'$ npm profile set password\nCurrent password: \nNew password: \n       Again:     '
 SSH_KEYFILE=$'work\nEnter file in which the key is (/Users/test/.ssh/id_ed25519): '
 GH_SSHTITLE=$'? Upload your SSH public key to your GitHub account? /Users/test/.ssh/id_ed25519.pub\n? Title for your SSH key: (GitHub CLI) '
@@ -219,6 +230,10 @@ DESTRUCTIVE_CONFIRMS=(
   "$PATCH_DEL"
   "$APT_PHRASE"
   "$MERGETOOL_DEL"
+  "$CP_UNWRITABLE"
+  "$RM_INACCESSIBLE"
+  "$RM_FR"
+  "$CP_FR"
   $'Reversed (or previously applied) patch detected!  Assume -R? [n] n\nApply anyway? [n] '
   $'work\nremove a.txt? '
   $'work\nexamine files in directory d? '
@@ -275,6 +290,8 @@ SECRET_INPUTS=(
   $'? Enter a value for DATABASE_URL [input is hidden] '
   "$VAULT_UNSEAL"
   "$SSH_BADPASS"
+  "$ECHO_OTP"
+  "$ECHO_MFA"
   "$SUDO_ES"
   $'Passwort: '
   "$AWS_ECHO"
@@ -313,6 +330,10 @@ SIGNIN_INPUTS=(
   "$YARN_LOGIN"
   "$GLAB_HOST"
   "$WANDB_CHOICE"
+  "$ECHO_NPMUSER"
+  "$ECHO_NPMEMAIL"
+  "$ECHO_PIPUSER"
+  "$ECHO_GITUSER"
   "$AWS_MFA"
   $'Please type \'yes\' or \'no\': '
   $'? Where do you use GitHub? [Use arrows to move, type to filter]\n> GitHub.com\n  Other'
@@ -424,6 +445,12 @@ test_hardstop_categories() {
   assert_equals $'hardstop\tdestructive' "$(printf 'work\nDiscard changes? [y/N]\n' | classify claude)" "a discard confirmation is a destructive stop"
   for c in $'Use (l)ocal or (r)emote, or (a)bort? ' "$ZYPPER_CONT" "$DENO_ALLOW" $'Do you trust "symfony/flex" to execute code and wish to enable it now? (writes "allow-plugins" to composer.json) [y,n,d,?] '; do
     assert_equals $'hold\tconfirm' "$(printf '%s\n' "$c" | classify claude)" "this confirmation is held: $c"
+  done
+ # git mergetool's launch prompt is an owner-reserved merge stop.
+  assert_equals hardstop "$(printf '%s\n' "$MERGETOOL_HIT" | classify claude | cut -f1)" "git mergetool's launch prompt is a hard stop"
+  assert_equals 'terminal confirmation' "$(bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$MERGETOOL_HIT")" "the send guard holds git mergetool's launch prompt"
+  for c in 'Exit code: 1' 'Summary: done' 'rm: cannot remove x: No such file or directory'; do
+    assert_equals '' "$(printf '%s\n' "$c" | classify claude)" "an ordinary output row is not a prompt: $c"
   done
   assert_equals $'hardstop\tcredential' "$(printf '%s\n' "$COMPOSER_AUTH" | classify claude)" "Composer's store-credentials question is a credential stop"
   assert_equals $'hold\tconfirm' "$(printf 'can\x27t find file to patch at input line 3\n|--- a/foo.c\n|+++ b/foo.c\nFile to patch: \n' | classify claude)" "patch's target-file input is held"
@@ -748,10 +775,16 @@ test_doorbell_never_types_into_a_prompt() {
     printf '%s\n' "$c" > "$H/a6-$i.txt"
     worker "d6x$i" claude "$H/a6-$i.txt"
   done
+  i=0
+  for c in "$ECHO_OTP" "$ECHO_MFA" "$ECHO_NPMUSER" "$ECHO_NPMEMAIL" "$ECHO_PIPUSER" "$ECHO_GITUSER" "$CP_UNWRITABLE" "$RM_INACCESSIBLE" "$RM_FR" "$CP_FR" "$MERGETOOL_HIT"; do
+    i=$((i + 1))
+    printf '%s\n' "$c" > "$H/b7-$i.txt"
+    worker "d7x$i" claude "$H/b7-$i.txt"
+  done
   printf 'work output\n? Enter your email address: ›\n' > "$H/em.txt"
   worker du claude "$H/em.txt"
   local id
-  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv dz dy dj di dn dw2 dg2 dc2 df2 ds2 du2 dh2 dk2 dt2 da2 dp3 dd3 dx3 do3 dg3 dh3 dk4 ds4 dc4 dt4 dg4 df4 ds5 da5 dm5 dk5 dg5 dn5 d6x1 d6x2 d6x3 d6x4 d6x5 d6x6 d6x7 d6x8 d6x9 d6x10 d6x11; do
+  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv dz dy dj di dn dw2 dg2 dc2 df2 ds2 du2 dh2 dk2 dt2 da2 dp3 dd3 dx3 do3 dg3 dh3 dk4 ds4 dc4 dt4 dg4 df4 ds5 da5 dm5 dk5 dg5 dn5 d6x1 d6x2 d6x3 d6x4 d6x5 d6x6 d6x7 d6x8 d6x9 d6x10 d6x11 d7x1 d7x2 d7x3 d7x4 d7x5 d7x6 d7x7 d7x8 d7x9 d7x10 d7x11; do
     FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
     assert_contains "$(inbox_text "$id")" "steer for $id" "the steer for worker $id is durably recorded"
     sleep 1
