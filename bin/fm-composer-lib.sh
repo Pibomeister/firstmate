@@ -2683,17 +2683,26 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
       gsub(/pass phrase/, "passphrase", last)
       # A trailing input cursor or mask is not part of the label.
       sub(/[ \t]*\[(hidden|input is masked)\][ \t]*$/, "", last)
-      sub(/[ \t]*((›|❯|▌|█|•|\*)[ \t]*)*$/, "", last)
       # prompts, enquirer, and inquirer draw `? Password › ****` with no
-      # colon, so a `? ` question ends its label there.
+      # colon, so a `? ` question ends its label at the pointer, and any
+      # value after it is not part of the label.
+      if (last ~ /^[ \t]*\?[ \t]+[^ \t]/) sub(/[ \t]+(›|❯|»|‣)([ \t].*)?$/, "", last)
+      sub(/[ \t]*((›|❯|▌|█|•|\*)[ \t]*)*$/, "", last)
       if (last ~ /^[ \t]*\?[ \t]+[^ \t]/ && last !~ /[:>?]$/) last = last ":"
       print last
     }')
   [ -n "$last" ] || return 1
+  # cargo asks to paste its token on the next line, and RubyGems and Pulumi
+  # name the one-time code or token on a row above a bare `Code:` or `:`.
+  if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(please[[:space:]]+)?paste[[:space:]]+((the|your|an?)[[:space:]]+)?([a-z.]+[[:space:]]+)?(token|api[[:space:]_-]?key|secret)([[:space:]].*)?[[:space:]]below\.?$' \
+    || { printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*((otp|mfa|2fa|one.time)[[:space:]]+)?(code|token)?[[:space:]]*:$|<enter>.*[[:space:]]:$' \
+      && printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk 'NF { r[++n] = tolower($0) } END { for (i = n - 3; i < n; i++) if (i > 0 && r[i] ~ /(^|[^a-z])otp([^a-z]|$)|one.time (code|password)|multi.factor|access token|api token/) f = 1; exit !f }'; }; then
+    printf 'credential\n'; return 0
+  fi
   if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+)?(\[sudo\][[:space:]]+)?(password|passphrase|passcode|pin|otp|2fa([[:space:]]+code)?|mfa([[:space:]]+code)?|one.time[[:space:]]+(code|password))([[:space:]]+for[[:space:]][^:]*)?[:>?]$|(enter|type|input|provide|paste)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(password|passphrase|passcode|pin|api[[:space:]_-]?key|access[[:space:]_-]?key|private[[:space:]_-]?key|token|secret|otp|2fa|mfa|one.time|authenticator|security)[^:>?]*[:>?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?(mfa|2fa|otp|two.factor)[[:space:]]+code([[:space:]]+for[[:space:]].*)?[:>?]$|two.factor([[:space:]]+[a-z]+)?[[:space:]]+code[:>?]$|authenticator([[:space:]]+app)?[[:space:]]+code[:>?]$|^[^:]{0,30}[[:space:]]pin[:>?]$|(password|passphrase|passcode)([[:space:]]+for[[:space:]].*)?[^:]{0,40}[:>]$|(api[[:space:]_-]?key|access[[:space:]_-]?key|token|secret)[^:>?]{0,30}[:>?]$'; then
     printf 'credential\n'; return 0
   fi
-  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:?]*[>:?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(code|(authentication|verification|security|login|sign.?in|device|authori[sz]ation)[[:space:]]+code)[^:>?]*[:>?]$|(authentication|security|login|verification|device) code[^:>?]{0,30}[:>?]$|^[[:space:]]*(\?[[:space:]]+)?username for .*[:>?]$|^[[:space:]]*(\?[[:space:]]+)?(user.?name|login|email|e-mail|email address|email or username|username or email)([[:space:]]*(\([^)]*\)|\[[^]]*\]))?[:>]([[:space:]]*\([^)]*\))?$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(user.?name|login|email|e-mail|email address)[^:>?]*[:>?]$|^[[:space:]]*sso[[:space:]]+(session name|start url|region|registration scopes)[^:]*:$|press (enter|return|any key)[^:]*(browser|github\.com|log.?in|sign.?in)'; then
+  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:?]*[>:?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(code|(authentication|verification|security|login|sign.?in|device|authori[sz]ation)[[:space:]]+code)[^:>?]*[:>?]$|(authentication|security|login|verification|device) code[^:>?]{0,30}[:>?]$|^[[:space:]]*(\?[[:space:]]+)?username for .*[:>?]$|^[[:space:]]*(\?[[:space:]]+)?(user.?name|login|email|e-mail|email address|email or username|username or email)([[:space:]]*(\([^)]*\)|\[[^]]*\]))?[:>]([[:space:]]*\([^)]*\))?$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(user.?name|login|email|e-mail|email address)[^:>?]*[:>?]$|^[[:space:]]*sso[[:space:]]+(session name|start url|region|registration scopes)[^:]*:$|press (enter|return|any key)[^:]*(browser|github\.com|log.?in|sign.?in)|^[[:space:]]*select a subscription and tenant[^:]*:$'; then
     printf 'sign-in\n'; return 0
   fi
   return 1
@@ -2762,7 +2771,7 @@ fm_composer_confirm_input() {  # <screen> -> row
     printf '%s\n' "$last"
     return 0
   fi
-  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|^[[:space:]]*(remove|examine files in directory|recursively remove|override .+ for|overwrite) .+\?([[:space:]]*\(y/n \[[yn]\]\))?$|\((\[y\]/n|y/\[n\])\)[[:space:]]*\?$|^[[:space:]]*<.*>[[:space:]]*\?$|[[:space:]]\?\.\.\.$|^[[:space:]]*what now>$|^[[:space:]]*(yes/no|y/n)\?$|\(type [^)]{1,60}\)[[:space:]]*:$|\[y\]es, \[n\]o, \[a\]ll, \[n\]one, \[r\]ename:$|^[[:space:]]*(press|hit) any key|\(y/n \[[yn]\]\)$|\[y,n(,[a-z?/]+)*\]\?$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[^:>?"'"'"'`]{1,100}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
+  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|^[[:space:]]*(remove|examine files in directory|recursively remove|override .+ for|overwrite) .+\?([[:space:]]*\(y/n \[[yn]\]\))?$|\((\[y\]/n|y/\[n\])\)[[:space:]]*\?$|^[[:space:]]*<.*>[[:space:]]*\?$|[[:space:]]\?\.\.\.$|^[[:space:]]*what now>$|\(enter "h" for help\)[[:space:]]*\[[a-z]+\]$|^[[:space:]]*(yes/no|y/n)\?$|\(type [^)]{1,60}\)[[:space:]]*:$|\[y\]es, \[n\]o, \[a\]ll, \[n\]one, \[r\]ename:$|^[[:space:]]*(press|hit) any key|\(y/n \[[yn]\]\)$|\[y,n(,[a-z?/]+)*\]\?$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[^:>?"'"'"'`]{1,100}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
   printf '%s\n' "$last"
 }
 

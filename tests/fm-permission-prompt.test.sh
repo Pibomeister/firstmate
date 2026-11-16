@@ -165,6 +165,8 @@ TYPE_DELETE=$'This permanently removes project acme.\nType DELETE to confirm:'
 GIT_CLEAN=$'Would remove the following items:\n  build/   out.log\n*** Commands ***\n    1: clean                2: filter by pattern    3: select by numbers\n    4: ask each             5: quit                 6: help\nWhat now> '
 DRIZZLE=$'Warning  Found data-loss statements:\n· You\'re about to delete users table with 3 items\n\nTHIS ACTION WILL CAUSE DATA LOSS AND CANNOT BE REVERTED\n\nDo you still want to push changes?\n❯ No, abort\n  Yes, I want to remove 1 table,'
 SSO_URL=$'work\nSSO start URL [None]: '
+AZ_SELECT=$'[Tenant and subscription selection]\n\nNo     Subscription name    Subscription ID                       Tenant\n-----  -------------------  ------------------------------------  --------\n[1] *  Dev                  00000000-0000-0000-0000-000000000000  Contoso\n\nSelect a subscription and tenant (Type a number or Enter for no changes): '
+CARGO_LOGIN=$'    Updating crates.io index\nplease paste the token found on https://crates.io/me below'
 AWS_ROLE=$'Using the account ID 111122223333\nThere are 2 roles available to you.\n> ReadOnly\n  FullAccess'
 # BSD rm, cp, and mv, gh, git hunk, Heroku, parted, Prisma, Supabase, and pnpm
 # destructive confirmations.
@@ -187,6 +189,7 @@ DESTRUCTIVE_CONFIRMS=(
   "$DRIZZLE"
   $'work\nAre you sure you want to drop the database \'app\' on server \'(localdb)\'? (y/N)'
   $'work\nAll data will be wiped. Continue? [y/N]'
+  $'    conflict  config/routes.rb\nOverwrite /app/config/routes.rb? (enter "h" for help) [Ynaqdhm] '
   $'WARNING!\n========\nThis will overwrite data on /dev/sdb irrevocably.\n\nAre you sure? (Type \'yes\' in capital letters): '
   $'Warning: The existing disk label on /dev/sdb will be destroyed and all data on this disk will be lost. Do you want to continue?\nYes/No? '
   $'? Are you sure you want to reset your database? All data will be lost. › (y/N)'
@@ -210,6 +213,9 @@ SECRET_INPUTS=(
   $'work\n? Password › ****'
   $'work\n? Enter your password ********'
   $'work\n? Password [input is masked]'
+  "$CARGO_LOGIN"
+  $'You have enabled multi-factor authentication. Please enter OTP code.\nCode:   '
+  $'Enter your access token from https://app.pulumi.com/account/tokens\n    or hit <ENTER> to log in using your browser                   : '
 )
 SIGNIN_INPUTS=(
   $'work\nheroku: Press any key to open up the browser to login or q to exit: '
@@ -225,6 +231,8 @@ SIGNIN_INPUTS=(
   $'work\nEnter user-name: '
   $'work\nSSO session name (Recommended): '
   "$SSO_URL"
+  "$AZ_SELECT"
+  $'work\n? Email or username › me@example.com'
 )
 
 ledger() { cat "$H/state/watchdog/actions.tsv" 2>/dev/null; }
@@ -317,7 +325,7 @@ test_hardstop_categories() {
     printf '%s\n' "$c" | classify codex >/dev/null && fail "a quoted list or busy row above a composer is not a prompt: $c"
     bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null && fail "a quoted list or busy row above a composer does not block a submit: $c"
   done
-  for c in $'work\n> ' $'work\nplease remove that line?' $'work\nI typed it to confirm it works.' $'work\nI will press any key now.' $'work\nis it y/n?' $'work\n? Project name › my-app' $'work\n? Which template?' $'work\n┌────────────┐\n│ All done   │\n└────────────┘'; do
+  for c in $'work\n> ' $'work\nplease remove that line?' $'work\nI typed it to confirm it works.' $'work\nI will press any key now.' $'work\nis it y/n?' $'work\n? Project name › my-app' $'work\n? Project name › my-token-app' $'work\n? Where should we create your project? › ./secret-notes' $'work\nI will paste the token below' $'work\nnote: the otp is in the vault\nok, next:' $'work\n? Which template?' $'work\n┌────────────┐\n│ All done   │\n└────────────┘'; do
     printf '%s\n' "$c" | classify claude >/dev/null && fail "this is not a confirmation: $c"
   done
   assert_equals $'hardstop\tdestructive' "$(printf 'work\nDiscard changes? [y/N]\n' | classify claude)" "a discard confirmation is a destructive stop"
@@ -569,10 +577,12 @@ test_doorbell_never_types_into_a_prompt() {
   worker dz claude "$H/drizzle.txt"
   printf '%s\n' "$SSO_URL" > "$H/ssourl.txt"
   worker dy claude "$H/ssourl.txt"
+  printf '%s\n' "$CARGO_LOGIN" > "$H/cargo.txt"
+  worker dj claude "$H/cargo.txt"
   printf 'work output\n? Enter your email address: ›\n' > "$H/em.txt"
   worker du claude "$H/em.txt"
   local id
-  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv dz dy; do
+  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv dz dy dj; do
     FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
     assert_contains "$(inbox_text "$id")" "steer for $id" "the steer for worker $id is durably recorded"
     sleep 1
@@ -706,12 +716,14 @@ test_hardstop_prompts_are_never_answered() {
   worker signin claude "$H/signin.txt"
   printf 'Signing in\nOTP:\n' > "$H/otp.txt"
   worker otp claude "$H/otp.txt"
+  printf '%s\n' "$AZ_SELECT" > "$H/az.txt"
+  worker az claude "$H/az.txt"
   { cat "$FIX/claude-2.1.325-trust.txt"; printf '%s\n' '────────────────────────────────' '❯ ' '────────────────────────────────' ' Continue with paid usage?' ' ❯ Yes' '   No' '' ' Enter to confirm · Esc to cancel'; } > "$H/stale.txt"
   worker stale claude "$H/stale.txt"
   run_wd 0 once >/dev/null 2>&1 || fail "the watchdog pass failed"
   run_wd 300 once >/dev/null 2>&1
   local id
-  for id in cred rm spend signin otp stale; do
+  for id in cred rm spend signin otp stale az; do
     assert_equals '' "$(typed "$id")" "no key reaches the $id prompt"
     assert_equals 1 "$(status_rows "$id" blocked permission-prompt-hardstop)" "the $id prompt is reported once as a hard stop"
   done
@@ -719,6 +731,7 @@ test_hardstop_prompts_are_never_answered() {
   assert_grep "shows a destructive prompt" "$H/state/rm.status" "the remove prompt names its category"
   assert_grep "shows a spend prompt" "$H/state/spend.status" "the add-funds prompt names its category"
   assert_grep "shows a sign-in prompt" "$H/state/signin.status" "the sign-in input names its category"
+  assert_grep "shows a sign-in prompt" "$H/state/az.status" "the az login subscription selector is a sign-in stop"
   assert_no_grep "find-generic-password" "$H/state/cred.status" "the blocked line carries no prompt text"
   assert_equals 0 "$(ledger_rows decline pending)" "no hard stop is declined"
   assert_grep "waiting on worker signin" "$H/data/watchdog/status.md" "a sign-in input with no dialog label still gets the waiting gap"
