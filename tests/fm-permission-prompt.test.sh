@@ -167,6 +167,12 @@ DRIZZLE=$'Warning  Found data-loss statements:\n· You\'re about to delete users
 SSO_URL=$'work\nSSO start URL [None]: '
 SSO_SCOPES=$'work\nSSO registration scopes [sso:account:access]: '
 SSO_URL_DEFAULT=$'work\nSSO start URL [https://my-sso-portal.awsapps.com/start]: '
+PIP_WIPE=$'git clone in ./src/foo exists with URL https://example.com/a.git\nThe plan is to install the git repository https://example.com/b.git\nWhat to do?  (s)witch, (i)gnore, (w)ipe, (b)ackup '
+DPKG_CONF=$'Configuration file \'/etc/example.conf\'\n ==> Modified (by you or by a script) since installation.\n ==> Package distributor has shipped an updated version.\n   What would you like to do about it ?  Your options are:\n    Y or I  : install the package maintainer\'s version\n    N or O  : keep your currently-installed version\n      D     : show the differences between the versions\n      Z     : start a shell to examine the situation\n The default action is to keep your current version.\n*** example.conf (Y/I/N/O/D/Z) [default=N] ?'
+PATCH_R=$'patching file a.c\nReversed (or previously applied) patch detected!  Assume -R? [n] '
+NPM_OTP=$'$ npm profile enable-2fa auth-and-writes\nPassword: \nAnd an OTP code from your authenticator: '
+GPG_EDIT=$'sec  ed25519/0123456789ABCDEF\n     created: 2026-01-01  usage: SC\ngpg> '
+GH_HOST=$'? Where do you use GitHub? Other\n? Hostname: '
 NPM_AGAIN=$'$ npm profile set password\nCurrent password: \nNew password: \n       Again:     '
 SSH_KEYFILE=$'work\nEnter file in which the key is (/Users/test/.ssh/id_ed25519): '
 GH_SSHTITLE=$'? Upload your SSH public key to your GitHub account? /Users/test/.ssh/id_ed25519.pub\n? Title for your SSH key: (GitHub CLI) '
@@ -183,6 +189,11 @@ AWS_ROLE=$'Using the account ID 111122223333\nThere are 2 roles available to you
 # BSD rm, cp, and mv, gh, git hunk, Heroku, parted, Prisma, Supabase, and pnpm
 # destructive confirmations.
 DESTRUCTIVE_CONFIRMS=(
+  "$PIP_WIPE"
+  $'What to do?  (i)gnore, (w)ipe, (b)ackup '
+  "$DPKG_CONF"
+  "$PATCH_R"
+  $'Reversed (or previously applied) patch detected!  Assume -R? [n] n\nApply anyway? [n] '
   $'work\nremove a.txt? '
   $'work\nexamine files in directory d? '
   $'work\nrecursively remove d? '
@@ -232,6 +243,8 @@ SECRET_INPUTS=(
   $'Enter your access token from https://app.pulumi.com/account/tokens\n    or hit <ENTER> to log in using your browser                   : '
   "$SSH_KEYFILE"
   "$NPM_AGAIN"
+  "$NPM_OTP"
+  "$GPG_EDIT"
   $'Generating public/private ed25519 key pair.\nEnter file in which to save the key (/home/u/.ssh/id_ed25519): '
 )
 SIGNIN_INPUTS=(
@@ -252,6 +265,7 @@ SIGNIN_INPUTS=(
   "$SSO_URL_DEFAULT"
   "$GH_DEVICE"
   "$GH_SSHTITLE"
+  "$GH_HOST"
   $'? Where do you use GitHub? [Use arrows to move, type to filter]\n> GitHub.com\n  Other'
   "$AZ_SELECT"
   $'work\n? Email or username › me@example.com'
@@ -635,10 +649,22 @@ test_doorbell_never_types_into_a_prompt() {
   worker dt2 claude "$H/ghtitle.txt"
   printf '%s\n' "$NPM_AGAIN" > "$H/npmagain.txt"
   worker da2 claude "$H/npmagain.txt"
+  printf '%s\n' "$PIP_WIPE" > "$H/pipwipe.txt"
+  worker dp3 claude "$H/pipwipe.txt"
+  printf '%s\n' "$DPKG_CONF" > "$H/dpkg.txt"
+  worker dd3 claude "$H/dpkg.txt"
+  printf '%s\n' "$PATCH_R" > "$H/patchr.txt"
+  worker dx3 claude "$H/patchr.txt"
+  printf '%s\n' "$NPM_OTP" > "$H/npmotp.txt"
+  worker do3 claude "$H/npmotp.txt"
+  printf '%s\n' "$GPG_EDIT" > "$H/gpgedit.txt"
+  worker dg3 claude "$H/gpgedit.txt"
+  printf '%s\n' "$GH_HOST" > "$H/ghhost.txt"
+  worker dh3 claude "$H/ghhost.txt"
   printf 'work output\n? Enter your email address: ›\n' > "$H/em.txt"
   worker du claude "$H/em.txt"
   local id
-  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv dz dy dj di dn dw2 dg2 dc2 df2 ds2 du2 dh2 dk2 dt2 da2; do
+  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv dz dy dj di dn dw2 dg2 dc2 df2 ds2 du2 dh2 dk2 dt2 da2 dp3 dd3 dx3 do3 dg3 dh3; do
     FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
     assert_contains "$(inbox_text "$id")" "steer for $id" "the steer for worker $id is durably recorded"
     sleep 1

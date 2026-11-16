@@ -2720,6 +2720,16 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
     && printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk 'NF { r[++n] = tolower($0) } END { for (i = n - 3; i < n; i++) if (i > 0 && r[i] ~ /(password|passphrase|pass phrase|passcode|pin|token|secret)[^:]{0,20}:[ \t\r]*$/) f = 1; exit !f }'; then
     printf 'credential\n'; return 0
   fi
+  # npm asks for `And an OTP code from your authenticator:` while it enables
+  # 2FA, and `gpg --edit-key` waits at `gpg>` to change a key.
+  if printf '%s' "$last" | LC_ALL=C grep -Eq '(^|[^a-z])(otp|2fa|mfa)[[:space:]]+code([[:space:]][^:>?]{0,40})?[:>?]$|^[[:space:]]*gpg>$'; then
+    printf 'credential\n'; return 0
+  fi
+  # gh asks for an enterprise `? Hostname:` after `Where do you use GitHub?`.
+  if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+)?hostname:$' \
+    && printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk 'NF { r[++n] = tolower($0) } END { for (i = n - 3; i < n; i++) if (i > 0 && r[i] ~ /where do you use github|github enterprise/) f = 1; exit !f }'; then
+    printf 'sign-in\n'; return 0
+  fi
   # OpenSSH's ssh-keygen asks which private key file to read or write.
   if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*enter file in which (the key is|to save the key)([[:space:]]*\([^)]*\))?[[:space:]]*:$'; then
     printf 'credential\n'; return 0
@@ -2798,7 +2808,7 @@ fm_composer_confirm_input() {  # <screen> -> row
     printf '%s\n' "$last"
     return 0
   fi
-  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|^[[:space:]]*(remove|examine files in directory|recursively remove|override .+ for|overwrite) .+\?([[:space:]]*\(y/n \[[yn]\]\))?$|\((\[y\]/n|y/\[n\])\)[[:space:]]*\?$|^[[:space:]]*<.*>[[:space:]]*\?$|[[:space:]]\?\.\.\.$|^[[:space:]]*what now>$|^[[:space:]]*(select items to delete|input ignore patterns|update|revert|add untracked|patch update|review diff)>>$|^[[:space:]]*please enter (your )?numeric choice[^:]*:$|^[[:space:]]*please enter a value between [0-9]+ and [0-9]+[^:]*:$|\(enter "h" for help\)[[:space:]]*\[[a-z]+\]$|^[[:space:]]*(yes/no|y/n)\?$|\(type [^)]{1,60}\)[[:space:]]*:$|\[y\]es, \[n\]o, \[a\]ll, \[n\]one, \[r\]ename:$|^[[:space:]]*(press|hit) any key|\(y/n \[[yn]\]\)$|\[y,n(,[a-z?/]+)*\]\?$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[^:>?"'"'"'`]{1,100}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
+  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|^[[:space:]]*(remove|examine files in directory|recursively remove|override .+ for|overwrite) .+\?([[:space:]]*\(y/n \[[yn]\]\))?$|\((\[y\]/n|y/\[n\])\)[[:space:]]*\?$|^[[:space:]]*<.*>[[:space:]]*\?$|[[:space:]]\?\.\.\.$|^[[:space:]]*what now>$|^[[:space:]]*(select items to delete|input ignore patterns|update|revert|add untracked|patch update|review diff)>>$|^[[:space:]]*please enter (your )?numeric choice[^:]*:$|^[[:space:]]*please enter a value between [0-9]+ and [0-9]+[^:]*:$|\(enter "h" for help\)[[:space:]]*\[[a-z]+\]$|^[[:space:]]*(yes/no|y/n)\?$|\(type [^)]{1,60}\)[[:space:]]*:$|\[y\]es, \[n\]o, \[a\]ll, \[n\]one, \[r\]ename:$|^[[:space:]]*(press|hit) any key|\(y/n \[[yn]\]\)$|\[y,n(,[a-z?/]+)*\]\?$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|^[[:space:]]*what to do\?[[:space:]]+(\([a-z]\)[a-z]+,?[[:space:]]*)+$|\(y/i/n/o/d/z\)[[:space:]]*(\[default=[a-z]\][[:space:]]*)?\?$|\?[[:space:]]+\[(y|n|yes|no)\]$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[^:>?"'"'"'`]{1,100}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
   printf '%s\n' "$last"
 }
 
