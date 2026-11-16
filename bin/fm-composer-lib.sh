@@ -2676,6 +2676,19 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
     }'; then
     printf 'credential\n'; return 0
   fi
+  # The AWS CLI draws its SSO session toolbar, a full-width rule, a
+  # `Configuration for SSO session:` header, and the session as JSON, below
+  # the live `SSO session name` input.
+  if printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
+    NF { r[++n] = tolower($0) }
+    END {
+      if (!n || r[n] !~ /^[ \t]*\}[ \t\r]*$/) exit 1
+      for (i = n - 1; i > 2 && i > n - 20; i--)
+        if (r[i] ~ /^[ \t]*configuration for sso session: / && r[i - 1] ~ /^(─){10,}[ \t\r]*$/ && r[i - 2] ~ /^[ \t]*sso session name[^:]*:/) exit 0
+      exit 1
+    }'; then
+    printf 'sign-in\n'; return 0
+  fi
   last=$(printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
     /[^ \t\r]/ { last = tolower($0) }
     END {
@@ -2702,7 +2715,7 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
   if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+)?(\[sudo\][[:space:]]+)?(password|passphrase|passcode|pin|otp|2fa([[:space:]]+code)?|mfa([[:space:]]+code)?|one.time[[:space:]]+(code|password))([[:space:]]+for[[:space:]][^:]*)?[:>?]$|(enter|type|input|provide|paste)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(password|passphrase|passcode|pin|api[[:space:]_-]?key|access[[:space:]_-]?key|private[[:space:]_-]?key|token|secret|otp|2fa|mfa|one.time|authenticator|security)[^:>?]*[:>?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?(mfa|2fa|otp|two.factor)[[:space:]]+code([[:space:]]+for[[:space:]].*)?[:>?]$|two.factor([[:space:]]+[a-z]+)?[[:space:]]+code[:>?]$|authenticator([[:space:]]+app)?[[:space:]]+code[:>?]$|^[^:]{0,30}[[:space:]]pin[:>?]$|(password|passphrase|passcode)([[:space:]]+for[[:space:]].*)?[^:]{0,40}[:>]$|(api[[:space:]_-]?key|access[[:space:]_-]?key|token|secret)[^:>?]{0,30}[:>?]$'; then
     printf 'credential\n'; return 0
   fi
-  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:?]*[>:?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(code|(authentication|verification|security|login|sign.?in|device|authori[sz]ation)[[:space:]]+code)[^:>?]*[:>?]$|(authentication|security|login|verification|device) code[^:>?]{0,30}[:>?]$|^[[:space:]]*(\?[[:space:]]+)?user(name)? for .*[:>?]$|^[[:space:]]*(\?[[:space:]]+)?(user.?name|login|email|e-mail|email address|email or username|username or email)([[:space:]]*(\([^)]*\)|\[[^]]*\]))?[:>]([[:space:]]*\([^)]*\))?$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(user.?name|login|email|e-mail|email address)[^:>?]*[:>?]$|^[[:space:]]*sso[[:space:]]+(session name|start url|region|registration scopes)[^:]*:$|press (enter|return|any key)[^:]*(browser|github\.com|log.?in|sign.?in)|^[[:space:]]*select a subscription and tenant[^:]*:$'; then
+  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:?]*[>:?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(code|(authentication|verification|security|login|sign.?in|device|authori[sz]ation)[[:space:]]+code)[^:>?]*[:>?]$|(authentication|security|login|verification|device) code[^:>?]{0,30}[:>?]$|^[[:space:]]*(\?[[:space:]]+)?user(name)? for .*[:>?]$|^[[:space:]]*(\?[[:space:]]+)?(user.?name|login|email|e-mail|email address|email or username|username or email)([[:space:]]*(\([^)]*\)|\[[^]]*\]))?[:>]([[:space:]]*\([^)]*\))?$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(user.?name|login|email|e-mail|email address)[^:>?]*[:>?]$|^[[:space:]]*sso[[:space:]]+(session name|start url|region|registration scopes)[^:]*:$|press (enter|return|any key)[^:]*(browser|github\.com|log.?in|sign.?in)|^[[:space:]]*select a subscription and tenant[^:]*:$|^[[:space:]]*enter the output of the above command[^:]*:$'; then
     printf 'sign-in\n'; return 0
   fi
   return 1
