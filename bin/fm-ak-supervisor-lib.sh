@@ -54,7 +54,7 @@ fm_ak_supervisor_declaration_payload() {
     '    "independent-review": "Firstmate dispatches a reviewer crewmate that wrote none of the change and relays its verdict at the head.",' \
     '    "seat-separation": "Firstmate dispatches the implementer, verifier and reviewer seats as separate crewmates with their own worktrees.",' \
     '    "head-bound-evidence": "Every receipt and verdict Firstmate relays names the head commit it covers.",' \
-    '    "disclosure": "Firstmate checks the pull request body for the disclosure sentence before the final ship record."' \
+    '    "disclosure": "Firstmate opens each pull request body with the disclosure sentence as its first paragraph and checks it before the final ship record."' \
     '  }' \
     '}'
 }
