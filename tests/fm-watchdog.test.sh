@@ -3019,6 +3019,20 @@ test_second_mate_restart_done_after_session_start_under_new_lock() {
   pass "second mate: a relaunch is done once its session start runs under a new live lock"
 }
 
+test_second_mate_session_start_after_the_window_is_not_done() {
+  local new
+  mate_restarted
+  new=$(live_pid)
+  LOCK_PIDS="$LOCK_PIDS $new"
+  mate_lock "$new"
+  # The restart began at offset 10, so pickup-secs=600 closes its window at 610.
+  mate_started "$new" 611
+  WD=$MATE_WD run_wd 620 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "a session start after the window is no pickup: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows restart-requested restart failed)" "the late pickup fails the restart: $(ledger | cut -f5-8)"
+  pass "second mate: a session start after pickup-secs is not a pickup"
+}
+
 test_dialog_reserved_check_reads_only_dialog_rows() {
   local rule='────────────────────'
   make_home "Merged PR #41, deleted the branch."$'\n'"$rule"$'\nSwitch to another model?\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
@@ -6076,6 +6090,7 @@ fm_test_run \
   test_second_mate_restart_ends_the_pass \
   test_second_mate_zero_exit_relaunch_is_not_done \
   test_second_mate_restart_done_after_session_start_under_new_lock \
+  test_second_mate_session_start_after_the_window_is_not_done \
   test_reserved_model_switch_dialog_is_held \
   test_secret_looking_decision_reaches_no_council \
   test_secret_looking_model_switch_dialog_is_held \

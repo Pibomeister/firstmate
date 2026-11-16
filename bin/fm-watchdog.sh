@@ -1268,7 +1268,7 @@ wd_restart() {  # <symptom> <kind>...
 # A second mate's pickup is its session start: bin/fm-session-start.sh writes
 # state/.session-start-complete with the lock pid once it holds the lock.
 wd_reconcile_pending() {
-  local now id home symptom action at tag tok old pick lockpid tr st detail picked done_note miss_note
+  local now id home symptom action at tag tok old pick lockpid tr st detail picked done_note miss_note started
   now=$(wd_now)
   fm_wd_open_pending "$LEDGER" | while IFS=$'\t' read -r id home symptom action at; do
     tag=$(wd_tag "$home")
@@ -1304,7 +1304,9 @@ wd_reconcile_pending() {
               continue ;;
           esac
           pick=$st/.session-start-complete
-          if [ -f "$pick" ] && [ "$(head -n 1 "$pick" 2>/dev/null | tr -cd '0-9')" = "$lockpid" ] && [ "$(wd_mtime "$pick")" -ge "$at" ]; then picked=1; fi
+          started=$(wd_mtime "$pick" | tr -cd '0-9')
+          if [ -n "$started" ] && [ "$(head -n 1 "$pick" 2>/dev/null | tr -cd '0-9')" = "$lockpid" ] &&
+            [ "$started" -ge "$at" ] && [ "$started" -le $((at + $(cfgi pickup-secs 600))) ]; then picked=1; fi
           done_note="session start verified; new lock pid $lockpid"
           miss_note="second mate relaunch had no verified session start under a new lock"
         fi
