@@ -2682,14 +2682,18 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
       gsub(/\r/, "", last)
       gsub(/pass phrase/, "passphrase", last)
       # A trailing input cursor or mask is not part of the label.
+      sub(/[ \t]*\[(hidden|input is masked)\][ \t]*$/, "", last)
       sub(/[ \t]*((›|❯|▌|█|•|\*)[ \t]*)*$/, "", last)
+      # prompts, enquirer, and inquirer draw `? Password › ****` with no
+      # colon, so a `? ` question ends its label there.
+      if (last ~ /^[ \t]*\?[ \t]+[^ \t]/ && last !~ /[:>?]$/) last = last ":"
       print last
     }')
   [ -n "$last" ] || return 1
   if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+)?(\[sudo\][[:space:]]+)?(password|passphrase|passcode|pin|otp|2fa([[:space:]]+code)?|mfa([[:space:]]+code)?|one.time[[:space:]]+(code|password))([[:space:]]+for[[:space:]][^:]*)?[:>?]$|(enter|type|input|provide|paste)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(password|passphrase|passcode|pin|api[[:space:]_-]?key|access[[:space:]_-]?key|private[[:space:]_-]?key|token|secret|otp|2fa|mfa|one.time|authenticator|security)[^:>?]*[:>?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?(mfa|2fa|otp|two.factor)[[:space:]]+code([[:space:]]+for[[:space:]].*)?[:>?]$|two.factor([[:space:]]+[a-z]+)?[[:space:]]+code[:>?]$|authenticator([[:space:]]+app)?[[:space:]]+code[:>?]$|^[^:]{0,30}[[:space:]]pin[:>?]$|(password|passphrase|passcode)([[:space:]]+for[[:space:]].*)?[^:]{0,40}[:>]$|(api[[:space:]_-]?key|access[[:space:]_-]?key|token|secret)[^:>?]{0,30}[:>?]$'; then
     printf 'credential\n'; return 0
   fi
-  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:?]*[>:?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(code|(authentication|verification|security|login|sign.?in|device|authori[sz]ation)[[:space:]]+code)[^:>?]*[:>?]$|(authentication|security|login|verification|device) code[^:>?]{0,30}[:>?]$|^[[:space:]]*(\?[[:space:]]+)?username for .*[:>?]$|^[[:space:]]*(\?[[:space:]]+)?(username|user name|login|email|e-mail|email address)([[:space:]]*(\([^)]*\)|\[[^]]*\]))?[:>]([[:space:]]*\([^)]*\))?$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(username|user name|login|email|e-mail|email address)[^:>?]*[:>?]$|press (enter|return|any key)[^:]*(browser|github\.com|log.?in|sign.?in)'; then
+  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:?]*[>:?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(code|(authentication|verification|security|login|sign.?in|device|authori[sz]ation)[[:space:]]+code)[^:>?]*[:>?]$|(authentication|security|login|verification|device) code[^:>?]{0,30}[:>?]$|^[[:space:]]*(\?[[:space:]]+)?username for .*[:>?]$|^[[:space:]]*(\?[[:space:]]+)?(user.?name|login|email|e-mail|email address|email or username|username or email)([[:space:]]*(\([^)]*\)|\[[^]]*\]))?[:>]([[:space:]]*\([^)]*\))?$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(user.?name|login|email|e-mail|email address)[^:>?]*[:>?]$|^[[:space:]]*sso[[:space:]]+(session name|start url|region|registration scopes)[^:]*:$|press (enter|return|any key)[^:]*(browser|github\.com|log.?in|sign.?in)'; then
     printf 'sign-in\n'; return 0
   fi
   return 1
@@ -2731,14 +2735,24 @@ fm_composer_confirm_input() {  # <screen> -> row
       for (i = n - 13; i <= n; i++) {
         if (i < 1) continue
         if (r[i] !~ /reveal more/ && r[i] ~ /\(use arrow keys|\[use arrows to move|^[ \t]*there (are|is) [0-9]+ .* available to you\.?[ \t\r]*$/) { q = i; f = 0; quoted = 0 }
-        else if (q && (r[i] ~ /for shortcuts|context left/ || r[i] ~ /^(─|━){20,}/)) quoted = 1
+        else if (q && (r[i] ~ /for shortcuts|context left|context [0-9]+% left/ || r[i] ~ /^(─|━){20,}/)) quoted = 1
         else if (q && r[i] ~ /^[ \t]*(❯|›|>)[ \t]*[^ \t]/) f = 1
         if (r[i] ~ /^[ \t]*\?[ \t]+[^ \t]/) { qq = i; fq = 0 }
         else if (qq && r[i] ~ /^[ \t]*(❯|›|>)[ \t]*[^ \t]/) fq = 1
       }
       # A paginated list may show its tip only below the options.
       if (fq && r[n] ~ /^[ \t]*\((use arrow keys|move up and down) to reveal more choices\)[ \t\r]*$/) exit 0
-      exit !(f && !quoted)
+      if (f && !quoted) exit 0
+      # A bare list, such as the drizzle-kit `❯ No, abort` under its question,
+      # holds only option rows, exactly one under a cursor, up to the last row.
+      c = 0; k = 0
+      for (i = n; i > 0 && i > n - 12; i--) {
+        if (r[i] ~ /for shortcuts|context left|context [0-9]+% left|esc to |⏎|ctrl\+|⌃/) exit 1
+        if (r[i] ~ /^[ \t]*(❯|›)[ \t]+[^ \t]/) c++
+        else if (r[i] !~ /^[ \t]+[^ \t]/) break
+        k++
+      }
+      exit !(c == 1 && k >= 2 && i > 0 && r[i] ~ /\?[ \t\r]*$/ && r[i] !~ /^[ \t]*(•|⏺|●|>|❯|›|\?[ \t]+for shortcuts)/)
     }'; then
     printf '%s\n' "$last"
     return 0

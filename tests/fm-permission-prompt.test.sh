@@ -163,6 +163,8 @@ run_wd() {  # <offset-secs> <args>...
 TF_DESTROY=$'Plan: 0 to add, 0 to change, 3 to destroy.\n\nDo you really want to destroy all resources?\n  Terraform will destroy all your managed infrastructure, as shown above.\n  There is no undo. Only \'yes\' will be accepted to confirm.\n\n  Enter a value: '
 TYPE_DELETE=$'This permanently removes project acme.\nType DELETE to confirm:'
 GIT_CLEAN=$'Would remove the following items:\n  build/   out.log\n*** Commands ***\n    1: clean                2: filter by pattern    3: select by numbers\n    4: ask each             5: quit                 6: help\nWhat now> '
+DRIZZLE=$'Warning  Found data-loss statements:\n· You\'re about to delete users table with 3 items\n\nTHIS ACTION WILL CAUSE DATA LOSS AND CANNOT BE REVERTED\n\nDo you still want to push changes?\n❯ No, abort\n  Yes, I want to remove 1 table,'
+SSO_URL=$'work\nSSO start URL [None]: '
 AWS_ROLE=$'Using the account ID 111122223333\nThere are 2 roles available to you.\n> ReadOnly\n  FullAccess'
 # BSD rm, cp, and mv, gh, git hunk, Heroku, parted, Prisma, Supabase, and pnpm
 # destructive confirmations.
@@ -182,6 +184,9 @@ DESTRUCTIVE_CONFIRMS=(
   $'? Do you still want to push changes? This deletes the users table (Use arrow keys)\n❯ No, abort\n  Yes, I want to remove 1 table,'
   $'Archive:  x.zip\nreplace a.txt? [y]es, [n]o, [A]ll, [N]one, [r]ename: '
   "$GIT_CLEAN"
+  "$DRIZZLE"
+  $'work\nAre you sure you want to drop the database \'app\' on server \'(localdb)\'? (y/N)'
+  $'work\nAll data will be wiped. Continue? [y/N]'
   $'WARNING!\n========\nThis will overwrite data on /dev/sdb irrevocably.\n\nAre you sure? (Type \'yes\' in capital letters): '
   $'Warning: The existing disk label on /dev/sdb will be destroyed and all data on this disk will be lost. Do you want to continue?\nYes/No? '
   $'? Are you sure you want to reset your database? All data will be lost. › (y/N)'
@@ -202,6 +207,9 @@ SECRET_INPUTS=(
   $'work\nVerifying - Enter PEM pass phrase:'
   $'work\nEnter pass phrase for key.pem:'
   "$PINENTRY"
+  $'work\n? Password › ****'
+  $'work\n? Enter your password ********'
+  $'work\n? Password [input is masked]'
 )
 SIGNIN_INPUTS=(
   $'work\nheroku: Press any key to open up the browser to login or q to exit: '
@@ -213,6 +221,10 @@ SIGNIN_INPUTS=(
   $'work\n? Enter your email address: ›'
   $'Attempting to automatically open the SSO authorization page in your default browser.\nThere are 2 AWS accounts available to you.\n> DeveloperAccount, developer-account-admin@example.com (111122223333)\n  ProductionAccount, production-account-admin@example.com (444455556666)'
   "$AWS_ROLE"
+  $'work\n? Email or username › '
+  $'work\nEnter user-name: '
+  $'work\nSSO session name (Recommended): '
+  "$SSO_URL"
 )
 
 ledger() { cat "$H/state/watchdog/actions.tsv" 2>/dev/null; }
@@ -298,11 +310,14 @@ test_hardstop_categories() {
   assert_equals $'hold\tconfirm' "$(printf '*** Commands ***\n  1: status\t  2: update\t  7: quit\t  8: help\nWhat now> \n' | classify claude)" "git add -i's menu is a held confirmation"
   for c in $'worker: the tool shows\n? Log in (Use arrow keys)\n\n› Implement {feature}\n\n  100% context left · ? for shortcuts' \
     $'? Log in (Use arrow keys)\n  Continue with GitHub\n────────────────────────────────────────\n❯ continue with the docs\n────────────────────────────────────────\n  ? for shortcuts' \
-    $'working on it\n› fix tests\n  esc to cancel' $'work\nI said yes/no? fine.\n\n❯ \n  ? for shortcuts'; do
+    $'working on it\n› fix tests\n  esc to cancel' \
+    $'• Ran npx vercel login\n  └ ? Log in to Vercel (Use arrow keys)\n    ❯ Continue with GitHub\n      Continue with GitLab\n\n› retry with a token\n\n  GPT-6.1-Sol medium · fm/branch · Context 77% left' \
+    $'• Shall I continue?\n\n› yes go ahead\n\n  GPT-6.1-Sol medium · fm/branch · Context 77% left' \
+    $'Should I continue?\n› yes go ahead\n  ⏎ send   ⌃J newline   ⌃T transcript   ⌃C quit' $'work\nI said yes/no? fine.\n\n❯ \n  ? for shortcuts'; do
     printf '%s\n' "$c" | classify codex >/dev/null && fail "a quoted list or busy row above a composer is not a prompt: $c"
     bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null && fail "a quoted list or busy row above a composer does not block a submit: $c"
   done
-  for c in $'work\n> ' $'work\nplease remove that line?' $'work\nI typed it to confirm it works.' $'work\nI will press any key now.' $'work\nis it y/n?' $'work\n┌────────────┐\n│ All done   │\n└────────────┘'; do
+  for c in $'work\n> ' $'work\nplease remove that line?' $'work\nI typed it to confirm it works.' $'work\nI will press any key now.' $'work\nis it y/n?' $'work\n? Project name › my-app' $'work\n? Which template?' $'work\n┌────────────┐\n│ All done   │\n└────────────┘'; do
     printf '%s\n' "$c" | classify claude >/dev/null && fail "this is not a confirmation: $c"
   done
   assert_equals $'hardstop\tdestructive' "$(printf 'work\nDiscard changes? [y/N]\n' | classify claude)" "a discard confirmation is a destructive stop"
@@ -550,10 +565,14 @@ test_doorbell_never_types_into_a_prompt() {
   worker dq claude "$H/parted.txt"
   printf '%s\n' "${SIGNIN_INPUTS[@]}" | grep -A6 'Log in to Vercel' | tail -n 7 > "$H/vercel.txt"
   worker dv claude "$H/vercel.txt"
+  printf '%s\n' "$DRIZZLE" > "$H/drizzle.txt"
+  worker dz claude "$H/drizzle.txt"
+  printf '%s\n' "$SSO_URL" > "$H/ssourl.txt"
+  worker dy claude "$H/ssourl.txt"
   printf 'work output\n? Enter your email address: ›\n' > "$H/em.txt"
   worker du claude "$H/em.txt"
   local id
-  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv; do
+  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv dz dy; do
     FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
     assert_contains "$(inbox_text "$id")" "steer for $id" "the steer for worker $id is durably recorded"
     sleep 1
