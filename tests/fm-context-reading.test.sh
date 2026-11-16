@@ -141,7 +141,7 @@ test_handoff_trigger_publishes_the_compact_point() {
   printf '{"autoCompactWindow":250000}\n' > "$claude_home/settings.json"
   assert_equals "" "$(run_trigger s-a "$TMP_ROOT/t-50")" "50000 of 217000 is above the threshold, so the trigger stays silent"
   rec=$(cat "$primary/state/compact-point" 2>/dev/null)
-  at=$(printf '%s' "$rec" | sed -n 's/^session=s-a compact_at=217000 at=\([0-9][0-9]*\)$/\1/p')
+  at=$(printf '%s' "$rec" | sed -n 's/^session=s-a compact_at=217000 at=\([0-9][0-9]*\) reset=compaction$/\1/p')
   [ -n "$at" ] || fail "the trigger must publish the point it resolved for the session, got: $rec"
   printf 'compact-at-tokens=100000\n' > "$primary/config/handoff-trigger"
   run_trigger s-b "$TMP_ROOT/t-50" >/dev/null
@@ -155,7 +155,16 @@ test_handoff_trigger_publishes_the_compact_point() {
     || fail "the in-session decision must stay unchanged"
   assert_contains "$(cat "$primary/state/compact-point")" "session=s-c compact_at=100000 at=" "the firing run publishes too"
   find "$primary/state" -maxdepth 1 -name 'compact-point.*' | grep -q . && fail "the record must be written atomically, with no temp file left"
-  pass "the handoff trigger publishes the compact point it resolved, named for its session"
+  assert_equals compaction "$(lib fm_context_reset_for_session "$primary" s-c)" "the reader names a compaction reset for the session"
+  assert_equals 100000 "$(lib fm_context_window_for_session "$primary" s-c)" "the reset field leaves the window reading intact"
+  assert_equals "" "$(lib fm_context_reset_for_session "$primary" s-other)" "another session's record names no reset"
+  printf 'compact-at-tokens=100000\nfresh-start-after=0\n' > "$primary/config/handoff-trigger"
+  run_trigger s-d "$TMP_ROOT/t-50" >/dev/null
+  assert_equals handoff "$(lib fm_context_reset_for_session "$primary" s-d)" "a cycle that ends in a handoff publishes that reset"
+  printf 'session=s-e compact_at=100000 at=%s\n' "$BASE" > "$primary/state/compact-point"
+  assert_equals "" "$(lib fm_context_reset_for_session "$primary" s-e)" "a record from an older trigger names no reset"
+  assert_equals 100000 "$(lib fm_context_window_for_session "$primary" s-e)" "an older record still gives its window"
+  pass "the handoff trigger publishes the compact point and the cycle's reset, named for its session"
 }
 
 # --- the watchdog restart decision ------------------------------------------------
@@ -245,10 +254,36 @@ test_watchdog_restart_follows_the_owning_reading() {
   pass "the watchdog restart gate follows the owning reading and records both values"
 }
 
+# Compaction-first: while the session's published reset is compaction, low
+# context is the routine run-up to auto-compaction, so the watchdog never asks
+# for a handoff; a cycle that ends in a handoff, or an explicit restart
+# request, still does.
+test_watchdog_leaves_a_compaction_cycle_to_auto_compaction() {
+  wd_home $'Captain session\n> \n  30% until auto-compact' 93000
+  printf 'session=%s compact_at=100000 at=%s reset=compaction\n' "$SID" "$BASE" > "$H/state/compact-point"
+  run_wd
+  assert_equals "" "$(handoff_rows)" "low context in a compaction cycle asks for no handoff"
+  grep -q 'restart-requested' "$H/state/watchdog/actions.tsv" 2>/dev/null \
+    && fail "a compaction cycle must not start the restart path: $(cat "$H/state/watchdog/actions.tsv")"
+
+  wd_home $'Captain session\n> \n  30% until auto-compact' 93000
+  printf 'session=%s compact_at=100000 at=%s reset=handoff\n' "$SID" "$BASE" > "$H/state/compact-point"
+  run_wd
+  assert_contains "$(handoff_rows)" "footer=30 derived=7 owner=derived" "low context in a handoff cycle still asks for the handoff"
+
+  wd_home $'Captain session\n> \n  30% until auto-compact' 93000
+  printf 'session=another-session compact_at=100000 at=%s reset=compaction\n' "$BASE" > "$H/state/compact-point"
+  printf 'compact-at-tokens=100000\n' > "$H/config/handoff-trigger"
+  run_wd
+  assert_contains "$(handoff_rows)" "owner=derived" "another session's compaction reset does not quiet this session"
+  pass "the watchdog leaves a compaction cycle to auto-compaction and still serves a handoff cycle"
+}
+
 fm_test_run \
   test_shared_footer_parser_reads_the_pane_footer \
   test_window_comes_from_the_matching_record_then_the_pin \
   test_derived_percent_is_left_of_the_window \
   test_reading_names_the_owner_and_both_values \
   test_handoff_trigger_publishes_the_compact_point \
-  test_watchdog_restart_follows_the_owning_reading
+  test_watchdog_restart_follows_the_owning_reading \
+  test_watchdog_leaves_a_compaction_cycle_to_auto_compaction

@@ -294,6 +294,12 @@
 #             current AGENTS.md to print before the bulky digest. The baseline
 #             remains immutable so every later drifted compaction refreshes
 #             again, while an equal baseline emits no instruction refresh.
+#             A Claude primary's `--reemit --source compact` that verifies its
+#             lock prints the compact re-entry card instead of the full
+#             re-emit: the work in flight, the re-check, and pointers, bounded
+#             to 6000 bytes so Claude delivers it whole (the card's code
+#             comment owns its contents). Plain `--reemit` always prints the
+#             full re-emit.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -1030,6 +1036,163 @@ EOF
     printf 'The original AGENTS.md baseline no longer matches, but the current file is absent.\n'
   fi
 }
+
+# --- compact re-entry card ------------------------------------------------------
+# A Claude auto-compaction is this home's routine context reset, so its re-emit
+# must land whole in context: Claude delivers a hook output of about 6.7 KB
+# whole but replaces 13.8 KB and more with a short preview, and the full re-emit
+# runs to well over 100 KB. A lock-owning Claude compact therefore prints this
+# card instead, bounded to REENTRY_CARD_BYTES: only the work in flight (open
+# captain orders, open decisions, captain holds, overdue goals, workers under
+# way, and the monitor), the re-check that turns the compaction summary's facts
+# back into current state, and pointers to everything else. The wake queue is
+# left for the session's own drain, which the card asks for first. A lock this
+# session cannot verify falls through to the full re-emit and its read-only
+# banner.
+REENTRY_CARD_BYTES=6000
+
+reentry_card_head() {  # <lock-output>
+  printf '%s%s\n' "FIRSTMATE COMPACT RE-ENTRY CARD - " "$FM_HOME"
+  printf 'Auto-compaction reset this session'"'"'s context; this session still holds the helm.\n'
+  printf 'Lock: %s\n' "$(printf '%s\n' "$1" | head -n 1)"
+  printf 'This card lists only the work in flight, small enough to read whole. AGENTS.md is still\n'
+  printf 'loaded, and the startup digest and its sweeps are not repeated.\n'
+  printf '\nRE-CHECK BEFORE ACTING - the compaction summary is history, not current state:\n'
+  printf '1. Run %s/bin/fm-wake-drain.sh now, handle what it presents, then run its WAKE_ACK_REQUIRED command.\n' "$FM_ROOT"
+  printf '2. Run %s/bin/fm-crew-state.sh <id> before acting on any worker, PR, or merge fact.\n' "$FM_ROOT"
+  printf '3. Act on an order only as bin/fm-order.sh pickup lists it now; ack it before acting.\n'
+}
+
+# Captain calls are backlog tasks held through bin/fm-captain-hold.sh, so they
+# are open decisions no status log names. The card lists the total and at most
+# REENTRY_CARD_HELD_ROWS rows; the full re-emit's backlog listing has the rest.
+REENTRY_CARD_HELD_ROWS=8
+
+reentry_card_held() {
+  local backlog="$DATA/backlog.md" out header rows total shown=0 row
+  printf '\nHELD FOR THE CAPTAIN (tasks-axi list --state held)\n'
+  if [ ! -s "$backlog" ]; then
+    printf '(none)\n'
+    return 0
+  fi
+  if ! fm_tasks_axi_backend_available "$CONFIG"; then
+    printf '(not listed without a compatible tasks-axi backend; the full re-emit named under MORE lists the backlog)\n'
+    return 0
+  fi
+  if ! out=$(tasks-axi list --file "$backlog" --state held --fields hold_kind,hold_until,hold_reason 2>&1); then
+    fm_cap_line_var "(tasks-axi list failed: $(printf '%s\n' "$out" | head -n 1); the full re-emit named under MORE lists the backlog)"
+    printf '%s\n' "$FM_LINE_CAP_LINE"
+    return 0
+  fi
+  out=$(printf '%s\n' "$out" | fm_hold_reason_decode_stream | strip_axi_help)
+  header=$(printf '%s\n' "$out" | awk '/^tasks\[/ { print; exit }')
+  rows=$(printf '%s\n' "$out" | awk '/^tasks\[/ { r = 1; next } r && /^[[:space:]]/ { print; next } { r = 0 }')
+  total=$(printf '%s' "$rows" | awk 'END { print NR }')
+  if [ "$total" -eq 0 ]; then
+    printf '(none)\n'
+    return 0
+  fi
+  printf 'held: %d in total\n%s\n' "$total" "$header"
+  while IFS= read -r row; do
+    [ "$shown" -lt "$REENTRY_CARD_HELD_ROWS" ] || break
+    fm_cap_line_var "$row"
+    printf '%s\n' "$FM_LINE_CAP_LINE"
+    shown=$((shown + 1))
+  done <<EOF
+$rows
+EOF
+  [ "$total" -le "$shown" ] ||
+    printf '[%d more held item(s) not shown; run the full re-emit named under MORE to list them]\n' "$((total - shown))"
+}
+
+reentry_card_body() {
+  local out task key verb note line meta id status found=0
+  printf '\nCAPTAIN ORDERS (bin/fm-order.sh pickup)\n'
+  out=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/fm-order.sh" pickup 2>&1) || out=
+  printf '%s\n' "${out:-(none open)}"
+
+  printf '\nOPEN DECISIONS (folded from the status logs)\n'
+  out=$(scan_open_decisions "$STATE" 2>/dev/null) || out=
+  while IFS=$(printf '\t') read -r task key verb note; do
+    [ -n "$task" ] || continue
+    found=1
+    line=$task
+    [ "$key" = default ] || line="$line [key=$key]"
+    fm_cap_line_var "$line $verb: $note"
+    printf '%s\n' "$FM_LINE_CAP_LINE"
+  done <<EOF
+$out
+EOF
+  [ "$found" -eq 1 ] || printf '(none)\n'
+
+  reentry_card_held
+
+  printf '\nOVERDUE GOALS (bin/fm-dispatch-log.sh overdue)\n'
+  out=
+  if [ -f "$STATE/dispatch-log.tsv" ]; then
+    out=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-dispatch-log.sh" overdue 2>&1) || true
+  fi
+  printf '%s\n' "${out:-(none)}"
+
+  printf '\nWORK UNDER WAY (last recorded event; bin/fm-crew-state.sh <id> has current state)\n'
+  found=0
+  for meta in "$STATE"/*.meta; do
+    [ -f "$meta" ] || continue
+    found=1
+    id=$(basename "$meta" .meta)
+    status="$STATE/$id.status"
+    line=$(tail -n 1 "$status" 2>/dev/null) || line=
+    fm_cap_line_var "$id project=$(fm_task_project_label "$meta") state=$(fm_task_state_word "$status") pr=$(fm_task_pr_url "$meta" "$status") age=$(fm_task_age "$meta") last: ${line:--}"
+    printf '%s\n' "$FM_LINE_CAP_LINE"
+  done
+  [ "$found" -eq 1 ] || printf '(none)\n'
+}
+
+reentry_card_tail() {
+  local afk=0 afk_mode x_mode=0
+  [ -e "$STATE/.afk" ] && afk=1
+  afk_mode=$(fm_afk_mode "$STATE")
+  [ -f "$CONFIG/x-mode.env" ] && x_mode=1
+  printf '\nMONITOR\n'
+  fm_watcher_supervision_verdict "$STATE" "$SCRIPT_DIR/fm-watch.sh" "${FM_GUARD_GRACE:-300}" "$FM_HOME" "$FM_ROOT"
+  if [ "$FM_WATCHER_VERDICT_OK" = true ]; then
+    printf 'monitor: healthy\n'
+  else
+    printf 'monitor: DOWN (%s) - restore it with the supervision protocol'"'"'s repair action before ending this turn\n' "$FM_WATCHER_VERDICT_REASON"
+  fi
+  if [ -f "$STATE/.afk-contract" ] || [ "$afk" -eq 1 ]; then
+    printf 'away posture: recorded (%s); load the matching /afk or /quiet skill before acting\n' "$afk_mode"
+  fi
+  printf '\nMORE\n'
+  printf 'Supervision protocol: %s/bin/fm-supervision-instructions.sh --harness %s --read-only 0 --afk %s --afk-mode %s --x-mode %s\n' \
+    "$FM_ROOT" "$PRIMARY_HARNESS" "$afk" "$afk_mode" "$x_mode"
+  printf 'Full re-emit (backlog, projects, captain and learnings files): FM_HOME=%s %s/bin/fm-session-start.sh --reemit\n' "$FM_HOME" "$FM_ROOT"
+}
+
+# print_reentry_card <lock-output>: the head and tail always print whole; the
+# in-flight body takes what the byte bound leaves and names what it omitted.
+print_reentry_card() {
+  local head tail budget
+  head=$(reentry_card_head "$1")
+  tail=$(reentry_card_tail)
+  budget=$((REENTRY_CARD_BYTES - $(printf '%s\n%s\n' "$head" "$tail" | LC_ALL=C wc -c) - 160))
+  printf '%s\n' "$head"
+  reentry_card_body | LC_ALL=C awk -v max="$budget" '
+    { n += length($0) + 1; if (cut || n > max) { cut = 1; omitted++; next } print }
+    END { if (cut) printf "[%d more line(s) omitted at the card'"'"'s byte bound; run the full re-emit named under MORE to list them]\n", omitted }'
+  printf '%s\n' "$tail"
+}
+
+if [ "$REEMIT" -eq 1 ] && [ "$SESSION_SOURCE" = compact ] && [ "$PRIMARY_HARNESS" = claude ]; then
+  stage lock
+  if REENTRY_LOCK_OUT=$("$SCRIPT_DIR/fm-lock.sh" 2>&1); then
+    # A compact starts a new context that has written no handoff yet
+    # (bin/fm-order.sh owns the handle and order contract).
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/fm-order.sh" claim-handle >/dev/null 2>&1 || true
+    print_reentry_card "$REENTRY_LOCK_OUT"
+    exit 0
+  fi
+fi
 
 AGENTS_START_HASH=
 if [ "$REEMIT" -eq 0 ] && [ "$SESSION_SOURCE" = startup ]; then

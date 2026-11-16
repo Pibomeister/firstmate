@@ -296,7 +296,7 @@ run_case() {
   case "$mode" in interrupt-after-ack|precommit) budget=$LAB_SUCCESS_BUDGET ;; esac
   if [ "$mode" = success ]; then
     budget=$LAB_SUCCESS_BUDGET
-    printf 'compact-at-tokens=100000\n' > "$LAB/config/handoff-trigger"
+    printf 'compact-at-tokens=100000\nfresh-start-after=0\n' > "$LAB/config/handoff-trigger"
     printf '{"type":"assistant","message":{"model":"claude-test-model","usage":{"input_tokens":90000,"output_tokens":1}}}\n' > "$LAB/transcript"
     hook_output=$(run_hook_fixture PostToolUse)
     printf '%s' "$hook_output" | jq -e '.hookSpecificOutput.additionalContext | contains("handoff")' >/dev/null \
