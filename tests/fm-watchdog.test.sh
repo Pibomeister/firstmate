@@ -4140,6 +4140,37 @@ page_subjects() {  # <phase>
   awk -F'\t' -v p="$1" '$5 == "dialog" && $6 == "page" && $7 == p { print $4 }' "$H/state/watchdog/actions.tsv" 2>/dev/null | sort
 }
 
+# A credential or sign-in stop can already hold a typed value that the secret
+# detector does not recognize, so its away page records no pane text at all.
+test_worker_credential_page_withholds_typed_values() {
+  local aws=$'$ aws configure\nAWS Access Key ID [****************ABCD]:\nAWS Secret Access Key [****************WXYZ]: wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY'
+  local otp=$'+ two-factor required\nEnter OTP: 918273'
+  local mode
+  for mode in act dry-run; do
+    if [ "$mode" = act ]; then make_home $'Captain session\n> '; else make_home $'Captain session\n> ' 'mode=dry-run'; fi
+    transcript 100 "Working."
+    worker_pane keys ship "$aws"
+    worker_pane code ship "$otp"
+    sleep 0.5
+    printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+    printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+    : > "$H/state/.afk"
+    run_wd 0 once >/dev/null 2>&1 || fail "the $mode away pass failed"
+    if [ "$mode" = act ]; then
+      assert_equals 2 "$(ledger_rows dialog page pending)" "both credential stops page the owner: $(ledger | cut -f4-8)"
+    else
+      assert_equals 2 "$(ledger_rows dialog page dry-run)" "dry-run records both pages it would send: $(ledger | cut -f4-8)"
+    fi
+    assert_no_grep "wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY" "$H/state/watchdog/actions.tsv" "a typed AWS secret stays out of the $mode ledger"
+    assert_no_grep "918273" "$H/state/watchdog/actions.tsv" "a typed one-time code stays out of the $mode ledger"
+    assert_equals 2 "$(grep -c 'withheld: a credential or sign-in prompt' "$H/state/watchdog/actions.tsv")" "the $mode ledger names both withheld prompts"
+    if [ -e "$H/paged.log" ]; then
+      assert_no_grep "wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY" "$H/paged.log" "the page carries no typed secret"
+    fi
+  done
+  pass "a credential or sign-in stop pages the owner without recording its pane text"
+}
+
 test_worker_permission_dialog_pages_the_owner() {
   local dialog=$'Do you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently\n\nEsc to cancel'
   local question=$'Which plan should I follow?\n ❯ 1. Plan A (Recommended)\n   2. Plan B\n\nEnter to select · ↑/↓ to navigate · Esc to cancel'
@@ -6222,6 +6253,7 @@ fm_test_run \
   test_dialog_kind_ignores_conversation_rows \
   test_away_permission_dialog_pages_the_owner \
   test_worker_permission_dialog_pages_the_owner \
+  test_worker_credential_page_withholds_typed_values \
   test_low_context_undeliverable_nudge_leaves_frozen_recovery \
   test_homes_with_one_basename_keep_their_own_state \
   test_dialog_reserved_check_reads_only_dialog_rows \

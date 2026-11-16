@@ -1532,7 +1532,7 @@ Pick the option that keeps work going on another model or account without buying
 # O_REC_SUBJECT, when set, is the worker this page belongs to, and that subject
 # has its own window so one pane does not consume another's or the home's.
 # The page carries no dialog text; the ledger row records which dialog fired,
-# withheld when it looks like a secret. Quiet mode is not paged: the owner is
+# withheld for a credential or sign-in prompt or when it looks like a secret. Quiet mode is not paged: the owner is
 # watching the session there.
 wd_page_permission() {
   local text id summary out rc subject who
@@ -1540,7 +1540,12 @@ wd_page_permission() {
   subject=${O_REC_SUBJECT:-$O_TAG}
   fm_wd_rate_ok "$LEDGER" "$O_HOME" dialog page "$(cfgi nudge-secs 900)" "$(wd_now)" "$subject" || return 0
   text=$(fm_wd_dialog_text "$O_PANE")
-  if fm_secret_like "$text"; then text='[withheld: the dialog text looks like a secret]'; fi
+  # A credential or sign-in stop may already hold a typed value the secret
+  # detector cannot recognize, so its text is never recorded.
+  if case "${WD_PP_REASON:-}" in credential|sign-in) true ;; *) false ;; esac \
+    || fm_composer_secret_input "$O_PANE" >/dev/null 2>&1; then
+    text='[withheld: a credential or sign-in prompt]'
+  elif fm_secret_like "$text"; then text='[withheld: the dialog text looks like a secret]'; fi
   text=${text:0:300}
   id=$(wd_id)
   if [ "$(wd_mode)" != act ]; then wd_rec "$id" dialog page dry-run "would page the owner; permission: $text"; return 0; fi
@@ -1785,6 +1790,7 @@ wd_pp_unlock() {
 wd_permission_prompt() {
   local id=$1 harness=$2 screen=$3 dialog=$4 verdict kind reason hash rc
   WD_PP_STOPPED=
+  WD_PP_REASON=
   [ "$(wd_permission_mode)" != off ] || return 2
   if ! verdict=$(fm_pp_classify "$screen" "$harness" "$dialog"); then
     wd_pp_clear "$id"
@@ -1795,6 +1801,7 @@ wd_permission_prompt() {
   hash=$(fm_pp_hash "$screen")
   case "$kind" in
     hardstop)
+      WD_PP_REASON=$reason
       wd_pp_stop "$id" permission-prompt-hardstop "$hash" "worker $id shows a $reason prompt; nothing was answered, and the watchdog never answers credential, sign-in, spend, destructive, or reserved prompts"
       return 1 ;;
     hold)

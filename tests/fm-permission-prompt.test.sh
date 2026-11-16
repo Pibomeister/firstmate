@@ -207,6 +207,18 @@ RM_INACCESSIBLE=$'rm: attempt removal of inaccessible directory \'cache\'? '
 RM_FR=$'rm : supprimer \'cache.txt\' du type fichier ? '
 CP_FR=$'cp : voulez-vous écraser \'current.db\' ? '
 MERGETOOL_HIT=$'Normal merge conflict for \'a.c\':\n  {local}: modified file\n  {remote}: modified file\nHit return to start merge resolution tool (vimdiff): '
+GH_ACC_HOST=$'? Where do you use GitHub?\n  1: GitHub.com\n  2: Other\nEnter a number between 1 and 2: '
+GH_ACC_AUTH=$'? How would you like to authenticate GitHub CLI?\n  1: Login with a web browser\n  2: Paste an authentication token\nEnter a number between 1 and 2: 2'
+GCLOUD_CODE=$'Enter authorization code: 4/0AbCdEf'
+AWS_LOGIN_CODE=$'Enter the authorization code displayed in your browser: ABCD-1234'
+GCLOUD_OUTPUT=$'Enter the output of the above command: 4/0xyz'
+GH_HOST_VAL=$'? Where do you use GitHub? Other\n? Hostname: github.example.com'
+KEYGEN_VAL=$'Enter file in which to save the key (/Users/a/.ssh/id_ed25519): /tmp/k'
+RU_PASS=$'Пароль: '
+NPM_OTP_VAL=$'And an OTP code from your authenticator: 123456'
+AWSVAULT_MFA=$'Enter MFA code for arn:aws:iam::123456789012:mfa/user: 123456'
+CERTBOT_DEL=$'Are you sure you want to delete the above certificate(s)?\n(Y)es/(N)o: '
+MKFS_PROCEED=$'/dev/sdb1 contains a ext4 file system\nProceed anyway? (y,N) '
 NPM_AGAIN=$'$ npm profile set password\nCurrent password: \nNew password: \n       Again:     '
 SSH_KEYFILE=$'work\nEnter file in which the key is (/Users/test/.ssh/id_ed25519): '
 GH_SSHTITLE=$'? Upload your SSH public key to your GitHub account? /Users/test/.ssh/id_ed25519.pub\n? Title for your SSH key: (GitHub CLI) '
@@ -234,6 +246,8 @@ DESTRUCTIVE_CONFIRMS=(
   "$RM_INACCESSIBLE"
   "$RM_FR"
   "$CP_FR"
+  "$CERTBOT_DEL"
+  "$MKFS_PROCEED"
   $'Reversed (or previously applied) patch detected!  Assume -R? [n] n\nApply anyway? [n] '
   $'work\nremove a.txt? '
   $'work\nexamine files in directory d? '
@@ -292,6 +306,10 @@ SECRET_INPUTS=(
   "$SSH_BADPASS"
   "$ECHO_OTP"
   "$ECHO_MFA"
+  "$KEYGEN_VAL"
+  "$RU_PASS"
+  "$NPM_OTP_VAL"
+  "$AWSVAULT_MFA"
   "$SUDO_ES"
   $'Passwort: '
   "$AWS_ECHO"
@@ -334,6 +352,12 @@ SIGNIN_INPUTS=(
   "$ECHO_NPMEMAIL"
   "$ECHO_PIPUSER"
   "$ECHO_GITUSER"
+  "$GH_ACC_HOST"
+  "$GH_ACC_AUTH"
+  "$GCLOUD_CODE"
+  "$AWS_LOGIN_CODE"
+  "$GCLOUD_OUTPUT"
+  "$GH_HOST_VAL"
   "$AWS_MFA"
   $'Please type \'yes\' or \'no\': '
   $'? Where do you use GitHub? [Use arrows to move, type to filter]\n> GitHub.com\n  Other'
@@ -449,7 +473,11 @@ test_hardstop_categories() {
  # git mergetool's launch prompt is an owner-reserved merge stop.
   assert_equals hardstop "$(printf '%s\n' "$MERGETOOL_HIT" | classify claude | cut -f1)" "git mergetool's launch prompt is a hard stop"
   assert_equals 'terminal confirmation' "$(bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$MERGETOOL_HIT")" "the send guard holds git mergetool's launch prompt"
-  for c in 'Exit code: 1' 'Summary: done' 'rm: cannot remove x: No such file or directory'; do
+  for c in $'Pick a color\n  1: red\n  2: blue\nEnter a number between 1 and 2: ' $'Command may disrupt existing ssh connections. Proceed with operation (y|n)? ' $'Send this email? ([y]es|[n]o|[e]dit|[q]uit|[a]ll): ' $'Trust this certificate? [no]:  ' $'Press RETURN/ENTER to continue or any other key to abort:' $'By typing \'agree\' you are agreeing to the terms. Type \'print\' to print them or \'cancel\' to cancel, [agree, print, cancel] '; do
+    assert_equals $'hold\tconfirm' "$(printf '%s\n' "$c" | classify claude)" "this terminal question is held: $c"
+  done
+  assert_equals 'option picker' "$(bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" $'Who should this report cover?\n❯ 1. This session only\n  2. All sessions\nEnter to choose · Esc to cancel')" "an Enter to choose picker blocks a send"
+  for c in 'Hostname: build-1' 'Error code: 500' 'Exit code: 1' 'Summary: done' 'rm: cannot remove x: No such file or directory'; do
     assert_equals '' "$(printf '%s\n' "$c" | classify claude)" "an ordinary output row is not a prompt: $c"
   done
   assert_equals $'hardstop\tcredential' "$(printf '%s\n' "$COMPOSER_AUTH" | classify claude)" "Composer's store-credentials question is a credential stop"
@@ -781,10 +809,16 @@ test_doorbell_never_types_into_a_prompt() {
     printf '%s\n' "$c" > "$H/b7-$i.txt"
     worker "d7x$i" claude "$H/b7-$i.txt"
   done
+  i=0
+  for c in "$GH_ACC_HOST" "$GH_ACC_AUTH" "$GCLOUD_CODE" "$AWS_LOGIN_CODE" "$GCLOUD_OUTPUT" "$GH_HOST_VAL" "$KEYGEN_VAL" "$RU_PASS" "$NPM_OTP_VAL" "$AWSVAULT_MFA" "$CERTBOT_DEL" "$MKFS_PROCEED"; do
+    i=$((i + 1))
+    printf '%s\n' "$c" > "$H/c8-$i.txt"
+    worker "d8x$i" claude "$H/c8-$i.txt"
+  done
   printf 'work output\n? Enter your email address: ›\n' > "$H/em.txt"
   worker du claude "$H/em.txt"
   local id
-  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv dz dy dj di dn dw2 dg2 dc2 df2 ds2 du2 dh2 dk2 dt2 da2 dp3 dd3 dx3 do3 dg3 dh3 dk4 ds4 dc4 dt4 dg4 df4 ds5 da5 dm5 dk5 dg5 dn5 d6x1 d6x2 d6x3 d6x4 d6x5 d6x6 d6x7 d6x8 d6x9 d6x10 d6x11 d7x1 d7x2 d7x3 d7x4 d7x5 d7x6 d7x7 d7x8 d7x9 d7x10 d7x11; do
+  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv dz dy dj di dn dw2 dg2 dc2 df2 ds2 du2 dh2 dk2 dt2 da2 dp3 dd3 dx3 do3 dg3 dh3 dk4 ds4 dc4 dt4 dg4 df4 ds5 da5 dm5 dk5 dg5 dn5 d6x1 d6x2 d6x3 d6x4 d6x5 d6x6 d6x7 d6x8 d6x9 d6x10 d6x11 d7x1 d7x2 d7x3 d7x4 d7x5 d7x6 d7x7 d7x8 d7x9 d7x10 d7x11 d8x1 d8x2 d8x3 d8x4 d8x5 d8x6 d8x7 d8x8 d8x9 d8x10 d8x11 d8x12; do
     FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
     assert_contains "$(inbox_text "$id")" "steer for $id" "the steer for worker $id is durably recorded"
     sleep 1
