@@ -415,7 +415,7 @@ except Exception as exc:
     print('unreadable or not JSON: %s' % exc); sys.exit(0)
 keys = ['launch-and-watch', 'validation-gate', 'independent-review',
         'seat-separation', 'head-bound-evidence', 'disclosure']
-line = re.compile(r'^[^\r\n  ]*\S[^\r\n  ]*$')
+line = re.compile(r'[^\r\n  ]*\S[^\r\n  ]*')
 if not isinstance(d, dict) or sorted(d) != ['contract', 'obligations', 'supervisor']:
     print('top-level keys: %r' % (sorted(d) if isinstance(d, dict) else d))
 elif d['contract'] != 'agent-kit/supervisor-contract@1':
@@ -425,7 +425,7 @@ elif d['supervisor'] != 'firstmate':
 elif not isinstance(d['obligations'], dict) or sorted(d['obligations']) != sorted(keys):
     print('obligation keys: %r' % d['obligations'])
 else:
-    bad = [k for k in keys if not isinstance(d['obligations'][k], str) or not line.match(d['obligations'][k])]
+    bad = [k for k in keys if not isinstance(d['obligations'][k], str) or not line.fullmatch(d['obligations'][k])]
     print('not one non-empty line: %r' % bad if bad else 'valid')
 PY
 }
@@ -435,6 +435,23 @@ file_identity() {
   python3 -I -c 'import hashlib, os, sys
 st = os.stat(sys.argv[1])
 print(st.st_ino, st.st_mtime_ns, hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$1"
+}
+
+# The digest of the declaration bytes agent-kit's adapters/firstmate statement
+# fixes; open agent-kit runs are stamped with it.
+AK_SUPERVISOR_DECLARATION_SHA256=7f3c2e3302d5c348fc08df441d8e6082a07650a25e6f216ed7214885bbd678fd
+
+# The validator itself rejects an obligation that is not exactly one line, so
+# the schema assertions below cannot pass vacuously.
+test_declaration_validator_rejects_multiline_obligations() {
+  local bad value
+  bad="$TMP_ROOT/bad-declaration.json"
+  for value in 'text\n' 'one\ntwo' 'text\r' '   '; do
+    printf '{"contract":"agent-kit/supervisor-contract@1","supervisor":"firstmate","obligations":{"launch-and-watch":"%s","validation-gate":"a","independent-review":"a","seat-separation":"a","head-bound-evidence":"a","disclosure":"a"}}\n' "$value" > "$bad"
+    [ "$(validate_declaration "$bad")" != valid ] ||
+      fail "the validator accepted the obligation value $value"
+  done
+  pass "the declaration validator rejects trailing, embedded and blank line obligations"
 }
 
 # A launch exports the declaration's real path, and that file satisfies the
@@ -455,6 +472,9 @@ test_declaration_matches_the_supervisor_contract() {
   real="$(cd -P -- "$(dirname -- "$decl")" && pwd -P)/$(basename -- "$decl")"
   assert_equals "$real" "$decl" "the exported declaration path must be the file's real path, which agent-kit stamps"
   assert_equals valid "$(validate_declaration "$decl")" "the declaration must match agent-kit's supervisor-declaration schema"
+  # agent-kit's Firstmate supervisor statement fixes these exact bytes.
+  assert_equals "$AK_SUPERVISOR_DECLARATION_SHA256" "$(file_identity "$decl" | cut -d' ' -f3)" \
+    "the declaration bytes must match agent-kit's Firstmate supervisor statement"
   cur=$(dirname -- "$decl")
   while :; do
     { [ ! -e "$cur/.git" ] && [ ! -L "$cur/.git" ]; } || fail "the declaration must sit outside every repository, but $cur holds .git"
@@ -536,6 +556,35 @@ codex-set=shell_environment_policy.set.AK_LIFECYCLE_POLICY="unattended"
 codex-set=shell_environment_policy.set.AK_LIFECYCLE_SUPERVISOR="firstmate"' "$seen" \
     "a launch without a declaration must unset any inherited path in the agent and its Codex tool shells"
   pass "a declaration location inside a git repository is refused with a warning and no inherited path survives"
+}
+
+# A declaration path that is a directory, or a link to one, is refused: the
+# rename would otherwise land inside it while reporting success.
+test_declaration_refuses_a_directory_destination() {
+  local kind rec out status seen dir target
+  for kind in directory link; do
+    rec=$(make_case "decl-dir-$kind" codex "decl-dir-$kind-a1")
+    read_case "$rec"
+    dir=$(dirname -- "$(decl_path "$HOME_DIR/user-home")")
+    mkdir -p "$dir"
+    target="$dir/supervisor-declaration.json"
+    if [ "$kind" = directory ]; then
+      mkdir "$target"
+    else
+      mkdir "$CASE_DIR/elsewhere"
+      ln -s "$CASE_DIR/elsewhere" "$target"
+    fi
+    out=$(run_case_spawn "decl-dir-$kind-a1" "$PROJ_DIR" --mode no-mistakes --yolo off)
+    status=$?
+    expect_code 0 "$status" "a spawn over a $kind declaration path should still launch: $out"
+    assert_contains "$out" "is a directory or a link to one" "the warning must name the $kind destination"
+    [ -z "$(find "$target/" -mindepth 1 2>/dev/null)" ] || fail "a $kind destination must gain no file inside it"
+    [ -z "$(find "$dir" -maxdepth 1 -name '.supervisor-declaration.json.*')" ] || fail "a refused $kind destination must leave no temporary file"
+    install_probe "$FAKEBIN_DIR"
+    seen=$(emitted_report "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") || fail "the emitted launch failed to run"
+    assert_contains "$seen" "declaration=unset" "a $kind destination must not be exported as the declaration"
+  done
+  pass "a declaration path that is a directory or a link to one is refused and never exported"
 }
 
 # bin/fm-env-scrub.sh removes all three lifecycle variables at every shared
@@ -757,8 +806,10 @@ test_raw_compound_launch
 test_raw_codex_launch_uses_the_launcher
 test_raw_non_codex_commands
 test_relaunch_rebuilds_the_values
+test_declaration_validator_rejects_multiline_obligations
 test_declaration_matches_the_supervisor_contract
 test_declaration_bytes_stay_stable
 test_declaration_refused_inside_a_repository
+test_declaration_refuses_a_directory_destination
 test_env_scrub_drops_all_three
 test_new_tmux_server_never_publishes_the_pair

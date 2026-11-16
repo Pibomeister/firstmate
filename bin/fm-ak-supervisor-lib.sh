@@ -36,7 +36,9 @@
 # bytes is left untouched (no write, rename or mtime change), so repeated and
 # concurrent launches never disturb an open run. An absent file, or one whose
 # bytes differ, is replaced by an atomic rename of a fully written sibling
-# temporary file. Changing the statements below therefore invalidates every
+# temporary file, and the written file is checked again after the rename; a
+# declaration path that is a directory or a link to one is refused instead.
+# Changing the statements below therefore invalidates every
 # run opened under the old bytes; agent-kit's recovery is a new run.
 #
 # Usage (sourced):
@@ -115,11 +117,18 @@ fm_ak_supervisor_declaration_ensure() {
     printf '%s\n' "$file"
     return 0
   fi
+  # A rename onto a directory, or a link to one, would move the temporary file
+  # inside it instead of replacing the declaration.
+  if [ -d "$file" ]; then
+    echo "warning: agent-kit supervisor declaration: $file is a directory or a link to one" >&2
+    return 1
+  fi
   tmp=$(mktemp "$real/.supervisor-declaration.json.XXXXXX" 2>/dev/null) || {
     echo "warning: agent-kit supervisor declaration: cannot write in $real" >&2
     return 1
   }
-  if fm_ak_supervisor_declaration_payload > "$tmp" && chmod 0644 "$tmp" && mv -f -- "$tmp" "$file"; then
+  if fm_ak_supervisor_declaration_payload > "$tmp" && chmod 0644 "$tmp" && mv -f -- "$tmp" "$file" &&
+    [ -f "$file" ] && [ ! -L "$file" ] && cmp -s -- "$file" <(fm_ak_supervisor_declaration_payload); then
     printf '%s\n' "$file"
     return 0
   fi
