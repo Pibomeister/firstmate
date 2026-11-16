@@ -4962,7 +4962,9 @@ test_home_usage_limit_ignores_grok_in_scrollback() {
   observe() { bash -c '. "$1/bin/fm-watchdog-lib.sh"; . "$1/bin/fm-composer-lib.sh"; shift; "$@"' _ "$ROOT" "$@"; }
   assert_equals 'Grok weekly-limit choice' "$(observe fm_composer_blocking_dialog "$grok")" \
     "the Grok fixture must match the composer detector, or a scrollback miss would be vacuous"
-  assert_equals '' "$(observe fm_composer_blocking_dialog "$picker" || true)" \
+  # A numbered picker over `Enter to confirm` refuses every submit, so the
+  # viewport picker blocks as an option picker; it must only not read as Grok.
+  assert_equals 'option picker' "$(observe fm_composer_blocking_dialog "$picker" || true)" \
     "the viewport picker must not match the Grok composer detector"
   assert_equals usage-limit "$(lib fm_wd_pane_dialog "$picker")" \
     "the viewport picker must still be a pane-text usage-limit"
@@ -4996,7 +4998,7 @@ SH
   view=$("$FAKEBIN/tmux" capture-pane -p -t "$mate_t" -S -0)
   assert_equals 'Grok weekly-limit choice' "$(observe fm_composer_blocking_dialog "$history")" \
     "stubbed scrollback must match the Grok detector"
-  assert_equals '' "$(observe fm_composer_blocking_dialog "$view" || true)" \
+  assert_equals 'option picker' "$(observe fm_composer_blocking_dialog "$view" || true)" \
     "stubbed viewport must not match the Grok detector"
   user="$parent/user"
   mkdir -p "$user/.claude"

@@ -248,6 +248,7 @@ SIGNIN_INPUTS=(
   "$SSO_SCOPES"
   "$SSO_URL_DEFAULT"
   "$GH_DEVICE"
+  $'? Where do you use GitHub? [Use arrows to move, type to filter]\n> GitHub.com\n  Other'
   "$AZ_SELECT"
   $'work\n? Email or username › me@example.com'
   "$PIP_USER"
