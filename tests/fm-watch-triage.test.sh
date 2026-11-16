@@ -3531,6 +3531,55 @@ test_busy_pane_below_turn_age_bound_is_absorbed() {
   pass "a busy worker below the turn-age bound remains working with no escalation"
 }
 
+# The hung-worker ladder's observe pass (bin/fm-hung-ladder.sh) runs inside
+# the watcher's own pane pass, before the busy-turn bound can defer a busy
+# pane, and it never changes what the pass decides. Absent config/hung-ladder
+# it costs nothing and writes nothing.
+test_hung_ladder_observes_a_busy_pane_inside_the_pass() {
+  local dir state config fakebin out capture_file window key sig pid
+  dir=$(make_case hung-ladder-observe); state="$dir/state"; config="$dir/config"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:fm-hl-busy"
+  mkdir -p "$config"
+  printf 'Working... (12.3s)' > "$capture_file"
+  printf 'window=%s\nkind=ship\nharness=pi\n' "$window" > "$state/hl-busy.meta"
+  record_pi_busy "$state" hl-busy
+  printf 'working: setup complete\n' > "$state/hl-busy.status"
+  sig=$(seen_sig "$state/hl-busy.status"); printf '%s' "$sig" > "$state/.seen-hl-busy_status"
+  key=$(watch_window_key "$window")
+  touch "$state/hl-busy.turn-ended"
+  prime_turnend_seen "$state/hl-busy.turn-ended"
+
+  # No config: one whole pass, and no ladder state appears.
+  env -u FM_TASK_ID PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$config" FM_BUSY_TURN_MAX_SECS=999 FM_STALE_ESCALATE_SECS=999 \
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_WATCH_ONCE=1 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" "$FM_TRIAGE_WAIT_FLOOR" || fail "one watcher pass with no ladder config did not finish cleanly"
+  [ -e "$state/.last-watcher-beat" ] || fail "the pass with no ladder config did not publish its beacon"
+  [ ! -s "$out" ] || fail "a busy pane with no ladder config printed a wake reason"
+  [ ! -e "$state/hung-ladder" ] || fail "an absent config/hung-ladder still wrote ladder state"
+
+  # Observe: the same busy pane, below the busy-turn bound, is sampled.
+  printf 'mode=observe\nactor=test\n' > "$config/hung-ladder"
+  chmod 600 "$config/hung-ladder"
+  env -u FM_TASK_ID PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$config" FM_BUSY_TURN_MAX_SECS=999 FM_STALE_ESCALATE_SECS=999 \
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_WATCH_ONCE=1 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" "$FM_TRIAGE_WAIT_FLOOR" || fail "one watcher pass with the ladder in observe did not finish cleanly"
+  [ ! -s "$out" ] || fail "the observe pass printed a wake reason: $(cat "$out")"
+  [ ! -e "$state/.stale-since-$key" ] || fail "the observe pass started a wedge timer"
+  [ -s "$state/hung-ladder/episodes/hl-busy.sample" ] \
+    || fail "the busy pane below the busy-turn bound was not observed by the ladder: $(cat "$state/.hung-ladder.err" 2>&1)"
+  grep -q 'mode	observe' "$state/hung-ladder/actions.tsv" || fail "the observe pass recorded no mode row"
+  if grep -q 'would-act' "$state/hung-ladder/actions.tsv"; then
+    fail "a single busy observation recorded a would-act row"
+  fi
+  env -u FM_TASK_ID FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$config" "$ROOT/bin/fm-hung-ladder.sh" verify >/dev/null \
+    || fail "the ledger written from the watcher pass does not verify"
+  pass "the hung-worker ladder observes a busy pane inside the watcher pass and changes nothing"
+}
+
 test_busy_pane_stable_hash_escalates_past_turn_age_bound() {
   local dir state fakebin out capture_file window key pane_hash sig pid
   dir=$(make_case busy-stable-hash-turn-age); state="$dir/state"; fakebin="$dir/fakebin"
@@ -5816,6 +5865,7 @@ fm_test_run \
   test_term_stops_a_watcher_whose_cleanup_marker_lock_is_held \
   test_cleanup_marker_lock_bound_is_decimal_with_zero_default \
   test_busy_pane_below_turn_age_bound_is_absorbed \
+  test_hung_ladder_observes_a_busy_pane_inside_the_pass \
   test_busy_pane_stable_hash_escalates_past_turn_age_bound \
   test_busy_pane_changing_hash_escalates_past_turn_age_bound \
   test_busy_pane_turn_end_touch_resets_age \

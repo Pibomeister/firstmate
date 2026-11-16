@@ -541,6 +541,10 @@ case "$WATCH_LOCK_WAIT" in ''|*[!0-9]*|0) WATCH_LOCK_WAIT=10 ;; esac
 # tolerates failure, so a helper stopped at the bound is skipped for the cycle.
 WATCH_HELPER_BUDGET=${FM_WATCH_HELPER_BUDGET:-}
 case "$WATCH_HELPER_BUDGET" in ''|*[!0-9]*|0) WATCH_HELPER_BUDGET=120 ;; esac
+HUNG_LADDER_SAMPLE_SECS=${FM_HUNG_LADDER_SAMPLE_SECS:-}
+case "$HUNG_LADDER_SAMPLE_SECS" in ''|*[!0-9]*|0) HUNG_LADDER_SAMPLE_SECS=60 ;; esac
+HUNG_LADDER_BUDGET=${FM_HUNG_LADDER_BUDGET:-}
+case "$HUNG_LADDER_BUDGET" in ''|*[!0-9]*|0) HUNG_LADDER_BUDGET=30 ;; esac
 # A busy pane is unconditional proof of liveness with no built-in duration bound,
 # so a hung foreground call can remain hidden even while its rendered busy
 # footer changes every poll. BUSY_TURN_MAX_SECS bounds how long any busy pane
@@ -3357,6 +3361,22 @@ STALE_WAIT_DECLARATION=
 
 CAPTAIN_CALL_IDENTITY=
 
+# The hung-worker ladder's observe pass (bin/fm-hung-ladder.sh owns every
+# rule). It runs inside this pass, never as its own loop: an absent
+# config/hung-ladder costs one file test, each task is sampled at most once
+# per FM_HUNG_LADDER_SAMPLE_SECS, the helper is time-bounded, and its result
+# never changes what this pass does next. It is called before the busy-turn
+# bound can defer the pane, so a pane that renders busy is still observed.
+hung_ladder_observe() {  # <task> <kind> <1 when the pane reads busy> <dialog> <pane-text>
+  local task=$1 kind=$2
+  [ -e "$CONFIG/hung-ladder" ] || return 0
+  [ -n "$task" ] || return 0
+  case "$kind" in ship|scout) ;; *) return 0 ;; esac
+  [ "$(age_of "$STATE/hung-ladder/episodes/$task.sample")" -ge "$HUNG_LADDER_SAMPLE_SECS" ] || return 0
+  printf '%s\n' "$5" | fm_run_timed "$HUNG_LADDER_BUDGET" "$BASH" "$SCRIPT_DIR/fm-hung-ladder.sh" \
+    tick --task "$task" --kind "$kind" --busy "$3" --dialog "$4" >/dev/null 2>"$STATE/.hung-ladder.err" || true
+}
+
 task_captain_call_open() {  # <task>
   local task=$1
   CAPTAIN_CALL_IDENTITY=
@@ -5588,6 +5608,7 @@ EOF
     # content cannot suppress stale detection. Read once per window per poll and
     # reused below so a busy verdict is consistent within one cycle.
     if window_is_busy "$w" "$tail40"; then busy_now=0; else busy_now=1; fi
+    hung_ladder_observe "$task" "$kind" "$((1 - busy_now))" "$dialog" "$tail40"
     if [ "$busy_now" -ne 0 ] && dismiss_pane_feedback_dialog "$w" "$tail40"; then
       echo "$h" > "$hf"
       echo 1 > "$cf"
