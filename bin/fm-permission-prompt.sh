@@ -76,7 +76,7 @@ if ! declare -F fm_secret_like >/dev/null 2>&1; then
 fi
 
 FM_PP_CREDENTIAL_RE='password|--reveal|(^|[^a-z])op[[:space:]]+item|aws[[:space:]]+configure|(^|[^a-z])(otp|2fa|mfa)([^a-z]|$)|one.time (code|password)|pass.?phrase|passcode|api.?key|access.?token|auth.?token|bearer|token|secret|keychain|credential|private.?key|id_(rsa|dsa|ecdsa|ed25519)|hosts\.yml|(^|[^a-z])printenv([^a-z]|$)|ssh-add|\.ssh/|\.netrc|\.npmrc|\.pgpass|authori[sz]ation:|(^|[^a-z])cookie:|\.docker/config\.json|curl[^|;&]*[[:space:]](-u|--user)([[:space:]=]|$)|(^|[^a-z])\.env([^a-z]|$)|kubectl[^|;&]*[[:space:]]config[[:space:]]+(view|get-users|set-credentials)|kubeconfig|\.kube/config|\.aws/|\.git-credentials|(^|[^a-z])vault[[:space:]]+(read|kv|login|token)|(^|[^a-z])(pass|gopass)[[:space:]]+(show|-c|otp|git|cat)([[:space:]]|$)|(^|[^a-z])(bw|lpass|keepassxc-cli)[[:space:]]+(get|show|export)|1password|op (read|signin)|security (find|add|delete)-|(^|[^a-z])gpg|(^|[^a-z])sudo([^a-z]|$)'
-FM_PP_SIGNIN_RE='sign.?in|log.?in|/login|authenticat|oauth|paste (the )?(authorization |authentication )?code|verification code|device code|browser didn.t open|select login method|not logged in|re-?authori[sz]e|session expired|aws accounts? available to you|roles? available to you|configure sso|sso (start url|session|region)|select a subscription and tenant|remote-bootstrap|output of the above command'
+FM_PP_SIGNIN_RE='sign.?in|log.?in|/login|authenticat|oauth|paste (the )?(authorization |authentication )?code|verification code|device code|browser didn.t open|select login method|not logged in|re-?authori[sz]e|session expired|aws accounts? available to you|roles? available to you|configure sso|sso (start url|session|region|registration scopes)|select a subscription and tenant|remote-bootstrap|output of the above command'
 FM_PP_SPEND_RE='add funds|paid[[:space:]]+(usage|credits?|plan|tier|model|request)|credits?[[:space:]]+to[[:space:]]+continue|use[[:space:]]+(your[[:space:]]+|extra[[:space:]]+|more[[:space:]]+)?credits|(^|[^a-z])charg(e|ed|es|ing)([^a-z]|$)|buy (more )?credits|purchase|payment|billing|upgrade (your |to )?(plan|max|pro)|extra usage|pay.as.you.go|overage|spend|credit card|subscribe|top.?up'
 FM_PP_DESTRUCTIVE_RE='(^|[^a-z])(rm|rmdir|unlink|shred|srm)([[:space:]]|$)|--recursive|(^|[[:space:]])--force([[:space:]=-]|$)|git[[:space:]]([^|;&]*[[:space:]])?(restore|clean|rm)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?reset[^|;&]*[[:space:]]--(hard|merge|keep)|git[[:space:]]([^|;&]*[[:space:]])?checkout[^|;&]*[[:space:]](-f|--force|\.|--)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?switch[^|;&]*[[:space:]](-f|--discard-changes)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?push[^|;&]*([[:space:]]-f([[:space:]]|$)|[[:space:]:]\+|[[:space:]]:[^[:space:]]|--delete|--mirror|--prune|[[:space:]]-d([[:space:]]|$))|git[[:space:]]([^|;&]*[[:space:]])?update-ref[^|;&]*[[:space:]]-d([[:space:]]|$)|s3[[:space:]]+rb([[:space:]]|$)|tmux[^|;&]*[[:space:]]kill-(server|session|pane|window)|git[[:space:]]([^|;&]*[[:space:]])?branch[^|;&]*[[:space:]]-(d|-delete)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?stash[[:space:]]+(drop|clear)|git[[:space:]]([^|;&]*[[:space:]])?(filter-branch|filter-repo|reflog[[:space:]]+expire)|worktree[[:space:]]+(remove|prune)|find[[:space:]].*-delete|(^|[^a-z])prune([^a-z]|$)|drop[[:space:]]+((the|this|your)[[:space:]]+)?(table|database|schema|db)([^a-z]|$)|truncate|(^|[^a-z])(delet|destroy|wipe|erase|overwrit)|mkfs|(^|[^a-z])dd[[:space:]]+if=|(chmod|chown|chgrp)([[:space:]][^|;&]*)?[[:space:]](-[a-z]*r|--recursive)|chmod[^|;&]*777|(^|[^a-z])mv[[:space:]]+(-[a-z]*f|--force)|(^|[[:space:];&|(])(:|true)[[:space:]]*>[^>&]|>[[:space:]]*/dev/(r?disk|sd|nvme)|kill[[:space:]]+-9|pkill|killall'
 FM_PP_RELEASE_RE='git[[:space:]]([^|;&]*[[:space:]])?push[^|;&]*[[:space:]:/](main|master|trunk|release[^[:space:]]*)([[:space:]]|$)|git[[:space:]]([^|;&]*[[:space:]])?push[^|;&]*([[:space:]:/]v[0-9]+\.[0-9]|--tags)|refs/(heads/(main|master|trunk)|tags/)|git[[:space:]]([^|;&]*[[:space:]])?tag([[:space:]]|$)|(^|[^be])merg|deploy|releas|publish|production|(^|[^a-z])prod([^a-z]|$)|gh[[:space:]]+release|npm[[:space:]]+publish|twine[[:space:]]+upload|terraform[[:space:]]+apply|kubectl[[:space:]]+(apply|delete|rollout)|helm[[:space:]]+(install|upgrade)|docker[[:space:]]+push'
@@ -116,6 +116,19 @@ _fm_pp_ruled_rows() {  # <screen>
       for (i = top + 1; i <= last; i++) if (r[i] ~ /[^ \t]/) print r[i]
     }') && [ -n "$rows" ] || return 1
   printf '%s\n' "$rows"
+}
+
+# The last 60 rows up to the last non-blank one, the reach of the boundary
+# search in _fm_pp_ruled_rows.
+_fm_pp_window_rows() {  # <screen>
+  printf '%s\n' "${1-}" | fm_wd_strip_ansi | awk '
+    { r[NR] = $0 }
+    END {
+      last = NR
+      while (last > 0 && r[last] !~ /[^ \t]/) last--
+      floor = last - 60; if (floor < 1) floor = 1
+      for (i = floor; i <= last; i++) if (r[i] ~ /[^ \t]/) print r[i]
+    }'
 }
 
 # The proven prompt rows, or else the watchdog's own dialog rows, which stop at
@@ -231,7 +244,7 @@ _fm_pp_trust_dialog() {  # <screen>
 }
 
 fm_pp_classify() {  # <screen> <harness> [<dialog>]
-  local screen=${1-} harness=${2-} dialog=${3-} rows text cat
+  local screen=${1-} harness=${2-} dialog=${3-} rows ruled text cat
   [ -n "$screen" ] || return 1
   # A proven trust dialog is read first, because the Antigravity picker has no
   # footer the watchdog's dialog detector recognizes.
@@ -280,10 +293,18 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
   # Only a proven structure leads to an action. A tool-approval prompt is
   # checked for every hard-stop category in its own rows and nothing else.
   if _fm_pp_claude_tool_approval "$screen"; then
-    # The whole command must be read, so an unproven boundary only holds.
-    if ! rows=$(_fm_pp_ruled_rows "$screen"); then
+    # The whole command must be read, so an unproven boundary only holds,
+    # unless a row in reach of the prompt already names a hard stop. A rule
+    # inside the command can end the dialog rows above it, so the same last
+    # 60 rows the boundary search reads are checked, which can only turn the
+    # hold into a keyed stop.
+    if ! ruled=$(_fm_pp_ruled_rows "$screen"); then
+      if cat=$(fm_pp_hardstop_category "$(_fm_pp_window_rows "$screen")"); then
+        printf 'hardstop\t%s\n' "$cat"; return 0
+      fi
       printf 'hold\tunproven\n'; return 0
     fi
+    rows=$ruled
     if cat=$(fm_pp_hardstop_category "$rows"); then
       printf 'hardstop\t%s\n' "$cat"; return 0
     fi

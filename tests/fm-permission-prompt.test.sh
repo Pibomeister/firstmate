@@ -165,6 +165,8 @@ TYPE_DELETE=$'This permanently removes project acme.\nType DELETE to confirm:'
 GIT_CLEAN=$'Would remove the following items:\n  build/   out.log\n*** Commands ***\n    1: clean                2: filter by pattern    3: select by numbers\n    4: ask each             5: quit                 6: help\nWhat now> '
 DRIZZLE=$'Warning  Found data-loss statements:\n· You\'re about to delete users table with 3 items\n\nTHIS ACTION WILL CAUSE DATA LOSS AND CANNOT BE REVERTED\n\nDo you still want to push changes?\n❯ No, abort\n  Yes, I want to remove 1 table,'
 SSO_URL=$'work\nSSO start URL [None]: '
+SSO_SCOPES=$'work\nSSO registration scopes [sso:account:access]: '
+SSO_URL_DEFAULT=$'work\nSSO start URL [https://my-sso-portal.awsapps.com/start]: '
 AZ_SELECT=$'[Tenant and subscription selection]\n\nNo     Subscription name    Subscription ID                       Tenant\n-----  -------------------  ------------------------------------  --------\n[1] *  Dev                  00000000-0000-0000-0000-000000000000  Contoso\n\nSelect a subscription and tenant (Type a number or Enter for no changes): '
 GCLOUD_REMOTE=$'You are authorizing gcloud CLI without access to a web browser.\n\ngcloud auth login --remote-bootstrap="https://accounts.google.com/o/oauth2/auth?response_type=code"\n\n\nEnter the output of the above command: '
 SSO_TOOLBAR=$'SSO session name (Recommended): my-sso\n────────────────────────────────────────────────────────────\nConfiguration for SSO session: my-sso\n\n{\n  "sso_start_url": "https://my-sso-portal.awsapps.com/start",\n  "sso_region": "us-east-1"\n}'
@@ -239,6 +241,8 @@ SIGNIN_INPUTS=(
   $'work\nEnter user-name: '
   $'work\nSSO session name (Recommended): '
   "$SSO_URL"
+  "$SSO_SCOPES"
+  "$SSO_URL_DEFAULT"
   "$AZ_SELECT"
   $'work\n? Email or username › me@example.com'
   "$PIP_USER"
@@ -415,8 +419,10 @@ test_structure_decides_not_words() {
     "a full-width rule inside a heredoc never hides the command above it"
   assert_equals $'hold\tunproven' "$(bash_prompt | awk -v d="$dashes" '/^ touch \/tmp/ { print " cat <<EOF"; print d; print " EOF"; next } { print }' | classify claude)" \
     "a command box whose boundary cannot be proven is held"
-  assert_equals $'hold\tunproven' "$(bash_prompt | awk -v rule="$rule" -v d="$dashes" '/^ touch \/tmp/ { print " rm -rf ~/work && cat <<EOF"; print rule; print d; print " EOF"; next } { print }' | classify claude)" \
+  assert_equals $'hardstop\tdestructive' "$(bash_prompt | awk -v rule="$rule" -v d="$dashes" '/^ touch \/tmp/ { print " rm -rf ~/work && cat <<EOF"; print rule; print d; print " EOF"; next } { print }' | classify claude)" \
     "a rule and a dashed row inside a command never hide the command above them"
+  assert_equals $'hardstop\tdestructive' "$(bash_prompt | awk -v d="$dashes" '/^ touch \/tmp/ { print " rm -rf build/ && cat <<EOF"; print d; print " EOF"; next } { print }' | classify claude)" \
+    "an unproven command box that shows a destructive command is a keyed stop, not a hold"
   assert_equals $'hardstop\tdestructive' "$(bash_prompt | awk '/^ touch \/tmp/ { print " git reset --ha"; print "rd HEAD"; next } { print }' | classify claude)" \
     "a soft-wrapped destructive command is still a stop"
   assert_equals $'hardstop\tcredential' "$(bash_prompt | awk '/^ touch \/tmp/ { print " cat ~/.ss"; print "h/id_ed25519"; next } { print }' | classify claude)" \
@@ -607,10 +613,14 @@ test_doorbell_never_types_into_a_prompt() {
   worker dc2 claude "$H/gcsel.txt"
   printf '%s\n' "$GIT_CLEAN_FILTER" > "$H/gcflt.txt"
   worker df2 claude "$H/gcflt.txt"
+  printf '%s\n' "$SSO_SCOPES" > "$H/ssosc.txt"
+  worker ds2 claude "$H/ssosc.txt"
+  printf '%s\n' "$SSO_URL_DEFAULT" > "$H/ssoud.txt"
+  worker du2 claude "$H/ssoud.txt"
   printf 'work output\n? Enter your email address: ›\n' > "$H/em.txt"
   worker du claude "$H/em.txt"
   local id
-  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv dz dy dj di dn dw2 dg2 dc2 df2; do
+  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv dz dy dj di dn dw2 dg2 dc2 df2 ds2 du2; do
     FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
     assert_contains "$(inbox_text "$id")" "steer for $id" "the steer for worker $id is durably recorded"
     sleep 1
