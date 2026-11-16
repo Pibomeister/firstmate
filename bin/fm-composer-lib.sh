@@ -2703,11 +2703,14 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
 # hunk prompts (`[y,n,q,a,d,e,?]?`), conda's `Proceed ([y]/n)?`, `find -ok`'s
 # `< rm ./a.txt > ?`, `xargs -p`'s `rm a ?...`, unzip's
 # `[y]es, [n]o, [A]ll, [N]one, [r]ename:`, git's interactive `What now>`,
-# cryptsetup's `(Type 'yes' in capital letters):`, `Press any key`, a bare `>`
+# cryptsetup's `(Type 'yes' in capital letters):`, parted's bare `Yes/No?`,
+# `Press any key`, a bare `>`
 # under `To proceed, type`, and an arrow-key list such as inquirer's
 # `? Log in (Use arrow keys)` or the AWS CLI's `There are 2 roles available to
-# you.` above a selected option, with only option rows
-# below it and no composer, so a quoted list above a composer is not one:
+# you.` above a selected option, with no composer below it (a full-width rule
+# at the left edge, `? for shortcuts`, or `context left`), so a quoted list
+# above a composer is not one; an indented separator and a `reveal more
+# choices` tip belong to the list:
 # typed text and Enter would answer it. Prints the lowered row.
 fm_composer_confirm_input() {  # <screen> -> row
   local last
@@ -2715,6 +2718,9 @@ fm_composer_confirm_input() {  # <screen> -> row
     /[^ \t\r]/ { last = tolower($0) }
     END {
       gsub(/\r/, "", last)
+      # enquirer prints the default answer after its pointer, as in
+      # `Proceed? (Y/n) › true`.
+      sub(/[ \t]*(›|»|‣)[ \t]*(true|false|yes|no)[ \t]*$/, "", last)
       sub(/[ \t]*((›|❯|▌|█|•|\*)[ \t]*)*$/, "", last)
       print last
     }')
@@ -2724,10 +2730,14 @@ fm_composer_confirm_input() {  # <screen> -> row
     END {
       for (i = n - 13; i <= n; i++) {
         if (i < 1) continue
-        if (r[i] ~ /\(use arrow keys|\[use arrows to move|^[ \t]*there (are|is) [0-9]+ .* available to you\.?[ \t\r]*$/) { q = i; f = 0; quoted = 0 }
-        else if (q && (r[i] ~ /(─|━){10,}/ || r[i] ~ /for shortcuts|context left/ || r[i] !~ /^[ \t]*((❯|›|>)[ \t]*)?[^ \t]/ || (r[i] !~ /^[ \t]+[^ \t]/ && r[i] !~ /^[ \t]*(❯|›|>)/))) quoted = 1
+        if (r[i] !~ /reveal more/ && r[i] ~ /\(use arrow keys|\[use arrows to move|^[ \t]*there (are|is) [0-9]+ .* available to you\.?[ \t\r]*$/) { q = i; f = 0; quoted = 0 }
+        else if (q && (r[i] ~ /for shortcuts|context left/ || r[i] ~ /^(─|━){20,}/)) quoted = 1
         else if (q && r[i] ~ /^[ \t]*(❯|›|>)[ \t]*[^ \t]/) f = 1
+        if (r[i] ~ /^[ \t]*\?[ \t]+[^ \t]/) { qq = i; fq = 0 }
+        else if (qq && r[i] ~ /^[ \t]*(❯|›|>)[ \t]*[^ \t]/) fq = 1
       }
+      # A paginated list may show its tip only below the options.
+      if (fq && r[n] ~ /^[ \t]*\((use arrow keys|move up and down) to reveal more choices\)[ \t\r]*$/) exit 0
       exit !(f && !quoted)
     }'; then
     printf '%s\n' "$last"
@@ -2738,7 +2748,7 @@ fm_composer_confirm_input() {  # <screen> -> row
     printf '%s\n' "$last"
     return 0
   fi
-  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|^[[:space:]]*(remove|examine files in directory|recursively remove|override .+ for|overwrite) .+\?([[:space:]]*\(y/n \[[yn]\]\))?$|\((\[y\]/n|y/\[n\])\)[[:space:]]*\?$|^[[:space:]]*<.*>[[:space:]]*\?$|[[:space:]]\?\.\.\.$|^[[:space:]]*what now>$|\(type [^)]{1,60}\)[[:space:]]*:$|\[y\]es, \[n\]o, \[a\]ll, \[n\]one, \[r\]ename:$|^[[:space:]]*(press|hit) any key|\(y/n \[[yn]\]\)$|\[y,n(,[a-z?/]+)*\]\?$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[^:>?"'"'"'`]{1,100}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
+  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|^[[:space:]]*(remove|examine files in directory|recursively remove|override .+ for|overwrite) .+\?([[:space:]]*\(y/n \[[yn]\]\))?$|\((\[y\]/n|y/\[n\])\)[[:space:]]*\?$|^[[:space:]]*<.*>[[:space:]]*\?$|[[:space:]]\?\.\.\.$|^[[:space:]]*what now>$|^[[:space:]]*(yes/no|y/n)\?$|\(type [^)]{1,60}\)[[:space:]]*:$|\[y\]es, \[n\]o, \[a\]ll, \[n\]one, \[r\]ename:$|^[[:space:]]*(press|hit) any key|\(y/n \[[yn]\]\)$|\[y,n(,[a-z?/]+)*\]\?$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[^:>?"'"'"'`]{1,100}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
   printf '%s\n' "$last"
 }
 
