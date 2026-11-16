@@ -5029,6 +5029,21 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
       exit 1
     fi
   fi
+  # Goal integrity (Eduardo, 2026-11-09): with config/goal-integrity present,
+  # refuse to send a brief that does not open with Eduardo's goal, verbatim,
+  # matching line 1 of state/goals/<task-id>.md.
+  if [ -e "$CONFIG/goal-integrity" ]; then
+    GOAL_FIRST_LINE=$(sed -n '1p' "$BRIEF")
+    GOAL_TEXT=${GOAL_FIRST_LINE#"GOAL (Eduardo, verbatim): "}
+    if [ "$GOAL_TEXT" = "$GOAL_FIRST_LINE" ] || [ -z "$(printf '%s' "$GOAL_TEXT" | tr -d '[:space:]')" ] || grep -qF '{GOAL}' "$BRIEF"; then
+      echo "error: $BRIEF must open with a 'GOAL (Eduardo, verbatim): ...' line holding Eduardo's goal from $STATE/goals/$ID.md (goal integrity, config/goal-integrity); refusing to send" >&2
+      exit 1
+    fi
+    if [ ! -f "$STATE/goals/$ID.md" ] || [ "$(sed -n '1p' "$STATE/goals/$ID.md")" != "$GOAL_TEXT" ]; then
+      echo "error: $BRIEF GOAL line does not match line 1 of $STATE/goals/$ID.md verbatim; only Eduardo's own words may stand there; refusing to send" >&2
+      exit 1
+    fi
+  fi
   if fm_brief_task_placeholders_present "$BRIEF"; then
     echo "error: $BRIEF still contains {TASK} or {FIRSTMATE_SPEC}; fill ## Captain's intent and ## Firstmate spec before spawn" >&2
     exit 1

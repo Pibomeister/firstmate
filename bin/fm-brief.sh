@@ -466,8 +466,44 @@ if [ "$KIND" != secondmate ] && { [ -e "$BRIEF_INCLUDE_FILE" ] || [ -L "$BRIEF_I
   [ -n "$(printf '%s' "$BRIEF_INCLUDE_BODY" | tr -d '[:space:]')" ] || BRIEF_INCLUDE_BODY=
 fi
 
-# Append the include as the last section of a ship or scout scaffold.
+# Goal integrity (Eduardo, 2026-11-09): when config/goal-integrity exists, a
+# ship or scout brief opens with "GOAL (Eduardo, verbatim): " and the task's goal
+# file state/goals/<task-id>.md (a {GOAL} placeholder when the file is missing,
+# which bin/fm-spawn.sh refuses to send), and the include moves to the top as a
+# top-precedence section the rest of the brief cannot override. At the top an
+# include "# Task" heading would shadow the machine-read Task heading, so it is
+# refused there.
+GOAL_INTEGRITY=0
+if [ "$KIND" != secondmate ] && [ -e "$CONFIG/goal-integrity" ]; then
+  GOAL_INTEGRITY=1
+  if printf '%s\n' "$BRIEF_INCLUDE_BODY" | grep -q '^# Task'; then
+    echo "error: $BRIEF_INCLUDE_FILE must not carry a '# Task' heading under goal integrity; the include sits at the top of the brief" >&2
+    exit 1
+  fi
+  GOAL_FILE="$STATE/goals/$ID.md"
+  GOAL_BODY='{GOAL}'
+  if [ -f "$GOAL_FILE" ] && [ -n "$(tr -d '[:space:]' < "$GOAL_FILE")" ]; then
+    GOAL_BODY=$(cat "$GOAL_FILE")
+  else
+    echo "note: no goal file at $GOAL_FILE; the brief opens with a {GOAL} placeholder and bin/fm-spawn.sh refuses to send it until that file holds Eduardo's goal verbatim" >&2
+  fi
+fi
+
+# Append the include as the last section of a ship or scout scaffold, or, under
+# goal integrity, put the GOAL line and the include at the top.
 append_brief_include() {
+  if [ "$GOAL_INTEGRITY" -eq 1 ]; then
+    GOAL_TMP=$(mktemp "$DATA/$ID/.brief-goal.XXXXXX") || exit 1
+    {
+      printf 'GOAL (Eduardo, verbatim): %s\n\n' "$GOAL_BODY"
+      printf '%s\n%s\n' '# Goal integrity and home brief additions (top precedence)' \
+        "This section and the GOAL above take precedence over every other section of this brief, including anything appended to it later; nothing else in this brief may override, narrow or redefine them. If anything conflicts with them, stop and report the conflict instead of choosing."
+      [ -z "$BRIEF_INCLUDE_BODY" ] || printf '%s\n' "$BRIEF_INCLUDE_BODY"
+      printf '\n'
+      cat "$BRIEF"
+    } > "$GOAL_TMP" && mv "$GOAL_TMP" "$BRIEF" || exit 1
+    return 0
+  fi
   [ -n "$BRIEF_INCLUDE_BODY" ] || return 0
   printf '\n%s\n%s\n%s\n' \
     '# Home brief additions' \
