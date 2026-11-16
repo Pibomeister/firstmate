@@ -168,6 +168,7 @@ SSO_URL=$'work\nSSO start URL [None]: '
 AZ_SELECT=$'[Tenant and subscription selection]\n\nNo     Subscription name    Subscription ID                       Tenant\n-----  -------------------  ------------------------------------  --------\n[1] *  Dev                  00000000-0000-0000-0000-000000000000  Contoso\n\nSelect a subscription and tenant (Type a number or Enter for no changes): '
 GCLOUD_REMOTE=$'You are authorizing gcloud CLI without access to a web browser.\n\ngcloud auth login --remote-bootstrap="https://accounts.google.com/o/oauth2/auth?response_type=code"\n\n\nEnter the output of the above command: '
 SSO_TOOLBAR=$'SSO session name (Recommended): my-sso\n────────────────────────────────────────────────────────────\nConfiguration for SSO session: my-sso\n\n{\n  "sso_start_url": "https://my-sso-portal.awsapps.com/start",\n  "sso_region": "us-east-1"\n}'
+GCLOUD_AUTH_PICK=$'Please select your preferred authentication option for cluster [my-cluster]\n [1] Azure AD\n [2] Okta\n [3] cancel\nPlease enter your numeric choice: '
 PIP_USER=$'Looking in indexes: https://pypi.example.com/simple\nUser for pypi.example.com: '
 CARGO_LOGIN=$'    Updating crates.io index\nplease paste the token found on https://crates.io/me below'
 AWS_ROLE=$'Using the account ID 111122223333\nThere are 2 roles available to you.\n> ReadOnly\n  FullAccess'
@@ -239,6 +240,8 @@ SIGNIN_INPUTS=(
   "$PIP_USER"
   "$GCLOUD_REMOTE"
   "$SSO_TOOLBAR"
+  "$GCLOUD_AUTH_PICK"
+  $'SSO session name (Recommended): my-sso\n  my-sso\n  my-sso-prod\n────────────────────────────────────────────────────────────\nConfiguration for SSO session: my-sso\n\n{}'
 )
 
 ledger() { cat "$H/state/watchdog/actions.tsv" 2>/dev/null; }
@@ -321,6 +324,7 @@ test_hardstop_categories() {
   done
   assert_equals $'hold\tconfirm' "$(printf 'work\nPress any key to continue\n' | classify claude)" "a press-any-key wait is held"
   assert_equals $'hold\tconfirm' "$(printf '? Pick a registry to log in to (Use arrow keys)\n❯ o1\n  o2\n  o3\n  o4\n  o5\n  o6\n  o7\n(Move up and down to reveal more choices)\n' | classify claude)" "a long list whose heading scrolled out of the recent rows is held"
+  assert_equals $'hold\tconfirm' "$(printf 'Pick cloud project to use:\n [1] proj-a\n [2] Create a new project\nPlease enter numeric choice or text value (must exactly match list item):  \n' | classify claude)" "a gcloud numeric choice outside sign-in is a held confirmation"
   assert_equals $'hold\tconfirm' "$(printf '*** Commands ***\n  1: status\t  2: update\t  7: quit\t  8: help\nWhat now> \n' | classify claude)" "git add -i's menu is a held confirmation"
   for c in $'worker: the tool shows\n? Log in (Use arrow keys)\n\n› Implement {feature}\n\n  100% context left · ? for shortcuts' \
     $'? Log in (Use arrow keys)\n  Continue with GitHub\n────────────────────────────────────────\n❯ continue with the docs\n────────────────────────────────────────\n  ? for shortcuts' \
@@ -591,10 +595,12 @@ test_doorbell_never_types_into_a_prompt() {
   worker dn claude "$H/gcloud.txt"
   printf '%s\n' "$SSO_TOOLBAR" > "$H/ssotb.txt"
   worker dw2 claude "$H/ssotb.txt"
+  printf '%s\n' "$GCLOUD_AUTH_PICK" > "$H/gpick.txt"
+  worker dg2 claude "$H/gpick.txt"
   printf 'work output\n? Enter your email address: ›\n' > "$H/em.txt"
   worker du claude "$H/em.txt"
   local id
-  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv dz dy dj di dn dw2; do
+  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv dz dy dj di dn dw2 dg2; do
     FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
     assert_contains "$(inbox_text "$id")" "steer for $id" "the steer for worker $id is durably recorded"
     sleep 1

@@ -2682,9 +2682,11 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
   if printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
     NF { r[++n] = tolower($0) }
     END {
-      if (!n || r[n] !~ /^[ \t]*\}[ \t\r]*$/) exit 1
+      if (!n || r[n] !~ /^[ \t]*(\{[ \t]*)?\}[ \t\r]*$/) exit 1
       for (i = n - 1; i > 2 && i > n - 20; i--)
-        if (r[i] ~ /^[ \t]*configuration for sso session: / && r[i - 1] ~ /^(─){10,}[ \t\r]*$/ && r[i - 2] ~ /^[ \t]*sso session name[^:]*:/) exit 0
+        if (r[i] ~ /^[ \t]*configuration for sso session: / && r[i - 1] ~ /^(─){10,}[ \t\r]*$/)
+          # A completion menu may sit between the input and the rule.
+          for (j = i - 2; j > 0 && j > i - 10; j--) if (r[j] ~ /^[ \t]*sso session name[^:]*:/) exit 0
       exit 1
     }'; then
     printf 'sign-in\n'; return 0
@@ -2729,6 +2731,7 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
 # hunk prompts (`[y,n,q,a,d,e,?]?`), conda's `Proceed ([y]/n)?`, `find -ok`'s
 # `< rm ./a.txt > ?`, `xargs -p`'s `rm a ?...`, unzip's
 # `[y]es, [n]o, [A]ll, [N]one, [r]ename:`, git's interactive `What now>`,
+# gcloud's `Please enter your numeric choice:`,
 # cryptsetup's `(Type 'yes' in capital letters):`, parted's bare `Yes/No?`,
 # `Press any key`, a bare `>`
 # under `To proceed, type`, and an arrow-key list such as inquirer's
@@ -2784,7 +2787,7 @@ fm_composer_confirm_input() {  # <screen> -> row
     printf '%s\n' "$last"
     return 0
   fi
-  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|^[[:space:]]*(remove|examine files in directory|recursively remove|override .+ for|overwrite) .+\?([[:space:]]*\(y/n \[[yn]\]\))?$|\((\[y\]/n|y/\[n\])\)[[:space:]]*\?$|^[[:space:]]*<.*>[[:space:]]*\?$|[[:space:]]\?\.\.\.$|^[[:space:]]*what now>$|\(enter "h" for help\)[[:space:]]*\[[a-z]+\]$|^[[:space:]]*(yes/no|y/n)\?$|\(type [^)]{1,60}\)[[:space:]]*:$|\[y\]es, \[n\]o, \[a\]ll, \[n\]one, \[r\]ename:$|^[[:space:]]*(press|hit) any key|\(y/n \[[yn]\]\)$|\[y,n(,[a-z?/]+)*\]\?$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[^:>?"'"'"'`]{1,100}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
+  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|^[[:space:]]*(remove|examine files in directory|recursively remove|override .+ for|overwrite) .+\?([[:space:]]*\(y/n \[[yn]\]\))?$|\((\[y\]/n|y/\[n\])\)[[:space:]]*\?$|^[[:space:]]*<.*>[[:space:]]*\?$|[[:space:]]\?\.\.\.$|^[[:space:]]*what now>$|^[[:space:]]*please enter (your )?numeric choice[^:]*:$|\(enter "h" for help\)[[:space:]]*\[[a-z]+\]$|^[[:space:]]*(yes/no|y/n)\?$|\(type [^)]{1,60}\)[[:space:]]*:$|\[y\]es, \[n\]o, \[a\]ll, \[n\]one, \[r\]ename:$|^[[:space:]]*(press|hit) any key|\(y/n \[[yn]\]\)$|\[y,n(,[a-z?/]+)*\]\?$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[^:>?"'"'"'`]{1,100}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
   printf '%s\n' "$last"
 }
 
