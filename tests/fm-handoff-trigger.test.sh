@@ -694,6 +694,10 @@ test_capture_is_the_default_before_the_drift_cap() {
   out=$(run_hook "$PRIMARY" s-capture "$t")
   expect_mode "$out" capture "the next cycle below the drift cap"
   assert_contains "$out" "Compactions so far: 1" "the capture names the compactions so far"
+  printf 'compact-at-tokens=100000\npercent-left=0\n' > "$PRIMARY/config/handoff-trigger"
+  expect_silent "$(run_hook "$PRIMARY" s-capture-off "$t")" "percent-left=0 never fires"
+  assert_contains "$(cat "$PRIMARY/state/compact-point")" "session=s-capture-off compact_at=100000" "percent-left=0 still publishes the point"
+  assert_equals "" "$(record_reset)" "percent-left=0 publishes no reset, so the watchdog keeps its low-context restart"
   pass "the default firing is a capture step: durable records, no successor, an ungated stop"
 }
 

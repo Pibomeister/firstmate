@@ -1158,7 +1158,7 @@ reentry_card_tail() {
   if [ "$FM_WATCHER_VERDICT_OK" = true ]; then
     printf 'monitor: healthy\n'
   else
-    printf 'monitor: DOWN (%s) - restore it with the supervision protocol'"'"'s repair action before ending this turn\n' "$FM_WATCHER_VERDICT_REASON"
+    printf 'monitor: DOWN (%s) - run the Supervision protocol command under MORE and use its repair action before ending this turn\n' "$FM_WATCHER_VERDICT_REASON"
   fi
   if [ -f "$STATE/.afk-contract" ] || [ "$afk" -eq 1 ]; then
     printf 'away posture: recorded (%s); load the matching /afk or /quiet skill before acting\n' "$afk_mode"

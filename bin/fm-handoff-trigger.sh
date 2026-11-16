@@ -266,7 +266,9 @@ first_reading_after_compaction() {
 MODE=
 REASON=
 POST_TOKENS=
-if [ -n "$BOUNDARIES" ]; then
+# A home with the trigger off (percent-left=0) gets no capture, so it publishes
+# no reset and keeps the watchdog's low-context restart.
+if [ -n "$BOUNDARIES" ] && [ "$PERCENT" -gt 0 ]; then
   MODE=capture
   if [ "$FRESH_AFTER" -eq 0 ]; then
     MODE=handoff
