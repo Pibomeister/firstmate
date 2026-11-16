@@ -219,6 +219,14 @@ NPM_OTP_VAL=$'And an OTP code from your authenticator: 123456'
 AWSVAULT_MFA=$'Enter MFA code for arn:aws:iam::123456789012:mfa/user: 123456'
 CERTBOT_DEL=$'Are you sure you want to delete the above certificate(s)?\n(Y)es/(N)o: '
 MKFS_PROCEED=$'/dev/sdb1 contains a ext4 file system\nProceed anyway? (y,N) '
+RM_TYPED=$'rm: remove regular file \'important.txt\'? y'
+TF_TYPED=$'Do you want to perform these actions?\n  Terraform will perform the actions described above.\n  Only \'yes\' will be accepted to approve.\n\n  Enter a value: yes'
+SSO_URL_VAL=$'SSO start URL [None]: https://my-sso-portal.awsapps.com/start'
+SSO_SCOPES_VAL=$'SSO registration scopes [sso:account:access]: sso:account:access'
+AZ_TENANT_VAL=$'Select a subscription and tenant (Type a number or Enter for no changes): 1'
+WRAP_GITUSER=$'$ git push\nUsername for \'https://github.co\nm\': '
+WRAP_MFA=$'Enter MFA code for arn:aws:iam::123456789012:mfa/u\nser: '
+WRAP_KEYGEN=$'Enter file in which to save the key (/Users/alice/.s\nsh/id_ed25519): '
 NPM_AGAIN=$'$ npm profile set password\nCurrent password: \nNew password: \n       Again:     '
 SSH_KEYFILE=$'work\nEnter file in which the key is (/Users/test/.ssh/id_ed25519): '
 GH_SSHTITLE=$'? Upload your SSH public key to your GitHub account? /Users/test/.ssh/id_ed25519.pub\n? Title for your SSH key: (GitHub CLI) '
@@ -248,6 +256,7 @@ DESTRUCTIVE_CONFIRMS=(
   "$CP_FR"
   "$CERTBOT_DEL"
   "$MKFS_PROCEED"
+  "$RM_TYPED"
   $'Reversed (or previously applied) patch detected!  Assume -R? [n] n\nApply anyway? [n] '
   $'work\nremove a.txt? '
   $'work\nexamine files in directory d? '
@@ -307,6 +316,8 @@ SECRET_INPUTS=(
   "$ECHO_OTP"
   "$ECHO_MFA"
   "$KEYGEN_VAL"
+  "$WRAP_MFA"
+  "$WRAP_KEYGEN"
   "$RU_PASS"
   "$NPM_OTP_VAL"
   "$AWSVAULT_MFA"
@@ -358,6 +369,10 @@ SIGNIN_INPUTS=(
   "$AWS_LOGIN_CODE"
   "$GCLOUD_OUTPUT"
   "$GH_HOST_VAL"
+  "$SSO_URL_VAL"
+  "$SSO_SCOPES_VAL"
+  "$AZ_TENANT_VAL"
+  "$WRAP_GITUSER"
   "$AWS_MFA"
   $'Please type \'yes\' or \'no\': '
   $'? Where do you use GitHub? [Use arrows to move, type to filter]\n> GitHub.com\n  Other'
@@ -477,7 +492,12 @@ test_hardstop_categories() {
     assert_equals $'hold\tconfirm' "$(printf '%s\n' "$c" | classify claude)" "this terminal question is held: $c"
   done
   assert_equals 'option picker' "$(bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" $'Who should this report cover?\n❯ 1. This session only\n  2. All sessions\nEnter to choose · Esc to cancel')" "an Enter to choose picker blocks a send"
-  for c in 'Hostname: build-1' 'Error code: 500' 'Exit code: 1' 'Summary: done' 'rm: cannot remove x: No such file or directory'; do
+  assert_equals $'hold\tconfirm' "$(printf '%s\n' "$TF_TYPED" | classify claude)" "a Terraform approval with its answer typed is still held"
+  for c in $'❯ \n────────────────────────────────────────────────────────\n  ? for shortcuts' $'│ > fix the bug: yes                                     │\n╰────────────────────────────────────────────────────────╯' 'The deploy finished with result: ok' $'Worked for 2m 10s\n\n› Ask: anything'; do
+    assert_equals '' "$(printf '%s\n' "$c" | classify claude)" "an agent screen is not a typed-answer or wrapped prompt: $c"
+    bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null && fail "an agent screen blocks a send: $c"
+  done
+  for c in 'Hostname: build-1' 'Error code: 500' 'OTP library version: 2.1.0' 'mfa is enabled for user: alice' '2FA required for account: bob' 'src/auth.ts:  // Enter verification code: 123' 'Exit code: 1' 'Summary: done' 'rm: cannot remove x: No such file or directory'; do
     assert_equals '' "$(printf '%s\n' "$c" | classify claude)" "an ordinary output row is not a prompt: $c"
   done
   assert_equals $'hardstop\tcredential' "$(printf '%s\n' "$COMPOSER_AUTH" | classify claude)" "Composer's store-credentials question is a credential stop"
@@ -815,10 +835,16 @@ test_doorbell_never_types_into_a_prompt() {
     printf '%s\n' "$c" > "$H/c8-$i.txt"
     worker "d8x$i" claude "$H/c8-$i.txt"
   done
+  i=0
+  for c in "$RM_TYPED" "$TF_TYPED" "$SSO_URL_VAL" "$SSO_SCOPES_VAL" "$AZ_TENANT_VAL" "$WRAP_GITUSER" "$WRAP_MFA" "$WRAP_KEYGEN"; do
+    i=$((i + 1))
+    printf '%s\n' "$c" > "$H/e9-$i.txt"
+    worker "d9x$i" claude "$H/e9-$i.txt"
+  done
   printf 'work output\n? Enter your email address: ›\n' > "$H/em.txt"
   worker du claude "$H/em.txt"
   local id
-  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv dz dy dj di dn dw2 dg2 dc2 df2 ds2 du2 dh2 dk2 dt2 da2 dp3 dd3 dx3 do3 dg3 dh3 dk4 ds4 dc4 dt4 dg4 df4 ds5 da5 dm5 dk5 dg5 dn5 d6x1 d6x2 d6x3 d6x4 d6x5 d6x6 d6x7 d6x8 d6x9 d6x10 d6x11 d7x1 d7x2 d7x3 d7x4 d7x5 d7x6 d7x7 d7x8 d7x9 d7x10 d7x11 d8x1 d8x2 d8x3 d8x4 d8x5 d8x6 d8x7 d8x8 d8x9 d8x10 d8x11 d8x12; do
+  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv dz dy dj di dn dw2 dg2 dc2 df2 ds2 du2 dh2 dk2 dt2 da2 dp3 dd3 dx3 do3 dg3 dh3 dk4 ds4 dc4 dt4 dg4 df4 ds5 da5 dm5 dk5 dg5 dn5 d6x1 d6x2 d6x3 d6x4 d6x5 d6x6 d6x7 d6x8 d6x9 d6x10 d6x11 d7x1 d7x2 d7x3 d7x4 d7x5 d7x6 d7x7 d7x8 d7x9 d7x10 d7x11 d8x1 d8x2 d8x3 d8x4 d8x5 d8x6 d8x7 d8x8 d8x9 d8x10 d8x11 d8x12 d9x1 d9x2 d9x3 d9x4 d9x5 d9x6 d9x7 d9x8; do
     FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
     assert_contains "$(inbox_text "$id")" "steer for $id" "the steer for worker $id is durably recorded"
     sleep 1

@@ -2665,6 +2665,39 @@ fm_composer_picker_rows() {  # rows on stdin
 # it. openssl's two-word `pass phrase` reads as passphrase. Prints credential
 # or sign-in.
 fm_composer_secret_input() {  # <screen> -> credential|sign-in
+  local u
+  fm_composer_secret_input_rows "${1-}" && return 0
+  u=$(fm_composer_unwrap_tail "${1-}") || return 1
+  fm_composer_secret_input_rows "$u"
+}
+
+# fm_composer_unwrap_tail <screen>: a capture keeps a narrow pane's soft
+# wraps as separate rows, so a long prompt's label can end up split from its
+# last row. Rows directly above the last non-blank row that fill the pane's
+# widest row exactly, and so prove a soft wrap, are joined onto it, up to four
+# rows, unless the last row opens like a composer, shell prompt, or box. Prints the rejoined screen, or exits 1 when no row was joined.
+fm_composer_unwrap_tail() {  # <screen> -> screen
+  printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
+    { gsub(/\r/, ""); r[++n] = $0; if (length($0) > w) w = length($0) }
+    END {
+      while (n > 0 && r[n] !~ /[^ \t]/) n--
+      if (n < 2 || w < 20) exit 1
+      # A soft-wrap continuation starts mid-label, never on a composer,
+      # shell, quote, or box marker, and carries part of a word, unlike the
+      # lone `:` of a pager. A capitalised word opens a new sentence rather
+      # than continuing one, and a joined row never ends a sentence.
+      if (r[n] ~ /^[ \t]|^(>|❯|›|\$|#|%|│|┃|\||\?|╰|└|─|━)/ || r[n] !~ /[A-Za-z0-9]/ || r[n] ~ /^[A-Z][a-z]/) exit 1
+      j = n
+      while (j > 1 && n - j < 4 && length(r[j - 1]) == w && r[j - 1] !~ /[ \t.!?:;]$/) j--
+      if (j == n) exit 1
+      for (i = 1; i < j; i++) print r[i]
+      line = ""
+      for (i = j; i <= n; i++) line = line r[i]
+      print line
+    }'
+}
+
+fm_composer_secret_input_rows() {  # <screen> -> credential|sign-in
   local last
   if printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
     NF { r[++n] = tolower($0) }
@@ -2751,7 +2784,7 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
   # A one-time code or sign-in label whose typed value is still echoed, such
   # as `Enter OTP: 123456`, `MFA token code: 123456`, pip's `User for
   # pypi.org: alice`, or git's `Username for 'https://github.com': alice`.
-  if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+|question[[:space:]]+)?(enter[[:space:]]+)?((your|the|an?)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+){0,2}(otp|2fa|mfa|one.time[[:space:]]+(code|password)|(otp|2fa|mfa|token|verification|authentication|security|one.time)[[:space:]]+code)([[:space:]]*\[[^]]*\]|[[:space:]][^:]{0,40}|[[:space:]]+for[[:space:]]+[^[:space:]]+)?:[[:space:]]+[^[:space:]]+$'; then
+  if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+|question[[:space:]]+)?(enter[[:space:]]+)?((your|the|an?)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+){0,2}(otp|2fa|mfa|one.time[[:space:]]+(code|password)|(otp|2fa|mfa|token|verification|authentication|security|one.time)[[:space:]]+code)([[:space:]]*\[[^]]*\]|[[:space:]]+from your authenticator|[[:space:]]+for[[:space:]]+[^[:space:]]+)?:[[:space:]]+[^[:space:]]+$'; then
     printf 'credential\n'; return 0
   fi
   if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+|question[[:space:]]+)?(npm[[:space:]]+)?(user.?name|login|email|e-mail|email address)([[:space:]]*(\([^)]*\)|\[[^]]*\]))?:([[:space:]]*\([^)]*\))?[[:space:]]+[^[:space:]]+$|^[[:space:]]*(user|user.?name|password) for [^[:space:]]+:[[:space:]]+[^[:space:]]+$'; then
@@ -2774,7 +2807,7 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
   if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*enter file in which (the key is|to save the key)([[:space:]]*\([^)]*\))?[[:space:]]*:[[:space:]]+[^[:space:]]'; then
     printf 'credential\n'; return 0
   fi
-  if printf '%s' "$last" | LC_ALL=C grep -Eq '(enter|type|input|provide|paste)[[:space:]]+((your|the|a|an)[[:space:]]+)?((authorization|authentication|verification|security|login|sign.?in|device|one.time)[[:space:]]+)code([[:space:]][^:]{0,60})?:[[:space:]]+[^[:space:]]+$|^[[:space:]]*enter the output of the above command[^:]*:[[:space:]]+[^[:space:]]'; then
+  if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+)?(enter|type|input|provide|paste)[[:space:]]+((your|the|a|an)[[:space:]]+)?((authorization|authentication|verification|security|login|sign.?in|device|one.time)[[:space:]]+)code([[:space:]][^:]{0,60})?:[[:space:]]+[^[:space:]]+$|^[[:space:]]*enter the output of the above command[^:]*:[[:space:]]+[^[:space:]]'; then
     printf 'sign-in\n'; return 0
   fi
   # OpenSSH's ssh-keygen asks which private key file to read or write.
@@ -2784,7 +2817,7 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
   if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+)?(\[sudo\][[:space:]]+)?(password|passphrase|passcode|pin|otp|2fa([[:space:]]+code)?|mfa([[:space:]]+code)?|one.time[[:space:]]+(code|password))([[:space:]]+for[[:space:]][^:]*)?[:>?]$|(enter|type|input|provide|paste)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(password|passphrase|passcode|pin|api[[:space:]_-]?key|access[[:space:]_-]?key|private[[:space:]_-]?key|token|secret|otp|2fa|mfa|one.time|authenticator|security)[^:>?]*[:>?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?(mfa|2fa|otp|two.factor)[[:space:]]+code([[:space:]]+for[[:space:]].*)?[:>?]$|two.factor([[:space:]]+[a-z]+)?[[:space:]]+code[:>?]$|authenticator([[:space:]]+app)?[[:space:]]+code[:>?]$|^[^:]{0,30}[[:space:]]pin[:>?]$|(password|passphrase|passcode)([[:space:]]+for[[:space:]].*)?[^:]{0,40}[:>]$|(api[[:space:]_-]?key|access[[:space:]_-]?key|token|secret)[^:>?]{0,30}[:>?]$'; then
     printf 'credential\n'; return 0
   fi
-  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:?]*[>:?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(code|(authentication|verification|security|login|sign.?in|device|authori[sz]ation)[[:space:]]+code)[^:>?]*[:>?]$|(authentication|security|login|verification|device) code[^:>?]{0,30}[:>?]$|^[[:space:]]*(\?[[:space:]]+)?user(name)? for .*[:>?]$|^[[:space:]]*(\?[[:space:]]+|question[[:space:]]+)?(npm[[:space:]]+)?(user.?name|login|email|e-mail|email address|email or username|username or email)([[:space:]]*(\([^)]*\)|\[[^]]*\]))?[:>]([[:space:]]*\([^)]*\))?$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(user.?name|login|email|e-mail|email address)[^:>?]*[:>?]$|^[[:space:]]*sso[[:space:]]+(session name|start url|region|registration scopes)([^:[]*\[[^]]*\])?[^:]*:$|press (enter|return|any key)([^:]|://)*(browser|github\.com|log.?in|sign.?in)|^[[:space:]]*select a subscription and tenant[^:]*:$|^[[:space:]]*enter the output of the above command[^:]*:$|^[[:space:]]*(\?[[:space:]]+)?title for your ssh key:|^[[:space:]]*please type .yes.(, .no. or the fingerprint| or .no.):$|^[[:space:]]*(\?[[:space:]]+)?(gitlab|github)([[:space:]]+enterprise([[:space:]]+server)?)?[[:space:]]+hostname:$|^[[:space:]]*wandb:[[:space:]]+enter your choice:$'; then
+  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:?]*[>:?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(code|(authentication|verification|security|login|sign.?in|device|authori[sz]ation)[[:space:]]+code)[^:>?]*[:>?]$|(authentication|security|login|verification|device) code[^:>?]{0,30}[:>?]$|^[[:space:]]*(\?[[:space:]]+)?user(name)? for .*[:>?]$|^[[:space:]]*(\?[[:space:]]+|question[[:space:]]+)?(npm[[:space:]]+)?(user.?name|login|email|e-mail|email address|email or username|username or email)([[:space:]]*(\([^)]*\)|\[[^]]*\]))?[:>]([[:space:]]*\([^)]*\))?$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(user.?name|login|email|e-mail|email address)[^:>?]*[:>?]$|^[[:space:]]*sso[[:space:]]+(session name|start url|region|registration scopes)([^:[]*\[[^]]*\])?[^:]*:([[:space:]]+[^[:space:]].*)?$|press (enter|return|any key)([^:]|://)*(browser|github\.com|log.?in|sign.?in)|^[[:space:]]*select a subscription and tenant[^:]*:([[:space:]]+[0-9]+)?$|^[[:space:]]*enter the output of the above command[^:]*:$|^[[:space:]]*(\?[[:space:]]+)?title for your ssh key:|^[[:space:]]*please type .yes.(, .no. or the fingerprint| or .no.):$|^[[:space:]]*(\?[[:space:]]+)?(gitlab|github)([[:space:]]+enterprise([[:space:]]+server)?)?[[:space:]]+hostname:$|^[[:space:]]*wandb:[[:space:]]+enter your choice:$'; then
     printf 'sign-in\n'; return 0
   fi
   return 1
@@ -2810,6 +2843,28 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
 # choices` tip belong to the list:
 # typed text and Enter would answer it. Prints the lowered row.
 fm_composer_confirm_input() {  # <screen> -> row
+  local u a
+  fm_composer_confirm_input_rows "${1-}" && return 0
+  # A confirmation whose answer is already typed but not yet submitted, such
+  # as `rm: remove regular file 'x'? y` or Terraform's `Enter a value: yes`,
+  # still waits, so the typed answer is dropped and the label checked again.
+  for u in "${1-}" "$(fm_composer_unwrap_tail "${1-}")"; do
+    [ -n "$u" ] || continue
+    a=$(printf '%s\n' "$u" | fm_composer_strip_ansi | LC_ALL=C awk '
+      { gsub(/\r/, ""); r[++n] = $0 }
+      END {
+        while (n > 0 && r[n] !~ /[^ \t]/) n--
+        if (!n || r[n] !~ /[?:\])>][ \t]+[^ \t]{1,60}[ \t]*$/) exit 1
+        sub(/[ \t]+[^ \t]{1,60}[ \t]*$/, "", r[n])
+        for (i = 1; i <= n; i++) print r[i]
+      }') || a=
+    if [ -n "$a" ] && fm_composer_confirm_input_rows "$a"; then return 0; fi
+    if [ "$u" != "${1-}" ] && fm_composer_confirm_input_rows "$u"; then return 0; fi
+  done
+  return 1
+}
+
+fm_composer_confirm_input_rows() {  # <screen> -> row
   local last
   last=$(printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
     /[^ \t\r]/ { last = tolower($0) }
