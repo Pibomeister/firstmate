@@ -2714,6 +2714,12 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
       && printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk 'NF { r[++n] = tolower($0) } END { for (i = n - 3; i < n; i++) if (i > 0 && r[i] ~ /(enter|provide|paste|type)[^.]*((^|[^a-z])otp([^a-z]|$)|one.time (code|password)|multi.factor|access token|api token)/) f = 1; exit !f }'; }; then
     printf 'credential\n'; return 0
   fi
+  # A short bare label such as npm's `Again:` re-asks for the secret entered
+  # on a row just above it, such as `New password:`.
+  if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z][a-z -]{0,23}:$' \
+    && printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk 'NF { r[++n] = tolower($0) } END { for (i = n - 3; i < n; i++) if (i > 0 && r[i] ~ /(password|passphrase|pass phrase|passcode|pin|token|secret)[^:]{0,20}:[ \t\r]*$/) f = 1; exit !f }'; then
+    printf 'credential\n'; return 0
+  fi
   # OpenSSH's ssh-keygen asks which private key file to read or write.
   if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*enter file in which (the key is|to save the key)([[:space:]]*\([^)]*\))?[[:space:]]*:$'; then
     printf 'credential\n'; return 0
