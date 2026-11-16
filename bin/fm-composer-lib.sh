@@ -2640,15 +2640,18 @@ fm_composer_blocking_dialog() {  # <screen> -> dialog name
 # last non-blank row is a recorded picker footer and a selected row sits in the
 # last 14 non-blank rows above it. Claude Code 2.1.316's folder-trust picker has
 # no numbers, so a cursor glyph before any text counts; a bare `>` needs a
-# number. The watchdog's dialog detector (fm_wd_pane_dialog) and the submit
-# guard both read it, so every picker the watchdog stops on blocks every submit.
+# number. Codex CLI's footer is lowercase, `Press enter to confirm or esc to go
+# back`, and is matched only as that whole row, so a bare busy `esc to cancel`
+# never counts. The watchdog's dialog detector (fm_wd_pane_dialog) and the
+# submit guard both read it, so every picker the watchdog stops on blocks every
+# submit.
 fm_composer_picker_rows() {  # rows on stdin
   LC_ALL=C awk '
     NF { r[++n] = $0 }
     END {
       s = n - 13; if (s < 1) s = 1
       for (i = s; i <= n; i++) if (r[i] ~ /(❯|›)[ \t]*[^ \t]/ || r[i] ~ />[ \t]*[0-9]+[.)][ \t]/) selected = 1
-      exit !(n && selected && r[n] ~ /(Enter to (confirm|select|submit|continue)|Esc to (cancel|exit|go back)|↑\/↓ to (navigate|select)|Tab:next answer)/)
+      exit !(n && selected && (r[n] ~ /(Enter to (confirm|select|submit|continue)|Esc to (cancel|exit|go back)|↑\/↓ to (navigate|select)|Tab:next answer)/ || tolower(r[n]) ~ /^[ \t]*press enter to (confirm|continue|select|submit) or esc to (cancel|go back|exit)[ \t\r]*$/))
     }'
 }
 
@@ -2698,10 +2701,14 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
 # confirm:`, or gh's `? Type owner/repo to confirm deletion:`, with the BSD
 # `rm`, `cp`, and `mv` forms (`remove a.txt?`, `overwrite b? (y/n [n])`), git's
 # hunk prompts (`[y,n,q,a,d,e,?]?`), conda's `Proceed ([y]/n)?`, `find -ok`'s
-# `< rm ./a.txt > ?`, `xargs -p`'s `rm a ?...`, `Press any key`, a bare `>`
+# `< rm ./a.txt > ?`, `xargs -p`'s `rm a ?...`, unzip's
+# `[y]es, [n]o, [A]ll, [N]one, [r]ename:`, git's interactive `What now>`,
+# cryptsetup's `(Type 'yes' in capital letters):`, `Press any key`, a bare `>`
 # under `To proceed, type`, and an arrow-key list such as inquirer's
-# `? Log in (Use arrow keys)` above a selected option: typed text and Enter
-# would answer it. Prints the lowered row.
+# `? Log in (Use arrow keys)` or the AWS CLI's `There are 2 roles available to
+# you.` above a selected option, with only option rows
+# below it and no composer, so a quoted list above a composer is not one:
+# typed text and Enter would answer it. Prints the lowered row.
 fm_composer_confirm_input() {  # <screen> -> row
   local last
   last=$(printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
@@ -2717,10 +2724,11 @@ fm_composer_confirm_input() {  # <screen> -> row
     END {
       for (i = n - 13; i <= n; i++) {
         if (i < 1) continue
-        if (r[i] ~ /\(use arrow keys|\[use arrows to move/) q = i
+        if (r[i] ~ /\(use arrow keys|\[use arrows to move|^[ \t]*there (are|is) [0-9]+ .* available to you\.?[ \t\r]*$/) { q = i; f = 0; quoted = 0 }
+        else if (q && (r[i] ~ /(─|━){10,}/ || r[i] ~ /for shortcuts|context left/ || r[i] !~ /^[ \t]*((❯|›|>)[ \t]*)?[^ \t]/ || (r[i] !~ /^[ \t]+[^ \t]/ && r[i] !~ /^[ \t]*(❯|›|>)/))) quoted = 1
         else if (q && r[i] ~ /^[ \t]*(❯|›|>)[ \t]*[^ \t]/) f = 1
       }
-      exit !f
+      exit !(f && !quoted)
     }'; then
     printf '%s\n' "$last"
     return 0
@@ -2730,7 +2738,7 @@ fm_composer_confirm_input() {  # <screen> -> row
     printf '%s\n' "$last"
     return 0
   fi
-  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|^[[:space:]]*(remove|examine files in directory|recursively remove|override .+ for|overwrite) .+\?([[:space:]]*\(y/n \[[yn]\]\))?$|\((\[y\]/n|y/\[n\])\)[[:space:]]*\?$|^[[:space:]]*<.*>[[:space:]]*\?$|[[:space:]]\?\.\.\.$|^[[:space:]]*(press|hit) any key|\(y/n \[[yn]\]\)$|\[y,n(,[a-z?/]+)*\]\?$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[^:>?"'"'"'`]{1,100}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
+  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|^[[:space:]]*(remove|examine files in directory|recursively remove|override .+ for|overwrite) .+\?([[:space:]]*\(y/n \[[yn]\]\))?$|\((\[y\]/n|y/\[n\])\)[[:space:]]*\?$|^[[:space:]]*<.*>[[:space:]]*\?$|[[:space:]]\?\.\.\.$|^[[:space:]]*what now>$|\(type [^)]{1,60}\)[[:space:]]*:$|\[y\]es, \[n\]o, \[a\]ll, \[n\]one, \[r\]ename:$|^[[:space:]]*(press|hit) any key|\(y/n \[[yn]\]\)$|\[y,n(,[a-z?/]+)*\]\?$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[^:>?"'"'"'`]{1,100}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
   printf '%s\n' "$last"
 }
 

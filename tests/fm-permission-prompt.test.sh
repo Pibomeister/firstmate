@@ -177,7 +177,16 @@ DESTRUCTIVE_CONFIRMS=(
   $'work\nrm a b ?...'
   $'work\noverride r--r--r-- dev/staff uchg for a.txt? '
   $'? Do you still want to push changes? This deletes the users table (Use arrow keys)\n❯ No, abort\n  Yes, I want to remove 1 table,'
+  $'Archive:  x.zip\nreplace a.txt? [y]es, [n]o, [A]ll, [N]one, [r]ename: '
+  $'Would remove the following items:\n  build/   out.log\n*** Commands ***\n    1: clean                2: filter by pattern    3: select by numbers\n    4: ask each             5: quit                 6: help\nWhat now> '
+  $'WARNING!\n========\nThis will overwrite data on /dev/sdb irrevocably.\n\nAre you sure? (Type \'yes\' in capital letters): '
 )
+# Codex CLI 0.151.0's recorded hook modal and its command approvals, whose
+# footer is lowercase.
+CODEX_HOOKS=$'Hooks need review\n12 hooks are new or changed.\nHooks can run outside the sandbox after you trust them.\n> 1. Review hooks\n  2. Trust all and continue\n  3. Continue without trusting (hooks won\'t run)\nPress enter to confirm or esc to go back'
+codex_approval() {  # <command>
+  printf '%s\n' 'Would you like to run the following command?' '' "  \$ $1" '' '› 1. Yes, proceed (y)' "  2. Yes, and don't ask again for this command (a)" '  3. No, and tell Codex what to do differently (esc)' '' '  Press enter to confirm or esc to cancel'
+}
 # openssl, gpg pinentry, Heroku, and inquirer credential and sign-in inputs.
 PINENTRY=$'work\n┌──────────────────────────────────────────┐\n│ Please enter the passphrase to unlock    │\n│ the OpenPGP secret key                   │\n│                                          │\n│ Passphrase: ____________________________ │\n│                                          │\n│       <OK>                  <Cancel>     │\n└──────────────────────────────────────────┘'
 SECRET_INPUTS=(
@@ -192,6 +201,8 @@ SIGNIN_INPUTS=(
   $'work\nEnter your username:'
   $'work\nEnter your email address:'
   $'work\n? Enter your email address: ›'
+  $'Attempting to automatically open the SSO authorization page in your default browser.\nThere are 2 AWS accounts available to you.\n> DeveloperAccount, developer-account-admin@example.com (111122223333)\n  ProductionAccount, production-account-admin@example.com (444455556666)'
+  $'Using the account ID 111122223333\nThere are 2 roles available to you.\n> ReadOnly\n  FullAccess'
 )
 
 ledger() { cat "$H/state/watchdog/actions.tsv" 2>/dev/null; }
@@ -226,6 +237,10 @@ test_declining_cursor_dialogs_never_route() {
   assert_equals $'hold\texternal-imports' "$(printf '%s\n' "$imports" | classify claude)" "the external-imports dialog is held"
   assert_equals $'hold\tbypass-confirm' "$(printf '%s\n' "$bypass" | classify claude)" "the bypass confirmation is held"
   assert_equals $'hold\thooks-review' "$(printf '%s\n' "$hooks" | classify codex)" "the hook-review modal is held"
+  assert_equals $'hold\thooks-review' "$(printf '%s\n' "$CODEX_HOOKS" | classify codex)" "the recorded Codex hook-review modal is held"
+  assert_equals $'hardstop\trelease' "$(codex_approval 'git push origin main' | classify codex)" "a Codex approval to push main is a release stop"
+  assert_equals $'hardstop\tdestructive' "$(codex_approval 'rm -rf build' | classify codex)" "a Codex approval to remove recursively is a destructive stop"
+  assert_equals $'hold\tunproven' "$(codex_approval 'npm test' | classify codex)" "any other Codex command approval is held"
   assert_equals $'hold\tunproven' "$(bash_prompt | sed -e 's/^ ❯ 1\. Yes$/   1. Yes/' -e 's/^   4\. No$/ ❯ 4. No/' | classify claude)" \
     "a tool prompt whose cursor moved off 1. Yes is not proven"
   assert_equals $'hold\tunproven' "$(bash_prompt | sed '/^─\{20,\}$/d' | classify claude)" "a tool prompt with no rule above it is not proven"
@@ -269,6 +284,13 @@ test_hardstop_categories() {
     assert_equals $'hardstop\tsign-in' "$(printf '%s\n' "$c" | classify claude)" "this input is a sign-in stop: $c"
   done
   assert_equals $'hold\tconfirm' "$(printf 'work\nPress any key to continue\n' | classify claude)" "a press-any-key wait is held"
+  assert_equals $'hold\tconfirm' "$(printf '*** Commands ***\n  1: status\t  2: update\t  7: quit\t  8: help\nWhat now> \n' | classify claude)" "git add -i's menu is a held confirmation"
+  for c in $'worker: the tool shows\n? Log in (Use arrow keys)\n\n› Implement {feature}\n\n  100% context left · ? for shortcuts' \
+    $'? Log in (Use arrow keys)\n  Continue with GitHub\n────────────────────────────────────────\n❯ continue with the docs\n────────────────────────────────────────\n  ? for shortcuts' \
+    $'working on it\n› fix tests\n  esc to cancel'; do
+    printf '%s\n' "$c" | classify codex >/dev/null && fail "a quoted list or busy row above a composer is not a prompt: $c"
+    bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null && fail "a quoted list or busy row above a composer does not block a submit: $c"
+  done
   for c in $'work\n> ' $'work\nplease remove that line?' $'work\nI typed it to confirm it works.' $'work\nI will press any key now.' $'work\n┌────────────┐\n│ All done   │\n└────────────┘'; do
     printf '%s\n' "$c" | classify claude >/dev/null && fail "this is not a confirmation: $c"
   done
@@ -379,7 +401,7 @@ test_send_guard_blocks_renumbered_pickers_and_secret_inputs() {
     $'work\nUsername (dev):' "$TF_DESTROY" "$TYPE_DELETE" $'work\nUsername [dev]:' $'work\nEmail address:' $' Continue with paid usage?\n ❯ Yes\n   No\n\n Enter to confirm · Esc to cancel' \
     $' Select login method:\n ❯ 1. Claude account\n   2. API key\n\n Enter to continue · Esc to go back' \
     $' Continue with paid usage?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel' \
-    "${DESTRUCTIVE_CONFIRMS[@]}" "${SECRET_INPUTS[@]}" "${SIGNIN_INPUTS[@]}" $'work\nPress any key to continue' $'work\nType my.app to confirm:' $'work\nStage this hunk [y,n,q,a,d,e,?]? '; do
+    "${DESTRUCTIVE_CONFIRMS[@]}" "${SECRET_INPUTS[@]}" "${SIGNIN_INPUTS[@]}" "$CODEX_HOOKS" "$(codex_approval 'rm -rf build')" "$(codex_approval 'npm test')" $'work\nPress any key to continue' $'work\nType my.app to confirm:' $'work\nStage this hunk [y,n,q,a,d,e,?]? '; do
     name=$(bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$screen") \
       || fail "every submit refuses this screen: $screen"
     [ -n "$name" ] || fail "the refusal names the dialog for: $screen"
@@ -507,10 +529,16 @@ test_doorbell_never_types_into_a_prompt() {
   worker dh claude "$H/hk.txt"
   printf '%s\n' "$PINENTRY" > "$H/pin.txt"
   worker de claude "$H/pin.txt"
+  codex_approval 'rm -rf build' > "$H/cxrm.txt"
+  worker dx codex "$H/cxrm.txt"
+  printf '%s\n' "${DESTRUCTIVE_CONFIRMS[@]: -2:1}" > "$H/gclean.txt"
+  worker dl claude "$H/gclean.txt"
+  printf '%s\n' "${SIGNIN_INPUTS[@]: -1}" > "$H/awsrole.txt"
+  worker da claude "$H/awsrole.txt"
   printf 'work output\n? Enter your email address: ›\n' > "$H/em.txt"
   worker du claude "$H/em.txt"
   local id
-  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du; do
+  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da; do
     FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
     assert_contains "$(inbox_text "$id")" "steer for $id" "the steer for worker $id is durably recorded"
     sleep 1
