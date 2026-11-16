@@ -1620,6 +1620,64 @@ test_spawn_codex_scout_writes_toml_env_with_traceparent() {
   pass "fm-spawn.sh --backend t3code codex: writes .codex/config.toml with GOTMPDIR, FM_TASK_ID, and TRACEPARENT"
 }
 
+# t3_spawn_refused_declaration <case> <id-prefix> <harness> [spawn args...]:
+# spawn a T3 worker whose agent-kit supervisor declaration location sits inside
+# a git repository, with a stale declaration path in the spawn environment.
+# Sets T3_REFUSED_WT and T3_REFUSED_OUT for the caller.
+t3_spawn_refused_declaration() {
+  local case_name=$1 prefix=$2 harness=$3 proj wt data state id fb
+  shift 3
+  id=$(t3_uid "$prefix")
+  t3_task_id "$id"
+  t3_case "$case_name"
+  proj="$CASE_DIR/spawn-project"; wt="$CASE_DIR/spawn-wt"; data="$CASE_DIR/data"; state="$CASE_DIR/state"
+  fm_git_worktree "$proj" "$wt" "fm/$id"
+  mkdir -p "$data/$id" "$state" "$CASE_DIR/home/state" "$CASE_DIR/state-repo/state"
+  git -C "$CASE_DIR/state-repo" init -q
+  # Preserved settings, git-excluded as an earlier spawn leaves them, already
+  # carry a stale declaration path.
+  mkdir -p "$wt/.claude"
+  printf '%s\n' '{"env":{"AK_LIFECYCLE_SUPERVISOR_DECLARATION":"/stale/declaration.json"}}' > "$wt/.claude/settings.local.json"
+  printf '%s\n' /.claude/settings.local.json >> "$(git -C "$wt" rev-parse --path-format=absolute --git-path info/exclude)"
+  write_spawn_brief "$data" "$id"
+  touch "$state/.last-watcher-beat"
+  FM_T3_PROJ="$proj" t3_world_set 'w.projects[0].workspaceRoot = process.env.FM_T3_PROJ'
+  fb=$(make_treehouse_fakebin "$CASE_DIR")
+  T3_REFUSED_WT=$wt
+  T3_REFUSED_OUT=$( HOME="$SPAWN_HOME" CLAUDE_CONFIG_DIR='' PATH="$fb:$PATH" FM_T3_TREEHOUSE_LOG="$LOG" FM_T3_TREEHOUSE_WT="$wt" \
+    XDG_STATE_HOME="$CASE_DIR/state-repo/state" AK_LIFECYCLE_SUPERVISOR_DECLARATION=/stale/declaration.json \
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$CASE_DIR/home" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$data" FM_CONFIG_OVERRIDE="$CONFIG" \
+    FM_PROJECTS_OVERRIDE="$CASE_DIR/unused-projects" FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" "$id" "$proj" "$harness" "$@" --backend t3code 2>&1 )
+  expect_code 0 $? "a T3 spawn with a refused declaration location should still launch"$'\n'"$T3_REFUSED_OUT"
+  assert_contains "$T3_REFUSED_OUT" "without AK_LIFECYCLE_SUPERVISOR_DECLARATION" \
+    "the spawn must warn that the worker launches without a declaration"
+  [ ! -e "$CASE_DIR/state-repo/state/firstmate" ] || fail "a refused declaration location must gain no file"
+}
+
+# A refused declaration still overrides the key, with an empty value: T3 never
+# runs the pane prefix that unsets it, so an omitted key would let a stale value
+# from the provider environment or preserved settings reach the worker.
+test_spawn_refused_declaration_empties_claude_settings_env() {
+  local settings
+  t3_spawn_refused_declaration refused-claude t3refusedz1 claude --mode no-mistakes --yolo off --model claude-sonnet-5 --effort high
+  settings="$T3_REFUSED_WT/.claude/settings.local.json"
+  [ "$(t3_json_field "$settings" 'd.env.AK_LIFECYCLE_SUPERVISOR_DECLARATION')" = "" ] \
+    || fail "a refused declaration must be set empty in the Claude settings env, got '$(t3_json_field "$settings" 'd.env.AK_LIFECYCLE_SUPERVISOR_DECLARATION')'"
+  [ "$(t3_json_field "$settings" 'd.env.AK_LIFECYCLE_SUPERVISOR')" = firstmate ] || fail "the supervisor name must still be set"
+  pass "fm-spawn.sh --backend t3code claude: a refused declaration is set empty in the settings env"
+}
+
+test_spawn_refused_declaration_empties_codex_toml_env() {
+  local toml
+  t3_require_tomllib test_spawn_refused_declaration_empties_codex_toml_env || return 0
+  t3_spawn_refused_declaration refused-codex t3refusedz2 codex --scout --model gpt-5.6-sol
+  toml="$T3_REFUSED_WT/.codex/config.toml"
+  [ "$(t3_toml_env "$toml" AK_LIFECYCLE_SUPERVISOR_DECLARATION)" = "" ] \
+    || fail "a refused declaration must be set empty in config.toml, got '$(t3_toml_env "$toml" AK_LIFECYCLE_SUPERVISOR_DECLARATION)'"
+  pass "fm-spawn.sh --backend t3code codex: a refused declaration is set empty in config.toml"
+}
+
 # Codex applies the worktree's .codex/config.toml only when its main checkout
 # is trusted, so spawn warns once, and still launches, unless the Codex
 # configuration shows that trust. Trust resolves from the thread's launch
@@ -2790,6 +2848,8 @@ test_untracked_codex_config_is_preserved
 test_codex_cleanup_without_journal_needs_no_python
 test_codex_worker_ignores_untracked_config_in_main_checkout
 test_spawn_codex_scout_writes_toml_env_with_traceparent
+test_spawn_refused_declaration_empties_claude_settings_env
+test_spawn_refused_declaration_empties_codex_toml_env
 test_spawn_codex_warns_unless_codex_trusts_the_project
 test_spawn_secondmate_runs_thread_in_home_with_env
 test_spawn_codex_secondmate_writes_toml_env

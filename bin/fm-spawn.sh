@@ -482,8 +482,9 @@
 #   bin/fm-ak-supervisor-lib.sh provisions outside every git repository on this
 #   host before each launch (that library owns its shape, location and
 #   stability). When it cannot be provisioned, the spawn warns, still launches,
-#   and unsets any inherited declaration path, so agent-kit refuses the
-#   worker's unattended runs instead of reading a stale file.
+#   and unsets any inherited declaration path (a T3 Code launch sets it empty),
+#   so agent-kit refuses the worker's unattended runs instead of reading a
+#   stale file.
 #   Agent-kit records the supervisor only from the release that includes its
 #   companion unattended opt-in change; an older agent-kit, for example 0.1.96,
 #   ignores AK_LIFECYCLE_SUPERVISOR and its declaration, so only
@@ -9235,9 +9236,10 @@ if [ "$BACKEND" = t3code ]; then
   # keeps by unsetting it when the record fails.
   T3CODE_ENV=("GOTMPDIR=$TASK_TMP/gotmp" COMPACT_ADVISER_DISABLE=1 "FM_TASK_INBOX=$STATE_REAL/$ID.inbox"
     AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate)
-  if [ -n "$AK_SUPERVISOR_DECLARATION" ]; then
-    T3CODE_ENV+=("AK_LIFECYCLE_SUPERVISOR_DECLARATION=$AK_SUPERVISOR_DECLARATION")
-  fi
+  # Always set, empty when provisioning failed: T3 never runs the LAUNCH
+  # prefix that unsets it, so an omitted key would let a stale value from the
+  # provider environment or preserved settings reach the worker.
+  T3CODE_ENV+=("AK_LIFECYCLE_SUPERVISOR_DECLARATION=$AK_SUPERVISOR_DECLARATION")
   if [ "$GIT_HOOKS_INSTALLED" = 1 ]; then
     T3CODE_ENV+=(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath "GIT_CONFIG_VALUE_0=$GIT_HOOKS_DIR")
   fi

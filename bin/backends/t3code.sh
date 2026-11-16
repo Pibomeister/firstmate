@@ -14,7 +14,8 @@
 # T3 sets environment variables per provider instance, never per thread, so
 # every fact firstmate would type into a pane before launch (GOTMPDIR,
 # COMPACT_ADVISER_DISABLE, FM_TASK_INBOX, AK_LIFECYCLE_POLICY,
-# AK_LIFECYCLE_SUPERVISOR, AK_LIFECYCLE_SUPERVISOR_DECLARATION when provisioned,
+# AK_LIFECYCLE_SUPERVISOR, AK_LIFECYCLE_SUPERVISOR_DECLARATION (empty when it
+# could not be provisioned),
 # the Git hook override, optional
 # LAVISH_AXI_HOST, FM_TASK_ID, TRACEPARENT,
 # and a secondmate's FM_* launch prefix) travels
