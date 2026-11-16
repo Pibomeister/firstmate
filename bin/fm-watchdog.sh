@@ -1217,11 +1217,11 @@ wd_restart() {  # <symptom> <kind>...
   id=$(wd_id)
   handoff=$(wd_write_handoff "$symptom")
   if [ "$O_PARENT" != - ]; then
-    wd_rec "$id" "$symptom" restart pending "second mate relaunch through its parent; handoff=$handoff"
+    # The handoff never reaches a second mate, so it cannot run pickup; its own
+    # session start proves the takeover instead, and wd_reconcile_pending closes the row.
+    wd_rec "$id" "$symptom" restart pending "second mate relaunch through its parent; pickup=session-start old_pid=$O_LOCK_PID handoff=$handoff"
     WD_RESTARTED=1
-    if FM_HOME=$O_PARENT fm_run_timed "$(cfgi relaunch-timeout-secs 900)" "$SCRIPT_DIR/fm-control.sh" "$O_ID" relaunch --note-file "$handoff" >/dev/null 2>&1; then
-      wd_rec "$id" "$symptom" restart "done" "relaunched through fm-control"
-    else
+    if ! FM_HOME=$O_PARENT fm_run_timed "$(cfgi relaunch-timeout-secs 900)" "$SCRIPT_DIR/fm-control.sh" "$O_ID" relaunch --note-file "$handoff" >/dev/null 2>&1; then
       wd_rec "$id" "$symptom" restart failed "fm-control relaunch refused or failed"
       wd_self_heal "$symptom" "Watchdog could not relaunch $O_TAG" "fm-control relaunch failed after $symptom"
     fi
@@ -1265,8 +1265,10 @@ wd_restart() {  # <symptom> <kind>...
 }
 
 # Close each pending row once: nudges by transcript or pane progress, restarts by pickup.
+# A second mate's pickup is its session start: bin/fm-session-start.sh writes
+# state/.session-start-complete with the lock pid once it holds the lock.
 wd_reconcile_pending() {
-  local now id home symptom action at tag tok old pick lockpid tr st
+  local now id home symptom action at tag tok old pick lockpid tr st detail picked done_note miss_note started
   now=$(wd_now)
   fm_wd_open_pending "$LEDGER" | while IFS=$'\t' read -r id home symptom action at; do
     tag=$(wd_tag "$home")
@@ -1284,24 +1286,40 @@ wd_reconcile_pending() {
           fi
         fi ;;
       restart)
-        tok=$(awk -F'\t' -v i="$id" '$2 == i && $7 == "pending" { print $8 }' "$LEDGER" | sed -n 's/.*token=\([0-9a-f]*\).*/\1/p' | tail -n 1)
-        old=$(awk -F'\t' -v i="$id" '$2 == i && $7 == "pending" { print $8 }' "$LEDGER" | sed -n 's/.*old_pid=\([0-9]*\).*/\1/p' | tail -n 1)
-        if [ -z "$tok" ]; then
-          [ $((now - at)) -ge "$(cfgi relaunch-timeout-secs 900)" ] && FM_WD_NOW=$now fm_wd_record "$LEDGER" "$id" "$home" "$tag" "$symptom" restart failed "relaunch recorded no outcome"
-          continue
-        fi
-        pick=$st/watchdog/pickups/$tok
+        detail=$(awk -F'\t' -v i="$id" '$2 == i && $7 == "pending" { print $8 }' "$LEDGER" | tail -n 1)
+        tok=$(printf '%s\n' "$detail" | sed -n 's/.*token=\([0-9a-f]*\).*/\1/p')
+        old=$(printf '%s\n' "$detail" | sed -n 's/.*old_pid=\([0-9]*\).*/\1/p')
         lockpid=$(head -n 1 "$st/.lock" 2>/dev/null | tr -cd '0-9')
-        if [ -f "$pick" ] && [ -n "$lockpid" ] && [ "$lockpid" != "$old" ] && wd_pid_alive "$lockpid"; then
+        picked=0
+        if [ -n "$tok" ]; then
+          pick=$st/watchdog/pickups/$tok
+          [ -f "$pick" ] && picked=1
+          done_note="pickup verified; new lock pid $lockpid"
+          miss_note="restart token $tok had no verified pickup"
+        else
+          case "$detail" in
+            *pickup=session-start*) ;;
+            *)
+              [ $((now - at)) -ge "$(cfgi relaunch-timeout-secs 900)" ] && FM_WD_NOW=$now fm_wd_record "$LEDGER" "$id" "$home" "$tag" "$symptom" restart failed "relaunch recorded no outcome"
+              continue ;;
+          esac
+          pick=$st/.session-start-complete
+          started=$(wd_mtime "$pick" | tr -cd '0-9')
+          if [ -n "$started" ] && [ "$(head -n 1 "$pick" 2>/dev/null | tr -cd '0-9')" = "$lockpid" ] &&
+            [ "$started" -ge "$at" ] && [ "$started" -le $((at + $(cfgi pickup-secs 600))) ]; then picked=1; fi
+          done_note="session start verified; new lock pid $lockpid"
+          miss_note="second mate relaunch had no verified session start under a new lock"
+        fi
+        if [ "$picked" = 1 ] && [ -n "$lockpid" ] && [ "$lockpid" != "$old" ] && wd_pid_alive "$lockpid"; then
           if [ -f "$st/.afk" ] && ! kill -0 "$(head -n 1 "$st/.supervise-daemon.pid" 2>/dev/null | tr -cd '0-9')" 2>/dev/null; then
             [ $((now - at)) -lt "$(cfgi pickup-secs 600)" ] && continue
             FM_WD_NOW=$now fm_wd_record "$LEDGER" "$id" "$home" "$tag" "$symptom" restart failed "picked up but the away daemon is not running"
           else
-            FM_WD_NOW=$now fm_wd_record "$LEDGER" "$id" "$home" "$tag" "$symptom" restart "done" "pickup verified; new lock pid $lockpid"
+            FM_WD_NOW=$now fm_wd_record "$LEDGER" "$id" "$home" "$tag" "$symptom" restart "done" "$done_note"
           fi
         elif [ $((now - at)) -ge "$(cfgi pickup-secs 600)" ]; then
           FM_WD_NOW=$now fm_wd_record "$LEDGER" "$id" "$home" "$tag" "$symptom" restart failed "no verified pickup within the window"
-          O_TAG=$tag O_HOME=$home wd_self_heal "$symptom" "Watchdog restart of $tag was not picked up" "restart token $tok had no verified pickup"
+          O_TAG=$tag O_HOME=$home wd_self_heal "$symptom" "Watchdog restart of $tag was not picked up" "$miss_note"
         fi ;;
       *)
         [ $((now - at)) -ge 3600 ] && FM_WD_NOW=$now fm_wd_record "$LEDGER" "$id" "$home" "$tag" "$symptom" "$action" failed "no outcome recorded" ;;

@@ -165,6 +165,9 @@ On tmux the new window joins the old session; when that session closed with the 
 The new session proves it took over by running the `pickup <token>` command from that prompt after it holds the session lock; pickup also moves the [captain record](#captain-record).
 The next pass marks the restart done only when that pickup record exists, a new live process holds the lock, and the away daemon runs again when the home is away.
 A second mate restart goes through its parent with `bin/fm-control.sh <id> relaunch --note-file <handoff>`, which owns checkpoint and rollback.
+A zero exit from that relaunch is not a pickup, because the handoff never reaches the second mate's session.
+The restart stays pending until a pass finds a new live process in the second mate's `state/.lock` whose pid `state/.session-start-complete` also names, written by its session start within `pickup-secs` of the restart's start.
+With no such proof within `pickup-secs`, the restart is marked failed and a self-heal issue is filed, the same as an unproven primary pickup.
 A captain quit on purpose leaves the same dead lock as a crash, so the watchdog restarts it. To stop a home from being restarted, list it in `do-not-touch`.
 Restarting `max-restarts` times in a day stops further restarts for that home, writes `state/watchdog/escalated/<home-basename>-<path-cksum>`, and files a self-heal issue; remove that file after review to re-enable restarts.
 

@@ -2913,6 +2913,126 @@ test_second_mate_restart_ends_the_pass() {
   pass "second mate: a relaunch ends the pass for its old endpoint"
 }
 
+# mate_code_root: a copy of bin/ whose fm-control.sh logs its argv and exits 0
+# without starting anything, the zero exit a second mate relaunch can give
+# while its session never takes over. Sets MATE_WD.
+MATE_WD=''
+mate_code_root() {
+  [ -z "$MATE_WD" ] || return 0
+  mkdir -p "$TMP_ROOT/code"
+  cp -R "$ROOT/bin" "$TMP_ROOT/code/bin"
+  cat > "$TMP_ROOT/code/bin/fm-control.sh" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$TMP_ROOT/code/control.log"
+exit 0
+SH
+  chmod +x "$TMP_ROOT/code/bin/fm-control.sh"
+  MATE_WD=$TMP_ROOT/code/bin/fm-watchdog.sh
+}
+
+# mate_restarted: a parent home whose second mate asked for a restart, run
+# until that relaunch exits 0. Sets H (parent), MATE, and MATE_OLD (the old lock pid).
+mate_restarted() {
+  local parent
+  mate_code_root
+  : > "$TMP_ROOT/code/control.log"
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home $'Mate session\n> '
+  MATE=$H
+  MATE_OLD=$LOCKPID
+  transcript 3000 "Working." "Testing." "Green."
+  printf '%s\n' "$MATE_OLD" > "$MATE/state/.session-start-complete"
+  fm_touch_epoch "$((BASE - 5000))" "$MATE/state/.lock" "$MATE/state/.lock-session" "$MATE/state/.session-start-complete"
+  : > "$MATE/state/.watchdog-restart-request"
+  fm_touch_epoch "$((BASE - 10))" "$MATE/state/.watchdog-restart-request"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$MATE" > "$parent/data/secondmates.md"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nrestart=on\npickup-secs=600\nrelaunch-timeout-secs=20\n' "$MATE/claude" > "$parent/config/watchdog"
+  H=$parent
+  WD=$MATE_WD run_wd 0 once >/dev/null 2>&1
+  WD=$MATE_WD run_wd 10 once >/dev/null 2>&1
+  assert_grep "ghost-mate relaunch --note-file" "$TMP_ROOT/code/control.log" "the relaunch went through the parent"
+  assert_equals 1 "$(ledger_rows restart-requested restart pending)" "the relaunch is pending: $(ledger | cut -f5-8)"
+}
+
+# mate_lock <pid>: the second mate's lock names <pid>, taken at offset 20.
+mate_lock() {
+  printf '%s\n' "$1" > "$MATE/state/.lock"
+  fm_touch_epoch "$((BASE + 20))" "$MATE/state/.lock"
+}
+
+# mate_started <pid> <offset>: session start completed under <pid> at <offset>.
+mate_started() {
+  printf '%s\n' "$1" > "$MATE/state/.session-start-complete"
+  fm_touch_epoch "$((BASE + $2))" "$MATE/state/.session-start-complete"
+}
+
+live_pid() { ( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$TMP_ROOT/live.pid" ); cat "$TMP_ROOT/live.pid"; }
+
+test_second_mate_zero_exit_relaunch_is_not_done() {
+  local dead new
+  mate_restarted
+  WD=$MATE_WD run_wd 20 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "a zero exit with the old lock is not done: $(ledger | cut -f5-8)"
+  assert_grep "RESTART-AWAITING-PICKUP" "$H/data/watchdog/status.md" "the second mate waits for its pickup"
+  # The old session runs session start again under its own lock.
+  mate_started "$MATE_OLD" 30
+  WD=$MATE_WD run_wd 40 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "the old pid is no pickup: $(ledger | cut -f5-8)"
+  ( sleep 0 & printf '%s\n' "$!" > "$TMP_ROOT/dead.pid" )
+  dead=$(cat "$TMP_ROOT/dead.pid")
+  while kill -0 "$dead" 2>/dev/null; do sleep 0.1; done
+  mate_lock "$dead"
+  mate_started "$dead" 50
+  WD=$MATE_WD run_wd 60 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "a dead new lock holder is no pickup: $(ledger | cut -f5-8)"
+  new=$(live_pid)
+  LOCK_PIDS="$LOCK_PIDS $new"
+  mate_lock "$new"
+  mate_started "$MATE_OLD" 30
+  WD=$MATE_WD run_wd 70 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "a new lock before session start completes is no pickup: $(ledger | cut -f5-8)"
+  mate_started "$new" -100
+  WD=$MATE_WD run_wd 80 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "a session start from before the restart is no pickup: $(ledger | cut -f5-8)"
+  mate_started "$MATE_OLD" 30
+  WD=$MATE_WD run_wd 610 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows restart-requested restart failed)" "no proof within pickup-secs fails the restart: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "the failed restart is never done: $(ledger | cut -f5-8)"
+  assert_grep "self-heal issue not filed for watchdog-restart-requested" "$H/data/watchdog/status.md" "the unproven pickup reaches self-heal"
+  WD=$MATE_WD run_wd 700 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows restart-requested restart pending)" "restart-secs still holds the next relaunch: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(grep -c relaunch "$TMP_ROOT/code/control.log")" "one relaunch inside the restart interval"
+  pass "second mate: a zero-exit relaunch is done only after a verified pickup, and caps hold"
+}
+
+test_second_mate_restart_done_after_session_start_under_new_lock() {
+  local new
+  mate_restarted
+  new=$(live_pid)
+  LOCK_PIDS="$LOCK_PIDS $new"
+  mate_lock "$new"
+  mate_started "$new" 30
+  WD=$MATE_WD run_wd 40 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows restart-requested restart "done")" "a new live lock with its session start is done: $(ledger | cut -f5-8)"
+  assert_contains "$(ledger | awk -F'\t' '$6 == "restart" && $7 == "done"' | cut -f8)" "session start verified; new lock pid $new" "the done row names the new lock pid"
+  pass "second mate: a relaunch is done once its session start runs under a new live lock"
+}
+
+test_second_mate_session_start_after_the_window_is_not_done() {
+  local new
+  mate_restarted
+  new=$(live_pid)
+  LOCK_PIDS="$LOCK_PIDS $new"
+  mate_lock "$new"
+  # The restart began at offset 10, so pickup-secs=600 closes its window at 610.
+  mate_started "$new" 611
+  WD=$MATE_WD run_wd 620 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "a session start after the window is no pickup: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows restart-requested restart failed)" "the late pickup fails the restart: $(ledger | cut -f5-8)"
+  pass "second mate: a session start after pickup-secs is not a pickup"
+}
+
 test_dialog_reserved_check_reads_only_dialog_rows() {
   local rule='────────────────────'
   make_home "Merged PR #41, deleted the branch."$'\n'"$rule"$'\nSwitch to another model?\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku'
@@ -5968,6 +6088,9 @@ fm_test_run \
   test_orca_draft_is_never_typed_onto \
   test_reserved_task_or_key_is_held_and_refused_nudges_are_gaps \
   test_second_mate_restart_ends_the_pass \
+  test_second_mate_zero_exit_relaunch_is_not_done \
+  test_second_mate_restart_done_after_session_start_under_new_lock \
+  test_second_mate_session_start_after_the_window_is_not_done \
   test_reserved_model_switch_dialog_is_held \
   test_secret_looking_decision_reaches_no_council \
   test_secret_looking_model_switch_dialog_is_held \
