@@ -2714,6 +2714,10 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
       && printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk 'NF { r[++n] = tolower($0) } END { for (i = n - 3; i < n; i++) if (i > 0 && r[i] ~ /(enter|provide|paste|type)[^.]*((^|[^a-z])otp([^a-z]|$)|one.time (code|password)|multi.factor|access token|api token)/) f = 1; exit !f }'; }; then
     printf 'credential\n'; return 0
   fi
+  # OpenSSH's ssh-keygen asks which private key file to read or write.
+  if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*enter file in which (the key is|to save the key)([[:space:]]*\([^)]*\))?[[:space:]]*:$'; then
+    printf 'credential\n'; return 0
+  fi
   if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+)?(\[sudo\][[:space:]]+)?(password|passphrase|passcode|pin|otp|2fa([[:space:]]+code)?|mfa([[:space:]]+code)?|one.time[[:space:]]+(code|password))([[:space:]]+for[[:space:]][^:]*)?[:>?]$|(enter|type|input|provide|paste)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(password|passphrase|passcode|pin|api[[:space:]_-]?key|access[[:space:]_-]?key|private[[:space:]_-]?key|token|secret|otp|2fa|mfa|one.time|authenticator|security)[^:>?]*[:>?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?(mfa|2fa|otp|two.factor)[[:space:]]+code([[:space:]]+for[[:space:]].*)?[:>?]$|two.factor([[:space:]]+[a-z]+)?[[:space:]]+code[:>?]$|authenticator([[:space:]]+app)?[[:space:]]+code[:>?]$|^[^:]{0,30}[[:space:]]pin[:>?]$|(password|passphrase|passcode)([[:space:]]+for[[:space:]].*)?[^:]{0,40}[:>]$|(api[[:space:]_-]?key|access[[:space:]_-]?key|token|secret)[^:>?]{0,30}[:>?]$'; then
     printf 'credential\n'; return 0
   fi

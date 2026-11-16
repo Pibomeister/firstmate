@@ -167,6 +167,7 @@ DRIZZLE=$'Warning  Found data-loss statements:\n· You\'re about to delete users
 SSO_URL=$'work\nSSO start URL [None]: '
 SSO_SCOPES=$'work\nSSO registration scopes [sso:account:access]: '
 SSO_URL_DEFAULT=$'work\nSSO start URL [https://my-sso-portal.awsapps.com/start]: '
+SSH_KEYFILE=$'work\nEnter file in which the key is (/Users/test/.ssh/id_ed25519): '
 GH_DEVICE=$'! First copy your one-time code: 1A2B-3C4D\nPress Enter to open https://github.com/login/device in your browser... '
 AZ_SELECT=$'[Tenant and subscription selection]\n\nNo     Subscription name    Subscription ID                       Tenant\n-----  -------------------  ------------------------------------  --------\n[1] *  Dev                  00000000-0000-0000-0000-000000000000  Contoso\n\nSelect a subscription and tenant (Type a number or Enter for no changes): '
 GCLOUD_REMOTE=$'You are authorizing gcloud CLI without access to a web browser.\n\ngcloud auth login --remote-bootstrap="https://accounts.google.com/o/oauth2/auth?response_type=code"\n\n\nEnter the output of the above command: '
@@ -227,6 +228,8 @@ SECRET_INPUTS=(
   "$CARGO_LOGIN"
   $'You have enabled multi-factor authentication. Please enter OTP code.\nCode:   '
   $'Enter your access token from https://app.pulumi.com/account/tokens\n    or hit <ENTER> to log in using your browser                   : '
+  "$SSH_KEYFILE"
+  $'Generating public/private ed25519 key pair.\nEnter file in which to save the key (/home/u/.ssh/id_ed25519): '
 )
 SIGNIN_INPUTS=(
   $'work\nheroku: Press any key to open up the browser to login or q to exit: '
@@ -621,10 +624,12 @@ test_doorbell_never_types_into_a_prompt() {
   worker du2 claude "$H/ssoud.txt"
   printf '%s\n' "$GH_DEVICE" > "$H/ghdev.txt"
   worker dh2 claude "$H/ghdev.txt"
+  printf '%s\n' "$SSH_KEYFILE" > "$H/sshkf.txt"
+  worker dk2 claude "$H/sshkf.txt"
   printf 'work output\n? Enter your email address: ›\n' > "$H/em.txt"
   worker du claude "$H/em.txt"
   local id
-  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv dz dy dj di dn dw2 dg2 dc2 df2 ds2 du2 dh2; do
+  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv dz dy dj di dn dw2 dg2 dc2 df2 ds2 du2 dh2 dk2; do
     FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
     assert_contains "$(inbox_text "$id")" "steer for $id" "the steer for worker $id is durably recorded"
     sleep 1
