@@ -11,6 +11,8 @@ set -u
 # A fleet pane already carries GIT_CONFIG core.hooksPath. These cases set the
 # Git config they assert on themselves, so drop the inherited one before any git command.
 unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_CONFIG_PARAMETERS
+# The agent-kit supervisor declaration lands under each spawn's throwaway HOME.
+unset XDG_STATE_HOME AK_LIFECYCLE_SUPERVISOR_DECLARATION
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -59,6 +61,7 @@ t3_uid() {  # <base> -> <base><run-tag>, recorded for cleanup
 # A claude spawn writes workspace trust into the launching user's own store
 # (${CLAUDE_CONFIG_DIR:-$HOME}), so both are pinned to a throwaway home.
 SPAWN_HOME="$TMP_ROOT/user-home"
+SPAWN_DECLARATION="$SPAWN_HOME/.local/state/firstmate/agent-kit/supervisor-declaration.json"
 mkdir -p "$SPAWN_HOME"
 
 # t3_case <name> [thread-status] -> sets CASE_DIR, CONFIG, LOG, REPO
@@ -1559,7 +1562,9 @@ test_spawn_leases_slot_creates_thread_and_starts_launch_turn() {
   [ "$(t3_json_field "$settings" 'd.env.COMPACT_ADVISER_DISABLE')" = 1 ] || fail "settings env must carry the compact-adviser kill switch every launch carries"
   [ "$(t3_json_field "$settings" 'd.env.AK_LIFECYCLE_POLICY')" = "unattended" ] || fail "settings env must carry the agent-kit unattended policy every launch carries"
   [ "$(t3_json_field "$settings" 'd.env.AK_LIFECYCLE_SUPERVISOR')" = "firstmate" ] || fail "settings env must name Firstmate as the agent-kit supervisor"
-  [ "$(t3_json_field "$settings" 'Object.keys(d.env).sort().join(" ")')" = "AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR COMPACT_ADVISER_DISABLE FM_HOME FM_T3CODE_ENV_KEYS FM_TASK_ID FM_TASK_INBOX GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GOTMPDIR" ] || fail "a worker env block carries the task inbox and Git hook with the launch environment"
+  [ "$(t3_json_field "$settings" 'd.env.AK_LIFECYCLE_SUPERVISOR_DECLARATION')" = "$SPAWN_DECLARATION" ] || fail "settings env must carry Firstmate's agent-kit supervisor declaration path"
+  [ -f "$SPAWN_DECLARATION" ] || fail "a T3 launch must provision the supervisor declaration it names"
+  [ "$(t3_json_field "$settings" 'Object.keys(d.env).sort().join(" ")')" = "AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR AK_LIFECYCLE_SUPERVISOR_DECLARATION COMPACT_ADVISER_DISABLE FM_HOME FM_T3CODE_ENV_KEYS FM_TASK_ID FM_TASK_INBOX GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GOTMPDIR" ] || fail "a worker env block carries the task inbox and Git hook with the launch environment"
   t3_excluded "$wt" .claude/settings.local.json || fail "the settings file must be git-excluded"
   assert_present "$wt/CLAUDE.local.md" "a claude worker gets the task-worker channel statement as CLAUDE.local.md"
   assert_grep "task worker launched by Firstmate" "$wt/CLAUDE.local.md" "CLAUDE.local.md must carry the channel statement"
@@ -1604,6 +1609,7 @@ test_spawn_codex_scout_writes_toml_env_with_traceparent() {
   [ "$(t3_toml_env "$toml" COMPACT_ADVISER_DISABLE)" = 1 ] || fail "config.toml must set the compact-adviser kill switch"
   [ "$(t3_toml_env "$toml" AK_LIFECYCLE_POLICY)" = "unattended" ] || fail "config.toml must set the agent-kit unattended policy"
   [ "$(t3_toml_env "$toml" AK_LIFECYCLE_SUPERVISOR)" = "firstmate" ] || fail "config.toml must name Firstmate as the agent-kit supervisor"
+  [ "$(t3_toml_env "$toml" AK_LIFECYCLE_SUPERVISOR_DECLARATION)" = "$SPAWN_DECLARATION" ] || fail "config.toml must carry Firstmate's agent-kit supervisor declaration path"
   tp=$(t3_toml_env "$toml" TRACEPARENT)
   case "$tp" in 00-????????????????????????????????-????????????????-??) ;; *) fail "config.toml must set a W3C TRACEPARENT when trace context is on, got '$(cat "$toml")'" ;; esac
   grep -qxF "traceparent=$tp" "$state/$id.meta" || fail "the delivered TRACEPARENT must be the one recorded in the meta, got '$(grep '^traceparent=' "$state/$id.meta")'"
@@ -1756,11 +1762,11 @@ test_spawn_secondmate_runs_thread_in_home_with_env() {
   settings="$home/.claude/settings.local.json"
   assert_present "$settings" "a claude secondmate home gets .claude/settings.local.json"
   [ "$(t3_json_field "$settings" 'd.hooks')" = undefined ] || fail "a secondmate home carries no busy hooks"
-  [ "$(t3_json_field "$settings" 'd.env.FM_T3CODE_ENV_KEYS.split(",").length')" = 19 ] || fail "the env block should carry GOTMPDIR plus the secondmate environment, got $(t3_json_field "$settings" 'Object.keys(d.env)')"
+  [ "$(t3_json_field "$settings" 'd.env.FM_T3CODE_ENV_KEYS.split(",").length')" = 20 ] || fail "the env block should carry GOTMPDIR plus the secondmate environment, got $(t3_json_field "$settings" 'Object.keys(d.env)')"
   [ "$(t3_json_field "$settings" 'd.env.CAPTAIN_VAR')" = keep ] || fail "the home's own env entries must survive the T3 environment install"
   [ "$(t3_json_field "$settings" 'd.permissions.allow[0]')" = 'Bash(ls:*)' ] || fail "the home's own settings must survive the T3 environment install"
   [ "$(t3_json_field "$settings" 'd.env.LAVISH_AXI_HOST')" = undefined ] || fail "a key an earlier spawn wrote and this one does not must not linger"
-  [ "$(t3_json_field "$settings" 'Object.keys(d.env).length')" = 21 ] || fail "the env block should hold the home's entry, the 19 Firstmate keys, and their list, got $(t3_json_field "$settings" 'Object.keys(d.env)')"
+  [ "$(t3_json_field "$settings" 'Object.keys(d.env).length')" = 22 ] || fail "the env block should hold the home's entry, the 20 Firstmate keys, and their list, got $(t3_json_field "$settings" 'Object.keys(d.env)')"
   [ "$(t3_json_field "$settings" 'd.env.GOTMPDIR')" = "/tmp/fm-$id/gotmp" ] || fail "settings env must carry GOTMPDIR"
   read_settings() { t3_json_field "$settings" "d.env[\"$1\"]"; }
   assert_t3_secondmate_env read_settings "claude secondmate settings env" "$home" "$thread" autoarm "$id"

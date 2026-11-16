@@ -1938,7 +1938,7 @@ The flag is read only for ship and scout spawns, secondmate charters never take 
 
 The optional local, gitignored `config/launch-env-allowlist` limits the ambient environment passed to newly launched workers, scouts, and secondmates, including relaunches.
 T3 Code starts the provider from the server's environment and cannot apply this command boundary, so `backend=t3code` refuses when the file exists; [`t3code-backend.md`](t3code-backend.md#active-limits) owns that backend limit.
-With no file, the pane shell unsets inherited home- and task-scoped variables (`FM_HOME`, `FM_TASK_ID`, `FM_TASK_INBOX`, `FM_PUBLIC_FOLLOWUP_PRIMARY_HOME`, `FM_SESSION_ENDPOINT_META`, `FM_LEASE_HOLDER_SESSION`, `FM_*_OVERRIDE`, `FM_PROCEVENT_CLAIM_*`, `FM_PROCEVENT_CAPTURE_*`, and `FM_ZELLIJ_SESSION` outside the zellij backend) and the agent-kit lifecycle pair (`AK_LIFECYCLE_POLICY`, `AK_LIFECYCLE_SUPERVISOR`) before assigning the worker's own values; runtime tuning `FM_*` variables and other variables remain subject to the provider, long-lived terminal daemon, and shell initialization.
+With no file, the pane shell unsets inherited home- and task-scoped variables (`FM_HOME`, `FM_TASK_ID`, `FM_TASK_INBOX`, `FM_PUBLIC_FOLLOWUP_PRIMARY_HOME`, `FM_SESSION_ENDPOINT_META`, `FM_LEASE_HOLDER_SESSION`, `FM_*_OVERRIDE`, `FM_PROCEVENT_CLAIM_*`, `FM_PROCEVENT_CAPTURE_*`, and `FM_ZELLIJ_SESSION` outside the zellij backend) and the agent-kit lifecycle variables (`AK_LIFECYCLE_POLICY`, `AK_LIFECYCLE_SUPERVISOR`, `AK_LIFECYCLE_SUPERVISOR_DECLARATION`) before assigning the worker's own values; runtime tuning `FM_*` variables and other variables remain subject to the provider, long-lived terminal daemon, and shell initialization.
 
 Do not assume every worker inherits the invoking Firstmate process's current environment.
 The file is inherited into secondmate homes through the [primary-authoritative configuration contract](../.agents/skills/secondmate-provisioning/SKILL.md).
@@ -2027,24 +2027,33 @@ This applies only to agents Firstmate launches; the captain's own primary Firstm
 
 ### Agent-kit lifecycle policy
 
-Every crewmate, scout, and secondmate Firstmate launches starts with `AK_LIFECYCLE_POLICY=unattended` and `AK_LIFECYCLE_SUPERVISOR=firstmate` in its environment, on a fresh spawn and on a relaunch alike, on every runtime backend.
+Every crewmate, scout, and secondmate Firstmate launches starts with `AK_LIFECYCLE_POLICY=unattended`, `AK_LIFECYCLE_SUPERVISOR=firstmate`, and, unless its location is refused as described below, `AK_LIFECYCLE_SUPERVISOR_DECLARATION` in its environment, on a fresh spawn and on a relaunch alike, on every runtime backend.
 `AK_LIFECYCLE_POLICY=unattended` selects agent-kit's opt-in unattended lifecycle policy for every agent-kit lifecycle run a launched worker performs.
 `AK_LIFECYCLE_SUPERVISOR=firstmate` names Firstmate as the supervisor in place of a human, but agent-kit records it only from the release that includes its companion unattended opt-in change.
-An older installed agent-kit, for example 0.1.96, ignores `AK_LIFECYCLE_SUPERVISOR`, so only `AK_LIFECYCLE_POLICY=unattended` takes effect there and no supervisor is recorded.
-As with the compact adviser setting, this covers raw launch commands, remote secondmates, and launches filtered by `config/launch-env-allowlist`, and Codex workers receive both names in their tool shells even under a `[shell_environment_policy] inherit = "core"` configuration.
+`AK_LIFECYCLE_SUPERVISOR_DECLARATION` is the absolute real path of Firstmate's supervisor declaration, a JSON file that states how Firstmate meets agent-kit's six run-supervisor obligations.
+An older installed agent-kit, for example 0.1.96, ignores `AK_LIFECYCLE_SUPERVISOR` and the declaration, so only `AK_LIFECYCLE_POLICY=unattended` takes effect there and no supervisor is recorded.
+As with the compact adviser setting, this covers raw launch commands, remote secondmates, and launches filtered by `config/launch-env-allowlist`, and Codex workers receive all three names in their tool shells even under a `[shell_environment_policy] inherit = "core"` configuration.
 
-The values are fixed and have no setting.
-An inherited value, whether in the environment that runs `bin/fm-spawn.sh` or in the destination pane, never replaces them, even when it is empty or names another supervisor.
-A secondmate therefore launches its own workers with the same pair, and a remote secondmate's host applies the same values through its own `bin/fm-spawn.sh`.
+Before each launch, Firstmate writes the declaration to `$XDG_STATE_HOME/firstmate/agent-kit/supervisor-declaration.json`, or to `~/.local/state/firstmate/agent-kit/supervisor-declaration.json` when `XDG_STATE_HOME` is unset or relative.
+The file lives there because agent-kit refuses a declaration inside any git repository, and a Firstmate home is inside one.
+Firstmate writes the file only when it is absent or its bytes differ, because agent-kit binds each run to the file's path and digest and refuses to ship that run after either changes.
+When the location has a `.git` entry on any ancestor, for example a home directory kept as a dotfiles work tree, or cannot be written, the spawn prints a warning and launches without the declaration.
+Agent-kit then refuses that worker's unattended lifecycle runs, and the worker's other work is unaffected.
+Set `XDG_STATE_HOME` to a directory outside every repository to fix it.
+[`bin/fm-ak-supervisor-lib.sh`](../bin/fm-ak-supervisor-lib.sh) owns the declaration's exact content and write rules.
+
+The policy and supervisor values are fixed and have no setting.
+An inherited value of any of the three names, whether in the environment that runs `bin/fm-spawn.sh` or in the destination pane, never replaces Firstmate's, even when it is empty or names another supervisor or file.
+A secondmate therefore launches its own workers with the same values, and a remote secondmate's host provisions its own declaration and applies the same values through its own `bin/fm-spawn.sh`.
 A raw launch command is routed through the same Codex launcher, with its arguments kept, only when the whole command string is one safe form: zero or more plain `NAME=value` words with no quote, backslash, `$` or shell operator, then `codex` or a literal path such as `/opt/bin/codex`, then arguments, with no other word on any line naming codex.
-Its tool shells then receive both names.
+Its tool shells then receive all three names.
 Any other raw command that names codex as a word refuses before launch, because Firstmate cannot be sure the launcher would carry the names into that Codex's tool shells.
 The check reads the whole string and does not parse shell syntax, so it refuses quoted or escaped assignments, a path built from a variable, a Codex behind any other command word such as `env`, `time`, `npx` or a shell, a second Codex after a separator or on another line, and codex inside quoted argument text, whether the command is Codex or another tool.
 Known false refusals follow from that rule: a command that is not a Codex launch refuses when codex appears only as a path segment or an assignment value, as in `DIR=/x/work/codex /x/work/codex/probe`, and a Codex launch refuses when a later word mentions codex, as in `CODEX_HOME=/srv/codex codex ...` or `codex exec` with codex in its prompt.
 These refusals are accepted so that Firstmate does not parse shell.
 Launch Codex with `--harness codex`, or simplify the raw command, instead.
-This applies only to agents Firstmate launches; the captain's own primary Firstmate session is never given either variable.
-A shared process that a launch starts and that outlives it does not hand either variable to later terminals, because Firstmate removes both from the environment it starts that process with.
+This applies only to agents Firstmate launches; the captain's own primary Firstmate session is never given any of these variables.
+A shared process that a launch starts and that outlives it does not hand any of them to later terminals, because Firstmate removes all three from the environment it starts that process with.
 That covers a tmux, Herdr, or zellij server, the Paseo daemon, the cmux app, a Herdr Core session's core, a Rex personal server, and a Tern session, and [`bin/fm-env-scrub.sh`](../bin/fm-env-scrub.sh) owns the removal.
 Orca and T3 Code only attach to an app or server the operator already runs, so Firstmate never starts one for them.
 Firstmate provides no configuration file or flag for this, and agent-kit's own unattended-policy checks, such as its refusal to ship onto an unprotected default branch, still apply.

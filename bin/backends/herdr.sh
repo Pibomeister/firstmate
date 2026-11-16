@@ -1715,7 +1715,7 @@ fm_backend_herdr_server_owner_name() {  # <owner-marker>
 # NOT auto-start the server, so this must run before any workspace/tab/pane
 # call. The server outlives its launcher and passes its startup environment to
 # every later pane, so remove home, harness identity, supervision selection,
-# and the agent-kit lifecycle pair inherited from whichever agent happened to
+# and the agent-kit lifecycle variables inherited from whichever agent happened to
 # start it. Bounded poll for the
 # server to report running.
 #

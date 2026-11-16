@@ -474,16 +474,24 @@
 #   task teardown removes only the current home's launch namespace.
 # Agent-kit lifecycle policy:
 #   Every launch (ship, scout, secondmate, raw command, and relaunch, on every
-#   backend) exports AK_LIFECYCLE_POLICY=unattended and
-#   AK_LIFECYCLE_SUPERVISOR=firstmate, so agent-kit lifecycle skills run under
-#   agent-kit's unattended policy with Firstmate named as the supervisor.
+#   backend) exports AK_LIFECYCLE_POLICY=unattended,
+#   AK_LIFECYCLE_SUPERVISOR=firstmate and AK_LIFECYCLE_SUPERVISOR_DECLARATION,
+#   so agent-kit lifecycle skills run under agent-kit's unattended policy with
+#   Firstmate named and declared as the run supervisor.
+#   The declaration is the absolute real path of the byte-stable JSON file
+#   bin/fm-ak-supervisor-lib.sh provisions outside every git repository on this
+#   host before each launch (that library owns its shape, location and
+#   stability). When it cannot be provisioned, the spawn warns, still launches,
+#   and unsets any inherited declaration path, so agent-kit refuses the
+#   worker's unattended runs instead of reading a stale file.
 #   Agent-kit records the supervisor only from the release that includes its
 #   companion unattended opt-in change; an older agent-kit, for example 0.1.96,
-#   ignores AK_LIFECYCLE_SUPERVISOR, so only AK_LIFECYCLE_POLICY takes effect.
+#   ignores AK_LIFECYCLE_SUPERVISOR and its declaration, so only
+#   AK_LIFECYCLE_POLICY takes effect.
 #   The values are fixed: an inherited value in this spawn's environment or in
 #   the destination pane, empty or different, never replaces them. T3 Code
 #   carries the same values in its per-directory harness config, and
-#   bin/fm-codex-launch.sh forces both into Codex tool shells. A raw command
+#   bin/fm-codex-launch.sh forces all three into Codex tool shells. A raw command
 #   is routed through that launcher, arguments kept, only when the whole
 #   string is one safe form: plain NAME=value words with no quote, backslash,
 #   $ or shell operator, then codex or a literal /path/to/codex, then
@@ -495,10 +503,11 @@
 #   launch whose later words mention codex (CODEX_HOME=/srv/codex codex ...,
 #   or codex exec with codex in its prompt). Use --harness codex or a simpler
 #   command instead. A shared server, daemon, app or session that a backend
-#   starts for a launch never receives the pair (bin/fm-env-scrub.sh).
+#   starts for a launch never receives the lifecycle variables
+#   (bin/fm-env-scrub.sh).
 # Launch environment (config/launch-env-allowlist):
 #   Absent keeps ambient inheritance but unsets inherited home- and task-scoped
-#   FM_* values and the agent-kit lifecycle pair (bin/fm-env-scrub.sh) in the
+#   FM_* values and the agent-kit lifecycle variables (bin/fm-env-scrub.sh) in the
 #   pane shell before re-establishing this launch's own values. A present
 #   readable regular file opts every
 #   supported command-line launch (ship, scout, secondmate, raw command, and
@@ -648,7 +657,8 @@
 #     __CODEXLAUNCH__ quoted path to bin/fm-codex-launch.sh, the codex
 #                  launcher that adds the shell-environment overrides for
 #                  the endpoint, inbox and agent-kit lifecycle variables
-#                  (AK_LIFECYCLE_POLICY, AK_LIFECYCLE_SUPERVISOR) its own
+#                  (AK_LIFECYCLE_POLICY, AK_LIFECYCLE_SUPERVISOR,
+#                  AK_LIFECYCLE_SUPERVISOR_DECLARATION) its own
 #                  environment carries before exec'ing codex with the
 #                  remaining args; the FM_CODEX_BIN= assignment before it
 #                  pins the executable, empty on every Codex template and
@@ -1086,6 +1096,8 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 . "$SCRIPT_DIR/fm-worker-account-lib.sh"
 # shellcheck source=bin/fm-omp-profile-lib.sh
 . "$SCRIPT_DIR/fm-omp-profile-lib.sh"
+# shellcheck source=bin/fm-ak-supervisor-lib.sh
+. "$SCRIPT_DIR/fm-ak-supervisor-lib.sh"
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
 # a direct report (see bin/fm-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
@@ -9151,12 +9163,22 @@ $LAUNCH
 if [ "$LAVISH_AXI_HOST_CONFIG_PRESENT" = 1 ]; then
   LAUNCH="export LAVISH_AXI_HOST=$(shell_quote "$LAVISH_AXI_HOST"); $LAUNCH"
 fi
-# Every launch carries the agent-kit unattended lifecycle opt-in, naming
-# Firstmate as the supervisor in place of a human (docs/configuration.md
-# "Agent-kit lifecycle policy"). The values are fixed literals: an inherited
-# value in this spawn's environment or the destination pane never replaces
-# them, so a secondmate's own spawns carry the same pair. Export statements
-# survive a compound raw launch and the launch-env-allowlist `env -i` wrapper.
+# Every launch carries the agent-kit unattended lifecycle opt-in, naming and
+# declaring Firstmate as the supervisor in place of a human
+# (docs/configuration.md "Agent-kit lifecycle policy"). The values are fixed:
+# an inherited value in this spawn's environment or the destination pane never
+# replaces them, so a secondmate's own spawns carry the same values. Export
+# statements survive a compound raw launch and the launch-env-allowlist
+# `env -i` wrapper. A declaration that cannot be provisioned is unset rather
+# than inherited, so agent-kit refuses unattended runs instead of reading a
+# stale file.
+if AK_SUPERVISOR_DECLARATION=$(fm_ak_supervisor_declaration_ensure); then
+  LAUNCH="export AK_LIFECYCLE_SUPERVISOR_DECLARATION=$(shell_quote "$AK_SUPERVISOR_DECLARATION"); $LAUNCH"
+else
+  AK_SUPERVISOR_DECLARATION=
+  echo "warning: launching $ID without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs" >&2
+  LAUNCH="unset AK_LIFECYCLE_SUPERVISOR_DECLARATION; $LAUNCH"
+fi
 LAUNCH="export AK_LIFECYCLE_POLICY=unattended; export AK_LIFECYCLE_SUPERVISOR=firstmate; $LAUNCH"
 # Every launch also exports the absolute path of this task's steering inbox, so
 # the constant doorbell line (bin/fm-task-inbox-lib.sh) can name
@@ -9213,6 +9235,9 @@ if [ "$BACKEND" = t3code ]; then
   # keeps by unsetting it when the record fails.
   T3CODE_ENV=("GOTMPDIR=$TASK_TMP/gotmp" COMPACT_ADVISER_DISABLE=1 "FM_TASK_INBOX=$STATE_REAL/$ID.inbox"
     AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate)
+  if [ -n "$AK_SUPERVISOR_DECLARATION" ]; then
+    T3CODE_ENV+=("AK_LIFECYCLE_SUPERVISOR_DECLARATION=$AK_SUPERVISOR_DECLARATION")
+  fi
   if [ "$GIT_HOOKS_INSTALLED" = 1 ]; then
     T3CODE_ENV+=(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath "GIT_CONFIG_VALUE_0=$GIT_HOOKS_DIR")
   fi

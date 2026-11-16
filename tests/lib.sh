@@ -197,7 +197,10 @@ fm_test_launch_command() {  # <launch>
   local command end=' || return 1 2>/dev/null || exit 1; '
   command=$(fm_test_launch_without_env_scrub "$1")
   case "$command" in *"$end"*) command=${command#*"$end"} ;; esac
-  while [[ "$command" == export\ *\;* ]]; do
+  # A launch whose agent-kit supervisor declaration was refused carries an
+  # unset prefix among the exports; strip it too, so callers that eval the
+  # result never run the worker command itself.
+  while [[ "$command" == export\ *\;* || "$command" == unset\ *\;* ]]; do
     command=${command#*; }
   done
   printf '%s' "$command"

@@ -4,8 +4,9 @@
 #
 # The operator's global Codex config may set
 # [shell_environment_policy] inherit="core", which strips HERDR_PANE_ID,
-# HERDR_SESSION, TMUX, TMUX_PANE, FM_TASK_INBOX, AK_LIFECYCLE_POLICY and
-# AK_LIFECYCLE_SUPERVISOR from tool shells even though the pane shell
+# HERDR_SESSION, TMUX, TMUX_PANE, FM_TASK_INBOX, AK_LIFECYCLE_POLICY,
+# AK_LIFECYCLE_SUPERVISOR and AK_LIFECYCLE_SUPERVISOR_DECLARATION from tool
+# shells even though the pane shell
 # carries them. fm_secondmate_watch_selected then refuses the secondmate
 # watcher. The launch therefore carries one
 # -c shell_environment_policy.set.<VAR>="<value>" override per variable the
@@ -23,6 +24,9 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-codex-shell-env)
+
+# The runner is itself a Firstmate launch; its own values must not stand in.
+unset AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR AK_LIFECYCLE_SUPERVISOR_DECLARATION XDG_STATE_HOME
 
 # make_case <name> <id>...
 # Echoes "<case-dir>|<home>|<project>|<worktree>|<fakebin>|<launch-log>|<pane-log>".
@@ -110,6 +114,8 @@ test_ship_tmux_launch_carries_overrides() {
   assert_override "$argvlog" FM_TASK_INBOX "$want_inbox"
   assert_override "$argvlog" AK_LIFECYCLE_POLICY unattended
   assert_override "$argvlog" AK_LIFECYCLE_SUPERVISOR firstmate
+  assert_override "$argvlog" AK_LIFECYCLE_SUPERVISOR_DECLARATION \
+    "$HOME_DIR/user-home/.local/state/firstmate/agent-kit/supervisor-declaration.json"
   assert_no_override "$argvlog" HERDR_PANE_ID
   assert_no_override "$argvlog" HERDR_SESSION
   pass "a Codex ship launch carries TMUX, TMUX_PANE, FM_TASK_INBOX and agent-kit lifecycle overrides, and no Herdr overrides the pane lacks"
@@ -141,6 +147,8 @@ test_secondmate_herdr_launch_selects_watcher() {
   assert_override "$argvlog" FM_TASK_INBOX "$want_inbox"
   assert_override "$argvlog" AK_LIFECYCLE_POLICY unattended
   assert_override "$argvlog" AK_LIFECYCLE_SUPERVISOR firstmate
+  assert_override "$argvlog" AK_LIFECYCLE_SUPERVISOR_DECLARATION \
+    "$HOME_DIR/user-home/.local/state/firstmate/agent-kit/supervisor-declaration.json"
   assert_no_override "$argvlog" TMUX
   assert_no_override "$argvlog" TMUX_PANE
 
@@ -162,8 +170,8 @@ test_secondmate_herdr_launch_selects_watcher() {
         ;;
     esac
   done < "$argvlog"
-  [ "${#tool_env[@]}" -eq 5 ] \
-    || fail "expected exactly the three captured overrides plus the agent-kit lifecycle pair to form the tool-shell environment, got: ${tool_env[*]:-none}"
+  [ "${#tool_env[@]}" -eq 6 ] \
+    || fail "expected exactly the three captured overrides plus the three agent-kit lifecycle variables to form the tool-shell environment, got: ${tool_env[*]:-none}"
   status=0
   env -i PATH="$PATH" HOME="$TMP_ROOT/tool-home" FM_HOME="$sm" \
     "${tool_env[@]}" "$ROOT/bin/fm-watch.sh" --secondmate-selected || status=$?
@@ -171,5 +179,30 @@ test_secondmate_herdr_launch_selects_watcher() {
   pass "a Codex secondmate launch carries Herdr, inbox and agent-kit lifecycle overrides, and watcher selection accepts the tool-shell environment they produce"
 }
 
+# The launcher itself forwards the declaration path TOML-escaped, and names no
+# override for a declaration the pane does not carry.
+test_launcher_forwards_the_declaration() {
+  local fakebin argvlog
+  fakebin="$TMP_ROOT/launcher-direct"
+  mkdir -p "$fakebin"
+  install_argv_probe "$fakebin"
+  argvlog="$TMP_ROOT/launcher-direct.argv"
+  env -i PATH="$PATH" FM_CODEX_BIN="$fakebin/codex" FM_CODEX_ARGV_LOG="$argvlog" \
+    AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate \
+    AK_LIFECYCLE_SUPERVISOR_DECLARATION='/state/a "b"\c.json' \
+    "$ROOT/bin/fm-codex-launch.sh" --disable hooks || fail "the Codex launcher failed to exec the probe"
+  assert_override "$argvlog" AK_LIFECYCLE_SUPERVISOR_DECLARATION '/state/a \"b\"\\c.json'
+  assert_equals '-c' "$(grep -Fx -B1 'shell_environment_policy.set.AK_LIFECYCLE_SUPERVISOR_DECLARATION="/state/a \"b\"\\c.json"' "$argvlog" | head -1)" \
+    "the declaration override must ride its own -c flag"
+  assert_equals '--disable
+hooks' "$(tail -2 "$argvlog")" "the launcher must keep Codex's own arguments last"
+  env -i PATH="$PATH" FM_CODEX_BIN="$fakebin/codex" FM_CODEX_ARGV_LOG="$argvlog" \
+    AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate \
+    "$ROOT/bin/fm-codex-launch.sh" || fail "the Codex launcher failed to exec the probe without a declaration"
+  assert_no_override "$argvlog" AK_LIFECYCLE_SUPERVISOR_DECLARATION
+  pass "the Codex launcher forwards the supervisor declaration path escaped on its own -c flag, and only when the pane has one"
+}
+
 test_ship_tmux_launch_carries_overrides
 test_secondmate_herdr_launch_selects_watcher
+test_launcher_forwards_the_declaration

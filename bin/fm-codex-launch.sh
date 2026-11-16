@@ -5,7 +5,8 @@
 # Codex tool shells inherit only what the operator's Codex config lets
 # through: a global [shell_environment_policy] inherit="core" strips
 # HERDR_PANE_ID, HERDR_SESSION, TMUX, TMUX_PANE, FM_TASK_INBOX,
-# AK_LIFECYCLE_POLICY and AK_LIFECYCLE_SUPERVISOR even though the pane shell
+# AK_LIFECYCLE_POLICY, AK_LIFECYCLE_SUPERVISOR and
+# AK_LIFECYCLE_SUPERVISOR_DECLARATION even though the pane shell
 # and the Codex process itself carry them; the watcher selection in
 # bin/fm-push-transition-lib.sh then refuses the secondmate watcher, and
 # agent-kit lifecycle commands lose Firstmate's unattended opt-in. A
@@ -29,7 +30,8 @@
 set -u
 
 args=()
-for var in HERDR_PANE_ID HERDR_SESSION TMUX TMUX_PANE FM_TASK_INBOX AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR; do
+for var in HERDR_PANE_ID HERDR_SESSION TMUX TMUX_PANE FM_TASK_INBOX \
+  AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR AK_LIFECYCLE_SUPERVISOR_DECLARATION; do
   value=${!var:-}
   [ -n "$value" ] || continue
   value=${value//\\/\\\\}

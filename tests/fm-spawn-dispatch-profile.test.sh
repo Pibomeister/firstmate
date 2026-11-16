@@ -6,6 +6,8 @@
 # literal launch command sent with `tmux send-keys -l`, so assertions pin the
 # command firstmate would run without starting any real harness.
 set -u
+# Every spawn's agent-kit supervisor declaration lands under its own HOME.
+unset XDG_STATE_HOME
 
 # shellcheck source=tests/fixtures.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
@@ -129,12 +131,15 @@ make_seeded_secondmate_home() {
 }
 
 # The inbox export, followed by the agent-kit lifecycle exports every launch
-# carries right after it as fixed literals.
+# carries right after it: the fixed policy and supervisor literals, then the
+# supervisor declaration under the spawn's HOME (fm_test_run_spawn gives every spawn HOME=<home>/user-home).
 task_inbox_export() {  # <home> <id>
   local state
   state=$(CDPATH='' cd -- "$1/state" && pwd -P) || fail "cannot resolve state dir $1/state"
   printf "export FM_TASK_INBOX='%s'; " "$state/$2.inbox"
   printf '%s' 'export AK_LIFECYCLE_POLICY=unattended; export AK_LIFECYCLE_SUPERVISOR=firstmate; '
+  printf "export AK_LIFECYCLE_SUPERVISOR_DECLARATION='%s'; " \
+    "$1/user-home/.local/state/firstmate/agent-kit/supervisor-declaration.json"
 }
 
 launch_inner() {  # <delivered command> -> worker command after the env boundary
