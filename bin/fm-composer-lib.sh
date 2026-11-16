@@ -2730,7 +2730,8 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
 # `rm`, `cp`, and `mv` forms (`remove a.txt?`, `overwrite b? (y/n [n])`), git's
 # hunk prompts (`[y,n,q,a,d,e,?]?`), conda's `Proceed ([y]/n)?`, `find -ok`'s
 # `< rm ./a.txt > ?`, `xargs -p`'s `rm a ?...`, unzip's
-# `[y]es, [n]o, [A]ll, [N]one, [r]ename:`, git's interactive `What now>`,
+# `[y]es, [n]o, [A]ll, [N]one, [r]ename:`, git's interactive `What now>` and
+# its `Select items to delete>>` style submenus,
 # gcloud's `Please enter your numeric choice:`,
 # cryptsetup's `(Type 'yes' in capital letters):`, parted's bare `Yes/No?`,
 # `Press any key`, a bare `>`
@@ -2787,7 +2788,7 @@ fm_composer_confirm_input() {  # <screen> -> row
     printf '%s\n' "$last"
     return 0
   fi
-  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|^[[:space:]]*(remove|examine files in directory|recursively remove|override .+ for|overwrite) .+\?([[:space:]]*\(y/n \[[yn]\]\))?$|\((\[y\]/n|y/\[n\])\)[[:space:]]*\?$|^[[:space:]]*<.*>[[:space:]]*\?$|[[:space:]]\?\.\.\.$|^[[:space:]]*what now>$|^[[:space:]]*please enter (your )?numeric choice[^:]*:$|\(enter "h" for help\)[[:space:]]*\[[a-z]+\]$|^[[:space:]]*(yes/no|y/n)\?$|\(type [^)]{1,60}\)[[:space:]]*:$|\[y\]es, \[n\]o, \[a\]ll, \[n\]one, \[r\]ename:$|^[[:space:]]*(press|hit) any key|\(y/n \[[yn]\]\)$|\[y,n(,[a-z?/]+)*\]\?$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[^:>?"'"'"'`]{1,100}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
+  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|^[[:space:]]*(remove|examine files in directory|recursively remove|override .+ for|overwrite) .+\?([[:space:]]*\(y/n \[[yn]\]\))?$|\((\[y\]/n|y/\[n\])\)[[:space:]]*\?$|^[[:space:]]*<.*>[[:space:]]*\?$|[[:space:]]\?\.\.\.$|^[[:space:]]*what now>$|^[[:space:]]*(select items to delete|input ignore patterns|update|revert|add untracked|patch update|review diff)>>$|^[[:space:]]*please enter (your )?numeric choice[^:]*:$|^[[:space:]]*please enter a value between [0-9]+ and [0-9]+[^:]*:$|\(enter "h" for help\)[[:space:]]*\[[a-z]+\]$|^[[:space:]]*(yes/no|y/n)\?$|\(type [^)]{1,60}\)[[:space:]]*:$|\[y\]es, \[n\]o, \[a\]ll, \[n\]one, \[r\]ename:$|^[[:space:]]*(press|hit) any key|\(y/n \[[yn]\]\)$|\[y,n(,[a-z?/]+)*\]\?$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[^:>?"'"'"'`]{1,100}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
   printf '%s\n' "$last"
 }
 
