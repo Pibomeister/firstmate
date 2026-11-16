@@ -273,7 +273,7 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
       rows=$(_fm_wd_tail_rows "$screen" 8)
       if cat=$(fm_pp_hardstop_category "$rows"); then
         printf 'hardstop\t%s\n' "$cat"
-      elif fm_wd_lower "$rows" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)|(^|[^a-z])(remov|discard|delet|overwrit|override|replac|destroy|wip(e|ed|ing)([^a-z]|$)|erase|examine files)|\(w\)ipe|\+\+\+[[:space:]]+/dev/null|\(y/i/n/o/d/z\)|(^|[[:space:]])assume -r\?|apply anyway\?|data will be lost|data loss|cannot be (undone|reverted)|drop[[:space:]]+((the|this|your)[[:space:]]+)?(table|database|schema|db)([^a-z]|$)|reset[[:space:]]+(your|the)([[:space:]]+[a-z]+)?[[:space:]]+(database|schema|db)'; then
+      elif fm_wd_lower "$rows" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)|(^|[^a-z])(remov|discard|delet|overwrit|override|replac|destroy|wip(e|ed|ing)([^a-z]|$)|erase|examine files)|\(w\)ipe|yes, do as i say|\+\+\+[[:space:]]+/dev/null|\(y/i/n/o/d/z\)|(^|[[:space:]])assume -r\?|apply anyway\?|data will be lost|data loss|cannot be (undone|reverted)|drop[[:space:]]+((the|this|your)[[:space:]]+)?(table|database|schema|db)([^a-z]|$)|reset[[:space:]]+(your|the)([[:space:]]+[a-z]+)?[[:space:]]+(database|schema|db)'; then
         printf 'hardstop\tdestructive\n'
       else
         printf 'hold\tconfirm\n'
