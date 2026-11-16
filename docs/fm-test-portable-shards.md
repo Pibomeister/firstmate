@@ -37,6 +37,8 @@ The provisional `tests/fm-orca-cli-cache.test.sh` hint is 32339 ms from a succes
 The provisional `tests/fm-handoff-launch-runtime.test.sh` and `tests/fm-supervisor-failover.test.sh` hints are 82167 ms and 39563 ms from one successful macOS arm64 run on 2026-11-15 UTC with Bash 3.2.57, using `bash bin/fm-test-run.sh --json <timing-json>` on both scripts; every case passed without a capability skip.
 Former provisional local hints for polytoken, approval-failover, Kimi live-guard skip, tap-verify, read-repetition, Antigravity primary, worktree-cleanup, order, and watchdog-live now use Ubuntu timing-artifact maxima from the 2026-11-03 refresh.
 `tests/fm-watchdog.test.sh` is 527813 ms from that refresh.
+The `tests/fm-merge-review.test.sh` hint is a provisional 8500 ms: on 2026-11-12 it ran locally in the same time as `tests/fm-merge-local.test.sh` (58 s against 61 s and 78 s on a loaded host), so it takes that script's Ubuntu weight class until a CI timing artifact replaces it.
+The `tests/fm-merge-review-live.test.sh` hint is the provisional 60 ms live-guard skip.
 The wedge-cap suite is 424173 ms for `tests/fm-watch-wedge-cap.test.sh`, 214 ms for the live-guard skip, and 60531 ms for the unconfigured-parity suite, from the November 4 balance refresh.
 `test_portable_serial_packing_budget_boundary` pins every other fixture script to 0 ms, so packing exactly at the 780000 ms budget is accepted and one millisecond above it is refused even when real serial members have no hint.
 The coverage-guard test owns modeled real-hint headroom under that budget.

@@ -19,6 +19,14 @@ A no-mistakes worker re-validates it with /no-mistakes so the pipeline stays the
 In no-mistakes mode the earlier `done [at=<epoch>]: {summary}` is the pipeline handoff and is not gated.
 Tell the captain the PR's full `https://...` URL copied from the worker's ready line, the resolved checks-green crew-state line, or the task's `pr=` metadata, a concise outcome summary, and the no-mistakes risk level when applicable.
 A captain instruction to merge is explicit authority; `yolo` is the only standing routine merge authority.
+When `bin/fm-merge-review.sh covers <PR url>` exits 0, this home requires the two-model merge review for that repository ([`docs/configuration.md`](../../../docs/configuration.md) "Merge review").
+Never run that review, a test, a build, or a verification step in the supervisor session, and never read the full reviews into it.
+Dispatch a scout through `bin/fm-spawn.sh` whose brief names the PR URL and the full head commit; it fetches that commit into its own copy, runs any exact-head verification the task needs, and runs `bin/fm-merge-review.sh run` at that head.
+The script, not the worker, writes the prompt, the snapshot, and every receipt, and a worker never edits a review or writes a verdict for a seat.
+Read only the one `merge-review:` verdict line, from the scout's status or from `bin/fm-merge-review.sh check <PR url> --head <full-sha>`, which is safe in a supervisor session.
+`approved` allows `bin/fm-pr-merge.sh <id> <PR url> --expected-head <full-sha>` under the merge authority that already exists; `blocked` is a dissent to relay as a finding, and only a new head with new reviews clears it; `incomplete` means a seat has no valid review yet.
+A changed head has no reviews, so dispatch again for the new head, and never count a review of another head.
+The supervisor runs that merge command itself unless a current captain order delegates the merge: then the worker's instructions record the existing authority for that PR and head, and the worker executes that recorded authority through the same command and never decides one.
 For any custom `state/<id>.check.sh` you write yourself, keep it an ordinary single-link mode-`0700` file, print one line only when firstmate should wake, print nothing otherwise, finish before `FM_CHECK_TIMEOUT`, then bind its current bytes with `bin/fm-check-register.sh <id>` before the watcher may execute it.
 Retire a custom check only through `bin/fm-check-unregister.sh <id>` (or `bin/fm-teardown.sh` for a spawned task); never hand-compose an `rm` with `$STATE`/`$ID`.
 
