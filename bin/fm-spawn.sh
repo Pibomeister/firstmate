@@ -482,7 +482,8 @@
 #   bin/fm-ak-supervisor-lib.sh provisions outside every git repository on this
 #   host before each launch (that library owns its shape, location and
 #   stability). When it cannot be provisioned, the spawn warns, still launches,
-#   and unsets any inherited declaration path (a T3 Code launch sets it empty),
+#   and unsets any inherited declaration path (a T3 Code launch, a Codex tool
+#   shell and Claude's per-launch --settings env set it empty instead),
 #   so agent-kit refuses the worker's unattended runs instead of reading a
 #   stale file.
 #   Agent-kit records the supervisor only from the release that includes its
@@ -7583,6 +7584,20 @@ case "$OPENCODE_VERSION" in
 *) OPENCODE_MAJOR=${OPENCODE_VERSION%%.*} ;;
 esac
 
+# Provision the agent-kit supervisor declaration once, before any launch wiring
+# names it, so the Claude --settings env, the launch exports and the T3 Code env
+# block all carry the same value (docs/configuration.md "Agent-kit lifecycle
+# policy"). Claude applies a settings env value over the process environment,
+# so its per-launch settings pin the declaration too, empty when it could not
+# be provisioned, and no saved Claude env value can restore a stale path.
+if AK_SUPERVISOR_DECLARATION=$(fm_ak_supervisor_declaration_ensure); then
+  AK_SUPERVISOR_DECLARATION_OK=1
+else
+  AK_SUPERVISOR_DECLARATION_OK=0
+  AK_SUPERVISOR_DECLARATION=
+  echo "warning: launching $ID without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs" >&2
+fi
+CLAUDE_AK_ENV_JSON="\"env\":{\"AK_LIFECYCLE_SUPERVISOR_DECLARATION\":\"$(json_escape "$AK_SUPERVISOR_DECLARATION")\"}"
 # Arm the semantic busy-state contract (bin/fm-busy-lib.sh) for every
 # adapter with a verified semantic source, including a --secondmate launch.
 # The parent watcher reads this home's record; skipping the arm left a
@@ -7715,6 +7730,7 @@ BUSY_GEN=
       if [ "$KEEP_AI_TRAILERS" != 1 ]; then
         session_keys='"feedbackDrafts":"off","attribution":{"commit":"","pr":"","sessionUrl":false},'
       fi
+      session_keys="$session_keys$CLAUDE_AK_ENV_JSON,"
       printf '{%s%s}\n' "$session_keys" "$hooks_json" >"$STATE_REAL/$ID.claude-settings.json"
     else
       mkdir -p "$WT/.claude"
@@ -8851,8 +8867,8 @@ case "$LAUNCH" in
   if [ "$KIND" = secondmate ]; then
     LAUNCH=${LAUNCH//__CLAUDESETTINGS__/$(shell_quote "$STATE_REAL/$ID.claude-settings.json")}
   else
-    claude_settings="'{\"feedbackDrafts\":\"off\"__CLAUDEATTRIBUTION__}'"
-    LAUNCH=${LAUNCH//__CLAUDESETTINGS__/$claude_settings}
+    claude_settings=$(shell_quote "{\"feedbackDrafts\":\"off\"__CLAUDEATTRIBUTION__,$CLAUDE_AK_ENV_JSON}")
+    LAUNCH=${LAUNCH//__CLAUDESETTINGS__/"$claude_settings"}
   fi
   ;;
 esac
@@ -9173,11 +9189,9 @@ fi
 # `env -i` wrapper. A declaration that cannot be provisioned is unset rather
 # than inherited, so agent-kit refuses unattended runs instead of reading a
 # stale file.
-if AK_SUPERVISOR_DECLARATION=$(fm_ak_supervisor_declaration_ensure); then
+if [ "$AK_SUPERVISOR_DECLARATION_OK" = 1 ]; then
   LAUNCH="export AK_LIFECYCLE_SUPERVISOR_DECLARATION=$(shell_quote "$AK_SUPERVISOR_DECLARATION"); $LAUNCH"
 else
-  AK_SUPERVISOR_DECLARATION=
-  echo "warning: launching $ID without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs" >&2
   LAUNCH="unset AK_LIFECYCLE_SUPERVISOR_DECLARATION; $LAUNCH"
 fi
 LAUNCH="export AK_LIFECYCLE_POLICY=unattended; export AK_LIFECYCLE_SUPERVISOR=firstmate; $LAUNCH"

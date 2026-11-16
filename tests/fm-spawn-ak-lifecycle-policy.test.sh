@@ -591,6 +591,72 @@ test_declaration_refuses_a_directory_destination() {
 
 # bin/fm-env-scrub.sh removes all three lifecycle variables at every shared
 # process boundary while leaving unrelated variables alone.
+# install_claude_probe <fakebin>: stand in for claude. It prints the declaration
+# the agent process started with, then the one its --settings value (inline JSON
+# or a settings file) pins in Claude's env, which outranks the process
+# environment and any saved Claude settings.
+install_claude_probe() {
+  cat > "$1/claude" <<'SH'
+#!/bin/sh
+printf 'declaration=%s\n' "${AK_LIFECYCLE_SUPERVISOR_DECLARATION-unset}"
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = --settings ]; then
+    python3 -c '
+import json, os, sys
+value = sys.argv[1]
+if os.path.isfile(value):
+    with open(value) as stream:
+        settings = json.load(stream)
+else:
+    settings = json.loads(value)
+print("claude-settings-declaration=" + settings.get("env", {}).get("AK_LIFECYCLE_SUPERVISOR_DECLARATION", "unset"))
+' "$2"
+  fi
+  shift
+done
+SH
+  chmod +x "$1/claude"
+}
+
+# A Claude worker's per-launch settings pin the declaration, so a value saved in
+# Claude's own settings cannot restore a stale path: the provisioned path when
+# it exists, an empty value when its location is refused.
+test_claude_settings_pin_the_declaration() {
+  local kind posture rec id sm out status seen want
+  for kind in ship secondmate; do
+    for posture in provisioned refused; do
+      id="claude-$kind-$posture"
+      rec=$(make_case "$id" claude "$id")
+      read_case "$rec"
+      mkdir -p "$HOME_DIR/user-home"
+      [ "$posture" = provisioned ] || git -C "$HOME_DIR/user-home" init -q
+      if [ "$kind" = ship ]; then
+        out=$(run_case_spawn "$id" "$PROJ_DIR" --mode no-mistakes --yolo off)
+      else
+        sm="$CASE_DIR/secondmate-home"
+        make_secondmate_home "$sm" "$id"
+        out=$(run_case_spawn "$id" "$sm" --secondmate)
+      fi
+      status=$?
+      expect_code 0 "$status" "a claude $kind spawn with a $posture declaration should succeed: $out"
+      install_claude_probe "$FAKEBIN_DIR"
+      seen=$(emitted_report "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
+        || fail "claude $kind, $posture: the emitted launch failed to run"
+      if [ "$posture" = provisioned ]; then
+        want=$(decl_path "$HOME_DIR/user-home")
+        assert_equals "declaration=$want
+claude-settings-declaration=$want" "$seen" \
+          "a claude $kind must carry the provisioned declaration in its environment and its per-launch settings"
+      else
+        assert_equals 'declaration=unset
+claude-settings-declaration=' "$seen" \
+          "a claude $kind with a refused declaration must unset it and pin it empty in its per-launch settings"
+      fi
+    done
+  done
+  pass "a claude worker's and secondmate's per-launch settings pin the declaration, empty when its location is refused"
+}
+
 test_env_scrub_drops_all_three() {
   local out file
   out=$(env AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate \
@@ -812,6 +878,7 @@ test_declaration_validator_rejects_multiline_obligations
 test_declaration_matches_the_supervisor_contract
 test_declaration_bytes_stay_stable
 test_declaration_refused_inside_a_repository
+test_claude_settings_pin_the_declaration
 test_declaration_refuses_a_directory_destination
 test_env_scrub_drops_all_three
 test_new_tmux_server_never_publishes_the_pair
