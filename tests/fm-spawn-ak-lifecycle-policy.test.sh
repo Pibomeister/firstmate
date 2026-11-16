@@ -530,7 +530,8 @@ test_declaration_bytes_stay_stable() {
 }
 
 # A location with .git on any ancestor is refused before anything is created:
-# the spawn still launches, warns, and leaves no inherited declaration path.
+# the spawn still launches, warns, and leaves no inherited declaration path;
+# Codex tool shells get an empty override so a Codex config value cannot either.
 test_declaration_refused_inside_a_repository() {
   local rec out status seen
   rec=$(make_case decl-in-repo codex decl-in-repo-a1)
@@ -553,8 +554,9 @@ test_declaration_refused_inside_a_repository() {
 supervisor=firstmate
 declaration=unset
 codex-set=shell_environment_policy.set.AK_LIFECYCLE_POLICY="unattended"
-codex-set=shell_environment_policy.set.AK_LIFECYCLE_SUPERVISOR="firstmate"' "$seen" \
-    "a launch without a declaration must unset any inherited path in the agent and its Codex tool shells"
+codex-set=shell_environment_policy.set.AK_LIFECYCLE_SUPERVISOR="firstmate"
+codex-set=shell_environment_policy.set.AK_LIFECYCLE_SUPERVISOR_DECLARATION=""' "$seen" \
+    "a launch without a declaration must unset any inherited path in the agent and set it empty in its Codex tool shells"
   pass "a declaration location inside a git repository is refused with a warning and no inherited path survives"
 }
 

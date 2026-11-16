@@ -179,8 +179,9 @@ test_secondmate_herdr_launch_selects_watcher() {
   pass "a Codex secondmate launch carries Herdr, inbox and agent-kit lifecycle overrides, and watcher selection accepts the tool-shell environment they produce"
 }
 
-# The launcher itself forwards the declaration path TOML-escaped, and names no
-# override for a declaration the pane does not carry.
+# The launcher itself forwards the declaration path TOML-escaped, and names an
+# empty override for a declaration the pane does not carry, so a stale value
+# set in Codex config cannot reach the tool shell.
 test_launcher_forwards_the_declaration() {
   local fakebin argvlog
   fakebin="$TMP_ROOT/launcher-direct"
@@ -199,8 +200,9 @@ hooks' "$(tail -2 "$argvlog")" "the launcher must keep Codex's own arguments las
   env -i PATH="$PATH" FM_CODEX_BIN="$fakebin/codex" FM_CODEX_ARGV_LOG="$argvlog" \
     AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate \
     "$ROOT/bin/fm-codex-launch.sh" || fail "the Codex launcher failed to exec the probe without a declaration"
-  assert_no_override "$argvlog" AK_LIFECYCLE_SUPERVISOR_DECLARATION
-  pass "the Codex launcher forwards the supervisor declaration path escaped on its own -c flag, and only when the pane has one"
+  assert_override "$argvlog" AK_LIFECYCLE_SUPERVISOR_DECLARATION ''
+  assert_no_override "$argvlog" TMUX
+  pass "the Codex launcher forwards the supervisor declaration path escaped on its own -c flag, and an empty override when the pane has none"
 }
 
 test_ship_tmux_launch_carries_overrides

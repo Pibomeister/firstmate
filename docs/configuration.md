@@ -2037,7 +2037,8 @@ As with the compact adviser setting, this covers raw launch commands, remote sec
 Before each launch, Firstmate writes the declaration to `$XDG_STATE_HOME/firstmate/agent-kit/supervisor-declaration.json`, or to `~/.local/state/firstmate/agent-kit/supervisor-declaration.json` when `XDG_STATE_HOME` is unset or relative.
 The file lives there because agent-kit refuses a declaration inside any git repository, and a Firstmate home is inside one.
 Firstmate writes the file only when it is absent or its bytes differ, because agent-kit binds each run to the file's path and digest and refuses to ship that run after either changes.
-When the location has a `.git` entry on any ancestor, for example a home directory kept as a dotfiles work tree, or cannot be written, the spawn prints a warning and launches without the declaration.
+When the location has a `.git` entry on any ancestor, for example a home directory kept as a dotfiles work tree, or cannot be written, the spawn prints a warning and launches the worker with the declaration cleared.
+A pane launch unsets the variable, while a T3 Code launch and a Codex tool shell receive it empty, so no stale value from the environment or a harness config survives.
 Agent-kit then refuses that worker's unattended lifecycle runs, and the worker's other work is unaffected.
 Set `XDG_STATE_HOME` to a directory outside every repository to fix it.
 [`bin/fm-ak-supervisor-lib.sh`](../bin/fm-ak-supervisor-lib.sh) owns the declaration's exact content and write rules.
