@@ -173,6 +173,12 @@ PATCH_R=$'patching file a.c\nReversed (or previously applied) patch detected!  A
 NPM_OTP=$'$ npm profile enable-2fa auth-and-writes\nPassword: \nAnd an OTP code from your authenticator: '
 GPG_EDIT=$'sec  ed25519/0123456789ABCDEF\n     created: 2026-01-01  usage: SC\ngpg> '
 GH_HOST=$'? Where do you use GitHub? Other\n? Hostname: '
+DOCKER_UNLOCK=$'$ docker swarm unlock\nPlease enter unlock key: '
+SSH_RETRY=$'The authenticity of host \'h (192.0.2.1)\' can\'t be established.\nED25519 key fingerprint is SHA256:abc.\nAre you sure you want to continue connecting (yes/no/[fingerprint])? maybe\nPlease type \'yes\', \'no\' or the fingerprint: '
+GPG_CARD=$'Reader ...........: Yubico YubiKey\ngpg/card> '
+GPG_TRUST=$'Please decide how far you trust this user to correctly verify other users\' keys\n  5 = I trust ultimately\n  m = back to the main menu\n\nYour decision? '
+GPG_VALID=$'Please specify how long the key should be valid.\n         0 = key does not expire\nKey is valid for? (0) '
+PATCH_DEL=$'can\'t find file to patch at input line 3\n|--- a/foo.c\n|+++ /dev/null\nFile to patch: '
 NPM_AGAIN=$'$ npm profile set password\nCurrent password: \nNew password: \n       Again:     '
 SSH_KEYFILE=$'work\nEnter file in which the key is (/Users/test/.ssh/id_ed25519): '
 GH_SSHTITLE=$'? Upload your SSH public key to your GitHub account? /Users/test/.ssh/id_ed25519.pub\n? Title for your SSH key: (GitHub CLI) '
@@ -193,6 +199,7 @@ DESTRUCTIVE_CONFIRMS=(
   $'What to do?  (i)gnore, (w)ipe, (b)ackup '
   "$DPKG_CONF"
   "$PATCH_R"
+  "$PATCH_DEL"
   $'Reversed (or previously applied) patch detected!  Assume -R? [n] n\nApply anyway? [n] '
   $'work\nremove a.txt? '
   $'work\nexamine files in directory d? '
@@ -244,6 +251,12 @@ SECRET_INPUTS=(
   "$SSH_KEYFILE"
   "$NPM_AGAIN"
   "$NPM_OTP"
+  "$DOCKER_UNLOCK"
+  $'Enter unlock key: '
+  "$GPG_CARD"
+  "$GPG_TRUST"
+  $'Please select what kind of key you want:\n   (1) RSA and RSA\n   (9) ECC (sign and encrypt) *default*\nYour selection? '
+  "$GPG_VALID"
   "$GPG_EDIT"
   $'Generating public/private ed25519 key pair.\nEnter file in which to save the key (/home/u/.ssh/id_ed25519): '
 )
@@ -266,6 +279,8 @@ SIGNIN_INPUTS=(
   "$GH_DEVICE"
   "$GH_SSHTITLE"
   "$GH_HOST"
+  "$SSH_RETRY"
+  $'Please type \'yes\' or \'no\': '
   $'? Where do you use GitHub? [Use arrows to move, type to filter]\n> GitHub.com\n  Other'
   "$AZ_SELECT"
   $'work\n? Email or username › me@example.com'
@@ -373,6 +388,8 @@ test_hardstop_categories() {
     printf '%s\n' "$c" | classify claude >/dev/null && fail "this is not a confirmation: $c"
   done
   assert_equals $'hardstop\tdestructive' "$(printf 'work\nDiscard changes? [y/N]\n' | classify claude)" "a discard confirmation is a destructive stop"
+  assert_equals $'hold\tconfirm' "$(printf 'can\x27t find file to patch at input line 3\n|--- a/foo.c\n|+++ b/foo.c\nFile to patch: \n' | classify claude)" "patch's target-file input is held"
+  assert_equals '' "$(printf 'work\nYour selection? \n' | classify claude)" "a generic selection question without GnuPG text is not a credential stop"
   for c in 'Username [dev]:' 'Email: (this IS public)' 'Email address:'; do
     assert_equals $'hardstop\tsign-in' "$(printf 'work\n%s\n' "$c" | classify claude)" "$c is a sign-in stop"
   done
@@ -661,10 +678,22 @@ test_doorbell_never_types_into_a_prompt() {
   worker dg3 claude "$H/gpgedit.txt"
   printf '%s\n' "$GH_HOST" > "$H/ghhost.txt"
   worker dh3 claude "$H/ghhost.txt"
+  printf '%s\n' "$DOCKER_UNLOCK" > "$H/dkunlock.txt"
+  worker dk4 claude "$H/dkunlock.txt"
+  printf '%s\n' "$SSH_RETRY" > "$H/sshretry.txt"
+  worker ds4 claude "$H/sshretry.txt"
+  printf '%s\n' "$GPG_CARD" > "$H/gpgcard.txt"
+  worker dc4 claude "$H/gpgcard.txt"
+  printf '%s\n' "$GPG_TRUST" > "$H/gpgtrust.txt"
+  worker dt4 claude "$H/gpgtrust.txt"
+  printf '%s\n' "$GPG_VALID" > "$H/gpgvalid.txt"
+  worker dg4 claude "$H/gpgvalid.txt"
+  printf '%s\n' "$PATCH_DEL" > "$H/patchdel.txt"
+  worker df4 claude "$H/patchdel.txt"
   printf 'work output\n? Enter your email address: ›\n' > "$H/em.txt"
   worker du claude "$H/em.txt"
   local id
-  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv dz dy dj di dn dw2 dg2 dc2 df2 ds2 du2 dh2 dk2 dt2 da2 dp3 dd3 dx3 do3 dg3 dh3; do
+  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv dz dy dj di dn dw2 dg2 dc2 df2 ds2 du2 dh2 dk2 dt2 da2 dp3 dd3 dx3 do3 dg3 dh3 dk4 ds4 dc4 dt4 dg4 df4; do
     FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
     assert_contains "$(inbox_text "$id")" "steer for $id" "the steer for worker $id is durably recorded"
     sleep 1
