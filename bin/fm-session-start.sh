@@ -1108,8 +1108,11 @@ EOF
 reentry_card_body() {
   local out task key verb note line meta id status found=0
   printf '\nCAPTAIN ORDERS (bin/fm-order.sh pickup)\n'
-  out=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/fm-order.sh" pickup 2>&1) || out=
-  printf '%s\n' "${out:-(none open)}"
+  if out=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/fm-order.sh" pickup 2>&1); then
+    printf '%s\n' "${out:-(none open)}"
+  else
+    printf 'unreadable - run bin/fm-order.sh pickup before acting on any order: %s\n' "$out" | head -n 3
+  fi
 
   printf '\nOPEN DECISIONS (folded from the status logs)\n'
   out=$(scan_open_decisions "$STATE" 2>/dev/null) || out=
@@ -1189,6 +1192,10 @@ if [ "$REEMIT" -eq 1 ] && [ "$SESSION_SOURCE" = compact ] && [ "$PRIMARY_HARNESS
     # A compact starts a new context that has written no handoff yet
     # (bin/fm-order.sh owns the handle and order contract).
     FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/fm-order.sh" claim-handle >/dev/null 2>&1 || true
+    # A compact re-arms the automatic away trigger without --session-start,
+    # as the full re-emit below does (bin/fm-auto-away.sh arm).
+    AUTO_AWAY_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-auto-away.sh" arm 2>&1) ||
+      printf 'AUTO AWAY: %s\n' "$AUTO_AWAY_OUT"
     print_reentry_card "$REENTRY_LOCK_OUT"
     exit 0
   fi

@@ -348,6 +348,7 @@ run_claude_sequence() {
     for step in "$@"; do
       case "$step" in
         @handoff) FM_HOME="$root" "$order" handoff --doc "$root/handoff.md" >/dev/null 2>&1 ;;
+        @unarm) rm -f "$root/state/auto-away.check-trust" "$root/state/auto-away.check.sh" ;;
         @crowd)
           i=0
           while [ "$i" -lt 40 ]; do
@@ -368,6 +369,18 @@ run_claude_sequence() {
 }
 
 byte_count() { printf '%s' "$1" | LC_ALL=C wc -c | tr -d ' '; }
+
+# A compact re-arms the automatic away check as the full re-emit does, so a
+# config/auto-away change made after startup takes effect at the next compact.
+test_run_claude_compact_card_rearms_auto_away() {
+  local root="$TMP_ROOT/run-claude-card-away" outdir="$TMP_ROOT/run-claude-card-away-out"
+  make_run_primary "$root"
+  mkdir -p "$outdir"
+  run_claude_sequence "$root" "$outdir" startup @unarm compact
+  assert_contains "$(cat "$outdir/compact.out")" "$CARD_BANNER$root" "a Claude compact did not print the re-entry card"
+  assert_present "$root/state/auto-away.check-trust" "a Claude compact card did not re-arm the automatic away check"
+  pass "run wrapper: a Claude compact card re-arms the automatic away check"
+}
 
 CARD_BANNER="FIRSTMATE COMPACT RE-ENTRY CARD - "
 
@@ -1285,6 +1298,7 @@ test_run_clear_and_compact_reemit
 test_run_rebuild_forwards_source_to_drifted_instruction_refresh
 test_run_new_context_clears_the_order_handoff_record
 test_run_claude_compact_prints_the_reentry_card
+test_run_claude_compact_card_rearms_auto_away
 test_run_claude_compact_card_stays_within_its_bound
 test_run_claude_compact_card_lists_captain_holds
 test_run_compact_without_completion_refreshes_before_finishing_startup
