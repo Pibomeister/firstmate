@@ -95,7 +95,7 @@ SH
     > "$H/state/heartbeat.json"
   jq -cn --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{type:"assistant",timestamp:$ts,message:{content:[{type:"text",text:"Working."}]}}' \
     > "$H/claude/projects/p/$sid.jsonl"
-  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\n%s\n' "$H/claude" "$extra" > "$H/config/watchdog"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nquota-guard=off\n%s\n' "$H/claude" "$extra" > "$H/config/watchdog"
   cat > "$H/control.sh" <<SH
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$H/control.log"
