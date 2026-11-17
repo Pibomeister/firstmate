@@ -542,6 +542,47 @@ test_process_substitution_under_an_execd_leader_is_spared() {
   pass "fm-test-queue.sh: a process substitution started before an exec into the queue keeps its output"
 }
 
+# The holder's own nap is never recorded as a caller stage, so a holder that
+# dies mid-nap leaves a nap the exit reap ends rather than one that holds the
+# slot after the run is over. A slowed ps lets the first nap begin before the
+# run records its siblings.
+holder_nap() { NAP=$(pgrep -P "$1" -x sleep 2>/dev/null | head -n 1); [ -n "$NAP" ]; }
+holder_recorded() { HOLDER=$(awk -F= '$1 == "holder_pid" { print $2 }' "$1" 2>/dev/null); [ -n "$HOLDER" ]; }
+test_dead_holders_nap_is_not_a_caller_stage() {
+  local wrapper real_ps
+  new_case holder-nap
+  echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
+  CASE_RELEASES+=("$CASE/release-napping")
+  real_ps=$(command -v ps)
+  mkdir -p "$CASE/fakebin"
+  printf '%s\n' '#!/bin/sh' \
+    "[ -e '$CASE/fast-ps' ] || sleep 0.3" \
+    "exec '$real_ps' \"\$@\"" > "$CASE/fakebin/ps"
+  chmod +x "$CASE/fakebin/ps"
+  (
+    set -m
+    PATH="$CASE/fakebin:$PATH" qbg run --label napping -- sh -c 'echo $$ > "$1/child"
+      while [ ! -e "$1/release-napping" ]; do sleep 0.05; done' _ "$CASE" >/dev/null 2>&1 &
+    echo $! > "$CASE/wrapper"
+    wait
+  ) 2>/dev/null &
+  CASE_PIDS+=("$!")
+  wait_until "napping command started" file_exists "$CASE/child"
+  wrapper=$(cat "$CASE/wrapper")
+  CASE_PIDS+=("$wrapper" "$(cat "$CASE/child")")
+  wait_until "the run recorded its holder" holder_recorded "$FM_TEST_QUEUE_DIR/tickets/0000000001"
+  wait_until "the holder naps" holder_nap "$HOLDER"
+  CASE_PIDS+=("$NAP")
+  kill -KILL "$HOLDER"
+  : > "$CASE/fast-ps"
+  kill -0 "$NAP" 2>/dev/null || fail "the nap ended before the run did, so nothing was tested"
+  release napping
+  wait_until "the run ended" pid_gone "$wrapper"
+  pid_gone "$NAP" || fail "the dead holder's nap $NAP outlived the run as a spared stage"
+  status_has 'serving=0' || fail "the slot stayed held after the run ended"
+  pass "fm-test-queue.sh: a dead holder's nap is reaped, not spared as a caller stage"
+}
+
 # A snapshot that fails once during the wrapper's exit reap leaves the
 # holder running to retry, rather than abandoning the straggler.
 test_failed_exit_snapshot_leaves_the_holder_to_retry() {
@@ -1121,6 +1162,7 @@ test_wrapper_killed_mid_reap_leaves_the_holder_to_finish
 test_zombie_wrapper_does_not_block_its_holder
 test_process_substitution_under_an_execd_leader_is_spared
 test_failed_exit_snapshot_leaves_the_holder_to_retry
+test_dead_holders_nap_is_not_a_caller_stage
 test_reused_group_id_is_not_reaped
 test_pipeline_stage_outliving_its_caller_is_spared
 test_remote_straggler_cannot_hold_the_ssh_output

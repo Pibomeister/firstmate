@@ -424,6 +424,8 @@ group_walk() {
         if (group[p] != g || p == w || p == out || (p in self) || state[p] ~ /^Z/) continue
         q = p; hops = 0; keep = 0; descends = 0
         while (hops++ < 4096) {
+          # The holder and what it runs are never caller stages.
+          if (q == out && mode == "siblings") { descends = 1; break }
           if (q == out || (q "@" start[q]) in spared) { keep = 1; break }
           r = parent[q]
           if (r == w) { descends = 1; break }
@@ -520,6 +522,8 @@ hold_group() {
   local nap="" list self tries
   self=${BASHPID:-$(exec sh -c 'printf "%s" "$PPID"')}
   trap '[ -z "$nap" ] || { kill "$nap" 2>/dev/null; kill -CONT "$nap" 2>/dev/null; wait "$nap" 2>/dev/null; }; exit 0' TERM
+  # A Ctrl-C to the run's group must not end the holder.
+  trap '' INT QUIT
   exec </dev/null >/dev/null 2>&1
   while pid_running "$T_PID" "$T_START"; do
     hold_nap
