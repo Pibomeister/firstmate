@@ -929,6 +929,7 @@ tests/fm-live-lab-up-mate.test.sh 17915
 tests/fm-live-lab.test.sh 81645
 tests/fm-mail-check.test.sh 8048
 tests/fm-mail.test.sh 11504
+tests/fm-memory-guard.test.sh 12464
 tests/fm-merge-local.test.sh 8251
 tests/fm-merge-review-live.test.sh 60
 tests/fm-merge-review.test.sh 8500
@@ -1925,6 +1926,10 @@ families_for_changed_path() {
       ;;
     bin/fm-disk-alarm.sh)
       printf '%s\n' "__script__:fm-disk-alarm.test.sh"
+      ;;
+    bin/fm-memory-guard.sh)
+      printf '%s\n' "__script__:fm-memory-guard.test.sh"
+      printf '%s\n' "__script__:fm-watchdog.test.sh"
       ;;
     bin/fm-env-lib.sh)
       # The one .env accessor, sourced by bin/fm-x-lib.sh (Relay token) and

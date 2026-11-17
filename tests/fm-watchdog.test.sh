@@ -198,7 +198,7 @@ SH
   jq -n --arg t "$T" --arg s "$SID" --argjson e "$BASE" --argjson p "$LOCKPID" \
     '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
     > "$H/state/heartbeat.json"
-  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nquota-guard=off\n%s\n' "$H/claude" "$extra" > "$H/config/watchdog"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nquota-guard=off\nmemory-guard=off\n%s\n' "$H/claude" "$extra" > "$H/config/watchdog"
   sleep 0.5
 }
 
@@ -3955,6 +3955,47 @@ test_status_file_short_and_staleness_visible() {
   pass "status file stays under 40 lines with timestamp, health, actions since last read, gaps, and a staleness line"
 }
 
+# fake_memory_tools <swap-used>|fail: a sysctl fake for the memory guard's
+# macOS reader; fail exits 1. The guard reads the real process table.
+fake_memory_tools() {
+  if [ "$1" = fail ]; then
+    printf '#!/usr/bin/env bash\nexit 1\n' > "$FAKEBIN/sysctl"
+  else
+    printf '#!/usr/bin/env bash\nprintf "total = 9.00M  used = %s  free = 1.00M  (encrypted)\\n"\n' "$1" > "$FAKEBIN/sysctl"
+  fi
+  chmod +x "$FAKEBIN/sysctl"
+}
+
+test_memory_guard_samples_once_per_pass() {
+  make_home $'Captain session\n> ' 'memory-guard=on'
+  printf 'swap_warn_mb=5\nproc_rss_mb=999999999\nmode=reap-scratch\n' > "$H/config/memory-guard"
+  fake_memory_tools 7.00M
+  FM_MEMORY_GUARD_OS=Darwin run_wd 0 once >/dev/null 2>&1 || fail "a pass with a memory alarm failed"
+  assert_equals 1 "$(wc -l < "$H/state/memory-guard.tsv" | tr -d ' ')" "one memory sample per pass"
+  assert_equals "$BASE	7" "$(cut -f 1-2 "$H/state/memory-guard.tsv")" "the sample uses the watchdog clock"
+  assert_grep "- host: memory alarm swap_used_mb=7 " "$H/data/watchdog/status.md" "an alarm in force is an open gap"
+  assert_grep "- host: swap used 7 MB is at or over 5 MB" "$H/data/watchdog/status.md" "the new alarm line is an open gap"
+  assert_grep "mode=reap-scratch" "$H/data/watchdog/status.md" "an acting watchdog keeps the configured reap-scratch mode"
+  FM_MEMORY_GUARD_OS=Darwin run_wd 120 once --dry-run >/dev/null 2>&1 || fail "a second pass failed"
+  assert_equals 2 "$(wc -l < "$H/state/memory-guard.tsv" | tr -d ' ')" "the next pass adds one more sample"
+  assert_grep "- host: memory alarm" "$H/data/watchdog/status.md" "a deduplicated alarm stays an open gap"
+  assert_no_grep "- host: swap used" "$H/data/watchdog/status.md" "a deduplicated alarm line is not repeated"
+  assert_grep "mode=observe" "$H/data/watchdog/status.md" "a dry-run watchdog forces observe mode"
+  rm -f "$H/state/memory-guard.tsv"
+  mkdir "$H/state/memory-guard.tsv"
+  # With no alarm in force, a sample that cannot be recorded is a failure.
+  printf 'swap_warn_mb=999999\nproc_rss_mb=999999999\n' > "$H/config/memory-guard"
+  FM_MEMORY_GUARD_OS=Darwin run_wd 240 once >/dev/null 2>&1 || fail "a failed memory sample stopped the pass"
+  assert_grep "- host: memory guard sample failed (exit 1)" "$H/data/watchdog/status.md" "a failed sample is a gap"
+  assert_grep "## Homes" "$H/data/watchdog/status.md" "the pass still writes the status file"
+  rmdir "$H/state/memory-guard.tsv"
+  printf 'memory-guard=off\n' >> "$H/config/watchdog"
+  FM_MEMORY_GUARD_OS=Darwin run_wd 360 once >/dev/null 2>&1
+  assert_absent "$H/state/memory-guard.tsv" "memory-guard=off takes no sample"
+  rm -f "$FAKEBIN/sysctl"
+  pass "the watchdog samples host memory once per pass and never stops on a failed sample"
+}
+
 test_away_permission_dialog_pages_the_owner() {
   local dialog=$'Do you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently\n\nEsc to cancel'
   local secret=$'Do you want to run curl -H "Authorization: Bearer abc123def456"?\n ❯ 1. Yes\n   2. No\n\nEsc to cancel'
@@ -6189,5 +6230,6 @@ fm_test_run \
   test_supervisor_gap_rows_name_each_watched_home \
   test_supervisor_gap_torn_line_and_failed_append \
   test_status_file_short_and_staleness_visible \
+  test_memory_guard_samples_once_per_pass \
   test_manager_units \
   test_never_merges_deploys_or_messages_owner

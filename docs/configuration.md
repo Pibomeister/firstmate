@@ -15,6 +15,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
 | Hung workers whose agent is still alive | [Hung-worker ladder](#hung-worker-ladder-confighung-ladder) |
 | Unattended stall recovery for firstmates and second mates | [Assistant watchdog](#assistant-watchdog-configwatchdog) |
+| Host memory and swap alarms | [Host memory guard](#host-memory-guard-configmemory-guard) |
 | Restarting relays that go stale after a network daemon restart | [Relay guard](#relay-guard-configrelay-guard) |
 | Host identity, credential, and reachability probes for an outside watchdog | [Host-health probe](#host-health-probe) |
 | Machine-wide heavy test admission | [`fm-test-queue.sh` header](../bin/fm-test-queue.sh) |
@@ -1251,6 +1252,19 @@ The no-mistakes brief tells a crewmate to run the lane gate before it starts a r
 `bin/fm-remote-home-provision.sh` refuses a new home on the receiving host the same way, and an existing home is not gated.
 A remote code root older than this gate provisions without it until that root is updated.
 A refusal places the work on another host or cloud.
+
+## Host memory guard (config/memory-guard)
+
+[`bin/fm-memory-guard.sh`](../bin/fm-memory-guard.sh) samples swap use and the largest processes once per [watchdog](watchdog.md) pass, and `check` runs one sample by hand.
+The optional local, gitignored `config/memory-guard` sets its swap and process limits, the sustained window, the alarm repeat time, the sample log cap, and `mode`.
+The guard never signals a process in any mode.
+The default `mode=observe` only reports alarms.
+An explicit `mode=reap-scratch` also names each sustained process as `would-stop` scratch or as spared, and still stops nothing, so an operator decides what to end.
+It never names an agent CLI, a supervisor, a multiplexer, an IDE, a browser, or a desktop app as scratch.
+A scratch process has no child processes and is a shell or interpreter running a single-link script from a disposable temp root.
+Protected names and paths are compared without case.
+The script header owns every key and default, the sample log at `state/memory-guard.tsv`, the alarm lines, and the full protection list.
+[`tests/fm-memory-guard.test.sh`](../tests/fm-memory-guard.test.sh) exercises both readers, the protection list with fixture process tables, and the absence of any signal.
 
 ## PR-ready line after green (config/ready-after-green)
 

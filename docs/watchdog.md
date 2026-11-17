@@ -58,6 +58,13 @@ Other dialogs are read from the visible screen only where the backend gives a vi
 A viewport that cannot be read is unknown: no dialog key and no quota pick, and it does not pre-empt a restart, low-context, or timer-loop check.
 Other backends, including Orca without a recorded Droid frame, fall back to the last 60 captured rows.
 
+Once per pass, not once per home, the watchdog also samples host memory and swap through [`bin/fm-memory-guard.sh`](../bin/fm-memory-guard.sh), with no daemon of its own.
+That script's header owns the readers, the `config/memory-guard` keys, the sample log, the alarm lines, and the reap-scratch classification rules.
+An alarm in force is an open gap on every pass, and a new alarm line is an open gap on the pass that prints it.
+A sample that fails or times out after 30 seconds is a gap and never stops the pass.
+The guard never signals a process; the watchdog also passes `--observe` unless its own `mode` is `act`, so a dry run does not even classify scratch.
+The memory guard restarts a process's sustained window after a 600 second gap, so an `interval-secs` above 600 means no process alarm fires.
+
 ## Layer check chain
 
 Four layers keep a home supervised: the monitor unit, the watcher arm, the heartbeat and the watchdog.
@@ -389,6 +396,7 @@ An absent file means dry-run on the owner home alone.
 | `quota-guard-window-secs` | none | Horizon a supervisor pool must last; empty uses `quota-guard-window-until` |
 | `quota-guard-window-until` | `08:00` | Local time the night window ends when `quota-guard-window-secs` is empty |
 | `quota-guard-timeout-secs` | `300` | Bound on one quota guard call |
+| `memory-guard` | `on` | `off` stops the host memory and swap sample on each pass |
 | `issue-repo` | none | `owner/repo` for self-heal issues; empty reports a gap instead |
 | `interval-secs` | `120` | Seconds between passes in `run` |
 | `frozen-secs` | `900` | Quiet time that counts as frozen |
