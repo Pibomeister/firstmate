@@ -8901,6 +8901,10 @@ if [ "$RELAUNCH" -eq 0 ]; then
   SPAWN_META_TMP=
 fi
 
+# Save the endpoint identity and fence possible worker delivery before any
+# backend can receive its launch. A pre-metadata crash remains releasable.
+spawn_claim_transition launch || exit 1
+
 # Fuse the backlog In-flight transition into the publication that just created
 # the record (bin/fm-backlog-transition-lib.sh owns the invariant). It runs under
 # this task's own meta lock, so a steer or teardown racing the same id stays
