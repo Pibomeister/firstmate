@@ -28,15 +28,24 @@
         "type": "command",
         "command": "\"$CURSOR_PROJECT_DIR\"/bin/fm-cd-pretool-check.sh --cursor",
         "timeout": 10
-      },
+      }
+    ],
+    "postToolUse": [
       {
-        "matcher": "Shell",
         "type": "command",
         "command": "\"$CURSOR_PROJECT_DIR\"/bin/fm-pstack-verify-hook.sh --cursor",
         "timeout": 10
-      },
+      }
+    ],
+    "postToolUseFailure": [
       {
-        "matcher": "Write|StrReplace|EditNotebook",
+        "type": "command",
+        "command": "\"$CURSOR_PROJECT_DIR\"/bin/fm-pstack-verify-hook.sh --cursor",
+        "timeout": 10
+      }
+    ],
+    "afterShellExecution": [
+      {
         "type": "command",
         "command": "\"$CURSOR_PROJECT_DIR\"/bin/fm-pstack-verify-hook.sh --cursor",
         "timeout": 10

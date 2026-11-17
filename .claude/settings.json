@@ -28,7 +28,8 @@
           },
           {
             "type": "command",
-            "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-pstack-verify-hook.sh --claude"
+            "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-pstack-verify-hook.sh --claude",
+            "timeout": 10
           }
         ]
       },
@@ -37,7 +38,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-pstack-verify-hook.sh --claude"
+            "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-pstack-verify-hook.sh --claude",
+            "timeout": 10
           }
         ]
       },

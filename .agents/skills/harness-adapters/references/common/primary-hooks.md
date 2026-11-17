@@ -39,10 +39,10 @@ It always exits 0, including on its own errors, so a miss never blocks a turn.
 
 | Event | Where firstmate sees it | Principle |
 | --- | --- | --- |
-| Completion report | `bin/fm-classify-lib.sh` `status_is_terminal_verb` (`done:`), Cursor `afterAgentResponse` `.text`, Claude `UserPromptSubmit` `.prompt` | `principle-prove-it-works` |
-| Tests added or changed | Cursor/Claude `preToolUse` Write/Edit of a test path | `principle-test-behavior-not-implementation` |
-| Speed or perf claim | Cursor `beforeSubmitPrompt` `.prompt`, Claude `UserPromptSubmit` `.prompt`, `afterAgentResponse` `.text` | `principle-explain-the-number` |
-| Same red twice after a claimed fix | Claude `PostToolUse` output plus `$STATE/pstack-verify-reds.tsv`, keyed on a stable check or test id | `principle-attack-the-premise` |
+| Completion report | `status_is_terminal_verb` on Write contents, quoted Shell payloads, and prompt/assistant text | `principle-prove-it-works` |
+| Tests added or changed | Claude `PreToolUse` Write/Edit of a code test path, Cursor `postToolUse` of the same, or a Shell redirect/heredoc/tee into that path | `principle-test-behavior-not-implementation` |
+| Speed or perf claim | `beforeSubmitPrompt` / `UserPromptSubmit` / `afterAgentResponse` text, after dropping `fast-forward` and `faster path` | `principle-explain-the-number` |
+| Same red twice after a claimed fix | stderr/stdout/`error_message`/`output` plus `$STATE/pstack-verify-reds.tsv`; claims from assistant-visible text | `principle-attack-the-premise` |
 
 Skills live at `.cursor/skills/principle-*/SKILL.md` (catalog) and `.agents/skills/principle-*/SKILL.md` (Claude mirror).
 Source: pstack 0.15.43, MIT.
