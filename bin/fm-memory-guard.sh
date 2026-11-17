@@ -45,7 +45,8 @@
 #
 # Sustained window: a process is tracked by pid and start time (now - etime,
 # matched within 5 s, so a reused pid starts a new window). A process that
-# drops under proc_rss_mb, or was last seen more than 600 s ago, starts again.
+# drops under proc_rss_mb, or was last seen more than 600 s ago, starts again,
+# so samples must come at least every 600 s for any process to be sustained.
 #
 # Status: ok (nothing over a limit), watch (a process over proc_rss_mb, not yet
 # sustained), alarm (swap at or over swap_warn_mb or a sustained process), or
@@ -54,23 +55,32 @@
 # spared:<pid> (a sustained process reap-scratch would not signal).
 #
 # Reaping: only with mode=reap-scratch and no --observe, and only for a
-# sustained process. It gets one SIGTERM to its own pid (never a group, never
-# SIGKILL) only when every rule holds:
+# sustained process. It gets one SIGTERM per pass to its own pid (never a
+# group, never SIGKILL), so a process that ignores it is signaled and reported
+# again on the next pass, only when every rule holds:
 #   - it belongs to the guard's own uid and is not the guard or an ancestor;
-#   - its command name and its argv[0] basename are not protected: claude,
-#     codex, agy, cursor, cursor-agent, grok, kimi, opencode, pi, omp, droid,
-#     hermes, muse, gemini, rovo, devin, cortex, kiro, polytoken, commandcode,
-#     orca, herdr, tmux, zellij, screen, no-mistakes, treehouse, launchd,
-#     systemd, sshd, login, and desktop, IDE, and browser processes (any
-#     argument inside a .app bundle, code, electron, chrome, chromium, firefox,
-#     safari, Xorg, Xwayland, gnome-shell, kwin, plasmashell, WindowServer);
-#   - it is not a Firstmate supervisor script (bin/fm-*.sh) outside a
+#   - no protected name is its command name, its argv[0] basename, any path
+#     component of any argument, or the leading word of one (claude-code,
+#     .codex, muse-bin-1.4): claude, codex, agy, cursor, cursor-agent, grok,
+#     kimi, opencode, pi, pi-signed, omp, droid, hermes, muse, gemini, rovo,
+#     devin, cortex, kiro, kiro-cli, polytoken, commandcode, command-code, orca, herdr, tmux, zellij, screen, no-mistakes,
+#     treehouse, launchd, systemd, sshd, login, and desktop, IDE, and browser
+#     processes (any argument inside a .app bundle, code, electron, chrome,
+#     chromium, firefox, safari, Xorg, Xwayland, gnome-shell, kwin,
+#     plasmashell, WindowServer);
+#   - no argument is a Firstmate supervisor script (bin/fm-*.sh) outside a
 #     disposable temp root;
-#   - node is protected unless its own arguments name a disposable temp root;
+#   - node is protected unless its program is under a disposable temp root;
 #   - no protected process descends from it;
-#   - it is scratch: its arguments name a disposable temp root (/tmp/fm-*,
-#     /private/tmp/fm-*, /var/folders/<a>/<b>/T/fm-*, or $TMPDIR/fm-*), or an
-#     ancestor runs a tests/<name>.test.sh script.
+#   - it is scratch: its program (argv[0], or an interpreter's script
+#     operand) starts under a disposable temp root (/tmp/fm-*,
+#     /private/tmp/fm-*, /var/folders/<a>/<b>/T/fm-*, or $TMPDIR/fm-*) with
+#     no . or .. segment, or an ancestor's program is a tests/<name>.test.sh
+#     script. An argument that only names a temp path does not make it scratch;
+#   - a fresh process read just before the signal still shows the same
+#     process (uid, parent, command name, arguments, and an elapsed time that
+#     only moved forward) and still judges it eligible; otherwise it is
+#     spared as changed since the sample.
 # A swap alarm alone signals nothing.
 #
 # Stdout without --json: one summary line, then one line per alarm printed
@@ -121,6 +131,8 @@ SEEN=$STATE/memory-guard-seen.tsv
 ALARMS=$STATE/memory-guard-alarms.tsv
 WINDOW_GAP_SECS=600
 START_SLACK_SECS=5
+RECHECK_MAX_SECS=120
+SELF_PIDS=''
 
 now=
 os=
@@ -238,7 +250,7 @@ read_procs() {  # <names-scratch-file>
 
 # --- protection -----------------------------------------------------------------
 
-PROTECTED_NAMES='claude codex agy cursor cursor-agent grok kimi opencode pi omp droid hermes muse gemini rovo devin cortex kiro polytoken commandcode orca herdr tmux zellij screen no-mistakes treehouse launchd systemd sshd login code Code electron Electron chrome chromium chromium-browser google-chrome firefox safari Safari Xorg Xwayland gnome-shell kwin kwin_wayland plasmashell WindowServer Finder Dock loginwindow'
+PROTECTED_NAMES='claude codex agy cursor cursor-agent grok kimi opencode pi pi-signed omp droid hermes muse gemini rovo devin cortex kiro kiro-cli polytoken commandcode command-code orca herdr tmux zellij screen no-mistakes treehouse launchd systemd sshd login code Code electron Electron chrome chromium chromium-browser google-chrome firefox safari Safari Xorg Xwayland gnome-shell kwin kwin_wayland plasmashell WindowServer Finder Dock loginwindow'
 
 scratch_roots() {
   local t phys
@@ -253,22 +265,59 @@ scratch_roots() {
 
 # Annotates each process row with its verdict: pid TAB eligible|spared TAB reason.
 # Reads the process table on stdin; the candidates file lists the sustained pids.
+# A process's program is argv[0], or for an interpreter (sh, bash, zsh, dash,
+# ksh, python*, node, deno, bun, ruby, perl, php) its first operand; inline
+# code (-c, -e, -) and an interpreter with no operand have no program path.
 classify_candidates() {  # <candidates-file> <self-pids>
-  awk -F'\t' -v cands="$1" -v selfs="$2" -v names="$PROTECTED_NAMES" -v roots="$(scratch_roots | tr '\n' ' ')" -v uid="$(id -u)" '
-    function scratch_arg(a,   i, n, r, k) {
-      n = split(roots, r, " ")
-      for (i = 1; i <= n; i++) { if (r[i] == "") continue; k = index(a, r[i]); if (k == 1 || (k > 1 && substr(a, k - 1, 1) ~ /[ =:]/)) return 1 }
-      if (a ~ /(^|[ =:])(\/private)?\/var\/folders\/[^ \/]+\/[^ \/]+\/T\/fm-/) return 1
+  awk -F'\t' -v cands="$1" -v selfs="$2" -v names="$PROTECTED_NAMES" -v roots="$(scratch_roots | tr '\n' '\t')" -v uid="$(id -u)" '
+    function under_root(t,   i, n, r) {
+      if (t == "" || t ~ /(^|\/)\.\.?(\/|$)/) return 0
+      n = split(roots, r, "\t")
+      for (i = 1; i <= n; i++) if (r[i] != "" && index(t, r[i]) == 1) return 1
+      return (t ~ /^(\/private)?\/var\/folders\/[^\/]+\/[^\/]+\/T\/fm-/)
+    }
+    function bname(t,   s) { s = t; sub(/.*\//, "", s); return s }
+    function interp(b) { return b ~ /^(ba|z|da|k)?sh$/ || b ~ /^python[0-9.]*$/ || b ~ /^(node|deno|bun|ruby|perl|php)$/ }
+    function program(a,   n, t, i) {
+      n = split(a, t, " ")
+      if (n == 0) return ""
+      if (!interp(bname(t[1]))) return t[1]
+      for (i = 2; i <= n; i++) {
+        if (t[i] == "-c" || t[i] == "-e" || t[i] == "-" || t[i] == "--eval") return ""
+        if (t[i] !~ /^-/) return t[i]
+      }
+      return ""
+    }
+    # A protected name as any path component of any argument, or as the
+    # leading word of one (claude-code, .codex), protects the process.
+    function protected_word(a,   n, t, i, m, c, j, w) {
+      n = split(a, t, " ")
+      for (i = 1; i <= n; i++) {
+        m = split(t[i], c, /[\/=]/)
+        for (j = 1; j <= m; j++) {
+          if (c[j] in prot) return c[j]
+          w = lead(c[j])
+          if (w != "" && (w in prot)) return w
+        }
+      }
+      return ""
+    }
+    function supervisor(a,   n, t, i) {
+      n = split(a, t, " ")
+      for (i = 1; i <= n; i++) if (t[i] ~ /(^|\/)bin\/fm-[A-Za-z0-9_.-]*\.sh$/ && !under_root(t[i])) return 1
       return 0
     }
-    function argv0(a,   s, n, q) { s = a; sub(/[[:space:]].*/, "", s); n = split(s, q, "/"); return q[n] }
-    function protected_reason(p,   c, a0) {
-      c = comm[p]; a0 = argv0(args[p])
+    function lead(t,   w) { w = t; sub(/^[.@]+/, "", w); sub(/[-.@_].*/, "", w); return w }
+    function protected_reason(p,   c, a0, w) {
+      c = comm[p]; a0 = bname(prog0[p])
       if (c in prot) return "protected " c
       if (a0 in prot) return "protected " a0
+      if (lead(c) in prot) return "protected " lead(c)
+      if (lead(a0) in prot) return "protected " lead(a0)
       if (args[p] ~ /\.app\//) return "desktop app"
-      if (c == "node" || a0 == "node") { if (!scratch_arg(args[p])) return "node outside a disposable temp root" }
-      if (args[p] ~ /(^|[ \/])bin\/fm-[A-Za-z0-9_.-]*\.sh([ ]|$)/ && !scratch_arg(args[p])) return "firstmate supervisor script"
+      w = protected_word(args[p]); if (w != "") return "protected " w
+      if ((c == "node" || a0 == "node") && !under_root(program(args[p]))) return "node outside a disposable temp root"
+      if (supervisor(args[p])) return "firstmate supervisor script"
       return ""
     }
     BEGIN {
@@ -276,7 +325,7 @@ classify_candidates() {  # <candidates-file> <self-pids>
       n = split(selfs, sp, " "); for (i = 1; i <= n; i++) if (sp[i] != "") self[sp[i]] = 1
       while ((getline l < cands) > 0) if (l != "") cand[l] = 1
     }
-    { pid = $1; puid[pid] = $2; ppid[pid] = $3; comm[pid] = $7; args[pid] = $8; order[++np] = pid }
+    { pid = $1; puid[pid] = $2; ppid[pid] = $3; comm[pid] = $7; args[pid] = $8; prog0[pid] = $8; sub(/[[:space:]].*/, "", prog0[pid]); order[++np] = pid }
     END {
       for (i = 1; i <= np; i++) { p = order[i]; r = protected_reason(p); if (r != "") preason[p] = r }
       # Mark every ancestor of a protected process.
@@ -290,9 +339,9 @@ classify_candidates() {  # <candidates-file> <self-pids>
         else if (c in preason) why = preason[c]
         else if (c in hasprot) why = "ancestor of protected pid " hasprot[c]
         else {
-          s = scratch_arg(args[c])
+          s = under_root(program(args[c]))
           if (!s) { q = ppid[c]; hops = 0
-            while (q in ppid && q != 0 && hops++ < 256) { if (args[q] ~ /(^|[ \/])tests\/[A-Za-z0-9_.-]+\.test\.sh([ ]|$)/) { s = 1; break } q = ppid[q] } }
+            while (q in ppid && q != 0 && hops++ < 256) { if (program(args[q]) ~ /(^|\/)tests\/[A-Za-z0-9_.-]+\.test\.sh$/) { s = 1; break } q = ppid[q] } }
           if (!s) why = "not scratch"
         }
         if (why == "") printf "%s\teligible\tscratch\n", c
@@ -359,10 +408,27 @@ actions=''
 : > "$WORK/verdicts"
 if [ -s "$WORK/sustained" ]; then
   cut -f 1 "$WORK/sustained" > "$WORK/cands"
-  classify_candidates "$WORK/cands" "$(self_pids)" < "$WORK/procs" > "$WORK/verdicts"
+  SELF_PIDS=$(self_pids)
+  classify_candidates "$WORK/cands" "$SELF_PIDS" < "$WORK/procs" > "$WORK/verdicts"
 fi
 
 verdict_of() { awk -F'\t' -v p="$1" '$1 == p { print $2 "\t" $3; exit }' "$WORK/verdicts"; }
+
+# still_same <pid>: a fresh read just before the signal still shows the
+# sampled process (same uid, parent, command name, and arguments, and an
+# elapsed time that only moved forward) and still judges it eligible.
+still_same() {
+  local pid=$1 was is
+  printf '%s\n' "$pid" > "$WORK/recand"
+  read_procs "$WORK/names-fresh" > "$WORK/fresh" 2>/dev/null || return 1
+  was=$(awk -F'\t' -v p="$pid" '$1 == p { print $2 "\t" $3 "\t" $7 "\t" $8 "\t" $6; exit }' "$WORK/procs")
+  is=$(awk -F'\t' -v p="$pid" '$1 == p { print $2 "\t" $3 "\t" $7 "\t" $8 "\t" $6; exit }' "$WORK/fresh")
+  [ -n "$was" ] && [ -n "$is" ] || return 1
+  [ "${was%$'\t'*}" = "${is%$'\t'*}" ] || return 1
+  [ "${is##*$'\t'}" -ge $(( ${was##*$'\t'} - START_SLACK_SECS )) ] || return 1
+  [ $(( ${is##*$'\t'} - ${was##*$'\t'} )) -le "$RECHECK_MAX_SECS" ] || return 1
+  [ "$(classify_candidates "$WORK/recand" "$SELF_PIDS" < "$WORK/fresh" | cut -f 2)" = eligible ]
+}
 
 : > "$WORK/alarm-lines"
 : > "$WORK/alarm-keys"
@@ -386,6 +452,9 @@ $(verdict_of "$pid")
 EOF
   if [ "$mode" != reap-scratch ]; then
     line="$line. Mode observe: nothing was stopped."
+  elif [ "$verdict" = eligible ] && ! still_same "$pid"; then
+    actions="$actions${actions:+,}spared:$pid"
+    line="$line. Mode reap-scratch: spared (changed since the sample); nothing was stopped."
   elif [ "$verdict" = eligible ]; then
     if kill -TERM "$pid" 2>/dev/null; then
       actions="$actions${actions:+,}term:$pid"

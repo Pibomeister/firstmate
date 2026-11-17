@@ -23,7 +23,7 @@ H=
 CASE_N=0
 SLEEPS=''
 # reap_fixture sets one P_<name> per fixture row; these are the ones read by name.
-P_runner='' P_claude='' P_wrapped=''
+P_runner='' P_claude='' P_wrapped='' P_exe='' P_nodeagent='' P_execd='' P_reused=''
 
 cat > "$FAKE/ps" <<'SH'
 #!/usr/bin/env bash
@@ -32,10 +32,15 @@ case "$*" in
   *'-p '*) PATH=$FM_FAKE_BASE_PATH exec ps "$@" ;;
 esac
 [ "${FM_FAKE_PS_MODE:-ok}" = ok ] || exit 1
+# A later read in the same pass serves table2 or comm2 when one exists, so a
+# case can change a process between the sample and the signal.
 case "$*" in
-  *comm=*) cat "$FM_FAKE_PS_DIR/comm" ;;
-  *) cat "$FM_FAKE_PS_DIR/table" ;;
+  *comm=*) f=comm ;;
+  *) f=table ;;
 esac
+n=$(cat "$FM_FAKE_PS_DIR/$f.reads" 2>/dev/null)
+printf '%s\n' "$(( ${n:-0} + 1 ))" > "$FM_FAKE_PS_DIR/$f.reads"
+if [ "${n:-0}" -ge 1 ] && [ -f "$FM_FAKE_PS_DIR/${f}2" ]; then cat "$FM_FAKE_PS_DIR/${f}2"; else cat "$FM_FAKE_PS_DIR/$f"; fi
 SH
 cat > "$FAKE/sysctl" <<'SH'
 #!/usr/bin/env bash
@@ -83,6 +88,8 @@ guard() {  # <now> [check args...]
   local now=$1
   shift
   RC=0
+  printf '0\n' > "$H/ps/table.reads"
+  printf '0\n' > "$H/ps/comm.reads"
   OUT=$(PATH="$FAKE:$BASE_PATH" FM_FAKE_BASE_PATH="$BASE_PATH" FM_FAKE_PS_DIR="$H/ps" FM_FAKE_PS_LOG="$H/ps.log" \
     FM_FAKE_PS_MODE="${PS_MODE:-ok}" FM_FAKE_SWAP_MODE="${SWAP_MODE:-ok}" FM_FAKE_SWAP_USED="$SWAP_USED" \
     FM_TEST_SEAM=1 FM_HOME="$H" FM_MEMORY_GUARD_NOW="$now" FM_MEMORY_GUARD_OS="${OS:-Darwin}" \
@@ -334,7 +341,7 @@ runner|bash|me|1|bash tests/fm-example.test.sh
 testchild|python3|me|P_runner|python3 -c pass
 nodetmp|node|me|1|node $TMP_ROOT/leak.js
 claude|claude|me|1|claude --print $TMP_ROOT/x
-codex|codex|me|1|/opt/homebrew/bin/codex exec $TMP_ROOT/y
+codex|exec-helper|me|1|/opt/homebrew/bin/codex exec $TMP_ROOT/y
 agy|agy|me|1|agy -p hello
 tmux|tmux|me|1|tmux -L fm-test-$CASE_N new-session $TMP_ROOT/z
 orca|orca|me|1|orca serve
@@ -357,7 +364,7 @@ wrapped|claude|me|P_wrapper|claude"
     eval "pid=\$P_$name"
     alive "$pid" || fail "protected process $name (pid $pid) was signaled: $OUT"
     ! action_has "term:$pid" || fail "SIGTERM recorded for $name: $(summary)"
-    action_has "spared:$pid" || [ "$name" = runner ] || [ "$name" = wrapped ] || fail "action does not name the spared $name: $(summary)"
+    action_has "spared:$pid" || [ "$name" = runner ] || fail "action does not name the spared $name: $(summary)"
   done
   assert_contains "$OUT" "pid $P_claude (claude) has held" "a protected agent still alarms"
   assert_contains "$OUT" "spared (protected claude)" "an agent harness is protected by name"
@@ -370,6 +377,54 @@ wrapped|claude|me|P_wrapper|claude"
   assert_contains "$OUT" "spared (another user)" "another user's process is never signaled"
   assert_contains "$OUT" "spared (ancestor of protected pid $P_wrapped)" "the parent of a live agent is protected"
   pass "reap-scratch stops only scratch processes and spares every live agent and operator process"
+}
+
+test_reap_scratch_needs_a_scratch_program() {
+  local name
+  new_home 'mode=reap-scratch'
+  for name in exe nodeagent watchtmp prodlog dotdot inline; do eval "P_$name="; done
+  REAP_ROWS="exe|leaky|me|1|$TMP_ROOT/bin/leaky --size 9
+nodeagent|node|me|1|node /opt/lib/node_modules/@anthropic-ai/claude-code/cli.js --add-dir $TMP_ROOT/p
+watchtmp|bash|me|1|bash /opt/firstmate/bin/fm-watch.sh --state $TMP_ROOT/home
+prodlog|python3|me|1|python3 /srv/production.py --log $TMP_ROOT/fm-production.log
+dotdot|bash|me|1|bash $TMP_ROOT/../../srv/job.sh
+inline|bash|me|1|bash -c run $TMP_ROOT/a.sh"
+  sustain
+  wait_gone "$P_exe" || fail "a program under a temp root was not stopped: $OUT"
+  action_has "term:$P_exe" || fail "action does not name the stopped program: $(summary)"
+  for name in nodeagent watchtmp prodlog dotdot inline; do
+    eval "pid=\$P_$name"
+    alive "$pid" || fail "$name (pid $pid) was signaled: $OUT"
+    action_has "spared:$pid" || fail "action does not name the spared $name: $(summary)"
+  done
+  assert_contains "$OUT" "pid $P_nodeagent (node) has held" "the interpreted agent alarms"
+  assert_contains "$OUT" "spared (protected claude)" "an agent run by an interpreter is protected by its script path"
+  assert_contains "$OUT" "spared (firstmate supervisor script)" "a supervisor stays protected when an argument names a temp path"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (not scratch)')" = 3 ] || fail "a temp-path argument, a .. path, or inline code counted as scratch: $OUT"
+  pass "reap-scratch needs the program itself under a temp root, not an argument that names one"
+}
+
+test_reap_scratch_rechecks_before_signaling() {
+  local name
+  new_home 'mode=reap-scratch'
+  for name in execd reused; do eval "P_$name="; done
+  REAP_ROWS="execd|bash|me|1|bash $TMP_ROOT/turns.sh
+reused|bash|me|1|bash $TMP_ROOT/again.sh"
+  for t in 0 300 600 900; do
+    CLOCK=$((NOW0 + t)) reap_fixture
+    # Between the sample and the signal, execd becomes an agent and the
+    # reused pid is a new process with the same command line.
+    awk -v e="$P_execd" -v r="$P_reused" '$1 == e { $NF = ""; $(NF - 1) = "claude" } $1 == r { $6 = "00:01" } { print }' "$H/ps/table" > "$H/ps/table2"
+    awk -v e="$P_execd" '$1 == e { $2 = "claude" } { print }' "$H/ps/comm" > "$H/ps/comm2"
+    guard $((NOW0 + t))
+  done
+  for name in execd reused; do
+    eval "pid=\$P_$name"
+    alive "$pid" || fail "$name (pid $pid) was signaled after it changed: $OUT"
+    action_has "spared:$pid" || fail "action does not name the spared $name: $(summary)"
+  done
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (changed since the sample)')" = 2 ] || fail "a changed process was not spared as changed: $OUT"
+  pass "reap-scratch rereads the process just before the signal and spares one that changed"
 }
 
 if [ "$#" -gt 0 ]; then
@@ -387,4 +442,6 @@ fm_test_run \
   test_log_is_bounded \
   test_json_output \
   test_observe_default_never_signals \
-  test_reap_scratch_spares_live_agents_and_operator_apps
+  test_reap_scratch_spares_live_agents_and_operator_apps \
+  test_reap_scratch_needs_a_scratch_program \
+  test_reap_scratch_rechecks_before_signaling

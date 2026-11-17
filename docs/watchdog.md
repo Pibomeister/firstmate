@@ -60,6 +60,7 @@ That script's header owns the readers, the `config/memory-guard` keys, the sampl
 An alarm in force is an open gap on every pass, and a new alarm line is an open gap on the pass that prints it.
 A sample that fails or times out after 30 seconds is a gap and never stops the pass.
 The watchdog passes `--observe` unless its own `mode` is `act`, so a dry run never signals a process.
+The memory guard restarts a process's sustained window after a 600 second gap, so an `interval-secs` above 600 means no process alarm fires.
 
 ## Layer check chain
 

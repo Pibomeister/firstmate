@@ -1218,7 +1218,7 @@ A refusal places the work on another host or cloud.
 [`bin/fm-memory-guard.sh`](../bin/fm-memory-guard.sh) samples swap use and the largest processes once per [watchdog](watchdog.md) pass, and `check` runs one sample by hand.
 The optional local, gitignored `config/memory-guard` sets its swap and process limits, the sustained window, the alarm repeat time, the sample log cap, and `mode`.
 The default `mode=observe` never signals a process.
-Only an explicit `mode=reap-scratch` lets it send one SIGTERM to a sustained scratch process under a disposable temp root, and never to an agent CLI, a supervisor, a multiplexer, an IDE, a browser, or a desktop app.
+Only an explicit `mode=reap-scratch` lets it send SIGTERM to a sustained scratch process whose program runs from a disposable temp root, after a fresh read confirms the same process, and never to an agent CLI, a supervisor, a multiplexer, an IDE, a browser, or a desktop app.
 The script header owns every key and default, the sample log at `state/memory-guard.tsv`, the alarm lines, and the full protection list.
 [`tests/fm-memory-guard.test.sh`](../tests/fm-memory-guard.test.sh) exercises both readers and the protection list with fixture process tables.
 
