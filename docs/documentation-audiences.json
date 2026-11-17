@@ -286,6 +286,22 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/principle-attack-the-premise/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/principle-explain-the-number/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/principle-prove-it-works/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/principle-test-behavior-not-implementation/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/process-event-sources/SKILL.md",
       "audience": "agent-runtime"
     },
@@ -1435,6 +1451,22 @@
     },
     {
       "path": ".cursor/skills/handoff/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/principle-attack-the-premise/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/principle-explain-the-number/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/principle-prove-it-works/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/principle-test-behavior-not-implementation/SKILL.md",
       "audience": "agent-runtime"
     },
     {

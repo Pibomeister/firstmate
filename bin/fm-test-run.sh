@@ -348,7 +348,7 @@ family_for_basename_var() {
     fm-calm-claude-mod.test.sh|\
     fm-harness-adapter-references.test.sh|fm-project-mode.test.sh|fm-park.test.sh|\
     fm-send-popup-settle.test.sh|fm-send-settle.test.sh|\
-    fm-subagent-pretool-check.test.sh|\
+    fm-subagent-pretool-check.test.sh|fm-pstack-verify-hook.test.sh|\
     fm-supervision-instructions.test.sh|fm-task-delivery.test.sh|\
     fm-timeout-lib.test.sh|fm-bash-compat.test.sh|fm-quiet-hours.test.sh|\
     fm-tmux-submit-busy.test.sh|fm-trace-context-lib.test.sh|\
@@ -980,6 +980,7 @@ tests/fm-procevent.test.sh 339254
 tests/fm-project-capacity.test.sh 74931
 tests/fm-project-mode.test.sh 651
 tests/fm-project-origin.test.sh 220
+tests/fm-pstack-verify-hook.test.sh 1500
 tests/fm-public-followup.test.sh 465889
 tests/fm-quota-array-dispatch-live-e2e.test.sh 52
 tests/fm-quota-choose.test.sh 4619
@@ -1829,6 +1830,9 @@ families_for_changed_path() {
       printf '%s\n' '__script__:fm-handoff-trigger.test.sh'
       printf '%s\n' '__script__:fm-handoff-trigger-live-e2e.test.sh'
       ;;
+    bin/fm-pstack-verify-hook.sh)
+      printf '%s\n' '__script__:fm-pstack-verify-hook.test.sh'
+      ;;
     bin/fm-captain-nudge.sh|bin/fm-captain-nudge-lib.sh)
       printf '%s\n' '__script__:fm-captain-nudge.test.sh'
       ;;
@@ -2016,6 +2020,7 @@ families_for_changed_path() {
       # The run tier's two harness-supplied facts (source vocabulary and
       # context-reset stdout injection) only show up against a real harness.
       printf '%s\n' __script__:fm-pi-windows-shell-invocation.test.sh
+      printf '%s\n' __script__:fm-pstack-verify-hook.test.sh
       printf '%s\n' session-bootstrap
       printf '%s\n' live-harness-optin
       ;;

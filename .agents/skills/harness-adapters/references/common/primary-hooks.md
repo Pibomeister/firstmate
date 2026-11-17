@@ -31,6 +31,22 @@ Never generalize Claude tool names or permissions without live evidence.
 Read it before changing session-open behavior.
 `../../../docs/verification/supervision.md` under "Native session-start delivery" owns active dated evidence.
 
+## Pstack verification principles
+
+`../../../bin/fm-pstack-verify-hook.sh` injects one of four vendored pstack skills when its event fires.
+It always exits 0, including on its own errors, so a miss never blocks a turn.
+`.cursor/hooks.json` and `.claude/settings.json` register it.
+
+| Event | Where firstmate sees it | Principle |
+| --- | --- | --- |
+| Completion report | `bin/fm-classify-lib.sh` `status_is_terminal_verb` (`done:`), Cursor `afterAgentResponse` `.text`, Claude `UserPromptSubmit` `.prompt` | `principle-prove-it-works` |
+| Tests added or changed | Cursor/Claude `preToolUse` Write/Edit of a test path | `principle-test-behavior-not-implementation` |
+| Speed or perf claim | Cursor `beforeSubmitPrompt` `.prompt`, Claude `UserPromptSubmit` `.prompt`, `afterAgentResponse` `.text` | `principle-explain-the-number` |
+| Same red twice after a claimed fix | Claude `PostToolUse` output plus `$STATE/pstack-verify-reds.tsv`, keyed on a stable check or test id | `principle-attack-the-premise` |
+
+Skills live at `.cursor/skills/principle-*/SKILL.md` (catalog) and `.agents/skills/principle-*/SKILL.md` (Claude mirror).
+Source: pstack 0.15.43, MIT.
+
 ## Watcher supervision
 
 `../../../bin/fm-session-start.sh` prints exactly one block for the detected primary.
