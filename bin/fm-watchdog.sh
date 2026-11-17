@@ -71,7 +71,9 @@ WD_COUNCIL_MAX_CHARS=2000
 # A boot-time launchd or systemd PATH can omit ~/.local/bin, where a
 # self-updated herdr lives, and then resolve an older package-managed copy that
 # starts a server the rest of the fleet cannot drive. Every command, including
-# render-launchd and render-systemd, uses the same normalized PATH.
+# render-launchd and render-systemd, uses the same normalized PATH, so any tool
+# in ~/.local/bin, not only herdr, wins over a package-managed copy, as it does
+# in an interactive Firstmate shell.
 PATH=$(fm_wd_user_bin_path "$PATH" "${HOME:-}")
 export PATH
 # shellcheck source=bin/fm-composer-lib.sh
@@ -2055,7 +2057,7 @@ wd_worker_metas() {  # <home>
 # other key. mode=print reports the read and does not act. A gone endpoint is
 # not a dialog.
 wd_visit_worker_dialogs() {
-  local mode=$1 id meta backend target harness screen dialog
+  local mode=$1 id meta backend target harness screen dialog mismatch
   local saved_pane saved_dialog_pane saved_backend saved_target saved_harness saved_dialog saved_id
   local saved_composer saved_composer_text saved_composer_above saved_draft
   saved_pane=$O_PANE
@@ -2083,8 +2085,20 @@ wd_visit_worker_dialogs() {
       continue
     fi
     if ! fm_backend_target_exists "$backend" "$target" 2>/dev/null; then
+      # A herdr server that refuses every client looks like a gone pane; say so.
+      mismatch=''
+      if [ "$backend" = herdr ]; then
+        mismatch=$(fm_run_timed_fn "$(cfgi call-timeout-secs 20)" wd_herdr_mismatch "$target" 2>/dev/null) || mismatch=''
+      fi
       if [ "$mode" = print ]; then
-        printf '  worker %s endpoint=%s:%s dialog=gone\n' "$id" "$backend" "$target"
+        if [ -n "$mismatch" ]; then
+          printf '  worker %s endpoint=%s:%s dialog=unknown\n' "$id" "$backend" "$target"
+          printf '    %s\n' "$mismatch"
+        else
+          printf '  worker %s endpoint=%s:%s dialog=gone\n' "$id" "$backend" "$target"
+        fi
+      elif [ -n "$mismatch" ]; then
+        wd_gap "worker $id pane could not be read: $mismatch"
       else
         wd_gap "worker $id endpoint is gone; its pane is not read"
       fi

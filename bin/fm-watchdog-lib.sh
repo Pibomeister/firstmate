@@ -147,8 +147,9 @@
 #       so a launchd or systemd PATH resolves the same binaries as an interactive
 #       Firstmate shell. It is inserted just before the first of those two, or
 #       appended when neither is present; a later copy is dropped, and a
-#       directory already ahead of them keeps its place. An empty home or a home
-#       with no such directory prints <path> unchanged.
+#       directory already ahead of them keeps its place. Empty entries, which
+#       name the current directory, keep their places too. An empty home or a
+#       home with no such directory prints <path> unchanged.
 
 FM_WD_REFUSED_TEXT_RE='(^|[^be])merg|[rd]emerg|deploy|releas|publish|(^|[^a-z])force.?push|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
 FM_WD_RESERVED_RE="$FM_WD_REFUSED_TEXT_RE"'|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|delet|destroy|wipe)'
@@ -161,23 +162,31 @@ FM_WD_MODEL_SWITCH_RE='^[^a-z]*(switch (to )?((a|another) )?model|switch to anot
 FM_WD_QUOTA_STATUS_RE='quota (floor|exhausted|is exhausted|at 0|limit|wall)|(hit|reached|at) (the |a |its )?quota|rate.?limited|rate limit (hit|reached)|usage limit (hit|reached)|out of (credits|quota)|credits (are )?(exhausted|at 0|empty)'
 
 fm_wd_user_bin_path() {  # <path> <home>
-  local path=$1 user_bin dir out='' placed=0
-  local -a parts=()
+  local rest=$1 user_bin dir out='' sep='' placed=0 more=1
   user_bin=${2:+$2/.local/bin}
   if [ -z "$user_bin" ] || [ ! -d "$user_bin" ]; then
-    printf '%s\n' "$path"
+    printf '%s\n' "$1"
     return 0
   fi
-  IFS=: read -r -a parts <<< "$path"
-  for dir in ${parts[@]+"${parts[@]}"}; do
+  if [ -z "$rest" ]; then
+    printf '%s\n' "$user_bin"
+    return 0
+  fi
+  # Split by hand: read -a would drop a trailing empty entry.
+  while [ "$more" = 1 ]; do
+    case "$rest" in
+      *:*) dir=${rest%%:*}; rest=${rest#*:} ;;
+      *) dir=$rest; more=0 ;;
+    esac
     case "$dir" in
       "$user_bin") [ "$placed" = 0 ] || continue; placed=1 ;;
       /opt/homebrew/bin|/usr/local/bin)
-        [ "$placed" = 1 ] || { out="$out${out:+:}$user_bin"; placed=1; } ;;
+        [ "$placed" = 1 ] || { out="$out$sep$user_bin"; sep=:; placed=1; } ;;
     esac
-    out="$out${out:+:}$dir"
+    out="$out$sep$dir"
+    sep=:
   done
-  [ "$placed" = 1 ] || out="$out${out:+:}$user_bin"
+  [ "$placed" = 1 ] || out="$out$sep$user_bin"
   printf '%s\n' "$out"
 }
 

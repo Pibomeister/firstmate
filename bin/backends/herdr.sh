@@ -531,7 +531,7 @@ fm_backend_herdr_client_mismatch() {  # <session>
     *[!0-9:]*|:*|*:) ;;
     *)
       if [ "$sproto" -lt "$cproto" ]; then
-        advice="the server is older than the client, so a stale server holds the session (for example one an older herdr binary started at boot); restart that session's server with $bin"
+        advice="the server is older than the client, so a stale server holds the session (for example one an older herdr binary started at boot); an operator must restart that session's server with $bin, which interrupts every pane on it"
       elif [ "$sproto" -gt "$cproto" ]; then
         advice="the client is older than the server; update herdr (herdr update) or put the newer herdr first on PATH"
       fi

@@ -69,6 +69,15 @@ test_user_bin_path_order() {
     "$(path_of "/over:/opt/homebrew/bin" "$h")" "a directory ahead of Homebrew keeps its place"
   assert_equals "/usr/bin:/bin:$u" \
     "$(path_of /usr/bin:/bin "$h")" "with no package directory it is appended"
+  assert_equals ":$u:/opt/homebrew/bin:/bin" \
+    "$(path_of :/opt/homebrew/bin:/bin "$h")" "a leading empty entry keeps its place"
+  assert_equals "$u:/opt/homebrew/bin:" \
+    "$(path_of /opt/homebrew/bin: "$h")" "a trailing empty entry stays last"
+  assert_equals "/usr/bin::$u" \
+    "$(path_of /usr/bin: "$h")" "a trailing empty entry survives an append"
+  assert_equals "/usr/bin::/bin:$u" \
+    "$(path_of /usr/bin::/bin "$h")" "an inner empty entry keeps its place"
+  assert_equals "$u" "$(path_of '' "$h")" "an empty PATH becomes ~/.local/bin"
   assert_equals "/opt/homebrew/bin:/bin" \
     "$(path_of /opt/homebrew/bin:/bin "$TMP_ROOT/no-such-home")" "a home with no ~/.local/bin leaves PATH alone"
   assert_equals "/opt/homebrew/bin:/bin" \
@@ -85,10 +94,12 @@ test_watchdog_resolves_user_local_herdr() {
   home="$TMP_ROOT/resolve-fm-home"
   mkdir -p "$home/state" "$home/config"
   fake_herdr "$h/.local/bin" '{}'
+  # shellcheck disable=SC2016 # positional params expand in the child shell.
   got=$(env -i HOME="$h" PATH=/opt/homebrew/bin:/usr/bin:/bin FM_HOME="$home" \
     "$SYSTEM_BASH" -c '. "$1"; command -v herdr' _ "$WD") || fail "the watchdog did not load: $got"
   assert_equals "$h/.local/bin/herdr" "$got" "the watchdog resolves ~/.local/bin/herdr under a launchd PATH"
   fake_herdr "$TMP_ROOT/override" '{}'
+  # shellcheck disable=SC2016 # positional params expand in the child shell.
   got=$(env -i HOME="$h" PATH="$TMP_ROOT/override:/opt/homebrew/bin:/usr/bin:/bin" FM_HOME="$home" \
     "$SYSTEM_BASH" -c '. "$1"; command -v herdr' _ "$WD") || fail "the watchdog did not load: $got"
   assert_equals "$TMP_ROOT/override/herdr" "$got" "a herdr directory placed first on PATH still wins"
@@ -102,6 +113,7 @@ test_watchdog_resolves_user_local_herdr() {
 }
 
 mismatch() {  # <path> -> output and exit status of fm_backend_herdr_client_mismatch
+  # shellcheck disable=SC2016 # positional params expand in the child shell.
   env -i HOME="$TMP_ROOT" PATH="$1" bash -c '. "$1/bin/backends/herdr.sh"; fm_backend_herdr_client_mismatch fmwd-lab' _ "$ROOT"
 }
 
@@ -131,30 +143,32 @@ test_mismatch_diagnostic() {
   pass "herdr: a protocol mismatch with no matching client gets one actionable line; a match, a stopped server, or an unknown verdict gets none"
 }
 
-# A primary home whose proving heartbeat names a herdr pane.
-make_herdr_home() {  # <name> -> sets H
-  local sid=00000000-0000-4000-8000-0000000000aa
+# A primary home whose proving heartbeat names its pane, by default a herdr one.
+make_herdr_home() {  # <name> [backend] [target] -> sets H
+  local sid=00000000-0000-4000-8000-0000000000aa backend=${2:-herdr} target=${3:-fmwd-lab:p1}
   H="$TMP_ROOT/$1"
   mkdir -p "$H/state" "$H/config" "$H/data"
   printf '%s\n' "$$" > "$H/state/.lock"
   printf '%s\n' "$sid" > "$H/state/.lock-session"
   fm_touch_epoch "$((BASE - 1))" "$H/state/.lock" "$H/state/.lock-session"
-  jq -n --arg s "$sid" --argjson e "$BASE" --argjson p "$$" \
-    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"herdr",target:"fmwd-lab:p1",present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
+  jq -n --arg s "$sid" --argjson e "$BASE" --argjson p "$$" --arg b "$backend" --arg t "$target" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:$b,target:$t,present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
     > "$H/state/heartbeat.json"
   printf 'mode=dry-run\nmodels=\nquota-guard=off\ncall-timeout-secs=10\n' > "$H/config/watchdog"
 }
 
-run_boot_wd() {  # <user-home> <args>...
+run_boot_wd() {  # <user-home> <args>...; WD_TOOLS overrides the tools directory
   local u=$1
   shift
-  env -i HOME="$u" PATH="$TOOLS:/usr/bin:/bin" FM_HOME="$H" FM_TEST_SEAM=1 FM_WD_TEST_COMPOSER=empty FM_WD_NOW="$BASE" \
+  env -i HOME="$u" PATH="${WD_TOOLS:-$TOOLS}:/usr/bin:/bin" FM_HOME="$H" FM_TEST_SEAM=1 FM_WD_TEST_COMPOSER=empty FM_WD_NOW="$BASE" \
     "$SYSTEM_BASH" "$WD" "$@"
 }
 
 # End to end: under a boot PATH with no package directory, the watchdog finds
 # ~/.local/bin/herdr, and a stale server's refusal is reported with its cause
-# in scan output and in the status file, with no server lifecycle call.
+# in scan output and in the status file, with no server lifecycle call. The
+# fake is appended after /usr/bin, so a herdr installed there would shadow it;
+# Homebrew and /usr/local/bin are never on this PATH.
 test_watchdog_reports_herdr_mismatch() {
   local u log out
   u=$(user_home e2e)
@@ -175,6 +189,35 @@ test_watchdog_reports_herdr_mismatch() {
   pass "watchdog: a boot PATH reaches ~/.local/bin/herdr and a stale herdr server is reported with its cause"
 }
 
+# A worker pane on a herdr session whose server refuses every client is
+# reported with the mismatch, not as a gone endpoint. The home pane is tmux,
+# through a fake tmux that fails every call, so only the worker reaches herdr.
+test_watchdog_reports_worker_herdr_mismatch() {
+  local u log out tools
+  u=$(user_home worker)
+  log="$TMP_ROOT/worker-herdr.log"
+  : > "$log"
+  fake_herdr "$u/.local/bin" '{"client":{"version":"0.8.2","protocol":20},"server":{"running":true,"compatible":false,"version":"0.7.4","protocol":16}}' "$log"
+  tools="$TMP_ROOT/worker-tools"
+  mkdir -p "$tools"
+  ln -s "$(command -v jq)" "$tools/jq"
+  printf '#!/bin/sh\nexit 1\n' > "$tools/tmux"
+  chmod +x "$tools/tmux"
+  make_herdr_home worker-home tmux fmwd-home:0.0
+  printf 'kind=ship\nbackend=herdr\nwindow=fmwd-lab:w1\nharness=claude\n' > "$H/state/fmwd-w1.meta"
+  out=$(WD_TOOLS=$tools run_boot_wd "$u" scan 2>&1) || fail "scan failed: $out"
+  case "$out" in
+    *"worker fmwd-w1 endpoint=herdr:fmwd-lab:w1 dialog=unknown"*"herdr protocol mismatch on session 'fmwd-lab'"*"stale server"*) ;;
+    *) fail "scan does not report the worker's herdr mismatch: $out" ;;
+  esac
+  WD_TOOLS=$tools run_boot_wd "$u" once >/dev/null 2>&1 || fail "once failed"
+  assert_grep "worker fmwd-w1 pane could not be read: herdr protocol mismatch on session 'fmwd-lab'" "$H/data/watchdog/status.md" \
+    "the status file names the worker's mismatch: $(cat "$H/data/watchdog/status.md" 2>&1)"
+  assert_no_grep "worker fmwd-w1 endpoint is gone" "$H/data/watchdog/status.md" "a refused worker pane is not called gone"
+  ! grep -Eq '^server( |$)' "$log" || fail "the watchdog ran a herdr server command: $(cat "$log")"
+  pass "watchdog: a worker pane behind a stale herdr server is reported with the mismatch, not as gone"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
 else
@@ -182,5 +225,6 @@ else
     test_user_bin_path_order \
     test_watchdog_resolves_user_local_herdr \
     test_mismatch_diagnostic \
-    test_watchdog_reports_herdr_mismatch
+    test_watchdog_reports_herdr_mismatch \
+    test_watchdog_reports_worker_herdr_mismatch
 fi
