@@ -203,7 +203,7 @@ try {
       else current = undefined;
     }
     for (const row of archived.values()) {
-      row.token = 'archive:' + row.occurrence + ':' + digest(row.header + '\n' + row.body);
+      row.token = 'archive:' + row.occurrence + ':' + digest(row.header + '\n' + row.body.trimEnd());
       const count = resolutionCount(row.body);
       if (count) resolutions.push({ id: row.id, count, token: row.token });
     }
