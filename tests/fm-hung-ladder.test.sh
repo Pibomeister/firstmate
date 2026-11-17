@@ -274,6 +274,18 @@ test_caps_hold_escalations() {
   hang_episode "$h" cs "$B"
   assert_equals 0 "$(rows "$h" cs would-act 4)" 'two recent automatic relaunches leave no room'
   case "$(reason_of "$h" cs would-act 5)" in *'park cap:shared-hour'*) ;; *) fail 'it parks on the shared hourly cap' ;; esac
+  # A shared counter that cannot be read holds rung 4 instead of reading as zero.
+  if [ "$(id -u)" != 0 ]; then
+    h=$(new_home cap-unreadable)
+    new_task "$h" cu
+    printf '%s\tattempt\n%s\tattempt\n' $((B - 600)) $((B - 300)) > "$h/state/.crew-relaunch-cu"
+    chmod 000 "$h/state/.crew-relaunch-cu"
+    hang_episode "$h" cu "$B"
+    chmod 600 "$h/state/.crew-relaunch-cu"
+    assert_equals 0 "$(rows "$h" cu would-act 4)" 'an unreadable shared counter leaves no room'
+    ledger "$h" | awk -F'\t' '$4 == "cu" && $6 == "hold" && $11 ~ /caps-unreadable/ { f = 1 } END { exit !f }' \
+      || fail 'an unreadable shared counter holds rung 4'
+  fi
 
   # Two hang replacements per task per night, even an hour apart.
   h=$(new_home cap-task-night)
@@ -461,6 +473,19 @@ test_healthy_waits_and_screens() {
     assert_equals 0 "$(ledger "$h" | awk -F'\t' '$4 == "us" && $6 == "resolve" { n++ } END { print n + 0 }')" 'an unreadable status file is never self-progress'
   fi
 
+  # An untracked file that cannot be read is unknown, never quiet.
+  if [ "$(id -u)" != 0 ]; then
+    new_task "$h" uu
+    ticks "$h" uu "$B" $((B + 600))
+    printf 'private\n' > "$h/wt-uu/notes.txt"
+    chmod 000 "$h/wt-uu/notes.txt"
+    ticks "$h" uu $((B + 660)) $((B + 1800))
+    no_escalation "$h" uu 'an unreadable untracked file'
+    ledger "$h" | awk -F'\t' '$4 == "uu" && $6 == "hold" && $11 ~ /unknown:.*fs/ { f = 1 } END { exit !f }' \
+      || fail 'an unreadable untracked file holds the episode'
+    chmod 600 "$h/wt-uu/notes.txt"
+  fi
+
   # A validation read that keeps failing holds every rung and raises the alarm.
   new_task "$h" vf
   touch "$h/probe/vf.validating-fail"
@@ -502,8 +527,15 @@ test_healthy_waits_and_screens() {
   sleep 1
   ticks "$h" kc "$B" $((B + 1800))
   assert_equals 0 "$(rows "$h" kc would-act 3)" 'a child not yet proven stale vetoes rung 3'
-  ledger "$h" | awk -F'\t' -v b=$((B + 900)) '$4 == "kc" && $6 == "would-act" && $5 == "1" { f = 1; ok = ($2 >= b + 240 && $8 ~ /children=1;stale_children=1/) } END { exit !(f && ok) }' \
-    || fail 'the episode opens only after the child is proven stale'
+  if [ -r /proc/self/io ]; then
+    ledger "$h" | awk -F'\t' -v b=$((B + 900)) '$4 == "kc" && $6 == "would-act" && $5 == "1" { f = 1; ok = ($2 >= b + 240 && $8 ~ /children=1;stale_children=1/) } END { exit !(f && ok) }' \
+      || fail 'the episode opens only after the child is proven stale'
+  else
+    # With no I/O counter, CPU time alone never proves the child idle.
+    assert_equals 0 "$(rows "$h" kc would-act)" 'a child with no I/O counter is never proven stale'
+    ledger "$h" | awk -F'\t' '$4 == "kc" && $6 == "alarm" && $11 ~ /degraded-sensor unknown=kernel/ { f = 1 } END { exit !f }' \
+      || fail 'a child that cannot be proven idle keeps the CPU sensor unknown'
+  fi
 
   # A ticket that names no test queue is an ordinary bounded wait, never a dead one.
   new_task "$h" tk

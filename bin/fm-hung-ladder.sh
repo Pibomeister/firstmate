@@ -98,9 +98,9 @@
 # CPU time and I/O count have stayed unchanged for 15 minutes; only then is
 # it a stale child. A failed Git read keeps the last good HEAD and content
 # hash, so it never reads as progress. I/O comes
-# from /proc/<pid>/io where it exists. macOS exposes no unprivileged I/O
-# counter, so there the 10 ms CPU clock, which every I/O system call
-# advances, stands in for it.
+# from /proc/<pid>/io where it exists. Where it cannot be read, as on macOS,
+# CPU time alone cannot show a child is idle, so a child unchanged for 15
+# minutes is unproven rather than stale and the kernel sensor reads unknown.
 # records: a declared wait's named job. Transcript and loop proofs are
 # recorded as unsupported. Git reads use --no-optional-locks and never write.
 # The validation read runs the crew-state reader with its snapshot cache off
@@ -792,14 +792,18 @@ fhl_untracked_digest() {  # <worktree>
       chomp $p;
       if (++$n > 2000) { $d->add("truncated\0"); last }
       my @s = lstat("$root/$p");
+      # A file gone since the listing is a change; any other failure is unknown.
+      exit 2 if !@s && !$!{ENOENT};
       $d->add($p, "\0", @s ? "$s[7]:$s[9]" : "gone", "\0");
       next unless @s && -f _ && $budget > 0;
       if (open(my $f, "<", "$root/$p")) {
         my $got = read($f, my $buf, $budget < 1048576 ? $budget : 1048576);
-        $budget -= $got if $got;
-        $d->add(defined $got ? $buf : "unreadable", "\0");
+        exit 2 unless defined $got;
+        $budget -= $got;
+        $d->add($buf, "\0");
       } else {
-        $d->add("unreadable\0");
+        exit 2 unless $!{ENOENT};
+        $d->add("gone\0");
       }
     }
     print $d->hexdigest, "\n";' "$1"
@@ -918,20 +922,30 @@ fhl_recorded_age() {  # <file> [<key>]: the epoch on line 1, or in <key>=
   echo $((NOW - m))
 }
 
-fhl_caps() {  # sets CAPS and CAP_HIT
-  local counts th tn hh hn attempts=0 ns
+# A counter that cannot be read sets CAP_UNKNOWN, which holds rung 4: a cap
+# that might already be spent is never read as zero.
+fhl_caps() {  # sets CAPS, CAP_HIT and CAP_UNKNOWN
+  local counts="0 0 0 0" th tn hh hn attempts=0 ns relaunch="$STATE/.crew-relaunch-$TASK"
+  CAP_UNKNOWN=0
   ns=$(fhl_night_start "$NOW")
-  counts=$(awk -F'\t' -v task="$TASK" -v hs=$((NOW - 3600)) -v ns="$ns" '
-    $6 == "would-act" && $5 == "4" {
-      if ($2 >= hs) { hh++; if ($4 == task) th++ }
-      if ($2 >= ns) { hn++; if ($4 == task) tn++ }
-    }
-    END { print th + 0, tn + 0, hh + 0, hn + 0 }' "$LEDGER" 2>/dev/null) || counts="0 0 0 0"
+  if [ -e "$LEDGER" ]; then
+    counts=$(awk -F'\t' -v task="$TASK" -v hs=$((NOW - 3600)) -v ns="$ns" '
+      $6 == "would-act" && $5 == "4" {
+        if ($2 >= hs) { hh++; if ($4 == task) th++ }
+        if ($2 >= ns) { hn++; if ($4 == task) tn++ }
+      }
+      END { print th + 0, tn + 0, hh + 0, hn + 0 }' "$LEDGER" 2>/dev/null) || { counts="0 0 0 0"; CAP_UNKNOWN=1; }
+  fi
   read -r th tn hh hn <<< "$counts"
-  if [ -f "$STATE/.crew-relaunch-$TASK" ]; then
-    attempts=$(awk -F'\t' -v hs=$((NOW - 3600)) '$2 == "attempt" && $1 >= hs { n++ } END { print n + 0 }' "$STATE/.crew-relaunch-$TASK" 2>/dev/null) || attempts=0
+  if [ -e "$relaunch" ] || [ -L "$relaunch" ]; then
+    if [ -f "$relaunch" ] && [ -r "$relaunch" ]; then
+      attempts=$(awk -F'\t' -v hs=$((NOW - 3600)) '$2 == "attempt" && $1 >= hs { n++ } END { print n + 0 }' "$relaunch" 2>/dev/null) || { attempts=0; CAP_UNKNOWN=1; }
+    else
+      CAP_UNKNOWN=1
+    fi
   fi
   CAPS="task_hour=$th/1;shared_hour=$((th + attempts))/2;task_night=$tn/2;home_hour=$hh/2;home_night=$hn/6"
+  [ "$CAP_UNKNOWN" = 0 ] || CAPS="$CAPS;unreadable=1"
   CAP_HIT=
   [ "$th" -lt 1 ] || CAP_HIT='task-hour'
   [ -n "$CAP_HIT" ] || [ $((th + attempts)) -lt 2 ] || CAP_HIT='shared-hour'
@@ -1189,7 +1203,7 @@ cmd_tick() {
   CEILING=$(fhl_num "$(fhl_kv "$CONFIG/hung-ladder" load_ceiling 2>/dev/null)" 200)
   LOAD_HIGH=0
   if [ "$LOAD" = unknown ] || fhl_gt "$LOAD" "$CEILING"; then LOAD_HIGH=1; fi
-  local tree cpu_total=0 cpu_quiet children=0 stale_children=0 working_children=0 kq=0 kids_out=''
+  local tree cpu_total=0 cpu_quiet children=0 stale_children=0 working_children=0 unproven_children=0 kq=0 kids_out=''
   cpu_quiet=$(fhl_num "$(fhl_kv "$CONFIG/hung-ladder" cpu_quiet_secs 2>/dev/null)" 1)
   if [ "$pid" != - ]; then
     if [ "$LOAD_HIGH" = 1 ]; then
@@ -1210,10 +1224,12 @@ cmd_tick() {
         if [ -n "$prev" ] && [ "${prev%%:*}" = "$fp" ]; then
           since=${prev#*:}
         fi
-        if [ $((NOW - since)) -ge 900 ]; then
-          stale_children=$((stale_children + 1))
-        else
+        if [ $((NOW - since)) -lt 900 ]; then
           working_children=$((working_children + 1))
+        elif [ "$io" = - ]; then
+          unproven_children=$((unproven_children + 1))
+        else
+          stale_children=$((stale_children + 1))
         fi
         kids_out="${kids_out}kid_$tp=$fp:$since
 "
@@ -1222,6 +1238,8 @@ cmd_tick() {
         kernel=unknown
       elif fhl_gt "$(awk -v a="$cpu_total" -v b="${S_cpu:-0}" 'BEGIN { print a - b }')" "$cpu_quiet" || [ "$working_children" -gt 0 ]; then
         kernel=active
+      elif [ "$unproven_children" -gt 0 ]; then
+        kernel=unknown
       else
         kq=$(( $(fhl_num "${S_kq:-0}" 0) + 1 ))
         if [ "$kq" -ge 2 ]; then kernel=quiet; else kernel=unknown; fi
@@ -1232,7 +1250,7 @@ cmd_tick() {
   fi
   [ "$WAIT" != dead ] || records=quiet
 
-  SIGNALS="rendered=$rendered;fs=$fs;kernel=$kernel;records=$records;transcript=unsupported;loop=unsupported;busy=$busy;live=$live;wait=$WAIT;screen=${screen:-none};composer=$composer;cpu=$cpu_total;children=$children;stale_children=$stale_children;load=$LOAD;backend=$backend"
+  SIGNALS="rendered=$rendered;fs=$fs;kernel=$kernel;records=$records;transcript=unsupported;loop=unsupported;busy=$busy;live=$live;wait=$WAIT;screen=${screen:-none};composer=$composer;cpu=$cpu_total;children=$children;stale_children=$stale_children;unproven_children=$unproven_children;load=$LOAD;backend=$backend"
 
   # Write the new sample before any decision, so the next pass compares
   # against this one whatever happens below. A failed Git read keeps the last
@@ -1377,6 +1395,8 @@ cmd_tick() {
           hold=breaker
         elif [ -n "$lock_path" ] && [ -e "$lock_path" ]; then
           hold=git-op
+        elif [ "$CAP_UNKNOWN" = 1 ]; then
+          hold=caps-unreadable
         elif [ -n "$CAP_HIT" ]; then
           fhl_act 5 "park cap:$CAP_HIT" "$(fhl_snapshot_pane "$EP_episode-r5")" && EP_rung5_at=$NOW EP_state=parked
         elif [ "$children" -gt 0 ]; then
