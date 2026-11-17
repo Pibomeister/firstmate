@@ -69,7 +69,9 @@
 #     chromium, brave, msedge, opera, vivaldi, firefox, safari, the JetBrains
 #     IDEs, zed, emacs, vim, Xorg, Xwayland, gnome-shell, kwin, plasmashell,
 #     WindowServer; the script's PROTECTED_NAMES holds the full list);
-#   - no argument is a Firstmate supervisor script or helper (bin/fm-*), wherever
+#   - no argument is a Firstmate supervisor script or helper (bin/fm-*, or
+#     any fm-*.sh, .py, .js, .mjs, .rb, or .pl by basename other than a
+#     *.test.sh runner), wherever
 #     it lives, and no argument is a Chromium or Electron helper --type=;
 #   - node is protected unless its program is under a disposable temp root;
 #   - no protected process descends from it;
@@ -78,10 +80,12 @@
 #     (/tmp/fm-*, /private/tmp/fm-*, /var/folders/<a>/<b>/T/fm-*, or
 #     $TMPDIR/fm-*) with no . or .. segment, is not itself a symlink, and
 #     still does once its directory symlinks are resolved; or an ancestor's
-#     program is a tests/<name>.test.sh script and its own argv[0] is a shell,
+#     program is a tests/<name>.test.sh script, with no protected process
+#     between them, and its own argv[0] is a shell,
 #     an interpreter, or a core tool such as sleep, awk, or jq. The program
-#     must be an existing regular file, its command name must match it, and
-#     no argument may hold a .. segment. An argument that only names a temp
+#     must be an existing regular file, its command name must match it, no
+#     argument may hold a .. segment, no sibling may extend its name with a
+#     space, and its resolved path must carry no protection of its own. An argument that only names a temp
 #     path, or an interpreter started with an option, does not make it
 #     scratch;
 #   - a fresh process read just before the signal still shows the same
@@ -223,8 +227,8 @@ ps_select() { case "$os" in Darwin) printf '%s\n' -axo ;; *) printf '%s\n' -eo ;
 read_procs() {  # <names-scratch-file>
   local sel table
   sel=$(ps_select)
-  table=$(ps "$sel" pid=,uid=,ppid=,pgid=,rss=,etime=,args= 2>/dev/null) || return 1
-  ps "$sel" pid=,comm= > "$1" 2>/dev/null || : > "$1"
+  table=$(ps -ww "$sel" pid=,uid=,ppid=,pgid=,rss=,etime=,args= 2>/dev/null) || return 1
+  ps -ww "$sel" pid=,comm= > "$1" 2>/dev/null || : > "$1"
   [ -n "$table" ] || return 1
   printf '%s\n' "$table" | awk -v names="$1" '
     function secs(e,   d, n, p, t, i) {
@@ -325,7 +329,7 @@ classify_candidates() {  # <candidates-file> <self-pids>
     }
     function supervisor(a,   n, t, i) {
       n = split(a, t, " ")
-      for (i = 1; i <= n; i++) if (t[i] ~ /(^|\/)bin\/fm-[A-Za-z0-9_.-]+$/) return 1
+      for (i = 1; i <= n; i++) if (t[i] ~ /(^|\/)bin\/fm-[A-Za-z0-9_.-]+$/ || (bname(t[i]) ~ /^fm-[A-Za-z0-9_.-]*\.(sh|bash|py|js|mjs|rb|pl)$/ && t[i] !~ /\.test\.sh$/)) return 1
       return 0
     }
     function lead(t,   w) { w = t; sub(/^[.@]+/, "", w); sub(/[-.@_].*/, "", w); return w }
@@ -372,7 +376,7 @@ classify_candidates() {  # <candidates-file> <self-pids>
           s = ""; pg = dotdot(args[c]) ? "" : program(args[c])
           if (under_root(pg) && runs_as(c, pg)) s = "program\t" pg
           else if (!dotdot(args[c]) && test_tool(bname(prog0[c])) && runs_as(c, prog0[c])) { q = ppid[c]; hops = 0
-            while (q in ppid && q != 0 && hops++ < 256) { if (program(args[q]) ~ /(^|\/)tests\/[A-Za-z0-9_.-]+\.test\.sh$/) { s = "scratch"; break } q = ppid[q] } }
+            while (q in ppid && q != 0 && hops++ < 256) { if (q in preason) break; if (program(args[q]) ~ /(^|\/)tests\/[A-Za-z0-9_.-]+\.test\.sh$/) { s = "scratch"; break } q = ppid[q] } }
           if (s == "") why = "not scratch"
         }
         if (why == "") printf "%s\teligible\t%s\n", c, s
@@ -402,15 +406,38 @@ EOF
   [[ "$1" =~ ^(/private)?/var/folders/[^/]+/[^/]+/T/fm- ]]
 }
 
+# ambiguous_program <path>: ps joins arguments with spaces, so a sibling named
+# "<program> ..." means the real program path may be longer than it looks.
+ambiguous_program() {
+  local e
+  for e in "$(dirname -- "$1")/$(basename -- "$1") "*; do
+    [ -e "$e" ] || [ -L "$e" ] && return 0
+  done
+  return 1
+}
+
+# resolved_protection <physical-path>: the protection reason the resolved
+# program path itself carries, judged as a bare command line; empty if none.
+resolved_protection() {
+  printf '999999999\n' > "$WORK/resolved-cand"
+  printf '999999999\t%s\t0\t0\t0\t0\t%s\t%s\n' "$(id -u)" "$(basename -- "$1")" "$1" |
+    classify_candidates "$WORK/resolved-cand" '' | awk -F'\t' '$2 == "spared" { print $3 }'
+}
+
 # judge <candidates-file>: classify_candidates on the table on stdin, then
-# spare an eligible program whose physical path leaves the temp roots.
+# spare an eligible program whose physical path is ambiguous, leaves the temp
+# roots, or is itself protected.
 judge() {
-  local pid verdict why prog phys
+  local pid verdict why prog phys prot
   classify_candidates "$1" "$SELF_PIDS" | while IFS=$'\t' read -r pid verdict why prog; do
     if [ "$verdict" = eligible ] && [ "$why" = program ]; then
       why=scratch
-      if ! phys=$(physical_path "$prog") || [ ! -f "$phys" ] || ! under_scratch_root "$phys"; then
+      if ambiguous_program "$prog"; then
+        verdict=spared why="program path is ambiguous"
+      elif ! phys=$(physical_path "$prog") || [ ! -f "$phys" ] || ! under_scratch_root "$phys"; then
         verdict=spared why="program is not a regular file under a disposable temp root"
+      elif prot=$(resolved_protection "$phys") && [ -n "$prot" ]; then
+        verdict=spared why="resolved program: $prot"
       fi
     fi
     printf '%s\t%s\t%s\n' "$pid" "$verdict" "$why"
@@ -551,6 +578,7 @@ while IFS=$'\t' read -r key line; do
   [ -n "$key" ] || continue
   last=$(awk -F'\t' -v k="$key" '$1 == k { print $2; exit }' "$ALARMS" 2>/dev/null)
   # An alarm that took or failed an action is always printed.
+  case "$last" in *[!0-9]*) last='' ;; esac
   if [ -z "$last" ] || [ $((now - last)) -ge "$alarm_repeat_secs" ] || { case "$line" in *SIGTERM*) true ;; *) false ;; esac; }; then
     printf '%s\n' "$line" >> "$WORK/printed"
     last=$now

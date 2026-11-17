@@ -27,8 +27,8 @@ SLEEPS=''
 P_runner='' P_claude='' P_wrapped='' P_exe='' P_nodeagent='' P_execd='' P_reused='' P_moved=''
 
 # Fixture programs under the temp root are real files, as a scratch program must be.
-mkdir -p "$TMP_ROOT/bin" "$TMP_ROOT/live/bin" "$TMP_ROOT/work dir"
-for f in runaway.sh leak.js wrap.sh foreign.sh turns.sh again.sh first.sh second.sh a.sh bootstrap.js bin/leaky live/bin/fm-watchdog.sh; do
+mkdir -p "$TMP_ROOT/bin" "$TMP_ROOT/live/bin" "$TMP_ROOT/work dir" "$TMP_ROOT/job" "$TMP_ROOT/claude-code"
+for f in runaway.sh leak.js wrap.sh foreign.sh turns.sh again.sh first.sh second.sh a.sh bootstrap.js bin/leaky live/bin/fm-watchdog.sh job/work claude-code/cli.js; do
   : > "$TMP_ROOT/$f"
 done
 
@@ -404,8 +404,11 @@ wrapped|claude|me|P_wrapper|claude"
 test_reap_scratch_needs_a_scratch_program() {
   local name
   new_home 'mode=reap-scratch'
-  for name in exe nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink runner brave renderer mailer nmd gimp spaced missing; do eval "P_$name="; done
+  for name in exe nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink runner brave renderer mailer nmd gimp spaced missing linkfile spacewrap pkgagent relsup agent2 agentkid; do eval "P_$name="; done
   ln -s "$BASE_PATH_FIRST" "$TMP_ROOT/prodlink"
+  ln -s "$TMP_ROOT/runaway.sh" "$TMP_ROOT/link.sh"
+  ln -s "$BASE_PATH_FIRST" "$TMP_ROOT/job/work dir"
+  ln -s "$TMP_ROOT/claude-code" "$TMP_ROOT/pkg"
   REAP_ROWS="exe|leaky|me|1|$TMP_ROOT/bin/leaky --size 9
 nodeagent|node|me|1|node /opt/lib/node_modules/@anthropic-ai/claude-code/cli.js --add-dir $TMP_ROOT/p
 watchtmp|bash|me|1|bash /opt/firstmate/bin/fm-watch.sh --state $TMP_ROOT/home
@@ -422,11 +425,17 @@ nmd|no-mistakes-daemon|me|P_runner|/opt/bin/no-mistakes-daemon serve
 gimp|gimp|me|P_runner|/usr/bin/gimp /srv/large.xcf
 spaced|python3|me|1|python3 $TMP_ROOT/work dir/../../srv/server.py
 missing|bash|me|1|bash $TMP_ROOT/missing.sh
+linkfile|bash|me|1|bash $TMP_ROOT/link.sh
+spacewrap|python3|me|1|python3 $TMP_ROOT/job/work dir/server.py
+pkgagent|node|me|1|node $TMP_ROOT/pkg/cli.js
+relsup|bash|me|P_runner|bash fm-watchdog.sh run
+agent2|claude|me|P_runner|claude
+agentkid|python3|me|P_agent2|python3 -c run
 renderer|helper|me|P_runner|/opt/app/helper --type=renderer"
   RUNNER_SMALL=1 sustain
   wait_gone "$P_exe" || fail "a program under a temp root was not stopped: $OUT"
   action_has "term:$P_exe" || fail "action does not name the stopped program: $(summary)"
-  for name in nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink brave renderer mailer nmd gimp spaced missing; do
+  for name in nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink brave renderer mailer nmd gimp spaced missing linkfile spacewrap pkgagent relsup agent2 agentkid; do
     eval "pid=\$P_$name"
     alive "$pid" || fail "$name (pid $pid) was signaled: $OUT"
     action_has "spared:$pid" || fail "action does not name the spared $name: $(summary)"
@@ -434,11 +443,13 @@ renderer|helper|me|P_runner|/opt/app/helper --type=renderer"
   assert_contains "$OUT" "pid $P_nodeagent (node) has held" "the interpreted agent alarms"
   assert_contains "$OUT" "spared (protected claude)" "an agent run by an interpreter is protected by its script path"
   assert_contains "$OUT" "spared (firstmate supervisor script)" "a supervisor stays protected when an argument names a temp path"
-  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (not scratch)')" = 5 ] || fail "a temp-path argument, a .. path, inline code, or a desktop app under a test runner counted as scratch: $OUT"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (not scratch)')" = 6 ] || fail "a temp-path argument, a .. path, inline code, or a desktop app under a test runner counted as scratch: $OUT"
   [ "$(printf '%s\n' "$OUT" | grep -c 'spared (node outside a disposable temp root)')" = 1 ] || fail "a node preload under a temp root made node scratch: $OUT"
-  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (firstmate supervisor script)')" = 3 ] || fail "a supervisor script under a temp root lost its protection: $OUT"
-  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (program is not a regular file under a disposable temp root)')" = 2 ] || fail "a symlink out of the temp root or a missing program counted as scratch: $OUT"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (firstmate supervisor script)')" = 4 ] || fail "a supervisor script under a temp root lost its protection: $OUT"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (program is not a regular file under a disposable temp root)')" = 3 ] || fail "a symlink out of the temp root or a missing program counted as scratch: $OUT"
   assert_contains "$OUT" "spared (protected no-mistakes)" "a hyphenated protected name protects a longer name it starts"
+  assert_contains "$OUT" "spared (program path is ambiguous)" "a sibling that extends the program name with a space makes it ambiguous"
+  assert_contains "$OUT" "spared (resolved program: protected claude)" "a symlink to an agent package stays protected"
   assert_contains "$OUT" "spared (protected brave)" "a browser under a test runner is protected"
   assert_contains "$OUT" "spared (browser or Electron helper)" "a Chromium helper under a test runner is protected"
   pass "reap-scratch needs the program itself under a temp root, not an argument that names one"
