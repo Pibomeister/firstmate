@@ -421,6 +421,7 @@ test_herdr_idle_tracks_screen_change_not_heartbeat() {
   local home bin cap idle
   bin="$TMP_ROOT/herdr-bin"
   mkdir -p "$bin"
+  # shellcheck disable=SC2016 # the generated fake herdr expands this at its own run time
   printf '#!/bin/sh\nprintf "%%s\\n" "${FAKE_HERDR_SCREEN:-idle screen}"\n' > "$bin/herdr"
   chmod +x "$bin/herdr"
   mkdir -p "$TMP_ROOT/herdr-home/state"

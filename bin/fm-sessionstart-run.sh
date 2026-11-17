@@ -167,15 +167,27 @@ record_context_epoch() {
   return 0
 }
 
+# True when the registered automatic away check is the only thing that makes
+# fm_supervision_status report supervision as needed.
+supervision_needed_only_for_auto_away() {
+  [ "$FM_SUP_CHECKS" -eq 1 ] && [ -e "$STATE/auto-away.check.sh" ] && [ -e "$STATE/auto-away.check-trust" ] \
+    && [ "$FM_SUP_IN_FLIGHT" -eq 0 ] && [ "$FM_SUP_SOURCES" -eq 0 ] && [ ! -f "$STATE/x-watch.check.sh" ] \
+    && ! fm_sup_open_goal "$STATE"
+}
+
 # Open supervision work the resumed session must pick up: needed supervision,
-# a pending wake row, or an open captain order.
+# a pending wake row, or an open captain order. The automatic away check
+# (bin/fm-auto-away.sh) is armed at every session start and keeps supervision
+# needed, but on its own it is no work to resume: its own wakes start turns.
 resume_work_open() {
   local data order
   # shellcheck source=bin/fm-supervision-lib.sh
   . "$SCRIPT_DIR/fm-supervision-lib.sh" || return 1
   fm_supervision_status "$STATE"
-  [ "$FM_SUP_NEEDED" = true ] && return 0
   [ "$FM_SUP_QUEUE_PENDING" = true ] && return 0
+  if [ "$FM_SUP_NEEDED" = true ]; then
+    supervision_needed_only_for_auto_away || return 0
+  fi
   data=${FM_DATA_OVERRIDE:-$FM_HOME/data}
   for order in "$data"/orders/pending/*.order "$data"/orders/acked/*.order; do
     [ -e "$order" ] && return 0

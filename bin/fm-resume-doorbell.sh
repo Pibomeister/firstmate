@@ -22,14 +22,18 @@
 # reads empty or the agent reads busy.
 #
 # It stands down, typing nothing, when the session lock changes owner, an away
-# or quiet record exists, a Stop claimed after the compaction (a turn already
-# ran), the handle is unreadable or older than the session lock, the agent is
+# or quiet record exists, state/.context-epoch no longer matches the one seen at
+# start (a /clear or another compaction began a new context), a Stop claimed
+# after the compaction (a turn already ran), the handle is unreadable or older
+# than the session lock, the agent is
 # not alive, the composer is not empty, a turn is running, idleness cannot be
 # proven before the wait limit, or another doorbell holds or takes over
 # state/.resume-doorbell.lock (each poll re-reads the lock's pid, so of two
 # doorbells that both cleared a stale lock only the last one types, and a
-# doorbell removes the lock on exit only while it still names it). Every run
-# appends one row to
+# doorbell removes the lock on exit only while it still names it). The lock
+# owner, doorbell lock, away or quiet record and context epoch are re-checked
+# before every resubmit Enter too; a change there withholds the Enter and logs
+# unverified. Every run appends one row to
 # state/.resume-doorbell.log:
 #   <utc-iso>\t<epoch>\t<source>\t<backend>:<target>\t<outcome>\t<detail>
 # with outcome submitted, unverified, stood-down or failed. It never kills,
@@ -110,6 +114,29 @@ trap '[ "$(cat "$LOCK/pid" 2>/dev/null)" != "$$" ] || rm -rf "$LOCK" 2>/dev/null
 LOCK_PID=$(sed -n '1p' "$STATE/.lock" 2>/dev/null || true)
 [ -n "$LOCK_PID" ] || finish stood-down "no session lock"
 
+# The context this doorbell was started for. A /clear or a later compaction
+# replaces state/.context-epoch (mktemp plus mv), so a hard link pinned inside
+# the doorbell lock stops naming the same file, and its bytes change too. An
+# epoch absent at start must stay absent.
+EPOCH_PIN="$LOCK/context-epoch"
+if [ -e "$STATE/.context-epoch" ]; then
+  ln "$STATE/.context-epoch" "$EPOCH_PIN" 2>/dev/null || EPOCH_PIN=
+  EPOCH_SUM=$(cksum < "$STATE/.context-epoch" 2>/dev/null || true)
+  [ -n "$EPOCH_SUM" ] || finish stood-down "state/.context-epoch is unreadable"
+else
+  EPOCH_PIN=
+  EPOCH_SUM=absent
+fi
+context_epoch_same() {
+  if [ "$EPOCH_SUM" = absent ]; then
+    [ ! -e "$STATE/.context-epoch" ]
+    return
+  fi
+  [ -e "$STATE/.context-epoch" ] || return 1
+  [ -z "$EPOCH_PIN" ] || [ "$STATE/.context-epoch" -ef "$EPOCH_PIN" ] || return 1
+  [ "$(cksum < "$STATE/.context-epoch" 2>/dev/null || true)" = "$EPOCH_SUM" ]
+}
+
 read_handle() {
   BACKEND=$(sed -n 's/^backend=//p' "$STATE/captain-handle" 2>/dev/null | head -n 1)
   TARGET=$(sed -n 's/^target=//p' "$STATE/captain-handle" 2>/dev/null | head -n 1)
@@ -130,21 +157,29 @@ transcript_size() {
   wc -c < "$TRANSCRIPT" 2>/dev/null | tr -d '[:space:]'
 }
 
-# Prints the stand-down reason, or nothing when the target is provably idle.
-# <previous transcript size> is the size one poll earlier.
-idle_reason() {  # <previous-size>
-  local prev=$1 agent busy composer size
+# Prints why this doorbell may no longer press a key, or nothing: ownership,
+# posture and context checks that hold for the first send and every resubmit.
+posture_reason() {
   # A second doorbell that cleared the same stale lock may have replaced ours.
   [ "$(cat "$LOCK/pid" 2>/dev/null)" = "$$" ] || { printf 'another resume doorbell took the lock'; return 0; }
   [ "$(sed -n '1p' "$STATE/.lock" 2>/dev/null || true)" = "$LOCK_PID" ] || { printf 'the session lock changed owner'; return 0; }
   kill -0 "$LOCK_PID" 2>/dev/null || { printf 'the session lock changed owner'; return 0; }
+  if [ -e "$STATE/.afk" ] || [ -e "$STATE/.afk-contract" ]; then
+    printf 'an away or quiet record exists'; return 0
+  fi
+  context_epoch_same || { printf 'a new context began after the compaction'; return 0; }
+}
+
+# Prints the stand-down reason, or nothing when the target is provably idle.
+# <previous transcript size> is the size one poll earlier.
+idle_reason() {  # <previous-size>
+  local prev=$1 agent busy composer size reason
+  reason=$(posture_reason)
+  [ -z "$reason" ] || { printf '%s' "$reason"; return 0; }
   # The handle counts only when this session recorded it: the re-emit's
   # claim-handle rewrites it after the lock, so a handle older than the lock
   # names some earlier session's terminal.
   [ ! "$STATE/.lock" -nt "$STATE/captain-handle" ] || { printf 'state/captain-handle is older than the session lock'; return 0; }
-  if [ -e "$STATE/.afk" ] || [ -e "$STATE/.afk-contract" ]; then
-    printf 'an away or quiet record exists'; return 0
-  fi
   # A Stop that claimed after this compaction means a turn already ran.
   if [ -e "$STATE/.context-epoch" ] && [ "$STATE/.claude-autoarm-epoch" -nt "$STATE/.context-epoch" ]; then
     printf 'a turn already ended after the compaction'; return 0
@@ -177,7 +212,7 @@ while :; do
   reason=$(idle_reason "$prev")
   [ -n "$reason" ] || break
   case "$reason" in
-    'another resume doorbell took the lock'|'state/captain-handle is older than the session lock'|'the session lock changed owner'|'agent state is '*|'composer is '*|'a turn is running'|'busy state is '*|'an away or quiet record exists'|'a turn already ended after the compaction')
+    'another resume doorbell took the lock'|'state/captain-handle is older than the session lock'|'the session lock changed owner'|'agent state is '*|'composer is '*|'a turn is running'|'busy state is '*|'an away or quiet record exists'|'a new context began after the compaction'|'a turn already ended after the compaction')
       finish stood-down "$reason" ;;
   esac
   prev=$(transcript_size)
@@ -192,10 +227,13 @@ case "$verdict" in
 esac
 
 # The first Enter did not land (the verdict was pending or unproven). Press
-# Enter again only while the composer holds exactly copies of our line.
+# Enter again only while the composer holds exactly copies of our line and
+# the ownership, posture and context checks still pass.
 i=0
 while [ "$i" -lt "$TRIES" ]; do
   sleep "$RESUBMIT_DELAY"
+  reason=$(posture_reason)
+  [ -z "$reason" ] || finish unverified "resubmit withheld after $i resubmit Enter(s): $reason (first verdict $verdict)"
   if fm_task_inbox_composer_holds "$BACKEND" "$TARGET" "$FM_RESUME_DOORBELL_LINE"; then
     fm_backend_send_key "$BACKEND" "$TARGET" Enter >/dev/null 2>&1 || finish failed "the resubmit Enter could not be sent"
     i=$((i + 1))

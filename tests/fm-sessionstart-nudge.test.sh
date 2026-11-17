@@ -336,6 +336,15 @@ test_run_compact_records_context_epoch_and_starts_one_doorbell() {
   [ "$(doorbell_runs "$root")" = 1 ] || fail "an auto boundary after a manual one must start one doorbell"
   grep -qF -- "--transcript $root/transcript.jsonl" "$root/state/doorbell-ran" \
     || fail "the doorbell must receive the payload's transcript path"
+  # Real work beyond the automatic away check still counts as open work.
+  root="$TMP_ROOT/run-doorbell-task-meta"
+  make_doorbell_primary "$root" auto
+  assert_present "$root/state/auto-away.check.sh" "the fixture startup must arm the automatic away check"
+  : > "$root/state/.wake-queue"
+  printf 'window=fixture\n' > "$root/state/fixture-task.meta"
+  run_hook_claude_payload "$root" \
+    "{\"source\":\"compact\",\"transcript_path\":\"$root/transcript.jsonl\"}" >/dev/null
+  [ "$(doorbell_runs "$root")" = 1 ] || fail "an in-flight task beside the automatic away check must start one doorbell"
   pass "run wrapper: an idle Claude auto compaction records the context epoch and starts one resume doorbell"
 }
 
