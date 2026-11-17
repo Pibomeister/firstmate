@@ -421,7 +421,7 @@ wrapped|claude|me|P_wrapper|claude"
 test_reap_scratch_needs_a_scratch_program() {
   local name
   new_home 'mode=reap-scratch'
-  for name in exe nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink runner brave renderer mailer nmd gimp spaced missing linkfile spacewrap pkgagent relsup agent2 agentkid symkid pkgkid runner2 fakekid pkgwrap pkgwrapkid noname runner3 aliaskid; do eval "P_$name="; done
+  for name in exe nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink runner brave renderer mailer nmd gimp spaced missing linkfile spacewrap pkgagent relsup agent2 agentkid symkid pkgkid runner2 fakekid pkgwrap pkgwrapkid noname runner3 aliaskid errexit inlinepath; do eval "P_$name="; done
   ln -s "$BASE_PATH_FIRST" "$TMP_ROOT/prodlink"
   ln -s "$TMP_ROOT/runaway.sh" "$TMP_ROOT/link.sh"
   ln -s "$BASE_PATH_FIRST" "$TMP_ROOT/job/work dir"
@@ -459,9 +459,11 @@ pkgwrapkid|node|me|P_pkgwrap|node $TMP_ROOT/pkg/cli.js
 noname||me|P_runner|sleep 5
 runner3|bash|me|1|bash $OUT_ROOT/pkg2/tests/ui.test.sh
 aliaskid|python3|me|P_runner3|python3 -c run
+errexit|bash|me|P_runner|bash -e $OUT_ROOT/run-loop.sh
+inlinepath|bash|me|P_runner|bash -c . $OUT_ROOT/run-loop.sh
 renderer|helper|me|P_runner|/opt/app/helper --type=renderer"
   RUNNER_SMALL=1 sustain
-  for name in exe nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink brave renderer mailer nmd gimp spaced missing linkfile spacewrap pkgagent relsup agent2 agentkid symkid pkgkid runner2 fakekid pkgwrap pkgwrapkid noname runner3 aliaskid; do
+  for name in exe nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink brave renderer mailer nmd gimp spaced missing linkfile spacewrap pkgagent relsup agent2 agentkid symkid pkgkid runner2 fakekid pkgwrap pkgwrapkid noname runner3 aliaskid errexit inlinepath; do
     eval "pid=\$P_$name"
     alive "$pid" || fail "$name (pid $pid) was signaled: $OUT"
     action_has "spared:$pid" || fail "action does not name the spared $name: $(summary)"
@@ -469,7 +471,7 @@ renderer|helper|me|P_runner|/opt/app/helper --type=renderer"
   assert_contains "$OUT" "pid $P_nodeagent (node) has held" "the interpreted agent alarms"
   assert_contains "$OUT" "spared (protected claude)" "an agent run by an interpreter is protected by its script path"
   assert_contains "$OUT" "spared (firstmate supervisor script)" "a supervisor stays protected when an argument names a temp path"
-  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (not scratch)')" = 7 ] || fail "a temp-path argument, a .. path, inline code, or a desktop app under a test runner counted as scratch: $OUT"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (not scratch)')" = 9 ] || fail "a temp-path argument, a .. path, inline code, or a desktop app under a test runner counted as scratch: $OUT"
   [ "$(printf '%s\n' "$OUT" | grep -c 'spared (node outside a disposable temp root)')" = 1 ] || fail "a node preload under a temp root made node scratch: $OUT"
   [ "$(printf '%s\n' "$OUT" | grep -c 'spared (firstmate supervisor script)')" = 4 ] || fail "a supervisor script under a temp root lost its protection: $OUT"
   [ "$(printf '%s\n' "$OUT" | grep -c 'spared (program is not a regular file under a disposable temp root)')" = 3 ] || fail "a symlink out of the temp root or a missing program counted as scratch: $OUT"

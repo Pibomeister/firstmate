@@ -92,7 +92,8 @@
 #     path that, joined to the runner's working directory when relative,
 #     resolves to an unambiguous regular file whose resolved path carries
 #     no protection, and its own executable is a shell, an interpreter, or
-#     a core tool such as sleep, awk, or jq, running inline code or a script
+#     a core tool such as sleep, awk, or jq, either with no argument that
+#     holds a / or as an interpreter whose first argument is a script
 #     (joined to its own working directory when relative) that is an
 #     unambiguous regular file with no protection once resolved. No
 #     argument may hold a .. segment, and an argument that only names a
@@ -324,15 +325,15 @@ classify_candidates() {  # <candidates-file> <self-pids>
       if (interp(bname(prog0[p]))) return interp(c)
       return index(b, c) == 1 && (c == b || length(c) >= 15)
     }
-    # The script run by a child of a test runner: "-" for a core tool or inline
-    # code (-c, -e), the script path for an interpreter, or "" when an option
-    # comes first and the script cannot be told apart from its value.
-    function child_script(a,   n, t) {
+    # The script run by a child of a test runner: the script path when an
+    # interpreter names one directly; "-" when no argument holds a path at
+    # all (sleep 5, python3 -c pass); otherwise "" because an option or a
+    # path argument could hide what really runs.
+    function child_script(a,   n, t, i) {
       n = split(a, t, " ")
-      if (!interp(bname(t[1]))) return "-"
-      if (n >= 2 && (t[2] == "-c" || t[2] == "-e")) return "-"
-      if (n < 2 || t[2] ~ /^-/) return ""
-      return t[2]
+      if (interp(bname(t[1])) && n >= 2 && t[2] !~ /^-/) return t[2]
+      for (i = 2; i <= n; i++) if (index(t[i], "/")) return ""
+      return "-"
     }
     function interp(b) { return b ~ /^(ba|z|da|k)?sh$/ || b ~ /^python[0-9.]*$/ || b ~ /^(node|deno|bun|ruby|perl|php)$/ }
     function program(a,   n, t, i) {
