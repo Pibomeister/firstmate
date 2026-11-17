@@ -651,15 +651,23 @@ test_structure_decides_not_words() {
 }
 
 test_idle_bottom_quotes_and_long_or_wrapped_lists() {
-  local c want oc codexf gem agy aws roles
+  local c want oc codexf fastf star gem agy aws roles
   oc=$(. "$ROOT/bin/fm-composer-lib.sh"; fm_composer_strip_ansi < "$ROOT/tests/fixtures/opencode-1.18.31-cwd/opencode-1.18.31-idle-cwd.ansi")
   codexf=$'\n› \n\n  gpt-6-astra high · ~/repo · main'
+  # The fast-mode footer and the braille starfield are recorded from Codex.
+  fastf=$'\n› Ask Codex to do anything\n\n  gpt-6-astra high fast · ~/Projects/purser · Launch Purser desk brief'
+  star=$'\n   ⢀      ⠂ ⠄     ⠈\n›⡀Ask Codex to do anything⡀  ⠈       ⠂        ⠁⠐ ⠁\n        ⠐    ⠄   ⠠  ⢀⠠⡀⠄⠂\n  gpt-6-astra high fast · ~/Projects/purser · Launch Purser desk brief'
   gem=$'╭────────────────────────────╮\n│ Enter Gemini API Key       │\n│ > _                        │\n╰────────────────────────────╯'
   agy=$'Accessing workspace:\n\n/work/project\n\nDo you trust the contents of this project?\n\nAntigravity CLI requires permission to read, edit, and execute files here.\n\n> Yes, I trust this folder\n  No, exit'
   # Quoted dialogs above an idle agent composer or a shell prompt, and
-  # multi-line drafts in the Cursor, Devin, and Muse composers, are never a
-  # prompt and never block a send.
+  # multi-line drafts in the Claude, Codex, Cursor, Devin, and Muse
+  # composers, are never a prompt and never block a send.
   for c in $'→ Explain this terminal label:\n  Password:' $'→ Explain this terminal label:\n  Continue? [y/N]' \
+    $'❯ Explain this terminal label:\n  Password:' $'› Explain this terminal label:\n  Password:' \
+    $'• Ran cat auth-fixture.txt\n  └ Authentication test fixture\n    ? Log in (Use arrow keys)\n    ❯ Continue with GitHub\n      Continue with GitLab\n'"$fastf" \
+    $'• Ran cat auth-fixture.txt\n  └ Authentication test fixture\n    ? Log in (Use arrow keys)\n    ❯ Continue with GitHub\n      Continue with GitLab\n'"$star" \
+    $'• Ran cat fixture\n  Quick safety check\n  ❯ 2. No, exit\n'"$star" \
+    $'• Ran cat fixture\n  Quick safety check\n  ❯ 2. No, exit\n\n› Summarize recent commits\n\n  gpt-6-astra high fast · ~/Projects/purser · Launch Purser desk brief' \
     $'❭ Explain this terminal label:\n  Password:' $'⟩ Explain this terminal label:\n  Continue? [y/N]' \
     $'• Ran cat fixture\n  Quick safety check\n  ❯ 2. No, exit'"$codexf" "$agy$codexf" \
     "$gem"$'\n'"$oc" "$gem"$'\nuser@host:~/repo$ ' "$agy"$'\n(venv) ~/repo % ' \
@@ -690,6 +698,14 @@ test_idle_bottom_quotes_and_long_or_wrapped_lists() {
   c=$'GnuPG needs to construct a user ID to identify your key.\n\nReal name: CI Bot\nEmail address: ci@example.com\nComment: CI$'
   assert_equals $'hardstop\tcredential' "$(printf '%s\n' "$c" | classify claude)" "a GnuPG comment input holding a typed \$ is still a credential stop"
   bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard misses a GnuPG comment input holding a typed \$"
+  # A program prompt such as `gpg>` holding a typed `#` is not a shell.
+  for c in 'gpg> #' 'gpg> save #' 'gpg/card> #'; do
+    c=$'gpg (GnuPG) 2.4.5\nSecret key is available.\n'"$c"
+    assert_equals $'hardstop\tcredential' "$(printf '%s\n' "$c" | classify claude)" "a populated GnuPG prompt is still a credential stop: $c"
+    bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard misses a populated GnuPG prompt: $c"
+  done
+  # A numbered option row never opens a multi-line draft.
+  assert_equals $'hold\tconfirm' "$(printf '%s\n' '? Continue?' '❯ 1. Yes' '  2. No' | classify claude)" "a numbered list under a question still holds"
   # Lists longer than eight rows keep their heading's category, and a hint
   # tail or option row soft-wrapped onto an unindented row stays in the list.
   aws=$'There are 10 AWS accounts available to you.\n> acct-0, a0@example.com (111111111110)'

@@ -2679,12 +2679,13 @@ fm_composer_draft_row() {  # <screen>
     NF { r[++n] = tolower($0) }
     END {
       if (!n) exit 1
-      # A multi-line draft in the Cursor, Devin, or Muse composer keeps its
-      # glyph only on its first row, and its continuation rows are indented,
-      # so the whole indented run above the last row is walked.
+      # A multi-line draft in the Claude, Codex, Cursor, Devin, or Muse
+      # composer keeps its glyph only on its first row, and its continuation
+      # rows are indented, so the whole indented run above the last row is
+      # walked. A numbered option row never opens a draft.
       k = n
       if (r[n] ~ /^[ \t]+[^ \t]/) for (i = n - 1; i > 0; i--) {
-        if (r[i] ~ /^[ \t]*(→|❭|⟩)[ \t]*[^ \t]/) { k = i; break }
+        if (r[i] ~ /^[ \t]*(→|❭|⟩|❯|›)[ \t]*[^ \t]/ && r[i] !~ /^[ \t]*(❯|›)[ \t]*[0-9]+[.)]/) { k = i; break }
         if (r[i] !~ /^[ \t]+[^ \t]/) break
       }
       if (r[k] !~ /^[ \t]*(❯|›|⟩|→|❭|>[ \t]+[^ \t]|│|┃|\|)/) exit 1
@@ -2713,19 +2714,22 @@ fm_composer_idle_bottom() {  # <screen>
     BEGIN { ph = tolower(ENVIRON["FM_PH"]) }
     function idle(s,  t) {
       t = s; if (t !~ /^[ \t]*(│[ \t]*)?(❯|›|⟩|→|❭|▌)/) return 0
-      sub(/^[ \t]*(│[ \t]*)?(❯|›|⟩|→|❭|▌)[ \t]*/, "", t); sub(/[ \t]*│?[ \t]*$/, "", t)
+      sub(/^[ \t]*(│[ \t]*)?(❯|›|⟩|→|❭|▌)[ \t]*/, "", t); sub(/[ \t]*(│)?[ \t]*$/, "", t)
       return t == "" || tolower(t) ~ ph
     }
-    { gsub(/\r/, "") }
+    # The Codex starfield draws braille cells around its composer.
+    { gsub(/\r/, ""); gsub(/\342[\240-\243][\200-\277]/, "") }
     NF { r[++n] = $0 }
     END {
       if (!n) exit 1
       # An input label such as GnuPG `Comment:` never opens a shell prompt, and
       # a `user@host`, bare, path, `[...]`, or `bash-3.2` prompt may already
       # hold a typed command.
-      if (r[n] ~ /^[ \t]*(\([^)]*\)[ \t]+)?([^ \t]*[^ \t:][ \t]+)?([^ \t]*[^ \t:][ \t]+)?[^ \t]*[$%#][ \t]*$/ && r[n] !~ /^[ \t]*[^ \t]*:[ \t]/) exit 0
-      if (r[n] ~ /^[ \t]*(\([^)]*\)[ \t]+)?[A-Za-z0-9._-]+@[A-Za-z0-9._-]+[^ \t]*([ \t]+[^ \t]+)?([ \t]+[^ \t]+)?[ \t]*[$%#][ \t]+[^ \t]/) exit 0
-      if (r[n] ~ /^[ \t]*(\([^)]*\)[ \t]+)?((~|\/)[^ \t]*[ \t]*|\[[^]]*\]|[A-Za-z]+-[0-9.]+)?[$%#][ \t]+[^ \t]/) exit 0
+      # A program prompt such as `gpg>` or `gpg/card>` is never a shell.
+      sh = r[n] !~ /^[ \t]*[^ \t]*[:>][ \t]/
+      if (sh && r[n] ~ /^[ \t]*(\([^)]*\)[ \t]+)?([^ \t]*[^ \t:][ \t]+)?([^ \t]*[^ \t:][ \t]+)?[^ \t]*[$%#][ \t]*$/) exit 0
+      if (sh && r[n] ~ /^[ \t]*(\([^)]*\)[ \t]+)?[A-Za-z0-9._-]+@[A-Za-z0-9._-]+[^ \t]*([ \t]+[^ \t]+)?([ \t]+[^ \t]+)?[ \t]*[$%#][ \t]+[^ \t]/) exit 0
+      if (sh && r[n] ~ /^[ \t]*(\([^)]*\)[ \t]+)?((~|\/)[^ \t]*[ \t]*|\[[^]]*\]|[A-Za-z]+-[0-9.]+)?[$%#][ \t]+[^ \t]/) exit 0
       # The opencode composer is a left-bar box closed by a `╹▀▀▀` floor row,
       # with its status row below and a sidebar beside its rows.
       for (i = n; i > 1 && i >= n - 2; i--) if (r[i] ~ /^[ \t]*╹(▀)+[ \t]*$/ && r[i - 1] ~ /^[ \t]*┃/) exit 0
@@ -2735,7 +2739,7 @@ fm_composer_idle_bottom() {  # <screen>
         # draws a rotating tip in its `›` composer right above its
         # `model effort · ...` footer; an approval view replaces that composer.
         if (r[i] ~ /^[ \t]*(│[ \t]*)?>[ \t]+Type your message or @path\/to\/file[ \t]*(│[ \t]*)?$/) exit 0
-        if (i < n && i >= n - 2 && r[i] ~ /^[ \t]*›[ \t]+[^ \t0-9]/ && r[i + 1] ~ /^[ \t]+[^ \t·]+[ \t]+(none|minimal|low|medium|high|xhigh|max)[ \t]+·[ \t]/ && r[i + 1] !~ /(:|\?)[ \t]*$/) exit 0
+        if (i < n && i >= n - 2 && r[i] ~ /^[ \t]*›[ \t]*[^ \t0-9]/ && r[i + 1] ~ /^[ \t]+[^ \t·]+[ \t]+(none|minimal|low|medium|high|xhigh|max)([ \t]+fast)?[ \t]+·[ \t]/ && r[i + 1] !~ /(:|\?)[ \t]*$/) exit 0
         if (r[i] ~ /(:|\?|>|›|❯|\])[ \t]*$/ || r[i] ~ /^[ \t]*(❯|›|>|●|○|◉|◯|◆|\[[ x]\]|[0-9]+[.)])[ \t]/ || r[i] ~ /^[ \t]*(│|┃)[ \t]+([0-9]+[.)]?[ \t]|\(|❯|›|>|●|○)/ || tolower(r[i]) ~ /press (any key|enter|return)|\(y\/n\)|\[y\/n\]/) exit 1
       }
       exit 1
@@ -2758,7 +2762,7 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
     END {
       for (i = n - 30; i <= n; i++) {
         if (i < 1) continue
-        if (r[i] ~ /^[ \t]*│[ \t]*Enter Gemini API Key[ \t]*│?[ \t]*$/) { kh = i; ki = 1 }
+        if (r[i] ~ /^[ \t]*│[ \t]*Enter Gemini API Key[ \t]*(│)?[ \t]*$/) { kh = i; ki = 1 }
         else if (r[i] ~ /^[ \t]*Enter Gemini API Key[ \t]*$/) { kh = i; ki = 0 }
         else if (kh && (i - kh <= 4 && r[i] ~ /^[ \t]*(│[ \t]*)?>/ || r[i] ~ /Paste your API key here|\(Press Enter to submit/)) ki = 1
         if (r[i] ~ /^[ \t]*(│[ \t]*)?How would you like to authenticate for this project\?[ \t]*(│[ \t]*)?$/) { ph = i; po = 0; pu = 0 }
@@ -3034,6 +3038,7 @@ fm_composer_list_rows() {  # <screen> [print]
     function cw(s,  t) { t = s; gsub(/[\200-\277]/, "", t); return length(t) }
     function done(s) { if (out == "print") for (j = s; j <= n; j++) print o[j]; exit 0 }
     function hint(s) { return s ~ /\(use arrow keys|\[use arrows to move|- use arrow-keys\. return to submit|^[ \t]*there (are|is) [0-9]+ .* available to you\.?[ \t\r]*$/ }
+    { gsub(/\342[\240-\243][\200-\277]/, "") }
     NF { r[++n] = tolower($0); sub(/[ \t\r]+$/, "", r[n]); o[n] = $0; wd[n] = cw(r[n]); if (wd[n] > w) w = wd[n] }
     END {
       for (i = n - 23; i <= n; i++) {
@@ -3048,7 +3053,7 @@ fm_composer_list_rows() {  # <screen> [print]
           # the widest row, continue a live list; prose, a transcript or box
           # row, an agent composer, or its footer (such as the Codex
           # `model effort · ...` row) after the hint makes it quoted.
-          if (r[i] ~ /for shortcuts|context left|context [0-9]+% left|esc to (cancel|interrupt)|esc twice to interrupt|⏎|⌃|ctrl\+|enter send/ || r[i] ~ /^[ \t]+[^ \t·]+[ \t]+(none|minimal|low|medium|high|xhigh|max)[ \t]+·[ \t]/ || r[i] ~ /^(─|━){20,}/ || r[i] ~ /^[ \t]*(❯|›|⟩|→|❭)[ \t]*$/ || r[i] ~ /^[ \t]*(│|┃|⏺|⎿|•|└|▌)/) quoted = 1
+          if (r[i] ~ /for shortcuts|context left|context [0-9]+% left|esc to (cancel|interrupt)|esc twice to interrupt|⏎|⌃|ctrl\+|enter send/ || r[i] ~ /^[ \t]+[^ \t·]+[ \t]+(none|minimal|low|medium|high|xhigh|max)([ \t]+fast)?[ \t]+·[ \t]/ || r[i] ~ /^(─|━){20,}/ || r[i] ~ /^[ \t]*(❯|›|⟩|→|❭)[ \t]*$/ || r[i] ~ /^[ \t]*(│|┃|⏺|⎿|•|└|▌)/) quoted = 1
           else if (r[i] ~ /^[ \t]*(❯|›|⟩|→|❭)[ \t]*[^ \t]/ && (t = r[i]) && sub(/^[ \t]*(❯|›|⟩|→|❭)[ \t]*/, "", t) && t ~ ph) quoted = 1
           else if (r[i] ~ /^[ \t]*(❯|›|>)[ \t]*[^ \t]/) f = 1
           else if (r[i] !~ /^[ \t]+[^ \t]/ && r[i] !~ /^[ \t]*\(.*\)[ \t]*$/ && wd[i - 1] < w) quoted = 1
@@ -3064,7 +3069,7 @@ fm_composer_list_rows() {  # <screen> [print]
       c = 0; k = 0
       for (i = n; i > 0 && i > n - 12; i--) {
         # An agent footer, such as the Codex `model effort · ...` row, ends it.
-        if (r[i] ~ /for shortcuts|context left|context [0-9]+% left|esc to |⏎|ctrl\+|⌃/ || r[i] ~ /^[ \t]+[^ \t·]+[ \t]+(none|minimal|low|medium|high|xhigh|max)[ \t]+·[ \t]/) exit 1
+        if (r[i] ~ /for shortcuts|context left|context [0-9]+% left|esc to |⏎|ctrl\+|⌃/ || r[i] ~ /^[ \t]+[^ \t·]+[ \t]+(none|minimal|low|medium|high|xhigh|max)([ \t]+fast)?[ \t]+·[ \t]/) exit 1
         if (r[i] ~ /^[ \t]*(❯|›)[ \t]+[^ \t]/) c++
         else if (r[i] !~ /^[ \t]+[^ \t]/) break
         k++
