@@ -1,0 +1,62 @@
+=== 1. covers subcommand against disposable lab home ===
+covers allowlisted rc=0
+covers unlisted rc=1
+error: invalid pull request URL
+covers invalid-url rc=2
+=== 2. Enter away posture & seed exact-head two-model review for pull/401 ===
+seat anthropic.claude.claude-test-1: APPROVE
+seat google.agy.gemini-test-high: APPROVE
+merge-review: approved head=52c97139c4e7d74ff3bbaebe876d82bac5e7c378 approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none url=https://github.com/example/repo/pull/401
+=== 3. Away-mode lost forge response -> pending keeps away authority -> rerun reconciles ===
+merge-review: approved head=52c97139c4e7d74ff3bbaebe876d82bac5e7c378 approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none url=https://github.com/example/repo/pull/401
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 5s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision is owned by the stop-hook park; inspect the hook registration and watcher startup path before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/401 is open and mergeable, with every unwaived required check reported and every unwaived check green at head 52c97139c4e7d74ff3bbaebe876d82bac5e7c378
+error: connection reset after forge accepted merge
+actionable: the merge command for https://github.com/example/repo/pull/401 failed, but the pull request reads back as state=MERGED, merged=true, isInMergeQueue=false
+self-land: outcome unknown: could not read https://github.com/example/repo/pull/401 after the merge attempt (merge exit 1); the pending record is kept, and running the same command again settles it without a second merge
+lost-response run rc=1
+--- pending record written before forge write ---
+fm-self-land-pending-v1
+task-x1
+https://github.com/example/repo/pull/401
+52c97139c4e7d74ff3bbaebe876d82bac5e7c378
+away
+1794951387
+self-land: reconciled https://github.com/example/repo/pull/401 as landed at head 52c97139c4e7d74ff3bbaebe876d82bac5e7c378; no second merge was sent
+self-land: landed https://github.com/example/repo/pull/401 head=52c97139c4e7d74ff3bbaebe876d82bac5e7c378 merge=ffffffffffffffffffffffffffffffffffffffff (reconciled)
+reconcile run rc=0
+--- landed.tsv ---
+1794951457	task-x1	https://github.com/example/repo/pull/401	52c97139c4e7d74ff3bbaebe876d82bac5e7c378	ffffffffffffffffffffffffffffffffffffffff	reconciled
+--- wake-queue ---
+1794951453	1	check	merged-task-x1-https://github.com/example/repo/pull/401	check: merge landed: task-x1 https://github.com/example/repo/pull/401 away
+=== 4. Corrupt away-posture record refusal ===
+self-land: refused (task): the away-posture record could not be read
+corrupt afk-contract rc=1
+=== 5. Merge queue (queued -> later merged reconciliation) on pull/402 ===
+seat anthropic.claude.claude-test-1: APPROVE
+seat google.agy.gemini-test-high: APPROVE
+merge-review: approved head=a056c89e9e03f0c7a287cf818f6e385c9c8a1d23 approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none url=https://github.com/example/repo/pull/402
+merge-review: approved head=a056c89e9e03f0c7a287cf818f6e385c9c8a1d23 approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none url=https://github.com/example/repo/pull/402
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 109s) - full banner already printed this episode.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/402 is open and mergeable, with every unwaived required check reported and every unwaived check green at head a056c89e9e03f0c7a287cf818f6e385c9c8a1d23
+verified: https://github.com/example/repo/pull/402 is queued (state=OPEN, merged=false, isInMergeQueue=true)
+self-land: queued https://github.com/example/repo/pull/402 head=a056c89e9e03f0c7a287cf818f6e385c9c8a1d23; the forge has not merged it yet, and the pending record is kept until it does
+queued run rc=0
+pending retained while queued: fm-self-land-pending-v1 task-x1 https://github.com/example/repo/pull/402 a056c89e9e03f0c7a287cf818f6e385c9c8a1d23 attended 1794951504 
+self-land: reconciled https://github.com/example/repo/pull/402 as landed at head a056c89e9e03f0c7a287cf818f6e385c9c8a1d23; no second merge was sent
+self-land: landed https://github.com/example/repo/pull/402 head=a056c89e9e03f0c7a287cf818f6e385c9c8a1d23 merge=ffffffffffffffffffffffffffffffffffffffff (reconciled)
+queued->reconciled run rc=0
+final landed.tsv:
+1794951457	task-x1	https://github.com/example/repo/pull/401	52c97139c4e7d74ff3bbaebe876d82bac5e7c378	ffffffffffffffffffffffffffffffffffffffff	reconciled
+1794951563	task-x1	https://github.com/example/repo/pull/402	a056c89e9e03f0c7a287cf818f6e385c9c8a1d23	ffffffffffffffffffffffffffffffffffffffff	reconciled
+ALL LAB-HOME E2E SCENARIOS PASSED
