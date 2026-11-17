@@ -90,7 +90,7 @@
 # the status records, the diff against HEAD and the untracked files' content,
 # never a secret-pattern file's content. A failed or timed-out
 # content hash or write probe reads as unknown, never quiet. A status line
-# that repeats one of the last four is a drip, not progress. kernel: CPU time
+# that repeats one of the last 256 is a drip, not progress. kernel: CPU time
 # of the agent's process tree per sample, unknown above the load ceiling or
 # when the tree cannot be read, unsupported when the backend names no root
 # process. A descendant counts as working, and vetoes the proof, until its
@@ -458,7 +458,11 @@ fhl_pane_screen_block() {  # stdin -> name or nothing
 
 fhl_secret_path() {  # <path>
   case "${1##*/}" in
-    .env|.env.*|*.env|*.pem|*.key|*.p12|*.pfx|id_rsa*|id_ed25519*|id_ecdsa*|*secret*|*Secret*|*SECRET*|*credential*|*Credential*|.netrc|.npmrc|.pypirc) return 0 ;;
+    .env|.env.*|*.env|*.pem|*.key|*.p12|*.pfx|id_rsa*|id_ed25519*|id_ecdsa*|.netrc|.npmrc|.pypirc) return 0 ;;
+  esac
+  # A secret or credential word anywhere in the path, directories included.
+  case "$1" in
+    *secret*|*Secret*|*SECRET*|*credential*|*Credential*|*CREDENTIAL*) return 0 ;;
   esac
   return 1
 }
@@ -487,14 +491,23 @@ fhl_agent_probe() {  # <task> <backend> <target>
   esac
 }
 
-# Orca keeps typed text on the prompt row in a separate draft field; a
-# failed read counts as a draft, so it blocks rather than escalates.
+# Orca keeps typed text on the prompt row in a separate draft field. The
+# adapter is loaded in this shell, because the other probes load it inside
+# command substitutions. Only a clear "no draft" answer counts as none; a
+# failed load or read counts as a draft, so it blocks rather than escalates.
 fhl_draft_present() {  # <task> <target>
+  local rc=0 answer
+  # A probe that gives no draft answer leaves the read to the adapter.
   if [ -n "${FM_HUNG_LADDER_PROBE:-}" ]; then
-    [ "$("$FM_HUNG_LADDER_PROBE" draft "$1" orca "$2" 2>/dev/null)" != none ]
-    return
+    answer=$("$FM_HUNG_LADDER_PROBE" draft "$1" orca "$2" 2>/dev/null)
+    if [ -n "$answer" ]; then
+      [ "$answer" != none ]
+      return
+    fi
   fi
-  fm_backend_orca_draft_present "$2" 2>/dev/null
+  fm_backend_source orca 2>/dev/null || return 0
+  fm_backend_orca_draft_present "$2" 2>/dev/null || rc=$?
+  [ "$rc" != 1 ]
 }
 
 fhl_composer_probe() {  # <task> <backend> <target>
@@ -761,10 +774,11 @@ fhl_secret_excludes() {
 # while a 64 MiB budget lasts. Secret-pattern names are skipped entirely.
 fhl_untracked_digest() {  # <worktree>
   local p
+  # shellcheck disable=SC2016 # the Perl program is single-quoted on purpose
   while IFS= read -r -d '' p; do
     [ -n "$p" ] || continue
     fhl_secret_path "$p" || printf '%s\0' "$p"
-  done | perl -MDigest::SHA -0 -e '
+  done | fm_run_timed 10 perl -MDigest::SHA -0 -e '
     my $root = shift; my $d = Digest::SHA->new(256); my ($n, $budget) = (0, 64 << 20);
     while (my $p = <STDIN>) {
       chomp $p;
@@ -785,24 +799,29 @@ fhl_untracked_digest() {  # <worktree>
 
 # Rung 4's content snapshot (5.2 h, 14.2 S4): head, staged and unstaged
 # patches without ignored or secret-pattern files, a hash per dirty and
-# untracked file, and presence only for secret-pattern and ignored files.
+# untracked file, the link text of each symlink (never followed), and
+# presence only for secret-pattern and ignored files.
 fhl_snapshot_tree() {  # <name> -> path:sha
   local dir="$HL/snapshots/$TASK" f p sz
   f="$dir/$1.tree"
   mkdir -p "$dir" && chmod 700 "$dir"
   [ -n "$WT" ] && [ -d "$WT" ] || { printf 'none'; return 0; }
-  fhl_secret_excludes < <(git -C "$WT" --no-optional-locks status --porcelain=v1 -z -uall 2>/dev/null)
+  fhl_secret_excludes < <(fm_run_timed 10 git -C "$WT" --no-optional-locks status --porcelain=v1 -z -uall 2>/dev/null)
   {
     printf 'head\t%s\n' "$(git -C "$WT" rev-parse HEAD 2>/dev/null)"
-    git -C "$WT" --no-optional-locks diff --binary -- . ${FHL_EXCL[@]+"${FHL_EXCL[@]}"} 2>/dev/null | head -c 20000000 > "$f.diff"
-    git -C "$WT" --no-optional-locks diff --cached --binary -- . ${FHL_EXCL[@]+"${FHL_EXCL[@]}"} 2>/dev/null | head -c 20000000 > "$f.cached.diff"
+    fm_run_timed 10 git -C "$WT" --no-optional-locks diff --binary -- . ${FHL_EXCL[@]+"${FHL_EXCL[@]}"} 2>/dev/null | head -c 20000000 > "$f.diff"
+    fm_run_timed 10 git -C "$WT" --no-optional-locks diff --cached --binary -- . ${FHL_EXCL[@]+"${FHL_EXCL[@]}"} 2>/dev/null | head -c 20000000 > "$f.cached.diff"
     printf 'diff_sha256\t%s\n' "$(fhl_sha < "$f.diff")"
     printf 'cached_diff_sha256\t%s\n' "$(fhl_sha < "$f.cached.diff")"
-    { git -C "$WT" --no-optional-locks diff --name-only -z HEAD 2>/dev/null; git -C "$WT" ls-files -z --others --exclude-standard 2>/dev/null; } | perl -0 -ne 'next if $seen{$_}++; print if ++$n <= 2000' |
+    { fm_run_timed 10 git -C "$WT" --no-optional-locks diff --name-only -z HEAD 2>/dev/null; fm_run_timed 10 git -C "$WT" ls-files -z --others --exclude-standard 2>/dev/null; } | perl -0 -ne 'next if $seen{$_}++; print if ++$n <= 2000' |
       while IFS= read -r -d '' p; do
         [ -n "$p" ] || continue
         if fhl_secret_path "$p"; then
           printf 'present-secret\t%s\n' "$(fhl_esc "$p")"
+        elif [ -L "$WT/$p" ]; then
+          # A link is recorded by its own text and never followed, so it
+          # cannot pull a secret's content into the snapshot.
+          printf 'symlink\t%s\t%s\n' "$(readlink "$WT/$p" | fhl_sha)" "$(fhl_esc "$p")"
         elif [ -f "$WT/$p" ]; then
           sz=$(wc -c < "$WT/$p" 2>/dev/null | tr -d ' ')
           if [ "${sz:-0}" -le 50000000 ]; then
@@ -1122,7 +1141,7 @@ cmd_tick() {
     fs_unknown=1
   fi
   local bodies
-  bodies=$(printf '%s %s' "${status_body:0:16}" "${S_bodies:-}" | tr '_' ' ' | awk '{ o = ""; n = 0; for (i = 1; i <= NF; i++) if (!s[$i]++ && n < 4) { o = o (n ? "_" : "") $i; n++ } print o }')
+  bodies=$(printf '%s %s' "${status_body:0:16}" "${S_bodies:-}" | tr '_' ' ' | awk '{ o = ""; n = 0; for (i = 1; i <= NF; i++) if (!s[$i]++ && n < 256) { o = o (n ? "_" : "") $i; n++ } print o }')
   if [ "$first" = 0 ]; then
     if [ "$status_size" != "${S_status_size:-0}" ]; then
       case "_${S_bodies:-}_" in

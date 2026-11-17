@@ -3591,6 +3591,36 @@ test_hung_ladder_observes_a_busy_pane_inside_the_pass() {
   pass "the hung-worker ladder observes a busy pane inside the watcher pass, changes nothing, and prunes after cleanup"
 }
 
+# Task names that differ only in `-` and `_` keep separate sample throttles.
+test_hung_ladder_samples_tasks_whose_names_differ_only_in_punctuation() {
+  local dir state config fakebin out capture_file t w pid
+  dir=$(make_case hung-ladder-keys); state="$dir/state"; config="$dir/config"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  mkdir -p "$config"
+  printf 'mode=observe\nactor=test\n' > "$config/hung-ladder"
+  chmod 600 "$config/hung-ladder"
+  printf 'Working... (12.3s)' > "$capture_file"
+  for t in hl-x:hlone hl_x:hltwo; do
+    w="test:fm-${t#*:}"; t=${t%%:*}
+    printf 'window=%s\nkind=ship\nharness=pi\n' "$w" > "$state/$t.meta"
+    record_pi_busy "$state" "$t"
+    printf 'working: setup complete\n' > "$state/$t.status"
+    printf '%s' "$(seen_sig "$state/$t.status")" > "$state/.seen-${t}_status"
+    touch "$state/$t.turn-ended"
+    prime_turnend_seen "$state/$t.turn-ended"
+  done
+  env -u FM_TASK_ID PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOWS="$(printf 'fm-hlone\nfm-hltwo')" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$config" FM_BUSY_TURN_MAX_SECS=999 FM_STALE_ESCALATE_SECS=999 \
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_WATCH_ONCE=1 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" "$FM_TRIAGE_WAIT_FLOOR" || fail "one watcher pass over two ladder tasks did not finish cleanly"
+  for t in hl-x hl_x; do
+    [ -s "$state/hung-ladder/episodes/$t.sample" ] \
+      || fail "task $t was not sampled in the pass: $(cat "$state/.hung-ladder.err" 2>&1)"
+  done
+  pass "the watcher keeps a separate ladder throttle for task names that differ only in punctuation"
+}
+
 test_busy_pane_stable_hash_escalates_past_turn_age_bound() {
   local dir state fakebin out capture_file window key pane_hash sig pid
   dir=$(make_case busy-stable-hash-turn-age); state="$dir/state"; fakebin="$dir/fakebin"
@@ -5877,6 +5907,7 @@ fm_test_run \
   test_cleanup_marker_lock_bound_is_decimal_with_zero_default \
   test_busy_pane_below_turn_age_bound_is_absorbed \
   test_hung_ladder_observes_a_busy_pane_inside_the_pass \
+  test_hung_ladder_samples_tasks_whose_names_differ_only_in_punctuation \
   test_busy_pane_stable_hash_escalates_past_turn_age_bound \
   test_busy_pane_changing_hash_escalates_past_turn_age_bound \
   test_busy_pane_turn_end_touch_resets_age \

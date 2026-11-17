@@ -38,7 +38,10 @@ cat > "$PROBE" <<'EOF'
 case "$1" in
   agent) cat "$FM_TEST_PROBE_DIR/$2.agent" ;;
   composer) cat "$FM_TEST_PROBE_DIR/$2.composer" 2>/dev/null || printf empty ;;
-  draft) cat "$FM_TEST_PROBE_DIR/$2.draft" 2>/dev/null || printf none ;;
+  draft)
+    # No answer leaves the draft read to the real Orca adapter.
+    [ ! -e "$FM_TEST_PROBE_DIR/$2.draft-real" ] || exit 0
+    cat "$FM_TEST_PROBE_DIR/$2.draft" 2>/dev/null || printf none ;;
 esac
 EOF
 CREW="$TMP_ROOT/crew-state"
@@ -141,7 +144,7 @@ tick() {  # <home> <task> <now>
   local h=$1 task=$2 now=$3
   pane_for "$now" | env -u FM_TASK_ID FM_HOME="$h" FM_HUNG_LADDER_NOW="$now" \
     FM_HUNG_LADDER_LOAD="${LOAD:-0.50}" FM_HUNG_LADDER_PROBE="$PROBE" FM_TEST_PROBE_DIR="$h/probe" \
-    FM_CREW_STATE_BIN="$CREW" FM_TEST_QUEUE_BIN="$TESTQ" PATH="$FAKEBIN:$PATH" \
+    FM_CREW_STATE_BIN="$CREW" FM_TEST_QUEUE_BIN="$TESTQ" PATH="${EXTRA_BIN:+$EXTRA_BIN:}$FAKEBIN:$PATH" \
     "$TEST_BASH" "$LADDER" tick --task "$task" --kind "${KIND:-ship}" --busy "${BUSY:-1}" --dialog "${DIALOG:-}"
 }
 
@@ -567,6 +570,18 @@ test_unverified_wait_cap_cannot_be_renewed() {
   [ "$(rows "$h" al observe 0)" -ge 1 ] || fail 'alternating status lines buy no unlimited hold'
   ledger "$h" | awk -F'\t' '$4 == "al" && $6 == "alarm" && $11 ~ /status-drip/ { f = 1 } END { exit !f }' \
     || fail 'recurring status lines raise the drip alarm'
+  # Cycling through six status lines that say nothing new.
+  local lines=(one two three four five six)
+  new_task "$h" cy
+  n=$B i=0
+  while [ "$n" -le $((B + 1800)) ]; do
+    printf 'working: checking step %s [at=%s]\n' "${lines[$((i % 6))]}" "$n" >> "$h/state/cy.status"
+    tick "$h" cy "$n"
+    n=$((n + 60)) i=$((i + 1))
+  done
+  [ "$(rows "$h" cy would-act 1)" -ge 1 ] || fail 'cycling status lines are not progress'
+  ledger "$h" | awk -F'\t' '$4 == "cy" && $6 == "alarm" && $11 ~ /status-drip/ { f = 1 } END { exit !f }' \
+    || fail 'cycling status lines raise the drip alarm'
   # A live pid this user does not run is not the worker's own job.
   if [ "$(id -u)" != 0 ]; then
     new_task "$h" p1
@@ -674,6 +689,48 @@ test_content_progress_covers_untracked_and_skips_secrets() {
   ! grep -rqE 'API_KEY|three' "$h/state/hung-ladder" || fail 'secret content is never saved'
   assert_no_actions 'content'
   pass 'untracked edits count as content progress, and secret files never enter the content hash'
+}
+
+test_orca_draft_read_loads_its_adapter() {
+  local h t
+  h=$(new_home orcadraft)
+  mkdir -p "$h/orcabin"
+  cat > "$h/orcabin/orca" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_TEST_PROBE_DIR/orca.log"
+[ ! -e "$FM_TEST_PROBE_DIR/orca-fail" ] || exit 1
+case "$1 $2" in
+  'terminal read')
+    printf '{"ok":true,"result":{"terminal":{"draft":"%s"}}}\n' "$(cat "$FM_TEST_PROBE_DIR/orca-draft" 2>/dev/null)" ;;
+  *) exit 1 ;;
+esac
+EOF
+  chmod +x "$h/orcabin/orca"
+  for t in dy dn; do
+    new_task "$h" "$t"
+    fm_write_meta "$h/state/$t.meta" "terminal=term-$t" "worktree=$h/wt-$t" "kind=ship" "backend=orca" "harness=claude"
+    touch "$h/probe/$t.draft-real"
+  done
+  # A typed draft parks the episode.
+  printf 'half-typed reply' > "$h/probe/orca-draft"
+  EXTRA_BIN="$h/orcabin" ticks "$h" dy "$B" $((B + 1800))
+  grep -q 'terminal read --terminal term-dy' "$h/probe/orca.log" || fail 'the real draft read ran'
+  no_escalation "$h" dy 'a real Orca draft'
+  case "$(reason_of "$h" dy would-act 5)" in *'composer:draft'*) ;; *) fail 'a real Orca draft parks' ;; esac
+  # An empty draft blocks nothing.
+  : > "$h/probe/orca-draft"
+  EXTRA_BIN="$h/orcabin" ticks "$h" dn "$B" $((B + 1080))
+  assert_equals 1 "$(rows "$h" dn would-act 3)" 'an empty draft lets the ladder run'
+  assert_equals 0 "$(rows "$h" dn would-act 5)" 'an empty draft does not park'
+  # A failed draft read counts as a draft.
+  new_task "$h" df
+  fm_write_meta "$h/state/df.meta" "terminal=term-df" "worktree=$h/wt-df" "kind=ship" "backend=orca" "harness=claude"
+  touch "$h/probe/df.draft-real" "$h/probe/orca-fail"
+  EXTRA_BIN="$h/orcabin" FM_BLIP_RETRY_READ_BUDGET_SECS=0 ticks "$h" df "$B" $((B + 1080))
+  no_escalation "$h" df 'a failed Orca draft read'
+  case "$(reason_of "$h" df would-act 5)" in *'composer:draft'*) ;; *) fail 'a failed draft read parks' ;; esac
+  assert_no_actions 'Orca draft'
+  pass 'the Orca draft read loads its adapter, and only a clear empty draft lets the ladder run'
 }
 
 test_live_mode_refused_without_gate() {
@@ -833,6 +890,7 @@ test_snapshots_redact_and_exclude_secrets() {
   printf 'TOKEN=quotedsecretvalue\n' > "$h/wt-s1/private key.env"
   printf 'TOKEN=quotedsecretvalue\n' > "$h/wt-s1/clé-secret.txt"
   printf 'change\n' >> "$h/wt-s1/README.md"
+  ln -s .env "$h/wt-s1/notes.txt"
   PANE_STYLE=token ticks "$h" s1 "$B" $((B + 1440))
   assert_equals 1 "$(rows "$h" s1 would-act 4)" 'the episode reached rung 4'
   snap=$(find "$h/state/hung-ladder/snapshots/s1" -name '*.pane' | head -n 1)
@@ -846,6 +904,8 @@ test_snapshots_redact_and_exclude_secrets() {
   grep -q '^present-secret	private key.env$' "$snap" || fail 'a quoted secret path is recorded as present'
   grep -q '^present-secret	clé-secret.txt$' "$snap" || fail 'a non-ASCII secret path is recorded as present'
   grep -q 'README.md' "$snap" || fail 'an ordinary dirty file is hashed'
+  grep -Eq '^symlink	[0-9a-f]{64}	notes.txt$' "$snap" || fail 'a symlink is recorded by its link text'
+  ! grep -Eq '^file	.*	notes.txt$' "$snap" || fail 'a symlink to a secret is never followed'
   grep -q '^present-ignored	cache/.env$' "$snap" || fail 'each ignored file is recorded, not only its directory'
   grep -q '^present-ignored	cache/data.txt$' "$snap" || fail 'every ignored file is recorded as present'
   ! grep -rq ignoredsecretvalue "$h/state/hung-ladder" || fail 'ignored file content is never saved'
@@ -887,6 +947,7 @@ fm_test_run \
   test_cleanup_resolves_open_episodes \
   test_validation_read_never_waits_on_a_lock \
   test_content_progress_covers_untracked_and_skips_secrets \
+  test_orca_draft_read_loads_its_adapter \
   test_live_mode_refused_without_gate \
   test_chain_and_escaping \
   test_snapshots_redact_and_exclude_secrets \

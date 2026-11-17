@@ -3374,7 +3374,9 @@ hung_ladder_observe() {  # <task> <kind> <1 when the pane reads busy> <dialog> <
   [ -e "$CONFIG/hung-ladder" ] || return 0
   [ -n "$task" ] || return 0
   case "$kind" in ship|scout) ;; *) return 0 ;; esac
-  stamp="HUNG_LADDER_AT_${task//[!A-Za-z0-9_]/_}"
+  # Escape `_` first, then `-` and `.`, so every task slug gets its own stamp.
+  stamp=${task//_/_5f}; stamp=${stamp//-/_2d}; stamp=${stamp//./_2e}
+  stamp="HUNG_LADDER_AT_${stamp//[!A-Za-z0-9_]/_}"
   last=${!stamp:-0}
   now=$(date +%s)
   [ $((now - last)) -ge "$HUNG_LADDER_SAMPLE_SECS" ] || return 0
