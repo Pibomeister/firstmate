@@ -1,0 +1,48 @@
+# Firstmate overlay: pstack 0.15.43 verification principles.
+# catalog.yaml:5-7: fork entries belong in catalog.d so an agent-kit refresh
+# does not wipe them.
+schema_version: 1
+skills:
+  - id: principle-prove-it-works
+    kind: standalone
+    invocation: M
+    profiles: [core]
+    batch: 13
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      After a completion report, verify against the real artifact with a rerunnable
+      check. Injected by bin/fm-pstack-verify-hook.sh. Donor: pstack 0.15.43 MIT.
+
+  - id: principle-test-behavior-not-implementation
+    kind: standalone
+    invocation: M
+    profiles: [core]
+    batch: 13
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      When tests are added or changed, keep only tests that fail when behavior breaks
+      and still pass when internals change. Injected by bin/fm-pstack-verify-hook.sh.
+
+  - id: principle-explain-the-number
+    kind: standalone
+    invocation: M
+    profiles: [core]
+    batch: 13
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Before trusting a speedup claim, write the judgment threshold and noise range,
+      then name the bottleneck from a profile. Injected by bin/fm-pstack-verify-hook.sh.
+
+  - id: principle-attack-the-premise
+    kind: standalone
+    invocation: M
+    profiles: [core]
+    batch: 13
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      When the same red returns twice after a claimed fix, question the shared
+      premise before the next fix. Injected by bin/fm-pstack-verify-hook.sh.

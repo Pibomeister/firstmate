@@ -12,13 +12,23 @@
 # one hook payload on stdin, classifies at most the four events below, and
 # prints the host's documented hook output when a trigger matches. It never
 # blocks a turn: every error path, including missing jq, empty stdin, and a
-# corrupt state file, exits 0. Cursor permission-shaped events always include
-# their required key (permission / continue) so a miss cannot deny a tool.
+# corrupt state file, exits 0.
+#
+# Host emit schema (https://cursor.com/docs/hooks; Claude hookSpecificOutput):
+#   Cursor postToolUse / postToolUseFailure / sessionStart -> additional_context
+#   Cursor beforeSubmitPrompt -> exactly {"continue":true}
+#   Cursor afterAgentResponse / afterShellExecution -> no output
+#   Claude UserPromptSubmit / PreToolUse / PostToolUse -> additionalContext
+# A Cursor speed claim or done-line seen on beforeSubmitPrompt,
+# afterAgentResponse, or afterShellExecution is stored as a pending marker
+# and delivered once on the next postToolUse or postToolUseFailure in the
+# same conversation.
 #
 # Triggers, each owned here:
 #   completion report  -> principle-prove-it-works
-#     status_is_terminal_verb (bin/fm-classify-lib.sh) is the only classifier.
-#     Lines come from Write/Edit contents, quoted payloads in Shell/Bash
+#     status_is_done_verb (bin/fm-classify-lib.sh): status_is_terminal_verb
+#     and then the verb is done. blocked:, failed:, and needs-decision: stay
+#     out. Lines come from Write/Edit contents, quoted payloads in Shell/Bash
 #     commands (the fm-brief STATUS_APPEND shape), and assistant/prompt text.
 #   tests added/changed -> principle-test-behavior-not-implementation
 #     Claude PreToolUse Write/Edit of a code test path, Cursor postToolUse of
@@ -26,13 +36,18 @@
 #     In-place editors (sed -i) and a cwd-relative foo.test.sh with no
 #     tests/ prefix are not covered.
 #   speed or perf claim -> principle-explain-the-number
-#     UserPromptSubmit / beforeSubmitPrompt / afterAgentResponse text, after
-#     dropping the phrases "fast-forward" and "faster path".
+#     An assertion such as "much faster", "got a lot faster", "2x as fast",
+#     or "the export is faster now". Questions, "as fast as", and a noun
+#     mention of "speedup" stay out. "fast-forward" and "faster path" are
+#     dropped locally before matching.
 #   same red twice after a claimed fix -> principle-attack-the-premise
 #     keyed on a stable check or test id in $STATE/pstack-verify-reds.tsv;
 #     claims are taken from assistant-visible text and tool output; reds are
-#     taken from stdout, stderr, error_message, and raw afterShellExecution
-#     output; a repeated payload token does not increment the streak.
+#     taken from stdout, stderr, and error_message on postToolUse /
+#     PostToolUse / postToolUseFailure (Cursor afterShellExecution is not
+#     counted, so one failed Shell is one red). A pytest node id matches the
+#     file prefix before ::. Jest FAIL <path> is extracted. A repeated
+#     payload token does not increment the streak.
 #
 # Usage:
 #   <hook JSON on stdin> | bin/fm-pstack-verify-hook.sh [--claude|--cursor]
@@ -46,6 +61,8 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 REDS_MAX_AGE_SECS=1209600
+LOCK_STALE_SECS=8
+LOCK_RETRIES=8
 
 CLAUDE_MODE=0
 CURSOR_MODE=0
@@ -65,8 +82,6 @@ EVENT=
 CURSOR_OUT=$CURSOR_MODE
 
 # Cursor beforeSubmitPrompt output is continue (https://cursor.com/docs/hooks).
-# A miss must still allow the prompt. preToolUse is not registered for this
-# helper; never print permission, which would override arm/cd's deny.
 emit_noop() {
   command -v jq >/dev/null 2>&1 || return 0
   case "${EVENT:-}" in
@@ -82,7 +97,6 @@ fail_open() {
   exit 0
 }
 
-# One sentence that names the skill and the path firstmate actually vendors.
 instruction_for() {  # <principle-id>
   case "$1" in
     principle-prove-it-works)
@@ -101,7 +115,6 @@ instruction_for() {  # <principle-id>
   esac
 }
 
-# Quoted payloads from a Shell/Bash command, including STATUS_APPEND's echo "...".
 extract_quoted_strings() {  # <command>
   local s=$1 q
   [ -n "$s" ] || return 0
@@ -119,7 +132,7 @@ extract_quoted_strings() {  # <command>
   done
 }
 
-# status_is_terminal_verb is the only completion classifier.
+# status_is_done_verb is the completion classifier (terminal and verb done).
 is_completion_text() {  # <text>
   local text=$1 line trimmed
   [ -n "$text" ] || return 1
@@ -132,18 +145,22 @@ is_completion_text() {  # <text>
       esac
     done
     [ -n "$trimmed" ] || continue
-    status_is_terminal_verb "$trimmed" && return 0
+    status_is_done_verb "$trimmed" && return 0
   done <<EOF
 $text
 EOF
   return 1
 }
 
-# Strip firstmate phrases, then match a claim. "speed up" as a request stays out.
+# An assertion, not a question or a noun mention.
 is_speed_claim_text() {  # <text>
   local text=$1 lower cleaned
   [ -n "$text" ] || return 1
   lower=$(printf '%s' "$text" | tr '[:upper:]' '[:lower:]')
+  case "$lower" in
+    *\?*) return 1 ;;
+    which\ *faster*|what\ *faster*|what\'s\ faster*) return 1 ;;
+  esac
   cleaned=$lower
   while :; do
     case "$cleaned" in
@@ -153,16 +170,17 @@ is_speed_claim_text() {  # <text>
     esac
   done
   case "$cleaned" in
+    *[0-9]x\ as\ fast*|[0-9]\ times\ as\ fast*|*[0-9]\ times\ as\ fast*) return 0 ;;
+    *as\ fast\ as*) return 1 ;;
+  esac
+  case "$cleaned" in
     *it\'s\ faster*|*it\ is\ faster*|*got\ faster*|*now\ faster*|*is\ faster*) return 0 ;;
     *much\ faster*|*a\ lot\ faster*|*lot\ faster*) return 0 ;;
-    *[0-9]x\ faster*|*times\ faster*|*%\ faster*) return 0 ;;
-    *[0-9]x\ as\ fast*|*times\ as\ fast*) return 0 ;;
-    *speedup*|*speed-up*) return 0 ;;
+    *[0-9]x\ faster*|[0-9]\ times\ faster*|*[0-9]\ times\ faster*|*%\ faster*) return 0 ;;
   esac
   return 1
 }
 
-# Code test files only. docs/test_plan.md and similar notes stay out.
 is_test_path() {  # <path>
   local path=$1 base
   [ -n "$path" ] || return 1
@@ -182,14 +200,18 @@ is_test_path() {  # <path>
   return 1
 }
 
-# Redirects and tees into a code test path, not `bash tests/foo.test.sh`.
+# Redirects and tees into a code test path segment, not contest/.
 shell_writes_test_path() {  # <command>
   local cmd=$1
   [ -n "$cmd" ] || return 1
   case "$cmd" in
-    *'>'*tests/*|*'>'*test/*|*'>'*__tests__/*) return 0 ;;
+    *'>'test/*|*'>'[[:space:]]test/*|*'>'*/test/*) return 0 ;;
+    *'>'tests/*|*'>'[[:space:]]tests/*|*'>'*/tests/*) return 0 ;;
+    *'>'__tests__/*|*'>'[[:space:]]__tests__/*|*'>'*/__tests__/*) return 0 ;;
     *'>'*/*.test.*|*'>'*/*_test.*|*'>'*/*.spec.*|*'>'*/*_spec.*) return 0 ;;
-    *tee\ tests/*) return 0 ;;
+    *tee[[:space:]]test/*|*tee[[:space:]]*/test/*) return 0 ;;
+    *tee[[:space:]]tests/*|*tee[[:space:]]*/tests/*) return 0 ;;
+    *tee[[:space:]]__tests__/*|*tee[[:space:]]*/__tests__/*) return 0 ;;
   esac
   return 1
 }
@@ -221,15 +243,33 @@ _ltrim() {  # <string-name>
   eval "$1=\$_s"
 }
 
+sanitize_field() {  # <raw> -> stdout, no tab/newline
+  printf '%s' "$1" | tr -d '\t\n\r'
+}
+
 sanitize_id() {  # <raw> -> stdout
   local s
   s=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9._/:@+ -')
+  case "$s" in
+    *::*) s=${s%%::*} ;;
+  esac
   s=${s# };
   s=${s% }
   printf '%s' "$s"
 }
 
-# Prefer a code-test path; otherwise the full TAP remainder, never the word "a".
+_split_words() {  # <text> -> words on stdout, noglob
+  local text=$1 restore=0 word
+  [ -n "$text" ] || return 0
+  case $- in *f*) restore=1 ;; esac
+  set -f
+  # shellcheck disable=SC2086
+  for word in $text; do
+    printf '%s\n' "$word"
+  done
+  [ "$restore" -eq 1 ] || set +f
+}
+
 extract_red_ids() {  # <text>
   local text=$1 line rest word found
   [ -n "$text" ] || return 0
@@ -239,6 +279,8 @@ extract_red_ids() {  # <text>
       *FAILED\ *) rest=${line#*FAILED} ;;
       *FAIL:\ *) rest=${line#*FAIL:} ;;
       *failed:*) rest=${line#*failed:} ;;
+      FAIL\ *) rest=${line#FAIL} ;;
+      *"FAIL "*) rest=${line#*"FAIL "} ;;
       *"not ok "*) rest=${line#*"not ok "} ;;
       *) continue ;;
     esac
@@ -257,13 +299,16 @@ extract_red_ids() {  # <text>
     esac
     [ -n "$rest" ] || continue
     found=
-    for word in $rest; do
+    while IFS= read -r word || [ -n "$word" ]; do
+      [ -n "$word" ] || continue
       word=${word#\'}; word=${word%\'}; word=${word#\"}; word=${word%\"}
       if is_test_path "$word"; then
         found=$(sanitize_id "$word")
         break
       fi
-    done
+    done <<EOF
+$(_split_words "$rest")
+EOF
     [ -n "$found" ] || found=$(sanitize_id "$rest")
     [ -n "$found" ] || continue
     printf '%s\n' "$found"
@@ -285,13 +330,16 @@ extract_claim_ids() {  # <text>
     esac
     _ltrim rest
     found=
-    for word in $rest; do
+    while IFS= read -r word || [ -n "$word" ]; do
+      [ -n "$word" ] || continue
       word=${word#\'}; word=${word%\'}; word=${word#\"}; word=${word%\"}
       if is_test_path "$word"; then
         found=$(sanitize_id "$word")
         break
       fi
-    done
+    done <<EOF
+$(_split_words "$rest")
+EOF
     if [ -z "$found" ]; then
       found=${rest%% *}
       case "$found" in
@@ -310,17 +358,73 @@ reds_file() {
   printf '%s' "$STATE/pstack-verify-reds.tsv"
 }
 
+pending_file() {
+  printf '%s' "$STATE/pstack-verify-pending"
+}
+
 now_epoch() {
   date +%s 2>/dev/null || printf '0'
 }
 
+file_mtime() {  # <path>
+  stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || printf ''
+}
+
 acquire_reds_lock() {
-  local lock=$1 i=0
-  while [ "$i" -lt 25 ]; do
+  local lock=$1 i=0 m now age
+  while [ "$i" -lt "$LOCK_RETRIES" ]; do
     mkdir "$lock" 2>/dev/null && return 0
+    m=$(file_mtime "$lock")
+    now=$(now_epoch)
+    case "$m" in ''|*[!0-9]*) ;; *)
+      case "$now" in ''|*[!0-9]*) ;; *)
+        age=$((now - m))
+        if [ "$age" -ge "$LOCK_STALE_SECS" ]; then
+          rmdir "$lock" 2>/dev/null
+          mkdir "$lock" 2>/dev/null && return 0
+        fi
+        ;;
+      esac
+      ;;
+    esac
+    sleep 1
     i=$((i + 1))
   done
   return 1
+}
+
+write_pending() {  # <conversation-id> <principle>
+  local conv=$1 principle=$2 file tmp
+  conv=$(sanitize_field "$conv")
+  [ -n "$conv" ] || conv="-"
+  case "$principle" in
+    principle-prove-it-works|principle-explain-the-number) ;;
+    *) return 0 ;;
+  esac
+  mkdir -p "$STATE" 2>/dev/null || return 0
+  file=$(pending_file)
+  tmp="${file}.tmp.$$"
+  printf '%s\t%s\n' "$conv" "$principle" > "$tmp" 2>/dev/null || return 0
+  mv "$tmp" "$file" 2>/dev/null || rm -f "$tmp"
+}
+
+take_pending() {  # <conversation-id> -> principle on stdout
+  local conv=$1 file pconv principle
+  conv=$(sanitize_field "$conv")
+  [ -n "$conv" ] || conv="-"
+  file=$(pending_file)
+  [ -f "$file" ] || return 0
+  IFS="$(printf '\t')" read -r pconv principle < "$file" || return 0
+  pconv=$(sanitize_field "$pconv")
+  [ -n "$pconv" ] || pconv="-"
+  case "$principle" in
+    principle-prove-it-works|principle-explain-the-number) ;;
+    *) rm -f "$file"; return 0 ;;
+  esac
+  if [ "$pconv" = "$conv" ] || [ "$pconv" = "-" ] || [ "$conv" = "-" ]; then
+    rm -f "$file"
+    printf '%s' "$principle"
+  fi
 }
 
 # Record a claimed fix or a red for <id>. Prints the id when streak reaches 2
@@ -405,31 +509,57 @@ record_red_event() {  # <id> <kind:claim|red> <token>
   fi
 }
 
-# Cursor docs (https://cursor.com/docs/hooks): postToolUse and
-# postToolUseFailure output additional_context; preToolUse output is
-# permission; beforeSubmitPrompt output is continue; afterShellExecution has
-# no documented output fields (raw `output` is the input we parse).
+# Cursor docs (https://cursor.com/docs/hooks): postToolUse, postToolUseFailure,
+# and sessionStart output additional_context. beforeSubmitPrompt output is
+# continue. afterAgentResponse and afterShellExecution have no output fields.
 emit_context() {  # <event> <instruction>
   local event=$1 instruction=$2 out
   command -v jq >/dev/null 2>&1 || return 0
   if [ "$CURSOR_MODE" = 1 ] || [ "$CURSOR_OUT" = 1 ]; then
     case "$event" in
-      preToolUse|PreToolUse)
-        return 0
-        ;;
-      beforeSubmitPrompt)
-        out=$(jq -n --arg c "$instruction" '{continue:true, additional_context:$c}' 2>/dev/null) || return 0
+      postToolUse|postToolUseFailure|sessionStart)
+        out=$(jq -n --arg c "$instruction" '{additional_context:$c}' 2>/dev/null) || return 0
         ;;
       *)
-        out=$(jq -n --arg c "$instruction" '{additional_context:$c}' 2>/dev/null) || return 0
+        return 0
         ;;
     esac
   else
-    out=$(jq -n --arg c "$instruction" --arg e "$event" \
-      '{hookSpecificOutput:{hookEventName:$e, additionalContext:$c}}' 2>/dev/null) || return 0
+    case "$event" in
+      UserPromptSubmit|PreToolUse|PostToolUse)
+        out=$(jq -n --arg c "$instruction" --arg e "$event" \
+          '{hookSpecificOutput:{hookEventName:$e, additionalContext:$c}}' 2>/dev/null) || return 0
+        ;;
+      *)
+        return 0
+        ;;
+    esac
   fi
   [ -n "$out" ] || return 0
   printf '%s\n' "$out"
+}
+
+cursor_counts_reds() {
+  case "$EVENT" in
+    afterShellExecution) return 1 ;;
+  esac
+  return 0
+}
+
+cursor_defers_inject() {
+  [ "$CURSOR_MODE" = 1 ] || [ "$CURSOR_OUT" = 1 ] || return 1
+  case "$EVENT" in
+    beforeSubmitPrompt|afterAgentResponse|afterShellExecution) return 0 ;;
+  esac
+  return 1
+}
+
+cursor_delivers_pending() {
+  [ "$CURSOR_MODE" = 1 ] || [ "$CURSOR_OUT" = 1 ] || return 1
+  case "$EVENT" in
+    postToolUse|postToolUseFailure) return 0 ;;
+  esac
+  return 1
 }
 
 PAYLOAD=$(cat 2>/dev/null || true)
@@ -447,9 +577,6 @@ if printf '%s' "$PAYLOAD" | jq -e 'has("cursor_version")' >/dev/null 2>&1; then
   CURSOR_OUT=1
 fi
 
-# Native Cursor events for this helper, plus PreToolUse which must not emit
-# additional_context (https://cursor.com/docs/hooks preToolUse output is
-# permission, not additional_context).
 if [ "$CLAUDE_MODE" -eq 1 ] && fm_hook_payload_is_foreign_host "$PAYLOAD"; then
   case "$EVENT" in
     postToolUse|PostToolUse|postToolUseFailure|afterShellExecution|afterAgentResponse|beforeSubmitPrompt|UserPromptSubmit|preToolUse|PreToolUse)
@@ -484,7 +611,8 @@ FIELDS=$(printf '%s' "$PAYLOAD" | jq -c '
       stderr: str($to.stderr // $tr.stderr // .stderr // .error_message // ""),
       stdout: str($to.stdout // $tr.stdout // .stdout // ""),
       output: str(.output // $to.output // $tr.output // ""),
-      token: str(.tool_use_id // .toolUseId // .generation_id // .prompt_id // "")
+      token: str(.tool_use_id // .toolUseId // .generation_id // .prompt_id // ""),
+      conv: str(.conversation_id // .conversationId // .session_id // "")
     }
 ' 2>/dev/null) || fail_open
 [ -n "$FIELDS" ] || fail_open
@@ -499,6 +627,7 @@ STDERR=$(printf '%s' "$FIELDS" | jq -r '.stderr' 2>/dev/null) || fail_open
 STDOUT=$(printf '%s' "$FIELDS" | jq -r '.stdout' 2>/dev/null) || fail_open
 OUTPUT=$(printf '%s' "$FIELDS" | jq -r '.output' 2>/dev/null) || fail_open
 TOKEN=$(printf '%s' "$FIELDS" | jq -r '.token' 2>/dev/null) || fail_open
+CONV=$(printf '%s' "$FIELDS" | jq -r '.conv' 2>/dev/null) || fail_open
 [ -n "$TOKEN" ] || TOKEN=$(printf '%s' "$PAYLOAD" | cksum 2>/dev/null | awk '{print $1}')
 
 QUOTED=
@@ -518,19 +647,21 @@ $STREAMS"
 PRINCIPLE=
 
 if is_write_tool "$TOOL" && is_test_path "$PATH_VAL"; then
-  PRINCIPLE=principle-test-behavior-not-implementation
+  PRINCIPLE="principle-test-behavior-not-implementation"
 elif { is_shell_tool "$TOOL" || [ -n "$COMMAND" ]; } && shell_writes_test_path "$COMMAND"; then
-  PRINCIPLE=principle-test-behavior-not-implementation
+  PRINCIPLE="principle-test-behavior-not-implementation"
 elif is_speed_claim_text "$VISIBLE"; then
-  PRINCIPLE=principle-explain-the-number
+  PRINCIPLE="principle-explain-the-number"
 elif is_completion_text "$VISIBLE"; then
-  PRINCIPLE=principle-prove-it-works
+  PRINCIPLE="principle-prove-it-works"
 fi
 
-RED_HIT=
 CLAIM_IDS=$(extract_claim_ids "$OBSERVED")
-RED_IDS=$(extract_red_ids "$STREAMS")
-[ -n "$RED_IDS" ] || RED_IDS=$(extract_red_ids "$VISIBLE")
+RED_IDS=
+if cursor_counts_reds; then
+  RED_IDS=$(extract_red_ids "$STREAMS")
+  [ -n "$RED_IDS" ] || RED_IDS=$(extract_red_ids "$VISIBLE")
+fi
 
 if [ -n "$CLAIM_IDS" ]; then
   while IFS= read -r cid || [ -n "$cid" ]; do
@@ -541,6 +672,7 @@ $CLAIM_IDS
 EOF
 fi
 
+RED_HIT=
 if [ -n "$RED_IDS" ]; then
   while IFS= read -r rid || [ -n "$rid" ]; do
     [ -n "$rid" ] || continue
@@ -552,7 +684,20 @@ EOF
 fi
 
 if [ -n "$RED_HIT" ]; then
-  PRINCIPLE=principle-attack-the-premise
+  PRINCIPLE="principle-attack-the-premise"
+fi
+
+if cursor_defers_inject; then
+  case "$PRINCIPLE" in
+    principle-prove-it-works|principle-explain-the-number)
+      write_pending "$CONV" "$PRINCIPLE"
+      PRINCIPLE=
+      ;;
+  esac
+fi
+
+if [ -z "$PRINCIPLE" ] && cursor_delivers_pending; then
+  PRINCIPLE=$(take_pending "$CONV")
 fi
 
 [ -n "$PRINCIPLE" ] || fail_open

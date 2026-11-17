@@ -394,51 +394,6 @@ skills:
       Author and improve skills using behavioral tests and provenance. Required for maintaining
       this package; candidate edits pass evaluations and a separate review before promotion.
 
-  # --- Firstmate-vendored pstack verification principles (pstack 0.15.43) --
-  - id: principle-prove-it-works
-    kind: standalone
-    invocation: M
-    profiles: [core]
-    batch: 13
-    provenance_origin: donor
-    status: authored
-    summary: >-
-      After a completion report, verify against the real artifact with a rerunnable
-      check. Injected by bin/fm-pstack-verify-hook.sh. Donor: pstack 0.15.43 MIT.
-
-  - id: principle-test-behavior-not-implementation
-    kind: standalone
-    invocation: M
-    profiles: [core]
-    batch: 13
-    provenance_origin: donor
-    status: authored
-    summary: >-
-      When tests are added or changed, keep only tests that fail when behavior breaks
-      and still pass when internals change. Injected by bin/fm-pstack-verify-hook.sh.
-
-  - id: principle-explain-the-number
-    kind: standalone
-    invocation: M
-    profiles: [core]
-    batch: 13
-    provenance_origin: donor
-    status: authored
-    summary: >-
-      Before trusting a speedup claim, write the judgment threshold and noise range,
-      then name the bottleneck from a profile. Injected by bin/fm-pstack-verify-hook.sh.
-
-  - id: principle-attack-the-premise
-    kind: standalone
-    invocation: M
-    profiles: [core]
-    batch: 13
-    provenance_origin: donor
-    status: authored
-    summary: >-
-      When the same red returns twice after a claimed fix, question the shared
-      premise before the next fix. Injected by bin/fm-pstack-verify-hook.sh.
-
   # --- Primitives (arch 2.4) ------------------------------------------------
   - id: prototype
     kind: primitive
