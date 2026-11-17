@@ -4496,7 +4496,34 @@ PY
     out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
   fi
 
-  pass "session start preserves shared-state baseline byte-for-byte across missing python3, locks, timeouts, corruption, unreadable files, inaccessible parent directories, transient lookup failures, no-interpreter fallback, and failed baseline reads"
+  # 12. Malformed multi-line baselines (empty 5th line + non-empty 6th line, and extra trailing
+  # blank line): must NOT be replaced even when both snapshots succeed, preserving exact bytes.
+  local valid_baseline_copy malformed_expected
+  valid_baseline_copy="$TMP_ROOT/shared-preserve-valid-baseline.copy"
+  malformed_expected="$TMP_ROOT/shared-preserve-malformed-expected"
+  cp "$home/state/.session-start-shared-baseline" "$valid_baseline_copy"
+
+  {
+    cat "$valid_baseline_copy"
+    printf '\nextra-sixth-line\n'
+  } > "$malformed_expected"
+  cp "$malformed_expected" "$home/state/.session-start-shared-baseline"
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  cmp -s "$malformed_expected" "$home/state/.session-start-shared-baseline" \
+    || fail "malformed baseline with empty 5th line and non-empty 6th line was overwritten"
+
+  {
+    cat "$valid_baseline_copy"
+    printf '\n'
+  } > "$malformed_expected"
+  cp "$malformed_expected" "$home/state/.session-start-shared-baseline"
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  cmp -s "$malformed_expected" "$home/state/.session-start-shared-baseline" \
+    || fail "malformed baseline with extra trailing blank line was overwritten"
+
+  cp "$valid_baseline_copy" "$home/state/.session-start-shared-baseline"
+
+  pass "session start preserves shared-state baseline byte-for-byte across missing python3, locks, timeouts, corruption, unreadable files, inaccessible parent directories, transient lookup failures, no-interpreter fallback, and failed or malformed baseline reads"
 }
 
 test_context_digest_absent_empty_present

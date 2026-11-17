@@ -1200,12 +1200,17 @@ check_shared_state_since_last_start() {
     classify_missing_path "$SHARED_BASELINE_FILE" || baseline_miss_rc=$?
     [ "$baseline_miss_rc" -eq 0 ] && baseline_ok=1
   elif [ -f "$SHARED_BASELINE_FILE" ] && [ ! -L "$SHARED_BASELINE_FILE" ] && [ -r "$SHARED_BASELINE_FILE" ]; then
-    if baseline_raw=$(cat "$SHARED_BASELINE_FILE" 2>/dev/null) \
+    if baseline_raw=$(cat "$SHARED_BASELINE_FILE" 2>/dev/null && printf '.') \
+      && printf '%s\n' "$baseline_raw" | awk '
+        NR <= 4 && length($0) == 0 { bad = 1 }
+        NR == 5 && $0 != "." { bad = 1 }
+        NR > 5 { bad = 1 }
+        END { if (bad || NR != 5) exit 1 }
+      ' \
       && prev_git_slots=$(printf '%s\n' "$baseline_raw" | sed -n '1p') \
       && prev_git_state=$(printf '%s\n' "$baseline_raw" | sed -n '2p') \
       && prev_nm_path=$(printf '%s\n' "$baseline_raw" | sed -n '3p') \
       && prev_nm_schema=$(printf '%s\n' "$baseline_raw" | sed -n '4p') \
-      && [ -z "$(printf '%s\n' "$baseline_raw" | sed -n '5p')" ] \
       && [ -n "$prev_git_slots" ] && [ -n "$prev_git_state" ] \
       && [ -n "$prev_nm_path" ] && [ -n "$prev_nm_schema" ]; then
       baseline_ok=1
