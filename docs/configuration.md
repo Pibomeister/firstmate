@@ -1219,7 +1219,8 @@ A refusal places the work on another host or cloud.
 The optional local, gitignored `config/memory-guard` sets its swap and process limits, the sustained window, the alarm repeat time, the sample log cap, and `mode`.
 The default `mode=observe` never signals a process.
 Only an explicit `mode=reap-scratch` lets it send SIGTERM to a sustained scratch process, after a fresh read confirms the same process, and never to an agent CLI, a supervisor, a multiplexer, an IDE, a browser, or a desktop app.
-A scratch process has no child processes, and either is a shell or interpreter running a script from a disposable temp root, or is a direct child of a `tests/<name>.test.sh` runner that is a real file.
+A scratch process has no child processes, and either is a shell or interpreter running a script from a disposable temp root, or is `sleep`, `yes`, `seq`, `true`, or `false` with only plain-number arguments whose direct parent is an absolute `tests/<name>.test.sh` runner that is a real file.
+Protected names and paths are compared without case.
 The script header owns every key and default, the sample log at `state/memory-guard.tsv`, the alarm lines, and the full protection list.
 [`tests/fm-memory-guard.test.sh`](../tests/fm-memory-guard.test.sh) exercises both readers and the protection list with fixture process tables.
 

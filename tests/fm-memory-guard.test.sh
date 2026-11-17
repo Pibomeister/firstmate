@@ -24,7 +24,7 @@ H=
 CASE_N=0
 SLEEPS=''
 # reap_fixture sets one P_<name> per fixture row; these are the ones read by name.
-D_runner='' D_testscript='' D_bareopt='' D_barename='' D_bunrun='' P_runner='' P_claude='' P_wrapped='' P_exe='' P_nodeagent='' P_execd='' P_reused='' P_moved=''
+D_runner='' D_testscript='' D_bareopt='' D_barename='' D_bunrun='' D_runner4='' P_runner='' P_claude='' P_wrapped='' P_exe='' P_nodeagent='' P_execd='' P_reused='' P_moved=''
 
 # Fixture programs under the temp root are real files, as a scratch program must be.
 mkdir -p "$TMP_ROOT/bin" "$TMP_ROOT/live/bin" "$TMP_ROOT/work dir" "$TMP_ROOT/job" "$TMP_ROOT/claude-code"
@@ -375,7 +375,7 @@ test_reap_scratch_spares_live_agents_and_operator_apps() {
   # shellcheck disable=SC2034 # read by reap_fixture through eval
   D_runner=$OUT_ROOT/repo D_testscript=$OUT_ROOT/repo
   REAP_ROWS="scratch|bash|me|1|bash $TMP_ROOT/runaway.sh
-runner|bash|me|1|bash tests/fm-example.test.sh
+runner|bash|me|1|bash $OUT_ROOT/repo/tests/fm-example.test.sh
 testchild|sleep|me|P_runner|sleep 5
 testscript|bash|me|P_runner|bash ./helper.sh
 nodetmp|node|me|1|node $TMP_ROOT/leak.js
@@ -385,7 +385,7 @@ agy|agy|me|1|agy -p hello
 tmux|tmux|me|1|tmux -L fm-test-$CASE_N new-session $TMP_ROOT/z
 orca|orca|me|1|orca serve
 nodeout|node|me|1|node /srv/server.js
-app|Cursor Helper|me|1|/Applications/Cursor.app/Contents/MacOS/Cursor Helper $TMP_ROOT/w
+app|Preview Helper|me|1|/Applications/Preview.app/Contents/MacOS/Preview Helper $TMP_ROOT/w
 watch|bash|me|1|bash /opt/firstmate/bin/fm-watch.sh
 plain|python3|me|1|python3 /srv/big.py
 other|bash|0|1|bash $TMP_ROOT/foreign.sh
@@ -394,12 +394,12 @@ wrapped|claude|me|P_wrapper|claude"
   # The test runner itself stays small, so only its child is a candidate.
   RUNNER_SMALL=1 sustain
   assert_equals 3 "$RC" "reap pass alarms: $OUT"
-  for name in scratch testchild testscript nodetmp; do
+  for name in scratch testchild nodetmp; do
     eval "pid=\$P_$name"
     wait_gone "$pid" || fail "scratch process $name (pid $pid) was not stopped: $OUT"
     action_has "term:$pid" || fail "action does not name the stopped $name: $(summary)"
   done
-  for name in runner claude codex agy tmux orca nodeout app watch plain other wrapper wrapped; do
+  for name in runner testscript claude codex agy tmux orca nodeout app watch plain other wrapper wrapped; do
     eval "pid=\$P_$name"
     alive "$pid" || fail "protected process $name (pid $pid) was signaled: $OUT"
     ! action_has "term:$pid" || fail "SIGTERM recorded for $name: $(summary)"
@@ -421,13 +421,13 @@ wrapped|claude|me|P_wrapper|claude"
 test_reap_scratch_needs_a_scratch_program() {
   local name
   new_home 'mode=reap-scratch'
-  for name in exe nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink runner brave renderer mailer nmd gimp spaced missing linkfile spacewrap pkgagent relsup agent2 agentkid symkid pkgkid runner2 fakekid pkgwrap pkgwrapkid noname runner3 aliaskid errexit inlinepath bareopt barename bunrun; do eval "P_$name="; done
+  for name in exe nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink runner brave renderer mailer nmd gimp spaced missing linkfile spacewrap pkgagent relsup agent2 agentkid symkid pkgkid runner2 fakekid pkgwrap pkgwrapkid noname runner3 aliaskid errexit inlinepath bareopt barename bunrun ddkid meld caseup runner4 relkid; do eval "P_$name="; done
   ln -s "$BASE_PATH_FIRST" "$TMP_ROOT/prodlink"
   ln -s "$TMP_ROOT/runaway.sh" "$TMP_ROOT/link.sh"
   ln -s "$BASE_PATH_FIRST" "$TMP_ROOT/job/work dir"
   ln -s "$TMP_ROOT/claude-code" "$TMP_ROOT/pkg"
   # shellcheck disable=SC2034 # read by reap_fixture through eval
-  D_runner=$OUT_ROOT/repo D_bareopt=$OUT_ROOT D_barename=$OUT_ROOT/repo D_bunrun=$OUT_ROOT/repo
+  D_runner=$OUT_ROOT/repo D_bareopt=$OUT_ROOT D_barename=$OUT_ROOT/repo D_bunrun=$OUT_ROOT/repo D_runner4=$OUT_ROOT/repo
   REAP_ROWS="exe|leaky|me|1|$TMP_ROOT/bin/leaky --size 9
 nodeagent|node|me|1|node /opt/lib/node_modules/@anthropic-ai/claude-code/cli.js --add-dir $TMP_ROOT/p
 watchtmp|bash|me|1|bash /opt/firstmate/bin/fm-watch.sh --state $TMP_ROOT/home
@@ -437,7 +437,7 @@ inline|bash|me|1|bash -c run $TMP_ROOT/a.sh
 preload|node|me|1|node --require $TMP_ROOT/bootstrap.js /srv/server.js
 livewatch|bash|me|1|bash $TMP_ROOT/live/bin/fm-watchdog.sh run
 prodlink|python3|me|1|python3 $TMP_ROOT/prodlink/server.py
-runner|bash|me|1|bash tests/ui.test.sh
+runner|bash|me|1|bash $OUT_ROOT/repo/tests/ui.test.sh
 brave|brave|me|P_runner|/opt/brave.com/brave/brave
 mailer|python3|me|P_runner|python3 /opt/firstmate/bin/fm-mail.py
 nmd|no-mistakes-daemon|me|P_runner|/opt/bin/no-mistakes-daemon serve
@@ -464,9 +464,14 @@ inlinepath|bash|me|P_runner|bash -c . $OUT_ROOT/run-loop.sh
 bareopt|bash|me|P_runner|bash -e run-loop.sh
 barename|bash|me|P_runner|bash helper.sh
 bunrun|bun|me|P_runner|bun run ./helper.sh
+ddkid|dd|me|P_runner|dd if=production.db of=backup.db bs=8G
+meld|python3|me|P_runner|python3 /usr/bin/meld
+caseup|bash|me|1|bash $OUT_ROOT/BIN/FM-WATCHDOG.SH run
+runner4|bash|me|1|bash tests/ui.test.sh
+relkid|sleep|me|P_runner4|sleep 5
 renderer|helper|me|P_runner|/opt/app/helper --type=renderer"
   RUNNER_SMALL=1 sustain
-  for name in exe nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink brave renderer mailer nmd gimp spaced missing linkfile spacewrap pkgagent relsup agent2 agentkid symkid pkgkid runner2 fakekid pkgwrap pkgwrapkid noname runner3 aliaskid errexit inlinepath bareopt barename bunrun; do
+  for name in exe nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink brave renderer mailer nmd gimp spaced missing linkfile spacewrap pkgagent relsup agent2 agentkid symkid pkgkid runner2 fakekid pkgwrap pkgwrapkid noname runner3 aliaskid errexit inlinepath bareopt barename bunrun ddkid meld caseup runner4 relkid; do
     eval "pid=\$P_$name"
     alive "$pid" || fail "$name (pid $pid) was signaled: $OUT"
     action_has "spared:$pid" || fail "action does not name the spared $name: $(summary)"
@@ -474,23 +479,21 @@ renderer|helper|me|P_runner|/opt/app/helper --type=renderer"
   assert_contains "$OUT" "pid $P_nodeagent (node) has held" "the interpreted agent alarms"
   assert_contains "$OUT" "spared (protected claude)" "an agent run by an interpreter is protected by its script path"
   assert_contains "$OUT" "spared (firstmate supervisor script)" "a supervisor stays protected when an argument names a temp path"
-  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (not scratch)')" = 12 ] || fail "a temp-path argument, a .. path, inline code, or a desktop app under a test runner counted as scratch: $OUT"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (not scratch)')" = 16 ] || fail "a temp-path argument, a .. path, inline code, or a desktop app under a test runner counted as scratch: $OUT"
   [ "$(printf '%s\n' "$OUT" | grep -c 'spared (node outside a disposable temp root)')" = 1 ] || fail "a node preload under a temp root made node scratch: $OUT"
-  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (firstmate supervisor script)')" = 4 ] || fail "a supervisor script under a temp root lost its protection: $OUT"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (firstmate supervisor script)')" = 5 ] || fail "a supervisor script under a temp root lost its protection: $OUT"
   [ "$(printf '%s\n' "$OUT" | grep -c 'spared (program is not a regular file under a disposable temp root)')" = 3 ] || fail "a symlink out of the temp root or a missing program counted as scratch: $OUT"
   assert_contains "$OUT" "spared (protected no-mistakes)" "a hyphenated protected name protects a longer name it starts"
   assert_contains "$OUT" "spared (program path is ambiguous)" "a sibling that extends the program name with a space makes it ambiguous"
   [ "$(printf '%s\n' "$OUT" | grep -c 'spared (resolved program: protected claude)')" = 2 ] || fail "a symlink to an agent package lost its protection: $OUT"
-  assert_contains "$OUT" "spared (test child script is not a regular file)" "a test child running a symlinked script is spared"
-  assert_contains "$OUT" "spared (resolved test child script: protected claude)" "a test child whose script resolves into an agent package is protected"
-  assert_contains "$OUT" "spared (test runner is not a regular tests/*.test.sh file)" "an ambiguous test-runner path makes nothing scratch"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (test runner is not an absolute, regular tests/\*.test.sh file)')" = 2 ] || fail "an ambiguous or relative test-runner path made a child scratch: $OUT"
   assert_contains "$OUT" "pid $P_exe (leaky) has held" "a native binary under a temp root still alarms"
   assert_contains "$OUT" "spared (executable name unknown)" "a process whose executable name was not read is never reaped"
   assert_contains "$OUT" "spared (resolved test runner: protected claude)" "a test runner that resolves into an agent package makes nothing scratch"
-  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (has child processes)')" = 3 ] || fail "a process with children counted as scratch: $OUT"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (has child processes)')" = 4 ] || fail "a process with children counted as scratch: $OUT"
   assert_contains "$OUT" "spared (protected brave)" "a browser under a test runner is protected"
   assert_contains "$OUT" "spared (browser or Electron helper)" "a Chromium helper under a test runner is protected"
-  pass "reap-scratch needs an interpreter running a temp-root script, or a direct child of a real test runner"
+  pass "reap-scratch needs an interpreter running a temp-root script, or a plain-number core tool under a real test runner"
 }
 
 test_reap_scratch_rechecks_before_signaling() {

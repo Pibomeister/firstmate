@@ -88,19 +88,20 @@
 #     sibling extends its name with a space, it is still under a temp root
 #     once its directory symlinks are resolved, and the resolved path
 #     carries no protection. A native binary under a temp root is never
-#     scratch. Or its direct parent's program is a tests/<name>.test.sh
-#     path that, joined to the runner's working directory when relative,
-#     resolves to an unambiguous regular file whose resolved path carries
-#     no protection, and its own executable is a shell, an interpreter, or
-#     a core tool such as sleep, awk, or jq. A core tool may have no
-#     argument that holds a /. A shell or interpreter must name its script
-#     as its first argument, written as a path that holds a / (a bare name
-#     may be found on PATH instead), never an option or inline code, and the
-#     script (joined to its own working directory when relative) must be an
-#     unambiguous regular file with no protection once resolved. Bun and
-#     Deno take subcommands, so they never make a process scratch. No
-#     argument may hold a .. segment, and an argument that only names a
-#     temp path does not make a process scratch;
+#     scratch, and Bun and Deno never are because they take subcommands.
+#     Or it is sleep, yes, seq, true, or false with only plain-number
+#     arguments, and its direct parent's program is an absolute
+#     tests/<name>.test.sh path that resolves to an unambiguous regular
+#     file whose resolved path carries no protection. A shell or
+#     interpreter child of a test runner is never scratch, because what it
+#     runs cannot be pinned down from its arguments. No argument may hold
+#     a .. segment, and an argument that only names a temp path does not
+#     make a process scratch;
+#   - names and paths are compared without case, since macOS file systems
+#     usually ignore it;
+#   - a script run straight through its shebang on Linux names itself, not
+#     its interpreter, and a framework Python on macOS is named Python, so
+#     neither is ever scratch; these rules spare too much, never too little;
 #   - a fresh process read just before the signal still shows the same
 #     process (uid, parent, command name, arguments, and an elapsed time that
 #     only moved forward) and still judges it eligible; otherwise it is
@@ -238,16 +239,6 @@ ps_select() { case "$os" in Darwin) printf '%s\n' -axo ;; *) printf '%s\n' -eo ;
 # executable that really runs. Linux comm is already the executable's name.
 comm_field() { case "$os" in Darwin) printf '%s\n' ucomm ;; *) printf '%s\n' comm ;; esac; }
 
-# proc_cwd <pid>: the working directory of a process, read-only, or nothing.
-proc_cwd() {
-  local d
-  case "$os" in
-    Darwin) d=$(lsof -a -p "$1" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1) ;;
-    Linux) d=$(readlink "/proc/$1/cwd" 2>/dev/null) ;;
-  esac
-  case "$d" in /*) printf '%s\n' "$d" ;; *) return 1 ;; esac
-}
-
 # Prints pid uid ppid pgid rss_kb etime_secs comm args, tab-separated; comm is
 # the basename of ps comm, and every tab or control byte is a space.
 read_procs() {  # <names-scratch-file>
@@ -316,7 +307,8 @@ classify_candidates() {  # <candidates-file> <self-pids>
     }
     function bname(t,   s) { s = t; sub(/.*\//, "", s); return s }
     # Programs a test runner may start that count as its scratch children.
-    function test_tool(b) { return interp(b) || b ~ /^(sleep|cat|head|tail|yes|dd|awk|gawk|mawk|sed|grep|sort|uniq|cut|tr|wc|jq|find|xargs|timeout|env|seq|printf|echo|true|false|mktemp|tee)$/ }
+    # No shell or interpreter, and nothing that reads, writes, or runs a file.
+    function test_tool(b) { return b ~ /^(sleep|yes|seq|true|false)$/ }
     # Any .. segment in any argument makes every path in the command line
     # untrusted, because ps joins arguments with spaces.
     function dotdot(a) { return a ~ /(^|[ \/=])\.\.([ \/]|$)/ }
@@ -328,15 +320,12 @@ classify_candidates() {  # <candidates-file> <self-pids>
       if (interp(bname(prog0[p]))) return interp(c)
       return index(b, c) == 1 && (c == b || length(c) >= 15)
     }
-    # The script run by a child of a test runner: the script path when an
-    # interpreter names one as its first argument; "-" for a core tool with
-    # no argument that holds a path (sleep 5); otherwise "", because an
-    # option or inline code could hide what really runs.
-    function child_script(a,   n, t, i) {
+    # A child of a test runner qualifies only when every argument is a plain
+    # number (sleep 5, seq 1000000, yes), so nothing it runs can be hidden.
+    function plain_args(a,   n, t, i) {
       n = split(a, t, " ")
-      if (interp(bname(t[1]))) return (script_interp(bname(t[1])) && n >= 2 && t[2] !~ /^-/ && index(t[2], "/")) ? t[2] : ""
-      for (i = 2; i <= n; i++) if (index(t[i], "/")) return ""
-      return "-"
+      for (i = 2; i <= n; i++) if (t[i] !~ /^[0-9]+(\.[0-9]+)?[smhd]?$/) return 0
+      return 1
     }
     # Interpreters whose first argument is always a script; bun and deno take
     # subcommands (bun run, deno run), so they never make a process scratch.
@@ -372,19 +361,20 @@ classify_candidates() {  # <candidates-file> <self-pids>
       return 0
     }
     function lead(t,   w) { w = t; sub(/^[.@]+/, "", w); sub(/[-.@_].*/, "", w); return w }
-    function protected_reason(p,   c, a0, w) {
-      c = comm[p]; a0 = bname(prog0[p])
+    # Names compare without case, since macOS file systems usually ignore it.
+    function protected_reason(p,   c, a0, w, la) {
+      c = tolower(comm[p]); a0 = tolower(bname(prog0[p])); la = tolower(args[p])
       if (c in prot) return "protected " c
       if (a0 in prot) return "protected " a0
       if (lead(c) in prot) return "protected " lead(c)
       if (lead(a0) in prot) return "protected " lead(a0)
       w = hyphen_hit(c); if (w != "") return "protected " w
       w = hyphen_hit(a0); if (w != "") return "protected " w
-      if (args[p] ~ /\.app\//) return "desktop app"
-      if (args[p] ~ /(^| )--type=[a-z-]+( |$)/) return "browser or Electron helper"
-      w = protected_word(args[p]); if (w != "") return "protected " w
+      if (la ~ /\.app\//) return "desktop app"
+      if (la ~ /(^| )--type=[a-z-]+( |$)/) return "browser or Electron helper"
+      w = protected_word(la); if (w != "") return "protected " w
       if ((c == "node" || a0 == "node") && !under_root(program(args[p]))) return "node outside a disposable temp root"
-      if (supervisor(args[p])) return "firstmate supervisor script"
+      if (supervisor(la)) return "firstmate supervisor script"
       return ""
     }
     # A protected name with a - or _ in it also protects any word it starts,
@@ -394,7 +384,7 @@ classify_candidates() {  # <candidates-file> <self-pids>
       return ""
     }
     BEGIN {
-      n = split(names, nm, " "); for (i = 1; i <= n; i++) { prot[nm[i]] = 1; if (nm[i] ~ /[-_]/) hy[++nh] = nm[i] }
+      n = split(tolower(names), nm, " "); for (i = 1; i <= n; i++) { prot[nm[i]] = 1; if (nm[i] ~ /[-_]/) hy[++nh] = nm[i] }
       n = split(selfs, sp, " "); for (i = 1; i <= n; i++) if (sp[i] != "") self[sp[i]] = 1
       while ((getline l < cands) > 0) if (l != "") cand[l] = 1
     }
@@ -416,8 +406,8 @@ classify_candidates() {  # <candidates-file> <self-pids>
         else {
           s = ""; pg = dotdot(args[c]) ? "" : program(args[c])
           if (under_root(pg) && script_interp(bname(prog0[c])) && runs_as(c, pg)) s = "program\t" pg
-          else if (!dotdot(args[c]) && test_tool(bname(prog0[c])) && runs_as(c, prog0[c]) && (cs = child_script(args[c])) != "") { q = ppid[c]
-            if (q in ppid && !(q in preason) && !dotdot(args[q]) && program(args[q]) ~ /(^|\/)tests\/[A-Za-z0-9_.-]+\.test\.sh$/) s = "runner\t" program(args[q]) "\t" cs "\t" q }
+          else if (test_tool(bname(prog0[c])) && runs_as(c, prog0[c]) && plain_args(args[c])) { q = ppid[c]
+            if (q in ppid && !(q in preason) && !dotdot(args[q]) && program(args[q]) ~ /(^|\/)tests\/[A-Za-z0-9_.-]+\.test\.sh$/) s = "runner\t" program(args[q]) }
           if (s == "") why = "not scratch"
         }
         if (why == "") printf "%s\teligible\t%s\n", c, s
@@ -457,16 +447,6 @@ ambiguous_program() {
   return 1
 }
 
-# absolute_for <pid> <path>: an absolute path as is, or a relative one joined
-# to that process's working directory; fails when the directory is unknown.
-absolute_for() {
-  local d
-  case "$2" in
-    /*) printf '%s\n' "$2" ;;
-    *) d=$(proc_cwd "$1") || return 1; printf '%s/%s\n' "${d%/}" "$2" ;;
-  esac
-}
-
 # resolved_protection <physical-path>: the protection reason the resolved
 # program path itself carries, judged as a bare command line; empty if none.
 resolved_protection() {
@@ -479,8 +459,8 @@ resolved_protection() {
 # spare an eligible program whose physical path is ambiguous, leaves the temp
 # roots, or is itself protected.
 judge() {
-  local pid verdict why prog extra rpid phys prot
-  classify_candidates "$1" "$SELF_PIDS" | while IFS=$'\t' read -r pid verdict why prog extra rpid; do
+  local pid verdict why prog phys prot
+  classify_candidates "$1" "$SELF_PIDS" | while IFS=$'\t' read -r pid verdict why prog; do
     if [ "$verdict" = eligible ] && [ "$why" = program ]; then
       why=scratch
       if ambiguous_program "$prog"; then
@@ -492,19 +472,12 @@ judge() {
       fi
     elif [ "$verdict" = eligible ] && [ "$why" = runner ]; then
       why=scratch
-      prog=$(absolute_for "$rpid" "$prog") || prog=''
+      case "$prog" in /*) ;; *) prog='' ;; esac
       if [ -z "$prog" ] || ambiguous_program "$prog" || ! phys=$(physical_path "$prog") || [ ! -f "$phys" ] ||
         ! [[ "$phys" =~ /tests/[A-Za-z0-9_.-]+\.test\.sh$ ]]; then
-        verdict=spared why="test runner is not a regular tests/*.test.sh file"
+        verdict=spared why="test runner is not an absolute, regular tests/*.test.sh file"
       elif prot=$(resolved_protection "$phys") && [ -n "$prot" ] && [ "$prot" != "not scratch" ]; then
         verdict=spared why="resolved test runner: $prot"
-      elif [ "$extra" != - ]; then
-        extra=$(absolute_for "$pid" "$extra") || extra=''
-        if [ -z "$extra" ] || ambiguous_program "$extra" || ! phys=$(physical_path "$extra") || [ ! -f "$phys" ]; then
-          verdict=spared why="test child script is not a regular file"
-        elif prot=$(resolved_protection "$phys") && [ -n "$prot" ] && [ "$prot" != "not scratch" ]; then
-          verdict=spared why="resolved test child script: $prot"
-        fi
       fi
     fi
     printf '%s\t%s\t%s\n' "$pid" "$verdict" "$why"
