@@ -467,7 +467,8 @@ family_for_basename_var() {
       ;;
     fm-check-unregister.test.sh|fm-pipeline-spend.test.sh|fm-pr-check-security.test.sh|\
     fm-pr-health.test.sh|fm-pr-merge.test.sh|fm-pr-reviewers.test.sh|fm-pr-state.test.sh|\
-    fm-merge-review.test.sh|fm-review-diff.test.sh|fm-teardown.test.sh|fm-x-mode.test.sh)
+    fm-merge-review.test.sh|fm-review-diff.test.sh|fm-self-land.test.sh|fm-teardown.test.sh|\
+    fm-x-mode.test.sh)
       REPLY_FAMILY=pr-forge
       ;;
     fm-afk-contract.test.sh|fm-afk-inject-e2e.test.sh|fm-afk-return.test.sh|fm-auto-away.test.sh|\
@@ -1020,6 +1021,7 @@ tests/fm-secondmate-restart.test.sh 79643
 tests/fm-secondmate-safety.test.sh 93702
 tests/fm-secondmate-sync.test.sh 57570
 tests/fm-self-heal-issue.test.sh 2087
+tests/fm-self-land.test.sh 20000
 tests/fm-self-repo-role.test.sh 8373
 tests/fm-send-agy-confirm.test.sh 6831
 tests/fm-send-inbox-doorbell-live-e2e.test.sh 91
@@ -2061,7 +2063,7 @@ families_for_changed_path() {
       printf '%s\n' pr-forge
       printf '%s\n' "__script__:fm-merge-review-live.test.sh"
       ;;
-    bin/fm-pr-*|bin/fm-merge-local.sh|bin/fm-review-diff.sh|\
+    bin/fm-pr-*|bin/fm-merge-local.sh|bin/fm-review-diff.sh|bin/fm-self-land.sh|\
     bin/fm-x-*|bin/fm-check*|bin/fm-pipeline-spend.sh)
       printf '%s\n' pr-forge
       ;;

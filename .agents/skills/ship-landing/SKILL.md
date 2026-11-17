@@ -27,6 +27,9 @@ Read only the one `merge-review:` verdict line, from the scout's status or from 
 `approved` allows `bin/fm-pr-merge.sh <id> <PR url> --expected-head <full-sha>` under the merge authority that already exists; `blocked` is a dissent to relay as a finding, and only a new head with new reviews clears it; `incomplete` means a seat has no valid review yet.
 A changed head has no reviews, so dispatch again for the new head, and never count a review of another head.
 The supervisor runs that merge command itself unless a current captain order delegates the merge: then the worker's instructions record the existing authority for that PR and head, and the worker executes that recorded authority through the same command and never decides one.
+When `bin/fm-self-land.sh covers <PR url>` exits 0, `config/self-land` is the owner's standing grant for that repository ([`docs/configuration.md`](../../../docs/configuration.md) "Self-landing"): the lane owner whose instructions name that grant lands its own PR with `bin/fm-self-land.sh <id> <PR url> --head <full-sha>` once the review at that head reads `approved`, and never with `bin/fm-pr-merge.sh` directly.
+A refusal from that script is final for the run: relay its one `self-land: refused` line as a finding, never work around it, and merge a refused PR only under the supervisor's own merge authority.
+That script's header owns every refusal, the stop file, the circuit breaker reset, and the rerun that settles a merge whose outcome was lost.
 For any custom `state/<id>.check.sh` you write yourself, keep it an ordinary single-link mode-`0700` file, print one line only when firstmate should wake, print nothing otherwise, finish before `FM_CHECK_TIMEOUT`, then bind its current bytes with `bin/fm-check-register.sh <id>` before the watcher may execute it.
 Retire a custom check only through `bin/fm-check-unregister.sh <id>` (or `bin/fm-teardown.sh` for a spawned task); never hand-compose an `rm` with `$STATE`/`$ID`.
 

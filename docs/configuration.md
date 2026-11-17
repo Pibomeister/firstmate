@@ -21,6 +21,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Machine-wide heavy test admission | [`fm-test-queue.sh` header](../bin/fm-test-queue.sh) |
 | Review bots on owned GitHub pull requests | [Contribution review bots](#contribution-review-bots-configcontribution-review-bots) |
 | Two-model review before a merge | [Merge review](#merge-review-configmerge-review) |
+| Letting a lane owner land its own approved pull request | [Self-landing](#self-landing-configself-land) |
 | Per-run overrides and tuning | [Environment variables](#environment-variables) |
 
 ## FM_HOME
@@ -123,6 +124,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Per-task claim ledgers, `state/<id>.claims.jsonl` ([`claim-ledger.md`](claim-ledger.md)).
 - Relay guard pass status, action log, probe streaks, relay logs, and pass lock under `state/relay-guard/` (`bin/fm-relay-guard.sh`).
 - The default host-health beacon log, `state/host-health-beacon.log` (`bin/fm-host-health.sh`).
+- Self-landing records under `state/self-land/`, one directory per repository, and the stop file `state/.self-land-off` (`bin/fm-self-land.sh`).
 - Registered external lanes under `state/external-lanes/`, one record per lane that a launcher outside Firstmate started (`bin/fm-lane-register.sh`).
 - The scheduled terminal-cleanup logs, `state/terminal-reap.log` and `state/terminal-reap.err`, written by the hourly LaunchAgent that `bin/fm-terminal-reap.sh --schedule-plist` prints.
 - The current captain handle, `state/captain-handle`, that order senders resolve at send time, and this session's handoff record, `state/.order-handoff`, that the restart gate reads (`bin/fm-order.sh`), plus the verified successor record, `state/.handoff-successor`, that the handoff trigger's successor gate reads, the pending handoff claim, `state/.handoff-pending`, and the versioned handoff event log, `state/handoff-events.log` (`bin/fm-handoff-lib.sh`), and the auto-compact point, `state/compact-point`, that the handoff trigger publishes for outside context readers (`bin/fm-handoff-trigger.sh`).
@@ -1159,6 +1161,34 @@ post=on
 `bin/fm-merge-review.sh` owns the verdict rule, the receipt format under `data/merge-review/`, the model identity evidence, and the limits of a local receipt.
 The `ship-landing` skill owns when a supervisor dispatches the review worker.
 This file holds only merges that go through `bin/fm-pr-merge.sh` for a repository a `require` line names; a merge made any other way, or in an unlisted repository, is not checked.
+The file is a home-local setting and is not inherited by secondmate homes.
+
+## Self-landing (config/self-land)
+
+The optional local, gitignored `config/self-land` file is the owner's standing grant that lets a lane owner land its own approved pull request through `bin/fm-self-land.sh`, without waiting for the supervisor to run the merge.
+With the file absent, self-landing is off and every run of that script refuses.
+The grant adds no merge path: the script sends a merge only through `bin/fm-pr-merge.sh`, which keeps every check of its own.
+
+The file holds `key=value` lines.
+Blank lines and lines that start with `#` are ignored.
+Any other malformed line, an unknown key, or a wildcard is an error that refuses every self-landing in this home.
+
+| Key | Value | Meaning |
+| --- | --- | --- |
+| `allow` | `<host>/<owner>/<repository>` | A GitHub repository whose approved pull requests a lane owner may land. Repeatable, matched without regard to letter case, and never a wildcard. |
+| `protect` | a file path, or a directory path that ends in `/` | A path, relative to the repository root, that a self-landed diff must not touch, added to the built-in list. Repeatable, and it applies to every allowed repository. |
+
+```text
+allow=github.com/<owner>/<repository>
+protect=deploy/
+```
+
+A repository an `allow` line names must also be named by a `require` line in [`config/merge-review`](#merge-review-configmerge-review), because the script lands only a head that the two-model review approved.
+`bin/fm-self-land.sh protected` prints the built-in protected paths, which are the workflow directory and the merge gate scripts, followed by the `protect` lines.
+Create `state/.self-land-off` to stop every self-landing in this home, and remove it to resume.
+
+`bin/fm-self-land.sh` owns every refusal, the records under `state/self-land/`, the circuit breaker and how to reset it, and the rule that settles a merge whose forge response was lost.
+The `ship-landing` skill owns when a lane owner uses it.
 The file is a home-local setting and is not inherited by secondmate homes.
 
 ## PR health monitor (config/pr-health-monitor)
