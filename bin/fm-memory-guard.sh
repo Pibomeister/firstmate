@@ -534,10 +534,11 @@ watched=0
 swap_alarm=0
 [ "$swap_ok" = 1 ] && [ "$swap_mb" -ge "$swap_warn_mb" ] && swap_alarm=1
 
-# Classify each sustained process: would-stop scratch, or spared.
+# Classify each sustained process as would-stop scratch or spared, only in
+# reap-scratch mode; observe does no classification work.
 actions=''
 : > "$WORK/verdicts"
-if [ -s "$WORK/sustained" ]; then
+if [ "$mode" = reap-scratch ] && [ -s "$WORK/sustained" ]; then
   cut -f 1 "$WORK/sustained" > "$WORK/cands"
   SELF_PIDS=$(self_pids)
   judge "$WORK/cands" < "$WORK/procs" > "$WORK/verdicts"

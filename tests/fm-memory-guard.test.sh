@@ -3,8 +3,9 @@
 # the sustained window, the swap alarm and its deduplication, the bounded
 # sample log, observe as the default, and the reap-scratch allowlist that
 # spares live agents, supervisors, multiplexers, and desktop apps.
-# ps and sysctl are PATH fakes that print fixture tables; every process the
-# reaper may signal is a real sleep this suite started.
+# ps and sysctl are PATH fakes that print fixture tables; every process a
+# fixture row names is a real sleep this suite started, so a test can prove
+# the guard left it running.
 # Optional arguments select test functions; no arguments run the full suite.
 set -u
 
@@ -48,15 +49,10 @@ case "$*" in
   *'-p '*) PATH=$FM_FAKE_BASE_PATH exec ps "$@" ;;
 esac
 [ "${FM_FAKE_PS_MODE:-ok}" = ok ] || exit 1
-# A later read in the same pass serves table2 or comm2 when one exists, so a
-# case can change a process between the sample and the signal.
 case "$*" in
-  *comm=*) f=comm ;;
-  *) f=table ;;
+  *comm=*) cat "$FM_FAKE_PS_DIR/comm" ;;
+  *) cat "$FM_FAKE_PS_DIR/table" ;;
 esac
-n=$(cat "$FM_FAKE_PS_DIR/$f.reads" 2>/dev/null)
-printf '%s\n' "$(( ${n:-0} + 1 ))" > "$FM_FAKE_PS_DIR/$f.reads"
-if [ "${n:-0}" -ge 1 ] && [ -f "$FM_FAKE_PS_DIR/${f}2" ]; then cat "$FM_FAKE_PS_DIR/${f}2"; else cat "$FM_FAKE_PS_DIR/$f"; fi
 SH
 cat > "$FAKE/sysctl" <<'SH'
 #!/usr/bin/env bash
@@ -105,8 +101,6 @@ guard() {  # <now> [check args...]
   local now=$1
   shift
   RC=0
-  printf '0\n' > "$H/ps/table.reads"
-  printf '0\n' > "$H/ps/comm.reads"
   OUT=$(PATH="$FAKE:$BASE_PATH" FM_FAKE_BASE_PATH="$BASE_PATH" FM_FAKE_PS_DIR="$H/ps" FM_FAKE_PS_LOG="$H/ps.log" \
     FM_FAKE_PS_MODE="${PS_MODE:-ok}" FM_FAKE_SWAP_MODE="${SWAP_MODE:-ok}" FM_FAKE_SWAP_USED="$SWAP_USED" \
     FM_TEST_SEAM=1 FM_HOME="$H" FM_MEMORY_GUARD_NOW="$now" FM_MEMORY_GUARD_OS="${OS:-Darwin}" \
@@ -361,11 +355,13 @@ test_observe_default_never_signals() {
   assert_contains "$OUT" "Mode observe: nothing was stopped." "observe says nothing was stopped"
   assert_contains "$(summary)" "action=none" "observe takes no action"
   alive "$P_scratch" || fail "observe mode signaled a scratch process"
+  ! grep -q 'ppid= -p' "$H/ps.log" || fail "observe mode ran the reap-scratch classification"
   new_home 'mode=reap-scratch'
   sustain --observe
   assert_contains "$(summary)" "mode=observe action=none" "--observe overrides reap-scratch"
   alive "$P_scratch" || fail "--observe signaled a scratch process"
-  pass "observe is the default and --observe always wins"
+  ! grep -q 'ppid= -p' "$H/ps.log" || fail "--observe ran the reap-scratch classification"
+  pass "observe is the default, does no classification work, and --observe always wins"
 }
 
 test_reap_scratch_spares_live_agents_and_operator_apps() {
@@ -491,7 +487,7 @@ renderer|helper|me|P_runner|/opt/app/helper --type=renderer"
   [ "$(printf '%s\n' "$OUT" | grep -c 'spared (resolved program: protected claude)')" = 2 ] || fail "a symlink to an agent package lost its protection: $OUT"
   assert_contains "$OUT" "spared (program has another hard link)" "a hard link into the temp root never makes a program scratch"
   assert_contains "$OUT" "pid $P_exe (leaky) has held" "a native binary under a temp root still alarms"
-  assert_contains "$OUT" "spared (executable name unknown)" "a process whose executable name was not read is never reaped"
+  assert_contains "$OUT" "spared (executable name unknown)" "a process whose executable name was not read is never named as would-stop"
   [ "$(printf '%s\n' "$OUT" | grep -c 'spared (has child processes)')" = 4 ] || fail "a process with children counted as scratch: $OUT"
   assert_contains "$OUT" "spared (protected brave)" "a browser under a test runner is protected"
   assert_contains "$OUT" "spared (browser or Electron helper)" "a Chromium helper under a test runner is protected"
@@ -502,7 +498,7 @@ test_reap_scratch_never_signals() {
   local code
   # No signal path exists: outside comments the script calls no kill tool.
   code=$(grep -vE '^[[:space:]]*#' "$GUARD")
-  printf '%s\n' "$code" | grep -q '^judge() {' || fail "the guard source was not read"
+  [ "$(printf '%s\n' "$code" | wc -l)" -gt 100 ] || fail "the guard source was not read"
   ! printf '%s\n' "$code" | grep -Eqw 'kill|pkill|killall' || fail "the guard script holds a signal call"
   new_home 'mode=reap-scratch'
   P_scratch=
@@ -510,6 +506,7 @@ test_reap_scratch_never_signals() {
   sustain
   assert_equals 3 "$RC" "a sustained scratch process alarms"
   action_has "would-stop:$P_scratch" || fail "the scratch process is not named as would-stop: $(summary)"
+  grep -q 'ppid= -p' "$H/ps.log" || fail "reap-scratch did not run its classification"
   CLOCK=$((NOW0 + 1200)) reap_fixture
   guard $((NOW0 + 1200))
   alive "$P_scratch" || fail "a would-stop process was signaled"
