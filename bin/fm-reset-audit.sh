@@ -104,15 +104,22 @@ try {
     const counts = lines.filter(line => /^count: [0-9]+$/.test(line));
     if (counts.length !== 1) fail('unreadable backlog count');
     const reported = Number(counts[0].slice(7));
+    function prefix(end) {
+      for (const line of lines.slice(0, end)) {
+        if (line.trim() && line !== counts[0]) fail('unexpected backlog prefix');
+      }
+    }
     const index = lines.findIndex(line => /^tasks\[\d+\]\{.*\}:$/.test(line));
     if (index < 0) {
       const empty = lines.findIndex(line => /^tasks: 0 (?:\w+ )*tasks in this backlog$/.test(line));
-      if (reported === 0 && empty >= 0) { tail(empty + 1); return []; }
+      if (reported === 0 && empty >= 0) { prefix(empty); tail(empty + 1); return []; }
       fail('unreadable backlog listing');
     }
     const [, count, names] = lines[index].match(/^tasks\[(\d+)\]\{(.*)\}:$/);
+    prefix(index);
     if (reported !== Number(count) || lines[index + 1 + Number(count)]?.startsWith('  ')) fail('inconsistent backlog count');
     const columns = names.split(',');
+    if (new Set(columns).size !== columns.length) fail('duplicate backlog columns');
     if (!['id', 'state', 'body', 'hold_kind', 'held'].every(name => columns.includes(name))) fail('incomplete backlog schema');
     const rows = [];
     for (const line of lines.slice(index + 1, index + 1 + Number(count))) {

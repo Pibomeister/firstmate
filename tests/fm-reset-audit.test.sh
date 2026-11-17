@@ -271,6 +271,18 @@ out=$(PATH="$TMP_ROOT/fakebin:$PATH" audit snapshot 2>&1); rc=$?
 expect_code 2 "$rc" 'blank lines cannot hide rows after a zero-row table'
 cat > "$TMP_ROOT/fakebin/tasks-axi" <<'EOF'
 #!/usr/bin/env bash
+printf 'count: 0\n  hidden,queued,"",captain,yes\ntasks[0]{id,state,body,hold_kind,held}:\n'
+EOF
+out=$(PATH="$TMP_ROOT/fakebin:$PATH" audit snapshot 2>&1); rc=$?
+expect_code 2 "$rc" 'rows before the table header are refused'
+cat > "$TMP_ROOT/fakebin/tasks-axi" <<'EOF'
+#!/usr/bin/env bash
+printf 'count: 0\n  hidden,queued,"",captain,yes\ntasks: 0 tasks in this backlog\n'
+EOF
+out=$(PATH="$TMP_ROOT/fakebin:$PATH" audit snapshot 2>&1); rc=$?
+expect_code 2 "$rc" 'rows before the empty-list representation are refused'
+cat > "$TMP_ROOT/fakebin/tasks-axi" <<'EOF'
+#!/usr/bin/env bash
 if [ -n "${BEADS_DIR+x}${BEADS_DB+x}${BD_DB+x}${TASKS_AXI_OTHER+x}${FM_ROOT_OVERRIDE+x}" ]; then
   printf 'addressing environment leaked\n' >&2
   exit 9
