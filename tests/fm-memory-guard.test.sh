@@ -31,8 +31,8 @@ mkdir -p "$TMP_ROOT/bin" "$TMP_ROOT/live/bin" "$TMP_ROOT/work dir" "$TMP_ROOT/jo
 for f in runaway.sh leak.js wrap.sh wrap2.sh foreign.sh turns.sh again.sh first.sh second.sh a.sh bootstrap.js bin/leaky live/bin/fm-watchdog.sh job/work claude-code/cli.js; do
   : > "$TMP_ROOT/$f"
 done
-# Test-runner fixtures live outside every disposable temp root, as a real
-# checkout does, so only the test-runner route can make their children scratch.
+# Checkout-like fixtures live outside every disposable temp root, so none of
+# them, or of the processes started from them, may ever be named as scratch.
 OUT_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/memory-guard-outside.XXXXXX")
 mkdir -p "$OUT_ROOT/repo/tests" "$OUT_ROOT/tests" "$OUT_ROOT/bin" "$OUT_ROOT/claude-code/tests"
 for f in repo/tests/fm-example.test.sh repo/tests/ui.test.sh repo/helper.sh tests/service.test.sh "tests/service.test.sh live.sh" bin/fm-watchdog.sh claude-code/cli.py claude-code/tests/ui.test.sh; do
@@ -396,13 +396,13 @@ wrapped|claude|me|P_wrapper|claude"
   assert_equals 3 "$RC" "reap pass alarms: $OUT"
   for name in scratch nodetmp; do
     eval "pid=\$P_$name"
-    wait_gone "$pid" || fail "scratch process $name (pid $pid) was not stopped: $OUT"
-    action_has "term:$pid" || fail "action does not name the stopped $name: $(summary)"
+    alive "$pid" || fail "scratch process $name (pid $pid) was signaled: $OUT"
+    action_has "would-stop:$pid" || fail "action does not name $name as would-stop: $(summary)"
   done
   for name in runner testchild testscript claude codex agy tmux orca nodeout app watch plain other wrapper wrapped; do
     eval "pid=\$P_$name"
     alive "$pid" || fail "protected process $name (pid $pid) was signaled: $OUT"
-    ! action_has "term:$pid" || fail "SIGTERM recorded for $name: $(summary)"
+    ! action_has "would-stop:$pid" || fail "$name was named as would-stop: $(summary)"
     action_has "spared:$pid" || [ "$name" = runner ] || fail "action does not name the spared $name: $(summary)"
   done
   assert_contains "$OUT" "pid $P_claude (claude) has held" "a protected agent still alarms"
@@ -415,7 +415,8 @@ wrapped|claude|me|P_wrapper|claude"
   assert_contains "$OUT" "spared (not scratch)" "an ordinary large process is not scratch"
   assert_contains "$OUT" "spared (another user)" "another user's process is never signaled"
   assert_contains "$OUT" "spared (ancestor of protected pid $P_wrapped)" "the parent of a live agent is protected"
-  pass "reap-scratch stops only scratch processes and spares every live agent and operator process"
+  assert_contains "$OUT" "disposable scratch that would be stopped; the guard never signals, so nothing was stopped." "a scratch alarm says it would be stopped and was not"
+  pass "reap-scratch names only scratch processes as would-stop and spares every live agent and operator process"
 }
 
 test_reap_scratch_needs_a_scratch_program() {
@@ -497,30 +498,24 @@ renderer|helper|me|P_runner|/opt/app/helper --type=renderer"
   pass "reap-scratch needs an interpreter running a single-link temp-root script"
 }
 
-test_reap_scratch_rechecks_before_signaling() {
-  local name
+test_reap_scratch_never_signals() {
+  local code
+  # No signal path exists: outside comments the script calls no kill tool.
+  code=$(grep -vE '^[[:space:]]*#' "$GUARD")
+  printf '%s\n' "$code" | grep -q '^judge() {' || fail "the guard source was not read"
+  ! printf '%s\n' "$code" | grep -Eqw 'kill|pkill|killall' || fail "the guard script holds a signal call"
   new_home 'mode=reap-scratch'
-  for name in execd reused moved; do eval "P_$name="; done
-  REAP_ROWS="execd|bash|me|1|bash $TMP_ROOT/turns.sh
-reused|bash|me|1|bash $TMP_ROOT/again.sh
-moved|bash|me|1|bash $TMP_ROOT/first.sh"
-  for t in 0 300 600 900; do
-    CLOCK=$((NOW0 + t)) reap_fixture
-    # Between the sample and the signal, execd becomes an agent and the
-    # reused pid is a new process with the same command line.
-    # moved still judges eligible after the change, so only the identity
-    # comparison spares it.
-    awk -v e="$P_execd" -v r="$P_reused" -v m="$P_moved" -v nxt="$TMP_ROOT/second.sh" '$1 == e { $NF = ""; $(NF - 1) = "claude" } $1 == r { $6 = "00:01" } $1 == m { $NF = nxt } { print }' "$H/ps/table" > "$H/ps/table2"
-    awk -v e="$P_execd" '$1 == e { $2 = "claude" } { print }' "$H/ps/comm" > "$H/ps/comm2"
-    guard $((NOW0 + t))
-  done
-  for name in execd reused moved; do
-    eval "pid=\$P_$name"
-    alive "$pid" || fail "$name (pid $pid) was signaled after it changed: $OUT"
-    action_has "spared:$pid" || fail "action does not name the spared $name: $(summary)"
-  done
-  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (changed since the sample)')" = 3 ] || fail "a changed process was not spared as changed: $OUT"
-  pass "reap-scratch rereads the process just before the signal and spares one that changed"
+  P_scratch=
+  REAP_ROWS="scratch|bash|me|1|bash $TMP_ROOT/runaway.sh"
+  sustain
+  assert_equals 3 "$RC" "a sustained scratch process alarms"
+  action_has "would-stop:$P_scratch" || fail "the scratch process is not named as would-stop: $(summary)"
+  CLOCK=$((NOW0 + 1200)) reap_fixture
+  guard $((NOW0 + 1200))
+  alive "$P_scratch" || fail "a would-stop process was signaled"
+  action_has "would-stop:$P_scratch" || fail "the next pass does not name it again: $(summary)"
+  assert_equals 0 "$(alarms)" "a would-stop alarm inside the repeat time is not printed again"
+  pass "reap-scratch only reports would-stop, never signals, and deduplicates the alarm"
 }
 
 if [ "$#" -gt 0 ]; then
@@ -541,4 +536,4 @@ fm_test_run \
   test_observe_default_never_signals \
   test_reap_scratch_spares_live_agents_and_operator_apps \
   test_reap_scratch_needs_a_scratch_program \
-  test_reap_scratch_rechecks_before_signaling
+  test_reap_scratch_never_signals

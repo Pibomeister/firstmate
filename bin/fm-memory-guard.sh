@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# fm-memory-guard.sh - host memory and swap self-monitoring with a guarded
-# runaway-scratch reaper.
+# fm-memory-guard.sh - host memory and swap self-monitoring that names, but
+# never stops, a runaway scratch process.
 #
 # Usage:
 #   fm-memory-guard.sh check [--json] [--observe]
@@ -40,8 +40,8 @@
 #   proc_sustained_secs=900    a watched process this long is an alarm
 #   alarm_repeat_secs=3600     an alarm still in force is printed again after this
 #   log_max_rows=2000          sample rows kept
-#   mode=observe               observe never signals anything; reap-scratch
-#                              allows the SIGTERM described below
+#   mode=observe               observe reports each alarm; reap-scratch also
+#                              classifies each sustained process as below
 # A key whose value is not a positive integer keeps its default and prints a
 # stderr note. Any mode other than reap-scratch is observe.
 #
@@ -53,13 +53,13 @@
 # Status: ok (nothing over a limit), watch (a process over proc_rss_mb, not yet
 # sustained), alarm (swap at or over swap_warn_mb or a sustained process), or
 # unreadable (both reads failed).
-# Action: none, or a comma list of term:<pid>, term-failed:<pid>, and
-# spared:<pid> (a sustained process reap-scratch would not signal).
+# Action: none, or a comma list of would-stop:<pid> (a sustained process that
+# is disposable scratch) and spared:<pid> (one that is not).
 #
-# Reaping: only with mode=reap-scratch and no --observe, and only for a
-# sustained process. It gets one SIGTERM per pass to its own pid (never a
-# group, never SIGKILL), so a process that ignores it is signaled and reported
-# again on the next pass, only when every rule holds:
+# The guard never sends a signal in any mode: it contains no kill call. With
+# mode=reap-scratch and no --observe, each sustained process is classified,
+# and the alarm names it as one that would be stopped only when every rule
+# holds; a process that is classified that way is still left running:
 #   - it belongs to the guard's own uid and is not the guard or an ancestor;
 #   - no protected name is its command name, its argv[0] basename, any path
 #     component of any argument, or the leading word of one (claude-code,
@@ -101,11 +101,7 @@
 #   - a script run straight through its shebang on Linux names itself, not
 #     its interpreter, and a framework Python on macOS is named Python, so
 #     neither is ever scratch; these rules spare too much, never too little;
-#   - a fresh process read just before the signal still shows the same
-#     process (uid, parent, command name, arguments, and an elapsed time that
-#     only moved forward) and still judges it eligible; otherwise it is
-#     spared as changed since the sample.
-# A swap alarm alone signals nothing.
+# A swap alarm alone classifies nothing.
 #
 # Stdout without --json: one summary line, then one line per alarm printed
 # this pass:
@@ -114,7 +110,7 @@
 # An alarm still in force inside alarm_repeat_secs is not printed again.
 #
 # Exit status: 0 for ok or watch, 3 for alarm (even when the sample could not
-# be recorded, so an action is never hidden), 1 when sampling or recording
+# be recorded, so an alarm is never hidden), 1 when sampling or recording
 # failed without an alarm, 2 for a usage error.
 #
 # Test seams, honoured only with FM_TEST_SEAM=1: FM_MEMORY_GUARD_NOW fixes the
@@ -156,7 +152,6 @@ SEEN=$STATE/memory-guard-seen.tsv
 ALARMS=$STATE/memory-guard-alarms.tsv
 WINDOW_GAP_SECS=600
 START_SLACK_SECS=5
-RECHECK_MAX_SECS=120
 SELF_PIDS=''
 
 now=
@@ -478,8 +473,8 @@ judge() {
         verdict=spared why="program has another hard link"
       elif ! real_interpreter "$pid"; then
         verdict=spared why="running executable is not an interpreter"
-      elif prot=$(resolved_protection "$phys") && [ -n "$prot" ] && [ "$prot" != "not scratch" ]; then
-        verdict=spared why="resolved program: $prot"
+      elif ! prot=$(resolved_protection "$phys") || [ -z "$prot" ] || [ "$prot" != "not scratch" ]; then
+        verdict=spared why="resolved program: ${prot:-unclassified}"
       fi
     fi
     printf '%s\t%s\t%s\n' "$pid" "$verdict" "$why"
@@ -539,7 +534,7 @@ watched=0
 swap_alarm=0
 [ "$swap_ok" = 1 ] && [ "$swap_mb" -ge "$swap_warn_mb" ] && swap_alarm=1
 
-# Decide each sustained process: reap or spare.
+# Classify each sustained process: would-stop scratch, or spared.
 actions=''
 : > "$WORK/verdicts"
 if [ -s "$WORK/sustained" ]; then
@@ -549,22 +544,6 @@ if [ -s "$WORK/sustained" ]; then
 fi
 
 verdict_of() { awk -F'\t' -v p="$1" '$1 == p { print $2 "\t" $3; exit }' "$WORK/verdicts"; }
-
-# still_same <pid>: a fresh read just before the signal still shows the
-# sampled process (same uid, parent, command name, and arguments, and an
-# elapsed time that only moved forward) and still judges it eligible.
-still_same() {
-  local pid=$1 was is
-  printf '%s\n' "$pid" > "$WORK/recand"
-  read_procs "$WORK/names-fresh" > "$WORK/fresh" 2>/dev/null || return 1
-  was=$(awk -F'\t' -v p="$pid" '$1 == p { print $2 "\t" $3 "\t" $7 "\t" $8 "\t" $6; exit }' "$WORK/procs")
-  is=$(awk -F'\t' -v p="$pid" '$1 == p { print $2 "\t" $3 "\t" $7 "\t" $8 "\t" $6; exit }' "$WORK/fresh")
-  [ -n "$was" ] && [ -n "$is" ] || return 1
-  [ "${was%$'\t'*}" = "${is%$'\t'*}" ] || return 1
-  [ "${is##*$'\t'}" -ge $(( ${was##*$'\t'} - START_SLACK_SECS )) ] || return 1
-  [ $(( ${is##*$'\t'} - ${was##*$'\t'} )) -le "$RECHECK_MAX_SECS" ] || return 1
-  [ "$(judge "$WORK/recand" < "$WORK/fresh" | cut -f 2)" = eligible ]
-}
 
 : > "$WORK/alarm-lines"
 : > "$WORK/alarm-keys"
@@ -588,17 +567,9 @@ $(verdict_of "$pid")
 EOF
   if [ "$mode" != reap-scratch ]; then
     line="$line. Mode observe: nothing was stopped."
-  elif [ "$verdict" = eligible ] && ! still_same "$pid"; then
-    actions="$actions${actions:+,}spared:$pid"
-    line="$line. Mode reap-scratch: spared (changed since the sample); nothing was stopped."
   elif [ "$verdict" = eligible ]; then
-    if kill -TERM "$pid" 2>/dev/null; then
-      actions="$actions${actions:+,}term:$pid"
-      line="$line. Mode reap-scratch: sent SIGTERM to this scratch process."
-    else
-      actions="$actions${actions:+,}term-failed:$pid"
-      line="$line. Mode reap-scratch: SIGTERM failed."
-    fi
+    actions="$actions${actions:+,}would-stop:$pid"
+    line="$line. Mode reap-scratch: disposable scratch that would be stopped; the guard never signals, so nothing was stopped."
   else
     actions="$actions${actions:+,}spared:$pid"
     line="$line. Mode reap-scratch: spared (${reason:-unclassified}); nothing was stopped."
@@ -619,9 +590,8 @@ fi
 while IFS=$'\t' read -r key line; do
   [ -n "$key" ] || continue
   last=$(awk -F'\t' -v k="$key" '$1 == k { print $2; exit }' "$ALARMS" 2>/dev/null)
-  # An alarm that took or failed an action is always printed.
   case "$last" in *[!0-9]*) last='' ;; esac
-  if [ -z "$last" ] || [ $((now - last)) -ge "$alarm_repeat_secs" ] || { case "$line" in *SIGTERM*) true ;; *) false ;; esac; }; then
+  if [ -z "$last" ] || [ $((now - last)) -ge "$alarm_repeat_secs" ]; then
     printf '%s\n' "$line" >> "$WORK/printed"
     last=$now
   fi
