@@ -168,7 +168,7 @@ cwd_row() {  # <pid> <cwd>
 
 run_reap() {  # [args...] -> stdout of the reaper; exit status in RC
   RC=0
-  OUT=$(PATH="$FB:$PATH" FM_HOME="$HOME_DIR" bash "$REAP" --min-age 0 "$@" 2>"$FX/stderr") || RC=$?
+  OUT=$(PATH="$FB:$PATH" FM_HOME="$HOME_DIR" bash "$REAP" --min-age 0 --browser-min-age 0 "$@" 2>"$FX/stderr") || RC=$?
 }
 
 verdict_of() {  # <id> -> "<action> <class>" from the last OUT
@@ -770,7 +770,211 @@ test_keep_list_protects_live_helpers() {
   pass "fm-terminal-reap: live sup-writer helpers are kept on a dry run and on apply"
 }
 
+# spawn_headless_under <owner-argv0> <chrome-exe>: start a headless browser
+# whose immediate parent carries <owner-argv0> as its command line, and print
+# the browser pid. The parent keeps waiting, so it stays live.
+spawn_headless_under() {  # <owner-argv0> <chrome-exe> -> PID
+  local spawner="$FX/spawn-under.sh" pidfile
+  pidfile=$(mktemp "$FX/child.XXXXXX"); rm -f "$pidfile"
+  cat > "$spawner" <<'SH'
+#!/usr/bin/env bash
+( exec -a "$1" bash -c 'sleep 600 & wait' "$1" --headless ) &
+printf '%s\n' "$!" > "$2"
+wait
+SH
+  chmod +x "$spawner"
+  ( exec -a "$1" bash "$spawner" "$2" "$pidfile" ) >/dev/null 2>&1 </dev/null &
+  TRACKED_PIDS+=("$!")
+  local i
+  for i in $(seq 1 50); do [ -s "$pidfile" ] && break; sleep 0.1; done
+  PID=$(cat "$pidfile")
+  TRACKED_PIDS+=("$PID")
+  await_exec "$PID"
+}
+
+test_browsers_reap_only_old_orphans() {
+  fixture_reset browser-owners
+  HOME_DIR="$FX/home"
+  mkdir -p "$HOME_DIR/state"
+  fixture_write
+  local appexe chrome orphan owned
+  appexe="$TMP_ROOT/Apps/Google Chrome.app/Contents/MacOS/Google Chrome"
+  mkdir -p "${appexe%/*}"; : > "$appexe"
+  chrome="$TMP_ROOT/browser-bin/chrome-headless-shell"
+  fake_headless "$chrome"; orphan=$PID
+  : > "$FX/ppid1-$orphan"
+  cwd_row "$orphan" "$FX/gone-orphan"
+  spawn_headless_under "bash -c $chrome" "$chrome"; owned=$PID
+  cwd_row "$owned" "$FX/gone-owned"
+  # A stable Chrome left headless with its crash handler, which Chrome
+  # reparents to pid 1 beside it in the same directory: the handler is part
+  # of the browser, never a live owner.
+  local stable handler
+  mkdir -p "$FX/stable-dir"
+  fake_headless "$appexe"; stable=$PID
+  handler="$TMP_ROOT/Apps/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Helpers/chrome_crashpad_handler"
+  mkdir -p "${handler%/*}"; : > "$handler"
+  ( exec -a "$handler" bash -c 'sleep 600 & wait' "$handler" --monitor-self ) >/dev/null 2>&1 </dev/null &
+  handler=$!
+  disown "$handler" 2>/dev/null || true
+  TRACKED_PIDS+=("$handler")
+  await_exec "$handler"
+  # Chrome also starts GoogleUpdater, whose crash handler is reparented to
+  # pid 1 and keeps Chrome's directory: it too is part of the browser.
+  local updater
+  updater="$TMP_ROOT/Library/Application Support/Google/GoogleUpdater/1.0/GoogleUpdater.app/Contents/MacOS/GoogleUpdater"
+  mkdir -p "${updater%/*}"; : > "$updater"
+  ( exec -a "$updater" bash -c 'sleep 600 & wait' "$updater" --crash-handler ) >/dev/null 2>&1 </dev/null &
+  updater=$!
+  disown "$updater" 2>/dev/null || true
+  TRACKED_PIDS+=("$updater")
+  await_exec "$updater"
+  : > "$FX/ppid1-$stable"; : > "$FX/ppid1-$handler"; : > "$FX/ppid1-$updater"
+  cwd_row "$stable" "$FX/stable-dir"
+  cwd_row "$handler" "$FX/stable-dir"
+  cwd_row "$updater" "$FX/stable-dir"
+  # A worker outside the profile has a live headless Chrome inside it, and
+  # Chrome has reparented that profile's crash handler to pid 1. The Chrome
+  # is the owner. The same is true of an orphaned Chrome beside another
+  # live-parent Chrome in one directory.
+  local profile worker shared live_chrome live_parent handler_pw orphan_beside live_beside
+  profile="$FX/pw-profile"
+  worker="$FX/worker-repo"
+  shared="$FX/shared-dir"
+  mkdir -p "$profile" "$worker" "$shared"
+  spawn_headless_under "node" "$chrome"; live_chrome=$PID
+  live_parent=$(ps -o ppid= -p "$live_chrome" | tr -d ' ')
+  [ -n "$live_parent" ] || fail "the live Chrome has no parent"
+  cwd_row "$live_chrome" "$profile"
+  cwd_row "$live_parent" "$worker"
+  handler_pw="$TMP_ROOT/ms-playwright/chromium-1/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Helpers/chrome_crashpad_handler"
+  mkdir -p "${handler_pw%/*}"; : > "$handler_pw"
+  ( exec -a "$handler_pw" bash -c 'sleep 600 & wait' "$handler_pw" --database="$profile/Crashpad" ) >/dev/null 2>&1 </dev/null &
+  handler_pw=$!
+  disown "$handler_pw" 2>/dev/null || true
+  TRACKED_PIDS+=("$handler_pw")
+  await_exec "$handler_pw"
+  : > "$FX/ppid1-$handler_pw"
+  cwd_row "$handler_pw" "$profile"
+  fake_headless "$chrome"; orphan_beside=$PID
+  : > "$FX/ppid1-$orphan_beside"
+  cwd_row "$orphan_beside" "$shared"
+  spawn_headless_under "node" "$chrome"; live_beside=$PID
+  cwd_row "$live_beside" "$shared"
+  sleep 1.2
+  run_reap --browser-min-age 3600
+  [ "$RC" = 0 ] || fail "the browser dry run must exit 0, got $RC: $(cat "$FX/stderr")"
+  expect "$orphan" "keep young" "an orphaned browser younger than one hour is never reaped"
+  expect "$owned" "" "a headless browser with a live parent is never a reap candidate"
+  run_reap --browser-min-age 0
+  [ "$RC" = 0 ] || fail "the browser dry run must exit 0, got $RC: $(cat "$FX/stderr")"
+  expect "$orphan" "reap owner-gone" "an orphaned headless browser older than the floor is reaped"
+  expect "$stable" "reap owner-gone" "an orphaned stable Chrome is reaped even beside its reparented crash handlers"
+  expect "$owned" "" "a headless browser with a live parent is never a reap candidate at any age"
+  expect "$handler_pw" "keep owner-live" "a live worker's Chrome in that directory keeps the reparented crash handler"
+  expect "$live_chrome" "" "a headless browser with a live parent is never a reap candidate"
+  expect "$orphan_beside" "keep owner-live" "a live-parent browser in the same directory keeps an orphaned Chrome"
+  expect "$live_beside" "" "a headless browser with a live parent is never a reap candidate"
+  run_reap --apply --browsers --browser-min-age 0
+  [ "$RC" = 0 ] || fail "the browser apply must exit 0, got $RC: $(cat "$FX/stderr")"
+  kill -0 "$owned" 2>/dev/null || fail "an apply stopped a browser whose parent is still live"
+  kill -0 "$handler_pw" 2>/dev/null || fail "an apply stopped a crash handler while the worker's browser still runs"
+  kill -0 "$live_chrome" 2>/dev/null || fail "an apply stopped a browser whose parent is still live"
+  kill -0 "$orphan_beside" 2>/dev/null || fail "an apply stopped an orphaned browser while another live browser still uses its directory"
+  kill -0 "$live_beside" 2>/dev/null || fail "an apply stopped a browser whose parent is still live"
+  pass "fm-terminal-reap: only orphaned headless browsers past the age floor are reaped"
+}
+
+# exited_show <handle> <pty> <path>: Orca's record of a pane whose process
+# exited: disconnected, unwritable, with an exit cause.
+exited_show() {
+  node -e 'const [h,p,w]=process.argv.slice(1);console.log(JSON.stringify({ok:true,result:{terminal:{handle:h,connected:false,writable:false,exitCause:{kind:"exit"},executionHostId:"local",ptyId:p,worktreePath:w}}}))' \
+    "$1" "$2" "$3" > "$FX/show-$1.json"
+}
+
+# build_lanes: Casco-style lanes an external launcher registered, each rooted
+# at the lane repository's main checkout, plus one unregistered tab there.
+build_lanes() {  # <case>
+  local h
+  fixture_reset "$1"
+  HOME_DIR="$FX/home"
+  CASCO="$FX/casco"
+  mkdir -p "$HOME_DIR/state"
+  fm_git_init_commit "$CASCO"
+  CASCO=$(cd "$CASCO" && pwd -P)
+  for h in term-lane-idle term-lane-exited term-lane-live term-lane-agent; do
+    FM_HOME="$HOME_DIR" bash "$ROOT/bin/fm-lane-register.sh" "lane-${h#term-lane-}" \
+      --repo "$CASCO" --terminal "$h" >/dev/null || fail "could not register $h"
+  done
+  idle_term term-lane-idle pty-lane-idle "$CASCO" "n11-g1"
+  show term-lane-idle pty-lane-idle "$CASCO"
+  # The pane's process exited: Orca's sweep names no session for it.
+  term term-lane-exited pty-lane-exited "$CASCO" "n11-g3"
+  exited_show term-lane-exited pty-lane-exited "$CASCO"
+  # No session in the sweep, but Orca still calls it connected.
+  term term-lane-live pty-lane-live "$CASCO" "n11-g4"
+  show term-lane-live pty-lane-live "$CASCO"
+  if [ -n "$STANDIN" ]; then
+    agent_session
+    term term-lane-agent pty-lane-agent "$CASCO" "n11-g5"; session pty-lane-agent "$PID"
+    show term-lane-agent pty-lane-agent "$CASCO"
+  fi
+  idle_term term-casco-tab pty-casco-tab "$CASCO" "n11-g9"
+  show term-casco-tab pty-casco-tab "$CASCO"
+  # A registered handle whose pane Orca roots outside the lane's repository
+  # and worktree is not trusted as that lane.
+  FM_HOME="$HOME_DIR" bash "$ROOT/bin/fm-lane-register.sh" lane-moved \
+    --repo "$CASCO" --terminal term-lane-moved >/dev/null || fail "could not register term-lane-moved"
+  mkdir -p "$FX/elsewhere"
+  idle_term term-lane-moved pty-lane-moved "$FX/elsewhere" "n11-g6"
+  show term-lane-moved pty-lane-moved "$FX/elsewhere"
+  # A lane another home registered is that home's to reap.
+  mkdir -p "$FX/sm-home/state" "$HOME_DIR/data"
+  printf -- '- sm1 - Test secondmate (home: %s; scope: tests; projects: alpha; added 2026-01-01)\n' "$FX/sm-home" \
+    > "$HOME_DIR/data/secondmates.md"
+  FM_HOME="$FX/sm-home" bash "$ROOT/bin/fm-lane-register.sh" lane-other \
+    --repo "$CASCO" --terminal term-lane-other >/dev/null || fail "could not register term-lane-other"
+  idle_term term-lane-other pty-lane-other "$CASCO" "n11-g7"
+  show term-lane-other pty-lane-other "$CASCO"
+  fixture_write
+}
+
+test_registered_external_lanes_are_reaped() {
+  local closed
+  build_lanes lanes-dry
+  run_reap --no-browsers
+  [ "$RC" = 0 ] || fail "a dry run over registered lanes must exit 0, got $RC: $(cat "$FX/stderr")"
+  expect term-lane-idle "reap external-lane" "a registered lane whose session holds only a shell is reaped"
+  expect term-lane-exited "reap external-lane-exited" "a registered lane whose pane exited is reaped"
+  expect term-lane-live "keep no-session" "a registered lane with no session that Orca still calls connected is kept"
+  expect term-casco-tab "keep foreign" "an unregistered tab in the lane repository is never firstmate's"
+  expect term-lane-moved "keep foreign" "a registered handle rooted outside its lane's repository and worktree is not trusted"
+  expect term-lane-other "keep foreign" "another home's registered lane is not this home's to reap"
+  if [ -n "$STANDIN" ]; then
+    expect term-lane-agent "keep live-agent" "a registered lane still running its agent is kept"
+  fi
+  [ ! -s "$FX/closed.log" ] || fail "a dry run must close nothing, closed: $(cat "$FX/closed.log")"
+
+  build_lanes lanes-apply
+  run_reap --apply --no-browsers
+  [ "$RC" = 0 ] || fail "an apply over registered lanes must exit 0, got $RC: $(cat "$FX/stderr")"
+  closed=$(sort "$FX/closed.log" | tr '\n' ' ')
+  [ "$closed" = 'term-lane-exited term-lane-idle ' ] \
+    || fail "--apply must close exactly the idle and exited lanes, got '$closed'"
+  expect term-lane-idle "closed external-lane" "an apply reports the idle lane's close"
+  expect term-lane-exited "closed external-lane-exited" "an apply reports the exited lane's close"
+
+  # A lane unregistered between the listing and the close is skipped.
+  build_lanes lanes-unregistered
+  printf '#!/usr/bin/env bash\nrm -f %q\n' "$HOME_DIR/state/external-lanes/lane-exited.lane" > "$FX/onshow-term-lane-exited"
+  chmod +x "$FX/onshow-term-lane-exited"
+  run_reap --apply --no-browsers
+  expect term-lane-exited "skipped external-lane-exited:now-unregistered" "a lane no longer registered at the close is skipped"
+  pass "fm-terminal-reap: registered external lanes are reaped once idle or exited, with every re-proof"
+}
+
 fm_test_run \
+  test_browsers_reap_only_old_orphans \
   test_keep_list_protects_live_helpers \
   test_protected_terminals_and_hourly_schedule \
   test_discovered_home_and_lock_ancestry \
@@ -781,4 +985,5 @@ fm_test_run \
   test_unreadable_owner_facts_keep_terminals \
   test_unreadable_inventory_closes_nothing \
   test_help_prints_only_the_usage_header \
-  test_browsers_are_reaped_only_without_a_live_owner
+  test_browsers_are_reaped_only_without_a_live_owner \
+  test_registered_external_lanes_are_reaped

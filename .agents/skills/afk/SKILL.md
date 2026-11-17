@@ -1,7 +1,7 @@
 ---
 name: afk
 description: >-
-  Enter the away posture when the captain invokes /afk, says they are going afk, `state/.afk-contract` or `state/.afk` exists, an incoming message starts with `FM_INJECT_MARK`, or any `state/.subsuper-*` marker is involved.
+  Enter the away posture when the captain invokes /afk, says they are going afk, a `check: auto-away` wake arrives, `state/.afk-contract` or `state/.afk` exists, an incoming message starts with `FM_INJECT_MARK`, or any `state/.subsuper-*` marker is involved.
   Load it at once in the /afk turn, before any other work, and on the first unmarked message while away to render the return brief.
 user-invocable: true
 metadata:
@@ -13,10 +13,23 @@ metadata:
 Away mode is a POSTURE of the one supervision session, not a second architecture.
 Being away changes exactly two things: how the captain is informed, and what happens at a captain-owned decision point (hold for return, or the answer the captain's away words already gave).
 It never changes the authority set.
-The posture is a file, `state/.afk-contract`, written only by `bin/fm-afk-contract.sh` in the same turn as `/afk`; nothing infers the posture from chat.
+The posture is a file, `state/.afk-contract`, written only by `bin/fm-afk-contract.sh` during explicit or automatic entry; nothing infers the posture from chat.
 A record carrying quiet mode (`bin/fm-afk-contract.sh mode`) is not this posture: the captain is present, so none of this skill's holds for a return apply to it (the `quiet` skill owns it).
 Typing `/afk` is itself the go: the captain may not look at the screen again, so entry never waits for a further human response, and no read-back gates it or asks for a go.
 Hold-for-return is the default and the only reach profile this release records: there is no phone channel, and the entry announcement says so aloud every time.
+
+## Automatic entry
+
+`bin/fm-auto-away.sh` owns the scheduled trigger and its activity stamp; [configuration](../../../docs/configuration.md#automatic-away-mode-configauto-away) owns the defaults and settings.
+On a `check: auto-away` wake, run the exact `bin/fm-auto-away.sh enter <activity>` command it carries.
+A wake reading `auto-away check failed:` carries no entry command: report the named problem to the captain as a blocker on automatic entry.
+This guarded command rechecks the trigger and writes the same record as plain `/afk`, with no away words or new authority.
+If it prints nothing, the request is obsolete or already fulfilled, a posture already exists, or an already reported entry failure repeated: acknowledge the wake without announcing or starting another session.
+If it prints `auto-away entry failed:` and exits nonzero, report that failure to the captain once as a blocker on automatic entry; a later scheduled check retries on its own.
+If it prints the entry announcement, continue at step 2 below, then announce automatic entry once with its trigger and the ordinary reach statement from step 3.
+Do not repeat step 1: the record already stands.
+The wake is internal input, not the captain's return.
+The next genuine captain message takes the normal return path below.
 
 ## Entering: `/afk [words]`
 
@@ -32,7 +45,7 @@ Hold-for-return is the default and the only reach profile this release records: 
      The away daemon is no longer launched on Pi; the ordinary supervision session (`docs/pi-supervision-branch.md`) keeps running with the record present, and `bin/fm-afk-launch.sh start` refuses on these harnesses.
      With the record present main is parked: the supervision branch takes every safe actionable wake, captain outcomes accumulate for the return brief, and main's standing authority relocates to the branch through the guarded scripts (`docs/pi-supervision-branch.md` "Postures"); only a wake the branch declines (including a broken branch or unsafe scan) or a watcher failure wakes main.
      `/quiet` needs nothing extra on Pi: the attended branch already keeps routine wakes out of this conversation, so quiet-while-present is the attended posture's own shape there.
-   - **A home that runs the supervision host** (a Claude home unless `config/supervision-host-off` opts it out, or a Cursor, OpenCode, omp, Grok, or Codex home with `config/supervision-host` and no opt-out; `docs/configuration.md` "Supervision host"): no daemon to launch for `/afk`.
+   - **A home that runs the supervision host** (a Claude home unless `config/supervision-host-off` opts it out, or a Cursor, OpenCode, omp, Grok, Codex, or Antigravity (`agy`) home with `config/supervision-host` and no opt-out; `docs/configuration.md` "Supervision host"): no daemon to launch for `/afk`.
      The supervision host (`docs/supervision-host.md`) is the away session there: it runs the branch's contract on a headless engine under the record while main is parked, and `bin/fm-afk-launch.sh start` and `start-native` refuse the away daemon on that home.
      On Codex, start the one foreground checkpoint that `bin/fm-afk-launch.sh` names before announcing that supervision is running ([protocol](../../../docs/supervision-protocols/codex.md)); the away record alone supervises nothing, and an interrupted turn leaves no cycle until the next message.
      If `enter` printed a `Supervision host: no engine ...` line, every away wake reaches this conversation instead; say so in the announcement.
@@ -41,7 +54,7 @@ Hold-for-return is the default and the only reach profile this release records: 
      This is a deliberate no-separate-terminal exception because the harness-hosted job creates no terminal or layout mutation, and a shell launcher cannot invoke a harness-native background tool.
      If the native launch fails, run `bin/fm-afk-launch.sh stop` to roll back the prepared lifecycle.
      Do not wrap it in `nohup ... &` (Codex/herdr can reap fire-and-forget shell children after a tool call returns).
-   - **Every other harness** (codex, opencode, omp, and cursor on a home that does not run the supervision host, and kimi): run `bin/fm-afk-launch.sh start`.
+   - **Every other harness** (codex, opencode, omp, cursor, and agy on a home that does not run the supervision host, and kimi): run `bin/fm-afk-launch.sh start`.
      It is the single owner of the daemon terminal: on pane backends it creates a NON-VISIBLE tracked terminal and passes the captain endpoint as `FM_SUPERVISOR_TARGET` so the daemon injects into the captain, not its own new pane (docs/herdr-backend.md "Away-mode supervisor support").
      On the t3code backend there is no terminal to create, so `start` refuses and only the native path above works; a Codex captain hosted by T3 Code has no away daemon (docs/t3code-backend.md "Active limits").
      On the Orca backend there is no non-visible terminal launch, so `start` also refuses and only the native path above works; a harness in this group has no away daemon on Orca (docs/configuration.md "Away-mode supervisor backend").
@@ -64,7 +77,7 @@ Hold-for-return is the default and the only reach profile this release records: 
   Destructive, irreversible, and security-sensitive actions are never pre-authorizable whatever the words say, and ask-user findings keep the `ask-user-authority` policy unless the words pre-answer the exact decision; anything else that needs the captain holds for their return.
 - On Pi, main is parked and the supervision branch handles every safe actionable wake under main's standing authority, through the same guarded scripts main would use: any pull request green at its live head may merge (which one the words meant is the branch's reading), queued work whose blockers cleared - already queued, or filed by the branch because the words explicitly call for it - dispatches within the spend cap, and a decision is answered with the captain's own pre-stated answer or under `ask-user-authority`.
   Anything else holds for the return, a red merge never proceeds while away, local-only landing always waits for the captain, and only a wake the branch declines (including a broken branch or unsafe scan) or a watcher failure wakes main (`docs/pi-supervision-branch.md` "Postures").
-- On a non-Pi home that runs the supervision host, the host's engine is that branch under the same rules, and a wake it hands back reaches main through that harness's own wake path (`Stop hook feedback` on Claude, a `watcher` follow-up on Cursor, OpenCode, and omp, the arm's background-task-completed notification on Grok, the checkpoint's output on Codex) with a `supervision-host:` line: that is automatic supervision, never the captain's return, so handle it under the away posture ([supervision protocol](../../../docs/supervision-protocols/supervision-host.md)).
+- On a non-Pi home that runs the supervision host, the host's engine is that branch under the same rules, and a wake it hands back reaches main through that harness's own wake path (`Stop hook feedback` on Claude, a `watcher` follow-up on Cursor, OpenCode, and omp, the Stop hook's `continue` reason on Antigravity, the arm's background-task-completed notification on Grok, the checkpoint's output on Codex) with a `supervision-host:` line: that is automatic supervision, never the captain's return, so handle it under the away posture ([supervision protocol](../../../docs/supervision-protocols/supervision-host.md)).
 - The session-start digest reports the posture under its AFK subsection, so a restart re-enters the posture from the record, not from memory.
 
 ## How to exit: the return
@@ -189,6 +202,7 @@ Classify each wake this way, applying the steering-inbox and parked-run exceptio
   With no unreported actionable event, the wake self-handles, and the current declaration outranks an enriched possible-wedge reason so it never escalates on the `FM_STALE_ESCALATE_SECS` cadence.
   If a declared external wait is still declared past `FM_PAUSE_RESURFACE_SECS` (default four hours), housekeeping sends one recheck and resets the pause window; a captain-held transfer is never rechecked while the posture record exists.
   The window ages against the crew's own latest status line, so only a status append that stops declaring the wait ends this routing and restores wedge detection.
+  A plain `paused:` wait whose recorded endpoint the backend proves `dead` or `missing` is a dead worker, not a wait: it escalates for recovery once per declaration and again at each recheck, unless the task is an open backlog captain hold, which stays quiet and is not rechecked (`paused_wait_agent_gone` in [`bin/fm-supervise-daemon.sh`](../../../bin/fm-supervise-daemon.sh) owns the gates).
 - `check` -> always escalate. Check scripts print only when firstmate should wake.
 - `stale` with a terminal status, a bare legacy captain-relevant line, or an unrecognized status prefix such as `parked:` -> escalate.
   Nonterminal progress remains transient even when its prose contains a legacy free-text token or its seen-status marker already matches, so record a marker and self-handle.

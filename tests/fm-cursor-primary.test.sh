@@ -71,7 +71,7 @@ install_scripts() {
   mkdir -p "$dir/bin" "$dir/docs"
   for f in fm-bash-compat-lib.sh fm-turnend-guard-cursor.sh fm-turnend-guard.sh fm-sessionstart-cursor.sh \
            fm-sessionstart-run.sh fm-sessionstart-nudge.sh fm-arm-pretool-check.sh \
-           fm-cd-pretool-check.sh fm-claude-stop-autoarm.sh fm-hook-host-lib.sh \
+           fm-cd-pretool-check.sh fm-claude-stop-autoarm.sh fm-hook-host-lib.sh fm-stop-policy-lib.sh \
            fm-primary-scope-lib.sh fm-supervision-lib.sh fm-wake-lib.sh fm-path-lib.sh \
            fm-session-lock-lib.sh fm-session-process.py fm-cursor-lib.sh fm-operational-input.sh \
            fm-supervision-instructions.sh fm-harness.sh fm-lock.sh \
@@ -558,6 +558,82 @@ test_park_runs_the_supervision_host_only_when_opted_in() {
   pass "cursor park: an opted-in home parks on the supervision host and relays every host line"
 }
 
+# The real away entry (bin/fm-afk-launch.sh) against a test home, pinned to the
+# cursor primary through the launch path's test seam.
+afk_launch() {  # <dir> <args...>
+  local dir=$1
+  shift
+  env -u FM_STATE_OVERRIDE -u FM_CONFIG_OVERRIDE -u FM_ROOT_OVERRIDE \
+    FM_HOME="$dir" FM_TEST_SEAM=1 FM_TEST_HARNESS=cursor "$ROOT/bin/fm-afk-launch.sh" "$@" >/dev/null 2>&1
+}
+
+# On a home that runs the supervision host, the host is the away session: the
+# manual and the automatic away entry write only the away record, the daemon
+# launch refuses, and the park keeps running the host beside the record, so
+# away mode never leaves this primary unsupervised.
+test_park_host_away_entry_keeps_parking() {
+  local dir out body entry verb
+  for entry in manual automatic; do
+    dir=$(make_primary_dir "$TMP_ROOT/park-host-away-$entry")
+    : > "$dir/state/task1.meta"
+    mkdir -p "$dir/config"
+    printf 'claude\n' > "$dir/config/supervision-host"
+    case "$entry" in
+      manual) afk_launch "$dir" enter --words 'gone overnight' ;;
+      automatic) afk_launch "$dir" enter-auto ;;
+    esac || fail "$entry away entry on an opted-in cursor home failed"
+    [ -f "$dir/state/.afk-contract" ] || fail "$entry away entry did not write the away record"
+    for verb in start start-native; do
+      afk_launch "$dir" "$verb" && fail "$entry: '$verb' launched the away daemon on a home that runs the supervision host"
+    done
+    [ ! -e "$dir/state/.afk" ] || fail "$entry away entry on an opted-in cursor home wrote the away daemon's flag"
+    write_arm_fixture "$dir" actionable
+    write_host_fixture "$dir" handback
+    out=$(run_park "$dir")
+    [ ! -e "$dir/state/arm-ran" ] || fail "$entry: an opted-in away home ran the plain arm"
+    [ "$(cut -f2,3 "$dir/state/host-ran" 2>/dev/null)" = "$(printf 'cursor\tpark')" ] \
+      || fail "$entry: the away park must run the host as 'park' with the cursor pin: $(cat "$dir/state/host-ran" 2>/dev/null)"
+    [ "$(kind_of_followup "$out")" = watcher ] || fail "$entry: a handed-back away wake must arrive as a watcher follow-up, got: $out"
+    body=$(followup_of "$out")
+    case "$body" in *'supervision-host: the away session could not take this wake'*) ;; *) fail "$entry: the away follow-up must carry the supervision-host line: $body" ;; esac
+    case "$body" in *'not from the captain: it is not a return'*) ;; *) fail "$entry: an away handback must say it is not the captain's return: $body" ;; esac
+  done
+  pass "cursor park: away entry on a host home writes no daemon flag and the park keeps running the host"
+}
+
+# The away daemon's flag (state/.afk) means the daemon owns supervision, so the
+# park stands down: away mode on a home without the host, and quiet mode that
+# entered through the daemon on a home whose attended host is not ready.
+test_park_stands_down_for_the_away_daemon() {
+  local dir out label
+  for label in away-no-host quiet-host; do
+    dir=$(make_primary_dir "$TMP_ROOT/park-daemon-$label")
+    : > "$dir/state/task1.meta"
+    mkdir -p "$dir/config"
+    case "$label" in
+      away-no-host)
+        afk_launch "$dir" enter --words 'gone overnight' || fail "$label: away entry failed"
+        afk_launch "$dir" start-native || fail "$label: a home without the host must prepare the away daemon"
+        [ "$(head -n 1 "$dir/state/.afk" 2>/dev/null)" = away ] || fail "$label: the daemon's flag must record away mode"
+        ;;
+      quiet-host)
+        printf 'claude\n' > "$dir/config/supervision-host"
+        FM_AFK_MODE=quiet afk_launch "$dir" enter --words 'keep routine wakes off my main' \
+          || fail "$label: quiet entry failed on a cursor home whose attended host is not ready"
+        FM_AFK_MODE=quiet afk_launch "$dir" start-native || fail "$label: quiet mode must still prepare the daemon"
+        [ "$(head -n 1 "$dir/state/.afk" 2>/dev/null)" = quiet ] || fail "$label: the daemon's flag must record quiet mode"
+        ;;
+    esac
+    write_arm_fixture "$dir" actionable
+    write_host_fixture "$dir" handback
+    out=$(run_park "$dir")
+    [ -z "$out" ] || fail "$label: the park must stand down while the away daemon owns supervision: $out"
+    [ ! -e "$dir/state/arm-ran" ] || fail "$label: the park armed while the away daemon owns supervision"
+    [ ! -e "$dir/state/host-ran" ] || fail "$label: the park ran the host while the away daemon owns supervision"
+  done
+  pass "cursor park: the away daemon's flag still stands the park down in away and quiet mode"
+}
+
 test_park_host_boundary_stand_down_and_death() {
   local dir out
   dir=$(make_primary_dir "$TMP_ROOT/park-host-boundary")
@@ -911,6 +987,8 @@ test_park_serializes_supersession_with_followup_commit
 test_superseded_park_does_not_consume_nag_budget
 test_park_inert_when_afk
 test_park_runs_the_supervision_host_only_when_opted_in
+test_park_host_away_entry_keeps_parking
+test_park_stands_down_for_the_away_daemon
 test_park_host_boundary_stand_down_and_death
 test_park_inert_under_pi_coding_agent
 test_park_still_parks_with_pi_leak_and_cursor_identity

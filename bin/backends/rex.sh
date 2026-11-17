@@ -70,6 +70,8 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 . "$FM_BACKEND_REX_ROOT/bin/fm-agent-process-lib.sh"
 # shellcheck source=bin/fm-transition-lib.sh
 . "$FM_BACKEND_REX_ROOT/bin/fm-transition-lib.sh"
+# shellcheck source=bin/fm-env-scrub.sh
+. "$FM_BACKEND_REX_ROOT/bin/fm-env-scrub.sh"
 
 # Verified floor: the API revision the live verification ran against.
 FM_BACKEND_REX_MIN_API=5
@@ -117,7 +119,9 @@ fm_backend_rex_tool_check() {
 fm_backend_rex_cli() {  # <rex-args...>
   local bin
   bin=$(fm_backend_rex_bin) || return 1
-  "$bin" "$@"
+  # A call without --autostart=false can start the personal server, which keeps
+  # its startup environment for every later block.
+  fm_env_without_ak_pair "$bin" "$@"
 }
 
 # fm_backend_rex_read: one CLI call that never starts a server; an unreachable

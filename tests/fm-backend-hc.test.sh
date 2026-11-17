@@ -27,6 +27,8 @@ D="${FAKE_HC_DIR:?}"
   for a in "$@"; do printf '\x1f%s' "$a"; done
   printf '\n'
 } >> "$D/log"
+printf '%s policy=%s supervisor=%s sentinel=%s\n' "${1:-}" "${AK_LIFECYCLE_POLICY-<unset>}" \
+  "${AK_LIFECYCLE_SUPERVISOR-<unset>}" "${FM_HC_SENTINEL-<unset>}" >> "$D/ak-env"
 cmd=${1:-}
 last=""
 for a in "$@"; do last=$a; done
@@ -293,6 +295,23 @@ test_container_ensure_gates_binary_version_and_generation() {
   pass "hc: container_ensure refuses a misnamed, old, or wrong-generation binary"
 }
 
+test_every_hc_call_runs_without_the_agent_kit_lifecycle_pair() {
+  local out seen
+  setup_case ak-pair
+  out=$(
+    export AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate FM_HC_SENTINEL=kept
+    # shellcheck disable=SC2016 # the inner shell expands it
+    hc_shell 'fm_backend_hc_container_ensure >/dev/null || exit 1
+      printf "caller=%s/%s\n" "$AK_LIFECYCLE_POLICY" "$AK_LIFECYCLE_SUPERVISOR"'
+  ) || fail "container_ensure should pass under a pair-carrying caller"
+  assert_contains "$out" "caller=unattended/firstmate" "the hc adapter must leave the caller's own pair in place"
+  seen=$(cat "$D/ak-env" 2>/dev/null)
+  assert_contains "$seen" "server" "container_ensure must reach the core through hc"
+  assert_contains "$seen" "sentinel=kept" "hc calls must still receive the caller's environment"
+  assert_not_contains "$seen" "policy=unattended" "an hc call, which can start the session's core, leaked AK_LIFECYCLE_POLICY"
+  assert_not_contains "$seen" "supervisor=firstmate" "an hc call, which can start the session's core, leaked AK_LIFECYCLE_SUPERVISOR"
+  pass "hc: every CLI call, including the one that can start the session's core, runs without the agent-kit lifecycle pair"
+}
 test_send_text_submit_confirms_through_send_wait() {
   local tag out log
   setup_case submit
@@ -375,5 +394,6 @@ fm_test_run \
   test_capture_and_current_path_read_the_recorded_terminal \
   test_endpoint_validation_binds_hc_meta \
   test_container_ensure_gates_binary_version_and_generation \
+  test_every_hc_call_runs_without_the_agent_kit_lifecycle_pair \
   test_send_text_submit_confirms_through_send_wait \
   test_send_delimiters_and_binary_socket_pins

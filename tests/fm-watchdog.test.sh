@@ -70,14 +70,62 @@ SH
   chmod +x "$FAKEBIN/tmux"
 }
 
+# Every long-lived fixture process ends its argv with this marked duration, so
+# this suite can find all of its own fixtures, including ones whose pid no case
+# recorded, while another suite's fixtures carry a different marker.
+WD_FIXTURE_SLEEP="100000.$$"
+export WD_FIXTURE_SLEEP
+
+# reap_marked_fixtures: TERM every process whose last argument is this suite's
+# marker, compared as a string so 100000.12 never matches 100000.120. The
+# marker reaches awk through the environment, so the probe itself never
+# matches.
+reap_marked_fixtures() {
+  local pids
+  pids=$(ps -axo pid=,args= 2>/dev/null | awk '"" $NF == "" ENVIRON["WD_FIXTURE_SLEEP"] { print $1 }')
+  # shellcheck disable=SC2086 # One pid per word.
+  [ -z "$pids" ] || kill $pids 2>/dev/null || true
+}
+
 LOCK_PIDS=''
 cleanup_watchdog_tests() {
   local p
   for p in $LOCK_PIDS; do kill "$p" 2>/dev/null || true; done
   "$REAL_TMUX" -L "$SOCKET" kill-server >/dev/null 2>&1 || true
+  reap_marked_fixtures
   fm_test_cleanup
 }
 trap cleanup_watchdog_tests EXIT
+
+# A suite killed too hard to run its traps (SIGKILL, or a kill aimed at the
+# suite process alone) would strand every fixture, reparented to init and
+# still holding whatever it inherited. A detached guardian outlives the suite,
+# holds none of its output, and sweeps the same fixtures once the suite's pid
+# (checked with its start time) is gone. Job control puts it in its own
+# process group, so a kill aimed at the suite's group, such as the test queue
+# ending a dead run's stragglers, cannot end it before it sweeps.
+start_fixture_guardian() {
+  local suite=$$ start
+  start=$(ps -p "$suite" -o lstart= 2>/dev/null)
+  (
+    set -m
+    (
+      exec </dev/null >/dev/null 2>&1
+      trap '' HUP INT
+      # A zombie suite is gone: its parent may wait only after reading output
+      # a fixture still holds.
+      while kill -0 "$suite" 2>/dev/null && { [ -z "$start" ] || [ "$(ps -p "$suite" -o lstart= 2>/dev/null)" = "$start" ]; }; do
+        case $(ps -p "$suite" -o stat= 2>/dev/null) in
+          *Z*) break ;;
+        esac
+        sleep 2
+      done
+      "$REAL_TMUX" -L "$SOCKET" kill-server || true
+      reap_marked_fixtures
+    ) &
+  ) 2>/dev/null
+}
+start_fixture_guardian
 
 BASE=$(date +%s)
 CASE_N=0
@@ -140,7 +188,7 @@ SH
   "$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "$sess" -x 160 -y 40 "$H/agent.sh"
   T=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" list-panes -t "$sess" -F '#{pane_id}' | head -n 1)
   # Detached, so the lock holder is reparented and reaped like a real session.
-  ( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
+  ( sleep "$WD_FIXTURE_SLEEP" > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
   LOCKPID=$(cat "$H/lockpid")
   LOCK_PIDS="$LOCK_PIDS $LOCKPID"
   printf '%s\n' "$LOCKPID" > "$H/state/.lock"
@@ -150,7 +198,7 @@ SH
   jq -n --arg t "$T" --arg s "$SID" --argjson e "$BASE" --argjson p "$LOCKPID" \
     '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
     > "$H/state/heartbeat.json"
-  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\n%s\n' "$H/claude" "$extra" > "$H/config/watchdog"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nquota-guard=off\nmemory-guard=off\n%s\n' "$H/claude" "$extra" > "$H/config/watchdog"
   sleep 0.5
 }
 
@@ -183,6 +231,28 @@ run_wd() {  # <offset-secs> <args>...
 }
 
 home_key() { local c; c=$(cd -P "$H" && pwd -P); printf '%s-%s' "$(basename "$c")" "$(printf '%s' "$c" | cksum | cut -d ' ' -f 1)"; }
+council_record_path() {  # <rulings|no-rulings> <task> <key>
+  local f
+  for f in "$H/data/watchdog/$1/"*.md; do
+    [ -f "$f" ] || continue
+    grep -Fxq -- "- task: $2" "$f" || continue
+    grep -Fxq -- "- key: $3" "$f" || continue
+    printf '%s\n' "$f"
+    return 0
+  done
+  return 1
+}
+
+council_fixture_record() {  # Seed and remove one record to obtain its opaque fixture path.
+  local out record
+  out=$(run_wd -10 council --task "$1" --key "$2" --record-file "$H/record.txt" 2>&1) || fail "cannot seed council fixture: $out"
+  case "$out" in council=ruled*) ;; *) fail "cannot seed council fixture: $out" ;; esac
+  record=${out#*record=}; record=${record%% prior=*}
+  rm -f "$record"
+  : > "$H/model.log"
+  printf '%s\n' "$record"
+}
+
 ledger() { cat "$H/state/watchdog/actions.tsv" 2>/dev/null; }
 ledger_rows() {  # <symptom> <action> <phase>
   awk -F'\t' -v s="$1" -v a="$2" -v p="$3" '$5 == s && $6 == a && $7 == p' "$H/state/watchdog/actions.tsv" 2>/dev/null | wc -l | tr -d ' '
@@ -260,7 +330,7 @@ test_mtime_uses_the_platform_stat_dialect() {
   make_home $'Captain session\n> '
   transcript 3000 "Working." "Testing." "Green."
   out=$(run_wd 0 scan 2>&1) || fail "native stat scan failed: $out"
-  assert_contains "$out" 'transcript_age=3000s' "native stat returns the transcript's age"
+  assert_contains "$out" 'activity_age=3000s (transcript)' "native stat returns the transcript's age"
   if [ "$(uname -s)" = Linux ]; then
     gnu=$(command -v stat)
   elif command -v gstat >/dev/null 2>&1; then
@@ -280,7 +350,7 @@ case "\${1:-}" in ''|-s) printf 'Linux\n' ;; *) exec "$real_uname" "\$@" ;; esac
 SH
     chmod +x "$statbin/stat" "$statbin/uname"
     out=$(PATH="$statbin:$PATH" run_wd 0 scan 2>&1) || fail "GNU stat scan failed: $out"
-    assert_contains "$out" 'transcript_age=3000s' "GNU stat returns a numeric transcript age"
+    assert_contains "$out" 'activity_age=3000s (transcript)' "GNU stat returns a numeric transcript age"
   else
     printf 'note: GNU stat unavailable; native stat checked\n'
   fi
@@ -699,8 +769,8 @@ council-seats=claude:haiku,agy:flash'
   ledger | grep -F 'captain-hold-pricing-1' | grep -Eq 'council|ruling' && fail "an owner hold reached council"
   ledger | grep -F 'ship-it' | grep -Eq 'council|ruling' && fail "a merge decision reached council"
   assert_grep "held for the owner" "$H/data/watchdog/status.md" "held decisions are reported as gaps"
-  ls "$H/data/watchdog/rulings/"*cache-layout*.md >/dev/null 2>&1 || fail "no ruling file for a unanimous council"
-  assert_grep "unanimous" "$H/data/watchdog/rulings/$(home_key)-t1-cache-layout.md" "ruling records unanimity"
+  ls "$H/data/watchdog/rulings/"*.md >/dev/null 2>&1 || fail "no ruling file for a unanimous council"
+  assert_grep "unanimous" "$(council_record_path rulings t1 cache-layout)" "ruling records unanimity"
   assert_equals 2 "$(grep -cE '^(claude|agy) -p' "$H/model.log")" "each blind seat was called once"
   pass "boundary: owner-reserved holds stay held; an ordinary decision is settled by a unanimous blind council"
 }
@@ -752,6 +822,22 @@ mode=dry-run'
   run_wd 4600 once >/dev/null 2>&1 || fail "spent: pass 4600 failed"
   assert_equals 3 "$(judge_calls)" "spent: the judge returns once the failed keys age out of the hour"
   pass "model-switch dialog: the judge and its refusals are rate-limited in every mode and stop after two failed keys"
+}
+
+test_worker_dialog_key_does_not_close_home_key_window() {
+  local stuck=$'Switch to another model?\n\n ❯ 1. Wait\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  local home_canon
+  make_home "$stuck" 'models=claude:haiku'
+  fake_models "$H" ok:"OPTION 1" absent
+  transcript 100 "Working."
+  home_canon=$(cd -P "$H" && pwd -P)
+  mkdir -p "$H/state/watchdog"
+  printf '%s\tw1\t%s\tworker:other\tdialog\tkey\tpending\tpress 0: dismiss the feedback survey\n' \
+    "$((BASE - 10))" "$home_canon" > "$H/state/watchdog/actions.tsv"
+  run_wd 0 once >/dev/null 2>&1 || fail "pass 0 failed"
+  assert_equals 1 "$(ledger | awk -F'\t' '$4 != "worker:other" && $5 == "dialog" && $6 == "key" && $7 == "pending"' | wc -l | tr -d ' ')" \
+    "a worker's recent dialog key does not hold back the home pane's model-switch key: $(ledger | cut -f4-8)"
+  pass "dialog key rate window is per pane: a worker's key does not block the home pane's key"
 }
 
 test_secret_looking_decision_reaches_no_council() {
@@ -813,6 +899,721 @@ council-seats=claude:haiku,agy:flash'
   ls "$H/data/watchdog/rulings/"*.md >/dev/null 2>&1 && fail "a split council must not write a ruling"
   ledger | grep -F 'ruling:cache-layout' && fail "a split council must not nudge a ruling"
   pass "council needs unanimity; a split vote holds"
+}
+
+# How many council or judge seats were really called in this home.
+seat_calls() {
+  local c
+  c=$(grep -cE '^(claude|agy) -p' "$H/model.log" 2>/dev/null)
+  printf '%s\n' "${c:-0}"
+}
+
+test_seat_family_derivation() {
+  assert_equals anthropic "$(lib fm_wd_seat_family claude:haiku)" "a claude alias is Anthropic"
+  assert_equals anthropic "$(lib fm_wd_seat_family claude:claude-fable-5-2)" "a full claude id is Anthropic"
+  assert_equals anthropic "$(lib fm_wd_seat_family agy:claude-opus-5-5)" "the model name wins over the harness"
+  assert_equals google "$(lib fm_wd_seat_family agy:gemini-4-carbon-high)" "a gemini id is Google"
+  assert_equals google "$(lib fm_wd_seat_family agy:flash)" "a gemini alias is Google"
+  assert_equals google "$(lib fm_wd_seat_family agy:some-new-name)" "an unnamed model falls back to its harness"
+  assert_equals openai "$(lib fm_wd_seat_family agy:gpt-9)" "a gpt id is OpenAI"
+  assert_equals unknown "$(lib fm_wd_seat_family other:model)" "an unknown harness and model has no family"
+  assert_equals unknown "$(lib fm_wd_seat_family '')" "an empty seat has no family"
+  pass "council seats: the model family comes from the model name, then the harness, else unknown"
+}
+
+test_decisions_act_while_everything_else_stays_dry_run() {
+  make_home $'Captain session\n> ' 'mode=dry-run
+decisions=act
+models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  owe_input 4000
+  printf 'needs-decision [at=%s] [key=cache-layout]: A (recommended) flat keys or B nested keys?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1 || fail "first pass failed"
+  assert_equals 1 "$(ledger_rows decisions nudge pending)" "the decision nudge is delivered: $(ledger | cut -f5-8)"
+  wait_typed ": fm-op " || wait_typed "operational-inbox" || fail "the decision nudge never reached the pane: $(cat "$H/typed.log")"
+  assert_equals 0 "$(ledger_rows unread-input nudge pending)" "another symptom's nudge stays a dry run"
+  assert_equals 1 "$(ledger_rows unread-input nudge dry-run)" "the other symptom is recorded as a dry run: $(ledger | cut -f5-8)"
+  run_wd 2000 once >/dev/null 2>&1 || fail "second pass failed"
+  assert_equals 1 "$(ledger_rows decision:cache-layout council "done")" "the council convened for real: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows decision:cache-layout council dry-run)" "no dry-run council row"
+  assert_present "$(council_record_path rulings t1 cache-layout)" "the ruling file exists"
+  assert_equals 1 "$(ledger_rows ruling:cache-layout nudge pending)" "the ruling nudge is delivered"
+  assert_equals 0 "$(ledger | awk -F'\t' '($6 == "key" || $6 == "enter" || $6 == "restart") && $7 == "pending"' | wc -l | tr -d ' ')" "no key, Enter, or restart acted"
+  pass "decisions=act: the decision nudge, council, and ruling nudge act while the rest of the ladder stays dry-run"
+}
+
+test_decisions_key_follows_mode_and_can_hold_it_back() {
+  make_home $'Captain session\n> ' 'mode=dry-run
+models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  printf 'needs-decision [at=%s] [key=cache-layout]: A (recommended) flat keys or B nested keys?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 2000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows decision:cache-layout council dry-run)" "with no decisions key, mode=dry-run keeps the council a dry run"
+  assert_equals 0 "$(seat_calls)" "a dry run calls no seat"
+  make_home $'Captain session\n> ' 'decisions=dry-run
+models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  printf 'needs-decision [at=%s] [key=cache-layout]: A (recommended) flat keys or B nested keys?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows decisions nudge dry-run)" "decisions=dry-run holds the decision nudge back under mode=act"
+  run_wd 2000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows decision:cache-layout council dry-run)" "decisions=dry-run holds the council back under mode=act"
+  [ ! -e "$H/data/watchdog/rulings" ] || fail "a dry run wrote a ruling"
+  pass "decisions: an unset key follows mode; decisions=dry-run holds the decision path back on its own"
+}
+
+test_one_family_council_is_refused_without_a_call() {
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,claude:sonnet'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  printf 'needs-decision [at=%s] [key=cache-layout]: A (recommended) flat keys or B nested keys?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 2000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows decision:cache-layout council refused)" "a one-family council is refused: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(seat_calls)" "a refused council calls no seat"
+  assert_grep "two model families" "$H/data/watchdog/status.md" "the refusal is a visible gap"
+  [ ! -e "$H/data/watchdog/rulings" ] && [ ! -e "$H/data/watchdog/no-rulings" ] || fail "a refused council wrote a record"
+  pass "boundary: two seats of one model family give no ruling, call no model, and show as a gap"
+}
+
+test_council_outcome_is_final_for_its_decision() {
+  local rec
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED B"
+  transcript 100 "Working."
+  printf 'needs-decision [at=%s] [key=cache-layout]: A flat keys or B nested keys?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 2000 once >/dev/null 2>&1
+  rec="$(council_record_path no-rulings t1 cache-layout)"
+  assert_present "$rec" "a split council leaves a durable record"
+  assert_grep "seat1=PROCEED A" "$rec" "the record names the first seat's answer"
+  assert_grep "seat2=PROCEED B" "$rec" "the record names the dissenting seat's answer"
+  assert_equals 2 "$(seat_calls)" "each seat was called once"
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  run_wd 30000 once >/dev/null 2>&1
+  run_wd 60000 once >/dev/null 2>&1
+  assert_equals 2 "$(seat_calls)" "a decided key is never put to council again"
+  [ ! -e "$H/data/watchdog/rulings" ] || fail "a later pass turned a split into a ruling"
+  assert_grep "held for the owner after a council gave no ruling" "$H/data/watchdog/status.md" "the hold stays visible on later passes"
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  printf 'needs-decision [at=%s] [key=cache-layout]: A (recommended) flat keys or B nested keys?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 2000 once >/dev/null 2>&1
+  assert_present "$(council_record_path rulings t1 cache-layout)" "the unanimous council ruled"
+  run_wd 30000 once >/dev/null 2>&1
+  run_wd 32000 once >/dev/null 2>&1
+  assert_equals 2 "$(seat_calls)" "a ruled key is never put to council again"
+  assert_grep "unapplied council ruling" "$H/data/watchdog/status.md" "a ruling on a still-open decision stays visible"
+  pass "council: one convening per decision; a split is recorded with its dissent and held, a ruling is never re-rolled"
+}
+
+test_council_with_no_answer_is_not_a_convening() {
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" fail fail
+  transcript 100 "Working."
+  printf 'needs-decision [at=%s] [key=cache-layout]: A (recommended) flat keys or B nested keys?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 2000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows decision:cache-layout council failed)" "an unanswered council is recorded as failed: $(ledger | cut -f5-8)"
+  [ ! -e "$H/data/watchdog/no-rulings" ] || fail "a council no seat answered left a final record"
+  fake_models "$H" ok:"PROCEED A" fail
+  # The first late pass repeats the rolled-up nudge; the council runs a window after it.
+  run_wd 30000 once >/dev/null 2>&1
+  run_wd 32000 once >/dev/null 2>&1
+  assert_present "$(council_record_path no-rulings t1 cache-layout)" "one answer and one failed seat is a final no-ruling"
+  assert_grep "seat2=FAILED" "$(council_record_path no-rulings t1 cache-layout)" "the record names the failed seat"
+  [ ! -e "$H/data/watchdog/rulings" ] || fail "one seat ruled alone"
+  pass "council: no answer at all is retried later; a partial answer is final and holds"
+}
+
+test_council_calls_use_their_own_budget_and_time_limit() {
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash
+council-call-max-usd=0.50
+council-timeout-secs=300'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  printf 'cache layout: A (recommended) flat keys or B nested keys?\n' > "$H/record.txt"
+  run_wd 0 council --task t1 --key s1-cache --record-file "$H/record.txt" >/dev/null 2>&1 || fail "council command failed"
+  assert_grep "max-budget-usd 0.50" "$H/model.log" "the council seat got the council budget"
+  assert_grep "print-timeout 300s" "$H/model.log" "the council seat got the council time limit"
+  : > "$H/model.log"
+  printf 'is this a loop?' | run_wd 10 judge loop '(LOOP|WORK)' >/dev/null 2>&1
+  assert_grep "max-budget-usd 0.05" "$H/model.log" "a judge call keeps the judge budget"
+  pass "council: council-call-max-usd and council-timeout-secs apply to council seats only"
+}
+
+test_council_command_rules_now_once_and_types_nothing() {
+  local out sentinel=FAKESENTINEL43
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  printf 'Third review round on the cache theme. A (recommended) ship plus filed follow-up, or B one more fix round?\n' > "$H/record.txt"
+  out=$(run_wd 0 council --task t1 --key s1-cache --record-file "$H/record.txt" 2>/dev/null) || fail "council command failed"
+  assert_contains "$out" "council=ruled" "a unanimous council rules: $out"
+  assert_contains "$out" "answer=PROCEED A" "the answer is printed: $out"
+  assert_contains "$out" "record=$H/data/watchdog/rulings/" "the record path is printed: $out"
+  assert_equals 2 "$(seat_calls)" "each seat was called once"
+  assert_equals 1 "$(ledger_rows decision:s1-cache council "done")" "the convening is in the ledger"
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  out=$(run_wd 100 council --task t1 --key s1-cache --record-file "$H/record.txt" 2>/dev/null) || fail "repeat council command failed"
+  assert_contains "$out" "council=ruled" "a repeat call returns the recorded outcome: $out"
+  assert_contains "$out" "answer=PROCEED A" "a repeat call cannot change the answer: $out"
+  assert_contains "$out" "prior=1" "a repeat call is marked as a replay: $out"
+  assert_equals 2 "$(seat_calls)" "a repeat call reaches no seat"
+  # An open decision's own record is the default record.
+  printf 'needs-decision [at=%s] [key=index-shape]: A (recommended) one index or B two?\n' "$((BASE - 60))" > "$H/state/t2.status"
+  fake_models "$H" ok:"PROCEED A" ok:"HOLD"
+  out=$(run_wd 200 council --task t2 --key index-shape 2>/dev/null) || fail "council on an open decision failed"
+  assert_contains "$out" "council=no-ruling" "a split council prints no ruling: $out"
+  assert_contains "$out" "answer=none" "a split council prints no answer: $out"
+  assert_grep "one index or B two" "$(council_record_path no-rulings t2 index-shape)" "the open decision's record was the question"
+  run_wd 300 council --task t2 --key not-open >/dev/null 2>&1 && fail "a key with no record and no open decision was accepted"
+  # Owner-reserved and secret-looking records never reach a seat.
+  : > "$H/model.log"
+  : > "$H/prompt.log"
+  printf 'merge PR #5 now, A yes or B wait?\n' > "$H/reserved.txt"
+  out=$(run_wd 400 council --task t1 --key s1-ship --record-file "$H/reserved.txt" 2>/dev/null) || fail "held council command failed"
+  assert_contains "$out" "council=held" "an owner-reserved record is held: $out"
+  out=$(run_wd 410 council --task t1 --key captain-hold-x --record-file "$H/record.txt" 2>/dev/null) || fail "held council command failed"
+  assert_contains "$out" "council=held" "an owner hold key is held: $out"
+  printf 'push failed for https://x-access-token:%s@example.invalid/o/r; A or B?\n' "$sentinel" > "$H/secret.txt"
+  out=$(run_wd 420 council --task t1 --key s1-push --record-file "$H/secret.txt" 2>/dev/null) || fail "held council command failed"
+  assert_contains "$out" "council=held" "a secret-looking record is held: $out"
+  assert_equals 0 "$(seat_calls)" "a held record reaches no seat"
+  if grep -rFq "$sentinel" "$H/state/watchdog" "$H/data/watchdog" "$H/model.log" "$H/prompt.log" 2>/dev/null; then fail "the withheld text reached a record or a model"; fi
+  assert_equals "" "$(cat "$H/typed.log")" "the council command types nothing into the pane"
+  run_wd 500 council --key s1-cache --record-file "$H/record.txt" >/dev/null 2>&1; assert_equals 2 "$?" "a missing task is a usage error"
+  run_wd 500 council --task t1 --key 'bad/key' --record-file "$H/record.txt" >/dev/null 2>&1; assert_equals 2 "$?" "a key with a path separator is a usage error"
+  pass "council command: rules at once through the same seats and holds, replays a recorded outcome, and types nothing"
+}
+
+test_council_keeps_dashed_decision_identities_separate() {
+  local out first second
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A (recommended) flat keys or B nested keys?\n' > "$H/record.txt"
+  out=$(run_wd 0 council --task a-b --key c --record-file "$H/record.txt" 2>&1) || fail "first council failed: $out"
+  assert_contains "$out" "answer=PROCEED A" "the first decision rules A"
+  first=${out#*record=}; first=${first%% prior=*}
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  out=$(run_wd 10 council --task a --key b-c --record-file "$H/record.txt" 2>/dev/null) || fail "second council failed"
+  assert_contains "$out" "answer=PROCEED B" "a distinct dashed identity must convene its own council: $out"
+  assert_contains "$out" "prior=0" "the second decision is not a replay"
+  second=${out#*record=}; second=${second%% prior=*}
+  [ "$first" != "$second" ] || fail "different decisions share a record path"
+  assert_equals 4 "$(seat_calls)" "both decisions convened independently"
+  out=$(run_wd 20 council --task a-b --key c --record-file "$H/record.txt" 2>/dev/null) || fail "first replay failed"
+  assert_contains "$out" "answer=PROCEED A" "the first decision retains its own answer"
+  assert_contains "$out" "prior=1" "the first decision replays"
+  assert_equals 4 "$(seat_calls)" "a replay calls no seat"
+  pass "council: dashed task and key fields identify distinct decisions"
+}
+
+test_council_checks_stored_identity_and_replays_legacy_records() {
+  local out legacy record
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  printf 'A flat keys or B (recommended) nested keys?\n' > "$H/record.txt"
+  legacy="$H/data/watchdog/rulings/$(home_key)-a-b-c.md"
+  mkdir -p "$(dirname "$legacy")"
+  printf -- '- home: %s\n- task: a-b\n- key: c\n- ruling: PROCEED A (unanimous, 2 blind seats)\n- seats: seat1=PROCEED A seat2=PROCEED A\n' "$H" > "$legacy"
+  out=$(run_wd 0 council --task a-b --key c --record-file "$H/record.txt" 2>/dev/null) || fail "legacy replay failed"
+  assert_contains "$out" "answer=PROCEED A" "a matching legacy record retains its ruling"
+  assert_contains "$out" "prior=1" "a matching legacy record replays"
+  assert_equals 0 "$(seat_calls)" "legacy replay calls no seat"
+  out=$(run_wd 10 council --task a --key b-c --record-file "$H/record.txt" 2>/dev/null) || fail "distinct council failed"
+  assert_contains "$out" "answer=PROCEED B" "a legacy record for another identity cannot replay: $out"
+  record=${out#*record=}; record=${record%% prior=*}
+  cp "$legacy" "$record"
+  out=$(run_wd 20 council --task a --key b-c --record-file "$H/record.txt" 2>/dev/null) || fail "identity check failed"
+  assert_contains "$out" "answer=PROCEED B" "a new filename also needs a matching stored identity: $out"
+  assert_contains "$out" "prior=0" "a mismatched record is not replayed"
+  assert_equals 4 "$(seat_calls)" "both mismatched records required a fresh council"
+  pass "council: stored identity is checked for new and legacy filenames"
+}
+
+test_council_requires_durable_publication() {
+  local fault out record real_mv
+  real_mv=$(command -v mv)
+  for fault in write publish directory; do
+    make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+    fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+    printf 'A (recommended) flat keys or B nested keys?\n' > "$H/record.txt"
+    record=$(council_fixture_record t1 s1-cache) || fail "cannot prepare persistence fixture"
+    mkdir -p "$(dirname "$record")"
+    if [ "$fault" = write ]; then
+      mkdir "$record.tmp"
+    elif [ "$fault" = directory ]; then
+      mkdir "$record"
+    else
+      cat > "$FAKEBIN/mv" <<SH
+#!/usr/bin/env bash
+case "\$1" in *.md.tmp) exit 1 ;; esac
+exec "$real_mv" "\$@"
+SH
+      chmod +x "$FAKEBIN/mv"
+    fi
+    out=$(run_wd 0 council --task t1 --key s1-cache --record-file "$H/record.txt" 2>/dev/null) || fail "council command failed"
+    rm -f "$FAKEBIN/mv"
+    assert_contains "$out" "council=failed" "$fault failure must not report a ruling: $out"
+    assert_contains "$out" "answer=none record=none" "an unpublished result cannot be applied"
+    [ ! -f "$record" ] || fail "a failed publication left a final record"
+    assert_equals 1 "$(ledger_rows decision:s1-cache council failed)" "persistence failure is recorded as failed"
+    assert_equals 0 "$(find "$H/state/watchdog/council-locks" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')" "persistence failure releases its lock"
+    rm -rf "$record.tmp"
+    [ "$fault" != directory ] || rmdir "$record"
+    out=$(run_wd 10 council --task t1 --key s1-cache --record-file "$H/record.txt" 2>/dev/null) || fail "retry failed"
+    assert_contains "$out" "council=ruled" "a retry can publish after storage recovers"
+    assert_present "$record" "the recovered council has a durable record"
+    assert_equals 4 "$(seat_calls)" "the unpublished decision is convened again"
+  done
+  pass "council: write, rename, and directory-target failures cannot return a successful ruling"
+}
+
+test_council_checks_the_complete_record_before_calling_seats() {
+  local out
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  { printf 'A flat keys or B nested keys? '; printf '%2100s' x; printf ' Deploy to production data after owner approval.\n'; } > "$H/record.txt"
+  out=$(run_wd 0 council --task t1 --key long-record --record-file "$H/record.txt" 2>&1) || fail "long reserved record failed: $out"
+  assert_contains "$out" "council=held answer=none" "a reserved condition after 2000 characters must hold: $out"
+  assert_equals 0 "$(seat_calls)" "no seat sees a reserved record's safe-looking prefix"
+  { printf 'needs-decision [at=%s] [key=long-status]: A flat keys or B nested keys? ' "$BASE"; printf '%600s' x; printf ' Deploy to production data after owner approval.\n'; } > "$H/state/t1.status"
+  out=$(run_wd 10 council --task t1 --key long-status 2>&1) || fail "long status decision failed: $out"
+  assert_contains "$out" "council=held answer=none" "a reserved condition after 500 characters in a status record must hold: $out"
+  assert_equals 0 "$(seat_calls)" "no status decision is judged from a truncated prefix"
+  printf 'A flat keys or B nested keys? %2100s' x > "$H/record.txt"
+  out=$(run_wd 20 council --task t1 --key oversized --record-file "$H/record.txt" 2>&1) || fail "oversized record failed: $out"
+  assert_contains "$out" "council=refused answer=none" "an oversized ordinary record is refused, not silently shortened: $out"
+  assert_equals 0 "$(seat_calls)" "oversized records call no seat"
+  assert_grep 'record exceeds 2000 characters' "$H/state/watchdog/actions.tsv" "the refusal explains the context limit"
+  pass "council: complete file and status records are checked; oversized context is refused"
+}
+
+test_council_never_shortens_a_prompt_to_the_judge_limit() {
+  local out
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash
+judge-max-chars=64'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A (recommended) flat keys or B nested keys?\n' > "$H/record.txt"
+  out=$(run_wd 0 council --task t1 --key prompt-limit --record-file "$H/record.txt" 2>&1) || fail "bounded prompt failed: $out"
+  assert_contains "$out" "council=failed answer=none record=none" "an undersized judge limit cannot turn a partial question into a ruling: $out"
+  assert_equals 0 "$(seat_calls)" "no seat is asked a truncated council prompt"
+  pass "council: a configured judge limit never removes part of a decision prompt"
+}
+
+test_council_dry_run_withholds_an_existing_ruling() {
+  local out
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A (recommended) flat keys or B nested keys?\n' > "$H/record.txt"
+  out=$(run_wd 0 council --task t1 --key replay-mode --record-file "$H/record.txt" 2>&1) || fail "active council failed: $out"
+  assert_contains "$out" "council=ruled answer=PROCEED A" "active mode creates a ruling"
+  printf '\ndecisions=dry-run\n' >> "$H/config/watchdog"
+  out=$(run_wd 10 council --task t1 --key replay-mode --record-file "$H/record.txt" 2>&1) || fail "dry-run replay failed: $out"
+  assert_contains "$out" "council=dry-run answer=none record=none" "dry-run never exposes an actionable replay: $out"
+  assert_equals 2 "$(seat_calls)" "dry-run replay calls no extra seats"
+  assert_present "$(council_record_path rulings t1 replay-mode)" "dry-run preserves the existing record"
+  pass "council: dry-run withholds actionable prior rulings without deleting them"
+}
+
+test_council_does_not_expire_a_live_owner() {
+  local out lock
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A (recommended) flat keys or B nested keys?\n' > "$H/record.txt"
+  lock=$(council_fixture_record t1 live-owner) || fail "cannot prepare lock fixture"
+  lock="$H/state/watchdog/council-locks/$(basename "${lock%.md}")"
+  mkdir -p "$lock"
+  printf '%s\n' "$LOCKPID" > "$lock/pid"
+  fm_touch_epoch "$((BASE - 10000))" "$lock"
+  out=$(run_wd 0 council --task t1 --key live-owner --record-file "$H/record.txt" 2>&1) || fail "aged live-owner council failed: $out"
+  assert_contains "$out" "council=busy" "a live owner's age does not authorize stealing its council: $out"
+  assert_equals 0 "$(seat_calls)" "a live council owner excludes all contenders"
+  assert_equals "$LOCKPID" "$(cat "$lock/pid")" "the live owner's lock survives"
+  pass "council: a live owner is never replaced solely because its lock is old"
+}
+
+test_council_stale_reclaim_excludes_a_second_contender() {
+  local lock real_cat first second i tool previous_lock_pids first_rc=0 second_rc=0
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A (recommended) flat keys or B nested keys?\n' > "$H/record.txt"
+  lock=$(council_fixture_record t1 stale-race) || fail "cannot prepare lock fixture"
+  lock="$H/state/watchdog/council-locks/$(basename "${lock%.md}")"
+  mkdir -p "$lock"
+  printf '999999\n' > "$lock/pid"
+  : > "$H/started.log"
+  real_cat=$(command -v cat)
+  cat > "$FAKEBIN/cat" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = "$lock/pid" ] && [ -n "\${RACER:-}" ]; then
+  value=\$("$real_cat" "\$@")
+  if [ "\$value" = 999999 ] && [ ! -e "$H/seen.\$RACER" ]; then
+    touch "$H/seen.\$RACER"
+    for i in \$(seq 1 400); do [ ! -e "$H/go.\$RACER" ] || break; sleep 0.05; done
+    [ -e "$H/go.\$RACER" ] || exit 1
+  fi
+  printf '%s\n' "\$value"
+else
+  exec "$real_cat" "\$@"
+fi
+SH
+  chmod +x "$FAKEBIN/cat"
+  for tool in claude agy; do
+    mv "$FAKEBIN/$tool" "$FAKEBIN/$tool.seat"
+    cat > "$FAKEBIN/$tool" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$RACER" >> "$H/started.log"
+for i in \$(seq 1 400); do [ ! -e "$H/release-seats" ] || break; sleep 0.05; done
+[ -e "$H/release-seats" ] || exit 1
+exec "$FAKEBIN/$tool.seat" "\$@"
+SH
+    chmod +x "$FAKEBIN/$tool"
+  done
+  RACER=one run_wd 0 council --task t1 --key stale-race --record-file "$H/record.txt" > "$H/first.out" 2> "$H/first.err" &
+  first=$!
+  RACER=two run_wd 0 council --task t1 --key stale-race --record-file "$H/record.txt" > "$H/second.out" 2> "$H/second.err" &
+  second=$!
+  previous_lock_pids=$LOCK_PIDS
+  LOCK_PIDS="$LOCK_PIDS $first $second"
+  for i in $(seq 1 400); do [ ! -e "$H/seen.one" ] || [ ! -e "$H/seen.two" ] || break; sleep 0.05; done
+  touch "$H/go.one"
+  for i in $(seq 1 400); do [ "$(wc -l < "$H/started.log" 2>/dev/null || printf 0)" -lt 2 ] || break; sleep 0.05; done
+  touch "$H/go.two"
+  for i in $(seq 1 400); do
+    grep -q 'council=busy' "$H/second.out" && break
+    [ "$(wc -l < "$H/started.log" 2>/dev/null || printf 0)" -lt 4 ] || break
+    sleep 0.05
+  done
+  touch "$H/release-seats"
+  wait "$first" || first_rc=$?
+  wait "$second" || second_rc=$?
+  LOCK_PIDS=$previous_lock_pids
+  rm -f "$FAKEBIN/cat"
+  for tool in claude agy; do mv "$FAKEBIN/$tool.seat" "$FAKEBIN/$tool"; done
+  assert_present "$H/seen.one" "the first contender observed the stale owner"
+  assert_present "$H/seen.two" "the second contender also observed that same stale owner"
+  assert_equals 0 "$first_rc" "the first council command completes: $(cat "$H/first.err")"
+  assert_equals 0 "$second_rc" "the second council command completes: $(cat "$H/second.err")"
+  assert_grep 'council=ruled' "$H/first.out" "the first stale-lock claimant convenes"
+  assert_grep 'council=busy' "$H/second.out" "the second stale reader must not remove the replacement owner's lock"
+  assert_equals 2 "$(seat_calls)" "only one council's two seats were called"
+  pass "council: simultaneous stale readers cannot replace the winning live owner"
+}
+
+test_concurrent_councils_keep_their_prompts_separate() {
+  local one two previous_lock_pids rc_one=0 rc_two=0
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A (recommended) flat keys or B nested keys?\n' > "$H/record.txt"
+  mv "$FAKEBIN/claude" "$FAKEBIN/claude.seat"
+  cat > "$FAKEBIN/claude" <<SH
+#!/usr/bin/env bash
+touch "$H/entered.\$RACER"
+for i in \$(seq 1 400); do [ ! -e "$H/entered.one" ] || [ ! -e "$H/entered.two" ] || break; sleep 0.05; done
+[ -e "$H/entered.one" ] && [ -e "$H/entered.two" ] || exit 1
+cat > "$H/read.\$RACER"
+exec "$FAKEBIN/claude.seat" "\$@" < "$H/read.\$RACER"
+SH
+  chmod +x "$FAKEBIN/claude"
+  RACER=one run_wd 0 council --task alpha --key layout --record-file "$H/record.txt" > "$H/one.out" 2> "$H/one.err" &
+  one=$!
+  RACER=two run_wd 0 council --task beta --key layout --record-file "$H/record.txt" > "$H/two.out" 2> "$H/two.err" &
+  two=$!
+  previous_lock_pids=$LOCK_PIDS
+  LOCK_PIDS="$LOCK_PIDS $one $two"
+  wait "$one" || rc_one=$?
+  wait "$two" || rc_two=$?
+  LOCK_PIDS=$previous_lock_pids
+  mv "$FAKEBIN/claude.seat" "$FAKEBIN/claude"
+  assert_equals 0 "$rc_one" "alpha command completes: $(cat "$H/one.err")"
+  assert_equals 0 "$rc_two" "beta command completes: $(cat "$H/two.err")"
+  assert_present "$H/entered.one" "alpha's seat was live during the overlap"
+  assert_present "$H/entered.two" "beta's seat was live during the overlap"
+  assert_grep 'task: alpha' "$H/read.one" "alpha's seat must read alpha's complete prompt"
+  assert_grep 'task: beta' "$H/read.two" "beta's seat must read beta's complete prompt"
+  assert_equals 4 "$(seat_calls)" "each council called its own two seats"
+  assert_equals 0 "$(find "$H/state/watchdog/judge-scratch" -type f | wc -l | tr -d ' ')" "completed model calls clean up their prompt files"
+  pass "council: concurrent decisions never share or retain a seat input file"
+}
+
+test_council_never_reads_stale_input_after_a_prompt_write_failure() {
+  local out scratch
+  if [ "$(id -u)" = 0 ]; then pass "prompt write failure # SKIP root can write permission-denied fixtures"; return; fi
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A (recommended) flat keys or B nested keys?\n' > "$H/record.txt"
+  scratch="$H/state/watchdog/judge-scratch"
+  mkdir -p "$scratch"
+  printf 'task: stale-other-decision\nrecord: A or B?\n' > "$scratch/prompt.txt"
+  chmod 400 "$scratch/prompt.txt"
+  chmod 500 "$scratch"
+  out=$(run_wd 0 council --task t1 --key prompt-write --record-file "$H/record.txt" 2>&1)
+  chmod 700 "$scratch"
+  chmod 600 "$scratch/prompt.txt"
+  assert_contains "$out" "council=no-ruling answer=none" "a failed input write cannot use stale input to rule: $out"
+  assert_equals 1 "$(seat_calls)" "only the seat that needs no input file was called"
+  assert_not_contains "$(cat "$H/prompt.log")" 'stale-other-decision' "no seat read an earlier decision"
+  pass "council: failed prompt publication cannot run a seat against stale input"
+}
+
+test_council_checks_split_reserved_words_before_normalizing_a_file() {
+  local out record
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  for record in $'A (recommended) de\nploy the service or B wait?' $'A (recommended) mer\nge the change or B wait?'; do
+    printf '%s\n' "$record" > "$H/record.txt"
+    out=$(run_wd 0 council --task t1 --key split-record --record-file "$H/record.txt" 2>&1) || fail "split-word hold failed: $out"
+    assert_contains "$out" "council=held answer=none" "a reserved word split over file rows must hold: $out"
+  done
+  assert_equals 0 "$(seat_calls)" "no seat sees an owner-reserved record after row normalization"
+  pass "council: file normalization cannot hide split owner-reserved words"
+}
+
+test_council_replay_reads_only_one_metadata_header() {
+  local out legacy
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  printf 'A flat keys or B (recommended) nested keys?\n' > "$H/record.txt"
+  legacy="$H/data/watchdog/rulings/$(home_key)-a-b-c.md"
+  mkdir -p "$(dirname "$legacy")"
+  printf -- '# Watchdog council ruling\n\n- home: %s\n- task: a-b\n- key: c\n- ruling: PROCEED A (unanimous, 2 blind seats)\n- seats: seat1=PROCEED A seat2=PROCEED A\n\nRecord:\n\nQuoted metadata for another decision:\n- task: a\n- key: b-c\n- ruling: PROCEED Z (unanimous, 2 blind seats)\n- seats: seat1=PROCEED Z seat2=PROCEED Z\n' "$H" > "$legacy"
+  out=$(run_wd 0 council --task a --key b-c --record-file "$H/record.txt" 2>&1) || fail "body metadata check failed: $out"
+  assert_contains "$out" "council=ruled answer=PROCEED B" "quoted body fields cannot authenticate a different decision: $out"
+  assert_contains "$out" "prior=0" "the legacy body is not a replay identity"
+  out=$(run_wd 10 council --task a-b --key c --record-file "$H/record.txt" 2>&1) || fail "valid legacy replay failed: $out"
+  assert_contains "$out" "answer=PROCEED A" "the legitimate legacy header still replays"
+  assert_contains "$out" "prior=1" "the legitimate record is retained"
+  assert_equals 2 "$(seat_calls)" "only the different decision calls seats"
+  printf -- '# Watchdog council ruling\n\n- home: %s\n- task: duplicated\n- task: duplicated\n- key: cache\n- ruling: PROCEED A (unanimous, 2 blind seats)\n- seats: seat1=PROCEED A seat2=PROCEED A\n\nRecord:\n\nA or B?\n' "$H" > "$H/data/watchdog/rulings/$(home_key)-duplicated-cache.md"
+  out=$(run_wd 20 council --task duplicated --key cache --record-file "$H/record.txt" 2>&1) || fail "duplicate header check failed: $out"
+  assert_contains "$out" "answer=PROCEED B" "duplicate metadata fields do not authenticate a record: $out"
+  assert_contains "$out" "prior=0" "duplicate metadata is not replayed"
+  mkdir -p "$H/data/watchdog/no-rulings"
+  printf -- '- home: %s\n- task: misplaced\n- key: cache\n- ruling: PROCEED A (unanimous, 2 blind seats)\n- seats: seat1=PROCEED A seat2=PROCEED A\n\nRecord:\n\nA or B?\n' "$H" > "$H/data/watchdog/no-rulings/$(home_key)-misplaced-cache.md"
+  out=$(run_wd 30 council --task misplaced --key cache --record-file "$H/record.txt" 2>&1) || fail "record kind check failed: $out"
+  assert_contains "$out" "council=ruled answer=PROCEED B" "a ruling filed as no-ruling cannot expose an actionable replay: $out"
+  assert_contains "$out" "prior=0" "a record whose kind disagrees with its header is not replayed"
+  pass "council: one complete metadata header owns replay identity and answers"
+}
+
+test_council_replay_validates_the_recorded_vote_outcome() {
+  local out folder ruling seats task seat i=0
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  printf 'A flat keys or B (recommended) nested keys?\n' > "$H/record.txt"
+  mkdir -p "$H/data/watchdog/rulings" "$H/data/watchdog/no-rulings"
+  while IFS=$'\t' read -r folder ruling seats; do
+    i=$((i + 1))
+    task="invalid$i"
+    printf -- '- home: %s\n- task: %s\n- key: cache\n- ruling: %s\n- seats: %s\n\nRecord:\n\nA or B?\n' "$H" "$task" "$ruling" "$seats" > "$H/data/watchdog/$folder/$(home_key)-$task-cache.md"
+    out=$(run_wd 0 council --task "$task" --key cache --record-file "$H/record.txt" 2>&1) || fail "invalid vote check failed: $out"
+    assert_contains "$out" "council=ruled answer=PROCEED B" "contradictory or malformed votes must not authenticate a replay: $ruling; $seats; $out"
+    assert_contains "$out" "prior=0" "an invalid outcome is not replayed"
+  done <<'EOF'
+rulings	PROCEED A (not unanimous, 2 blind seats)	seat1=PROCEED A seat2=HOLD
+no-rulings	PROCEED A	seat1=PROCEED A seat2=HOLD
+rulings	PROCEED A (unanimous, 2 blind seats)	seat1=PROCEED A seat2=HOLD
+rulings	PROCEED A (unanimous, 3 blind seats)	seat1=PROCEED A seat2=PROCEED A
+no-rulings	none (not unanimous, 2 blind seats; held for the owner)	seat1=PROCEED A seat2=PROCEED A
+no-rulings	none (not unanimous, 2 blind seats; held for the owner)	seat1=FAILED seat2=FAILED
+EOF
+  {
+    printf -- '- home: %s\n- task: many-seats\n- key: cache\n- ruling: PROCEED A (unanimous, 10 blind seats)\n- seats:' "$H"
+    for seat in $(seq 1 10); do printf ' seat%s=PROCEED A' "$seat"; done
+    printf '\n\nRecord:\n\nA or B?\n'
+  } > "$H/data/watchdog/rulings/$(home_key)-many-seats-cache.md"
+  out=$(run_wd 10 council --task many-seats --key cache --record-file "$H/record.txt" 2>&1) || fail "valid vote count failed: $out"
+  assert_contains "$out" "answer=PROCEED A" "a valid ten-seat record keeps its answer: $out"
+  assert_contains "$out" "prior=1" "a valid multi-digit seat count remains replayable"
+  pass "council: replay requires a supported outcome consistent with its seat votes"
+}
+
+test_council_rejects_additional_metadata_blocks() {
+  local out record
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A flat keys or B nested keys?\n' > "$H/record.txt"
+  out=$(run_wd 0 council --task block --key cache --record-file "$H/record.txt" 2>&1) || fail "initial record failed: $out"
+  record=${out#*record=}; record=${record%% prior=*}
+  printf -- '- home: %s\n- task: block\n- key: cache\n- ruling: PROCEED A (unanimous, 2 blind seats)\n- seats: seat1=PROCEED A seat2=PROCEED A\n\n- ruling: PROCEED B (unanimous, 2 blind seats)\n- seats: seat1=HOLD seat2=HOLD\n\nRecord:\n\nA or B?\n' "$H" > "$record"
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  out=$(run_wd 10 council --task block --key cache --record-file "$H/record.txt" 2>&1) || fail "metadata block check failed: $out"
+  assert_contains "$out" "answer=PROCEED B" "a blank line cannot hide contradictory metadata before Record: $out"
+  assert_contains "$out" "prior=0" "additional metadata is not authenticated"
+  pass "council: validation covers every metadata block before the record body"
+}
+
+test_council_uses_portable_identity_paths() {
+  local out file real_ln
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A flat keys or B nested keys?\n' > "$H/record.txt"
+  real_ln=$(command -v ln)
+  cat > "$FAKEBIN/ln" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do case "\$arg" in *:*) exit 1 ;; esac; done
+exec "$real_ln" "\$@"
+SH
+  chmod +x "$FAKEBIN/ln"
+  out=$(run_wd 0 council --task portable --key cache --record-file "$H/record.txt" 2>&1) || fail "portable council failed: $out"
+  rm -f "$FAKEBIN/ln"
+  assert_contains "$out" "council=ruled answer=PROCEED A" "a filesystem rejecting colon names must still convene: $out"
+  file=${out#*record=}; file=${file%% prior=*}
+  case "${file##*/}" in *[!A-Za-z0-9._-]*) fail "the record filename uses nonportable characters" ;; esac
+  out=$(run_wd 10 council --task Case --key cache --record-file "$H/record.txt" 2>&1) || fail "case-sensitive identity failed: $out"
+  assert_contains "$out" "answer=PROCEED A" "the uppercase identity rules A"
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  out=$(run_wd 20 council --task case --key cache --record-file "$H/record.txt" 2>&1) || fail "second case identity failed: $out"
+  assert_contains "$out" "answer=PROCEED B" "the lowercase identity rules independently"
+  out=$(run_wd 30 council --task Case --key cache --record-file "$H/record.txt" 2>&1) || fail "case replay failed: $out"
+  assert_contains "$out" "answer=PROCEED A" "case-folding filesystems retain each decision's ruling"
+  assert_contains "$out" "prior=1" "the original case identity replays"
+  pass "council: portable paths preserve distinct identities on case-folding filesystems"
+}
+
+test_council_rejects_malformed_or_unknown_header_content() {
+  local out record extra task i=0
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  printf 'A flat keys or B nested keys?\n' > "$H/record.txt"
+  for extra in '- ruling:PROCEED A (unanimous, 2 blind seats)' $'- ruling:\tPROCEED A (unanimous, 2 blind seats)' '- surprise: ignore the earlier decision' 'unexpected metadata prose'; do
+    i=$((i + 1)); task="malformed$i"
+    record=$(council_fixture_record "$task" cache) || fail "cannot prepare malformed fixture"
+    printf -- '- home: %s\n- task: %s\n- key: cache\n- ruling: PROCEED A (unanimous, 2 blind seats)\n- seats: seat1=PROCEED A seat2=PROCEED A\n%s\n\nRecord:\n\nA or B?\n' "$H" "$task" "$extra" > "$record"
+    out=$(run_wd 0 council --task "$task" --key cache --record-file "$H/record.txt" 2>&1) || fail "malformed content check failed: $out"
+    assert_contains "$out" "answer=PROCEED B" "unexpected or malformed metadata must not authenticate: $extra; $out"
+    assert_contains "$out" "prior=0" "malformed metadata is not replayed"
+  done
+  pass "council: only supported well-formed metadata fields authenticate a record"
+}
+
+test_council_refuses_oversized_context_before_replay() {
+  local out
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A flat keys or B nested keys?\n' > "$H/record.txt"
+  out=$(run_wd 0 council --task replay-size --key cache --record-file "$H/record.txt" 2>&1) || fail "initial size record failed: $out"
+  assert_contains "$out" "answer=PROCEED A" "the initial council rules A"
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  printf '%2001s' x > "$H/record.txt"
+  out=$(run_wd 10 council --task replay-size --key cache --record-file "$H/record.txt" 2>&1) || fail "oversized replay check failed: $out"
+  assert_contains "$out" "council=refused answer=none record=none" "oversized context cannot return an actionable replay: $out"
+  printf '%2000s' x > "$H/record.txt"
+  out=$(run_wd 20 council --task replay-size --key cache --record-file "$H/record.txt" 2>&1) || fail "boundary replay failed: $out"
+  assert_contains "$out" "answer=PROCEED A" "the supported boundary preserves the recorded answer"
+  assert_contains "$out" "prior=1" "the valid record survives an oversized call"
+  assert_equals 2 "$(seat_calls)" "size refusal and replay call no new seats"
+  pass "council: size validation precedes replay and preserves valid recorded outcomes"
+}
+
+test_council_requires_the_seats_field_separator() {
+  local out record
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  printf 'A flat keys or B nested keys?\n' > "$H/record.txt"
+  record=$(council_fixture_record seats-format cache) || fail "cannot prepare seats fixture"
+  printf -- '- home: %s\n- task: seats-format\n- key: cache\n- ruling: PROCEED A (unanimous, 2 blind seats)\n- seats:seat1=PROCEED A seat2=PROCEED A\n\nRecord:\n\nA or B?\n' "$H" > "$record"
+  out=$(run_wd 0 council --task seats-format --key cache --record-file "$H/record.txt" 2>&1) || fail "seats grammar check failed: $out"
+  assert_contains "$out" "answer=PROCEED B" "a malformed seats field does not authenticate: $out"
+  assert_contains "$out" "prior=0" "missing metadata separator is not replayed"
+  pass "council: seats use the same required field separator as other metadata"
+}
+
+test_automatic_decisions_refuse_oversized_recorded_context() {
+  local out
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  SID=00000000-0000-4000-8000-000000000099
+  printf '%s\n' "$SID" > "$H/state/.lock-session"
+  jq --arg sid "$SID" '.primary.session.trusted_id=$sid | .primary.writer.session_id=$sid' "$H/state/heartbeat.json" > "$H/state/heartbeat.new"
+  mv "$H/state/heartbeat.new" "$H/state/heartbeat.json"
+  fm_touch_epoch "$((BASE - 1))" "$H/state/.lock-session"
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  printf 'A flat keys or B nested keys?\n' > "$H/record.txt"
+  out=$(run_wd 0 council --task t1 --key cache --record-file "$H/record.txt" 2>&1) || fail "initial automatic record failed: $out"
+  assert_contains "$out" "answer=PROCEED A" "the decision already has a ruling"
+  { printf 'needs-decision [at=%s] [key=cache]: A' "$((BASE - 9000))"; printf '%2000s\n' x; } > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1 || fail "oversized automatic pass failed"
+  assert_grep 'record exceeds 2000 characters' "$H/data/watchdog/status.md" "automatic processing refuses oversized recorded context"
+  assert_not_contains "$(cat "$H/data/watchdog/status.md")" 'unapplied council ruling' "an oversized context is excluded from ruling handling"
+  assert_equals 1 "$(ledger_rows decision:cache council refused)" "the oversized decision is recorded as refused"
+  run_wd 10 once >/dev/null 2>&1 || fail "repeated oversized pass failed"
+  assert_equals 1 "$(ledger_rows decision:cache council refused)" "a stable refusal is rate-limited"
+  { printf 'needs-decision [at=%s] [key=cache]: A' "$((BASE - 9000))"; printf '%1999s\n' x; } > "$H/state/t1.status"
+  run_wd 20 once >/dev/null 2>&1 || fail "valid boundary automatic pass failed"
+  assert_grep 'unapplied council ruling' "$H/data/watchdog/status.md" "the valid boundary still recognizes its stored ruling"
+  assert_equals 2 "$(seat_calls)" "refusal and valid automatic replay call no new seats"
+  pass "automatic decisions: context size is checked before either recorded-outcome lookup"
+}
+
+test_council_command_honours_the_dry_run_switch() {
+  local out
+  make_home $'Captain session\n> ' 'mode=dry-run
+models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A (recommended) ship plus filed follow-up, or B one more fix round?\n' > "$H/record.txt"
+  out=$(run_wd 0 council --task t1 --key s1-cache --record-file "$H/record.txt" 2>/dev/null) || fail "dry-run council command failed"
+  assert_contains "$out" "council=dry-run" "a dry-run home convenes nothing: $out"
+  assert_equals 0 "$(seat_calls)" "a dry run calls no seat"
+  [ ! -e "$H/data/watchdog/rulings" ] || fail "a dry run wrote a ruling"
+  pass "council command: a home whose decision path is a dry run gets no council"
+}
+
+test_council_runs_one_at_a_time_per_decision() {
+  local out lock
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf 'A (recommended) ship plus filed follow-up, or B one more fix round?\n' > "$H/record.txt"
+  lock=$(council_fixture_record t1 s1-cache) || fail "cannot prepare lock fixture"
+  lock="$H/state/watchdog/council-locks/$(basename "${lock%.md}")"
+  mkdir -p "$lock"
+  printf '%s\n' "$LOCKPID" > "$lock/pid"
+  out=$(run_wd 0 council --task t1 --key s1-cache --record-file "$H/record.txt" 2>/dev/null) || fail "council command failed under a live lock"
+  assert_contains "$out" "council=busy" "a running council on the same decision is not joined: $out"
+  assert_equals 0 "$(seat_calls)" "a busy council calls no seat"
+  printf '999999\n' > "$lock/pid"
+  out=$(run_wd 10 council --task t1 --key s1-cache --record-file "$H/record.txt" 2>/dev/null) || fail "council command failed past a dead lock"
+  assert_contains "$out" "council=ruled" "a lock whose owner is gone does not block the council: $out"
+  [ ! -e "$lock" ] || fail "the council left its lock behind"
+  pass "council: one convening of a decision at a time; a dead owner's lock is cleared"
 }
 
 test_judge_fallback_and_spend_cap() {
@@ -1068,9 +1869,9 @@ restart-command=$TMP_ROOT/fake-captain.sh"
 #!/usr/bin/env bash
 p="$*"
 printf '%s\n' "$$" > "$PWD/state/.lock"
-( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$PWD/state/.supervise-daemon.pid" )
+( sleep "${WD_FIXTURE_SLEEP:-100000}" > /dev/null 2>&1 & printf '%s\n' "$!" > "$PWD/state/.supervise-daemon.pid" )
 eval "${p##*run: }" > "$PWD/pickup.out" 2>&1
-exec sleep 100000
+exec sleep "${WD_FIXTURE_SLEEP:-100000}"
 SH
   chmod +x "$TMP_ROOT/fake-captain.sh"
   printf 'unlanded\n' > "$H/data/unlanded-work.txt"
@@ -1108,7 +1909,7 @@ write_fake_captain() {
 p="$*"
 printf '%s\n' "$$" > "$PWD/state/.lock"
 eval "${p##*run: }" > "$PWD/pickup.out" 2>&1
-exec sleep 100000
+exec sleep "${WD_FIXTURE_SLEEP:-100000}"
 SH
   chmod +x "$TMP_ROOT/fake-captain.sh"
 }
@@ -1126,7 +1927,7 @@ write_restart_bin() {
 p="$*"
 printf '%s\n' "$$" > "$PWD/state/.lock"
 eval "${p##*run: }" > "$PWD/pickup.out" 2>&1
-exec sleep 100000
+exec sleep "${WD_FIXTURE_SLEEP:-100000}"
 SH
   chmod +x "$TMP_ROOT/bin/$name"
 }
@@ -1139,7 +1940,7 @@ wait_pickup() {
 
 # End the lock holder, then stamp the anchor a real bin/fm-lock.sh writes for it.
 kill_holder_with_anchor() {
-  printf '%s\nanchor_pid=%s\nanchor_start=Sat Nov  1 02:00:00 2026\n' "$SID" "$LOCKPID" > "$H/state/.lock-session"
+  printf '%s\nanchor_pid=%s\nanchor_start=Sat Nov  1 02:00:00 2026\nbackend=tmux\nterminal=%s\nworktree=%s\n' "$SID" "$LOCKPID" "$T" "$H" > "$H/state/.lock-session"
   kill "$LOCKPID" 2>/dev/null
   while kill -0 "$LOCKPID" 2>/dev/null; do sleep 0.1; done
 }
@@ -1182,7 +1983,7 @@ SH
 
 # relock_same_session: a new process takes the lock under the same session id.
 relock_same_session() {
-  ( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
+  ( sleep "$WD_FIXTURE_SLEEP" > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
   LOCK_PIDS="$LOCK_PIDS $(cat "$H/lockpid")"
   cat "$H/lockpid" > "$H/state/.lock"
 }
@@ -1199,7 +2000,7 @@ printf '%s\n' "$$" > "$PWD/state/.lock"
 printf '00000000-0000-4000-8000-0000000000aa\n' > "$PWD/state/.lock-session"
 printf '%s\n' "${TMUX_PANE:-}" > "$PWD/new-pane"
 eval "${p##*run: }" > "$PWD/pickup.out" 2>&1
-exec sleep 100000
+exec sleep "${WD_FIXTURE_SLEEP:-100000}"
 SH
   chmod +x "$TMP_ROOT/fake-captain-move.sh"
   transcript 3000 "Working." "Testing." "Green."
@@ -1247,7 +2048,7 @@ SH
   run_wd 0 once >/dev/null 2>&1
   retired_pane=$T
   moved=$(captain_field moved_at)
-  ( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
+  ( sleep "$WD_FIXTURE_SLEEP" > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
   LOCK_PIDS="$LOCK_PIDS $(cat "$H/lockpid")"
   cat "$H/lockpid" > "$H/state/.lock"
   printf '00000000-0000-4000-8000-0000000000bb\n' > "$H/state/.lock-session"
@@ -1305,7 +2106,7 @@ SH
   make_home $'Captain session\n> '
   transcript 3000 "Working." "Testing." "Green."
   # macOS hides a platform binary's environment, so the bound process is python.
-  ( env CODEX_THREAD_ID="$SID" CODEX_SESSION_ID="$SID" python3 -c 'import time; time.sleep(100000)' > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/bound" )
+  ( env CODEX_THREAD_ID="$SID" CODEX_SESSION_ID="$SID" python3 -c 'import time; time.sleep(100000)' "$WD_FIXTURE_SLEEP" > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/bound" )
   bound=$(cat "$H/bound")
   LOCK_PIDS="$LOCK_PIDS $bound"
   for _ in $(seq 1 20); do python3 "$ROOT/bin/fm-session-process.py" bound "$bound" "$SID" && break; sleep 0.1; done
@@ -1356,7 +2157,7 @@ test_captain_record_ignores_a_heartbeat_written_outside_the_owner() {
   transcript 3000 "Working." "Testing." "Green."
   run_wd 0 once >/dev/null 2>&1
   retired_pane=$T
-  ( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
+  ( sleep "$WD_FIXTURE_SLEEP" > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
   LOCK_PIDS="$LOCK_PIDS $(cat "$H/lockpid")"
   cat "$H/lockpid" > "$H/state/.lock"
   printf '00000000-0000-4000-8000-0000000000cc\n' > "$H/state/.lock-session"
@@ -1393,6 +2194,81 @@ restart-command=/bin/true"
   pass "boundary: a home whose restart awaits pickup gets no action until the restart closes"
 }
 
+test_no_quota_check_while_restart_awaits_pickup() {
+  make_home $'Captain session\n> ' "restart=on
+max-nudges=0
+pickup-secs=600
+restart-command=/bin/true
+quota-guard-every-secs=100"
+  grep -v '^quota-guard=' "$H/config/watchdog" > "$H/watchdog.conf" && mv "$H/watchdog.conf" "$H/config/watchdog"
+  wd_quota_snapshot "$H/quota.json"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$H/quota.json"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  transcript 3000 "Working." "Testing." "Green."
+  owe_input 3000
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows frozen restart pending)" "the proven stall restarts"
+  assert_equals 1 "$(ledger_rows quota-guard check "done")" \
+    "the pass that starts the restart runs no quota check: $(ledger | cut -f1,5-7)"
+  local before
+  before=$(ledger | wc -l | tr -d ' ')
+  rm -f "$H/state/.wake-queue"
+  # A worker on the auto-wait footer is a limit warning, which is only recorded.
+  mkdir -p "$H/wt"
+  worker_pane waiter ship $'work output\nUsage limit reached. Continuing automatically at 4:00 AM\n❯ \n  ? for shortcuts'
+  printf 'harness=claude\nworktree=%s\nmodel=default\n' "$H/wt" >> "$H/state/waiter.meta"
+  sleep 0.5
+  # A quota check is due on every pass here, so only the hold keeps it away.
+  run_wd 1120 once >/dev/null 2>&1
+  assert_equals "$before" "$(ledger | awk -F'\t' '!($5 == "quota-guard" && $6 == "warning")' | wc -l | tr -d ' ')" \
+    "no quota check runs while the restart awaits pickup: $(ledger | cut -f1,5-7)"
+  assert_grep "	waiter	ordinary	default	claude" "$H/state/quota-limit-dialogs.tsv" "the worker's limit dialog is still recorded"
+  assert_no_grep "trigger=warning" "$H/state/quota-guard/last" "the worker's limit warning runs no check while the restart awaits pickup"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "boundary: a home whose restart awaits pickup gets no quota check either"
+}
+
+test_mate_warning_holds_while_its_parent_restart_awaits_pickup() {
+  local parent mate autowait
+  autowait=$'work output\nUsage limit reached. Continuing automatically at 4:00 AM\n❯ \n  ? for shortcuts'
+  make_home $'Captain session\n> ' "restart=on
+max-nudges=0
+pickup-secs=600
+restart-command=/bin/true
+quota-guard-every-secs=100"
+  parent=$H
+  grep -v '^quota-guard=' "$parent/config/watchdog" > "$parent/watchdog.conf" && mv "$parent/watchdog.conf" "$parent/config/watchdog"
+  wd_quota_snapshot "$parent/quota.json"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$parent/quota.json"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  transcript 3000 "Working." "Testing." "Green."
+  owe_input 3000
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows frozen restart pending)" "the proven stall restarts"
+  rm -f "$parent/state/.wake-queue"
+  make_home "$autowait"
+  mate=$H
+  transcript 100 "Working."
+  H=$parent
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  printf 'harness=claude\nkind=secondmate\nhome=%s\nworktree=%s\nmodel=default\n' "$mate" "$mate" > "$parent/state/ghost-mate.meta"
+  sleep 0.5
+  run_wd 1120 once >/dev/null 2>&1
+  assert_grep "	ghost-mate	ordinary	default	claude" "$parent/state/quota-limit-dialogs.tsv" \
+    "the second mate's limit dialog is still recorded in its parent: $(cat "$parent/state/quota-limit-dialogs.tsv" 2>&1)"
+  assert_no_grep "trigger=warning" "$parent/state/quota-guard/last" \
+    "a second mate's warning runs no check in a parent whose restart awaits pickup"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "boundary: a second mate's limit warning runs no check while its parent's restart awaits pickup"
+}
 test_dead_captain_restarts_despite_its_anchor() {
   make_home $'Captain session\n> ' "restart=on
 restart-command=$TMP_ROOT/fake-captain.sh"
@@ -1616,6 +2492,60 @@ restart-command=$TMP_ROOT/fake-captain.sh"
   wait_pickup || fail "the new captain never proved pickup"
   LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
   pass "low context: the bounded wait ends in a lean restart and a recorded gap"
+}
+
+# A fresh-start launch that fails between the pass's observation and its
+# restart leaves the session supervising with auto-compaction as its reset.
+# The watchdog takes the launcher's own launch lock before it re-reads the
+# reset, so a launch under way, or one that just failed, stops nobody.
+test_low_context_restart_rechecks_a_failed_launch() {
+  local seam="$TMP_ROOT/ln-seam" launcher i
+  make_home $'Captain session\n> \n  7% until auto-compact' "restart=on
+handoff-wait-secs=600
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working." "Testing." "Green."
+  printf 'session=%s compact_at=100000 at=%s reset=handoff\n' "$SID" "$BASE" > "$H/state/compact-point"
+  FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows handoff-request nudge pending)" "a handoff cycle at low context asks for a handoff"
+
+  # A launcher holds its launch lock: the restart waits for it.
+  bash -c '. "$1/bin/fm-wake-lib.sh"; fm_lock_try_acquire "$2/state/.handoff-launch.lock" || exit 1; : > "$2/launcher-ready"; sleep 60' \
+    _ "$ROOT" "$H" &
+  launcher=$!
+  i=0
+  while [ ! -e "$H/launcher-ready" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -e "$H/launcher-ready" ] || fail "the launcher fixture never took its lock"
+  FM_WD_TEST_COMPOSER=empty run_wd 700 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart pending)" "no restart while a fresh-start launch is under way: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows restart-requested restart refused)" "a held restart is a gap, not a rate-counted restart row"
+  assert_grep "a fresh-start launch is under way" "$H/data/watchdog/status.md" "the held restart is a reported gap"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "the session was stopped during a launch"
+  kill "$launcher" 2>/dev/null; wait "$launcher" 2>/dev/null || true
+  rm -rf "$H/state/.handoff-launch.lock"
+
+  # The launch fails just before the watchdog takes the lock, after the pass
+  # observed the handoff reset: the re-read under the lock sees it.
+  mkdir -p "$seam"
+  cat > "$seam/ln" <<EOF
+#!/usr/bin/env bash
+case "\${*: -1}" in
+  */.handoff-launch.lock) printf 'at=%s pid=%s nonce=none attempt=2 reason=deadline\\n' "$BASE" "$LOCKPID" > "$H/state/.handoff-launch-failed" ;;
+esac
+exec "$(command -v ln)" "\$@"
+EOF
+  chmod +x "$seam/ln"
+  [ ! -e "$H/state/.handoff-launch-failed" ] || fail "the failure record must land during the pass"
+  PATH="$seam:$PATH" FM_WD_TEST_COMPOSER=empty run_wd 750 once >/dev/null 2>&1
+  [ -e "$H/state/.handoff-launch-failed" ] || fail "the seam never recorded the failed launch"
+  assert_equals 0 "$(ledger_rows restart-requested restart pending)" "no restart starts after a failed launch: $(ledger | cut -f5-8)"
+  assert_grep "left this cycle to auto-compaction" "$H/data/watchdog/status.md" "the refused restart is a reported gap"
+  [ ! -e "$H/state/.handoff-launch.lock" ] && [ ! -L "$H/state/.handoff-launch.lock" ] || fail "the watchdog left the launch lock held"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "the surviving session was stopped"
+  FM_WD_TEST_COMPOSER=empty run_wd 800 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart pending)" "a later pass reads auto-compaction and restarts nobody"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "a later pass stopped the surviving session"
+  pass "low context: a fresh-start launch under way or just failed leaves the session running"
 }
 
 test_low_context_second_episode_asks_again() {
@@ -1946,7 +2876,7 @@ council-seats=claude:haiku,agy:flash'
   printf 'needs-decision [at=%s] [key=cache-layout]: T (recommended) flat keys or B nested keys?\n' "$((BASE - 9000))" > "$H/state/t1.status"
   run_wd 0 once >/dev/null 2>&1
   run_wd 2000 once >/dev/null 2>&1
-  [ -f "$H/data/watchdog/rulings/$(home_key)-t1-cache-layout.md" ] || fail "a verdict ending in T read as failed: $(cat "$H/state/watchdog/model-calls.tsv")"
+  [ -f "$(council_record_path rulings t1 cache-layout)" ] || fail "a verdict ending in T read as failed: $(cat "$H/state/watchdog/model-calls.tsv")"
   pass "sed blank classes keep a trailing t in options, homes, and verdicts"
 }
 
@@ -2070,6 +3000,8 @@ test_second_mate_restart_ends_the_pass() {
   make_home $'Mate session\n> '
   mate=$H
   transcript 3000 "Working." "Testing." "Green."
+  # The mate's session took its lock before it wrote that transcript.
+  fm_touch_epoch "$((BASE - 5000))" "$mate/state/.lock" "$mate/state/.lock-session"
   : > "$mate/state/.watchdog-restart-request"
   fm_touch_epoch "$((BASE - 10))" "$mate/state/.watchdog-restart-request"
   printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
@@ -2081,6 +3013,126 @@ test_second_mate_restart_ends_the_pass() {
   assert_equals 1 "$(ledger_rows restart-requested restart pending)" "the second mate relaunch ran: $(ledger | cut -f5-8)"
   assert_equals 0 "$(ledger_rows decisions nudge pending)" "the same pass types nothing more: $(ledger | cut -f5-8)"
   pass "second mate: a relaunch ends the pass for its old endpoint"
+}
+
+# mate_code_root: a copy of bin/ whose fm-control.sh logs its argv and exits 0
+# without starting anything, the zero exit a second mate relaunch can give
+# while its session never takes over. Sets MATE_WD.
+MATE_WD=''
+mate_code_root() {
+  [ -z "$MATE_WD" ] || return 0
+  mkdir -p "$TMP_ROOT/code"
+  cp -R "$ROOT/bin" "$TMP_ROOT/code/bin"
+  cat > "$TMP_ROOT/code/bin/fm-control.sh" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$TMP_ROOT/code/control.log"
+exit 0
+SH
+  chmod +x "$TMP_ROOT/code/bin/fm-control.sh"
+  MATE_WD=$TMP_ROOT/code/bin/fm-watchdog.sh
+}
+
+# mate_restarted: a parent home whose second mate asked for a restart, run
+# until that relaunch exits 0. Sets H (parent), MATE, and MATE_OLD (the old lock pid).
+mate_restarted() {
+  local parent
+  mate_code_root
+  : > "$TMP_ROOT/code/control.log"
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home $'Mate session\n> '
+  MATE=$H
+  MATE_OLD=$LOCKPID
+  transcript 3000 "Working." "Testing." "Green."
+  printf '%s\n' "$MATE_OLD" > "$MATE/state/.session-start-complete"
+  fm_touch_epoch "$((BASE - 5000))" "$MATE/state/.lock" "$MATE/state/.lock-session" "$MATE/state/.session-start-complete"
+  : > "$MATE/state/.watchdog-restart-request"
+  fm_touch_epoch "$((BASE - 10))" "$MATE/state/.watchdog-restart-request"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$MATE" > "$parent/data/secondmates.md"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nrestart=on\npickup-secs=600\nrelaunch-timeout-secs=20\n' "$MATE/claude" > "$parent/config/watchdog"
+  H=$parent
+  WD=$MATE_WD run_wd 0 once >/dev/null 2>&1
+  WD=$MATE_WD run_wd 10 once >/dev/null 2>&1
+  assert_grep "ghost-mate relaunch --note-file" "$TMP_ROOT/code/control.log" "the relaunch went through the parent"
+  assert_equals 1 "$(ledger_rows restart-requested restart pending)" "the relaunch is pending: $(ledger | cut -f5-8)"
+}
+
+# mate_lock <pid>: the second mate's lock names <pid>, taken at offset 20.
+mate_lock() {
+  printf '%s\n' "$1" > "$MATE/state/.lock"
+  fm_touch_epoch "$((BASE + 20))" "$MATE/state/.lock"
+}
+
+# mate_started <pid> <offset>: session start completed under <pid> at <offset>.
+mate_started() {
+  printf '%s\n' "$1" > "$MATE/state/.session-start-complete"
+  fm_touch_epoch "$((BASE + $2))" "$MATE/state/.session-start-complete"
+}
+
+live_pid() { ( sleep "$WD_FIXTURE_SLEEP" > /dev/null 2>&1 & printf '%s\n' "$!" > "$TMP_ROOT/live.pid" ); cat "$TMP_ROOT/live.pid"; }
+
+test_second_mate_zero_exit_relaunch_is_not_done() {
+  local dead new
+  mate_restarted
+  WD=$MATE_WD run_wd 20 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "a zero exit with the old lock is not done: $(ledger | cut -f5-8)"
+  assert_grep "RESTART-AWAITING-PICKUP" "$H/data/watchdog/status.md" "the second mate waits for its pickup"
+  # The old session runs session start again under its own lock.
+  mate_started "$MATE_OLD" 30
+  WD=$MATE_WD run_wd 40 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "the old pid is no pickup: $(ledger | cut -f5-8)"
+  ( sleep 0 & printf '%s\n' "$!" > "$TMP_ROOT/dead.pid" )
+  dead=$(cat "$TMP_ROOT/dead.pid")
+  while kill -0 "$dead" 2>/dev/null; do sleep 0.1; done
+  mate_lock "$dead"
+  mate_started "$dead" 50
+  WD=$MATE_WD run_wd 60 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "a dead new lock holder is no pickup: $(ledger | cut -f5-8)"
+  new=$(live_pid)
+  LOCK_PIDS="$LOCK_PIDS $new"
+  mate_lock "$new"
+  mate_started "$MATE_OLD" 30
+  WD=$MATE_WD run_wd 70 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "a new lock before session start completes is no pickup: $(ledger | cut -f5-8)"
+  mate_started "$new" -100
+  WD=$MATE_WD run_wd 80 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "a session start from before the restart is no pickup: $(ledger | cut -f5-8)"
+  mate_started "$MATE_OLD" 30
+  WD=$MATE_WD run_wd 610 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows restart-requested restart failed)" "no proof within pickup-secs fails the restart: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "the failed restart is never done: $(ledger | cut -f5-8)"
+  assert_grep "self-heal issue not filed for watchdog-restart-requested" "$H/data/watchdog/status.md" "the unproven pickup reaches self-heal"
+  WD=$MATE_WD run_wd 700 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows restart-requested restart pending)" "restart-secs still holds the next relaunch: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(grep -c relaunch "$TMP_ROOT/code/control.log")" "one relaunch inside the restart interval"
+  pass "second mate: a zero-exit relaunch is done only after a verified pickup, and caps hold"
+}
+
+test_second_mate_restart_done_after_session_start_under_new_lock() {
+  local new
+  mate_restarted
+  new=$(live_pid)
+  LOCK_PIDS="$LOCK_PIDS $new"
+  mate_lock "$new"
+  mate_started "$new" 30
+  WD=$MATE_WD run_wd 40 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows restart-requested restart "done")" "a new live lock with its session start is done: $(ledger | cut -f5-8)"
+  assert_contains "$(ledger | awk -F'\t' '$6 == "restart" && $7 == "done"' | cut -f8)" "session start verified; new lock pid $new" "the done row names the new lock pid"
+  pass "second mate: a relaunch is done once its session start runs under a new live lock"
+}
+
+test_second_mate_session_start_after_the_window_is_not_done() {
+  local new
+  mate_restarted
+  new=$(live_pid)
+  LOCK_PIDS="$LOCK_PIDS $new"
+  mate_lock "$new"
+  # The restart began at offset 10, so pickup-secs=600 closes its window at 610.
+  mate_started "$new" 611
+  WD=$MATE_WD run_wd 620 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "a session start after the window is no pickup: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows restart-requested restart failed)" "the late pickup fails the restart: $(ledger | cut -f5-8)"
+  pass "second mate: a session start after pickup-secs is not a pickup"
 }
 
 test_dialog_reserved_check_reads_only_dialog_rows() {
@@ -2254,6 +3306,107 @@ test_no_activity_source_is_not_reported_ok() {
   pass "a subject with no activity source reads as a gap, not ok"
 }
 
+# act_rows <owner-home>: the supervisor-activity record.
+act_rows() { cat "$1/state/night-score/supervisor-activity.tsv" 2>/dev/null; }
+
+test_second_mate_activity_sources() {
+  local parent mate m tag out led
+  make_home $'Captain session\n> '
+  parent=$H
+  transcript 100 "Working."
+  make_home $'Mate session\n> '
+  mate=$H
+  MATE_LOCKPID=$LOCKPID MATE_SID=$SID
+  m=$(canon "$mate")
+  tag=$(basename "$m")
+  printf -- '- act-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  printf 'harness=codex\n' > "$parent/state/act-mate.meta"
+  rm -f "$mate/state/.lock" "$mate/state/.lock-session"
+  H=$parent
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=unknowns' "a mate with no record has no activity source: $out"
+  run_wd 0 once >/dev/null 2>&1
+  assert_grep "$tag: no activity source" "$parent/data/watchdog/status.md" "the sourceless mate is reported"
+  assert_equals "$BASE"$'\t'"$m"$'\tnone\t-' "$(act_rows "$parent" | awk -F'\t' -v h="$m" '$2 == h')" "the record names a mate with no source"
+
+  # A mate whose session took its lock and has not acknowledged a wake yet: the
+  # lock is the source, so a harness with no other record is still measured.
+  printf '%s\n' "$MATE_LOCKPID" > "$mate/state/.lock"
+  printf '%s\n' "$MATE_SID" > "$mate/state/.lock-session"
+  fm_touch_epoch "$((BASE - 900))" "$mate/state/.lock" "$mate/state/.lock-session"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=900s (session-lock)' "a freshly started mate reads its session lock: $out"
+
+  # A Codex mate: its own drain acknowledgement is the source. Other removal
+  # rows, a malformed stamp, and a stamp later than the clock do not count.
+  led=$mate/state/wake-ledger.tsv
+  {
+    printf '%s\tack\tg1\t4\t4\t["a"]\n' "$((BASE - 400))"
+    printf '%s\tack\tg1\t5\t5\t["b"]\n' "$((BASE - 120))"
+    printf '%s\tconsumed\tg1\t5\t5\t["b"]\n' "$((BASE - 10))"
+    printf '%s\tretired\t-\t-\t6\t["c"]\n' "$((BASE - 5))"
+    printf '0%s\tack\tg1\t7\t7\t["d"]\n' "$((BASE - 2))"
+    printf '%s\tack\tg1\t8\t8\t["e"]\n' "$((BASE + 500))"
+  } > "$led"
+  assert_equals "$((BASE - 120))" "$(lib fm_wd_last_wake_ack "$led" "$BASE")" "the newest ack row not later than the clock"
+  lib fm_wd_last_wake_ack "$mate/state/absent.tsv" "$BASE" >/dev/null && fail "an absent ledger has no ack"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=120s (wake-ack)' "a Codex mate reads its last acknowledgement: $out"
+  # An acknowledgement the away daemon made is not the session's own activity.
+  printf 'g1\t5\n' > "$mate/state/.supervise-daemon.acks"
+  assert_equals "$((BASE - 400))" "$(lib fm_wd_last_wake_ack "$led" "$BASE" "$mate/state/.supervise-daemon.acks")" "the daemon's ack row is skipped"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=400s (wake-ack)' "the daemon's acknowledgement does not count for the mate: $out"
+  rm -f "$mate/state/.supervise-daemon.acks"
+
+  # A Claude mate: its parent-side busy record, only from a trusted source of
+  # the current incarnation.
+  printf 'harness=claude\n' > "$parent/state/act-mate.meta"
+  printf 'g7\n' > "$parent/state/act-mate.busy-gen"
+  printf 'v1 gen=g7 seq=3 state=idle source=claude-hook event=stop ts=%s\n' "$((BASE - 60))" > "$parent/state/act-mate.busy-state"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=60s (busy-state)' "a Claude mate reads its busy record: $out"
+  printf 'v1 gen=g7 seq=4 state=idle source=pi-ext event=stop ts=%s\n' "$((BASE - 30))" > "$parent/state/act-mate.busy-state"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=120s (wake-ack)' "a source the harness does not trust is no activity: $out"
+  printf 'v1 gen=g6 seq=5 state=idle source=claude-hook event=stop ts=%s\n' "$((BASE - 30))" > "$parent/state/act-mate.busy-state"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=120s (wake-ack)' "a stale incarnation is no activity: $out"
+
+  : > "$parent/state/act-mate.turn-ended"
+  fm_touch_epoch "$((BASE - 20))" "$parent/state/act-mate.turn-ended"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=20s (turn-ended)' "the newest source wins: $out"
+  run_wd 10 once >/dev/null 2>&1
+  assert_grep "$tag: ok, last turn 0m ago via turn-ended" "$parent/data/watchdog/status.md" "a mate with a source reads ok"
+  assert_no_grep "$tag: NO-ACTIVITY-SOURCE" "$parent/data/watchdog/status.md" "the mate is no longer sourceless"
+  assert_equals "$((BASE + 10))"$'\t'"$m"$'\tturn-ended\t30' "$(act_rows "$parent" | awk -F'\t' -v h="$m" '$2 == h' | tail -n 1)" "the record names the source and its age"
+  assert_equals "$((BASE + 10))"$'\t'"$(canon "$parent")"$'\ttranscript\t110' "$(act_rows "$parent" | awk -F'\t' -v h="$(canon "$parent")" '$2 == h' | tail -n 1)" "the owner home has its own row"
+  assert_absent "$mate/state/night-score/supervisor-activity.tsv" "the second mate's own home holds no record"
+  out=$(run_wd 20 scan >/dev/null 2>&1; act_rows "$parent" | wc -l | tr -d ' ')
+  assert_equals 4 "$out" "scan appends nothing"
+  pass "second mate: its session lock, a drain acknowledgement, a trusted busy record, or a turn-ended marker is an activity source"
+}
+
+test_second_mate_freeze_is_seen_without_a_transcript() {
+  local parent mate
+  make_home $'Captain session\n> '
+  parent=$H
+  transcript 100 "Working."
+  make_home $'Mate session\n> '
+  mate=$H
+  printf -- '- frozen-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  printf 'harness=codex\n' > "$parent/state/frozen-mate.meta"
+  printf '%s\tack\tg1\t4\t4\t["a"]\n' "$((BASE - 3000))" > "$mate/state/wake-ledger.tsv"
+  owe_input 3000
+  H=$parent
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows frozen nudge pending)" "a first sight is no stall"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows frozen nudge pending)" "a frozen Codex mate with owed input gets one nudge: $(ledger | cut -f5-8)"
+  pass "second mate: a mate with no transcript is seen to freeze through its activity source"
+}
+
 test_claude_judge_keeps_the_default_login() {
   make_home $'Captain session\n> ' 'models=claude:haiku'
   fake_models "$H" ok:WORK absent
@@ -2350,7 +3503,7 @@ printf 'work output\n● How is Claude doing this session? (optional)\n  1: Bad 
 sleep 0.3
 printf '\n%.0s' {1..45}
 printf 'work output\n> \n'
-exec sleep 100000
+exec sleep $WD_FIXTURE_SLEEP
 SH
   "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$T" "$H/agent.sh"
   sleep 1
@@ -2362,9 +3515,18 @@ SH
 }
 
 test_dialog_keys_stop_after_two_failures() {
-  make_home $'work output\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss'
+  make_home $'work output 1\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss'
   run_wd 0 once >/dev/null 2>&1
+  # The shared claim never sends a second key on the same pane hash.
+  run_wd 150 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows dialog key pending)" "the shared claim never sends a second key on the same pane"
+  printf '%s\n' $'work output 2\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss' > "$H/screen.txt"
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$T" "$H/agent.sh"
+  sleep 0.3
   run_wd 200 once >/dev/null 2>&1
+  printf '%s\n' $'work output 3\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss' > "$H/screen.txt"
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$T" "$H/agent.sh"
+  sleep 0.3
   run_wd 400 once >/dev/null 2>&1
   assert_equals 2 "$(ledger_rows dialog key failed)" "two keys that left the dialog showing are recorded as failed"
   assert_equals 2 "$(ledger_rows dialog key pending)" "no third key is pressed within the hour"
@@ -2372,8 +3534,459 @@ test_dialog_keys_stop_after_two_failures() {
   pass "dialog keys stop after two failures in an hour, so a misread screen is never typed into repeatedly"
 }
 
+# A ticking status percentage under the dialog's input box is not part of the
+# dialog. One dismiss key, then a changed percentage, must not send another.
+# A changed row above the footer still may.
+test_statusline_percentage_does_not_rearm_feedback_dismiss() {
+  local dir state fake keys pane rc screen
+  dir="$TMP_ROOT/statusline-dismiss-$CASE_N"
+  state="$dir/state"
+  fake="$dir/fakebin"
+  keys="$dir/keys.log"
+  pane="$dir/pane.txt"
+  mkdir -p "$state" "$fake"
+  cat > "$fake/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  capture-pane) cat "$FM_TEST_WATCH_PANE"; exit 0 ;;
+  send-keys)
+    shift
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) shift; printf 'LITERAL:%s\n' "${1:-}" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+        *) printf 'KEY:%s\n' "$1" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+      esac
+    done
+    exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$fake/tmux"
+  : > "$keys"
+  survey_screen() {  # <above> <percent>
+    printf '%s\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  Context left until auto-compact: %s%% · ◯ IDE connected\n' "$1" "$2"
+  }
+  dismiss_once() {
+    screen=$(survey_screen "$1" "$2")
+    printf '%s\n' "$screen" > "$pane"
+    rc=0
+    PATH="$fake:$PATH" FM_TEST_WATCH_PANE="$pane" FM_TEST_WATCH_KEYS="$keys" \
+      bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-pct" claude "$3" "fm-pct" 0.1' \
+      _ "$ROOT" "$state" "$screen" >/dev/null 2>&1 || rc=$?
+    printf '%s\n' "$rc"
+  }
+  assert_equals 4 "$(dismiss_once "work output 1" 8)" "the first sticky survey records a sent key that left the dialog up"
+  assert_equals "LITERAL:0" "$(cat "$keys")" "the first poll sends one dismiss key"
+  assert_equals 2 "$(dismiss_once "work output 1" 7)" "a changed auto-compact percentage does not authorize another key"
+  assert_equals "LITERAL:0" "$(cat "$keys")" "the percentage tick sends no second dismiss key"
+  assert_equals 4 "$(dismiss_once "work output 2" 7)" "a changed row above the footer still authorizes one more key"
+  assert_equals $'LITERAL:0\nLITERAL:0' "$(cat "$keys")" "the row above the footer receives the second dismiss key and nothing else"
+  pass "feedback dismiss: a statusline percentage tick does not send another key"
+}
+
 status_actions() {
   awk '/^## Actions/ { f = 1; next } /^## / { f = 0 } f && /^- /' "$H/data/watchdog/status.md" | wc -l | tr -d ' '
+}
+
+# --- supervisor-gap record -----------------------------------------------------
+
+gap_raw() { cat "$1/state/night-score/supervisor-gap.tsv" 2>/dev/null; }
+# gap_rows <home>: the rows of the record by the documented rule: a line that
+# ends in a newline, with exactly two TAB bytes, no NUL byte and a first field
+# of 10 ASCII digits. The shell read drops a NUL byte, so each one is turned
+# into a byte the loop can see.
+gap_rows() {
+  local line tabs epoch
+  [ -f "$1/state/night-score/supervisor-gap.tsv" ] || return 0
+  LC_ALL=C tr '\000' '\001' < "$1/state/night-score/supervisor-gap.tsv" | while IFS= read -r line; do
+    case "$line" in *$'\001'*) continue ;; esac
+    tabs=${line//[!$'\t']/}
+    epoch=${line%%$'\t'*}
+    [ "${#tabs}" -eq 2 ] && [ "${#epoch}" -eq 10 ] || continue
+    case "$epoch" in *[!0123456789]*) continue ;; esac
+    printf '%s\n' "$line"
+  done
+}
+canon() { (cd -P "$1" && pwd -P); }
+# publish <home> <json-value>: stamps the fixture heartbeat with a published_epoch.
+publish() {
+  jq --argjson p "$2" '.published_epoch = $p' "$1/state/heartbeat.json" > "$1/state/heartbeat.json.new" \
+    && mv "$1/state/heartbeat.json.new" "$1/state/heartbeat.json"
+}
+
+# gap_no_rows <label> <home> <now> <published-epoch>: the builder refuses the reading.
+gap_no_rows() {
+  local label=$1 out
+  shift
+  if out=$(lib fm_wd_supervisor_gap_rows "$@"); then fail "$label: the builder accepted it"; fi
+  assert_equals "" "$out" "$label: no row"
+}
+
+# gap_report <label> <stderr-text>: a failed append is the open gap in the status
+# file and the whole of standard error, one line. The caller removes the status
+# file before the pass, so the open gap is the one that pass wrote.
+gap_report() {
+  assert_grep "supervisor-gap record append failed" "$H/data/watchdog/status.md" "$1 is an open gap in the status file"
+  assert_equals 1 "$(printf '%s\n' "$2" | wc -l | tr -d ' ')" "$1 is one standard error line: $2"
+  case "$2" in
+    'fm-watchdog: supervisor-gap record append failed for '*) ;;
+    *) fail "$1 is not named on standard error: $2" ;;
+  esac
+}
+
+test_supervisor_gap_rows_from_one_reading() {
+  local now=1794000000
+  assert_equals "$now"$'\tobserved\t/h' "$(lib fm_wd_supervisor_gap_rows /h "$now" "$now")" "age 0 is one observation row"
+  assert_equals "$now"$'\tobserved\t/h' "$(lib fm_wd_supervisor_gap_rows /h "$now" 1793999400)" "age 600 is not a gap"
+  assert_equals "$now"$'\t/h\theartbeat_age=601\n'"$now"$'\tobserved\t/h' "$(lib fm_wd_supervisor_gap_rows /h "$now" 1793999399)" \
+    "age 601 is the gap row, then the observation row"
+  gap_no_rows "a stamp later than the clock" /h "$now" 1794000001
+  gap_no_rows "a zero stamp" /h "$now" 0
+  gap_no_rows "a negative stamp" /h "$now" -5
+  gap_no_rows "a fractional stamp" /h "$now" 1793999400.5
+  gap_no_rows "a stamp that is not a number" /h "$now" abc
+  gap_no_rows "an empty stamp" /h "$now" ""
+  gap_no_rows "a zero-padded stamp" /h "$now" 01793999400
+  gap_no_rows "a stamp with a digit that is not ASCII" /h "$now" $'179399940\xc2\xb2'
+  gap_no_rows "a clock with a digit that is not ASCII" /h $'179400000\xc2\xb2' 1793999400
+  gap_no_rows "a stamp too long for shell arithmetic" /h "$now" 99999999999999999999
+  gap_no_rows "a clock that is not a number" /h now 1793999400
+  gap_no_rows "a zero clock" /h 0 0
+  gap_no_rows "a clock of 9 digits" /h 999999999 999999400
+  gap_no_rows "a clock of 11 digits" /h 10000000000 9999999400
+  gap_no_rows "an empty home" "" "$now" 1793999400
+  gap_no_rows "a home with a TAB" $'/h\tx' "$now" 1793999400
+  gap_no_rows "a home with a newline" $'/h\nx' "$now" 1793999400
+  gap_no_rows "a home with a carriage return" $'/h\rx' "$now" 1793999400
+  pass "supervisor-gap rows: an observation per reading, a gap row over 600 s, and no row for an invalid reading or a clock that does not have 10 digits"
+}
+
+test_supervisor_gap_heartbeat_stamp_reading() {
+  local d="$TMP_ROOT/hb-stamp" f out doc
+  mkdir -p "$d/dir.json" "$d/shim"
+  f="$d/heartbeat.json"
+  printf '{"schema":"fm-heartbeat.v1","generated_epoch":5,"published_epoch":1794000000}\n' > "$f"
+  assert_equals 1794000000 "$(lib fm_wd_heartbeat_published "$f")" "a published heartbeat prints its stamp"
+  printf '{\n  "schema": "fm-heartbeat.v1",\n  "published_epoch": 1794000000\n}\n' > "$f"
+  assert_equals 1794000000 "$(lib fm_wd_heartbeat_published "$f")" "an indented heartbeat prints its stamp"
+  # A heartbeat of real size, about 90 KB and indented. No time limit is set here:
+  # a text check that matches each key or each space of it makes this the slow case.
+  jq -n '{schema:"fm-heartbeat.v1",published_epoch:1794000000,tasks:[range(900) | {id:"task-\(.)",state:"working",note:"x y z"}]}' > "$d/large.json"
+  assert_equals 1794000000 "$(lib fm_wd_heartbeat_published "$d/large.json")" "a heartbeat of real size prints its stamp"
+  ln -s "$f" "$d/link.json"
+  if out=$(lib fm_wd_heartbeat_published "$d/link.json"); then fail "a symbolic link to a heartbeat was accepted"; fi
+  assert_equals "" "$out" "a symbolic link to a heartbeat prints nothing"
+  printf '{"schema":"fm-heartbeat.v1","published_epoch":999999999999999}\n' > "$f"
+  assert_equals 999999999999999 "$(lib fm_wd_heartbeat_published "$f")" "a 15-digit stamp is read"
+  printf '{"schema":"fm-heartbeat.v1","published_epoch":1794000000,"task":"caf\351 \377"}\n' > "$f"
+  assert_equals 1794000000 "$(lib fm_wd_heartbeat_published "$f")" "bytes that are not UTF-8 in another field do not hide the stamp"
+  printf '%s\n' '{"schema":"fm-heartbeat.v1","published_epoch":1794000000,"note":"x,\"published_epoch\":5}","names":["published_epoch"]}' > "$f"
+  assert_equals 1794000000 "$(lib fm_wd_heartbeat_published "$f")" "the name of the stamp inside a string value is not a second key"
+  printf '%s\n' '{"schema":"fm-heartbeat.v1","published_epoch":1794000000,"n":"x,","m":"{ ","k,":1,"a":["x,","published_epoch"]}' > "$f"
+  assert_equals 1794000000 "$(lib fm_wd_heartbeat_published "$f")" "a string that ends in a comma or a brace starts no key"
+  for doc in '{"schema":"fm-heartbeat.v1","generated_epoch":1794000000}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":0}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":-1794000000}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1794000000.5}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":"1794000000"}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":null}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":true}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1e30}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1.794e9}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1794000000.0}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1234567890123456}' \
+    '{"schema":"fm-heartbeat.v2","published_epoch":1794000000}' \
+    '{"published_epoch":1794000000}' \
+    '[{"schema":"fm-heartbeat.v1","published_epoch":1794000000}]' \
+    $'{}\n{"schema":"fm-heartbeat.v1","published_epoch":1794000000}' \
+    $'{"schema":"fm-heartbeat.v1","published_epoch":1794000000}\nnull' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1.794e9,"nested":{"published_epoch":1794000000}}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1794000000,"nested":{"published_epoch":1794000000}}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1000,"published_epoch":2000}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1794000000,"published_epoch":1.794e9}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1794000000,"\u0070ublished_epoch":1.794e9}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1.794e9,"pub lished_epoch":1794000000}' \
+    '{"schema":"fm-heartbeat.v1","published_epoch":1794000000.0,"x\"published_epoch":1794000000}' \
+    '1794000000' \
+    'not json' \
+    ''; do
+    printf '%s\n' "$doc" > "$f"
+    if out=$(lib fm_wd_heartbeat_published "$f"); then fail "an unread heartbeat was accepted: $doc"; fi
+    assert_equals "" "$out" "an unread heartbeat prints nothing: $doc"
+  done
+  printf '{"schema":"fm-heartbeat.v1","published_epoch":1794000000}\n\0' > "$f"
+  if out=$(lib fm_wd_heartbeat_published "$f" 2>/dev/null); then fail "a heartbeat with a NUL byte after the document was accepted"; fi
+  assert_equals "" "$out" "a heartbeat with a NUL byte after the document prints nothing"
+  # The heartbeat is replaced by rename while a reading is under way: this jq
+  # replaces it, as soon as it has read it, with a file that no reading accepts.
+  cat > "$d/shim/jq" <<'SH'
+#!/usr/bin/env bash
+"$REAL_JQ" "$@"
+rc=$?
+printf 'not json\n' > "$HB.new" && mv "$HB.new" "$HB"
+exit "$rc"
+SH
+  chmod +x "$d/shim/jq"
+  printf '{"schema":"fm-heartbeat.v1","published_epoch":1794000000}\n' > "$f"
+  out=$(REAL_JQ=$(command -v jq) HB="$f" PATH="$d/shim:$PATH" lib fm_wd_heartbeat_published "$f") \
+    || fail "a heartbeat replaced during the reading was not read"
+  assert_equals 1794000000 "$out" "a heartbeat replaced during the reading prints the stamp that was read"
+  assert_equals "not json" "$(cat "$f")" "the reading under test did see the heartbeat replaced"
+  if out=$(lib fm_wd_heartbeat_published "$d/absent.json"); then fail "an absent heartbeat was accepted"; fi
+  assert_equals "" "$out" "an absent heartbeat prints nothing"
+  if out=$(lib fm_wd_heartbeat_published "$d/dir.json"); then fail "a directory was accepted"; fi
+  assert_equals "" "$out" "a directory prints nothing"
+  pass "supervisor-gap reading: only the one positive integer published_epoch of one fm-heartbeat.v1 document is read, from one read of the file"
+}
+
+test_supervisor_gap_record_follows_published_heartbeat_age() {
+  local home obs gap first
+  make_home $'Captain session\n> '
+  transcript 100 "Working."
+  home=$(canon "$H")
+  publish "$H" "$BASE"
+  run_wd 0 scan >/dev/null 2>&1
+  assert_absent "$H/state/night-score/supervisor-gap.tsv" "scan writes no record"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "$BASE"$'\tobserved\t'"$home" "$(gap_rows "$H")" "a fresh heartbeat is one observation row"
+  assert_equals $'\t\t\t\n'"$BASE"$'\tobserved\t'"$home" "$(gap_raw "$H")" "the append is a line of three TABs, then the row"
+  publish "$H" "$((BASE - 590))"
+  run_wd 10 once >/dev/null 2>&1
+  assert_equals "$((BASE + 10))"$'\tobserved\t'"$home" "$(gap_rows "$H" | tail -n +2)" "an age of exactly 600 adds one observation row and no gap row"
+  publish "$H" "$((BASE - 581))"
+  run_wd 20 once >/dev/null 2>&1
+  gap="$((BASE + 20))"$'\t'"$home"$'\theartbeat_age=601'
+  obs="$((BASE + 20))"$'\tobserved\t'"$home"
+  assert_equals "$gap"$'\n'"$obs" "$(gap_rows "$H" | tail -n +3)" "an age of 601 adds the gap row, then the observation row"
+  first=$(gap_rows "$H")
+  jq -n --argjson pid "$LOCKPID" --argjson deadline "$((BASE + 500))" \
+    '{version:1,nonce:"n1",handoff:"data/handoff.md",sha256:"0",predecessor_pid:$pid,predecessor_start:"x",deadline:$deadline}' \
+    > "$H/state/.handoff-pending"
+  run_wd 20 once >/dev/null 2>&1
+  assert_equals "$first" "$(gap_rows "$H" | head -n 4)" "a handoff claim in the home leaves the rows already written unchanged"
+  assert_equals "$gap"$'\n'"$obs" "$(gap_rows "$H" | tail -n +5)" "a pass during a handoff claim still appends the gap row"
+  rm -f "$H/state/.handoff-pending"
+  run_wd 20 once --dry-run >/dev/null 2>&1
+  assert_equals "$gap"$'\n'"$obs" "$(gap_rows "$H" | tail -n +7)" "a dry-run pass appends the same rows"
+  assert_equals 8 "$(gap_rows "$H" | wc -l | tr -d ' ')" "the record holds the rows of the five passes"
+  assert_equals 5 "$(gap_raw "$H" | grep -c "^$(printf '\t\t\t')\$")" "each of the five appends starts with its line of three TABs"
+  assert_equals 13 "$(gap_raw "$H" | wc -l | tr -d ' ')" "the record holds those rows and lines and nothing else"
+  pass "supervisor-gap record: each action pass appends the reading, a gap row over 600 s, and scan appends nothing"
+}
+
+test_supervisor_gap_unread_heartbeat_writes_no_row() {
+  local doc saved before
+  make_home $'Captain session\n> '
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "" "$(gap_raw "$H")" "a heartbeat with no published_epoch writes no row"
+  publish "$H" "$((BASE + 1))"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "" "$(gap_raw "$H")" "a heartbeat stamped later than the clock writes no row"
+  saved=$(cat "$H/state/heartbeat.json")
+  for doc in 0 -5 1794000000.5 '"1794000000"' null; do
+    publish "$H" "$doc"
+    run_wd 0 once >/dev/null 2>&1
+    assert_equals "" "$(gap_raw "$H")" "published_epoch $doc writes no row"
+  done
+  printf '%s\n' "$saved" | jq --argjson p "$BASE" '.schema = "fm-heartbeat.v2" | .published_epoch = $p' > "$H/state/heartbeat.json"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "" "$(gap_raw "$H")" "another schema writes no row"
+  printf 'not json\n' > "$H/state/heartbeat.json"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "" "$(gap_raw "$H")" "a heartbeat that is not JSON writes no row"
+  rm -f "$H/state/heartbeat.json"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "" "$(gap_raw "$H")" "an absent heartbeat writes no row"
+  printf '%s\n' "$saved" | jq --argjson p "$BASE" '.published_epoch = $p' > "$H/state/heartbeat.real"
+  ln -s heartbeat.real "$H/state/heartbeat.json"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "" "$(gap_raw "$H")" "a heartbeat that is a symbolic link to a good file writes no row"
+  rm -f "$H/state/heartbeat.json"
+  mv "$H/state/heartbeat.real" "$H/state/heartbeat.json"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "$BASE"$'\tobserved\t'"$(canon "$H")" "$(gap_rows "$H")" "the same home is recorded once its heartbeat is read"
+  # A clock that does not have 10 digits: the reading is good, and no row is written.
+  before=$(gap_raw "$H" | cksum)
+  publish "$H" 9999999300
+  run_wd "$((10000000000 - BASE))" once >/dev/null 2>&1
+  assert_equals "$before" "$(gap_raw "$H" | cksum)" "a clock of 11 digits writes no row"
+  publish "$H" 999999300
+  run_wd "$((999999999 - BASE))" once >/dev/null 2>&1
+  assert_equals "$before" "$(gap_raw "$H" | cksum)" "a clock of 9 digits writes no row"
+  pass "supervisor-gap record: a heartbeat that was not read, or a clock that does not have 10 digits, leaves the home with no row"
+}
+
+test_supervisor_gap_rows_name_each_watched_home() {
+  local parent mate p m
+  make_home $'Captain session\n> '
+  parent=$H
+  transcript 100 "Working."
+  make_home $'Mate session\n> '
+  mate=$H
+  transcript 100 "Working."
+  p=$(canon "$parent")
+  m=$(canon "$mate")
+  publish "$parent" "$BASE"
+  publish "$mate" "$((BASE - 700))"
+  printf -- '- gap-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  H=$parent
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals "$BASE"$'\tobserved\t'"$p" "$(gap_rows "$parent" | awk -F'\t' -v h="$p" '$2 == h || $3 == h')" "the owner home has its observation row"
+  assert_equals "$BASE"$'\t'"$m"$'\theartbeat_age=700\n'"$BASE"$'\tobserved\t'"$m" "$(gap_rows "$parent" | awk -F'\t' -v h="$m" '$2 == h || $3 == h')" \
+    "the second mate has its gap row and its observation row in the owner home's record"
+  assert_equals 3 "$(gap_rows "$parent" | wc -l | tr -d ' ')" "one unfiltered pass writes the rows of both homes only"
+  assert_absent "$mate/state/night-score/supervisor-gap.tsv" "the second mate's own home holds no record"
+  run_wd 5 once --home "$mate" >/dev/null 2>&1
+  assert_equals "$((BASE + 5))"$'\t'"$m"$'\theartbeat_age=705\n'"$((BASE + 5))"$'\tobserved\t'"$m" "$(gap_rows "$parent" | tail -n +4)" \
+    "a pass filtered to the second mate appends the second mate's rows only"
+  pass "supervisor-gap record: the owner home's record names each home the pass read, and a filtered pass names one"
+}
+
+test_supervisor_gap_torn_line_and_failed_append() {
+  local home rec row gaprow earlier err before target
+  make_home $'Captain session\n> '
+  transcript 100 "Working."
+  home=$(canon "$H")
+  rec="$H/state/night-score/supervisor-gap.tsv"
+  row="$BASE"$'\tobserved\t'"$home"
+  publish "$H" "$BASE"
+  mkdir -p "$H/state/night-score" "$H/shim"
+
+  # The row rule these cases read the record by: each of these lines is not a row.
+  printf '\tobserved\t/h\n794000000\tobserved\t/h\n17940000000\tobserved\t/h\n179400000a\tobserved\t/h\n' > "$rec"
+  printf '179400000\302\262\tobserved\t/h\n1794000000\tobserved\t/h\0\n1794000000\tobserved\n' >> "$rec"
+  printf '1794000000\tobserved\t/h\tx\n1794000000\tobserved\t/h' >> "$rec"
+  assert_equals "" "$(gap_rows "$H")" "an empty, short, long or non-digit first field, a NUL byte, another TAB count and a line with no newline are not rows"
+  printf '1794000000\tobserved\t/h\n' > "$rec"
+  assert_equals $'1794000000\tobserved\t/h' "$(gap_rows "$H")" "a line of two TABs with a first field of 10 digits is a row"
+  printf '%s\tobserved\t/torn/ho' "$((BASE - 120))" > "$rec"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 2 "$(wc -l < "$rec" | tr -d ' ')" "the cut piece is closed and the new row is on its own line"
+  [ "$(awk -F'\t' 'NR == 1 { print NF }' "$rec")" -ge 4 ] || fail "the closed piece still reads as a three-field row: $(head -n 1 "$rec")"
+  assert_equals "$row" "$(gap_rows "$H")" "the row after a cut piece is whole, and the closed piece is not a row"
+
+  printf '%s\tobserved\t/torn/ho\0' "$((BASE - 120))" > "$rec"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 2 "$(wc -l < "$rec" | tr -d ' ')" "a cut piece that ends in a NUL byte is closed"
+  # Counted in bytes: an awk that stops at the NUL would see three fields.
+  assert_equals 5 "$(head -n 1 "$rec" | tr -cd '\t' | wc -c | tr -d ' ')" "the closed NUL-ended line holds its two TABs and the three closing TABs"
+  assert_equals "$row" "$(tail -n 1 "$rec")" "the row after a NUL-ended piece is whole"
+
+  # Another pass leaves a cut piece after the last moment this pass could look at
+  # the record: this cat puts the piece there just before it appends the rows.
+  cat > "$H/shim/cat" <<'SH'
+#!/usr/bin/env bash
+[ "$#" -eq 0 ] || exec "$REAL_CAT" "$@"
+data=$("$REAL_CAT"; printf x)
+case "$data" in *$'\tobserved\t'*) printf '%s' "$PIECE" >> "$REC" ;; esac
+printf '%s' "${data%x}"
+SH
+  chmod +x "$H/shim/cat"
+  earlier="$((BASE - 60))"$'\tobserved\t'"$home"
+  printf '%s\n' "$earlier" > "$rec"
+  REC="$rec" PIECE="$((BASE - 120))"$'\tobserved\t/torn/ho' REAL_CAT=$(command -v cat) PATH="$H/shim:$PATH" run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(grep -c '/torn/ho' "$rec")" "the pass under test did get a cut piece just before its append"
+  assert_equals "$earlier"$'\n'"$row" "$(gap_rows "$H")" "a piece that lands just before the append is closed and joins no row"
+  assert_equals 3 "$(wc -l < "$rec" | tr -d ' ')" "the record holds the earlier row, the closed piece and the new row"
+
+  # The same, for a piece with no TAB and a reading that is a gap: the piece is
+  # closed, so it does not join the gap row, and both rows are rows.
+  publish "$H" "$((BASE - 700))"
+  gaprow="$BASE"$'\t'"$home"$'\theartbeat_age=700'
+  printf '%s\n' "$earlier" > "$rec"
+  REC="$rec" PIECE=1794 REAL_CAT=$(command -v cat) PATH="$H/shim:$PATH" run_wd 0 once >/dev/null 2>&1
+  assert_equals $'1794\t\t\t' "$(sed -n 2p "$rec")" "the pass under test did get a piece with no TAB just before its append, and closed it"
+  assert_equals "$earlier"$'\n'"$gaprow"$'\n'"$row" "$(gap_rows "$H")" "a piece with no TAB joins no row: the gap row and the observation row are whole"
+  publish "$H" "$BASE"
+
+  if [ "$(id -u)" != 0 ]; then
+    printf '%s\tobserved\t/torn/ho' "$((BASE - 120))" > "$rec"
+    chmod 200 "$rec"
+    run_wd 0 once >/dev/null 2>&1
+    chmod 644 "$rec"
+    assert_equals 2 "$(wc -l < "$rec" | tr -d ' ')" "a record that cannot be read still has its cut piece closed"
+    assert_equals "$row" "$(gap_rows "$H")" "the row appended to a record that cannot be read is whole"
+
+    printf '%s\tobserved\t/torn/ho' "$((BASE - 120))" > "$rec"
+    chmod 444 "$rec"
+    before=$(cksum < "$rec")
+    rm -f "$H/data/watchdog/status.md"
+    err=$(run_wd 0 once 2>&1 >/dev/null) || fail "a record that cannot be written fails the pass: $err"
+    assert_equals "$before" "$(cksum < "$rec")" "a record that cannot be written keeps its bytes: no closing line and no row"
+    gap_report "the append to a read-only record" "$err"
+    chmod 644 "$rec"
+  else
+    printf '# not run here: root can write any file, so the record that cannot be read and the read-only record are not checked\n'
+  fi
+
+  rm -rf "$H/state/night-score"
+  mkdir -p "$H/state/night-score/supervisor-gap.tsv"
+  rm -f "$H/data/watchdog/status.md"
+  err=$(run_wd 0 once 2>&1 >/dev/null) || fail "a directory in place of the record fails the pass: $err"
+  assert_equals "" "$(find "$rec" -mindepth 1)" "nothing is appended when a directory stands in place of the record"
+  gap_report "the append to a directory" "$err"
+
+  rm -rf "$H/state/night-score"
+  : > "$H/state/night-score"
+  before=$(ledger)
+  rm -f "$H/data/watchdog/status.md"
+  err=$(run_wd 0 once 2>&1 >/dev/null) || fail "a record that cannot be appended fails the pass: $err"
+  [ -f "$H/state/night-score" ] && [ ! -s "$H/state/night-score" ] || fail "a row was written although the record cannot be appended"
+  gap_report "the append with no record directory" "$err"
+  assert_equals "$before" "$(ledger)" "the failed append takes no action"
+
+  # A write that fails after the record opened, where the system has a full device.
+  if [ -c /dev/full ]; then
+    rm -f "$H/state/night-score"
+    mkdir -p "$H/state/night-score"
+    ln -s /dev/full "$rec"
+    rm -f "$H/data/watchdog/status.md"
+    err=$(run_wd 0 once 2>&1 >/dev/null) || fail "a record on a full device fails the pass: $err"
+    gap_report "the write to a full device" "$err"
+  else
+    printf '# not run here: this system has no /dev/full, so the write to a full device is checked on Linux only\n'
+  fi
+
+  # A write that fails after it started: the record is filled so that a file-size
+  # limit of 1 MiB leaves room for the line of three TABs, the gap row and 5 bytes
+  # of the observation row. Linux cuts the append there. A system that lets the
+  # append land whole has no failed write to check.
+  rm -rf "$H/state/night-score"
+  mkdir -p "$H/state/night-score"
+  publish "$H" "$((BASE - 700))"
+  gaprow="$BASE"$'\t'"$home"$'\theartbeat_age=700'
+  target=$((1048576 - 4 - $(printf '%s' "$gaprow" | wc -c | tr -d ' ') - 1 - 5))
+  awk -v n="$target" 'BEGIN {
+    for (i = 0; i < int(n / 16); i++) print "padding-line\t\t\t"
+    r = n % 16
+    if (r) { s = ""; for (i = 1; i < r; i++) s = s "x"; print s }
+  }' > "$rec"
+  assert_equals "$target" "$(wc -c < "$rec" | tr -d ' ')" "the record is filled to the size the cut needs"
+  rm -f "$H/data/watchdog/status.md"
+  err=$( (trap '' XFSZ; ulimit -f 1024; run_wd 0 once) 2>&1 >/dev/null) || fail "a write cut short by a size limit fails the pass: $err"
+  if [ "$(tail -n 1 "$rec")" != "$row" ]; then
+    gap_report "the write cut short by a size limit" "$err"
+    assert_no_grep "$(printf '\tobserved\t')" "$H/data/watchdog/status.md" "the row of a failed write does not go to the status file"
+    assert_equals "$gaprow" "$(gap_rows "$H")" "a write cut short leaves the gap row whole and no observation row"
+    run_wd 5 once >/dev/null 2>&1
+    assert_equals "$gaprow"$'\n'"$((BASE + 5))"$'\t'"$home"$'\theartbeat_age=705\n'"$((BASE + 5))"$'\tobserved\t'"$home" "$(gap_rows "$H")" \
+      "after a write cut short, the next pass closes the piece it left and appends whole rows"
+  elif [ "$(uname -s)" = Linux ]; then
+    fail "the size-limited append landed whole on Linux, so the write that fails after it started was not checked"
+  else
+    printf '# not run here: the size-limited append landed whole, so the write that fails after it started is checked on Linux only\n'
+  fi
+
+  # The pass cannot create its work files: it fails before it reads a home.
+  before=$(cksum < "$rec")
+  rm -rf "$H/state/watchdog"
+  : > "$H/state/watchdog"
+  if run_wd 0 once >/dev/null 2>&1; then fail "a pass that cannot create its work files did not fail"; fi
+  assert_equals "$before" "$(cksum < "$rec")" "a pass that cannot create its work files appends nothing"
+  rm -f "$H/state/watchdog"
+  pass "supervisor-gap record: a cut piece never joins a row, and a failed append is reported and does not fail the pass"
 }
 
 test_status_file_short_and_staleness_visible() {
@@ -2394,6 +4007,47 @@ test_status_file_short_and_staleness_visible() {
   run_wd 7 once >/dev/null 2>&1
   assert_equals 0 "$(status_actions)" "acknowledged actions drop out"
   pass "status file stays under 40 lines with timestamp, health, actions since last read, gaps, and a staleness line"
+}
+
+# fake_memory_tools <swap-used>|fail: a sysctl fake for the memory guard's
+# macOS reader; fail exits 1. The guard reads the real process table.
+fake_memory_tools() {
+  if [ "$1" = fail ]; then
+    printf '#!/usr/bin/env bash\nexit 1\n' > "$FAKEBIN/sysctl"
+  else
+    printf '#!/usr/bin/env bash\nprintf "total = 9.00M  used = %s  free = 1.00M  (encrypted)\\n"\n' "$1" > "$FAKEBIN/sysctl"
+  fi
+  chmod +x "$FAKEBIN/sysctl"
+}
+
+test_memory_guard_samples_once_per_pass() {
+  make_home $'Captain session\n> ' 'memory-guard=on'
+  printf 'swap_warn_mb=5\nproc_rss_mb=999999999\nmode=reap-scratch\n' > "$H/config/memory-guard"
+  fake_memory_tools 7.00M
+  FM_MEMORY_GUARD_OS=Darwin run_wd 0 once >/dev/null 2>&1 || fail "a pass with a memory alarm failed"
+  assert_equals 1 "$(wc -l < "$H/state/memory-guard.tsv" | tr -d ' ')" "one memory sample per pass"
+  assert_equals "$BASE	7" "$(cut -f 1-2 "$H/state/memory-guard.tsv")" "the sample uses the watchdog clock"
+  assert_grep "- host: memory alarm swap_used_mb=7 " "$H/data/watchdog/status.md" "an alarm in force is an open gap"
+  assert_grep "- host: swap used 7 MB is at or over 5 MB" "$H/data/watchdog/status.md" "the new alarm line is an open gap"
+  assert_grep "mode=reap-scratch" "$H/data/watchdog/status.md" "an acting watchdog keeps the configured reap-scratch mode"
+  FM_MEMORY_GUARD_OS=Darwin run_wd 120 once --dry-run >/dev/null 2>&1 || fail "a second pass failed"
+  assert_equals 2 "$(wc -l < "$H/state/memory-guard.tsv" | tr -d ' ')" "the next pass adds one more sample"
+  assert_grep "- host: memory alarm" "$H/data/watchdog/status.md" "a deduplicated alarm stays an open gap"
+  assert_no_grep "- host: swap used" "$H/data/watchdog/status.md" "a deduplicated alarm line is not repeated"
+  assert_grep "mode=observe" "$H/data/watchdog/status.md" "a dry-run watchdog forces observe mode"
+  rm -f "$H/state/memory-guard.tsv"
+  mkdir "$H/state/memory-guard.tsv"
+  # With no alarm in force, a sample that cannot be recorded is a failure.
+  printf 'swap_warn_mb=999999\nproc_rss_mb=999999999\n' > "$H/config/memory-guard"
+  FM_MEMORY_GUARD_OS=Darwin run_wd 240 once >/dev/null 2>&1 || fail "a failed memory sample stopped the pass"
+  assert_grep "- host: memory guard sample failed (exit 1)" "$H/data/watchdog/status.md" "a failed sample is a gap"
+  assert_grep "## Homes" "$H/data/watchdog/status.md" "the pass still writes the status file"
+  rmdir "$H/state/memory-guard.tsv"
+  printf 'memory-guard=off\n' >> "$H/config/watchdog"
+  FM_MEMORY_GUARD_OS=Darwin run_wd 360 once >/dev/null 2>&1
+  assert_absent "$H/state/memory-guard.tsv" "memory-guard=off takes no sample"
+  rm -f "$FAKEBIN/sysctl"
+  pass "the watchdog samples host memory once per pass and never stops on a failed sample"
 }
 
 test_away_permission_dialog_pages_the_owner() {
@@ -2918,6 +4572,280 @@ SH
   pass "usage-limit: an unreadable claude-account pin gets no pick"
 }
 
+test_quota_guard_checks_at_kickoff_and_periodically() {
+  local snap
+  make_home $'Captain session\n> '
+  # The guard runs by default, so this home carries no quota-guard key at all.
+  grep -v '^quota-guard=' "$H/config/watchdog" > "$H/watchdog.conf" && mv "$H/watchdog.conf" "$H/config/watchdog"
+  snap="$H/quota.json"
+  wd_quota_snapshot "$snap"
+  : > "$H/quota-axi.calls"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$H/quota-axi.calls"
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1 || fail "quota guard kickoff pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard check "done")" "the first pass is a kickoff check: $(ledger | cut -f4-8)"
+  assert_grep "trigger=kickoff" "$H/state/quota-guard/last" "the kickoff check is on record"
+  assert_grep "quota-guard: unknown trigger=kickoff" "$H/data/watchdog/status.md" \
+    "a check that is not ok stays a gap"
+  run_wd 60 once >/dev/null 2>&1 || fail "quota guard quiet pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard check "done")" "no check is due inside the period"
+  assert_grep "quota-guard: unknown trigger=kickoff" "$H/data/watchdog/status.md" \
+    "the last check's verdict stays a gap while it is not ok"
+  run_wd 7300 once >/dev/null 2>&1 || fail "quota guard periodic pass failed"
+  assert_equals 2 "$(ledger_rows quota-guard check "done")" "a check runs again after two hours"
+  assert_grep "trigger=periodic" "$H/state/quota-guard/last" "the periodic check is on record"
+  assert_no_grep "allow-keychain-prompt" "$H/quota-axi.calls" "the guard never opens a sign-in prompt"
+  [ ! -s "$H/typed.log" ] || fail "an unknown verdict typed into the pane: $(cat "$H/typed.log")"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota guard: by default the watchdog checks at kickoff and every two hours"
+}
+
+test_quota_guard_nudge_names_each_move_with_a_quoted_home() {
+  local home="$TMP_ROOT/owner home" out cmd
+  mkdir -p "$home"
+  out=$(FM_HOME="$home" bash -c '. "$1"; O_HOME=$2; wd_quota_guard_nudge_text "$3"' _ "$WD" "$home" \
+    "quota-guard: act trigger=kickoff window=3600s pools=2 ok=0 unknown=0 short=1 exhausted=1 steer=1 failover=2") ||
+    fail "the nudge text could not be built: $out"
+  assert_contains "$out" "Move each steered worker with bin/fm-control.sh relaunch on its named pick." \
+    "a check with a steered worker names the worker relaunch"
+  assert_contains "$out" "run bin/fm-supervisor-failover.sh primary <handoff-file> --reason quota_guard in the background" \
+    "a check with a supervisor failover names the primary's command"
+  cmd=${out#*for a second mate, run }
+  cmd=${cmd%% --reason quota_guard.*}
+  assert_equals "FM_HOME=$(printf '%q' "$home") bin/fm-supervisor-failover.sh secondmate <id>" "$cmd" \
+    "the second mate command quotes the owning home"
+  assert_contains "$out" "Never change an account pin, sign in, or spend." "the nudge keeps its limits"
+  pass "quota guard: the nudge names each move, and the second mate command quotes its home"
+}
+test_quota_guard_act_nudges_after_any_check() {
+  local snap root
+  make_home $'Captain session\n> '
+  grep -v '^quota-guard=' "$H/config/watchdog" > "$H/watchdog.conf" && mv "$H/watchdog.conf" "$H/config/watchdog"
+  transcript 100 "Working."
+  # The lock holder here is not a harness process, so each pass names it. The
+  # primary's transcript lives under $H/claude, so its account is that root, not
+  # the ordinary ~/.claude; only that lane is exhausted.
+  root="$H/claude"
+  snap="$H/claude-quota.json"
+  jq -n --arg r "$root" '{schemaVersion: 6, providers: [{provider: "claude", accountKey: "acct", accountLocator: {path: $r},
+    state: {status: "fresh", stale: false},
+    quotaSemantics: {status: "known", effectiveAvailability: [{scope: "all_models", status: "known", effectivePercentRemaining: 0, runway: {status: "exhausted_now"}}]}}]}' > "$snap"
+  wd_quota_snapshot "$H/quota.json"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *" --provider claude "*) cat "$snap" ;;
+  *) cat "$H/quota.json" ;;
+esac
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 0 once >/dev/null 2>&1 || fail "quota guard kickoff pass failed"
+  assert_grep "pool: claude:$root status=exhausted runway=0 supervisors=primary" "$H/state/quota-guard/report.txt" \
+    "the primary is judged on the account that holds its transcript: $(cat "$H/state/quota-guard/report.txt" 2>&1)"
+  assert_equals 1 "$(ledger_rows quota-guard nudge pending)" "an act check nudges the primary: $(ledger | cut -f4-8)"
+  grep -rqs "quota-guard: act trigger=kickoff" "$H/state/operational-inbox" || fail "the act nudge does not name the kickoff check"
+  grep -rqsF "run bin/fm-supervisor-failover.sh primary <handoff-file> --reason quota_guard in the background" "$H/state/operational-inbox" ||
+    fail "a supervisor failover nudge does not name the failover command: $(cat "$H"/state/operational-inbox/* 2>&1)"
+  ! grep -rqsF "fm-control.sh relaunch" "$H/state/operational-inbox" ||
+    fail "a nudge with no worker move names the worker relaunch: $(cat "$H"/state/operational-inbox/* 2>&1)"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 1000 once >/dev/null 2>&1 || fail "quota guard quiet pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard nudge pending)" "a check already nudged is not nudged again: $(ledger | cut -f4-8)"
+  # A limit warning runs its own check between passes; the next pass nudges it
+  # even though no periodic check is due.
+  FM_HOME="$H" FM_TEST_SEAM=1 FM_NOW=$((BASE + 1100)) FM_QUOTA_GUARD_CONF="$H/config/watchdog" "$ROOT/bin/fm-quota-guard.sh" \
+    warning --subject primary --harness claude --primary-harness claude --primary-account "$root" >/dev/null 2>&1
+  assert_grep "trigger=warning" "$H/state/quota-guard/last" "the warning check is on record"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 2000 once >/dev/null 2>&1 || fail "quota guard pass after a warning failed"
+  assert_equals 1 "$(ledger_rows quota-guard check "done")" "the pass runs no check of its own after the warning check: $(ledger | cut -f4-8)"
+  assert_equals 2 "$(ledger_rows quota-guard nudge pending)" "a warning's act check nudges on the next pass: $(ledger | cut -f4-8)"
+  grep -rqs "quota-guard: act trigger=warning" "$H/state/operational-inbox" || fail "the second nudge does not name the warning check"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota guard: every act check nudges the primary once, whichever path ran it"
+}
+
+# quota_guard_exhausted_root <root>: a fake quota-axi on which only the Claude
+# account at <root> is exhausted.
+quota_guard_exhausted_root() {
+  local root=$1 snap="$H/claude-quota.json"
+  jq -n --arg r "$root" '{schemaVersion: 6, providers: [{provider: "claude", accountKey: "acct", accountLocator: {path: $r},
+    state: {status: "fresh", stale: false},
+    quotaSemantics: {status: "known", effectiveAvailability: [{scope: "all_models", status: "known", effectivePercentRemaining: 0, runway: {status: "exhausted_now"}}]}}]}' > "$snap"
+  wd_quota_snapshot "$H/quota.json"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *" --provider claude "*) cat "$snap" ;;
+  *) cat "$H/quota.json" ;;
+esac
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+}
+
+test_quota_guard_nudge_retries_a_failed_send_and_skips_a_dead_primary() {
+  make_home $'Captain session\n> '
+  grep -v '^quota-guard=' "$H/config/watchdog" > "$H/watchdog.conf" && mv "$H/watchdog.conf" "$H/config/watchdog"
+  transcript 100 "Working."
+  quota_guard_exhausted_root "$H/claude"
+  # A file where the inbox directory goes makes the nudge's record fail.
+  printf 'x\n' > "$H/state/operational-inbox"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 0 once >/dev/null 2>&1 || fail "failing-nudge pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard nudge failed)" "the nudge whose record failed is a failed row: $(ledger | cut -f4-8)"
+  rm -f "$H/state/operational-inbox"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 1000 once >/dev/null 2>&1 || fail "retry pass failed"
+  assert_equals 2 "$(ledger_rows quota-guard nudge pending)" "a nudge that never reached the primary is sent again: $(ledger | cut -f4-8)"
+  grep -rqs "quota-guard: act trigger=kickoff" "$H/state/operational-inbox" || fail "the retried nudge does not name the kickoff check"
+  FM_HOME="$H" FM_TEST_SEAM=1 FM_NOW=$((BASE + 1100)) FM_QUOTA_GUARD_CONF="$H/config/watchdog" "$ROOT/bin/fm-quota-guard.sh" \
+    warning --subject primary --harness claude --primary-harness claude --primary-account "$H/claude" >/dev/null 2>&1
+  assert_grep "trigger=warning" "$H/state/quota-guard/last" "the warning check is on record"
+  kill "$LOCKPID" 2>/dev/null
+  sleep 0.5
+  ! kill -0 "$LOCKPID" 2>/dev/null || fail "the lock holder is still alive"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 2000 once >/dev/null 2>&1 || fail "dead-primary pass failed"
+  assert_equals 2 "$(ledger_rows quota-guard nudge pending)" "a primary whose lock holder is dead is not nudged: $(ledger | cut -f4-8)"
+  # Only the earlier nudge's progress check may land now; no new nudge starts.
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 == "quota-guard" && $6 == "nudge" && $7 != "failed" && $1 >= '"$((BASE + 2000))" | wc -l | tr -d ' ')" \
+    "no nudge of any phase starts for a dead primary: $(ledger | cut -f4-8)"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota guard: a nudge that failed is sent again, and a dead primary is never nudged"
+}
+
+test_quota_guard_nudge_skips_a_holder_that_died_during_the_check() {
+  make_home $'Captain session\n> '
+  grep -v '^quota-guard=' "$H/config/watchdog" > "$H/watchdog.conf" && mv "$H/watchdog.conf" "$H/config/watchdog"
+  transcript 100 "Working."
+  quota_guard_exhausted_root "$H/claude"
+  # The Claude read comes after the guard judged the primary live, so the
+  # holder dies while the check is still running.
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *" --provider claude "*)
+    kill "$LOCKPID" 2>/dev/null
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do kill -0 "$LOCKPID" 2>/dev/null || break; sleep 0.1; done
+    cat "$H/claude-quota.json" ;;
+  *) cat "$H/quota.json" ;;
+esac
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 0 once >/dev/null 2>&1 || fail "quota guard kickoff pass failed"
+  assert_grep "quota-guard: act trigger=kickoff" "$H/state/quota-guard/report.txt" \
+    "the check judged the primary while it was live: $(cat "$H/state/quota-guard/report.txt" 2>&1)"
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 == "quota-guard" && $6 == "nudge"' | wc -l | tr -d ' ')" \
+    "a holder that died during the check is not nudged: $(ledger | cut -f4-8)"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota guard: a primary whose holder died during the check gets no nudge"
+}
+
+test_autowait_footers_on_a_mate_and_a_worker_are_limit_warnings() {
+  local parent mate autowait
+  autowait=$'work output\nUsage limit reached. Continuing automatically at 4:00 AM\n❯ \n  ? for shortcuts'
+  make_home $'Captain session\n> '
+  parent=$H
+  grep -v '^quota-guard=' "$parent/config/watchdog" > "$parent/watchdog.conf" && mv "$parent/watchdog.conf" "$parent/config/watchdog"
+  transcript 100 "Working."
+  make_home "$autowait"
+  mate=$H
+  transcript 100 "Working."
+  # Input that has waited long enough would draw an unread-input nudge, and an
+  # away record with a dead daemon would draw a daemon-dead side check.
+  owe_input 1000
+  : > "$mate/state/.afk"
+  printf '999999\n' > "$mate/state/.supervise-daemon.pid"
+  H=$parent
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  {
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "home=$mate"
+    echo "worktree=$mate"
+    echo "model=default"
+  } > "$parent/state/ghost-mate.meta"
+  mkdir -p "$parent/wt"
+  worker_pane waiter ship "$autowait"
+  printf 'harness=claude\nworktree=%s\nmodel=default\n' "$parent/wt" >> "$parent/state/waiter.meta"
+  # Only the account that holds the primary's transcript is exhausted.
+  quota_guard_exhausted_root "$parent/claude"
+  sleep 0.5
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 0 once >/dev/null 2>&1 || fail "auto-wait footer pass failed"
+  assert_grep "	ghost-mate	ordinary	default	claude" "$parent/state/quota-limit-dialogs.tsv" \
+    "a second mate's auto-wait footer is recorded as a limit dialog in its parent: $(cat "$parent/state/quota-limit-dialogs.tsv" 2>&1)"
+  assert_grep "	waiter	ordinary	default	claude" "$parent/state/quota-limit-dialogs.tsv" \
+    "a worker's auto-wait footer is recorded as a limit dialog"
+  assert_grep "trigger=warning" "$parent/state/quota-guard/last" "the second mate's warning checks quota"
+  assert_grep "pool: claude:$parent/claude status=exhausted runway=0 supervisors=primary" "$parent/state/quota-guard/report.txt" \
+    "the second mate's check judges the primary on its own account: $(cat "$parent/state/quota-guard/report.txt" 2>&1)"
+  [ ! -s "$mate/typed.log" ] || fail "the watchdog typed into the second mate's auto-wait pane: $(cat "$mate/typed.log")"
+  assert_equals 0 "$(ledger | awk -F'\t' -v m="$(basename "$mate")" '$4 == m && $6 == "nudge"' | wc -l | tr -d ' ')" \
+    "a second mate on the auto-wait gets no nudge: $(ledger | cut -f4-8)"
+  [ ! -s "$parent/worker-waiter.typed" ] || fail "the watchdog typed into the worker's auto-wait pane: $(cat "$parent/worker-waiter.typed")"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota guard: an auto-wait footer on a second mate or a worker is a limit warning judged on the primary's account"
+}
+test_failed_limit_dialog_record_is_retried() {
+  local snap dialog
+  dialog=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  make_home $'Captain session\n> ' 'reroute-candidates=codex:gpt-5.4'
+  mkdir -p "$H/wt" "$H/user/.claude"
+  worker_pane limit ship "$dialog"
+  printf 'harness=claude\nworktree=%s\nmodel=default\n' "$H/wt" >> "$H/state/limit.meta"
+  snap="$H/quota.json"
+  wd_quota_snapshot "$snap"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  transcript 100 "Working."
+  sleep 0.5
+  # A directory where the record file goes makes the append fail.
+  mkdir -p "$H/state/quota-limit-dialogs.tsv"
+  HOME="$H/user" run_wd 0 once >/dev/null 2>&1 || fail "failing-record pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard warning failed)" "a dialog that cannot be recorded is a failed row: $(ledger | cut -f4-8)"
+  assert_grep "limit dialog on limit not recorded" "$H/data/watchdog/status.md" "a failed record is a gap"
+  rmdir "$H/state/quota-limit-dialogs.tsv"
+  HOME="$H/user" run_wd 1 once >/dev/null 2>&1 || fail "retry pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard warning "done")" "a failed record is tried again on the next pass: $(ledger | cut -f4-8)"
+  assert_grep "	limit	ordinary	default	claude" "$H/state/quota-limit-dialogs.tsv" "the retried dialog is recorded"
+  HOME="$H/user" run_wd 2 once >/dev/null 2>&1 || fail "rate-limited pass failed"
+  assert_equals 1 "$(wc -l < "$H/state/quota-limit-dialogs.tsv" | tr -d ' ')" "a recorded dialog waits nudge-secs"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota guard: a limit dialog that failed to record is tried again on the next pass"
+}
+test_failed_warning_check_records_the_dialog_once() {
+  local snap dialog
+  dialog=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  make_home $'Captain session\n> ' 'reroute-candidates=codex:gpt-5.4'
+  grep -v '^quota-guard=' "$H/config/watchdog" > "$H/watchdog.conf" && mv "$H/watchdog.conf" "$H/config/watchdog"
+  mkdir -p "$H/wt" "$H/user/.claude"
+  worker_pane limit ship "$dialog"
+  printf 'harness=claude\nworktree=%s\nmodel=default\n' "$H/wt" >> "$H/state/limit.meta"
+  snap="$H/quota.json"
+  wd_quota_snapshot "$snap"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  transcript 100 "Working."
+  sleep 0.5
+  # A file where the guard's state directory goes makes every check fail.
+  printf 'x\n' > "$H/state/quota-guard"
+  HOME="$H/user" run_wd 0 once >/dev/null 2>&1 || fail "failing-check pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard warning "done")" "a recorded dialog is done even when its check fails: $(ledger | cut -f4-8)"
+  assert_equals 0 "$(ledger_rows quota-guard warning failed)" "a failed check after the record is no failed record: $(ledger | cut -f4-8)"
+  assert_grep "quota guard check after the limit dialog on limit failed" "$H/data/watchdog/status.md" "the failed check is a gap"
+  assert_equals 0 "$(ledger_rows quota-guard check "done")" "a check that could not save its result is no done check: $(ledger | cut -f4-8)"
+  assert_grep "quota guard check failed (exit 1)" "$H/data/watchdog/status.md" "the pass's failed check is a gap"
+  HOME="$H/user" run_wd 1 once >/dev/null 2>&1 || fail "second failing-check pass failed"
+  assert_equals 1 "$(wc -l < "$H/state/quota-limit-dialogs.tsv" | tr -d ' ')" "a failing check never records the dialog again"
+  rm -f "$FAKEBIN/quota-axi" "$H/state/quota-guard"
+  pass "quota guard: a limit warning whose check fails records its dialog once"
+}
 test_worker_usage_limit_names_a_pick() {
   local snap dialog calls
   dialog=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
@@ -2969,7 +4897,12 @@ SH
     "a worker pane-text usage-limit must queue until reset"
   assert_not_contains "$(cat "$H/data/watchdog/status.md")" "Supervisor relaunches" \
     "a worker pane-text usage-limit must not send the supervisor to relaunch"
+  assert_grep "	limit	ordinary	default	claude" "$H/state/quota-limit-dialogs.tsv" \
+    "a worker's limit dialog is recorded with its account and model"
+  assert_grep "	limit2	ordinary	default	claude" "$H/state/quota-limit-dialogs.tsv" \
+    "each worker's limit dialog is recorded"
   HOME="$H/user" run_wd 1 once >/dev/null 2>&1 || fail "rate-limited worker usage-limit pass failed"
+  assert_equals 2 "$(wc -l < "$H/state/quota-limit-dialogs.tsv" | tr -d ' ')" "a dialog is recorded once per nudge-secs"
   assert_equals 2 "$(ledger_rows quota suggest held)" "nudge-secs must not add another worker pick: $(ledger | cut -f4-8)"
   calls=$(wc -l < "$H/quota-axi.calls" | tr -d ' ')
   assert_equals 1 "$calls" "a rate-limited pass must not call quota-axi again"
@@ -3637,6 +5570,561 @@ test_primary_ordinary_idle_is_not_paged() {
   pass "usage-limit auto-wait: an ordinary idle primary is not paged"
 }
 
+# shellcheck disable=SC2016
+test_feedback_claim_recovery_serializes_contenders() {
+  local dir claim dead_pid pid_a pid_b rc_a rc_b
+  dir=$(fm_test_tmproot feedback-recovery)
+  claim="$dir/claim"
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" -c '. "$1/bin/fm-control-lib.sh"; printf "%s\n" "$$" > "$2/dead-pid"; fm_control_acquire_feedback_claim "$2/claim"' _ "$ROOT" "$dir" &
+  dead_pid=$!
+  wait "$dead_pid" || fail "the initial owner could not acquire the claim"
+  dead_pid=$(cat "$dir/dead-pid")
+  cat > "$dir/contender.sh" <<'SH'
+#!/usr/bin/env bash
+set -u
+root=$1 dir=$2 who=$3 dead_pid=$4
+. "$root/bin/fm-control-lib.sh"
+kill() {
+  if [ "${1:-}" = -0 ] && [ "${2:-}" = "$dead_pid" ]; then
+    : > "$dir/$who.observed"
+    local n=0
+    if [ "$who" = a ]; then
+      while [ ! -f "$dir/b.observed" ] && [ "$n" -lt 100 ]; do sleep 0.02; n=$((n + 1)); done
+    else
+      while [ ! -f "$dir/a.acquired" ] && [ "$n" -lt 100 ]; do sleep 0.02; n=$((n + 1)); done
+    fi
+    return 1
+  fi
+  builtin kill "$@"
+}
+if fm_control_acquire_feedback_claim "$dir/claim"; then
+  : > "$dir/$who.acquired"
+  if [ "$who" = a ]; then
+    n=0
+    while [ ! -f "$dir/b.finished" ] && [ "$n" -lt 150 ]; do sleep 0.02; n=$((n + 1)); done
+  fi
+  fm_control_release_feedback_claim "$dir/claim"
+  rc=0
+else
+  rc=1
+fi
+: > "$dir/$who.finished"
+exit "$rc"
+SH
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" "$dir/contender.sh" "$ROOT" "$dir" a "$dead_pid" > "$dir/a.log" 2>&1 &
+  pid_a=$!
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" "$dir/contender.sh" "$ROOT" "$dir" b "$dead_pid" > "$dir/b.log" 2>&1 &
+  pid_b=$!
+  rc_a=0; wait "$pid_a" || rc_a=$?
+  rc_b=0; wait "$pid_b" || rc_b=$?
+  [ -f "$dir/a.observed" ] && [ -f "$dir/b.observed" ] || fail "both contenders must inspect the dead owner"
+  assert_equals 0 "$rc_a" "the first contender recovers the stale claim"
+  assert_equals 1 "$rc_b" "a contender with a stale observation cannot reclaim a fresh live claim"
+  [ ! -e "$dir/b.acquired" ] || fail "two contenders held the claim simultaneously"
+  pass "feedback claim: competing stale recovery preserves the fresh owner"
+}
+
+# shellcheck disable=SC2016
+test_feedback_claim_recovers_legacy_owner() {
+  local dir dead_pid rc=0
+  dir=$(fm_test_tmproot feedback-legacy)
+  mkdir -p "$dir/claim"
+  printf '%s 0\n' "$$" > "$dir/claim/owner"
+  touch -t 200101010101 "$dir/claim"
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" -c '. "$1/bin/fm-control-lib.sh"; fm_control_acquire_feedback_claim "$2"' _ "$ROOT" "$dir/claim" || rc=$?
+  assert_equals 1 "$rc" "an old-format claim with a live owner is preserved regardless of age"
+  "$BASH" -c 'exit 0' &
+  dead_pid=$!
+  wait "$dead_pid"
+  printf '%s 0\n' "$dead_pid" > "$dir/claim/owner"
+  rc=0
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" -c '. "$1/bin/fm-control-lib.sh"; fm_control_acquire_feedback_claim "$2" && fm_control_release_feedback_claim "$2"' _ "$ROOT" "$dir/claim" || rc=$?
+  assert_equals 0 "$rc" "a dead old-format owner does not strand feedback dismissal after an upgrade"
+  pass "feedback claim: legacy owners are recovered only after they exit"
+}
+
+# shellcheck disable=SC2016
+test_feedback_claim_release_preserves_another_owner() {
+  local dir holder n=0 rc=0
+  dir=$(fm_test_tmproot feedback-release)
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" -c '. "$1/bin/fm-control-lib.sh"; fm_control_acquire_feedback_claim "$2/claim" || exit 1; : > "$2/ready"; sleep 30' _ "$ROOT" "$dir" &
+  holder=$!
+  LOCK_PIDS="$LOCK_PIDS $holder"
+  while [ ! -f "$dir/ready" ] && [ "$n" -lt 100 ]; do sleep 0.02; n=$((n + 1)); done
+  [ -f "$dir/ready" ] || fail "the live owner could not acquire its claim"
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" -c '. "$1/bin/fm-control-lib.sh"; fm_control_release_feedback_claim "$2"' _ "$ROOT" "$dir/claim"
+  [ -d "$dir/claim" ] || fail "release removed another process's claim"
+  FM_STATE_OVERRIDE="$dir/state" "$BASH" -c '. "$1/bin/fm-control-lib.sh"; fm_control_acquire_feedback_claim "$2"' _ "$ROOT" "$dir/claim" || rc=$?
+  assert_equals 1 "$rc" "another process cannot acquire the preserved live claim"
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  pass "feedback claim: release preserves another live owner"
+}
+
+test_watchdog_rearms_uncertain_feedback_on_primary_and_worker() {
+  local subject target marker n
+  for subject in primary worker; do
+    make_home $'working\n> ' $'key-secs=0\nkey-settle-secs=0'
+    target=$T
+    if [ "$subject" = worker ]; then
+      worker_pane feedback ship $'working\n> '
+      printf 'harness=codex\n' >> "$H/state/feedback.meta"
+      target=$WP
+    fi
+    printf '%s\n' $'How was this?\n\n 1. bug         Crash, error message, hang, or broken UI/behavior\n 2. bad_result  Output was off-target, incorrect, incomplete, or unhelpful\n 3. other       Slowness, feature suggestion, UX feedback, or anything else\n\nPress enter to confirm or esc to go back' > "$H/feedback.txt"
+    cat > "$H/dialog.sh" <<'SH'
+#!/usr/bin/env bash
+home=$1
+for i in 1 2; do
+  printf '\033[2J\033[H'
+  cat "$home/feedback.txt"
+  stty -echo raw
+  dd bs=1 count=1 of="$home/key-$i" 2>/dev/null
+  stty sane -echo
+  while [ ! -e "$home/clear-$i" ]; do sleep 0.02; done
+  printf '\033[2J\033[Hworking\n> \n'
+  : > "$home/ready-$i"
+  while [ ! -e "$home/reopen" ]; do sleep 0.02; done
+done
+SH
+    "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$target" "bash '$H/dialog.sh' '$H'"
+    sleep 0.2
+    run_wd 0 once >/dev/null 2>&1 || fail "$subject initial uncertain dismissal failed"
+    assert_equals 1 "$(wc -c < "$H/key-1" | tr -d ' ')" "$subject receives its first dismiss key"
+    marker=$(find "$H/state" -maxdepth 1 -name '.feedback-dismissed-*' | head -n 1)
+    [ -f "$marker" ] || fail "$subject uncertain dismissal did not retain a marker"
+    : > "$H/clear-1"
+    n=0
+    while [ ! -e "$H/ready-1" ] && [ "$n" -lt 100 ]; do sleep 0.02; n=$((n + 1)); done
+    [ -f "$H/ready-1" ] || fail "$subject dialog never cleared"
+    cp "$H/config/watchdog" "$H/watchdog-original"
+    printf 'do-not-touch=%s\n' "$target" >> "$H/config/watchdog"
+    run_wd 1 once >/dev/null 2>&1 || fail "$subject do-not-touch observation failed"
+    [ -f "$marker" ] || fail "$subject do-not-touch observation changed the marker"
+    cp "$H/watchdog-original" "$H/config/watchdog"
+    run_wd 2 once --dry-run >/dev/null 2>&1 || fail "$subject dry-run observation failed"
+    [ -f "$marker" ] || fail "$subject dry-run observation changed the marker"
+    run_wd 2 scan >/dev/null 2>&1 || fail "$subject scan observation failed"
+    [ -f "$marker" ] || fail "$subject scan observation changed the marker"
+    wrap_tmux_visible fail
+    run_wd 2 once >/dev/null 2>&1 || fail "$subject failed viewport observation failed"
+    [ -f "$marker" ] || fail "$subject failed viewport cleared the marker"
+    wrap_tmux_visible blank
+    run_wd 3 once >/dev/null 2>&1 || fail "$subject empty viewport observation failed"
+    [ -f "$marker" ] || fail "$subject empty viewport cleared the marker"
+    restore_fake_tmux
+    run_wd 4 once >/dev/null 2>&1 || fail "$subject absent-dialog observation failed"
+    [ ! -f "$marker" ] || fail "$subject absent-dialog observation did not clear the marker"
+    : > "$H/reopen"
+    sleep 0.2
+    run_wd 4000 once >/dev/null 2>&1 || fail "$subject reopened-dialog pass failed"
+    assert_equals 1 "$(wc -c < "$H/key-2" | tr -d ' ')" "$subject identical reopening receives a new dismiss key"
+  done
+  pass "watchdog: primary and worker absence observations rearm uncertain dialogs with capture and do-not-touch guards"
+}
+
+test_feedback_uncertain_dismissal_reopens() {
+  local dir mode
+  dir=$(fm_test_tmproot feedback-reopen)
+  for mode in sticky empty; do
+    cat > "$dir/check.sh" <<'SH'
+set -u
+root=$1 dir=$2 mode=$3
+mkdir -p "$dir"
+. "$root/bin/fm-control-lib.sh"
+screen=$'How was this?\n\n 1. bug         Crash, error message, hang, or broken UI/behavior\n 2. bad_result  Output was off-target, incorrect, incomplete, or unhelpful\n 3. other       Slowness, feature suggestion, UX feedback, or anything else\n\nPress enter to confirm or esc to go back'
+printf '%s\n' "$screen" > "$dir/pane"
+fm_control_capture_feedback_pane() { cat "$dir/pane"; }
+fm_control_send_feedback_dismiss() {
+  printf '%s\n' "$3" >> "$dir/keys"
+  if [ "$mode" = empty ]; then : > "$dir/pane"; fi
+}
+rc=0
+fm_control_dismiss_feedback_dialog "$dir/state" tmux test codex "$screen" '' 0 5 || rc=$?
+[ "$rc" = 4 ] || exit 10
+printf 'working\n> \n' > "$dir/pane"
+rc=0
+fm_control_dismiss_feedback_dialog "$dir/state" tmux test codex "$(cat "$dir/pane")" '' 0 5 || rc=$?
+[ "$rc" = 1 ] || { printf 'clear observation rc=%s\n' "$rc"; exit 11; }
+printf '%s\n' "$screen" > "$dir/pane"
+rc=0
+fm_control_dismiss_feedback_dialog "$dir/state" tmux test codex "$screen" '' 0 5 || rc=$?
+[ "$rc" = 4 ] || exit 12
+SH
+    FM_STATE_OVERRIDE="$dir/$mode/state" "$BASH" "$dir/check.sh" "$ROOT" "$dir/$mode" "$mode" </dev/null
+    assert_equals 0 "$?" "a $mode post-send capture is rearmed by a later clear observation"
+    assert_equals $'Escape\nEscape' "$(cat "$dir/$mode/keys")" "an identical reopened dialog gets a new dismiss key after $mode verification"
+  done
+  pass "feedback dismiss: a later clear observation rearms an uncertain dismissal"
+}
+
+test_feedback_and_bug_report_dialog_dismissal() {
+  local agy_survey agy_multiline claude_survey claude_survey_statusline claude_survey_autocompact claude_draft claude_modal_input claude_modal_scope claude_modal_consent claude_followup codex_feedback codex_upload near_miss unknown_picker
+  agy_survey=$'work output\nHow\'s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip\n> \n  ? for shortcuts'
+  agy_multiline=$'work output\nHow\'s the CLI experience so far? Help us improve:\n  [1] Good  [2] Fine  [3] Bad  [0] Skip'
+  claude_survey=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss'
+  claude_survey_statusline=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n────────────────────────────────────────\n❯\xc2\xa0\n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main'
+  claude_survey_autocompact=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  Context left until auto-compact: 8% · ◯ IDE connected'
+  claude_draft=$'some work\n● Bug report drafted: tool timeout on large file\n  1 to review · 2 to send · 0 to dismiss'
+  claude_modal_input=$'Submit feedback / bug report\nDescribe the issue below:\n\nPress Enter to continue · Esc to cancel'
+  claude_modal_scope=$'Report a bug or share your conversation\nHow much session history should we include?\n ❯ 1. This session only\n   2. Last 5 sessions\n\nEnter to choose · Esc to cancel'
+  claude_modal_consent=$'Submit feedback / bug report\nThis report will include:\n- Your feedback / bug description: hang\n\nEnter to submit · ↑/↓ to navigate · Esc to cancel'
+  claude_followup=$'● What went wrong? (optional)\n\n  enter to send · esc to skip'
+  codex_feedback=$'How was this?\n\n ❯ 1. bug         Crash, error message, hang, or broken UI/behavior\n   2. bad_result  Output was off-target, incorrect, incomplete, or unhelpful\n   3. other       Slowness, feature suggestion, UX feedback, or anything else\n\nPress enter to confirm or esc to go back'
+  codex_upload=$'Upload logs?\nThe following files will be sent:\n  • codex-logs.log\n\n ❯ 1. Yes\n   2. No\n\nPress enter to confirm or esc to go back'
+  unknown_picker=$'Which plan should I follow?\n ❯ 1. Plan A (Recommended)\n   2. Plan B\n\nEnter to select · ↑/↓ to navigate · Esc to cancel'
+
+  # 1. Exact per-harness signatures choose only the skip/dismiss key (0 or Escape), never submit.
+  assert_equals $'agy-cli-feedback\t0' "$(lib fm_control_feedback_dialog_dismiss agy "$agy_survey")" "agy single-line CLI survey chooses 0/Skip"
+  assert_equals $'agy-cli-feedback\t0' "$(lib fm_control_feedback_dialog_dismiss agy "$agy_multiline")" "agy two-line CLI survey chooses 0/Skip"
+  assert_equals $'claude-session-feedback\t0' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_survey")" "claude session survey chooses 0/Dismiss"
+  assert_equals $'claude-session-feedback\t0' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_survey_statusline")" "claude session survey with statusLine under input box chooses 0/Dismiss"
+  assert_equals $'claude-session-feedback\t0' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_survey_autocompact")" "claude session survey with auto-compact row under input box chooses 0/Dismiss"
+  assert_equals $'claude-bug-report-draft\t0' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_draft")" "claude drafted bug report card chooses 0/dismiss"
+  assert_equals $'claude-bug-report-dialog\tEscape' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_modal_input")" "claude bug report input step chooses Escape"
+  assert_equals $'claude-bug-report-dialog\tEscape' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_modal_scope")" "claude bug report scope step chooses Escape"
+  assert_equals $'claude-bug-report-dialog\tEscape' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_modal_consent")" "claude bug report consent step chooses Escape"
+  assert_equals $'claude-survey-followup\tEscape' "$(lib fm_control_feedback_dialog_dismiss claude "$claude_followup")" "claude survey follow-up chooses Escape"
+  assert_equals $'codex-feedback-dialog\tEscape' "$(lib fm_control_feedback_dialog_dismiss codex "$codex_feedback")" "codex feedback picker chooses Escape"
+  assert_equals $'codex-upload-logs\tEscape' "$(lib fm_control_feedback_dialog_dismiss codex "$codex_upload")" "codex upload logs prompt chooses Escape"
+
+  local screen
+  for screen in "$agy_survey" "$agy_multiline" "$claude_survey" "$claude_survey_statusline" "$claude_survey_autocompact" "$claude_draft" "$claude_modal_input" "$claude_modal_scope" "$claude_modal_consent" "$claude_followup" "$codex_feedback" "$codex_upload"; do
+    assert_equals feedback "$(lib fm_wd_pane_dialog "$screen")" "fm_wd_pane_dialog classifies known feedback/bug-report fixture as feedback"
+  done
+
+  # 2. Per-harness scoping: a signature from another harness is never matched.
+  ! lib fm_control_feedback_dialog_dismiss claude "$agy_survey" || fail "claude adapter matched agy survey"
+  ! lib fm_control_feedback_dialog_dismiss codex "$agy_survey" || fail "codex adapter matched agy survey"
+  ! lib fm_control_feedback_dialog_dismiss pi "$agy_survey" || fail "pi adapter matched agy survey"
+  ! lib fm_control_feedback_dialog_dismiss agy "$claude_survey" || fail "agy adapter matched claude survey"
+  ! lib fm_control_feedback_dialog_dismiss codex "$claude_draft" || fail "codex adapter matched claude bug report draft"
+  ! lib fm_control_feedback_dialog_dismiss claude "$codex_feedback" || fail "claude adapter matched codex feedback dialog"
+
+  # 3. Near-miss texts, altered footers, and unknown dialogs are never dismissed.
+  for near_miss in \
+    $'Log: How\'s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip' \
+    $'How\'s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad' \
+    $'● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good' \
+    $'● Bug report drafted: tool timeout\n  1 to review · 2 to send' \
+    $'Submit feedback / bug report\nDescribe the issue below:\n\nPress Enter to continue' \
+    $'How was this?\n\n ❯ 1. bug         Crash, error message, hang, or broken UI/behavior\n\nDo not press esc to close' \
+    $'How was this?\n\n ❯ 1. bug         Crash, error message, hang, or broken UI/behavior\n\nPress space to continue or esc to close' \
+    $'Upload logs?\nThe following files will be sent:\n  • codex-logs.log\n\nPress space to confirm' \
+    $'How\'s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip\nnew work output after survey\n> '; do
+    ! lib fm_control_feedback_dialog_dismiss "" "$near_miss" || fail "near-miss matched feedback dismissal: $near_miss"
+    assert_equals "" "$(lib fm_wd_pane_dialog "$near_miss")" "near-miss is not classified as a dialog: $near_miss"
+  done
+  # 3b. A TUI that full-clears its screen pushes the closed dialog and its input
+  #     box into scrollback, then draws a clean or populated prompt below. The
+  #     later input box proves the dialog is stale; dismissing it would type 0
+  #     into the composer or corrupt an existing draft.
+  local stale_boxed stale_bare stale_rule stale_boxed_draft stale_bare_draft stale_rule_draft
+  stale_boxed=$'● Done. I updated the parser and ran the tests.\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n╭──────────────────────────────╮\n│ >                            │\n╰──────────────────────────────╯\n  ? for shortcuts\n● Done. I updated the parser and ran the tests.\n╭──────────────────────────────╮\n│ >                            │\n╰──────────────────────────────╯\n  ? for shortcuts'
+  stale_bare=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n> \nsome work\n> '
+  stale_rule=$'some work\n● Bug report drafted: tool timeout on large file\n  1 to review · 2 to send · 0 to dismiss\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main\nsome work\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main'
+  stale_boxed_draft=$'● Done. I updated the parser and ran the tests.\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n╭──────────────────────────────╮\n│ >                            │\n╰──────────────────────────────╯\n  ? for shortcuts\n● Done. I updated the parser and ran the tests.\n╭──────────────────────────────╮\n│ > existing draft             │\n╰──────────────────────────────╯\n  ? for shortcuts'
+  stale_bare_draft=$'some work\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n> \nsome work\n> existing draft'
+  stale_rule_draft=$'some work\n● Bug report drafted: tool timeout on large file\n  1 to review · 2 to send · 0 to dismiss\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main\nsome work\n────────────────────────────────────────\n❯ existing draft\n────────────────────────────────────────\n  [opus-4.6] workspace/firstmate · main'
+  for screen in "$stale_boxed" "$stale_bare" "$stale_rule" "$stale_boxed_draft" "$stale_bare_draft" "$stale_rule_draft"; do
+    ! lib fm_control_feedback_dialog_dismiss claude "$screen" || fail "stale dialog above a newer prompt matched feedback dismissal: $screen"
+  done
+  ! lib fm_control_feedback_dialog_dismiss "" "$unknown_picker" || fail "unknown picker matched feedback dismissal"
+  assert_equals question "$(lib fm_wd_pane_dialog "$unknown_picker")" "unknown picker still classifies as question"
+
+  # 4. Watchdog auto-dismisses worker feedback and bug-report dialogs without submitting,
+  #    enforces per-harness scoping on worker panes, preserves the home pane's composer
+  #    state (home draft + worker dialog in one pass), and does not let worker failures
+  #    consume the primary home pane's two-failure cap.
+  make_home $'Captain session\n────────────────────────────────────────\n❯ home draft in progress\n────────────────────────────────────────\n  ? for shortcuts'
+  transcript 100 "Working."
+  local home_canon
+  home_canon=$(cd -P "$H" && pwd -P)
+  mkdir -p "$H/state/watchdog"
+  printf '%s\tw1\t%s\tworker:other\tdialog\tkey\tfailed\tstuck\n%s\tw2\t%s\tworker:other\tdialog\tkey\tfailed\tstuck\n' \
+    "$((BASE - 200))" "$home_canon" "$((BASE - 100))" "$home_canon" > "$H/state/watchdog/actions.tsv"
+  cat > "$H/worker-agy.sh" <<SH
+#!/usr/bin/env bash
+printf '%s\n' 'How'\''s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip'
+stty -echo raw
+dd bs=1 count=1 of="$H/worker-agy.key" 2>/dev/null
+stty sane -echo
+clear
+printf '> \n'
+exec sleep $WD_FIXTURE_SLEEP
+SH
+  chmod +x "$H/worker-agy.sh"
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "wkagy${CASE_N}" -x 160 -y 40 "$H/worker-agy.sh"
+  WP=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" list-panes -t "=wkagy${CASE_N}" -F '#{pane_id}' | head -n 1)
+  printf 'kind=ship\nharness=agy\nbackend=tmux\nwindow=%s\nendpoint_task_id=agyw\n' "$WP" > "$H/state/agyw.meta"
+  cat > "$H/worker-mismatch.sh" <<SH
+#!/usr/bin/env bash
+printf '%s\n' 'How'\''s the CLI experience so far? Help us improve: [1] Good [2] Fine [3] Bad [0] Skip'
+stty -echo
+exec cat >> "$H/worker-mismatch.key"
+SH
+  chmod +x "$H/worker-mismatch.sh"
+  : > "$H/worker-mismatch.key"
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "wkmis${CASE_N}" -x 160 -y 40 "$H/worker-mismatch.sh"
+  local WP_MIS
+  WP_MIS=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" list-panes -t "=wkmis${CASE_N}" -F '#{pane_id}' | head -n 1)
+  printf 'kind=ship\nharness=claude\nbackend=tmux\nwindow=%s\nendpoint_task_id=misw\n' "$WP_MIS" > "$H/state/misw.meta"
+  sleep 0.5
+  local post_worker_state
+  post_worker_state=$(
+    FM_TEST_SEAM=1 FM_WD_NOW="$BASE" FM_HOME="$H" bash -c '
+      HOME_T=$2
+      . "$1"
+      fm_backend_composer_state() {
+        if [ "$2" = "$HOME_T" ]; then printf "pending\n"; else printf "empty\n"; fi
+      }
+      mkdir -p "$WD" "$OUT"
+      WD_GAPS=$(mktemp "$WD/.gaps.XXXXXX")
+      wd_observe "$FM_HOME" - primary
+      O_DRAFT="home-orca-draft"
+      WD_SYMPTOM=ok WD_RESTARTED=0
+      wd_handle_subject
+      wd_visit_worker_dialogs page
+      rm -f "$WD_GAPS"
+      printf "%s|%s|%s\n" "$O_COMPOSER" "$O_DRAFT" "$(printf "%s" "$O_COMPOSER_TEXT" | tr "\n" " ")"
+    ' _ "$WD" "$T"
+  ) || fail "watchdog worker feedback pass failed"
+  assert_equals "0" "$(cat "$H/worker-agy.key" 2>/dev/null)" "worker agy survey received literal 0 and nothing else"
+  assert_equals "" "$(cat "$H/worker-mismatch.key" 2>/dev/null)" "claude worker showing an agy survey receives no key"
+  assert_equals 0 "$(awk -F'\t' '$4 == "worker:misw"' "$H/state/watchdog/actions.tsv" | wc -l | tr -d ' ')" \
+    "mismatched-harness worker records no dialog key action"
+  assert_equals 1 "$(awk -F'\t' '$4 == "worker:agyw" && $5 == "dialog" && $6 == "key" && $7 == "done"' "$H/state/watchdog/actions.tsv" | wc -l | tr -d ' ')" \
+    "worker agy feedback dismissal recorded done despite another worker's two failures: $(ledger)"
+  assert_grep "composer=pending" "$H/state/watchdog/subjects/$(home_key)" \
+    "home subject recorded pending composer"
+  assert_contains "$post_worker_state" "pending|home-orca-draft|" \
+    "worker feedback dismissal did not overwrite the home pane's O_COMPOSER or O_DRAFT"
+  assert_contains "$post_worker_state" "home draft in progress" \
+    "worker feedback dismissal did not overwrite the home pane's O_COMPOSER_TEXT"
+  [ ! -s "$H/typed.log" ] || fail "home pane with draft was typed into during worker dialog dismissal: $(cat "$H/typed.log")"
+
+  # 5. Watcher (fm-watch.sh) auto-dismisses an idle worker's feedback dialog and logs the dismissal, but leaves a busy worker alone.
+  local wdir wstate wfake wout
+  wdir="$TMP_ROOT/watch-feedback-$CASE_N"
+  wstate="$wdir/state"
+  wfake="$wdir/fakebin"
+  wout="$wdir/watch.out"
+  mkdir -p "$wstate" "$wfake" "$wdir/config"
+  printf 'window=test:fm-agy\nkind=ship\nharness=agy\nbackend=tmux\n' > "$wstate/agy.meta"
+  cat > "$wfake/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  list-windows) printf 'fm-agy\n'; exit 0 ;;
+  capture-pane) cat "$FM_TEST_WATCH_PANE"; exit 0 ;;
+  send-keys)
+    shift
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) shift; printf 'LITERAL:%s\n' "${1:-}" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+        *) printf 'KEY:%s\n' "$1" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+      esac
+    done
+    [ -z "${FM_TEST_WATCH_CLEAR_ON_SEND:-}" ] || printf 'work output\n> \n' > "$FM_TEST_WATCH_PANE"
+    exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$wfake/tmux"
+  printf '%s\n' "$agy_survey" > "$wdir/pane-idle.txt"
+  : > "$wdir/keys.log"
+  PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-idle.txt" FM_TEST_WATCH_KEYS="$wdir/keys.log" FM_TEST_WATCH_CLEAR_ON_SEND=1 \
+    FM_HOME="$wdir" FM_STATE_OVERRIDE="$wstate" FM_CONFIG_OVERRIDE="$wdir/config" \
+    FM_WATCH_ONCE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    bash "$ROOT/bin/fm-watch.sh" > "$wout" 2>&1 || fail "fm-watch.sh once failed on idle feedback pane: $(cat "$wout")"
+  assert_equals "LITERAL:0" "$(cat "$wdir/keys.log")" "watcher sent only literal 0 (never Enter or submit) on idle agy survey"
+  assert_grep "auto-dismissed feedback dialog (agy-cli-feedback key=0): test:fm-agy" "$wstate/.watch-triage.log" \
+    "watcher logged the feedback dismissal"
+
+  # 6. Shared atomic claim: when two callers race on one pane (even with different
+  #    status-row snapshots), serialization sends the dismiss key at most once.
+  local rstate="$wdir/race-state" pid1 pid2
+  mkdir -p "$rstate"
+  printf '%s\n' "$claude_survey_statusline" > "$wdir/pane-race.txt"
+  : > "$wdir/race-keys.log"
+  cat > "$wfake/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  capture-pane) cat "$FM_TEST_WATCH_PANE"; exit 0 ;;
+  send-keys)
+    sleep 0.1
+    shift
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) shift; printf 'LITERAL:%s\n' "${1:-}" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+        *) printf 'KEY:%s\n' "$1" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+      esac
+    done
+    printf 'work output\n> \n' > "$FM_TEST_WATCH_PANE"
+    exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$wfake/tmux"
+  (
+    PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-race.txt" FM_TEST_WATCH_KEYS="$wdir/race-keys.log" \
+      bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" claude "$3" "fm-agy" 0.1' \
+      _ "$ROOT" "$rstate" "$claude_survey_statusline" >/dev/null 2>&1 || true
+  ) &
+  pid1=$!
+  (
+    PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-race.txt" FM_TEST_WATCH_KEYS="$wdir/race-keys.log" \
+      bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" claude "$3" "fm-agy" 0.1' \
+      _ "$ROOT" "$rstate" "$claude_survey_autocompact" >/dev/null 2>&1 || true
+  ) &
+  pid2=$!
+  wait "$pid1" "$pid2"
+  assert_equals "LITERAL:0" "$(cat "$wdir/race-keys.log")" "concurrent callers racing with different snapshots on one pane send the dismiss key exactly once"
+
+  # 7. A key delivery that fails leaves the dialog retryable on the next tick.
+  local fstate="$wdir/fail-state" frc=0
+  mkdir -p "$fstate"
+  printf '%s\n' "$agy_survey" > "$wdir/pane-fail.txt"
+  : > "$wdir/fail-keys.log"
+  : > "$wdir/send-fails-once"
+  cat > "$wfake/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  capture-pane) cat "$FM_TEST_WATCH_PANE"; exit 0 ;;
+  send-keys)
+    if [ -e "$FM_TEST_SEND_FAILS_ONCE" ]; then rm -f "$FM_TEST_SEND_FAILS_ONCE"; exit 1; fi
+    shift
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) shift; printf 'LITERAL:%s\n' "${1:-}" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+        *) printf 'KEY:%s\n' "$1" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+      esac
+    done
+    printf 'work output\n> \n' > "$FM_TEST_WATCH_PANE"
+    exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$wfake/tmux"
+  PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-fail.txt" FM_TEST_WATCH_KEYS="$wdir/fail-keys.log" FM_TEST_SEND_FAILS_ONCE="$wdir/send-fails-once" \
+    bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1' \
+    _ "$ROOT" "$fstate" "$agy_survey" >/dev/null 2>&1 || frc=$?
+  assert_equals 3 "$frc" "a failed key delivery reports delivery failure"
+  assert_equals "" "$(cat "$wdir/fail-keys.log")" "no key reached the pane on the failed delivery"
+  frc=0
+  PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-fail.txt" FM_TEST_WATCH_KEYS="$wdir/fail-keys.log" FM_TEST_SEND_FAILS_ONCE="$wdir/send-fails-once" \
+    bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1' \
+    _ "$ROOT" "$fstate" "$agy_survey" >/dev/null 2>&1 || frc=$?
+  assert_equals 0 "$frc" "the next tick retries the unchanged dialog after a failed delivery and clears it"
+  assert_equals "LITERAL:0" "$(cat "$wdir/fail-keys.log")" "the retry sends the dismiss key once"
+
+  # 7b. After a verified dismissal clears .feedback-dismissed-*, an identical dialog
+  #     reappearing later on the same endpoint is dismissed again.
+  printf '%s\n' "$agy_survey" > "$wdir/pane-fail.txt"
+  : > "$wdir/fail-keys.log"
+  frc=0
+  PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-fail.txt" FM_TEST_WATCH_KEYS="$wdir/fail-keys.log" \
+    bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1' \
+    _ "$ROOT" "$fstate" "$agy_survey" >/dev/null 2>&1 || frc=$?
+  assert_equals 0 "$frc" "an identical dialog reappearing after a verified dismissal is dismissed again"
+  assert_equals "LITERAL:0" "$(cat "$wdir/fail-keys.log")" "the reopened identical dialog receives its dismiss key"
+
+  # 7c. A failed, empty, or timed-out live pre-send capture refuses to send any key.
+  local cstate="$wdir/cap-state" cap_mode
+  mkdir -p "$cstate"
+  for cap_mode in fail empty timeout; do
+    : > "$wdir/cap-keys.log"
+    cat > "$wfake/tmux" <<SH
+#!/usr/bin/env bash
+case "\${1:-}" in
+  capture-pane)
+    case "$cap_mode" in
+      fail) exit 1 ;;
+      empty) exit 0 ;;
+      timeout) sleep 5; exit 0 ;;
+    esac ;;
+  send-keys)
+    printf 'SENT\n' >> "$wdir/cap-keys.log"
+    exit 0 ;;
+esac
+exit 0
+SH
+    chmod +x "$wfake/tmux"
+    frc=0
+    PATH="$wfake:$PATH" bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1 1' \
+      _ "$ROOT" "$cstate" "$agy_survey" >/dev/null 2>&1 || frc=$?
+    assert_equals 2 "$frc" "live capture mode '$cap_mode' refuses dismissal with rc 2"
+    assert_equals "" "$(cat "$wdir/cap-keys.log")" "live capture mode '$cap_mode' sends zero keys"
+  done
+
+  # 7d. An interrupted claimant (dead owner PID) or expired stale claim is recovered
+  #     by a subsequent caller on the same endpoint.
+  local kstate="$wdir/kill-state" dead_pid
+  mkdir -p "$kstate"
+  printf '%s\n' "$agy_survey" > "$wdir/pane-kill.txt"
+  : > "$wdir/kill-keys.log"
+  cat > "$wfake/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  capture-pane)
+    if [ -e "${FM_TEST_HOLD_CLAIM:-}" ]; then
+      : > "$FM_TEST_HOLD_CLAIM.ready"
+      sleep 30
+    fi
+    cat "$FM_TEST_WATCH_PANE"
+    exit 0 ;;
+  send-keys)
+    shift
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) shift; printf 'LITERAL:%s\n' "${1:-}" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+        *) printf 'KEY:%s\n' "$1" >> "$FM_TEST_WATCH_KEYS"; shift ;;
+      esac
+    done
+    printf 'work output\n> \n' > "$FM_TEST_WATCH_PANE"
+    exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$wfake/tmux"
+  : > "$wdir/hold-claim"
+  (
+    PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-kill.txt" FM_TEST_WATCH_KEYS="$wdir/kill-keys.log" FM_TEST_HOLD_CLAIM="$wdir/hold-claim" \
+      bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1 20' \
+      _ "$ROOT" "$kstate" "$agy_survey" >/dev/null 2>&1
+  ) &
+  dead_pid=$!
+  local wait_i=0
+  while [ ! -e "$wdir/hold-claim.ready" ] && [ "$wait_i" -lt 40 ]; do
+    sleep 0.05
+    wait_i=$((wait_i + 1))
+  done
+  kill -9 "$dead_pid" 2>/dev/null || true
+  wait "$dead_pid" 2>/dev/null || true
+  rm -f "$wdir/hold-claim" "$wdir/hold-claim.ready"
+  [ -d "$kstate/.feedback-claim-tmux_test_fm-agy" ] || fail "killed claimant did not leave a claim directory behind"
+  frc=0
+  PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-kill.txt" FM_TEST_WATCH_KEYS="$wdir/kill-keys.log" \
+    bash -c '. "$1/bin/fm-backend.sh"; . "$1/bin/fm-control-lib.sh"; fm_control_dismiss_feedback_dialog "$2" tmux "test:fm-agy" agy "$3" "fm-agy" 0.1' \
+    _ "$ROOT" "$kstate" "$agy_survey" >/dev/null 2>&1 || frc=$?
+  assert_equals 0 "$frc" "subsequent caller recovers a claim left by a terminated owner and dismisses the dialog"
+  assert_equals "LITERAL:0" "$(cat "$wdir/kill-keys.log")" "recovered claim sends the dismiss key once"
+
+  # Busy worker showing `esc to cancel` alongside the text is not touched.
+  printf '%s\n  esc to cancel\n' "$agy_survey" > "$wdir/pane-busy.txt"
+  : > "$wdir/keys.log"
+  rm -rf "$wstate"/.feedback-dismissed-* "$wstate"/.feedback-claim-*
+  PATH="$wfake:$PATH" FM_TEST_WATCH_PANE="$wdir/pane-busy.txt" FM_TEST_WATCH_KEYS="$wdir/keys.log" \
+    FM_HOME="$wdir" FM_STATE_OVERRIDE="$wstate" FM_CONFIG_OVERRIDE="$wdir/config" \
+    FM_WATCH_ONCE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    bash "$ROOT/bin/fm-watch.sh" > "$wout" 2>&1 || fail "fm-watch.sh once failed on busy pane"
+  assert_equals "" "$(cat "$wdir/keys.log")" "watcher sends no key while the worker is busy"
+  pass "feedback and bug-report dialogs: exact per-harness signatures auto-dismiss when idle without submitting, near-misses and unknown dialogs do not"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -3644,9 +6132,16 @@ fi
 
 fm_test_run \
   test_dialog_detection \
+  test_feedback_claim_recovery_serializes_contenders \
+  test_feedback_claim_recovers_legacy_owner \
+  test_feedback_claim_release_preserves_another_owner \
+  test_watchdog_rearms_uncertain_feedback_on_primary_and_worker \
+  test_feedback_uncertain_dismissal_reopens \
+  test_feedback_and_bug_report_dialog_dismissal \
   test_mtime_uses_the_platform_stat_dialect \
   test_dismissed_dialog_in_scrollback_is_not_showing \
   test_dialog_keys_stop_after_two_failures \
+  test_statusline_percentage_does_not_rearm_feedback_dismiss \
   test_loop_verdicts \
   test_stall_proof_and_text_guards \
   test_frozen_pane_nudges_once_then_rate_limits \
@@ -3658,6 +6153,35 @@ fm_test_run \
   test_terminal_service_loss_is_agent_gone \
   test_owner_reserved_holds_stay_held_and_council_settles_the_rest \
   test_split_council_gives_no_ruling \
+  test_seat_family_derivation \
+  test_decisions_act_while_everything_else_stays_dry_run \
+  test_decisions_key_follows_mode_and_can_hold_it_back \
+  test_one_family_council_is_refused_without_a_call \
+  test_council_outcome_is_final_for_its_decision \
+  test_council_with_no_answer_is_not_a_convening \
+  test_council_calls_use_their_own_budget_and_time_limit \
+  test_council_command_rules_now_once_and_types_nothing \
+  test_council_keeps_dashed_decision_identities_separate \
+  test_council_checks_stored_identity_and_replays_legacy_records \
+  test_council_requires_durable_publication \
+  test_council_checks_the_complete_record_before_calling_seats \
+  test_council_never_shortens_a_prompt_to_the_judge_limit \
+  test_council_dry_run_withholds_an_existing_ruling \
+  test_council_does_not_expire_a_live_owner \
+  test_council_stale_reclaim_excludes_a_second_contender \
+  test_concurrent_councils_keep_their_prompts_separate \
+  test_council_never_reads_stale_input_after_a_prompt_write_failure \
+  test_council_checks_split_reserved_words_before_normalizing_a_file \
+  test_council_replay_reads_only_one_metadata_header \
+  test_council_replay_validates_the_recorded_vote_outcome \
+  test_council_rejects_additional_metadata_blocks \
+  test_council_uses_portable_identity_paths \
+  test_council_rejects_malformed_or_unknown_header_content \
+  test_council_refuses_oversized_context_before_replay \
+  test_council_requires_the_seats_field_separator \
+  test_automatic_decisions_refuse_oversized_recorded_context \
+  test_council_command_honours_the_dry_run_switch \
+  test_council_runs_one_at_a_time_per_decision \
   test_judge_fallback_and_spend_cap \
   test_no_model_still_acts_and_reports_gap \
   test_timer_loop_needs_owed_input \
@@ -3674,6 +6198,8 @@ fm_test_run \
   test_captain_record_follows_the_lock_owner \
   test_captain_record_ignores_a_heartbeat_written_outside_the_owner \
   test_no_action_while_restart_awaits_pickup \
+  test_no_quota_check_while_restart_awaits_pickup \
+  test_mate_warning_holds_while_its_parent_restart_awaits_pickup \
   test_dead_captain_restarts_despite_its_anchor \
   test_watchdog_allows_muse_restart_with_approval_flag \
   test_watchdog_adds_yolo_to_bare_muse_restart \
@@ -3681,6 +6207,7 @@ fm_test_run \
   test_dead_holder_is_not_hidden_by_earlier_symptoms \
   test_low_context_waits_for_full_handoff_then_restarts \
   test_low_context_timeout_restarts_with_lean_handoff \
+  test_low_context_restart_rechecks_a_failed_launch \
   test_low_context_second_episode_asks_again \
   test_low_context_undelivered_nudge_starts_no_wait \
   test_restart_interval_holds_without_escalating \
@@ -3705,10 +6232,14 @@ fm_test_run \
   test_orca_draft_is_never_typed_onto \
   test_reserved_task_or_key_is_held_and_refused_nudges_are_gaps \
   test_second_mate_restart_ends_the_pass \
+  test_second_mate_zero_exit_relaunch_is_not_done \
+  test_second_mate_restart_done_after_session_start_under_new_lock \
+  test_second_mate_session_start_after_the_window_is_not_done \
   test_reserved_model_switch_dialog_is_held \
   test_secret_looking_decision_reaches_no_council \
   test_secret_looking_model_switch_dialog_is_held \
   test_model_switch_judge_is_rate_limited \
+  test_worker_dialog_key_does_not_close_home_key_window \
   test_usage_limit_unknown_harness_queues \
   test_claude_pinned_secondmate_with_tooling_gets_no_codex_pick \
   test_ordinary_home_claude_json_mcp_blocks_the_move \
@@ -3716,6 +6247,14 @@ fm_test_run \
   test_usage_limit_claude_without_tooling_names_a_pick \
   test_unreadable_claude_account_pin_gets_no_pick \
   test_worker_usage_limit_names_a_pick \
+  test_quota_guard_checks_at_kickoff_and_periodically \
+  test_quota_guard_act_nudges_after_any_check \
+  test_quota_guard_nudge_names_each_move_with_a_quoted_home \
+  test_quota_guard_nudge_retries_a_failed_send_and_skips_a_dead_primary \
+  test_quota_guard_nudge_skips_a_holder_that_died_during_the_check \
+  test_autowait_footers_on_a_mate_and_a_worker_are_limit_warnings \
+  test_failed_limit_dialog_record_is_retried \
+  test_failed_warning_check_records_the_dialog_once \
   test_grok_weekly_limit_on_a_secondmate_names_a_pick \
   test_home_usage_limit_ignores_grok_in_scrollback \
   test_orca_usage_limit_does_not_relaunch_from_scrollback \
@@ -3734,9 +6273,18 @@ fm_test_run \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \
   test_no_activity_source_is_not_reported_ok \
+  test_second_mate_activity_sources \
+  test_second_mate_freeze_is_seen_without_a_transcript \
   test_claude_judge_keeps_the_default_login \
   test_unknown_heartbeat_endpoint_is_not_reported_ok \
   test_tmux_restart_survives_a_closed_session \
+  test_supervisor_gap_rows_from_one_reading \
+  test_supervisor_gap_heartbeat_stamp_reading \
+  test_supervisor_gap_record_follows_published_heartbeat_age \
+  test_supervisor_gap_unread_heartbeat_writes_no_row \
+  test_supervisor_gap_rows_name_each_watched_home \
+  test_supervisor_gap_torn_line_and_failed_append \
   test_status_file_short_and_staleness_visible \
+  test_memory_guard_samples_once_per_pass \
   test_manager_units \
   test_never_merges_deploys_or_messages_owner

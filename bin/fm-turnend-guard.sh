@@ -79,31 +79,24 @@
 #      that runs the supervision host under an away record skips the detach: with
 #      no wake queued and no watcher other than a hold, the stop is allowed with
 #      a loud notice that away supervision is not running until the next checkpoint.
-#   3. A stop following this guard's own block in the same session and turn is
-#      allowed only when rule 1 no longer applies, no wake is queued, and
-#      nothing advanced since that block - the watcher beacon at full mtime
-#      precision and the watch-lock identity both unchanged. Rule 3 is the
-#      escape for a secondmate home and for a home where state/.afk is present.
-#      The non-secondmate path in rule 2 does not reach it. The per-session
-#      record lives in state/.turnend-codex-block.<session>.
-#   4. When the checkpoint is closed and state/.afk is absent, at most 2 further
-#      blocks are allowed in the same turn, including a turn that still has a
-#      queued wake. The count resets when the turn id changes. It is the blocks=
-#      line in the rule 3 record. Open-checkpoint blocks do not consume it. A
-#      home where state/.afk is present does not use this bound; rule 3 is its
-#      escape.
+#   3. Once rule 1 no longer applies, stop_hook_active=true allows the continued
+#      stop, including when a wake is queued or this is a secondmate/away home.
+#      An initial queued-wake stop requests drain, handling and acknowledgement.
+#      Its continuation may end while the queue stays durable for later handling.
+# Only after rules 1 and 2, and never while this session's own checkpoint runs,
+# bin/fm-stop-policy-lib.sh limit mode also allows a stop that follows a hook
+# continuation or reaches its loop or hourly bound.
 # A home whose session lock is held by another live session gets the read-only
 # diagnostic exit, exactly like --claude mode below.
-# Pending wakes hold the turn until the bound in rule 4
-# allows it. Away daemon ownership retains its existing allow path and is not
-# a reason to detach a second watcher.
+# Away daemon ownership retains its existing allow path and is not a reason to
+# detach a second watcher.
 #
 # Loop-guard, --claude mode (Stop-owned auto-arm cooperation): Claude Code
 # marks EVERY stop after ANY stop-hook-driven continuation stop_hook_active=true,
 # including turns started by the asyncRewake auto-arm, so the one-shot allow
 # would re-open the exact blind window this guard exists to close
 # (docs/turnend-guard.md records the 2026-07-21 incident). In --claude mode this
-# guard ignores stop_hook_active and instead cooperates with the Stop-owned
+# guard keeps missing-supervision recovery intact and cooperates with the Stop-owned
 # auto-arm (bin/fm-claude-stop-autoarm.sh), which fires on the same Stop event:
 #   1. a live identity-matched watcher with a fresh beacon - or, in away mode, a
 #      live identity-matched daemon with a fresh beacon - allows immediately;
@@ -130,6 +123,9 @@
 #      re-block (budget_account_current_epoch owns that rule), so an inert
 #      hook that leaves the ledger frozen cannot hold the guard in an
 #      unbounded re-block loop below that override.
+#      Before any re-block, bin/fm-stop-policy-lib.sh repair mode applies the
+#      loop and hourly bounds; missing-supervision repair skips both the parked
+#      shortcut and stop_hook_active.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -230,9 +226,6 @@ if [ "$CLAUDE_MODE" -eq 0 ] && [ "$CURSOR_MODE" -eq 0 ] \
   && [ "$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null)" = codex ]; then
   CODEX_MODE=1
 fi
-if [ "$CLAUDE_MODE" -eq 0 ] && [ "$CODEX_MODE" -eq 0 ] && [ "$AGY_MODE" -eq 0 ] && [ "$STOP_HOOK_ACTIVE" = "true" ]; then
-  allow_exit
-fi
 
 # --- scope precisely to a PRIMARY checkout ----------------------------------
 # A genuinely-marked secondmate home runs its OWN primary firstmate session, so
@@ -247,6 +240,15 @@ fi
 # checkout has the two equal. Child worktrees never carry the gitignored marker,
 # so this exempts them while guarding every real secondmate home.
 fm_primary_scope_matches "$FM_ROOT" "$STATE" || allow_exit
+
+# shellcheck source=bin/fm-stop-policy-lib.sh
+. "$SCRIPT_DIR/fm-stop-policy-lib.sh"
+# An ordinary-mode active hook always stops; check mode only records the
+# hook_active watchdog line for this primary home.
+if [ "$CLAUDE_MODE" -eq 0 ] && [ "$CODEX_MODE" -eq 0 ] && [ "$AGY_MODE" -eq 0 ] && [ "$STOP_HOOK_ACTIVE" = "true" ]; then
+  fm_stop_policy_allows_stop "$PAYLOAD" check >/dev/null 2>&1 || true
+  allow_exit
+fi
 
 # External auto-compact footer for this turn. A missing script or footer stays silent.
 if [ "${FM_TEST_SEAM:-}" != 1 ] && [ -x "$SCRIPT_DIR/fm-context-burn.sh" ]; then
@@ -267,7 +269,6 @@ OWNER_LOCK="$STATE/.claude-autoarm.lock"
 FAILURE_NOTICE="$STATE/.claude-autoarm-failure-notified"
 FAILURE_ALARM="$STATE/.claude-autoarm-failure-alarmed"
 SESSION_ID=$(printf '%s' "$PAYLOAD" | jq -r '.session_id // "unknown"' 2>/dev/null || printf 'unknown')
-TURN_ID=$(printf '%s' "$PAYLOAD" | jq -r '.turn_id // ""' 2>/dev/null || true)
 # A Codex Stop hook gets no CODEX_THREAD_ID/CODEX_SESSION_ID pair (live probe,
 # codex-cli 0.166.0); its thread id arrives only as the payload's session_id.
 # Hand that id to the session-lock library so its same-session checks below
@@ -280,32 +281,6 @@ if [ "$CODEX_MODE" -eq 1 ] && [ -z "${CODEX_THREAD_ID:-}" ] && [ -z "${CODEX_SES
   CODEX_THREAD_ID=$SESSION_ID
   CODEX_SESSION_ID=$SESSION_ID
 fi
-CODEX_BLOCK="$STATE/.turnend-codex-block.$(printf '%s' "$SESSION_ID" | tr -c 'A-Za-z0-9_-' '_')"
-# Watcher progress since a block: the beacon mtime at full precision, so beats
-# within one second still differ, plus the watch-lock identity, so a new cycle
-# shows even before its first beat.
-codex_progress() {
-  local mtime
-  if [ "$(uname)" = Darwin ]; then
-    mtime=$(/usr/bin/stat -f %Fm "$STATE/.last-watcher-beat" 2>/dev/null)
-  else
-    mtime=$(stat -c %.9Y "$STATE/.last-watcher-beat" 2>/dev/null)
-  fi
-  printf '%s|%s' "${mtime:-none}" "$(cat "$STATE/.watch.lock/pid-identity" 2>/dev/null)"
-}
-# Blocks already recorded for this turn. A record from another turn counts as
-# zero so a new turn does not inherit the previous turn's budget.
-codex_recorded_blocks() {
-  local turn blocks
-  turn=$(sed -n 's/^turn=//p' "$CODEX_BLOCK" 2>/dev/null || true)
-  [ "$turn" = "$TURN_ID" ] || { printf '0\n'; return 0; }
-  blocks=$(sed -n 's/^blocks=//p' "$CODEX_BLOCK" 2>/dev/null || true)
-  case "$blocks" in ''|*[!0-9]*) blocks=0 ;; esac
-  printf '%s\n' "$blocks"
-}
-codex_write_block() {  # <blocks>
-  printf 'turn=%s\nprogress=%s\nblocks=%s\n' "$TURN_ID" "$(codex_progress)" "$1" > "$CODEX_BLOCK" 2>/dev/null || true
-}
 budget_reset() {
   [ "$CLAUDE_MODE" -eq 1 ] || return 0
   fm_lock_try_acquire "$BUDGET_LOCK" || return 0
@@ -329,7 +304,11 @@ allow_supervised_stop() {
     exit 0
   fi
   [ "$CLAUDE_MODE" -eq 1 ] || exit 0
-  fm_failure_episode_reset "$STATE" && exit 0
+  if fm_failure_episode_reset "$STATE"; then
+    fm_stop_policy_allows_stop "$PAYLOAD" supervise || true
+    exit 0
+  fi
+  fm_stop_policy_allows_stop "$PAYLOAD" repair && allow_exit
   exit 2
 }
 
@@ -436,22 +415,16 @@ if [ "$(fm_path_age "$STATE/.last-watcher-beat")" -lt "$AFK_GRACE" ] \
 fi
 
 block_stop() {
-  local afk x_mode reason rule msg max_blocks cur_blocks blocks cause
+  local afk x_mode reason rule msg max_blocks cur_blocks
+  if [ "$CLAUDE_MODE" -eq 1 ]; then
+    fm_stop_policy_allows_stop "$PAYLOAD" repair && allow_exit
+  elif [ "$CHECKPOINT_OPEN" -eq 0 ]; then
+    fm_stop_policy_allows_stop "$PAYLOAD" limit && allow_exit
+  fi
   afk=0
   [ -e "$STATE/.afk" ] && afk=1
   x_mode=0
   [ -f "$CONFIG/x-mode.env" ] && x_mode=1
-  if [ "$CODEX_MODE" -eq 1 ] && [ "$CHECKPOINT_OPEN" -eq 0 ] && [ "$afk" -eq 0 ]; then
-    blocks=$(codex_recorded_blocks)
-    if [ "$blocks" -ge 2 ]; then
-      cause='without a persistent watcher'
-      if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
-        cause='with queued wakes still undrained'
-      fi
-      printf '%s\n' "{\"systemMessage\":\"FIRSTMATE SUPERVISION BLOCK BOUND REACHED: this turn already blocked ${blocks} times ${cause}. Allowing the turn to end so foreground checkpoints cannot loop. Queued wakes stay durable until the captain's next message starts a turn.\"}"
-      exit 0
-    fi
-  fi
   if [ "$AGY_MODE" -eq 1 ]; then
     max_blocks=${FM_TURNEND_MAX_BLOCKS:-3}
     case "$max_blocks" in ''|*[!0-9]*|0) max_blocks=3 ;; esac
@@ -501,15 +474,6 @@ block_stop() {
     printf '●  %s\n' "$reason"
     printf '●%s\n' "$rule"
   )
-  if [ "$CODEX_MODE" -eq 1 ]; then
-    if [ "$CHECKPOINT_OPEN" -eq 0 ] && [ "$afk" -eq 0 ]; then
-      blocks=$(codex_recorded_blocks)
-      blocks=$((blocks + 1))
-    else
-      blocks=$(codex_recorded_blocks)
-    fi
-    codex_write_block "$blocks"
-  fi
   if [ "$AGY_MODE" -eq 1 ]; then
     jq -cn --arg r "$msg" '{decision:"continue",reason:$r}'
     exit 0
@@ -529,6 +493,9 @@ if { [ "$CLAUDE_MODE" -eq 1 ] || [ "$CODEX_MODE" -eq 1 ]; } && fm_session_lock_f
   printf '{"systemMessage":"FIRSTMATE SUPERVISION IS OWNED BY ANOTHER LIVE SESSION: this read-only session cannot and should not arm or repair the watcher (lock owner pid %s). Allowing this turn to end safely; the owning session must restore supervision."}\n' \
     "$FM_SESSION_LOCK_FOREIGN_OWNER_PID"
   exit 0
+fi
+if [ "$CLAUDE_MODE" -eq 1 ] || [ "$CODEX_MODE" -eq 1 ]; then
+  FM_STOP_POLICY_OWNER_CHECKED=1
 fi
 
 # Codex rule 2 (header): once this session's own checkpoint is closed, detach an
@@ -554,16 +521,6 @@ if [ "$CODEX_MODE" -eq 1 ] && [ "$CHECKPOINT_OPEN" -eq 0 ] && [ "$SECONDMATE_MOD
     printf '%s\n' '{"systemMessage":"FIRSTMATE SUPERVISION HAS NO PERSISTENT WATCHER: the Stop hook could not confirm a detached owner. Allowing this turn to end so it does not loop on foreground checkpoints. The next stop will try again."}'
     exit 0
   fi
-fi
-
-# Codex rule 3 (header): allow a stop that follows this guard's own block in this
-# session and turn only when nothing advanced since that block. A record from an
-# earlier turn, or a stop continued by some other hook's block, is judged fresh.
-if [ "$CODEX_MODE" -eq 1 ] && [ "$STOP_HOOK_ACTIVE" = "true" ] && [ "$CHECKPOINT_OPEN" -eq 0 ] \
-  && [ "$FM_SUP_QUEUE_PENDING" = false ] \
-  && [ "$(sed -n 's/^turn=//p' "$CODEX_BLOCK" 2>/dev/null)" = "$TURN_ID" ] \
-  && [ "$(sed -n 's/^progress=//p' "$CODEX_BLOCK" 2>/dev/null)" = "$(codex_progress)" ]; then
-  exit 0
 fi
 
 if [ "$CLAUDE_MODE" -eq 0 ]; then
@@ -650,6 +607,7 @@ budget_account_current_epoch() {  # [observe|block]
 
 autoarm_owns_recovery() {
   local pid role outcome age
+  [ ! -e "$STATE/.afk" ] || return 1
   fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME" && return 0
   # An open generation claim owns recovery; fm_autoarm_claim_open in
   # bin/fm-wake-lib.sh owns the full predicate, including session reachability.
@@ -786,8 +744,9 @@ i=0
 while [ "$i" -lt $((SYNC_WAIT_MS / 100)) ]; do
   if autoarm_owns_recovery; then
     if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
-      fm_failure_episode_reset "$STATE" || exit 2
+      fm_failure_episode_reset "$STATE" || { fm_stop_policy_allows_stop "$PAYLOAD" repair && allow_exit; exit 2; }
     fi
+    fm_stop_policy_allows_stop "$PAYLOAD" supervise || true
     exit 0
   fi
   sleep 0.1
@@ -795,8 +754,9 @@ while [ "$i" -lt $((SYNC_WAIT_MS / 100)) ]; do
 done
 if autoarm_owns_recovery; then
   if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
-    fm_failure_episode_reset "$STATE" || exit 2
+    fm_failure_episode_reset "$STATE" || { fm_stop_policy_allows_stop "$PAYLOAD" repair && allow_exit; exit 2; }
   fi
+  fm_stop_policy_allows_stop "$PAYLOAD" supervise || true
   exit 0
 fi
 

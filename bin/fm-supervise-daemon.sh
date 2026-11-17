@@ -174,6 +174,9 @@
 #                                   (default 20); a pane server that does not
 #                                   answer fails startup, and in the loop the
 #                                   tick goes on to its watcher check
+#          Names each wake acknowledgement it makes, as its generation and
+#          through value, in state/.supervise-daemon.acks, so the watchdog does
+#          not read the daemon's ack rows as the session's activity.
 #          Logs each wake to state/.supervise-daemon.log (size-capped). Single
 #          instance via portable lock on state/.supervise-daemon.lock. Trapped
 #          SIGTERM/SIGINT shut down once the step in progress returns (bounded
@@ -227,6 +230,14 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 # (fm_busy_classify).
 # shellcheck source=bin/fm-busy-lib.sh
 . "$FM_DAEMON_DIR/fm-busy-lib.sh"
+if ! declare -F fm_control_feedback_dialog_dismiss >/dev/null 2>&1; then
+  # shellcheck source=/dev/null # Analyzed separately as a canonical lint root.
+  . "$FM_DAEMON_DIR/fm-control-lib.sh"
+fi
+# The configurable active alert (wedge_alarm_notify and its channels), shared
+# with the escalation gate.
+# shellcheck source=bin/fm-notify-lib.sh
+. "$FM_DAEMON_DIR/fm-notify-lib.sh"
 
 # --- tunables ---------------------------------------------------------------
 # Supervisor backends this daemon knows how to inject into today. rex goes
@@ -251,11 +262,9 @@ HOUSEKEEPING_TICK_DEFAULT=15
 # the normal flush path and, if that cannot confirm a submit, raises a loud wedge
 # alarm. The escape hatch makes a guard false-positive visible instead of silent.
 MAX_DEFER_SECS_DEFAULT=300
-WEDGE_ALARM_TIMEOUT_SECS_DEFAULT=10
 # TERM-to-KILL grace when the daemon stops its watcher and everything it started.
 WATCHER_STOP_GRACE_SECS=5
 WEDGE_ALARM_LAST_EPOCH=0
-WEDGE_ALARM_NOTIFIER_PID=
 # Why the latest delivery attempt did not land; the wedge alarm reports it.
 INJECT_LAST_FAILURE=
 # 1 once the latest delivery attempt reached the submit primitive.
@@ -466,7 +475,7 @@ classify_signal() {  # <reason-after-colon> <state>
 # first sight of a non-terminal stale it returns "self" and the caller records a
 # timestamp marker; persistence is escalated by housekeeping's recheck, not here.
 classify_stale() {  # <window> <state> [<span-record> <span-status>]
-  local win=$1 state=$2 record=${3-} rc=${4-} task last declared event rest
+  local win=$1 state=$2 record=${3-} rc=${4-} task last declared event rest gone
   task=$(window_to_task "$win" "$state")
   if [ -z "$rc" ]; then
     reconcile_overdue_pause "$state" "$task" || true
@@ -493,7 +502,17 @@ classify_stale() {  # <window> <state> [<span-record> <span-status>]
     # EXPECTED, so this is not a wedge. The caller records a pause marker (long
     # re-surface cadence in housekeeping) rather than a wedge stale marker. Cheap:
     # a status-file read, no fm-crew-state.sh call, mirroring the
-    # daemon's existing status-log classification.
+    # daemon's existing status-log classification. The one exception is a
+    # plain `paused:` line whose agent the backend proves gone
+    # (paused_wait_agent_gone): that worker is dead, not waiting.
+    if gone=$(paused_wait_agent_gone "$win" "$state" "$declared"); then
+      if ! paused_gone_reported "$win" "$state" "$declared"; then
+        printf 'escalate|%s' "$(paused_gone_reason "$win" "$gone" "$declared")"
+        return
+      fi
+      printf 'pause|paused worker gone (agent %s), already reported; rechecked on a long cadence: %s' "$gone" "$declared"
+      return
+    fi
     printf 'pause|paused (awaiting external), rechecked on a long cadence: %s' "$declared"
     return
   fi
@@ -661,7 +680,7 @@ clear_pause_tracking() {  # <window> <state>
   # the whole horizon.
   rm -f "$state/.subsuper-paused-$key" "$state/.subsuper-pause-until-due-$key" "$state/.subsuper-stale-$key" \
     "$state/.subsuper-dialog-$key" \
-    "$state/.subsuper-reported-stale-$key" \
+    "$state/.subsuper-reported-stale-$key" "$state/.subsuper-gone-paused-$key" \
     "$state/.paused-$watcher_key" "$state/.paused-rechecked-$watcher_key" "$state/.paused-resurfaced-$watcher_key" \
     "$state/.stale-$watcher_key" "$state/.stale-since-$watcher_key" "$state/.wedge-escalations-$watcher_key" \
     "$state/.wedge-permanent-$watcher_key" \
@@ -840,8 +859,9 @@ task_window_harness() {  # <window> <state>
 }
 
 # stale_window_is_busy: 0 when the semantic busy-state contract
-# (bin/fm-busy-lib.sh) reports busy, 2 when the endpoint is gone, 3 for T3
-# native uncertainty, and 1 otherwise. Uncertainty cannot prove work resumed.
+# (bin/fm-busy-lib.sh) reports busy, or when a known feedback dialog on this
+# pane was just dismissed, 2 when the endpoint is gone, 3 for T3 native
+# uncertainty, and 1 otherwise. Uncertainty cannot prove work resumed.
 # A T3 thread is gone only when the adapter reads it missing (archived or 404);
 # its verdict is native, so a failed transcript read is uncertainty, not removal.
 # Other backends treat a failed capture as gone.
@@ -860,8 +880,83 @@ stale_window_is_busy() {  # <window> <state>
   case "$verdict" in
     busy\ *) return 0 ;;
     unknown\ t3code-native) return 3 ;;
-    *) return 1 ;;
   esac
+  if [ -n "$tail40" ] && [ -n "$harness" ]; then
+    if fm_control_dismiss_feedback_dialog "$state" "$backend" "$win" "$harness" "$tail40" "$label" 0.2 "$DAEMON_PROBE_BUDGET"; then
+      log "auto-dismissed feedback dialog ($FM_CONTROL_FEEDBACK_DIALOG_ID key=$FM_CONTROL_FEEDBACK_DISMISS_KEY): $win"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+# --- a dead worker behind a declared `paused:` wait (Refs #149) -------------
+# A `paused:` line says the worker waits on something external; it never proves
+# a worker is still there to resume when the wait clears. The watcher already
+# reads endpoint liveness before it trusts such a line (fm-watch.sh
+# wedge_wait_evidence and pause_state_class); these helpers give the daemon's
+# own pause routes the same check, so a worker that died or lost its endpoint
+# behind a `paused:` line is surfaced as a dead worker instead of being
+# rechecked as a healthy wait forever.
+# Cost: one recovery-grade backend probe (fm_backend_agent_state), taken only
+# where a plain `paused:` candidate is being classified - a stale wake or the
+# once-per-window pause recheck - never on every housekeeping tick. The
+# backlog read runs only after the probe proves the agent gone.
+# Only `dead` and `missing` count, the verdicts that license recovery; alive,
+# ambiguous, unreadable, and unverified keep the declared wait. Exempt, because
+# the check cannot or need not judge them: a task with no recorded endpoint, a
+# secondmate (its liveness is secondmate-liveness's job), a remote task (a local
+# probe cannot see its endpoint), a verified captain-held transfer, and a task
+# whose backlog item is an open captain hold (bin/fm-captain-hold.sh `open`
+# exit 0) - no live agent is needed while the captain decides, so that gone
+# agent returns 2 and its pause recheck stays quiet as well. A hold the backlog
+# cannot confirm surfaces the worker, the fail-safe direction.
+# Dedupe: state/.subsuper-gone-paused-<key> records the declared line already
+# reported, so repeat stale wakes for one dead pane do not each escalate; the
+# pause recheck re-surfaces it once per PAUSE_RESURFACE_SECS window as before.
+PAUSED_GONE_PREFIX='paused worker gone: '
+
+paused_wait_agent_gone() {  # <window> <state> <declared-line> -> dead|missing; 1 not gone, 2 gone but held
+  local win=$1 state=$2 declared=$3 task meta verdict
+  status_is_paused "$declared" || return 1
+  task=$(window_to_task "$win" "$state")
+  [ -n "$task" ] || return 1
+  meta="$state/$task.meta"
+  [ -f "$meta" ] || return 1
+  [ -n "$(fm_backend_target_of_meta "$meta" 2>/dev/null)" ] || return 1
+  [ "$(fm_meta_get "$meta" kind 2>/dev/null || true)" != secondmate ] || return 1
+  [ -z "$(fm_meta_get "$meta" remote_host 2>/dev/null || true)" ] || return 1
+  verdict=$(fm_backend_agent_state "$(fm_backend_of_meta "$meta")" "$win" 2>/dev/null) || return 1
+  case "$verdict" in
+    dead|missing) ;;
+    *) rm -f "$state/.subsuper-gone-paused-$(_stale_key "$task")"; return 1 ;;
+  esac
+  FM_HOME="$FM_HOME" "$FM_DAEMON_DIR/fm-captain-hold.sh" open "$task" >/dev/null 2>&1 && return 2
+  printf '%s' "$verdict"
+}
+
+paused_gone_reason() {  # <window> <dead|missing> <declared-line>
+  local detail
+  case "$2" in
+    dead) detail='the endpoint is still there with no agent running in it' ;;
+    *) detail='the recorded endpoint is gone' ;;
+  esac
+  printf '%s%s (agent %s - %s, so the declared wait cannot clear on its own; recover the worker, and check for unlanded work before any cleanup): %s' \
+    "$PAUSED_GONE_PREFIX" "$1" "$2" "$detail" "$3"
+}
+
+paused_gone_reported() {  # <window> <state> <declared-line>
+  [ "$(cat "$2/.subsuper-gone-paused-$(_stale_key "$(window_to_task "$1" "$2")")" 2>/dev/null || true)" = "$3" ]
+}
+
+paused_gone_mark() {  # <window> <state> <declared-line>
+  printf '%s' "$3" > "$2/.subsuper-gone-paused-$(_stale_key "$(window_to_task "$1" "$2")")"
+}
+
+# Escalate a dead worker found behind <declared-line> and record it reported.
+paused_gone_escalate() {  # <window> <state> <dead|missing> <declared-line>
+  escalate_add "$2" "$(paused_gone_reason "$1" "$3" "$4")" || return 1
+  paused_gone_mark "$1" "$2" "$4"
 }
 
 escalate_add() {  # <state> <distilled-item>
@@ -1063,292 +1158,6 @@ escalate_flush() {  # <state>
   return 1
 }
 
-# --- backend-independent active wedge alert ---------------------------------
-# The tmux status-line flash in inject_wedge_alarm below is a cosmetic,
-# client-side OSD with no cross-backend equivalent, so a wedged non-tmux primary
-# (the 2026-07-10 overnight incident: a claude-on-herdr primary) got NO active
-# signal - only the passive state/.subsuper-inject-wedged marker, which nothing
-# surfaces until the next fleet action (that night, 20 escalations sat buffered
-# for 8.5h). These helpers add a configurable active alert that does not depend
-# on any pane or its backend status-line: an OS-level macOS notification, a
-# herdr notification, or a captain-supplied command (push to a phone, etc.).
-# Every channel is best-effort - a missing or failing channel logs and is
-# skipped, never crashing the daemon loop - and the durable marker plus the tmux
-# flash stay exactly as before.
-#
-# Config: config/wedge-alarm (local, gitignored), one channel directive per
-# non-empty, non-comment line. FM_WEDGE_ALARM_CHANNEL overrides the file with a
-# single directive. Directives:
-#   off              disable the active alert entirely, regardless of position
-#                    (marker + flash remain)
-#   auto | default   platform default: macOS -> osascript; otherwise none
-#   osascript        macOS Notification Center banner (backend-independent)
-#   herdr            herdr UI notification (herdr notification show)
-#   command:<cmd>    run <cmd> via `sh -c`, summary on $1 and on stdin
-# An absent config means auto, i.e. default-ON on macOS: the alarm's whole
-# purpose is to never be silent, so the reachable OS channel fires unless the
-# captain explicitly disables it.
-
-# Print the configured channel directives, one per line. FM_WEDGE_ALARM_CHANNEL
-# wins (a single directive); else each non-empty, non-comment line of
-# config/wedge-alarm; else "auto".
-wedge_alarm_configured_channels() {
-  local cfg line found=
-  if [ -n "${FM_WEDGE_ALARM_CHANNEL:-}" ]; then
-    printf '%s\n' "$FM_WEDGE_ALARM_CHANNEL"
-    return 0
-  fi
-  cfg="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/wedge-alarm"
-  if [ -f "$cfg" ]; then
-    while IFS= read -r line || [ -n "$line" ]; do
-      line="${line#"${line%%[![:space:]]*}"}"
-      line="${line%"${line##*[![:space:]]}"}"
-      [ -n "$line" ] || continue
-      case "$line" in '#'*) continue ;; esac
-      printf '%s\n' "$line"
-      found=1
-    done < "$cfg"
-  fi
-  [ -n "$found" ] || printf 'auto\n'
-}
-
-# Resolve the platform's default OS-level channel for `auto`. macOS reaches the
-# captain via an osascript Notification Center banner; other platforms have no
-# built-in OS channel (the captain wires a command: directive), so this prints
-# nothing and wedge_alarm_notify logs that the marker is the only signal.
-wedge_alarm_platform_default() {
-  case "$(uname)" in
-    Darwin) command -v osascript >/dev/null 2>&1 && printf 'osascript' ;;
-    *) : ;;
-  esac
-}
-
-wedge_alarm_run_bounded() {
-  local channel=$1 timeout monitor_was_on=0 pid start elapsed rc
-  shift
-  timeout=${FM_WEDGE_ALARM_TIMEOUT_SECS:-$WEDGE_ALARM_TIMEOUT_SECS_DEFAULT}
-  case "$timeout" in
-    ''|*[!0-9]*) timeout=$WEDGE_ALARM_TIMEOUT_SECS_DEFAULT ;;
-    *) [ "$timeout" -gt 0 ] 2>/dev/null || timeout=$WEDGE_ALARM_TIMEOUT_SECS_DEFAULT ;;
-  esac
-  case $- in *m*) monitor_was_on=1 ;; esac
-  set -m 2>/dev/null || true
-  case $- in
-    *m*) ;;
-    *) log "wedge alarm: ${channel} notifier skipped because its watchdog could not start"; return 125 ;;
-  esac
-  "$@" &
-  pid=$!
-  WEDGE_ALARM_NOTIFIER_PID=$pid
-  start=$SECONDS
-  while kill -0 "-$pid" 2>/dev/null; do
-    elapsed=$((SECONDS - start))
-    if [ "$elapsed" -ge "$timeout" ]; then
-      wedge_alarm_stop_active_notifier
-      [ "$monitor_was_on" -eq 1 ] || set +m 2>/dev/null || true
-      log "wedge alarm: ${channel} notifier timed out after ${elapsed}s (limit ${timeout}s)"
-      return 124
-    fi
-    sleep 0.1
-  done
-  if wait "$pid"; then rc=0; else rc=$?; fi
-  WEDGE_ALARM_NOTIFIER_PID=
-  [ "$monitor_was_on" -eq 1 ] || set +m 2>/dev/null || true
-  return "$rc"
-}
-
-wedge_alarm_stop_active_notifier() {
-  local pid=${WEDGE_ALARM_NOTIFIER_PID:-}
-  [ -n "$pid" ] || return 0
-  WEDGE_ALARM_NOTIFIER_PID=
-  kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
-  sleep 0.2
-  kill -KILL "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
-}
-
-# The single execution seam for every configured notifier channel.
-# FM_WEDGE_ALARM_EXEC, when set, REPLACES the real notifier: the resolved channel
-# name and summary are handed to that command instead of ever invoking osascript
-# or herdr or a captain-supplied command. This is the one injection point the test harness forces to a recorder
-# so no test can post a real desktop notification - the library-mode guard at the
-# foot of this file defaults it to "discard" whenever the daemon is SOURCED
-# rather than executed, which is the only way a test reaches these functions. The
-# special value "discard" fires nothing; unset means production (the executed
-# daemon), so the real channels fire.
-wedge_alarm_os_notifier_override() {  # <channel> <summary>
-  local channel=$1 summary=$2 rc exec_override=${FM_WEDGE_ALARM_EXEC:-}
-  case "$exec_override" in
-    '') return 2 ;;
-    discard) return 0 ;;
-    *)
-      wedge_alarm_run_bounded "$channel" "$exec_override" "$channel" "$summary" >/dev/null 2>&1
-      rc=$?
-      [ "$rc" -eq 0 ] && return 0
-      log "wedge alarm: notifier override exited $rc for channel '$channel'"
-      return 1 ;;
-  esac
-}
-
-# Post a macOS Notification Center banner. `display notification` is OS-level,
-# independent of any terminal pane or multiplexer status-line. The summary is
-# passed as an argv item (never interpolated into the AppleScript source) so its
-# text can never break the script. Best-effort: logs and returns 1 on failure.
-wedge_alarm_via_osascript() {  # <summary>
-  local summary=$1 rc
-  wedge_alarm_os_notifier_override osascript "$summary"
-  rc=$?
-  case "$rc" in
-    0) return 0 ;;
-    1) return 1 ;;
-  esac
-  command -v osascript >/dev/null 2>&1 || {
-    log "wedge alarm: osascript not found; cannot post a macOS notification"; return 1; }
-  wedge_alarm_run_bounded osascript osascript -e 'on run argv' \
-    -e 'display notification (item 1 of argv) with title "firstmate: away-mode escalations WEDGED" sound name "Basso"' \
-    -e 'end run' "$summary" >/dev/null 2>&1 && return 0
-  log "wedge alarm: osascript notification failed"
-  return 1
-}
-
-# Post a herdr UI notification - herdr's own surface, separate from the pane and
-# its status-line. Best-effort: logs and returns 1 on failure.
-wedge_alarm_via_herdr() {  # <summary>
-  local summary=$1 rc
-  wedge_alarm_os_notifier_override herdr "$summary"
-  rc=$?
-  case "$rc" in
-    0) return 0 ;;
-    1) return 1 ;;
-  esac
-  command -v herdr >/dev/null 2>&1 || {
-    log "wedge alarm: herdr not found; cannot post a herdr notification"; return 1; }
-  wedge_alarm_run_bounded herdr herdr notification show "firstmate: away-mode escalations WEDGED" \
-    --body "$summary" --sound request >/dev/null 2>&1 && return 0
-  log "wedge alarm: herdr notification failed"
-  return 1
-}
-
-# Raise Firstmate's own Rex alert on the supervisor pane: a blocked program-status
-# record (id=fm-wedge) plus an OSC 777 desktop notification, which badges that tab
-# and returns the captain to the pane (bin/backends/rex.sh fm_backend_rex_alert).
-# Used only when config/wedge-alarm names `rex`; `auto` never adds it. Needs the
-# supervisor backend to be rex. Best-effort: logs and returns 1 on failure.
-WEDGE_ALARM_REX_RAISED=0
-wedge_alarm_via_rex() {  # <summary>
-  local summary=$1 rc backend target
-  wedge_alarm_os_notifier_override rex "$summary"
-  rc=$?
-  case "$rc" in
-    0) return 0 ;;
-    1) return 1 ;;
-  esac
-  backend="${FM_SUPERVISOR_BACKEND:-$FM_SUPERVISOR_BACKEND_DEFAULT}"
-  target="${FM_SUPERVISOR_TARGET:-$FM_SUPERVISOR_TARGET_DEFAULT}"
-  [ "$backend" = rex ] || {
-    log "wedge alarm: rex channel needs a Rex supervisor pane (supervisor backend is ${backend:-unset})"; return 1; }
-  fm_backend_source rex >/dev/null 2>&1 || {
-    log "wedge alarm: the rex adapter could not be loaded"; return 1; }
-  if wedge_alarm_run_bounded rex fm_backend_rex_alert "$target" "firstmate: away-mode escalations WEDGED" "$summary" >/dev/null 2>&1; then
-    WEDGE_ALARM_REX_RAISED=1
-    return 0
-  fi
-  log "wedge alarm: rex alert could not be written to the supervisor pane"
-  return 1
-}
-
-# Remove a raised Rex alert once a digest is delivered. Best-effort.
-wedge_alarm_rex_clear() {
-  [ "$WEDGE_ALARM_REX_RAISED" = 1 ] || return 0
-  WEDGE_ALARM_REX_RAISED=0
-  fm_backend_source rex >/dev/null 2>&1 || return 0
-  fm_backend_rex_alert_clear "${FM_SUPERVISOR_TARGET:-$FM_SUPERVISOR_TARGET_DEFAULT}" >/dev/null 2>&1 || true
-}
-
-# Run a captain-supplied command with the summary on $1 and on stdin, so an
-# alert can reach a phone/pager (ntfy, Slack, SMS) even when the captain is away
-# from the machine entirely. Best-effort: logs and returns 1 on failure.
-wedge_alarm_via_command() {  # <cmd> <summary>
-  local cmd=$1 summary=$2 rc
-  if [ "${WEDGE_ALARM_EMIT_ACTIVE:-}" != 1 ]; then
-    wedge_alarm_emit command "$summary" "$cmd"
-    return $?
-  fi
-  [ -n "$cmd" ] || { log "wedge alarm: empty command: channel; nothing to run"; return 1; }
-  wedge_alarm_run_bounded command sh -c "$cmd" fm-wedge-alarm "$summary" \
-    <<< "$summary" >/dev/null 2>&1
-  rc=$?
-  [ "$rc" -eq 0 ] && return 0
-  log "wedge alarm: command channel exited $rc (command redacted)"
-  return 1
-}
-
-wedge_alarm_emit() {  # <channel> <summary>
-  local channel=$1 summary=$2 cmd=${3:-} rc exec_override=${FM_WEDGE_ALARM_EXEC:-} WEDGE_ALARM_EMIT_ACTIVE=1
-  case "$exec_override" in
-    '') ;;
-    discard) return 0 ;;
-    *)
-      wedge_alarm_run_bounded "$channel" "$exec_override" "$channel" "$summary" >/dev/null 2>&1
-      rc=$?
-      [ "$rc" -eq 0 ] && return 0
-      log "wedge alarm: notifier override exited $rc for channel '$channel'"
-      return 1 ;;
-  esac
-  case "$channel" in
-    osascript) wedge_alarm_via_osascript "$summary" ;;
-    herdr) wedge_alarm_via_herdr "$summary" ;;
-    rex) wedge_alarm_via_rex "$summary" ;;
-    command) wedge_alarm_via_command "$cmd" "$summary" ;;
-  esac
-}
-
-# Fire every configured active-alert channel, best-effort. Always returns 0: a
-# channel failure can never abort inject_wedge_alarm or the daemon loop. Any
-# `off` directive disables the alert, regardless of position; an unresolvable
-# `auto` (no OS channel on this platform) logs that the durable marker is the
-# only signal. Every notifier routes through the test-forced recorder seam.
-wedge_alarm_notify() {  # <summary> <marker> [strict]
-  local summary=$1 marker=$2 strict=${3:-} ch attempted=0 delivered=0
-  local -a channels=()
-  WEDGE_ALARM_PAGE_RESULT=pending
-  while IFS= read -r ch; do
-    [ -n "$ch" ] || continue
-    channels+=("$ch")
-  done < <(wedge_alarm_configured_channels)
-  for ch in "${channels[@]}"; do
-    if [ "$ch" = off ]; then
-      [ "$strict" = strict ] && return 2
-      return 0
-    fi
-  done
-  for ch in "${channels[@]}"; do
-    case "$ch" in auto|default) ch=$(wedge_alarm_platform_default) ;; esac
-    case "$ch" in
-      '') log "wedge alarm: no OS-level alert channel on $(uname); durable marker $marker is the only signal - set config/wedge-alarm (e.g. a command: directive)" ;;
-      osascript|herdr|rex)
-        attempted=1
-        wedge_alarm_emit "$ch" "$summary" && delivered=1 ;;
-      command:*)
-        attempted=1
-        wedge_alarm_emit command "$summary" "${ch#command:}" && delivered=1 ;;
-      *) log "wedge alarm: unrecognized active-alert channel directive (redacted); marker still written" ;;
-    esac
-  done
-  if [ "$strict" = strict ]; then
-    if [ "$delivered" -eq 1 ]; then
-      WEDGE_ALARM_PAGE_RESULT=sent
-      return 0
-    fi
-    if [ "$attempted" -eq 1 ]; then
-      WEDGE_ALARM_PAGE_RESULT=failed
-      return 1
-    fi
-    return 2
-  fi
-  return 0
-}
-
 # Raise a loud, rate-limited alarm when escalations cannot be delivered after
 # max-defer (the supervisor endpoint is genuinely busy/wedged, the initial send
 # fails, or the submit's Enter is swallowed). The daemon must NEVER silently
@@ -1481,7 +1290,7 @@ overdue_delivered_key() {  # <state> <task>
 }
 
 housekeeping() {  # <state>
-  local state=$1 now due f key task win marker age last max_defer oldest pause_secs marker_epoch until bounded_until pause_reason dialog_name persisted append_rc size seen_identity overdue_marker overdue_task pause_identity pause_size record
+  local state=$1 now due f key task win marker age last max_defer oldest pause_secs marker_epoch until bounded_until pause_reason dialog_name persisted append_rc size seen_identity overdue_marker overdue_task pause_identity pause_size record gone gone_rc
   now=$(_now)
   for overdue_marker in "$state"/.paused-overdue-*; do
     [ -f "$overdue_marker" ] || continue
@@ -1669,6 +1478,24 @@ housekeeping() {  # <state>
     # on busy: migrate_watcher_pause_markers recreates it with a fresh timestamp on
     # the very next tick while the declaration still stands, so the window would
     # restart forever and the wait would never mature into its one recheck.
+    # A plain `paused:` wait whose agent is proven gone surfaces as a dead worker
+    # instead: without this, a gone endpoint took the silent drop below and the
+    # next tick re-seeded the marker, masking the death indefinitely. It repeats
+    # once per window, like any recheck, while the worker stays gone. A gone agent
+    # under an open backlog captain hold (2) needs no recheck: the hold already
+    # names the wait, so its window restarts quietly. Both record a passed
+    # `until` as due exactly as the live recheck below does, or that passed time
+    # would re-open this branch on every tick.
+    gone=$(paused_wait_agent_gone "$win" "$state" "$last"); gone_rc=$?
+    if [ "$gone_rc" -ne 1 ]; then
+      if [ "$gone_rc" -eq 2 ] || paused_gone_escalate "$win" "$state" "$gone" "$last"; then
+        _now > "$marker"
+        if [ -n "$until" ] && [ "$now" -ge "$until" ]; then
+          printf '%s\n' "$until" > "$due"
+        fi
+      fi
+      continue
+    fi
     stale_window_is_busy "$win" "$state"
     case "$?" in
       2) rm -f "$marker" ;;
@@ -1842,6 +1669,18 @@ inject_msg() {  # <message> [state] [exact] [request-id]
   composer=$(fm_backend_composer_state "$backend" "$target" 2>/dev/null)
   if [ "$composer" = empty ] && [ "$backend" = orca ] && fm_backend_orca_draft_present "$target"; then
     composer="pending-unproven"
+  fi
+  if [ "$composer" != empty ] && [ "$backend" != t3code ]; then
+    local sup_screen
+    sup_screen=$(fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_capture "$backend" "$target" 40 2>/dev/null || true)
+    if [ -n "$sup_screen" ] \
+      && fm_control_dismiss_feedback_dialog "$state" "$backend" "$target" "$(fm_daemon_primary_harness)" "$sup_screen" "" 0.2 "$DAEMON_PROBE_BUDGET"; then
+      log "auto-dismissed feedback dialog ($FM_CONTROL_FEEDBACK_DIALOG_ID key=$FM_CONTROL_FEEDBACK_DISMISS_KEY): $target"
+      composer=$(fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_composer_state "$backend" "$target" 2>/dev/null || true)
+      if [ "$composer" = empty ] && [ "$backend" = orca ] && fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_orca_draft_present "$target"; then
+        composer="pending-unproven"
+      fi
+    fi
   fi
   if [ "$composer" != empty ]; then
     case "$composer" in
@@ -2046,6 +1885,13 @@ handle_wake() {  # <reason> <state>
         # A terminal-stale escalate must not leave a persistence marker behind, or
         # housekeeping re-escalates the same pane as a false wedge later.
         [ "$kind" = "stale" ] && stale_marker_remove "$arg" "$state"
+        if [ "$kind" = stale ]; then
+          case "$distilled" in
+            "$PAUSED_GONE_PREFIX"*)
+              paused_gone_mark "$arg" "$state" \
+                "$(status_declared_wait_line "$state/$(window_to_task "$arg" "$state").status")" ;;
+          esac
+        fi
         mark_escalated_seen "$state" "$capture" || classification_failed=1
         if [ "${FM_ESCALATE_BATCH_SECS:-$ESCALATE_BATCH_SECS_DEFAULT}" -le 0 ] \
            || is_captain_inbox_check "$reason"; then
@@ -2143,8 +1989,53 @@ handle_durable_wakes() {  # <watcher-reason> <state>
     log "wake drain omitted its generation-bound acknowledgement; retaining durable wakes"
     return 1
   fi
-  "$FM_DAEMON_DIR/fm-wake-drain.sh" --ack-through "$ack_through" \
-    --recovery-generation "$ack_generation"
+  # The watchdog reads wake-ledger ack rows as the session's own activity, so
+  # the daemon names its own acknowledgement first and takes the name back if
+  # the acknowledgement fails. An acknowledgement it cannot name would read as
+  # the session's own activity, so it is not made.
+  if ! note_daemon_ack "$state" "$ack_generation" "$ack_through"; then
+    log "could not record the daemon's acknowledgement; retaining durable wakes"
+    return 1
+  fi
+  if ! "$FM_DAEMON_DIR/fm-wake-drain.sh" --ack-through "$ack_through" \
+    --recovery-generation "$ack_generation"; then
+    # The drain can commit its ack row and fail afterwards, in claim cleanup;
+    # that row is still the daemon's, so its name stays.
+    daemon_ack_committed "$state" "$ack_generation" "$ack_through" ||
+      unnote_daemon_ack "$state" "$ack_generation" "$ack_through"
+    return 1
+  fi
+}
+
+# daemon_ack_committed <state> <generation> <through>: the wake ledger holds
+# an ack row for exactly that generation and through value.
+daemon_ack_committed() {
+  [ -f "$1/wake-ledger.tsv" ] || return 1
+  tail -n 2000 "$1/wake-ledger.tsv" 2>/dev/null |
+    LC_ALL=C awk -F'\t' -v g="$2" -v t="$3" '$2 == "ack" && $3 == g && $4 == t { f = 1 } END { exit !f }'
+}
+
+# note_daemon_ack <state> <generation> <through>: records one acknowledgement
+# this daemon makes in state/.supervise-daemon.acks, keeping the newest 2000,
+# as many as the wake-ledger rows the watchdog reads, so every daemon ack row
+# it can see is still named; fails when the record cannot be appended.
+note_daemon_ack() {
+  local f=$1/.supervise-daemon.acks tmp
+  printf '%s\t%s\n' "$2" "$3" >> "$f" 2>/dev/null || return 1
+  [ "$(wc -l < "$f" 2>/dev/null | tr -d ' ')" -gt 4000 ] || return 0
+  tmp=$(mktemp "$1/.supervise-daemon.acks.XXXXXX" 2>/dev/null) || return 0
+  if tail -n 2000 "$f" > "$tmp" 2>/dev/null; then mv "$tmp" "$f" 2>/dev/null || rm -f "$tmp"; else rm -f "$tmp"; fi
+}
+
+unnote_daemon_ack() {  # <state> <generation> <through>
+  local f=$1/.supervise-daemon.acks tmp
+  [ -f "$f" ] || return 0
+  tmp=$(mktemp "$1/.supervise-daemon.acks.XXXXXX" 2>/dev/null) || return 0
+  if awk -F'\t' -v g="$2" -v t="$3" '!($1 == g && $2 == t)' "$f" > "$tmp" 2>/dev/null; then
+    mv "$tmp" "$f" 2>/dev/null || rm -f "$tmp"
+  else
+    rm -f "$tmp"
+  fi
 }
 
 # --- log --------------------------------------------------------------------

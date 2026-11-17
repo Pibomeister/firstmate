@@ -34,6 +34,7 @@ Hard rules, in priority order:
    A project's captain-approved `yolo` posture is the only standing relaxation for merge authority; section 7 owns delivery and merge defaults, while the captain-instruction precedence rule below owns when a current explicit captain instruction overrides a conflicting Firstmate-written standing rule within its exact scope.
 3. **Never tear down unlanded work.**
    Uncommitted changes are never landed, and `bin/fm-teardown.sh` owns the complete landed-work test.
+   For authorized worktree cleanup, Git-ignored files, including `.env.local`, are disposable and need no retention or backup; they do not count as unlanded work, while tracked changes and non-ignored untracked files remain protected.
    Never bypass a refusal or use `--force` unless the captain explicitly authorized discarding that work.
    A scout worktree is declared scratch and may be discarded only after its report exists and the shared unresolved-decision completion gate passes.
 4. **Crewmates never address the captain.**
@@ -173,6 +174,7 @@ The delivery lifecycle is an always-loaded operational contract; referenced scri
 Resolve the project independently for every request.
 Record every new captain goal - a chat ask, inbox note, or away-mode ask for work, not a follow-up that only amends a logged goal - with `bin/fm-dispatch-log.sh received` the moment you read it, and within 15 minutes either spawn it (`dispatched --task`, or `--task secondmate:<id>` when routed to a secondmate) or record the concrete reason nothing can start (`blocked --reason`).
 Work waiting behind other work is `queued --reason`, which stays overdue until dispatched or blocked; the script header owns goal ids, exit codes, and the ledger at `state/dispatch-log.tsv`.
+File every approved proposal and every acknowledged captain order as its own backlog item at once with `bin/fm-ledger.sh intake`, one item per ask, so the backlog alone restores the work after any handoff.
 An explicit project wins, a clear follow-up inherits its referent, and otherwise match the request against the registry, work under way, and project code or README.
 Proceed on one confident match while naming the project in plain language; ask one concise question when multiple or no projects plausibly match.
 
@@ -239,6 +241,7 @@ The selected delivery path owns its own rigor.
 When no-mistakes is selected, no-mistakes alone owns review, fixes, tests, documentation, push, PR, and CI; otherwise follow the faster path without adding an independent reviewer.
 Never hold work outside no-mistakes for a manual clean verdict, stack serial manual reviews, or infer authority for one from security, architecture, or risk alone.
 A separate review or audit is allowed only when the captain explicitly requests that deliverable or the authorized task is a knowledge-only review; one named question remains scoped to that question.
+A home's `config/merge-review` is that request in standing form for the repositories it names: the two-model merge review runs in a background worker, never in a supervisor session, under `ship-landing`.
 If fast-path risk needs more rigor, escalate whether to use no-mistakes instead of inventing a manual gate.
 The path's worker, automated gates, and captain approval remain authoritative:
 
@@ -272,7 +275,7 @@ Load `scout-completion` when a scout reports completion, presents a visual artif
 Fleet supervision is an always-loaded operational contract; `docs/architecture.md`, `docs/turnend-guard.md`, the emitted session-start block, and script help own mechanisms and harness-specific recipes.
 
 Whenever work is under way, keep exactly one live supervision cycle using the emitted protocol for this primary harness.
-Relay may require that same live cycle with no fleet work.
+Relay or the automatic away check may require that same live cycle with no fleet work.
 Do not substitute another harness's wait shape, use shell `&`, or create a second cycle when a healthy one already exists.
 For every actionable wake, follow the ordinary-wake continuation in the emitted protocol; use its repair action only when the live cycle is missing or failed.
 No turn ends blind while work is under way, including turns described as holding or waiting.
@@ -292,7 +295,7 @@ Handle actionable wakes as follows:
 1. For `signal:`, read the listed event lines first, then reconcile current state only where action depends on it.
 2. For `stale:`, inspect the recorded endpoint and load `stuck-crewmate-recovery` for a stopped, looping, confused, or unresponsive worker; a deep-inspection reason also requires current-state and validation-log inspection.
 3. For `check:`, act on the named poll result, including merges, contribution signals, Relay events, process-to-event source results, and captain inbox notes; a handled inbox note is also acknowledged with `bin/fm-inbox.sh drain --ack <id>`, or it stays counted as still waiting for firstmate.
-   A `check: secondmate <id> auto-relaunched` wake records a recovery that already completed - reconcile the mate's current state rather than relaunching again, and treat a repeat or a paused-bound wake as the signal to investigate why the mate keeps exiting.
+   A `check: secondmate <id> auto-relaunched` or `check: <id> auto-relaunched` wake records a recovery that already completed - reconcile the mate's or worker's current state rather than relaunching again, and treat a repeat or a paused-bound wake as the signal to investigate why it keeps exiting.
    When the note needs a durable answer the submitter can read, publish it with `bin/fm-inbox.sh reply <id>` (the script header owns the reply contract) rather than leaving the answer only in this transcript.
    A `check: captain order <id>` or `check: captain hold <id>` wake or a session-start `CAPTAIN ORDERS` section names durable captain orders: ack each with `bin/fm-order.sh ack <id>` before acting, never run one it reports as `skip`, and finish it as done or parked; a hold in force overrides every older order and council ruling until lifted, so never relay work that contradicts one; that script's header owns the order and hold contract, and legacy orders by terminal or inbox note stay fully accepted.
 4. For `heartbeat:`, review the whole fleet from the structured fleet view, reconcile suspicious tasks and PR state, update the backlog, and never report an unchanged fleet as progress.
@@ -385,6 +388,8 @@ When a main-side thread such as a pending captain decision or relay reminder is 
 Captain calls discovered by investigations or visual reviews follow `captain-hold-lifecycle`, which owns their completion gate and recorded-answer rules.
 When the automatic transition gate applies, dispatch and completion move the item themselves - `bin/fm-spawn.sh` and `bin/fm-teardown.sh` own those transitions and refuse rather than report success without them - so what remains yours is filing the item before dispatch, recording decisions, and keeping notes current; `docs/configuration.md` owns gate applicability and the manual-backend exception.
 Re-evaluate queued work after every teardown and heartbeat, and also after a recorded PR-ready handoff when `config/project-capacity` caps that project, dispatching items only when dependencies, time gates, and project capacity have cleared.
+The backlog is the mission ledger: `bin/fm-ledger.sh plan` and `next` show each project's plan and next ready item to anyone, supervisor or not, and a `ready-depth` notification means refilling each named project's ready queue with approved work before the night.
+Write every session handoff with `bin/fm-ledger.sh handoff`: the ledger plus a short in-flight note, never a continuation of an earlier handoff.
 When `config/lane-capacity` exists, `bin/fm-capacity.sh` reports open lanes and host headroom for that re-evaluation.
 
 `.tasks.toml`, `docs/configuration.md`, and current `tasks-axi --help` own the backlog schema, compatibility, retention, and routine command syntax.
@@ -453,3 +458,7 @@ It does not replace the Firstmate supervisor contract above.
 Reviewer isolation on Cursor is `partial` upstream.
 In a Cursor session only, start review with `/super-review` and a mode of `full`, `readiness`, or `delta`; on other harnesses, section 7 owns review.
 Pin, licenses, refresh steps, and capability honesty live in [`.cursor/agent-kit.md`](.cursor/agent-kit.md).
+
+## Goal line enforcement (optional home)
+
+When `config/goal-integrity` is present, keep each task ask as a single verbatim line in `state/goals/<task-id>.md`, reload it at handoff, and let ship and scout briefs open with the matching GOAL line; see `docs/configuration.md`.

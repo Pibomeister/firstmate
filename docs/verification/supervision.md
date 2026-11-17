@@ -332,7 +332,7 @@ The blocking and bounded-follow-up mechanisms were validated across seven harnes
 ### Codex held checkpoint turn, 2026-10-09
 
 This receipt and the owned-fork receipt below record the earlier held-checkpoint rules.
-The Stop hook no longer asks for a successor checkpoint, and outside away mode queued wakes hold a turn only up to a fixed bound; [`turnend-guard.md`](../turnend-guard.md#codex-mode) owns the current rules.
+The Stop hook no longer asks for a successor checkpoint, and a queued wake no longer holds the turn after the first block: the `stop_hook_active=true` continuation may end while the queue stays durable. [`turnend-guard.md`](../turnend-guard.md#codex-mode) owns the current rules.
 The checkpoint ancestry and sub-second precision facts below still apply.
 
 Verified with codex-cli 0.160.0 on macOS through `FM_CODEX_LIVE_E2E=1 tests/fm-codex-continuity-live-e2e.test.sh`, which runs `codex exec --dangerously-bypass-hook-trust` in an isolated lab clone.
@@ -525,6 +525,7 @@ The same suite ingests a keyed remote-secondmate parent reply through the real a
 It also covers unchanged decisions remaining available to the next drain without an empty-queue wake, interrupted handling, handling-window generation reuse, non-fatal moved-generation acknowledgement with sequence-bounded consumption, and a persistent successor remaining live after recovery is acknowledged.
 
 The Claude product live path ran with Claude Code 2.1.278 on 2026-09-21.
+Its repeated-rewake result below predates the shared stop policy; the current active-hook payload proof is in [runtime backend verification](runtime-backends.md#claude-stop-continuation-policy).
 The same guard also passed once under Claude Code 2.1.236 and 2.1.219 during this verification.
 
 ```sh

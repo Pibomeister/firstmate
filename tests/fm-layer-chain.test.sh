@@ -101,7 +101,7 @@ test_pass_records_every_watched_home() {
   local base="$TMP_ROOT/pass-every" owner other
   owner=$(new_home "$base/owner")
   other=$(new_home "$base/other")
-  printf 'homes=%s,%s\n' "$owner" "$other" > "$owner/config/watchdog"
+  printf 'homes=%s,%s\nquota-guard=off\n' "$owner" "$other" > "$owner/config/watchdog"
   clear_units
   install_unit monitor "$owner"
   wd_pass "$owner" FAKE_MON_STATE=enabled || fail "the watchdog pass failed"

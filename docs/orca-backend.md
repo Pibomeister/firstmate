@@ -58,6 +58,9 @@ PR registration moves Orca cards to `in-review`; successful PR merge recording o
 `bin/fm-orca-card.sh` bounds each best-effort update to five seconds plus termination grace and warns on failure without changing the caller's outcome; a hung merge-time update can stall the watcher for that bounded interval.
 Spawn records the initial Orca-created branch, including the recorded base branch in abort-recovery metadata, and attempts guarded cleanup after removing the Orca worktree.
 Teardown detaches the task worktree and uses the same guarded cleanup for the recorded Orca-created branch, even when that branch was checked out; a distinct worker branch keeps its existing teardown behavior.
+Before removing the worktree, teardown also closes every other Orca terminal in it that this machine hosts once that terminal's session is proved dead or missing, and counts matches on every saved paired environment and on any other execution host the local list names, where it closes only the task's recorded terminal handle, proved by a re-list rather than by a local session read.
+A remote terminal matched by path alone is counted, left to that host's own cleanup, and reported with a warning.
+`bin/fm-teardown.sh`'s header owns the refusal and warning rules.
 The guard retains invalid, default, recorded-base, and observed checked-out or rebasing branches, and keeps uncontained work with a warning.
 It removes the exact recorded branch tip only when a remote-tracking ref contains that tip, verifying that ref and the tip atomically with the delete; task or project `HEAD` and local branches never count as proof, so unpushed work is retained and an unresolved default or failed proof also retains the branch and warns.
 A deletion through this proof leaves any `branch.<name>.*` config behind; that residue is harmless and intentionally not removed.
@@ -65,6 +68,7 @@ The real Orca card movement from `in-progress` through `in-review` to `completed
 Tasks waiting without a PR and existing leaked branches are not reconciled by these event hooks.
 
 `fm-peek.sh` reads with `orca terminal read`.
+`bin/fm-orca-cli-cache.sh` reuses read-only Orca CLI results for a few seconds, and its header owns that rule.
 An ordinary metadata-routed `fm-send.sh` text steer becomes a durable steering-inbox record, and only its best-effort constant doorbell passes through Orca's submit machinery.
 On the typed plane, `fm-send.sh` verifies composer clearance through the fleet-wide classifier in `bin/fm-composer-lib.sh`, retrying Enter without retyping when a slash popup first fills an argument placeholder.
 For a recorded Droid task, a matching post-Enter `UserPromptSubmit` receipt also confirms a typed send when the composer is temporarily unreadable during Droid's turn; the receipt binds the prompt digest and event sequence to the current task generation.
@@ -148,6 +152,7 @@ The [Orca environment source](configuration.md#orca-environment-source-configlau
 
 ```sh
 tests/fm-backend-orca.test.sh
+tests/fm-orca-cli-cache.test.sh
 tests/fm-spawn-orca-worktree.test.sh
 tests/fm-control.test.sh
 tests/fm-daemon.test.sh

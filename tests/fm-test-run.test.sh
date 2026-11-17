@@ -1752,6 +1752,355 @@ SH
   pass "--per-script-timeout-secs turns a hung script into a bounded failure"
 }
 
+# Build a fixture repo that holds a copy of the runner and print its path.
+group_fixture_repo() {  # <tmp> [with-timeout-lib]
+  local repo="$1/repo"
+  mkdir -p "$repo/bin" "$repo/tests" "$1/evidence" "$1/tmp"
+  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
+  if [ "${2:-}" = with-timeout-lib ]; then
+    cp "$ROOT/bin/fm-timeout-lib.sh" "$ROOT/bin/fm-bash-compat-lib.sh" "$repo/bin/"
+  fi
+  chmod +x "$repo/bin/fm-test-run.sh"
+  printf '%s\n' "$repo"
+}
+
+# Run "$@" as the child of a stand-in caller that leads its own process group
+# and records every TERM it receives. The stand-in is what a script's group
+# signal reaches when the runner does not contain the script, so this suite and
+# whatever started it stay out of range even when containment is broken.
+# Leaves <dir>/caller.rc (the command's status, or "not-isolated"),
+# <dir>/caller.signalled (present only when a TERM arrived), <dir>/out and
+# <dir>/err.
+run_under_group_caller() {  # <dir> <command...>
+  local dir=$1
+  shift
+  rm -f "$dir/caller.rc" "$dir/caller.signalled"
+  cat >"$dir/caller.sh" <<'SH'
+#!/usr/bin/env bash
+dir=$1
+shift
+own_group=$(ps -o pgid= -p $$ | tr -d '[:space:]')
+if [ "$own_group" != "$$" ]; then
+  echo not-isolated >"$dir/caller.rc"
+  exit 3
+fi
+trap 'echo TERM >>"$dir/caller.signalled"' TERM
+"$@" >"$dir/out" 2>"$dir/err"
+echo "$?" >"$dir/caller.rc"
+SH
+  perl -e 'setpgrp(0, 0) or exit 125; exec @ARGV' \
+    bash "$dir/caller.sh" "$dir" "$@" </dev/null || true
+  [ "$(cat "$dir/caller.rc" 2>/dev/null)" != not-isolated ] \
+    || fail "the stand-in caller could not lead its own process group"
+}
+
+# Wait until <pid> is gone, for at most <tenths> tenths of a second.
+wait_for_pid_gone() {  # <pid> <tenths>
+  local waited=0
+  while kill -0 "$1" 2>/dev/null && [ "$waited" -lt "$2" ]; do
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  ! kill -0 "$1" 2>/dev/null
+}
+
+# Wait until every named file has content, for at most <tenths> tenths of a second.
+wait_for_files() {  # <tenths> <file>...
+  local limit=$1 waited=0 f missing
+  shift
+  while :; do
+    missing=0
+    for f in "$@"; do
+      [ -s "$f" ] || missing=1
+    done
+    [ "$missing" -eq 1 ] || return 0
+    [ "$waited" -lt "$limit" ] || return 1
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+}
+
+# A test whose cleanup signals its own process group must reach nothing but
+# itself. When the script shares the runner's group, that signal also reaches
+# the runner and whatever started the runner, which under a harness that does
+# not isolate tool commands is the worker agent itself. Containment must not
+# depend on a per-script bound being set.
+test_a_script_that_signals_its_group_cannot_reach_the_caller() {
+  local tmp repo signaller=tests/fm-group-signal-fixture.test.sh
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-group-signal.XXXXXX")
+  repo=$(group_fixture_repo "$tmp" with-timeout-lib)
+  cat >"$repo/$signaller" <<'SH'
+#!/usr/bin/env bash
+trap '' TERM
+kill -TERM 0
+echo "ok - fixture signalled only its own process group"
+SH
+  cp "$repo/$signaller" "$repo/tests/fm-brief.test.sh"
+  cat >"$repo/tests/fm-composer-lib.test.sh" <<'SH'
+#!/usr/bin/env bash
+echo "ok - bystander fixture"
+SH
+  chmod +x "$repo/$signaller" "$repo/tests/fm-brief.test.sh" "$repo/tests/fm-composer-lib.test.sh"
+
+  # Serial, no per-script bound: the live output path.
+  run_under_group_caller "$tmp" env TMPDIR="$tmp/tmp" "$repo/bin/fm-test-run.sh" "$signaller"
+  [ ! -e "$tmp/caller.signalled" ] \
+    || fail "a script's own-group TERM reached the runner's caller: $(cat "$tmp/out" "$tmp/err")"
+  assert_equals 0 "$(cat "$tmp/caller.rc")" "the serial run must finish green"
+  grep -Fq 'ok - fixture signalled only its own process group' "$tmp/out" \
+    || fail "the signalling script's output was lost: $(cat "$tmp/out" "$tmp/err")"
+  grep -Fq 'FM_TEST_SUMMARY total=1 failed=0' "$tmp/out" \
+    || fail "the serial run did not report a complete summary: $(cat "$tmp/out" "$tmp/err")"
+
+  # Concurrent workers, no per-script bound: the captured output path.
+  run_under_group_caller "$tmp" env TMPDIR="$tmp/tmp" "$repo/bin/fm-test-run.sh" --jobs 2 \
+    tests/fm-brief.test.sh tests/fm-composer-lib.test.sh
+  [ ! -e "$tmp/caller.signalled" ] \
+    || fail "a concurrent script's own-group TERM reached the runner's caller: $(cat "$tmp/out" "$tmp/err")"
+  assert_equals 0 "$(cat "$tmp/caller.rc")" "the concurrent run must finish green"
+  grep -Fq 'FM_TEST_SUMMARY total=2 failed=0' "$tmp/out" \
+    || fail "the concurrent run did not report a complete summary: $(cat "$tmp/out" "$tmp/err")"
+
+  # With a per-script bound the caller is just as far out of range.
+  run_under_group_caller "$tmp" env TMPDIR="$tmp/tmp" "$repo/bin/fm-test-run.sh" \
+    --per-script-timeout-secs 120 "$signaller"
+  [ ! -e "$tmp/caller.signalled" ] \
+    || fail "a bounded script's own-group TERM reached the runner's caller: $(cat "$tmp/out" "$tmp/err")"
+  grep -Fq 'FM_TEST_SUMMARY total=1 ' "$tmp/out" \
+    || fail "the bounded run did not report a complete summary: $(cat "$tmp/out" "$tmp/err")"
+
+  rm -rf "$tmp"
+  pass "a script that signals its own process group cannot reach the runner's caller"
+}
+
+# Containment must cost the script nothing it had: its redirected stdin, its own
+# exit status, and whatever it deliberately left running when it finished.
+test_a_contained_script_keeps_stdin_status_and_leftovers() {
+  local tmp repo evidence script=tests/fm-group-plain-fixture.test.sh rc leftover
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-group-plain.XXXXXX")
+  repo=$(group_fixture_repo "$tmp")
+  evidence="$tmp/evidence"
+  cat >"$repo/$script" <<'SH'
+#!/usr/bin/env bash
+IFS= read -r line
+echo "ok - stdin line: $line"
+ps -o pgid= -p $$ | tr -d '[:space:]' >"$GROUP_EVIDENCE/script.pgid"
+echo $$ >"$GROUP_EVIDENCE/script.pid"
+sleep 600 >/dev/null 2>&1 &
+echo $! >"$GROUP_EVIDENCE/leftover.pid"
+exit 7
+SH
+  chmod +x "$repo/$script"
+
+  set +e
+  printf 'payload\n' | TMPDIR="$tmp/tmp" GROUP_EVIDENCE="$evidence" \
+    "$repo/bin/fm-test-run.sh" "$script" >"$tmp/out" 2>"$tmp/err"
+  rc=${PIPESTATUS[1]}
+  set -e
+  leftover=$(cat "$evidence/leftover.pid" 2>/dev/null || true)
+
+  [ "$rc" -ne 0 ] || fail "a script that exits 7 must fail the run: $(cat "$tmp/out" "$tmp/err")"
+  grep -Fq 'ok - stdin line: payload' "$tmp/out" \
+    || fail "the script lost its redirected stdin: $(cat "$tmp/out" "$tmp/err")"
+  grep -Eq 'FM_TEST_END .* exit=7 ' "$tmp/out" \
+    || fail "the script's own exit status was not recorded: $(cat "$tmp/out" "$tmp/err")"
+  [ -n "$leftover" ] || fail "the fixture did not record its leftover process"
+  # Long enough for a cleanup that wrongly fired on a normal finish to land.
+  sleep 2
+  if ! kill -0 "$leftover" 2>/dev/null; then
+    fail "a script that finished normally had its leftover process ended"
+  fi
+  kill -KILL "$leftover" 2>/dev/null || true
+  assert_equals "$(cat "$evidence/script.pid")" "$(cat "$evidence/script.pgid")" \
+    "an unbounded script must lead its own process group"
+
+  rm -rf "$tmp"
+  pass "a contained script keeps its stdin, exit status and leftover processes"
+}
+
+# A script in its own group no longer hears a signal sent to the runner, so the
+# runner has to pass it on: ending the runner must still end the script.
+test_a_terminated_runner_takes_its_script_with_it() {
+  local tmp repo evidence script=tests/fm-group-term-fixture.test.sh runner_pid rc script_pid
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-group-term.XXXXXX")
+  repo=$(group_fixture_repo "$tmp")
+  evidence="$tmp/evidence"
+  cat >"$repo/$script" <<'SH'
+#!/usr/bin/env bash
+trap 'echo TERM >"$GROUP_EVIDENCE/script.signalled"; exit 0' TERM
+echo $$ >"$GROUP_EVIDENCE/script.pid"
+while :; do sleep 1; done
+SH
+  chmod +x "$repo/$script"
+
+  TMPDIR="$tmp/tmp" GROUP_EVIDENCE="$evidence" \
+    "$repo/bin/fm-test-run.sh" "$script" >"$tmp/out" 2>"$tmp/err" &
+  runner_pid=$!
+  if ! wait_for_files 1200 "$evidence/script.pid"; then
+    kill -KILL "$runner_pid" 2>/dev/null || true
+    fail "the fixture script never started: $(cat "$tmp/out" "$tmp/err")"
+  fi
+  script_pid=$(cat "$evidence/script.pid")
+  kill -TERM "$runner_pid"
+  set +e
+  wait "$runner_pid"
+  rc=$?
+  set -e
+  if ! wait_for_files 100 "$evidence/script.signalled" || ! wait_for_pid_gone "$script_pid" 100; then
+    kill -KILL "$script_pid" 2>/dev/null || true
+    fail "TERM to the runner did not reach its running script"
+  fi
+  assert_equals 143 "$rc" "a terminated runner must end on that same signal"
+
+  rm -rf "$tmp"
+  pass "TERM to the runner is passed on to its running script"
+}
+
+test_a_terminated_runner_does_not_wait_forever_for_a_stubborn_script() {
+  local tmp repo evidence script=tests/fm-group-term-stubborn-fixture.test.sh runner_pid script_pid stubborn_pid rc
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-group-term-stubborn.XXXXXX")
+  repo=$(group_fixture_repo "$tmp")
+  evidence="$tmp/evidence"
+  cat >"$repo/$script" <<'SH'
+#!/usr/bin/env bash
+trap '' TERM
+sh -c 'trap "" TERM; echo $$ >"$1"; while :; do sleep 1; done' _ "$GROUP_EVIDENCE/stubborn.pid" &
+echo $$ >"$GROUP_EVIDENCE/script.pid"
+while :; do sleep 1; done
+SH
+  chmod +x "$repo/$script"
+
+  TMPDIR="$tmp/tmp" GROUP_EVIDENCE="$evidence" \
+    "$repo/bin/fm-test-run.sh" "$script" >"$tmp/out" 2>"$tmp/err" &
+  runner_pid=$!
+  if ! wait_for_files 1200 "$evidence/script.pid" "$evidence/stubborn.pid"; then
+    kill -KILL "$runner_pid" 2>/dev/null || true
+    fail "the stubborn fixture script never started: $(cat "$tmp/out" "$tmp/err")"
+  fi
+  script_pid=$(cat "$evidence/script.pid")
+  stubborn_pid=$(cat "$evidence/stubborn.pid")
+  kill -TERM "$runner_pid"
+  if ! wait_for_pid_gone "$runner_pid" 150; then
+    kill -KILL "$runner_pid" 2>/dev/null || true
+    wait "$runner_pid" 2>/dev/null || true
+    kill -KILL -- "-$script_pid" 2>/dev/null || true
+    fail "a terminated runner waited indefinitely for a script that ignores TERM"
+  fi
+  set +e
+  wait "$runner_pid"
+  rc=$?
+  set -e
+  assert_equals 143 "$rc" "a terminated runner must preserve TERM status even if its script ignores TERM"
+  if ! wait_for_pid_gone "$script_pid" 150 || ! wait_for_pid_gone "$stubborn_pid" 150; then
+    kill -KILL -- "-$script_pid" 2>/dev/null || true
+    fail "a terminated runner left TERM-ignoring descendants running"
+  fi
+
+  rm -rf "$tmp"
+  pass "a terminated runner bounds cleanup of TERM-ignoring descendants"
+}
+
+# Delay registration in the non-leader watchdog to drive the startup race.
+# Inherited dispositions must already protect it while registration is delayed.
+test_a_group_signal_before_watchdog_initialization_keeps_cleanup() {
+  local tmp repo evidence script=tests/fm-group-watchdog-race-fixture.test.sh runner_pid script_pid rc
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-watchdog-race.XXXXXX")
+  repo=$(group_fixture_repo "$tmp")
+  evidence="$tmp/evidence"
+  cat >"$repo/$script" <<'FIXTURE'
+#!/usr/bin/env bash
+trap '' TERM
+echo $$ >"$GROUP_EVIDENCE/script.pid"
+while [ ! -s "$GROUP_EVIDENCE/watchdog.starting" ]; do sleep 0.1; done
+kill -TERM 0
+echo sent >"$GROUP_EVIDENCE/script.signalled"
+while :; do sleep 1; done
+FIXTURE
+  chmod +x "$repo/$script"
+  (
+    trap() {
+      local pid pgid
+      if [ "$#" -eq 4 ] && [ "$1" = '' ]; then
+        pid=$(/bin/sh -c 'echo "$PPID"')
+        pgid=$(ps -o pgid= -p "$pid" | tr -d '[:space:]')
+        if [ "$pid" != "$pgid" ]; then
+          echo starting >"$GROUP_EVIDENCE/watchdog.starting"
+          while [ ! -f "$GROUP_EVIDENCE/watchdog.continue" ]; do sleep 0.1; done
+        fi
+      fi
+      # shellcheck disable=SC2064 # Forward the existing trap arguments unchanged.
+      builtin trap "$@"
+    }
+    export -f trap
+    exec env TMPDIR="$tmp/tmp" GROUP_EVIDENCE="$evidence" \
+      "$repo/bin/fm-test-run.sh" "$script"
+  ) >"$tmp/out" 2>"$tmp/err" &
+  runner_pid=$!
+  if ! wait_for_files 300 "$evidence/script.pid" "$evidence/script.signalled"; then
+    kill -KILL "$runner_pid" 2>/dev/null || true
+    fail "the watchdog startup fixture did not signal its group: $(cat "$tmp/out" "$tmp/err")"
+  fi
+  script_pid=$(cat "$evidence/script.pid")
+  sleep 0.3
+  touch "$evidence/watchdog.continue"
+  kill -TERM "$runner_pid"
+  if ! wait_for_pid_gone "$runner_pid" 150; then
+    kill -KILL "$runner_pid" 2>/dev/null || true
+    wait "$runner_pid" 2>/dev/null || true
+    kill -KILL -- "-$script_pid" 2>/dev/null || true
+    fail "the signalled fixture prevented runner cancellation"
+  fi
+  set +e
+  wait "$runner_pid"
+  rc=$?
+  set -e
+  assert_equals 143 "$rc" "cancellation after an early group signal must preserve TERM status"
+  if ! wait_for_pid_gone "$script_pid" 150; then
+    kill -KILL -- "-$script_pid" 2>/dev/null || true
+    fail "a group signal killed the watchdog before its handlers were installed"
+  fi
+  rm -rf "$tmp"
+  pass "a group signal before watchdog initialization cannot disable cleanup"
+}
+
+# A hard kill gives the runner no chance to pass anything on. Without a
+# per-script bound nothing else would ever end the script, so its group must
+# end with the runner, including a process that ignores TERM.
+test_a_killed_runner_does_not_orphan_its_script() {
+  local tmp repo evidence script=tests/fm-group-kill-fixture.test.sh runner_pid script_pid stubborn_pid
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-group-kill.XXXXXX")
+  repo=$(group_fixture_repo "$tmp")
+  evidence="$tmp/evidence"
+  cat >"$repo/$script" <<'SH'
+#!/usr/bin/env bash
+trap '' TERM
+sh -c 'trap "" TERM; echo $$ >"$1"; while :; do sleep 1; done' _ "$GROUP_EVIDENCE/stubborn.pid" &
+echo $$ >"$GROUP_EVIDENCE/script.pid"
+while :; do sleep 1; done
+SH
+  chmod +x "$repo/$script"
+
+  TMPDIR="$tmp/tmp" GROUP_EVIDENCE="$evidence" \
+    "$repo/bin/fm-test-run.sh" "$script" >"$tmp/out" 2>"$tmp/err" &
+  runner_pid=$!
+  if ! wait_for_files 1200 "$evidence/script.pid" "$evidence/stubborn.pid"; then
+    kill -KILL "$runner_pid" 2>/dev/null || true
+    fail "the fixture script never started: $(cat "$tmp/out" "$tmp/err")"
+  fi
+  script_pid=$(cat "$evidence/script.pid")
+  stubborn_pid=$(cat "$evidence/stubborn.pid")
+  kill -KILL "$runner_pid"
+  wait "$runner_pid" 2>/dev/null || true
+  if ! wait_for_pid_gone "$script_pid" 600 || ! wait_for_pid_gone "$stubborn_pid" 600; then
+    kill -KILL "$script_pid" "$stubborn_pid" 2>/dev/null || true
+    fail "a killed runner left its script's process group running"
+  fi
+
+  rm -rf "$tmp"
+  pass "a killed runner does not leave its script's process group running"
+}
+
 # The duration regression this guard exists for: a suite whose scripts are all
 # green but whose wall clock outgrew its caller's invocation budget. The caller
 # gets killed mid-run and retries invisibly, so an over-budget run has to be a
@@ -2068,6 +2417,95 @@ assert len(doc["scripts"])==3
   pass "aggregate-json merges lane timing artifacts"
 }
 
+test_real_repo_coverage_guard_and_live_e2e_family() {
+  local tmp out listed unhinted max budget s
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-realcov.XXXXXX")
+  out=$("$RUNNER" --check-coverage) || { rm -rf "$tmp"; fail "real repository --check-coverage failed: $out"; }
+  assert_contains "$out" "FM_TEST_COVERAGE ok" "real repository coverage guard must report ok"
+  unhinted=$(printf '%s\n' "$out" | sed -n 's/.*serial_unhinted=\([0-9][0-9]*\).*/\1/p')
+  max=$(printf '%s\n' "$out" | sed -n 's/.*serial_max_ms=\([0-9][0-9]*\).*/\1/p')
+  budget=$(printf '%s\n' "$out" | sed -n 's/.*serial_budget_ms=\([0-9][0-9]*\).*/\1/p')
+  [ -n "$unhinted" ] && [ -n "$max" ] && [ -n "$budget" ] \
+    || { rm -rf "$tmp"; fail "real coverage summary missing serial metrics: $out"; }
+  [ "$unhinted" -eq 0 ] \
+    || { rm -rf "$tmp"; fail "real repository portable-serial lane must have 0 unhinted scripts, got $unhinted"; }
+  [ "$max" -le "$budget" ] \
+    || { rm -rf "$tmp"; fail "real repository largest serial shard (${max}ms) exceeds budget (${budget}ms)"; }
+
+  listed=$("$RUNNER" --list --family live-harness-optin)
+  for s in \
+    tests/fm-codex-catalog-live-e2e.test.sh \
+    tests/fm-hermes-gateway-coexistence-live-e2e.test.sh \
+    tests/fm-hermes-profile-safety-live-e2e.test.sh \
+    tests/fm-hermes-signals-live-e2e.test.sh \
+    tests/fm-kiro-signals-live-e2e.test.sh \
+    tests/fm-opencode-abs-cwd-rail-live-e2e.test.sh \
+    tests/fm-stop-policy-live-e2e.test.sh \
+    tests/fm-warm-compact-herdr-live-e2e.test.sh; do
+    assert_contains "$listed" "$s" "family live-harness-optin must include $s"
+  done
+
+  FM_LIVE=0 FM_STOP_POLICY_LIVE_E2E=0 "$RUNNER" --json "$tmp/timing.json" \
+    tests/fm-stop-policy-live-e2e.test.sh >"$tmp/out.txt" 2>"$tmp/err.txt" \
+    || { local err; err=$(cat "$tmp/err.txt"); rm -rf "$tmp"; fail "disabled stop-policy live guard must exit 0: $err"; }
+  grep -q 'family=live-harness-optin' "$tmp/out.txt" \
+    || { local out_txt; out_txt=$(cat "$tmp/out.txt"); rm -rf "$tmp"; fail "stop-policy live guard must report family=live-harness-optin: $out_txt"; }
+  grep -q 'expected_gate_skip=live-capability' "$tmp/out.txt" \
+    || { local out_txt; out_txt=$(cat "$tmp/out.txt"); rm -rf "$tmp"; fail "stop-policy live guard must expect a capability skip: $out_txt"; }
+  grep -q 'gate_skip=true' "$tmp/out.txt" \
+    || { local out_txt; out_txt=$(cat "$tmp/out.txt"); rm -rf "$tmp"; fail "stop-policy live guard output must report gate_skip=true: $out_txt"; }
+  grep -Eq '"gate_skip": *true' "$tmp/timing.json" \
+    || { local json_txt; json_txt=$(cat "$tmp/timing.json"); rm -rf "$tmp"; fail "stop-policy live guard timing json must record gate_skip=true: $json_txt"; }
+  rm -rf "$tmp"
+  pass "real repository passes coverage guard and maps live-e2e guards to live-harness-optin"
+}
+
+test_bash32_reexecs_to_bash5_candidate() {
+  local tmp out
+  if [ ! -x /bin/bash ] || /bin/bash -c '[ "${BASH_VERSINFO[0]:-0}" -ge 5 ]' 2>/dev/null; then
+    pass "bash 3.2 re-exec check skipped on host where /bin/bash is already bash 5+"
+    return 0
+  fi
+  # The fake candidate must hand off to a real Bash 5+. This test's own
+  # interpreter can be Bash 3.2 when PATH resolves bash to /bin/bash.
+  local real_bash5='' candidate
+  for candidate in "$BASH" /opt/homebrew/bin/bash /usr/local/bin/bash; do
+    [ -x "$candidate" ] || continue
+    # shellcheck disable=SC2016  # the candidate shell must expand BASH_VERSINFO
+    if "$candidate" -c '[ "${BASH_VERSINFO[0]:-0}" -ge 5 ]' 2>/dev/null; then
+      real_bash5=$candidate
+      break
+    fi
+  done
+  if [ -z "$real_bash5" ]; then
+    pass "bash 3.2 re-exec check skipped on host with no bash 5+ to delegate to"
+    return 0
+  fi
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-reexec.XXXXXX")
+  cat >"$tmp/fake-bash5" <<EOF
+#!/bin/sh
+if [ "\${1:-}" = "-c" ]; then
+  exec "$real_bash5" "\$@"
+fi
+printf 'reexec:%s\n' "\${FM_TEST_RUN_BASH_REEXEC:-0}" >"$tmp/reexec.marker"
+exec "$real_bash5" "\$@"
+EOF
+  chmod +x "$tmp/fake-bash5"
+  out=$(env -u FM_TEST_RUN_NO_REEXEC FM_TEST_SEAM=1 FM_TEST_RUN_BASH5_CANDIDATE="$tmp/fake-bash5" /bin/bash "$RUNNER" --list-families) \
+    || { rm -rf "$tmp"; fail "runner invoked under /bin/bash 3.2 failed to re-exec into bash 5 candidate"; }
+  assert_contains "$out" "pure-contract-unit" "re-execed runner must print families"
+  [ -f "$tmp/reexec.marker" ] \
+    || { rm -rf "$tmp"; fail "runner invoked under /bin/bash 3.2 did not exec FM_TEST_RUN_BASH5_CANDIDATE"; }
+  assert_contains "$(cat "$tmp/reexec.marker")" "reexec:1" "re-exec must set FM_TEST_RUN_BASH_REEXEC=1"
+  rm -f "$tmp/reexec.marker"
+  FM_TEST_RUN_NO_REEXEC=1 FM_TEST_SEAM=1 FM_TEST_RUN_BASH5_CANDIDATE="$tmp/fake-bash5" /bin/bash "$RUNNER" --list-families >/dev/null \
+    || { rm -rf "$tmp"; fail "runner with FM_TEST_RUN_NO_REEXEC=1 failed --list-families"; }
+  [ ! -e "$tmp/reexec.marker" ] \
+    || { rm -rf "$tmp"; fail "FM_TEST_RUN_NO_REEXEC=1 must suppress bash 5 re-exec"; }
+  rm -rf "$tmp"
+  pass "runner invoked under bash 3.2 re-execs into bash 5+ candidate unless suppressed"
+}
+
 test_list_all_exact_suite_coverage
 test_family_selection
 test_single_script_selection
@@ -2110,8 +2548,21 @@ test_changed_shared_fixture_selects_its_readers
 test_changed_t3_sources_select_their_readers
 test_concurrent_runs_are_ordered_longest_first
 test_per_script_timeout_bounds_a_hang
+case "$(uname -s)" in
+  MINGW*|MSYS*) pass "skip: POSIX process-group ownership is unavailable on native Windows" ;;
+  *)
+    test_a_script_that_signals_its_group_cannot_reach_the_caller
+    test_a_contained_script_keeps_stdin_status_and_leftovers
+    test_a_terminated_runner_takes_its_script_with_it
+    test_a_terminated_runner_does_not_wait_forever_for_a_stubborn_script
+    test_a_group_signal_before_watchdog_initialization_keeps_cleanup
+    test_a_killed_runner_does_not_orphan_its_script
+    ;;
+esac
 test_changed_bound_gives_slow_watcher_suites_headroom
 test_max_wall_ms_is_a_result_not_advice
 test_jobs_parallel_scheduler_and_failure_propagation
 test_herdr_ci_family_run_has_a_step_timeout
 test_aggregate_json
+test_real_repo_coverage_guard_and_live_e2e_family
+test_bash32_reexecs_to_bash5_candidate

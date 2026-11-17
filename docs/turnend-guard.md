@@ -38,7 +38,7 @@ The guard acts at that boundary when both of these hold:
 - In-flight work, a primary home's unresolved (`received` or `queued`) dispatch-log goal, a process-event source, a registered custom check, or Relay polling needs supervision.
 - No identity-matched watcher has a fresh beacon.
 
-The beacon is `state/.last-watcher-beat`, which `bin/fm-watch.sh` touches every cycle, as [Guard grace and the poll cadence](#guard-grace-and-the-poll-cadence) describes.
+The beacon is `state/.last-watcher-beat`, which `bin/fm-watch.sh` touches on the cadence [Guard grace and the poll cadence](#guard-grace-and-the-poll-cadence) describes.
 When the guard acts, the harness integration must do one of two things:
 
 - Block the turn end.
@@ -80,8 +80,9 @@ These sources also count toward supervision need:
 - Registered `state/procevent/*.source` records require supervision even though they have no task metadata.
 - Every mode treats `state/x-watch.check.sh` as supervision need, so Relay polling remains guarded without an in-flight task.
 - A custom check registered with `bin/fm-check-register.sh` counts the same way, so an operator's home-level poll keeps running after the last task is torn down.
+- The automatic away check (`state/auto-away.check.sh`) is such a check, armed by default at every primary session start, so an idle primary home still needs a live watcher while the check stays registered, and [`configuration.md`](configuration.md#automatic-away-mode-configauto-away) owns how `enabled=off` retires it.
 
-The default cross-harness mode exits silently with no supervision need.
+With none of these sources, the default cross-harness mode exits silently with no supervision need.
 
 ### Strict watcher check at the turn boundary
 
@@ -196,6 +197,10 @@ That handling can legitimately outrun a fixed 300-second window under load (a sl
 
 With `state/.afk` absent the daemon lock proves nothing and the strict watcher predicate is unchanged.
 
+A home that runs the supervision host is the exception that never writes `state/.afk` for away mode.
+There the host is the away session ([`supervision-host.md`](supervision-host.md)), so away entry writes only the away-posture record `state/.afk-contract` and the daemon launch refuses.
+The Stop-parked primaries therefore keep parking the host beside that record, while `state/.afk` still stands them down wherever the daemon owns supervision.
+
 ### State directory, grace, and missing input
 
 - `FM_STATE_OVERRIDE` wins over `FM_HOME/state`, and `FM_HOME` wins over repository-root `state/`.
@@ -204,8 +209,11 @@ With `state/.afk` absent the daemon lock proves nothing and the strict watcher p
 
 ### Guard grace and the poll cadence
 
-`bin/fm-watch.sh` touches `state/.last-watcher-beat` once per cycle, immediately before its terminal wait (`event_wait_or_sleep`) as well as at the top of the next cycle.
-A healthy watcher's beacon can therefore legitimately age up to `FM_POLL` seconds between touches.
+`bin/fm-watch.sh` touches `state/.last-watcher-beat` at the start of each cycle, again when a pane-staleness record begins after the previous record has returned, and again when that scan returns.
+A subordinate call that has not returned does not refresh the beacon, so a helper that stays blocked still ages past grace.
+That extra touch is the completed-record boundary, not a timer and not a larger grace.
+After the scan returns, the beacon can still age through the rest of the cycle and the terminal wait (`event_wait_or_sleep`).
+A healthy watcher can therefore age for one in-flight record plus up to `FM_POLL` seconds.
 
 A fixed 300-second grace default stops correctly bounding staleness once a home's `FM_POLL` reaches or exceeds it.
 A perfectly healthy watcher mid-wait would then read stale at the edge of every full poll cycle by definition.
@@ -311,12 +319,14 @@ The registrations in detail:
 ### Claude and Codex blocking
 
 Claude and Codex can block a Stop directly with exit status 2 and stderr.
-Claude keeps its one-shot `stop_hook_active` allow.
+Ordinary guards honor `stop_hook_active`; Claude's cooperative mode also preserves tokenless monitoring before allowing a blind stop.
+The shared primary continuation limits, parked-work exit and watchdog log are owned by [`bin/fm-stop-policy-lib.sh`](../bin/fm-stop-policy-lib.sh), with regression and lab drill in [`tests/fm-stop-policy.test.sh`](../tests/fm-stop-policy.test.sh).
+A parked Claude home stops early when a healthy watcher or verified auto-arm recovery owns monitoring; missing monitoring still requires repair.
 Codex mode is owned by the header of [`bin/fm-turnend-guard.sh`](../bin/fm-turnend-guard.sh).
-A running checkpoint this session started still blocks.
+A running checkpoint this session started still blocks; the shared stop policy applies only after the checkpoint and detach rules.
 Once it has exited, the hook detaches a persistent hold or allows the stop.
-A fixed bound of 2 limits later blocks in a turn once no checkpoint runs, on a secondmate home too.
-A secondmate home and a home with away mode active also keep the no-progress escape.
+Outside an open checkpoint, `stop_hook_active=true` allows the continued stop, including in secondmate and away homes.
+An initial queued-wake stop asks for handling; its active continuation may end while the queue remains durable.
 A detached hold has no doorbell, so the stop that starts it prints a notice, and wakes wait for the next captain message.
 
 ### Codex mode
@@ -334,6 +344,7 @@ A local tmux or Herdr Codex secondmate with a validated parent/inbox binding use
 `bin/fm-watch.sh`'s header owns its command interfaces.
 Its actionable events ring the existing durable steering inbox, while the watcher's ordinary triage absorbs no-change heartbeats and retains the actionable-status backstop.
 The Stop guard allows a supervised stop only with the live watcher, session/process identity and delivery route proven.
+An active-hook continuation can also end after its own checkpoint closes, retaining pending wakes.
 Until that proof holds, no foreground checkpoint is the fallback.
 When `bin/fm-watch.sh --secondmate` reports a failure, the emitted protocol and repair line tell the model to tell the parent, then stop.
 A failed notification is retried on the next poll, and the watcher stops after three consecutive binding-check failures without acknowledging pending events.
@@ -345,7 +356,7 @@ Existing native protocols remain authoritative outside the selected row.
 
 | Harness | Backend/route | Ownership mode | Result |
 | --- | --- | --- | --- |
-| Codex | tmux or Herdr, validated local parent/inbox and foreground session | No other watcher/host/away owner | Persistent watcher with identity-bound doorbell; Stop requires its proof. |
+| Codex | tmux or Herdr, validated local parent/inbox and foreground session | No other watcher/host/away owner | Persistent watcher with identity-bound doorbell; an initial Stop requires its proof, and an active continuation can end with pending wakes retained. |
 | Codex | Any | Away or quiet daemon | Existing daemon protocol; short-turn watcher stands down. |
 | Codex | Any | Supervision host selected | A foreground checkpoint runs the host; with none running, the Stop hook detaches a persistent hold or allows the turn to end. Under an away record it skips the detach and allows the stop with a loud notice that away supervision is not running until the next checkpoint. |
 | Codex | tmux or Herdr, local | Leftover `--grok-hold` watcher | `bin/fm-watch.sh --secondmate` proves its binding, then stops that recorded watcher (identity-matched to this home only) and takes over; a watcher that does not stop is reported with its pid and the home-scoped stop command. |
@@ -355,9 +366,10 @@ Existing native protocols remain authoritative outside the selected row.
 
 ### Claude cooperative mode
 
-Claude runs the guard with `--claude`, which ignores `stop_hook_active` and cooperates with the Stop-owned auto-arm.
+Claude runs the guard with `--claude`, which preserves missing-supervision recovery while the shared policy bounds model continuations.
 Claude Code sets `stop_hook_active=true` on every stop after any stop-hook continuation, including `asyncRewake` rewakes.
-Under the default one-shot behavior, that re-opened the 2026-07-21 blind window.
+The Stop-owned auto-arm keeps tokenless monitoring running when the model may stop.
+At a later external wake it evaluates fresh state, and a continuation bound retains the monitoring owner while the pending wake stays durable.
 
 Before the Claude cooperative budget can re-block a Stop, the guard checks for a live foreign session-lock owner and takes the same safe diagnostic exit described under "Guard predicates" ([foreign session-lock owner](#foreign-session-lock-owner)).
 
@@ -516,6 +528,7 @@ While supervision is needed it PARKS:
 3. It returns an actionable close as one `watcher`-kind follow-up.
 
 It spends no model tokens while parked.
+On a home that runs the supervision host the park runs `bin/fm-supervision-host.sh park` in the arm's place, including while the away-posture record is live, and a handback beside an away record says it is not the captain's return.
 This is the same between-turns shape as Claude's Stop auto-arm, so `fm_supervision_model` classifies Cursor as `autoarm` and the mid-turn pull guard accepts a fresh beacon without a live watcher.
 
 #### Cursor park under a Pi host
@@ -577,6 +590,7 @@ Like Cursor, Antigravity does not expose an asynchronous background rewake chann
 It polls the child every `FM_AGY_PARK_POLL` seconds (default 2) and waits on it under the 28800s hook timeout, so an idle watcher cycle forces no model turn and consumes no `executionNum`; the optional `FM_AGY_PARK_TIMEOUT` bounds the total wait across every attempt:
 
 - An actionable close (a watcher reason line, or a `supervision-host:` line in host mode) resets `state/.turnend-blocks` and returns `{"decision":"continue","reason":"<wake>"}` on stdout, immediately starting a follow-up supervision turn.
+  A host handback beside an away record (not quiet mode's) says it is not the captain's return, as on Claude and Cursor.
 - When an `FM_AGY_PARK_TIMEOUT` bound is set and passes with the child still running, the hook stops the child and returns `{"decision":"continue","reason":"[supervision-park] ..."}` so the next turn boundary parks again.
 - A non-actionable close beside a verified healthy watcher, a host that stood down, or a fleet that no longer needs supervision resets `state/.turnend-blocks`, emits `{}`, and lets the turn end cleanly.
 - A park that cannot establish a cycle after two bounded attempts delegates to `bin/fm-turnend-guard.sh --agy` for a bounded 3-block repair nag before failing open.
@@ -659,9 +673,12 @@ It also covers true-reason banner wording and reason-keyed episode dedup survivi
 - The nested loop bounds.
 - Supersession.
 - Away-mode and lock-ownership inertness.
+- Supervision-host parking beside a manual or automatic away entry, which writes no `state/.afk`, and stand-down beside the away daemon's flag in away and quiet mode.
 - Pi-host stand-down without Cursor identity and continued parking when `PI_CODING_AGENT` leaks alongside `CURSOR_AGENT` or `CURSOR_INVOKED_AS`.
 - Child-worktree exclusion.
 - That the adapter never exits 2.
+
+`tests/fm-agy-primary.test.sh` covers the Antigravity park over real processes with no harness installed, including supervision-host parking beside a manual or automatic away entry with its away-posture note and stand-down beside the away daemon's flag in away and quiet mode.
 
 `tests/fm-kimi-harness.test.sh` covers the separate Kimi crew hook's format preservation, idempotence, refusal cases, token guard, spawn registration, and teardown cleanup.
 `tests/fm-supervision-instructions.test.sh` covers recovery-line ownership and pi-signed's identity-preserving reuse of Pi's protocol.

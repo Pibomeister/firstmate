@@ -78,7 +78,7 @@ Add required status checks with `strict_required_status_checks_policy: false`; a
 Bind the checks to the GitHub Actions app already producing them, rather than accepting the same context from any integration.
 No new app installation or manual runner setup is needed for that setting.
 
-Require the actual job contexts: `Full suite`, `Lint 1` through `Lint 6`, `Test coverage guard`, `Repo invariants`, `Behavior portable parallel 1`, `Behavior portable parallel 2`, `Behavior portable serial 1` through `Behavior portable serial 10`, `Behavior portable serial 11`, `Behavior portable serial 12`, `Behavior portable serial 13`, `Behavior portable serial 14`, `Behavior portable serial 15` through `Behavior portable serial 24`, `Behavior tests (Herdr)`, `Behavior timing aggregate`, and `PR must be raised via no-mistakes`.
+Require the actual job contexts: `Full suite`, `Lint 1` through `Lint 6`, `Test coverage guard`, `Repo invariants`, `Behavior portable parallel 1`, `Behavior portable parallel 2`, `Behavior portable serial 1` through `Behavior portable serial 10`, `Behavior portable serial 11`, `Behavior portable serial 12`, `Behavior portable serial 13`, `Behavior portable serial 14`, `Behavior portable serial 15` through `Behavior portable serial 25`, `Behavior tests (Herdr)`, `Behavior timing aggregate`, and `PR must be raised via no-mistakes`.
 `Stock macOS Bash snapshot compatibility` is commented out in `.github/workflows/ci.yml` as of 2026-11-04.
 Uncomment the job before putting that check back on the ruleset.
 The last name is the compliance job context, not its workflow title; its existing automation exceptions remain unchanged.
@@ -161,7 +161,7 @@ bin/fm-test-isolation-proof.sh --list   # proven portable parallel candidate set
 bin/fm-test-isolation-proof.sh --jobs 4 --json /tmp/fm-isolation-proof.json   # re-run the portable candidate proof
 bin/fm-test-isolation-proof.sh --pool watcher-wake-lock --jobs 4   # re-run an admitted family proof
 [ ! -L CLAUDE.md ] && cmp -s CLAUDE.md - <<'EOF'
-<!-- Points Claude at AGENTS.md via import; edit AGENTS.md, not this file. -->
+<!-- Imports AGENTS.md, including its worktree cleanup rule; maintain shared rules there. -->
 @AGENTS.md
 EOF
 [ "$(readlink .claude/skills)" = "../.agents/skills" ]

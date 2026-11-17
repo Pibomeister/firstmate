@@ -471,6 +471,27 @@ fm_busy_record_read() {  # <state-dir> <id>
   printf '%s %s %s %s' "$r_state" "$r_source" "$r_event" "$r_seq"
 }
 
+# fm_busy_record_ts: the ts of a valid, gen-matching record whose source is
+# trusted for <harness>, else failure with nothing printed. The ts dates the
+# record's last lifecycle event, so it is activity evidence for the watchdog
+# (docs/watchdog.md), never a state verdict.
+fm_busy_record_ts() {  # <state-dir> <id> <harness>
+  local parsed r_source line f
+  local -a fields
+  parsed=$(fm_busy_record_read "$1" "$2") || return 1
+  r_source=${parsed#* }
+  r_source=${r_source%% *}
+  fm_busy_source_trusted "$3" "$r_source" || return 1
+  IFS= read -r line < "$(fm_busy_record_path "$1" "$2")" 2>/dev/null || return 1
+  IFS=' ' read -r -a fields <<< "$line"
+  for f in "${fields[@]}"; do
+    case "$f" in
+      ts=*) f=${f#ts=}; case "$f" in ''|*[!0-9]*) return 1 ;; esac; printf '%s\n' "$f"; return 0 ;;
+    esac
+  done
+  return 1
+}
+
 fm_busy_prompt_receipts_path() {  # <state-dir> <id>
   printf '%s/%s.droid-submit-receipts' "$1" "$2"
 }

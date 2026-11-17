@@ -1152,7 +1152,39 @@ EOF
   pass "home-summary excludes kind=secondmate from unowned_current and terminal_in_flight"
 }
 
+test_session_endpoint_comes_from_the_lock_sidecar() {
+  local home out view
+  home=$(make_home session-endpoint)
+  out=$(FM_HOME="$home" "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e \
+    '.session.endpoint.backend == "unknown" and .session.endpoint.target == "unknown"' >/dev/null \
+    || fail "an absent lock sidecar is unknown: $out"
+  view=$(FM_HOME="$home" "$VIEW")
+  assert_contains "$view" "Session endpoint: unknown" "the fleet view says the endpoint is unknown"
+
+  printf 'sess\nbackend=herdr\nterminal=fm-lab:w1:p9\nworktree=%s\n' "$home" > "$home/state/.lock-session"
+  out=$(FM_HOME="$home" "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e \
+    '.session.endpoint.backend == "herdr" and .session.endpoint.target == "fm-lab:w1:p9"' >/dev/null \
+    || fail "a concrete lock endpoint is not shown: $out"
+  view=$(FM_HOME="$home" "$VIEW")
+  assert_contains "$view" "Session endpoint: herdr fm-lab:w1:p9" "the fleet view names the recorded pane"
+
+  printf 'sess\nbackend=herdr\nterminal=fm-lab:w1:p9\nworktree=/somewhere/else\n' > "$home/state/.lock-session"
+  out=$(FM_HOME="$home" "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e \
+    '.session.endpoint.backend == "unknown" and .session.endpoint.target == "unknown"' >/dev/null \
+    || fail "a sidecar for another home must not name this session: $out"
+
+  printf 'sess\nbackend=unknown\nterminal=unknown\nworktree=%s\n' "$home" > "$home/state/.lock-session"
+  view=$(FM_HOME="$home" "$VIEW")
+  assert_contains "$view" "Session endpoint: unknown" "the unknown token is not shown as a pane"
+  assert_not_contains "$view" "Session endpoint: unknown unknown" "unknown is one word, not a pane"
+  pass "the fleet snapshot and view read the lock sidecar endpoint"
+}
+
 fm_test_run \
+  test_session_endpoint_comes_from_the_lock_sidecar \
   test_empty_fleet_json \
   test_fixture_snapshot_json \
   test_home_summary_excludes_secondmate_from_child_inventory \

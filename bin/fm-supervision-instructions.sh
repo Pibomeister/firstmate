@@ -342,6 +342,9 @@ if [ -n "$HOST_SNIPPET" ]; then
   printf '%s\n' '- Supervision host: on; it takes away-posture wakes and, where the dialog mirror is verified, eligible attended wakes itself, and hands the rest to you (protocol at the end of this block).'
 fi
 ordinary_wake_line
+if [ "$READ_ONLY" -eq 0 ] && [ ! -e "$FM_HOME/.fm-secondmate-home" ]; then
+  printf '%s\n' '- Before handling each genuine captain message (never a wake, hook, or startup), run bin/fm-auto-away.sh captain-message; a check: auto-away wake loads /afk.'
+fi
 printf '%s\n' '- Captain-facing turn replies stay short and do not use tables.'
 printf '%s\n' '- A long report goes in a file under data/, and the reply is one line from bin/fm-context-burn.sh report with that path and its sha256.'
 printf '%s\n' '- A large read, including a triage table or a handoff, goes through a worker or a bounded head or search, not a full read into this session.'

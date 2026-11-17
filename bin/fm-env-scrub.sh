@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-# Remove home/task-scoped Firstmate variables before crossing a shared process
+# Remove home/task-scoped Firstmate variables and the agent-kit lifecycle
+# variables (AK_LIFECYCLE_POLICY, AK_LIFECYCLE_SUPERVISOR,
+# AK_LIFECYCLE_SUPERVISOR_DECLARATION) before crossing a shared process
 # boundary. A new tmux server must not publish its creator's home or task
-# identity globally; a worker launch must not inherit another home's identity
-# from an old server. Runtime tuning FM_* variables are not scoped and stay.
+# identity, or a launched worker's unattended policy and supervisor
+# declaration, globally; a worker launch must not inherit another home's
+# identity from an old server, and sets the lifecycle variables again itself
+# after this scrub. Runtime tuning FM_*
+# variables are not scoped and stay.
 #
-# Source `fm_env_scrub` in a subshell before creating a tmux server, or run:
+# Source `fm_env_scrub` in a subshell before creating a tmux server, use
+# `fm_env_without_ak_pair` (below) at any other shared server start, or run:
 #   fm-env-scrub.sh [--keep-zellij-session] unset-file <out-file>
 #   fm-env-scrub.sh exec <command> [args...]
 # `unset-file` writes the scoped names it inherited as unset statements in the
@@ -17,7 +23,8 @@ fm_env_scrub_names() {  # [keep-zellij-session: 0|1]
     case "$name" in
       FM_ZELLIJ_SESSION) [ "$keep_zellij" -eq 0 ] || continue ;;
       FM_HOME | FM_TASK_ID | FM_TASK_INBOX | FM_PUBLIC_FOLLOWUP_PRIMARY_HOME | FM_SESSION_ENDPOINT_META | FM_LEASE_HOLDER_SESSION | \
-        FM_*_OVERRIDE | FM_PROCEVENT_CLAIM_* | FM_PROCEVENT_CAPTURE_*) ;;
+        FM_*_OVERRIDE | FM_PROCEVENT_CLAIM_* | FM_PROCEVENT_CAPTURE_* | \
+        AK_LIFECYCLE_POLICY | AK_LIFECYCLE_SUPERVISOR | AK_LIFECYCLE_SUPERVISOR_DECLARATION) ;;
       *) continue ;;
     esac
     printf '%s\n' "$name"
@@ -29,6 +36,24 @@ fm_env_scrub() {  # [keep-zellij-session: 0|1]
   while IFS= read -r name; do
     unset "$name"
   done < <(fm_env_scrub_names "${1:-0}")
+}
+
+# fm_env_drop_ak_pair unsets the agent-kit lifecycle variables (the policy and
+# supervisor pair plus the supervisor declaration path) in the current shell;
+# call it inside a subshell. fm_env_without_ak_pair runs a command or function
+# in a subshell without them. Every backend start that can launch a shared
+# server, daemon, app or session outliving the spawn goes through one of them,
+# because that process hands its startup environment to later terminals that
+# are not Firstmate workers.
+fm_env_drop_ak_pair() {
+  unset AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR AK_LIFECYCLE_SUPERVISOR_DECLARATION
+}
+
+fm_env_without_ak_pair() {  # <command> [args...]
+  (
+    fm_env_drop_ak_pair
+    "$@"
+  )
 }
 
 [ "${BASH_SOURCE[0]}" = "$0" ] || return 0

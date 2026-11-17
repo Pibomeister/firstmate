@@ -129,6 +129,8 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
 # shellcheck source=bin/fm-backend-hometag-lib.sh
 . "$FM_BACKEND_TERN_ROOT/bin/fm-backend-hometag-lib.sh"
+# shellcheck source=bin/fm-env-scrub.sh
+. "$FM_BACKEND_TERN_ROOT/bin/fm-env-scrub.sh"
 
 # Shared composer-content classifier and submit helpers (bin/fm-composer-lib.sh).
 # shellcheck source=bin/fm-composer-lib.sh
@@ -291,7 +293,8 @@ fm_backend_tern_container_ensure() {
   listing=$(fm_backend_tern_ls_json) || { echo "error: 'tern ls --json' failed; is a Tern window or session daemon reachable from this shell?" >&2; return 1; }
   sid=$(fm_backend_tern_session_id_for_name "$listing" "$name")
   if [ -z "$sid" ]; then
-    out=$(fm_backend_tern_cli new session "$name" 2>&1) || { echo "error: tern new session failed for '$name': $out" >&2; return 1; }
+    # The session outlives the spawn and may hand this environment to its later tabs.
+    out=$(fm_env_without_ak_pair fm_backend_tern_cli new session "$name" 2>&1) || { echo "error: tern new session failed for '$name': $out" >&2; return 1; }
     listing=$(fm_backend_tern_ls_json) || { echo "error: 'tern ls --json' failed after creating session '$name'" >&2; return 1; }
     sid=$(fm_backend_tern_session_id_for_name "$listing" "$name")
   fi
