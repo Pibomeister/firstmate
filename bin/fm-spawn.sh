@@ -5043,6 +5043,27 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
       exit 1
     fi
   fi
+  # shellcheck source=bin/fm-goal-integrity-lib.sh
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-goal-integrity-lib.sh"
+  if fm_goal_integrity_enabled "$CONFIG"; then
+    GOAL_PREFIX=$(fm_goal_integrity_prefix "$CONFIG") || exit 1
+    GOAL_FIRST_LINE=$(sed -n '1p' "$BRIEF")
+    case "$GOAL_FIRST_LINE" in
+      "$GOAL_PREFIX"*) GOAL_TEXT=${GOAL_FIRST_LINE#"$GOAL_PREFIX"} ;;
+      *)
+        echo "error: $BRIEF must open with a '${GOAL_PREFIX}...' line from $STATE/goals/$ID.md (config/goal-integrity); refusing to send" >&2
+        exit 1
+        ;;
+    esac
+    if [ -z "$(printf '%s' "$GOAL_TEXT" | tr -d '[:space:]')" ] || [ "$GOAL_TEXT" = '{GOAL}' ]; then
+      echo "error: $BRIEF must open with a non-empty verbatim goal from $STATE/goals/$ID.md (config/goal-integrity); refusing to send" >&2
+      exit 1
+    fi
+    if [ ! -f "$STATE/goals/$ID.md" ] || [ "$(sed -n '1p' "$STATE/goals/$ID.md")" != "$GOAL_TEXT" ]; then
+      echo "error: $BRIEF GOAL line does not match line 1 of $STATE/goals/$ID.md verbatim; refusing to send" >&2
+      exit 1
+    fi
+  fi
   if fm_brief_task_placeholders_present "$BRIEF"; then
     echo "error: $BRIEF still contains {TASK} or {FIRSTMATE_SPEC}; fill ## Captain's intent and ## Firstmate spec before spawn" >&2
     exit 1

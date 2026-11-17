@@ -458,3 +458,7 @@ It does not replace the Firstmate supervisor contract above.
 Reviewer isolation on Cursor is `partial` upstream.
 In a Cursor session only, start review with `/super-review` and a mode of `full`, `readiness`, or `delta`; on other harnesses, section 7 owns review.
 Pin, licenses, refresh steps, and capability honesty live in [`.cursor/agent-kit.md`](.cursor/agent-kit.md).
+
+## Goal line enforcement (optional home)
+
+When `config/goal-integrity` is present, keep each task ask in `state/goals/<task-id>.md` verbatim, reload it at handoff, and let ship and scout briefs open with the matching GOAL line; see `docs/configuration.md`.

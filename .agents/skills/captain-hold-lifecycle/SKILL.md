@@ -70,3 +70,5 @@ The absence of a routed work item is not a divergence and the guard never requir
 
 `bin/fm-captain-hold.sh --help` owns command syntax, close modes, legacy-identity compatibility, completion attestation, retry behavior, and close ordering.
 `docs/captain-hold-lifecycle.md` records the mechanism and regression evidence without restating this policy.
+
+When `config/goal-integrity` is present, a hold does not waive the verbatim goal file; quote the stored ask before deciding (`docs/configuration.md`, Goal line enforcement).

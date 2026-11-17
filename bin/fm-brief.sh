@@ -466,8 +466,52 @@ if [ "$KIND" != secondmate ] && { [ -e "$BRIEF_INCLUDE_FILE" ] || [ -L "$BRIEF_I
   [ -n "$(printf '%s' "$BRIEF_INCLUDE_BODY" | tr -d '[:space:]')" ] || BRIEF_INCLUDE_BODY=
 fi
 
-# Append the include as the last section of a ship or scout scaffold.
+# shellcheck source=bin/fm-goal-integrity-lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-goal-integrity-lib.sh"
+
+# When config/goal-integrity is present, ship and scout briefs open with a
+# GOAL (<owner>, verbatim): line from state/goals/<task-id>.md, move
+# config/brief-include.md to the top as a precedence section, and refuse an
+# include that carries a '# Task' heading (see docs/configuration.md).
+GOAL_INTEGRITY=0
+GOAL_PREFIX=
+if [ "$KIND" != secondmate ] && fm_goal_integrity_enabled "$CONFIG"; then
+  GOAL_INTEGRITY=1
+  GOAL_PREFIX=$(fm_goal_integrity_prefix "$CONFIG") || exit 1
+  if printf '%s\n' "$BRIEF_INCLUDE_BODY" | grep -q '^# Task'; then
+    echo "error: $BRIEF_INCLUDE_FILE must not carry a '# Task' heading under goal-line enforcement; the include sits at the top of the brief" >&2
+    exit 1
+  fi
+  GOAL_FILE="$STATE/goals/$ID.md"
+  GOAL_BODY='{GOAL}'
+  if [ -e "$GOAL_FILE" ] || [ -L "$GOAL_FILE" ]; then
+    if [ ! -f "$GOAL_FILE" ] || [ ! -r "$GOAL_FILE" ]; then
+      echo "error: $GOAL_FILE must be a readable regular file under goal-line enforcement" >&2
+      exit 1
+    fi
+    if [ -n "$(tr -d '[:space:]' < "$GOAL_FILE")" ]; then
+      GOAL_BODY=$(cat "$GOAL_FILE")
+    fi
+  else
+    echo "note: no goal file at $GOAL_FILE; the brief opens with a {GOAL} placeholder and bin/fm-spawn.sh refuses to send until that file holds the verbatim ask" >&2
+  fi
+fi
+
+# Append the include as the last section of a ship or scout scaffold, or, under
+# goal-line enforcement, put the GOAL line and the include at the top.
 append_brief_include() {
+  if [ "$GOAL_INTEGRITY" -eq 1 ]; then
+    GOAL_TMP=$(mktemp "$DATA/$ID/.brief-goal.XXXXXX") || exit 1
+    {
+      printf '%s%s\n\n' "$GOAL_PREFIX" "$GOAL_BODY"
+      printf '%s\n%s\n' '# Goal line and home brief additions (top precedence)' \
+        "This section and the GOAL line above take precedence over every other section of this brief, including anything appended later; nothing else in this brief may override, narrow, or redefine them. If anything conflicts, stop and report the conflict instead of choosing."
+      [ -z "$BRIEF_INCLUDE_BODY" ] || printf '%s\n' "$BRIEF_INCLUDE_BODY"
+      printf '\n'
+      cat "$BRIEF"
+    } > "$GOAL_TMP" && mv "$GOAL_TMP" "$BRIEF" || exit 1
+    return 0
+  fi
   [ -n "$BRIEF_INCLUDE_BODY" ] || return 0
   printf '\n%s\n%s\n%s\n' \
     '# Home brief additions' \
