@@ -139,6 +139,31 @@ out=$(audit compare --before "$TEST_HOME/before.json")
 expect_code 0 $? 'archived Done and hold answer'
 pass 'Done retention preserves completion and captain-answer evidence'
 
+new_home reused
+seed
+cat > "$TEST_HOME/data/done-archive.md" <<'EOF'
+## Done
+- [x] ship-one - old finished task (closed 2026-01-01)
+- [x] hold-one - old answered call (closed 2026-01-01)
+  Resolution recorded by fm-captain-hold.
+  Captain decision:
+  An old answer.
+EOF
+snapshot before
+mv "$TEST_HOME/state/ship-one.meta" "$TEST_HOME/lost-meta"
+tasks 'rm' ship-one >/dev/null || fail 'lose reused task'
+tasks 'rm' hold-one >/dev/null || fail 'lose reused hold'
+MISSING='task:ship-one hold:hold-one backlog:ship-one backlog:hold-one'
+expect_drift
+# A new retained close of the same ID is distinct even with identical bytes.
+cat >> "$TEST_HOME/data/done-archive.md" <<'EOF'
+- [x] ship-one - old finished task (closed 2026-01-01)
+EOF
+out=$(audit compare --before "$TEST_HOME/before.json" --no-strict)
+case "$out" in *task:ship-one*|*backlog:ship-one*) fail 'a new archive occurrence did not account for task completion' ;; esac
+assert_contains "$out" hold:hold-one 'old hold answer is still stale'
+pass 'stale archive evidence cannot hide deleted reused task IDs or captain holds'
+
 new_home missing-backlog
 seed
 snapshot before

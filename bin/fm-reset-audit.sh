@@ -25,6 +25,7 @@
 # Done evidence; a worker's done status alone is not teardown. Branch/PR updates
 # on a surviving task are allowed. Missing backlog work also produces DRIFT.
 # Existing markdown Done archives supply completion and resolution evidence.
+# Evidence tokens distinguish new closes/answers from stale archived lifecycles.
 #
 # Each compare appends one TSV row to <home>/state/reset-audit.tsv:
 #   <epoch> <kind> <PASS|FAIL> <comma-separated category:id drift, or ->
@@ -51,6 +52,7 @@ const fail = message => { throw new Error(message); };
 const slug = value => typeof value === 'string' && /^[A-Za-z0-9._-]+$/.test(value);
 const sorted = rows => rows.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 const canonical = value => JSON.stringify(value, null, 2) + '\n';
+const digest = value => require('node:crypto').createHash('sha256').update(value).digest('hex');
 const opts = {};
 try {
   if (!['snapshot', 'compare'].includes(command)) fail('expected snapshot or compare; see --help');
@@ -152,7 +154,7 @@ try {
         body = match[1].startsWith('"') ? JSON.parse(match[1]) : match[1];
       }
       const count = resolutionCount(body);
-      if (count) resolutions.push({ id: row.id, count });
+      if (count) resolutions.push({ id: row.id, count, token: 'live:' + digest(body) });
       if (row.state !== 'done' && row.hold_kind === 'captain') {
         holds.push({ id: row.id, set: body.match(/^Captain hold set: (.*)$/m)?.[1] || '', resolutions: count });
       }
@@ -175,17 +177,23 @@ try {
       }
     }
     const archived = new Map();
+    const occurrences = new Map();
     let current;
     for (const line of (backend === 'beads' ? '' : read(archive)).split('\n')) {
       const match = line.match(/^- \[x\] ([A-Za-z0-9._-]+)(?: |$)/);
-      if (match) { current = { id: match[1], body: '' }; archived.set(current.id, current); }
+      if (match) {
+        const occurrence = (occurrences.get(match[1]) || 0) + 1;
+        occurrences.set(match[1], occurrence);
+        current = { id: match[1], body: '', header: line, occurrence };
+        archived.set(current.id, current);
+      }
       else if (current && (line === '' || /^\s/.test(line))) current.body += line.replace(/^  /, '') + '\n';
       else current = undefined;
     }
     for (const row of archived.values()) {
-      if ([...rows, ...done].some(item => item.id === row.id)) continue;
+      row.token = 'archive:' + row.occurrence + ':' + digest(row.header + '\n' + row.body);
       const count = resolutionCount(row.body);
-      if (count) resolutions.push({ id: row.id, count });
+      if (count) resolutions.push({ id: row.id, count, token: row.token });
     }
     const metas = fs.existsSync(path.join(home, 'state')) ? fs.readdirSync(path.join(home, 'state')).filter(name => name.endsWith('.meta') && !name.startsWith('.')) : [];
     const active = metas.map(name => {
@@ -199,7 +207,8 @@ try {
     return { version: 1, home, goals: sorted([...goals.values()].filter(row => ['received', 'queued'].includes(row.event))),
       holds: sorted(holds), tasks: sorted(active), backlog: sorted(rows.filter(row => row.state !== 'done').map(({ id, state }) => ({ id, state }))),
       evidence: { goals: sorted([...goals.values()].filter(row => ['dispatched', 'blocked'].includes(row.event))),
-        done: [...new Set([...done, ...archived.values()].filter(row => !rows.some(item => item.id === row.id)).map(row => row.id))].sort(), resolutions: sorted(resolutions) } };
+        done: sorted([...done.map(row => ({ id: row.id, token: 'live:' + digest(JSON.stringify(row)) })),
+          ...[...archived.values()].map(row => ({ id: row.id, token: row.token }))]), resolutions: sorted(resolutions) } };
   }
   function validate(value) {
     if (value?.version !== 1 || value.home !== home) fail('manifest version/home mismatch');
@@ -217,8 +226,8 @@ try {
       fail('invalid manifest work state');
     const evidence = value.evidence;
     if (!evidence || !Array.isArray(evidence.goals) || evidence.goals.some(row => !slug(row?.id) || !['dispatched', 'blocked'].includes(row.event)) ||
-        !Array.isArray(evidence.done) || evidence.done.some(id => !slug(id)) || !Array.isArray(evidence.resolutions) ||
-        evidence.resolutions.some(row => !slug(row?.id) || !Number.isInteger(row.count) || row.count < 1) ||
+        !Array.isArray(evidence.done) || evidence.done.some(row => !slug(row?.id) || typeof row.token !== 'string') || !Array.isArray(evidence.resolutions) ||
+        evidence.resolutions.some(row => !slug(row?.id) || typeof row.token !== 'string' || !Number.isInteger(row.count) || row.count < 1) ||
         value.holds.some(row => !Number.isInteger(row.resolutions) || row.resolutions < 0)) fail('invalid manifest evidence');
     return value;
   }
@@ -233,15 +242,20 @@ try {
     const before = validate(JSON.parse(fs.readFileSync(opts['--before'], 'utf8')));
     const after = validate(opts['--after'] ? JSON.parse(fs.readFileSync(opts['--after'], 'utf8')) : snapshot());
     const has = (rows, id) => rows.some(row => row.id === id);
+    const fresh = (records, item) => !records.some(row => row.id === item.id && row.token === item.token);
+    const completed = id => after.evidence.done.some(item => item.id === id &&
+      (fresh(before.evidence.done, item) || (!has(before.backlog, id) &&
+        before.evidence.done.some(row => row.id === id && row.token.startsWith('live:')))));
     const drift = [];
     for (const row of before.goals)
       if (!has(after.goals, row.id) && !has(after.evidence.goals, row.id)) drift.push(`goal:${row.id}`);
     for (const row of before.holds)
-      if (!has(after.holds, row.id) && !after.evidence.resolutions.some(item => item.id === row.id && item.count > row.resolutions)) drift.push(`hold:${row.id}`);
+      if (!has(after.holds, row.id) && !after.evidence.resolutions.some(item => item.id === row.id &&
+          item.count > row.resolutions && fresh(before.evidence.resolutions, item))) drift.push(`hold:${row.id}`);
     for (const row of before.tasks)
-      if (!has(after.tasks, row.id) && !after.evidence.done.includes(row.id)) drift.push(`task:${row.id}`);
+      if (!has(after.tasks, row.id) && !completed(row.id)) drift.push(`task:${row.id}`);
     for (const row of before.backlog)
-      if (!has(after.backlog, row.id) && !after.evidence.done.includes(row.id)) drift.push(`backlog:${row.id}`);
+      if (!has(after.backlog, row.id) && !completed(row.id)) drift.push(`backlog:${row.id}`);
     drift.sort();
     const verdict = drift.length ? 'FAIL' : 'PASS';
     const state = inside(path.join(home, 'state'));
