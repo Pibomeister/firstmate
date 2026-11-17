@@ -532,7 +532,7 @@ test_claim_concurrent_spawn_and_lost_reply() {
 
 test_claim_crash_fence() {
   claim_fixture claim-crash
-  local out token rc=0
+  local out token next_token wt fakebin rc=0
   out=$(ledger claim --project alpha) || fail "initial claim: $out"
   token=${out##*token=}
   # Use the spawn-owned public transition under a real lock, then kill its
@@ -549,7 +549,157 @@ test_claim_crash_fence() {
   assert_contains "$out" 'phase=dispatching' 'the uncertain dispatch remains durable'
   out=$(ledger claim --project alpha 2>&1); rc=$?
   expect_code 3 "$rc" 'a crashed claim is never reissued'
-  pass 'a killed dispatcher leaves recoverable ownership and never reissues an uncertain launch'
+  out=$( (unset FM_TASK_ID; ledger claim-release claim-one --token "$token") 2>&1) || fail "prelaunch crash cannot be released: $out"
+  out=$(ledger claim --project alpha) || fail "released item cannot be claimed again: $out"
+  next_token=${out##*token=}
+  [ "$next_token" != "$token" ] || fail 'release reused the retired token'
+  wt="$HOME_DIR/test-worktree"
+  fm_git_worktree "$HOME_DIR/projects/alpha" "$wt" recovered-claim
+  fakebin=$(fm_test_make_spawn_fakebin "$HOME_DIR/fake" codex)
+  printf 'codex\n' > "$HOME_DIR/config/crew-harness"
+  touch "$HOME_DIR/state/.last-watcher-beat"
+  out=$(FM_BACKEND=tmux fm_test_run_spawn "$HOME_DIR" "$wt" "$fakebin" claim-one "$HOME_DIR/projects/alpha" --scout --claim "$token") && fail 'retired token launched a worker'
+  assert_contains "$out" 'claim token is required' 'the old delayed spawn remains fenced'
+  out=$(FM_BACKEND=tmux FM_FAKE_LAUNCH_LOG="$HOME_DIR/recovered-launch.log" fm_test_run_spawn "$HOME_DIR" "$wt" "$fakebin" claim-one "$HOME_DIR/projects/alpha" --scout --claim "$next_token") || fail "recovered claim failed to launch: $out"
+  [ "$(grep -c 'export FM_TASK_INBOX=' "$HOME_DIR/recovered-launch.log")" = 1 ] || fail 'recovery did not deliver exactly one worker'
+  pass 'a killed prelaunch dispatcher can be released without reusing its dispatch identity'
+}
+
+test_claim_parked_order_revokes_authority() {
+  new_home claim-order
+  mkdir -p "$HOME_DIR/projects/alpha"
+  printf 'claim-project=alpha\n' > "$HOME_DIR/config/mission-ledger"
+  local oid out token rc
+  oid=$(order send --from test -- 'approved order to claim' | awk '/^queued / {print $2}')
+  ledger intake claim-one --project alpha --title 'order work' --source "order:$oid" >/dev/null || fail 'order intake failed'
+  fm_test_spawn_brief "$HOME_DIR" claim-one
+  out=$(ledger claim --project alpha) || fail "order claim failed: $out"
+  token=${out##*token=}
+  order ack "$oid" >/dev/null || fail 'order ack failed'
+  order finish "$oid" parked -- 'defer this work' >/dev/null || fail 'order park failed'
+  out=$(ledger claim --project alpha --resume claim-one 2>&1); rc=$?
+  expect_code 1 "$rc" 'parking the source order revokes a reserved claim'
+  assert_contains "$out" 'parked' 'refusal identifies the revoked source order'
+  [ "$(jq -r .token "$HOME_DIR/state/ledger-claims/claim-one.json")" = "$token" ] || fail 'revocation changed receipt identity'
+  pass 'a parked source order revokes the claim even when backlog and brief are unchanged'
+}
+
+test_claim_project_symlink_cannot_cross_home() {
+  claim_fixture claim-containment
+  local out rc
+  mkdir -p "$TMP_ROOT/foreign-home/projects/alpha"
+  rmdir "$HOME_DIR/projects/alpha"
+  ln -s "$TMP_ROOT/foreign-home/projects/alpha" "$HOME_DIR/projects/alpha"
+  out=$(ledger claim --project alpha 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail 'claim followed a project symlink into another home'
+  assert_absent "$HOME_DIR/state/ledger-claims/claim-one.json" 'foreign project got no receipt'
+  claim_fixture claim-symlink-after-reserve
+  out=$(ledger claim --project alpha) || fail 'cannot reserve contained project'
+  rmdir "$HOME_DIR/projects/alpha"
+  ln -s "$TMP_ROOT/foreign-home/projects/alpha" "$HOME_DIR/projects/alpha"
+  out=$(ledger claim --project alpha --resume claim-one 2>&1); rc=$?
+  expect_code 1 "$rc" 'retargeting the project symlink refuses a reserved claim'
+  pass 'claim rejects a project symlink outside the home projects root'
+}
+
+claim_transition_for_test() { # <token> <begin|launch|finish>
+  FM_HOME="$HOME_DIR" bash -c '
+    source "$1/bin/fm-wake-lib.sh"
+    fm_lock_try_acquire "$FM_HOME/state/.spawn-claim-one.lock" || exit 1
+    trap '\''fm_lock_release "$FM_HOME/state/.spawn-claim-one.lock"'\'' EXIT
+    "$1/bin/fm-ledger.sh" "claim-$3" claim-one "$2" "$FM_HOME/projects/alpha"
+  ' _ "$ROOT" "$1" "$2"
+}
+
+test_claim_rechecks_hold_at_publication() {
+  claim_fixture claim-hold-publication
+  local out token fakebin rc real_sha
+  out=$(ledger claim --project alpha) || fail 'cannot reserve hold fixture'
+  token=${out##*token=}
+  fakebin=$(fm_fakebin "$HOME_DIR/hold-fake")
+  real_sha=$(command -v shasum)
+  cat > "$fakebin/shasum" <<'SH'
+#!/usr/bin/env bash
+# Inject an external order after snapshot hashing starts, after the earlier
+# holds read. The marker proves the race occurred rather than a timing guess.
+if [ "$#" = 2 ] && [ "$1" = -a ] && [ "$2" = 256 ]; then
+  input=$(cat)
+  if [ -f "$FM_HOLD_TRIGGER" ] && printf '%s\n' "$input" | grep -Fq 'Ledger source: proposal:V12'; then
+    mv "$FM_HOLD_TRIGGER" "$FM_HOLD_TRIGGER.fired"
+    FM_HOME="$FM_HOLD_HOME" "$FM_HOLD_ROOT/bin/fm-order.sh" send --hold --from test -- 'stop this dispatch' >/dev/null || exit 1
+  fi
+  printf '%s\n' "$input" | "$FM_HOLD_REAL_SHA" "$@"
+else
+  exec "$FM_HOLD_REAL_SHA" "$@"
+fi
+SH
+  chmod +x "$fakebin/shasum"
+  touch "$HOME_DIR/inject-hold"
+  out=$(PATH="$fakebin:$PATH" FM_HOLD_TRIGGER="$HOME_DIR/inject-hold" FM_HOLD_HOME="$HOME_DIR" FM_HOLD_ROOT="$ROOT" FM_HOLD_REAL_SHA="$real_sha" claim_transition_for_test "$token" begin 2>&1); rc=$?
+  expect_code 1 "$rc" "late hold must prevent publication: $out"
+  [ -f "$HOME_DIR/inject-hold.fired" ] || fail 'late hold fixture did not reach the hashing boundary'
+  assert_contains "$out" 'standing holds' 'the final authority read observes the late hold'
+  [ "$(jq -r .phase "$HOME_DIR/state/ledger-claims/claim-one.json")" = reserved ] || fail 'dispatching receipt published despite late hold'
+  pass 'a hold arriving after snapshot validation refuses receipt publication'
+}
+
+test_claim_release_requires_proven_retirement() {
+  claim_fixture claim-release-proof
+  local out token rc fakebin dead_pid next_token
+  out=$(ledger claim --project alpha) || fail 'cannot reserve release fixture'
+  token=${out##*token=}
+  out=$(FM_TASK_ID=worker ledger claim-release claim-one --token "$token" 2>&1); rc=$?
+  expect_code 1 "$rc" 'workers cannot release claims'
+  out=$(ledger claim-release claim-one --token stale 2>&1); rc=$?
+  expect_code 1 "$rc" 'release binds the current token'
+  claim_transition_for_test "$token" begin || fail 'begin failed'
+  mkdir -p "$HOME_DIR/worker-copy"
+  bash -c 'exit 0' & dead_pid=$!
+  wait "$dead_pid"
+  cat > "$HOME_DIR/state/claim-one.meta" <<EOF
+window=firstmate:fm-claim-one
+endpoint_task_id=claim-one
+project=$HOME_DIR/projects/alpha
+worktree=$HOME_DIR/worker-copy
+harness=codex
+kind=scout
+spawn_gen=release-test
+tmux_socket=$HOME_DIR/private.sock
+tmux_server_pid=$dead_pid
+tmux_server_identity=terminated fixture process
+tmux_window_id=@1
+EOF
+  claim_transition_for_test "$token" launch || fail 'launch fence failed'
+  claim_transition_for_test "$token" finish || fail 'finish failed'
+  out=$(ledger claim-release claim-one --token "$token" 2>&1); rc=$?
+  expect_code 1 "$rc" 'release refuses a current task record'
+  rm "$HOME_DIR/state/claim-one.meta"
+  fakebin=$(fm_fakebin "$HOME_DIR/proof-fake")
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+if [ -f "$FM_RELEASE_UNCERTAIN" ]; then echo 'transport error'; else echo 'no server running'; fi
+exit 1
+SH
+  cat > "$fakebin/lsof" <<'SH'
+#!/usr/bin/env bash
+printf 'p1\nfcwd\nn/\n'
+SH
+  chmod +x "$fakebin/tmux" "$fakebin/lsof"
+  touch "$HOME_DIR/uncertain"
+  out=$(PATH="$fakebin:$PATH" FM_RELEASE_UNCERTAIN="$HOME_DIR/uncertain" ledger claim-release claim-one --token "$token" 2>&1); rc=$?
+  expect_code 1 "$rc" 'unreachable endpoint does not prove safe release'
+  rm "$HOME_DIR/uncertain"
+  out=$(PATH="$fakebin:$PATH" FM_RELEASE_UNCERTAIN="$HOME_DIR/uncertain" ledger claim-release claim-one --token "$token" 2>&1) || fail "proven retired claim cannot be released: $out"
+  [ -f "$HOME_DIR/state/ledger-claims/released/claim-one-$token.json" ] || fail 'release lost its receipt history'
+  out=$(ledger claim --project alpha) || fail 'retired item cannot be claimed again'
+  next_token=${out##*token=}
+  [ "$next_token" != "$token" ] || fail 'new reservation reused the retired token'
+  out=$(ledger claim-release claim-one --token "$token" 2>&1); rc=$?
+  expect_code 1 "$rc" 'a stale release cannot retire the new reservation'
+  touch "$HOME_DIR/state/claim-one.backlog-close"
+  out=$(ledger claim-release claim-one --token "$next_token" 2>&1); rc=$?
+  expect_code 1 "$rc" 'pending close prevents release'
+  pass 'supervisor release preserves current ownership and requires proof that a delivered endpoint is gone'
 }
 
 test_claim_skips_unprepared_work_and_scopes_charter_guidance() {
@@ -613,11 +763,20 @@ if [ "${FM_TEST_ONLY:-}" = claims ]; then
   exit
 fi
 
+if [ "${FM_TEST_ONLY:-}" = claim-recovery ]; then
+  fm_test_run test_claim_crash_fence test_claim_parked_order_revokes_authority test_claim_project_symlink_cannot_cross_home test_claim_rechecks_hold_at_publication test_claim_release_requires_proven_retirement
+  exit
+fi
+
 fm_test_run \
   test_claim_reserves_once_and_resumes \
   test_claim_refusals_and_changed_approval \
   test_claim_concurrent_spawn_and_lost_reply \
   test_claim_crash_fence \
+  test_claim_parked_order_revokes_authority \
+  test_claim_project_symlink_cannot_cross_home \
+  test_claim_rechecks_hold_at_publication \
+  test_claim_release_requires_proven_retirement \
   test_claim_skips_unprepared_work_and_scopes_charter_guidance \
   test_claim_spawn_waits_for_concurrent_claim_lock \
   test_intake_files_one_item_per_ask_and_replays \

@@ -988,6 +988,7 @@ A check time is reported only within 6 hours after it passes, so a watcher that 
 Claim grants are stricter: a malformed grant, or a symlinked or unreadable configuration, refuses claims and secondmate launch.
 Enable `claim-project` in one pilot home first, only for work already approved and routed to that home.
 It grants no cross-home routing, charter changes, new work, or merge authority.
+The home supervisor can retire an abandoned claim with `claim-release`; the ledger refuses release while task ownership or possible worker delivery remains unproven.
 The atomic reservation, spawn token, approval recheck, and crash-recovery commands are owned by the [`fm-ledger.sh` header](../bin/fm-ledger.sh).
 
 ## Escalation quiet hours (config/escalation)
