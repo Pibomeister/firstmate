@@ -156,8 +156,9 @@ fm_pp_hardstop_category() {  # <text>
   # in it, such as https://user:pass@host.
   if fm_secret_like "$t"; then printf 'credential\n'; return 0; fi
   # An environment dump, bare, wrapped, or with options, prints every
-  # exported secret.
-  if fm_wd_lower "${1-}" | LC_ALL=C grep -Eq '(^|[;&|(][[:space:]]*)[[:space:]]*((command|builtin|exec|sudo|nohup)[[:space:]]+)*(([^[:space:]]*/)?(env|printenv)([[:space:]]+-[^[:space:]|;&>]*)*|set|export[[:space:]]+-p|declare[[:space:]]+-[a-z]*x|typeset[[:space:]]+-[a-z]*x|compgen[[:space:]]+-e)[[:space:]]*($|[|>;&)])'; then printf 'credential\n'; return 0; fi
+  # exported secret. A command preview can open with a `$ ` prompt, as
+  # Codex draws it.
+  if fm_wd_lower "${1-}" | LC_ALL=C grep -Eq '(^|[;&|(][[:space:]]*)[[:space:]]*([$][[:space:]]+)?((command|builtin|exec|sudo|nohup)[[:space:]]+)*(([^[:space:]]*/)?(env|printenv)([[:space:]]+-[^[:space:]|;&>]*)*|set|export[[:space:]]+-p|declare[[:space:]]+-[a-z]*x|typeset[[:space:]]+-[a-z]*x|compgen[[:space:]]+-e)[[:space:]]*($|[|>;&)])'; then printf 'credential\n'; return 0; fi
   if printf '%s' "$t" | LC_ALL=C grep -Eq "$FM_PP_SIGNIN_RE"; then printf 'sign-in\n'; return 0; fi
   if printf '%s' "$t" | LC_ALL=C grep -Eq "$FM_PP_SPEND_RE"; then printf 'spend\n'; return 0; fi
   if printf '%s' "$t" | LC_ALL=C grep -Eq "$FM_PP_DESTRUCTIVE_RE"; then printf 'destructive\n'; return 0; fi
@@ -435,9 +436,17 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
   fi
   # A question picker's rows can reach conversation above it, so its hard
   # stops and holds read only the picker's own paragraph: the unbroken rows
-  # that end at its last `1.` option row.
-  if [ "$dialog" = question ] && text=$(_fm_pp_question_paragraph "$screen") && [ -n "$text" ]; then
-    rows=$text
+  # that end at its last `1.` option row. A screen labelled permission is
+  # labelled again from that paragraph, so words in the conversation, such as
+  # a quoted `Do you want to proceed?`, never make an ordinary question picker
+  # a permission prompt; a paragraph that still reads as a permission prompt
+  # keeps every row, so the command above its question is still checked. A
+  # Codex dialog is already read whole.
+  if [ -z "$codex" ] && text=$(_fm_pp_question_paragraph "$screen") && [ -n "$text" ]; then
+    if [ "$dialog" = permission ] && [ "$(fm_wd_pane_dialog "$text" "$harness" 2>/dev/null)" = question ]; then
+      dialog=question
+    fi
+    [ "$dialog" != question ] || rows=$text
   fi
   if cat=$(fm_pp_hardstop_category "$rows"); then
     printf 'hardstop\t%s\n' "$cat"; return 0

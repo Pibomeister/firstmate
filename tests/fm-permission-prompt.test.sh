@@ -219,6 +219,10 @@ test_declining_cursor_dialogs_never_route() {
   assert_equals $'hardstop\trelease' "$(codex_approval 'git push origin main' | classify codex)" "a Codex approval to push main is a release stop"
   assert_equals $'hardstop\tdestructive' "$(codex_approval 'rm -rf build' | classify codex)" "a Codex approval to remove recursively is a destructive stop"
   assert_equals $'hold\tunproven' "$(codex_approval 'npm test' | classify codex)" "any other Codex command approval is held"
+  local dump
+  for dump in 'env' 'command env' 'export -p'; do
+    assert_equals $'hardstop\tcredential' "$(codex_approval "$dump" | classify codex)" "a Codex approval for \`$dump\` behind its \$ prompt is a credential stop"
+  done
   assert_equals $'hold\texternal-imports' "$(full_imports /Users/u/work/shared/notes.md | classify claude)" "the whole imports dialog is held, and its fixed security line names no stop"
   assert_equals $'hardstop\trelease' "$(full_imports /Users/u/work/production-notes.md | classify claude)" "an import path is still read for a hard stop"
   assert_equals $'hold\tbypass-confirm' "$(full_bypass | classify claude)" "the whole bypass confirmation is held, and its fixed warning names no stop"
@@ -320,6 +324,10 @@ test_structure_decides_not_words() {
     && fail "conversation above an unruled question picker made it a hold"
   printf '%s\n' '⏺ I will update the password-field test.' '' 'Which plan should I follow?' ' ❯ 1. Plan A (Recommended)' '   2. Plan B' '' 'Enter to select · ↑/↓ to navigate · Esc to cancel' | classify claude >/dev/null \
     && fail "conversation above an unruled question picker made it a hard stop"
+  printf '%s\n' '⏺ Do you want to proceed? I will update the password-field test.' '' 'Which plan should I follow?' ' ❯ 1. Plan A (Recommended)' '   2. Plan B' '' 'Enter to select · ↑/↓ to navigate · Esc to cancel' | classify claude >/dev/null \
+    && fail "a quoted permission question above a question picker made it a hard stop"
+  printf '%s\n' '⏺ Do you want to proceed? Next I will review hooks in the repo.' '' 'Which plan should I follow?' ' ❯ 1. Plan A (Recommended)' '   2. Plan B' '' 'Enter to select · ↑/↓ to navigate · Esc to cancel' | classify claude >/dev/null \
+    && fail "a quoted permission question above a question picker made it a hold"
   assert_equals $'hardstop\tcredential' "$(printf '%s\n' '⏺ Working.' '' 'Which password should I use?' ' ❯ 1. Plan A' '   2. Plan B' '' 'Enter to select · Esc to cancel' | classify claude)" "a hard-stop word in the picker's own paragraph still stops"
   pass "structure, not words: conversation above a prompt and phrases inside a command never change its verdict"
 }
@@ -581,6 +589,15 @@ test_hardstop_prompts_are_never_answered() {
     wd_permission_prompt cred claude "$(printf "work output\n> \n")" none
     printf "%s\n" "$?"' _ "$WD" "$cred_pane" 2>/dev/null)
   assert_equals 2 "$stale_rc" "an older empty screen gets no verdict"
+  # A re-read whose viewport read fails reports the dialog as unknown, which
+  # keeps the marker too.
+  stale_rc=$(FM_TEST_SEAM=1 FM_WD_NOW=$((BASE + 460)) FM_HOME="$H" bash -c '
+    . "$1" || exit 9
+    wd_observe_dialog() { printf "%s\n" unknown; }
+    O_HOME=$FM_HOME O_TAG=$(wd_tag "$FM_HOME") O_KEY=$(wd_state_key "$FM_HOME") O_BACKEND=tmux O_TARGET=$2 O_REC_SUBJECT=worker:cred
+    wd_permission_prompt cred claude "$(printf "work output\n> \n")" none
+    printf "%s\n" "$?"' _ "$WD" "$cred_pane" 2>/dev/null)
+  assert_equals 2 "$stale_rc" "an older empty screen with a failed dialog read gets no verdict"
   assert_equals 0 "$(status_rows cred resolved permission-prompt-hardstop)" "an older empty screen does not resolve a hard stop still on the pane"
   assert_equals 1 "$(find "$H/state/watchdog/permission" -name '*-cred.open' | wc -l | tr -d ' ')" "the hard stop's marker stays while the prompt is on the pane"
 

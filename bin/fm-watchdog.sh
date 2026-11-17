@@ -1895,11 +1895,12 @@ wd_permission_prompt() {
     # overlapping pass never clears a marker another pass just wrote. This
     # pass's screen can predate a prompt another pass reported, so the pane is
     # read again under the lock; only a fresh read that still shows no prompt
-    # resolves the marker, and a failed read keeps it.
+    # resolves the marker, and a failed read keeps it. An `unknown` dialog is
+    # a failed viewport read, so it keeps the marker too.
     if [ -e "$(wd_pp_mark "$id").open" ] && wd_pp_lock "$id"; then
       live=$(wd_capture "$O_BACKEND" "$O_TARGET" 60) || live=
       live_dialog=$(wd_observe_dialog "$O_BACKEND" "$O_TARGET" "fm-$id" "${harness:-unknown}") || live_dialog=
-      if [ -n "$live" ] && ! fm_pp_classify "$live" "$harness" "${live_dialog:-none}" >/dev/null; then
+      if [ -n "$live" ] && [ "$live_dialog" != unknown ] && ! fm_pp_classify "$live" "$harness" "${live_dialog:-none}" >/dev/null; then
         wd_pp_clear "$id"
       fi
       wd_pp_unlock "$id"
