@@ -16,16 +16,22 @@ QUEUE="$ROOT/bin/fm-test-queue.sh"
 QBASH=${FM_TEST_BASH:-bash}
 CASE_PIDS=()
 CASE_RELEASES=()
+# Files a fixture writes its own pid into, so a failed case still ends it.
+CASE_PID_FILES=()
 
 reap_case_pids() {
   local p
   for p in "${CASE_RELEASES[@]:-}"; do
     [ -n "$p" ] && : > "$p"
   done
+  for p in "${CASE_PID_FILES[@]:-}"; do
+    [ -n "$p" ] && [ -s "$p" ] && CASE_PIDS+=("$(cat "$p")")
+  done
   for p in "${CASE_PIDS[@]:-}"; do
     [ -n "$p" ] && kill -KILL -- "$p" 2>/dev/null
   done
   CASE_PIDS=()
+  CASE_PID_FILES=()
 }
 trap 'reap_case_pids; fm_test_cleanup' EXIT
 
@@ -274,6 +280,138 @@ SH
   release follower
   wait "$follower"
   pass "fm-test-queue.sh: nonleader grandchildren follow the documented lifetime limit"
+}
+
+pid_gone() { ! kill -0 "$1" 2>/dev/null; }
+
+# A wrapper that leads its own group, as under an interactive shell, a tool
+# that execs it, or an SSH session: set -m gives the job its own group and the
+# job's first process is the wrapper itself.
+test_led_group_straggler_is_reaped_and_frees_the_slot() {
+  local follower straggler leader
+  new_case straggler
+  echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
+  CASE_RELEASES+=("$CASE/release-leaky")
+  CASE_PID_FILES+=("$CASE/straggler")
+  # The command leaves a background sleep holding the job's stdout, then exits 0.
+  (
+    set -m
+    set -o pipefail
+    qbg run --label leaky -- sh -c 'cp "$FM_TEST_QUEUE_HELD" "$1/record"; echo $$ > "$1/leader-child"
+      while [ ! -e "$1/release-leaky" ]; do sleep 0.05; done
+      sleep 100000 & echo $! > "$1/straggler"; echo leaky-done' _ "$CASE" 2>>"$CASE/stderr" |
+      { sleep 0.3; cat; echo consumer-done; } > "$CASE/leaky.out" &
+    wait $!
+    echo $? > "$CASE/leaky.rc"
+  ) 2>>"$CASE/stderr" &
+  CASE_PIDS+=("$!")
+  wait_until "leaky run served" status_has '^serving .*label=leaky$'
+  wait_until "leaky ticket recorded" file_exists "$CASE/record"
+  leader=$(awk -F= '$1 == "pid" { print $2 }' "$CASE/record")
+  assert_equals "$leader" "$(awk -F= '$1 == "pgid" { print $2 }' "$CASE/record")" "the fixture wrapper did not lead its own group"
+  start_held follower; follower=$HELD_PID
+  wait_until "follower waits behind the leaky run" status_has '^waiting position=1 .*label=follower$'
+  release leaky
+  wait_until "the leaky run's caller saw end of output" file_exists "$CASE/leaky.rc"
+  straggler=$(cat "$CASE/straggler")
+  assert_equals 0 "$(cat "$CASE/leaky.rc")" "the leaky run or its consumer failed"
+  assert_equals "leaky-done consumer-done" "$(tr '\n' ' ' < "$CASE/leaky.out" | sed 's/ $//')" \
+    "the pipeline consumer beside the wrapper lost output or was ended"
+  wait_until "straggler ended" pid_gone "$straggler"
+  wait_until "follower served once the straggler was reaped" status_has '^serving .*label=follower$'
+  release follower
+  wait "$follower"
+  line_is_empty || fail "the reaped run left its ticket behind"
+  pass "fm-test-queue.sh: a leaked background child in the wrapper's own group is reaped and frees the slot"
+}
+
+test_stale_led_group_straggler_is_reaped_by_the_next_run() {
+  local wrapper child straggler rc after
+  new_case stale-straggler
+  echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
+  CASE_RELEASES+=("$CASE/release-crashed")
+  CASE_PID_FILES+=("$CASE/straggler")
+  (
+    set -m
+    qbg run --label crashed -- sh -c 'echo $$ > "$1/child"
+      while [ ! -e "$1/release-crashed" ]; do sleep 0.05; done
+      sleep 100000 & echo $! > "$1/straggler"' _ "$CASE" >/dev/null 2>&1 &
+    echo $! > "$CASE/wrapper"
+    wait
+  ) 2>/dev/null &
+  CASE_PIDS+=("$!")
+  wait_until "crashed command started" file_exists "$CASE/child"
+  wrapper=$(cat "$CASE/wrapper")
+  child=$(cat "$CASE/child")
+  CASE_PIDS+=("$wrapper" "$child")
+  assert_grep "pgid=$wrapper" "$FM_TEST_QUEUE_DIR/tickets/0000000001" "the fixture wrapper did not record its own group"
+  kill -KILL "$wrapper"
+  wait_until "wrapper gone" pid_gone "$wrapper"
+  status_has ' serving=1 ' || fail "a running child lost its slot when the wrapper died"
+  release crashed
+  wait_until "child left its straggler" file_exists "$CASE/straggler"
+  straggler=$(cat "$CASE/straggler")
+  wait_until "child exited" pid_gone "$child"
+  kill -0 "$straggler" 2>/dev/null || fail "the straggler did not outlive its parent, so this case would be vacuous"
+  qbg run --label after -- sh -c 'echo after > "$1/after"' _ "$CASE" 2>/dev/null &
+  after=$!
+  CASE_PIDS+=("$after")
+  wait_until "a run behind a dead ticket's straggler was served" file_exists "$CASE/after"
+  wait "$after"; rc=$?
+  expect_code 0 "$rc" "a run behind a dead ticket's straggler"
+  wait_until "stale straggler ended" pid_gone "$straggler"
+  line_is_empty || fail "the dead ticket was not reclaimed"
+  pass "fm-test-queue.sh: the next run reaps a dead wrapper's straggler and reclaims its slot"
+}
+
+# group_members <pgid>: every live process still in that group.
+group_members() { ps -axo pgid=,stat=,args= 2>/dev/null | awk -v g="$1" '$1 == g && $2 !~ /^Z/'; }
+group_empty() { [ -z "$(group_members "$1")" ]; }
+group_has_sleep() { group_members "$1" | awk '$3 == "sleep" { found = 1 } END { exit !found }'; }
+
+# wait_long <seconds> <description> <command...>: wait_until with a longer bound.
+wait_long() {
+  local limit=$(($1 * 10)) what=$2 i=0
+  shift 2
+  while ! "$@"; do
+    i=$((i + 1))
+    [ "$i" -lt "$limit" ] || fail "timed out waiting for: $what"
+    sleep 0.1
+  done
+}
+
+# A representative watchdog case runs as its own job, so everything it starts
+# shares one group that must be empty once the suite is gone - after a normal
+# exit and after a kill too hard for the suite to clean up itself.
+test_watchdog_fixtures_do_not_outlive_their_suite() {
+  local mode suite
+  if ! command -v tmux >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+    pass "fm-watchdog.test.sh fixtures: skipped, tmux or jq not found"
+    return
+  fi
+  new_case watchdog-fixtures
+  for mode in exit kill; do
+    mkdir -p "$CASE/$mode-tmp"
+    (
+      set -m
+      TMPDIR="$CASE/$mode-tmp" bash "$ROOT/tests/fm-watchdog.test.sh" test_captain_record_follows_the_lock_owner \
+        > "$CASE/$mode.log" 2>&1 < /dev/null &
+      echo $! > "$CASE/$mode.suite"
+      wait
+    ) 2>/dev/null &
+    CASE_PIDS+=("$!")
+    wait_until "the $mode suite started" file_exists "$CASE/$mode.suite"
+    suite=$(cat "$CASE/$mode.suite")
+    CASE_PIDS+=("$suite")
+    if [ "$mode" = kill ]; then
+      wait_long 120 "a watchdog fixture started" group_has_sleep "$suite"
+      kill -KILL "$suite"
+    fi
+    wait_long 300 "the $mode suite ended" pid_gone "$suite"
+    [ "$mode" = kill ] || assert_grep FM_TEST_COMPLETE "$CASE/$mode.log" "the watchdog case did not complete"
+    wait_long 30 "nothing outlived the $mode suite" group_empty "$suite"
+  done
+  pass "fm-watchdog.test.sh: no fixture outlives its suite, even one killed outright"
 }
 
 test_reused_child_pid_is_not_live() {
@@ -531,7 +669,13 @@ case "$*" in *"tar -xzf"*) [ "${FAIL_EXTRACT:-}" != 1 ] || { cat >/dev/null; exi
 export FM_TEST_QUEUE_DIR="${SSH_LOG%/*}/remote-spool"
 export FM_TEST_QUEUE_LOAD_FILE="${SSH_LOG%/*}/remote-load"
 unset FM_TEST_QUEUE_HELD
-exec bash -c "$*"
+# Like sshd, start the remote command as the leader of a new session.
+exec python3 -c 'import os, sys
+try:
+    os.setsid()
+except OSError:
+    pass
+os.execvp("bash", ["bash", "-c", sys.argv[1]])' "$*"
 SH
   chmod +x "$1"
 }
@@ -592,6 +736,36 @@ test_remote_offload_snapshot_and_failure() {
   pass 'fm-test-queue.sh: high load offloads current source and preserves arguments and failure status'
 }
 
+test_remote_straggler_cannot_hold_the_ssh_output() {
+  local saved_path=$PATH straggler
+  new_case offload-straggler
+  mkdir -p "$CASE/fakebin"
+  offload_fixture_repo "$CASE/repo" https://example.invalid/owner/firstmate.git
+  printf 'slots=1\nload_ceiling=150\nremote_hosts=builder\n' > "$FM_TEST_QUEUE_DIR/config"
+  echo 9 > "$CASE/load"
+  echo 1 > "$CASE/remote-load"
+  fake_remote_ssh "$CASE/fakebin/ssh"
+  export SSH_LOG="$CASE/ssh.log"
+  PATH="$CASE/fakebin:$PATH"
+  CASE_PID_FILES+=("$CASE/straggler")
+  # The remote command leaves a background sleep holding the SSH output.
+  (
+    cd "$CASE/repo" || exit 1
+    q run -- sh -c 'sleep 100000 & echo $! > "$1/straggler"; echo remote-done' _ "$CASE" 2>>"$CASE/stderr" | cat > "$CASE/out"
+    echo $? > "$CASE/rc"
+  ) 2>>"$CASE/stderr" &
+  CASE_PIDS+=("$!")
+  PATH=$saved_path
+  wait_until 'remote run returned with its output closed' file_exists "$CASE/rc"
+  straggler=$(cat "$CASE/straggler")
+  assert_grep 'offloading to builder' "$CASE/stderr" 'the run was not offloaded'
+  assert_equals 0 "$(cat "$CASE/rc")" 'remote run exit status'
+  assert_equals remote-done "$(cat "$CASE/out")" 'remote run output'
+  wait_until 'remote straggler ended' pid_gone "$straggler"
+  line_is_empty || fail 'remote run leaked local ticket'
+  pass 'fm-test-queue.sh: a remote straggler is reaped and cannot hold the SSH output open'
+}
+
 test_unreachable_remote_waits_locally_and_threshold_is_configurable() {
   local p saved_path=$PATH out
   new_case remote-fallback
@@ -630,6 +804,10 @@ test_load_ceiling_holds_the_head
 test_signals_release_the_ticket
 test_dead_owners_are_reclaimed
 test_unled_group_grandchildren_do_not_keep_the_slot
+test_led_group_straggler_is_reaped_and_frees_the_slot
+test_stale_led_group_straggler_is_reaped_by_the_next_run
+test_remote_straggler_cannot_hold_the_ssh_output
+test_watchdog_fixtures_do_not_outlive_their_suite
 test_reused_child_pid_is_not_live
 test_stale_lock_is_broken
 test_competing_reclaimers_preserve_the_replacement_lock

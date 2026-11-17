@@ -85,13 +85,25 @@
 # (default 5).
 #
 # Dead owners: every ticket records its wrapper's and direct child's pids and
-# process start times. It also records the wrapper's pgid when the wrapper
-# leads that group (pgid equals pid). A ticket stays live while any recorded
-# identity or leader group remains alive, including after wrapper SIGKILL.
+# process start times. It also records the wrapper's pgid and parent pid when
+# the wrapper leads that group (pgid equals pid) and the parent is outside it.
+# A ticket stays live while any recorded identity or leader group remains
+# alive, including after wrapper SIGKILL.
 # Commands inherit the wrapper's job; the queue creates no process group and
 # does not manage the terminal. If the wrapper and its direct child both die
 # while grandchildren survive in a group the wrapper did not lead, the slot
 # can be freed early.
+# Stragglers: once the direct child has exited, members of a recorded leader
+# group that the workload left behind are ended (TERM, then KILL after a
+# 2-second grace) before the slot is released: by the wrapper on exit, or by
+# the next run that finds both the wrapper and its child dead. A straggler is
+# a group member other than the wrapper whose ancestry reaches the wrapper or
+# leaves the group through any process other than the recorded parent, such
+# as init after reparenting; pipeline stages the parent started beside the
+# wrapper are spared. A leaked background process holding the caller's
+# output therefore cannot hold a slot or keep the caller's pipe open. On a
+# remote host the queue replaces the SSH session's shell, so it leads the
+# session group there and the same rule closes the SSH output streams.
 # Dead lock owners and old locks without a usable owner record are recovered
 # only from the observed directory generation, after a 10-second grace period
 # for an uninitialized owner record.
@@ -289,12 +301,14 @@ lock_release() {
 
 # --- tickets ----------------------------------------------------------------
 # Each ticket is tickets/<10-digit number>, so lexical order is line order.
-# Fields: pid, start, child_pid, child_start, pgid, enqueued, served, task, label.
-T_PID="" T_START="" T_CHILD_PID="" T_CHILD_START="" T_PGID="" T_ENQUEUED="" T_SERVED="" T_TASK="" T_LABEL=""
+# Fields: pid, start, child_pid, child_start, pgid, caller_pid, enqueued,
+# served, task, label. Readers ignore unknown fields, and a ticket without
+# caller_pid (written by an older queue) is read as having none.
+T_PID="" T_START="" T_CHILD_PID="" T_CHILD_START="" T_PGID="" T_CALLER="" T_ENQUEUED="" T_SERVED="" T_TASK="" T_LABEL=""
 
 ticket_read() {  # <file>
   local line k v
-  T_PID="" T_START="" T_CHILD_PID="" T_CHILD_START="" T_PGID="" T_ENQUEUED="" T_SERVED="" T_TASK="" T_LABEL=""
+  T_PID="" T_START="" T_CHILD_PID="" T_CHILD_START="" T_PGID="" T_CALLER="" T_ENQUEUED="" T_SERVED="" T_TASK="" T_LABEL=""
   [ -f "$1" ] || return 1
   while IFS= read -r line; do
     k=${line%%=*}
@@ -305,6 +319,7 @@ ticket_read() {  # <file>
       child_pid) T_CHILD_PID=$v ;;
       child_start) T_CHILD_START=$v ;;
       pgid) T_PGID=$v ;;
+      caller_pid) T_CALLER=$v ;;
       enqueued) T_ENQUEUED=$v ;;
       served) T_SERVED=$v ;;
       task) T_TASK=$v ;;
@@ -315,8 +330,8 @@ ticket_read() {  # <file>
 
 ticket_write() {  # <file> ; writes the T_* fields atomically
   local tmp="$1.tmp.$$"
-  (umask 077; printf 'pid=%s\nstart=%s\nchild_pid=%s\nchild_start=%s\npgid=%s\nenqueued=%s\nserved=%s\ntask=%s\nlabel=%s\n' \
-    "$T_PID" "$T_START" "$T_CHILD_PID" "$T_CHILD_START" "$T_PGID" "$T_ENQUEUED" "$T_SERVED" "$T_TASK" "$T_LABEL" > "$tmp") &&
+  (umask 077; printf 'pid=%s\nstart=%s\nchild_pid=%s\nchild_start=%s\npgid=%s\ncaller_pid=%s\nenqueued=%s\nserved=%s\ntask=%s\nlabel=%s\n' \
+    "$T_PID" "$T_START" "$T_CHILD_PID" "$T_CHILD_START" "$T_PGID" "$T_CALLER" "$T_ENQUEUED" "$T_SERVED" "$T_TASK" "$T_LABEL" > "$tmp") &&
     mv -f "$tmp" "$1"
 }
 
@@ -347,10 +362,93 @@ ticket_alive() {
   owner_alive "$T_PID" "$T_START" || workload_alive
 }
 
+# group_stragglers <pgid> <wrapper-pid> <caller-pid|empty>: prints the live
+# members of the wrapper's group that the header's straggler rule ends. Walk
+# each member's ancestry: reaching the wrapper makes it a descendant; leaving
+# the group through the recorded caller makes it a pipeline sibling to spare;
+# leaving through anything else (init, a subreaper) makes it an orphan. With
+# no recorded caller, only an orphan reparented to init counts.
+group_stragglers() {
+  local members
+  members=$(
+    printf '%s\n' "${BASHPID:-$(exec sh -c 'printf "%s" "$PPID"')}"
+    exec ps -axo pid=,ppid=,pgid=,stat=
+  ) || return 1
+  # The probe and its ancestors (this reaper's own subshells) are never listed.
+  awk -v g="$1" -v w="$2" -v c="${3:-}" '
+    NR == 1 { probe = $1; next }
+    { parent[$1] = $2; group[$1] = $3; state[$1] = $4 }
+    END {
+      for (q = probe; (q in parent) && !(q in self); q = parent[q]) self[q] = 1
+      for (p in group) {
+        if (group[p] != g || p == w || (p in self) || state[p] ~ /^Z/) continue
+        q = parent[p]; hops = 0; keep = 0
+        while (hops++ < 4096) {
+          if (q == w) break
+          if (!(q in group) || group[q] != g) {
+            if (c != "") keep = (q == c); else keep = (q != 1)
+            break
+          }
+          q = parent[q]
+        }
+        if (!keep) print p
+      }
+    }' <<< "$members"
+}
+
+# ticket_group_reapable <exit|stale>: whether the read ticket's recorded group
+# is the wrapper's own and its workload is over. exit is the wrapper itself on
+# the way out; stale is another run that found the wrapper pid gone.
+ticket_group_reapable() {
+  local caller_group
+  is_uint "$T_PGID" && [ "$T_PGID" -gt 1 ] && [ "$T_PGID" = "$T_PID" ] || return 1
+  [ -n "$T_CHILD_PID" ] || return 1
+  ! owner_alive "$T_CHILD_PID" "$T_CHILD_START" || return 1
+  case "$1" in
+    exit) [ "$T_PID" = "$$" ] || return 1 ;;
+    stale)
+      # A live process under the leader's pid is the wrapper or a reuse; a
+      # group id is never reused while the group still has members.
+      ! kill -0 "$T_PID" 2>/dev/null || return 1
+      [ "$(ps -p "$$" -o pgid= 2>/dev/null | tr -d '[:space:]')" != "$T_PGID" ] || return 1
+      ;;
+    *) return 1 ;;
+  esac
+  if is_uint "$T_CALLER" && [ "$T_CALLER" -gt 1 ] && kill -0 "$T_CALLER" 2>/dev/null; then
+    caller_group=$(ps -p "$T_CALLER" -o pgid= 2>/dev/null | tr -d '[:space:]')
+    [ "$caller_group" != "$T_PGID" ] || return 1
+  fi
+}
+
+# reap_stragglers: ends the read ticket's stragglers, TERM first, then KILL for
+# any still present after a 2-second grace; a few rounds catch late forks.
+reap_stragglers() {
+  local pids sig=TERM round=0 i caller=""
+  is_uint "$T_CALLER" && [ "$T_CALLER" -gt 1 ] && caller=$T_CALLER
+  while [ "$round" -lt 3 ]; do
+    pids=$(group_stragglers "$T_PGID" "$T_PID" "$caller") || return 0
+    [ -n "$pids" ] || return 0
+    # shellcheck disable=SC2086 # One pid per word.
+    kill -"$sig" $pids 2>/dev/null
+    i=0
+    while [ "$i" -lt 20 ]; do
+      sleep 0.1
+      pids=$(group_stragglers "$T_PGID" "$T_PID" "$caller") || return 0
+      [ -n "$pids" ] || return 0
+      i=$((i + 1))
+    done
+    sig=KILL
+    round=$((round + 1))
+  done
+}
+
 reclaim_dead() {
   local f
   while IFS= read -r f; do
     ticket_read "$f" || continue
+    if ticket_group_reapable stale; then
+      reap_stragglers
+    fi
     ticket_alive || rm -f "$f"
   done < <(ticket_files)
 }
@@ -361,8 +459,11 @@ MY_TICKET=""
 cleanup() {
   remote_cleanup
   if [ -n "$MY_TICKET" ]; then
-    if ticket_read "$MY_TICKET" && ! workload_alive "$$"; then
-      rm -f "$MY_TICKET"
+    if ticket_read "$MY_TICKET"; then
+      if ticket_group_reapable exit; then
+        reap_stragglers
+      fi
+      workload_alive "$$" || rm -f "$MY_TICKET"
     fi
     MY_TICKET=""
   fi
@@ -394,7 +495,12 @@ take_ticket() {  # <label>
   T_CHILD_PID=""
   T_CHILD_START=""
   T_PGID=$(ps -p "$$" -o pgid= 2>/dev/null | tr -d '[:space:]')
-  [ "$T_PGID" = "$$" ] || T_PGID=""
+  T_CALLER=$PPID
+  # Record a group only when it is this wrapper's own: it leads the group
+  # and its parent stays outside it.
+  if [ "$T_PGID" != "$$" ] || [ "$(ps -p "$PPID" -o pgid= 2>/dev/null | tr -d '[:space:]')" = "$$" ]; then
+    T_PGID="" T_CALLER=""
+  fi
   T_ENQUEUED=$(date +%s)
   T_SERVED=""
   T_TASK=${FM_TASK_ID:-}

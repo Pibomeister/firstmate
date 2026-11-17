@@ -152,7 +152,8 @@ try:
     until("interrupted workload releases its slot", lambda: "serving=0 waiting=0 " in status())
 
     (case / "grandchild.sh").write_text(
-        ': > "$1/grandchild.ran"\nwhile [ ! -e "$1/release-grandchild" ]; do sleep 0.05; done\n'
+        'echo $$ > "$1/grandchild.pid"\n: > "$1/grandchild.ran"\n'
+        'while [ ! -e "$1/release-grandchild" ]; do sleep 0.05; done\n'
     )
     leader = background("leader", '\n'.join([
         'echo $$ > "$1/leader.child"',
@@ -183,15 +184,24 @@ try:
     probe.chmod(0o700)
     failed_probe_env = dict(env, PATH=str(fakebin) + os.pathsep + env["PATH"], REAL_PS=shutil.which("ps"))
     assert "serving=1 waiting=0 stale=0 " in status(failed_probe_env)
+    # With the wrapper and its direct child both dead, the next admission ends
+    # what the workload left in the wrapper's own group and takes the slot.
+    grandchild = int((case / "grandchild.pid").read_text())
     follower = background("group-follower", ': > "$1/group-follower.ran"\n')
-    until("follower waits for surviving leader group", lambda: "serving=1 waiting=1 stale=0 " in status())
-    assert not (case / "group-follower.ran").exists()
-    (case / "release-grandchild").touch()
     send(f'wait {follower}; printf "GROUP-FOLLOWER-RC=%s\\n" "$?"\n')
     receive(b"GROUP-FOLLOWER-RC=0\r\n")
     receive(prompt)
     wrappers.remove(follower)
     assert (case / "group-follower.ran").exists()
+
+    def gone(pid):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        return False
+
+    until("surviving leader group member ended", lambda: gone(grandchild))
     assert "serving=0 waiting=0 stale=0 " in status()
 
     send(command("foreground", '\n'.join([
