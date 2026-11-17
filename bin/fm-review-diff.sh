@@ -38,8 +38,13 @@
 # valid git branch name is refused instead of taking that fallback, the same
 # refusal fm-merge-local.sh applies, so a corrupt meta record can never turn a
 # review into a diff of the wrong content.
-# Usage: fm-review-diff.sh <task-id> [--stat]
+# Usage: fm-review-diff.sh <task-id> [--stat] [--since <full-sha>]
 #   --stat prints only the stat summary; default prints stat summary plus full diff.
+#   --since <full-sha> prints the change from an already reviewed head to the
+#     compare side instead of the whole change, for a later review round;
+#     `fm-merge-review.sh findings` prints that head as previous=. It is a
+#     direct two-commit diff, so after a rebase it also shows base branch
+#     changes, and a note says so. The default stays the whole change.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -50,7 +55,7 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 "$FM_ROOT/bin/fm-guard.sh" || true
 
 usage() {
-  echo "usage: fm-review-diff.sh <task-id> [--stat]" >&2
+  echo "usage: fm-review-diff.sh <task-id> [--stat] [--since <full-sha>]" >&2
 }
 
 if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
@@ -61,12 +66,23 @@ fi
 ID=${1:-}
 [ -n "$ID" ] || { usage; exit 1; }
 STAT_ONLY=false
-case "${2:-}" in
-  '') ;;
-  --stat) STAT_ONLY=true ;;
-  *) usage; exit 1 ;;
-esac
-[ $# -le 2 ] || { usage; exit 1; }
+SINCE=
+shift
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --stat) STAT_ONLY=true ;;
+    --since)
+      SINCE=${2:-}
+      if ! [[ "$SINCE" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]]; then
+        echo "error: --since requires a full lowercase commit sha" >&2
+        exit 1
+      fi
+      shift
+      ;;
+    *) usage; exit 1 ;;
+  esac
+  shift
+done
 
 META="$STATE/$ID.meta"
 [ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
@@ -231,6 +247,26 @@ fi
 
 git -C "$WT" rev-parse --verify --quiet "$BASE^{commit}" >/dev/null || { echo "error: base $BASE does not exist in $WT" >&2; exit 1; }
 git -C "$WT" rev-parse --verify --quiet "$COMPARE_REF^{commit}" >/dev/null || { echo "error: compare ref $COMPARE_REF does not resolve in $WT" >&2; exit 1; }
+
+if [ -n "$SINCE" ]; then
+  git -C "$WT" rev-parse --verify --quiet "$SINCE^{commit}" >/dev/null \
+    || { echo "error: --since commit $SINCE does not exist in $WT" >&2; exit 1; }
+  echo "diff base: $BASE"
+  echo "delta since: $SINCE"
+  if ! git -C "$WT" merge-base --is-ancestor "$SINCE" "$COMPARE_REF" 2>/dev/null; then
+    echo "note: $COMPARE_REF does not descend from $SINCE, so this delta also shows changes that came from the base branch" >&2
+  fi
+  if git -C "$WT" diff --quiet "$SINCE" "$COMPARE_REF" --; then
+    echo "no changes since $SINCE"
+    exit 0
+  fi
+  git -C "$WT" diff --stat "$SINCE" "$COMPARE_REF" --
+  if ! "$STAT_ONLY"; then
+    echo
+    git -C "$WT" diff "$SINCE" "$COMPARE_REF" --
+  fi
+  exit 0
+fi
 
 echo "diff base: $BASE"
 if git -C "$WT" diff --quiet "$BASE...$COMPARE_REF" --; then

@@ -107,7 +107,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Durable captain orders and holds under `data/orders/` (`bin/fm-order.sh`).
 - Successor handoff acknowledgements, `data/handoff-ack-<nonce>.json` (`bin/fm-handoff-lib.sh`).
 - The mission ledger's intake record `data/ledger-intake.tsv`, which says where each filed backlog item came from (`bin/fm-ledger.sh`).
-- Merge review receipts under `data/merge-review/`, one directory per pull request and head commit (`bin/fm-merge-review.sh`).
+- Merge review receipts under `data/merge-review/`, one directory per pull request and head commit, with that pull request's review round, finding, and follow-up records beside them (`bin/fm-merge-review.sh`).
 
 `state/` holds runtime records:
 
@@ -1156,7 +1156,7 @@ require=github.com/<owner>/<repository>
 post=on
 ```
 
-`bin/fm-merge-review.sh` owns the verdict rule, the receipt format under `data/merge-review/`, the model identity evidence, and the limits of a local receipt.
+`bin/fm-merge-review.sh` owns the verdict rule, the review rounds and the findings that carry across them, the receipt format under `data/merge-review/`, the model identity evidence, and the limits of a local receipt.
 The `ship-landing` skill owns when a supervisor dispatches the review worker.
 This file holds only merges that go through `bin/fm-pr-merge.sh` for a repository a `require` line names; a merge made any other way, or in an unlisted repository, is not checked.
 The file is a home-local setting and is not inherited by secondmate homes.

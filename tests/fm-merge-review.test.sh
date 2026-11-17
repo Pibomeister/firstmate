@@ -22,6 +22,15 @@ OTHER_HEAD=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 # records what the reviewer could see in its working directory. The behavior
 # is read from <stub>/<tool>.mode (default approve) and the reported model
 # from <stub>/<tool>.model (default: the requested model plus a suffix).
+# In approve mode <stub>/<tool>.review, when present, supplies the finding
+# lines and the verdict line that follow the prose, with @HEAD@ for the head.
+# A review call also leaves its prompt in <stub>/<tool>.prompt, whether it was
+# given prior findings and a delta in <stub>/<tool>.given, and a copy of each
+# one it was given in <stub>/<tool>.prior and .delta. A council call (the
+# prompt asks for a "COUNCIL: DONE" line) is logged to
+# <stub>/<tool>.council-calls instead, leaves .council-prompt,
+# .council-findings and .council-reviews, and answers from
+# <stub>/<tool>.council, or with no disposition when that file is absent.
 write_reviewer_stub() {  # <fakebin> <tool>
   cat > "$1/$2" <<'SH'
 #!/usr/bin/env bash
@@ -40,8 +49,35 @@ for arg in "$@"; do
   prev=$arg
 done
 [ "$tool" != claude ] || prompt=$(cat)
+head=$(printf '%s\n' "$prompt" | sed -n 's/^Head commit under review: //p' | head -1)
+reported=$(cat "$stub/$tool.model" 2>/dev/null || echo "$model-build")
+answer() {
+  case "$tool" in
+    claude) jq -n --arg t "$1" --arg m "$reported" '{result: $t, is_error: false, modelUsage: {($m): {}}}' ;;
+    grok) jq -n --arg t "$1" --arg m "$reported" '{text: ("I will read the diff first." + $t), modelUsage: {($m): {}}}' ;;
+    agy) jq -n --arg t "$1" '{status: "SUCCESS", response: $t, num_turns: 1}' ;;
+  esac
+}
+if printf '%s\n' "$prompt" | grep -q '^COUNCIL: DONE '; then
+  printf '%s\n' "$PWD" >> "$stub/$tool.council-calls"
+  printf '%s\n' "$prompt" > "$stub/$tool.council-prompt"
+  cp council-findings.md "$stub/$tool.council-findings"
+  ls reviews > "$stub/$tool.council-reviews"
+  text='I read each finding against diff.patch and the snapshot.'
+  [ ! -f "$stub/$tool.council" ] || text="$text
+$(sed "s/@HEAD@/$head/g" "$stub/$tool.council")"
+  answer "$text"
+  exit 0
+fi
 # One line per call: agy takes the multi-line prompt as an argument.
 printf '%s|%s\n' "$PWD" "$(printf '%s' "$*" | tr '\n' ' ')" >> "$stub/$tool.calls"
+printf '%s\n' "$prompt" > "$stub/$tool.prompt"
+{
+  [ -f prior-findings.md ] && echo prior=yes || echo prior=no
+  [ -f delta.patch ] && echo delta=yes || echo delta=no
+} > "$stub/$tool.given"
+[ ! -f prior-findings.md ] || cp prior-findings.md "$stub/$tool.prior"
+[ ! -f delta.patch ] || cp delta.patch "$stub/$tool.delta"
 {
   [ -s diff.patch ] && echo diff=yes || echo diff=no
   [ -f snapshot/feature.txt ] && echo snapshot=yes || echo snapshot=no
@@ -49,14 +85,12 @@ printf '%s|%s\n' "$PWD" "$(printf '%s' "$*" | tr '\n' ' ')" >> "$stub/$tool.call
 } > "$stub/$tool.saw"
 [ ! -f snapshot/feature.txt ] || cp snapshot/feature.txt "$stub/$tool.feature"
 [ ! -f snapshot/README.md ] || cp snapshot/README.md "$stub/$tool.readme"
-head=$(printf '%s\n' "$prompt" | sed -n 's/^Head commit under review: //p' | head -1)
 if [ -e "$stub/$tool.wait" ]; then
   printf '%s\n' "$$" > "$stub/$tool.pid"
   : > "$stub/$tool.waiting"
   while [ -e "$stub/$tool.wait" ]; do sleep 0.1; done
 fi
 mode=$(cat "$stub/$tool.mode" 2>/dev/null || echo approve)
-reported=$(cat "$stub/$tool.model" 2>/dev/null || echo "$model-build")
 body='Summary: the change adds one feature file and nothing else.
 Files read: diff.patch, snapshot/feature.txt, snapshot/README.md.
 Findings: none that block. The file is plain text, nothing executes it, and no test or document contradicts it.
@@ -77,11 +111,11 @@ VERDICT: APPROVE aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ;;
 I approve this change." ;;
   fail) echo "stand-in $tool failure" >&2; exit 3 ;;
 esac
-case "$tool" in
-  claude) jq -n --arg t "$text" --arg m "$reported" '{result: $t, is_error: false, modelUsage: {($m): {}}}' ;;
-  grok) jq -n --arg t "$text" --arg m "$reported" '{text: ("I will read the diff first." + $t), modelUsage: {($m): {}}}' ;;
-  agy) jq -n --arg t "$text" '{status: "SUCCESS", response: $t, num_turns: 1}' ;;
-esac
+if [ "$mode" = approve ] && [ -f "$stub/$tool.review" ]; then
+  text="$body
+$(sed "s/@HEAD@/$head/g" "$stub/$tool.review")"
+fi
+answer "$text"
 SH
   chmod +x "$1/$2"
 }
@@ -161,6 +195,16 @@ calls() {  # <tool>
   else
     echo 0
   fi
+}
+
+# assert_grep matches a fixed string; these match a basic regular expression,
+# for a whole line of a findings listing or a patch.
+assert_match() {  # <pattern> <file> <msg>
+  grep -- "$1" "$2" >/dev/null || fail "$3"
+}
+
+assert_no_match() {  # <pattern> <file> <msg>
+  ! grep -- "$1" "$2" >/dev/null || fail "$3"
 }
 
 test_two_families_approve_and_a_supervisor_reads_one_line() {
@@ -1145,6 +1189,495 @@ test_intent_reaches_the_prompt_the_receipt_binds() {
   pass "the stated intent is part of the stored prompt each receipt is bound to"
 }
 
+# Commit one more change on the reviewed branch and move HEAD_SHA to it.
+next_head() {  # <line>
+  printf '%s\n' "$1" >> "$REPO/feature.txt"
+  git -C "$REPO" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qam "$1"
+  HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
+}
+
+# What a stand-in reviewer answers after its prose: finding lines and the
+# verdict line, with @HEAD@ for the head under review.
+set_review() {  # <tool> <line>...
+  local tool=$1
+  shift
+  printf '%s\n' "$@" > "$STUB/$tool.review"
+}
+
+set_council() {  # <tool> <line>...
+  local tool=$1
+  shift
+  printf '%s\n' "$@" > "$STUB/$tool.council"
+}
+
+run_at_head() {
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO"
+}
+
+findings_at_head() {
+  run_supervisor findings "$PR_URL" --head "$HEAD_SHA"
+}
+
+CLAUDE_SEAT=anthropic.claude.claude-test-1
+AGY_SEAT=google.agy.gemini-test-high
+
+test_the_round_counter_spans_heads() {
+  local rc=0 first second failed pr
+  make_case rounds "${TWO_SEATS[@]}"
+  first=$HEAD_SHA
+  pr=$(dirname "$(store_dir)")
+  run_at_head || fail "rounds: the first head did not approve"
+  assert_grep " round=1 " "$CASE/stdout" "rounds: the first reviewed head is not round 1"
+  run_at_head || fail "rounds: a rerun at the first head did not approve"
+  assert_grep " round=1 " "$CASE/stdout" "rounds: a rerun at one head changed its round"
+
+  next_head 'second head'
+  second=$HEAD_SHA
+  mkdir -p "$pr/$first/.run.lock"
+  printf '%s\n' "$$" > "$pr/$first/.run.lock/pid"
+  run_at_head || rc=$?
+  expect_code 2 "$rc" "rounds: a round started while the previous round was running"
+  assert_grep "still running" "$CASE/stderr" "rounds: the refusal did not name the running previous round"
+  assert_equals 1 "$(calls claude)" "rounds: a reviewer was called while the previous round was running"
+  mv "$pr/$first/.run.lock" "$CASE/released-run-lock"
+
+  run_at_head || fail "rounds: the second head did not approve"
+  assert_grep " round=2 " "$CASE/stdout" "rounds: the second reviewed head is not round 2"
+  assert_grep "previous=$first" "$(store_dir)/round" "rounds: round 2 does not name the first head as previous"
+  assert_grep "round=2" "$(store_dir)/$CLAUDE_SEAT.receipt" "rounds: the receipt does not carry its round"
+  findings_at_head || fail "rounds: findings failed"
+  assert_grep "round=2 head=$second previous=$first" "$CASE/stdout" "rounds: findings did not print the round"
+
+  # A head whose every call failed is not a round.
+  next_head 'third head'
+  failed=$HEAD_SHA
+  echo fail > "$STUB/claude.mode"
+  echo fail > "$STUB/agy.mode"
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "rounds: a head with no review"
+  echo approve > "$STUB/claude.mode"
+  echo approve > "$STUB/agy.mode"
+  next_head 'fourth head'
+  run_at_head || fail "rounds: the fourth head did not approve"
+  assert_grep " round=3 " "$CASE/stdout" "rounds: a head with no review counted as a round"
+  assert_grep "previous=$second" "$(store_dir)/round" "rounds: round 3 took a head with no review as previous"
+
+  # The head that failed takes the next round when it is reviewed at last.
+  HEAD_SHA=$failed
+  run_at_head || fail "rounds: the once-failed head did not approve"
+  assert_grep " round=4 " "$CASE/stdout" "rounds: a head first reviewed later did not take the next round"
+
+  HEAD_SHA=$first
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 0 "$rc" "rounds: the first head after later rounds"
+  assert_grep " round=1 " "$CASE/stdout" "rounds: later rounds changed the first head's round"
+  pass "the round counter spans heads, holds on a rerun, skips a head with no review, and waits for the previous round"
+}
+
+test_heads_reviewed_before_rounds_still_count_and_block() {
+  local rc=0 first store receipt
+  make_case legacy "${TWO_SEATS[@]}"
+  first=$HEAD_SHA
+  echo block > "$STUB/agy.mode"
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "legacy: the blocking run"
+  # Rewrite the store as a run before review rounds left it.
+  store=$(store_dir)
+  for receipt in "$store"/*.receipt; do
+    grep -v -e '^round=' -e '^prior_sha256=' -e '^delta_sha256=' "$receipt" > "$receipt.tmp"
+    mv "$receipt.tmp" "$receipt"
+  done
+  mkdir "$CASE/after-rounds"
+  mv "$store/round" "$(dirname "$store")/rounds" "$CASE/after-rounds/"
+
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 1 "$rc" "legacy: check of a BLOCK receipt written before rounds"
+  assert_grep "merge-review: blocked head=$first" "$CASE/stdout" "legacy: an existing BLOCK receipt stopped blocking"
+  assert_grep "blocks=$AGY_SEAT" "$CASE/stdout" "legacy: the existing dissent is not named"
+  assert_no_grep " round=" "$CASE/stdout" "legacy: a head with no round record printed a round"
+
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "legacy: a rerun at the blocked head"
+  assert_equals 1 "$(calls agy)" "legacy: the existing dissent was called again"
+  assert_grep "merge-review: blocked" "$CASE/stdout" "legacy: a rerun cleared an existing BLOCK receipt"
+
+  echo approve > "$STUB/agy.mode"
+  next_head 'the fix'
+  run_at_head || fail "legacy: the fixed head did not approve ($(cat "$CASE/stdout"))"
+  assert_grep " round=2 " "$CASE/stdout" "legacy: the head reviewed before rounds was not counted as round 1"
+  assert_grep "previous=$first" "$(store_dir)/round" "legacy: round 2 does not name the earlier head"
+  assert_equals 0 "$(wc -c < "$STUB/claude.prior" | tr -d ' ')" "legacy: a head with no finding lines carried a finding"
+
+  HEAD_SHA=$first
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 1 "$rc" "legacy: the blocked head after a later approval"
+  assert_grep "merge-review: blocked" "$CASE/stdout" "legacy: a later head cleared the earlier head's BLOCK"
+  pass "a head reviewed before rounds counts as a round, and its BLOCK receipt keeps blocking"
+}
+
+test_findings_keep_their_ids_and_reach_the_next_round_with_the_delta() {
+  local rc=0 first store
+  make_case carry "${TWO_SEATS[@]}"
+  first=$HEAD_SHA
+  set_review claude \
+    '- **FINDING NEW | BLOCKING | none | feature.txt:1 | The reader breaks on the first line; guard it.**' \
+    'VERDICT: BLOCK @HEAD@'
+  set_review agy \
+    'FINDING NEW | NON-BLOCKING | none | README.md:1 | The heading has a typo.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "carry: round 1 with a blocking finding"
+  assert_grep "merge-review: blocked" "$CASE/stdout" "carry: round 1 is not blocked"
+  assert_grep " open=F1 " "$CASE/stdout" "carry: the blocking finding has no id in the verdict line"
+  assert_equals "prior=no delta=no" "$(tr '\n' ' ' < "$STUB/claude.given" | sed 's/ $//')" \
+    "carry: round 1 got prior findings or a delta"
+  findings_at_head || fail "carry: findings failed"
+  assert_match "^F1	open	none	feature.txt:1	The reader breaks on the first line; guard it.	followup=none$" "$CASE/stdout" \
+    "carry: the blocking finding is not listed as open"
+  assert_match "^F2	noted	none	README.md:1	" "$CASE/stdout" "carry: the note is not listed"
+
+  next_head 'guarded reader'
+  # An approving review that skips an open finding does not count.
+  set_review claude \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The guard is in place at this head.' \
+    'VERDICT: APPROVE @HEAD@'
+  set_review agy 'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "carry: round 2 with one review that skips F1"
+  store=$(store_dir)
+  assert_absent "$store/$AGY_SEAT.receipt" "carry: an approval that skipped an open finding left a receipt"
+  assert_grep "open finding F1 has no status line" "$CASE/stdout" "carry: the skipped finding was not named"
+  assert_grep "merge-review: incomplete" "$CASE/stdout" "carry: one counted review was not incomplete"
+
+  # What the reviewer was given in round 2.
+  assert_equals "prior=yes delta=yes" "$(tr '\n' ' ' < "$STUB/claude.given" | sed 's/ $//')" \
+    "carry: round 2 did not get the prior findings and the delta"
+  assert_match "^F1 | open | none | feature.txt:1 | The reader breaks on the first line; guard it.$" "$STUB/claude.prior" \
+    "carry: the open finding did not reach round 2 with its id"
+  assert_match "^F2 | noted | none | README.md:1 | " "$STUB/claude.prior" "carry: the note did not reach round 2 with its id"
+  assert_match "^+guarded reader$" "$STUB/claude.delta" "carry: the delta lacks the change since the reviewed head"
+  assert_no_match "^+the feature$" "$STUB/claude.delta" "carry: the delta repeats the change already reviewed"
+  assert_match "^+the feature$" "$store/diff.$(sed -n 's/^diff_sha256=//p' "$store/$CLAUDE_SEAT.receipt").patch" \
+    "carry: the whole change is no longer in the reviewed diff"
+  assert_equals "diff=yes snapshot=yes repo=no" "$(tr '\n' ' ' < "$STUB/claude.saw" | sed 's/ $//')" \
+    "carry: round 2 lost the whole diff or the snapshot"
+  assert_grep "still open: F1." "$STUB/claude.prompt" "carry: the prompt does not name the open finding"
+
+  set_review agy \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | Confirmed, the guard covers the first line.' \
+    'VERDICT: APPROVE @HEAD@'
+  run_at_head || fail "carry: round 2 did not approve once both seats ruled on F1 ($(cat "$CASE/stdout"))"
+  assert_equals 2 "$(calls claude)" "carry: the seat that already answered round 2 was called again"
+  assert_grep " round=2 " "$CASE/stdout" "carry: the approved head is not round 2"
+  assert_no_grep " open=" "$CASE/stdout" "carry: a resolved finding is still open"
+  findings_at_head || fail "carry: findings failed"
+  assert_match "^F1	resolved	" "$CASE/stdout" "carry: the finding is not listed as resolved"
+
+  # Ids are never reused, and a settled finding keeps its state.
+  next_head 'more work'
+  set_review claude \
+    'FINDING NEW | NON-BLOCKING | none | feature.txt:3 | The new line lacks a comment.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  set_review agy 'VERDICT: APPROVE @HEAD@'
+  run_at_head || fail "carry: round 3 did not approve ($(cat "$CASE/stdout"))"
+  findings_at_head || fail "carry: findings failed"
+  assert_match "^F1	resolved	" "$CASE/stdout" "carry: a resolved finding changed state in a later round"
+  assert_match "^F3	noted	none	feature.txt:3	" "$CASE/stdout" "carry: a new finding did not take the next id"
+
+  HEAD_SHA=$first
+  findings_at_head || fail "carry: findings failed"
+  assert_match "^F1	open	" "$CASE/stdout" "carry: later rounds rewrote the first head's findings"
+  pass "findings keep their ids, later rounds get the open ones with the delta, and the whole change stays under review"
+}
+
+test_a_dissent_is_kept_whatever_its_form() {
+  local rc=0
+  make_case dissent "${THREE_SEATS[@]}"
+  set_review claude \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | The reader breaks on the first line.' \
+    'VERDICT: BLOCK @HEAD@'
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "dissent: round 1"
+
+  next_head 'second head'
+  # A BLOCK with a malformed finding line and no status for F1.
+  set_review claude \
+    'FINDING this line does not fit the form' \
+    'VERDICT: BLOCK @HEAD@'
+  # An approval with a malformed finding line.
+  set_review agy \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | Fixed.' \
+    'FINDING NEW | SEVERE | none | feature.txt:2 | An unknown status.' \
+    'VERDICT: APPROVE @HEAD@'
+  set_review grok \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | Fixed.' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "dissent: round 2"
+  assert_grep "blocks=$CLAUDE_SEAT" "$CASE/stdout" "dissent: a BLOCK with a malformed finding line was discarded"
+  assert_absent "$(store_dir)/$AGY_SEAT.receipt" "dissent: an approval with a malformed finding line left a receipt"
+  assert_present "$(store_dir)/xai.grok.grok-test.receipt" "dissent: the spare did not replace the review that did not count"
+  assert_grep " open=F1 " "$CASE/stdout" "dissent: a dissent that gave an open finding no status released it"
+  pass "a BLOCK is recorded whatever its finding lines look like, and an approval with a malformed line is not"
+}
+
+# Two approved heads, so the next head is round three.
+two_approved_rounds() {
+  run_at_head || fail "$1: round 1 did not approve"
+  next_head 'second head'
+  run_at_head || fail "$1: round 2 did not approve"
+  next_head 'third head'
+}
+
+test_round_three_defers_an_edge_case_only_when_both_seats_agree() {
+  local rc=0
+  make_case defer "${TWO_SEATS[@]}"
+  set_review claude \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | An empty file makes the reader loop.' \
+    'VERDICT: BLOCK @HEAD@'
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "defer: round 1"
+
+  next_head 'second head'
+  # Before round three an edge case still blocks.
+  set_review claude \
+    'FINDING F1 | EDGE-CASE | none | feature.txt:1 | Only an empty file triggers it.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  set_review agy \
+    'FINDING F1 | EDGE-CASE | none | feature.txt:1 | Only an empty file triggers it.' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "defer: round 2 with an edge case"
+  assert_grep "merge-review: blocked" "$CASE/stdout" "defer: an edge case was deferred before round three"
+  assert_grep " open=F1 " "$CASE/stdout" "defer: the round 2 edge case is not open"
+
+  next_head 'third head'
+  # One seat calls it a regression: it blocks, with no BLOCK verdict needed.
+  set_review agy \
+    'FINDING F1 | REGRESSION | none | feature.txt:1 | An empty file worked at the merge base.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "defer: round 3 with one seat calling a regression"
+  assert_grep "merge-review: blocked" "$CASE/stdout" "defer: one seat deferred a finding the other calls a regression"
+  assert_grep " open=F1 " "$CASE/stdout" "defer: the regression is not open"
+  assert_grep "blocks=none" "$CASE/stdout" "defer: the case no longer shows an open finding blocking without a BLOCK verdict"
+
+  next_head 'fourth head'
+  set_review agy \
+    'FINDING F1 | EDGE-CASE | none | feature.txt:1 | Agreed, the merge base loops the same way.' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "defer: round 4 before the follow-up is recorded"
+  assert_grep "merge-review: incomplete" "$CASE/stdout" "defer: a deferred finding approved with no follow-up"
+  assert_grep " deferred=F1 " "$CASE/stdout" "defer: the deferred finding is not named"
+  assert_grep "has no recorded follow-up" "$CASE/stdout" "defer: the missing follow-up was not reported"
+  assert_equals 0 "$(cat "$STUB"/*.council-calls 2>/dev/null | wc -l | tr -d ' ')" \
+    "defer: seats that both ruled in their reviews were asked again"
+
+  rc=0
+  run_supervisor followup "$PR_URL" --head "$HEAD_SHA" --finding F2 --ref 'backlog item 12' || rc=$?
+  expect_code 2 "$rc" "defer: a follow-up for a finding that does not exist"
+  rc=0
+  run_supervisor followup "$PR_URL" --head "$HEAD_SHA" --finding F1 --ref 'backlog item 12' || rc=$?
+  expect_code 0 "$rc" "defer: recording the follow-up ($(cat "$CASE/stderr"))"
+  rc=0
+  run_supervisor followup "$PR_URL" --head "$HEAD_SHA" --finding F1 --ref 'backlog item 99' || rc=$?
+  expect_code 2 "$rc" "defer: replacing a recorded follow-up"
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 0 "$rc" "defer: check once the follow-up is recorded ($(cat "$CASE/stdout"))"
+  assert_grep "merge-review: approved" "$CASE/stdout" "defer: two agreeing seats and a follow-up did not approve"
+  assert_grep " deferred=F1 " "$CASE/stdout" "defer: the approved line hides the deferred finding"
+  findings_at_head || fail "defer: findings failed"
+  assert_match "^F1	deferred	.*	followup=backlog item 12$" "$CASE/stdout" "defer: findings does not show the follow-up"
+
+  rc=0
+  run_supervisor followup "$PR_URL" --head "$HEAD_SHA" --finding F1 --ref 'backlog item 12' || rc=$?
+  expect_code 0 "$rc" "defer: recording the same follow-up again"
+  pass "from round three an edge case is deferred only when both seats agree, and approves only with a recorded follow-up"
+}
+
+test_the_council_rules_on_a_new_edge_case_in_round_three() {
+  local rc=0 store
+  make_case council "${TWO_SEATS[@]}"
+  two_approved_rounds council
+  set_review claude \
+    'FINDING NEW | EDGE-CASE | none | feature.txt:3 | A file over 2 GB overflows the counter.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  # The other seat gives no usable answer: the finding waits.
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "council: round 3 with no council answer"
+  assert_grep "merge-review: incomplete" "$CASE/stdout" "council: a finding one seat never ruled on did not wait"
+  assert_grep "waits for a seat" "$CASE/stdout" "council: the wait was not reported"
+  assert_equals 1 "$(wc -l < "$STUB/agy.council-calls" | tr -d ' ')" "council: the other seat was not asked once"
+  assert_absent "$STUB/claude.council-calls" "council: the seat that raised the finding was asked to rule on it"
+  assert_match "^F1 | none | feature.txt:3 | A file over 2 GB overflows the counter. | reviews/$CLAUDE_SEAT.review.md$" \
+    "$STUB/agy.council-findings" "council: the asked seat did not get the finding and its review"
+  assert_grep "$CLAUDE_SEAT.review.md" "$STUB/agy.council-reviews" "council: the asked seat did not get the review"
+  assert_grep "Rule on these findings: F1." "$STUB/agy.council-prompt" "council: the prompt does not name the finding"
+
+  set_council agy \
+    'DISPOSITION F1 | EDGE-CASE | none | The merge base uses the same 32-bit counter, so nothing regressed.' \
+    'COUNCIL: DONE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "council: round 3 once the council answered"
+  store=$(store_dir)
+  assert_present "$store/$AGY_SEAT.council.1.ruling" "council: the ruling was not recorded"
+  assert_equals 3 "$(calls claude)" "council: a seat was asked to review the head again"
+  assert_equals 3 "$(calls agy)" "council: a seat was asked to review the head again"
+  assert_grep " deferred=F1 " "$CASE/stdout" "council: the agreed edge case is not deferred"
+  run_supervisor followup "$PR_URL" --head "$HEAD_SHA" --finding F1 --ref 'https://example.invalid/issues/4' \
+    || fail "council: the follow-up was refused ($(cat "$CASE/stderr"))"
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 0 "$rc" "council: check with the ruling and the follow-up ($(cat "$CASE/stdout"))"
+
+  # An edited council answer no longer counts.
+  printf 'edited\n' >> "$store/$AGY_SEAT.council.1.md"
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 1 "$rc" "council: check after the council answer changed"
+  assert_grep "waits for a seat" "$CASE/stdout" "council: an edited council answer still counted"
+  pass "in round three the other seat rules on a new edge case, and the finding waits until it does"
+}
+
+test_the_council_can_hold_a_new_edge_case_as_a_regression() {
+  local rc=0
+  make_case council-regression "${TWO_SEATS[@]}"
+  two_approved_rounds council-regression
+  set_review claude \
+    'FINDING NEW | EDGE-CASE | none | feature.txt:3 | A file over 2 GB overflows the counter.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  set_council agy \
+    'DISPOSITION F1 | REGRESSION | none | The merge base used a 64-bit counter, so large files worked before.' \
+    'COUNCIL: DONE @HEAD@'
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "council-regression: round 3"
+  assert_grep "merge-review: blocked" "$CASE/stdout" "council-regression: one seat deferred a finding the other calls a regression"
+  assert_grep " open=F1 " "$CASE/stdout" "council-regression: the finding is not open"
+  rc=0
+  run_supervisor followup "$PR_URL" --head "$HEAD_SHA" --finding F1 --ref 'backlog item 3' || rc=$?
+  expect_code 2 "$rc" "council-regression: a follow-up for an open finding"
+  assert_grep "only a deferred finding takes a follow-up" "$CASE/stderr" "council-regression: the refusal did not say why"
+  pass "a seat that calls a new edge case a regression keeps it blocking, and an open finding takes no follow-up"
+}
+
+test_unsupported_findings_are_dropped_with_evidence() {
+  local rc=0
+  make_case unsupported "${TWO_SEATS[@]}"
+  set_review claude \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | The reader may read past the end.' \
+    'VERDICT: BLOCK @HEAD@'
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "unsupported: round 1"
+
+  next_head 'second head'
+  # One seat alone cannot drop it.
+  set_review claude \
+    'FINDING F1 | BLOCKING | none | feature.txt:1 | Still reads past the end.' \
+    'VERDICT: BLOCK @HEAD@'
+  set_review agy \
+    'FINDING F1 | UNSUPPORTED | none | feature.txt:1 | The reader stops at the length it was given; no read past the end exists.' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "unsupported: round 2"
+  assert_grep " open=F1 " "$CASE/stdout" "unsupported: one seat dropped a finding the other holds"
+
+  next_head 'third head'
+  # No evidence is not a disposition.
+  set_review claude \
+    'FINDING F1 | UNSUPPORTED | none | feature.txt:1 |' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "unsupported: round 3 with a disposition that gives no evidence"
+  assert_absent "$(store_dir)/$CLAUDE_SEAT.receipt" "unsupported: a disposition with no evidence left a receipt"
+
+  set_review claude \
+    'FINDING F1 | UNSUPPORTED | none | feature.txt:1 | I traced the read loop again: the bound check on line 4 stops it.' \
+    'VERDICT: APPROVE @HEAD@'
+  run_at_head || fail "unsupported: round 3 did not approve ($(cat "$CASE/stdout"))"
+  assert_grep " dropped=F1 " "$CASE/stdout" "unsupported: the dropped finding is not named"
+  assert_no_grep " open=" "$CASE/stdout" "unsupported: a dropped finding is still open"
+  pass "a finding every seat calls unsupported, with evidence, is dropped; one seat alone cannot drop it"
+}
+
+test_security_destructive_and_data_loss_findings_always_block() {
+  local rc=0
+  make_case classed "${TWO_SEATS[@]}"
+  two_approved_rounds classed
+  # A classed finding is never an edge case, whatever the reviewer calls it.
+  set_review claude \
+    'FINDING NEW | EDGE-CASE | data-loss | feature.txt:3 | A crash mid-write truncates the file.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "classed: round 3 with a data-loss edge case"
+  assert_grep "merge-review: blocked" "$CASE/stdout" "classed: a data-loss finding was deferred"
+  assert_grep " open=F1 " "$CASE/stdout" "classed: the data-loss finding is not open"
+  assert_absent "$STUB/agy.council-calls" "classed: a finding that cannot be deferred was put to the council"
+
+  # The class stays once given, even when both seats later drop it.
+  next_head 'fourth head'
+  set_review claude \
+    'FINDING F1 | EDGE-CASE | none | feature.txt:3 | Only a crash triggers it.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  set_review agy \
+    'FINDING F1 | EDGE-CASE | none | feature.txt:3 | Only a crash triggers it.' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "classed: round 4 with both seats relabelling the finding"
+  assert_grep "merge-review: blocked" "$CASE/stdout" "classed: two seats deferred a data-loss finding"
+  findings_at_head || fail "classed: findings failed"
+  assert_match "^F1	open	data-loss	" "$CASE/stdout" "classed: the finding lost its class"
+
+  next_head 'fifth head'
+  set_review claude \
+    'FINDING F1 | RESOLVED | none | feature.txt:3 | The write now goes to a temporary file first.' \
+    'VERDICT: APPROVE @HEAD@'
+  set_review agy \
+    'FINDING F1 | RESOLVED | none | feature.txt:3 | Confirmed: write, then rename.' \
+    'VERDICT: APPROVE @HEAD@'
+  run_at_head || fail "classed: the fixed head did not approve ($(cat "$CASE/stdout"))"
+
+  # A seat's council disposition can give the class.
+  make_case classed-council "${TWO_SEATS[@]}"
+  two_approved_rounds classed-council
+  set_review claude \
+    'FINDING NEW | EDGE-CASE | none | feature.txt:3 | A crafted name escapes the output directory.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  set_council agy \
+    'DISPOSITION F1 | EDGE-CASE | security | It is rare, but it lets a file be written outside the directory.' \
+    'COUNCIL: DONE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "classed-council: round 3"
+  assert_grep "merge-review: blocked" "$CASE/stdout" "classed-council: a finding one seat calls a security hole was deferred"
+
+  # A classed note blocks in any round.
+  make_case classed-note "${TWO_SEATS[@]}"
+  set_review claude \
+    'FINDING NEW | NON-BLOCKING | destructive | feature.txt:1 | The cleanup removes the whole directory.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "classed-note: round 1"
+  assert_grep "merge-review: blocked" "$CASE/stdout" "classed-note: a destructive finding passed as a note"
+  pass "a security, destructive, or data-loss finding is never deferred or noted, and keeps its class"
+}
+
 fm_test_run \
   test_two_families_approve_and_a_supervisor_reads_one_line \
   test_run_refuses_in_a_supervisor_session \
@@ -1193,4 +1726,13 @@ fm_test_run \
   test_stale_receipt_base_refreshes_approvals \
   test_stale_spare_approval_is_dropped_before_the_run_starts \
   test_stale_block_at_another_base_is_not_replaced \
-  test_intent_reaches_the_prompt_the_receipt_binds
+  test_intent_reaches_the_prompt_the_receipt_binds \
+  test_the_round_counter_spans_heads \
+  test_heads_reviewed_before_rounds_still_count_and_block \
+  test_findings_keep_their_ids_and_reach_the_next_round_with_the_delta \
+  test_a_dissent_is_kept_whatever_its_form \
+  test_round_three_defers_an_edge_case_only_when_both_seats_agree \
+  test_the_council_rules_on_a_new_edge_case_in_round_three \
+  test_the_council_can_hold_a_new_edge_case_as_a_regression \
+  test_unsupported_findings_are_dropped_with_evidence \
+  test_security_destructive_and_data_loss_findings_always_block
