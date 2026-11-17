@@ -536,7 +536,10 @@ test_hardstop_categories() {
     "sign-in|? Where do you use GitHub?  [Use arrows t"$'\n'"o move, type to filter]"$'\n'"> GitHub.com"$'\n'"  Other" \
     "sign-in|There are 2 roles available to"$'\n'"you."$'\n'"  ReadOnly"$'\n'"> FullAccess" \
     "credential|Generating public/private ed25519 key pair."$'\n'"Enter file in which to save the key (/Users/test/.ssh/id_ed25519)"$'\n'":" \
-    "credential|Identity added: x"$'\n'"Bad passphrase, try again for /Users/test/.ssh/id_ed25519 (test@host)"$'\n'":"; do
+    "credential|Identity added: x"$'\n'"Bad passphrase, try again for /Users/test/.ssh/id_ed25519 (test@host)"$'\n'":" \
+    "credential|"$'╭────────────────────────────────────────────╮\n│                                            │\n│ Enter Gemini API Key                       │\n│                                            │\n│ Please enter your Gemini API key.          │\n│                                            │\n│ ╭──────────────────────────────────────╮ │\n│ │ Paste your API key here              │ │\n│ ╰──────────────────────────────────────╯ │\n│                                            │\n│ (Press Enter to submit, Esc to cancel)     │\n╰────────────────────────────────────────────╯\n  ~/repo   no sandbox   gemini-2.5-pro (100% context left)' \
+    "sign-in|╭──────────────────────────────────────────────────────╮"$'\n'"│ How would you like to authenticate for this project? │"$'\n'"│ ● 1. Login with Google                               │"$'\n'"│   2. Use Gemini API Key                              │"$'\n'"│ (Use Enter to select)                                │"$'\n'"╰──────────────────────────────────────────────────────╯"$'\n'"  ~/repo  no sandbox  gemini-2.5-pro (100% context left)" \
+    "sign-in|? Log in to Vercel (Use arrow keys)"$'\n'"❯ Continue with GitHub"$'\n'"  Continue with GitLab"; do
     want=${c%%|*}; c=${c#*|}
     assert_equals "hardstop	$want" "$(printf '%s\n' "$c" | classify claude)" "a widely used CLI prompt is a $want stop: $c"
     bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard misses a $want prompt: $c"
@@ -546,7 +549,12 @@ test_hardstop_categories() {
     "  ⎿  How would you like to authenticate for this project?"$'\n'"     ● 1. Sign in with Google"$'\n'"$rule40"$'\n'"❯ "$'\n'"$rule40"$'\n'"  ⏵⏵ bypass permissions on (shift+tab to cycle)" \
     "⏺ Added a regression test for the Enter Gemini API Key dialog."$'\n'"$rule40"$'\n'"❯ "$'\n'"$rule40"$'\n'"  ? for shortcuts" \
     "Enter Gemini API Key"$'\n'"Working on it now"$'\n'"$rule40"$'\n'"❯ "$'\n'"$rule40"$'\n'"  ? for shortcuts" \
-    '→ Explain how to enter a password:' '❭ Explain how to enter a password:' '⟩ Continue? [y/N]' 'You can set it by typing the following:'; do
+    '→ Explain how to enter a password:' '❭ Explain how to enter a password:' '⟩ Continue? [y/N]' 'You can set it by typing the following:' \
+    "• Ran npx vercel login"$'\n'"  └ ? Log in to Vercel (Use arrow keys)"$'\n'"    ❯ Continue with GitHub"$'\n'"      Continue with GitLab"$'\n\n'"› "$'\n\n'"  esc to cancel" \
+    "? Select a framework: › - Use arrow-keys. Return to submit."$'\n'"❯ Vanilla"$'\n'"  React"$'\n\n'"│ → Add a follow-up                    │"$'\n'"Claude 4.5 Sonnet · 12.3%" \
+    "? Select a framework: › - Use arrow-keys. Return to submit."$'\n'"❯ Vanilla"$'\n'"  React"$'\n\n'"┃  "$'\n'"  enter send  ctrl+p commands" \
+    "? Select a framework: › - Use arrow-keys. Return to submit."$'\n'"❯ Vanilla"$'\n'"  React"$'\n\n'"▌ "$'\n'"  ⏎ send   ⌃J newline   ⌃T transcript   ⌃C quit" \
+    "? Select a framework: › - Use arrow-keys. Return to submit."$'\n'"❯ Vanilla"$'\n'"  React"$'\n'"That is the create-vite list; next I patch the guard."$'\n'"> fix the list check"; do
     [ -z "$(printf '%s\n' "$c" | classify claude)" ] || fail "an agent draft, pager, or prose row is read as a prompt: $c"
     ! bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard blocks an agent draft, pager, or prose row: $c"
   done

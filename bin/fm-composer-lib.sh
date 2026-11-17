@@ -2687,21 +2687,25 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
   # Gemini CLI's first-run auth-method picker and its API-key entry dialog
   # draw their own box and footer, so their rows, not the last row, prove
   # them; the signatures are the ones bin/fm-busy-lib.sh records. Each
-  # heading must stand alone on its row, inside the box or bare, with the
-  # dialog's own input or selected option and hint below it and no agent
-  # composer or conversation row after it, so quoted text never matches.
+  # heading must stand alone on its row, and a bare heading, outside the
+  # dialog box, needs the dialog's own input row or text below it; the
+  # auth picker needs its selected option and hint. No agent composer or
+  # conversation row may follow, so quoted text never matches.
   if printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
     { gsub(/\r/, "") }
     NF { r[++n] = $0 }
     END {
       for (i = n - 30; i <= n; i++) {
         if (i < 1) continue
-        if (r[i] ~ /^[ \t]*(│[ \t]*)?Enter Gemini API Key[ \t]*(│[ \t]*)?$/) { kh = i; ki = 0 }
-        else if (kh && i - kh <= 4 && r[i] ~ /^[ \t]*(│[ \t]*)?>/) ki = 1
+        if (r[i] ~ /^[ \t]*│[ \t]*Enter Gemini API Key[ \t]*│?[ \t]*$/) { kh = i; ki = 1 }
+        else if (r[i] ~ /^[ \t]*Enter Gemini API Key[ \t]*$/) { kh = i; ki = 0 }
+        else if (kh && (i - kh <= 4 && r[i] ~ /^[ \t]*(│[ \t]*)?>/ || r[i] ~ /Paste your API key here|\(Press Enter to submit/)) ki = 1
         if (r[i] ~ /^[ \t]*(│[ \t]*)?How would you like to authenticate for this project\?[ \t]*(│[ \t]*)?$/) { ph = i; po = 0; pu = 0 }
         else if (ph && r[i] ~ /^[ \t]*(│[ \t]*)?●[ \t]*[0-9]+\.[ \t]+[^ \t]/) po = 1
         else if (ph && po && r[i] ~ /^[ \t]*(│[ \t]*)?\(Use Enter to select\)/) pu = 1
-        if (r[i] ~ /^(─|━){20,}|for shortcuts|context left|context [0-9]+% left|bypass permissions|^[ \t]*(⏺|⎿|❯|›)/) { kh = 0; ki = 0; ph = 0; po = 0; pu = 0 }
+        # Gemini draws its own `(N% context left)` footer under the dialog, so
+        # only another agent composer, its footer, or a transcript row cancels.
+        if (r[i] ~ /^(─|━){20,}|for shortcuts|bypass permissions|^[ \t]*(⏺|⎿|❯|›)/) { kh = 0; ki = 0; ph = 0; po = 0; pu = 0 }
       }
       if (ki) { print "credential"; exit 0 }
       if (pu) { print "sign-in"; exit 0 }
@@ -2968,9 +2972,16 @@ fm_composer_list_rows() {  # <screen>
         if (i < 1) continue
         # A narrow pane can wrap the hint over two rows, so a row that only
         # completes the hint with the row above also opens the list.
-        if (r[i] !~ /reveal more/ && (hint(r[i]) || (i > 1 && !hint(r[i - 1]) && (hint(r[i - 1] r[i]) || hint(r[i - 1] " " r[i]))))) { q = i; f = 0; quoted = 0 }
-        else if (q && (r[i] ~ /for shortcuts|context left|context [0-9]+% left/ || r[i] ~ /^(─|━){20,}/)) quoted = 1
-        else if (q && r[i] ~ /^[ \t]*(❯|›|>)[ \t]*[^ \t]/) f = 1
+        # A hint under a tool-output marker (`└`, `⎿`) is quoted output.
+        if (r[i] !~ /reveal more/ && (hint(r[i]) || (i > 1 && !hint(r[i - 1]) && (hint(r[i - 1] r[i]) || hint(r[i - 1] " " r[i]))))) { q = i; f = 0; quoted = (r[i] ~ /^[ \t]*(└|⎿)/) }
+        else if (q && !quoted) {
+          # Only option rows (indented, or under a cursor) and tip rows in
+          # parentheses continue a live list; prose, a transcript or box row,
+          # an agent composer, or its footer after the hint makes it quoted.
+          if (r[i] ~ /for shortcuts|context left|context [0-9]+% left|esc to (cancel|interrupt)|esc twice to interrupt|⏎|⌃|ctrl\+|enter send/ || r[i] ~ /^(─|━){20,}/ || r[i] ~ /^[ \t]*(❯|›|⟩|→|❭)[ \t]*$/ || r[i] ~ /^[ \t]*(│|┃|⏺|⎿|•|└|▌)/) quoted = 1
+          else if (r[i] ~ /^[ \t]*(❯|›|>)[ \t]*[^ \t]/) f = 1
+          else if (r[i] !~ /^[ \t]+[^ \t]/ && r[i] !~ /^[ \t]*\(.*\)[ \t]*$/) quoted = 1
+        }
         if (r[i] ~ /^[ \t]*\?[ \t]+[^ \t]/) { qq = i; fq = 0 }
         else if (qq && r[i] ~ /^[ \t]*(❯|›|>)[ \t]*[^ \t]/) fq = 1
       }
