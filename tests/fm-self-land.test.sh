@@ -596,6 +596,16 @@ test_red_base_trips_the_breaker_and_it_stays_tripped() {
   grep -Fxq 'red=(unnamed check), deploy/preview' "$(repo_dir "$case_dir")/breaker" \
     || fail "breaker-status: the record must name the unnamed check and the red status, and not the rerun ci: $(cat "$(repo_dir "$case_dir")/breaker")"
 
+  # A failed status that has no name is red by itself.
+  rm -f "$(repo_dir "$case_dir")/breaker"
+  printf '{"total_count":1,"check_runs":[{"name":"ci","status":"completed","conclusion":"success"}]}\n' \
+    > "$case_dir/base-check-runs.json"
+  printf '{"state":"error","statuses":[{"context":"","state":"error"}]}\n' > "$case_dir/base-status.json"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  assert_refused "$case_dir" red-base "breaker-unnamed-status"
+  grep -Fxq 'red=(unnamed status)' "$(repo_dir "$case_dir")/breaker" \
+    || fail "breaker-unnamed-status: the record must name the unnamed status: $(cat "$(repo_dir "$case_dir")/breaker" 2>&1)"
+
   # A rerun to green on the same commit leaves the base green, so the landing goes through.
   rm -f "$(repo_dir "$case_dir")/breaker"
   jq -c -n '{total_count: 2, check_runs: [

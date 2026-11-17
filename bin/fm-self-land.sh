@@ -408,7 +408,7 @@ require_green_base() {
     | jq -r '
       if (.state | type) == "string" then . else error("shape") end
       | [ (.statuses // [])[] | select(.state == "failure" or .state == "error")
-          | (.context | strings) // "(unnamed status)" ]
+          | if (.context | type) == "string" and (.context | length) > 0 then .context else "(unnamed status)" end ]
       | unique | .[]' 2>/dev/null) \
     || refuse forge-read "could not read the statuses of base branch $SL_PR_BASE at $sha"
   red=$(printf '%s\n%s\n' "$runs" "$statuses" | sed '/^$/d' | tr '\n' ',' | sed 's/,$//; s/,/, /g')
