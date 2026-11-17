@@ -94,9 +94,11 @@
 #     no protection, and its own executable is a shell, an interpreter, or
 #     a core tool such as sleep, awk, or jq. A core tool may have no
 #     argument that holds a /. A shell or interpreter must name its script
-#     as its first argument, never an option or inline code, and the script
-#     (joined to its own working directory when relative) must be an
-#     unambiguous regular file with no protection once resolved. No
+#     as its first argument, written as a path that holds a / (a bare name
+#     may be found on PATH instead), never an option or inline code, and the
+#     script (joined to its own working directory when relative) must be an
+#     unambiguous regular file with no protection once resolved. Bun and
+#     Deno take subcommands, so they never make a process scratch. No
 #     argument may hold a .. segment, and an argument that only names a
 #     temp path does not make a process scratch;
 #   - a fresh process read just before the signal still shows the same
@@ -332,10 +334,13 @@ classify_candidates() {  # <candidates-file> <self-pids>
     # option or inline code could hide what really runs.
     function child_script(a,   n, t, i) {
       n = split(a, t, " ")
-      if (interp(bname(t[1]))) return (n >= 2 && t[2] !~ /^-/) ? t[2] : ""
+      if (interp(bname(t[1]))) return (script_interp(bname(t[1])) && n >= 2 && t[2] !~ /^-/ && index(t[2], "/")) ? t[2] : ""
       for (i = 2; i <= n; i++) if (index(t[i], "/")) return ""
       return "-"
     }
+    # Interpreters whose first argument is always a script; bun and deno take
+    # subcommands (bun run, deno run), so they never make a process scratch.
+    function script_interp(b) { return interp(b) && b !~ /^(bun|deno)$/ }
     function interp(b) { return b ~ /^(ba|z|da|k)?sh$/ || b ~ /^python[0-9.]*$/ || b ~ /^(node|deno|bun|ruby|perl|php)$/ }
     function program(a,   n, t, i) {
       n = split(a, t, " ")
@@ -410,7 +415,7 @@ classify_candidates() {  # <candidates-file> <self-pids>
         else if (kids[c] > 0) why = "has child processes"
         else {
           s = ""; pg = dotdot(args[c]) ? "" : program(args[c])
-          if (under_root(pg) && interp(bname(prog0[c])) && runs_as(c, pg)) s = "program\t" pg
+          if (under_root(pg) && script_interp(bname(prog0[c])) && runs_as(c, pg)) s = "program\t" pg
           else if (!dotdot(args[c]) && test_tool(bname(prog0[c])) && runs_as(c, prog0[c]) && (cs = child_script(args[c])) != "") { q = ppid[c]
             if (q in ppid && !(q in preason) && !dotdot(args[q]) && program(args[q]) ~ /(^|\/)tests\/[A-Za-z0-9_.-]+\.test\.sh$/) s = "runner\t" program(args[q]) "\t" cs "\t" q }
           if (s == "") why = "not scratch"
