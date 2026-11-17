@@ -589,7 +589,190 @@ test_no_quota_axi_is_unknown() {
   pass "a missing quota-axi reads as unknown"
 }
 
+
+# The lightweight check uses the production harness resolver with its supported
+# supervision-primary pin, so it never depends on this test runner ancestry.
+run_snapshot_check() {
+  env -i HOME="$CASE/user-home" PATH="$FAKEBIN:$PATH" FM_HOME="$HOME_DIR" \
+    FM_SUPERVISION_ACTOR=branch FM_SUPERVISION_PRIMARY_HARNESS=codex \
+    FM_TEST_SEAM=1 FM_NOW="$NOW" "$TOOL" check "$@"
+}
+
+toon_snapshot() {  # <runway> <percent> [seconds]
+  cat > "$CASE/quota.toon" <<EOF
+bin: quota-axi
+generatedAt: 2026-11-16T00:00:00Z
+quota[1]{provider,scope,effectivePercentRemaining,spendPriority,runway,confidence,limitedBy,resetsAt}:
+  codex,all_models,$2,0.5,$1,established,weekly,unknown
+EOF
+  if [ -n "${3:-}" ]; then
+    cat >> "$CASE/quota.toon" <<EOF
+exhaustion[1]{provider,scope,usableRunwaySeconds,projectedExhaustedAt,limitingWindowId}:
+  codex,all_models,$3,unknown,weekly
+EOF
+  else
+    printf 'exhaustion[0]:\n' >> "$CASE/quota.toon"
+  fi
+  printf 'attention[0]:\n' >> "$CASE/quota.toon"
+}
+
+check_verdict() {  # <expected> [options]
+  local expected=$1 out
+  shift
+  out=$(run_snapshot_check --snapshot "$CASE/quota.toon" --json "$@") || fail "check failed: $out"
+  printf '%s\n' "$out" | jq -e --arg v "$expected" \
+    '.pools | length == 1 and all(.[]; .verdict == $v)' >/dev/null || fail "expected $expected: $out"
+}
+
+test_snapshot_horizon_and_exhaustion() {
+  new_case toon-horizon
+  toon_snapshot through_reset 40
+  check_verdict HEALTHY
+  toon_snapshot projected_exhaustion 40 35999
+  check_verdict TIGHT_HORIZON
+  check_verdict HEALTHY --horizon-secs 35999
+  toon_snapshot projected_exhaustion 40 36000
+  check_verdict HEALTHY
+  toon_snapshot exhausted_now 5 0
+  check_verdict EXHAUSTED
+  toon_snapshot through_reset 0
+  check_verdict EXHAUSTED
+  toon_snapshot through_reset 40 0
+  check_verdict EXHAUSTED
+  toon_snapshot projected_exhaustion 40 unknown
+  check_verdict unknown
+  [ ! -e "$CASE/reads" ] || fail "--snapshot called quota-axi"
+  pass "TOON check classifies reset, exact horizon, zero percent, zero runway and unknown time"
+}
+
+test_snapshot_attention_and_missing_data() {
+  local kind out
+  new_case toon-attention
+  for kind in stale error auth_required; do
+    toon_snapshot through_reset 40
+    sed '$d' "$CASE/quota.toon" > "$CASE/attention.toon"
+    cat >> "$CASE/attention.toon" <<EOF
+attention[1]{provider,scope,kind,detail,remedy}:
+  codex,all_models,$kind,"cached, uncertain",unknown
+EOF
+    out=$(run_snapshot_check --snapshot "$CASE/attention.toon" --json) || fail "attention check failed"
+    printf '%s\n' "$out" | jq -e --arg k "$kind" \
+      '.pools[0].verdict == "unknown" and (.pools[0].detail | contains($k)) and .alerts == ""' >/dev/null || fail "$out"
+  done
+  printf 'quota[0]:\nexhaustion[0]:\nattention[0]:\n' > "$CASE/quota.toon"
+  check_verdict unknown
+  printf 'quota[0]:\nexhaustion[0]:\nattention[1]{provider,scope,kind,detail,remedy}:\n  codex,all_models,stale,cached,unknown\n' > "$CASE/quota.toon"
+  check_verdict unknown
+  printf 'invalid\n' > "$CASE/quota.toon"
+  check_verdict unknown
+  pass "stale, error, auth attention, absent pools and malformed TOON stay unknown"
+}
+
+test_snapshot_local_members_and_config() {
+  local out
+  new_case toon-members
+  cat > "$HOME_DIR/config/secondmate-harness" <<'EOF'
+codex
+mate local: claude
+EOF
+  printf 'kind=secondmate\nharness=\n' > "$HOME_DIR/state/local.meta"
+  printf 'kind=secondmate\nharness=grok\nremote_host=other-host\n' > "$HOME_DIR/state/remote.meta"
+  printf 'kind=ship\nharness=kimi\n' > "$HOME_DIR/state/worker.meta"
+  printf 'kind=secondmate\nharness=kimi\n' > "$CASE/foreign.meta"
+  ln -s "$CASE/foreign.meta" "$HOME_DIR/state/foreign.meta"
+  cat > "$CASE/quota.toon" <<'EOF'
+bin: quota-axi
+generatedAt: 2026-11-16T00:00:00Z
+quota[2]{provider,scope,effectivePercentRemaining,spendPriority,runway,confidence,limitedBy,resetsAt}:
+  codex,all_models,40,0.5,through_reset,established,weekly,unknown
+  claude,all_models,50,0.5,through_reset,established,weekly,unknown
+exhaustion[0]:
+attention[0]:
+EOF
+  out=$(run_snapshot_check --snapshot "$CASE/quota.toon" --json) || fail "member discovery failed"
+  printf '%s\n' "$out" | jq -e '.pools | length == 2 and all(.[]; .verdict == "HEALTHY") and (map(.members[]) | sort == ["local","primary"])' >/dev/null || fail "$out"
+  mkdir -p "$CASE/isolated-account"
+  printf '%s\n' "$CASE/isolated-account" > "$HOME_DIR/config/claude-account"
+  cp "$HOME_DIR/config/claude-account" "$CASE/pin.before"
+  out=$(run_snapshot_check --snapshot "$CASE/quota.toon" --json) || fail "pinned discovery failed"
+  printf '%s\n' "$out" | jq -e '.pools[] | select(.provider == "claude") | .verdict == "unknown"' >/dev/null || fail "$out"
+  cmp -s "$CASE/pin.before" "$HOME_DIR/config/claude-account" || fail "pin changed"
+  printf 'mate local: invalid extra extra extra\n' > "$HOME_DIR/config/secondmate-harness"
+  if run_snapshot_check --snapshot "$CASE/quota.toon" --json > "$CASE/invalid.out" 2>&1; then
+    fail "malformed secondmate config silently fell back"
+  fi
+  pass "discovery uses own local meta and resolver pins, skips remote, worker and symlink records"
+}
+
+test_snapshot_account_keys_and_scopes() {
+  local out
+  new_case toon-accounts
+  cat > "$CASE/quota.toon" <<'EOF'
+bin: quota-axi
+generatedAt: 2026-11-16T00:00:00Z
+quota[3]{provider,accountKey,scope,effectivePercentRemaining,spendPriority,runway,confidence,limitedBy,resetsAt}:
+  codex,codex-home,all_models,40,0.5,through_reset,established,weekly,unknown
+  codex,codex-home,model:small,5,0.1,projected_exhaustion,established,weekly,unknown
+  codex,other,all_models,0,0,exhausted_now,established,weekly,unknown
+exhaustion[1]{provider,accountKey,scope,usableRunwaySeconds,projectedExhaustedAt,limitingWindowId}:
+  codex,codex-home,model:small,60,unknown,weekly
+attention[1]{provider,accountKey,scope,kind,detail,remedy}:
+  codex,other,all_models,error,unavailable,unknown
+EOF
+  out=$(run_snapshot_check --snapshot "$CASE/quota.toon" --json) || fail "schema 6 failed"
+  printf '%s\n' "$out" | jq -e '.pools | length == 2 and all(.[]; .account == "codex-home") and (map(.verdict) | sort == ["HEALTHY","TIGHT_HORIZON"])' >/dev/null || fail "$out"
+  pass "schema-6 joins stay on the selected account and retain potentially limiting model scopes"
+}
+
+test_snapshot_alert_dedup_and_rotation() {
+  local out count
+  new_case toon-log
+  toon_snapshot projected_exhaustion 5 100
+  out=$(run_snapshot_check --snapshot "$CASE/quota.toon") || fail "first alert failed"
+  assert_contains "$out" TIGHT_HORIZON "first crossing alerts"
+  assert_contains "$out" 'move new workers off' "recommendation preserves supervisor pool"
+  out=$(run_snapshot_check --snapshot "$CASE/quota.toon") || fail "repeat failed"
+  [ -z "$out" ] || fail "repeated condition alerted: $out"
+  toon_snapshot exhausted_now 0 0
+  out=$(run_snapshot_check --snapshot "$CASE/quota.toon") || fail "exhaustion failed"
+  assert_contains "$out" EXHAUSTED "escalation alerts"
+  toon_snapshot through_reset 40
+  out=$(run_snapshot_check --snapshot "$CASE/quota.toon") || fail "recovery failed"
+  [ -z "$out" ] || fail "healthy check printed alert"
+  toon_snapshot projected_exhaustion 5 100
+  out=$(run_snapshot_check --snapshot "$CASE/quota.toon") || fail "recurrence failed"
+  assert_contains "$out" TIGHT_HORIZON "recovery rearms alert"
+  awk 'BEGIN { for (i=0; i<1010; i++) print i "\tcodex\tall_models\tTIGHT_HORIZON\t5\tprojected_exhaustion\t100\taccount=default members=primary; " }' > "$HOME_DIR/state/quota-guard.tsv"
+  out=$(run_snapshot_check --snapshot "$CASE/quota.toon") || fail "rotation failed"
+  [ -z "$out" ] || fail "rotation lost dedup state"
+  count=$(wc -l < "$HOME_DIR/state/quota-guard.tsv" | tr -d ' ')
+  expect_code 1000 "$count" "ledger is bounded"
+  awk -F '\t' -v now="$NOW" 'NF != 8 {exit 1} END {if ($1 != now) exit 1}' "$HOME_DIR/state/quota-guard.tsv" || fail "rotated TSV malformed or newest row missing"
+  pass "new conditions alert once, recovery rearms, and TSV rotation keeps 1000 structured rows"
+}
+
+test_snapshot_one_live_read_and_options() {
+  local out arg
+  new_case toon-read
+  toon_snapshot through_reset 40
+  cp "$CASE/quota.toon" "$CASE/main.json"
+  out=$(run_snapshot_check --json) || fail "live read failed"
+  printf '%s\n' "$out" | jq -e '.horizon_secs == 36000 and .pools[0].verdict == "HEALTHY"' >/dev/null || fail "$out"
+  [ "$(wc -l < "$CASE/reads" | tr -d ' ')" = 1 ] || fail "more than one quota read"
+  assert_contains "$(cat "$CASE/reads")" 'args=--no-credential-refresh' "default TOON read never refreshes credentials"
+  for arg in 0 -1 text 01 1000000000; do
+    if run_snapshot_check --horizon-secs "$arg" > "$CASE/option.out" 2>&1; then fail "accepted horizon $arg"; fi
+  done
+  run_snapshot_check --help > "$CASE/help" || fail "check help failed"
+  pass "one bounded default-format read, default horizon, strict options and help"
+}
 fm_test_run \
+  test_snapshot_horizon_and_exhaustion \
+  test_snapshot_attention_and_missing_data \
+  test_snapshot_local_members_and_config \
+  test_snapshot_account_keys_and_scopes \
+  test_snapshot_alert_dedup_and_rotation \
+  test_snapshot_one_live_read_and_options \
   test_stale_quota_is_unknown_not_headroom \
   test_short_supervisor_pool_steers_its_workers_and_fails_over \
   test_exhausted_supervisor_fails_over_to_another_account \
