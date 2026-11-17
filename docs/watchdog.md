@@ -133,7 +133,6 @@ These checks run on every pass as well:
   `stall-pr` fires when a ship task with `yolo=on` has a latest `done` status that names a PR, at least `stall-secs` old, and the task has no merge-notification record for that PR.
   Declared waits stay quiet: a task whose latest status is a `paused:` or captain-held wait is not in flight, a wake row about that task or its pane does not count, and a PR that waits on the owner's merge word (`yolo=off`) is the owner's wait.
   Each trigger is a gap on every pass and pages the home's [alert channels](wedge-alarm.md#channels) at most once per `stall-page-secs` per home.
-  `stall-page` switches the page apart from `mode`.
   The page carries counts, ages, and PR URLs, never input or pane text; it types nothing, restarts nothing, lands nothing, and never touches the session lock.
 - Decisions open longer than `decision-secs` get one rolled-up nudge per home.
   A window later, the oldest unsettled decision goes to a council of blind seats, at most `council-per-pass` per home per pass.
@@ -471,7 +470,6 @@ An absent file means dry-run on the owner home alone.
 | `homes` | the owner home | Comma-separated homes to watch, each with its registered second mates |
 | `mode` | `dry-run` | `act` takes actions; anything else records them as `dry-run` |
 | `decisions` | the `mode` value | `act` lets the decision nudge, the council, and the ruling nudge act; any other value keeps them a dry run |
-| `stall-page` | the `mode` value | `act` sends the stall page; any other value records it as a dry run |
 | `restart` | `off` | `on` allows restarts when `mode=act` |
 | `restart-command` | none | Starts a new captain session and appends the prompt as one argument. When the command word, after any leading `NAME=value`, `env`, `exec`, or `command` and again after `&&`, `||`, `;`, or `|`, is `muse`, `muse-bin`, or `muse-bin-*`, or a path ending in one of them, with one layer of surrounding quotes removed, and the command carries none of `--yolo`, `--disable-approval`, `--approval-mode never`, or `--approval-mode=never`, `--yolo` is inserted as the first argument after the first such word. Any other command runs unchanged, even when another word names muse. |
 | `do-not-touch` | none | Comma-separated homes, home names, or terminal targets never typed into or restarted |

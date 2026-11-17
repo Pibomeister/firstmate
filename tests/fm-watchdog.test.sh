@@ -5352,11 +5352,20 @@ test_stall_page_declared_waits_stay_quiet() {
   printf '%s\t1\tsignal\tfm-w.status\tsignal\n' "$((BASE - 2000))" > "$H/state/.wake-queue"
   run_wd 0 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows stall-input page "done")" "a resolved wait is no longer quiet: $(ledger | cut -f5-8)"
+
+  stall_home
+  stall_task fm-a off "working [at=$((BASE - 100))]: implementing"
+  printf 'kind=ship\nbackend=t3code\nt3_thread_id=thr-wait-1\nyolo=off\nendpoint_task_id=fm-t3\n' > "$H/state/fm-t3.meta"
+  printf 'paused [at=%s]: waiting on CI\n' "$((BASE - 2000))" > "$H/state/fm-t3.status"
+  printf '08\t1\tsignal\tbad-octal\tsignal\n' > "$H/state/.wake-queue"
+  printf '%s\t2\tstale\tthr-wait-1\tstale: thr-wait-1\n' "$((BASE - 1900))" >> "$H/state/.wake-queue"
+  run_wd 0 once >/dev/null 2>&1 || fail "t3code wait and leading-zero wake timestamp failed"
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 ~ /^stall-/' | wc -l | tr -d ' ')" "a t3code declared wait stays quiet and leading-zero timestamps are skipped: $(ledger | cut -f5-8)"
   pass "stall page: rows about declared waits and homes with only declared waits stay quiet"
 }
 
 test_stall_page_ready_pr_unlanded() {
-  local url=https://github.com/o/r/pull/7
+  local url=https://github.com/o/r/pull/7 forgejo_url=https://git.example.com/o/r/pulls/9
   stall_home
   stall_task fm-p on "done [at=$((BASE - 1000))]: PR $url checks green"
   run_wd 0 once >/dev/null 2>&1 || fail "first pass failed"
@@ -5368,6 +5377,7 @@ test_stall_page_ready_pr_unlanded() {
   run_wd 600 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows stall-pr page pending)" "the PR page is rate-limited: $(ledger | cut -f5-8)"
   printf 'fm-pr-poll-merge-notified-v1\ngithub\ngithub.com\no/r\n7\n' > "$H/state/fm-p.pr-poll-merge-notified"
+  chmod 600 "$H/state/fm-p.pr-poll-merge-notified"
   run_wd 3700 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows stall-pr page pending)" "a landed PR no longer pages: $(ledger | cut -f5-8)"
   assert_no_grep "ready PRs unlanded" "$H/data/watchdog/status.md" "a landed PR leaves the gaps"
@@ -5375,8 +5385,34 @@ test_stall_page_ready_pr_unlanded() {
   stall_home
   stall_task fm-p on "done [at=$((BASE - 1000))]: PR $url checks green"
   printf 'fm-pr-poll-merge-notified-v1\ngithub\ngithub.com\no/r\n6\n' > "$H/state/fm-p.pr-poll-merge-notified"
+  chmod 600 "$H/state/fm-p.pr-poll-merge-notified"
   run_wd 0 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows stall-pr page "done")" "a marker for another PR of the task does not count as landed: $(ledger | cut -f5-8)"
+
+  stall_home
+  stall_task fm-p on "done [at=$((BASE - 1000))]: PR $forgejo_url checks green"
+  printf 'fm-pr-poll-merge-notified-v1\nforgejo\nother.example.com\no/r\n9\n' > "$H/state/fm-p.pr-poll-merge-notified"
+  chmod 600 "$H/state/fm-p.pr-poll-merge-notified"
+  run_wd 0 once >/dev/null 2>&1 || fail "forgejo pass failed"
+  assert_equals 1 "$(ledger_rows stall-pr page "done")" "a Forgejo PR pages and a marker for another host does not count as landed: $(ledger | cut -f5-8)"
+  assert_grep "$forgejo_url" "$H/paged.log" "the page names the Forgejo PR"
+  printf 'fm-pr-poll-merge-notified-v1\nforgejo\ngit.example.com\no/r\n9\n' > "$H/state/fm-p.pr-poll-merge-notified"
+  chmod 600 "$H/state/fm-p.pr-poll-merge-notified"
+  run_wd 3700 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows stall-pr page pending)" "a matching Forgejo marker marks the PR landed: $(ledger | cut -f5-8)"
+
+  stall_home
+  stall_task fm-p on "done [at=$((BASE - 1000))]: PR $forgejo_url checks green"
+  printf 'fm-pr-poll-merge-notified-v0\nforgejo\ngit.example.com\no/r\n9\n' > "$H/state/fm-p.pr-poll-merge-notified"
+  chmod 600 "$H/state/fm-p.pr-poll-merge-notified"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows stall-pr page "done")" "a marker with wrong version does not mark the PR landed: $(ledger | cut -f5-8)"
+
+  stall_home
+  printf 'kind=scout\nbackend=tmux\nwindow=%%9%s\nterminal=term_fm-s\nyolo=on\nendpoint_task_id=fm-s\n' "$CASE_N" > "$H/state/fm-s.meta"
+  printf 'done [at=%s]: reviewed %s\n' "$((BASE - 1000))" "$url" > "$H/state/fm-s.status"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 ~ /^stall-/' | wc -l | tr -d ' ')" "a scout task naming a PR URL does not trigger stall-pr: $(ledger | cut -f5-8)"
 
   stall_home
   stall_task fm-p off "done [at=$((BASE - 1000))]: PR $url checks green"
@@ -5395,7 +5431,7 @@ test_stall_page_ready_pr_unlanded() {
   pass "stall page: a ready PR under standing authority unlanded past stall-secs pages once per window until it lands"
 }
 
-test_stall_page_ignores_a_live_holder_and_fresh_heartbeat_and_follows_its_switch() {
+test_stall_page_ignores_a_live_holder_and_fresh_heartbeat() {
   # make_home's lock holder is a live process and its heartbeat is fresh; a
   # dead holder must not hide the stall either.
   stall_home
@@ -5413,20 +5449,6 @@ test_stall_page_ignores_a_live_holder_and_fresh_heartbeat_and_follows_its_switch
   assert_equals 1 "$(ledger_rows stall-input page dry-run)" "dry-run records the page it would send: $(ledger | cut -f5-8)"
   [ ! -e "$H/paged.log" ] || fail "dry-run paged the owner: $(cat "$H/paged.log")"
 
-  stall_home $'mode=dry-run\nstall-page=act'
-  stall_task fm-a off "working [at=$((BASE - 100))]: implementing"
-  owe_input 1000
-  run_wd 0 once >/dev/null 2>&1
-  assert_equals 1 "$(ledger_rows stall-input page "done")" "stall-page=act pages while everything else stays a dry run: $(ledger | cut -f5-8)"
-  [ ! -s "$H/typed.log" ] || fail "a dry-run home was typed into: $(cat "$H/typed.log")"
-
-  stall_home 'stall-page=off'
-  stall_task fm-a off "working [at=$((BASE - 100))]: implementing"
-  owe_input 1000
-  run_wd 0 once >/dev/null 2>&1
-  assert_equals 1 "$(ledger_rows stall-input page dry-run)" "stall-page=off keeps the page a dry run under mode=act: $(ledger | cut -f5-8)"
-  [ ! -e "$H/paged.log" ] || fail "stall-page=off paged the owner: $(cat "$H/paged.log")"
-
   stall_home
   stall_task fm-a off "working [at=$((BASE - 100))]: implementing"
   owe_input 1000
@@ -5434,7 +5456,7 @@ test_stall_page_ignores_a_live_holder_and_fresh_heartbeat_and_follows_its_switch
   run_wd 0 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows stall-input page refused)" "alerts turned off refuse the page: $(ledger | cut -f5-8)"
   assert_grep "stall-input not paged" "$H/data/watchdog/status.md" "the unpaged stall is a reported gap"
-  pass "stall page: no live or dead holder and no fresh heartbeat hides it, and stall-page switches it apart from mode"
+  pass "stall page: no live or dead holder and no fresh heartbeat hides it, and mode=dry-run records without paging"
 }
 
 test_never_merges_deploys_or_messages_owner() {
@@ -8409,7 +8431,7 @@ fm_test_run \
   test_stall_page_unhandled_input_pages_once_per_window \
   test_stall_page_declared_waits_stay_quiet \
   test_stall_page_ready_pr_unlanded \
-  test_stall_page_ignores_a_live_holder_and_fresh_heartbeat_and_follows_its_switch \
+  test_stall_page_ignores_a_live_holder_and_fresh_heartbeat \
   test_never_merges_deploys_or_messages_owner \
   test_default_heartbeat_freeze_stays_above_a_quiet_home \
   test_default_heartbeat_freeze_uses_published_deadline \

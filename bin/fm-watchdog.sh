@@ -132,6 +132,8 @@ export PATH
 . "$SCRIPT_DIR/fm-supervisor-target-lib.sh"
 # shellcheck source=bin/fm-quiet-hours-lib.sh
 . "$SCRIPT_DIR/fm-quiet-hours-lib.sh"
+# shellcheck source=bin/fm-pr-lib.sh
+. "$SCRIPT_DIR/fm-pr-lib.sh"
 
 die() { printf 'fm-watchdog: %s\n' "$1" >&2; exit "${2:-1}"; }
 
@@ -167,17 +169,6 @@ wd_decisions_mode() {
 wd_permission_mode() {
   case "${WD_FORCE_DRY:-}:$(cfg permission-route '')" in
     *:off) printf 'off\n' ;;
-    1:*) printf 'dry-run\n' ;;
-    *:) wd_mode ;;
-    *:act) printf 'act\n' ;;
-    *) printf 'dry-run\n' ;;
-  esac
-}
-
-# The stall page has its own switch too. An unset `stall-page` follows `mode`;
-# any value but `act` records the page as a dry run.
-wd_stall_page_mode() {
-  case "${WD_FORCE_DRY:-}:$(cfg stall-page '')" in
     1:*) printf 'dry-run\n' ;;
     *:) wd_mode ;;
     *:act) printf 'act\n' ;;
@@ -2357,16 +2348,21 @@ wd_handle_human_step() {  # <kind>
 # pane verdict enters it, so a live process or a fresh beacon cannot hide a
 # stall. It types nothing, restarts nothing, and never touches the session lock.
 
-# wd_pr_landed <state> <task-id> <pr-url>: 0 when the task's merge-notification
-# marker (bin/fm-pr-lib.sh) names this PR's repository path and number.
-wd_pr_landed() {
-  local marker=$1/$2.pr-poll-merge-notified url=$3 path num
-  [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
-  num=${url##*/}
-  path=${url#https://*/}
-  path=${path%%/pull/*}
-  path=${path%%/-/merge_requests/*}
-  awk -v p="$path" -v n="$num" 'NR == 4 { mp = $0 } NR == 5 { mn = $0 } END { exit !(mp == p && mn == n) }' "$marker"
+wd_stall_parse_pr_url() {  # <home> <status-line>
+  local FM_HOME=$1 FM_CONFIG_OVERRIDE=$1/config line=$2 token matched=''
+  while IFS= read -r token; do
+    while :; do
+      case "$token" in
+        *[\).\],\;:\'\"\>]) token=${token%?} ;;
+        *) break ;;
+      esac
+    done
+    if fm_pr_url_parse "$token"; then
+      matched=$FM_PR_URL
+    fi
+  done < <(printf '%s\n' "$line" | grep -oE 'https://[^[:space:]]+' || true)
+  [ -n "$matched" ] || return 1
+  fm_pr_url_parse "$matched"
 }
 
 # wd_stall_scan: sets S_FLIGHT, S_WAITS, S_IN_N, S_IN_AGE, S_PR_N, S_PR_AGE, and
@@ -2380,26 +2376,29 @@ wd_stall_scan() {
     sf=$st/$id.status
     if [ -f "$sf" ] && [ -n "$(status_declared_wait_line "$sf" 2>/dev/null)" ]; then
       S_WAITS="$S_WAITS$id"$'\n'
-      for key in terminal window; do
+      for key in terminal t3_thread_id window; do
         m=$(fm_meta_get "$meta" "$key" 2>/dev/null) || m=''
         [ -z "$m" ] || S_WAITS="$S_WAITS$m"$'\n'
       done
       continue
     fi
     S_FLIGHT=$((S_FLIGHT + 1))
-    # Only a PR firstmate may land on its own standing authority can stall here;
+    # Only a ship PR firstmate may land on its own standing authority can stall here;
     # one that waits on the owner's merge word is the owner's wait.
-    [ "$(fm_meta_get "$meta" yolo 2>/dev/null)" = on ] && [ -f "$sf" ] || continue
+    [ "$(fm_meta_get "$meta" kind 2>/dev/null)" = ship ] \
+      && [ "$(fm_meta_get "$meta" yolo 2>/dev/null)" = on ] \
+      && [ -f "$sf" ] || continue
     last=$(last_status_line "$sf" 2>/dev/null) || continue
     verb=$(status_line_verb "$last" 2>/dev/null) || continue
     [ "$verb" = "done" ] || continue
-    url=$(printf '%s\n' "$last" | grep -oE 'https://[^[:space:]]+/(pull|-/merge_requests)/[0-9]+' | tail -n 1)
-    [ -n "$url" ] || continue
+    wd_stall_parse_pr_url "$O_HOME" "$last" || continue
+    url=$FM_PR_URL
     at=$(status_line_at_epoch "$last" 2>/dev/null) || at=$(wd_mtime "$sf")
     fm_wd_epoch_ok "$at" && [ "$at" -le "$now" ] || continue
     age=$((now - at))
     [ "$age" -ge "$(cfgi stall-secs 900)" ] || continue
-    wd_pr_landed "$st" "$id" "$url" && continue
+    fm_pr_poll_merge_already_notified "$st" "$id" \
+      "$FM_PR_PROVIDER" "$FM_PR_HOST" "$FM_PR_PATH" "$FM_PR_NUMBER" && continue
     S_PR_N=$((S_PR_N + 1))
     [ "$age" -le "$S_PR_AGE" ] || S_PR_AGE=$age
     S_PRS="$S_PRS${S_PRS:+ }$url"
@@ -2410,7 +2409,7 @@ EOF
   # declared wait, and captain inbox notes not yet handled.
   if [ -s "$st/.wake-queue" ]; then
     while IFS=$'\t' read -r at _ _ key _; do
-      case "$at" in ''|*[!0-9]*) continue ;; esac
+      fm_wd_epoch_ok "$at" || continue
       tid=${key%.*}
       case "$S_WAITS" in *$'\n'"$key"$'\n'*|*$'\n'"$tid"$'\n'*) continue ;; esac
       S_IN_N=$((S_IN_N + 1))
@@ -2419,8 +2418,9 @@ EOF
   fi
   for f in "$st"/inbox/*.note; do
     [ -f "$f" ] || continue
-    S_IN_N=$((S_IN_N + 1))
     m=$(wd_mtime "$f")
+    fm_wd_epoch_ok "$m" || continue
+    S_IN_N=$((S_IN_N + 1))
     if [ -z "$in_old" ] || [ "$m" -lt "$in_old" ]; then in_old=$m; fi
   done
   if [ -n "$in_old" ] && [ "$in_old" -le "$now" ]; then S_IN_AGE=$((now - in_old)); fi
@@ -2433,7 +2433,7 @@ wd_stall_send() {
   wd_gap "$detail"
   fm_wd_rate_ok "$LEDGER" "$O_HOME" "$symptom" page "$(cfgi stall-page-secs 3600)" "$(wd_now)" "$O_TAG" || return 0
   id=$(wd_id)
-  if [ "$(wd_stall_page_mode)" != act ]; then wd_rec "$id" "$symptom" page dry-run "would page the owner; $detail"; return 0; fi
+  if [ "$(wd_mode)" != act ]; then wd_rec "$id" "$symptom" page dry-run "would page the owner; $detail"; return 0; fi
   wd_rec "$id" "$symptom" page pending "$detail"
   out=$(FM_HOME=$O_HOME FM_STATE_OVERRIDE=$O_HOME/state FM_CONFIG_OVERRIDE=$O_HOME/config \
     fm_run_timed 60 bash "$SCRIPT_DIR/fm-supervise-daemon.sh" page "$summary" "$LEDGER" 2>/dev/null)
