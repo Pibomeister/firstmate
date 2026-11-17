@@ -254,6 +254,20 @@ set -eu
 echo "$$" > "$FM_HOME/pred.pid"
 ORCA_TERMINAL_HANDLE=term_predecessor bash "$ROOT/bin/fm-lock.sh" > "$FM_HOME/lock.out" 2>&1
 set +e
+if [ "$FM_HANDOFF_LAB_MODE" = interrupt-before-attempt ]; then
+  # Hold the claim lock until the launcher waits for it, then interrupt the
+  # launcher before any attempt starts.
+  (STATE="$FM_HOME/state"
+    . "$ROOT/bin/fm-wake-lib.sh"
+    fm_lock_acquire_wait "$STATE/.lock.acquire"
+    touch "$STATE/claim-held"
+    end=$((SECONDS + 60))
+    while [ ! -e "$STATE/claim-wait" ] && [ "$SECONDS" -lt "$end" ]; do sleep 0.1; done
+    kill -TERM "$(cat "$FM_HOME/launcher.pid")"
+    sleep 1
+    rm -f "$STATE/claim-held"
+    fm_lock_release "$STATE/.lock.acquire") &
+fi
 if [ "$FM_HANDOFF_LAB_MODE" = slow-claim ]; then
   # Hold the claim lock past half the budget before the launcher starts.
   (STATE="$FM_HOME/state"
@@ -294,7 +308,11 @@ run_case() {
   # interrupt-after-ack and precommit also end at a real ack, so they need
   # the success budget's claim deadline rather than the 40 s failure claim.
   case "$mode" in interrupt-after-ack|precommit) budget=$LAB_SUCCESS_BUDGET ;; esac
-  [ "$mode" != uncovered-order ] || FM_HOME="$LAB" bash "$ROOT/bin/fm-order.sh" send --from test 'order the handoff omits' >/dev/null
+  if [ "$mode" = uncovered-order ]; then
+    FM_HOME="$LAB" bash "$ROOT/bin/fm-order.sh" send --from test 'order the handoff omits' >/dev/null
+    printf 'at=1 pid=1 nonce=none attempt=0 reason=error\n' > "$LAB/state/.handoff-launch-failed"
+  fi
+  [ "$mode" != interrupt-before-attempt ] || printf 'at=1 pid=1 nonce=none attempt=0 reason=error\n' > "$LAB/state/.handoff-launch-failed"
   # `arm` fires the real hook's planned fresh start first, so a failing mode
   # exercises the gate that firing sets.
   if [ "$mode" = success ] || [ "${3:-}" = arm ]; then
@@ -411,9 +429,11 @@ assert_contains "$(cat "$LAB/launch.out")" 'this session keeps the lock' 'the re
 [ "$(cat "$LAB/state/.lock")" = "$(cat "$LAB/pred.pid")" ] || fail 'an uncovered order must not move the lock'
 [ ! -e "$LAB/state/attempts" ] || fail 'an uncovered order must launch no successor'
 [ ! -e "$LAB/state/handoff-events.log" ] || fail "an uncovered order must emit no handoff event: $(cat "$LAB/state/handoff-events.log")"
-for record in .handoff-pending .handoff-successor .handoff-launch-failed .handoff-launch.lock supervisor-failover.log; do
+for record in .handoff-pending .handoff-successor .handoff-launch.lock supervisor-failover.log; do
   [ ! -e "$LAB/state/$record" ] || fail "an uncovered order must not write $record"
 done
+[ "$(cat "$LAB/state/.handoff-launch-failed" 2>/dev/null)" = 'at=1 pid=1 nonce=none attempt=0 reason=error' ] \
+  || fail 'an uncovered order must leave an earlier failure record exactly as it was'
 pass 'a handoff that omits an open captain order is refused before any claim, record, or launch'
 # Once the handoff lists the order, the same launch proceeds to a verified transfer.
 FM_HOME="$LAB" bash "$ROOT/bin/fm-order.sh" handoff --doc "$LAB/data/handoff ) '.md" >/dev/null
@@ -439,6 +459,19 @@ run_hook_fixture PostToolUse >/dev/null
 assert_contains "$(cat "$LAB/state/compact-point")" ' reset=handoff' 'without a failure record the cycle still publishes a handoff reset'
 mv "$LAB/failed.keep" "$LAB/state/.handoff-launch-failed"
 pass 'a failed planned fresh start releases its Stop gate and falls back to auto-compaction'
+
+# A later launch removes the earlier failure record; when it is interrupted
+# before any attempt starts, it records its own failure for the surviving
+# session rather than leave the cycle gated with no record.
+run_case interrupt-before-attempt orca arm
+[ "$(cat "$LAB/rc")" != 0 ] || fail 'the interrupted launch must fail'
+[ ! -e "$LAB/state/attempts" ] || fail 'the interrupted launch must start no attempt'
+failed=$(cat "$LAB/state/.handoff-launch-failed" 2>/dev/null) || fail 'an interrupted launch must record state/.handoff-launch-failed'
+printf '%s\n' "$failed" | grep -Eq "^at=[0-9]+ pid=$(cat "$LAB/pred.pid") nonce=(none|[0-9a-f]{32}) attempt=0 reason=(interrupted|unresolved)\$" \
+  || fail "the interrupted launch must replace the earlier record with its own: $failed"
+[ "$(cat "$LAB/state/.lock")" = "$(cat "$LAB/pred.pid")" ] || fail 'the interrupted launch must not move the lock'
+run_hook_fixture Stop >/dev/null 2>&1 || fail 'an interrupted fresh-start launch must release the Stop gate for the surviving session'
+pass 'a launch interrupted before any attempt still records its failure for the surviving session'
 
 # Existing supervisor endpoint metadata outranks an inherited terminal variable.
 META_HOME="$TMP_ROOT/meta-home"

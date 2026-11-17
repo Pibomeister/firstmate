@@ -35,7 +35,8 @@
 # Launch failure: state/.handoff-launch-failed is one line,
 #   at=<epoch> pid=<predecessor-pid> nonce=<hex-or-none> attempt=<0|1|2> reason=<safe-token>
 # rewritten by the launcher with every handoff_failed it emits, including
-# reason=unresolved, and removed when a later launch starts its attempts.
+# reason=unresolved, and with any unfinished exit after it removed an earlier
+# record. A later launch removes it once it holds the launch lock.
 # While the record names the current, live lock pid, the predecessor survived the
 # failed launch and keeps supervising this home. A planned fresh start whose
 # trigger marker is no newer than the record (fm_handoff_launch_failed_since)

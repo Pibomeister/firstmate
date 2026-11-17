@@ -510,7 +510,8 @@ The successor reads the handoff and acknowledges it before running session start
 The predecessor remains alive until the acknowledgement is validated and the lock transfers under the existing claim and task-lease locks.
 The predecessor then ends its turn and retires; it must not continue fleet mutations after the transfer.
 Two fresh terminal attempts share one ten-minute budget; the launcher emits a parseable failure if neither completes.
-Every such failure also writes `state/.handoff-launch-failed`, which names the predecessor that still holds the lock, and a later launch removes it when it starts its attempts.
+Every such failure, and any unfinished exit of a later launch, writes `state/.handoff-launch-failed`, which names the predecessor that still holds the lock.
+A later launch removes that record when it starts.
 A missing or invalid acknowledgement cannot move the predecessor's live lock.
 On Orca, failed panes remain available for diagnosis; on every backend, a failed attempt's expired claim cannot take ownership.
 `bin/fm-captain-locate.sh` reports the verified lock holder and its terminal handle for supervisor discovery; its header owns the output format.

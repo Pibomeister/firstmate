@@ -49,8 +49,9 @@
 # still busy then, a successor transaction may yet commit, so the exit emits
 # handoff_failed reason=unresolved: not final, settled by a later handoff_ack
 # reason=lock_transferred for the same nonce.
-# Each handoff_failed also rewrites state/.handoff-launch-failed, and a launch
-# that starts its attempts removes it; bin/fm-handoff-lib.sh owns the record and
+# Each handoff_failed also rewrites state/.handoff-launch-failed, as does an
+# unfinished exit after the launch removed an earlier record, and a launch
+# removes it once it holds the launch lock; bin/fm-handoff-lib.sh owns the record and
 # how it releases a planned fresh start's Stop gate for the surviving session.
 # Outputs only the versioned events owned by fm-handoff-lib.sh. Other errors
 # go to stderr. state/.handoff-successor is written only after lock verification.
@@ -242,6 +243,7 @@ fm_lock_try_acquire "$STATE/.handoff-launch.lock" || die 'a handoff launcher alr
 NONCE=
 CLAIM_HELD=0
 HANDOFF_STARTED=0
+FAILED_RECORD_CLEARED=0
 HANDOFF_COMPLETE=0
 HANDOFF_FAIL_REQUESTED=0
 HANDOFF_FAILURE_REASON=error
@@ -275,6 +277,11 @@ cleanup() {
     fm_handoff_event handoff_failed "$NONCE" "$attempt" "$PRED_PID" none "$HANDOFF_FAILURE_REASON" >&9
     fm_handoff_record_launch_failed "$PRED_PID" "$NONCE" "$attempt" "$HANDOFF_FAILURE_REASON" \
       || printf 'error: cannot record the failed launch in state/.handoff-launch-failed\n' >&2
+  elif [ "$HANDOFF_COMPLETE" -eq 0 ] && [ "$rc" -ne 0 ] && [ "$FAILED_RECORD_CLEARED" = 1 ]; then
+    # This launch removed an earlier failure record but stopped before any
+    # attempt started, so the session still holds the lock: record that too.
+    fm_handoff_record_launch_failed "$PRED_PID" "$NONCE" "${attempt:-0}" "$HANDOFF_FAILURE_REASON" \
+      || printf 'error: cannot record the failed launch in state/.handoff-launch-failed\n' >&2
   fi
   if [ "$CLAIM_HELD" = 1 ] && [ -n "$NONCE" ] \
     && [ "$(jq -r '.nonce // ""' "$STATE/.handoff-pending" 2>/dev/null)" = "$NONCE" ]; then
@@ -288,6 +295,7 @@ cleanup() {
 trap cleanup EXIT
 trap 'HANDOFF_FAILURE_REASON=interrupted; exit 1' HUP INT TERM
 rm -f "$STATE/.handoff-successor" "$STATE/.handoff-launch-failed"
+FAILED_RECORD_CLEARED=1
 DEADLINE=$(( $(date +%s) + TIMEOUT ))
 MONO_DEADLINE=$((SECONDS + TIMEOUT))
 
