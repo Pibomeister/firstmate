@@ -1746,6 +1746,7 @@ families_for_changed_path() {
       printf '%s\n' real-herdr-gated
       printf '%s\n' backend-dispatch
       printf '%s\n' pure-contract-unit
+      printf '%s\n' "__script__:fm-watchdog-herdr-path.test.sh"
       ;;
     bin/fm-herdr-session-cleanup.sh)
       printf '%s\n' session-bootstrap
@@ -1826,6 +1827,7 @@ families_for_changed_path() {
       printf '%s\n' watcher-wake-lock
       printf '%s\n' "__script__:fm-backend-t3code.test.sh"
       printf '%s\n' "__script__:fm-watchdog.test.sh"
+      printf '%s\n' "__script__:fm-watchdog-herdr-path.test.sh"
       printf '%s\n' "__script__:fm-quota-guard.test.sh"
       printf '%s\n' "__script__:fm-watchdog-live.test.sh"
       printf '%s\n' "__script__:fm-usage-limit-pane-live.test.sh"

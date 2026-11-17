@@ -68,6 +68,14 @@ WD_COUNCIL_MAX_CHARS=2000
 
 # shellcheck source=bin/fm-watchdog-lib.sh
 . "$SCRIPT_DIR/fm-watchdog-lib.sh"
+# A boot-time launchd or systemd PATH can omit ~/.local/bin, where a
+# self-updated herdr lives, and then resolve an older package-managed copy that
+# starts a server the rest of the fleet cannot drive. Every command, including
+# render-launchd and render-systemd, uses the same normalized PATH, so any tool
+# in ~/.local/bin, not only herdr, wins over a package-managed copy, as it does
+# in an interactive Firstmate shell.
+PATH=$(fm_wd_user_bin_path "$PATH" "${HOME:-}")
+export PATH
 # shellcheck source=bin/fm-composer-lib.sh
 . "$SCRIPT_DIR/fm-composer-lib.sh"
 # shellcheck source=bin/fm-secret-lib.sh
@@ -197,6 +205,15 @@ wd_pane_sig() {  # <screen>
 
 wd_capture() {  # <backend> <target> <lines>
   fm_run_timed_fn "$(cfgi call-timeout-secs 20)" fm_backend_capture "$1" "$2" "$3" 2>/dev/null
+}
+
+# The cause of a failed herdr read when it is a client and server protocol
+# mismatch on the target's session, else nothing (bin/backends/herdr.sh
+# fm_backend_herdr_client_mismatch). It never starts or stops a server.
+wd_herdr_mismatch() {  # <herdr-target>
+  fm_backend_source herdr >/dev/null 2>&1 || return 1
+  fm_backend_herdr_parse_target "$1" || return 1
+  fm_backend_herdr_client_mismatch "$FM_BACKEND_HERDR_SESSION"
 }
 
 # Match fm-control.sh usage_limit_dialog_name: a viewport read is expected
@@ -487,7 +504,7 @@ wd_observe() {
   now=$(wd_now)
   O_HOME=$home O_PARENT=$parent O_ID=$id O_TAG=$(wd_tag "$home") O_KEY=$(wd_state_key "$home")
   O_BACKEND='' O_TARGET='' O_HARNESS='' O_SESSION='' O_HB_AGE=unknown O_CTX='' O_CTX_SRC='' O_CTX_READING='' O_CTX_RESET=''
-  O_PANE='' O_DIALOG_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_AUTOWAIT=0 O_LIMIT_FOOTER=0 O_COMPOSER=unknown O_TURN=unknown
+  O_PANE='' O_HERDR_MISMATCH='' O_DIALOG_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_AUTOWAIT=0 O_LIMIT_FOOTER=0 O_COMPOSER=unknown O_TURN=unknown
   O_LOCK_PID='' O_ALIVE=0 O_INSTANCE=unknown O_OWNER=none O_CPU_BUSY=unknown O_TRANSCRIPT='' O_TR_AGE=unknown O_ACT_AGE=unknown O_ACT_SRC=''
   C_BACKEND='' C_TARGET='' C_MOVED=''
   O_LOOP=none O_LOOP_N=0 O_EVENTS='' O_RESTART_REQ=0 O_OWED_N=0 O_OWED_AGE=0
@@ -581,6 +598,9 @@ EOF
   fi
   if [ -n "$O_BACKEND" ] && [ -n "$O_TARGET" ]; then
     O_PANE=$(wd_capture "$O_BACKEND" "$O_TARGET" 60) || O_PANE=''
+    if [ -z "$O_PANE" ] && [ "$O_BACKEND" = herdr ]; then
+      O_HERDR_MISMATCH=$(fm_run_timed_fn "$(cfgi call-timeout-secs 20)" wd_herdr_mismatch "$O_TARGET" 2>/dev/null) || O_HERDR_MISMATCH=''
+    fi
   fi
   if [ -n "$O_PANE" ]; then
     local view
@@ -659,6 +679,7 @@ wd_print_observation() {
     "  pane_static=${O_PANE_STATIC}s dialog=${O_DIALOG:-none} usage_limit_autowait=$O_AUTOWAIT composer=$O_COMPOSER turn_running=$O_TURN cpu_busy=$O_CPU_BUSY" \
     "  activity_age=${O_ACT_AGE}s${O_ACT_SRC:+ ($O_ACT_SRC)} loop=$O_LOOP/$O_LOOP_N restart_requested=$O_RESTART_REQ ctx=${O_CTX:-unknown}${O_CTX_SRC:+ ($O_CTX_SRC)}${O_CTX_READING:+ [$O_CTX_READING]}${O_CTX_RESET:+ reset=$O_CTX_RESET}" \
     "  owed=$O_OWED_N oldest=${O_OWED_AGE}s afk=$O_AFK daemon=$O_DAEMON heartbeat_age=${O_HB_AGE}s"
+  [ -z "$O_HERDR_MISMATCH" ] || printf '  %s\n' "$O_HERDR_MISMATCH"
 }
 
 # --- actions -------------------------------------------------------------------
@@ -2036,7 +2057,7 @@ wd_worker_metas() {  # <home>
 # other key. mode=print reports the read and does not act. A gone endpoint is
 # not a dialog.
 wd_visit_worker_dialogs() {
-  local mode=$1 id meta backend target harness screen dialog
+  local mode=$1 id meta backend target harness screen dialog mismatch
   local saved_pane saved_dialog_pane saved_backend saved_target saved_harness saved_dialog saved_id
   local saved_composer saved_composer_text saved_composer_above saved_draft
   saved_pane=$O_PANE
@@ -2064,8 +2085,20 @@ wd_visit_worker_dialogs() {
       continue
     fi
     if ! fm_backend_target_exists "$backend" "$target" 2>/dev/null; then
+      # A herdr server that refuses every client looks like a gone pane; say so.
+      mismatch=''
+      if [ "$backend" = herdr ]; then
+        mismatch=$(fm_run_timed_fn "$(cfgi call-timeout-secs 20)" wd_herdr_mismatch "$target" 2>/dev/null) || mismatch=''
+      fi
       if [ "$mode" = print ]; then
-        printf '  worker %s endpoint=%s:%s dialog=gone\n' "$id" "$backend" "$target"
+        if [ -n "$mismatch" ]; then
+          printf '  worker %s endpoint=%s:%s dialog=unknown\n' "$id" "$backend" "$target"
+          printf '    %s\n' "$mismatch"
+        else
+          printf '  worker %s endpoint=%s:%s dialog=gone\n' "$id" "$backend" "$target"
+        fi
+      elif [ -n "$mismatch" ]; then
+        wd_gap "worker $id pane could not be read: $mismatch"
       else
         wd_gap "worker $id endpoint is gone; its pane is not read"
       fi
@@ -2153,6 +2186,7 @@ wd_handle_subject() {
   if [ "$O_DIALOG" = unknown ]; then
     wd_gap "the visible pane could not be read; dialog unknown"
   fi
+  [ -z "$O_HERDR_MISMATCH" ] || wd_gap "$O_HERDR_MISMATCH"
   if [ "$dead" = 1 ]; then
     symptom='agent-gone'
     if [ "$O_ACT_AGE" != unknown ] && [ "$O_ACT_AGE" -ge "$frozen" ]; then
