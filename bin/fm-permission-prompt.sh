@@ -44,8 +44,9 @@
 #       records a permanent decline), Claude's bypass-permissions confirmation
 #       (the cursor sits on `No, exit`), and Codex's hook-review modal. No key.
 #   hold unproven
-#       Any other permission dialog. No key. Any other question picker has no
-#       verdict.
+#       Any other permission dialog, including a recorded Codex command
+#       approval that names no hard stop. No key. Any other question picker
+#       has no verdict.
 #
 # Functions (all pure; they read their arguments and print):
 #   fm_pp_classify <screen> <harness> [<dialog>]
@@ -230,6 +231,30 @@ _fm_pp_trust_dialog() {  # <screen>
   [ "$rows" = ok ]
 }
 
+# A recorded Codex CLI 0.151.0 dialog, which the watchdog's dialog detector
+# does not read: its command-approval question or hook-review heading, a
+# numbered cursor row (`›` or `>`) below it, and its whole lowercase footer as
+# the last row. It only ever leads to a hold or a hard stop.
+_fm_pp_codex_dialog() {  # <screen>
+  local rows
+  rows=$(printf '%s\n' "${1-}" | fm_wd_strip_ansi | LC_ALL=C awk '
+    { r[NR] = $0 }
+    END {
+      last = NR
+      while (last > 0 && r[last] !~ /[^ \t]/) last--
+      if (r[last] !~ /^[ \t]*Press enter to confirm or esc to (cancel|go back)[ \t]*$/) exit 1
+      floor = last - 14; if (floor < 1) floor = 1
+      head = 0
+      for (i = last - 1; i >= floor; i--) if (r[i] ~ /^[ \t]*(Would you like to run the following command\?|Hooks need review)[ \t]*$/) { head = i; break }
+      if (!head) exit 1
+      cursor = 0
+      for (i = head + 1; i < last; i++) if (r[i] ~ /^[ \t]*(›|>)[ \t]*[0-9]+\.[ \t]/) cursor++
+      if (cursor != 1) exit 1
+      print "ok"
+    }') || return 1
+  [ "$rows" = ok ]
+}
+
 fm_pp_classify() {  # <screen> <harness> [<dialog>]
   local screen=${1-} harness=${2-} dialog=${3-} rows ruled text cat
   [ -n "$screen" ] || return 1
@@ -246,6 +271,9 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
     dialog=
   elif [ -z "$dialog" ]; then
     dialog=$(fm_wd_pane_dialog "$screen" "$harness") || dialog=
+  fi
+  if [ -z "$dialog" ] && _fm_pp_codex_dialog "$screen"; then
+    dialog=permission
   fi
   case "$dialog" in
     permission|question) ;;

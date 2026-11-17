@@ -161,7 +161,7 @@ The text says it comes from the automated watchdog.
 
 On each pass the watchdog reads the screen of every recorded ship or scout worker pane through `bin/fm-permission-prompt.sh`, which names one verdict for a prompt there.
 The watchdog never selects a yes option, never presses Enter or a digit on a permission prompt, and never types text into one.
-The classifier recognizes only exact known dialogs: the recorded Claude tool-approval prompt, the Claude and Antigravity workspace-trust dialogs, the external-imports, bypass-confirmation, and hook-review dialogs, and the pickers the watchdog's own dialog detector reads (`fm_wd_pane_dialog` in `bin/fm-watchdog-lib.sh`).
+The classifier recognizes only exact known dialogs: the recorded Claude tool-approval prompt, the Claude and Antigravity workspace-trust dialogs, the external-imports, bypass-confirmation, and hook-review dialogs, the recorded Codex CLI 0.151.0 command-approval and hook-review dialogs (whose whole lowercase footer `Press enter to confirm or esc to cancel` must be the last row), and the pickers the watchdog's own dialog detector reads (`fm_wd_pane_dialog` in `bin/fm-watchdog-lib.sh`).
 A screen with none of those gets no verdict, so a generic terminal or external-CLI prompt, such as a password input or a `[y/N]` confirmation, is left to the existing gap and away page.
 Detectors for those prompts are planned as an observe-only follow-up under [issue #264](https://github.com/Pibomeister/firstmate/issues/264).
 The submit guard is unchanged (`fm_composer_blocking_dialog` in `bin/fm-composer-lib.sh`), and the watchdog sends its own instruction only after Escape when the composer reads as proven empty.

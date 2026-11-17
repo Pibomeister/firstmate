@@ -203,6 +203,8 @@ test_declining_cursor_dialogs_never_route() {
   assert_equals $'hardstop\trelease' "$(codex_approval 'git push origin main' | classify codex)" "a Codex approval to push main is a release stop"
   assert_equals $'hardstop\tdestructive' "$(codex_approval 'rm -rf build' | classify codex)" "a Codex approval to remove recursively is a destructive stop"
   assert_equals $'hold\tunproven' "$(codex_approval 'npm test' | classify codex)" "any other Codex command approval is held"
+  { codex_approval 'rm -rf build'; printf '%s\n' '' '› Explain this' '' '  gpt-6 high · ~/work'; } | classify codex >/dev/null \
+    && fail "a Codex approval quoted above a composer is not a live dialog"
   assert_equals $'hold\tunproven' "$(bash_prompt | sed -e 's/^ ❯ 1\. Yes$/   1. Yes/' -e 's/^   4\. No$/ ❯ 4. No/' | classify claude)" \
     "a tool prompt whose cursor moved off 1. Yes is not proven"
   assert_equals $'hold\tunproven' "$(bash_prompt | sed '/^─\{20,\}$/d' | classify claude)" "a tool prompt with no rule above it is not proven"

@@ -2441,7 +2441,7 @@ wd_visit_worker_dialogs() {
         ;;
     esac
     # A held prompt or hard stop on a screen the dialog reader did not label
-    # permission, such as a password input or a declining picker, still gets
+    # permission, such as a Codex dialog or a declining picker, still gets
     # the waiting gap and the away page. A decline that only waits for its
     # next pass, with no blocked line, does not.
     if [ "$prompt" = 1 ] && [ "$dialog" != permission ] && [ -n "${WD_PP_STOPPED:-}" ]; then
