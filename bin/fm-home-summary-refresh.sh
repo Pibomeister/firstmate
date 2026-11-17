@@ -22,8 +22,9 @@
 # A failed refresh never rewrites the ledger, so the last good summary keeps its
 # own generated and generated_epoch values: readers see its true age, never the
 # time of the failed attempt. The producer reports each stage it enters to a
-# per-attempt stage file (FM_SNAPSHOT_STAGE_LOG), and a failed attempt logs the
-# stage it was in plus the stage start offsets, so a slow stage is named in
+# per-attempt stage file (FM_SNAPSHOT_STAGE_LOG), and a failed attempt, whether
+# it hit the deadline or the worker handled the failure itself, logs the stage it
+# was in plus the stage start offsets, so a slow or failing stage is named in
 # state/.home-summary-refresh.log instead of a bare deadline.
 # The worker adds its own stages to that file: lock-wait, producer, validate and
 # publish, with the producer's stages between producer and validate.
@@ -303,6 +304,11 @@ if home_summary_refresh_once; then
   exit 0
 else
   refresh_rc=$?
+fi
+# A failure the worker handled itself names its stage too, like a deadline the
+# parent reports, so every failed refresh says where it stopped.
+if [ -n "${FM_SNAPSHOT_STAGE_LOG:-}" ]; then
+  HOME_SUMMARY_ERROR="$HOME_SUMMARY_ERROR$(home_summary_stage_note "$FM_SNAPSHOT_STAGE_LOG")"
 fi
 if [ "$BEST_EFFORT" -eq 1 ]; then
   home_summary_log_failure

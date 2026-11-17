@@ -638,6 +638,136 @@ grep -F 'refresh exceeded its 3-second deadline in stage publish' \
   || fail "the publish stage was not named in the failure log: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
 pass "a deadline names the lock-wait, validate and publish stages"
 
+# A failure the worker handles itself, with no deadline involved, must name its
+# stage too: a malformed document in validate, a refused replacement in publish.
+JQFAILBIN="$TMP_ROOT/jq-fail-bin"
+mkdir -p "$JQFAILBIN"
+cat > "$JQFAILBIN/jq" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    */.home-summary.json.*) exit 1 ;;
+  esac
+done
+exec "$FM_TEST_REAL_JQ" "$@"
+SH
+chmod +x "$JQFAILBIN/jq"
+: > "$HOME_DIR/state/.home-summary-refresh.log"
+PATH="$JQFAILBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  "$WRITER" --best-effort \
+  || fail "a worker-handled validation failure changed the best-effort caller result"
+grep -F 'summary producer returned a malformed ledger document in stage validate (stages: lock-wait@' \
+  "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "a worker-handled validation failure did not name its stage: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+MVFAILBIN="$TMP_ROOT/mv-fail-bin"
+mkdir -p "$MVFAILBIN"
+cat > "$MVFAILBIN/mv" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    */home-summary.json) exit 1 ;;
+  esac
+done
+exec "$FM_TEST_REAL_MV" "$@"
+SH
+chmod +x "$MVFAILBIN/mv"
+: > "$HOME_DIR/state/.home-summary-refresh.log"
+PATH="$MVFAILBIN:$FAKEBIN:$PATH" FM_TEST_REAL_MV="$REAL_MV" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  "$WRITER" --best-effort \
+  || fail "a worker-handled publish failure changed the best-effort caller result"
+grep -F 'atomic ledger replacement failed' "$HOME_DIR/state/.home-summary-refresh.log" \
+  | grep -F ' in stage publish (stages: lock-wait@' >/dev/null \
+  || fail "a worker-handled publish failure did not name its stage: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+# Without --best-effort the direct caller sees the same stage on stderr.
+PATH="$MVFAILBIN:$FAKEBIN:$PATH" FM_TEST_REAL_MV="$REAL_MV" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  "$WRITER" 2> "$TMP_ROOT/direct-failure.err" \
+  && fail "a refused replacement did not fail the direct caller"
+grep -F ' in stage publish (stages: ' "$TMP_ROOT/direct-failure.err" >/dev/null \
+  || fail "the direct caller did not see the failing stage: $(cat "$TMP_ROOT/direct-failure.err")"
+pass "a failure the worker handles itself names its stage"
+
+# The producer reads current state for every task through a sliding window, not
+# in barriers. Five tasks run behind two slots: the first task's read cannot end
+# until the other four have, so it only finishes if the window refills a slot the
+# moment a fast task ends. A barrier, or serial reads, strand that read until the
+# fake gives up, and the event order below fails. The assertion counts reads and
+# their overlap, never elapsed time, so host load cannot change the verdict.
+SLIDE_HOME="$TMP_ROOT/slide-home"
+mkdir -p "$SLIDE_HOME/state" "$SLIDE_HOME/data" "$SLIDE_HOME/config" "$SLIDE_HOME/projects"
+SLIDE_HOME=$(cd "$SLIDE_HOME" && pwd -P)
+printf '# Seeded Firstmate home\n' > "$SLIDE_HOME/AGENTS.md"
+printf 'mate\n' > "$SLIDE_HOME/.fm-secondmate-home"
+{
+  printf '## In flight\n'
+  n=1
+  while [ "$n" -le 5 ]; do
+    printf -- '- [ ] slide-%s - Window task %s (repo: firstmate) (kind: ship) (since 2026-08-28)\n' "$n" "$n"
+    fm_git_init_commit "$SLIDE_HOME/projects/slide-$n"
+    git -C "$SLIDE_HOME/projects/slide-$n" checkout -q -b "fm/slide-$n"
+    fm_write_meta "$SLIDE_HOME/state/slide-$n.meta" \
+      "window=fmtest:fm-slide-$n" "worktree=$SLIDE_HOME/projects/slide-$n" \
+      "project=firstmate" "harness=claude" "kind=ship" "mode=no-mistakes" \
+      "spawn_gen=fm.slide$n"
+    printf 'working: window fixture\n' > "$SLIDE_HOME/state/slide-$n.status"
+    n=$((n + 1))
+  done
+  printf '\n## Queued\n\n## Done\n'
+} > "$SLIDE_HOME/data/backlog.md"
+SLIDEBIN="$TMP_ROOT/slide-bin"
+mkdir -p "$SLIDEBIN"
+cat > "$SLIDEBIN/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+[ -n "${FM_TEST_SLIDE_LOG:-}" ] && [ "$*" = "axi status" ] || exit 0
+id=$(basename "$PWD")
+case "$id" in slide-*) ;; *) exit 0 ;; esac
+printf 'start %s\n' "$id" >> "$FM_TEST_SLIDE_LOG"
+if [ "$id" = slide-1 ]; then
+  n=0
+  while [ "$(grep -c '^end ' "$FM_TEST_SLIDE_LOG")" -lt 4 ] && [ "$n" -lt 600 ]; do
+    sleep 0.05
+    n=$((n + 1))
+  done
+fi
+printf 'end %s\n' "$id" >> "$FM_TEST_SLIDE_LOG"
+exit 0
+SH
+chmod +x "$SLIDEBIN/no-mistakes"
+run_slide() {  # <concurrency> [log]
+  PATH="$SLIDEBIN:$FAKEBIN:$PATH" FM_TEST_SLIDE_LOG="${2:-}" \
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$SLIDE_HOME" \
+    FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
+    FM_SNAPSHOT_LOCAL_READ_CONCURRENCY="$1" \
+    "$SNAPSHOT" --secondmate-home-summary
+}
+SLIDE_LOG="$TMP_ROOT/slide-events.log"
+: > "$SLIDE_LOG"
+run_slide 2 "$SLIDE_LOG" > "$TMP_ROOT/slide-window.json" \
+  || fail "the sliding-window producer run failed"
+[ "$(grep -c '^start ' "$SLIDE_LOG")" -eq 5 ] \
+  || fail "the window did not read all five tasks once: $(tr '\n' ' ' < "$SLIDE_LOG")"
+[ "$(tail -n 1 "$SLIDE_LOG")" = "end slide-1" ] \
+  || fail "a free slot was not refilled while the slow read ran (barrier or serial reads): $(tr '\n' ' ' < "$SLIDE_LOG")"
+max_inflight=$(awk '/^start /{n++; if (n>m) m=n} /^end /{n--} END{print m+0}' "$SLIDE_LOG")
+[ "$max_inflight" -eq 2 ] \
+  || fail "the window ran $max_inflight reads at once instead of its limit of 2: $(tr '\n' ' ' < "$SLIDE_LOG")"
+# The composed summary must not depend on how many reads overlapped.
+run_slide 1 > "$TMP_ROOT/slide-serial.json" || fail "the serial producer run failed"
+run_slide 16 > "$TMP_ROOT/slide-wide.json" || fail "the wide producer run failed"
+jq -S . "$TMP_ROOT/slide-serial.json" > "$TMP_ROOT/slide-serial.norm"
+jq -S . "$TMP_ROOT/slide-window.json" > "$TMP_ROOT/slide-window.norm"
+jq -S . "$TMP_ROOT/slide-wide.json" > "$TMP_ROOT/slide-wide.norm"
+cmp -s "$TMP_ROOT/slide-serial.norm" "$TMP_ROOT/slide-window.norm" \
+  || fail "overlapping reads changed the summary: $(diff "$TMP_ROOT/slide-serial.norm" "$TMP_ROOT/slide-window.norm" | head -5)"
+cmp -s "$TMP_ROOT/slide-serial.norm" "$TMP_ROOT/slide-wide.norm" \
+  || fail "a wide window changed the summary"
+jq -e '(.invalidity.ids | sort) == ["slide-1","slide-2","slide-3","slide-4","slide-5"] and .counts.endpoints == 5' \
+  "$TMP_ROOT/slide-window.json" >/dev/null \
+  || fail "the window summary lost a task row: $(jq -c '[.invalidity, .counts]' "$TMP_ROOT/slide-window.json")"
+pass "current-state reads refill a free slot and never change the summary"
+
 MKBIN="$TMP_ROOT/mkdir-hangbin"
 REAL_MKDIR=$(command -v mkdir)
 mkdir -p "$MKBIN"
