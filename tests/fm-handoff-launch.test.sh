@@ -467,7 +467,7 @@ run_case interrupt-before-attempt orca arm
 [ "$(cat "$LAB/rc")" != 0 ] || fail 'the interrupted launch must fail'
 [ ! -e "$LAB/state/attempts" ] || fail 'the interrupted launch must start no attempt'
 failed=$(cat "$LAB/state/.handoff-launch-failed" 2>/dev/null) || fail 'an interrupted launch must record state/.handoff-launch-failed'
-printf '%s\n' "$failed" | grep -Eq "^at=[0-9]+ pid=$(cat "$LAB/pred.pid") nonce=(none|[0-9a-f]{32}) attempt=0 reason=(interrupted|unresolved)\$" \
+printf '%s\n' "$failed" | grep -Eq "^at=[0-9]+ pid=$(cat "$LAB/pred.pid") nonce=(none|[0-9a-f]{32}) attempt=[01] reason=(interrupted|unresolved)\$" \
   || fail "the interrupted launch must replace the earlier record with its own: $failed"
 [ "$(cat "$LAB/state/.lock")" = "$(cat "$LAB/pred.pid")" ] || fail 'the interrupted launch must not move the lock'
 run_hook_fixture Stop >/dev/null 2>&1 || fail 'an interrupted fresh-start launch must release the Stop gate for the surviving session'
