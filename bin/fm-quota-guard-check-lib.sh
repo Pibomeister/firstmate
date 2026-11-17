@@ -122,11 +122,17 @@ fm_quota_guard_check() {
     def number: try tonumber catch null;
     [$members[] | . as $m |
       quota_row($snapshot; .provider; .lane) as $p |
+      ($p.accountKey // "default") as $row_account |
       (if $p == null then [] elif .model == "default" then quota_provider_rows($p)
-       else quota_applicable($p; .model) end) as $rows |
+       else quota_applicable($p; .model) end) as $quota_rows |
+      {provider: $m.provider, quotaSemantics: {effectiveAvailability:
+        [$snapshot.attention[]? | select(.provider == $m.provider and (.accountKey // "default") == $row_account) |
+          {scope: .scope, status: "unknown"}]}} as $attention_provider |
+      (if .model == "default" then quota_provider_rows($attention_provider)
+       else quota_applicable($attention_provider; .model) end) as $attention_rows |
+      ($quota_rows + [$attention_rows[] | select(.scope as $scope | ($quota_rows | map(.scope) | index($scope)) == null)]) as $rows |
       (if ($rows | length) == 0 then [{scope: "all_models", status: "unknown"}] else $rows end)[] |
       . as $r |
-      ($p.accountKey // "default") as $row_account |
       (if $m.account != "" and $m.account != "ordinary" then $m.account
        elif $p != null then $row_account
        else (if $m.lane == "" then "default" else $m.lane end) end) as $account |

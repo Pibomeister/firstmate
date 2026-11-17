@@ -730,6 +730,19 @@ EOF
     (.pools | map(select(.scope == "model:large")) | .[0].verdict == "EXHAUSTED") and
     (.pools | map(select(.scope == "all_models")) | .[0].verdict == "HEALTHY") and
     (.alerts | contains("EXHAUSTED"))' >/dev/null || fail "$out"
+  cat > "$CASE/attention-only.toon" <<'EOF'
+bin: quota-axi
+generatedAt: 2026-11-16T00:00:00Z
+quota[1]{provider,scope,effectivePercentRemaining,spendPriority,runway,confidence,limitedBy,resetsAt}:
+  codex,all_models,40,0.5,through_reset,established,weekly,unknown
+exhaustion[0]:
+attention[1]{provider,scope,kind,detail,remedy}:
+  codex,model:small,error,unavailable,unknown
+EOF
+  out=$(run_snapshot_check --snapshot "$CASE/attention-only.toon" --json) || fail "attention-only check failed"
+  printf '%s\n' "$out" | jq -e '.pools | length == 2 and
+    (map(select(.scope == "model:small")) | .[0].verdict == "unknown") and
+    (map(select(.scope == "all_models")) | .[0].verdict == "HEALTHY")' >/dev/null || fail "$out"
   pass "schema-6 joins stay on the selected account and retain potentially limiting model scopes"
 }
 
