@@ -30,7 +30,9 @@
 #       way no key: the watchdog asks bin/fm-control.sh for a controlled
 #       relaunch, whose spawn pre-registers the worktree's trust entry. Other
 #       harnesses get `hold trust-unregistered`. A hard-stop word in its
-#       workspace rows, the only rows the dialog does not fix, is a hard stop.
+#       workspace rows, the only rows the dialog does not fix, is a hard stop,
+#       and a dialog whose workspace rows cannot be found is
+#       `hold trust-unproven`.
 #   hardstop <credential|sign-in|spend|destructive|release|reserved>
 #       The prompt names a credential, a sign-in, paid usage, a destructive
 #       command, a merge, tag or release, or another owner-reserved category
@@ -262,27 +264,29 @@ _fm_pp_codex_dialog() {  # <screen>
 
 # The workspace rows of a proven trust dialog: the rows between its
 # `Accessing workspace:` row and its heading, which are the only rows the
-# dialog does not fix. Empty when the screen has no such row.
+# dialog does not fix. It fails when that row is not found below the same
+# floor the trust check uses, so an unread workspace is never relaunched.
 _fm_pp_trust_workspace_rows() {  # <screen>
   printf '%s\n' "${1-}" | fm_wd_strip_ansi | awk '
     { r[NR] = $0 }
     END {
       last = NR
+      while (last > 0 && r[last] !~ /[^ \t]/) last--
       floor = last - 40; if (floor < 1) floor = 1
       head = 0
       for (i = last; i >= floor; i--) if (r[i] ~ /^[ \t]*(Quick safety check: Is this a project you created or one you trust\?|Do you trust the contents of this project\?)/) { head = i; break }
-      if (!head) exit 0
+      if (!head) exit 1
       top = 0
       for (i = head - 1; i >= floor; i--) if (r[i] ~ /^[ \t]*Accessing workspace:[ \t]*$/) { top = i; break }
-      if (!top) exit 0
+      if (!top) exit 1
       for (i = top + 1; i < head; i++) print r[i]
     }'
 }
 
 # A Claude external-imports or bypass-confirmation dialog, proven by its
-# heading, both fixed answer rows below it, and its footer as the last row with
-# at most one blank row between them, so a dialog left in scrollback is never
-# read as the current one. The first output row names it,
+# heading anywhere in the capture, both fixed answer rows below it, and its
+# footer as the last row with at most one blank row between them, so a dialog
+# left in scrollback is never read as the current one. The first output row names it,
 # and the rows after it are the only rows the dialog does not fix: the listed
 # import paths. Its fixed text, such as the security-docs line, is never read
 # for a hard stop.
@@ -293,7 +297,7 @@ _fm_pp_fixed_dialog() {  # <screen>
     END {
       last = NR
       while (last > 0 && r[last] !~ /[^ \t]/) last--
-      floor = last - 40; if (floor < 1) floor = 1
+      floor = 1
       kind = ""; head = 0
       for (i = last; i >= floor; i--) {
         if (r[i] ~ /^[ \t]*Allow external CLAUDE\.md file imports\?[ \t]*$/) { kind = "external-imports"; head = i; break }
@@ -313,7 +317,14 @@ _fm_pp_fixed_dialog() {  # <screen>
       for (i = first; i < last; i++) if (r[i] ~ /[^ \t]/) after++
       if (after != 2) exit 1
       print kind
-      if (kind == "external-imports") for (i = head + 1; i < first; i++) if (r[i] ~ /^[ \t]*(\/|~\/|\.\.?\/)[^ \t]/) print r[i]
+      if (kind != "external-imports") exit 0
+      # The import list is the run of rows below `External imports:` up to
+      # the next blank row, so a wrapped path is read whole. Without that row
+      # every row between the heading and the answers is read.
+      list = 0
+      for (i = head + 1; i < first; i++) if (r[i] ~ /^[ \t]*External imports:[ \t]*$/) { list = i; break }
+      if (!list) { for (i = head + 1; i < first; i++) print r[i]; exit 0 }
+      for (i = list + 1; i < first && r[i] ~ /[^ \t]/; i++) print r[i]
     }') || return 1
   [ -n "$out" ] || return 1
   printf '%s\n' "$out"
@@ -325,7 +336,10 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
   # A proven trust dialog is read first, because the Antigravity picker has no
   # footer the watchdog's dialog detector recognizes.
   if _fm_pp_trust_dialog "$screen"; then
-    if cat=$(fm_pp_hardstop_category "$(_fm_pp_trust_workspace_rows "$screen")"); then
+    if ! text=$(_fm_pp_trust_workspace_rows "$screen"); then
+      printf 'hold\ttrust-unproven\n'; return 0
+    fi
+    if cat=$(fm_pp_hardstop_category "$text"); then
       printf 'hardstop\t%s\n' "$cat"; return 0
     fi
     case "$harness" in

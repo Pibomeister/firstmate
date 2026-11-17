@@ -1773,8 +1773,9 @@ wd_pp_relaunch() {
   return 1
 }
 
-# wd_pp_lock <id>: one pass at a time may press a key on or relaunch one
-# worker, so overlapping run and once passes never both send an Escape. A lock
+# wd_pp_lock <id>: one pass at a time may press a key on, relaunch, or write
+# the open marker of one worker, so overlapping run and once passes never both
+# send an Escape or both write a blocked line. A lock
 # left by a pass that died is taken over after 20 minutes, longer than the
 # relaunch timeout.
 wd_pp_lock() {
@@ -1802,31 +1803,37 @@ wd_permission_prompt() {
   WD_PP_REASON=
   [ "$(wd_permission_mode)" != off ] || return 2
   if ! verdict=$(fm_pp_classify "$screen" "$harness" "$dialog"); then
-    wd_pp_clear "$id"
+    # The open marker is read and cleared under the worker's lock, so an
+    # overlapping pass never clears a marker another pass just wrote.
+    if [ -e "$(wd_pp_mark "$id").open" ] && wd_pp_lock "$id"; then
+      wd_pp_clear "$id"
+      wd_pp_unlock "$id"
+    fi
     return 2
   fi
   kind=${verdict%%$'\t'*}
   reason=${verdict#*$'\t'}
   hash=$(fm_pp_hash "$screen")
+  case "$kind" in hardstop|hold|trust|route) ;; *) return 2 ;; esac
+  # Every marker write for one worker runs under its lock, so overlapping run
+  # and once passes never both write a blocked line or both send an Escape.
+  if ! wd_pp_lock "$id"; then
+    wd_rec "$(wd_id)" permission-prompt report refused "another watchdog pass is acting on worker $id; nothing was pressed"
+    return 1
+  fi
   case "$kind" in
     hardstop)
       WD_PP_REASON=$reason
       wd_pp_stop "$id" permission-prompt-hardstop "$hash" "worker $id shows a $reason prompt; nothing was answered, and the watchdog never answers credential, sign-in, spend, destructive, or reserved prompts"
-      return 1 ;;
+      rc=1 ;;
     hold)
       wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id waits on a permission prompt the watchdog does not answer ($reason); nothing was answered"
-      return 1 ;;
-    trust|route)
-      if ! wd_pp_lock "$id"; then
-        wd_rec "$(wd_id)" permission-prompt report refused "another watchdog pass is acting on worker $id; nothing was pressed"
-        return 1
-      fi
-      if [ "$kind" = trust ]; then wd_pp_relaunch "$id" "$hash"; else wd_pp_decline "$id" "$harness" "$hash"; fi
-      rc=$?
-      wd_pp_unlock "$id"
-      return "$rc" ;;
-    *) return 2 ;;
+      rc=1 ;;
+    trust) wd_pp_relaunch "$id" "$hash"; rc=$? ;;
+    route) wd_pp_decline "$id" "$harness" "$hash"; rc=$? ;;
   esac
+  wd_pp_unlock "$id"
+  return "$rc"
 }
 
 # A primary on Claude's usage-limit auto-wait takes no turn until the reset,

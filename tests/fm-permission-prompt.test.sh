@@ -194,6 +194,7 @@ test_real_claude_prompts_classify() {
   assert_equals $'hold\tunknown-harness' "$(bash_prompt | classify '')" "the same prompt with no recorded harness is held"
   assert_equals $'trust\tworkspace' "$(classify claude < "$FIX/claude-2.1.325-trust.txt")" "the real trust dialog asks for a relaunch, and its fixed security-guide row names no stop"
   assert_equals $'hardstop\trelease' "$(sed 's#/tmp/probe/#/srv/production/#' "$FIX/claude-2.1.325-trust.txt" | classify claude)" "a trust dialog's workspace path is read for a hard stop"
+  assert_equals $'hardstop\trelease' "$({ sed 's#/tmp/probe/#/srv/production/#' "$FIX/claude-2.1.325-trust.txt" | head -18; for _ in $(seq 30); do echo ' '; done; } | classify claude)" "rows of spaces below a trust dialog never hide its workspace path"
   assert_equals $'hold\ttrust-unregistered' "$(classify codex < "$FIX/claude-2.1.325-trust.txt")" "a trust dialog on a harness with no pre-registration is held"
   classify claude < "$FIX/claude-2.1.325-after-escape.txt" >/dev/null \
     && fail "the screen Claude drew after Escape must not read as a prompt"
@@ -216,6 +217,9 @@ test_declining_cursor_dialogs_never_route() {
   assert_equals $'hold\texternal-imports' "$(full_imports /Users/u/work/shared/notes.md | classify claude)" "the whole imports dialog is held, and its fixed security line names no stop"
   assert_equals $'hardstop\trelease' "$(full_imports /Users/u/work/production-notes.md | classify claude)" "an import path is still read for a hard stop"
   assert_equals $'hold\tbypass-confirm' "$(full_bypass | classify claude)" "the whole bypass confirmation is held, and its fixed warning names no stop"
+  assert_equals $'hardstop\tcredential' "$(full_imports /Users/u/work/shared/notes.md | sed 's#notes.md#\
+   .env#' | classify claude)" "a wrapped import path is read whole"
+  assert_equals $'hold\texternal-imports' "$({ full_imports /Users/u/work/shared/note0.md | sed -n 1,7p; for i in $(seq 45); do echo "   /Users/u/work/shared/note$i.md"; done; full_imports x | sed -n '8,$p'; } | classify claude)" "a tall import list is still the imports dialog"
   assert_equals $'hardstop\tcredential' "$({ full_imports /Users/u/work/shared/notes.md; bash_prompt | awk '/^ touch \/tmp/ { print " cat ~/.netrc"; next } { print }'; } | classify claude)" "an imports dialog left above a current prompt is not the current dialog"
   assert_equals $'hardstop\tdestructive' "$(printf '%s\n' 'Would you like to run the following command?' '' '  $ rm -rf build;' $'  echo safe;\n  echo safe;\n  echo safe;\n  echo safe;\n  echo safe;\n  echo safe;\n  echo safe;\n  echo safe;\n  echo safe;\n  echo safe;\n  echo safe;\n  echo safe;\n  echo safe;\n  echo safe;\n  echo safe;\n  echo safe;' '' '› 1. Yes, proceed (y)' "  2. Yes, and don't ask again for this command (a)" '  3. No, and tell Codex what to do differently (esc)' '' '  Press enter to confirm or esc to cancel' | classify codex)" "a destructive row far above a Codex footer is still read"
   assert_equals $'hardstop\tdestructive' "$(printf '%s\n' '' '  Would you like to run the following command?' '' '  Reason: clean the build tree' '' '  $ find build -name "*.o"' '      -newer stamp' '      -print0' '    | xargs -0' '      rm -rf' '' '  › 1. Yes, proceed (y)' "    2. Yes, and don't ask again for this command (p)" '    3. No, and tell Codex what to do differently (esc)' '' '' '  Press enter to confirm or esc to cancel' | classify codex)" "a taller Codex approval is read whole for a hard stop"
@@ -355,6 +359,14 @@ test_tool_approval_is_declined_and_steered() {
   assert_equals '' "$(typed wf)" "a prompt whose checksum cannot be saved gets no key"
   assert_contains "$(ledger | awk -F'\t' '$4 == "worker:wf" && $7 == "failed" { print $8 }')" "could not be saved" "the unsaved checksum is recorded"
   assert_equals 1 "$(status_rows wf blocked permission-prompt-held)" "the unsaved checksum is reported as held"
+  full_imports /Users/u/work/shared/notes.md > "$H/imports.txt"
+  worker hl claude "$H/imports.txt"
+  mkdir "$mark-hl.lock"
+  run_wd 800 once >/dev/null 2>&1
+  assert_equals 0 "$(status_rows hl blocked permission-prompt-held)" "a held prompt another pass is acting on gets no second blocked line"
+  rmdir "$mark-hl.lock"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(status_rows hl blocked permission-prompt-held)" "once the other pass is done, the held prompt is reported once"
   pass "tool approval: one Escape, verified gone, then a durable rewrite instruction, one pass at a time per worker, and no key without a saved checksum"
 }
 

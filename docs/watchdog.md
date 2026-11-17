@@ -164,6 +164,9 @@ The watchdog never selects a yes option, never presses Enter or a digit on a per
 The classifier recognizes only exact known dialogs: the recorded Claude tool-approval prompt, the Claude and Antigravity workspace-trust dialogs, the external-imports, bypass-confirmation, and hook-review dialogs, the recorded Codex CLI 0.151.0 command-approval and hook-review dialogs (whose whole lowercase footer `Press enter to confirm or esc to cancel` must be the last row), and the pickers the watchdog's own dialog detector reads (`fm_wd_pane_dialog` in `bin/fm-watchdog-lib.sh`).
 The fixed text of the external-imports, bypass-confirmation, and trust dialogs, such as their security-docs lines, is never read for a hard stop.
 Only the rows those dialogs do not fix are read: an imports dialog's listed paths and a trust dialog's workspace rows, so a hard-stop word there turns the hold or the relaunch into a keyed stop.
+That check reads the whole hard-stop vocabulary, so a workspace path such as `.../fm-release-notes` is a keyed stop rather than a relaunch; it presses no key either way.
+A trust dialog whose `Accessing workspace:` row cannot be found is held as `trust-unproven` rather than relaunched.
+An imports dialog's list is the run of rows below its `External imports:` row up to the next blank row, so a wrapped path is read whole, and the dialog is found anywhere in the capture.
 A Codex dialog is read only when its heading sits within the 40 rows above its footer, and every row from that heading through the footer is checked for a hard stop.
 An imports or bypass dialog counts only when its footer is the last row right below its answer rows, so one left in scrollback above a current prompt is not read.
 A screen with none of those gets no verdict, so a generic terminal or external-CLI prompt, such as a password input or a `[y/N]` confirmation, is left to the existing gap and away page.
@@ -171,7 +174,7 @@ Detectors for those prompts are planned as an observe-only follow-up under [issu
 The submit guard is unchanged (`fm_composer_blocking_dialog` in `bin/fm-composer-lib.sh`), and the watchdog sends its own instruction only after Escape when the composer reads as proven empty.
 Hard-stop words are also read with shell quotes and backslashes removed, so `git reset "--hard"` reads as `--hard`.
 Escape is the only key it sends, and only to a proven tool-approval prompt.
-One pass at a time may press a key on or relaunch one worker, so overlapping passes never both send an Escape; a lock left by a pass that died is taken over after 20 minutes.
+One pass at a time may press a key on, relaunch, or write the open marker of one worker, so overlapping passes never both send an Escape or both write a blocked line; a lock left by a pass that died is taken over after 20 minutes.
 Only a proven screen structure leads to an action: words inside a command, or conversation above the prompt, never turn a prompt into a trust dialog, a hold, or a route.
 The prompt rows are the rows below the nearest full-width rule above the last row.
 A rule with an odd number of dashed command-box rows below it sits inside the command preview, such as a heredoc, so the search goes on to the rule above it.
