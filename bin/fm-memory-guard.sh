@@ -78,8 +78,11 @@
 #     (/tmp/fm-*, /private/tmp/fm-*, /var/folders/<a>/<b>/T/fm-*, or
 #     $TMPDIR/fm-*) with no . or .. segment, is not itself a symlink, and
 #     still does once its directory symlinks are resolved; or an ancestor's
-#     program is a tests/<name>.test.sh script. An argument that only names a
-#     temp path, or an interpreter started with an option, does not make it
+#     program is a tests/<name>.test.sh script and its own argv[0] is a shell,
+#     an interpreter, or a core tool such as sleep, awk, or jq. The program
+#     must be an existing regular file, its command name must match it, and
+#     no argument may hold a .. segment. An argument that only names a temp
+#     path, or an interpreter started with an option, does not make it
 #     scratch;
 #   - a fresh process read just before the signal still shows the same
 #     process (uid, parent, command name, arguments, and an elapsed time that
@@ -282,6 +285,19 @@ classify_candidates() {  # <candidates-file> <self-pids>
       return (t ~ /^(\/private)?\/var\/folders\/[^\/]+\/[^\/]+\/T\/fm-/)
     }
     function bname(t,   s) { s = t; sub(/.*\//, "", s); return s }
+    # Programs a test runner may start that count as its scratch children.
+    function test_tool(b) { return interp(b) || b ~ /^(sleep|cat|head|tail|yes|dd|awk|gawk|mawk|sed|grep|sort|uniq|cut|tr|wc|jq|find|xargs|timeout|env|seq|printf|echo|true|false|mktemp|tee)$/ }
+    # Any .. segment in any argument makes every path in the command line
+    # untrusted, because ps joins arguments with spaces.
+    function dotdot(a) { return a ~ /(^|[ \/=])\.\.([ \/]|$)/ }
+    # The program matches what runs: comm is the program basename, or its
+    # prefix where the kernel truncates it; an interpreter runs as itself.
+    function runs_as(p, pg,   c, b) {
+      c = comm[p]; b = bname(pg)
+      if (c == "") return 0
+      if (interp(bname(prog0[p]))) return interp(c)
+      return index(b, c) == 1 && (c == b || length(c) >= 15)
+    }
     function interp(b) { return b ~ /^(ba|z|da|k)?sh$/ || b ~ /^python[0-9.]*$/ || b ~ /^(node|deno|bun|ruby|perl|php)$/ }
     function program(a,   n, t, i) {
       n = split(a, t, " ")
@@ -353,9 +369,9 @@ classify_candidates() {  # <candidates-file> <self-pids>
         else if (c in preason) why = preason[c]
         else if (c in hasprot) why = "ancestor of protected pid " hasprot[c]
         else {
-          s = ""; pg = program(args[c])
-          if (under_root(pg)) s = "program\t" pg
-          else { q = ppid[c]; hops = 0
+          s = ""; pg = dotdot(args[c]) ? "" : program(args[c])
+          if (under_root(pg) && runs_as(c, pg)) s = "program\t" pg
+          else if (!dotdot(args[c]) && test_tool(bname(prog0[c])) && runs_as(c, prog0[c])) { q = ppid[c]; hops = 0
             while (q in ppid && q != 0 && hops++ < 256) { if (program(args[q]) ~ /(^|\/)tests\/[A-Za-z0-9_.-]+\.test\.sh$/) { s = "scratch"; break } q = ppid[q] } }
           if (s == "") why = "not scratch"
         }
@@ -393,8 +409,8 @@ judge() {
   classify_candidates "$1" "$SELF_PIDS" | while IFS=$'\t' read -r pid verdict why prog; do
     if [ "$verdict" = eligible ] && [ "$why" = program ]; then
       why=scratch
-      if ! phys=$(physical_path "$prog") || ! under_scratch_root "$phys"; then
-        verdict=spared why="program resolves outside a disposable temp root"
+      if ! phys=$(physical_path "$prog") || [ ! -f "$phys" ] || ! under_scratch_root "$phys"; then
+        verdict=spared why="program is not a regular file under a disposable temp root"
       fi
     fi
     printf '%s\t%s\t%s\n' "$pid" "$verdict" "$why"

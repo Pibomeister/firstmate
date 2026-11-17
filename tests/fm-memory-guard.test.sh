@@ -26,6 +26,12 @@ SLEEPS=''
 # reap_fixture sets one P_<name> per fixture row; these are the ones read by name.
 P_runner='' P_claude='' P_wrapped='' P_exe='' P_nodeagent='' P_execd='' P_reused='' P_moved=''
 
+# Fixture programs under the temp root are real files, as a scratch program must be.
+mkdir -p "$TMP_ROOT/bin" "$TMP_ROOT/live/bin" "$TMP_ROOT/work dir"
+for f in runaway.sh leak.js wrap.sh foreign.sh turns.sh again.sh first.sh second.sh a.sh bootstrap.js bin/leaky live/bin/fm-watchdog.sh; do
+  : > "$TMP_ROOT/$f"
+done
+
 cat > "$FAKE/ps" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_FAKE_PS_LOG"
@@ -398,8 +404,7 @@ wrapped|claude|me|P_wrapper|claude"
 test_reap_scratch_needs_a_scratch_program() {
   local name
   new_home 'mode=reap-scratch'
-  for name in exe nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink runner brave renderer mailer nmd; do eval "P_$name="; done
-  mkdir -p "$TMP_ROOT/bin" "$TMP_ROOT/live/bin"
+  for name in exe nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink runner brave renderer mailer nmd gimp spaced missing; do eval "P_$name="; done
   ln -s "$BASE_PATH_FIRST" "$TMP_ROOT/prodlink"
   REAP_ROWS="exe|leaky|me|1|$TMP_ROOT/bin/leaky --size 9
 nodeagent|node|me|1|node /opt/lib/node_modules/@anthropic-ai/claude-code/cli.js --add-dir $TMP_ROOT/p
@@ -414,11 +419,14 @@ runner|bash|me|1|bash tests/ui.test.sh
 brave|brave|me|P_runner|/opt/brave.com/brave/brave
 mailer|python3|me|P_runner|python3 /opt/firstmate/bin/fm-mail.py
 nmd|no-mistakes-daemon|me|P_runner|/opt/bin/no-mistakes-daemon serve
+gimp|gimp|me|P_runner|/usr/bin/gimp /srv/large.xcf
+spaced|python3|me|1|python3 $TMP_ROOT/work dir/../../srv/server.py
+missing|bash|me|1|bash $TMP_ROOT/missing.sh
 renderer|helper|me|P_runner|/opt/app/helper --type=renderer"
   RUNNER_SMALL=1 sustain
   wait_gone "$P_exe" || fail "a program under a temp root was not stopped: $OUT"
   action_has "term:$P_exe" || fail "action does not name the stopped program: $(summary)"
-  for name in nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink brave renderer mailer nmd; do
+  for name in nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink brave renderer mailer nmd gimp spaced missing; do
     eval "pid=\$P_$name"
     alive "$pid" || fail "$name (pid $pid) was signaled: $OUT"
     action_has "spared:$pid" || fail "action does not name the spared $name: $(summary)"
@@ -426,10 +434,10 @@ renderer|helper|me|P_runner|/opt/app/helper --type=renderer"
   assert_contains "$OUT" "pid $P_nodeagent (node) has held" "the interpreted agent alarms"
   assert_contains "$OUT" "spared (protected claude)" "an agent run by an interpreter is protected by its script path"
   assert_contains "$OUT" "spared (firstmate supervisor script)" "a supervisor stays protected when an argument names a temp path"
-  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (not scratch)')" = 3 ] || fail "a temp-path argument, a .. path, or inline code counted as scratch: $OUT"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (not scratch)')" = 5 ] || fail "a temp-path argument, a .. path, inline code, or a desktop app under a test runner counted as scratch: $OUT"
   [ "$(printf '%s\n' "$OUT" | grep -c 'spared (node outside a disposable temp root)')" = 1 ] || fail "a node preload under a temp root made node scratch: $OUT"
   [ "$(printf '%s\n' "$OUT" | grep -c 'spared (firstmate supervisor script)')" = 3 ] || fail "a supervisor script under a temp root lost its protection: $OUT"
-  assert_contains "$OUT" "spared (program resolves outside a disposable temp root)" "a symlink out of the temp root is not scratch"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (program is not a regular file under a disposable temp root)')" = 2 ] || fail "a symlink out of the temp root or a missing program counted as scratch: $OUT"
   assert_contains "$OUT" "spared (protected no-mistakes)" "a hyphenated protected name protects a longer name it starts"
   assert_contains "$OUT" "spared (protected brave)" "a browser under a test runner is protected"
   assert_contains "$OUT" "spared (browser or Electron helper)" "a Chromium helper under a test runner is protected"
