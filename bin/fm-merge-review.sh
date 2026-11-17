@@ -88,7 +88,9 @@
 # snapshot/ still hold the whole change, and the verdict still covers it. An
 # open finding needs one status line from every seat; a seat that reviewed the
 # head and gave an open finding no status still holds it.
-# A finding's state at a head comes from the seats that hold a valid receipt:
+# A finding's state at a head comes from the seats that hold a valid receipt.
+# One seat alone never settles a finding: it is deferred, dropped, or resolved
+# only while seats from at least two model families hold a valid receipt.
 #   open      a seat holds it: BLOCKING, or from round three REGRESSION. It
 #             blocks, and the next round must rule on it again.
 #   deferred  from round three only: at least one seat calls it an EDGE-CASE
@@ -102,7 +104,9 @@
 #   dropped   every seat calls it UNSUPPORTED or RESOLVED, with evidence.
 #   resolved  every seat calls it RESOLVED.
 #   noted     a NON-BLOCKING note.
-#   pending   an edge case that a seat has not ruled on yet.
+#   pending   a seat has not ruled on it yet: an edge case another seat must
+#             answer, or a finding no seat holds while fewer than two model
+#             families hold a valid review at the head.
 #   unruled   open before this head, and no seat holds a valid review here.
 # A pending or unruled finding keeps check incomplete until run is called
 # again at the head and the seats answer.
@@ -649,9 +653,9 @@ mr_council_rows() {  # <answer-file> <asked ids, comma-separated>
 # the reviews of <seats> (the seats that hold a valid receipt with a round),
 # and their valid council rulings. Rows, ordered by id:
 #   <id> <state> <class> <where> <text>
-# with state open, deferred, dropped, resolved, noted, pending (an edge case
-# another seat has not ruled on), or unruled (open before, and no seat has
-# reviewed this head). With <need>, also "N <seat> <id>" for each ruling a
+# with state open, deferred, dropped, resolved, noted, pending (a seat has not
+# ruled on it, or fewer than two model families have reviewed this head), or
+# unruled (open before, and no seat has reviewed this head). With <need>, also "N <seat> <id>" for each ruling a
 # pending finding lacks. "E <reason>" rows report evidence that does not fit.
 mr_findings_state() {  # <head-store> <seats> [need]
   local store=$1 seat head ruling sha ids
@@ -663,7 +667,7 @@ mr_findings_state() {  # <head-store> <seats> [need]
       { n = split($0, p, " [|] "); if (n == 5) print "P\t" p[1] "\t" p[2] "\t" p[3] "\t" p[4] "\t" p[5] }
     ' "$store/prior.md"
     for seat in $2; do
-      printf 'S\t%s\n' "$seat"
+      printf 'S\t%s\t%s\n' "$seat" "$(mr_receipt_get "$store/$seat.receipt" family)"
     done
     for seat in $2; do
       sha=$(mr_receipt_get "$store/$seat.receipt" review_sha256)
@@ -695,7 +699,7 @@ mr_findings_state() {  # <head-store> <seats> [need]
     }
     $1 == "R" { round = $2 + 0; next }
     $1 == "P" { order[++n] = $2; st[$2] = $3; cls[$2] = $4; wh[$2] = $5; tx[$2] = $6; prior[$2] = 1; next }
-    $1 == "S" { seats[++ns] = $2; isseat[$2] = 1; next }
+    $1 == "S" { seats[++ns] = $2; isseat[$2] = 1; if (!($3 in fam)) { fam[$3] = 1; nf++ } next }
     $1 == "I" { idof[$3, $4] = $2; next }
     $1 == "V" {
       id = $4
@@ -732,6 +736,8 @@ mr_findings_state() {  # <head-store> <seats> [need]
           else if ((id, "drop") in has) state = "dropped"
           else if ((id, "fixed") in has) state = "resolved"
           else state = "noted"
+          # One model family alone settles nothing; its own new note stays a note.
+          if (nf < 2 && state != "open" && !(state == "noted" && (id in raiser))) state = "pending"
         }
         print id "\t" state "\t" cls[id] "\t" wh[id] "\t" tx[id]
       }
@@ -878,20 +884,20 @@ mr_check() {
     ! [[ "$complete_before" =~ ^[0-9a-f]{64}$ ]] || [ "$complete_before" != "$complete_after" ]; then
     state=incomplete
     reason='the review batch is incomplete or changed during the check'
+  elif [ "$family_count" -lt 2 ]; then
+    state=incomplete
+    case "$family_count" in
+      0) reason='no valid approving review at this head' ;;
+      *) reason='approving reviews come from one model family; two are required' ;;
+    esac
   elif [ "$waiting" -gt 0 ]; then
     state=incomplete
     reason='a finding waits for a seat to rule on it; run the review again at this head'
   elif [ -n "$unfiled" ]; then
     state=incomplete
     reason="deferred finding $unfiled has no recorded follow-up"
-  elif [ "$family_count" -ge 2 ]; then
-    state=approved
   else
-    state=incomplete
-    case "$family_count" in
-      0) reason='no valid approving review at this head' ;;
-      *) reason='approving reviews come from one model family; two are required' ;;
-    esac
+    state=approved
   fi
   printf 'merge-review: %s head=%s approvals=%s blocks=%s%s%s%s%s%s%s url=%s\n' \
     "$state" "$MR_HEAD" "${approvals:-none}" "${blocks:-none}" \
@@ -1366,9 +1372,13 @@ mr_council() {
   need=$(mr_findings_state "$MR_STORE" "$seats" need | awk -F'\t' '$1 == "N"')
   [ -n "$need" ] || return 0
   mkdir -p "$MR_WORK/reviews" || mr_die 'cannot stage the reviews for the council'
-  mr_findings_state "$MR_STORE" "$seats" | awk -F'\t' -v ledger="${MR_STORE%/*}/ids" -v h="$MR_HEAD" '
-    BEGIN { while ((getline line < ledger) > 0) { split(line, f, "\t"); if (f[2] == h) by[f[1]] = f[3] } }
-    $2 == "pending" { print $1 " | " $3 " | " $4 " | " $5 " | reviews/" by[$1] ".review.md" }
+  mr_findings_state "$MR_STORE" "$seats" | awk -F'\t' -v ledger="${MR_STORE%/*}/ids" -v h="$MR_HEAD" \
+    -v asked="$(printf '%s\n' "$need" | awk -F'\t' '{ printf "%s,", $3 }')" '
+    BEGIN {
+      while ((getline line < ledger) > 0) { split(line, f, "\t"); if (f[2] == h) by[f[1]] = f[3] }
+      n = split(asked, a, ","); for (i = 1; i <= n; i++) if (a[i] != "") want[a[i]] = 1
+    }
+    $2 == "pending" && ($1 in want) { print $1 " | " $3 " | " $4 " | " $5 " | reviews/" by[$1] ".review.md" }
   ' > "$MR_WORK/council-findings.md" || mr_die 'cannot stage the findings for the council'
   for seat in $seats; do
     cp "$MR_STORE/$seat.review.md" "$MR_WORK/reviews/$seat.review.md" || mr_die 'cannot stage the reviews for the council'

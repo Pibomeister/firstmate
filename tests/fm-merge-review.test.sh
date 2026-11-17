@@ -1678,6 +1678,75 @@ test_security_destructive_and_data_loss_findings_always_block() {
   pass "a security, destructive, or data-loss finding is never deferred or noted, and keeps its class"
 }
 
+test_one_seat_alone_never_settles_a_finding() {
+  local rc=0
+  make_case oneseat "${TWO_SEATS[@]}"
+  set_review claude \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | An empty file makes the reader loop.' \
+    'FINDING NEW | BLOCKING | none | feature.txt:2 | A long line is cut without notice.' \
+    'VERDICT: BLOCK @HEAD@'
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "oneseat: round 1"
+
+  next_head 'second head'
+  set_review claude \
+    'FINDING F1 | BLOCKING | none | feature.txt:1 | The empty file still loops.' \
+    'FINDING F2 | BLOCKING | none | feature.txt:2 | The long line is still cut.' \
+    'VERDICT: BLOCK @HEAD@'
+  set_review agy \
+    'FINDING F1 | BLOCKING | none | feature.txt:1 | The empty file still loops.' \
+    'FINDING F2 | BLOCKING | none | feature.txt:2 | The long line is still cut.' \
+    'VERDICT: BLOCK @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "oneseat: round 2"
+
+  next_head 'third head'
+  # Round three, and only one seat answers: its rulings settle nothing.
+  echo fail > "$STUB/agy.mode"
+  set_review claude \
+    'FINDING F1 | EDGE-CASE | none | feature.txt:1 | Only an empty file triggers it.' \
+    'FINDING F2 | UNSUPPORTED | none | feature.txt:2 | No line in the change is cut.' \
+    'FINDING NEW | EDGE-CASE | none | feature.txt:3 | A file of blank lines is slow.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "oneseat: round 3 with one seat"
+  assert_grep "merge-review: incomplete" "$CASE/stdout" "oneseat: one seat's review was not reported incomplete"
+  assert_grep "one model family" "$CASE/stdout" "oneseat: the missing second model family was not the reason"
+  assert_no_grep " deferred=" "$CASE/stdout" "oneseat: one seat alone deferred a finding"
+  assert_no_grep " dropped=" "$CASE/stdout" "oneseat: one seat alone dropped a finding"
+  findings_at_head || fail "oneseat: findings failed"
+  assert_match "^F1	pending	" "$CASE/stdout" "oneseat: the earlier finding one seat calls an edge case is not waiting"
+  assert_match "^F2	pending	" "$CASE/stdout" "oneseat: the earlier finding one seat calls unsupported is not waiting"
+  assert_match "^F3	pending	" "$CASE/stdout" "oneseat: the new edge case of one seat is not waiting"
+  rc=0
+  run_supervisor followup "$PR_URL" --head "$HEAD_SHA" --finding F1 --ref 'backlog item 12' || rc=$?
+  expect_code 2 "$rc" "oneseat: a follow-up recorded before a second seat ruled"
+  [ ! -e "$(dirname "$(store_dir)")/followups/F1" ] || fail "oneseat: a follow-up record exists before a second seat ruled"
+
+  # The second seat reviews the same head and holds one finding.
+  echo approve > "$STUB/agy.mode"
+  set_review agy \
+    'FINDING F1 | REGRESSION | none | feature.txt:1 | An empty file worked at the merge base.' \
+    'FINDING F2 | UNSUPPORTED | none | feature.txt:2 | Agreed, no line is cut.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  set_council agy \
+    'DISPOSITION F3 | EDGE-CASE | none | The merge base is slow in the same way.' \
+    'COUNCIL: DONE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "oneseat: round 3 with both seats"
+  assert_grep "merge-review: blocked" "$CASE/stdout" "oneseat: the regression the second seat holds does not block"
+  assert_grep " open=F1 " "$CASE/stdout" "oneseat: the finding the second seat holds is not open"
+  assert_grep " deferred=F3 " "$CASE/stdout" "oneseat: the edge case both seats agree on is not deferred"
+  assert_grep " dropped=F2 " "$CASE/stdout" "oneseat: the finding both seats call unsupported is not dropped"
+  rc=0
+  run_supervisor followup "$PR_URL" --head "$HEAD_SHA" --finding F1 --ref 'backlog item 12' || rc=$?
+  expect_code 2 "$rc" "oneseat: a follow-up for a finding a seat holds as a regression"
+  pass "one seat alone never defers, drops, or resolves a finding, and no follow-up is recorded before a second model family rules"
+}
+
 fm_test_run \
   test_two_families_approve_and_a_supervisor_reads_one_line \
   test_run_refuses_in_a_supervisor_session \
@@ -1735,4 +1804,5 @@ fm_test_run \
   test_the_council_rules_on_a_new_edge_case_in_round_three \
   test_the_council_can_hold_a_new_edge_case_as_a_regression \
   test_unsupported_findings_are_dropped_with_evidence \
-  test_security_destructive_and_data_loss_findings_always_block
+  test_security_destructive_and_data_loss_findings_always_block \
+  test_one_seat_alone_never_settles_a_finding
