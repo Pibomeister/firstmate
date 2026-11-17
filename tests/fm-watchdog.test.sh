@@ -4144,17 +4144,25 @@ page_subjects() {  # <phase>
 # detector does not recognize, so its away page records no pane text at all.
 test_worker_credential_page_withholds_typed_values() {
   local cookie=$'Bash command\n\n  curl -H "Cookie: session=rvw7731cookie" https://api.example.com/me\n  Fetch the profile\n\nDo you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently\n\nEsc to cancel'
-  local mode
-  for mode in act dry-run; do
-    if [ "$mode" = act ]; then make_home $'Captain session\n> '; else make_home $'Captain session\n> ' 'mode=dry-run'; fi
+  local mode key
+  for mode in act dry-run locked; do
+    if [ "$mode" = dry-run ]; then make_home $'Captain session\n> ' 'mode=dry-run'; else make_home $'Captain session\n> '; fi
     transcript 100 "Working."
     worker_pane cookie ship "$cookie"
+    if [ "$mode" = locked ]; then
+      # Another pass holds the worker's lock, so this pass writes no marker.
+      key="$(basename "$H")-$(printf '%s' "$H" | cksum | cut -d ' ' -f 1)"
+      mkdir -p "$H/state/watchdog/permission/$key-cookie.lock"
+    fi
     sleep 0.5
     printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
     printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
     : > "$H/state/.afk"
     run_wd 0 once >/dev/null 2>&1 || fail "the $mode away pass failed"
-    if [ "$mode" = act ]; then
+    if [ "$mode" = locked ]; then
+      assert_equals 1 "$(grep -c 'another watchdog pass is acting on worker cookie' "$H/state/watchdog/actions.tsv")" "the busy lock is recorded: $(ledger | cut -f4-8)"
+    fi
+    if [ "$mode" != dry-run ]; then
       assert_equals 1 "$(ledger_rows dialog page pending)" "the credential stop pages the owner: $(ledger | cut -f4-8)"
     else
       assert_equals 1 "$(ledger_rows dialog page dry-run)" "dry-run records the page it would send: $(ledger | cut -f4-8)"
@@ -4165,7 +4173,7 @@ test_worker_credential_page_withholds_typed_values() {
       assert_no_grep "rvw7731cookie" "$H/paged.log" "the page carries no session cookie"
     fi
   done
-  pass "a credential stop on an approval picker pages the owner without recording its pane text"
+  pass "a credential stop on an approval picker pages the owner without recording its pane text, even while another pass holds the worker lock"
 }
 
 test_worker_permission_dialog_pages_the_owner() {

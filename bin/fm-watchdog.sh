@@ -1815,6 +1815,9 @@ wd_permission_prompt() {
   reason=${verdict#*$'\t'}
   hash=$(fm_pp_hash "$screen")
   case "$kind" in hardstop|hold|trust|route) ;; *) return 2 ;; esac
+  # The reason is set before the lock, so a busy lock never lets a credential
+  # or sign-in page record the pane text.
+  [ "$kind" != hardstop ] || WD_PP_REASON=$reason
   # Every marker write for one worker runs under its lock, so overlapping run
   # and once passes never both write a blocked line or both send an Escape.
   if ! wd_pp_lock "$id"; then
@@ -1823,7 +1826,6 @@ wd_permission_prompt() {
   fi
   case "$kind" in
     hardstop)
-      WD_PP_REASON=$reason
       wd_pp_stop "$id" permission-prompt-hardstop "$hash" "worker $id shows a $reason prompt; nothing was answered, and the watchdog never answers credential, sign-in, spend, destructive, or reserved prompts"
       rc=1 ;;
     hold)
