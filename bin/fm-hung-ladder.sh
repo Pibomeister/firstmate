@@ -621,7 +621,7 @@ fhl_pid_live() {  # <pid>
 # The wait resolver (gate item 5). Sets WAIT (none|live|dead|unverified|
 # expired) and WAIT_NOTE.
 fhl_resolve_wait() {  # <task> <wait-line>
-  local task=$1 line=$2 until at pid ticket queue_out max queue=0 prc=0
+  local task=$1 line=$2 until at pid ticket queue_out max queue=0 prc=0 owner
   WAIT=none WAIT_NOTE=
   [ -n "$line" ] || return 0
   status_is_paused "$line" || return 0
@@ -641,7 +641,11 @@ fhl_resolve_wait() {  # <task> <wait-line>
     esac
     # Only a process this user runs can be the worker's own job; any other
     # live pid (pid 1, another user's daemon) buys only the bounded hold.
-    if [ "$(LC_ALL=C ps -p "$pid" -o uid= 2>/dev/null | tr -d ' ')" = "$(id -u)" ]; then
+    owner=$(LC_ALL=C fm_run_timed 5 ps -p "$pid" -o uid= 2>/dev/null | tr -d ' ')
+    case "$owner" in
+      ''|*[!0-9]*) WAIT=unknown WAIT_NOTE="pid-owner-unreadable: $WAIT_NOTE"; return 0 ;;
+    esac
+    if [ "$owner" = "$(id -u)" ]; then
       WAIT=live
       return 0
     fi
@@ -829,19 +833,32 @@ fhl_untracked_digest() {  # <worktree>
 # Rung 4's content snapshot (5.2 h, 14.2 S4): head, staged and unstaged
 # patches without ignored or secret-pattern files, a hash per dirty and
 # untracked file, the link text of each symlink (never followed), and
-# presence only for secret-pattern and ignored files.
+# presence only for every secret-pattern and ignored file. A read that fails
+# or times out, a patch past 20 MB, more than 2000 dirty or untracked files,
+# or more than 200000 ignored files makes the record incomplete: it ends with
+# an `incomplete` line and the function returns 3, which holds rung 4.
 fhl_snapshot_tree() {  # <name> -> path:sha
-  local dir="$HL/snapshots/$TASK" f p sz
+  local dir="$HL/snapshots/$TASK" f p sz inc='' head n
   f="$dir/$1.tree"
   mkdir -p "$dir" && chmod 700 "$dir"
   [ -n "$WT" ] && [ -d "$WT" ] || { printf 'none'; return 0; }
+  head=$(git -C "$WT" rev-parse HEAD 2>/dev/null) || inc="${inc}head,"
+  (set -o pipefail; fm_run_timed 10 git -C "$WT" --no-optional-locks diff --binary -- . "${FHL_EXCL[@]}" 2>/dev/null | head -c 20000001 > "$f.diff") || inc="${inc}diff,"
+  (set -o pipefail; fm_run_timed 10 git -C "$WT" --no-optional-locks diff --cached --binary -- . "${FHL_EXCL[@]}" 2>/dev/null | head -c 20000001 > "$f.cached.diff") || inc="${inc}cached-diff,"
+  [ "$(wc -c < "$f.diff" | tr -d ' ')" -le 20000000 ] || inc="${inc}diff-size,"
+  [ "$(wc -c < "$f.cached.diff" | tr -d ' ')" -le 20000000 ] || inc="${inc}cached-diff-size,"
+  fm_run_timed 10 git -C "$WT" --no-optional-locks diff --name-only -z HEAD > "$f.names" 2>/dev/null || inc="${inc}dirty-list,"
+  fm_run_timed 10 git -C "$WT" --no-optional-locks ls-files -z --others --exclude-standard >> "$f.names" 2>/dev/null || inc="${inc}untracked-list,"
+  fm_run_timed 10 git -C "$WT" --no-optional-locks ls-files -z --others --ignored --exclude-standard > "$f.ignored" 2>/dev/null || inc="${inc}ignored-list,"
+  n=$(perl -0 -ne 'END { print $n + 0 } $n++ unless $seen{$_}++' "$f.names")
+  [ "$n" -le 2000 ] || inc="${inc}dirty-files,"
+  n=$(perl -0 -ne 'END { print $n + 0 } $n++' "$f.ignored")
+  [ "$n" -le 200000 ] || inc="${inc}ignored-files,"
   {
-    printf 'head\t%s\n' "$(git -C "$WT" rev-parse HEAD 2>/dev/null)"
-    fm_run_timed 10 git -C "$WT" --no-optional-locks diff --binary -- . "${FHL_EXCL[@]}" 2>/dev/null | head -c 20000000 > "$f.diff"
-    fm_run_timed 10 git -C "$WT" --no-optional-locks diff --cached --binary -- . "${FHL_EXCL[@]}" 2>/dev/null | head -c 20000000 > "$f.cached.diff"
+    printf 'head\t%s\n' "$head"
     printf 'diff_sha256\t%s\n' "$(fhl_sha < "$f.diff")"
     printf 'cached_diff_sha256\t%s\n' "$(fhl_sha < "$f.cached.diff")"
-    { fm_run_timed 10 git -C "$WT" --no-optional-locks diff --name-only -z HEAD 2>/dev/null; fm_run_timed 10 git -C "$WT" ls-files -z --others --exclude-standard 2>/dev/null; } | perl -0 -ne 'next if $seen{$_}++; print if ++$n <= 2000' |
+    perl -0 -ne 'next if $seen{$_}++; print if ++$n <= 2000' "$f.names" |
       while IFS= read -r -d '' p; do
         [ -n "$p" ] || continue
         if fhl_secret_path "$p"; then
@@ -861,11 +878,13 @@ fhl_snapshot_tree() {  # <name> -> path:sha
           printf 'deleted\t%s\n' "$(fhl_esc "$p")"
         fi
       done
-    fm_run_timed 10 git -C "$WT" ls-files -z --others --ignored --exclude-standard 2>/dev/null |
-      perl -0 -ne 'chomp; if (++$n > 2000) { print "present-ignored-truncated\t2000\n"; exit } s/\\/\\\\/g; s/\t/\\t/g; s/\n/\\n/g; s/\r/\\r/g; s/[[:cntrl:]]/?/g; print "present-ignored\t$_\n"'
+    perl -0 -ne 'chomp; last if ++$n > 200000; s/\\/\\\\/g; s/\t/\\t/g; s/\n/\\n/g; s/\r/\\r/g; s/[[:cntrl:]]/?/g; print "present-ignored\t$_\n"' "$f.ignored"
+    [ -z "$inc" ] || printf 'incomplete\t%s\n' "${inc%,}"
   } > "$f"
+  rm -f "$f.names" "$f.ignored"
   chmod 600 "$f" "$f.diff" "$f.cached.diff" 2>/dev/null || true
   printf '%s:%s' "snapshots/$TASK/$1.tree" "$(fhl_sha < "$f")"
+  [ -z "$inc" ] || return 3
 }
 
 # Snapshots belong to a task; once its metadata is gone, they go too. Runs at
@@ -1452,7 +1471,14 @@ cmd_tick() {
         else
           local gated=''
           case "$backend" in tmux|herdr) ;; *) gated=" replace-gate=owner($backend)" ;; esac
-          fhl_act 4 "relaunch$gated" "$(fhl_snapshot_tree "$EP_episode-r4")" && EP_rung4_at=$NOW
+          # A rung-4 record that cannot show the whole worktree holds.
+          local snap='' snap_rc=0
+          snap=$(fhl_snapshot_tree "$EP_episode-r4") || snap_rc=$?
+          if [ "$snap_rc" = 0 ]; then
+            fhl_act 4 "relaunch$gated" "$snap" && EP_rung4_at=$NOW
+          else
+            hold=snapshot-incomplete
+          fi
         fi
       fi
     fi

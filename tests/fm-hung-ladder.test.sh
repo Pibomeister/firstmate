@@ -427,6 +427,20 @@ test_healthy_waits_and_screens() {
   ticks "$h" bg "$B" $((B + 1800))
   assert_equals 0 "$(rows "$h" bg would-act)" 'a live background shell protects the worker'
 
+  # An owner query that fails is unknown, never an expired wait.
+  mkdir -p "$h/uidbin"
+  cat > "$h/uidbin/ps" <<'EOF'
+#!/usr/bin/env bash
+[ "$#" = 4 ] && [ "$1" = -p ] && [ "$3" = -o ] && [ "$4" = uid= ] && exit 1
+exec /bin/ps "$@"
+EOF
+  chmod +x "$h/uidbin/ps"
+  new_task "$h" uq
+  printf 'paused: waiting on background shell pid=%s running the build [at=%s]\n' "$live" "$B" >> "$h/state/uq.status"
+  EXTRA_BIN="$h/uidbin" ticks "$h" uq "$B" $((B + 1800))
+  no_escalation "$h" uq 'a failed owner query'
+  ! ledger "$h" | awk -F'\t' '$4 == "uq" && $11 ~ /unverified-wait-cap/ { f = 1 } END { exit !f }' || fail 'a failed owner query never expires the wait'
+
   # A pid query that fails is unknown, never a dead job.
   mkdir -p "$h/psbin"
   cat > "$h/psbin/ps" <<'EOF'
@@ -998,6 +1012,24 @@ test_chain_and_escaping() {
   pass 'the hash chain and field escaping expose spoofed, edited, and removed rows'
 }
 
+test_incomplete_snapshot_holds_rung4() {
+  local h
+  h=$(new_home bigtree)
+  new_task "$h" bt
+  mkdir -p "$h/wt-bt/many"
+  ( cd "$h/wt-bt/many" && seq -f 'f%04g' 1 2001 | xargs touch )
+  git -C "$h/wt-bt" add many
+  git -C "$h/wt-bt" -c user.name=t -c user.email=t@example.invalid commit -qm many
+  ( cd "$h/wt-bt/many" && for f in f*; do echo x > "$f"; done )
+  ticks "$h" bt "$B" $((B + 1800))
+  assert_equals 1 "$(rows "$h" bt would-act 3)" 'the episode reached rung 3'
+  assert_equals 0 "$(rows "$h" bt would-act 4)" 'a snapshot that cannot list every dirty file holds rung 4'
+  ledger "$h" | awk -F'\t' '$4 == "bt" && $6 == "hold" && $11 == "snapshot-incomplete" { f = 1 } END { exit !f }' \
+    || fail 'the hold names the incomplete snapshot'
+  assert_no_actions 'incomplete snapshot'
+  pass 'a rung-4 snapshot that cannot record the whole worktree holds rung 4'
+}
+
 test_snapshots_redact_and_exclude_secrets() {
   local h snap rc
   h=$(new_home secrets)
@@ -1007,6 +1039,7 @@ test_snapshots_redact_and_exclude_secrets() {
   mkdir -p "$h/wt-s1/cache"
   printf 'API_KEY=ignoredsecretvalue\n' > "$h/wt-s1/cache/.env"
   printf 'data\n' > "$h/wt-s1/cache/data.txt"
+  ( cd "$h/wt-s1/cache" && seq -f 'c%04g' 1 2000 | xargs touch && touch z-private.env )
   printf 'TOKEN=first\n' > "$h/wt-s1/private key.env"
   printf 'TOKEN=first\n' > "$h/wt-s1/clé-secret.txt"
   git -C "$h/wt-s1" add 'private key.env' 'clé-secret.txt'
@@ -1039,6 +1072,8 @@ test_snapshots_redact_and_exclude_secrets() {
   ! grep -Eq '^file	.*	notes.txt$' "$snap" || fail 'a symlink to a secret is never followed'
   grep -q '^present-ignored	cache/.env$' "$snap" || fail 'each ignored file is recorded, not only its directory'
   grep -q '^present-ignored	cache/data.txt$' "$snap" || fail 'every ignored file is recorded as present'
+  grep -q '^present-ignored	cache/z-private.env$' "$snap" || fail 'ignored files past the first 2000 are recorded as present'
+  ! grep -q '^incomplete' "$snap" || fail 'a complete snapshot is not marked incomplete'
   ! grep -rq ignoredsecretvalue "$h/state/hung-ladder" || fail 'ignored file content is never saved'
   ! grep -rq dirsecretvalue "$h/state/hung-ladder" || fail 'a file under a credentials directory stays out of the patches'
   ! grep -rq casesecretvalue "$h/state/hung-ladder" || fail 'a secret pattern matches in any case'
@@ -1087,4 +1122,5 @@ fm_test_run \
   test_live_mode_refused_without_gate \
   test_chain_and_escaping \
   test_snapshots_redact_and_exclude_secrets \
+  test_incomplete_snapshot_holds_rung4 \
   test_mode_off_and_absent_do_nothing
