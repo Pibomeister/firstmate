@@ -1,0 +1,70 @@
+=== 1. Valid secondmate claim-project configuration ===
+rc=0
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab-sm.rKR3CN/primary
+warning: secondmate sm-live sync skipped before launch: primary default-branch commit cannot be resolved
+spawned sm-live harness=codex kind=secondmate mode=secondmate yolo=off window=firstmate:fm-sm-live worktree=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab-sm.rKR3CN/sm-live
+--- generated launch-charter.md ---
+# Secondmate Charter
+Operate within your scope.
+
+
+# Approved local queue continuation
+
+Continue approved ready work in this home through bin/fm-ledger.sh claim when the supervisor is quiet.
+Read bin/fm-ledger.sh --help for the claim, spawn and recovery contract before using it.
+The exact project grants within this charter are: alpha beta.
+--- sm-live.meta ---
+window=firstmate:fm-sm-live
+tmux_socket=/private/tmp/fml.rDpv4d/tmux-501/default
+tmux_server_pid=12065
+tmux_server_identity=Tue Nov 17 18:32:42 2026     tmux -f /dev/null -S /tmp/fml.rDpv4d/tmux-501/default new-session -d -s firstmate -c /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab-sm.rKR3CN/primary
+tmux_window_id=@1
+endpoint_task_id=sm-live
+worktree=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab-sm.rKR3CN/sm-live
+project=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab-sm.rKR3CN/sm-live
+harness=codex
+approval_mode=bypass
+kind=secondmate
+mode=secondmate
+yolo=off
+tasktmp=/tmp/fm-sm-live
+model=default
+effort=default
+spawn_gen=s1794940366.12517.24311
+home=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab-sm.rKR3CN/sm-live
+projects=
+--- tmux windows ---
+0: zsh* (1 panes) [80x24] [layout b25d,80x24,0,0,0] @0 (active)
+1: fm-sm-live (1 panes) [80x24] [layout b25e,80x24,0,0,1] @1
+--- sm-live pane capture ---
+eduardopicazo@Eduardos-MacBook-Pro-2 sm-live % . '/tmp/fm-sm-live+906cf5c1f94e4c
+1f988cc64b4145dd22260af18063b7dcb72a790647128522ba/launch.s1794940366.12517.2431
+1.sh'
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+=== 2. Malformed claim-project refuses secondmate launch ===
+rc=1 output=fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab-sm.rKR3CN/primary
+warning: secondmate sm-bad sync skipped before launch: primary default-branch commit cannot be resolved
+error: invalid secondmate claim-project configuration
+=== 3. Symlinked mission-ledger refuses secondmate launch ===
+rc=1 output=fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab-sm.rKR3CN/primary
+warning: secondmate sm-sym sync skipped before launch: primary default-branch commit cannot be resolved
+error: invalid secondmate claim-project configuration
+=== 4. Tmux windows after refused launches (must still only be zsh + fm-sm-live) ===
+0: zsh* (1 panes) [80x24] [layout b25d,80x24,0,0,0] @0 (active)
+1: fm-sm-live (1 panes) [80x24] [layout b25e,80x24,0,0,1] @1

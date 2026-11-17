@@ -1,0 +1,100 @@
+=== 1. Intake approved item ===
+filed sc-live-1 project=alpha source=proposal:V12
+=== 2. Read-only next before claim ===
+NEXT sc-live-1 project=alpha kind=task priority=-
+task:
+  id: sc-live-1
+  title: Live scout claim validation
+  state: queued
+=== 3. Concurrent claim race ===
+Concurrent claim exits: r1=0 r2=1 (sum_zero=1)
+claimant1 stdout:
+CLAIM sc-live-1 project=alpha phase=reserved token=c79e05c7d8a13f63c984d5e382007b3d
+claimant2 stdout:
+claimant1 stderr:
+claimant2 stderr:
+fm-ledger: another claim operation is in progress
+=== 4. Resume recovers same token ===
+CLAIM sc-live-1 project=alpha phase=reserved token=c79e05c7d8a13f63c984d5e382007b3d
+=== 5. Spawn without --claim refuses ===
+rc=1 output=fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.szjLs1
+fm-ledger: task sc-live-1 is reserved; its claim token is required
+=== 6. Spawn with --claim against real tmux + treehouse + codex ===
+rc=0 output=fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.szjLs1
+spawned sc-live-1 harness=codex kind=scout window=firstmate:fm-sc-live-1 worktree=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.szjLs1/treehouse-pool/.treehouse/alpha-deab14/1/alpha
+=== 7. Receipt after spawn ===
+{
+  "version": 1,
+  "id": "sc-live-1",
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.szjLs1",
+  "project": "alpha",
+  "path": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.szjLs1/projects/alpha",
+  "token": "c79e05c7d8a13f63c984d5e382007b3d",
+  "snapshot": "9304dba49c0537b79196a8d70f75d88e03e7d96b8651127c1b343ad29556b47a",
+  "phase": "launched"
+}
+=== 8. Task meta after spawn ===
+window=firstmate:fm-sc-live-1
+tmux_socket=/private/tmp/fml.A1c6h7/tmux-501/default
+tmux_server_pid=4055
+tmux_server_identity=Tue Nov 17 18:31:25 2026     tmux -f /dev/null -S /tmp/fml.A1c6h7/tmux-501/default new-session -d -s firstmate -c /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.szjLs1
+tmux_window_id=@1
+endpoint_task_id=sc-live-1
+worktree=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.szjLs1/treehouse-pool/.treehouse/alpha-deab14/1/alpha
+project=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.szjLs1/projects/alpha
+harness=codex
+approval_mode=bypass
+kind=scout
+tasktmp=/tmp/fm-sc-live-1
+model=default
+effort=default
+spawn_gen=s1794940319.63395.21915
+=== 9. Backlog state after spawn ===
+task:
+  id: sc-live-1
+  title: Live scout claim validation
+  state: in_flight
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: task
+  repo: alpha
+  priority: "-"
+  created: 2026-11-17
+  closed: "-"
+  deps: none
+  links: none
+  body: "Ledger source: proposal:V12\nVerify claim and spawn end-to-end"
+=== 10. Live tmux windows & pane capture ===
+0: zsh* (1 panes) [80x24] [layout b25d,80x24,0,0,0] @0 (active)
+1: fm-sc-live-1 (1 panes) [80x24] [layout b25e,80x24,0,0,1] @1
+
+  >_ OpenAI Codex (v0.169.0)
+     /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/…/1/alpha
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+› Ask Codex to do anything
+
+  ? for shortcuts
+=== 11. Late replay with same --claim token refuses ===
+rc=1 output=fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.szjLs1
+fm-ledger: claim sc-live-1 is launched; use task recovery, never repeat fresh spawn

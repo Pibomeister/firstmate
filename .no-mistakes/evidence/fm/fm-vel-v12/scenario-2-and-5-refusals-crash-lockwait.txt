@@ -1,0 +1,50 @@
+=== Scenario 2a: Default off before claim-project ===
+filed sc-ref-1 project=alpha source=proposal:V1
+default-off rc=1 out=fm-ledger: claims are not enabled for project alpha in this home
+=== Scenario 2b: Skips unapproved & undecided priority-0 items, claims ready sc-ref-1 ===
+claim-with-parked rc=0 out=fm-ledger: claim unapproved-0 has no unique ledger source
+fm-ledger: claim undecided-0 has an open decision or blocker
+CLAIM sc-ref-1 project=alpha phase=reserved token=bb56c799f36a1ed322283b8a1cc19534
+=== Scenario 2c: Changed approval (source prefix mismatch, brief edit, hold) refuses resume ===
+prefix-mismatch rc=1 out=fm-ledger: claim sc-ref-1 approval source changed
+=== Scenario 2d: Standing hold refuses fresh claim ===
+filed sc-hold-1 project=alpha source=proposal:V12
+standing-hold rc=3 out=fm-ledger: claim unapproved-0 has no unique ledger source
+fm-ledger: claim undecided-0 has an open decision or blocker
+fm-ledger: standing holds require owner reconciliation before claiming
+claim: nothing claimable for project alpha
+=== Scenario 5a: Crash fence (claim-begin + SIGKILL -> phase=dispatching exit 4, no reissue) ===
+fm-ledger: claim unapproved-0 has no unique ledger source
+fm-ledger: claim undecided-0 has an open decision or blocker
+reserved: CLAIM sc-hold-1 project=alpha phase=reserved token=9cd4c595be18ff7fd0c5851ddbd5e70c
+bash: line 137: 58141 Killed: 9               FM_HOME="$LAB" bash -c '
+    source "$1/bin/fm-wake-lib.sh"
+    fm_lock_try_acquire "$FM_HOME/state/.spawn-sc-hold-1.lock" || exit 1
+    "$1/bin/fm-ledger.sh" claim-begin sc-hold-1 "$2" "$FM_HOME/projects/alpha" || exit 1
+    kill -KILL "$$"
+  ' _ "$PWD" "$crash_token" > /dev/null 2>&1
+crash helper rc=137
+resume-after-crash rc=4 out=CLAIM sc-hold-1 project=alpha phase=dispatching token=9cd4c595be18ff7fd0c5851ddbd5e70c
+claim sc-hold-1: dispatch outcome uncertain; recover the existing task, never repeat fresh spawn
+fresh-claim-after-crash rc=3 out=fm-ledger: claim unapproved-0 has no unique ledger source
+fm-ledger: claim undecided-0 has an open decision or blocker
+claim: nothing claimable for project alpha
+=== Scenario 5b (F1): Concurrent .ledger-claim.lock held while real fm-spawn.sh runs ===
+filed sc-lock-wait project=alpha source=proposal:V12
+fm-ledger: claim unapproved-0 has no unique ledger source
+fm-ledger: claim undecided-0 has an open decision or blocker
+reserved for lock-wait: CLAIM sc-lock-wait project=alpha phase=reserved token=1537afd3a4e9b5bfebadc4488d9560b6
+spawn-under-lock-contention rc=0
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.tKdb6Q
+spawned sc-lock-wait harness=codex kind=scout window=firstmate:fm-sc-lock-wait worktree=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.tKdb6Q/treehouse-pool/.treehouse/alpha-08c7e3/1/alpha
+--- receipt after F1 lock-wait spawn ---
+{
+  "version": 1,
+  "id": "sc-lock-wait",
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.tKdb6Q",
+  "project": "alpha",
+  "path": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.tKdb6Q/projects/alpha",
+  "token": "1537afd3a4e9b5bfebadc4488d9560b6",
+  "snapshot": "daab35fdcbd92098646bb2180f4ac8e2363bd45449082b7e4b8733ae50790c93",
+  "phase": "launched"
+}
