@@ -6203,6 +6203,59 @@ restart-command=/bin/false'
   pass "heartbeat recovery keeps the main running-turn veto"
 }
 
+test_heartbeat_dryrun_never_counts_as_delivery() {
+  make_home $'Captain session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=600
+mode=dry-run
+nudge-secs=1
+restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen nudge dry-run)" "the preview nudge was not recorded"
+  printf 'mode=act\n' >> "$H/config/watchdog"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "preview history authorized a real restart"
+  assert_equals 1 "$(ledger_rows heartbeat-frozen nudge pending)" "active mode did not deliver its own nudge"
+  run_wd 1100 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "active delivery lost its full grace period"
+  run_wd 1300 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen restart pending)" "a proven active delivery never recovered"
+  wait_pickup || fail "active recovery did not prove pickup"
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  pass "dry-run history cannot satisfy the active heartbeat delivery prerequisite"
+}
+
+test_heartbeat_ignores_orphan_and_previous_owner_receipts() {
+  local history
+  for history in orphan previous-owner; do
+    make_home $'Captain session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=600
+nudge-secs=1
+restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+    write_fake_captain
+    transcript 3000 "Working."
+    run_wd 0 once >/dev/null 2>&1
+    printf '%s\told\t%s\tprimary\theartbeat-frozen\tnudge\tpending\tinterrupted delivery\n' "$((BASE + 700))" "$H" >> "$H/state/watchdog/actions.tsv"
+    if [ "$history" = previous-owner ]; then
+      printf '%s\told\t%s\tprimary\theartbeat-frozen\tnudge\tdone\theartbeat-owner=999999:old-session:old-start\n' "$((BASE + 700))" "$H" >> "$H/state/watchdog/actions.tsv"
+    fi
+    run_wd 1000 once >/dev/null 2>&1
+    assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "$history history authorized a restart"
+    assert_equals 2 "$(ledger_rows heartbeat-frozen nudge pending)" "$history history prevented a fresh delivery"
+    awk -F '\t' -v owner="heartbeat-owner=$LOCKPID:$SID:" '
+      $5 == "heartbeat-frozen" && $6 == "nudge" && $7 == "done" && index($8, owner) == 1 { found = 1 }
+      END { exit !found }
+    ' "$H/state/watchdog/actions.tsv" || fail "$history case has no current-owner delivery receipt"
+    run_wd 1300 once >/dev/null 2>&1
+    assert_equals 1 "$(ledger_rows heartbeat-frozen restart pending)" "$history case never recovered after its own delivery"
+    wait_pickup || fail "$history recovery did not prove pickup"
+    LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  done
+  pass "orphan pending rows and another owner's delivery cannot authorize heartbeat restart"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -6369,4 +6422,6 @@ fm_test_run \
   test_pending_handoff_suppresses_heartbeat_recovery \
   test_heartbeat_recovery_preserves_account_pins \
   test_heartbeat_response_cannot_suppress_recovery_forever \
-  test_heartbeat_recovery_preserves_the_running_turn_veto
+  test_heartbeat_recovery_preserves_the_running_turn_veto \
+  test_heartbeat_dryrun_never_counts_as_delivery \
+  test_heartbeat_ignores_orphan_and_previous_owner_receipts

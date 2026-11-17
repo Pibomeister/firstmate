@@ -101,6 +101,8 @@ A home whose restart awaits pickup gets no action at all until that restart clos
 | Unread input | Input has waited `owed-input-secs` with no running turn | Nudge. |
 | Heartbeat frozen | A live lock owner has a heartbeat older than `heartbeat-frozen-secs`, after the existing ladder checks | Record the stale heartbeat and nudge an empty idle composer; wait `heartbeat-restart-secs` before using the configured restart path when no transcript progress follows, repeat the rate-limited nudge after a response if the heartbeat stays stale, and hold during a pending handoff, active work, draft, or known quota condition without changing account pins. |
 
+Heartbeat recovery requires a successful delivery receipt for the current lock owner and process instance, so dry runs, interrupted delivery, and previous sessions cannot authorize its restart.
+
 The frozen, agent-gone, and restart paths need an activity source, the newest of these stamps that is not later than the watchdog clock:
 
 - `transcript`: the modification time of the session's Claude transcript, the only transcript layout read;

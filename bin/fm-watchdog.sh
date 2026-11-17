@@ -698,7 +698,10 @@ wd_rec() {  # <id> <symptom> <action> <phase> <detail>
 
 # wd_nudge <symptom> <body>: a record-backed doorbell into the subject's own pane.
 wd_nudge() {
-  local symptom=$1 body="Watchdog (automated, not the captain or the owner): $2" id doorbell verdict
+  local symptom=$1 body="Watchdog (automated, not the captain or the owner): $2" id doorbell verdict heartbeat_owner=''
+  if [ "$symptom" = heartbeat-frozen ]; then
+    heartbeat_owner=$(wd_heartbeat_owner) || { wd_gap "heartbeat nudge held; current owner is unproven"; return 0; }
+  fi
   if ! fm_wd_text_allowed "$body"; then
     wd_gap "$symptom held; its nudge names a merge, deploy, or release word"
     wd_rate_open "$symptom" nudge "$(cfgi nudge-secs 900)" && wd_rec "$(wd_id)" "$symptom" nudge refused "text names a merge, deploy, or release word"
@@ -719,6 +722,11 @@ wd_nudge() {
     wd_rec "$id" "$symptom" nudge failed "operational input record failed"; return 0; }
   verdict=$(fm_run_timed_fn 30 fm_backend_send_text_submit "$O_BACKEND" "$O_TARGET" "$doorbell" 2 0.5 1 2>/dev/null) || {
     wd_rec "$id" "$symptom" nudge failed "doorbell submit failed (${verdict:-no verdict})"; return 0; }
+  if [ "$symptom" = heartbeat-frozen ] && wd_same_live_owner "$O_HOME/state" \
+    && [ "$(wd_heartbeat_owner)" = "$heartbeat_owner" ]; then
+    wd_rec "$id" "$symptom" nudge done "$heartbeat_owner" || wd_gap "heartbeat delivery receipt could not be written"
+  fi
+  return 0
 }
 
 # wd_key <symptom> <key-or-digit> <why>: one key, then verify its effect; returns 0
@@ -1398,6 +1406,13 @@ wd_self_heal() {  # <class> <title> <evidence>
 
 # --- the ladder ------------------------------------------------------------------
 
+wd_heartbeat_owner() {
+  local start
+  wd_same_live_owner "$O_HOME/state" || return 1
+  start=$(fm_session_process_start "$O_LOCK_PID") || return 1
+  printf 'heartbeat-owner=%s:%s:%s\n' "$O_LOCK_PID" "${O_SESSION:-none}" "$start"
+}
+
 wd_heartbeat_frozen() {
   local secs
   secs=$(cfgi heartbeat-frozen-secs 600)
@@ -1405,7 +1420,7 @@ wd_heartbeat_frozen() {
 }
 
 wd_handle_heartbeat_frozen() {
-  local now stale_at last since kinds
+  local now stale_at last since kinds owner
   now=$(wd_now)
   stale_at=$((now - O_HB_AGE))
   wd_rate_open heartbeat-frozen detect "$(cfgi nudge-secs 900)" &&
@@ -1422,11 +1437,9 @@ wd_handle_heartbeat_frozen() {
     wd_gap "heartbeat is stale but the existing composer or quota guard takes precedence"
     return 0
   fi
-  last=$(awk -F'\t' -v h="$O_HOME" '
-    $3 == h && $5 == "heartbeat-frozen" && $6 == "nudge" {
-      if ($7 ~ /^(pending|dry-run)$/) { id = $2; at = $1 }
-      else if ($7 == "failed" && $2 == id) at = ""
-    }
+  owner=$(wd_heartbeat_owner) || { wd_gap "heartbeat recovery held; owner identity is unproven"; return 0; }
+  last=$(awk -F'\t' -v h="$O_HOME" -v owner="$owner" '
+    $3 == h && $5 == "heartbeat-frozen" && $6 == "nudge" && $7 == "done" && $8 == owner { at = $1 }
     END { print at }
   ' "$LEDGER" 2>/dev/null)
   if [ -z "$last" ] || [ "$last" -lt "$stale_at" ]; then
@@ -1447,6 +1460,10 @@ wd_handle_heartbeat_frozen() {
   kinds=records
   [ "$O_TR_AGE" = unknown ] || kinds="$kinds filesystem"
   if [ -n "$O_PANE" ] && [ "$O_PANE_STATIC" -ge $((since - $(cfgi interval-secs 120))) ]; then kinds="$kinds rendered"; fi
+  if ! wd_same_live_owner "$O_HOME/state" || [ "$(wd_heartbeat_owner)" != "$owner" ]; then
+    wd_gap "heartbeat recovery held; owner changed after its delivery receipt was read"
+    return 0
+  fi
   # shellcheck disable=SC2086 # kinds is a word list accepted by the restart proof.
   wd_restart heartbeat-frozen $kinds
 }
