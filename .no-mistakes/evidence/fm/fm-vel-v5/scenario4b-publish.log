@@ -1,0 +1,1 @@
+[2026-11-17T21:49:33Z] refresh exceeded its 30-second deadline in stage publish (stages: lock-wait@1 producer@2 backlog@2 task-observation@2 task-rows@10 contributions@12 summary@13 validate@14 publish@14)

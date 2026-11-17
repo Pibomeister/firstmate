@@ -1,0 +1,30 @@
+=== V5 Live Lab Validation (2026-11-17T21:48:28Z) ===
+Host load: 15:48  up 1 day, 6 hrs, 47 users, load averages: 59.79 64.62 71.65
+Lab home: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.wnzQIq
+Lab tmux dir: /tmp/fml.W38ZjM
+
+--- Scenario 1: Loaded 6-task lab home refresh under 60s (all defaults) ---
+Scenario 1 elapsed: 13s
+PASS Scenario 1: 6-task lab home refreshed in 13s (< 60s); valid=true; generated=2026-11-17T21:48:33Z epoch=1794952113; counts={"active_children":4,"decisions_open":2,"holds":2,"queued":1,"landed":1,"endpoints":6}
+
+--- Scenario 2: Deadline during lock-wait ---
+Scenario 2 log: [2026-11-17T21:48:47Z] refresh exceeded its 3-second deadline in stage lock-wait (stages: lock-wait@0)
+PASS Scenario 2: lock-wait named and prior summary preserved (2026-11-17T21:48:33Z)
+
+--- Scenario 3: Deadline during task-observation ---
+Scenario 3 log: [2026-11-17T21:48:52Z] refresh exceeded its 8-second deadline in stage task-observation (stages: lock-wait@0 producer@2 backlog@2 task-observation@2)
+PASS Scenario 3: task-observation named on shared timeline and prior summary preserved
+
+--- Scenario 4a: Deadline during validate ---
+Scenario 4a log: [2026-11-17T21:49:02Z] refresh exceeded its 30-second deadline in stage validate (stages: lock-wait@1 producer@2 backlog@2 task-observation@2 task-rows@9 contributions@12 summary@15 validate@16)
+PASS Scenario 4a: validate stage named on shared timeline and prior summary preserved
+
+--- Scenario 4b: Deadline during publish ---
+Scenario 4b log: [2026-11-17T21:49:33Z] refresh exceeded its 30-second deadline in stage publish (stages: lock-wait@1 producer@2 backlog@2 task-observation@2 task-rows@10 contributions@12 summary@13 validate@14 publish@14)
+PASS Scenario 4b: publish stage named on shared timeline and prior summary preserved
+
+--- Scenario 5: Signalled parent cleans up stage file; producer never recreates deleted log ---
+PASS Scenario 5: signalled parent cleaned stage file and producer never recreated deleted stage log
+
+--- Scenario 6: Live watcher triggers refresh on status update ---
+FAIL: Scenario 6: watcher did not publish updated summary with lab-watch-test hold

@@ -1,0 +1,2 @@
+Initial summary epoch: 1794952392
+PASS Scenario 6: live watcher refreshed home-summary.json (epoch 1794952392 -> 1794952414, state=externally_held)
