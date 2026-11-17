@@ -733,6 +733,24 @@ test_disabled_cache_skips_list_and_invalidate() {
   pass "fm_orca_cli: a disabled cache does not call, store, or invalidate"
 }
 
+test_timed_call_keeps_the_rest_of_its_function() {
+  local switch out
+  # A timed call runs its function as a background job; macOS /bin/bash 3.2 can
+  # replace that job with the CLI, which loses the captured body and every step after it.
+  for switch in 1 0; do
+    setup_case "timed-$switch"
+    FM_ORCA_READ_BODY='{"ok":true,"result":{"terminal":{"tail":["drawn"]}}}'
+    out=$(PATH="$CASE/fakebin:$PATH" FM_ORCA_CLI_CACHE="$switch" FM_ORCA_CLI_CACHE_DIR="$FM_ORCA_CLI_CACHE_DIR" \
+      FM_ORCA_LOG="$LOG" FM_ORCA_COUNT="$COUNT" FM_ORCA_LIST="$LIST" FM_ORCA_READ_BODY="$FM_ORCA_READ_BODY" \
+      bash -c '. "$1"; . "$2"
+        read_then_mark() { local body; body=$(fm_orca_cli terminal read --terminal term-a --json); printf "%s\nafter\n" "$body"; }
+        fm_run_timed_fn 10 read_then_mark' _ "$ROOT/bin/fm-timeout-lib.sh" "$ROOT/bin/fm-orca-cli-cache.sh" 2>&1)
+    assert_contains "$out" '"drawn"' "cache=$switch: a timed read lost the CLI body: $out"
+    assert_contains "$out" after "cache=$switch: a timed read lost the steps after the CLI: $out"
+  done
+  pass "fm_orca_cli: a timed call keeps the CLI body and the rest of its function, cache on or off"
+}
+
 test_test_seam_keeps_cache_off_until_forced() {
   setup_case seam
   CACHE_SWITCH=inherit
@@ -840,6 +858,7 @@ fm_test_run \
   test_terminal_exists_absent_on_a_complete_list \
   test_truncated_list_is_not_absence \
   test_disabled_cache_skips_list_and_invalidate \
+  test_timed_call_keeps_the_rest_of_its_function \
   test_test_seam_keeps_cache_off_until_forced \
   test_single_flight_shares_one_inflight_read \
   test_target_exists_shares_one_list_when_cache_is_on \
