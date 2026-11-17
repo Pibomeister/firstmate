@@ -3383,6 +3383,17 @@ hung_ladder_observe() {  # <task> <kind> <1 when the pane reads busy> <dialog> <
     tick --task "$task" --kind "$kind" --busy "$3" --dialog "$4" >/dev/null 2>"$STATE/.hung-ladder.err" || true
 }
 
+# Snapshots of tasks that are gone are pruned once an hour from the pass
+# itself, so retention never depends on another worker being observed.
+hung_ladder_prune() {
+  local now
+  [ -d "$STATE/hung-ladder/snapshots" ] || return 0
+  now=$(date +%s)
+  [ $((now - ${HUNG_LADDER_PRUNED_AT:-0})) -ge 3600 ] || return 0
+  HUNG_LADDER_PRUNED_AT=$now
+  fm_run_timed "$HUNG_LADDER_BUDGET" "$BASH" "$SCRIPT_DIR/fm-hung-ladder.sh" prune >/dev/null 2>&1 || true
+}
+
 task_captain_call_open() {  # <task>
   local task=$1
   CAPTAIN_CALL_IDENTITY=
@@ -5874,6 +5885,7 @@ EOF
       fi
     fi
   done < <(recorded_windows)
+  hung_ladder_prune
   watch_record_progress_beat
   parked_gate_scan_end
 

@@ -1079,6 +1079,8 @@ Both files must belong to this user, and the approval must have no group or othe
 Set the mode with `bin/fm-hung-ladder.sh set-mode <mode> --actor <name>`, read it with `mode`, and check the ledger with `verify`.
 A worker session (one with `FM_TASK_ID` set) can never set the mode or write the ledger.
 The watcher runs one observation per task per minute on its existing pass, with no new background process.
+A sensor read that fails or times out counts as unknown, never as quiet, so it can only hold a rung.
+The watcher also prunes the snapshots of cleaned-up tasks once an hour on the same pass.
 Each ledger row is escaped and hash-chained to the row before it, so an edited, removed, or inserted row is detected.
 A later outcome is a new `resolve` row with `later_self_progressed=yes` or `no`, never an edit.
 Caps, the systemic breaker, holds, and parks are recorded in each row, so the soak can show what live mode would have done.

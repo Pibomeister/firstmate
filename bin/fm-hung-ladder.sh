@@ -24,6 +24,10 @@
 #       builds no live path.
 #   fm-hung-ladder.sh verify
 #       Recompute the whole ledger hash chain. Exit 0 intact, 3 broken.
+#   fm-hung-ladder.sh prune
+#       Remove the snapshots of every task whose metadata is gone. The watcher
+#       runs it once an hour, so snapshots go with task cleanup even when no
+#       worker is left to observe. Writes nothing else.
 #   fm-hung-ladder.sh --help
 #
 # Exit status: 0 success or nothing to do; 2 usage error or refusal by a
@@ -77,9 +81,16 @@
 # SENSORS. rendered: the normalized pane hash (ANSI, spinner glyphs and digit
 # runs removed) against the previous sample. filesystem: status size and last
 # line, inbox acknowledgements, head, dirty-content hash, and a worktree
-# write probe; a scout reads only status and inbox. kernel: CPU time of the
-# agent's process tree per sample, unknown above the load ceiling or when the
-# tree cannot be read, unsupported when the backend names no root process.
+# write probe; a scout reads only status and inbox. A failed or timed-out
+# content hash or write probe reads as unknown, never quiet. A status line
+# that repeats one of the last four is a drip, not progress. kernel: CPU time
+# of the agent's process tree per sample, unknown above the load ceiling or
+# when the tree cannot be read, unsupported when the backend names no root
+# process. A descendant whose CPU time or I/O count changed is working and
+# vetoes the proof; one unchanged for 15 minutes is a stale child. I/O comes
+# from /proc/<pid>/io where it exists. macOS exposes no unprivileged I/O
+# counter, so there the 10 ms CPU clock, which every I/O system call
+# advances, stands in for it.
 # records: a declared wait's named job. Transcript and loop proofs are
 # recorded as unsupported. Git reads use --no-optional-locks and never write.
 #
@@ -117,8 +128,24 @@ fhl_sha() {  # stdin -> sha256 hex
   fi
 }
 
+# GNU stat reads -f as file-system mode, so pick the flavor by system rather
+# than by trying one and falling back.
 fhl_stat() {  # <file> -> "<uid> <octal-perms>"
-  stat -f '%u %Lp' "$1" 2>/dev/null || stat -c '%u %a' "$1" 2>/dev/null
+  [ -n "${FHL_OS:-}" ] || FHL_OS=$(uname 2>/dev/null)
+  if [ "$FHL_OS" = Darwin ]; then
+    /usr/bin/stat -f '%u %Lp' "$1" 2>/dev/null
+  else
+    stat -c '%u %a' "$1" 2>/dev/null
+  fi
+}
+
+fhl_mtime() {  # <file> -> epoch seconds
+  [ -n "${FHL_OS:-}" ] || FHL_OS=$(uname 2>/dev/null)
+  if [ "$FHL_OS" = Darwin ]; then
+    /usr/bin/stat -f %m "$1" 2>/dev/null
+  else
+    stat -c %Y "$1" 2>/dev/null
+  fi
 }
 
 # 0 when <file> is a regular file owned by this user whose permissions have
@@ -273,9 +300,16 @@ fhl_row() {
   id="hl-$seq"
   body="$seq	$NOW	$id	$(fhl_esc "$task")	$(fhl_esc "$rung")	$(fhl_esc "$decision")	$(fhl_esc "$EFFECTIVE")	$(fhl_esc "${SIGNALS:--}")	$(fhl_esc "${CAPS:--}")	$(fhl_esc "${BREAKER:--}")	$(fhl_esc "$reason")	$(fhl_esc "$ref")	$(fhl_esc "$lsp")	$LAST_HASH"
   hash=$(printf '%s' "$body" | fhl_sha)
-  printf '%s\t%s\n' "$body" "$hash" >> "$LEDGER" || return 1
+  # The row and its head record are one step: the watcher's budget signal
+  # must not land between them and leave the chain refusing every append.
+  trap '' TERM INT HUP
+  if ! printf '%s\t%s\n' "$body" "$hash" >> "$LEDGER"; then
+    trap - TERM INT HUP
+    return 1
+  fi
   chmod 600 "$LEDGER" 2>/dev/null || true
   printf '%s\t%s\n' "$seq" "$hash" > "$HL/head.tmp" && mv -f "$HL/head.tmp" "$HL/head"
+  trap - TERM INT HUP
   ROW_ID=$id
 }
 
@@ -471,6 +505,36 @@ fhl_tree() {  # <root-pid>
     }'
 }
 
+# Bytes read and written by <pid> so far, from /proc where it exists.
+fhl_child_io() {  # <pid>
+  [ -r "/proc/$1/io" ] || return 1
+  awk '$1 == "rchar:" || $1 == "wchar:" { s += $2; n++ } END { if (!n) exit 1; printf "%.0f\n", s }' "/proc/$1/io" 2>/dev/null
+}
+
+# The worktree write probe: 0 a file changed since <anchor>, 1 none did, 2 the
+# walk failed or timed out, which reads as unknown rather than quiet.
+fhl_written_since() {  # <worktree> <anchor>
+  local wt=$1 anchor=$2 hit rc=0 name bound
+  local -a names=() prune=()
+  read -r -a names <<< "${FM_WORKTREE_WRITE_PRUNE:-}"
+  for name in ${names[@]+"${names[@]}"}; do
+    [ "${#prune[@]}" -eq 0 ] || prune+=( -o )
+    prune+=( -name "$name" )
+  done
+  bound=${FM_WORKTREE_WRITE_TIMEOUT:-10}
+  case "$bound" in ''|*[!0-9]*|0) bound=10 ;; esac
+  if [ "${#prune[@]}" -gt 0 ]; then
+    hit=$(fm_run_timed "$bound" find "$wt" -xdev -maxdepth "${FM_WORKTREE_WRITE_MAXDEPTH:-6}" \
+      \( "${prune[@]}" \) -prune -o -type f -newer "$anchor" -print -quit 2>/dev/null) || rc=$?
+  else
+    hit=$(fm_run_timed "$bound" find "$wt" -xdev -maxdepth "${FM_WORKTREE_WRITE_MAXDEPTH:-6}" \
+      -type f -newer "$anchor" -print -quit 2>/dev/null) || rc=$?
+  fi
+  [ -z "$hit" ] || return 0
+  [ "$rc" = 0 ] || return 2
+  return 1
+}
+
 fhl_pid_live() {  # <pid>
   case "${1:-}" in ''|*[!0-9]*) return 1 ;; esac
   [ -n "$(LC_ALL=C ps -p "$1" -o pid= 2>/dev/null)" ]
@@ -490,12 +554,18 @@ fhl_resolve_wait() {  # <task> <wait-line>
   fi
   pid=$(printf '%s' "$line" | sed -nE 's/.*(^|[^A-Za-z0-9_])pid[=: ]+([0-9]+).*/\2/p' | head -n 1)
   if [ -n "$pid" ]; then
-    if fhl_pid_live "$pid"; then WAIT=live; else WAIT=dead; WAIT_NOTE="pid-gone: $WAIT_NOTE"; fi
-    return 0
+    if ! fhl_pid_live "$pid"; then WAIT=dead WAIT_NOTE="pid-gone: $WAIT_NOTE"; return 0; fi
+    # Only a process this user runs can be the worker's own job; any other
+    # live pid (pid 1, another user's daemon) buys only the bounded hold.
+    if [ "$(LC_ALL=C ps -p "$pid" -o uid= 2>/dev/null | tr -d ' ')" = "$(id -u)" ]; then
+      WAIT=live
+      return 0
+    fi
+    WAIT_NOTE="pid-not-own: $WAIT_NOTE"
   fi
   ticket=$(printf '%s' "$line" | sed -nE 's/.*ticket[=: #]+([0-9]+).*/\1/p' | head -n 1)
   case "$line" in
-    *fm-test-queue*|*test-queue*|*test\ queue*|*ticket*)
+    *fm-test-queue*|*test-queue*|*test\ queue*)
       if ! queue_out=$(fm_run_timed 10 "${FM_TEST_QUEUE_BIN:-$SCRIPT_DIR/fm-test-queue.sh}" status 2>/dev/null); then
         WAIT=unknown WAIT_NOTE="test-queue-unreadable: $WAIT_NOTE"
         return 0
@@ -535,10 +605,16 @@ fhl_resolve_wait() {  # <task> <wait-line>
 
 # Validation in flight (gate item 6): any no-mistakes run the crew state
 # attributes to the task that is working (running, fixing, CI) or parked at a
-# gate. Read only when a rung could fire, under a short bound, because the
-# crew-state read takes a lock; a read that fails or times out holds.
+# gate. Read only when a rung could fire, under a short bound. The crew-state
+# reader takes an exclusive lock on its snapshot, so a lock someone else holds
+# right now is probed without waiting and holds as unknown; a read that fails
+# or times out holds too.
 fhl_validating() {
-  local line rc=0 state src
+  local line rc=0 state src lockf="$STATE/.nm-status-snapshot.json.lock"
+  if [ -e "$lockf" ] && ! perl -MFcntl=:flock -e 'open(my $f, "<", $ARGV[0]) or exit 0; exit(flock($f, LOCK_EX | LOCK_NB) ? 0 : 1)' "$lockf" 2>/dev/null; then
+    held=${held:-unknown:validation=lock-busy}
+    return 1
+  fi
   line=$(fm_run_timed 5 "$FM_CREW_STATE_BIN" "$TASK" 2>/dev/null) || rc=$?
   if [ "$rc" != 0 ]; then
     held=${held:-unknown:validation=$rc}
@@ -666,7 +742,8 @@ fhl_snapshot_tree() {  # <name> -> path:sha
           printf 'deleted\t%s\n' "$(fhl_esc "$p")"
         fi
       done
-    git -C "$WT" ls-files --others --ignored --exclude-standard --directory 2>/dev/null | head -n 200 | sed 's/^/present-ignored\t/'
+    fm_run_timed 10 git -C "$WT" ls-files -z --others --ignored --exclude-standard 2>/dev/null |
+      perl -0 -ne 'chomp; if (++$n > 2000) { print "present-ignored-truncated\t2000\n"; exit } s/\\/\\\\/g; s/\t/\\t/g; s/\n/\\n/g; s/\r/\\r/g; s/[[:cntrl:]]/?/g; print "present-ignored\t$_\n"'
   } > "$f"
   chmod 600 "$f" "$f.diff" "$f.cached.diff" 2>/dev/null || true
   printf '%s:%s' "snapshots/$TASK/$1.tree" "$(fhl_sha < "$f")"
@@ -675,9 +752,13 @@ fhl_snapshot_tree() {  # <name> -> path:sha
 # Snapshots belong to a task; once its metadata is gone, they go too. Runs at
 # most once an hour.
 fhl_prune_snapshots() {
-  local d t
   [ "$(fhl_recorded_age "$HL/.pruned")" -ge 3600 ] || return 0
   printf '%s\n' "$NOW" > "$HL/.pruned"
+  fhl_prune_now
+}
+
+fhl_prune_now() {
+  local d t
   for d in "$HL/snapshots"/*/; do
     [ -d "$d" ] || continue
     t=${d%/}; t=${t##*/}
@@ -785,7 +866,8 @@ cmd_tick() {
     # Never wait on the poll path: a held lock skips this sample, and a lock
     # older than five minutes is a crashed tick's.
     local lock_m
-    lock_m=$(stat -f %m "$HL/.lock" 2>/dev/null || stat -c %Y "$HL/.lock" 2>/dev/null) || exit 0
+    lock_m=$(fhl_mtime "$HL/.lock") || exit 0
+    case "$lock_m" in ''|*[!0-9]*) exit 0 ;; esac
     [ $(( $(date +%s) - lock_m )) -ge 300 ] || exit 0
     rmdir "$HL/.lock" 2>/dev/null; mkdir "$HL/.lock" 2>/dev/null || exit 0
   }
@@ -877,7 +959,6 @@ cmd_tick() {
       unknown) held=${held:-unknown:wait=unreadable} ;;
     esac
   fi
-  [ "$WAIT" = unverified ] || [ "$WAIT" = expired ] || EP_wait_since=""
   # --- gate item 7 ---
   local screen=''
   [ -z "$dialog" ] || screen="dialog:$dialog"
@@ -912,22 +993,32 @@ cmd_tick() {
     head=$(git -C "$WT" rev-parse HEAD 2>/dev/null) || { head=-; fs_unknown=1; }
     local porcelain diffhash
     porcelain=$(fm_run_timed 10 git -C "$WT" --no-optional-locks status --porcelain=v1 -uall 2>/dev/null) || fs_unknown=1
-    diffhash=$(fm_run_timed 10 git -C "$WT" --no-optional-locks diff HEAD --binary 2>/dev/null | head -c 20000000 | fhl_sha)
+    # A diff that fails, times out, or outgrows the bound reads as unknown.
+    diffhash=$(set -o pipefail; fm_run_timed 10 git -C "$WT" --no-optional-locks diff HEAD --binary 2>/dev/null | head -c 20000000 | fhl_sha) || fs_unknown=1
     dirty=$(printf '%s\n%s' "$porcelain" "$diffhash" | fhl_sha)
-    if [ -f "$HL/episodes/$TASK.anchor" ] && crew_worktree_written_since "$TASK" "$STATE" "$HL/episodes/$TASK.anchor"; then
-      wrote=1
+    if [ -f "$HL/episodes/$TASK.anchor" ]; then
+      local wrc=0
+      fhl_written_since "$WT" "$HL/episodes/$TASK.anchor" || wrc=$?
+      case "$wrc" in 0) wrote=1 ;; 1) ;; *) fs_unknown=1 ;; esac
     fi
   elif [ "$KIND" = ship ]; then
     fs_unknown=1
   fi
+  local bodies
+  bodies=$(printf '%s %s' "${status_body:0:16}" "${S_bodies:-}" | tr '_' ' ' | awk '{ o = ""; n = 0; for (i = 1; i <= NF; i++) if (!s[$i]++ && n < 4) { o = o (n ? "_" : "") $i; n++ } print o }')
   if [ "$first" = 0 ]; then
     if [ "$status_size" != "${S_status_size:-0}" ]; then
-      if [ "$status_body" = "${S_status_body:-}" ]; then
-        drip_seen=1
-      else
-        status_changed=1
-        net_advance=status
-      fi
+      case "_${S_bodies:-}_" in
+        *"_${status_body:0:16}_"*) drip_seen=1 ;;
+        *)
+          if [ "$status_body" = "${S_status_body:-}" ]; then
+            drip_seen=1
+          else
+            status_changed=1
+            net_advance=status
+          fi
+          ;;
+      esac
     fi
     [ "$inbox" -le "${S_inbox:-0}" ] || net_advance=${net_advance:-inbox-ack}
     [ "$head" = "${S_head:--}" ] || net_advance=${net_advance:-head}
@@ -953,7 +1044,7 @@ cmd_tick() {
     if [ "$LOAD_HIGH" = 1 ]; then
       kernel=unknown
     elif tree=$(fhl_tree "$pid"); then
-      local tp tc tcomm prev since cls
+      local tp tc tcomm prev since cls io fp
       while read -r tp tc tcomm; do
         [ -n "$tp" ] || continue
         cpu_total=$(awk -v a="$cpu_total" -v b="$tc" 'BEGIN { printf "%.2f", a + b }')
@@ -961,15 +1052,17 @@ cmd_tick() {
         cls=$(fm_agent_process_classify_name "$tcomm")
         [ "$cls" = other ] || continue
         children=$((children + 1))
+        io=$(fhl_child_io "$tp") || io=-
+        fp="$tc/$io"
         eval "prev=\${S_kid_$tp:-}"
         since=$NOW
-        if [ -n "$prev" ] && [ "${prev%%:*}" = "$tc" ]; then
+        if [ -n "$prev" ] && [ "${prev%%:*}" = "$fp" ]; then
           since=${prev#*:}
         elif [ -n "$prev" ]; then
           working_children=$((working_children + 1))
         fi
         [ $((NOW - since)) -lt 900 ] || stale_children=$((stale_children + 1))
-        kids_out="${kids_out}kid_$tp=$tc:$since
+        kids_out="${kids_out}kid_$tp=$fp:$since
 "
       done <<< "$tree"
       if [ "$first" = 1 ] || [ -z "${S_cpu:-}" ]; then
@@ -991,8 +1084,8 @@ cmd_tick() {
   # Write the new sample before any decision, so the next pass compares
   # against this one whatever happens below.
   {
-    printf 'pane=%s\nstatus_size=%s\nstatus_body=%s\ninbox=%s\nhead=%s\ndirty=%s\ncpu=%s\nkq=%s\n' \
-      "$pane_hash" "$status_size" "$status_body" "$inbox" "$head" "$dirty" "$cpu_total" "$kq"
+    printf 'pane=%s\nstatus_size=%s\nstatus_body=%s\nbodies=%s\ninbox=%s\nhead=%s\ndirty=%s\ncpu=%s\nkq=%s\n' \
+      "$pane_hash" "$status_size" "$status_body" "$bodies" "$inbox" "$head" "$dirty" "$cpu_total" "$kq"
     printf '%s' "$kids_out"
   } > "$HL/episodes/$TASK.sample.tmp" && mv -f "$HL/episodes/$TASK.sample.tmp" "$HL/episodes/$TASK.sample"
   : > "$HL/episodes/$TASK.anchor"
@@ -1194,5 +1287,6 @@ case "${1:-}" in
   mode) cmd_mode ;;
   set-mode) shift; cmd_set_mode "$@" ;;
   verify) cmd_verify ;;
+  prune) fhl_refuse_worker; [ ! -d "$HL/snapshots" ] || fhl_prune_now ;;
   *) usage >&2; exit 2 ;;
 esac

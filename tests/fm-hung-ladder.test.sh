@@ -96,6 +96,19 @@ new_task() {  # <home> <task> [kind]
 
 agent_pid() { local s; s=$(cat "$1/probe/$2.agent"); printf '%s' "${s#* }"; }
 
+perm_of() {  # <path> -> octal permissions
+  if [ "$(uname)" = Darwin ]; then /usr/bin/stat -f %Lp "$1"; else stat -c %a "$1"; fi
+}
+
+# An agent whose child writes a little every 20 seconds and uses almost no CPU.
+WRITER="$TMP_ROOT/writer-agent"
+cat > "$WRITER" <<'EOF'
+#!/usr/bin/env bash
+perl -e 'while (1) { open(my $f, ">>", $ARGV[0]) or die; print $f "x" x 4096; close $f; sleep 20 }' "$1" &
+wait
+EOF
+chmod +x "$WRITER"
+
 PANE_STYLE=busy
 pane_for() {  # <now>
   case "$PANE_STYLE" in
@@ -195,8 +208,8 @@ test_observe_rungs_and_self_progress() {
   assert_agents_alive 'observe mode'
   [ ! -e "$h/state/t1.inbox" ] || fail 'observe mode wrote no steering message'
   verify "$h" >/dev/null || fail 'the ledger chain verifies'
-  assert_equals "700" "$(stat -f %Lp "$h/state/hung-ladder" 2>/dev/null || stat -c %a "$h/state/hung-ladder")" 'ladder directory is owner-only'
-  assert_equals "600" "$(stat -f %Lp "$h/state/hung-ladder/actions.tsv" 2>/dev/null || stat -c %a "$h/state/hung-ladder/actions.tsv")" 'ledger is owner-only'
+  assert_equals "700" "$(perm_of "$h/state/hung-ladder")" 'ladder directory is owner-only'
+  assert_equals "600" "$(perm_of "$h/state/hung-ladder/actions.tsv")" 'ledger is owner-only'
   snap=$(find "$h/state/hung-ladder/snapshots/t1" -name '*.tree' | head -n 1)
   [ -n "$snap" ] || fail 'rung 4 saved a content snapshot'
   grep -q "^head	$(git -C "$h/wt-t1" rev-parse HEAD)" "$snap" || fail 'the content snapshot records the head'
@@ -426,6 +439,41 @@ test_healthy_waits_and_screens() {
   new_task "$h" st
   PANE_STYLE=streaming ticks "$h" st "$B" $((B + 1800))
   assert_equals 0 "$(rows "$h" st observe)" 'a turn that streams tokens opens no episode'
+
+  # A ticket that names no test queue is an ordinary bounded wait, never a dead one.
+  new_task "$h" tk
+  printf 'paused: waiting for approval on ticket PROJ-123 [at=%s]\n' "$B" >> "$h/state/tk.status"
+  ticks "$h" tk "$B" $((B + 1800))
+  assert_equals 0 "$(rows "$h" tk would-act)" 'a ticket outside the test queue is not a dead wait'
+
+  # A worktree the write probe cannot walk reads as unknown, never quiet.
+  if [ "$(id -u)" != 0 ]; then
+    new_task "$h" ur
+    mkdir "$h/wt-ur/locked"
+    chmod 000 "$h/wt-ur/locked"
+    ticks "$h" ur "$B" $((B + 1800))
+    chmod 755 "$h/wt-ur/locked"
+    assert_equals 0 "$(rows "$h" ur would-act)" 'an unreadable worktree proves nothing quiet'
+  fi
+
+  # A descendant that keeps writing with almost no CPU is a working child.
+  if [ -r /proc/self/io ]; then
+    new_task "$h" io
+    "$WRITER" "$h/io-out" </dev/null >/dev/null 2>&1 &
+    AGENTS="$AGENTS $!"
+    printf 'alive %s' "$!" > "$h/probe/io.agent"
+    ticks "$h" io "$B" $((B + 1800))
+    assert_equals 0 "$(rows "$h" io observe)" 'a descendant whose I/O moves vetoes the proof'
+  fi
+
+  # The crew-state reader's lock is held elsewhere: the read never waits, and holds.
+  new_task "$h" lk
+  perl -MFcntl=:flock -e 'open(my $f, ">>", $ARGV[0]) or die; flock($f, LOCK_EX) or die; sleep 900' \
+    "$h/state/.nm-status-snapshot.json.lock" </dev/null >/dev/null 2>&1 &
+  AGENTS="$AGENTS $!"
+  sleep 1
+  ticks "$h" lk "$B" $((B + 1800))
+  assert_equals 0 "$(rows "$h" lk would-act)" 'a held crew-state lock holds every rung'
   assert_no_actions 'waits and screens'
   assert_agents_alive 'waits and screens'
   pass 'healthy declared waits and blocked screens give no rung-3 or rung-4 rows'
@@ -452,6 +500,30 @@ test_unverified_wait_cap_cannot_be_renewed() {
   printf 'paused: waiting on the release window\n' >> "$h/state/ns.status"
   ticks "$h" ns "$B" $((B + 1500))
   assert_equals 1 "$(rows "$h" ns observe 0)" 'an unstamped wait runs out too'
+  # Alternating the wait with a status line that says nothing new.
+  local i=0
+  new_task "$h" al
+  n=$B
+  while [ "$n" -le $((B + 1500)) ]; do
+    if [ $((i % 2)) = 0 ]; then
+      printf 'paused: waiting on the release window [at=%s]\n' "$n" >> "$h/state/al.status"
+    else
+      printf 'working: still waiting [at=%s]\n' "$n" >> "$h/state/al.status"
+    fi
+    tick "$h" al "$n"
+    n=$((n + 60)) i=$((i + 1))
+  done
+  [ "$(rows "$h" al observe 0)" -ge 1 ] || fail 'alternating status lines buy no unlimited hold'
+  ledger "$h" | awk -F'\t' '$4 == "al" && $6 == "alarm" && $11 ~ /status-drip/ { f = 1 } END { exit !f }' \
+    || fail 'recurring status lines raise the drip alarm'
+  # A live pid this user does not run is not the worker's own job.
+  if [ "$(id -u)" != 0 ]; then
+    new_task "$h" p1
+    printf 'paused: waiting on pid=1 [at=%s]\n' "$B" >> "$h/state/p1.status"
+    ticks "$h" p1 "$B" $((B + 1500))
+    assert_equals 1 "$(rows "$h" p1 observe 0)" 'another user'"'"'s pid buys only the bounded hold'
+    case "$(reason_of "$h" p1 would-act 1)" in *pid-not-own*) ;; *) fail 'rung 1 names the foreign pid' ;; esac
+  fi
   assert_no_actions 'wait cap'
   pass 'the unverified-wait hold is capped from first sighting and cannot be renewed'
 }
@@ -588,10 +660,14 @@ test_chain_and_escaping() {
 }
 
 test_snapshots_redact_and_exclude_secrets() {
-  local h snap
+  local h snap rc
   h=$(new_home secrets)
   new_task "$h" s1
   printf 'API_KEY=supersecretvalue\n' > "$h/wt-s1/.env"
+  printf 'cache/\n' > "$h/wt-s1/.gitignore"
+  mkdir -p "$h/wt-s1/cache"
+  printf 'API_KEY=ignoredsecretvalue\n' > "$h/wt-s1/cache/.env"
+  printf 'data\n' > "$h/wt-s1/cache/data.txt"
   printf 'TOKEN=first\n' > "$h/wt-s1/private key.env"
   printf 'TOKEN=first\n' > "$h/wt-s1/clé-secret.txt"
   git -C "$h/wt-s1" add 'private key.env' 'clé-secret.txt'
@@ -612,10 +688,17 @@ test_snapshots_redact_and_exclude_secrets() {
   grep -q '^present-secret	private key.env$' "$snap" || fail 'a quoted secret path is recorded as present'
   grep -q '^present-secret	clé-secret.txt$' "$snap" || fail 'a non-ASCII secret path is recorded as present'
   grep -q 'README.md' "$snap" || fail 'an ordinary dirty file is hashed'
-  assert_equals "600" "$(stat -f %Lp "$snap" 2>/dev/null || stat -c %a "$snap")" 'snapshots are owner-only'
+  grep -q '^present-ignored	cache/.env$' "$snap" || fail 'each ignored file is recorded, not only its directory'
+  grep -q '^present-ignored	cache/data.txt$' "$snap" || fail 'every ignored file is recorded as present'
+  ! grep -rq ignoredsecretvalue "$h/state/hung-ladder" || fail 'ignored file content is never saved'
+  assert_equals "600" "$(perm_of "$snap")" 'snapshots are owner-only'
   ! ledger "$h" | grep -q 'API_KEY' || fail 'patch bodies never reach the ledger'
   rm -f "$h/state/s1.meta"
-  tick "$h" s1 $((B + 5100)) || true
+  rc=0
+  env FM_TASK_ID=s1 FM_HOME="$h" "$TEST_BASH" "$LADDER" prune 2>/dev/null || rc=$?
+  assert_equals 2 "$rc" 'a worker cannot prune'
+  [ -e "$h/state/hung-ladder/snapshots/s1" ] || fail 'the refused prune removed nothing'
+  env -u FM_TASK_ID FM_HOME="$h" "$TEST_BASH" "$LADDER" prune || fail 'prune runs'
   [ ! -e "$h/state/hung-ladder/snapshots/s1" ] || fail 'snapshots go with task cleanup'
   assert_no_actions 'snapshots'
   pass 'snapshots redact tokens, leave secret contents out, and go with task cleanup'

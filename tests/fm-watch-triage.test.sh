@@ -3577,7 +3577,18 @@ test_hung_ladder_observes_a_busy_pane_inside_the_pass() {
   fi
   env -u FM_TASK_ID FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$config" "$ROOT/bin/fm-hung-ladder.sh" verify >/dev/null \
     || fail "the ledger written from the watcher pass does not verify"
-  pass "the hung-worker ladder observes a busy pane inside the watcher pass and changes nothing"
+
+  # Once the last task is cleaned up, the pass itself still prunes its snapshots.
+  mkdir -p "$state/hung-ladder/snapshots/hl-busy"
+  printf 'pane\n' > "$state/hung-ladder/snapshots/hl-busy/r1.pane"
+  rm -f "$state/hl-busy.meta"
+  env -u FM_TASK_ID PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$config" FM_BUSY_TURN_MAX_SECS=999 FM_STALE_ESCALATE_SECS=999 \
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_WATCH_ONCE=1 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" "$FM_TRIAGE_WAIT_FLOOR" || fail "the pass with no task left did not finish cleanly"
+  [ ! -e "$state/hung-ladder/snapshots/hl-busy" ] || fail "a cleaned-up task's snapshots outlived the pass"
+  pass "the hung-worker ladder observes a busy pane inside the watcher pass, changes nothing, and prunes after cleanup"
 }
 
 test_busy_pane_stable_hash_escalates_past_turn_age_bound() {
