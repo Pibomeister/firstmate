@@ -36,7 +36,8 @@
 # worker; 3 a live mode refused, or the ledger chain is broken.
 #
 # MODE (config/hung-ladder). An absent file means `off`. Lines are key=value
-# and `#` starts a comment: mode=off|observe|steer|interrupt|relaunch,
+# and `#` starts a comment, on its own line or after the mode value:
+# mode=off|observe|steer|interrupt|relaunch,
 # actor=<who set it>, and the optional tunables load_ceiling (default 200),
 # cpu_quiet_secs (CPU seconds of the agent tree per sample that still read
 # quiet, default 1) and unverified_wait_max_secs (default 7200). The file
@@ -202,6 +203,9 @@ fhl_resolve_mode() {
     return 0
   fi
   m=$(fhl_kv "$f" mode) || m=$(awk '/^[ \t]*#/ { next } NF { print $1; exit }' "$f")
+  # A comment after the value, as in `mode=observe # soak`, is not part of it.
+  m=${m%%#*}
+  m=$(printf '%s' "$m" | tr -d ' \t')
   MODE_ACTOR=$(fhl_kv "$f" actor) || MODE_ACTOR=-
   [ -n "$MODE_ACTOR" ] || MODE_ACTOR=-
   CFG_MODE=$m
@@ -456,16 +460,39 @@ fhl_pane_screen_block() {  # stdin -> name or nothing
     }' 2>/dev/null
 }
 
+# The one list of secret patterns, matched without regard to case: file-name
+# patterns, and words that mark a path secret anywhere, directories included.
+FHL_SECRET_NAMES=(.env '.env.*' '*.env' '*.pem' '*.key' '*.p12' '*.pfx' 'id_rsa*' 'id_ed25519*' 'id_ecdsa*' .netrc .npmrc .pypirc)
+FHL_SECRET_WORDS=(secret credential)
+
 fhl_secret_path() {  # <path>
-  case "${1##*/}" in
-    .env|.env.*|*.env|*.pem|*.key|*.p12|*.pfx|id_rsa*|id_ed25519*|id_ecdsa*|.netrc|.npmrc|.pypirc) return 0 ;;
-  esac
-  # A secret or credential word anywhere in the path, directories included.
-  case "$1" in
-    *secret*|*Secret*|*SECRET*|*credential*|*Credential*|*CREDENTIAL*) return 0 ;;
-  esac
-  return 1
+  local base=${1##*/} pat rc=1 restore
+  restore=$(shopt -p nocasematch)
+  shopt -s nocasematch
+  for pat in "${FHL_SECRET_NAMES[@]}"; do
+    # shellcheck disable=SC2254 # the pattern is meant to match as a glob
+    case "$base" in $pat) rc=0; break ;; esac
+  done
+  if [ "$rc" = 1 ]; then
+    for pat in "${FHL_SECRET_WORDS[@]}"; do
+      case "$1" in *"$pat"*) rc=0; break ;; esac
+    done
+  fi
+  eval "$restore"
+  return "$rc"
 }
+
+# The same list as Git exclude pathspecs. They are fixed patterns, not a list
+# read from the worktree, so no failed read or file changed in between can let
+# a secret file's content into a diff this script hashes or saves.
+FHL_EXCL=()
+for _fhl_p in "${FHL_SECRET_NAMES[@]}"; do
+  FHL_EXCL+=( ":(exclude,glob,icase)**/$_fhl_p" )
+done
+for _fhl_p in "${FHL_SECRET_WORDS[@]}"; do
+  FHL_EXCL+=( ":(exclude,glob,icase)**/*$_fhl_p*" ":(exclude,glob,icase)**/*$_fhl_p*/**" )
+done
+unset _fhl_p
 
 # Agent liveness and root process. Prints "<state> <pid|->".
 fhl_agent_probe() {  # <task> <backend> <target>
@@ -590,7 +617,7 @@ fhl_resolve_wait() {  # <task> <wait-line>
   WAIT=none WAIT_NOTE=
   [ -n "$line" ] || return 0
   status_is_paused "$line" || return 0
-  WAIT_NOTE=$(printf '%s' "$line" | cut -c1-160)
+  WAIT_NOTE=$(printf '%s\n' "$line" | fhl_redact | cut -c1-160)
   # A passed deadline ends the wait. A future one is the worker's own word,
   # so it still needs a named live job, or it buys only the bounded hold.
   if until=$(status_paused_until "$line" 2>/dev/null) && [ -n "$until" ] && [ "$until" -le "$NOW" ]; then
@@ -750,25 +777,6 @@ fhl_snapshot_pane() {  # <name> -> path:sha
   printf '%s:%s' "snapshots/$TASK/$1.pane" "$(fhl_sha < "$f")"
 }
 
-# Fills FHL_EXCL with a literal exclude pathspec for every secret-pattern
-# path in the `git status --porcelain=v1 -z` records on stdin, rename sources
-# included, so no secret file's content reaches a diff this script hashes.
-fhl_secret_excludes() {
-  local rec p rename=0
-  FHL_EXCL=()
-  while IFS= read -r -d '' rec; do
-    if [ "$rename" = 1 ]; then
-      p=$rec rename=0
-    else
-      case "$rec" in R*|C*|?R*|?C*) rename=1 ;; esac
-      p=${rec:3}
-    fi
-    [ -n "$p" ] || continue
-    fhl_secret_path "$p" && FHL_EXCL+=( ":(exclude,literal)$p" )
-  done
-  return 0
-}
-
 # One digest over the untracked, non-ignored files named NUL-separated on
 # stdin: each name with its size and mtime, plus the first MiB of content
 # while a 64 MiB budget lasts. Secret-pattern names are skipped entirely.
@@ -806,11 +814,10 @@ fhl_snapshot_tree() {  # <name> -> path:sha
   f="$dir/$1.tree"
   mkdir -p "$dir" && chmod 700 "$dir"
   [ -n "$WT" ] && [ -d "$WT" ] || { printf 'none'; return 0; }
-  fhl_secret_excludes < <(fm_run_timed 10 git -C "$WT" --no-optional-locks status --porcelain=v1 -z -uall 2>/dev/null)
   {
     printf 'head\t%s\n' "$(git -C "$WT" rev-parse HEAD 2>/dev/null)"
-    fm_run_timed 10 git -C "$WT" --no-optional-locks diff --binary -- . ${FHL_EXCL[@]+"${FHL_EXCL[@]}"} 2>/dev/null | head -c 20000000 > "$f.diff"
-    fm_run_timed 10 git -C "$WT" --no-optional-locks diff --cached --binary -- . ${FHL_EXCL[@]+"${FHL_EXCL[@]}"} 2>/dev/null | head -c 20000000 > "$f.cached.diff"
+    fm_run_timed 10 git -C "$WT" --no-optional-locks diff --binary -- . "${FHL_EXCL[@]}" 2>/dev/null | head -c 20000000 > "$f.diff"
+    fm_run_timed 10 git -C "$WT" --no-optional-locks diff --cached --binary -- . "${FHL_EXCL[@]}" 2>/dev/null | head -c 20000000 > "$f.cached.diff"
     printf 'diff_sha256\t%s\n' "$(fhl_sha < "$f.diff")"
     printf 'cached_diff_sha256\t%s\n' "$(fhl_sha < "$f.cached.diff")"
     { fm_run_timed 10 git -C "$WT" --no-optional-locks diff --name-only -z HEAD 2>/dev/null; fm_run_timed 10 git -C "$WT" ls-files -z --others --exclude-standard 2>/dev/null; } | perl -0 -ne 'next if $seen{$_}++; print if ++$n <= 2000' |
@@ -1047,17 +1054,24 @@ cmd_tick() {
   [ "$pid" != "$probe" ] || pid=-
   [ "$live" != alive ] || printf '%s\n' "$NOW" > "$HL/seen/$TASK"
 
-  local status_file="$STATE/$TASK.status" last_line='' verb='' status_size=0 status_body='' wait_line
-  if [ -f "$status_file" ]; then
-    last_line=$(last_status_line "$status_file")
-    status_size=$(wc -c < "$status_file" | tr -d ' ')
-    status_body=$(fhl_status_body "$last_line" | fhl_sha)
-    status_line_verb "$last_line" verb
+  local status_file="$STATE/$TASK.status" last_line='' verb='' status_size=0 status_body='' wait_line status_unknown=0
+  if [ -e "$status_file" ]; then
+    # A status file that cannot be read says nothing, so it is unknown, never
+    # an empty record that reads as quiet.
+    if [ -f "$status_file" ] && [ -r "$status_file" ] && status_size=$(wc -c < "$status_file" 2>/dev/null); then
+      status_size=$(printf '%s' "$status_size" | tr -d ' ')
+      last_line=$(last_status_line "$status_file")
+      status_body=$(fhl_status_body "$last_line" | fhl_sha)
+      status_line_verb "$last_line" verb
+    else
+      status_size=${S_status_size:-0} status_body=${S_status_body:-} status_unknown=1
+    fi
   fi
   wait_line=$(status_declared_wait_line "$status_file" 2>/dev/null) || wait_line=
   fhl_resolve_wait "$TASK" "$wait_line"
 
   local gate='' held=''
+  [ "$status_unknown" = 0 ] || held=unknown:status=unreadable
   case "$live" in
     alive) ;;
     dead|missing) gate="not-live:$live" ;;
@@ -1127,8 +1141,7 @@ cmd_tick() {
     # that fails, times out, or outgrows its bound reads as unknown.
     local porc="$HL/episodes/$TASK.porcelain" diffhash untracked
     fm_run_timed 10 git -C "$WT" --no-optional-locks status --porcelain=v1 -z -uall > "$porc" 2>/dev/null || fs_unknown=1
-    fhl_secret_excludes < "$porc"
-    diffhash=$(set -o pipefail; fm_run_timed 10 git -C "$WT" --no-optional-locks diff HEAD --binary -- . ${FHL_EXCL[@]+"${FHL_EXCL[@]}"} 2>/dev/null | head -c 20000000 | fhl_sha) || fs_unknown=1
+    diffhash=$(set -o pipefail; fm_run_timed 10 git -C "$WT" --no-optional-locks diff HEAD --binary -- . "${FHL_EXCL[@]}" 2>/dev/null | head -c 20000000 | fhl_sha) || fs_unknown=1
     untracked=$(set -o pipefail; fm_run_timed 10 git -C "$WT" --no-optional-locks ls-files -z --others --exclude-standard 2>/dev/null | fhl_untracked_digest "$WT") || fs_unknown=1
     dirty=$(printf '%s\n%s\n%s' "$(fhl_sha < "$porc")" "$diffhash" "$untracked" | fhl_sha)
     rm -f "$porc"
@@ -1256,14 +1269,6 @@ cmd_tick() {
   [ "$rendered" != active ] || activity="${activity}rendered,"
   [ "$fs" != active ] || activity="${activity}fs,"
   [ "$kernel" != active ] || activity="${activity}kernel,"
-  if [ "$first" = 0 ] && [ -n "$unknown_kinds" ]; then
-    EP_unknown_streak=$(( $(fhl_num "${EP_unknown_streak:-0}" 0) + 1 ))
-    if [ "$EP_unknown_streak" -ge 5 ] && [ "${EP_degraded:-0}" != 1 ]; then
-      fhl_row "$TASK" - alarm "degraded-sensor unknown=${unknown_kinds%,} passes=$EP_unknown_streak" && EP_degraded=1
-    fi
-  else
-    EP_unknown_streak=0 EP_degraded=0
-  fi
   local quiet_count=0
   [ "$rendered" != quiet ] || quiet_count=$((quiet_count + 1))
   [ "$fs" != quiet ] || quiet_count=$((quiet_count + 1))
@@ -1274,6 +1279,18 @@ cmd_tick() {
   case "$net_advance" in ''|status) [ "$wrote" = 0 ] || EP_wait_since='' ;; *) EP_wait_since='' ;; esac
   if [ -z "$gate" ] && [ "$live" = alive ] && { [ "$proof" = 1 ] || [ -n "$screen" ]; } && fhl_validating; then
     gate=validating
+  fi
+  # A validation read that failed just now counts with the other unknowns.
+  case "$held" in
+    unknown:validation=*) case ",$unknown_kinds" in *,validation,*) ;; *) unknown_kinds="${unknown_kinds}validation," ;; esac ;;
+  esac
+  if [ "$first" = 0 ] && [ -n "$unknown_kinds" ]; then
+    EP_unknown_streak=$(( $(fhl_num "${EP_unknown_streak:-0}" 0) + 1 ))
+    if [ "$EP_unknown_streak" -ge 5 ] && [ "${EP_degraded:-0}" != 1 ]; then
+      fhl_row "$TASK" - alarm "degraded-sensor unknown=${unknown_kinds%,} passes=$EP_unknown_streak" && EP_degraded=1
+    fi
+  else
+    EP_unknown_streak=0 EP_degraded=0
   fi
 
   fhl_breaker
@@ -1387,6 +1404,7 @@ cmd_tick() {
 
 cmd_prune() {
   fhl_refuse_worker
+  umask 077
   [ -d "$HL" ] || exit 0
   NOW=$(fhl_now)
   fhl_resolve_mode

@@ -1081,6 +1081,7 @@ A worker session (one with `FM_TASK_ID` set) can never set the mode or write the
 The watcher runs one observation per task per minute on its existing pass, with no new background process.
 A sensor read that fails or times out counts as unknown, never as quiet, so it can only hold a rung.
 Secret-pattern files are recorded by name only and never enter a content hash or snapshot.
+A path is secret-pattern when its file name matches a key, certificate, `.env` or credential-file pattern, or any part of it contains `secret` or `credential`, in any case.
 A snapshot records a symlink by its link text and never follows it.
 A declared wait protects a worker without limit only when it names a live job this user runs or an active test-queue ticket; a deadline or any other wording holds only for the bounded unverified-wait time.
 Once an hour on the same pass, the watcher resolves the open records of cleaned-up tasks and prunes their snapshots.

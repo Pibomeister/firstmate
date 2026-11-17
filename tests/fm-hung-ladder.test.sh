@@ -51,6 +51,7 @@ cat > "$CREW" <<'EOF'
 if [ "${FM_CREW_STATE_NO_SNAPSHOT:-}" != 1 ]; then
   perl -MFcntl=:flock -e 'open(my $f, ">>", $ARGV[0]) or exit 0; flock($f, LOCK_EX); exit 0' "$FM_HOME/state/.nm-status-snapshot.json.lock"
 fi
+[ ! -e "$FM_TEST_PROBE_DIR/$1.validating-fail" ] || exit 3
 if [ -s "$FM_TEST_PROBE_DIR/$1.validating" ]; then
   cat "$FM_TEST_PROBE_DIR/$1.validating"
 elif [ -e "$FM_TEST_PROBE_DIR/$1.validating" ]; then
@@ -447,6 +448,27 @@ test_healthy_waits_and_screens() {
   ticks "$h" cu "$B" $((B + 1800))
   assert_equals 0 "$(rows "$h" cu would-act)" 'an unreadable composer holds every rung'
 
+  # A status file that cannot be read is unknown, never quiet or progress.
+  if [ "$(id -u)" != 0 ]; then
+    new_task "$h" us
+    ticks "$h" us "$B" $((B + 600))
+    chmod 000 "$h/state/us.status"
+    ticks "$h" us $((B + 660)) $((B + 1800))
+    chmod 644 "$h/state/us.status"
+    no_escalation "$h" us 'an unreadable status file'
+    ledger "$h" | awk -F'\t' '$4 == "us" && $6 == "hold" && $11 ~ /unknown:.*status/ { f = 1 } END { exit !f }' \
+      || fail 'an unreadable status file holds the episode'
+    assert_equals 0 "$(ledger "$h" | awk -F'\t' '$4 == "us" && $6 == "resolve" { n++ } END { print n + 0 }')" 'an unreadable status file is never self-progress'
+  fi
+
+  # A validation read that keeps failing holds every rung and raises the alarm.
+  new_task "$h" vf
+  touch "$h/probe/vf.validating-fail"
+  ticks "$h" vf "$B" $((B + 1800))
+  no_escalation "$h" vf 'a failing validation read'
+  ledger "$h" | awk -F'\t' '$4 == "vf" && $6 == "alarm" && $11 ~ /degraded-sensor unknown=validation/ { f = 1 } END { exit !f }' \
+    || fail 'five failed validation reads raise the degraded-sensor alarm'
+
   # Orca keeps prompt-row text in a draft field the composer read leaves out.
   new_task "$h" od
   fm_write_meta "$h/state/od.meta" "terminal=term-od" "worktree=$h/wt-od" "kind=ship" "backend=orca" "harness=claude"
@@ -539,6 +561,12 @@ test_unverified_wait_cap_cannot_be_renewed() {
   case "$(reason_of "$h" rw would-act 1)" in *unverified-wait-cap*) ;; *) fail 'rung 1 names the wait cap' ;; esac
   ledger "$h" | awk -F'\t' '$4 == "rw" && $6 == "observe" { exit !($2 >= '"$((B + 600))"') }' \
     || fail 'the cap counts from the first sighting of the wait'
+  # A token in the wait line never reaches the ledger.
+  new_task "$h" tw
+  printf 'paused: waiting on the release window with ghp_abcdefghijklmnopqrstuvwxyz0123 [at=%s]\n' "$B" >> "$h/state/tw.status"
+  ticks "$h" tw "$B" $((B + 1500))
+  case "$(reason_of "$h" tw would-act 1)" in *'gh_[REDACTED]'*) ;; *) fail 'the wait note is redacted' ;; esac
+  ! ledger "$h" | grep -q 'ghp_abcdefghijklmnopqrstuvwxyz0123' || fail 'a token in a status line never reaches the ledger'
   # A wait with no stamp at all.
   new_task "$h" ns
   printf 'paused: waiting on the release window\n' >> "$h/state/ns.status"
@@ -629,7 +657,8 @@ test_cleanup_resolves_open_episodes() {
   assert_equals "$sum" "$(ledger "$h" | fhl_test_sha)" 'a refused live mode writes no ledger row'
   [ -e "$h/state/hung-ladder/episodes/g1.ep" ] || fail 'a refused prune keeps the episode'
   printf 'mode=observe\nactor=test\n' > "$h/config/hung-ladder"
-  env -u FM_TASK_ID FM_HOME="$h" FM_HUNG_LADDER_NOW=$((B + 700)) "$TEST_BASH" "$LADDER" prune || fail 'prune runs'
+  ( umask 022; env -u FM_TASK_ID FM_HOME="$h" FM_HUNG_LADDER_NOW=$((B + 700)) "$TEST_BASH" "$LADDER" prune ) || fail 'prune runs'
+  assert_equals 600 "$(perm_of "$h/state/hung-ladder/head")" 'prune keeps the head record owner-only'
   local t want got
   for t in g1 g2; do
     want=$(ledger "$h" | awk -F'\t' -v t="$t" '$4 == t && ($6 == "observe" || $6 == "would-act") { n++ } END { print n + 0 }')
@@ -889,6 +918,13 @@ test_snapshots_redact_and_exclude_secrets() {
   git -C "$h/wt-s1" -c user.name=t -c user.email=t@example.invalid commit -qm secrets
   printf 'TOKEN=quotedsecretvalue\n' > "$h/wt-s1/private key.env"
   printf 'TOKEN=quotedsecretvalue\n' > "$h/wt-s1/clé-secret.txt"
+  mkdir -p "$h/wt-s1/config/Credentials"
+  printf 'TOKEN=first\n' > "$h/wt-s1/config/Credentials/prod.yml"
+  printf 'KEY=first\n' > "$h/wt-s1/deploy.PEM"
+  git -C "$h/wt-s1" add config deploy.PEM
+  git -C "$h/wt-s1" -c user.name=t -c user.email=t@example.invalid commit -qm more
+  printf 'TOKEN=dirsecretvalue\n' > "$h/wt-s1/config/Credentials/prod.yml"
+  printf 'KEY=casesecretvalue\n' > "$h/wt-s1/deploy.PEM"
   printf 'change\n' >> "$h/wt-s1/README.md"
   ln -s .env "$h/wt-s1/notes.txt"
   PANE_STYLE=token ticks "$h" s1 "$B" $((B + 1440))
@@ -909,6 +945,9 @@ test_snapshots_redact_and_exclude_secrets() {
   grep -q '^present-ignored	cache/.env$' "$snap" || fail 'each ignored file is recorded, not only its directory'
   grep -q '^present-ignored	cache/data.txt$' "$snap" || fail 'every ignored file is recorded as present'
   ! grep -rq ignoredsecretvalue "$h/state/hung-ladder" || fail 'ignored file content is never saved'
+  ! grep -rq dirsecretvalue "$h/state/hung-ladder" || fail 'a file under a credentials directory stays out of the patches'
+  ! grep -rq casesecretvalue "$h/state/hung-ladder" || fail 'a secret pattern matches in any case'
+  grep -q '^present-secret	config/Credentials/prod.yml$' "$snap" || fail 'a path with a secret word is recorded as present'
   assert_equals "600" "$(perm_of "$snap")" 'snapshots are owner-only'
   ! ledger "$h" | grep -q 'API_KEY' || fail 'patch bodies never reach the ledger'
   rm -f "$h/state/s1.meta"
@@ -930,9 +969,11 @@ test_mode_off_and_absent_do_nothing() {
   ticks "$h" o1 "$B" $((B + 600))
   [ ! -e "$h/state/hung-ladder" ] || fail 'an absent config means off'
   assert_contains "$(env FM_HOME="$h" "$TEST_BASH" "$LADDER" mode)" 'mode: off' 'mode reports off by default'
-  printf 'mode=off\n' > "$h/config/hung-ladder"
+  printf 'mode=off # paused for now\n' > "$h/config/hung-ladder"
   ticks "$h" o1 $((B + 660)) $((B + 1200))
   [ ! -e "$h/state/hung-ladder" ] || fail 'mode off writes nothing'
+  printf 'mode=observe # soak\nactor=test\n' > "$h/config/hung-ladder"
+  assert_contains "$(env FM_HOME="$h" "$TEST_BASH" "$LADDER" mode)" 'mode: observe' 'a comment after the mode value is ignored'
   pass 'an absent config or mode off observes nothing'
 }
 
