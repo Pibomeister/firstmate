@@ -43,6 +43,15 @@ fm_backend_busy_state() {
   fake_get busy idle
 }
 fm_backend_herdr_rendered_busy_state() { fake_get rendered idle; }
+# lazy-adapter: like the real adapter, the rendered read is defined only once
+# fm_backend_source loads it.
+if [ -e "$FAKE_DIR/lazy-adapter" ]; then
+  unset -f fm_backend_herdr_rendered_busy_state
+  fm_backend_source() {
+    [ "$1" = herdr ] || return 1
+    fm_backend_herdr_rendered_busy_state() { fake_get rendered idle; }
+  }
+fi
 fm_backend_composer_state() {
   [ -s "$FAKE_DIR/composer" ] && { printf 'pending'; return 0; }
   fake_get composer-state empty
@@ -115,11 +124,12 @@ test_idle_session_gets_one_line_and_submits() {
 
 test_unsafe_targets_stand_down_and_type_nothing() {
   local dir case_name reason
-  for case_name in busy rendered-busy pending dead unknown-no-transcript no-handle stale-handle away later-stop; do
+  for case_name in busy rendered-busy rendered-busy-lazy pending dead unknown-no-transcript no-handle stale-handle away later-stop; do
     dir=$(make_home "stand-$case_name")
     case "$case_name" in
       busy) printf 'busy' > "$dir/fake/busy" ;;
       rendered-busy) printf 'busy' > "$dir/fake/rendered" ;;
+      rendered-busy-lazy) printf 'busy' > "$dir/fake/rendered"; : > "$dir/fake/lazy-adapter" ;;
       pending) printf 'draft text' > "$dir/fake/composer" ;;
       dead) printf 'dead' > "$dir/fake/agent" ;;
       unknown-no-transcript) printf 'unknown' > "$dir/fake/busy" ;;
@@ -136,7 +146,7 @@ test_unsafe_targets_stand_down_and_type_nothing() {
     [ "$(typed_count "$dir")" = 0 ] || fail "$case_name: the doorbell typed into an unsafe target: $(cat "$dir/fake/keys")"
     [ "$(last_outcome "$dir")" = stood-down ] || fail "$case_name: outcome must be stood-down, got: $(cat "$dir/state/.resume-doorbell.log")"
     case "$case_name" in
-      busy|rendered-busy) reason='a turn is running' ;;
+      busy|rendered-busy|rendered-busy-lazy) reason='a turn is running' ;;
       pending) reason='composer is pending' ;;
       dead) reason='agent state is dead' ;;
       unknown-no-transcript) reason='busy state is unknown' ;;
@@ -311,7 +321,7 @@ wait_for_doorbell_lock() {  # <dir>
 }
 
 test_new_context_during_settle_stands_down() {
-  local dir pid
+  local dir pid sum
   # A /clear during the settle replaces the epoch the doorbell started under.
   dir=$(make_home cleared-during-settle)
   printf 'source=compact\nlock_pid=1\nat=1\n' > "$dir/state/.context-epoch"
@@ -349,13 +359,30 @@ test_new_context_during_settle_stands_down() {
   [ "$(typed_count "$dir")" = 0 ] || fail "a doorbell must not type after a context epoch appeared during its settle"
   assert_contains "$(last_detail "$dir")" "a new context began after the compaction" "the stand-down must name the new context"
 
-  # An unchanged epoch still lets an idle session get its line.
+  # A /clear between the hook's launch and the doorbell's start: the doorbell
+  # is bound to the epoch the hook recorded, not the one it finds.
+  dir=$(make_home cleared-before-start)
+  printf 'source=compact\nlock_pid=1\nat=1\n' > "$dir/state/.context-epoch"
+  sum=$(cksum < "$dir/state/.context-epoch")
+  printf 'source=clear\nlock_pid=1\nat=2\n' > "$dir/state/.context-epoch.new"
+  mv -f "$dir/state/.context-epoch.new" "$dir/state/.context-epoch"
+  run_doorbell "$dir" --source compact --epoch-sum "$sum"
+  [ "$(typed_count "$dir")" = 0 ] || fail "a doorbell must not type into a context cleared before it started: $(cat "$dir/fake/keys")"
+  assert_contains "$(last_detail "$dir")" "a new context began after the compaction" "the stand-down must name the new context"
+  [ ! -e "$dir/state/.resume-doorbell.lock" ] || fail "a doorbell for a gone context must not hold the lock"
+
+  # An unchanged epoch still lets an idle session get its line, with or
+  # without the hook's recorded sum.
   dir=$(make_home epoch-unchanged)
   printf 'source=compact\nlock_pid=1\nat=1\n' > "$dir/state/.context-epoch"
-  run_doorbell "$dir" --source compact
+  run_doorbell "$dir" --source compact --epoch-sum "$(cksum < "$dir/state/.context-epoch")"
   [ "$(typed_count "$dir")" = 1 ] || fail "an unchanged context epoch must not block the line"
   [ "$(last_outcome "$dir")" = submitted ] || fail "outcome must be submitted, got: $(cat "$dir/state/.resume-doorbell.log")"
-  pass "resume doorbell: a /clear or a new context epoch during the settle stands it down; an unchanged epoch still delivers"
+  dir=$(make_home epoch-unchanged-no-sum)
+  printf 'source=compact\nlock_pid=1\nat=1\n' > "$dir/state/.context-epoch"
+  run_doorbell "$dir" --source compact
+  [ "$(last_outcome "$dir")" = submitted ] || fail "outcome must be submitted without a sum, got: $(cat "$dir/state/.resume-doorbell.log")"
+  pass "resume doorbell: a /clear or a new context epoch before the start or during the settle stands it down; an unchanged epoch still delivers"
 }
 
 test_resubmit_rechecks_posture_after_a_pending_send() {
