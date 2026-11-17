@@ -25,15 +25,17 @@
 # or quiet record exists, state/.context-epoch no longer matches the one seen at
 # start (a /clear or another compaction began a new context), a Stop claimed
 # after the compaction (a turn already ran), the handle is unreadable or older
-# than the session lock, the agent is
-# not alive, the composer is not empty, a turn is running, idleness cannot be
+# than the session lock, the agent is not alive, the composer is not empty, a
+# turn is running (native busy, a rendered busy footer, or an assistant record
+# after the newest compact boundary in the transcript), idleness cannot be
 # proven before the wait limit, or another doorbell holds or takes over
-# state/.resume-doorbell.lock (each poll re-reads the lock's pid, so of two
-# doorbells that both cleared a stale lock only the last one types, and a
-# doorbell removes the lock on exit only while it still names it). The lock
-# owner, doorbell lock, away or quiet record and context epoch are re-checked
-# before every resubmit Enter too; a change there withholds the Enter and logs
-# unverified. Every run appends one row to
+# state/.resume-doorbell.lock. A doorbell started under a newer context takes a
+# live lock over from one started under an older context; each poll re-reads
+# the lock's pid, so of two doorbells that both cleared a stale lock only the
+# last one types, and a doorbell removes the lock on exit only while it still
+# names it. The lock owner, doorbell lock, away or quiet record and context
+# epoch are re-checked before every resubmit Enter too; a change there
+# withholds the Enter and logs unverified. Every run appends one row to
 # state/.resume-doorbell.log:
 #   <utc-iso>\t<epoch>\t<source>\t<backend>:<target>\t<outcome>\t<detail>
 # with outcome submitted, unverified, stood-down or failed. It never kills,
@@ -94,21 +96,31 @@ finish() {  # <outcome> <detail>
 
 [ -d "$STATE" ] || exit 0
 
-# Single flight: a second doorbell while one is live types nothing.
+# Single flight: a second doorbell while one is live types nothing, unless the
+# live one was started under an older context. That one stands down at its next
+# check (its pinned epoch was replaced), so this newer doorbell takes the lock
+# over and owns the delivery rather than both standing down.
 if ! mkdir "$LOCK" 2>/dev/null; then
   holder=$(cat "$LOCK/pid" 2>/dev/null || true)
   if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
-    finish stood-down "another resume doorbell (pid $holder) is running"
+    if [ -e "$STATE/.context-epoch" ] && ! [ "$STATE/.context-epoch" -ef "$LOCK/context-epoch.$holder" ]; then
+      if ! { printf '%s\n' "$$" > "$LOCK/pid.$$" && mv -f "$LOCK/pid.$$" "$LOCK/pid"; } 2>/dev/null; then
+        finish stood-down "the doorbell lock could not be taken over from pid $holder"
+      fi
+    else
+      finish stood-down "another resume doorbell (pid $holder) is running"
+    fi
+  else
+    # A lock whose pid is not written yet belongs to a doorbell between its
+    # mkdir and its pid write; only an old one is stale.
+    if [ -z "$holder" ] && [ -n "$(find "$LOCK" -maxdepth 0 -newermt '-10 seconds' 2>/dev/null)" ]; then
+      finish stood-down "another resume doorbell is starting"
+    fi
+    rm -rf "$LOCK" 2>/dev/null || true
+    mkdir "$LOCK" 2>/dev/null || finish stood-down "the doorbell lock could not be taken"
   fi
-  # A lock whose pid is not written yet belongs to a doorbell between its
-  # mkdir and its pid write; only an old one is stale.
-  if [ -z "$holder" ] && [ -n "$(find "$LOCK" -maxdepth 0 -newermt '-10 seconds' 2>/dev/null)" ]; then
-    finish stood-down "another resume doorbell is starting"
-  fi
-  rm -rf "$LOCK" 2>/dev/null || true
-  mkdir "$LOCK" 2>/dev/null || finish stood-down "the doorbell lock could not be taken"
 fi
-printf '%s\n' "$$" > "$LOCK/pid" 2>/dev/null || true
+[ "$(cat "$LOCK/pid" 2>/dev/null)" = "$$" ] || printf '%s\n' "$$" > "$LOCK/pid" 2>/dev/null || true
 trap '[ "$(cat "$LOCK/pid" 2>/dev/null)" != "$$" ] || rm -rf "$LOCK" 2>/dev/null || true' EXIT
 
 LOCK_PID=$(sed -n '1p' "$STATE/.lock" 2>/dev/null || true)
@@ -117,8 +129,9 @@ LOCK_PID=$(sed -n '1p' "$STATE/.lock" 2>/dev/null || true)
 # The context this doorbell was started for. A /clear or a later compaction
 # replaces state/.context-epoch (mktemp plus mv), so a hard link pinned inside
 # the doorbell lock stops naming the same file, and its bytes change too. An
-# epoch absent at start must stay absent.
-EPOCH_PIN="$LOCK/context-epoch"
+# epoch absent at start must stay absent. The pin is per doorbell, so a newer
+# doorbell can tell that a live holder started under an older context.
+EPOCH_PIN="$LOCK/context-epoch.$$"
 if [ -e "$STATE/.context-epoch" ]; then
   ln "$STATE/.context-epoch" "$EPOCH_PIN" 2>/dev/null || EPOCH_PIN=
   EPOCH_SUM=$(cksum < "$STATE/.context-epoch" 2>/dev/null || true)
@@ -157,6 +170,30 @@ transcript_size() {
   wc -c < "$TRANSCRIPT" 2>/dev/null | tr -d '[:space:]'
 }
 
+# True when the transcript shows a turn after the newest compact boundary: an
+# idle compaction writes no assistant record, while a compaction inside a turn
+# is followed by that turn's assistant records, including a tool call still
+# running. Unprovable (no jq, unreadable) counts as a turn.
+transcript_turn_after_compaction() {
+  local from
+  [ -n "$TRANSCRIPT" ] || return 1
+  command -v jq >/dev/null 2>&1 && [ -r "$TRANSCRIPT" ] || return 0
+  from=$(grep -n -F 'compact_boundary' "$TRANSCRIPT" 2>/dev/null \
+    | jq -Rr 'capture("^(?<n>[0-9]+):(?<j>.*)$")? | select((.j | fromjson? | (.type == "system" and .subtype == "compact_boundary")) == true) | .n' 2>/dev/null \
+    | tail -n 1)
+  tail -n +"${from:-1}" "$TRANSCRIPT" 2>/dev/null \
+    | jq -Rr 'fromjson? | select(.type == "assistant") | "turn"' 2>/dev/null | grep -q turn
+}
+
+# The rendered Claude busy footer, on a backend that exposes one. Native idle
+# can read idle during a long foreground tool call (docs/herdr-backend.md), so
+# a rendered busy footer independently proves a running turn.
+rendered_busy() {
+  local fn="fm_backend_${BACKEND}_rendered_busy_state"
+  declare -F "$fn" >/dev/null 2>&1 || { printf 'unknown'; return 0; }
+  "$fn" "$TARGET" claude 2>/dev/null || printf 'unknown'
+}
+
 # Prints why this doorbell may no longer press a key, or nothing: ownership,
 # posture and context checks that hold for the first send and every resubmit.
 posture_reason() {
@@ -191,12 +228,14 @@ idle_reason() {  # <previous-size>
   busy=$(fm_backend_busy_state "$BACKEND" "$TARGET" 2>/dev/null || printf unknown)
   [ "$busy" != busy ] || { printf 'a turn is running'; return 0; }
   [ "$busy" = idle ] || { printf 'busy state is %s, not a native idle' "$busy"; return 0; }
+  [ "$(rendered_busy)" != busy ] || { printf 'a turn is running'; return 0; }
   # Native idle can lag a turn that just started, so a transcript, when one
   # was given, must also have stayed unchanged for a whole poll.
   if [ -n "$TRANSCRIPT" ]; then
     size=$(transcript_size)
     [ -n "$size" ] && [ -n "$prev" ] && [ "$size" = "$prev" ] \
       || { printf 'the transcript is not proven quiet'; return 0; }
+    ! transcript_turn_after_compaction || { printf 'a turn is running after the compaction'; return 0; }
   fi
 }
 
@@ -212,7 +251,7 @@ while :; do
   reason=$(idle_reason "$prev")
   [ -n "$reason" ] || break
   case "$reason" in
-    'another resume doorbell took the lock'|'state/captain-handle is older than the session lock'|'the session lock changed owner'|'agent state is '*|'composer is '*|'a turn is running'|'busy state is '*|'an away or quiet record exists'|'a new context began after the compaction'|'a turn already ended after the compaction')
+    'another resume doorbell took the lock'|'state/captain-handle is older than the session lock'|'the session lock changed owner'|'agent state is '*|'composer is '*|'a turn is running'|'a turn is running after the compaction'|'busy state is '*|'an away or quiet record exists'|'a new context began after the compaction'|'a turn already ended after the compaction')
       finish stood-down "$reason" ;;
   esac
   prev=$(transcript_size)

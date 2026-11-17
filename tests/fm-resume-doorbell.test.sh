@@ -42,6 +42,7 @@ fm_backend_busy_state() {
   [ -z "${FAKE_GROW_TRANSCRIPT:-}" ] || printf '{"type":"assistant"}\n' >> "$FAKE_GROW_TRANSCRIPT"
   fake_get busy idle
 }
+fm_backend_herdr_rendered_busy_state() { fake_get rendered idle; }
 fm_backend_composer_state() {
   [ -s "$FAKE_DIR/composer" ] && { printf 'pending'; return 0; }
   fake_get composer-state empty
@@ -114,10 +115,11 @@ test_idle_session_gets_one_line_and_submits() {
 
 test_unsafe_targets_stand_down_and_type_nothing() {
   local dir case_name reason
-  for case_name in busy pending dead unknown-no-transcript no-handle stale-handle away later-stop; do
+  for case_name in busy rendered-busy pending dead unknown-no-transcript no-handle stale-handle away later-stop; do
     dir=$(make_home "stand-$case_name")
     case "$case_name" in
       busy) printf 'busy' > "$dir/fake/busy" ;;
+      rendered-busy) printf 'busy' > "$dir/fake/rendered" ;;
       pending) printf 'draft text' > "$dir/fake/composer" ;;
       dead) printf 'dead' > "$dir/fake/agent" ;;
       unknown-no-transcript) printf 'unknown' > "$dir/fake/busy" ;;
@@ -134,7 +136,7 @@ test_unsafe_targets_stand_down_and_type_nothing() {
     [ "$(typed_count "$dir")" = 0 ] || fail "$case_name: the doorbell typed into an unsafe target: $(cat "$dir/fake/keys")"
     [ "$(last_outcome "$dir")" = stood-down ] || fail "$case_name: outcome must be stood-down, got: $(cat "$dir/state/.resume-doorbell.log")"
     case "$case_name" in
-      busy) reason='a turn is running' ;;
+      busy|rendered-busy) reason='a turn is running' ;;
       pending) reason='composer is pending' ;;
       dead) reason='agent state is dead' ;;
       unknown-no-transcript) reason='busy state is unknown' ;;
@@ -145,7 +147,7 @@ test_unsafe_targets_stand_down_and_type_nothing() {
     esac
     assert_contains "$(last_detail "$dir")" "$reason" "$case_name: the stand-down must name its reason"
   done
-  pass "resume doorbell: a running turn, a draft, a dead agent, an unproven busy state, no handle, a handle older than the session lock, an away record, or a turn that already ran types nothing"
+  pass "resume doorbell: a running turn (native or rendered), a draft, a dead agent, an unproven busy state, no handle, a handle older than the session lock, an away record, or a turn that already ran types nothing"
 }
 
 test_idle_needs_native_idle_and_a_quiet_transcript() {
@@ -170,6 +172,64 @@ test_idle_needs_native_idle_and_a_quiet_transcript() {
   [ "$(typed_count "$dir")" = 0 ] || fail "a backend with no native busy state must never get the line, even with a quiet transcript"
   [ "$(last_outcome "$dir")" = stood-down ] || fail "outcome must be stood-down, got: $(cat "$dir/state/.resume-doorbell.log")"
   pass "resume doorbell: typing needs a native idle plus a quiet transcript; an unproven busy state stands down"
+}
+
+test_turn_after_the_compaction_boundary_stands_down() {
+  local dir boundary
+  boundary='{"type":"system","subtype":"compact_boundary","compactMetadata":{"trigger":"auto","preTokens":1}}'
+  # An in-turn compaction followed by a long tool call: native idle, a quiet
+  # transcript, but the turn's assistant record follows the boundary.
+  dir=$(make_home turn-after-boundary)
+  printf '%s\n' '{"type":"assistant","message":{"content":[]}}' "$boundary" \
+    '{"type":"user","isCompactSummary":true}' \
+    '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash"}]}}' > "$dir/transcript.jsonl"
+  run_doorbell "$dir" --source compact --transcript "$dir/transcript.jsonl"
+  [ "$(typed_count "$dir")" = 0 ] || fail "a turn still running after the compaction must not get the line: $(cat "$dir/fake/keys")"
+  [ "$(last_outcome "$dir")" = stood-down ] || fail "outcome must be stood-down, got: $(cat "$dir/state/.resume-doorbell.log")"
+  assert_contains "$(last_detail "$dir")" "a turn is running after the compaction" "the stand-down must name the running turn"
+
+  # An idle compaction: assistant records only before the newest boundary.
+  dir=$(make_home idle-after-boundary)
+  printf '%s\n' '{"type":"assistant","message":{"content":[]}}' "$boundary" \
+    '{"type":"user","isCompactSummary":true}' > "$dir/transcript.jsonl"
+  run_doorbell "$dir" --source compact --transcript "$dir/transcript.jsonl"
+  [ "$(typed_count "$dir")" = 1 ] || fail "an idle compaction with no assistant record after its boundary must get the line"
+  [ "$(last_outcome "$dir")" = submitted ] || fail "outcome must be submitted, got: $(cat "$dir/state/.resume-doorbell.log")"
+  pass "resume doorbell: an assistant record after the newest compact boundary stands it down; an idle compaction still delivers"
+}
+
+test_newer_context_takes_over_a_live_doorbell() {
+  local dir pid
+  # Doorbell A settles under one compaction; a second compaction replaces the
+  # epoch and starts B. B must take over and deliver; A must stand down.
+  dir=$(make_home takeover-newer-context)
+  printf 'source=compact\nlock_pid=1\nat=1\n' > "$dir/state/.context-epoch"
+  SETTLE=1 run_doorbell "$dir" --source compact &
+  pid=$!
+  wait_for_doorbell_lock "$dir"
+  printf 'source=compact\nlock_pid=1\nat=2\n' > "$dir/state/.context-epoch.new"
+  mv -f "$dir/state/.context-epoch.new" "$dir/state/.context-epoch"
+  run_doorbell "$dir" --source compact
+  wait "$pid"
+  [ "$(typed_count "$dir")" = 1 ] || fail "exactly one doorbell must deliver after a newer compaction: $(cat "$dir/fake/keys" 2>/dev/null)"
+  [ "$(grep -c "$(printf '\tsubmitted\t')" "$dir/state/.resume-doorbell.log")" = 1 ] \
+    || fail "exactly one doorbell must log submitted: $(cat "$dir/state/.resume-doorbell.log")"
+  [ "$(grep -c "$(printf '\tstood-down\t')" "$dir/state/.resume-doorbell.log")" = 1 ] \
+    || fail "the older doorbell must log stood-down: $(cat "$dir/state/.resume-doorbell.log")"
+  [ ! -e "$dir/state/.resume-doorbell.lock" ] || fail "the doorbell lock was left behind after the takeover"
+
+  # A second doorbell under the same context still stands down for the holder.
+  dir=$(make_home same-context-second)
+  printf 'source=compact\nlock_pid=1\nat=1\n' > "$dir/state/.context-epoch"
+  SETTLE=1 run_doorbell "$dir" --source compact &
+  pid=$!
+  wait_for_doorbell_lock "$dir"
+  sleep 0.2
+  run_doorbell "$dir" --source compact
+  assert_contains "$(last_detail "$dir")" "another resume doorbell" "a same-context second doorbell must stand down for the holder"
+  wait "$pid"
+  [ "$(typed_count "$dir")" = 1 ] || fail "the holder must still deliver exactly once: $(cat "$dir/fake/keys" 2>/dev/null)"
+  pass "resume doorbell: a doorbell for a newer context takes over a live one and delivers once; a same-context one stands down"
 }
 
 test_changed_lock_owner_stands_down() {
@@ -336,9 +396,11 @@ test_second_doorbell_types_nothing_while_one_runs() {
 test_idle_session_gets_one_line_and_submits
 test_unsafe_targets_stand_down_and_type_nothing
 test_idle_needs_native_idle_and_a_quiet_transcript
+test_turn_after_the_compaction_boundary_stands_down
 test_changed_lock_owner_stands_down
 test_lock_taken_over_stands_down_and_keeps_the_new_lock
 test_dropped_enter_is_resubmitted_only_while_ours
 test_new_context_during_settle_stands_down
 test_resubmit_rechecks_posture_after_a_pending_send
+test_newer_context_takes_over_a_live_doorbell
 test_second_doorbell_types_nothing_while_one_runs
