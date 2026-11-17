@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # tests/fm-spawn-ak-lifecycle-policy.test.sh - every agent this fleet launches
 # must start under agent-kit's unattended lifecycle policy with Firstmate named
-# as the supervisor, whatever values the spawn or pane environment inherited.
+# and declared as the supervisor, whatever values the spawn or pane environment
+# inherited. The declaration file must match agent-kit's supervisor contract,
+# sit outside every git repository, and keep its bytes across launches.
 #
 # The assertions never read bin/fm-spawn.sh's source. They drive the real spawn
 # against a fake tmux pane and a real isolated git worktree, then EXECUTE the
@@ -24,12 +26,22 @@ TMP_ROOT=$(fm_test_tmproot fm-spawn-ak-lifecycle)
 
 # The cases must not depend on the runner's own environment, which is itself a
 # Firstmate launch carrying these names; the inherited-value case sets its own.
-unset AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR
+# XDG_STATE_HOME goes too, so every declaration lands under the case's HOME.
+unset AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR AK_LIFECYCLE_SUPERVISOR_DECLARATION XDG_STATE_HOME
 
-DEFAULT_REPORT='policy=unattended
-supervisor=firstmate
-codex-set=shell_environment_policy.set.AK_LIFECYCLE_POLICY="unattended"
-codex-set=shell_environment_policy.set.AK_LIFECYCLE_SUPERVISOR="firstmate"'
+# decl_path <spawn-user-home>: where the declaration lands for that HOME.
+decl_path() {
+  printf '%s\n' "$1/.local/state/firstmate/agent-kit/supervisor-declaration.json"
+}
+
+# default_report <declaration-path>: what the probe reports for a launch whose
+# agent and Codex tool shells carry all three lifecycle values.
+default_report() {
+  printf '%s\n' 'policy=unattended' 'supervisor=firstmate' "declaration=$1" \
+    'codex-set=shell_environment_policy.set.AK_LIFECYCLE_POLICY="unattended"' \
+    'codex-set=shell_environment_policy.set.AK_LIFECYCLE_SUPERVISOR="firstmate"' \
+    "codex-set=shell_environment_policy.set.AK_LIFECYCLE_SUPERVISOR_DECLARATION=\"$1\""
+}
 
 # make_case <name> <harness> <id>...
 # Echoes "<case-dir>|<home>|<project>|<worktree>|<fakebin>|<launch-log>|<pane-log>".
@@ -78,6 +90,7 @@ install_probe() {  # <fakebin>
 #!/bin/sh
 printf 'policy=%s\n' "${AK_LIFECYCLE_POLICY-unset}"
 printf 'supervisor=%s\n' "${AK_LIFECYCLE_SUPERVISOR-unset}"
+printf 'declaration=%s\n' "${AK_LIFECYCLE_SUPERVISOR_DECLARATION-unset}"
 for arg do
   case "$arg" in
     shell_environment_policy.set.AK_*) printf 'codex-set=%s\n' "$arg" ;;
@@ -98,6 +111,7 @@ emitted_report() {
   [ -z "${3:-}" ] || preamble=$(grep '^export ' "$3")
   env -i HOME="$TMP_ROOT/pane-home" PATH="$fakebin:$PATH" TERM=xterm TMUX=synthetic-pane \
     AK_LIFECYCLE_POLICY=pane-value AK_LIFECYCLE_SUPERVISOR=pane-supervisor \
+    AK_LIFECYCLE_SUPERVISOR_DECLARATION="$TMP_ROOT/pane-declaration.json" \
     FM_CODEX_BIN="$TMP_ROOT/stray-codex-bin-must-not-run" \
     /bin/sh -c "$preamble
 $launch"
@@ -123,8 +137,8 @@ test_ship_and_scout_launches() {
       install_probe "$FAKEBIN_DIR"
       seen=$(emitted_report "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
         || fail "$kind, allowlist $setting: the emitted launch failed to run"
-      assert_equals "$DEFAULT_REPORT" "$seen" \
-        "a $kind launched with allowlist=$setting must start unattended with Firstmate as supervisor, in the agent and its Codex tool shells"
+      assert_equals "$(default_report "$(decl_path "$HOME_DIR/user-home")")" "$seen" \
+        "a $kind launched with allowlist=$setting must start unattended with Firstmate as declared supervisor, in the agent and its Codex tool shells"
     done
   done
   pass "ship and scout launches carry the unattended policy and Firstmate supervisor in both allowlist postures, overriding contrary pane values"
@@ -142,8 +156,8 @@ test_secondmate_launch() {
   install_probe "$FAKEBIN_DIR"
   seen=$(emitted_report "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
     || fail "secondmate: the emitted launch failed to run"
-  assert_equals "$DEFAULT_REPORT" "$seen" \
-    "a secondmate must start unattended with Firstmate as supervisor, so its own spawns inherit the same values"
+  assert_equals "$(default_report "$(decl_path "$HOME_DIR/user-home")")" "$seen" \
+    "a secondmate must start unattended with Firstmate as declared supervisor, so its own spawns inherit the same values"
   pass "a secondmate launch carries the unattended policy and Firstmate supervisor"
 }
 
@@ -159,7 +173,7 @@ test_launch_command_alone_carries_the_values() {
   install_probe "$FAKEBIN_DIR"
   seen=$(emitted_report "$FAKEBIN_DIR" "$LAUNCH_LOG") \
     || fail "the emitted launch failed to run without the pane exports"
-  assert_equals "$DEFAULT_REPORT" "$seen" "the launch command alone must set both values"
+  assert_equals "$(default_report "$(decl_path "$HOME_DIR/user-home")")" "$seen" "the launch command alone must set all three values"
   pass "the launch command sets the unattended policy on its own"
 }
 
@@ -175,10 +189,11 @@ test_inherited_values_never_replace_the_pair() {
       read_case "$rec"
       [ "$setting" = absent ] || : > "$HOME_DIR/config/launch-env-allowlist"
       if [ "$parent" = empty ]; then
-        out=$(AK_LIFECYCLE_POLICY='' AK_LIFECYCLE_SUPERVISOR='' \
+        out=$(AK_LIFECYCLE_POLICY='' AK_LIFECYCLE_SUPERVISOR='' AK_LIFECYCLE_SUPERVISOR_DECLARATION='' \
           run_case_spawn "$id" "$PROJ_DIR" --mode no-mistakes --yolo off)
       else
         out=$(AK_LIFECYCLE_POLICY=attended AK_LIFECYCLE_SUPERVISOR="night desk's \"shift\"" \
+          AK_LIFECYCLE_SUPERVISOR_DECLARATION="$CASE_DIR/inherited-declaration.json" \
           run_case_spawn "$id" "$PROJ_DIR" --mode no-mistakes --yolo off)
       fi
       status=$?
@@ -186,8 +201,8 @@ test_inherited_values_never_replace_the_pair() {
       install_probe "$FAKEBIN_DIR"
       seen=$(emitted_report "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
         || fail "inherited $parent values, allowlist $setting: the emitted launch failed to run"
-      assert_equals "$DEFAULT_REPORT" "$seen" \
-        "allowlist=$setting: $parent inherited values must not replace unattended and firstmate"
+      assert_equals "$(default_report "$(decl_path "$HOME_DIR/user-home")")" "$seen" \
+        "allowlist=$setting: $parent inherited values must not replace unattended, firstmate and Firstmate's declaration"
     done
   done
   pass "inherited empty or contrary values never replace the unattended policy and Firstmate supervisor"
@@ -206,6 +221,7 @@ SH
   cat >> "$1" <<'SH'
 printf 'policy=%s\n' "${AK_LIFECYCLE_POLICY-unset}"
 printf 'supervisor=%s\n' "${AK_LIFECYCLE_SUPERVISOR-unset}"
+printf 'declaration=%s\n' "${AK_LIFECYCLE_SUPERVISOR_DECLARATION-unset}"
 printf 'codex-home=%s\n' "${CODEX_HOME-unset}"
 printf 'codex-bin-env=%s\n' "${FM_CODEX_BIN-unset}"
 skip=0
@@ -227,7 +243,7 @@ SH
 RAW_CODEX_REFUSAL='names codex outside the one raw form bin/fm-codex-launch.sh can take over'
 
 test_raw_codex_launch_uses_the_launcher() {
-  local form rec id raw out status seen expected
+  local form rec id raw out status seen expected decl
   for form in bare prefixed path; do
     id="raw-codex-$form-a1"
     rec=$(make_case "raw-codex-$form" codex "$id")
@@ -246,24 +262,29 @@ test_raw_codex_launch_uses_the_launcher() {
     install_raw_probe "$CASE_DIR/by-path/codex" named-path
     seen=$(emitted_report "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
       || fail "raw $form Codex: the emitted launch failed to run"
+    decl=$(decl_path "$HOME_DIR/user-home")
     case "$form" in
     bare) expected="ran=path-lookup
 policy=unattended
 supervisor=firstmate
+declaration=$decl
 codex-home=unset" ;;
     prefixed) expected="ran=path-lookup
 policy=unattended
 supervisor=firstmate
+declaration=$decl
 codex-home=$CASE_DIR/codex-home" ;;
     path) expected="ran=named-path
 policy=unattended
 supervisor=firstmate
+declaration=$decl
 codex-home=$CASE_DIR/codex-home" ;;
     esac
     expected="$expected
 codex-bin-env=unset
 codex-set=shell_environment_policy.set.AK_LIFECYCLE_POLICY=\"unattended\"
 codex-set=shell_environment_policy.set.AK_LIFECYCLE_SUPERVISOR=\"firstmate\"
+codex-set=shell_environment_policy.set.AK_LIFECYCLE_SUPERVISOR_DECLARATION=\"$decl\"
 argv=<--disable>
 argv=<hooks>"
     assert_equals "$expected" "$seen" \
@@ -364,7 +385,8 @@ test_raw_compound_launch() {
   mkdir -p "$probe_dir"
   cat > "$probe_dir/probe" <<'SH'
 #!/bin/sh
-printf 'policy=%s\nsupervisor=%s\n' "${AK_LIFECYCLE_POLICY-unset}" "${AK_LIFECYCLE_SUPERVISOR-unset}"
+printf 'policy=%s\nsupervisor=%s\ndeclaration=%s\n' "${AK_LIFECYCLE_POLICY-unset}" "${AK_LIFECYCLE_SUPERVISOR-unset}" \
+  "${AK_LIFECYCLE_SUPERVISOR_DECLARATION-unset}"
 SH
   chmod +x "$probe_dir/probe"
   out=$(run_case_spawn raw-compound-a1 "$PROJ_DIR" --mode no-mistakes --yolo off "cd $probe_dir && ./probe")
@@ -373,8 +395,300 @@ SH
   seen=$(emitted_report "$FAKEBIN_DIR" "$LAUNCH_LOG") \
     || fail "raw compound launch: the emitted launch failed to run"
   assert_equals "policy=unattended
-supervisor=firstmate" "$seen" "a raw compound launch must carry both values past cd"
+supervisor=firstmate
+declaration=$(decl_path "$HOME_DIR/user-home")" "$seen" "a raw compound launch must carry all three values past cd"
   pass "a compound raw launch carries the unattended policy and Firstmate supervisor"
+}
+
+# --- the supervisor declaration file ----------------------------------------
+
+# validate_declaration <file>: prints "valid" when the file has exactly the
+# keys and value shapes agent-kit's supervisor-declaration schema requires,
+# otherwise the first violation.
+validate_declaration() {
+  python3 -I - "$1" <<'PY'
+import json, re, sys
+try:
+    with open(sys.argv[1], 'rb') as fh:
+        d = json.loads(fh.read().decode('utf-8'))
+except Exception as exc:
+    print('unreadable or not JSON: %s' % exc); sys.exit(0)
+keys = ['launch-and-watch', 'validation-gate', 'independent-review',
+        'seat-separation', 'head-bound-evidence', 'disclosure']
+line = re.compile(r'[^\r\n  ]*\S[^\r\n  ]*')
+if not isinstance(d, dict) or sorted(d) != ['contract', 'obligations', 'supervisor']:
+    print('top-level keys: %r' % (sorted(d) if isinstance(d, dict) else d))
+elif d['contract'] != 'agent-kit/supervisor-contract@1':
+    print('contract: %r' % d['contract'])
+elif d['supervisor'] != 'firstmate':
+    print('supervisor: %r' % d['supervisor'])
+elif not isinstance(d['obligations'], dict) or sorted(d['obligations']) != sorted(keys):
+    print('obligation keys: %r' % d['obligations'])
+else:
+    bad = [k for k in keys if not isinstance(d['obligations'][k], str) or not line.fullmatch(d['obligations'][k])]
+    print('not one non-empty line: %r' % bad if bad else 'valid')
+PY
+}
+
+# file_identity <file>: inode, mtime in nanoseconds and sha256 of the bytes.
+file_identity() {
+  python3 -I -c 'import hashlib, os, sys
+st = os.stat(sys.argv[1])
+print(st.st_ino, st.st_mtime_ns, hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$1"
+}
+
+# The digest of the declaration bytes agent-kit's adapters/firstmate statement
+# fixes; open agent-kit runs are stamped with it.
+AK_SUPERVISOR_DECLARATION_SHA256=7f3c2e3302d5c348fc08df441d8e6082a07650a25e6f216ed7214885bbd678fd
+
+# The validator itself rejects an obligation that is not exactly one line, so
+# the schema assertions below cannot pass vacuously.
+test_declaration_validator_rejects_multiline_obligations() {
+  local bad value
+  bad="$TMP_ROOT/bad-declaration.json"
+  for value in 'text\n' 'one\ntwo' 'text\r' '   '; do
+    printf '{"contract":"agent-kit/supervisor-contract@1","supervisor":"firstmate","obligations":{"launch-and-watch":"%s","validation-gate":"a","independent-review":"a","seat-separation":"a","head-bound-evidence":"a","disclosure":"a"}}\n' "$value" > "$bad"
+    [ "$(validate_declaration "$bad")" != valid ] ||
+      fail "the validator accepted the obligation value $value"
+  done
+  pass "the declaration validator rejects trailing, embedded and blank line obligations"
+}
+
+# A launch exports the declaration's real path, and that file satisfies the
+# schema and sits outside every git repository, all the way up to /.
+test_declaration_matches_the_supervisor_contract() {
+  local rec out status seen decl real cur
+  rec=$(make_case decl-shape codex decl-shape-a1)
+  read_case "$rec"
+  out=$(FM_TEST_XDG_STATE_HOME=relative/state run_case_spawn decl-shape-a1 "$PROJ_DIR" --mode no-mistakes --yolo off)
+  status=$?
+  expect_code 0 "$status" "spawn should succeed: $out"
+  install_probe "$FAKEBIN_DIR"
+  seen=$(emitted_report "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") || fail "the emitted launch failed to run"
+  decl=$(printf '%s\n' "$seen" | sed -n 's/^declaration=//p')
+  assert_equals "$(decl_path "$HOME_DIR/user-home")" "$decl" \
+    "a relative XDG_STATE_HOME must be ignored in favour of HOME/.local/state"
+  { [ -f "$decl" ] && [ ! -L "$decl" ]; } || fail "the exported declaration must be a regular file: $decl"
+  real="$(cd -P -- "$(dirname -- "$decl")" && pwd -P)/$(basename -- "$decl")"
+  assert_equals "$real" "$decl" "the exported declaration path must be the file's real path, which agent-kit stamps"
+  assert_equals valid "$(validate_declaration "$decl")" "the declaration must match agent-kit's supervisor-declaration schema"
+  # agent-kit's Firstmate supervisor statement fixes these exact bytes.
+  assert_equals "$AK_SUPERVISOR_DECLARATION_SHA256" "$(file_identity "$decl" | cut -d' ' -f3)" \
+    "the declaration bytes must match agent-kit's Firstmate supervisor statement"
+  cur=$(dirname -- "$decl")
+  while :; do
+    { [ ! -e "$cur/.git" ] && [ ! -L "$cur/.git" ]; } || fail "the declaration must sit outside every repository, but $cur holds .git"
+    [ "$cur" != / ] || break
+    cur=$(dirname -- "$cur")
+  done
+  pass "a launch exports the real path of a schema-valid declaration that sits outside every git repository"
+}
+
+# Repeated and concurrent launches never rewrite matching bytes, so an open
+# agent-kit run's path-and-digest stamp keeps holding; a file whose bytes
+# differ is restored to the canonical bytes.
+test_declaration_bytes_stay_stable() {
+  local shared rec home_a home_b wt_a wt_b fb_a fb_b proj_a proj_b decl before after canonical pid_a status_a status_b out
+  shared="$TMP_ROOT/shared-state"
+  rec=$(make_case decl-stable-a codex stable-a1 stable-a2 stable-a3)
+  read_case "$rec"
+  home_a=$HOME_DIR wt_a=$WT_DIR fb_a=$FAKEBIN_DIR proj_a=$PROJ_DIR
+  rec=$(make_case decl-stable-b codex stable-b1)
+  read_case "$rec"
+  home_b=$HOME_DIR wt_b=$WT_DIR fb_b=$FAKEBIN_DIR proj_b=$PROJ_DIR
+  # Two homes race their first launch into one declaration directory.
+  FM_TEST_XDG_STATE_HOME=$shared fm_test_run_spawn "$home_a" "$wt_a" "$fb_a" stable-a1 "$proj_a" --mode no-mistakes --yolo off \
+    > "$TMP_ROOT/stable-a1.out" 2>&1 &
+  pid_a=$!
+  FM_TEST_XDG_STATE_HOME=$shared fm_test_run_spawn "$home_b" "$wt_b" "$fb_b" stable-b1 "$proj_b" --mode no-mistakes --yolo off \
+    > "$TMP_ROOT/stable-b1.out" 2>&1
+  status_b=$?
+  wait "$pid_a"
+  status_a=$?
+  expect_code 0 "$status_a" "the first racing spawn should succeed: $(cat "$TMP_ROOT/stable-a1.out")"
+  expect_code 0 "$status_b" "the second racing spawn should succeed: $(cat "$TMP_ROOT/stable-b1.out")"
+  decl="$shared/firstmate/agent-kit/supervisor-declaration.json"
+  assert_equals valid "$(validate_declaration "$decl")" "racing first launches must leave one schema-valid declaration"
+  [ -z "$(find "$shared/firstmate/agent-kit" -name '.supervisor-declaration.json.*' 2>/dev/null)" ] ||
+    fail "racing launches must leave no temporary declaration file behind"
+  canonical="$TMP_ROOT/canonical-declaration.json"
+  cp "$decl" "$canonical"
+
+  # An old mtime makes any rewrite visible even within one clock tick.
+  touch -t 200001020304.05 "$decl"
+  before=$(file_identity "$decl")
+  out=$(FM_TEST_XDG_STATE_HOME=$shared fm_test_run_spawn "$home_a" "$wt_a" "$fb_a" stable-a2 "$proj_a" --mode no-mistakes --yolo off)
+  expect_code 0 "$?" "a repeat spawn should succeed: $out"
+  after=$(file_identity "$decl")
+  assert_equals "$before" "$after" "a repeat launch must leave a matching declaration's inode, mtime and bytes untouched"
+
+  printf '{"supervisor":"edited"}\n' > "$decl"
+  out=$(FM_TEST_XDG_STATE_HOME=$shared fm_test_run_spawn "$home_a" "$wt_a" "$fb_a" stable-a3 "$proj_a" --mode no-mistakes --yolo off)
+  expect_code 0 "$?" "a spawn over an edited declaration should succeed: $out"
+  cmp -s "$canonical" "$decl" || fail "a launch must restore an edited declaration to the canonical bytes"
+  pass "repeated and racing launches keep the declaration's bytes, inode and mtime, and an edited file is restored"
+}
+
+# A location with .git on any ancestor is refused before anything is created:
+# the spawn still launches, warns, and leaves no inherited declaration path;
+# Codex tool shells get an empty override so a Codex config value cannot either.
+test_declaration_refused_inside_a_repository() {
+  local rec out status seen
+  rec=$(make_case decl-in-repo codex decl-in-repo-a1)
+  read_case "$rec"
+  mkdir -p "$HOME_DIR/user-home"
+  git -C "$HOME_DIR/user-home" init -q
+  out=$(AK_LIFECYCLE_SUPERVISOR_DECLARATION="$CASE_DIR/inherited-declaration.json" \
+    run_case_spawn decl-in-repo-a1 "$PROJ_DIR" --mode no-mistakes --yolo off)
+  status=$?
+  expect_code 0 "$status" "a spawn whose declaration location is inside a repository should still launch: $out"
+  assert_contains "$out" "inside the git repository at $HOME_DIR/user-home" \
+    "the warning must name the enclosing repository"
+  assert_contains "$out" "without AK_LIFECYCLE_SUPERVISOR_DECLARATION" \
+    "the warning must say the worker launches without a declaration"
+  [ ! -e "$HOME_DIR/user-home/.local/state/firstmate" ] ||
+    fail "a refused location must gain no new directory or file"
+  install_probe "$FAKEBIN_DIR"
+  seen=$(emitted_report "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") || fail "the emitted launch failed to run"
+  assert_equals 'policy=unattended
+supervisor=firstmate
+declaration=
+codex-set=shell_environment_policy.set.AK_LIFECYCLE_POLICY="unattended"
+codex-set=shell_environment_policy.set.AK_LIFECYCLE_SUPERVISOR="firstmate"
+codex-set=shell_environment_policy.set.AK_LIFECYCLE_SUPERVISOR_DECLARATION=""' "$seen" \
+    "a launch without a declaration must replace any inherited path with an empty value in the agent and its Codex tool shells"
+  pass "a declaration location inside a git repository is refused with a warning and no inherited path survives"
+}
+
+# A declaration path that is a directory, or a link to one, is refused: the
+# rename would otherwise land inside it while reporting success.
+test_declaration_refuses_a_directory_destination() {
+  local kind rec out status seen dir target
+  for kind in directory link; do
+    rec=$(make_case "decl-dir-$kind" codex "decl-dir-$kind-a1")
+    read_case "$rec"
+    dir=$(dirname -- "$(decl_path "$HOME_DIR/user-home")")
+    mkdir -p "$dir"
+    target="$dir/supervisor-declaration.json"
+    if [ "$kind" = directory ]; then
+      mkdir "$target"
+    else
+      mkdir "$CASE_DIR/elsewhere"
+      ln -s "$CASE_DIR/elsewhere" "$target"
+    fi
+    out=$(run_case_spawn "decl-dir-$kind-a1" "$PROJ_DIR" --mode no-mistakes --yolo off)
+    status=$?
+    expect_code 0 "$status" "a spawn over a $kind declaration path should still launch: $out"
+    assert_contains "$out" "is a directory or a link to one" "the warning must name the $kind destination"
+    [ -z "$(find "$target/" -mindepth 1 2>/dev/null)" ] || fail "a $kind destination must gain no file inside it"
+    [ -z "$(find "$dir" -maxdepth 1 -name '.supervisor-declaration.json.*')" ] || fail "a refused $kind destination must leave no temporary file"
+    install_probe "$FAKEBIN_DIR"
+    seen=$(emitted_report "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") || fail "the emitted launch failed to run"
+    printf '%s\n' "$seen" | grep -qx 'declaration=' \
+      || fail "a $kind destination must not be exported as the declaration, and the name must stay present and empty; got: $seen"
+  done
+  pass "a declaration path that is a directory or a link to one is refused and never exported"
+}
+
+# bin/fm-env-scrub.sh removes all three lifecycle variables at every shared
+# process boundary while leaving unrelated variables alone.
+# install_claude_probe <fakebin>: stand in for claude. It prints the declaration
+# the agent process started with, then the one its --settings value (inline JSON
+# or a settings file) pins in Claude's env, which outranks the process
+# environment and any saved Claude settings.
+install_claude_probe() {
+  cat > "$1/claude" <<'SH'
+#!/bin/sh
+printf 'declaration=%s\n' "${AK_LIFECYCLE_SUPERVISOR_DECLARATION-unset}"
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = --settings ]; then
+    python3 -c '
+import json, os, sys
+value = sys.argv[1]
+if os.path.isfile(value):
+    with open(value) as stream:
+        settings = json.load(stream)
+else:
+    settings = json.loads(value)
+print("claude-settings-declaration=" + settings.get("env", {}).get("AK_LIFECYCLE_SUPERVISOR_DECLARATION", "unset"))
+' "$2"
+  fi
+  shift
+done
+SH
+  chmod +x "$1/claude"
+}
+
+# A Claude worker's per-launch settings pin the declaration, so a value saved in
+# Claude's own settings cannot restore a stale path: the provisioned path when
+# it exists, an empty value when its location is refused.
+test_claude_settings_pin_the_declaration() {
+  local kind posture rec id sm out status seen want
+  for kind in ship secondmate; do
+    for posture in provisioned refused; do
+      id="claude-$kind-$posture"
+      rec=$(make_case "$id" claude "$id")
+      read_case "$rec"
+      mkdir -p "$HOME_DIR/user-home"
+      [ "$posture" = provisioned ] || git -C "$HOME_DIR/user-home" init -q
+      if [ "$kind" = ship ]; then
+        out=$(run_case_spawn "$id" "$PROJ_DIR" --mode no-mistakes --yolo off)
+      else
+        sm="$CASE_DIR/secondmate-home"
+        make_secondmate_home "$sm" "$id"
+        out=$(run_case_spawn "$id" "$sm" --secondmate)
+      fi
+      status=$?
+      expect_code 0 "$status" "a claude $kind spawn with a $posture declaration should succeed: $out"
+      install_claude_probe "$FAKEBIN_DIR"
+      seen=$(emitted_report "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") \
+        || fail "claude $kind, $posture: the emitted launch failed to run"
+      if [ "$posture" = provisioned ]; then
+        want=$(decl_path "$HOME_DIR/user-home")
+        assert_equals "declaration=$want
+claude-settings-declaration=$want" "$seen" \
+          "a claude $kind must carry the provisioned declaration in its environment and its per-launch settings"
+      else
+        assert_equals 'declaration=
+claude-settings-declaration=' "$seen" \
+          "a claude $kind with a refused declaration must carry it empty in its environment and its per-launch settings"
+      fi
+    done
+  done
+  pass "a claude worker's and secondmate's per-launch settings pin the declaration, empty when its location is refused"
+}
+
+test_env_scrub_drops_all_three() {
+  local out file
+  out=$(env AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate \
+    AK_LIFECYCLE_SUPERVISOR_DECLARATION=/x/declaration.json AK_SCRUB_KEEP=kept \
+    "$ROOT/bin/fm-env-scrub.sh" exec env)
+  assert_equals '' "$(printf '%s\n' "$out" | grep -E '^AK_LIFECYCLE_' || true)" \
+    "fm-env-scrub.sh exec must remove every agent-kit lifecycle variable"
+  assert_contains "$out" 'AK_SCRUB_KEEP=kept' "fm-env-scrub.sh exec must keep unrelated variables"
+
+  file="$TMP_ROOT/scrub.unset"
+  # shellcheck disable=SC2016 # The bash -c script expands its own arguments.
+  env AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate \
+    AK_LIFECYCLE_SUPERVISOR_DECLARATION=/x/declaration.json \
+    bash -c '"$1" unset-file "$2"' _ "$ROOT/bin/fm-env-scrub.sh" "$file" || fail "unset-file failed"
+  assert_equals 'unset AK_LIFECYCLE_POLICY
+unset AK_LIFECYCLE_SUPERVISOR
+unset AK_LIFECYCLE_SUPERVISOR_DECLARATION' "$(grep '^unset AK_' "$file" | sort)" \
+    "unset-file must name all three lifecycle variables for the pane shell"
+
+  cat > "$TMP_ROOT/scrub-probe.sh" <<'SH'
+. "$1/bin/fm-env-scrub.sh"
+fm_env_without_ak_pair sh -c 'printf "inner=%s|%s|%s\n" "${AK_LIFECYCLE_POLICY-unset}" "${AK_LIFECYCLE_SUPERVISOR-unset}" "${AK_LIFECYCLE_SUPERVISOR_DECLARATION-unset}"'
+printf 'outer=%s\n' "${AK_LIFECYCLE_SUPERVISOR_DECLARATION-unset}"
+SH
+  out=$(env AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate \
+    AK_LIFECYCLE_SUPERVISOR_DECLARATION=/x/declaration.json \
+    bash "$TMP_ROOT/scrub-probe.sh" "$ROOT")
+  assert_equals 'inner=unset|unset|unset
+outer=/x/declaration.json' "$out" \
+    "fm_env_without_ak_pair must run its command without all three while the caller keeps them"
+  pass "fm-env-scrub.sh removes all three agent-kit lifecycle variables at shared process boundaries"
 }
 
 # --- relaunch ---------------------------------------------------------------
@@ -473,8 +787,8 @@ test_relaunch_rebuilds_the_values() {
     install_probe "$dir/fakebin"
     seen=$(emitted_report "$dir/fakebin" "$dir/fake/launch") \
       || fail "relaunch with allowlist=$setting: the replacement launch failed to run"
-    assert_equals "$DEFAULT_REPORT" "$seen" \
-      "a relaunched agent with allowlist=$setting must start unattended with Firstmate as supervisor, exactly as a fresh spawn does"
+    assert_equals "$(default_report "$(decl_path "$dir/user-home")")" "$seen" \
+      "a relaunched agent with allowlist=$setting must start unattended with Firstmate as declared supervisor, exactly as a fresh spawn does"
   done
   pass "relaunch rebuilds the unattended policy and Firstmate supervisor in both allowlist postures"
 }
@@ -519,18 +833,20 @@ SH
   # shellcheck disable=SC2016 # The bash -c script expands its own variables.
   out=$(env -u TMUX -u TMUX_PANE PATH="$shim:$PATH" SHELL=/bin/sh \
     AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate AK_SCRUB_CREATOR_MARKER=creator \
+    AK_LIFECYCLE_SUPERVISOR_DECLARATION=/creator/declaration.json \
     bash -c '. "$1/bin/fm-backend.sh" && fm_backend_source tmux && fm_backend_tmux_container_ensure &&
-      printf "\ncreator=%s|%s\n" "${AK_LIFECYCLE_POLICY-unset}" "${AK_LIFECYCLE_SUPERVISOR-unset}"' _ "$ROOT" 2>&1)
+      printf "\ncreator=%s|%s|%s\n" "${AK_LIFECYCLE_POLICY-unset}" "${AK_LIFECYCLE_SUPERVISOR-unset}" \
+        "${AK_LIFECYCLE_SUPERVISOR_DECLARATION-unset}"' _ "$ROOT" 2>&1)
   status=$?
   expect_code 0 "$status" "the tmux backend should create its server: $out"
-  assert_contains "$out" 'creator=unattended|firstmate' \
+  assert_contains "$out" 'creator=unattended|firstmate|/creator/declaration.json' \
     "the process that created the server must still carry the pair, so this case cannot pass vacuously"
 
   global=$(env -u TMUX -u TMUX_PANE "$SCRUB_REAL_TMUX" -S "$SCRUB_TMUX_SOCKET" show-environment -g 2>&1) \
     || fail "show-environment -g failed on the new server: $global"
   printf '%s\n' "$global" | grep -qx 'AK_SCRUB_CREATOR_MARKER=creator' ||
     fail "the new server must hold its creator's other variables, so the pair's absence is the scrub's doing"
-  leaked=$(printf '%s\n' "$global" | grep -E '^AK_LIFECYCLE_(POLICY|SUPERVISOR)=' || true)
+  leaked=$(printf '%s\n' "$global" | grep -E '^AK_LIFECYCLE_(POLICY|SUPERVISOR|SUPERVISOR_DECLARATION)=' || true)
   [ -z "$leaked" ] || fail "a server created by a pair-carrying process must not publish the pair globally: $leaked"
 
   env -i PATH="$PATH" HOME="$TMP_ROOT/pane-home" \
@@ -544,7 +860,7 @@ SH
   [ -f "$later" ] || fail "the later session never reported its environment"
   grep -qx 'AK_SCRUB_CREATOR_MARKER=creator' "$later" ||
     fail "a later session must inherit the server's global environment, so the check below is meaningful"
-  leaked=$(grep -E '^AK_LIFECYCLE_(POLICY|SUPERVISOR)=' "$later" || true)
+  leaked=$(grep -E '^AK_LIFECYCLE_(POLICY|SUPERVISOR|SUPERVISOR_DECLARATION)=' "$later" || true)
   [ -z "$leaked" ] || fail "an unrelated later session must not inherit the pair from the server: $leaked"
   cleanup_scrub_tmux
   SCRUB_TMUX_SOCKET=
@@ -559,4 +875,11 @@ test_raw_compound_launch
 test_raw_codex_launch_uses_the_launcher
 test_raw_non_codex_commands
 test_relaunch_rebuilds_the_values
+test_declaration_validator_rejects_multiline_obligations
+test_declaration_matches_the_supervisor_contract
+test_declaration_bytes_stay_stable
+test_declaration_refused_inside_a_repository
+test_claude_settings_pin_the_declaration
+test_declaration_refuses_a_directory_destination
+test_env_scrub_drops_all_three
 test_new_tmux_server_never_publishes_the_pair
