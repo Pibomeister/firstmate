@@ -1,0 +1,55 @@
+=== Scenario 1: Loaded 24-task disposable lab-home refresh under 60s ===
+{
+  "exit_code": 0,
+  "elapsed_s": 43.183,
+  "under_60s": true,
+  "schema": "fm-secondmate-home-summary.v1",
+  "generated": "2026-11-17T10:00:00Z",
+  "generated_epoch": 1794909600,
+  "valid": false,
+  "state": "unknown",
+  "reason": "child current state unavailable: task-01, task-02, task-03, task-04, task-05, task-06, task-07, task-08, task-09, task-10, task-11, task-12, task-13, task-14, task-15, task-16, task-17, task-18, task-19, task-20, task-21, task-22, task-23, task-24",
+  "invalidity": {
+    "kind": "child_current_unavailable",
+    "ids": [
+      "task-01",
+      "task-02",
+      "task-03",
+      "task-04",
+      "task-05",
+      "task-06",
+      "task-07",
+      "task-08",
+      "task-09",
+      "task-10",
+      "task-11",
+      "task-12",
+      "task-13",
+      "task-14",
+      "task-15",
+      "task-16",
+      "task-17",
+      "task-18",
+      "task-19",
+      "task-20",
+      "task-21",
+      "task-22",
+      "task-23",
+      "task-24"
+    ]
+  },
+  "counts": {
+    "active_children": 0,
+    "decisions_open": 2,
+    "holds": 0,
+    "queued": 1,
+    "landed": 0,
+    "endpoints": 24
+  },
+  "open_decision_keys": [
+    "gate-05",
+    "gate-19"
+  ],
+  "remaining_stage_files": [],
+  "stderr": ""
+}

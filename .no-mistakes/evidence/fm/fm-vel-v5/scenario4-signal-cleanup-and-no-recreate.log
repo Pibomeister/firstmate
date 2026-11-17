@@ -1,0 +1,30 @@
+=== Scenario 4: Signalled parent stage cleanup & non-recreation of deleted stage log ===
+{
+  "signals": {
+    "SIGTERM": {
+      "proc_rc": 143,
+      "stage_file_created": true,
+      "stage_files_after_signal": []
+    },
+    "SIGINT": {
+      "proc_rc": 130,
+      "stage_file_created": true,
+      "stage_files_after_signal": []
+    },
+    "SIGHUP": {
+      "proc_rc": 129,
+      "stage_file_created": true,
+      "stage_files_after_signal": []
+    }
+  },
+  "deleted_stage_log_rc": 0,
+  "deleted_stage_log_recreated": false,
+  "live_stage_log_rc": 0,
+  "live_stage_entries": [
+    "backlog\t0",
+    "task-observation\t0",
+    "task-rows\t25",
+    "contributions\t32",
+    "summary\t37"
+  ]
+}

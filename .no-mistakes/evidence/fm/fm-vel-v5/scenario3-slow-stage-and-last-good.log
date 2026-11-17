@@ -1,0 +1,14 @@
+=== Scenario 3: Deadline failure names slow stage & keeps last good summary ===
+{
+  "initial_rc": 0,
+  "best_effort_rc": 0,
+  "best_effort_log": "[2026-11-17T19:21:17Z] refresh exceeded its 5-second deadline in stage task-observation (stages: backlog@0 task-observation@1)",
+  "direct_rc": 124,
+  "direct_stderr": "Terminated: 15\nfm-home-summary-refresh: refresh exceeded its 5-second deadline in stage task-observation (stages: backlog@0 task-observation@0)",
+  "ledger_byte_identical_after_best_effort": true,
+  "ledger_byte_identical_after_direct": true,
+  "preserved_generated": "2026-11-17T10:00:00Z",
+  "preserved_generated_epoch": 1794909600,
+  "attempted_now": "2026-11-17T10:05:00Z",
+  "remaining_stage_files": []
+}

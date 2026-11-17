@@ -1,0 +1,10 @@
+=== Scenario 2: Sliding-window & concurrent row assembly (20 tasks: 1x5s + 19x1s) ===
+{
+  "concurrency_16_rc": 0,
+  "concurrency_16_elapsed_s": 37.595,
+  "concurrency_1_rc": 124,
+  "concurrency_1_elapsed_s": 60.99,
+  "speedup": 1.62,
+  "endpoints_observed": 20,
+  "active_children": 0
+}
