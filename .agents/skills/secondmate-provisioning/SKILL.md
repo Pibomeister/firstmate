@@ -229,27 +229,27 @@ This rule moves routed and approved work forward; it never creates work, so the 
 
 ### Authority split
 
-- The lane owner may implement approved items, drive its own no-mistakes runs, dispatch the two-model merge review, land its own approved pull requests through `bin/fm-self-land.sh`, file follow-ups, and report each outcome.
-- Only the main firstmate routes work across homes, creates or relaunches a secondmate, changes a charter, reconciles captain holds, cleans up work copies, writes or removes a lane owner's grants, and resets a tripped self-landing circuit breaker.
+- The lane owner may implement approved items, drive its own no-mistakes runs, dispatch the two-model merge review, land its own approved pull requests through `bin/fm-self-land.sh` (pending ticket V11), tear down its own landed crew tasks with `bin/fm-teardown.sh`, file follow-ups, and report each outcome.
+- Only the main firstmate routes work across homes, creates or relaunches a secondmate, changes a charter, reconciles captain holds, runs cross-home or orphaned worktree sweeps and any unlanded or forced cleanup, writes or removes a lane owner's grants, and resets a tripped self-landing circuit breaker.
 - Only the captain approves a merge in any repository the grant does not name, any waiver, a release, tag, or deploy, spend, a sign-in, a forge setting change, closing a pull request with unlanded work, and anything destructive, irreversible, or security-sensitive.
 
 ### Grants
 
-Self-landing stays off until the lane owner's own home holds `config/self-land` naming the repository and `config/merge-review` requiring the review for it (`docs/configuration.md` "Self-landing").
+Self-landing stays off until the lane owner's own home holds `config/self-land` naming the repository (schema pending ticket V11) and `config/merge-review` requiring the review for it ([`docs/configuration.md`](../../../docs/configuration.md#merge-review-configmerge-review)).
 Neither file is inherited, so the main firstmate writes both in the lane owner's home, and only after the captain explicitly approves self-landing for that repository; a lane owner never writes its own grant.
 Name each repository in at most one home's `config/self-land`, the main home included: the wrapper's lock, pending, and breaker records are local to one home, so one lane owner per repository is what lets them guard the repository.
 Before granting, read `config/self-land` in the main home and every registered secondmate home, and refuse a second owner for the same repository.
 The main home keeps landing tasks it already owns through `bin/fm-pr-merge.sh`; a lane owner never adopts, lands, or reconstructs another home's tasks.
-Create `state/.self-land-off` in the lane owner's home to stop its self-landing at once, and remove the repository's `allow` line to revoke the grant.
+Create the self-landing stop file defined by ticket V11 (pending) in the lane owner's home to stop its self-landing at once, and remove the repository's entry from `config/self-land` (line syntax pending ticket V11) to revoke the grant.
 A lane for the firstmate repository itself also needs a publication role for its pull-request target; `firstmate-self-repo` owns that boundary.
 
 ### Charter change and relaunch
 
-A lane owner's custom charter text names the repository, its delivery-owner role, landing only through `bin/fm-self-land.sh` under the home's grant, this section's keep-moving rule by pointer, and any domain hard rules.
+A lane owner's custom charter text names the repository, its delivery-owner role, landing only through `bin/fm-self-land.sh` (pending ticket V11) under the home's grant, this section's keep-moving rule by pointer, and any domain hard rules.
 Its registry `scope:` names delivery and landing for that repository, so intake routes the repository's new work there.
 Only the main firstmate changes a live lane owner's charter: replace the home's `data/charter.md` with the filled charter, update that mate's summary and `scope:` in `data/secondmates.md` with the generated suffix intact, and run `bin/fm-home-seed.sh validate`.
 Then relaunch it with `bin/fm-control.sh <id> relaunch` while its endpoint is live, or respawn it under Recovery below when it is dead; either launch reads `data/charter.md` fresh and never rewrites it.
-The change is in force when `bin/fm-health-verdict.sh --home <lane-home>` prints `verdict=ok` and the lane owner lands one approved pull request through `bin/fm-self-land.sh` while the main firstmate is idle.
+The change is in force when `bin/fm-health-verdict.sh --home <lane-home>` prints `verdict=ok` with `reason=fresh` and the lane owner lands one approved pull request through `bin/fm-self-land.sh` (pending ticket V11) while the main firstmate is idle.
 
 ## Recovery
 
