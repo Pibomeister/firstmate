@@ -68,10 +68,16 @@
 # FM_TEST_QUEUE_REMOTE_DISABLE=1 prevents recursive offloading there.
 # The transport snapshots the current Git checkout (shallow HEAD, tracked and
 # nonignored untracked files, including edits and deletions) into a private
-# remote temporary checkout over a compressed tar stream. Commands that need
-# older history must fetch it explicitly. Git, tar, Bash and test dependencies must already
-# exist remotely. Ignored dependencies, credentials and caller environment are
-# not copied. Worktree paths in argv are rewritten to the remote checkout;
+# remote temporary checkout. Rsync sends only changed data to a persistent
+# per-repository mirror in ~/.cache/firstmate/test-mirrors on each remote host.
+# Worktrees sharing a Git common directory reuse that mirror.
+# A private copy isolates each run from later syncs and test-written files.
+# A SHA-256 inventory verifies all paths, bytes, modes, symlinks and Git metadata
+# before admission; a mismatch falls back locally before any workload starts.
+# Mirror locks serialize preparations; busy or abandoned locks fall back locally.
+# Commands that need older history must fetch it explicitly. Git, rsync, Python 3,
+# Bash and test dependencies must already exist remotely (tar is local only).
+# Ignored dependencies, credentials and caller environment are not copied. Worktree paths in argv are rewritten to the remote checkout;
 # other absolute paths must be valid remotely. stdin/stdout/stderr and exit
 # status pass through. Once execution is attempted, an SSH error is returned,
 # never retried locally, because the remote workload may already have started.

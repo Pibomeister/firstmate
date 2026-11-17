@@ -1083,14 +1083,20 @@ offload_fixture_repo() {  # <dir> <origin-url>
   git -C "$1" remote add origin "$2"
 }
 
-fake_remote_ssh() {  # <path>: runs remote commands locally; FAIL_EXTRACT fails the upload
+fake_remote_ssh() {  # <path>: runs SSH and rsync against an isolated local mirror
   cat > "$1" <<'SH'
 #!/usr/bin/env bash
 while [ "${1:-}" = -o ]; do shift 2; done
 host=$1; shift
 printf '%s\n' "$host" >> "$SSH_LOG"
 [ "$host" != unreachable ] || exit 255
-case "$*" in *"tar -xzf"*) [ "${FAIL_EXTRACT:-}" != 1 ] || { cat >/dev/null; exit 1; } ;; esac
+case "$*" in
+  *"exec env FM_HOME="*)
+    printf '%s\n' "$*" >> "$SSH_LOG.executions"
+    [ "${FAIL_EXEC:-}" != 1 ] || exit 255 ;;
+esac
+export HOME="${SSH_LOG%/*}/remote-home"
+mkdir -p "$HOME"
 export FM_TEST_QUEUE_DIR="${SSH_LOG%/*}/remote-spool"
 export FM_TEST_QUEUE_LOAD_FILE="${SSH_LOG%/*}/remote-load"
 unset FM_TEST_QUEUE_HELD
@@ -1103,6 +1109,23 @@ except OSError:
 os.execvp("bash", ["bash", "-c", sys.argv[1]])' "$*"
 SH
   chmod +x "$1"
+  cat > "${1%/*}/rsync" <<'SH'
+#!/usr/bin/env bash
+[ "${1:-}" != --server ] || exec "$REAL_RSYNC" "$@"
+[ "${FAIL_EXTRACT:-}" != 1 ] || exit 1
+args=()
+while [ "$#" -gt 1 ]; do
+  if [ "$1" = -e ]; then shift 2; else args+=("$1"); shift; fi
+done
+dest=${1#*:}
+# Production quotes the remote path for the remote shell.
+dest=${dest#\'}; dest=${dest%\'}
+"$REAL_RSYNC" "${args[@]}" --stats "$dest" >> "$SSH_LOG.rsync" || exit
+if [ "${CORRUPT_SNAPSHOT:-}" = 1 ]; then printf stale > "$dest/repo/source"; fi
+SH
+  chmod +x "${1%/*}/rsync"
+  export REAL_RSYNC
+  REAL_RSYNC=$(command -v rsync)
 }
 
 test_unlisted_project_runs_locally_and_failed_upload_falls_back() {
@@ -1126,7 +1149,7 @@ test_unlisted_project_runs_locally_and_failed_upload_falls_back() {
   expect_code 5 "$rc" 'failed upload must run the suite locally, not report a failure'
   assert_equals "$(cd "$CASE/listed" && pwd -P)" "$(cd "$out" && pwd -P)" 'failed upload did not fall back to the local checkout'
   assert_grep 'no remote prepared; using local admission' "$CASE/listed.err" 'failed upload was not reported as a preparation failure'
-  assert_equals 3 "$(wc -l < "$SSH_LOG" | tr -d ' ')" 'failed upload must mint, upload, and remove the scratch exactly once'
+  assert_absent "$SSH_LOG.executions" 'failed upload started a remote command'
   line_is_empty || fail 'fallback run leaked local ticket'
   pass 'fm-test-queue.sh: offload is per-project opt-in; a failed upload runs locally'
 }
@@ -1156,7 +1179,11 @@ test_remote_offload_snapshot_and_failure() {
   assert_equals "changed|untracked|quote' and spaces|true" "$out" 'remote shallow snapshot and argv'
   assert_grep 'offloading to m3' "$CASE/stderr" 'load above eight must prefer reachable remote even below local ceiling'
   assert_grep unreachable "$SSH_LOG" 'the first configured host was not attempted'
-  assert_equals 5 "$(wc -l < "$SSH_LOG" | tr -d ' ')" 'test command failed remotely and was retried or cleanup was missed'
+  assert_equals 1 "$(wc -l < "$SSH_LOG.executions" | tr -d ' ')" 'failed remote command was retried'
+  python3 - "$SSH_LOG.executions" <<'PYTEST' || fail 'normal remote scratch was not cleaned'
+import os, shlex, sys
+assert not os.path.exists(shlex.split(open(sys.argv[1]).read())[1])
+PYTEST
   line_is_empty || fail 'remote command leaked local ticket'
   pass 'fm-test-queue.sh: high load offloads current source and preserves arguments and failure status'
 }
@@ -1218,6 +1245,82 @@ test_unreachable_remote_waits_locally_and_threshold_is_configurable() {
   pass 'fm-test-queue.sh: unreachable hosts preserve local admission; threshold is configurable'
 }
 
+test_remote_incremental_manifest_and_uncertain_run() {
+  local saved_path=$PATH out rc started elapsed mirror
+  new_case offload-incremental
+  mkdir -p "$CASE/fakebin"
+  offload_fixture_repo "$CASE/repo" https://example.invalid/owner/firstmate.git
+  printf original > "$CASE/repo/source"
+  printf removed > "$CASE/repo/deleted"
+  printf 'ignored\n' > "$CASE/repo/.gitignore"
+  # An unchanged, incompressible payload makes full retransfers observable.
+  dd if=/dev/urandom of="$CASE/repo/large" bs=1048576 count=4 2>/dev/null
+  git -C "$CASE/repo" add .
+  git -C "$CASE/repo" -c user.name=Tests -c user.email=tests@example.invalid commit -qm fixture
+  printf 'slots=1\nload_ceiling=150\nremote_hosts=m3\n' > "$FM_TEST_QUEUE_DIR/config"
+  echo 9 > "$CASE/load"
+  echo 1 > "$CASE/remote-load"
+  fake_remote_ssh "$CASE/fakebin/ssh"
+  export SSH_LOG="$CASE/ssh.log"
+  PATH="$CASE/fakebin:$PATH"
+  ( cd "$CASE/repo" && q run -- sh -c 'echo poison > source; echo junk > leaked' ) 2>"$CASE/cold.err" || fail 'cold offload'
+  printf committed > "$CASE/repo/committed"
+  git -C "$CASE/repo" add committed
+  git -C "$CASE/repo" -c user.name=Tests -c user.email=tests@example.invalid commit -qm advance
+  printf changed > "$CASE/repo/source"
+  rm "$CASE/repo/deleted"
+  printf extra > "$CASE/repo/extra space"
+  printf secret > "$CASE/repo/ignored"
+  ln -s source "$CASE/repo/link"
+  chmod +x "$CASE/repo/source"
+  : > "$SSH_LOG.rsync"
+  started=$(date +%s)
+  out=$( ( cd "$CASE/repo" && q run -- sh -c '[ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"' ) 2>"$CASE/warm.err") || fail 'warm offload'
+  elapsed=$(( $(date +%s) - started ))
+  assert_equals 'changed|extra' "$out" 'warm manifest snapshot'
+  assert_grep 'offloading to m3' "$CASE/warm.err" 'warm prepare fell back locally'
+  [ "$elapsed" -lt 30 ] || fail "warm offload took ${elapsed}s (limit 30s)"
+  python3 - "$SSH_LOG.rsync" <<'PYTEST' || fail 'warm upload retransferred unchanged payload'
+import re, sys
+text = open(sys.argv[1]).read()
+amounts = re.findall(r'(?:Literal|Unmatched) data: ([0-9,]+) (?:bytes|B)', text)
+assert amounts, text
+assert sum(int(n.replace(',', '')) for n in amounts) < 100000, text
+PYTEST
+  mirror=$(printf '%s\n' "$CASE/remote-home/.cache/firstmate/test-mirrors/"*)
+  mkdir "$mirror/lock"
+  out=$( ( cd "$CASE/repo" && q run -- pwd ) 2>"$CASE/busy.err") || fail 'busy mirror fallback'
+  assert_equals "$(cd "$CASE/repo" && pwd -P)" "$out" 'busy mirror did not run locally'
+  [ -d "$mirror/lock" ] || fail 'busy fallback removed another preparation lock'
+  rmdir "$mirror/lock"
+  out=$( ( cd "$CASE/repo" && CORRUPT_SNAPSHOT=1 q run -- pwd ) 2>"$CASE/mismatch.err") || fail 'manifest mismatch fallback'
+  assert_equals "$(cd "$CASE/repo" && pwd -P)" "$out" 'manifest mismatch did not run locally'
+  assert_grep 'no remote prepared' "$CASE/mismatch.err" 'manifest mismatch was accepted'
+  ( cd "$CASE/repo" && FAIL_EXEC=1 q run -- sh -c 'touch "$1/ran"' _ "$CASE" ) 2>"$CASE/uncertain.err"; rc=$?
+  expect_code 255 "$rc" 'uncertain SSH result'
+  assert_absent "$CASE/ran" 'uncertain remote execution retried locally'
+  assert_grep 'execution uncertain' "$CASE/uncertain.err" 'uncertain scratch was not preserved'
+  python3 - "$SSH_LOG.executions" <<'PYTEST' || fail 'uncertain scratch was removed'
+import os, shlex, shutil, sys
+path = shlex.split(open(sys.argv[1]).read().splitlines()[-1])[1]
+assert os.path.isdir(path), path
+# Only the fixture knows that this injected connection failure ran nothing.
+shutil.rmtree(os.path.dirname(path))
+PYTEST
+  PATH=$saved_path
+  pass "fm-test-queue.sh: warm delta verified in ${elapsed}s; mismatch falls back and uncertain execution does not"
+}
+
+if [ "${1:-}" = --remote-only ]; then
+  test_remote_incremental_manifest_and_uncertain_run
+  test_remote_offload_snapshot_and_failure
+  test_unreachable_remote_waits_locally_and_threshold_is_configurable
+  test_unlisted_project_runs_locally_and_failed_upload_falls_back
+  test_remote_straggler_cannot_hold_the_ssh_output
+  exit 0
+fi
+
+test_remote_incremental_manifest_and_uncertain_run
 test_help_and_usage
 test_remote_offload_snapshot_and_failure
 test_unreachable_remote_waits_locally_and_threshold_is_configurable
