@@ -95,15 +95,23 @@
 # can be freed early.
 # Stragglers: once the direct child has exited, members of a recorded leader
 # group that the workload left behind are ended (TERM, then KILL after a
-# 2-second grace) before the slot is released: by the wrapper on exit, or by
-# the next run that finds both the wrapper and its child dead. A straggler is
-# a group member other than the wrapper whose ancestry reaches the wrapper or
-# leaves the group through any process other than the recorded parent, such
-# as init after reparenting; pipeline stages the parent started beside the
-# wrapper are spared. A leaked background process holding the caller's
-# output therefore cannot hold a slot or keep the caller's pipe open. On a
-# remote host the queue replaces the SSH session's shell, so it leads the
-# session group there and the same rule closes the SSH output streams.
+# 2-second grace) before the slot is released. When a led group's command is
+# served, the wrapper starts a small holder in that group and records it with
+# the group members already present, which are the pipeline stages its parent
+# started beside it. The holder's membership keeps the group id from being
+# reused, so a group is only reaped while its continuity is proven: by the
+# wrapper on exit, by the holder itself once both the wrapper and child are
+# gone, or by the next run that finds the holder alive while both are dead.
+# A straggler is a group member other than the wrapper, the holder, or a
+# recorded pipeline stage and its own descendants, whose ancestry reaches the
+# wrapper or leaves the group through any process other than the recorded
+# parent, such as init after reparenting. Each signal goes only to a process
+# whose group and start time still match. Tickets without a holder, written
+# by an older queue, are never reaped. A leaked background process holding
+# the caller's output therefore cannot hold a slot or keep the caller's pipe
+# open. On a remote host the queue replaces the SSH session's shell, so it
+# leads the session group there and the same rule closes the SSH output
+# streams.
 # Dead lock owners and old locks without a usable owner record are recovered
 # only from the observed directory generation, after a 10-second grace period
 # for an uninitialized owner record.
@@ -301,14 +309,15 @@ lock_release() {
 
 # --- tickets ----------------------------------------------------------------
 # Each ticket is tickets/<10-digit number>, so lexical order is line order.
-# Fields: pid, start, child_pid, child_start, pgid, caller_pid, enqueued,
-# served, task, label. Readers ignore unknown fields, and a ticket without
-# caller_pid (written by an older queue) is read as having none.
-T_PID="" T_START="" T_CHILD_PID="" T_CHILD_START="" T_PGID="" T_CALLER="" T_ENQUEUED="" T_SERVED="" T_TASK="" T_LABEL=""
+# Fields: pid, start, child_pid, child_start, pgid, caller_pid, holder_pid,
+# holder_start, siblings, enqueued, served, task, label. siblings lists
+# pid@start words. Readers ignore unknown fields, and a field an older queue
+# did not write is read as empty.
+T_PID="" T_START="" T_CHILD_PID="" T_CHILD_START="" T_PGID="" T_CALLER="" T_HOLDER_PID="" T_HOLDER_START="" T_SIBLINGS="" T_ENQUEUED="" T_SERVED="" T_TASK="" T_LABEL=""
 
 ticket_read() {  # <file>
   local line k v
-  T_PID="" T_START="" T_CHILD_PID="" T_CHILD_START="" T_PGID="" T_CALLER="" T_ENQUEUED="" T_SERVED="" T_TASK="" T_LABEL=""
+  T_PID="" T_START="" T_CHILD_PID="" T_CHILD_START="" T_PGID="" T_CALLER="" T_HOLDER_PID="" T_HOLDER_START="" T_SIBLINGS="" T_ENQUEUED="" T_SERVED="" T_TASK="" T_LABEL=""
   [ -f "$1" ] || return 1
   while IFS= read -r line; do
     k=${line%%=*}
@@ -320,6 +329,9 @@ ticket_read() {  # <file>
       child_start) T_CHILD_START=$v ;;
       pgid) T_PGID=$v ;;
       caller_pid) T_CALLER=$v ;;
+      holder_pid) T_HOLDER_PID=$v ;;
+      holder_start) T_HOLDER_START=$v ;;
+      siblings) T_SIBLINGS=$v ;;
       enqueued) T_ENQUEUED=$v ;;
       served) T_SERVED=$v ;;
       task) T_TASK=$v ;;
@@ -330,8 +342,8 @@ ticket_read() {  # <file>
 
 ticket_write() {  # <file> ; writes the T_* fields atomically
   local tmp="$1.tmp.$$"
-  (umask 077; printf 'pid=%s\nstart=%s\nchild_pid=%s\nchild_start=%s\npgid=%s\ncaller_pid=%s\nenqueued=%s\nserved=%s\ntask=%s\nlabel=%s\n' \
-    "$T_PID" "$T_START" "$T_CHILD_PID" "$T_CHILD_START" "$T_PGID" "$T_CALLER" "$T_ENQUEUED" "$T_SERVED" "$T_TASK" "$T_LABEL" > "$tmp") &&
+  (umask 077; printf 'pid=%s\nstart=%s\nchild_pid=%s\nchild_start=%s\npgid=%s\ncaller_pid=%s\nholder_pid=%s\nholder_start=%s\nsiblings=%s\nenqueued=%s\nserved=%s\ntask=%s\nlabel=%s\n' \
+    "$T_PID" "$T_START" "$T_CHILD_PID" "$T_CHILD_START" "$T_PGID" "$T_CALLER" "$T_HOLDER_PID" "$T_HOLDER_START" "$T_SIBLINGS" "$T_ENQUEUED" "$T_SERVED" "$T_TASK" "$T_LABEL" > "$tmp") &&
     mv -f "$tmp" "$1"
 }
 
@@ -362,55 +374,87 @@ ticket_alive() {
   owner_alive "$T_PID" "$T_START" || workload_alive
 }
 
-# group_stragglers <pgid> <wrapper-pid> <caller-pid|empty>: prints the live
-# members of the wrapper's group that the header's straggler rule ends. Walk
-# each member's ancestry: reaching the wrapper makes it a descendant; leaving
-# the group through the recorded caller makes it a pipeline sibling to spare;
-# leaving through anything else (init, a subreaper) makes it an orphan. With
-# no recorded caller, only an orphan reparented to init counts.
-group_stragglers() {
+# group_snapshot: prints the probe's pid, then one "pid ppid pgid stat start"
+# line per process, the start time's words joined by "_" so one snapshot
+# names a process the same way every time.
+group_snapshot() {
+  printf '%s\n' "${BASHPID:-$(exec sh -c 'printf "%s" "$PPID"')}"
+  TZ=UTC LC_ALL=C exec ps -axo pid=,ppid=,pgid=,stat=,lstart=
+}
+
+# group_walk <siblings|stragglers> [<pid to leave out>]: classifies the live
+# members of the read ticket's group from one snapshot, printing pid@start
+# words. siblings lists the members that do not descend from the wrapper;
+# stragglers lists the header's straggler rule. The probe and its ancestors
+# (this reaper's own subshells) are never listed.
+group_walk() {
   local members
-  members=$(
-    printf '%s\n' "${BASHPID:-$(exec sh -c 'printf "%s" "$PPID"')}"
-    exec ps -axo pid=,ppid=,pgid=,stat=
-  ) || return 1
-  # The probe and its ancestors (this reaper's own subshells) are never listed.
-  awk -v g="$1" -v w="$2" -v c="${3:-}" '
+  members=$(group_snapshot) || return 1
+  awk -v mode="$1" -v out="${2:-}" -v g="$T_PGID" -v w="$T_PID" -v c="$T_CALLER" -v sib="$T_SIBLINGS" '
     NR == 1 { probe = $1; next }
-    { parent[$1] = $2; group[$1] = $3; state[$1] = $4 }
+    {
+      parent[$1] = $2; group[$1] = $3; state[$1] = $4
+      s = $5; for (i = 6; i <= NF; i++) s = s "_" $i
+      start[$1] = s
+    }
     END {
+      n = split(sib, list, " ")
+      for (i = 1; i <= n; i++) spared[list[i]] = 1
       for (q = probe; (q in parent) && !(q in self); q = parent[q]) self[q] = 1
       for (p in group) {
-        if (group[p] != g || p == w || (p in self) || state[p] ~ /^Z/) continue
-        q = parent[p]; hops = 0; keep = 0
+        if (group[p] != g || p == w || p == out || (p in self) || state[p] ~ /^Z/) continue
+        q = p; hops = 0; keep = 0; descends = 0
         while (hops++ < 4096) {
-          if (q == w) break
-          if (!(q in group) || group[q] != g) {
-            if (c != "") keep = (q == c); else keep = (q != 1)
-            break
-          }
-          q = parent[q]
+          if ((q "@" start[q]) in spared) { keep = 1; break }
+          r = parent[q]
+          if (r == w) { descends = 1; break }
+          if (!(r in group) || group[r] != g) { keep = (r == c); break }
+          q = r
         }
-        if (!keep) print p
+        if (mode == "siblings" ? !descends : !keep) print p "@" start[p]
       }
     }' <<< "$members"
 }
 
-# ticket_group_reapable <exit|stale>: whether the read ticket's recorded group
-# is the wrapper's own and its workload is over. exit is the wrapper itself on
-# the way out; stale is another run that found the wrapper pid gone.
+# signal_listed <signal> <pid@start...>: signals each listed process that is
+# still in the read ticket's group with the same start time. TERM is followed
+# by CONT so a stopped process acts on it.
+signal_listed() {
+  local sig=$1 members pids
+  shift
+  members=$(group_snapshot) || return 0
+  pids=$(awk -v want="$*" -v g="$T_PGID" '
+    BEGIN { n = split(want, list, " "); for (i = 1; i <= n; i++) listed[list[i]] = 1 }
+    NR == 1 { next }
+    {
+      s = $5; for (i = 6; i <= NF; i++) s = s "_" $i
+      if ($3 == g && ($1 "@" s) in listed) print $1
+    }' <<< "$members")
+  [ -n "$pids" ] || return 0
+  # shellcheck disable=SC2086 # One pid per word.
+  kill -"$sig" $pids 2>/dev/null
+  # shellcheck disable=SC2086 # One pid per word.
+  [ "$sig" != TERM ] || kill -CONT $pids 2>/dev/null
+}
+
+# ticket_group_reapable <exit|hold|stale>: whether the read ticket's recorded
+# group is the wrapper's own, its workload is over, and the caller can prove
+# the group was never reused. exit is the wrapper on the way out; hold is the
+# holder once the wrapper is gone; stale is another run that finds the wrapper
+# gone and the holder alive.
 ticket_group_reapable() {
   local caller_group
   is_uint "$T_PGID" && [ "$T_PGID" -gt 1 ] && [ "$T_PGID" = "$T_PID" ] || return 1
-  [ -n "$T_CHILD_PID" ] || return 1
+  is_uint "$T_HOLDER_PID" && [ -n "$T_CHILD_PID" ] || return 1
   ! owner_alive "$T_CHILD_PID" "$T_CHILD_START" || return 1
   case "$1" in
     exit) [ "$T_PID" = "$$" ] || return 1 ;;
+    hold) ! owner_alive "$T_PID" "$T_START" || return 1 ;;
     stale)
-      # A live process under the leader's pid is the wrapper or a reuse; a
-      # group id is never reused while the group still has members.
       ! kill -0 "$T_PID" 2>/dev/null || return 1
       [ "$(ps -p "$$" -o pgid= 2>/dev/null | tr -d '[:space:]')" != "$T_PGID" ] || return 1
+      owner_alive "$T_HOLDER_PID" "$T_HOLDER_START" || return 1
+      [ "$(ps -p "$T_HOLDER_PID" -o pgid= 2>/dev/null | tr -d '[:space:]')" = "$T_PGID" ] || return 1
       ;;
     *) return 1 ;;
   esac
@@ -420,26 +464,68 @@ ticket_group_reapable() {
   fi
 }
 
-# reap_stragglers: ends the read ticket's stragglers, TERM first, then KILL for
-# any still present after a 2-second grace; a few rounds catch late forks.
+# reap_stragglers [<holder pid>]: ends the read ticket's stragglers, TERM
+# first, then KILL for any still present after a 2-second grace. A holder pid
+# is spared until the stragglers are gone, then ended last. Returns nonzero
+# when a straggler outlasts its KILL.
 reap_stragglers() {
-  local pids sig=TERM round=0 i caller=""
-  is_uint "$T_CALLER" && [ "$T_CALLER" -gt 1 ] && caller=$T_CALLER
-  while [ "$round" -lt 3 ]; do
-    pids=$(group_stragglers "$T_PGID" "$T_PID" "$caller") || return 0
-    [ -n "$pids" ] || return 0
-    # shellcheck disable=SC2086 # One pid per word.
-    kill -"$sig" $pids 2>/dev/null
+  local holder=${1:-} list sig=TERM limit=20 i
+  while :; do
+    list=$(group_walk stragglers "$holder") || return 1
+    [ -n "$list" ] || break
+    # shellcheck disable=SC2086 # One pid@start per word.
+    signal_listed "$sig" $list
     i=0
-    while [ "$i" -lt 20 ]; do
+    while [ "$i" -lt "$limit" ]; do
       sleep 0.1
-      pids=$(group_stragglers "$T_PGID" "$T_PID" "$caller") || return 0
-      [ -n "$pids" ] || return 0
+      list=$(group_walk stragglers "$holder") || return 1
+      [ -n "$list" ] || break 2
       i=$((i + 1))
     done
-    sig=KILL
-    round=$((round + 1))
+    [ "$sig" = TERM ] || return 1
+    sig=KILL limit=10
   done
+  [ -n "$holder" ] || return 0
+  owner_alive "$holder" "$T_HOLDER_START" || return 0
+  kill "$holder" 2>/dev/null
+  kill -CONT "$holder" 2>/dev/null
+  i=0
+  while [ "$i" -lt 10 ] && owner_alive "$holder" "$T_HOLDER_START"; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+}
+
+# hold_group: the holder, started in the background when a led group's
+# command is served. Its membership keeps the group id reserved. It exits on
+# TERM, and if the wrapper dies without its cleanup it reaps the stragglers
+# itself once the child is gone.
+hold_group() {
+  local nap=""
+  trap '[ -z "$nap" ] || { kill "$nap" 2>/dev/null; kill -CONT "$nap" 2>/dev/null; wait "$nap" 2>/dev/null; }; exit 0' TERM
+  exec </dev/null >/dev/null 2>&1
+  while owner_alive "$T_PID" "$T_START"; do
+    sleep 2 & nap=$!
+    wait "$nap"
+    nap=""
+  done
+  ticket_read "$MY_TICKET" || exit 0
+  while owner_alive "$T_CHILD_PID" "$T_CHILD_START"; do
+    sleep 2 & nap=$!
+    wait "$nap"
+    nap=""
+  done
+  if ticket_group_reapable hold; then
+    reap_stragglers || true
+  fi
+  exit 0
+}
+
+stop_holder() {
+  [ -n "$HOLDER_PID" ] || return 0
+  ! owner_alive "$HOLDER_PID" "$T_HOLDER_START" || kill "$HOLDER_PID" 2>/dev/null
+  wait "$HOLDER_PID" 2>/dev/null
+  HOLDER_PID=""
 }
 
 reclaim_dead() {
@@ -447,7 +533,7 @@ reclaim_dead() {
   while IFS= read -r f; do
     ticket_read "$f" || continue
     if ticket_group_reapable stale; then
-      reap_stragglers
+      reap_stragglers "$T_HOLDER_PID" || true
     fi
     ticket_alive || rm -f "$f"
   done < <(ticket_files)
@@ -455,13 +541,17 @@ reclaim_dead() {
 
 # --- run --------------------------------------------------------------------
 MY_TICKET=""
+HOLDER_PID=""
 
 cleanup() {
   remote_cleanup
   if [ -n "$MY_TICKET" ]; then
     if ticket_read "$MY_TICKET"; then
-      if ticket_group_reapable exit; then
-        reap_stragglers
+      if ! owner_alive "$T_CHILD_PID" "$T_CHILD_START"; then
+        if ticket_group_reapable exit; then
+          reap_stragglers || true
+        fi
+        stop_holder
       fi
       workload_alive "$$" || rm -f "$MY_TICKET"
     fi
@@ -494,6 +584,7 @@ take_ticket() {  # <label>
   T_START=$(pid_start "$$")
   T_CHILD_PID=""
   T_CHILD_START=""
+  T_HOLDER_PID="" T_HOLDER_START="" T_SIBLINGS=""
   T_PGID=$(ps -p "$$" -o pgid= 2>/dev/null | tr -d '[:space:]')
   T_CALLER=$PPID
   # Record a group only when it is this wrapper's own: it leads the group
@@ -628,6 +719,10 @@ cmd_run() {
   done
 
   [ -z "$last" ] || echo "fm-test-queue: ticket $n served" >&2
+  if [ -n "$T_PGID" ]; then
+    hold_group &
+    HOLDER_PID=$!
+  fi
   (
     local child_pid
     child_pid=${BASHPID:-$(exec sh -c 'printf "%s" "$PPID"')} || exit 125
@@ -635,6 +730,11 @@ cmd_run() {
     ticket_read "$MY_TICKET" || die "cannot read ticket $n"
     T_CHILD_PID=$child_pid
     T_CHILD_START=$(pid_start "$child_pid")
+    if [ -n "$HOLDER_PID" ] && [ -n "$T_PGID" ]; then
+      T_HOLDER_PID=$HOLDER_PID
+      T_HOLDER_START=$(pid_start "$HOLDER_PID")
+      T_SIBLINGS=$(group_walk siblings | tr '\n' ' ')
+    fi
     ticket_write "$MY_TICKET" || die "cannot record child for ticket $n"
     lock_release
     export FM_TEST_QUEUE_HELD=$MY_TICKET

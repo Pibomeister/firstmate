@@ -325,8 +325,10 @@ test_led_group_straggler_is_reaped_and_frees_the_slot() {
   pass "fm-test-queue.sh: a leaked background child in the wrapper's own group is reaped and frees the slot"
 }
 
+# The holder is stopped before the child exits, so only the next run can do
+# the reaping.
 test_stale_led_group_straggler_is_reaped_by_the_next_run() {
-  local wrapper child straggler rc after
+  local wrapper child straggler rc after holder
   new_case stale-straggler
   echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
   CASE_RELEASES+=("$CASE/release-crashed")
@@ -345,8 +347,14 @@ test_stale_led_group_straggler_is_reaped_by_the_next_run() {
   child=$(cat "$CASE/child")
   CASE_PIDS+=("$wrapper" "$child")
   assert_grep "pgid=$wrapper" "$FM_TEST_QUEUE_DIR/tickets/0000000001" "the fixture wrapper did not record its own group"
+  holder=$(awk -F= '$1 == "holder_pid" { print $2 }' "$FM_TEST_QUEUE_DIR/tickets/0000000001")
+  [ -n "$holder" ] || fail "the served led group recorded no holder"
+  CASE_PIDS+=("$holder")
   kill -KILL "$wrapper"
   wait_until "wrapper gone" pid_gone "$wrapper"
+  # Stopped only now: a stopped member when the group is orphaned would get
+  # the kernel's hangup, and so would the child.
+  kill -STOP "$holder"
   status_has ' serving=1 ' || fail "a running child lost its slot when the wrapper died"
   release crashed
   wait_until "child left its straggler" file_exists "$CASE/straggler"
@@ -360,14 +368,125 @@ test_stale_led_group_straggler_is_reaped_by_the_next_run() {
   wait "$after"; rc=$?
   expect_code 0 "$rc" "a run behind a dead ticket's straggler"
   wait_until "stale straggler ended" pid_gone "$straggler"
+  wait_until "stopped holder ended" pid_gone "$holder"
   line_is_empty || fail "the dead ticket was not reclaimed"
   pass "fm-test-queue.sh: the next run reaps a dead wrapper's straggler and reclaims its slot"
+}
+
+# With no later run at all, the holder itself reaps a killed wrapper's
+# straggler once the child is gone, then exits.
+test_killed_wrapper_holder_reaps_without_a_next_run() {
+  local wrapper child straggler
+  new_case holder-reap
+  echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
+  CASE_RELEASES+=("$CASE/release-crashed")
+  CASE_PID_FILES+=("$CASE/straggler")
+  (
+    set -m
+    qbg run --label crashed -- sh -c 'echo $$ > "$1/child"
+      while [ ! -e "$1/release-crashed" ]; do sleep 0.05; done
+      sleep 100000 </dev/null >/dev/null 2>&1 & echo $! > "$1/straggler"' _ "$CASE" >/dev/null 2>&1 &
+    echo $! > "$CASE/wrapper"
+    wait
+  ) 2>/dev/null &
+  CASE_PIDS+=("$!")
+  wait_until "crashed command started" file_exists "$CASE/child"
+  wrapper=$(cat "$CASE/wrapper")
+  child=$(cat "$CASE/child")
+  CASE_PIDS+=("$wrapper" "$child")
+  kill -KILL "$wrapper"
+  wait_until "wrapper gone" pid_gone "$wrapper"
+  release crashed
+  wait_until "child left its straggler" file_exists "$CASE/straggler"
+  straggler=$(cat "$CASE/straggler")
+  wait_until "straggler ended with no later run" pid_gone "$straggler"
+  wait_until "nothing is left in the group" group_empty "$wrapper"
+  pass "fm-test-queue.sh: a killed wrapper's holder reaps its straggler with no later run"
+}
+
+# An unrelated job whose leader exits leaves a member behind in a group whose
+# id matches a dead ticket. Without a live holder in that group, nothing proves
+# the group is the ticket's, so its member must survive.
+test_reused_group_id_is_not_reaped() {
+  local group member dead now start holder
+  new_case reused-group
+  echo slots=2 > "$FM_TEST_QUEUE_DIR/config"
+  mkdir -p "$FM_TEST_QUEUE_DIR/tickets"
+  CASE_PID_FILES+=("$CASE/member")
+  (
+    set -m
+    sh -c 'sleep 100000 </dev/null >/dev/null 2>&1 & echo $! > "$1/member"' _ "$CASE" &
+    echo $! > "$CASE/group"
+    wait
+  ) 2>/dev/null
+  wait_until "unrelated member started" file_exists "$CASE/member"
+  group=$(cat "$CASE/group")
+  member=$(cat "$CASE/member")
+  assert_equals "$group" "$(ps -p "$member" -o pgid= | tr -d '[:space:]')" "the unrelated member left its job's group"
+  wait_until "unrelated leader gone" pid_gone "$group"
+  sh -c 'exit 0' & dead=$!
+  wait "$dead"
+  now=$(date +%s)
+  start=$(TZ=UTC LC_ALL=C ps -p "$$" -o lstart= | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+  # First the holder is a live process outside the group, then it is dead.
+  for holder in "$$ $start" "$dead dead"; do
+    printf 'pid=%s\nstart=dead\nchild_pid=%s\nchild_start=dead\npgid=%s\ncaller_pid=\nholder_pid=%s\nholder_start=%s\nsiblings=\nenqueued=%s\nserved=%s\ntask=\nlabel=reused-group\n' \
+      "$group" "$dead" "$group" "${holder%% *}" "${holder#* }" "$now" "$now" > "$FM_TEST_QUEUE_DIR/tickets/0000000001"
+    q run -- true 2>/dev/null || fail "a run beside the reused group failed"
+    kill -0 "$member" 2>/dev/null || fail "a run reaped a reused group it could not prove was its own (holder ${holder%% *})"
+  done
+  kill -KILL "$member" 2>/dev/null
+  pass "fm-test-queue.sh: a matching group id without a live holder in it is never reaped"
+}
+
+# A caller starts the pipeline as its own job, waits until it is served, and
+# exits, so its consumer is reparented away from the recorded caller. The
+# consumer was already in the group at serve time, so it is a recorded stage.
+test_pipeline_stage_outliving_its_caller_is_spared() {
+  local caller consumer
+  new_case orphaned-stage
+  echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
+  CASE_RELEASES+=("$CASE/release-stage")
+  CASE_PID_FILES+=("$CASE/consumer")
+  cat > "$CASE/caller.sh" <<'SH'
+set -m
+"$1" "$2" run --label stage -- sh -c 'cp "$FM_TEST_QUEUE_HELD" "$1/record"
+  while [ ! -e "$1/release-stage" ]; do sleep 0.05; done; echo stage-out' _ "$3" 2>/dev/null |
+  sh -c 'echo $$ > "$1/consumer"; cat; sleep 0.5; echo consumer-done' _ "$3" > "$3/stage.out" 2>/dev/null &
+while [ ! -s "$3/record" ]; do sleep 0.05; done
+SH
+  bash "$CASE/caller.sh" "$QBASH" "$QUEUE" "$CASE" </dev/null >/dev/null 2>&1 &
+  caller=$!
+  CASE_PIDS+=("$caller")
+  wait "$caller"
+  wait_until "consumer started" file_exists "$CASE/consumer"
+  consumer=$(cat "$CASE/consumer")
+  kill -0 "$consumer" 2>/dev/null || fail "the consumer ended before the run did"
+  [ "$(ps -p "$consumer" -o ppid= | tr -d '[:space:]')" != "$caller" ] || fail "the consumer still has its caller, so this case would be vacuous"
+  release stage
+  wait_until "the consumer finished after the run" grep -q consumer-done "$CASE/stage.out"
+  assert_equals "stage-out consumer-done" "$(tr '\n' ' ' < "$CASE/stage.out" | sed 's/ $//')" \
+    "the orphaned pipeline consumer lost output or was ended"
+  wait_until "the run released its slot" line_is_empty
+  pass "fm-test-queue.sh: a pipeline stage that outlives its caller is not reaped"
 }
 
 # group_members <pgid>: every live process still in that group.
 group_members() { ps -axo pgid=,stat=,args= 2>/dev/null | awk -v g="$1" '$1 == g && $2 !~ /^Z/'; }
 group_empty() { [ -z "$(group_members "$1")" ]; }
-group_has_sleep() { group_members "$1" | awk '$3 == "sleep" { found = 1 } END { exit !found }'; }
+# marked_fixture_running <suite pid>: whether any process anywhere still
+# carries that watchdog suite's fixture marker as its last argument. The
+# marker reaches awk through the environment, so the probe never matches.
+marked_fixture_running() {
+  ps -axo args= 2>/dev/null | WD_MARK="100000.$1" awk '"" $NF == "" ENVIRON["WD_MARK"] { found = 1 } END { exit !found }'
+}
+no_marked_fixture() { ! marked_fixture_running "$1"; }
+# suite_tmux_gone <suite pid>: whether that suite's private tmux server ended.
+suite_tmux_gone() {
+  ! ps -axo args= 2>/dev/null | WD_SOCKET="fm-watchdog-test-$1" awk '
+    { for (i = 1; i < NF; i++) if ($i == "-L" && $(i + 1) == ENVIRON["WD_SOCKET"]) found = 1 }
+    END { exit !found }'
+}
 
 # wait_long <seconds> <description> <command...>: wait_until with a longer bound.
 wait_long() {
@@ -382,36 +501,55 @@ wait_long() {
 
 # A representative watchdog case runs as its own job, so everything it starts
 # shares one group that must be empty once the suite is gone - after a normal
-# exit and after a kill too hard for the suite to clean up itself.
+# exit and after a kill too hard for the suite to clean up itself, both
+# directly and under the queue, whose cleanup of the dead run's group must
+# not end the suite's guardian before it sweeps.
 test_watchdog_fixtures_do_not_outlive_their_suite() {
-  local mode suite
+  local mode suite group
   if ! command -v tmux >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
     pass "fm-watchdog.test.sh fixtures: skipped, tmux or jq not found"
     return
   fi
   new_case watchdog-fixtures
-  for mode in exit kill; do
+  for mode in exit kill queued; do
     mkdir -p "$CASE/$mode-tmp"
-    (
-      set -m
-      TMPDIR="$CASE/$mode-tmp" bash "$ROOT/tests/fm-watchdog.test.sh" test_captain_record_follows_the_lock_owner \
-        > "$CASE/$mode.log" 2>&1 < /dev/null &
-      echo $! > "$CASE/$mode.suite"
-      wait
-    ) 2>/dev/null &
-    CASE_PIDS+=("$!")
-    wait_until "the $mode suite started" file_exists "$CASE/$mode.suite"
-    suite=$(cat "$CASE/$mode.suite")
-    CASE_PIDS+=("$suite")
-    if [ "$mode" = kill ]; then
-      wait_long 120 "a watchdog fixture started" group_has_sleep "$suite"
+    if [ "$mode" = queued ]; then
+      (
+        set -m
+        TMPDIR="$CASE/$mode-tmp" qbg run --label watchdog -- bash "$ROOT/tests/fm-watchdog.test.sh" \
+          test_captain_record_follows_the_lock_owner > "$CASE/$mode.log" 2>&1 < /dev/null &
+        echo $! > "$CASE/$mode.group"
+        wait
+      ) 2>/dev/null &
+      CASE_PIDS+=("$!")
+      wait_until "the $mode suite started" grep -qs '^child_pid=[0-9]' "$FM_TEST_QUEUE_DIR/tickets/0000000001"
+      group=$(cat "$CASE/$mode.group")
+      suite=$(awk -F= '$1 == "child_pid" { print $2 }' "$FM_TEST_QUEUE_DIR/tickets/0000000001")
+    else
+      (
+        set -m
+        TMPDIR="$CASE/$mode-tmp" bash "$ROOT/tests/fm-watchdog.test.sh" test_captain_record_follows_the_lock_owner \
+          > "$CASE/$mode.log" 2>&1 < /dev/null &
+        echo $! > "$CASE/$mode.suite"
+        wait
+      ) 2>/dev/null &
+      CASE_PIDS+=("$!")
+      wait_until "the $mode suite started" file_exists "$CASE/$mode.suite"
+      suite=$(cat "$CASE/$mode.suite")
+      group=$suite
+    fi
+    CASE_PIDS+=("$suite" "$group")
+    if [ "$mode" != exit ]; then
+      wait_long 120 "a marked watchdog fixture started" marked_fixture_running "$suite"
       kill -KILL "$suite"
     fi
     wait_long 300 "the $mode suite ended" pid_gone "$suite"
-    [ "$mode" = kill ] || assert_grep FM_TEST_COMPLETE "$CASE/$mode.log" "the watchdog case did not complete"
-    wait_long 30 "nothing outlived the $mode suite" group_empty "$suite"
+    [ "$mode" != exit ] || assert_grep FM_TEST_COMPLETE "$CASE/$mode.log" "the watchdog case did not complete"
+    wait_long 30 "nothing outlived the $mode suite" group_empty "$group"
+    wait_long 30 "no marked fixture outlived the $mode suite" no_marked_fixture "$suite"
+    wait_long 30 "the $mode suite's tmux server ended" suite_tmux_gone "$suite"
   done
-  pass "fm-watchdog.test.sh: no fixture outlives its suite, even one killed outright"
+  pass "fm-watchdog.test.sh: no fixture outlives its suite, even one killed outright or under the queue"
 }
 
 test_reused_child_pid_is_not_live() {
@@ -806,6 +944,9 @@ test_dead_owners_are_reclaimed
 test_unled_group_grandchildren_do_not_keep_the_slot
 test_led_group_straggler_is_reaped_and_frees_the_slot
 test_stale_led_group_straggler_is_reaped_by_the_next_run
+test_killed_wrapper_holder_reaps_without_a_next_run
+test_reused_group_id_is_not_reaped
+test_pipeline_stage_outliving_its_caller_is_spared
 test_remote_straggler_cannot_hold_the_ssh_output
 test_watchdog_fixtures_do_not_outlive_their_suite
 test_reused_child_pid_is_not_live

@@ -77,11 +77,12 @@ WD_FIXTURE_SLEEP="100000.$$"
 export WD_FIXTURE_SLEEP
 
 # reap_marked_fixtures: TERM every process whose last argument is this suite's
-# marker. The marker reaches awk through the environment, so the probe itself
-# never matches.
+# marker, compared as a string so 100000.12 never matches 100000.120. The
+# marker reaches awk through the environment, so the probe itself never
+# matches.
 reap_marked_fixtures() {
   local pids
-  pids=$(ps -axo pid=,args= 2>/dev/null | awk '$NF == ENVIRON["WD_FIXTURE_SLEEP"] { print $1 }')
+  pids=$(ps -axo pid=,args= 2>/dev/null | awk '"" $NF == "" ENVIRON["WD_FIXTURE_SLEEP"] { print $1 }')
   # shellcheck disable=SC2086 # One pid per word.
   [ -z "$pids" ] || kill $pids 2>/dev/null || true
 }
@@ -100,11 +101,14 @@ trap cleanup_watchdog_tests EXIT
 # suite process alone) would strand every fixture, reparented to init and
 # still holding whatever it inherited. A detached guardian outlives the suite,
 # holds none of its output, and sweeps the same fixtures once the suite's pid
-# (checked with its start time) is gone.
+# (checked with its start time) is gone. Job control puts it in its own
+# process group, so a kill aimed at the suite's group, such as the test queue
+# ending a dead run's stragglers, cannot end it before it sweeps.
 start_fixture_guardian() {
   local suite=$$ start
   start=$(ps -p "$suite" -o lstart= 2>/dev/null)
   (
+    set -m
     (
       exec </dev/null >/dev/null 2>&1
       trap '' HUP INT
@@ -114,7 +118,7 @@ start_fixture_guardian() {
       "$REAL_TMUX" -L "$SOCKET" kill-server || true
       reap_marked_fixtures
     ) &
-  )
+  ) 2>/dev/null
 }
 start_fixture_guardian
 
