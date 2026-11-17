@@ -6256,6 +6256,70 @@ restart-command=$TMP_ROOT/fake-captain.sh"
   pass "orphan pending rows and another owner's delivery cannot authorize heartbeat restart"
 }
 
+test_heartbeat_recovery_serializes_with_handoff_launch() {
+  local ready release holder n
+  make_home $'Captain session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=600
+restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  ready=$H/launch-ready
+  release=$H/launch-release
+  FM_HOME="$H" STATE="$H/state" bash -c '
+    . "$1/bin/fm-wake-lib.sh"
+    fm_lock_try_acquire "$2" || exit 1
+    : > "$3"
+    n=0
+    while [ ! -e "$4" ] && [ "$n" -lt 600 ]; do sleep 0.1; n=$((n + 1)); done
+    fm_lock_release "$2"
+  ' _ "$ROOT" "$H/state/.handoff-launch.lock" "$ready" "$release" &
+  holder=$!
+  n=0
+  while [ ! -e "$ready" ] && [ "$n" -lt 300 ]; do sleep 0.1; n=$((n + 1)); done
+  [ -e "$ready" ] || fail "the isolated launch owner did not acquire its lock"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "heartbeat recovery raced a launch before its claim existed"
+  : > "$release"
+  wait "$holder" || fail "the isolated launch owner did not release its lock"
+  run_wd 1100 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen restart pending)" "recovery did not resume after launch serialization cleared"
+  wait_pickup || fail "serialized recovery did not prove pickup"
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  pass "heartbeat recovery shares the existing launch lock before restarting"
+}
+
+test_heartbeat_recovery_respects_recent_wake_activity() {
+  make_home $'Captain session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=600
+restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  printf '%s\tack\tg1\t1\t1\t["handled"]\n' "$((BASE + 950))" > "$H/state/wake-ledger.tsv"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "a recent own wake acknowledgement was ignored"
+  assert_contains "$(act_rows "$H")" $'\twake-ack\t50' "the recent activity source was not observed"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "a responsive session was stopped"
+  pass "heartbeat recovery respects the newest verified session activity source"
+}
+
+test_heartbeat_recovery_requires_a_known_activity_source() {
+  make_home $'Captain session\n❯ \n  ? for shortcuts' 'heartbeat-frozen-secs=600
+restart=on
+restart-command=/bin/false'
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen detect held)" "the source-less heartbeat case was not observed"
+  assert_equals 0 "$(ledger_rows heartbeat-frozen nudge pending)" "unknown activity was treated as idle"
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "unknown activity authorized restart"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "a session with unknown activity was stopped"
+  pass "heartbeat recovery preserves main's verified activity-source requirement"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -6424,4 +6488,7 @@ fm_test_run \
   test_heartbeat_response_cannot_suppress_recovery_forever \
   test_heartbeat_recovery_preserves_the_running_turn_veto \
   test_heartbeat_dryrun_never_counts_as_delivery \
-  test_heartbeat_ignores_orphan_and_previous_owner_receipts
+  test_heartbeat_ignores_orphan_and_previous_owner_receipts \
+  test_heartbeat_recovery_serializes_with_handoff_launch \
+  test_heartbeat_recovery_respects_recent_wake_activity \
+  test_heartbeat_recovery_requires_a_known_activity_source
