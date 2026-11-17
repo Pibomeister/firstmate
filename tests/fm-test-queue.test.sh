@@ -19,24 +19,61 @@ CASE_RELEASES=()
 # Files a fixture writes its own pid into, so a failed case still ends it.
 CASE_PID_FILES=()
 
-reap_case_pids() {
+# case_pid_start <pid>: the process's start time, empty once it is gone.
+case_pid_start() { TZ=UTC LC_ALL=C ps -p "$1" -o lstart= 2>/dev/null | sed 's/^ *//; s/ *$//'; }
+# track_pids <pid>...: registers fixtures with their start time, so cleanup
+# never signals a process that later reused one of their pids.
+track_pids() {
   local p
+  for p in "$@"; do
+    [ -n "$p" ] && CASE_PIDS+=("$p@$(case_pid_start "$p")")
+  done
+}
+# case_pid_age <pid>: seconds the process has run, from ps etime.
+case_pid_age() {
+  ps -p "$1" -o etime= 2>/dev/null | awk '{
+    t = $1; d = 0
+    if (index(t, "-")) { d = substr(t, 1, index(t, "-") - 1); t = substr(t, index(t, "-") + 1) }
+    n = split(t, a, ":"); s = 0
+    for (i = 1; i <= n; i++) s = s * 60 + a[i]
+    print d * 86400 + s
+  }'
+}
+case_file_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
+
+# reap_case_pids: ends the current case's fixtures and retires their
+# registrations. A tracked pid is signalled only while its start time still
+# matches; a pid read from a fixture's file only while that process is at
+# least as old as the file, give or take the one-second clock granularity.
+reap_case_pids() {
+  local p e age mtime
   for p in "${CASE_RELEASES[@]:-}"; do
     [ -n "$p" ] && : > "$p"
   done
   for p in "${CASE_PID_FILES[@]:-}"; do
-    [ -n "$p" ] && [ -s "$p" ] && CASE_PIDS+=("$(cat "$p")")
+    [ -n "$p" ] && [ -s "$p" ] || continue
+    e=$(cat "$p")
+    case "$e" in '' | *[!0-9]*) continue ;; esac
+    age=$(case_pid_age "$e")
+    mtime=$(case_file_mtime "$p")
+    [ -n "$age" ] && [ -n "$mtime" ] || continue
+    [ $((age + 1)) -ge $(($(date +%s) - mtime)) ] && kill -KILL -- "$e" 2>/dev/null
   done
-  for p in "${CASE_PIDS[@]:-}"; do
-    [ -n "$p" ] && kill -KILL -- "$p" 2>/dev/null
+  for e in "${CASE_PIDS[@]:-}"; do
+    p=${e%%@*}
+    [ -n "$p" ] && [ "$p" != "$e" ] && [ -n "${e#*@}" ] || continue
+    [ "$(case_pid_start "$p")" = "${e#*@}" ] && kill -KILL -- "$p" 2>/dev/null
   done
   CASE_PIDS=()
   CASE_PID_FILES=()
+  CASE_RELEASES=()
 }
 trap 'reap_case_pids; fm_test_cleanup' EXIT
 
-# new_case <name>: a private spool, no config file, load 1, fast polling.
+# new_case <name>: a private spool, no config file, load 1, fast polling,
+# after ending the previous case's fixtures.
 new_case() {
+  reap_case_pids
   CASE="$TMP_ROOT/$1"
   mkdir -p "$CASE"
   echo 1 > "$CASE/load"
@@ -73,7 +110,7 @@ start_held() {  # <name> -> sets HELD_PID
   qbg run --label "$1" -- sh -c ': > "$1/started-$2"; while [ ! -e "$1/release-$2" ]; do sleep 0.05; done; echo "$2" >> "$1/order"' _ "$CASE" "$1" \
     2>>"$CASE/stderr" &
   HELD_PID=$!
-  CASE_PIDS+=("$HELD_PID")
+  track_pids "$HELD_PID"
 }
 
 release() { : > "$CASE/release-$1"; }
@@ -164,7 +201,7 @@ test_load_ceiling_holds_the_head() {
   echo 20.5 > "$CASE/load"
   qbg run -- sh -c 'echo ran > "$1/ran"' _ "$CASE" 2>"$CASE/stderr" &
   p=$!
-  CASE_PIDS+=("$p")
+  track_pids "$p"
   wait_until "load wait reported" grep -Fq "load 20.5 is not below 16" "$CASE/stderr"
   status_has '^waiting position=1 ' || fail "a run under high load is not shown waiting"
   assert_absent "$CASE/ran" "a run started while the load was above the ceiling"
@@ -224,10 +261,10 @@ test_dead_owners_are_reclaimed() {
   echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
   qbg run --label crashed -- sh -c 'echo $$ > "$1/child"; while [ ! -e "$1/release-crashed" ]; do sleep 0.05; done' _ "$CASE" 2>/dev/null &
   p=$!
-  CASE_PIDS+=("$p")
+  track_pids "$p"
   wait_until "crashed command started" file_exists "$CASE/child"
   child=$(cat "$CASE/child")
-  CASE_PIDS+=("$child")
+  track_pids "$child"
   group=$(ps -p "$p" -o pgid= | tr -d ' ')
   assert_equals "$group" "$(ps -p "$child" -o pgid= | tr -d ' ')" "command left its wrapper's job"
   assert_grep "child_pid=$child" "$FM_TEST_QUEUE_DIR/tickets/0000000001" "ticket did not persist its workload child"
@@ -246,7 +283,7 @@ test_dead_owners_are_reclaimed() {
   wait_until "holder served after survivor left" status_has '^serving .*label=holder$'
   qbg run --label ghost -- true 2>/dev/null &
   p=$!
-  CASE_PIDS+=("$p")
+  track_pids "$p"
   wait_until "ghost waiting" status_has '^waiting position=1 .*label=ghost$'
   kill -KILL "$p"; wait "$p" 2>/dev/null
   release holder
@@ -270,7 +307,7 @@ SH
   q run --label parent -- sh -c 'cp "$FM_TEST_QUEUE_HELD" "$1/record"; sh "$1/child.sh" "$1" & while [ ! -s "$1/descendant" ]; do sleep 0.05; done' _ "$CASE" 2>/dev/null
   wait_until "descendant started" file_exists "$CASE/descendant"
   child=$(cat "$CASE/descendant")
-  CASE_PIDS+=("$child")
+  track_pids "$child"
   kill -0 "$child" || fail "the grandchild did not survive its direct parent"
   assert_equals "" "$(awk -F= '$1 == "pgid" { print $2 }' "$CASE/record")" "nonleader wrapper recorded a shared group"
   line_is_empty || fail "an unrelated shared group kept the slot after wrapper and child exited"
@@ -304,7 +341,7 @@ test_led_group_straggler_is_reaped_and_frees_the_slot() {
     wait $!
     echo $? > "$CASE/leaky.rc"
   ) 2>>"$CASE/stderr" &
-  CASE_PIDS+=("$!")
+  track_pids "$!"
   wait_until "leaky run served" status_has '^serving .*label=leaky$'
   wait_until "leaky ticket recorded" file_exists "$CASE/record"
   leader=$(awk -F= '$1 == "pid" { print $2 }' "$CASE/record")
@@ -341,15 +378,15 @@ test_stale_led_group_straggler_is_reaped_by_the_next_run() {
     echo $! > "$CASE/wrapper"
     wait
   ) 2>/dev/null &
-  CASE_PIDS+=("$!")
+  track_pids "$!"
   wait_until "crashed command started" file_exists "$CASE/child"
   wrapper=$(cat "$CASE/wrapper")
   child=$(cat "$CASE/child")
-  CASE_PIDS+=("$wrapper" "$child")
+  track_pids "$wrapper" "$child"
   assert_grep "pgid=$wrapper" "$FM_TEST_QUEUE_DIR/tickets/0000000001" "the fixture wrapper did not record its own group"
   holder=$(awk -F= '$1 == "holder_pid" { print $2 }' "$FM_TEST_QUEUE_DIR/tickets/0000000001")
   [ -n "$holder" ] || fail "the served led group recorded no holder"
-  CASE_PIDS+=("$holder")
+  track_pids "$holder"
   kill -KILL "$wrapper"
   wait_until "wrapper gone" pid_gone "$wrapper"
   # Stopped only now: a stopped member when the group is orphaned would get
@@ -363,7 +400,7 @@ test_stale_led_group_straggler_is_reaped_by_the_next_run() {
   kill -0 "$straggler" 2>/dev/null || fail "the straggler did not outlive its parent, so this case would be vacuous"
   qbg run --label after -- sh -c 'echo after > "$1/after"' _ "$CASE" 2>/dev/null &
   after=$!
-  CASE_PIDS+=("$after")
+  track_pids "$after"
   wait_until "a run behind a dead ticket's straggler was served" file_exists "$CASE/after"
   wait "$after"; rc=$?
   expect_code 0 "$rc" "a run behind a dead ticket's straggler"
@@ -389,11 +426,11 @@ test_killed_wrapper_holder_reaps_without_a_next_run() {
     echo $! > "$CASE/wrapper"
     wait
   ) 2>/dev/null &
-  CASE_PIDS+=("$!")
+  track_pids "$!"
   wait_until "crashed command started" file_exists "$CASE/child"
   wrapper=$(cat "$CASE/wrapper")
   child=$(cat "$CASE/child")
-  CASE_PIDS+=("$wrapper" "$child")
+  track_pids "$wrapper" "$child"
   kill -KILL "$wrapper"
   wait_until "wrapper gone" pid_gone "$wrapper"
   release crashed
@@ -429,10 +466,10 @@ test_holder_waits_for_a_child_still_recording_itself() {
     echo $! > "$CASE/wrapper"
     wait
   ) 2>/dev/null &
-  CASE_PIDS+=("$!")
+  track_pids "$!"
   wait_until "the child is held inside its record" file_exists "$CASE/gate/blocked"
   wrapper=$(cat "$CASE/wrapper")
-  CASE_PIDS+=("$wrapper")
+  track_pids "$wrapper"
   kill -KILL "$wrapper"
   wait_until "wrapper gone" pid_gone "$wrapper"
   # Longer than the holder's 2-second poll, so a holder that gave up is gone.
@@ -461,12 +498,12 @@ test_wrapper_killed_mid_reap_leaves_the_holder_to_finish() {
     echo $! > "$CASE/wrapper"
     wait
   ) 2>/dev/null &
-  CASE_PIDS+=("$!")
+  track_pids "$!"
   wait_until "stubborn straggler started" file_exists "$CASE/straggler"
   wrapper=$(cat "$CASE/wrapper")
   child=$(cat "$CASE/child")
   straggler=$(cat "$CASE/straggler")
-  CASE_PIDS+=("$wrapper" "$child")
+  track_pids "$wrapper" "$child"
   wait_until "child exited" pid_gone "$child"
   # Inside the wrapper's 2-second grace after a TERM the straggler ignores.
   sleep 0.5
@@ -503,11 +540,11 @@ p.stdout.read()
 open(os.path.join(case, "output-closed"), "w").close()
 p.wait()
 PYCALLER
-  CASE_PIDS+=("$!")
+  track_pids "$!"
   wait_until "stubborn straggler started" file_exists "$CASE/straggler"
   wrapper=$(cat "$CASE/wrapper")
   straggler=$(cat "$CASE/straggler")
-  CASE_PIDS+=("$wrapper")
+  track_pids "$wrapper"
   wait_until "child exited" pid_gone "$(cat "$CASE/child")"
   sleep 0.5
   [ ! -e "$CASE/output-closed" ] || fail "the wrapper finished before it could be killed mid-reap"
@@ -532,10 +569,10 @@ test_process_substitution_under_an_execd_leader_is_spared() {
     echo $! > "$CASE/leader"
     wait
   ) 2>/dev/null &
-  CASE_PIDS+=("$!")
+  track_pids "$!"
   wait_until "the exec'd leader started" file_exists "$CASE/leader"
   leader=$(cat "$CASE/leader")
-  CASE_PIDS+=("$leader")
+  track_pids "$leader"
   wait_until "the exec'd run ended" pid_gone "$leader"
   wait_until "the consumer finished after the run" file_exists "$CASE/out"
   assert_equals 3 "$(cat "$CASE/out")" "the process substitution's consumer lost its input"
@@ -566,13 +603,13 @@ test_dead_holders_nap_is_not_a_caller_stage() {
     echo $! > "$CASE/wrapper"
     wait
   ) 2>/dev/null &
-  CASE_PIDS+=("$!")
+  track_pids "$!"
   wait_until "napping command started" file_exists "$CASE/child"
   wrapper=$(cat "$CASE/wrapper")
-  CASE_PIDS+=("$wrapper" "$(cat "$CASE/child")")
+  track_pids "$wrapper" "$(cat "$CASE/child")"
   wait_until "the run recorded its holder" holder_recorded "$FM_TEST_QUEUE_DIR/tickets/0000000001"
   wait_until "the holder naps" holder_nap "$HOLDER"
-  CASE_PIDS+=("$NAP")
+  track_pids "$NAP"
   kill -KILL "$HOLDER"
   : > "$CASE/fast-ps"
   kill -0 "$NAP" 2>/dev/null || fail "the nap ended before the run did, so nothing was tested"
@@ -609,10 +646,10 @@ EOF
     echo $! > "$CASE/wrapper"
     wait
   ) 2>/dev/null &
-  CASE_PIDS+=("$!")
+  track_pids "$!"
   wait_until "the run started" file_exists "$CASE/wrapper"
   wrapper=$(cat "$CASE/wrapper")
-  CASE_PIDS+=("$wrapper")
+  track_pids "$wrapper"
   wait_until "the command ran" file_exists "$CASE/out"
   [ -d "$CASE/ps-failed" ] || fail "the holder's start-time read never failed"
   wait_until "the run ended after an unread holder start" pid_gone "$wrapper"
@@ -641,10 +678,10 @@ test_failed_exit_snapshot_leaves_the_holder_to_retry() {
     echo $! > "$CASE/wrapper"
     wait
   ) 2>/dev/null &
-  CASE_PIDS+=("$!")
+  track_pids "$!"
   wait_until "the run started" file_exists "$CASE/wrapper"
   wrapper=$(cat "$CASE/wrapper")
-  CASE_PIDS+=("$wrapper")
+  track_pids "$wrapper"
   wait_until "the run left its straggler" file_exists "$CASE/straggler"
   straggler=$(cat "$CASE/straggler")
   wait_until "the run ended" pid_gone "$wrapper"
@@ -707,7 +744,7 @@ while [ ! -s "$3/record" ]; do sleep 0.05; done
 SH
   bash "$CASE/caller.sh" "$QBASH" "$QUEUE" "$CASE" </dev/null >/dev/null 2>&1 &
   caller=$!
-  CASE_PIDS+=("$caller")
+  track_pids "$caller"
   wait "$caller"
   wait_until "consumer started" file_exists "$CASE/consumer"
   consumer=$(cat "$CASE/consumer")
@@ -771,7 +808,7 @@ test_watchdog_fixtures_do_not_outlive_their_suite() {
         echo $! > "$CASE/$mode.group"
         wait
       ) 2>/dev/null &
-      CASE_PIDS+=("$!")
+      track_pids "$!"
       wait_until "the $mode suite started" grep -qs '^child_pid=[0-9]' "$FM_TEST_QUEUE_DIR/tickets/0000000001"
       group=$(cat "$CASE/$mode.group")
       suite=$(awk -F= '$1 == "child_pid" { print $2 }' "$FM_TEST_QUEUE_DIR/tickets/0000000001")
@@ -783,12 +820,12 @@ test_watchdog_fixtures_do_not_outlive_their_suite() {
         echo $! > "$CASE/$mode.suite"
         wait
       ) 2>/dev/null &
-      CASE_PIDS+=("$!")
+      track_pids "$!"
       wait_until "the $mode suite started" file_exists "$CASE/$mode.suite"
       suite=$(cat "$CASE/$mode.suite")
       group=$suite
     fi
-    CASE_PIDS+=("$suite" "$group")
+    track_pids "$suite" "$group"
     if [ "$mode" != exit ]; then
       wait_long 120 "a marked watchdog fixture started" marked_fixture_running "$suite"
       kill -KILL "$suite"
@@ -834,7 +871,7 @@ test_stale_lock_is_broken() {
   mkdir -p "$FM_TEST_QUEUE_DIR/lock"
   : > "$FM_TEST_QUEUE_DIR/lock/owner"
   qbg run -- true 2>/dev/null & p=$!
-  CASE_PIDS+=("$p")
+  track_pids "$p"
   sleep 0.3
   assert_absent "$FM_TEST_QUEUE_DIR/tickets/0000000003" "a fresh uninitialized lock bypassed its grace period"
   touch -t 200001010000 "$FM_TEST_QUEUE_DIR/lock"
@@ -907,7 +944,7 @@ test_lost_counter_cannot_jump_the_line() {
   rm -f "$FM_TEST_QUEUE_DIR/next"
   qbg run --label third -- sh -c 'echo third >> "$1/order"' _ "$CASE" 2>/dev/null &
   rc=$!
-  CASE_PIDS+=("$rc")
+  track_pids "$rc"
   wait_until "third waiting" status_has '^waiting position=2 .*label=third$'
   release first; release second
   wait "$holder" "$later" "$rc"
@@ -943,10 +980,10 @@ SH
   export RACE_CASE="$CASE" OBSERVED_PID=$$ REAL_PS="$real_ps" REAL_MV="$real_mv"
   export PATH="$CASE/fakebin:$PATH"
   TZ=America/Mexico_City RECLAIMER=B qbg run --label B -- true 2>"$CASE/B.err" & b=$!
-  CASE_PIDS+=("$b")
+  track_pids "$b"
   wait_until "B observed the stale owner" file_exists "$CASE/observed-B"
   TZ=UTC RECLAIMER=A qbg run --label A -- true 2>"$CASE/A.err" & a=$!
-  CASE_PIDS+=("$a")
+  track_pids "$a"
   wait_until "A holds the replacement lock" file_exists "$CASE/holding-A"
   : > "$CASE/allow-B"
   sleep 0.5
@@ -965,13 +1002,13 @@ test_contenders_in_different_timezones_share_ownership() {
   CASE_RELEASES+=("$CASE/release-utc")
   TZ=UTC qbg run --label utc -- sh -c 'echo "$TZ" > "$1/utc-tz"; echo $$ > "$1/child"; while [ ! -e "$1/release-utc" ]; do sleep 0.05; done' _ "$CASE" 2>/dev/null &
   holder=$!
-  CASE_PIDS+=("$holder")
+  track_pids "$holder"
   wait_until "UTC command started" file_exists "$CASE/child"
   child=$(cat "$CASE/child")
-  CASE_PIDS+=("$child")
+  track_pids "$child"
   TZ=America/Mexico_City qbg run --label mexico -- sh -c 'echo "$TZ" > "$1/mexico-tz"' _ "$CASE" 2>/dev/null &
   follower=$!
-  CASE_PIDS+=("$follower")
+  track_pids "$follower"
   TZ=America/Mexico_City wait_until "other timezone waits for wrapper" status_has '^waiting position=1 .*label=mexico$'
   assert_absent "$CASE/mexico-tz" "a timezone difference freed an occupied slot"
   kill -KILL "$holder"; wait "$holder" 2>/dev/null
@@ -1142,7 +1179,7 @@ test_remote_straggler_cannot_hold_the_ssh_output() {
     q run -- sh -c 'sleep 100000 & echo $! > "$1/straggler"; echo remote-done' _ "$CASE" 2>>"$CASE/stderr" | cat > "$CASE/out"
     echo $? > "$CASE/rc"
   ) 2>>"$CASE/stderr" &
-  CASE_PIDS+=("$!")
+  track_pids "$!"
   PATH=$saved_path
   wait_until 'remote run returned with its output closed' file_exists "$CASE/rc"
   straggler=$(cat "$CASE/straggler")
@@ -1166,7 +1203,7 @@ test_unreachable_remote_waits_locally_and_threshold_is_configurable() {
   offload_fixture_repo "$CASE/repo" https://example.invalid/owner/firstmate.git
   ( cd "$CASE/repo" && qbg run -- sh -c ': > "$1/ran"' _ "$CASE" ) 2>"$CASE/stderr" &
   p=$!
-  CASE_PIDS+=("$p")
+  track_pids "$p"
   wait_until 'unreachable remote fallback' grep -Fq 'no remote prepared; using local admission' "$CASE/stderr"
   assert_absent "$CASE/ran" 'unreachable hosts bypassed the local load ceiling'
   echo 1 > "$CASE/load"

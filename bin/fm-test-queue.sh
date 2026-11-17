@@ -558,8 +558,10 @@ hold_nap() {
   nap=""
 }
 
-# holder_is_ours: true while the holder is still one of this shell's unreaped
-# jobs, so its pid cannot belong to another process.
+# holder_is_ours: true while the holder is still listed among this shell's
+# jobs. A running or stopped job's pid cannot belong to another process; bash
+# 3.2 can list a job that something else killed a moment ago until its next
+# fork, which leaves only that brief pid-reuse window open.
 holder_is_ours() {
   case " $(jobs -p 2>/dev/null | tr '\n' ' ') " in
     *" $HOLDER_PID "*) return 0 ;;
