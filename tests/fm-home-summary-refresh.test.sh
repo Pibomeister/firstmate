@@ -484,6 +484,14 @@ PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   || fail "repeated lock timeout changed the best-effort caller result"
 [ "$(grep -c 'refresh exceeded its 1-second deadline' "$HOME_DIR/state/.home-summary-refresh.log" 2>/dev/null || true)" -ge 2 ] \
   || fail "repeated publication lock timeouts vanished from failure reporting"
+# A deadline hit while queued behind another refresh must name the lock wait.
+: > "$HOME_DIR/state/.home-summary-refresh.log"
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  FM_HOME_SUMMARY_TIMEOUT=3 "$WRITER" --best-effort \
+  || fail "a lock-wait timeout changed the best-effort caller result"
+grep -F 'refresh exceeded its 3-second deadline in stage lock-wait' \
+  "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "the lock wait was not named in the failure log: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
 kill "$LOCK_HOLDER_PID" >/dev/null 2>&1 || true
 wait "$LOCK_HOLDER_PID" >/dev/null 2>&1 || true
 LOCK_HOLDER_PID=
@@ -508,9 +516,9 @@ stage_nm_pid=$(cat "$STAGE_MARKER" 2>/dev/null || true)
 grep -F 'refresh exceeded its 3-second deadline in stage task-observation' \
   "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
   || fail "the slow stage was not named in the failure log: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
-grep -E 'stages: backlog@[0-9]+ task-observation@[0-9]+' \
+grep -E 'stages: lock-wait@[0-9]+ producer@[0-9]+ backlog@[0-9]+ task-observation@[0-9]+' \
   "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
-  || fail "the failure log did not list the stage offsets"
+  || fail "the failure log did not list the stage offsets: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
 cmp -s "$TMP_ROOT/stage-prior-ledger.json" "$HOME_DIR/state/home-summary.json" \
   || fail "a failed refresh replaced the last good ledger"
 [ "$(jq -r '.generated' "$HOME_DIR/state/home-summary.json")" = "$NOW_TWO" ] \
@@ -592,6 +600,43 @@ grep -F 'refresh exceeded its 1-second deadline' \
   "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
   || fail "publication validation timeout was not logged"
 pass "best-effort refresh bounds validation and publication"
+
+# A deadline hit while validating, or while publishing, must name that stage
+# rather than blaming the producer's last stage, and the offsets must share one
+# timeline that includes the worker's own stages.
+: > "$HOME_DIR/state/.home-summary-refresh.log"
+PATH="$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
+  "$WRITER" --best-effort \
+  || fail "a validation stage timeout changed the best-effort caller result"
+grep -F 'refresh exceeded its 3-second deadline in stage validate' \
+  "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "the validate stage was not named in the failure log: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+grep -E 'stages: lock-wait@[0-9]+ producer@[0-9]+ backlog@[0-9]+ .*summary@[0-9]+ validate@[0-9]+' \
+  "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "the stage list did not run lock-wait, producer, the producer's stages, then validate: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+PUBBIN="$TMP_ROOT/pub-hangbin"
+REAL_MV=$(command -v mv)
+mkdir -p "$PUBBIN"
+cat > "$PUBBIN/mv" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    */home-summary.json) sleep 30 ;;
+  esac
+done
+exec "$FM_TEST_REAL_MV" "$@"
+SH
+chmod +x "$PUBBIN/mv"
+: > "$HOME_DIR/state/.home-summary-refresh.log"
+PATH="$PUBBIN:$FAKEBIN:$PATH" FM_TEST_REAL_MV="$REAL_MV" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
+  "$WRITER" --best-effort \
+  || fail "a publish stage timeout changed the best-effort caller result"
+grep -F 'refresh exceeded its 3-second deadline in stage publish' \
+  "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "the publish stage was not named in the failure log: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+pass "a deadline names the lock-wait, validate and publish stages"
 
 MKBIN="$TMP_ROOT/mkdir-hangbin"
 REAL_MKDIR=$(command -v mkdir)

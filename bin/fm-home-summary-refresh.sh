@@ -25,6 +25,8 @@
 # per-attempt stage file (FM_SNAPSHOT_STAGE_LOG), and a failed attempt logs the
 # stage it was in plus the stage start offsets, so a slow stage is named in
 # state/.home-summary-refresh.log instead of a bare deadline.
+# The worker adds its own stages to that file: lock-wait, producer, validate and
+# publish, with the producer's stages between producer and validate.
 #
 # With --best-effort, a failure is appended to the bounded home-local
 # state/.home-summary-refresh.log when available, with stderr as the bounded
@@ -101,6 +103,14 @@ home_summary_cleanup() {
   fi
 }
 
+# Record that the worker entered <stage>, at its seconds since the worker
+# started, in the parent's stage file. Like the producer's own stage reports,
+# it appends only to a file that still exists.
+home_summary_stage() {  # <stage-name>
+  [ -n "${FM_SNAPSHOT_STAGE_LOG:-}" ] && [ -f "$FM_SNAPSHOT_STAGE_LOG" ] || return 0
+  printf '%s\t%s\n' "$1" "$SECONDS" >> "$FM_SNAPSHOT_STAGE_LOG" 2>/dev/null || true
+}
+
 home_summary_fail() {
   HOME_SUMMARY_ERROR=$1
   return 1
@@ -119,6 +129,7 @@ home_summary_refresh_once() {
   if [ "$HOME_SUMMARY_IF_IDLE" -eq 1 ]; then
     fm_lock_try_acquire "$REFRESH_LOCK" || return 0
   else
+    home_summary_stage lock-wait
     fm_lock_acquire_wait "$REFRESH_LOCK"
   fi
   HOME_SUMMARY_LOCK_HELD=1
@@ -131,7 +142,9 @@ home_summary_refresh_once() {
     return 1
   }
 
+  home_summary_stage producer
   if env \
+    FM_SNAPSHOT_STAGE_BASE="$SECONDS" \
     FM_ROOT_OVERRIDE="$FM_ROOT" \
     FM_HOME="$FM_HOME" \
     FM_STATE_OVERRIDE="$STATE" \
@@ -156,6 +169,7 @@ home_summary_refresh_once() {
   fi
   rm -f -- "$HOME_SUMMARY_ERR_TMP"
   HOME_SUMMARY_ERR_TMP=
+  home_summary_stage validate
   if ! jq -e --arg home "$FM_HOME" '
     .schema == "fm-secondmate-home-summary.v1"
     and .hold_classifier_schema == "fm-captain-hold-buckets.v1"
@@ -180,6 +194,7 @@ home_summary_refresh_once() {
     home_summary_fail "summary producer returned a malformed ledger document"
     return 1
   fi
+  home_summary_stage publish
   if ! chmod 600 "$HOME_SUMMARY_TMP" 2>/dev/null; then
     home_summary_fail "could not set the publication file mode"
     return 1
