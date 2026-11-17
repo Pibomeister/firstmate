@@ -875,15 +875,82 @@ test_worker_quota_uses_its_subject_and_source_home() {
   printf 'working [at=%s]: unrelated owner status\n' "$((T0 + 650))" > "$home/state/worker1.status"
   printf 'blocked [at=%s]: quota floor until reset\n' "$T0" > "$source/state/worker1.status"
   observe_ok "$home" "$((T0 + 700))"
-  assert_equals 1 "$(count_rows "$ledger" stall-open worker1)" "production worker prefix changed the task identity"
-  assert_equals 0 "$(count_rows "$ledger" stall-close worker1)" "another home's status recovered this worker"
+  assert_equals 1 "$(count_rows "$ledger" stall-open)" "the foreign worker was not recorded"
+  assert_equals 0 "$(count_rows "$ledger" stall-close)" "another home's status recovered this worker"
   printf 'working [at=%s]: back\n' "$((T0 + 900))" > "$source/state/worker1.status"
   observe_ok "$home" "$((T0 + 1000))"
   awk -F '\t' -v ended="$((T0 + 900))" '
-    $2 == "stall-close" && $3 == "worker" && $4 == "worker1" && $8 == ended { found = 1 }
+    $2 == "stall-close" && $3 == "worker" && $4 ~ /^home_[0-9]+_worker1$/ && $8 == ended { found = 1 }
     END { exit !found }
   ' "$ledger" || fail "the source home's worker status did not recover the episode"
   pass "worker-prefixed quota rows recover only from their source home's task status"
+}
+
+test_watchdog_recovery_respects_the_active_state_override() {
+  local home state ledger
+  home=$(new_home state-override)
+  state=$TMP_ROOT/override-state
+  mkdir -p "$state/watchdog"
+  ledger=$state/stall-ledger.tsv
+  printf '%s\n' "$T0" > "$state/.stall-ledger-born"
+  printf '%s\theld\t\tworker:worker1\tquota\tsuggest\theld\tqueued until reset\n' "$T0" > "$state/watchdog/actions.tsv"
+  printf 'blocked [at=%s]: quota floor until reset\n' "$T0" > "$state/worker1.status"
+  env FM_TEST_SEAM=1 FM_NOW="$((T0 + 700))" FM_STALL_LEDGER_MIN_SECS=0 \
+    FM_HOME="$home" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$home/data" \
+    /bin/bash "$CLI" observe || fail "state-override observation failed"
+  printf 'working [at=%s]: back\n' "$((T0 + 900))" > "$state/worker1.status"
+  env FM_TEST_SEAM=1 FM_NOW="$((T0 + 1000))" FM_STALL_LEDGER_MIN_SECS=0 \
+    FM_HOME="$home" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$home/data" \
+    /bin/bash "$CLI" observe || fail "state-override recovery failed"
+  assert_equals 1 "$(count_rows "$ledger" stall-close worker1)" "local recovery ignored the active state override"
+  pass "local watchdog recovery uses the documented active state override"
+}
+
+test_a_fresh_heartbeat_corroborates_the_actual_completion_time() {
+  local home ledger actions
+  home=$(new_home delayed-completion)
+  ledger=$(ledger_of "$home")
+  mkdir -p "$home/state/watchdog"
+  printf '%s\n' "$T0" > "$home/state/.stall-ledger-born"
+  actions=$home/state/watchdog/actions.tsv
+  printf '%s\theld\t\tprimary\tfrozen\trestart\theld\theld\n' "$((T0 + 700))" > "$actions"
+  write_hb "$home/state/heartbeat.json" "$T0"
+  observe_ok "$home" "$((T0 + 700))"
+  printf '%s\tdone\t\tprimary\tfrozen\trestart\tdone\trestarted\n' "$((T0 + 1750))" >> "$actions"
+  write_hb "$home/state/heartbeat.json" "$((T0 + 1750))"
+  observe_ok "$home" "$((T0 + 1900))"
+  observe_ok "$home" "$((T0 + 2000))"
+  assert_equals 1 "$(count_rows "$ledger" stall-open)" "one episode was duplicated after recovery"
+  assert_equals 1 "$(count_rows "$ledger" stall-close)" "one recovery was recorded more than once"
+  awk -F '\t' -v start="$T0" -v ended="$((T0 + 1750))" '
+    $2 == "stall-close" && $5 == start && $8 == ended && $9 == 1750 { found = 1 }
+    END { exit !found }
+  ' "$ledger" || fail "a verified recovery was delayed to observation time"
+  pass "fresh heartbeat evidence preserves the verified completion epoch without duplication"
+}
+
+test_same_worker_id_in_two_homes_has_separate_episodes() {
+  local home first second ledger actions source
+  home=$(new_home multi-home-owner)
+  first=$(new_home multi-home-first)
+  second=$(new_home multi-home-second)
+  ledger=$(ledger_of "$home")
+  mkdir -p "$home/state/watchdog"
+  printf '%s\n' "$T0" > "$home/state/.stall-ledger-born"
+  actions=$home/state/watchdog/actions.tsv
+  for source in "$first" "$second"; do
+    printf '%s\theld\t%s\tworker:worker1\tquota\tsuggest\theld\tqueued until reset\n' "$T0" "$source" >> "$actions"
+    printf 'blocked [at=%s]: quota floor until reset\n' "$T0" > "$source/state/worker1.status"
+  done
+  observe_ok "$home" "$((T0 + 700))"
+  assert_equals 2 "$(count_rows "$ledger" stall-open)" "same-ID workers in different homes were merged"
+  printf 'working [at=%s]: back\n' "$((T0 + 900))" > "$first/state/worker1.status"
+  observe_ok "$home" "$((T0 + 1000))"
+  assert_equals 1 "$(count_rows "$ledger" stall-close)" "one home's status recovered the other worker"
+  printf 'working [at=%s]: back\n' "$((T0 + 1100))" > "$second/state/worker1.status"
+  observe_ok "$home" "$((T0 + 1200))"
+  assert_equals 2 "$(count_rows "$ledger" stall-close)" "the second home did not recover independently"
+  pass "identical task IDs in two watched homes retain independent episode identities"
 }
 
 test_usage_and_unknown_commands() {
@@ -901,6 +968,9 @@ test_usage_and_unknown_commands() {
 }
 
 fm_test_run \
+  test_watchdog_recovery_respects_the_active_state_override \
+  test_a_fresh_heartbeat_corroborates_the_actual_completion_time \
+  test_same_worker_id_in_two_homes_has_separate_episodes \
   test_completed_watchdog_cannot_recover_a_stale_heartbeat \
   test_missing_secondmate_heartbeat_is_not_recovery \
   test_worker_quota_uses_its_subject_and_source_home \
