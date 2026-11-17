@@ -657,7 +657,7 @@ marker_mode() {
 
 # record_reset: the reset= word the hook published in state/compact-point.
 record_reset() {
-  sed -n 's/.* reset=\([a-z]*\)$/\1/p' "$PRIMARY/state/compact-point" 2>/dev/null
+  sed -n 's/.* reset=\([a-z]*\).*$/\1/p' "$PRIMARY/state/compact-point" 2>/dev/null
 }
 
 stop_rc() {  # <session> <transcript> [extra-payload-jq]
@@ -812,6 +812,86 @@ test_a_legacy_marker_gates_as_a_handoff() {
   pass "a marker from before compaction-first gates the stop as a handoff"
 }
 
+# A planned fresh start whose launch failed while this session kept the lock
+# releases the cycle's whole Stop gate, open orders included, and publishes
+# compaction as the reset; a record that is older than the firing or names
+# another lock holder releases nothing.
+test_a_failed_fresh_start_launch_releases_the_stop() {
+  local t="$TMP_ROOT/t-launch-failed" record="$PRIMARY/state/.handoff-launch-failed" holder at out
+  reset_lab
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.handoff-successor" "$record"
+  printf 'compact-at-tokens=100000\nfresh-start-after=0\n' > "$PRIMARY/config/handoff-trigger"
+  transcript "$t" 90000
+  sleep 60 &
+  holder=$!
+  printf '%s\n' "$holder" > "$PRIMARY/state/.lock"
+  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --from test "order during a failed launch" >/dev/null \
+    || fail "could not send the order fixture"
+  out=$(run_hook "$PRIMARY" s-lf "$t")
+  expect_mode "$out" handoff "the firing plans a fresh start"
+  assert_equals handoff "$(record_reset)" "before any launch fails the cycle publishes a handoff reset"
+  assert_equals 2 "$(stop_rc s-lf "$t")" "the fresh-start gate blocks before any launch fails"
+  at=$(sed -n '1s/^\([0-9][0-9]*\) .*/\1/p' "$PRIMARY/state/.handoff-trigger.s-lf.0")
+
+  printf 'at=%s pid=%s nonce=none attempt=1 reason=error\n' "$((at - 1))" "$holder" > "$record"
+  assert_equals 2 "$(stop_rc s-lf "$t")" "a failure recorded before this firing does not release it"
+  printf 'at=%s pid=%s nonce=none attempt=1 reason=error\n' "$at" "$((holder + 1))" > "$record"
+  assert_equals 2 "$(stop_rc s-lf "$t")" "a failure naming another lock holder does not release the gate"
+  printf 'at=%s pid=%s nonce=abc attempt=7 reason=error\n' "$at" "$holder" > "$record"
+  assert_equals 2 "$(stop_rc s-lf "$t")" "a malformed failure record does not release the gate"
+  ln -sf "$TMP_ROOT/absent" "$record.link"
+  rm -f "$record"
+  mv "$record.link" "$record"
+  assert_equals 2 "$(stop_rc s-lf "$t")" "a symlinked failure record does not release the gate"
+  rm -f "$record"
+
+  printf 'at=%s pid=%s nonce=%s attempt=2 reason=deadline\n' "$at" "$holder" "$(printf '%032d' 0)" > "$record"
+  assert_equals 0 "$(stop_rc s-lf "$t")" "a failed launch that left this session holding the lock releases the gate"
+  run_hook "$PRIMARY" s-lf "$t" >/dev/null
+  assert_equals compaction "$(record_reset)" "after a failed launch the cycle publishes a compaction reset"
+  assert_contains "$(lib_reset s-lf)" compaction "the watchdog's reader also sees auto-compaction"
+
+  # A launch that fails after this run chose its reset lands before the
+  # publication with an older epoch. The published snapshot itself, read
+  # before any later run, must already read as auto-compaction.
+  rm -f "$record"
+  mkdir -p "$TMP_ROOT/race-bin"
+  cat > "$TMP_ROOT/race-bin/mktemp" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  *compact-point.*) [ -e "$record" ] || printf 'at=%s pid=%s nonce=none attempt=1 reason=error\\n' "$at" "$holder" > "$record" ;;
+esac
+exec "$(command -v mktemp)" "\$@"
+EOF
+  chmod +x "$TMP_ROOT/race-bin/mktemp"
+  printf 'session=s-lf compact_at=100000 at=%s reset=handoff\n' "$((at + 5))" > "$PRIMARY/state/compact-point"
+  # The publication must land in a later second than the recorded failure.
+  while [ "$(date +%s)" -le "$at" ]; do sleep 0.2; done
+  HOOK_ENV="PATH=$TMP_ROOT/race-bin:$PATH" run_hook "$PRIMARY" s-lf "$t" >/dev/null
+  [ -e "$record" ] || fail "the race seam must record the failure during the publication"
+  assert_equals handoff "$(record_reset)" "the run chose its handoff reset before the failure landed"
+  assert_contains "$(cat "$PRIMARY/state/compact-point")" " cycle=$at" "a fired handoff reset names its cycle by the marker epoch"
+  [ "$(sed -n 's/.* at=\([0-9]*\) reset=.*/\1/p' "$PRIMARY/state/compact-point")" -gt "$at" ] \
+    || fail "the publication must postdate the recorded failure for this race"
+  assert_contains "$(lib_reset s-lf)" compaction "that very snapshot reads as auto-compaction, bound to its cycle"
+  run_hook "$PRIMARY" s-lf "$t" >/dev/null
+  assert_equals compaction "$(record_reset)" "the next run publishes the compaction reset itself"
+
+  # A later launch removes the record, and the gate applies again.
+  rm -f "$record"
+  assert_equals 2 "$(stop_rc s-lf "$t")" "without the record the gate blocks again"
+  run_hook "$PRIMARY" s-lf "$t" >/dev/null
+  assert_equals handoff "$(record_reset)" "without the record the cycle publishes a handoff reset again"
+  kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.lock" "$PRIMARY/state/compact-point"
+  pass "a failed fresh-start launch releases the cycle's Stop gate and falls back to auto-compaction"
+}
+
+# lib_reset <session>: the reset the watchdog's context reader names for it.
+lib_reset() {
+  bash -c '. "$1/bin/fm-context-reading-lib.sh"; fm_context_reset_for_session "$2" "$3"' _ "$ROOT" "$PRIMARY" "$1"
+}
+
 wait_for_file() {  # <path> <tenths>
   local n=0
   while [ ! -e "$1" ] && [ "$n" -lt "$2" ]; do sleep 0.1; n=$((n + 1)); done
@@ -826,6 +906,7 @@ test_a_capture_cancelled_while_building_its_output_fires_on_the_next_run
 test_fresh_start_after_n_compactions
 test_fresh_start_on_high_context_after_compaction
 test_a_legacy_marker_gates_as_a_handoff
+test_a_failed_fresh_start_launch_releases_the_stop
 test_threshold_configurable
 test_fires_once_per_context_cycle
 test_rearms_after_compaction
