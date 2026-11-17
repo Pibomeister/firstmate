@@ -2447,37 +2447,57 @@ restart-command=$TMP_ROOT/fake-captain.sh"
 }
 
 # A fresh-start launch that fails between the pass's observation and its
-# restart leaves the session supervising with auto-compaction as its reset,
-# so the restart boundary re-reads the reset and stops nobody.
+# restart leaves the session supervising with auto-compaction as its reset.
+# The watchdog takes the launcher's own launch lock before it re-reads the
+# reset, so a launch under way, or one that just failed, stops nobody.
 test_low_context_restart_rechecks_a_failed_launch() {
-  local seam="$TMP_ROOT/od-seam"
+  local seam="$TMP_ROOT/ln-seam" launcher i
   make_home $'Captain session\n> \n  7% until auto-compact' "restart=on
 handoff-wait-secs=600
 restart-command=$TMP_ROOT/fake-captain.sh"
   write_fake_captain
   transcript 3000 "Working." "Testing." "Green."
   printf 'session=%s compact_at=100000 at=%s reset=handoff\n' "$SID" "$BASE" > "$H/state/compact-point"
-  mkdir -p "$seam"
-  # The restart token read is the last step before the restart: record the
-  # failed launch there, after the pass observed the handoff reset.
-  cat > "$seam/od" <<EOF
-#!/usr/bin/env bash
-case "\$*" in
-  *-N8*) printf 'at=%s pid=%s nonce=none attempt=2 reason=deadline\\n' "$BASE" "$LOCKPID" > "$H/state/.handoff-launch-failed" ;;
-esac
-exec "$(command -v od)" "\$@"
-EOF
-  chmod +x "$seam/od"
   FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows handoff-request nudge pending)" "a handoff cycle at low context asks for a handoff"
-  PATH="$seam:$PATH" FM_WD_TEST_COMPOSER=empty run_wd 700 once >/dev/null 2>&1
-  assert_equals 1 "$(ledger_rows restart-requested restart refused)" "the restart boundary refuses once the launch failed: $(ledger | cut -f5-8)"
-  assert_equals 0 "$(ledger_rows restart-requested restart pending)" "no restart starts after a failed launch"
+
+  # A launcher holds its launch lock: the restart waits for it.
+  bash -c '. "$1/bin/fm-wake-lib.sh"; fm_lock_try_acquire "$2/state/.handoff-launch.lock" || exit 1; : > "$2/launcher-ready"; sleep 60' \
+    _ "$ROOT" "$H" &
+  launcher=$!
+  i=0
+  while [ ! -e "$H/launcher-ready" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -e "$H/launcher-ready" ] || fail "the launcher fixture never took its lock"
+  FM_WD_TEST_COMPOSER=empty run_wd 700 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart pending)" "no restart while a fresh-start launch is under way: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows restart-requested restart refused)" "a held restart is a gap, not a rate-counted restart row"
+  assert_grep "a fresh-start launch is under way" "$H/data/watchdog/status.md" "the held restart is a reported gap"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "the session was stopped during a launch"
+  kill "$launcher" 2>/dev/null; wait "$launcher" 2>/dev/null || true
+  rm -rf "$H/state/.handoff-launch.lock"
+
+  # The launch fails just before the watchdog takes the lock, after the pass
+  # observed the handoff reset: the re-read under the lock sees it.
+  mkdir -p "$seam"
+  cat > "$seam/ln" <<EOF
+#!/usr/bin/env bash
+case "\${*: -1}" in
+  */.handoff-launch.lock) printf 'at=%s pid=%s nonce=none attempt=2 reason=deadline\\n' "$BASE" "$LOCKPID" > "$H/state/.handoff-launch-failed" ;;
+esac
+exec "$(command -v ln)" "\$@"
+EOF
+  chmod +x "$seam/ln"
+  [ ! -e "$H/state/.handoff-launch-failed" ] || fail "the failure record must land during the pass"
+  PATH="$seam:$PATH" FM_WD_TEST_COMPOSER=empty run_wd 750 once >/dev/null 2>&1
+  [ -e "$H/state/.handoff-launch-failed" ] || fail "the seam never recorded the failed launch"
+  assert_equals 0 "$(ledger_rows restart-requested restart pending)" "no restart starts after a failed launch: $(ledger | cut -f5-8)"
+  assert_grep "left this cycle to auto-compaction" "$H/data/watchdog/status.md" "the refused restart is a reported gap"
+  [ ! -e "$H/state/.handoff-launch.lock" ] && [ ! -L "$H/state/.handoff-launch.lock" ] || fail "the watchdog left the launch lock held"
   kill -0 "$LOCKPID" 2>/dev/null || fail "the surviving session was stopped"
   FM_WD_TEST_COMPOSER=empty run_wd 800 once >/dev/null 2>&1
   assert_equals 0 "$(ledger_rows restart-requested restart pending)" "a later pass reads auto-compaction and restarts nobody"
   kill -0 "$LOCKPID" 2>/dev/null || fail "a later pass stopped the surviving session"
-  pass "low context: a fresh-start launch that fails before the restart leaves the session running"
+  pass "low context: a fresh-start launch under way or just failed leaves the session running"
 }
 
 test_low_context_second_episode_asks_again() {

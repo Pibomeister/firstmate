@@ -195,6 +195,11 @@ test_a_failed_launch_reads_as_compaction() {
   printf 'at=%s pid=%s nonce=none attempt=1 reason=error\n' "$BASE" "$holder" > "$home/state/.handoff-launch-failed"
   printf 'session=s-lf compact_at=100000 at=%s reset=handoff\n' "$((BASE + 1))" > "$home/state/compact-point"
   assert_equals handoff "$(lib fm_context_reset_for_session "$home" s-lf)" "a handoff reset published after the failure stands"
+  printf 'session=s-lf compact_at=100000 at=%s reset=handoff cycle=%s\n' "$((BASE + 9))" "$BASE" > "$home/state/compact-point"
+  assert_equals compaction "$(lib fm_context_reset_for_session "$home" s-lf)" "a later publication of the failed cycle still reads as compaction"
+  assert_equals 100000 "$(lib fm_context_window_for_session "$home" s-lf)" "a record with a cycle still yields its compact point"
+  printf 'session=s-lf compact_at=100000 at=%s reset=handoff cycle=%s\n' "$((BASE + 9))" "$((BASE + 1))" > "$home/state/compact-point"
+  assert_equals handoff "$(lib fm_context_reset_for_session "$home" s-lf)" "a failure from before the cycle leaves the handoff reset"
   printf 'session=s-lf compact_at=100000 at=%s reset=compaction\n' "$((BASE + 1))" > "$home/state/compact-point"
   assert_equals compaction "$(lib fm_context_reset_for_session "$home" s-lf)" "a compaction reset is unchanged by a failure record"
   kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null || true

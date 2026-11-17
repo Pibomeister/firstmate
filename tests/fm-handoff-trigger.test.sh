@@ -657,7 +657,7 @@ marker_mode() {
 
 # record_reset: the reset= word the hook published in state/compact-point.
 record_reset() {
-  sed -n 's/.* reset=\([a-z]*\)$/\1/p' "$PRIMARY/state/compact-point" 2>/dev/null
+  sed -n 's/.* reset=\([a-z]*\).*$/\1/p' "$PRIMARY/state/compact-point" 2>/dev/null
 }
 
 stop_rc() {  # <session> <transcript> [extra-payload-jq]
@@ -851,8 +851,9 @@ test_a_failed_fresh_start_launch_releases_the_stop() {
   assert_equals compaction "$(record_reset)" "after a failed launch the cycle publishes a compaction reset"
   assert_contains "$(lib_reset s-lf)" compaction "the watchdog's reader also sees auto-compaction"
 
-  # A launch that fails after this run chose its reset but records an epoch
-  # older than the publication still ends in a compaction reset.
+  # A launch that fails after this run chose its reset lands before the
+  # publication with an older epoch. The published snapshot itself, read
+  # before any later run, must already read as auto-compaction.
   rm -f "$record"
   mkdir -p "$TMP_ROOT/race-bin"
   cat > "$TMP_ROOT/race-bin/mktemp" <<EOF
@@ -868,8 +869,13 @@ EOF
   while [ "$(date +%s)" -le "$at" ]; do sleep 0.2; done
   HOOK_ENV="PATH=$TMP_ROOT/race-bin:$PATH" run_hook "$PRIMARY" s-lf "$t" >/dev/null
   [ -e "$record" ] || fail "the race seam must record the failure during the publication"
-  assert_equals compaction "$(record_reset)" "a failure recorded during the publication still publishes a compaction reset"
-  assert_contains "$(lib_reset s-lf)" compaction "the watchdog's reader also sees auto-compaction after the race"
+  assert_equals handoff "$(record_reset)" "the run chose its handoff reset before the failure landed"
+  assert_contains "$(cat "$PRIMARY/state/compact-point")" " cycle=$at" "a fired handoff reset names its cycle by the marker epoch"
+  [ "$(sed -n 's/.* at=\([0-9]*\) reset=.*/\1/p' "$PRIMARY/state/compact-point")" -gt "$at" ] \
+    || fail "the publication must postdate the recorded failure for this race"
+  assert_contains "$(lib_reset s-lf)" compaction "that very snapshot reads as auto-compaction, bound to its cycle"
+  run_hook "$PRIMARY" s-lf "$t" >/dev/null
+  assert_equals compaction "$(record_reset)" "the next run publishes the compaction reset itself"
 
   # A later launch removes the record, and the gate applies again.
   rm -f "$record"

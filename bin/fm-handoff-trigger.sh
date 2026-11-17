@@ -53,12 +53,14 @@
 # PUBLISHED POINT. On each PostToolUse or UserPromptSubmit run with a session
 # id and a transcript, whatever percent-left says, the hook writes the point it
 # resolved to state/compact-point as one line,
-#   session=<id> compact_at=<tokens> at=<epoch> reset=compaction|handoff
+#   session=<id> compact_at=<tokens> at=<epoch> reset=compaction|handoff [cycle=<epoch>]
 # with an atomic rename, so a reader outside the session (the watchdog, through
 # bin/fm-context-reading-lib.sh) uses the same window and knows whether this
 # cycle ends in auto-compaction or in a planned fresh start. A fresh start whose
 # successor launch failed in this cycle, with this session still holding the
 # lock, publishes reset=compaction, because auto-compaction is then its reset.
+# A handoff reset whose fresh start already fired adds cycle=<epoch>, the
+# trigger marker's epoch, which a failure record must not predate.
 # A run that resolves no point removes a record that names its session. The
 # record never changes this hook's own decision.
 #
@@ -186,7 +188,7 @@ publish_compact_point() {
   fi
   tmp=$(mktemp "$record.XXXXXX" 2>/dev/null) || return 0
   if printf 'session=%s compact_at=%s at=%s%s\n' "$SESSION_ID" "$COMPACT_AT" "$(date +%s)" \
-    "${RESET:+ reset=$RESET}" > "$tmp" && mv -f "$tmp" "$record"; then
+    "${RESET:+ reset=$RESET}${CYCLE:+ cycle=$CYCLE}" > "$tmp" && mv -f "$tmp" "$record"; then
     return 0
   fi
   rm -f "$tmp"
@@ -213,11 +215,14 @@ fi
 # marker_launch_failed: this cycle fired a fresh start whose successor launch
 # then failed while this session kept the lock (bin/fm-handoff-lib.sh owns the
 # record and fm_handoff_launch_failed_since), so the cycle no longer hands off.
+marker_epoch() {
+  [ -n "$MARKER" ] && [ -f "$MARKER" ] || return 1
+  sed -n '1s/^\([0-9][0-9]*\) .*/\1/p' "$MARKER" 2>/dev/null | grep .
+}
 marker_launch_failed() {
   local at
-  [ -n "$MARKER" ] && [ -f "$MARKER" ] && [ -e "$STATE/.handoff-launch-failed" ] || return 1
-  at=$(sed -n '1s/^\([0-9][0-9]*\) .*/\1/p' "$MARKER" 2>/dev/null)
-  [ -n "$at" ] || return 1
+  [ -e "$STATE/.handoff-launch-failed" ] || return 1
+  at=$(marker_epoch) || return 1
   # shellcheck source=bin/fm-handoff-lib.sh
   . "$SCRIPT_DIR/fm-handoff-lib.sh"
   fm_handoff_launch_failed_since "$STATE" "$at"
@@ -310,10 +315,16 @@ fi
 
 # The published reset: a fresh start whose launch failed in this cycle falls
 # back to auto-compaction, the reset the surviving session now gets.
+# A handoff reset names its cycle by the marker's epoch once the fresh start
+# fired, so a reader judges a failure record against the cycle, not against
+# when this run happened to publish.
 RESET=
+CYCLE=
 case "$MODE" in
   capture) RESET=compaction ;;
-  handoff) RESET=handoff; ! marker_launch_failed || RESET=compaction ;;
+  handoff)
+    RESET=handoff
+    if marker_launch_failed; then RESET=compaction; else CYCLE=$(marker_epoch) || CYCLE=; fi ;;
 esac
 
 # shellcheck source=bin/fm-compact-point-lib.sh
@@ -322,13 +333,6 @@ COMPACT_AT=
 [ -z "$SESSION_ID" ] || [ -z "$TRANSCRIPT" ] ||
   COMPACT_AT=$(fm_compact_at_tokens "$TRANSCRIPT" "$CONFIG/handoff-trigger") || COMPACT_AT=
 publish_compact_point
-# A launch that failed after RESET was chosen may carry an epoch older than
-# this publication, which the reader would then reject. Check again now: a
-# failure recorded later carries an epoch at or after this publication.
-if [ "$RESET" = handoff ] && [ -n "$COMPACT_AT" ] && marker_launch_failed; then
-  RESET=compaction
-  publish_compact_point
-fi
 
 [ "$PERCENT" -gt 0 ] || exit 0
 [ -n "$MARKER" ] || exit 0

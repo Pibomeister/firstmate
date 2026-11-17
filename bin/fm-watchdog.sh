@@ -1214,9 +1214,34 @@ wd_write_handoff() {  # <symptom> -> prints path
 }
 
 wd_restart() {  # <symptom> <kind>...
-  local symptom=$1 id handoff token cmd yolo_cmd yolo_note prompt pid i sess
+  local symptom=$1 launch_lock='' rc=0
   shift
   wd_restart_gate "$symptom" "$@" || return 0
+  # A low-context restart rests on the reset observed earlier in this pass.
+  # The fresh-start launcher records a failure while it holds its launch lock,
+  # so hold that lock from the reset's re-read through the restart: no launch
+  # is under way, and one that failed has already left auto-compaction as the
+  # surviving session's reset. Both refusals are gaps, not restart rows, so
+  # they never hold a later restart behind the restart rate.
+  if [ "$symptom" = restart-requested ] && [ "$O_RESTART_REQ" != 1 ]; then
+    if ! fm_lock_try_acquire "$O_HOME/state/.handoff-launch.lock"; then
+      wd_gap "$symptom held; a fresh-start launch is under way"
+      return 0
+    fi
+    launch_lock=$O_HOME/state/.handoff-launch.lock
+    if [ "$(fm_context_reset_for_session "$O_HOME" "$O_SESSION")" = compaction ]; then
+      fm_lock_release "$launch_lock"
+      wd_gap "$symptom held; a failed fresh-start launch left this cycle to auto-compaction"
+      return 0
+    fi
+  fi
+  wd_restart_run "$symptom" || rc=$?
+  [ -z "$launch_lock" ] || fm_lock_release "$launch_lock"
+  return "$rc"
+}
+
+wd_restart_run() {  # <symptom>
+  local symptom=$1 id handoff token cmd yolo_cmd yolo_note prompt pid i sess
   id=$(wd_id)
   handoff=$(wd_write_handoff "$symptom")
   if [ "$O_PARENT" != - ]; then
@@ -1243,14 +1268,6 @@ wd_restart() {  # <symptom> <kind>...
     sess=${sess:-firstmate-$O_TAG}
   fi
   token=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
-  # A low-context restart rests on the reset observed earlier in this pass.
-  # A fresh-start launch that failed since then left the session supervising
-  # with auto-compaction as its reset, so re-read it at the restart boundary.
-  if [ "$symptom" = restart-requested ] && [ "$O_RESTART_REQ" != 1 ] \
-    && [ "$(fm_context_reset_for_session "$O_HOME" "$O_SESSION")" = compaction ]; then
-    wd_rec "$id" "$symptom" restart refused "the session's cycle now ends in auto-compaction"
-    return 0
-  fi
   pid=$O_LOCK_PID
   wd_rec "$id" "$symptom" restart pending "token=$token old_pid=$pid handoff=$handoff$yolo_note"
   WD_RESTARTED=1
