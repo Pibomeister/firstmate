@@ -5258,6 +5258,185 @@ test_worker_permission_dialog_pages_the_owner() {
   pass "worker permission dialog: ship and scout panes page on their own windows, a plain pane and a question do not, and a gone endpoint is not read"
 }
 
+# stall_task <id> <yolo> <status-line> [terminal]: a recorded ship task with a
+# status file and no pane; the stall page reads its records only.
+stall_task() {
+  printf 'kind=ship\nbackend=tmux\nwindow=%%9%s\nterminal=%s\nyolo=%s\nendpoint_task_id=%s\n' \
+    "$CASE_N" "${4:-term_$1}" "$2" "$1" > "$H/state/$1.meta"
+  printf '%s\n' "$3" > "$H/state/$1.status"
+}
+
+stall_home() {  # [extra-config]
+  make_home $'Captain session\n> ' "${1:-}"
+  transcript 30 "Working."
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  cp "$H/state/.lock" "$H/lock.before"
+  cp "$H/state/.lock-session" "$H/lock-session.before"
+}
+
+assert_no_restart_or_lock_theft() {  # <label>
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 == "restart"' | wc -l | tr -d ' ')" "$1: the stall page restarted something: $(ledger | cut -f5-8)"
+  cmp -s "$H/state/.lock" "$H/lock.before" || fail "$1: the session lock changed"
+  cmp -s "$H/state/.lock-session" "$H/lock-session.before" || fail "$1: the lock session record changed"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "$1: the live lock holder was stopped"
+}
+
+test_stall_page_unhandled_input_pages_once_per_window() {
+  stall_home
+  stall_task fm-a off "working [at=$((BASE - 100))]: implementing"
+  owe_input 1000
+  run_wd 0 once >/dev/null 2>&1 || fail "first pass failed"
+  assert_equals 1 "$(ledger_rows stall-input page pending)" "input unhandled for 15 minutes with work in flight pages: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows stall-input page "done")" "the stall page was delivered: $(ledger | cut -f5-8)"
+  assert_grep "1 unhandled inputs, the oldest 16 minutes old, while 1 tasks are in flight" "$H/paged.log" "the page names the stalled input and the work in flight"
+  assert_grep "stalled: 1 inputs unhandled" "$H/data/watchdog/status.md" "the stall is a reported gap"
+  assert_no_grep "captain note waiting" "$H/paged.log" "the page carries no input text"
+  assert_no_restart_or_lock_theft "unhandled input"
+  run_wd 600 once >/dev/null 2>&1 || fail "second pass failed"
+  assert_equals 1 "$(ledger_rows stall-input page pending)" "a second page waits for stall-page-secs: $(ledger | cut -f5-8)"
+  assert_grep "stalled: 1 inputs unhandled" "$H/data/watchdog/status.md" "the stall stays a gap between pages"
+  run_wd 3700 once >/dev/null 2>&1 || fail "third pass failed"
+  assert_equals 2 "$(ledger_rows stall-input page pending)" "a stall still standing after stall-page-secs pages again: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows stall-pr page pending)" "no ready PR, no PR page"
+  assert_no_restart_or_lock_theft "unhandled input, later passes"
+
+  stall_home
+  stall_task fm-a off "working [at=$((BASE - 100))]: implementing"
+  owe_input 600
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows stall-input page pending)" "input under stall-secs does not page: $(ledger | cut -f5-8)"
+
+  stall_home
+  owe_input 3000
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 ~ /^stall-/' | wc -l | tr -d ' ')" "input with no work in flight does not page: $(ledger | cut -f5-8)"
+  [ ! -e "$H/paged.log" ] || fail "an idle home was paged: $(cat "$H/paged.log")"
+
+  stall_home 'stall-secs=300'
+  stall_task fm-a off "working [at=$((BASE - 100))]: implementing"
+  owe_input 400
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows stall-input page "done")" "stall-secs sets the threshold: $(ledger | cut -f5-8)"
+  pass "stall page: input unhandled past stall-secs with work in flight pages the owner once per window and restarts nothing"
+}
+
+test_stall_page_declared_waits_stay_quiet() {
+  stall_home
+  stall_task fm-a off "working [at=$((BASE - 100))]: implementing"
+  stall_task fm-w off "paused [at=$((BASE - 2000))]: waiting on the machine-wide test queue"
+  printf '%s\t1\tsignal\tfm-w.status\tsignal: %s\n' "$((BASE - 2000))" "$H/state/fm-w.status" > "$H/state/.wake-queue"
+  printf '%s\t2\tstale\tterm_fm-w\tstale: term_fm-w\n' "$((BASE - 1900))" >> "$H/state/.wake-queue"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 ~ /^stall-/' | wc -l | tr -d ' ')" "wake rows about a task in a declared wait stay quiet: $(ledger | cut -f5-8)"
+  [ ! -e "$H/paged.log" ] || fail "a declared wait paged the owner: $(cat "$H/paged.log")"
+
+  stall_home
+  stall_task fm-w off "paused [at=$((BASE - 2000))]: waiting on the machine-wide test queue"
+  owe_input 2000
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 ~ /^stall-/' | wc -l | tr -d ' ')" "a home whose only work is a declared wait has no work in flight: $(ledger | cut -f5-8)"
+
+  stall_home
+  stall_task fm-a off "working [at=$((BASE - 100))]: implementing"
+  stall_task fm-w off "paused [at=$((BASE - 2000))]: waiting on the machine-wide test queue"
+  printf '%s\t1\tsignal\tfm-w.status\tsignal\n' "$((BASE - 2000))" > "$H/state/.wake-queue"
+  printf '%s\t2\tsignal\tfm-a.status\tsignal\n' "$((BASE - 1000))" >> "$H/state/.wake-queue"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows stall-input page "done")" "a row about working-task input still pages beside a declared wait: $(ledger | cut -f5-8)"
+  assert_grep "1 unhandled inputs, the oldest 16 minutes old" "$H/paged.log" "only the undeclared row counts"
+
+  stall_home
+  stall_task fm-a off "working [at=$((BASE - 100))]: implementing"
+  stall_task fm-w off "paused [at=$((BASE - 3000))]: waiting on CI"
+  printf 'resolved [at=%s]: CI finished\n' "$((BASE - 2500))" >> "$H/state/fm-w.status"
+  printf '%s\t1\tsignal\tfm-w.status\tsignal\n' "$((BASE - 2000))" > "$H/state/.wake-queue"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows stall-input page "done")" "a resolved wait is no longer quiet: $(ledger | cut -f5-8)"
+  pass "stall page: rows about declared waits and homes with only declared waits stay quiet"
+}
+
+test_stall_page_ready_pr_unlanded() {
+  local url=https://github.com/o/r/pull/7
+  stall_home
+  stall_task fm-p on "done [at=$((BASE - 1000))]: PR $url checks green"
+  run_wd 0 once >/dev/null 2>&1 || fail "first pass failed"
+  assert_equals 1 "$(ledger_rows stall-pr page "done")" "a ready PR unlanded for 15 minutes pages: $(ledger | cut -f5-8)"
+  assert_grep "1 ready PRs on $(basename "$H") have waited up to 16 minutes" "$H/paged.log" "the page names the age"
+  assert_grep "$url" "$H/paged.log" "the page names the PR"
+  assert_grep "stalled: 1 ready PRs unlanded" "$H/data/watchdog/status.md" "the unlanded PR is a reported gap"
+  assert_no_restart_or_lock_theft "ready PR"
+  run_wd 600 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows stall-pr page pending)" "the PR page is rate-limited: $(ledger | cut -f5-8)"
+  printf 'fm-pr-poll-merge-notified-v1\ngithub\ngithub.com\no/r\n7\n' > "$H/state/fm-p.pr-poll-merge-notified"
+  run_wd 3700 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows stall-pr page pending)" "a landed PR no longer pages: $(ledger | cut -f5-8)"
+  assert_no_grep "ready PRs unlanded" "$H/data/watchdog/status.md" "a landed PR leaves the gaps"
+
+  stall_home
+  stall_task fm-p on "done [at=$((BASE - 1000))]: PR $url checks green"
+  printf 'fm-pr-poll-merge-notified-v1\ngithub\ngithub.com\no/r\n6\n' > "$H/state/fm-p.pr-poll-merge-notified"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows stall-pr page "done")" "a marker for another PR of the task does not count as landed: $(ledger | cut -f5-8)"
+
+  stall_home
+  stall_task fm-p off "done [at=$((BASE - 1000))]: PR $url checks green"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 ~ /^stall-/' | wc -l | tr -d ' ')" "a PR waiting on the owner's merge word stays quiet: $(ledger | cut -f5-8)"
+
+  stall_home
+  stall_task fm-p on "done [at=$((BASE - 600))]: PR $url checks green"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows stall-pr page pending)" "a PR ready under stall-secs does not page: $(ledger | cut -f5-8)"
+
+  stall_home
+  stall_task fm-p on "paused [at=$((BASE - 1000))]: PR $url held as a draft"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 ~ /^stall-/' | wc -l | tr -d ' ')" "a PR held in a declared wait stays quiet: $(ledger | cut -f5-8)"
+  pass "stall page: a ready PR under standing authority unlanded past stall-secs pages once per window until it lands"
+}
+
+test_stall_page_ignores_a_live_holder_and_fresh_heartbeat_and_follows_its_switch() {
+  # make_home's lock holder is a live process and its heartbeat is fresh; a
+  # dead holder must not hide the stall either.
+  stall_home
+  stall_task fm-a off "working [at=$((BASE - 100))]: implementing"
+  owe_input 1000
+  kill "$LOCKPID" 2>/dev/null; sleep 0.3
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows stall-input page "done")" "a dead lock holder still pages the stall: $(ledger | cut -f5-8)"
+  cmp -s "$H/state/.lock" "$H/lock.before" || fail "the stall page took the lock of a dead holder"
+
+  stall_home 'mode=dry-run'
+  stall_task fm-a off "working [at=$((BASE - 100))]: implementing"
+  owe_input 1000
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows stall-input page dry-run)" "dry-run records the page it would send: $(ledger | cut -f5-8)"
+  [ ! -e "$H/paged.log" ] || fail "dry-run paged the owner: $(cat "$H/paged.log")"
+
+  stall_home $'mode=dry-run\nstall-page=act'
+  stall_task fm-a off "working [at=$((BASE - 100))]: implementing"
+  owe_input 1000
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows stall-input page "done")" "stall-page=act pages while everything else stays a dry run: $(ledger | cut -f5-8)"
+  [ ! -s "$H/typed.log" ] || fail "a dry-run home was typed into: $(cat "$H/typed.log")"
+
+  stall_home 'stall-page=off'
+  stall_task fm-a off "working [at=$((BASE - 100))]: implementing"
+  owe_input 1000
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows stall-input page dry-run)" "stall-page=off keeps the page a dry run under mode=act: $(ledger | cut -f5-8)"
+  [ ! -e "$H/paged.log" ] || fail "stall-page=off paged the owner: $(cat "$H/paged.log")"
+
+  stall_home
+  stall_task fm-a off "working [at=$((BASE - 100))]: implementing"
+  owe_input 1000
+  printf 'off\n' > "$H/config/wedge-alarm"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows stall-input page refused)" "alerts turned off refuse the page: $(ledger | cut -f5-8)"
+  assert_grep "stall-input not paged" "$H/data/watchdog/status.md" "the unpaged stall is a reported gap"
+  pass "stall page: no live or dead holder and no fresh heartbeat hides it, and stall-page switches it apart from mode"
+}
+
 test_never_merges_deploys_or_messages_owner() {
   # Every act-mode case above ran with gh, gh-axi, notifiers, and mail faked.
   # The away permission-dialog page reaches only a home's configured alert
@@ -8227,6 +8406,10 @@ fm_test_run \
   test_status_file_short_and_staleness_visible \
   test_memory_guard_samples_once_per_pass \
   test_manager_units \
+  test_stall_page_unhandled_input_pages_once_per_window \
+  test_stall_page_declared_waits_stay_quiet \
+  test_stall_page_ready_pr_unlanded \
+  test_stall_page_ignores_a_live_holder_and_fresh_heartbeat_and_follows_its_switch \
   test_never_merges_deploys_or_messages_owner \
   test_default_heartbeat_freeze_stays_above_a_quiet_home \
   test_default_heartbeat_freeze_uses_published_deadline \

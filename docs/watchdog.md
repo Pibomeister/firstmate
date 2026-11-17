@@ -126,6 +126,15 @@ These checks run on every pass as well:
 - An away record with a dead away daemon gets a nudge to re-arm it.
 - A watcher heartbeat older than `watcher-stale-secs` is reported as a gap.
 - A herdr pane read, of the home pane or of a worker pane, that fails because the session's running server refuses every `herdr` client on `PATH` as a protocol mismatch is reported as a gap naming both versions and protocols, and whether the server is stale or the client is behind; the watchdog never starts, stops, or restarts that server.
+- A stall page tells the owner that a home has stopped moving, whatever its process or heartbeat shows.
+  It reads only the home's own records, so a live session-lock holder, a fresh heartbeat, a running turn, or a busy pane cannot hide a stall, and a dead holder does not stop the page.
+  It pages on two triggers, as ledger symptoms `stall-input` and `stall-pr`.
+  `stall-input` fires when a wake-queue row or a captain inbox note has waited at least `stall-secs` while at least one ship or scout task is in flight.
+  `stall-pr` fires when a ship task with `yolo=on` has a latest `done` status that names a PR, at least `stall-secs` old, and the task has no merge-notification record for that PR.
+  Declared waits stay quiet: a task whose latest status is a `paused:` or captain-held wait is not in flight, a wake row about that task or its pane does not count, and a PR that waits on the owner's merge word (`yolo=off`) is the owner's wait.
+  Each trigger is a gap on every pass and pages the home's [alert channels](wedge-alarm.md#channels) at most once per `stall-page-secs` per home.
+  `stall-page` switches the page apart from `mode`.
+  The page carries counts, ages, and PR URLs, never input or pane text; it types nothing, restarts nothing, lands nothing, and never touches the session lock.
 - Decisions open longer than `decision-secs` get one rolled-up nudge per home.
   A window later, the oldest unsettled decision goes to a council of blind seats, at most `council-per-pass` per home per pass.
   [The decision council](#the-decision-council) owns what a council needs, what it records, and when it acts.
@@ -305,8 +314,9 @@ The watchdog never merges, never deploys, never spends beyond existing caps, nev
 - A nudge whose text names a merge, deploy, or release word is not sent and appears as a held gap.
 - A nudge goes out only onto a composer read as empty. An unknown composer, an Orca draft, or a failed draft read holds the nudge as a gap. A held nudge counts toward `max-nudges`, so a frozen session still reaches the restart proof with nothing typed. A stable clean draft gets Enter once before that ladder.
 - Model calls stop once the metered spend of the last day reaches `daily-max-usd`; each Claude call also carries `--max-budget-usd` from `judge-call-max-usd`.
-- The only outward actions are a rate-limited self-heal issue through `bin/fm-self-heal-issue.sh`, on the repository named in `issue-repo` and under that script's own publication gate, the away permission page, the primary usage-limit auto-wait page, and the daytime human-only-step page.
+- The only outward actions are a rate-limited self-heal issue through `bin/fm-self-heal-issue.sh`, on the repository named in `issue-repo` and under that script's own publication gate, the away permission page, the primary usage-limit auto-wait page, the daytime human-only-step page, and the stall page.
 - The away permission page goes only to the home's own [alert channels](wedge-alarm.md#channels), at most once per `nudge-secs` for the home pane and once per `nudge-secs` for each recorded ship or scout worker pane, and carries no dialog text.
+- The stall page goes only to the home's own alert channels, at most once per `stall-page-secs` per home for each trigger.
 - A restart stops one session process and opens a new terminal; it never removes a worktree, branch, file, or task.
 - A worker permission prompt never gets a yes, Enter, a digit, or text.
   Escape goes only to a proven Claude tool-approval prompt, and credential, sign-in, spend, destructive, release, and owner-reserved prompts get no key and a `permission-prompt-hardstop` blocked line.
@@ -461,6 +471,7 @@ An absent file means dry-run on the owner home alone.
 | `homes` | the owner home | Comma-separated homes to watch, each with its registered second mates |
 | `mode` | `dry-run` | `act` takes actions; anything else records them as `dry-run` |
 | `decisions` | the `mode` value | `act` lets the decision nudge, the council, and the ruling nudge act; any other value keeps them a dry run |
+| `stall-page` | the `mode` value | `act` sends the stall page; any other value records it as a dry run |
 | `restart` | `off` | `on` allows restarts when `mode=act` |
 | `restart-command` | none | Starts a new captain session and appends the prompt as one argument. When the command word, after any leading `NAME=value`, `env`, `exec`, or `command` and again after `&&`, `||`, `;`, or `|`, is `muse`, `muse-bin`, or `muse-bin-*`, or a path ending in one of them, with one layer of surrounding quotes removed, and the command carries none of `--yolo`, `--disable-approval`, `--approval-mode never`, or `--approval-mode=never`, `--yolo` is inserted as the first argument after the first such word. Any other command runs unchanged, even when another word names muse. |
 | `do-not-touch` | none | Comma-separated homes, home names, or terminal targets never typed into or restarted |
@@ -486,6 +497,8 @@ An absent file means dry-run on the owner home alone.
 | `interval-secs` | `120` | Seconds between passes in `run` |
 | `frozen-secs` | `900` | Quiet time that counts as frozen |
 | `owed-input-secs` | `900` | Wait that counts as unread input |
+| `stall-secs` | `900` | Wait that counts as a stall: unhandled input with work in flight, or a ready PR left unlanded |
+| `stall-page-secs` | `3600` | Minimum time between stall pages for one trigger in one home |
 | `decision-secs` | `1800` | Wait before an open decision is nudged |
 | `rapid-loop-secs` | `180` | Span inside which repeats count as a rapid loop |
 | `restart-at-percent` | `8` | Context left that requests a restart |

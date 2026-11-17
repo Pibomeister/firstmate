@@ -174,6 +174,17 @@ wd_permission_mode() {
   esac
 }
 
+# The stall page has its own switch too. An unset `stall-page` follows `mode`;
+# any value but `act` records the page as a dry run.
+wd_stall_page_mode() {
+  case "${WD_FORCE_DRY:-}:$(cfg stall-page '')" in
+    1:*) printf 'dry-run\n' ;;
+    *:) wd_mode ;;
+    *:act) printf 'act\n' ;;
+    *) printf 'dry-run\n' ;;
+  esac
+}
+
 WD_CONTROL=$SCRIPT_DIR/fm-control.sh
 if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_WD_TEST_CONTROL:-}" ]; then WD_CONTROL=$FM_WD_TEST_CONTROL; fi
 
@@ -2340,6 +2351,122 @@ wd_handle_human_step() {  # <kind>
   esac
 }
 
+# --- stall page ------------------------------------------------------------------
+# docs/watchdog.md "Stall page" owns the two triggers, the quiet cases, and the
+# keys. The page reads records only: no lock holder, heartbeat, running turn, or
+# pane verdict enters it, so a live process or a fresh beacon cannot hide a
+# stall. It types nothing, restarts nothing, and never touches the session lock.
+
+# wd_pr_landed <state> <task-id> <pr-url>: 0 when the task's merge-notification
+# marker (bin/fm-pr-lib.sh) names this PR's repository path and number.
+wd_pr_landed() {
+  local marker=$1/$2.pr-poll-merge-notified url=$3 path num
+  [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
+  num=${url##*/}
+  path=${url#https://*/}
+  path=${path%%/pull/*}
+  path=${path%%/-/merge_requests/*}
+  awk -v p="$path" -v n="$num" 'NR == 4 { mp = $0 } NR == 5 { mn = $0 } END { exit !(mp == p && mn == n) }' "$marker"
+}
+
+# wd_stall_scan: sets S_FLIGHT, S_WAITS, S_IN_N, S_IN_AGE, S_PR_N, S_PR_AGE, and
+# S_PRS for the subject wd_observe just read, from its own home's records.
+wd_stall_scan() {
+  local st=$O_HOME/state now id meta sf last verb url at age key tid f m in_old=''
+  now=$(wd_now)
+  S_FLIGHT=0 S_WAITS=$'\n' S_IN_N=0 S_IN_AGE=0 S_PR_N=0 S_PR_AGE=0 S_PRS=''
+  while IFS=$'\t' read -r id meta; do
+    [ -n "$id" ] || continue
+    sf=$st/$id.status
+    if [ -f "$sf" ] && [ -n "$(status_declared_wait_line "$sf" 2>/dev/null)" ]; then
+      S_WAITS="$S_WAITS$id"$'\n'
+      for key in terminal window; do
+        m=$(fm_meta_get "$meta" "$key" 2>/dev/null) || m=''
+        [ -z "$m" ] || S_WAITS="$S_WAITS$m"$'\n'
+      done
+      continue
+    fi
+    S_FLIGHT=$((S_FLIGHT + 1))
+    # Only a PR firstmate may land on its own standing authority can stall here;
+    # one that waits on the owner's merge word is the owner's wait.
+    [ "$(fm_meta_get "$meta" yolo 2>/dev/null)" = on ] && [ -f "$sf" ] || continue
+    last=$(last_status_line "$sf" 2>/dev/null) || continue
+    verb=$(status_line_verb "$last" 2>/dev/null) || continue
+    [ "$verb" = "done" ] || continue
+    url=$(printf '%s\n' "$last" | grep -oE 'https://[^[:space:]]+/(pull|-/merge_requests)/[0-9]+' | tail -n 1)
+    [ -n "$url" ] || continue
+    at=$(status_line_at_epoch "$last" 2>/dev/null) || at=$(wd_mtime "$sf")
+    fm_wd_epoch_ok "$at" && [ "$at" -le "$now" ] || continue
+    age=$((now - at))
+    [ "$age" -ge "$(cfgi stall-secs 900)" ] || continue
+    wd_pr_landed "$st" "$id" "$url" && continue
+    S_PR_N=$((S_PR_N + 1))
+    [ "$age" -le "$S_PR_AGE" ] || S_PR_AGE=$age
+    S_PRS="$S_PRS${S_PRS:+ }$url"
+  done <<EOF
+$(wd_worker_metas "$O_HOME")
+EOF
+  # Unhandled input: wake rows not yet drained, except rows about a task in a
+  # declared wait, and captain inbox notes not yet handled.
+  if [ -s "$st/.wake-queue" ]; then
+    while IFS=$'\t' read -r at _ _ key _; do
+      case "$at" in ''|*[!0-9]*) continue ;; esac
+      tid=${key%.*}
+      case "$S_WAITS" in *$'\n'"$key"$'\n'*|*$'\n'"$tid"$'\n'*) continue ;; esac
+      S_IN_N=$((S_IN_N + 1))
+      if [ -z "$in_old" ] || [ "$at" -lt "$in_old" ]; then in_old=$at; fi
+    done < "$st/.wake-queue"
+  fi
+  for f in "$st"/inbox/*.note; do
+    [ -f "$f" ] || continue
+    S_IN_N=$((S_IN_N + 1))
+    m=$(wd_mtime "$f")
+    if [ -z "$in_old" ] || [ "$m" -lt "$in_old" ]; then in_old=$m; fi
+  done
+  if [ -n "$in_old" ] && [ "$in_old" -le "$now" ]; then S_IN_AGE=$((now - in_old)); fi
+}
+
+# wd_stall_send <symptom> <detail> <summary>: reports the stall as a gap on every
+# pass, and pages the owner at most once per stall-page-secs per home and trigger.
+wd_stall_send() {
+  local symptom=$1 detail=$2 summary=$3 id out rc
+  wd_gap "$detail"
+  fm_wd_rate_ok "$LEDGER" "$O_HOME" "$symptom" page "$(cfgi stall-page-secs 3600)" "$(wd_now)" "$O_TAG" || return 0
+  id=$(wd_id)
+  if [ "$(wd_stall_page_mode)" != act ]; then wd_rec "$id" "$symptom" page dry-run "would page the owner; $detail"; return 0; fi
+  wd_rec "$id" "$symptom" page pending "$detail"
+  out=$(FM_HOME=$O_HOME FM_STATE_OVERRIDE=$O_HOME/state FM_CONFIG_OVERRIDE=$O_HOME/config \
+    fm_run_timed 60 bash "$SCRIPT_DIR/fm-supervise-daemon.sh" page "$summary" "$LEDGER" 2>/dev/null)
+  rc=$?
+  case "$rc:$out" in
+    '0:page: sent') wd_rec "$id" "$symptom" page "done" "owner paged" ;;
+    2:*)
+      wd_rec "$id" "$symptom" page refused "alerts are off or no alert channel is configured"
+      wd_gap "$symptom not paged: alerts are off or no alert channel is configured" ;;
+    *)
+      wd_rec "$id" "$symptom" page failed "no alert channel delivered the page (exit $rc)"
+      wd_gap "$symptom page failed on every alert channel" ;;
+  esac
+}
+
+wd_handle_stall() {
+  local secs mins
+  secs=$(cfgi stall-secs 900)
+  wd_stall_scan
+  if [ "$S_FLIGHT" -gt 0 ] && [ "$S_IN_N" -gt 0 ] && [ "$S_IN_AGE" -ge "$secs" ]; then
+    mins=$((S_IN_AGE / 60))
+    wd_stall_send stall-input \
+      "stalled: $S_IN_N inputs unhandled for ${mins}m while $S_FLIGHT tasks are in flight" \
+      "Firstmate watchdog: $O_TAG has $S_IN_N unhandled inputs, the oldest ${mins} minutes old, while $S_FLIGHT tasks are in flight. Its supervisor is not handling them, whatever its process or heartbeat shows. The watchdog restarted nothing. Check the supervisor terminal; the captain record is $O_HOME/state/watchdog/captain and the ledger is $LEDGER."
+  fi
+  if [ "$S_PR_N" -gt 0 ]; then
+    mins=$((S_PR_AGE / 60))
+    wd_stall_send stall-pr \
+      "stalled: $S_PR_N ready PRs unlanded for up to ${mins}m: $S_PRS" \
+      "Firstmate watchdog: $S_PR_N ready PRs on $O_TAG have waited up to ${mins} minutes without landing under standing authority: $S_PRS. The watchdog landed and restarted nothing. Check the supervisor terminal; the ledger is $LEDGER."
+  fi
+}
+
 # Aged open decisions get one rolled-up nudge per window; once that nudge has
 # had a full window, the oldest decision without a recent council gets one.
 wd_handle_decisions() {
@@ -3107,6 +3234,8 @@ wd_handle_subject() {
   # A restart this pass stopped the recorded session, so its old endpoint gets nothing more.
   if [ "$WD_RESTARTED" = 1 ]; then WD_SYMPTOM=$symptom; return 0; fi
   if [ -z "$O_HUMAN_STEP" ] && [ -n "$O_PANE" ] && [ "$O_DIALOG" != unknown ]; then wd_human_step_clear; fi
+  # Neither a live holder nor a dead one hides a stall, so this runs either way.
+  wd_handle_stall
   if [ "$dead" = 1 ] || [ "$symptom" = usage-limit-autowait ] || [ "$symptom" = human-step ]; then reachable=0; fi
   if [ "$reachable" = 1 ] && [ "$O_AFK" = 1 ] && [ "$O_DAEMON" = 0 ]; then
     [ -n "$symptom" ] || symptom='daemon-dead'
