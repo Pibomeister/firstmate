@@ -721,6 +721,15 @@ attention[1]{provider,accountKey,scope,kind,detail,remedy}:
 EOF
   out=$(run_snapshot_check --snapshot "$CASE/quota.toon" --json) || fail "schema 6 failed"
   printf '%s\n' "$out" | jq -e '.pools | length == 2 and all(.[]; .account == "codex-home") and (map(.verdict) | sort == ["HEALTHY","TIGHT_HORIZON"])' >/dev/null || fail "$out"
+  sed -e 's/codex,other,all_models,0/codex,codex-home,model:large,0/' \
+    -e 's/codex,other,all_models,error/codex,codex-home,model:small,error/' \
+    "$CASE/quota.toon" > "$CASE/scoped-attention.toon"
+  out=$(run_snapshot_check --snapshot "$CASE/scoped-attention.toon" --json) || fail "scoped attention check failed"
+  printf '%s\n' "$out" | jq -e '
+    (.pools | map(select(.scope == "model:small")) | .[0].verdict == "unknown") and
+    (.pools | map(select(.scope == "model:large")) | .[0].verdict == "EXHAUSTED") and
+    (.pools | map(select(.scope == "all_models")) | .[0].verdict == "HEALTHY") and
+    (.alerts | contains("EXHAUSTED"))' >/dev/null || fail "$out"
   pass "schema-6 joins stay on the selected account and retain potentially limiting model scopes"
 }
 

@@ -108,7 +108,10 @@ fm_quota_guard_check() {
   else
     raw=$(fm_run_timed "$READ_SECS" quota-axi --no-credential-refresh 2>/dev/null </dev/null) || err='quota-axi read failed'
   fi
-  parsed=$(printf '%s\n' "$raw" | fm_quota_toon_to_json) || err='invalid quota-axi TOON snapshot'
+  parsed=''
+  if [ -z "$err" ]; then
+    parsed=$(printf '%s\n' "$raw" | fm_quota_toon_to_json) || err='invalid quota-axi TOON snapshot'
+  fi
   if [ -n "$err" ] || ! printf '%s\n' "$parsed" | fm_quota_json_valid; then
     parsed='{"schemaVersion":5,"providers":[],"attention":[],"exhaustion":[]}'
     [ -n "$err" ] || err='invalid quota-axi provider data'
@@ -127,7 +130,8 @@ fm_quota_guard_check() {
       (if $m.account != "" and $m.account != "ordinary" then $m.account
        elif $p != null then $row_account
        else (if $m.lane == "" then "default" else $m.lane end) end) as $account |
-      [$snapshot.attention[]? | select(.provider == $m.provider and (.accountKey // "default") == $row_account)] as $attention |
+      [$snapshot.attention[]? | select(.provider == $m.provider and (.accountKey // "default") == $row_account and
+        (.scope == $r.scope or .scope == "all_models" or .scope == "all_products"))] as $attention |
       [$snapshot.exhaustion[]? | select(.provider == $m.provider and (.accountKey // "default") == $row_account and .scope == $r.scope)] as $exhaustion |
       ($exhaustion[0].usableRunwaySeconds | number) as $seconds |
       ($r.runway.status // "unknown") as $runway |
