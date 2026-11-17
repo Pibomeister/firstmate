@@ -34,8 +34,8 @@ done
 # Test-runner fixtures live outside every disposable temp root, as a real
 # checkout does, so only the test-runner route can make their children scratch.
 OUT_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/memory-guard-outside.XXXXXX")
-mkdir -p "$OUT_ROOT/repo/tests" "$OUT_ROOT/tests" "$OUT_ROOT/bin" "$OUT_ROOT/claude-code"
-for f in repo/tests/fm-example.test.sh repo/tests/ui.test.sh repo/helper.sh tests/service.test.sh "tests/service.test.sh live.sh" bin/fm-watchdog.sh claude-code/cli.py; do
+mkdir -p "$OUT_ROOT/repo/tests" "$OUT_ROOT/tests" "$OUT_ROOT/bin" "$OUT_ROOT/claude-code/tests"
+for f in repo/tests/fm-example.test.sh repo/tests/ui.test.sh repo/helper.sh tests/service.test.sh "tests/service.test.sh live.sh" bin/fm-watchdog.sh claude-code/cli.py claude-code/tests/ui.test.sh; do
   : > "$OUT_ROOT/$f"
 done
 ln -s "$OUT_ROOT/bin/fm-watchdog.sh" "$OUT_ROOT/run-loop.sh"
@@ -421,7 +421,7 @@ wrapped|claude|me|P_wrapper|claude"
 test_reap_scratch_needs_a_scratch_program() {
   local name
   new_home 'mode=reap-scratch'
-  for name in exe nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink runner brave renderer mailer nmd gimp spaced missing linkfile spacewrap pkgagent relsup agent2 agentkid symkid pkgkid runner2 fakekid pkgwrap pkgwrapkid; do eval "P_$name="; done
+  for name in exe nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink runner brave renderer mailer nmd gimp spaced missing linkfile spacewrap pkgagent relsup agent2 agentkid symkid pkgkid runner2 fakekid pkgwrap pkgwrapkid noname runner3 aliaskid; do eval "P_$name="; done
   ln -s "$BASE_PATH_FIRST" "$TMP_ROOT/prodlink"
   ln -s "$TMP_ROOT/runaway.sh" "$TMP_ROOT/link.sh"
   ln -s "$BASE_PATH_FIRST" "$TMP_ROOT/job/work dir"
@@ -456,11 +456,12 @@ runner2|bash|me|1|bash $OUT_ROOT/tests/service.test.sh live.sh
 fakekid|python3|me|P_runner2|python3 -c run
 pkgwrap|bash|me|1|bash $TMP_ROOT/wrap2.sh
 pkgwrapkid|node|me|P_pkgwrap|node $TMP_ROOT/pkg/cli.js
+noname||me|P_runner|sleep 5
+runner3|bash|me|1|bash $OUT_ROOT/pkg2/tests/ui.test.sh
+aliaskid|python3|me|P_runner3|python3 -c run
 renderer|helper|me|P_runner|/opt/app/helper --type=renderer"
   RUNNER_SMALL=1 sustain
-  wait_gone "$P_exe" || fail "a program under a temp root was not stopped: $OUT"
-  action_has "term:$P_exe" || fail "action does not name the stopped program: $(summary)"
-  for name in nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink brave renderer mailer nmd gimp spaced missing linkfile spacewrap pkgagent relsup agent2 agentkid symkid pkgkid runner2 fakekid pkgwrap pkgwrapkid; do
+  for name in exe nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink brave renderer mailer nmd gimp spaced missing linkfile spacewrap pkgagent relsup agent2 agentkid symkid pkgkid runner2 fakekid pkgwrap pkgwrapkid noname runner3 aliaskid; do
     eval "pid=\$P_$name"
     alive "$pid" || fail "$name (pid $pid) was signaled: $OUT"
     action_has "spared:$pid" || fail "action does not name the spared $name: $(summary)"
@@ -468,7 +469,7 @@ renderer|helper|me|P_runner|/opt/app/helper --type=renderer"
   assert_contains "$OUT" "pid $P_nodeagent (node) has held" "the interpreted agent alarms"
   assert_contains "$OUT" "spared (protected claude)" "an agent run by an interpreter is protected by its script path"
   assert_contains "$OUT" "spared (firstmate supervisor script)" "a supervisor stays protected when an argument names a temp path"
-  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (not scratch)')" = 6 ] || fail "a temp-path argument, a .. path, inline code, or a desktop app under a test runner counted as scratch: $OUT"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (not scratch)')" = 7 ] || fail "a temp-path argument, a .. path, inline code, or a desktop app under a test runner counted as scratch: $OUT"
   [ "$(printf '%s\n' "$OUT" | grep -c 'spared (node outside a disposable temp root)')" = 1 ] || fail "a node preload under a temp root made node scratch: $OUT"
   [ "$(printf '%s\n' "$OUT" | grep -c 'spared (firstmate supervisor script)')" = 4 ] || fail "a supervisor script under a temp root lost its protection: $OUT"
   [ "$(printf '%s\n' "$OUT" | grep -c 'spared (program is not a regular file under a disposable temp root)')" = 3 ] || fail "a symlink out of the temp root or a missing program counted as scratch: $OUT"
@@ -478,10 +479,13 @@ renderer|helper|me|P_runner|/opt/app/helper --type=renderer"
   assert_contains "$OUT" "spared (test child script is not a regular file)" "a test child running a symlinked script is spared"
   assert_contains "$OUT" "spared (resolved test child script: protected claude)" "a test child whose script resolves into an agent package is protected"
   assert_contains "$OUT" "spared (test runner is not a regular tests/*.test.sh file)" "an ambiguous test-runner path makes nothing scratch"
-  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (has child processes)')" = 2 ] || fail "a process with children counted as scratch: $OUT"
+  assert_contains "$OUT" "pid $P_exe (leaky) has held" "a native binary under a temp root still alarms"
+  assert_contains "$OUT" "spared (executable name unknown)" "a process whose executable name was not read is never reaped"
+  assert_contains "$OUT" "spared (resolved test runner: protected claude)" "a test runner that resolves into an agent package makes nothing scratch"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (has child processes)')" = 3 ] || fail "a process with children counted as scratch: $OUT"
   assert_contains "$OUT" "spared (protected brave)" "a browser under a test runner is protected"
   assert_contains "$OUT" "spared (browser or Electron helper)" "a Chromium helper under a test runner is protected"
-  pass "reap-scratch needs the program itself under a temp root, not an argument that names one"
+  pass "reap-scratch needs an interpreter running a temp-root script, or a direct child of a real test runner"
 }
 
 test_reap_scratch_rechecks_before_signaling() {

@@ -78,23 +78,25 @@
 #   - node is protected unless its program is under a disposable temp root;
 #   - no protected process descends from it, and it has no child processes
 #     at all;
-#   - it is scratch: its program (argv[0], or an interpreter's first argument
-#     when that is not an option) starts under a disposable temp root
-#     (/tmp/fm-*, /private/tmp/fm-*, /var/folders/<a>/<b>/T/fm-*, or
-#     $TMPDIR/fm-*) with no . or .. segment, is not itself a symlink, and
-#     still does once its directory symlinks are resolved; or an ancestor's
-#     program is a tests/<name>.test.sh path that, joined to the runner's
-#     working directory when relative, resolves to an unambiguous regular
-#     file, with no protected process between them, and its own argv[0] is
-#     a shell, an interpreter, or a core tool such as sleep, awk, or jq,
-#     running inline code or a script (joined to its own working directory
-#     when relative) that is an unambiguous regular file with no protection
-#     once resolved. The program must be an existing regular file, its
-#     command name must match it, no argument may hold a .. segment, no
-#     sibling may extend its name with a space, and its resolved path must
-#     carry no protection of its own. An argument that only names a temp
-#     path, or an interpreter started with an option, does not make it
-#     scratch;
+#   - its executable name was read (ucomm on macOS, comm on Linux), never
+#     guessed from argv[0];
+#   - it is scratch in one of two ways. Either a shell or interpreter runs
+#     a script (its first argument, which must not be an option) under a
+#     disposable temp root (/tmp/fm-*, /private/tmp/fm-*,
+#     /var/folders/<a>/<b>/T/fm-*, or $TMPDIR/fm-*) with no . or ..
+#     segment; the script is an existing regular file, not a symlink, no
+#     sibling extends its name with a space, it is still under a temp root
+#     once its directory symlinks are resolved, and the resolved path
+#     carries no protection. A native binary under a temp root is never
+#     scratch. Or its direct parent's program is a tests/<name>.test.sh
+#     path that, joined to the runner's working directory when relative,
+#     resolves to an unambiguous regular file whose resolved path carries
+#     no protection, and its own executable is a shell, an interpreter, or
+#     a core tool such as sleep, awk, or jq, running inline code or a script
+#     (joined to its own working directory when relative) that is an
+#     unambiguous regular file with no protection once resolved. No
+#     argument may hold a .. segment, and an argument that only names a
+#     temp path does not make a process scratch;
 #   - a fresh process read just before the signal still shows the same
 #     process (uid, parent, command name, arguments, and an elapsed time that
 #     only moved forward) and still judges it eligible; otherwise it is
@@ -273,8 +275,8 @@ read_procs() {  # <names-scratch-file>
       if ($6 !~ /^([0-9]+-)?([0-9]+:)?[0-9]+:[0-9]+$/) next
       args = line
       sub(/^[[:space:]]*[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]+[^[:space:]]+[[:space:]]*/, "", args)
+      # An unread executable name stays unknown: argv[0] can be rewritten.
       c = ($1 in comm) ? comm[$1] : ""
-      if (c == "") { c = args; sub(/[[:space:]].*/, "", c) }
       c = base(c); gsub(/[[:cntrl:]]/, " ", c); if (c == "") c = "?"
       printf "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n", $1, $2, $3, $4, $5, secs($6), c, args
     }'
@@ -402,15 +404,13 @@ classify_candidates() {  # <candidates-file> <self-pids>
         else if (c + 0 <= 1) why = "init"
         else if (c in preason) why = preason[c]
         else if (c in hasprot) why = "ancestor of protected pid " hasprot[c]
+        else if (comm[c] == "?") why = "executable name unknown"
         else if (kids[c] > 0) why = "has child processes"
         else {
           s = ""; pg = dotdot(args[c]) ? "" : program(args[c])
-          if (under_root(pg) && runs_as(c, pg)) s = "program\t" pg
-          else if (!dotdot(args[c]) && test_tool(bname(prog0[c])) && runs_as(c, prog0[c]) && (cs = child_script(args[c])) != "") { q = ppid[c]; hops = 0
-            while (q in ppid && q != 0 && hops++ < 256) {
-              if (q in preason || dotdot(args[q])) break
-              if (program(args[q]) ~ /(^|\/)tests\/[A-Za-z0-9_.-]+\.test\.sh$/) { s = "runner\t" program(args[q]) "\t" cs "\t" q; break }
-              q = ppid[q] } }
+          if (under_root(pg) && interp(bname(prog0[c])) && runs_as(c, pg)) s = "program\t" pg
+          else if (!dotdot(args[c]) && test_tool(bname(prog0[c])) && runs_as(c, prog0[c]) && (cs = child_script(args[c])) != "") { q = ppid[c]
+            if (q in ppid && !(q in preason) && !dotdot(args[q]) && program(args[q]) ~ /(^|\/)tests\/[A-Za-z0-9_.-]+\.test\.sh$/) s = "runner\t" program(args[q]) "\t" cs "\t" q }
           if (s == "") why = "not scratch"
         }
         if (why == "") printf "%s\teligible\t%s\n", c, s
@@ -480,7 +480,7 @@ judge() {
         verdict=spared why="program path is ambiguous"
       elif ! phys=$(physical_path "$prog") || [ ! -f "$phys" ] || ! under_scratch_root "$phys"; then
         verdict=spared why="program is not a regular file under a disposable temp root"
-      elif prot=$(resolved_protection "$phys") && [ -n "$prot" ]; then
+      elif prot=$(resolved_protection "$phys") && [ -n "$prot" ] && [ "$prot" != "not scratch" ]; then
         verdict=spared why="resolved program: $prot"
       fi
     elif [ "$verdict" = eligible ] && [ "$why" = runner ]; then
@@ -489,6 +489,8 @@ judge() {
       if [ -z "$prog" ] || ambiguous_program "$prog" || ! phys=$(physical_path "$prog") || [ ! -f "$phys" ] ||
         ! [[ "$phys" =~ /tests/[A-Za-z0-9_.-]+\.test\.sh$ ]]; then
         verdict=spared why="test runner is not a regular tests/*.test.sh file"
+      elif prot=$(resolved_protection "$phys") && [ -n "$prot" ] && [ "$prot" != "not scratch" ]; then
+        verdict=spared why="resolved test runner: $prot"
       elif [ "$extra" != - ]; then
         extra=$(absolute_for "$pid" "$extra") || extra=''
         if [ -z "$extra" ] || ambiguous_program "$extra" || ! phys=$(physical_path "$extra") || [ ! -f "$phys" ]; then
