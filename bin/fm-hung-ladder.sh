@@ -605,15 +605,20 @@ fhl_written_since() {  # <worktree> <anchor>
   return 1
 }
 
+# 0 the process exists, 1 it is proven gone, 2 the query failed. A pid is
+# gone only when the same query still finds this shell, so a failed or
+# timed-out ps never reads as a dead job.
 fhl_pid_live() {  # <pid>
   case "${1:-}" in ''|*[!0-9]*) return 1 ;; esac
-  [ -n "$(LC_ALL=C ps -p "$1" -o pid= 2>/dev/null)" ]
+  [ -z "$(LC_ALL=C fm_run_timed 5 ps -p "$1" -o pid= 2>/dev/null)" ] || return 0
+  [ -z "$(LC_ALL=C fm_run_timed 5 ps -p "$$" -o pid= 2>/dev/null)" ] || return 1
+  return 2
 }
 
 # The wait resolver (gate item 5). Sets WAIT (none|live|dead|unverified|
 # expired) and WAIT_NOTE.
 fhl_resolve_wait() {  # <task> <wait-line>
-  local task=$1 line=$2 until at pid ticket queue_out max queue=0
+  local task=$1 line=$2 until at pid ticket queue_out max queue=0 prc=0
   WAIT=none WAIT_NOTE=
   [ -n "$line" ] || return 0
   status_is_paused "$line" || return 0
@@ -626,7 +631,11 @@ fhl_resolve_wait() {  # <task> <wait-line>
   fi
   pid=$(printf '%s' "$line" | sed -nE 's/.*(^|[^A-Za-z0-9_])pid[=: ]+([0-9]+).*/\2/p' | head -n 1)
   if [ -n "$pid" ]; then
-    if ! fhl_pid_live "$pid"; then WAIT=dead WAIT_NOTE="pid-gone: $WAIT_NOTE"; return 0; fi
+    fhl_pid_live "$pid" || prc=$?
+    case "$prc" in
+      1) WAIT=dead WAIT_NOTE="pid-gone: $WAIT_NOTE"; return 0 ;;
+      2) WAIT=unknown WAIT_NOTE="pid-unreadable: $WAIT_NOTE"; return 0 ;;
+    esac
     # Only a process this user runs can be the worker's own job; any other
     # live pid (pid 1, another user's daemon) buys only the bounded hold.
     if [ "$(LC_ALL=C ps -p "$pid" -o uid= 2>/dev/null | tr -d ' ')" = "$(id -u)" ]; then
@@ -657,7 +666,11 @@ fhl_resolve_wait() {  # <task> <wait-line>
           END { exit !found }' > "$HL/.wait.$$"; then
         pid=$(cat "$HL/.wait.$$")
         rm -f "$HL/.wait.$$"
-        if [ -z "$pid" ] || fhl_pid_live "$pid"; then WAIT=live; return 0; fi
+        [ -z "$pid" ] || fhl_pid_live "$pid" || prc=$?
+        case "$prc" in
+          0) WAIT=live; return 0 ;;
+          2) WAIT=unknown WAIT_NOTE="pid-unreadable: $WAIT_NOTE"; return 0 ;;
+        esac
       fi
       rm -f "$HL/.wait.$$"
       WAIT=dead WAIT_NOTE="test-queue-ticket-gone: $WAIT_NOTE"
@@ -878,6 +891,10 @@ fhl_prune_now() {
     t=${d%/}; t=${t##*/}
     [ -e "$STATE/$t.meta" ] || rm -rf "${d%/}"
   done
+  for e in "$HL/seen"/*; do
+    [ -e "$e" ] || continue
+    [ -e "$STATE/${e##*/}.meta" ] || rm -f "$e"
+  done
 }
 
 # A task cleaned up with an episode still open never gets another tick, so
@@ -958,8 +975,10 @@ fhl_caps() {  # sets CAPS, CAP_HIT and CAP_UNKNOWN
 # minutes, N live workers, or host load above the ceiling.
 fhl_breaker() {  # sets BREAKER and TRIPPED
   local live=0 open=0 f threshold was
+  # A task cleaned up since it was last seen alive no longer counts.
   for f in "$HL/seen"/*; do
     [ -f "$f" ] || continue
+    [ -e "$STATE/${f##*/}.meta" ] || continue
     [ "$(fhl_recorded_age "$f")" -lt 600 ] && live=$((live + 1))
   done
   for f in "$HL/episodes"/*.ep; do
@@ -1066,7 +1085,11 @@ cmd_tick() {
   live=${probe%% *}
   pid=${probe#* }
   [ "$pid" != "$probe" ] || pid=-
-  [ "$live" != alive ] || printf '%s\n' "$NOW" > "$HL/seen/$TASK"
+  # A worker seen dead stops counting toward the breaker's N at once.
+  case "$live" in
+    alive) printf '%s\n' "$NOW" > "$HL/seen/$TASK" ;;
+    dead|missing) rm -f "$HL/seen/$TASK" ;;
+  esac
 
   local status_file="$STATE/$TASK.status" last_line='' verb='' status_size=0 status_body='' wait_line status_unknown=0
   if [ -e "$status_file" ]; then
@@ -1146,7 +1169,9 @@ cmd_tick() {
 
   local head='-' dirty='-' inbox=0 wrote=0 fs_unknown=0 net_advance='' drip_seen=0 status_changed=0
   if [ -d "$STATE/$TASK.inbox/handled" ]; then
-    inbox=$(find "$STATE/$TASK.inbox/handled" -maxdepth 1 -name '*.msg' 2>/dev/null | wc -l | tr -d ' ')
+    # A failed count keeps the last one and makes the sensor unknown.
+    inbox=$(set -o pipefail; fm_run_timed 10 find "$STATE/$TASK.inbox/handled" -maxdepth 1 -name '*.msg' 2>/dev/null | wc -l | tr -d ' ') \
+      || { inbox=$(fhl_num "${S_inbox:-0}" 0); fs_unknown=1; }
   fi
   if [ "$KIND" = ship ] && [ -n "$WT" ] && [ -d "$WT" ]; then
     head=$(git -C "$WT" rev-parse HEAD 2>/dev/null) || { head=-; fs_unknown=1; }

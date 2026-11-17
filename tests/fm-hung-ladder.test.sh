@@ -321,6 +321,7 @@ seed_live() {  # <home> <count> <now>: other live workers for the breaker's N
   mkdir -p "$1/state/hung-ladder/seen"
   while [ "$i" -lt "$2" ]; do
     printf '%s\n' "$3" > "$1/state/hung-ladder/seen/other-$i"
+    : > "$1/state/other-$i.meta"
     i=$((i + 1))
   done
 }
@@ -359,6 +360,20 @@ test_breaker_formula_and_load() {
   assert_equals 0 "$(rows "$h" - alarm)" 'no systemic alarm below max(3, ceil(N/4))'
   for t in c1 c2 c3; do
     assert_equals 1 "$(rows "$h" "$t" would-act 3)" "rung 3 proceeds below the threshold ($t)"
+  done
+
+  # Workers cleaned up since they were last seen alive leave N at once.
+  h=$(new_home breaker-gone)
+  for t in g1 g2 g3; do new_task "$h" "$t"; done
+  seed_live "$h" 13 "$B"
+  rm -f "$h/state"/other-*.meta
+  parallel_ticks "$h" "$B" $((B + 1200)) 0 g1 g2 g3
+  case "$(ledger "$h" | awk -F'\t' '$6 == "alarm" { print $11 }')" in
+    *'systemic-breaker open=3 threshold=3'*) ;;
+    *) fail 'cleaned-up workers do not raise the threshold' ;;
+  esac
+  for t in g1 g2 g3; do
+    assert_equals 0 "$(rows "$h" "$t" would-act 3)" "rung 3 holds once the cleaned-up workers leave N ($t)"
   done
 
   # Host load above the configured ceiling trips it too, and it clears.
@@ -411,6 +426,33 @@ test_healthy_waits_and_screens() {
   printf 'paused: waiting on background shell pid=%s running the build [at=%s]\n' "$live" "$B" >> "$h/state/bg.status"
   ticks "$h" bg "$B" $((B + 1800))
   assert_equals 0 "$(rows "$h" bg would-act)" 'a live background shell protects the worker'
+
+  # A pid query that fails is unknown, never a dead job.
+  mkdir -p "$h/psbin"
+  cat > "$h/psbin/ps" <<'EOF'
+#!/usr/bin/env bash
+[ "$#" = 4 ] && [ "$1" = -p ] && [ "$3" = -o ] && [ "$4" = pid= ] && exit 1
+exec /bin/ps "$@"
+EOF
+  chmod +x "$h/psbin/ps"
+  new_task "$h" pq
+  printf 'paused: waiting on background shell pid=%s running the build [at=%s]\n' "$live" "$B" >> "$h/state/pq.status"
+  EXTRA_BIN="$h/psbin" ticks "$h" pq "$B" $((B + 1800))
+  no_escalation "$h" pq 'a failed pid query'
+  ! ledger "$h" | awk -F'\t' '$4 == "pq" && $11 ~ /pid-gone/ { f = 1 } END { exit !f }' || fail 'a failed pid query never reads as a dead job'
+
+  # A steering inbox that cannot be read is unknown, never quiet.
+  if [ "$(id -u)" != 0 ]; then
+    new_task "$h" ib
+    mkdir -p "$h/state/ib.inbox/handled"
+    ticks "$h" ib "$B" $((B + 600))
+    chmod 000 "$h/state/ib.inbox/handled"
+    ticks "$h" ib $((B + 660)) $((B + 1800))
+    chmod 700 "$h/state/ib.inbox/handled"
+    no_escalation "$h" ib 'an unreadable steering inbox'
+    ledger "$h" | awk -F'\t' '$4 == "ib" && $6 == "hold" && $11 ~ /unknown:.*fs/ { f = 1 } END { exit !f }' \
+      || fail 'an unreadable steering inbox holds the episode'
+  fi
 
   # A recognised dialog parks with the pane saved, never rung 3 or 4.
   new_task "$h" dl
