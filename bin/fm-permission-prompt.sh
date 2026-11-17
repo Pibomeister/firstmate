@@ -275,7 +275,7 @@ _fm_pp_question_paragraph() {  # <screen>
     { r[NR] = $0 }
     END {
       first = 0
-      for (i = NR; i >= 1; i--) if (r[i] ~ /^[ \t]*((❯|›|>)[ \t]*)?1[.)][ \t]/) { first = i; break }
+      for (i = NR; i >= 1; i--) if (r[i] ~ /^[^0-9A-Za-z]*1[.)][ \t]/) { first = i; break }
       if (!first) exit 0
       top = first
       while (top > 1 && r[top - 1] ~ /[^ \t]/) top--
@@ -395,7 +395,11 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
     usage-limit|model-switch)
       # Another handler owns these pickers, but a spend, sign-in, or other
       # hard-stop answer on one is still reported and never answered here.
-      cat=$(fm_pp_hardstop_category "$(_fm_wd_dialog_rows "$screen" all)") || return 1
+      # Only the picker's own paragraph is read, so conversation above it
+      # never names the category.
+      text=$(_fm_pp_question_paragraph "$screen")
+      [ -n "$text" ] || text=$(_fm_wd_dialog_rows "$screen" all)
+      cat=$(fm_pp_hardstop_category "$text") || return 1
       printf 'hardstop\t%s\n' "$cat"
       return 0
       ;;

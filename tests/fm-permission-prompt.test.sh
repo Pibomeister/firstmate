@@ -286,6 +286,12 @@ test_hardstop_categories() {
     "a usage-limit picker that offers paid usage is a spend stop"
   printf ' Switch model?\n ❯ 1. Opus\n   2. Sonnet\n\n Enter to confirm · Esc to cancel\n' | classify claude model-switch >/dev/null \
     && fail "an ordinary model-switch picker is left to its own handler"
+  printf 'The API token was rotated yesterday, see notes.\n\n Switch to another model?\n ❯ 1. Wait\n   2. Stop\n\n Enter to confirm · Esc to cancel\n' | classify claude model-switch >/dev/null \
+    && fail "conversation above a model-switch picker named its hard-stop category"
+  printf '⏺ I merged the deploy notes into the release doc.\n\n You have hit your limit\n ❯ 1. Wait for reset\n   2. Switch to another account\n\n Enter to confirm · Esc to cancel\n' | classify claude usage-limit >/dev/null \
+    && fail "conversation above a usage-limit picker named its hard-stop category"
+  assert_equals $'hardstop\tspend' "$(printf '⏺ I merged the deploy notes.\n\n You have hit your limit\n ❯ 1. Wait for reset\n   2. Add funds to keep going\n\n Enter to confirm · Esc to cancel\n' | classify claude usage-limit)" \
+    "a usage-limit picker whose own rows offer paid usage stays a spend stop under conversation"
   printf ' Which plan should I follow?\n ❯ 1. Plan A\n   2. Plan B\n\n Enter to select · ↑/↓ to navigate · Esc to cancel\n' | classify claude >/dev/null \
     && fail "an ordinary question picker is not a permission prompt"
   pass "hard stops: credential, sign-in, spend, destructive, and release prompts are named and never routed"
