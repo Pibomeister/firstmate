@@ -552,11 +552,11 @@ test_declaration_refused_inside_a_repository() {
   seen=$(emitted_report "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") || fail "the emitted launch failed to run"
   assert_equals 'policy=unattended
 supervisor=firstmate
-declaration=unset
+declaration=
 codex-set=shell_environment_policy.set.AK_LIFECYCLE_POLICY="unattended"
 codex-set=shell_environment_policy.set.AK_LIFECYCLE_SUPERVISOR="firstmate"
 codex-set=shell_environment_policy.set.AK_LIFECYCLE_SUPERVISOR_DECLARATION=""' "$seen" \
-    "a launch without a declaration must unset any inherited path in the agent and set it empty in its Codex tool shells"
+    "a launch without a declaration must replace any inherited path with an empty value in the agent and its Codex tool shells"
   pass "a declaration location inside a git repository is refused with a warning and no inherited path survives"
 }
 
@@ -584,7 +584,8 @@ test_declaration_refuses_a_directory_destination() {
     [ -z "$(find "$dir" -maxdepth 1 -name '.supervisor-declaration.json.*')" ] || fail "a refused $kind destination must leave no temporary file"
     install_probe "$FAKEBIN_DIR"
     seen=$(emitted_report "$FAKEBIN_DIR" "$LAUNCH_LOG" "$PANE_LOG") || fail "the emitted launch failed to run"
-    assert_contains "$seen" "declaration=unset" "a $kind destination must not be exported as the declaration"
+    printf '%s\n' "$seen" | grep -qx 'declaration=' \
+      || fail "a $kind destination must not be exported as the declaration, and the name must stay present and empty; got: $seen"
   done
   pass "a declaration path that is a directory or a link to one is refused and never exported"
 }
@@ -648,9 +649,9 @@ test_claude_settings_pin_the_declaration() {
 claude-settings-declaration=$want" "$seen" \
           "a claude $kind must carry the provisioned declaration in its environment and its per-launch settings"
       else
-        assert_equals 'declaration=unset
+        assert_equals 'declaration=
 claude-settings-declaration=' "$seen" \
-          "a claude $kind with a refused declaration must unset it and pin it empty in its per-launch settings"
+          "a claude $kind with a refused declaration must carry it empty in its environment and its per-launch settings"
       fi
     done
   done

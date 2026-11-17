@@ -2038,9 +2038,13 @@ Before each launch, Firstmate writes the declaration to `$XDG_STATE_HOME/firstma
 The file lives there because agent-kit refuses a declaration inside any git repository, and a Firstmate home is inside one.
 Firstmate writes the file only when it is absent or its bytes differ, because agent-kit binds each run to the file's path and digest and refuses to ship that run after either changes.
 When the location has a `.git` entry on any ancestor, for example a home directory kept as a dotfiles work tree, or cannot be written, the spawn prints a warning and launches the worker with the declaration cleared.
-A pane launch unsets the variable, while a T3 Code launch, a Codex tool shell and a Claude worker's per-launch settings receive it empty, so no stale value from the environment or a harness config survives.
+The worker environment, a T3 Code launch, a Codex tool shell and a Claude worker's per-launch settings all receive the variable empty rather than unset, so no inherited value survives and a harness dotenv loader that fills only missing names leaves it empty.
 Agent-kit then refuses that worker's unattended lifecycle runs, and the worker's other work is unaffected.
 Set `XDG_STATE_HOME` to a directory outside every repository to fix it.
+Firstmate provisions these three names only through the worker environment and the per-launch carriers it owns, which are the Codex tool-shell override, the Claude per-launch settings and the T3 Code worktree configuration.
+Operator-level harness layers outside those carriers can still override any `AK_LIFECYCLE_*` name, for example Claude managed settings, a harness's own dotenv or organization settings, a dotenv file loaded with override, or direnv.
+Those layers sit outside Firstmate launch provisioning for the declaration exactly as they already do for `AK_LIFECYCLE_POLICY` and `AK_LIFECYCLE_SUPERVISOR`, so keep them free of these names.
+Agent-kit still validates the resolved declaration on every run: its real path, that no ancestor is a git repository, its schema, and its sha256.
 [`bin/fm-ak-supervisor-lib.sh`](../bin/fm-ak-supervisor-lib.sh) owns the declaration's exact content and write rules.
 
 The policy and supervisor values are fixed and have no setting.

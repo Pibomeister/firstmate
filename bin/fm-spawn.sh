@@ -482,10 +482,10 @@
 #   bin/fm-ak-supervisor-lib.sh provisions outside every git repository on this
 #   host before each launch (that library owns its shape, location and
 #   stability). When it cannot be provisioned, the spawn warns, still launches,
-#   and unsets any inherited declaration path (a T3 Code launch, a Codex tool
-#   shell and Claude's per-launch --settings env set it empty instead),
-#   so agent-kit refuses the worker's unattended runs instead of reading a
-#   stale file.
+#   and sets the declaration empty in the worker environment, a T3 Code
+#   launch, a Codex tool shell and Claude's per-launch --settings env, so
+#   agent-kit refuses the worker's unattended runs instead of reading a stale
+#   file.
 #   Agent-kit records the supervisor only from the release that includes its
 #   companion unattended opt-in change; an older agent-kit, for example 0.1.96,
 #   ignores AK_LIFECYCLE_SUPERVISOR and its declaration, so only
@@ -7590,10 +7590,7 @@ esac
 # policy"). Claude applies a settings env value over the process environment,
 # so its per-launch settings pin the declaration too, empty when it could not
 # be provisioned, and no saved Claude env value can restore a stale path.
-if AK_SUPERVISOR_DECLARATION=$(fm_ak_supervisor_declaration_ensure); then
-  AK_SUPERVISOR_DECLARATION_OK=1
-else
-  AK_SUPERVISOR_DECLARATION_OK=0
+if ! AK_SUPERVISOR_DECLARATION=$(fm_ak_supervisor_declaration_ensure); then
   AK_SUPERVISOR_DECLARATION=
   echo "warning: launching $ID without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs" >&2
 fi
@@ -9186,14 +9183,11 @@ fi
 # an inherited value in this spawn's environment or the destination pane never
 # replaces them, so a secondmate's own spawns carry the same values. Export
 # statements survive a compound raw launch and the launch-env-allowlist
-# `env -i` wrapper. A declaration that cannot be provisioned is unset rather
-# than inherited, so agent-kit refuses unattended runs instead of reading a
-# stale file.
-if [ "$AK_SUPERVISOR_DECLARATION_OK" = 1 ]; then
-  LAUNCH="export AK_LIFECYCLE_SUPERVISOR_DECLARATION=$(shell_quote "$AK_SUPERVISOR_DECLARATION"); $LAUNCH"
-else
-  LAUNCH="unset AK_LIFECYCLE_SUPERVISOR_DECLARATION; $LAUNCH"
-fi
+# `env -i` wrapper. A declaration that cannot be provisioned is exported empty
+# rather than inherited or unset, so agent-kit refuses unattended runs instead
+# of reading a stale file, and a harness dotenv loader that fills only missing
+# names sees it as present and leaves it empty.
+LAUNCH="export AK_LIFECYCLE_SUPERVISOR_DECLARATION=$(shell_quote "$AK_SUPERVISOR_DECLARATION"); $LAUNCH"
 LAUNCH="export AK_LIFECYCLE_POLICY=unattended; export AK_LIFECYCLE_SUPERVISOR=firstmate; $LAUNCH"
 # Every launch also exports the absolute path of this task's steering inbox, so
 # the constant doorbell line (bin/fm-task-inbox-lib.sh) can name
