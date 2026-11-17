@@ -37,6 +37,8 @@
 #   state/night-score/supervisor-activity.tsv  append-only activity-source record of every watched home; docs/watchdog.md owns its rows.
 #   <watched home>/state/quota-guard/, <watched home>/state/quota-limit-dialogs.tsv
 #                                written by bin/fm-quota-guard.sh, whose header owns them.
+#   state/memory-guard*.tsv      the owner home's host memory and swap samples,
+#                                written by bin/fm-memory-guard.sh, whose header owns them.
 #   data/watchdog/status.md      the short status file, rewritten atomically after each pass.
 #   data/watchdog/handoffs/, data/watchdog/rulings/  restart handoffs and council rulings.
 #   data/watchdog/no-rulings/    the record of each council that gave no ruling.
@@ -2290,6 +2292,30 @@ wd_monitor_read() {  # <home>
   return 1
 }
 
+# --- memory guard (bin/fm-memory-guard.sh) --------------------------------------
+
+# wd_memory_guard_pass: one host memory and swap sample per pass, never per
+# home. It runs in observe mode unless this watchdog's mode is act. An alarm in
+# force is an open gap on every pass; a sample that fails is a gap and never
+# stops the pass.
+wd_memory_guard_pass() {
+  local out rc=0 summary
+  [ "$(cfg memory-guard on)" != off ] || return 0
+  set -- check
+  [ "$(wd_mode)" = act ] || set -- "$@" --observe
+  out=$(fm_run_timed 30 env FM_HOME="$OWNER_HOME" FM_MEMORY_GUARD_NOW="$(wd_now)" \
+    "$SCRIPT_DIR/fm-memory-guard.sh" "$@" 2>/dev/null </dev/null) || rc=$?
+  case "$rc" in
+    0) return 0 ;;
+    3) ;;
+    *) printf -- '- host: memory guard sample failed (exit %s)\n' "$rc" >> "$WD_GAPS"; return 0 ;;
+  esac
+  summary=$(printf '%s\n' "$out" | sed -n '1s/^memory-guard: status=alarm //p')
+  [ -z "$summary" ] || printf -- '- host: memory alarm %s\n' "$summary" >> "$WD_GAPS"
+  printf '%s\n' "$out" | sed -n 's/^MEMORY_GUARD_ALARM: /- host: /p' >> "$WD_GAPS"
+  return 0
+}
+
 wd_once() {  # [home-filter]
   local filter=${1:-} health
   mkdir -p "$WD" "$OUT"
@@ -2313,6 +2339,7 @@ wd_once() {  # [home-filter]
     wd_visit_worker_dialogs page
     wd_health_line >> "$health"
   done
+  wd_memory_guard_pass
   [ -n "$(wd_models)" ] || printf -- '- no model configured; judged symptoms are reported only\n' >> "$WD_GAPS"
   wd_write_status "$health" "$WD_GAPS"
   rm -f "$health" "$WD_GAPS" "$WD/.decisions" "$WD/.decisions-aged"

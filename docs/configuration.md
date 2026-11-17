@@ -14,6 +14,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), [warm-cache compaction](#warm-cache-compaction-configwarm-compact), [early handoff trigger](#early-handoff-trigger-confighandoff-trigger), [heartbeat stale grace](#heartbeat-stale-grace-configheartbeat), [task budgets](#task-budget-enforcement-configbudget-enforcement), and [Calm preference](#calm-preference-configcalm) |
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
 | Unattended stall recovery for firstmates and second mates | [Assistant watchdog](#assistant-watchdog-configwatchdog) |
+| Host memory and swap alarms | [Host memory guard](#host-memory-guard-configmemory-guard) |
 | Restarting relays that go stale after a network daemon restart | [Relay guard](#relay-guard-configrelay-guard) |
 | Host identity, credential, and reachability probes for an outside watchdog | [Host-health probe](#host-health-probe) |
 | Machine-wide heavy test admission | [`fm-test-queue.sh` header](../bin/fm-test-queue.sh) |
@@ -1211,6 +1212,15 @@ The no-mistakes brief tells a crewmate to run the lane gate before it starts a r
 `bin/fm-remote-home-provision.sh` refuses a new home on the receiving host the same way, and an existing home is not gated.
 A remote code root older than this gate provisions without it until that root is updated.
 A refusal places the work on another host or cloud.
+
+## Host memory guard (config/memory-guard)
+
+[`bin/fm-memory-guard.sh`](../bin/fm-memory-guard.sh) samples swap use and the largest processes once per [watchdog](watchdog.md) pass, and `check` runs one sample by hand.
+The optional local, gitignored `config/memory-guard` sets its swap and process limits, the sustained window, the alarm repeat time, the sample log cap, and `mode`.
+The default `mode=observe` never signals a process.
+Only an explicit `mode=reap-scratch` lets it send one SIGTERM to a sustained scratch process under a disposable temp root, and never to an agent CLI, a supervisor, a multiplexer, an IDE, a browser, or a desktop app.
+The script header owns every key and default, the sample log at `state/memory-guard.tsv`, the alarm lines, and the full protection list.
+[`tests/fm-memory-guard.test.sh`](../tests/fm-memory-guard.test.sh) exercises both readers and the protection list with fixture process tables.
 
 ## PR-ready line after green (config/ready-after-green)
 

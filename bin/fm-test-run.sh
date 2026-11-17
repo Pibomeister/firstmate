@@ -1923,6 +1923,10 @@ families_for_changed_path() {
     bin/fm-disk-alarm.sh)
       printf '%s\n' "__script__:fm-disk-alarm.test.sh"
       ;;
+    bin/fm-memory-guard.sh)
+      printf '%s\n' "__script__:fm-memory-guard.test.sh"
+      printf '%s\n' "__script__:fm-watchdog.test.sh"
+      ;;
     bin/fm-env-lib.sh)
       # The one .env accessor, sourced by bin/fm-x-lib.sh (Relay token) and
       # bin/fm-dispatch-resolve.sh (TYPESAFE_API_KEY).
