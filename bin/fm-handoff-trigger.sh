@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
-# fm-handoff-trigger.sh - early handoff trigger for a Claude primary session.
+# fm-handoff-trigger.sh - context trigger for a Claude primary session.
 #
 # Registered in tracked .claude/settings.json as a PostToolUse, a
 # UserPromptSubmit, and a Stop command hook. When the session's context left before
 # auto-compact falls to the configured percentage (default 15), the session
-# receives ONE instruction, as hook additionalContext, to write its handoff
-# from the mission ledger (bin/fm-ledger.sh handoff) before auto-compact, hand
-# off to a live successor it launches with bin/fm-handoff-launch.sh (a second
-# mate asks its parent to relaunch it instead), and report that it is ready to
-# restart. It fires
-# at most once per context cycle, so a session that keeps working past the
-# threshold is not nagged again, and a session that auto-compacts anyway is told
-# again before its next auto-compact.
+# receives ONE instruction, as hook additionalContext, once per context cycle.
+# Compaction-first: auto-compaction is the routine reset on the same harness, so
+# the instruction is normally a CAPTURE step - file every piece of open work that
+# lives only in the chat into its durable record, then let auto-compaction run;
+# it never asks for a successor and never gates a stop. A cycle ends in a
+# planned FRESH START (a handoff written from the mission ledger with
+# bin/fm-ledger.sh handoff, to a live successor the session launches with
+# bin/fm-handoff-launch.sh; a second mate asks its parent to relaunch it) only
+# at the drift cap: once the transcript holds fresh-start-after compaction
+# boundaries, or when the first context reading after the latest compaction is
+# at or above fresh-start-context-tokens. fresh-start-after=0 restores a handoff
+# every cycle. A handoff for quota exhaustion or a harness switch is a
+# deliberate handoff the session or the captain starts on the same paths.
 #
 # CONTEXT LEFT. Claude Code does not hand hooks its own "% until auto-compact"
 # figure, and the status line's context_window.remaining_percentage measures
@@ -48,11 +53,12 @@
 # PUBLISHED POINT. On each PostToolUse or UserPromptSubmit run with a session
 # id and a transcript, whatever percent-left says, the hook writes the point it
 # resolved to state/compact-point as one line,
-#   session=<id> compact_at=<tokens> at=<epoch>
+#   session=<id> compact_at=<tokens> at=<epoch> reset=compaction|handoff
 # with an atomic rename, so a reader outside the session (the watchdog, through
-# bin/fm-context-reading-lib.sh) uses the same window. A run that resolves no
-# point removes a record that names its session. The record never changes this
-# hook's own decision.
+# bin/fm-context-reading-lib.sh) uses the same window and knows whether this
+# cycle ends in auto-compaction or in a planned fresh start. A run that resolves
+# no point removes a record that names its session. The record never changes
+# this hook's own decision.
 #
 # CONFIG (config/handoff-trigger, optional; docs/configuration.md "Early
 # handoff trigger" owns the schema). Absent means on at the defaults.
@@ -60,6 +66,12 @@
 #                           0 turns the trigger off, 1-99 otherwise)
 #   compact-at-tokens=<n>   the auto-compact point in tokens, overriding the
 #                           value derived from Claude's settings
+#   fresh-start-after=<n>   the drift cap in compactions (default 4; 0 hands
+#                           off every cycle)
+#   fresh-start-context-tokens=<n>
+#                           a first reading after compaction at or above n
+#                           makes the cycle a fresh start (default 135000;
+#                           0 turns that reading off)
 # Blank lines and lines starting with # are ignored; an unusable value keeps
 # its default.
 #
@@ -73,16 +85,22 @@
 # boundary records in its transcript, so a compaction re-arms the trigger. The
 # first firing in a cycle creates state/.handoff-trigger.<session-id>.<count>
 # with an exclusive create, so concurrent hook calls from parallel tool calls
-# still fire once. A firing also removes markers older than 30 days.
+# still fire once; the marker records mode=capture or mode=handoff, and a marker
+# without a mode (written before compaction-first) counts as a handoff. The
+# hook builds the whole instruction before that create and prints it right
+# after, so a run Claude cancels at its hook timeout while it is still building
+# leaves the firing to the next run. A firing also removes markers older than
+# 30 days.
 #
-# RESTART GATE (Stop). A session is handing off once the trigger has fired in
-# its current context cycle, or once it ran `bin/fm-order.sh handoff --doc`
-# (stow, a restart, or a home with percent-left=0). On each Stop of a session
+# RESTART GATE (Stop). A session is handing off once the trigger has fired a
+# fresh start in its current context cycle, or once it ran `bin/fm-order.sh
+# handoff --doc` (stow, a restart, a deliberate handoff, or a home with
+# percent-left=0). A capture firing is not a handoff. On each Stop of a session
 # handing off, the hook runs `bin/fm-order.sh gate`; when the recorded handoff
 # document does not name every open captain order it blocks that stop (exit 2,
 # the gate's verdict on stderr) so the session writes the orders into its
-# handoff before it reports ready to restart. A session the trigger fired on
-# is also blocked until fm-handoff-lib.sh validates the completed successor's
+# handoff before it reports ready to restart. A session with a fresh-start
+# firing in this cycle is also blocked until fm-handoff-lib.sh validates the completed successor's
 # acknowledgement, digest, process instance and lock ownership. The completion
 # record must be newer than this cycle's trigger marker. The successor confirms
 # the handoff sha256 and stops on a mismatch. The lock transfers while this
@@ -114,6 +132,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 
 FM_HANDOFF_PERCENT_DEFAULT=15
+FM_HANDOFF_FRESH_AFTER_DEFAULT=4
+FM_HANDOFF_FRESH_TOKENS_DEFAULT=135000
 
 command -v jq >/dev/null 2>&1 || exit 0
 PAYLOAD=$(cat 2>/dev/null) || exit 0
@@ -129,6 +149,8 @@ fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
 
 # Read the threshold from config/handoff-trigger.
 PERCENT=$FM_HANDOFF_PERCENT_DEFAULT
+FRESH_AFTER=$FM_HANDOFF_FRESH_AFTER_DEFAULT
+FRESH_TOKENS=$FM_HANDOFF_FRESH_TOKENS_DEFAULT
 if [ -f "$CONFIG/handoff-trigger" ]; then
   while IFS= read -r line || [ -n "$line" ]; do
     key=${line%%=*}
@@ -136,6 +158,8 @@ if [ -f "$CONFIG/handoff-trigger" ]; then
     case "$value" in '' | *[!0-9]*) continue ;; esac
     case "$key" in
       percent-left) [ "${#value}" -le 2 ] && PERCENT=$((10#$value)) ;;
+      fresh-start-after) [ "${#value}" -le 3 ] && FRESH_AFTER=$((10#$value)) ;;
+      fresh-start-context-tokens) [ "${#value}" -le 7 ] && FRESH_TOKENS=$((10#$value)) ;;
     esac
   done < "$CONFIG/handoff-trigger"
 fi
@@ -154,7 +178,8 @@ publish_compact_point() {
     return 0
   fi
   tmp=$(mktemp "$record.XXXXXX" 2>/dev/null) || return 0
-  if printf 'session=%s compact_at=%s at=%s\n' "$SESSION_ID" "$COMPACT_AT" "$(date +%s)" > "$tmp" && mv -f "$tmp" "$record"; then
+  if printf 'session=%s compact_at=%s at=%s%s\n' "$SESSION_ID" "$COMPACT_AT" "$(date +%s)" \
+    "${MODE:+ reset=$( [ "$MODE" = capture ] && echo compaction || echo handoff)}" > "$tmp" && mv -f "$tmp" "$record"; then
     return 0
   fi
   rm -f "$tmp"
@@ -170,10 +195,11 @@ case "$EVENT" in PostToolUse | UserPromptSubmit | Stop) ;; *) exit 0 ;; esac
 # tokens: a compaction landing between the two reads then leaves no usage to
 # measure instead of pre-compaction usage in the new cycle.
 MARKER=
+BOUNDARIES=
 if [ -n "$SESSION_ID" ] && [ -n "$TRANSCRIPT" ]; then
   BOUNDARIES=$(LC_ALL=C grep -c '"subtype":"compact_boundary"' "$TRANSCRIPT" 2>/dev/null)
   case "$BOUNDARIES" in
-    '' | *[!0-9]*) ;;
+    '' | *[!0-9]*) BOUNDARIES= ;;
     *) MARKER="$STATE/.handoff-trigger.$(printf '%s' "$SESSION_ID" | tr -c 'A-Za-z0-9_-' '_').$BOUNDARIES" ;;
   esac
 fi
@@ -182,10 +208,18 @@ if [ "$EVENT" = Stop ]; then
   # shellcheck source=bin/fm-stop-policy-lib.sh
   . "$SCRIPT_DIR/fm-stop-policy-lib.sh"
   # Enforce the restart gate only on a session that is handing off: the
-  # trigger fired in this cycle, or this session recorded a handoff document
-  # (bin/fm-order.sh handing-off), which also covers percent-left=0. Another
-  # session's handoff record in the same home never gates this stop.
-  { [ -n "$MARKER" ] && [ -e "$MARKER" ]; } ||
+  # trigger fired a fresh start in this cycle, or this session recorded a
+  # handoff document (bin/fm-order.sh handing-off), which also covers
+  # percent-left=0. A capture firing is not a handoff. Another session's
+  # handoff record in the same home never gates this stop.
+  HANDOFF_MARKER=
+  if [ -n "$MARKER" ] && [ -e "$MARKER" ]; then
+    case "$(sed -n 's/.* mode=\([a-z]*\).*/\1/p' "$MARKER" 2>/dev/null)" in
+      capture) ;;
+      *) HANDOFF_MARKER=1 ;;
+    esac
+  fi
+  [ -n "$HANDOFF_MARKER" ] ||
     FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" handing-off 2>/dev/null || exit 0
   [ "$(printf '%s' "$PAYLOAD" | jq -r '.stop_hook_active // false' 2>/dev/null)" != true ] || exit 0
   GATE_RC=0
@@ -197,10 +231,10 @@ if [ "$EVENT" = Stop ]; then
       "$(printf '%s' "$GATE_OUT" | tr '\n' ' ')" >&2
     exit 2
   fi
-  # Successor gate: only a session the trigger fired on in this cycle owes a
-  # successor; a handoff recorded for stow or compaction does not, and a
-  # second mate asks its parent for a relaunch instead.
-  if [ -n "$MARKER" ] && [ -e "$MARKER" ] && ! fm_root_is_secondmate_home "$FM_ROOT"; then
+  # Successor gate: only a fresh-start firing in this cycle owes a successor;
+  # a capture firing or a handoff recorded for stow does not, and a second
+  # mate asks its parent for a relaunch instead.
+  if [ -n "$HANDOFF_MARKER" ] && ! fm_root_is_secondmate_home "$FM_ROOT"; then
     LAUNCH="$STATE/.handoff-successor"
     # shellcheck source=bin/fm-session-lock-lib.sh
     . "$SCRIPT_DIR/fm-session-lock-lib.sh"
@@ -214,6 +248,44 @@ if [ "$EVENT" = Stop ]; then
   fi
   exit 0
 fi
+# first_reading_after_compaction: the first assistant context reading after the
+# latest compaction boundary, from the lines just after it.
+first_reading_after_compaction() {
+  local last
+  last=$(LC_ALL=C grep -n '"subtype":"compact_boundary"' "$TRANSCRIPT" 2>/dev/null | tail -n 1 | cut -d: -f1)
+  case "$last" in '' | *[!0-9]*) return 1 ;; esac
+  sed -n "$((last + 1)),$((last + 400))p" "$TRANSCRIPT" 2>/dev/null | jq -R -r '
+      fromjson? | select(.type == "assistant") | .message.usage // empty
+      | select(type == "object")
+      | (.input_tokens // 0) + (.cache_read_input_tokens // 0) + (.cache_creation_input_tokens // 0)
+    ' 2>/dev/null | head -n 1
+}
+
+# The cycle's mode: capture (auto-compaction is the reset) or handoff (a planned
+# fresh start), with the reason a fresh start gives.
+MODE=
+REASON=
+POST_TOKENS=
+# A home with the trigger off (percent-left=0) gets no capture, so it publishes
+# no reset and keeps the watchdog's low-context restart.
+if [ -n "$BOUNDARIES" ] && [ "$PERCENT" -gt 0 ]; then
+  MODE=capture
+  if [ "$FRESH_AFTER" -eq 0 ]; then
+    MODE=handoff
+    REASON="this home hands off every context cycle (fresh-start-after=0)"
+  elif [ "$BOUNDARIES" -ge "$FRESH_AFTER" ]; then
+    MODE=handoff
+    REASON="the drift cap is reached after ${BOUNDARIES} compactions on this harness (fresh-start-after=${FRESH_AFTER})"
+  elif [ "$BOUNDARIES" -ge 1 ] && [ "$FRESH_TOKENS" -gt 0 ]; then
+    POST_TOKENS=$(first_reading_after_compaction) || POST_TOKENS=
+    case "$POST_TOKENS" in '' | *[!0-9]*) POST_TOKENS= ;; esac
+    if [ -n "$POST_TOKENS" ] && [ "$POST_TOKENS" -ge "$FRESH_TOKENS" ]; then
+      MODE=handoff
+      REASON="the latest compaction left ${POST_TOKENS} tokens right after compaction, at or above ${FRESH_TOKENS}, so each cycle is getting shorter"
+    fi
+  fi
+fi
+
 # shellcheck source=bin/fm-compact-point-lib.sh
 . "$SCRIPT_DIR/fm-compact-point-lib.sh"
 COMPACT_AT=
@@ -234,24 +306,34 @@ case "$TOKENS" in '' | *[!0-9]*) exit 0 ;; esac
 LEFT=$(fm_compact_left_percent "$TOKENS" "$COMPACT_AT")
 [ "$LEFT" -le "$PERCENT" ] || exit 0
 
-# Claim the one firing for this context cycle; a concurrent call that loses exits.
-( set -o noclobber; printf '%s\n' "$(date +%s) tokens=$TOKENS compact_at=$COMPACT_AT" > "$MARKER" ) 2>/dev/null || exit 0
+# Build the whole instruction before the claim below (ONCE PER CONTEXT CYCLE).
 find "$STATE" -maxdepth 1 -name '.handoff-trigger.*' -type f -mtime +30 -exec rm -f {} + 2>/dev/null
 
-MESSAGE="Firstmate early handoff trigger, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). Write your session handoff now, before auto-compact, from the mission ledger: file every open ask, approved proposal, and captain order that has no backlog item yet as its own item with bin/fm-ledger.sh intake, bring each item's note current, and persist every decision and piece of durable knowledge this session holds (the stow skill covers this). Then write a new handoff with bin/fm-ledger.sh handoff --doc <new handoff file> --note-file <short note of what is in flight right now>: it adds that note to the ledger plan, never continues an earlier handoff, and records the document with bin/fm-order.sh handoff --doc. If bin/fm-ledger.sh cannot read the backlog, do not skip the handoff: write a new handoff document yourself with the in-flight note, the open work, and bin/fm-dispatch-log.sh open, record it with bin/fm-order.sh handoff --doc <that file>, and say in it that the ledger was unreadable. Then hand off to a successor and report that this session is ready to restart."
-if fm_root_is_secondmate_home "$FM_ROOT"; then
-  MESSAGE="$MESSAGE This is a second mate, so never launch your own successor: append to your parent channel that your handoff is written, name the handoff document, and ask the parent to relaunch you, once, then end this turn."
+if [ "$MODE" = capture ]; then
+  MESSAGE="Firstmate context capture, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens). Auto-compaction is this session's routine reset, so do not hand off or launch a successor unless the captain asks for a handoff, such as for a quota limit or a harness switch, and do not run /compact by hand. Before it lands, file every piece of open work that lives only in this chat into its durable record: every open ask, approved proposal, and captain order with no backlog item yet as its own item with bin/fm-ledger.sh intake, each item's note brought current, new captain goals in the dispatch log (bin/fm-dispatch-log.sh), and pending captain calls as holds (bin/fm-captain-hold.sh); route durable knowledge as the stow skill describes. After compaction the re-entry card lists open orders, decisions, overdue goals, and workers; drain the wake queue and run bin/fm-crew-state.sh before acting on any PR, worker, or decision fact the summary carries, because the summary can be stale. Compactions so far: ${BOUNDARIES}; a planned fresh start comes after ${FRESH_AFTER}. This instruction fires once per context cycle."
 else
-  MESSAGE="$MESSAGE Launch your successor with bin/fm-handoff-launch.sh <handoff file>. Run it with the Bash tool's run_in_background=true, because a foreground tool timeout cannot cover its setup plus the ten-minute protocol deadline, and collect the launcher's exit status and output before reporting readiness. It requires the successor to read the document, write its nonce-bound acknowledgement with bin/fm-handoff-ack.sh, and take the session lock before state/.handoff-successor clears this turn's gate. The successor confirms the handoff sha256 and stops on a mismatch. The lock transfers while this session is still alive, so do not wait for an external exit. The successor then runs bin/fm-session-start.sh. After verified transfer, end this turn and retire the predecessor session. If both attempts fail within ten minutes, the launcher emits handoff_failed; report that failure instead of claiming readiness. A failure with reason=unresolved is not final: a later handoff_ack with reason=lock_transferred for the same nonce means the transfer committed."
+  MESSAGE="Firstmate planned fresh start, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens), and ${REASON}, so this cycle ends in a handoff to a fresh session instead of another compaction. Capture first, because the limit can land at any point: file every open ask, approved proposal, and captain order that has no backlog item yet as its own item with bin/fm-ledger.sh intake, bring each item's note current, and persist every decision and piece of durable knowledge this session holds (the stow skill covers this). Then write a new handoff with bin/fm-ledger.sh handoff --doc <new handoff file> --note-file <short note of what is in flight right now>: it adds that note to the ledger plan, never continues an earlier handoff, and records the document with bin/fm-order.sh handoff --doc. If bin/fm-ledger.sh cannot read the backlog, do not skip the handoff: write a new handoff document yourself with the in-flight note, the open work, and bin/fm-dispatch-log.sh open, record it with bin/fm-order.sh handoff --doc <that file>, and say in it that the ledger was unreadable. A fact that arrives after you record the document goes into its durable record, never an addendum file, because the successor reads only the hashed document and re-checks live records at pickup."
+  if fm_root_is_secondmate_home "$FM_ROOT"; then
+    MESSAGE="$MESSAGE This is a second mate, so never launch your own successor: append to your parent channel that your handoff is written, name the handoff document, and ask the parent to relaunch you, once, then end this turn."
+  else
+    MESSAGE="$MESSAGE Launch your successor with bin/fm-handoff-launch.sh <handoff file>. Run it with the Bash tool's run_in_background=true, because a foreground tool timeout cannot cover its setup plus the ten-minute protocol deadline, and collect the launcher's exit status and output before reporting readiness. It requires the successor to read the document, write its nonce-bound acknowledgement with bin/fm-handoff-ack.sh, and take the session lock before state/.handoff-successor clears this turn's gate. The successor confirms the handoff sha256 and stops on a mismatch. The lock transfers while this session is still alive, so do not wait for an external exit. The successor then runs bin/fm-session-start.sh. After verified transfer, end this turn and retire the predecessor session. If both attempts fail within ten minutes, the launcher emits handoff_failed; report that failure instead of claiming readiness. A failure with reason=unresolved is not final: a later handoff_ack with reason=lock_transferred for the same nonce means the transfer committed."
+  fi
+  MESSAGE="$MESSAGE Do not run /compact instead. This instruction fires once per context cycle."
+  # Durable captain orders are part of the handoff: name each open order and the
+  # command that writes them into the handoff document (bin/fm-order.sh owns the
+  # list and the restart gate this hook enforces on Stop).
+  ORDERS=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" pickup 2>/dev/null \
+    | awk '/^  [0-9]+-[0-9a-f]+ / && $3 ~ /^kind=/ { printf "%s%s (%s)", sep, $1, $2; sep = ", " }')
+  if [ -n "$ORDERS" ]; then
+    MESSAGE="$MESSAGE Open captain orders that your handoff must list: ${ORDERS}. File each order that is not a hold as its own ledger item with bin/fm-ledger.sh intake --source order:<id>; bin/fm-ledger.sh handoff then writes them into your handoff document through bin/fm-order.sh handoff --doc, and this session cannot end its handoff turn until bin/fm-order.sh gate passes."
+  fi
 fi
-MESSAGE="$MESSAGE Do not run /compact. This instruction fires once per context cycle."
-# Durable captain orders are part of the handoff: name each open order and the
-# command that writes them into the handoff document (bin/fm-order.sh owns the
-# list and the restart gate this hook enforces on Stop).
-ORDERS=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" pickup 2>/dev/null \
-  | awk '/^  [0-9]+-[0-9a-f]+ / && $3 ~ /^kind=/ { printf "%s%s (%s)", sep, $1, $2; sep = ", " }')
-if [ -n "$ORDERS" ]; then
-  MESSAGE="$MESSAGE Open captain orders that your handoff must list: ${ORDERS}. File each order that is not a hold as its own ledger item with bin/fm-ledger.sh intake --source order:<id>; bin/fm-ledger.sh handoff then writes them into your handoff document through bin/fm-order.sh handoff --doc, and this session cannot end its handoff turn until bin/fm-order.sh gate passes."
-fi
-jq -n --arg event "$EVENT" --arg context "$MESSAGE" \
-  '{hookSpecificOutput: {hookEventName: $event, additionalContext: $context}}'
+OUTPUT=$(jq -n --arg event "$EVENT" --arg context "$MESSAGE" \
+  '{hookSpecificOutput: {hookEventName: $event, additionalContext: $context}}') || exit 0
+CLAIM="$(date +%s) tokens=$TOKENS compact_at=$COMPACT_AT mode=$MODE"
+
+# Claim the one firing for this context cycle and print it at once, with only
+# builtins between the two; a concurrent call that loses the claim exits.
+set -o noclobber
+{ printf '%s\n' "$CLAIM" > "$MARKER"; } 2>/dev/null || exit 0
+printf '%s\n' "$OUTPUT"
