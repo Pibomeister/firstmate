@@ -25,6 +25,31 @@ with_hooks_env() {  # <hooks-dir> <command...>
   GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=$hooks "$@"
 }
 
+# Git 2.43 expands a pathname core.hooksPath while loading config.
+# Later git expands it when a hook runs. Probe a throwaway repo with
+# -c; a failing rev-parse is eager expansion. Independent of wrapper output.
+git_hookspath_expands_eagerly() {
+  local probe="$TMP_ROOT/git-eager-probe"
+  if [ ! -d "$probe/.git" ]; then
+    mkdir -p "$probe"
+    git init -q "$probe"
+  fi
+  ! git -C "$probe" -c core.hooksPath='~fm-no-such-user-6171/x' rev-parse --git-dir >/dev/null 2>&1
+}
+
+# <err> <git-diagnostic> — commit already failed. Branch wrapper checks on
+# the independent probe, not on the wrapper's own prefix.
+assert_hookspath_wrapper_contract() {
+  local err=$1 diagnostic=$2
+  if git_hookspath_expands_eagerly; then
+    assert_not_contains "$err" "fm-git-strip-ai-trailers:" "eager git reached the wrapper"
+  else
+    assert_contains "$err" "fm-git-strip-ai-trailers:" "lazy git never reached the wrapper"
+    assert_contains "$err" "refusing to skip its pre-commit hook" "the refusal did not name the skipped hook"
+    assert_equals 1 "$(printf '%s\n' "$err" | grep -c "$diagnostic")" "git's lookup error was not shown exactly once"
+  fi
+}
+
 make_repo() {
   local dir=$1
   fm_git_init_commit "$dir"
@@ -259,15 +284,16 @@ test_unresolvable_project_hookspath_still_refuses() {
   make_repo "$repo"
   printf 'note\n' >>"$repo/README.md"
   git -C "$repo" add README.md
+  head=$(git -C "$repo" rev-parse HEAD)
   git -C "$repo" config core.hooksPath '~fm-no-such-user-6171/hooks'
   hooks="$TMP_ROOT/hooks-unresolvable"
   "$STRIP" install "$hooks" "$repo" || fail "install should succeed with an unresolvable core.hooksPath"
-  head=$(git -C "$repo" rev-parse HEAD)
   err=$(with_hooks_env "$hooks" git -C "$repo" commit -q -m 'fix: unresolvable hooksPath' 2>&1) &&
     fail "a commit succeeded although the repository's hooks directory cannot be resolved"
-  assert_contains "$err" "refusing to skip its pre-commit hook" "the refusal did not name the skipped hook"
-  assert_equals 1 "$(printf '%s\n' "$err" | grep -c 'failed to expand user dir')" "git's lookup error was not shown exactly once"
-  assert_equals "$head" "$(git -C "$repo" rev-parse HEAD)" "a refused commit still moved HEAD"
+  assert_contains "$err" "failed to expand user dir" "the refusal did not show git's lookup error"
+  assert_hookspath_wrapper_contract "$err" "failed to expand user dir"
+  git -C "$repo" -c core.hooksPath=x config --unset core.hooksPath
+  assert_equals "$head" "$(git -C "$repo" -c core.hooksPath=x rev-parse HEAD)" "a refused commit still moved HEAD"
   pass "an unresolvable project core.hooksPath still refuses the commit"
 }
 
@@ -283,10 +309,111 @@ test_valueless_project_hookspath_still_refuses() {
   printf '[core]\n\thooksPath\n' >>"$repo/.git/config"
   err=$(with_hooks_env "$hooks" git -C "$repo" commit -q -m 'fix: valueless hooksPath' 2>&1) &&
     fail "a commit succeeded although core.hooksPath has no value"
-  assert_contains "$err" "refusing to skip its pre-commit hook" "the refusal did not name the skipped hook"
-  assert_equals 1 "$(printf '%s\n' "$err" | grep -c "missing value for 'core.hookspath'")" "git's lookup error was not shown exactly once"
+  assert_contains "$err" "missing value for 'core.hookspath'" "the refusal did not show git's lookup error"
+  assert_hookspath_wrapper_contract "$err" "missing value for 'core.hookspath'"
+  git -C "$repo" -c core.hooksPath=x config --unset core.hooksPath
   assert_equals "$head" "$(git -C "$repo" -c core.hooksPath=x rev-parse HEAD)" "a refused commit still moved HEAD"
   pass "a valueless project core.hooksPath still refuses the commit"
+}
+
+test_valueless_hookspath_before_install_succeeds_and_commit_still_refuses() {
+  local repo hooks head err
+  repo="$TMP_ROOT/valueless-before-install"
+  make_repo "$repo"
+  printf 'note\n' >>"$repo/README.md"
+  git -C "$repo" add README.md
+  head=$(git -C "$repo" rev-parse HEAD)
+  printf '[core]\n\thooksPath\n' >>"$repo/.git/config"
+  hooks="$TMP_ROOT/hooks-valueless-before"
+  "$STRIP" install "$hooks" "$repo" || fail "install should succeed with a valueless core.hooksPath already present"
+  err=$(with_hooks_env "$hooks" git -C "$repo" commit -q -m 'fix: valueless hooksPath before install' 2>&1) &&
+    fail "a commit succeeded although core.hooksPath has no value"
+  assert_contains "$err" "missing value for 'core.hookspath'" "the refusal did not show git's lookup error"
+  git -C "$repo" -c core.hooksPath=x config --unset core.hooksPath
+  assert_equals "$head" "$(git -C "$repo" -c core.hooksPath=x rev-parse HEAD)" "a refused commit still moved HEAD"
+  pass "install accepts a valueless core.hooksPath already present and the later commit still refuses"
+}
+
+test_unresolvable_install_ignores_process_locale() {
+  local repo hooks fakebin real_git
+  repo="$TMP_ROOT/unresolvable-locale"
+  make_repo "$repo"
+  git -C "$repo" config core.hooksPath '~fm-no-such-user-6171/hooks'
+  hooks="$TMP_ROOT/hooks-unresolvable-locale"
+  fakebin=$(fm_fakebin "$TMP_ROOT/locale-git")
+  real_git=$(command -v git)
+  cat >"$fakebin/git" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = -C ] && [ "\${3:-}" = rev-parse ] && [ "\${4:-}" = --is-inside-work-tree ]; then
+  case "\${LC_ALL:-}" in
+    C|C.*|POSIX)
+      printf '%s\\n' "fatal: failed to expand user dir in: '~fm-no-such-user-6171/hooks'" >&2
+      ;;
+    *)
+      printf '%s\\n' "fatal: Benutzerverzeichnis konnte nicht expandiert werden in: '~fm-no-such-user-6171/hooks'" >&2
+      ;;
+  esac
+  exit 128
+fi
+exec $(printf '%q' "$real_git") "\$@"
+SH
+  chmod 700 "$fakebin/git"
+  LC_ALL=en_US.utf8 LANG=en_US.utf8 LANGUAGE=de PATH="$fakebin:$PATH" \
+    "$STRIP" install "$hooks" "$repo" \
+    || fail "install should succeed when the process locale is not C"
+  pass "an unresolvable core.hooksPath install does not depend on the process locale"
+}
+
+test_install_rejects_allowed_probe_error_without_git_dir() {
+  local wt hooks fakebin real_git sentinel err
+  wt="$TMP_ROOT/no-git-allowed"
+  mkdir -p "$wt"
+  hooks="$TMP_ROOT/hooks-no-git-allowed"
+  mkdir -p "$hooks"
+  sentinel="$hooks/keep-me"
+  printf 'keep\n' >"$sentinel"
+  fakebin=$(fm_fakebin "$TMP_ROOT/no-git-allowed-git")
+  real_git=$(command -v git)
+  cat >"$fakebin/git" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = -C ] && [ "\${3:-}" = rev-parse ] && [ "\${4:-}" = --is-inside-work-tree ]; then
+  printf '%s\\n' "fatal: failed to expand user dir in: '~fm-no-such-user-6171/hooks'" >&2
+  exit 128
+fi
+exec $(printf '%q' "$real_git") "\$@"
+SH
+  chmod 700 "$fakebin/git"
+  err=$(PATH="$fakebin:$PATH" "$STRIP" install "$hooks" "$wt" 2>&1) &&
+    fail "install succeeded without a .git directory: $err"
+  assert_contains "$err" "error: not a git worktree" "the refusal did not name the missing worktree"
+  [ -f "$sentinel" ] || fail "install deleted a pre-existing hooks directory after refusing a no-.git probe"
+  pass "an allowed git probe error without .git refuses install and leaves the hooks directory"
+}
+
+test_install_rejects_unrelated_probe_failure_with_git_dir() {
+  local repo hooks fakebin real_git sentinel err
+  repo="$TMP_ROOT/unrelated-probe"
+  make_repo "$repo"
+  hooks="$TMP_ROOT/hooks-unrelated-probe"
+  mkdir -p "$hooks"
+  sentinel="$hooks/keep-me"
+  printf 'keep\n' >"$sentinel"
+  fakebin=$(fm_fakebin "$TMP_ROOT/unrelated-probe-git")
+  real_git=$(command -v git)
+  cat >"$fakebin/git" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = -C ] && [ "\${3:-}" = rev-parse ] && [ "\${4:-}" = --is-inside-work-tree ]; then
+  printf '%s\\n' "fatal: bogus config in this probe" >&2
+  exit 128
+fi
+exec $(printf '%q' "$real_git") "\$@"
+SH
+  chmod 700 "$fakebin/git"
+  err=$(PATH="$fakebin:$PATH" "$STRIP" install "$hooks" "$repo" 2>&1) &&
+    fail "install succeeded on an unrelated probe failure: $err"
+  assert_contains "$err" "error: not a git worktree" "the refusal did not name the failed probe"
+  [ -f "$sentinel" ] || fail "install deleted a pre-existing hooks directory after an unrelated probe failure"
+  pass "an unrelated git probe failure with .git refuses install and leaves the hooks directory"
 }
 
 write_refusing_pre_push() {  # <path> <marker>
@@ -533,6 +660,10 @@ test_pane_hookspath_does_not_reroute_another_repository
 test_empty_project_hookspath_runs_no_repository_hook
 test_unresolvable_project_hookspath_still_refuses
 test_valueless_project_hookspath_still_refuses
+test_valueless_hookspath_before_install_succeeds_and_commit_still_refuses
+test_unresolvable_install_ignores_process_locale
+test_install_rejects_allowed_probe_error_without_git_dir
+test_install_rejects_unrelated_probe_failure_with_git_dir
 test_repository_pre_push_runs_on_every_override_channel
 test_git_c_override_still_strips_and_chains_commit_hooks
 test_repository_hook_keeps_inherited_git_config
