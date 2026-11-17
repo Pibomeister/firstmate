@@ -71,7 +71,9 @@ A `pending` line holds someone's draft, so the doorbell is skipped and the draft
 The draft guard decides what happens on `pending-unproven` and `unknown`:
 
 - `advisory`, the default, rings anyway, as firstmate always has.
-- `strict` skips the ring and records `composer-unproven` as the last delivery, so nothing is typed into a line that could not be proved free.
+  It can submit a draft: a draft taller than the rows the classifier reads loses its opening prompt glyph, reads `pending-unproven` or `unknown`, and is submitted with the doorbell's Enter.
+- `strict` is the opt-in. It skips the ring and records `composer-unproven` as the last delivery, so nothing is typed into a line that could not be proved free.
+  The cost is friction: a steer to a worker whose input line cannot be read waits for escalation instead of ringing.
 
 Set it with the first line of `config/inbox-draft-guard`, or for one process with `FM_TASK_INBOX_DRAFT_GUARD`.
 One race remains under either setting: text typed between the read and the doorbell's Enter is submitted with the doorbell.
@@ -93,7 +95,7 @@ It is read-only, makes no network call, and with `--probe-composer` takes one fr
 | `source`, `binding` | As above. |
 | `ownership` | `scope_id`, and the supervision `lease` (`actor`, `pid`, `epoch`) or `null`. |
 | `authorization` | The task's recorded `kind`, `project` (the project directory's name), delivery `mode`, `yolo` merge posture, and `approval_mode` (the worker tool's own permission mode), or `null` for each one the task does not record. |
-| `queue` | `queued`, `oldest`, `oldest_queued_at`, `oldest_delivery` (`ordinary` or `fire-and-forget`), `last_delivery` (`msg`, `result`, `at`), `composer` (`state`, `at`, `probed`) or `null`, and `draft_guard`. |
+| `queue` | `queued`, `oldest`, `oldest_queued_at`, `oldest_delivery` (`ordinary` or `fire-and-forget`), `oldest_ordinary` and `oldest_ordinary_queued_at` (the oldest message that is not fire-and-forget, or `null`), `last_delivery` (`msg`, `result`, `at`), `composer` (`state`, `at`, `probed`) or `null`, and `draft_guard`. |
 | `state` | The task's current declaration: `state`, `key`, `text`, as `bin/fm-crew-state.sh` reads it. |
 | `progress` | `last_working_at`, `last_status_state`, `last_status_at`, `status_log_mtime`, `screen_beat_at`, `last_receipt`, and `live_ts`. |
 | `waits` | `dependency` (a declared wait, with `until`), `human_gates` (each open decision or blocker), and `dialog` (`permission`, `question`, `feedback`, `usage-limit`, `model-switch`, `none`, or `not-read`). |
@@ -115,7 +117,7 @@ It is a command, not a daemon, and in this version it runs only in dry run.
 
 It can name only two actions:
 
-- `resume`: ring the doorbell again, under the strict draft guard, for the oldest ordinary message a task has left unacknowledged for at least `FM_UNBLOCK_STALL_SECS` (default 900).
+- `resume`: ring the doorbell again, under the strict draft guard, for a task's oldest unacknowledged message that is not fire-and-forget, once it has waited at least `FM_UNBLOCK_STALL_SECS` (default 900). A fire-and-forget message queued ahead of it does not hide it.
 - `dispatch`: start the ready backlog item that `bin/fm-ledger.sh next` names, which is already filed and so already authorized.
 
 It never names an approval, merge, deploy, spend, account, authentication, permission, restart, kill, or shell command.

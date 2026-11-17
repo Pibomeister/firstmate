@@ -79,11 +79,9 @@ test_receipts_follow_a_message_to_its_outcome() {
   receipts_sync "$state" || fail "an idle sync failed"
   assert_equals 6 "$(wc -l < "$state/t1.inbox/receipts.jsonl" | tr -d ' ')" "receipts after an idle sync"
 
-  # A settled first line gives started and then result; an older writer's
-  # queued stage continues as accepted.
+  # A settled first line gives started and then result.
   rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "status please")
   name=${rec##*/}
-  sed -i.bak 's/\taccepted\t/\tqueued\t/' "$state/t1.inbox/.receipt-open" && rm -f "$state/t1.inbox/.receipt-open.bak"
   mv "$rec" "$state/t1.inbox/handled/"
   printf 'blocked [key=need-token]: no token\n' >> "$state/t1.status"
   receipts_sync "$state" || fail "sync of a settled first line failed"

@@ -68,9 +68,7 @@
 # about, so a line written for earlier work after the enqueue counts, and
 # several records picked up together share their lines. A record removed before
 # pickup gets no further receipt, and no receipt is ever a delivery proof
-# beyond the handled/ move. Records opened by an older writer under the stage
-# name queued continue as accepted. Readers ignore members they do not
-# recognize.
+# beyond the handled/ move. Readers ignore members they do not recognize.
 #
 # Record format (fm_task_inbox_write / fm_task_inbox_body):
 #   schema=fm-task-inbox.v1
@@ -383,7 +381,6 @@ fm_task_inbox_receipts_sync() {  # <state-dir> <task-id>
   while IFS=$'\t' read -r msg stage offset; do
     case "$msg" in *.msg) ;; *) continue ;; esac
     case "$offset" in ''|*[!0-9]*) offset=0 ;; esac
-    [ "$stage" != queued ] || stage=accepted
     if [ "$stage" = accepted ]; then
       if [ -f "$dir/handled/$msg" ]; then
         _fm_task_inbox_receipt_append "$dir" "$msg" picked_up || {

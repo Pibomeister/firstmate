@@ -158,6 +158,25 @@ test_every_unsafe_or_ambiguous_stall_is_held() {
   pass "unblock: ambiguous deliveries, unproven input lines, gates, waits, final states, dialogs, and unbound epochs are all held"
 }
 
+test_a_fire_and_forget_message_ahead_never_hides_an_ordinary_stall() {
+  make_home ff-ahead
+  add_task t1 s3.3.3
+  # A fire-and-forget nudge at a lower sequence number, then a stalled steer.
+  queue_msg t1 001.msg 2027-01-15T06:00:00Z fire-and-forget
+  queue_msg t1 002.msg 2027-01-15T07:00:00Z
+  composer t1 empty $((NOW - 30))
+  unblock plan
+  assert_equals 0 "$RC" "plan exit"
+  assert_equals 'resume candidate stalled-on-unacknowledged-message' "$(verdicts)" "decision"
+  assert_equals '["002.msg","resume:t1:002.msg@s3.3.3",3600,{"ring":"002.msg","draft_guard":"strict"}]' \
+    "$(printf '%s\n' "$OUT" | jq -c '[.msg, .stall_key, .waited_secs, .would]')" "the ordinary steer is the candidate"
+  OUT=$(FM_HOME="$HOME_DIR" FM_HOST_ID_OVERRIDE=test-host "$ROOT/bin/fm-task-snapshot.sh" t1)
+  assert_equals '["001.msg","fire-and-forget","002.msg",true]' \
+    "$(printf '%s\n' "$OUT" | jq -c '[.queue.oldest, .queue.oldest_delivery, .queue.oldest_ordinary, (.queue.oldest_ordinary_queued_at | type == "number")]')" \
+    "snapshot queue"
+  pass "unblock: a fire-and-forget message queued ahead never hides a stalled ordinary steer"
+}
+
 test_observe_claims_one_epoch_bound_action_per_stall() {
   make_home observe
   add_task t1 s1.1.1
@@ -173,6 +192,7 @@ test_observe_claims_one_epoch_bound_action_per_stall() {
   unblock observe
   assert_equals 0 "$RC" "first observe exit"
   assert_equals 'resume candidate stalled-on-unacknowledged-message' "$(verdicts)" "first observe decision"
+  assert_equals 'unblock.decision' "$(printf '%s\n' "$OUT" | jq -r .event)" "printed event of a recorded candidate"
   assert_equals '["unblock.candidate","resume:t1:002.msg@s1.1.1"]' \
     "$(jq -c '[.event, .stall_key]' "$HOME_DIR/state/unblock.jsonl")" "recorded candidate"
   unblock observe
@@ -261,6 +281,7 @@ test_snapshot_keeps_the_native_incarnation_apart_from_the_spawn_generation() {
 test_a_stale_heartbeat_alone_names_no_action
 test_a_stalled_message_on_a_proven_empty_input_line_is_a_resume_candidate
 test_every_unsafe_or_ambiguous_stall_is_held
+test_a_fire_and_forget_message_ahead_never_hides_an_ordinary_stall
 test_observe_claims_one_epoch_bound_action_per_stall
 test_dispatch_names_only_the_next_ready_item
 test_enforce_is_always_refused

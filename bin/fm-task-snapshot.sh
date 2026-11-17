@@ -107,6 +107,7 @@ snapshot() {  # <task>
   local wait='' wverb='' until='' gates lease='null' inbox dir f b n queued=0 oldest='' oldest_n=0
   local oldest_at='' ring_msg='' ring_result='' ring_at='' comp='' comp_at='' live_ts='' dialog=''
   local beat='' guard probe='' backend target binding working_at='' receipt='{}' odelivery='' project
+  local ordinary='' ordinary_at=''
   meta="$STATE/$task.meta"
   [ -f "$meta" ] || { echo "fm-task-snapshot: no meta for $task" >&2; return 1; }
   status="$STATE/$task.status"
@@ -156,6 +157,15 @@ snapshot() {  # <task>
     fi
     oldest_at=$(fm_utc_iso_to_epoch "$oldest_at" 2>/dev/null) || oldest_at=''
   fi
+  # The oldest ordinary record, chosen as the escalation ladder chooses it, so a
+  # fire-and-forget record queued ahead of it cannot hide an ordinary stall.
+  if ordinary=$(fm_task_inbox_oldest_unhandled "$STATE" "$task" 2>/dev/null); then
+    ordinary_at=$(sed -n 's/^at=//p; /^--$/q' "$ordinary" 2>/dev/null | head -n 1)
+    ordinary_at=$(fm_utc_iso_to_epoch "$ordinary_at" 2>/dev/null) || ordinary_at=''
+    ordinary=${ordinary##*/}
+  else
+    ordinary=''
+  fi
   { IFS=$'\t' read -r ring_msg ring_result ring_at < "$dir/.last-ring"; } 2>/dev/null || ring_msg=''
   { IFS=$'\t' read -r comp comp_at < "$dir/.composer"; } 2>/dev/null || comp=''
   guard=$(fm_task_inbox_draft_guard "$dir/000.msg")
@@ -183,10 +193,12 @@ snapshot() {  # <task>
   project=${project##*/}
   inbox=$(jq -cn --argjson queued "$queued" --arg oldest "$oldest" --arg oldest_at "$oldest_at" \
     --arg rmsg "$ring_msg" --arg rres "$ring_result" --arg rat "$ring_at" \
-    --arg comp "$comp" --arg comp_at "$comp_at" --arg probe "$probe" --arg guard "$guard" --arg odelivery "$odelivery" '
+    --arg comp "$comp" --arg comp_at "$comp_at" --arg probe "$probe" --arg guard "$guard" --arg odelivery "$odelivery" \
+    --arg ordinary "$ordinary" --arg ordinary_at "$ordinary_at" '
     def n: if . == "" then null else . end;
     {queued: $queued, oldest: ($oldest | n), oldest_queued_at: ($oldest_at | tonumber? // null),
      oldest_delivery: ($odelivery | n),
+     oldest_ordinary: ($ordinary | n), oldest_ordinary_queued_at: ($ordinary_at | tonumber? // null),
      last_delivery: (if $rmsg == "" then null else {msg: $rmsg, result: $rres, at: ($rat | tonumber? // null)} end),
      composer: (if $probe != "" then {state: $probe, at: (now | floor), probed: true}
                 elif $comp != "" then {state: $comp, at: ($comp_at | tonumber? // null), probed: false}

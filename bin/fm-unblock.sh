@@ -25,7 +25,8 @@
 # a quiet worker is not a stalled one, and a stale heartbeat alone is no reason
 # to act.
 #
-# A resume stall is a task whose oldest ordinary message has waited at least
+# A resume stall is a task whose oldest ordinary message (the snapshot's
+# queue.oldest_ordinary, which skips fire-and-forget records) has waited at least
 # FM_UNBLOCK_STALL_SECS (default 900) since it was accepted. It is a candidate
 # only when every one of these holds; otherwise it is a hold with the first
 # failing reason:
@@ -120,29 +121,30 @@ resume_decisions() {
   snaps=$("$SCRIPT_DIR/fm-task-snapshot.sh" --all ${PROBE[@]+"${PROBE[@]}"}) || return 1
   [ -n "$snaps" ] || return 0
   jq -c --argjson now "$NOW" --argjson stall "$STALL_SECS" --argjson cmax "$COMPOSER_MAX_AGE" '
-    select(.queue.queued > 0 and .queue.oldest != null and .queue.oldest_delivery == "ordinary"
-           and .queue.oldest_queued_at != null and ($now - .queue.oldest_queued_at) >= $stall)
+    select(.queue.oldest_ordinary != null and .queue.oldest_ordinary_queued_at != null
+           and ($now - .queue.oldest_ordinary_queued_at) >= $stall)
     | . as $s
+    | $s.queue.oldest_ordinary as $msg
     | ($s.queue.last_delivery // {}) as $ld
     | (if ($s.state.state // "") == "done" or ($s.state.state // "") == "failed" then "worker-reported-final-state"
        elif ($s.waits.human_gates | length) > 0 then "open-human-gate"
        elif $s.waits.dependency != null then "declared-wait"
        elif ($s.waits.dialog as $d | ["permission","question","feedback","usage-limit","model-switch"] | any(. == $d)) then "dialog-needs-answer"
        elif $s.binding.spawn_gen == null then "no-spawn-generation"
-       elif $ld.msg == $s.queue.oldest and ($ld.result // "") == "rang" then "ambiguous-delivery:rang-without-pickup"
-       elif $ld.msg == $s.queue.oldest and ($ld.result // "") == "send-failed" then "ambiguous-delivery:send-failed"
-       elif $ld.msg == $s.queue.oldest and ($ld.result // "") == "composer-unproven" then "ambiguous-delivery:input-line-unreadable"
-       elif $ld.msg == $s.queue.oldest and ($ld.result // "") == "endpoint-gone" then "endpoint-gone"
+       elif $ld.msg == $msg and ($ld.result // "") == "rang" then "ambiguous-delivery:rang-without-pickup"
+       elif $ld.msg == $msg and ($ld.result // "") == "send-failed" then "ambiguous-delivery:send-failed"
+       elif $ld.msg == $msg and ($ld.result // "") == "composer-unproven" then "ambiguous-delivery:input-line-unreadable"
+       elif $ld.msg == $msg and ($ld.result // "") == "endpoint-gone" then "endpoint-gone"
        elif $s.queue.composer == null or $s.queue.composer.state != "empty" then "input-line-not-proven-empty"
        elif ($s.queue.composer.probed | not) and (($s.queue.composer.at // 0) < ($now - $cmax)) then "input-line-reading-stale"
        else null end) as $hold
-    | {action: "resume", task: $s.task, msg: $s.queue.oldest, item: null,
+    | {action: "resume", task: $s.task, msg: $msg, item: null,
        epoch: $s.binding.spawn_gen,
-       stall_key: ("resume:" + $s.task + ":" + $s.queue.oldest + "@" + ($s.binding.spawn_gen // "none")),
-       waited_secs: ($now - $s.queue.oldest_queued_at),
+       stall_key: ("resume:" + $s.task + ":" + $msg + "@" + ($s.binding.spawn_gen // "none")),
+       waited_secs: ($now - $s.queue.oldest_ordinary_queued_at),
        verdict: (if $hold == null then "candidate" else "hold" end),
        reason: ($hold // "stalled-on-unacknowledged-message"),
-       would: (if $hold == null then {ring: $s.queue.oldest, draft_guard: "strict"} else null end)}
+       would: (if $hold == null then {ring: $msg, draft_guard: "strict"} else null end)}
   ' <<< "$snaps"
 }
 
@@ -197,11 +199,11 @@ emit() {  # <decision-json>
   rec=$(jq -c --argjson ts "$NOW" --argjson source "$SOURCE" --arg mode dry-run \
     '{v: 1, ts: $ts, event: "unblock.decision", mode: $mode, source: $source} + .' <<< "$d") || return 1
   if [ "$CMD" = observe ] && [ "$(jq -r .verdict <<< "$rec")" = candidate ]; then
+    # Only the recorded line is a candidate event; stdout keeps the decision event.
     mkdir -p "$STATE/unblock" || return 1
     claim="$STATE/unblock/$(claim_name "$(jq -r .stall_key <<< "$rec")").claim"
     if (set -o noclobber; printf '%s\n' "$rec" > "$claim") 2>/dev/null; then
-      rec=$(jq -c '.event = "unblock.candidate"' <<< "$rec")
-      printf '%s\n' "$rec" >> "$STATE/unblock.jsonl" || return 1
+      jq -c '.event = "unblock.candidate"' <<< "$rec" >> "$STATE/unblock.jsonl" || return 1
     else
       owner=$(jq -c '.source // null' "$claim" 2>/dev/null) || owner=null
       [ -n "$owner" ] || owner=null
