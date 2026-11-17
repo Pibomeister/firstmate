@@ -5045,7 +5045,9 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
   fi
   # shellcheck source=bin/fm-goal-integrity-lib.sh
   . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-goal-integrity-lib.sh"
-  if fm_goal_integrity_enabled "$CONFIG"; then
+  _gi=$(fm_goal_integrity_enabled "$CONFIG"; echo $?)
+  [ "$_gi" -eq 2 ] && { echo "error: cannot inspect $CONFIG/goal-integrity" >&2; exit 1; }
+  if [ "$RELAUNCH" -eq 0 ] && [ "$_gi" -eq 0 ]; then
     GOAL_PREFIX=$(fm_goal_integrity_prefix "$CONFIG") || exit 1
     GOAL_FIRST_LINE=$(sed -n '1p' "$BRIEF")
     case "$GOAL_FIRST_LINE" in

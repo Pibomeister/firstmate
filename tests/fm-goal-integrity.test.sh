@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Goal-line enforcement (config/goal-integrity). fm-brief.sh opens ship and
-# scout briefs with GOAL (<owner>, verbatim): from state/goals/<task-id>.md;
+# scout briefs with GOAL (<owner>, verbatim): from state/goals/<task-id>.md line 1;
 # fm-spawn.sh refuses briefs without a matching goal line.
 set -u
 
@@ -11,6 +11,7 @@ TMP_ROOT=$(fm_test_tmproot fm-goal-integrity)
 export FM_BACKEND=tmux
 OWNER=fixture
 GOAL='Deliver the sample widget through codegen with zero manual edits'
+FAKEBIN="$TMP_ROOT/fakebin"
 
 mkhome() {
   local h="$TMP_ROOT/$1"
@@ -29,9 +30,14 @@ brief() {
 }
 spawn() {
   FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' FM_PROJECTS_OVERRIDE='' FM_CONFIG_OVERRIDE='' \
-    FM_HOME="$1" FM_SPAWN_NO_GUARD=1 "$ROOT/bin/fm-spawn.sh" "$2" projects/alpha codex --mode no-mistakes --yolo off 2>&1
+    FM_HOME="$1" FM_SPAWN_NO_GUARD=1 FM_BACKEND=tmux PATH="$FAKEBIN:$PATH" \
+    "$ROOT/bin/fm-spawn.sh" "$2" projects/alpha codex --mode direct-PR --yolo off 2>&1
 }
 line_of() { grep -n -F -- "$1" "$2" | head -1 | cut -d: -f1; }
+
+mkdir -p "$FAKEBIN"
+printf '#!/bin/sh\nexit 1\n' > "$FAKEBIN/tmux"
+chmod +x "$FAKEBIN/tmux"
 
 test_ship_and_scout_open_with_goal_and_top_include() {
   local h kind b first inc body expect
@@ -39,8 +45,8 @@ test_ship_and_scout_open_with_goal_and_top_include() {
   expect="GOAL ($OWNER, verbatim): $GOAL"
   printf '%s\n' 'Standing include line.' > "$h/config/brief-include.md"
   for kind in ship scout; do
-    printf '%s\nDate: 2026-11-17\nSource: test\n' "$GOAL" > "$h/state/goals/eta-$kind.md"
-    if [ "$kind" = ship ]; then brief "$h" "eta-$kind" some-proj --mode no-mistakes >/dev/null 2>&1 || fail "ship scaffold failed"
+    printf '%s\n' "$GOAL" > "$h/state/goals/eta-$kind.md"
+    if [ "$kind" = ship ]; then brief "$h" "eta-$kind" some-proj --mode direct-PR >/dev/null 2>&1 || fail "ship scaffold failed"
     else brief "$h" "eta-$kind" some-proj --scout >/dev/null 2>&1 || fail "scout scaffold failed"; fi
     b="$h/data/eta-$kind/brief.md"
     first=$(sed -n '1p' "$b")
@@ -56,7 +62,7 @@ test_missing_goal_file_leaves_a_placeholder() {
   local h first expect
   h=$(mkhome nogoal)
   expect="GOAL ($OWNER, verbatim): {GOAL}"
-  brief "$h" eta-nogoal some-proj --mode no-mistakes >/dev/null 2>&1 || fail "scaffold failed without a goal file"
+  brief "$h" eta-nogoal some-proj --mode direct-PR >/dev/null 2>&1 || fail "scaffold failed without a goal file"
   first=$(sed -n '1p' "$h/data/eta-nogoal/brief.md")
   [ "$first" = "$expect" ] || fail "missing goal file did not leave the {GOAL} placeholder: $first"
   pass "a missing goal file leaves a {GOAL} placeholder"
@@ -73,7 +79,7 @@ test_include_task_heading_is_refused_at_the_top() {
 }
 
 test_home_without_flag_keeps_old_shape() {
-  local h b
+  local h b first
   h=$(mkhome legacy off)
   printf '%s\n' 'Standing include line.' > "$h/config/brief-include.md"
   brief "$h" eta-legacy some-proj --scout >/dev/null 2>&1 || fail "legacy scaffold failed"
@@ -105,19 +111,18 @@ test_spawn_refuses_without_a_matching_goal_line() {
   pass "fm-spawn refuses a brief with no GOAL line, a {GOAL} placeholder, or a mismatched goal"
 }
 
-test_brief_mentioning_goal_placeholder_token_is_allowed_in_task_body() {
-  local h out status prefix
-  h=$(mkhome tok)
-  prefix="GOAL ($OWNER, verbatim): "
-  printf '%s\n' "$GOAL" > "$h/state/goals/eta-tok.md"
-  mkdir -p "$h/data/eta-tok"
-  printf '%s\n' "${prefix}${GOAL}" \
-    '# Goal line and home brief additions (top precedence)' 'x' \
-    'You are a crewmate.' '# Task' 'Mention {GOAL} only in commentary here.' \
-    > "$h/data/eta-tok/brief.md"
-  out=$(spawn "$h" eta-tok); status=$?
-  [ "$status" -ne 0 ] || fail "spawn refused a brief that mentions {GOAL} only in the task body: $out"
-  pass "spawn checks the goal line only, not every {GOAL} mention in the brief"
+test_spawn_passes_goal_gate_on_a_filled_brief() {
+  local h out status b
+  h=$(mkhome passgate)
+  printf '%s\n' "$GOAL" > "$h/state/goals/eta-pass.md"
+  brief "$h" eta-pass some-proj --mode direct-PR >/dev/null 2>&1 || fail "scaffold failed"
+  b="$h/data/eta-pass/brief.md"
+  sed -i '' -e 's/{TASK}/Fix the widget./' -e 's/{FIRSTMATE_SPEC}/Run the test suite./' "$b" 2>/dev/null || \
+    sed -i -e 's/{TASK}/Fix the widget./' -e 's/{FIRSTMATE_SPEC}/Run the test suite./' "$b"
+  out=$(spawn "$h" eta-pass); status=$?
+  printf '%s\n' "$out" | grep -F 'refusing to send' >/dev/null && fail "goal gate refused a valid brief: $out"
+  [ "$status" -ne 0 ] || fail "expected spawn to stop at fake tmux, not at goal gate"
+  pass "fm-spawn accepts a scaffolded brief whose GOAL line matches the goal file"
 }
 
 fm_test_run \
@@ -126,4 +131,4 @@ fm_test_run \
   test_include_task_heading_is_refused_at_the_top \
   test_home_without_flag_keeps_old_shape \
   test_spawn_refuses_without_a_matching_goal_line \
-  test_brief_mentioning_goal_placeholder_token_is_allowed_in_task_body
+  test_spawn_passes_goal_gate_on_a_filled_brief

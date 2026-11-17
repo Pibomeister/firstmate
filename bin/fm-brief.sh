@@ -162,6 +162,10 @@
 # regular file, or text carrying its own "Delivery contract: mode=" line (which
 # a later scout promotion could not outrank), stops the scaffold before
 # anything is written. Secondmate charters never take it.
+# When config/goal-integrity exists, ship and scout scaffolds instead open with
+# a GOAL (<owner>, verbatim): line from state/goals/<task-id>.md line 1 and put
+# brief-include.md at the top as a precedence section; bin/fm-spawn.sh refuses
+# briefs without a matching goal line unless --relaunch is in effect.
 # Refuses to overwrite an existing brief.
 set -eu
 
@@ -475,7 +479,12 @@ fi
 # include that carries a '# Task' heading (see docs/configuration.md).
 GOAL_INTEGRITY=0
 GOAL_PREFIX=
-if [ "$KIND" != secondmate ] && fm_goal_integrity_enabled "$CONFIG"; then
+_gi=1
+if [ "$KIND" != secondmate ]; then
+  _gi=$(fm_goal_integrity_enabled "$CONFIG"; echo $?)
+  [ "$_gi" -eq 2 ] && { echo "error: cannot inspect $CONFIG/goal-integrity" >&2; exit 1; }
+fi
+if [ "$KIND" != secondmate ] && [ "$_gi" -eq 0 ]; then
   GOAL_INTEGRITY=1
   GOAL_PREFIX=$(fm_goal_integrity_prefix "$CONFIG") || exit 1
   if printf '%s\n' "$BRIEF_INCLUDE_BODY" | grep -q '^# Task'; then
@@ -489,8 +498,11 @@ if [ "$KIND" != secondmate ] && fm_goal_integrity_enabled "$CONFIG"; then
       echo "error: $GOAL_FILE must be a readable regular file under goal-line enforcement" >&2
       exit 1
     fi
-    if [ -n "$(tr -d '[:space:]' < "$GOAL_FILE")" ]; then
-      GOAL_BODY=$(cat "$GOAL_FILE")
+    if [ -n "$(sed -n '1p' "$GOAL_FILE" | tr -d '[:space:]')" ]; then
+      GOAL_BODY=$(sed -n '1p' "$GOAL_FILE")
+    else
+      echo "error: $GOAL_FILE line 1 must hold the verbatim ask under goal-line enforcement" >&2
+      exit 1
     fi
   else
     echo "note: no goal file at $GOAL_FILE; the brief opens with a {GOAL} placeholder and bin/fm-spawn.sh refuses to send until that file holds the verbatim ask" >&2
