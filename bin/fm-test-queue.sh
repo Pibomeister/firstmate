@@ -99,14 +99,19 @@
 # served, the wrapper starts a small holder in that group and records it with
 # the group members already present, which are the pipeline stages its parent
 # started beside it. The holder's membership keeps the group id from being
-# reused, so a group is only reaped while its continuity is proven: by the
-# wrapper on exit, by the holder itself once both the wrapper and child are
-# gone, or by the next run that finds the holder alive while both are dead.
+# reused, so only a member reaps the group: the wrapper on exit, or the
+# holder once both the wrapper and child are gone. The next run that finds
+# both dead only wakes the holder if it is stopped, and the slot stays held
+# until the holder is done. While the child has not yet recorded itself, the
+# holder waits as long as anything else remains in the group.
 # A straggler is a group member other than the wrapper, the holder, or a
 # recorded pipeline stage and its own descendants, whose ancestry reaches the
 # wrapper or leaves the group through any process other than the recorded
-# parent, such as init after reparenting. Each signal goes only to a process
-# whose group and start time still match. Tickets without a holder, written
+# parent, such as init after reparenting; a recorded parent that is init
+# itself counts as none. Each signal goes only to a process
+# whose group and start time still match a fresh snapshot; a pid is reused
+# between that snapshot and the signal only if the kernel cycles through its
+# whole pid space in that moment. Tickets without a holder, written
 # by an older queue, are never reaped. A leaked background process holding
 # the caller's output therefore cannot hold a slot or keep the caller's pipe
 # open. On a remote host the queue replaces the SSH session's shell, so it
@@ -405,10 +410,10 @@ group_walk() {
         if (group[p] != g || p == w || p == out || (p in self) || state[p] ~ /^Z/) continue
         q = p; hops = 0; keep = 0; descends = 0
         while (hops++ < 4096) {
-          if ((q "@" start[q]) in spared) { keep = 1; break }
+          if (q == out || (q "@" start[q]) in spared) { keep = 1; break }
           r = parent[q]
           if (r == w) { descends = 1; break }
-          if (!(r in group) || group[r] != g) { keep = (r == c); break }
+          if (!(r in group) || group[r] != g) { keep = (r == c && c > 1); break }
           q = r
         }
         if (mode == "siblings" ? !descends : !keep) print p "@" start[p]
@@ -441,7 +446,7 @@ signal_listed() {
 # group is the wrapper's own, its workload is over, and the caller can prove
 # the group was never reused. exit is the wrapper on the way out; hold is the
 # holder once the wrapper is gone; stale is another run that finds the wrapper
-# gone and the holder alive.
+# gone and the holder alive, and then only wakes the holder.
 ticket_group_reapable() {
   local caller_group
   is_uint "$T_PGID" && [ "$T_PGID" -gt 1 ] && [ "$T_PGID" = "$T_PID" ] || return 1
@@ -464,56 +469,51 @@ ticket_group_reapable() {
   fi
 }
 
-# reap_stragglers [<holder pid>]: ends the read ticket's stragglers, TERM
-# first, then KILL for any still present after a 2-second grace. A holder pid
-# is spared until the stragglers are gone, then ended last. Returns nonzero
-# when a straggler outlasts its KILL.
+# reap_stragglers [<pid to leave out>]: ends the read ticket's stragglers,
+# TERM first, then KILL for any still present after a 2-second grace. The
+# left-out pid and its descendants are spared. Returns nonzero when a
+# straggler outlasts its KILL.
 reap_stragglers() {
-  local holder=${1:-} list sig=TERM limit=20 i
+  local out=${1:-} list sig=TERM limit=20 i
   while :; do
-    list=$(group_walk stragglers "$holder") || return 1
+    list=$(group_walk stragglers "$out") || return 1
     [ -n "$list" ] || break
     # shellcheck disable=SC2086 # One pid@start per word.
     signal_listed "$sig" $list
     i=0
     while [ "$i" -lt "$limit" ]; do
       sleep 0.1
-      list=$(group_walk stragglers "$holder") || return 1
+      list=$(group_walk stragglers "$out") || return 1
       [ -n "$list" ] || break 2
       i=$((i + 1))
     done
     [ "$sig" = TERM ] || return 1
     sig=KILL limit=10
   done
-  [ -n "$holder" ] || return 0
-  owner_alive "$holder" "$T_HOLDER_START" || return 0
-  kill "$holder" 2>/dev/null
-  kill -CONT "$holder" 2>/dev/null
-  i=0
-  while [ "$i" -lt 10 ] && owner_alive "$holder" "$T_HOLDER_START"; do
-    sleep 0.1
-    i=$((i + 1))
-  done
 }
 
 # hold_group: the holder, started in the background when a led group's
 # command is served. Its membership keeps the group id reserved. It exits on
 # TERM, and if the wrapper dies without its cleanup it reaps the stragglers
-# itself once the child is gone.
+# itself once the child is gone. A child that has not recorded itself yet
+# shows up as a straggler, so the holder waits while any remain.
 hold_group() {
-  local nap=""
+  local nap="" list
   trap '[ -z "$nap" ] || { kill "$nap" 2>/dev/null; kill -CONT "$nap" 2>/dev/null; wait "$nap" 2>/dev/null; }; exit 0' TERM
   exec </dev/null >/dev/null 2>&1
   while owner_alive "$T_PID" "$T_START"; do
-    sleep 2 & nap=$!
-    wait "$nap"
-    nap=""
+    hold_nap
   done
-  ticket_read "$MY_TICKET" || exit 0
+  while :; do
+    ticket_read "$MY_TICKET" || exit 0
+    [ -z "$T_CHILD_PID" ] || break
+    if list=$(group_walk stragglers); then
+      [ -n "$list" ] || exit 0
+    fi
+    hold_nap
+  done
   while owner_alive "$T_CHILD_PID" "$T_CHILD_START"; do
-    sleep 2 & nap=$!
-    wait "$nap"
-    nap=""
+    hold_nap
   done
   if ticket_group_reapable hold; then
     reap_stragglers || true
@@ -521,9 +521,20 @@ hold_group() {
   exit 0
 }
 
+# hold_nap: a 2-second wait the holder's TERM trap can cut short; it sets
+# the caller's nap.
+hold_nap() {
+  sleep 2 & nap=$!
+  wait "$nap"
+  nap=""
+}
+
 stop_holder() {
   [ -n "$HOLDER_PID" ] || return 0
-  ! owner_alive "$HOLDER_PID" "$T_HOLDER_START" || kill "$HOLDER_PID" 2>/dev/null
+  if owner_alive "$HOLDER_PID" "$T_HOLDER_START"; then
+    kill "$HOLDER_PID" 2>/dev/null
+    kill -CONT "$HOLDER_PID" 2>/dev/null
+  fi
   wait "$HOLDER_PID" 2>/dev/null
   HOLDER_PID=""
 }
@@ -532,8 +543,10 @@ reclaim_dead() {
   local f
   while IFS= read -r f; do
     ticket_read "$f" || continue
+    # Only a member reaps, so the group id cannot be reused mid-reap; a
+    # stopped holder is woken and the ticket stays live until it is done.
     if ticket_group_reapable stale; then
-      reap_stragglers "$T_HOLDER_PID" || true
+      kill -CONT "$T_HOLDER_PID" 2>/dev/null
     fi
     ticket_alive || rm -f "$f"
   done < <(ticket_files)
@@ -547,9 +560,11 @@ cleanup() {
   remote_cleanup
   if [ -n "$MY_TICKET" ]; then
     if ticket_read "$MY_TICKET"; then
-      if ! owner_alive "$T_CHILD_PID" "$T_CHILD_START"; then
+      # With no recorded child yet, a running holder keeps the group.
+      if [ -n "$T_CHILD_PID" ] && ! owner_alive "$T_CHILD_PID" "$T_CHILD_START"; then
+        # The holder is spared, so a wrapper killed mid-reap leaves it to finish.
         if ticket_group_reapable exit; then
-          reap_stragglers || true
+          reap_stragglers "$HOLDER_PID" || true
         fi
         stop_holder
       fi

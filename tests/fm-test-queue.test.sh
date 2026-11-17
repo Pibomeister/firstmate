@@ -404,6 +404,80 @@ test_killed_wrapper_holder_reaps_without_a_next_run() {
   pass "fm-test-queue.sh: a killed wrapper's holder reaps its straggler with no later run"
 }
 
+# A wrapper killed while its child is still recording itself leaves the
+# holder with no child to watch yet; the holder must keep waiting rather than
+# leave the group unguarded. A ps gate holds the child inside its record.
+test_holder_waits_for_a_child_still_recording_itself() {
+  local wrapper straggler real_ps
+  new_case holder-pending
+  echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
+  real_ps=$(command -v ps)
+  mkdir -p "$CASE/fakebin" "$CASE/gate"
+  CASE_RELEASES+=("$CASE/gate/open")
+  CASE_PID_FILES+=("$CASE/straggler")
+  printf '%s\n' '#!/bin/sh' \
+    "if [ \"\$*\" = '-axo pid=,ppid=,pgid=,stat=,lstart=' ] && mkdir '$CASE/gate/taken' 2>/dev/null; then" \
+    "  : > '$CASE/gate/blocked'" \
+    "  while [ ! -e '$CASE/gate/open' ]; do sleep 0.05; done" \
+    'fi' \
+    "exec '$real_ps' \"\$@\"" > "$CASE/fakebin/ps"
+  chmod +x "$CASE/fakebin/ps"
+  (
+    set -m
+    PATH="$CASE/fakebin:$PATH" qbg run --label pending -- sh -c \
+      'sleep 100000 </dev/null >/dev/null 2>&1 & echo $! > "$1/straggler"' _ "$CASE" >/dev/null 2>&1 &
+    echo $! > "$CASE/wrapper"
+    wait
+  ) 2>/dev/null &
+  CASE_PIDS+=("$!")
+  wait_until "the child is held inside its record" file_exists "$CASE/gate/blocked"
+  wrapper=$(cat "$CASE/wrapper")
+  CASE_PIDS+=("$wrapper")
+  kill -KILL "$wrapper"
+  wait_until "wrapper gone" pid_gone "$wrapper"
+  # Longer than the holder's 2-second poll, so a holder that gave up is gone.
+  sleep 3
+  : > "$CASE/gate/open"
+  wait_until "child left its straggler" file_exists "$CASE/straggler"
+  straggler=$(cat "$CASE/straggler")
+  wait_until "straggler ended with no later run" pid_gone "$straggler"
+  wait_until "nothing is left in the group" group_empty "$wrapper"
+  pass "fm-test-queue.sh: a holder outlasting its wrapper waits for a child still recording itself"
+}
+
+# The wrapper spares the holder while it reaps on exit, so a wrapper killed
+# during the grace for a straggler that ignores TERM leaves the holder to
+# finish with KILL.
+test_wrapper_killed_mid_reap_leaves_the_holder_to_finish() {
+  local wrapper child straggler
+  new_case holder-mid-reap
+  echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
+  CASE_PID_FILES+=("$CASE/straggler")
+  (
+    set -m
+    qbg run --label stubborn -- sh -c 'echo $$ > "$1/child"
+      sh -c '"'"'trap "" TERM; echo $$ > "$1/straggler"; exec sleep 100000'"'"' _ "$1" </dev/null >/dev/null 2>&1 &
+      while [ ! -s "$1/straggler" ]; do sleep 0.05; done' _ "$CASE" >/dev/null 2>&1 &
+    echo $! > "$CASE/wrapper"
+    wait
+  ) 2>/dev/null &
+  CASE_PIDS+=("$!")
+  wait_until "stubborn straggler started" file_exists "$CASE/straggler"
+  wrapper=$(cat "$CASE/wrapper")
+  child=$(cat "$CASE/child")
+  straggler=$(cat "$CASE/straggler")
+  CASE_PIDS+=("$wrapper" "$child")
+  wait_until "child exited" pid_gone "$child"
+  # Inside the wrapper's 2-second grace after a TERM the straggler ignores.
+  sleep 0.5
+  ! pid_gone "$wrapper" || fail "the wrapper finished before it could be killed mid-reap"
+  kill -KILL "$wrapper"
+  wait_until "wrapper gone" pid_gone "$wrapper"
+  wait_until "stubborn straggler ended with no later run" pid_gone "$straggler"
+  wait_until "nothing is left in the group" group_empty "$wrapper"
+  pass "fm-test-queue.sh: a wrapper killed mid-reap leaves its holder to finish the reap"
+}
+
 # An unrelated job whose leader exits leaves a member behind in a group whose
 # id matches a dead ticket. Without a live holder in that group, nothing proves
 # the group is the ticket's, so its member must survive.
@@ -945,6 +1019,8 @@ test_unled_group_grandchildren_do_not_keep_the_slot
 test_led_group_straggler_is_reaped_and_frees_the_slot
 test_stale_led_group_straggler_is_reaped_by_the_next_run
 test_killed_wrapper_holder_reaps_without_a_next_run
+test_holder_waits_for_a_child_still_recording_itself
+test_wrapper_killed_mid_reap_leaves_the_holder_to_finish
 test_reused_group_id_is_not_reaped
 test_pipeline_stage_outliving_its_caller_is_spared
 test_remote_straggler_cannot_hold_the_ssh_output

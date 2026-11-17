@@ -174,6 +174,11 @@ try:
     receive(b"KILLED-RC=137\r\n")
     receive(prompt)
     wrappers.remove(leader)
+    # Hold the group's holder still, so it cannot reap on its own before the
+    # status checks below; stopping it only after the wrapper is gone keeps
+    # the orphaned group from being hung up.
+    holder = int(owner["holder_pid"])
+    os.kill(holder, signal.SIGSTOP)
     assert "serving=1 waiting=0 stale=0 " in status()
     os.kill(direct_child, signal.SIGKILL)
     assert "serving=1 waiting=0 stale=0 " in status(), "live leader group lost its slot"
@@ -184,8 +189,9 @@ try:
     probe.chmod(0o700)
     failed_probe_env = dict(env, PATH=str(fakebin) + os.pathsep + env["PATH"], REAL_PS=shutil.which("ps"))
     assert "serving=1 waiting=0 stale=0 " in status(failed_probe_env)
-    # With the wrapper and its direct child both dead, the next admission ends
-    # what the workload left in the wrapper's own group and takes the slot.
+    # With the wrapper and its direct child both dead, the next admission wakes
+    # the holder, which ends what the workload left in the group, and then
+    # takes the slot.
     grandchild = int((case / "grandchild.pid").read_text())
     follower = background("group-follower", ': > "$1/group-follower.ran"\n')
     send(f'wait {follower}; printf "GROUP-FOLLOWER-RC=%s\\n" "$?"\n')
@@ -202,6 +208,7 @@ try:
         return False
 
     until("surviving leader group member ended", lambda: gone(grandchild))
+    until("woken holder ended", lambda: gone(holder))
     assert "serving=0 waiting=0 stale=0 " in status()
 
     send(command("foreground", '\n'.join([
