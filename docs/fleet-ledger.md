@@ -1,6 +1,6 @@
 # Fleet activity ledger
 
-The fleet activity ledger is an opt-in, append-only file that outside tools can read to follow what a firstmate home is doing: which tasks were dispatched, what their workers reported, when a PR became ready for review, when their work merged, and when they were cleaned up.
+The fleet activity ledger is an opt-in, append-only file that outside tools can read to follow what a firstmate home is doing: which tasks were dispatched, when their workers started, whether they are progressing, blocked, or stalled, what they reported, when they finished, the evidence behind each verified outcome, when their work merged, and when they were cleaned up.
 It is the stable, documented hook for firstmate status; this page is its contract.
 
 ## Turning it on and off
@@ -20,7 +20,7 @@ Every record carries these members:
 | ------- | --------------------------------------------------------- |
 | `v`     | Record format version, currently `1`                      |
 | `ts`    | Unix time in seconds when the record was written          |
-| `event` | One of the five event names below                         |
+| `event` | One of the event names below                              |
 | `task`  | The firstmate task id the record is about                 |
 
 Readers must ignore members and events they do not recognize, so later versions can add them without breaking existing readers.
@@ -34,6 +34,12 @@ Readers must ignore members and events they do not recognize, so later versions 
 | `task.pr_ready`    | `pr`                                           | Firstmate records the task's PR as ready for review. |
 | `task.merged`      | `via` (`"pr"` or `"local"`), plus `pr` when `via` is `"pr"` | The task's PR merge is recorded, or its local-only branch landed. |
 | `task.cleaned_up`  | none                                           | The task's worker and local copy were removed. |
+| `task.started`     | `source`, `spawn_gen`                          | A worker incarnation shows its first sign of work. |
+| `task.heartbeat`   | `source`, `text`                               | A worker reports `working`, or its screen changes while it is busy. |
+| `task.blocked`     | `wait`, `state`, `key`, `text`                 | A worker reports `paused`, `blocked`, or `needs-decision`. |
+| `task.stalled`     | `reason`                                       | The supervision monitor queues a stale notice for the task. |
+| `task.finished`    | `outcome`, `pr`, `text`                        | A worker reports `done` or `failed`. |
+| `task.verified_outcome` | `outcome`, `checker`, `evidence`          | Firstmate checked an outcome against evidence it can name. |
 
 `task.dispatched` members: `kind` is `ship`, `scout`, or `secondmate`; `project` is the project directory name, or `null` for a remote second mate; `harness` names the agent tool; `model` is the requested model, or `null` for the tool's default.
 
@@ -44,14 +50,54 @@ It is written each time firstmate records a PR for the task, so registering a re
 `key` is the line's `[key=...]` decision key, or `null`.
 `text` is the status line after its first colon, verbatim, capped at 2000 characters; if the line has no colon, it is the whole line.
 
+### Derived events
+
+Workers gain no new duty: every event below is derived from a status line, from the supervision monitor's own observations, or from the producers above.
+Each derived record follows the `task.status` record of the line it came from.
+
+`task.started` is written once per worker incarnation, the incarnation being the task's recorded spawn generation.
+`source` is `"status"` when the first sign is a status line other than `resolved`, or `"pane"` when it is the worker's screen changing while busy.
+`spawn_gen` is the recorded spawn generation, or `null` when the task records none.
+A relaunch starts a new incarnation, so it can add another `task.started`.
+
+`task.heartbeat` is a progress beat.
+`source` is `"status"` for a `working` line, with `text` as in `task.status`.
+`source` is `"pane"` when the monitor saw the busy worker's screen change, with `text` `null`.
+Screen beats for one task are at least `FM_FLEET_LEDGER_HEARTBEAT_SECS` seconds apart (default 300), and the first screen sign of an incarnation is recorded as `task.started` instead.
+
+`task.blocked` members: `wait` is `"dependency"` for `paused`, `"blocker"` for `blocked`, and `"decision"` for `needs-decision`; `state`, `key`, and `text` are as in `task.status`.
+
+`task.stalled` members: `reason` is the stale notice's text, capped at 2000 characters.
+It is written when the monitor queues the notice, before firstmate reads it.
+
+`task.finished` members: `outcome` is `"done"` or `"failed"`; `pr` is the first PR or merge request URL in the line, or `null`; `text` is as in `task.status`.
+A worker can report `done` more than once, for example when it hands its branch over and again when its PR is ready, so a task can have several `task.finished` records; the last one is current.
+
+`task.verified_outcome` members: `outcome` names what was checked, `checker` names the firstmate script that checked it, and `evidence` is an object whose members depend on `outcome`:
+
+| `outcome`    | `checker`          | `evidence` members |
+| ------------ | ------------------ | ------------------ |
+| `"pr_ready"` | `"fm-pr-check"`    | `pr`, the PR's full URL; `head`, the head commit firstmate recorded from the forge, or `null` when the forge could not be read |
+| `"merged"`   | `"fm-merge-outcome"` | `via` `"pr"`, and `pr`, the merged PR's full URL |
+| `"merged"`   | `"fm-merge-local"` | `via` `"local"`, and `head`, the landed branch head the worker recorded, or `null` |
+| `"report"`   | `"fm-fleet-ledger"` | `report`, the scout report's path relative to the home (`data/<task>/report.md`); `sha256`, the report's SHA-256 when the scout's `done` line was captured |
+
+A `"pr_ready"` record follows each `task.pr_ready`, and a `"merged"` record follows each `task.merged`.
+A `"report"` record follows a scout's `task.finished` with outcome `done` only when the report file exists then.
+
 Example:
 
 ```json
 {"v":1,"ts":1790132857,"event":"task.dispatched","task":"fix-login","kind":"ship","project":"webapp","harness":"claude","model":null}
 {"v":1,"ts":1790132870,"event":"task.status","task":"fix-login","state":"working","key":null,"text":" bug reproduced"}
+{"v":1,"ts":1790132870,"event":"task.started","task":"fix-login","source":"status","spawn_gen":"s1790132857.4242.17"}
+{"v":1,"ts":1790132870,"event":"task.heartbeat","task":"fix-login","source":"status","text":" bug reproduced"}
 {"v":1,"ts":1790133400,"event":"task.status","task":"fix-login","state":"done","key":null,"text":" PR https://github.com/acme/webapp/pull/7 checks green"}
+{"v":1,"ts":1790133400,"event":"task.finished","task":"fix-login","outcome":"done","pr":"https://github.com/acme/webapp/pull/7","text":" PR https://github.com/acme/webapp/pull/7 checks green"}
 {"v":1,"ts":1790133410,"event":"task.pr_ready","task":"fix-login","pr":"https://github.com/acme/webapp/pull/7"}
+{"v":1,"ts":1790133410,"event":"task.verified_outcome","task":"fix-login","outcome":"pr_ready","checker":"fm-pr-check","evidence":{"pr":"https://github.com/acme/webapp/pull/7","head":"3f2c9a1d0b7e4c5a8f6e2d1c0b9a8f7e6d5c4b3a"}}
 {"v":1,"ts":1790133900,"event":"task.merged","task":"fix-login","via":"pr","pr":"https://github.com/acme/webapp/pull/7"}
+{"v":1,"ts":1790133900,"event":"task.verified_outcome","task":"fix-login","outcome":"merged","checker":"fm-merge-outcome","evidence":{"via":"pr","pr":"https://github.com/acme/webapp/pull/7"}}
 {"v":1,"ts":1790133960,"event":"task.cleaned_up","task":"fix-login"}
 ```
 
@@ -64,7 +110,8 @@ Example:
   - lines from workers whose instructions predate this, or that append without running the instruction's full command;
   - lines a remote second mate reports, which reach this home through firstmate's relay;
   - lines written while the immediate record fails, for example when the ledger file cannot be written.
-  Recording `task.pr_ready`, `task.merged`, or `task.cleaned_up` first records that task's pending status lines.
+  Recording `task.pr_ready`, `task.merged`, `task.stalled`, a screen heartbeat, or `task.cleaned_up` first records that task's pending status lines.
+- Screen heartbeats and `task.stalled` come from the supervision monitor, so none are written while it is not running, and screen heartbeats need a worker tool whose busy state the monitor can read.
 - Captured status lines are delivered at least once unless a write fails or a crash loses unflushed records: an interrupted capture can repeat records, so a reader that must not double-count should tolerate duplicates.
 - A status record can appear just before its task's `task.dispatched` record when the worker writes a status line in the moment between its launch and that record.
 - When a home turns the ledger on, status lines already in a live task's log are recorded on that task's next capture (which may be a worker status command, PR registration, merge, cleanup, or monitor poll); tasks dispatched or cleaned up while the flag was absent have no record of that.
@@ -80,7 +127,8 @@ These are possible follow-ups, deliberately left out of this version:
 
 - session start, away-mode, and quiet-mode events;
 - relaunch events;
-- whether a worker is currently working or idle, and when a turn ends; see the [runtime backend event sources](architecture.md#runtime-session-backends) for native activity observations;
+- when a turn ends, and an idle beat for a worker that is not busy; see the [runtime backend event sources](architecture.md#runtime-session-backends) for native activity observations;
+- the input-line, steering-inbox, and dialog state of a task, which the [task live status file](configuration.md#task-live-status) exposes instead;
 - sequence numbers and gap detection;
 - rotation and continuity across rotated files;
 - backfill or replay of events from before the ledger was turned on;

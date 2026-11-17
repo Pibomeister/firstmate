@@ -264,6 +264,28 @@ fm_secondmate_watch_notify() {
   esac
 }
 
+# Opt-in fleet activity ledger (docs/fleet-ledger.md): record a queued stale
+# wake as task.stalled. Off costs one file test, and a ledger failure is
+# ignored so it never changes the wake.
+ledger_task_stalled() {  # <window> <reason>
+  local task
+  [ -e "${CONFIG:-/nonexistent}/fleet-ledger" ] || return 0
+  declare -F window_to_task >/dev/null && declare -F fm_run_timed >/dev/null || return 0
+  task=$(window_to_task "$1" "$STATE" 2>/dev/null) || return 0
+  [ -n "$task" ] || return 0
+  fm_run_timed "${WATCH_HELPER_BUDGET:-120}" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+    FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-fleet-ledger.sh" stalled "$task" "$2" \
+    >/dev/null 2>&1 || true
+}
+
+# Queue one stale wake exactly as fm_wake_append does, then record it in the
+# ledger. Returns the queue append's status.
+stale_wake_append() {  # <window> <reason>
+  fm_wake_append stale "$1" "$2" || return $?
+  ledger_task_stalled "$1" "$2"
+  return 0
+}
+
 # Exit after reporting one actionable wake. Tests override this callback.
 # A hold opt-in returns after the report so the watcher can keep the lock.
 # An optional cadence kind lets actionable work retain heartbeat delivery while
@@ -366,7 +388,7 @@ handle_push_transition() {  # <backend> <session> <record>
   esac
   note=$(fm_backend_transition_note "$backend" "$record" 2>/dev/null || true)
   reason="stale: $window ($backend: agent $to${detail:+ ($detail)} - waiting on human${note:+: $note}, escalated immediately, not via wedge timer)"
-  fm_wake_append stale "$window" "$reason" || exit 1
+  stale_wake_append "$window" "$reason" || exit 1
   fm_backend_commit_transition "$backend" "$STATE" "$session" "$record" || exit 1
   mark_surfaced "$STATE/$task.status" "$surface_end" "$surface_ident"
   wake "$reason"

@@ -12,7 +12,10 @@
 #   bin/fm-brief.sh              appended (in every worker's status command,
 #                                right after its unchanged plain append)
 #   bin/fm-spawn.sh              dispatched (fresh spawns only, never relaunch)
-#   bin/fm-watch.sh              capture, once per poll cycle
+#   bin/fm-watch.sh              capture, once per poll cycle; activity, when
+#                                a worker's screen changed, at most once per
+#                                FM_FLEET_LEDGER_HEARTBEAT_SECS per task;
+#                                stalled, when it queues a stale wake
 #   bin/fm-pr-check.sh           pr_ready (a PR registered for review, not the
 #                                merge-time re-record from bin/fm-pr-merge.sh)
 #   bin/fm-merge-outcome-lib.sh  merged ... pr (a recorded PR merge)
@@ -27,6 +30,21 @@
 #   fm-fleet-ledger.sh cleaned_up <task>
 #   fm-fleet-ledger.sh capture
 #   fm-fleet-ledger.sh appended <config> <state>/<task>.status
+#   fm-fleet-ledger.sh activity <task>
+#   fm-fleet-ledger.sh stalled <task> <reason>
+#
+# Derived events. Each captured status line is recorded as task.status and
+# then projected: the first line or screen activity of a worker incarnation
+# (its meta spawn_gen) adds task.started, a working line adds task.heartbeat,
+# a paused, blocked, or needs-decision line adds task.blocked, and a done or
+# failed line adds task.finished. A done line from a scout whose
+# data/<task>/report.md exists adds task.verified_outcome naming the report and
+# its sha256; pr_ready and merged add task.verified_outcome with their evidence.
+# state/.<task>.fleet-ledger-started holds the spawn_gen already announced;
+# dispatched and cleaned_up delete it. activity records task.started when the
+# incarnation has none yet, and task.heartbeat otherwise; the watcher owns its
+# throttle. Workers gain no new duty: every derived event comes from a status
+# line, a screen change, a stale wake, or a producer above.
 #
 # capture appends one task.status record for every complete (newline-ended)
 # line added to a state/<task>.status log since that task's byte offset in
@@ -62,12 +80,13 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
+DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 LEDGER="$STATE/fleet-ledger.jsonl"
 LOCK="$STATE/.fleet-ledger.lock"
 TEXT_MAX_CHARS=2000
 
 usage() {
-  echo "usage: fm-fleet-ledger.sh dispatched <task> <kind> <project> <harness> <model> | pr_ready <task> <url> | merged <task> pr <url> | merged <task> local | cleaned_up <task> | capture | appended <config> <state>/<task>.status" >&2
+  echo "usage: fm-fleet-ledger.sh dispatched <task> <kind> <project> <harness> <model> | pr_ready <task> <url> | merged <task> pr <url> | merged <task> local | cleaned_up <task> | capture | appended <config> <state>/<task>.status | activity <task> | stalled <task> <reason>" >&2
   exit 2
 }
 
@@ -83,7 +102,8 @@ case "$cmd" in
     task_ok "${2:-}" || usage
     case "$#:${3:-}" in 4:pr) [ -n "$4" ] || usage ;; 3:local) ;; *) usage ;; esac
     ;;
-  cleaned_up) { [ "$#" -eq 2 ] && task_ok "$2"; } || usage ;;
+  cleaned_up|activity) { [ "$#" -eq 2 ] && task_ok "$2"; } || usage ;;
+  stalled) { [ "$#" -eq 3 ] && task_ok "$2" && [ -n "$3" ]; } || usage ;;
   capture) [ "$#" -eq 1 ] || usage ;;
   appended)
     [ "$#" -eq 3 ] && [ -n "$2" ] || usage
@@ -93,6 +113,7 @@ case "$cmd" in
     task_ok "$APPENDED_TASK" || usage
     CONFIG=$2
     STATE=${3%/*}
+    [ -n "${FM_DATA_OVERRIDE:-}" ] || DATA=${STATE%/*}/data
     LEDGER="$STATE/fleet-ledger.jsonl"
     LOCK="$STATE/.fleet-ledger.lock"
     ;;
@@ -103,6 +124,26 @@ esac
 [ -d "$STATE" ] && [ ! -L "$STATE" ] || exit 1
 
 offset_path() { printf '%s/.%s.fleet-ledger-offset' "$STATE" "$1"; }
+started_path() { printf '%s/.%s.fleet-ledger-started' "$STATE" "$1"; }
+
+meta_field() { # <task> <field>: the field's last value in state/<task>.meta, or empty
+  local line value=''
+  [ -f "$STATE/$1.meta" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in "$2="*) value=${line#*=} ;; esac
+  done < "$STATE/$1.meta"
+  printf '%s' "$value"
+}
+
+sha256_of() { # <file>
+  local digest
+  if command -v shasum >/dev/null 2>&1; then
+    digest=$(shasum -a 256 < "$1") || return 1
+  else
+    digest=$(sha256sum < "$1") || return 1
+  fi
+  printf '%s' "${digest%% *}"
+}
 
 read_offset() { # <task> <out-var>: saved byte offset, 0 when absent or malformed
   local value=0
@@ -162,7 +203,53 @@ append_status() { # <task> <status-line>
   text=${line#*:}
   append task.status "$task" \
     "{state: (\$state | n), key: (\$key | n), text: \$text[0:$TEXT_MAX_CHARS]}" \
-    --arg state "$verb" --arg key "$key" --arg text "$text"
+    --arg state "$verb" --arg key "$key" --arg text "$text" || return 1
+  [ -n "$verb" ] || return 0
+  if [ "$verb" != resolved ]; then
+    announce_started "$task" status || [ "$?" -eq 3 ] || return 1
+  fi
+  append_derived "$task" "$verb" "$key" "$text"
+}
+
+# task.started once per worker incarnation; <source> is status or pane.
+# Returns 3 when the incarnation was already announced.
+# shellcheck disable=SC2016 # $names in the filter are jq variables.
+announce_started() { # <task> <source>
+  local task=$1 gen seen=''
+  gen=$(meta_field "$task" spawn_gen)
+  { IFS= read -r seen < "$(started_path "$task")"; } 2>/dev/null || seen=''
+  [ "$seen" != "${gen:--}" ] || return 3
+  append task.started "$task" '{source: $source, spawn_gen: ($gen | n)}' \
+    --arg source "$2" --arg gen "$gen" || return 1
+  printf '%s\n' "${gen:--}" > "$(started_path "$task")"
+}
+
+# The semantic projection of one status line (see the header).
+# shellcheck disable=SC2016 # $names in the filters are jq variables.
+append_derived() { # <task> <verb> <key> <text>
+  local task=$1 verb=$2 key=$3 text=$4 wait pr='' report digest
+  case "$verb" in
+    working)
+      append task.heartbeat "$task" "{source: \"status\", text: \$text[0:$TEXT_MAX_CHARS]}" --arg text "$text"
+      ;;
+    paused|blocked|needs-decision)
+      case "$verb" in paused) wait=dependency ;; blocked) wait=blocker ;; *) wait=decision ;; esac
+      append task.blocked "$task" "{wait: \$wait, state: \$state, key: (\$key | n), text: \$text[0:$TEXT_MAX_CHARS]}" \
+        --arg wait "$wait" --arg state "$verb" --arg key "$key" --arg text "$text"
+      ;;
+    done|failed)
+      [[ $text =~ (https?://[^[:space:]]+/(pull|merge_requests)/[0-9]+) ]] && pr=${BASH_REMATCH[1]}
+      append task.finished "$task" "{outcome: \$outcome, pr: (\$pr | n), text: \$text[0:$TEXT_MAX_CHARS]}" \
+        --arg outcome "$verb" --arg pr "$pr" --arg text "$text" || return 1
+      [ "$verb" = "done" ] && [ "$(meta_field "$task" kind)" = scout ] || return 0
+      report="$DATA/$task/report.md"
+      [ -f "$report" ] && [ ! -L "$report" ] || return 0
+      digest=$(sha256_of "$report") || return 0
+      append task.verified_outcome "$task" \
+        '{outcome: "report", checker: "fm-fleet-ledger", evidence: {report: $report, sha256: $sha}}' \
+        --arg report "data/$task/report.md" --arg sha "$digest"
+      ;;
+  esac
 }
 
 capture_task() { # <task>; caller holds the lock
@@ -209,7 +296,7 @@ case "$cmd" in
     capture_task "$APPENDED_TASK" || rc=1
     ;;
   dispatched)
-    rm -f -- "$(offset_path "$2")"
+    rm -f -- "$(offset_path "$2")" "$(started_path "$2")"
     append task.dispatched "$2" \
       '{kind: ($kind | n), project: ($project | n), harness: ($harness | n), model: ($model | n)}' \
       --arg kind "$3" --arg project "$4" --arg harness "$5" --arg model "$6" || rc=1
@@ -217,19 +304,39 @@ case "$cmd" in
   pr_ready)
     capture_task "$2" || rc=1
     append task.pr_ready "$2" '{pr: $pr}' --arg pr "$3" || rc=1
+    append task.verified_outcome "$2" \
+      '{outcome: "pr_ready", checker: "fm-pr-check", evidence: {pr: $pr, head: ($head | n)}}' \
+      --arg pr "$3" --arg head "$(meta_field "$2" pr_head)" || rc=1
     ;;
   merged)
     capture_task "$2" || rc=1
     if [ "$3" = pr ]; then
       append task.merged "$2" '{via: "pr", pr: $pr}' --arg pr "$4" || rc=1
+      append task.verified_outcome "$2" \
+        '{outcome: "merged", checker: "fm-merge-outcome", evidence: {via: "pr", pr: $pr}}' \
+        --arg pr "$4" || rc=1
     else
       append task.merged "$2" '{via: "local"}' || rc=1
+      append task.verified_outcome "$2" \
+        '{outcome: "merged", checker: "fm-merge-local", evidence: {via: "local", head: ($head | n)}}' \
+        --arg head "$(meta_field "$2" local_done_head)" || rc=1
     fi
+    ;;
+  activity)
+    capture_task "$2" || rc=1
+    announce_started "$2" pane || case "$?" in
+      3) append task.heartbeat "$2" '{source: "pane", text: null}' || rc=1 ;;
+      *) rc=1 ;;
+    esac
+    ;;
+  stalled)
+    capture_task "$2" || rc=1
+    append task.stalled "$2" "{reason: \$reason[0:$TEXT_MAX_CHARS]}" --arg reason "$3" || rc=1
     ;;
   cleaned_up)
     capture_task "$2" || rc=1
     append task.cleaned_up "$2" '{}' || rc=1
-    [ "$rc" -ne 0 ] || rm -f -- "$(offset_path "$2")"
+    [ "$rc" -ne 0 ] || rm -f -- "$(offset_path "$2")" "$(started_path "$2")"
     ;;
 esac
 [ "$rc" -eq 0 ] || echo "fm-fleet-ledger: could not record $cmd${2:+ for $2}; the ledger may be missing records" >&2
