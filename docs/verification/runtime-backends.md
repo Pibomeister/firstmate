@@ -4144,9 +4144,11 @@ Sanitized copies of those three screens are the fixtures in `tests/fixtures/perm
 ```sh
 bash bin/fm-test-run.sh tests/fm-permission-prompt.test.sh
 ok - real Claude 2.1.325 prompts: tool approval routes only on claude, trust relaunches, and the cancelled screen is clear
-ok - tool approval: one Escape, verified gone, then a durable rewrite instruction
-ok - hard stops: credential, destructive, spend, and sign-in prompts get no key and one keyed blocked line
+ok - tool approval: one Escape, verified gone, then a durable rewrite instruction, and one pass at a time per worker
+ok - hard stops: credential, destructive, and spend prompts get no key and one keyed blocked line
 ```
+
+The output above is an excerpt of the 2026-11-17 rerun after the scope was narrowed to exact known dialogs; the generic terminal and external-CLI prompt detectors moved to an observe-only follow-up under [issue #264](https://github.com/Pibomeister/firstmate/issues/264).
 
 `tests/fm-watchdog-live.test.sh` now also asserts that `bin/fm-permission-prompt.sh` names the real folder-trust picker a trust dialog, and that assertion passed against Claude Code 2.1.325.
 That same run failed its later check that the home's waiting permission dialog is reported as a gap, and an unmodified copy of the prior commit fails the same check: the guard's heartbeat no longer gives the watchdog a home terminal endpoint, so the home pane is not read.

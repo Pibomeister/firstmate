@@ -954,7 +954,7 @@ tests/fm-parent-channel-scan-exclusion.test.sh 4265
 tests/fm-park.test.sh 2189
 tests/fm-peek-remote.test.sh 1093
 tests/fm-pending-reply.test.sh 65326
-tests/fm-permission-prompt.test.sh 299362
+tests/fm-permission-prompt.test.sh 160717
 tests/fm-pi-branch-extension.test.sh 117091
 tests/fm-pi-branch-live-e2e.test.sh 83
 tests/fm-pi-branch-responsiveness-live-e2e.test.sh 13146
