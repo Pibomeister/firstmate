@@ -101,6 +101,9 @@
 # from /proc/<pid>/io where it exists. Where it cannot be read, as on macOS,
 # CPU time alone cannot show a child is idle, so a child unchanged for 15
 # minutes is unproven rather than stale and the kernel sensor reads unknown.
+# native: the harness's own progress markers beside the status file (a
+# completed turn, native progress, opted-in model progress); any change since
+# the last pass is activity, and a marker whose time cannot be read is unknown.
 # records: a declared wait's named job. Transcript and loop proofs are
 # recorded as unsupported. Git reads use --no-optional-locks and never write.
 # The validation read runs the crew-state reader with its snapshot cache off
@@ -803,7 +806,8 @@ fhl_untracked_digest() {  # <worktree>
     my $root = shift; my $d = Digest::SHA->new(256); my ($n, $budget) = (0, 64 << 20);
     while (my $p = <STDIN>) {
       chomp $p;
-      if (++$n > 2000) { $d->add("truncated\0"); last }
+      # A scan cut short cannot show the files it skipped are unchanged.
+      exit 2 if ++$n > 2000;
       my @s = lstat("$root/$p");
       # A file gone since the listing is a change; any other failure is unknown.
       exit 2 if !@s && !$!{ENOENT};
@@ -1275,7 +1279,22 @@ cmd_tick() {
   fi
   [ "$WAIT" != dead ] || records=quiet
 
-  SIGNALS="rendered=$rendered;fs=$fs;kernel=$kernel;records=$records;transcript=unsupported;loop=unsupported;busy=$busy;live=$live;wait=$WAIT;screen=${screen:-none};composer=$composer;cpu=$cpu_total;children=$children;stale_children=$stale_children;unproven_children=$unproven_children;load=$LOAD;backend=$backend"
+  local native=quiet native_fp='' nf nm
+  for nf in "$STATE/$TASK.turn-ended" "$STATE/$TASK.progress" "$STATE/$TASK.model-progress"; do
+    nm=-
+    if [ -e "$nf" ]; then
+      nm=$(fhl_mtime "$nf") || nm=
+      case "$nm" in ''|*[!0-9]*) native=unknown ;; esac
+    fi
+    native_fp="$native_fp$nm/"
+  done
+  if [ "$native" = unknown ]; then
+    native_fp=${S_native:-$native_fp}
+  elif [ "$first" = 0 ] && [ "$native_fp" != "${S_native:-}" ]; then
+    native=active
+  fi
+
+  SIGNALS="rendered=$rendered;fs=$fs;kernel=$kernel;records=$records;transcript=unsupported;loop=unsupported;busy=$busy;live=$live;wait=$WAIT;screen=${screen:-none};composer=$composer;native=$native;cpu=$cpu_total;children=$children;stale_children=$stale_children;unproven_children=$unproven_children;load=$LOAD;backend=$backend"
 
   # Write the new sample before any decision, so the next pass compares
   # against this one whatever happens below. A failed Git read keeps the last
@@ -1284,8 +1303,8 @@ cmd_tick() {
     head=${S_head:--} dirty=${S_dirty:--}
   fi
   {
-    printf 'pane=%s\nstatus_size=%s\nstatus_body=%s\nbodies=%s\ninbox=%s\nhead=%s\ndirty=%s\ncpu=%s\nkq=%s\n' \
-      "$pane_hash" "$status_size" "$status_body" "$bodies" "$inbox" "$head" "$dirty" "$cpu_total" "$kq"
+    printf 'pane=%s\nstatus_size=%s\nstatus_body=%s\nbodies=%s\ninbox=%s\nhead=%s\ndirty=%s\ncpu=%s\nkq=%s\nnative=%s\n' \
+      "$pane_hash" "$status_size" "$status_body" "$bodies" "$inbox" "$head" "$dirty" "$cpu_total" "$kq" "$native_fp"
     printf '%s' "$kids_out"
   } > "$HL/episodes/$TASK.sample.tmp" && mv -f "$HL/episodes/$TASK.sample.tmp" "$HL/episodes/$TASK.sample"
   : > "$HL/episodes/$TASK.anchor"
@@ -1308,8 +1327,10 @@ cmd_tick() {
   [ "$fs" != unknown ] || unknown_kinds="${unknown_kinds}fs,"
   [ "$kernel" != unknown ] || unknown_kinds="${unknown_kinds}kernel,"
   [ "$composer" != unknown ] || unknown_kinds="${unknown_kinds}composer,"
+  [ "$native" != unknown ] || unknown_kinds="${unknown_kinds}native,"
   k=${held#unknown:}; [ -z "$held" ] || unknown_kinds="${unknown_kinds}${k%%=*},"
   [ "$rendered" != active ] || activity="${activity}rendered,"
+  [ "$native" != active ] || activity="${activity}native,"
   [ "$fs" != active ] || activity="${activity}fs,"
   [ "$kernel" != active ] || activity="${activity}kernel,"
   local quiet_count=0

@@ -1081,6 +1081,8 @@ A worker session (one with `FM_TASK_ID` set) can never set the mode or write the
 The watcher runs one observation per task per minute on its existing pass, with no new background process.
 A sensor read that fails or times out counts as unknown, never as quiet, so it can only hold a rung.
 Where a child process's I/O counter cannot be read, as on macOS, a quiet child is never proven idle, so it keeps the CPU sensor unknown.
+A change to the worker's native progress markers, such as a completed turn, counts as activity.
+An untracked-file scan that reaches its 2000-file limit counts as unknown.
 Secret-pattern files are recorded by name only and never enter a content hash or snapshot.
 A path is secret-pattern when its file name matches a key, certificate, `.env` or credential-file pattern, or any part of it contains `secret` or `credential`, in any case.
 A snapshot records a symlink by its link text and never follows it.

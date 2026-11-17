@@ -441,6 +441,27 @@ EOF
   no_escalation "$h" pq 'a failed pid query'
   ! ledger "$h" | awk -F'\t' '$4 == "pq" && $11 ~ /pid-gone/ { f = 1 } END { exit !f }' || fail 'a failed pid query never reads as a dead job'
 
+  # Native harness progress beside an unchanged pane is activity.
+  new_task "$h" np
+  local n=$B
+  while [ "$n" -le $((B + 1800)) ]; do
+    : > "$h/state/np.progress"
+    perl -e 'utime $ARGV[0], $ARGV[0], $ARGV[1]' "$n" "$h/state/np.progress"
+    tick "$h" np "$n"
+    n=$((n + 60))
+  done
+  assert_equals 0 "$(rows "$h" np would-act)" 'native progress keeps the worker out of an episode'
+
+  # An untracked scan cut short at its file limit is unknown, never quiet.
+  new_task "$h" ut
+  ticks "$h" ut "$B" $((B + 600))
+  mkdir -p "$h/wt-ut/many"
+  ( cd "$h/wt-ut/many" && seq 1 2001 | xargs touch )
+  ticks "$h" ut $((B + 660)) $((B + 1800))
+  no_escalation "$h" ut 'an untracked scan past its file limit'
+  ledger "$h" | awk -F'\t' '$4 == "ut" && $6 == "hold" && $11 ~ /unknown:.*fs/ { f = 1 } END { exit !f }' \
+    || fail 'an untracked scan past its file limit holds the episode'
+
   # A steering inbox that cannot be read is unknown, never quiet.
   if [ "$(id -u)" != 0 ]; then
     new_task "$h" ib
