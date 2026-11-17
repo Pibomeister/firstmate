@@ -1760,7 +1760,12 @@ wd_pp_relaunch() {
     wd_rec "$rid" permission-prompt relaunch dry-run "would relaunch the worker so its launch pre-registers workspace trust"
     return 1
   fi
-  wd_rec "$rid" permission-prompt relaunch pending "workspace-trust dialog: controlled relaunch"
+  # The pending row is what keeps the next relaunch outside its window, so a
+  # relaunch that cannot be recorded is never started.
+  if ! wd_rec "$rid" permission-prompt relaunch pending "workspace-trust dialog: controlled relaunch"; then
+    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows the workspace-trust dialog, and the relaunch could not be recorded; nothing was relaunched"
+    return 1
+  fi
   note="The previous launch stopped on the workspace-trust dialog before it could work. The watchdog relaunched this worker so its launch pre-registers the worktree's trust entry; no key was typed into the dialog. Continue the task from these instructions."
   if err=$(FM_HOME=$O_HOME fm_run_timed "$(cfgi relaunch-timeout-secs 900)" "$WD_CONTROL" "$id" relaunch --note "$note" 2>&1 >/dev/null); then
     wd_rec "$rid" permission-prompt relaunch "done" "worker relaunched"

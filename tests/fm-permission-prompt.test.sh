@@ -318,6 +318,9 @@ test_structure_decides_not_words() {
     "a soft-wrapped credential read is still a stop"
   printf '%s\n' '⏺ Next I will review hooks in the repo.' '' 'Which plan should I follow?' ' ❯ 1. Plan A (Recommended)' '   2. Plan B' '' 'Enter to select · ↑/↓ to navigate · Esc to cancel' | classify claude >/dev/null \
     && fail "conversation above an unruled question picker made it a hold"
+  printf '%s\n' '⏺ I will update the password-field test.' '' 'Which plan should I follow?' ' ❯ 1. Plan A (Recommended)' '   2. Plan B' '' 'Enter to select · ↑/↓ to navigate · Esc to cancel' | classify claude >/dev/null \
+    && fail "conversation above an unruled question picker made it a hard stop"
+  assert_equals $'hardstop\tcredential' "$(printf '%s\n' '⏺ Working.' '' 'Which password should I use?' ' ❯ 1. Plan A' '   2. Plan B' '' 'Enter to select · Esc to cancel' | classify claude)" "a hard-stop word in the picker's own paragraph still stops"
   pass "structure, not words: conversation above a prompt and phrases inside a command never change its verdict"
 }
 
@@ -512,6 +515,15 @@ test_trust_dialog_relaunches_without_a_key() {
   assert_equals 1 "$(status_rows ag blocked permission-prompt-held)" "the Antigravity trust picker is reported as held"
   assert_grep "trust-relaunch-answers" "$H/state/ag.status" "the held line names why"
   assert_grep "waiting on worker ag" "$H/data/watchdog/status.md" "a held Antigravity trust picker still gets the waiting gap"
+  make_home
+  worker tw claude "$FIX/claude-2.1.325-trust.txt"
+  rm -f "$H/state/watchdog/actions.tsv"
+  mkdir -p "$H/state/watchdog/actions.tsv"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$({ cat "$H/control.log" 2>/dev/null || true; } | grep -c '^tw relaunch' || true)" "a relaunch that cannot be recorded is never started"
+  assert_equals 1 "$(status_rows tw blocked permission-prompt-held)" "the unrecorded relaunch is reported as held"
+  assert_equals '' "$(typed tw)" "an unrecorded relaunch types nothing"
+  rmdir "$H/state/watchdog/actions.tsv"
   pass "trust dialog: no key, a controlled relaunch once per window, and a refusal is reported"
 }
 

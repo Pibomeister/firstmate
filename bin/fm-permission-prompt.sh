@@ -266,7 +266,9 @@ _fm_pp_codex_dialog() {  # <screen>
 
 # The screen rows of a question picker from the top of the paragraph that
 # holds its last `1.` option row down to the last row, read from the screen
-# because the prompt rows drop blank rows. Empty when no option row is found.
+# because the prompt rows drop blank rows. When the option rows open their own
+# paragraph, the paragraph above them is the picker's title and is included.
+# Empty when no option row is found.
 _fm_pp_question_paragraph() {  # <screen>
   printf '%s\n' "${1-}" | fm_wd_strip_ansi | awk '
     { r[NR] = $0 }
@@ -276,6 +278,12 @@ _fm_pp_question_paragraph() {  # <screen>
       if (!first) exit 0
       top = first
       while (top > 1 && r[top - 1] ~ /[^ \t]/) top--
+      # Options that open their own paragraph take the paragraph above them
+      # as the picker title, the way Claude draws `Select login method:`.
+      if (top == first) {
+        while (top > 1 && r[top - 1] !~ /[^ \t]/) top--
+        while (top > 1 && r[top - 1] ~ /[^ \t]/) top--
+      }
       for (i = top; i <= NR; i++) print r[i]
     }'
 }
@@ -425,15 +433,17 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
     fi
     printf 'hold\t%s\n' "${fixed%%$'\n'*}"; return 0
   fi
+  # A question picker's rows can reach conversation above it, so its hard
+  # stops and holds read only the picker's own paragraph: the unbroken rows
+  # that end at its last `1.` option row.
+  if [ "$dialog" = question ] && text=$(_fm_pp_question_paragraph "$screen") && [ -n "$text" ]; then
+    rows=$text
+  fi
   if cat=$(fm_pp_hardstop_category "$rows"); then
     printf 'hardstop\t%s\n' "$cat"; return 0
   fi
-  # Every remaining verdict is a hold, which presses nothing. A question
-  # picker's rows can reach conversation above it, so its holds read only the
-  # picker's own paragraph: the unbroken rows that end at its first option.
-  text=$rows
-  [ "$dialog" != question ] || text=$(_fm_pp_question_paragraph "$screen")
-  text=$(fm_wd_lower "$text" | tr '\n\t' '  ')
+  # Every remaining verdict is a hold, which presses nothing.
+  text=$(fm_wd_lower "$rows" | tr '\n\t' '  ')
   if printf '%s' "$text" | LC_ALL=C grep -Eq 'external (claude\.md )?(file )?imports|allow external'; then
     printf 'hold\texternal-imports\n'; return 0
   fi
