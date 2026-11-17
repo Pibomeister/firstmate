@@ -698,7 +698,10 @@ wd_rec() {  # <id> <symptom> <action> <phase> <detail>
 
 # wd_nudge <symptom> <body>: a record-backed doorbell into the subject's own pane.
 wd_nudge() {
-  local symptom=$1 body="Watchdog (automated, not the captain or the owner): $2" id doorbell verdict
+  local symptom=$1 body="Watchdog (automated, not the captain or the owner): $2" id doorbell verdict heartbeat_owner=''
+  if [ "$symptom" = heartbeat-frozen ]; then
+    heartbeat_owner=$(wd_heartbeat_owner) || { wd_gap "heartbeat nudge held; current owner is unproven"; return 0; }
+  fi
   if ! fm_wd_text_allowed "$body"; then
     wd_gap "$symptom held; its nudge names a merge, deploy, or release word"
     wd_rate_open "$symptom" nudge "$(cfgi nudge-secs 900)" && wd_rec "$(wd_id)" "$symptom" nudge refused "text names a merge, deploy, or release word"
@@ -719,6 +722,11 @@ wd_nudge() {
     wd_rec "$id" "$symptom" nudge failed "operational input record failed"; return 0; }
   verdict=$(fm_run_timed_fn 30 fm_backend_send_text_submit "$O_BACKEND" "$O_TARGET" "$doorbell" 2 0.5 1 2>/dev/null) || {
     wd_rec "$id" "$symptom" nudge failed "doorbell submit failed (${verdict:-no verdict})"; return 0; }
+  if [ "$symptom" = heartbeat-frozen ] && wd_same_live_owner "$O_HOME/state" \
+    && [ "$(wd_heartbeat_owner)" = "$heartbeat_owner" ]; then
+    wd_rec "$id" "$symptom" nudge "done" "$heartbeat_owner" || wd_gap "heartbeat delivery receipt could not be written"
+  fi
+  return 0
 }
 
 # wd_key <symptom> <key-or-digit> <why>: one key, then verify its effect; returns 0
@@ -1257,6 +1265,19 @@ wd_restart() {  # <symptom> <kind>...
       wd_gap "$symptom held; a failed fresh-start launch left this cycle to auto-compaction"
       return 0
     fi
+  elif [ "$symptom" = heartbeat-frozen ]; then
+    if ! fm_lock_try_acquire "$O_HOME/state/.handoff-launch.lock"; then
+      wd_gap "$symptom held; a fresh-start launch is under way"
+      return 0
+    fi
+    launch_lock=$O_HOME/state/.handoff-launch.lock
+    if fm_wd_handoff_in_progress "$O_HOME/state/.handoff-pending" "$O_LOCK_PID" "$(wd_now)" 600 \
+      || ! wd_same_live_owner "$O_HOME/state" \
+      || [ "$(wd_heartbeat_owner)" != "${WD_HEARTBEAT_OWNER:-}" ]; then
+      fm_lock_release "$launch_lock"
+      wd_gap "$symptom held; handoff or owner changed before the serialized restart"
+      return 0
+    fi
   fi
   wd_restart_run "$symptom" || rc=$?
   [ -z "$launch_lock" ] || fm_lock_release "$launch_lock"
@@ -1397,6 +1418,71 @@ wd_self_heal() {  # <class> <title> <evidence>
 }
 
 # --- the ladder ------------------------------------------------------------------
+
+wd_heartbeat_owner() {
+  local start
+  wd_same_live_owner "$O_HOME/state" || return 1
+  start=$(fm_session_process_start "$O_LOCK_PID") || return 1
+  printf 'heartbeat-owner=%s:%s:%s\n' "$O_LOCK_PID" "${O_SESSION:-none}" "$start"
+}
+
+wd_heartbeat_frozen() {
+  local secs
+  secs=$(cfgi heartbeat-frozen-secs 600)
+  [ "$O_OWNER" = live ] && [ "$secs" -gt 0 ] && [ "$O_HB_AGE" != unknown ] && [ "$O_HB_AGE" -ge "$secs" ]
+}
+
+wd_handle_heartbeat_frozen() {
+  local now stale_at last since kinds owner
+  now=$(wd_now)
+  stale_at=$((now - O_HB_AGE))
+  wd_rate_open heartbeat-frozen detect "$(cfgi nudge-secs 900)" &&
+    wd_rec "$(wd_id)" heartbeat-frozen detect held "heartbeat ${O_HB_AGE}s old; lock pid $O_LOCK_PID live"
+  if fm_wd_handoff_in_progress "$O_HOME/state/.handoff-pending" "$O_LOCK_PID" "$now" 600; then
+    wd_gap "heartbeat is stale during a pending handoff; nothing typed"
+    return 0
+  fi
+  if [ "$O_TURN" = 1 ] || [ "$O_CPU_BUSY" = 1 ]; then
+    wd_gap "heartbeat is stale during active work; treated as busy"
+    return 0
+  fi
+  if [ "$O_COMPOSER" != empty ] || [ "$O_AUTOWAIT" = 1 ] || [ "${O_LIMIT_FOOTER:-0}" = 1 ]; then
+    wd_gap "heartbeat is stale but the existing composer or quota guard takes precedence"
+    return 0
+  fi
+  if [ "$O_ACT_AGE" = unknown ]; then
+    wd_gap "heartbeat recovery held; no verified session activity source"
+    return 0
+  fi
+  owner=$(wd_heartbeat_owner) || { wd_gap "heartbeat recovery held; owner identity is unproven"; return 0; }
+  last=$(awk -F'\t' -v h="$O_HOME" -v owner="$owner" '
+    $3 == h && $5 == "heartbeat-frozen" && $6 == "nudge" && $7 == "done" && $8 == owner { at = $1 }
+    END { print at }
+  ' "$LEDGER" 2>/dev/null)
+  if [ -z "$last" ] || [ "$last" -lt "$stale_at" ]; then
+    wd_nudge heartbeat-frozen "this session's heartbeat is stale while its lock is live. Re-arm supervision, then drain the wake queue and act on it."
+    return 0
+  fi
+  since=$((now - last))
+  if [ "$since" -lt "$(cfgi heartbeat-restart-secs 240)" ]; then
+    wd_gap "heartbeat is stale; waiting after the delivered nudge"
+    return 0
+  fi
+  if [ "$O_ACT_AGE" -lt "$since" ]; then
+    wd_rate_open heartbeat-frozen responsive "$(cfgi nudge-secs 900)" &&
+      wd_rec "$(wd_id)" heartbeat-frozen responsive held "verified $O_ACT_SRC activity advanced after the nudge; no restart"
+    wd_nudge heartbeat-frozen "the heartbeat is still stale after this session responded. Re-arm supervision, then drain the wake queue and act on it."
+    return 0
+  fi
+  kinds='records filesystem'
+  if [ -n "$O_PANE" ] && [ "$O_PANE_STATIC" -ge $((since - $(cfgi interval-secs 120))) ]; then kinds="$kinds rendered"; fi
+  if ! wd_same_live_owner "$O_HOME/state" || [ "$(wd_heartbeat_owner)" != "$owner" ]; then
+    wd_gap "heartbeat recovery held; owner changed after its delivery receipt was read"
+    return 0
+  fi
+  # shellcheck disable=SC2086 # kinds is a word list accepted by the restart proof.
+  WD_HEARTBEAT_OWNER=$owner wd_restart heartbeat-frozen $kinds
+}
 
 wd_ladder_nudge_then_restart() {  # <symptom> <nudge-body> <kind>...
   local symptom=$1 body=$2 nudges
@@ -2256,6 +2342,9 @@ wd_handle_subject() {
   elif [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$owed" ] && [ "$O_TURN" != 1 ]; then
     symptom='unread-input'
     wd_nudge unread-input "$O_OWED_N inputs have waited $((O_OWED_AGE / 60)) minutes. Drain the wake queue and act on it."
+  elif wd_heartbeat_frozen; then
+    symptom='heartbeat-frozen'
+    wd_handle_heartbeat_frozen
   fi
   # A restart this pass stopped the recorded session, so its old endpoint gets nothing more.
   if [ "$WD_RESTARTED" = 1 ]; then WD_SYMPTOM=$symptom; return 0; fi

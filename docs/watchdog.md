@@ -99,6 +99,10 @@ A home whose restart awaits pickup gets no action at all until that restart clos
 | Frozen | Pane and activity source unchanged for `frozen-secs` while input has waited as long | Nudge, then restart. A running turn holds instead. |
 | Unsent input | The composer holds the same pending text on two passes with no running turn | Press Enter once per two hours, unless a row from the first prompt row to the end of the window names a merge, deploy, release, publish, or force push; that refusal is reported as a gap. Rule and footer rows hide nothing from this check, and conversation rows above the first prompt row do not count. Enter also needs the whole draft proven. A bordered last prompt row needs a closed box with both borders inside the window. A plain last prompt row needs two equal rules of 40 or more characters at column 0 around it. Draft rows sit indented under the prompt glyph, so such a rule is the harness's. Any other draft gets no Enter and a reported gap: a plain or bare composer, an indented composer such as Grok or Cursor, a left-bar composer, a Claude composer on a named session whose top rule carries a title, a paste placeholder, or a draft taller than the read window or the capture. These are reported gaps and not supported coverage. |
 | Unread input | Input has waited `owed-input-secs` with no running turn | Nudge. |
+| Heartbeat frozen | A live lock owner has a heartbeat older than `heartbeat-frozen-secs`, after the existing ladder checks | Record the stale heartbeat and nudge an empty idle composer; wait `heartbeat-restart-secs` before using the configured restart path when no verified session activity follows, repeat the rate-limited nudge after a response if the heartbeat stays stale, and hold during a pending handoff, active work, draft, or known quota condition without changing account pins. |
+
+Heartbeat recovery requires a successful delivery receipt for the current lock owner and process instance, so dry runs, interrupted delivery, and previous sessions cannot authorize its restart.
+It uses the existing activity sources and holds the existing handoff launch lock through its final checks and restart.
 
 The frozen, agent-gone, and restart paths need an activity source, the newest of these stamps that is not later than the watchdog clock:
 
@@ -418,6 +422,8 @@ An absent file means dry-run on the owner home alone.
 | `quota-secs` | `600` | Quota park age before a reroute nudge |
 | `restart-secs` | `7200` | Minimum time between restarts of one home |
 | `watcher-stale-secs` | `900` | Heartbeat age reported as a stale watcher |
+| `heartbeat-frozen-secs` | `600` | Heartbeat age with a live lock owner that enables heartbeat recovery; `0` disables it |
+| `heartbeat-restart-secs` | `240` | Wait after a delivered heartbeat recovery nudge before considering a restart |
 | `relaunch-timeout-secs` | `900` | Bound on a second mate relaunch |
 | `call-timeout-secs` | `20` | Bound on each pane capture |
 | `key-settle-secs` | `2` | Wait after a key before checking its effect |

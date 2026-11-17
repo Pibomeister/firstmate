@@ -73,6 +73,9 @@
 #       a row below the last prompt row. Above it, the phrase matches only on a
 #       row that opens by stating the usage limit (fm_wd_usage_limit_text), so
 #       conversation output that quotes the phrase is not a match.
+#   fm_wd_handoff_in_progress <claim-file> <lock-pid> <now> <max-secs>
+#       Returns 0 for a bounded pending handoff claim for that lock owner;
+#       bin/fm-handoff-lib.sh owns the claim format.
 #   fm_wd_dialog_options <screen>
 #       Prints `<number>\t<text>` for each numbered option of the dialog.
 #   fm_wd_dialog_text <screen>
@@ -335,6 +338,13 @@ fm_wd_usage_limit_autowait() {  # <screen>
       }
     }')
   return 1
+}
+
+fm_wd_handoff_in_progress() {  # <claim-file> <lock-pid> <now> <max-secs>
+  local claim=$1 pid=$2 now=$3 max=$4 deadline
+  [ -n "$pid" ] && [ -f "$claim" ] && [ ! -L "$claim" ] || return 1
+  deadline=$(jq -er --arg p "$pid" 'select(.version == 1 and (.predecessor_pid | tostring) == $p) | .deadline | numbers | floor' "$claim" 2>/dev/null) || return 1
+  [ "$deadline" -gt "$now" ] && [ $((deadline - now)) -le "$max" ]
 }
 
 fm_wd_quota_status_line() {  # <line>
