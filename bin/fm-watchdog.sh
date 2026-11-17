@@ -143,8 +143,9 @@ wd_decisions_mode() {
 }
 
 # Worker permission prompts have their own switch. An unset `permission-route`
-# follows `mode`, `off` keeps the report-only gap and page, and any other value
-# but `act` is a dry run.
+# follows `mode`, `off` runs no classifier and keeps the report-only gap and
+# page for the dialogs fm_wd_pane_dialog reads, `act` acts even when `mode` is
+# dry-run, and any other value is a dry run.
 wd_permission_mode() {
   case "${WD_FORCE_DRY:-}:$(cfg permission-route '')" in
     *:off) printf 'off\n' ;;
@@ -1676,11 +1677,18 @@ wd_pp_decline() {
     wd_rec "$rid" permission-prompt decline refused "the prompt changed before the key; nothing was pressed"
     return 1
   fi
-  # The checksum is kept before the key, so one prompt gets at most one Escape
-  # even when delivery or the check after it fails.
-  mkdir -p "$WD/permission"
-  printf '%s\n' "$hash" >> "$mark.declined"
-  wd_rec "$rid" permission-prompt decline pending "press Escape on a claude tool-approval prompt"
+  # The checksum and the attempt are kept before the key, so one prompt gets at
+  # most one Escape even when delivery or the check after it fails. A record
+  # that cannot be kept presses nothing.
+  if ! { mkdir -p "$WD/permission" && printf '%s\n' "$hash" >> "$mark.declined"; } 2>/dev/null; then
+    wd_rec "$rid" permission-prompt decline failed "the prompt checksum could not be saved; nothing was pressed"
+    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows a tool-approval prompt, and its checksum could not be saved; nothing was answered"
+    return 1
+  fi
+  if ! wd_rec "$rid" permission-prompt decline pending "press Escape on a claude tool-approval prompt"; then
+    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows a tool-approval prompt, and the attempt could not be recorded; nothing was answered"
+    return 1
+  fi
   if ! fm_run_timed_fn 10 fm_control_send_feedback_dismiss "$O_BACKEND" "$O_TARGET" Escape "fm-$id" >/dev/null 2>&1; then
     wd_rec "$rid" permission-prompt decline failed "key delivery failed"
     wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows a tool-approval prompt, and the Escape key could not be delivered; nothing was answered"
@@ -1709,7 +1717,7 @@ wd_pp_decline() {
   after_dialog=$(fm_wd_pane_dialog "$after" "$harness") || after_dialog=
   if verdict=$(fm_pp_classify "$after" "$harness" "${after_dialog:-none}"); then
     case "$verdict" in
-      hardstop*) wd_pp_stop "$id" permission-prompt-hardstop "after-$hash" "worker $id shows a ${verdict#*$'\t'} prompt after a declined tool call; nothing was answered, and no instruction was sent" ;;
+      hardstop*) WD_PP_REASON=${verdict#*$'\t'}; wd_pp_stop "$id" permission-prompt-hardstop "after-$hash" "worker $id shows a ${verdict#*$'\t'} prompt after a declined tool call; nothing was answered, and no instruction was sent" ;;
       *) wd_pp_stop "$id" permission-prompt-held "after-$hash" "worker $id shows another permission prompt after a declined tool call (${verdict#*$'\t'}); nothing was answered, and no instruction was sent" ;;
     esac
     return 1

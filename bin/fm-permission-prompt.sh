@@ -29,14 +29,17 @@
 #       Enter would exit, and Antigravity's preselects its safe answer; either
 #       way no key: the watchdog asks bin/fm-control.sh for a controlled
 #       relaunch, whose spawn pre-registers the worktree's trust entry. Other
-#       harnesses get `hold trust-unregistered`.
+#       harnesses get `hold trust-unregistered`. A hard-stop word in its
+#       workspace rows, the only rows the dialog does not fix, is a hard stop.
 #   hardstop <credential|sign-in|spend|destructive|release|reserved>
 #       The prompt names a credential, a sign-in, paid usage, a destructive
 #       command, a merge, tag or release, or another owner-reserved category
 #       (fm_wd_reserved). Never answered. A tool-approval prompt and every
 #       picker the watchdog's dialog detector recognizes, including a
 #       usage-limit or model-switch picker, are checked for every category in
-#       their own rows. A screen with no recognized dialog has no verdict:
+#       their own rows. The external-imports and bypass dialogs are checked
+#       only in the rows they do not fix (the listed import paths), so their
+#       fixed security text never names a stop. A screen with no recognized dialog has no verdict:
 #       generic terminal and external-CLI prompts are out of scope here.
 #   hold <external-imports|bypass-confirm|hooks-review>
 #       A dialog whose every answer is a standing decision or whose default
@@ -243,7 +246,7 @@ _fm_pp_codex_dialog() {  # <screen>
       last = NR
       while (last > 0 && r[last] !~ /[^ \t]/) last--
       if (r[last] !~ /^[ \t]*Press enter to confirm or esc to (cancel|go back)[ \t]*$/) exit 1
-      floor = last - 14; if (floor < 1) floor = 1
+      floor = last - 40; if (floor < 1) floor = 1
       head = 0
       for (i = last - 1; i >= floor; i--) if (r[i] ~ /^[ \t]*(Would you like to run the following command\?|Hooks need review)[ \t]*$/) { head = i; break }
       if (!head) exit 1
@@ -255,12 +258,68 @@ _fm_pp_codex_dialog() {  # <screen>
   [ "$rows" = ok ]
 }
 
+# The workspace rows of a proven trust dialog: the rows between its
+# `Accessing workspace:` row and its heading, which are the only rows the
+# dialog does not fix. Empty when the screen has no such row.
+_fm_pp_trust_workspace_rows() {  # <screen>
+  printf '%s\n' "${1-}" | fm_wd_strip_ansi | awk '
+    { r[NR] = $0 }
+    END {
+      last = NR
+      floor = last - 40; if (floor < 1) floor = 1
+      head = 0
+      for (i = last; i >= floor; i--) if (r[i] ~ /^[ \t]*(Quick safety check: Is this a project you created or one you trust\?|Do you trust the contents of this project\?)/) { head = i; break }
+      if (!head) exit 0
+      top = 0
+      for (i = head - 1; i >= floor; i--) if (r[i] ~ /^[ \t]*Accessing workspace:[ \t]*$/) { top = i; break }
+      if (!top) exit 0
+      for (i = top + 1; i < head; i++) print r[i]
+    }'
+}
+
+# A Claude external-imports or bypass-confirmation dialog, proven by its
+# heading and both fixed answer rows below it. The first output row names it,
+# and the rows after it are the only rows the dialog does not fix: the listed
+# import paths. Its fixed text, such as the security-docs line, is never read
+# for a hard stop.
+_fm_pp_fixed_dialog() {  # <screen>
+  local out
+  out=$(printf '%s\n' "${1-}" | fm_wd_strip_ansi | awk '
+    { r[NR] = $0 }
+    END {
+      last = NR
+      while (last > 0 && r[last] !~ /[^ \t]/) last--
+      floor = last - 40; if (floor < 1) floor = 1
+      kind = ""; head = 0
+      for (i = last; i >= floor; i--) {
+        if (r[i] ~ /^[ \t]*Allow external CLAUDE\.md file imports\?[ \t]*$/) { kind = "external-imports"; head = i; break }
+        if (r[i] ~ /^[ \t]*WARNING: Claude Code running in Bypass Permissions mode[ \t]*$/) { kind = "bypass-confirm"; head = i; break }
+      }
+      if (!head) exit 1
+      no = 0; yes = 0; first = 0
+      for (i = head + 1; i <= last; i++) {
+        if (kind == "external-imports" && r[i] ~ /^[ \t]*(❯)?[ \t]*1\.[ \t]+No, disable external imports[ \t]*$/) { no = 1; if (!first) first = i }
+        if (kind == "external-imports" && r[i] ~ /^[ \t]*(❯)?[ \t]*2\.[ \t]+Yes, allow external imports[ \t]*$/) { yes = 1; if (!first) first = i }
+        if (kind == "bypass-confirm" && r[i] ~ /^[ \t]*(❯)?[ \t]*1\.[ \t]+No, exit[ \t]*$/) { no = 1; if (!first) first = i }
+        if (kind == "bypass-confirm" && r[i] ~ /^[ \t]*(❯)?[ \t]*2\.[ \t]+Yes, I accept[ \t]*$/) { yes = 1; if (!first) first = i }
+      }
+      if (!(no && yes)) exit 1
+      print kind
+      if (kind == "external-imports") for (i = head + 1; i < first; i++) if (r[i] ~ /^[ \t]*(\/|~\/|\.\.?\/)[^ \t]/) print r[i]
+    }') || return 1
+  [ -n "$out" ] || return 1
+  printf '%s\n' "$out"
+}
+
 fm_pp_classify() {  # <screen> <harness> [<dialog>]
-  local screen=${1-} harness=${2-} dialog=${3-} rows ruled text cat
+  local screen=${1-} harness=${2-} dialog=${3-} rows ruled text cat fixed
   [ -n "$screen" ] || return 1
   # A proven trust dialog is read first, because the Antigravity picker has no
   # footer the watchdog's dialog detector recognizes.
   if _fm_pp_trust_dialog "$screen"; then
+    if cat=$(fm_pp_hardstop_category "$(_fm_pp_trust_workspace_rows "$screen")"); then
+      printf 'hardstop\t%s\n' "$cat"; return 0
+    fi
     case "$harness" in
       claude|agy) printf 'trust\tworkspace\n' ;;
       *) printf 'hold\ttrust-unregistered\n' ;;
@@ -312,6 +371,12 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
       *) printf 'hold\tunknown-harness\n' ;;
     esac
     return 0
+  fi
+  if fixed=$(_fm_pp_fixed_dialog "$screen"); then
+    if cat=$(fm_pp_hardstop_category "$(printf '%s\n' "$fixed" | sed 1d)"); then
+      printf 'hardstop\t%s\n' "$cat"; return 0
+    fi
+    printf 'hold\t%s\n' "${fixed%%$'\n'*}"; return 0
   fi
   if cat=$(fm_pp_hardstop_category "$rows"); then
     printf 'hardstop\t%s\n' "$cat"; return 0

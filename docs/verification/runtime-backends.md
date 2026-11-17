@@ -4144,7 +4144,7 @@ Sanitized copies of those three screens are the fixtures in `tests/fixtures/perm
 ```sh
 bash bin/fm-test-run.sh tests/fm-permission-prompt.test.sh
 ok - real Claude 2.1.325 prompts: tool approval routes only on claude, trust relaunches, and the cancelled screen is clear
-ok - tool approval: one Escape, verified gone, then a durable rewrite instruction, and one pass at a time per worker
+ok - tool approval: one Escape, verified gone, then a durable rewrite instruction, one pass at a time per worker, and no key without a saved checksum
 ok - hard stops: credential, destructive, and spend prompts get no key and one keyed blocked line
 ```
 

@@ -166,6 +166,15 @@ CODEX_HOOKS=$'Hooks need review\n12 hooks are new or changed.\nHooks can run out
 codex_approval() {  # <command>
   printf '%s\n' 'Would you like to run the following command?' '' "  \$ $1" '' '› 1. Yes, proceed (y)' "  2. Yes, and don't ask again for this command (a)" '  3. No, and tell Codex what to do differently (esc)' '' '  Press enter to confirm or esc to cancel'
 }
+# The whole Claude external-imports and bypass-confirmation dialogs, rebuilt
+# from Claude Code's wording rather than captured, with their fixed security
+# lines. The import list is the only row the dialog does not fix.
+full_imports() {  # <import-path>
+  printf '%s\n' '────────────────────────────────────────' ' Allow external CLAUDE.md file imports?' '' " This project's CLAUDE.md imports files outside the current working directory. Never allow this for third-party repositories." '' ' External imports:' "   $1" '' ' Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks https://code.claude.com/docs/en/security' '' ' ❯ 1. No, disable external imports' '   2. Yes, allow external imports' '' ' Enter to confirm · Esc to cancel'
+}
+full_bypass() {
+  printf '%s\n' ' WARNING: Claude Code running in Bypass Permissions mode' '' ' In Bypass Permissions mode, Claude Code will not ask for your approval before running potentially dangerous commands.' ' This mode should only be used in a sandboxed container/VM that has restricted internet access and can easily be restored if damaged.' '' ' By proceeding, you accept all responsibility for actions taken while running in Bypass Permissions mode.' '' ' https://code.claude.com/docs/en/security' '' ' ❯ 1. No, exit' '   2. Yes, I accept' '' ' Enter to confirm · Esc to cancel'
+}
 
 ledger() { cat "$H/state/watchdog/actions.tsv" 2>/dev/null; }
 ledger_rows() {  # <action> <phase> [subject]
@@ -183,7 +192,8 @@ test_real_claude_prompts_classify() {
   assert_equals $'route\ttool-approval' "$(bash_prompt | classify claude)" "the real Claude Bash prompt routes on a claude worker"
   assert_equals $'hold\tunknown-harness' "$(bash_prompt | classify codex)" "the same prompt on another harness is held"
   assert_equals $'hold\tunknown-harness' "$(bash_prompt | classify '')" "the same prompt with no recorded harness is held"
-  assert_equals $'trust\tworkspace' "$(classify claude < "$FIX/claude-2.1.325-trust.txt")" "the real trust dialog asks for a relaunch"
+  assert_equals $'trust\tworkspace' "$(classify claude < "$FIX/claude-2.1.325-trust.txt")" "the real trust dialog asks for a relaunch, and its fixed security-guide row names no stop"
+  assert_equals $'hardstop\trelease' "$(sed 's#/tmp/probe/#/srv/production/#' "$FIX/claude-2.1.325-trust.txt" | classify claude)" "a trust dialog's workspace path is read for a hard stop"
   assert_equals $'hold\ttrust-unregistered' "$(classify codex < "$FIX/claude-2.1.325-trust.txt")" "a trust dialog on a harness with no pre-registration is held"
   classify claude < "$FIX/claude-2.1.325-after-escape.txt" >/dev/null \
     && fail "the screen Claude drew after Escape must not read as a prompt"
@@ -203,12 +213,16 @@ test_declining_cursor_dialogs_never_route() {
   assert_equals $'hardstop\trelease' "$(codex_approval 'git push origin main' | classify codex)" "a Codex approval to push main is a release stop"
   assert_equals $'hardstop\tdestructive' "$(codex_approval 'rm -rf build' | classify codex)" "a Codex approval to remove recursively is a destructive stop"
   assert_equals $'hold\tunproven' "$(codex_approval 'npm test' | classify codex)" "any other Codex command approval is held"
+  assert_equals $'hold\texternal-imports' "$(full_imports /Users/u/work/shared/notes.md | classify claude)" "the whole imports dialog is held, and its fixed security line names no stop"
+  assert_equals $'hardstop\trelease' "$(full_imports /Users/u/work/production-notes.md | classify claude)" "an import path is still read for a hard stop"
+  assert_equals $'hold\tbypass-confirm' "$(full_bypass | classify claude)" "the whole bypass confirmation is held, and its fixed warning names no stop"
+  assert_equals $'hardstop\tdestructive' "$(printf '%s\n' '' '  Would you like to run the following command?' '' '  Reason: clean the build tree' '' '  $ find build -name "*.o"' '      -newer stamp' '      -print0' '    | xargs -0' '      rm -rf' '' '  › 1. Yes, proceed (y)' "    2. Yes, and don't ask again for this command (p)" '    3. No, and tell Codex what to do differently (esc)' '' '' '  Press enter to confirm or esc to cancel' | classify codex)" "a taller Codex approval is read whole for a hard stop"
   { codex_approval 'rm -rf build'; printf '%s\n' '' '› Explain this' '' '  gpt-6 high · ~/work'; } | classify codex >/dev/null \
     && fail "a Codex approval quoted above a composer is not a live dialog"
   assert_equals $'hold\tunproven' "$(bash_prompt | sed -e 's/^ ❯ 1\. Yes$/   1. Yes/' -e 's/^   4\. No$/ ❯ 4. No/' | classify claude)" \
     "a tool prompt whose cursor moved off 1. Yes is not proven"
   assert_equals $'hold\tunproven' "$(bash_prompt | sed '/^─\{20,\}$/d' | classify claude)" "a tool prompt with no rule above it is not proven"
-  pass "declining-cursor dialogs: imports, bypass, hook review, and a moved cursor are held"
+  pass "declining-cursor dialogs: imports, bypass, hook review, and a moved cursor are held, and their fixed text names no stop"
 }
 
 test_hardstop_categories() {
@@ -298,6 +312,7 @@ test_antigravity_trust_screen_classifies() {
   local agy=$'Accessing workspace:\n\n/work/project\n\nDo you trust the contents of this project?\n\nAntigravity CLI requires permission to read, edit, and execute files here.\n\n> Yes, I trust this folder\n  No, exit'
   assert_equals $'trust\tworkspace' "$(printf '%s\n' "$agy" | classify agy)" "the recorded Antigravity trust screen is a trust dialog"
   assert_equals $'hold\ttrust-unregistered' "$(printf '%s\n' "$agy" | classify codex)" "on another harness it is held"
+  assert_equals $'hardstop\trelease' "$(printf '%s\n' "$agy" | sed 's#/work/project#/srv/production#' | classify agy)" "its workspace path is read for a hard stop"
   printf '%s\n\nok\n>\n? for shortcuts\n' "$agy" | classify agy >/dev/null \
     && fail "a quoted trust screen above a composer is not a trust dialog"
   pass "Antigravity trust: its recorded screen is read before the dialog detector, and is held off agy"
@@ -332,7 +347,13 @@ test_tool_approval_is_declined_and_steered() {
   run_wd 400 once >/dev/null 2>&1
   assert_equals 1 "$(typed lk | tr -cd '\033' | wc -c | tr -d ' ')" "once the other pass is done, the prompt gets its one Escape"
   [ ! -e "$mark-lk.lock" ] || fail "the pass releases its lock"
-  pass "tool approval: one Escape, verified gone, then a durable rewrite instruction, and one pass at a time per worker"
+  worker wf claude "$FIX/claude-2.1.325-bash-prompt.txt" "$FIX/claude-2.1.325-after-escape.txt"
+  mkdir "$mark-wf.declined"
+  run_wd 600 once >/dev/null 2>&1
+  assert_equals '' "$(typed wf)" "a prompt whose checksum cannot be saved gets no key"
+  assert_contains "$(ledger | awk -F'\t' '$4 == "worker:wf" && $7 == "failed" { print $8 }')" "could not be saved" "the unsaved checksum is recorded"
+  assert_equals 1 "$(status_rows wf blocked permission-prompt-held)" "the unsaved checksum is reported as held"
+  pass "tool approval: one Escape, verified gone, then a durable rewrite instruction, one pass at a time per worker, and no key without a saved checksum"
 }
 
 test_prompt_after_escape_gets_no_instruction() {
@@ -362,20 +383,24 @@ test_prompt_after_escape_gets_no_instruction() {
 test_declining_dialogs_on_workers_get_no_key() {
   local id
   make_home
-  printf '%s\n' '────────────────────────────────────────' ' Allow external CLAUDE.md file imports?' ' ❯ 1. No, disable external imports' '   2. Yes, allow external imports' '' ' Enter to confirm · Esc to cancel' > "$H/imports.txt"
-  printf '%s\n' ' WARNING: Claude Code running in Bypass Permissions mode' ' ❯ 1. No, exit' '   2. Yes, I accept' '' ' Enter to confirm · Esc to cancel' > "$H/bypass.txt"
+  full_imports /Users/u/work/shared/notes.md > "$H/imports.txt"
+  printf '%s\n' "$CODEX_HOOKS" > "$H/codex-hooks.txt"
+  worker cx codex "$H/codex-hooks.txt"
+  full_bypass > "$H/bypass.txt"
   worker im claude "$H/imports.txt"
   worker by claude "$H/bypass.txt"
   worker dn claude "$FIX/claude-2.1.325-bash-prompt.txt" "$FIX/claude-2.1.325-after-escape.txt"
   printf 'do-not-touch=%s\n' "$WP" >> "$H/config/watchdog"
   run_wd 0 once >/dev/null 2>&1 || fail "the watchdog pass failed"
-  for id in im by dn; do
+  for id in im by dn cx; do
     assert_equals '' "$(typed "$id")" "no key reaches worker $id"
     assert_equals 1 "$(status_rows "$id" blocked permission-prompt-held)" "worker $id is reported as held"
   done
   assert_grep "external-imports" "$H/state/im.status" "the imports dialog names its reason"
   assert_grep "bypass-confirm" "$H/state/by.status" "the bypass confirmation names its reason"
   assert_grep "do-not-touch" "$H/state/dn.status" "the do-not-touch hold names its reason"
+  assert_grep "hooks-review" "$H/state/cx.status" "the Codex hook review names its reason"
+  assert_grep "permission prompt waiting on worker cx" "$H/data/watchdog/status.md" "the Codex dialog the picker detector misses still gets the waiting gap"
   pass "declining dialogs and do-not-touch workers: no key and one keyed held line"
 }
 
