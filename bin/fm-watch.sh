@@ -3383,11 +3383,12 @@ hung_ladder_observe() {  # <task> <kind> <1 when the pane reads busy> <dialog> <
     tick --task "$task" --kind "$kind" --busy "$3" --dialog "$4" >/dev/null 2>"$STATE/.hung-ladder.err" || true
 }
 
-# Snapshots of tasks that are gone are pruned once an hour from the pass
-# itself, so retention never depends on another worker being observed.
+# Ladder records of tasks that are gone are resolved and pruned once an hour
+# from the pass itself, so cleanup never depends on another worker being
+# observed.
 hung_ladder_prune() {
   local now
-  [ -d "$STATE/hung-ladder/snapshots" ] || return 0
+  [ -d "$STATE/hung-ladder" ] || return 0
   now=$(date +%s)
   [ $((now - ${HUNG_LADDER_PRUNED_AT:-0})) -ge 3600 ] || return 0
   HUNG_LADDER_PRUNED_AT=$now

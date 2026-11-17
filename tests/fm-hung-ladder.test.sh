@@ -96,6 +96,10 @@ new_task() {  # <home> <task> [kind]
 
 agent_pid() { local s; s=$(cat "$1/probe/$2.agent"); printf '%s' "${s#* }"; }
 
+fhl_test_sha() {  # stdin -> sha256 hex
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi | cut -d' ' -f1
+}
+
 perm_of() {  # <path> -> octal permissions
   if [ "$(uname)" = Darwin ]; then /usr/bin/stat -f %Lp "$1"; else stat -c %a "$1"; fi
 }
@@ -108,6 +112,15 @@ perl -e 'while (1) { open(my $f, ">>", $ARGV[0]) or die; print $f "x" x 4096; cl
 wait
 EOF
 chmod +x "$WRITER"
+
+# An agent with one idle child that uses no CPU and does no I/O.
+PARENT="$TMP_ROOT/parent-agent"
+cat > "$PARENT" <<'EOF'
+#!/usr/bin/env bash
+sleep 3600 &
+wait
+EOF
+chmod +x "$PARENT"
 
 PANE_STYLE=busy
 pane_for() {  # <now>
@@ -440,6 +453,29 @@ test_healthy_waits_and_screens() {
   PANE_STYLE=streaming ticks "$h" st "$B" $((B + 1800))
   assert_equals 0 "$(rows "$h" st observe)" 'a turn that streams tokens opens no episode'
 
+  # Queue wording with no ticket and no queue name is an ordinary bounded wait.
+  new_task "$h" qw
+  printf 'paused: waiting for the CI test queue to drain [at=%s]\n' "$B" >> "$h/state/qw.status"
+  ticks "$h" qw "$B" $((B + 1800))
+  assert_equals 0 "$(rows "$h" qw would-act)" 'free-text queue wording is not a dead wait'
+
+  # A validation run whose state the crew state cannot read holds every rung.
+  new_task "$h" vu
+  echo "state: unknown · source: run-step · selected run unreadable" > "$h/probe/vu.validating"
+  ticks "$h" vu "$B" $((B + 1800))
+  assert_equals 0 "$(rows "$h" vu would-act)" 'an unknown validation state holds'
+
+  # A child is working until it has stayed unchanged for 15 minutes.
+  new_task "$h" kc
+  "$PARENT" </dev/null >/dev/null 2>&1 &
+  AGENTS="$AGENTS $!"
+  printf 'alive %s' "$!" > "$h/probe/kc.agent"
+  sleep 1
+  ticks "$h" kc "$B" $((B + 1800))
+  assert_equals 0 "$(rows "$h" kc would-act 3)" 'a child not yet proven stale vetoes rung 3'
+  ledger "$h" | awk -F'\t' -v b=$((B + 900)) '$4 == "kc" && $6 == "would-act" && $5 == "1" { f = 1; ok = ($2 >= b + 240 && $8 ~ /children=1;stale_children=1/) } END { exit !(f && ok) }' \
+    || fail 'the episode opens only after the child is proven stale'
+
   # A ticket that names no test queue is an ordinary bounded wait, never a dead one.
   new_task "$h" tk
   printf 'paused: waiting for approval on ticket PROJ-123 [at=%s]\n' "$B" >> "$h/state/tk.status"
@@ -500,6 +536,16 @@ test_unverified_wait_cap_cannot_be_renewed() {
   printf 'paused: waiting on the release window\n' >> "$h/state/ns.status"
   ticks "$h" ns "$B" $((B + 1500))
   assert_equals 1 "$(rows "$h" ns observe 0)" 'an unstamped wait runs out too'
+  # A future deadline is the worker's own word: it buys the bounded hold only.
+  new_task "$h" fu
+  printf 'paused: waiting on the release window until 2030-01-01T00:00Z [at=%s]\n' "$B" >> "$h/state/fu.status"
+  ticks "$h" fu "$B" $((B + 1500))
+  assert_equals 1 "$(rows "$h" fu observe 0)" 'a far deadline still runs out'
+  case "$(reason_of "$h" fu would-act 1)" in *unverified-wait-cap*) ;; *) fail 'rung 1 names the wait cap for a far deadline' ;; esac
+  new_task "$h" fp
+  printf 'paused: waiting pid=999999 until 2030-01-01T00:00Z [at=%s]\n' "$B" >> "$h/state/fp.status"
+  ticks "$h" fp "$B" $((B + 600))
+  case "$(reason_of "$h" fp would-act 1)" in *pid-gone*) ;; *) fail 'a deadline does not hide a dead job' ;; esac
   # Alternating the wait with a status line that says nothing new.
   local i=0
   new_task "$h" al
@@ -526,6 +572,60 @@ test_unverified_wait_cap_cannot_be_renewed() {
   fi
   assert_no_actions 'wait cap'
   pass 'the unverified-wait hold is capped from first sighting and cannot be renewed'
+}
+
+test_failed_reads_never_count_as_progress() {
+  local h
+  h=$(new_home failread)
+  new_task "$h" fr
+  ticks "$h" fr "$B" $((B + 600))
+  assert_equals 1 "$(rows "$h" fr would-act 2)" 'the episode reached rung 2'
+  # One pass where Git cannot read the worktree.
+  mv "$h/wt-fr/.git/HEAD" "$h/wt-fr/.git/HEAD.off"
+  tick "$h" fr $((B + 660))
+  mv "$h/wt-fr/.git/HEAD.off" "$h/wt-fr/.git/HEAD"
+  ticks "$h" fr $((B + 720)) $((B + 1200))
+  ledger "$h" | awk -F'\t' '$4 == "fr" && $6 == "hold" && $11 ~ /unknown:.*fs/ { f = 1 } END { exit !f }' \
+    || fail 'the failed read holds'
+  assert_equals 0 "$(ledger "$h" | awk -F'\t' '$4 == "fr" && $6 == "resolve" { n++ } END { print n + 0 }')" 'a failed read is never self-progress'
+  assert_equals 1 "$(rows "$h" fr would-act 3)" 'the episode carries on once Git reads again'
+  assert_no_actions 'failed reads'
+  pass 'a failed Git read holds the episode and never counts as progress'
+}
+
+test_cleanup_resolves_open_episodes() {
+  local h sum
+  h=$(new_home cleanup)
+  new_task "$h" g1
+  new_task "$h" g2
+  ticks "$h" g1 "$B" $((B + 600))
+  ticks "$h" g2 "$B" $((B + 600))
+  rm -f "$h/state/g1.meta" "$h/state/g2.meta"
+  printf 'done [at=%s]: PR opened\n' $((B + 650)) >> "$h/state/g2.status"
+  # A refused live mode writes nothing, not even resolve rows.
+  sum=$(ledger "$h" | fhl_test_sha)
+  printf 'mode=relaunch\nactor=test\n' > "$h/config/hung-ladder"
+  env -u FM_TASK_ID FM_HOME="$h" FM_HUNG_LADDER_NOW=$((B + 700)) "$TEST_BASH" "$LADDER" prune 2>/dev/null || fail 'a refused prune exits cleanly'
+  assert_equals "$sum" "$(ledger "$h" | fhl_test_sha)" 'a refused live mode writes no ledger row'
+  [ -e "$h/state/hung-ladder/episodes/g1.ep" ] || fail 'a refused prune keeps the episode'
+  printf 'mode=observe\nactor=test\n' > "$h/config/hung-ladder"
+  env -u FM_TASK_ID FM_HOME="$h" FM_HUNG_LADDER_NOW=$((B + 700)) "$TEST_BASH" "$LADDER" prune || fail 'prune runs'
+  local t want got
+  for t in g1 g2; do
+    want=$(ledger "$h" | awk -F'\t' -v t="$t" '$4 == t && ($6 == "observe" || $6 == "would-act") { n++ } END { print n + 0 }')
+    got=$(ledger "$h" | awk -F'\t' -v t="$t" '$4 == t && $6 == "resolve" { n++ } END { print n + 0 }')
+    [ "$want" -ge 2 ] || fail "$t had pending rows"
+    assert_equals "$want" "$got" "every pending row of $t is resolved"
+    [ ! -e "$h/state/hung-ladder/episodes/$t.ep" ] || fail "the episode record of $t goes"
+  done
+  assert_equals 0 "$(ledger "$h" | awk -F'\t' '$4 == "g1" && $6 == "resolve" && $13 != "no" { n++ } END { print n + 0 }')" 'a silent cleaned-up task did not self-progress'
+  assert_equals 0 "$(ledger "$h" | awk -F'\t' '$4 == "g2" && $6 == "resolve" && $13 != "yes" { n++ } END { print n + 0 }')" 'a task that reported done did self-progress'
+  sum=$(ledger "$h" | fhl_test_sha)
+  env -u FM_TASK_ID FM_HOME="$h" FM_HUNG_LADDER_NOW=$((B + 760)) "$TEST_BASH" "$LADDER" prune || fail 'a second prune runs'
+  assert_equals "$sum" "$(ledger "$h" | fhl_test_sha)" 'each row is resolved once'
+  verify "$h" >/dev/null || fail 'the ledger verifies after cleanup'
+  assert_no_actions 'cleanup'
+  pass 'cleanup resolves every pending row once, and a refused mode writes nothing'
 }
 
 test_live_mode_refused_without_gate() {
@@ -725,6 +825,8 @@ fm_test_run \
   test_breaker_formula_and_load \
   test_healthy_waits_and_screens \
   test_unverified_wait_cap_cannot_be_renewed \
+  test_failed_reads_never_count_as_progress \
+  test_cleanup_resolves_open_episodes \
   test_live_mode_refused_without_gate \
   test_chain_and_escaping \
   test_snapshots_redact_and_exclude_secrets \

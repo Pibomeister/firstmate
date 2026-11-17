@@ -25,9 +25,11 @@
 #   fm-hung-ladder.sh verify
 #       Recompute the whole ledger hash chain. Exit 0 intact, 3 broken.
 #   fm-hung-ladder.sh prune
-#       Remove the snapshots of every task whose metadata is gone. The watcher
-#       runs it once an hour, so snapshots go with task cleanup even when no
-#       worker is left to observe. Writes nothing else.
+#       For every task whose metadata is gone: resolve its pending would-act
+#       rows (observe mode only), then remove its episode records and
+#       snapshots. The watcher runs it once an hour, so cleanup reaches the
+#       ledger even when no worker is left to observe. A refused live mode
+#       writes nothing.
 #   fm-hung-ladder.sh --help
 #
 # Exit status: 0 success or nothing to do; 2 usage error or refusal by a
@@ -70,8 +72,8 @@
 #
 # OTHER FILES under state/hung-ladder/ (directory 0700, files 0600):
 #   episodes/<task>.ep      the episode record (key=value), dated at T0
-#   episodes/<task>.sample  the previous sensor readings; its mtime is the
-#                           watcher's sample throttle
+#   episodes/<task>.sample  the previous sensor readings (the watcher's
+#                           sample throttle is an in-memory stamp)
 #   episodes/<task>.anchor  the worktree write probe anchor
 #   seen/<task>             the epoch of the last live reading; N for the breaker
 #   snapshots/<task>/       redacted pane text and rung-4 content snapshots,
@@ -86,8 +88,10 @@
 # that repeats one of the last four is a drip, not progress. kernel: CPU time
 # of the agent's process tree per sample, unknown above the load ceiling or
 # when the tree cannot be read, unsupported when the backend names no root
-# process. A descendant whose CPU time or I/O count changed is working and
-# vetoes the proof; one unchanged for 15 minutes is a stale child. I/O comes
+# process. A descendant counts as working, and vetoes the proof, until its
+# CPU time and I/O count have stayed unchanged for 15 minutes; only then is
+# it a stale child. A failed Git read keeps the last good HEAD and content
+# hash, so it never reads as progress. I/O comes
 # from /proc/<pid>/io where it exists. macOS exposes no unprivileged I/O
 # counter, so there the 10 ms CPU clock, which every I/O system call
 # advances, stands in for it.
@@ -543,13 +547,15 @@ fhl_pid_live() {  # <pid>
 # The wait resolver (gate item 5). Sets WAIT (none|live|dead|unverified|
 # expired) and WAIT_NOTE.
 fhl_resolve_wait() {  # <task> <wait-line>
-  local task=$1 line=$2 until at pid ticket queue_out max
+  local task=$1 line=$2 until at pid ticket queue_out max queue=0
   WAIT=none WAIT_NOTE=
   [ -n "$line" ] || return 0
   status_is_paused "$line" || return 0
   WAIT_NOTE=$(printf '%s' "$line" | cut -c1-160)
-  if until=$(status_paused_until "$line" 2>/dev/null) && [ -n "$until" ]; then
-    if [ "$until" -le "$NOW" ]; then WAIT=dead; WAIT_NOTE="until-passed: $WAIT_NOTE"; else WAIT=live; fi
+  # A passed deadline ends the wait. A future one is the worker's own word,
+  # so it still needs a named live job, or it buys only the bounded hold.
+  if until=$(status_paused_until "$line" 2>/dev/null) && [ -n "$until" ] && [ "$until" -le "$NOW" ]; then
+    WAIT=dead WAIT_NOTE="until-passed: $WAIT_NOTE"
     return 0
   fi
   pid=$(printf '%s' "$line" | sed -nE 's/.*(^|[^A-Za-z0-9_])pid[=: ]+([0-9]+).*/\2/p' | head -n 1)
@@ -564,8 +570,14 @@ fhl_resolve_wait() {  # <task> <wait-line>
     WAIT_NOTE="pid-not-own: $WAIT_NOTE"
   fi
   ticket=$(printf '%s' "$line" | sed -nE 's/.*ticket[=: #]+([0-9]+).*/\1/p' | head -n 1)
+  # Only the queue's own name, or a queue wait that names its ticket, is
+  # checked against the queue; other wording is an ordinary bounded wait.
   case "$line" in
-    *fm-test-queue*|*test-queue*|*test\ queue*)
+    *fm-test-queue*) queue=1 ;;
+    *test-queue*|*test\ queue*) [ -z "$ticket" ] || queue=1 ;;
+  esac
+  case "$queue" in
+    1)
       if ! queue_out=$(fm_run_timed 10 "${FM_TEST_QUEUE_BIN:-$SCRIPT_DIR/fm-test-queue.sh}" status 2>/dev/null); then
         WAIT=unknown WAIT_NOTE="test-queue-unreadable: $WAIT_NOTE"
         return 0
@@ -622,6 +634,10 @@ fhl_validating() {
   fi
   case "$line" in state:*) ;; *) held=${held:-unknown:validation=unreadable}; return 1 ;; esac
   state=${line#state: }; state=${state%% *}
+  if [ "$state" = unknown ]; then
+    held=${held:-unknown:validation=state-unknown}
+    return 1
+  fi
   case "$line" in *" source: "*) src=${line#* source: }; src=${src%% *} ;; *) src= ;; esac
   [ "$src" = run-step ] || return 1
   case "$state" in working|parked) return 0 ;; esac
@@ -758,12 +774,52 @@ fhl_prune_snapshots() {
 }
 
 fhl_prune_now() {
-  local d t
+  local d t e
+  if [ "${EFFECTIVE:-off}" = observe ]; then
+    for e in "$HL/episodes"/*.ep; do
+      [ -f "$e" ] || continue
+      t=${e##*/}; t=${t%.ep}
+      [ -e "$STATE/$t.meta" ] || fhl_resolve_gone "$t" || continue
+    done
+  fi
+  for e in "$HL/episodes"/*.ep "$HL/episodes"/*.sample "$HL/episodes"/*.anchor; do
+    [ -e "$e" ] || continue
+    t=${e##*/}; t=${t%.*}
+    [ -e "$STATE/$t.meta" ] || [ -e "$HL/episodes/$t.ep" ] || rm -f "$e"
+  done
   for d in "$HL/snapshots"/*/; do
     [ -d "$d" ] || continue
     t=${d%/}; t=${t##*/}
     [ -e "$STATE/$t.meta" ] || rm -rf "${d%/}"
   done
+}
+
+# A task cleaned up with an episode still open never gets another tick, so
+# its pending rows are resolved here. It progressed when its last status line
+# says done, or is a line the last sample had not seen; otherwise no. The
+# episode record goes only after every row is written.
+fhl_resolve_gone() {  # <task>
+  local t=$1 id lsp=no cause=task-gone:no-new-status last='' body='' v=''
+  G_actions='' G_bodies='' G_status_body=''
+  fhl_read_kv_file "$HL/episodes/$t.ep" G_
+  fhl_read_kv_file "$HL/episodes/$t.sample" G_
+  if [ -n "$G_actions" ] && [ -f "$STATE/$t.status" ]; then
+    last=$(last_status_line "$STATE/$t.status")
+    status_line_verb "$last" v
+    body=$(fhl_status_body "$last" | fhl_sha)
+    if [ "$v" = "done" ]; then
+      lsp=yes cause=task-gone:done
+    elif [ -n "$last" ] && [ "$body" != "$G_status_body" ]; then
+      case "_${G_bodies}_" in
+        *"_${body:0:16}_"*) ;;
+        *) lsp=yes cause=task-gone:new-status ;;
+      esac
+    fi
+  fi
+  for id in $G_actions; do
+    fhl_row "$t" - resolve "close:$cause" "$id" "$lsp" || return 1
+  done
+  rm -f "$HL/episodes/$t.ep" "$HL/episodes/$t.sample" "$HL/episodes/$t.anchor"
 }
 
 # Seconds since the epoch recorded inside <file> (its first line), 999999
@@ -1021,8 +1077,10 @@ cmd_tick() {
       esac
     fi
     [ "$inbox" -le "${S_inbox:-0}" ] || net_advance=${net_advance:-inbox-ack}
-    [ "$head" = "${S_head:--}" ] || net_advance=${net_advance:-head}
-    [ "$dirty" = "${S_dirty:--}" ] || net_advance=${net_advance:-dirty-content}
+    if [ "$fs_unknown" = 0 ]; then
+      [ "$head" = "${S_head:--}" ] || net_advance=${net_advance:-head}
+      [ "$dirty" = "${S_dirty:--}" ] || net_advance=${net_advance:-dirty-content}
+    fi
     if [ "$fs_unknown" = 1 ]; then
       fs=unknown
     elif [ -n "$net_advance" ] || [ "$wrote" = 1 ]; then
@@ -1058,10 +1116,12 @@ cmd_tick() {
         since=$NOW
         if [ -n "$prev" ] && [ "${prev%%:*}" = "$fp" ]; then
           since=${prev#*:}
-        elif [ -n "$prev" ]; then
+        fi
+        if [ $((NOW - since)) -ge 900 ]; then
+          stale_children=$((stale_children + 1))
+        else
           working_children=$((working_children + 1))
         fi
-        [ $((NOW - since)) -lt 900 ] || stale_children=$((stale_children + 1))
         kids_out="${kids_out}kid_$tp=$fp:$since
 "
       done <<< "$tree"
@@ -1082,7 +1142,11 @@ cmd_tick() {
   SIGNALS="rendered=$rendered;fs=$fs;kernel=$kernel;records=$records;transcript=unsupported;loop=unsupported;busy=$busy;live=$live;wait=$WAIT;screen=${screen:-none};composer=$composer;cpu=$cpu_total;children=$children;stale_children=$stale_children;load=$LOAD;backend=$backend"
 
   # Write the new sample before any decision, so the next pass compares
-  # against this one whatever happens below.
+  # against this one whatever happens below. A failed Git read keeps the last
+  # good HEAD and content hash, so the next good read compares against them.
+  if [ "$fs_unknown" = 1 ] && [ "$first" = 0 ]; then
+    head=${S_head:--} dirty=${S_dirty:--}
+  fi
   {
     printf 'pane=%s\nstatus_size=%s\nstatus_body=%s\nbodies=%s\ninbox=%s\nhead=%s\ndirty=%s\ncpu=%s\nkq=%s\n' \
       "$pane_hash" "$status_size" "$status_body" "$bodies" "$inbox" "$head" "$dirty" "$cpu_total" "$kq"
@@ -1178,6 +1242,7 @@ cmd_tick() {
 
   if [ "$EP_state" = open ]; then
     local elapsed=$((NOW - EP_t0)) hold=''
+    fhl_caps
     if [ -n "$held" ] || [ -n "$unknown_kinds" ]; then
       hold="unknown:${unknown_kinds%,}"
     elif [ -n "$screen" ]; then
@@ -1228,6 +1293,18 @@ cmd_tick() {
   fi
   fhl_write_episode
   exit 0
+}
+
+cmd_prune() {
+  fhl_refuse_worker
+  [ -d "$HL" ] || exit 0
+  NOW=$(fhl_now)
+  fhl_resolve_mode
+  case "$MODE_REASON" in refused:*) exit 0 ;; esac
+  mkdir "$HL/.lock" 2>/dev/null || exit 0
+  trap 'rmdir "$HL/.lock" 2>/dev/null' EXIT
+  SIGNALS=- CAPS=- BREAKER=-
+  fhl_prune_now
 }
 
 cmd_mode() {
@@ -1287,6 +1364,6 @@ case "${1:-}" in
   mode) cmd_mode ;;
   set-mode) shift; cmd_set_mode "$@" ;;
   verify) cmd_verify ;;
-  prune) fhl_refuse_worker; [ ! -d "$HL/snapshots" ] || fhl_prune_now ;;
+  prune) cmd_prune ;;
   *) usage >&2; exit 2 ;;
 esac
