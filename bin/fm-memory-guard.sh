@@ -92,9 +92,10 @@
 #     path that, joined to the runner's working directory when relative,
 #     resolves to an unambiguous regular file whose resolved path carries
 #     no protection, and its own executable is a shell, an interpreter, or
-#     a core tool such as sleep, awk, or jq, either with no argument that
-#     holds a / or as an interpreter whose first argument is a script
-#     (joined to its own working directory when relative) that is an
+#     a core tool such as sleep, awk, or jq. A core tool may have no
+#     argument that holds a /. A shell or interpreter must name its script
+#     as its first argument, never an option or inline code, and the script
+#     (joined to its own working directory when relative) must be an
 #     unambiguous regular file with no protection once resolved. No
 #     argument may hold a .. segment, and an argument that only names a
 #     temp path does not make a process scratch;
@@ -326,12 +327,12 @@ classify_candidates() {  # <candidates-file> <self-pids>
       return index(b, c) == 1 && (c == b || length(c) >= 15)
     }
     # The script run by a child of a test runner: the script path when an
-    # interpreter names one directly; "-" when no argument holds a path at
-    # all (sleep 5, python3 -c pass); otherwise "" because an option or a
-    # path argument could hide what really runs.
+    # interpreter names one as its first argument; "-" for a core tool with
+    # no argument that holds a path (sleep 5); otherwise "", because an
+    # option or inline code could hide what really runs.
     function child_script(a,   n, t, i) {
       n = split(a, t, " ")
-      if (interp(bname(t[1])) && n >= 2 && t[2] !~ /^-/) return t[2]
+      if (interp(bname(t[1]))) return (n >= 2 && t[2] !~ /^-/) ? t[2] : ""
       for (i = 2; i <= n; i++) if (index(t[i], "/")) return ""
       return "-"
     }
