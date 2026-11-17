@@ -37,9 +37,9 @@
 # names it. The context epoch also names the session lock owner that recorded
 # it, and a different owner stands the doorbell down. The lock owner, doorbell
 # lock, away or quiet record and context epoch are re-checked right before
-# every keystroke, inside the shared send helper too (the adapter's keystroke
-# functions are wrapped in this process); a change withholds the keystroke, and
-# logs stood-down before anything was typed or unverified after. Every run appends one row to
+# every keystroke, inside the shared send helper and adapter too (the call that
+# issues each keystroke is wrapped in this process); a change withholds the
+# keystroke, and logs stood-down before anything was typed or unverified after. Every run appends one row to
 # state/.resume-doorbell.log:
 #   <utc-iso>\t<epoch>\t<source>\t<backend>:<target>\t<outcome>\t<detail>
 # with outcome submitted, unverified, stood-down or failed. It never kills,
@@ -152,6 +152,14 @@ while ! mkdir "$LOCK" 2>/dev/null; do
     if [ -n "$EXPECTED_EPOCH_SUM" ] && [ "$(current_epoch_sum)" != "$EXPECTED_EPOCH_SUM" ]; then
       finish stood-down "a new context began after the compaction"
     fi
+    sleep 0.2
+    continue
+  fi
+  # An older holder seen earlier is removing its lock (its pid goes first):
+  # look again rather than mistake it for a new doorbell starting.
+  if [ -z "$holder" ] && [ -n "$older_holder" ]; then
+    [ "$(date +%s)" -lt "$holder_wait_deadline" ] \
+      || finish stood-down "an older resume doorbell (pid $older_holder) did not stand down"
     sleep 0.2
     continue
   fi
@@ -325,46 +333,80 @@ done
 reason=$(posture_reason)
 [ -z "$reason" ] || finish stood-down "$reason"
 
-# The shared send helper reads the composer and the agent again before it
-# types and before each Enter. So the adapter's keystroke functions are
-# wrapped, in this process only, to re-run those checks right before every
-# keystroke (hc: right after its last read before its one-shot send). A
-# withheld keystroke is recorded in WITHHELD and the keystroke reports failure.
+# The shared send helper and the adapter read the composer, the agent and the
+# endpoint again before they type and before each Enter. So the one call that
+# issues each keystroke (the herdr, tern or hc CLI's send subcommands, or the
+# adapter's keystroke functions elsewhere) is wrapped, in this process only, to
+# re-run those checks right before it. A withheld keystroke is recorded in
+# WITHHELD and reports failure; TYPED records that the line was typed.
 WITHHELD="$LOCK/withheld.$$"
-keystroke_allowed() {  # <function>
+TYPED="$LOCK/typed.$$"
+keystroke_allowed() {
   local why
   why=$(posture_reason)
   [ -n "$why" ] || return 0
-  [ -e "$WITHHELD" ] || printf '%s\t%s\n' "$1" "$why" > "$WITHHELD" 2>/dev/null || true
+  [ -e "$WITHHELD" ] || printf '%s\n' "$why" > "$WITHHELD" 2>/dev/null || true
   return 1
 }
-guard_keystroke() {  # <function> <before|after>
-  local fn=$1 body
-  declare -F "$fn" >/dev/null 2>&1 || return 0
-  body=$(declare -f "$fn") || return 1
-  eval "fm_rd_unguarded_${body}" || return 1
-  if [ "$2" = after ]; then
-    eval "$fn() { fm_rd_unguarded_$fn \"\$@\" || return 1; keystroke_allowed $fn; }"
-  else
-    eval "$fn() { keystroke_allowed $fn || return 1; fm_rd_unguarded_$fn \"\$@\"; }"
-  fi
-}
-withheld_detail() {  # prints "<what>: <reason>" for a withheld keystroke, or fails
-  local fn why
-  [ -s "$WITHHELD" ] || return 1
-  IFS=$'\t' read -r fn why < "$WITHHELD" || true
+keystroke_kind() {  # <function> <args...>: prints text, key, or nothing for a read
+  local fn=$1
+  shift
   case "$fn" in
-    *_send_key) printf 'an Enter was withheld: %s' "$why" ;;
-    *) printf 'the send was withheld before typing: %s' "$why" ;;
+    fm_backend_herdr_cli)
+      if [ "${2:-}" = pane ]; then
+        case "${3:-}" in send-text|run) printf 'text' ;; send-keys) printf 'key' ;; esac
+      fi
+      ;;
+    fm_backend_tern_cli)
+      case "${1:-}" in
+        send) if [ "${3:-}" = text ]; then printf 'text'; else printf 'key'; fi ;;
+        run) printf 'text' ;;
+      esac
+      ;;
+    fm_backend_hc_cli)
+      case "${2:-}" in send) printf 'text' ;; keys) printf 'key' ;; esac
+      ;;
+    *_send_literal|*_turn_start) printf 'text' ;;
+    *_send_key) printf 'key' ;;
   esac
 }
+guard_keystroke() {  # <function>: 0 wrapped, 2 absent, 1 failed
+  local fn=$1 body
+  declare -F "$fn" >/dev/null 2>&1 || return 2
+  body=$(declare -f "$fn") || return 1
+  eval "fm_rd_unguarded_${body}" || return 1
+  eval "$fn() {
+    local kind
+    kind=\$(keystroke_kind $fn \"\$@\")
+    if [ -n \"\$kind\" ]; then keystroke_allowed || return 1; fi
+    fm_rd_unguarded_$fn \"\$@\" || return
+    [ \"\$kind\" != text ] || : > \"\$TYPED\" 2>/dev/null || true
+  }"
+}
+withheld_detail() {  # prints "<what>: <reason>" for a withheld keystroke, or fails
+  [ -s "$WITHHELD" ] || return 1
+  if [ -e "$TYPED" ]; then
+    printf 'a keystroke was withheld after typing: %s' "$(cat "$WITHHELD")"
+  else
+    printf 'the send was withheld before typing: %s' "$(cat "$WITHHELD")"
+  fi
+}
 fm_backend_source "$BACKEND" >/dev/null 2>&1 || finish failed "the $BACKEND backend could not be loaded"
-for keystroke_fn in send_literal send_key turn_start; do
-  guard_keystroke "fm_backend_${BACKEND}_$keystroke_fn" before || finish failed "the $BACKEND keystrokes could not be guarded"
+case "$BACKEND" in
+  herdr|tern|hc) keystroke_fns="fm_backend_${BACKEND}_cli" ;;
+  *) keystroke_fns="fm_backend_${BACKEND}_send_literal fm_backend_${BACKEND}_send_key fm_backend_${BACKEND}_turn_start" ;;
+esac
+guarded=0
+for keystroke_fn in $keystroke_fns; do
+  rc=0
+  guard_keystroke "$keystroke_fn" || rc=$?
+  case "$rc" in
+    0) guarded=$((guarded + 1)) ;;
+    2) ;;
+    *) finish failed "the $BACKEND keystrokes could not be guarded" ;;
+  esac
 done
-if [ "$BACKEND" = hc ]; then
-  guard_keystroke fm_backend_hc_target_ready after || finish failed "the hc keystrokes could not be guarded"
-fi
+[ "$guarded" -gt 0 ] || finish failed "the $BACKEND keystrokes could not be guarded"
 
 verdict=$(fm_backend_send_text_submit "$BACKEND" "$TARGET" "$FM_RESUME_DOORBELL_LINE" 1 0.4 0.3 2>/dev/null) || verdict=
 if detail=$(withheld_detail); then
@@ -392,7 +434,7 @@ while [ "$i" -lt "$TRIES" ]; do
     [ -z "$reason" ] || finish unverified "resubmit withheld after $i resubmit Enter(s): $reason (first verdict $verdict)"
     if ! fm_backend_send_key "$BACKEND" "$TARGET" Enter >/dev/null 2>&1; then
       if detail=$(withheld_detail); then
-        finish unverified "resubmit withheld after $i resubmit Enter(s): ${detail#an Enter was withheld: } (first verdict $verdict)"
+        finish unverified "resubmit withheld after $i resubmit Enter(s): $(cat "$WITHHELD") (first verdict $verdict)"
       fi
       finish failed "the resubmit Enter could not be sent"
     fi
