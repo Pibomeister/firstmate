@@ -901,7 +901,7 @@ wait_for_file() {  # <path> <tenths>
 test_live_guard_config_and_api_failure() {
   local fakebin=$TMP_ROOT/guard-bin config=$TMP_ROOT/guard-config
   local recorded=$TMP_ROOT/guard-recorded out rc
-  mkdir -p "$fakebin" "$config"
+  mkdir -p "$fakebin" "$config" "$TMP_ROOT/other/guard-config"
   cat > "$fakebin/claude" <<'EOF'
 #!/usr/bin/env bash
 if [ "${1:-}" = --version ]; then
@@ -934,6 +934,7 @@ EOF
   rc=0
   out=$( (cd "$TMP_ROOT" && env PATH="$fakebin:$PATH" FM_HANDOFF_TRIGGER_LIVE_E2E=1 \
     FM_GUARD_FIXTURE_CONFIG="$recorded" FM_HANDOFF_TRIGGER_LIVE_CLAUDE_CONFIG_DIR=guard-config \
+    CDPATH="$TMP_ROOT/other" \
     bash "$ROOT/tests/fm-handoff-trigger-live-e2e.test.sh") 2>&1) || rc=$?
   [ "$rc" -ne 0 ] || fail "a failed fixture request passed with a relative config"
   assert_contains "$out" 'api_error_status=429: fixture request refused' "relative-config API failure diagnostic"
