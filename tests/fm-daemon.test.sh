@@ -1013,8 +1013,10 @@ test_stale_diagnostic_wedge_survives_busy_housekeeping() {
     (
       kill() { printf 'kill %s\n' "$*" >> "$action_log"; }
       fm_backend_send_text_submit() { printf 'interrupt %s\n' "$*" >> "$action_log"; }
+      # A live agent holds the endpoint, so the paused case is a wait, not a dead worker.
+      export PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CURRENT_COMMAND=claude
       LOG="$dir/daemon.log" FM_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
-      PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+      FM_FAKE_TMUX_CAPTURE="$pane" \
         FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999999 housekeeping "$state"
     )
     case "$case_name" in
@@ -4176,7 +4178,9 @@ test_dialog_name_after_demand_deep_inspection_still_escalates() {
   printf 'paused: awaiting an external dependency\n' > "$state/picker-ship.status"
   : > "$state/.subsuper-escalations"
   reason="stale: $win (idle 250s, possible wedge, escalation 3, demand-deep-inspection: same pane has wedge-escalated 3 times in a row - do not re-absorb on the run-step/pane state alone, blocked-on-prompt: Claude background-task exit picker)"
-  LOG="$dir/daemon.log" FM_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
+  # The agent showing the picker is alive, so the declared wait is a wait, not a dead worker.
+  PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CURRENT_COMMAND=claude \
+    LOG="$dir/daemon.log" FM_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
   [ ! -s "$state/.subsuper-escalations" ] \
     || fail "a declared wait with the dialog suffix escalated as a wedge: $(cat "$state/.subsuper-escalations")"
   pass "a dialog name after demand-deep-inspection still escalates, and a declared wait still pauses"
