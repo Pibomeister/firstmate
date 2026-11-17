@@ -38,7 +38,11 @@
 #              only after the first press rendered a running turn, and
 #              otherwise reports `cancel=not-running` having sent one press.
 #   exit       Stop the agent, preserving its terminal endpoint, worktree, and
-#              every uncommitted change. Interrupts first when the task reads
+#              every uncommitted change. A ship or scout first records the stop
+#              as deliberate in state/.crew-stopped-<id>, so the watcher's
+#              automatic relaunch leaves it stopped until a later relaunch or
+#              fresh spawn clears that marker; a refused exit removes it
+#              again, so a later crash still relaunches. Interrupts first when the task reads
 #              busy, then submits the harness's exit command. Postcondition:
 #              the backend's recovery-grade classifier reports the agent gone.
 #              Already-stopped is success (idempotent). A proven usage-limit
@@ -160,6 +164,12 @@
 #              An explicit --harness or --model is a quota or operator replace
 #              and rebinds through --relaunch.
 #
+# Every verb exits 5 when another lifecycle action already holds the task's
+# lock, state/.control-<id>.lock, 6 when the supervision lease guard refuses
+# (bin/fm-lease-lib.sh), and 7 when FM_CONTROL_REQUIRE_RECORD's token check
+# fails; all three refusals come before anything reaches the agent, so a
+# caller may treat them as proof that nothing was sent.
+#
 # Teardown and discard are NOT verbs here and never will be. `exit` stops an
 # agent and preserves everything else; removing a worktree, killing an
 # endpoint, or discarding work stays with bin/fm-teardown.sh, which owns the
@@ -206,8 +216,29 @@
 #   FM_CONTROL_ARM_WAIT          wait for an armed interrupt's rendered proof
 #                                after the press gap (1.5)
 #   FM_CONTROL_EXIT_WAIT         alive->dead wait after the exit command (30)
+#   FM_CONTROL_EXPECT_SPAWN_GEN  Watcher-only expected generation (empty for legacy
+#                               records); recheck generation and stop/clean-exit
+#                               evidence under the lifecycle lock when set.
 #   FM_CONTROL_LAUNCH_WAIT       dead->alive wait after a relaunch (90)
 #   FM_CONTROL_EXIT_RETRIES      Enter retries for the exit command (3)
+#   FM_CONTROL_EXPECTED_SPAWN_GEN  internal callers may require the task's
+#                                recorded spawn_gen to still match this value;
+#                                checked under the per-task lifecycle lock
+#                                after the record is read, so a worker
+#                                relaunched since the caller selected it is
+#                                refused rather than acted on. Unset or empty
+#                                does not change ordinary control calls.
+#                                It applies to every verb (load relief binds
+#                                interrupts with it); the relaunch-only
+#                                FM_CONTROL_EXPECT_SPAWN_GEN above is separate.
+#   FM_CONTROL_REQUIRE_RECORD, FM_CONTROL_REQUIRE_TOKEN  internal callers may
+#                                require that file to still hold the line
+#                                token=<FM_CONTROL_REQUIRE_TOKEN>, checked under
+#                                the lifecycle lock; otherwise exit 7 before
+#                                anything is sent. Load relief binds each
+#                                interrupt to its own pause record this way, so
+#                                an interrupt that outlived its pass cannot
+#                                land after that record was resumed or replaced.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -279,6 +310,7 @@ die() {  # <message>
 CONTROL_LOCK=
 CONTROL_LOCK_HELD=0
 RELAUNCH_ACTIVE=0
+CREW_STOP_MARKER_PENDING=
 RELAUNCH_PHASE=start
 RELAUNCH_META_LOCK=
 RELAUNCH_META_LOCK_HELD=0
@@ -308,6 +340,11 @@ control_cleanup() {
   # the next lifecycle command for this task writes the same path.
   if [ -n "${FM_COMPOSER_DIALOG_SINK:-}" ]; then
     rm -f "$FM_COMPOSER_DIALOG_SINK"
+  fi
+  # An exit that ends here without stopping the agent was refused, so its
+  # stop marker must not keep the watcher from reviving a later crash.
+  if [ -n "$CREW_STOP_MARKER_PENDING" ]; then
+    rm -f -- "$CREW_STOP_MARKER_PENDING" || true
   fi
   if [ "$CONTROL_LOCK_HELD" = 1 ]; then
     CONTROL_LOCK_HELD=0
@@ -426,7 +463,7 @@ fm_lease_guard "$ID" "lifecycle control (fm-control)"
 CONTROL_LOCK="$STATE/.control-$ID.lock"
 trap control_cleanup EXIT
 fm_lock_try_acquire "$CONTROL_LOCK" \
-  || die "another lifecycle action is already running for task $ID"
+  || { echo "error: another lifecycle action is already running for task $ID" >&2; exit 5; }
 CONTROL_LOCK_HELD=1
 # do_exit runs in a command substitution. That subshell does not run this
 # EXIT trap, so the parent has to hold the path the trap removes. Set it
@@ -443,6 +480,29 @@ if [ ! -f "$META" ]; then
       ;;
   esac
   die "no task '$ID' in $STATE (fm-control resolves an exact task id only)"
+fi
+
+# Watcher observations must still hold after acquiring the lifecycle lock.
+if [ "$VERB" = relaunch ] && [ "${FM_CONTROL_EXPECT_SPAWN_GEN+x}" = x ]; then
+  [ "$(fm_meta_get "$META" spawn_gen 2>/dev/null || true)" = "$FM_CONTROL_EXPECT_SPAWN_GEN" ] \
+    || die "automatic relaunch cancelled: task $ID has a different worker generation"
+  if [ -e "$STATE/.crew-stopped-$ID" ] || [ -L "$STATE/.crew-stopped-$ID" ]; then
+    die "automatic relaunch cancelled: task $ID was stopped on purpose"
+  fi
+  if [ -n "$FM_CONTROL_EXPECT_SPAWN_GEN" ] \
+    && [ "$(cat "$STATE/$ID.agent-exit" 2>/dev/null || true)" = "$FM_CONTROL_EXPECT_SPAWN_GEN"$'\t'0 ]; then
+    die "automatic relaunch cancelled: task $ID exited cleanly with status 0"
+  fi
+fi
+
+if [ -n "${FM_CONTROL_EXPECTED_SPAWN_GEN:-}" ] \
+  && [ "$(fm_meta_get "$META" spawn_gen)" != "$FM_CONTROL_EXPECTED_SPAWN_GEN" ]; then
+  die "task $ID's spawn_gen no longer matches the caller's expected generation; refusing to act on a relaunched worker"
+fi
+if [ -n "${FM_CONTROL_REQUIRE_RECORD:-}" ] \
+  && ! grep -qxF -- "token=${FM_CONTROL_REQUIRE_TOKEN:-}" "$FM_CONTROL_REQUIRE_RECORD" 2>/dev/null; then
+  echo "error: task $ID's caller record $FM_CONTROL_REQUIRE_RECORD no longer holds the caller's token; refusing to act for a record that was resumed or replaced" >&2
+  exit 7
 fi
 
 # A remotely placed secondmate records its endpoint on ANOTHER host, so every
@@ -1897,7 +1957,19 @@ case "$VERB" in
     echo "interrupt-delivered $ID harness=$HARNESS backend=$BACKEND verified=$proof"
     ;;
   exit)
+    # Recorded before the stop is attempted, so the watcher can never read
+    # the stopped agent as a crash and relaunch it in between. A refused stop
+    # leaves the agent running, so control_cleanup removes the marker on any
+    # exit before the stop succeeded. A marker an earlier deliberate stop left
+    # is not this attempt's to remove, so it stays as it was.
+    if { [ "$KIND" = ship ] || [ "$KIND" = scout ]; } \
+       && [ ! -e "$STATE/.crew-stopped-$ID" ] && [ ! -L "$STATE/.crew-stopped-$ID" ]; then
+      CREW_STOP_MARKER_PENDING=$STATE/.crew-stopped-$ID
+      printf '%s\texit\n' "$(date +%s)" > "$CREW_STOP_MARKER_PENDING" \
+        || die "could not record task $ID's intentional stop at $STATE/.crew-stopped-$ID; refusing to stop an agent the watcher could then relaunch"
+    fi
     result=$(do_exit)
+    CREW_STOP_MARKER_PENDING=
     echo "$result $ID harness=$HARNESS backend=$BACKEND endpoint=$T worktree=$WT"
     ;;
   relaunch)

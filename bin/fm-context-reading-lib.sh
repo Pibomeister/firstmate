@@ -20,6 +20,18 @@
 # pin of <home>/config/handoff-trigger is the fallback. With neither there is
 # no window and no derived reading.
 #
+# THE RESET. The same record names how the session's current context cycle
+# ends: reset=compaction (auto-compaction is the routine reset) or
+# reset=handoff (a planned fresh start). fm_context_reset_for_session prints
+# that word only for a record naming the session; a record without it, from an
+# older trigger, or no matching record prints nothing. A handoff record whose
+# cycle (cycle=, or the publication time when the fresh start has not fired)
+# is no later than a failed successor launch that left the session holding the
+# lock (bin/fm-handoff-lib.sh, fm_handoff_launch_failed_since) prints
+# compaction, because the surviving session now auto-compacts; the trigger's
+# next run publishes compaction itself. Binding to the cycle keeps every
+# published snapshot safe, whenever the record lands.
+#
 # THE OWNER. derived when a derived reading exists, footer when only the footer
 # exists, none otherwise. A caller decides on the owner's value; owner none
 # reports unknown and never drives a decision by itself.
@@ -30,6 +42,8 @@
 # than that many points, else 0.
 #
 #   fm_context_window_for_session <home> <session-id>
+#   fm_context_reset_for_session <home> <session-id>
+#       prints compaction or handoff, or nothing
 #   fm_context_derived_percent <transcript> <window-tokens>
 #   fm_context_reading <home> <session-id> <transcript> <pane-text-file>
 #       the pane text file may be any readable path, such as a process
@@ -58,14 +72,33 @@ fm_context_window_for_session() {  # <home> <session-id>
   local home=$1 session=$2 line rec_session rec_at
   if [ -n "$session" ] && [ -f "$home/state/compact-point" ]; then
     IFS= read -r line < "$home/state/compact-point" || [ -n "$line" ] || line=''
-    rec_session=$(printf '%s\n' "$line" | sed -n 's/^session=\([^ ]*\) compact_at=[0-9][0-9]* at=[0-9]*$/\1/p')
-    rec_at=$(printf '%s\n' "$line" | sed -n 's/^session=[^ ]* compact_at=\([1-9][0-9]*\) at=[0-9]*$/\1/p')
+    rec_session=$(printf '%s\n' "$line" | sed -En 's/^session=([^ ]*) compact_at=[0-9]+ at=[0-9]*( reset=[a-z]+( cycle=[0-9]+)?)?$/\1/p')
+    rec_at=$(printf '%s\n' "$line" | sed -En 's/^session=[^ ]* compact_at=([1-9][0-9]*) at=[0-9]*( reset=[a-z]+( cycle=[0-9]+)?)?$/\1/p')
     if [ -n "$rec_at" ] && [ "$rec_session" = "$session" ]; then
       printf '%s\n' "$rec_at"
       return 0
     fi
   fi
   _fm_context_config_value "$home/config/handoff-trigger" compact-at-tokens
+}
+
+fm_context_reset_for_session() {  # <home> <session-id>
+  local home=$1 session=$2 line reset at
+  [ -n "$session" ] && [ -f "$home/state/compact-point" ] || return 0
+  IFS= read -r line < "$home/state/compact-point" || [ -n "$line" ] || return 0
+  case "$line" in "session=$session "*) ;; *) return 0 ;; esac
+  reset=$(printf '%s\n' "$line" | sed -En 's/^session=[^ ]* compact_at=[1-9][0-9]* at=[0-9]* reset=(compaction|handoff( cycle=[0-9]+)?)$/\1/p')
+  case "$reset" in handoff*) reset=handoff ;; esac
+  if [ "$reset" = handoff ] && [ -e "$home/state/.handoff-launch-failed" ]; then
+    # The cycle epoch, when published, binds the record to this cycle; an
+    # older publication without one falls back to its publication time.
+    at=$(printf '%s\n' "$line" | sed -En 's/^session=[^ ]* compact_at=[1-9][0-9]* at=[0-9]+ reset=handoff cycle=([0-9]+)$/\1/p')
+    [ -n "$at" ] || at=$(printf '%s\n' "$line" | sed -En 's/^session=[^ ]* compact_at=[1-9][0-9]* at=([0-9]+) reset=handoff$/\1/p')
+    # shellcheck source=bin/fm-handoff-lib.sh
+    . "$(dirname "${BASH_SOURCE[0]}")/fm-handoff-lib.sh"
+    ! fm_handoff_launch_failed_since "$home/state" "$at" || reset=compaction
+  fi
+  [ -z "$reset" ] || printf '%s\n' "$reset"
 }
 
 fm_context_derived_percent() {  # <transcript> <window-tokens>

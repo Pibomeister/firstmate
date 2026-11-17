@@ -15,6 +15,11 @@
 #       Returns 0 when the text names an owner-reserved category (merge, release,
 #       deploy, spend, money, sign-in, credential, secret, security, production
 #       data, PII, delete, destroy, force-push). Those holds stay held.
+#   fm_wd_seat_family <harness:model>
+#       Prints the model family of one council seat: anthropic, google, openai,
+#       or unknown. The model name decides; a name it does not know falls back
+#       to the harness's own family; anything else is unknown, and an unknown
+#       seat never counts toward the two families a ruling needs.
 #   fm_wd_text_allowed <text>
 #       Returns 0 only when the watchdog may type or file this text: it refuses
 #       merge, deploy, release, publish, and force-push words, so no typed answer
@@ -33,12 +38,17 @@
 #       composers are not proven.
 #   fm_wd_strip_ansi
 #       Filter: removes ANSI escape sequences and carriage returns.
-#   fm_wd_pane_dialog <screen>
+#   fm_wd_feedback_dialog_dismiss <screen> [<harness>]
+#   fm_wd_feedback_dialog_key <screen> [<harness>]
+#       Wrap fm_control_feedback_dialog_dismiss (bin/fm-control-lib.sh): print
+#       `<dialog-id>\t<key>` or only the skip key for a known feedback or
+#       bug-report dialog, else exit 1.
+#   fm_wd_pane_dialog <screen> [<harness>]
 #       Prints `feedback`, `permission`, `usage-limit`, `model-switch`, or
 #       `question` when the last rows of the screen hold that blocking dialog,
-#       else nothing (exit 1). A dialog needs its structure, not its words: the
-#       feedback survey needs its heading and its `0: Dismiss` row among the last
-#       rows; every other kind needs a selected numbered row and a recorded picker
+#       else nothing (exit 1). A dialog needs its structure, not its words: a
+#       feedback or bug-report dialog needs a known signature from
+#       fm_control_feedback_dialog_dismiss; every other kind needs a selected numbered row and a recorded picker
 #       footer as the last non-blank row. A row that opens by stating a provider
 #       limit is `usage-limit`; a same-account model or account switch stays
 #       `model-switch`.
@@ -63,27 +73,9 @@
 #       a row below the last prompt row. Above it, the phrase matches only on a
 #       row that opens by stating the usage limit (fm_wd_usage_limit_text), so
 #       conversation output that quotes the phrase is not a match.
-#   fm_wd_limit_screen <screen>
-#       Returns 0 when the last 12 non-blank rows hold a row that opens by
-#       stating a provider limit (fm_wd_usage_limit_text), such as Claude's
-#       `You've hit your weekly limit · resets ...`, or the auto-wait footer
-#       fm_wd_usage_limit_autowait accepts. It adds no phrase of its own.
-#   fm_wd_transcript_limit <transcript.jsonl> <now>
-#       Prints `<weekly|session|other>\t<resets-epoch>` and returns 0 when the
-#       newest assistant record in the transcript tail is a Claude usage-limit
-#       record (`"apiError":"usage_limit_reached"`) whose reset is after <now>.
-#       The reset is rate_limit_info.resetsAt, else quotaLimits.resetsAt, else
-#       the record time plus five hours. seven_day* is weekly, five_hour* is
-#       session, any other type is other. Exit 1 otherwise.
-#   fm_wd_account_limit_reset <config-dir> <now> [days]
-#       Prints the newest reset epoch after <now> among the usage-limit records
-#       in the last 64 KiB of each top-level session transcript under
-#       <config-dir>/projects modified in the last <days> (default 7), and
-#       returns 0: that account is at its own limit. Exit 1 when none is found.
 #   fm_wd_handoff_in_progress <claim-file> <lock-pid> <now> <max-secs>
-#       Returns 0 when <claim-file> is a version 1 verified-handoff claim
-#       (bin/fm-handoff-lib.sh) from <lock-pid> whose deadline is after <now>
-#       and at most <max-secs> away, so a successor is still due.
+#       Returns 0 for a bounded pending handoff claim for that lock owner;
+#       bin/fm-handoff-lib.sh owns the claim format.
 #   fm_wd_dialog_options <screen>
 #       Prints `<number>\t<text>` for each numbered option of the dialog.
 #   fm_wd_dialog_text <screen>
@@ -116,7 +108,9 @@
 #   fm_wd_rate_ok <ledger> <home> <symptom> <action> <secs> <now> [subject]
 #       Returns 0 when the last attempt is older than secs.
 #       The optional subject filter is the same as fm_wd_last_epoch.
-#   fm_wd_count_since <ledger> <home> <symptom|*> <action|*> <phase-regex> <since>
+#   fm_wd_count_since <ledger> <home> <symptom|*> <action|*> <phase-regex> <since> [subject]
+#       Prints the count of matching rows; the optional subject filter is the
+#       same as fm_wd_last_epoch.
 #   fm_wd_open_pending <ledger>
 #       Prints `<id>\t<home>\t<symptom>\t<action>\t<epoch>` for every pending
 #       row with no later outcome row for the same id.
@@ -124,6 +118,41 @@
 #       Prints the summed numeric cost column, in dollars.
 #   fm_wd_iso <epoch>
 #       Prints the UTC ISO-8601 time.
+#   fm_wd_epoch_ok <value>
+#       Returns 0 for a positive integer in plain decimal digits, 15 at most,
+#       with no leading zero.
+#   fm_wd_heartbeat_published <heartbeat-file>
+#       Prints the published_epoch of a heartbeat and returns 0 only when the
+#       file is a regular file, and not a symbolic link, that jq parses as one
+#       JSON document: an fm-heartbeat.v1 object whose key published_epoch,
+#       spelled with no escape, holds a positive integer written as plain
+#       decimal digits, 15 at most, and which holds no other key of that name
+#       at any depth. The file is read once. Anything else is unread: it prints
+#       nothing and returns 1.
+#   fm_wd_supervisor_gap_rows <home> <now> <published-epoch>
+#       Prints the supervisor-gap rows of one heartbeat reading (docs/watchdog.md
+#       "Supervisor-gap record"): the gap row when now - published-epoch is over
+#       600, then the observation row. Prints nothing and returns 1 when now
+#       does not have exactly 10 digits, when either epoch is not a positive
+#       integer of at most 15 digits with no leading zero, when the age is
+#       negative, or when the home is empty or holds a TAB, a newline or a
+#       carriage return.
+#   fm_wd_last_wake_ack <wake-ledger> <now> [daemon-acks]
+#       Prints the epoch of the newest `ack` row (bin/fm-wake-ledger-lib.sh owns
+#       the rows) among the last 2000 rows of a wake ledger, skipping a row
+#       stamped later than now and a row whose generation and through value
+#       the away daemon named in its daemon-acks file
+#       (bin/fm-supervise-daemon.sh). Prints nothing and returns 1 when there is
+#       none.
+#   fm_wd_user_bin_path <path> <home>
+#       Prints <path> with <home>/.local/bin ahead of /opt/homebrew/bin and
+#       /usr/local/bin, where a self-updated tool such as `herdr update` installs,
+#       so a launchd or systemd PATH resolves the same binaries as an interactive
+#       Firstmate shell. It is inserted just before the first of those two, or
+#       appended when neither is present; a later copy is dropped, and a
+#       directory already ahead of them keeps its place. Empty entries, which
+#       name the current directory, keep their places too. An empty home or a
+#       home with no such directory prints <path> unchanged.
 
 FM_WD_REFUSED_TEXT_RE='(^|[^be])merg|[rd]emerg|deploy|releas|publish|(^|[^a-z])force.?push|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
 FM_WD_RESERVED_RE="$FM_WD_REFUSED_TEXT_RE"'|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|delet|destroy|wipe)'
@@ -134,6 +163,35 @@ FM_WD_TIMER_BASH_RE='(^|[^a-z])(sleep|fm-watch|fm-wake|wake|timer|until)([^a-z]|
 FM_WD_USAGE_LIMIT_RE='^[^a-z]*(you( have|.{1,3}ve)? hit your ([a-z0-9-]+ ){0,2}limit|([a-z0-9-]+ )?(usage|rate)[- ]?limit (hit|reached|reset)|(you( are|.{1,3}re) )?out of credits|waiting on a rate[- ]limit)'
 FM_WD_MODEL_SWITCH_RE='^[^a-z]*(switch (to )?((a|another) )?model|switch to another account)'
 FM_WD_QUOTA_STATUS_RE='quota (floor|exhausted|is exhausted|at 0|limit|wall)|(hit|reached|at) (the |a |its )?quota|rate.?limited|rate limit (hit|reached)|usage limit (hit|reached)|out of (credits|quota)|credits (are )?(exhausted|at 0|empty)'
+
+fm_wd_user_bin_path() {  # <path> <home>
+  local rest=$1 user_bin dir out='' sep='' placed=0 more=1
+  user_bin=${2:+$2/.local/bin}
+  if [ -z "$user_bin" ] || [ ! -d "$user_bin" ]; then
+    printf '%s\n' "$1"
+    return 0
+  fi
+  if [ -z "$rest" ]; then
+    printf ':%s\n' "$user_bin"
+    return 0
+  fi
+  # Split by hand: read -a would drop a trailing empty entry.
+  while [ "$more" = 1 ]; do
+    case "$rest" in
+      *:*) dir=${rest%%:*}; rest=${rest#*:} ;;
+      *) dir=$rest; more=0 ;;
+    esac
+    case "$dir" in
+      "$user_bin") [ "$placed" = 0 ] || continue; placed=1 ;;
+      /opt/homebrew/bin|/usr/local/bin)
+        [ "$placed" = 1 ] || { out="$out$sep$user_bin"; sep=:; placed=1; } ;;
+    esac
+    out="$out$sep$dir"
+    sep=:
+  done
+  [ "$placed" = 1 ] || out="$out$sep$user_bin"
+  printf '%s\n' "$out"
+}
 
 fm_wd_conf_get() {  # <file> <key> <default>
   local file=$1 key=$2 def=${3-} v
@@ -182,6 +240,21 @@ fm_wd_reserved() {  # <text>
 
 fm_wd_text_allowed() {  # <text>
   ! _fm_wd_guard_view "$1" | LC_ALL=C grep -Eq "$FM_WD_REFUSED_TEXT_RE"
+}
+
+fm_wd_seat_family() {  # <harness:model>
+  local h=${1%%:*} m
+  m=$(fm_wd_lower "${1#*:}")
+  case "$m" in
+    *claude*|*haiku*|*sonnet*|*opus*|*fable*|*mythos*) printf 'anthropic\n'; return 0 ;;
+    *gemini*|*flash*|*carbon*) printf 'google\n'; return 0 ;;
+    *gpt*|*codex*|o[0-9]*) printf 'openai\n'; return 0 ;;
+  esac
+  case "$h" in
+    claude) printf 'anthropic\n' ;;
+    agy) printf 'google\n' ;;
+    *) printf 'unknown\n' ;;
+  esac
 }
 
 fm_wd_paste_placeholder() {  # <composer-window>
@@ -267,50 +340,6 @@ fm_wd_usage_limit_autowait() {  # <screen>
   return 1
 }
 
-fm_wd_limit_screen() {  # <screen>
-  local row
-  [ -n "${1-}" ] || return 1
-  fm_wd_usage_limit_autowait "$1" && return 0
-  while IFS= read -r row; do
-    fm_wd_usage_limit_text "$row" && return 0
-  done < <(_fm_wd_tail_rows "$1" 12)
-  return 1
-}
-
-fm_wd_transcript_limit() {  # <transcript> <now>
-  local f=$1 now=$2 row kind reset
-  [ -f "$f" ] || return 1
-  row=$(tail -c 262144 "$f" 2>/dev/null | jq -R -r '
-    fromjson? | select(type == "object" and .type == "assistant") |
-    [(.apiError // "-"),
-     ((.apiErrorParams.rate_limit_info.rateLimitType // .quotaLimits.rateLimitType // "-") | tostring),
-     ((.apiErrorParams.rate_limit_info.resetsAt // .quotaLimits.resetsAt //
-       ((.timestamp // "" | tostring | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601? // 0) + 18000)) | floor | tostring)] | @tsv' 2>/dev/null | tail -n 1)
-  [ -n "$row" ] || return 1
-  IFS=$'\t' read -r kind row reset <<EOF
-$row
-EOF
-  [ "$kind" = usage_limit_reached ] || return 1
-  case "$reset" in ''|*[!0-9]*) return 1 ;; esac
-  [ "$reset" -gt "$now" ] || return 1
-  case "$row" in seven_day*) kind=weekly ;; five_hour*) kind=session ;; *) kind=other ;; esac
-  printf '%s\t%s\n' "$kind" "$reset"
-}
-
-fm_wd_account_limit_reset() {  # <config-dir> <now> [days]
-  local dir=$1 now=$2 days=${3:-7} reset
-  [ -d "$dir/projects" ] || return 1
-  reset=$(find "$dir/projects" -mindepth 2 -maxdepth 2 -name '*.jsonl' -mtime -"$days" -print0 2>/dev/null |
-    perl -0 -ne 'chomp; open(my $f, "<", $_) or next; my $s = -s $f; seek($f, $s > 65536 ? $s - 65536 : 0, 0);
-      local $/; my $b = <$f>; close $f; $b = "" unless defined $b;
-      for (split /\n/, $b) { print "$_\n" if index($_, q("apiError":"usage_limit_reached")) >= 0 }' 2>/dev/null |
-    jq -R -r 'fromjson? | (.apiErrorParams.rate_limit_info.resetsAt // .quotaLimits.resetsAt // empty) | numbers | floor' 2>/dev/null |
-    sort -n | tail -n 1)
-  case "$reset" in ''|*[!0-9]*) return 1 ;; esac
-  [ "$reset" -gt "$now" ] || return 1
-  printf '%s\n' "$reset"
-}
-
 fm_wd_handoff_in_progress() {  # <claim-file> <lock-pid> <now> <max-secs>
   local claim=$1 pid=$2 now=$3 max=$4 deadline
   [ -n "$pid" ] && [ -f "$claim" ] && [ ! -L "$claim" ] || return 1
@@ -336,9 +365,9 @@ fm_wd_usage_limit_kind() {  # <name>
 
 # Pane dialog first. If that misses, reuse fm_composer_blocking_dialog and
 # normalize a usage-limit kind to the pane name `usage-limit`. No extra regex.
-fm_wd_observe_dialog() {  # <screen>
+fm_wd_observe_dialog() {  # <screen> [<harness>]
   local dialog
-  dialog=$(fm_wd_pane_dialog "$1") || dialog=''
+  dialog=$(fm_wd_pane_dialog "$1" "${2-}") || dialog=''
   if [ -n "$dialog" ]; then
     printf '%s\n' "$dialog"
     return 0
@@ -358,15 +387,29 @@ _fm_wd_tail_rows() {  # <screen> <n>
   printf '%s\n' "$1" | fm_wd_strip_ansi | awk 'NF { rows[++n] = $0 } END { s = n - '"$2"' + 1; if (s < 1) s = 1; for (i = s; i <= n; i++) print rows[i] }'
 }
 
-fm_wd_pane_dialog() {  # <screen>
+if ! declare -F fm_control_feedback_dialog_dismiss >/dev/null 2>&1; then
+  # shellcheck source=/dev/null # Analyzed separately as a canonical lint root.
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-control-lib.sh"
+fi
+
+fm_wd_feedback_dialog_dismiss() {  # <screen> [<harness>]
+  fm_control_feedback_dialog_dismiss "${2-}" "${1-}"
+}
+
+fm_wd_feedback_dialog_key() {  # <screen> [<harness>]
+  local spec
+  spec=$(fm_control_feedback_dialog_dismiss "${2-}" "${1-}") || return 1
+  printf '%s\n' "${spec#*$'\t'}"
+}
+
+fm_wd_pane_dialog() {  # <screen> [<harness>]
   local tail
   [ -n "${1-}" ] || return 1
-  tail=$(_fm_wd_tail_rows "$1" 14)
-  if printf '%s\n' "$tail" | LC_ALL=C grep -Eq 'How is Claude doing' \
-     && printf '%s\n' "$tail" | LC_ALL=C grep -Eq '(^|[^0-9])0:[ ]*Dismiss'; then
+  if fm_wd_feedback_dialog_dismiss "$1" "${2-}" >/dev/null; then
     printf 'feedback\n'
     return 0
   fi
+  tail=$(_fm_wd_tail_rows "$1" 14)
   # A picker: its last non-blank row is the recorded footer and a selected
   # row sits above it. Claude Code 2.1.316's folder-trust picker has no
   # numbers, so a cursor glyph before any text counts; a bare `>` needs a number.
@@ -536,10 +579,10 @@ fm_wd_rate_ok() {  # <ledger> <home> <symptom> <action> <secs> <now> [subject]
   [ -z "$last" ] || [ $(( $6 - last )) -ge "$5" ]
 }
 
-fm_wd_count_since() {  # <ledger> <home> <symptom|*> <action|*> <phase-regex> <since>
+fm_wd_count_since() {  # <ledger> <home> <symptom|*> <action|*> <phase-regex> <since> [subject]
   [ -f "$1" ] || { printf '0\n'; return 0; }
-  awk -F'\t' -v h="$2" -v s="$3" -v a="$4" -v p="$5" -v since="$6" '
-    $1 >= since && $3 == h && ($5 == s || s == "*") && ($6 == a || a == "*") && $7 ~ p { c++ }
+  awk -F'\t' -v h="$2" -v s="$3" -v a="$4" -v p="$5" -v since="$6" -v subj="${7:-}" '
+    $1 >= since && $3 == h && ($5 == s || s == "*") && ($6 == a || a == "*") && $7 ~ p && (subj == "" || $4 == subj) { c++ }
     END { print c + 0 }' "$1"
 }
 
@@ -558,4 +601,64 @@ fm_wd_spent_since() {  # <model-calls.tsv> <since>
 
 fm_wd_iso() {  # <epoch>
   date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ
+}
+
+# A positive decimal integer that shell arithmetic can hold: no sign, no leading
+# zero (bash would read it as octal), at most 15 digits. The digits are listed
+# one by one, because a range can match other characters in some locales.
+fm_wd_epoch_ok() {  # <value>
+  case "$1" in ''|0*|*[!0123456789]*) return 1 ;; esac
+  [ "${#1}" -le 15 ]
+}
+
+fm_wd_heartbeat_published() {  # <heartbeat-file>
+  local v
+  [ -f "$1" ] && [ ! -L "$1" ] || return 1
+  # One read of the raw text: the watcher replaces the file by rename, so a
+  # second open could see another stamp. jq may print 1.7e9 or 1700000000.0 as
+  # the same integer, so the text must also hold the stamp as those plain
+  # digits. In valid JSON a quote that follows { or , opens a string or closes
+  # one, and a closing quote is followed only by whitespace, a colon, a comma, a
+  # bracket, a brace or the end of the text. So neither pattern can match from
+  # inside a string, and an array element is never followed by a colon: the two
+  # patterns see key tokens only, which are one key of that name in the whole
+  # text, spelled plainly or with \u escapes, and the plain spelling with the
+  # plain digits as its value. The first pattern also matches another key only
+  # when that key holds a \u escape and no character outside a-z and _, which
+  # keeps a large heartbeat fast.
+  v=$(jq -Rrs '. as $text
+    | (try fromjson catch null)
+    | if type == "object" and .schema == "fm-heartbeat.v1" then .published_epoch else empty end
+    | select(type == "number" and . > 0 and . == floor and . < 1e15) | floor | tostring
+    | select(. as $v | $text
+        | ([scan("[{,][ \t\r\n]*(\"published_epoch\"|\"[a-z_]*(?:\\\\u[0-9a-fA-F]{4}[a-z_]*)+\")[ \t\r\n]*:")[0]
+            | fromjson | select(. == "published_epoch")] | length == 1)
+          and test("[{,][ \t\r\n]*\"published_epoch\"[ \t\r\n]*:[ \t\r\n]*" + $v + "[ \t\r\n]*[,}]"))' "$1" 2>/dev/null) || return 1
+  fm_wd_epoch_ok "$v" || return 1
+  printf '%s\n' "$v"
+}
+
+fm_wd_supervisor_gap_rows() {  # <home> <now> <published-epoch>
+  local home=$1 now=$2 pub=$3 age
+  case "$home" in ''|*$'\t'*|*$'\n'*|*$'\r'*) return 1 ;; esac
+  # A row starts with exactly 10 digits, so the last digits of a cut epoch can
+  # never read as an epoch. A clock of another length prints no row.
+  fm_wd_epoch_ok "$now" && [ "${#now}" -eq 10 ] && fm_wd_epoch_ok "$pub" || return 1
+  age=$((now - pub))
+  [ "$age" -ge 0 ] || return 1
+  [ "$age" -le 600 ] || printf '%s\t%s\theartbeat_age=%s\n' "$now" "$home" "$age"
+  printf '%s\tobserved\t%s\n' "$now" "$home"
+}
+
+fm_wd_last_wake_ack() {  # <wake-ledger> <now> [daemon-acks]
+  local v acks=${3:-}
+  [ -f "$1" ] || return 1
+  fm_wd_epoch_ok "$2" || return 1
+  [ -n "$acks" ] && [ -f "$acks" ] && [ -r "$acks" ] || acks=/dev/null
+  v=$(tail -n 2000 "$1" 2>/dev/null | LC_ALL=C awk -F'\t' -v now="$2" -v acks="$acks" '
+    BEGIN { while ((getline line < acks) > 0) daemon[line] = 1 }
+    $2 == "ack" && !(($3 "\t" $4) in daemon) && $1 ~ /^[1-9][0-9]*$/ && length($1) <= 15 && $1 + 0 <= now + 0 && $1 + 0 > m + 0 { m = $1 }
+    END { if (m != "") print m }')
+  [ -n "$v" ] || return 1
+  printf '%s\n' "$v"
 }

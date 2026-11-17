@@ -2996,12 +2996,17 @@ test_followup_post_record_failure_clears_link() {
   err="$home/err.txt"
   cat > "$fakebin/mv" <<'SH'
 #!/usr/bin/env bash
+dest=${!#}
 if [ -n "${FAKE_MV_FAIL_AFTER_FLAG:-}" ] \
   && [ -f "$FAKE_MV_FAIL_AFTER_FLAG" ] \
   && [ -n "${FAKE_MV_FAILED_ONCE:-}" ] \
   && [ ! -f "$FAKE_MV_FAILED_ONCE" ]; then
-  : > "$FAKE_MV_FAILED_ONCE"
-  exit 2
+  case "$dest" in
+    */task-rf.meta)
+      : > "$FAKE_MV_FAILED_ONCE"
+      exit 2
+      ;;
+  esac
 fi
 exec /bin/mv "$@"
 SH

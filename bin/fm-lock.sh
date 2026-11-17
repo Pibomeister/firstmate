@@ -28,10 +28,19 @@
 # Valid FM_SESSION_ENDPOINT_META from a secondmate launch contributes the
 # Orca backend, terminal, worktree, and spawn_gen fields with precedence over
 # terminal environment variables. A primary's current terminal replaces a
-# previous sidecar endpoint on re-publication; otherwise its Orca or tmux
-# endpoint is preserved for the same trusted session id.
-# Confirmed-own acquisition leaves a matching anchor instance's sidecar
-# byte-identical; otherwise it republishes the record. A same-session
+# previous sidecar endpoint on re-publication. That terminal is the pair
+# discover_supervisor_target and discover_supervisor_backend both report
+# with status 0: an Orca handle, a tmux pane, a Herdr session:pane, or
+# another confident supervisor backend. An illegal token fails publication.
+# The legacy tmux fallback is not a terminal and is never recorded.
+# When that discovery does not return 0, a new publication records
+# backend=unknown and terminal=unknown. unknown is not an address.
+# Explicit launch metadata that is not a concrete endpoint writes no
+# endpoint fields, and it does not become unknown.
+# The same trusted session id keeps a concrete endpoint when this
+# publication has no live terminal. Confirmed-own acquisition leaves a
+# matching anchor instance's sidecar byte-identical; otherwise it republishes
+# the record. A same-session
 # confirmation keeps a live line 1 that is in this session's harness ancestry,
 # because bin/fm-startup-network.sh compares that pid across its deferred
 # sweeps; a dead recorded pid is reclaimed and rewritten to this session's
@@ -202,7 +211,8 @@ remember_lock_session() {
 }
 
 publish_lock_endpoint() {
-  local trusted=$1 recorded=$2 candidate=${FM_SESSION_ENDPOINT_META:-} source='' field value endpoint_backend=tmux explicit=0
+  local trusted=$1 recorded=$2 candidate=${FM_SESSION_ENDPOINT_META:-} source='' field value
+  local endpoint_backend='' endpoint_target='' explicit=0 rc=0
   if [ -n "$trusted" ] && [ "$trusted" = "$recorded" ]; then
     source=$LOCK_SESSION
   fi
@@ -213,24 +223,54 @@ publish_lock_endpoint() {
     source=$candidate
     explicit=1
   fi
-  # A resumed primary can move terminals while retaining its trusted id.
-  # Its live terminal outranks its old sidecar, but not explicit launch metadata.
-  if [ "$explicit" -eq 0 ] && value=$(fm_handoff_endpoint_handle); then
-    case "$value" in *[!A-Za-z0-9_.:%-]*) return 1 ;; esac
-    [ -n "${TMUX_PANE:-}" ] || endpoint_backend=orca
-    printf 'backend=%s\nterminal=%s\nworktree=%s\n' "$endpoint_backend" "$value" "${FM_HOME%/}"
+  # A live confident endpoint outranks a preserved sidecar, but not explicit
+  # launch metadata. Status 0 is the only confident answer; the tmux fallback
+  # and an Orca-home refusal are not endpoints. A present but illegal target
+  # fails publication rather than being recorded as unknown.
+  if [ "$explicit" -eq 0 ]; then
+    rc=0
+    endpoint_target=$(discover_supervisor_target 2>/dev/null) || rc=$?
+    if [ "$rc" -eq 0 ]; then
+      case "$endpoint_target" in ''|*[!A-Za-z0-9_.:%-]*) return 1 ;; esac
+      endpoint_backend=$(discover_supervisor_backend 2>/dev/null) || rc=$?
+    fi
+    if [ "$rc" -eq 0 ]; then
+      case "$endpoint_backend" in ''|*[!A-Za-z0-9_-]*) return 1 ;; esac
+      printf 'backend=%s\nterminal=%s\nworktree=%s\n' \
+        "$endpoint_backend" "$endpoint_target" "${FM_HOME%/}"
+      return 0
+    fi
+  fi
+  # Same trusted session, or explicit launch metadata: copy a concrete endpoint.
+  # A new session does not inherit the predecessor terminal. unknown is not concrete.
+  if [ -n "$source" ] && [ -f "$source" ] && [ ! -L "$source" ]; then
+    case "$(sed -n 's/^backend=//p' "$source")" in
+      orca|tmux|herdr|rex|hc|t3code) ;;
+      *) source='' ;;
+    esac
+  fi
+  if [ -n "$source" ] && [ -f "$source" ] && [ ! -L "$source" ]; then
+    value=$(sed -n 's/^worktree=//p' "$source")
+    if [ -n "$value" ] && [ "$value" = "${FM_HOME%/}" ]; then
+      value=$(sed -n 's/^terminal=//p' "$source")
+      case "$value" in
+        ''|unknown|*[!A-Za-z0-9_.:%-]*|*$'\n'*|*$'\r'*) source='' ;;
+      esac
+    else
+      source=''
+    fi
+  fi
+  if [ -n "$source" ] && [ -f "$source" ] && [ ! -L "$source" ]; then
+    for field in backend terminal worktree spawn_gen; do
+      value=$(sed -n "s/^$field=//p" "$source")
+      case "$value" in *$'\n'*|*$'\r'*) return 1 ;; esac
+      [ -z "$value" ] || printf '%s=%s\n' "$field" "$value"
+    done
     return 0
   fi
-  [ -n "$source" ] && [ -f "$source" ] && [ ! -L "$source" ] || return 0
-  case "$(sed -n 's/^backend=//p' "$source")" in orca|tmux) ;; *) return 0 ;; esac
-  value=$(sed -n 's/^worktree=//p' "$source")
-  [ -n "$value" ] && [ "$value" = "${FM_HOME%/}" ] || return 0
-  [ -n "$(sed -n 's/^terminal=//p' "$source")" ] || return 0
-  for field in backend terminal worktree spawn_gen; do
-    value=$(sed -n "s/^$field=//p" "$source")
-    case "$value" in *$'\n'*|*$'\r'*) return 1 ;; esac
-    [ -z "$value" ] || printf '%s=%s\n' "$field" "$value"
-  done
+  # Explicit metadata that is not a concrete endpoint writes nothing.
+  [ "$explicit" -eq 1 ] && return 0
+  printf 'backend=unknown\nterminal=unknown\n'
   return 0
 }
 

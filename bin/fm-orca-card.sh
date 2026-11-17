@@ -21,7 +21,7 @@ ORCA_WORKTREE_ID=$(grep '^orca_worktree_id=' "$META" 2>/dev/null | tail -1 | cut
 # Reuse the adapter's JSON-error check, including ok:false with exit status 0.
 # shellcheck source=bin/backends/orca.sh
 . "$SCRIPT_DIR/backends/orca.sh"
-if out=$(fm_run_timed 5 orca worktree set --worktree "id:$ORCA_WORKTREE_ID" \
+if out=$(fm_orca_cli_mutation fm_run_timed 5 orca worktree set --worktree "id:$ORCA_WORKTREE_ID" \
   --workspace-status "$2" --json 2>/dev/null) \
   && printf '%s' "$out" | fm_backend_orca_json_ok >/dev/null 2>&1; then
   :

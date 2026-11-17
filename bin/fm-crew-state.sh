@@ -224,7 +224,9 @@
 #
 # Read-only against the worktree, backend, and no-mistakes state database; the
 # only filesystem write is the short-lived snapshot cache under
-# $STATE/.nm-status-snapshot.json (and its lock file). Always exits 0 on a
+# $STATE/.nm-status-snapshot.json (and its lock file). FM_CREW_STATE_NO_SNAPSHOT=1
+# reads the state database directly with that cache off, so the read neither
+# writes nor waits on the cache lock. Always exits 0 on a
 # successful read regardless of state; exit 2 only on a usage error (no id).
 set -u
 
@@ -356,6 +358,14 @@ map_log_state() {  # <line>
 }
 
 LOG_LINE=$(status_current_line "$LOG" "$KIND")
+# Load relief (bin/fm-load-relief.sh) appends its own paused and resolved
+# [key=load-relief] lines without the worker's lock, so one can land just
+# after the worker's done or failed. Such a trailing bookkeeping line never
+# replaces the terminal outcome before it.
+if [ "$(_fm_decision_key "$LOG_LINE" '' 2>/dev/null)" = load-relief ]; then
+  _own_line=$(last_status_line_without_key "$LOG" load-relief)
+  case "$(status_line_verb "$_own_line")" in done|failed) LOG_LINE=$_own_line ;; esac
+fi
 LOG_VERB=$(status_line_verb "$LOG_LINE")
 
 # --- remote secondmate: the true source is the remote endpoint ---------------
@@ -402,8 +412,8 @@ fi
 # shell - so a finished crew whose endpoint has closed still reports its run-step
 # state (e.g. done) instead of being masked as unknown. Backend-aware
 # (fm_backend_of_meta defaults absent backend= to tmux, the P1 contract): a
-# herdr task is read through fm_backend_capture while tmux uses the shared
-# endpoint-existence predicate.
+# herdr task is read through fm_backend_capture. tmux and orca use the shared
+# endpoint-existence predicate. Orca's predicate is one cached terminal list.
 TASK_BACKEND=$(fm_backend_of_meta "$META")
 BACKEND_TARGET=$(fm_backend_target_of_meta "$META")
 EXPECTED_LABEL="fm-$ID"
@@ -411,6 +421,7 @@ EXPECTED_LABEL="fm-$ID"
 pane_readable() {  # <target>
   case "$TASK_BACKEND" in
     tmux) fm_backend_target_exists tmux "$1" ;;
+    orca) fm_backend_target_exists orca "$1" ;;
     *) fm_backend_capture "$TASK_BACKEND" "$1" 1 "$EXPECTED_LABEL" >/dev/null 2>&1 ;;
   esac
 }
@@ -1099,6 +1110,7 @@ COARSE_STATUS=""
 SELECTED_RUN_ID=""
 NM_SNAPSHOT_ACTIVE=0
 NM_SNAPSHOT_FILE=$(fm_nm_status_snapshot_path "$STATE")
+[ "${FM_CREW_STATE_NO_SNAPSHOT:-}" != 1 ] || NM_SNAPSHOT_FILE=
 # Scouts and secondmates never drive a no-mistakes validation of their own
 # worktree, so skip the lookup for them and read state from pane/log directly.
 if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/null 2>&1; then

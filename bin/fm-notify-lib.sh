@@ -1,0 +1,305 @@
+#!/usr/bin/env bash
+# fm-notify-lib.sh - the configurable, backend-independent active alert: the
+# channel directives of config/wedge-alarm, the bounded notifier runners and the
+# one send entry point wedge_alarm_notify. bin/fm-supervise-daemon.sh sources it
+# for the wedge alarm, and bin/fm-escalate.sh delivers through it.
+# docs/wedge-alarm.md owns the channel contract; these functions moved here
+# from the daemon with their behavior unchanged.
+#
+# The caller provides FM_HOME (and optionally FM_CONFIG_OVERRIDE). The daemon
+# also provides log; when it is absent a no-op stands in, so a caller with no
+# log file still runs. The supervisor-backend defaults are read when the rex
+# channel is used and are empty when the caller sets none.
+
+# WEDGE_ALARM_PAGE_RESULT is set here and read by the caller after the send.
+# shellcheck disable=SC2034
+declare -F log >/dev/null 2>&1 || log() { :; }
+
+WEDGE_ALARM_TIMEOUT_SECS_DEFAULT=10
+WEDGE_ALARM_NOTIFIER_PID=
+
+# --- backend-independent active wedge alert ---------------------------------
+# The tmux status-line flash in inject_wedge_alarm in the daemon is a cosmetic,
+# client-side OSD with no cross-backend equivalent, so a wedged non-tmux primary
+# (the 2026-07-10 overnight incident: a claude-on-herdr primary) got NO active
+# signal - only the passive state/.subsuper-inject-wedged marker, which nothing
+# surfaces until the next fleet action (that night, 20 escalations sat buffered
+# for 8.5h). These helpers add a configurable active alert that does not depend
+# on any pane or its backend status-line: an OS-level macOS notification, a
+# herdr notification, or a captain-supplied command (push to a phone, etc.).
+# Every channel is best-effort - a missing or failing channel logs and is
+# skipped, never crashing the daemon loop - and the durable marker plus the tmux
+# flash stay exactly as before.
+#
+# Config: config/wedge-alarm (local, gitignored), one channel directive per
+# non-empty, non-comment line. FM_WEDGE_ALARM_CHANNEL overrides the file with a
+# single directive. Directives:
+#   off              disable the active alert entirely, regardless of position
+#                    (marker + flash remain)
+#   auto | default   platform default: macOS -> osascript; otherwise none
+#   osascript        macOS Notification Center banner (backend-independent)
+#   herdr            herdr UI notification (herdr notification show)
+#   command:<cmd>    run <cmd> via `sh -c`, summary on $1 and on stdin
+# An absent config means auto, i.e. default-ON on macOS: the alarm's whole
+# purpose is to never be silent, so the reachable OS channel fires unless the
+# captain explicitly disables it.
+
+# Print the configured channel directives, one per line. FM_WEDGE_ALARM_CHANNEL
+# wins (a single directive); else each non-empty, non-comment line of
+# config/wedge-alarm; else "auto".
+wedge_alarm_configured_channels() {
+  local cfg line found=
+  if [ -n "${FM_WEDGE_ALARM_CHANNEL:-}" ]; then
+    printf '%s\n' "$FM_WEDGE_ALARM_CHANNEL"
+    return 0
+  fi
+  cfg="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/wedge-alarm"
+  if [ -f "$cfg" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      line="${line#"${line%%[![:space:]]*}"}"
+      line="${line%"${line##*[![:space:]]}"}"
+      [ -n "$line" ] || continue
+      case "$line" in '#'*) continue ;; esac
+      printf '%s\n' "$line"
+      found=1
+    done < "$cfg"
+  fi
+  [ -n "$found" ] || printf 'auto\n'
+}
+
+# Resolve the platform's default OS-level channel for `auto`. macOS reaches the
+# captain via an osascript Notification Center banner; other platforms have no
+# built-in OS channel (the captain wires a command: directive), so this prints
+# nothing and wedge_alarm_notify logs that the marker is the only signal.
+wedge_alarm_platform_default() {
+  case "$(uname)" in
+    Darwin) command -v osascript >/dev/null 2>&1 && printf 'osascript' ;;
+    *) : ;;
+  esac
+}
+
+wedge_alarm_run_bounded() {
+  local channel=$1 timeout monitor_was_on=0 pid start elapsed rc
+  shift
+  timeout=${FM_WEDGE_ALARM_TIMEOUT_SECS:-$WEDGE_ALARM_TIMEOUT_SECS_DEFAULT}
+  case "$timeout" in
+    ''|*[!0-9]*) timeout=$WEDGE_ALARM_TIMEOUT_SECS_DEFAULT ;;
+    *) [ "$timeout" -gt 0 ] 2>/dev/null || timeout=$WEDGE_ALARM_TIMEOUT_SECS_DEFAULT ;;
+  esac
+  case $- in *m*) monitor_was_on=1 ;; esac
+  set -m 2>/dev/null || true
+  case $- in
+    *m*) ;;
+    *) log "wedge alarm: ${channel} notifier skipped because its watchdog could not start"; return 125 ;;
+  esac
+  "$@" &
+  pid=$!
+  WEDGE_ALARM_NOTIFIER_PID=$pid
+  start=$SECONDS
+  while kill -0 "-$pid" 2>/dev/null; do
+    elapsed=$((SECONDS - start))
+    if [ "$elapsed" -ge "$timeout" ]; then
+      wedge_alarm_stop_active_notifier
+      [ "$monitor_was_on" -eq 1 ] || set +m 2>/dev/null || true
+      log "wedge alarm: ${channel} notifier timed out after ${elapsed}s (limit ${timeout}s)"
+      return 124
+    fi
+    sleep 0.1
+  done
+  if wait "$pid"; then rc=0; else rc=$?; fi
+  WEDGE_ALARM_NOTIFIER_PID=
+  [ "$monitor_was_on" -eq 1 ] || set +m 2>/dev/null || true
+  return "$rc"
+}
+
+wedge_alarm_stop_active_notifier() {
+  local pid=${WEDGE_ALARM_NOTIFIER_PID:-}
+  [ -n "$pid" ] || return 0
+  WEDGE_ALARM_NOTIFIER_PID=
+  kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  sleep 0.2
+  kill -KILL "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+}
+
+# The single execution seam for every configured notifier channel.
+# FM_WEDGE_ALARM_EXEC, when set, REPLACES the real notifier: the resolved channel
+# name and summary are handed to that command instead of ever invoking osascript
+# or herdr or a captain-supplied command. This is the one injection point the test harness forces to a recorder
+# so no test can post a real desktop notification - the library-mode guard at the
+# foot of this file defaults it to "discard" whenever the daemon is SOURCED
+# rather than executed, which is the only way a test reaches these functions. The
+# special value "discard" fires nothing; unset means production (the executed
+# daemon), so the real channels fire.
+wedge_alarm_os_notifier_override() {  # <channel> <summary>
+  local channel=$1 summary=$2 rc exec_override=${FM_WEDGE_ALARM_EXEC:-}
+  case "$exec_override" in
+    '') return 2 ;;
+    discard) return 0 ;;
+    *)
+      wedge_alarm_run_bounded "$channel" "$exec_override" "$channel" "$summary" >/dev/null 2>&1
+      rc=$?
+      [ "$rc" -eq 0 ] && return 0
+      log "wedge alarm: notifier override exited $rc for channel '$channel'"
+      return 1 ;;
+  esac
+}
+
+# Post a macOS Notification Center banner. `display notification` is OS-level,
+# independent of any terminal pane or multiplexer status-line. The summary is
+# passed as an argv item (never interpolated into the AppleScript source) so its
+# text can never break the script. Best-effort: logs and returns 1 on failure.
+wedge_alarm_via_osascript() {  # <summary>
+  local summary=$1 rc
+  wedge_alarm_os_notifier_override osascript "$summary"
+  rc=$?
+  case "$rc" in
+    0) return 0 ;;
+    1) return 1 ;;
+  esac
+  command -v osascript >/dev/null 2>&1 || {
+    log "wedge alarm: osascript not found; cannot post a macOS notification"; return 1; }
+  wedge_alarm_run_bounded osascript osascript -e 'on run argv' \
+    -e 'display notification (item 1 of argv) with title "firstmate: away-mode escalations WEDGED" sound name "Basso"' \
+    -e 'end run' "$summary" >/dev/null 2>&1 && return 0
+  log "wedge alarm: osascript notification failed"
+  return 1
+}
+
+# Post a herdr UI notification - herdr's own surface, separate from the pane and
+# its status-line. Best-effort: logs and returns 1 on failure.
+wedge_alarm_via_herdr() {  # <summary>
+  local summary=$1 rc
+  wedge_alarm_os_notifier_override herdr "$summary"
+  rc=$?
+  case "$rc" in
+    0) return 0 ;;
+    1) return 1 ;;
+  esac
+  command -v herdr >/dev/null 2>&1 || {
+    log "wedge alarm: herdr not found; cannot post a herdr notification"; return 1; }
+  wedge_alarm_run_bounded herdr herdr notification show "firstmate: away-mode escalations WEDGED" \
+    --body "$summary" --sound request >/dev/null 2>&1 && return 0
+  log "wedge alarm: herdr notification failed"
+  return 1
+}
+
+# Raise Firstmate's own Rex alert on the supervisor pane: a blocked program-status
+# record (id=fm-wedge) plus an OSC 777 desktop notification, which badges that tab
+# and returns the captain to the pane (bin/backends/rex.sh fm_backend_rex_alert).
+# Used only when config/wedge-alarm names `rex`; `auto` never adds it. Needs the
+# supervisor backend to be rex. Best-effort: logs and returns 1 on failure.
+WEDGE_ALARM_REX_RAISED=0
+wedge_alarm_via_rex() {  # <summary>
+  local summary=$1 rc backend target
+  wedge_alarm_os_notifier_override rex "$summary"
+  rc=$?
+  case "$rc" in
+    0) return 0 ;;
+    1) return 1 ;;
+  esac
+  backend="${FM_SUPERVISOR_BACKEND:-${FM_SUPERVISOR_BACKEND_DEFAULT:-}}"
+  target="${FM_SUPERVISOR_TARGET:-${FM_SUPERVISOR_TARGET_DEFAULT:-}}"
+  [ "$backend" = rex ] || {
+    log "wedge alarm: rex channel needs a Rex supervisor pane (supervisor backend is ${backend:-unset})"; return 1; }
+  fm_backend_source rex >/dev/null 2>&1 || {
+    log "wedge alarm: the rex adapter could not be loaded"; return 1; }
+  if wedge_alarm_run_bounded rex fm_backend_rex_alert "$target" "firstmate: away-mode escalations WEDGED" "$summary" >/dev/null 2>&1; then
+    WEDGE_ALARM_REX_RAISED=1
+    return 0
+  fi
+  log "wedge alarm: rex alert could not be written to the supervisor pane"
+  return 1
+}
+
+# Remove a raised Rex alert once a digest is delivered. Best-effort.
+wedge_alarm_rex_clear() {
+  [ "$WEDGE_ALARM_REX_RAISED" = 1 ] || return 0
+  WEDGE_ALARM_REX_RAISED=0
+  fm_backend_source rex >/dev/null 2>&1 || return 0
+  fm_backend_rex_alert_clear "${FM_SUPERVISOR_TARGET:-${FM_SUPERVISOR_TARGET_DEFAULT:-}}" >/dev/null 2>&1 || true
+}
+
+# Run a captain-supplied command with the summary on $1 and on stdin, so an
+# alert can reach a phone/pager (ntfy, Slack, SMS) even when the captain is away
+# from the machine entirely. Best-effort: logs and returns 1 on failure.
+wedge_alarm_via_command() {  # <cmd> <summary>
+  local cmd=$1 summary=$2 rc
+  if [ "${WEDGE_ALARM_EMIT_ACTIVE:-}" != 1 ]; then
+    wedge_alarm_emit command "$summary" "$cmd"
+    return $?
+  fi
+  [ -n "$cmd" ] || { log "wedge alarm: empty command: channel; nothing to run"; return 1; }
+  wedge_alarm_run_bounded command sh -c "$cmd" fm-wedge-alarm "$summary" \
+    <<< "$summary" >/dev/null 2>&1
+  rc=$?
+  [ "$rc" -eq 0 ] && return 0
+  log "wedge alarm: command channel exited $rc (command redacted)"
+  return 1
+}
+
+wedge_alarm_emit() {  # <channel> <summary>
+  local channel=$1 summary=$2 cmd=${3:-} rc exec_override=${FM_WEDGE_ALARM_EXEC:-} WEDGE_ALARM_EMIT_ACTIVE=1
+  case "$exec_override" in
+    '') ;;
+    discard) return 0 ;;
+    *)
+      wedge_alarm_run_bounded "$channel" "$exec_override" "$channel" "$summary" >/dev/null 2>&1
+      rc=$?
+      [ "$rc" -eq 0 ] && return 0
+      log "wedge alarm: notifier override exited $rc for channel '$channel'"
+      return 1 ;;
+  esac
+  case "$channel" in
+    osascript) wedge_alarm_via_osascript "$summary" ;;
+    herdr) wedge_alarm_via_herdr "$summary" ;;
+    rex) wedge_alarm_via_rex "$summary" ;;
+    command) wedge_alarm_via_command "$cmd" "$summary" ;;
+  esac
+}
+
+# Fire every configured active-alert channel, best-effort. Always returns 0: a
+# channel failure can never abort inject_wedge_alarm or the daemon loop. Any
+# `off` directive disables the alert, regardless of position; an unresolvable
+# `auto` (no OS channel on this platform) logs that the durable marker is the
+# only signal. Every notifier routes through the test-forced recorder seam.
+wedge_alarm_notify() {  # <summary> <marker> [strict]
+  local summary=$1 marker=$2 strict=${3:-} ch attempted=0 delivered=0
+  local -a channels=()
+  WEDGE_ALARM_PAGE_RESULT=pending
+  while IFS= read -r ch; do
+    [ -n "$ch" ] || continue
+    channels+=("$ch")
+  done < <(wedge_alarm_configured_channels)
+  for ch in "${channels[@]}"; do
+    if [ "$ch" = off ]; then
+      [ "$strict" = strict ] && return 2
+      return 0
+    fi
+  done
+  for ch in "${channels[@]}"; do
+    case "$ch" in auto|default) ch=$(wedge_alarm_platform_default) ;; esac
+    case "$ch" in
+      '') log "wedge alarm: no OS-level alert channel on $(uname); durable marker $marker is the only signal - set config/wedge-alarm (e.g. a command: directive)" ;;
+      osascript|herdr|rex)
+        attempted=1
+        wedge_alarm_emit "$ch" "$summary" && delivered=1 ;;
+      command:*)
+        attempted=1
+        wedge_alarm_emit command "$summary" "${ch#command:}" && delivered=1 ;;
+      *) log "wedge alarm: unrecognized active-alert channel directive (redacted); marker still written" ;;
+    esac
+  done
+  if [ "$strict" = strict ]; then
+    if [ "$delivered" -eq 1 ]; then
+      WEDGE_ALARM_PAGE_RESULT=sent
+      return 0
+    fi
+    if [ "$attempted" -eq 1 ]; then
+      WEDGE_ALARM_PAGE_RESULT=failed
+      return 1
+    fi
+    return 2
+  fi
+  return 0
+}
