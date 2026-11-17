@@ -1969,11 +1969,24 @@ The address selects the existing shared server; it does not authorize starting o
 The optional local, gitignored `config/brief-include.md` adds standing worker instructions to every ship and scout brief.
 This keeps private brief content out of tracked files.
 When the file exists, `bin/fm-brief.sh` appends its text verbatim as the scaffold's last section, `# Home brief additions`, which defers to every other section of the brief, including the ship contract a later scout promotion appends below it.
+When `config/goal-integrity` is present, the include instead sits at the top of the brief; see "Goal line enforcement" below.
 
 An absent or blank file changes nothing, while a present path that is not a readable regular file, or text carrying its own `Delivery contract: mode=` line, stops the scaffold before anything is written.
 The text is static and never executed or expanded; secondmate charters never take it, and the file is local to each home rather than part of secondmate inherited configuration.
 
 `bin/fm-brief.sh`'s header owns the placement rule and its safety argument.
+
+## Goal line enforcement (config/goal-integrity)
+
+The optional local, gitignored `config/goal-integrity` file opts this home into verbatim goal-line enforcement for ship and scout briefs.
+Create it with `touch "$FM_HOME/config/goal-integrity"` to use the default owner label `owner`, or write the owner label as the file's first non-empty line (for example `acme` produces `GOAL (acme, verbatim): ...`).
+It is inherited to secondmate homes through the shared config inheritance list.
+
+When present and readable, `bin/fm-brief.sh` reads the single-line verbatim ask in `state/goals/<task-id>.md` and prepends `GOAL (<owner>, verbatim):` plus that line to `data/<task-id>/brief.md`, moves `config/brief-include.md` to the top under `# Goal line and home brief additions (top precedence)`, and refuses an include that carries a `# Task` heading.
+A missing goal file leaves a `{GOAL}` placeholder on line 1; `bin/fm-spawn.sh` then refuses to send the brief until the goal file exists and line 1 matches the brief's GOAL line.
+The standing rule prose for a home stays in gitignored local files such as `config/brief-include.md`, `data/captain.md`, and home-local agent overlays; this flag only enforces the mechanism.
+
+`bin/fm-brief.sh` and `bin/fm-spawn.sh` headers own the exact refusal wording; `bin/fm-goal-integrity-lib.sh` owns the shared owner-label and prefix logic.
 
 ## Herdr lifecycle spawn guard (config/herdr-lifecycle-spawn-guard)
 

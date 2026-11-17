@@ -37,3 +37,5 @@ After successful teardown, record completion, retain only the configured recent 
 
 A secondmate is persistent and an empty queue is healthy.
 Retire one only on an explicit captain or main-firstmate decision, after loading `secondmate-provisioning`; its home must contain no work under way, and forced discard still requires explicit captain authority.
+
+When `config/goal-integrity` is present, landing proof stays tied to the verbatim goal file for that task (`docs/configuration.md`, Goal line enforcement).

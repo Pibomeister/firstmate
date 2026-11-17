@@ -334,7 +334,7 @@ family_for_basename_var() {
   case "$1" in
     fm-arm-pretool-check.test.sh|fm-ask-user-authority.test.sh|\
     fm-bearings-board.test.sh|\
-    fm-brief.test.sh|fm-dod-lib.test.sh|fm-merge-local.test.sh|fm-vendor-auth-probe.test.sh|\
+    fm-brief.test.sh|fm-dod-lib.test.sh|fm-goal-integrity.test.sh|fm-merge-local.test.sh|fm-vendor-auth-probe.test.sh|\
     fm-calm-pi-extension.test.sh|fm-cd-pretool-check.test.sh|\
     fm-classify-decision-key.test.sh|\
     fm-composer-ghost.test.sh|fm-composer-lib.test.sh|fm-context-reading.test.sh|\
@@ -894,6 +894,7 @@ tests/fm-gemini-harness.test.sh 1167
 tests/fm-git-push-guard.test.sh 1333
 tests/fm-git-strip-ai-trailers.test.sh 4125
 tests/fm-gitignore-config.test.sh 67
+tests/fm-goal-integrity.test.sh 17416
 tests/fm-gotmp.test.sh 1890
 tests/fm-grok-continuity-live-e2e.test.sh 54
 tests/fm-grok-quota-handoff-live-e2e.test.sh 58

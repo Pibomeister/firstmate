@@ -30,6 +30,9 @@
 #   ship or scout spawn also refuses leftover `{TASK}` / `{FIRSTMATE_SPEC}`
 #   placeholders, an empty Task, an incomplete pair of Task subsections, or a
 #   `## Captain's intent` line opening with a Captain label or address.
+#   When config/goal-integrity exists, a ship or scout brief must open with a
+#   GOAL (<owner>, verbatim): line matching the single-line ask in
+#   state/goals/<task-id>.md, unless this spawn is --relaunch.
 #   When config/herdr-lifecycle-spawn-guard exists, a brief naming
 #   bin/fm-herdr-lab.sh or a listed Herdr session/server lifecycle command must
 #   carry the Herdr isolation contract emitted by bin/fm-brief.sh --herdr-lab;
@@ -5040,6 +5043,41 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
     ' -- "$BRIEF")
     if [ -n "$HERDR_LIFECYCLE_COMMAND" ] && ! grep -Fq '# Herdr isolation - HARD SAFETY CONTRACT' "$BRIEF"; then
       echo "error: $BRIEF names the Herdr lifecycle command \`$HERDR_LIFECYCLE_COMMAND\` but lacks the Herdr isolation contract; regenerate it with bin/fm-brief.sh --herdr-lab" >&2
+      exit 1
+    fi
+  fi
+  # shellcheck source=bin/fm-goal-integrity-lib.sh
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-goal-integrity-lib.sh"
+  if fm_goal_integrity_enabled "$CONFIG"; then
+    _gi=0
+  else
+    _gi=$?
+    [ "$_gi" -eq 2 ] && { echo "error: cannot inspect $CONFIG/goal-integrity" >&2; exit 1; }
+  fi
+  if [ "$RELAUNCH" -eq 0 ] && [ "$_gi" -eq 0 ]; then
+    GOAL_PREFIX=$(fm_goal_integrity_prefix "$CONFIG") || exit 1
+    GOAL_FIRST_LINE=$(sed -n '1p' "$BRIEF")
+    case "$GOAL_FIRST_LINE" in
+      "$GOAL_PREFIX"*) GOAL_TEXT=${GOAL_FIRST_LINE#"$GOAL_PREFIX"} ;;
+      *)
+        echo "error: $BRIEF must open with a '${GOAL_PREFIX}...' line from $STATE/goals/$ID.md (config/goal-integrity); refusing to send" >&2
+        exit 1
+        ;;
+    esac
+    if [ -z "$(printf '%s' "$GOAL_TEXT" | tr -d '[:space:]')" ] || [ "$GOAL_TEXT" = '{GOAL}' ]; then
+      echo "error: $BRIEF must open with a non-empty verbatim goal from $STATE/goals/$ID.md (config/goal-integrity); refusing to send" >&2
+      exit 1
+    fi
+    if [ ! -f "$STATE/goals/$ID.md" ]; then
+      echo "error: $STATE/goals/$ID.md is missing; refusing to send" >&2
+      exit 1
+    fi
+    if [ -n "$(awk 'NR > 1 && NF { found=1 } END { if (found) print 1 }' "$STATE/goals/$ID.md")" ]; then
+      echo "error: $STATE/goals/$ID.md must be a single-line verbatim ask under goal-line enforcement; refusing to send" >&2
+      exit 1
+    fi
+    if [ "$(awk 'NF { print; exit }' "$STATE/goals/$ID.md")" != "$GOAL_TEXT" ]; then
+      echo "error: $BRIEF GOAL line does not match $STATE/goals/$ID.md verbatim; refusing to send" >&2
       exit 1
     fi
   fi
