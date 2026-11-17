@@ -518,6 +518,30 @@ PYCALLER
   pass "fm-test-queue.sh: a zombie wrapper whose caller still reads its output does not stall its holder"
 }
 
+# A shell that execs into the queue leaves the processes it already started,
+# such as a process substitution's consumer, as the wrapper's own children.
+# They are caller stages, so the run's exit spares them.
+test_process_substitution_under_an_execd_leader_is_spared() {
+  local leader
+  new_case exec-substitution
+  echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
+  (
+    set -m
+    "$QBASH" -c 'exec "$1" "$2" run --label substituted -- sh -c "seq 1 3" > >(sleep 1; tail -n 1 > "$3/out.tmp"; mv "$3/out.tmp" "$3/out")' \
+      _ "$QBASH" "$QUEUE" "$CASE" </dev/null 2>/dev/null &
+    echo $! > "$CASE/leader"
+    wait
+  ) 2>/dev/null &
+  CASE_PIDS+=("$!")
+  wait_until "the exec'd leader started" file_exists "$CASE/leader"
+  leader=$(cat "$CASE/leader")
+  CASE_PIDS+=("$leader")
+  wait_until "the exec'd run ended" pid_gone "$leader"
+  wait_until "the consumer finished after the run" file_exists "$CASE/out"
+  assert_equals 3 "$(cat "$CASE/out")" "the process substitution's consumer lost its input"
+  pass "fm-test-queue.sh: a process substitution started before an exec into the queue keeps its output"
+}
+
 # An unrelated job whose leader exits leaves a member behind in a group whose
 # id matches a dead ticket. Without a live holder in that group, nothing proves
 # the group is the ticket's, so its member must survive.
@@ -1062,6 +1086,7 @@ test_killed_wrapper_holder_reaps_without_a_next_run
 test_holder_waits_for_a_child_still_recording_itself
 test_wrapper_killed_mid_reap_leaves_the_holder_to_finish
 test_zombie_wrapper_does_not_block_its_holder
+test_process_substitution_under_an_execd_leader_is_spared
 test_reused_group_id_is_not_reaped
 test_pipeline_stage_outliving_its_caller_is_spared
 test_remote_straggler_cannot_hold_the_ssh_output

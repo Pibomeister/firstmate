@@ -98,7 +98,8 @@
 # 2-second grace) before the slot is released. When a led group's command is
 # served, the wrapper starts a small holder in that group and records it with
 # the group members already present, which are the pipeline stages its parent
-# started beside it. The holder's membership keeps the group id from being
+# started beside it and anything a shell that exec'd into the wrapper had
+# started. The holder's membership keeps the group id from being
 # reused, so only a member reaps the group: the wrapper on exit, or the
 # holder once both the wrapper and child are gone. The next run that finds
 # both dead only wakes the holder if it is stopped, and the slot stays held
@@ -108,7 +109,8 @@
 # recorded pipeline stage and its own descendants, whose ancestry reaches the
 # wrapper or leaves the group through any process other than the recorded
 # parent, such as init after reparenting; a recorded parent that is init
-# itself counts as none. Each signal goes only to a process
+# itself counts as none, and orphans that a subreaper parent adopts are
+# spared as its own. Each signal goes only to a process
 # whose group and start time still match a fresh snapshot; only the brief
 # moment between that snapshot and the signal is left open, which no
 # portable shell primitive closes. Tickets without a holder, written
@@ -399,8 +401,10 @@ group_snapshot() {
 
 # group_walk <siblings|stragglers> [<pid to leave out>]: classifies the live
 # members of the read ticket's group from one snapshot, printing pid@start
-# words. siblings lists the members that do not descend from the wrapper;
-# stragglers lists the header's straggler rule. The probe and its ancestors
+# words. siblings lists the members that do not descend from the wrapper,
+# plus its existing children, which a shell that exec'd into the wrapper
+# started, such as a process substitution's consumer; stragglers lists the
+# header's straggler rule. The probe and its ancestors
 # (this reaper's own subshells) are never listed.
 group_walk() {
   local members
@@ -426,7 +430,7 @@ group_walk() {
           if (!(r in group) || group[r] != g) { keep = (r == c && c > 1); break }
           q = r
         }
-        if (mode == "siblings" ? !descends : !keep) print p "@" start[p]
+        if (mode == "siblings" ? (!descends || parent[p] == w) : !keep) print p "@" start[p]
       }
     }' <<< "$members"
 }
@@ -461,7 +465,7 @@ ticket_group_reapable() {
   local caller_group
   is_uint "$T_PGID" && [ "$T_PGID" -gt 1 ] && [ "$T_PGID" = "$T_PID" ] || return 1
   is_uint "$T_HOLDER_PID" && [ -n "$T_CHILD_PID" ] || return 1
-  ! owner_alive "$T_CHILD_PID" "$T_CHILD_START" || return 1
+  ! pid_running "$T_CHILD_PID" "$T_CHILD_START" || return 1
   case "$1" in
     exit) [ "$T_PID" = "$$" ] || return 1 ;;
     hold) ! pid_running "$T_PID" "$T_START" || return 1 ;;
@@ -765,7 +769,7 @@ cmd_run() {
     T_CHILD_START=$(pid_start "$child_pid")
     # Without a sibling list the holder is left unrecorded, so nothing is
     # reaped rather than a pipeline stage.
-    if [ -n "$HOLDER_PID" ] && [ -n "$T_PGID" ] && siblings=$(group_walk siblings); then
+    if [ -n "$HOLDER_PID" ] && [ -n "$T_PGID" ] && siblings=$(group_walk siblings "$HOLDER_PID"); then
       T_HOLDER_PID=$HOLDER_PID
       T_HOLDER_START=$(pid_start "$HOLDER_PID")
       T_SIBLINGS=$(printf '%s' "$siblings" | tr '\n' ' ')
