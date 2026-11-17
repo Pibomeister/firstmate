@@ -4,6 +4,20 @@
 # that keep the supervisors running.
 #
 # Usage: FM_HOME=<home> fm-quota-guard.sh <command> [options]
+#   check [--snapshot <file>] [--horizon-secs <n>] [--json]
+#                      One default TOON snapshot for this supervisor and local
+#                      kind=secondmate records, without reading child homes.
+#                      Default horizon: 36000 seconds. Prints only newly seen
+#                      EXHAUSTED or TIGHT_HORIZON conditions; --json always
+#                      prints {horizon_secs, pools, alerts}. Unknown quota is
+#                      disclosed in JSON and the ledger, never a login prompt.
+#                      Appends state/quota-guard.tsv: timestamp, provider,
+#                      scope, verdict, percent_remaining, runway,
+#                      usable_runway_secs, detail (account and members).
+#                      Keeps the latest 1000 rows, with fields at most 512 bytes.
+#                      This check exits 0 even when quota is tight or unknown.
+#
+# Legacy watchdog interface (selected by any watchdog-specific check option):
 #   check [--trigger kickoff|periodic|warning|manual]
 #                      One read and verdict now; the trigger defaults to manual.
 #   tick               Run check only when one is due: kickoff when this home has
@@ -800,7 +814,17 @@ command -v jq >/dev/null 2>&1 || die "jq is required" 1
 CMD=${1-}
 [ "$#" -eq 0 ] || shift
 case "$CMD" in
-  check) parse_opts check "$@"; cmd_check ;;
+  check)
+    legacy=false
+    for arg in "$@"; do
+      case "$arg" in --trigger|--window-secs|--primary-harness|--primary-account|--candidate) legacy=true ;; esac
+    done
+    if "$legacy"; then parse_opts check "$@"; cmd_check
+    else
+      # shellcheck source=bin/fm-quota-guard-check-lib.sh
+      . "$SCRIPT_DIR/fm-quota-guard-check-lib.sh"
+      fm_quota_guard_check "$@"
+    fi ;;
   tick) parse_opts tick "$@"; cmd_tick ;;
   warning)
     parse_opts warning "$@"

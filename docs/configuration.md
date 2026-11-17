@@ -562,6 +562,7 @@ When a supervisor's pool runs short or out, `bin/fm-supervisor-failover.sh prima
 The watchdog's quota guard nudge names these commands to the primary when a check finds a supervisor pool short or exhausted ([quota guard](watchdog.md)); the primary runs them, and nothing else does.
 It first tries another signed-in Claude account with headroom, for a primary on tmux only, and then a comparable model on another verified runtime with measured headroom.
 Stale quota data or an applicable scope that is not measured is never headroom, as the quota guard judges it.
+For a one-snapshot supervisor pool check with bounded history, use [`bin/fm-quota-guard.sh check`](../bin/fm-quota-guard.sh); its header owns the TOON interface and the separate watchdog interface.
 A primary is replaced through the verified handoff above, and a secondmate through `bin/fm-control.sh <id> relaunch`.
 It never signs in, spends, or edits an account pin, and it reports the replacement and the reason, or that no candidate has headroom.
 Its `--help` owns the candidate order, refusals, and output, and [`tests/fm-supervisor-failover.test.sh`](../tests/fm-supervisor-failover.test.sh) covers them.

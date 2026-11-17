@@ -1909,7 +1909,7 @@ families_for_changed_path() {
     bin/fm-claude-account-quota.sh)
       printf '%s\n' "__script__:fm-claude-account-quota.test.sh"
       ;;
-    bin/fm-quota-guard.sh)
+    bin/fm-quota-guard.sh|bin/fm-quota-guard-check-lib.sh)
       printf '%s\n' "__script__:fm-quota-guard.test.sh"
       printf '%s\n' "__script__:fm-watchdog.test.sh"
       ;;
