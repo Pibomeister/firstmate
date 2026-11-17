@@ -174,8 +174,9 @@ Detectors for those prompts are planned as an observe-only follow-up under [issu
 The submit guard is unchanged (`fm_composer_blocking_dialog` in `bin/fm-composer-lib.sh`), and the watchdog sends its own instruction only after Escape when the composer reads as proven empty.
 Hard-stop words are also read with shell quotes and backslashes removed, so `git reset "--hard"` reads as `--hard`.
 Escape is the only key it sends, and only to a proven tool-approval prompt.
-One pass at a time may press a key on, relaunch, or write the open marker of one worker, so overlapping passes never both send an Escape or both write a blocked line; a lock left by a pass that died is taken over after 20 minutes.
+One pass at a time may press a key on, relaunch, or write the open marker of one worker, so overlapping passes never both send an Escape or both write a blocked line; it is the shared pid lock (`fm_lock_try_acquire` in `bin/fm-wake-lib.sh`), so a lock whose holder process is gone is reclaimed under that lock's steal mutex, and two passes reclaiming it never both hold it.
 Only a proven screen structure leads to an action: words inside a command, or conversation above the prompt, never turn a prompt into a trust dialog, a hold, or a route.
+A question picker's word-based holds read only its own paragraph, the unbroken rows that end at its last `1.` option row, so conversation above a blank row never makes it a hold; conversation drawn directly against the picker can, and a hold presses no key.
 The prompt rows are the rows below the nearest full-width rule above the last row.
 A rule with an odd number of dashed command-box rows below it sits inside the command preview, such as a heredoc, so the search goes on to the rule above it.
 The chosen rule may have at most the box's two dashed rows below it, and no rule above it may enclose a dashed row.

@@ -1651,7 +1651,7 @@ wd_pp_decline() {
   local id=$1 harness=$2 hash=$3 mark cap n rid live after after_dialog verdict tries=0
   mark=$(wd_pp_mark "$id")
   if grep -Fxq -- "$hash" "$mark.declined" 2>/dev/null; then
-    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows a tool-approval prompt that already got its one Escape; nothing more is pressed"
+    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows a tool-approval prompt that already had its one Escape attempt; nothing more is pressed"
     return 1
   fi
   cap=$(cfgi permission-decline-cap 3)
@@ -1775,23 +1775,17 @@ wd_pp_relaunch() {
 
 # wd_pp_lock <id>: one pass at a time may press a key on, relaunch, or write
 # the open marker of one worker, so overlapping run and once passes never both
-# send an Escape or both write a blocked line. A lock
-# left by a pass that died is taken over after 20 minutes, longer than the
-# relaunch timeout.
+# send an Escape or both write a blocked line. It is the shared pid lock
+# (fm_lock_try_acquire in bin/fm-wake-lib.sh): a lock whose holder process is
+# gone is reclaimed under its steal mutex, so two passes reclaiming one stale
+# lock never both hold it, and a release never removes another pass's lock.
 wd_pp_lock() {
-  local lock
-  lock=$(wd_pp_mark "$1").lock
-  mkdir -p "$WD/permission"
-  mkdir "$lock" 2>/dev/null && return 0
-  if [ -n "$(find "$lock" -maxdepth 0 -mmin +20 2>/dev/null)" ]; then
-    rmdir "$lock" 2>/dev/null
-    mkdir "$lock" 2>/dev/null && return 0
-  fi
-  return 1
+  mkdir -p "$WD/permission" 2>/dev/null || return 1
+  fm_lock_try_acquire "$(wd_pp_mark "$1").lock"
 }
 
 wd_pp_unlock() {
-  rmdir "$(wd_pp_mark "$1").lock" 2>/dev/null || true
+  fm_lock_release "$(wd_pp_mark "$1").lock" || true
 }
 
 # wd_permission_prompt <id> <harness> <screen> <dialog>: the unattended route

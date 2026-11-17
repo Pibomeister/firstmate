@@ -184,6 +184,11 @@ status_rows() {  # <id> <state> <key>
   { cat "$H/state/$1.status" 2>/dev/null || true; } | grep -c "^$2 \[at=[0-9]*\] \[key=$3\]: " || true
 }
 typed() { cat "$H/worker-$1.typed" 2>/dev/null; }
+# hold_lock <lock> [pid]: another pass, live by default, holds a worker lock in
+# the shared pid-lock shape. drop_lock ends that hold.
+hold_lock() { mkdir "$1" && printf '%s\n' "${2:-$$}" > "$1/pid"; }
+drop_lock() { rm -rf "$1"; }
+dead_pid() { bash -c 'printf "%s\n" "$$"'; }
 inbox_text() { cat "$H/state/$1.inbox/"*.msg 2>/dev/null; }
 
 # --- classifier ----------------------------------------------------------------
@@ -311,6 +316,8 @@ test_structure_decides_not_words() {
     "a soft-wrapped destructive command is still a stop"
   assert_equals $'hardstop\tcredential' "$(bash_prompt | awk '/^ touch \/tmp/ { print " cat ~/.ss"; print "h/id_ed25519"; next } { print }' | classify claude)" \
     "a soft-wrapped credential read is still a stop"
+  printf '%s\n' '⏺ Next I will review hooks in the repo.' '' 'Which plan should I follow?' ' ❯ 1. Plan A (Recommended)' '   2. Plan B' '' 'Enter to select · ↑/↓ to navigate · Esc to cancel' | classify claude >/dev/null \
+    && fail "conversation above an unruled question picker made it a hold"
   pass "structure, not words: conversation above a prompt and phrases inside a command never change its verdict"
 }
 
@@ -345,14 +352,24 @@ test_tool_approval_is_declined_and_steered() {
   [ -n "$mark" ] || fail "the declined checksum is kept"
   mark=${mark%-ok.declined}
   worker lk claude "$FIX/claude-2.1.325-bash-prompt.txt" "$FIX/claude-2.1.325-after-escape.txt"
-  mkdir "$mark-lk.lock"
+  hold_lock "$mark-lk.lock"
   run_wd 200 once >/dev/null 2>&1
   assert_equals '' "$(typed lk)" "a worker another pass is acting on gets no key"
   assert_contains "$(ledger | awk -F'\t' '$7 == "refused" { print $8 }')" "another watchdog pass is acting on worker lk" "the overlap is recorded"
-  rmdir "$mark-lk.lock"
+  drop_lock "$mark-lk.lock"
   run_wd 400 once >/dev/null 2>&1
   assert_equals 1 "$(typed lk | tr -cd '\033' | wc -c | tr -d ' ')" "once the other pass is done, the prompt gets its one Escape"
-  [ ! -e "$mark-lk.lock" ] || fail "the pass releases its lock"
+  [ ! -e "$mark-lk.lock" ] && [ ! -L "$mark-lk.lock" ] || fail "the pass releases its lock"
+  # A lock whose holder died is reclaimed, and two passes reclaiming it at
+  # once send one Escape between them.
+  worker dl claude "$FIX/claude-2.1.325-bash-prompt.txt" "$FIX/claude-2.1.325-after-escape.txt"
+  hold_lock "$mark-dl.lock" "$(dead_pid)"
+  run_wd 500 once >/dev/null 2>&1 &
+  local racer=$!
+  run_wd 500 once >/dev/null 2>&1
+  wait "$racer" || true
+  assert_equals 1 "$(typed dl | tr -cd '\033' | wc -c | tr -d ' ')" "two passes reclaiming a dead pass's lock send one Escape"
+  [ ! -e "$mark-dl.lock" ] && [ ! -L "$mark-dl.lock" ] || fail "the reclaimed lock is released"
   worker wf claude "$FIX/claude-2.1.325-bash-prompt.txt" "$FIX/claude-2.1.325-after-escape.txt"
   mkdir "$mark-wf.declined"
   run_wd 600 once >/dev/null 2>&1
@@ -361,10 +378,10 @@ test_tool_approval_is_declined_and_steered() {
   assert_equals 1 "$(status_rows wf blocked permission-prompt-held)" "the unsaved checksum is reported as held"
   full_imports /Users/u/work/shared/notes.md > "$H/imports.txt"
   worker hl claude "$H/imports.txt"
-  mkdir "$mark-hl.lock"
+  hold_lock "$mark-hl.lock"
   run_wd 800 once >/dev/null 2>&1
   assert_equals 0 "$(status_rows hl blocked permission-prompt-held)" "a held prompt another pass is acting on gets no second blocked line"
-  rmdir "$mark-hl.lock"
+  drop_lock "$mark-hl.lock"
   run_wd 1000 once >/dev/null 2>&1
   assert_equals 1 "$(status_rows hl blocked permission-prompt-held)" "once the other pass is done, the held prompt is reported once"
   pass "tool approval: one Escape, verified gone, then a durable rewrite instruction, one pass at a time per worker, and no key without a saved checksum"
@@ -421,7 +438,7 @@ test_declining_dialogs_on_workers_get_no_key() {
   mark=${mark%-cx.open}
   codex_approval 'cat ~/.netrc' > "$H/codex-netrc.txt"
   worker cl codex "$H/codex-netrc.txt"
-  mkdir "$mark-cl.lock"
+  hold_lock "$mark-cl.lock"
   run_wd 200 once >/dev/null 2>&1
   assert_equals '' "$(typed cl)" "a Codex hard stop another pass is acting on gets no key"
   assert_equals 0 "$(status_rows cl blocked permission-prompt-hardstop)" "the pass without the lock writes no blocked line"

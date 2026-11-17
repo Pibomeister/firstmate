@@ -4153,6 +4153,7 @@ test_worker_credential_page_withholds_typed_values() {
       # Another pass holds the worker's lock, so this pass writes no marker.
       key="$(basename "$H")-$(printf '%s' "$H" | cksum | cut -d ' ' -f 1)"
       mkdir -p "$H/state/watchdog/permission/$key-cookie.lock"
+      printf '%s\n' "$$" > "$H/state/watchdog/permission/$key-cookie.lock/pid"
     fi
     sleep 0.5
     printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"

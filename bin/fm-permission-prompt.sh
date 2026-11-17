@@ -264,6 +264,22 @@ _fm_pp_codex_dialog() {  # <screen>
   printf '%s\n' "$rows"
 }
 
+# The screen rows of a question picker from the top of the paragraph that
+# holds its last `1.` option row down to the last row, read from the screen
+# because the prompt rows drop blank rows. Empty when no option row is found.
+_fm_pp_question_paragraph() {  # <screen>
+  printf '%s\n' "${1-}" | fm_wd_strip_ansi | awk '
+    { r[NR] = $0 }
+    END {
+      first = 0
+      for (i = NR; i >= 1; i--) if (r[i] ~ /^[ \t]*((❯|›|>)[ \t]*)?1\.[ \t]/) { first = i; break }
+      if (!first) exit 0
+      top = first
+      while (top > 1 && r[top - 1] ~ /[^ \t]/) top--
+      for (i = top; i <= NR; i++) print r[i]
+    }'
+}
+
 # The workspace rows of a proven trust dialog: the rows between its
 # `Accessing workspace:` row and its heading, which are the only rows the
 # dialog does not fix. It fails when that row is not found below the same
@@ -412,8 +428,12 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
   if cat=$(fm_pp_hardstop_category "$rows"); then
     printf 'hardstop\t%s\n' "$cat"; return 0
   fi
-  # Every remaining verdict is a hold, which presses nothing.
-  text=$(fm_wd_lower "$rows" | tr '\n\t' '  ')
+  # Every remaining verdict is a hold, which presses nothing. A question
+  # picker's rows can reach conversation above it, so its holds read only the
+  # picker's own paragraph: the unbroken rows that end at its first option.
+  text=$rows
+  [ "$dialog" != question ] || text=$(_fm_pp_question_paragraph "$screen")
+  text=$(fm_wd_lower "$text" | tr '\n\t' '  ')
   if printf '%s' "$text" | LC_ALL=C grep -Eq 'external (claude\.md )?(file )?imports|allow external'; then
     printf 'hold\texternal-imports\n'; return 0
   fi
