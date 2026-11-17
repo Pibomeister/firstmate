@@ -40,27 +40,37 @@
 #                              "<msg>\t<count>\t<epoch>\t<spawn-gen>"
 #   <task>.inbox/receipts.jsonl  append-only result receipts (below)
 #   <task>.inbox/.receipt-open   receipts still owed, one per record:
-#                              "<msg>\t<queued|picked_up>\t<status-byte-offset>"
+#                              "<msg>\t<accepted|picked_up|started>\t<status-byte-offset>"
 #   <task>.inbox/.last-ring    the last delivery attempt by any ring path:
-#                              "<msg>\t<rang|composer-pending|send-failed|endpoint-gone>\t<epoch>"
+#                              "<msg>\t<rang|composer-pending|composer-unproven|send-failed|endpoint-gone>\t<epoch>"
 #   <task>.inbox/.composer     the composer verdict that attempt read:
 #                              "<empty|pending|pending-unproven|unknown>\t<epoch>"
 #
-# Result receipts (receipts.jsonl): one JSON object per line, only appended:
-#   {"v":1,"ts":<epoch>,"msg":"<NNN.msg>","receipt":"queued"}
+# Typed receipts (receipts.jsonl): one JSON object per line, only appended,
+# in this order for one message:
+#   {"v":1,"ts":<epoch>,"msg":"<NNN.msg>","receipt":"accepted"}
 #   {"v":1,"ts":<epoch>,"msg":"<NNN.msg>","receipt":"picked_up"}
-#   {"v":1,"ts":<epoch>,"msg":"<NNN.msg>","receipt":"finished",
-#    "outcome":"<done|failed|blocked|needs-decision|paused>",
-#    "text":"<status line after its first colon, at most 2000 characters>",
-#    "status_at":<the line's [at=] epoch, or null>}
-# queued is written with the record. picked_up is written when the watcher
-# first sees the record in handled/, so its ts trails the worker's mv by up to
-# one poll; the mv itself stays the acknowledgement. finished is written for
-# a picked-up record at the first settled status line the task appended after
-# the record was queued. A line the worker wrote for earlier work between the
-# enqueue and the pickup therefore counts, and several records picked up
-# before one settled line all finish on it. A record removed before pickup
-# gets no further receipt. Readers ignore members they do not recognize.
+#   {"v":1,"ts":<epoch>,"msg":"<NNN.msg>","receipt":"started",<line>}
+#   {"v":1,"ts":<epoch>,"msg":"<NNN.msg>","receipt":"progress",<line>}  (zero or more)
+#   {"v":1,"ts":<epoch>,"msg":"<NNN.msg>","receipt":"result",<line>,
+#    "outcome":"<done|failed|blocked|needs-decision|paused>"}
+# where <line> is "state":"<the status line's verb>","text":"<the line after its
+# first colon, at most 2000 characters>","status_at":<its [at=] epoch, or null>.
+# accepted is written with the record, under .seq.lock, so a record that exists
+# always has it. picked_up is written when the watcher first sees the record in
+# handled/, so its ts trails the worker's mv by up to one poll; the mv itself
+# stays the acknowledgement. After pickup, the status lines the task appended
+# after the record was accepted are read in order: the first working or settled
+# line gives started, each later working line gives progress, and the first
+# settled line gives result (a settled first line gives started and then
+# result). Other lines, such as resolved, give none. The correlation is
+# positional, not causal: workers do not name the message a status line is
+# about, so a line written for earlier work after the enqueue counts, and
+# several records picked up together share their lines. A record removed before
+# pickup gets no further receipt, and no receipt is ever a delivery proof
+# beyond the handled/ move. Records opened by an older writer under the stage
+# name queued continue as accepted. Readers ignore members they do not
+# recognize.
 #
 # Record format (fm_task_inbox_write / fm_task_inbox_body):
 #   schema=fm-task-inbox.v1
@@ -279,9 +289,9 @@ _fm_task_inbox_receipt_append() {  # <inbox-dir> <msg> <receipt> [<extra>]
       "$now" "$2" "$3" "${4:-}" >> "$1/receipts.jsonl"; } 2>/dev/null
 }
 
-# Record the queued receipt for a new record and open it for the watcher's
+# Record the accepted receipt for a new record and open it for the watcher's
 # receipt sync, remembering the status log's byte size at enqueue so the
-# finished receipt only reads lines written after this message.
+# later receipts only read lines written after this message.
 # Caller holds .seq.lock.
 _fm_task_inbox_receipt_queue() {  # <inbox-dir> <msg>
   local dir=$1 state task size=0
@@ -293,45 +303,77 @@ _fm_task_inbox_receipt_queue() {  # <inbox-dir> <msg>
     size=${size//[[:space:]]/}
     case "$size" in ''|*[!0-9]*) size=0 ;; esac
   fi
-  _fm_task_inbox_receipt_append "$dir" "$2" queued || return 0
-  { printf '%s\tqueued\t%s\n' "$2" "$size" >> "$dir/.receipt-open"; } 2>/dev/null || true
+  _fm_task_inbox_receipt_append "$dir" "$2" accepted || return 0
+  { printf '%s\taccepted\t%s\n' "$2" "$size" >> "$dir/.receipt-open"; } 2>/dev/null || true
 }
 
-# The first settled status line (done, failed, blocked, needs-decision, or
-# paused) at or after byte <offset> of <log>. Sets _FM_TI_SETTLED to that line,
-# or empty, and _FM_TI_SCANNED to the byte offset after the last complete line
-# read. Needs status_line_verb from bin/fm-classify-lib.sh, the status-line
-# grammar's owner.
-_fm_task_inbox_settled_after() {  # <log> <offset>
-  local LC_ALL=C log=$1 offset=$2 data tail complete line verb
-  _FM_TI_SETTLED=
-  _FM_TI_SCANNED=$offset
+# The <line> members of a started, progress, or result receipt, as a JSON
+# fragment with a leading comma, in _FM_TI_LINE. Needs status_line_verb and
+# status_line_at_epoch from bin/fm-classify-lib.sh, the status-line grammar's
+# owner.
+_fm_task_inbox_receipt_line() {  # <status-line> <verb> [outcome]
+  local at fragment
+  at=$(status_line_at_epoch "$1" 2>/dev/null) || at=''
+  fragment=$(jq -cn --arg state "$2" --arg text "${1#*:}" --arg at "$at" --arg outcome "${3:-}" \
+    '{state: $state, text: $text[0:2000], status_at: ($at | tonumber? // null)}
+     + (if $outcome == "" then {} else {outcome: $outcome} end)' 2>/dev/null) || return 1
+  fragment=${fragment#\{}
+  _FM_TI_LINE=",${fragment%\}}"
+}
+
+# Advance one picked-up record through the complete status lines at or after
+# byte <offset> of <log>, appending its started, progress, and result receipts.
+# Sets _FM_TI_STAGE (picked_up, started, or result) and _FM_TI_OFFSET to the
+# byte after the last line whose receipt is written. Returns 1 when the log
+# cannot be read or a receipt cannot be written; the stage and offset then
+# still name what was written.
+_fm_task_inbox_receipt_advance() {  # <inbox-dir> <msg> <log> <stage> <offset>
+  local LC_ALL=C dir=$1 msg=$2 log=$3 data tail complete line verb kind
+  _FM_TI_STAGE=$4
+  _FM_TI_OFFSET=$5
   [ -f "$log" ] || return 0
-  data=$(tail -c "+$((offset + 1))" "$log" 2>/dev/null; printf x) || return 1
+  data=$(tail -c "+$((_FM_TI_OFFSET + 1))" "$log" 2>/dev/null; printf x) || return 1
   data=${data%x}
   tail=${data##*$'\n'}
   complete=${data%"$tail"}
   [ -n "$complete" ] || return 0
   while IFS= read -r line; do
-    _FM_TI_SCANNED=$((_FM_TI_SCANNED + ${#line} + 1))
     status_line_verb "$line" verb
     case "$verb" in
-      done|failed|blocked|needs-decision|paused)
-        _FM_TI_SETTLED=$line
-        return 0
-        ;;
+      working) kind=progress ;;
+      done|failed|blocked|needs-decision|paused) kind=result ;;
+      *) kind='' ;;
     esac
+    if [ -n "$kind" ] && [ "$_FM_TI_STAGE" = picked_up ]; then
+      _fm_task_inbox_receipt_line "$line" "$verb" || return 1
+      _fm_task_inbox_receipt_append "$dir" "$msg" started "$_FM_TI_LINE" || return 1
+      _FM_TI_STAGE=started
+      [ "$kind" = result ] || kind=''
+    fi
+    if [ -n "$kind" ]; then
+      if [ "$kind" = result ]; then
+        _fm_task_inbox_receipt_line "$line" "$verb" "$verb" || return 1
+      else
+        _fm_task_inbox_receipt_line "$line" "$verb" || return 1
+      fi
+      _fm_task_inbox_receipt_append "$dir" "$msg" "$kind" "$_FM_TI_LINE" || return 1
+    fi
+    _FM_TI_OFFSET=$((_FM_TI_OFFSET + ${#line} + 1))
+    if [ "$kind" = result ]; then
+      _FM_TI_STAGE=result
+      return 0
+    fi
   done <<< "${complete%$'\n'}"
 }
 
-# fm_task_inbox_receipts_sync: advance every open receipt of <task>'s inbox.
-# A queued record found in handled/ gets its picked_up receipt; a picked-up
-# record whose task has since written a settled status line gets its finished
-# receipt, which carries that line's verb as the outcome. A record gone from
-# both places is dropped without a receipt. One file test when nothing is open.
-# The watcher calls it once per poll for each recorded task.
+# fm_task_inbox_receipts_sync: advance every open receipt of <task>'s inbox
+# (see "Typed receipts" in the header). An accepted record found in handled/
+# gets its picked_up receipt and is then advanced through the task's status
+# lines; a record gone from both places is dropped without a receipt. One file
+# test when nothing is open. The watcher calls it once per poll for each
+# recorded task.
 fm_task_inbox_receipts_sync() {  # <state-dir> <task-id>
-  local state=$1 task=$2 dir open lock msg stage offset out='' status=0 extra at
+  local state=$1 task=$2 dir open lock msg stage offset out='' status=0
   dir="$state/$task.inbox"
   open="$dir/.receipt-open"
   [ -s "$open" ] || return 0
@@ -341,9 +383,13 @@ fm_task_inbox_receipts_sync() {  # <state-dir> <task-id>
   while IFS=$'\t' read -r msg stage offset; do
     case "$msg" in *.msg) ;; *) continue ;; esac
     case "$offset" in ''|*[!0-9]*) offset=0 ;; esac
-    if [ "$stage" = queued ]; then
+    [ "$stage" != queued ] || stage=accepted
+    if [ "$stage" = accepted ]; then
       if [ -f "$dir/handled/$msg" ]; then
-        _fm_task_inbox_receipt_append "$dir" "$msg" picked_up
+        _fm_task_inbox_receipt_append "$dir" "$msg" picked_up || {
+          out+="$msg"$'\t'"$stage"$'\t'"$offset"$'\n'
+          continue
+        }
         stage=picked_up
       elif [ -f "$dir/$msg" ]; then
         out+="$msg"$'\t'"$stage"$'\t'"$offset"$'\n'
@@ -352,23 +398,9 @@ fm_task_inbox_receipts_sync() {  # <state-dir> <task-id>
         continue
       fi
     fi
-    [ "$stage" = picked_up ] || continue
-    _fm_task_inbox_settled_after "$state/$task.status" "$offset" || {
-      out+="$msg"$'\t'"$stage"$'\t'"$offset"$'\n'
-      continue
-    }
-    if [ -z "$_FM_TI_SETTLED" ]; then
-      out+="$msg"$'\t'"$stage"$'\t'"$_FM_TI_SCANNED"$'\n'
-      continue
-    fi
-    at=$(status_line_at_epoch "$_FM_TI_SETTLED" 2>/dev/null) || at=null
-    status_line_verb "$_FM_TI_SETTLED" stage
-    extra=$(jq -cn --arg outcome "$stage" --arg text "${_FM_TI_SETTLED#*:}" --arg at "$at" \
-      '{outcome: $outcome, text: $text[0:2000], status_at: ($at | tonumber? // null)}' 2>/dev/null) \
-      || { out+="$msg"$'\t'picked_up$'\t'"$offset"$'\n'; continue; }
-    extra=${extra#\{}
-    _fm_task_inbox_receipt_append "$dir" "$msg" finished ",${extra%\}}" \
-      || out+="$msg"$'\t'picked_up$'\t'"$offset"$'\n'
+    case "$stage" in picked_up|started) ;; *) continue ;; esac
+    _fm_task_inbox_receipt_advance "$dir" "$msg" "$state/$task.status" "$stage" "$offset" || true
+    [ "$_FM_TI_STAGE" = result ] || out+="$msg"$'\t'"$_FM_TI_STAGE"$'\t'"$_FM_TI_OFFSET"$'\n'
   done < "$open"
   if [ -n "$out" ]; then
     { printf '%s' "$out" > "$open.tmp" && mv -f "$open.tmp" "$open"; } 2>/dev/null || status=1
@@ -573,12 +605,19 @@ fm_task_inbox_doorbell_line() {  # <record-path>
 # failed, 3 skipped because the endpoint is positively dead or missing (nothing
 # typed; recovery owns the record). No return value is delivery proof; the
 # acknowledgement move is the only delivery signal.
-# The skip is deliberately narrow: only an exact `pending` verdict can defer,
-# because there our Enter could submit someone's real half-typed content.
-# `pending-unproven` and `unknown` still ring - the worst outcome is a garbled
-# CONSTANT line the worker recovers semantically, while skipping on ambiguous
-# verdicts would starve a harness whose idle screen the classifier cannot
-# positively identify (that classifier is advisory here by design).
+# Under the default advisory draft guard the skip is deliberately narrow: only
+# an exact `pending` verdict can defer, because there our Enter could submit
+# someone's real half-typed content. `pending-unproven` and `unknown` still
+# ring - the worst outcome is a garbled CONSTANT line the worker recovers
+# semantically, while skipping on ambiguous verdicts would starve a harness
+# whose idle screen the classifier cannot positively identify.
+# Under the strict draft guard (fm_task_inbox_draft_guard) the ring never
+# types or presses Enter unless the composer reads exactly `empty`, or holds
+# only whole copies of our own doorbell (the owned-copies path below);
+# `pending-unproven` and `unknown` are skipped like `pending` and recorded as
+# composer-unproven, so the record waits durably and the ladder escalates it.
+# Both guards keep one residual race: input typed between the composer read
+# and the adapter's own Enter is submitted with the doorbell.
 # A pending composer holding only whole copies of our own doorbell line is
 # earlier rings whose Enter never landed (later rings concatenate onto it), so
 # on an agent not reported busy it is submitted rather than skipped; skipping
@@ -606,6 +645,22 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
   return "$rc"
 }
 
+# The draft guard for the home that owns <record-path>: strict or advisory.
+# FM_TASK_INBOX_DRAFT_GUARD wins when it is strict or advisory; otherwise the
+# home's config/inbox-draft-guard decides when its first line is strict, and
+# everything else is advisory (docs/supervision-events.md owns the contract).
+fm_task_inbox_draft_guard() {  # <record-path>
+  local dir config value=''
+  case "${FM_TASK_INBOX_DRAFT_GUARD:-}" in
+    strict|advisory) printf '%s' "$FM_TASK_INBOX_DRAFT_GUARD"; return 0 ;;
+  esac
+  _fm_task_inbox_dir_of "$1" dir
+  config=${FM_CONFIG_OVERRIDE:-${dir%/*/*}/config}
+  { IFS= read -r value < "$config/inbox-draft-guard"; } 2>/dev/null || value=''
+  [ "$value" = strict ] || value=advisory
+  printf '%s' "$value"
+}
+
 # The inbox directory that holds <record-path>, whether pending or handled.
 _fm_task_inbox_dir_of() {  # <record-path> <out-var>
   local d=${1%/*}
@@ -614,13 +669,18 @@ _fm_task_inbox_dir_of() {  # <record-path> <out-var>
 
 # Record the last delivery attempt in .last-ring as "<msg>\t<result>\t<epoch>",
 # where result is rang, composer-pending, send-failed, or endpoint-gone (the
-# ring's return codes 0 through 3). Best effort.
+# ring's return codes 0 through 3), or composer-unproven for a skip whose
+# composer verdict was pending-unproven or unknown. Best effort.
 _fm_task_inbox_note_ring() {  # <record-path> <ring-rc>
-  local dir result now
+  local dir result now verdict=''
   _fm_task_inbox_dir_of "$1" dir
   case "$2" in
     0) result=rang ;;
-    1) result=composer-pending ;;
+    1)
+      result=composer-pending
+      { IFS=$'\t' read -r verdict _ < "$dir/.composer"; } 2>/dev/null || verdict=''
+      case "$verdict" in pending-unproven|unknown) result=composer-unproven ;; esac
+      ;;
     3) result=endpoint-gone ;;
     *) result=send-failed ;;
   esac
@@ -650,6 +710,10 @@ _fm_task_inbox_ring_once() {  # <backend> <target> <record-path> [expected-label
   fi
   cstate=$(fm_backend_composer_state "$backend" "$target" "$label" 2>/dev/null) || cstate=unknown
   _fm_task_inbox_note_composer "$rec" "$cstate"
+  case "$cstate" in
+    empty|pending) ;;
+    *) [ "$(fm_task_inbox_draft_guard "$rec")" != strict ] || return 1 ;;
+  esac
   case "$cstate" in
     pending)
       if [ "$(fm_backend_busy_state "$backend" "$target" 2>/dev/null)" = busy ]; then

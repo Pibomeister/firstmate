@@ -71,7 +71,7 @@ in_home() {  # <command...>: run one real script against the case home
     FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
     FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$WT_DIR" TMUX="fake,1,0" \
-    PATH="$FAKEBIN:$PATH" "$@"
+    FM_HOST_ID_OVERRIDE="${CASE_HOST_ID:-test-host-1}" PATH="$FAKEBIN:$PATH" "$@"
 }
 
 # Spawn, write status lines, poll once, land locally, clean up.
@@ -101,9 +101,56 @@ run_lifecycle() {
 }
 
 ledger_rows() {  # <jq filter>: print one compact row per ledger record
-  # A spawn generation is random per launch, so rows show only its shape.
-  jq -c "if has(\"spawn_gen\") then .spawn_gen |= (if type == \"string\" and test(\"^s[0-9]+[.]\") then \"<gen>\" else . end) else . end | $1" \
+  # A spawn generation is random per launch, so rows show only its shape; the
+  # source envelope has its own test.
+  jq -c "del(.event_id, .seq, .task_rev, .source, .binding) | if has(\"spawn_gen\") then .spawn_gen |= (if type == \"string\" and test(\"^s[0-9]+[.]\") then \"<gen>\" else . end) else . end | $1" \
     "$HOME_DIR/state/fleet-ledger.jsonl"
+}
+
+# Every record's envelope: one home-wide gapless sequence, a gapless per-task
+# revision, one source, and the task's binding.
+assert_envelope() {
+  local ledger="$HOME_DIR/state/fleet-ledger.jsonl" scope
+  scope=$(jq -r '.scope_id' "$HOME_DIR/state/producer-identity.json") || fail "no producer identity file"
+  jq -e -s --arg scope "$scope" --arg pid "$$" '
+    (map(.seq) == [range(1; length + 1)])
+    and all(.[]; .event_id == ($scope + ":" + (.seq | tostring)))
+    and (map(.task_rev) == [range(1; length + 1)])
+    and all(.[]; .source == {machine_id: .source.machine_id, scope_id: $scope, assurance: "host-match",
+                             actor: "main", session_pid: ($pid | tonumber), producer: "fm-fleet-ledger"})
+    and (map(.source.machine_id) | unique | length == 1)
+    and (.[0].source.machine_id | test("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"))
+    and all(.[]; .binding.native == null and (.binding.endpoint | type) == "string")
+    and all(.[]; .binding.spawn_gen | test("^s[0-9]+[.]"))
+  ' "$ledger" >/dev/null || fail "ledger envelopes are wrong: $(jq -c '{seq, event_id, task_rev, source, binding}' "$ledger")"
+  jq -e 'has("host_digest") and (.host_digest | test("^[0-9a-f]{64}$")) and (tostring | contains("test-host-1") | not)' \
+    "$HOME_DIR/state/producer-identity.json" >/dev/null || fail "identity file must hold only the host digest: $(cat "$HOME_DIR/state/producer-identity.json")"
+}
+
+test_envelope_reports_a_moved_home_and_a_native_incarnation() {
+  local out ledger scope
+  make_case envelope on
+  ledger="$HOME_DIR/state/fleet-ledger.jsonl"
+  fm_write_meta "$HOME_DIR/state/$TASK.meta" "window=fm-$TASK" "kind=ship" "backend=orca" \
+    "spawn_gen=s1790000000.1.1" "terminal=term_0000aaaa" "orca_worktree_id=wt-9"
+  out=$(in_home "$ROOT/bin/fm-fleet-ledger.sh" stalled "$TASK" "quiet" 2>&1) || fail "stalled failed: $out"
+  scope=$(jq -r '.scope_id' "$HOME_DIR/state/producer-identity.json")
+  out=$(CASE_HOST_ID=another-host in_home "$ROOT/bin/fm-fleet-ledger.sh" stalled "$TASK" "still quiet" 2>&1) \
+    || fail "stalled on another host failed: $out"
+  out=$(CASE_HOST_ID=none in_home "$ROOT/bin/fm-fleet-ledger.sh" stalled "$TASK" "no host id" 2>&1) \
+    || fail "stalled without a host id failed: $out"
+  assert_equals "$(printf '%s\n' \
+    '[1,1,"host-match",true,{"spawn_gen":"s1790000000.1.1","backend":"orca","endpoint":"fm-'"$TASK"'","native":{"terminal":"term_0000aaaa","worktree_id":"wt-9"}}]' \
+    '[2,2,"host-mismatch",true,null]' \
+    '[3,3,"host-unknown",false,null]')" \
+    "$(jq -c --arg scope "$scope" '[.seq, .task_rev, .source.assurance, (.source.machine_id != null and .source.scope_id == $scope),
+      (if .seq == 1 then .binding else null end)]' "$ledger")" "envelopes across hosts"
+  [ "$(sed -n 1p "$ledger" | jq -r .source.machine_id)" != "$(sed -n 2p "$ledger" | jq -r .source.machine_id)" ] \
+    || fail "another host must report another machine id"
+  rm -f "$HOME_DIR/state/.fleet-ledger.seq" "$HOME_DIR/state/.$TASK.fleet-ledger-rev"
+  out=$(in_home "$ROOT/bin/fm-fleet-ledger.sh" stalled "$TASK" "after a lost counter" 2>&1) || fail "stalled failed: $out"
+  assert_equals '[4,1]' "$(tail -n 1 "$ledger" | jq -c '[.seq, .task_rev]')" "a lost sequence file resumes from the ledger"
+  pass "envelope: a moved home reads host-mismatch, a missing host id reads host-unknown, the native incarnation stays apart from the spawn generation, and a lost sequence file resumes after the last record"
 }
 
 test_flag_on_records_the_task_lifecycle() {
@@ -115,6 +162,7 @@ test_flag_on_records_the_task_lifecycle() {
     "$HOME_DIR/state/fleet-ledger.jsonl" >/dev/null \
     || fail "every record must carry v, ts, event, and task: $(cat "$HOME_DIR/state/fleet-ledger.jsonl")"
   rows=$(ledger_rows '[.event, .task] + (del(.v, .ts, .event, .task) | to_entries | map(.value))')
+  assert_envelope
   assert_equals "$(cat <<EOF
 ["task.dispatched","$TASK","ship","sample","claude",null]
 ["task.status","$TASK","working",null," setup done"]
@@ -177,7 +225,7 @@ test_flag_on_records_a_pr_registration() {
   out=$(in_home "$ROOT/bin/fm-pr-check.sh" "$TASK" "$pr_url" 2>&1) || fail "PR registration failed: $out"
   out=$(in_home env FM_PR_CHECK_MERGE=1 "$ROOT/bin/fm-pr-check.sh" "$TASK" "$pr_url" 2>&1) \
     || fail "merge-time PR re-record failed: $out"
-  rows=$(ledger_rows '[.event, .state // .outcome, .pr // .evidence, .source, .checker]')
+  rows=$(ledger_rows '[.event, .state // .outcome, .pr // .evidence, .signal, .checker]')
   assert_equals "$(cat <<EOF
 ["task.dispatched",null,null,null,null]
 ["task.status","done",null,null,null]
@@ -231,6 +279,8 @@ test_worker_status_line_is_recorded_when_written() {
 ["task.blocked","needs-decision"," pick a lamp colour"]
 EOF
 )" "$(ledger_rows '[.event, .state, .text]')" "ledger rows right after the append"
+  assert_equals '["worker"]' "$(jq -c -s 'map(.source.actor) | unique' "$HOME_DIR/state/fleet-ledger.jsonl")" \
+    "records a worker's status command writes name the worker as their actor"
   out=$(in_home "$ROOT/bin/fm-fleet-ledger.sh" capture 2>&1) || fail "backstop capture failed: $out"
   assert_equals 3 "$(wc -l < "$HOME_DIR/state/fleet-ledger.jsonl" | tr -d ' ')" \
     "ledger records after the backstop capture"
@@ -326,7 +376,7 @@ test_screen_activity_starts_once_per_incarnation() {
   # A relaunch is a new incarnation: its first sign starts it again.
   fm_write_meta "$HOME_DIR/state/$TASK.meta" "kind=ship" "spawn_gen=s1790000500.2.2"
   out=$(ledger_cmd activity "$TASK" 2>&1) || fail "relaunch activity failed: $out"
-  rows=$(jq -c '[.event, .source, .spawn_gen, .state, .text, .reason]' "$HOME_DIR/state/fleet-ledger.jsonl")
+  rows=$(jq -c '[.event, .signal, .spawn_gen, .state, .text, .reason]' "$HOME_DIR/state/fleet-ledger.jsonl")
   assert_equals "$(cat <<'EOF'
 ["task.started","pane","s1790000000.1.1",null,null,null]
 ["task.heartbeat","pane",null,null,null,null]
@@ -379,7 +429,7 @@ test_watcher_throttles_screen_heartbeats_and_records_stalls() {
   printf '1\n' > "$HOME_DIR/state/.$TASK.fleet-ledger-beat"
   out=$(watch_helper "ledger_task_activity $TASK" 2>&1) || fail "activity helper after the interval failed: $out"
   assert_equals "$(printf '%s\n' '["task.started",null]' '["task.heartbeat","pane"]')" \
-    "$(ledger_rows '[.event, (if .event == "task.heartbeat" then .source else null end)]')" "rows after the interval"
+    "$(ledger_rows '[.event, (if .event == "task.heartbeat" then .signal else null end)]')" "rows after the interval"
   out=$(watch_helper "stale_wake_append sess:fm-$TASK 'no progress for 10 polls'" 2>&1) || fail "stale helper failed: $out"
   assert_contains "$(cat "$HOME_DIR/state/.wake-queue" 2>/dev/null)" "no progress for 10 polls" "the stale wake was not queued"
   assert_equals '["task.stalled","no progress for 10 polls"]' \
@@ -388,6 +438,7 @@ test_watcher_throttles_screen_heartbeats_and_records_stalls() {
 }
 
 test_flag_on_records_the_task_lifecycle
+test_envelope_reports_a_moved_home_and_a_native_incarnation
 test_screen_activity_starts_once_per_incarnation
 test_scout_done_records_its_report_as_verified_outcome
 test_watcher_throttles_screen_heartbeats_and_records_stalls

@@ -84,7 +84,8 @@ SH
 # A fake tmux whose pane is a Claude-style composer that keeps its content in
 # FM_FAKE_COMPOSER: literal input appends to it, capture renders it wrapped
 # between rules, and Enter submits it (logged as SUBMIT) unless
-# FM_FAKE_DROP_ENTERS still holds a count of Enters to swallow.
+# FM_FAKE_DROP_ENTERS still holds a count of Enters to swallow. A nonempty
+# FM_FAKE_SCREEN file replaces the rendered screen verbatim.
 make_composer_stub() {  # <dir>
   mkdir -p "$1/fakebin"
   cat > "$1/fakebin/tmux" <<'SH'
@@ -117,6 +118,7 @@ case "${1:-}" in
     case "$*" in *cursor_y*) printf '2\n'; exit 0 ;; esac
     printf 'fakepane\n'; exit 0 ;;
   capture-pane)
+    if [ -s "${FM_FAKE_SCREEN:-}" ]; then cat "$FM_FAKE_SCREEN"; exit 0; fi
     rule=$(printf '─%.0s' $(seq 64))
     printf '● done\n%s\n' "$rule"
     if [ -s "$FM_FAKE_COMPOSER" ]; then

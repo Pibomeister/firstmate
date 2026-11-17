@@ -227,6 +227,7 @@ Firstmate's own skills live in two separate places with different audiences, and
 - [docs/calm.md](docs/calm.md) - current `/calm` behavior on Pi and Claude Code and its supported presentation limits.
 - [docs/voice-relay.md](docs/voice-relay.md) - the optional spoken interface: setup on both machines, measured round-trip cost, what a spoken answer may read, and what this build does not do yet.
 - [docs/fleet-ledger.md](docs/fleet-ledger.md) - the opt-in activity ledger outside tools can read to follow a home's tasks, and its record contract.
+- [docs/supervision-events.md](docs/supervision-events.md) - the producer identity, typed steering receipts, task snapshot, and dry-run unblocker contract for tools that act on stalls.
 - [docs/wedge-alarm.md](docs/wedge-alarm.md) - configure the active alert for an away-mode escalation delivery that gets stuck.
 - [docs/usage-warner.md](docs/usage-warner.md) - configure the opt-in local threshold warner for Claude usage windows.
 - [docs/watchdog.md](docs/watchdog.md) - run the opt-in per-machine watchdog that recovers stalled firstmates and second mates.

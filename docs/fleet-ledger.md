@@ -22,6 +22,15 @@ Every record carries these members:
 | `ts`    | Unix time in seconds when the record was written          |
 | `event` | One of the event names below                              |
 | `task`  | The firstmate task id the record is about                 |
+| `event_id` | `<scope_id>:<seq>`, unique across homes and hosts      |
+| `seq`   | This home's record number: 1 for the first record, then one more for each record |
+| `task_rev` | The task's own record number, restarting at 1 when the task is dispatched |
+| `source` | Who wrote the record: machine, home, actor, and session ([producer identity](supervision-events.md#producer-identity)) |
+| `binding` | The task's spawn generation, runtime, endpoint, and native terminal session, kept apart |
+
+`binding` has the members `spawn_gen`, `backend`, `endpoint` (the recorded window or label), and `native`, which is `{"terminal": ..., "worktree_id": ...}` for a runtime with its own terminal sessions, or `null`.
+Each is `null` when the task records none.
+[`supervision-events.md`](supervision-events.md) owns the meaning of `source` and `binding`; a record whose producer identity cannot be loaded is not written.
 
 Readers must ignore members and events they do not recognize, so later versions can add them without breaking existing readers.
 
@@ -34,8 +43,8 @@ Readers must ignore members and events they do not recognize, so later versions 
 | `task.pr_ready`    | `pr`                                           | Firstmate records the task's PR as ready for review. |
 | `task.merged`      | `via` (`"pr"` or `"local"`), plus `pr` when `via` is `"pr"` | The task's PR merge is recorded, or its local-only branch landed. |
 | `task.cleaned_up`  | none                                           | The task's worker and local copy were removed. |
-| `task.started`     | `source`, `spawn_gen`                          | A worker incarnation shows its first sign of work. |
-| `task.heartbeat`   | `source`, `text`                               | A worker reports `working`, or its screen changes while it is busy. |
+| `task.started`     | `signal`, `spawn_gen`                          | A worker incarnation shows its first sign of work. |
+| `task.heartbeat`   | `signal`, `text`                               | A worker reports `working`, or its screen changes while it is busy. |
 | `task.blocked`     | `wait`, `state`, `key`, `text`                 | A worker reports `paused`, `blocked`, or `needs-decision`. |
 | `task.stalled`     | `reason`                                       | The supervision monitor queues a stale notice for the task. |
 | `task.finished`    | `outcome`, `pr`, `text`                        | A worker reports `done` or `failed`. |
@@ -56,13 +65,13 @@ Workers gain no new duty: every event below is derived from a status line, from 
 Each derived record follows the `task.status` record of the line it came from.
 
 `task.started` is written once per worker incarnation, the incarnation being the task's recorded spawn generation.
-`source` is `"status"` when the first sign is a status line other than `resolved`, or `"pane"` when it is the worker's screen changing while busy.
+`signal` is `"status"` when the first sign is a status line other than `resolved`, or `"pane"` when it is the worker's screen changing while busy.
 `spawn_gen` is the recorded spawn generation, or `null` when the task records none.
 A relaunch starts a new incarnation, so it can add another `task.started`.
 
 `task.heartbeat` is a progress beat.
-`source` is `"status"` for a `working` line, with `text` as in `task.status`.
-`source` is `"pane"` when the monitor saw the busy worker's screen change, with `text` `null`.
+`signal` is `"status"` for a `working` line, with `text` as in `task.status`.
+`signal` is `"pane"` when the monitor saw the busy worker's screen change, with `text` `null`.
 Screen beats for one task are at least `FM_FLEET_LEDGER_HEARTBEAT_SECS` seconds apart (default 300), and the first screen sign of an incarnation is recorded as `task.started` instead.
 
 `task.blocked` members: `wait` is `"dependency"` for `paused`, `"blocker"` for `blocked`, and `"decision"` for `needs-decision`; `state`, `key`, and `text` are as in `task.status`.
@@ -85,13 +94,13 @@ A worker can report `done` more than once, for example when it hands its branch 
 A `"pr_ready"` record follows each `task.pr_ready`, and a `"merged"` record follows each `task.merged`.
 A `"report"` record follows a scout's `task.finished` with outcome `done` only when the report file exists then.
 
-Example:
+Example, with the envelope members left out of each line for brevity:
 
 ```json
 {"v":1,"ts":1790132857,"event":"task.dispatched","task":"fix-login","kind":"ship","project":"webapp","harness":"claude","model":null}
 {"v":1,"ts":1790132870,"event":"task.status","task":"fix-login","state":"working","key":null,"text":" bug reproduced"}
-{"v":1,"ts":1790132870,"event":"task.started","task":"fix-login","source":"status","spawn_gen":"s1790132857.4242.17"}
-{"v":1,"ts":1790132870,"event":"task.heartbeat","task":"fix-login","source":"status","text":" bug reproduced"}
+{"v":1,"ts":1790132870,"event":"task.started","task":"fix-login","signal":"status","spawn_gen":"s1790132857.4242.17"}
+{"v":1,"ts":1790132870,"event":"task.heartbeat","task":"fix-login","signal":"status","text":" bug reproduced"}
 {"v":1,"ts":1790133400,"event":"task.status","task":"fix-login","state":"done","key":null,"text":" PR https://github.com/acme/webapp/pull/7 checks green"}
 {"v":1,"ts":1790133400,"event":"task.finished","task":"fix-login","outcome":"done","pr":"https://github.com/acme/webapp/pull/7","text":" PR https://github.com/acme/webapp/pull/7 checks green"}
 {"v":1,"ts":1790133410,"event":"task.pr_ready","task":"fix-login","pr":"https://github.com/acme/webapp/pull/7"}
@@ -99,6 +108,15 @@ Example:
 {"v":1,"ts":1790133900,"event":"task.merged","task":"fix-login","via":"pr","pr":"https://github.com/acme/webapp/pull/7"}
 {"v":1,"ts":1790133900,"event":"task.verified_outcome","task":"fix-login","outcome":"merged","checker":"fm-merge-outcome","evidence":{"via":"pr","pr":"https://github.com/acme/webapp/pull/7"}}
 {"v":1,"ts":1790133960,"event":"task.cleaned_up","task":"fix-login"}
+```
+
+The first record of that example, with its envelope:
+
+```json
+{"v":1,"ts":1790132857,"event":"task.dispatched","task":"fix-login","kind":"ship","project":"webapp","harness":"claude","model":null,
+ "event_id":"e06103f5-8bd2-41ab-8e19-426c86129c88:41","seq":41,"task_rev":1,
+ "source":{"machine_id":"5de35e49-0ab5-bf30-0c4b-adfa070db385","scope_id":"e06103f5-8bd2-41ab-8e19-426c86129c88","assurance":"host-match","actor":"main","session_pid":4242,"producer":"fm-fleet-ledger"},
+ "binding":{"spawn_gen":"s1790132857.4242.17","backend":"tmux","endpoint":"fm-fix-login","native":null}}
 ```
 
 ## Limits
@@ -115,7 +133,10 @@ Example:
 - Captured status lines are delivered at least once unless a write fails or a crash loses unflushed records: an interrupted capture can repeat records, so a reader that must not double-count should tolerate duplicates.
 - A status record can appear just before its task's `task.dispatched` record when the worker writes a status line in the moment between its launch and that record.
 - When a home turns the ledger on, status lines already in a live task's log are recorded on that task's next capture (which may be a worker status command, PR registration, merge, cleanup, or monitor poll); tasks dispatched or cleaned up while the flag was absent have no record of that.
-- There is no sequence number and no gap detection.
+- `seq` has no gaps within one file, so a reader that sees `seq` jump knows records were lost, and a reader that sees it repeat knows a write was retried.
+  The counter lives in `state/.fleet-ledger.seq` and is saved only after its record is appended; a lost or older counter resumes after the file's last record.
+  Truncating the file keeps the counter, so the emptied file continues from the next `seq`.
+  `task_rev` is gapless for one task between its dispatch and its cleanup.
 - Writes are plain appends with no forced flush to disk, so a machine crash can lose the newest records.
 - The file is never rotated and grows until truncated.
   To truncate it, stop reading, then empty it with `: > state/fleet-ledger.jsonl`; later records append to the empty file.
@@ -129,7 +150,6 @@ These are possible follow-ups, deliberately left out of this version:
 - relaunch events;
 - when a turn ends, and an idle beat for a worker that is not busy; see the [runtime backend event sources](architecture.md#runtime-session-backends) for native activity observations;
 - the input-line, steering-inbox, and dialog state of a task, which the [task live status file](configuration.md#task-live-status) exposes instead;
-- sequence numbers and gap detection;
 - rotation and continuity across rotated files;
 - backfill or replay of events from before the ledger was turned on;
 - secret scrubbing beyond what status lines already contain, and privacy guarantees stronger than those of `state/`.

@@ -2,14 +2,17 @@
 # tests/fm-task-inbox-receipts.test.sh - steering-message result receipts
 # (bin/fm-task-inbox-lib.sh "Result receipts") and the per-task live status
 # file the watcher writes (docs/configuration.md "Task live status"):
-#   1. A message gets a queued receipt when written, picked_up once the worker
-#      moves it into handled/, and finished with the outcome of the first
-#      settled status line written after it was queued; a removed record is
+#   1. A message gets an accepted receipt when written, picked_up once the
+#      worker moves it into handled/, then started, progress, and result from
+#      the status lines written after it was accepted; a removed record is
 #      dropped without a further receipt, and the handled/ move stays the
 #      acknowledgement.
 #   2. Every delivery attempt records its result and the input-line verdict it
 #      read, so a skipped delivery behind stray input-line text is visible.
-#   3. The live status file reports the input-line reading, the queued steering
+#   3. The strict draft guard never types or presses Enter on an input line it
+#      cannot prove empty, while the advisory guard keeps ringing there; a
+#      draft typed after the read is the documented residual race.
+#   4. The live status file reports the input-line reading, the queued steering
 #      count and last delivery, and an open dialog, from a real steer check.
 set -u
 
@@ -30,7 +33,7 @@ receipts_sync() {  # <state>
 }
 
 receipt_rows() {  # <state>
-  jq -c '[.msg, .receipt, .outcome, .text, .status_at]' "$1/t1.inbox/receipts.jsonl"
+  jq -c '[.msg, .receipt, .state, .outcome, .text, .status_at]' "$1/t1.inbox/receipts.jsonl"
 }
 
 test_receipts_follow_a_message_to_its_outcome() {
@@ -43,34 +46,53 @@ test_receipts_follow_a_message_to_its_outcome() {
   name=${rec##*/}
   jq -e -s 'all(.[]; .v == 1 and (.ts | type) == "number")' "$state/t1.inbox/receipts.jsonl" >/dev/null \
     || fail "every receipt must carry v and ts: $(cat "$state/t1.inbox/receipts.jsonl")"
-  assert_equals "[\"$name\",\"queued\",null,null,null]" "$(receipt_rows "$state")" "receipts after the write"
+  assert_equals "[\"$name\",\"accepted\",null,null,null,null]" "$(receipt_rows "$state")" "receipts after the write"
 
   receipts_sync "$state" || fail "sync before pickup failed"
   assert_equals 1 "$(wc -l < "$state/t1.inbox/receipts.jsonl" | tr -d ' ')" "receipts before pickup"
 
   mv "$rec" "$state/t1.inbox/handled/"
   receipts_sync "$state" || fail "sync after pickup failed"
-  printf 'working [at=1790000100]: rebasing\npartial' >> "$state/t1.status"
+  printf 'resolved [key=k1]: earlier question\nworking [at=1790000100]: rebasing\npartial' >> "$state/t1.status"
   receipts_sync "$state" || fail "sync on a working line failed"
-  assert_equals "$(printf '%s\n' "[\"$name\",\"queued\",null,null,null]" "[\"$name\",\"picked_up\",null,null,null]")" \
+  assert_equals "$(printf '%s\n' \
+    "[\"$name\",\"accepted\",null,null,null,null]" \
+    "[\"$name\",\"picked_up\",null,null,null,null]" \
+    "[\"$name\",\"started\",\"working\",null,\" rebasing\",1790000100]")" \
     "$(receipt_rows "$state")" "receipts while the worker is still working"
 
-  printf ' line\ndone [at=1790000123]: rebased and pushed\n' >> "$state/t1.status"
+  printf ' line\nworking: tests pass\ndone [at=1790000123]: rebased and pushed\nworking: later work\n' >> "$state/t1.status"
   rec2=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "never mind")
   name2=${rec2##*/}
   rm -f "$rec2"
   receipts_sync "$state" || fail "sync after the settled line failed"
   assert_equals "$(printf '%s\n' \
-    "[\"$name\",\"queued\",null,null,null]" \
-    "[\"$name\",\"picked_up\",null,null,null]" \
-    "[\"$name2\",\"queued\",null,null,null]" \
-    "[\"$name\",\"finished\",\"done\",\" rebased and pushed\",1790000123]")" \
+    "[\"$name\",\"accepted\",null,null,null,null]" \
+    "[\"$name\",\"picked_up\",null,null,null,null]" \
+    "[\"$name\",\"started\",\"working\",null,\" rebasing\",1790000100]" \
+    "[\"$name2\",\"accepted\",null,null,null,null]" \
+    "[\"$name\",\"progress\",\"working\",null,\" tests pass\",null]" \
+    "[\"$name\",\"result\",\"done\",\"done\",\" rebased and pushed\",1790000123]")" \
     "$(receipt_rows "$state")" "receipts after the settled line"
   assert_absent "$state/t1.inbox/.receipt-open" "no receipt is still owed"
   assert_present "$state/t1.inbox/handled/$name" "the worker's acknowledgement stays in handled/"
   receipts_sync "$state" || fail "an idle sync failed"
-  assert_equals 4 "$(wc -l < "$state/t1.inbox/receipts.jsonl" | tr -d ' ')" "receipts after an idle sync"
-  pass "receipts: a message is queued, picked up, and finished with the first settled outcome after it; a removed record gets no more"
+  assert_equals 6 "$(wc -l < "$state/t1.inbox/receipts.jsonl" | tr -d ' ')" "receipts after an idle sync"
+
+  # A settled first line gives started and then result; an older writer's
+  # queued stage continues as accepted.
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "status please")
+  name=${rec##*/}
+  sed -i.bak 's/\taccepted\t/\tqueued\t/' "$state/t1.inbox/.receipt-open" && rm -f "$state/t1.inbox/.receipt-open.bak"
+  mv "$rec" "$state/t1.inbox/handled/"
+  printf 'blocked [key=need-token]: no token\n' >> "$state/t1.status"
+  receipts_sync "$state" || fail "sync of a settled first line failed"
+  assert_equals "$(printf '%s\n' \
+    "[\"$name\",\"picked_up\",null,null,null,null]" \
+    "[\"$name\",\"started\",\"blocked\",null,\" no token\",null]" \
+    "[\"$name\",\"result\",\"blocked\",\"blocked\",\" no token\",null]")" \
+    "$(receipt_rows "$state" | tail -3)" "receipts for a settled first line"
+  pass "receipts: a message is accepted, picked up, started, progressed, and given a result from the status lines after it; a removed record gets no more"
 }
 
 test_delivery_attempts_record_their_result_and_input_line() {
@@ -97,6 +119,53 @@ test_delivery_attempts_record_their_result_and_input_line() {
   assert_equals "$name rang" "$(cut -f1,2 "$state/t1.inbox/.last-ring" | tr '\t' ' ')" "rung delivery record"
   assert_equals empty "$(cut -f1 "$state/t1.inbox/.composer")" "input-line verdict after the ring"
   pass "delivery: each attempt records its result and the input-line verdict it read"
+}
+
+test_strict_draft_guard_never_submits_an_unproven_input_line() {
+  local dir state rec log composer screen rc name
+  dir="$TMP_ROOT/guard"
+  state="$dir/state"
+  mkdir -p "$state" "$dir/config"
+  make_composer_stub "$dir"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  name=${rec##*/}
+  log="$dir/send.log"; composer="$dir/composer"; screen="$dir/screen"; : > "$log"; : > "$composer"
+  printf 'Thinking about it\nsome tool output\n' > "$screen"
+  ring() {  # <guard-env-value>
+    rc=0
+    PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_COMPOSER="$composer" FM_FAKE_SCREEN="$screen" \
+      FM_FAKE_DROP_ENTERS="$dir/drops" FM_CONFIG_OVERRIDE="$dir/config" FM_TASK_INBOX_DRAFT_GUARD="$1" \
+      inbox_lib "$state" fm_task_inbox_ring tmux sess:fm-t1 "$rec" fm-t1 || rc=$?
+  }
+  printf 'strict\n' > "$dir/config/inbox-draft-guard"
+  ring ''
+  assert_equals 1 "$rc" "strict ring on an unreadable input line"
+  assert_equals "$name composer-unproven" "$(cut -f1,2 "$state/t1.inbox/.last-ring" | tr '\t' ' ')" "strict skip record"
+  assert_equals "" "$(cat "$composer")" "the strict guard typed into an unproven input line"
+  assert_equals "" "$(cat "$log")" "the strict guard pressed Enter on an unproven input line"
+  ring advisory
+  assert_equals 0 "$rc" "an advisory ring on an unreadable input line"
+  assert_contains "$(cat "$log")" "Firstmate instruction waiting" "the advisory guard should still ring"
+  # Benign race: the line reads empty, then a draft lands before the adapter's
+  # Enter. Both guards submit it with the doorbell; this pins the residual.
+  : > "$log"; : > "$screen"; : > "$composer"
+  printf 'a late draft ' > "$dir/late"
+  cat > "$dir/fakebin/fm-late-draft" <<'SH'
+#!/usr/bin/env bash
+cat "$1" >> "$2"
+SH
+  chmod +x "$dir/fakebin/fm-late-draft"
+  python3 - "$dir/fakebin/tmux" <<'PYEOF'
+import sys
+p=sys.argv[1]; s=open(p).read()
+s=s.replace('    if [ "$literal" = 1 ]; then\n','    if [ "$literal" = 1 ]; then\n      [ -z "${FM_FAKE_LATE_DRAFT:-}" ] || { fm-late-draft "$FM_FAKE_LATE_DRAFT" "$FM_FAKE_COMPOSER"; FM_FAKE_LATE_DRAFT=; }\n',1)
+open(p,'w').write(s)
+PYEOF
+  FM_FAKE_LATE_DRAFT="$dir/late" ring strict
+  assert_equals 0 "$rc" "a strict ring on an empty input line"
+  assert_contains "$(cat "$log")" "SUBMIT: a late draft : Firstmate instruction waiting" \
+    "the residual race: a draft typed after the read is submitted with the doorbell"
+  pass "draft guard: strict never types or submits on an unproven input line, advisory still rings, and the read-to-Enter race is the pinned residual"
 }
 
 test_live_status_reports_what_holds_up_steering() {
@@ -162,5 +231,6 @@ test_watcher_poll_writes_live_status() {
 
 test_receipts_follow_a_message_to_its_outcome
 test_delivery_attempts_record_their_result_and_input_line
+test_strict_draft_guard_never_submits_an_unproven_input_line
 test_live_status_reports_what_holds_up_steering
 test_watcher_poll_writes_live_status

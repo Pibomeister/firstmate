@@ -118,8 +118,10 @@ Each effective `FM_HOME` contains private operational directories.
 - Parent-side remote ledger copies under `state/secondmate-summary-cache/`.
 - One-shot Bearings reconcile requests under `state/reconcile-notify/`.
 - Private secondmate config-reread generations with their retry and quarantine state.
-- Per-task steering-inbox records under `state/<id>.inbox/`, with their append-only result receipts in `state/<id>.inbox/receipts.jsonl` (`bin/fm-task-inbox-lib.sh`).
+- Per-task steering-inbox records under `state/<id>.inbox/`, with their append-only typed receipts in `state/<id>.inbox/receipts.jsonl` (`bin/fm-task-inbox-lib.sh`).
 - Per-task live status files, `state/<id>.live.json` ([Task live status](#task-live-status)).
+- The home's write-once producer identity, `state/producer-identity.json` (`bin/fm-producer-identity-lib.sh`), and the fleet ledger's record counters, `state/.fleet-ledger.seq` and `state/.<id>.fleet-ledger-rev` (`bin/fm-fleet-ledger.sh`).
+- The dry-run unblocker's stall claims under `state/unblock/` and its candidate log, `state/unblock.jsonl` (`bin/fm-unblock.sh`).
 - Parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`).
 - Per-task claim ledgers, `state/<id>.claims.jsonl` ([`claim-ledger.md`](claim-ledger.md)).
 - Relay guard pass status, action log, probe streaks, relay logs, and pass lock under `state/relay-guard/` (`bin/fm-relay-guard.sh`).
@@ -1047,7 +1049,7 @@ The file is one JSON object:
 | `composer.at` | When that reading was taken, or `null`. |
 | `inbox.queued` | Steering messages written but not yet acknowledged by the worker. |
 | `inbox.oldest`, `inbox.oldest_queued_at` | The oldest unacknowledged message's name and its UTC enqueue time, or `null`. |
-| `inbox.last_delivery` | The last delivery attempt by any sender: the message name, `result` (`rang`, `composer-pending` when the input line held other text so delivery was skipped, `send-failed`, or `endpoint-gone`), and its time; `null` before any attempt. |
+| `inbox.last_delivery` | The last delivery attempt by any sender: the message name, `result` (`rang`, `composer-pending` when the input line held other text so delivery was skipped, `composer-unproven` when the strict draft guard skipped a line it could not prove free, `send-failed`, or `endpoint-gone`), and its time; `null` before any attempt. |
 | `dialog.state` | A dialog the worker's screen shows that needs an answer: `permission` (an approval or trust prompt), `question`, `feedback`, `usage-limit`, `model-switch`, or `none`; `not-read` when this poll did not read the screen, as for an idle second mate. |
 | `dialog.at` | When the screen was last classified, or `null`. |
 
@@ -1055,8 +1057,26 @@ The composer reading comes from delivery attempts only, so the monitor takes no 
 The dialog is classified from the screen the monitor already reads each poll, and only again when that screen changed.
 Readers must ignore members they do not recognize.
 
-Steering message receipts live beside the messages in `state/<id>.inbox/receipts.jsonl`: one JSON object per line, appended as each message is `queued`, `picked_up` by the worker, and `finished` with the outcome of the first settled status line the worker wrote after the message was queued.
-The `bin/fm-task-inbox-lib.sh` header owns that schema; the worker's acknowledgement is still its move of the message into `handled/`.
+Typed steering receipts live beside the messages in `state/<id>.inbox/receipts.jsonl`: one JSON object per line, appended as each message is `accepted`, `picked_up` by the worker, `started`, given `progress`, and given its `result` from the status lines the worker wrote after acceptance.
+The `bin/fm-task-inbox-lib.sh` header owns that schema, and [`supervision-events.md`](supervision-events.md#typed-receipts) summarizes it; the worker's acknowledgement is still its move of the message into `handled/`.
+`bin/fm-task-snapshot.sh` prints these facts with the task's binding, ownership, state, and waits as one JSON object per task ([Task snapshot](supervision-events.md#task-snapshot)).
+
+## Inbox draft guard (config/inbox-draft-guard)
+
+The first line selects what a steering doorbell does when the worker's input line reads `pending-unproven` or `unknown`.
+`advisory`, the default when the file is absent or holds anything else, rings anyway.
+`strict` skips the ring and records `composer-unproven`, so the doorbell is never typed into a line that could not be proved free.
+`FM_TASK_INBOX_DRAFT_GUARD` (`strict` or `advisory`) overrides the file for one process.
+An input line that visibly holds other text is skipped under either setting.
+[`supervision-events.md`](supervision-events.md#input-line-guard) owns the guard's contract and its one remaining race.
+
+## Auto-unblock (config/auto-unblock)
+
+The first line enables `bin/fm-unblock.sh observe`, which records each new stall candidate once in `state/unblock.jsonl`.
+`observe` is the only accepted value; `off`, absence, or anything else refuses `observe`.
+`bin/fm-unblock.sh plan` needs no flag and writes nothing, and no value enables enforcement.
+`FM_UNBLOCK_STALL_SECS` (default 900) is how long the oldest ordinary steering message must wait before its task counts as stalled, and `FM_UNBLOCK_COMPOSER_MAX_AGE` (default 120) is the oldest input-line reading a resume may rely on.
+[`supervision-events.md`](supervision-events.md#unblocker) owns the decision contract.
 
 ## Claim verifier AgentKit gate (config/agentkit-gate)
 

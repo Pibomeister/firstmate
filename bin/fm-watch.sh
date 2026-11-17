@@ -3467,7 +3467,7 @@ live_status_refresh() {  # <task> <kind> [<screen-hash> <screen>]
   { IFS=$'\t' read -r ring_msg ring_result ring_at < "$dir/.last-ring"; } 2>/dev/null || ring_msg=''
   n=${ring_msg%.msg}
   case "$n" in ''|*[!0-9]*) ring_msg='' ;; esac
-  case "$ring_result" in rang|composer-pending|send-failed|endpoint-gone) ;; *) ring_msg='' ;; esac
+  case "$ring_result" in rang|composer-pending|composer-unproven|send-failed|endpoint-gone) ;; *) ring_msg='' ;; esac
   case "$ring_at" in ''|*[!0-9]*) ring_msg='' ;; esac
   { IFS=$'\t' read -r comp comp_at < "$dir/.composer"; } 2>/dev/null || comp=''
   case "$comp" in empty|pending|pending-unproven|unknown) ;; *) comp='' ;; esac

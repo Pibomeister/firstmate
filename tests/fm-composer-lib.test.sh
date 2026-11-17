@@ -2268,3 +2268,41 @@ test_dialog_heading_and_footer_must_be_the_recorded_lines
 test_dialog_note_skips_the_match_when_no_sink_is_set
 test_quoted_exit_picker_text_is_not_a_dialog
 test_grok_weekly_limit_choice_is_named_only_in_its_recorded_structure
+
+# A composer taller than the capture window. An external send guard once
+# scanned an 18-row tail, missed the opening prompt glyph of a 34-row pasted
+# composer, and read it as empty; it reported the send as not delivered, so the
+# failure was safe. This classifier receives an equally short tail (the
+# FM_COMPOSER_CAPTURE_LINES window), so the same race must refuse here too:
+# with the composer's opening row cut off, no window may read `empty`, while
+# the same shapes with nothing typed still do.
+test_composer_taller_than_the_capture_window_never_reads_empty() {
+  local i rule top bottom body boxed caps screen shape out
+  local -a shapes=()
+  rule=$(printf '─%.0s' $(seq 1 60))
+  top="╭$(printf '─%.0s' $(seq 1 58))╮"
+  bottom="╰$(printf '─%.0s' $(seq 1 58))╯"
+  body=''
+  boxed=''
+  for i in $(seq 2 34); do
+    body+=$(printf '  pasted order line %02d keeps going' "$i")$'\n'
+    boxed+=$(printf '│   pasted order line %02d keeps going%25s│' "$i" '')$'\n'
+  done
+  shapes+=("codex|$(printf 'old transcript\n› pasted order line 01\n%s\n  gpt-5 high · 80%% context left' "$body")")
+  shapes+=("claude|$(printf 'transcript\n%s\n❯ pasted order line 01\n%s%s\n  ? for shortcuts' "$rule" "$body" "$rule")")
+  shapes+=("boxed|$(printf 'transcript\n%s\n│ > pasted order line 01%37s│\n%s%s' "$top" '' "$boxed" "$bottom")")
+  for caps in "$CAPS_PLAIN" "$CAPS_STYLED_NOID"; do
+    for shape in "${shapes[@]}"; do
+      screen=$(printf '%s\n' "${shape#*|}" | tail -n "$FM_COMPOSER_CAPTURE_LINES")
+      out=$(fm_composer_classify_screen "$caps" "$screen")
+      [ "$out" != empty ] || fail "${shape%%|*} composer cut by a ${FM_COMPOSER_CAPTURE_LINES}-row window read empty (caps ${caps//$'\n'/,})"
+      out=$(LC_ALL=C fm_composer_classify_screen "$caps" "$screen")
+      [ "$out" != empty ] || fail "${shape%%|*} composer cut by the window read empty under LC_ALL=C"
+    done
+    assert_screen "empty codex control" empty "$caps" $'old transcript\n› \n\n  gpt-5 high · 80% context left'
+    assert_screen "empty claude control" empty "$caps" "$(printf 'transcript\n%s\n❯ \n%s\n  ? for shortcuts' "$rule" "$rule")"
+  done
+  pass "composer: a composer taller than the capture window never reads empty, and the same empty shapes still do"
+}
+
+test_composer_taller_than_the_capture_window_never_reads_empty
