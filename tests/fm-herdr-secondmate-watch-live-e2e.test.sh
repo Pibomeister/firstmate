@@ -16,13 +16,17 @@
 # wherever herdr and jq exist. It refreshes the docs/verification/runtime-backends.md
 # "Codex secondmate watcher on Herdr" entry.
 #
-# Every Herdr call goes through bin/fm-herdr-lab.sh against the lab session: the
-# production code reaches herdr through a PATH shim that forwards only calls
+# Every Herdr call goes through bin/fm-herdr-lab.sh: fixture start/stop own the
+# private XDG default, and lab provision/run/teardown use the named session.
+# Production code reaches herdr through a PATH shim that forwards only calls
 # carrying that session's `--session` and refuses everything else.
 set -u
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+# shellcheck source=tests/herdr-test-safety.sh
+. "$(dirname "${BASH_SOURCE[0]}")/herdr-test-safety.sh"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LAB_HELPER=${HERDR_LAB_HELPER:-$ROOT/bin/fm-herdr-lab.sh}
@@ -36,21 +40,34 @@ fm_live_gate default-on FM_HERDR_SECONDMATE_WATCH_LIVE_E2E herdr jq
 
 HERDR_VERSION=$(herdr --version 2>/dev/null | head -n 1)
 TMP_ROOT=$(mktemp -d "$(cd "${TMPDIR:-/tmp}" && pwd -P)/fm-herdr-sm-watch.XXXXXX")
-LAB_SESSION=$("$LAB_HELPER" name fm-herdr-sm-watch) || fail "could not name a lab session"
+# Herdr session sockets live under XDG. The owned-XDG helper creates a short
+# /tmp/hx.XXXXXX tree so the lab socket stays under the 108-byte AF_UNIX limit.
+HERDR_XDG=$(herdr_fixture_create) || fail "could not create an owned Herdr XDG"
 cleanup() {
   local status=$?
   local f
   for f in "$TMP_ROOT/home/state/.watch.lock/pid" "$TMP_ROOT/owner.pid"; do
     [ -s "$f" ] && kill "$(cat "$f")" 2>/dev/null
   done
-  "$LAB_HELPER" teardown "$LAB_SESSION" >/dev/null 2>&1 || status=1
+  if [ -n "${LAB_SESSION:-}" ]; then
+    "$LAB_HELPER" teardown "$LAB_SESSION" >/dev/null 2>&1 || status=1
+  fi
+  herdr_fixture_cleanup "$HERDR_XDG" >/dev/null 2>&1 || status=1
   rm -rf "$TMP_ROOT"
   exit "$status"
 }
 trap cleanup EXIT
+herdr_fixture_apply "$HERDR_XDG" || fail "could not apply the owned Herdr XDG"
+LAB_SESSION=$("$LAB_HELPER" name fm-herdr-sm-watch) || fail "could not name a lab session"
+
+# Lab provision's fleet-state tripwire still requires exactly one running
+# default session. Start that default in this test's owned XDG. The helper
+# never runs `herdr server stop` and never signals a process it does not own.
+herdr_fixture_start "$HERDR_XDG" || fail "test-owned default Herdr session did not become ready"
 
 "$LAB_HELPER" provision "$LAB_SESSION" >/dev/null 2>&1 || fail "lab provision failed"
-"$LAB_HELPER" run "$LAB_SESSION" workspace create >/dev/null 2>&1 || fail "lab workspace create failed"
+"$LAB_HELPER" run "$LAB_SESSION" workspace create >/dev/null 2>"$HERDR_XDG/workspace-create.err" \
+  || fail "lab workspace create failed: $(tr '\n' ' ' < "$HERDR_XDG/workspace-create.err")"
 PANE=$("$LAB_HELPER" run "$LAB_SESSION" pane list 2>/dev/null | jq -r '(.result.panes // .result)[0].pane_id // empty')
 [ -n "$PANE" ] || fail "lab pane id unreadable"
 

@@ -342,7 +342,7 @@ family_for_basename_var() {
     fm-agent-kit-pin.test.sh|fm-documentation-audiences.test.sh|fm-ensure-agents-md.test.sh|fm-forge-detect.test.sh|fm-grok-harness.test.sh|\
     fm-fork-free-helpers.test.sh|\
     fm-harness-precedence.test.sh|fm-install-herdr.test.sh|\
-    fm-kimi-harness.test.sh|fm-devin-harness.test.sh|fm-commandcode-harness.test.sh|fm-cortex-harness.test.sh|fm-muse-harness.test.sh|fm-rovo-harness.test.sh|fm-agy-harness.test.sh|fm-droid-harness.test.sh|fm-omp-harness.test.sh|fm-polytoken-harness.test.sh|fm-herdr-lab.test.sh|fm-lint.test.sh|\
+    fm-kimi-harness.test.sh|fm-devin-harness.test.sh|fm-commandcode-harness.test.sh|fm-cortex-harness.test.sh|fm-muse-harness.test.sh|fm-rovo-harness.test.sh|fm-agy-harness.test.sh|fm-droid-harness.test.sh|fm-omp-harness.test.sh|fm-polytoken-harness.test.sh|fm-herdr-lab.test.sh|fm-herdr-owned-xdg.test.sh|fm-lint.test.sh|\
     fm-lint-workflows.test.sh|\
     fm-operational-input.test.sh|fm-pi-primary-types.test.sh|fm-read-repetition.test.sh|\
     fm-calm-claude-mod.test.sh|\
@@ -380,7 +380,7 @@ family_for_basename_var() {
     fm-backend-herdr-focus-flash-e2e.test.sh|\
     fm-backend-herdr-stale-active-tab-e2e.test.sh|\
     fm-backend-herdr-agent-exit-shell-e2e.test.sh|\
-    fm-herdr-attached-viewer-live-e2e.test.sh|fm-herdr-session-cleanup-e2e.test.sh|\
+    fm-herdr-attached-viewer-live-e2e.test.sh|fm-herdr-owned-xdg-live-e2e.test.sh|fm-herdr-session-cleanup-e2e.test.sh|\
     fm-backend-herdr-smoke.test.sh|fm-backend-herdr-workspace-per-home-e2e.test.sh|\
     fm-control-herdr-smoke.test.sh)
       REPLY_FAMILY=real-herdr-gated
@@ -908,6 +908,7 @@ tests/fm-harness-liveness-drift-live-e2e.test.sh 1038
 tests/fm-harness-precedence.test.sh 4680
 tests/fm-heartbeat.test.sh 128044
 tests/fm-herdr-groups.test.sh 4623
+tests/fm-herdr-owned-xdg.test.sh 19396
 tests/fm-herdr-pi-stale-registration-live-e2e.test.sh 82
 tests/fm-herdr-secondmate-watch-live-e2e.test.sh 59
 tests/fm-herdr-session-cleanup.test.sh 10131
@@ -916,6 +917,7 @@ tests/fm-herdr-version-floor-live-e2e.test.sh 74
 tests/fm-home-summary-refresh.test.sh 48737
 tests/fm-host-mirror-live-e2e.test.sh 70
 tests/fm-host-mirror.test.sh 14895
+tests/fm-hung-ladder.test.sh 45000
 tests/fm-inactive-reconcile.test.sh 70720
 tests/fm-inbox.test.sh 6907
 tests/fm-jev-mem-guard.test.sh 364
@@ -927,6 +929,7 @@ tests/fm-lint-workflows.test.sh 1857
 tests/fm-live-gate.test.sh 11102
 tests/fm-live-lab-up-mate.test.sh 17915
 tests/fm-live-lab.test.sh 81645
+tests/fm-load-relief.test.sh 12302
 tests/fm-mail-check.test.sh 8048
 tests/fm-mail.test.sh 11504
 tests/fm-memory-guard.test.sh 12464
@@ -1001,6 +1004,7 @@ tests/fm-remote-secondmate-parent-binding.test.sh 83979
 tests/fm-remote-secondmate-relaunch.test.sh 1037
 tests/fm-remote-secondmate-trace-context.test.sh 157409
 tests/fm-remote-transport-lanes.test.sh 77333
+tests/fm-reset-audit.test.sh 45000
 tests/fm-review-check.test.sh 1931
 tests/fm-rovo-harness.test.sh 20426
 tests/fm-rovo-signals-live-e2e.test.sh 73
@@ -1107,6 +1111,7 @@ tests/fm-watch-wedge-cap-unconfigured-parity.test.sh 60531
 tests/fm-watch-wedge-cap.test.sh 424173
 tests/fm-usage-limit-pane-live.test.sh 90
 tests/fm-usage-limit-pane-pending.test.sh 4000
+tests/fm-watchdog-herdr-path.test.sh 1937
 tests/fm-watchdog-live.test.sh 89
 tests/fm-watchdog.test.sh 527813
 tests/fm-watcher-lock.test.sh 73024
@@ -1744,10 +1749,12 @@ families_for_changed_path() {
     bin/fm-test-linux.sh|tests/linux/Dockerfile)
       printf '%s\n' "__script__:fm-test-linux.test.sh"
       ;;
-    bin/backends/herdr*|bin/fm-herdr-lab.sh|tests/herdr-test-safety.sh|tests/herdr-client-pair-fixture.sh)
+    bin/backends/herdr*|bin/fm-herdr-lab.sh|bin/fm-herdr-owned-xdg.sh|tests/herdr-test-safety.sh|tests/herdr-client-pair-fixture.sh|tests/herdr-owned-xdg.sh)
       printf '%s\n' real-herdr-gated
       printf '%s\n' backend-dispatch
       printf '%s\n' pure-contract-unit
+      printf '%s\n' "__script__:fm-herdr-owned-xdg-live-e2e.test.sh"
+      printf '%s\n' "__script__:fm-herdr-secondmate-watch-live-e2e.test.sh"
       printf '%s\n' "__script__:fm-watchdog-herdr-path.test.sh"
       ;;
     bin/fm-herdr-session-cleanup.sh)
