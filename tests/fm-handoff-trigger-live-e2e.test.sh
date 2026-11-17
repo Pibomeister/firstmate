@@ -54,6 +54,7 @@ config_args=()
 if [ -n "${FM_HANDOFF_TRIGGER_LIVE_CLAUDE_CONFIG_DIR:-}" ]; then
   CLAUDE_CONFIG=$FM_HANDOFF_TRIGGER_LIVE_CLAUDE_CONFIG_DIR
   [ -d "$CLAUDE_CONFIG" ] || fail "FM_HANDOFF_TRIGGER_LIVE_CLAUDE_CONFIG_DIR is not a directory: $CLAUDE_CONFIG"
+  CLAUDE_CONFIG=$(cd -P "$CLAUDE_CONFIG" && pwd) || fail "could not resolve the live guard config directory"
   config_args=(CLAUDE_CONFIG_DIR="$CLAUDE_CONFIG")
 fi
 
