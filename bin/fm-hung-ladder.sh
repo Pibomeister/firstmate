@@ -279,9 +279,18 @@ fhl_row() {
   ROW_ID=$id
 }
 
-cmd_verify() {
+# The whole-chain walk: prints "<rows>\t<last-hash>" for an intact ledger
+# that matches its head record, or one "broken: ..." line and returns 3.
+fhl_chain_walk() {
   local out last
-  [ -s "$LEDGER" ] || { echo "ledger: empty"; return 0; }
+  if [ ! -s "$LEDGER" ]; then
+    if [ -e "$HL/head" ]; then
+      echo "broken: ledger empty but head record present"
+      return 3
+    fi
+    printf '0\t%s\n' "$GENESIS"
+    return 0
+  fi
   out=$(perl -MDigest::SHA=sha256_hex -e '
     my ($g, $file) = @ARGV; my $prev = $g; my $n = 0;
     open(my $fh, "<", $file) or do { print "broken: unreadable\n"; exit 3 };
@@ -303,7 +312,13 @@ cmd_verify() {
     echo "broken: head record does not match the last row"
     return 3
   fi
-  echo "ledger: intact rows=${out%%$'\t'*}"
+  printf '%s\n' "$out"
+}
+
+cmd_verify() {
+  local out
+  out=$(fhl_chain_walk) || { printf '%s\n' "$out"; return 3; }
+  if [ "${out%%$'\t'*}" = 0 ]; then echo "ledger: empty"; else echo "ledger: intact rows=${out%%$'\t'*}"; fi
 }
 
 # --- small readers ----------------------------------------------------------
@@ -343,7 +358,9 @@ fhl_normalize_pane() {  # stdin -> normalized text
     s/\e\[[0-9;?]*[ -\/]*[@-~]//g;
     s/\e\][^\a]*\a//g;
     s/[\x{2800}-\x{28FF}\x{2722}-\x{273D}\x{00B7}\x{2022}\x{23FA}\x{25CF}\x{25D0}-\x{25D3}\x{2581}-\x{2588}]//g;
-    s/[0-9]+/0/g;
+    # Counters such as elapsed time churn on a hung turn, so digits
+    # normalize away; token progress is native progress (4.2) and stays.
+    s/((?:[\x{2191}\x{2193}]\s*)[0-9][0-9.,]*\s*[kKmM]?|[0-9][0-9.,]*\s*[kKmM]?\s*tok(?:en)?s?\b)|[0-9]+/defined $1 ? $1 : "0"/ge;
     s/[ \t\r]+$//;
   ' 2>/dev/null
 }
@@ -404,6 +421,16 @@ fhl_agent_probe() {  # <task> <backend> <target>
       printf '%s -' "$(fm_backend_agent_state "$backend" "$target")"
       ;;
   esac
+}
+
+# Orca keeps typed text on the prompt row in a separate draft field; a
+# failed read counts as a draft, so it blocks rather than escalates.
+fhl_draft_present() {  # <task> <target>
+  if [ -n "${FM_HUNG_LADDER_PROBE:-}" ]; then
+    [ "$("$FM_HUNG_LADDER_PROBE" draft "$1" orca "$2" 2>/dev/null)" != none ]
+    return
+  fi
+  fm_backend_orca_draft_present "$2" 2>/dev/null
 }
 
 fhl_composer_probe() {  # <task> <backend> <target>
@@ -469,7 +496,10 @@ fhl_resolve_wait() {  # <task> <wait-line>
   ticket=$(printf '%s' "$line" | sed -nE 's/.*ticket[=: #]+([0-9]+).*/\1/p' | head -n 1)
   case "$line" in
     *fm-test-queue*|*test-queue*|*test\ queue*|*ticket*)
-      queue_out=$(fm_run_timed 10 "${FM_TEST_QUEUE_BIN:-$SCRIPT_DIR/fm-test-queue.sh}" status 2>/dev/null) || queue_out=
+      if ! queue_out=$(fm_run_timed 10 "${FM_TEST_QUEUE_BIN:-$SCRIPT_DIR/fm-test-queue.sh}" status 2>/dev/null); then
+        WAIT=unknown WAIT_NOTE="test-queue-unreadable: $WAIT_NOTE"
+        return 0
+      fi
       if printf '%s\n' "$queue_out" | awk -v t="task=$task" -v k="ticket=$ticket" '
           ($1 == "serving" || $1 == "waiting") {
             ok = 0; tk = (k == "ticket="); p = ""
@@ -487,14 +517,39 @@ fhl_resolve_wait() {  # <task> <wait-line>
       ;;
   esac
   # A wait the resolver cannot parse protects, but only for a bounded time
-  # from its own status line (14.2 S3).
+  # (14.2 S3). The clock is the earlier of the line's own stamp and when the
+  # ladder first saw an unverified wait, so re-stamping, repeating, or leaving
+  # out the stamp buys nothing; only real work (a commit, a content change, a
+  # write, a handled message) restarts it.
   max=$(fhl_num "$(fhl_kv "$CONFIG/hung-ladder" unverified_wait_max_secs 2>/dev/null)" 7200)
   at=$(status_line_at_epoch "$line" 2>/dev/null) || at=
-  if [ -n "$at" ] && [ $((NOW - at)) -ge "$max" ]; then
+  [ -n "${EP_wait_since:-}" ] || EP_wait_since=$NOW
+  case "$at" in ''|*[!0-9]*) at=$EP_wait_since ;; esac
+  [ "$at" -le "$EP_wait_since" ] || at=$EP_wait_since
+  if [ $((NOW - at)) -ge "$max" ]; then
     WAIT=expired WAIT_NOTE="unverified-wait-cap: $WAIT_NOTE"
   else
     WAIT=unverified
   fi
+}
+
+# Validation in flight (gate item 6): any no-mistakes run the crew state
+# attributes to the task that is working (running, fixing, CI) or parked at a
+# gate. Read only when a rung could fire, under a short bound, because the
+# crew-state read takes a lock; a read that fails or times out holds.
+fhl_validating() {
+  local line rc=0 state src
+  line=$(fm_run_timed 5 "$FM_CREW_STATE_BIN" "$TASK" 2>/dev/null) || rc=$?
+  if [ "$rc" != 0 ]; then
+    held=${held:-unknown:validation=$rc}
+    return 1
+  fi
+  case "$line" in state:*) ;; *) held=${held:-unknown:validation=unreadable}; return 1 ;; esac
+  state=${line#state: }; state=${state%% *}
+  case "$line" in *" source: "*) src=${line#* source: }; src=${src%% *} ;; *) src= ;; esac
+  [ "$src" = run-step ] || return 1
+  case "$state" in working|parked) return 0 ;; esac
+  return 1
 }
 
 # --- tick --------------------------------------------------------------------
@@ -535,6 +590,7 @@ fhl_write_episode() {
     printf 'drip=%s\n' "${EP_drip:-}"
     printf 'drip_alarm=%s\n' "${EP_drip_alarm:-}"
     printf 'last_close=%s\n' "${EP_last_close:-}"
+    printf 'wait_since=%s\n' "${EP_wait_since:-}"
   } > "$f.tmp" && mv -f "$f.tmp" "$f"
 }
 
@@ -577,32 +633,37 @@ fhl_snapshot_tree() {  # <name> -> path:sha
   f="$dir/$1.tree"
   mkdir -p "$dir" && chmod 700 "$dir"
   [ -n "$WT" ] && [ -d "$WT" ] || { printf 'none'; return 0; }
-  while IFS= read -r p; do
+  local rec rename=0
+  while IFS= read -r -d '' rec; do
+    if [ "$rename" = 1 ]; then
+      p=$rec rename=0
+    else
+      case "$rec" in R*|C*|?R*|?C*) rename=1 ;; esac
+      p=${rec:3}
+    fi
     [ -n "$p" ] || continue
     fhl_secret_path "$p" && excl+=( ":(exclude,literal)$p" )
-  done <<EOF
-$(git -C "$WT" --no-optional-locks status --porcelain=v1 -uall 2>/dev/null | cut -c4- | sed 's/.* -> //')
-EOF
+  done < <(git -C "$WT" --no-optional-locks status --porcelain=v1 -z -uall 2>/dev/null)
   {
     printf 'head\t%s\n' "$(git -C "$WT" rev-parse HEAD 2>/dev/null)"
     git -C "$WT" --no-optional-locks diff --binary -- . ${excl[@]+"${excl[@]}"} 2>/dev/null | head -c 20000000 > "$f.diff"
     git -C "$WT" --no-optional-locks diff --cached --binary -- . ${excl[@]+"${excl[@]}"} 2>/dev/null | head -c 20000000 > "$f.cached.diff"
     printf 'diff_sha256\t%s\n' "$(fhl_sha < "$f.diff")"
     printf 'cached_diff_sha256\t%s\n' "$(fhl_sha < "$f.cached.diff")"
-    { git -C "$WT" --no-optional-locks diff --name-only HEAD 2>/dev/null; git -C "$WT" ls-files --others --exclude-standard 2>/dev/null; } | sort -u | head -n 2000 |
-      while IFS= read -r p; do
+    { git -C "$WT" --no-optional-locks diff --name-only -z HEAD 2>/dev/null; git -C "$WT" ls-files -z --others --exclude-standard 2>/dev/null; } | perl -0 -ne 'next if $seen{$_}++; print if ++$n <= 2000' |
+      while IFS= read -r -d '' p; do
         [ -n "$p" ] || continue
         if fhl_secret_path "$p"; then
-          printf 'present-secret\t%s\n' "$p"
+          printf 'present-secret\t%s\n' "$(fhl_esc "$p")"
         elif [ -f "$WT/$p" ]; then
           sz=$(wc -c < "$WT/$p" 2>/dev/null | tr -d ' ')
           if [ "${sz:-0}" -le 50000000 ]; then
-            printf 'file\t%s\t%s\n' "$(fhl_sha < "$WT/$p")" "$p"
+            printf 'file\t%s\t%s\n' "$(fhl_sha < "$WT/$p")" "$(fhl_esc "$p")"
           else
-            printf 'file-oversize\t%s\t%s\n' "$sz" "$p"
+            printf 'file-oversize\t%s\t%s\n' "$sz" "$(fhl_esc "$p")"
           fi
         else
-          printf 'deleted\t%s\n' "$p"
+          printf 'deleted\t%s\n' "$(fhl_esc "$p")"
         fi
       done
     git -C "$WT" ls-files --others --ignored --exclude-standard --directory 2>/dev/null | head -n 200 | sed 's/^/present-ignored\t/'
@@ -747,12 +808,12 @@ cmd_tick() {
   case "$KIND" in ship|scout) ;; *) exit 0 ;; esac
   meta="$STATE/$TASK.meta"
   [ -f "$meta" ] || exit 0
-  if [ -f "$CONFIG/hung-ladder-skip" ] && grep -qxF "$TASK" "$CONFIG/hung-ladder-skip"; then exit 0; fi
+  if fhl_owner_file "$CONFIG/hung-ladder-skip" 022 && grep -qxF "$TASK" "$CONFIG/hung-ladder-skip"; then exit 0; fi
 
   local k
   fhl_clear_episode
   EP_seen_at='' EP_block_since='' EP_block_parked='' EP_unknown_streak='' EP_degraded=''
-  EP_drip='' EP_drip_alarm='' EP_last_close=''
+  EP_drip='' EP_drip_alarm='' EP_last_close='' EP_wait_since=''
   fhl_read_kv_file "$HL/episodes/$TASK.ep" EP_
   [ -n "$EP_state" ] || EP_state=idle
   fhl_read_kv_file "$HL/episodes/$TASK.sample" S_
@@ -813,11 +874,10 @@ cmd_tick() {
   if [ -z "$gate" ]; then
     case "$WAIT" in
       live|unverified) gate="verified-wait:$WAIT" ;;
+      unknown) held=${held:-unknown:wait=unreadable} ;;
     esac
   fi
-  if [ -z "$gate" ] && [ "$live" = alive ] && crew_run_is_validating "$TASK" >/dev/null 2>&1; then
-    gate=validating
-  fi
+  [ "$WAIT" = unverified ] || [ "$WAIT" = expired ] || EP_wait_since=""
   # --- gate item 7 ---
   local screen=''
   [ -z "$dialog" ] || screen="dialog:$dialog"
@@ -825,7 +885,14 @@ cmd_tick() {
   local composer=-
   if [ -z "$gate" ] && [ -z "$screen" ] && [ "$live" = alive ]; then
     composer=$(fhl_composer_probe "$TASK" "$backend" "$target")
-    case "$composer" in pending|pending-unproven) screen="composer:$composer" ;; esac
+    case "$composer" in
+      pending|pending-unproven) screen="composer:$composer" ;;
+      empty) ;;
+      *) composer=unknown ;;
+    esac
+    if [ -z "$screen" ] && [ "$backend" = orca ] && fhl_draft_present "$TASK" "$target"; then
+      screen="composer:draft"
+    fi
   fi
 
   # --- quiet proof sensors ---
@@ -947,6 +1014,7 @@ cmd_tick() {
   [ "$rendered" != unknown ] || unknown_kinds="${unknown_kinds}rendered,"
   [ "$fs" != unknown ] || unknown_kinds="${unknown_kinds}fs,"
   [ "$kernel" != unknown ] || unknown_kinds="${unknown_kinds}kernel,"
+  [ "$composer" != unknown ] || unknown_kinds="${unknown_kinds}composer,"
   k=${held#unknown:}; [ -z "$held" ] || unknown_kinds="${unknown_kinds}${k%%=*},"
   [ "$rendered" != active ] || activity="${activity}rendered,"
   [ "$fs" != active ] || activity="${activity}fs,"
@@ -966,6 +1034,10 @@ cmd_tick() {
   [ "$records" != quiet ] || quiet_count=$((quiet_count + 1))
   local proof=0
   [ -z "$activity" ] && [ -z "$unknown_kinds" ] && [ "$quiet_count" -ge 2 ] && proof=1
+  case "$net_advance" in ''|status) [ "$wrote" = 0 ] || EP_wait_since='' ;; *) EP_wait_since='' ;; esac
+  if [ -z "$gate" ] && [ "$live" = alive ] && { [ "$proof" = 1 ] || [ -n "$screen" ]; } && fhl_validating; then
+    gate=validating
+  fi
 
   fhl_breaker
 
@@ -1028,11 +1100,15 @@ cmd_tick() {
           fhl_act 3 interrupt "$(fhl_snapshot_pane "$EP_episode-r3")" && EP_rung3_at=$NOW
         fi
       elif [ -n "${EP_rung3_at:-}" ] && [ -z "${EP_rung4_at:-}" ] && [ "$elapsed" -ge 1320 ] && [ $((NOW - EP_rung3_at)) -ge 360 ]; then
+        local chain=''
+        chain=$(fhl_chain_walk) || chain=broken
         fhl_caps
         local lock_path=''
         [ -z "$WT" ] || lock_path=$(git -C "$WT" rev-parse --git-path index.lock 2>/dev/null) || lock_path=
         case "$lock_path" in /*) ;; ?*) lock_path="$WT/$lock_path" ;; esac
-        if [ "$TRIPPED" = 1 ]; then
+        if [ "$chain" = broken ]; then
+          hold=ledger-unverified
+        elif [ "$TRIPPED" = 1 ]; then
           hold=breaker
         elif [ -n "$lock_path" ] && [ -e "$lock_path" ]; then
           hold=git-op

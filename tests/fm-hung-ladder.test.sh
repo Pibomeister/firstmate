@@ -38,12 +38,15 @@ cat > "$PROBE" <<'EOF'
 case "$1" in
   agent) cat "$FM_TEST_PROBE_DIR/$2.agent" ;;
   composer) cat "$FM_TEST_PROBE_DIR/$2.composer" 2>/dev/null || printf empty ;;
+  draft) cat "$FM_TEST_PROBE_DIR/$2.draft" 2>/dev/null || printf none ;;
 esac
 EOF
 CREW="$TMP_ROOT/crew-state"
 cat > "$CREW" <<'EOF'
 #!/usr/bin/env bash
-if [ -e "$FM_TEST_PROBE_DIR/$1.validating" ]; then
+if [ -s "$FM_TEST_PROBE_DIR/$1.validating" ]; then
+  cat "$FM_TEST_PROBE_DIR/$1.validating"
+elif [ -e "$FM_TEST_PROBE_DIR/$1.validating" ]; then
   echo "state: working · source: run-step · validating (running) · run: r1"
 else
   echo "state: working · source: pane · idle"
@@ -53,6 +56,7 @@ TESTQ="$TMP_ROOT/test-queue"
 cat > "$TESTQ" <<'EOF'
 #!/usr/bin/env bash
 [ "$1" = status ] || exit 2
+[ ! -e "$FM_TEST_PROBE_DIR/testq-fail" ] || exit 1
 cat "$FM_TEST_PROBE_DIR/testq" 2>/dev/null || true
 EOF
 chmod +x "$PROBE" "$CREW" "$TESTQ"
@@ -95,7 +99,8 @@ agent_pid() { local s; s=$(cat "$1/probe/$2.agent"); printf '%s' "${s#* }"; }
 PANE_STYLE=busy
 pane_for() {  # <now>
   case "$PANE_STYLE" in
-    busy) printf '● Running the build\n\n✻ Thinking… (%ss · ↓ %s tokens · esc to interrupt)\n' "$(( $1 - B ))" "$(( ($1 - B) * 3 ))" ;;
+    busy) printf '● Running the build\n\n✻ Thinking… (%ss · ↓ 180 tokens · esc to interrupt)\n' "$(( $1 - B ))" ;;
+    streaming) printf '● Running the build\n\n✻ Thinking… (%ss · ↓ %s tokens · esc to interrupt)\n' "$(( $1 - B ))" "$(( ($1 - B) * 3 ))" ;;
     pager) printf 'commit abc\nAuthor: x\n\n    message\n(END)\n' ;;
     token) printf 'export GH_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123\n❯ \n' ;;
     *) printf '%s\n' "$PANE_STYLE" ;;
@@ -381,14 +386,74 @@ test_healthy_waits_and_screens() {
   no_escalation "$h" pg 'pager'
   case "$(reason_of "$h" pg would-act 5)" in *'screen-block pager'*) ;; *) fail 'a pager parks' ;; esac
 
-  # A validation run in flight.
+  # A validation run in flight, in each state the crew state reports.
   new_task "$h" nm
   : > "$h/probe/nm.validating"
   ticks "$h" nm "$B" $((B + 1800))
   assert_equals 0 "$(rows "$h" nm would-act)" 'a validating worker is out of scope'
+  new_task "$h" ci
+  echo "state: working · source: run-step · ci running · run: r2" > "$h/probe/ci.validating"
+  ticks "$h" ci "$B" $((B + 1800))
+  assert_equals 0 "$(rows "$h" ci would-act)" 'a run waiting on CI is out of scope'
+  new_task "$h" pk
+  echo "state: parked · source: run-step · parked at review: 2 finding(s) · run: r3" > "$h/probe/pk.validating"
+  ticks "$h" pk "$B" $((B + 1800))
+  assert_equals 0 "$(rows "$h" pk would-act)" 'a run parked at a gate is out of scope'
+
+  # A test-queue wait whose queue cannot be read is unknown, never dead.
+  new_task "$h" qf
+  printf 'paused: waiting on fm-test-queue ticket=9 [at=%s]\n' "$B" >> "$h/state/qf.status"
+  : > "$h/probe/testq-fail"
+  ticks "$h" qf "$B" $((B + 1800))
+  rm -f "$h/probe/testq-fail"
+  assert_equals 0 "$(rows "$h" qf would-act)" 'an unreadable queue proves nothing about the wait'
+
+  # A composer that cannot be read is an unknown sensor.
+  new_task "$h" cu
+  printf unknown > "$h/probe/cu.composer"
+  ticks "$h" cu "$B" $((B + 1800))
+  assert_equals 0 "$(rows "$h" cu would-act)" 'an unreadable composer holds every rung'
+
+  # Orca keeps prompt-row text in a draft field the composer read leaves out.
+  new_task "$h" od
+  fm_write_meta "$h/state/od.meta" "terminal=term-od" "worktree=$h/wt-od" "kind=ship" "backend=orca" "harness=claude"
+  printf present > "$h/probe/od.draft"
+  ticks "$h" od "$B" $((B + 1800))
+  no_escalation "$h" od 'Orca draft'
+  case "$(reason_of "$h" od would-act 5)" in *'composer:draft'*) ;; *) fail 'an Orca draft parks' ;; esac
+
+  # Streaming tokens are native progress, even when nothing else moves.
+  new_task "$h" st
+  PANE_STYLE=streaming ticks "$h" st "$B" $((B + 1800))
+  assert_equals 0 "$(rows "$h" st observe)" 'a turn that streams tokens opens no episode'
   assert_no_actions 'waits and screens'
   assert_agents_alive 'waits and screens'
   pass 'healthy declared waits and blocked screens give no rung-3 or rung-4 rows'
+}
+
+test_unverified_wait_cap_cannot_be_renewed() {
+  local h n
+  h=$(new_home capwait)
+  printf 'mode=observe\nactor=test\nunverified_wait_max_secs=600\n' > "$h/config/hung-ladder"
+  # The same wait, re-stamped every minute.
+  new_task "$h" rw
+  n=$B
+  while [ "$n" -le $((B + 1500)) ]; do
+    printf 'paused: waiting on the release window [at=%s]\n' "$n" >> "$h/state/rw.status"
+    tick "$h" rw "$n"
+    n=$((n + 60))
+  done
+  assert_equals 1 "$(rows "$h" rw observe 0)" 'a re-stamped wait still runs out'
+  case "$(reason_of "$h" rw would-act 1)" in *unverified-wait-cap*) ;; *) fail 'rung 1 names the wait cap' ;; esac
+  ledger "$h" | awk -F'\t' '$4 == "rw" && $6 == "observe" { exit !($2 >= '"$((B + 600))"') }' \
+    || fail 'the cap counts from the first sighting of the wait'
+  # A wait with no stamp at all.
+  new_task "$h" ns
+  printf 'paused: waiting on the release window\n' >> "$h/state/ns.status"
+  ticks "$h" ns "$B" $((B + 1500))
+  assert_equals 1 "$(rows "$h" ns observe 0)" 'an unstamped wait runs out too'
+  assert_no_actions 'wait cap'
+  pass 'the unverified-wait hold is capped from first sighting and cannot be renewed'
 }
 
 test_live_mode_refused_without_gate() {
@@ -488,6 +553,36 @@ test_chain_and_escaping() {
   rc=0
   verify "$h" >/dev/null || rc=$?
   assert_equals 3 "$rc" 'a spoofed row is detected'
+  # Emptying the ledger while its head record stays is a deletion.
+  : > "$h/state/hung-ladder/actions.tsv"
+  rc=0
+  verify "$h" >/dev/null || rc=$?
+  assert_equals 3 "$rc" 'an emptied ledger is reported broken'
+
+  # An edit to an earlier row holds rung 4, whose caps read that history.
+  local h2
+  h2=$(new_home chain-history)
+  new_task "$h2" e2
+  ticks "$h2" e2 "$B" $((B + 1380))
+  assert_equals 1 "$(rows "$h2" e2 would-act 3)" 'the episode reached rung 3'
+  perl -i -pe 's/\tepisode-open /\tepisode-0pen / if $. == 2' "$h2/state/hung-ladder/actions.tsv"
+  ticks "$h2" e2 $((B + 1440)) $((B + 1500))
+  assert_equals 0 "$(rows "$h2" e2 would-act 4)" 'rung 4 never reads an edited history'
+  assert_equals 1 "$(rows "$h2" e2 hold)" 'the hold is recorded once'
+  ledger "$h2" | grep -q 'ledger-unverified' || fail 'the hold names the broken chain'
+
+  # A skip list that others can write is not trusted.
+  local h3
+  h3=$(new_home chain-skip)
+  new_task "$h3" k1
+  printf 'k1\n' > "$h3/config/hung-ladder-skip"
+  chmod 666 "$h3/config/hung-ladder-skip"
+  tick "$h3" k1 "$B"
+  [ -s "$h3/state/hung-ladder/episodes/k1.sample" ] || fail 'a skip list others can write does not skip'
+  chmod 644 "$h3/config/hung-ladder-skip"
+  rm -f "$h3/state/hung-ladder/episodes/k1.sample"
+  tick "$h3" k1 $((B + 60))
+  [ ! -e "$h3/state/hung-ladder/episodes/k1.sample" ] || fail 'an owner-only skip list skips'
   assert_no_actions 'chain'
   pass 'the hash chain and field escaping expose spoofed, edited, and removed rows'
 }
@@ -497,6 +592,12 @@ test_snapshots_redact_and_exclude_secrets() {
   h=$(new_home secrets)
   new_task "$h" s1
   printf 'API_KEY=supersecretvalue\n' > "$h/wt-s1/.env"
+  printf 'TOKEN=first\n' > "$h/wt-s1/private key.env"
+  printf 'TOKEN=first\n' > "$h/wt-s1/clé-secret.txt"
+  git -C "$h/wt-s1" add 'private key.env' 'clé-secret.txt'
+  git -C "$h/wt-s1" -c user.name=t -c user.email=t@example.invalid commit -qm secrets
+  printf 'TOKEN=quotedsecretvalue\n' > "$h/wt-s1/private key.env"
+  printf 'TOKEN=quotedsecretvalue\n' > "$h/wt-s1/clé-secret.txt"
   printf 'change\n' >> "$h/wt-s1/README.md"
   PANE_STYLE=token ticks "$h" s1 "$B" $((B + 1440))
   assert_equals 1 "$(rows "$h" s1 would-act 4)" 'the episode reached rung 4'
@@ -507,6 +608,9 @@ test_snapshots_redact_and_exclude_secrets() {
   snap=$(find "$h/state/hung-ladder/snapshots/s1" -name '*.tree' | head -n 1)
   grep -q '^present-secret	.env$' "$snap" || fail 'a secret-pattern file is recorded as present'
   ! grep -rq supersecretvalue "$h/state/hung-ladder" || fail 'secret file content is never saved'
+  ! grep -rq quotedsecretvalue "$h/state/hung-ladder" || fail 'a secret file whose name Git quotes is still left out'
+  grep -q '^present-secret	private key.env$' "$snap" || fail 'a quoted secret path is recorded as present'
+  grep -q '^present-secret	clé-secret.txt$' "$snap" || fail 'a non-ASCII secret path is recorded as present'
   grep -q 'README.md' "$snap" || fail 'an ordinary dirty file is hashed'
   assert_equals "600" "$(stat -f %Lp "$snap" 2>/dev/null || stat -c %a "$snap")" 'snapshots are owner-only'
   ! ledger "$h" | grep -q 'API_KEY' || fail 'patch bodies never reach the ledger'
@@ -537,6 +641,7 @@ fm_test_run \
   test_caps_hold_escalations \
   test_breaker_formula_and_load \
   test_healthy_waits_and_screens \
+  test_unverified_wait_cap_cannot_be_renewed \
   test_live_mode_refused_without_gate \
   test_chain_and_escaping \
   test_snapshots_redact_and_exclude_secrets \

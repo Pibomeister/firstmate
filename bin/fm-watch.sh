@@ -3364,15 +3364,21 @@ CAPTAIN_CALL_IDENTITY=
 # The hung-worker ladder's observe pass (bin/fm-hung-ladder.sh owns every
 # rule). It runs inside this pass, never as its own loop: an absent
 # config/hung-ladder costs one file test, each task is sampled at most once
-# per FM_HUNG_LADDER_SAMPLE_SECS, the helper is time-bounded, and its result
-# never changes what this pass does next. It is called before the busy-turn
-# bound can defer the pane, so a pane that renders busy is still observed.
+# per FM_HUNG_LADDER_SAMPLE_SECS (an in-memory stamp, so the bound holds in
+# every mode, including off and refused), the helper is time-bounded, and its
+# result never changes what this pass does next. It is called before the
+# busy-turn bound can defer the pane, so a pane that renders busy is still
+# observed.
 hung_ladder_observe() {  # <task> <kind> <1 when the pane reads busy> <dialog> <pane-text>
-  local task=$1 kind=$2
+  local task=$1 kind=$2 stamp last now
   [ -e "$CONFIG/hung-ladder" ] || return 0
   [ -n "$task" ] || return 0
   case "$kind" in ship|scout) ;; *) return 0 ;; esac
-  [ "$(age_of "$STATE/hung-ladder/episodes/$task.sample")" -ge "$HUNG_LADDER_SAMPLE_SECS" ] || return 0
+  stamp="HUNG_LADDER_AT_${task//[!A-Za-z0-9_]/_}"
+  last=${!stamp:-0}
+  now=$(date +%s)
+  [ $((now - last)) -ge "$HUNG_LADDER_SAMPLE_SECS" ] || return 0
+  printf -v "$stamp" '%s' "$now"
   printf '%s\n' "$5" | fm_run_timed "$HUNG_LADDER_BUDGET" "$BASH" "$SCRIPT_DIR/fm-hung-ladder.sh" \
     tick --task "$task" --kind "$kind" --busy "$3" --dialog "$4" >/dev/null 2>"$STATE/.hung-ladder.err" || true
 }

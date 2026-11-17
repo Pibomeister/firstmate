@@ -1083,6 +1083,8 @@ Each ledger row is escaped and hash-chained to the row before it, so an edited, 
 A later outcome is a new `resolve` row with `later_self_progressed=yes` or `no`, never an edit.
 Caps, the systemic breaker, holds, and parks are recorded in each row, so the soak can show what live mode would have done.
 List task ids the ladder never observes in `config/hung-ladder-skip`, one per line.
+The skip list is honored only when this user owns it and no group or other user can write it.
+These checks guard against mistakes and other users, not against a worker running as the same user, which could also edit its own config; stage 1 has no action path for such a worker to reach.
 [`fm-hung-ladder.sh`'s header and help](../bin/fm-hung-ladder.sh) own every key, the tunables, the ledger fields, the sensors, and the state files.
 
 ## Merge review (config/merge-review)
