@@ -336,6 +336,8 @@ test_run_compact_records_context_epoch_and_starts_one_doorbell() {
   [ "$(doorbell_runs "$root")" = 1 ] || fail "an auto boundary after a manual one must start one doorbell"
   grep -qF -- "--transcript $root/transcript.jsonl" "$root/state/doorbell-ran" \
     || fail "the doorbell must receive the payload's transcript path"
+  grep -qF -- "--epoch-sum $(cksum < "$root/state/.context-epoch")" "$root/state/doorbell-ran" \
+    || fail "the doorbell must receive the context epoch this hook recorded: $(cat "$root/state/doorbell-ran")"
   # Real work beyond the automatic away check still counts as open work.
   root="$TMP_ROOT/run-doorbell-task-meta"
   make_doorbell_primary "$root" auto

@@ -235,10 +235,14 @@ launch_resume_doorbell() {  # <program>
   local bin=$1
   # Detached from the hook: its own process group, stdio away from the hook's
   # pipes, so the SessionStart hook returns at once.
+  # The epoch this hook just recorded rides along, so a /clear between this
+  # launch and the doorbell's own start cannot become the doorbell's context.
+  local epoch_sum
+  epoch_sum=$(cksum < "$STATE/.context-epoch" 2>/dev/null || true)
   (
     set -m 2>/dev/null || true
     FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
-      nohup "$bin" --source compact --transcript "$TRANSCRIPT" </dev/null >/dev/null 2>&1 &
+      nohup "$bin" --source compact --transcript "$TRANSCRIPT" --epoch-sum "${epoch_sum:-absent}" </dev/null >/dev/null 2>&1 &
   ) || true
   return 0
 }

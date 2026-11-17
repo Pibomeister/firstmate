@@ -45,7 +45,12 @@
 # sourced after bin/fm-backend.sh so a suite can replace the backend reads and
 # keystrokes.
 #
-# Usage: fm-resume-doorbell.sh [--source <source>] [--transcript <path>]
+# --epoch-sum is the cksum(1) output of state/.context-epoch as the launching
+# hook recorded it (or "absent"). A doorbell whose context differs from that by
+# the time it pins it stands down, so a /clear between launch and start cannot
+# become its context.
+#
+# Usage: fm-resume-doorbell.sh [--source <source>] [--transcript <path>] [--epoch-sum <cksum>]
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -57,10 +62,12 @@ FM_RESUME_DOORBELL_LINE=': Firstmate resume after context compaction: re-read st
 
 SOURCE=compact
 TRANSCRIPT=
+EXPECTED_EPOCH_SUM=
 while [ $# -gt 0 ]; do
   case "$1" in
     --source) SOURCE=${2:-compact}; shift; [ $# -eq 0 ] || shift ;;
     --transcript) TRANSCRIPT=${2:-}; shift; [ $# -eq 0 ] || shift ;;
+    --epoch-sum) EXPECTED_EPOCH_SUM=${2:-}; shift; [ $# -eq 0 ] || shift ;;
     -h|--help) sed -n '2,${/^#/!q;p;}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) shift ;;
   esac
@@ -95,6 +102,19 @@ finish() {  # <outcome> <detail>
 }
 
 [ -d "$STATE" ] || exit 0
+
+current_epoch_sum() {
+  if [ -e "$STATE/.context-epoch" ]; then
+    cksum < "$STATE/.context-epoch" 2>/dev/null || true
+  else
+    printf 'absent'
+  fi
+}
+# Checked before the lock too, so a doorbell for a context already gone never
+# takes a live lock over.
+if [ -n "$EXPECTED_EPOCH_SUM" ] && [ "$(current_epoch_sum)" != "$EXPECTED_EPOCH_SUM" ]; then
+  finish stood-down "a new context began after the compaction"
+fi
 
 # Single flight: a second doorbell while one is live types nothing, unless the
 # live one was started under an older context. That one stands down at its next
@@ -133,12 +153,20 @@ LOCK_PID=$(sed -n '1p' "$STATE/.lock" 2>/dev/null || true)
 # doorbell can tell that a live holder started under an older context.
 EPOCH_PIN="$LOCK/context-epoch.$$"
 if [ -e "$STATE/.context-epoch" ]; then
-  ln "$STATE/.context-epoch" "$EPOCH_PIN" 2>/dev/null || EPOCH_PIN=
-  EPOCH_SUM=$(cksum < "$STATE/.context-epoch" 2>/dev/null || true)
+  if ln "$STATE/.context-epoch" "$EPOCH_PIN" 2>/dev/null; then
+    EPOCH_SUM=$(cksum < "$EPOCH_PIN" 2>/dev/null || true)
+  else
+    EPOCH_PIN=
+    EPOCH_SUM=$(cksum < "$STATE/.context-epoch" 2>/dev/null || true)
+  fi
   [ -n "$EPOCH_SUM" ] || finish stood-down "state/.context-epoch is unreadable"
 else
   EPOCH_PIN=
   EPOCH_SUM=absent
+fi
+# The pinned context must be the one the launching hook recorded.
+if [ -n "$EXPECTED_EPOCH_SUM" ] && [ "$EPOCH_SUM" != "$EXPECTED_EPOCH_SUM" ]; then
+  finish stood-down "a new context began after the compaction"
 fi
 context_epoch_same() {
   if [ "$EPOCH_SUM" = absent ]; then
@@ -190,6 +218,9 @@ transcript_turn_after_compaction() {
 # a rendered busy footer independently proves a running turn.
 rendered_busy() {
   local fn="fm_backend_${BACKEND}_rendered_busy_state"
+  # The other backend reads load the adapter inside their own command
+  # substitutions, so it is not loaded here yet.
+  declare -F "$fn" >/dev/null 2>&1 || fm_backend_source "$BACKEND" >/dev/null 2>&1 || true
   declare -F "$fn" >/dev/null 2>&1 || { printf 'unknown'; return 0; }
   "$fn" "$TARGET" claude 2>/dev/null || printf 'unknown'
 }
