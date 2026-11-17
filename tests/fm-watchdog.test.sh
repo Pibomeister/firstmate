@@ -4145,25 +4145,30 @@ page_subjects() {  # <phase>
 test_worker_credential_page_withholds_typed_values() {
   local aws=$'$ aws configure\nAWS Access Key ID [****************ABCD]:\nAWS Secret Access Key [****************WXYZ]: wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY'
   local otp=$'+ two-factor required\nEnter OTP: 918273'
+  # An approval picker for a credential-bearing call pages from the dialog
+  # path, where the bottom row is the picker footer, not an input.
+  local cookie=$'Bash command\n\n  curl -H "Cookie: session=rvw7731cookie" https://api.example.com/me\n  Fetch the profile\n\nDo you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently\n\nEsc to cancel'
   local mode
   for mode in act dry-run; do
     if [ "$mode" = act ]; then make_home $'Captain session\n> '; else make_home $'Captain session\n> ' 'mode=dry-run'; fi
     transcript 100 "Working."
     worker_pane keys ship "$aws"
     worker_pane code ship "$otp"
+    worker_pane cookie ship "$cookie"
     sleep 0.5
     printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
     printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
     : > "$H/state/.afk"
     run_wd 0 once >/dev/null 2>&1 || fail "the $mode away pass failed"
     if [ "$mode" = act ]; then
-      assert_equals 2 "$(ledger_rows dialog page pending)" "both credential stops page the owner: $(ledger | cut -f4-8)"
+      assert_equals 3 "$(ledger_rows dialog page pending)" "each credential stop pages the owner: $(ledger | cut -f4-8)"
     else
-      assert_equals 2 "$(ledger_rows dialog page dry-run)" "dry-run records both pages it would send: $(ledger | cut -f4-8)"
+      assert_equals 3 "$(ledger_rows dialog page dry-run)" "dry-run records each page it would send: $(ledger | cut -f4-8)"
     fi
     assert_no_grep "wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY" "$H/state/watchdog/actions.tsv" "a typed AWS secret stays out of the $mode ledger"
     assert_no_grep "918273" "$H/state/watchdog/actions.tsv" "a typed one-time code stays out of the $mode ledger"
-    assert_equals 2 "$(grep -c 'withheld: a credential or sign-in prompt' "$H/state/watchdog/actions.tsv")" "the $mode ledger names both withheld prompts"
+    assert_no_grep "rvw7731cookie" "$H/state/watchdog/actions.tsv" "a session cookie in a credential picker stays out of the $mode ledger"
+    assert_equals 3 "$(grep -c 'withheld: a credential or sign-in prompt' "$H/state/watchdog/actions.tsv")" "the $mode ledger names each withheld prompt"
     if [ -e "$H/paged.log" ]; then
       assert_no_grep "wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY" "$H/paged.log" "the page carries no typed secret"
     fi

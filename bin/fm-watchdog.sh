@@ -2382,7 +2382,8 @@ wd_visit_worker_dialogs() {
   saved_draft=${O_DRAFT:-}
   while IFS=$'\t' read -r id meta; do
     [ -n "$id" ] || continue
-    # A stop reason belongs to one worker's pass, never to the next pane.
+    # A stop reason belongs to one worker's pass, including its page, never
+    # to the next pane.
     WD_PP_REASON=
     backend=$(fm_backend_of_meta "$meta")
     target=$(fm_backend_target_of_meta "$meta")
@@ -2425,7 +2426,7 @@ wd_visit_worker_dialogs() {
     if [ -z "$dialog" ] && fm_wd_usage_limit_autowait "$screen"; then
       O_REC_SUBJECT="worker:$id"
       wd_quota_guard_warning "$id"
-      unset O_REC_SUBJECT WD_PP_REASON
+      unset O_REC_SUBJECT
     fi
     prompt=2
     case "$dialog" in
@@ -2436,7 +2437,7 @@ wd_visit_worker_dialogs() {
           O_REC_SUBJECT="worker:$id"
           wd_permission_prompt "$id" "$harness" "$screen" "${dialog:-none}"
           prompt=$?
-          unset O_REC_SUBJECT WD_PP_REASON
+          unset O_REC_SUBJECT
         fi
         ;;
     esac
@@ -2453,7 +2454,7 @@ wd_visit_worker_dialogs() {
       wd_gap "permission prompt waiting on worker $id; the watchdog does not answer it"
       wd_page_permission
       O_DIALOG=$saved_dialog
-      unset O_REC_SUBJECT WD_PP_REASON
+      unset O_REC_SUBJECT
     fi
     case "$dialog" in
       feedback)
@@ -2468,7 +2469,7 @@ wd_visit_worker_dialogs() {
         wd_handle_dialog || true
         O_ID=$saved_id
         O_HARNESS=$saved_harness
-        unset O_REC_SUBJECT WD_PP_REASON
+        unset O_REC_SUBJECT
         ;;
       permission)
         O_BACKEND=$backend
@@ -2480,7 +2481,7 @@ wd_visit_worker_dialogs() {
           wd_gap "permission dialog waiting on worker $id; the watchdog does not select an answer, and this one was neither declined nor relaunched"
           wd_page_permission
         fi
-        unset O_REC_SUBJECT WD_PP_REASON
+        unset O_REC_SUBJECT
         ;;
       usage-limit)
         O_BACKEND=$backend
@@ -2489,7 +2490,7 @@ wd_visit_worker_dialogs() {
         O_DIALOG=$dialog
         O_REC_SUBJECT="worker:$id"
         wd_quota_name_pick_rated "$(wd_id)" "worker $id" "$id"
-        unset O_REC_SUBJECT WD_PP_REASON
+        unset O_REC_SUBJECT
         ;;
     esac
   done < <(wd_worker_metas "$O_HOME")

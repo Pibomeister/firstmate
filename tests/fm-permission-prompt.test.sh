@@ -497,6 +497,18 @@ test_hardstop_categories() {
     assert_equals '' "$(printf '%s\n' "$c" | classify claude)" "an agent screen is not a typed-answer or wrapped prompt: $c"
     bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null && fail "an agent screen blocks a send: $c"
   done
+  for c in $'build output line\nUsername for \'https:/\n/github.com\': ' $'build output line\nEnter passphrase for\n key \'/home/u/.ssh/i\nd_ed25519\': ' $'build output line\nAWS Secret Access Ke\ny [None]: ' $'build output line\nSSO start URL [None]\n: ' "Please type 'yes', 'no' or the fingerprint: yes" "Please type 'yes' or 'no': yes" 'gpg> save' 'gpg/card> admin' '? GitLab hostname: gitlab.example.com' 'Enter user-name: scott'; do
+    [ -n "$(printf '%s\n' "$c" | classify claude)" ] || fail "a wrapped or populated sign-in input is not caught: $c"
+    bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard misses a wrapped or populated sign-in input: $c"
+  done
+  for c in $'build output line\nrm: remove write-pro\ntected regular file \n\'important.txt\'? ' 'Select items to delete>> 1 2' 'Input ignore patterns>> *.o *.a'; do
+    [ -n "$(printf '%s\n' "$c" | classify claude)" ] || fail "a wrapped or populated confirmation is not caught: $c"
+    bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard misses a wrapped or populated confirmation: $c"
+  done
+  for c in '❯ Fix the test that asks: are you sure? yes' $'Running tests for the password reset flow and the\n login handler now, this takes a while' 'Enter the directory: src'; do
+    [ -z "$(printf '%s\n' "$c" | classify claude)" ] || fail "agent text is read as a prompt: $c"
+    ! bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard blocks agent text: $c"
+  done
   for c in 'Hostname: build-1' 'Error code: 500' 'OTP library version: 2.1.0' 'mfa is enabled for user: alice' '2FA required for account: bob' 'src/auth.ts:  // Enter verification code: 123' 'Exit code: 1' 'Summary: done' 'rm: cannot remove x: No such file or directory'; do
     assert_equals '' "$(printf '%s\n' "$c" | classify claude)" "an ordinary output row is not a prompt: $c"
   done
