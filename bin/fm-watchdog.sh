@@ -1635,7 +1635,7 @@ wd_pp_steer() {
   local id=$1 hash=$2 text rid
   text="Watchdog (automated, not the owner): a permission prompt on your pane was declined automatically, because no person can approve prompts during unattended work. Do not repeat the same call. If it was a Bash command the harness could not check, rewrite it in a form it can check: quote heredoc delimiters (<<'EOF'), avoid unescaped backticks, or write the file with the Write or Edit tool. If the action is truly needed and no other form works, append a blocked: status line that names it instead of waiting for approval."
   rid=$(wd_id)
-  if FM_HOME=$O_HOME fm_run_timed 60 "$SCRIPT_DIR/fm-send.sh" "$id" "$text" >/dev/null 2>&1; then
+  if FM_HOME=$O_HOME fm_run_timed 60 "$SCRIPT_DIR/fm-send.sh" "$id" "$text" </dev/null >/dev/null 2>&1; then
     wd_rec "$rid" permission-prompt steer "done" "rewrite instruction recorded in the worker's inbox"
     return 0
   fi
@@ -1738,7 +1738,10 @@ wd_pp_decline() {
     return 1
   fi
   wd_pp_steer "$id" "$hash" || return 1
-  wd_pp_clear "$id"
+  # The prompt is handled once the instruction is recorded, so a ledger write
+  # that fails after it never turns the decline into a waiting prompt.
+  wd_pp_clear "$id" || true
+  return 0
 }
 
 # wd_pp_relaunch <id> <prompt-hash>: a workspace-trust dialog, whose cursor
@@ -1767,7 +1770,7 @@ wd_pp_relaunch() {
     return 1
   fi
   note="The previous launch stopped on the workspace-trust dialog before it could work. The watchdog relaunched this worker so its launch pre-registers the worktree's trust entry; no key was typed into the dialog. Continue the task from these instructions."
-  if err=$(FM_HOME=$O_HOME fm_run_timed "$(cfgi relaunch-timeout-secs 900)" "$WD_CONTROL" "$id" relaunch --note "$note" 2>&1 >/dev/null); then
+  if err=$(FM_HOME=$O_HOME fm_run_timed "$(cfgi relaunch-timeout-secs 900)" "$WD_CONTROL" "$id" relaunch --note "$note" </dev/null 2>&1 >/dev/null); then
     wd_rec "$rid" permission-prompt relaunch "done" "worker relaunched"
     wd_pp_clear "$id"
     return 0
@@ -1797,15 +1800,22 @@ wd_pp_unlock() {
 # for one worker pane. 0 = the prompt left the pane; 1 = a prompt still waits;
 # 2 = no prompt verdict, or `permission-route=off`.
 wd_permission_prompt() {
-  local id=$1 harness=$2 screen=$3 dialog=$4 verdict kind reason hash rc
+  local id=$1 harness=$2 screen=$3 dialog=$4 verdict kind reason hash rc live live_dialog
   WD_PP_STOPPED=
   WD_PP_REASON=
   [ "$(wd_permission_mode)" != off ] || return 2
   if ! verdict=$(fm_pp_classify "$screen" "$harness" "$dialog"); then
     # The open marker is read and cleared under the worker's lock, so an
-    # overlapping pass never clears a marker another pass just wrote.
+    # overlapping pass never clears a marker another pass just wrote. This
+    # pass's screen can predate a prompt another pass reported, so the pane is
+    # read again under the lock; only a fresh read that still shows no prompt
+    # resolves the marker, and a failed read keeps it.
     if [ -e "$(wd_pp_mark "$id").open" ] && wd_pp_lock "$id"; then
-      wd_pp_clear "$id"
+      live=$(wd_capture "$O_BACKEND" "$O_TARGET" 60) || live=
+      live_dialog=$(wd_observe_dialog "$O_BACKEND" "$O_TARGET" "fm-$id" "${harness:-unknown}") || live_dialog=
+      if [ -n "$live" ] && ! fm_pp_classify "$live" "$harness" "${live_dialog:-none}" >/dev/null; then
+        wd_pp_clear "$id"
+      fi
       wd_pp_unlock "$id"
     fi
     return 2

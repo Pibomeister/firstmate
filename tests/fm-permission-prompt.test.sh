@@ -570,6 +570,20 @@ test_hardstop_prompts_are_never_answered() {
   assert_equals 0 "$(ledger_rows decline pending)" "no hard stop is declined"
   assert_equals '' "$(cat "$H/control.log" 2>/dev/null)" "no hard stop is relaunched"
 
+  # A pass whose own screen read came before the prompt reads the pane again
+  # under the worker lock, so an older empty screen never resolves a hard stop
+  # that is still on the pane.
+  local cred_pane stale_rc
+  cred_pane=$(sed -n 's/^window=//p' "$H/state/cred.meta")
+  stale_rc=$(FM_TEST_SEAM=1 FM_WD_NOW=$((BASE + 450)) FM_HOME="$H" bash -c '
+    . "$1" || exit 9
+    O_HOME=$FM_HOME O_TAG=$(wd_tag "$FM_HOME") O_KEY=$(wd_state_key "$FM_HOME") O_BACKEND=tmux O_TARGET=$2 O_REC_SUBJECT=worker:cred
+    wd_permission_prompt cred claude "$(printf "work output\n> \n")" none
+    printf "%s\n" "$?"' _ "$WD" "$cred_pane" 2>/dev/null)
+  assert_equals 2 "$stale_rc" "an older empty screen gets no verdict"
+  assert_equals 0 "$(status_rows cred resolved permission-prompt-hardstop)" "an older empty screen does not resolve a hard stop still on the pane"
+  assert_equals 1 "$(find "$H/state/watchdog/permission" -name '*-cred.open' | wc -l | tr -d ' ')" "the hard stop's marker stays while the prompt is on the pane"
+
   printf 'work output\n> \n' > "$H/plain.txt"
   repaint cred "$H/plain.txt"
   run_wd 600 once >/dev/null 2>&1

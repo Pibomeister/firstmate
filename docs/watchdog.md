@@ -178,6 +178,7 @@ One pass at a time may press a key on, relaunch, or write the open marker of one
 Only a proven screen structure leads to an action: words inside a command, or conversation above the prompt, never turn a prompt into a trust dialog, a hold, or a route.
 A question picker's hard stops and word-based holds read only its own paragraph, the unbroken rows that end at its last `1.` option row, plus the paragraph above when the options open their own paragraph (the picker's title), so conversation above a blank row never makes it a hard stop or a hold; conversation drawn directly against the picker can, and neither presses a key.
 A trust relaunch whose pending ledger row cannot be written is never started, so the relaunch window always has its record; the dialog is held instead.
+A reported prompt is resolved only from a fresh read of the pane taken under the worker's lock, so a pass whose own read came before the prompt never resolves it, and a failed read keeps it open.
 The prompt rows are the rows below the nearest full-width rule above the last row.
 A rule with an odd number of dashed command-box rows below it sits inside the command preview, such as a heredoc, so the search goes on to the rule above it.
 The chosen rule may have at most the box's two dashed rows below it, and no rule above it may enclose a dashed row.
