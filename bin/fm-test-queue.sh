@@ -474,7 +474,7 @@ ticket_group_reapable() {
     stale)
       ! pid_running "$T_PID" "" || return 1
       [ "$(ps -p "$$" -o pgid= 2>/dev/null | tr -d '[:space:]')" != "$T_PGID" ] || return 1
-      owner_alive "$T_HOLDER_PID" "$T_HOLDER_START" || return 1
+      [ -n "$T_HOLDER_START" ] && [ "$(pid_start "$T_HOLDER_PID")" = "$T_HOLDER_START" ] || return 1
       [ "$(ps -p "$T_HOLDER_PID" -o pgid= 2>/dev/null | tr -d '[:space:]')" = "$T_PGID" ] || return 1
       ;;
     *) return 1 ;;
@@ -541,14 +541,12 @@ hold_group() {
   while pid_running "$T_CHILD_PID" "$T_CHILD_START"; do
     hold_nap
   done
-  if ticket_group_reapable hold; then
-    tries=0
-    until reap_stragglers; do
-      tries=$((tries + 1))
-      [ "$tries" -lt 5 ] || break
-      hold_nap
-    done
-  fi
+  tries=0
+  while ticket_group_reapable hold && ! reap_stragglers; do
+    tries=$((tries + 1))
+    [ "$tries" -lt 5 ] || break
+    hold_nap
+  done
   exit 0
 }
 
@@ -560,13 +558,23 @@ hold_nap() {
   nap=""
 }
 
+# holder_is_ours: true while the holder is still one of this shell's unreaped
+# jobs, so its pid cannot belong to another process.
+holder_is_ours() {
+  case " $(jobs -p 2>/dev/null | tr '\n' ' ') " in
+    *" $HOLDER_PID "*) return 0 ;;
+  esac
+  return 1
+}
+# stop_holder: ends the holder and waits only for a holder it signalled; one
+# it cannot prove is ours is left to exit on its own once the wrapper is gone.
 stop_holder() {
   [ -n "$HOLDER_PID" ] || return 0
-  if [ -n "$HOLDER_START" ] && owner_alive "$HOLDER_PID" "$HOLDER_START"; then
+  if holder_is_ours; then
     kill "$HOLDER_PID" 2>/dev/null
     kill -CONT "$HOLDER_PID" 2>/dev/null
+    wait "$HOLDER_PID" 2>/dev/null
   fi
-  wait "$HOLDER_PID" 2>/dev/null
   HOLDER_PID="" HOLDER_START=""
 }
 

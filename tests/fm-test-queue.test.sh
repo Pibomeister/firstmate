@@ -583,6 +583,44 @@ test_dead_holders_nap_is_not_a_caller_stage() {
   pass "fm-test-queue.sh: a dead holder's nap is reaped, not spared as a caller stage"
 }
 
+# A wrapper that could not read its holder's start time records no holder,
+# and must still end rather than wait on a holder that waits for it.
+test_unread_holder_start_does_not_hang_the_run() {
+  local wrapper real_ps
+  new_case holder-unread
+  echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
+  real_ps=$(command -v ps)
+  mkdir -p "$CASE/fakebin"
+  cat > "$CASE/fakebin/ps" <<EOF
+#!/bin/sh
+# Fails once: the first start-time read of a process whose parent is this
+# ps's grandparent, which is the wrapper asking about the holder it forked.
+if [ "\$1" = -p ] && [ "\$3" = -o ] && [ "\$4" = lstart= ]; then
+  gp=\$('$real_ps' -p "\$PPID" -o ppid= | tr -d ' ')
+  tp=\$('$real_ps' -p "\$2" -o ppid= | tr -d ' ')
+  if [ -n "\$gp" ] && [ "\$gp" = "\$tp" ] && mkdir '$CASE/ps-failed' 2>/dev/null; then exit 1; fi
+fi
+exec '$real_ps' "\$@"
+EOF
+  chmod +x "$CASE/fakebin/ps"
+  (
+    set -m
+    PATH="$CASE/fakebin:$PATH" qbg run --label unread -- sh -c 'echo ran > "$1/out"' _ "$CASE" >/dev/null 2>&1 &
+    echo $! > "$CASE/wrapper"
+    wait
+  ) 2>/dev/null &
+  CASE_PIDS+=("$!")
+  wait_until "the run started" file_exists "$CASE/wrapper"
+  wrapper=$(cat "$CASE/wrapper")
+  CASE_PIDS+=("$wrapper")
+  wait_until "the command ran" file_exists "$CASE/out"
+  [ -d "$CASE/ps-failed" ] || fail "the holder's start-time read never failed"
+  wait_until "the run ended after an unread holder start" pid_gone "$wrapper"
+  wait_until "nothing is left in the group" group_empty "$wrapper"
+  status_has 'serving=0' || fail "the slot stayed held after the run ended"
+  pass "fm-test-queue.sh: an unread holder start time neither hangs the run nor holds the slot"
+}
+
 # A snapshot that fails once during the wrapper's exit reap leaves the
 # holder running to retry, rather than abandoning the straggler.
 test_failed_exit_snapshot_leaves_the_holder_to_retry() {
@@ -1163,6 +1201,7 @@ test_zombie_wrapper_does_not_block_its_holder
 test_process_substitution_under_an_execd_leader_is_spared
 test_failed_exit_snapshot_leaves_the_holder_to_retry
 test_dead_holders_nap_is_not_a_caller_stage
+test_unread_holder_start_does_not_hang_the_run
 test_reused_group_id_is_not_reaped
 test_pipeline_stage_outliving_its_caller_is_spared
 test_remote_straggler_cannot_hold_the_ssh_output
