@@ -464,6 +464,21 @@ test_claim_refusals_and_changed_approval() {
     [ "$(jq -r .token "$HOME_DIR/state/ledger-claims/claim-one.json")" = "$token" ] || fail 'refusal replaced the receipt'
     [ "$(jq -r .phase "$HOME_DIR/state/ledger-claims/claim-one.json")" = reserved ] || fail 'refusal consumed the claim'
   done
+  for variant in prefix prose; do
+    new_home "claim-source-$variant"
+    mkdir -p "$HOME_DIR/projects/alpha"
+    printf 'claim-project=alpha\n' > "$HOME_DIR/config/mission-ledger"
+    ledger intake claim-one --project alpha --title 'approved work' --source proposal:V1 --body 'Approved detail' >/dev/null || fail 'intake failed'
+    fm_test_spawn_brief "$HOME_DIR" claim-one
+    out=$(ledger claim --project alpha) || fail "initial $variant claim: $out"
+    case "$variant" in
+      prefix) tasks update claim-one --body 'Ledger source: proposal:V12' >/dev/null || fail 'body update failed' ;;
+      prose) tasks update claim-one --body $'Edited note\nLedger source: proposal:V1' >/dev/null || fail 'body update failed' ;;
+    esac
+    out=$(ledger claim --project alpha --resume claim-one 2>&1); rc=$?
+    expect_code 1 "$rc" "source $variant mismatch refuses claim: $out"
+    assert_contains "$out" 'approval source changed' "source $variant mismatch explains refusal"
+  done
   claim_fixture claim-owned
   tasks start claim-one >/dev/null
   out=$(ledger claim --project alpha 2>&1); rc=$?
@@ -476,6 +491,11 @@ test_claim_refusals_and_changed_approval() {
   printf 'claim-project=../other-home\n' >> "$HOME_DIR/config/mission-ledger"
   out=$(ledger claim --project alpha 2>&1); rc=$?
   expect_code 1 "$rc" 'invalid scope fails closed even after a valid grant'
+  claim_fixture claim-symlink-config
+  printf 'claim-project=alpha\n' > "$HOME_DIR/real-ledger"
+  ln -sf "$HOME_DIR/real-ledger" "$HOME_DIR/config/mission-ledger"
+  out=$(ledger claim --project alpha 2>&1); rc=$?
+  expect_code 1 "$rc" 'symlinked mission-ledger refuses claims'
   pass 'approval, scope, dependencies, decisions, quota and standing holds refuse claims; in-flight work stays owned'
 }
 
@@ -552,11 +572,44 @@ test_claim_skips_unprepared_work_and_scopes_charter_guidance() {
   printf 'claim-project=../alpha\n' > "$HOME_DIR/other-config/mission-ledger"
   out=$(fm_secondmate_claim_guidance "$HOME_DIR/other-config"); rc=$?
   expect_code 1 "$rc" 'charter refuses an invalid grant'
+  printf 'claim-project=alpha\n' > "$HOME_DIR/real-mission-ledger"
+  ln -sf "$HOME_DIR/real-mission-ledger" "$HOME_DIR/other-config/mission-ledger"
+  out=$(fm_secondmate_claim_guidance "$HOME_DIR/other-config"); rc=$?
+  expect_code 1 "$rc" 'charter refuses a symlinked mission-ledger'
   pass 'unprepared items do not stall ready work and claim guidance stays inside one home'
 }
 
+test_claim_spawn_waits_for_concurrent_claim_lock() {
+  claim_fixture claim-wait-lock
+  local out token wt fakebin holder rc=0
+  out=$(ledger claim --project alpha) || fail "initial claim: $out"
+  token=${out##*token=}
+  wt="$HOME_DIR/test-worktree"
+  fm_git_worktree "$HOME_DIR/projects/alpha" "$wt" claim-wait-lock
+  fakebin=$(fm_test_make_spawn_fakebin "$HOME_DIR/fake" codex)
+  printf 'codex\n' > "$HOME_DIR/config/crew-harness"
+  touch "$HOME_DIR/state/.last-watcher-beat"
+  # Hold the home claim lock across spawn to simulate a concurrent claim scan.
+  FM_HOME="$HOME_DIR" bash -c '
+    source "$1/bin/fm-wake-lib.sh"
+    fm_lock_try_acquire "$FM_HOME/state/.ledger-claim.lock" || exit 1
+    sleep 1
+    fm_lock_release "$FM_HOME/state/.ledger-claim.lock"
+  ' _ "$ROOT" &
+  holder=$!
+  sleep 0.2
+  out=$(ledger claim-check claim-one "$token" "$HOME_DIR/projects/alpha" 2>&1); rc=$?
+  expect_code 1 "$rc" 'unauthorized claim-check without spawn lock refuses immediately'
+  out=$(FM_BACKEND=tmux fm_test_run_spawn "$HOME_DIR" "$wt" "$fakebin" claim-one "$HOME_DIR/projects/alpha" --scout --claim "$token" 2>&1) \
+    || fail "spawn failed under concurrent claim lock: $out"
+  wait "$holder" || fail 'lock holder helper failed'
+  out=$(ledger claim --project alpha --resume claim-one) || fail "cannot read launched receipt: $out"
+  assert_contains "$out" 'phase=launched' 'spawn waited on the claim lock and completed launch'
+  pass 'spawn claim transitions wait for concurrent claim lock without losing launch completion'
+}
+
 if [ "${FM_TEST_ONLY:-}" = claims ]; then
-  fm_test_run test_claim_reserves_once_and_resumes test_claim_refusals_and_changed_approval test_claim_concurrent_spawn_and_lost_reply test_claim_crash_fence test_claim_skips_unprepared_work_and_scopes_charter_guidance
+  fm_test_run test_claim_reserves_once_and_resumes test_claim_refusals_and_changed_approval test_claim_concurrent_spawn_and_lost_reply test_claim_crash_fence test_claim_skips_unprepared_work_and_scopes_charter_guidance test_claim_spawn_waits_for_concurrent_claim_lock
   exit
 fi
 
@@ -566,6 +619,7 @@ fm_test_run \
   test_claim_concurrent_spawn_and_lost_reply \
   test_claim_crash_fence \
   test_claim_skips_unprepared_work_and_scopes_charter_guidance \
+  test_claim_spawn_waits_for_concurrent_claim_lock \
   test_intake_files_one_item_per_ask_and_replays \
   test_intake_replay_key_and_existing_ids \
   test_public_followups_are_not_ready_work \

@@ -454,7 +454,8 @@ EOF
 
 # --- claims --------------------------------------------------------------------
 
-claim_init() {
+claim_init() { # [try|wait]
+  local mode=${1:-try}
   # shellcheck source=bin/fm-wake-lib.sh
   . "$SCRIPT_DIR/fm-wake-lib.sh"
   # shellcheck source=bin/fm-classify-lib.sh
@@ -466,7 +467,11 @@ claim_init() {
   [ ! -L "$CLAIM_DIR" ] || die "claim directory is a symlink"
   mkdir -p "$CLAIM_DIR" || die "cannot create claim directory"
   CLAIM_LOCK="$STATE/.ledger-claim.lock"
-  fm_lock_try_acquire "$CLAIM_LOCK" || die "another claim operation is in progress"
+  if [ "$mode" = wait ]; then
+    fm_lock_acquire_wait "$CLAIM_LOCK" || die "cannot acquire claim lock"
+  else
+    fm_lock_try_acquire "$CLAIM_LOCK" || die "another claim operation is in progress"
+  fi
   trap 'if [ -n "$CLAIM_TASK_LOCK" ]; then fm_lock_release "$CLAIM_TASK_LOCK"; fi; fm_lock_release "$CLAIM_LOCK"' EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
@@ -484,7 +489,7 @@ claim_scope() {
 }
 
 claim_snapshot() { # <id> <project>; prints the exact approval-input digest
-  local id=$1 project=$2 row source item holds open brief="$DATA/$1/brief.md"
+  local id=$1 project=$2 row source item body first holds open brief="$DATA/$1/brief.md"
   claim_scope "$project"
   load_backlog
   row=$(classified_rows | awk -F '\t' -v id="$id" -v p="$project" '$1 == p && $2 == "ready" && $5 == id { print }')
@@ -496,7 +501,12 @@ claim_snapshot() { # <id> <project>; prints the exact approval-input digest
   source=$(printf '%s\n' "$row" | cut -f3)
   valid_source "$source" || die "claim $id has an invalid approval source"
   item=$(tasks show "$id" --full) || die "cannot read claim $id"
-  printf '%s\n' "$item" | grep -F -- "Ledger source: $source" >/dev/null || die "claim $id approval source changed"
+  body=$(printf '%s\n' "$item" | sed -n 's/^  body: //p' | head -n 1)
+  case "$body" in
+    \"*\") body=$(printf '%s' "$body" | jq -r 'if type == "string" then . else "" end' 2>/dev/null) || body='' ;;
+  esac
+  first=${body%%$'\n'*}
+  [ "$first" = "Ledger source: $source" ] || die "claim $id approval source changed"
   [ -f "$brief" ] && [ -s "$brief" ] && [ -r "$brief" ] && [ ! -L "$brief" ] || die "claim $id needs a prepared brief"
   if [ -e "$STATE/$id.status" ] || [ -L "$STATE/$id.status" ]; then
     [ -f "$STATE/$id.status" ] && [ -r "$STATE/$id.status" ] && [ ! -L "$STATE/$id.status" ] || die "claim $id status is unreadable"
@@ -601,8 +611,8 @@ EOF
 cmd_claim_spawn() { # <check|begin|finish> <id> <token> <project-path>
   local action=$1 id=$2 token=$3 path=$4 tmp
   claim_slug "$id"
-  claim_init
   [ "$(cat "$STATE/.spawn-$id.lock/pid" 2>/dev/null)" = "$PPID" ] || die "claim transition requires the caller's spawn lock"
+  claim_init wait
   if [ ! -e "$CLAIM_DIR/$id.json" ] && [ ! -L "$CLAIM_DIR/$id.json" ]; then
     [ -z "$token" ] && [ "$action" = check ] && return 0
     die "no claim receipt for $id"
