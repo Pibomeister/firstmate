@@ -2680,9 +2680,10 @@ fm_composer_draft_row() {  # <screen>
     END {
       if (!n) exit 1
       # A multi-line draft in the Cursor, Devin, or Muse composer keeps its
-      # glyph only on its first row, and its continuation rows are indented.
+      # glyph only on its first row, and its continuation rows are indented,
+      # so the whole indented run above the last row is walked.
       k = n
-      if (r[n] ~ /^[ \t]+[^ \t]/) for (i = n - 1; i > 0 && i >= n - 4; i--) {
+      if (r[n] ~ /^[ \t]+[^ \t]/) for (i = n - 1; i > 0; i--) {
         if (r[i] ~ /^[ \t]*(→|❭|⟩)[ \t]*[^ \t]/) { k = i; break }
         if (r[i] !~ /^[ \t]+[^ \t]/) break
       }
@@ -2693,25 +2694,38 @@ fm_composer_draft_row() {  # <screen>
 }
 
 # fm_composer_idle_bottom <screen>: the bottom of the screen is an empty agent
-# composer row (`❯ › ⟩ → ❭ ┃ ▌`, inside an optional box border) with only its
-# own footer rows below it, an opencode composer box, or a bare shell prompt on
-# the last row. A live
+# composer row (`❯ › ⟩ → ❭ ▌`, inside an optional box border), or one showing a
+# recorded idle placeholder (FM_COMPOSER_IDLE_RE, Codex `Ask Codex to do
+# anything`), with only its own footer rows below it, an opencode composer box,
+# or a shell prompt on the last row, bare or as `user@host` with a typed command. A live
 # terminal prompt or dialog replaces the composer, so anything above such a
 # bottom is quoted output and never a prompt waiting for an answer. A bare `>`
 # never counts, because Gemini draws its key input that way. A footer row
 # never ends like a question or label and never opens with an option cursor.
+fm_composer_idle_placeholder_re() {
+  printf '%s|^Ask Codex to do anything$' "${FM_COMPOSER_IDLE_RE:-$FM_COMPOSER_IDLE_RE_DEFAULT}" | LC_ALL=C tr '[:upper:]' '[:lower:]'
+}
+
 fm_composer_idle_bottom() {  # <screen>
-  printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
+  printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk -v ph="$(fm_composer_idle_placeholder_re)" '
+    function idle(s,  t) {
+      t = s; if (t !~ /^[ \t]*(│[ \t]*)?(❯|›|⟩|→|❭|▌)/) return 0
+      sub(/^[ \t]*(│[ \t]*)?(❯|›|⟩|→|❭|▌)[ \t]*/, "", t); sub(/[ \t]*│?[ \t]*$/, "", t)
+      return t == "" || tolower(t) ~ ph
+    }
     { gsub(/\r/, "") }
     NF { r[++n] = $0 }
     END {
       if (!n) exit 1
-      if (r[n] ~ /^[ \t]*(\([^)]*\)[ \t]+)?([^ \t]+[ \t]+)?[^ \t]*[$%#][ \t]*$/) exit 0
+      # An input label such as GnuPG `Comment:` never opens a shell prompt, and
+      # a `user@host` prompt may already hold a typed command.
+      if (r[n] ~ /^[ \t]*(\([^)]*\)[ \t]+)?([^ \t]*[^ \t:][ \t]+)?([^ \t]*[^ \t:][ \t]+)?[^ \t]*[$%#][ \t]*$/ && r[n] !~ /^[ \t]*[^ \t]*:[ \t]/) exit 0
+      if (r[n] ~ /^[ \t]*(\([^)]*\)[ \t]+)?[A-Za-z0-9._-]+@[A-Za-z0-9._-]+[^ \t]*([ \t]+[^ \t]+)?([ \t]+[^ \t]+)?[ \t]*[$%#][ \t]+[^ \t]/) exit 0
       # The opencode composer is a left-bar box closed by a `╹▀▀▀` floor row,
       # with its status row below and a sidebar beside its rows.
       for (i = n; i > 1 && i >= n - 2; i--) if (r[i] ~ /^[ \t]*╹(▀)+[ \t]*$/ && r[i - 1] ~ /^[ \t]*┃/) exit 0
       for (i = n; i > 0 && i >= n - 6; i--) {
-        if (r[i] ~ /^[ \t]*(│[ \t]*)?(❯|›|⟩|→|❭|┃|▌)[ \t]*(│[ \t]*)?$/) exit 0
+        if (idle(r[i])) exit 0
         if (r[i] ~ /(:|\?|>|›|❯|\])[ \t]*$/ || r[i] ~ /^[ \t]*(❯|›|>|●|○|◉|◯|◆|\[[ x]\]|[0-9]+[.)])[ \t]/ || r[i] ~ /^[ \t]*(│|┃)[ \t]+([0-9]+[.)]?[ \t]|\(|❯|›|>|●|○)/ || tolower(r[i]) ~ /press (any key|enter|return)|\(y\/n\)|\[y\/n\]/) exit 1
       }
       exit 1
@@ -2742,7 +2756,9 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
         else if (ph && po && r[i] ~ /^[ \t]*(│[ \t]*)?\(Use Enter to select\)/) pu = 1
         # Gemini draws its own `(N% context left)` footer under the dialog, so
         # only another agent composer, its footer, or a transcript row cancels.
-        if (r[i] ~ /^(─|━){20,}|for shortcuts|bypass permissions|^[ \t]*(⏺|⎿|❯|›)/) { kh = 0; ki = 0; ph = 0; po = 0; pu = 0 }
+        # The Gemini composer, a `>` row further below the heading than its
+        # key input, also cancels it.
+        if (r[i] ~ /^(─|━){20,}|for shortcuts|bypass permissions|Type your message|^[ \t]*(⏺|⎿|❯|›)/ || (kh && i - kh > 4 && r[i] ~ /^[ \t]*(│[ \t]*)?>/)) { kh = 0; ki = 0; ph = 0; po = 0; pu = 0 }
       }
       if (ki) { print "credential"; exit 0 }
       if (pu) { print "sign-in"; exit 0 }
@@ -3003,7 +3019,7 @@ fm_composer_confirm_input() {  # <screen> -> row
 # prints the recognized list from its heading down, so its category is read
 # from the whole list rather than only its last rows.
 fm_composer_list_rows() {  # <screen> [print]
-  printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk -v out="${2-}" '
+  printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk -v out="${2-}" -v ph="$(fm_composer_idle_placeholder_re)" '
     function cw(s,  t) { t = s; gsub(/[\200-\277]/, "", t); return length(t) }
     function done(s) { if (out == "print") for (j = s; j <= n; j++) print o[j]; exit 0 }
     function hint(s) { return s ~ /\(use arrow keys|\[use arrows to move|- use arrow-keys\. return to submit|^[ \t]*there (are|is) [0-9]+ .* available to you\.?[ \t\r]*$/ }
@@ -3021,6 +3037,7 @@ fm_composer_list_rows() {  # <screen> [print]
           # the widest row, continue a live list; prose, a transcript or box
           # row, an agent composer, or its footer after the hint makes it quoted.
           if (r[i] ~ /for shortcuts|context left|context [0-9]+% left|esc to (cancel|interrupt)|esc twice to interrupt|⏎|⌃|ctrl\+|enter send/ || r[i] ~ /^(─|━){20,}/ || r[i] ~ /^[ \t]*(❯|›|⟩|→|❭)[ \t]*$/ || r[i] ~ /^[ \t]*(│|┃|⏺|⎿|•|└|▌)/) quoted = 1
+          else if (r[i] ~ /^[ \t]*(❯|›|⟩|→|❭)[ \t]*[^ \t]/ && (t = r[i]) && sub(/^[ \t]*(❯|›|⟩|→|❭)[ \t]*/, "", t) && t ~ ph) quoted = 1
           else if (r[i] ~ /^[ \t]*(❯|›|>)[ \t]*[^ \t]/) f = 1
           else if (r[i] !~ /^[ \t]+[^ \t]/ && r[i] !~ /^[ \t]*\(.*\)[ \t]*$/ && wd[i - 1] < w) quoted = 1
         }
@@ -3034,7 +3051,8 @@ fm_composer_list_rows() {  # <screen> [print]
       # holds only option rows, exactly one under a cursor, up to the last row.
       c = 0; k = 0
       for (i = n; i > 0 && i > n - 12; i--) {
-        if (r[i] ~ /for shortcuts|context left|context [0-9]+% left|esc to |⏎|ctrl\+|⌃/) exit 1
+        # An agent footer, such as the Codex `model · path · title` row, ends it.
+        if (r[i] ~ /for shortcuts|context left|context [0-9]+% left|esc to |⏎|ctrl\+|⌃|[ \t]·[ \t]/) exit 1
         if (r[i] ~ /^[ \t]*(❯|›)[ \t]+[^ \t]/) c++
         else if (r[i] !~ /^[ \t]+[^ \t]/) break
         k++

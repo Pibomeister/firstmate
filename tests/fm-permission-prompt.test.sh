@@ -662,13 +662,23 @@ test_idle_bottom_quotes_and_long_or_wrapped_lists() {
   for c in $'→ Explain this terminal label:\n  Password:' $'→ Explain this terminal label:\n  Continue? [y/N]' \
     $'❭ Explain this terminal label:\n  Password:' $'⟩ Explain this terminal label:\n  Continue? [y/N]' \
     $'• Ran cat fixture\n  Quick safety check\n  ❯ 2. No, exit'"$codexf" "$agy$codexf" \
-    "$gem"$'\n'"$oc" "$gem"$'\nuser@host:~/repo$ ' "$agy"$'\n(venv) ~/repo % '; do
+    "$gem"$'\n'"$oc" "$gem"$'\nuser@host:~/repo$ ' "$agy"$'\n(venv) ~/repo % ' \
+    $'→ Explain these labels:\n  one\n  two\n  three\n  four\n  Password:' \
+    $'Should I continue?\n\n› Update the README\n\n  gpt-6-astra high · ~/repo · README update' \
+    $'Should I continue?\n\n› Ask Codex to do anything\n\n  gpt-6-astra high · ~/repo · main' \
+    "$gem"$'\n✦ That was the key dialog fixture.\n╭──────────────────────────────────────────────╮\n│ > Type your message or @path/to/file         │\n╰──────────────────────────────────────────────╯\n  ~/repo   no sandbox   gemini-2.5-pro (99% context left)' \
+    "$gem"$'\n✦ That was the key dialog fixture.\n╭──────────────────────────────────────────────╮\n│ > fix the test                               │\n╰──────────────────────────────────────────────╯\n  ~/repo   no sandbox   gemini-2.5-pro (99% context left)' \
+    $'ls\nREADME\nalice@host:~/repo$ rg password:' $'ls\nalice@host repo % rg password:'; do
     [ -z "$(printf '%s\n' "$c" | classify codex)" ] || fail "a quoted dialog or multi-line draft is read as a prompt: $c"
     ! bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard blocks a quoted dialog or multi-line draft: $c"
   done
   # A live dialog with no composer or shell prompt below it still stops.
   assert_equals $'trust\tworkspace' "$(printf '%s\n' "$agy" | classify agy)" "the live Antigravity trust screen is still a trust dialog"
   assert_equals $'hardstop\tcredential' "$(printf '%s\n' "$gem"$'\n  ~/repo   no sandbox   gemini-2.5-pro' | classify claude)" "the live Gemini key dialog is still a credential stop"
+  # An input label that ends in a typed `$` is not a shell prompt.
+  c=$'GnuPG needs to construct a user ID to identify your key.\n\nReal name: CI Bot\nEmail address: ci@example.com\nComment: CI$'
+  assert_equals $'hardstop\tcredential' "$(printf '%s\n' "$c" | classify claude)" "a GnuPG comment input holding a typed \$ is still a credential stop"
+  bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard misses a GnuPG comment input holding a typed \$"
   # Lists longer than eight rows keep their heading's category, and a hint
   # tail or option row soft-wrapped onto an unindented row stays in the list.
   aws=$'There are 10 AWS accounts available to you.\n> acct-0, a0@example.com (111111111110)'
