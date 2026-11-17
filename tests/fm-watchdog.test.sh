@@ -70,14 +70,62 @@ SH
   chmod +x "$FAKEBIN/tmux"
 }
 
+# Every long-lived fixture process ends its argv with this marked duration, so
+# this suite can find all of its own fixtures, including ones whose pid no case
+# recorded, while another suite's fixtures carry a different marker.
+WD_FIXTURE_SLEEP="100000.$$"
+export WD_FIXTURE_SLEEP
+
+# reap_marked_fixtures: TERM every process whose last argument is this suite's
+# marker, compared as a string so 100000.12 never matches 100000.120. The
+# marker reaches awk through the environment, so the probe itself never
+# matches.
+reap_marked_fixtures() {
+  local pids
+  pids=$(ps -axo pid=,args= 2>/dev/null | awk '"" $NF == "" ENVIRON["WD_FIXTURE_SLEEP"] { print $1 }')
+  # shellcheck disable=SC2086 # One pid per word.
+  [ -z "$pids" ] || kill $pids 2>/dev/null || true
+}
+
 LOCK_PIDS=''
 cleanup_watchdog_tests() {
   local p
   for p in $LOCK_PIDS; do kill "$p" 2>/dev/null || true; done
   "$REAL_TMUX" -L "$SOCKET" kill-server >/dev/null 2>&1 || true
+  reap_marked_fixtures
   fm_test_cleanup
 }
 trap cleanup_watchdog_tests EXIT
+
+# A suite killed too hard to run its traps (SIGKILL, or a kill aimed at the
+# suite process alone) would strand every fixture, reparented to init and
+# still holding whatever it inherited. A detached guardian outlives the suite,
+# holds none of its output, and sweeps the same fixtures once the suite's pid
+# (checked with its start time) is gone. Job control puts it in its own
+# process group, so a kill aimed at the suite's group, such as the test queue
+# ending a dead run's stragglers, cannot end it before it sweeps.
+start_fixture_guardian() {
+  local suite=$$ start
+  start=$(ps -p "$suite" -o lstart= 2>/dev/null)
+  (
+    set -m
+    (
+      exec </dev/null >/dev/null 2>&1
+      trap '' HUP INT
+      # A zombie suite is gone: its parent may wait only after reading output
+      # a fixture still holds.
+      while kill -0 "$suite" 2>/dev/null && { [ -z "$start" ] || [ "$(ps -p "$suite" -o lstart= 2>/dev/null)" = "$start" ]; }; do
+        case $(ps -p "$suite" -o stat= 2>/dev/null) in
+          *Z*) break ;;
+        esac
+        sleep 2
+      done
+      "$REAL_TMUX" -L "$SOCKET" kill-server || true
+      reap_marked_fixtures
+    ) &
+  ) 2>/dev/null
+}
+start_fixture_guardian
 
 BASE=$(date +%s)
 CASE_N=0
@@ -140,7 +188,7 @@ SH
   "$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "$sess" -x 160 -y 40 "$H/agent.sh"
   T=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" list-panes -t "$sess" -F '#{pane_id}' | head -n 1)
   # Detached, so the lock holder is reparented and reaped like a real session.
-  ( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
+  ( sleep "$WD_FIXTURE_SLEEP" > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
   LOCKPID=$(cat "$H/lockpid")
   LOCK_PIDS="$LOCK_PIDS $LOCKPID"
   printf '%s\n' "$LOCKPID" > "$H/state/.lock"
@@ -1821,9 +1869,9 @@ restart-command=$TMP_ROOT/fake-captain.sh"
 #!/usr/bin/env bash
 p="$*"
 printf '%s\n' "$$" > "$PWD/state/.lock"
-( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$PWD/state/.supervise-daemon.pid" )
+( sleep "${WD_FIXTURE_SLEEP:-100000}" > /dev/null 2>&1 & printf '%s\n' "$!" > "$PWD/state/.supervise-daemon.pid" )
 eval "${p##*run: }" > "$PWD/pickup.out" 2>&1
-exec sleep 100000
+exec sleep "${WD_FIXTURE_SLEEP:-100000}"
 SH
   chmod +x "$TMP_ROOT/fake-captain.sh"
   printf 'unlanded\n' > "$H/data/unlanded-work.txt"
@@ -1861,7 +1909,7 @@ write_fake_captain() {
 p="$*"
 printf '%s\n' "$$" > "$PWD/state/.lock"
 eval "${p##*run: }" > "$PWD/pickup.out" 2>&1
-exec sleep 100000
+exec sleep "${WD_FIXTURE_SLEEP:-100000}"
 SH
   chmod +x "$TMP_ROOT/fake-captain.sh"
 }
@@ -1879,7 +1927,7 @@ write_restart_bin() {
 p="$*"
 printf '%s\n' "$$" > "$PWD/state/.lock"
 eval "${p##*run: }" > "$PWD/pickup.out" 2>&1
-exec sleep 100000
+exec sleep "${WD_FIXTURE_SLEEP:-100000}"
 SH
   chmod +x "$TMP_ROOT/bin/$name"
 }
@@ -1935,7 +1983,7 @@ SH
 
 # relock_same_session: a new process takes the lock under the same session id.
 relock_same_session() {
-  ( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
+  ( sleep "$WD_FIXTURE_SLEEP" > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
   LOCK_PIDS="$LOCK_PIDS $(cat "$H/lockpid")"
   cat "$H/lockpid" > "$H/state/.lock"
 }
@@ -1952,7 +2000,7 @@ printf '%s\n' "$$" > "$PWD/state/.lock"
 printf '00000000-0000-4000-8000-0000000000aa\n' > "$PWD/state/.lock-session"
 printf '%s\n' "${TMUX_PANE:-}" > "$PWD/new-pane"
 eval "${p##*run: }" > "$PWD/pickup.out" 2>&1
-exec sleep 100000
+exec sleep "${WD_FIXTURE_SLEEP:-100000}"
 SH
   chmod +x "$TMP_ROOT/fake-captain-move.sh"
   transcript 3000 "Working." "Testing." "Green."
@@ -2000,7 +2048,7 @@ SH
   run_wd 0 once >/dev/null 2>&1
   retired_pane=$T
   moved=$(captain_field moved_at)
-  ( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
+  ( sleep "$WD_FIXTURE_SLEEP" > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
   LOCK_PIDS="$LOCK_PIDS $(cat "$H/lockpid")"
   cat "$H/lockpid" > "$H/state/.lock"
   printf '00000000-0000-4000-8000-0000000000bb\n' > "$H/state/.lock-session"
@@ -2058,7 +2106,7 @@ SH
   make_home $'Captain session\n> '
   transcript 3000 "Working." "Testing." "Green."
   # macOS hides a platform binary's environment, so the bound process is python.
-  ( env CODEX_THREAD_ID="$SID" CODEX_SESSION_ID="$SID" python3 -c 'import time; time.sleep(100000)' > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/bound" )
+  ( env CODEX_THREAD_ID="$SID" CODEX_SESSION_ID="$SID" python3 -c 'import time; time.sleep(100000)' "$WD_FIXTURE_SLEEP" > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/bound" )
   bound=$(cat "$H/bound")
   LOCK_PIDS="$LOCK_PIDS $bound"
   for _ in $(seq 1 20); do python3 "$ROOT/bin/fm-session-process.py" bound "$bound" "$SID" && break; sleep 0.1; done
@@ -2109,7 +2157,7 @@ test_captain_record_ignores_a_heartbeat_written_outside_the_owner() {
   transcript 3000 "Working." "Testing." "Green."
   run_wd 0 once >/dev/null 2>&1
   retired_pane=$T
-  ( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
+  ( sleep "$WD_FIXTURE_SLEEP" > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
   LOCK_PIDS="$LOCK_PIDS $(cat "$H/lockpid")"
   cat "$H/lockpid" > "$H/state/.lock"
   printf '00000000-0000-4000-8000-0000000000cc\n' > "$H/state/.lock-session"
@@ -2967,7 +3015,7 @@ mate_started() {
   fm_touch_epoch "$((BASE + $2))" "$MATE/state/.session-start-complete"
 }
 
-live_pid() { ( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$TMP_ROOT/live.pid" ); cat "$TMP_ROOT/live.pid"; }
+live_pid() { ( sleep "$WD_FIXTURE_SLEEP" > /dev/null 2>&1 & printf '%s\n' "$!" > "$TMP_ROOT/live.pid" ); cat "$TMP_ROOT/live.pid"; }
 
 test_second_mate_zero_exit_relaunch_is_not_done() {
   local dead new
@@ -3401,7 +3449,7 @@ printf 'work output\n● How is Claude doing this session? (optional)\n  1: Bad 
 sleep 0.3
 printf '\n%.0s' {1..45}
 printf 'work output\n> \n'
-exec sleep 100000
+exec sleep $WD_FIXTURE_SLEEP
 SH
   "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$T" "$H/agent.sh"
   sleep 1
@@ -5708,7 +5756,7 @@ dd bs=1 count=1 of="$H/worker-agy.key" 2>/dev/null
 stty sane -echo
 clear
 printf '> \n'
-exec sleep 100000
+exec sleep $WD_FIXTURE_SLEEP
 SH
   chmod +x "$H/worker-agy.sh"
   "$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "wkagy${CASE_N}" -x 160 -y 40 "$H/worker-agy.sh"
