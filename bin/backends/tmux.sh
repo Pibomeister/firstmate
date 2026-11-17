@@ -205,6 +205,7 @@ fm_backend_tmux_prepare_relaunch() {  # <target>
   case "$pane_pid" in ''|*[!0-9]*) return 1 ;; esac
   shell=$(ps -p "$pane_pid" -o comm= 2>/dev/null) || return 1
   shell=${shell##*/}
+  shell=${shell#-}
   [ -n "$shell" ] || return 1
   for ((i = 0; i < 100; i++)); do
     current=$(tmux display-message -p -t "$target" '#{pane_current_command}' 2>/dev/null) || return 1
@@ -220,14 +221,6 @@ fm_backend_tmux_prepare_relaunch() {  # <target>
   done
   echo "error: tmux pane $target did not return to its shell before relaunch" >&2
   return 1
-}
-
-# Make the pane's foreground job a shell that exits normally after reaping
-# the agent, even when the agent itself dies from SIGTERM.
-fm_backend_tmux_quiet_launch() {  # <command>
-  printf "/bin/sh -c '"
-  printf '%s; exit $?' "$1" | sed "s/'/'\\\\''/g"
-  printf "'"
 }
 
 # fm_backend_tmux_window_inventory: <session-target>'s window names, one per

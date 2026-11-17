@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Exercise the relaunch handoff in an isolated real tmux pane with interactive zsh.
+# Exercise the relaunch handoff in an isolated real tmux pane with a login zsh.
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 command -v tmux >/dev/null 2>&1 || { echo 'skip: tmux unavailable'; exit 0; }
@@ -22,7 +22,8 @@ export PATH
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-backend.sh"
 fm_backend_source tmux || exit 1
-"$REAL_TMUX" -L "$SOCKET" new-session -d -s repro -x 180 -y 40 /bin/zsh -i || exit 1
+mkdir "$TMP/zdot" || exit 1
+ZDOTDIR="$TMP/zdot" SHELL=$(command -v zsh) "$REAL_TMUX" -L "$SOCKET" -f /dev/null new-session -d -s repro -x 180 -y 40 || exit 1
 TARGET=repro:0
 PANE_PID=$("$REAL_TMUX" -L "$SOCKET" display-message -p -t "$TARGET" '#{pane_pid}')
 
@@ -43,14 +44,14 @@ wait_for() {
 wait_child() {
   local parent=$1 i child
   for ((i = 0; i < 60; i++)); do
-    child=$(pgrep -P "$parent" | head -1)
+    child=$(pgrep -P "$parent" -f 'sleep 60' | head -1)
     if [ -n "$child" ]; then printf '%s\n' "$child"; return 0; fi
     sleep 0.1
   done
   return 1
 }
 
-# An unwrapped launch is the old behavior: SIGTERM produces zsh's notice.
+# SIGTERM on the pane's foreground agent produces zsh's notice.
 "$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l "env -u CURSOR_AGENT /bin/sh -c 'sleep 60'"
 "$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
 OLD_PID=$(wait_child "$PANE_PID")
@@ -75,21 +76,9 @@ WAIT_PID=$(wait_child "$PANE_PID")
 ( sleep 0.4; kill -TERM "$WAIT_PID" 2>/dev/null ) &
 KILLER=$!
 fm_backend_tmux_prepare_relaunch "$TARGET" || fail 'preparation returned before the old agent exited'
+! kill -0 "$WAIT_PID" 2>/dev/null || fail 'preparation returned while the old agent was still running'
 wait "$KILLER" || fail 'delayed fixture stop failed'
 "$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l "printf 'result:%s\\n' waited-for-exit"
 "$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
 wait_for 'result:waited-for-exit' || fail 'replacement did not run after waiting for the old agent'
 printf 'ok - relaunch preparation waits for foreground exit\n'
-
-# The new wrapper keeps zsh's direct child alive to reap a signalled agent.
-COMMAND=$(fm_backend_tmux_quiet_launch "env -u CURSOR_AGENT /bin/sh -c 'sleep 60'")
-"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l "$COMMAND"
-"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
-WRAPPER_PID=$(wait_child "$PANE_PID")
-AGENT_PID=$(wait_child "$WRAPPER_PID")
-[ -n "$AGENT_PID" ] || fail 'wrapped fixture agent did not start'
-kill -TERM "$AGENT_PID" 2>/dev/null || fail 'could not stop wrapped agent'
-sleep 0.3
-VISIBLE=$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$TARGET" -S -0)
-case "$VISIBLE" in *'zsh: terminated'*) fail 'wrapped launch still printed a termination notice' ;; esac
-printf 'ok - wrapped tmux launch suppresses zsh termination notice\n'

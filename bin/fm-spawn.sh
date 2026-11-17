@@ -9413,11 +9413,6 @@ else
   ENV_SCRUB_FILE=$(shell_quote "$LAUNCH_DIR/env-scrub.$SPAWN_GEN.sh")
   LAUNCH="$(shell_quote "$FM_ROOT/bin/fm-env-scrub.sh") ${scrub_option}unset-file $ENV_SCRUB_FILE && . $ENV_SCRUB_FILE || return 1 2>/dev/null || exit 1; $LAUNCH"
 fi
-if [ "$BACKEND" = tmux ]; then
-  # Keep the interactive pane shell's foreground child alive until it can
-  # reap a terminated agent. A normal shell exit avoids zsh's job notice.
-  LAUNCH=$(fm_backend_tmux_quiet_launch "$LAUNCH")
-fi
 if [ "$BACKEND" = t3code ]; then
   # No pane: the launch is the thread's first message, carrying the same
   # encoded brief the LAUNCH template embeds; MODEL/EFFORT were fixed as the
