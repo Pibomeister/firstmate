@@ -69,16 +69,31 @@ fake_posture_once() {  # <switch-file>: apply that posture change once
   fake_posture_change "$(fake_get "$1" none)"
   rm -f "$FAKE_DIR/$1"
 }
-# The adapter's keystroke functions, which the doorbell guards; the real
-# adapter is never loaded.
+# Like the real herdr adapter: each keystroke function first reads the
+# endpoint (target_ready), then issues the keystroke through the herdr CLI,
+# which the doorbell guards. The real adapter is never loaded.
 _FM_BACKEND_HERDR_SOURCED=1
-fm_backend_herdr_send_literal() {  # <target> <text>
-  printf 'text\t%s\t%s\n' "$1" "$2" >> "$FAKE_DIR/keys"
-  printf '%s' "$2" > "$FAKE_DIR/composer"
+fm_backend_herdr_cli() {  # <session> pane send-text|send-keys <pane> <arg>; anything else is a read
+  [ "${2:-}" = pane ] || return 0
+  case "${3:-}" in
+    send-text)
+      printf 'text\t%s\t%s\n' "$4" "$5" >> "$FAKE_DIR/keys"
+      printf '%s' "$5" > "$FAKE_DIR/composer"
+      ;;
+    send-keys)
+      # The helper's own first Enter is not logged.
+      [ -n "${FAKE_HELPER_ENTER:-}" ] || printf 'key\t%s\t%s\n' "$4" "$5" >> "$FAKE_DIR/keys"
+      fake_drop_enter || : > "$FAKE_DIR/composer"
+      ;;
+  esac
 }
-fm_backend_herdr_send_key() {  # <target> <key> [helper]: the helper's own Enter is not logged
-  [ "${3:-}" = helper ] || printf 'key\t%s\t%s\n' "$1" "$2" >> "$FAKE_DIR/keys"
-  fake_drop_enter || : > "$FAKE_DIR/composer"
+fm_backend_herdr_send_literal() {  # <target> <text>
+  fake_posture_once posture-in-target-ready
+  fm_backend_herdr_cli fixture pane send-text "$1" "$2"
+}
+fm_backend_herdr_send_key() {  # <target> <key>
+  fake_posture_once posture-in-target-ready
+  fm_backend_herdr_cli fixture pane send-keys "$1" "$2"
 }
 fm_backend_send_key() { fm_backend_herdr_send_key "$2" "$3"; }
 # Like the shared helper: its own reads, then typing, then more reads, then
@@ -88,7 +103,7 @@ fm_backend_send_text_submit() {
   fake_posture_once posture-during-send
   fm_backend_herdr_send_literal "$2" "$3" || { printf 'send-failed'; return 0; }
   fake_posture_once posture-before-enter
-  fm_backend_herdr_send_key "$2" Enter helper || { printf 'send-failed'; return 0; }
+  FAKE_HELPER_ENTER=1 fm_backend_herdr_send_key "$2" Enter || { printf 'send-failed'; return 0; }
   if [ -s "$FAKE_DIR/composer" ]; then printf 'pending'; else printf 'empty'; fi
 }
 fm_task_inbox_composer_holds() {
@@ -304,6 +319,27 @@ test_newer_context_waits_out_an_older_doorbell() {
   wait "$pid"
   [ "$(typed_count "$dir")" = 1 ] || fail "the newer doorbell must deliver after the older one exits: $(cat "$dir/state/.resume-doorbell.log")"
   [ "$(last_outcome "$dir")" = submitted ] || fail "outcome must be submitted, got: $(cat "$dir/state/.resume-doorbell.log")"
+  # The older holder's exit removes its pid before its lock folder: the empty,
+  # young lock is not mistaken for a new doorbell starting.
+  dir=$(make_home older-holder-pid-removed)
+  printf 'old\n' > "$dir/state/old-epoch"
+  printf 'source=compact\nlock_pid=%s\nat=2\n' "$(sed -n 1p "$dir/state/.lock")" > "$dir/state/.context-epoch"
+  mkdir "$dir/state/.resume-doorbell.lock"
+  sleep 30 >/dev/null 2>&1 &
+  holder=$!
+  printf '%s\n' "$holder" >> "$TMP_ROOT/sleepers"
+  printf '%s\n' "$holder" > "$dir/state/.resume-doorbell.lock/pid"
+  ln "$dir/state/old-epoch" "$dir/state/.resume-doorbell.lock/context-epoch.$holder"
+  run_doorbell "$dir" --source compact &
+  pid=$!
+  sleep 0.8
+  rm -f "$dir/state/.resume-doorbell.lock/pid" "$dir/state/.resume-doorbell.lock/context-epoch.$holder"
+  sleep 0.8
+  [ -z "$(cat "$dir/state/.resume-doorbell.log" 2>/dev/null)" ] || fail "the newer doorbell must keep waiting while the older one removes its lock: $(cat "$dir/state/.resume-doorbell.log")"
+  rmdir "$dir/state/.resume-doorbell.lock"
+  kill "$holder" 2>/dev/null || true
+  wait "$pid"
+  [ "$(typed_count "$dir")" = 1 ] || fail "the newer doorbell must deliver after the older one removed its lock: $(cat "$dir/state/.resume-doorbell.log")"
   pass "resume doorbell: a doorbell for a newer context waits out an older one and delivers once; a same-context one stands down"
 }
 
@@ -518,7 +554,16 @@ test_posture_change_inside_the_send_withholds_the_keystroke() {
       || fail "$case_name: the withheld Enter must leave the line unsubmitted"
     [ "$(enter_count "$dir")" = 0 ] || fail "$case_name: no resubmit Enter may follow: $(cat "$dir/fake/keys")"
     [ "$(last_outcome "$dir")" = unverified ] || fail "$case_name: outcome must be unverified, got: $(cat "$dir/state/.resume-doorbell.log")"
-    assert_contains "$(last_detail "$dir")" "an Enter was withheld: $reason" "$case_name: the log must name the withheld Enter"
+    assert_contains "$(last_detail "$dir")" "a keystroke was withheld after typing: $reason" "$case_name: the log must name the withheld Enter"
+
+    # Inside the adapter's keystroke function, after its own endpoint read.
+    dir=$(make_home "send-target-ready-$case_name")
+    printf 'source=compact\nlock_pid=%s\nat=1\n' "$(sed -n 1p "$dir/state/.lock")" > "$dir/state/.context-epoch"
+    printf '%s' "$case_name" > "$dir/fake/posture-in-target-ready"
+    run_doorbell "$dir" --source compact
+    [ "$(typed_count "$dir")" = 0 ] || fail "$case_name: a posture change in the adapter's own read must withhold the typing: $(cat "$dir/fake/keys")"
+    [ "$(last_outcome "$dir")" = stood-down ] || fail "$case_name: outcome must be stood-down, got: $(cat "$dir/state/.resume-doorbell.log")"
+    assert_contains "$(last_detail "$dir")" "the send was withheld before typing: $reason" "$case_name: the stand-down must name the withheld send"
   done
 
   # During the resubmit loop's composer read, before its Enter.
@@ -530,7 +575,7 @@ test_posture_change_inside_the_send_withholds_the_keystroke() {
   [ "$(enter_count "$dir")" = 0 ] || fail "a posture change during the resubmit composer read must withhold the Enter: $(cat "$dir/fake/keys")"
   [ "$(last_outcome "$dir")" = unverified ] || fail "outcome must be unverified, got: $(cat "$dir/state/.resume-doorbell.log")"
   assert_contains "$(last_detail "$dir")" "resubmit withheld" "the log must say the resubmit was withheld"
-  pass "resume doorbell: a posture change inside the send helper or the resubmit composer read withholds the next keystroke"
+  pass "resume doorbell: a posture change inside the send helper, the adapter, or the resubmit composer read withholds the next keystroke"
 }
 
 test_replacement_session_is_not_the_target() {
