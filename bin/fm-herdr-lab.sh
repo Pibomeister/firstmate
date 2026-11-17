@@ -56,9 +56,10 @@
 # herdr pid (TERM, then bounded KILL) whose start time still matches, and
 # never run `herdr server stop`. They signal only when that pid's environment
 # proves XDG_CONFIG_HOME is this fixture's config dir as a whole NUL field:
-# /proc/<pid>/environ, or Darwin KERN_PROCARGS2 via /usr/bin/python3 ctypes
-# (stock macOS, skipped if that python is the CLT stub). If neither reader
-# yields an environment, they refuse to signal.
+# /proc/<pid>/environ, or Darwin KERN_PROCARGS2 via python3 ctypes. Stock
+# /usr/bin/python3 is tried first; a missing or CLT-stub interpreter falls
+# back to PATH python3 and the common Homebrew paths. There is no ps -Eww
+# fallback. If neither reader yields an environment, they refuse to signal.
 # Inherited HERDR_* identity is cleared on every fixture command. Lab session
 # names still cannot be default.
 set -u
@@ -658,11 +659,15 @@ fm_herdr_lab_fixture_process_pgid() { # <pid>
 # awk RS="\0" on this Linux-only branch drops those fields and prints the
 # rest as whole records. Darwin has no /proc; env is KERN_PROCARGS2
 # (int32 argc, exec path, argv, then env), the same buffer fm-procinfo.py
-# reads, via /usr/bin/python3 ctypes. There is no ps -Eww fallback: Apple
-# ps already joined env NULs with spaces. A missing or stub python, or a
-# failed sysctl, is unreadable. FM_PROC_ROOT_OVERRIDE points tests at a
-# fake /proc; FM_HERDR_LAB_KERN_PROCARGS2_OVERRIDE points tests at a fake
-# KERN_PROCARGS2 buffer, matching fm-wake-lib.sh's override style.
+# reads, via python3 ctypes. Stock /usr/bin/python3 is tried first. A
+# missing file or CLT stub then tries `command -v python3`, then
+# /opt/homebrew/bin/python3 and /usr/local/bin/python3. The first
+# interpreter that imports ctypes and completes the read wins. There is
+# no ps -Eww fallback: Apple ps already joined env NULs with spaces. If
+# no interpreter works, the environment is unreadable. FM_PROC_ROOT_OVERRIDE
+# points tests at a fake /proc; FM_HERDR_LAB_KERN_PROCARGS2_OVERRIDE points
+# tests at a fake KERN_PROCARGS2 buffer; FM_HERDR_LAB_PYTHON3_CANDIDATES is
+# a newline-separated interpreter list for those tests.
 fm_herdr_lab_fixture_process_env() { # <pid>
   local pid=$1 proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc}
   case "$pid" in
@@ -677,20 +682,47 @@ fm_herdr_lab_fixture_process_env() { # <pid>
   fm_herdr_lab_fixture_darwin_env "$pid"
 }
 
-# /usr/bin/python3 with a working ctypes (not the CLT stub). No PATH search:
-# Homebrew python is not stock macOS.
-fm_herdr_lab_fixture_darwin_python() {
-  local py=/usr/bin/python3
-  [ -x "$py" ] || return 1
-  "$py" -c 'import ctypes, ctypes.util, struct' >/dev/null 2>&1 || return 1
-  printf '%s' "$py"
+# Interpreters to try for KERN_PROCARGS2, first match wins. Duplicates are
+# skipped. A newline-separated FM_HERDR_LAB_PYTHON3_CANDIDATES list replaces
+# this order in tests.
+fm_herdr_lab_fixture_darwin_python_candidates() {
+  local py seen=""
+  if [ -n "${FM_HERDR_LAB_PYTHON3_CANDIDATES:-}" ]; then
+    printf '%s\n' "$FM_HERDR_LAB_PYTHON3_CANDIDATES"
+    return 0
+  fi
+  for py in /usr/bin/python3 "$(command -v python3 2>/dev/null || true)" \
+    /opt/homebrew/bin/python3 /usr/local/bin/python3; do
+    [ -n "$py" ] || continue
+    case " $seen " in
+      *" $py "*) continue ;;
+    esac
+    seen="$seen $py "
+    printf '%s\n' "$py"
+  done
+}
+
+# Working ctypes, not a CLT stub that cannot import it.
+fm_herdr_lab_fixture_darwin_python_ok() { # <python>
+  local py=$1
+  [ -n "$py" ] && [ -x "$py" ] || return 1
+  "$py" -c 'import ctypes, ctypes.util, struct' >/dev/null 2>&1
 }
 
 # Whole NUL env fields from KERN_PROCARGS2. argv is skipped, not parsed.
 # Fields with an embedded newline are dropped, matching the /proc reader.
+# Tries each candidate until one completes the read; none is unreadable.
 fm_herdr_lab_fixture_darwin_env() { # <pid>
   local pid=$1 py
-  py=$(fm_herdr_lab_fixture_darwin_python) || return 1
+  while IFS= read -r py; do
+    fm_herdr_lab_fixture_darwin_python_ok "$py" || continue
+    fm_herdr_lab_fixture_darwin_env_with "$py" "$pid" && return 0
+  done < <(fm_herdr_lab_fixture_darwin_python_candidates)
+  return 1
+}
+
+fm_herdr_lab_fixture_darwin_env_with() { # <python> <pid>
+  local py=$1 pid=$2
   "$py" - "$pid" <<'PY' 2>/dev/null
 import ctypes
 import ctypes.util

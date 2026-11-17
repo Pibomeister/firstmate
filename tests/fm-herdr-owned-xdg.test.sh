@@ -70,7 +70,18 @@ push_darwin_env() { # [argv-only]
 }
 
 pop_darwin_env() {
-  unset FM_PROC_ROOT_OVERRIDE FM_HERDR_LAB_KERN_PROCARGS2_OVERRIDE FM_HERDR_LAB_DARWIN_ENV_HIDE
+  unset FM_PROC_ROOT_OVERRIDE FM_HERDR_LAB_KERN_PROCARGS2_OVERRIDE FM_HERDR_LAB_DARWIN_ENV_HIDE FM_HERDR_LAB_PYTHON3_CANDIDATES
+}
+
+# CLT-stub stand-in: executable, but cannot import ctypes.
+install_stub_python3() { # <dest>
+  mkdir -p "$(dirname "$1")"
+  cat > "$1" <<'SH'
+#!/bin/sh
+echo "xcode-select: note: No developer tools were found" >&2
+exit 1
+SH
+  chmod +x "$1"
 }
 
 # Build a KERN_PROCARGS2 blob: int32 argc, exec path, argv, then env.
@@ -314,6 +325,67 @@ test_stop_refuses_herdr_named_pid_when_xdg_is_a_space_inside_another_field() {
     "fm-herdr-lab fixture: stop and cleanup refuse a Darwin-read herdr-named pid whose XDG_CONFIG_HOME is a space inside another field" \
     space-xdg
   pop_darwin_env
+}
+
+# Owned decoy (has this fixture's XDG) driven through the Darwin reader.
+owned_herdr_named_decoy() { # sets root pid
+  local token pidfile start
+  root=$(herdr_fixture_create) || fail "create failed"
+  remember_owned "$root"
+  token=$(cat "$root/.fm-herdr-owned")
+  pidfile=$(fm_test_tmproot herdr-named-sleep)/owned.pid
+  start_herdr_named_sleep "$pidfile" 30 "XDG_CONFIG_HOME=$root/c"
+  pid=$(cat "$pidfile")
+  kill -0 "$pid" 2>/dev/null || fail "the herdr-named decoy did not start"
+  write_kern_procargs2 "$pid"
+  start=$(LC_ALL=C ps -p "$pid" -o lstart= | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  [ -n "$start" ] || fail "could not read the decoy start time"
+  printf 'schema=fm-herdr-owned-xdg.v1\nxdg_root=%s\nmarker_token=%s\npid=%s\npid_start=%s\n' \
+    "$root" "$token" "$pid" "$start" > "$root/owned.record"
+}
+
+test_stop_signals_owned_pid_when_stock_python_is_stub() {
+  local fake stub good root pid
+  fake=$(fm_test_tmproot fm-herdr-owned-xdg-py)
+  stub=$fake/usr/bin/python3
+  install_stub_python3 "$stub"
+  good=$(command -v python3) || fail "python3 is required for the Darwin python fallback"
+  case "$good" in
+    /*) ;;
+    *) fail "python3 is not an absolute path: $good" ;;
+  esac
+  export FM_HERDR_LAB_PYTHON3_CANDIDATES
+  FM_HERDR_LAB_PYTHON3_CANDIDATES=$(printf '%s\n%s\n' "$stub" "$good")
+  push_darwin_env
+  owned_herdr_named_decoy
+  herdr_fixture_stop "$root" || fail "stop must signal the owned pid through PATH python3 when stock python3 is a stub"
+  wait_until_gone "$pid" "stop left the owned herdr-named pid running after PATH python3 succeeded"
+  herdr_fixture_cleanup "$root" || fail "cleanup after PATH python3 stop failed"
+  pop_darwin_env
+  pass "fm-herdr-lab fixture: stop signals an owned pid when stock python3 is a stub and PATH python3 works"
+}
+
+test_stop_refuses_owned_pid_when_no_python3_works() {
+  local fake stub root pid status=0
+  fake=$(fm_test_tmproot fm-herdr-owned-xdg-py)
+  stub=$fake/usr/bin/python3
+  install_stub_python3 "$stub"
+  export FM_HERDR_LAB_PYTHON3_CANDIDATES
+  FM_HERDR_LAB_PYTHON3_CANDIDATES=$stub
+  push_darwin_env
+  owned_herdr_named_decoy
+  herdr_fixture_stop "$root" >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "stop must refuse when no python3 can read KERN_PROCARGS2"
+  kill -0 "$pid" 2>/dev/null || fail "stop signalled a herdr-named decoy when no python3 worked"
+  status=0
+  herdr_fixture_cleanup "$root" >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "cleanup must refuse when no python3 can read KERN_PROCARGS2"
+  kill -0 "$pid" 2>/dev/null || fail "cleanup signalled a herdr-named decoy when no python3 worked"
+  kill -TERM "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  herdr_fixture_cleanup "$root" || fail "cleanup after the no-python3 decoy exited failed"
+  pop_darwin_env
+  pass "fm-herdr-lab fixture: stop and cleanup refuse an owned pid when no python3 can read Darwin env, decoy alive"
 }
 
 test_stop_refuses_herdr_named_pid_with_empty_readable_environ() {
@@ -697,6 +769,8 @@ test_stop_refuses_herdr_named_pid_when_proc_is_unreadable_and_ps_e_is_absent
 test_stop_refuses_herdr_named_pid_with_xdg_prefix_collision
 test_stop_refuses_herdr_named_pid_with_xdg_prefix_collision_when_proc_is_hidden
 test_stop_refuses_herdr_named_pid_when_xdg_is_a_space_inside_another_field
+test_stop_signals_owned_pid_when_stock_python_is_stub
+test_stop_refuses_owned_pid_when_no_python3_works
 test_stop_refuses_herdr_named_pid_with_empty_readable_environ
 test_stop_refuses_herdr_named_pid_when_xdg_is_forged_inside_a_nul_field
 test_lab_tripwire_still_refuses_zero_and_multiple_defaults
