@@ -1030,9 +1030,22 @@ test_chain_and_escaping() {
   tick "$h3" k1 "$B"
   [ -s "$h3/state/hung-ladder/episodes/k1.sample" ] || fail 'a skip list others can write does not skip'
   chmod 644 "$h3/config/hung-ladder-skip"
-  rm -f "$h3/state/hung-ladder/episodes/k1.sample"
   tick "$h3" k1 $((B + 60))
   [ ! -e "$h3/state/hung-ladder/episodes/k1.sample" ] || fail 'an owner-only skip list skips'
+  # A skip closes an open episode, and removing it starts a fresh clock.
+  rm -f "$h3/config/hung-ladder-skip"
+  ticks "$h3" k1 $((B + 120)) $((B + 720))
+  assert_equals 1 "$(rows "$h3" k1 would-act 2)" 'the episode reached rung 2'
+  printf 'k1\n' > "$h3/config/hung-ladder-skip"
+  chmod 644 "$h3/config/hung-ladder-skip"
+  ticks "$h3" k1 $((B + 780)) $((B + 2580))
+  ledger "$h3" | awk -F'\t' '$4 == "k1" && $6 == "resolve" && $11 == "close:gate:skipped" { f = 1 } END { exit !f }' \
+    || fail 'a skip closes the open episode'
+  [ ! -e "$h3/state/hung-ladder/episodes/k1.ep" ] || fail 'a skip clears the episode clock'
+  rm -f "$h3/config/hung-ladder-skip"
+  ticks "$h3" k1 $((B + 2640)) $((B + 2880))
+  assert_equals 0 "$(rows "$h3" k1 would-act 3)" 'an unskipped task starts a fresh eligibility period'
+  assert_equals 1 "$(rows "$h3" k1 would-act 1)" 'and records no new rung inside its first minutes'
   assert_no_actions 'chain'
   pass 'the hash chain and field escaping expose spoofed, edited, and removed rows'
 }
@@ -1096,7 +1109,8 @@ test_snapshots_redact_and_exclude_secrets() {
   printf 'TOKEN=first\n' > "$h/wt-s1/config/Credentials/prod.yml"
   printf 'KEY=first\n' > "$h/wt-s1/deploy.PEM"
   printf 'KEY=gonevalue\n' > "$h/wt-s1/gone.key"
-  git -C "$h/wt-s1" add config deploy.PEM gone.key
+  printf 'KEY=cleanvalue\n' > "$h/wt-s1/clean.pem"
+  git -C "$h/wt-s1" add config deploy.PEM gone.key clean.pem
   git -C "$h/wt-s1" -c user.name=t -c user.email=t@example.invalid commit -qm more
   printf 'TOKEN=dirsecretvalue\n' > "$h/wt-s1/config/Credentials/prod.yml"
   printf 'KEY=casesecretvalue\n' > "$h/wt-s1/deploy.PEM"
@@ -1127,6 +1141,9 @@ test_snapshots_redact_and_exclude_secrets() {
   ! grep -rq casesecretvalue "$h/state/hung-ladder" || fail 'a secret pattern matches in any case'
   grep -q '^present-secret	config/Credentials/prod.yml$' "$snap" || fail 'a path with a secret word is recorded as present'
   grep -q '^deleted-secret	gone.key$' "$snap" || fail 'a deleted secret file is recorded as deleted'
+  grep -q '^present-secret	clean.pem$' "$snap" || fail 'an unchanged tracked secret file is recorded as present'
+  ! grep -rq cleanvalue "$h/state/hung-ladder" || fail 'an unchanged tracked secret file is never copied'
+  assert_equals 1 "$(grep -c '^present-secret	deploy.PEM$' "$snap")" 'a dirty tracked secret file is recorded once'
   ! grep -q '^present-secret	gone.key$' "$snap" || fail 'a deleted secret file is never recorded as present'
   assert_equals "600" "$(perm_of "$snap")" 'snapshots are owner-only'
   ! ledger "$h" | grep -q 'API_KEY' || fail 'patch bodies never reach the ledger'

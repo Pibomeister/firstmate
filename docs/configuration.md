@@ -1088,6 +1088,7 @@ A path is secret-pattern when its file name matches a key, certificate, `.env` o
 A snapshot records a symlink by its link text and never follows it.
 A rung-4 snapshot that cannot record the whole worktree is marked incomplete and holds rung 4.
 A snapshot records a deleted secret-pattern file as deleted, never as present.
+A snapshot also records each unchanged tracked secret-pattern file as present.
 A task the crew state reports done or failed is out of scope.
 The ladder's Git reads run no program the repository configures, such as a filter, an external diff driver, a text converter or an fsmonitor hook.
 A declared wait protects a worker without limit only when it names a live job this user runs or an active test-queue ticket; a deadline or any other wording holds only for the bounded unverified-wait time.
@@ -1096,6 +1097,7 @@ Each ledger row is escaped and hash-chained to the row before it, so an edited, 
 A later outcome is a new `resolve` row with `later_self_progressed=yes` or `no`, never an edit.
 Caps, the systemic breaker, holds, and parks are recorded in each row, so the soak can show what live mode would have done.
 List task ids the ladder never observes in `config/hung-ladder-skip`, one per line.
+Adding a task closes its open episode, and removing it starts a fresh eligibility period.
 The skip list is honored only when this user owns it and no group or other user can write it.
 These checks guard against mistakes and other users, not against a worker running as the same user, which could also edit its own config; stage 1 has no action path for such a worker to reach.
 [`fm-hung-ladder.sh`'s header and help](../bin/fm-hung-ladder.sh) own every key, the tunables, the ledger fields, the sensors, and the state files.

@@ -488,12 +488,16 @@ fhl_secret_path() {  # <path>
 # The same list as Git exclude pathspecs. They are fixed patterns, not a list
 # read from the worktree, so no failed read or file changed in between can let
 # a secret file's content into a diff this script hashes or saves.
-FHL_EXCL=()
+# FHL_SECRET_SPEC is the same list as positive pathspecs, which names the
+# tracked secret-pattern files a snapshot records as present.
+FHL_EXCL=() FHL_SECRET_SPEC=()
 for _fhl_p in "${FHL_SECRET_NAMES[@]}"; do
   FHL_EXCL+=( ":(exclude,glob,icase)**/$_fhl_p" )
+  FHL_SECRET_SPEC+=( ":(glob,icase)**/$_fhl_p" )
 done
 for _fhl_p in "${FHL_SECRET_WORDS[@]}"; do
   FHL_EXCL+=( ":(exclude,glob,icase)**/*$_fhl_p*" ":(exclude,glob,icase)**/*$_fhl_p*/**" )
+  FHL_SECRET_SPEC+=( ":(glob,icase)**/*$_fhl_p*" ":(glob,icase)**/*$_fhl_p*/**" )
 done
 unset _fhl_p
 
@@ -807,6 +811,19 @@ fhl_close_episode() {  # <yes|no> <cause>
   EP_last_close=$NOW
 }
 
+# A skipped task leaves the ladder: its open episode closes as gate:skipped
+# and its records go, so a task taken off the list starts a fresh eligibility
+# period rather than resuming the old episode clock.
+fhl_skip_reset() {
+  local e="$HL/episodes/$TASK"
+  [ -e "$e.ep" ] || [ -e "$e.sample" ] || [ -e "$e.anchor" ] || return 0
+  SIGNALS=- CAPS=- BREAKER=-
+  fhl_clear_episode
+  fhl_read_kv_file "$e.ep" EP_
+  fhl_close_episode no gate:skipped
+  rm -f "$e.ep" "$e.sample" "$e.anchor" "$e.porcelain"
+}
+
 fhl_act() {  # <rung> <reason> -> appends the would-act row and records its id
   fhl_row "$TASK" "$1" would-act "$2" "${3:--}" pending || return 1
   EP_actions="${EP_actions:+$EP_actions }$ROW_ID"
@@ -879,6 +896,7 @@ fhl_snapshot_tree() {  # <name> -> path:sha
   [ "$(wc -c < "$f.cached.diff" | tr -d ' ')" -le 20000000 ] || inc="${inc}cached-diff-size,"
   fm_run_timed 10 git "${FHL_GIT[@]}" diff "${FHL_DIFF[@]}" --name-only -z HEAD > "$f.names" 2>/dev/null || inc="${inc}dirty-list,"
   fm_run_timed 10 git "${FHL_GIT[@]}" ls-files -z --others --exclude-standard >> "$f.names" 2>/dev/null || inc="${inc}untracked-list,"
+  fm_run_timed 10 git "${FHL_GIT[@]}" ls-files -z -- "${FHL_SECRET_SPEC[@]}" >> "$f.names" 2>/dev/null || inc="${inc}tracked-secret-list,"
   fm_run_timed 10 git "${FHL_GIT[@]}" ls-files -z --others --ignored --exclude-standard > "$f.ignored" 2>/dev/null || inc="${inc}ignored-list,"
   n=$(perl -0 -ne 'END { print $n + 0 } $n++ unless $seen{$_}++' "$f.names")
   [ "$n" -le 2000 ] || inc="${inc}dirty-files,"
@@ -1118,7 +1136,10 @@ cmd_tick() {
   case "$KIND" in ship|scout) ;; *) exit 0 ;; esac
   meta="$STATE/$TASK.meta"
   [ -f "$meta" ] || exit 0
-  if fhl_owner_file "$CONFIG/hung-ladder-skip" 022 && grep -qxF "$TASK" "$CONFIG/hung-ladder-skip"; then exit 0; fi
+  if fhl_owner_file "$CONFIG/hung-ladder-skip" 022 && grep -qxF "$TASK" "$CONFIG/hung-ladder-skip"; then
+    fhl_skip_reset
+    exit 0
+  fi
 
   local k
   fhl_clear_episode
