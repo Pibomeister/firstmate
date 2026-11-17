@@ -1181,7 +1181,7 @@ Any other malformed line, an unknown key, or a wildcard is an error that refuses
 allow=github.com/<owner>/<repository>
 ```
 
-A repository an `allow` line names must also be named by a `require` line in [`config/merge-review`](#merge-review-configmerge-review), because the script lands only a head that the two-model review approved.
+A repository an `allow` line names must also be covered by a `require` line in [`config/merge-review`](#merge-review-configmerge-review), because the script lands only a head that the two-model review approved.
 The file is a repository allowlist only.
 The paths a self-landed diff must not touch are fixed in the script: the workflow directory, the merge gate scripts, and the libraries those scripts load.
 No setting adds to or removes from that list.
@@ -3896,6 +3896,7 @@ FM_SEND_RETRIES=3       # fm-send typed-plane Enter-retry attempts after typing 
 FM_SEND_SLEEP=0.4       # seconds between fm-send typed-plane submit checks
 FM_SEND_SETTLE=1        # seconds fm-send waits after a successful typed-plane submit; 0 disables
 FM_PENDING_REPLY_GRACE_SECS=120   # seconds after the request turn completes without a correlated parent report before its one recovery repost is eligible, and after the recovery turn completes before the missed-report escalation is eligible; never counted from delivery
+FM_SELF_LAND_PENDING_GRACE=120   # seconds (0 to 3600) an unmerged state/self-land/.../pending record is treated as in flight before a later bin/fm-self-land.sh run drops it; out-of-range or invalid values fall back to 120
 # sub-supervisor (bin/fm-supervise-daemon.sh); presence-gated via /afk
 FM_SUPERVISOR_BACKEND=             # optional supervisor endpoint backend override; see "Away-mode supervisor backend" for supported backends and detection
 FM_SUPERVISOR_TARGET=              # optional supervisor endpoint target override; tmux uses the exact forms owned by fm_backend_target_exists in bin/fm-backend.sh, herdr uses <session>:<pane-id>, t3code uses the thread id, otherwise auto-detected
