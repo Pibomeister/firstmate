@@ -489,6 +489,38 @@ wait "$LOCK_HOLDER_PID" >/dev/null 2>&1 || true
 LOCK_HOLDER_PID=
 pass "best-effort refresh bounds publication lock acquisition"
 
+# A refresh that blows its deadline inside a slow stage must name that stage in
+# the failure log, and must leave the last good summary untouched so it keeps its
+# own generated timestamp rather than the time of the failed attempt.
+STAGE_MARKER="$TMP_ROOT/stage-no-mistakes.pid"
+rm -f "$STAGE_MARKER"
+run_writer "$NOW_TWO" "$EPOCH_TWO" || fail "could not settle a good ledger before the slow-stage check"
+cp "$HOME_DIR/state/home-summary.json" "$TMP_ROOT/stage-prior-ledger.json"
+: > "$HOME_DIR/state/.home-summary-refresh.log"
+printf 'working: a status change forces a recompute\n' >> "$HOME_DIR/state/ledger-task.status"
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  FM_SNAPSHOT_NOW="$NOW_THREE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_THREE" \
+  FM_TEST_NM_MARKER="$STAGE_MARKER" FM_TEST_NM_SLEEP=30 \
+  FM_HOME_SUMMARY_TIMEOUT=3 "$WRITER" --best-effort \
+  || fail "a slow-stage timeout changed the best-effort caller result"
+stage_nm_pid=$(cat "$STAGE_MARKER" 2>/dev/null || true)
+[ -z "$stage_nm_pid" ] || kill -KILL "$stage_nm_pid" >/dev/null 2>&1 || true
+grep -F 'refresh exceeded its 3-second deadline in stage task-observation' \
+  "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "the slow stage was not named in the failure log: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+grep -E 'stages: backlog@[0-9]+ task-observation@[0-9]+' \
+  "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "the failure log did not list the stage offsets"
+cmp -s "$TMP_ROOT/stage-prior-ledger.json" "$HOME_DIR/state/home-summary.json" \
+  || fail "a failed refresh replaced the last good ledger"
+[ "$(jq -r '.generated' "$HOME_DIR/state/home-summary.json")" = "$NOW_TWO" ] \
+  || fail "the last good ledger lost its true generated timestamp"
+[ "$(jq -r '.generated_epoch' "$HOME_DIR/state/home-summary.json")" = "$EPOCH_TWO" ] \
+  || fail "the last good ledger lost its true generated epoch"
+ls "$HOME_DIR/state"/.home-summary-stage.* >/dev/null 2>&1 \
+  && fail "the failed refresh leaked its stage file"
+pass "a deadline failure names the slow stage and keeps the last good summary"
+
 HANGBIN="$TMP_ROOT/hangbin"
 REAL_JQ=$(command -v jq)
 mkdir -p "$HANGBIN"

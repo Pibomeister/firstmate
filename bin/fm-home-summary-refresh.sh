@@ -19,6 +19,13 @@
 # (default 60 seconds). No reader can observe temporary output through the
 # ledger path.
 #
+# A failed refresh never rewrites the ledger, so the last good summary keeps its
+# own generated and generated_epoch values: readers see its true age, never the
+# time of the failed attempt. The producer reports each stage it enters to a
+# per-attempt stage file (FM_SNAPSHOT_STAGE_LOG), and a failed attempt logs the
+# stage it was in plus the stage start offsets, so a slow stage is named in
+# state/.home-summary-refresh.log instead of a bare deadline.
+#
 # With --best-effort, a failure is appended to the bounded home-local
 # state/.home-summary-refresh.log when available, with stderr as the bounded
 # fallback, and the command exits zero. Session start, watcher, spawn, and
@@ -215,21 +222,44 @@ if [ "$HOME_SUMMARY_MODE" = log-failure ]; then
   exit 0
 fi
 
+# Name the stage a failed attempt was in, from the producer's stage file:
+# "in stage <last stage> (stages: <stage>@<seconds> ...)", or nothing when the
+# producer never reported one.
+home_summary_stage_note() {  # <stage-file>
+  local file=$1 last
+  [ -s "$file" ] || return 0
+  last=$(tail -n 1 "$file" 2>/dev/null | cut -f1)
+  [ -n "$last" ] || return 0
+  printf ' in stage %s (stages: %s)' "$last" \
+    "$(cut -f1,2 "$file" 2>/dev/null | tr '\t' '@' | tr '\n' ' ' | sed 's/ $//' | cut -c1-300)"
+}
+
 if [ "$HOME_SUMMARY_MODE" = parent ]; then
   attempt_stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) || attempt_stamp=
+  stage_file=
+  # No mkdir here: the parent must never block outside the deadline, so a home
+  # whose state directory is missing simply runs without stage reporting.
+  if [ -d "$STATE" ]; then
+    stage_file=$(umask 077; mktemp "$STATE/.home-summary-stage.XXXXXX" 2>/dev/null) || stage_file=
+  fi
   if fm_run_timed "$HOME_SUMMARY_TIMEOUT" env \
     FM_HOME_SUMMARY_WORKER_BEST_EFFORT="$BEST_EFFORT" \
     FM_HOME_SUMMARY_IF_IDLE="$HOME_SUMMARY_IF_IDLE" \
+    FM_SNAPSHOT_STAGE_LOG="$stage_file" \
     "$SCRIPT_DIR/fm-home-summary-refresh.sh" --_worker; then
+    [ -z "$stage_file" ] || rm -f -- "$stage_file"
     exit 0
   else
     refresh_rc=$?
   fi
+  stage_note=
+  [ -z "$stage_file" ] || stage_note=$(home_summary_stage_note "$stage_file")
+  [ -z "$stage_file" ] || rm -f -- "$stage_file"
   if [ "$BEST_EFFORT" -eq 1 ]; then
     if [ "$refresh_rc" -eq 124 ]; then
-      parent_error="refresh exceeded its ${HOME_SUMMARY_TIMEOUT}-second deadline"
+      parent_error="refresh exceeded its ${HOME_SUMMARY_TIMEOUT}-second deadline${stage_note}"
     else
-      parent_error="refresh worker failed with exit $refresh_rc"
+      parent_error="refresh worker failed with exit $refresh_rc${stage_note}"
     fi
     fm_run_timed 2 env \
       FM_HOME_SUMMARY_PARENT_ERROR="$parent_error" \
@@ -238,8 +268,8 @@ if [ "$HOME_SUMMARY_MODE" = parent ]; then
     exit 0
   fi
   if [ "$refresh_rc" -eq 124 ]; then
-    printf 'fm-home-summary-refresh: refresh exceeded its %s-second deadline\n' \
-      "$HOME_SUMMARY_TIMEOUT" >&2
+    printf 'fm-home-summary-refresh: refresh exceeded its %s-second deadline%s\n' \
+      "$HOME_SUMMARY_TIMEOUT" "$stage_note" >&2
   fi
   exit "$refresh_rc"
 fi
