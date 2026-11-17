@@ -237,7 +237,8 @@ _fm_pp_trust_dialog() {  # <screen>
 # A recorded Codex CLI 0.151.0 dialog, which the watchdog's dialog detector
 # does not read: its command-approval question or hook-review heading, a
 # numbered cursor row (`›` or `>`) below it, and its whole lowercase footer as
-# the last row. It only ever leads to a hold or a hard stop.
+# the last row. It only ever leads to a hold or a hard stop. It prints every
+# row from the heading through the footer, which the hard-stop check reads.
 _fm_pp_codex_dialog() {  # <screen>
   local rows
   rows=$(printf '%s\n' "${1-}" | fm_wd_strip_ansi | LC_ALL=C awk '
@@ -253,9 +254,10 @@ _fm_pp_codex_dialog() {  # <screen>
       cursor = 0
       for (i = head + 1; i < last; i++) if (r[i] ~ /^[ \t]*(›|>)[ \t]*[0-9]+\.[ \t]/) cursor++
       if (cursor != 1) exit 1
-      print "ok"
+      for (i = head; i <= last; i++) print r[i]
     }') || return 1
-  [ "$rows" = ok ]
+  [ -n "$rows" ] || return 1
+  printf '%s\n' "$rows"
 }
 
 # The workspace rows of a proven trust dialog: the rows between its
@@ -278,7 +280,9 @@ _fm_pp_trust_workspace_rows() {  # <screen>
 }
 
 # A Claude external-imports or bypass-confirmation dialog, proven by its
-# heading and both fixed answer rows below it. The first output row names it,
+# heading, both fixed answer rows below it, and its footer as the last row with
+# at most one blank row between them, so a dialog left in scrollback is never
+# read as the current one. The first output row names it,
 # and the rows after it are the only rows the dialog does not fix: the listed
 # import paths. Its fixed text, such as the security-docs line, is never read
 # for a hard stop.
@@ -304,6 +308,10 @@ _fm_pp_fixed_dialog() {  # <screen>
         if (kind == "bypass-confirm" && r[i] ~ /^[ \t]*(❯)?[ \t]*2\.[ \t]+Yes, I accept[ \t]*$/) { yes = 1; if (!first) first = i }
       }
       if (!(no && yes)) exit 1
+      if (r[last] !~ /^[ \t]*Enter to confirm · Esc to cancel[ \t]*$/) exit 1
+      after = 0
+      for (i = first; i < last; i++) if (r[i] ~ /[^ \t]/) after++
+      if (after != 2) exit 1
       print kind
       if (kind == "external-imports") for (i = head + 1; i < first; i++) if (r[i] ~ /^[ \t]*(\/|~\/|\.\.?\/)[^ \t]/) print r[i]
     }') || return 1
@@ -312,7 +320,7 @@ _fm_pp_fixed_dialog() {  # <screen>
 }
 
 fm_pp_classify() {  # <screen> <harness> [<dialog>]
-  local screen=${1-} harness=${2-} dialog=${3-} rows ruled text cat fixed
+  local screen=${1-} harness=${2-} dialog=${3-} rows ruled text cat fixed codex
   [ -n "$screen" ] || return 1
   # A proven trust dialog is read first, because the Antigravity picker has no
   # footer the watchdog's dialog detector recognizes.
@@ -331,9 +339,11 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
   elif [ -z "$dialog" ]; then
     dialog=$(fm_wd_pane_dialog "$screen" "$harness") || dialog=
   fi
-  if [ -z "$dialog" ] && _fm_pp_codex_dialog "$screen"; then
-    dialog=permission
+  codex=
+  if [ -z "$dialog" ] || [ "$dialog" = permission ]; then
+    codex=$(_fm_pp_codex_dialog "$screen") || codex=
   fi
+  [ -z "$codex" ] || dialog=permission
   case "$dialog" in
     permission|question) ;;
     # A screen with no recognized dialog has no verdict.
@@ -348,6 +358,8 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
     *) return 1 ;;
   esac
   rows=$(fm_pp_prompt_rows "$screen")
+  # A Codex dialog is read whole, from its heading through its footer.
+  [ -z "$codex" ] || rows=$codex
   # Only a proven structure leads to an action. A tool-approval prompt is
   # checked for every hard-stop category in its own rows and nothing else.
   if _fm_pp_claude_tool_approval "$screen"; then

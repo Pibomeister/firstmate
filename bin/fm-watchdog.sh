@@ -1680,13 +1680,15 @@ wd_pp_decline() {
   # The checksum and the attempt are kept before the key, so one prompt gets at
   # most one Escape even when delivery or the check after it fails. A record
   # that cannot be kept presses nothing.
+  # The attempt is recorded first, so a checksum on file always means the
+  # Escape was about to be sent.
+  if ! wd_rec "$rid" permission-prompt decline pending "press Escape on a claude tool-approval prompt"; then
+    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows a tool-approval prompt, and the attempt could not be recorded; nothing was answered"
+    return 1
+  fi
   if ! { mkdir -p "$WD/permission" && printf '%s\n' "$hash" >> "$mark.declined"; } 2>/dev/null; then
     wd_rec "$rid" permission-prompt decline failed "the prompt checksum could not be saved; nothing was pressed"
     wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows a tool-approval prompt, and its checksum could not be saved; nothing was answered"
-    return 1
-  fi
-  if ! wd_rec "$rid" permission-prompt decline pending "press Escape on a claude tool-approval prompt"; then
-    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows a tool-approval prompt, and the attempt could not be recorded; nothing was answered"
     return 1
   fi
   if ! fm_run_timed_fn 10 fm_control_send_feedback_dismiss "$O_BACKEND" "$O_TARGET" Escape "fm-$id" >/dev/null 2>&1; then
