@@ -5076,7 +5076,7 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
       echo "error: $STATE/goals/$ID.md must be a single-line verbatim ask under goal-line enforcement; refusing to send" >&2
       exit 1
     fi
-  if [ "$(awk 'NF { print; exit }' "$STATE/goals/$ID.md")" != "$GOAL_TEXT" ]; then
+    if [ "$(awk 'NF { print; exit }' "$STATE/goals/$ID.md")" != "$GOAL_TEXT" ]; then
       echo "error: $BRIEF GOAL line does not match $STATE/goals/$ID.md verbatim; refusing to send" >&2
       exit 1
     fi
