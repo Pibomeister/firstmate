@@ -1100,6 +1100,7 @@ mkdir -p "$HOME"
 export FM_TEST_QUEUE_DIR="${SSH_LOG%/*}/remote-spool"
 export FM_TEST_QUEUE_LOAD_FILE="${SSH_LOG%/*}/remote-load"
 unset FM_TEST_QUEUE_HELD
+if [ -n "${REMOTE_UMASK:-}" ]; then umask "$REMOTE_UMASK"; fi
 # Like sshd, start the remote command as the leader of a new session.
 exec python3 -c 'import os, sys
 try:
@@ -1272,10 +1273,10 @@ test_remote_incremental_manifest_and_uncertain_run() {
   printf extra > "$CASE/repo/extra space"
   printf secret > "$CASE/repo/ignored"
   ln -s source "$CASE/repo/link"
-  chmod +x "$CASE/repo/source"
+  chmod 755 "$CASE/repo/source"
   : > "$SSH_LOG.rsync"
   started=$(date +%s)
-  out=$( ( cd "$CASE/repo" && q run -- sh -c '[ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"' ) 2>"$CASE/warm.err") || fail 'warm offload'
+  out=$( ( cd "$CASE/repo" && REMOTE_UMASK=077 q run -- sh -c '[ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"' ) 2>"$CASE/warm.err") || fail 'warm offload'
   elapsed=$(( $(date +%s) - started ))
   assert_equals 'changed|extra' "$out" 'warm manifest snapshot'
   assert_grep 'offloading to m3' "$CASE/warm.err" 'warm prepare fell back locally'
@@ -1310,15 +1311,6 @@ PYTEST
   PATH=$saved_path
   pass "fm-test-queue.sh: warm delta verified in ${elapsed}s; mismatch falls back and uncertain execution does not"
 }
-
-if [ "${1:-}" = --remote-only ]; then
-  test_remote_incremental_manifest_and_uncertain_run
-  test_remote_offload_snapshot_and_failure
-  test_unreachable_remote_waits_locally_and_threshold_is_configurable
-  test_unlisted_project_runs_locally_and_failed_upload_falls_back
-  test_remote_straggler_cannot_hold_the_ssh_output
-  exit 0
-fi
 
 test_remote_incremental_manifest_and_uncertain_run
 test_help_and_usage

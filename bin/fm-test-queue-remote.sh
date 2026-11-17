@@ -167,7 +167,7 @@ SHREMOTE
     # Checksums avoid timestamp-only transfers; rolling deltas send only the
     # changed bytes. Delete stale paths, including removed untracked files.
     if rsync -ac --delete --no-whole-file -z -e "$transport" "$REMOTE_LOCAL/snapshot/" "$host:$(remote_quote "$cache/snapshot/")" >/dev/null 2>&1 &&
-      remote_ssh "$host" "cp -R $(remote_quote "$cache/snapshot/.") $(remote_quote "$dir/") && bash -c $(remote_quote "$verify") _ $(remote_quote "$dir") $(remote_quote "$cache/verified") && cd $(remote_quote "$dir/repo$rel") && rmdir $(remote_quote "$cache/lock")" </dev/null >/dev/null 2>&1; then
+      remote_ssh "$host" "cp -RPp $(remote_quote "$cache/snapshot/.") $(remote_quote "$dir/") && chmod 700 $(remote_quote "$dir") && bash -c $(remote_quote "$verify") _ $(remote_quote "$dir") $(remote_quote "$cache/verified") && cd $(remote_quote "$dir/repo$rel") && rmdir $(remote_quote "$cache/lock")" </dev/null >/dev/null 2>&1; then
       REMOTE_CACHE=""
       REMOTE_ROOT="$dir/repo"
       REMOTE_CWD="$REMOTE_ROOT$rel"
