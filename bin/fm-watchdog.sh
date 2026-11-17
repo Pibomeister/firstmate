@@ -1805,7 +1805,7 @@ wd_pp_decline() {
   after_dialog=$(fm_wd_pane_dialog "$after" "$harness") || after_dialog=
   if verdict=$(fm_pp_classify "$after" "$harness" "${after_dialog:-none}"); then
     case "$verdict" in
-      hardstop*) WD_PP_REASON=${verdict#*$'\t'}; wd_pp_stop "$id" permission-prompt-hardstop "after-$hash" "worker $id shows a ${verdict#*$'\t'} prompt after a declined tool call; nothing was answered, and no instruction was sent" ;;
+      hardstop*) wd_pp_reason "${verdict#*$'\t'}"; wd_pp_stop "$id" permission-prompt-hardstop "after-$hash" "worker $id shows a ${verdict#*$'\t'} prompt after a declined tool call; nothing was answered, and no instruction was sent" ;;
       *) wd_pp_stop "$id" permission-prompt-held "after-$hash" "worker $id shows another permission prompt after a declined tool call (${verdict#*$'\t'}); nothing was answered, and no instruction was sent" ;;
     esac
     return 1
@@ -1882,6 +1882,14 @@ wd_pp_unlock() {
   fm_lock_release "$(wd_pp_mark "$1").lock" || true
 }
 
+# wd_pp_reason <reason>: the stop reason the page reads. A credential or
+# sign-in reason already set by an earlier read of this pass is never
+# replaced, because the page still carries that read's pane.
+wd_pp_reason() {
+  case "${WD_PP_REASON:-}" in credential|sign-in) return 0 ;; esac
+  WD_PP_REASON=$1
+}
+
 # wd_permission_prompt <id> <harness> <screen> <dialog>: the unattended route
 # for one worker pane. 0 = the prompt left the pane; 1 = a prompt still waits;
 # 2 = no prompt verdict, or `permission-route=off`.
@@ -1900,7 +1908,7 @@ wd_permission_prompt() {
     case "$kind" in hardstop|hold|trust|route) ;; *) return 2 ;; esac
     # The reason is set before the lock, so a busy lock never lets a
     # credential or sign-in page record the pane text.
-    [ "$kind" != hardstop ] || WD_PP_REASON=$reason
+    [ "$kind" != hardstop ] || wd_pp_reason "$reason"
   fi
   # Every marker write for one worker runs under its lock, so overlapping run
   # and once passes never both write a blocked line or both send an Escape.
@@ -1933,9 +1941,9 @@ wd_permission_prompt() {
   kind=${verdict%%$'\t'*}
   reason=${verdict#*$'\t'}
   case "$kind" in hardstop|hold|trust|route) ;; *) wd_pp_unlock "$id"; return 2 ;; esac
-  # A stop reason from either read is kept, so neither read's pane text is
-  # recorded for a credential or sign-in page.
-  [ "$kind" != hardstop ] || WD_PP_REASON=$reason
+  # A credential or sign-in reason from either read is kept, so neither
+  # read's pane text is recorded on the page.
+  [ "$kind" != hardstop ] || wd_pp_reason "$reason"
   hash=$(fm_pp_hash "$live")
   case "$kind" in
     hardstop)

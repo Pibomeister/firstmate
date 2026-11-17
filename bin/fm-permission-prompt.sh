@@ -275,7 +275,7 @@ _fm_pp_question_paragraph() {  # <screen>
     { r[NR] = $0 }
     END {
       first = 0
-      for (i = NR; i >= 1; i--) if (r[i] ~ /^[ \t]*((❯|›|>)[ \t]*)?1\.[ \t]/) { first = i; break }
+      for (i = NR; i >= 1; i--) if (r[i] ~ /^[ \t]*((❯|›|>)[ \t]*)?1[.)][ \t]/) { first = i; break }
       if (!first) exit 0
       top = first
       while (top > 1 && r[top - 1] ~ /[^ \t]/) top--

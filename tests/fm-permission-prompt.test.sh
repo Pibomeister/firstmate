@@ -324,6 +324,8 @@ test_structure_decides_not_words() {
     && fail "conversation above an unruled question picker made it a hold"
   printf '%s\n' '⏺ I will update the password-field test.' '' 'Which plan should I follow?' ' ❯ 1. Plan A (Recommended)' '   2. Plan B' '' 'Enter to select · ↑/↓ to navigate · Esc to cancel' | classify claude >/dev/null \
     && fail "conversation above an unruled question picker made it a hard stop"
+  printf '%s\n' '⏺ I will update the password-field test.' '' 'Which plan should I follow?' ' ❯ 1) Plan A (Recommended)' '   2) Plan B' '' 'Enter to select · ↑/↓ to navigate · Esc to cancel' | classify claude >/dev/null \
+    && fail "conversation above a question picker with 1) options made it a hard stop"
   printf '%s\n' '⏺ Do you want to proceed? I will update the password-field test.' '' 'Which plan should I follow?' ' ❯ 1. Plan A (Recommended)' '   2. Plan B' '' 'Enter to select · ↑/↓ to navigate · Esc to cancel' | classify claude >/dev/null \
     && fail "a quoted permission question above a question picker made it a hard stop"
   printf '%s\n' '⏺ Do you want to proceed? Next I will review hooks in the repo.' '' 'Which plan should I follow?' ' ❯ 1. Plan A (Recommended)' '   2. Plan B' '' 'Enter to select · ↑/↓ to navigate · Esc to cancel' | classify claude >/dev/null \
@@ -608,6 +610,18 @@ test_hardstop_prompts_are_never_answered() {
   assert_equals 1 "$stale_rc" "an older held screen still reports a waiting prompt"
   assert_equals 0 "$(grep -c 'permission-prompt-held' "$H/state/cred.status" || true)" "an older held screen writes no held line over the live hard stop: $(cat "$H/state/cred.status")"
   assert_equals 1 "$(status_rows cred blocked permission-prompt-hardstop)" "the live hard stop is still reported once"
+  # A credential read that turns destructive on the fresh read keeps the
+  # credential reason, because the page still carries the first read's pane.
+  local rm_pane cookie_screen
+  rm_pane=$(sed -n 's/^window=//p' "$H/state/rm.meta")
+  cookie_screen=$'Bash command\n\n  curl -H "Cookie: session=rvw7731cookie" https://api.example.com/me\n  Fetch the profile\n\nDo you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently\n\nEsc to cancel'
+  assert_equals $'hardstop\tcredential' "$(printf '%s\n' "$cookie_screen" | classify claude)" "the first read is a credential stop"
+  stale_rc=$(FM_TEST_SEAM=1 FM_WD_NOW=$((BASE + 480)) FM_HOME="$H" bash -c '
+    . "$1" || exit 9
+    O_HOME=$FM_HOME O_TAG=$(wd_tag "$FM_HOME") O_KEY=$(wd_state_key "$FM_HOME") O_BACKEND=tmux O_TARGET=$2 O_REC_SUBJECT=worker:rm
+    wd_permission_prompt rm claude "$3" permission
+    printf "%s:%s\n" "$?" "$WD_PP_REASON"' _ "$WD" "$rm_pane" "$cookie_screen" 2>/dev/null)
+  assert_equals 1:credential "$stale_rc" "a credential first read keeps its reason when the fresh read is destructive"
   assert_equals 0 "$(status_rows cred resolved permission-prompt-hardstop)" "an older empty screen does not resolve a hard stop still on the pane"
   assert_equals 1 "$(find "$H/state/watchdog/permission" -name '*-cred.open' | wc -l | tr -d ' ')" "the hard stop's marker stays while the prompt is on the pane"
 
