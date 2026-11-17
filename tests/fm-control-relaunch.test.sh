@@ -84,10 +84,12 @@ case "${1:-}" in
       esac
     done
     payload=${1:-}
+    case "$payload" in C-u) rm -f "$D/relaunch-probe" ;; esac
     if [ -s "$D/capture" ]; then
       printf '%s\n' "$payload" >> "$D/picker-keys"
     fi
     if [ "$literal" = 1 ]; then
+      case "$payload" in ': #__fm_relaunch_clear_'*) printf '%s\n' "$payload" > "$D/relaunch-probe" ;; esac
       case "$payload" in
         ". '"*"'") staged=${payload#". '"}; staged=${staged%"'"}; [ ! -f "$staged" ] || payload=$(cat "$staged") ;;
       esac
@@ -126,6 +128,7 @@ case "${1:-}" in
     for a in "$@"; do
       case "$a" in
         *cursor_y*) printf '1\n'; exit 0 ;;
+          *cursor_x*) printf '7\n'; exit 0 ;;
         *socket_path*)
           [ -n "${FM_FAKE_TMUX_SERVER_PID:-}" ] || { printf 'fakepane\n'; exit 0; }
           printf '%s\t%s\n' "$FM_FAKE_TMUX_SOCKET" "$FM_FAKE_TMUX_SERVER_PID"; exit 0 ;;
@@ -152,6 +155,7 @@ case "${1:-}" in
     done
     printf 'fakepane\n'; exit 0 ;;
   capture-pane)
+    if [ -f "$D/relaunch-probe" ]; then cat "$D/relaunch-probe"; exit 0; fi
     [ -z "${FM_FAKE_COMPOSER_READ_FAIL:-}" ] || exit 1
     if [ -s "$D/capture" ]; then
       cat "$D/capture"
@@ -230,10 +234,36 @@ SH
 #!/usr/bin/env bash
 case "$*" in
   '-p 4242426 -o comm=') printf -- '-zsh\n' ;;
+  '-ww -p 4242426 -o args=') printf -- '-zsh\n' ;;
+  '-p 4242426 -o pgid=') printf '4242426\n' ;;
+  '-p 4242426 -o stat=') printf 'Ss\n' ;;
+  '-p 4242426 -o tpgid=')
+    [ ! -e "$FM_FAKE_DIR/guard-refuse" ] || exit 1
+    if [ -e "$FM_FAKE_DIR/guard-refuse-after-wait" ]; then
+      count=$(cat "$FM_FAKE_DIR/guard-tpgid-count" 2>/dev/null || printf '0')
+      count=$((count + 1))
+      printf '%s\n' "$count" > "$FM_FAKE_DIR/guard-tpgid-count"
+      [ "$count" -le 2 ] || exit 1
+    fi
+    printf '4242426\n' ;;
   *) exec /bin/ps "$@" ;;
 esac
 SH
   chmod +x "$fb/ps"
+  cat > "$fb/pgrep" <<'SH'
+#!/usr/bin/env bash
+case "$*" in '-g 4242426') printf '4242426\n' ;; *) exec /usr/bin/pgrep "$@" ;; esac
+SH
+  chmod +x "$fb/pgrep"
+  cat > "$fb/bashenv" <<'SH'
+kill() {
+  if [ "${1:-}" = -INT ] && [ "${2:-}" = 4242426 ]; then
+    [ -z "${FM_FAKE_DIR:-}" ] || rm -f "$FM_FAKE_DIR/relaunch-probe"
+    return 0
+  fi
+  builtin kill "$@"
+}
+SH
   cat > "$fb/sleep" <<'SH'
 #!/usr/bin/env bash
 [ -z "${FM_FAKE_LOCK_WAITING:-}" ] || : > "$FM_FAKE_LOCK_WAITING"
@@ -313,7 +343,7 @@ run_control() {  # <case-dir> <args...>
   : > "$dir/user-home/Library/Keychains/login.keychain-db"
   env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION -u HERDR_SOCKET_PATH \
     -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
-    PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
+    PATH="$dir/fakebin:$PATH" BASH_ENV="$dir/fakebin/bashenv" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
     HOME="$dir/user-home" CLAUDE_CONFIG_DIR='' \
     FM_SPAWN_NO_GUARD=1 GROK_HOME="$dir/grokhome" \
     FM_CONTROL_POLL=0.01 FM_CONTROL_EXIT_WAIT=0.05 FM_CONTROL_LAUNCH_WAIT=0.05 \
@@ -348,7 +378,7 @@ run_spawn() {  # <case-dir> <args...>
   : > "$dir/user-home/Library/Keychains/login.keychain-db"
   env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION -u HERDR_SOCKET_PATH \
     -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
-    PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
+    PATH="$dir/fakebin:$PATH" BASH_ENV="$dir/fakebin/bashenv" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
     HOME="$dir/user-home" CLAUDE_CONFIG_DIR='' \
     FM_SPAWN_NO_GUARD=1 GROK_HOME="$dir/grokhome" \
     "$SPAWN" "$@" 2>&1
@@ -563,7 +593,7 @@ SH
   chmod +x "$dir/fakebin/claude"
   # The staged launch is one multi-line payload (env scrub, agent command,
   # then the OSC 7501 disarm), so take every line typed after the /exit.
-  launch=$(awk 'seen { print } $0 == "/exit" { seen = 1 }' "$dir/fake/literal-raw")
+  launch=$(awk 'seen && $0 !~ /^: #__fm_relaunch_clear_/ { print } $0 == "/exit" { seen = 1 }' "$dir/fake/literal-raw")
   worker_env=$(env -i HOME="$dir/user-home" PATH="$dir/fakebin:$PATH" SHELL=/bin/sh \
     FM_HOME=/synthetic/foreign FM_CREW_STATE_META_OVERRIDE=/synthetic/foreign.meta \
     FM_CREW_STATE_STATUS_OVERRIDE=/synthetic/foreign.status FM_SEND_RETRIES=7 \
@@ -4899,6 +4929,38 @@ SH
   pass "fm-control exit removes the dialog file before it releases the control lock"
 }
 
+test_tmux_guard_refusal_preserves_relaunch_record() {
+  local dir out rc
+  dir=$(new_case guard-refusal rlguard)
+  add_ship_task "$dir" rlguard claude
+  cp "$dir/home/state/rlguard.meta" "$dir/meta-before"
+  : > "$dir/fake/guard-refuse"
+  out=$(run_control "$dir" rlguard relaunch --note 'guard refusal'); rc=$?
+  expect_code 1 "$rc" "tmux guard must refuse relaunch"$'\n'"$out"
+  assert_contains "$out" 'did not reach a clean shell prompt' 'guard refusal should be explicit'
+  cmp -s "$dir/meta-before" "$dir/home/state/rlguard.meta" || fail 'guard refusal changed the task record'
+  [ ! -e "$dir/fake/launch" ] || fail 'guard refusal staged a replacement launch'
+  pass 'tmux guard refusal preserves the task record and does not launch'
+}
+
+test_tmux_late_guard_refusal_restores_relaunch_record() {
+  local dir out rc
+  dir=$(new_case late-guard-refusal rllate)
+  add_ship_task "$dir" rllate claude
+  cp "$dir/home/state/rllate.meta" "$dir/meta-before"
+  printf 'prior generation\n' > "$dir/home/state/rllate.droid-session-end"
+  printf 'intentional stop\n' > "$dir/home/state/.crew-stopped-rllate"
+  : > "$dir/fake/guard-refuse-after-wait"
+  out=$(run_control "$dir" rllate relaunch --note 'late guard refusal'); rc=$?
+  expect_code 1 "$rc" "late tmux guard must refuse relaunch"$'\n'"$out"
+  assert_contains "$out" 'left its clean shell prompt before launch delivery' 'late guard refusal should be explicit'
+  cmp -s "$dir/meta-before" "$dir/home/state/rllate.meta" || fail 'late guard refusal changed the task record'
+  [ "$(cat "$dir/home/state/rllate.droid-session-end" 2>/dev/null)" = 'prior generation' ] || fail 'late guard refusal removed the prior session-end marker'
+  [ -e "$dir/home/state/.crew-stopped-rllate" ] || fail 'late guard refusal did not restore the intentional-stop marker'
+  [ ! -e "$dir/fake/launch" ] || fail 'late guard refusal delivered a replacement launch'
+  pass 'late tmux guard refusal restores the task record and does not launch'
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -4907,6 +4969,8 @@ test_relaunch_off_opencode_removes_tracked_wiring
 test_exit_and_relaunch_remove_the_dialog_file
 test_exit_removes_the_dialog_file_before_releasing_the_lock
 test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint
+test_tmux_guard_refusal_preserves_relaunch_record
+test_tmux_late_guard_refusal_restores_relaunch_record
 test_pooled_relaunch_custody_is_agy_only
 test_agy_relaunch_requires_treehouse_capabilities_before_stopping
 test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text

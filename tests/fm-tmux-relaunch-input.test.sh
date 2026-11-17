@@ -82,3 +82,215 @@ wait "$KILLER" || fail 'delayed fixture stop failed'
 "$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
 wait_for 'result:waited-for-exit' || fail 'replacement did not run after waiting for the old agent'
 printf 'ok - relaunch preparation waits for foreground exit\n'
+
+wait_child_zsh() {
+  local parent=$1 i child
+  for ((i = 0; i < 60; i++)); do
+    child=$(pgrep -P "$parent" -x zsh | head -1)
+    if [ -n "$child" ]; then printf '%s\n' "$child"; return 0; fi
+    sleep 0.1
+  done
+  return 1
+}
+
+# A nested zsh has the same executable name as the original pane shell. Its
+# different foreground process group must prevent cleanup and launch input.
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l 'zsh -f'
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
+CHILD_ZSH=$(wait_child_zsh "$PANE_PID") || fail 'nested zsh did not start'
+SHELL=/bin/bash fm_backend_tmux_prepare_relaunch "$TARGET" > "$TMP/same-name-guard.out" 2>&1 &
+GUARD_PID=$!
+sleep 0.4
+kill -0 "$GUARD_PID" 2>/dev/null || fail 'guard accepted a foreground child zsh'
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l 'exit'
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
+wait "$GUARD_PID" || fail 'guard did not continue after nested zsh exited'
+printf 'ok - foreground child with the same executable name is not accepted\n'
+
+# A child that never exits must be refused within the ten-second wall clock
+# bound. The guard must leave the child running and must never type a launch.
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l 'zsh -f'
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
+CHILD_ZSH=$(wait_child_zsh "$PANE_PID") || fail 'timeout fixture zsh did not start'
+START=$(date +%s)
+if fm_backend_tmux_prepare_relaunch "$TARGET" > "$TMP/timeout-guard.out" 2>&1; then
+  fail 'guard accepted a still-running foreground child'
+fi
+ELAPSED=$(( $(date +%s) - START ))
+[ "$ELAPSED" -ge 9 ] && [ "$ELAPSED" -le 11 ] || fail "guard took ${ELAPSED}s instead of about 10s"
+kill -0 "$CHILD_ZSH" 2>/dev/null || fail 'guard stopped the foreground child'
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l 'exit'
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
+printf 'ok - foreground timeout is bounded by the wall clock\n'
+
+# The pane's top process may be a wrapper that keeps a child login shell.
+REAL_ZSH=$(command -v zsh)
+cat > "$TMP/wrapper" <<SH
+#!/bin/bash
+"$REAL_ZSH" -f
+wait
+SH
+chmod +x "$TMP/wrapper"
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n wrapped "/bin/bash -e $TMP/wrapper" || fail 'wrapper window did not start'
+TARGET=repro:wrapped
+WRAPPER_PID=$("$REAL_TMUX" -L "$SOCKET" display-message -p -t "$TARGET" '#{pane_pid}')
+wait_child_zsh "$WRAPPER_PID" >/dev/null || fail 'wrapper child shell did not start'
+( unset SHELL; fm_backend_tmux_prepare_relaunch "$TARGET" ) || fail 'wrapper top process prevented shell relaunch'
+fm_backend_tmux_send_text_line "$TARGET" "printf 'result:%s\\n' wrapped-shell"
+wait_for 'result:wrapped-shell' || fail 'replacement was not delivered to wrapper child shell'
+printf 'ok - wrapper top process is accepted when its shell is foreground\n'
+
+# Without job control a child can share the shell's pgid. In that case the
+# guard must still see the live child and refuse the launch.
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n nojob || fail 'no-job-control window did not start'
+TARGET=repro:nojob
+NOJOB_PID=$("$REAL_TMUX" -L "$SOCKET" display-message -p -t "$TARGET" '#{pane_pid}')
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l 'unsetopt monitor'
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
+sleep 0.2
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l 'sleep 60'
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
+NOJOB_CHILD=$(wait_child "$NOJOB_PID") || fail 'no-job-control child did not start'
+SHELL_GROUP=$(ps -p "$NOJOB_PID" -o pgid=)
+CHILD_GROUP=$(ps -p "$NOJOB_CHILD" -o pgid=)
+[ "$SHELL_GROUP" = "$CHILD_GROUP" ] || fail 'fixture child did not share the shell process group'
+if fm_backend_tmux_prepare_relaunch "$TARGET" no-wait > "$TMP/nojob-guard.out" 2>&1; then
+  fail 'guard accepted a same-group foreground child'
+fi
+kill -TERM "$NOJOB_CHILD" 2>/dev/null || fail 'no-job-control child could not be stopped'
+printf 'ok - same-group child without job control is refused\n'
+
+# A custom ^U binding must fail closed instead of swallowing the replacement
+# command behind input that C-u did not remove.
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n rebound "$REAL_ZSH" -f || fail 'custom binding window did not start'
+TARGET=repro:rebound
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l "bindkey '^U' self-insert"
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
+sleep 0.2
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l 'stale-input'
+if fm_backend_tmux_prepare_relaunch "$TARGET" > "$TMP/rebound-guard.out" 2>&1; then
+  fail 'guard accepted a custom ^U binding that did not clear input'
+fi
+grep -q 'did not clear relaunch input' "$TMP/rebound-guard.out" || fail 'custom binding refusal lacked a clear reason'
+printf 'ok - custom ^U binding refuses replacement input\n'
+
+# A ^U binding that submits the line must not execute old input. Interrupt
+# the shell directly before sending line-editor keys.
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n submit || fail 'submit-binding window did not start'
+TARGET=repro:submit
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l "bindkey '^U' accept-line"
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
+sleep 0.2
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l ": > '$TMP/stale-executed'"
+fm_backend_tmux_prepare_relaunch "$TARGET" > "$TMP/submit-guard.out" 2>&1 || true
+[ ! -e "$TMP/stale-executed" ] || fail 'custom ^U submitted stale input before guard refusal'
+printf 'ok - custom ^U accept-line binding cannot submit stale input\n'
+
+# Input to the right of the cursor must also be removed before launch text.
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n cursorleft || fail 'cursor-left window did not start'
+TARGET=repro:cursorleft
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l 'stale-input'
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" C-b C-b C-b
+fm_backend_tmux_prepare_relaunch "$TARGET" || fail 'cursor-left input could not be cleaned'
+fm_backend_tmux_send_text_line "$TARGET" "printf 'result:%s\\n' cursor-clean"
+wait_for 'result:cursor-clean' || fail 'cursor-left stale input corrupted replacement command'
+printf 'ok - cursor-left stale input is removed before replacement\n'
+
+# Startup options for an interactive shell must not be mistaken for a script
+# or -c wrapper.
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n bashopts '/bin/bash --norc --noprofile --posix -i' || fail 'bash options window did not start'
+TARGET=repro:bashopts
+fm_backend_tmux_prepare_relaunch "$TARGET" || fail 'interactive bash startup options were refused'
+fm_backend_tmux_send_text_line "$TARGET" "printf 'result:%s\\n' bash-options"
+wait_for 'result:bash-options' || fail 'replacement did not reach bash with startup options'
+printf 'ok - interactive bash startup options are accepted\n'
+
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n bashstdin '/bin/bash -is' || fail 'interactive stdin-shell window did not start'
+TARGET=repro:bashstdin
+BASH_PID=$("$REAL_TMUX" -L "$SOCKET" display-message -p -t "$TARGET" '#{pane_pid}')
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l '/bin/bash -i'
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
+for ((i = 0; i < 60; i++)); do
+  NESTED_BASH=$(pgrep -P "$BASH_PID" -x bash | head -1)
+  [ -z "$NESTED_BASH" ] || break
+  sleep 0.1
+done
+[ -n "${NESTED_BASH:-}" ] || fail 'nested bash did not start'
+if fm_backend_tmux_prepare_relaunch "$TARGET" no-wait > "$TMP/bashstdin-guard.out" 2>&1; then
+  fail 'interactive bash -is pane selected its foreground child instead'
+fi
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l 'exit'
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
+printf 'ok - interactive bash -is pane does not select a nested shell\n'
+
+# Prompt hooks can briefly run a child after each SIGINT. The final guard
+# waits for the prompt to settle within its deadline.
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n slowprompt || fail 'slow-prompt window did not start'
+TARGET=repro:slowprompt
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l 'precmd() { sleep 0.3; }'
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
+sleep 0.5
+fm_backend_tmux_prepare_relaunch "$TARGET" no-wait || fail 'prompt hook prevented a settled relaunch'
+fm_backend_tmux_send_text_line "$TARGET" "printf 'result:%s\\n' slow-prompt"
+wait_for 'result:slow-prompt' || fail 'replacement did not reach shell with a prompt hook'
+printf 'ok - prompt hook settles before final relaunch delivery\n'
+
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n clockprompt || fail 'clock-prompt window did not start'
+TARGET=repro:clockprompt
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l "PROMPT='[%*] %# '"
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
+sleep 0.2
+fm_backend_tmux_prepare_relaunch "$TARGET" no-wait || fail 'changing clock prompt was refused'
+printf 'ok - clock prompt redraw keeps the input check valid\n'
+
+# ps flattens argv, so an rcfile path with spaces must stay ambiguous rather
+# than turning a nested Bash into the pane's original shell.
+mkdir "$TMP/rc dir" || fail 'rcfile fixture directory could not be created'
+: > "$TMP/rc dir/rc"
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n ambiguous "/bin/bash --rcfile '$TMP/rc dir/rc' -i" || fail 'ambiguous shell window did not start'
+TARGET=repro:ambiguous
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l '/bin/bash -i'
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
+sleep 0.2
+if fm_backend_tmux_prepare_relaunch "$TARGET" no-wait > "$TMP/ambiguous-guard.out" 2>&1; then
+  fail 'flattened rcfile argv selected a nested shell'
+fi
+printf 'ok - ambiguous shell argv refuses instead of selecting a child\n'
+
+# ps flattens argv[0] too. A process name with spaces cannot establish the
+# identity of the pane's original shell.
+(
+  ps() {
+    case "$*" in
+      '-p 123 -o comm=') printf 'zsh\n' ;;
+      '-ww -p 123 -o args=') printf 'my zsh -f\n' ;;
+      '-p 124 -o comm=') printf 'bash\n' ;;
+      '-ww -p 124 -o args=') printf 'bash --init-file /tmp/rc -i\n' ;;
+      '-p 125 -o comm=') printf 'bash\n' ;;
+      '-ww -p 125 -o args=') printf 'bash -is foo\n' ;;
+      '-p 126 -o comm=') printf 'zsh\n' ;;
+      '-ww -p 126 -o args=') printf 'zsh +o vi\n' ;;
+      '-p 127 -o comm=') printf 'fish\n' ;;
+      '-ww -p 127 -o args=') printf 'fish -C source\n' ;;
+      '-p 128 -o comm=') printf 'bash\n' ;;
+      '-ww -p 128 -o args=') printf 'bash -iO extglob\n' ;;
+      *) return 1 ;;
+    esac
+  }
+  fm_backend_tmux_interactive_shell 123
+  [ "$?" -eq 2 ] || exit 1
+  fm_backend_tmux_interactive_shell 124
+  [ "$?" -eq 2 ] || exit 1
+  fm_backend_tmux_interactive_shell 125
+  [ "$?" -eq 2 ] || exit 1
+  fm_backend_tmux_interactive_shell 126
+  [ "$?" -eq 2 ] || exit 1
+  fm_backend_tmux_interactive_shell 127
+  [ "$?" -eq 2 ] || exit 1
+  fm_backend_tmux_interactive_shell 128
+  [ "$?" -eq 2 ]
+) || fail 'flattened shell argv was not treated as ambiguous'
+printf 'ok - ambiguous shell argv[0] and option values refuse child selection\n'
+
+bash "$ROOT/tests/fm-control-relaunch.test.sh" test_tmux_guard_refusal_preserves_relaunch_record test_tmux_late_guard_refusal_restores_relaunch_record \
+  || fail 'guard refusal changed the relaunch record'

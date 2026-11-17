@@ -131,7 +131,9 @@ case "${1:-}" in
       esac
     done
     payload=${1:-}
+    case "$payload" in C-u) rm -f "$D/relaunch-probe" ;; esac
     if [ "$literal" = 1 ]; then
+      case "$payload" in ': #__fm_relaunch_clear_'*) printf '%s\n' "$payload" > "$D/relaunch-probe" ;; esac
       case "$payload" in
         ". '"*"'")
           staged=${payload#". '"}
@@ -149,13 +151,16 @@ case "${1:-}" in
     for a in "$@"; do
       case "$a" in
         *cursor_y*) printf '1\n'; exit 0 ;;
+        *cursor_x*) printf '7\n'; exit 0 ;;
         *pane_pid*) printf '4242426\n'; exit 0 ;;
         *pane_current_command*) cat "$D/command"; printf '\n'; exit 0 ;;
         *pane_current_path*) cat "$D/cwd"; printf '\n'; exit 0 ;;
       esac
     done
     printf 'fakepane\n'; exit 0 ;;
-  capture-pane) printf '╭────╮\n│    │\n╰────╯\n'; exit 0 ;;
+  capture-pane)
+    if [ -f "$D/relaunch-probe" ]; then cat "$D/relaunch-probe"; else printf '╭────╮\n│    │\n╰────╯\n'; fi
+    exit 0 ;;
   list-windows) [ -f "$D/windows" ] && cat "$D/windows"; exit 0 ;;
 esac
 exit 0
@@ -165,10 +170,28 @@ SH
 #!/usr/bin/env bash
 case "$*" in
   '-p 4242426 -o comm=') printf -- '-zsh\n' ;;
+  '-ww -p 4242426 -o args=') printf -- '-zsh\n' ;;
+  '-p 4242426 -o pgid=') printf '4242426\n' ;;
+  '-p 4242426 -o stat=') printf 'Ss\n' ;;
+  '-p 4242426 -o tpgid=') printf '4242426\n' ;;
   *) exec /bin/ps "$@" ;;
 esac
 SH
   chmod +x "$fb/ps"
+  cat > "$fb/pgrep" <<'SH'
+#!/usr/bin/env bash
+case "$*" in '-g 4242426') printf '4242426\n' ;; *) exec /usr/bin/pgrep "$@" ;; esac
+SH
+  chmod +x "$fb/pgrep"
+  cat > "$fb/bashenv" <<'SH'
+kill() {
+  if [ "${1:-}" = -INT ] && [ "${2:-}" = 4242426 ]; then
+    [ -z "${FM_FAKE_DIR:-}" ] || rm -f "$FM_FAKE_DIR/relaunch-probe"
+    return 0
+  fi
+  builtin kill "$@"
+}
+SH
   printf '#!/usr/bin/env bash\nexit 0\n' > "$fb/sleep"
   chmod +x "$fb/sleep"
 }
@@ -199,7 +222,7 @@ test_exit_records_the_stop_and_relaunch_clears_it() {
     echo "effort=default"
   } > "$home/state/$id.meta"
   ctl() {
-    env PATH="$dir/fakebin:$PATH" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
+    env PATH="$dir/fakebin:$PATH" BASH_ENV="$dir/fakebin/bashenv" FM_HOME="$home" FM_FAKE_DIR="$dir/fake" \
       HOME="$dir/user-home" CLAUDE_CONFIG_DIR='' FM_SPAWN_NO_GUARD=1 \
       FM_CONTROL_POLL=0.01 FM_CONTROL_EXIT_WAIT=0.05 FM_CONTROL_LAUNCH_WAIT=0.05 \
       "$CONTROL" "$id" "$@" 2>&1
