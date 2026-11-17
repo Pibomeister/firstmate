@@ -885,6 +885,94 @@ test_browsers_reap_only_old_orphans() {
   pass "fm-terminal-reap: only orphaned headless browsers past the age floor are reaped"
 }
 
+# exited_show <handle> <pty> <path>: Orca's record of a pane whose process
+# exited: disconnected, unwritable, with an exit cause.
+exited_show() {
+  node -e 'const [h,p,w]=process.argv.slice(1);console.log(JSON.stringify({ok:true,result:{terminal:{handle:h,connected:false,writable:false,exitCause:{kind:"exit"},executionHostId:"local",ptyId:p,worktreePath:w}}}))' \
+    "$1" "$2" "$3" > "$FX/show-$1.json"
+}
+
+# build_lanes: Casco-style lanes an external launcher registered, each rooted
+# at the lane repository's main checkout, plus one unregistered tab there.
+build_lanes() {  # <case>
+  local h
+  fixture_reset "$1"
+  HOME_DIR="$FX/home"
+  CASCO="$FX/casco"
+  mkdir -p "$HOME_DIR/state"
+  fm_git_init_commit "$CASCO"
+  CASCO=$(cd "$CASCO" && pwd -P)
+  for h in term-lane-idle term-lane-exited term-lane-live term-lane-agent; do
+    FM_HOME="$HOME_DIR" bash "$ROOT/bin/fm-lane-register.sh" "lane-${h#term-lane-}" \
+      --repo "$CASCO" --terminal "$h" >/dev/null || fail "could not register $h"
+  done
+  idle_term term-lane-idle pty-lane-idle "$CASCO" "n11-g1"
+  show term-lane-idle pty-lane-idle "$CASCO"
+  # The pane's process exited: Orca's sweep names no session for it.
+  term term-lane-exited pty-lane-exited "$CASCO" "n11-g3"
+  exited_show term-lane-exited pty-lane-exited "$CASCO"
+  # No session in the sweep, but Orca still calls it connected.
+  term term-lane-live pty-lane-live "$CASCO" "n11-g4"
+  show term-lane-live pty-lane-live "$CASCO"
+  if [ -n "$STANDIN" ]; then
+    agent_session
+    term term-lane-agent pty-lane-agent "$CASCO" "n11-g5"; session pty-lane-agent "$PID"
+    show term-lane-agent pty-lane-agent "$CASCO"
+  fi
+  idle_term term-casco-tab pty-casco-tab "$CASCO" "n11-g9"
+  show term-casco-tab pty-casco-tab "$CASCO"
+  # A registered handle whose pane Orca roots outside the lane's repository
+  # and worktree is not trusted as that lane.
+  FM_HOME="$HOME_DIR" bash "$ROOT/bin/fm-lane-register.sh" lane-moved \
+    --repo "$CASCO" --terminal term-lane-moved >/dev/null || fail "could not register term-lane-moved"
+  mkdir -p "$FX/elsewhere"
+  idle_term term-lane-moved pty-lane-moved "$FX/elsewhere" "n11-g6"
+  show term-lane-moved pty-lane-moved "$FX/elsewhere"
+  # A lane another home registered is that home's to reap.
+  mkdir -p "$FX/sm-home/state" "$HOME_DIR/data"
+  printf -- '- sm1 - Test secondmate (home: %s; scope: tests; projects: alpha; added 2026-01-01)\n' "$FX/sm-home" \
+    > "$HOME_DIR/data/secondmates.md"
+  FM_HOME="$FX/sm-home" bash "$ROOT/bin/fm-lane-register.sh" lane-other \
+    --repo "$CASCO" --terminal term-lane-other >/dev/null || fail "could not register term-lane-other"
+  idle_term term-lane-other pty-lane-other "$CASCO" "n11-g7"
+  show term-lane-other pty-lane-other "$CASCO"
+  fixture_write
+}
+
+test_registered_external_lanes_are_reaped() {
+  local closed
+  build_lanes lanes-dry
+  run_reap --no-browsers
+  [ "$RC" = 0 ] || fail "a dry run over registered lanes must exit 0, got $RC: $(cat "$FX/stderr")"
+  expect term-lane-idle "reap external-lane" "a registered lane whose session holds only a shell is reaped"
+  expect term-lane-exited "reap external-lane-exited" "a registered lane whose pane exited is reaped"
+  expect term-lane-live "keep no-session" "a registered lane with no session that Orca still calls connected is kept"
+  expect term-casco-tab "keep foreign" "an unregistered tab in the lane repository is never firstmate's"
+  expect term-lane-moved "keep foreign" "a registered handle rooted outside its lane's repository and worktree is not trusted"
+  expect term-lane-other "keep foreign" "another home's registered lane is not this home's to reap"
+  if [ -n "$STANDIN" ]; then
+    expect term-lane-agent "keep live-agent" "a registered lane still running its agent is kept"
+  fi
+  [ ! -s "$FX/closed.log" ] || fail "a dry run must close nothing, closed: $(cat "$FX/closed.log")"
+
+  build_lanes lanes-apply
+  run_reap --apply --no-browsers
+  [ "$RC" = 0 ] || fail "an apply over registered lanes must exit 0, got $RC: $(cat "$FX/stderr")"
+  closed=$(sort "$FX/closed.log" | tr '\n' ' ')
+  [ "$closed" = 'term-lane-exited term-lane-idle ' ] \
+    || fail "--apply must close exactly the idle and exited lanes, got '$closed'"
+  expect term-lane-idle "closed external-lane" "an apply reports the idle lane's close"
+  expect term-lane-exited "closed external-lane-exited" "an apply reports the exited lane's close"
+
+  # A lane unregistered between the listing and the close is skipped.
+  build_lanes lanes-unregistered
+  printf '#!/usr/bin/env bash\nrm -f %q\n' "$HOME_DIR/state/external-lanes/lane-exited.lane" > "$FX/onshow-term-lane-exited"
+  chmod +x "$FX/onshow-term-lane-exited"
+  run_reap --apply --no-browsers
+  expect term-lane-exited "skipped external-lane-exited:now-unregistered" "a lane no longer registered at the close is skipped"
+  pass "fm-terminal-reap: registered external lanes are reaped once idle or exited, with every re-proof"
+}
+
 fm_test_run \
   test_browsers_reap_only_old_orphans \
   test_keep_list_protects_live_helpers \
@@ -897,4 +985,5 @@ fm_test_run \
   test_unreadable_owner_facts_keep_terminals \
   test_unreadable_inventory_closes_nothing \
   test_help_prints_only_the_usage_header \
-  test_browsers_are_reaped_only_without_a_live_owner
+  test_browsers_are_reaped_only_without_a_live_owner \
+  test_registered_external_lanes_are_reaped

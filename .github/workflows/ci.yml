@@ -277,7 +277,7 @@ jobs:
       # Every shard reports so one failure never hides another shard's result.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -581,7 +581,7 @@ jobs:
           tmp=$(mktemp)
           trap 'rm -f "$tmp"' EXIT
           printf '%s\n' \
-            '<!-- Points Claude at AGENTS.md via import; edit AGENTS.md, not this file. -->' \
+            '<!-- Imports AGENTS.md, including its worktree cleanup rule; maintain shared rules there. -->' \
             '@AGENTS.md' >"$tmp"
           cmp -s CLAUDE.md "$tmp" || { echo "::error::CLAUDE.md must be the canonical @AGENTS.md pointer"; exit 1; }
           [ "$(readlink .claude/skills)" = "../.agents/skills" ] || { echo "::error::.claude/skills must be a symlink to ../.agents/skills"; exit 1; }

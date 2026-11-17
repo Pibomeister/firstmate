@@ -1,2 +1,2 @@
-<!-- Points Claude at AGENTS.md via import; edit AGENTS.md, not this file. -->
+<!-- Imports AGENTS.md, including its worktree cleanup rule; maintain shared rules there. -->
 @AGENTS.md

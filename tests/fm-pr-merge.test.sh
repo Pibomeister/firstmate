@@ -107,7 +107,7 @@ write_github_live_json() {
   local case_dir=$1 head=$2
   printf '%s\n' "$head" > "$case_dir/github-head"
   cat > "$case_dir/github-view.json" <<JSON
-{"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefOid":"$head","baseRefName":"main","statusCheckRollup":[{"__typename":"CheckRun","name":"ci","status":"COMPLETED","conclusion":"SUCCESS"}]}
+{"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefOid":"$head","baseRefName":"main","baseRefOid":"$(git -C "$case_dir/wt" rev-parse origin/main)","statusCheckRollup":[{"__typename":"CheckRun","name":"ci","status":"COMPLETED","conclusion":"SUCCESS"}]}
 JSON
 }
 
@@ -115,7 +115,7 @@ write_github_red_json() {
   local case_dir=$1 head=$2 name=$3
   printf '%s\n' "$head" > "$case_dir/github-head"
   cat > "$case_dir/github-view.json" <<JSON
-{"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefOid":"$head","baseRefName":"main","statusCheckRollup":[{"__typename":"CheckRun","name":"$name","status":"COMPLETED","conclusion":"FAILURE"}]}
+{"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefOid":"$head","baseRefName":"main","baseRefOid":"$(git -C "$case_dir/wt" rev-parse origin/main)","statusCheckRollup":[{"__typename":"CheckRun","name":"$name","status":"COMPLETED","conclusion":"FAILURE"}]}
 JSON
 }
 
@@ -150,7 +150,7 @@ write_github_rollup_json() {
   done
   printf '%s\n' "$head" > "$case_dir/github-head"
   cat > "$case_dir/github-view.json" <<JSON
-{"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefOid":"$head","baseRefName":"main","statusCheckRollup":[$rollup]}
+{"state":"OPEN","isDraft":false,"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","headRefOid":"$head","baseRefName":"main","baseRefOid":"$(git -C "$case_dir/wt" rev-parse origin/main)","statusCheckRollup":[$rollup]}
 JSON
 }
 
@@ -288,6 +288,12 @@ case "${1:-} ${2:-}" in
     # The required-check reads: the branch itself, and its rules read without
     # the merge-queue filter the queue reader below applies.
     case " $* " in
+      *" repos/"*"/compare/"*)
+        view_dir=$(dirname "$FM_TEST_GH_VIEW_JSON")
+        [ ! -e "$view_dir/review-compare-fail" ] || exit 1
+        if [ -f "$view_dir/review-merge-base" ]; then cat "$view_dir/review-merge-base";
+        else git -C "$view_dir/wt" rev-parse origin/main; fi
+        exit 0 ;;
       *" repos/"*"/pulls/"*"/update-branch "*)
         [ "${2:-}" = --method ] && [ "${3:-}" = PUT ] || exit 2
         expected=
@@ -3057,6 +3063,219 @@ test_expected_head_bad_inputs_refuse_before_effects() {
   pass "fm-pr-merge refuses a malformed, abbreviated, missing, or conflicting --expected-head before any effect"
 }
 
+# Seed this case's home with a merge-review config that covers example/repo and
+# with real receipts: a head commit is added to the task's worktree and
+# bin/fm-merge-review.sh run reviews it through stand-in claude and agy tools.
+# <agy-verdict> is APPROVE or BLOCK. Echoes the head commit.
+seed_merge_review() {
+  local case_dir=$1 url=$2 agy_verdict=$3 head tool
+  printf '%s\n' \
+    'seat=anthropic:claude:claude-test-1' \
+    'seat=google:agy:gemini-test-high' \
+    'require=github.com/example/repo' > "$case_dir/home/config/merge-review"
+  printf 'reviewed change\n' > "$case_dir/wt/change.txt"
+  git -C "$case_dir/wt" add change.txt
+  git -C "$case_dir/wt" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' \
+    commit -qm 'reviewed change'
+  head=$(git -C "$case_dir/wt" rev-parse HEAD)
+  mkdir -p "$case_dir/reviewbin"
+  for tool in claude agy; do
+    cat > "$case_dir/reviewbin/$tool" <<'SH'
+#!/usr/bin/env bash
+tool=${0##*/}
+[ "${1:-}" != --version ] || { echo "$tool 9.9.9"; exit 0; }
+verdict=APPROVE
+[ "$tool" != agy ] || verdict=$FM_TEST_AGY_VERDICT
+text="Summary: the change adds one text file and nothing reads it.
+Files read: diff.patch and snapshot/change.txt.
+Findings: the file is plain text, no script sources it, and no document or test contradicts it.
+This stand-in review is long enough to clear the floor that keeps a bare verdict from counting.
+VERDICT: $verdict $FM_TEST_REVIEW_HEAD"
+if [ "$tool" = claude ]; then
+  jq -n --arg t "$text" '{result: $t, modelUsage: {"claude-test-1": {}}}'
+else
+  jq -n --arg t "$text" '{status: "SUCCESS", response: $t}'
+fi
+SH
+    chmod +x "$case_dir/reviewbin/$tool"
+  done
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$case_dir/home" FM_TASK_ID=task-x1 \
+    FM_TEST_AGY_VERDICT="$agy_verdict" FM_TEST_REVIEW_HEAD="$head" \
+    PATH="$case_dir/reviewbin:$PATH" \
+    "$ROOT/bin/fm-merge-review.sh" run "$url" --head "$head" --repo "$case_dir/wt" --base origin/main \
+    > "$case_dir/review.out" 2> "$case_dir/review.err" || true
+  printf '%s\n' "$head"
+}
+
+test_covered_repository_needs_an_approved_review_at_the_expected_head() {
+  local case_dir rc head other url
+  other=dddddddddddddddddddddddddddddddddddddddd
+
+  # Approved at the exact head: the merge goes through, bound to that head.
+  url=https://github.com/example/repo/pull/221
+  case_dir=$(make_case merge-review-approved)
+  head=$(seed_merge_review "$case_dir" "$url" APPROVE)
+  assert_grep "merge-review: approved head=$head" "$case_dir/review.out" \
+    "merge-review-approved: the seeded review did not approve: $(cat "$case_dir/review.err")"
+  add_gh_mocks "$case_dir" "$head"
+  : > "$case_dir/gh-axi.log"
+  run_pr_merge "$case_dir" task-x1 "$url" --expected-head "$head" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "merge-review-approved: an approved head should merge: $(cat "$case_dir/stderr")"
+  assert_logged_gh_merge "$case_dir" 221 example/repo --squash
+  assert_grep "merge-review: approved head=$head" "$case_dir/stderr" \
+    "merge-review-approved: the merge did not report the review verdict it relied on"
+
+  # No --expected-head: nothing names the reviewed commit, so nothing is read.
+  url=https://github.com/example/repo/pull/222
+  case_dir=$(make_case merge-review-no-head)
+  head=$(seed_merge_review "$case_dir" "$url" APPROVE)
+  add_gh_mocks "$case_dir" "$head"
+  : > "$case_dir/gh.log"
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "merge-review-no-head: a covered merge without --expected-head must refuse"
+  assert_grep 'needs a two-model merge review at an exact head' "$case_dir/stderr" \
+    "merge-review-no-head: the refusal did not name the missing head"
+  [ ! -s "$case_dir/gh.log" ] || fail "merge-review-no-head: the forge was called: $(cat "$case_dir/gh.log")"
+
+  # The head moved after the reviews: the new head has none.
+  url=https://github.com/example/repo/pull/223
+  case_dir=$(make_case merge-review-moved)
+  head=$(seed_merge_review "$case_dir" "$url" APPROVE)
+  add_gh_mocks "$case_dir" "$other"
+  : > "$case_dir/gh.log"
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" --expected-head "$other" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "merge-review-moved: reviews of an older head must not carry over"
+  assert_grep "no approved two-model merge review at $other" "$case_dir/stderr" \
+    "merge-review-moved: the refusal did not name the unreviewed head"
+  assert_grep 'merge-review: incomplete' "$case_dir/stderr" \
+    "merge-review-moved: the refusal did not carry the verdict line"
+  [ ! -s "$case_dir/gh.log" ] || fail "merge-review-moved: the forge was called: $(cat "$case_dir/gh.log")"
+
+  # One reviewer blocks: the approval does not outvote it.
+  url=https://github.com/example/repo/pull/224
+  case_dir=$(make_case merge-review-blocked)
+  head=$(seed_merge_review "$case_dir" "$url" BLOCK)
+  add_gh_mocks "$case_dir" "$head"
+  : > "$case_dir/gh.log"
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" --expected-head "$head" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "merge-review-blocked: a blocking review must refuse the merge"
+  assert_grep 'merge-review: blocked' "$case_dir/stderr" \
+    "merge-review-blocked: the refusal did not carry the blocking verdict"
+  [ ! -s "$case_dir/gh.log" ] || fail "merge-review-blocked: the forge was called: $(cat "$case_dir/gh.log")"
+  pass "a covered repository merges only with an approved two-model review at --expected-head"
+}
+
+test_review_scope_tracks_the_live_merge_base() {
+  local case_dir head rc=0 url=https://github.com/example/repo/pull/227
+  case_dir=$(make_case review-retarget)
+  head=$(seed_merge_review "$case_dir" "$url" APPROVE)
+  add_gh_mocks "$case_dir" "$head"
+  printf '%s\n' "$MR_STALE_HEAD" > "$case_dir/review-merge-base"
+  jq --arg b "$MR_STALE_HEAD" '.baseRefName="feature" | .baseRefOid=$b' "$case_dir/github-view.json" > "$case_dir/new-view"
+  mv "$case_dir/new-view" "$case_dir/github-view.json"
+  run_pr_merge "$case_dir" task-x1 "$url" --expected-head "$head" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 1 "$rc" "review-retarget: unchanged head with another reviewed diff base must refuse"
+  assert_grep 'merge base' "$case_dir/stderr" "review-retarget: refusal did not identify stale review scope"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" "review-retarget: wrong-scope review reached a forge write"
+
+  case_dir=$(make_case review-base-advance)
+  head=$(seed_merge_review "$case_dir" "$url" APPROVE)
+  add_gh_mocks "$case_dir" "$head"
+  jq --arg b "$MR_STALE_HEAD" '.baseRefOid=$b' "$case_dir/github-view.json" > "$case_dir/new-view"
+  mv "$case_dir/new-view" "$case_dir/github-view.json"
+  run_pr_merge "$case_dir" task-x1 "$url" --expected-head "$head" > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "review-base-advance: unchanged merge base must retain approval: $(cat "$case_dir/stderr")"
+  assert_logged_gh_merge "$case_dir" 227 example/repo --squash
+  pass "review approval follows the live merge base, without invalidating an unchanged diff on a base-branch advance"
+}
+
+test_other_forges_bind_reviews_to_the_live_diff_base() {
+  local provider case_dir head base rc url
+  for provider in gitlab forgejo; do
+    if [ "$provider" = gitlab ]; then case_dir=$(make_gitlab_case review-scope-gitlab); url=$MR_URL;
+    else case_dir=$(make_forgejo_case review-scope-forgejo); url=$FJ_URL; fi
+    head=$(seed_merge_review "$case_dir" "$url" APPROVE)
+    git -C "$case_dir/wt" update-ref refs/remotes/origin/reviewed-source "$head"
+    base=$(git -C "$case_dir/wt" rev-parse origin/main)
+    printf '%s\n' 'seat=anthropic:claude:claude-test-1' 'seat=google:agy:gemini-test-high' 'require=*' > "$case_dir/home/config/merge-review"
+    if [ "$provider" = gitlab ]; then
+      write_mr_json "$case_dir/mr.json" head="$head" pipeline_sha="$head"
+      write_mr_json "$case_dir/mr-post.json" state=merged head="$head" pipeline_sha="$head"
+      jq --arg h "$head" --arg b "$MR_STALE_HEAD" '.diff_refs={head_sha:$h,base_sha:$b}' "$case_dir/mr.json" > "$case_dir/new-view"
+      mv "$case_dir/new-view" "$case_dir/mr.json"
+    else
+      write_forgejo_pr_json "$case_dir/pr.json" head="$head"
+      write_forgejo_pr_json "$case_dir/pr-post.json" state=closed mergeable=false merged=true head="$head"
+      printf '%s\n' "$head" > "$case_dir/tea-expected-head"
+      jq --arg b "$MR_STALE_HEAD" '.merge_base=$b' "$case_dir/pr.json" > "$case_dir/new-view"
+      mv "$case_dir/new-view" "$case_dir/pr.json"
+    fi
+    rc=0
+    run_pr_merge "$case_dir" task-x1 "$url" --expected-head "$head" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+    expect_code 1 "$rc" "review-scope-$provider: a changed diff base must refuse"
+    assert_grep 'merge base' "$case_dir/stderr" "review-scope-$provider: wrong-scope refusal is missing: $(cat "$case_dir/stderr")"
+    if [ "$provider" = gitlab ]; then
+      assert_absent "$case_dir/glab-merge-called" "review-scope-gitlab: wrong diff reached merge"
+      jq --arg b "$base" '.diff_refs.base_sha=$b' "$case_dir/mr.json" > "$case_dir/new-view"
+      mv "$case_dir/new-view" "$case_dir/mr.json"
+    else
+      assert_absent "$case_dir/tea-merge-called" "review-scope-forgejo: wrong diff reached merge"
+      jq --arg b "$base" '.merge_base=$b' "$case_dir/pr.json" > "$case_dir/new-view"
+      mv "$case_dir/new-view" "$case_dir/pr.json"
+    fi
+    run_pr_merge "$case_dir" task-x1 "$url" --expected-head "$head" > "$case_dir/stdout" 2> "$case_dir/stderr" \
+      || fail "review-scope-$provider: matching review scope must merge: $(cat "$case_dir/stderr")"
+  done
+  pass "GitLab and Forgejo refuse a changed review base and accept the exact reviewed diff"
+}
+
+test_merge_review_gate_applies_only_where_configured() {
+  local case_dir rc head
+  head=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+  # Another repository is listed: this one keeps the previous behavior.
+  case_dir=$(make_case merge-review-other-repo)
+  printf '%s\n' \
+    'seat=anthropic:claude:claude-test-1' \
+    'seat=google:agy:gemini-test-high' \
+    'require=github.com/example/other' > "$case_dir/home/config/merge-review"
+  add_gh_mocks "$case_dir" "$head"
+  : > "$case_dir/gh-axi.log"
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/225 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "merge-review-other-repo: an unlisted repository should merge as before: $(cat "$case_dir/stderr")"
+  assert_logged_gh_merge "$case_dir" 225 example/repo --squash
+
+  # A config that cannot be read is a refusal, never an unreviewed merge.
+  case_dir=$(make_case merge-review-bad-config)
+  printf '%s\n' 'seat=anthropic:claude' 'require=github.com/example/repo' \
+    > "$case_dir/home/config/merge-review"
+  add_gh_mocks "$case_dir" "$head"
+  : > "$case_dir/gh.log"
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/226 \
+    --expected-head "$head" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "merge-review-bad-config: a malformed config must refuse"
+  assert_grep 'correct config/merge-review before merging' "$case_dir/stderr" \
+    "merge-review-bad-config: the refusal did not name the config"
+  [ ! -s "$case_dir/gh.log" ] || fail "merge-review-bad-config: the forge was called: $(cat "$case_dir/gh.log")"
+  pass "the merge-review gate leaves unlisted repositories alone and refuses on a malformed config"
+}
+
 test_expected_head_keeps_existing_refusals() {
   local case_dir rc head
   head=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -5652,3 +5871,7 @@ test_expected_head_push_after_verify_is_refused_by_the_forge
 test_expected_head_later_preflight_does_not_adopt_a_new_head
 test_expected_head_bad_inputs_refuse_before_effects
 test_expected_head_keeps_existing_refusals
+test_covered_repository_needs_an_approved_review_at_the_expected_head
+test_merge_review_gate_applies_only_where_configured
+test_review_scope_tracks_the_live_merge_base
+test_other_forges_bind_reviews_to_the_live_diff_base

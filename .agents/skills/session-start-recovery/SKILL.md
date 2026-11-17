@@ -43,3 +43,5 @@ Do not dispatch until the essential launch tools are present and GitHub authenti
 A silent bootstrap section needs no action; for any printed actionable diagnostic line, load `bootstrap-diagnostics` and follow its owner procedure.
 `BOOTSTRAP_INFO:` lines are completed no-action facts and do not require loading a skill.
 `secondmate-provisioning` owns startup secondmate sync, liveness, and inherited local-material convergence.
+
+When `config/goal-integrity` is present, reload each live task's `state/goals/<task-id>.md` before steering or spawning (`docs/configuration.md`, Goal line enforcement).

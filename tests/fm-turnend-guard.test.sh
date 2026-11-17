@@ -941,7 +941,7 @@ test_tracked_claude_entries_inert_under_grok() {
       || fail "tracked entry for $target ran under a legacy GROK_AGENT environment"
   done < <(jq -r '.hooks[][].hooks[].command' "$ROOT/.claude/settings.json")
 
-  [ "$guarded" -eq 10 ] || fail "expected 10 grok-guarded tracked entries, saw $guarded"
+  [ "$guarded" -eq 11 ] || fail "expected 11 grok-guarded tracked entries, saw $guarded"
   [ "$unguarded" -eq 1 ] || fail "expected 1 documented unguarded tracked entry, saw $unguarded"
   pass "tracked .claude/settings.json entries: $guarded inert under grok, the documented subagent exception still armed, all live under Claude"
 }
@@ -1009,6 +1009,71 @@ EOF
   assert_contains "$(cat "$log")" "guard=$expected_root/bin/fm-turnend-guard.sh" "codex hook must keep using the outer firstmate guard"
   assert_not_contains "$out" "nested guard executed" "codex hook must not execute nested project code"
   pass ".codex/hooks.json: Stop hook ignores nested git root guard scripts"
+}
+
+test_codex_hook_emits_one_json_document_and_preserves_failures() {
+  local dir command route scenario want status stdout stderr expected payload
+  dir="$TMP_ROOT/codex-json-output"
+  mkdir -p "$dir/bin"
+  : > "$dir/AGENTS.md"
+  mark_codex_hook_root "$dir"
+  command=$(jq -r '.hooks.Stop[0].hooks[0].command' "$ROOT/.codex/hooks.json")
+  payload='{"stop_hook_active":false,"session_id":"wrapper-test"}'
+  stdout="$dir/stdout"
+  stderr="$dir/stderr"
+  expected="$dir/expected"
+  cat > "$dir/bin/fm-turnend-guard.sh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "${0##*/}:$*" > "$FM_TEST_OUTPUT_DIR/route"
+cat > "$FM_TEST_OUTPUT_DIR/payload"
+cat "$FM_TEST_OUTPUT_DIR/child.stdout"
+cat "$FM_TEST_OUTPUT_DIR/child.stderr" >&2
+exit "$FM_TEST_OUTPUT_CODE"
+EOF
+  chmod +x "$dir/bin/fm-turnend-guard.sh"
+  for route in direct park; do
+    if [ "$route" = park ]; then
+      cp "$dir/bin/fm-turnend-guard.sh" "$dir/bin/fm-codex-stop-park.sh"
+    fi
+    for scenario in silent system-message empty-object block error; do
+      want=0
+      : > "$dir/child.stdout"
+      : > "$dir/child.stderr"
+      case "$scenario" in
+        system-message) printf '{"systemMessage":"foreign owner diagnostic"}\n' > "$dir/child.stdout" ;;
+        empty-object) printf '{}\n' > "$dir/child.stdout" ;;
+        block) want=2; printf 'continue supervision\n' > "$dir/child.stderr" ;;
+        error)
+          want=1
+          printf 'guard diagnostic\n' > "$dir/child.stdout"
+          printf 'guard failed\n' > "$dir/child.stderr"
+          ;;
+      esac
+      cp "$dir/child.stdout" "$expected"
+      if [ "$want" -eq 0 ] && [ ! -s "$expected" ]; then
+        printf '{}\n' > "$expected"
+      fi
+      printf '%s' "$payload" | (cd "$dir" && \
+        FM_TEST_OUTPUT_DIR="$dir" FM_TEST_OUTPUT_CODE="$want" bash -c "$command") \
+        > "$stdout" 2> "$stderr"
+      status=$?
+      expect_code "$want" "$status" "Codex $route $scenario exit status"
+      cmp -s "$expected" "$stdout" || fail "Codex $route $scenario changed stdout: $(cat "$stdout")"
+      cmp -s "$dir/child.stderr" "$stderr" || fail "Codex $route $scenario changed stderr"
+      [ "$(cat "$dir/payload")" = "$payload" ] || fail "Codex $route $scenario changed the payload"
+      if [ "$route" = park ]; then
+        [ "$(cat "$dir/route")" = 'fm-codex-stop-park.sh:--guard' ] || fail "Codex did not select the park guard"
+      else
+        [ "$(cat "$dir/route")" = 'fm-turnend-guard.sh:' ] || fail "Codex did not select the direct guard"
+      fi
+      if [ "$want" -eq 0 ]; then
+        jq -e . "$stdout" >/dev/null || fail "Codex $route $scenario returned invalid JSON"
+        jq -se 'length == 1 and (.[0] | type == "object")' "$stdout" >/dev/null \
+          || fail "Codex $route $scenario returned more than one JSON document"
+      fi
+      pass ".codex Stop wrapper: $route $scenario preserves stdout, stderr and exit $want"
+    done
+  done
 }
 
 test_codex_hook_preserves_streams_without_login_logout_output() {
@@ -3701,6 +3766,7 @@ test_grok_adapter_missing_jq_and_no_supervision_allow
 test_tracked_claude_entries_inert_under_grok
 test_codex_hook_uses_process_pwd_when_payload_cwd_is_outside_root
 test_codex_hook_ignores_nested_git_root_guard
+test_codex_hook_emits_one_json_document_and_preserves_failures
 test_codex_hook_preserves_streams_without_login_logout_output
 test_opencode_plugin_anchors_guard_to_worktree
 test_pi_extension_injects_once_per_logical_agent_run

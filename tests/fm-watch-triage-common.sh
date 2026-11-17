@@ -7068,6 +7068,22 @@ test_afk_declared_pause_on_a_worker_gate_rings_only_the_worker() {
   pass "away mode points a paused worker at a gate it can answer without waking anyone else"
 }
 
+test_load_relief_pause_on_a_parked_run_is_not_rung() {
+  local dir state out pid
+  dir=$(afk_parked_fixture afk-parked-load-relief); state="$dir/state"; out="$dir/watch.out"
+  printf 'paused [key=load-relief] [at=1]: load relief: load 40 at or over ceiling 20 for 300s; interrupted in place, work preserved, resumes when load falls\n' >> "$state/afk-parked.status"
+  printf '%s' "$(seen_sig "$state/afk-parked.status")" > "$state/.seen-afk-parked_status"
+  afk_parked_watch "$dir" "$PARKED_GATE_WORKER"
+  pid=$!
+  if ! wait_poll_cycle "$state" "$pid" || ! wait_poll_cycle "$state" "$pid" || ! wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"; fail "the watcher did not keep polling a load-relief pause on a parked run: $(cat "$out")"
+  fi
+  [ "$(afk_parked_records "$dir")" = 0 ] \
+    || { reap "$pid"; fail "a worker paused by load relief was rung to answer its parked gate while load stayed high"; }
+  reap "$pid"
+  pass "a load-relief pause on a parked run is left to load relief, and its worker is not rung to answer the gate"
+}
+
 test_afk_declared_pause_on_an_executing_run_stays_handed_off_once() {
   local dir state out pid
   dir=$(afk_parked_fixture afk-parked-still-running); state="$dir/state"; out="$dir/watch.out"
