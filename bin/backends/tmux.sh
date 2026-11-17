@@ -196,6 +196,40 @@ fm_backend_tmux_send_literal() {  # <target> <text>
   tmux send-keys -t "$1" -l "$2"
 }
 
+# Wait for the pane's original shell to regain the foreground before a
+# relaunch types into it. Clear any interrupted composer line and redraw the
+# prompt so zsh's termination notice cannot become launch input.
+fm_backend_tmux_prepare_relaunch() {  # <target>
+  local target=$1 pane_pid shell current i
+  pane_pid=$(tmux display-message -p -t "$target" '#{pane_pid}' 2>/dev/null) || return 1
+  case "$pane_pid" in ''|*[!0-9]*) return 1 ;; esac
+  shell=$(ps -p "$pane_pid" -o comm= 2>/dev/null) || return 1
+  shell=${shell##*/}
+  [ -n "$shell" ] || return 1
+  for ((i = 0; i < 100; i++)); do
+    current=$(tmux display-message -p -t "$target" '#{pane_current_command}' 2>/dev/null) || return 1
+    if [ "$current" = "$shell" ]; then
+      sleep 0.1
+      current=$(tmux display-message -p -t "$target" '#{pane_current_command}' 2>/dev/null) || return 1
+      if [ "$current" = "$shell" ]; then
+        tmux send-keys -t "$target" C-u C-l
+        return $?
+      fi
+    fi
+    sleep 0.1
+  done
+  echo "error: tmux pane $target did not return to its shell before relaunch" >&2
+  return 1
+}
+
+# Make the pane's foreground job a shell that exits normally after reaping
+# the agent, even when the agent itself dies from SIGTERM.
+fm_backend_tmux_quiet_launch() {  # <command>
+  printf "/bin/sh -c '"
+  printf '%s; exit $?' "$1" | sed "s/'/'\\\\''/g"
+  printf "'"
+}
+
 # fm_backend_tmux_window_inventory: <session-target>'s window names, one per
 # line on stdout, together with a verdict on the READ ITSELF, which is what
 # every caller that must not guess depends on:

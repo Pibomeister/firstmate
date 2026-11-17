@@ -9413,6 +9413,11 @@ else
   ENV_SCRUB_FILE=$(shell_quote "$LAUNCH_DIR/env-scrub.$SPAWN_GEN.sh")
   LAUNCH="$(shell_quote "$FM_ROOT/bin/fm-env-scrub.sh") ${scrub_option}unset-file $ENV_SCRUB_FILE && . $ENV_SCRUB_FILE || return 1 2>/dev/null || exit 1; $LAUNCH"
 fi
+if [ "$BACKEND" = tmux ]; then
+  # Keep the interactive pane shell's foreground child alive until it can
+  # reap a terminated agent. A normal shell exit avoids zsh's job notice.
+  LAUNCH=$(fm_backend_tmux_quiet_launch "$LAUNCH")
+fi
 if [ "$BACKEND" = t3code ]; then
   # No pane: the launch is the thread's first message, carrying the same
   # encoded brief the LAUNCH template embeds; MODEL/EFFORT were fixed as the
@@ -9499,6 +9504,12 @@ else
     # under errexit on sourcing a file spawn already reclaimed even inside ||, so
     # keep an errexit pane shell open in both cases.
     LAUNCH_SOURCE_TEXT="if [ -e $(shell_quote "$LAUNCH_FILE") ]; then $LAUNCH_SOURCE_TEXT || true; else echo 'error: private launch file was already removed; refusing worker launch' >&2; fi"
+  fi
+  if [ "$BACKEND" = tmux ] && [ "$RELAUNCH" -eq 1 ]; then
+    fm_backend_tmux_prepare_relaunch "$T" || {
+      echo "error: tmux pane $T did not reach a clean shell prompt before relaunch" >&2
+      exit 1
+    }
   fi
   if ! spawn_send_literal "$T" "$LAUNCH_SOURCE_TEXT"; then
     [ "$ORCA_LAUNCH_ENV_ENABLED" != 1 ] || spawn_orca_launch_send_fail
