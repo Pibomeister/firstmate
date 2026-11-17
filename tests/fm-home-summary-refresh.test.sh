@@ -521,6 +521,34 @@ ls "$HOME_DIR/state"/.home-summary-stage.* >/dev/null 2>&1 \
   && fail "the failed refresh leaked its stage file"
 pass "a deadline failure names the slow stage and keeps the last good summary"
 
+# Signalling the parent while its worker is still running must not leak the
+# per-attempt stage file in state/.
+SIGNAL_MARKER="$TMP_ROOT/signal-no-mistakes.pid"
+rm -f "$SIGNAL_MARKER"
+printf 'working: a status change forces a recompute\n' >> "$HOME_DIR/state/ledger-task.status"
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  FM_SNAPSHOT_NOW="$NOW_THREE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_THREE" \
+  FM_TEST_NM_MARKER="$SIGNAL_MARKER" FM_TEST_NM_SLEEP=30 \
+  "$WRITER" --best-effort > /dev/null 2>&1 &
+SLOW_WRITER_PID=$!
+i=0
+while [ ! -s "$SIGNAL_MARKER" ] && [ "$i" -lt 200 ]; do
+  kill -0 "$SLOW_WRITER_PID" 2>/dev/null || break
+  sleep 0.05
+  i=$((i + 1))
+done
+[ -s "$SIGNAL_MARKER" ] || fail "the signalled-parent refresh never reached its slow worker"
+ls "$HOME_DIR/state"/.home-summary-stage.* >/dev/null 2>&1 \
+  || fail "the parent did not create a stage file to clean up"
+kill -TERM "$SLOW_WRITER_PID" >/dev/null 2>&1 || true
+wait "$SLOW_WRITER_PID" >/dev/null 2>&1 || true
+SLOW_WRITER_PID=
+signal_nm_pid=$(cat "$SIGNAL_MARKER" 2>/dev/null || true)
+[ -z "$signal_nm_pid" ] || kill -KILL "$signal_nm_pid" >/dev/null 2>&1 || true
+ls "$HOME_DIR/state"/.home-summary-stage.* >/dev/null 2>&1 \
+  && fail "a signalled parent leaked its stage file"
+pass "a signalled parent removes its stage file"
+
 HANGBIN="$TMP_ROOT/hangbin"
 REAL_JQ=$(command -v jq)
 mkdir -p "$HANGBIN"
