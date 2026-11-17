@@ -518,8 +518,10 @@ test_parked_run_wake_reaches_supervision_despite_the_declared_pause() {
     > "$state/$task.status"
   fm_write_meta "$state/$task.meta" "window=$win" "backend=tmux" "harness=codex"
   # The control: this lane's plain stale wake IS a declared pause to the daemon,
-  # so the escalation below is the reason's doing and not the fixture's.
-  FM_ESCALATE_BATCH_SECS=999999 handle_wake "stale: $win" "$state" || fail "plain stale handling failed"
+  # so the escalation below is the reason's doing and not the fixture's. A live
+  # agent holds the endpoint, so the pause is not a dead worker (Refs #149).
+  PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CURRENT_COMMAND=codex \
+    FM_ESCALATE_BATCH_SECS=999999 handle_wake "stale: $win" "$state" || fail "plain stale handling failed"
   [ ! -s "$buffer" ] && [ -e "$state/.subsuper-paused-$key" ] \
     || fail "the fixture's plain stale wake was not classified as a declared pause, so it proves nothing"
   # Taken from the watcher that mints it, so a rewording there that this daemon
@@ -1064,6 +1066,9 @@ test_enriched_wedge_under_declared_wait_uses_pause_cadence() {
   printf 'working: dispatching the long audit\npaused: the audit engine is running to completion\n' \
     > "$state/$task.status"
   printf 'idle prompt $\n' > "$pane"
+  # A live agent holds the recorded endpoint for the whole case: a declared wait
+  # whose agent is gone is a dead worker, not this healthy wait (Refs #149).
+  local -x PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CURRENT_COMMAND=claude
   case "$(FM_STATE_OVERRIDE="$state" classify_stale "$win" "$state")" in
     pause\|*) ;;
     *) fail "the fixture's own classifier verdict is not a pause, so this case pins nothing about the override" ;;
@@ -1695,6 +1700,112 @@ test_housekeeping_pause_marker_transitions_to_clear() {
   [ ! -e "$state/.subsuper-stale-$key" ] || fail "resume retained normal stale tracking"
   [ ! -s "$state/.subsuper-escalations" ] || fail "resuming from pause escalated immediately"
   pass "housekeeping clears tracking when a crew leaves pause"
+}
+
+# Refs #149: a `paused:` line never proves the worker is still there. These three
+# drive the same stale wake and pause recheck through a fake tmux whose recorded
+# endpoint holds a live agent, a bare shell, or nothing at all.
+paused_liveness_case() {  # <name> <task> -> dir; writes meta, status, and pane
+  local dir state task=$2
+  dir=$(make_supercase "$1")
+  state="$dir/state"
+  fm_write_meta "$state/$task.meta" "window=sess:fm-$task" "backend=tmux" "kind=ship"
+  printf 'working: opened the PR\npaused: waiting for the vendor rate-limit reset\n' > "$state/$task.status"
+  printf 'idle prompt $\n' > "$dir/pane.txt"
+  printf '%s\n' "$dir"
+}
+
+# (a) A live agent behind `paused:` is a healthy wait: the wake is absorbed as a
+# pause and the long-cadence recheck still names the external dependency.
+test_paused_live_agent_stays_a_healthy_wait() {
+  local dir state task=paused-live win key out
+  dir=$(paused_liveness_case paused-live-agent "$task"); state="$dir/state"
+  win="sess:fm-$task"; key=$(_stale_key "$task")
+  out=$(PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CURRENT_COMMAND=claude \
+    FM_STATE_OVERRIDE="$state" classify_stale "$win" "$state")
+  case "$out" in pause\|paused\ \(awaiting\ external\)*) ;; *) fail "a live paused worker did not classify as a healthy wait: $out" ;; esac
+  PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CURRENT_COMMAND=claude \
+    LOG="$dir/daemon.log" FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999999 \
+    handle_wake "stale: $win (idle 250s, possible wedge, escalation 2)" "$state"
+  [ ! -s "$state/.subsuper-escalations" ] \
+    || fail "a live paused worker escalated on its stale wake: $(cat "$state/.subsuper-escalations")"
+  [ -e "$state/.subsuper-paused-$key" ] || fail "a live paused worker did not record pause tracking"
+  echo $(( $(date +%s) - 5000 )) > "$state/.subsuper-paused-$key"
+  PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" \
+    FM_FAKE_TMUX_CURRENT_COMMAND=claude FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999999 \
+    FM_PAUSE_RESURFACE_SECS=240 housekeeping "$state"
+  grep -F 'awaiting external' "$state/.subsuper-escalations" >/dev/null \
+    || fail "a live paused worker's recheck did not name its external wait: $(cat "$state/.subsuper-escalations" 2>/dev/null)"
+  grep -F 'paused worker gone' "$state/.subsuper-escalations" >/dev/null \
+    && fail "a live paused worker was reported gone"
+  pass "a live agent behind a paused: line stays a healthy wait on the long recheck cadence"
+}
+
+# (b) A backlog-verified captain hold needs no live agent: its exited agent stays
+# quiet rather than being surfaced as a dead worker.
+test_paused_dead_agent_under_backlog_captain_hold_stays_quiet() {
+  local dir state task=paused-held win key out
+  command -v tasks-axi >/dev/null 2>&1 \
+    || { echo "skip: tasks-axi not found (backlog captain-hold exemption)"; return 0; }
+  dir=$(paused_liveness_case paused-held-dead "$task"); state="$dir/state"
+  win="sess:fm-$task"; key=$(_stale_key "$task")
+  mkdir -p "$dir/data" "$dir/config"
+  fm_test_tasks_toml "$dir/.tasks.toml" || fail "could not write the backlog config"
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$dir/data/backlog.md"
+  (cd "$dir" && tasks-axi add "$task" 'waiting on a captain call' --file data/backlog.md) >/dev/null 2>&1 \
+    || fail "could not file the backlog item"
+  FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_DATA_OVERRIDE="$dir/data" FM_CONFIG_OVERRIDE="$dir/config" \
+    "$ROOT/bin/fm-captain-hold.sh" hold "$task" --reason 'awaiting the captain on the release call' >/dev/null 2>&1 \
+    || fail "could not hold the backlog item for the captain"
+  out=$(FM_HOME="$dir" FM_DATA_OVERRIDE="$dir/data" FM_CONFIG_OVERRIDE="$dir/config" \
+    PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CURRENT_COMMAND=zsh \
+    FM_STATE_OVERRIDE="$state" classify_stale "$win" "$state")
+  case "$out" in pause\|paused\ \(awaiting\ external\)*) ;; *) fail "a held worker's exited agent was not kept as a wait: $out" ;; esac
+  FM_HOME="$dir" FM_DATA_OVERRIDE="$dir/data" FM_CONFIG_OVERRIDE="$dir/config" \
+    PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CURRENT_COMMAND=zsh \
+    LOG="$dir/daemon.log" FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999999 \
+    handle_wake "stale: $win (idle 250s, agent dead - the endpoint is still there with no agent running in it)" "$state"
+  [ ! -s "$state/.subsuper-escalations" ] \
+    || fail "a held worker's exited agent escalated on its stale wake: $(cat "$state/.subsuper-escalations")"
+  [ -e "$state/.subsuper-paused-$key" ] || fail "a held worker did not keep pause tracking"
+  pass "a dead agent whose task is an open backlog captain hold stays quiet behind its paused: line"
+}
+
+# (c) A dead or vanished agent behind an ordinary `paused:` wait is surfaced as a
+# dead worker - once per wake burst, and again on the pause recheck - instead of
+# being absorbed as a healthy wait (dead) or silently dropped (missing).
+test_paused_dead_agent_surfaces_for_recovery() {
+  local dir state task=paused-dead win key out n
+  dir=$(paused_liveness_case paused-dead-agent "$task"); state="$dir/state"
+  win="sess:fm-$task"; key=$(_stale_key "$task")
+  out=$(PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CURRENT_COMMAND=zsh \
+    FM_STATE_OVERRIDE="$state" classify_stale "$win" "$state")
+  case "$out" in "escalate|paused worker gone: $win (agent dead - "*"): paused: waiting for the vendor rate-limit reset") ;;
+    *) fail "a dead agent behind paused: was not surfaced: $out" ;; esac
+  # The watcher's own dead-record wake, then a repeat, as the watcher delivers them.
+  for n in 1 2; do
+    PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CURRENT_COMMAND=zsh \
+      LOG="$dir/daemon.log" FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999999 \
+      handle_wake "stale: $win (idle 250s, agent dead - the endpoint is still there with no agent running in it, so this is not a wedge)" "$state"
+  done
+  [ "$(grep -c "paused worker gone: $win (agent dead" "$state/.subsuper-escalations" 2>/dev/null)" = 1 ] \
+    || fail "a dead paused worker was not escalated exactly once across repeat wakes: $(cat "$state/.subsuper-escalations" 2>/dev/null)"
+  grep -F 'check for unlanded work' "$state/.subsuper-escalations" >/dev/null \
+    || fail "the dead-worker escalation does not route to recovery"
+
+  # The endpoint itself vanishes: the long recheck used to drop the marker silently
+  # and re-seed it on the next tick. It must surface the gone endpoint instead.
+  : > "$state/.subsuper-escalations"
+  echo $(( $(date +%s) - 5000 )) > "$state/.subsuper-paused-$key"
+  PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="sess:some-other-window" \
+    FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999999 FM_PAUSE_RESURFACE_SECS=240 \
+    housekeeping "$state"
+  grep -F "paused worker gone: $win (agent missing - the recorded endpoint is gone" "$state/.subsuper-escalations" >/dev/null \
+    || fail "a vanished endpoint behind paused: was not surfaced on the recheck: $(cat "$state/.subsuper-escalations" 2>/dev/null)"
+  grep -F 'awaiting external' "$state/.subsuper-escalations" >/dev/null \
+    && fail "a vanished endpoint was reported as a healthy external wait"
+  [ -e "$state/.subsuper-paused-$key" ] || fail "the recheck dropped the window instead of resetting it"
+  pass "a dead or vanished agent behind an ordinary paused: wait is surfaced for recovery"
 }
 
 test_housekeeping_persistent_stale_escalates() {
@@ -3847,6 +3958,9 @@ test_housekeeping_captain_held_resolved_cleared
 test_housekeeping_stale_marker_transitions_to_pause
 test_housekeeping_captain_held_stale_marker_transitions_to_pause
 test_housekeeping_pause_marker_transitions_to_clear
+test_paused_live_agent_stays_a_healthy_wait
+test_paused_dead_agent_under_backlog_captain_hold_stays_quiet
+test_paused_dead_agent_surfaces_for_recovery
 test_housekeeping_herdr_persistent_stale_resolves_meta
 test_housekeeping_herdr_idle_busy_record_clears_stale
 test_housekeeping_herdr_resumed_stale_cleared
