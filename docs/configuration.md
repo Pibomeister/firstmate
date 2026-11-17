@@ -1089,6 +1089,7 @@ A snapshot records a symlink by its link text and never follows it.
 A rung-4 snapshot that cannot record the whole worktree is marked incomplete and holds rung 4.
 A snapshot records a deleted secret-pattern file as deleted, never as present.
 A task the crew state reports done or failed is out of scope.
+The ladder's Git reads run no program the repository configures, such as a filter, an external diff driver, a text converter or an fsmonitor hook.
 A declared wait protects a worker without limit only when it names a live job this user runs or an active test-queue ticket; a deadline or any other wording holds only for the bounded unverified-wait time.
 Once an hour on the same pass, the watcher resolves the open records of cleaned-up tasks and prunes their snapshots.
 Each ledger row is escaped and hash-chained to the row before it, so an edited, removed, or inserted row is detected.

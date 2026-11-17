@@ -419,6 +419,20 @@ test_healthy_waits_and_screens() {
   assert_equals 1 "$(rows "$h" tq would-act 2)" 'a proven dead wait steers at once'
   no_escalation "$h" tq 'dead wait inside its first minutes'
 
+  # A queue label is free text: a pid, task or ticket inside it is never a field.
+  new_task "$h" lp
+  new_agent
+  live=$AGENT_PID
+  new_task "$h" lt
+  printf 'paused: waiting on fm-test-queue ticket=8 for the full suite [at=%s]\n' "$B" >> "$h/state/lp.status"
+  printf 'paused: waiting on fm-test-queue ticket=12 for the full suite [at=%s]\n' "$B" >> "$h/state/lt.status"
+  printf 'serving ticket=8 pid=%s age=1m task=lp label=suite pid=999999\nserving ticket=9 pid=%s age=1m task=other label=x task=lt ticket=12\n' "$live" "$live" > "$h/probe/testq"
+  ticks "$h" lp "$B" $((B + 1800))
+  ticks "$h" lt "$B" $((B + 600))
+  assert_equals 0 "$(rows "$h" lp would-act)" 'a pid inside the label never replaces the ticket pid'
+  case "$(reason_of "$h" lt would-act 1)" in *test-queue-ticket-gone*) ;; *) fail 'a task and ticket inside another ticket label are not this wait' ;; esac
+  : > "$h/probe/testq"
+
   # A live background shell named by pid.
   new_task "$h" bg
   new_agent
@@ -1023,6 +1037,27 @@ test_chain_and_escaping() {
   pass 'the hash chain and field escaping expose spoofed, edited, and removed rows'
 }
 
+test_git_reads_run_no_repo_programs() {
+  local h m
+  h=$(new_home gitexec)
+  new_task "$h" gx
+  m="$h/ran"
+  printf '* filter=evil diff=evil\n' > "$h/wt-gx/.git/info/attributes"
+  git -C "$h/wt-gx" config filter.evil.clean "sh -c 'echo clean >> $m; cat'"
+  git -C "$h/wt-gx" config filter.evil.process "sh -c 'echo process >> $m; exit 1'"
+  git -C "$h/wt-gx" config diff.evil.textconv "sh -c 'echo textconv >> $m; cat \"\$0\"'"
+  git -C "$h/wt-gx" config diff.evil.command "sh -c 'echo command >> $m'"
+  git -C "$h/wt-gx" config diff.external "sh -c 'echo external >> $m'"
+  git -C "$h/wt-gx" config core.fsmonitor "sh -c 'echo fsmonitor >> $m'"
+  printf 'change\n' >> "$h/wt-gx/README.md"
+  ticks "$h" gx "$B" $((B + 1440))
+  [ ! -e "$m" ] || fail "a Git read ran a configured program: $(tr '\n' ' ' < "$m")"
+  assert_equals 1 "$(rows "$h" gx would-act 4)" 'the episode still reached rung 4'
+  grep -q 'README.md' "$(find "$h/state/hung-ladder/snapshots/gx" -name '*.tree' | head -n 1)" || fail 'the snapshot still records the change'
+  assert_no_actions 'git reads'
+  pass 'Git reads run no filter, diff driver, text converter or fsmonitor hook the repository configures'
+}
+
 test_incomplete_snapshot_holds_rung4() {
   local h
   h=$(new_home bigtree)
@@ -1138,4 +1173,5 @@ fm_test_run \
   test_chain_and_escaping \
   test_snapshots_redact_and_exclude_secrets \
   test_incomplete_snapshot_holds_rung4 \
+  test_git_reads_run_no_repo_programs \
   test_mode_off_and_absent_do_nothing

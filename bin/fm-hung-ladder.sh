@@ -497,6 +497,26 @@ for _fhl_p in "${FHL_SECRET_WORDS[@]}"; do
 done
 unset _fhl_p
 
+# Git reads never run a program the repository configures. FHL_GIT holds the
+# arguments every worktree read passes: no fsmonitor hook, and each configured
+# filter driver replaced by a plain copy. Diffs also pass FHL_DIFF, which turns
+# off external diff drivers, text converters and submodule recursion. A config
+# read that fails returns 1, and the caller skips every Git read.
+FHL_DIFF=(--no-ext-diff --no-textconv --ignore-submodules=all)
+fhl_git_prep() {  # <worktree> -> sets FHL_GIT
+  local out rc=0 n
+  FHL_GIT=(-C "$1" --no-optional-locks -c core.fsmonitor=false -c submodule.recurse=false -c diff.ignoreSubmodules=all)
+  out=$(fm_run_timed 5 git -C "$1" config --name-only --get-regexp '^filter\..*\.(clean|smudge|process|required)$' 2>/dev/null) || rc=$?
+  case "$rc" in 0|1) ;; *) return 1 ;; esac
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    n=${n#filter.}; n=${n%.*}
+    FHL_GIT+=(-c "filter.$n.clean=cat" -c "filter.$n.smudge=cat" -c "filter.$n.process=" -c "filter.$n.required=false")
+  done <<EOF
+$out
+EOF
+}
+
 # Agent liveness and root process. Prints "<state> <pid|->".
 fhl_agent_probe() {  # <task> <backend> <target>
   local task=$1 backend=$2 target=$3 state pid
@@ -667,7 +687,8 @@ fhl_resolve_wait() {  # <task> <wait-line>
       if printf '%s\n' "$queue_out" | awk -v t="task=$task" -v k="ticket=$ticket" '
           ($1 == "serving" || $1 == "waiting") {
             ok = 0; tk = (k == "ticket="); p = ""
-            for (i = 2; i <= NF; i++) { if ($i == t) ok = 1; if ($i == k) tk = 1; if ($i ~ /^pid=/) p = substr($i, 5) }
+            # The free-text label comes last; nothing in it is a field.
+            for (i = 2; i <= NF && $i !~ /^label=/; i++) { if ($i == t) ok = 1; if ($i == k) tk = 1; if ($i ~ /^pid=/ && p == "") p = substr($i, 5) }
             if (ok && tk) { print p; found = 1; exit }
           }
           END { exit !found }' > "$HL/.wait.$$"; then
@@ -845,14 +866,20 @@ fhl_snapshot_tree() {  # <name> -> path:sha
   f="$dir/$1.tree"
   mkdir -p "$dir" && chmod 700 "$dir"
   [ -n "$WT" ] && [ -d "$WT" ] || { printf 'none'; return 0; }
-  head=$(git -C "$WT" rev-parse HEAD 2>/dev/null) || inc="${inc}head,"
-  (set -o pipefail; fm_run_timed 10 git -C "$WT" --no-optional-locks diff --binary -- . "${FHL_EXCL[@]}" 2>/dev/null | head -c 20000001 > "$f.diff") || inc="${inc}diff,"
-  (set -o pipefail; fm_run_timed 10 git -C "$WT" --no-optional-locks diff --cached --binary -- . "${FHL_EXCL[@]}" 2>/dev/null | head -c 20000001 > "$f.cached.diff") || inc="${inc}cached-diff,"
+  if ! fhl_git_prep "$WT"; then
+    printf 'incomplete\tgit-config\n' > "$f"
+    chmod 600 "$f"
+    printf '%s:%s' "snapshots/$TASK/$1.tree" "$(fhl_sha < "$f")"
+    return 3
+  fi
+  head=$(git "${FHL_GIT[@]}" rev-parse HEAD 2>/dev/null) || inc="${inc}head,"
+  (set -o pipefail; fm_run_timed 10 git "${FHL_GIT[@]}" diff "${FHL_DIFF[@]}" --binary -- . "${FHL_EXCL[@]}" 2>/dev/null | head -c 20000001 > "$f.diff") || inc="${inc}diff,"
+  (set -o pipefail; fm_run_timed 10 git "${FHL_GIT[@]}" diff "${FHL_DIFF[@]}" --cached --binary -- . "${FHL_EXCL[@]}" 2>/dev/null | head -c 20000001 > "$f.cached.diff") || inc="${inc}cached-diff,"
   [ "$(wc -c < "$f.diff" | tr -d ' ')" -le 20000000 ] || inc="${inc}diff-size,"
   [ "$(wc -c < "$f.cached.diff" | tr -d ' ')" -le 20000000 ] || inc="${inc}cached-diff-size,"
-  fm_run_timed 10 git -C "$WT" --no-optional-locks diff --name-only -z HEAD > "$f.names" 2>/dev/null || inc="${inc}dirty-list,"
-  fm_run_timed 10 git -C "$WT" --no-optional-locks ls-files -z --others --exclude-standard >> "$f.names" 2>/dev/null || inc="${inc}untracked-list,"
-  fm_run_timed 10 git -C "$WT" --no-optional-locks ls-files -z --others --ignored --exclude-standard > "$f.ignored" 2>/dev/null || inc="${inc}ignored-list,"
+  fm_run_timed 10 git "${FHL_GIT[@]}" diff "${FHL_DIFF[@]}" --name-only -z HEAD > "$f.names" 2>/dev/null || inc="${inc}dirty-list,"
+  fm_run_timed 10 git "${FHL_GIT[@]}" ls-files -z --others --exclude-standard >> "$f.names" 2>/dev/null || inc="${inc}untracked-list,"
+  fm_run_timed 10 git "${FHL_GIT[@]}" ls-files -z --others --ignored --exclude-standard > "$f.ignored" 2>/dev/null || inc="${inc}ignored-list,"
   n=$(perl -0 -ne 'END { print $n + 0 } $n++ unless $seen{$_}++' "$f.names")
   [ "$n" -le 2000 ] || inc="${inc}dirty-files,"
   n=$(perl -0 -ne 'END { print $n + 0 } $n++' "$f.ignored")
@@ -1203,15 +1230,18 @@ cmd_tick() {
     inbox=$(set -o pipefail; fm_run_timed 10 find "$STATE/$TASK.inbox/handled" -maxdepth 1 -name '*.msg' 2>/dev/null | wc -l | tr -d ' ') \
       || { inbox=$(fhl_num "${S_inbox:-0}" 0); fs_unknown=1; }
   fi
-  if [ "$KIND" = ship ] && [ -n "$WT" ] && [ -d "$WT" ]; then
-    head=$(git -C "$WT" rev-parse HEAD 2>/dev/null) || { head=-; fs_unknown=1; }
+  if [ "$KIND" = ship ] && [ -n "$WT" ] && [ -d "$WT" ] && ! fhl_git_prep "$WT"; then
+    # A config read that fails runs no other Git read and is unknown.
+    fs_unknown=1
+  elif [ "$KIND" = ship ] && [ -n "$WT" ] && [ -d "$WT" ]; then
+    head=$(git "${FHL_GIT[@]}" rev-parse HEAD 2>/dev/null) || { head=-; fs_unknown=1; }
     # The content hash covers the status records, the diff against HEAD
     # without secret-pattern files, and the untracked files' content. A read
     # that fails, times out, or outgrows its bound reads as unknown.
     local porc="$HL/episodes/$TASK.porcelain" diffhash untracked
-    fm_run_timed 10 git -C "$WT" --no-optional-locks status --porcelain=v1 -z -uall > "$porc" 2>/dev/null || fs_unknown=1
-    diffhash=$(set -o pipefail; fm_run_timed 10 git -C "$WT" --no-optional-locks diff HEAD --binary -- . "${FHL_EXCL[@]}" 2>/dev/null | head -c 20000000 | fhl_sha) || fs_unknown=1
-    untracked=$(set -o pipefail; fm_run_timed 10 git -C "$WT" --no-optional-locks ls-files -z --others --exclude-standard 2>/dev/null | fhl_untracked_digest "$WT") || fs_unknown=1
+    fm_run_timed 10 git "${FHL_GIT[@]}" status --porcelain=v1 -z -uall --ignore-submodules=all > "$porc" 2>/dev/null || fs_unknown=1
+    diffhash=$(set -o pipefail; fm_run_timed 10 git "${FHL_GIT[@]}" diff "${FHL_DIFF[@]}" HEAD --binary -- . "${FHL_EXCL[@]}" 2>/dev/null | head -c 20000000 | fhl_sha) || fs_unknown=1
+    untracked=$(set -o pipefail; fm_run_timed 10 git "${FHL_GIT[@]}" ls-files -z --others --exclude-standard 2>/dev/null | fhl_untracked_digest "$WT") || fs_unknown=1
     dirty=$(printf '%s\n%s\n%s' "$(fhl_sha < "$porc")" "$diffhash" "$untracked" | fhl_sha)
     rm -f "$porc"
     if [ -f "$HL/episodes/$TASK.anchor" ]; then
