@@ -75,7 +75,8 @@
 # counted across heads in <pull request>/rounds; a rerun at one head stays in
 # its round, and a head whose every call failed adds no round. Heads reviewed
 # before the ledger existed are counted from their receipts. A round does not
-# start while the previous round's run is still alive.
+# start while a run at another head in the ledger is still alive, whether or
+# not that run has written a receipt yet.
 #
 # Findings. A reviewer reports each finding on one line:
 #   FINDING <NEW|id> | <STATUS> | <CLASS> | <where> | <text>
@@ -1305,6 +1306,18 @@ mr_round_begin() {  # <repo>
     done | LC_ALL=C sort -s -t "$tab" -k2,2n > "$MR_RECORDS/rounds.new"
     mv "$MR_RECORDS/rounds.new" "$ledger" || mr_die 'cannot write the review round ledger'
   fi
+  if ! mr_dir_has_receipt "$MR_STORE" || [ ! -f "$MR_STORE/round" ]; then
+    # This head is about to begin a round. A round begun while another head's
+    # run is still going would miss the findings that run is about to leave.
+    while IFS="$tab" read -r head started; do
+      [ "$head" != "$MR_HEAD" ] || continue
+      holder=$(cat "$pr/$head/.run.lock/pid" 2>/dev/null || true)
+      case "$holder" in
+        '' | *[!0-9]*) ;;
+        *) ! kill -0 "$holder" 2>/dev/null || mr_die "the review round at $head is still running" ;;
+      esac
+    done < "$ledger"
+  fi
   if ! mr_dir_has_receipt "$MR_STORE"; then
     # No review counts at this head yet, so it takes the next round now.
     rm -f "$MR_STORE/round" "$MR_STORE/prior.md"
@@ -1322,11 +1335,6 @@ mr_round_begin() {  # <repo>
       previous=$head
     done < "$ledger"
     if [ "$previous" != none ]; then
-      holder=$(cat "$pr/$previous/.run.lock/pid" 2>/dev/null || true)
-      case "$holder" in
-        '' | *[!0-9]*) ;;
-        *) ! kill -0 "$holder" 2>/dev/null || mr_die "the previous review round, at $previous, is still running" ;;
-      esac
       mr_findings_left_at "$previous" | awk -F'\t' '
         $1 ~ /^F[0-9]+$/ {
           state = $2

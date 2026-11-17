@@ -1276,6 +1276,45 @@ test_the_round_counter_spans_heads() {
   pass "the round counter spans heads, holds on a rerun, skips a head with no review, and waits for the previous round"
 }
 
+test_a_round_waits_for_a_running_head_that_has_no_receipt_yet() {
+  local rc=0 first second third pr ledger_before calls_before
+  make_case running-head "${TWO_SEATS[@]}"
+  first=$HEAD_SHA
+  pr=$(dirname "$(store_dir)")
+  run_at_head || fail "running-head: the first head did not approve"
+
+  # The second head is in the ledger with no receipt, and a run holds it.
+  next_head 'second head'
+  second=$HEAD_SHA
+  echo fail > "$STUB/claude.mode"
+  echo fail > "$STUB/agy.mode"
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "running-head: a head with no review"
+  echo approve > "$STUB/claude.mode"
+  echo approve > "$STUB/agy.mode"
+  mkdir -p "$pr/$second/.run.lock"
+  printf '%s\n' "$$" > "$pr/$second/.run.lock/pid"
+  ledger_before=$(cat "$pr/rounds")
+  calls_before=$(calls claude)
+
+  next_head 'third head'
+  third=$HEAD_SHA
+  rc=0
+  run_at_head || rc=$?
+  expect_code 2 "$rc" "running-head: a round started while a head with no receipt was running"
+  assert_grep "the review round at $second is still running" "$CASE/stderr" "running-head: the refusal did not name the running head"
+  assert_equals "$ledger_before" "$(cat "$pr/rounds")" "running-head: the refused run changed the round ledger"
+  [ ! -e "$pr/$third/round" ] || fail "running-head: the refused run recorded a round"
+  [ ! -e "$pr/$third/prior.md" ] || fail "running-head: the refused run recorded prior findings"
+  assert_equals "$calls_before" "$(calls claude)" "running-head: a reviewer was called while another head was running"
+
+  mv "$pr/$second/.run.lock" "$CASE/released-run-lock"
+  run_at_head || fail "running-head: the third head did not approve once the other run ended"
+  assert_grep " round=2 " "$CASE/stdout" "running-head: the third head is not round 2"
+  assert_grep "previous=$first" "$(store_dir)/round" "running-head: round 2 does not name the first head as previous"
+  pass "a round waits for a running head that has no receipt yet, and changes nothing while it waits"
+}
+
 test_heads_reviewed_before_rounds_still_count_and_block() {
   local rc=0 first store receipt
   make_case legacy "${TWO_SEATS[@]}"
@@ -1805,4 +1844,5 @@ fm_test_run \
   test_the_council_can_hold_a_new_edge_case_as_a_regression \
   test_unsupported_findings_are_dropped_with_evidence \
   test_security_destructive_and_data_loss_findings_always_block \
-  test_one_seat_alone_never_settles_a_finding
+  test_one_seat_alone_never_settles_a_finding \
+  test_a_round_waits_for_a_running_head_that_has_no_receipt_yet
