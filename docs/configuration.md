@@ -1176,15 +1176,15 @@ Any other malformed line, an unknown key, or a wildcard is an error that refuses
 | Key | Value | Meaning |
 | --- | --- | --- |
 | `allow` | `<host>/<owner>/<repository>` | A GitHub repository whose approved pull requests a lane owner may land. Repeatable, matched without regard to letter case, and never a wildcard. |
-| `protect` | a file path, or a directory path that ends in `/` | A path, relative to the repository root, that a self-landed diff must not touch, added to the built-in list. Repeatable, and it applies to every allowed repository. |
 
 ```text
 allow=github.com/<owner>/<repository>
-protect=deploy/
 ```
 
 A repository an `allow` line names must also be named by a `require` line in [`config/merge-review`](#merge-review-configmerge-review), because the script lands only a head that the two-model review approved.
-`bin/fm-self-land.sh protected` prints the built-in protected paths, which are the workflow directory and the merge gate scripts, followed by the `protect` lines.
+The file is a repository allowlist only.
+The paths a self-landed diff must not touch are fixed in the script: the workflow directory, the merge gate scripts, and the libraries those scripts load.
+No setting adds to or removes from that list.
 Create `state/.self-land-off` to stop every self-landing in this home, and remove it to resume.
 
 `bin/fm-self-land.sh` owns every refusal, the records under `state/self-land/`, the circuit breaker and how to reset it, and the rule that settles a merge whose forge response was lost.

@@ -89,11 +89,11 @@ SH
   printf '%s\n' "$head"
 }
 
-# The pull request as the forge reports it. Args: case_dir number head [files]
+# The pull request as the forge reports it. Args: case_dir number head [files] [base]
 write_pull() {
-  local case_dir=$1 number=$2 head=$3 files=${4:-1}
-  printf '{"state":"open","merged":false,"head":{"sha":"%s"},"base":{"ref":"main"},"changed_files":%s,"merge_commit_sha":null}\n' \
-    "$head" "$files" > "$case_dir/pull-$number.json"
+  local case_dir=$1 number=$2 head=$3 files=${4:-1} base=${5:-main}
+  printf '{"state":"open","merged":false,"head":{"sha":"%s"},"base":{"ref":"%s"},"changed_files":%s,"merge_commit_sha":null}\n' \
+    "$head" "$base" "$files" > "$case_dir/pull-$number.json"
 }
 
 # The pull request's file list. Args: case_dir number <jq array literal>
@@ -228,6 +228,16 @@ case "${1:-} ${2:-}" in
         ;;
       *" repos/"*"/branches/"*)
         [ ! -e "$d/branch-read-fail" ] || exit 1
+        # GitHub reads the branch as one URL path segment: a name sent with a
+        # bare slash is another route, and it answers 404.
+        for arg in "$@"; do
+          case "$arg" in
+            repos/*/branches/*/*)
+              printf 'gh: Not Found (HTTP 404)\n' >&2
+              exit 1
+              ;;
+          esac
+        done
         cat "$d/github-branch.json"
         exit 0
         ;;
@@ -356,6 +366,11 @@ test_refuses_a_repository_the_grant_does_not_name() {
   write_grant "$case_dir" 'allow=github.com/example/repo' 'waive=protected-path'
   land "$case_dir" task-x1 "$url" --head "$head"
   assert_refused "$case_dir" config "grant-unknown-key"
+
+  # The grant is a repository allowlist only: it cannot change the protected paths.
+  write_grant "$case_dir" 'allow=github.com/example/repo' 'protect=deploy/'
+  land "$case_dir" task-x1 "$url" --head "$head"
+  assert_refused "$case_dir" config "grant-protect-key"
   [ ! -s "$case_dir/gh.log" ] || fail "grant: the forge was read under a grant that refuses"
 
   # Letter case does not select another repository.
@@ -424,11 +439,23 @@ test_refuses_a_diff_that_touches_a_protected_path() {
   land "$case_dir" task-x1 "$url" --head "$head"
   assert_refused "$case_dir" protected-path "protected-self"
 
-  # A path the owner added.
-  write_grant "$case_dir" 'allow=github.com/example/repo' 'protect=deploy/'
-  write_files "$case_dir" 321 '[{filename: "change.txt"}, {filename: "deploy/prod.yaml"}]'
+  # The libraries the gates load, and the poll script the pull request check
+  # publishes, decide a merge as much as the gates do. The refusal names every
+  # protected path of the diff, so one landing proves each of them.
+  local lib libs='fm-timeout-lib.sh fm-dod-lib.sh fm-pr-poll.sh fm-classify-lib.sh fm-tasks-axi-lib.sh
+    fm-hold-reason-lib.sh fm-parent-channel-lib.sh fm-bash-compat-lib.sh fm-path-lib.sh fm-session-lock-lib.sh'
+  # shellcheck disable=SC2086 # The list is split into one argument per library.
+  write_files "$case_dir" 321 "$(printf '{filename: "bin/%s"}\n' $libs | jq -R -s -r '
+    "[{filename: \"change.txt\"}, " + (split("\n") | map(select(length > 0)) | join(", ")) + "]"')"
+  write_pull "$case_dir" 321 "$head" 11
   land "$case_dir" task-x1 "$url" --head "$head"
-  assert_refused "$case_dir" protected-path "protected-owner-line"
+  assert_refused "$case_dir" protected-path "protected-gate-libs"
+  for lib in $libs; do
+    grep -Fq "self-land: protected path: \"bin/$lib\"" "$case_dir/stderr" \
+      || fail "protected-gate-libs: bin/$lib is loaded by a merge gate and was not refused: $(cat "$case_dir/stderr")"
+  done
+  grep -Fq 'protected path: "change.txt"' "$case_dir/stderr" \
+    && fail "protected-gate-libs: an ordinary file was named as protected"
 
   # A file list that is shorter than the pull request says is not trusted.
   write_pull "$case_dir" 321 "$head" 3
@@ -519,7 +546,14 @@ test_second_merge_in_flight_is_refused() {
 test_red_base_trips_the_breaker_and_it_stays_tripped() {
   local case_dir head url=$REPO_URL/pull/361
   read -r case_dir head <<< "$(ready_case breaker 361)"
-  printf '{"total_count":2,"check_runs":[{"name":"ci","status":"completed","conclusion":"failure"},{"name":"docs","status":"completed","conclusion":"success"}]}\n' \
+  # A green run does not replace a failed run of the same name that started
+  # after it, and nothing replaces a failed run that reports no start time.
+  jq -c -n '{total_count: 5, check_runs: [
+    {name: "ci", status: "completed", conclusion: "success", started_at: "2026-11-17T10:00:00Z"},
+    {name: "ci", status: "completed", conclusion: "failure", started_at: "2026-11-17T10:05:00Z"},
+    {name: "lint", status: "completed", conclusion: "failure"},
+    {name: "lint", status: "completed", conclusion: "success", started_at: "2026-11-17T10:05:00Z"},
+    {name: "docs", status: "completed", conclusion: "success", started_at: "2026-11-17T10:00:00Z"}]}' \
     > "$case_dir/base-check-runs.json"
   land "$case_dir" task-x1 "$url" --head "$head"
   expect_code 1 "$(cat "$case_dir/rc")" "breaker-trip: a red base must refuse"
@@ -527,7 +561,8 @@ test_red_base_trips_the_breaker_and_it_stays_tripped() {
     "breaker-trip: expected a red-base refusal, got: $(cat "$case_dir/stderr")"
   assert_present "$(repo_dir "$case_dir")/breaker" "breaker-trip: no breaker record was written"
   assert_grep "sha=$BASE_SHA" "$(repo_dir "$case_dir")/breaker" "breaker-trip: the record does not name the red commit"
-  assert_grep 'red=ci' "$(repo_dir "$case_dir")/breaker" "breaker-trip: the record does not name the red check"
+  grep -Fxq 'red=ci, lint' "$(repo_dir "$case_dir")/breaker" \
+    || fail "breaker-trip: the record must name exactly the red checks ci and lint: $(cat "$(repo_dir "$case_dir")/breaker")"
   [ "$(merge_calls "$case_dir")" -eq 0 ] || fail "breaker-trip: a merge was sent onto a red base"
 
   # The base is green again, but nobody has reset the breaker.
@@ -542,16 +577,47 @@ test_red_base_trips_the_breaker_and_it_stays_tripped() {
   land "$case_dir" task-x1 "$url" --head "$head"
   expect_code 0 "$(cat "$case_dir/rc")" "breaker-reset: a reset breaker on a green base must land: $(cat "$case_dir/stderr")"
 
-  # A failed commit status is red too, and a base that cannot be read trips nothing.
+  # A failed commit status is red too. A failed check that was run again to
+  # green on the same commit is not red, and a failed check with no name is
+  # reported and never replaced.
   url=$REPO_URL/pull/362
   read -r case_dir head <<< "$(ready_case breaker-status 362)"
+  jq -c -n '{total_count: 4, check_runs: [
+    {name: "ci", status: "completed", conclusion: "failure", started_at: "2026-11-17T10:00:00Z"},
+    {name: "ci", status: "completed", conclusion: "success", started_at: "2026-11-17T10:05:00Z"},
+    {name: "", status: "completed", conclusion: "failure", started_at: "2026-11-17T10:00:00Z"},
+    {name: "", status: "completed", conclusion: "success", started_at: "2026-11-17T10:05:00Z"}]}' \
+    > "$case_dir/base-check-runs.json"
   printf '{"state":"failure","statuses":[{"context":"deploy/preview","state":"failure"}]}\n' \
     > "$case_dir/base-status.json"
   land "$case_dir" task-x1 "$url" --head "$head"
   assert_grep 'self-land: refused (red-base)' "$case_dir/stderr" \
     "breaker-status: expected a red-base refusal, got: $(cat "$case_dir/stderr")"
-  assert_grep 'red=deploy/preview' "$(repo_dir "$case_dir")/breaker" \
-    "breaker-status: the record does not name the red status"
+  grep -Fxq 'red=(unnamed check), deploy/preview' "$(repo_dir "$case_dir")/breaker" \
+    || fail "breaker-status: the record must name the unnamed check and the red status, and not the rerun ci: $(cat "$(repo_dir "$case_dir")/breaker")"
+
+  # A rerun to green on the same commit leaves the base green, so the landing goes through.
+  rm -f "$(repo_dir "$case_dir")/breaker"
+  jq -c -n '{total_count: 2, check_runs: [
+    {name: "ci", status: "completed", conclusion: "failure", started_at: "2026-11-17T10:00:00Z"},
+    {name: "ci", status: "completed", conclusion: "success", started_at: "2026-11-17T10:05:00Z"}]}' \
+    > "$case_dir/base-check-runs.json"
+  printf '{"state":"success","statuses":[]}\n' > "$case_dir/base-status.json"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  expect_code 0 "$(cat "$case_dir/rc")" "breaker-rerun: a check rerun to green must not hold the landing: $(cat "$case_dir/stderr")"
+  assert_absent "$(repo_dir "$case_dir")/breaker" "breaker-rerun: a rerun to green tripped the breaker"
+
+  # A base branch whose name has a slash is read as one URL path segment.
+  url=$REPO_URL/pull/364
+  read -r case_dir head <<< "$(ready_case breaker-slashed-base 364)"
+  write_pull "$case_dir" 364 "$head" 1 release/v1
+  printf '{"total_count":1,"check_runs":[{"name":"ci","status":"completed","conclusion":"failure"}]}\n' \
+    > "$case_dir/base-check-runs.json"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  assert_grep 'self-land: refused (red-base)' "$case_dir/stderr" \
+    "breaker-slashed-base: the base branch release/v1 must be read, got: $(cat "$case_dir/stderr")"
+  assert_grep 'base=release/v1' "$(repo_dir "$case_dir")/breaker" \
+    "breaker-slashed-base: the record does not name the base branch"
 
   url=$REPO_URL/pull/363
   read -r case_dir head <<< "$(ready_case breaker-unreadable 363)"

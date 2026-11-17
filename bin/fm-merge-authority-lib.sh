@@ -215,8 +215,6 @@ fm_merge_authority_remove_if_matches() {  # <state> <task-id> <provider> <host> 
 # shellcheck disable=SC2034 # Public results consumed by sourcing callers.
 FM_SELF_LAND_ALLOW=
 # shellcheck disable=SC2034 # Public results consumed by sourcing callers.
-FM_SELF_LAND_PROTECT=
-# shellcheck disable=SC2034 # Public results consumed by sourcing callers.
 FM_SELF_LAND_ERROR=
 # shellcheck disable=SC2034 # Public results consumed by sourcing callers.
 FM_SELF_LAND_PENDING_ID=
@@ -240,8 +238,8 @@ _fm_self_land_lower() {  # <text>
   printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]'
 }
 
-# Load the grant. FM_SELF_LAND_ALLOW and FM_SELF_LAND_PROTECT receive one
-# lowercase entry per line. Returns 0 when the file was read, 1 when it is
+# Load the grant. FM_SELF_LAND_ALLOW receives one lowercase repository per
+# line. Returns 0 when the file was read, 1 when it is
 # absent (self-landing is off), and 2 with FM_SELF_LAND_ERROR set when it cannot
 # be trusted, so a typing mistake never widens the grant.
 # shellcheck disable=SC2034 # Public results consumed by sourcing callers.
@@ -249,7 +247,6 @@ fm_self_land_config_load() {  # <config-file>
   local config=${1-} line key val n=0
   local LC_ALL=C
   FM_SELF_LAND_ALLOW=
-  FM_SELF_LAND_PROTECT=
   FM_SELF_LAND_ERROR=
   if [ -z "$config" ]; then
     FM_SELF_LAND_ERROR='no config/self-land path was given'
@@ -282,16 +279,6 @@ fm_self_land_config_load() {  # <config-file>
           return 2
         fi
         FM_SELF_LAND_ALLOW="${FM_SELF_LAND_ALLOW:+$FM_SELF_LAND_ALLOW
-}$val"
-        ;;
-      protect)
-        case "$val" in
-          '' | /* | *'*'* | *[[:cntrl:]]* | ../* | */../* | */..)
-            FM_SELF_LAND_ERROR="config/self-land line $n: protect needs a repository path, or a directory ending in /"
-            return 2
-            ;;
-        esac
-        FM_SELF_LAND_PROTECT="${FM_SELF_LAND_PROTECT:+$FM_SELF_LAND_PROTECT
 }$val"
         ;;
       *)

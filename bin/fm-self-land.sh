@@ -9,7 +9,6 @@
 # Usage:
 #   fm-self-land.sh <task-id> <pr-url> --head <full-sha>
 #   fm-self-land.sh covers <pr-url>
-#   fm-self-land.sh protected
 #   fm-self-land.sh -h | --help
 #
 # <pr-url> is the canonical full GitHub pull request URL, and --head is the
@@ -19,8 +18,7 @@
 #
 # `covers` exits 0 when config/self-land names the pull request's repository,
 # 1 when it does not or the file is absent, and 2 when the file or the URL
-# cannot be read. `protected` prints the paths a self-landed diff must not
-# touch, one per line.
+# cannot be read.
 #
 # A landing run refuses, before any forge write, when one of these is true:
 #   stop-file       state/.self-land-off exists. Create it to stop every
@@ -46,13 +44,19 @@
 #                   not be read completely, or the pull request is not open at
 #                   --head.
 #   protected-path  the diff adds, changes, renames, or removes a protected
-#                   path: .github/workflows/, a merge gate script or a library
-#                   a gate loads, or a path a protect line names. Such a change
-#                   needs the supervisor's merge.
+#                   path: .github/workflows/, a merge gate script, a library a
+#                   gate loads directly or through another library, or the
+#                   poll script the pull request check publishes. The list is
+#                   fixed in this script. Such a change needs the supervisor's
+#                   merge.
 #
 # A failed check is a completed check run that concluded failure, timed_out,
 # startup_failure, or action_required, or a commit status in state failure or
-# error. A base branch with no checks is not red.
+# error. A failed check run does not count when a run of the same name on the
+# same commit concluded success, neutral, or skipped and started later; both
+# runs must report a whole-second UTC start time. A check run with no name is
+# never replaced by another. A commit status is never replaced. A base branch
+# with no checks is not red.
 #
 # Records, under state/self-land/<provider>/<host>/<owner>/<repository>/:
 #   lock        one self-landing run per repository at a time. A second run
@@ -115,23 +119,43 @@ SL_STOP_FILE="$STATE/.self-land-off"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 
-# The merge gates: the entry points that decide a merge and the libraries they
-# load directly. A diff that touches one could weaken the gate that lands it.
-SL_PROTECT_BUILTIN='.github/workflows/
+# The merge gates: the entry points that decide a merge, every library one of
+# them loads directly or through another library, and the poll script the pull
+# request check publishes. A diff that touches one could weaken the gate that
+# lands it. Entries are lowercase; an entry that ends in / covers a directory.
+SL_PROTECT='.github/workflows/
 bin/fm-self-land.sh
 bin/fm-pr-merge.sh
 bin/fm-pr-check.sh
+bin/fm-pr-poll.sh
 bin/fm-merge-local.sh
 bin/fm-merge-review.sh
 bin/fm-review-diff.sh
 bin/fm-captain-hold.sh
+bin/fm-afk-contract.sh
+bin/fm-backlog-transition-lib.sh
+bin/fm-bash-compat-lib.sh
+bin/fm-brief-heading-lib.sh
+bin/fm-classify-lib.sh
+bin/fm-clock-lib.sh
+bin/fm-cursor-lib.sh
+bin/fm-dod-lib.sh
+bin/fm-external-review-lib.sh
+bin/fm-hold-reason-lib.sh
+bin/fm-lease-lib.sh
 bin/fm-merge-authority-lib.sh
 bin/fm-merge-outcome-lib.sh
+bin/fm-nm-run-lib.sh
+bin/fm-parent-channel-lib.sh
+bin/fm-path-lib.sh
 bin/fm-pr-lib.sh
-bin/fm-afk-contract.sh
-bin/fm-lease-lib.sh
-bin/fm-wake-lib.sh
-bin/fm-backlog-transition-lib.sh'
+bin/fm-secondmate-parent-lib.sh
+bin/fm-session-lock-lib.sh
+bin/fm-supervision-engine-lib.sh
+bin/fm-tasks-axi-lib.sh
+bin/fm-timeout-lib.sh
+bin/fm-wake-ledger-lib.sh
+bin/fm-wake-lib.sh'
 
 SL_LOCK=
 SL_REPO_DIR=
@@ -168,23 +192,7 @@ load_grant() {
   esac
 }
 
-protected_paths() {
-  printf '%s\n' "$SL_PROTECT_BUILTIN"
-  [ -z "$FM_SELF_LAND_PROTECT" ] || printf '%s\n' "$FM_SELF_LAND_PROTECT"
-}
-
 case "${1:-}" in
-  protected)
-    [ "$#" -eq 1 ] || invalid "protected takes no argument"
-    rc=0
-    fm_self_land_config_load "$SL_CONFIG" || rc=$?
-    if [ "$rc" -eq 2 ]; then
-      printf 'error: %s\n' "$FM_SELF_LAND_ERROR" >&2
-      exit 2
-    fi
-    protected_paths
-    exit 0
-    ;;
   covers)
     if [ "$#" -eq 2 ]; then
       if ! fm_pr_url_parse "$2"; then
@@ -338,7 +346,7 @@ FIELDS
 # read: a count that differs from the pull request's own count is a refusal.
 require_unprotected_diff() {
   local raw protect result count='' hits=''
-  protect=$(protected_paths | jq -R . | jq -s -c .) \
+  protect=$(printf '%s\n' "$SL_PROTECT" | jq -R . | jq -s -c .) \
     || refuse forge-read "could not prepare the protected path list"
   raw=$(gh api --paginate "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER/files?per_page=100" 2>/dev/null) \
     || refuse forge-read "could not read the file list of $URL"
@@ -364,20 +372,36 @@ require_unprotected_diff() {
 }
 
 # Trip the breaker when the base branch head is red. An unreadable base is a
-# refusal and trips nothing.
+# refusal and trips nothing. read_pull limits the branch name to characters of
+# which only / needs encoding as one URL path segment.
 require_green_base() {
   local sha runs statuses red epoch tmp
-  sha=$(gh api "repos/$PR_OWNER/$PR_REPO/branches/$SL_PR_BASE" 2>/dev/null \
+  sha=$(gh api "repos/$PR_OWNER/$PR_REPO/branches/${SL_PR_BASE//\//%2F}" 2>/dev/null \
     | jq -r '.commit.sha | strings' 2>/dev/null) \
     || refuse forge-read "could not read the head of base branch $SL_PR_BASE"
   fm_pr_head_valid "$sha" || refuse forge-read "could not read the head of base branch $SL_PR_BASE"
   runs=$(gh api --paginate "repos/$PR_OWNER/$PR_REPO/commits/$sha/check-runs?per_page=100" 2>/dev/null \
     | jq -s -r '
-      [ .[] | .check_runs | if type == "array" then .[] else error("shape") end
-        | select(.status == "completed")
-        | select(.conclusion == "failure" or .conclusion == "timed_out"
-            or .conclusion == "startup_failure" or .conclusion == "action_required")
-        | (.name | strings) // "(unnamed check)" ]
+      def settled_at:
+        if type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
+        then . else null end;
+      [ .[] | .check_runs | if type == "array" then .[] else error("shape") end ]
+      | [ to_entries[]
+          | .key as $i
+          | .value
+          | select(.status == "completed")
+          | {
+              name: (if (.name | type) == "string" then .name else "" end),
+              red: (.conclusion == "failure" or .conclusion == "timed_out"
+                or .conclusion == "startup_failure" or .conclusion == "action_required"),
+              green: (.conclusion == "success" or .conclusion == "neutral" or .conclusion == "skipped"),
+              at: (.started_at | settled_at)
+            }
+          | . + {group: (if .name == "" then ["", $i] else [.name, -1] end)} ]
+      | [ group_by(.group)[]
+          | ([.[] | select(.green) | .at | select(. != null)] | max) as $newest_green
+          | select(any(.[]; .red and ($newest_green == null or .at == null or .at >= $newest_green)))
+          | if .[0].name == "" then "(unnamed check)" else .[0].name end ]
       | unique | .[]' 2>/dev/null) \
     || refuse forge-read "could not read the checks of base branch $SL_PR_BASE at $sha"
   statuses=$(gh api "repos/$PR_OWNER/$PR_REPO/commits/$sha/status" 2>/dev/null \
