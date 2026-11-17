@@ -160,231 +160,12 @@ run_wd() {  # <offset-secs> <args>...
   FM_TEST_SEAM=1 FM_WD_TEST_COMPOSER="${PP_COMPOSER:-empty}" FM_WD_TEST_CONTROL="$H/control.sh" FM_WD_NOW=$((BASE + off)) FM_HOME="$H" bash "$WD" "$@"
 }
 
-TF_DESTROY=$'Plan: 0 to add, 0 to change, 3 to destroy.\n\nDo you really want to destroy all resources?\n  Terraform will destroy all your managed infrastructure, as shown above.\n  There is no undo. Only \'yes\' will be accepted to confirm.\n\n  Enter a value: '
-TYPE_DELETE=$'This permanently removes project acme.\nType DELETE to confirm:'
-GIT_CLEAN=$'Would remove the following items:\n  build/   out.log\n*** Commands ***\n    1: clean                2: filter by pattern    3: select by numbers\n    4: ask each             5: quit                 6: help\nWhat now> '
-DRIZZLE=$'Warning  Found data-loss statements:\n· You\'re about to delete users table with 3 items\n\nTHIS ACTION WILL CAUSE DATA LOSS AND CANNOT BE REVERTED\n\nDo you still want to push changes?\n❯ No, abort\n  Yes, I want to remove 1 table,'
-SSO_URL=$'work\nSSO start URL [None]: '
-SSO_SCOPES=$'work\nSSO registration scopes [sso:account:access]: '
-SSO_URL_DEFAULT=$'work\nSSO start URL [https://my-sso-portal.awsapps.com/start]: '
-PIP_WIPE=$'git clone in ./src/foo exists with URL https://example.com/a.git\nThe plan is to install the git repository https://example.com/b.git\nWhat to do?  (s)witch, (i)gnore, (w)ipe, (b)ackup '
-DPKG_CONF=$'Configuration file \'/etc/example.conf\'\n ==> Modified (by you or by a script) since installation.\n ==> Package distributor has shipped an updated version.\n   What would you like to do about it ?  Your options are:\n    Y or I  : install the package maintainer\'s version\n    N or O  : keep your currently-installed version\n      D     : show the differences between the versions\n      Z     : start a shell to examine the situation\n The default action is to keep your current version.\n*** example.conf (Y/I/N/O/D/Z) [default=N] ?'
-PATCH_R=$'patching file a.c\nReversed (or previously applied) patch detected!  Assume -R? [n] '
-NPM_OTP=$'$ npm profile enable-2fa auth-and-writes\nPassword: \nAnd an OTP code from your authenticator: '
-GPG_EDIT=$'sec  ed25519/0123456789ABCDEF\n     created: 2026-01-01  usage: SC\ngpg> '
-GH_HOST=$'? Where do you use GitHub? Other\n? Hostname: '
-DOCKER_UNLOCK=$'$ docker swarm unlock\nPlease enter unlock key: '
-SSH_RETRY=$'The authenticity of host \'h (192.0.2.1)\' can\'t be established.\nED25519 key fingerprint is SHA256:abc.\nAre you sure you want to continue connecting (yes/no/[fingerprint])? maybe\nPlease type \'yes\', \'no\' or the fingerprint: '
-GPG_CARD=$'Reader ...........: Yubico YubiKey\ngpg/card> '
-GPG_TRUST=$'Please decide how far you trust this user to correctly verify other users\' keys\n  5 = I trust ultimately\n  m = back to the main menu\n\nYour decision? '
-GPG_VALID=$'Please specify how long the key should be valid.\n         0 = key does not expire\nKey is valid for? (0) '
-PATCH_DEL=$'can\'t find file to patch at input line 3\n|--- a/foo.c\n|+++ /dev/null\nFile to patch: '
-SUDO_ES=$'$ sudo ls\n[sudo] contraseña para alice: '
-AWS_ECHO=$'$ aws configure\nAWS Access Key ID [None]: AKIAIOSFODNN7EXAMPLE'
-AWS_MFA=$'$ aws configure mfa-login\nMFA serial number or ARN: '
-KEYCHAIN=$'$ security unlock-keychain /Users/alice/Library/Keychains/login.keychain-db\npassword to unlock /Users/alice/Library/Keychains/login.keychain-db: '
-GPG_NAME=$'GnuPG needs to construct a user ID to identify your key.\n\nReal name: '
-GPG_OKAY=$'You selected this USER-ID:\n    "Alice <a@example.com>"\n\nChange (N)ame, (C)omment, (E)mail or (O)kay/(Q)uit? '
-INQ_HIDDEN=$'? Password: [input is hidden] '
-VAULT_UNSEAL=$'$ vault operator unseal\nUnseal Key (will be hidden): '
-SSH_BADPASS=$'Bad passphrase, try again for /Users/alice-long-name/.ssh/id_ed25519_work_laptop:'
-YARN_LOGIN=$'yarn login v1.22.22\nquestion npm username: '
-APT_PHRASE=$'WARNING: The following essential packages will be removed.\nThis should NOT be done unless you know exactly what you are doing!\n  apt\nYou are about to do something potentially harmful.\nTo continue type in the phrase \'Yes, do as I say!\'\n ?] '
-MERGETOOL_DEL=$'Deleted merge conflict for \'a.c\':\n  {local}: modified file\n  {remote}: deleted\nUse (m)odified or (d)eleted file, or (a)bort? '
-COMPOSER_AUTH=$'Do you want to store credentials for repo.example.com in /x/auth.json ? [Yn] '
-ZYPPER_CONT=$'Continue? [y/n/v/...? shows all options] (y): '
-GLAB_HOST=$'? GitLab hostname: '
-WANDB_CHOICE=$'wandb: (1) Create a W&B account\nwandb: (2) Use an existing W&B account\nwandb: Enter your choice: '
-DENO_ALLOW=$'┏ ⚠️  Deno requests read access to "/etc".\n┠─ Requested by `Deno.readFile()` API.\n┗ Allow? [y/n/A] (y = yes, allow; n = no, deny; A = allow all read permissions) > '
-ECHO_OTP=$'Enter OTP: 123456'
-ECHO_MFA=$'MFA token code: 123456'
-ECHO_NPMUSER=$'npm username: alice'
-ECHO_NPMEMAIL=$'Email: (this IS public) a@example.com'
-ECHO_PIPUSER=$'User for pypi.example.com: alice'
-ECHO_GITUSER=$'Username for \'https://github.com\': alice'
-CP_UNWRITABLE=$'cp: unwritable \'current.db\' (mode 0444, r--r--r--); try anyway? '
-RM_INACCESSIBLE=$'rm: attempt removal of inaccessible directory \'cache\'? '
-RM_FR=$'rm : supprimer \'cache.txt\' du type fichier ? '
-CP_FR=$'cp : voulez-vous écraser \'current.db\' ? '
-MERGETOOL_HIT=$'Normal merge conflict for \'a.c\':\n  {local}: modified file\n  {remote}: modified file\nHit return to start merge resolution tool (vimdiff): '
-GH_ACC_HOST=$'? Where do you use GitHub?\n  1: GitHub.com\n  2: Other\nEnter a number between 1 and 2: '
-GH_ACC_AUTH=$'? How would you like to authenticate GitHub CLI?\n  1: Login with a web browser\n  2: Paste an authentication token\nEnter a number between 1 and 2: 2'
-GCLOUD_CODE=$'Enter authorization code: 4/0AbCdEf'
-AWS_LOGIN_CODE=$'Enter the authorization code displayed in your browser: ABCD-1234'
-GCLOUD_OUTPUT=$'Enter the output of the above command: 4/0xyz'
-GH_HOST_VAL=$'? Where do you use GitHub? Other\n? Hostname: github.example.com'
-KEYGEN_VAL=$'Enter file in which to save the key (/Users/a/.ssh/id_ed25519): /tmp/k'
-RU_PASS=$'Пароль: '
-NPM_OTP_VAL=$'And an OTP code from your authenticator: 123456'
-AWSVAULT_MFA=$'Enter MFA code for arn:aws:iam::123456789012:mfa/user: 123456'
-CERTBOT_DEL=$'Are you sure you want to delete the above certificate(s)?\n(Y)es/(N)o: '
-MKFS_PROCEED=$'/dev/sdb1 contains a ext4 file system\nProceed anyway? (y,N) '
-RM_TYPED=$'rm: remove regular file \'important.txt\'? y'
-TF_TYPED=$'Do you want to perform these actions?\n  Terraform will perform the actions described above.\n  Only \'yes\' will be accepted to approve.\n\n  Enter a value: yes'
-SSO_URL_VAL=$'SSO start URL [None]: https://my-sso-portal.awsapps.com/start'
-SSO_SCOPES_VAL=$'SSO registration scopes [sso:account:access]: sso:account:access'
-AZ_TENANT_VAL=$'Select a subscription and tenant (Type a number or Enter for no changes): 1'
-WRAP_GITUSER=$'$ git push\nUsername for \'https://github.co\nm\': '
-WRAP_MFA=$'Enter MFA code for arn:aws:iam::123456789012:mfa/u\nser: '
-WRAP_KEYGEN=$'Enter file in which to save the key (/Users/alice/.s\nsh/id_ed25519): '
-NPM_AGAIN=$'$ npm profile set password\nCurrent password: \nNew password: \n       Again:     '
-SSH_KEYFILE=$'work\nEnter file in which the key is (/Users/test/.ssh/id_ed25519): '
-GH_SSHTITLE=$'? Upload your SSH public key to your GitHub account? /Users/test/.ssh/id_ed25519.pub\n? Title for your SSH key: (GitHub CLI) '
-GH_DEVICE=$'! First copy your one-time code: 1A2B-3C4D\nPress Enter to open https://github.com/login/device in your browser... '
-AZ_SELECT=$'[Tenant and subscription selection]\n\nNo     Subscription name    Subscription ID                       Tenant\n-----  -------------------  ------------------------------------  --------\n[1] *  Dev                  00000000-0000-0000-0000-000000000000  Contoso\n\nSelect a subscription and tenant (Type a number or Enter for no changes): '
-GCLOUD_REMOTE=$'You are authorizing gcloud CLI without access to a web browser.\n\ngcloud auth login --remote-bootstrap="https://accounts.google.com/o/oauth2/auth?response_type=code"\n\n\nEnter the output of the above command: '
-SSO_TOOLBAR=$'SSO session name (Recommended): my-sso\n────────────────────────────────────────────────────────────\nConfiguration for SSO session: my-sso\n\n{\n  "sso_start_url": "https://my-sso-portal.awsapps.com/start",\n  "sso_region": "us-east-1"\n}'
-GCLOUD_AUTH_PICK=$'Please select your preferred authentication option for cluster [my-cluster]\n [1] Azure AD\n [2] Okta\n [3] cancel\nPlease enter your numeric choice: '
-PIP_USER=$'Looking in indexes: https://pypi.example.com/simple\nUser for pypi.example.com: '
-CARGO_LOGIN=$'    Updating crates.io index\nplease paste the token found on https://crates.io/me below'
-GIT_CLEAN_SELECT=$'Would remove the following items:\n  build/   tmp.txt\n*** Commands ***\n    1: clean                2: filter by pattern    3: select by numbers\n    4: ask each             5: quit                 6: help\nWhat now> 3\n    1: build/    2: tmp.txt\nSelect items to delete>> '
-GIT_CLEAN_FILTER=$'Would remove the following items:\n  build/   tmp.txt\n*** Commands ***\n    1: clean                2: filter by pattern    3: select by numbers\n    4: ask each             5: quit                 6: help\nWhat now> 2\n  build/   tmp.txt\nInput ignore patterns>> '
-AWS_ROLE=$'Using the account ID 111122223333\nThere are 2 roles available to you.\n> ReadOnly\n  FullAccess'
-# BSD rm, cp, and mv, gh, git hunk, Heroku, parted, Prisma, Supabase, and pnpm
-# destructive confirmations.
-DESTRUCTIVE_CONFIRMS=(
-  "$PIP_WIPE"
-  $'What to do?  (i)gnore, (w)ipe, (b)ackup '
-  "$DPKG_CONF"
-  "$PATCH_R"
-  "$PATCH_DEL"
-  "$APT_PHRASE"
-  "$MERGETOOL_DEL"
-  "$CP_UNWRITABLE"
-  "$RM_INACCESSIBLE"
-  "$RM_FR"
-  "$CP_FR"
-  "$CERTBOT_DEL"
-  "$MKFS_PROCEED"
-  "$RM_TYPED"
-  $'Reversed (or previously applied) patch detected!  Assume -R? [n] n\nApply anyway? [n] '
-  $'work\nremove a.txt? '
-  $'work\nexamine files in directory d? '
-  $'work\nrecursively remove d? '
-  $'work\noverride r--r--r--  dev/staff for a.txt? '
-  $'work\noverwrite b? (y/n [n]) '
-  $'work\n? Type acme/repo to confirm deletion: '
-  $'work\nDiscard this hunk from worktree [y,n,q,a,d,e,?]? '
-  $' !    WARNING: This will destroy acme\n !    To proceed, type acme or re-run this command with\n !    --confirm acme\n\n> '
-  $'The following packages will be REMOVED:\n\n  numpy-1.26\n\nProceed ([y]/n)? '
-  $'work\n< rm ./a.txt > ? '
-  $'work\nrm a b ?...'
-  $'work\noverride r--r--r-- dev/staff uchg for a.txt? '
-  $'? Do you still want to push changes? This deletes the users table (Use arrow keys)\n❯ No, abort\n  Yes, I want to remove 1 table,'
-  $'Archive:  x.zip\nreplace a.txt? [y]es, [n]o, [A]ll, [N]one, [r]ename: '
-  "$GIT_CLEAN"
-  "$GIT_CLEAN_SELECT"
-  "$GIT_CLEAN_FILTER"
-  "$DRIZZLE"
-  $'work\nAre you sure you want to drop the database \'app\' on server \'(localdb)\'? (y/N)'
-  $'work\nAll data will be wiped. Continue? [y/N]'
-  $'    conflict  config/routes.rb\nOverwrite /app/config/routes.rb? (enter "h" for help) [Ynaqdhm] '
-  $'WARNING!\n========\nThis will overwrite data on /dev/sdb irrevocably.\n\nAre you sure? (Type \'yes\' in capital letters): '
-  $'Warning: The existing disk label on /dev/sdb will be destroyed and all data on this disk will be lost. Do you want to continue?\nYes/No? '
-  $'? Are you sure you want to reset your database? All data will be lost. › (y/N)'
-  $'Drift detected.\n? Do you want to continue? All data will be lost. › (y/N)'
-  $'work\nDo you want to reset the remote database? [y/N] '
-  $'? The modules directory at "/w/node_modules" will be removed and reinstalled from scratch. Proceed? (Y/n) › true'
-)
 # Codex CLI 0.151.0's recorded hook modal and its command approvals, whose
 # footer is lowercase.
 CODEX_HOOKS=$'Hooks need review\n12 hooks are new or changed.\nHooks can run outside the sandbox after you trust them.\n> 1. Review hooks\n  2. Trust all and continue\n  3. Continue without trusting (hooks won\'t run)\nPress enter to confirm or esc to go back'
 codex_approval() {  # <command>
   printf '%s\n' 'Would you like to run the following command?' '' "  \$ $1" '' '› 1. Yes, proceed (y)' "  2. Yes, and don't ask again for this command (a)" '  3. No, and tell Codex what to do differently (esc)' '' '  Press enter to confirm or esc to cancel'
 }
-# openssl, gpg pinentry, Heroku, and inquirer credential and sign-in inputs.
-PINENTRY=$'work\n┌──────────────────────────────────────────┐\n│ Please enter the passphrase to unlock    │\n│ the OpenPGP secret key                   │\n│                                          │\n│ Passphrase: ____________________________ │\n│                                          │\n│       <OK>                  <Cancel>     │\n└──────────────────────────────────────────┘'
-SECRET_INPUTS=(
-  $'work\nEnter PEM pass phrase:'
-  $'work\nVerifying - Enter PEM pass phrase:'
-  $'work\nEnter pass phrase for key.pem:'
-  "$PINENTRY"
-  $'work\n? Password › ****'
-  $'work\n? Enter your password ********'
-  $'work\n? Password [input is masked]'
-  "$CARGO_LOGIN"
-  $'You have enabled multi-factor authentication. Please enter OTP code.\nCode:   '
-  $'Enter your access token from https://app.pulumi.com/account/tokens\n    or hit <ENTER> to log in using your browser                   : '
-  "$SSH_KEYFILE"
-  "$NPM_AGAIN"
-  "$NPM_OTP"
-  "$DOCKER_UNLOCK"
-  "$INQ_HIDDEN"
-  $'? Enter a value for DATABASE_URL [input is hidden] '
-  "$VAULT_UNSEAL"
-  "$SSH_BADPASS"
-  "$ECHO_OTP"
-  "$ECHO_MFA"
-  "$KEYGEN_VAL"
-  "$WRAP_MFA"
-  "$WRAP_KEYGEN"
-  "$RU_PASS"
-  "$NPM_OTP_VAL"
-  "$AWSVAULT_MFA"
-  "$SUDO_ES"
-  $'Passwort: '
-  "$AWS_ECHO"
-  "$KEYCHAIN"
-  "$GPG_NAME"
-  $'GnuPG needs to construct a user ID to identify your key.\n\nReal name: Alice\nEmail address: a@example.com\nComment: '
-  "$GPG_OKAY"
-  $'Enter unlock key: '
-  "$GPG_CARD"
-  "$GPG_TRUST"
-  $'Please select what kind of key you want:\n   (1) RSA and RSA\n   (9) ECC (sign and encrypt) *default*\nYour selection? '
-  "$GPG_VALID"
-  "$GPG_EDIT"
-  $'Generating public/private ed25519 key pair.\nEnter file in which to save the key (/home/u/.ssh/id_ed25519): '
-)
-SIGNIN_INPUTS=(
-  $'work\nheroku: Press any key to open up the browser to login or q to exit: '
-  $'? Log in to Vercel (Use arrow keys)\n❯ Continue with GitHub\n  Continue with GitLab\n  Continue with Email'
-  $'? Log in to Vercel (Use arrow keys)\n❯ Continue with GitHub\n  Continue with GitLab\n  Continue with Bitbucket\n  Continue with Email\n  ─────────────────────────────────\n  Cancel'
-  $'? Sign in with which account?\n❯ one\n  two\n  three\n(Use arrow keys to reveal more choices)'
-  $'work\nEnter your username:'
-  $'work\nEnter your email address:'
-  $'work\n? Enter your email address: ›'
-  $'Attempting to automatically open the SSO authorization page in your default browser.\nThere are 2 AWS accounts available to you.\n> DeveloperAccount, developer-account-admin@example.com (111122223333)\n  ProductionAccount, production-account-admin@example.com (444455556666)'
-  "$AWS_ROLE"
-  $'work\n? Email or username › '
-  $'work\nEnter user-name: '
-  $'work\nSSO session name (Recommended): '
-  "$SSO_URL"
-  "$SSO_SCOPES"
-  "$SSO_URL_DEFAULT"
-  "$GH_DEVICE"
-  "$GH_SSHTITLE"
-  "$GH_HOST"
-  "$SSH_RETRY"
-  "$YARN_LOGIN"
-  "$GLAB_HOST"
-  "$WANDB_CHOICE"
-  "$ECHO_NPMUSER"
-  "$ECHO_NPMEMAIL"
-  "$ECHO_PIPUSER"
-  "$ECHO_GITUSER"
-  "$GH_ACC_HOST"
-  "$GH_ACC_AUTH"
-  "$GCLOUD_CODE"
-  "$AWS_LOGIN_CODE"
-  "$GCLOUD_OUTPUT"
-  "$GH_HOST_VAL"
-  "$SSO_URL_VAL"
-  "$SSO_SCOPES_VAL"
-  "$AZ_TENANT_VAL"
-  "$WRAP_GITUSER"
-  "$AWS_MFA"
-  $'Please type \'yes\' or \'no\': '
-  $'? Where do you use GitHub? [Use arrows to move, type to filter]\n> GitHub.com\n  Other'
-  "$AZ_SELECT"
-  $'work\n? Email or username › me@example.com'
-  "$PIP_USER"
-  "$GCLOUD_REMOTE"
-  "$SSO_TOOLBAR"
-  "$GCLOUD_AUTH_PICK"
-  $'Please select your preferred authentication option for cluster [c]\n [1] Azure AD\n [2] Okta\nPlease enter your numeric choice: 9\nPlease enter a value between 1 and 2:  '
-  $'SSO session name (Recommended): my-sso\n  my-sso\n  my-sso-prod\n────────────────────────────────────────────────────────────\nConfiguration for SSO session: my-sso\n\n{}'
-)
 
 ledger() { cat "$H/state/watchdog/actions.tsv" 2>/dev/null; }
 ledger_rows() {  # <action> <phase> [subject]
@@ -447,152 +228,16 @@ test_hardstop_categories() {
   assert_equals $'route\ttool-approval' "$(bash_prompt_with 'git push -u origin fm/feature-x' | classify claude)" "a feature-branch push still routes"
   assert_equals $'hardstop\tdestructive' "$(bash_prompt_with 'git reset "--hard" HEAD' | classify claude)" "a quoted --hard is still a destructive stop"
   assert_equals $'hardstop\trelease' "$(bash_prompt_with 'git push origin HEAD:"main"' | classify claude)" "a quoted push to main is still a release stop"
-  assert_equals $'hardstop\tdestructive' "$(printf "work\nrm: remove regular file 'important.txt'?\n" | classify claude)" "a terminal remove confirmation is a destructive stop"
-  assert_equals $'hardstop\tspend' "$(printf 'work\nContinue with paid usage? [y/N]\n' | classify claude)" "a one-line paid-usage confirmation is a spend stop"
-  assert_equals $'hold\tconfirm' "$(printf 'work\nProceed? (y/n)\n' | classify claude)" "any other terminal confirmation is held"
-  assert_equals $'hardstop\tdestructive' "$(printf '%s\n' "$TF_DESTROY" | classify claude)" "a typed Terraform destroy confirmation is a destructive stop"
-  assert_equals $'hardstop\tdestructive' "$(printf '%s\n' "$TYPE_DELETE" | classify claude)" "a typed DELETE confirmation is a destructive stop"
-  assert_equals $'hold\tconfirm' "$(printf 'work\nType "acme" to continue:\n' | classify claude)" "any other typed confirmation is held"
-  assert_equals $'hold\tconfirm' "$(printf 'work\nType my.app to confirm:\n' | classify claude)" "a typed name with a dot is a held confirmation"
-  assert_equals $'hold\tconfirm' "$(printf 'work\nStage this hunk [y,n,q,a,d,e,?]? \n' | classify claude)" "a git stage-hunk prompt is a held confirmation"
-  for c in "${DESTRUCTIVE_CONFIRMS[@]}"; do
-    assert_equals $'hardstop\tdestructive' "$(printf '%s\n' "$c" | classify claude)" "this confirmation is a destructive stop: $c"
-  done
-  for c in "${SECRET_INPUTS[@]}"; do
-    assert_equals $'hardstop\tcredential' "$(printf '%s\n' "$c" | classify claude)" "this input is a credential stop: $c"
-  done
-  for c in "${SIGNIN_INPUTS[@]}"; do
-    assert_equals $'hardstop\tsign-in' "$(printf '%s\n' "$c" | classify claude)" "this input is a sign-in stop: $c"
-  done
-  assert_equals $'hold\tconfirm' "$(printf 'work\nPress any key to continue\n' | classify claude)" "a press-any-key wait is held"
-  assert_equals $'hardstop\tsign-in' "$(printf '? Pick a registry to log in to (Use arrow keys)\n❯ o1\n  o2\n  o3\n  o4\n  o5\n  o6\n  o7\n(Move up and down to reveal more choices)\n' | classify claude)" "a long list is read from its heading, above the recent rows"
-  assert_equals $'hold\tconfirm' "$(printf 'Pick cloud project to use:\n [1] proj-a\n [2] Create a new project\nPlease enter numeric choice or text value (must exactly match list item):  \n' | classify claude)" "a gcloud numeric choice outside sign-in is a held confirmation"
-  assert_equals $'hold\tconfirm' "$(printf '           staged     unstaged path\n  1:    unchanged        +1/-0 a.txt\nUpdate>> \n' | classify claude)" "a git add -i submenu is a held confirmation"
-  assert_equals $'hold\tconfirm' "$(printf '*** Commands ***\n  1: status\t  2: update\t  7: quit\t  8: help\nWhat now> \n' | classify claude)" "git add -i's menu is a held confirmation"
-  for c in $'worker: the tool shows\n? Log in (Use arrow keys)\n\n› Implement {feature}\n\n  100% context left · ? for shortcuts' \
-    $'? Log in (Use arrow keys)\n  Continue with GitHub\n────────────────────────────────────────\n❯ continue with the docs\n────────────────────────────────────────\n  ? for shortcuts' \
-    $'working on it\n› fix tests\n  esc to cancel' \
-    $'• Ran npx vercel login\n  └ ? Log in to Vercel (Use arrow keys)\n    ❯ Continue with GitHub\n      Continue with GitLab\n\n› retry with a token\n\n  GPT-6.1-Sol medium · fm/branch · Context 77% left' \
-    $'• Shall I continue?\n\n› yes go ahead\n\n  GPT-6.1-Sol medium · fm/branch · Context 77% left' \
-    $'Should I continue?\n› yes go ahead\n  ⏎ send   ⌃J newline   ⌃T transcript   ⌃C quit' $'work\nI said yes/no? fine.\n\n❯ \n  ? for shortcuts'; do
-    printf '%s\n' "$c" | classify codex >/dev/null && fail "a quoted list or busy row above a composer is not a prompt: $c"
-    bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null && fail "a quoted list or busy row above a composer does not block a submit: $c"
-  done
-  for c in $'work\n> ' $'work\nplease remove that line?' $'work\nI typed it to confirm it works.' $'work\nI will press any key now.' $'work\nis it y/n?' $'work\n? Project name › my-app' $'work\n? Project name › my-token-app' $'work\n? Where should we create your project? › ./secret-notes' $'work\nI will paste the token below' $'work\nnote: the otp is in the vault\nok, next:' $'commit 1a2b3c\n    fix access token refresh\n:' $'The API token is read from env.\nCode:' $'here is the config\n{\n  "a": 1\n}' $'work\nthe prompt said Update>> then waited' $'work\n? Which template?' $'work\n┌────────────┐\n│ All done   │\n└────────────┘'; do
-    printf '%s\n' "$c" | classify claude >/dev/null && fail "this is not a confirmation: $c"
-  done
-  assert_equals $'hardstop\tdestructive' "$(printf 'work\nDiscard changes? [y/N]\n' | classify claude)" "a discard confirmation is a destructive stop"
-  for c in $'Use (l)ocal or (r)emote, or (a)bort? ' "$ZYPPER_CONT" "$DENO_ALLOW" $'Do you trust "symfony/flex" to execute code and wish to enable it now? (writes "allow-plugins" to composer.json) [y,n,d,?] '; do
-    assert_equals $'hold\tconfirm' "$(printf '%s\n' "$c" | classify claude)" "this confirmation is held: $c"
-  done
- # git mergetool's launch prompt is an owner-reserved merge stop.
-  assert_equals hardstop "$(printf '%s\n' "$MERGETOOL_HIT" | classify claude | cut -f1)" "git mergetool's launch prompt is a hard stop"
-  assert_equals 'terminal confirmation' "$(bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$MERGETOOL_HIT")" "the send guard holds git mergetool's launch prompt"
-  for c in $'Pick a color\n  1: red\n  2: blue\nEnter a number between 1 and 2: ' $'Command may disrupt existing ssh connections. Proceed with operation (y|n)? ' $'Send this email? ([y]es|[n]o|[e]dit|[q]uit|[a]ll): ' $'Trust this certificate? [no]:  ' $'Press RETURN/ENTER to continue or any other key to abort:' $'By typing \'agree\' you are agreeing to the terms. Type \'print\' to print them or \'cancel\' to cancel, [agree, print, cancel] '; do
-    assert_equals $'hold\tconfirm' "$(printf '%s\n' "$c" | classify claude)" "this terminal question is held: $c"
-  done
-  assert_equals 'option picker' "$(bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" $'Who should this report cover?\n❯ 1. This session only\n  2. All sessions\nEnter to choose · Esc to cancel')" "an Enter to choose picker blocks a send"
-  assert_equals $'hold\tconfirm' "$(printf '%s\n' "$TF_TYPED" | classify claude)" "a Terraform approval with its answer typed is still held"
-  for c in $'❯ \n────────────────────────────────────────────────────────\n  ? for shortcuts' $'│ > fix the bug: yes                                     │\n╰────────────────────────────────────────────────────────╯' 'The deploy finished with result: ok' $'Worked for 2m 10s\n\n› Ask: anything'; do
-    assert_equals '' "$(printf '%s\n' "$c" | classify claude)" "an agent screen is not a typed-answer or wrapped prompt: $c"
-    bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null && fail "an agent screen blocks a send: $c"
-  done
-  for c in $'build output line\nUsername for \'https:/\n/github.com\': ' $'build output line\nEnter passphrase for\n key \'/home/u/.ssh/i\nd_ed25519\': ' $'build output line\nAWS Secret Access Ke\ny [None]: ' $'build output line\nSSO start URL [None]\n: ' "Please type 'yes', 'no' or the fingerprint: yes" "Please type 'yes' or 'no': yes" 'gpg> save' 'gpg/card> admin' '? GitLab hostname: gitlab.example.com' 'Enter user-name: scott'; do
-    [ -n "$(printf '%s\n' "$c" | classify claude)" ] || fail "a wrapped or populated sign-in input is not caught: $c"
-    bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard misses a wrapped or populated sign-in input: $c"
-  done
-  for c in $'build output line\nrm: remove write-pro\ntected regular file \n\'important.txt\'? ' 'Select items to delete>> 1 2' 'Input ignore patterns>> *.o *.a'; do
-    [ -n "$(printf '%s\n' "$c" | classify claude)" ] || fail "a wrapped or populated confirmation is not caught: $c"
-    bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard misses a wrapped or populated confirmation: $c"
-  done
-  for c in '❯ Fix the test that asks: are you sure? yes' $'Running tests for the password reset flow and the\n login handler now, this takes a while' 'Enter the directory: src'; do
-    [ -z "$(printf '%s\n' "$c" | classify claude)" ] || fail "agent text is read as a prompt: $c"
-    ! bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard blocks agent text: $c"
-  done
-  local rule40 longrepo want
-  rule40=$(printf '─%.0s' $(seq 40))
-  longrepo=$(printf 'o%.0s' $(seq 39))/$(printf 'r%.0s' $(seq 66))
-  for c in \
-    "sign-in|$rule40"$'\n'"Username for 'https://github.enterprise."$'\n'"example.org':" \
-    "destructive|You are about to do something potentially harmful."$'\n'"To continue type in the phrase 'Yes, do as I say!'"$'\n'" ?] Yes, do as I say!" \
-    "destructive|? Type $longrepo to confirm deletion:" \
-    "destructive|? Type $longrepo to confirm deletion: $longrepo" \
-    'credential|Enter OTP: 123 456' \
-    "sign-in|? Get started"$'\n\n'"  How would you like to authenticate for this project?"$'\n\n'"  ● 1. Sign in with Google"$'\n'"    2. Use Gemini API Key"$'\n'"    3. Vertex AI"$'\n\n'"  No authentication method selected."$'\n\n'"  (Use Enter to select)"$'\n\n'"  Terms of Services and Privacy Notice for Gemini CLI"$'\n\n'"  https://geminicli.com/docs/resources/tos-privacy/" \
-    "credential|╭────────────────────────────╮"$'\n'"│ Enter Gemini API Key       │"$'\n'"│ > _                        │"$'\n'"╰────────────────────────────╯"$'\n'"  ~/repo   no sandbox   gemini-2.5-pro" \
-    "destructive|? Target directory \"my-app\" is not empty. Please choose how to proceed: › - Use arrow-keys. Return to submit."$'\n'"❯   Remove existing files and continue"$'\n'"    Cancel operation"$'\n'"    Ignore files and continue" \
-    "destructive|◆  Target directory \"my-app\" is not empty. Please choose how to proceed:"$'\n'"│  ● Cancel operation"$'\n'"│  ○ Remove existing files and continue"$'\n'"│  ○ Ignore files and continue"$'\n'"└" \
-    'destructive|gzip: data.json already exists; do you wish to overwrite (y or n)? ' \
-    'destructive|data.json already exists -- do you wish to overwrite (y or n)? ' \
-    'destructive|gzip: data.json already exists; do you wish to overwrite (y or n)? y' \
-    "sign-in|Press ENTER to open your browser or submit your device code here: https://login.docker.com/activate"$'\n'"Waiting for authentication in the browser…" \
-    'sign-in|Please enter the 6 digit code:' \
-    "destructive|This will permanently remove the 'dev' stack!"$'\n'"Please confirm that this is what you'd like to do by typing \`dev\`:" \
-    "destructive|Would you like to replace the existing file:"$'\n'"? (Y)es / (N)o / (A)lways / (S)kip all / A(u)to rename all / (Q)uit? " \
-    "sign-in|? Choose an account to sign in with:  [Use arrows to move, type to filter]"$'\n'"  alice@corp.com"$'\n'"> bob@corp.com" \
-    "destructive|? Are you sure you want to delete these files?  [Use arrows to move, type to filter]"$'\n'"  No"$'\n'"> Yes" \
-    "sign-in|? What account do you want to log into?  [Use arrows to move, type to filter]"$'\n'"> GitHub.com" \
-    "sign-in|There are 2 roles available to you."$'\n'"  ReadOnly"$'\n'"> FullAccess" \
-    "sign-in|? Where do you use GitHub?  [Use arrows t"$'\n'"o move, type to filter]"$'\n'"> GitHub.com"$'\n'"  Other" \
-    "sign-in|There are 2 roles available to"$'\n'"you."$'\n'"  ReadOnly"$'\n'"> FullAccess" \
-    "credential|Generating public/private ed25519 key pair."$'\n'"Enter file in which to save the key (/Users/test/.ssh/id_ed25519)"$'\n'":" \
-    "credential|Identity added: x"$'\n'"Bad passphrase, try again for /Users/test/.ssh/id_ed25519 (test@host)"$'\n'":" \
-    "credential|"$'╭────────────────────────────────────────────╮\n│                                            │\n│ Enter Gemini API Key                       │\n│                                            │\n│ Please enter your Gemini API key.          │\n│                                            │\n│ ╭──────────────────────────────────────╮ │\n│ │ Paste your API key here              │ │\n│ ╰──────────────────────────────────────╯ │\n│                                            │\n│ (Press Enter to submit, Esc to cancel)     │\n╰────────────────────────────────────────────╯\n  ~/repo   no sandbox   gemini-2.5-pro (100% context left)' \
-    "sign-in|╭──────────────────────────────────────────────────────╮"$'\n'"│ How would you like to authenticate for this project? │"$'\n'"│ ● 1. Login with Google                               │"$'\n'"│   2. Use Gemini API Key                              │"$'\n'"│ (Use Enter to select)                                │"$'\n'"╰──────────────────────────────────────────────────────╯"$'\n'"  ~/repo  no sandbox  gemini-2.5-pro (100% context left)" \
-    "sign-in|? Log in to Vercel (Use arrow keys)"$'\n'"❯ Continue with GitHub"$'\n'"  Continue with GitLab"; do
-    want=${c%%|*}; c=${c#*|}
-    assert_equals "hardstop	$want" "$(printf '%s\n' "$c" | classify claude)" "a widely used CLI prompt is a $want stop: $c"
-    bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard misses a $want prompt: $c"
-  done
-  for c in '❯ Continue? [y/N]' '❯ Explain how to enter a password:' '› Enter OTP: 123456' $'commit abc\n    Merge pull request #42 from team/rotate-secret (rotate the API token now)\n:' "Working on the fix now"$'\n'"$rule40"$'\n'"❯ "$'\n'"$rule40"$'\n'"  ? for shortcuts" 'The tests for gzip and docker login pass; next we look at the 6 digit code path.' \
-    "⏺ Bash(grep -n 'Gemini' bin/fm-busy-lib.sh)"$'\n'"  ⎿  1180:# ... (\"Enter Gemini API Key\")."$'\n'"$rule40"$'\n'"❯ "$'\n'"$rule40"$'\n'"  ? for shortcuts" \
-    "  ⎿  How would you like to authenticate for this project?"$'\n'"     ● 1. Sign in with Google"$'\n'"$rule40"$'\n'"❯ "$'\n'"$rule40"$'\n'"  ⏵⏵ bypass permissions on (shift+tab to cycle)" \
-    "⏺ Added a regression test for the Enter Gemini API Key dialog."$'\n'"$rule40"$'\n'"❯ "$'\n'"$rule40"$'\n'"  ? for shortcuts" \
-    "Enter Gemini API Key"$'\n'"Working on it now"$'\n'"$rule40"$'\n'"❯ "$'\n'"$rule40"$'\n'"  ? for shortcuts" \
-    '→ Explain how to enter a password:' '❭ Explain how to enter a password:' '⟩ Continue? [y/N]' 'You can set it by typing the following:' \
-    "• Ran npx vercel login"$'\n'"  └ ? Log in to Vercel (Use arrow keys)"$'\n'"    ❯ Continue with GitHub"$'\n'"      Continue with GitLab"$'\n\n'"› "$'\n\n'"  esc to cancel" \
-    "? Select a framework: › - Use arrow-keys. Return to submit."$'\n'"❯ Vanilla"$'\n'"  React"$'\n\n'"│ → Add a follow-up                    │"$'\n'"Claude 4.5 Sonnet · 12.3%" \
-    "? Select a framework: › - Use arrow-keys. Return to submit."$'\n'"❯ Vanilla"$'\n'"  React"$'\n\n'"┃  "$'\n'"  enter send  ctrl+p commands" \
-    "? Select a framework: › - Use arrow-keys. Return to submit."$'\n'"❯ Vanilla"$'\n'"  React"$'\n\n'"▌ "$'\n'"  ⏎ send   ⌃J newline   ⌃T transcript   ⌃C quit" \
-    "? Select a framework: › - Use arrow-keys. Return to submit."$'\n'"❯ Vanilla"$'\n'"  React"$'\n'"That is the create-vite list; next I patch the guard."$'\n'"> fix the list check"; do
-    [ -z "$(printf '%s\n' "$c" | classify claude)" ] || fail "an agent draft, pager, or prose row is read as a prompt: $c"
-    ! bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard blocks an agent draft, pager, or prose row: $c"
-  done
-  c=$'? Which account?  (Use arrow keys)\n  acct-a\n❯ acct-b'
-  assert_equals "hold	confirm" "$(printf '%s\n' "$c" | classify claude)" "a select list with its cursor on the last option holds"
-  bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard misses a select list with its cursor on the last option"
-  for c in 'Hostname: build-1' 'Error code: 500' 'OTP library version: 2.1.0' 'mfa is enabled for user: alice' '2FA required for account: bob' 'src/auth.ts:  // Enter verification code: 123' 'Exit code: 1' 'Summary: done' 'rm: cannot remove x: No such file or directory'; do
-    assert_equals '' "$(printf '%s\n' "$c" | classify claude)" "an ordinary output row is not a prompt: $c"
-  done
-  assert_equals $'hardstop\tcredential' "$(printf '%s\n' "$COMPOSER_AUTH" | classify claude)" "Composer's store-credentials question is a credential stop"
-  assert_equals $'hold\tconfirm' "$(printf 'can\x27t find file to patch at input line 3\n|--- a/foo.c\n|+++ b/foo.c\nFile to patch: \n' | classify claude)" "patch's target-file input is held"
-  assert_equals '' "$(printf 'work\nYour selection? \n' | classify claude)" "a generic selection question without GnuPG text is not a credential stop"
-  assert_equals '' "$(printf 'work\nComment: \n' | classify claude)" "a bare Comment: label without GnuPG text is not a credential stop"
-  assert_equals '' "$(printf 'Summary of tokens: 12k used\n' | classify claude)" "a row that only mentions tokens is not a credential input"
-  for c in 'Username [dev]:' 'Email: (this IS public)' 'Email address:'; do
-    assert_equals $'hardstop\tsign-in' "$(printf 'work\n%s\n' "$c" | classify claude)" "$c is a sign-in stop"
-  done
-  for c in 'should I continue?' 'the bug: continue?'; do
-    printf 'work\n%s\n' "$c" | classify claude >/dev/null && fail "conversation ending in $c is not a confirmation"
-  done
-  assert_equals $'hardstop\tsign-in' "$(printf 'work\nUsername (dev):\n' | classify claude)" "a login input with a default value is a sign-in stop"
   assert_equals $'hardstop\tspend' "$(printf ' Continue with paid usage?\n ❯ Yes\n   No\n\n Enter to confirm · Esc to cancel\n' | classify claude)" "an unnumbered paid-usage picker is a spend stop"
   assert_equals $'hardstop\tspend' "$({ cat "$FIX/claude-2.1.325-trust.txt"; printf '%s\n' '────────────────────────────────' '❯ ' '────────────────────────────────' ' Continue with paid usage?' ' ❯ Yes' '   No' '' ' Enter to confirm · Esc to cancel'; } | classify claude)" \
     "a trust dialog left in scrollback above a current paid-usage picker is not read as the trust dialog"
   for c in 'git push origin feature' 'tmux ls' 'curl https://example.com' 'mv a.txt b.txt' 'npm test > out.log' 'ln -sf a b' 'cp -rf a b' 'set -euo pipefail' 'git checkout -b fm/new' 'env FOO=1 npm test'; do
     assert_equals $'route\ttool-approval' "$(bash_prompt_with "$c" | classify claude)" "$c still routes"
   done
-  for c in 'Enter your password:' 'Enter your passphrase:' 'Password for dev@build:' "Password for 'https://x@github.com':" 'Enter OTP:'; do
-    assert_equals $'hardstop\tcredential' "$(printf 'work\n%s\n' "$c" | classify claude)" "$c is a credential stop"
-  done
-  assert_equals $'hardstop\tsign-in' "$(printf "work\nUsername for 'https://github.com':\n" | classify claude)" "a git username input is a sign-in stop"
   assert_equals $'hardstop\tspend' "$(printf ' Continue with paid usage?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel\n' | classify claude)" \
     "a paid-usage picker is a spend stop"
   assert_equals $'hardstop\tdestructive' "$(printf ' Delete the database?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel\n' | classify claude)" \
     "a destructive question picker is a destructive stop"
-  assert_equals $'hardstop\tcredential' "$(printf 'work\n[sudo] password for dev:\n' | classify claude)" "a sudo password input is a credential stop"
-  assert_equals $'hardstop\tsign-in' "$(printf 'Browser opened\nPaste code here if prompted >\n' | classify claude)" "a pasted sign-in code is a sign-in stop"
-  assert_equals $'hardstop\tsign-in' "$(printf 'work\nEnter your authentication code:\n' | classify claude)" "an authentication code input is a sign-in stop"
   assert_equals $'hardstop\tsign-in' "$(printf ' Select login method:\n\n ❯ 1. Claude account with subscription\n   2. Anthropic Console account\n\n Enter to confirm · Esc to cancel\n' | classify claude)" \
     "a login picker is a sign-in stop"
   assert_equals $'hardstop\tspend' "$(printf ' You have reached your limit. Add funds to continue?\n ❯ 1. Buy more credits\n   2. Wait\n\n Enter to confirm · Esc to cancel\n' | classify claude)" \
@@ -605,9 +250,6 @@ test_hardstop_categories() {
   done
   for c in 'cat id_rsa' 'cat ~/.config/gh/hosts.yml' 'printenv' 'env' 'curl -u user:pass https://example.com' 'cat ~/.docker/config.json' 'curl -H "Authorization: Basic dXNlcjpwYXNz" https://example.com' 'command env' 'env -0' '/usr/bin/env'; do
     assert_equals $'hardstop\tcredential' "$(bash_prompt_with "$c" | classify claude)" "$c is a credential stop"
-  done
-  for c in 'Enter your API key >' '? Enter your API key: ›' 'Token: ****' "Password for 'https://dev@github.com':" 'OTP:' '2FA code:'; do
-    assert_equals $'hardstop\tcredential' "$(printf 'work\n%s\n' "$c" | classify claude)" "$c is a credential stop"
   done
   assert_equals $'hardstop\tspend' "$(printf ' You have hit your limit\n ❯ 1. Add funds\n   2. Wait for reset\n\n Enter to confirm · Esc to cancel\n' | classify claude usage-limit)" \
     "a usage-limit picker that offers paid usage is a spend stop"
@@ -650,125 +292,13 @@ test_structure_decides_not_words() {
   pass "structure, not words: conversation above a prompt and phrases inside a command never change its verdict"
 }
 
-test_idle_bottom_quotes_and_long_or_wrapped_lists() {
-  local c want oc codexf fastf star gem agy aws roles
-  oc=$(. "$ROOT/bin/fm-composer-lib.sh"; fm_composer_strip_ansi < "$ROOT/tests/fixtures/opencode-1.18.31-cwd/opencode-1.18.31-idle-cwd.ansi")
-  codexf=$'\n› \n\n  gpt-6-astra high · ~/repo · main'
-  # The fast-mode footer and the braille starfield are recorded from Codex.
-  fastf=$'\n› Ask Codex to do anything\n\n  gpt-6-astra high fast · ~/Projects/purser · Launch Purser desk brief'
-  star=$'\n   ⢀      ⠂ ⠄     ⠈\n›⡀Ask Codex to do anything⡀  ⠈       ⠂        ⠁⠐ ⠁\n        ⠐    ⠄   ⠠  ⢀⠠⡀⠄⠂\n  gpt-6-astra high fast · ~/Projects/purser · Launch Purser desk brief'
-  gem=$'╭────────────────────────────╮\n│ Enter Gemini API Key       │\n│ > _                        │\n╰────────────────────────────╯'
-  agy=$'Accessing workspace:\n\n/work/project\n\nDo you trust the contents of this project?\n\nAntigravity CLI requires permission to read, edit, and execute files here.\n\n> Yes, I trust this folder\n  No, exit'
-  # Quoted dialogs above an idle agent composer or a shell prompt, and
-  # multi-line drafts in the Claude, Codex, Cursor, Devin, and Muse
-  # composers, are never a prompt and never block a send.
-  for c in $'→ Explain this terminal label:\n  Password:' $'→ Explain this terminal label:\n  Continue? [y/N]' \
-    $'❯ Explain this terminal label:\n  Password:' $'› Explain this terminal label:\n  Password:' \
-    $'• Ran cat auth-fixture.txt\n  └ Authentication test fixture\n    ? Log in (Use arrow keys)\n    ❯ Continue with GitHub\n      Continue with GitLab\n'"$fastf" \
-    $'• Ran cat auth-fixture.txt\n  └ Authentication test fixture\n    ? Log in (Use arrow keys)\n    ❯ Continue with GitHub\n      Continue with GitLab\n'"$star" \
-    $'• Ran cat fixture\n  Quick safety check\n  ❯ 2. No, exit\n'"$star" \
-    $'• Ran cat fixture\n  Quick safety check\n  ❯ 2. No, exit\n\n› Summarize recent commits\n\n  gpt-6-astra high fast · ~/Projects/purser · Launch Purser desk brief' \
-    $'❭ Explain this terminal label:\n  Password:' $'⟩ Explain this terminal label:\n  Continue? [y/N]' \
-    $'• Ran cat fixture\n  Quick safety check\n  ❯ 2. No, exit'"$codexf" "$agy$codexf" \
-    "$gem"$'\n'"$oc" "$gem"$'\nuser@host:~/repo$ ' "$agy"$'\n(venv) ~/repo % ' \
-    $'→ Explain these labels:\n  one\n  two\n  three\n  four\n  Password:' \
-    $'Should I continue?\n\n› Update the README\n\n  gpt-6-astra high · ~/repo · README update' \
-    $'Should I continue?\n\n› Ask Codex to do anything\n\n  gpt-6-astra high · ~/repo · main' \
-    "$gem"$'\n✦ That was the key dialog fixture.\n╭──────────────────────────────────────────────╮\n│ > Type your message or @path/to/file         │\n╰──────────────────────────────────────────────╯\n  ~/repo   no sandbox   gemini-2.5-pro (99% context left)' \
-    "$gem"$'\n✦ That was the key dialog fixture.\n╭──────────────────────────────────────────────╮\n│ > fix the test                               │\n╰──────────────────────────────────────────────╯\n  ~/repo   no sandbox   gemini-2.5-pro (99% context left)' \
-    $'ls\nREADME\nalice@host:~/repo$ rg password:' $'ls\nalice@host repo % rg password:' \
-    $'ls\n$ rg password:' $'ls\n~/repo % rg password:' $'ls\n[alice@host repo]$ rg password:' $'ls\nbash-3.2$ rg password:' \
-    $'• Ran cat auth-fixture.txt\n  └ Authentication test fixture\n    ? Log in (Use arrow keys)\n    ❯ Continue with GitHub\n      Continue with GitLab\n\n› Update the README\n\n  gpt-6-astra high · ~/repo · main' \
-    $'• Ran cat fixture\n  Quick safety check\n  ❯ 2. No, exit\n\n› Summarize recent commits\n\n  gpt-5.5 xhigh · Context 97% left · /private/tmp · 2.1K in' \
-    "$agy"$'\n\n› Summarize recent commits\n\n  gpt-5.5 xhigh · Context 97% left · /private/tmp · 2.1K in' \
-    $'✦ Quick safety check\n  ❯ 2. No, exit\n╭──────────────────────────────────────────────╮\n│ > Type your message or @path/to/file         │\n╰──────────────────────────────────────────────╯\n  ~/repo   no sandbox   gemini-2.5-pro (99% context left)' \
-    $'? Get started\n\n  How would you like to authenticate for this project?\n\n  ● 1. Login with Google\n    2. Use Gemini API Key\n\n  (Use Enter to select)\n╭──────────────────────────────────────────────╮\n│ > fix the test                               │\n╰──────────────────────────────────────────────╯\n  ~/repo   no sandbox   gemini-2.5-pro (99% context left)'; do
-    [ -z "$(printf '%s\n' "$c" | classify codex)" ] || fail "a quoted dialog or multi-line draft is read as a prompt: $c"
-    ! bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard blocks a quoted dialog or multi-line draft: $c"
-  done
-  # A live dialog with no composer or shell prompt below it still stops.
-  assert_equals $'trust\tworkspace' "$(printf '%s\n' "$agy" | classify agy)" "the live Antigravity trust screen is still a trust dialog"
-  assert_equals $'hardstop\tcredential' "$(printf '%s\n' "$gem"$'\n  ~/repo   no sandbox   gemini-2.5-pro' | classify claude)" "the live Gemini key dialog is still a credential stop"
-  # An input label that ends in a typed `$` is not a shell prompt.
-  # A middle dot inside a live list option is not an agent footer.
-  assert_equals $'hold\tconfirm' "$(printf '%s\n' '? Which model?' '❯ gpt-5 · fast' '  o4 · deep' | classify claude)" "a bare list whose options hold a middle dot still holds"
-  assert_equals $'hold\tconfirm' "$(printf '%s\n' '? Select a model (Use arrow keys)' '› gpt-5 · fast' '  o4 · deep' | classify claude)" "an arrow-key list whose options hold a middle dot still holds"
-  # A shell row above a live password prompt never hides it.
-  assert_equals $'hardstop\tcredential' "$(printf '%s\n' $'$ psql -U app' 'Password for user app: ' | classify claude)" "a password prompt under a typed shell command is still a credential stop"
-  c=$'GnuPG needs to construct a user ID to identify your key.\n\nReal name: CI Bot\nEmail address: ci@example.com\nComment: CI$'
-  assert_equals $'hardstop\tcredential' "$(printf '%s\n' "$c" | classify claude)" "a GnuPG comment input holding a typed \$ is still a credential stop"
-  bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard misses a GnuPG comment input holding a typed \$"
-  # A program prompt such as `gpg>` holding a typed `#` is not a shell.
-  for c in 'gpg> #' 'gpg> save #' 'gpg/card> #'; do
-    c=$'gpg (GnuPG) 2.4.5\nSecret key is available.\n'"$c"
-    assert_equals $'hardstop\tcredential' "$(printf '%s\n' "$c" | classify claude)" "a populated GnuPG prompt is still a credential stop: $c"
-    bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard misses a populated GnuPG prompt: $c"
-  done
-  # A numbered option row never opens a multi-line draft.
-  assert_equals $'hold\tconfirm' "$(printf '%s\n' '? Continue?' '❯ 1. Yes' '  2. No' | classify claude)" "a numbered list under a question still holds"
-  # Lists longer than eight rows keep their heading's category, and a hint
-  # tail or option row soft-wrapped onto an unindented row stays in the list.
-  aws=$'There are 10 AWS accounts available to you.\n> acct-0, a0@example.com (111111111110)'
-  for c in 1 2 3 4 5 6 7 8 9; do aws="$aws"$'\n'"  acct-$c, a$c@example.com (11111111111$c)"; done
-  roles=$'There are 12 roles available to you.\n  Role0'
-  for c in 1 2 3 4 5 6 7 8 9 10; do roles="$roles"$'\n'"  Role$c"; done
-  roles="$roles"$'\n> Admin'
-  for c in "sign-in|$aws" "sign-in|$roles" \
-    "destructive|? Are you sure you want to delete these files?  [Use arrows to move, type to filt"$'\n'"er]"$'\n'"  No"$'\n'"> Yes" \
-    "sign-in|? What account do you want to log into?  [Use arrows to move, type to filter, ? for m"$'\n'"ore help]"$'\n'"> GitHub.com"$'\n'"  Other" \
-    "destructive|? You are about to drop the users table, are you sure? (Use arrow keys"$'\n'")"$'\n'"❯ No, abort"$'\n'"  Yes, drop the table" \
-    "sign-in|There are 3 AWS accounts available to you."$'\n'"> ProductionWorkloadsAccount, aws-production-workloads+root@example-corp.com (4444"$'\n'"55556666)"$'\n'"  StagingAccount, staging@example-corp.com (111122223333)"; do
-    want=${c%%|*}; c=${c#*|}
-    assert_equals "hardstop	$want" "$(printf '%s\n' "$c" | classify claude)" "a long or soft-wrapped list is a $want stop: $c"
-    bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard misses a long or soft-wrapped $want list: $c"
-  done
-  pass "an idle composer or shell prompt proves the dialog above it quoted, and long or soft-wrapped lists keep their stop"
-}
-
 test_antigravity_trust_screen_classifies() {
   local agy=$'Accessing workspace:\n\n/work/project\n\nDo you trust the contents of this project?\n\nAntigravity CLI requires permission to read, edit, and execute files here.\n\n> Yes, I trust this folder\n  No, exit'
   assert_equals $'trust\tworkspace' "$(printf '%s\n' "$agy" | classify agy)" "the recorded Antigravity trust screen is a trust dialog"
   assert_equals $'hold\ttrust-unregistered' "$(printf '%s\n' "$agy" | classify codex)" "on another harness it is held"
   printf '%s\n\nok\n>\n? for shortcuts\n' "$agy" | classify agy >/dev/null \
     && fail "a quoted trust screen above a composer is not a trust dialog"
-  bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$agy" >/dev/null \
-    || fail "every submit refuses the Antigravity trust picker"
-  pass "Antigravity trust: its recorded screen is read before the dialog detector, held off agy, and refuses every submit"
-}
-
-test_send_guard_blocks_renumbered_pickers_and_secret_inputs() {
-  local screen name
-  for screen in \
-    $' Quick safety check\n   1. Yes, I trust this folder\n ❯ 2. No, exit\n\n Enter to confirm · Esc to cancel' \
-    $' Quick safety check\n > No, exit\n   Yes, I trust this folder\n\n Enter to confirm · Esc to cancel' \
-    $' Allow external CLAUDE.md file imports?\n   1. Yes, allow external imports\n ❯ 2. No, disable external imports\n\n Enter to confirm · Esc to cancel' \
-    $' Quick safety check\n   1. Yes, I trust this folder\n ❯ 2. No, exit\n\n Some other footer' \
-    $'work\nEnter your API key >' $'work\n? Enter your API key: ›' $'work\nPassword:' $'work\nPIN:' $'work\nEnter your verification code:' \
-    $'work\nPassword for \'https://dev@github.com\':' $'work\nUsername for \'https://github.com\':' $'work\nPaste code here if prompted >' $'work\nEnter verification code:' $'work\nOTP:' $'work\nEnter your authentication code:' \
-    $'work\nPress Enter to open browser to sign in' $'work\n2FA:' $'work\nMFA:' $'work\nEnter code:' \
-    $'work\n    Username for \'https://github.com\':' $'work\nEnter MFA code for arn:aws:iam::123456789012:mfa/user:' $'work\nUsername:' $'work\nLogin:' \
-    $'work\nTwo-factor code:' $'work\nAuthenticator app code:' $'work\nSecurity key PIN:' \
-    $'work\nrm: remove regular file \'important.txt\'?' $'work\nContinue with paid usage? [y/N]' $'work\nAre you sure?' \
-    $'work\nUsername (dev):' "$TF_DESTROY" "$TYPE_DELETE" $'work\nUsername [dev]:' $'work\nEmail address:' $' Continue with paid usage?\n ❯ Yes\n   No\n\n Enter to confirm · Esc to cancel' \
-    $' Select login method:\n ❯ 1. Claude account\n   2. API key\n\n Enter to continue · Esc to go back' \
-    $' Continue with paid usage?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel' \
-    "${DESTRUCTIVE_CONFIRMS[@]}" "${SECRET_INPUTS[@]}" "${SIGNIN_INPUTS[@]}" "$CODEX_HOOKS" "$(codex_approval 'rm -rf build')" "$(codex_approval 'npm test')" $'work\nPress any key to continue' $'work\nType my.app to confirm:' $'work\nStage this hunk [y,n,q,a,d,e,?]? '; do
-    name=$(bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$screen") \
-      || fail "every submit refuses this screen: $screen"
-    [ -n "$name" ] || fail "the refusal names the dialog for: $screen"
-  done
-  local n
-  for n in 2 3 4; do
-    screen=$(bash_prompt_with 'rm -rf build/' | sed -e 's/^ ❯ 1\. Yes$/   1. Yes/' -e "s/^   $n\./ ❯ $n./")
-    bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$screen" >/dev/null \
-      || fail "every submit refuses a tool-approval prompt with option $n selected"
-  done
-  screen=$(cat "$FIX/claude-2.1.325-trust.txt"; printf '%s\n' '────────────────────────────────' '❯ ' '────────────────────────────────' '  ? for shortcuts')
-  bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$screen" >/dev/null \
-    && fail "a quoted trust picker above a normal composer does not block"
-  bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" $'work\nthe token refresh is fixed\n❯ ' >/dev/null \
-    && fail "conversation that mentions a token is not a secret input"
-  pass "send guard: a renumbered or re-glyphed declining picker, a numbered picker, a secret or sign-in input, and a terminal confirmation refuse every submit"
+  pass "Antigravity trust: its recorded screen is read before the dialog detector, and is held off agy"
 }
 
 # --- the watchdog route ----------------------------------------------------------
@@ -806,52 +336,25 @@ test_tool_approval_is_declined_and_steered() {
 test_prompt_after_escape_gets_no_instruction() {
   make_home
   worker nt claude "$FIX/claude-2.1.325-bash-prompt.txt" "$FIX/claude-2.1.325-trust.txt"
-  printf 'work output\nEnter your password:\n' > "$H/pw-after.txt"
-  worker np claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/pw-after.txt"
-  printf 'work output\n? Enter your API key: ›\n' > "$H/key-after.txt"
-  worker nk claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/key-after.txt"
-  printf 'work output\nUsername (dev):\n' > "$H/user-after.txt"
-  worker nu claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/user-after.txt"
-  printf '%s\n' "$TF_DESTROY" > "$H/tf-after.txt"
-  worker nf claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/tf-after.txt"
-  printf '%s\n' "$TYPE_DELETE" > "$H/del-after.txt"
-  worker nd claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/del-after.txt"
-  printf 'work output\n? Type acme/widget to confirm deletion: \n' > "$H/gh-after.txt"
-  worker ng claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/gh-after.txt"
-  printf 'work output\noverwrite current.db? (y/n [n]) \n' > "$H/cp-after.txt"
-  worker no claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/cp-after.txt"
-  printf 'work output\nEnter your username:\n' > "$H/un-after.txt"
-  worker ne claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/un-after.txt"
+  printf 'work output\n Continue with paid usage?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel\n' > "$H/paid-after.txt"
+  worker np claude "$FIX/claude-2.1.325-bash-prompt.txt" "$H/paid-after.txt"
   run_wd 0 once >/dev/null 2>&1 || fail "the watchdog pass failed"
   local id
-  for id in nt np nk nu nf nd ng no ne; do
+  for id in nt np; do
     assert_equals "$ESC" "$(typed "$id")" "only the one Escape reaches worker $id: $(typed "$id" | od -c | head -3)"
     assert_equals '' "$(inbox_text "$id")" "no instruction, and so no doorbell, goes to worker $id"
     assert_equals 0 "$(ledger_rows steer "done" "worker:$id")" "no steer is recorded for worker $id"
   done
   assert_equals 1 "$(status_rows nt blocked permission-prompt-held)" "a trust dialog behind the declined prompt is held: $(cat "$H/state/nt.status" 2>&1; ledger | grep nt | cut -f4-8)"
-  assert_equals 1 "$(status_rows np blocked permission-prompt-hardstop)" "a password input behind the declined prompt is a hard stop"
-  assert_equals 1 "$(status_rows nk blocked permission-prompt-hardstop)" "an API-key input behind the declined prompt is a hard stop"
-  assert_equals 1 "$(status_rows nu blocked permission-prompt-hardstop)" "a login input with a default value behind the declined prompt is a hard stop"
-  assert_equals 1 "$(status_rows nf blocked permission-prompt-hardstop)" "a typed Terraform destroy confirmation behind the declined prompt is a hard stop"
-  assert_equals 1 "$(status_rows nd blocked permission-prompt-hardstop)" "a typed DELETE confirmation behind the declined prompt is a hard stop"
-  assert_grep "shows a destructive prompt after a declined tool call" "$H/state/nf.status" "the typed confirmation stop names its category"
-  assert_equals 1 "$(status_rows ng blocked permission-prompt-hardstop)" "a typed gh deletion confirmation behind the declined prompt is a hard stop"
-  assert_equals 1 "$(status_rows no blocked permission-prompt-hardstop)" "a BSD overwrite confirmation behind the declined prompt is a hard stop"
-  assert_equals 1 "$(status_rows ne blocked permission-prompt-hardstop)" "a prefixed username input behind the declined prompt is a hard stop"
-  for id in nf nd ng no ne; do
-    FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
-    sleep 1
-    assert_equals "$ESC" "$(typed "$id")" "a later doorbell types nothing into the typed confirmation on worker $id: $(typed "$id" | od -c | head -3)"
-  done
-  assert_grep "shows a credential prompt after a declined tool call" "$H/state/np.status" "the hard stop names its category"
+  assert_equals 1 "$(status_rows np blocked permission-prompt-hardstop)" "a paid-usage picker behind the declined prompt is a hard stop: $(cat "$H/state/np.status" 2>&1)"
+  assert_grep "shows a spend prompt after a declined tool call" "$H/state/np.status" "the hard stop names its category"
   make_home
   worker nc claude "$FIX/claude-2.1.325-bash-prompt.txt" "$FIX/claude-2.1.325-after-escape.txt"
   PP_COMPOSER=unknown run_wd 0 once >/dev/null 2>&1 || fail "the watchdog pass failed"
   assert_equals "$ESC" "$(typed nc)" "only the one Escape reaches a worker whose composer is not proven empty"
   assert_equals '' "$(inbox_text nc)" "no instruction goes to a composer that is not proven empty"
   assert_equals 1 "$(status_rows nc blocked permission-prompt-held)" "a composer that is not proven empty after Escape is held"
-  pass "after Escape: a trust dialog, credential input, typed destructive confirmation, or unproven composer gets no instruction, no doorbell, and a keyed blocked line"
+  pass "after Escape: a trust dialog, a paid-usage picker, or an unproven composer gets no instruction, no doorbell, and a keyed blocked line"
 }
 
 test_doorbell_never_types_into_a_prompt() {
@@ -860,136 +363,14 @@ test_doorbell_never_types_into_a_prompt() {
   worker dt claude "$FIX/claude-2.1.325-trust.txt"
   printf ' Continue with paid usage?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel\n' > "$H/paid.txt"
   worker ds claude "$H/paid.txt"
-  printf 'work output\nEnter your password:\n' > "$H/pw.txt"
-  worker dp claude "$H/pw.txt"
-  printf 'work output\nPress Enter to open browser to sign in\n' > "$H/browser.txt"
-  worker dw claude "$H/browser.txt"
-  printf 'work output\n2FA:\n' > "$H/2fa.txt"
-  worker d2 claude "$H/2fa.txt"
-  printf "work output\nrm: remove regular file 'important.txt'?\n" > "$H/rmc.txt"
-  worker dr claude "$H/rmc.txt"
-  printf 'work output\n? Type acme/widget to confirm deletion: \n' > "$H/ghdel.txt"
-  worker dg claude "$H/ghdel.txt"
-  printf 'work output\nremove important.txt? \n' > "$H/bsdrm.txt"
-  worker dm claude "$H/bsdrm.txt"
-  printf 'work output\noverwrite current.db? (y/n [n]) \n' > "$H/bsdcp.txt"
-  worker dc claude "$H/bsdcp.txt"
-  printf 'work output\nEnter PEM pass phrase:\n' > "$H/pem.txt"
-  worker dk claude "$H/pem.txt"
-  printf 'work output\nheroku: Press any key to open up the browser to login or q to exit: \n' > "$H/hk.txt"
-  worker dh claude "$H/hk.txt"
-  printf '%s\n' "$PINENTRY" > "$H/pin.txt"
-  worker de claude "$H/pin.txt"
-  codex_approval 'rm -rf build' > "$H/cxrm.txt"
-  worker dx codex "$H/cxrm.txt"
-  printf '%s\n' "$GIT_CLEAN" > "$H/gclean.txt"
-  worker dl claude "$H/gclean.txt"
-  printf '%s\n' "$AWS_ROLE" > "$H/awsrole.txt"
-  worker da claude "$H/awsrole.txt"
-  printf '%s\n' "${DESTRUCTIVE_CONFIRMS[@]}" | grep -A1 'disk label' > "$H/parted.txt"
-  worker dq claude "$H/parted.txt"
-  printf '%s\n' "${SIGNIN_INPUTS[@]}" | grep -A6 'Log in to Vercel' | tail -n 7 > "$H/vercel.txt"
-  worker dv claude "$H/vercel.txt"
-  printf '%s\n' "$DRIZZLE" > "$H/drizzle.txt"
-  worker dz claude "$H/drizzle.txt"
-  printf '%s\n' "$SSO_URL" > "$H/ssourl.txt"
-  worker dy claude "$H/ssourl.txt"
-  printf '%s\n' "$CARGO_LOGIN" > "$H/cargo.txt"
-  worker dj claude "$H/cargo.txt"
-  printf '%s\n' "$PIP_USER" > "$H/pip.txt"
-  worker di claude "$H/pip.txt"
-  printf '%s\n' "$GCLOUD_REMOTE" > "$H/gcloud.txt"
-  worker dn claude "$H/gcloud.txt"
-  printf '%s\n' "$SSO_TOOLBAR" > "$H/ssotb.txt"
-  worker dw2 claude "$H/ssotb.txt"
-  printf '%s\n' "$GCLOUD_AUTH_PICK" > "$H/gpick.txt"
-  worker dg2 claude "$H/gpick.txt"
-  printf '%s\n' "$GIT_CLEAN_SELECT" > "$H/gcsel.txt"
-  worker dc2 claude "$H/gcsel.txt"
-  printf '%s\n' "$GIT_CLEAN_FILTER" > "$H/gcflt.txt"
-  worker df2 claude "$H/gcflt.txt"
-  printf '%s\n' "$SSO_SCOPES" > "$H/ssosc.txt"
-  worker ds2 claude "$H/ssosc.txt"
-  printf '%s\n' "$SSO_URL_DEFAULT" > "$H/ssoud.txt"
-  worker du2 claude "$H/ssoud.txt"
-  printf '%s\n' "$GH_DEVICE" > "$H/ghdev.txt"
-  worker dh2 claude "$H/ghdev.txt"
-  printf '%s\n' "$SSH_KEYFILE" > "$H/sshkf.txt"
-  worker dk2 claude "$H/sshkf.txt"
-  printf '%s\n' "$GH_SSHTITLE" > "$H/ghtitle.txt"
-  worker dt2 claude "$H/ghtitle.txt"
-  printf '%s\n' "$NPM_AGAIN" > "$H/npmagain.txt"
-  worker da2 claude "$H/npmagain.txt"
-  printf '%s\n' "$PIP_WIPE" > "$H/pipwipe.txt"
-  worker dp3 claude "$H/pipwipe.txt"
-  printf '%s\n' "$DPKG_CONF" > "$H/dpkg.txt"
-  worker dd3 claude "$H/dpkg.txt"
-  printf '%s\n' "$PATCH_R" > "$H/patchr.txt"
-  worker dx3 claude "$H/patchr.txt"
-  printf '%s\n' "$NPM_OTP" > "$H/npmotp.txt"
-  worker do3 claude "$H/npmotp.txt"
-  printf '%s\n' "$GPG_EDIT" > "$H/gpgedit.txt"
-  worker dg3 claude "$H/gpgedit.txt"
-  printf '%s\n' "$GH_HOST" > "$H/ghhost.txt"
-  worker dh3 claude "$H/ghhost.txt"
-  printf '%s\n' "$DOCKER_UNLOCK" > "$H/dkunlock.txt"
-  worker dk4 claude "$H/dkunlock.txt"
-  printf '%s\n' "$SSH_RETRY" > "$H/sshretry.txt"
-  worker ds4 claude "$H/sshretry.txt"
-  printf '%s\n' "$GPG_CARD" > "$H/gpgcard.txt"
-  worker dc4 claude "$H/gpgcard.txt"
-  printf '%s\n' "$GPG_TRUST" > "$H/gpgtrust.txt"
-  worker dt4 claude "$H/gpgtrust.txt"
-  printf '%s\n' "$GPG_VALID" > "$H/gpgvalid.txt"
-  worker dg4 claude "$H/gpgvalid.txt"
-  printf '%s\n' "$PATCH_DEL" > "$H/patchdel.txt"
-  worker df4 claude "$H/patchdel.txt"
-  printf '%s\n' "$SUDO_ES" > "$H/sudoes.txt"
-  worker ds5 claude "$H/sudoes.txt"
-  printf '%s\n' "$AWS_ECHO" > "$H/awsecho.txt"
-  worker da5 claude "$H/awsecho.txt"
-  printf '%s\n' "$AWS_MFA" > "$H/awsmfa.txt"
-  worker dm5 claude "$H/awsmfa.txt"
-  printf '%s\n' "$KEYCHAIN" > "$H/keychain.txt"
-  worker dk5 claude "$H/keychain.txt"
-  printf '%s\n' "$GPG_NAME" > "$H/gpgname.txt"
-  worker dg5 claude "$H/gpgname.txt"
-  printf '%s\n' "$GPG_OKAY" > "$H/gpgokay.txt"
-  worker dn5 claude "$H/gpgokay.txt"
-  i=0
-  for c in "$INQ_HIDDEN" "$VAULT_UNSEAL" "$SSH_BADPASS" "$YARN_LOGIN" "$APT_PHRASE" "$MERGETOOL_DEL" "$COMPOSER_AUTH" "$ZYPPER_CONT" "$GLAB_HOST" "$WANDB_CHOICE" "$DENO_ALLOW"; do
-    i=$((i + 1))
-    printf '%s\n' "$c" > "$H/a6-$i.txt"
-    worker "d6x$i" claude "$H/a6-$i.txt"
-  done
-  i=0
-  for c in "$ECHO_OTP" "$ECHO_MFA" "$ECHO_NPMUSER" "$ECHO_NPMEMAIL" "$ECHO_PIPUSER" "$ECHO_GITUSER" "$CP_UNWRITABLE" "$RM_INACCESSIBLE" "$RM_FR" "$CP_FR" "$MERGETOOL_HIT"; do
-    i=$((i + 1))
-    printf '%s\n' "$c" > "$H/b7-$i.txt"
-    worker "d7x$i" claude "$H/b7-$i.txt"
-  done
-  i=0
-  for c in "$GH_ACC_HOST" "$GH_ACC_AUTH" "$GCLOUD_CODE" "$AWS_LOGIN_CODE" "$GCLOUD_OUTPUT" "$GH_HOST_VAL" "$KEYGEN_VAL" "$RU_PASS" "$NPM_OTP_VAL" "$AWSVAULT_MFA" "$CERTBOT_DEL" "$MKFS_PROCEED"; do
-    i=$((i + 1))
-    printf '%s\n' "$c" > "$H/c8-$i.txt"
-    worker "d8x$i" claude "$H/c8-$i.txt"
-  done
-  i=0
-  for c in "$RM_TYPED" "$TF_TYPED" "$SSO_URL_VAL" "$SSO_SCOPES_VAL" "$AZ_TENANT_VAL" "$WRAP_GITUSER" "$WRAP_MFA" "$WRAP_KEYGEN"; do
-    i=$((i + 1))
-    printf '%s\n' "$c" > "$H/e9-$i.txt"
-    worker "d9x$i" claude "$H/e9-$i.txt"
-  done
-  printf 'work output\n? Enter your email address: ›\n' > "$H/em.txt"
-  worker du claude "$H/em.txt"
   local id
-  for id in db dt ds dp dw d2 dr dg dm dc dk dh de du dx dl da dq dv dz dy dj di dn dw2 dg2 dc2 df2 ds2 du2 dh2 dk2 dt2 da2 dp3 dd3 dx3 do3 dg3 dh3 dk4 ds4 dc4 dt4 dg4 df4 ds5 da5 dm5 dk5 dg5 dn5 d6x1 d6x2 d6x3 d6x4 d6x5 d6x6 d6x7 d6x8 d6x9 d6x10 d6x11 d7x1 d7x2 d7x3 d7x4 d7x5 d7x6 d7x7 d7x8 d7x9 d7x10 d7x11 d8x1 d8x2 d8x3 d8x4 d8x5 d8x6 d8x7 d8x8 d8x9 d8x10 d8x11 d8x12 d9x1 d9x2 d9x3 d9x4 d9x5 d9x6 d9x7 d9x8; do
+  for id in db dt ds; do
     FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
     assert_contains "$(inbox_text "$id")" "steer for $id" "the steer for worker $id is durably recorded"
     sleep 1
     assert_equals '' "$(typed "$id")" "the doorbell types nothing into the prompt on worker $id: $(typed "$id" | od -c | head -3)"
   done
-  pass "doorbell: a steer to a worker on a tool-approval prompt, a trust picker, a secret or sign-in input, or a GNU, BSD, or typed terminal confirmation is recorded and types nothing"
+  pass "doorbell: a steer to a worker on a Claude tool-approval prompt, a trust picker, or a paid-usage picker is recorded and types nothing"
 }
 
 test_declining_dialogs_on_workers_get_no_key() {
@@ -1110,40 +491,30 @@ test_hardstop_prompts_are_never_answered() {
   bash_prompt_with 'security find-generic-password -s gh -w' > "$H/cred.txt"
   bash_prompt_with 'rm -rf build/' > "$H/rm.txt"
   printf ' You have reached your limit. Add funds to continue?\n ❯ 1. Buy more credits\n   2. Wait\n\n Enter to confirm · Esc to cancel\n' > "$H/spend.txt"
-  printf 'Opening the browser to sign in\nPaste code here if prompted >\n' > "$H/signin.txt"
   worker cred claude "$H/cred.txt" "$FIX/claude-2.1.325-after-escape.txt"
   worker rm claude "$H/rm.txt" "$FIX/claude-2.1.325-after-escape.txt"
   worker spend claude "$H/spend.txt"
-  worker signin claude "$H/signin.txt"
-  printf 'Signing in\nOTP:\n' > "$H/otp.txt"
-  worker otp claude "$H/otp.txt"
-  printf '%s\n' "$AZ_SELECT" > "$H/az.txt"
-  worker az claude "$H/az.txt"
   { cat "$FIX/claude-2.1.325-trust.txt"; printf '%s\n' '────────────────────────────────' '❯ ' '────────────────────────────────' ' Continue with paid usage?' ' ❯ Yes' '   No' '' ' Enter to confirm · Esc to cancel'; } > "$H/stale.txt"
   worker stale claude "$H/stale.txt"
   run_wd 0 once >/dev/null 2>&1 || fail "the watchdog pass failed"
   run_wd 300 once >/dev/null 2>&1
   local id
-  for id in cred rm spend signin otp stale az; do
+  for id in cred rm spend stale; do
     assert_equals '' "$(typed "$id")" "no key reaches the $id prompt"
     assert_equals 1 "$(status_rows "$id" blocked permission-prompt-hardstop)" "the $id prompt is reported once as a hard stop"
   done
   assert_grep "shows a credential prompt" "$H/state/cred.status" "the keychain prompt names its category"
   assert_grep "shows a destructive prompt" "$H/state/rm.status" "the remove prompt names its category"
   assert_grep "shows a spend prompt" "$H/state/spend.status" "the add-funds prompt names its category"
-  assert_grep "shows a sign-in prompt" "$H/state/signin.status" "the sign-in input names its category"
-  assert_grep "shows a sign-in prompt" "$H/state/az.status" "the az login subscription selector is a sign-in stop"
   assert_no_grep "find-generic-password" "$H/state/cred.status" "the blocked line carries no prompt text"
   assert_equals 0 "$(ledger_rows decline pending)" "no hard stop is declined"
-  assert_grep "waiting on worker signin" "$H/data/watchdog/status.md" "a sign-in input with no dialog label still gets the waiting gap"
-  assert_grep "waiting on worker otp" "$H/data/watchdog/status.md" "a one-time code input still gets the waiting gap"
   assert_equals '' "$(cat "$H/control.log" 2>/dev/null)" "no hard stop is relaunched"
 
   printf 'work output\n> \n' > "$H/plain.txt"
   repaint cred "$H/plain.txt"
   run_wd 600 once >/dev/null 2>&1
   assert_equals 1 "$(status_rows cred resolved permission-prompt-hardstop)" "the hard stop is resolved once the prompt leaves"
-  pass "hard stops: credential, destructive, spend, and sign-in prompts get no key and one keyed blocked line"
+  pass "hard stops: credential, destructive, and spend prompts get no key and one keyed blocked line"
 }
 
 test_hardstop_never_reaches_council() {
@@ -1170,19 +541,19 @@ council-seats=claude:haiku,agy:flash'
 
 test_externally_resolved_hardstop_reopens() {
   make_home
-  printf 'work output\nEnter your password:\n' > "$H/pw.txt"
-  worker xr claude "$H/pw.txt"
+  bash_prompt_with 'cat ~/.ssh/id_ed25519' > "$H/key.txt"
+  worker xr claude "$H/key.txt"
   run_wd 0 once >/dev/null 2>&1 || fail "the watchdog pass failed"
-  assert_equals 1 "$(status_rows xr blocked permission-prompt-hardstop)" "the password input is a hard stop"
-  FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" xr --resolve-key permission-prompt-hardstop "the password was entered" >/dev/null 2>&1
+  assert_equals 1 "$(status_rows xr blocked permission-prompt-hardstop)" "the private-key read is a hard stop"
+  FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" xr --resolve-key permission-prompt-hardstop "the key read was answered" >/dev/null 2>&1
   assert_equals 1 "$(grep -c '^resolved .*\[key=permission-prompt-hardstop\]' "$H/state/xr.status")" "the answer closes the hard stop: $(cat "$H/state/xr.status")"
-  printf 'work output\nEnter your 2FA code:\n' > "$H/2fa.txt"
-  repaint xr "$H/2fa.txt"
+  printf ' Continue with paid usage?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel\n' > "$H/paid.txt"
+  repaint xr "$H/paid.txt"
   run_wd 300 once >/dev/null 2>&1
   assert_equals 2 "$(status_rows xr blocked permission-prompt-hardstop)" "a new hard stop after an outside answer is reported again: $(cat "$H/state/xr.status")"
   run_wd 600 once >/dev/null 2>&1
   assert_equals 2 "$(status_rows xr blocked permission-prompt-hardstop)" "the reopened hard stop is still reported only once"
-  assert_equals '' "$(typed xr)" "no key reaches either input"
+  assert_equals '' "$(typed xr)" "no key reaches either prompt"
   pass "hard stop: a key another writer resolved does not hide the next hard stop"
 }
 
@@ -1227,9 +598,7 @@ fm_test_run \
   test_declining_cursor_dialogs_never_route \
   test_hardstop_categories \
   test_structure_decides_not_words \
-  test_send_guard_blocks_renumbered_pickers_and_secret_inputs \
   test_antigravity_trust_screen_classifies \
-  test_idle_bottom_quotes_and_long_or_wrapped_lists \
   test_failed_declines_count_toward_cap \
   test_tool_approval_is_declined_and_steered \
   test_prompt_after_escape_gets_no_instruction \

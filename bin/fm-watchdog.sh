@@ -1542,8 +1542,7 @@ wd_page_permission() {
   text=$(fm_wd_dialog_text "$O_PANE")
   # A credential or sign-in stop may already hold a typed value the secret
   # detector cannot recognize, so its text is never recorded.
-  if case "${WD_PP_REASON:-}" in credential|sign-in) true ;; *) false ;; esac \
-    || fm_composer_secret_input "$O_PANE" >/dev/null 2>&1; then
+  if case "${WD_PP_REASON:-}" in credential|sign-in) true ;; *) false ;; esac; then
     text='[withheld: a credential or sign-in prompt]'
   elif fm_secret_like "$text"; then text='[withheld: the dialog text looks like a secret]'; fi
   text=${text:0:300}

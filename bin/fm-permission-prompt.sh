@@ -34,9 +34,10 @@
 #       The prompt names a credential, a sign-in, paid usage, a destructive
 #       command, a merge, tag or release, or another owner-reserved category
 #       (fm_wd_reserved). Never answered. A tool-approval prompt and every
-#       picker, including a usage-limit or model-switch picker, are checked for
-#       every category in their own rows; a screen with no picker is checked
-#       only for a credential or sign-in input on its last row.
+#       picker the watchdog's dialog detector recognizes, including a
+#       usage-limit or model-switch picker, are checked for every category in
+#       their own rows. A screen with no recognized dialog has no verdict:
+#       generic terminal and external-CLI prompts are out of scope here.
 #   hold <external-imports|bypass-confirm|hooks-review>
 #       A dialog whose every answer is a standing decision or whose default
 #       answer exits the worker: Claude's external-imports dialog (Escape
@@ -54,9 +55,6 @@
 #       else the watchdog's own dialog rows.
 #   fm_pp_hardstop_category <text>
 #       Prints the first hard-stop category the text names. Exit 1 when none.
-#   fm_pp_bottom_input <screen>
-#       Prints `credential` or `sign-in` when the last non-blank row is a
-#       password, passphrase, token, API key, or pasted sign-in code input.
 #   fm_pp_hash <screen>
 #       Prints a checksum of the prompt rows, so one prompt gets one action.
 #
@@ -65,10 +63,6 @@
 if ! declare -F fm_wd_pane_dialog >/dev/null 2>&1; then
   # shellcheck source=bin/fm-watchdog-lib.sh
   . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-watchdog-lib.sh"
-fi
-if ! declare -F fm_composer_secret_input >/dev/null 2>&1; then
-  # shellcheck source=bin/fm-composer-lib.sh
-  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-composer-lib.sh"
 fi
 if ! declare -F fm_secret_like >/dev/null 2>&1; then
   # shellcheck source=bin/fm-secret-lib.sh
@@ -170,13 +164,6 @@ fm_pp_hardstop_category() {  # <text>
   return 1
 }
 
-# Only the last non-blank row counts, and only as an input waiting for typed
-# secret text, so conversation that mentions a password is never a prompt. The
-# send guard in bin/fm-composer-lib.sh reads the same detector.
-fm_pp_bottom_input() {  # <screen>
-  fm_composer_secret_input "${1-}"
-}
-
 # A Claude tool-approval prompt, proven by its rows rather than its words.
 _fm_pp_claude_tool_approval() {  # <screen>
   local rows
@@ -247,12 +234,8 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
   local screen=${1-} harness=${2-} dialog=${3-} rows ruled text cat
   [ -n "$screen" ] || return 1
   # A proven trust dialog is read first, because the Antigravity picker has no
-  # footer the watchdog's dialog detector recognizes. An idle agent composer or
-  # shell prompt at the bottom of the screen proves a trust dialog or terminal
-  # prompt above it is quoted output, as the send guard reads it.
-  if fm_composer_idle_bottom "$screen"; then
-    :
-  elif _fm_pp_trust_dialog "$screen"; then
+  # footer the watchdog's dialog detector recognizes.
+  if _fm_pp_trust_dialog "$screen"; then
     case "$harness" in
       claude|agy) printf 'trust\tworkspace\n' ;;
       *) printf 'hold\ttrust-unregistered\n' ;;
@@ -266,30 +249,8 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
   fi
   case "$dialog" in
     permission|question) ;;
-    '')
-      fm_composer_idle_bottom "$screen" && return 1
-      if cat=$(fm_pp_bottom_input "$screen"); then
-        printf 'hardstop\t%s\n' "$cat"; return 0
-      fi
-      # A terminal confirmation is never answered: a hard stop when it or the
-      # few rows above it, which state what it confirms, name one, and
-      # otherwise held.
-      fm_composer_confirm_input "$screen" >/dev/null || return 1
-      rows=$(_fm_wd_tail_rows "$screen" 8)
-      # A select list is read whole, from its heading down, so a long AWS SSO
-      # account list keeps the heading that names its category.
-      if text=$(fm_composer_list_rows "$screen" print); then
-        rows=$(printf '%s\n%s' "$text" "$rows")
-      fi
-      if cat=$(fm_pp_hardstop_category "$rows"); then
-        printf 'hardstop\t%s\n' "$cat"
-      elif fm_wd_lower "$rows" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)|(^|[^a-z])(remov|discard|delet|overwrit|override|replac|destroy|wip(e|ed|ing)([^a-z]|$)|erase|examine files)|\(w\)ipe|^[[:space:]]*(rm|cp|mv|ln|install|rmdir|shred|unlink)[[:space:]]?:[[:space:]]|yes, do as i say|contains an? [a-z0-9]+ file ?system|\+\+\+[[:space:]]+/dev/null|\(y/i/n/o/d/z\)|(^|[[:space:]])assume -r\?|apply anyway\?|data will be lost|data loss|cannot be (undone|reverted)|drop[[:space:]]+((the|this|your)[[:space:]]+)?(table|database|schema|db)([^a-z]|$)|reset[[:space:]]+(your|the)([[:space:]]+[a-z]+)?[[:space:]]+(database|schema|db)'; then
-        printf 'hardstop\tdestructive\n'
-      else
-        printf 'hold\tconfirm\n'
-      fi
-      return 0
-      ;;
+    # A screen with no recognized dialog has no verdict.
+    '') return 1 ;;
     usage-limit|model-switch)
       # Another handler owns these pickers, but a spend, sign-in, or other
       # hard-stop answer on one is still reported and never answered here.

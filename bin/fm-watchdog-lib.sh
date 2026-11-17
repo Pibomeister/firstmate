@@ -392,19 +392,22 @@ fm_wd_feedback_dialog_key() {  # <screen> [<harness>]
   printf '%s\n' "${spec#*$'\t'}"
 }
 
-if ! declare -F fm_composer_picker_rows >/dev/null 2>&1; then
-  # shellcheck source=/dev/null # Analyzed separately as a canonical lint root.
-  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-composer-lib.sh"
-fi
-
 fm_wd_pane_dialog() {  # <screen> [<harness>]
+  local tail
   [ -n "${1-}" ] || return 1
   if fm_wd_feedback_dialog_dismiss "$1" "${2-}" >/dev/null; then
     printf 'feedback\n'
     return 0
   fi
-  # A picker, by the one structure the submit guard also reads.
-  printf '%s\n' "$1" | fm_wd_strip_ansi | fm_composer_picker_rows || return 1
+  tail=$(_fm_wd_tail_rows "$1" 14)
+  # A picker: its last non-blank row is the recorded footer and a selected
+  # row sits above it. Claude Code 2.1.316's folder-trust picker has no
+  # numbers, so a cursor glyph before any text counts; a bare `>` needs a number.
+  printf '%s\n' "$tail" | awk '
+    /(❯|›)[ \t]*[^ \t]/ || />[ \t]*[0-9]+[.)][ \t]/ { selected = 1 }
+    NF { last = $0 }
+    END { exit !(selected && last ~ /(Enter to (confirm|select|submit|continue)|Esc to (cancel|exit|go back)|↑\/↓ to (navigate|select)|Tab:next answer)/) }
+  ' || return 1
   if _fm_wd_dialog_rows "$1" all | LC_ALL=C grep -Eiq "do you want to (proceed|make this edit|create|allow|run|overwrite|delete)|allow (this|once|always)|yes, and don.t ask again|background work is running|trust (this|the files)"; then
     printf 'permission\n'
   elif _fm_wd_dialog_rows "$1" own | LC_ALL=C grep -Eiq "$FM_WD_USAGE_LIMIT_RE"; then

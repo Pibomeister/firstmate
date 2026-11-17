@@ -2198,10 +2198,9 @@ test_dialog_heading_and_footer_must_be_the_recorded_lines() {
     'The fixture mentions Background work is running in a sentence' \
     '❯ 1. Exit and stop tasks' \
     'Enter to confirm · Esc to cancel')
-  # A live-looking selected row over a whole recorded footer still blocks as
-  # an option picker; it must only not read as the exit picker.
-  out=$(fm_composer_blocking_dialog "$screen")
-  [ "$out" = 'option picker' ] || fail "a heading buried in a sentence must not match the exit picker, got '$out'"
+  out=$(fm_composer_blocking_dialog "$screen"); rc=$?
+  [ "$rc" -eq 1 ] || fail "a heading buried in a sentence must not match"
+  [ -z "$out" ] || fail "a miss must print nothing, got '$out'"
   screen=$(printf '%s\n' \
     'Background work is running' \
     '❯ 1. Exit and stop tasks' \
@@ -2246,8 +2245,8 @@ test_quoted_exit_picker_text_is_not_a_dialog() {
   out=$(fm_composer_blocking_dialog "$(printf '%s\n' \
     '❯ 1. Exit and stop tasks' \
     'Background work is running' \
-    'Enter to confirm · Esc to cancel')")
-  [ "$out" = 'option picker' ] || fail "a selected row above the heading must not match the exit picker, got '$out'"
+    'Enter to confirm · Esc to cancel')"); rc=$?
+  [ "$rc" -eq 1 ] || fail "a selected row above the heading must not match"
   FM_TEST_PICKER_SCREEN=$screen
   FM_TEST_PICKER_ENTERS=$(mktemp)
   : > "$FM_TEST_PICKER_ENTERS"
