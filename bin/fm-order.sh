@@ -23,6 +23,7 @@
 #   fm-order.sh holds [--relay]
 #   fm-order.sh handoff --doc <file>
 #   fm-order.sh gate
+#   fm-order.sh covers --doc <file>
 #   fm-order.sh handing-off
 #   fm-order.sh claim-handle
 #   fm-order.sh sweep
@@ -106,7 +107,11 @@
 # only when this session recorded a handoff. `gate` reads this session's
 # recorded document and exits 0 only when it names every open order id;
 # otherwise it exits 3 naming the missing ids, including when this session
-# recorded no handoff or the document is gone.
+# recorded no handoff or the document is gone. `covers --doc <file>` applies
+# the same test to the named document instead of the recorded one: it exits 0
+# when the document names every open order id, 3 naming the missing ids, and 1
+# when the document or an order directory cannot be read, so coverage is never
+# assumed. bin/fm-handoff-launch.sh runs it before launching a successor.
 # `claim-handle` clears the record whenever the lock owner opens a new context
 # (startup, resume, clear, or compact), so a document written before it never
 # satisfies a later context's gate. Enforcement:
@@ -149,7 +154,7 @@
 # `sweep: another sweep is running` and exits 0, so two runners never exceed
 # the cap or escalate twice.
 #
-# Exit status: 0 success; 1 failure; 2 invalid use; 3 `gate` blocked, a
+# Exit status: 0 success; 1 failure; 2 invalid use; 3 `gate` or `covers` blocked, a
 # send/resend that saved the order but could not append its wake, or a
 # `verify` whose order is still pending (not yet acknowledged).
 #
@@ -830,20 +835,27 @@ cmd_handoff() {
   printf 'handoff: wrote %s open order(s) into %s\n' "$n" "$doc"
 }
 
-cmd_gate() {
-  local doc lines id state missing='' n=0
-  [ "$#" -eq 0 ] || usage_die "usage: fm-order.sh gate"
-  doc=$(recorded_handoff_doc)
+# Print each open order id that <doc> does not name, one per line; an empty or
+# missing <doc> names none.
+orders_missing_from() {  # <doc>
+  local doc=$1 lines id state
   lines=$(open_orders)
   while read -r id state; do
     [ -n "$id" ] || continue
-    n=$((n + 1))
     if [ -z "$doc" ] || [ ! -f "$doc" ] || ! grep -qF -- "$id" "$doc"; then
-      missing="$missing $id"
+      printf '%s\n' "$id"
     fi
   done <<EOF
 $lines
 EOF
+}
+
+cmd_gate() {
+  local doc missing n
+  [ "$#" -eq 0 ] || usage_die "usage: fm-order.sh gate"
+  doc=$(recorded_handoff_doc)
+  missing=$(orders_missing_from "$doc" | awk 'NF { printf " %s", $0 }')
+  n=$(open_orders | awk 'NF { n++ } END { print n + 0 }')
   if [ -n "$missing" ]; then
     if [ -z "$doc" ]; then
       printf 'gate: blocked - this session wrote no handoff, so none lists the open order(s):%s\n' "$missing"
@@ -856,6 +868,24 @@ EOF
     return 3
   fi
   printf 'gate: clear (%s open order(s), all in the handoff)\n' "$n"
+}
+
+cmd_covers() {
+  local doc d missing n
+  [ "$#" -eq 2 ] && [ "$1" = --doc ] && [ -n "$2" ] || usage_die "usage: fm-order.sh covers --doc <file>"
+  doc=$2
+  [ -f "$doc" ] && [ -r "$doc" ] || die "cannot read handoff $doc"
+  for d in "$ORDERS" "$ORDERS/pending" "$ORDERS/acked"; do
+    [ ! -d "$d" ] || { [ -r "$d" ] && [ -x "$d" ]; } || die "cannot read $d"
+  done
+  missing=$(orders_missing_from "$doc" | awk 'NF { printf " %s", $0 }')
+  n=$(open_orders | awk 'NF { n++ } END { print n + 0 }')
+  if [ -n "$missing" ]; then
+    printf 'covers: blocked - the handoff %s does not list open order(s):%s\n' "$doc" "$missing"
+    printf '  Run bin/fm-order.sh handoff --doc %s so the handoff names every open order.\n' "$doc"
+    return 3
+  fi
+  printf 'covers: clear (%s open order(s), all in %s)\n' "$n" "$doc"
 }
 
 # ---------------------------------------------------------------- leash
@@ -931,6 +961,7 @@ case "${1:-}" in
   holds) shift; cmd_holds "$@" ;;
   handoff) shift; cmd_handoff "$@" ;;
   gate) shift; cmd_gate "$@" ;;
+  covers) shift; cmd_covers "$@" ;;
   handing-off) shift; cmd_handing_off "$@" ;;
   claim-handle) shift; cmd_claim_handle ;;
   sweep) shift; cmd_sweep ;;

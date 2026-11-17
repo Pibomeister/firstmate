@@ -167,6 +167,40 @@ test_handoff_trigger_publishes_the_compact_point() {
   pass "the handoff trigger publishes the compact point and the cycle's reset, named for its session"
 }
 
+# A handoff reset published at or before a failed fresh-start launch that
+# left the session holding the lock reads as compaction, so the watchdog
+# never restarts the survivor; a newer cycle, another lock holder, or an
+# unreadable record leaves the handoff reset as published.
+test_a_failed_launch_reads_as_compaction() {
+  local home="$TMP_ROOT/launch-failed" holder dead
+  mkdir -p "$home/state"
+  sleep 60 &
+  holder=$!
+  printf '%s\n' "$holder" > "$home/state/.lock"
+  printf 'session=s-lf compact_at=100000 at=%s reset=handoff\n' "$BASE" > "$home/state/compact-point"
+  assert_equals handoff "$(lib fm_context_reset_for_session "$home" s-lf)" "with no failure record the handoff reset stands"
+  printf 'at=%s pid=%s nonce=none attempt=1 reason=error\n' "$BASE" "$holder" > "$home/state/.handoff-launch-failed"
+  assert_equals compaction "$(lib fm_context_reset_for_session "$home" s-lf)" "a failed launch that left the lock in place reads as compaction"
+  printf 'at=%s pid=%s nonce=none attempt=1 reason=error\n' "$BASE" "$((holder + 1))" > "$home/state/.handoff-launch-failed"
+  assert_equals handoff "$(lib fm_context_reset_for_session "$home" s-lf)" "a failure naming another lock holder leaves the handoff reset"
+  sleep 0 &
+  dead=$!
+  wait "$dead" 2>/dev/null || true
+  printf '%s\n' "$dead" > "$home/state/.lock"
+  printf 'at=%s pid=%s nonce=none attempt=1 reason=error\n' "$BASE" "$dead" > "$home/state/.handoff-launch-failed"
+  assert_equals handoff "$(lib fm_context_reset_for_session "$home" s-lf)" "a failure naming a dead lock holder leaves the handoff reset"
+  printf '%s\n' "$holder" > "$home/state/.lock"
+  printf 'garbage\n' > "$home/state/.handoff-launch-failed"
+  assert_equals handoff "$(lib fm_context_reset_for_session "$home" s-lf)" "a malformed failure record leaves the handoff reset"
+  printf 'at=%s pid=%s nonce=none attempt=1 reason=error\n' "$BASE" "$holder" > "$home/state/.handoff-launch-failed"
+  printf 'session=s-lf compact_at=100000 at=%s reset=handoff\n' "$((BASE + 1))" > "$home/state/compact-point"
+  assert_equals handoff "$(lib fm_context_reset_for_session "$home" s-lf)" "a handoff reset published after the failure stands"
+  printf 'session=s-lf compact_at=100000 at=%s reset=compaction\n' "$((BASE + 1))" > "$home/state/compact-point"
+  assert_equals compaction "$(lib fm_context_reset_for_session "$home" s-lf)" "a compaction reset is unchanged by a failure record"
+  kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null || true
+  pass "the reader treats a handoff reset that a failed launch overtook as auto-compaction"
+}
+
 # --- the watchdog restart decision ------------------------------------------------
 
 FAKEBIN=$(fm_fakebin "$TMP_ROOT")
@@ -271,6 +305,16 @@ test_watchdog_leaves_a_compaction_cycle_to_auto_compaction() {
   run_wd
   assert_contains "$(handoff_rows)" "footer=30 derived=7 owner=derived" "low context in a handoff cycle still asks for the handoff"
 
+  # A planned fresh start whose launch failed left this session supervising:
+  # the cycle falls back to auto-compaction and the watchdog restarts nobody.
+  wd_home $'Captain session\n> \n  30% until auto-compact' 93000
+  printf 'session=%s compact_at=100000 at=%s reset=handoff\n' "$SID" "$BASE" > "$H/state/compact-point"
+  printf 'at=%s pid=%s nonce=none attempt=2 reason=deadline\n' "$BASE" "$LOCKPID" > "$H/state/.handoff-launch-failed"
+  run_wd
+  assert_equals "" "$(handoff_rows)" "low context after a failed fresh-start launch asks for no handoff"
+  grep -q 'restart-requested' "$H/state/watchdog/actions.tsv" 2>/dev/null \
+    && fail "a failed fresh-start launch must not start the restart path: $(cat "$H/state/watchdog/actions.tsv")"
+
   wd_home $'Captain session\n> \n  30% until auto-compact' 93000
   printf 'session=another-session compact_at=100000 at=%s reset=compaction\n' "$BASE" > "$H/state/compact-point"
   printf 'compact-at-tokens=100000\n' > "$H/config/handoff-trigger"
@@ -285,5 +329,6 @@ fm_test_run \
   test_derived_percent_is_left_of_the_window \
   test_reading_names_the_owner_and_both_values \
   test_handoff_trigger_publishes_the_compact_point \
+  test_a_failed_launch_reads_as_compaction \
   test_watchdog_restart_follows_the_owning_reading \
   test_watchdog_leaves_a_compaction_cycle_to_auto_compaction

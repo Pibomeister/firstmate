@@ -31,6 +31,20 @@
 # handoff_ack reason=lock_transferred is a verified transfer from a live
 # predecessor; reason=stale_takeover means the predecessor was proven dead and
 # the successor took the lock through the ordinary stale-owner path.
+#
+# Launch failure: state/.handoff-launch-failed is one line,
+#   at=<epoch> pid=<predecessor-pid> nonce=<hex-or-none> attempt=<0|1|2> reason=<safe-token>
+# rewritten by the launcher with every handoff_failed it emits, including
+# reason=unresolved, and removed when a later launch starts its attempts.
+# While the record names the current, live lock pid, the predecessor survived the
+# failed launch and keeps supervising this home. A planned fresh start whose
+# trigger marker is no newer than the record (fm_handoff_launch_failed_since)
+# is then no longer handing off: bin/fm-handoff-trigger.sh releases its Stop
+# gate for that cycle, and the cycle's published reset reads compaction, so
+# auto-compaction stays the session's reset and a watchdog never restarts the
+# surviving session for a handoff that will not come. A record that names any
+# other pid, such as after an unresolved failure the transfer later committed,
+# releases nothing.
 
 # shellcheck source=bin/fm-supervisor-target-lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fm-supervisor-target-lib.sh"
@@ -53,6 +67,36 @@ fm_handoff_event() { # <event> <nonce> <attempt> <pid> <handle> <reason>
   line="HANDOFF v1 ts=$(date +%s) event=$1 nonce=$nonce attempt=$3 pid=$pid handle=$handle reason=$6"
   printf '%s\n' "$line" >> "$STATE/handoff-events.log"
   printf '%s\n' "$line"
+}
+
+fm_handoff_record_launch_failed() { # <pid> <nonce> <attempt> <reason>
+  local pid=$1 nonce=$2 attempt=$3 reason=$4 tmp
+  case "$pid" in ''|*[!0-9]*) pid=0 ;; esac
+  case "$nonce" in ''|*[!a-f0-9]*) nonce=none ;; esac
+  case "$attempt" in [0-2]) ;; *) attempt=0 ;; esac
+  case "$reason" in ''|*[!A-Za-z0-9_.:-]*) reason=error ;; esac
+  tmp=$(mktemp "$STATE/.handoff-launch-failed.XXXXXX") || return 1
+  if printf 'at=%s pid=%s nonce=%s attempt=%s reason=%s\n' "$(date +%s)" "$pid" "$nonce" "$attempt" "$reason" > "$tmp" \
+    && mv -f "$tmp" "$STATE/.handoff-launch-failed"; then
+    return 0
+  fi
+  rm -f "$tmp"
+  return 1
+}
+
+# True when <state-dir> records a failed launch at or after <epoch> whose
+# predecessor still holds the lock and is alive. Reads only that record and
+# the lock file.
+fm_handoff_launch_failed_since() { # <state-dir> <epoch>
+  local record="$1/.handoff-launch-failed" since=$2 line
+  local shape='^at=([0-9]+) pid=([0-9]+) nonce=(none|[a-f0-9]+) attempt=[0-2] reason=[A-Za-z0-9_.:-]+$'
+  case "$since" in ''|*[!0-9]*) return 1 ;; esac
+  [ -f "$record" ] && [ ! -L "$record" ] || return 1
+  IFS= read -r line < "$record" || [ -n "$line" ] || return 1
+  [[ $line =~ $shape ]] || return 1
+  [ "${BASH_REMATCH[2]}" != 0 ] && [ "${BASH_REMATCH[2]}" = "$(cat "$1/.lock" 2>/dev/null)" ] || return 1
+  [ "${BASH_REMATCH[1]}" -ge "$since" ] || return 1
+  kill -0 "${BASH_REMATCH[2]}" 2>/dev/null
 }
 
 fm_handoff_hash() {

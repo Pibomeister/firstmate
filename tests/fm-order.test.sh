@@ -534,6 +534,64 @@ test_legacy_inbox_note_still_works() {
   pass "(f) a legacy inbox note works unchanged beside durable orders"
 }
 
+# covers checks a named document, the one the fresh-start launcher hashes,
+# rather than this session's recorded handoff, and writes nothing.
+test_covers_checks_the_named_handoff_document() {
+  local home rc=0 first second out doc
+  home=$(make_home covers)
+  doc="$home/data/handoff-launch.md"
+  printf '# Handoff\n' >"$doc"
+  out=$(run_order "$home" covers --doc "$doc") || fail "with no open orders any readable handoff is covered"
+  assert_contains "$out" "covers: clear (0 open order(s)" "covers reports a clear verdict with no orders"
+  run_order "$home" send "first" >/dev/null
+  first=$(only_id "$home" pending)
+  run_order "$home" send "second" >/dev/null
+  second=$(find "$home/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//' | grep -v "$first")
+  run_order "$home" ack "$second" >/dev/null
+  out=$(run_order "$home" covers --doc "$doc") || rc=$?
+  assert_equals 3 "$rc" "a handoff that omits open orders is blocked"
+  assert_contains "$out" "$first" "covers names the missing pending order"
+  assert_contains "$out" "$second" "covers names the missing acked order"
+  assert_contains "$out" "bin/fm-order.sh handoff --doc $doc" "covers names the command that repairs the handoff"
+  printf 'lists %s only\n' "$first" >>"$doc"
+  rc=0
+  out=$(run_order "$home" covers --doc "$doc") || rc=$?
+  assert_equals 3 "$rc" "a handoff that lists only some open orders is blocked"
+  assert_contains "$out" "$second" "covers names the order still missing"
+  assert_not_contains "$out" "$first" "covers does not name the order the handoff lists"
+  # Another document that lists every order, even this session's recorded
+  # handoff, never covers the named document.
+  run_order "$home" handoff --doc "$home/data/other.md" >/dev/null
+  rc=0
+  run_order "$home" covers --doc "$doc" >/dev/null || rc=$?
+  assert_equals 3 "$rc" "the recorded handoff does not stand in for the named document"
+  rm -f "$home/state/.order-handoff"
+  printf 'and %s\n' "$second" >>"$doc"
+  out=$(run_order "$home" covers --doc "$doc") || fail "a handoff that lists every open order is covered"
+  assert_contains "$out" "covers: clear (2 open order(s)" "covers counts every open order"
+  [ ! -e "$home/state/.order-handoff" ] || fail "covers must not record a handoff"
+  run_order "$home" finish "$second" "done" finished >/dev/null
+  run_order "$home" covers --doc "$doc" >/dev/null || fail "a finished order no longer needs listing"
+
+  rc=0
+  run_order "$home" covers --doc "$home/data/absent.md" >/dev/null 2>&1 || rc=$?
+  assert_equals 1 "$rc" "an unreadable handoff cannot be verified"
+  if [ "$(id -u)" != 0 ]; then
+    chmod 000 "$home/data/orders/pending"
+    rc=0
+    run_order "$home" covers --doc "$doc" >/dev/null 2>&1 || rc=$?
+    chmod 755 "$home/data/orders/pending"
+    assert_equals 1 "$rc" "an unreadable order store cannot be verified"
+  fi
+  for args in "" "--doc" "$doc" "--doc $doc extra"; do
+    rc=0
+    # shellcheck disable=SC2086 # Each case is a word list.
+    run_order "$home" covers $args >/dev/null 2>&1 || rc=$?
+    assert_equals 2 "$rc" "covers $args is invalid use"
+  done
+  pass "covers verifies that a named handoff lists every open order and writes nothing"
+}
+
 test_invalid_use() {
   local home rc=0
   home=$(make_home invalid)
@@ -553,6 +611,7 @@ test_two_stage_ack_separates_receipt_from_completion
 test_handle_is_resolved_at_send_time
 test_doorbell_defers_over_an_unproven_composer
 test_restart_gate_requires_every_open_order_in_the_handoff
+test_covers_checks_the_named_handoff_document
 test_one_sweep_runs_at_a_time
 test_hold_overrides_older_orders_and_travels_with_relays
 test_holds_read_fails_when_the_store_is_unreadable

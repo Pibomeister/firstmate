@@ -502,11 +502,15 @@ Orca uses `orca agent launch` with a prompt argument; tmux executes direct argv.
 A tmux pane does not inherit the session's environment, so a tmux successor launched without an account choice is given the session's own `CLAUDE_CONFIG_DIR` or `CODEX_HOME`.
 Orca owns the agent's permission posture; an explicit `auto` home setting currently refuses rather than substituting a shell launch.
 The successor may run on Codex, on agy, or on another signed-in `config/claude-accounts` entry, without changing any account pin, sign-in, or spend setting; the launcher's `--help` owns the options and their backend limits.
+Before anything else, the launcher checks with `bin/fm-order.sh covers --doc` that the handoff it is given lists every open captain order.
+When an order is missing or the check cannot read the document or the order store, the launcher exits 4 before any claim, record, event, or launch, and the session keeps the lock and its Stop gate.
+The session then rewrites the handoff with `bin/fm-ledger.sh handoff` or `bin/fm-order.sh handoff --doc` and launches again.
 Before any claim, the launcher reads the successor's own quota: an exhausted pool refuses before anything launches and the predecessor keeps the lock, while an unmeasured pool is disclosed and does not block.
 The successor reads the handoff and acknowledges it before running session start.
 The predecessor remains alive until the acknowledgement is validated and the lock transfers under the existing claim and task-lease locks.
 The predecessor then ends its turn and retires; it must not continue fleet mutations after the transfer.
 Two fresh terminal attempts share one ten-minute budget; the launcher emits a parseable failure if neither completes.
+Every such failure also writes `state/.handoff-launch-failed`, which names the predecessor that still holds the lock, and a later launch removes it when it starts its attempts.
 A missing or invalid acknowledgement cannot move the predecessor's live lock.
 On Orca, failed panes remain available for diagnosis; on every backend, a failed attempt's expired claim cannot take ownership.
 `bin/fm-captain-locate.sh` reports the verified lock holder and its terminal handle for supervisor discovery; its header owns the output format.
@@ -547,6 +551,9 @@ It never writes the handoff, compacts, or restarts the session.
 
 The same hook enforces the captain-order restart gate at each Stop of a session that is handing off: the trigger fired a fresh start in this context cycle, or the session ran `bin/fm-order.sh handoff --doc` (stow, a restart, a deliberate handoff, or `percent-left=0`); a capture firing is not a handoff.
 It blocks such a stop once per turn while the recorded handoff document omits an open captain order, and it never gates an ordinary stop.
+A fresh start whose launch failed while the session kept the lock releases the whole gate for that cycle, captain orders included, because no successor is coming and the session goes on supervising.
+The cycle's published reset then reads auto-compaction rather than a fresh start, so a watchdog with `restart=on` never restarts or wedges the surviving session; auto-compaction stays its reset until the next cycle fires again.
+A failure record older than the firing, or one that names another lock holder, releases nothing.
 A primary session with a fresh-start firing in this context cycle is also blocked once per turn until `state/.handoff-successor` is newer than the firing and records a successor whose acknowledgement, process instance, and lock ownership `bin/fm-handoff-lib.sh` validates, so that handoff turn cannot end on ready to restart without a verified transfer; a live pid alone does not clear it; a second mate's stop is not gated this way, because its parent owns the relaunch.
 The handoff record belongs to the session that wrote it, so another session's stop in the same home is never gated by it.
 A caller outside any harness session, such as a restarting leash or sender, reads the record as the captain's, so its `bin/fm-order.sh gate` check clears when the captain's handoff lists every open order.

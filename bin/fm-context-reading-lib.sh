@@ -24,7 +24,11 @@
 # ends: reset=compaction (auto-compaction is the routine reset) or
 # reset=handoff (a planned fresh start). fm_context_reset_for_session prints
 # that word only for a record naming the session; a record without it, from an
-# older trigger, or no matching record prints nothing.
+# older trigger, or no matching record prints nothing. A handoff record
+# published no later than a failed successor launch that left the session
+# holding the lock (bin/fm-handoff-lib.sh, fm_handoff_launch_failed_since)
+# prints compaction, because the surviving session now auto-compacts; the
+# trigger's next run publishes compaction itself.
 #
 # THE OWNER. derived when a derived reading exists, footer when only the footer
 # exists, none otherwise. A caller decides on the owner's value; owner none
@@ -77,11 +81,18 @@ fm_context_window_for_session() {  # <home> <session-id>
 }
 
 fm_context_reset_for_session() {  # <home> <session-id>
-  local home=$1 session=$2 line
+  local home=$1 session=$2 line reset at
   [ -n "$session" ] && [ -f "$home/state/compact-point" ] || return 0
   IFS= read -r line < "$home/state/compact-point" || [ -n "$line" ] || return 0
   case "$line" in "session=$session "*) ;; *) return 0 ;; esac
-  printf '%s\n' "$line" | sed -En 's/^session=[^ ]* compact_at=[1-9][0-9]* at=[0-9]* reset=(compaction|handoff)$/\1/p'
+  reset=$(printf '%s\n' "$line" | sed -En 's/^session=[^ ]* compact_at=[1-9][0-9]* at=[0-9]* reset=(compaction|handoff)$/\1/p')
+  if [ "$reset" = handoff ] && [ -e "$home/state/.handoff-launch-failed" ]; then
+    at=$(printf '%s\n' "$line" | sed -En 's/^session=[^ ]* compact_at=[1-9][0-9]* at=([0-9]+) reset=handoff$/\1/p')
+    # shellcheck source=bin/fm-handoff-lib.sh
+    . "$(dirname "${BASH_SOURCE[0]}")/fm-handoff-lib.sh"
+    ! fm_handoff_launch_failed_since "$home/state" "$at" || reset=compaction
+  fi
+  [ -z "$reset" ] || printf '%s\n' "$reset"
 }
 
 fm_context_derived_percent() {  # <transcript> <window-tokens>

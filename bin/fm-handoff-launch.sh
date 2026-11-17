@@ -12,6 +12,11 @@
 #                               already be signed in (claude auth status); no
 #                               sign-in is opened.
 #   --reason <token>            why this runtime was chosen (default: handoff)
+# First, `bin/fm-order.sh covers --doc <handoff-file>` must find every open
+# captain order named in the document. A handoff that omits one, or coverage
+# that cannot be read, is refused with exit 4 and a diagnostic before any
+# preflight, claim, or record, so no order is dropped across the session
+# boundary and this session keeps the lock and its gate unchanged.
 # Before any claim, a quota preflight (bin/fm-supervisor-failover-lib.sh)
 # reads the successor's own quota. A successor whose pool is exhausted_now or
 # at 0% is refused with exit 3 before anything launches; an unmeasured pool is
@@ -44,6 +49,9 @@
 # still busy then, a successor transaction may yet commit, so the exit emits
 # handoff_failed reason=unresolved: not final, settled by a later handoff_ack
 # reason=lock_transferred for the same nonce.
+# Each handoff_failed also rewrites state/.handoff-launch-failed, and a launch
+# that starts its attempts removes it; bin/fm-handoff-lib.sh owns the record and
+# how it releases a planned fresh start's Stop gate for the surviving session.
 # Outputs only the versioned events owned by fm-handoff-lib.sh. Other errors
 # go to stderr. state/.handoff-successor is written only after lock verification.
 # Test-only: FM_TEST_SEAM=1 enables FM_HANDOFF_TEST_HARNESS and
@@ -108,6 +116,18 @@ fm_root_is_secondmate_home "$FM_HOME" && die 'a second mate asks its parent to r
 # shellcheck source=bin/fm-supervisor-failover-lib.sh
 . "$SCRIPT_DIR/fm-supervisor-failover-lib.sh"
 fm_session_lock_owned_by_self "$STATE" || die 'only the current session lock owner can launch its successor'
+# Open-order coverage: a handoff that omits an open captain order would drop it
+# across the session boundary, so refuse before any preflight, claim, or record.
+cover_rc=0
+COVER_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" covers --doc "$HANDOFF" 2>&1) || cover_rc=$?
+if [ "$cover_rc" -ne 0 ]; then
+  if [ "$cover_rc" -eq 3 ]; then
+    printf 'error: the handoff does not list every open captain order, so no successor is launched and this session keeps the lock; rewrite it with bin/fm-ledger.sh handoff or bin/fm-order.sh handoff --doc, then launch again: %s\n' "$(printf '%s' "$COVER_OUT" | tr '\n' ' ')" >&2
+  else
+    printf 'error: cannot verify that the handoff lists every open captain order, so no successor is launched and this session keeps the lock: %s\n' "$(printf '%s' "$COVER_OUT" | tr '\n' ' ')" >&2
+  fi
+  exit 4
+fi
 PRED_PID=$(cat "$STATE/.lock")
 case "$PRED_PID" in ''|*[!0-9]*) die 'verified successor launch currently requires a POSIX process anchor' ;; esac
 PRED_START=$(fm_session_process_start "$PRED_PID") || die 'cannot identify predecessor instance'
@@ -253,6 +273,8 @@ cleanup() {
   if [ "$HANDOFF_COMPLETE" -eq 0 ] \
     && { [ "$HANDOFF_STARTED" -eq 1 ] || [ "$HANDOFF_FAIL_REQUESTED" -eq 1 ]; }; then
     fm_handoff_event handoff_failed "$NONCE" "$attempt" "$PRED_PID" none "$HANDOFF_FAILURE_REASON" >&9
+    fm_handoff_record_launch_failed "$PRED_PID" "$NONCE" "$attempt" "$HANDOFF_FAILURE_REASON" \
+      || printf 'error: cannot record the failed launch in state/.handoff-launch-failed\n' >&2
   fi
   if [ "$CLAIM_HELD" = 1 ] && [ -n "$NONCE" ] \
     && [ "$(jq -r '.nonce // ""' "$STATE/.handoff-pending" 2>/dev/null)" = "$NONCE" ]; then
@@ -265,7 +287,7 @@ cleanup() {
 }
 trap cleanup EXIT
 trap 'HANDOFF_FAILURE_REASON=interrupted; exit 1' HUP INT TERM
-rm -f "$STATE/.handoff-successor"
+rm -f "$STATE/.handoff-successor" "$STATE/.handoff-launch-failed"
 DEADLINE=$(( $(date +%s) + TIMEOUT ))
 MONO_DEADLINE=$((SECONDS + TIMEOUT))
 

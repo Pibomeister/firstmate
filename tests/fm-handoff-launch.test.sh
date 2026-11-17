@@ -294,14 +294,19 @@ run_case() {
   # interrupt-after-ack and precommit also end at a real ack, so they need
   # the success budget's claim deadline rather than the 40 s failure claim.
   case "$mode" in interrupt-after-ack|precommit) budget=$LAB_SUCCESS_BUDGET ;; esac
-  if [ "$mode" = success ]; then
-    budget=$LAB_SUCCESS_BUDGET
+  [ "$mode" != uncovered-order ] || FM_HOME="$LAB" bash "$ROOT/bin/fm-order.sh" send --from test 'order the handoff omits' >/dev/null
+  # `arm` fires the real hook's planned fresh start first, so a failing mode
+  # exercises the gate that firing sets.
+  if [ "$mode" = success ] || [ "${3:-}" = arm ]; then
+    [ "$mode" != success ] || budget=$LAB_SUCCESS_BUDGET
     printf 'compact-at-tokens=100000\nfresh-start-after=0\n' > "$LAB/config/handoff-trigger"
     printf '{"type":"assistant","message":{"model":"claude-test-model","usage":{"input_tokens":90000,"output_tokens":1}}}\n' > "$LAB/transcript"
     hook_output=$(run_hook_fixture PostToolUse)
     printf '%s' "$hook_output" | jq -e '.hookSpecificOutput.additionalContext | contains("handoff")' >/dev/null \
       || fail 'the real hook must arm the lab handoff gate'
     [ -e "$LAB/state/.handoff-trigger.lab-predecessor.0" ] || fail 'the lab handoff gate marker must exist'
+    # A failure record from an earlier launch must not survive a new launch.
+    [ "$mode" != success ] || printf 'at=1 pid=1 nonce=none attempt=0 reason=error\n' > "$LAB/state/.handoff-launch-failed"
   fi
   # Detach the predecessor so its death is not hidden behind an unreaped zombie.
   (FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS="$budget" FM_HANDOFF_LAB_MODE="$mode" claude "$LAB/predecessor.sh" &
@@ -393,6 +398,47 @@ for mode in interrupt error-exit; do
   cat "$LAB/state/handoff-events.log"
   pass "DRILL $mode: one failure on stdout and log, predecessor lock retained"
 done
+
+# The handoff must list every open captain order before anything launches:
+# an omitted order refuses with exit 4 and leaves every successor record,
+# the claim, the preflight log, and the lock exactly as they were.
+rm -rf "$LAB/data/orders" "$LAB/state/supervisor-failover.log"
+run_case uncovered-order
+[ "$(cat "$LAB/rc")" = 4 ] || fail "an uncovered open order must refuse with exit 4: $(cat "$LAB/launch.out")"
+order_id=$(find "$LAB/data/orders/pending" -name '*.order' | sed 's#.*/##; s/\.order$//')
+assert_contains "$(cat "$LAB/launch.out")" "$order_id" 'the refusal names the missing order'
+assert_contains "$(cat "$LAB/launch.out")" 'this session keeps the lock' 'the refusal says the session keeps supervising'
+[ "$(cat "$LAB/state/.lock")" = "$(cat "$LAB/pred.pid")" ] || fail 'an uncovered order must not move the lock'
+[ ! -e "$LAB/state/attempts" ] || fail 'an uncovered order must launch no successor'
+[ ! -e "$LAB/state/handoff-events.log" ] || fail "an uncovered order must emit no handoff event: $(cat "$LAB/state/handoff-events.log")"
+for record in .handoff-pending .handoff-successor .handoff-launch-failed .handoff-launch.lock supervisor-failover.log; do
+  [ ! -e "$LAB/state/$record" ] || fail "an uncovered order must not write $record"
+done
+pass 'a handoff that omits an open captain order is refused before any claim, record, or launch'
+# Once the handoff lists the order, the same launch proceeds to a verified transfer.
+FM_HOME="$LAB" bash "$ROOT/bin/fm-order.sh" handoff --doc "$LAB/data/handoff ) '.md" >/dev/null
+FM_HOME="$LAB" bash "$ROOT/bin/fm-order.sh" covers --doc "$LAB/data/handoff ) '.md" >/dev/null \
+  || fail 'the rewritten handoff must cover the open order'
+rm -rf "$LAB/data/orders" "$LAB/state/.order-handoff"
+
+# A planned fresh start whose launch fails leaves the predecessor supervising:
+# the failure is recorded for it, the cycle's Stop gate releases, and the
+# cycle's published reset falls back to auto-compaction.
+run_case error-exit orca arm
+[ "$(cat "$LAB/rc")" != 0 ] || fail 'the armed error-exit launch must fail'
+failed=$(cat "$LAB/state/.handoff-launch-failed" 2>/dev/null) || fail 'a failed launch must record state/.handoff-launch-failed'
+printf '%s\n' "$failed" | grep -Eq "^at=[0-9]+ pid=$(cat "$LAB/pred.pid") nonce=[0-9a-f]{32} attempt=1 reason=error\$" \
+  || fail "the failure record must name the surviving predecessor, nonce, attempt, and reason: $failed"
+run_hook_fixture Stop >/dev/null 2>&1 || fail 'a failed fresh-start launch must release the Stop gate for the surviving session'
+run_hook_fixture PostToolUse >/dev/null
+assert_contains "$(cat "$LAB/state/compact-point")" ' reset=compaction' 'a failed fresh-start launch publishes auto-compaction as the reset'
+cp "$LAB/state/.handoff-launch-failed" "$LAB/failed.keep"
+rm -f "$LAB/state/.handoff-launch-failed"
+run_hook_fixture Stop >/dev/null 2>&1 && fail 'without a failure record the fresh-start gate must still block'
+run_hook_fixture PostToolUse >/dev/null
+assert_contains "$(cat "$LAB/state/compact-point")" ' reset=handoff' 'without a failure record the cycle still publishes a handoff reset'
+mv "$LAB/failed.keep" "$LAB/state/.handoff-launch-failed"
+pass 'a failed planned fresh start releases its Stop gate and falls back to auto-compaction'
 
 # Existing supervisor endpoint metadata outranks an inherited terminal variable.
 META_HOME="$TMP_ROOT/meta-home"
@@ -606,6 +652,7 @@ nonce=$(sed -n 's/^nonce=//p' "$LAB/state/.handoff-successor")
 ack="$LAB/data/handoff-ack-$nonce.json"
 jq -e --argjson pid "$(cat "$LAB/state/.lock")" '.version == 1 and .harness_pid == $pid and .fm_lock_pid == $pid and (.sha256 | length) == 64 and .terminal_handle == "term_lab_1"' "$ack" >/dev/null || fail 'ack schema and lock must agree'
 run_hook_fixture Stop >/dev/null 2>&1 || fail 'verified completion must clear the actual Stop gate'
+[ ! -e "$LAB/state/.handoff-launch-failed" ] || fail 'a new launch must remove an earlier failure record'
 cp "$ack" "$LAB/ack.backup"
 jq '.sha256="wrong"' "$LAB/ack.backup" > "$ack"
 run_hook_fixture Stop >/dev/null 2>&1 && fail 'tampered ack must not clear the Stop gate'
