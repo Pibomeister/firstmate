@@ -528,15 +528,31 @@ test_hardstop_categories() {
     "sign-in|Press ENTER to open your browser or submit your device code here: https://login.docker.com/activate"$'\n'"Waiting for authentication in the browser…" \
     'sign-in|Please enter the 6 digit code:' \
     "destructive|This will permanently remove the 'dev' stack!"$'\n'"Please confirm that this is what you'd like to do by typing \`dev\`:" \
-    "destructive|Would you like to replace the existing file:"$'\n'"? (Y)es / (N)o / (A)lways / (S)kip all / A(u)to rename all / (Q)uit? "; do
+    "destructive|Would you like to replace the existing file:"$'\n'"? (Y)es / (N)o / (A)lways / (S)kip all / A(u)to rename all / (Q)uit? " \
+    "sign-in|? Choose an account to sign in with:  [Use arrows to move, type to filter]"$'\n'"  alice@corp.com"$'\n'"> bob@corp.com" \
+    "destructive|? Are you sure you want to delete these files?  [Use arrows to move, type to filter]"$'\n'"  No"$'\n'"> Yes" \
+    "sign-in|? What account do you want to log into?  [Use arrows to move, type to filter]"$'\n'"> GitHub.com" \
+    "sign-in|There are 2 roles available to you."$'\n'"  ReadOnly"$'\n'"> FullAccess" \
+    "sign-in|? Where do you use GitHub?  [Use arrows t"$'\n'"o move, type to filter]"$'\n'"> GitHub.com"$'\n'"  Other" \
+    "sign-in|There are 2 roles available to"$'\n'"you."$'\n'"  ReadOnly"$'\n'"> FullAccess" \
+    "credential|Generating public/private ed25519 key pair."$'\n'"Enter file in which to save the key (/Users/test/.ssh/id_ed25519)"$'\n'":" \
+    "credential|Identity added: x"$'\n'"Bad passphrase, try again for /Users/test/.ssh/id_ed25519 (test@host)"$'\n'":"; do
     want=${c%%|*}; c=${c#*|}
     assert_equals "hardstop	$want" "$(printf '%s\n' "$c" | classify claude)" "a widely used CLI prompt is a $want stop: $c"
     bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard misses a $want prompt: $c"
   done
-  for c in '❯ Continue? [y/N]' '❯ Explain how to enter a password:' '› Enter OTP: 123456' $'commit abc\n    Merge pull request #42 from team/rotate-secret (rotate the API token now)\n:' "Working on the fix now"$'\n'"$rule40"$'\n'"❯ "$'\n'"$rule40"$'\n'"  ? for shortcuts" 'The tests for gzip and docker login pass; next we look at the 6 digit code path.'; do
+  for c in '❯ Continue? [y/N]' '❯ Explain how to enter a password:' '› Enter OTP: 123456' $'commit abc\n    Merge pull request #42 from team/rotate-secret (rotate the API token now)\n:' "Working on the fix now"$'\n'"$rule40"$'\n'"❯ "$'\n'"$rule40"$'\n'"  ? for shortcuts" 'The tests for gzip and docker login pass; next we look at the 6 digit code path.' \
+    "⏺ Bash(grep -n 'Gemini' bin/fm-busy-lib.sh)"$'\n'"  ⎿  1180:# ... (\"Enter Gemini API Key\")."$'\n'"$rule40"$'\n'"❯ "$'\n'"$rule40"$'\n'"  ? for shortcuts" \
+    "  ⎿  How would you like to authenticate for this project?"$'\n'"     ● 1. Sign in with Google"$'\n'"$rule40"$'\n'"❯ "$'\n'"$rule40"$'\n'"  ⏵⏵ bypass permissions on (shift+tab to cycle)" \
+    "⏺ Added a regression test for the Enter Gemini API Key dialog."$'\n'"$rule40"$'\n'"❯ "$'\n'"$rule40"$'\n'"  ? for shortcuts" \
+    "Enter Gemini API Key"$'\n'"Working on it now"$'\n'"$rule40"$'\n'"❯ "$'\n'"$rule40"$'\n'"  ? for shortcuts" \
+    '→ Explain how to enter a password:' '❭ Explain how to enter a password:' '⟩ Continue? [y/N]' 'You can set it by typing the following:'; do
     [ -z "$(printf '%s\n' "$c" | classify claude)" ] || fail "an agent draft, pager, or prose row is read as a prompt: $c"
     ! bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard blocks an agent draft, pager, or prose row: $c"
   done
+  c=$'? Which account?  (Use arrow keys)\n  acct-a\n❯ acct-b'
+  assert_equals "hold	confirm" "$(printf '%s\n' "$c" | classify claude)" "a select list with its cursor on the last option holds"
+  bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard misses a select list with its cursor on the last option"
   for c in 'Hostname: build-1' 'Error code: 500' 'OTP library version: 2.1.0' 'mfa is enabled for user: alice' '2FA required for account: bob' 'src/auth.ts:  // Enter verification code: 123' 'Exit code: 1' 'Summary: done' 'rm: cannot remove x: No such file or directory'; do
     assert_equals '' "$(printf '%s\n' "$c" | classify claude)" "an ordinary output row is not a prompt: $c"
   done

@@ -2665,7 +2665,8 @@ fm_composer_picker_rows() {  # rows on stdin
 # it. openssl's two-word `pass phrase` reads as passphrase. Prints credential
 # or sign-in.
 # fm_composer_draft_row <screen>: the last non-blank row opens like an agent
-# composer or a box row (`❯`, `›`, `> ` with text, `│`, `┃`, `|`), so it is a
+# composer or a box row (an agent glyph from FM_COMPOSER_AGENT_PROMPT_GLYPHS,
+# `> ` with text, `│`, `┃`, `|`), so it is a
 # draft such as `❯ Continue? [y/N]`, never a terminal input. A `> ` answer row
 # under a `To proceed, type` or `To continue type in the phrase` instruction is
 # that input, not a draft.
@@ -2674,7 +2675,7 @@ fm_composer_draft_row() {  # <screen>
     { gsub(/\r/, "") }
     NF { r[++n] = tolower($0) }
     END {
-      if (!n || r[n] !~ /^[ \t]*(❯|›|>[ \t]+[^ \t]|│|┃|\|)/) exit 1
+      if (!n || r[n] !~ /^[ \t]*(❯|›|⟩|→|❭|>[ \t]+[^ \t]|│|┃|\|)/) exit 1
       for (i = n - 4; i < n; i++) if (i > 0 && r[i] ~ /to proceed, type|to continue type in the phrase/) exit 1
       exit 0
     }'
@@ -2685,18 +2686,25 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
   fm_composer_draft_row "${1-}" && return 1
   # Gemini CLI's first-run auth-method picker and its API-key entry dialog
   # draw their own box and footer, so their rows, not the last row, prove
-  # them; the signatures are the ones bin/fm-busy-lib.sh records.
+  # them; the signatures are the ones bin/fm-busy-lib.sh records. Each
+  # heading must stand alone on its row, inside the box or bare, with the
+  # dialog's own input or selected option and hint below it and no agent
+  # composer or conversation row after it, so quoted text never matches.
   if printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
+    { gsub(/\r/, "") }
     NF { r[++n] = $0 }
     END {
       for (i = n - 30; i <= n; i++) {
         if (i < 1) continue
-        if (r[i] ~ /Enter Gemini API Key/) key = 1
-        if (r[i] ~ /How would you like to authenticate for this project\?/) head = 1
-        if (head && r[i] ~ /Use Gemini API Key|Sign in with Google|No authentication method selected|Vertex AI/) pick = 1
+        if (r[i] ~ /^[ \t]*(│[ \t]*)?Enter Gemini API Key[ \t]*(│[ \t]*)?$/) { kh = i; ki = 0 }
+        else if (kh && i - kh <= 4 && r[i] ~ /^[ \t]*(│[ \t]*)?>/) ki = 1
+        if (r[i] ~ /^[ \t]*(│[ \t]*)?How would you like to authenticate for this project\?[ \t]*(│[ \t]*)?$/) { ph = i; po = 0; pu = 0 }
+        else if (ph && r[i] ~ /^[ \t]*(│[ \t]*)?●[ \t]*[0-9]+\.[ \t]+[^ \t]/) po = 1
+        else if (ph && po && r[i] ~ /^[ \t]*(│[ \t]*)?\(Use Enter to select\)/) pu = 1
+        if (r[i] ~ /^(─|━){20,}|for shortcuts|context left|context [0-9]+% left|bypass permissions|^[ \t]*(⏺|⎿|❯|›)/) { kh = 0; ki = 0; ph = 0; po = 0; pu = 0 }
       }
-      if (key) { print "credential"; exit 0 }
-      if (pick) { print "sign-in"; exit 0 }
+      if (ki) { print "credential"; exit 0 }
+      if (pu) { print "sign-in"; exit 0 }
       exit 1
     }'; then
     return 0
@@ -2721,17 +2729,21 @@ fm_composer_unwrap_tail() {  # <screen> -> screen
       while (n > 0 && r[n] !~ /[^ \t]/) n--
       if (n < 2 || w < 20) exit 1
       # A soft-wrap continuation never opens on a composer, shell, quote, or
-      # box marker. A lone `:` continues a label only after a closing quote,
-      # bracket, or parenthesis, unlike the prompt of a pager, and a
+      # box marker. A lone `:` continues a label after a closing quote or
+      # bracket, or a known input label, unlike the prompt of a pager, and a
       # capitalised word after a finished sentence opens a new one.
       if (r[n] ~ /^[ \t]*(>|❯|›|\$|#|%|│|┃|\||╰|└|─|━|\? for shortcuts)/) exit 1
-      if (r[n] ~ /^[ \t]*:?[ \t]*$/ && r[n - 1] !~ /[\047\]]$/) exit 1
+      lone = (r[n] ~ /^[ \t]*:?[ \t]*$/ && r[n - 1] !~ /[\047\]]$/)
       if (r[n] ~ /^[A-Z][a-z]/ && r[n - 1] ~ /[.!?]$/) exit 1
       j = n
       # A rule or box row as wide as the pane is furniture, never part of a
       # wrapped label.
       while (j > 1 && n - j < 4 && c[j - 1] == w && r[j - 1] ~ /[A-Za-z0-9]/ && r[j - 1] !~ /^[ \t]*(─|━|│|┃|╭|╰|┌|└|═)/) j--
       if (j == n) exit 1
+      # Any other lone `:` continues only a known secret input label, such as
+      # the ssh-keygen `Enter file in which to save the key (...)` or the
+      # ssh-add `Bad passphrase, try again for ...`.
+      if (lone && tolower(r[j]) !~ /^[ \t]*(enter (file in which|passphrase|new passphrase|same passphrase|pin)|bad passphrase|passphrase for|password for|enter password)/) exit 1
       for (i = 1; i < j; i++) print r[i]
       line = ""
       for (i = j; i <= n; i++) line = line r[i]
@@ -2911,6 +2923,9 @@ fm_composer_confirm_input() {  # <screen> -> row
     printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '/[^ \t\r]/ { l = tolower($0) } END { print l }'
     return 0
   fi
+  # A select list whose cursor sits on its last option opens that row like a
+  # composer draft, so the list is read before the draft-row check.
+  if fm_composer_list_rows "${1-}"; then fm_composer_confirm_input_rows "${1-}"; return; fi
   fm_composer_draft_row "${1-}" && return 1
   fm_composer_confirm_input_rows "${1-}" && return 0
   # A confirmation whose answer is already typed but not yet submitted, such
@@ -2939,25 +2954,21 @@ fm_composer_confirm_input() {  # <screen> -> row
   return 1
 }
 
-fm_composer_confirm_input_rows() {  # <screen> -> row
-  local last
-  last=$(printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
-    /[^ \t\r]/ { last = tolower($0) }
-    END {
-      gsub(/\r/, "", last)
-      # enquirer prints the default answer after its pointer, as in
-      # `Proceed? (Y/n) › true`.
-      sub(/[ \t]*(›|»|‣)[ \t]*(true|false|yes|no)[ \t]*$/, "", last)
-      sub(/[ \t]*((›|❯|▌|█|•|\*)[ \t]*)*$/, "", last)
-      print last
-    }')
-  [ -n "$last" ] || return 1
-  if printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
-    NF { r[++n] = tolower($0) }
+# fm_composer_list_rows <screen>: the last rows are a live arrow-key select
+# list, such as survey's `[Use arrows to move, type to filter]`, inquirer's
+# `(Use arrow keys)`, prompts' `- Use arrow-keys. Return to submit.`, AWS SSO's
+# `There are N roles available to you.`, or a bare question above its option
+# rows, with the cursor on any option, the last one included.
+fm_composer_list_rows() {  # <screen>
+  printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
+    function hint(s) { return s ~ /\(use arrow keys|\[use arrows to move|- use arrow-keys\. return to submit|^[ \t]*there (are|is) [0-9]+ .* available to you\.?[ \t\r]*$/ }
+    NF { r[++n] = tolower($0); sub(/[ \t\r]+$/, "", r[n]) }
     END {
       for (i = n - 13; i <= n; i++) {
         if (i < 1) continue
-        if (r[i] !~ /reveal more/ && r[i] ~ /\(use arrow keys|\[use arrows to move|- use arrow-keys\. return to submit|^[ \t]*there (are|is) [0-9]+ .* available to you\.?[ \t\r]*$/) { q = i; f = 0; quoted = 0 }
+        # A narrow pane can wrap the hint over two rows, so a row that only
+        # completes the hint with the row above also opens the list.
+        if (r[i] !~ /reveal more/ && (hint(r[i]) || (i > 1 && !hint(r[i - 1]) && (hint(r[i - 1] r[i]) || hint(r[i - 1] " " r[i]))))) { q = i; f = 0; quoted = 0 }
         else if (q && (r[i] ~ /for shortcuts|context left|context [0-9]+% left/ || r[i] ~ /^(─|━){20,}/)) quoted = 1
         else if (q && r[i] ~ /^[ \t]*(❯|›|>)[ \t]*[^ \t]/) f = 1
         if (r[i] ~ /^[ \t]*\?[ \t]+[^ \t]/) { qq = i; fq = 0 }
@@ -2976,7 +2987,23 @@ fm_composer_confirm_input_rows() {  # <screen> -> row
         k++
       }
       exit !(c == 1 && k >= 2 && i > 0 && r[i] ~ /\?[ \t\r]*$/ && r[i] !~ /^[ \t]*(•|⏺|●|>|❯|›|\?[ \t]+for shortcuts)/)
-    }'; then
+    }'
+}
+
+fm_composer_confirm_input_rows() {  # <screen> -> row
+  local last
+  last=$(printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
+    /[^ \t\r]/ { last = tolower($0) }
+    END {
+      gsub(/\r/, "", last)
+      # enquirer prints the default answer after its pointer, as in
+      # `Proceed? (Y/n) › true`.
+      sub(/[ \t]*(›|»|‣)[ \t]*(true|false|yes|no)[ \t]*$/, "", last)
+      sub(/[ \t]*((›|❯|▌|█|•|\*)[ \t]*)*$/, "", last)
+      print last
+    }')
+  [ -n "$last" ] || return 1
+  if fm_composer_list_rows "${1-}"; then
     printf '%s\n' "$last"
     return 0
   fi
@@ -2985,7 +3012,7 @@ fm_composer_confirm_input_rows() {  # <screen> -> row
     printf '%s\n' "$last"
     return 0
   fi
-  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|^[[:space:]]*(remove|examine files in directory|recursively remove|override .+ for|overwrite) .+\?([[:space:]]*\(y/n \[[yn]\]\))?$|\((\[y\]/n|y/\[n\])\)[[:space:]]*\?$|\(y or n\)[[:space:]]*\?$|by typing[[:space:]]+[^:]{1,100}:$|\(y\)es[[:space:]]*/[[:space:]]*\(n\)o[^?]*\?$|^[[:space:]]*<.*>[[:space:]]*\?$|[[:space:]]\?\.\.\.$|^[[:space:]]*what now>$|^[[:space:]]*(select items to delete|input ignore patterns|update|revert|add untracked|patch update|review diff)>>$|^[[:space:]]*please enter (your )?numeric choice[^:]*:$|^[[:space:]]*please enter a value between [0-9]+ and [0-9]+[^:]*:$|\(enter "h" for help\)[[:space:]]*\[[a-z]+\]$|^[[:space:]]*(yes/no|y/n)\?$|\(type [^)]{1,60}\)[[:space:]]*:$|\[y\]es, \[n\]o, \[a\]ll, \[n\]one, \[r\]ename:$|^[[:space:]]*(press|hit) any key|\(y/n \[[yn]\]\)$|\[y,n(,[a-z?/]+)*\]\??$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|^[[:space:]]*file to patch:$|\(y\)es/\(n\)o:$|\((y|yes)[|,](n|no)\)\??$|\?[[:space:]]+\((y|n|yes|no)[|,](y|n|yes|no)\)$|\(\[y\]es\|\[n\]o(\|\[[a-z]\][a-z]+)*\):$|\?[[:space:]]+\[(yes|no)\]:$|press (return|enter)(/(return|enter))? to continue or any other key to abort:?$|\[agree, print, cancel\]$|^[[:space:]]*enter a number between [0-9]+ and [0-9]+:([[:space:]]+[0-9]+)?$|^[[:space:]]*(rm|cp|mv|ln|install|rmdir|shred|unlink)[[:space:]]?:[[:space:]].*\?$|^[[:space:]]*(hit|press)[[:space:]]+(return|enter)[[:space:]]+to[[:space:]].*(tool|merge)[^:]*:$|^[[:space:]]*use \([a-z]\)[a-z]+ or \([a-z]\)[a-z]+( file)?, or \(a\)bort\?$|\[y/n/[^]]*\][[:space:]]*(\([a-z]+\))?[[:space:]]*:?$|allow\?[[:space:]]+\[y/n(/a)?\]|^[[:space:]]*what to do\?[[:space:]]+(\([a-z]\)[a-z]+,?[[:space:]]*)+$|\(y/i/n/o/d/z\)[[:space:]]*(\[default=[a-z]\][[:space:]]*)?\?$|\?[[:space:]]+\[(y|n|yes|no|yn|ny)\]$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[^:>?"'"'"'`]{1,160}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
+  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|^[[:space:]]*(remove|examine files in directory|recursively remove|override .+ for|overwrite) .+\?([[:space:]]*\(y/n \[[yn]\]\))?$|\((\[y\]/n|y/\[n\])\)[[:space:]]*\?$|\(y or n\)[[:space:]]*\?$|by typing[[:space:]]+[`"'"'"'][^:]{1,100}[`"'"'"']:$|\(y\)es[[:space:]]*/[[:space:]]*\(n\)o[^?]*\?$|^[[:space:]]*<.*>[[:space:]]*\?$|[[:space:]]\?\.\.\.$|^[[:space:]]*what now>$|^[[:space:]]*(select items to delete|input ignore patterns|update|revert|add untracked|patch update|review diff)>>$|^[[:space:]]*please enter (your )?numeric choice[^:]*:$|^[[:space:]]*please enter a value between [0-9]+ and [0-9]+[^:]*:$|\(enter "h" for help\)[[:space:]]*\[[a-z]+\]$|^[[:space:]]*(yes/no|y/n)\?$|\(type [^)]{1,60}\)[[:space:]]*:$|\[y\]es, \[n\]o, \[a\]ll, \[n\]one, \[r\]ename:$|^[[:space:]]*(press|hit) any key|\(y/n \[[yn]\]\)$|\[y,n(,[a-z?/]+)*\]\??$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|^[[:space:]]*file to patch:$|\(y\)es/\(n\)o:$|\((y|yes)[|,](n|no)\)\??$|\?[[:space:]]+\((y|n|yes|no)[|,](y|n|yes|no)\)$|\(\[y\]es\|\[n\]o(\|\[[a-z]\][a-z]+)*\):$|\?[[:space:]]+\[(yes|no)\]:$|press (return|enter)(/(return|enter))? to continue or any other key to abort:?$|\[agree, print, cancel\]$|^[[:space:]]*enter a number between [0-9]+ and [0-9]+:([[:space:]]+[0-9]+)?$|^[[:space:]]*(rm|cp|mv|ln|install|rmdir|shred|unlink)[[:space:]]?:[[:space:]].*\?$|^[[:space:]]*(hit|press)[[:space:]]+(return|enter)[[:space:]]+to[[:space:]].*(tool|merge)[^:]*:$|^[[:space:]]*use \([a-z]\)[a-z]+ or \([a-z]\)[a-z]+( file)?, or \(a\)bort\?$|\[y/n/[^]]*\][[:space:]]*(\([a-z]+\))?[[:space:]]*:?$|allow\?[[:space:]]+\[y/n(/a)?\]|^[[:space:]]*what to do\?[[:space:]]+(\([a-z]\)[a-z]+,?[[:space:]]*)+$|\(y/i/n/o/d/z\)[[:space:]]*(\[default=[a-z]\][[:space:]]*)?\?$|\?[[:space:]]+\[(y|n|yes|no|yn|ny)\]$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[^:>?"'"'"'`]{1,160}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
   printf '%s\n' "$last"
 }
 
