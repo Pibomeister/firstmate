@@ -542,6 +542,39 @@ test_process_substitution_under_an_execd_leader_is_spared() {
   pass "fm-test-queue.sh: a process substitution started before an exec into the queue keeps its output"
 }
 
+# A snapshot that fails once during the wrapper's exit reap leaves the
+# holder running to retry, rather than abandoning the straggler.
+test_failed_exit_snapshot_leaves_the_holder_to_retry() {
+  local wrapper straggler real_ps
+  new_case holder-retry
+  echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
+  real_ps=$(command -v ps)
+  mkdir -p "$CASE/fakebin"
+  CASE_PID_FILES+=("$CASE/straggler")
+  printf '%s\n' '#!/bin/sh' \
+    "if [ -e '$CASE/fail-ps' ] && [ \"\$*\" = '-axo pid=,ppid=,pgid=,stat=,lstart=' ] && mkdir '$CASE/ps-failed' 2>/dev/null; then exit 1; fi" \
+    "exec '$real_ps' \"\$@\"" > "$CASE/fakebin/ps"
+  chmod +x "$CASE/fakebin/ps"
+  (
+    set -m
+    PATH="$CASE/fakebin:$PATH" qbg run --label retry -- sh -c \
+      'sleep 100000 </dev/null >/dev/null 2>&1 & echo $! > "$1/straggler"; : > "$1/fail-ps"' _ "$CASE" >/dev/null 2>&1 &
+    echo $! > "$CASE/wrapper"
+    wait
+  ) 2>/dev/null &
+  CASE_PIDS+=("$!")
+  wait_until "the run started" file_exists "$CASE/wrapper"
+  wrapper=$(cat "$CASE/wrapper")
+  CASE_PIDS+=("$wrapper")
+  wait_until "the run left its straggler" file_exists "$CASE/straggler"
+  straggler=$(cat "$CASE/straggler")
+  wait_until "the run ended" pid_gone "$wrapper"
+  [ -d "$CASE/ps-failed" ] || fail "the exit reap's snapshot never failed"
+  wait_until "straggler ended after the failed snapshot" pid_gone "$straggler"
+  wait_until "nothing is left in the group" group_empty "$wrapper"
+  pass "fm-test-queue.sh: a snapshot failure during the exit reap leaves the holder to retry"
+}
+
 # An unrelated job whose leader exits leaves a member behind in a group whose
 # id matches a dead ticket. Without a live holder in that group, nothing proves
 # the group is the ticket's, so its member must survive.
@@ -1087,6 +1120,7 @@ test_holder_waits_for_a_child_still_recording_itself
 test_wrapper_killed_mid_reap_leaves_the_holder_to_finish
 test_zombie_wrapper_does_not_block_its_holder
 test_process_substitution_under_an_execd_leader_is_spared
+test_failed_exit_snapshot_leaves_the_holder_to_retry
 test_reused_group_id_is_not_reaped
 test_pipeline_stage_outliving_its_caller_is_spared
 test_remote_straggler_cannot_hold_the_ssh_output

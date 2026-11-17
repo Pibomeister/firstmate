@@ -517,7 +517,7 @@ reap_stragglers() {
 # itself once the child is gone. A child that has not recorded itself yet
 # shows up as a straggler, so the holder waits while any remain.
 hold_group() {
-  local nap="" list self
+  local nap="" list self tries
   self=${BASHPID:-$(exec sh -c 'printf "%s" "$PPID"')}
   trap '[ -z "$nap" ] || { kill "$nap" 2>/dev/null; kill -CONT "$nap" 2>/dev/null; wait "$nap" 2>/dev/null; }; exit 0' TERM
   exec </dev/null >/dev/null 2>&1
@@ -538,7 +538,12 @@ hold_group() {
     hold_nap
   done
   if ticket_group_reapable hold; then
-    reap_stragglers || true
+    tries=0
+    until reap_stragglers; do
+      tries=$((tries + 1))
+      [ "$tries" -lt 5 ] || break
+      hold_nap
+    done
   fi
   exit 0
 }
@@ -553,12 +558,12 @@ hold_nap() {
 
 stop_holder() {
   [ -n "$HOLDER_PID" ] || return 0
-  if owner_alive "$HOLDER_PID" "$T_HOLDER_START"; then
+  if [ -n "$HOLDER_START" ] && owner_alive "$HOLDER_PID" "$HOLDER_START"; then
     kill "$HOLDER_PID" 2>/dev/null
     kill -CONT "$HOLDER_PID" 2>/dev/null
   fi
   wait "$HOLDER_PID" 2>/dev/null
-  HOLDER_PID=""
+  HOLDER_PID="" HOLDER_START=""
 }
 
 reclaim_dead() {
@@ -576,7 +581,7 @@ reclaim_dead() {
 
 # --- run --------------------------------------------------------------------
 MY_TICKET=""
-HOLDER_PID=""
+HOLDER_PID="" HOLDER_START=""
 
 cleanup() {
   remote_cleanup
@@ -585,10 +590,12 @@ cleanup() {
       # With no recorded child yet, a running holder keeps the group.
       if [ -n "$T_CHILD_PID" ] && ! owner_alive "$T_CHILD_PID" "$T_CHILD_START"; then
         # The holder is spared, so a wrapper killed mid-reap leaves it to finish.
+        # A reap that could not finish leaves the holder to retry.
         if ticket_group_reapable exit; then
-          reap_stragglers "$HOLDER_PID" || true
+          ! reap_stragglers "$HOLDER_PID" || stop_holder
+        else
+          stop_holder
         fi
-        stop_holder
       fi
       workload_alive "$$" || rm -f "$MY_TICKET"
     fi
@@ -759,6 +766,7 @@ cmd_run() {
   if [ -n "$T_PGID" ]; then
     hold_group &
     HOLDER_PID=$!
+    HOLDER_START=$(pid_start "$HOLDER_PID")
   fi
   (
     local child_pid siblings
@@ -769,9 +777,9 @@ cmd_run() {
     T_CHILD_START=$(pid_start "$child_pid")
     # Without a sibling list the holder is left unrecorded, so nothing is
     # reaped rather than a pipeline stage.
-    if [ -n "$HOLDER_PID" ] && [ -n "$T_PGID" ] && siblings=$(group_walk siblings "$HOLDER_PID"); then
+    if [ -n "$HOLDER_START" ] && [ -n "$T_PGID" ] && siblings=$(group_walk siblings "$HOLDER_PID"); then
       T_HOLDER_PID=$HOLDER_PID
-      T_HOLDER_START=$(pid_start "$HOLDER_PID")
+      T_HOLDER_START=$HOLDER_START
       T_SIBLINGS=$(printf '%s' "$siblings" | tr '\n' ' ')
     fi
     ticket_write "$MY_TICKET" || die "cannot record child for ticket $n"
