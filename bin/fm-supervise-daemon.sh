@@ -908,14 +908,15 @@ stale_window_is_busy() {  # <window> <state>
 # secondmate (its liveness is secondmate-liveness's job), a remote task (a local
 # probe cannot see its endpoint), a verified captain-held transfer, and a task
 # whose backlog item is an open captain hold (bin/fm-captain-hold.sh `open`
-# exit 0) - no live agent is needed while the captain decides. A hold the
-# backlog cannot confirm surfaces the worker, the fail-safe direction.
+# exit 0) - no live agent is needed while the captain decides, so that gone
+# agent returns 2 and its pause recheck stays quiet as well. A hold the backlog
+# cannot confirm surfaces the worker, the fail-safe direction.
 # Dedupe: state/.subsuper-gone-paused-<key> records the declared line already
 # reported, so repeat stale wakes for one dead pane do not each escalate; the
 # pause recheck re-surfaces it once per PAUSE_RESURFACE_SECS window as before.
 PAUSED_GONE_PREFIX='paused worker gone: '
 
-paused_wait_agent_gone() {  # <window> <state> <declared-line> -> dead|missing
+paused_wait_agent_gone() {  # <window> <state> <declared-line> -> dead|missing; 1 not gone, 2 gone but held
   local win=$1 state=$2 declared=$3 task meta verdict
   status_is_paused "$declared" || return 1
   task=$(window_to_task "$win" "$state")
@@ -930,7 +931,7 @@ paused_wait_agent_gone() {  # <window> <state> <declared-line> -> dead|missing
     dead|missing) ;;
     *) rm -f "$state/.subsuper-gone-paused-$(_stale_key "$task")"; return 1 ;;
   esac
-  FM_HOME="$FM_HOME" "$FM_DAEMON_DIR/fm-captain-hold.sh" open "$task" >/dev/null 2>&1 && return 1
+  FM_HOME="$FM_HOME" "$FM_DAEMON_DIR/fm-captain-hold.sh" open "$task" >/dev/null 2>&1 && return 2
   printf '%s' "$verdict"
 }
 
@@ -1289,7 +1290,7 @@ overdue_delivered_key() {  # <state> <task>
 }
 
 housekeeping() {  # <state>
-  local state=$1 now due f key task win marker age last max_defer oldest pause_secs marker_epoch until bounded_until pause_reason dialog_name persisted append_rc size seen_identity overdue_marker overdue_task pause_identity pause_size record gone
+  local state=$1 now due f key task win marker age last max_defer oldest pause_secs marker_epoch until bounded_until pause_reason dialog_name persisted append_rc size seen_identity overdue_marker overdue_task pause_identity pause_size record gone gone_rc
   now=$(_now)
   for overdue_marker in "$state"/.paused-overdue-*; do
     [ -f "$overdue_marker" ] || continue
@@ -1480,10 +1481,18 @@ housekeeping() {  # <state>
     # A plain `paused:` wait whose agent is proven gone surfaces as a dead worker
     # instead: without this, a gone endpoint took the silent drop below and the
     # next tick re-seeded the marker, masking the death indefinitely. It repeats
-    # once per window, like any recheck, while the worker stays gone.
-    if gone=$(paused_wait_agent_gone "$win" "$state" "$last"); then
-      if paused_gone_escalate "$win" "$state" "$gone" "$last"; then
+    # once per window, like any recheck, while the worker stays gone. A gone agent
+    # under an open backlog captain hold (2) needs no recheck: the hold already
+    # names the wait, so its window restarts quietly. Both record a passed
+    # `until` as due exactly as the live recheck below does, or that passed time
+    # would re-open this branch on every tick.
+    gone=$(paused_wait_agent_gone "$win" "$state" "$last"); gone_rc=$?
+    if [ "$gone_rc" -ne 1 ]; then
+      if [ "$gone_rc" -eq 2 ] || paused_gone_escalate "$win" "$state" "$gone" "$last"; then
         _now > "$marker"
+        if [ -n "$until" ] && [ "$now" -ge "$until" ]; then
+          printf '%s\n' "$until" > "$due"
+        fi
       fi
       continue
     fi

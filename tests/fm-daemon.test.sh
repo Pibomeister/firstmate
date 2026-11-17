@@ -1768,6 +1768,17 @@ test_paused_dead_agent_under_backlog_captain_hold_stays_quiet() {
   [ ! -s "$state/.subsuper-escalations" ] \
     || fail "a held worker's exited agent escalated on its stale wake: $(cat "$state/.subsuper-escalations")"
   [ -e "$state/.subsuper-paused-$key" ] || fail "a held worker did not keep pause tracking"
+  # Its long-cadence recheck stays quiet too: the hold already names the wait,
+  # even though the exited agent's shell still renders a pane.
+  echo $(( $(date +%s) - 5000 )) > "$state/.subsuper-paused-$key"
+  FM_HOME="$dir" FM_DATA_OVERRIDE="$dir/data" FM_CONFIG_OVERRIDE="$dir/config" \
+    PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CURRENT_COMMAND=zsh \
+    FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999999 \
+    FM_PAUSE_RESURFACE_SECS=240 housekeeping "$state"
+  [ ! -s "$state/.subsuper-escalations" ] \
+    || fail "a held worker's exited agent drew a pause recheck: $(cat "$state/.subsuper-escalations")"
+  [ "$(( $(date +%s) - $(cat "$state/.subsuper-paused-$key" 2>/dev/null || echo 0) ))" -lt 600 ] \
+    || fail "a held worker's quiet recheck did not restart its window"
   pass "a dead agent whose task is an open backlog captain hold stays quiet behind its paused: line"
 }
 
@@ -1806,6 +1817,26 @@ test_paused_dead_agent_surfaces_for_recovery() {
     && fail "a vanished endpoint was reported as a healthy external wait"
   [ -e "$state/.subsuper-paused-$key" ] || fail "the recheck dropped the window instead of resetting it"
   pass "a dead or vanished agent behind an ordinary paused: wait is surfaced for recovery"
+}
+
+# A dead worker whose `paused:` line names an `until` time already past is
+# surfaced once at that time, not again on every housekeeping tick after it.
+test_paused_dead_agent_with_passed_until_surfaces_once() {
+  local dir state task=paused-dead-until win key n
+  dir=$(paused_liveness_case paused-dead-until "$task"); state="$dir/state"
+  win="sess:fm-$task"; key=$(_stale_key "$task")
+  printf 'paused: waiting for the vendor rate-limit reset until %s\n' \
+    "$(date -u -r $(( $(date +%s) - 3600 )) +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d @$(( $(date +%s) - 3600 )) +%Y-%m-%dT%H:%M:%SZ)" \
+    >> "$state/$task.status"
+  _now > "$state/.subsuper-paused-$key"
+  for n in 1 2 3; do
+    PATH="$dir/fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CURRENT_COMMAND=zsh \
+      FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999999 \
+      housekeeping "$state"
+  done
+  [ "$(grep -c "paused worker gone: $win (agent dead" "$state/.subsuper-escalations" 2>/dev/null)" = 1 ] \
+    || fail "a dead worker past its declared until was not surfaced exactly once across ticks: $(cat "$state/.subsuper-escalations" 2>/dev/null)"
+  pass "a dead worker past its declared until time is surfaced once, not on every tick"
 }
 
 test_housekeeping_persistent_stale_escalates() {
@@ -3961,6 +3992,7 @@ test_housekeeping_pause_marker_transitions_to_clear
 test_paused_live_agent_stays_a_healthy_wait
 test_paused_dead_agent_under_backlog_captain_hold_stays_quiet
 test_paused_dead_agent_surfaces_for_recovery
+test_paused_dead_agent_with_passed_until_surfaces_once
 test_housekeeping_herdr_persistent_stale_resolves_meta
 test_housekeeping_herdr_idle_busy_record_clears_stale
 test_housekeeping_herdr_resumed_stale_cleared
