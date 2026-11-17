@@ -597,8 +597,40 @@ test_host_outside_the_lock_owner_stands_down() {
   pass "host: a host outside the session-lock owner stands down without arming"
 }
 
+test_tagged_host_cleanup_reaps_the_wrapper_process_group() {
+  local home wrapper child
+  home=$(make_home tagged-reap away)
+  # Same shape as the tagged-holder spawn: setsid then bash -c with a second
+  # command after the payload, so bash does not exec and the payload is a child.
+  wrapper=$(perl -e '
+    defined(my $pid = fork) or exit 1;
+    if ($pid) { print $pid; exit 0; }
+    require POSIX;
+    POSIX::setsid() >= 0 or exit 1;
+    open STDOUT, ">", "/dev/null" or exit 1;
+    exec @ARGV;
+  ' bash -c 'sleep 98771 & printf "%s\n" "$!" > "$0"; wait' "$home/tagged-child.pid") \
+    || fail "tagged-reap: could not start a setsid wrapper"
+  case "$wrapper" in
+    ''|*[!0-9]*) fail "tagged-reap: wrapper pid was not reported" ;;
+  esac
+  printf '%s\n' "$wrapper" > "$home/tagged-host.pid"
+  wait_until 50 test -s "$home/tagged-child.pid" \
+    || fail "tagged-reap: the wrapper did not record its child"
+  child=$(cat "$home/tagged-child.pid")
+  kill -0 "$wrapper" 2>/dev/null || fail "tagged-reap: wrapper $wrapper died before cleanup"
+  kill -0 "$child" 2>/dev/null || fail "tagged-reap: child $child died before cleanup"
+  stop_home_processes "$home"
+  wait_until 20 sh -c '! kill -0 "$1" 2>/dev/null' _ "$wrapper" \
+    || fail "cleanup left the tagged wrapper pid $wrapper running"
+  wait_until 20 sh -c '! kill -0 "$1" 2>/dev/null' _ "$child" \
+    || fail "cleanup left the wrapper's child pid $child running"
+  rm -f "$home/tagged-host.pid"
+  pass "tagged-host cleanup signals the recorded process group, not only the wrapper pid"
+}
+
 test_tagged_lock_holder_reaches_the_engine_whole() {
-  local home first
+  local home first host_pid
   home=$(make_home tagged-holder away)
   echo hold-lease > "$home/stub-mode"
   # A Windows/Git Bash home: uname reports MINGW and ps -W lists the session
@@ -612,10 +644,29 @@ printf '%s\n' '  4201508       0       0       7204  ?              0 22:24:48 C
 SH
   chmod +x "$home/fakebin/uname" "$home/fakebin/ps"
   printf 'win:7204\n' > "$home/state/.lock"
-  env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID \
+  # POSIX harness ancestry is preferred over the Windows tagged holder
+  # (fm_harness_ancestry_pids). A Cursor/agent parent in this process table
+  # would stand the host down. Reparent the host to init so the case exercises
+  # the tagged-holder path without changing that ownership preference.
+  # The setsid child reparents to init, so a fail before .supervision-host is
+  # written would leak it unless this pid is recorded for suite cleanup.
+  host_pid=$(perl -e '
+    defined(my $pid = fork) or exit 1;
+    if ($pid) { print $pid; exit 0; }
+    require POSIX;
+    POSIX::setsid() >= 0 or exit 1;
+    open STDOUT, ">", "/dev/null" or exit 1;
+    exec @ARGV;
+  ' env -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID \
     FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" \
     CLAUDE_PID=7204 CLAUDE_CODE_SESSION_ID=tagged-session \
-    bash -c '"$0" park > "$FM_HOME/host.out" 2>&1; printf "%s\n" "$?" > "$FM_HOME/host.rc"' "$HOST" 2>> "$home/claude.err" &
+    bash -c '"$0" park > "$FM_HOME/host.out" 2>&1; printf "%s\n" "$?" > "$FM_HOME/host.rc"' "$HOST" \
+    2>> "$home/claude.err") \
+    || fail "tagged: could not start an ancestry-isolated host"
+  case "$host_pid" in
+    ''|*[!0-9]*) fail "tagged: isolated host pid was not reported" ;;
+  esac
+  printf '%s\n' "$host_pid" > "$home/tagged-host.pid"
   wait_until 150 watcher_live "$home" || fail "tagged: the host never started a watcher cycle: $(cat "$home/host.out")"
   append_status "$home" 'step one'
   wait_until 250 handled_at_least "$home" 1 || fail "tagged: the wake was not handled: $(cat "$home/host.out"; cat "$home/state/.supervision-host.log")"
@@ -625,6 +676,7 @@ SH
     "the engine's lease must record the tagged holder whole and read live"
   kill -TERM "$(awk -F '\t' '$1 == "host" { print $2 }' "$home/state/.supervision-host")"
   wait_until_deadline 60 host_exited "$home" || fail "tagged: the host did not stop on TERM"
+  rm -f "$home/tagged-host.pid"
   pass "host: a Windows-tagged session-lock holder reaches the engine's lease whole"
 }
 
@@ -686,5 +738,6 @@ fm_test_run \
   test_unchanged_held_outcome_reaches_the_captain_once_until_a_new_event \
   test_unverified_engine_hands_every_away_wake_to_main \
   test_host_outside_the_lock_owner_stands_down \
+  test_tagged_host_cleanup_reaps_the_wrapper_process_group \
   test_tagged_lock_holder_reaches_the_engine_whole \
   test_superseded_host_leaves_the_owner_untouched
