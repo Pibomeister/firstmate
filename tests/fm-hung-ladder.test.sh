@@ -44,6 +44,10 @@ EOF
 CREW="$TMP_ROOT/crew-state"
 cat > "$CREW" <<'EOF'
 #!/usr/bin/env bash
+# Like the real reader, a read with the snapshot cache on waits for its lock.
+if [ "${FM_CREW_STATE_NO_SNAPSHOT:-}" != 1 ]; then
+  perl -MFcntl=:flock -e 'open(my $f, ">>", $ARGV[0]) or exit 0; flock($f, LOCK_EX); exit 0' "$FM_HOME/state/.nm-status-snapshot.json.lock"
+fi
 if [ -s "$FM_TEST_PROBE_DIR/$1.validating" ]; then
   cat "$FM_TEST_PROBE_DIR/$1.validating"
 elif [ -e "$FM_TEST_PROBE_DIR/$1.validating" ]; then
@@ -502,14 +506,15 @@ test_healthy_waits_and_screens() {
     assert_equals 0 "$(rows "$h" io observe)" 'a descendant whose I/O moves vetoes the proof'
   fi
 
-  # The crew-state reader's lock is held elsewhere: the read never waits, and holds.
-  new_task "$h" lk
-  perl -MFcntl=:flock -e 'open(my $f, ">>", $ARGV[0]) or die; flock($f, LOCK_EX) or die; sleep 900' \
-    "$h/state/.nm-status-snapshot.json.lock" </dev/null >/dev/null 2>&1 &
-  AGENTS="$AGENTS $!"
-  sleep 1
-  ticks "$h" lk "$B" $((B + 1800))
-  assert_equals 0 "$(rows "$h" lk would-act)" 'a held crew-state lock holds every rung'
+  # A dialog that appears inside an open episode parks it after 4 minutes too.
+  new_task "$h" dm
+  ticks "$h" dm "$B" $((B + 600))
+  assert_equals 1 "$(rows "$h" dm would-act 2)" 'the episode reached rung 2 before the dialog'
+  DIALOG='Claude background-task exit picker' ticks "$h" dm $((B + 660)) $((B + 1800))
+  no_escalation "$h" dm 'a dialog inside an episode'
+  assert_equals 1 "$(rows "$h" dm would-act 5)" 'a dialog inside an episode parks once'
+  case "$(reason_of "$h" dm would-act 5)" in *'screen-block dialog:'*) ;; *) fail 'the park inside an episode names the dialog' ;; esac
+  ls "$h/state/hung-ladder/snapshots/dm/"*-r5.pane >/dev/null 2>&1 || fail 'the park inside an episode saves the pane'
   assert_no_actions 'waits and screens'
   assert_agents_alive 'waits and screens'
   pass 'healthy declared waits and blocked screens give no rung-3 or rung-4 rows'
@@ -628,6 +633,49 @@ test_cleanup_resolves_open_episodes() {
   pass 'cleanup resolves every pending row once, and a refused mode writes nothing'
 }
 
+test_validation_read_never_waits_on_a_lock() {
+  local h
+  h=$(new_home lockfree)
+  new_task "$h" lk
+  perl -MFcntl=:flock -e 'open(my $f, ">>", $ARGV[0]) or die; flock($f, LOCK_EX) or die; sleep 900' \
+    "$h/state/.nm-status-snapshot.json.lock" </dev/null >/dev/null 2>&1 &
+  AGENTS="$AGENTS $!"
+  sleep 1
+  ticks "$h" lk "$B" $((B + 1200))
+  assert_equals 0 "$(rows "$h" lk hold)" 'a held crew-state lock neither stalls nor holds the read'
+  assert_equals 1 "$(rows "$h" lk would-act 3)" 'the episode carries on past the validation read'
+  assert_no_actions 'lock'
+  pass 'the validation read takes no lock another reader can hold'
+}
+
+test_content_progress_covers_untracked_and_skips_secrets() {
+  local h
+  h=$(new_home content)
+  # Editing an existing untracked file is progress.
+  new_task "$h" un
+  printf 'first\n' > "$h/wt-un/notes.txt"
+  ticks "$h" un "$B" $((B + 540))
+  assert_equals 1 "$(rows "$h" un would-act 2)" 'the episode reached rung 2'
+  printf 'second\n' >> "$h/wt-un/notes.txt"
+  ticks "$h" un $((B + 600)) $((B + 1200))
+  ledger "$h" | awk -F'\t' '$4 == "un" && $6 == "resolve" && $11 ~ /dirty-content/ && $13 == "yes" { f = 1 } END { exit !f }' \
+    || fail 'an untracked file edit closes the episode as self-progress'
+  assert_equals 0 "$(rows "$h" un would-act 3)" 'no rung 3 after untracked progress'
+  # A tracked secret file's content never enters the content hash.
+  new_task "$h" se
+  printf 'API_KEY=one\n' > "$h/wt-se/.env"
+  git -C "$h/wt-se" add .env
+  git -C "$h/wt-se" -c user.name=t -c user.email=t@example.invalid commit -qm env
+  printf 'API_KEY=two\n' > "$h/wt-se/.env"
+  ticks "$h" se "$B" $((B + 540))
+  printf 'API_KEY=three\n' > "$h/wt-se/.env"
+  ticks "$h" se $((B + 600)) $((B + 1200))
+  assert_equals 0 "$(ledger "$h" | awk -F'\t' '$4 == "se" && $11 ~ /dirty-content/ { n++ } END { print n + 0 }')" 'a secret file edit is not content progress'
+  ! grep -rqE 'API_KEY|three' "$h/state/hung-ladder" || fail 'secret content is never saved'
+  assert_no_actions 'content'
+  pass 'untracked edits count as content progress, and secret files never enter the content hash'
+}
+
 test_live_mode_refused_without_gate() {
   local h out rc before
   h="$TMP_ROOT/refuse"
@@ -730,6 +778,16 @@ test_chain_and_escaping() {
   rc=0
   verify "$h" >/dev/null || rc=$?
   assert_equals 3 "$rc" 'an emptied ledger is reported broken'
+  # A kill between a row and its head record leaves the head one row behind:
+  # the chain still verifies, and the next append records that row as the head.
+  cp "$TMP_ROOT/chain-backup.tsv" "$h/state/hung-ladder/actions.tsv"
+  ledger "$h" | awk -F'\t' '{ p = s; s = $1 "\t" $15 } END { print p }' > "$h/state/hung-ladder/head"
+  verify "$h" >/dev/null || fail 'a split append still verifies'
+  new_task "$h" e3
+  printf 'paused: waiting pid=999999 [at=%s]\n' "$B" >> "$h/state/e3.status"
+  ticks "$h" e3 "$B" $((B + 120))
+  [ "$(rows "$h" e3 observe)" -ge 1 ] || fail 'the next append after a split append is accepted'
+  verify "$h" >/dev/null || fail 'the healed chain verifies'
 
   # An edit to an earlier row holds rung 4, whose caps read that history.
   local h2
@@ -827,6 +885,8 @@ fm_test_run \
   test_unverified_wait_cap_cannot_be_renewed \
   test_failed_reads_never_count_as_progress \
   test_cleanup_resolves_open_episodes \
+  test_validation_read_never_waits_on_a_lock \
+  test_content_progress_covers_untracked_and_skips_secrets \
   test_live_mode_refused_without_gate \
   test_chain_and_escaping \
   test_snapshots_redact_and_exclude_secrets \

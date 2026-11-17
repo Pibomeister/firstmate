@@ -1074,12 +1074,13 @@ An absent file means `off`.
 No code path sends keys, writes a steering message, or interrupts, exits, relaunches, or kills a worker in any mode.
 The live modes `steer`, `interrupt`, and `relaunch` are refused with no write unless a separate owner approval record exists in `config/hung-ladder-approval`.
 Even with that approval the effective mode stays `observe`, because stage 1 builds no live path.
-A refused live mode runs as `off`, so the watcher writes nothing at all.
+A refused live mode runs as `off`: the watcher writes no ladder state and no ledger row, only the refusal message in its own error file.
 Both files must belong to this user, and the approval must have no group or other permissions.
 Set the mode with `bin/fm-hung-ladder.sh set-mode <mode> --actor <name>`, read it with `mode`, and check the ledger with `verify`.
 A worker session (one with `FM_TASK_ID` set) can never set the mode or write the ledger.
 The watcher runs one observation per task per minute on its existing pass, with no new background process.
 A sensor read that fails or times out counts as unknown, never as quiet, so it can only hold a rung.
+Secret-pattern files are recorded by name only and never enter a content hash or snapshot.
 A declared wait protects a worker without limit only when it names a live job this user runs or an active test-queue ticket; a deadline or any other wording holds only for the bounded unverified-wait time.
 Once an hour on the same pass, the watcher resolves the open records of cleaned-up tasks and prunes their snapshots.
 Each ledger row is escaped and hash-chained to the row before it, so an edited, removed, or inserted row is detected.
@@ -3681,6 +3682,7 @@ FM_CREW_STATE_NM_TIMEOUT=10   # seconds allowed per no-mistakes query inside fm-
 FM_CREW_STATE_PANE_TIMEOUT=3   # seconds bounding each backend pane read inside fm-crew-state.sh (the readability probe and the busy-state tail); a probe that hits the bound reads unknown with the endpoint unreachable; invalid or zero values use 3
 FM_TEARDOWN_NM_TIMEOUT=10    # seconds allowed per no-mistakes query or abort inside fm-teardown.sh
 FM_CREW_STATE_RUNS_LIMIT=200  # plain runs-ledger rows scanned for fallback attribution; does not change the CLI's AXI overview window (selection owner: bin/fm-nm-run-lib.sh)
+FM_CREW_STATE_NO_SNAPSHOT=   # 1 makes fm-crew-state.sh read the no-mistakes state database with the snapshot cache off, so it neither writes the cache nor waits on its lock; the hung-worker ladder sets it
 FM_NM_SNAPSHOT_TTL=5   # seconds a cached read-only no-mistakes state-database snapshot (state/.nm-status-snapshot.json) is reused across fm-crew-state.sh reads in one sweep; bin/fm-nm-run-lib.sh owns the schema guard and the fallback to the no-mistakes CLI
 FM_TEARDOWN_NM_RUNS_LIMIT=200  # recent no-mistakes run rows scanned to prove an unresolved-head parked run belongs to teardown's task
 FM_HEARTBEAT_BIN=bin/fm-heartbeat.sh     # test override for the ledger publisher the watcher's heartbeat ticker launches each cycle

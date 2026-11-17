@@ -67,6 +67,9 @@
 # inserted row breaks the chain. state/hung-ladder/head records the last seq
 # and hash; before each append the last row is recomputed and compared with
 # it, and a mismatch refuses the append and leaves ledger-refused behind.
+# The one mismatch accepted is a head exactly one row behind a last row that
+# chains from it, which a kill between the row and its head record leaves;
+# the next append records that row as the head.
 # The chain detects tampering; it cannot stop a same-user process that
 # rewrites the whole chain consistently.
 #
@@ -83,7 +86,9 @@
 # SENSORS. rendered: the normalized pane hash (ANSI, spinner glyphs and digit
 # runs removed) against the previous sample. filesystem: status size and last
 # line, inbox acknowledgements, head, dirty-content hash, and a worktree
-# write probe; a scout reads only status and inbox. A failed or timed-out
+# write probe; a scout reads only status and inbox. The content hash covers
+# the status records, the diff against HEAD and the untracked files' content,
+# never a secret-pattern file's content. A failed or timed-out
 # content hash or write probe reads as unknown, never quiet. A status line
 # that repeats one of the last four is a drip, not progress. kernel: CPU time
 # of the agent's process tree per sample, unknown above the load ceiling or
@@ -97,6 +102,9 @@
 # advances, stands in for it.
 # records: a declared wait's named job. Transcript and loop proofs are
 # recorded as unsupported. Git reads use --no-optional-locks and never write.
+# The validation read runs the crew-state reader with its snapshot cache off
+# (FM_CREW_STATE_NO_SNAPSHOT=1), so it takes no lock. A screen block that
+# lasts 4 minutes parks the episode, whether it appeared before or inside it.
 #
 # FM_HUNG_LADDER_NOW, FM_HUNG_LADDER_LOAD and FM_HUNG_LADDER_PROBE (an
 # executable answering `agent <task> <backend> <target>` with "<state> <pid>"
@@ -279,8 +287,20 @@ fhl_ledger_tail_ok() {
     fhl_ledger_refuse "last row hash does not recompute"
     return 1
   fi
-  if ! IFS=$'\t' read -r head_seq head_hash < "$HL/head" 2>/dev/null \
-      || [ "$head_seq" != "$seq" ] || [ "$head_hash" != "$hash" ]; then
+  if [ ! -e "$HL/head" ]; then
+    head_seq=0 head_hash=$GENESIS
+  elif ! IFS=$'\t' read -r head_seq head_hash < "$HL/head" 2>/dev/null; then
+    fhl_ledger_refuse "head record unreadable"
+    return 1
+  fi
+  case "$seq" in ''|*[!0-9]*) fhl_ledger_refuse "last row sequence is not a number"; return 1 ;; esac
+  if [ "$head_seq" = "$((seq - 1))" ] && [ "${body##*$'\t'}" = "$head_hash" ]; then
+    # A kill landed between the row and its head record: the row chains from
+    # the recorded head and its own hash recomputes, so record it as the head.
+    printf '%s\t%s\n' "$seq" "$hash" > "$HL/head.tmp" && mv -f "$HL/head.tmp" "$HL/head" || return 1
+    head_seq=$seq head_hash=$hash
+  fi
+  if [ "$head_seq" != "$seq" ] || [ "$head_hash" != "$hash" ]; then
     fhl_ledger_refuse "last row does not match the head record"
     return 1
   fi
@@ -318,9 +338,10 @@ fhl_row() {
 }
 
 # The whole-chain walk: prints "<rows>\t<last-hash>" for an intact ledger
-# that matches its head record, or one "broken: ..." line and returns 3.
+# that matches its head record (or sits one row behind it after a split
+# append), or one "broken: ..." line and returns 3.
 fhl_chain_walk() {
-  local out last
+  local out last before
   if [ ! -s "$LEDGER" ]; then
     if [ -e "$HL/head" ]; then
       echo "broken: ledger empty but head record present"
@@ -330,7 +351,7 @@ fhl_chain_walk() {
     return 0
   fi
   out=$(perl -MDigest::SHA=sha256_hex -e '
-    my ($g, $file) = @ARGV; my $prev = $g; my $n = 0;
+    my ($g, $file) = @ARGV; my $prev = $g; my $before = $g; my $n = 0;
     open(my $fh, "<", $file) or do { print "broken: unreadable\n"; exit 3 };
     while (my $l = <$fh>) {
       $n++;
@@ -341,12 +362,17 @@ fhl_chain_walk() {
       if ($f[13] ne $prev) { print "broken: line $n prev_hash does not chain\n"; exit 3 }
       my $body = join("\t", @f[0..13]);
       if (sha256_hex($body) ne $f[14]) { print "broken: line $n hash does not recompute\n"; exit 3 }
-      $prev = $f[14];
+      $before = $prev; $prev = $f[14];
     }
-    print "$n\t$prev\n";
+    print "$n\t$prev\t$before\n";
   ' "$GENESIS" "$LEDGER") || { printf '%s\n' "$out"; return 3; }
-  last=$(cat "$HL/head" 2>/dev/null) || last=
-  if [ "$last" != "$out" ]; then
+  before=${out##*$'\t'} out=${out%$'\t'*}
+  if [ -e "$HL/head" ]; then
+    last=$(cat "$HL/head" 2>/dev/null) || last=
+  else
+    last="0	$GENESIS"
+  fi
+  if [ "$last" != "$out" ] && [ "$last" != "$(( ${out%%$'\t'*} - 1 ))	$before" ]; then
     echo "broken: head record does not match the last row"
     return 3
   fi
@@ -617,17 +643,12 @@ fhl_resolve_wait() {  # <task> <wait-line>
 
 # Validation in flight (gate item 6): any no-mistakes run the crew state
 # attributes to the task that is working (running, fixing, CI) or parked at a
-# gate. Read only when a rung could fire, under a short bound. The crew-state
-# reader takes an exclusive lock on its snapshot, so a lock someone else holds
-# right now is probed without waiting and holds as unknown; a read that fails
-# or times out holds too.
+# gate. Read only when a rung could fire, under a short bound, with the
+# crew-state snapshot cache off so the read takes no lock another reader can
+# hold; a read that fails or times out holds.
 fhl_validating() {
-  local line rc=0 state src lockf="$STATE/.nm-status-snapshot.json.lock"
-  if [ -e "$lockf" ] && ! perl -MFcntl=:flock -e 'open(my $f, "<", $ARGV[0]) or exit 0; exit(flock($f, LOCK_EX | LOCK_NB) ? 0 : 1)' "$lockf" 2>/dev/null; then
-    held=${held:-unknown:validation=lock-busy}
-    return 1
-  fi
-  line=$(fm_run_timed 5 "$FM_CREW_STATE_BIN" "$TASK" 2>/dev/null) || rc=$?
+  local line rc=0 state src
+  line=$(FM_CREW_STATE_NO_SNAPSHOT=1 fm_run_timed 5 "$FM_CREW_STATE_BIN" "$TASK" 2>/dev/null) || rc=$?
   if [ "$rc" != 0 ]; then
     held=${held:-unknown:validation=$rc}
     return 1
@@ -716,16 +737,12 @@ fhl_snapshot_pane() {  # <name> -> path:sha
   printf '%s:%s' "snapshots/$TASK/$1.pane" "$(fhl_sha < "$f")"
 }
 
-# Rung 4's content snapshot (5.2 h, 14.2 S4): head, staged and unstaged
-# patches without ignored or secret-pattern files, a hash per dirty and
-# untracked file, and presence only for secret-pattern and ignored files.
-fhl_snapshot_tree() {  # <name> -> path:sha
-  local dir="$HL/snapshots/$TASK" f p sz
-  local -a excl=()
-  f="$dir/$1.tree"
-  mkdir -p "$dir" && chmod 700 "$dir"
-  [ -n "$WT" ] && [ -d "$WT" ] || { printf 'none'; return 0; }
-  local rec rename=0
+# Fills FHL_EXCL with a literal exclude pathspec for every secret-pattern
+# path in the `git status --porcelain=v1 -z` records on stdin, rename sources
+# included, so no secret file's content reaches a diff this script hashes.
+fhl_secret_excludes() {
+  local rec p rename=0
+  FHL_EXCL=()
   while IFS= read -r -d '' rec; do
     if [ "$rename" = 1 ]; then
       p=$rec rename=0
@@ -734,12 +751,51 @@ fhl_snapshot_tree() {  # <name> -> path:sha
       p=${rec:3}
     fi
     [ -n "$p" ] || continue
-    fhl_secret_path "$p" && excl+=( ":(exclude,literal)$p" )
-  done < <(git -C "$WT" --no-optional-locks status --porcelain=v1 -z -uall 2>/dev/null)
+    fhl_secret_path "$p" && FHL_EXCL+=( ":(exclude,literal)$p" )
+  done
+  return 0
+}
+
+# One digest over the untracked, non-ignored files named NUL-separated on
+# stdin: each name with its size and mtime, plus the first MiB of content
+# while a 64 MiB budget lasts. Secret-pattern names are skipped entirely.
+fhl_untracked_digest() {  # <worktree>
+  local p
+  while IFS= read -r -d '' p; do
+    [ -n "$p" ] || continue
+    fhl_secret_path "$p" || printf '%s\0' "$p"
+  done | perl -MDigest::SHA -0 -e '
+    my $root = shift; my $d = Digest::SHA->new(256); my ($n, $budget) = (0, 64 << 20);
+    while (my $p = <STDIN>) {
+      chomp $p;
+      if (++$n > 2000) { $d->add("truncated\0"); last }
+      my @s = lstat("$root/$p");
+      $d->add($p, "\0", @s ? "$s[7]:$s[9]" : "gone", "\0");
+      next unless @s && -f _ && $budget > 0;
+      if (open(my $f, "<", "$root/$p")) {
+        my $got = read($f, my $buf, $budget < 1048576 ? $budget : 1048576);
+        $budget -= $got if $got;
+        $d->add(defined $got ? $buf : "unreadable", "\0");
+      } else {
+        $d->add("unreadable\0");
+      }
+    }
+    print $d->hexdigest, "\n";' "$1"
+}
+
+# Rung 4's content snapshot (5.2 h, 14.2 S4): head, staged and unstaged
+# patches without ignored or secret-pattern files, a hash per dirty and
+# untracked file, and presence only for secret-pattern and ignored files.
+fhl_snapshot_tree() {  # <name> -> path:sha
+  local dir="$HL/snapshots/$TASK" f p sz
+  f="$dir/$1.tree"
+  mkdir -p "$dir" && chmod 700 "$dir"
+  [ -n "$WT" ] && [ -d "$WT" ] || { printf 'none'; return 0; }
+  fhl_secret_excludes < <(git -C "$WT" --no-optional-locks status --porcelain=v1 -z -uall 2>/dev/null)
   {
     printf 'head\t%s\n' "$(git -C "$WT" rev-parse HEAD 2>/dev/null)"
-    git -C "$WT" --no-optional-locks diff --binary -- . ${excl[@]+"${excl[@]}"} 2>/dev/null | head -c 20000000 > "$f.diff"
-    git -C "$WT" --no-optional-locks diff --cached --binary -- . ${excl[@]+"${excl[@]}"} 2>/dev/null | head -c 20000000 > "$f.cached.diff"
+    git -C "$WT" --no-optional-locks diff --binary -- . ${FHL_EXCL[@]+"${FHL_EXCL[@]}"} 2>/dev/null | head -c 20000000 > "$f.diff"
+    git -C "$WT" --no-optional-locks diff --cached --binary -- . ${FHL_EXCL[@]+"${FHL_EXCL[@]}"} 2>/dev/null | head -c 20000000 > "$f.cached.diff"
     printf 'diff_sha256\t%s\n' "$(fhl_sha < "$f.diff")"
     printf 'cached_diff_sha256\t%s\n' "$(fhl_sha < "$f.cached.diff")"
     { git -C "$WT" --no-optional-locks diff --name-only -z HEAD 2>/dev/null; git -C "$WT" ls-files -z --others --exclude-standard 2>/dev/null; } | perl -0 -ne 'next if $seen{$_}++; print if ++$n <= 2000' |
@@ -782,7 +838,7 @@ fhl_prune_now() {
       [ -e "$STATE/$t.meta" ] || fhl_resolve_gone "$t" || continue
     done
   fi
-  for e in "$HL/episodes"/*.ep "$HL/episodes"/*.sample "$HL/episodes"/*.anchor; do
+  for e in "$HL/episodes"/*.ep "$HL/episodes"/*.sample "$HL/episodes"/*.anchor "$HL/episodes"/*.porcelain; do
     [ -e "$e" ] || continue
     t=${e##*/}; t=${t%.*}
     [ -e "$STATE/$t.meta" ] || [ -e "$HL/episodes/$t.ep" ] || rm -f "$e"
@@ -819,7 +875,7 @@ fhl_resolve_gone() {  # <task>
   for id in $G_actions; do
     fhl_row "$t" - resolve "close:$cause" "$id" "$lsp" || return 1
   done
-  rm -f "$HL/episodes/$t.ep" "$HL/episodes/$t.sample" "$HL/episodes/$t.anchor"
+  rm -f "$HL/episodes/$t.ep" "$HL/episodes/$t.sample" "$HL/episodes/$t.anchor" "$HL/episodes/$t.porcelain"
 }
 
 # Seconds since the epoch recorded inside <file> (its first line), 999999
@@ -1047,11 +1103,16 @@ cmd_tick() {
   fi
   if [ "$KIND" = ship ] && [ -n "$WT" ] && [ -d "$WT" ]; then
     head=$(git -C "$WT" rev-parse HEAD 2>/dev/null) || { head=-; fs_unknown=1; }
-    local porcelain diffhash
-    porcelain=$(fm_run_timed 10 git -C "$WT" --no-optional-locks status --porcelain=v1 -uall 2>/dev/null) || fs_unknown=1
-    # A diff that fails, times out, or outgrows the bound reads as unknown.
-    diffhash=$(set -o pipefail; fm_run_timed 10 git -C "$WT" --no-optional-locks diff HEAD --binary 2>/dev/null | head -c 20000000 | fhl_sha) || fs_unknown=1
-    dirty=$(printf '%s\n%s' "$porcelain" "$diffhash" | fhl_sha)
+    # The content hash covers the status records, the diff against HEAD
+    # without secret-pattern files, and the untracked files' content. A read
+    # that fails, times out, or outgrows its bound reads as unknown.
+    local porc="$HL/episodes/$TASK.porcelain" diffhash untracked
+    fm_run_timed 10 git -C "$WT" --no-optional-locks status --porcelain=v1 -z -uall > "$porc" 2>/dev/null || fs_unknown=1
+    fhl_secret_excludes < "$porc"
+    diffhash=$(set -o pipefail; fm_run_timed 10 git -C "$WT" --no-optional-locks diff HEAD --binary -- . ${FHL_EXCL[@]+"${FHL_EXCL[@]}"} 2>/dev/null | head -c 20000000 | fhl_sha) || fs_unknown=1
+    untracked=$(set -o pipefail; fm_run_timed 10 git -C "$WT" --no-optional-locks ls-files -z --others --exclude-standard 2>/dev/null | fhl_untracked_digest "$WT") || fs_unknown=1
+    dirty=$(printf '%s\n%s\n%s' "$(fhl_sha < "$porc")" "$diffhash" "$untracked" | fhl_sha)
+    rm -f "$porc"
     if [ -f "$HL/episodes/$TASK.anchor" ]; then
       local wrc=0
       fhl_written_since "$WT" "$HL/episodes/$TASK.anchor" || wrc=$?
@@ -1220,6 +1281,7 @@ cmd_tick() {
     if [ -z "$gate" ] && [ -z "$held" ] && [ -n "$screen" ]; then
       [ -n "${EP_block_since:-}" ] || EP_block_since=$NOW
       if [ $((NOW - EP_block_since)) -ge 240 ] && [ "${EP_block_parked:-0}" != 1 ]; then
+        fhl_caps
         EP_state=parked EP_t0=$EP_block_since EP_episode="ep-$NOW" EP_opened=$NOW
         fhl_row "$TASK" 0 observe "episode-open screen-block T0=$EP_t0" && EP_actions=$ROW_ID
         fhl_act 5 "park screen-block $screen" "$(fhl_snapshot_pane "$EP_episode-r5")" && EP_rung5_at=$NOW
@@ -1231,6 +1293,7 @@ cmd_tick() {
     if [ -z "$gate" ] && [ -z "$held" ] && [ -z "$screen" ] && [ "$proof" = 1 ]; then
       [ -n "${EP_since:-}" ] || EP_since=$NOW
       if [ "$WAIT" = dead ] || [ $((NOW - EP_since)) -ge 240 ]; then
+        fhl_caps
         EP_state=open EP_t0=$EP_since EP_episode="ep-$EP_since" EP_opened=$NOW
         fhl_row "$TASK" 0 observe "episode-open T0=$EP_t0" && EP_actions=$ROW_ID
         fhl_act 1 "verify wait=$WAIT${WAIT_NOTE:+ note=$WAIT_NOTE}" && EP_rung1_at=$NOW
@@ -1247,7 +1310,15 @@ cmd_tick() {
       hold="unknown:${unknown_kinds%,}"
     elif [ -n "$screen" ]; then
       hold="screen:$screen"
+      # A block that appears inside an episode parks it after lasting 4
+      # minutes, exactly as one seen before an episode opens.
+      [ -n "${EP_block_since:-}" ] || EP_block_since=$NOW
+      if [ $((NOW - EP_block_since)) -ge 240 ] && [ "${EP_block_parked:-0}" != 1 ]; then
+        fhl_act 5 "park screen-block $screen" "$(fhl_snapshot_pane "$EP_episode-r5")" && EP_rung5_at=$NOW EP_state=parked
+        EP_block_parked=1
+      fi
     fi
+    [ -n "$screen" ] && [ "$hold" = "screen:$screen" ] || EP_block_since='' EP_block_parked=0
     if [ -z "$hold" ] && [ "$proof" = 1 ]; then
       if [ -z "${EP_rung2_at:-}" ] && { [ "$WAIT" = dead ] || [ "$elapsed" -ge 360 ]; }; then
         fhl_act 2 "steer${WAIT_NOTE:+ wait-ended=$WAIT_NOTE}" && EP_rung2_at=$NOW
