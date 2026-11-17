@@ -68,7 +68,7 @@ printf '%s\n' "$SID" > "$H/state/.lock-session"
 jq -n --arg t "$T" --arg s "$SID" --argjson e "$(date +%s)" \
   '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s}}}' \
   > "$H/state/heartbeat.json"
-printf 'mode=act\nmodels=\ncouncil-seats=\nkey-settle-secs=1\n' > "$H/config/watchdog"
+printf 'mode=act\nmodels=\ncouncil-seats=\nkey-settle-secs=1\nquota-guard=off\n' > "$H/config/watchdog"
 
 screen() { "$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$T" 2>/dev/null; }
 wd() { PATH="$FAKEBIN:$PATH" FM_HOME="$H" bash "$WD" "$@"; }

@@ -45,7 +45,9 @@
 #      unreachable or unreadable remote reports unknown-remote, never a false
 #      gone/dead.
 #   2. Matching no-mistakes run for this crew's branch AND current code identity,
-#      active or terminal (from `axi status`, or the coarse `no-mistakes runs`
+#      active or terminal (from bin/fm-nm-run-lib.sh's read-only status snapshot
+#      when that read succeeds and the run is absent, inactive, or its head
+#      matches this worktree, else `axi status`, or the coarse `no-mistakes runs`
 #      fallback)? Branch name alone is not enough: a historical run on a reused
 #      branch whose head was rewritten or diverged must not be attributed.
 #      A run EXECUTING on this crew's branch (pending, running, fixing or ci -
@@ -220,8 +222,12 @@
 #      classified by step 4. Backends with no classifier keep reading a failed
 #      capture as gone. The fallback's own comment owns the per-verdict rules.
 #
-# Read-only and side-effect free. Always exits 0 on a successful read regardless
-# of state; exit 2 only on a usage error (no id).
+# Read-only against the worktree, backend, and no-mistakes state database; the
+# only filesystem write is the short-lived snapshot cache under
+# $STATE/.nm-status-snapshot.json (and its lock file). FM_CREW_STATE_NO_SNAPSHOT=1
+# reads the state database directly with that cache off, so the read neither
+# writes nor waits on the cache lock. Always exits 0 on a
+# successful read regardless of state; exit 2 only on a usage error (no id).
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -352,6 +358,14 @@ map_log_state() {  # <line>
 }
 
 LOG_LINE=$(status_current_line "$LOG" "$KIND")
+# Load relief (bin/fm-load-relief.sh) appends its own paused and resolved
+# [key=load-relief] lines without the worker's lock, so one can land just
+# after the worker's done or failed. Such a trailing bookkeeping line never
+# replaces the terminal outcome before it.
+if [ "$(_fm_decision_key "$LOG_LINE" '' 2>/dev/null)" = load-relief ]; then
+  _own_line=$(last_status_line_without_key "$LOG" load-relief)
+  case "$(status_line_verb "$_own_line")" in done|failed) LOG_LINE=$_own_line ;; esac
+fi
 LOG_VERB=$(status_line_verb "$LOG_LINE")
 
 # --- remote secondmate: the true source is the remote endpoint ---------------
@@ -366,7 +380,7 @@ LOG_VERB=$(status_line_verb "$LOG_LINE")
 # down or dead mate; only the remote host's own dead/missing verdict may say
 # the endpoint is actually gone.
 if [ -n "$REMOTE_HOST" ]; then
-  if ! REMOTE_STATE=$(FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-on.sh" "$ID" \
+  if ! REMOTE_STATE=$(FM_BLIP_READ=1 FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-on.sh" "$ID" \
     fm-remote-secondmate-control.sh state "$ID" < /dev/null 2>/dev/null); then
     REMOTE_STATE=
   fi
@@ -398,8 +412,8 @@ fi
 # shell - so a finished crew whose endpoint has closed still reports its run-step
 # state (e.g. done) instead of being masked as unknown. Backend-aware
 # (fm_backend_of_meta defaults absent backend= to tmux, the P1 contract): a
-# herdr task is read through fm_backend_capture while tmux uses the shared
-# endpoint-existence predicate.
+# herdr task is read through fm_backend_capture. tmux and orca use the shared
+# endpoint-existence predicate. Orca's predicate is one cached terminal list.
 TASK_BACKEND=$(fm_backend_of_meta "$META")
 BACKEND_TARGET=$(fm_backend_target_of_meta "$META")
 EXPECTED_LABEL="fm-$ID"
@@ -407,6 +421,7 @@ EXPECTED_LABEL="fm-$ID"
 pane_readable() {  # <target>
   case "$TASK_BACKEND" in
     tmux) fm_backend_target_exists tmux "$1" ;;
+    orca) fm_backend_target_exists orca "$1" ;;
     *) fm_backend_capture "$TASK_BACKEND" "$1" 1 "$EXPECTED_LABEL" >/dev/null 2>&1 ;;
   esac
 }
@@ -989,9 +1004,11 @@ nm_effective_ci_step_status() {
 # still monitoring until merged or closed" (pinned from no-mistakes v1.84.0).
 # That no_ci sentence reads as no-checks, like the zero-checks marker: no check
 # ever verified the PR, so it stays working and never promotes a worker's own
-# "checks green" claim, even though its text says "all checks passed". Reads
-# the ci step's log via `axi logs --full` and scans
-# it for the MOST RECENT recognized marker (the log is append-only/chronological,
+# "checks green" claim, even though its text says "all checks passed".
+# When the status snapshot is active, this run is its selected run, and that
+# snapshot already holds a recognized ci marker, that text is the log.
+# Otherwise this reads the ci step's log via `axi logs --full` and scans it
+# for the MOST RECENT recognized marker (the log is append-only/chronological,
 # so the last match is current): green with nothing red after it means CI is
 # green right now, still only waiting on merge/close.
 # "base branch advanced (..), re-arming CI monitor timeout" is deliberately NOT
@@ -1004,7 +1021,11 @@ nm_ci_checks_state() {
   local run_id ci_log marker
   run_id=$(strip_quotes "$(nm_field id)")
   [ -n "$run_id" ] || { printf 'unknown'; return; }
-  ci_log=$(nm_run axi logs --step ci --run "$run_id" --full) || true
+  if [ "${NM_SNAPSHOT_ACTIVE:-0}" = 1 ] && [ "$run_id" = "${NM_SNAPSHOT_SELECTED_ID:-}" ] && [ -n "${NM_SNAPSHOT_CI_LOG:-}" ]; then
+    ci_log=$NM_SNAPSHOT_CI_LOG
+  else
+    ci_log=$(nm_run axi logs --step ci --run "$run_id" --full) || true
+  fi
   [ -n "$ci_log" ] || { printf 'unknown'; return; }
   marker=$(printf '%s\n' "$ci_log" \
     | grep -E 'CI checks passed|repository declares no CI \(no_ci: true\)|no CI checks reported - still monitoring|no CI checks reported yet|checks failed|issues detected|CI checks running' \
@@ -1038,6 +1059,10 @@ nm_ci_checks_state() {
 # The same reader checks for conflicting run records when the AXI overview
 # cannot identify this branch's run.
 nm_runs_list() {
+  if [ "${NM_SNAPSHOT_ACTIVE:-0}" = 1 ]; then
+    printf '%s\n' "$NM_SNAPSHOT_RUNS_LIST"
+    return 0
+  fi
   nm_run runs --limit "$FM_CREW_STATE_RUNS_LIMIT"
 }
 # The ledger is fetched at most once per read into RUNS_LIST: the coarse
@@ -1049,6 +1074,11 @@ RUNS_LIST=""
 RUNS_LIST_FETCHED=0
 runs_list_once() {
   [ "$RUNS_LIST_FETCHED" = 1 ] && return 0
+  if [ "${NM_SNAPSHOT_ACTIVE:-0}" = 1 ]; then
+    RUNS_LIST=$NM_SNAPSHOT_RUNS_LIST
+    RUNS_LIST_FETCHED=1
+    return 0
+  fi
   RUNS_LIST=$(nm_runs_list)
   RUNS_LIST_FETCHED=1
 }
@@ -1078,10 +1108,20 @@ NM_DAEMON_ANSWER=""
 RUN_DEAD_DAEMON=""
 COARSE_STATUS=""
 SELECTED_RUN_ID=""
+NM_SNAPSHOT_ACTIVE=0
+NM_SNAPSHOT_FILE=$(fm_nm_status_snapshot_path "$STATE")
+[ "${FM_CREW_STATE_NO_SNAPSHOT:-}" != 1 ] || NM_SNAPSHOT_FILE=
 # Scouts and secondmates never drive a no-mistakes validation of their own
 # worktree, so skip the lookup for them and read state from pane/log directly.
 if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/null 2>&1; then
-  RUN_OUT=$(nm_run axi status)
+  if fm_nm_snapshot_load_worktree "$WT" "$CREW_BRANCH" "$NM_TIMEOUT" "$FM_CREW_STATE_RUNS_LIMIT" "$NM_SNAPSHOT_FILE" \
+    && { [ -z "$NM_SNAPSHOT_SELECTED_ID" ] || ! fm_nm_run_is_active "$NM_SNAPSHOT_STATUS_OUT" \
+      || fm_nm_head_matches_worktree "$WT" "$(strip_quotes "$(fm_nm_field "$NM_SNAPSHOT_STATUS_OUT" head)")"; }; then
+    NM_SNAPSHOT_ACTIVE=1
+    RUN_OUT=$NM_SNAPSHOT_STATUS_OUT
+  else
+    RUN_OUT=$(nm_run axi status)
+  fi
   if [ "$(strip_quotes "$(printf '%s\n' "$RUN_OUT" | sed -n 's/^error: //p')")" = "repo not initialized (run 'no-mistakes init' first)" ]; then
     RUN_OUT=""
   fi
@@ -1099,7 +1139,11 @@ if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/n
       run_choice="status-absent"
     else
       overview_ok=1
-      run_overview=$(fm_nm_run_checked "$WT" "$NM_TIMEOUT" axi) || overview_ok=0
+      if [ "$NM_SNAPSHOT_ACTIVE" = 1 ]; then
+        run_overview=$NM_SNAPSHOT_OVERVIEW_OUT
+      else
+        run_overview=$(fm_nm_run_checked "$WT" "$NM_TIMEOUT" axi) || overview_ok=0
+      fi
       [ -n "$run_overview" ] || emit unknown run-step "run inventory unavailable; run id: $(strip_quotes "$(nm_field id)")"
       run_choice=$(fm_nm_select_run "$CREW_BRANCH" "$run_overview" "$WT" "$NM_TIMEOUT")
       [ "$overview_ok" = 1 ] || emit unknown run-step "run inventory unreadable; run ids: $(strip_quotes "$(nm_field id)"), ${run_choice##*|}"
@@ -1137,7 +1181,11 @@ if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/n
               IFS=', ' read -ra candidates <<< "$candidate_ids"
               for candidate_id in "${candidates[@]}"; do
                 [ "$candidate_id" = "$reported_id" ] && continue
-                candidate_detail=$(fm_nm_run_checked "$WT" "$NM_TIMEOUT" axi status --run "$candidate_id") || candidate_detail=
+                if [ "$NM_SNAPSHOT_ACTIVE" = 1 ] && [ "$candidate_id" = "$NM_SNAPSHOT_SELECTED_ID" ] && [ -n "$NM_SNAPSHOT_SELECTED_OUT" ]; then
+                  candidate_detail=$NM_SNAPSHOT_SELECTED_OUT
+                else
+                  candidate_detail=$(fm_nm_run_checked "$WT" "$NM_TIMEOUT" axi status --run "$candidate_id") || candidate_detail=
+                fi
                 [ "$candidate_id" = "$selected_id" ] && selected_detail=$candidate_detail
                 if [ -n "$candidate_detail" ] && fm_nm_run_is_active "$candidate_detail"; then
                   emit unknown run-step "competing live runs; run ids: $candidate_ids"
@@ -1166,6 +1214,8 @@ if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/n
         fi
         if [ -n "$selected_detail" ]; then
           RUN_OUT=$selected_detail
+        elif [ "$NM_SNAPSHOT_ACTIVE" = 1 ] && [ "$selected_id" = "$NM_SNAPSHOT_SELECTED_ID" ] && [ -n "$NM_SNAPSHOT_SELECTED_OUT" ]; then
+          RUN_OUT=$NM_SNAPSHOT_SELECTED_OUT
         else
           RUN_OUT=$(fm_nm_run_checked "$WT" "$NM_TIMEOUT" axi status --run "$selected_id") \
             || emit unknown run-step "selected run unreadable; run ids: $candidate_ids"

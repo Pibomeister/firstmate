@@ -429,6 +429,51 @@ test_server_ensure_skips_attach_when_already_exists() {
   pass "fm_backend_zellij_server_ensure: reuses an existing session without calling attach"
 }
 
+# make_zellij_server_env_fakebin: a `zellij` stub whose `attach` records
+# whether its own environment carries the agent-kit lifecycle pair and a
+# creator sentinel to $FM_ZELLIJ_SERVER_ENV_LOG, then marks the session
+# created so the next list-sessions reports it.
+make_zellij_server_env_fakebin() {  # <dir> -> echoes fakebin dir
+  local dir=$1 fb="$1/fakebin"
+  mkdir -p "$fb"
+  cat > "$fb/zellij" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  list-sessions)
+    [ -e "$FM_ZELLIJ_SERVER_MARKER" ] && printf '%s\n' firstmate
+    ;;
+  attach)
+    {
+      for name in AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR FM_ZELLIJ_SENTINEL; do
+        eval 'value=${'"$name"'-<unset>}'
+        printf '%s=%s\n' "$name" "$value"
+      done
+    } > "$FM_ZELLIJ_SERVER_ENV_LOG"
+    : > "$FM_ZELLIJ_SERVER_MARKER"
+    ;;
+esac
+exit 0
+SH
+  chmod +x "$fb/zellij"
+  printf '%s\n' "$fb"
+}
+
+test_server_ensure_drops_the_agent_kit_lifecycle_pair() {
+  local dir fb log output
+  dir="$TMP_ROOT/server-env"; mkdir -p "$dir"; log="$dir/env"
+  fb=$(make_zellij_server_env_fakebin "$dir")
+  PATH="$fb:$PATH" FM_ZELLIJ_SERVER_ENV_LOG="$log" FM_ZELLIJ_SERVER_MARKER="$dir/created" FM_ZELLIJ_SENTINEL=kept \
+    AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate \
+    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_server_ensure firstmate' "$ROOT"
+  expect_code 0 $? "server_ensure should create the session under a pair-carrying creator"
+  output=$(cat "$log" 2>/dev/null)
+  assert_contains "$output" "FM_ZELLIJ_SENTINEL=kept" "server_ensure did not hand the creator environment to zellij attach"
+  assert_contains "$output" "AK_LIFECYCLE_POLICY=<unset>" "server_ensure leaked AK_LIFECYCLE_POLICY into the long-lived zellij session"
+  assert_contains "$output" "AK_LIFECYCLE_SUPERVISOR=<unset>" "server_ensure leaked AK_LIFECYCLE_SUPERVISOR into the long-lived zellij session"
+  pass "fm_backend_zellij_server_ensure: drops the agent-kit lifecycle pair from the session it creates and keeps other creator variables"
+}
+
 # --- dispatch wiring (fm-backend.sh) ------------------------------------------
 
 test_dispatch_routes_zellij_backend() {
@@ -1315,6 +1360,7 @@ test_resolve_bare_selector_refuses_cross_session_ambiguous_untagged
 test_session_exists_true_when_listed
 test_session_exists_false_when_absent
 test_server_ensure_skips_attach_when_already_exists
+test_server_ensure_drops_the_agent_kit_lifecycle_pair
 test_dispatch_routes_zellij_backend
 test_dispatch_busy_state_unknown_for_zellij
 test_create_task_refuses_duplicate_label

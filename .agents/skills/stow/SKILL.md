@@ -257,7 +257,9 @@ Judge for yourself what is important and which record each thing belongs to, and
 One bound holds: this covers the open work you are actually holding in context, not the records at large.
 It is not a reconciliation of durable records against repository or forge reality, cannot become one on input this volatile, and must never be reported as one.
 Where the right correction is a judgment you cannot make, leave the record alone and raise the question instead of guessing.
-Before a reset, run `bin/fm-order.sh handoff --doc <handoff file>` so the handoff document lists every open captain order, and do not reset while `bin/fm-order.sh gate` exits 3; its header owns that restart gate.
+File every open ask, approved proposal, and captain order with no backlog item as its own item with `bin/fm-ledger.sh intake` first, so the ledger alone restores the work.
+Before a reset, write a new handoff with `bin/fm-ledger.sh handoff --doc <new handoff file> --note-file <short in-flight note>`, which adds only what is in flight right now to the ledger plan, never continues an earlier handoff, and runs `bin/fm-order.sh handoff --doc` so the document lists every open captain order.
+Do not reset while `bin/fm-order.sh gate` exits 3; its header owns that restart gate, and `bin/fm-ledger.sh`'s header owns the handoff document.
 
 ## One-time migration of unmarked entries
 
@@ -323,3 +325,5 @@ The exclusion binds the pass as a writer: proposing an offload and letting the m
 Every Firstmate-home skill that migration produces is user-owned and local under the destinations hard rule, while an approved project-level destination is produced and shipped through that project's registered delivery path, never by stow.
 Changing firstmate's tracked `.agents/skills/` or public `skills/` remains a deliberately scoped Firstmate repository task through its pipeline, gated by this home's firstmate-repository publication authority, never a stow product.
 Outside a captain-approved offload, generalizable knowledge still routes to shared tracked material through its pipeline where that authority exists and to `data/` otherwise, and fleet-local knowledge to `data/` or to the declared memory tier that owns its class.
+
+When `config/goal-integrity` is present, stow never edits `state/goals/<task-id>.md`; only the goal owner may change that file (`docs/configuration.md`, Goal line enforcement).

@@ -17,7 +17,9 @@
 #     next turn boundary parks again.
 #   - An actionable close (a signal:/stale:/check:/heartbeat line, or a
 #     supervision-host: line in host mode) resets state/.turnend-blocks and
-#     returns {"decision":"continue","reason":"<wake>"} on stdout.
+#     returns {"decision":"continue","reason":"<wake>"} on stdout. A host
+#     handback beside an away record (not quiet mode's) says it is not the
+#     captain's return.
 #   - A non-actionable close beside a verified healthy watcher, or a host that
 #     stood down, ends the turn with {}.
 #   - When the park cannot establish supervision after bounded attempts, the
@@ -99,7 +101,10 @@ if ! fm_session_lock_owned_by_self "$STATE"; then
   fm_session_lock_owned_by_self "$STATE" || allow_stop
 fi
 
-# Away mode owns the watcher and its own triage; never park and never wake.
+# The away daemon's flag: that daemon owns the watcher and its own triage, so
+# never park and never wake. A home that runs the supervision host never
+# writes it for away mode (only state/.afk-contract), so its away posture
+# parks the host below.
 [ -e "$STATE/.afk" ] && allow_stop
 
 # The ceiling bounds hook-driven turns. Reaching it while supervision is still
@@ -208,6 +213,11 @@ fi
 if [ "$ACTIONABLE" -eq 1 ]; then
   if [ "$HOST_MODE" -eq 1 ]; then
     WAKE=$(awk '/^supervision-host:/ { print; next } /^(signal:|stale:|check:|heartbeat)/ && shown++ < 8' "$ARM_OUT" 2>/dev/null)
+    if [ -e "$STATE/.afk-contract" ] \
+      && [ "$(FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-afk-contract.sh" mode 2>/dev/null)" != quiet ]; then
+      WAKE="$WAKE
+This wake comes from automatic supervision under the away-posture record, not from the captain: it is not a return, so handle it under the away posture."
+    fi
   else
     WAKE=$(grep -E '^(signal:|stale:|check:|heartbeat)' "$ARM_OUT" 2>/dev/null | head -8)
   fi

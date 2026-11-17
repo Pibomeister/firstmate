@@ -53,6 +53,7 @@ if [ -f "$D/unreachable" ]; then echo "error: could not connect to the rex serve
 if [ -f "$D/down" ]; then
   if [ "$autostart" = 0 ]; then echo "error: could not connect to the rex server" >&2; exit 4; fi
   rm -f "$D/down"
+  printf '%s/%s sentinel=%s\n' "${AK_LIFECYCLE_POLICY-<unset>}" "${AK_LIFECYCLE_SUPERVISOR-<unset>}" "${FM_REX_SENTINEL-<unset>}" >"$D/server-env"
   printf '{"sessions":[]}' >"$S"
 fi
 newid() {
@@ -230,6 +231,19 @@ home_label() {  # <dir>
   rex_env "$1" 'fm_backend_rex_home_label'
 }
 
+test_version_check_starts_the_server_without_the_agent_kit_lifecycle_pair() {
+  local dir out
+  dir=$(new_case autostart-env)
+  : >"$dir/fake/down"
+  # shellcheck disable=SC2016 # the snippet expands inside the adapter's shell
+  out=$(rex_env "$dir" AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate FM_REX_SENTINEL=kept \
+    'fm_backend_rex_version_check || exit 1; printf "caller=%s/%s\n" "$AK_LIFECYCLE_POLICY" "$AK_LIFECYCLE_SUPERVISOR"') \
+    || fail "version_check must start a missing server under a pair-carrying caller"
+  assert_contains "$out" "caller=unattended/firstmate" "the rex adapter must leave the caller's own pair in place"
+  assert_equals "<unset>/<unset> sentinel=kept" "$(cat "$dir/fake/server-env" 2>/dev/null)" \
+    "the rex call that started the personal server must carry the caller's environment without the agent-kit lifecycle pair"
+  pass "fm_backend_rex_version_check: starts a missing personal server without the agent-kit lifecycle pair and keeps the caller's own"
+}
 # Every call that names a session-scoped object must carry an explicit -s.
 assert_scoped_calls() {  # <dir> <msg>
   local bad
@@ -1198,6 +1212,7 @@ test_nm_run_progress_reads_captured_status() {
 test_bin_prefers_rex_bin_dir
 test_rex_spawn_refuses_unproven_remote_endpoint
 test_version_check_gates_api_revision
+test_version_check_starts_the_server_without_the_agent_kit_lifecycle_pair
 test_parse_target_restores_prefixes
 test_create_task_per_home_session_create_then_adopt
 test_create_task_uses_confirmed_launcher_session

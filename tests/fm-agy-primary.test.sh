@@ -57,7 +57,7 @@ install_scripts() {
   for f in fm-bash-compat-lib.sh fm-sessionstart-agy.sh fm-turnend-guard-agy.sh \
            fm-turnend-guard.sh fm-sessionstart-run.sh fm-sessionstart-nudge.sh \
            fm-arm-pretool-check.sh fm-cd-pretool-check.sh fm-subagent-pretool-check.sh \
-           fm-claude-stop-autoarm.sh fm-hook-host-lib.sh \
+           fm-claude-stop-autoarm.sh fm-hook-host-lib.sh fm-stop-policy-lib.sh \
            fm-primary-scope-lib.sh fm-supervision-lib.sh fm-wake-lib.sh fm-path-lib.sh \
            fm-session-lock-lib.sh fm-cursor-lib.sh fm-gemini-lib.sh fm-operational-input.sh \
            fm-supervision-instructions.sh fm-harness.sh fm-lock.sh \
@@ -348,6 +348,99 @@ test_turnend_guard_agy_supervision_host_park() {
   pass "fm-turnend-guard-agy: an opted-in home parks on the supervision host with the agy pin"
 }
 
+# The real away entry (bin/fm-afk-launch.sh) against a test home, pinned to the
+# agy primary through the launch path's test seam.
+afk_launch() {  # <dir> <args...>
+  local dir=$1
+  shift
+  env -u FM_STATE_OVERRIDE -u FM_CONFIG_OVERRIDE -u FM_ROOT_OVERRIDE \
+    FM_HOME="$dir" FM_TEST_SEAM=1 FM_TEST_HARNESS=agy "$ROOT/bin/fm-afk-launch.sh" "$@" >/dev/null 2>&1
+}
+
+# On a home that runs the supervision host, the host is the away session: the
+# manual and the automatic away entry write only the away record, the daemon
+# launch refuses, and the Stop hook keeps parking the host beside the record,
+# so away mode never leaves this primary unsupervised.
+test_turnend_guard_agy_host_away_entry_keeps_parking() {
+  local dir payload out reason entry verb
+  payload='{"sessionId":"s-1","conversationId":"c-1","executionNum":1,"terminationReason":"NO_TOOL_CALL"}'
+  for entry in manual automatic; do
+    dir=$(make_primary_dir "$TMP_ROOT/stop-host-away-$entry")
+    : > "$dir/state/task1.meta"
+    printf 'claude\n' > "$dir/config/supervision-host"
+    case "$entry" in
+      manual) afk_launch "$dir" enter --words 'gone overnight' ;;
+      automatic) afk_launch "$dir" enter-auto ;;
+    esac
+    expect_code 0 $? "$entry away entry on an opted-in agy home"
+    [ -f "$dir/state/.afk-contract" ] || fail "$entry away entry did not write the away record"
+    for verb in start start-native; do
+      afk_launch "$dir" "$verb" && fail "$entry: '$verb' launched the away daemon on a home that runs the supervision host"
+    done
+    [ ! -e "$dir/state/.afk" ] || fail "$entry away entry on an opted-in agy home wrote the away daemon's flag"
+    write_arm_fixture "$dir" actionable
+    write_host_fixture "$dir" handback
+    out=$(run_agy_stop "$dir" "$payload")
+    [ ! -e "$dir/state/arm-ran" ] || fail "$entry: an opted-in away home ran the plain arm"
+    [ "$(cat "$dir/state/host-ran" 2>/dev/null)" = "$(printf 'agy\tpark')" ] \
+      || fail "$entry: the away park must run the host as 'park' with the agy pin: $(cat "$dir/state/host-ran" 2>/dev/null)"
+    assert_equals "continue" "$(printf '%s' "$out" | jq -r '.decision // empty' 2>/dev/null)" \
+      "$entry: a handed-back away wake must return decision=continue"
+    reason=$(printf '%s' "$out" | jq -r '.reason // empty' 2>/dev/null)
+    assert_contains "$reason" "supervision-host: the away session could not take this wake" \
+      "$entry: a handed-back away wake must carry the supervision-host line"
+    assert_contains "$reason" "not from the captain: it is not a return" \
+      "$entry: an away handback must say it is not the captain's return"
+  done
+
+  # Quiet mode's record is a present captain (bin/fm-afk-contract.sh AWAY OR
+  # QUIET), so the same handback beside it carries no away note.
+  dir=$(make_primary_dir "$TMP_ROOT/stop-host-quiet-record")
+  : > "$dir/state/task1.meta"
+  printf 'claude\n' > "$dir/config/supervision-host"
+  FM_HOME="$dir" FM_AFK_MODE=quiet "$ROOT/bin/fm-afk-contract.sh" enter --words 'keep routine wakes off my main' >/dev/null 2>&1 \
+    || fail "fixture: could not record quiet mode"
+  write_host_fixture "$dir" handback
+  out=$(run_agy_stop "$dir" "$payload")
+  reason=$(printf '%s' "$out" | jq -r '.reason // empty' 2>/dev/null)
+  assert_contains "$reason" "supervision-host:" "the quiet-record handback must reach main"
+  assert_not_contains "$reason" "not a return" "a handback beside a quiet record must not call itself away-posture supervision"
+  pass "fm-turnend-guard-agy: away entry on a host home writes no daemon flag and the Stop hook keeps parking the host"
+}
+
+# The away daemon's flag (state/.afk) means the daemon owns supervision, so the
+# Stop hook stands down: away mode on a home without the host, and quiet mode
+# that entered through the daemon on a home that runs it.
+test_turnend_guard_agy_stands_down_for_the_away_daemon() {
+  local dir payload out label
+  payload='{"sessionId":"s-1","conversationId":"c-1","executionNum":1,"terminationReason":"NO_TOOL_CALL"}'
+  for label in away-no-host quiet-host; do
+    dir=$(make_primary_dir "$TMP_ROOT/stop-daemon-$label")
+    : > "$dir/state/task1.meta"
+    case "$label" in
+      away-no-host)
+        afk_launch "$dir" enter --words 'gone overnight' || fail "$label: away entry failed"
+        afk_launch "$dir" start-native || fail "$label: a home without the host must prepare the away daemon"
+        assert_equals away "$(head -n 1 "$dir/state/.afk" 2>/dev/null)" "$label: the daemon's flag must record away mode"
+        ;;
+      quiet-host)
+        printf 'claude\n' > "$dir/config/supervision-host"
+        FM_AFK_MODE=quiet afk_launch "$dir" enter --words 'keep routine wakes off my main' \
+          || fail "$label: quiet entry failed on an agy home whose host is not attended-ready"
+        FM_AFK_MODE=quiet afk_launch "$dir" start-native || fail "$label: quiet mode must still prepare the daemon"
+        assert_equals quiet "$(head -n 1 "$dir/state/.afk" 2>/dev/null)" "$label: the daemon's flag must record quiet mode"
+        ;;
+    esac
+    write_arm_fixture "$dir" actionable
+    write_host_fixture "$dir" handback
+    out=$(run_agy_stop "$dir" "$payload")
+    assert_equals "{}" "$out" "$label: the Stop hook must stand down while the away daemon owns supervision"
+    [ ! -e "$dir/state/arm-ran" ] || fail "$label: the Stop hook armed while the away daemon owns supervision"
+    [ ! -e "$dir/state/host-ran" ] || fail "$label: the Stop hook ran the host while the away daemon owns supervision"
+  done
+  pass "fm-turnend-guard-agy: the away daemon's flag still stands the Stop hook down in away and quiet mode"
+}
+
 test_turnend_guard_agy_park_timeout_rearms() {
   local dir payload out decision reason
   dir=$(make_primary_dir "$TMP_ROOT/stop-timeout")
@@ -619,6 +712,8 @@ fm_test_run \
   test_sessionstart_agy_primary_secondmate_and_worktree_scope \
   test_turnend_guard_agy_actionable_wake_followup \
   test_turnend_guard_agy_supervision_host_park \
+  test_turnend_guard_agy_host_away_entry_keeps_parking \
+  test_turnend_guard_agy_stands_down_for_the_away_daemon \
   test_turnend_guard_agy_park_timeout_rearms \
   test_turnend_guard_agy_fleet_empty_and_healthy_close \
   test_turnend_guard_agy_non_normal_termination_reasons \

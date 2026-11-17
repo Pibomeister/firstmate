@@ -576,6 +576,55 @@ test_no_mistakes_dod_green_detection() {
   pass "fm-brief.sh: no-mistakes DOD detects a green PR from the drive call, not a status poll"
 }
 
+# Repeat runs, not single runs, are the validation overhead: a worker that fixes
+# one finding per round, pushes each follow-up fix as its own run, or rewrites a
+# validated head pays a full review again each time. Every no-mistakes variant
+# renders the convergence lines; a mode without the pipeline renders none.
+test_no_mistakes_dod_convergence_lines() {
+  local home id brief variant
+  home="$TMP_ROOT/convergence-home"
+  mkdir -p "$home/data"
+  for variant in default:--mode:no-mistakes manual:--pr:manual gerrit:--forge:gerrit; do
+    id="brief-converge-${variant%%:*}"
+    case "$variant" in
+      default*) FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null 2>&1 ;;
+      manual*) FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes --pr manual >/dev/null 2>&1 ;;
+      gerrit*) FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes --forge gerrit >/dev/null 2>&1 ;;
+    esac
+    brief="$home/data/$id/brief.md"
+    assert_present "$brief" "$variant brief was not scaffolded"
+    assert_grep "run the repository's own lint command" "$brief" \
+      "$variant no-mistakes DOD must require a lint preflight before each run"
+    assert_grep "the targeted tests that cover your change, sending any heavy suite through the machine-wide test line" "$brief" \
+      "$variant no-mistakes DOD must require targeted tests, heavy ones through the test line"
+    assert_grep "never replaces, skips, or narrows a pipeline step, and the gate still runs in full" "$brief" \
+      "$variant no-mistakes DOD must keep the full gate after the preflight"
+    assert_grep "no-mistakes axi respond --action fix --findings <ids to fix> --ignore <ids to decline>\` call, so one fix round covers them all" "$brief" \
+      "$variant no-mistakes DOD must answer every fix-gate finding in one round"
+    assert_grep "firstmate's decision then returns one exact response command that covers every finding" "$brief" \
+      "$variant no-mistakes DOD must fold ask-user and other findings into one round"
+    assert_grep "end that file with one line \`other: fix=<ids> decline=<ids>\`" "$brief" \
+      "$variant no-mistakes DOD must record the worker's choice for non-ask-user findings"
+    assert_grep "The one exception is a captain-ordered supersession that firstmate steers you through" "$brief" \
+      "$variant no-mistakes DOD must carve the supersession sequence out of commit-on-top"
+    assert_grep "commit on top of it, never rebase, amend, squash, reset, or force-push it" "$brief" \
+      "$variant no-mistakes DOD must keep follow-up work on top of a validated head"
+    assert_grep "before you start one run for all of them, not one run per fix" "$brief" \
+      "$variant no-mistakes DOD must batch follow-up fixes into one run"
+    assert_grep "every decision the captain already made on this task, in the captain's words" "$brief" \
+      "$variant no-mistakes DOD must carry settled captain decisions into --intent"
+    assert_grep "a decision made by firstmate or by you is still not captain intent" "$brief" \
+      "$variant no-mistakes DOD must keep non-captain decisions out of --intent"
+  done
+  id="brief-converge-direct"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode direct-PR >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+  assert_present "$brief" "direct-PR brief was not scaffolded"
+  assert_no_grep "one fix round covers them all" "$brief" \
+    "direct-PR brief must not render no-mistakes gate convergence lines"
+  pass "fm-brief.sh: every no-mistakes DOD renders the run-convergence lines"
+}
+
 test_ask_user_escalation_format() {
   local home id brief mode other_id other_brief
   home="$TMP_ROOT/ask-user-home"
@@ -1886,6 +1935,42 @@ test_crewmate_scaffolds_route_heavy_tests_through_the_queue() {
   pass "fm-brief.sh: every crewmate scaffold routes heavy test suites through the test queue"
 }
 
+test_crewmate_scaffolds_name_a_runnable_ledger_next() {
+  local home brief mode rule command out rc
+  if ! command -v tasks-axi >/dev/null 2>&1; then
+    pass "fm-brief.sh: ledger next check skipped (tasks-axi is not installed)"
+    return 0
+  fi
+  home="$TMP_ROOT/ledger next home's"
+  mkdir -p "$home/data" "$home/state" "$home/config"
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$home/data/backlog.md"
+  FM_HOME="$home" bash "$ROOT/bin/fm-tasks-axi.sh" add other-first "beta outranks alpha" --repo beta --priority 0 >/dev/null \
+    || fail "could not seed the other project's ready item"
+  for mode in no-mistakes direct-PR local-only scout; do
+    if [ "$mode" = scout ]; then
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "ledger-next-$mode" alpha --scout >/dev/null 2>&1 \
+        || fail "fm-brief.sh --scout exited non-zero"
+    else
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "ledger-next-$mode" alpha --mode "$mode" >/dev/null 2>&1 \
+        || fail "fm-brief.sh --mode $mode exited non-zero"
+    fi
+    brief="$home/data/ledger-next-$mode/brief.md"
+    rule=$(grep -F 'next ready backlog item' "$brief")
+    [ -n "$rule" ] || fail "$mode brief does not name the ledger next command"
+    command=$(printf '%s\n' "$rule" | cut -d '`' -f 2)
+    out=$(cd "$TMP_ROOT" && env -u FM_HOME /bin/bash -c "$command" 2>&1); rc=$?
+    expect_code 3 "$rc" "$mode ledger next command with no ready item in the briefed project (got: $out)"
+    FM_HOME="$home" bash "$ROOT/bin/fm-tasks-axi.sh" add "next-$mode" "ready for $mode" --repo alpha --priority 2 >/dev/null \
+      || fail "could not seed a ready item"
+    out=$(cd "$TMP_ROOT" && env -u FM_HOME /bin/bash -c "$command" 2>&1); rc=$?
+    expect_code 0 "$rc" "$mode ledger next command with a ready item (got: $out)"
+    assert_contains "$out" "NEXT next-$mode project=alpha" "$mode ledger next command did not return the briefed project's item"
+    FM_HOME="$home" bash "$ROOT/bin/fm-tasks-axi.sh" start "next-$mode" >/dev/null \
+      || fail "could not start the seeded item"
+  done
+  pass "fm-brief.sh: ship and scout briefs name a runnable read-only ledger next command for their own project"
+}
+
 test_queue_command_quotes_foreign_firstmate_path() {
   local home foreign_root mode brief rule ship_rule command out rc
   home="$TMP_ROOT/test-queue-foreign-home"
@@ -1933,6 +2018,7 @@ test_delivery_flags_are_refused_where_they_do_not_apply
 test_faster_paths_use_configured_authority_without_stacked_review
 test_no_mistakes_dod_wording
 test_no_mistakes_dod_green_detection
+test_no_mistakes_dod_convergence_lines
 test_pr_based_dod_requires_non_draft
 test_ask_user_escalation_format
 test_ship_project_memory_wording
@@ -1967,3 +2053,4 @@ test_branch_prefix_command_is_shell_safe
 test_crewmate_scaffolds_forbid_pool_administration
 test_crewmate_scaffolds_route_heavy_tests_through_the_queue
 test_queue_command_quotes_foreign_firstmate_path
+test_crewmate_scaffolds_name_a_runnable_ledger_next

@@ -293,6 +293,57 @@ SH
   pass "fm_backend_paseo_ensure_running: returns immediately when paseo is already reachable"
 }
 
+# make_paseo_daemon_env_fakebin: a stateful `paseo` stub whose daemon reports
+# down until `start` runs. `start` records whether its own environment carries
+# the agent-kit lifecycle pair and a creator sentinel to
+# $FM_PASEO_DAEMON_ENV_LOG, then marks the daemon up.
+make_paseo_daemon_env_fakebin() { # <dir> -> echoes fakebin dir
+  local fb="$1/fakebin"
+  mkdir -p "$fb"
+  cat >"$fb/paseo" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  status)
+    if [ -e "$FM_PASEO_DAEMON_MARKER" ]; then
+      printf '%s\n' '{"localDaemon":"running","connectedDaemon":"reachable"}'
+      exit 0
+    fi
+    exit 1
+    ;;
+  start)
+    {
+      for name in AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR FM_PASEO_SENTINEL; do
+        eval 'value=${'"$name"'-<unset>}'
+        printf '%s=%s\n' "$name" "$value"
+      done
+    } >"$FM_PASEO_DAEMON_ENV_LOG"
+    : >"$FM_PASEO_DAEMON_MARKER"
+    ;;
+esac
+exit 0
+SH
+  chmod +x "$fb/paseo"
+  printf '%s\n' "$fb"
+}
+
+test_ensure_running_starts_the_daemon_without_the_agent_kit_lifecycle_pair() {
+  local dir fb log out
+  dir="$TMP_ROOT/daemon-env"
+  mkdir -p "$dir"
+  log="$dir/env"
+  fb=$(make_paseo_daemon_env_fakebin "$dir")
+  out=$(PATH="$fb:$PATH" FM_PASEO_DAEMON_ENV_LOG="$log" FM_PASEO_DAEMON_MARKER="$dir/up" FM_PASEO_SENTINEL=kept \
+    AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate \
+    bash -c '. "$0/bin/backends/paseo.sh"; fm_backend_paseo_ensure_running || exit 1; printf "caller=%s/%s\n" "$AK_LIFECYCLE_POLICY" "$AK_LIFECYCLE_SUPERVISOR"' "$ROOT")
+  expect_code 0 $? "ensure_running should start the daemon under a pair-carrying caller"
+  assert_contains "$out" "caller=unattended/firstmate" "ensure_running must leave the caller's own pair in place"
+  assert_contains "$(cat "$log" 2>/dev/null)" "FM_PASEO_SENTINEL=kept" "ensure_running did not hand the caller's environment to 'paseo start'"
+  assert_contains "$(cat "$log")" "AK_LIFECYCLE_POLICY=<unset>" "'paseo start' leaked AK_LIFECYCLE_POLICY into the shared daemon"
+  assert_contains "$(cat "$log")" "AK_LIFECYCLE_SUPERVISOR=<unset>" "'paseo start' leaked AK_LIFECYCLE_SUPERVISOR into the shared daemon"
+  pass "fm_backend_paseo_ensure_running: starts the shared daemon without the agent-kit lifecycle pair and keeps the caller's own"
+}
+
 # --- create_task: duplicate refusal, id resolution ---------------------------
 
 test_create_task_refuses_duplicate_name() {
@@ -1063,6 +1114,7 @@ test_dispatch_composer_state_routes_paseo
 test_daemon_state_ok
 test_daemon_state_down_on_unreachable
 test_ensure_running_returns_immediately_when_already_ok
+test_ensure_running_starts_the_daemon_without_the_agent_kit_lifecycle_pair
 test_create_task_refuses_duplicate_name
 test_create_task_creates_and_parses_ids
 test_create_task_refuses_unreadable_inventory

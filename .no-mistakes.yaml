@@ -38,6 +38,7 @@ commands:
 # The evidence is not committed to the feature or default branch.
 test:
   instructions: |
+    Scope the test evidence to the changed surface. Run the colocated tests/<subject>.test.sh for every changed bin/ script or library when one exists, and any test that exercises the changed behavior, and run a live Herdr, lab-home, or harness scenario only when the change touches the behavior that scenario proves. A change to prose, skills, or brief text with no other executable behavior needs only the tests that render or check that text. Scoping chooses which evidence to gather; it never skips the Test step or leaves a changed behavior without evidence.
     Run live Herdr scenarios only through bin/fm-herdr-lab.sh with a named non-default fm-lab-* session, following that helper's prepare, provision, run, and teardown contract exactly.
     Never touch the live default Herdr session or fleet panes.
     Prefer a throwaway lab for spawn, long-launch, and Claude-path proofs, and tear it down in the same evidence turn.

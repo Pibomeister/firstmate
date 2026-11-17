@@ -575,8 +575,9 @@ test_batch_reports_a_deferred_pair() {
   write_live "$home" live-a "$case_dir/project"
   out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" "task-c=$case_dir/project" --mode no-mistakes --yolo off) || rc=$?
   expect_code "$DEFER_EXIT" "$rc" "a batch whose only pair was deferred did not exit with the deferral status: $out"
-  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project is at capacity, so it stays queued" \
+  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - a capacity gate" \
     "the batch did not report the deferral"
+  assert_contains "$out" "deferred: project" "the child's own deferred line did not name the project cause"
   assert_not_contains "$out" "batch: FAILED" "the batch reported a deferral as a failure"
   pass "a batch reports a capacity deferral as deferred, not failed"
 }
@@ -649,8 +650,90 @@ SH
   pass "an Orca spawn takes the shared project lock whenever a same-origin clone is capped and defers before creating anything"
 }
 
+test_lane_capacity_defers_spawn_past_home_cap() {
+  local case_dir home out rc=0 before worktrees
+  case_dir=$(make_case lane-cap task-c)
+  home="$case_dir/home"
+  printf '1\n' > "$home/config/lane-capacity"
+  write_live "$home" live-a "$case_dir/project"
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a spawn past the lane cap was not deferred: $out"
+  assert_contains "$out" "deferred: lane capacity" "the lane deferral did not name lane capacity"
+  assert_nothing_created "$case_dir" "$home" task-c "$before" "$worktrees"
+  rc=0
+  out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" "task-c=$case_dir/project" --mode no-mistakes --yolo off) || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a batch past the lane cap was not deferred: $out"
+  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - a capacity gate" "the batch did not report the lane deferral"
+  assert_contains "$out" "deferred: lane capacity" "the batch hid the child's lane-capacity cause"
+  assert_not_contains "$out" "its project is at capacity" "the batch summary blamed project capacity for a lane deferral"
+  pass "a spawn past the home lane cap is deferred with exit 75 and creates nothing"
+}
+
+# stub_load <case-dir> <load1>: Darwin probes reporting <load1> on 16 cores.
+# uname answers Darwin only inside bin/fm-capacity.sh, so the rest of a spawn
+# keeps the real platform on a Linux runner.
+stub_load() {
+  cat > "$1/fakebin/sysctl" <<SH
+#!/usr/bin/env bash
+case "\${2:-}" in
+  vm.loadavg) echo "{ $2 1.00 1.00 }" ;;
+  hw.logicalcpu) echo 16 ;;
+  *) exec /usr/bin/sysctl "\$@" ;;
+esac
+SH
+  cat > "$1/fakebin/uname" <<'SH'
+#!/usr/bin/env bash
+case "$(ps -o args= -p "$PPID" 2>/dev/null)" in
+  *fm-capacity.sh*) echo Darwin ;;
+  *) PATH=/usr/bin:/bin exec uname "$@" ;;
+esac
+SH
+  chmod +x "$1/fakebin/sysctl" "$1/fakebin/uname"
+}
+
+test_lane_load_ceiling_defers_spawn_with_stubbed_load() {
+  local case_dir home out rc=0 before worktrees
+  case_dir=$(make_case lane-load task-c)
+  home="$case_dir/home"
+  printf '9\nmax-load1 20\n' > "$home/config/lane-capacity"
+  stub_load "$case_dir" 200.00
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a spawn under a stubbed load of 200 was not deferred: $out"
+  assert_contains "$out" "deferred: lane capacity" "the load deferral did not name lane capacity"
+  assert_contains "$out" "load: 200.00 at or over its ceiling 20 (max-load1)" "the load deferral did not name the load cause"
+  assert_nothing_created "$case_dir" "$home" task-c "$before" "$worktrees"
+  pass "a spawn under a stubbed load over max-load1 is deferred with exit 75 and creates nothing"
+}
+
+test_max_load1_raises_spawn_ceiling_over_cores() {
+  local case_dir home out rc=0 before worktrees
+  case_dir=$(make_case lane-load-raised task-c)
+  home="$case_dir/home"
+  printf '9\nmax-load1 40\n' > "$home/config/lane-capacity"
+  stub_load "$case_dir" 41.00
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a spawn at load 41 over max-load1 40 was not deferred: $out"
+  assert_nothing_created "$case_dir" "$home" task-c "$before" "$worktrees"
+  stub_load "$case_dir" 24.00
+  rc=0
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a spawn at load 24 on 16 cores under max-load1 40 was refused: $out"
+  assert_contains "$out" "spawned task-c" "a spawn under max-load1 did not launch"
+  assert_not_contains "$out" "deferred:" "a spawn under max-load1 was deferred by the core count"
+  pass "max-load1 40 on 16 cores admits a spawn at load 24 and defers one at load 41"
+}
+
 test_undeclared_capacity_keeps_dispatch_uncapped
 test_available_capacity_admits_the_worker
+test_lane_capacity_defers_spawn_past_home_cap
+test_lane_load_ceiling_defers_spawn_with_stubbed_load
+test_max_load1_raises_spawn_ceiling_over_cores
 test_exhausted_capacity_defers_without_leaving_anything_behind
 test_spaced_project_name_is_declared
 test_hash_prefixed_project_name_is_declared

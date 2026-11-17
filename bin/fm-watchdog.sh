@@ -7,6 +7,12 @@
 #                                 One scan and action pass, then rewrite the status file.
 #   scan [--home <path>]          One observation pass; prints each subject and its workers' dialog reads; no action.
 #   judge <purpose> <answer-ere>  Bounded cheap-model call; prompt on stdin; prints the answer.
+#   council --task <id> --key <key> [--home <path>] [--record-file <file>]
+#                                 One blind council on one decision, now. The record is the
+#                                 complete file, else its complete open decision; records over
+#                                 2000 characters are refused. Dry-run never returns an answer. Prints
+#                                 council=<ruled|no-ruling|held|dry-run|refused|busy|failed>
+#                                 answer=<PROCEED x|none> record=<path|none> prior=<0|1> seats=<answers>.
 #   status                        Print the status file.
 #   ack-read                      Record that the status file was read now.
 #   pickup <token>                Run by a restarted session to prove it took over.
@@ -27,8 +33,18 @@
 #   state/watchdog/near-loop/<home-basename>-<path-cksum>  epoch, evidence cksum, and answer of the last near-loop judgment.
 #   state/watchdog/escalated/<home-basename>-<path-cksum>  present after a restart loop; remove it to clear.
 #   state/watchdog/last-read     epoch of the last ack-read.
+#   state/night-score/supervisor-gap.tsv  append-only supervisor-gap record of every watched home; docs/watchdog.md owns its rows.
+#   state/night-score/supervisor-activity.tsv  append-only activity-source record of every watched home; docs/watchdog.md owns its rows.
+#   <watched home>/state/quota-guard/, <watched home>/state/quota-limit-dialogs.tsv
+#                                written by bin/fm-quota-guard.sh, whose header owns them.
+#   state/memory-guard*.tsv      the owner home's host memory and swap samples,
+#                                written by bin/fm-memory-guard.sh, whose header owns them.
 #   data/watchdog/status.md      the short status file, rewritten atomically after each pass.
 #   data/watchdog/handoffs/, data/watchdog/rulings/  restart handoffs and council rulings.
+#   data/watchdog/no-rulings/    the record of each council that gave no ruling.
+#   state/watchdog/council-locks/  one owner-identity lock per running council.
+# Council locators are Git blob IDs of NUL-separated home/task/key tuples;
+# authenticated legacy filenames remain readable. Hashing uses the code root.
 # A restarted session writes <its home>/state/watchdog/pickups/<token>.
 #   <watched home>/state/watchdog/captain  key=value record of that home's live
 #                                captain, rewritten each pass and by pickup.
@@ -50,9 +66,18 @@ WD=$STATE/watchdog
 OUT=$OWNER_HOME/data/watchdog
 LEDGER=$WD/actions.tsv
 CALLS=$WD/model-calls.tsv
+WD_COUNCIL_MAX_CHARS=2000
 
 # shellcheck source=bin/fm-watchdog-lib.sh
 . "$SCRIPT_DIR/fm-watchdog-lib.sh"
+# A boot-time launchd or systemd PATH can omit ~/.local/bin, where a
+# self-updated herdr lives, and then resolve an older package-managed copy that
+# starts a server the rest of the fleet cannot drive. Every command, including
+# render-launchd and render-systemd, uses the same normalized PATH, so any tool
+# in ~/.local/bin, not only herdr, wins over a package-managed copy, as it does
+# in an interactive Firstmate shell.
+PATH=$(fm_wd_user_bin_path "$PATH" "${HOME:-}")
+export PATH
 # shellcheck source=bin/fm-composer-lib.sh
 . "$SCRIPT_DIR/fm-composer-lib.sh"
 # shellcheck source=bin/fm-secret-lib.sh
@@ -67,8 +92,14 @@ CALLS=$WD/model-calls.tsv
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
 # shellcheck source=bin/fm-classify-lib.sh
 . "$SCRIPT_DIR/fm-classify-lib.sh"
+# shellcheck source=bin/fm-busy-lib.sh
+. "$SCRIPT_DIR/fm-busy-lib.sh"
 # shellcheck source=bin/fm-backend.sh
 . "$SCRIPT_DIR/fm-backend.sh"
+# Direct `orca` execs below cannot see a shell function. Invalidate after a
+# send or create so a cached supervision read is not served past that mutation.
+# shellcheck source=bin/fm-orca-cli-cache.sh
+. "$SCRIPT_DIR/fm-orca-cli-cache.sh"
 # shellcheck source=bin/fm-warm-compact-lib.sh
 . "$SCRIPT_DIR/fm-warm-compact-lib.sh"
 # shellcheck source=bin/fm-context-footer-lib.sh
@@ -93,6 +124,20 @@ wd_mode() {
     *) printf 'dry-run\n' ;;
   esac
 }
+
+# The decision path has its own switch: the decision nudge, the council, and the
+# ruling nudge. An unset `decisions` follows `mode`; any value but `act` is a dry run.
+wd_decisions_mode() {
+  case "${WD_FORCE_DRY:-}:$(cfg decisions '')" in
+    1:*) printf 'dry-run\n' ;;
+    *:) wd_mode ;;
+    *:act) printf 'act\n' ;;
+    *) printf 'dry-run\n' ;;
+  esac
+}
+
+# The mode one nudge runs under: the decision path sets WD_NUDGE_MODE for its own.
+wd_nudge_mode() { printf '%s\n' "${WD_NUDGE_MODE:-$(wd_mode)}"; }
 
 # GNU stat's -f writes filesystem data, so select the platform dialect once.
 if [ "$(uname -s)" = Darwin ]; then
@@ -164,6 +209,15 @@ wd_capture() {  # <backend> <target> <lines>
   fm_run_timed_fn "$(cfgi call-timeout-secs 20)" fm_backend_capture "$1" "$2" "$3" 2>/dev/null
 }
 
+# The cause of a failed herdr read when it is a client and server protocol
+# mismatch on the target's session, else nothing (bin/backends/herdr.sh
+# fm_backend_herdr_client_mismatch). It never starts or stops a server.
+wd_herdr_mismatch() {  # <herdr-target>
+  fm_backend_source herdr >/dev/null 2>&1 || return 1
+  fm_backend_herdr_parse_target "$1" || return 1
+  fm_backend_herdr_client_mismatch "$FM_BACKEND_HERDR_SESSION"
+}
+
 # Match fm-control.sh usage_limit_dialog_name: a viewport read is expected
 # only on backends in FM_BACKEND_VISIBLE_CAPTURE, or Orca with a recorded
 # Droid frame. Callers that need history keep using wd_capture.
@@ -192,13 +246,13 @@ wd_view() {  # <backend> <target> [expected-label]
 # when a viewport read is expected: a failed read is unknown (no dialog
 # action, no quota pick), and a successful blank screen is none.
 # Backends without a viewport keep classifying from scrollback.
-wd_observe_dialog() {  # <backend> <target> [expected-label]
-  local b=$1 t=$2 label=${3-} scroll view dialog
+wd_observe_dialog() {  # <backend> <target> [expected-label] [harness]
+  local b=$1 t=$2 label=${3-} harness=${4-} scroll view dialog
   if [ -z "$label" ]; then
     case "${O_ID:-}" in ''|-) ;; *) label=fm-$O_ID ;; esac
   fi
   scroll=$(wd_capture "$b" "$t" 60) || scroll=
-  dialog=$(fm_wd_observe_dialog "$scroll") || dialog=
+  dialog=$(fm_wd_observe_dialog "$scroll" "$harness") || dialog=
   case "$dialog" in
     permission)
       printf '%s\n' permission
@@ -210,7 +264,7 @@ wd_observe_dialog() {  # <backend> <target> [expected-label]
       printf '%s\n' unknown
       return 0
     }
-    fm_wd_observe_dialog "$view"
+    fm_wd_observe_dialog "$view" "$harness"
     return
   fi
   [ -n "$dialog" ] || return 1
@@ -259,7 +313,7 @@ wd_open_decisions() {  # <state> <now>
       [ -n "$key" ] || continue
       at=$(grep -F "[key=$key]" "$f" 2>/dev/null | tail -n 1 | sed -n 's/.*\[at=\([0-9][0-9]*\)\].*/\1/p')
       [ -n "$at" ] || at=$(wd_mtime "$f")
-      printf '%s\t%s\t%s\t%s\t%s\n' "$task" "$key" "$verb" "$((now - at))" "$(printf '%s' "$summary" | tr '\t' ' ' | cut -c1-500)"
+      printf '%s\t%s\t%s\t%s\t%s\n' "$task" "$key" "$verb" "$((now - at))" "$(printf '%s' "$summary" | tr '\t' ' ')"
     done
   done
 }
@@ -289,7 +343,7 @@ wd_read_composer() {
     if fm_backend_source orca >/dev/null 2>&1; then
       fm_run_timed_fn 10 fm_backend_orca_draft_present "$O_TARGET" >/dev/null 2>&1 || rc=$?
     fi
-    [ "$rc" = 1 ] || O_COMPOSER=pending-unproven
+    [ "$rc" = 1 ] || O_COMPOSER='pending-unproven'
   fi
   O_DRAFT=''
   O_COMPOSER_TEXT=$(printf '%s\n' "$O_PANE" | fm_wd_strip_ansi | awk 'NF { r[++n] = $0 } END { for (i = n - 7; i <= n; i++) if (i > 0) print r[i] }')
@@ -328,6 +382,19 @@ wd_read_owner() {
   else
     O_OWNER=dead
   fi
+}
+
+# wd_same_live_owner <state-dir>: the lock still names the owner wd_read_owner
+# observed (same pid and recorded session, and the same anchor instance when it
+# matched), and that owner is still live.
+wd_same_live_owner() {
+  local st=$1 pid sess
+  pid=$(head -n 1 "$st/.lock" 2>/dev/null | tr -cd '0-9')
+  [ -n "$pid" ] && [ "$pid" = "$O_LOCK_PID" ] || return 1
+  sess=$(fm_session_lock_recorded_session_id "$st" 2>/dev/null) || sess=''
+  [ "$sess" = "$O_SESSION" ] || return 1
+  if [ "$O_INSTANCE" = match ]; then fm_session_lock_anchor_instance_matches "$st" 2>/dev/null || return 1; fi
+  wd_pid_alive "$pid" || fm_session_lock_recorded_owner_live "$st" >/dev/null 2>&1
 }
 
 # wd_lock_at <state-dir>: the newest mtime of the session lock files, else 0.
@@ -386,17 +453,61 @@ wd_publish_captain() {
   fi
 }
 
+# wd_lock_endpoint <state-dir> <home>
+# Prints the concrete backend and terminal from state/.lock-session, one per
+# line, when both name this home. unknown, empty, an illegal token, and a
+# different worktree are not addresses.
+wd_lock_endpoint() {
+  local side=$1/.lock-session backend terminal worktree home_phys side_phys
+  [ -f "$side" ] && [ ! -L "$side" ] || return 1
+  backend=$(sed -n 's/^backend=//p' "$side")
+  terminal=$(sed -n 's/^terminal=//p' "$side")
+  worktree=$(sed -n 's/^worktree=//p' "$side")
+  # The subject home is the physical path. The lock records the FM_HOME it was
+  # given, which may be a symlink or a doubled slash for that same directory.
+  home_phys=$(cd -P -- "$2" 2>/dev/null && pwd -P) || return 1
+  side_phys=$(cd -P -- "$worktree" 2>/dev/null && pwd -P) || return 1
+  [ "$side_phys" = "$home_phys" ] || return 1
+  case "$backend" in ''|unknown|*[!A-Za-z0-9_-]*) return 1 ;; esac
+  case "$terminal" in ''|unknown|*[!A-Za-z0-9_.:%-]*) return 1 ;; esac
+  printf '%s\n%s\n' "$backend" "$terminal"
+}
+
+# _wd_act_take <epoch> <source>: wd_activity's step; keeps the newest stamp that
+# is not later than the clock in the caller's at and src.
+_wd_act_take() {
+  fm_wd_epoch_ok "$1" || return 0
+  [ "$1" -le "$now" ] && [ "$1" -gt "$at" ] || return 0
+  at=$1 src=$2
+}
+
+# wd_activity <now>: sets O_ACT_AGE and O_ACT_SRC from the newest activity
+# source of the subject wd_observe is reading. docs/watchdog.md owns the sources.
+wd_activity() {
+  local now=$1 at=0 src='' ps
+  [ -z "$O_TRANSCRIPT" ] || _wd_act_take "$(wd_mtime "$O_TRANSCRIPT")" transcript
+  _wd_act_take "$(fm_wd_last_wake_ack "$O_HOME/state/wake-ledger.tsv" "$now" "$O_HOME/state/.supervise-daemon.acks")" wake-ack
+  if [ "$O_PARENT" != - ]; then
+    ps=$O_PARENT/state
+    _wd_act_take "$(fm_busy_record_ts "$ps" "$O_ID" "$O_HARNESS" 2>/dev/null)" busy-state
+    [ ! -f "$ps/$O_ID.turn-ended" ] || _wd_act_take "$(wd_mtime "$ps/$O_ID.turn-ended")" turn-ended
+    _wd_act_take "$(wd_lock_at "$O_HOME/state")" session-lock
+  fi
+  [ -z "$src" ] || O_ACT_AGE=$((now - at)) O_ACT_SRC=$src
+}
+
 # wd_observe <home> <parent> <id>: fills the O_* globals for one subject and
 # saves the comparable parts to state/watchdog/subjects/<home-basename>-<path-cksum>.
 wd_observe() {
   local home=$1 parent=$2 id=$3 st now hb prev meta row hb_sid hb_wpid='' hb_wsid='' ctx dt hb_at=0 cb='' ct=''
+  local lock_ep='' lock_backend='' lock_target=''
   local footer_text='' footer_src='' reading
   st=$home/state
   now=$(wd_now)
   O_HOME=$home O_PARENT=$parent O_ID=$id O_TAG=$(wd_tag "$home") O_KEY=$(wd_state_key "$home")
-  O_BACKEND='' O_TARGET='' O_SESSION='' O_HB_AGE=unknown O_CTX='' O_CTX_SRC='' O_CTX_READING=''
-  O_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_AUTOWAIT=0 O_COMPOSER=unknown O_TURN=unknown
-  O_LOCK_PID='' O_ALIVE=0 O_INSTANCE=unknown O_OWNER=none O_CPU_BUSY=unknown O_TRANSCRIPT='' O_TR_AGE=unknown
+  O_BACKEND='' O_TARGET='' O_HARNESS='' O_SESSION='' O_HB_AGE=unknown O_CTX='' O_CTX_SRC='' O_CTX_READING='' O_CTX_RESET=''
+  O_PANE='' O_HERDR_MISMATCH='' O_DIALOG_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_AUTOWAIT=0 O_LIMIT_FOOTER=0 O_COMPOSER=unknown O_TURN=unknown
+  O_LOCK_PID='' O_ALIVE=0 O_INSTANCE=unknown O_OWNER=none O_CPU_BUSY=unknown O_TRANSCRIPT='' O_TR_AGE=unknown O_ACT_AGE=unknown O_ACT_SRC=''
   C_BACKEND='' C_TARGET='' C_MOVED=''
   O_LOOP=none O_LOOP_N=0 O_EVENTS='' O_RESTART_REQ=0 O_OWED_N=0 O_OWED_AGE=0
   O_AFK=0 O_DAEMON=unknown O_PREV_COMPOSER='' O_PREV_SIG='' O_COMPOSER_TEXT='' O_COMPOSER_ABOVE='' O_DRAFT=''
@@ -412,6 +523,8 @@ $row
 EOF
     [ "$O_BACKEND" != - ] || O_BACKEND=''
     [ "$O_TARGET" != - ] || O_TARGET=''
+    [ "$O_BACKEND" != unknown ] || O_BACKEND=''
+    [ "$O_TARGET" != unknown ] || O_TARGET=''
     [ "$hb_sid" != - ] || hb_sid=''
     [ "$hb_wpid" != - ] || hb_wpid=''
     [ "$hb_wsid" != - ] || hb_wsid=''
@@ -427,6 +540,15 @@ EOF
   # parent's recorded endpoint for it.
   meta=''
   [ "$parent" = - ] || meta=$parent/state/$id.meta
+  if [ -n "$meta" ] && [ -f "$meta" ]; then
+    O_HARNESS=$(fm_meta_get "$meta" harness 2>/dev/null) || O_HARNESS=''
+  fi
+  if [ -z "$O_HARNESS" ] && [ -n "${FM_SESSION_LOCK_OWNER_HARNESS:-}" ]; then
+    O_HARNESS=$FM_SESSION_LOCK_OWNER_HARNESS
+  fi
+  if [ -z "$O_HARNESS" ] && [ -n "$O_LOCK_PID" ] && declare -F fm_ps_comm >/dev/null 2>&1 && declare -F fm_harness_path_name >/dev/null 2>&1; then
+    O_HARNESS=$(fm_harness_path_name "$(fm_ps_comm "$O_LOCK_PID" 2>/dev/null)" 2>/dev/null) || O_HARNESS=''
+  fi
   if [ -n "$meta" ] && [ -f "$meta" ] && { [ -z "$O_TARGET" ] || [ -z "$O_SESSION" ] || [ "$hb_sid" != "$O_SESSION" ]; }; then
     O_BACKEND=$(fm_backend_of_meta "$meta" 2>/dev/null)
     O_TARGET=$(fm_backend_target_of_meta "$meta" 2>/dev/null)
@@ -437,6 +559,27 @@ EOF
     && { { [ -n "$hb_wpid" ] && [ "$hb_wpid" = "$O_LOCK_PID" ]; } || { [ -n "$hb_wsid" ] && [ "$hb_wsid" = "$O_SESSION" ]; }; }; then
     # Only a heartbeat written inside the lock owner names the owner's terminal.
     cb=$O_BACKEND ct=$O_TARGET
+  fi
+  # A primary heartbeat that does not prove a terminal must not keep that pane
+  # for capture. The endpoint recorded when this session took the lock is the
+  # address. A second mate stays on the parent meta path above.
+  if [ "$parent" = - ] && { [ -z "$cb" ] || [ -z "$ct" ]; }; then
+    O_BACKEND=''
+    O_TARGET=''
+    cb=''
+    ct=''
+    lock_ep=$(wd_lock_endpoint "$st" "$home" 2>/dev/null) || lock_ep=''
+    if [ -n "$lock_ep" ]; then
+      lock_backend=${lock_ep%%$'\n'*}
+      lock_target=${lock_ep#*$'\n'}
+      lock_target=${lock_target%%$'\n'*}
+      if [ -n "$lock_backend" ] && [ -n "$lock_target" ]; then
+        O_BACKEND=$lock_backend
+        O_TARGET=$lock_target
+        cb=$lock_backend
+        ct=$lock_target
+      fi
+    fi
   fi
   prev=$WD/subjects/$O_KEY
   local p_sig='' p_since='' p_cpu='' p_at='' p_comp='' p_term='' p_term_owner=''
@@ -457,14 +600,20 @@ EOF
   fi
   if [ -n "$O_BACKEND" ] && [ -n "$O_TARGET" ]; then
     O_PANE=$(wd_capture "$O_BACKEND" "$O_TARGET" 60) || O_PANE=''
+    if [ -z "$O_PANE" ] && [ "$O_BACKEND" = herdr ]; then
+      O_HERDR_MISMATCH=$(fm_run_timed_fn "$(cfgi call-timeout-secs 20)" wd_herdr_mismatch "$O_TARGET" 2>/dev/null) || O_HERDR_MISMATCH=''
+    fi
   fi
   if [ -n "$O_PANE" ]; then
     local view
     O_SIG=$(wd_pane_sig "$O_PANE")
     if [ "$O_SIG" = "$p_sig" ] && [ -n "$p_since" ]; then O_PANE_STATIC=$((now - p_since)); else p_since=$now; fi
-    O_DIALOG=$(wd_observe_dialog "$O_BACKEND" "$O_TARGET") || O_DIALOG=''
+    O_DIALOG=$(wd_observe_dialog "$O_BACKEND" "$O_TARGET" "" "$O_HARNESS") || O_DIALOG=''
     view=$(wd_view "$O_BACKEND" "$O_TARGET") || view=$O_PANE
-    if [ "$parent" = - ] && fm_wd_usage_limit_autowait "$view"; then O_AUTOWAIT=1; fi
+    O_DIALOG_PANE=$view
+    if fm_wd_usage_limit_autowait "$view"; then
+      if [ "$parent" = - ]; then O_AUTOWAIT=1; else O_LIMIT_FOOTER=1; fi
+    fi
     wd_read_composer
     O_TURN=$(wd_turn_running "$O_BACKEND" "$O_TARGET" "$O_PANE")
     [ -n "$footer_text" ] || { footer_text=$(_fm_wd_tail_rows "$O_PANE" 10); footer_src=pane; }
@@ -478,6 +627,7 @@ EOF
   else
     O_TRANSCRIPT=''
   fi
+  wd_activity "$now"
   # One shared context reading (bin/fm-context-reading-lib.sh): the derived
   # percentage owns the restart decision when it exists, else the footer; the
   # full-window status percentage is never read.
@@ -487,6 +637,9 @@ EOF
     *' owner=derived '*) O_CTX=$(printf '%s\n' "$reading" | sed -n 's/.* derived=\([0-9]*\) .*/\1/p'); O_CTX_SRC=derived ;;
     *' owner=footer '*) O_CTX=$(printf '%s\n' "$reading" | sed -n 's/^footer=\([0-9]*\) .*/\1/p'); O_CTX_SRC=$footer_src ;;
   esac
+  # How this cycle ends, as the session's trigger published it: compaction
+  # means low context is the routine run-up to auto-compaction.
+  O_CTX_RESET=$(fm_context_reset_for_session "$home" "$O_SESSION")
   if [ -f "$st/.watchdog-restart-request" ]; then
     local req_at last_r
     req_at=$(wd_mtime "$st/.watchdog-restart-request")
@@ -526,15 +679,16 @@ wd_print_observation() {
     "  endpoint=${O_BACKEND:-none}:${O_TARGET:-none} session=${O_SESSION:-none} lock_pid=${O_LOCK_PID:-none} alive=$O_ALIVE instance=$O_INSTANCE owner=$O_OWNER" \
     "  captain=${C_BACKEND:-none}:${C_TARGET:-none} moved_at=${C_MOVED:-none}" \
     "  pane_static=${O_PANE_STATIC}s dialog=${O_DIALOG:-none} usage_limit_autowait=$O_AUTOWAIT composer=$O_COMPOSER turn_running=$O_TURN cpu_busy=$O_CPU_BUSY" \
-    "  transcript_age=${O_TR_AGE}s loop=$O_LOOP/$O_LOOP_N restart_requested=$O_RESTART_REQ ctx=${O_CTX:-unknown}${O_CTX_SRC:+ ($O_CTX_SRC)}${O_CTX_READING:+ [$O_CTX_READING]}" \
+    "  activity_age=${O_ACT_AGE}s${O_ACT_SRC:+ ($O_ACT_SRC)} loop=$O_LOOP/$O_LOOP_N restart_requested=$O_RESTART_REQ ctx=${O_CTX:-unknown}${O_CTX_SRC:+ ($O_CTX_SRC)}${O_CTX_READING:+ [$O_CTX_READING]}${O_CTX_RESET:+ reset=$O_CTX_RESET}" \
     "  owed=$O_OWED_N oldest=${O_OWED_AGE}s afk=$O_AFK daemon=$O_DAEMON heartbeat_age=${O_HB_AGE}s"
+  [ -z "$O_HERDR_MISMATCH" ] || printf '  %s\n' "$O_HERDR_MISMATCH"
 }
 
 # --- actions -------------------------------------------------------------------
 
 # wd_action_gate <symptom> <action> <rate-secs>: 0 when the action may run now.
-wd_rate_open() {
-  fm_wd_rate_ok "$LEDGER" "$O_HOME" "$1" "$2" "$3" "$(wd_now)"
+wd_rate_open() {  # <symptom> <action> <rate-secs> [subject]
+  fm_wd_rate_ok "$LEDGER" "$O_HOME" "$1" "$2" "$3" "$(wd_now)" "${4-}"
 }
 
 wd_rec() {  # <id> <symptom> <action> <phase> <detail>
@@ -550,12 +704,12 @@ wd_nudge() {
     wd_rate_open "$symptom" nudge "$(cfgi nudge-secs 900)" && wd_rec "$(wd_id)" "$symptom" nudge refused "text names a merge, deploy, or release word"
     return 0
   fi
-  if [ "$(wd_mode)" = act ] && [ "$O_COMPOSER" != empty ]; then wd_gap "$symptom held; composer is $O_COMPOSER, so nothing is typed"; fi
+  if [ "$(wd_nudge_mode)" = act ] && [ "$O_COMPOSER" != empty ]; then wd_gap "$symptom held; composer is $O_COMPOSER, so nothing is typed"; fi
   wd_rate_open "$symptom" nudge "$(cfgi nudge-secs 900)" || return 0
   id=$(wd_id)
   if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_rec "$id" "$symptom" nudge refused "endpoint is on do-not-touch"; return 0; fi
   if [ -z "$O_TARGET" ]; then wd_rec "$id" "$symptom" nudge refused "no recorded endpoint"; return 0; fi
-  if [ "$(wd_mode)" != act ]; then wd_rec "$id" "$symptom" nudge dry-run "$body"; return 0; fi
+  if [ "$(wd_nudge_mode)" != act ]; then wd_rec "$id" "$symptom" nudge dry-run "$body"; return 0; fi
   if [ -n "$O_DIALOG" ] || [ "$O_COMPOSER" != empty ]; then
     wd_rec "$id" "$symptom" nudge held "composer is $O_COMPOSER${O_DIALOG:+, dialog $O_DIALOG}; nothing typed"
     return 0
@@ -571,13 +725,13 @@ wd_nudge() {
 # only when the key changed the pane. A dialog that left refreshes the observation.
 wd_key() {
   local symptom=$1 key=$2 why=$3 id after
-  wd_rate_open "$symptom" key "$(cfgi key-secs 120)" || return 1
+  wd_rate_open "$symptom" key "$(cfgi key-secs 120)" "${O_REC_SUBJECT:-$O_TAG}" || return 1
   id=$(wd_id)
   if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_rec "$id" "$symptom" key refused "endpoint is on do-not-touch"; return 1; fi
   if [ "$(wd_mode)" != act ]; then wd_rec "$id" "$symptom" key dry-run "would press $key: $why"; return 1; fi
   wd_rec "$id" "$symptom" key pending "press $key: $why"
   case "$O_BACKEND:$key" in
-    orca:[0-9]) fm_run_timed 10 orca terminal send --terminal "$O_TARGET" --text "$key" --json >/dev/null 2>&1 ;;
+    orca:[0-9]) fm_orca_cli_mutation fm_run_timed 10 orca terminal send --terminal "$O_TARGET" --text "$key" --json >/dev/null 2>&1 ;;
     tmux:[0-9]) fm_run_timed 10 tmux send-keys -t "$O_TARGET" -l "$key" >/dev/null 2>&1 ;;
     *) fm_run_timed_fn 10 fm_backend_send_key "$O_BACKEND" "$O_TARGET" "$key" >/dev/null 2>&1 ;;
   esac || { wd_rec "$id" "$symptom" key failed "key delivery failed"; return 1; }
@@ -597,10 +751,48 @@ wd_gap() {  # <text>
   printf '%s\n' "- $O_TAG: $1" >> "$WD_GAPS"
 }
 
+# wd_score_gap: appends the supervisor-gap rows of the subject wd_observe just
+# read (docs/watchdog.md "Supervisor-gap record"). A heartbeat that is not read
+# writes nothing, and a clock that does not have exactly 10 digits writes
+# nothing. Each append starts with a line of three TABs, which is not a row: it
+# closes whatever a cut append left, with no check of the last byte, so no other
+# pass can put bytes between a check and the rows. A child process writes the
+# record, so a failed write leaves no row bytes in this shell's output buffer
+# for the next builtin write to send to another file. The two report lines are
+# builtin writes, like every other report of the pass.
+wd_score_gap() {
+  local f=$STATE/night-score/supervisor-gap.tsv pub now rows
+  pub=$(fm_wd_heartbeat_published "$O_HOME/state/heartbeat.json") || return 0
+  now=$(wd_now)
+  rows=$(fm_wd_supervisor_gap_rows "$O_HOME" "$now" "$pub") || return 0
+  if ! { mkdir -p "${f%/*}" && cat >> "$f" <<< $'\t\t\t\n'"$rows"; } 2>/dev/null; then
+    wd_gap "supervisor-gap record append failed"
+    printf 'fm-watchdog: supervisor-gap record append failed for %s: %s\n' "$O_TAG" "$f" >&2
+  fi
+}
+
+# wd_score_activity: appends the supervisor-activity row of the subject
+# wd_observe just read (docs/watchdog.md "Supervisor-activity record"). A child
+# process writes the row, as in wd_score_gap.
+wd_score_activity() {
+  local f=$STATE/night-score/supervisor-activity.tsv now src=none age=-
+  now=$(wd_now)
+  fm_wd_epoch_ok "$now" && [ "${#now}" -eq 10 ] || return 0
+  case "$O_HOME" in ''|*$'\t'*|*$'\n'*|*$'\r'*) return 0 ;; esac
+  [ "$O_ACT_AGE" = unknown ] || src=$O_ACT_SRC age=$O_ACT_AGE
+  if ! { mkdir -p "${f%/*}" && cat >> "$f" <<< "$now"$'\t'"$O_HOME"$'\t'"$src"$'\t'"$age"; } 2>/dev/null; then
+    wd_gap "supervisor-activity record append failed"
+  fi
+}
+
 # --- cheap model judge ---------------------------------------------------------
 
+# A council sets WD_CALL_MAX_USD and WD_CALL_TIMEOUT for its seats; every other
+# call keeps the judge's own budget and time limit.
 wd_judge_one() {  # <model> <purpose> <answer-ere> <prompt>  -> prints the answer
-  local model=$1 purpose=$2 re=$3 prompt=$4 h m out ans cost='' tin='' tout='' rc=0 spent cap scratch acct pin
+  local model=$1 purpose=$2 re=$3 prompt=$4 h m out ans cost='' tin='' tout='' rc=0 spent cap scratch acct pin secs usd prompt_file
+  secs=${WD_CALL_TIMEOUT:-$(cfgi judge-timeout-secs 120)}
+  usd=${WD_CALL_MAX_USD:-$(cfg judge-call-max-usd 0.05)}
   h=${model%%:*} m=${model#*:}
   spent=$(fm_wd_spent_since "$CALLS" "$(( $(wd_now) - 86400 ))")
   cap=$(cfg daily-max-usd 1.00)
@@ -610,7 +802,11 @@ wd_judge_one() {  # <model> <purpose> <answer-ere> <prompt>  -> prints the answe
   fi
   scratch=$WD/judge-scratch
   mkdir -p "$scratch"
-  prompt=$(printf '%s' "$prompt" | cut -c1-"$(cfgi judge-max-chars 6000)")
+  if [ "$purpose" = council ]; then
+    [ "${#prompt}" -le "$(cfgi judge-max-chars 6000)" ] || return 1
+  else
+    prompt=$(printf '%s' "$prompt" | cut -c1-"$(cfgi judge-max-chars 6000)")
+  fi
   case "$h" in
     claude)
       command -v claude >/dev/null 2>&1 || return 4
@@ -624,23 +820,25 @@ wd_judge_one() {  # <model> <purpose> <answer-ere> <prompt>  -> prints the answe
       fi
       # The timed runner detaches stdin, so the prompt reaches claude through a
       # redirect inside the timed command rather than a pipe into the runner.
-      printf '%s' "$prompt" > "$scratch/prompt.txt"
+      prompt_file=$(mktemp "$scratch/prompt.XXXXXX") || return 1
+      printf '%s' "$prompt" > "$prompt_file" || { rm -f "$prompt_file"; return 1; }
       # shellcheck disable=SC2016  # Expanded by the timed child shell.
       # With no account set, the CLI's own default stays in force: naming the default
       # directory explicitly makes the real CLI report that it is not logged in.
       # An ordinary account means the variable is unset.
       out=$( (cd "$scratch" && { if [ "$acct" = ordinary ]; then unset CLAUDE_CONFIG_DIR; elif [ -n "$acct" ]; then export CLAUDE_CONFIG_DIR="$acct"; fi; } && \
-        fm_run_timed "$(cfgi judge-timeout-secs 120)" bash -c 'f=$1; shift; exec "$@" < "$f"' _ "$scratch/prompt.txt" \
+        fm_run_timed "$secs" bash -c 'f=$1; shift; exec "$@" < "$f"' _ "$prompt_file" \
         claude -p --model "$m" --output-format json --tools "" \
-        --setting-sources "" --strict-mcp-config --no-session-persistence --max-budget-usd "$(cfg judge-call-max-usd 0.05)") 2>/dev/null) || rc=$?
+        --setting-sources "" --strict-mcp-config --no-session-persistence --max-budget-usd "$usd") 2>/dev/null) || rc=$?
+      rm -f "$prompt_file"
       ans=$(printf '%s' "$out" | jq -r '.result // empty' 2>/dev/null)
       cost=$(printf '%s' "$out" | jq -r '.total_cost_usd // empty' 2>/dev/null)
       tin=$(printf '%s' "$out" | jq -r '.usage.input_tokens // empty' 2>/dev/null)
       tout=$(printf '%s' "$out" | jq -r '.usage.output_tokens // empty' 2>/dev/null) ;;
     agy)
       command -v agy >/dev/null 2>&1 || return 4
-      out=$( (cd "$scratch" && fm_run_timed "$(cfgi judge-timeout-secs 120)" agy -p "$prompt" --model "$m" --output-format json \
-        --disable-slash-commands --print-timeout "$(cfgi judge-timeout-secs 120)s") 2>/dev/null) || rc=$?
+      out=$( (cd "$scratch" && fm_run_timed "$secs" agy -p "$prompt" --model "$m" --output-format json \
+        --disable-slash-commands --print-timeout "${secs}s") 2>/dev/null) || rc=$?
       ans=$(printf '%s' "$out" | jq -r '.response // empty' 2>/dev/null)
       tin=$(printf '%s' "$out" | jq -r '.usage.input_tokens // empty' 2>/dev/null)
       tout=$(printf '%s' "$out" | jq -r '.usage.output_tokens // empty' 2>/dev/null)
@@ -672,11 +870,107 @@ wd_judge() {
 
 # --- council -------------------------------------------------------------------
 
-# wd_council <task> <key> <summary>: blind seats; a unanimous PROCEED writes a ruling.
+# 0 when a decision is the owner's: never nudged, put to council, or answered.
+wd_decision_reserved() {  # <task> <key> <summary>
+  case "$2" in captain-hold-*) return 0 ;; esac
+  fm_wd_reserved "$1 $2 $3" || fm_secret_like "$1 $2 $3" ||
+    printf ',%s,' "$(cfg reserved-keys '')" | grep -Fq ",$2,"
+}
+
+wd_council_key() {  # <task> <key>: portable locator; record metadata authenticates identity.
+  local digest
+  digest=$(unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR
+    printf '%s\0%s\0%s' "$O_HOME" "$1" "$2" | git -C "$SCRIPT_DIR" hash-object --stdin) || return 1
+  printf 'council-%s\n' "$digest"
+}
+
+# wd_council_record <task> <key>: the final council record of one decision, as
+# `ruled|no-ruling TAB answer TAB path TAB seats`; nothing when it has none.
+wd_council_record() {
+  local name f kind header answer locator
+  locator=$(wd_council_key "$1" "$2") || return 1
+  for name in "$locator.md" "$O_KEY-$1:$2.md" "$O_KEY-$1-$2.md"; do
+    for f in "$OUT/rulings/$name" "$OUT/no-rulings/$name"; do
+      [ -f "$f" ] || continue
+      case "$f" in "$OUT/rulings/"*) kind=ruled ;; *) kind=no-ruling ;; esac
+      header=$(sed '/^Record:$/,$d' "$f")
+      FM_WD_RECORD_HOME="$O_HOME" FM_WD_RECORD_TASK="$1" FM_WD_RECORD_KEY="$2" FM_WD_RECORD_KIND="$kind" awk '
+        /^[[:space:]]*$/ { if (meta) ended=1; next }
+        ended { bad=1 }
+        /^# Watchdog council ruling$/ {
+          title++; if (meta || ENVIRON["FM_WD_RECORD_KIND"] != "ruled") bad=1; next
+        }
+        /^# Watchdog council record - no ruling$/ {
+          title++; if (meta || ENVIRON["FM_WD_RECORD_KIND"] != "no-ruling") bad=1; next
+        }
+        /^- / { meta=1 }
+        /^- home: / { h++; if (substr($0,9) != ENVIRON["FM_WD_RECORD_HOME"]) bad=1; next }
+        /^- task: / { t++; if (substr($0,9) != ENVIRON["FM_WD_RECORD_TASK"]) bad=1; next }
+        /^- key: / { k++; if (substr($0,8) != ENVIRON["FM_WD_RECORD_KEY"]) bad=1; next }
+        /^- ruling: / { r++; ruling=substr($0,11); next }
+        /^- seats: / { s++; seats=substr($0,10); next }
+        /^- seat models: .+$/ { model_fields++; next }
+        /^- at: .+$/ { at_fields++; next }
+        { bad=1 }
+        END {
+          if (bad || h != 1 || t != 1 || k != 1 || r != 1 || s != 1 || title > 1 || model_fields > 1 || at_fields > 1) exit 1
+          kind=ENVIRON["FM_WD_RECORD_KIND"]
+          if (kind == "ruled") {
+            if (ruling !~ /^PROCEED [A-Za-z0-9]{1,3} \(unanimous, [0-9]+ blind seats\)$/) exit 1
+            answer=ruling; sub(/ \(.*/, "", answer)
+          } else if (ruling !~ /^none \(not unanimous, [0-9]+ blind seats; held for the owner\)$/) exit 1
+          count=ruling; sub(/^.*unanimous, /, "", count); sub(/ blind seats.*$/, "", count); count+=0
+          n=split(seats, votes, / seat/)
+          if (count < 2 || n != count) exit 1
+          agreed=1; answered=0
+          for (i=1; i<=n; i++) {
+            prefix=(i == 1 ? "seat" i "=" : i "=")
+            if (index(votes[i], prefix) != 1) exit 1
+            vote=substr(votes[i],length(prefix)+1)
+            if (vote !~ /^(PROCEED [A-Za-z0-9]{1,3}|HOLD|FAILED)$/) exit 1
+            if (vote != "FAILED") answered++
+            if (i == 1) first=vote; else if (vote != first) agreed=0
+            if (kind == "ruled" && vote != answer) exit 1
+          }
+          if (kind == "no-ruling" && (!answered || (agreed && first ~ /^PROCEED /))) exit 1
+        }
+      ' <<< "$header" || continue
+      answer=$(sed -n 's/^- ruling: \(PROCEED [A-Za-z0-9]*\) (.*/\1/p' <<< "$header")
+      case "$kind:$answer" in ruled:|no-ruling:?*) continue ;; esac
+      printf '%s\t%s\t%s\t%s\n' "$kind" "$answer" "$f" "$(sed -n 's/^- seats://p' <<< "$header")"
+      return 0
+    done
+  done
+}
+
+# wd_council <task> <key> <summary>: blind seats; prints
+# `outcome TAB answer TAB record TAB seats`.
+#   unanimous  every seat gave the same PROCEED; a ruling file is written.
+#   no-ruling  a seat answered and the seats did not all agree; a record is written.
+#   failed     no seat answered or publication failed; a later convening may run.
+#   refused    the seats span fewer than two model families; no seat is called.
+#   busy       another convening of this decision is running.
+# A ruling or no-ruling record is final for its task and key: the caller checks
+# wd_council_record first, and this function never overwrites one.
 wd_council() {
-  local task=$1 key=$2 summary=$3 seats seat i=0 tmp answers='' first='' unanimous=1 ruling prompt
+  local task=$1 key=$2 summary=$3 seats seat i=0 tmp answers='' first='' unanimous=1 answered=0 record prompt a fams lock dir locator
+  local WD_CALL_MAX_USD WD_CALL_TIMEOUT
+  if [ "${#summary}" -gt "$WD_COUNCIL_MAX_CHARS" ]; then
+    printf 'refused\t\t\trecord exceeds %s characters\n' "$WD_COUNCIL_MAX_CHARS"
+    return 0
+  fi
   seats=$(cfg council-seats "$(wd_models | tr '\n' ',')")
-  tmp=$(mktemp -d "$WD/council.XXXXXX") || return 1
+  fams=$(for seat in $(printf '%s' "$seats" | tr ',' ' '); do fm_wd_seat_family "$seat"; done | grep -v '^unknown$' | sort -u | wc -l | tr -d ' ')
+  if [ "$fams" -lt 2 ]; then printf 'refused\t\t\tcouncil seats span fewer than two model families\n'; return 0; fi
+  WD_CALL_MAX_USD=$(cfg council-call-max-usd "$(cfg judge-call-max-usd 0.05)")
+  WD_CALL_TIMEOUT=$(cfgi council-timeout-secs "$(cfgi judge-timeout-secs 120)")
+  # Shared owner-identity locking serializes stale reclamation without expiring live owners.
+  locator=$(wd_council_key "$task" "$key") || return 1
+  lock=$WD/council-locks/$locator
+  mkdir -p "$WD/council-locks"
+  if ! fm_lock_try_acquire "$lock"; then printf 'busy\t\t\t\n'; return 0; fi
+  if [ -n "$(wd_council_record "$task" "$key")" ]; then fm_lock_release "$lock"; printf 'busy\t\t\t\n'; return 0; fi
+  tmp=$(mktemp -d "$WD/council.XXXXXX") || { fm_lock_release "$lock"; return 1; }
   prompt="You are one blind seat on a council for an autonomous software team. The owner is away. A worker parked this decision:
 task: $task
 key: $key
@@ -693,24 +987,124 @@ Reply with exactly one line: PROCEED <label> or HOLD."
   [ "$i" -ge 2 ] || unanimous=0
   for seat in $(seq 1 "$i"); do
     a=$(head -n 1 "$tmp/$seat" 2>/dev/null)
-    answers="$answers seat$seat=${a:-FAILED}"
-    case "$a" in PROCEED*) ;; *) unanimous=0 ;; esac
+    a=${a:-FAILED}
+    answers="$answers seat$seat=$a"
+    case "$a" in
+      PROCEED*) answered=$((answered + 1)) ;;
+      HOLD) answered=$((answered + 1)); unanimous=0 ;;
+      *) unanimous=0 ;;
+    esac
     if [ -z "$first" ]; then first=$a; elif [ "$a" != "$first" ]; then unanimous=0; fi
   done
   rm -rf "$tmp"
-  if [ "$unanimous" = 1 ]; then
-    mkdir -p "$OUT/rulings"
-    ruling=$OUT/rulings/$O_KEY-$task-$key.md
-    {
-      printf '# Watchdog council ruling\n\n'
-      printf -- '- home: %s\n- task: %s\n- key: %s\n- ruling: %s (unanimous, %s blind seats)\n- seats:%s\n- at: %s\n\n' \
-        "$O_HOME" "$task" "$key" "$first" "$i" "$answers" "$(fm_wd_iso "$(wd_now)")"
-      printf 'Record:\n\n%s\n' "$summary"
-    } > "$ruling"
-    printf 'unanimous\t%s\t%s\t%s\n' "$first" "$ruling" "$answers"
+  if [ "$answered" -eq 0 ]; then fm_lock_release "$lock"; printf 'failed\t\t\t%s\n' "$answers"; return 0; fi
+  if [ "$unanimous" = 1 ]; then dir=$OUT/rulings; else dir=$OUT/no-rulings; fi
+  mkdir -p "$dir"
+  record=$dir/$locator.md
+  if {
+    if [ "$unanimous" = 1 ]; then
+      printf '# Watchdog council ruling\n\n' &&
+      printf -- '- home: %s\n- task: %s\n- key: %s\n- ruling: %s (unanimous, %s blind seats)\n' "$O_HOME" "$task" "$key" "$first" "$i"
+    else
+      printf '# Watchdog council record - no ruling\n\n' &&
+      printf -- '- home: %s\n- task: %s\n- key: %s\n- ruling: none (not unanimous, %s blind seats; held for the owner)\n' "$O_HOME" "$task" "$key" "$i"
+    fi &&
+    printf -- '- seats:%s\n- seat models: %s\n- at: %s\n\n' "$answers" "$seats" "$(fm_wd_iso "$(wd_now)")" &&
+    printf 'Record:\n\n%s\n' "$summary"
+  } > "$record.tmp" && [ ! -d "$record" ] && mv "$record.tmp" "$record"; then
+    fm_lock_release "$lock"
   else
-    printf 'no-ruling\t\t\t%s\n' "$answers"
+    rm -f "$record.tmp" 2>/dev/null
+    fm_lock_release "$lock"
+    printf 'failed\t\t\t%s\n' "$answers"
+    return 0
   fi
+  if [ "$unanimous" = 1 ]; then
+    printf 'unanimous\t%s\t%s\t%s\n' "$first" "$record" "$answers"
+  else
+    printf 'no-ruling\t\t%s\t%s\n' "$record" "$answers"
+  fi
+}
+
+# One ledger row for a council result, closing the pending row of the same id.
+wd_council_ledger() {  # <id> <task> <key> <result>
+  case "$4" in
+    unanimous*) wd_rec "$1" "decision:$3" council "done" "$(printf '%s' "$4" | cut -f2,4)" ;;
+    no-ruling*) wd_rec "$1" "decision:$3" council "done" "no ruling;$(printf '%s' "$4" | cut -f4)" ;;
+    refused*) wd_rec "$1" "decision:$3" council refused "$(printf '%s' "$4" | cut -f4)" ;;
+    busy*) wd_rec "$1" "decision:$3" council held "another council on $2 $3 is running" ;;
+    *) wd_rec "$1" "decision:$3" council failed "no final council record;$(printf '%s' "$4" | cut -f4)" ;;
+  esac
+}
+
+wd_council_line() {  # <outcome> <answer> <record> <prior> <seats>
+  printf 'council=%s answer=%s record=%s prior=%s seats=%s\n' "$1" "${2:-none}" "${3:-none}" "$4" "${5:-none}"
+}
+
+# cmd_council: one convening on demand, for a supervisor that needs a ruling now.
+# Prints `council=<outcome> answer=<PROCEED x|none> record=<path|none> prior=<0|1> seats=<answers>`.
+# It types nothing and nudges nobody; the caller applies the result.
+cmd_council() {
+  local task='' key='' home='' file='' summary res id rec
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --task) task=${2:?--task needs a task id}; shift ;;
+      --key) key=${2:?--key needs a decision key}; shift ;;
+      --home) home=$(cd -P -- "${2:?--home needs a path}" && pwd -P) || die "no such home: $2" 2; shift ;;
+      --record-file) file=${2:?--record-file needs a path}; shift ;;
+      *) die "unknown council option: $1" 2 ;;
+    esac
+    shift
+  done
+  [ -n "$task" ] && [ -n "$key" ] || die "usage: council --task <id> --key <key> [--home <path>] [--record-file <file>]" 2
+  case "$task$key" in *[!A-Za-z0-9._-]*) die "task and key may hold only letters, digits, dot, underscore, and dash" 2 ;; esac
+  [ -n "$home" ] || home=$(cd -P -- "$OWNER_HOME" && pwd -P)
+  wd_subjects | awk -F'\t' -v h="$home" '$1 == h { f = 1 } END { exit !f }' || die "not a watched home: $home" 2
+  mkdir -p "$WD"
+  O_HOME=$home O_TAG=$(wd_tag "$home") O_KEY=$(wd_state_key "$home")
+  if [ -n "$file" ]; then
+    [ -f "$file" ] || die "no such record file: $file" 2
+    summary=$(cat "$file") || die "cannot read record file: $file"
+  else
+    summary=$(wd_open_decisions "$home/state" "$(wd_now)" 2>/dev/null | awk -F'\t' -v t="$task" -v k="$key" '$1 == t && $2 == k { print $5; exit }')
+  fi
+  [ -n "$summary" ] || die "no record: $task has no open decision $key and no --record-file was given"
+  id=$(wd_id)
+  if wd_decision_reserved "$task" "$key" "$summary"; then
+    if fm_secret_like "$task $key $summary"; then
+      wd_rec "$id" "decision" council held "an owner-reserved or secret-looking record; no seat saw it"
+    else
+      wd_rec "$id" "decision:$key" council held "$task $key is the owner's; no seat saw it"
+    fi
+    wd_council_line held '' '' 0 ''
+    return 0
+  fi
+  summary=$(printf '%s' "$summary" | tr '\t\r\n' '   ')
+  if [ "${#summary}" -gt "$WD_COUNCIL_MAX_CHARS" ]; then
+    wd_rec "$id" "decision:$key" council refused "record exceeds $WD_COUNCIL_MAX_CHARS characters"
+    wd_council_line refused '' '' 0 ''
+    return 0
+  fi
+  if [ "$(wd_decisions_mode)" != act ]; then
+    wd_rec "$id" "decision:$key" council dry-run "would convene council on $task $key"
+    wd_council_line dry-run '' '' 0 ''
+    return 0
+  fi
+  rec=$(wd_council_record "$task" "$key")
+  if [ -n "$rec" ]; then
+    wd_council_line "$(printf '%s' "$rec" | cut -f1)" "$(printf '%s' "$rec" | cut -f2)" "$(printf '%s' "$rec" | cut -f3)" 1 "$(printf '%s' "$rec" | cut -f4 | sed 's/^ //')"
+    return 0
+  fi
+  wd_rec "$id" "decision:$key" council pending "$task $key (on demand)"
+  res=$(wd_council "$task" "$key" "$summary")
+  wd_council_ledger "$id" "$task" "$key" "$res"
+  case "$res" in
+    unanimous*) wd_council_line ruled "$(printf '%s' "$res" | cut -f2)" "$(printf '%s' "$res" | cut -f3)" 0 "$(printf '%s' "$res" | cut -f4 | sed 's/^ //')" ;;
+    no-ruling*) wd_council_line no-ruling '' "$(printf '%s' "$res" | cut -f3)" 0 "$(printf '%s' "$res" | cut -f4 | sed 's/^ //')" ;;
+    refused*) wd_council_line refused '' '' 0 '' ;;
+    busy*) wd_council_line busy '' '' 0 '' ;;
+    *) wd_council_line failed '' '' 0 "$(printf '%s' "$res" | cut -f4 | sed 's/^ //')" ;;
+  esac
 }
 
 # --- restart -------------------------------------------------------------------
@@ -787,7 +1181,7 @@ wd_restart_available() {
   if [ "$(cfg restart off)" != on ]; then wd_gap "restart requested or context low, but restart is off; no handoff is asked for"; return 1; fi
   if [ -f "$WD/escalated/$O_KEY" ]; then wd_gap "restart requested or context low, but restarts are escalated; no handoff is asked for"; return 1; fi
   if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_gap "restart requested or context low, but this endpoint is on do-not-touch; no handoff is asked for"; return 1; fi
-  if [ "$O_TR_AGE" = unknown ]; then wd_gap "restart requested or context low, but no activity source can prove quiet; no handoff is asked for"; return 1; fi
+  if [ "$O_ACT_AGE" = unknown ]; then wd_gap "restart requested or context low, but no activity source can prove quiet; no handoff is asked for"; return 1; fi
   if [ "$O_PARENT" = - ]; then
     if [ -z "$(cfg restart-command "")" ]; then wd_gap "restart requested or context low, but no restart-command is set; no handoff is asked for"; return 1; fi
     case "$O_BACKEND" in orca|tmux) ;; *) wd_gap "restart requested or context low, but backend ${O_BACKEND:-none} has no restart launcher; no handoff is asked for"; return 1 ;; esac
@@ -843,17 +1237,42 @@ wd_write_handoff() {  # <symptom> -> prints path
 }
 
 wd_restart() {  # <symptom> <kind>...
-  local symptom=$1 id handoff token cmd yolo_cmd yolo_note prompt pid i sess
+  local symptom=$1 launch_lock='' rc=0
   shift
   wd_restart_gate "$symptom" "$@" || return 0
+  # A low-context restart rests on the reset observed earlier in this pass.
+  # The fresh-start launcher records a failure while it holds its launch lock,
+  # so hold that lock from the reset's re-read through the restart: no launch
+  # is under way, and one that failed has already left auto-compaction as the
+  # surviving session's reset. Both refusals are gaps, not restart rows, so
+  # they never hold a later restart behind the restart rate.
+  if [ "$symptom" = restart-requested ] && [ "$O_RESTART_REQ" != 1 ]; then
+    if ! fm_lock_try_acquire "$O_HOME/state/.handoff-launch.lock"; then
+      wd_gap "$symptom held; a fresh-start launch is under way"
+      return 0
+    fi
+    launch_lock=$O_HOME/state/.handoff-launch.lock
+    if [ "$(fm_context_reset_for_session "$O_HOME" "$O_SESSION")" = compaction ]; then
+      fm_lock_release "$launch_lock"
+      wd_gap "$symptom held; a failed fresh-start launch left this cycle to auto-compaction"
+      return 0
+    fi
+  fi
+  wd_restart_run "$symptom" || rc=$?
+  [ -z "$launch_lock" ] || fm_lock_release "$launch_lock"
+  return "$rc"
+}
+
+wd_restart_run() {  # <symptom>
+  local symptom=$1 id handoff token cmd yolo_cmd yolo_note prompt pid i sess
   id=$(wd_id)
   handoff=$(wd_write_handoff "$symptom")
   if [ "$O_PARENT" != - ]; then
-    wd_rec "$id" "$symptom" restart pending "second mate relaunch through its parent; handoff=$handoff"
+    # The handoff never reaches a second mate, so it cannot run pickup; its own
+    # session start proves the takeover instead, and wd_reconcile_pending closes the row.
+    wd_rec "$id" "$symptom" restart pending "second mate relaunch through its parent; pickup=session-start old_pid=$O_LOCK_PID handoff=$handoff"
     WD_RESTARTED=1
-    if FM_HOME=$O_PARENT fm_run_timed "$(cfgi relaunch-timeout-secs 900)" "$SCRIPT_DIR/fm-control.sh" "$O_ID" relaunch --note-file "$handoff" >/dev/null 2>&1; then
-      wd_rec "$id" "$symptom" restart "done" "relaunched through fm-control"
-    else
+    if ! FM_HOME=$O_PARENT fm_run_timed "$(cfgi relaunch-timeout-secs 900)" "$SCRIPT_DIR/fm-control.sh" "$O_ID" relaunch --note-file "$handoff" >/dev/null 2>&1; then
       wd_rec "$id" "$symptom" restart failed "fm-control relaunch refused or failed"
       wd_self_heal "$symptom" "Watchdog could not relaunch $O_TAG" "fm-control relaunch failed after $symptom"
     fi
@@ -886,7 +1305,7 @@ wd_restart() {  # <symptom> <kind>...
   fi
   prompt="Watchdog restart of this firstmate home. Read $handoff first, then take over as the session-start contract says. After you hold the session lock, run: FM_HOME=$O_HOME $SCRIPT_DIR/fm-watchdog.sh pickup $token"
   case "$O_BACKEND" in
-    orca) fm_run_timed 60 orca terminal create --worktree "path:$O_HOME" --title "firstmate captain" --command "$cmd $(printf '%q' "$prompt")" --json >/dev/null 2>&1 ;;
+    orca) fm_orca_cli_mutation fm_run_timed 60 orca terminal create --worktree "path:$O_HOME" --title "firstmate captain" --command "$cmd $(printf '%q' "$prompt")" --json >/dev/null 2>&1 ;;
     tmux)
       if fm_run_timed 10 tmux has-session -t "=$sess" >/dev/null 2>&1; then
         fm_run_timed 30 tmux new-window -d -t "=$sess:" -c "$O_HOME" -n firstmate "$cmd $(printf '%q' "$prompt")" >/dev/null 2>&1
@@ -897,8 +1316,10 @@ wd_restart() {  # <symptom> <kind>...
 }
 
 # Close each pending row once: nudges by transcript or pane progress, restarts by pickup.
+# A second mate's pickup is its session start: bin/fm-session-start.sh writes
+# state/.session-start-complete with the lock pid once it holds the lock.
 wd_reconcile_pending() {
-  local now id home symptom action at tag tok old pick lockpid tr st
+  local now id home symptom action at tag tok old pick lockpid tr st detail picked done_note miss_note started
   now=$(wd_now)
   fm_wd_open_pending "$LEDGER" | while IFS=$'\t' read -r id home symptom action at; do
     tag=$(wd_tag "$home")
@@ -916,24 +1337,40 @@ wd_reconcile_pending() {
           fi
         fi ;;
       restart)
-        tok=$(awk -F'\t' -v i="$id" '$2 == i && $7 == "pending" { print $8 }' "$LEDGER" | sed -n 's/.*token=\([0-9a-f]*\).*/\1/p' | tail -n 1)
-        old=$(awk -F'\t' -v i="$id" '$2 == i && $7 == "pending" { print $8 }' "$LEDGER" | sed -n 's/.*old_pid=\([0-9]*\).*/\1/p' | tail -n 1)
-        if [ -z "$tok" ]; then
-          [ $((now - at)) -ge "$(cfgi relaunch-timeout-secs 900)" ] && FM_WD_NOW=$now fm_wd_record "$LEDGER" "$id" "$home" "$tag" "$symptom" restart failed "relaunch recorded no outcome"
-          continue
-        fi
-        pick=$st/watchdog/pickups/$tok
+        detail=$(awk -F'\t' -v i="$id" '$2 == i && $7 == "pending" { print $8 }' "$LEDGER" | tail -n 1)
+        tok=$(printf '%s\n' "$detail" | sed -n 's/.*token=\([0-9a-f]*\).*/\1/p')
+        old=$(printf '%s\n' "$detail" | sed -n 's/.*old_pid=\([0-9]*\).*/\1/p')
         lockpid=$(head -n 1 "$st/.lock" 2>/dev/null | tr -cd '0-9')
-        if [ -f "$pick" ] && [ -n "$lockpid" ] && [ "$lockpid" != "$old" ] && wd_pid_alive "$lockpid"; then
+        picked=0
+        if [ -n "$tok" ]; then
+          pick=$st/watchdog/pickups/$tok
+          [ -f "$pick" ] && picked=1
+          done_note="pickup verified; new lock pid $lockpid"
+          miss_note="restart token $tok had no verified pickup"
+        else
+          case "$detail" in
+            *pickup=session-start*) ;;
+            *)
+              [ $((now - at)) -ge "$(cfgi relaunch-timeout-secs 900)" ] && FM_WD_NOW=$now fm_wd_record "$LEDGER" "$id" "$home" "$tag" "$symptom" restart failed "relaunch recorded no outcome"
+              continue ;;
+          esac
+          pick=$st/.session-start-complete
+          started=$(wd_mtime "$pick" | tr -cd '0-9')
+          if [ -n "$started" ] && [ "$(head -n 1 "$pick" 2>/dev/null | tr -cd '0-9')" = "$lockpid" ] &&
+            [ "$started" -ge "$at" ] && [ "$started" -le $((at + $(cfgi pickup-secs 600))) ]; then picked=1; fi
+          done_note="session start verified; new lock pid $lockpid"
+          miss_note="second mate relaunch had no verified session start under a new lock"
+        fi
+        if [ "$picked" = 1 ] && [ -n "$lockpid" ] && [ "$lockpid" != "$old" ] && wd_pid_alive "$lockpid"; then
           if [ -f "$st/.afk" ] && ! kill -0 "$(head -n 1 "$st/.supervise-daemon.pid" 2>/dev/null | tr -cd '0-9')" 2>/dev/null; then
             [ $((now - at)) -lt "$(cfgi pickup-secs 600)" ] && continue
             FM_WD_NOW=$now fm_wd_record "$LEDGER" "$id" "$home" "$tag" "$symptom" restart failed "picked up but the away daemon is not running"
           else
-            FM_WD_NOW=$now fm_wd_record "$LEDGER" "$id" "$home" "$tag" "$symptom" restart "done" "pickup verified; new lock pid $lockpid"
+            FM_WD_NOW=$now fm_wd_record "$LEDGER" "$id" "$home" "$tag" "$symptom" restart "done" "$done_note"
           fi
         elif [ $((now - at)) -ge "$(cfgi pickup-secs 600)" ]; then
           FM_WD_NOW=$now fm_wd_record "$LEDGER" "$id" "$home" "$tag" "$symptom" restart failed "no verified pickup within the window"
-          O_TAG=$tag O_HOME=$home wd_self_heal "$symptom" "Watchdog restart of $tag was not picked up" "restart token $tok had no verified pickup"
+          O_TAG=$tag O_HOME=$home wd_self_heal "$symptom" "Watchdog restart of $tag was not picked up" "$miss_note"
         fi ;;
       *)
         [ $((now - at)) -ge 3600 ] && FM_WD_NOW=$now fm_wd_record "$LEDGER" "$id" "$home" "$tag" "$symptom" "$action" failed "no outcome recorded" ;;
@@ -973,19 +1410,68 @@ wd_ladder_nudge_then_restart() {  # <symptom> <nudge-body> <kind>...
   fi
 }
 
+wd_rearm_feedback_dialog() {  # <backend> <target> <harness> <screen> [expected-label]
+  local backend=$1 target=$2 harness=$3 screen=$4 label=${5-}
+  [ -n "$screen" ] && [ "$(wd_mode)" = act ] || return 0
+  wd_do_not_touch "$O_HOME" "$target" && return 0
+  fm_control_feedback_dialog_dismiss "$harness" "$screen" >/dev/null 2>&1 && return 0
+  if [ -z "$label" ]; then
+    case "${O_ID:-}" in ''|-) ;; *) label=fm-$O_ID ;; esac
+  fi
+  fm_control_dismiss_feedback_dialog "$O_HOME/state" "$backend" "$target" "$harness" "$screen" "$label" 0 "$(cfgi call-timeout-secs 20)" >/dev/null 2>&1 || true
+}
+
 wd_handle_dialog() {
-  local opts pick n text
+  local opts pick n text key dialog_pane id label='' rc=0
   # Two keys that did not clear a dialog within the hour stop the presses, so a
   # misread screen never keeps typing into the session and no model is asked.
   case "$O_DIALOG" in
     feedback|model-switch)
-      if [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" dialog key '^failed$' "$(( $(wd_now) - 3600 ))")" -ge 2 ]; then
+      if [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" dialog key '^failed$' "$(( $(wd_now) - 3600 ))" "${O_REC_SUBJECT:-$O_TAG}")" -ge 2 ]; then
         wd_gap "a $O_DIALOG dialog did not clear after two keys this hour; no more keys pressed"
         return 0
       fi ;;
   esac
   case "$O_DIALOG" in
-    feedback) wd_key dialog 0 "dismiss the feedback survey" ;;
+    feedback)
+      dialog_pane=${O_DIALOG_PANE:-$O_PANE}
+      if ! key=$(fm_wd_feedback_dialog_key "$dialog_pane" "${O_HARNESS:-}" 2>/dev/null) || [ -z "$key" ]; then
+        wd_gap "feedback dialog key could not be resolved; no key pressed"
+        return 0
+      fi
+      wd_rate_open dialog key "$(cfgi key-secs 120)" "${O_REC_SUBJECT:-$O_TAG}" || return 0
+      id=$(wd_id)
+      if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_rec "$id" dialog key refused "endpoint is on do-not-touch"; return 0; fi
+      if [ "$(wd_mode)" != act ]; then wd_rec "$id" dialog key dry-run "would press $key: dismiss the feedback survey"; return 0; fi
+      case "${O_ID:-}" in ''|-) ;; *) label=fm-$O_ID ;; esac
+      fm_control_dismiss_feedback_dialog "$O_HOME/state" "$O_BACKEND" "$O_TARGET" "${O_HARNESS:-}" "$dialog_pane" "$label" "$(cfgi key-settle-secs 2)" "$(cfgi call-timeout-secs 20)" || rc=$?
+      case "$rc" in
+        0)
+          wd_rec "$id" dialog key pending "press $FM_CONTROL_FEEDBACK_DISMISS_KEY: dismiss the feedback survey"
+          wd_rec "$id" dialog key "done" "dialog left the pane"
+          O_DIALOG=''
+          O_PANE=$FM_CONTROL_FEEDBACK_AFTER_PANE
+          O_DIALOG_PANE=$FM_CONTROL_FEEDBACK_AFTER_PANE
+          [ -n "${O_REC_SUBJECT:-}" ] || wd_read_composer
+          ;;
+        1)
+          return 0
+          ;;
+        2)
+          wd_gap "feedback dialog still showing after an earlier dismiss key; no second key pressed"
+          return 0
+          ;;
+        3)
+          wd_rec "$id" dialog key pending "press $FM_CONTROL_FEEDBACK_DISMISS_KEY: dismiss the feedback survey"
+          wd_rec "$id" dialog key failed "key delivery failed"
+          return 1
+          ;;
+        *)
+          wd_rec "$id" dialog key pending "press $FM_CONTROL_FEEDBACK_DISMISS_KEY: dismiss the feedback survey"
+          wd_rec "$id" dialog key failed "dialog still showing"
+          return 1
+          ;;
+      esac ;;
     permission)
       wd_gap "permission dialog waiting; the watchdog never answers permission prompts"
       wd_page_permission ;;
@@ -1084,13 +1570,17 @@ wd_page_captain_autowait() {
 wd_handle_captain_autowait() {
   wd_gap "usage-limit auto-wait on $O_TAG; the primary takes no turns until the reset. The watchdog does not kill or relaunch the primary. Run bin/fm-quota-reroute.sh suggest, then launch a successor on the named pick manually."
   wd_page_captain_autowait
+  wd_quota_guard_warning
 }
 
 # Aged open decisions get one rolled-up nudge per window; once that nudge has
 # had a full window, the oldest decision without a recent council gets one.
 wd_handle_decisions() {
   local st=$O_HOME/state now task key verb age summary secs res aged=0 keys='' id cap ran=0 nudged held=0 held_keys=''
+  local oversized=0 refused_at
+  local rec split=0 split_keys='' ruled=0 ruled_keys='' WD_NUDGE_MODE
 
+  WD_NUDGE_MODE=$(wd_decisions_mode)
   now=$(wd_now)
   secs=$(cfgi decision-secs 1800)
   cap=$(cfgi council-per-pass 1)
@@ -1099,18 +1589,37 @@ wd_handle_decisions() {
   while IFS=$'\t' read -r task key verb age summary; do
     [ -n "$key" ] || continue
     [ "$age" -ge "$secs" ] || continue
-    if case "$key" in captain-hold-*) true ;; *) false ;; esac || fm_wd_reserved "$task $key $summary" ||
-       fm_secret_like "$task $key $summary" ||
-       printf ',%s,' "$(cfg reserved-keys '')" | grep -Fq ",$key,"; then
+    if wd_decision_reserved "$task" "$key" "$summary"; then
       held=$((held + 1))
       [ "$held" -gt 3 ] || fm_secret_like "$task/$key" || held_keys="$held_keys${held_keys:+, }$task/$key"
       continue
     fi
+    if [ "${#summary}" -gt "$WD_COUNCIL_MAX_CHARS" ]; then
+      oversized=$((oversized + 1))
+      refused_at=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" "decision:$key" council '^refused$')
+      if [ -z "$refused_at" ] || [ $((now - refused_at)) -ge "$(cfgi council-secs 21600)" ]; then
+        wd_rec "$(wd_id)" "decision:$key" council refused "record exceeds $WD_COUNCIL_MAX_CHARS characters"
+      fi
+      continue
+    fi
+    rec=$(wd_council_record "$task" "$key")
+    case "$rec" in
+      no-ruling*)
+        split=$((split + 1))
+        [ "$split" -gt 3 ] || split_keys="$split_keys${split_keys:+, }$task/$key"
+        continue ;;
+      ruled*)
+        ruled=$((ruled + 1))
+        [ "$ruled" -gt 3 ] || ruled_keys="$ruled_keys${ruled_keys:+, }$task/$key" ;;
+    esac
     aged=$((aged + 1))
     [ "$aged" -gt 5 ] || keys="$keys${keys:+, }$task/$key"
     printf '%s\t%s\t%s\n' "$task" "$key" "$summary" >> "$WD/.decisions-aged"
   done < "$WD/.decisions"
   [ "$held" -eq 0 ] || wd_gap "$held decisions held for the owner (never touched)${held_keys:+, e.g. $held_keys}"
+  [ "$split" -eq 0 ] || wd_gap "$split decisions held for the owner after a council gave no ruling (records under data/watchdog/no-rulings/), e.g. $split_keys"
+  [ "$ruled" -eq 0 ] || wd_gap "$ruled open decisions have an unapplied council ruling (under data/watchdog/rulings/), e.g. $ruled_keys"
+  [ "$oversized" -eq 0 ] || wd_gap "$oversized decisions refused: record exceeds $WD_COUNCIL_MAX_CHARS characters"
   [ "$aged" -gt 0 ] || return 0
   [ "$O_TURN" = 1 ] && return 0
   nudged=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" decisions nudge '^(pending|dry-run)$')
@@ -1121,17 +1630,25 @@ wd_handle_decisions() {
   [ $((now - nudged)) -ge "$secs" ] || return 0
   while IFS=$'\t' read -r task key summary; do
     [ "$ran" -lt "$cap" ] || break
+    if [ "${#summary}" -gt "$WD_COUNCIL_MAX_CHARS" ]; then
+      wd_gap "council refused: record exceeds $WD_COUNCIL_MAX_CHARS characters"
+      continue
+    fi
+    [ -z "$(wd_council_record "$task" "$key")" ] || continue
     fm_wd_rate_ok "$LEDGER" "$O_HOME" "decision:$key" council "$(cfgi council-secs 21600)" "$now" || continue
     ran=$((ran + 1))
     id=$(wd_id)
-    if [ "$(wd_mode)" != act ]; then wd_rec "$id" "decision:$key" council dry-run "would convene council on $task $key"; continue; fi
+    if [ "$WD_NUDGE_MODE" != act ]; then wd_rec "$id" "decision:$key" council dry-run "would convene council on $task $key"; continue; fi
     wd_rec "$id" "decision:$key" council pending "$task $key"
     res=$(wd_council "$task" "$key" "$summary")
+    wd_council_ledger "$id" "$task" "$key" "$res"
     case "$res" in
       unanimous*)
-        wd_rec "$id" "decision:$key" council "done" "$(printf '%s' "$res" | cut -f2,4)"
         wd_nudge "ruling:$key" "a unanimous blind council ruled $(printf '%s' "$res" | cut -f2) on decision $key from $task. Ruling file: $(printf '%s' "$res" | cut -f3). Apply it with fm-send --resolve-key if it stands, or record why not." ;;
-      *) wd_rec "$id" "decision:$key" council "done" "no ruling;$(printf '%s' "$res" | cut -f4)"; wd_gap "council gave no ruling on $task $key; held" ;;
+      no-ruling*) wd_gap "council gave no ruling on $task $key; held for the owner, record $(printf '%s' "$res" | cut -f3)" ;;
+      refused*) wd_gap "no council on $task $key: $(printf '%s' "$res" | cut -f4); held" ;;
+      busy*) ;;
+      *) wd_gap "council did not publish a final record on $task $key; held" ;;
     esac
   done < "$WD/.decisions-aged"
 }
@@ -1259,6 +1776,7 @@ wd_quota_name_pick() {  # <id> <subject> [task-id]
 }
 
 wd_quota_name_pick_rated() {  # <id> <subject-label> [task-id]
+  wd_quota_guard_warning "${3-}"
   if fm_wd_rate_ok "$LEDGER" "$O_HOME" quota suggest "$(cfgi nudge-secs 900)" "$(wd_now)" "${O_REC_SUBJECT:-$O_TAG}"; then
     wd_quota_name_pick "$1" "$2" "${3-}"
   else
@@ -1279,6 +1797,151 @@ wd_handle_quota() {
   done
 }
 
+# --- quota guard (bin/fm-quota-guard.sh) -------------------------------------
+
+wd_quota_guard_on() { [ "$(cfg quota-guard on)" != off ]; }
+
+# wd_quota_guard <home> <command> [args...]: one bounded guard call for that
+# home with this watchdog's config and candidates. Sets WD_QG_LINE to the
+# result line it printed, if any, and returns its exit status.
+wd_quota_guard() {
+  local home=$1 cand out rc=0
+  shift
+  for cand in $(cfg reroute-candidates "" | tr ',' ' '); do set -- "$@" --candidate "$cand"; done
+  out=$(fm_run_timed "$(cfgi quota-guard-timeout-secs 300)" env -u FM_STATE_OVERRIDE -u FM_CONFIG_OVERRIDE \
+    FM_HOME="$home" FM_QUOTA_GUARD_CONF="$CONF" FM_NOW="$(wd_now)" \
+    "$SCRIPT_DIR/fm-quota-guard.sh" "$@" 2>/dev/null </dev/null) || rc=$?
+  WD_QG_LINE=$(printf '%s\n' "$out" | sed -n '1{/^quota-guard: /p;}')
+  return "$rc"
+}
+
+# wd_primary_account: the Claude account root that holds the primary's
+# transcript, or ordinary for ~/.claude; fails when no transcript was read.
+wd_primary_account() {
+  local root
+  [ -n "$O_TRANSCRIPT" ] || return 1
+  root=${O_TRANSCRIPT%/projects/*}
+  [ -n "$root" ] && [ "$root" != "$O_TRANSCRIPT" ] || return 1
+  if [ "$(cd -P -- "$root" 2>/dev/null && pwd -P)" = "$(cd -P -- "${HOME:-}/.claude" 2>/dev/null && pwd -P)" ]; then
+    printf 'ordinary\n'
+  else
+    printf '%s\n' "$root"
+  fi
+}
+
+# wd_quota_guard_nudged_since <epoch>: 0 when a quota-guard nudge to this
+# subject was delivered or recorded as a dry run at or after that time. A nudge
+# whose record or submit failed does not count; one that only saw no transcript
+# progress afterward was delivered.
+wd_quota_guard_nudged_since() {
+  [ -f "$LEDGER" ] || return 1
+  awk -F'\t' -v h="$O_HOME" -v subj="${O_REC_SUBJECT:-$O_TAG}" -v at="$1" '
+    $3 == h && $4 == subj && $5 == "quota-guard" && $6 == "nudge" {
+      if (($7 == "pending" || $7 == "dry-run") && $1 + 0 >= at + 0) ok[$2] = 1
+      else if ($7 == "failed" && $8 !~ /no transcript progress/) delete ok[$2]
+    }
+    END { for (id in ok) exit 0; exit 1 }' "$LEDGER"
+}
+
+# wd_quota_guard_nudge_text <result-line>: the nudge for a check that named
+# moves. A worker moves on its named pick, while a supervisor goes through
+# bin/fm-supervisor-failover.sh, which owns the verified handoff and makes its
+# own choice among the comparable models the captain declared. A count the
+# line does not carry names both ways.
+wd_quota_guard_nudge_text() {
+  local result=$1 text steer fail qhome
+  steer=$(printf '%s\n' "$result" | sed -n 's/.* steer=\([0-9][0-9]*\).*/\1/p')
+  fail=$(printf '%s\n' "$result" | sed -n 's/.* failover=\([0-9][0-9]*\).*/\1/p')
+  qhome=$(printf '%q' "$O_HOME")
+  text="$result. The moves are in $O_HOME/state/quota-guard/report.txt."
+  [ "$steer" = 0 ] || text="$text Move each steered worker with bin/fm-control.sh relaunch on its named pick."
+  [ "$fail" = 0 ] || text="$text Fail each supervisor over with bin/fm-supervisor-failover.sh, which chooses from config/supervisor-failover-candidates: for the primary, write a handoff document and run bin/fm-supervisor-failover.sh primary <handoff-file> --reason quota_guard in the background; for a second mate, run FM_HOME=$qhome bin/fm-supervisor-failover.sh secondmate <id> --reason quota_guard."
+  printf '%s Never change an account pin, sign in, or spend.\n' "$text"
+}
+
+# wd_quota_guard_pass: a primary home's kickoff and periodic quota check, then
+# the standing verdict of its last check as a gap while it is not ok. A check
+# that named moves, whichever pass or warning ran it, nudges a live primary
+# until one nudge after that check is delivered or recorded as a dry run.
+wd_quota_guard_pass() {
+  local rc=0 rec=$O_HOME/state/quota-guard/last acct at
+  wd_quota_guard_on || return 0
+  set -- tick
+  # Only a live primary is named, so a dead one is never kept as a supervisor.
+  if [ "$O_ALIVE" = 1 ]; then
+    [ -z "$O_HARNESS" ] || set -- "$@" --primary-harness "$O_HARNESS"
+    if acct=$(wd_primary_account); then set -- "$@" --primary-account "$acct"; fi
+  fi
+  wd_quota_guard "$O_HOME" "$@" || rc=$?
+  # A check that printed its result but could not save it is still a failure.
+  if [ -n "$WD_QG_LINE" ] && { [ "$rc" = 0 ] || [ "$rc" = 3 ]; }; then
+    wd_rec "$(wd_id)" quota-guard check "done" "$WD_QG_LINE"
+  elif [ "$rc" != 0 ]; then
+    wd_gap "quota guard check failed (exit $rc)"
+  fi
+  case "$(fm_wd_conf_get "$rec" verdict '')" in
+    act|unknown) wd_gap "$(fm_wd_conf_get "$rec" result '') (checked $(fm_wd_iso "$(fm_wd_conf_get "$rec" at 0)"))" ;;
+  esac
+  at=$(fm_wd_conf_get "$rec" at '' | tr -cd '0-9')
+  # The check can run long, so the owner observed before it must still hold the
+  # lock and be live before a nudge is sent.
+  if [ "$(fm_wd_conf_get "$rec" verdict '')" = act ] && [ -n "$at" ] && [ "$O_ALIVE" = 1 ] &&
+     [ "$WD_RESTARTED" != 1 ] && [ "$WD_SYMPTOM" != usage-limit-autowait ] &&
+     wd_same_live_owner "$O_HOME/state"; then
+    if ! wd_quota_guard_nudged_since "$at"; then
+      wd_nudge quota-guard "$(wd_quota_guard_nudge_text "$(fm_wd_conf_get "$rec" result '')")"
+    fi
+  fi
+}
+
+# wd_quota_guard_warning [task-id]: records the limit dialog this pass saw on
+# the subject or its worker, once per nudge-secs, and unless quota-guard=off
+# checks quota now. A second mate's dialog is recorded in its parent home. Only
+# a recorded dialog starts the window, so a failed record is tried again on the
+# next pass; a check that fails after the record is a gap, not a failed record.
+wd_quota_guard_warning() {
+  local task=${1-} home=$O_HOME subject rc=0 last acct=''
+  last=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" quota-guard warning '^done$' "${O_REC_SUBJECT:-$O_TAG}")
+  [ -z "$last" ] || [ $(( $(wd_now) - last )) -ge "$(cfgi nudge-secs 900)" ] || return 0
+  if [ "${O_PARENT:-}" != - ] && [ -n "${O_ID:-}" ] && [ "$O_ID" != - ]; then
+    home=$O_PARENT
+    if [ -n "$task" ]; then subject=$O_ID/$task; else subject=$O_ID; fi
+  elif [ -n "$task" ]; then subject=$task
+  else subject=primary
+  fi
+  set -- record-dialog --subject "$subject"
+  [ "${O_PARENT:-}" != - ] || acct=$(wd_primary_account) || acct=''
+  if [ "$subject" = primary ] && [ -n "${O_HARNESS:-}" ]; then set -- "$@" --harness "$O_HARNESS"; fi
+  if [ "$subject" = primary ] && [ -n "$acct" ]; then set -- "$@" --account "$acct"; fi
+  wd_quota_guard "$home" "$@" || rc=$?
+  if [ "$rc" != 0 ]; then
+    wd_rec "$(wd_id)" quota-guard warning failed "limit dialog on $subject not recorded (exit $rc)"
+    wd_gap "limit dialog on $subject not recorded (exit $rc)"
+    return 0
+  fi
+  # A home whose restart awaits pickup gets no check; its dialog is still
+  # recorded. A second mate's warning checks its parent, so the parent's hold
+  # is the one that counts.
+  if ! wd_quota_guard_on || wd_home_awaits_restart "$home"; then
+    wd_rec "$(wd_id)" quota-guard warning "done" "limit dialog on $subject recorded"
+    return 0
+  fi
+  set -- check --trigger warning
+  # Only a live primary is named, so a dead one is never kept as a supervisor.
+  if [ "$home" = "$O_HOME" ] && [ "${O_PARENT:-}" = - ] && [ "${O_ALIVE:-0}" = 1 ]; then
+    [ -z "${O_HARNESS:-}" ] || set -- "$@" --primary-harness "$O_HARNESS"
+    [ -z "$acct" ] || set -- "$@" --primary-account "$acct"
+  fi
+  rc=0
+  wd_quota_guard "$home" "$@" || rc=$?
+  case "$rc" in 0|3) ;; *) WD_QG_LINE= ;; esac
+  wd_rec "$(wd_id)" quota-guard warning "done" "limit dialog on $subject recorded${WD_QG_LINE:+; $WD_QG_LINE}"
+  case "$rc" in
+    0) ;;
+    3) [ -z "$WD_QG_LINE" ] || wd_gap "$WD_QG_LINE" ;;
+    *) wd_gap "quota guard check after the limit dialog on $subject failed (exit $rc)" ;;
+  esac
+}
 wd_unsent_is_stable() {
   [ "$O_COMPOSER" = pending ] && [ "$O_PREV_COMPOSER" = pending ] && [ "$O_SIG" = "$O_PREV_SIG" ] && [ "$O_TURN" = 0 ]
 }
@@ -1310,6 +1973,13 @@ wd_submit_unsent() {
   fi
   wd_rate_open pasted-input key "$(cfgi enter-secs 300)" && wd_key pasted-input Enter "submit text left unsent"
   return 0
+}
+
+# Low context asks for a restart: context left at or below restart-at-percent,
+# unless the session's published reset is compaction (compaction-first: the
+# Claude trigger's capture step, not a handoff, serves that cycle).
+wd_low_context() {
+  [ -n "$O_CTX" ] && [ "$O_CTX" -le "$(cfgi restart-at-percent 8)" ] && [ "$O_CTX_RESET" != compaction ]
 }
 
 # A low-context ask with no delivered nudge that no later pass can deliver either.
@@ -1361,7 +2031,7 @@ wd_requested_restart() {  # <quiet-secs>
       wd_gap "no full handoff within ${wait}s; the restart uses the lean handoff"
     fi
   fi
-  if [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -ge "$quiet" ]; then
+  if [ "$O_ACT_AGE" != unknown ] && [ "$O_ACT_AGE" -ge "$quiet" ]; then
     wd_restart restart-requested filesystem records
   else
     wd_gap "restart requested; waiting for ${quiet}s of quiet"
@@ -1409,19 +2079,30 @@ wd_worker_metas() {  # <home>
 }
 
 # Read each recorded worker pane with the home dialog detector.
-# mode=page sends a permission dialog through wd_page_permission and no other key.
-# mode=print reports the read and does not act. A gone endpoint is not a dialog.
+# mode=page dismisses a known feedback or bug-report dialog, pages a permission
+# dialog through wd_page_permission, and names a usage-limit pick. It sends no
+# other key. mode=print reports the read and does not act. A gone endpoint is
+# not a dialog.
 wd_visit_worker_dialogs() {
-  local mode=$1 id meta backend target screen dialog
-  local saved_pane saved_backend saved_target saved_dialog
+  local mode=$1 id meta backend target harness screen dialog mismatch
+  local saved_pane saved_dialog_pane saved_backend saved_target saved_harness saved_dialog saved_id
+  local saved_composer saved_composer_text saved_composer_above saved_draft
   saved_pane=$O_PANE
+  saved_dialog_pane=${O_DIALOG_PANE:-}
   saved_backend=$O_BACKEND
   saved_target=$O_TARGET
+  saved_harness=${O_HARNESS:-}
   saved_dialog=$O_DIALOG
+  saved_id=${O_ID:-}
+  saved_composer=${O_COMPOSER:-}
+  saved_composer_text=${O_COMPOSER_TEXT:-}
+  saved_composer_above=${O_COMPOSER_ABOVE:-}
+  saved_draft=${O_DRAFT:-}
   while IFS=$'\t' read -r id meta; do
     [ -n "$id" ] || continue
     backend=$(fm_backend_of_meta "$meta")
     target=$(fm_backend_target_of_meta "$meta")
+    harness=$(fm_meta_get "$meta" harness 2>/dev/null) || harness=
     if [ -z "$backend" ] || [ -z "$target" ]; then
       [ "$mode" = print ] && printf '  worker %s endpoint=none dialog=none\n' "$id"
       continue
@@ -1431,20 +2112,52 @@ wd_visit_worker_dialogs() {
       continue
     fi
     if ! fm_backend_target_exists "$backend" "$target" 2>/dev/null; then
+      # A herdr server that refuses every client looks like a gone pane; say so.
+      mismatch=''
+      if [ "$backend" = herdr ]; then
+        mismatch=$(fm_run_timed_fn "$(cfgi call-timeout-secs 20)" wd_herdr_mismatch "$target" 2>/dev/null) || mismatch=''
+      fi
       if [ "$mode" = print ]; then
-        printf '  worker %s endpoint=%s:%s dialog=gone\n' "$id" "$backend" "$target"
+        if [ -n "$mismatch" ]; then
+          printf '  worker %s endpoint=%s:%s dialog=unknown\n' "$id" "$backend" "$target"
+          printf '    %s\n' "$mismatch"
+        else
+          printf '  worker %s endpoint=%s:%s dialog=gone\n' "$id" "$backend" "$target"
+        fi
+      elif [ -n "$mismatch" ]; then
+        wd_gap "worker $id pane could not be read: $mismatch"
       else
         wd_gap "worker $id endpoint is gone; its pane is not read"
       fi
       continue
     fi
     screen=$(wd_capture "$backend" "$target" 60) || screen=''
-    dialog=$(wd_observe_dialog "$backend" "$target" "fm-$id") || dialog=''
+    dialog=$(wd_observe_dialog "$backend" "$target" "fm-$id" "${harness:-unknown}") || dialog=''
     if [ "$mode" = print ]; then
       printf '  worker %s endpoint=%s:%s dialog=%s\n' "$id" "$backend" "$target" "${dialog:-none}"
       continue
     fi
+    wd_rearm_feedback_dialog "$backend" "$target" "${harness:-unknown}" "$screen" "fm-$id"
+    if [ -z "$dialog" ] && fm_wd_usage_limit_autowait "$screen"; then
+      O_REC_SUBJECT="worker:$id"
+      wd_quota_guard_warning "$id"
+      unset O_REC_SUBJECT
+    fi
     case "$dialog" in
+      feedback)
+        O_BACKEND=$backend
+        O_TARGET=$target
+        O_HARNESS=${harness:-unknown}
+        O_PANE=$screen
+        O_DIALOG_PANE=$(wd_view "$backend" "$target" "fm-$id") || O_DIALOG_PANE=$screen
+        O_DIALOG=$dialog
+        O_ID=$id
+        O_REC_SUBJECT="worker:$id"
+        wd_handle_dialog || true
+        O_ID=$saved_id
+        O_HARNESS=$saved_harness
+        unset O_REC_SUBJECT
+        ;;
       permission)
         O_BACKEND=$backend
         O_TARGET=$target
@@ -1467,16 +2180,29 @@ wd_visit_worker_dialogs() {
     esac
   done < <(wd_worker_metas "$O_HOME")
   O_PANE=$saved_pane
+  O_DIALOG_PANE=$saved_dialog_pane
   O_BACKEND=$saved_backend
   O_TARGET=$saved_target
+  O_HARNESS=$saved_harness
   O_DIALOG=$saved_dialog
+  O_ID=$saved_id
+  O_COMPOSER=$saved_composer
+  O_COMPOSER_TEXT=$saved_composer_text
+  O_COMPOSER_ABOVE=$saved_composer_above
+  O_DRAFT=$saved_draft
   unset O_REC_SUBJECT
+}
+
+# wd_home_awaits_restart <home>: a restart of that home is still pending pickup.
+wd_home_awaits_restart() {
+  fm_wd_open_pending "$LEDGER" | awk -F'\t' -v h="$1" '$2 == h && $4 == "restart" { f = 1 } END { exit !f }'
 }
 
 # wd_handle_subject: one symptom per pass, by precedence, then the side checks.
 wd_handle_subject() {
   local symptom='' quiet frozen owed dead=0 reachable=1
-  if fm_wd_open_pending "$LEDGER" | awk -F'\t' -v h="$O_HOME" '$2 == h && $4 == "restart" { f = 1 } END { exit !f }'; then
+  wd_rearm_feedback_dialog "$O_BACKEND" "$O_TARGET" "${O_HARNESS:-}" "$O_PANE"
+  if wd_home_awaits_restart "$O_HOME"; then
     WD_SYMPTOM='restart-awaiting-pickup'
     return 0
   fi
@@ -1487,20 +2213,26 @@ wd_handle_subject() {
   if [ "$O_DIALOG" = unknown ]; then
     wd_gap "the visible pane could not be read; dialog unknown"
   fi
+  [ -z "$O_HERDR_MISMATCH" ] || wd_gap "$O_HERDR_MISMATCH"
   if [ "$dead" = 1 ]; then
     symptom='agent-gone'
-    if [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -ge "$frozen" ]; then
+    if [ "$O_ACT_AGE" != unknown ] && [ "$O_ACT_AGE" -ge "$frozen" ]; then
       O_TURN=0 O_CPU_BUSY=0 wd_restart agent-gone kernel filesystem
     else
-      wd_gap "lock holder is dead; restart needs ${frozen}s of transcript quiet; nothing typed"
+      wd_gap "lock holder is dead; restart needs ${frozen}s of activity quiet; nothing typed"
     fi
   elif [ "$O_PARENT" = - ] && [ "$O_AUTOWAIT" = 1 ]; then
     symptom='usage-limit-autowait'
     wd_handle_captain_autowait
+  elif [ "$O_PARENT" != - ] && [ "$O_LIMIT_FOOTER" = 1 ]; then
+    # A second mate on the auto-wait takes no turn until the reset either, so
+    # nothing is typed into it; its footer is a limit warning, not a page.
+    symptom='usage-limit-autowait'
+    wd_quota_guard_warning
   elif [ -n "$O_DIALOG" ] && [ "$O_DIALOG" != unknown ]; then
     symptom=dialog
     wd_handle_dialog
-  elif { [ "$O_RESTART_REQ" = 1 ] || { [ -n "$O_CTX" ] && [ "$O_CTX" -le "$(cfgi restart-at-percent 8)" ]; }; } && wd_restart_available && ! wd_handoff_undeliverable; then
+  elif { [ "$O_RESTART_REQ" = 1 ] || wd_low_context; } && wd_restart_available && ! wd_handoff_undeliverable; then
     symptom='restart-requested'
     wd_requested_restart "$quiet"
   elif { [ "$O_LOOP" = rapid ] && [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -le "$(cfgi rapid-loop-secs 180)" ]; } \
@@ -1510,11 +2242,11 @@ wd_handle_subject() {
   elif [ "$O_LOOP" = near ] && [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$owed" ] && wd_near_loop_confirmed; then
     symptom='timer-loop'
     wd_ladder_nudge_then_restart timer-loop "your recent replies repeat without new work while input waits. Stop re-arming, drain the wake queue, and act on it." filesystem records
-  elif [ "$O_PANE_STATIC" -ge "$frozen" ] && [ "$O_TR_AGE" != unknown ] && [ "$O_TR_AGE" -ge "$frozen" ] \
+  elif [ "$O_PANE_STATIC" -ge "$frozen" ] && [ "$O_ACT_AGE" != unknown ] && [ "$O_ACT_AGE" -ge "$frozen" ] \
        && [ "$O_OWED_N" -gt 0 ] && [ "$O_OWED_AGE" -ge "$frozen" ]; then
     symptom=frozen
     if [ "$O_TURN" = 1 ]; then
-      wd_gap "pane and transcript static $((O_PANE_STATIC / 60))m during a running turn; treated as busy"
+      wd_gap "pane and activity static $((O_PANE_STATIC / 60))m during a running turn; treated as busy"
     else
       wd_ladder_nudge_then_restart frozen "nothing changed for $((O_PANE_STATIC / 60)) minutes while $O_OWED_N inputs wait. Drain the wake queue and act on it." rendered filesystem kernel
     fi
@@ -1544,7 +2276,7 @@ wd_handle_subject() {
     wd_self_heal "$symptom" "Watchdog: $symptom recurs on $O_TAG" "$symptom handled 3 or more times in 24h"
   fi
   WD_SYMPTOM=${symptom:-ok}
-  if [ "$O_TR_AGE" = unknown ]; then
+  if [ "$O_ACT_AGE" = unknown ]; then
     wd_gap "no activity source; frozen, dead-holder, and low-context restarts are unavailable"
     WD_SYMPTOM=${symptom:-no-activity-source}
   fi
@@ -1558,7 +2290,7 @@ wd_handle_subject() {
 
 wd_health_line() {
   local s=$WD_SYMPTOM idle='' captain='no lock holder' term='an unknown terminal'
-  [ "$O_TR_AGE" = unknown ] || idle=", last turn $((O_TR_AGE / 60))m ago"
+  [ "$O_ACT_AGE" = unknown ] || idle=", last turn $((O_ACT_AGE / 60))m ago via $O_ACT_SRC"
   if [ -n "$O_LOCK_PID" ]; then
     [ -z "$C_TARGET" ] || term=$C_BACKEND:$C_TARGET
     captain="captain pid $O_LOCK_PID $O_OWNER on $term${C_MOVED:+, moved $(fm_wd_iso "$C_MOVED")}"
@@ -1619,6 +2351,34 @@ wd_monitor_read() {  # <home>
   return 1
 }
 
+# --- memory guard (bin/fm-memory-guard.sh) --------------------------------------
+
+# wd_memory_guard_pass: one host memory and swap sample per pass, never per
+# home. It runs in observe mode unless this watchdog's mode is act. An alarm in
+# force is an open gap on every pass; a sample that fails is a gap and never
+# stops the pass.
+wd_memory_guard_pass() {
+  local out rc=0 summary
+  [ "$(cfg memory-guard on)" != off ] || return 0
+  set -- check
+  [ "$(wd_mode)" = act ] || set -- "$@" --observe
+  # Its config is the owner home's; its state follows this watchdog's own.
+  out=$(fm_run_timed 30 env -u FM_CONFIG_OVERRIDE FM_STATE_OVERRIDE="$STATE" FM_HOME="$OWNER_HOME" FM_MEMORY_GUARD_NOW="$(wd_now)" \
+    "$SCRIPT_DIR/fm-memory-guard.sh" "$@" 2>/dev/null </dev/null) || rc=$?
+  case "$rc" in
+    0) return 0 ;;
+    3) ;;
+    *) printf -- '- host: memory guard sample failed (exit %s)\n' "$rc" >> "$WD_GAPS"; return 0 ;;
+  esac
+  # At most three host lines a pass, so other homes' gaps stay visible.
+  summary=$(printf '%s\n' "$out" | sed -n '1s/^memory-guard: status=alarm //p')
+  {
+    [ -z "$summary" ] || printf -- '- host: memory alarm %s\n' "$summary"
+    printf '%s\n' "$out" | sed -n 's/^MEMORY_GUARD_ALARM: /- host: /p'
+  } | head -n 3 >> "$WD_GAPS"
+  return 0
+}
+
 wd_once() {  # [home-filter]
   local filter=${1:-} health
   mkdir -p "$WD" "$OUT"
@@ -1630,11 +2390,19 @@ wd_once() {  # [home-filter]
     [ -z "$filter" ] || [ "$home" = "$filter" ] || continue
     wd_monitor_read "$home"
     wd_observe "$home" "$parent" "$id"
+    wd_score_gap
+    wd_score_activity
     WD_SYMPTOM=ok WD_RESTARTED=0
     wd_handle_subject
+    # A home whose restart awaits pickup gets no action, quota checks included,
+    # and the ledger is read again so that holds from the pass that starts it.
+    if [ "$parent" = - ] && ! wd_home_awaits_restart "$home"; then
+      wd_quota_guard_pass
+    fi
     wd_visit_worker_dialogs page
     wd_health_line >> "$health"
   done
+  wd_memory_guard_pass
   [ -n "$(wd_models)" ] || printf -- '- no model configured; judged symptoms are reported only\n' >> "$WD_GAPS"
   wd_write_status "$health" "$WD_GAPS"
   rm -f "$health" "$WD_GAPS" "$WD/.decisions" "$WD/.decisions-aged"
@@ -1754,8 +2522,9 @@ manager_status() {
   return 1
 }
 
-usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; }
 
+[ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 cmd=${1:-}
 [ "$#" -eq 0 ] || shift
 case "$cmd" in
@@ -1779,6 +2548,7 @@ case "$cmd" in
     [ "$#" -eq 2 ] || die "usage: judge <purpose> <answer-ere> < prompt" 2
     mkdir -p "$WD"
     wd_judge "$1" "$2" "$(cat)" ;;
+  council) cmd_council "$@" ;;
   status) cat "$OUT/status.md" 2>/dev/null || die "no status file yet" ;;
   ack-read) mkdir -p "$WD" && wd_now > "$WD/last-read" ;;
   pickup) cmd_pickup "$@" ;;

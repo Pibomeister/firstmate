@@ -34,6 +34,10 @@ mkdir -p "$PARENT/data" "$PARENT/state" "$PARENT/config" "$PARENT/projects" \
   "$REMOTE_ROOT" "$CLAIMS" "$PROBEBIN" "$TMP_ROOT/pane-home"
 trap 'FM_HOME="$PARENT" FM_PROCEVENT_CLAIM_ROOT="$CLAIMS" "$ROOT/bin/fm-procevent.sh" sweep-home >/dev/null 2>&1 || true; if [ -f "$TMP_ROOT/remote-jobs/worker.pid" ]; then kill "$(cat "$TMP_ROOT/remote-jobs/worker.pid")" 2>/dev/null || true; fi; rm -rf -- "$TMP_ROOT"' EXIT
 
+# The agent-kit lifecycle defaults are checked below; the runner's own values
+# must not stand in for what the remote host's spawn would choose.
+unset AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR
+
 # A synthetic value the remote launch must override rather than inherit, so a
 # launch that only forwarded the ambient environment cannot pass as a floor.
 CONTRARY=0
@@ -188,5 +192,17 @@ SEEN=$(replay_remote_launch bare) \
 assert_equals 1 "$SEEN" \
   "a remote second mate launched under the cleared allowlisted environment must still start with the compact adviser disabled"
 pass "the remote route keeps the compact-adviser switch through the cleared allowlisted environment"
+
+# --- the agent-kit unattended policy reaches the remote second mate ---------
+cat > "$PROBEBIN/codex" <<'SH'
+#!/bin/sh
+printf '%s|%s\n' "${AK_LIFECYCLE_POLICY-unset}" "${AK_LIFECYCLE_SUPERVISOR-unset}"
+SH
+SEEN=$(launch=$(remote_launch_command) && env -i HOME="$TMP_ROOT/pane-home" PATH="$PROBEBIN:$PATH" TERM=xterm \
+  AK_LIFECYCLE_POLICY=pane-value AK_LIFECYCLE_SUPERVISOR=pane-supervisor /bin/sh -c "$launch") \
+  || fail "the remote launch failed to run for the agent-kit policy probe"
+assert_equals 'unattended|firstmate' "$SEEN" \
+  "a remote second mate must start under the agent-kit unattended policy with Firstmate as supervisor"
+pass "a remote-routed second mate on Herdr starts under the agent-kit unattended policy with Firstmate as supervisor"
 
 echo "ALL TESTS PASSED"

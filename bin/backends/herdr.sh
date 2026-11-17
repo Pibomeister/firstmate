@@ -77,6 +77,8 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 # every backend so the decision cannot drift.
 # shellcheck source=bin/fm-composer-lib.sh
 . "$FM_BACKEND_HERDR_ROOT/bin/fm-composer-lib.sh"
+# shellcheck source=bin/fm-env-scrub.sh
+. "$FM_BACKEND_HERDR_ROOT/bin/fm-env-scrub.sh"
 
 # Shared, backend-neutral normalized-transition shape and the single-owner
 # status->action policy table (bin/fm-transition-lib.sh). This adapter's event
@@ -501,6 +503,42 @@ fm_backend_herdr_client_select() {  # <session> [force]
       return 0
     fi
   done <<< "$candidates"
+  return 0
+}
+
+# fm_backend_herdr_client_mismatch: after a forced selection for <session>,
+# print one actionable line and return 0 when a running server is reported
+# incompatible with the selected client, which means no herdr on PATH can drive
+# that session; return 1, printing nothing, otherwise (compatible, stopped, or
+# unknown). Read-only: it never starts, stops, or restarts a server. A server
+# whose protocol is older than the client's is a stale server, such as one an
+# older herdr binary started at boot; a newer one means the client is behind.
+fm_backend_herdr_client_mismatch() {  # <session>
+  local session=$1 bin running compatible fields cver cproto sver sproto advice
+  fm_backend_herdr_client_select "$session" force
+  bin=$(fm_backend_herdr_bin)
+  [ "$bin" != herdr ] || bin=$(command -v herdr 2>/dev/null) || return 1
+  IFS='|' read -r running compatible \
+    <<< "$(fm_backend_herdr_client_status "$bin" "$session")"
+  [ "$running" = true ] && [ "$compatible" = false ] || return 1
+  fields=$(HERDR_SESSION="$session" "$bin" status --json --session "$session" 2>/dev/null \
+    | jq -r '[(.client.version // "" | tostring), (.client.protocol // "" | tostring),
+              (if (.server | type) == "object" then (.server.version // "" | tostring) else "" end),
+              (if (.server | type) == "object" then (.server.protocol // "" | tostring) else "" end)] | join("|")' 2>/dev/null) || fields='|||'
+  IFS='|' read -r cver cproto sver sproto <<< "$fields"
+  advice="make the herdr client and server versions match"
+  case "$cproto|$sproto" in
+    '|'*|*'|'|*[!0-9]*'|'*|*'|'*[!0-9]*) ;;
+    *)
+      if [ "$sproto" -lt "$cproto" ]; then
+        advice="the server is older than the client, so a stale server holds the session (for example one an older herdr binary started at boot); an operator must restart that session's server with $bin, which interrupts every pane on it"
+      elif [ "$sproto" -gt "$cproto" ]; then
+        advice="the client is older than the server; update herdr (herdr update) or put the newer herdr first on PATH"
+      fi
+      ;;
+  esac
+  printf "herdr protocol mismatch on session '%s': client %s %s (protocol %s) cannot drive the running server %s (protocol %s), and no other herdr on PATH matches it, so every pane read on that session fails; %s\n" \
+    "$session" "$bin" "${cver:-unknown}" "${cproto:-unknown}" "${sver:-unknown}" "${sproto:-unknown}" "$advice"
   return 0
 }
 
@@ -1712,8 +1750,9 @@ fm_backend_herdr_server_owner_name() {  # <owner-marker>
 # has-session || tmux new-session -d`. Verified: a bare socket CLI call does
 # NOT auto-start the server, so this must run before any workspace/tab/pane
 # call. The server outlives its launcher and passes its startup environment to
-# every later pane, so remove home, harness identity, and supervision selection
-# inherited from whichever agent happened to start it. Bounded poll for the
+# every later pane, so remove home, harness identity, supervision selection,
+# and the agent-kit lifecycle variables inherited from whichever agent happened to
+# start it. Bounded poll for the
 # server to report running.
 #
 # A running server returns after one marker check in the session directory,
@@ -1759,6 +1798,7 @@ fm_backend_herdr_server_ensure() {  # <session>
   (
     unset FM_HOME FM_ROOT_OVERRIDE FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_PROJECTS_OVERRIDE FM_CONFIG_OVERRIDE \
       CURSOR_AGENT CURSOR_INVOKED_AS CLAUDECODE PI_CODING_AGENT FM_PI_HARNESS GROK_AGENT FM_SUPERVISION_MODEL
+    fm_env_drop_ak_pair
     set -m
     fm_backend_herdr_cli "$session" server </dev/null >/dev/null 2>&1 &
   ) || return 1

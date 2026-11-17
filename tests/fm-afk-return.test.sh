@@ -23,6 +23,7 @@ install_runner() {  # <case-dir>
   local dir=$1
   mkdir -p "$dir/bin" "$dir/home/state" "$dir/home/data" "$dir/home/config"
   cp "$ROOT/bin/fm-afk-return.sh" "$dir/bin/"
+  cp "$ROOT/bin/fm-auto-away.sh" "$dir/bin/"
   cp "$ROOT/bin/fm-wake-lib.sh" "$dir/bin/"
   cp "$ROOT/bin/fm-bash-compat-lib.sh" "$dir/bin/"
   cp "$ROOT/bin/fm-lock-lib.sh" "$dir/bin/"
@@ -134,6 +135,7 @@ test_return_gate_owns_remediation_and_reports_catchup_to_bearings() {
   [ "$rc" -eq 3 ] || fail "return begin should gate on a live blocker (rc=$rc): $out"
   gate="$dir/home/state/.afk-return-catchup"
   [ -s "$gate" ] || fail "return begin did not persist its fail-closed catch-up gate"
+  assert_present "$dir/home/state/.captain-message-epoch" "ordinary return did not reset automatic-away activity"
   assert_contains "$out" 'firstmate-actionable blocker: repair-task [key=synthetic-dependency]' "return output did not assign blocker remediation to Firstmate"
   grep -F $'evidence\twake\t1784074271' "$gate" >/dev/null || fail "drained wake evidence was not retained in the durable gate"
   grep -F $'evidence\twake\twake annotation: latest wake-EVENT observed at drain, not current state: repair-task.status: blocked synthetic dependency' "$gate" >/dev/null \
@@ -330,6 +332,21 @@ test_return_is_mode_agnostic_for_quiet_mode() {
   [ ! -e "$dir/home/state/.afk" ] || fail "quiet-mode return left the mode flag behind"
   [ "$(wc -l < "$dir/home/stop.log" | tr -d ' ')" -eq 1 ] || fail "quiet-mode return did not stop the daemon exactly once"
   pass "/quiet off's return path behaves identically for a quiet-content flag as for a legacy away-content one"
+}
+
+test_return_continues_when_activity_stamp_fails() {
+  local dir out
+  dir="$TMP_ROOT/stamp-failure-return"
+  install_runner "$dir"
+  printf 'quiet\n%s\n' "$(date +%s)" > "$dir/home/state/.afk"
+  : > "$dir/home/state/.fake-drain"
+  mkdir "$dir/home/state/.captain-message-epoch"
+
+  out=$(run_return "$dir" begin 2>&1) || fail "an activity stamp failure aborted the return: $out"
+  assert_contains "$out" 'could not record automatic-away activity' "the stamp failure was not reported"
+  assert_contains "$out" 'catch-up clear' "the return did not finish after a stamp failure"
+  [ ! -e "$dir/home/state/.afk" ] || fail "a stamp failure left the away flag behind"
+  pass "an automatic-away activity stamp failure warns and the ordinary return still completes"
 }
 
 test_check_retries_recorded_terminal_teardown() {
@@ -1527,6 +1544,7 @@ test_captain_decision_does_not_masquerade_as_firstmate_blocker
 test_evidence_publication_failure_preserves_wake_for_redrain
 test_away_reentry_refuses_pending_return_gate
 test_return_is_mode_agnostic_for_quiet_mode
+test_return_continues_when_activity_stamp_fails
 test_check_retries_recorded_terminal_teardown
 test_unreadable_superseded_archive_keeps_return_gated
 test_missing_final_archive_keeps_retained_contract_gated

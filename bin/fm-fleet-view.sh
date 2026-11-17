@@ -4,6 +4,8 @@
 # This command intentionally does not parse fleet state itself.
 # It shells out to fm-fleet-snapshot.sh --json and renders that stable
 # structured contract for humans.
+# The opening lines name the schema, the home, and the session endpoint from that snapshot.
+# When either side is missing or unknown, the line is "Session endpoint: unknown".
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -65,6 +67,11 @@ printf '%s\n' "$SNAPSHOT" | jq -r '
   "",
   "Schema: \(.schema)",
   "Home: \(.fm_home)",
+  (if (.session.endpoint.backend // "unknown") == "unknown"
+      or (.session.endpoint.target // "unknown") == "unknown"
+    then "Session endpoint: unknown"
+    else "Session endpoint: \(.session.endpoint.backend) \(.session.endpoint.target)"
+    end),
   "",
   "## Under Way",
   (if (.tasks | length) == 0 then

@@ -75,8 +75,9 @@
 #                   slowest CI hint with margin; exceeding it becomes a bounded
 #                   failure, not proof of a hang. --max-wall-ms is checked
 #                   after the run and so cannot catch a hang on its own.
-#                   External interruption cleanup is outside this runner's
-#                   guarantee; configured per-script bounds remain authoritative.
+#                   With a bound set, external interruption cleanup is outside
+#                   this runner's guarantee; the configured bound remains
+#                   authoritative.
 #   --max-wall-ms N fail the run when its measured invocation wall clock exceeds
 #                   N milliseconds, including an empty selection. It is
 #                   evaluated after selection and suite execution and cannot
@@ -120,6 +121,19 @@
 # configuration, including one that sources no test helper of its own;
 # tests/git-config-helpers.sh owns that contract and its limits.
 #
+# Every selected script also runs in a process group of its own, apart from the
+# runner's, with or without a per-script bound. A signal a script sends to its
+# own group therefore reaches neither this runner nor whatever started it.
+# Without a bound the runner shell that started the script owns that group
+# (run_script_group); under --jobs that shell is the script's worker, not the
+# runner process itself. The owning shell passes INT, HUP and TERM on to the
+# group, the group ends when that shell is killed without releasing it, a
+# script that finishes on its own keeps whatever it left running, and a
+# terminal stdin is replaced by /dev/null while a redirected stdin is kept.
+# With a bound, bin/fm-timeout-lib.sh owns the group and the bound is what ends
+# it. Native Windows Bash layers are the exception: there an unbounded script
+# runs in the runner's own group.
+#
 # Family labels, the changed-file map, and production portable-shard composition
 # live in this script only (one owner). The proven-isolated candidate set remains
 # owned by bin/fm-test-isolation-proof.sh; portable parallel shards are a
@@ -155,7 +169,38 @@
 # arms above those also name individual tests/ files explicitly.
 set -eu
 
+# Under Bash older than 5 (stock macOS /bin/bash 3.2), re-exec the runner once
+# under the first Bash 5+ found at FM_TEST_RUN_BASH5_CANDIDATE (when
+# FM_TEST_SEAM=1), /opt/homebrew/bin/bash, or /usr/local/bin/bash, so
+# EPOCHREALTIME timing and the faster builtins apply; with none found the
+# runner continues on the current Bash. FM_TEST_RUN_NO_REEXEC=1 disables the
+# re-exec. The FM_TEST_RUN_BASH_REEXEC marker stops a loop and is unset
+# afterwards so test children that invoke the runner re-exec on their own.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 5 ] && [ -z "${FM_TEST_RUN_BASH_REEXEC:-}" ] && [ -z "${FM_TEST_RUN_NO_REEXEC:-}" ]; then
+  _fm_seam_bash5=''
+  [ "${FM_TEST_SEAM:-0}" = 1 ] && _fm_seam_bash5=${FM_TEST_RUN_BASH5_CANDIDATE:-}
+  for _fm_bash_candidate in "$_fm_seam_bash5" /opt/homebrew/bin/bash /usr/local/bin/bash; do
+    [ -n "$_fm_bash_candidate" ] && [ -x "$_fm_bash_candidate" ] || continue
+    # shellcheck disable=SC2016
+    if "$_fm_bash_candidate" -c '[ "${BASH_VERSINFO[0]:-0}" -ge 5 ]' 2>/dev/null; then
+      unset _fm_seam_bash5
+      FM_TEST_RUN_BASH_REEXEC=1 exec "$_fm_bash_candidate" "$0" "$@"
+    fi
+  done
+  unset _fm_seam_bash5 _fm_bash_candidate
+fi
+unset FM_TEST_RUN_BASH_REEXEC
+
 now_ms() {
+  local rt sec frac
+  rt=${EPOCHREALTIME:-}
+  if [ -n "$rt" ]; then
+    sec=${rt%%[.,]*}
+    frac=${rt#*[.,]}
+    frac="${frac}000"
+    printf '%s\n' "$((sec * 1000 + 10#${frac:0:3}))"
+    return 0
+  fi
   if command -v python3 >/dev/null 2>&1; then
     python3 -c 'import time; print(int(time.time() * 1000))'
   else
@@ -203,7 +248,7 @@ CHANGED_DEFAULT_TIMEOUT_SECS=1500
 
 # How many separate-runner shards the portable serial remainder splits into.
 # One owner: CI lane names carry this count and are refused when they disagree.
-PORTABLE_SERIAL_SHARDS=24
+PORTABLE_SERIAL_SHARDS=25
 
 # Fixed balance estimate for a portable-serial script with no measurement.
 # Replace it with a measured hint when CI timing becomes available.
@@ -285,11 +330,11 @@ cpu_count() {
 # also swallows every test nobody has classified yet. Keeping the two separate
 # is what lets `standalone` carry a concurrent proof while a brand-new test
 # lands in `unclassified` and stays serial until someone proves it.
-family_for_basename() {
+family_for_basename_var() {
   case "$1" in
     fm-arm-pretool-check.test.sh|fm-ask-user-authority.test.sh|\
     fm-bearings-board.test.sh|\
-    fm-brief.test.sh|fm-dod-lib.test.sh|fm-merge-local.test.sh|fm-vendor-auth-probe.test.sh|\
+    fm-brief.test.sh|fm-dod-lib.test.sh|fm-goal-integrity.test.sh|fm-merge-local.test.sh|fm-vendor-auth-probe.test.sh|\
     fm-calm-pi-extension.test.sh|fm-cd-pretool-check.test.sh|\
     fm-classify-decision-key.test.sh|\
     fm-composer-ghost.test.sh|fm-composer-lib.test.sh|fm-context-reading.test.sh|\
@@ -311,7 +356,7 @@ family_for_basename() {
     fm-test-run.test.sh|fm-test-isolation-proof.test.sh|fm-test-tap-verify.test.sh|\
     fm-ci-select.test.sh|fm-ci-workflow.test.sh|\
     fm-usage-limit-pane-pending.test.sh)
-      printf '%s\n' pure-contract-unit
+      REPLY_FAMILY=pure-contract-unit
       ;;
     fm-daemon.test.sh|fm-guard-stale-banner.test.sh|fm-pi-watch-extension.test.sh|\
     fm-session-lock-ancestry.test.sh|fm-cursor-primary.test.sh|fm-agy-primary.test.sh|fm-secondmate-inbox-guard.test.sh|\
@@ -326,7 +371,7 @@ family_for_basename() {
     fm-watch-triage.test.sh|fm-watch-triage-pause.test.sh|fm-watch-triage-wedge-defer.test.sh|fm-watch-triage-fork.test.sh|fm-task-inbox.test.sh|fm-watch-inbox-recovery.test.sh|\
     fm-watcher-lock.test.sh|fm-inactive-reconcile.test.sh|fm-watch-wedge-cap.test.sh|\
     fm-watch-wedge-cap-unconfigured-parity.test.sh|fm-supervision-bounds.test.sh|fm-watcher-replacement.test.sh)
-      printf '%s\n' watcher-wake-lock
+      REPLY_FAMILY=watcher-wake-lock
       ;;
     fm-afk-inject-herdr-e2e.test.sh|fm-afk-launch.test.sh|fm-backend-autodetect-smoke.test.sh|\
     fm-backend-herdr-eventwait-smoke.test.sh|fm-backend-herdr-presentation-e2e.test.sh|\
@@ -338,7 +383,7 @@ family_for_basename() {
     fm-herdr-attached-viewer-live-e2e.test.sh|fm-herdr-owned-xdg-live-e2e.test.sh|fm-herdr-session-cleanup-e2e.test.sh|\
     fm-backend-herdr-smoke.test.sh|fm-backend-herdr-workspace-per-home-e2e.test.sh|\
     fm-control-herdr-smoke.test.sh)
-      printf '%s\n' real-herdr-gated
+      REPLY_FAMILY=real-herdr-gated
       ;;
     fm-backlog-handoff.test.sh|fm-on.test.sh|fm-remote-backlog-handoff.test.sh|\
     fm-remote-doctor.test.sh|fm-remote-herdr-guard.test.sh|fm-remote-job.test.sh|fm-remote-job-orphan-reap.test.sh|fm-remote-job-process-start.test.sh|\
@@ -351,13 +396,13 @@ family_for_basename() {
     fm-secondmate-safety.test.sh|fm-secondmate-sync.test.sh|\
     fm-startup-memory-budget.test.sh|fm-stow-cascade.test.sh|\
     fm-send-secondmate-marker.test.sh|fm-shared-captain-inheritance.test.sh)
-      printf '%s\n' secondmate
+      REPLY_FAMILY=secondmate
       ;;
     fm-backlog-atomicity.test.sh|\
     fm-bootstrap.test.sh|fm-bootstrap-network-parallel.test.sh|fm-fleet-sync.test.sh|fm-gate-refuse.test.sh|fm-gotmp.test.sh|\
     fm-session-start.test.sh|fm-sessionstart-nudge.test.sh|fm-startup-network.test.sh|\
     fm-tangle-guard.test.sh|fm-update.test.sh)
-      printf '%s\n' session-bootstrap
+      REPLY_FAMILY=session-bootstrap
       ;;
     fm-afk-pi-herdr-return-e2e.test.sh|\
     fm-bearings-board-lavish-live-e2e.test.sh|\
@@ -365,13 +410,14 @@ family_for_basename() {
     fm-cmux-claude-composer-live-e2e.test.sh|\
     fm-composer-matrix-live-e2e.test.sh|\
     fm-composer-codex-idle-live-e2e.test.sh|\
+    fm-codex-catalog-live-e2e.test.sh|\
     fm-codex-continuity-live-e2e.test.sh|fm-codex-hook-layer-live-e2e.test.sh|\
     fm-grok-continuity-live-e2e.test.sh|fm-grok-quota-handoff-live-e2e.test.sh|\
     fm-cursor-primary-live-e2e.test.sh|fm-agy-primary-live-e2e.test.sh|\
     fm-grok-stop-live-e2e.test.sh|fm-harness-adapter-instructions-live-e2e.test.sh|\
     fm-harness-liveness-drift-live-e2e.test.sh|fm-backend-hc-liveness-live-e2e.test.sh|\
     fm-kimi-trust-prompt-live-e2e.test.sh|\
-    fm-devin-signals-live-e2e.test.sh|fm-commandcode-signals-live-e2e.test.sh|fm-cortex-signals-live-e2e.test.sh|fm-muse-signals-live-e2e.test.sh|fm-rovo-signals-live-e2e.test.sh|fm-agy-signals-live-e2e.test.sh|fm-agy-spawn-live-e2e.test.sh|fm-droid-signals-live-e2e.test.sh|fm-droid-orca-signals-live-e2e.test.sh|fm-polytoken-signals-live-e2e.test.sh|\
+    fm-devin-signals-live-e2e.test.sh|fm-commandcode-signals-live-e2e.test.sh|fm-cortex-signals-live-e2e.test.sh|fm-hermes-signals-live-e2e.test.sh|fm-hermes-profile-safety-live-e2e.test.sh|fm-hermes-gateway-coexistence-live-e2e.test.sh|fm-muse-signals-live-e2e.test.sh|fm-rovo-signals-live-e2e.test.sh|fm-agy-signals-live-e2e.test.sh|fm-agy-spawn-live-e2e.test.sh|fm-droid-signals-live-e2e.test.sh|fm-droid-orca-signals-live-e2e.test.sh|fm-kiro-signals-live-e2e.test.sh|fm-polytoken-signals-live-e2e.test.sh|\
     fm-launch-prompt-signals-live-e2e.test.sh|fm-backend-t3code-live-e2e.test.sh|\
     fm-backend-t3code-pr-tools-live-e2e.test.sh|\
     fm-pi-seeded-home-trust-live-e2e.test.sh|\
@@ -379,11 +425,13 @@ family_for_basename() {
     fm-herdr-projected-cd-live-e2e.test.sh|\
     fm-herdr-pi-stale-registration-live-e2e.test.sh|fm-herdr-secondmate-watch-live-e2e.test.sh|\
     fm-worker-account-live-e2e.test.sh|\
+    fm-opencode-abs-cwd-rail-live-e2e.test.sh|\
     fm-opencode-primary-live-e2e.test.sh|fm-pi-branch-live-e2e.test.sh|\
     fm-pi-branch-responsiveness-live-e2e.test.sh|\
     fm-pi-primary-live-e2e.test.sh|fm-pi-codex-native.test.sh|fm-omp-primary-live-e2e.test.sh|\
     fm-pr-state-live-e2e.test.sh|\
     fm-sessionstart-hook-live-e2e.test.sh|fm-sessionstart-instruction-refresh-live-e2e.test.sh|\
+    fm-stop-policy-live-e2e.test.sh|\
     fm-task-budget-live-e2e.test.sh|\
     fm-handoff-trigger-live-e2e.test.sh|\
     fm-supervision-host-live-e2e.test.sh|fm-supervision-host-attended-live-e2e.test.sh|\
@@ -396,9 +444,11 @@ family_for_basename() {
     fm-calm-pi-queue-retention-live-e2e.test.sh|\
     fm-herdr-submit-confirm-live-e2e.test.sh|\
     fm-backend-rex-composer-live-e2e.test.sh|\
+    fm-warm-compact-herdr-live-e2e.test.sh|\
     fm-watch-wedge-cap-live.test.sh|fm-read-repetition-live.test.sh|\
-    fm-watchdog-live.test.sh|fm-usage-limit-pane-live.test.sh)
-      printf '%s\n' live-harness-optin
+    fm-watchdog-live.test.sh|fm-usage-limit-pane-live.test.sh|\
+    fm-merge-review-live.test.sh)
+      REPLY_FAMILY=live-harness-optin
       ;;
     fm-backend-herdr.test.sh|fm-backend-tmux-smoke.test.sh|fm-backend.test.sh|\
     fm-backend-t3code.test.sh|fm-t3-mcp.test.sh|fm-tmux-agent-liveness.test.sh|\
@@ -413,53 +463,54 @@ family_for_basename() {
     fm-spawn-compact-adviser-disable-remote.test.sh|fm-codex-shell-env.test.sh|\
     fm-project-capacity.test.sh|\
     fm-teardown-endpoint-safety.test.sh)
-      printf '%s\n' backend-dispatch
+      REPLY_FAMILY=backend-dispatch
       ;;
     fm-check-unregister.test.sh|fm-pipeline-spend.test.sh|fm-pr-check-security.test.sh|\
     fm-pr-health.test.sh|fm-pr-merge.test.sh|fm-pr-reviewers.test.sh|fm-pr-state.test.sh|\
-    fm-review-diff.test.sh|fm-teardown.test.sh|fm-x-mode.test.sh)
-      printf '%s\n' pr-forge
+    fm-merge-review.test.sh|fm-review-diff.test.sh|fm-teardown.test.sh|fm-x-mode.test.sh)
+      REPLY_FAMILY=pr-forge
       ;;
-    fm-afk-contract.test.sh|fm-afk-inject-e2e.test.sh|fm-afk-return.test.sh|\
+    fm-afk-contract.test.sh|fm-afk-inject-e2e.test.sh|fm-afk-return.test.sh|fm-auto-away.test.sh|\
     fm-supervision-host.test.sh|fm-supervision-host-fork.test.sh|fm-supervision-host-drain.test.sh|\
     fm-supervision-host-hook.test.sh|fm-supervision-host-park.test.sh|fm-supervision-host-mirror.test.sh|\
     fm-host-mirror.test.sh)
-      printf '%s\n' afk
+      REPLY_FAMILY=afk
       ;;
     fm-bearings-board-render.test.sh|fm-bearings-snapshot.test.sh|fm-contributions.test.sh|\
     fm-fleet-snapshot-view.test.sh|fm-home-summary-refresh.test.sh)
-      printf '%s\n' snapshot-bearings
+      REPLY_FAMILY=snapshot-bearings
       ;;
     fm-backend-cmux.test.sh|fm-backend-cmux-smoke.test.sh)
-      printf '%s\n' cmux
+      REPLY_FAMILY=cmux
       ;;
     fm-backend-paseo.test.sh|fm-backend-paseo-smoke.test.sh)
-      printf '%s\n' paseo
+      REPLY_FAMILY=paseo
       ;;
     fm-backend-rex.test.sh|fm-backend-rex-smoke.test.sh|fm-backend-rex-eventwait-smoke.test.sh)
-      printf '%s\n' rex
+      REPLY_FAMILY=rex
       ;;
     fm-backend-zellij.test.sh|fm-backend-zellij-smoke.test.sh)
-      printf '%s\n' zellij
+      REPLY_FAMILY=zellij
       ;;
-    fm-backend-orca.test.sh|fm-terminal-reap.test.sh)
-      printf '%s\n' orca
+    fm-backend-orca.test.sh|fm-orca-cli-cache.test.sh|fm-terminal-reap.test.sh)
+      REPLY_FAMILY=orca
       ;;
     fm-backend-tern.test.sh|fm-backend-tern-smoke.test.sh)
-      printf '%s\n' tern
+      REPLY_FAMILY=tern
       ;;
     fm-backend-hc.test.sh|fm-backend-hc-smoke.test.sh|fm-backend-hc-appdetect-smoke.test.sh)
-      printf '%s\n' hc
+      REPLY_FAMILY=hc
       ;;
     fm-branch-supervision.test.sh|fm-busy-adapter-wiring.test.sh|\
     fm-busy-state.test.sh|fm-capacity.test.sh|fm-captain-record.test.sh|fm-disk-alarm.test.sh|fm-classify-corr-token.test.sh|\
-    fm-claude-account-quota.test.sh|\
+    fm-claude-account-quota.test.sh|fm-quota-guard.test.sh|\
     fm-claude-stop-autoarm.test.sh|fm-cursor-harness.test.sh|\
     fm-dispatch-resolve.test.sh|\
     fm-extension-binding.test.sh|fm-gitignore-config.test.sh|fm-health-verdict.test.sh|\
     fm-no-mistakes-required.test.sh|fm-peek-remote.test.sh|\
     fm-pending-reply.test.sh|fm-pi-branch-extension.test.sh|\
     fm-procevent-extension-errors.test.sh|fm-procevent-factory.test.sh|fm-procevent-no-mistakes.test.sh|fm-procevent-quota.test.sh|fm-procevent-when.test.sh|fm-procevent.test.sh|\
+    fm-escalate.test.sh|fm-escalation-class-map.test.sh|\
     fm-incident-ledger.test.sh|fm-layer-chain.test.sh|fm-live-gate.test.sh|\
     fm-project-origin.test.sh|fm-public-followup.test.sh|fm-quota-choose.test.sh|\
     fm-remote-entrypoint.test.sh|fm-remote-secondmate-parent-binding.test.sh|\
@@ -467,12 +518,18 @@ family_for_basename() {
     fm-test-fixture-cleanup.test.sh|fm-test-fixtures.test.sh|\
     fm-voice-relay.test.sh|fm-wake-drain-open-decisions-cursor.test.sh|\
     fm-wake-drain-open-decisions.test.sh|fm-wake-drain-outcome-backstop.test.sh)
-      printf '%s\n' standalone
+      REPLY_FAMILY=standalone
       ;;
     *)
-      printf '%s\n' unclassified
+      REPLY_FAMILY=unclassified
       ;;
   esac
+}
+
+family_for_basename() {
+  local REPLY_FAMILY
+  family_for_basename_var "$1"
+  printf '%s\n' "$REPLY_FAMILY"
 }
 
 expected_gate_skip_for_family() {
@@ -706,30 +763,32 @@ is_proven_isolated_script() {
 # and other unproven work stays here. Derived rather than enumerated so a newly added test
 # lands here by default instead of falling out of every lane.
 list_portable_serial() {
-  local s base fam
+  local s REPLY_FAMILY
   while IFS= read -r s; do
     [ -n "$s" ] || continue
-    base=$(basename "$s")
-    fam=$(family_for_basename "$base")
-    if [ "$fam" = "real-herdr-gated" ]; then
-      continue
-    fi
-    if is_proven_isolated_script "$s"; then
+    family_for_basename_var "${s##*/}"
+    if [ "$REPLY_FAMILY" = "real-herdr-gated" ]; then
       continue
     fi
     printf '%s\n' "$s"
-  done < <(all_repo_tests)
+  done < <(
+    awk '
+      NR == FNR { if (NF) { skip[$0] = 1 }; next }
+      NF && !($0 in skip) { print $0 }
+    ' <(list_proven_isolated) <(all_repo_tests)
+  )
 }
 
 # Measured portable-serial script durations in milliseconds, from the CI timing
 # artifacts recorded in docs/fm-test-portable-shards.md. Each value is the
 # slowest successful sample in the referenced complete/partial CI runs, with
-# the native-Windows exception documented there.
+# the native-host exceptions documented there.
 # Refreshed with successful samples from runs 41747763452, 41730727306,
 # and 41699536822. Host/mirror split hints include margin on per-case log times.
 # These are balance hints only: the shard
 # partition stays complete and disjoint whatever they say, so a stale hint costs
-# balance rather than coverage. That doc owns the refresh procedure.
+# balance rather than coverage. Local gap-filling hints are provisional;
+# that doc owns their provenance and the refresh procedure.
 portable_serial_weight_hints() {
   cat <<'EOF'
 tests/fm-afk-contract.test.sh 13468
@@ -744,6 +803,7 @@ tests/fm-agy-signals-live-e2e.test.sh 58
 tests/fm-agy-spawn-live-e2e.test.sh 55
 tests/fm-approval-failover.test.sh 11286
 tests/fm-ask-user-authority.test.sh 304
+tests/fm-auto-away.test.sh 33149
 tests/fm-backend-cmux-smoke.test.sh 39
 tests/fm-backend-cmux.test.sh 4583
 tests/fm-backend-orca.test.sh 95028
@@ -769,6 +829,8 @@ tests/fm-bearings-board-lavish-live-e2e.test.sh 77
 tests/fm-bearings-board-render.test.sh 19733
 tests/fm-bearings-board.test.sh 48250
 tests/fm-bearings-snapshot.test.sh 226520
+tests/fm-blip-read-budget.test.sh 4390
+tests/fm-blip-retry.test.sh 14728
 tests/fm-bootstrap-network-parallel.test.sh 78541
 tests/fm-bootstrap.test.sh 111060
 tests/fm-branch-supervision.test.sh 38608
@@ -832,6 +894,7 @@ tests/fm-gemini-harness.test.sh 1167
 tests/fm-git-push-guard.test.sh 1333
 tests/fm-git-strip-ai-trailers.test.sh 4125
 tests/fm-gitignore-config.test.sh 67
+tests/fm-goal-integrity.test.sh 17416
 tests/fm-gotmp.test.sh 1890
 tests/fm-grok-continuity-live-e2e.test.sh 54
 tests/fm-grok-quota-handoff-live-e2e.test.sh 58
@@ -845,6 +908,7 @@ tests/fm-harness-liveness-drift-live-e2e.test.sh 1038
 tests/fm-harness-precedence.test.sh 4680
 tests/fm-heartbeat.test.sh 128044
 tests/fm-herdr-groups.test.sh 4623
+tests/fm-herdr-owned-xdg.test.sh 19396
 tests/fm-herdr-pi-stale-registration-live-e2e.test.sh 82
 tests/fm-herdr-secondmate-watch-live-e2e.test.sh 59
 tests/fm-herdr-session-cleanup.test.sh 10131
@@ -853,19 +917,25 @@ tests/fm-herdr-version-floor-live-e2e.test.sh 74
 tests/fm-home-summary-refresh.test.sh 48737
 tests/fm-host-mirror-live-e2e.test.sh 70
 tests/fm-host-mirror.test.sh 14895
+tests/fm-hung-ladder.test.sh 45000
 tests/fm-inactive-reconcile.test.sh 70720
 tests/fm-inbox.test.sh 6907
 tests/fm-jev-mem-guard.test.sh 364
 tests/fm-kimi-harness.test.sh 123284
 tests/fm-kimi-trust-prompt-live-e2e.test.sh 84
 tests/fm-launch-prompt-signals-live-e2e.test.sh 121
+tests/fm-ledger.test.sh 33927
 tests/fm-lint-workflows.test.sh 1857
 tests/fm-live-gate.test.sh 11102
 tests/fm-live-lab-up-mate.test.sh 17915
 tests/fm-live-lab.test.sh 81645
+tests/fm-load-relief.test.sh 12302
 tests/fm-mail-check.test.sh 8048
 tests/fm-mail.test.sh 11504
+tests/fm-memory-guard.test.sh 12464
 tests/fm-merge-local.test.sh 8251
+tests/fm-merge-review-live.test.sh 60
+tests/fm-merge-review.test.sh 8500
 tests/fm-monitor-watchdog-manager.test.sh 336
 tests/fm-monitor-watchdog.test.sh 56986
 tests/fm-muse-harness.test.sh 58029
@@ -878,6 +948,7 @@ tests/fm-on.test.sh 18771
 tests/fm-opencode-abs-cwd-rail-live-e2e.test.sh 55
 tests/fm-opencode-primary-live-e2e.test.sh 69
 tests/fm-operational-input.test.sh 2856
+tests/fm-orca-cli-cache.test.sh 32339
 tests/fm-order.test.sh 12265
 tests/fm-parent-channel-scan-exclusion.test.sh 4265
 tests/fm-park.test.sh 2189
@@ -933,6 +1004,7 @@ tests/fm-remote-secondmate-parent-binding.test.sh 83979
 tests/fm-remote-secondmate-relaunch.test.sh 1037
 tests/fm-remote-secondmate-trace-context.test.sh 157409
 tests/fm-remote-transport-lanes.test.sh 77333
+tests/fm-reset-audit.test.sh 45000
 tests/fm-review-check.test.sh 1931
 tests/fm-rovo-harness.test.sh 20426
 tests/fm-rovo-signals-live-e2e.test.sh 73
@@ -961,6 +1033,8 @@ tests/fm-sessionstart-hook-live-e2e.test.sh 56
 tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh 57
 tests/fm-sessionstart-nudge.test.sh 117493
 tests/fm-shared-captain-inheritance.test.sh 10266
+tests/fm-spawn-agent-exit-status.test.sh 86400
+tests/fm-spawn-ak-lifecycle-policy.test.sh 261603
 tests/fm-spawn-compact-adviser-disable-remote.test.sh 80708
 tests/fm-spawn-compact-adviser-disable.test.sh 32759
 tests/fm-spawn-dispatch-profile.test.sh 518005
@@ -975,6 +1049,7 @@ tests/fm-startup-network.test.sh 79596
 tests/fm-stat-shadowing.test.sh 58
 tests/fm-stow-cascade.test.sh 3412
 tests/fm-subagent-pretool-check.test.sh 1761
+tests/fm-successor-endpoint.test.sh 19227
 tests/fm-supervise-quiet.test.sh 13949
 tests/fm-supervision-bounds.test.sh 27649
 tests/fm-supervision-events.test.sh 1545
@@ -1036,9 +1111,11 @@ tests/fm-watch-wedge-cap-unconfigured-parity.test.sh 60531
 tests/fm-watch-wedge-cap.test.sh 424173
 tests/fm-usage-limit-pane-live.test.sh 90
 tests/fm-usage-limit-pane-pending.test.sh 4000
+tests/fm-watchdog-herdr-path.test.sh 1937
 tests/fm-watchdog-live.test.sh 89
 tests/fm-watchdog.test.sh 527813
 tests/fm-watcher-lock.test.sh 73024
+tests/fm-watcher-readiness.test.sh 41841
 tests/fm-watcher-replacement.test.sh 97325
 tests/fm-worker-account-live-e2e.test.sh 3496
 tests/fm-worker-account.test.sh 78443
@@ -1047,12 +1124,46 @@ tests/fm-backend-hc-liveness-live-e2e.test.sh 9000
 tests/fm-backend-hc-smoke.test.sh 3700
 tests/fm-backend-hc.test.sh 4000
 tests/fm-claude-account-quota.test.sh 2492
+tests/fm-quota-guard.test.sh 44000
 tests/fm-codex-stop-park.test.sh 35000
 tests/fm-herdr-projected-cd-live-e2e.test.sh 28000
 tests/fm-install-herdr.test.sh 1000
 tests/fm-live-lab-isolation.test.sh 6459
 tests/fm-osc7501.test.sh 14000
 tests/fm-test-linux.test.sh 1500
+tests/fm-backend-hc-appdetect-smoke.test.sh 663
+tests/fm-captain-record.test.sh 18894
+tests/fm-codex-stop-thread-live-e2e.test.sh 60
+tests/fm-context-reading.test.sh 15142
+tests/fm-handoff-launch.test.sh 5980
+tests/fm-handoff-launch-runtime.test.sh 82167
+tests/fm-supervisor-failover.test.sh 39563
+tests/fm-hc-lab.test.sh 4348
+tests/fm-health-verdict.test.sh 10966
+tests/fm-hermes-gateway-coexistence-live-e2e.test.sh 60
+tests/fm-hermes-harness.test.sh 35700
+tests/fm-hermes-profile-safety-live-e2e.test.sh 60
+tests/fm-hermes-signals-live-e2e.test.sh 60
+tests/fm-host-health.test.sh 35130
+tests/fm-escalate.test.sh 6000
+tests/fm-escalation-class-map.test.sh 6000
+tests/fm-incident-ledger.test.sh 30626
+tests/fm-kiro-harness.test.sh 35000
+tests/fm-kiro-signals-live-e2e.test.sh 60
+tests/fm-lane-register.test.sh 52000
+tests/fm-lane-vitals.test.sh 9527
+tests/fm-layer-chain.test.sh 29492
+tests/fm-procevent-factory.test.sh 25000
+tests/fm-quiet-hours.test.sh 3189
+tests/fm-ready-pr-discovery.test.sh 25000
+tests/fm-relay-guard.test.sh 35000
+tests/fm-remote-inherit-generation.test.sh 12737
+tests/fm-send-kiro-confirm.test.sh 6795
+tests/fm-session-start-drift.test.sh 13657
+tests/fm-soak-record.test.sh 35000
+tests/fm-stop-policy-live-e2e.test.sh 60
+tests/fm-stop-policy.test.sh 36274
+tests/fm-wake-ledger.test.sh 25000
 EOF
 }
 
@@ -1125,10 +1236,10 @@ portable_serial_assignments() {
     loads[best]=$((best_load + ms))
     printf '%s\t%s\n' "$best" "$script"
   done < <(
-    while IFS= read -r script; do
-      [ -n "$script" ] || continue
-      printf '%s\t%s\n' "$(portable_serial_weight_for "$script")" "$script"
-    done < <(list_portable_serial) | LC_ALL=C sort -t$'\t' -k1,1nr -k2,2
+    awk -v fallback="$PORTABLE_SERIAL_DEFAULT_WEIGHT_MS" '
+      NR == FNR { if (NF) { hint[$1] = $2 }; next }
+      NF { printf "%s\t%s\n", ($1 in hint) ? hint[$1] : fallback, $1 }
+    ' <(portable_serial_weight_hints) <(list_portable_serial) | LC_ALL=C sort -t$'\t' -k1,1nr -k2,2
   )
 }
 
@@ -1496,13 +1607,12 @@ select_all() {
 }
 
 select_family() {
-  local want=$1 s base fam found=0
+  local want=$1 s REPLY_FAMILY found=0
   [ -n "$want" ] || die "--family requires a name"
   while IFS= read -r s; do
     [ -n "$s" ] || continue
-    base=$(basename "$s")
-    fam=$(family_for_basename "$base")
-    if [ "$fam" = "$want" ]; then
+    family_for_basename_var "${s##*/}"
+    if [ "$REPLY_FAMILY" = "$want" ]; then
       add_script "$s"
       found=1
     fi
@@ -1511,17 +1621,20 @@ select_family() {
 }
 
 families_for_test_reference() {  # <needle>...
-  local s needle
+  local s needle REPLY_FAMILY
   local found=0
-  local -a needles=()
+  local -a needles=() tests=()
   for needle in "$@"; do needles+=(-e "$needle"); done
   while IFS= read -r s; do
-    [ -n "$s" ] || continue
-    if grep -Fq "${needles[@]}" "$s"; then
-      family_for_basename "$(basename "$s")"
-      found=1
-    fi
+    [ -n "$s" ] && tests+=("$s")
   done < <(all_repo_tests)
+  [ "${#tests[@]}" -gt 0 ] || return 1
+  while IFS= read -r s; do
+    [ -n "$s" ] || continue
+    family_for_basename_var "${s##*/}"
+    printf '%s\n' "$REPLY_FAMILY"
+    found=1
+  done < <(grep -Fl "${needles[@]}" "${tests[@]}" 2>/dev/null || true)
   [ "$found" -eq 1 ]
 }
 
@@ -1532,23 +1645,30 @@ families_for_test_reference() {  # <needle>...
 scripts_for_test_reference() {
   local needle=$1 s
   local found=0
+  local -a tests=()
+  while IFS= read -r s; do
+    [ -n "$s" ] && tests+=("$s")
+  done < <(all_repo_tests)
+  [ "${#tests[@]}" -gt 0 ] || return 1
   while IFS= read -r s; do
     [ -n "$s" ] || continue
-    if grep -Fq "$needle" "$s"; then
-      printf '__script__:%s\n' "$(basename "$s")"
-      found=1
-    fi
-  done < <(all_repo_tests)
+    printf '__script__:%s\n' "${s##*/}"
+    found=1
+  done < <(grep -Fl -e "$needle" "${tests[@]}" 2>/dev/null || true)
   [ "$found" -eq 1 ]
 }
 
 # bin/ scripts other than <needle> itself that name <needle>.
 bin_consumers_of() {
   local needle=$1 b
+  local -a bins=()
   for b in bin/*.sh bin/backends/*.sh; do
     [ -f "$b" ] || continue
-    [ "$(basename "$b")" = "$needle" ] || ! grep -Fq "$needle" "$b" || printf '%s\n' "$b"
+    [ "${b##*/}" = "$needle" ] && continue
+    bins+=("$b")
   done
+  [ "${#bins[@]}" -gt 0 ] || return 0
+  grep -Fl -e "$needle" "${bins[@]}" 2>/dev/null || true
 }
 
 # An unmapped bin/ path has no curated family of its own. Its blast radius is
@@ -1634,6 +1754,7 @@ families_for_changed_path() {
       printf '%s\n' pure-contract-unit
       printf '%s\n' "__script__:fm-herdr-owned-xdg-live-e2e.test.sh"
       printf '%s\n' "__script__:fm-herdr-secondmate-watch-live-e2e.test.sh"
+      printf '%s\n' "__script__:fm-watchdog-herdr-path.test.sh"
       ;;
     bin/fm-herdr-session-cleanup.sh)
       printf '%s\n' session-bootstrap
@@ -1671,7 +1792,12 @@ families_for_changed_path() {
       # coverage re-runs, mirroring the real-herdr-gated arm above.
       printf '%s\n' hc
       ;;
-    bin/backends/orca*|bin/backends/tmux.sh)
+    bin/backends/orca*)
+      printf '%s\n' backend-dispatch
+      printf '%s\n' orca
+      printf '%s\n' "__script__:fm-blip-retry.test.sh"
+      ;;
+    bin/backends/tmux.sh)
       printf '%s\n' backend-dispatch
       printf '%s\n' orca
       ;;
@@ -1709,6 +1835,8 @@ families_for_changed_path() {
       printf '%s\n' watcher-wake-lock
       printf '%s\n' "__script__:fm-backend-t3code.test.sh"
       printf '%s\n' "__script__:fm-watchdog.test.sh"
+      printf '%s\n' "__script__:fm-watchdog-herdr-path.test.sh"
+      printf '%s\n' "__script__:fm-quota-guard.test.sh"
       printf '%s\n' "__script__:fm-watchdog-live.test.sh"
       printf '%s\n' "__script__:fm-usage-limit-pane-live.test.sh"
       printf '%s\n' "__script__:fm-usage-limit-pane-pending.test.sh"
@@ -1748,7 +1876,14 @@ families_for_changed_path() {
       printf '%s\n' secondmate
       printf '%s\n' "__script__:fm-backend-t3code.test.sh"
       ;;
-    bin/fm-remote*|bin/fm-on.sh|bin/fm-home-seed.sh|\
+    bin/fm-blip-retry-lib.sh)
+      printf '%s\n' "__script__:fm-blip-retry.test.sh"
+      ;;
+    bin/fm-on.sh)
+      printf '%s\n' secondmate
+      printf '%s\n' "__script__:fm-blip-retry.test.sh"
+      ;;
+    bin/fm-remote*|bin/fm-home-seed.sh|\
     bin/fm-backlog-handoff.sh|bin/fm-backlog-receive.sh|bin/fm-procevent-remote-reply.sh|\
     bin/fm-config-inherit-lib.sh|bin/fm-config-push.sh|bin/fm-shared*|\
     bin/fm-stow-cascade.sh)
@@ -1770,6 +1905,7 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-dispatch-resolve.test.sh"
       printf '%s\n' "__script__:fm-capacity.test.sh"
       printf '%s\n' "__script__:fm-claude-account-quota.test.sh"
+      printf '%s\n' "__script__:fm-quota-guard.test.sh"
       ;;
     bin/fm-procevent-quota.sh)
       printf '%s\n' "__script__:fm-procevent-quota.test.sh"
@@ -1784,6 +1920,10 @@ families_for_changed_path() {
     bin/fm-claude-account-quota.sh)
       printf '%s\n' "__script__:fm-claude-account-quota.test.sh"
       ;;
+    bin/fm-quota-guard.sh|bin/fm-quota-guard-check-lib.sh)
+      printf '%s\n' "__script__:fm-quota-guard.test.sh"
+      printf '%s\n' "__script__:fm-watchdog.test.sh"
+      ;;
     bin/fm-dispatch-resolve.sh)
       printf '%s\n' "__script__:fm-dispatch-resolve.test.sh"
       ;;
@@ -1793,6 +1933,10 @@ families_for_changed_path() {
       ;;
     bin/fm-disk-alarm.sh)
       printf '%s\n' "__script__:fm-disk-alarm.test.sh"
+      ;;
+    bin/fm-memory-guard.sh)
+      printf '%s\n' "__script__:fm-memory-guard.test.sh"
+      printf '%s\n' "__script__:fm-watchdog.test.sh"
       ;;
     bin/fm-env-lib.sh)
       # The one .env accessor, sourced by bin/fm-x-lib.sh (Relay token) and
@@ -1904,6 +2048,10 @@ families_for_changed_path() {
     bin/fm-teardown.sh)
       printf '%s\n' pr-forge
       printf '%s\n' "__script__:fm-backend-t3code.test.sh"
+      ;;
+    bin/fm-merge-review.sh)
+      printf '%s\n' pr-forge
+      printf '%s\n' "__script__:fm-merge-review-live.test.sh"
       ;;
     bin/fm-pr-*|bin/fm-merge-local.sh|bin/fm-review-diff.sh|\
     bin/fm-x-*|bin/fm-check*|bin/fm-pipeline-spend.sh)
@@ -2702,6 +2850,17 @@ cleanup_run() {
 
 trap cleanup_run EXIT
 
+# Native Windows Bash layers keep the direct path: they give this runner no
+# dependable POSIX process groups or FIFOs to own a script with.
+SCRIPT_GROUPS=1
+case "$(uname -s)" in
+  MINGW*|MSYS*) SCRIPT_GROUPS=0 ;;
+esac
+
+# How long a script whose runner died without releasing it gets to end on TERM
+# before its group is killed.
+SCRIPT_GROUP_KILL_GRACE_SECS=5
+
 RUN_ID="fm-test-run-${RUN_STARTED_MS}-$$"
 TOTAL=0
 FAILED=0
@@ -2778,11 +2937,124 @@ record_script_result() {
   TOTAL=$((TOTAL + 1))
 }
 
+# Print the pid of the shell that calls this. Inside a subshell $$ still names
+# the runner, and bash 3.2 has no BASHPID.
+current_shell_pid() {
+  exec /bin/sh -c 'echo "$PPID"'
+}
+
+# The script side of run_script_group: runs in the background shell that job
+# control made the leader of a new process group, starts the owner watch inside
+# that group, and becomes the command.
+script_group_leader() {  # <link> <command...>
+  local link=$1 group
+  shift
+  set +m
+  trap - INT HUP TERM
+  # The watch's read end opens before the command starts, so a command that
+  # finishes at once cannot outrun the watch. fd 9 is the owner's write end.
+  exec 7<"$link" 9>&- || exit 125
+  group=$(current_shell_pid)
+  # A group named after this shell's pid exists only when this shell leads it.
+  if ! kill -0 -- "-$group" 2>/dev/null; then
+    printf 'fm-test-run: could not give %s its own process group; not running it\n' "$*" >&2
+    exit 125
+  fi
+  # The watch must inherit ignored signals before either child can run.
+  trap '' INT HUP TERM
+  (
+    # A line means the owner released the group. End of file with no line means
+    # the owner is gone, and then nothing else would ever end this group.
+    trap '' INT HUP TERM
+    verdict=
+    IFS= read -r verdict <&7 || true
+    [ -z "$verdict" ] || exit 0
+    kill -TERM -- "-$group" 2>/dev/null || exit 0
+    waited=0
+    while [ "$waited" -lt "$SCRIPT_GROUP_KILL_GRACE_SECS" ] && kill -0 "$group" 2>/dev/null; do
+      sleep 1
+      waited=$((waited + 1))
+    done
+    kill -KILL -- "-$group" 2>/dev/null || true
+  ) </dev/null >/dev/null 2>&1 &
+  trap - INT HUP TERM
+  exec "$@" 7<&-
+}
+
+# Run <command...> as the leader of its own process group and return its
+# status. A signal the command sends to its own group then reaches nothing
+# else: not this runner, and not whatever started this runner.
+# <id> only has to be unique within this run.
+#
+# Owning the group replaces what sharing the runner's group gave for free:
+# - INT, HUP and TERM delivered to the calling shell are passed on to the
+#   command's group, and the calling shell then ends on that same signal.
+# - When the calling shell dies without releasing the group (a hard kill), the
+#   owner watch ends the group: TERM, then KILL once the leader has gone or
+#   SCRIPT_GROUP_KILL_GRACE_SECS have passed.
+# A command that finishes on its own is released, so whatever it left running
+# is left alone.
+# A terminal or closed stdin becomes /dev/null, because a background group must
+# not read the terminal; a redirected stdin is kept.
+# Both call sites run with default INT, HUP and TERM dispositions, and this
+# function returns with exactly that.
+run_script_group() {  # <id> <command...>
+  local link="$RUN_TMP/group.$1" leader='' interrupted='' rc=0 monitor_was_on=0
+  shift
+  rm -f "$link"
+  if ! mkfifo "$link"; then
+    log "could not create the process-group owner link $link"
+    return 125
+  fi
+  # Read-write never blocks on a FIFO and makes this shell its only writer, so
+  # end of file on the watch's side means this shell is gone.
+  if ! exec 9<>"$link"; then
+    rm -f "$link"
+    return 125
+  fi
+  trap 'interrupted=INT; [ -z "$leader" ] || kill -INT -- "-$leader" 2>/dev/null || true' INT
+  trap 'interrupted=HUP; [ -z "$leader" ] || kill -HUP -- "-$leader" 2>/dev/null || true' HUP
+  trap 'interrupted=TERM; [ -z "$leader" ] || kill -TERM -- "-$leader" 2>/dev/null || true' TERM
+  case $- in *m*) monitor_was_on=1 ;; esac
+  set -m
+  if [ ! -t 0 ] && ( exec 8<&0 ) 2>/dev/null; then
+    { script_group_leader "$link" "$@" 0<&8 8<&- & } 8<&0
+  else
+    script_group_leader "$link" "$@" </dev/null &
+  fi
+  leader=$!
+  [ "$monitor_was_on" -eq 1 ] || set +m
+  # A signal that arrived before the leader was known has not been passed on.
+  [ -z "$interrupted" ] || kill -s "$interrupted" -- "-$leader" 2>/dev/null || true
+  while [ -z "$interrupted" ]; do
+    if wait "$leader"; then rc=0; else rc=$?; fi
+    # A trap interrupts wait before the leader has ended.
+    kill -0 "$leader" 2>/dev/null || break
+  done
+  trap - INT HUP TERM
+  if [ -z "$interrupted" ]; then
+    printf 'released\n' >&9 2>/dev/null || true
+  fi
+  exec 9>&-
+  rm -f "$link"
+  if [ -n "$interrupted" ]; then
+    kill -s "$interrupted" "$(current_shell_pid)"
+    case "$interrupted" in
+      INT) return 130 ;;
+      HUP) return 129 ;;
+      *) return 143 ;;
+    esac
+  fi
+  return "$rc"
+}
+
 # Run <script>, capturing output to <out>. <stream> 1 also echoes it live.
 # <id> only has to be unique within this run. When PER_SCRIPT_TIMEOUT_SECS is
 # positive, a script that outruns it is terminated and reported as exit 124: a
 # hung script must become a bounded failure rather than an unbounded suite,
 # because an unbounded suite is what silently outruns its caller's budget.
+# Without a bound the script still runs in a process group of its own
+# (run_script_group), so no script shares the runner's group in either mode.
 run_script_bounded() {  # <script> <out> <stream> <id>
   local script=$1 out=$2 stream=$3 id=$4
   # Declaring the variables local first keeps the helper's export scoped to this
@@ -2791,8 +3063,7 @@ run_script_bounded() {  # <script> <out> <stream> <id>
   local GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM
   # shellcheck source=tests/git-config-helpers.sh
   . "$ROOT/tests/git-config-helpers.sh" || return
-  local rc
-  : "$id"
+  local rc stream_pipe tee_pid
   set +e
   if [ "$stream" -eq 1 ]; then
     if [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ]; then
@@ -2801,12 +3072,31 @@ run_script_bounded() {  # <script> <out> <stream> <id>
       fm_run_timed "$PER_SCRIPT_TIMEOUT_SECS" bash -c \
         'bash "$1" 2>&1 | tee "$2"; exit "${PIPESTATUS[0]}"' _ "$script" "$out"
       rc=$?
+    elif [ "$SCRIPT_GROUPS" -eq 1 ]; then
+      # tee stays in the runner's group and reads a pipe, so a script that
+      # signals its own group cannot cut its captured output short.
+      stream_pipe="$RUN_TMP/stream.$id"
+      rm -f "$stream_pipe"
+      if mkfifo "$stream_pipe"; then
+        tee "$out" <"$stream_pipe" &
+        tee_pid=$!
+        run_script_group "$id" bash "$script" >"$stream_pipe" 2>&1
+        rc=$?
+        wait "$tee_pid"
+        rm -f "$stream_pipe"
+      else
+        log "could not create the output pipe $stream_pipe"
+        rc=125
+      fi
     else
       bash "$script" 2>&1 | tee "$out"
       rc=${PIPESTATUS[0]}
     fi
   elif [ "$PER_SCRIPT_TIMEOUT_SECS" -gt 0 ]; then
     fm_run_timed "$PER_SCRIPT_TIMEOUT_SECS" bash "$script" >"$out" 2>&1
+    rc=$?
+  elif [ "$SCRIPT_GROUPS" -eq 1 ]; then
+    run_script_group "$id" bash "$script" >"$out" 2>&1
     rc=$?
   else
     bash "$script" >"$out" 2>&1

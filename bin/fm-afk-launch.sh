@@ -82,6 +82,12 @@
 #                              preflight. With no words
 #                              while away it is a refresh; new words replace
 #                              the mandate. On Pi this is the whole entry.
+#   fm-afk-launch.sh enter-auto
+#                              The automatic trigger's entry: same as a plain
+#                              enter with no words, but silent when any posture
+#                              already exists. It rejects every argument.
+#                              The launch lock makes this check atomic with
+#                              explicit /afk and /quiet entry.
 #   fm-afk-launch.sh start     Capture the captain pane, then (unless the daemon
 #                              is already running) launch the daemon in a fresh
 #                              non-visible terminal for the detected backend and
@@ -1016,10 +1022,22 @@ fm_afk_launch_main() {
   trap 'exit 143' TERM
   fm_afk_launch_lock_acquire || return 1
   case "${1:-start}" in
-    enter|start|start-native) fm_afk_contract_entry_allowed "$FM_AFK_LAUNCH_STATE" || return 1 ;;
+    enter|enter-auto|start|start-native) fm_afk_contract_entry_allowed "$FM_AFK_LAUNCH_STATE" || return 1 ;;
   esac
   case "${1:-start}" in
     enter) shift; fm_afk_launch_enter "$@" ;;
+    enter-auto)
+      # Automatic entry carries no away words, so it accepts no arguments.
+      if [ "$#" -ne 1 ]; then
+        fm_afk_launch_log "enter-auto takes no arguments"
+        return 2
+      fi
+      # Automatic entry must not refresh a manual entry or replace quiet mode.
+      # This check runs under the same launch lock as every explicit entry.
+      if [ ! -e "$FM_AFK_LAUNCH_STATE/.afk-contract" ] && [ ! -e "$FM_AFK_LAUNCH_STATE/.afk" ]; then
+        fm_afk_launch_enter
+      fi
+      ;;
     propose|confirm)
       fm_afk_launch_log "'$1' was retired with the wait-for-go gate: /afk is itself the go, so run 'enter' to write the record in the same turn"
       (exit 2) ;;

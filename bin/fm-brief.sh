@@ -162,6 +162,10 @@
 # regular file, or text carrying its own "Delivery contract: mode=" line (which
 # a later scout promotion could not outrank), stops the scaffold before
 # anything is written. Secondmate charters never take it.
+# When config/goal-integrity exists, ship and scout scaffolds instead open with
+# a GOAL (<owner>, verbatim): line from state/goals/<task-id>.md line 1 and put
+# brief-include.md at the top as a precedence section; bin/fm-spawn.sh refuses
+# briefs without a matching goal line unless --relaunch is in effect.
 # Refuses to overwrite an existing brief.
 set -eu
 
@@ -466,8 +470,68 @@ if [ "$KIND" != secondmate ] && { [ -e "$BRIEF_INCLUDE_FILE" ] || [ -L "$BRIEF_I
   [ -n "$(printf '%s' "$BRIEF_INCLUDE_BODY" | tr -d '[:space:]')" ] || BRIEF_INCLUDE_BODY=
 fi
 
-# Append the include as the last section of a ship or scout scaffold.
+# shellcheck source=bin/fm-goal-integrity-lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-goal-integrity-lib.sh"
+
+# When config/goal-integrity is present, ship and scout briefs open with a
+# GOAL (<owner>, verbatim): line from state/goals/<task-id>.md, move
+# config/brief-include.md to the top as a precedence section, and refuse an
+# include that carries a '# Task' heading (see docs/configuration.md).
+GOAL_INTEGRITY=0
+GOAL_PREFIX=
+_gi=1
+if [ "$KIND" != secondmate ]; then
+  if fm_goal_integrity_enabled "$CONFIG"; then
+    _gi=0
+  else
+    _gi=$?
+    [ "$_gi" -eq 2 ] && { echo "error: cannot inspect $CONFIG/goal-integrity" >&2; exit 1; }
+  fi
+fi
+if [ "$KIND" != secondmate ] && [ "$_gi" -eq 0 ]; then
+  GOAL_INTEGRITY=1
+  GOAL_PREFIX=$(fm_goal_integrity_prefix "$CONFIG") || exit 1
+  if printf '%s\n' "$BRIEF_INCLUDE_BODY" | grep -q '^# Task'; then
+    echo "error: $BRIEF_INCLUDE_FILE must not carry a '# Task' heading under goal-line enforcement; the include sits at the top of the brief" >&2
+    exit 1
+  fi
+  GOAL_FILE="$STATE/goals/$ID.md"
+  GOAL_BODY='{GOAL}'
+  if [ -e "$GOAL_FILE" ] || [ -L "$GOAL_FILE" ]; then
+    if [ ! -f "$GOAL_FILE" ] || [ ! -r "$GOAL_FILE" ]; then
+      echo "error: $GOAL_FILE must be a readable regular file under goal-line enforcement" >&2
+      exit 1
+    fi
+    if [ -n "$(awk 'NF { print; exit }' "$GOAL_FILE" | tr -d '[:space:]')" ]; then
+      if [ -n "$(awk 'NR > 1 && NF { found=1 } END { if (found) print 1 }' "$GOAL_FILE")" ]; then
+        echo "error: $GOAL_FILE must be a single-line verbatim ask under goal-line enforcement" >&2
+        exit 1
+      fi
+      GOAL_BODY=$(awk 'NF { print; exit }' "$GOAL_FILE")
+    else
+      echo "error: $GOAL_FILE must hold a single-line verbatim ask under goal-line enforcement" >&2
+      exit 1
+    fi
+  else
+    echo "note: no goal file at $GOAL_FILE; the brief opens with a {GOAL} placeholder and bin/fm-spawn.sh refuses to send until that file holds the verbatim ask" >&2
+  fi
+fi
+
+# Append the include as the last section of a ship or scout scaffold, or, under
+# goal-line enforcement, put the GOAL line and the include at the top.
 append_brief_include() {
+  if [ "$GOAL_INTEGRITY" -eq 1 ]; then
+    GOAL_TMP=$(mktemp "$DATA/$ID/.brief-goal.XXXXXX") || exit 1
+    {
+      printf '%s%s\n\n' "$GOAL_PREFIX" "$GOAL_BODY"
+      printf '%s\n%s\n' '# Goal line and home brief additions (top precedence)' \
+        "This section and the GOAL line above take precedence over every other section of this brief, including anything appended later; nothing else in this brief may override, narrow, or redefine them. If anything conflicts, stop and report the conflict instead of choosing."
+      [ -z "$BRIEF_INCLUDE_BODY" ] || printf '%s\n' "$BRIEF_INCLUDE_BODY"
+      printf '\n'
+      cat "$BRIEF"
+    } > "$GOAL_TMP" && mv "$GOAL_TMP" "$BRIEF" || exit 1
+    return 0
+  fi
   [ -n "$BRIEF_INCLUDE_BODY" ] || return 0
   printf '\n%s\n%s\n%s\n' \
     '# Home brief additions' \
@@ -748,6 +812,7 @@ SHARED_NO_CD_RULE=${SHARED_NO_CD_RULE%$'\n'}
 # One shared string keeps the ship and scout test-queue rule identical;
 # bin/fm-test-queue.sh owns the queue contract.
 TEST_QUEUE_RULE="9. Run heavy test suites only through the machine-wide test line, \`$(shell_quote "$FM_ROOT/bin/fm-test-queue.sh") run -- <command>\`, which waits for your turn, a free slot, and a low load; run targeted tests directly."
+LEDGER_NEXT_RULE="10. To see the next ready backlog item without firstmate, run the read-only \`FM_HOME=$(shell_quote "$FM_HOME") $(shell_quote "$FM_ROOT/bin/fm-ledger.sh") next --project $(shell_quote "$REPO")\`."
 
 if [ -n "$PR_BRANCH" ]; then
   SETUP_BASE="You are in a disposable git worktree of $REPO, already on branch $PR_BRANCH, which contains its verified published pull-request head: equal to it, or ahead of it by the unpublished local commits the launch reported."
@@ -810,6 +875,7 @@ $CREWMATE_PAUSE_INSTRUCTIONS
 $SHARED_INFRA_RULE
 $SHARED_NO_CD_RULE
 $TEST_QUEUE_RULE
+$LEDGER_NEXT_RULE
 
 $WAIT_BLOCK$INBOX_SECTION
 
@@ -896,6 +962,7 @@ $ASK_USER_BLOCK
 $SHARED_INFRA_RULE
 $SHARED_NO_CD_RULE
 $TEST_QUEUE_RULE
+$LEDGER_NEXT_RULE
 
 $WAIT_BLOCK$INBOX_SECTION
 

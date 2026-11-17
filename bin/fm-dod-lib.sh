@@ -421,11 +421,15 @@ fm_ask_user_escalation_block() {  # <data-dir> <task-id>
    For a no-mistakes ask-user gate specifically, escalate all ask-user findings as one event plus one snapshot file, using that same shape even when the gate holds only a single ask-user finding: write only the ask-user findings, verbatim and unparaphrased (id, severity, file, line, description, authority), to \`$data/$id/nm-<run>-findings.txt\`, then report the gate with
    \`needs-decision [at=<epoch>] [key=nm-<run>-<step>]: ask-user findings=<id1>,<id2>,... file=$data/$id/nm-<run>-findings.txt\`
    naming every ask-user finding id from that gate. The status line only points at the file; it never restates or summarizes a finding's content.
+   When the gate also holds findings that are not ask-user, end that file with one line \`other: fix=<ids> decline=<ids>\` giving your choice for each of them, so firstmate's one response command can cover every finding.
 EOF
 }
 
 # The forge-independent middle of the no-mistakes contract: how a worker drives
 # the pipeline, what `--intent` may carry, and the two firstmate-specific rules.
+# It also holds the convergence lines: a lint and targeted-test preflight before
+# each run, one fix round per gate, and follow-up commits on top of a validated
+# head in one run, which cut repeat runs without narrowing what the gate proves.
 # Written once; only the sentence about a green PR depends on the forge,
 # because on gerrit, and under pr=manual (the `no-ci` argument), the ci step is
 # skipped and there is no PR for the drive call to report.
@@ -461,6 +465,8 @@ An elapsed or interrupted drive attachment is not evidence the daemon died; the 
 Before starting a no-mistakes run, run \`$script_dir/fm-disk-alarm.sh --gate lane\`.
 A non-zero result means do not start that run.
 Append a blocked status line carrying the script's own line, then stop, so the work can be placed on another host or cloud.
+Before your handoff \`done:\` and again before any later run on this branch, run the repository's own lint command (its no-mistakes \`commands.lint\`, or the one its contributor guide names) and the targeted tests that cover your change, sending any heavy suite through the machine-wide test line, and commit fixes for what they report.
+That preflight only finds failures sooner: it never replaces, skips, or narrows a pipeline step, and the gate still runs in full.
 
 You drive no-mistakes by responding to its gates, not by implementing fixes.
 Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
@@ -472,7 +478,12 @@ Do not include \`## Firstmate spec\`, later Firstmate build constraints, or your
 The \`--intent\` string you pass must be self-sufficient: that string plus the codebase must let a reader reconstruct roughly the same specification, without depending on a separate report, a PR, or context that lives only in this conversation.
 When the captain's intent refers to a report, decision, or PR ("do items 1, 2, 3, and 7 of the report"), write the substance of the referenced items into \`--intent\` in the captain's terms, not only the pointer; that substance is the captain's ask by reference, while Firstmate's build instructions and your own decisions still stay out.
 This replaces the no-mistakes skill's advice to enrich \`--intent\` with decisions and tradeoffs; that advice does not apply to Firstmate-dispatched work.
+Do carry into \`--intent\` every decision the captain already made on this task, in the captain's words as firstmate relayed them - a later clarification, or the captain's answer to an earlier ask-user finding - so the reviewer does not raise again what the captain settled; a decision made by firstmate or by you is still not captain intent.
 Do not hand-edit, commit, or fix findings yourself while a run is active - the pipeline applies every fix.
+At a fix gate, answer every finding the gate shows in one \`no-mistakes axi respond --action fix --findings <ids to fix> --ignore <ids to decline>\` call, so one fix round covers them all instead of one finding per round.
+When the gate also holds ask-user findings, escalate them first with your choice for the gate's other findings in the snapshot's \`other:\` line; firstmate's decision then returns one exact response command that covers every finding, and you run it as that one round.
+Once a run has pushed this branch, its head with every pipeline fix commit is the base for follow-up work: commit on top of it, never rebase, amend, squash, reset, or force-push it, and collect every follow-up fix you know of into commits before you start one run for all of them, not one run per fix.
+The one exception is a captain-ordered supersession that firstmate steers you through, which replaces the obsolete work from its pre-invalidation base under that steer.
 When \`branch_sync\` reports this branch diverged from or rewritten against the pipeline's published head, never archive, reset, or sync it by hand: run \`$resync_q $task_q "\$(git rev-parse --show-toplevel)" $branch_q\`; on exit 3 follow its monitoring-only lines, and on any other nonzero exit report a blocker with its output.
 
 $drive_block

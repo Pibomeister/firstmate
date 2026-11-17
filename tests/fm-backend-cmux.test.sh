@@ -457,6 +457,56 @@ SH
   pass "fm_backend_cmux_ensure_running: fails fast on an unauthenticated socket, naming the password config and the Automation mode alternative"
 }
 
+# make_cmux_launch_env_fakebin: a `cmux` stub whose socket reports down until
+# the app is launched, plus an `open` stub that records whether its own
+# environment carries the agent-kit lifecycle pair and a creator sentinel to
+# $FM_CMUX_LAUNCH_ENV_LOG, then marks the socket up.
+make_cmux_launch_env_fakebin() {  # <dir> -> echoes fakebin dir
+  local fb="$1/fakebin"
+  mkdir -p "$fb"
+  cat > "$fb/cmux" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = ping ]; then
+  if [ -e "$FM_CMUX_UP_MARKER" ]; then
+    printf 'PONG\n'
+    exit 0
+  fi
+  printf 'Error: Socket not found\n'
+  exit 1
+fi
+exit 0
+SH
+  cat > "$fb/open" <<'SH'
+#!/usr/bin/env bash
+{
+  printf 'ARGS=%s\n' "$*"
+  for name in AK_LIFECYCLE_POLICY AK_LIFECYCLE_SUPERVISOR FM_CMUX_SENTINEL; do
+    eval 'value=${'"$name"'-<unset>}'
+    printf '%s=%s\n' "$name" "$value"
+  done
+} > "$FM_CMUX_LAUNCH_ENV_LOG"
+: > "$FM_CMUX_UP_MARKER"
+SH
+  chmod +x "$fb/cmux" "$fb/open"
+  printf '%s\n' "$fb"
+}
+
+test_ensure_running_launches_the_app_without_the_agent_kit_lifecycle_pair() {
+  local dir fb log out
+  dir="$TMP_ROOT/launch-env"; mkdir -p "$dir/home"; log="$dir/env"
+  fb=$(make_cmux_launch_env_fakebin "$dir")
+  out=$(PATH="$fb:$PATH" FM_HOME="$dir/home" FM_CMUX_LAUNCH_ENV_LOG="$log" FM_CMUX_UP_MARKER="$dir/up" FM_CMUX_SENTINEL=kept \
+    AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_ensure_running || exit 1; printf "caller=%s/%s\n" "$AK_LIFECYCLE_POLICY" "$AK_LIFECYCLE_SUPERVISOR"' "$ROOT")
+  expect_code 0 $? "ensure_running should launch cmux under a pair-carrying caller"
+  assert_contains "$out" "caller=unattended/firstmate" "ensure_running must leave the caller's own pair in place"
+  assert_contains "$(cat "$log" 2>/dev/null)" "ARGS=-a cmux" "ensure_running did not launch the app through 'open -a cmux'"
+  assert_contains "$(cat "$log")" "FM_CMUX_SENTINEL=kept" "ensure_running did not hand the caller's environment to the app launch"
+  assert_contains "$(cat "$log")" "AK_LIFECYCLE_POLICY=<unset>" "the cmux launch leaked AK_LIFECYCLE_POLICY into the shared app"
+  assert_contains "$(cat "$log")" "AK_LIFECYCLE_SUPERVISOR=<unset>" "the cmux launch leaked AK_LIFECYCLE_SUPERVISOR into the shared app"
+  pass "fm_backend_cmux_ensure_running: launches the shared app without the agent-kit lifecycle pair and keeps the caller's own"
+}
+
 # --- create_task: duplicate refusal, id resolution ---------------------------
 
 test_create_task_refuses_duplicate_label() {
@@ -1128,6 +1178,7 @@ test_ping_state_down
 test_ensure_running_returns_immediately_when_already_ok
 test_ensure_running_fails_fast_on_denied_without_launching
 test_ensure_running_fails_fast_on_unauth_without_launching
+test_ensure_running_launches_the_app_without_the_agent_kit_lifecycle_pair
 test_create_task_refuses_duplicate_label
 test_create_task_creates_and_parses_ids
 test_target_ready_fails_when_target_absent

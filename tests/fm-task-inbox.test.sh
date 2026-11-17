@@ -1691,6 +1691,60 @@ test_watcher_dead_pane_ignores_stale_busy_state() {
   pass "watcher: dead-pane recovery overrides stale busy state"
 }
 
+test_idle_steer_does_not_type_into_a_sticky_feedback_dialog() {
+  local dir state log rec survey
+  dir=$(setup_watch_case sticky-feedback)
+  state="$dir/state"
+  log="$dir/send.log"
+  : > "$log"
+  fm_write_meta "$state/t1.meta" "window=sess:fm-t1" "kind=ship" "harness=claude" "backend=tmux"
+  survey=$'work output\n● How is Claude doing this session? (optional)\n  1: Bad    2: Fine   3: Good   0: Dismiss\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  Context left until auto-compact: 8% · ◯ IDE connected'
+  printf '%s\n' "$survey" > "$dir/pane.txt"
+  cat > "$dir/fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  send-keys)
+    shift
+    literal=0
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) literal=1; shift ;;
+        *) break ;;
+      esac
+    done
+    if [ "$literal" = 1 ]; then
+      printf 'LITERAL:%s\n' "${1:-}" >> "${FM_SEND_LOG:-/dev/null}"
+    else
+      printf 'KEY:%s\n' "${1:-}" >> "${FM_SEND_LOG:-/dev/null}"
+    fi
+    exit 0 ;;
+  display-message)
+    printf 'fakepane\n'
+    exit 0 ;;
+  capture-pane)
+    cat "${FM_FAKE_TMUX_CAPTURE:?}"
+    exit 0 ;;
+  list-windows)
+    printf 'fm-t1\n'
+    exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$dir/fakebin/tmux"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  age_path "$rec"
+  PATH="$dir/fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_SEND_LOG="$log" \
+    FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" FM_TASK_INBOX_GRACE_SECS=0 \
+    bash -c '. "$1" && inbox_steer_check sess:fm-t1 t1 && inbox_steer_check sess:fm-t1 t1' \
+    _ "$WATCH" > "$dir/check.out" 2>&1 \
+    || fail "sticky feedback steer check failed:"$'\n'"$(cat "$dir/check.out")"
+  assert_equals "LITERAL:0" "$(cat "$log")" \
+    "a sticky feedback dialog may receive one dismiss key and must not receive the doorbell or Enter"
+  pass "watcher: an idle due steer does not type into a sticky feedback dialog"
+}
+
 test_write_is_durable_and_exact
 test_doorbell_is_a_shell_noop
 test_doorbell_rejects_terminal_controls
@@ -1936,3 +1990,4 @@ test_parked_gate_notice_leaves_other_waits_alone
 test_parked_gate_notice_survives_a_dead_agent_and_an_unwritable_inbox
 test_watcher_rings_a_paused_worker_when_its_run_parks
 test_watcher_wakes_firstmate_when_a_paused_run_parks_on_ask_user
+test_idle_steer_does_not_type_into_a_sticky_feedback_dialog

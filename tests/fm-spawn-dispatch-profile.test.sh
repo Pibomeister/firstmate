@@ -6,6 +6,8 @@
 # literal launch command sent with `tmux send-keys -l`, so assertions pin the
 # command firstmate would run without starting any real harness.
 set -u
+# Every spawn's agent-kit supervisor declaration lands under its own HOME.
+unset XDG_STATE_HOME
 
 # shellcheck source=tests/fixtures.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
@@ -128,10 +130,22 @@ make_seeded_secondmate_home() {
   git -C "$home" init -q -b main
 }
 
+# The inbox export, followed by the agent-kit lifecycle exports every launch
+# carries right after it: the fixed policy and supervisor literals, then the
+# supervisor declaration under the spawn's HOME (fm_test_run_spawn gives every spawn HOME=<home>/user-home).
+# claude_worker_settings <home>: the quoted per-launch --settings value a Claude
+# worker receives, pinning the supervisor declaration under the spawn's HOME.
+claude_worker_settings() {
+  printf "'%s'" "{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false},\"env\":{\"AK_LIFECYCLE_SUPERVISOR_DECLARATION\":\"$1/user-home/.local/state/firstmate/agent-kit/supervisor-declaration.json\"}}"
+}
+
 task_inbox_export() {  # <home> <id>
   local state
   state=$(CDPATH='' cd -- "$1/state" && pwd -P) || fail "cannot resolve state dir $1/state"
   printf "export FM_TASK_INBOX='%s'; " "$state/$2.inbox"
+  printf '%s' 'export AK_LIFECYCLE_POLICY=unattended; export AK_LIFECYCLE_SUPERVISOR=firstmate; '
+  printf "export AK_LIFECYCLE_SUPERVISOR_DECLARATION='%s'; " \
+    "$1/user-home/.local/state/firstmate/agent-kit/supervisor-declaration.json"
 }
 
 launch_inner() {  # <delivered command> -> worker command after the env boundary
@@ -1029,8 +1043,8 @@ test_raw_codex_effort_placeholder_checks_catalog() {
   assert_absent "$HOME_DIR/state/$id.meta" 'raw inline HOME refusal published task metadata'
   [ ! -s "$LAUNCH_LOG" ] || fail 'raw inline HOME refusal launched an agent'
 
-  # A quote inside the inline HOME word still refuses. A value containing
-  # whitespace is outside this parser: the raw word loop splits on it.
+  # A quote or $ inside the inline HOME word refuses before the catalog check,
+  # because the raw Codex launch is not the safe form.
   id=profile-codex-raw-max-inline-quoted-home
   rec=$(make_spawn_case profile-codex-raw-max-inline-quoted-home codex "$id")
   read_case_record "$rec"
@@ -1039,7 +1053,7 @@ test_raw_codex_effort_placeholder_checks_catalog() {
     "HOME=$CASE_DIR/o'q\$x-home codex __EFFORTFLAG__" --model gpt-5.6-luna --effort max 2>&1)
   status=$?
   expect_code 1 "$status" "raw inline HOME with shell metacharacters must refuse: $out"
-  assert_contains "$out" 'inline CODEX_HOME or HOME cannot be validated' 'quoted inline HOME refusal was not actionable'
+  assert_contains "$out" 'names codex outside the one raw form' 'quoted inline HOME refusal was not actionable'
   assert_absent "$HOME_DIR/state/$id.meta" 'quoted inline HOME refusal published task metadata'
   [ ! -s "$LAUNCH_LOG" ] || fail 'quoted inline HOME refusal launched an agent'
 
@@ -1051,7 +1065,7 @@ test_raw_codex_effort_placeholder_checks_catalog() {
   status=$?
   expect_code 0 "$status" "raw Codex command without effort placeholder must retain its prior path: $out"
   launch=$(launch_inner "$(cat "$LAUNCH_LOG")")
-  assert_contains "$launch" 'codex --raw-mode' 'raw command changed without an effort placeholder'
+  assert_contains "$launch" "fm-codex-launch.sh' --raw-mode" 'raw command changed without an effort placeholder'
   assert_not_contains "$launch" 'model_reasoning_effort=' 'effort flag leaked into raw command without placeholder'
   pass 'raw Codex max is catalog-gated only when its effort placeholder is substituted'
 }
@@ -2279,7 +2293,7 @@ test_claude_forwards_firstmate_config_dir_when_set() {
   status=$?
   expect_code 0 "$status" "claude spawn with CLAUDE_CONFIG_DIR set should succeed"
   launch=$(fm_test_launch_unframe "$(cat "$LAUNCH_LOG")")
-  assert_contains "$launch" "CLAUDE_CONFIG_DIR='$CASE_DIR/claude-work' env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions $(claude_worker_add_dirs "$HOME_DIR" "$id")--settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}'" \
+  assert_contains "$launch" "CLAUDE_CONFIG_DIR='$CASE_DIR/claude-work' env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions $(claude_worker_add_dirs "$HOME_DIR" "$id")--settings $(claude_worker_settings "$HOME_DIR")" \
     "claude launch did not forward firstmate's CLAUDE_CONFIG_DIR to the crewmate pane"
   pass "claude forwards firstmate's CLAUDE_CONFIG_DIR so the crewmate uses the same credential store"
 }
@@ -2975,7 +2989,7 @@ claude_expected_launch() {  # <launch> <home> <id> <permission-flag>
   [ "$(printf '%s' "$doorbell" | "$ROOT/bin/fm-operational-input.sh" doorbell-kind)" = launch-brief ] \
     || doorbell="not a launch-brief doorbell"
   quoted="'$(printf '%s' "$doorbell" | sed "s/'/'\\\\''/g")'"
-  printf '%s' "export FM_TASK_ID=$3; export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$2" "$3")$(fm_test_launch_git_prefix "$(launch_inner "$1")")env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude $4 $(claude_worker_add_dirs "$2" "$3")--settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}' $CLAUDE_CONTROL_CHANNEL_FLAG $quoted"
+  printf '%s' "export FM_TASK_ID=$3; export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$2" "$3")$(fm_test_launch_git_prefix "$(launch_inner "$1")")env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude $4 $(claude_worker_add_dirs "$2" "$3")--settings $(claude_worker_settings "$2") $CLAUDE_CONTROL_CHANNEL_FLAG $quoted"
 }
 
 test_claude_permission_mode_absent_defaults_to_bypass() {
