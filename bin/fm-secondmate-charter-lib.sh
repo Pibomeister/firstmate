@@ -45,7 +45,7 @@ registry_scope_for_brief() {
 
 # Exact project grants for self-service claims, narrower than a prose charter.
 # docs/configuration.md owns claim-project; fm-ledger.sh owns the transaction.
-# Missing configuration grants nothing. A malformed grant refuses the whole list.
+# Missing configuration grants nothing. A symlinked, unreadable, or malformed configuration refuses the whole list.
 fm_secondmate_claim_projects() { # <config-dir>
   local file="$1/mission-ledger" line project
   [ -e "$file" ] || [ -L "$file" ] || return 0
