@@ -127,7 +127,7 @@ pass 'unholding or closing a captain call without its decision record fails'
 new_home released
 seed
 snapshot before
-printf 'Resume work.\n' > "$TEST_HOME/answer"
+printf 'Resume work. %0700d\n' 0 > "$TEST_HOME/answer"
 hold answer hold-one --decision-file "$TEST_HOME/answer" --release >/dev/null || fail 'release with answer'
 out=$(audit compare --before "$TEST_HOME/before.json")
 expect_code 0 $? 'recorded hold release'
