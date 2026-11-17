@@ -109,14 +109,16 @@ try {
       if (!slug(row.id) || !['queued', 'in_flight', 'done'].includes(row.state)) fail('invalid backlog identity/state');
       rows.push(row);
     }
+    if (rows.length !== Number(count)) fail('incomplete backlog listing');
     return rows;
   }
   const env = { ...process.env, FM_HOME: home, FM_DATA_OVERRIDE: path.join(home, 'data'),
     FM_STATE_OVERRIDE: path.join(home, 'state'), FM_CONFIG_OVERRIDE: path.join(home, 'config') };
-  delete env.TASKS_AXI_FILE;
-  delete env.TASKS_AXI_BACKEND;
+  for (const key of Object.keys(env)) {
+    if (/^(TASKS_AXI_|BEADS_|BD_)/.test(key) || key === 'FM_ROOT_OVERRIDE') delete env[key];
+  }
   let backend;
-  function tasks(...argv) {
+  function resolveBackend() {
     if (!backend) {
       backend = execFileSync('bash', ['-c', '. "$1/fm-tasks-axi-lib.sh"; fm_tasks_axi_backend_resolve "$2"',
         'reset-audit', scripts, home], { env, encoding: 'utf8', timeout: 10000 }).trim();
@@ -124,6 +126,10 @@ try {
       if (backend === 'beads') inside(path.join(home, '.beads'));
       env.TASKS_AXI_BACKEND = backend;
     }
+    return backend;
+  }
+  function tasks(...argv) {
+    resolveBackend();
     return execFileSync('bash', [path.join(scripts, 'fm-tasks-axi.sh'), ...argv],
       { env, cwd: home, encoding: 'utf8', timeout: 10000, maxBuffer: 16 * 1024 * 1024 });
   }
@@ -134,20 +140,26 @@ try {
   }
   function snapshot() {
     const goals = new Map();
+    const terminalGoals = [];
+    let goalLine = 0;
     for (const line of read(path.join(home, 'state/dispatch-log.tsv')).split('\n').filter(Boolean)) {
       const fields = line.split('\t');
       if (fields.length < 5 || !slug(fields[3]) || !['received', 'queued', 'dispatched', 'blocked'].includes(fields[2])) fail('malformed dispatch ledger');
       goals.set(fields[3], { id: fields[3], event: fields[2] });
+      goalLine++;
+      if (['dispatched', 'blocked'].includes(fields[2])) terminalGoals.push({ id: fields[3], event: fields[2], token: goalLine + ':' + digest(line) });
     }
     inside(path.join(home, 'data'));
     inside(path.join(home, 'data/backlog.md'));
     inside(path.join(home, '.tasks.toml'));
+    if (resolveBackend() === 'beads' && !fs.existsSync(path.join(home, 'data')))
+      fail('data directory is required to address the configured Beads backlog');
     const rows = fs.existsSync(path.join(home, 'data')) ? table(tasks('list', '--fields', 'body,hold_kind,held')).filter(row => row.state !== 'done') : [];
     const done = fs.existsSync(path.join(home, 'data')) ? table(tasks('list', '--state', 'done', '--fields', 'body,hold_kind,held')) : [];
     const holds = [], resolutions = [];
     for (const row of [...rows, ...done]) {
       let body = row.body || '';
-      if (/\.\.\. \(truncated, [0-9]+ chars total/.test(body)) {
+      if (body.length >= 500 || /\(truncated, [0-9]+ chars total/.test(body)) {
         const shown = tasks('show', row.id, '--full');
         const match = shown.match(/^  body: (.*)$/m);
         if (!match) fail(`unreadable task body: ${row.id}`);
@@ -206,7 +218,7 @@ try {
     });
     return { version: 1, home, goals: sorted([...goals.values()].filter(row => ['received', 'queued'].includes(row.event))),
       holds: sorted(holds), tasks: sorted(active), backlog: sorted(rows.filter(row => row.state !== 'done').map(({ id, state }) => ({ id, state }))),
-      evidence: { goals: sorted([...goals.values()].filter(row => ['dispatched', 'blocked'].includes(row.event))),
+      evidence: { goals: sorted(terminalGoals),
         done: sorted([...done.map(row => ({ id: row.id, token: 'live:' + digest(JSON.stringify(row)) })),
           ...[...archived.values()].map(row => ({ id: row.id, token: row.token }))]), resolutions: sorted(resolutions) } };
   }
@@ -220,12 +232,8 @@ try {
         value.backlog.some(row => !['queued', 'in_flight'].includes(row.state)) ||
         value.tasks.some(row => ['branch', 'pr', 'spawn_gen'].some(key => typeof row[key] !== 'string')))
       fail('invalid manifest state');
-    if (value.goals.some(row => !['received', 'queued'].includes(row.event)) ||
-        value.backlog.some(row => !['queued', 'in_flight'].includes(row.state)) ||
-        value.tasks.some(row => !['branch', 'pr', 'spawn_gen'].every(key => typeof row[key] === 'string')))
-      fail('invalid manifest work state');
     const evidence = value.evidence;
-    if (!evidence || !Array.isArray(evidence.goals) || evidence.goals.some(row => !slug(row?.id) || !['dispatched', 'blocked'].includes(row.event)) ||
+    if (!evidence || !Array.isArray(evidence.goals) || evidence.goals.some(row => !slug(row?.id) || typeof row.token !== 'string' || !['dispatched', 'blocked'].includes(row.event)) ||
         !Array.isArray(evidence.done) || evidence.done.some(row => !slug(row?.id) || typeof row.token !== 'string') || !Array.isArray(evidence.resolutions) ||
         evidence.resolutions.some(row => !slug(row?.id) || typeof row.token !== 'string' || !Number.isInteger(row.count) || row.count < 1) ||
         value.holds.some(row => !Number.isInteger(row.resolutions) || row.resolutions < 0)) fail('invalid manifest evidence');
@@ -248,7 +256,7 @@ try {
         before.evidence.done.some(row => row.id === id && row.token.startsWith('live:')))));
     const drift = [];
     for (const row of before.goals)
-      if (!has(after.goals, row.id) && !has(after.evidence.goals, row.id)) drift.push(`goal:${row.id}`);
+      if (!has(after.goals, row.id) && !after.evidence.goals.some(item => item.id === row.id && fresh(before.evidence.goals, item))) drift.push(`goal:${row.id}`);
     for (const row of before.holds)
       if (!has(after.holds, row.id) && !after.evidence.resolutions.some(item => item.id === row.id &&
           item.count > row.resolutions && fresh(before.evidence.resolutions, item))) drift.push(`hold:${row.id}`);

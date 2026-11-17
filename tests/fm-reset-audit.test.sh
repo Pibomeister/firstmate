@@ -80,6 +80,20 @@ out=$(audit compare --before "$TEST_HOME/before.json")
 expect_code 0 $? 'blocked dispatch goal is accounted for'
 pass 'a durably blocked goal is an accounted dispatch-ledger terminal transition'
 
+new_home rollback
+goal received goal-open --summary 'first attempt' >/dev/null
+goal dispatched goal-open --task first-attempt >/dev/null
+goal queued goal-open --reason 'retry needed' >/dev/null
+snapshot before
+head -n 2 "$TEST_HOME/state/dispatch-log.tsv" > "$TEST_HOME/older-ledger"
+mv "$TEST_HOME/older-ledger" "$TEST_HOME/state/dispatch-log.tsv"
+MISSING=goal:goal-open
+expect_drift
+goal dispatched goal-open --task second-attempt >/dev/null
+out=$(audit compare --before "$TEST_HOME/before.json")
+expect_code 0 $? 'a new terminal dispatch record accounts for the retry'
+pass 'ledger tail loss cannot reuse an older dispatched event to hide a queued retry'
+
 new_home missing-task
 seed
 snapshot before
@@ -205,6 +219,35 @@ out=$(audit snapshot 2>&1); rc=$?
 expect_code 2 "$rc" 'a network-capable backend is refused before invocation'
 assert_contains "$out" 'non-local or unsupported' 'backend refusal is explicit'
 pass 'external symlink targets and unsupported backlog backends cannot escape the local audit'
+
+new_home beads-without-data
+printf 'backend = "beads"\n' > "$TEST_HOME/.tasks.toml"
+mv "$TEST_HOME/data" "$TEST_HOME/unused-data"
+out=$(audit snapshot 2>&1); rc=$?
+expect_code 2 "$rc" 'a Beads home without the addressing data directory fails explicitly'
+assert_contains "$out" 'data directory is required' 'unsupported home layout cannot emit empty inventories'
+
+new_home partial-list
+mkdir -p "$TMP_ROOT/fakebin"
+cat > "$TMP_ROOT/fakebin/tasks-axi" <<'EOF'
+#!/usr/bin/env bash
+printf 'count: 2\ntasks[2]{id,state,body,hold_kind,held}:\n  only,queued,"","-",no'
+EOF
+chmod +x "$TMP_ROOT/fakebin/tasks-axi"
+out=$(PATH="$TMP_ROOT/fakebin:$PATH" audit snapshot 2>&1); rc=$?
+expect_code 2 "$rc" 'truncated TOON without a final newline is refused'
+assert_contains "$out" 'incomplete backlog listing' 'partial listing names the failure'
+cat > "$TMP_ROOT/fakebin/tasks-axi" <<'EOF'
+#!/usr/bin/env bash
+if [ -n "${BEADS_DIR+x}${BEADS_DB+x}${BD_DB+x}${TASKS_AXI_OTHER+x}${FM_ROOT_OVERRIDE+x}" ]; then
+  printf 'addressing environment leaked\n' >&2
+  exit 9
+fi
+printf 'count: 0\ntasks: 0 tasks in this backlog\n'
+EOF
+out=$(PATH="$TMP_ROOT/fakebin:$PATH" BEADS_DIR=/elsewhere BEADS_DB=/elsewhere/db BD_DB=/elsewhere/other TASKS_AXI_OTHER=elsewhere FM_ROOT_OVERRIDE=/elsewhere audit snapshot 2>&1); rc=$?
+expect_code 0 "$rc" 'inherited addressing is removed before any backlog subprocess'
+pass 'partial TOON, unsupported Beads layouts, and inherited adapter redirects fail closed'
 
 new_home retention
 snapshot before
