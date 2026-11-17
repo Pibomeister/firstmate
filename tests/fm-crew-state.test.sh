@@ -7121,6 +7121,45 @@ head: $head"
   pass "read failures (corrupt, unreadable, missing state.sqlite) fall back to the daemon without creating or writing the DB"
 }
 
+test_status_snapshot_off_reads_without_the_cache_lock() {
+  local d=$TMP_ROOT/snap-off head start elapsed holder out
+  reset_fakes
+  mkdir -p "$d/state"
+  make_repo_on_branch "$d/wt" fm/ship-a
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/snap-off.meta" "window=fm:fm-snap-off" "worktree=$d/wt" "kind=ship"
+  printf 'working [at=1700000000]: validating\n' > "$d/state/snap-off.status"
+  NM_HOME="$d/nm-home"
+  export NM_HOME
+  mkdir -p "$NM_HOME"
+  head=$(git -C "$d/wt" rev-parse HEAD)
+  init_full_nm_sqlite "$NM_HOME/state.sqlite" "$d/wt" "$head"
+  cat > "$d/fakebin/no-mistakes" <<'EOF'
+#!/usr/bin/env bash
+echo "unexpected-cli-call: $*" >> "${FM_NM_CLI_LOG}"
+exit 99
+EOF
+  chmod +x "$d/fakebin/no-mistakes"
+  export FM_NM_CLI_LOG="$d/nm-cli.log"
+  # Another reader holds the cache lock for longer than the read may take.
+  perl -MFcntl=:flock -e 'open(my $f, ">>", $ARGV[0]) or die; flock($f, LOCK_EX) or die; sleep 90' \
+    "$d/state/.nm-status-snapshot.json.lock" </dev/null >/dev/null 2>&1 &
+  holder=$!
+  sleep 1
+  start=$(date +%s)
+  out=$(FM_CREW_STATE_NO_SNAPSHOT=1 FM_CREW_STATE_NM_TIMEOUT=60 run_crew_state "$d" snap-off)
+  elapsed=$(( $(date +%s) - start ))
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  [ "$elapsed" -lt 60 ] || fail "the snapshot-off read waited on the cache lock (${elapsed}s)"
+  [ ! -e "$d/state/.nm-status-snapshot.json" ] || fail "the snapshot-off read wrote the cache"
+  [ ! -e "$d/nm-cli.log" ] || fail "the snapshot-off read fell back to the no-mistakes CLI"
+  assert_contains "$out" "state: parked" "the snapshot-off read still reads the state database"
+  assert_contains "$out" "run: 01M7SNAPSHOTA0000000000001" "the snapshot-off read keeps the selected run"
+  unset FM_NM_CLI_LOG
+  pass "FM_CREW_STATE_NO_SNAPSHOT reads the state database without the cache or its lock"
+}
+
 test_status_snapshot_stale_snapshot_is_rejected() {
   local d=$TMP_ROOT/snap-stale head out
   reset_fakes
@@ -7808,6 +7847,7 @@ test_legacy_conflicting_run_records_report_unknown
 test_status_snapshot_readonly_and_shared_across_sweep
 test_status_snapshot_schema_version_guard_falls_back_to_daemon
 test_status_snapshot_read_failure_falls_back_to_daemon
+test_status_snapshot_off_reads_without_the_cache_lock
 test_status_snapshot_stale_snapshot_is_rejected
 test_status_snapshot_moved_live_run_reads_cli
 test_status_snapshot_quiet_uses_configured_step_quiet_warning

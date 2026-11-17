@@ -888,30 +888,40 @@ TREE
 # caveat that a child may have outlived it. A stale handle, a terminal on
 # another execution host, or any unreadable fact is `unreadable`.
 fm_backend_orca_agent_state() {  # <terminal-id>
+  local out
+  out=$(fm_backend_orca_agent_probe "${1:-}")
+  printf '%s' "${out%% *}"
+}
+
+# fm_backend_orca_agent_probe: the same verdict as fm_backend_orca_agent_state
+# plus the session root process it was read from, as "<state> <pid|->". It
+# takes no lock and writes nothing, so supervision can call it on its poll
+# path; bin/fm-hung-ladder.sh reads the root for its CPU sensor.
+fm_backend_orca_agent_probe() {  # <terminal-id>
   local terminal=${1:-} facts read connected kind host pty wtpath pid rc
-  [ -n "$terminal" ] || { printf 'unreadable'; return 0; }
-  facts=$(fm_backend_orca_terminal_facts "$terminal") || { printf 'unreadable'; return 0; }
+  [ -n "$terminal" ] || { printf 'unreadable -'; return 0; }
+  facts=$(fm_backend_orca_terminal_facts "$terminal") || { printf 'unreadable -'; return 0; }
   IFS=$'\x1f' read -r read connected kind host pty wtpath _ <<FACTS
 $facts
 FACTS
-  [ "$read" = ok ] && [ "$host" = local ] || { printf 'unreadable'; return 0; }
+  [ "$read" = ok ] && [ "$host" = local ] || { printf 'unreadable -'; return 0; }
   case "$connected" in
     false)
-      if [ -n "$kind" ]; then printf 'missing'; else printf 'unreadable'; fi
+      if [ -n "$kind" ]; then printf 'missing -'; else printf 'unreadable -'; fi
       return 0
       ;;
     true) ;;
-    *) printf 'unreadable'; return 0 ;;
+    *) printf 'unreadable -'; return 0 ;;
   esac
-  pid=$(fm_backend_orca_session_pid "$pty") || { printf 'unreadable'; return 0; }
+  pid=$(fm_backend_orca_session_pid "$pty") || { printf 'unreadable -'; return 0; }
   rc=0
   fm_backend_orca_pid_absent "$pid" || rc=$?
   case "$rc" in
-    0) printf 'missing'; return 0 ;;
+    0) printf 'missing -'; return 0 ;;
     1) ;;
-    *) printf 'unreadable'; return 0 ;;
+    *) printf 'unreadable -'; return 0 ;;
   esac
-  fm_backend_orca_tree_state "$pid"
+  printf '%s %s' "$(fm_backend_orca_tree_state "$pid")" "$pid"
 }
 
 # fm_backend_orca_physical_dir: <dir> with every symlink resolved, or 1.

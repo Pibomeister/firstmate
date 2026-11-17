@@ -2549,6 +2549,24 @@ test_orca_agent_state_reads_the_session_tree() {
   pass "fm_backend_orca_agent_state: a connected terminal reads alive, dead, or ambiguous from its session tree"
 }
 
+test_orca_agent_probe_names_the_session_root() {
+  local root out
+  [ -n "$ORCA_STANDIN" ] || { pass "SKIP: Orca agent probe tree case (no agent stand-in survives here)"; return 0; }
+  orca_case probe-agent
+  orca_tree agent
+  root=$ORCA_TREE_ROOT
+  orca_show_json term-1 true true '' local pty-1 /orca/wt-1 > "$RESP/1.out"
+  orca_memory_json pty-0 1234 pty-1 "$root" > "$RESP/2.out"
+  out=$(orca_run 'fm_backend_orca_agent_probe term-1')
+  orca_tree_cleanup
+  [ "$out" = "alive $root" ] || fail "a live session must probe as 'alive $root', got '$out'"
+  orca_case probe-closed
+  orca_show_json term-1 false false operator_close local pty-1 /orca/wt-1 > "$RESP/1.out"
+  out=$(orca_run 'fm_backend_orca_agent_probe term-1')
+  [ "$out" = 'missing -' ] || fail "a closed terminal must probe as 'missing -', got '$out'"
+  pass "fm_backend_orca_agent_probe: the verdict carries the session root it was read from"
+}
+
 test_orca_agent_state_reads_a_closed_terminal_as_missing() {
   local out
   orca_case state-closed
@@ -2983,6 +3001,7 @@ test_secondmate_force_teardown_surfaces_orca_child_remove_failure
 test_secondmate_force_teardown_refuses_orca_child_id_path_mismatch
 test_secondmate_force_teardown_refuses_partial_orca_child
 test_orca_agent_state_reads_the_session_tree
+test_orca_agent_probe_names_the_session_root
 test_orca_agent_state_reads_a_closed_terminal_as_missing
 test_orca_agent_state_unprovable_reads_are_unreadable
 test_orca_absence_proof_is_gone_for_a_closed_clean_terminal

@@ -13,6 +13,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Backlog, preferences, and memory | [Backlog backend](#backlog-backend-taskstoml--configbacklog-backend), [captain preferences](#captain-preferences-datacaptainmd--datacaptain-sharedmd), [external memory tiers](#external-memory-tiers-memory-layering-section), [record export](#record-export-configrecord-export-root), and [startup memory budget](#startup-memory-budget-configstartup-memory-budget) |
 | Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), [warm-cache compaction](#warm-cache-compaction-configwarm-compact), [early handoff trigger](#early-handoff-trigger-confighandoff-trigger), [heartbeat stale grace](#heartbeat-stale-grace-configheartbeat), [task budgets](#task-budget-enforcement-configbudget-enforcement), and [Calm preference](#calm-preference-configcalm) |
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
+| Hung workers whose agent is still alive | [Hung-worker ladder](#hung-worker-ladder-confighung-ladder) |
 | Unattended stall recovery for firstmates and second mates | [Assistant watchdog](#assistant-watchdog-configwatchdog) |
 | Restarting relays that go stale after a network daemon restart | [Relay guard](#relay-guard-configrelay-guard) |
 | Host identity, credential, and reachability probes for an outside watchdog | [Host-health probe](#host-health-probe) |
@@ -1077,6 +1078,44 @@ A remote secondmate is refused from a home with a lane budget, because a local l
 A Claude or Codex child whose usage is unknown at teardown is recorded as a folded unknown in the lane, and every later launch is refused naming it until an operator clears that entry; teardown keeps the child record only when the lane itself cannot be locked or written.
 Native counters arrive after charged work, so a stop can overshoot and an interrupt can remain unconfirmed.
 [`fm-task-budget.sh`'s header and help](../bin/fm-task-budget.sh) own counter definitions, executable interfaces, binding, attempt deduplication, and state mechanics.
+
+## Hung-worker ladder (config/hung-ladder)
+
+The hung-worker ladder watches live ship and scout workers whose agent is alive but no longer makes progress.
+Stage 1 only observes: it records what each rung would do and never acts on a worker.
+The optional local, gitignored `config/hung-ladder` file selects the mode with a `mode=` line.
+An absent file means `off`.
+`off` observes nothing, and `observe` records would-act rows in `state/hung-ladder/actions.tsv`.
+No code path sends keys, writes a steering message, or interrupts, exits, relaunches, or kills a worker in any mode.
+The live modes `steer`, `interrupt`, and `relaunch` are refused with no write unless a separate owner approval record exists in `config/hung-ladder-approval`.
+Even with that approval the effective mode stays `observe`, because stage 1 builds no live path.
+A refused live mode runs as `off`: the watcher writes no ladder state and no ledger row, only the refusal message in its own error file.
+Both files must belong to this user, and the approval must have no group or other permissions.
+Set the mode with `bin/fm-hung-ladder.sh set-mode <mode> --actor <name>`, read it with `mode`, and check the ledger with `verify`.
+A worker session (one with `FM_TASK_ID` set) can never set the mode or write the ledger.
+The watcher runs one observation per task per minute on its existing pass, with no new background process.
+A sensor read that fails or times out counts as unknown, never as quiet, so it can only hold a rung.
+Where a child process's I/O counter cannot be read, as on macOS, a quiet child is never proven idle, so it keeps the CPU sensor unknown.
+A change to the worker's native progress markers, such as a completed turn, counts as activity.
+An untracked-file scan that reaches its 2000-file limit counts as unknown.
+Secret-pattern files are recorded by name only and never enter a content hash or snapshot.
+A path is secret-pattern when its file name matches a key, certificate, `.env` or credential-file pattern, or any part of it contains `secret` or `credential`, in any case.
+A snapshot records a symlink by its link text and never follows it.
+A rung-4 snapshot that cannot record the whole worktree is marked incomplete and holds rung 4.
+A snapshot records a deleted secret-pattern file as deleted, never as present.
+A snapshot also records each unchanged tracked secret-pattern file as present.
+A task the crew state reports done or failed is out of scope.
+The ladder's Git reads run no program the repository configures, such as a filter, an external diff driver, a text converter or an fsmonitor hook.
+A declared wait protects a worker without limit only when it names a live job this user runs or an active test-queue ticket; a deadline or any other wording holds only for the bounded unverified-wait time.
+Once an hour on the same pass, the watcher resolves the open records of cleaned-up tasks and prunes their snapshots.
+Each ledger row is escaped and hash-chained to the row before it, so an edited, removed, or inserted row is detected.
+A later outcome is a new `resolve` row with `later_self_progressed=yes` or `no`, never an edit.
+Caps, the systemic breaker, holds, and parks are recorded in each row, so the soak can show what live mode would have done.
+List task ids the ladder never observes in `config/hung-ladder-skip`, one per line.
+Adding a task closes its open episode, and removing it starts a fresh eligibility period.
+The skip list is honored only when this user owns it and no group or other user can write it.
+These checks guard against mistakes and other users, not against a worker running as the same user, which could also edit its own config; stage 1 has no action path for such a worker to reach.
+[`fm-hung-ladder.sh`'s header and help](../bin/fm-hung-ladder.sh) own every key, the tunables, the ledger fields, the sensors, and the state files.
 
 ## Merge review (config/merge-review)
 
@@ -3696,6 +3735,7 @@ FM_CREW_STATE_NM_TIMEOUT=10   # seconds allowed per no-mistakes query inside fm-
 FM_CREW_STATE_PANE_TIMEOUT=3   # seconds bounding each backend pane read inside fm-crew-state.sh (the readability probe and the busy-state tail); a probe that hits the bound reads unknown with the endpoint unreachable; invalid or zero values use 3
 FM_TEARDOWN_NM_TIMEOUT=10    # seconds allowed per no-mistakes query or abort inside fm-teardown.sh
 FM_CREW_STATE_RUNS_LIMIT=200  # plain runs-ledger rows scanned for fallback attribution; does not change the CLI's AXI overview window (selection owner: bin/fm-nm-run-lib.sh)
+FM_CREW_STATE_NO_SNAPSHOT=   # 1 makes fm-crew-state.sh read the no-mistakes state database with the snapshot cache off, so it neither writes the cache nor waits on its lock; the hung-worker ladder sets it
 FM_NM_SNAPSHOT_TTL=5   # seconds a cached read-only no-mistakes state-database snapshot (state/.nm-status-snapshot.json) is reused across fm-crew-state.sh reads in one sweep; bin/fm-nm-run-lib.sh owns the schema guard and the fallback to the no-mistakes CLI
 FM_TEARDOWN_NM_RUNS_LIMIT=200  # recent no-mistakes run rows scanned to prove an unresolved-head parked run belongs to teardown's task
 FM_HEARTBEAT_BIN=bin/fm-heartbeat.sh     # test override for the ledger publisher the watcher's heartbeat ticker launches each cycle
@@ -3748,6 +3788,8 @@ FM_WATCHER_CLEANUP_LOCK_BOUND=   # optional watcher EXIT marker-lock wait; defau
 FM_WAKE_QUEUE_LOCK_WAIT=30   # seconds a short state lock (the wake queue, a recovery marker, a pending-reply record) is waited for before the caller gives up with the state untouched; zero or invalid values use 30
 FM_LEASE_COMMAND_LOCK_WAIT=60   # seconds a lease command or a guarded mutation (fm-send, fm-control, fm-teardown) waits for this home's lease-command lock before refusing with exit 6 and naming the holder; zero or invalid values use 60
 FM_WATCH_HELPER_BUDGET=120   # seconds each watcher helper (fleet-ledger capture, herdr group sync, process-event reconcile, inactive reconcile scan, worktree cleanup) may run before the watcher skips it for that cycle; zero or invalid values use 120
+FM_HUNG_LADDER_SAMPLE_SECS=60   # seconds between hung-worker ladder observations of one task when config/hung-ladder exists; zero or invalid values use 60
+FM_HUNG_LADDER_BUDGET=30   # seconds one hung-worker ladder observation may run before the watcher skips it for that pass; zero or invalid values use 30
 FM_WORKTREE_CLEANUP=1   # set to 0 to skip the watcher's linked-worktree cleanup pass; bin/fm-worktree-cleanup.sh owns the pass
 FM_PENDING_REPLY_SEND_BUDGET=120   # seconds the watcher's pending-reply recovery send may run; a send stopped at the bound is reconciled as delivery unknown, never failed; zero or invalid values use 120
 FM_PENDING_REPLY_OBSERVE_BUDGET=20   # seconds the watcher's busy-or-idle read of a pending-reply target pane may run; a read that does not finish counts as unknown for that cycle
