@@ -1891,38 +1891,52 @@ wd_permission_prompt() {
   WD_PP_REASON=
   [ "$(wd_permission_mode)" != off ] || return 2
   if ! verdict=$(fm_pp_classify "$screen" "$harness" "$dialog"); then
-    # The open marker is read and cleared under the worker's lock, so an
-    # overlapping pass never clears a marker another pass just wrote. This
-    # pass's screen can predate a prompt another pass reported, so the pane is
-    # read again under the lock; only a fresh read that still shows no prompt
-    # resolves the marker, and a failed read keeps it. An `unknown` dialog is
-    # a failed viewport read, so it keeps the marker too.
-    if [ -e "$(wd_pp_mark "$id").open" ] && wd_pp_lock "$id"; then
-      live=$(wd_capture "$O_BACKEND" "$O_TARGET" 60) || live=
-      live_dialog=$(wd_observe_dialog "$O_BACKEND" "$O_TARGET" "fm-$id" "${harness:-unknown}") || live_dialog=
-      if [ -n "$live" ] && [ "$live_dialog" != unknown ] && ! fm_pp_classify "$live" "$harness" "${live_dialog:-none}" >/dev/null; then
-        wd_pp_clear "$id"
-      fi
-      wd_pp_unlock "$id"
-    fi
-    return 2
+    # No verdict and no reported prompt leaves nothing to write.
+    [ -e "$(wd_pp_mark "$id").open" ] || return 2
+    kind=none
+  else
+    kind=${verdict%%$'\t'*}
+    reason=${verdict#*$'\t'}
+    case "$kind" in hardstop|hold|trust|route) ;; *) return 2 ;; esac
+    # The reason is set before the lock, so a busy lock never lets a
+    # credential or sign-in page record the pane text.
+    [ "$kind" != hardstop ] || WD_PP_REASON=$reason
   fi
-  kind=${verdict%%$'\t'*}
-  reason=${verdict#*$'\t'}
-  hash=$(fm_pp_hash "$screen")
-  case "$kind" in hardstop|hold|trust|route) ;; *) return 2 ;; esac
-  # The reason is set before the lock, so a busy lock never lets a credential
-  # or sign-in page record the pane text.
-  [ "$kind" != hardstop ] || WD_PP_REASON=$reason
   # Every marker write for one worker runs under its lock, so overlapping run
   # and once passes never both write a blocked line or both send an Escape.
   if ! wd_pp_lock "$id"; then
+    [ "$kind" != none ] || return 2
     wd_rec "$(wd_id)" permission-prompt report refused "another watchdog pass is acting on worker $id; nothing was pressed"
     # A held prompt or hard stop still gets its waiting gap and away page;
     # only the marker write waits for the lock.
     case "$kind" in hardstop|hold) WD_PP_STOPPED=1 ;; esac
     return 1
   fi
+  # This pass's screen can predate a prompt another pass reported, so the
+  # pane is read again under the lock and only that fresh verdict is acted
+  # on: an older screen never resolves or replaces a newer report. A failed
+  # read, including a dialog read that returns `unknown`, writes nothing.
+  live=$(wd_capture "$O_BACKEND" "$O_TARGET" 60) || live=
+  live_dialog=$(wd_observe_dialog "$O_BACKEND" "$O_TARGET" "fm-$id" "${harness:-unknown}") || live_dialog=
+  if [ -z "$live" ] || [ "$live_dialog" = unknown ]; then
+    wd_pp_unlock "$id"
+    [ "$kind" != none ] || return 2
+    wd_rec "$(wd_id)" permission-prompt report refused "worker $id could not be read again under its lock; nothing was pressed or written"
+    case "$kind" in hardstop|hold) WD_PP_STOPPED=1 ;; esac
+    return 1
+  fi
+  if ! verdict=$(fm_pp_classify "$live" "$harness" "${live_dialog:-none}"); then
+    wd_pp_clear "$id"
+    wd_pp_unlock "$id"
+    return 2
+  fi
+  kind=${verdict%%$'\t'*}
+  reason=${verdict#*$'\t'}
+  case "$kind" in hardstop|hold|trust|route) ;; *) wd_pp_unlock "$id"; return 2 ;; esac
+  # A stop reason from either read is kept, so neither read's pane text is
+  # recorded for a credential or sign-in page.
+  [ "$kind" != hardstop ] || WD_PP_REASON=$reason
+  hash=$(fm_pp_hash "$live")
   case "$kind" in
     hardstop)
       wd_pp_stop "$id" permission-prompt-hardstop "$hash" "worker $id shows a $reason prompt; nothing was answered, and the watchdog never answers credential, sign-in, spend, destructive, or reserved prompts"

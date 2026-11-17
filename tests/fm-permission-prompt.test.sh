@@ -588,7 +588,7 @@ test_hardstop_prompts_are_never_answered() {
     O_HOME=$FM_HOME O_TAG=$(wd_tag "$FM_HOME") O_KEY=$(wd_state_key "$FM_HOME") O_BACKEND=tmux O_TARGET=$2 O_REC_SUBJECT=worker:cred
     wd_permission_prompt cred claude "$(printf "work output\n> \n")" none
     printf "%s\n" "$?"' _ "$WD" "$cred_pane" 2>/dev/null)
-  assert_equals 2 "$stale_rc" "an older empty screen gets no verdict"
+  assert_equals 1 "$stale_rc" "an older empty screen reads the live hard stop again and reports it still waiting"
   # A re-read whose viewport read fails reports the dialog as unknown, which
   # keeps the marker too.
   stale_rc=$(FM_TEST_SEAM=1 FM_WD_NOW=$((BASE + 460)) FM_HOME="$H" bash -c '
@@ -598,6 +598,16 @@ test_hardstop_prompts_are_never_answered() {
     wd_permission_prompt cred claude "$(printf "work output\n> \n")" none
     printf "%s\n" "$?"' _ "$WD" "$cred_pane" 2>/dev/null)
   assert_equals 2 "$stale_rc" "an older empty screen with a failed dialog read gets no verdict"
+  # An older screen that reads as a hold never replaces the hard stop still
+  # on the pane: the fresh read under the lock is the verdict acted on.
+  stale_rc=$(FM_TEST_SEAM=1 FM_WD_NOW=$((BASE + 470)) FM_HOME="$H" bash -c '
+    . "$1" || exit 9
+    O_HOME=$FM_HOME O_TAG=$(wd_tag "$FM_HOME") O_KEY=$(wd_state_key "$FM_HOME") O_BACKEND=tmux O_TARGET=$2 O_REC_SUBJECT=worker:cred
+    wd_permission_prompt cred claude "$3" none
+    printf "%s\n" "$?"' _ "$WD" "$cred_pane" "$(codex_approval 'npm test')" 2>/dev/null)
+  assert_equals 1 "$stale_rc" "an older held screen still reports a waiting prompt"
+  assert_equals 0 "$(grep -c 'permission-prompt-held' "$H/state/cred.status" || true)" "an older held screen writes no held line over the live hard stop: $(cat "$H/state/cred.status")"
+  assert_equals 1 "$(status_rows cred blocked permission-prompt-hardstop)" "the live hard stop is still reported once"
   assert_equals 0 "$(status_rows cred resolved permission-prompt-hardstop)" "an older empty screen does not resolve a hard stop still on the pane"
   assert_equals 1 "$(find "$H/state/watchdog/permission" -name '*-cred.open' | wc -l | tr -d ' ')" "the hard stop's marker stays while the prompt is on the pane"
 
