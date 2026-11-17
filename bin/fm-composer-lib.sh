@@ -2587,6 +2587,9 @@ fm_composer_blocking_dialog() {  # <screen> -> dialog name
     printf '%s' 'Claude tool-approval prompt'
     return 0
   fi
+  # Every check below reads rows that tool output can quote, so an idle agent
+  # composer or shell prompt at the bottom of the screen proves them quoted.
+  fm_composer_idle_bottom "$screen" && return 1
   # Recorded 2026-11-14 on Claude Code 2.1.325: the folder-trust picker, whose
   # selected row is No, exit, and the external-imports picker, whose selected
   # row is No, disable external imports. Enter would choose either one. Any
@@ -2675,9 +2678,43 @@ fm_composer_draft_row() {  # <screen>
     { gsub(/\r/, "") }
     NF { r[++n] = tolower($0) }
     END {
-      if (!n || r[n] !~ /^[ \t]*(❯|›|⟩|→|❭|>[ \t]+[^ \t]|│|┃|\|)/) exit 1
-      for (i = n - 4; i < n; i++) if (i > 0 && r[i] ~ /to proceed, type|to continue type in the phrase/) exit 1
+      if (!n) exit 1
+      # A multi-line draft in the Cursor, Devin, or Muse composer keeps its
+      # glyph only on its first row, and its continuation rows are indented.
+      k = n
+      if (r[n] ~ /^[ \t]+[^ \t]/) for (i = n - 1; i > 0 && i >= n - 4; i--) {
+        if (r[i] ~ /^[ \t]*(→|❭|⟩)[ \t]*[^ \t]/) { k = i; break }
+        if (r[i] !~ /^[ \t]+[^ \t]/) break
+      }
+      if (r[k] !~ /^[ \t]*(❯|›|⟩|→|❭|>[ \t]+[^ \t]|│|┃|\|)/) exit 1
+      for (i = k - 4; i < k; i++) if (i > 0 && r[i] ~ /to proceed, type|to continue type in the phrase/) exit 1
       exit 0
+    }'
+}
+
+# fm_composer_idle_bottom <screen>: the bottom of the screen is an empty agent
+# composer row (`❯ › ⟩ → ❭ ┃ ▌`, inside an optional box border) with only its
+# own footer rows below it, an opencode composer box, or a bare shell prompt on
+# the last row. A live
+# terminal prompt or dialog replaces the composer, so anything above such a
+# bottom is quoted output and never a prompt waiting for an answer. A bare `>`
+# never counts, because Gemini draws its key input that way. A footer row
+# never ends like a question or label and never opens with an option cursor.
+fm_composer_idle_bottom() {  # <screen>
+  printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
+    { gsub(/\r/, "") }
+    NF { r[++n] = $0 }
+    END {
+      if (!n) exit 1
+      if (r[n] ~ /^[ \t]*(\([^)]*\)[ \t]+)?([^ \t]+[ \t]+)?[^ \t]*[$%#][ \t]*$/) exit 0
+      # The opencode composer is a left-bar box closed by a `╹▀▀▀` floor row,
+      # with its status row below and a sidebar beside its rows.
+      for (i = n; i > 1 && i >= n - 2; i--) if (r[i] ~ /^[ \t]*╹(▀)+[ \t]*$/ && r[i - 1] ~ /^[ \t]*┃/) exit 0
+      for (i = n; i > 0 && i >= n - 6; i--) {
+        if (r[i] ~ /^[ \t]*(│[ \t]*)?(❯|›|⟩|→|❭|┃|▌)[ \t]*(│[ \t]*)?$/) exit 0
+        if (r[i] ~ /(:|\?|>|›|❯|\])[ \t]*$/ || r[i] ~ /^[ \t]*(❯|›|>|●|○|◉|◯|◆|\[[ x]\]|[0-9]+[.)])[ \t]/ || r[i] ~ /^[ \t]*(│|┃)[ \t]+([0-9]+[.)]?[ \t]|\(|❯|›|>|●|○)/ || tolower(r[i]) ~ /press (any key|enter|return)|\(y\/n\)|\[y\/n\]/) exit 1
+      }
+      exit 1
     }'
 }
 
@@ -2962,32 +2999,37 @@ fm_composer_confirm_input() {  # <screen> -> row
 # list, such as survey's `[Use arrows to move, type to filter]`, inquirer's
 # `(Use arrow keys)`, prompts' `- Use arrow-keys. Return to submit.`, AWS SSO's
 # `There are N roles available to you.`, or a bare question above its option
-# rows, with the cursor on any option, the last one included.
-fm_composer_list_rows() {  # <screen>
-  printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
+# rows, with the cursor on any option, the last one included. With `print`,
+# prints the recognized list from its heading down, so its category is read
+# from the whole list rather than only its last rows.
+fm_composer_list_rows() {  # <screen> [print]
+  printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk -v out="${2-}" '
+    function cw(s,  t) { t = s; gsub(/[\200-\277]/, "", t); return length(t) }
+    function done(s) { if (out == "print") for (j = s; j <= n; j++) print o[j]; exit 0 }
     function hint(s) { return s ~ /\(use arrow keys|\[use arrows to move|- use arrow-keys\. return to submit|^[ \t]*there (are|is) [0-9]+ .* available to you\.?[ \t\r]*$/ }
-    NF { r[++n] = tolower($0); sub(/[ \t\r]+$/, "", r[n]) }
+    NF { r[++n] = tolower($0); sub(/[ \t\r]+$/, "", r[n]); o[n] = $0; wd[n] = cw(r[n]); if (wd[n] > w) w = wd[n] }
     END {
-      for (i = n - 13; i <= n; i++) {
+      for (i = n - 23; i <= n; i++) {
         if (i < 1) continue
         # A narrow pane can wrap the hint over two rows, so a row that only
         # completes the hint with the row above also opens the list.
         # A hint under a tool-output marker (`└`, `⎿`) is quoted output.
         if (r[i] !~ /reveal more/ && (hint(r[i]) || (i > 1 && !hint(r[i - 1]) && (hint(r[i - 1] r[i]) || hint(r[i - 1] " " r[i]))))) { q = i; f = 0; quoted = (r[i] ~ /^[ \t]*(└|⎿)/) }
         else if (q && !quoted) {
-          # Only option rows (indented, or under a cursor) and tip rows in
-          # parentheses continue a live list; prose, a transcript or box row,
-          # an agent composer, or its footer after the hint makes it quoted.
+          # Option rows (indented, or under a cursor), tip rows in parentheses,
+          # and a row that continues a soft-wrapped row above it, which fills
+          # the widest row, continue a live list; prose, a transcript or box
+          # row, an agent composer, or its footer after the hint makes it quoted.
           if (r[i] ~ /for shortcuts|context left|context [0-9]+% left|esc to (cancel|interrupt)|esc twice to interrupt|⏎|⌃|ctrl\+|enter send/ || r[i] ~ /^(─|━){20,}/ || r[i] ~ /^[ \t]*(❯|›|⟩|→|❭)[ \t]*$/ || r[i] ~ /^[ \t]*(│|┃|⏺|⎿|•|└|▌)/) quoted = 1
           else if (r[i] ~ /^[ \t]*(❯|›|>)[ \t]*[^ \t]/) f = 1
-          else if (r[i] !~ /^[ \t]+[^ \t]/ && r[i] !~ /^[ \t]*\(.*\)[ \t]*$/) quoted = 1
+          else if (r[i] !~ /^[ \t]+[^ \t]/ && r[i] !~ /^[ \t]*\(.*\)[ \t]*$/ && wd[i - 1] < w) quoted = 1
         }
         if (r[i] ~ /^[ \t]*\?[ \t]+[^ \t]/) { qq = i; fq = 0 }
         else if (qq && r[i] ~ /^[ \t]*(❯|›|>)[ \t]*[^ \t]/) fq = 1
       }
       # A paginated list may show its tip only below the options.
-      if (fq && r[n] ~ /^[ \t]*\((use arrow keys|move up and down) to reveal more choices\)[ \t\r]*$/) exit 0
-      if (f && !quoted) exit 0
+      if (fq && r[n] ~ /^[ \t]*\((use arrow keys|move up and down) to reveal more choices\)[ \t\r]*$/) done(qq)
+      if (f && !quoted) done(q > 1 && !hint(r[q]) ? q - 1 : q)
       # A bare list, such as the drizzle-kit `❯ No, abort` under its question,
       # holds only option rows, exactly one under a cursor, up to the last row.
       c = 0; k = 0
@@ -2997,7 +3039,8 @@ fm_composer_list_rows() {  # <screen>
         else if (r[i] !~ /^[ \t]+[^ \t]/) break
         k++
       }
-      exit !(c == 1 && k >= 2 && i > 0 && r[i] ~ /\?[ \t\r]*$/ && r[i] !~ /^[ \t]*(•|⏺|●|>|❯|›|\?[ \t]+for shortcuts)/)
+      if (c == 1 && k >= 2 && i > 0 && r[i] ~ /\?[ \t\r]*$/ && r[i] !~ /^[ \t]*(•|⏺|●|>|❯|›|\?[ \t]+for shortcuts)/) done(i)
+      exit 1
     }'
 }
 

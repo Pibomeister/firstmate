@@ -465,7 +465,7 @@ test_hardstop_categories() {
     assert_equals $'hardstop\tsign-in' "$(printf '%s\n' "$c" | classify claude)" "this input is a sign-in stop: $c"
   done
   assert_equals $'hold\tconfirm' "$(printf 'work\nPress any key to continue\n' | classify claude)" "a press-any-key wait is held"
-  assert_equals $'hold\tconfirm' "$(printf '? Pick a registry to log in to (Use arrow keys)\n❯ o1\n  o2\n  o3\n  o4\n  o5\n  o6\n  o7\n(Move up and down to reveal more choices)\n' | classify claude)" "a long list whose heading scrolled out of the recent rows is held"
+  assert_equals $'hardstop\tsign-in' "$(printf '? Pick a registry to log in to (Use arrow keys)\n❯ o1\n  o2\n  o3\n  o4\n  o5\n  o6\n  o7\n(Move up and down to reveal more choices)\n' | classify claude)" "a long list is read from its heading, above the recent rows"
   assert_equals $'hold\tconfirm' "$(printf 'Pick cloud project to use:\n [1] proj-a\n [2] Create a new project\nPlease enter numeric choice or text value (must exactly match list item):  \n' | classify claude)" "a gcloud numeric choice outside sign-in is a held confirmation"
   assert_equals $'hold\tconfirm' "$(printf '           staged     unstaged path\n  1:    unchanged        +1/-0 a.txt\nUpdate>> \n' | classify claude)" "a git add -i submenu is a held confirmation"
   assert_equals $'hold\tconfirm' "$(printf '*** Commands ***\n  1: status\t  2: update\t  7: quit\t  8: help\nWhat now> \n' | classify claude)" "git add -i's menu is a held confirmation"
@@ -648,6 +648,44 @@ test_structure_decides_not_words() {
   assert_equals $'hardstop\tcredential' "$(bash_prompt | awk '/^ touch \/tmp/ { print " cat ~/.ss"; print "h/id_ed25519"; next } { print }' | classify claude)" \
     "a soft-wrapped credential read is still a stop"
   pass "structure, not words: conversation above a prompt and phrases inside a command never change its verdict"
+}
+
+test_idle_bottom_quotes_and_long_or_wrapped_lists() {
+  local c want oc codexf gem agy aws roles
+  oc=$(. "$ROOT/bin/fm-composer-lib.sh"; fm_composer_strip_ansi < "$ROOT/tests/fixtures/opencode-1.18.31-cwd/opencode-1.18.31-idle-cwd.ansi")
+  codexf=$'\n› \n\n  gpt-6-astra high · ~/repo · main'
+  gem=$'╭────────────────────────────╮\n│ Enter Gemini API Key       │\n│ > _                        │\n╰────────────────────────────╯'
+  agy=$'Accessing workspace:\n\n/work/project\n\nDo you trust the contents of this project?\n\nAntigravity CLI requires permission to read, edit, and execute files here.\n\n> Yes, I trust this folder\n  No, exit'
+  # Quoted dialogs above an idle agent composer or a shell prompt, and
+  # multi-line drafts in the Cursor, Devin, and Muse composers, are never a
+  # prompt and never block a send.
+  for c in $'→ Explain this terminal label:\n  Password:' $'→ Explain this terminal label:\n  Continue? [y/N]' \
+    $'❭ Explain this terminal label:\n  Password:' $'⟩ Explain this terminal label:\n  Continue? [y/N]' \
+    $'• Ran cat fixture\n  Quick safety check\n  ❯ 2. No, exit'"$codexf" "$agy$codexf" \
+    "$gem"$'\n'"$oc" "$gem"$'\nuser@host:~/repo$ ' "$agy"$'\n(venv) ~/repo % '; do
+    [ -z "$(printf '%s\n' "$c" | classify codex)" ] || fail "a quoted dialog or multi-line draft is read as a prompt: $c"
+    ! bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard blocks a quoted dialog or multi-line draft: $c"
+  done
+  # A live dialog with no composer or shell prompt below it still stops.
+  assert_equals $'trust\tworkspace' "$(printf '%s\n' "$agy" | classify agy)" "the live Antigravity trust screen is still a trust dialog"
+  assert_equals $'hardstop\tcredential' "$(printf '%s\n' "$gem"$'\n  ~/repo   no sandbox   gemini-2.5-pro' | classify claude)" "the live Gemini key dialog is still a credential stop"
+  # Lists longer than eight rows keep their heading's category, and a hint
+  # tail or option row soft-wrapped onto an unindented row stays in the list.
+  aws=$'There are 10 AWS accounts available to you.\n> acct-0, a0@example.com (111111111110)'
+  for c in 1 2 3 4 5 6 7 8 9; do aws="$aws"$'\n'"  acct-$c, a$c@example.com (11111111111$c)"; done
+  roles=$'There are 12 roles available to you.\n  Role0'
+  for c in 1 2 3 4 5 6 7 8 9 10; do roles="$roles"$'\n'"  Role$c"; done
+  roles="$roles"$'\n> Admin'
+  for c in "sign-in|$aws" "sign-in|$roles" \
+    "destructive|? Are you sure you want to delete these files?  [Use arrows to move, type to filt"$'\n'"er]"$'\n'"  No"$'\n'"> Yes" \
+    "sign-in|? What account do you want to log into?  [Use arrows to move, type to filter, ? for m"$'\n'"ore help]"$'\n'"> GitHub.com"$'\n'"  Other" \
+    "destructive|? You are about to drop the users table, are you sure? (Use arrow keys"$'\n'")"$'\n'"❯ No, abort"$'\n'"  Yes, drop the table" \
+    "sign-in|There are 3 AWS accounts available to you."$'\n'"> ProductionWorkloadsAccount, aws-production-workloads+root@example-corp.com (4444"$'\n'"55556666)"$'\n'"  StagingAccount, staging@example-corp.com (111122223333)"; do
+    want=${c%%|*}; c=${c#*|}
+    assert_equals "hardstop	$want" "$(printf '%s\n' "$c" | classify claude)" "a long or soft-wrapped list is a $want stop: $c"
+    bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard misses a long or soft-wrapped $want list: $c"
+  done
+  pass "an idle composer or shell prompt proves the dialog above it quoted, and long or soft-wrapped lists keep their stop"
 }
 
 test_antigravity_trust_screen_classifies() {
@@ -1154,6 +1192,7 @@ fm_test_run \
   test_structure_decides_not_words \
   test_send_guard_blocks_renumbered_pickers_and_secret_inputs \
   test_antigravity_trust_screen_classifies \
+  test_idle_bottom_quotes_and_long_or_wrapped_lists \
   test_failed_declines_count_toward_cap \
   test_tool_approval_is_declined_and_steered \
   test_prompt_after_escape_gets_no_instruction \

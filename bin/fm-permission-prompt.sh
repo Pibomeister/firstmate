@@ -247,8 +247,12 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
   local screen=${1-} harness=${2-} dialog=${3-} rows ruled text cat
   [ -n "$screen" ] || return 1
   # A proven trust dialog is read first, because the Antigravity picker has no
-  # footer the watchdog's dialog detector recognizes.
-  if _fm_pp_trust_dialog "$screen"; then
+  # footer the watchdog's dialog detector recognizes. An idle agent composer or
+  # shell prompt at the bottom of the screen proves a trust dialog or terminal
+  # prompt above it is quoted output, as the send guard reads it.
+  if fm_composer_idle_bottom "$screen"; then
+    :
+  elif _fm_pp_trust_dialog "$screen"; then
     case "$harness" in
       claude|agy) printf 'trust\tworkspace\n' ;;
       *) printf 'hold\ttrust-unregistered\n' ;;
@@ -263,6 +267,7 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
   case "$dialog" in
     permission|question) ;;
     '')
+      fm_composer_idle_bottom "$screen" && return 1
       if cat=$(fm_pp_bottom_input "$screen"); then
         printf 'hardstop\t%s\n' "$cat"; return 0
       fi
@@ -271,6 +276,11 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
       # otherwise held.
       fm_composer_confirm_input "$screen" >/dev/null || return 1
       rows=$(_fm_wd_tail_rows "$screen" 8)
+      # A select list is read whole, from its heading down, so a long AWS SSO
+      # account list keeps the heading that names its category.
+      if text=$(fm_composer_list_rows "$screen" print); then
+        rows=$(printf '%s\n%s' "$text" "$rows")
+      fi
       if cat=$(fm_pp_hardstop_category "$rows"); then
         printf 'hardstop\t%s\n' "$cat"
       elif fm_wd_lower "$rows" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)|(^|[^a-z])(remov|discard|delet|overwrit|override|replac|destroy|wip(e|ed|ing)([^a-z]|$)|erase|examine files)|\(w\)ipe|^[[:space:]]*(rm|cp|mv|ln|install|rmdir|shred|unlink)[[:space:]]?:[[:space:]]|yes, do as i say|contains an? [a-z0-9]+ file ?system|\+\+\+[[:space:]]+/dev/null|\(y/i/n/o/d/z\)|(^|[[:space:]])assume -r\?|apply anyway\?|data will be lost|data loss|cannot be (undone|reverted)|drop[[:space:]]+((the|this|your)[[:space:]]+)?(table|database|schema|db)([^a-z]|$)|reset[[:space:]]+(your|the)([[:space:]]+[a-z]+)?[[:space:]]+(database|schema|db)'; then
