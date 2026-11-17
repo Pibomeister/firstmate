@@ -77,7 +77,8 @@ fm_stall_ledger_until() {
     civil=$(TZ=America/Chicago date -d "@$kick" +%Y-%m-%d) || return 1
     eight=$(TZ=America/Chicago date -d "$civil 08:00:00" +%s) || return 1
     if [ "$eight" -le "$kick" ]; then
-      eight=$(TZ=America/Chicago date -d "$civil 08:00:00 + 1 day" +%s) || return 1
+      civil=$(TZ=America/Chicago date -d "$civil tomorrow" +%Y-%m-%d) || return 1
+      eight=$(TZ=America/Chicago date -d "$civil 08:00:00" +%s) || return 1
     fi
   fi
   printf '%s\n' "$eight"
@@ -805,13 +806,11 @@ _fm_stall_reconcile() {
         open_start=${open_start%% *}
         _fm_stall_is_num "$open_start" || continue
         _fm_stall_is_num "$open_detect" || continue
-        if [ "$ended" -ge "$open_start" ]; then
+        if [ "$ended" -ge "$open_start" ] && [ "$ended" -ge "$open_detect" ]; then
           dur=$((ended - open_start))
-        else
-          dur=0
+          _fm_stall_append "$FM_STALL_NOW" stall-close "$cls" "$sub" "$open_start" "$open_detect" "$who" "$ended" "$dur" "$open_ref" || return 1
+          continue
         fi
-        _fm_stall_append "$FM_STALL_NOW" stall-close "$cls" "$sub" "$open_start" "$open_detect" "$who" "$ended" "$dur" "$open_ref" || return 1
-        continue
       fi
       tight=$(_fm_stall_tighten "$cls" "$sub" "$start" "$detect") || true
       if [ -n "$tight" ]; then

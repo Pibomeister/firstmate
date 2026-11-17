@@ -794,6 +794,32 @@ test_quota_and_autowait_close_only_on_evidence() {
   pass "quota, auto-wait, and a refused restart close only on later evidence"
 }
 
+test_historical_completion_does_not_close_a_later_episode() {
+  local home ledger actions
+  home=$(new_home historical-completion)
+  ledger=$(ledger_of "$home")
+  mkdir -p "$home/state/watchdog"
+  printf '%s\n' "$T0" > "$home/state/.stall-ledger-born"
+  actions=$home/state/watchdog/actions.tsv
+  printf '%s\ta-held\t\tprimary\tfrozen\trestart\theld\theld\n' "$T0" > "$actions"
+  printf '%s\ta-done\t\tprimary\tfrozen\trestart\tdone\trestarted\n' "$((T0 + 700))" >> "$actions"
+  observe_ok "$home" "$((T0 + 700))"
+  printf '%s\tb-held\t\tprimary\tfrozen\trestart\theld\theld\n' "$((T0 + 1400))" >> "$actions"
+  observe_ok "$home" "$((T0 + 2101))"
+  assert_equals 2 "$(count_rows "$ledger" stall-open)" "both episodes were recorded"
+  observe_ok "$home" "$((T0 + 2161))"
+  assert_equals 1 "$(count_rows "$ledger" stall-close)" "old completion closed the ongoing episode"
+
+  printf '%s\tb-done\t\tprimary\tfrozen\trestart\tdone\trestarted\n' "$((T0 + 2200))" >> "$actions"
+  observe_ok "$home" "$((T0 + 2300))"
+  assert_equals 2 "$(count_rows "$ledger" stall-close)" "the second completion did not close its episode"
+  awk -F '\t' -v ended="$((T0 + 2200))" '
+    $2 == "stall-close" && $5 == 1800000800 && $8 == ended { found = 1 }
+    END { exit !found }
+  ' "$ledger" || fail "the second episode did not retain its own recovery time"
+  pass "historical completion never closes a later ongoing episode"
+}
+
 test_usage_and_unknown_commands() {
   local home out rc=0
   home=$(new_home usage)
@@ -809,6 +835,7 @@ test_usage_and_unknown_commands() {
 }
 
 fm_test_run \
+  test_historical_completion_does_not_close_a_later_episode \
   test_score_passes_on_the_locking_boundaries \
   test_score_fails_a_human_intervention \
   test_score_fails_stall_duration_over_30_minutes \
