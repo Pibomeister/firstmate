@@ -590,6 +590,17 @@ EOF
   ticks "$h" qw "$B" $((B + 1800))
   assert_equals 0 "$(rows "$h" qw would-act)" 'free-text queue wording is not a dead wait'
 
+  # A task the crew state reports finished is out of scope, whatever its
+  # last status line says.
+  new_task "$h" fd
+  echo "state: done · source: run-step · checks green: PR ready for review · run: r4" > "$h/probe/fd.validating"
+  ticks "$h" fd "$B" $((B + 1800))
+  assert_equals 0 "$(rows "$h" fd would-act)" 'a finished task gets no would-act rows'
+  new_task "$h" ff
+  echo "state: failed · source: status-log · build broke" > "$h/probe/ff.validating"
+  ticks "$h" ff "$B" $((B + 1800))
+  assert_equals 0 "$(rows "$h" ff would-act)" 'a failed task gets no would-act rows'
+
   # A validation run whose state the crew state cannot read holds every rung.
   new_task "$h" vu
   echo "state: unknown · source: run-step · selected run unreadable" > "$h/probe/vu.validating"
@@ -1049,10 +1060,12 @@ test_snapshots_redact_and_exclude_secrets() {
   mkdir -p "$h/wt-s1/config/Credentials"
   printf 'TOKEN=first\n' > "$h/wt-s1/config/Credentials/prod.yml"
   printf 'KEY=first\n' > "$h/wt-s1/deploy.PEM"
-  git -C "$h/wt-s1" add config deploy.PEM
+  printf 'KEY=gonevalue\n' > "$h/wt-s1/gone.key"
+  git -C "$h/wt-s1" add config deploy.PEM gone.key
   git -C "$h/wt-s1" -c user.name=t -c user.email=t@example.invalid commit -qm more
   printf 'TOKEN=dirsecretvalue\n' > "$h/wt-s1/config/Credentials/prod.yml"
   printf 'KEY=casesecretvalue\n' > "$h/wt-s1/deploy.PEM"
+  rm -f "$h/wt-s1/gone.key"
   printf 'change\n' >> "$h/wt-s1/README.md"
   ln -s .env "$h/wt-s1/notes.txt"
   PANE_STYLE=token ticks "$h" s1 "$B" $((B + 1440))
@@ -1078,6 +1091,8 @@ test_snapshots_redact_and_exclude_secrets() {
   ! grep -rq dirsecretvalue "$h/state/hung-ladder" || fail 'a file under a credentials directory stays out of the patches'
   ! grep -rq casesecretvalue "$h/state/hung-ladder" || fail 'a secret pattern matches in any case'
   grep -q '^present-secret	config/Credentials/prod.yml$' "$snap" || fail 'a path with a secret word is recorded as present'
+  grep -q '^deleted-secret	gone.key$' "$snap" || fail 'a deleted secret file is recorded as deleted'
+  ! grep -q '^present-secret	gone.key$' "$snap" || fail 'a deleted secret file is never recorded as present'
   assert_equals "600" "$(perm_of "$snap")" 'snapshots are owner-only'
   ! ledger "$h" | grep -q 'API_KEY' || fail 'patch bodies never reach the ledger'
   rm -f "$h/state/s1.meta"

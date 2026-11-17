@@ -701,6 +701,8 @@ fhl_resolve_wait() {  # <task> <wait-line>
   fi
 }
 
+# A crew state of done or failed, from any source, marks a finished task and
+# sets FINISHED, so it gates like a done status line.
 # Validation in flight (gate item 6): any no-mistakes run the crew state
 # attributes to the task that is working (running, fixing, CI) or parked at a
 # gate. Read only when a rung could fire, under a short bound, with the
@@ -719,6 +721,7 @@ fhl_validating() {
     held=${held:-unknown:validation=state-unknown}
     return 1
   fi
+  case "$state" in done|failed) FINISHED=$state; return 0 ;; esac
   case "$line" in *" source: "*) src=${line#* source: }; src=${src%% *} ;; *) src= ;; esac
   [ "$src" = run-step ] || return 1
   case "$state" in working|parked) return 0 ;; esac
@@ -862,7 +865,11 @@ fhl_snapshot_tree() {  # <name> -> path:sha
       while IFS= read -r -d '' p; do
         [ -n "$p" ] || continue
         if fhl_secret_path "$p"; then
-          printf 'present-secret\t%s\n' "$(fhl_esc "$p")"
+          if [ -e "$WT/$p" ] || [ -L "$WT/$p" ]; then
+            printf 'present-secret\t%s\n' "$(fhl_esc "$p")"
+          else
+            printf 'deleted-secret\t%s\n' "$(fhl_esc "$p")"
+          fi
         elif [ -L "$WT/$p" ]; then
           # A link is recorded by its own text and never followed, so it
           # cannot pull a secret's content into the snapshot.
@@ -1360,8 +1367,10 @@ cmd_tick() {
   local proof=0
   [ -z "$activity" ] && [ -z "$unknown_kinds" ] && [ "$quiet_count" -ge 2 ] && proof=1
   case "$net_advance" in ''|status) [ "$wrote" = 0 ] || EP_wait_since='' ;; *) EP_wait_since='' ;; esac
+  FINISHED=''
   if [ -z "$gate" ] && [ "$live" = alive ] && { [ "$proof" = 1 ] || [ -n "$screen" ]; } && fhl_validating; then
     gate=validating
+    [ -z "$FINISHED" ] || gate="finished:crew-$FINISHED"
   fi
   # A validation read that failed just now counts with the other unknowns.
   case "$held" in
@@ -1477,7 +1486,7 @@ cmd_tick() {
           if [ "$snap_rc" = 0 ]; then
             fhl_act 4 "relaunch$gated" "$snap" && EP_rung4_at=$NOW
           else
-            hold=snapshot-incomplete
+            hold='snapshot-incomplete'
           fi
         fi
       fi
