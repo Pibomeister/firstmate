@@ -2303,7 +2303,8 @@ wd_memory_guard_pass() {
   [ "$(cfg memory-guard on)" != off ] || return 0
   set -- check
   [ "$(wd_mode)" = act ] || set -- "$@" --observe
-  out=$(fm_run_timed 30 env FM_HOME="$OWNER_HOME" FM_MEMORY_GUARD_NOW="$(wd_now)" \
+  # Its config is the owner home's; its state follows this watchdog's own.
+  out=$(fm_run_timed 30 env -u FM_CONFIG_OVERRIDE FM_STATE_OVERRIDE="$STATE" FM_HOME="$OWNER_HOME" FM_MEMORY_GUARD_NOW="$(wd_now)" \
     "$SCRIPT_DIR/fm-memory-guard.sh" "$@" 2>/dev/null </dev/null) || rc=$?
   case "$rc" in
     0) return 0 ;;
