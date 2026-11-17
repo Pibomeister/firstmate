@@ -668,7 +668,13 @@ test_idle_bottom_quotes_and_long_or_wrapped_lists() {
     $'Should I continue?\n\n› Ask Codex to do anything\n\n  gpt-6-astra high · ~/repo · main' \
     "$gem"$'\n✦ That was the key dialog fixture.\n╭──────────────────────────────────────────────╮\n│ > Type your message or @path/to/file         │\n╰──────────────────────────────────────────────╯\n  ~/repo   no sandbox   gemini-2.5-pro (99% context left)' \
     "$gem"$'\n✦ That was the key dialog fixture.\n╭──────────────────────────────────────────────╮\n│ > fix the test                               │\n╰──────────────────────────────────────────────╯\n  ~/repo   no sandbox   gemini-2.5-pro (99% context left)' \
-    $'ls\nREADME\nalice@host:~/repo$ rg password:' $'ls\nalice@host repo % rg password:'; do
+    $'ls\nREADME\nalice@host:~/repo$ rg password:' $'ls\nalice@host repo % rg password:' \
+    $'ls\n$ rg password:' $'ls\n~/repo % rg password:' $'ls\n[alice@host repo]$ rg password:' $'ls\nbash-3.2$ rg password:' \
+    $'• Ran cat auth-fixture.txt\n  └ Authentication test fixture\n    ? Log in (Use arrow keys)\n    ❯ Continue with GitHub\n      Continue with GitLab\n\n› Update the README\n\n  gpt-6-astra high · ~/repo · main' \
+    $'• Ran cat fixture\n  Quick safety check\n  ❯ 2. No, exit\n\n› Summarize recent commits\n\n  gpt-5.5 xhigh · Context 97% left · /private/tmp · 2.1K in' \
+    "$agy"$'\n\n› Summarize recent commits\n\n  gpt-5.5 xhigh · Context 97% left · /private/tmp · 2.1K in' \
+    $'✦ Quick safety check\n  ❯ 2. No, exit\n╭──────────────────────────────────────────────╮\n│ > Type your message or @path/to/file         │\n╰──────────────────────────────────────────────╯\n  ~/repo   no sandbox   gemini-2.5-pro (99% context left)' \
+    $'? Get started\n\n  How would you like to authenticate for this project?\n\n  ● 1. Login with Google\n    2. Use Gemini API Key\n\n  (Use Enter to select)\n╭──────────────────────────────────────────────╮\n│ > fix the test                               │\n╰──────────────────────────────────────────────╯\n  ~/repo   no sandbox   gemini-2.5-pro (99% context left)'; do
     [ -z "$(printf '%s\n' "$c" | classify codex)" ] || fail "a quoted dialog or multi-line draft is read as a prompt: $c"
     ! bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard blocks a quoted dialog or multi-line draft: $c"
   done
@@ -676,6 +682,11 @@ test_idle_bottom_quotes_and_long_or_wrapped_lists() {
   assert_equals $'trust\tworkspace' "$(printf '%s\n' "$agy" | classify agy)" "the live Antigravity trust screen is still a trust dialog"
   assert_equals $'hardstop\tcredential' "$(printf '%s\n' "$gem"$'\n  ~/repo   no sandbox   gemini-2.5-pro' | classify claude)" "the live Gemini key dialog is still a credential stop"
   # An input label that ends in a typed `$` is not a shell prompt.
+  # A middle dot inside a live list option is not an agent footer.
+  assert_equals $'hold\tconfirm' "$(printf '%s\n' '? Which model?' '❯ gpt-5 · fast' '  o4 · deep' | classify claude)" "a bare list whose options hold a middle dot still holds"
+  assert_equals $'hold\tconfirm' "$(printf '%s\n' '? Select a model (Use arrow keys)' '› gpt-5 · fast' '  o4 · deep' | classify claude)" "an arrow-key list whose options hold a middle dot still holds"
+  # A shell row above a live password prompt never hides it.
+  assert_equals $'hardstop\tcredential' "$(printf '%s\n' $'$ psql -U app' 'Password for user app: ' | classify claude)" "a password prompt under a typed shell command is still a credential stop"
   c=$'GnuPG needs to construct a user ID to identify your key.\n\nReal name: CI Bot\nEmail address: ci@example.com\nComment: CI$'
   assert_equals $'hardstop\tcredential' "$(printf '%s\n' "$c" | classify claude)" "a GnuPG comment input holding a typed \$ is still a credential stop"
   bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard misses a GnuPG comment input holding a typed \$"
