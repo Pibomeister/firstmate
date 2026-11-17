@@ -316,12 +316,12 @@ test_structure_decides_not_words() {
 
 test_antigravity_trust_screen_classifies() {
   local agy=$'Accessing workspace:\n\n/work/project\n\nDo you trust the contents of this project?\n\nAntigravity CLI requires permission to read, edit, and execute files here.\n\n> Yes, I trust this folder\n  No, exit'
-  assert_equals $'trust\tworkspace' "$(printf '%s\n' "$agy" | classify agy)" "the recorded Antigravity trust screen is a trust dialog"
+  assert_equals $'hold\ttrust-relaunch-answers' "$(printf '%s\n' "$agy" | classify agy)" "the recorded Antigravity trust screen is held, because its relaunch can answer it"
   assert_equals $'hold\ttrust-unregistered' "$(printf '%s\n' "$agy" | classify codex)" "on another harness it is held"
   assert_equals $'hardstop\trelease' "$(printf '%s\n' "$agy" | sed 's#/work/project#/srv/production#' | classify agy)" "its workspace path is read for a hard stop"
   printf '%s\n\nok\n>\n? for shortcuts\n' "$agy" | classify agy >/dev/null \
     && fail "a quoted trust screen above a composer is not a trust dialog"
-  pass "Antigravity trust: its recorded screen is read before the dialog detector, and is held off agy"
+  pass "Antigravity trust: its recorded screen is read before the dialog detector, and is held"
 }
 
 # --- the watchdog route ----------------------------------------------------------
@@ -415,6 +415,17 @@ test_declining_dialogs_on_workers_get_no_key() {
   assert_grep "do-not-touch" "$H/state/dn.status" "the do-not-touch hold names its reason"
   assert_grep "hooks-review" "$H/state/cx.status" "the Codex hook review names its reason"
   assert_grep "permission prompt waiting on worker cx" "$H/data/watchdog/status.md" "the Codex dialog the picker detector misses still gets the waiting gap"
+  local mark
+  mark=$(find "$H/state/watchdog/permission" -name '*-cx.open' 2>/dev/null | head -n 1)
+  [ -n "$mark" ] || fail "the Codex hold keeps its open marker"
+  mark=${mark%-cx.open}
+  codex_approval 'cat ~/.netrc' > "$H/codex-netrc.txt"
+  worker cl codex "$H/codex-netrc.txt"
+  mkdir "$mark-cl.lock"
+  run_wd 200 once >/dev/null 2>&1
+  assert_equals '' "$(typed cl)" "a Codex hard stop another pass is acting on gets no key"
+  assert_equals 0 "$(status_rows cl blocked permission-prompt-hardstop)" "the pass without the lock writes no blocked line"
+  assert_grep "permission prompt waiting on worker cl" "$H/data/watchdog/status.md" "a Codex hard stop still gets the waiting gap while another pass holds the lock"
   pass "declining dialogs and do-not-touch workers: no key and one keyed held line"
 }
 
@@ -480,15 +491,10 @@ test_trust_dialog_relaunches_without_a_key() {
   worker ag agy "$H/agy-trust.txt"
   run_wd 0 once >/dev/null 2>&1
   assert_equals '' "$(typed ag)" "no key reaches the Antigravity trust picker"
-  assert_equals 1 "$(grep -c '^ag relaunch --note ' "$H/control.log" 2>/dev/null || true)" "the Antigravity worker is relaunched through fm-control: $(ledger | cut -f4-8)"
-  make_home
-  : > "$H/control.refuse"
-  printf 'Accessing workspace:\n\n/work/project\n\nDo you trust the contents of this project?\n\nAntigravity CLI requires permission to read, edit, and execute files here.\n\n> Yes, I trust this folder\n  No, exit\n' > "$H/agy-trust.txt"
-  worker ar agy "$H/agy-trust.txt"
-  run_wd 0 once >/dev/null 2>&1
-  assert_equals '' "$(typed ar)" "a refused Antigravity relaunch types nothing"
-  assert_equals 1 "$(status_rows ar blocked permission-prompt-held)" "a refused Antigravity relaunch is reported as held"
-  assert_grep "waiting on worker ar" "$H/data/watchdog/status.md" "a held Antigravity trust picker still gets the waiting gap"
+  assert_equals 0 "$({ cat "$H/control.log" 2>/dev/null || true; } | grep -c '^ag relaunch' || true)" "the Antigravity worker is never relaunched, so its spawn never answers the dialog: $(ledger | cut -f4-8)"
+  assert_equals 1 "$(status_rows ag blocked permission-prompt-held)" "the Antigravity trust picker is reported as held"
+  assert_grep "trust-relaunch-answers" "$H/state/ag.status" "the held line names why"
+  assert_grep "waiting on worker ag" "$H/data/watchdog/status.md" "a held Antigravity trust picker still gets the waiting gap"
   pass "trust dialog: no key, a controlled relaunch once per window, and a refusal is reported"
 }
 

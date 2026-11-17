@@ -24,12 +24,14 @@
 #       bin/fm-send.sh. No route ever selects a Yes option. The same proven
 #       prompt on another harness is `hold unknown-harness`.
 #   trust workspace
-#       Claude's or Antigravity's workspace-trust dialog, proven by its heading
-#       and answer rows. Claude's cursor sits on the declining `No, exit`, so
-#       Enter would exit, and Antigravity's preselects its safe answer; either
-#       way no key: the watchdog asks bin/fm-control.sh for a controlled
-#       relaunch, whose spawn pre-registers the worktree's trust entry. Other
-#       harnesses get `hold trust-unregistered`. A hard-stop word in its
+#       Claude's workspace-trust dialog, proven by its heading and answer
+#       rows. Its cursor sits on the declining `No, exit`, so Enter would
+#       exit; no key: the watchdog asks bin/fm-control.sh for a controlled
+#       relaunch, whose spawn pre-registers the worktree's trust entry and
+#       refuses to launch when it cannot. Antigravity's dialog is
+#       `hold trust-relaunch-answers`, because its spawn answers the dialog
+#       with Enter when pre-registration fails. Other harnesses get
+#       `hold trust-unregistered`. A hard-stop word in its
 #       workspace rows, the only rows the dialog does not fix, is a hard stop,
 #       and a dialog whose workspace rows cannot be found is
 #       `hold trust-unproven`.
@@ -343,7 +345,10 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
       printf 'hardstop\t%s\n' "$cat"; return 0
     fi
     case "$harness" in
-      claude|agy) printf 'trust\tworkspace\n' ;;
+      claude) printf 'trust\tworkspace\n' ;;
+      # An Antigravity launch whose trust pre-registration fails answers the
+      # dialog with Enter, so the watchdog never relaunches into it.
+      agy) printf 'hold\ttrust-relaunch-answers\n' ;;
       *) printf 'hold\ttrust-unregistered\n' ;;
     esac
     return 0

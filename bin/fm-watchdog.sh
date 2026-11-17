@@ -1822,6 +1822,9 @@ wd_permission_prompt() {
   # and once passes never both write a blocked line or both send an Escape.
   if ! wd_pp_lock "$id"; then
     wd_rec "$(wd_id)" permission-prompt report refused "another watchdog pass is acting on worker $id; nothing was pressed"
+    # A held prompt or hard stop still gets its waiting gap and away page;
+    # only the marker write waits for the lock.
+    case "$kind" in hardstop|hold) WD_PP_STOPPED=1 ;; esac
     return 1
   fi
   case "$kind" in
