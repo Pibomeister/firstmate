@@ -72,8 +72,9 @@
 # per-repository mirror in ~/.cache/firstmate/test-mirrors on each remote host.
 # Worktrees sharing a Git common directory reuse that mirror.
 # A private copy isolates each run from later syncs and test-written files.
-# A SHA-256 inventory verifies all paths, bytes, modes, symlinks and Git metadata
-# before admission; a mismatch falls back locally before any workload starts.
+# A SHA-256 inventory verifies source paths, bytes, modes and symlinks before
+# admission; Git HEAD, tree and index identity are checked separately.
+# A mismatch falls back locally before any workload starts.
 # Mirror locks serialize preparations; busy or abandoned locks fall back locally.
 # Commands that need older history must fetch it explicitly. Git, rsync, Python 3,
 # Bash and test dependencies must already exist remotely.

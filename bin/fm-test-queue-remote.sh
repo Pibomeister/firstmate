@@ -461,7 +461,7 @@ SHREMOTE
     if [ "$rhead" = "$local_head" ]; then
       git_mode=same
     elif [ -n "$rhead" ] && remote_stage_git_delta "$root" "$rhead" "$local_head" "$REMOTE_LOCAL/stage/delta.pack"; then
-      git_mode=delta
+      git_mode='delta'
     else
       git_mode=cold
       if ! git clone -q --depth=1 --no-checkout "file://$root" "$REMOTE_LOCAL/cold-repo" >/dev/null 2>&1 ||
