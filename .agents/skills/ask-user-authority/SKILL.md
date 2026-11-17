@@ -45,8 +45,8 @@ Read the result with `bin/fm-merge-review.sh findings <PR url> --head <full-sha>
 
 - `deferred`: every seat called it an edge case.
   File the follow-up as its own backlog item first, then record it with `bin/fm-merge-review.sh followup`; the review does not approve before that record exists.
-- `dropped`: every seat found it unsupported, and nothing more is owed.
-- `open`: a seat holds it as a regression, or it is a security, destructive, or data-loss finding, which never defers.
+- `dropped`: every seat found it unsupported or already fixed, and nothing more is owed.
+- `open`: a seat holds it as a regression, the seats do not all call it an edge case, or it is a security, destructive, or data-loss finding, which never defers.
   Send the worker one fix round that names the open finding ids.
 - `pending` or `unruled`: a seat has not ruled, so dispatch the review again at that head.
 

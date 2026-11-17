@@ -1147,6 +1147,7 @@ Any other malformed line is an error that refuses both a review run and a covere
 Two reviews from one family count as one, so a run needs seats from at least two families.
 `<harness>` is `claude`, `agy`, or `grok`, the tools whose read-only one-shot call `tests/fm-merge-review-live.test.sh` checks.
 Leave `<effort>` out for a model whose name already carries its effort.
+A `<model>` name that holds the part `.council` is refused, because that part names a seat's stored council files.
 
 ```text
 seat=anthropic:claude:<model>

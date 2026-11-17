@@ -25,7 +25,11 @@
 #         alter the reviewed commit or snapshot. Filesystem path collisions
 #         and repository-enclosed temporary directories refuse before any seat.
 #         A seat that already holds a valid receipt at this head is not called
-#         again, so a rerun cannot replace a BLOCK with a new roll. Interrupted
+#         again, so a rerun cannot replace a BLOCK with a new roll. When the
+#         merge base moved and the head did not, a rerun replaces a seat's
+#         approval, but never a review that says BLOCK, holds a finding as
+#         blocking, or raises a new edge case: that review stays, check at the
+#         new merge base is incomplete, and only a new head clears it. Interrupted
 #         runs stop their reviewers before releasing the lock; stale writers
 #         are fenced by run identity, and publication never replaces evidence.
 # check   Deterministic and safe for a supervisor: it recomputes every digest,
@@ -94,15 +98,18 @@
 # only while seats from at least two model families hold a valid receipt.
 #   open      a seat holds it: BLOCKING, or from round three REGRESSION. It
 #             blocks, and the next round must rule on it again.
-#   deferred  from round three only: at least one seat calls it an EDGE-CASE
-#             and no seat calls it a REGRESSION. Every seat must agree, so a
-#             NEW edge case is put to each other seat in one more read-only
-#             call (the council), which answers
+#             From round three it is also open while one seat calls it an
+#             EDGE-CASE and another gives it any other status.
+#   deferred  from round three only: every seat calls it an EDGE-CASE. A NEW
+#             edge case is therefore put to each other seat in one more
+#             read-only call (the council), which answers
 #               DISPOSITION <id> | <REGRESSION|EDGE-CASE|UNSUPPORTED> | <CLASS> | <evidence>
 #             and ends with "COUNCIL: DONE <full-sha>". Until every seat has
 #             answered, check is incomplete. A deferred finding needs a
-#             follow-up record before check approves.
-#   dropped   every seat calls it UNSUPPORTED or RESOLVED, with evidence.
+#             follow-up record, which names where it was filed, before check
+#             approves.
+#   dropped   every seat calls it UNSUPPORTED or RESOLVED, with evidence, and
+#             at least one calls it UNSUPPORTED.
 #   resolved  every seat calls it RESOLVED.
 #   noted     a NON-BLOCKING note.
 #   pending   a seat has not ruled on it yet: an edge case another seat must
@@ -151,8 +158,12 @@
 #     ids                  "<id> TAB <head> TAB <seat> TAB <review sha256> TAB
 #                          <finding line number>", one line per NEW finding
 #     followups/<id>       where a deferred finding was filed
-# A seat id is <family>.<harness>.<model>. check counts a receipt only while
-# config/merge-review still declares that seat. A receipt with no round key
+# A seat id is <family>.<harness>.<model>, and a model name cannot hold the
+# part ".council". check counts a receipt only while config/merge-review still
+# declares that seat. A seat that is no longer declared settles nothing, but
+# when the next head starts its round, a finding that its review of the
+# previous head held as blocking, as a regression, or as an edge case is
+# carried as open. A receipt with no round key
 # was written before review rounds existed: it counts exactly as it did, a
 # BLOCK in it still blocks, and it carries no finding into a later round.
 #
@@ -258,6 +269,11 @@ mr_seat_add() {  # <seat|spare> <spec> <line-number>
   esac
   [[ "$model" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$ ]] \
     || mr_die "config/merge-review line $n: the model name is empty or has unsupported characters"
+  # A seat's council files are named <seat>.council.<n>.*: see the store layout.
+  case "$model" in
+    *.council | *.council.*)
+      mr_die "config/merge-review line $n: the model name cannot hold the part \".council\", which names council files" ;;
+  esac
   [ -z "$effort" ] || [[ "$effort" =~ ^[a-z]{1,16}$ ]] \
     || mr_die "config/merge-review line $n: the effort must be lowercase letters"
   id="$family.$harness.$model"
@@ -370,10 +386,39 @@ mr_receipt_live_base() {  # <receipt>
   [ "$base" = "$MR_BASE" ]
 }
 
+# True when a valid receipt must outlive a moved merge base: its verdict is
+# BLOCK, its review holds a finding as blocking or raises a new edge case, or
+# the seat's council answer holds a finding as a regression or gives it a
+# class. A rerun that replaced such a review would lose the finding, or what
+# keeps it blocking, with it.
+mr_receipt_holds_finding() {  # <receipt>
+  local receipt=$1 dir rows ruling
+  [ "$(mr_receipt_get "$receipt" verdict)" != BLOCK ] || return 0
+  [ -n "$(mr_receipt_get "$receipt" round)" ] || return 1
+  dir=$(dirname "$receipt")
+  rows=$(mr_review_rows "$dir" "${receipt%.receipt}.review.md") || true
+  if printf '%s\n' "$rows" | LC_ALL=C awk -F'\t' '
+    $1 == "B" || ($1 == "ok" && $3 == "NEW" && $4 == "EDGE-CASE") { found = 1 }
+    END { exit !found }'; then
+    return 0
+  fi
+  for ruling in "${receipt%.receipt}".council.*.ruling; do
+    [ -f "$ruling" ] || continue
+    rows=$(mr_council_rows "${ruling%.ruling}.md" "$(mr_receipt_get "$ruling" findings)") || continue
+    if printf '%s\n' "$rows" | LC_ALL=C awk -F'\t' '
+      $2 == "REGRESSION" || $3 != "none" { found = 1 }
+      END { exit !found }'; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 # Drop a stale approval seat's evidence when the live merge base moved but the
-# head did not. A prior BLOCK at another base is kept for the reviewer record.
+# head did not. A review that holds a finding at another base is kept: see
+# mr_receipt_holds_finding.
 mr_seat_drop_stale_approval() {  # <seat-id>
-  local id=$1 receipt base verdict saved_post=$MR_POST
+  local id=$1 receipt base saved_post=$MR_POST
   receipt="$MR_STORE/$id.receipt"
   if [ ! -e "$receipt" ] && [ ! -L "$receipt" ]; then
     return 1
@@ -387,8 +432,7 @@ mr_seat_drop_stale_approval() {  # <seat-id>
   [ -n "$MR_BASE" ] || return 1
   base=$(mr_receipt_get "$receipt" base)
   [ "$base" != "$MR_BASE" ] || return 1
-  verdict=$(mr_receipt_get "$receipt" verdict)
-  [ "$verdict" = BLOCK ] && return 1
+  ! mr_receipt_holds_finding "$receipt" || return 1
   rm -f "$receipt" "$MR_STORE/$id.review.md" "$MR_STORE/$id.raw.json" "$MR_STORE/$id.comment.md" \
     "${MR_STORE:?}/${id:?}.council."*
   return 0
@@ -428,11 +472,16 @@ mr_file_bytes() {  # <file>
 }
 
 # Validate what a receipt and a council ruling share: the pull request, the
-# head, and the declared seat with its model identity. Sets MR_R_IDX on
-# success and MR_R_REASON on failure.
-MR_R_IDX=
+# head, and the declared seat with its model identity. Sets MR_R_REASON on
+# failure.
+#
+# MR_FORMER_SEATS is set only while a new round reads what the previous head
+# left (mr_findings_left_at). A record of a seat that config/merge-review no
+# longer declares then passes on its own seat fields, so the findings that
+# seat held are not lost: see "Findings" in the header.
+MR_FORMER_SEATS=
 mr_record_seat_ok() {  # <record> <seat-id>
-  local record=$1 seat=$2 idx value harness identity reported requested expected_url=$FM_PR_URL
+  local record=$1 seat=$2 idx value family harness identity reported requested expected_url=$FM_PR_URL
   value=$(mr_receipt_get "$record" url)
   case "$FM_PR_PROVIDER" in
     github | gitlab | forgejo) value=$(mr_lower "$value"); expected_url=$(mr_lower "$expected_url") ;;
@@ -444,13 +493,28 @@ mr_record_seat_ok() {  # <record> <seat-id>
   { [ -z "$MR_EXPECTED_BASE" ] || [ "$value" = "$MR_EXPECTED_BASE" ]; } \
     || { MR_R_REASON='the review merge base is not the live merge base'; return 1; }
   [ "$(mr_receipt_get "$record" seat)" = "$seat" ] || { MR_R_REASON='the receipt names another seat'; return 1; }
-  idx=$(mr_seat_index "$seat") || { MR_R_REASON='the seat is not declared in config/merge-review'; return 1; }
-  harness=${MR_SEAT_HARNESS[$idx]}
-  requested=${MR_SEAT_MODEL[$idx]}
-  [ "$(mr_receipt_get "$record" family)" = "${MR_SEAT_FAMILY[$idx]}" ] \
-    && [ "$(mr_receipt_get "$record" harness)" = "$harness" ] \
-    && [ "$(mr_receipt_get "$record" requested_model)" = "$requested" ] \
-    || { MR_R_REASON='the receipt does not match the declared seat'; return 1; }
+  if idx=$(mr_seat_index "$seat"); then
+    harness=${MR_SEAT_HARNESS[$idx]}
+    requested=${MR_SEAT_MODEL[$idx]}
+    [ "$(mr_receipt_get "$record" family)" = "${MR_SEAT_FAMILY[$idx]}" ] \
+      && [ "$(mr_receipt_get "$record" harness)" = "$harness" ] \
+      && [ "$(mr_receipt_get "$record" requested_model)" = "$requested" ] \
+      || { MR_R_REASON='the receipt does not match the declared seat'; return 1; }
+  elif [ -n "$MR_FORMER_SEATS" ]; then
+    family=$(mr_receipt_get "$record" family)
+    harness=$(mr_receipt_get "$record" harness)
+    requested=$(mr_receipt_get "$record" requested_model)
+    case "$harness" in
+      claude | agy | grok) ;;
+      *) MR_R_REASON='the receipt names no verified reviewer tool'; return 1 ;;
+    esac
+    [[ "$family" =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]] && [[ "$requested" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$ ]] \
+      && [ "$family.$harness.$requested" = "$seat" ] \
+      || { MR_R_REASON='the receipt does not match its own seat'; return 1; }
+  else
+    MR_R_REASON='the seat is not declared in config/merge-review'
+    return 1
+  fi
   [ "$(mr_receipt_get "$record" exit)" = 0 ] || { MR_R_REASON='the model call did not exit 0'; return 1; }
 
   identity=$(mr_receipt_get "$record" identity)
@@ -465,7 +529,6 @@ mr_record_seat_ok() {  # <record> <seat-id>
         || { MR_R_REASON='the reported model is not the requested model'; return 1; }
       ;;
   esac
-  MR_R_IDX=$idx
 }
 
 # True when <dir>/<prefix>.<sha256>.<suffix> exists and has that digest.
@@ -668,7 +731,11 @@ mr_findings_state() {  # <head-store> <seats> [need]
       { n = split($0, p, " [|] "); if (n == 5) print "P\t" p[1] "\t" p[2] "\t" p[3] "\t" p[4] "\t" p[5] }
     ' "$store/prior.md"
     for seat in $2; do
-      printf 'S\t%s\t%s\n' "$seat" "$(mr_receipt_get "$store/$seat.receipt" family)"
+      if mr_seat_index "$seat" >/dev/null; then
+        printf 'S\t%s\t%s\n' "$seat" "$(mr_receipt_get "$store/$seat.receipt" family)"
+      else
+        printf 'X\t%s\n' "$seat"
+      fi
     done
     for seat in $2; do
       sha=$(mr_receipt_get "$store/$seat.receipt" review_sha256)
@@ -698,23 +765,38 @@ mr_findings_state() {  # <head-store> <seats> [need]
       by[id, seat] = 1
       voted[id] = 1
     }
+    # A seat that is no longer declared settles nothing. A line of its review
+    # or ruling that held a finding keeps that finding open.
+    function held(status, class) {
+      return status == "BLOCKING" || status == "REGRESSION" || status == "EDGE-CASE" ||
+        (status == "NON-BLOCKING" && class != "none")
+    }
+    function hold(id, class) {
+      if (class != "none" && cls[id] == "none") cls[id] = class
+      has[id, "block"] = 1
+      voted[id] = 1
+    }
     $1 == "R" { round = $2 + 0; next }
     $1 == "P" { order[++n] = $2; st[$2] = $3; cls[$2] = $4; wh[$2] = $5; tx[$2] = $6; prior[$2] = 1; next }
     $1 == "S" { seats[++ns] = $2; isseat[$2] = 1; if (!($3 in fam)) { fam[$3] = 1; nf++ } next }
+    $1 == "X" { former[$2] = 1; next }
     $1 == "I" { idof[$3, $4] = $2; next }
     $1 == "V" {
       id = $4
+      if (($2 in former) && !held($5, $6)) next
       if (id == "NEW") {
         if (!(($2, $3) in idof)) { print "E\ta finding of " $2 " has no recorded id"; next }
         id = idof[$2, $3]
         if (!(id in st)) { order[++n] = id; st[id] = "new"; cls[id] = "none"; wh[id] = $7; tx[id] = $8; raiser[id] = $2 }
       }
-      vote(id, $2, $5, $6)
+      if ($2 in former) hold(id, $6)
+      else vote(id, $2, $5, $6)
       next
     }
     $1 == "C" {
-      if (!($2 in isseat) || !($3 in raiser) || raiser[$3] == $2) next
-      vote($3, $2, $4, $5)
+      if (!($3 in raiser) || raiser[$3] == $2) next
+      if ($2 in former) { if (held($4, $5)) hold($3, $5) }
+      else if ($2 in isseat) vote($3, $2, $4, $5)
       next
     }
     END {
@@ -727,11 +809,16 @@ mr_findings_state() {  # <head-store> <seats> [need]
           if (id in prior) for (s = 1; s <= ns; s++) if (!((id, seats[s]) in by)) block = 1
           if (block) state = "open"
           else if ((id, "edge") in has) {
-            state = (cls[id] != "none") ? "open" : "deferred"
-            if (state == "deferred" && (id in raiser)) for (s = 1; s <= ns; s++) {
-              if (seats[s] == raiser[id] || ((id, seats[s]) in by)) continue
-              state = "pending"
-              if (need != "") print "N\t" seats[s] "\t" id
+            # Deferral needs an EDGE-CASE from every seat: any other ruling
+            # beside it leaves the finding open.
+            if (cls[id] != "none" || ((id, "drop") in has) || ((id, "fixed") in has) || ((id, "note") in has)) state = "open"
+            else {
+              state = "deferred"
+              if (id in raiser) for (s = 1; s <= ns; s++) {
+                if (seats[s] == raiser[id] || ((id, seats[s]) in by)) continue
+                state = "pending"
+                if (need != "") print "N\t" seats[s] "\t" id
+              }
             }
           }
           else if ((id, "drop") in has) state = "dropped"
@@ -755,7 +842,7 @@ MR_R_SEAT=
 MR_R_ROUND=
 MR_R_REASON=
 mr_receipt_valid() {  # <receipt>
-  local receipt=$1 dir seat idx review value verdict expected_url=$FM_PR_URL
+  local receipt=$1 dir seat review value verdict expected_url=$FM_PR_URL
   MR_R_VERDICT=
   MR_R_FAMILY=
   MR_R_SEAT=
@@ -766,7 +853,6 @@ mr_receipt_valid() {  # <receipt>
   MR_R_SEAT=$seat
   [ "$(mr_receipt_get "$receipt" format)" = "$MR_FORMAT" ] || { MR_R_REASON='unknown receipt format'; return 1; }
   mr_record_seat_ok "$receipt" "$seat" || return 1
-  idx=$MR_R_IDX
 
   review="$dir/$seat.review.md"
   [ -f "$review" ] || { MR_R_REASON='the review text is missing'; return 1; }
@@ -806,7 +892,7 @@ mr_receipt_valid() {  # <receipt>
   fi
   MR_R_ROUND=$(mr_receipt_get "$receipt" round)
   MR_R_VERDICT=$verdict
-  MR_R_FAMILY=${MR_SEAT_FAMILY[$idx]}
+  MR_R_FAMILY=$(mr_receipt_get "$receipt" family)
 }
 
 mr_store_dir() {
@@ -814,6 +900,18 @@ mr_store_dir() {
   case "$FM_PR_PROVIDER" in github | gitlab | forgejo) path=$(mr_lower "$path") ;; esac
   printf '%s/data/merge-review/%s/%s/%s/%s/%s\n' \
     "$FM_HOME" "$FM_PR_PROVIDER" "$FM_PR_HOST" "$path" "$FM_PR_NUMBER" "$MR_HEAD"
+}
+
+# Print where finding <id> was filed, when its follow-up record names that
+# finding and a place.
+mr_followup_ref() {  # <followups-dir> <id>
+  local ref
+  [ "$(mr_receipt_get "$1/$2" finding)" = "$2" ] || return 1
+  ref=$(mr_receipt_get "$1/$2" ref)
+  case "$ref" in
+    *[![:space:]]*) printf '%s\n' "$ref" ;;
+    *) return 1 ;;
+  esac
 }
 
 # Print the one verdict line for the stored receipts and return 0 only on
@@ -871,7 +969,7 @@ mr_check() {
     waiting=$(printf '%s\n' "$findings" | awk -F'\t' '
       $1 == "E" || $2 == "pending" || $2 == "unruled" { n++ } END { print n + 0 }')
     for id in $(printf '%s' "$deferred" | tr ',' ' '); do
-      [ -s "${store%/*}/followups/$id" ] || unfiled="${unfiled:+$unfiled,}$id"
+      mr_followup_ref "${store%/*}/followups" "$id" >/dev/null || unfiled="${unfiled:+$unfiled,}$id"
     done
   fi
   complete_after=$(cat "$store/.complete" 2>/dev/null) || complete_after=
@@ -1202,18 +1300,14 @@ mr_reviewed_families() {
 }
 
 mr_seat_has_receipt() {  # <seat-index>
-  local receipt="$MR_STORE/${MR_SEAT_ID[$1]}.receipt" saved_post=$MR_POST rc=0 verdict
+  local receipt="$MR_STORE/${MR_SEAT_ID[$1]}.receipt" saved_post=$MR_POST rc=0
   [ -f "$receipt" ] || return 1
   MR_POST=off
   if mr_receipt_valid "$receipt"; then
-    if mr_receipt_live_base "$receipt"; then
+    if mr_receipt_live_base "$receipt" || mr_receipt_holds_finding "$receipt"; then
       rc=0
     else
-      verdict=$(mr_receipt_get "$receipt" verdict)
-      case "$verdict" in
-        BLOCK) rc=0 ;;
-        *) rc=1 ;;
-      esac
+      rc=1
     fi
   else
     rc=1
@@ -1276,7 +1370,7 @@ mr_assign_ids() {
 # after giving an id to any finding a stopped run left without one. The caller
 # holds the pull request ledger lock.
 mr_findings_left_at() {  # <head>
-  local MR_HEAD=$1 MR_EXPECTED_BASE=''
+  local MR_HEAD=$1 MR_EXPECTED_BASE='' MR_FORMER_SEATS=1
   mr_assign_ids
   mr_head_findings
 }
@@ -1455,7 +1549,7 @@ mr_findings_print() {
   printf 'round=%s head=%s previous=%s\n' "${round:-none}" "$MR_HEAD" "${previous:-none}"
   mr_head_findings | while IFS="$tab" read -r id state class where text; do
     case "$id" in F[0-9]*) ;; *) continue ;; esac
-    ref=$(mr_receipt_get "$followups/$id" ref)
+    ref=$(mr_followup_ref "$followups" "$id" || true)
     printf '%s\t%s\t%s\t%s\t%s\tfollowup=%s\n' "$id" "$state" "$class" "$where" "$text" "${ref:-none}"
   done
 }
@@ -1465,7 +1559,9 @@ mr_followup() {  # <finding-id> <ref>
   local id=$1 ref=$2 store dir state tmp existing
   [[ "$id" =~ ^F[1-9][0-9]{0,6}$ ]] || mr_die '--finding requires a finding id such as F3'
   case "$ref" in
-    '' | *[[:cntrl:]]*) mr_die '--ref requires one line of text that names where the follow-up was filed' ;;
+    *[[:cntrl:]]*) mr_die '--ref requires one line of text that names where the follow-up was filed' ;;
+    *[![:space:]]*) ;;
+    *) mr_die '--ref requires one line of text that names where the follow-up was filed' ;;
   esac
   [ "${#ref}" -le 300 ] || mr_die '--ref is longer than 300 characters'
   store=$(mr_store_dir)
@@ -1532,8 +1628,8 @@ mr_write_prompt() {  # <file> <intent-file-or-empty>
       printf '%s\n' \
         "This is round $MR_ROUND, so every finding that could block now gets one disposition as its <STATUS>:" \
         '- REGRESSION: in ordinary use the change breaks behavior that works at the merge base, or does not do what its stated intent says. It blocks.' \
-        '- EDGE-CASE: a real defect outside ordinary use, where the merge base is no better. It becomes a filed follow-up and stops blocking only when every reviewer agrees.' \
-        '- UNSUPPORTED: no concrete evidence shows a defect. Say what you checked. It is dropped.' \
+        '- EDGE-CASE: a real defect outside ordinary use, where the merge base is no better. It becomes a filed follow-up and stops blocking only when every reviewer calls it an EDGE-CASE.' \
+        '- UNSUPPORTED: no concrete evidence shows a defect. Say what you checked. It is dropped only when every reviewer calls it UNSUPPORTED or RESOLVED.' \
         'A security, destructive, or data-loss finding is never an EDGE-CASE.' \
         'For a NEW finding <STATUS> is REGRESSION, EDGE-CASE, or NON-BLOCKING.'
       [ -z "$open" ] || printf '%s\n' \
@@ -1559,7 +1655,7 @@ mr_write_prompt() {  # <file> <intent-file-or-empty>
 
 mr_write_council_prompt() {  # <file> <ids>
   printf '%s\n' \
-    "You are a merge reviewer in review round $MR_ROUND of one pull request at one exact commit, which you have already reviewed. Other reviewers reported findings that they call edge cases. A finding becomes a filed follow-up and stops blocking the merge only when every reviewer agrees, so your disposition decides." \
+    "You are a merge reviewer in review round $MR_ROUND of one pull request at one exact commit, which you have already reviewed. Other reviewers reported findings that they call edge cases. A finding becomes a filed follow-up and stops blocking the merge only when every reviewer calls it an EDGE-CASE, so your disposition decides." \
     '' \
     "Pull request: $FM_PR_URL" \
     "Head commit under review: $MR_HEAD" \
@@ -1578,7 +1674,7 @@ mr_write_council_prompt() {  # <file> <ids>
     '<STATUS> is one of:' \
     '- REGRESSION: in ordinary use the change breaks behavior that works at the merge base, or does not do what its stated intent says. It blocks.' \
     '- EDGE-CASE: a real defect outside ordinary use, where the merge base is no better. It becomes a filed follow-up.' \
-    '- UNSUPPORTED: no concrete evidence shows a defect.' \
+    '- UNSUPPORTED: no concrete evidence shows a defect. The finding then stays open for the next round, because its reporter holds it as an edge case.' \
     '<CLASS> is security, destructive, data-loss, or none. A security, destructive, or data-loss finding is never an EDGE-CASE and keeps blocking.' \
     '' \
     'The last line of your answer must be exactly this line, with nothing after it:' \
