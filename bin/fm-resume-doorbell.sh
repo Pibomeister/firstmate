@@ -29,12 +29,15 @@
 # turn is running (native busy, a rendered busy footer, or an assistant record
 # after the newest compact boundary in the transcript), idleness cannot be
 # proven before the wait limit, or another doorbell holds or takes over
-# state/.resume-doorbell.lock. A doorbell started under a newer context takes a
-# live lock over from one started under an older context; each poll re-reads
+# state/.resume-doorbell.lock. A doorbell started under a newer context waits,
+# bounded, for a live one started under an older context to stand down and
+# then takes the lock; each poll re-reads
 # the lock's pid, so of two doorbells that both cleared a stale lock only the
 # last one types, and a doorbell removes the lock on exit only while it still
-# names it. The lock owner, doorbell lock, away or quiet record and context
-# epoch are re-checked before every resubmit Enter too; a change there
+# names it. The context epoch also names the session lock owner that recorded
+# it, and a different owner stands the doorbell down. The lock owner, doorbell
+# lock, away or quiet record and context epoch are re-checked right before the
+# first send and before every resubmit Enter; a change before a resubmit
 # withholds the Enter and logs unverified. Every run appends one row to
 # state/.resume-doorbell.log:
 #   <utc-iso>\t<epoch>\t<source>\t<backend>:<target>\t<outcome>\t<detail>
@@ -117,30 +120,43 @@ if [ -n "$EXPECTED_EPOCH_SUM" ] && [ "$(current_epoch_sum)" != "$EXPECTED_EPOCH_
 fi
 
 # Single flight: a second doorbell while one is live types nothing, unless the
-# live one was started under an older context. That one stands down at its next
-# check (its pinned epoch was replaced), so this newer doorbell takes the lock
-# over and owns the delivery rather than both standing down.
-if ! mkdir "$LOCK" 2>/dev/null; then
+# live one was started under an older context. That one stands down at its
+# next check (its pinned epoch was replaced) and removes the lock, so this
+# newer doorbell waits for it to exit, bounded, and then takes the lock afresh
+# rather than both standing down. No doorbell ever rewrites a live holder's
+# lock.
+holder_wait_deadline=$(( $(date +%s) + ${SETTLE%.*} + WAIT + 30 ))
+pin_wait_deadline=$(( $(date +%s) + 3 ))
+while ! mkdir "$LOCK" 2>/dev/null; do
   holder=$(cat "$LOCK/pid" 2>/dev/null || true)
   if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
-    if [ -e "$STATE/.context-epoch" ] && ! [ "$STATE/.context-epoch" -ef "$LOCK/context-epoch.$holder" ]; then
-      if ! { printf '%s\n' "$$" > "$LOCK/pid.$$" && mv -f "$LOCK/pid.$$" "$LOCK/pid"; } 2>/dev/null; then
-        finish stood-down "the doorbell lock could not be taken over from pid $holder"
-      fi
+    if [ -e "$STATE/.context-epoch" ] && [ -e "$LOCK/context-epoch.$holder" ] \
+      && ! [ "$STATE/.context-epoch" -ef "$LOCK/context-epoch.$holder" ]; then
+      # The holder is bound to an older context and will stand down.
+      [ "$(date +%s)" -lt "$holder_wait_deadline" ] \
+        || finish stood-down "an older resume doorbell (pid $holder) did not stand down"
+    elif [ -e "$STATE/.context-epoch" ] && [ ! -e "$LOCK/context-epoch.$holder" ] \
+      && [ "$(date +%s)" -lt "$pin_wait_deadline" ]; then
+      : # The holder has not pinned its context yet; look again shortly.
     else
       finish stood-down "another resume doorbell (pid $holder) is running"
     fi
-  else
-    # A lock whose pid is not written yet belongs to a doorbell between its
-    # mkdir and its pid write; only an old one is stale.
-    if [ -z "$holder" ] && [ -n "$(find "$LOCK" -maxdepth 0 -newermt '-10 seconds' 2>/dev/null)" ]; then
-      finish stood-down "another resume doorbell is starting"
+    if [ -n "$EXPECTED_EPOCH_SUM" ] && [ "$(current_epoch_sum)" != "$EXPECTED_EPOCH_SUM" ]; then
+      finish stood-down "a new context began after the compaction"
     fi
-    rm -rf "$LOCK" 2>/dev/null || true
-    mkdir "$LOCK" 2>/dev/null || finish stood-down "the doorbell lock could not be taken"
+    sleep 0.2
+    continue
   fi
-fi
-[ "$(cat "$LOCK/pid" 2>/dev/null)" = "$$" ] || printf '%s\n' "$$" > "$LOCK/pid" 2>/dev/null || true
+  # A lock whose pid is not written yet belongs to a doorbell between its
+  # mkdir and its pid write; only an old one is stale.
+  if [ -z "$holder" ] && [ -n "$(find "$LOCK" -maxdepth 0 -newermt '-10 seconds' 2>/dev/null)" ]; then
+    finish stood-down "another resume doorbell is starting"
+  fi
+  rm -rf "$LOCK" 2>/dev/null || true
+  mkdir "$LOCK" 2>/dev/null || finish stood-down "the doorbell lock could not be taken"
+  break
+done
+printf '%s\n' "$$" > "$LOCK/pid" 2>/dev/null || true
 trap '[ "$(cat "$LOCK/pid" 2>/dev/null)" != "$$" ] || rm -rf "$LOCK" 2>/dev/null || true' EXIT
 
 LOCK_PID=$(sed -n '1p' "$STATE/.lock" 2>/dev/null || true)
@@ -167,6 +183,13 @@ fi
 # The pinned context must be the one the launching hook recorded.
 if [ -n "$EXPECTED_EPOCH_SUM" ] && [ "$EPOCH_SUM" != "$EXPECTED_EPOCH_SUM" ]; then
   finish stood-down "a new context began after the compaction"
+fi
+# The context belongs to the session that recorded it: a replacement session
+# that took the session lock before this doorbell started is not its target.
+if [ "$EPOCH_SUM" != absent ]; then
+  epoch_owner=$(sed -n 's/^lock_pid=//p' "${EPOCH_PIN:-$STATE/.context-epoch}" 2>/dev/null | head -n 1)
+  [ -z "$epoch_owner" ] || [ "$epoch_owner" = "$LOCK_PID" ] \
+    || finish stood-down "the session lock changed owner"
 fi
 context_epoch_same() {
   if [ "$EPOCH_SUM" = absent ]; then
@@ -288,6 +311,11 @@ while :; do
   prev=$(transcript_size)
   [ "$(date +%s)" -lt "$deadline" ] || finish stood-down "not-quiet: $reason"
 done
+
+# The idle reads above take time; the ownership, posture and context checks
+# run once more right before the first keystroke.
+reason=$(posture_reason)
+[ -z "$reason" ] || finish stood-down "$reason"
 
 verdict=$(fm_backend_send_text_submit "$BACKEND" "$TARGET" "$FM_RESUME_DOORBELL_LINE" 1 0.4 0.3 2>/dev/null) \
   || finish failed "the send did not complete"

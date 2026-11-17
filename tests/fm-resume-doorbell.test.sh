@@ -19,6 +19,15 @@ FAKE_LIB="$TMP_ROOT/fake-backend.sh"
 cat > "$FAKE_LIB" <<'SH'
 # File-backed fake backend for the resume doorbell (sourced under FM_TEST_SEAM).
 fake_get() { cat "$FAKE_DIR/$1" 2>/dev/null || printf '%s' "$2"; }
+fake_posture_change() {  # <none|away|away-contract|lock-moved|cleared>
+  case "$1" in
+    away) : > "$FAKE_DIR/../state/.afk" ;;
+    away-contract) : > "$FAKE_DIR/../state/.afk-contract" ;;
+    lock-moved) printf '1\n' > "$FAKE_DIR/../state/.lock" ;;
+    cleared) printf 'source=clear\n' > "$FAKE_DIR/../state/.context-epoch.new" \
+      && mv -f "$FAKE_DIR/../state/.context-epoch.new" "$FAKE_DIR/../state/.context-epoch" ;;
+  esac
+}
 fake_drop_enter() {  # true (and decrements) while Enters are being dropped
   local n
   n=$(fake_get drops 0)
@@ -27,19 +36,18 @@ fake_drop_enter() {  # true (and decrements) while Enters are being dropped
   # Someone types into the composer right after our dropped Enter.
   [ ! -e "$FAKE_DIR/foreign-after-drop" ] || printf 'operator draft' > "$FAKE_DIR/composer"
   # The session's posture or context changes right after our dropped Enter.
-  case "$(fake_get posture-after-drop none)" in
-    away) : > "$FAKE_DIR/../state/.afk" ;;
-    away-contract) : > "$FAKE_DIR/../state/.afk-contract" ;;
-    lock-moved) printf '1\n' > "$FAKE_DIR/../state/.lock" ;;
-    cleared) printf 'source=clear\n' > "$FAKE_DIR/../state/.context-epoch.new" \
-      && mv -f "$FAKE_DIR/../state/.context-epoch.new" "$FAKE_DIR/../state/.context-epoch" ;;
-  esac
+  fake_posture_change "$(fake_get posture-after-drop none)"
   return 0
 }
 fm_backend_agent_state() { fake_get agent alive; }
 fm_backend_busy_state() {
   # A fixture transcript that keeps growing models a turn writing to it.
   [ -z "${FAKE_GROW_TRANSCRIPT:-}" ] || printf '{"type":"assistant"}\n' >> "$FAKE_GROW_TRANSCRIPT"
+  # The session's posture or context changes during the idle reads, once.
+  if [ -e "$FAKE_DIR/posture-during-idle" ]; then
+    fake_posture_change "$(fake_get posture-during-idle none)"
+    rm -f "$FAKE_DIR/posture-during-idle"
+  fi
   fake_get busy idle
 }
 fm_backend_herdr_rendered_busy_state() { fake_get rendered idle; }
@@ -208,16 +216,16 @@ test_turn_after_the_compaction_boundary_stands_down() {
   pass "resume doorbell: an assistant record after the newest compact boundary stands it down; an idle compaction still delivers"
 }
 
-test_newer_context_takes_over_a_live_doorbell() {
-  local dir pid
+test_newer_context_waits_out_an_older_doorbell() {
+  local dir pid holder
   # Doorbell A settles under one compaction; a second compaction replaces the
-  # epoch and starts B. B must take over and deliver; A must stand down.
+  # epoch and starts B. B must wait for A to stand down and deliver.
   dir=$(make_home takeover-newer-context)
-  printf 'source=compact\nlock_pid=1\nat=1\n' > "$dir/state/.context-epoch"
+  printf 'source=compact\nlock_pid=%s\nat=1\n' "$(sed -n 1p "$dir/state/.lock")" > "$dir/state/.context-epoch"
   SETTLE=1 run_doorbell "$dir" --source compact &
   pid=$!
   wait_for_doorbell_lock "$dir"
-  printf 'source=compact\nlock_pid=1\nat=2\n' > "$dir/state/.context-epoch.new"
+  printf 'source=compact\nlock_pid=%s\nat=2\n' "$(sed -n 1p "$dir/state/.lock")" > "$dir/state/.context-epoch.new"
   mv -f "$dir/state/.context-epoch.new" "$dir/state/.context-epoch"
   run_doorbell "$dir" --source compact
   wait "$pid"
@@ -230,7 +238,7 @@ test_newer_context_takes_over_a_live_doorbell() {
 
   # A second doorbell under the same context still stands down for the holder.
   dir=$(make_home same-context-second)
-  printf 'source=compact\nlock_pid=1\nat=1\n' > "$dir/state/.context-epoch"
+  printf 'source=compact\nlock_pid=%s\nat=1\n' "$(sed -n 1p "$dir/state/.lock")" > "$dir/state/.context-epoch"
   SETTLE=1 run_doorbell "$dir" --source compact &
   pid=$!
   wait_for_doorbell_lock "$dir"
@@ -239,7 +247,27 @@ test_newer_context_takes_over_a_live_doorbell() {
   assert_contains "$(last_detail "$dir")" "another resume doorbell" "a same-context second doorbell must stand down for the holder"
   wait "$pid"
   [ "$(typed_count "$dir")" = 1 ] || fail "the holder must still deliver exactly once: $(cat "$dir/fake/keys" 2>/dev/null)"
-  pass "resume doorbell: a doorbell for a newer context takes over a live one and delivers once; a same-context one stands down"
+  # The older holder stands down and removes the lock between the newer
+  # doorbell's look and its next step: the newer one still takes the lock.
+  dir=$(make_home older-holder-exits)
+  printf 'old\n' > "$dir/state/old-epoch"
+  printf 'source=compact\nlock_pid=%s\nat=2\n' "$(sed -n 1p "$dir/state/.lock")" > "$dir/state/.context-epoch"
+  mkdir "$dir/state/.resume-doorbell.lock"
+  sleep 30 >/dev/null 2>&1 &
+  holder=$!
+  printf '%s\n' "$holder" >> "$TMP_ROOT/sleepers"
+  printf '%s\n' "$holder" > "$dir/state/.resume-doorbell.lock/pid"
+  ln "$dir/state/old-epoch" "$dir/state/.resume-doorbell.lock/context-epoch.$holder"
+  run_doorbell "$dir" --source compact --epoch-sum "$(cksum < "$dir/state/.context-epoch")" &
+  pid=$!
+  sleep 1
+  [ "$(typed_count "$dir")" = 0 ] || fail "the newer doorbell must wait while the older one holds the lock"
+  rm -rf "$dir/state/.resume-doorbell.lock"
+  kill "$holder" 2>/dev/null || true
+  wait "$pid"
+  [ "$(typed_count "$dir")" = 1 ] || fail "the newer doorbell must deliver once the older one stood down: $(cat "$dir/state/.resume-doorbell.log")"
+  [ "$(last_outcome "$dir")" = submitted ] || fail "outcome must be submitted, got: $(cat "$dir/state/.resume-doorbell.log")"
+  pass "resume doorbell: a doorbell for a newer context waits out an older one and delivers once; a same-context one stands down"
 }
 
 test_changed_lock_owner_stands_down() {
@@ -324,12 +352,12 @@ test_new_context_during_settle_stands_down() {
   local dir pid sum
   # A /clear during the settle replaces the epoch the doorbell started under.
   dir=$(make_home cleared-during-settle)
-  printf 'source=compact\nlock_pid=1\nat=1\n' > "$dir/state/.context-epoch"
+  printf 'source=compact\nlock_pid=%s\nat=1\n' "$(sed -n 1p "$dir/state/.lock")" > "$dir/state/.context-epoch"
   printf '{"type":"system"}\n' > "$dir/transcript.jsonl"
   SETTLE=1 run_doorbell "$dir" --source compact --transcript "$dir/transcript.jsonl" &
   pid=$!
   wait_for_doorbell_lock "$dir"
-  printf 'source=clear\nlock_pid=1\nat=2\n' > "$dir/state/.context-epoch.new"
+  printf 'source=clear\nlock_pid=%s\nat=2\n' "$(sed -n 1p "$dir/state/.lock")" > "$dir/state/.context-epoch.new"
   mv -f "$dir/state/.context-epoch.new" "$dir/state/.context-epoch"
   wait "$pid"
   [ "$(typed_count "$dir")" = 0 ] || fail "a doorbell must not type into a context cleared during its settle: $(cat "$dir/fake/keys")"
@@ -339,7 +367,7 @@ test_new_context_during_settle_stands_down() {
   # A replacement with identical bytes (a repeat compaction in the same
   # second by the same owner) is still a new context.
   dir=$(make_home same-bytes-new-epoch)
-  printf 'source=compact\nlock_pid=1\nat=1\n' > "$dir/state/.context-epoch"
+  printf 'source=compact\nlock_pid=%s\nat=1\n' "$(sed -n 1p "$dir/state/.lock")" > "$dir/state/.context-epoch"
   SETTLE=1 run_doorbell "$dir" --source compact &
   pid=$!
   wait_for_doorbell_lock "$dir"
@@ -354,7 +382,7 @@ test_new_context_during_settle_stands_down() {
   SETTLE=1 run_doorbell "$dir" --source compact &
   pid=$!
   wait_for_doorbell_lock "$dir"
-  printf 'source=clear\nlock_pid=1\nat=2\n' > "$dir/state/.context-epoch"
+  printf 'source=clear\nlock_pid=%s\nat=2\n' "$(sed -n 1p "$dir/state/.lock")" > "$dir/state/.context-epoch"
   wait "$pid"
   [ "$(typed_count "$dir")" = 0 ] || fail "a doorbell must not type after a context epoch appeared during its settle"
   assert_contains "$(last_detail "$dir")" "a new context began after the compaction" "the stand-down must name the new context"
@@ -362,9 +390,9 @@ test_new_context_during_settle_stands_down() {
   # A /clear between the hook's launch and the doorbell's start: the doorbell
   # is bound to the epoch the hook recorded, not the one it finds.
   dir=$(make_home cleared-before-start)
-  printf 'source=compact\nlock_pid=1\nat=1\n' > "$dir/state/.context-epoch"
+  printf 'source=compact\nlock_pid=%s\nat=1\n' "$(sed -n 1p "$dir/state/.lock")" > "$dir/state/.context-epoch"
   sum=$(cksum < "$dir/state/.context-epoch")
-  printf 'source=clear\nlock_pid=1\nat=2\n' > "$dir/state/.context-epoch.new"
+  printf 'source=clear\nlock_pid=%s\nat=2\n' "$(sed -n 1p "$dir/state/.lock")" > "$dir/state/.context-epoch.new"
   mv -f "$dir/state/.context-epoch.new" "$dir/state/.context-epoch"
   run_doorbell "$dir" --source compact --epoch-sum "$sum"
   [ "$(typed_count "$dir")" = 0 ] || fail "a doorbell must not type into a context cleared before it started: $(cat "$dir/fake/keys")"
@@ -374,12 +402,12 @@ test_new_context_during_settle_stands_down() {
   # An unchanged epoch still lets an idle session get its line, with or
   # without the hook's recorded sum.
   dir=$(make_home epoch-unchanged)
-  printf 'source=compact\nlock_pid=1\nat=1\n' > "$dir/state/.context-epoch"
+  printf 'source=compact\nlock_pid=%s\nat=1\n' "$(sed -n 1p "$dir/state/.lock")" > "$dir/state/.context-epoch"
   run_doorbell "$dir" --source compact --epoch-sum "$(cksum < "$dir/state/.context-epoch")"
   [ "$(typed_count "$dir")" = 1 ] || fail "an unchanged context epoch must not block the line"
   [ "$(last_outcome "$dir")" = submitted ] || fail "outcome must be submitted, got: $(cat "$dir/state/.resume-doorbell.log")"
   dir=$(make_home epoch-unchanged-no-sum)
-  printf 'source=compact\nlock_pid=1\nat=1\n' > "$dir/state/.context-epoch"
+  printf 'source=compact\nlock_pid=%s\nat=1\n' "$(sed -n 1p "$dir/state/.lock")" > "$dir/state/.context-epoch"
   run_doorbell "$dir" --source compact
   [ "$(last_outcome "$dir")" = submitted ] || fail "outcome must be submitted without a sum, got: $(cat "$dir/state/.resume-doorbell.log")"
   pass "resume doorbell: a /clear or a new context epoch before the start or during the settle stands it down; an unchanged epoch still delivers"
@@ -389,7 +417,7 @@ test_resubmit_rechecks_posture_after_a_pending_send() {
   local dir case_name reason
   for case_name in away away-contract lock-moved cleared; do
     dir=$(make_home "resubmit-$case_name")
-    printf 'source=compact\nlock_pid=1\nat=1\n' > "$dir/state/.context-epoch"
+    printf 'source=compact\nlock_pid=%s\nat=1\n' "$(sed -n 1p "$dir/state/.lock")" > "$dir/state/.context-epoch"
     printf '1\n' > "$dir/fake/drops"
     printf '%s' "$case_name" > "$dir/fake/posture-after-drop"
     run_doorbell "$dir" --source compact
@@ -405,6 +433,38 @@ test_resubmit_rechecks_posture_after_a_pending_send() {
     assert_contains "$(last_detail "$dir")" "$reason" "$case_name: the log must name the posture change"
   done
   pass "resume doorbell: an away record, a moved session lock, or a new context after a pending first send withholds every resubmit Enter"
+}
+
+test_posture_change_during_idle_reads_withholds_the_first_send() {
+  local dir case_name reason
+  for case_name in away lock-moved cleared; do
+    dir=$(make_home "idle-reads-$case_name")
+    printf 'source=compact\nlock_pid=%s\nat=1\n' "$(sed -n 1p "$dir/state/.lock")" > "$dir/state/.context-epoch"
+    printf '%s' "$case_name" > "$dir/fake/posture-during-idle"
+    run_doorbell "$dir" --source compact
+    [ "$(typed_count "$dir")" = 0 ] || fail "$case_name: a posture change during the idle reads must withhold the first send: $(cat "$dir/fake/keys")"
+    [ "$(last_outcome "$dir")" = stood-down ] || fail "$case_name: outcome must be stood-down, got: $(cat "$dir/state/.resume-doorbell.log")"
+    case "$case_name" in
+      away) reason='an away or quiet record exists' ;;
+      lock-moved) reason='the session lock changed owner' ;;
+      cleared) reason='a new context began after the compaction' ;;
+    esac
+    assert_contains "$(last_detail "$dir")" "$reason" "$case_name: the stand-down must name the change"
+  done
+  pass "resume doorbell: an away record, a moved session lock, or a new context during the idle reads withholds the first send"
+}
+
+test_replacement_session_is_not_the_target() {
+  local dir
+  # The launching session recorded the epoch and exited; a replacement
+  # session took the session lock before the doorbell started.
+  dir=$(make_home replacement-session)
+  printf 'source=compact\nlock_pid=1\nat=1\n' > "$dir/state/.context-epoch"
+  run_doorbell "$dir" --source compact --epoch-sum "$(cksum < "$dir/state/.context-epoch")"
+  [ "$(typed_count "$dir")" = 0 ] || fail "a doorbell must not type into a session that did not record its context: $(cat "$dir/fake/keys")"
+  [ "$(last_outcome "$dir")" = stood-down ] || fail "outcome must be stood-down, got: $(cat "$dir/state/.resume-doorbell.log")"
+  assert_contains "$(last_detail "$dir")" "the session lock changed owner" "the stand-down must name the owner change"
+  pass "resume doorbell: a session other than the one that recorded the context gets nothing"
 }
 
 test_second_doorbell_types_nothing_while_one_runs() {
@@ -429,5 +489,7 @@ test_lock_taken_over_stands_down_and_keeps_the_new_lock
 test_dropped_enter_is_resubmitted_only_while_ours
 test_new_context_during_settle_stands_down
 test_resubmit_rechecks_posture_after_a_pending_send
-test_newer_context_takes_over_a_live_doorbell
+test_newer_context_waits_out_an_older_doorbell
+test_posture_change_during_idle_reads_withholds_the_first_send
+test_replacement_session_is_not_the_target
 test_second_doorbell_types_nothing_while_one_runs

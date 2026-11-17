@@ -235,14 +235,12 @@ launch_resume_doorbell() {  # <program>
   local bin=$1
   # Detached from the hook: its own process group, stdio away from the hook's
   # pipes, so the SessionStart hook returns at once.
-  # The epoch this hook just recorded rides along, so a /clear between this
-  # launch and the doorbell's own start cannot become the doorbell's context.
-  local epoch_sum
-  epoch_sum=$(cksum < "$STATE/.context-epoch" 2>/dev/null || true)
+  # The epoch this hook recorded rides along, so a /clear between this launch
+  # and the doorbell's own start cannot become the doorbell's context.
   (
     set -m 2>/dev/null || true
     FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
-      nohup "$bin" --source compact --transcript "$TRANSCRIPT" --epoch-sum "${epoch_sum:-absent}" </dev/null >/dev/null 2>&1 &
+      nohup "$bin" --source compact --transcript "$TRANSCRIPT" --epoch-sum "${RECORDED_EPOCH_SUM:-absent}" </dev/null >/dev/null 2>&1 &
   ) || true
   return 0
 }
@@ -257,6 +255,7 @@ case "$SOURCE" in
   clear|compact)
     if session_start_completed; then
       record_context_epoch
+      RECORDED_EPOCH_SUM=$(cksum < "$STATE/.context-epoch" 2>/dev/null || true)
       # Decide before the re-emit: its wake drain may move the queued rows
       # that prove open work.
       DOORBELL_BIN=
