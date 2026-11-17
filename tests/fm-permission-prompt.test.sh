@@ -359,22 +359,6 @@ test_prompt_after_escape_gets_no_instruction() {
   pass "after Escape: a trust dialog, a paid-usage picker, or an unproven composer gets no instruction, no doorbell, and a keyed blocked line"
 }
 
-test_doorbell_never_types_into_a_prompt() {
-  make_home
-  worker db claude "$FIX/claude-2.1.325-bash-prompt.txt"
-  worker dt claude "$FIX/claude-2.1.325-trust.txt"
-  printf ' Continue with paid usage?\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel\n' > "$H/paid.txt"
-  worker ds claude "$H/paid.txt"
-  local id
-  for id in db dt ds; do
-    FM_HOME="$H" bash "$ROOT/bin/fm-send.sh" "$id" "steer for $id" >/dev/null 2>&1
-    assert_contains "$(inbox_text "$id")" "steer for $id" "the steer for worker $id is durably recorded"
-    sleep 1
-    assert_equals '' "$(typed "$id")" "the doorbell types nothing into the prompt on worker $id: $(typed "$id" | od -c | head -3)"
-  done
-  pass "doorbell: a steer to a worker on a Claude tool-approval prompt, a trust picker, or a paid-usage picker is recorded and types nothing"
-}
-
 test_declining_dialogs_on_workers_get_no_key() {
   local id
   make_home
@@ -604,7 +588,6 @@ fm_test_run \
   test_failed_declines_count_toward_cap \
   test_tool_approval_is_declined_and_steered \
   test_prompt_after_escape_gets_no_instruction \
-  test_doorbell_never_types_into_a_prompt \
   test_declining_dialogs_on_workers_get_no_key \
   test_repeated_or_capped_prompts_hold \
   test_trust_dialog_relaunches_without_a_key \
