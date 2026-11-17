@@ -36,9 +36,10 @@
 # last one types, and a doorbell removes the lock on exit only while it still
 # names it. The context epoch also names the session lock owner that recorded
 # it, and a different owner stands the doorbell down. The lock owner, doorbell
-# lock, away or quiet record and context epoch are re-checked right before the
-# first send and before every resubmit Enter; a change before a resubmit
-# withholds the Enter and logs unverified. Every run appends one row to
+# lock, away or quiet record and context epoch are re-checked right before
+# every keystroke, inside the shared send helper too (the adapter's keystroke
+# functions are wrapped in this process); a change withholds the keystroke, and
+# logs stood-down before anything was typed or unverified after. Every run appends one row to
 # state/.resume-doorbell.log:
 #   <utc-iso>\t<epoch>\t<source>\t<backend>:<target>\t<outcome>\t<detail>
 # with outcome submitted, unverified, stood-down or failed. It never kills,
@@ -127,17 +128,24 @@ fi
 # lock.
 holder_wait_deadline=$(( $(date +%s) + ${SETTLE%.*} + WAIT + 30 ))
 pin_wait_deadline=$(( $(date +%s) + 3 ))
+older_holder=
 while ! mkdir "$LOCK" 2>/dev/null; do
   holder=$(cat "$LOCK/pid" 2>/dev/null || true)
   if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
     if [ -e "$STATE/.context-epoch" ] && [ -e "$LOCK/context-epoch.$holder" ] \
       && ! [ "$STATE/.context-epoch" -ef "$LOCK/context-epoch.$holder" ]; then
       # The holder is bound to an older context and will stand down.
+      older_holder=$holder
       [ "$(date +%s)" -lt "$holder_wait_deadline" ] \
         || finish stood-down "an older resume doorbell (pid $holder) did not stand down"
     elif [ -e "$STATE/.context-epoch" ] && [ ! -e "$LOCK/context-epoch.$holder" ] \
       && [ "$(date +%s)" -lt "$pin_wait_deadline" ]; then
       : # The holder has not pinned its context yet; look again shortly.
+    elif [ "$(cat "$LOCK/pid" 2>/dev/null || true)" != "$holder" ] || [ "$older_holder" = "$holder" ]; then
+      # The lock moved or vanished under this look, or an older holder's pin
+      # vanished as it stood down and removed its lock: look again.
+      [ "$(date +%s)" -lt "$holder_wait_deadline" ] \
+        || finish stood-down "an older resume doorbell (pid $holder) did not stand down"
     else
       finish stood-down "another resume doorbell (pid $holder) is running"
     fi
@@ -313,13 +321,60 @@ while :; do
 done
 
 # The idle reads above take time; the ownership, posture and context checks
-# run once more right before the first keystroke.
+# run once more before the send.
 reason=$(posture_reason)
 [ -z "$reason" ] || finish stood-down "$reason"
 
-verdict=$(fm_backend_send_text_submit "$BACKEND" "$TARGET" "$FM_RESUME_DOORBELL_LINE" 1 0.4 0.3 2>/dev/null) \
-  || finish failed "the send did not complete"
+# The shared send helper reads the composer and the agent again before it
+# types and before each Enter. So the adapter's keystroke functions are
+# wrapped, in this process only, to re-run those checks right before every
+# keystroke (hc: right after its last read before its one-shot send). A
+# withheld keystroke is recorded in WITHHELD and the keystroke reports failure.
+WITHHELD="$LOCK/withheld.$$"
+keystroke_allowed() {  # <function>
+  local why
+  why=$(posture_reason)
+  [ -n "$why" ] || return 0
+  [ -e "$WITHHELD" ] || printf '%s\t%s\n' "$1" "$why" > "$WITHHELD" 2>/dev/null || true
+  return 1
+}
+guard_keystroke() {  # <function> <before|after>
+  local fn=$1 body
+  declare -F "$fn" >/dev/null 2>&1 || return 0
+  body=$(declare -f "$fn") || return 1
+  eval "fm_rd_unguarded_${body}" || return 1
+  if [ "$2" = after ]; then
+    eval "$fn() { fm_rd_unguarded_$fn \"\$@\" || return 1; keystroke_allowed $fn; }"
+  else
+    eval "$fn() { keystroke_allowed $fn || return 1; fm_rd_unguarded_$fn \"\$@\"; }"
+  fi
+}
+withheld_detail() {  # prints "<what>: <reason>" for a withheld keystroke, or fails
+  local fn why
+  [ -s "$WITHHELD" ] || return 1
+  IFS=$'\t' read -r fn why < "$WITHHELD" || true
+  case "$fn" in
+    *_send_key) printf 'an Enter was withheld: %s' "$why" ;;
+    *) printf 'the send was withheld before typing: %s' "$why" ;;
+  esac
+}
+fm_backend_source "$BACKEND" >/dev/null 2>&1 || finish failed "the $BACKEND backend could not be loaded"
+for keystroke_fn in send_literal send_key turn_start; do
+  guard_keystroke "fm_backend_${BACKEND}_$keystroke_fn" before || finish failed "the $BACKEND keystrokes could not be guarded"
+done
+if [ "$BACKEND" = hc ]; then
+  guard_keystroke fm_backend_hc_target_ready after || finish failed "the hc keystrokes could not be guarded"
+fi
+
+verdict=$(fm_backend_send_text_submit "$BACKEND" "$TARGET" "$FM_RESUME_DOORBELL_LINE" 1 0.4 0.3 2>/dev/null) || verdict=
+if detail=$(withheld_detail); then
+  case "$detail" in
+    'the send was withheld'*) finish stood-down "$detail" ;;
+    *) finish unverified "$detail (first verdict ${verdict:-none})" ;;
+  esac
+fi
 case "$verdict" in
+  '') finish failed "the send did not complete" ;;
   send-failed) finish failed "send-failed" ;;
   empty) finish submitted "first Enter landed" ;;
 esac
@@ -330,10 +385,17 @@ esac
 i=0
 while [ "$i" -lt "$TRIES" ]; do
   sleep "$RESUBMIT_DELAY"
-  reason=$(posture_reason)
-  [ -z "$reason" ] || finish unverified "resubmit withheld after $i resubmit Enter(s): $reason (first verdict $verdict)"
+  # The composer read comes first, so the posture check is the last read
+  # before the Enter (and the guarded Enter re-checks it once more).
   if fm_task_inbox_composer_holds "$BACKEND" "$TARGET" "$FM_RESUME_DOORBELL_LINE"; then
-    fm_backend_send_key "$BACKEND" "$TARGET" Enter >/dev/null 2>&1 || finish failed "the resubmit Enter could not be sent"
+    reason=$(posture_reason)
+    [ -z "$reason" ] || finish unverified "resubmit withheld after $i resubmit Enter(s): $reason (first verdict $verdict)"
+    if ! fm_backend_send_key "$BACKEND" "$TARGET" Enter >/dev/null 2>&1; then
+      if detail=$(withheld_detail); then
+        finish unverified "resubmit withheld after $i resubmit Enter(s): ${detail#an Enter was withheld: } (first verdict $verdict)"
+      fi
+      finish failed "the resubmit Enter could not be sent"
+    fi
     i=$((i + 1))
     continue
   fi
