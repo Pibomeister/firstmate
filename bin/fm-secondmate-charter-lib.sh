@@ -42,3 +42,31 @@ registry_scope_for_brief() {
     brief_section_text "$brief" "Routing scope" | normalize_registry_text
   fi
 }
+
+# Exact project grants for self-service claims, narrower than a prose charter.
+# docs/configuration.md owns claim-project; fm-ledger.sh owns the transaction.
+# Missing configuration grants nothing. A malformed grant refuses the whole list.
+fm_secondmate_claim_projects() { # <config-dir>
+  local file="$1/mission-ledger" line project
+  [ -e "$file" ] || [ -L "$file" ] || return 0
+  [ -f "$file" ] && [ -r "$file" ] && [ ! -L "$file" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      claim-project=*)
+        project=${line#*=}
+        case "$project" in ''|.|..|*[!A-Za-z0-9._-]*) return 1 ;; esac
+        printf '%s\n' "$project"
+        ;;
+    esac
+  done < "$file"
+}
+
+fm_secondmate_claim_guidance() { # <config-dir>
+  local projects
+  projects=$(fm_secondmate_claim_projects "$1") || return 1
+  [ -n "$projects" ] || return 0
+  printf '\n# Approved local queue continuation\n\n'
+  printf 'Continue approved ready work in this home through bin/fm-ledger.sh claim when the supervisor is quiet.\n'
+  printf 'Read bin/fm-ledger.sh --help for the claim, spawn and recovery contract before using it.\n'
+  printf 'The exact project grants within this charter are: %s.\n' "$(printf '%s' "$projects" | tr '\n' ' ')"
+}

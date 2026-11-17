@@ -5,10 +5,11 @@
 # item without changing anything, depth reports thin ready queues once per
 # scheduled time, and handoff writes a self-contained document from the ledger
 # plus a short in-flight note, refusing delta chains and unfiled orders.
+# Opt-in claims cover concurrent spawn, changed authority and crash recovery.
 set -u
 
-# shellcheck source=tests/lib.sh disable=SC1091
-. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/fixtures.sh disable=SC1091
+. "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 LEDGER="$ROOT/bin/fm-ledger.sh"
 TASKS="$ROOT/bin/fm-tasks-axi.sh"
@@ -411,7 +412,160 @@ test_arm_never_replaces_a_task_check_of_the_same_name() {
   pass "arm and disarm never replace or remove a task's check that shares the ready-depth name"
 }
 
+test_claim_reserves_once_and_resumes() {
+  new_home claim
+  local out rc token
+  ledger intake claim-one --project alpha --title 'approved work' --source proposal:V12 >/dev/null
+  mkdir -p "$HOME_DIR/projects/alpha" "$HOME_DIR/data/claim-one"
+  printf 'approved brief\n' > "$HOME_DIR/data/claim-one/brief.md"
+  out=$(ledger claim --project alpha 2>&1); rc=$?
+  expect_code 1 "$rc" 'claim is off by default'
+  printf 'claim-project=alpha\n' > "$HOME_DIR/config/mission-ledger"
+  out=$(ledger claim --project alpha) || fail "claim failed: $out"
+  assert_contains "$out" 'CLAIM claim-one project=alpha phase=reserved token=' 'claim returns a reservation'
+  token=${out##*token=}
+  out=$(ledger claim --project alpha 2>&1); rc=$?
+  expect_code 3 "$rc" 'a reserved item is not claimable again'
+  out=$(ledger claim --project alpha --resume claim-one) || fail "resume failed: $out"
+  assert_contains "$out" "token=$token" 'lost claim response reuses the same token'
+  tasks hold claim-one --reason 'new decision' >/dev/null
+  out=$(ledger claim --project alpha --resume claim-one 2>&1); rc=$?
+  expect_code 1 "$rc" 'a changed hold refuses recovery'
+  pass 'claim is opt-in, exclusive and resumable without replacing its identity'
+}
+
+claim_fixture() {
+  new_home "$1"
+  mkdir -p "$HOME_DIR/projects/alpha"
+  printf 'claim-project=alpha\n' > "$HOME_DIR/config/mission-ledger"
+  ledger intake claim-one --project alpha --title 'approved work' --source proposal:V12 >/dev/null || fail 'intake failed'
+  fm_test_spawn_brief "$HOME_DIR" claim-one
+}
+
+test_claim_refusals_and_changed_approval() {
+  local variant out rc token
+  for variant in brief scope dependency decision quota source; do
+    claim_fixture "claim-$variant"
+    out=$(ledger claim --project alpha) || fail "initial $variant claim: $out"
+    token=${out##*token=}
+    case "$variant" in
+      brief) printf '\nNew, unapproved work\n' >> "$HOME_DIR/data/claim-one/brief.md" ;;
+      scope) printf 'claim-project=beta\n' > "$HOME_DIR/config/mission-ledger" ;;
+      dependency)
+        tasks add dependency 'unfinished dependency' --repo alpha >/dev/null
+        tasks block claim-one --by dependency >/dev/null || fail 'cannot add dependency'
+        ;;
+      decision) printf 'needs-decision [key=approval]: unresolved approval\nworking: still open\n' > "$HOME_DIR/state/claim-one.status" ;;
+      quota) printf 'budget_inclusive_hard=100\nbudget_folded_unknown=child@FM_BUDGET_LAUNCH_unknown\n' > "$HOME_DIR/state/lane-budget" ;;
+      source) rm "$HOME_DIR/data/ledger-intake.tsv" ;;
+    esac
+    out=$(ledger claim --project alpha --resume claim-one 2>&1); rc=$?
+    expect_code 1 "$rc" "changed $variant refuses a reserved claim: $out"
+    [ "$(jq -r .token "$HOME_DIR/state/ledger-claims/claim-one.json")" = "$token" ] || fail 'refusal replaced the receipt'
+    [ "$(jq -r .phase "$HOME_DIR/state/ledger-claims/claim-one.json")" = reserved ] || fail 'refusal consumed the claim'
+  done
+  claim_fixture claim-owned
+  tasks start claim-one >/dev/null
+  out=$(ledger claim --project alpha 2>&1); rc=$?
+  expect_code 3 "$rc" 'main-owned in-flight work is not adopted'
+  claim_fixture claim-holds
+  order send --hold --from test -- 'hold dispatch' >/dev/null
+  out=$(ledger claim --project alpha 2>&1); rc=$?
+  expect_code 3 "$rc" 'standing holds refuse fresh claims'
+  claim_fixture claim-bad-config
+  printf 'claim-project=../other-home\n' >> "$HOME_DIR/config/mission-ledger"
+  out=$(ledger claim --project alpha 2>&1); rc=$?
+  expect_code 1 "$rc" 'invalid scope fails closed even after a valid grant'
+  pass 'approval, scope, dependencies, decisions, quota and standing holds refuse claims; in-flight work stays owned'
+}
+
+test_claim_concurrent_spawn_and_lost_reply() {
+  claim_fixture claim-spawn
+  local one two r1=0 r2=0 out token fakebin wt
+  ledger claim --project alpha > "$HOME_DIR/one.out" 2> "$HOME_DIR/one.err" & one=$!
+  ledger claim --project alpha > "$HOME_DIR/two.out" 2> "$HOME_DIR/two.err" & two=$!
+  wait "$one" || r1=$?
+  wait "$two" || r2=$?
+  [ "$(( (r1 == 0) + (r2 == 0) ))" = 1 ] || fail "two claimants must produce one reservation ($r1,$r2)"
+  out=$(ledger claim --project alpha --resume claim-one) || fail "cannot recover lost claim reply: $out"
+  token=${out##*token=}
+  wt="$HOME_DIR/test-worktree"
+  fm_git_worktree "$HOME_DIR/projects/alpha" "$wt" claim-fixture
+  fakebin=$(fm_test_make_spawn_fakebin "$HOME_DIR/fake" codex)
+  printf 'codex\n' > "$HOME_DIR/config/crew-harness"
+  touch "$HOME_DIR/state/.last-watcher-beat"
+  out=$(FM_BACKEND=tmux fm_test_run_spawn "$HOME_DIR" "$wt" "$fakebin" claim-one "$HOME_DIR/projects/alpha" --scout) && fail 'spawn without token admitted a reserved item'
+  assert_contains "$out" 'claim token is required' 'ordinary dispatch cannot bypass the reservation'
+  FM_BACKEND=tmux FM_FAKE_LAUNCH_LOG="$HOME_DIR/launch.log" fm_test_run_spawn "$HOME_DIR" "$wt" "$fakebin" claim-one "$HOME_DIR/projects/alpha" --scout --claim "$token" > "$HOME_DIR/spawn-one.out" & one=$!
+  FM_BACKEND=tmux FM_FAKE_LAUNCH_LOG="$HOME_DIR/launch.log" fm_test_run_spawn "$HOME_DIR" "$wt" "$fakebin" claim-one "$HOME_DIR/projects/alpha" --scout --claim "$token" > "$HOME_DIR/spawn-two.out" & two=$!
+  r1=0; r2=0
+  wait "$one" || r1=$?
+  wait "$two" || r2=$?
+  [ "$(( (r1 == 0) + (r2 == 0) ))" = 1 ] || fail "two spawn calls must launch one worker ($r1,$r2): $(cat "$HOME_DIR"/spawn-*.out)"
+  out=$(ledger claim --project alpha --resume claim-one) || fail "cannot read completed receipt: $out"
+  assert_contains "$out" 'phase=launched' 'lost spawn reply recovers the completed receipt'
+  assert_contains "$(tasks show claim-one --full)" 'state: in_flight' 'one worker owns the backlog item'
+  out=$(FM_BACKEND=tmux fm_test_run_spawn "$HOME_DIR" "$wt" "$fakebin" claim-one "$HOME_DIR/projects/alpha" --scout --claim "$token") && fail 'a late replay launched twice'
+  [ "$(grep -c 'export FM_TASK_INBOX=' "$HOME_DIR/launch.log")" = 1 ] || fail 'the backend received more than one worker launch'
+  pass 'two claimants and two launch calls produce one worker; a lost response and late replay do not duplicate it'
+}
+
+test_claim_crash_fence() {
+  claim_fixture claim-crash
+  local out token rc=0
+  out=$(ledger claim --project alpha) || fail "initial claim: $out"
+  token=${out##*token=}
+  # Use the spawn-owned public transition under a real lock, then kill its
+  # holder. No endpoint evidence exists, so recovery must retain uncertainty.
+  FM_HOME="$HOME_DIR" bash -c '
+    source "$1/bin/fm-wake-lib.sh"
+    fm_lock_try_acquire "$FM_HOME/state/.spawn-claim-one.lock" || exit 1
+    "$1/bin/fm-ledger.sh" claim-begin claim-one "$2" "$FM_HOME/projects/alpha" || exit 1
+    kill -KILL "$$"
+  ' _ "$ROOT" "$token" >/dev/null 2>&1 || rc=$?
+  [ "$rc" = 137 ] || fail "crash fixture did not cross the dispatch fence: $rc"
+  out=$(ledger claim --project alpha --resume claim-one 2>&1); rc=$?
+  expect_code 4 "$rc" 'a crash after the fence is uncertain, not retryable'
+  assert_contains "$out" 'phase=dispatching' 'the uncertain dispatch remains durable'
+  out=$(ledger claim --project alpha 2>&1); rc=$?
+  expect_code 3 "$rc" 'a crashed claim is never reissued'
+  pass 'a killed dispatcher leaves recoverable ownership and never reissues an uncertain launch'
+}
+
+test_claim_skips_unprepared_work_and_scopes_charter_guidance() {
+  claim_fixture claim-skip
+  local out rc
+  tasks add unapproved 'not sourced from an approved ask' --repo alpha --priority 0 >/dev/null
+  ledger intake undecided --project alpha --title 'pending choice' --source proposal:pending --priority 0 >/dev/null
+  fm_test_spawn_brief "$HOME_DIR" undecided
+  printf 'needs-decision [key=choice]: pending\n' > "$HOME_DIR/state/undecided.status"
+  out=$(ledger claim --project alpha 2>/dev/null) || fail "ready work after parked items was not claimed: $out"
+  assert_contains "$out" 'CLAIM claim-one' 'an unprepared or undecided item does not stall the queue'
+  # Source-only library API: no subprocess or harness-specific behavior.
+  # shellcheck source=bin/fm-secondmate-charter-lib.sh
+  . "$ROOT/bin/fm-secondmate-charter-lib.sh"
+  out=$(fm_secondmate_claim_guidance "$HOME_DIR/config") || fail 'valid scope guidance refused'
+  assert_contains "$out" 'grants within this charter are: alpha.' 'the charter advertises only local grants'
+  mkdir -p "$HOME_DIR/other-config"
+  out=$(fm_secondmate_claim_guidance "$HOME_DIR/other-config") || fail 'default-off guidance failed'
+  [ -z "$out" ] || fail 'another home inherited a claim grant'
+  printf 'claim-project=../alpha\n' > "$HOME_DIR/other-config/mission-ledger"
+  out=$(fm_secondmate_claim_guidance "$HOME_DIR/other-config"); rc=$?
+  expect_code 1 "$rc" 'charter refuses an invalid grant'
+  pass 'unprepared items do not stall ready work and claim guidance stays inside one home'
+}
+
+if [ "${FM_TEST_ONLY:-}" = claims ]; then
+  fm_test_run test_claim_reserves_once_and_resumes test_claim_refusals_and_changed_approval test_claim_concurrent_spawn_and_lost_reply test_claim_crash_fence test_claim_skips_unprepared_work_and_scopes_charter_guidance
+  exit
+fi
+
 fm_test_run \
+  test_claim_reserves_once_and_resumes \
+  test_claim_refusals_and_changed_approval \
+  test_claim_concurrent_spawn_and_lost_reply \
+  test_claim_crash_fence \
+  test_claim_skips_unprepared_work_and_scopes_charter_guidance \
   test_intake_files_one_item_per_ask_and_replays \
   test_intake_replay_key_and_existing_ids \
   test_public_followups_are_not_ready_work \

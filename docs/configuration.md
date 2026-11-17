@@ -1126,8 +1126,13 @@ The optional local, gitignored `config/mission-ledger` file holds one `key=value
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `min-ready` | `3` | Ready items each active project needs at each check time; `0` turns the scheduled check off. |
+| `claim-project` | absent (off) | Exact project slug allowed for home-local self-service dispatch; repeat for each project inside the home's approved charter. |
 
 Blank lines and lines that start with `#` are ignored, and an unusable value keeps its default.
+Claim grants are stricter: a malformed grant refuses claims, and a symlinked or unreadable configuration grants nothing.
+Enable `claim-project` in one pilot home first, only for work already approved and routed to that home.
+It grants no cross-home routing, charter changes, new work, or merge authority.
+The atomic reservation, spawn token, approval recheck, and crash-recovery commands are owned by the [`fm-ledger.sh` header](../bin/fm-ledger.sh).
 A check time is reported only within 6 hours after it passes, so a watcher that was down overnight does not report a stale morning reading.
 
 ## Escalation quiet hours (config/escalation)

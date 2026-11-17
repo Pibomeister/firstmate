@@ -869,6 +869,10 @@
 #   identity is owned by the parent home that holds its task metadata, while the
 #   pane export happens on the remote host (bin/fm-remote-secondmate-control.sh).
 #   Local spawns never pass it and resolve their own carrier exactly as before.
+# --claim <token> consumes fm-ledger.sh's home-local reservation on a fresh
+# single ship/scout spawn. The ledger owns receipt validation and crash recovery.
+# A reserved id cannot be freshly spawned without its token. Every backend uses
+# the same fence before endpoint allocation; no claim relaxes another spawn gate.
 set -eu
 
 # Template replacements must stay literal on Bash 5.2+ and stock macOS Bash.
@@ -1155,6 +1159,7 @@ BUDGET_LAUNCH_MARKER=''
 # Opt-in only: exact-resume presentation-order lock waits instead of refusing.
 # Absent/unset keeps upstream refuse-on-contention. See header.
 HERDR_RESUME_LOCK_WAIT=0
+LEDGER_CLAIM=
 POS=()
 want_value=
 for a in "$@"; do
@@ -1191,6 +1196,7 @@ for a in "$@"; do
       EFFORT_SET=1
       ;;
     dispatch-override) DISPATCH_OVERRIDE=$a ;;
+    claim) LEDGER_CLAIM=$a ;;
     hermes-profile)
       HERMES_PROFILE=$a
       HERMES_PROFILE_SET=1
@@ -1273,6 +1279,7 @@ for a in "$@"; do
     EFFORT_SET=1
     ;;
   --dispatch-override) want_value=dispatch-override ;;
+  --claim) want_value=claim ;;
   --dispatch-override=*) DISPATCH_OVERRIDE=${a#--dispatch-override=} ;;
   --hermes-profile) want_value=hermes-profile ;;
   --hermes-profile=*) HERMES_PROFILE=${a#--hermes-profile=}; HERMES_PROFILE_SET=1 ;;
@@ -2386,6 +2393,7 @@ if [ "$RELAUNCH" -eq 1 ] && [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart"
   exit 1
 fi
 if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in */*) false ;; *) true ;; esac then
+  [ -z "$LEDGER_CLAIM" ] || { echo 'error: --claim requires a single task' >&2; exit 1; }
   if [ "$KIND" != secondmate ] && [ -z "$HARNESS_ARG" ] && [ -f "$CONFIG/crew-dispatch.json" ]; then
     echo "error: config/crew-dispatch.json is active - pass an explicit harness resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
     exit 1
@@ -2438,6 +2446,10 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   exit "$rc"
 fi
 ID=${POS[0]}
+if [ -n "$LEDGER_CLAIM" ] && { [ "$RELAUNCH" -eq 1 ] || [ "$KIND" = secondmate ]; }; then
+  echo 'error: --claim requires a fresh ship or scout spawn' >&2
+  exit 1
+fi
 fm_task_id_creation_valid "$ID" || {
   echo "error: invalid task id" >&2
   exit 2
@@ -4979,6 +4991,14 @@ fi
 # secondmates included. Refuse a new child before any endpoint exists when that
 # total is already at a stop.
 "$SCRIPT_DIR/fm-task-budget.sh" prelaunch "$FM_HOME" || exit 1
+spawn_claim_transition() {
+  [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] || return 0
+  if [ -n "$LEDGER_CLAIM" ] || [ -e "$STATE/ledger-claims/$ID.json" ] || [ -L "$STATE/ledger-claims/$ID.json" ]; then
+    FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+      "$SCRIPT_DIR/fm-ledger.sh" "claim-$1" "$ID" "$LEDGER_CLAIM" "$PROJ_ABS"
+  fi
+}
+spawn_claim_transition check || exit 1
 [ -f "$BRIEF" ] || {
   echo "error: task $ID has no brief at inaccessible data path $BRIEF" >&2
   exit 1
@@ -5408,6 +5428,23 @@ if [ -d "$DATA/orders" ]; then
   fi
 fi
 
+if [ "$KIND" = secondmate ]; then
+  # Grants belong to the child home, never the launching parent's configuration.
+  # shellcheck source=bin/fm-secondmate-charter-lib.sh
+  . "$SCRIPT_DIR/fm-secondmate-charter-lib.sh"
+  CLAIM_GUIDANCE=$(fm_secondmate_claim_guidance "$PROJ_ABS/config") || {
+    echo 'error: invalid secondmate claim-project configuration' >&2
+    exit 1
+  }
+  if [ -n "$CLAIM_GUIDANCE" ]; then
+    CLAIM_CHARTER="$PROJ_ABS/state/launch-charter.md"
+    mkdir -p "$PROJ_ABS/state"
+    { cat "$BRIEF" && printf '\n%s\n' "$CLAIM_GUIDANCE"; } > "$CLAIM_CHARTER.tmp.$$" || exit 1
+    mv "$CLAIM_CHARTER.tmp.$$" "$CLAIM_CHARTER"
+    BRIEF=$CLAIM_CHARTER
+  fi
+fi
+
 BRIEF_DIR_REAL=$(cd "$(dirname "$BRIEF")" && pwd -P)
 BRIEF_REAL="$BRIEF_DIR_REAL/$(basename "$BRIEF")"
 
@@ -5807,6 +5844,9 @@ if [ -e "$STATE/$ID.backlog-close" ] || [ -L "$STATE/$ID.backlog-close" ]; then
   exit 1
 fi
 
+# No endpoint or task worktree exists yet on any fresh backend path. Keep this
+# durable fence through an uncertain failure, even if spawn cleanup removes meta.
+spawn_claim_transition begin || exit 1
 W="fm-$ID"
 if [ "$RELAUNCH" -eq 1 ]; then
   # A secondmate's home already resolved WT above through the same validation a
@@ -9825,6 +9865,7 @@ if [ "$T3CODE_LAUNCH_UNCONFIRMED" = 1 ]; then
   exit 1
 fi
 
+spawn_claim_transition finish || exit 1
 SPAWN_DELIVERY=
 [ -z "$MODE" ] || SPAWN_DELIVERY=" mode=$MODE yolo=$YOLO"
 SPAWN_ACCOUNT=
