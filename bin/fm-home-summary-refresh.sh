@@ -237,12 +237,8 @@ home_summary_stage_note() {  # <stage-file>
 if [ "$HOME_SUMMARY_MODE" = parent ]; then
   attempt_stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) || attempt_stamp=
   stage_file=
-  # No mkdir here: the parent must never block outside the deadline, so a home
-  # whose state directory is missing simply runs without stage reporting.
-  if [ -d "$STATE" ]; then
-    stage_file=$(umask 077; mktemp "$STATE/.home-summary-stage.XXXXXX" 2>/dev/null) || stage_file=
-  fi
-  # A signalled parent must not leave its stage file behind in state/.
+  # A signalled parent must not leave its stage file behind in state/, so the
+  # traps are registered before the file can exist.
   # shellcheck disable=SC2329 # Invoked by the signal and EXIT traps below.
   home_summary_parent_cleanup() {
     [ -z "$stage_file" ] || rm -f -- "$stage_file" 2>/dev/null || true
@@ -251,6 +247,11 @@ if [ "$HOME_SUMMARY_MODE" = parent ]; then
   trap 'exit 129' HUP
   trap 'exit 130' INT
   trap 'exit 143' TERM
+  # No mkdir here: the parent must never block outside the deadline, so a home
+  # whose state directory is missing simply runs without stage reporting.
+  if [ -d "$STATE" ]; then
+    stage_file=$(umask 077; mktemp "$STATE/.home-summary-stage.XXXXXX" 2>/dev/null) || stage_file=
+  fi
   if fm_run_timed "$HOME_SUMMARY_TIMEOUT" env \
     FM_HOME_SUMMARY_WORKER_BEST_EFFORT="$BEST_EFFORT" \
     FM_HOME_SUMMARY_IF_IDLE="$HOME_SUMMARY_IF_IDLE" \

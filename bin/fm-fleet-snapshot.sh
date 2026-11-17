@@ -316,11 +316,13 @@ esac
 command -v jq >/dev/null 2>&1 || { echo "fm-fleet-snapshot: jq not found" >&2; exit 1; }
 
 # Stage timing: with FM_SNAPSHOT_STAGE_LOG set, each stage boundary appends one
-# "<stage>\t<seconds since start>" line, so a caller that kills a slow run can
-# name the stage it was in. The log never changes the snapshot output.
+# "<stage>\t<seconds since start>" line to that existing file, so a caller that
+# kills a slow run can name the stage it was in. The log never changes the snapshot output.
 SNAPSHOT_STAGE_START=$SECONDS
 snapshot_stage() {  # <stage-name>
   [ -n "${FM_SNAPSHOT_STAGE_LOG:-}" ] || return 0
+  # Append only to a log the caller still owns: a deleted log is never recreated.
+  [ -f "$FM_SNAPSHOT_STAGE_LOG" ] || return 0
   printf '%s\t%s\n' "$1" "$((SECONDS - SNAPSHOT_STAGE_START))" \
     >> "$FM_SNAPSHOT_STAGE_LOG" 2>/dev/null || true
 }

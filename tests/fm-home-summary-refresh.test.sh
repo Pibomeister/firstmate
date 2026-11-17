@@ -549,6 +549,25 @@ ls "$HOME_DIR/state"/.home-summary-stage.* >/dev/null 2>&1 \
   && fail "a signalled parent leaked its stage file"
 pass "a signalled parent removes its stage file"
 
+# The producer reports stages only to a log its caller still owns: a log that
+# was deleted (a signalled parent already cleaned it up) must not be recreated.
+GONE_LOG="$TMP_ROOT/gone-stage.log"
+rm -f "$GONE_LOG"
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  FM_SNAPSHOT_NOW="$NOW_THREE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_THREE" \
+  FM_SNAPSHOT_STAGE_LOG="$GONE_LOG" "$SNAPSHOT" --secondmate-home-summary >/dev/null 2>&1 \
+  || fail "the producer failed with an absent stage log"
+[ ! -e "$GONE_LOG" ] || fail "the producer recreated a deleted stage log"
+LIVE_LOG="$TMP_ROOT/live-stage.log"
+: > "$LIVE_LOG"
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  FM_SNAPSHOT_NOW="$NOW_THREE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_THREE" \
+  FM_SNAPSHOT_STAGE_LOG="$LIVE_LOG" "$SNAPSHOT" --secondmate-home-summary >/dev/null 2>&1 \
+  || fail "the producer failed with a live stage log"
+grep -E '^summary	[0-9]+$' "$LIVE_LOG" >/dev/null \
+  || fail "the producer did not report its stages to an existing stage log"
+pass "the producer never recreates a deleted stage log"
+
 HANGBIN="$TMP_ROOT/hangbin"
 REAL_JQ=$(command -v jq)
 mkdir -p "$HANGBIN"
