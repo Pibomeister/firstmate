@@ -983,7 +983,7 @@ The optional local, gitignored `config/mission-ledger` file holds one `key=value
 | `claim-project` | absent (off) | Exact project slug allowed for home-local self-service dispatch; repeat for each project inside the home's approved charter. |
 
 Blank lines and lines that start with `#` are ignored, and an unusable value keeps its default.
-Claim grants are stricter: a malformed grant refuses claims, and a symlinked or unreadable configuration grants nothing.
+Claim grants are stricter: a malformed grant, or a symlinked or unreadable configuration, refuses claims and secondmate launch.
 Enable `claim-project` in one pilot home first, only for work already approved and routed to that home.
 It grants no cross-home routing, charter changes, new work, or merge authority.
 The atomic reservation, spawn token, approval recheck, and crash-recovery commands are owned by the [`fm-ledger.sh` header](../bin/fm-ledger.sh).
