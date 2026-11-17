@@ -66,17 +66,21 @@
 #     devin, cortex, kiro, kiro-cli, polytoken, commandcode, command-code, orca, herdr, tmux, zellij, screen, no-mistakes,
 #     treehouse, launchd, systemd, sshd, login, and desktop, IDE, and browser
 #     processes (any argument inside a .app bundle, code, electron, chrome,
-#     chromium, firefox, safari, Xorg, Xwayland, gnome-shell, kwin,
-#     plasmashell, WindowServer);
-#   - no argument is a Firstmate supervisor script (bin/fm-*.sh) outside a
-#     disposable temp root;
+#     chromium, brave, msedge, opera, vivaldi, firefox, safari, the JetBrains
+#     IDEs, zed, emacs, vim, Xorg, Xwayland, gnome-shell, kwin, plasmashell,
+#     WindowServer; the script's PROTECTED_NAMES holds the full list);
+#   - no argument is a Firstmate supervisor script (bin/fm-*.sh), wherever
+#     it lives, and no argument is a Chromium or Electron helper --type=;
 #   - node is protected unless its program is under a disposable temp root;
 #   - no protected process descends from it;
-#   - it is scratch: its program (argv[0], or an interpreter's script
-#     operand) starts under a disposable temp root (/tmp/fm-*,
-#     /private/tmp/fm-*, /var/folders/<a>/<b>/T/fm-*, or $TMPDIR/fm-*) with
-#     no . or .. segment, or an ancestor's program is a tests/<name>.test.sh
-#     script. An argument that only names a temp path does not make it scratch;
+#   - it is scratch: its program (argv[0], or an interpreter's first argument
+#     when that is not an option) starts under a disposable temp root
+#     (/tmp/fm-*, /private/tmp/fm-*, /var/folders/<a>/<b>/T/fm-*, or
+#     $TMPDIR/fm-*) with no . or .. segment, is not itself a symlink, and
+#     still does once its directory symlinks are resolved; or an ancestor's
+#     program is a tests/<name>.test.sh script. An argument that only names a
+#     temp path, or an interpreter started with an option, does not make it
+#     scratch;
 #   - a fresh process read just before the signal still shows the same
 #     process (uid, parent, command name, arguments, and an elapsed time that
 #     only moved forward) and still judges it eligible; otherwise it is
@@ -250,7 +254,7 @@ read_procs() {  # <names-scratch-file>
 
 # --- protection -----------------------------------------------------------------
 
-PROTECTED_NAMES='claude codex agy cursor cursor-agent grok kimi opencode pi pi-signed omp droid hermes muse gemini rovo devin cortex kiro kiro-cli polytoken commandcode command-code orca herdr tmux zellij screen no-mistakes treehouse launchd systemd sshd login code Code electron Electron chrome chromium chromium-browser google-chrome firefox safari Safari Xorg Xwayland gnome-shell kwin kwin_wayland plasmashell WindowServer Finder Dock loginwindow'
+PROTECTED_NAMES='claude codex agy cursor cursor-agent grok kimi opencode pi pi-signed omp droid hermes muse gemini rovo devin cortex kiro kiro-cli polytoken commandcode command-code orca herdr tmux zellij screen no-mistakes treehouse launchd systemd sshd login code Code electron Electron chrome chromium chromium-browser google-chrome brave brave-browser msedge microsoft-edge opera vivaldi epiphany firefox firefox-bin firefox-esr GeckoMain safari Safari idea pycharm webstorm goland clion rider studio zed sublime_text emacs vim nvim Xorg Xwayland gnome-shell kwin kwin_wayland plasmashell WindowServer Finder Dock loginwindow'
 
 scratch_roots() {
   local t phys
@@ -282,11 +286,10 @@ classify_candidates() {  # <candidates-file> <self-pids>
       n = split(a, t, " ")
       if (n == 0) return ""
       if (!interp(bname(t[1]))) return t[1]
-      for (i = 2; i <= n; i++) {
-        if (t[i] == "-c" || t[i] == "-e" || t[i] == "-" || t[i] == "--eval") return ""
-        if (t[i] !~ /^-/) return t[i]
-      }
-      return ""
+      # Any option before the script may take a value, so there is no
+      # trusted program path: inline code, a preload, or a module.
+      if (n < 2 || t[2] ~ /^-/) return ""
+      return t[2]
     }
     # A protected name as any path component of any argument, or as the
     # leading word of one (claude-code, .codex), protects the process.
@@ -304,7 +307,7 @@ classify_candidates() {  # <candidates-file> <self-pids>
     }
     function supervisor(a,   n, t, i) {
       n = split(a, t, " ")
-      for (i = 1; i <= n; i++) if (t[i] ~ /(^|\/)bin\/fm-[A-Za-z0-9_.-]*\.sh$/ && !under_root(t[i])) return 1
+      for (i = 1; i <= n; i++) if (t[i] ~ /(^|\/)bin\/fm-[A-Za-z0-9_.-]*\.sh$/) return 1
       return 0
     }
     function lead(t,   w) { w = t; sub(/^[.@]+/, "", w); sub(/[-.@_].*/, "", w); return w }
@@ -315,6 +318,7 @@ classify_candidates() {  # <candidates-file> <self-pids>
       if (lead(c) in prot) return "protected " lead(c)
       if (lead(a0) in prot) return "protected " lead(a0)
       if (args[p] ~ /\.app\//) return "desktop app"
+      if (args[p] ~ /(^| )--type=[a-z-]+( |$)/) return "browser or Electron helper"
       w = protected_word(args[p]); if (w != "") return "protected " w
       if ((c == "node" || a0 == "node") && !under_root(program(args[p]))) return "node outside a disposable temp root"
       if (supervisor(args[p])) return "firstmate supervisor script"
@@ -339,15 +343,52 @@ classify_candidates() {  # <candidates-file> <self-pids>
         else if (c in preason) why = preason[c]
         else if (c in hasprot) why = "ancestor of protected pid " hasprot[c]
         else {
-          s = under_root(program(args[c]))
-          if (!s) { q = ppid[c]; hops = 0
-            while (q in ppid && q != 0 && hops++ < 256) { if (program(args[q]) ~ /(^|\/)tests\/[A-Za-z0-9_.-]+\.test\.sh$/) { s = 1; break } q = ppid[q] } }
-          if (!s) why = "not scratch"
+          s = ""; pg = program(args[c])
+          if (under_root(pg)) s = "program\t" pg
+          else { q = ppid[c]; hops = 0
+            while (q in ppid && q != 0 && hops++ < 256) { if (program(args[q]) ~ /(^|\/)tests\/[A-Za-z0-9_.-]+\.test\.sh$/) { s = "scratch"; break } q = ppid[q] } }
+          if (s == "") why = "not scratch"
         }
-        if (why == "") printf "%s\teligible\tscratch\n", c
+        if (why == "") printf "%s\teligible\t%s\n", c, s
         else printf "%s\tspared\t%s\n", c, why
       }
     }'
+}
+
+# physical_path <path>: the path with every directory symlink resolved; a
+# symlinked file or an unreadable directory has none.
+physical_path() {
+  local d
+  [ ! -L "$1" ] || return 1
+  d=$(cd -P -- "$(dirname -- "$1")" 2>/dev/null && pwd -P) || return 1
+  printf '%s/%s\n' "$d" "$(basename -- "$1")"
+}
+
+under_scratch_root() {  # <physical-path>
+  local r
+  case "$1" in */../*|*/./*|*/..|*/.) return 1 ;; esac
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    case "$1" in "$r"*) return 0 ;; esac
+  done <<EOF
+$(scratch_roots)
+EOF
+  [[ "$1" =~ ^(/private)?/var/folders/[^/]+/[^/]+/T/fm- ]]
+}
+
+# judge <candidates-file>: classify_candidates on the table on stdin, then
+# spare an eligible program whose physical path leaves the temp roots.
+judge() {
+  local pid verdict why prog phys
+  classify_candidates "$1" "$SELF_PIDS" | while IFS=$'\t' read -r pid verdict why prog; do
+    if [ "$verdict" = eligible ] && [ "$why" = program ]; then
+      why=scratch
+      if ! phys=$(physical_path "$prog") || ! under_scratch_root "$phys"; then
+        verdict=spared why="program resolves outside a disposable temp root"
+      fi
+    fi
+    printf '%s\t%s\t%s\n' "$pid" "$verdict" "$why"
+  done
 }
 
 self_pids() {  # the guard and every ancestor
@@ -409,7 +450,7 @@ actions=''
 if [ -s "$WORK/sustained" ]; then
   cut -f 1 "$WORK/sustained" > "$WORK/cands"
   SELF_PIDS=$(self_pids)
-  classify_candidates "$WORK/cands" "$SELF_PIDS" < "$WORK/procs" > "$WORK/verdicts"
+  judge "$WORK/cands" < "$WORK/procs" > "$WORK/verdicts"
 fi
 
 verdict_of() { awk -F'\t' -v p="$1" '$1 == p { print $2 "\t" $3; exit }' "$WORK/verdicts"; }
@@ -427,7 +468,7 @@ still_same() {
   [ "${was%$'\t'*}" = "${is%$'\t'*}" ] || return 1
   [ "${is##*$'\t'}" -ge $(( ${was##*$'\t'} - START_SLACK_SECS )) ] || return 1
   [ $(( ${is##*$'\t'} - ${was##*$'\t'} )) -le "$RECHECK_MAX_SECS" ] || return 1
-  [ "$(classify_candidates "$WORK/recand" "$SELF_PIDS" < "$WORK/fresh" | cut -f 2)" = eligible ]
+  [ "$(judge "$WORK/recand" < "$WORK/fresh" | cut -f 2)" = eligible ]
 }
 
 : > "$WORK/alarm-lines"

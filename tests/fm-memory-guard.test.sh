@@ -12,6 +12,7 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
+BASE_PATH_FIRST=${BASE_PATH%%:*}
 TMP_ROOT=$(fm_test_tmproot fm-memory-guard)
 GUARD="$ROOT/bin/fm-memory-guard.sh"
 FAKE=$(fm_fakebin "$TMP_ROOT")
@@ -382,17 +383,25 @@ wrapped|claude|me|P_wrapper|claude"
 test_reap_scratch_needs_a_scratch_program() {
   local name
   new_home 'mode=reap-scratch'
-  for name in exe nodeagent watchtmp prodlog dotdot inline; do eval "P_$name="; done
+  for name in exe nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink runner brave renderer; do eval "P_$name="; done
+  mkdir -p "$TMP_ROOT/bin" "$TMP_ROOT/live/bin"
+  ln -s "$BASE_PATH_FIRST" "$TMP_ROOT/prodlink"
   REAP_ROWS="exe|leaky|me|1|$TMP_ROOT/bin/leaky --size 9
 nodeagent|node|me|1|node /opt/lib/node_modules/@anthropic-ai/claude-code/cli.js --add-dir $TMP_ROOT/p
 watchtmp|bash|me|1|bash /opt/firstmate/bin/fm-watch.sh --state $TMP_ROOT/home
 prodlog|python3|me|1|python3 /srv/production.py --log $TMP_ROOT/fm-production.log
 dotdot|bash|me|1|bash $TMP_ROOT/../../srv/job.sh
-inline|bash|me|1|bash -c run $TMP_ROOT/a.sh"
-  sustain
+inline|bash|me|1|bash -c run $TMP_ROOT/a.sh
+preload|node|me|1|node --require $TMP_ROOT/bootstrap.js /srv/server.js
+livewatch|bash|me|1|bash $TMP_ROOT/live/bin/fm-watchdog.sh run
+prodlink|python3|me|1|python3 $TMP_ROOT/prodlink/server.py
+runner|bash|me|1|bash tests/ui.test.sh
+brave|brave|me|P_runner|/opt/brave.com/brave/brave
+renderer|helper|me|P_runner|/opt/app/helper --type=renderer"
+  RUNNER_SMALL=1 sustain
   wait_gone "$P_exe" || fail "a program under a temp root was not stopped: $OUT"
   action_has "term:$P_exe" || fail "action does not name the stopped program: $(summary)"
-  for name in nodeagent watchtmp prodlog dotdot inline; do
+  for name in nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink brave renderer; do
     eval "pid=\$P_$name"
     alive "$pid" || fail "$name (pid $pid) was signaled: $OUT"
     action_has "spared:$pid" || fail "action does not name the spared $name: $(summary)"
@@ -401,6 +410,11 @@ inline|bash|me|1|bash -c run $TMP_ROOT/a.sh"
   assert_contains "$OUT" "spared (protected claude)" "an agent run by an interpreter is protected by its script path"
   assert_contains "$OUT" "spared (firstmate supervisor script)" "a supervisor stays protected when an argument names a temp path"
   [ "$(printf '%s\n' "$OUT" | grep -c 'spared (not scratch)')" = 3 ] || fail "a temp-path argument, a .. path, or inline code counted as scratch: $OUT"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (node outside a disposable temp root)')" = 1 ] || fail "a node preload under a temp root made node scratch: $OUT"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (firstmate supervisor script)')" = 2 ] || fail "a supervisor script under a temp root lost its protection: $OUT"
+  assert_contains "$OUT" "spared (program resolves outside a disposable temp root)" "a symlink out of the temp root is not scratch"
+  assert_contains "$OUT" "spared (protected brave)" "a browser under a test runner is protected"
+  assert_contains "$OUT" "spared (browser or Electron helper)" "a Chromium helper under a test runner is protected"
   pass "reap-scratch needs the program itself under a temp root, not an argument that names one"
 }
 
