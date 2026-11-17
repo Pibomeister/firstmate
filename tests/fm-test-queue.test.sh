@@ -370,7 +370,7 @@ test_stale_led_group_straggler_is_reaped_by_the_next_run() {
   wait_until "stale straggler ended" pid_gone "$straggler"
   wait_until "stopped holder ended" pid_gone "$holder"
   line_is_empty || fail "the dead ticket was not reclaimed"
-  pass "fm-test-queue.sh: the next run reaps a dead wrapper's straggler and reclaims its slot"
+  pass "fm-test-queue.sh: the next run wakes a dead wrapper's stopped holder, which reaps its straggler, and takes the slot"
 }
 
 # With no later run at all, the holder itself reaps a killed wrapper's
@@ -476,6 +476,46 @@ test_wrapper_killed_mid_reap_leaves_the_holder_to_finish() {
   wait_until "stubborn straggler ended with no later run" pid_gone "$straggler"
   wait_until "nothing is left in the group" group_empty "$wrapper"
   pass "fm-test-queue.sh: a wrapper killed mid-reap leaves its holder to finish the reap"
+}
+
+# A caller that reads the run's output to the end before it waits leaves a
+# killed wrapper a zombie until that output closes. The holder treats the
+# zombie as gone, so it reaps the straggler holding the output.
+test_zombie_wrapper_does_not_block_its_holder() {
+  local wrapper straggler
+  new_case holder-zombie
+  echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
+  CASE_PID_FILES+=("$CASE/straggler")
+  python3 - "$QBASH" "$QUEUE" "$CASE" <<'PYCALLER' &
+import os, subprocess, sys
+qbash, queue, case = sys.argv[1:4]
+script = (
+    'echo $$ > "$1/child"\n'
+    'sh -c \'trap "" TERM; echo $$ > "$1/straggler"; exec sleep 100000\' _ "$1" </dev/null 2>/dev/null &\n'
+    'while [ ! -s "$1/straggler" ]; do sleep 0.05; done\n'
+)
+p = subprocess.Popen([qbash, queue, "run", "--label", "zombie", "--", "sh", "-c", script, "_", case],
+                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                     preexec_fn=os.setpgrp)
+with open(os.path.join(case, "wrapper"), "w") as f:
+    f.write(str(p.pid))
+p.stdout.read()
+open(os.path.join(case, "output-closed"), "w").close()
+p.wait()
+PYCALLER
+  CASE_PIDS+=("$!")
+  wait_until "stubborn straggler started" file_exists "$CASE/straggler"
+  wrapper=$(cat "$CASE/wrapper")
+  straggler=$(cat "$CASE/straggler")
+  CASE_PIDS+=("$wrapper")
+  wait_until "child exited" pid_gone "$(cat "$CASE/child")"
+  sleep 0.5
+  [ ! -e "$CASE/output-closed" ] || fail "the wrapper finished before it could be killed mid-reap"
+  kill -KILL "$wrapper"
+  wait_long 30 "the caller's output closed" file_exists "$CASE/output-closed"
+  wait_until "stubborn straggler ended" pid_gone "$straggler"
+  wait_until "nothing is left in the group" group_empty "$wrapper"
+  pass "fm-test-queue.sh: a zombie wrapper whose caller still reads its output does not stall its holder"
 }
 
 # An unrelated job whose leader exits leaves a member behind in a group whose
@@ -1021,6 +1061,7 @@ test_stale_led_group_straggler_is_reaped_by_the_next_run
 test_killed_wrapper_holder_reaps_without_a_next_run
 test_holder_waits_for_a_child_still_recording_itself
 test_wrapper_killed_mid_reap_leaves_the_holder_to_finish
+test_zombie_wrapper_does_not_block_its_holder
 test_reused_group_id_is_not_reaped
 test_pipeline_stage_outliving_its_caller_is_spared
 test_remote_straggler_cannot_hold_the_ssh_output

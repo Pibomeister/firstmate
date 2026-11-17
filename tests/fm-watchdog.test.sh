@@ -112,7 +112,12 @@ start_fixture_guardian() {
     (
       exec </dev/null >/dev/null 2>&1
       trap '' HUP INT
+      # A zombie suite is gone: its parent may wait only after reading output
+      # a fixture still holds.
       while kill -0 "$suite" 2>/dev/null && { [ -z "$start" ] || [ "$(ps -p "$suite" -o lstart= 2>/dev/null)" = "$start" ]; }; do
+        case $(ps -p "$suite" -o stat= 2>/dev/null) in
+          *Z*) break ;;
+        esac
         sleep 2
       done
       "$REAL_TMUX" -L "$SOCKET" kill-server || true
