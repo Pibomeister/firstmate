@@ -1,0 +1,28 @@
+=== 1. Mint disposable lab primary home ===
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.B8MufV/primary
+tmux_dir=/tmp/fml.asgZav
+=== 2. Seed lane-owner secondmate home (project-less firstmate repo domain) ===
+scaffolded: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.B8MufV/primary/data/firstmate-plan-mate/brief.md (secondmate charter)
+home=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.B8MufV/lane-home
+=== 3. Live seed-manifest & quota-reroute check against seeded home ===
+clean seeded claude-tooling rc=1 sig=
+clean seeded suggest pick=codex default
+edited secondmate-provisioning claude-tooling rc=0 sig=worktree .agents/skills/secondmate-provisioning/SKILL.md
+edited firstmate-self-repo claude-tooling rc=0 sig=worktree .agents/skills/firstmate-self-repo/SKILL.md
+=== 4. Charter replacement, registry scope update, and validate ===
+validate valid registry exit=0
+validate broken registry rc=1 err=error: malformed secondmate registry entry: - broken - bad line (home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.B8MufV/lane-home; missing scope)
+=== 5. Health verdict: idle vs fresh live vs stale ===
+health-verdict idle: verdict=ok reason=idle heartbeat_age=1 lock=none watcher_age=1 monitor=enabled at=1794951868
+health-verdict fresh: verdict=ok reason=fresh heartbeat_age=0 lock=live watcher_age=0 monitor=enabled at=1794951872
+health-verdict stale: verdict=stale reason=heartbeat-stale heartbeat_age=505 lock=live watcher_age=5 monitor=enabled at=1794951877
+=== 6. Firstmate-self-repo publication-target isolation (fork vs parent) ===
+lane role report: fm-role: maintainer github.com/operator/firstmate-fork (inherited)
+check fork target: authorized: maintainer scope github.com/operator/firstmate-fork
+scaffolded: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.B8MufV/lane-home/data/fork-ship/brief.md (ship, mode=direct-PR; replace {TASK} and {FIRSTMATE_SPEC})
+check parent target (no consent) rc=1 out=refused: this home runs as firstmate user/operator and holds no publication authority for github.com/upstream/firstmate
+brief parent target (no consent) rc=1 out=error: this home runs as firstmate user/operator and holds no publication authority for github.com/upstream/firstmate
+error: to let this home publish to github.com/upstream/firstmate, write 'maintainer github.com/upstream/firstmate' into /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.B8MufV/lane-home/config/firstmate-role (docs/configuration.md "Firstmate role"), or pass --upstream-consent github.com/upstream/firstmate for this one task with the captain's explicit approval
+lane role without receipt: fm-role: user - unverified inherited grant: a role file exists with no propagation receipt, and a secondmate gains the role only through propagation
+check fork target without receipt rc=1 out=refused: this home runs as firstmate user/operator and holds no publication authority for github.com/operator/firstmate-fork
+=== Steps 1-6 ALL PASSED (see live-lab-teardown.log for Step 7) ===
