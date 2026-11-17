@@ -141,6 +141,14 @@
 #       the away daemon named in its daemon-acks file
 #       (bin/fm-supervise-daemon.sh). Prints nothing and returns 1 when there is
 #       none.
+#   fm_wd_user_bin_path <path> <home>
+#       Prints <path> with <home>/.local/bin ahead of /opt/homebrew/bin and
+#       /usr/local/bin, where a self-updated tool such as `herdr update` installs,
+#       so a launchd or systemd PATH resolves the same binaries as an interactive
+#       Firstmate shell. It is inserted just before the first of those two, or
+#       appended when neither is present; a later copy is dropped, and a
+#       directory already ahead of them keeps its place. An empty home or a home
+#       with no such directory prints <path> unchanged.
 
 FM_WD_REFUSED_TEXT_RE='(^|[^be])merg|[rd]emerg|deploy|releas|publish|(^|[^a-z])force.?push|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
 FM_WD_RESERVED_RE="$FM_WD_REFUSED_TEXT_RE"'|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|delet|destroy|wipe)'
@@ -151,6 +159,27 @@ FM_WD_TIMER_BASH_RE='(^|[^a-z])(sleep|fm-watch|fm-wake|wake|timer|until)([^a-z]|
 FM_WD_USAGE_LIMIT_RE='^[^a-z]*(you( have|.{1,3}ve)? hit your ([a-z0-9-]+ ){0,2}limit|([a-z0-9-]+ )?(usage|rate)[- ]?limit (hit|reached|reset)|(you( are|.{1,3}re) )?out of credits|waiting on a rate[- ]limit)'
 FM_WD_MODEL_SWITCH_RE='^[^a-z]*(switch (to )?((a|another) )?model|switch to another account)'
 FM_WD_QUOTA_STATUS_RE='quota (floor|exhausted|is exhausted|at 0|limit|wall)|(hit|reached|at) (the |a |its )?quota|rate.?limited|rate limit (hit|reached)|usage limit (hit|reached)|out of (credits|quota)|credits (are )?(exhausted|at 0|empty)'
+
+fm_wd_user_bin_path() {  # <path> <home>
+  local path=$1 user_bin dir out='' placed=0
+  local -a parts=()
+  user_bin=${2:+$2/.local/bin}
+  if [ -z "$user_bin" ] || [ ! -d "$user_bin" ]; then
+    printf '%s\n' "$path"
+    return 0
+  fi
+  IFS=: read -r -a parts <<< "$path"
+  for dir in ${parts[@]+"${parts[@]}"}; do
+    case "$dir" in
+      "$user_bin") [ "$placed" = 0 ] || continue; placed=1 ;;
+      /opt/homebrew/bin|/usr/local/bin)
+        [ "$placed" = 1 ] || { out="$out${out:+:}$user_bin"; placed=1; } ;;
+    esac
+    out="$out${out:+:}$dir"
+  done
+  [ "$placed" = 1 ] || out="$out${out:+:}$user_bin"
+  printf '%s\n' "$out"
+}
 
 fm_wd_conf_get() {  # <file> <key> <default>
   local file=$1 key=$2 def=${3-} v
