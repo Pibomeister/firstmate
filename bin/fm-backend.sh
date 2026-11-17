@@ -1110,7 +1110,7 @@ fm_backend_source() {  # <name>
       set -- fm-backend-hometag-lib.sh fm-composer-lib.sh
       ;;
     orca)
-      set -- fm-composer-lib.sh fm-agent-process-lib.sh fm-session-lock-lib.sh fm-cursor-lib.sh fm-gemini-lib.sh
+      set -- fm-composer-lib.sh fm-agent-process-lib.sh fm-session-lock-lib.sh fm-cursor-lib.sh fm-gemini-lib.sh fm-orca-cli-cache.sh
       ;;
     cmux|paseo)
       set -- fm-backend-hometag-lib.sh fm-composer-lib.sh
@@ -1515,8 +1515,10 @@ fm_backend_composer_state() {  # <backend> <target> [expected-label] -> empty|pe
 # server as a side effect via fm_backend_herdr_server_ensure - fine for an
 # operation that is about to use the pane, wrong for a passive liveness
 # probe). A gone tmux window or an unqueryable herdr pane (server down, pane
-# closed), missing zellij pane, unreadable Orca terminal, or absent Tern block
-# simply fails, which IS "does not exist" for this purpose.
+# closed), missing zellij pane, or absent Tern block simply fails, which IS
+# "does not exist" for this purpose. Orca existence is one shared terminal
+# list owned by bin/fm-orca-cli-cache.sh, and an unreadable list falls back
+# to a one-line terminal read.
 # Owns fm-crew-state.sh's pane_readable check too, so callers that only need a
 # fast alive/dead read (recovery digests, the session-start fleet digest) do
 # not re-derive it inline.
@@ -1524,7 +1526,7 @@ fm_backend_composer_state() {  # <backend> <target> [expected-label] -> empty|pe
 # session, and `session:window`, `session:index`, or a window index with
 # a numeric `.pane` suffix; optional `=session:=window` markers stay exact too.
 fm_backend_target_exists() {  # <backend> <target> [expected-label]
-  local backend=$1 target=$2 expected_label=${3:-} session pane
+  local backend=$1 target=$2 expected_label=${3:-} session pane orca_exists_rc
   case "$backend" in
     tmux)
       fm_backend_source tmux || return 1
@@ -1551,7 +1553,13 @@ fm_backend_target_exists() {  # <backend> <target> [expected-label]
       ;;
     orca)
       fm_backend_source orca || return 1
-      fm_backend_orca_capture "$target" 1 >/dev/null 2>&1
+      orca_exists_rc=0
+      fm_backend_orca_terminal_exists "$target" || orca_exists_rc=$?
+      case "$orca_exists_rc" in
+        0) return 0 ;;
+        1) return 1 ;;
+        *) fm_backend_orca_capture "$target" 1 >/dev/null 2>&1 ;;
+      esac
       ;;
     cmux)
       fm_backend_source cmux || return 1

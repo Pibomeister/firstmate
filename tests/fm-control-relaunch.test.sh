@@ -2527,7 +2527,7 @@ stale_published_task() {  # <case-dir> <id>: ship task on task-<id>, stale again
 }
 
 test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head() {
-  local dir out mode local_sha
+  local dir out mode local_sha launch
   dir=$(new_case prresync rl90)
   stale_published_task "$dir" rl90
   out=$(run_spawn "$dir" rl90 --relaunch)
@@ -2588,15 +2588,33 @@ test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head() {
   dir=$(new_case prresync-dirty rl91)
   stale_published_task "$dir" rl91
   printf 'keep\n' > "$dir/wt/uncommitted.txt"
+  printf 'edited\n' >> "$dir/wt/a.txt"
   out=$(run_spawn "$dir" rl91 --relaunch)
-  assert_contains "$out" "cannot relaunch: bin/fm-pr-resync.sh exited 1" "a dirty worktree did not refuse the relaunch"$'\n'"$out"
-  assert_not_contains "$out" "spawned rl91" "a refused relaunch still launched"
-  [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$STALE_SHA" ] || fail "a refused relaunch moved the branch"
-  assert_grep 'keep' "$dir/wt/uncommitted.txt" "a refused relaunch discarded local work"
+  assert_contains "$out" "spawned rl91" "a dirty task-owned copy did not relaunch"$'\n'"$out"
+  assert_contains "$out" "skipping the published-head resync" "a dirty relaunch did not say it skipped the resync"
+  assert_not_contains "$out" "fm-pr-resync:" "a dirty relaunch invoked the network resync owner"
+  [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$STALE_SHA" ] || fail "a dirty relaunch moved the branch"
+  assert_grep 'keep' "$dir/wt/uncommitted.txt" "a dirty relaunch discarded an untracked file"
+  assert_grep 'edited' "$dir/wt/a.txt" "a dirty relaunch discarded a tracked edit"
+  [ -z "$(git -C "$dir/wt" stash list)" ] || fail "a dirty relaunch stashed local work"
+  launch="$dir/home/data/rl91/launch-brief.md"
+  assert_grep '# Dirty-copy relaunch' "$launch" "the replacement was not told its copy is dirty"
+  assert_grep 'never stash, reset, check out over, clean, or discard them' "$launch" "the dirty-copy section does not protect the edits"
+  assert_grep 'uncommitted.txt' "$launch" "the dirty-copy section does not list the uncommitted paths"
+  assert_grep "fm-pr-resync.sh rl91 $dir/wt task-rl91 --refuse-diverged" "$launch" "the dirty-copy section does not name the later resync with its divergence refusal"
 
   out=$(run_spawn "$dir" rl91 --relaunch --pr-branch task-rl91)
   assert_contains "$out" "--pr-branch and --from-branch apply only to a fresh launch" "--relaunch accepted --pr-branch"
-  pass "fm-spawn --relaunch: no-mistakes divergence refuses, behind advances, and explicit worker-owned modes skip resync despite a no-mistakes remote"
+
+  dir=$(new_case prresync-dirty-other rl98)
+  stale_published_task "$dir" rl98
+  git -C "$dir/wt" switch -q -c unrelated
+  printf 'keep\n' > "$dir/wt/uncommitted.txt"
+  out=$(run_spawn "$dir" rl98 --relaunch)
+  assert_not_contains "$out" "spawned rl98" "a dirty copy on another branch launched"$'\n'"$out"
+  assert_contains "$out" "cannot relaunch" "a dirty copy on another branch was not refused"$'\n'"$out"
+  assert_grep 'keep' "$dir/wt/uncommitted.txt" "a refused relaunch discarded local work"
+  pass "fm-spawn --relaunch: no-mistakes divergence refuses, behind advances, a dirty task-owned copy relaunches untouched without resync, and explicit worker-owned modes skip resync despite a no-mistakes remote"
 }
 
 # A successor launched with --from-branch keeps its brief's Setup "Source
@@ -2678,6 +2696,83 @@ SH
   [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$local_sha" ] || fail "a clean ahead relaunch moved HEAD"
   [ "$refs_before" = "$refs_after" ] || fail "a clean ahead relaunch moved a ref"
   pass "fm-spawn --relaunch: a clean strictly-ahead run_pipeline verdict launches and keeps the local commit"
+}
+
+# A clean copy left behind its own pipeline-pushed head by a failed pr step
+# carries the native behind / safe_fast_forward / sync verdict; a relaunch
+# fast-forwards it through the owner and launches without manual sync.
+behind_pipeline_push_task() {  # <case-dir> <id>: clean ship copy one pipeline commit behind origin
+  local dir=$1 id=$2
+  add_ship_task "$dir" "$id" claude
+  printf 'branch=task-%s\n' "$id" >> "$dir/home/state/$id.meta"
+  printf 'a\n' > "$dir/wt/a.txt"
+  git -C "$dir/wt" add a.txt
+  git -C "$dir/wt" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm a
+  git -C "$dir/wt" push -q origin "task-$id"
+  git clone -q "$dir/proj.origin.git" "$dir/pipe"
+  git -C "$dir/pipe" switch -q "task-$id"
+  printf 'fix\n' > "$dir/pipe/fix.txt"
+  git -C "$dir/pipe" add fix.txt
+  git -C "$dir/pipe" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm fix
+  git -C "$dir/pipe" push -q origin "task-$id"
+  PUBLISHED_SHA=$(git -C "$dir/pipe" rev-parse HEAD)
+  git -C "$dir/proj" remote add no-mistakes "$dir/proj.origin.git"
+  printf '%s\n' "$PUBLISHED_SHA" > "$dir/fake/published"
+  cat > "$dir/fakebin/no-mistakes" <<SH
+#!/usr/bin/env bash
+[ "\${1:-} \${2:-}" = "axi sync" ] || exit 0
+printf '%s\n' "\$*" >> '$dir/fake/nm-calls'
+head=\$(git rev-parse HEAD) pub=\$(cat '$dir/fake/published')
+if [ "\$head" = "\$pub" ]; then
+  printf '%s\n' 'branch_sync:' '  state: synchronized' '  changed: false' '  relation: equal' \
+    '  safety: already_synchronized'
+  exit 0
+fi
+printf '%s\n' 'branch_sync:' '  state: behind' '  changed: false' '  local:' '    branch: task-$id' \
+  "    head: \$head" '    clean: true' '  pipeline:' '    run: "01RUN"' '    status: failed' '    phase: pr' \
+  "    current_head: \$pub" "    pushed_head: \$pub" '  remote:' "    observed_head: \$pub" '    freshness: live' \
+  '  relation: behind' '  safety: safe_fast_forward' '  next_action:' '    code: sync' '    command: no-mistakes axi sync'
+SH
+  chmod +x "$dir/fakebin/no-mistakes"
+}
+
+assert_fast_forwarded_relaunch() {  # <case-dir> <output> <label>
+  local dir=$1 out=$2 label=$3
+  assert_contains "$out" "result=advanced archive=- custody=settled head=$PUBLISHED_SHA" "$label did not settle"$'\n'"$out"
+  assert_not_contains "$out" "not a verdict this owner settles" "$label was refused"
+  assert_not_contains "$out" "Monitoring-only relaunch" "$label was treated as monitoring-only"
+  [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$PUBLISHED_SHA" ] \
+    || fail "$label did not reach the pipeline-pushed head"
+  [ -z "$(git -C "$dir/wt" status --porcelain)" ] || fail "$label left the copy dirty"
+  [ -z "$(git -C "$dir/wt" for-each-ref --format='%(refname)' refs/heads/archive/)" ] \
+    || fail "$label created an archive"
+  [ -s "$dir/fake/nm-calls" ] || fail "$label never read branch custody"
+  ! grep -qv '^axi sync --check$' "$dir/fake/nm-calls" || fail "$label ran a mutating no-mistakes command"
+}
+
+test_spawn_relaunch_fast_forwards_a_clean_branch_behind_its_pipeline_push() {
+  local dir out
+  dir=$(new_case prresync-ff rl99)
+  behind_pipeline_push_task "$dir" rl99
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" rl99 --relaunch)
+  assert_contains "$out" "spawned rl99" "a clean safe fast-forward relaunch did not launch"$'\n'"$out"
+  assert_fast_forwarded_relaunch "$dir" "$out" "a safe fast-forward spawn relaunch"
+  pass "fm-spawn --relaunch: a clean branch behind its own pipeline push fast-forwards and launches without manual sync"
+}
+
+test_control_relaunch_fast_forwards_a_clean_branch_behind_its_pipeline_push() {
+  local dir out rc
+  dir=$(new_case ctl-ff rl99c)
+  behind_pipeline_push_task "$dir" rl99c
+  out=$(run_control "$dir" rl99c relaunch --note "pr step failed after the push"); rc=$?
+  expect_code 0 "$rc" "a safe fast-forward fm-control relaunch should succeed"$'\n'"$out"
+  assert_contains "$out" "relaunched rl99c harness=claude from=claude" "the fm-control relaunch outcome is missing"
+  assert_fast_forwarded_relaunch "$dir" "$out" "a safe fast-forward fm-control relaunch"
+  [ "$(journal_field "$dir" rl99c phase)" = complete ] \
+    || fail "the safe fast-forward relaunch transaction should end complete"
+  assert_grep "Firstmate operational input waiting: read" "$dir/fake/literal" "the replacement should have been launched"
+  pass "fm-control relaunch: a clean branch behind its own pipeline push fast-forwards and relaunches without manual sync"
 }
 
 test_spawn_relaunch_origin_probe_timeout_refuses() {
@@ -3499,6 +3594,40 @@ SH
   [ "$(journal_field "$dir" sm6 children)" = 2 ] \
     || fail "readable child metas must still be counted, got '$(journal_field "$dir" sm6 children)'"
   pass "fm-control relaunch: a vanished watcher scratch file does not fail the child-record checkpoint"
+}
+
+test_automatic_relaunch_rechecks_lifecycle_state_under_lock() {
+  local dir out rc scenario
+  for scenario in stopped replaced clean; do
+    dir=$(new_case "auto-$scenario" rl-auto)
+    add_ship_task "$dir" rl-auto codex
+    printf 'spawn_gen=observed-worker\n' >> "$dir/home/state/rl-auto.meta"
+    case "$scenario" in
+      stopped)
+        out=$(run_control "$dir" rl-auto exit)
+        expect_code 0 "$?" "the intervening exit should succeed"$'\n'"$out"
+        ;;
+      replaced)
+        sed 's/^spawn_gen=.*/spawn_gen=replacement-worker/' "$dir/home/state/rl-auto.meta" > "$dir/replacement.meta"
+        mv "$dir/replacement.meta" "$dir/home/state/rl-auto.meta"
+        ;;
+      clean)
+        printf 'observed-worker\t0\n' > "$dir/home/state/rl-auto.agent-exit"
+        ;;
+    esac
+    cp "$dir/home/state/rl-auto.meta" "$dir/before.meta"
+    cp "$dir/home/data/rl-auto/brief.md" "$dir/before.brief"
+    cp "$dir/fake/command" "$dir/before.command"
+    rc=0
+    out=$(FM_CONTROL_EXPECT_SPAWN_GEN=observed-worker run_control "$dir" rl-auto relaunch --note "stale automatic recovery") || rc=$?
+    expect_code 1 "$rc" "automatic relaunch must refuse after $scenario"$'\n'"$out"
+    assert_contains "$out" "automatic relaunch cancelled" "the refusal should explain the stale recovery"
+    cmp -s "$dir/before.meta" "$dir/home/state/rl-auto.meta" || fail "$scenario changed the task record"
+    cmp -s "$dir/before.brief" "$dir/home/data/rl-auto/brief.md" || fail "$scenario appended a stale checkpoint note"
+    cmp -s "$dir/before.command" "$dir/fake/command" || fail "$scenario touched the current agent"
+    [ ! -e "$dir/home/state/rl-auto.control-relaunch" ] || fail "$scenario started a relaunch transaction"
+  done
+  pass "automatic relaunch rechecks intervening stop, replacement, and clean exit under the lifecycle lock"
 }
 
 test_concurrent_relaunch_is_refused() {
@@ -4834,6 +4963,8 @@ test_spawn_relaunch_of_promoted_scout_uses_the_recorded_branch
 test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head
 test_spawn_relaunch_under_an_active_run_is_monitoring_only
 test_spawn_relaunch_keeps_a_clean_local_ahead_commit
+test_spawn_relaunch_fast_forwards_a_clean_branch_behind_its_pipeline_push
+test_control_relaunch_fast_forwards_a_clean_branch_behind_its_pipeline_push
 test_spawn_relaunch_origin_probe_timeout_refuses
 test_spawn_relaunch_of_a_successor_ignores_its_source_line
 test_promoted_scout_relaunch_receives_the_current_delivery_contract
@@ -4865,6 +4996,7 @@ test_secondmate_relaunch_checkpoints_child_work_and_spares_the_charter
 test_secondmate_relaunch_refuses_an_unmarked_home
 test_secondmate_checkpoint_refuses_unreadable_child_state
 test_secondmate_checkpoint_ignores_a_vanished_scratch_find_walk
+test_automatic_relaunch_rechecks_lifecycle_state_under_lock
 test_concurrent_relaunch_is_refused
 test_direct_spawn_relaunch_participates_in_the_lifecycle_lock
 test_promotion_participates_in_the_lifecycle_lock_before_metadata_resolution

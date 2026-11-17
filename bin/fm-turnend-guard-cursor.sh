@@ -36,7 +36,11 @@
 # actionable like a wake line, and the follow-up carries every such line in
 # order while wake lines keep the eight-line cap; "supervision-host stood
 # down:" ends the park silently; a host that died without a close is retried
-# instead of being judged by the healthy-watcher predicate. On a home that does not run the host nothing below changes.
+# instead of being judged by the healthy-watcher predicate. A handback beside
+# an away record (not quiet mode's) says it is not the captain's return. Away
+# entry on such a home writes only state/.afk-contract and never the away
+# daemon's flag state/.afk, so the park keeps running the host while away.
+# On a home that does not run the host nothing below changes.
 #
 # LOOP BOUNDING IS DOUBLE, because either bound alone is insufficient:
 #   - `loop_limit` in .cursor/hooks.json is Cursor's own ceiling. Once
@@ -293,7 +297,9 @@ if [ "$LOOP_COUNT" -ge "$LOOP_CEILING" ]; then
   emit_followup turn-end-guard "FIRSTMATE SUPERVISION FOLLOW-UP CEILING REACHED - this session has taken $LOOP_COUNT consecutive hook-driven turns without a captain message, so automatic wake delivery stops here to bound the loop. Queued wakes stay durable: run bin/fm-wake-drain.sh, handle them, and run its exact WAKE_ACK_REQUIRED command. Supervision resumes automatically at the next turn end after the captain's next message."
 fi
 
-# Away mode owns the watcher and its own triage; never park and never wake.
+# The away daemon's flag: that daemon owns the watcher and its own triage, so
+# never park and never wake. A home that runs the supervision host never
+# writes it for away mode, so its away posture parks the host below.
 [ -e "$STATE/.afk" ] && exit 0
 
 if ! fm_supervision_needed "$STATE" "$GRACE"; then

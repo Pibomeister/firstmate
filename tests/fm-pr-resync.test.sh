@@ -672,6 +672,92 @@ assert_contains "$OUT" "monitoring-only" "ahead active run: monitoring contract"
 assert_contains "$LAST" "custody=pipeline-active" "ahead active run: result line"
 pass "an active run on an ahead branch stays monitoring-only"
 
+# A clean branch strictly behind its own live pipeline push binding, with the
+# native behind / safe_fast_forward / sync verdict (v1.106.1 shape after a
+# failed pr step), fast-forwards and settles. Neighboring predicates refuse.
+ffv() {  # <local_head> [pushed_head] [observed_head] [freshness] [command]: live strict fast-forward plan
+  printf 'branch_sync:\n  state: behind\n  changed: false\n  local:\n    branch: %s\n    head: %s\n    clean: true\n  pipeline:\n    run: "01RUN"\n    status: failed\n    phase: pr\n    submitted_head: %s\n    current_head: %s\n    pushed_head: %s\n    pushed_at: 1794699000\n    push_generation: 1\n  target:\n    kind: origin\n    remote: origin\n    url: "%s"\n    ref: refs/heads/%s\n  remote:\n    observed_head: %s\n    freshness: %s\n    observed_at: 1794699043\n  relation: behind\n  safety: safe_fast_forward\n  pr_state: none\n  next_action:\n    code: sync\n    command: %s\n' \
+    "$B" "$1" "$1" "${2:-$PUB}" "${2:-$PUB}" "$D/origin.git" "$B" "${3:-${2:-$PUB}}" "${4:-live}" "${5:-no-mistakes axi sync}"
+}
+AFTER_FF=$(bs synchronized already_synchronized '' '' 01RUN)
+publish_fix() { cm "$D/pipe" fix; git -C "$D/pipe" push -q origin "$B"; PUB=$(git -C "$D/origin.git" rev-parse "$B"); }
+
+for flag in "" --refuse-diverged; do
+  fixture "behind-ff${flag:+-relaunch}"; gate; publish_fix
+  resp 1 0 "$(ffv "$A")"; resp 2 0 "$(ffv "$A")"; resp 3 0 "$AFTER_FF"; run_owner "$B" ${flag:+"$flag"}
+  expect_code 0 "$RC" "behind safe_fast_forward ${flag:-plain}: exit"$'\n'"$OUT"
+  assert_equals "$PUB" "$(ref "refs/heads/$B")" "behind safe_fast_forward: branch at the pipeline-pushed head"
+  assert_equals "$PUB" "$(ref HEAD)" "behind safe_fast_forward: HEAD at the pipeline-pushed head"
+  assert_equals "" "$(git -C "$WT" status --porcelain)" "behind safe_fast_forward: worktree clean"
+  assert_equals "" "$(archives)" "behind safe_fast_forward: no archive"
+  assert_equals "$(printf '%s\n' 'axi sync --check' 'axi sync --check' 'axi sync --check')" "$(calls)" "behind safe_fast_forward: read-only checks only"
+  assert_equals "fm-pr-resync: result=advanced archive=- custody=settled head=$PUB" "$LAST" "behind safe_fast_forward: result line"
+  pass "a clean behind safe_fast_forward sync verdict fast-forwards and settles ${flag:-without a flag}"
+done
+
+fixture behind-ff-check; gate; publish_fix; HEADS=$(heads)
+resp 1 0 "$(ffv "$A")"; run_owner "$B" --check
+expect_code 0 "$RC" "behind safe_fast_forward --check: exit"
+assert_equals "$HEADS" "$(heads)" "behind safe_fast_forward --check: no ref movement"
+assert_contains "$LAST" "result=planned:advance" "behind safe_fast_forward --check: planned advance"
+pass "--check plans the safe fast-forward without moving anything"
+
+ff_refused() {  # <label> [run_owner args...]: nothing moved and the owner refused
+  expect_code 1 "$RC" "$1: exit"$'\n'"$OUT"
+  assert_equals "$HEADS" "$(heads)" "$1: no ref movement"
+  assert_equals "" "$(archives)" "$1: no archive"
+}
+
+fixture behind-ff-dirty; gate; publish_fix; printf 'x\n' > "$WT/untracked"; HEADS=$(heads)
+resp 1 0 "$(ffv "$A")"; run_owner "$B" --refuse-diverged
+ff_refused "dirty behind safe_fast_forward"
+assert_contains "$OUT" "not a verdict this owner settles" "dirty behind safe_fast_forward: refused"
+assert_equals "x" "$(cat "$WT/untracked")" "dirty behind safe_fast_forward: local file kept"
+pass "a dirty tree does not gain the safe fast-forward settlement"
+
+fixture behind-ff-diverged; gate; rebase_publish; HEADS=$(heads)
+resp 1 0 "$(ffv "$A")"; run_owner "$B" --refuse-diverged
+ff_refused "diverged with safe_fast_forward verdict"
+assert_equals "$A" "$(ref "refs/heads/$B")" "diverged with safe_fast_forward verdict: branch unchanged"
+pass "a diverged branch does not gain the safe fast-forward settlement"
+
+fixture behind-ff-ahead; gate; cm "$WT" local1; L=$(ref "refs/heads/$B"); HEADS=$(heads)
+resp 1 0 "$(ffv "$L")"; run_owner "$B" --refuse-diverged
+ff_refused "ahead with safe_fast_forward verdict"
+assert_equals "$L" "$(ref HEAD)" "ahead with safe_fast_forward verdict: local commit kept"
+pass "an ahead branch does not gain the safe fast-forward settlement"
+
+for bad in pushed observed freshness local command; do
+  fixture "behind-ff-bad-$bad"; gate; publish_fix; HEADS=$(heads)
+  case "$bad" in
+    pushed) V=$(ffv "$A" "$A" "$PUB") ;;  # the pipeline binding is not the published head
+    observed) V=$(ffv "$A" "$PUB" "$A") ;;
+    freshness) V=$(ffv "$A" "$PUB" "$PUB" pipeline_push) ;;
+    local) V=$(ffv "$PUB") ;;
+    command) V=$(ffv "$A" "$PUB" "$PUB" live 'no-mistakes axi sync --force') ;;
+  esac
+  resp 1 0 "$V"; run_owner "$B" --refuse-diverged
+  ff_refused "safe_fast_forward with mismatched $bad"
+  assert_equals "$A" "$(ref "refs/heads/$B")" "safe_fast_forward with mismatched $bad: branch unchanged"
+  assert_contains "$OUT" "not a verdict this owner settles" "safe_fast_forward with mismatched $bad: refused"
+  pass "a safe fast-forward verdict with a mismatched $bad is refused"
+done
+
+fixture behind-ff-recheck; gate; publish_fix; HEADS=$(heads)
+resp 1 0 "$(ffv "$A")"; resp 2 1 "$DIVERGED"; run_owner "$B" --refuse-diverged
+ff_refused "safe_fast_forward recheck changed"
+assert_contains "$OUT" "blocked_diverged" "safe_fast_forward recheck changed: native output"
+pass "a changed custody recheck before the move refuses the safe fast-forward"
+
+fixture behind-ff-unsettled; gate; publish_fix
+resp 1 0 "$(ffv "$A")"; resp 2 0 "$(ffv "$A")"; resp 3 1 "$(bs pipeline_owned blocked_some_new_verdict inspect_and_reconcile_manually 'no-mistakes axi status' 01RUN)"
+run_owner "$B" --refuse-diverged
+expect_code 1 "$RC" "safe_fast_forward unsettled after the move: exit"
+assert_equals "$PUB" "$(ref "refs/heads/$B")" "safe_fast_forward unsettled after the move: advance kept"
+assert_contains "$OUT" "advanced $B from $A to $PUB" "safe_fast_forward unsettled after the move: reports the advance"
+assert_contains "$LAST" "custody=refused" "safe_fast_forward unsettled after the move: result line"
+pass "a safe fast-forward whose fresh re-check is not settled refuses and reports the advance"
+
 for bad_timeout in 0 00 invalid; do
   FM_PR_RESYNC_TIMEOUT=$bad_timeout run_owner
   expect_code 2 "$RC" "invalid network bound $bad_timeout: usage"

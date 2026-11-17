@@ -97,7 +97,9 @@ remote_exec() {
     command="$command $(remote_quote "$arg")"
   done
   : > "$REMOTE_LOCAL/execution-uncertain"
-  remote_ssh "$REMOTE_HOST" "cd $(remote_quote "$REMOTE_CWD") && FM_HOME=$(remote_quote "$REMOTE_ROOT") FM_TEST_QUEUE_REMOTE_DISABLE=1 bash $(remote_quote "$REMOTE_DIR/queue/fm-test-queue.sh") run --$command"
+  # exec makes the remote queue the session leader SSH created, so it owns
+  # that group and ends stragglers that would hold the SSH output open.
+  remote_ssh "$REMOTE_HOST" "cd $(remote_quote "$REMOTE_CWD") && exec env FM_HOME=$(remote_quote "$REMOTE_ROOT") FM_TEST_QUEUE_REMOTE_DISABLE=1 bash $(remote_quote "$REMOTE_DIR/queue/fm-test-queue.sh") run --$command"
   rc=$?
   if [ "$rc" -lt 128 ]; then rm -f "$REMOTE_LOCAL/execution-uncertain"; fi
   return "$rc"
