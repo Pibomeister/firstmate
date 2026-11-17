@@ -91,13 +91,23 @@ try {
   // Validate table counts so a partial/tool-error listing cannot erase work.
   function table(output) {
     const lines = output.split('\n');
+    function tail(start) {
+      for (let i = start; i < lines.length; i++) {
+        if (!lines[i].trim()) continue;
+        const help = lines[i].match(/^help\[([0-9]+)\]:$/);
+        if (!help) fail('unexpected backlog row or trailing output');
+        for (let n = 0; n < Number(help[1]); n++) {
+          if (!lines[++i]?.startsWith('  - ')) fail('incomplete backlog help');
+        }
+      }
+    }
     const counts = lines.filter(line => /^count: [0-9]+$/.test(line));
     if (counts.length !== 1) fail('unreadable backlog count');
     const reported = Number(counts[0].slice(7));
     const index = lines.findIndex(line => /^tasks\[\d+\]\{.*\}:$/.test(line));
     if (index < 0) {
       const empty = lines.findIndex(line => /^tasks: 0 (?:\w+ )*tasks in this backlog$/.test(line));
-      if (reported === 0 && empty >= 0 && !lines[empty + 1]?.startsWith('  ')) return [];
+      if (reported === 0 && empty >= 0) { tail(empty + 1); return []; }
       fail('unreadable backlog listing');
     }
     const [, count, names] = lines[index].match(/^tasks\[(\d+)\]\{(.*)\}:$/);
@@ -115,6 +125,7 @@ try {
       rows.push(row);
     }
     if (rows.length !== Number(count)) fail('incomplete backlog listing');
+    tail(index + 1 + Number(count));
     return rows;
   }
   const env = { ...process.env, FM_HOME: home, FM_DATA_OVERRIDE: path.join(home, 'data'),
