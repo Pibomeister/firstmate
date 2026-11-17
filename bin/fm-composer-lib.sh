@@ -2664,8 +2664,43 @@ fm_composer_picker_rows() {  # rows on stdin
 # border, such as gpg's pinentry, where the input row sits in the box above
 # it. openssl's two-word `pass phrase` reads as passphrase. Prints credential
 # or sign-in.
+# fm_composer_draft_row <screen>: the last non-blank row opens like an agent
+# composer or a box row (`❯`, `›`, `> ` with text, `│`, `┃`, `|`), so it is a
+# draft such as `❯ Continue? [y/N]`, never a terminal input. A `> ` answer row
+# under a `To proceed, type` or `To continue type in the phrase` instruction is
+# that input, not a draft.
+fm_composer_draft_row() {  # <screen>
+  printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
+    { gsub(/\r/, "") }
+    NF { r[++n] = tolower($0) }
+    END {
+      if (!n || r[n] !~ /^[ \t]*(❯|›|>[ \t]+[^ \t]|│|┃|\|)/) exit 1
+      for (i = n - 4; i < n; i++) if (i > 0 && r[i] ~ /to proceed, type|to continue type in the phrase/) exit 1
+      exit 0
+    }'
+}
+
 fm_composer_secret_input() {  # <screen> -> credential|sign-in
   local u
+  fm_composer_draft_row "${1-}" && return 1
+  # Gemini CLI's first-run auth-method picker and its API-key entry dialog
+  # draw their own box and footer, so their rows, not the last row, prove
+  # them; the signatures are the ones bin/fm-busy-lib.sh records.
+  if printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
+    NF { r[++n] = $0 }
+    END {
+      for (i = n - 30; i <= n; i++) {
+        if (i < 1) continue
+        if (r[i] ~ /Enter Gemini API Key/) key = 1
+        if (r[i] ~ /How would you like to authenticate for this project\?/) head = 1
+        if (head && r[i] ~ /Use Gemini API Key|Sign in with Google|No authentication method selected|Vertex AI/) pick = 1
+      }
+      if (key) { print "credential"; exit 0 }
+      if (pick) { print "sign-in"; exit 0 }
+      exit 1
+    }'; then
+    return 0
+  fi
   fm_composer_secret_input_rows "${1-}" && return 0
   u=$(fm_composer_unwrap_tail "${1-}") || return 1
   fm_composer_secret_input_rows "$u"
@@ -2678,7 +2713,10 @@ fm_composer_secret_input() {  # <screen> -> credential|sign-in
 # rows, unless the last row opens like a composer, shell prompt, or box. Prints the rejoined screen, or exits 1 when no row was joined.
 fm_composer_unwrap_tail() {  # <screen> -> screen
   printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
-    { gsub(/\r/, ""); r[++n] = $0; if (length($0) > w) w = length($0) }
+    # Width counts characters, not bytes: a UTF-8 continuation byte adds no
+    # column, so a box-drawing rule is as wide as the ASCII row it spans.
+    function cw(s,  t) { t = s; gsub(/[\200-\277]/, "", t); return length(t) }
+    { gsub(/\r/, ""); r[++n] = $0; c[n] = cw($0); if (c[n] > w) w = c[n] }
     END {
       while (n > 0 && r[n] !~ /[^ \t]/) n--
       if (n < 2 || w < 20) exit 1
@@ -2687,10 +2725,12 @@ fm_composer_unwrap_tail() {  # <screen> -> screen
       # bracket, or parenthesis, unlike the prompt of a pager, and a
       # capitalised word after a finished sentence opens a new one.
       if (r[n] ~ /^[ \t]*(>|❯|›|\$|#|%|│|┃|\||╰|└|─|━|\? for shortcuts)/) exit 1
-      if (r[n] ~ /^[ \t]*:?[ \t]*$/ && r[n - 1] !~ /[\047")\]]$/) exit 1
+      if (r[n] ~ /^[ \t]*:?[ \t]*$/ && r[n - 1] !~ /[\047\]]$/) exit 1
       if (r[n] ~ /^[A-Z][a-z]/ && r[n - 1] ~ /[.!?]$/) exit 1
       j = n
-      while (j > 1 && n - j < 4 && length(r[j - 1]) == w) j--
+      # A rule or box row as wide as the pane is furniture, never part of a
+      # wrapped label.
+      while (j > 1 && n - j < 4 && c[j - 1] == w && r[j - 1] ~ /[A-Za-z0-9]/ && r[j - 1] !~ /^[ \t]*(─|━|│|┃|╭|╰|┌|└|═)/) j--
       if (j == n) exit 1
       for (i = 1; i < j; i++) print r[i]
       line = ""
@@ -2786,8 +2826,16 @@ fm_composer_secret_input_rows() {  # <screen> -> credential|sign-in
   # A one-time code or sign-in label whose typed value is still echoed, such
   # as `Enter OTP: 123456`, `MFA token code: 123456`, pip's `User for
   # pypi.org: alice`, or git's `Username for 'https://github.com': alice`.
-  if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+|question[[:space:]]+)?(enter[[:space:]]+)?((your|the|an?)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+){0,2}(otp|2fa|mfa|one.time[[:space:]]+(code|password)|(otp|2fa|mfa|token|verification|authentication|security|one.time)[[:space:]]+code)([[:space:]]*\[[^]]*\]|[[:space:]]+from your authenticator|[[:space:]]+for[[:space:]]+[^[:space:]]+)?:[[:space:]]+[^[:space:]]+$'; then
+  # npm accepts a one-time code typed in spaced groups, such as `123 456`.
+  if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+|question[[:space:]]+)?(enter[[:space:]]+)?((your|the|an?)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+){0,2}(otp|2fa|mfa|one.time[[:space:]]+(code|password)|(otp|2fa|mfa|token|verification|authentication|security|one.time)[[:space:]]+code)([[:space:]]*\[[^]]*\]|[[:space:]]+from your authenticator|[[:space:]]+for[[:space:]]+[^[:space:]]+)?:[[:space:]]+[^[:space:]]+([[:space:]]+[0-9]+)*$'; then
     printf 'credential\n'; return 0
+  fi
+  # docker login's device flow prints `Press ENTER to open your browser or
+  # submit your device code here: <url>`, then waits on a last row of its own
+  # while it still reads Enter.
+  if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*waiting for authentication in the browser' \
+    && printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk 'NF { r[++n] = tolower($0) } END { for (i = n - 3; i < n; i++) if (i > 0 && r[i] ~ /press (enter|return).*browser/) f = 1; exit !f }'; then
+    printf 'sign-in\n'; return 0
   fi
   if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+|question[[:space:]]+)?(npm[[:space:]]+)?(user.?name|login|email|e-mail|email address)([[:space:]]*(\([^)]*\)|\[[^]]*\]))?:([[:space:]]*\([^)]*\))?[[:space:]]+[^[:space:]]+$|^[[:space:]]*(user|user.?name|password) for [^[:space:]]+:[[:space:]]+[^[:space:]]+$'; then
     printf 'sign-in\n'; return 0
@@ -2819,7 +2867,7 @@ fm_composer_secret_input_rows() {  # <screen> -> credential|sign-in
   if printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*(\?[[:space:]]+)?(\[sudo\][[:space:]]+)?(password|passphrase|passcode|pin|otp|2fa([[:space:]]+code)?|mfa([[:space:]]+code)?|one.time[[:space:]]+(code|password))([[:space:]]+for[[:space:]][^:]*)?[:>?]$|(enter|type|input|provide|paste)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(password|passphrase|passcode|pin|api[[:space:]_-]?key|access[[:space:]_-]?key|private[[:space:]_-]?key|token|secret|otp|2fa|mfa|one.time|authenticator|security)[^:>?]*[:>?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?(mfa|2fa|otp|two.factor)[[:space:]]+code([[:space:]]+for[[:space:]].*)?[:>?]$|two.factor([[:space:]]+[a-z]+)?[[:space:]]+code[:>?]$|authenticator([[:space:]]+app)?[[:space:]]+code[:>?]$|^[^:]{0,30}[[:space:]]pin[:>?]$|(password|passphrase|passcode)([[:space:]]+for[[:space:]].*)?[^:]{0,40}[:>]$|(api[[:space:]_-]?key|access[[:space:]_-]?key|token|secret)[^:>?]{0,30}[:>?]$'; then
     printf 'credential\n'; return 0
   fi
-  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:?]*[>:?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(code|(authentication|verification|security|login|sign.?in|device|authori[sz]ation)[[:space:]]+code)[^:>?]*[:>?]$|(authentication|security|login|verification|device) code[^:>?]{0,30}[:>?]$|^[[:space:]]*(\?[[:space:]]+)?user(name)? for .*[:>?]$|^[[:space:]]*(\?[[:space:]]+|question[[:space:]]+)?(npm[[:space:]]+)?(user.?name|login|email|e-mail|email address|email or username|username or email)([[:space:]]*(\([^)]*\)|\[[^]]*\]))?[:>]([[:space:]]*\([^)]*\))?$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(user.?name|login|email|e-mail|email address)[^:>?]*[:>?]$|^[[:space:]]*sso[[:space:]]+(session name|start url|region|registration scopes)([^:[]*\[[^]]*\])?[^:]*:([[:space:]]+[^[:space:]].*)?$|press (enter|return|any key)([^:]|://)*(browser|github\.com|log.?in|sign.?in)|^[[:space:]]*select a subscription and tenant[^:]*:([[:space:]]+[0-9]+)?$|^[[:space:]]*enter the output of the above command[^:]*:$|^[[:space:]]*(\?[[:space:]]+)?title for your ssh key:|^[[:space:]]*please type .yes.(, .no. or the fingerprint| or .no.):([[:space:]]+[^[:space:]]+)?$|^[[:space:]]*(\?[[:space:]]+)?(gitlab|github)([[:space:]]+enterprise([[:space:]]+server)?)?[[:space:]]+hostname:([[:space:]]+[^[:space:]]+)?$|^[[:space:]]*enter[[:space:]]+((your|the)[[:space:]]+)?(user.?name|login|email|e-mail)[^:]{0,20}:[[:space:]]+[^[:space:]]+$|^[[:space:]]*wandb:[[:space:]]+enter your choice:$'; then
+  if printf '%s' "$last" | LC_ALL=C grep -Eq 'paste (the )?(authorization |authentication )?code[^>:?]*[>:?]$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+){0,2}(code|(authentication|verification|security|login|sign.?in|device|authori[sz]ation)[[:space:]]+code)[^:>?]*[:>?]$|(authentication|security|login|verification|device) code[^:>?]{0,30}[:>?]$|^[[:space:]]*(\?[[:space:]]+)?user(name)? for .*[:>?]$|^[[:space:]]*(\?[[:space:]]+|question[[:space:]]+)?(npm[[:space:]]+)?(user.?name|login|email|e-mail|email address|email or username|username or email)([[:space:]]*(\([^)]*\)|\[[^]]*\]))?[:>]([[:space:]]*\([^)]*\))?$|(enter|type|input|provide)[[:space:]]+((your|the|a|an)[[:space:]]+)?([a-z0-9_.-]+[[:space:]]+)?(user.?name|login|email|e-mail|email address)[^:>?]*[:>?]$|^[[:space:]]*sso[[:space:]]+(session name|start url|region|registration scopes)([^:[]*\[[^]]*\])?[^:]*:([[:space:]]+[^[:space:]].*)?$|press (enter|return|any key)([^:]|://)*(browser|github\.com|log.?in|sign.?in)|^[[:space:]]*select a subscription and tenant[^:]*:([[:space:]]+[0-9]+)?$|^[[:space:]]*enter the output of the above command[^:]*:$|^[[:space:]]*(\?[[:space:]]+)?title for your ssh key:|^[[:space:]]*please type .yes.(, .no. or the fingerprint| or .no.):([[:space:]]+[^[:space:]]+)?$|^[[:space:]]*(\?[[:space:]]+)?(gitlab|github)([[:space:]]+enterprise([[:space:]]+server)?)?[[:space:]]+hostname:([[:space:]]+[^[:space:]]+)?$|^[[:space:]]*enter[[:space:]]+((your|the)[[:space:]]+)?(user.?name|login|email|e-mail)[^:]{0,20}:[[:space:]]+[^[:space:]]+$|^[[:space:]]*wandb:[[:space:]]+enter your choice:$'; then
     printf 'sign-in\n'; return 0
   fi
   return 1
@@ -2846,6 +2894,24 @@ fm_composer_secret_input_rows() {  # <screen> -> credential|sign-in
 # typed text and Enter would answer it. Prints the lowered row.
 fm_composer_confirm_input() {  # <screen> -> row
   local u a
+  # A clack list (`◆` question, `│  ●`/`│  ○` options, closing `└`) ends in
+  # its own frame, so it is read before the draft-row check.
+  if printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '
+    { gsub(/\r/, "") }
+    NF { r[++n] = $0 }
+    END {
+      if (!n || r[n] !~ /^[ \t]*└[ \t]*$/) exit 1
+      for (i = n - 1; i > 0 && i > n - 14; i--) {
+        if (r[i] ~ /^[ \t]*◆[ \t]+[^ \t]/) exit !sel
+        if (r[i] !~ /^[ \t]*│/) exit 1
+        if (r[i] ~ /^[ \t]*│[ \t]+(●|◼|◉)[ \t]*[^ \t]/) sel = 1
+      }
+      exit 1
+    }'; then
+    printf '%s\n' "${1-}" | fm_composer_strip_ansi | LC_ALL=C awk '/[^ \t\r]/ { l = tolower($0) } END { print l }'
+    return 0
+  fi
+  fm_composer_draft_row "${1-}" && return 1
   fm_composer_confirm_input_rows "${1-}" && return 0
   # A confirmation whose answer is already typed but not yet submitted, such
   # as `rm: remove regular file 'x'? y` or Terraform's `Enter a value: yes`,
@@ -2856,12 +2922,14 @@ fm_composer_confirm_input() {  # <screen> -> row
       { gsub(/\r/, ""); r[++n] = $0 }
       END {
         while (n > 0 && r[n] !~ /[^ \t]/) n--
-        # An agent draft such as `❯ fix the test that asks: are you sure? yes`
-        # is composer text, not a typed answer.
-        if (!n || r[n] ~ /^[ \t]*(❯|›|>[ \t]|│|┃|\|)/) exit 1
-        # git clean takes several answers after `>>`, such as `1 2` or `*.o *.a`.
+        if (!n) exit 1
+        for (i = n - 4; i < n; i++) if (i > 0 && tolower(r[i]) ~ /to proceed, type|to continue type in the phrase/) phrase = 1
+        # git clean takes several answers after `>>`, such as `1 2` or `*.o *.a`,
+        # and APT takes the whole phrase `Yes, do as I say!` after `?]`.
         if (r[n] ~ />>[ \t]+[^ \t]/) sub(/>>[ \t]+.*$/, ">>", r[n])
-        else if (r[n] ~ /[?:\])>][ \t]+[^ \t]{1,60}[ \t]*$/) sub(/[ \t]+[^ \t]{1,60}[ \t]*$/, "", r[n])
+        else if (phrase && r[n] ~ /^[ \t]*(\?\]|>)[ \t]+[^ \t]/) r[n] = (r[n] ~ /^[ \t]*\?\]/) ? "?]" : ">"
+        # One typed token, up to the length of a gh owner/repo name.
+        else if (r[n] ~ /[?:\])>][ \t]+[^ \t]{1,160}[ \t]*$/) sub(/[ \t]+[^ \t]{1,160}[ \t]*$/, "", r[n])
         else exit 1
         for (i = 1; i <= n; i++) print r[i]
       }') || a=
@@ -2889,7 +2957,7 @@ fm_composer_confirm_input_rows() {  # <screen> -> row
     END {
       for (i = n - 13; i <= n; i++) {
         if (i < 1) continue
-        if (r[i] !~ /reveal more/ && r[i] ~ /\(use arrow keys|\[use arrows to move|^[ \t]*there (are|is) [0-9]+ .* available to you\.?[ \t\r]*$/) { q = i; f = 0; quoted = 0 }
+        if (r[i] !~ /reveal more/ && r[i] ~ /\(use arrow keys|\[use arrows to move|- use arrow-keys\. return to submit|^[ \t]*there (are|is) [0-9]+ .* available to you\.?[ \t\r]*$/) { q = i; f = 0; quoted = 0 }
         else if (q && (r[i] ~ /for shortcuts|context left|context [0-9]+% left/ || r[i] ~ /^(─|━){20,}/)) quoted = 1
         else if (q && r[i] ~ /^[ \t]*(❯|›|>)[ \t]*[^ \t]/) f = 1
         if (r[i] ~ /^[ \t]*\?[ \t]+[^ \t]/) { qq = i; fq = 0 }
@@ -2917,7 +2985,7 @@ fm_composer_confirm_input_rows() {  # <screen> -> row
     printf '%s\n' "$last"
     return 0
   fi
-  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|^[[:space:]]*(remove|examine files in directory|recursively remove|override .+ for|overwrite) .+\?([[:space:]]*\(y/n \[[yn]\]\))?$|\((\[y\]/n|y/\[n\])\)[[:space:]]*\?$|^[[:space:]]*<.*>[[:space:]]*\?$|[[:space:]]\?\.\.\.$|^[[:space:]]*what now>$|^[[:space:]]*(select items to delete|input ignore patterns|update|revert|add untracked|patch update|review diff)>>$|^[[:space:]]*please enter (your )?numeric choice[^:]*:$|^[[:space:]]*please enter a value between [0-9]+ and [0-9]+[^:]*:$|\(enter "h" for help\)[[:space:]]*\[[a-z]+\]$|^[[:space:]]*(yes/no|y/n)\?$|\(type [^)]{1,60}\)[[:space:]]*:$|\[y\]es, \[n\]o, \[a\]ll, \[n\]one, \[r\]ename:$|^[[:space:]]*(press|hit) any key|\(y/n \[[yn]\]\)$|\[y,n(,[a-z?/]+)*\]\??$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|^[[:space:]]*file to patch:$|\(y\)es/\(n\)o:$|\((y|yes)[|,](n|no)\)\??$|\?[[:space:]]+\((y|n|yes|no)[|,](y|n|yes|no)\)$|\(\[y\]es\|\[n\]o(\|\[[a-z]\][a-z]+)*\):$|\?[[:space:]]+\[(yes|no)\]:$|press (return|enter)(/(return|enter))? to continue or any other key to abort:?$|\[agree, print, cancel\]$|^[[:space:]]*enter a number between [0-9]+ and [0-9]+:([[:space:]]+[0-9]+)?$|^[[:space:]]*(rm|cp|mv|ln|install|rmdir|shred|unlink)[[:space:]]?:[[:space:]].*\?$|^[[:space:]]*(hit|press)[[:space:]]+(return|enter)[[:space:]]+to[[:space:]].*(tool|merge)[^:]*:$|^[[:space:]]*use \([a-z]\)[a-z]+ or \([a-z]\)[a-z]+( file)?, or \(a\)bort\?$|\[y/n/[^]]*\][[:space:]]*(\([a-z]+\))?[[:space:]]*:?$|allow\?[[:space:]]+\[y/n(/a)?\]|^[[:space:]]*what to do\?[[:space:]]+(\([a-z]\)[a-z]+,?[[:space:]]*)+$|\(y/i/n/o/d/z\)[[:space:]]*(\[default=[a-z]\][[:space:]]*)?\?$|\?[[:space:]]+\[(y|n|yes|no|yn|ny)\]$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[^:>?"'"'"'`]{1,100}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
+  printf '%s' "$last" | LC_ALL=C grep -Eq '^[[:space:]]*[a-z0-9_./-]+: (remove|overwrite|replace|delete|descend into|examine|unlink)[^?]*\?$|^[[:space:]]*(remove|examine files in directory|recursively remove|override .+ for|overwrite) .+\?([[:space:]]*\(y/n \[[yn]\]\))?$|\((\[y\]/n|y/\[n\])\)[[:space:]]*\?$|\(y or n\)[[:space:]]*\?$|by typing[[:space:]]+[^:]{1,100}:$|\(y\)es[[:space:]]*/[[:space:]]*\(n\)o[^?]*\?$|^[[:space:]]*<.*>[[:space:]]*\?$|[[:space:]]\?\.\.\.$|^[[:space:]]*what now>$|^[[:space:]]*(select items to delete|input ignore patterns|update|revert|add untracked|patch update|review diff)>>$|^[[:space:]]*please enter (your )?numeric choice[^:]*:$|^[[:space:]]*please enter a value between [0-9]+ and [0-9]+[^:]*:$|\(enter "h" for help\)[[:space:]]*\[[a-z]+\]$|^[[:space:]]*(yes/no|y/n)\?$|\(type [^)]{1,60}\)[[:space:]]*:$|\[y\]es, \[n\]o, \[a\]ll, \[n\]one, \[r\]ename:$|^[[:space:]]*(press|hit) any key|\(y/n \[[yn]\]\)$|\[y,n(,[a-z?/]+)*\]\??$|[[(](y/n|y/n/q|y/n/a|y/n/all|yes/no|y/n/a/q)[])][[:space:]]*[:?]?$|are you sure[^?]*\?$|^[[:space:]]*(continue|proceed)\?$|^[[:space:]]*file to patch:$|\(y\)es/\(n\)o:$|\((y|yes)[|,](n|no)\)\??$|\?[[:space:]]+\((y|n|yes|no)[|,](y|n|yes|no)\)$|\(\[y\]es\|\[n\]o(\|\[[a-z]\][a-z]+)*\):$|\?[[:space:]]+\[(yes|no)\]:$|press (return|enter)(/(return|enter))? to continue or any other key to abort:?$|\[agree, print, cancel\]$|^[[:space:]]*enter a number between [0-9]+ and [0-9]+:([[:space:]]+[0-9]+)?$|^[[:space:]]*(rm|cp|mv|ln|install|rmdir|shred|unlink)[[:space:]]?:[[:space:]].*\?$|^[[:space:]]*(hit|press)[[:space:]]+(return|enter)[[:space:]]+to[[:space:]].*(tool|merge)[^:]*:$|^[[:space:]]*use \([a-z]\)[a-z]+ or \([a-z]\)[a-z]+( file)?, or \(a\)bort\?$|\[y/n/[^]]*\][[:space:]]*(\([a-z]+\))?[[:space:]]*:?$|allow\?[[:space:]]+\[y/n(/a)?\]|^[[:space:]]*what to do\?[[:space:]]+(\([a-z]\)[a-z]+,?[[:space:]]*)+$|\(y/i/n/o/d/z\)[[:space:]]*(\[default=[a-z]\][[:space:]]*)?\?$|\?[[:space:]]+\[(y|n|yes|no|yn|ny)\]$|(^|[[:space:]])enter a value:$|(^|[[:space:]])type[[:space:]]+["'"'"'`]?[^:>?"'"'"'`]{1,160}["'"'"'`]?[[:space:]]+to[[:space:]]+(confirm|continue|proceed|delete|destroy|remove)[^:>?]*[:>?]?$' || return 1
   printf '%s\n' "$last"
 }
 

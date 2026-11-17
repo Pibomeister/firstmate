@@ -509,6 +509,34 @@ test_hardstop_categories() {
     [ -z "$(printf '%s\n' "$c" | classify claude)" ] || fail "agent text is read as a prompt: $c"
     ! bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard blocks agent text: $c"
   done
+  local rule40 longrepo want
+  rule40=$(printf '─%.0s' $(seq 40))
+  longrepo=$(printf 'o%.0s' $(seq 39))/$(printf 'r%.0s' $(seq 66))
+  for c in \
+    "sign-in|$rule40"$'\n'"Username for 'https://github.enterprise."$'\n'"example.org':" \
+    "destructive|You are about to do something potentially harmful."$'\n'"To continue type in the phrase 'Yes, do as I say!'"$'\n'" ?] Yes, do as I say!" \
+    "destructive|? Type $longrepo to confirm deletion:" \
+    "destructive|? Type $longrepo to confirm deletion: $longrepo" \
+    'credential|Enter OTP: 123 456' \
+    "sign-in|? Get started"$'\n\n'"  How would you like to authenticate for this project?"$'\n\n'"  ● 1. Sign in with Google"$'\n'"    2. Use Gemini API Key"$'\n'"    3. Vertex AI"$'\n\n'"  No authentication method selected."$'\n\n'"  (Use Enter to select)"$'\n\n'"  Terms of Services and Privacy Notice for Gemini CLI"$'\n\n'"  https://geminicli.com/docs/resources/tos-privacy/" \
+    "credential|╭────────────────────────────╮"$'\n'"│ Enter Gemini API Key       │"$'\n'"│ > _                        │"$'\n'"╰────────────────────────────╯"$'\n'"  ~/repo   no sandbox   gemini-2.5-pro" \
+    "destructive|? Target directory \"my-app\" is not empty. Please choose how to proceed: › - Use arrow-keys. Return to submit."$'\n'"❯   Remove existing files and continue"$'\n'"    Cancel operation"$'\n'"    Ignore files and continue" \
+    "destructive|◆  Target directory \"my-app\" is not empty. Please choose how to proceed:"$'\n'"│  ● Cancel operation"$'\n'"│  ○ Remove existing files and continue"$'\n'"│  ○ Ignore files and continue"$'\n'"└" \
+    'destructive|gzip: data.json already exists; do you wish to overwrite (y or n)? ' \
+    'destructive|data.json already exists -- do you wish to overwrite (y or n)? ' \
+    'destructive|gzip: data.json already exists; do you wish to overwrite (y or n)? y' \
+    "sign-in|Press ENTER to open your browser or submit your device code here: https://login.docker.com/activate"$'\n'"Waiting for authentication in the browser…" \
+    'sign-in|Please enter the 6 digit code:' \
+    "destructive|This will permanently remove the 'dev' stack!"$'\n'"Please confirm that this is what you'd like to do by typing \`dev\`:" \
+    "destructive|Would you like to replace the existing file:"$'\n'"? (Y)es / (N)o / (A)lways / (S)kip all / A(u)to rename all / (Q)uit? "; do
+    want=${c%%|*}; c=${c#*|}
+    assert_equals "hardstop	$want" "$(printf '%s\n' "$c" | classify claude)" "a widely used CLI prompt is a $want stop: $c"
+    bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard misses a $want prompt: $c"
+  done
+  for c in '❯ Continue? [y/N]' '❯ Explain how to enter a password:' '› Enter OTP: 123456' $'commit abc\n    Merge pull request #42 from team/rotate-secret (rotate the API token now)\n:' "Working on the fix now"$'\n'"$rule40"$'\n'"❯ "$'\n'"$rule40"$'\n'"  ? for shortcuts" 'The tests for gzip and docker login pass; next we look at the 6 digit code path.'; do
+    [ -z "$(printf '%s\n' "$c" | classify claude)" ] || fail "an agent draft, pager, or prose row is read as a prompt: $c"
+    ! bash -c '. "$1/bin/fm-composer-lib.sh"; fm_composer_blocking_dialog "$2"' _ "$ROOT" "$c" >/dev/null || fail "the send guard blocks an agent draft, pager, or prose row: $c"
+  done
   for c in 'Hostname: build-1' 'Error code: 500' 'OTP library version: 2.1.0' 'mfa is enabled for user: alice' '2FA required for account: bob' 'src/auth.ts:  // Enter verification code: 123' 'Exit code: 1' 'Summary: done' 'rm: cannot remove x: No such file or directory'; do
     assert_equals '' "$(printf '%s\n' "$c" | classify claude)" "an ordinary output row is not a prompt: $c"
   done
