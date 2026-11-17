@@ -24,13 +24,22 @@ H=
 CASE_N=0
 SLEEPS=''
 # reap_fixture sets one P_<name> per fixture row; these are the ones read by name.
-P_runner='' P_claude='' P_wrapped='' P_exe='' P_nodeagent='' P_execd='' P_reused='' P_moved=''
+D_runner='' D_testscript='' P_runner='' P_claude='' P_wrapped='' P_exe='' P_nodeagent='' P_execd='' P_reused='' P_moved=''
 
 # Fixture programs under the temp root are real files, as a scratch program must be.
 mkdir -p "$TMP_ROOT/bin" "$TMP_ROOT/live/bin" "$TMP_ROOT/work dir" "$TMP_ROOT/job" "$TMP_ROOT/claude-code"
-for f in runaway.sh leak.js wrap.sh foreign.sh turns.sh again.sh first.sh second.sh a.sh bootstrap.js bin/leaky live/bin/fm-watchdog.sh job/work claude-code/cli.js; do
+for f in runaway.sh leak.js wrap.sh wrap2.sh foreign.sh turns.sh again.sh first.sh second.sh a.sh bootstrap.js bin/leaky live/bin/fm-watchdog.sh job/work claude-code/cli.js; do
   : > "$TMP_ROOT/$f"
 done
+# Test-runner fixtures live outside every disposable temp root, as a real
+# checkout does, so only the test-runner route can make their children scratch.
+OUT_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/memory-guard-outside.XXXXXX")
+mkdir -p "$OUT_ROOT/repo/tests" "$OUT_ROOT/tests" "$OUT_ROOT/bin" "$OUT_ROOT/claude-code"
+for f in repo/tests/fm-example.test.sh repo/tests/ui.test.sh repo/helper.sh tests/service.test.sh "tests/service.test.sh live.sh" bin/fm-watchdog.sh claude-code/cli.py; do
+  : > "$OUT_ROOT/$f"
+done
+ln -s "$OUT_ROOT/bin/fm-watchdog.sh" "$OUT_ROOT/run-loop.sh"
+ln -s "$OUT_ROOT/claude-code" "$OUT_ROOT/pkg2"
 
 cat > "$FAKE/ps" <<'SH'
 #!/usr/bin/env bash
@@ -59,6 +68,7 @@ chmod +x "$FAKE/ps" "$FAKE/sysctl"
 cleanup_sleeps() {
   local p
   for p in $SLEEPS; do kill "$p" 2>/dev/null || true; done
+  rm -rf "$OUT_ROOT"
   fm_test_cleanup
 }
 trap cleanup_sleeps EXIT
@@ -108,9 +118,9 @@ alarms() { printf '%s\n' "$OUT" | grep -c '^MEMORY_GUARD_ALARM: ' | tr -d ' '; }
 # action_has <token>: the summary's action list holds exactly that token.
 action_has() { summary | sed -n 's/.* action=//p' | tr ',' '\n' | grep -Fxq -- "$1"; }
 
-start_sleep() {  # -> pid of a real, detached sleep this suite owns
+start_sleep() {  # [cwd] -> pid of a real, detached sleep this suite owns
   local f="$TMP_ROOT/sleep.$RANDOM.pid"
-  ( sleep 100000 >/dev/null 2>&1 & printf '%s\n' "$!" > "$f" )
+  ( cd "${1:-$TMP_ROOT}" || exit 1; sleep 100000 >/dev/null 2>&1 & printf '%s\n' "$!" > "$f" )
   SLEEP_PID=$(cat "$f")
   SLEEPS="$SLEEPS $SLEEP_PID"
 }
@@ -193,6 +203,10 @@ test_unreadable_sources() {
   assert_contains "$OUT" "memory-guard: swap could not be read on Darwin" "swap failure note"
   assert_contains "$OUT" "memory-guard: the process table could not be read" "process failure note"
   assert_contains "$(cat "$H/state/memory-guard.tsv")" "unknown	-	-	-	unreadable	none" "an unreadable pass is still recorded"
+  new_home
+  SWAP_USED=10.00M PS_MODE=fail guard "$NOW0"
+  assert_equals 1 "$RC" "a failed process read alone exits 1, so the loss of process watching is visible"
+  assert_contains "$(summary)" "status=ok swap_used_mb=10 top_pid=- " "the swap reading still stands"
   pass "a failed read is reported and recorded, never guessed"
 }
 
@@ -318,7 +332,7 @@ reap_fixture() {
   while IFS='|' read -r name comm uid parent args; do
     [ -n "$name" ] || continue
     eval "pid=\${P_$name:-}"
-    if [ -z "$pid" ]; then start_sleep; pid=$SLEEP_PID; eval "P_$name=$pid"; fi
+    if [ -z "$pid" ]; then eval "start_sleep \"\${D_$name:-}\""; pid=$SLEEP_PID; eval "P_$name=$pid"; fi
     case "$parent" in P_*) eval "parent=\$$parent" ;; esac
     [ "$uid" != me ] || uid=$MYUID
     proc "$pid" "$uid" "$parent" "${RSS:-9000}" $(( ${CLOCK:-$NOW0} - NOW0 + 5000 )) "$comm" "$args"
@@ -357,10 +371,13 @@ test_observe_default_never_signals() {
 test_reap_scratch_spares_live_agents_and_operator_apps() {
   local name
   new_home 'mode=reap-scratch'
-  for name in scratch runner testchild nodetmp claude codex agy tmux orca nodeout app watch plain other wrapper wrapped; do eval "P_$name="; done
+  for name in scratch runner testchild testscript nodetmp claude codex agy tmux orca nodeout app watch plain other wrapper wrapped; do eval "P_$name="; done
+  # shellcheck disable=SC2034 # read by reap_fixture through eval
+  D_runner=$OUT_ROOT/repo D_testscript=$OUT_ROOT/repo
   REAP_ROWS="scratch|bash|me|1|bash $TMP_ROOT/runaway.sh
 runner|bash|me|1|bash tests/fm-example.test.sh
 testchild|python3|me|P_runner|python3 -c pass
+testscript|bash|me|P_runner|bash helper.sh
 nodetmp|node|me|1|node $TMP_ROOT/leak.js
 claude|claude|me|1|claude --print $TMP_ROOT/x
 codex|exec-helper|me|1|/opt/homebrew/bin/codex exec $TMP_ROOT/y
@@ -377,7 +394,7 @@ wrapped|claude|me|P_wrapper|claude"
   # The test runner itself stays small, so only its child is a candidate.
   RUNNER_SMALL=1 sustain
   assert_equals 3 "$RC" "reap pass alarms: $OUT"
-  for name in scratch testchild nodetmp; do
+  for name in scratch testchild testscript nodetmp; do
     eval "pid=\$P_$name"
     wait_gone "$pid" || fail "scratch process $name (pid $pid) was not stopped: $OUT"
     action_has "term:$pid" || fail "action does not name the stopped $name: $(summary)"
@@ -404,11 +421,13 @@ wrapped|claude|me|P_wrapper|claude"
 test_reap_scratch_needs_a_scratch_program() {
   local name
   new_home 'mode=reap-scratch'
-  for name in exe nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink runner brave renderer mailer nmd gimp spaced missing linkfile spacewrap pkgagent relsup agent2 agentkid; do eval "P_$name="; done
+  for name in exe nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink runner brave renderer mailer nmd gimp spaced missing linkfile spacewrap pkgagent relsup agent2 agentkid symkid pkgkid runner2 fakekid pkgwrap pkgwrapkid; do eval "P_$name="; done
   ln -s "$BASE_PATH_FIRST" "$TMP_ROOT/prodlink"
   ln -s "$TMP_ROOT/runaway.sh" "$TMP_ROOT/link.sh"
   ln -s "$BASE_PATH_FIRST" "$TMP_ROOT/job/work dir"
   ln -s "$TMP_ROOT/claude-code" "$TMP_ROOT/pkg"
+  # shellcheck disable=SC2034 # read by reap_fixture through eval
+  D_runner=$OUT_ROOT/repo
   REAP_ROWS="exe|leaky|me|1|$TMP_ROOT/bin/leaky --size 9
 nodeagent|node|me|1|node /opt/lib/node_modules/@anthropic-ai/claude-code/cli.js --add-dir $TMP_ROOT/p
 watchtmp|bash|me|1|bash /opt/firstmate/bin/fm-watch.sh --state $TMP_ROOT/home
@@ -431,11 +450,17 @@ pkgagent|node|me|1|node $TMP_ROOT/pkg/cli.js
 relsup|bash|me|P_runner|bash fm-watchdog.sh run
 agent2|claude|me|P_runner|claude
 agentkid|python3|me|P_agent2|python3 -c run
+symkid|bash|me|P_runner|bash $OUT_ROOT/run-loop.sh
+pkgkid|python3|me|P_runner|python3 $OUT_ROOT/pkg2/cli.py
+runner2|bash|me|1|bash $OUT_ROOT/tests/service.test.sh live.sh
+fakekid|python3|me|P_runner2|python3 -c run
+pkgwrap|bash|me|1|bash $TMP_ROOT/wrap2.sh
+pkgwrapkid|node|me|P_pkgwrap|node $TMP_ROOT/pkg/cli.js
 renderer|helper|me|P_runner|/opt/app/helper --type=renderer"
   RUNNER_SMALL=1 sustain
   wait_gone "$P_exe" || fail "a program under a temp root was not stopped: $OUT"
   action_has "term:$P_exe" || fail "action does not name the stopped program: $(summary)"
-  for name in nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink brave renderer mailer nmd gimp spaced missing linkfile spacewrap pkgagent relsup agent2 agentkid; do
+  for name in nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink brave renderer mailer nmd gimp spaced missing linkfile spacewrap pkgagent relsup agent2 agentkid symkid pkgkid runner2 fakekid pkgwrap pkgwrapkid; do
     eval "pid=\$P_$name"
     alive "$pid" || fail "$name (pid $pid) was signaled: $OUT"
     action_has "spared:$pid" || fail "action does not name the spared $name: $(summary)"
@@ -449,7 +474,11 @@ renderer|helper|me|P_runner|/opt/app/helper --type=renderer"
   [ "$(printf '%s\n' "$OUT" | grep -c 'spared (program is not a regular file under a disposable temp root)')" = 3 ] || fail "a symlink out of the temp root or a missing program counted as scratch: $OUT"
   assert_contains "$OUT" "spared (protected no-mistakes)" "a hyphenated protected name protects a longer name it starts"
   assert_contains "$OUT" "spared (program path is ambiguous)" "a sibling that extends the program name with a space makes it ambiguous"
-  assert_contains "$OUT" "spared (resolved program: protected claude)" "a symlink to an agent package stays protected"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (resolved program: protected claude)')" = 2 ] || fail "a symlink to an agent package lost its protection: $OUT"
+  assert_contains "$OUT" "spared (test child script is not a regular file)" "a test child running a symlinked script is spared"
+  assert_contains "$OUT" "spared (resolved test child script: protected claude)" "a test child whose script resolves into an agent package is protected"
+  assert_contains "$OUT" "spared (test runner is not a regular tests/*.test.sh file)" "an ambiguous test-runner path makes nothing scratch"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (has child processes)')" = 2 ] || fail "a process with children counted as scratch: $OUT"
   assert_contains "$OUT" "spared (protected brave)" "a browser under a test runner is protected"
   assert_contains "$OUT" "spared (browser or Electron helper)" "a Chromium helper under a test runner is protected"
   pass "reap-scratch needs the program itself under a temp root, not an argument that names one"

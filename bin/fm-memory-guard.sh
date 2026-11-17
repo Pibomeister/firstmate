@@ -16,10 +16,12 @@
 #   macOS  swap from `sysctl -n vm.swapusage` (the used = <n>M|G field)
 #   Linux  swap from /proc/meminfo (SwapTotal - SwapFree, in kB)
 #   both   processes from `ps -axo pid=,uid=,ppid=,pgid=,rss=,etime=,args=`
-#          and `ps -axo pid=,comm=` (Linux uses -eo). comm is read on its
-#          own because it can hold spaces; it is reduced to its basename.
+#          and `ps -axo pid=,ucomm=` (Linux uses -eo and comm). The name is
+#          read on its own because it can hold spaces; it is reduced to its
+#          basename. macOS ucomm names the real executable, not argv[0].
 # A swap read that fails is swap_used_mb=unknown. A process read that fails
-# leaves the top fields as `-`. When both fail the pass exits 1.
+# leaves the top fields as `-` and makes the pass exit 1 unless it alarms;
+# when both fail the status is unreadable.
 #
 # Files, under FM_HOME (FM_STATE_OVERRIDE and FM_CONFIG_OVERRIDE replace
 # state/ and config/):
@@ -74,18 +76,23 @@
 #     *.test.sh runner), wherever
 #     it lives, and no argument is a Chromium or Electron helper --type=;
 #   - node is protected unless its program is under a disposable temp root;
-#   - no protected process descends from it;
+#   - no protected process descends from it, and it has no child processes
+#     at all;
 #   - it is scratch: its program (argv[0], or an interpreter's first argument
 #     when that is not an option) starts under a disposable temp root
 #     (/tmp/fm-*, /private/tmp/fm-*, /var/folders/<a>/<b>/T/fm-*, or
 #     $TMPDIR/fm-*) with no . or .. segment, is not itself a symlink, and
 #     still does once its directory symlinks are resolved; or an ancestor's
-#     program is a tests/<name>.test.sh script, with no protected process
-#     between them, and its own argv[0] is a shell,
-#     an interpreter, or a core tool such as sleep, awk, or jq. The program
-#     must be an existing regular file, its command name must match it, no
-#     argument may hold a .. segment, no sibling may extend its name with a
-#     space, and its resolved path must carry no protection of its own. An argument that only names a temp
+#     program is a tests/<name>.test.sh path that, joined to the runner's
+#     working directory when relative, resolves to an unambiguous regular
+#     file, with no protected process between them, and its own argv[0] is
+#     a shell, an interpreter, or a core tool such as sleep, awk, or jq,
+#     running inline code or a script (joined to its own working directory
+#     when relative) that is an unambiguous regular file with no protection
+#     once resolved. The program must be an existing regular file, its
+#     command name must match it, no argument may hold a .. segment, no
+#     sibling may extend its name with a space, and its resolved path must
+#     carry no protection of its own. An argument that only names a temp
 #     path, or an interpreter started with an option, does not make it
 #     scratch;
 #   - a fresh process read just before the signal still shows the same
@@ -221,6 +228,19 @@ read_swap_mb() {
 }
 
 ps_select() { case "$os" in Darwin) printf '%s\n' -axo ;; *) printf '%s\n' -eo ;; esac; }
+# macOS comm follows argv[0], which a process can rewrite; ucomm names the
+# executable that really runs. Linux comm is already the executable's name.
+comm_field() { case "$os" in Darwin) printf '%s\n' ucomm ;; *) printf '%s\n' comm ;; esac; }
+
+# proc_cwd <pid>: the working directory of a process, read-only, or nothing.
+proc_cwd() {
+  local d
+  case "$os" in
+    Darwin) d=$(lsof -a -p "$1" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1) ;;
+    Linux) d=$(readlink "/proc/$1/cwd" 2>/dev/null) ;;
+  esac
+  case "$d" in /*) printf '%s\n' "$d" ;; *) return 1 ;; esac
+}
 
 # Prints pid uid ppid pgid rss_kb etime_secs comm args, tab-separated; comm is
 # the basename of ps comm, and every tab or control byte is a space.
@@ -228,7 +248,7 @@ read_procs() {  # <names-scratch-file>
   local sel table
   sel=$(ps_select)
   table=$(ps -ww "$sel" pid=,uid=,ppid=,pgid=,rss=,etime=,args= 2>/dev/null) || return 1
-  ps -ww "$sel" pid=,comm= > "$1" 2>/dev/null || : > "$1"
+  ps -ww "$sel" "pid=,$(comm_field)=" > "$1" 2>/dev/null || : > "$1"
   [ -n "$table" ] || return 1
   printf '%s\n' "$table" | awk -v names="$1" '
     function secs(e,   d, n, p, t, i) {
@@ -302,6 +322,16 @@ classify_candidates() {  # <candidates-file> <self-pids>
       if (interp(bname(prog0[p]))) return interp(c)
       return index(b, c) == 1 && (c == b || length(c) >= 15)
     }
+    # The script run by a child of a test runner: "-" for a core tool or inline
+    # code (-c, -e), the script path for an interpreter, or "" when an option
+    # comes first and the script cannot be told apart from its value.
+    function child_script(a,   n, t) {
+      n = split(a, t, " ")
+      if (!interp(bname(t[1]))) return "-"
+      if (n >= 2 && (t[2] == "-c" || t[2] == "-e")) return "-"
+      if (n < 2 || t[2] ~ /^-/) return ""
+      return t[2]
+    }
     function interp(b) { return b ~ /^(ba|z|da|k)?sh$/ || b ~ /^python[0-9.]*$/ || b ~ /^(node|deno|bun|ruby|perl|php)$/ }
     function program(a,   n, t, i) {
       n = split(a, t, " ")
@@ -359,7 +389,7 @@ classify_candidates() {  # <candidates-file> <self-pids>
       n = split(selfs, sp, " "); for (i = 1; i <= n; i++) if (sp[i] != "") self[sp[i]] = 1
       while ((getline l < cands) > 0) if (l != "") cand[l] = 1
     }
-    { pid = $1; puid[pid] = $2; ppid[pid] = $3; comm[pid] = $7; args[pid] = $8; prog0[pid] = $8; sub(/[[:space:]].*/, "", prog0[pid]); order[++np] = pid }
+    { pid = $1; kids[$3]++; puid[pid] = $2; ppid[pid] = $3; comm[pid] = $7; args[pid] = $8; prog0[pid] = $8; sub(/[[:space:]].*/, "", prog0[pid]); order[++np] = pid }
     END {
       for (i = 1; i <= np; i++) { p = order[i]; r = protected_reason(p); if (r != "") preason[p] = r }
       # Mark every ancestor of a protected process.
@@ -372,11 +402,15 @@ classify_candidates() {  # <candidates-file> <self-pids>
         else if (c + 0 <= 1) why = "init"
         else if (c in preason) why = preason[c]
         else if (c in hasprot) why = "ancestor of protected pid " hasprot[c]
+        else if (kids[c] > 0) why = "has child processes"
         else {
           s = ""; pg = dotdot(args[c]) ? "" : program(args[c])
           if (under_root(pg) && runs_as(c, pg)) s = "program\t" pg
-          else if (!dotdot(args[c]) && test_tool(bname(prog0[c])) && runs_as(c, prog0[c])) { q = ppid[c]; hops = 0
-            while (q in ppid && q != 0 && hops++ < 256) { if (q in preason) break; if (program(args[q]) ~ /(^|\/)tests\/[A-Za-z0-9_.-]+\.test\.sh$/) { s = "scratch"; break } q = ppid[q] } }
+          else if (!dotdot(args[c]) && test_tool(bname(prog0[c])) && runs_as(c, prog0[c]) && (cs = child_script(args[c])) != "") { q = ppid[c]; hops = 0
+            while (q in ppid && q != 0 && hops++ < 256) {
+              if (q in preason || dotdot(args[q])) break
+              if (program(args[q]) ~ /(^|\/)tests\/[A-Za-z0-9_.-]+\.test\.sh$/) { s = "runner\t" program(args[q]) "\t" cs "\t" q; break }
+              q = ppid[q] } }
           if (s == "") why = "not scratch"
         }
         if (why == "") printf "%s\teligible\t%s\n", c, s
@@ -416,6 +450,16 @@ ambiguous_program() {
   return 1
 }
 
+# absolute_for <pid> <path>: an absolute path as is, or a relative one joined
+# to that process's working directory; fails when the directory is unknown.
+absolute_for() {
+  local d
+  case "$2" in
+    /*) printf '%s\n' "$2" ;;
+    *) d=$(proc_cwd "$1") || return 1; printf '%s/%s\n' "${d%/}" "$2" ;;
+  esac
+}
+
 # resolved_protection <physical-path>: the protection reason the resolved
 # program path itself carries, judged as a bare command line; empty if none.
 resolved_protection() {
@@ -428,8 +472,8 @@ resolved_protection() {
 # spare an eligible program whose physical path is ambiguous, leaves the temp
 # roots, or is itself protected.
 judge() {
-  local pid verdict why prog phys prot
-  classify_candidates "$1" "$SELF_PIDS" | while IFS=$'\t' read -r pid verdict why prog; do
+  local pid verdict why prog extra rpid phys prot
+  classify_candidates "$1" "$SELF_PIDS" | while IFS=$'\t' read -r pid verdict why prog extra rpid; do
     if [ "$verdict" = eligible ] && [ "$why" = program ]; then
       why=scratch
       if ambiguous_program "$prog"; then
@@ -438,6 +482,20 @@ judge() {
         verdict=spared why="program is not a regular file under a disposable temp root"
       elif prot=$(resolved_protection "$phys") && [ -n "$prot" ]; then
         verdict=spared why="resolved program: $prot"
+      fi
+    elif [ "$verdict" = eligible ] && [ "$why" = runner ]; then
+      why=scratch
+      prog=$(absolute_for "$rpid" "$prog") || prog=''
+      if [ -z "$prog" ] || ambiguous_program "$prog" || ! phys=$(physical_path "$prog") || [ ! -f "$phys" ] ||
+        ! [[ "$phys" =~ /tests/[A-Za-z0-9_.-]+\.test\.sh$ ]]; then
+        verdict=spared why="test runner is not a regular tests/*.test.sh file"
+      elif [ "$extra" != - ]; then
+        extra=$(absolute_for "$pid" "$extra") || extra=''
+        if [ -z "$extra" ] || ambiguous_program "$extra" || ! phys=$(physical_path "$extra") || [ ! -f "$phys" ]; then
+          verdict=spared why="test child script is not a regular file"
+        elif prot=$(resolved_protection "$phys") && [ -n "$prot" ] && [ "$prot" != "not scratch" ]; then
+          verdict=spared why="resolved test child script: $prot"
+        fi
       fi
     fi
     printf '%s\t%s\t%s\n' "$pid" "$verdict" "$why"
@@ -621,5 +679,5 @@ else
 fi
 
 [ "$status" != alarm ] || exit 3
-[ "$status" != unreadable ] && [ "$record_ok" = 1 ] || exit 1
+[ "$procs_ok" = 1 ] && [ "$record_ok" = 1 ] || exit 1
 exit 0
