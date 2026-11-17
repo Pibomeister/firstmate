@@ -80,7 +80,7 @@
 #     at all;
 #   - its executable name was read (ucomm on macOS, comm on Linux), never
 #     guessed from argv[0];
-#   - it is scratch in one of two ways. Either a shell or interpreter runs
+#   - it is scratch only when a shell or interpreter runs
 #     a script (its first argument, which must not be an option) under a
 #     disposable temp root (/tmp/fm-*, /private/tmp/fm-*,
 #     /var/folders/<a>/<b>/T/fm-*, or $TMPDIR/fm-*) with no . or ..
@@ -89,14 +89,13 @@
 #     once its directory symlinks are resolved, and the resolved path
 #     carries no protection. A native binary under a temp root is never
 #     scratch, and Bun and Deno never are because they take subcommands.
-#     Or it is sleep, yes, seq, true, or false with only plain-number
-#     arguments, and its direct parent's program is an absolute
-#     tests/<name>.test.sh path that resolves to an unambiguous regular
-#     file whose resolved path carries no protection. A shell or
-#     interpreter child of a test runner is never scratch, because what it
-#     runs cannot be pinned down from its arguments. No argument may hold
-#     a .. segment, and an argument that only names a temp path does not
-#     make a process scratch;
+#     The script has exactly one hard link, so no other name can alias an
+#     agent or project file. On Linux, the executable /proc/<pid>/exe names
+#     must itself be a shell or interpreter, since comm follows a symlink
+#     name. TMPDIR counts as a temp root only when it resolves under /tmp,
+#     /private/tmp, or /var/folders/<a>/<b>/T. No argument may hold a ..
+#     segment, and an argument that only names a temp path does not make a
+#     process scratch. A child of a test runner gets no special treatment;
 #   - names and paths are compared without case, since macOS file systems
 #     usually ignore it;
 #   - a script run straight through its shebang on Linux names itself, not
@@ -287,8 +286,13 @@ scratch_roots() {
   t=${TMPDIR:-}
   t=${t%/}
   [ -n "$t" ] || return 0
-  printf '%s/fm-\n' "$t"
+  # TMPDIR counts only when it really is a system temp directory.
   phys=$(cd -P -- "$t" 2>/dev/null && pwd -P) || return 0
+  case "$phys" in
+    /tmp | /tmp/* | /private/tmp | /private/tmp/*) ;;
+    *) [[ "$phys" =~ ^(/private)?/var/folders/[^/]+/[^/]+/T(/|$) ]] || return 0 ;;
+  esac
+  printf '%s/fm-\n' "$t"
   [ "$phys" = "$t" ] || printf '%s/fm-\n' "$phys"
 }
 
@@ -306,9 +310,6 @@ classify_candidates() {  # <candidates-file> <self-pids>
       return (t ~ /^(\/private)?\/var\/folders\/[^\/]+\/[^\/]+\/T\/fm-/)
     }
     function bname(t,   s) { s = t; sub(/.*\//, "", s); return s }
-    # Programs a test runner may start that count as its scratch children.
-    # No shell or interpreter, and nothing that reads, writes, or runs a file.
-    function test_tool(b) { return b ~ /^(sleep|yes|seq|true|false)$/ }
     # Any .. segment in any argument makes every path in the command line
     # untrusted, because ps joins arguments with spaces.
     function dotdot(a) { return a ~ /(^|[ \/=])\.\.([ \/]|$)/ }
@@ -319,13 +320,6 @@ classify_candidates() {  # <candidates-file> <self-pids>
       if (c == "") return 0
       if (interp(bname(prog0[p]))) return interp(c)
       return index(b, c) == 1 && (c == b || length(c) >= 15)
-    }
-    # A child of a test runner qualifies only when every argument is a plain
-    # number (sleep 5, seq 1000000, yes), so nothing it runs can be hidden.
-    function plain_args(a,   n, t, i) {
-      n = split(a, t, " ")
-      for (i = 2; i <= n; i++) if (t[i] !~ /^[0-9]+(\.[0-9]+)?[smhd]?$/) return 0
-      return 1
     }
     # Interpreters whose first argument is always a script; bun and deno take
     # subcommands (bun run, deno run), so they never make a process scratch.
@@ -406,8 +400,6 @@ classify_candidates() {  # <candidates-file> <self-pids>
         else {
           s = ""; pg = dotdot(args[c]) ? "" : program(args[c])
           if (under_root(pg) && script_interp(bname(prog0[c])) && runs_as(c, pg)) s = "program\t" pg
-          else if (test_tool(bname(prog0[c])) && runs_as(c, prog0[c]) && plain_args(args[c])) { q = ppid[c]
-            if (q in ppid && !(q in preason) && !dotdot(args[q]) && program(args[q]) ~ /(^|\/)tests\/[A-Za-z0-9_.-]+\.test\.sh$/) s = "runner\t" program(args[q]) }
           if (s == "") why = "not scratch"
         }
         if (why == "") printf "%s\teligible\t%s\n", c, s
@@ -423,6 +415,21 @@ physical_path() {
   [ ! -L "$1" ] || return 1
   d=$(cd -P -- "$(dirname -- "$1")" 2>/dev/null && pwd -P) || return 1
   printf '%s/%s\n' "$d" "$(basename -- "$1")"
+}
+
+# link_count <path>: the hard-link count of a file; GNU stat first, since
+# GNU stat -f means file-system status rather than BSD file status.
+link_count() { stat -c %h -- "$1" 2>/dev/null || stat -f %l -- "$1" 2>/dev/null; }
+
+# real_interpreter <pid>: on Linux, comm follows the invoked file name, so a
+# symlink can give any program a shell's name; the executable /proc links to
+# must be a shell or script interpreter. On macOS ucomm already names it.
+real_interpreter() {
+  local exe
+  [ "$os" = Linux ] || return 0
+  exe=$(readlink "/proc/$1/exe" 2>/dev/null) || return 1
+  exe=${exe##*/}
+  [[ "$exe" =~ ^((ba|z|da|k)?sh|python[0-9.]*|node|ruby|perl|php)$ ]]
 }
 
 under_scratch_root() {  # <physical-path>
@@ -467,17 +474,12 @@ judge() {
         verdict=spared why="program path is ambiguous"
       elif ! phys=$(physical_path "$prog") || [ ! -f "$phys" ] || ! under_scratch_root "$phys"; then
         verdict=spared why="program is not a regular file under a disposable temp root"
+      elif [ "$(link_count "$phys")" != 1 ]; then
+        verdict=spared why="program has another hard link"
+      elif ! real_interpreter "$pid"; then
+        verdict=spared why="running executable is not an interpreter"
       elif prot=$(resolved_protection "$phys") && [ -n "$prot" ] && [ "$prot" != "not scratch" ]; then
         verdict=spared why="resolved program: $prot"
-      fi
-    elif [ "$verdict" = eligible ] && [ "$why" = runner ]; then
-      why=scratch
-      case "$prog" in /*) ;; *) prog='' ;; esac
-      if [ -z "$prog" ] || ambiguous_program "$prog" || ! phys=$(physical_path "$prog") || [ ! -f "$phys" ] ||
-        ! [[ "$phys" =~ /tests/[A-Za-z0-9_.-]+\.test\.sh$ ]]; then
-        verdict=spared why="test runner is not an absolute, regular tests/*.test.sh file"
-      elif prot=$(resolved_protection "$phys") && [ -n "$prot" ] && [ "$prot" != "not scratch" ]; then
-        verdict=spared why="resolved test runner: $prot"
       fi
     fi
     printf '%s\t%s\t%s\n' "$pid" "$verdict" "$why"
