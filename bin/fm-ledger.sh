@@ -76,7 +76,7 @@
 # it to see what comes next; it dispatches nothing. It exits 3 when nothing is
 # ready.
 #
-# CLAIM. Opt-in via config/mission-ledger claim-project (see configuration.md).
+# CLAIM. Opt-in via config/mission-ledger claim-project (see docs/configuration.md).
 # Claims only this home's queued, ready, ledger-sourced items with a prepared
 # brief and a project clone under this home's projects directory. An exact
 # project grant is the operator's machine-readable charter scope, never inferred
@@ -152,10 +152,12 @@
 #
 # CONFIG (config/mission-ledger, optional; docs/configuration.md "Mission
 # ledger" owns the schema). Absent means the defaults.
-#   min-ready=<n>     ready items each active project needs (default 3; 0
-#                     turns the scheduled check off)
-# Blank lines and lines starting with # are ignored; an unusable value keeps
-# its default.
+#   min-ready=<n>         ready items each active project needs (default 3; 0
+#                         turns the scheduled check off)
+#   claim-project=<slug>  repeatable exact project grant for claim (see CLAIM)
+# Blank lines and lines starting with # are ignored; an unusable min-ready
+# keeps its default, while unsafe files or malformed claim-project grants
+# refuse claims.
 #
 # Exit status: 0 success; 1 refusal or failure; 2 usage error; 3 a result to
 # act on (unfiled order, short project, nothing ready, handoff refused for an
