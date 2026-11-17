@@ -3935,6 +3935,8 @@ test_memory_guard_samples_once_per_pass() {
   assert_grep "mode=observe" "$H/data/watchdog/status.md" "a dry-run watchdog forces observe mode"
   rm -f "$H/state/memory-guard.tsv"
   mkdir "$H/state/memory-guard.tsv"
+  # With no alarm in force, a sample that cannot be recorded is a failure.
+  printf 'swap_warn_mb=999999\nproc_rss_mb=999999999\n' > "$H/config/memory-guard"
   FM_MEMORY_GUARD_OS=Darwin run_wd 240 once >/dev/null 2>&1 || fail "a failed memory sample stopped the pass"
   assert_grep "- host: memory guard sample failed (exit 1)" "$H/data/watchdog/status.md" "a failed sample is a gap"
   assert_grep "## Homes" "$H/data/watchdog/status.md" "the pass still writes the status file"

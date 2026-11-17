@@ -69,7 +69,7 @@
 #     chromium, brave, msedge, opera, vivaldi, firefox, safari, the JetBrains
 #     IDEs, zed, emacs, vim, Xorg, Xwayland, gnome-shell, kwin, plasmashell,
 #     WindowServer; the script's PROTECTED_NAMES holds the full list);
-#   - no argument is a Firstmate supervisor script (bin/fm-*.sh), wherever
+#   - no argument is a Firstmate supervisor script or helper (bin/fm-*), wherever
 #     it lives, and no argument is a Chromium or Electron helper --type=;
 #   - node is protected unless its program is under a disposable temp root;
 #   - no protected process descends from it;
@@ -93,8 +93,9 @@
 #   MEMORY_GUARD_ALARM: <what is over which limit, and what was done>
 # An alarm still in force inside alarm_repeat_secs is not printed again.
 #
-# Exit status: 0 for ok or watch, 3 for alarm, 1 when sampling or recording
-# failed, 2 for a usage error.
+# Exit status: 0 for ok or watch, 3 for alarm (even when the sample could not
+# be recorded, so an action is never hidden), 1 when sampling or recording
+# failed without an alarm, 2 for a usage error.
 #
 # Test seams, honoured only with FM_TEST_SEAM=1: FM_MEMORY_GUARD_NOW fixes the
 # clock, FM_MEMORY_GUARD_OS (Darwin|Linux) picks the parser, and
@@ -301,13 +302,14 @@ classify_candidates() {  # <candidates-file> <self-pids>
           if (c[j] in prot) return c[j]
           w = lead(c[j])
           if (w != "" && (w in prot)) return w
+          w = hyphen_hit(c[j]); if (w != "") return w
         }
       }
       return ""
     }
     function supervisor(a,   n, t, i) {
       n = split(a, t, " ")
-      for (i = 1; i <= n; i++) if (t[i] ~ /(^|\/)bin\/fm-[A-Za-z0-9_.-]*\.sh$/) return 1
+      for (i = 1; i <= n; i++) if (t[i] ~ /(^|\/)bin\/fm-[A-Za-z0-9_.-]+$/) return 1
       return 0
     }
     function lead(t,   w) { w = t; sub(/^[.@]+/, "", w); sub(/[-.@_].*/, "", w); return w }
@@ -317,6 +319,8 @@ classify_candidates() {  # <candidates-file> <self-pids>
       if (a0 in prot) return "protected " a0
       if (lead(c) in prot) return "protected " lead(c)
       if (lead(a0) in prot) return "protected " lead(a0)
+      w = hyphen_hit(c); if (w != "") return "protected " w
+      w = hyphen_hit(a0); if (w != "") return "protected " w
       if (args[p] ~ /\.app\//) return "desktop app"
       if (args[p] ~ /(^| )--type=[a-z-]+( |$)/) return "browser or Electron helper"
       w = protected_word(args[p]); if (w != "") return "protected " w
@@ -324,8 +328,14 @@ classify_candidates() {  # <candidates-file> <self-pids>
       if (supervisor(args[p])) return "firstmate supervisor script"
       return ""
     }
+    # A protected name with a - or _ in it also protects any word it starts,
+    # such as no-mistakes-daemon or command-code-1.74.
+    function hyphen_hit(w,   k, L, nx) {
+      for (k = 1; k <= nh; k++) { L = length(hy[k]); nx = substr(w, L + 1, 1); if (substr(w, 1, L) == hy[k] && (nx == "" || nx ~ /[-._@]/)) return hy[k] }
+      return ""
+    }
     BEGIN {
-      n = split(names, nm, " "); for (i = 1; i <= n; i++) prot[nm[i]] = 1
+      n = split(names, nm, " "); for (i = 1; i <= n; i++) { prot[nm[i]] = 1; if (nm[i] ~ /[-_]/) hy[++nh] = nm[i] }
       n = split(selfs, sp, " "); for (i = 1; i <= n; i++) if (sp[i] != "") self[sp[i]] = 1
       while ((getline l < cands) > 0) if (l != "") cand[l] = 1
     }
@@ -566,6 +576,6 @@ else
   done < "$WORK/printed"
 fi
 
-[ "$status" != unreadable ] && [ "$record_ok" = 1 ] || exit 1
 [ "$status" != alarm ] || exit 3
+[ "$status" != unreadable ] && [ "$record_ok" = 1 ] || exit 1
 exit 0

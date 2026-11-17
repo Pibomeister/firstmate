@@ -24,7 +24,7 @@ H=
 CASE_N=0
 SLEEPS=''
 # reap_fixture sets one P_<name> per fixture row; these are the ones read by name.
-P_runner='' P_claude='' P_wrapped='' P_exe='' P_nodeagent='' P_execd='' P_reused=''
+P_runner='' P_claude='' P_wrapped='' P_exe='' P_nodeagent='' P_execd='' P_reused='' P_moved=''
 
 cat > "$FAKE/ps" <<'SH'
 #!/usr/bin/env bash
@@ -274,6 +274,21 @@ test_log_is_bounded() {
   pass "the sample log stays bounded"
 }
 
+test_alarm_survives_a_failed_record() {
+  new_home 'swap_warn_mb=5'
+  SWAP_USED=7.00M
+  mkdir "$H/state/memory-guard.tsv"
+  guard "$NOW0"
+  assert_equals 3 "$RC" "an alarm still exits 3 when the sample cannot be recorded"
+  assert_contains "$OUT" "MEMORY_GUARD_ALARM: swap used 7 MB" "the alarm line is still printed"
+  assert_contains "$OUT" "cannot record the sample" "the record failure is reported"
+  new_home 'swap_warn_mb=999999'
+  mkdir "$H/state/memory-guard.tsv"
+  guard "$NOW0"
+  assert_equals 1 "$RC" "a record failure with no alarm exits 1"
+  pass "an alarm is never hidden by a sample that cannot be recorded"
+}
+
 test_json_output() {
   command -v jq >/dev/null 2>&1 || { pass "json output (skip: jq not found)"; return 0; }
   new_home
@@ -383,7 +398,7 @@ wrapped|claude|me|P_wrapper|claude"
 test_reap_scratch_needs_a_scratch_program() {
   local name
   new_home 'mode=reap-scratch'
-  for name in exe nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink runner brave renderer; do eval "P_$name="; done
+  for name in exe nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink runner brave renderer mailer nmd; do eval "P_$name="; done
   mkdir -p "$TMP_ROOT/bin" "$TMP_ROOT/live/bin"
   ln -s "$BASE_PATH_FIRST" "$TMP_ROOT/prodlink"
   REAP_ROWS="exe|leaky|me|1|$TMP_ROOT/bin/leaky --size 9
@@ -397,11 +412,13 @@ livewatch|bash|me|1|bash $TMP_ROOT/live/bin/fm-watchdog.sh run
 prodlink|python3|me|1|python3 $TMP_ROOT/prodlink/server.py
 runner|bash|me|1|bash tests/ui.test.sh
 brave|brave|me|P_runner|/opt/brave.com/brave/brave
+mailer|python3|me|P_runner|python3 /opt/firstmate/bin/fm-mail.py
+nmd|no-mistakes-daemon|me|P_runner|/opt/bin/no-mistakes-daemon serve
 renderer|helper|me|P_runner|/opt/app/helper --type=renderer"
   RUNNER_SMALL=1 sustain
   wait_gone "$P_exe" || fail "a program under a temp root was not stopped: $OUT"
   action_has "term:$P_exe" || fail "action does not name the stopped program: $(summary)"
-  for name in nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink brave renderer; do
+  for name in nodeagent watchtmp prodlog dotdot inline preload livewatch prodlink brave renderer mailer nmd; do
     eval "pid=\$P_$name"
     alive "$pid" || fail "$name (pid $pid) was signaled: $OUT"
     action_has "spared:$pid" || fail "action does not name the spared $name: $(summary)"
@@ -411,8 +428,9 @@ renderer|helper|me|P_runner|/opt/app/helper --type=renderer"
   assert_contains "$OUT" "spared (firstmate supervisor script)" "a supervisor stays protected when an argument names a temp path"
   [ "$(printf '%s\n' "$OUT" | grep -c 'spared (not scratch)')" = 3 ] || fail "a temp-path argument, a .. path, or inline code counted as scratch: $OUT"
   [ "$(printf '%s\n' "$OUT" | grep -c 'spared (node outside a disposable temp root)')" = 1 ] || fail "a node preload under a temp root made node scratch: $OUT"
-  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (firstmate supervisor script)')" = 2 ] || fail "a supervisor script under a temp root lost its protection: $OUT"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (firstmate supervisor script)')" = 3 ] || fail "a supervisor script under a temp root lost its protection: $OUT"
   assert_contains "$OUT" "spared (program resolves outside a disposable temp root)" "a symlink out of the temp root is not scratch"
+  assert_contains "$OUT" "spared (protected no-mistakes)" "a hyphenated protected name protects a longer name it starts"
   assert_contains "$OUT" "spared (protected brave)" "a browser under a test runner is protected"
   assert_contains "$OUT" "spared (browser or Electron helper)" "a Chromium helper under a test runner is protected"
   pass "reap-scratch needs the program itself under a temp root, not an argument that names one"
@@ -421,23 +439,26 @@ renderer|helper|me|P_runner|/opt/app/helper --type=renderer"
 test_reap_scratch_rechecks_before_signaling() {
   local name
   new_home 'mode=reap-scratch'
-  for name in execd reused; do eval "P_$name="; done
+  for name in execd reused moved; do eval "P_$name="; done
   REAP_ROWS="execd|bash|me|1|bash $TMP_ROOT/turns.sh
-reused|bash|me|1|bash $TMP_ROOT/again.sh"
+reused|bash|me|1|bash $TMP_ROOT/again.sh
+moved|bash|me|1|bash $TMP_ROOT/first.sh"
   for t in 0 300 600 900; do
     CLOCK=$((NOW0 + t)) reap_fixture
     # Between the sample and the signal, execd becomes an agent and the
     # reused pid is a new process with the same command line.
-    awk -v e="$P_execd" -v r="$P_reused" '$1 == e { $NF = ""; $(NF - 1) = "claude" } $1 == r { $6 = "00:01" } { print }' "$H/ps/table" > "$H/ps/table2"
+    # moved still judges eligible after the change, so only the identity
+    # comparison spares it.
+    awk -v e="$P_execd" -v r="$P_reused" -v m="$P_moved" -v nxt="$TMP_ROOT/second.sh" '$1 == e { $NF = ""; $(NF - 1) = "claude" } $1 == r { $6 = "00:01" } $1 == m { $NF = nxt } { print }' "$H/ps/table" > "$H/ps/table2"
     awk -v e="$P_execd" '$1 == e { $2 = "claude" } { print }' "$H/ps/comm" > "$H/ps/comm2"
     guard $((NOW0 + t))
   done
-  for name in execd reused; do
+  for name in execd reused moved; do
     eval "pid=\$P_$name"
     alive "$pid" || fail "$name (pid $pid) was signaled after it changed: $OUT"
     action_has "spared:$pid" || fail "action does not name the spared $name: $(summary)"
   done
-  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (changed since the sample)')" = 2 ] || fail "a changed process was not spared as changed: $OUT"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (changed since the sample)')" = 3 ] || fail "a changed process was not spared as changed: $OUT"
   pass "reap-scratch rereads the process just before the signal and spares one that changed"
 }
 
@@ -454,6 +475,7 @@ fm_test_run \
   test_sustained_window \
   test_swap_threshold_and_config \
   test_log_is_bounded \
+  test_alarm_survives_a_failed_record \
   test_json_output \
   test_observe_default_never_signals \
   test_reap_scratch_spares_live_agents_and_operator_apps \

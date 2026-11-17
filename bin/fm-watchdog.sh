@@ -2311,9 +2311,12 @@ wd_memory_guard_pass() {
     3) ;;
     *) printf -- '- host: memory guard sample failed (exit %s)\n' "$rc" >> "$WD_GAPS"; return 0 ;;
   esac
+  # At most three host lines a pass, so other homes' gaps stay visible.
   summary=$(printf '%s\n' "$out" | sed -n '1s/^memory-guard: status=alarm //p')
-  [ -z "$summary" ] || printf -- '- host: memory alarm %s\n' "$summary" >> "$WD_GAPS"
-  printf '%s\n' "$out" | sed -n 's/^MEMORY_GUARD_ALARM: /- host: /p' >> "$WD_GAPS"
+  {
+    [ -z "$summary" ] || printf -- '- host: memory alarm %s\n' "$summary"
+    printf '%s\n' "$out" | sed -n 's/^MEMORY_GUARD_ALARM: /- host: /p'
+  } | head -n 3 >> "$WD_GAPS"
   return 0
 }
 
