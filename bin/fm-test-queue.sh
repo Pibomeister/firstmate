@@ -76,7 +76,7 @@
 # before admission; a mismatch falls back locally before any workload starts.
 # Mirror locks serialize preparations; busy or abandoned locks fall back locally.
 # Commands that need older history must fetch it explicitly. Git, rsync, Python 3,
-# Bash and test dependencies must already exist remotely (tar is local only).
+# Bash and test dependencies must already exist remotely.
 # Ignored dependencies, credentials and caller environment are not copied. Worktree paths in argv are rewritten to the remote checkout;
 # other absolute paths must be valid remotely. stdin/stdout/stderr and exit
 # status pass through. Once execution is attempted, an SSH error is returned,

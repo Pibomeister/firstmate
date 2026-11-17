@@ -1122,7 +1122,7 @@ dest=${1#*:}
 # Production quotes the remote path for the remote shell.
 dest=${dest#\'}; dest=${dest%\'}
 "$REAL_RSYNC" "${args[@]}" --stats "$dest" >> "$SSH_LOG.rsync" || exit
-if [ "${CORRUPT_SNAPSHOT:-}" = 1 ]; then printf stale > "$dest/repo/source"; fi
+if [ "${CORRUPT_SNAPSHOT:-}" = 1 ] && [ -d "$dest/repo" ]; then printf stale > "$dest/repo/source"; fi
 SH
   chmod +x "${1%/*}/rsync"
   export REAL_RSYNC

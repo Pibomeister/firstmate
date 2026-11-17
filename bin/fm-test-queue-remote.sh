@@ -42,58 +42,215 @@ remote_project_listed() {
   return 1
 }
 
-# Hash the entire transported tree, including Git metadata, modes and symlinks.
-# An exact inventory also detects deletions and unexpected stale mirror files.
-# Only the top-level manifest itself is excluded from its own digest.
-remote_manifest() {
-  python3 - "$1" <<'PYMANIFEST'
+# Build file lists, queue copy, and local SHA-256 manifest in one pass directly
+# from the source tree, emitting repo metadata for remote_prepare.
+remote_stage_local() {
+  python3 - "$1" "$2" "$3" "$4" "$5" <<'PYSTAGE'
+import concurrent.futures
 import hashlib
 import json
 import os
+import shutil
+import socket
 import stat
+import subprocess
 import sys
+import time
 
-root = os.fsencode(sys.argv[1])
+pwd, local_dir, script_dir, spool, head_only = sys.argv[1:6]
 
-def walk(path, relative=b""):
-    for name in sorted(os.listdir(path)):
-        if not relative and name == b"manifest":
-            continue
-        entry = os.path.join(path, name)
-        rel = os.path.join(relative, name)
-        mode = os.lstat(entry).st_mode
-        if stat.S_ISLNK(mode):
-            value = ["link", os.fsdecode(os.readlink(entry))]
-        elif stat.S_ISREG(mode):
-            digest = hashlib.sha256()
-            with open(entry, "rb") as stream:
-                for block in iter(lambda: stream.read(1024 * 1024), b""):
-                    digest.update(block)
-            value = ["file", mode & 0o777, digest.hexdigest()]
-        elif stat.S_ISDIR(mode):
-            value = ["dir"]
+try:
+    root = subprocess.check_output(
+        ["git", "rev-parse", "--show-toplevel"], cwd=pwd, stderr=subprocess.DEVNULL
+    ).decode().rstrip("\r\n")
+except subprocess.CalledProcessError:
+    sys.exit(1)
+
+root_real = os.path.realpath(root)
+pwd_real = os.path.realpath(pwd)
+if pwd_real == root_real:
+    rel_cwd = ""
+elif pwd_real.startswith(root_real + os.sep):
+    rel_cwd = pwd_real[len(root_real):]
+else:
+    sys.exit(1)
+
+try:
+    local_head = subprocess.check_output(
+        ["git", "-C", root, "rev-parse", "--verify", "HEAD"], stderr=subprocess.DEVNULL
+    ).decode().strip()
+    local_tree = subprocess.check_output(
+        ["git", "-C", root, "rev-parse", "--verify", "HEAD^{tree}"], stderr=subprocess.DEVNULL
+    ).decode().strip()
+    common = subprocess.check_output(
+        ["git", "-C", root, "rev-parse", "--git-common-dir"], stderr=subprocess.DEVNULL
+    ).decode().rstrip("\r\n")
+except subprocess.CalledProcessError:
+    sys.exit(1)
+
+if not os.path.isabs(common):
+    common = os.path.join(root, common)
+common = os.path.realpath(common)
+key = hashlib.sha256(f"{socket.gethostname()}\n{common}\n".encode()).hexdigest()
+cache_path = os.path.join(spool, f"manifest-cache-{key}.json") if spool else ""
+
+stage_dir = os.path.join(local_dir, "stage")
+queue_dir = os.path.join(stage_dir, "queue")
+os.makedirs(queue_dir, exist_ok=True)
+
+root_b = os.fsencode(root)
+local_b = os.fsencode(local_dir)
+script_b = os.fsencode(script_dir)
+queue_b = os.fsencode(queue_dir)
+
+raw = subprocess.check_output(
+    ["git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard"]
+)
+now = time.time()
+
+old_cache = {}
+if cache_path and os.path.isfile(cache_path):
+    try:
+        with open(cache_path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict):
+            old_cache = data
+    except Exception:
+        old_cache = {}
+
+files = []
+recent = []
+to_hash = []
+new_cache = {}
+tree = {b"queue": {}, b"repo": {}}
+
+for rel in raw.split(b"\0"):
+    if not rel:
+        continue
+    full = os.path.join(root_b, rel)
+    try:
+        st = os.lstat(full)
+    except FileNotFoundError:
+        continue
+    mode = st.st_mode
+    if stat.S_ISDIR(mode):
+        sys.exit(1)
+    parts = rel.split(b"/")
+    cur = tree[b"repo"]
+    for part in parts[:-1]:
+        cur = cur.setdefault(part, {})
+    if stat.S_ISLNK(mode):
+        recent.append(rel)
+        cur[parts[-1]] = ["link", os.fsdecode(os.readlink(full))]
+    elif stat.S_ISREG(mode):
+        if abs(now - st.st_mtime) < 3.0:
+            recent.append(rel)
         else:
-            raise ValueError("unsupported snapshot entry: " + os.fsdecode(rel))
-        print(json.dumps([os.fsdecode(rel), *value], ensure_ascii=True))
-        if stat.S_ISDIR(mode):
-            walk(entry, rel)
+            files.append(rel)
+        key_f = os.fsdecode(rel)
+        sig = [st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns]
+        cached = old_cache.get(key_f)
+        if isinstance(cached, list) and len(cached) == 2 and cached[0] == sig:
+            new_cache[key_f] = cached
+            cur[parts[-1]] = ["file", mode & 0o777, cached[1]]
+        else:
+            slot = ["file", mode & 0o777, None]
+            cur[parts[-1]] = slot
+            to_hash.append((full, key_f, sig, slot))
+    else:
+        sys.exit(1)
 
-walk(root)
-PYMANIFEST
+def hash_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+if to_hash:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
+        results = list(pool.map(lambda item: hash_file(item[0]), to_hash))
+    for (_, key_f, sig, slot), digest in zip(to_hash, results):
+        slot[2] = digest
+        new_cache[key_f] = [sig, digest]
+
+for name in (b"fm-test-queue.sh", b"fm-test-queue-remote.sh"):
+    src = os.path.join(script_b, name)
+    dst = os.path.join(queue_b, name)
+    shutil.copy2(src, dst)
+    st = os.lstat(dst)
+    tree[b"queue"][name] = ["file", st.st_mode & 0o777, hash_file(dst)]
+
+with open(os.path.join(local_b, b"files"), "wb") as fh:
+    if files:
+        fh.write(b"\0".join(files) + b"\0")
+with open(os.path.join(local_b, b"recent_files"), "wb") as fh:
+    if recent:
+        fh.write(b"\0".join(recent) + b"\0")
+
+manifest_lines = []
+def emit(node, relative=b""):
+    for name in sorted(node):
+        child = node[name]
+        rel = os.path.join(relative, name)
+        if isinstance(child, dict):
+            manifest_lines.append(json.dumps([os.fsdecode(rel), "dir"], ensure_ascii=True))
+            emit(child, rel)
+        else:
+            manifest_lines.append(json.dumps([os.fsdecode(rel), *child], ensure_ascii=True))
+
+emit(tree)
+with open(os.path.join(local_b, b"stage", b"manifest"), "w", encoding="utf-8") as fh:
+    if manifest_lines:
+        fh.write("\n".join(manifest_lines) + "\n")
+
+if cache_path:
+    try:
+        tmp = f"{cache_path}.tmp.{os.getpid()}"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(new_cache, fh)
+        os.replace(tmp, cache_path)
+    except Exception:
+        pass
+
+with open(os.path.join(local_b, b"meta"), "w", encoding="utf-8") as fh:
+    fh.write(f"{root}\n{rel_cwd}\n{key}\n{local_head}\n{local_tree}\n")
+PYSTAGE
 }
 
-# Loose objects keep their content-addressed names across HEAD changes. A new
-# shallow pack would rename the entire pack and resend unchanged blobs.
-remote_stage_git() {
-  local root=$1 repo=$2 pack objects="$REMOTE_LOCAL/objects"
-  git clone -q --depth=1 --no-checkout "file://$root" "$repo" >/dev/null 2>&1 || return 1
-  mkdir "$objects" || return 1
-  for pack in "$repo/.git/objects/pack/"*.pack; do
-    [ -f "$pack" ] || return 1
-    GIT_OBJECT_DIRECTORY="$objects" git -C "$repo" unpack-objects < "$pack" || return 1
-  done
-  rm -rf "$repo/.git/objects" && mv "$objects" "$repo/.git/objects" &&
-    git -C "$repo" read-tree HEAD
+# Build a pack of objects in local_head missing from remote_head's shallow tree.
+remote_stage_git_delta() {
+  local root=$1 remote_head=$2 local_head=$3 out=$4
+  python3 - "$root" "$remote_head" "$local_head" "$out" <<'PYDELTA'
+import subprocess
+import sys
+
+root, remote_head, local_head, out = sys.argv[1:5]
+if subprocess.call(["git", "-C", root, "cat-file", "-e", f"{remote_head}^{{commit}}"], stderr=subprocess.DEVNULL) != 0:
+    sys.exit(1)
+head_tree = subprocess.check_output(
+    ["git", "-C", root, "rev-parse", "--verify", f"{local_head}^{{tree}}"]
+).decode().strip()
+diff = subprocess.check_output(
+    ["git", "-C", root, "diff-tree", "-r", "-t", "--no-commit-id", remote_head, local_head]
+).decode().splitlines()
+oids = {local_head, head_tree}
+for line in diff:
+    parts = line.split()
+    if len(parts) >= 4 and parts[1] != "160000" and parts[3] != "0" * 40:
+        oids.add(parts[3])
+proc = subprocess.Popen(
+    ["git", "-C", root, "pack-objects", "--stdout", "-q"],
+    stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE,
+)
+pack, _ = proc.communicate(("\n".join(sorted(oids)) + "\n").encode())
+if proc.returncode != 0 or not pack:
+    sys.exit(1)
+with open(out, "wb") as fh:
+    fh.write(pack)
+PYDELTA
 }
 
 # Prepare before starting any workload. A failed preparation can safely fall
@@ -101,22 +258,164 @@ remote_stage_git() {
 # A per-repository mirror is locked only for sync/copy, never for test execution.
 # Refuse a busy or abandoned lock rather than overwriting another preparation.
 remote_prepare() {
-  local root host dir file rel hosts key reply cache transport verify common
+  local root host rel hosts key reply dir cache rhead transport
+  local local_head local_tree git_mode finalize
   command -v ssh >/dev/null 2>&1 && command -v git >/dev/null 2>&1 &&
     command -v rsync >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1 || return 1
-  root=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
-  case "$PWD/" in "$root/"*) rel=${PWD#"$root"} ;; *) return 1 ;; esac
   REMOTE_LOCAL=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-offload.XXXXXXXX") || return 1
-  common=$(git -C "$root" rev-parse --git-common-dir) || { remote_cleanup; return 1; }
-  case "$common" in /*) ;; *) common="$root/$common" ;; esac
-  common=$(cd "$common" && pwd -P) || { remote_cleanup; return 1; }
-  key=$(printf '%s\n' "$(hostname)" "$common" | python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())') || { remote_cleanup; return 1; }
+  if ! remote_stage_local "$PWD" "$REMOTE_LOCAL" "$SCRIPT_DIR" "$SPOOL" 0; then
+    remote_cleanup
+    return 1
+  fi
+  {
+    IFS= read -r root
+    IFS= read -r rel
+    IFS= read -r key
+    IFS= read -r local_head
+    IFS= read -r local_tree
+  } < "$REMOTE_LOCAL/meta"
   hosts=${REMOTE_HOSTS:-}
   hosts=${hosts//,/ }
   transport="ssh -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=15 -o ServerAliveCountMax=2"
-  # The remote Bash expands its positional parameters, not this shell.
-  # shellcheck disable=SC2016
-  verify="$(declare -f remote_manifest)"$'\n''remote_manifest "$1" > "$2" && cmp -s "$1/manifest" "$2"'
+  finalize=$(cat <<'PYFINAL'
+import concurrent.futures
+import hashlib
+import json
+import os
+import shutil
+import stat
+import subprocess
+import sys
+
+cache, rdir, git_mode, lhead, ltree = sys.argv[1:6]
+snap = os.path.join(cache, "snapshot")
+repo = os.path.join(snap, "repo")
+expected_files = set()
+expected_dirs = {repo}
+with open(os.path.join(snap, "manifest"), "r", encoding="utf-8") as fh:
+    for line in fh:
+        item = json.loads(line)
+        rel = item[0]
+        if rel == "repo" or rel.startswith("repo/"):
+            p = os.path.join(snap, rel)
+            if item[1] == "dir":
+                expected_dirs.add(p)
+            else:
+                expected_files.add(p)
+for cur, dirs, files in os.walk(repo, topdown=False):
+    if cur == os.path.join(repo, ".git") or cur.startswith(os.path.join(repo, ".git") + os.sep):
+        continue
+    for f in files:
+        p = os.path.join(cur, f)
+        if p not in expected_files:
+            os.unlink(p)
+    for d in dirs:
+        p = os.path.join(cur, d)
+        if d == ".git" and cur == repo:
+            continue
+        if os.path.islink(p):
+            if p not in expected_files:
+                os.unlink(p)
+        elif p in expected_files or p not in expected_dirs:
+            shutil.rmtree(p)
+
+delta_pack = os.path.join(snap, "delta.pack")
+cold_git = os.path.join(snap, "cold.git")
+repo_git = os.path.join(repo, ".git")
+if git_mode == "cold":
+    if os.path.exists(repo_git):
+        shutil.rmtree(repo_git)
+    shutil.move(cold_git, repo_git)
+elif git_mode == "delta":
+    pack_dst = os.path.join(repo_git, "objects", "pack", f"pack-{lhead}-{os.getpid()}.pack")
+    shutil.move(delta_pack, pack_dst)
+    subprocess.check_call(["git", "-C", repo, "index-pack", pack_dst], stdout=subprocess.DEVNULL)
+    with open(os.path.join(repo_git, "shallow"), "w", encoding="utf-8") as fh:
+        fh.write(lhead + "\n")
+    subprocess.check_call(["git", "-C", repo, "update-ref", "HEAD", lhead])
+    subprocess.check_call(["git", "-C", repo, "read-tree", "HEAD"])
+if os.path.exists(delta_pack):
+    os.unlink(delta_pack)
+if os.path.exists(cold_git):
+    shutil.rmtree(cold_git)
+
+def clean_dir(target):
+    for n in os.listdir(target):
+        p = os.path.join(target, n)
+        if os.path.isdir(p) and not os.path.islink(p):
+            shutil.rmtree(p)
+        else:
+            os.unlink(p)
+
+src_dot = os.path.join(snap, ".")
+if subprocess.call(["cp", "-RcPp", src_dot, rdir + "/"], stderr=subprocess.DEVNULL) != 0:
+    clean_dir(rdir)
+    if subprocess.call(["cp", "--reflink=auto", "-RPp", src_dot, rdir + "/"], stderr=subprocess.DEVNULL) != 0:
+        clean_dir(rdir)
+        subprocess.check_call(["cp", "-RPp", src_dot, rdir + "/"])
+os.chmod(rdir, 0o700)
+
+rdir_b = os.fsencode(rdir)
+entries = []
+def walk(path, relative=b""):
+    for name in sorted(os.listdir(path)):
+        if not relative and name == b"manifest":
+            continue
+        if relative == b"repo" and name == b".git":
+            continue
+        entry = os.path.join(path, name)
+        rel_p = os.path.join(relative, name)
+        mode = os.lstat(entry).st_mode
+        if stat.S_ISLNK(mode):
+            entries.append((rel_p, "link", os.fsdecode(os.readlink(entry)), None))
+        elif stat.S_ISREG(mode):
+            entries.append((rel_p, "file", mode & 0o777, entry))
+        elif stat.S_ISDIR(mode):
+            entries.append((rel_p, "dir", None, None))
+            walk(entry, rel_p)
+        else:
+            sys.exit(1)
+
+def hash_file(path):
+    d = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            d.update(block)
+    return d.hexdigest()
+
+walk(rdir_b)
+file_paths = [item[3] for item in entries if item[1] == "file"]
+hashes = []
+if file_paths:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
+        hashes = list(pool.map(hash_file, file_paths))
+hi = 0
+verified_lines = []
+for rel_p, kind, meta, _ in entries:
+    if kind == "link":
+        verified_lines.append(json.dumps([os.fsdecode(rel_p), "link", meta], ensure_ascii=True))
+    elif kind == "file":
+        verified_lines.append(json.dumps([os.fsdecode(rel_p), "file", meta, hashes[hi]], ensure_ascii=True))
+        hi += 1
+    else:
+        verified_lines.append(json.dumps([os.fsdecode(rel_p), "dir"], ensure_ascii=True))
+
+expected_text = open(os.path.join(rdir, "manifest"), "r", encoding="utf-8").read()
+actual_text = ("\n".join(verified_lines) + "\n") if verified_lines else ""
+if expected_text != actual_text:
+    sys.exit(1)
+
+rrepo = os.path.join(rdir, "repo")
+rev = subprocess.check_output(
+    ["git", "-C", rrepo, "rev-parse", "--is-shallow-repository", "HEAD", "HEAD^{tree}"]
+).decode().splitlines()
+if rev != ["true", lhead, ltree]:
+    sys.exit(1)
+wtree = subprocess.check_output(["git", "-C", rrepo, "write-tree"]).decode().strip()
+if wtree != ltree:
+    sys.exit(1)
+PYFINAL
+  )
   for host in $hosts; do
     # HOME is resolved on the remote host. Only this user's private cache and
     # a newly minted run directory are used; no project checkout is modified.
@@ -132,42 +431,52 @@ mkdir -p "$cache"
 if [ -L "$cache" ] || [ ! -O "$cache" ]; then exit 1; fi
 chmod 700 "$cache"
 mkdir "$cache/lock"
+mkdir -p "$cache/snapshot/repo"
 dir=$(mktemp -d /tmp/fm-test-offload.XXXXXXXX) || { rmdir "$cache/lock"; exit 1; }
-printf '%s\n%s\n' "$dir" "$cache"
+rhead=""
+if [ -d "$cache/snapshot/repo/.git" ] && [ -f "$cache/snapshot/repo/.git/shallow" ]; then
+  packs=0
+  for p in "$cache/snapshot/repo/.git/objects/pack/"*.pack; do
+    [ -f "$p" ] && packs=$((packs + 1))
+  done
+  if [ "$packs" -gt 0 ] && [ "$packs" -le 16 ]; then
+    rhead=$(git -C "$cache/snapshot/repo" rev-parse --verify HEAD 2>/dev/null || true)
+  fi
+fi
+printf '%s\n%s\n%s\n' "$dir" "$cache" "${rhead:-none}"
 SHREMOTE
     ) || continue
     dir=${reply%%$'\n'*}
-    cache=${reply#*$'\n'}
+    reply=${reply#*$'\n'}
+    cache=${reply%%$'\n'*}
+    rhead=${reply#*$'\n'}
+    [ "$rhead" != none ] || rhead=""
     # Only a private directory minted by this protocol may ever be removed.
     case "$dir" in /tmp/fm-test-offload.*) ;; *) continue ;; esac
     case "$dir" in *[!a-zA-Z0-9/._-]*) continue ;; esac
     case "$cache" in /*/.cache/firstmate/test-mirrors/"$key") ;; *) continue ;; esac
     REMOTE_HOST=$host REMOTE_DIR=$dir REMOTE_CACHE=$cache
-    if [ ! -f "$REMOTE_LOCAL/snapshot/manifest" ]; then
-      # Stage only eligible source paths. Never traverse a directory in place
-      # of a tracked file (including submodules) or copy ignored dependencies.
-      git -C "$root" ls-files -z --cached --others --exclude-standard > "$REMOTE_LOCAL/all" || { remote_cleanup; return 1; }
-      : > "$REMOTE_LOCAL/files"
-      while IFS= read -r -d '' file; do
-        [ -e "$root/$file" ] || [ -L "$root/$file" ] || continue
-        if [ -d "$root/$file" ] && [ ! -L "$root/$file" ]; then remote_cleanup; return 1; fi
-        printf '%s\0' "$file" >> "$REMOTE_LOCAL/files"
-      done < "$REMOTE_LOCAL/all"
-      if ! mkdir -p "$REMOTE_LOCAL/snapshot/queue" ||
-        ! remote_stage_git "$root" "$REMOTE_LOCAL/snapshot/repo" ||
-        ! (set -o pipefail; tar -cf - -C "$root" --null -T "$REMOTE_LOCAL/files" |
-          tar -xf - -C "$REMOTE_LOCAL/snapshot/repo") ||
-        ! cp "$SCRIPT_DIR/fm-test-queue.sh" "$SCRIPT_DIR/fm-test-queue-remote.sh" "$REMOTE_LOCAL/snapshot/queue/" ||
-        ! remote_manifest "$REMOTE_LOCAL/snapshot" > "$REMOTE_LOCAL/snapshot/manifest"; then
+    rm -rf "$REMOTE_LOCAL/stage/delta.pack" "$REMOTE_LOCAL/stage/cold.git" "$REMOTE_LOCAL/cold-repo"
+    git_mode=""
+    if [ "$rhead" = "$local_head" ]; then
+      git_mode=same
+    elif [ -n "$rhead" ] && remote_stage_git_delta "$root" "$rhead" "$local_head" "$REMOTE_LOCAL/stage/delta.pack"; then
+      git_mode=delta
+    else
+      git_mode=cold
+      if ! git clone -q --depth=1 --no-checkout "file://$root" "$REMOTE_LOCAL/cold-repo" >/dev/null 2>&1 ||
+        ! git -C "$REMOTE_LOCAL/cold-repo" read-tree HEAD ||
+        ! mv "$REMOTE_LOCAL/cold-repo/.git" "$REMOTE_LOCAL/stage/cold.git"; then
         remote_cleanup
         return 1
       fi
+      rm -rf "$REMOTE_LOCAL/cold-repo"
     fi
     echo "fm-test-queue: syncing snapshot delta to $host" >&2
-    # Checksums avoid timestamp-only transfers; rolling deltas send only the
-    # changed bytes. Delete stale paths, including removed untracked files.
-    if rsync -ac --delete --no-whole-file -z -e "$transport" "$REMOTE_LOCAL/snapshot/" "$host:$(remote_quote "$cache/snapshot/")" >/dev/null 2>&1 &&
-      remote_ssh "$host" "cp -RPp $(remote_quote "$cache/snapshot/.") $(remote_quote "$dir/") && chmod 700 $(remote_quote "$dir") && bash -c $(remote_quote "$verify") _ $(remote_quote "$dir") $(remote_quote "$cache/verified") && cd $(remote_quote "$dir/repo$rel") && rmdir $(remote_quote "$cache/lock")" </dev/null >/dev/null 2>&1; then
+    if { [ ! -s "$REMOTE_LOCAL/files" ] || rsync -a --force --files-from="$REMOTE_LOCAL/files" --from0 --no-whole-file -z -e "$transport" "$root/" "$host:$(remote_quote "$cache/snapshot/repo/")" >/dev/null 2>&1; } &&
+      { [ ! -s "$REMOTE_LOCAL/recent_files" ] || rsync -ac --force --files-from="$REMOTE_LOCAL/recent_files" --from0 --no-whole-file -z -e "$transport" "$root/" "$host:$(remote_quote "$cache/snapshot/repo/")" >/dev/null 2>&1; } &&
+      rsync -a --no-whole-file -z -e "$transport" "$REMOTE_LOCAL/stage/" "$host:$(remote_quote "$cache/snapshot/")" >/dev/null 2>&1 &&
+      remote_ssh "$host" "python3 -c $(remote_quote "$finalize") $(remote_quote "$cache") $(remote_quote "$dir") $(remote_quote "$git_mode") $(remote_quote "$local_head") $(remote_quote "$local_tree") && cd $(remote_quote "$dir/repo$rel") && rmdir $(remote_quote "$cache/lock")" </dev/null >/dev/null 2>&1; then
       REMOTE_CACHE=""
       REMOTE_ROOT="$dir/repo"
       REMOTE_CWD="$REMOTE_ROOT$rel"
