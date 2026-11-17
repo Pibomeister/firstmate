@@ -1,0 +1,71 @@
+=== Scenario 1: fm-review-diff.sh --since live validation ===
+H1=f1897bad09a7e123cc26078f8ce037c8d212a430
+H2=14b919dd52b1c3ad0852037c8bcf235028834859
+--- default full diff ---
+diff base: origin/main
+ r1.txt | 1 +
+ r2.txt | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/r1.txt b/r1.txt
+new file mode 100644
+index 0000000..7dd7fb1
+--- /dev/null
++++ b/r1.txt
+@@ -0,0 +1 @@
++round-1 feature
+diff --git a/r2.txt b/r2.txt
+new file mode 100644
+index 0000000..6014695
+--- /dev/null
++++ b/r2.txt
+@@ -0,0 +1 @@
++round-2 fix
+--- --since H1 delta diff ---
+diff base: origin/main
+delta since: f1897bad09a7e123cc26078f8ce037c8d212a430
+ r2.txt | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/r2.txt b/r2.txt
+new file mode 100644
+index 0000000..6014695
+--- /dev/null
++++ b/r2.txt
+@@ -0,0 +1 @@
++round-2 fix
+--- --stat --since H1 ---
+diff base: origin/main
+delta since: f1897bad09a7e123cc26078f8ce037c8d212a430
+ r2.txt | 1 +
+ 1 file changed, 1 insertion(+)
+--- rewritten branch + --since H1 ---
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 6s) - full banner already printed this episode.
+diff base: origin/main
+delta since: f1897bad09a7e123cc26078f8ce037c8d212a430
+note: fm/live-s1 does not descend from f1897bad09a7e123cc26078f8ce037c8d212a430, so this delta also shows changes that came from the base branch
+ r1.txt        | 1 -
+ rewritten.txt | 1 +
+ 2 files changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/r1.txt b/r1.txt
+deleted file mode 100644
+index 7dd7fb1..0000000
+--- a/r1.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-round-1 feature
+diff --git a/rewritten.txt b/rewritten.txt
+new file mode 100644
+index 0000000..4b0b26e
+--- /dev/null
++++ b/rewritten.txt
+@@ -0,0 +1 @@
++rewritten fix
+--- adversarial short sha refusal ---
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 8s) - full banner already printed this episode.
+error: --since requires a full lowercase commit sha
+short-sha-exit=1
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 9s) - full banner already printed this episode.
+error: --since commit deadbeefdeadbeefdeadbeefdeadbeefdeadbeef does not exist in /tmp/fm-v7-s1.lgFdic/wt
+unknown-sha-exit=1

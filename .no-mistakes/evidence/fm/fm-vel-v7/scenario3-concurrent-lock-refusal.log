@@ -1,0 +1,9 @@
+=== Scenario 3: concurrent-round .run.lock/pid refusal (no receipt yet at H1) ===
+H1=dad7f084e06f3386b3382d467e20c2a2077c5409 (holder_pid=33959, no receipt)
+H2=6f4612592fcbf21146de92a9a71a0624e434e0b6
+error: the review round at dad7f084e06f3386b3382d467e20c2a2077c5409 is still running
+refusal-exit=2
+rounds-ledger-after-refusal:
+dad7f084e06f3386b3382d467e20c2a2077c5409	1700000000
+H2-round-exists: no
+H2-prior-exists: no

@@ -1,0 +1,69 @@
+=== Scenario 2 Round 2 (live claude + agy) ===
+H1=e120fd16f98aed5300cd528a9028dbe7ee6e0cbb
+H2=a0fe0a704e0dda7577beadf155c57e5a9b340fd2
+R2 exit=1
+seat anthropic.claude.claude-sonnet-5-5: APPROVE
+seat openai.agy.gpt-oss-120b-medium: no valid review (the review does not end with a verdict line for this head)
+merge-review: incomplete head=a0fe0a704e0dda7577beadf155c57e5a9b340fd2 approvals=anthropic.claude.claude-sonnet-5-5:APPROVE blocks=none round=2 reason="approving reviews come from one model family; two are required" url=https://github.com/example/live-s2/pull/7
+--- round file ---
+round=2
+previous=e120fd16f98aed5300cd528a9028dbe7ee6e0cbb
+--- prior.md ---
+F1 | open | none | parse_port.py:3 | No range check, so "0", "-1" and "70000" are accepted instead of raising ValueError; add a check that the value is within 1..65535.
+F2 | open | none | parse_port.py:3 | int() accepts whitespace, signs, underscores and Unicode digits that should be rejected as non-digits; validate with an ASCII-digit check before converting.
+F3 | noted | none | parse_port.py:1 | No tests cover the new function; add tests for valid ports, boundaries, empty strings, non-digits and out-of-range values.
+--- delta patch ---
+diff --git a/parse_port.py b/parse_port.py
+index aeb52582e0258113ce2a78011a9b4eccf6d04cf1..3cf5a922064a06aea3512ba8e51175d129170418 100644
+--- a/parse_port.py
++++ b/parse_port.py
+@@ -1,3 +1,7 @@
+ def parse_port(value: str) -> int:
+-    # Bug: does not validate port range 1..65535
+-    return int(value)
++    if not isinstance(value, str) or not value.isascii() or not value.isdigit():
++        raise ValueError(f"invalid port: {value!r}")
++    port = int(value)
++    if port < 1 or port > 65535:
++        raise ValueError(f"port out of range: {port}")
++    return port
+diff --git a/test_parse_port.py b/test_parse_port.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..8100749c4fb6c6198ded6da78c1d3fd90849b90e
+--- /dev/null
++++ b/test_parse_port.py
+@@ -0,0 +1,16 @@
++import unittest
++from parse_port import parse_port
++
++class TestParsePort(unittest.TestCase):
++    def test_valid(self):
++        self.assertEqual(parse_port("1"), 1)
++        self.assertEqual(parse_port("80"), 80)
++        self.assertEqual(parse_port("65535"), 65535)
++
++    def test_invalid(self):
++        for bad in ("", "0", "-1", "65536", " 80", "80 ", "1_0", "abc", "\u0668\u0660"):
++            with self.assertRaises(ValueError):
++                parse_port(bad)
++
++if __name__ == "__main__":
++    unittest.main()
+--- prompt excerpt (prior/delta/open) ---
+6:Review round: 2
+11:- prior-findings.md: the findings of the earlier rounds, one per line as "<id> | <state> | <class> | <where> | <text>".
+12:- delta.patch: the change from the previously reviewed head e120fd16f98aed5300cd528a9028dbe7ee6e0cbb to this head. It also shows base branch changes when the branch was rebased.
+18:This is review round 2 of this pull request. Your verdict still covers the whole change in diff.patch. Start from prior-findings.md and delta.patch when they are present, then check everything else the newer commits could affect.
+19:Do not report again a finding that prior-findings.md lists as resolved, dropped, deferred, or noted, unless this head makes it worse. Then report it as NEW and name the old id in its text.
+32:These earlier findings are still open: F1, F2. Give each of them exactly one line with its id in place of NEW and the <STATUS> RESOLVED (this head fixes it), BLOCKING (it still stands), or UNSUPPORTED (it was never a real defect; say what you checked). A review that skips one does not count.
+--- findings at H2 ---
+round=2 head=a0fe0a704e0dda7577beadf155c57e5a9b340fd2 previous=e120fd16f98aed5300cd528a9028dbe7ee6e0cbb
+F1	pending	none	parse_port.py:3	No range check, so "0", "-1" and "70000" are accepted instead of raising ValueError; add a check that the value is within 1..65535.	followup=none
+F2	pending	none	parse_port.py:3	int() accepts whitespace, signs, underscores and Unicode digits that should be rejected as non-digits; validate with an ASCII-digit check before converting.	followup=none
+F3	noted	none	parse_port.py:1	No tests cover the new function; add tests for valid ports, boundaries, empty strings, non-digits and out-of-range values.	followup=none
+--- check at H2 ---
+merge-review: incomplete head=a0fe0a704e0dda7577beadf155c57e5a9b340fd2 approvals=anthropic.claude.claude-sonnet-5-5:APPROVE blocks=none round=2 reason="approving reviews come from one model family; two are required" url=https://github.com/example/live-s2/pull/7
+check-exit=1
+--- check at H1 (earlier BLOCK still blocks) ---
+merge-review: blocked head=e120fd16f98aed5300cd528a9028dbe7ee6e0cbb approvals=none blocks=anthropic.claude.claude-sonnet-5-5 round=1 open=F1,F2 url=https://github.com/example/live-s2/pull/7
+h1-check-exit=1

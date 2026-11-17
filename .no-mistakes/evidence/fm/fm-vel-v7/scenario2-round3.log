@@ -1,0 +1,45 @@
+=== Scenario 2 Round 3 (live claude + agy) ===
+H2=a0fe0a704e0dda7577beadf155c57e5a9b340fd2
+H3=8d8d1ee3583fe0ac3e1ef358327e1cfd35e42885
+R3 exit=1
+seat openai.agy.gpt-oss-120b-medium: no valid review (the review does not end with a verdict line for this head)
+seat anthropic.claude.claude-sonnet-5-5: APPROVE
+merge-review: incomplete head=8d8d1ee3583fe0ac3e1ef358327e1cfd35e42885 approvals=anthropic.claude.claude-sonnet-5-5:APPROVE blocks=none round=3 reason="approving reviews come from one model family; two are required" url=https://github.com/example/live-s2/pull/7
+--- round file ---
+round=3
+previous=a0fe0a704e0dda7577beadf155c57e5a9b340fd2
+--- prior.md (pending from R2 becomes open in R3) ---
+F1 | open | none | parse_port.py:3 | No range check, so "0", "-1" and "70000" are accepted instead of raising ValueError; add a check that the value is within 1..65535.
+F2 | open | none | parse_port.py:3 | int() accepts whitespace, signs, underscores and Unicode digits that should be rejected as non-digits; validate with an ASCII-digit check before converting.
+F3 | noted | none | parse_port.py:1 | No tests cover the new function; add tests for valid ports, boundaries, empty strings, non-digits and out-of-range values.
+--- delta patch ---
+diff --git a/parse_port.py b/parse_port.py
+index 3cf5a922064a06aea3512ba8e51175d129170418..beac70608a85e59bad3348777ef4eb464bca4bb3 100644
+--- a/parse_port.py
++++ b/parse_port.py
+@@ -1,4 +1,5 @@
+ def parse_port(value: str) -> int:
++    """Parse an ASCII TCP port string in 1..65535."""
+     if not isinstance(value, str) or not value.isascii() or not value.isdigit():
+         raise ValueError(f"invalid port: {value!r}")
+     port = int(value)
+--- round 3 prompt disposition rules ---
+31:This is round 3, so every finding that could block now gets one disposition as its <STATUS>:
+32:- REGRESSION: in ordinary use the change breaks behavior that works at the merge base, or does not do what its stated intent says. It blocks.
+33:- EDGE-CASE: a real defect outside ordinary use, where the merge base is no better. It becomes a filed follow-up and stops blocking only when every reviewer agrees.
+34:- UNSUPPORTED: no concrete evidence shows a defect. Say what you checked. It is dropped.
+35:A security, destructive, or data-loss finding is never an EDGE-CASE.
+36:For a NEW finding <STATUS> is REGRESSION, EDGE-CASE, or NON-BLOCKING.
+37:These earlier findings are still open: F1, F2. Give each of them exactly one line with its id in place of NEW and the <STATUS> RESOLVED (this head fixes it), REGRESSION, EDGE-CASE, or UNSUPPORTED. A review that skips one does not count.
+39:Choose BLOCK only when a REGRESSION, or a security, destructive, or data-loss finding, stands. Do not approve work you could not read.
+--- findings at H3 ---
+round=3 head=8d8d1ee3583fe0ac3e1ef358327e1cfd35e42885 previous=a0fe0a704e0dda7577beadf155c57e5a9b340fd2
+F1	pending	none	parse_port.py:3	No range check, so "0", "-1" and "70000" are accepted instead of raising ValueError; add a check that the value is within 1..65535.	followup=none
+F2	pending	none	parse_port.py:3	int() accepts whitespace, signs, underscores and Unicode digits that should be rejected as non-digits; validate with an ASCII-digit check before converting.	followup=none
+F3	noted	none	parse_port.py:1	No tests cover the new function; add tests for valid ports, boundaries, empty strings, non-digits and out-of-range values.	followup=none
+--- followup refusal on pending F1 ---
+error: finding F1 is pending at 8d8d1ee3583fe0ac3e1ef358327e1cfd35e42885; only a deferred finding takes a follow-up
+followup-exit=2
+--- fm-pr-merge.sh refusal when merge-review is incomplete ---
+error: https://github.com/example/live-s2/pull/7 has no approved two-model merge review at 8d8d1ee3583fe0ac3e1ef358327e1cfd35e42885 (merge-review: incomplete head=8d8d1ee3583fe0ac3e1ef358327e1cfd35e42885 approvals=anthropic.claude.claude-sonnet-5-5:APPROVE blocks=none round=3 reason="approving reviews come from one model family; two are required" url=https://github.com/example/live-s2/pull/7); a background worker runs bin/fm-merge-review.sh run for that head
+pr-merge-exit=1
