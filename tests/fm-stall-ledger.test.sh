@@ -820,6 +820,72 @@ test_historical_completion_does_not_close_a_later_episode() {
   pass "historical completion never closes a later ongoing episode"
 }
 
+test_completed_watchdog_cannot_recover_a_stale_heartbeat() {
+  local home ledger actions
+  home=$(new_home replay-heartbeat)
+  ledger=$(ledger_of "$home")
+  mkdir -p "$home/state/watchdog"
+  printf '%s\n' "$T0" > "$home/state/.stall-ledger-born"
+  actions=$home/state/watchdog/actions.tsv
+  printf '%s\theld\t\tprimary\tfrozen\trestart\theld\theld\n' "$T0" > "$actions"
+  printf '%s\tdone\t\tprimary\tfrozen\trestart\tdone\trestarted\n' "$((T0 + 700))" >> "$actions"
+  write_hb "$home/state/heartbeat.json" "$T0"
+  observe_ok "$home" "$((T0 + 700))"
+  observe_ok "$home" "$((T0 + 760))"
+  assert_equals 2 "$(count_rows "$ledger" stall-open)" "watchdog and heartbeat episodes were recorded"
+  assert_equals 1 "$(count_rows "$ledger" stall-close)" "replayed completion recovered a stale heartbeat"
+  write_hb "$home/state/heartbeat.json" "$((T0 + 900))"
+  observe_ok "$home" "$((T0 + 900))"
+  awk -F '\t' -v start="$T0" -v ended="$((T0 + 900))" '
+    $2 == "stall-close" && $5 == start && $8 == ended { found = 1 }
+    END { exit !found }
+  ' "$ledger" || fail "the heartbeat episode did not close on its own recovery"
+  pass "completed watchdog history cannot recover a still-stale heartbeat"
+}
+
+test_missing_secondmate_heartbeat_is_not_recovery() {
+  local home mate ledger
+  home=$(new_home missing-heartbeat)
+  mate=$(new_home missing-heartbeat-mate)
+  ledger=$(ledger_of "$home")
+  printf 'kind=secondmate\nhome=%s\n' "$mate" > "$home/state/mate1.meta"
+  printf 'mate1\n' > "$mate/.fm-secondmate-home"
+  write_hb "$home/state/heartbeat.json" "$((T0 + 700))"
+  write_hb "$mate/state/heartbeat.json" "$T0"
+  observe_ok "$home" "$((T0 + 700))"
+  assert_equals 1 "$(count_rows "$ledger" stall-open mate1)" "stale secondmate heartbeat opens a stall"
+  rm -f "$mate/state/heartbeat.json"
+  observe_ok "$home" "$((T0 + 800))"
+  assert_equals 0 "$(count_rows "$ledger" stall-close mate1)" "missing heartbeat falsely recovered a secondmate"
+  write_hb "$mate/state/heartbeat.json" "$((T0 + 900))"
+  observe_ok "$home" "$((T0 + 900))"
+  assert_equals 1 "$(count_rows "$ledger" stall-close mate1)" "fresh secondmate heartbeat did not recover its stall"
+  pass "an unavailable secondmate heartbeat requires affirmative recovery evidence"
+}
+
+test_worker_quota_uses_its_subject_and_source_home() {
+  local home source ledger actions
+  home=$(new_home worker-quota-owner)
+  source=$(new_home worker-quota-source)
+  ledger=$(ledger_of "$home")
+  mkdir -p "$home/state/watchdog"
+  printf '%s\n' "$T0" > "$home/state/.stall-ledger-born"
+  actions=$home/state/watchdog/actions.tsv
+  printf '%s\theld\t%s\tworker:worker1\tquota\tsuggest\theld\tqueued until reset\n' "$T0" "$source" > "$actions"
+  printf 'working [at=%s]: unrelated owner status\n' "$((T0 + 650))" > "$home/state/worker1.status"
+  printf 'blocked [at=%s]: quota floor until reset\n' "$T0" > "$source/state/worker1.status"
+  observe_ok "$home" "$((T0 + 700))"
+  assert_equals 1 "$(count_rows "$ledger" stall-open worker1)" "production worker prefix changed the task identity"
+  assert_equals 0 "$(count_rows "$ledger" stall-close worker1)" "another home's status recovered this worker"
+  printf 'working [at=%s]: back\n' "$((T0 + 900))" > "$source/state/worker1.status"
+  observe_ok "$home" "$((T0 + 1000))"
+  awk -F '\t' -v ended="$((T0 + 900))" '
+    $2 == "stall-close" && $3 == "worker" && $4 == "worker1" && $8 == ended { found = 1 }
+    END { exit !found }
+  ' "$ledger" || fail "the source home's worker status did not recover the episode"
+  pass "worker-prefixed quota rows recover only from their source home's task status"
+}
+
 test_usage_and_unknown_commands() {
   local home out rc=0
   home=$(new_home usage)
@@ -835,6 +901,9 @@ test_usage_and_unknown_commands() {
 }
 
 fm_test_run \
+  test_completed_watchdog_cannot_recover_a_stale_heartbeat \
+  test_missing_secondmate_heartbeat_is_not_recovery \
+  test_worker_quota_uses_its_subject_and_source_home \
   test_historical_completion_does_not_close_a_later_episode \
   test_score_passes_on_the_locking_boundaries \
   test_score_fails_a_human_intervention \

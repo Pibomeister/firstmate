@@ -153,6 +153,21 @@ _fm_stall_have_hb() { # <class> <subject> <epoch>
   ' "$FM_STALL_LEDGER"
 }
 
+_fm_stall_missing_hb() { # <class> <subject>
+  _fm_stall_have_hb "$1" "$2" "$FM_STALL_NOW" && return 1
+  awk -F '\t' -v c="$1" -v s="$2" '
+    NF == 10 && $2 == "hb" && $3 == c && $4 == s { found = 1; exit }
+    END { exit !found }
+  ' "$FM_STALL_LEDGER"
+}
+
+_fm_stall_had_stale_hb() { # <class> <subject> <detect>
+  awk -F '\t' -v c="$1" -v s="$2" -v d="$3" '
+    NF == 10 && $2 == "hb" && $3 == c && $4 == s && $1 >= d && $1 - $5 > 600 { found = 1; exit }
+    END { exit !found }
+  ' "$FM_STALL_LEDGER"
+}
+
 _fm_stall_opens() {
   [ -f "$FM_STALL_LEDGER" ] || return 0
   awk -F '\t' '
@@ -470,6 +485,9 @@ _fm_stall_wd_extra() {
 
 _fm_stall_wd_norm() { # <home> <subject> <symptom> -> prints "class subject"
   local home=$1 subject=$2 symptom=$3 norm base meta kind
+  case "$subject" in
+    worker:*) printf 'worker %s\n' "$(_fm_stall_subject "${subject#worker:}")"; return 0 ;;
+  esac
   norm=$(_fm_stall_subject "$subject")
   base=${FM_HOME%/}
   base=$(_fm_stall_subject "${base##*/}")
@@ -531,13 +549,13 @@ _fm_stall_wd_lib() {
 
 # A working, done, or resolved status line after the last watchdog row is
 # resumption. Prints its at epoch. Return 2 when that epoch is before detect.
-_fm_stall_status_resumed() { # <subject> <last-epoch> <detect>
-  local task=$1 last=$2 detect=$3 file line at
+_fm_stall_status_resumed() { # <subject> <last-epoch> <detect> [state]
+  local task=$1 last=$2 detect=$3 state=${4:-$STATE} file line at
   case "$task" in
     ''|-) return 1 ;;
     *[!A-Za-z0-9._-]*) return 1 ;;
   esac
-  file=$STATE/$task.status
+  file=$state/$task.status
   [ -f "$file" ] && [ ! -L "$file" ] || return 1
   line=$(tail -n 1 "$file" 2>/dev/null || true)
   case "$line" in
@@ -554,13 +572,13 @@ _fm_stall_status_resumed() { # <subject> <last-epoch> <detect>
 
 # 0 and an epoch: the condition ended at that epoch, after detect.
 # 2: it ended before this episode was a stall. 1: still unverified or active.
-_fm_stall_wd_resolved() { # <symptom> <subject> <last-epoch> <detect>
-  local symptom=$1 task=$2 last=$3 detect=$4 file flag checked at rc=0 line stat_task
+_fm_stall_wd_resolved() { # <symptom> <subject> <last-epoch> <detect> [state]
+  local symptom=$1 task=$2 last=$3 detect=$4 state=${5:-$STATE} file flag checked at rc=0 line stat_task
   _fm_stall_is_num "$last" || return 1
   _fm_stall_is_num "$detect" || return 1
   case "$symptom" in
     usage-limit-autowait)
-      file=$STATE/watchdog/captain
+      file=$state/watchdog/captain
       [ -f "$file" ] && [ ! -L "$file" ] || return 1
       _fm_stall_wd_lib || return 1
       flag=$(fm_wd_conf_get "$file" usage_limit_autowait '')
@@ -582,25 +600,25 @@ _fm_stall_wd_resolved() { # <symptom> <subject> <last-epoch> <detect>
         ''|-) return 1 ;;
         *[!A-Za-z0-9._-]*) return 1 ;;
       esac
-      file=$STATE/$stat_task.status
+      file=$state/$stat_task.status
       [ -f "$file" ] && [ ! -L "$file" ] || return 1
       _fm_stall_wd_lib || return 1
       line=$(tail -n 1 "$file" 2>/dev/null || true)
       if fm_wd_quota_status_line "$line"; then
         return 1
       fi
-      at=$(_fm_stall_status_resumed "$stat_task" "$last" "$detect") || rc=$?
+      at=$(_fm_stall_status_resumed "$stat_task" "$last" "$detect" "$state") || rc=$?
       [ "$rc" -eq 0 ] || return "$rc"
       printf '%s\n' "$at"
       ;;
     frozen|timer-loop|usage-limit)
-      file=$STATE/watchdog/captain
+      file=$state/watchdog/captain
       if [ -f "$file" ] && [ ! -L "$file" ]; then
         _fm_stall_wd_lib || return 1
         flag=$(fm_wd_conf_get "$file" usage_limit_autowait '')
         [ "$flag" = 1 ] && return 1
       fi
-      at=$(_fm_stall_status_resumed "$task" "$last" "$detect") || rc=$?
+      at=$(_fm_stall_status_resumed "$task" "$last" "$detect" "$state") || rc=$?
       [ "$rc" -eq 0 ] || return "$rc"
       printf '%s\n' "$at"
       ;;
@@ -610,7 +628,7 @@ _fm_stall_wd_resolved() { # <symptom> <subject> <last-epoch> <detect>
 
 _fm_stall_watchdog() {
   local file epoch _id home subject symptom action phase detail
-  local cls sub key extra start detect estart edetect esymptom elast norm
+  local cls sub key extra start detect estart edetect esymptom elast ehome norm
   local res res_rc
   file=$STATE/watchdog/actions.tsv
   [ -f "$file" ] && [ ! -L "$file" ] || return 0
@@ -619,6 +637,9 @@ _fm_stall_watchdog() {
     _fm_stall_is_num "$epoch" || continue
     [ "$epoch" -ge "$FM_STALL_BORN" ] || continue
     _fm_stall_wd_symptom "$symptom" || continue
+    [ -n "$home" ] || home=$FM_HOME
+    case "$home" in /*) ;; *) continue ;; esac
+    case "$home" in *[[:cntrl:]]*) continue ;; esac
     norm=$(_fm_stall_wd_norm "$home" "$subject" "$symptom")
     cls=${norm%% *}
     sub=${norm#* }
@@ -626,7 +647,7 @@ _fm_stall_watchdog() {
     key=$FM_STALL_WORK/ep/${cls}__${sub}
     if _fm_stall_wd_terminates "$phase" "$action"; then
       if [ -f "$key" ]; then
-        read -r estart edetect esymptom elast < "$key" || true
+        IFS=$(printf '\t') read -r estart edetect esymptom elast ehome < "$key" || true
         rm -f -- "$key"
         if _fm_stall_is_num "$estart" && _fm_stall_is_num "$edetect" && [ "$epoch" -gt "$estart" ]; then
           if [ $((epoch - estart)) -gt 600 ]; then
@@ -643,28 +664,28 @@ _fm_stall_watchdog() {
       start=$((epoch - extra))
     fi
     if [ ! -f "$key" ]; then
-      printf '%s %s %s %s\n' "$start" "$epoch" "$symptom" "$epoch" > "$key" || return 1
+      printf '%s\t%s\t%s\t%s\t%s\n' "$start" "$epoch" "$symptom" "$epoch" "$home" > "$key" || return 1
       continue
     fi
-    read -r estart edetect esymptom elast < "$key" || continue
+    IFS=$(printf '\t') read -r estart edetect esymptom elast ehome < "$key" || continue
     _fm_stall_is_num "$estart" || estart=$start
     _fm_stall_is_num "$edetect" || edetect=$epoch
     _fm_stall_is_num "$elast" || elast=$epoch
     [ "$start" -lt "$estart" ] && estart=$start
     [ "$epoch" -lt "$edetect" ] && edetect=$epoch
     [ "$epoch" -gt "$elast" ] && elast=$epoch
-    printf '%s %s %s %s\n' "$estart" "$edetect" "$esymptom" "$elast" > "$key" || return 1
+    printf '%s\t%s\t%s\t%s\t%s\n' "$estart" "$edetect" "$esymptom" "$elast" "$home" > "$key" || return 1
   done < <(_fm_stall_wd_rows "$file")
   for key in "$FM_STALL_WORK/ep"/*; do
     [ -f "$key" ] || continue
-    read -r estart edetect esymptom elast < "$key" || continue
+    IFS=$(printf '\t') read -r estart edetect esymptom elast ehome < "$key" || continue
     _fm_stall_is_num "$estart" || continue
     _fm_stall_is_num "$edetect" || continue
     cls=${key##*/}
     sub=${cls#*__}
     cls=${cls%%__*}
     res_rc=0
-    res=$(_fm_stall_wd_resolved "$esymptom" "$sub" "$elast" "$edetect") || res_rc=$?
+    res=$(_fm_stall_wd_resolved "$esymptom" "$sub" "$elast" "$edetect" "$ehome/state") || res_rc=$?
     if [ "$res_rc" -eq 2 ]; then
       continue
     fi
@@ -793,6 +814,12 @@ _fm_stall_reconcile() {
       _fm_stall_is_num "$start" || continue
       _fm_stall_is_num "$detect" || continue
       _fm_stall_is_num "$ended" || continue
+      if awk -F '\t' -v c="$cls" -v s="$sub" -v e="$ended" '
+        NF == 10 && $2 == "stall-close" && $3 == c && $4 == s && $8 == e { found = 1; exit }
+        END { exit !found }
+      ' "$FM_STALL_LEDGER"; then
+        continue
+      fi
       case "$who" in
         watchdog|-) ;;
         *) who=watchdog ;;
@@ -806,7 +833,10 @@ _fm_stall_reconcile() {
         open_start=${open_start%% *}
         _fm_stall_is_num "$open_start" || continue
         _fm_stall_is_num "$open_detect" || continue
-        if [ "$ended" -ge "$open_start" ] && [ "$ended" -ge "$open_detect" ]; then
+        if [ "$ended" -ge "$open_start" ] && [ "$ended" -ge "$open_detect" ] \
+          && ! _fm_stall_signal_has "$cls" "$sub" \
+          && ! _fm_stall_missing_hb "$cls" "$sub" \
+          && ! _fm_stall_had_stale_hb "$cls" "$sub" "$open_detect"; then
           dur=$((ended - open_start))
           _fm_stall_append "$FM_STALL_NOW" stall-close "$cls" "$sub" "$open_start" "$open_detect" "$who" "$ended" "$dur" "$open_ref" || return 1
           continue
@@ -831,7 +861,7 @@ _fm_stall_reconcile() {
   fi
   _fm_stall_opens > "$FM_STALL_WORK/opens.tsv" || return 1
   while IFS=$(printf '\t') read -r cls sub ref start detect || [ -n "${cls:-}" ]; do
-    if _fm_stall_signal_has "$cls" "$sub"; then
+    if _fm_stall_signal_has "$cls" "$sub" || _fm_stall_missing_hb "$cls" "$sub"; then
       continue
     fi
     _fm_stall_is_num "$start" || continue
