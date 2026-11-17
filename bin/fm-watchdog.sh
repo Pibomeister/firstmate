@@ -1243,6 +1243,14 @@ wd_restart() {  # <symptom> <kind>...
     sess=${sess:-firstmate-$O_TAG}
   fi
   token=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
+  # A low-context restart rests on the reset observed earlier in this pass.
+  # A fresh-start launch that failed since then left the session supervising
+  # with auto-compaction as its reset, so re-read it at the restart boundary.
+  if [ "$symptom" = restart-requested ] && [ "$O_RESTART_REQ" != 1 ] \
+    && [ "$(fm_context_reset_for_session "$O_HOME" "$O_SESSION")" = compaction ]; then
+    wd_rec "$id" "$symptom" restart refused "the session's cycle now ends in auto-compaction"
+    return 0
+  fi
   pid=$O_LOCK_PID
   wd_rec "$id" "$symptom" restart pending "token=$token old_pid=$pid handoff=$handoff$yolo_note"
   WD_RESTARTED=1

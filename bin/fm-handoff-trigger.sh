@@ -322,6 +322,13 @@ COMPACT_AT=
 [ -z "$SESSION_ID" ] || [ -z "$TRANSCRIPT" ] ||
   COMPACT_AT=$(fm_compact_at_tokens "$TRANSCRIPT" "$CONFIG/handoff-trigger") || COMPACT_AT=
 publish_compact_point
+# A launch that failed after RESET was chosen may carry an epoch older than
+# this publication, which the reader would then reject. Check again now: a
+# failure recorded later carries an epoch at or after this publication.
+if [ "$RESET" = handoff ] && [ -n "$COMPACT_AT" ] && marker_launch_failed; then
+  RESET=compaction
+  publish_compact_point
+fi
 
 [ "$PERCENT" -gt 0 ] || exit 0
 [ -n "$MARKER" ] || exit 0

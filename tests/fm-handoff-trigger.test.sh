@@ -851,6 +851,26 @@ test_a_failed_fresh_start_launch_releases_the_stop() {
   assert_equals compaction "$(record_reset)" "after a failed launch the cycle publishes a compaction reset"
   assert_contains "$(lib_reset s-lf)" compaction "the watchdog's reader also sees auto-compaction"
 
+  # A launch that fails after this run chose its reset but records an epoch
+  # older than the publication still ends in a compaction reset.
+  rm -f "$record"
+  mkdir -p "$TMP_ROOT/race-bin"
+  cat > "$TMP_ROOT/race-bin/mktemp" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  *compact-point.*) [ -e "$record" ] || printf 'at=%s pid=%s nonce=none attempt=1 reason=error\\n' "$at" "$holder" > "$record" ;;
+esac
+exec "$(command -v mktemp)" "\$@"
+EOF
+  chmod +x "$TMP_ROOT/race-bin/mktemp"
+  printf 'session=s-lf compact_at=100000 at=%s reset=handoff\n' "$((at + 5))" > "$PRIMARY/state/compact-point"
+  # The publication must land in a later second than the recorded failure.
+  while [ "$(date +%s)" -le "$at" ]; do sleep 0.2; done
+  HOOK_ENV="PATH=$TMP_ROOT/race-bin:$PATH" run_hook "$PRIMARY" s-lf "$t" >/dev/null
+  [ -e "$record" ] || fail "the race seam must record the failure during the publication"
+  assert_equals compaction "$(record_reset)" "a failure recorded during the publication still publishes a compaction reset"
+  assert_contains "$(lib_reset s-lf)" compaction "the watchdog's reader also sees auto-compaction after the race"
+
   # A later launch removes the record, and the gate applies again.
   rm -f "$record"
   assert_equals 2 "$(stop_rc s-lf "$t")" "without the record the gate blocks again"

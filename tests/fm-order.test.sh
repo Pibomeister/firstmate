@@ -541,6 +541,7 @@ test_covers_checks_the_named_handoff_document() {
   home=$(make_home covers)
   doc="$home/data/handoff-launch.md"
   printf '# Handoff\n' >"$doc"
+  cp "$doc" "$TMP_ROOT/covers-doc.md"
   out=$(run_order "$home" covers --doc "$doc") || fail "with no open orders any readable handoff is covered"
   assert_contains "$out" "covers: clear (0 open order(s)" "covers reports a clear verdict with no orders"
   run_order "$home" send "first" >/dev/null
@@ -582,7 +583,22 @@ test_covers_checks_the_named_handoff_document() {
     run_order "$home" covers --doc "$doc" >/dev/null 2>&1 || rc=$?
     chmod 755 "$home/data/orders/pending"
     assert_equals 1 "$rc" "an unreadable order store cannot be verified"
+    # An unsearchable data directory hides the whole store, which must not
+    # read as a store with no orders.
+    chmod 000 "$home/data"
+    rc=0
+    run_order "$home" covers --doc "$TMP_ROOT/covers-doc.md" >/dev/null 2>&1 || rc=$?
+    chmod 755 "$home/data"
+    assert_equals 1 "$rc" "an unsearchable data directory cannot be verified"
   fi
+  rc=0
+  FM_DATA_OVERRIDE=/dev/null FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config" \
+    bash "$ORDER_BIN" covers --doc "$doc" >/dev/null 2>&1 || rc=$?
+  assert_equals 1 "$rc" "a data path that is not a directory cannot be verified"
+  rc=0
+  out=$(FM_DATA_OVERRIDE="$home/no-data-yet" FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config" \
+    bash "$ORDER_BIN" covers --doc "$doc" 2>&1) || rc=$?
+  assert_equals 0 "$rc" "a provably absent order store holds no orders: $out"
   for args in "" "--doc" "$doc" "--doc $doc extra"; do
     rc=0
     # shellcheck disable=SC2086 # Each case is a word list.

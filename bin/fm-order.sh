@@ -875,8 +875,17 @@ cmd_covers() {
   [ "$#" -eq 2 ] && [ "$1" = --doc ] && [ -n "$2" ] || usage_die "usage: fm-order.sh covers --doc <file>"
   doc=$2
   [ -f "$doc" ] && [ -r "$doc" ] || die "cannot read handoff $doc"
-  for d in "$ORDERS" "$ORDERS/pending" "$ORDERS/acked"; do
-    [ ! -d "$d" ] || { [ -r "$d" ] && [ -x "$d" ]; } || die "cannot read $d"
+  # An order store counts as empty only when it is provably absent: the first
+  # missing level must sit in a searchable directory. Anything present must be
+  # a readable, searchable directory, so an inaccessible store never reads as
+  # holding no orders.
+  for d in "$DATA" "$ORDERS" "$ORDERS/pending" "$ORDERS/acked"; do
+    if [ -e "$d" ] || [ -L "$d" ]; then
+      [ -d "$d" ] && [ -r "$d" ] && [ -x "$d" ] || die "cannot read $d"
+    else
+      [ -d "$(dirname "$d")" ] && [ -x "$(dirname "$d")" ] || die "cannot read $d"
+      [ "$d" = "$ORDERS/pending" ] || break
+    fi
   done
   missing=$(orders_missing_from "$doc" | awk 'NF { printf " %s", $0 }')
   n=$(open_orders | awk 'NF { n++ } END { print n + 0 }')

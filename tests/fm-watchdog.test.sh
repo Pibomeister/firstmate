@@ -2446,6 +2446,40 @@ restart-command=$TMP_ROOT/fake-captain.sh"
   pass "low context: the bounded wait ends in a lean restart and a recorded gap"
 }
 
+# A fresh-start launch that fails between the pass's observation and its
+# restart leaves the session supervising with auto-compaction as its reset,
+# so the restart boundary re-reads the reset and stops nobody.
+test_low_context_restart_rechecks_a_failed_launch() {
+  local seam="$TMP_ROOT/od-seam"
+  make_home $'Captain session\n> \n  7% until auto-compact' "restart=on
+handoff-wait-secs=600
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working." "Testing." "Green."
+  printf 'session=%s compact_at=100000 at=%s reset=handoff\n' "$SID" "$BASE" > "$H/state/compact-point"
+  mkdir -p "$seam"
+  # The restart token read is the last step before the restart: record the
+  # failed launch there, after the pass observed the handoff reset.
+  cat > "$seam/od" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  *-N8*) printf 'at=%s pid=%s nonce=none attempt=2 reason=deadline\\n' "$BASE" "$LOCKPID" > "$H/state/.handoff-launch-failed" ;;
+esac
+exec "$(command -v od)" "\$@"
+EOF
+  chmod +x "$seam/od"
+  FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows handoff-request nudge pending)" "a handoff cycle at low context asks for a handoff"
+  PATH="$seam:$PATH" FM_WD_TEST_COMPOSER=empty run_wd 700 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows restart-requested restart refused)" "the restart boundary refuses once the launch failed: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows restart-requested restart pending)" "no restart starts after a failed launch"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "the surviving session was stopped"
+  FM_WD_TEST_COMPOSER=empty run_wd 800 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart pending)" "a later pass reads auto-compaction and restarts nobody"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "a later pass stopped the surviving session"
+  pass "low context: a fresh-start launch that fails before the restart leaves the session running"
+}
+
 test_low_context_second_episode_asks_again() {
   make_home $'Captain session\n> \n  7% until auto-compact' "restart=on
 restart-command=/bin/true"
@@ -6064,6 +6098,7 @@ fm_test_run \
   test_dead_holder_is_not_hidden_by_earlier_symptoms \
   test_low_context_waits_for_full_handoff_then_restarts \
   test_low_context_timeout_restarts_with_lean_handoff \
+  test_low_context_restart_rechecks_a_failed_launch \
   test_low_context_second_episode_asks_again \
   test_low_context_undelivered_nudge_starts_no_wait \
   test_restart_interval_holds_without_escalating \
