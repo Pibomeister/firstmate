@@ -130,8 +130,6 @@ case "${1:-}" in
           [ -n "${FM_FAKE_TMUX_SERVER_PID:-}" ] || { printf 'fakepane\n'; exit 0; }
           printf '%s\t%s\n' "$FM_FAKE_TMUX_SOCKET" "$FM_FAKE_TMUX_SERVER_PID"; exit 0 ;;
         '#{window_id}') printf '@9\n'; exit 0 ;;
-        # The pane's login shell, which the relaunch waits on (fakebin ps).
-        '#{pane_pid}') printf '4242426\n'; exit 0 ;;
         '#{pid}')
           if [ -f "$D/server-dead" ]; then echo "no server running on ${FM_FAKE_TMUX_SOCKET:-/tmp/tmux-1000/default}" >&2; exit 1; fi
           printf '%s\n' "${FM_FAKE_TMUX_SERVER_PID:-1}"; exit 0 ;;
@@ -218,7 +216,6 @@ case "${1:-}" in
     done
     printf '%s\n' "$name" >> "$D/windows"
     printf '%s\n' "$name" >> "$D/created-windows"
-    printf 'zsh' > "$D/command"
     printf '%s\n' "$SOCK" >> "$D/created-sockets"
     printf '@9\n'
     exit 0 ;;
@@ -226,14 +223,6 @@ esac
 exit 0
 SH
   chmod +x "$fb/tmux"
-  cat > "$fb/ps" <<'SH'
-#!/usr/bin/env bash
-case "$*" in
-  '-p 4242426 -o comm=') printf -- '-zsh\n' ;;
-  *) exec /bin/ps "$@" ;;
-esac
-SH
-  chmod +x "$fb/ps"
   cat > "$fb/sleep" <<'SH'
 #!/usr/bin/env bash
 [ -z "${FM_FAKE_LOCK_WAITING:-}" ] || : > "$FM_FAKE_LOCK_WAITING"

@@ -149,7 +149,6 @@ case "${1:-}" in
     for a in "$@"; do
       case "$a" in
         *cursor_y*) printf '1\n'; exit 0 ;;
-        *pane_pid*) printf '4242426\n'; exit 0 ;;
         *pane_current_command*) cat "$D/command"; printf '\n'; exit 0 ;;
         *pane_current_path*) cat "$D/cwd"; printf '\n'; exit 0 ;;
       esac
@@ -161,14 +160,6 @@ esac
 exit 0
 SH
   chmod +x "$fb/tmux"
-  cat > "$fb/ps" <<'SH'
-#!/usr/bin/env bash
-case "$*" in
-  '-p 4242426 -o comm=') printf -- '-zsh\n' ;;
-  *) exec /bin/ps "$@" ;;
-esac
-SH
-  chmod +x "$fb/ps"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$fb/sleep"
   chmod +x "$fb/sleep"
 }
