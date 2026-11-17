@@ -198,7 +198,7 @@ SH
   jq -n --arg t "$T" --arg s "$SID" --argjson e "$BASE" --argjson p "$LOCKPID" \
     '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
     > "$H/state/heartbeat.json"
-  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nquota-guard=off\nmemory-guard=off\n%s\n' "$H/claude" "$extra" > "$H/config/watchdog"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nquota-guard=off\nmemory-guard=off\nheartbeat-frozen-secs=0\n%s\n' "$H/claude" "$extra" > "$H/config/watchdog"
   sleep 0.5
 }
 
@@ -6162,6 +6162,201 @@ SH
   pass "feedback and bug-report dialogs: exact per-harness signatures auto-dismiss when idle without submitting, near-misses and unknown dialogs do not"
 }
 
+test_pending_handoff_suppresses_heartbeat_recovery() {
+  local claim=$TMP_ROOT/pending-heartbeat.json now=1793000000
+  jq -n --argjson d "$((now + 300))" '{version:1,predecessor_pid:4242,deadline:$d}' > "$claim"
+  lib fm_wd_handoff_in_progress "$claim" 4242 "$now" 600 || fail "bounded matching handoff was not recognized"
+  lib fm_wd_handoff_in_progress "$claim" 4243 "$now" 600 && fail "another owner claim counted"
+  lib fm_wd_handoff_in_progress "$claim" 4242 "$((now + 301))" 600 && fail "expired handoff counted"
+  lib fm_wd_handoff_in_progress "$claim" 4242 "$((now - 400))" 600 && fail "unbounded handoff counted"
+  make_home $'Captain session\n❯ \n  ? for shortcuts' 'heartbeat-frozen-secs=600
+restart=on
+restart-command=/bin/false'
+  transcript 3000 "Working."
+  jq -n --argjson p "$LOCKPID" --argjson d "$((BASE + 1000))" '{version:1,predecessor_pid:$p,deadline:$d}' > "$H/state/.handoff-pending"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  run_wd 950 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen detect held)" "the pending-handoff test did not observe a stale heartbeat"
+  assert_equals 0 "$(ledger_rows heartbeat-frozen nudge pending)" "a pending handoff was nudged"
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "a pending handoff was restarted"
+  pass "heartbeat recovery leaves a pending handoff alone"
+}
+
+test_heartbeat_recovery_preserves_account_pins() {
+  local pin
+  make_home $'Captain session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=600
+restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  pin=$H/config/claude-account
+  printf '%s\n' "$H/claude" > "$pin"
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen nudge pending)" "stale heartbeat was not nudged"
+  run_wd 800 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "restart preceded its grace period"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen restart pending)" "unanswered heartbeat nudge did not restart"
+  wait_pickup || fail "configured restart did not prove pickup"
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  assert_equals "$H/claude" "$(cat "$pin")" "heartbeat recovery changed an account pin"
+  pass "heartbeat recovery uses the configured restart without changing account pins"
+}
+
+test_heartbeat_response_cannot_suppress_recovery_forever() {
+  make_home $'Captain session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=600
+restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  fm_touch_epoch "$((BASE + 750))" "$H/claude/projects/p/$SID.jsonl"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "a response was ignored"
+  run_wd 1700 once >/dev/null 2>&1
+  assert_equals 2 "$(ledger_rows heartbeat-frozen nudge pending)" "a historical response prevented another nudge"
+  run_wd 2000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen restart pending)" "one old response suppressed recovery indefinitely"
+  wait_pickup || fail "the retried heartbeat recovery did not prove pickup"
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  pass "one transcript response cannot suppress later heartbeat recovery forever"
+}
+
+test_heartbeat_recovery_preserves_the_running_turn_veto() {
+  make_home $'Captain session\n✻ Running tool… (esc to interrupt)' 'heartbeat-frozen-secs=600
+restart=on
+restart-command=/bin/false'
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen detect held)" "the busy-turn test did not observe a stale heartbeat"
+  assert_equals 0 "$(ledger_rows heartbeat-frozen nudge pending)" "a running turn was nudged"
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "a running turn was restarted"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "busy lock owner was stopped"
+  pass "heartbeat recovery keeps the main running-turn veto"
+}
+
+test_heartbeat_dryrun_never_counts_as_delivery() {
+  make_home $'Captain session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=600
+mode=dry-run
+nudge-secs=1
+restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen nudge dry-run)" "the preview nudge was not recorded"
+  printf 'mode=act\n' >> "$H/config/watchdog"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "preview history authorized a real restart"
+  assert_equals 1 "$(ledger_rows heartbeat-frozen nudge pending)" "active mode did not deliver its own nudge"
+  run_wd 1100 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "active delivery lost its full grace period"
+  run_wd 1300 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen restart pending)" "a proven active delivery never recovered"
+  wait_pickup || fail "active recovery did not prove pickup"
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  pass "dry-run history cannot satisfy the active heartbeat delivery prerequisite"
+}
+
+test_heartbeat_ignores_orphan_and_previous_owner_receipts() {
+  local history
+  for history in orphan previous-owner; do
+    make_home $'Captain session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=600
+nudge-secs=1
+restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+    write_fake_captain
+    transcript 3000 "Working."
+    run_wd 0 once >/dev/null 2>&1
+    printf '%s\told\t%s\tprimary\theartbeat-frozen\tnudge\tpending\tinterrupted delivery\n' "$((BASE + 700))" "$H" >> "$H/state/watchdog/actions.tsv"
+    if [ "$history" = previous-owner ]; then
+      printf '%s\told\t%s\tprimary\theartbeat-frozen\tnudge\tdone\theartbeat-owner=999999:old-session:old-start\n' "$((BASE + 700))" "$H" >> "$H/state/watchdog/actions.tsv"
+    fi
+    run_wd 1000 once >/dev/null 2>&1
+    assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "$history history authorized a restart"
+    assert_equals 2 "$(ledger_rows heartbeat-frozen nudge pending)" "$history history prevented a fresh delivery"
+    awk -F '\t' -v owner="heartbeat-owner=$LOCKPID:$SID:" '
+      $5 == "heartbeat-frozen" && $6 == "nudge" && $7 == "done" && index($8, owner) == 1 { found = 1 }
+      END { exit !found }
+    ' "$H/state/watchdog/actions.tsv" || fail "$history case has no current-owner delivery receipt"
+    run_wd 1300 once >/dev/null 2>&1
+    assert_equals 1 "$(ledger_rows heartbeat-frozen restart pending)" "$history case never recovered after its own delivery"
+    wait_pickup || fail "$history recovery did not prove pickup"
+    LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  done
+  pass "orphan pending rows and another owner's delivery cannot authorize heartbeat restart"
+}
+
+test_heartbeat_recovery_serializes_with_handoff_launch() {
+  local ready release holder n
+  make_home $'Captain session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=600
+restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  ready=$H/launch-ready
+  release=$H/launch-release
+  FM_HOME="$H" STATE="$H/state" bash -c '
+    . "$1/bin/fm-wake-lib.sh"
+    fm_lock_try_acquire "$2" || exit 1
+    : > "$3"
+    n=0
+    while [ ! -e "$4" ] && [ "$n" -lt 600 ]; do sleep 0.1; n=$((n + 1)); done
+    fm_lock_release "$2"
+  ' _ "$ROOT" "$H/state/.handoff-launch.lock" "$ready" "$release" &
+  holder=$!
+  n=0
+  while [ ! -e "$ready" ] && [ "$n" -lt 300 ]; do sleep 0.1; n=$((n + 1)); done
+  [ -e "$ready" ] || fail "the isolated launch owner did not acquire its lock"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "heartbeat recovery raced a launch before its claim existed"
+  : > "$release"
+  wait "$holder" || fail "the isolated launch owner did not release its lock"
+  run_wd 1100 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen restart pending)" "recovery did not resume after launch serialization cleared"
+  wait_pickup || fail "serialized recovery did not prove pickup"
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  pass "heartbeat recovery shares the existing launch lock before restarting"
+}
+
+test_heartbeat_recovery_respects_recent_wake_activity() {
+  make_home $'Captain session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=600
+restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  printf '%s\tack\tg1\t1\t1\t["handled"]\n' "$((BASE + 950))" > "$H/state/wake-ledger.tsv"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "a recent own wake acknowledgement was ignored"
+  assert_contains "$(act_rows "$H")" $'\twake-ack\t50' "the recent activity source was not observed"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "a responsive session was stopped"
+  pass "heartbeat recovery respects the newest verified session activity source"
+}
+
+test_heartbeat_recovery_requires_a_known_activity_source() {
+  make_home $'Captain session\n❯ \n  ? for shortcuts' 'heartbeat-frozen-secs=600
+restart=on
+restart-command=/bin/false'
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen detect held)" "the source-less heartbeat case was not observed"
+  assert_equals 0 "$(ledger_rows heartbeat-frozen nudge pending)" "unknown activity was treated as idle"
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "unknown activity authorized restart"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "a session with unknown activity was stopped"
+  pass "heartbeat recovery preserves main's verified activity-source requirement"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -6325,4 +6520,13 @@ fm_test_run \
   test_status_file_short_and_staleness_visible \
   test_memory_guard_samples_once_per_pass \
   test_manager_units \
-  test_never_merges_deploys_or_messages_owner
+  test_never_merges_deploys_or_messages_owner \
+  test_pending_handoff_suppresses_heartbeat_recovery \
+  test_heartbeat_recovery_preserves_account_pins \
+  test_heartbeat_response_cannot_suppress_recovery_forever \
+  test_heartbeat_recovery_preserves_the_running_turn_veto \
+  test_heartbeat_dryrun_never_counts_as_delivery \
+  test_heartbeat_ignores_orphan_and_previous_owner_receipts \
+  test_heartbeat_recovery_serializes_with_handoff_launch \
+  test_heartbeat_recovery_respects_recent_wake_activity \
+  test_heartbeat_recovery_requires_a_known_activity_source

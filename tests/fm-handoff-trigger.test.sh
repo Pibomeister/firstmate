@@ -898,6 +898,51 @@ wait_for_file() {  # <path> <tenths>
   [ -e "$1" ]
 }
 
+test_live_guard_config_and_api_failure() {
+  local fakebin=$TMP_ROOT/guard-bin config=$TMP_ROOT/guard-config
+  local recorded=$TMP_ROOT/guard-recorded out rc
+  mkdir -p "$fakebin" "$config" "$TMP_ROOT/other/guard-config"
+  cat > "$fakebin/claude" <<'EOF'
+#!/usr/bin/env bash
+if [ "${1:-}" = --version ]; then
+  printf 'fixture-cli\n'
+  exit 0
+fi
+printf '%s\n' "${CLAUDE_CONFIG_DIR:-unset}" > "$FM_GUARD_FIXTURE_CONFIG"
+printf '{"is_error":true,"api_error_status":429,"result":"fixture request refused"}\n'
+exit 7
+EOF
+  chmod +x "$fakebin/claude"
+  rc=0
+  out=$(env -u FM_HANDOFF_TRIGGER_LIVE_CLAUDE_CONFIG_DIR PATH="$fakebin:$PATH" \
+    FM_HANDOFF_TRIGGER_LIVE_E2E=1 FM_GUARD_FIXTURE_CONFIG="$recorded" \
+    CLAUDE_CONFIG_DIR="$TMP_ROOT/inherited-config" \
+    bash "$ROOT/tests/fm-handoff-trigger-live-e2e.test.sh" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a failed fixture request passed the live guard"
+  assert_contains "$out" 'api_error_status=429: fixture request refused' "JSON API failure diagnostic"
+  assert_equals unset "$(cat "$recorded")" "the live guard inherited an unrelated account"
+
+  rc=0
+  out=$(env PATH="$fakebin:$PATH" FM_HANDOFF_TRIGGER_LIVE_E2E=1 \
+    FM_GUARD_FIXTURE_CONFIG="$recorded" CLAUDE_CONFIG_DIR="$TMP_ROOT/inherited-config" \
+    FM_HANDOFF_TRIGGER_LIVE_CLAUDE_CONFIG_DIR="$config" \
+    bash "$ROOT/tests/fm-handoff-trigger-live-e2e.test.sh" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a failed fixture request passed with an explicit config"
+  assert_contains "$out" 'api_error_status=429: fixture request refused' "explicit-config API failure diagnostic"
+  assert_equals "$config" "$(cat "$recorded")" "the explicit lab account was not used"
+
+  rc=0
+  out=$( (cd "$TMP_ROOT" && env PATH="$fakebin:$PATH" FM_HANDOFF_TRIGGER_LIVE_E2E=1 \
+    FM_GUARD_FIXTURE_CONFIG="$recorded" FM_HANDOFF_TRIGGER_LIVE_CLAUDE_CONFIG_DIR=guard-config \
+    CDPATH="$TMP_ROOT/other" \
+    bash "$ROOT/tests/fm-handoff-trigger-live-e2e.test.sh") 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a failed fixture request passed with a relative config"
+  assert_contains "$out" 'api_error_status=429: fixture request refused' "relative-config API failure diagnostic"
+  assert_equals "$config" "$(cat "$recorded")" "the relative lab config changed meaning after entering the lab"
+  pass "live-guard fixture isolates the account and reports the JSON API failure"
+}
+
+test_live_guard_config_and_api_failure
 test_handoff_gates_the_stop_until_a_recorded_successor_is_alive
 test_secondmate_handoff_escalates_to_its_parent
 test_threshold_default_15

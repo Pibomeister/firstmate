@@ -161,6 +161,8 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-escalate.sh`         | The escalation gate: append incident transitions to the ledger, send one escalation, delta or closure record per rules, and enqueue one incident wake per transition |
 | `fm-escalation-class-map.tsv` | The one table that gives each signal state its exception class, or routine |
 | `fm-notify-lib.sh`       | Configurable active-alert channels and the bounded sender `wedge_alarm_notify`, shared by the supervise daemon and the escalation gate |
+| `fm-stall-ledger-lib.sh` | Append-only stall ledger: one row per heartbeat sample, stall open, stall close, verified handoff, or human intervention, written under the ledger lock |
+| `fm-stall-ledger.sh`     | Record stall-ledger rows from supervision state, and score a window PASS or FAIL |
 | `fm-quiet-hours-lib.sh`  | Quiet-hours clock: whether a moment is inside the nightly or weekend quiet-hours window and when that window ends, in the config/escalation zone |
 | `fm-quiet-hours.sh`      | Print the quiet-hours reading for an epoch or for now |
 | `fm-path-lib.sh`         | Fork-free `dirname`/`basename` equivalents with no source-time side effects             |
