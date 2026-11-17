@@ -125,6 +125,8 @@ FM_HANDOFF_TRIGGER_LIVE_E2E=1 bash tests/fm-handoff-trigger-live-e2e.test.sh
 ```
 
 It runs one headless Haiku session with the hook on PostToolUse and UserPromptSubmit, `autoCompactWindow` 120000, and `percent-left=99`, and makes two tool calls.
+The lab drops an inherited `CLAUDE_CONFIG_DIR` and uses the default config unless `FM_HANDOFF_TRIGGER_LIVE_CLAUDE_CONFIG_DIR` selects another already signed-in directory.
+If the command fails, the guard includes the API status and message from its JSON result in the diagnostic.
 Selected output from the successful guard:
 
 ```text
