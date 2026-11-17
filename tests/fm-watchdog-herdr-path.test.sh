@@ -7,7 +7,8 @@
 # older package-managed herdr and started a server the fleet could not drive.
 # Every herdr here is a PATH fake that logs its calls; no case runs a real
 # herdr, and the end-to-end cases keep /opt/homebrew/bin and /usr/local/bin off
-# PATH so no installed herdr can be reached even if the fix regresses.
+# PATH so no installed herdr can be reached even if the fix regresses. The
+# suite skips when /usr/bin or /bin holds a herdr, since every case keeps them.
 # Optional arguments select test functions; no arguments run the full suite.
 set -u
 
@@ -15,6 +16,15 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
+# These cases keep /usr/bin and /bin on PATH for ordinary utilities. A herdr
+# installed there would run ahead of, or beside, the fakes and could reach a
+# real server, so the suite refuses to run rather than lose its isolation.
+for sys_dir in /usr/bin /bin; do
+  if [ -e "$sys_dir/herdr" ]; then
+    echo "skip: $sys_dir/herdr exists and would shadow the fake herdr binaries"
+    exit 0
+  fi
+done
 
 TMP_ROOT=$(fm_test_tmproot fm-watchdog-herdr-path-tests)
 WD="$ROOT/bin/fm-watchdog.sh"
@@ -77,7 +87,7 @@ test_user_bin_path_order() {
     "$(path_of /usr/bin: "$h")" "a trailing empty entry survives an append"
   assert_equals "/usr/bin::/bin:$u" \
     "$(path_of /usr/bin::/bin "$h")" "an inner empty entry keeps its place"
-  assert_equals "$u" "$(path_of '' "$h")" "an empty PATH becomes ~/.local/bin"
+  assert_equals ":$u" "$(path_of '' "$h")" "an empty PATH keeps its current-directory entry"
   assert_equals "/opt/homebrew/bin:/bin" \
     "$(path_of /opt/homebrew/bin:/bin "$TMP_ROOT/no-such-home")" "a home with no ~/.local/bin leaves PATH alone"
   assert_equals "/opt/homebrew/bin:/bin" \
@@ -131,6 +141,14 @@ test_mismatch_diagnostic() {
   rc=0; out=$(mismatch "$d/behind:$TOOLS:/usr/bin:/bin") || rc=$?
   assert_equals 0 "$rc" "an older client is reported"
   case "$out" in *"client is older than the server"*"herdr update"*) ;; *) fail "an older client gets no update advice: $out" ;; esac
+  fake_herdr "$d/odd" '{"client":{"version":"0.8.2","protocol":"2:0"},"server":{"running":true,"compatible":false,"version":"0.7.4","protocol":16}}'
+  rc=0; out=$(mismatch "$d/odd:$TOOLS:/usr/bin:/bin" 2>&1) || rc=$?
+  assert_equals 0 "$rc" "a non-numeric protocol is still reported"
+  case "$out" in
+    *"integer expression"*) fail "a non-numeric protocol reached a numeric test: $out" ;;
+    *"(protocol 2:0)"*"server 0.7.4 (protocol 16)"*"make the herdr client and server versions match"*) ;;
+    *) fail "a non-numeric protocol does not get the generic advice: $out" ;;
+  esac
   fake_herdr "$d/match" '{"client":{"version":"0.7.4","protocol":16},"server":{"running":true,"compatible":true,"protocol":16}}'
   rc=0; out=$(mismatch "$d/new:$d/match:$TOOLS:/usr/bin:/bin") || rc=$?
   assert_equals "1:" "$rc:$out" "a matching second client on PATH is no mismatch"
@@ -167,7 +185,7 @@ run_boot_wd() {  # <user-home> <args>...; WD_TOOLS overrides the tools directory
 # End to end: under a boot PATH with no package directory, the watchdog finds
 # ~/.local/bin/herdr, and a stale server's refusal is reported with its cause
 # in scan output and in the status file, with no server lifecycle call. The
-# fake is appended after /usr/bin, so a herdr installed there would shadow it;
+# fake is appended after /usr/bin, which the suite has checked holds no herdr;
 # Homebrew and /usr/local/bin are never on this PATH.
 test_watchdog_reports_herdr_mismatch() {
   local u log out

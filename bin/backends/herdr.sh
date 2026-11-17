@@ -527,8 +527,8 @@ fm_backend_herdr_client_mismatch() {  # <session>
               (if (.server | type) == "object" then (.server.protocol // "" | tostring) else "" end)] | join("|")' 2>/dev/null) || fields='|||'
   IFS='|' read -r cver cproto sver sproto <<< "$fields"
   advice="make the herdr client and server versions match"
-  case "$cproto:$sproto" in
-    *[!0-9:]*|:*|*:) ;;
+  case "$cproto|$sproto" in
+    '|'*|*'|'|*[!0-9]*'|'*|*'|'*[!0-9]*) ;;
     *)
       if [ "$sproto" -lt "$cproto" ]; then
         advice="the server is older than the client, so a stale server holds the session (for example one an older herdr binary started at boot); an operator must restart that session's server with $bin, which interrupts every pane on it"

@@ -22,7 +22,7 @@ FM_HOME=<home> bin/fm-watchdog.sh manager-status
 
 `render-launchd` also creates `state/watchdog`, because launchd does not create the parent directory of its log file.
 The rendered unit captures the current `PATH`, so render it from a shell that can run `claude`, `agy`, `tmux`, `orca`, `herdr`, and `jq`.
-When `~/.local/bin` exists, every command first places it, where `herdr update` installs, ahead of `/opt/homebrew/bin` and `/usr/local/bin`, or appends it when neither is on `PATH`, so a boot-time `PATH` resolves the same `herdr` as an interactive Firstmate shell.
+When `~/.local/bin` (where `herdr update` installs) exists, every command places it ahead of `/opt/homebrew/bin` and `/usr/local/bin`, or appends it when neither is on `PATH`, so a boot-time `PATH` resolves the same `herdr` as an interactive Firstmate shell.
 That applies to every tool there, not only `herdr`, as it does in an interactive shell.
 A directory already ahead of those two keeps its place, so an explicit override still wins.
 `run` holds a single-instance lock per owner home, so a second copy exits at once.

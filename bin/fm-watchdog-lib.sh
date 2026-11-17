@@ -169,7 +169,7 @@ fm_wd_user_bin_path() {  # <path> <home>
     return 0
   fi
   if [ -z "$rest" ]; then
-    printf '%s\n' "$user_bin"
+    printf ':%s\n' "$user_bin"
     return 0
   fi
   # Split by hand: read -a would drop a trailing empty entry.
