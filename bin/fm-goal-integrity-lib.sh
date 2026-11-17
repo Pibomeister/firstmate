@@ -24,8 +24,8 @@ fm_goal_integrity_owner() {
     echo "error: $flag must be a readable regular file when goal-line enforcement is enabled" >&2
     return 1
   fi
-  line=$(sed -n '1p' "$flag" | tr -d '[:space:]')
-  case "$line" in
+  line=$(awk 'NF { print; exit }' "$flag")
+  case "$(printf '%s' "$line" | tr '[:upper:]' '[:lower:]')" in
     ''|on|1|yes|true) printf '%s\n' owner; return 0 ;;
     off|0|no|false)
       echo "error: remove $flag to disable goal-line enforcement; do not write off/false into it" >&2

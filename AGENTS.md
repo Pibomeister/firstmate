@@ -461,4 +461,4 @@ Pin, licenses, refresh steps, and capability honesty live in [`.cursor/agent-kit
 
 ## Goal line enforcement (optional home)
 
-When `config/goal-integrity` is present, keep each task ask in `state/goals/<task-id>.md` verbatim, reload it at handoff, and let ship and scout briefs open with the matching GOAL line; see `docs/configuration.md`.
+When `config/goal-integrity` is present, keep each task ask as a single verbatim line in `state/goals/<task-id>.md`, reload it at handoff, and let ship and scout briefs open with the matching GOAL line; see `docs/configuration.md`.

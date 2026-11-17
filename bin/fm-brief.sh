@@ -481,8 +481,12 @@ GOAL_INTEGRITY=0
 GOAL_PREFIX=
 _gi=1
 if [ "$KIND" != secondmate ]; then
-  _gi=$(fm_goal_integrity_enabled "$CONFIG"; echo $?)
-  [ "$_gi" -eq 2 ] && { echo "error: cannot inspect $CONFIG/goal-integrity" >&2; exit 1; }
+  if fm_goal_integrity_enabled "$CONFIG"; then
+    _gi=0
+  else
+    _gi=$?
+    [ "$_gi" -eq 2 ] && { echo "error: cannot inspect $CONFIG/goal-integrity" >&2; exit 1; }
+  fi
 fi
 if [ "$KIND" != secondmate ] && [ "$_gi" -eq 0 ]; then
   GOAL_INTEGRITY=1
@@ -498,10 +502,14 @@ if [ "$KIND" != secondmate ] && [ "$_gi" -eq 0 ]; then
       echo "error: $GOAL_FILE must be a readable regular file under goal-line enforcement" >&2
       exit 1
     fi
-    if [ -n "$(sed -n '1p' "$GOAL_FILE" | tr -d '[:space:]')" ]; then
-      GOAL_BODY=$(sed -n '1p' "$GOAL_FILE")
+    if [ -n "$(awk 'NF { print; exit }' "$GOAL_FILE" | tr -d '[:space:]')" ]; then
+      if [ -n "$(awk 'NR > 1 && NF { found=1 } END { if (found) print 1 }' "$GOAL_FILE")" ]; then
+        echo "error: $GOAL_FILE must be a single-line verbatim ask under goal-line enforcement" >&2
+        exit 1
+      fi
+      GOAL_BODY=$(awk 'NF { print; exit }' "$GOAL_FILE")
     else
-      echo "error: $GOAL_FILE line 1 must hold the verbatim ask under goal-line enforcement" >&2
+      echo "error: $GOAL_FILE must hold a single-line verbatim ask under goal-line enforcement" >&2
       exit 1
     fi
   else
