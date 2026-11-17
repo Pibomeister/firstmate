@@ -89,6 +89,9 @@ head -n 2 "$TEST_HOME/state/dispatch-log.tsv" > "$TEST_HOME/older-ledger"
 mv "$TEST_HOME/older-ledger" "$TEST_HOME/state/dispatch-log.tsv"
 MISSING=goal:goal-open
 expect_drift
+tail -n 1 "$TEST_HOME/state/dispatch-log.tsv" > "$TEST_HOME/shifted-ledger"
+mv "$TEST_HOME/shifted-ledger" "$TEST_HOME/state/dispatch-log.tsv"
+expect_drift
 goal dispatched goal-open --task second-attempt >/dev/null
 out=$(audit compare --before "$TEST_HOME/before.json")
 expect_code 0 $? 'a new terminal dispatch record accounts for the retry'
@@ -176,6 +179,11 @@ EOF
 out=$(audit compare --before "$TEST_HOME/before.json" --no-strict)
 case "$out" in *task:ship-one*|*backlog:ship-one*) fail 'a new archive occurrence did not account for task completion' ;; esac
 assert_contains "$out" hold:hold-one 'old hold answer is still stale'
+# Dropping a later archived incarnation must not make an earlier one new.
+head -n 2 "$TEST_HOME/data/done-archive.md" > "$TEST_HOME/old-archive"
+mv "$TEST_HOME/old-archive" "$TEST_HOME/data/done-archive.md"
+MISSING='task:ship-one backlog:ship-one hold:hold-one'
+expect_drift
 pass 'stale archive evidence cannot hide deleted reused task IDs or captain holds'
 
 new_home missing-backlog
@@ -237,6 +245,18 @@ chmod +x "$TMP_ROOT/fakebin/tasks-axi"
 out=$(PATH="$TMP_ROOT/fakebin:$PATH" audit snapshot 2>&1); rc=$?
 expect_code 2 "$rc" 'truncated TOON without a final newline is refused'
 assert_contains "$out" 'incomplete backlog listing' 'partial listing names the failure'
+cat > "$TMP_ROOT/fakebin/tasks-axi" <<'EOF'
+#!/usr/bin/env bash
+printf 'count: 0\ntasks[0]{id,state,body,hold_kind,held}:\n  hidden,queued,"",captain,yes\n'
+EOF
+out=$(PATH="$TMP_ROOT/fakebin:$PATH" audit snapshot 2>&1); rc=$?
+expect_code 2 "$rc" 'TOON rows exceeding the declared count are refused'
+cat > "$TMP_ROOT/fakebin/tasks-axi" <<'EOF'
+#!/usr/bin/env bash
+printf 'count: 2\ntasks[1]{id,state,body,hold_kind,held}:\n  only,queued,"","-",no\n'
+EOF
+out=$(PATH="$TMP_ROOT/fakebin:$PATH" audit snapshot 2>&1); rc=$?
+expect_code 2 "$rc" 'inconsistent TOON count declarations are refused'
 cat > "$TMP_ROOT/fakebin/tasks-axi" <<'EOF'
 #!/usr/bin/env bash
 if [ -n "${BEADS_DIR+x}${BEADS_DB+x}${BD_DB+x}${TASKS_AXI_OTHER+x}${FM_ROOT_OVERRIDE+x}" ]; then

@@ -25,7 +25,7 @@
 # Done evidence; a worker's done status alone is not teardown. Branch/PR updates
 # on a surviving task are allowed. Missing backlog work also produces DRIFT.
 # Existing markdown Done archives supply completion and resolution evidence.
-# Evidence tokens distinguish new closes/answers from stale archived lifecycles.
+# Baseline occurrence totals prevent old closed lifecycles masking open work.
 #
 # Each compare appends one TSV row to <home>/state/reset-audit.tsv:
 #   <epoch> <kind> <PASS|FAIL> <comma-separated category:id drift, or ->
@@ -91,12 +91,17 @@ try {
   // Validate table counts so a partial/tool-error listing cannot erase work.
   function table(output) {
     const lines = output.split('\n');
+    const counts = lines.filter(line => /^count: [0-9]+$/.test(line));
+    if (counts.length !== 1) fail('unreadable backlog count');
+    const reported = Number(counts[0].slice(7));
     const index = lines.findIndex(line => /^tasks\[\d+\]\{.*\}:$/.test(line));
     if (index < 0) {
-      if (/^count: 0$/m.test(output) && /^tasks: 0 (?:\w+ )*tasks in this backlog$/m.test(output)) return [];
+      const empty = lines.findIndex(line => /^tasks: 0 (?:\w+ )*tasks in this backlog$/.test(line));
+      if (reported === 0 && empty >= 0 && !lines[empty + 1]?.startsWith('  ')) return [];
       fail('unreadable backlog listing');
     }
     const [, count, names] = lines[index].match(/^tasks\[(\d+)\]\{(.*)\}:$/);
+    if (reported !== Number(count) || lines[index + 1 + Number(count)]?.startsWith('  ')) fail('inconsistent backlog count');
     const columns = names.split(',');
     if (!['id', 'state', 'body', 'hold_kind', 'held'].every(name => columns.includes(name))) fail('incomplete backlog schema');
     const rows = [];
@@ -141,13 +146,17 @@ try {
   function snapshot() {
     const goals = new Map();
     const terminalGoals = [];
-    let goalLine = 0;
+    const goalOccurrences = new Map();
     for (const line of read(path.join(home, 'state/dispatch-log.tsv')).split('\n').filter(Boolean)) {
       const fields = line.split('\t');
       if (fields.length < 5 || !slug(fields[3]) || !['received', 'queued', 'dispatched', 'blocked'].includes(fields[2])) fail('malformed dispatch ledger');
       goals.set(fields[3], { id: fields[3], event: fields[2] });
-      goalLine++;
-      if (['dispatched', 'blocked'].includes(fields[2])) terminalGoals.push({ id: fields[3], event: fields[2], token: goalLine + ':' + digest(line) });
+      if (['dispatched', 'blocked'].includes(fields[2])) {
+        const hash = digest(line);
+        const occurrence = (goalOccurrences.get(hash) || 0) + 1;
+        goalOccurrences.set(hash, occurrence);
+        terminalGoals.push({ id: fields[3], event: fields[2], token: hash + ':' + occurrence });
+      }
     }
     inside(path.join(home, 'data'));
     inside(path.join(home, 'data/backlog.md'));
@@ -188,22 +197,23 @@ try {
         archive = path.resolve(home, value.slice(1, -1));
       }
     }
-    const archived = new Map();
+    const archived = [];
     const occurrences = new Map();
     let current;
     for (const line of (backend === 'beads' ? '' : read(archive)).split('\n')) {
       const match = line.match(/^- \[x\] ([A-Za-z0-9._-]+)(?: |$)/);
       if (match) {
-        const occurrence = (occurrences.get(match[1]) || 0) + 1;
-        occurrences.set(match[1], occurrence);
-        current = { id: match[1], body: '', header: line, occurrence };
-        archived.set(current.id, current);
+        current = { id: match[1], body: '', header: line };
+        archived.push(current);
       }
       else if (current && (line === '' || /^\s/.test(line))) current.body += line.replace(/^  /, '') + '\n';
       else current = undefined;
     }
-    for (const row of archived.values()) {
-      row.token = 'archive:' + row.occurrence + ':' + digest(row.header + '\n' + row.body.trimEnd());
+    for (const row of archived) {
+      const hash = digest(row.header + '\n' + row.body.trimEnd());
+      const occurrence = (occurrences.get(hash) || 0) + 1;
+      occurrences.set(hash, occurrence);
+      row.token = 'archive:' + hash + ':' + occurrence;
       const count = resolutionCount(row.body);
       if (count) resolutions.push({ id: row.id, count, token: row.token });
     }
@@ -220,7 +230,7 @@ try {
       holds: sorted(holds), tasks: sorted(active), backlog: sorted(rows.filter(row => row.state !== 'done').map(({ id, state }) => ({ id, state }))),
       evidence: { goals: sorted(terminalGoals),
         done: sorted([...done.map(row => ({ id: row.id, token: 'live:' + digest(JSON.stringify(row)) })),
-          ...[...archived.values()].map(row => ({ id: row.id, token: row.token }))]), resolutions: sorted(resolutions) } };
+          ...archived.map(row => ({ id: row.id, token: row.token }))]), resolutions: sorted(resolutions) } };
   }
   function validate(value) {
     if (value?.version !== 1 || value.home !== home) fail('manifest version/home mismatch');
@@ -250,16 +260,16 @@ try {
     const before = validate(JSON.parse(fs.readFileSync(opts['--before'], 'utf8')));
     const after = validate(opts['--after'] ? JSON.parse(fs.readFileSync(opts['--after'], 'utf8')) : snapshot());
     const has = (rows, id) => rows.some(row => row.id === id);
-    const fresh = (records, item) => !records.some(row => row.id === item.id && row.token === item.token);
-    const completed = id => after.evidence.done.some(item => item.id === id &&
-      (fresh(before.evidence.done, item) || (!has(before.backlog, id) &&
-        before.evidence.done.some(row => row.id === id && row.token.startsWith('live:')))));
+    const total = (records, id) => records.filter(row => row.id === id).length;
+    const answers = (records, id) => records.filter(row => row.id === id).reduce((sum, row) => sum + row.count, 0);
+    const completed = id => total(after.evidence.done, id) > total(before.evidence.done, id) ||
+      (!has(before.backlog, id) && has(after.evidence.done, id) &&
+        before.evidence.done.some(row => row.id === id && row.token.startsWith('live:')));
     const drift = [];
     for (const row of before.goals)
-      if (!has(after.goals, row.id) && !after.evidence.goals.some(item => item.id === row.id && fresh(before.evidence.goals, item))) drift.push(`goal:${row.id}`);
+      if (!has(after.goals, row.id) && total(after.evidence.goals, row.id) <= total(before.evidence.goals, row.id)) drift.push(`goal:${row.id}`);
     for (const row of before.holds)
-      if (!has(after.holds, row.id) && !after.evidence.resolutions.some(item => item.id === row.id &&
-          item.count > row.resolutions && fresh(before.evidence.resolutions, item))) drift.push(`hold:${row.id}`);
+      if (!has(after.holds, row.id) && answers(after.evidence.resolutions, row.id) <= answers(before.evidence.resolutions, row.id)) drift.push(`hold:${row.id}`);
     for (const row of before.tasks)
       if (!has(after.tasks, row.id) && !completed(row.id)) drift.push(`task:${row.id}`);
     for (const row of before.backlog)
