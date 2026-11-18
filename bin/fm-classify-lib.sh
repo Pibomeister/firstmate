@@ -318,6 +318,19 @@ status_is_terminal_verb() {
   esac
 }
 
+# 0 when the line is a completion report: a terminal verb whose verb is done.
+# Callers that mean "the work finished" use this, not status_is_terminal_verb
+# alone, because blocked:, failed:, and needs-decision: are terminal but not
+# completions. status_is_terminal_verb remains the single owner of the four
+# terminal verbs; this helper only narrows to done.
+status_is_done_verb() {
+  local line=$1 verb
+  [ -n "$line" ] || return 1
+  status_is_terminal_verb "$line" || return 1
+  verb=$(status_line_verb "$line")
+  [ "$verb" = "done" ]
+}
+
 # 0 if the given (last) status line matches a captain-relevant verb.
 # Verb-aware by default: terminal verbs always match; nonterminal progress verbs
 # (working, resolved, captain-held) and paused never match from free-text prose;

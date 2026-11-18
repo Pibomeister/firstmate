@@ -91,7 +91,7 @@ entrypoints:
       - ultraqa
 
   model_invoked:
-    count: 13
+    count: 17
     authority: model
     skills:
       - codebase-design
@@ -107,6 +107,10 @@ entrypoints:
       - prototype
       - handoff
       - wait-what
+      - principle-prove-it-works
+      - principle-test-behavior-not-implementation
+      - principle-explain-the-number
+      - principle-attack-the-premise
 
   # super-review is the one skill with named entrypoints (catalog.yaml `entrypoints`).
   # These values are authoritative and must match the catalog.
@@ -376,15 +380,15 @@ no_operation_exposed:
     These user-invoked skills expose no phase operation. No controller, grant or charter entry
     can start them. A controller that needs their effect stops and names the slash command.
   note: >-
-    This list covers user-invoked skills only, and is complete for them. The thirteen skills in
+    This list covers user-invoked skills only, and is complete for them. The seventeen skills in
     `entrypoints.model_invoked` are absent by construction rather than by omission: a controller
     already invokes a model-invoked skill directly, which is what the M mode means, so there is
     no forbidden edge for a closure to withhold. A phase operation on a user-invoked skill exists
     where a human entrypoint would otherwise be the only way in. super-review is model-invoked and
     still exposes review.full, review.delta and review.readiness, so a delegated controller keeps
-    a grant-checked path. Read together, the two lists account for every skill in catalog.yaml:
-    23 user-invoked, of which these 15 expose no operation and the rest do, plus 13 model-invoked
-    that this closure does not list.
+    a grant-checked path. Read together, the two lists account for every skill in catalog.yaml
+    plus catalog.d fragments: 23 user-invoked, of which these 15 expose no operation and the rest
+    do, plus 17 model-invoked that this closure does not list.
   skills:
     - autopilot
     - compound-refresh

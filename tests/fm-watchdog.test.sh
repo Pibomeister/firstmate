@@ -1808,6 +1808,7 @@ test_primary_ignores_another_sessions_endpoint() {
   assert_equals 0 "$(ledger | awk -F'\t' '$6 == "nudge" && $7 != "refused"' | wc -l | tr -d ' ')" "no nudge goes out to another session's pane: $(ledger | cut -f5-8)"
   assert_grep "no recorded terminal endpoint" "$H/data/watchdog/status.md" "the unproven endpoint is reported"
   printf '%s\n' "$SID" > "$H/state/.lock-session"
+  fm_touch_epoch "$((BASE - 1))" "$H/state/.lock-session"
   run_wd 1100 once >/dev/null 2>&1 || fail "matching pass failed"
   run_wd 2200 once >/dev/null 2>&1 || fail "second matching pass failed"
   assert_equals 1 "$(ledger_rows frozen nudge pending)" "the matching endpoint is used again"
@@ -1837,8 +1838,9 @@ test_primary_without_lock_identity_never_trusts_heartbeat_endpoint() {
     assert_contains "$out" 'endpoint=none:none session=none' "$state: heartbeat cannot supply its own identity proof"
 
     printf '%s\n' "$SID" > "$H/state/.lock-session"
-    jq --arg sid "$SID" '.primary.session.trusted_id = $sid' "$H/state/heartbeat.json" > "$H/heartbeat.tmp"
+    jq --arg sid "$SID" '.primary.session.trusted_id = $sid | .primary.writer.session_id = $sid' "$H/state/heartbeat.json" > "$H/heartbeat.tmp"
     mv "$H/heartbeat.tmp" "$H/state/heartbeat.json"
+    fm_touch_epoch "$((BASE - 1))" "$H/state/.lock-session"
     # A refused nudge also occupies the 900s rate window.
     run_wd 1000 once >/dev/null 2>&1 || fail "$state: matching pass failed"
     assert_equals 1 "$(ledger_rows unread-input nudge pending)" "$state: a proven matching identity restores delivery"
@@ -1861,6 +1863,7 @@ restart-command=/bin/false'
 }
 
 test_restart_verified_pickup_and_loop_stop() {
+  local pane home
   make_home $'Captain session\n> ' "restart=on
 max-nudges=0
 pickup-secs=600
@@ -1871,6 +1874,8 @@ p="$*"
 printf '%s\n' "$$" > "$PWD/state/.lock"
 ( sleep "${WD_FIXTURE_SLEEP:-100000}" > /dev/null 2>&1 & printf '%s\n' "$!" > "$PWD/state/.supervise-daemon.pid" )
 eval "${p##*run: }" > "$PWD/pickup.out" 2>&1
+# Leave an idle composer on the successor pane so later passes can read it.
+printf 'Captain session\n> \n'
 exec sleep "${WD_FIXTURE_SLEEP:-100000}"
 SH
   chmod +x "$TMP_ROOT/fake-captain.sh"
@@ -1893,10 +1898,18 @@ SH
   run_wd 1100 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows frozen restart "done")" "the pickup was verified with a live away daemon: $(ledger | grep restart)"
   assert_present "$H/data/unlanded-work.txt" "a restart never tears down work"
+  pane=$(captain_field target)
+  [ -n "$pane" ] || fail "pickup left no captain terminal"
+  fresh_heartbeat "$pane"
   # Two restarts inside a day is a loop: the next proven stall escalates instead.
-  printf '%s\tx1\t%s\thome\tfrozen\trestart\tpending\told\n' "$((BASE - 20000))" "$(cd -P "$H" && pwd -P)" >> "$H/state/watchdog/actions.tsv"
-  run_wd 20000 once >/dev/null 2>&1
-  run_wd 21000 once >/dev/null 2>&1
+  # A pending row needs a token and a matching done row so reconcile does not
+  # treat the injected earlier restart as an in-flight relaunch with no outcome.
+  home=$(cd -P "$H" && pwd -P)
+  printf '%s\tx1\t%s\thome\tfrozen\trestart\tpending\ttoken=ab old_pid=1\n%s\tx1\t%s\thome\tfrozen\trestart\tdone\tverified\n' \
+    "$((BASE - 20000))" "$home" "$((BASE - 19900))" "$home" >> "$H/state/watchdog/actions.tsv"
+  # The successor pane must stay still for a freeze proof; a typed nudge would reset it.
+  FM_WD_TEST_COMPOSER=unknown run_wd 20000 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=unknown run_wd 21000 once >/dev/null 2>&1
   assert_present "$H/state/watchdog/escalated/$(home_key)" "a restart loop escalates"
   [ "$(ledger_rows frozen restart pending)" -le 2 ] || fail "restart kept looping"
   pass "restart: lean handoff, new terminal, verified pickup with lock takeover; a loop stops and escalates"
@@ -1952,6 +1965,15 @@ captain_field() { sed -n "s/^$1=//p" "$H/state/watchdog/captain" 2>/dev/null | t
 fresh_heartbeat() {
   jq -n --arg t "$1" --arg s "${2:-$SID}" --argjson e "$(date +%s)" --argjson p "$(head -n 1 "$H/state/.lock")" \
     '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
+    > "$H/state/heartbeat.json"
+}
+
+# owner_heartbeat [backend] [target]: rewrite the home's heartbeat as this lock
+# owner at BASE, the same proof make_home writes. A heartbeat without writer
+# identity is not an address.
+owner_heartbeat() {
+  jq -n --arg b "${1:-tmux}" --arg t "${2:-$T}" --arg s "$SID" --argjson e "$BASE" --argjson p "$LOCKPID" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:$b,target:$t,present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
     > "$H/state/heartbeat.json"
 }
 
@@ -2676,9 +2698,7 @@ restart-command=/bin/true'
   transcript 100 "Working."
   : > "$H/state/.watchdog-restart-request"
   fm_touch_epoch "$((BASE - 10))" "$H/state/.watchdog-restart-request"
-  jq -n --arg s "$SID" --argjson e "$BASE" \
-    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"herdr",target:"pane-1",present:true},session:{trusted_id:$s}}}' \
-    > "$H/state/heartbeat.json"
+  owner_heartbeat herdr pane-1
   run_wd 0 once >/dev/null 2>&1
   assert_grep "has no restart launcher" "$H/data/watchdog/status.md" "an unsupported backend is a gap"
   assert_equals 1 "$(ledger | awk -F'\t' '$5 == "unread-input" && $6 == "nudge"' | wc -l | tr -d ' ')" "an unsupported backend leaves unread input handled: $(ledger | cut -f5-8)"
@@ -2737,9 +2757,7 @@ restart-command=/bin/true'
 restart-command=/bin/true'
   transcript 5000 "Working." "Testing." "Green."
   owe_input 5000
-  jq -n --arg s "$SID" --argjson e "$BASE" \
-    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"orca",target:"term-1",present:true},session:{trusted_id:$s}}}' \
-    > "$H/state/heartbeat.json"
+  owner_heartbeat orca term-1
   cat > "$FAKEBIN/orca" <<SH
 #!/usr/bin/env bash
 case "\$1 \$2" in
@@ -2900,14 +2918,15 @@ restart-command=/bin/true'
     transcript 3000 "Working." "Testing." "Green."
     age=0
     [ "$case_sid" = old ] && age=2000
-    jq -n --arg t "$T" --arg s "$([ "$case_sid" = other ] && printf 'another-session' || printf '%s' "$SID")" --argjson e "$((BASE - age))" \
-      '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},context_left:{remaining:{percent:7}}}}' \
+    jq -n --arg t "$T" --arg s "$([ "$case_sid" = other ] && printf 'another-session' || printf '%s' "$SID")" --argjson e "$((BASE - age))" --argjson p "$LOCKPID" \
+      '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s},context_left:{remaining:{percent:7}}}}' \
       > "$H/state/heartbeat.json"
+    fm_touch_epoch "$((BASE - age - 1))" "$H/state/.lock" "$H/state/.lock-session"
     FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
     assert_equals 0 "$(ledger_rows handoff-request nudge pending)" "$case_sid heartbeat percent starts nothing: $(ledger | cut -f5-8)"
   done
-  jq -n --arg t "$T" --arg s "$SID" --argjson e "$BASE" \
-    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},context_left:{remaining:{percent:7}}}}' \
+  jq -n --arg t "$T" --arg s "$SID" --argjson e "$BASE" --argjson p "$LOCKPID" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s},context_left:{remaining:{percent:7}}}}' \
     > "$H/state/heartbeat.json"
   FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows handoff-request nudge pending)" "a fresh percent for this session counts: $(ledger | cut -f5-8)"
@@ -2918,9 +2937,7 @@ test_orca_draft_probe_failure_holds_the_nudge() {
   make_home $'Captain session\n> '
   transcript 3000 "Working." "Testing." "Green."
   owe_input 3000
-  jq -n --arg s "$SID" --argjson e "$BASE" \
-    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"orca",target:"term-1",present:true},session:{trusted_id:$s}}}' \
-    > "$H/state/heartbeat.json"
+  owner_heartbeat orca term-1
   cat > "$FAKEBIN/orca" <<SH
 #!/usr/bin/env bash
 case "\$1 \$2" in
@@ -2949,9 +2966,7 @@ test_orca_draft_is_never_typed_onto() {
   make_home $'Captain session\n> '
   transcript 3000 "Working." "Testing." "Green."
   owe_input 3000
-  jq -n --arg s "$SID" --argjson e "$BASE" \
-    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"orca",target:"term-1",present:true},session:{trusted_id:$s}}}' \
-    > "$H/state/heartbeat.json"
+  owner_heartbeat orca term-1
   cat > "$FAKEBIN/orca" <<SH
 #!/usr/bin/env bash
 case "\$1 \$2" in
@@ -3270,9 +3285,7 @@ test_unknown_composer_guards_the_nudge() {
 
 test_orca_turn_probe_keeps_errors_unknown() {
   make_home $'Captain session\n> '
-  jq -n --arg s "$SID" --argjson e "$BASE" \
-    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"orca",target:"term-1",present:true},session:{trusted_id:$s}}}' \
-    > "$H/state/heartbeat.json"
+  owner_heartbeat orca term-1
   cat > "$FAKEBIN/orca" <<'SH'
 #!/usr/bin/env bash
 case "$1 $2" in
@@ -3472,6 +3485,9 @@ restart-command=$TMP_ROOT/fake-captain.sh"
   write_fake_captain
   local sess="wd$CASE_N"
   "$REAL_TMUX" -f /dev/null -L "$SOCKET" list-panes -t "=$sess" -F '#{pane_pid}' | head -n 1 > "$H/state/.lock"
+  LOCKPID=$(cat "$H/state/.lock")
+  owner_heartbeat
+  fm_touch_epoch "$((BASE - 1))" "$H/state/.lock" "$H/state/.lock-session"
   transcript 3000 "Working." "Testing." "Green."
   owe_input 3000
   run_wd 0 once >/dev/null 2>&1
@@ -4138,6 +4154,43 @@ SH
 
 page_subjects() {  # <phase>
   awk -F'\t' -v p="$1" '$5 == "dialog" && $6 == "page" && $7 == p { print $4 }' "$H/state/watchdog/actions.tsv" 2>/dev/null | sort
+}
+
+# A credential stop on an approval picker can show a value that the secret
+# detector does not recognize, so its away page records no pane text at all.
+test_worker_credential_page_withholds_typed_values() {
+  local cookie=$'Bash command\n\n  curl -H "Cookie: session=rvw7731cookie" https://api.example.com/me\n  Fetch the profile\n\nDo you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently\n\nEsc to cancel'
+  local mode key
+  for mode in act dry-run locked; do
+    if [ "$mode" = dry-run ]; then make_home $'Captain session\n> ' 'mode=dry-run'; else make_home $'Captain session\n> '; fi
+    transcript 100 "Working."
+    worker_pane cookie ship "$cookie"
+    if [ "$mode" = locked ]; then
+      # Another pass holds the worker's lock, so this pass writes no marker.
+      key="$(basename "$H")-$(printf '%s' "$H" | cksum | cut -d ' ' -f 1)"
+      mkdir -p "$H/state/watchdog/permission/$key-cookie.lock"
+      printf '%s\n' "$$" > "$H/state/watchdog/permission/$key-cookie.lock/pid"
+    fi
+    sleep 0.5
+    printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+    printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+    : > "$H/state/.afk"
+    run_wd 0 once >/dev/null 2>&1 || fail "the $mode away pass failed"
+    if [ "$mode" = locked ]; then
+      assert_equals 1 "$(grep -c 'another watchdog pass is acting on worker cookie' "$H/state/watchdog/actions.tsv")" "the busy lock is recorded: $(ledger | cut -f4-8)"
+    fi
+    if [ "$mode" != dry-run ]; then
+      assert_equals 1 "$(ledger_rows dialog page pending)" "the credential stop pages the owner: $(ledger | cut -f4-8)"
+    else
+      assert_equals 1 "$(ledger_rows dialog page dry-run)" "dry-run records the page it would send: $(ledger | cut -f4-8)"
+    fi
+    assert_no_grep "rvw7731cookie" "$H/state/watchdog/actions.tsv" "a session cookie in a credential picker stays out of the $mode ledger"
+    assert_equals 1 "$(grep -c 'withheld: a credential or sign-in prompt' "$H/state/watchdog/actions.tsv")" "the $mode ledger names the withheld prompt"
+    if [ -e "$H/paged.log" ]; then
+      assert_no_grep "rvw7731cookie" "$H/paged.log" "the page carries no session cookie"
+    fi
+  done
+  pass "a credential stop on an approval picker pages the owner without recording its pane text, even while another pass holds the worker lock"
 }
 
 test_worker_permission_dialog_pages_the_owner() {
@@ -6415,6 +6468,7 @@ fm_test_run \
   test_dialog_kind_ignores_conversation_rows \
   test_away_permission_dialog_pages_the_owner \
   test_worker_permission_dialog_pages_the_owner \
+  test_worker_credential_page_withholds_typed_values \
   test_low_context_undeliverable_nudge_leaves_frozen_recovery \
   test_homes_with_one_basename_keep_their_own_state \
   test_dialog_reserved_check_reads_only_dialog_rows \

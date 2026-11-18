@@ -1127,7 +1127,8 @@ fm_control_feedback_dialog_dismiss() {  # <harness> <screen> [mode]
             continue
           }
           if (is_border_row(tail[j])) {
-            if (tail[j] ~ /^[ \t]*[╰└]/) {
+            # Alternation, not a class: mawk treats [╰└] as bytes, so ─ and ❯ match.
+            if (tail[j] ~ /^[ \t]*(╰|└)/) {
               if (!no_prompt_after(j)) return 0
               marker_cut = j
               return 1

@@ -286,6 +286,22 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/principle-attack-the-premise/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/principle-explain-the-number/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/principle-prove-it-works/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/principle-test-behavior-not-implementation/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/process-event-sources/SKILL.md",
       "audience": "agent-runtime"
     },
@@ -815,6 +831,18 @@
     },
     {
       "path": "tests/fixtures/grok-composer-footer.screen.txt",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "tests/fixtures/permission-prompt/claude-2.1.325-after-escape.txt",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "tests/fixtures/permission-prompt/claude-2.1.325-bash-prompt.txt",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "tests/fixtures/permission-prompt/claude-2.1.325-trust.txt",
       "audience": "maintainer-verification"
     },
     {
@@ -1435,6 +1463,22 @@
     },
     {
       "path": ".cursor/skills/handoff/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/principle-attack-the-premise/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/principle-explain-the-number/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/principle-prove-it-works/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".cursor/skills/principle-test-behavior-not-implementation/SKILL.md",
       "audience": "agent-runtime"
     },
     {

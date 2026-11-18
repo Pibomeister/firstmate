@@ -31,6 +31,12 @@ Never generalize Claude tool names or permissions without live evidence.
 Read it before changing session-open behavior.
 `../../../docs/verification/supervision.md` under "Native session-start delivery" owns active dated evidence.
 
+## Pstack verification principles
+
+`../../../bin/fm-pstack-verify-hook.sh` owns the four trigger events and the host emit schema.
+`.cursor/hooks.json` and `.claude/settings.json` register it.
+Skills live at `.cursor/skills/principle-*/SKILL.md` and `.agents/skills/principle-*/SKILL.md`.
+
 ## Watcher supervision
 
 `../../../bin/fm-session-start.sh` prints exactly one block for the detected primary.
