@@ -1,0 +1,12 @@
+== S2 deadline with slow stage (timeout=5s, no-mistakes sleeps 30s), --best-effort
+Terminated: 15
+rc=0 elapsed=10s
+-- failure log:
+[2026-11-18T10:19:09Z] refresh exceeded its 5-second deadline in stage task-observation (stages: lock-wait@0 producer@1 backlog@1 task-observation@1)
+ledger before generated=2026-11-18T10:18:18Z after generated=2026-11-18T10:18:18Z unchanged=yes
+-- leftover stage files:
+0
+== S2b direct mode returns failure
+Terminated: 15
+fm-home-summary-refresh: refresh exceeded its 5-second deadline in stage task-observation (stages: lock-wait@1 producer@2 backlog@2 task-observation@2)
+rc=124 elapsed=8s

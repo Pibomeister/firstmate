@@ -1,0 +1,12 @@
+== S3 stray FM_HOME_SUMMARY_STAGE_PATH outside the state dir is ignored
+rc=0
+victim file intact: keep me
+rc=0
+state-dir file with non-default name intact
+== S4 deadline while queued on the refresh lock
+Terminated: 15
+rc=0 elapsed=6s
+-- failure log:
+[2026-11-18T10:20:50Z] refresh exceeded its 4-second deadline in stage lock-wait (stages: lock-wait@0)
+holder rc=0
+-- leftover stage files: 0

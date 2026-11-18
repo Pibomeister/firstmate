@@ -1,0 +1,5 @@
+== S1 normal refresh
+rc=0 elapsed=13s
+{"schema":"fm-secondmate-home-summary.v1","generated":"2026-11-18T10:18:18Z","generated_epoch":1794997098,"tasks":[]}
+
+-rw-------@ 1 eduardopicazo  staff  1430 Nov 18 04:18 home-summary.json
