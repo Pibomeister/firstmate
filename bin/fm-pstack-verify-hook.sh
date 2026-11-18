@@ -24,8 +24,11 @@
 #     stdout through. This helper still prints continue so a miss cannot
 #     depend on that default.
 #   Cursor afterAgentResponse / afterShellExecution -> no output
-#   Claude UserPromptSubmit / PreToolUse / PostToolUse / PostToolUseFailure
-#     -> additionalContext
+#   Claude UserPromptSubmit -> additionalContext for speed claims
+#   Claude PreToolUse -> additionalContext for test-file writes and completions
+#   Claude PostToolUse / PostToolUseFailure -> additionalContext for
+#     recurring-red only. One Claude tool call is PreToolUse then PostToolUse;
+#     non-red principles emit on PreToolUse so they are not printed twice.
 # A Cursor speed claim, done-line, or recurring-red seen on
 # beforeSubmitPrompt, afterAgentResponse, or afterShellExecution is stored
 # as a pending marker keyed by conversation_id and delivered once on the
@@ -42,9 +45,9 @@
 #   tests added/changed -> principle-test-behavior-not-implementation
 #     Claude PreToolUse Write/Edit of a code test path (file_path/content or
 #     path/contents), Cursor postToolUse of the same, or a Shell
-#     redirect/heredoc/tee/cp/mv into a code test path. A cwd-relative
-#     foo.test.sh Write or `cat > foo.test.sh` injects. In-place editors
-#     (sed -i) are not covered.
+#     redirect/heredoc/tee/cp/mv whose TARGET is a code test path. A cwd-relative
+#     foo.test.sh Write or `cat > foo.test.sh` injects. A redirect to /tmp that
+#     later names a test path does not. In-place editors (sed -i) are not covered.
 #   speed or perf claim -> principle-explain-the-number
 #     An assertion such as "much faster", "got a lot faster", "2x as fast",
 #     "the export is faster now", "the export is 2x as fast?", or
@@ -243,24 +246,65 @@ is_test_path() {  # <path>
 }
 
 # Redirects, tees (including flags), and cp/mv destinations into a code test
-# path segment, not contest/. In-place editors (sed -i) are not covered.
+# path segment, not contest/. Only the redirect/tee/cp/mv TARGET is matched.
+# In-place editors (sed -i) are not covered.
 shell_writes_test_path() {  # <command>
-  local cmd=$1
+  local cmd=$1 word prev='' mode='' last_cp=''
   [ -n "$cmd" ] || return 1
-  case "$cmd" in
-    *'>'test/*|*'>'[[:space:]]test/*|*'>'*/test/*) return 0 ;;
-    *'>'tests/*|*'>'[[:space:]]tests/*|*'>'*/tests/*) return 0 ;;
-    *'>'__tests__/*|*'>'[[:space:]]__tests__/*|*'>'*/__tests__/*) return 0 ;;
-    *'>'*/*.test.*|*'>'*/*_test.*|*'>'*/*.spec.*|*'>'*/*_spec.*) return 0 ;;
-    *'>'*.test.*|*'>'*_test.*|*'>'*.spec.*|*'>'*_spec.*) return 0 ;;
-    *tee[[:space:]]*test/*|*tee[[:space:]]*[[:space:]]*/test/*) return 0 ;;
-    *tee[[:space:]]*tests/*|*tee[[:space:]]*[[:space:]]*/tests/*) return 0 ;;
-    *tee[[:space:]]*__tests__/*|*tee[[:space:]]*[[:space:]]*/__tests__/*) return 0 ;;
-    *cp[[:space:]]*[[:space:]]test/*|*cp[[:space:]]*[[:space:]]*/test/*) return 0 ;;
-    *cp[[:space:]]*[[:space:]]tests/*|*cp[[:space:]]*[[:space:]]*/tests/*) return 0 ;;
-    *mv[[:space:]]*[[:space:]]test/*|*mv[[:space:]]*[[:space:]]*/test/*) return 0 ;;
-    *mv[[:space:]]*[[:space:]]tests/*|*mv[[:space:]]*[[:space:]]*/tests/*) return 0 ;;
-  esac
+  cmd=$(printf '%s' "$cmd" | sed 's/>>/ __RA__ /g; s/>/ __R__ /g')
+  while IFS= read -r word || [ -n "$word" ]; do
+    [ -n "$word" ] || continue
+    word=${word#\'}; word=${word%\'}; word=${word#\"}; word=${word%\"}
+    case "$word" in
+      __R__|__RA__)
+        prev=$word
+        mode=
+        last_cp=
+        continue
+        ;;
+      '&&'|'||'|'|'|';'|'&')
+        if { [ "$mode" = cp ] || [ "$mode" = mv ]; } && is_test_path "$last_cp"; then
+          return 0
+        fi
+        prev=
+        mode=
+        last_cp=
+        continue
+        ;;
+    esac
+    case "$prev" in
+      __R__|__RA__)
+        is_test_path "$word" && return 0
+        prev=
+        continue
+        ;;
+    esac
+    case "$word" in
+      tee|*/tee) mode='tee'; prev=; continue ;;
+      cp|*/cp) mode='cp'; last_cp=; prev=; continue ;;
+      mv|*/mv) mode='mv'; last_cp=; prev=; continue ;;
+    esac
+    case "$mode" in
+      tee)
+        case "$word" in
+          -*) ;;
+          *) is_test_path "$word" && return 0 ;;
+        esac
+        ;;
+      cp|mv)
+        case "$word" in
+          -*) ;;
+          *) last_cp=$word ;;
+        esac
+        ;;
+    esac
+    prev=$word
+  done <<EOF
+$(_split_words "$cmd")
+EOF
+  if { [ "$mode" = cp ] || [ "$mode" = mv ]; } && is_test_path "$last_cp"; then
+    return 0
+  fi
   return 1
 }
 
@@ -880,6 +924,24 @@ fi
 
 if [ -z "$PRINCIPLE" ] && cursor_delivers_pending; then
   PRINCIPLE=$(take_pending "$CONV")
+fi
+
+# Claude: one event per trigger. Reds stay on PostToolUse/PostToolUseFailure.
+if [ -n "$PRINCIPLE" ] && ! is_cursor_host; then
+  case "$PRINCIPLE" in
+    principle-attack-the-premise)
+      case "$EVENT" in
+        PostToolUse|PostToolUseFailure) ;;
+        *) PRINCIPLE= ;;
+      esac
+      ;;
+    *)
+      case "$EVENT" in
+        PreToolUse|UserPromptSubmit) ;;
+        *) PRINCIPLE= ;;
+      esac
+      ;;
+  esac
 fi
 
 if [ -n "$PRINCIPLE" ]; then

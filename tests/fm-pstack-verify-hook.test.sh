@@ -51,11 +51,14 @@ expect_cursor_continue_only() {  # <label>
 expect_claude_inject() {  # <principle> <event> <label>
   expect_exit_ok "$3"
   [ -n "$RUN_OUT" ] || fail "$3: expected JSON, got empty stdout"
+  printf '%s' "$RUN_OUT" | grep -Fq permissionDecision \
+    && fail "$3: output must not contain permissionDecision, got: $RUN_OUT"
   printf '%s' "$RUN_OUT" | jq -e --arg p "$1" --arg e "$2" '
       (keys | sort) == ["hookSpecificOutput"]
       and (.hookSpecificOutput.hookEventName == $e)
       and (.hookSpecificOutput.additionalContext|type=="string")
       and (.hookSpecificOutput.additionalContext|contains($p))
+      and (tostring | contains("permissionDecision") | not)
     ' >/dev/null 2>&1 || fail "$3: Claude schema/principle $1 event $2, got: $RUN_OUT"
 }
 
@@ -87,9 +90,9 @@ test_cursor_post_tool_use_status_append_injects() {
 
 test_write_contents_done_line_injects_prove_it_works() {
   run_hook "$PRIMARY" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Write","tool_input":{"file_path":"state/t.status","content":"done [at=1731880000]: shipped\n"}}' \
+    '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"state/t.status","content":"done [at=1731880000]: shipped\n"}}' \
     --claude
-  expect_claude_inject "principle-prove-it-works" "PostToolUse" "Write content with a done line"
+  expect_claude_inject "principle-prove-it-works" "PreToolUse" "Write content with a done line"
   pass "Write content holding a done line injects principle-prove-it-works"
 }
 
@@ -219,6 +222,64 @@ test_cp_into_test_path_injects() {
     --claude
   expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" "cp into a test path"
   pass "cp into tests/... injects principle-test-behavior-not-implementation"
+}
+
+test_redirect_elsewhere_then_grep_test_path_is_silent() {
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git diff HEAD > /tmp/out && grep x tests/fm-pstack-verify-hook.test.sh"}}' \
+    --claude
+  expect_silent "redirect to /tmp then grep a test path"
+  pass "git diff redirected to /tmp then grep of a test path does not inject"
+}
+
+test_redirect_elsewhere_then_cat_test_path_is_silent() {
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"echo x > /tmp/out && cat tests/export.test.sh"}}' \
+    --claude
+  expect_silent "redirect to /tmp then cat a test path"
+  pass "echo redirected to /tmp then cat of a test path does not inject"
+}
+
+test_its_faster_injects_explain_the_number() {
+  run_hook "$PRIMARY" \
+    "{\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"it's faster\"}" \
+    --claude
+  expect_claude_inject "principle-explain-the-number" "UserPromptSubmit" "literal it's faster"
+  pass "it's faster injects principle-explain-the-number"
+}
+
+test_claude_write_of_test_file_emits_once_across_pre_and_post() {
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"tests/foo.test.sh","content":"pass x\n"}}' \
+    --claude
+  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" "first event of one Write"
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"PostToolUse","tool_name":"Write","tool_input":{"file_path":"tests/foo.test.sh","content":"pass x\n"},"tool_response":{"stdout":""}}' \
+    --claude
+  expect_silent "PostToolUse of the same Write must not inject again"
+  pass "one Claude Write of a test file injects on PreToolUse only"
+}
+
+test_blocked_status_append_is_not_completion() {
+  local blocked
+  blocked='echo "blocked: wait for review" >> /tmp/task.status && true'
+  run_hook "$PRIMARY" \
+    "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":$(printf '%s' "$blocked" | jq -Rs .)}}" \
+    --claude
+  expect_silent "blocked: STATUS_APPEND Bash"
+  run_hook "$PRIMARY" \
+    "{\"hook_event_name\":\"postToolUse\",\"tool_name\":\"Shell\",\"tool_input\":{\"command\":$(printf '%s' "$blocked" | jq -Rs .)},\"tool_output\":\"{\\\"exitCode\\\":0}\",\"cursor_version\":\"x\",\"conversation_id\":\"c1\",\"generation_id\":\"g\"}" \
+    --cursor
+  expect_silent "blocked: STATUS_APPEND Shell"
+  pass "blocked: via STATUS_APPEND Shell/Bash does not inject principle-prove-it-works"
+}
+
+test_blocked_status_write_is_not_completion() {
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"state/t.status","content":"blocked: wait for review\n"}}' \
+    --claude
+  expect_silent "blocked: Write of a status file"
+  pass "blocked: via a *.status Write does not inject principle-prove-it-works"
 }
 
 test_contest_path_is_not_a_test_write() {
@@ -768,6 +829,13 @@ test_lock_aged_five_seconds_breaks_once_stale() {
     '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed tests/export.test.sh\n"},"session_id":"s1"}' \
     --claude
   expect_silent "claim through a lock that ages past stale"
+  run_hook "$home" \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh\n"},"tool_use_id":"r1","session_id":"s1"}' \
+    --claude
+  run_hook "$home" \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh\n"},"tool_use_id":"r2","session_id":"s1"}' \
+    --claude
+  expect_claude_inject "principle-attack-the-premise" "PostToolUse" "aging lock must still record the claim"
   pass "a lock aged about 2s is broken once it goes stale"
 }
 
@@ -810,6 +878,14 @@ test_claude_mode_is_silent_on_cursor_pre_tool_use() {
     --claude
   expect_silent "Claude registration must not emit permission on Cursor preToolUse"
   pass "--claude is silent on a Cursor-delivered preToolUse payload"
+}
+
+test_empty_stdin_fails_open() {
+  run_hook "$PRIMARY" '' --cursor
+  expect_silent "empty stdin --cursor"
+  run_hook "$PRIMARY" '' --claude
+  expect_silent "empty stdin --claude"
+  pass "empty stdin fails open with no output"
 }
 
 test_malformed_payload_fails_open() {
@@ -1063,6 +1139,8 @@ test_working_checks_green_so_far_is_not_completion
 test_implementation_complete_question_is_not_completion
 test_pr_ready_for_review_sentence_is_not_completion
 test_blocked_line_is_not_a_completion
+test_blocked_status_append_is_not_completion
+test_blocked_status_write_is_not_completion
 test_needs_decision_line_is_not_a_completion
 test_write_of_test_file_injects_test_behavior
 test_cwd_relative_test_file_write_injects
@@ -1071,6 +1149,9 @@ test_shell_redirect_to_test_file_injects
 test_cwd_relative_shell_redirect_injects
 test_tee_with_flags_into_test_path_injects
 test_cp_into_test_path_injects
+test_redirect_elsewhere_then_grep_test_path_is_silent
+test_redirect_elsewhere_then_cat_test_path_is_silent
+test_claude_write_of_test_file_emits_once_across_pre_and_post
 test_contest_path_is_not_a_test_write
 test_write_of_docs_testing_notes_is_not_a_test_change
 test_docs_test_plan_is_not_a_test_file
@@ -1081,6 +1162,7 @@ test_cursor_before_submit_speed_prints_continue_only
 test_two_x_as_fast_injects_explain_the_number
 test_much_faster_injects_explain_the_number
 test_got_a_lot_faster_injects_explain_the_number
+test_its_faster_injects_explain_the_number
 test_please_speed_up_ci_is_not_a_speed_claim
 test_which_is_faster_is_not_a_speed_claim
 test_as_fast_as_is_not_a_speed_claim
@@ -1113,6 +1195,7 @@ test_missing_jq_before_submit_still_continues
 test_claude_mode_stands_down_on_cursor_before_submit
 test_claude_mode_stands_down_on_cursor_post_tool_use
 test_claude_mode_is_silent_on_cursor_pre_tool_use
+test_empty_stdin_fails_open
 test_malformed_payload_fails_open
 test_missing_jq_fails_open
 test_after_shell_status_append_is_consumed_by_post_tool_use
