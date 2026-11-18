@@ -109,7 +109,7 @@ FM_CLASSIFY_CAPTAIN_RE_DEFAULT='done:|needs-decision:|blocked:|failed:|PR ready|
 FM_CLASSIFY_PAUSED_VERB_DEFAULT='paused'
 
 # Bounded re-surface cadence for a declared external-wait pause.
-# Far longer than the wedge threshold (FM_STALE_ESCALATE_SECS, default 240s), it
+# Far longer than the wedge threshold (FM_STALE_ESCALATE_SECS, default 300s), it
 # avoids nagging a deliberate wait while ensuring a forgotten wait cannot rot
 # invisibly - it re-surfaces once for a recheck every window. Four hours by
 # default: a declared wait is by definition expected to clear on its own, so a
