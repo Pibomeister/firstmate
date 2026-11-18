@@ -1,0 +1,22 @@
+1..19
+ok - lands only an allowlisted repository at the approved exact head
+ok - refuses every repository the grant does not name
+ok - refuses a landing with missing review evidence
+ok - refuses a diff that touches the merge gates or the workflows
+ok - refuses every landing while the stop file exists
+ok - refuses a task that is held for the captain
+ok - refuses a second merge while one is in flight for the repository
+ok - trips the breaker on a red base and stays tripped until it is reset
+ok - reconciles a lost forge response without a duplicate merge
+ok - holds the repository after a failed merge command until its outcome is known
+ok - holds the repository while a merge waits in the forge's merge queue
+ok - addresses the host the pull request URL names, whatever the caller exported
+ok - reads the switches and the pull request again in front of the merge command
+ok - reads every status page, the combined status, and the default branch
+ok - refuses while the base head has unfinished checks, and lands once they finish
+ok - completes the record of a landing on the next run when it could not be written
+ok - stops every later landing after a merge that did not pass its check
+ok - takes no waiver flag and passes no option to the forge
+ok - keeps every refusal of the merge gate it wraps
+FM_TEST_COMPLETE
+bash tests/fm-self-land.test.sh  124.30s user 181.97s system 27% cpu 18:22.16 total

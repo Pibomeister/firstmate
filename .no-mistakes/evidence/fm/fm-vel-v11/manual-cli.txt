@@ -1,0 +1,37 @@
+## no config/self-land
+$ bin/fm-self-land.sh covers https://github.com/example/repo/pull/7
+[exit=1]
+
+$ bin/fm-self-land.sh task-x1 https://github.com/example/repo/pull/7 --head 0123456789abcdef0123456789abcdef01234567
+self-land: refused (config): config/self-land is absent, so self-landing is off in this home
+[exit=1]
+
+## waiver flag
+$ bin/fm-self-land.sh task-x1 https://github.com/example/repo/pull/7 --head 0123456789abcdef0123456789abcdef01234567 --allow-red
+error: a landing needs exactly <task-id> <pr-url> --head <full-sha>; there is no other option and no waiver flag
+usage: fm-self-land.sh <task-id> <pr-url> --head <full-sha>
+[exit=2]
+
+## allowlist
+$ bin/fm-self-land.sh covers https://github.com/example/repo/pull/7
+[exit=0]
+
+$ bin/fm-self-land.sh covers https://github.com/other/repo/pull/7
+[exit=1]
+
+## stop file
+$ bin/fm-self-land.sh task-x1 https://github.com/example/repo/pull/7 --head 0123456789abcdef0123456789abcdef01234567
+self-land: refused (stop-file): state/.self-land-off exists; remove it to resume self-landing
+[exit=1]
+
+## not allowlisted
+$ bin/fm-self-land.sh task-x1 https://github.com/other/repo/pull/7 --head 0123456789abcdef0123456789abcdef01234567
+self-land: refused (not-allowlisted): config/self-land has no allow line for github.com/other/repo
+[exit=1]
+
+## short head
+$ bin/fm-self-land.sh task-x1 https://github.com/example/repo/pull/7 --head abc123
+error: --head needs the full lowercase commit id
+usage: fm-self-land.sh <task-id> <pr-url> --head <full-sha>
+[exit=2]
+
