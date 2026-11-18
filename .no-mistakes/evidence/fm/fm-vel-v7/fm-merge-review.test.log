@@ -1,0 +1,12 @@
+1..65
+ok - two approving reviews from two model families approve, and check prints one line
+ok - run refuses outside a spawned worker and calls no reviewer
+ok - each reviewer gets the diff and head snapshot in a temporary directory with read-only flags
+ok - one BLOCK blocks despite an approval, the spare stays out, and a rerun cannot replace it
+ok - a changed head is incomplete, and receipts copied from the old head do not count
+ok - two reviews from one model family count as one
+ok - a tool that reports another model leaves no receipt, and the spare supplies the second family
+ok - a bare verdict, another commit's verdict, a missing verdict, and a failed call leave no receipt
+ok - an approval with non-blocking findings approves and stays visible in the verdict line
+ok - a flipped verdict, an edited review, and a missing diff each void the receipt
+ok - a receipt stops counting when config/merge-review no longer declares its seat

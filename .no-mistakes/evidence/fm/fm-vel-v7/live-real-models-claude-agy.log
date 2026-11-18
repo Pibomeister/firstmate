@@ -1,0 +1,16 @@
+LAB=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.NktAoJ
+== round 1 run at 6ab6b608dab4e8fb2614f0a3276d02437e583e47
+seat anthropic.claude.claude-sonnet-5-5: BLOCK
+seat google.agy.gemini-3.8-flash-high: BLOCK
+merge-review: blocked head=6ab6b608dab4e8fb2614f0a3276d02437e583e47 approvals=none blocks=anthropic.claude.claude-sonnet-5-5,google.agy.gemini-3.8-flash-high round=1 open=F1,F3 url=https://github.com/example/lab/pull/3
+exit=1
+== findings
+round=1 head=6ab6b608dab4e8fb2614f0a3276d02437e583e47 previous=none
+F1	open	security	run.sh:4	`eval "echo Hello $name"` executes shell metacharacters in the user-supplied argument (arbitrary command injection); remove eval and use `printf 'Hello %s\n' "$name"`.	followup=none
+F2	noted	none	run.sh:3	Missing argument is not checked, so the script prints "Hello " and exits 0; add `${1:?usage: run.sh <name>}`.	followup=none
+F3	open	security	run.sh:4	Evaluating unescaped user input with eval allows arbitrary shell command injection; remove eval and output the greeting safely using printf 'Hello %s\n' "$name".	followup=none
+exit=0
+== round 2 run at e148301ef6769b58d7ea0b0c092b9e5d67ceed96
+{run-worktree}/bin/fm-merge-review.sh: line 611: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.NktAoJ/data/merge-review/github/github.com/example/lab/3/6ab6b608dab4e8fb2614f0a3276d02437e583e47/anthropic.claude.claude-sonnet-5-5.review.md: No such file or directory
+error: cannot record the prior findings
+shell-init: error retrieving current directory: getcwd: cannot access parent directories: No such file or directory

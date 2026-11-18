@@ -1,0 +1,10 @@
+diff --git a/run.sh b/run.sh
+index 57a402175489dfe95c7e00a78e48bbf879b24566..dd572a39a32581c214da7ad1cc60a04434152998 100644
+--- a/run.sh
++++ b/run.sh
+@@ -1,4 +1,4 @@
+ #!/usr/bin/env bash
+ # Usage: run.sh <name>  - greets a user by name.
+ name=$1
+-eval "echo Hello $name"
++printf 'Hello %s\n' "$name"

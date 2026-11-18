@@ -1,0 +1,67 @@
+LAB=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.2jE5o2
+== round 1 run at 3c2a55779a1fc2343f46c4fa79b1a27356f4490f
+seat anthropic.claude.claude-sonnet-5-5: BLOCK
+seat xai.grok.grok-4.7: no valid review (the grok call exited 1)
+merge-review: blocked head=3c2a55779a1fc2343f46c4fa79b1a27356f4490f approvals=none blocks=anthropic.claude.claude-sonnet-5-5 round=1 open=F1 url=https://github.com/example/lab/pull/1
+exit=1
+== findings
+round=1 head=3c2a55779a1fc2343f46c4fa79b1a27356f4490f previous=none
+F1	open	security	run.sh:4	`eval "echo Hello $name"` runs attacker-controlled input as shell code (command injection); replace with `printf 'Hello %s\n' "$name"` and drop `eval`.	followup=none
+F2	noted	none	run.sh:3	A missing argument silently prints "Hello " and exits 0; validate with `name=${1:?usage: run.sh <name>}`.	followup=none
+exit=0
+== round 2 run at ccb5916c0c9737e4398b5d2c171a15e0b37b34b0
+seat anthropic.claude.claude-sonnet-5-5: APPROVE
+seat xai.grok.grok-4.7: no valid review (the grok call exited 1)
+merge-review: incomplete head=ccb5916c0c9737e4398b5d2c171a15e0b37b34b0 approvals=anthropic.claude.claude-sonnet-5-5:APPROVE blocks=none round=2 reason="approving reviews come from one model family; two are required" url=https://github.com/example/lab/pull/1
+exit=1
+== findings
+round=2 head=ccb5916c0c9737e4398b5d2c171a15e0b37b34b0 previous=3c2a55779a1fc2343f46c4fa79b1a27356f4490f
+F1	pending	security	run.sh:4	`eval "echo Hello $name"` runs attacker-controlled input as shell code (command injection); replace with `printf 'Hello %s\n' "$name"` and drop `eval`.	followup=none
+F2	noted	none	run.sh:3	A missing argument silently prints "Hello " and exits 0; validate with `name=${1:?usage: run.sh <name>}`.	followup=none
+exit=0
+== check
+merge-review: incomplete head=ccb5916c0c9737e4398b5d2c171a15e0b37b34b0 approvals=anthropic.claude.claude-sonnet-5-5:APPROVE blocks=none round=2 reason="approving reviews come from one model family; two are required" url=https://github.com/example/lab/pull/1
+exit=1
+== rounds ledger
+3c2a55779a1fc2343f46c4fa79b1a27356f4490f	1794975138
+ccb5916c0c9737e4398b5d2c171a15e0b37b34b0	1794975230
+== ids ledger
+F1	3c2a55779a1fc2343f46c4fa79b1a27356f4490f	anthropic.claude.claude-sonnet-5-5	06ef856824e4c43382f4663464f17af08a194c0f8895b2b80955d9ad4cc73df6	1
+F2	3c2a55779a1fc2343f46c4fa79b1a27356f4490f	anthropic.claude.claude-sonnet-5-5	06ef856824e4c43382f4663464f17af08a194c0f8895b2b80955d9ad4cc73df6	2
+== H2 round record
+round=2
+previous=3c2a55779a1fc2343f46c4fa79b1a27356f4490f
+== H2 prior.md
+F1 | open | security | run.sh:4 | `eval "echo Hello $name"` runs attacker-controlled input as shell code (command injection); replace with `printf 'Hello %s\n' "$name"` and drop `eval`.
+F2 | noted | none | run.sh:3 | A missing argument silently prints "Hello " and exits 0; validate with `name=${1:?usage: run.sh <name>}`.
+== H2 delta files
+anthropic.claude.claude-sonnet-5-5.raw.json
+anthropic.claude.claude-sonnet-5-5.receipt
+anthropic.claude.claude-sonnet-5-5.review.md
+delta.6dc7a5f859f045c5d34c9a4bec2010c1b27642a9f31a2702f4ea03a66836bf1a.patch
+diff.0018029fa9b82699507d81cf2d50e5d42c1fb22de2e758194d504ce8fa7ab35f.patch
+prior.md
+prompt.7e4e52b52a9f05bf66a6764093768ec7b59f67e0b7f0b60ab3f3c1025e455106.md
+round
+xai.grok.grok-4.7.failed.1794975236
+xai.grok.grok-4.7.failed.1794975236.raw.json
+xai.grok.grok-4.7.failed.1794975236.stderr
+--- /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.2jE5o2/data/merge-review/github/github.com/example/lab/1/ccb5916c0c9737e4398b5d2c171a15e0b37b34b0/delta.6dc7a5f859f045c5d34c9a4bec2010c1b27642a9f31a2702f4ea03a66836bf1a.patch
+diff --git a/run.sh b/run.sh
+index 57a402175489dfe95c7e00a78e48bbf879b24566..dd572a39a32581c214da7ad1cc60a04434152998 100644
+--- a/run.sh
++++ b/run.sh
+@@ -1,4 +1,4 @@
+ #!/usr/bin/env bash
+ # Usage: run.sh <name>  - greets a user by name.
+ name=$1
+-eval "echo Hello $name"
++printf 'Hello %s\n' "$name"
+== finding lines in H2 reviews
+FINDING F1 | RESOLVED | none | run.sh:4 | `eval` is removed and the name is passed as a quoted `printf '%s'` argument, so attacker-controlled input is no longer executed.
+VERDICT: APPROVE ccb5916c0c9737e4398b5d2c171a15e0b37b34b0
+== finding lines in H1 reviews
+FINDING NEW | BLOCKING | security | run.sh:4 | `eval "echo Hello $name"` runs attacker-controlled input as shell code (command injection); replace with `printf 'Hello %s\n' "$name"` and drop `eval`.
+FINDING NEW | NON-BLOCKING | none | run.sh:3 | A missing argument silently prints "Hello " and exits 0; validate with `name=${1:?usage: run.sh <name>}`.
+VERDICT: BLOCK 3c2a55779a1fc2343f46c4fa79b1a27356f4490f
+lab removed

@@ -1,0 +1,10 @@
+diff --git a/run.sh b/run.sh
+new file mode 100644
+index 0000000000000000000000000000000000000000..57a402175489dfe95c7e00a78e48bbf879b24566
+--- /dev/null
++++ b/run.sh
+@@ -0,0 +1,4 @@
++#!/usr/bin/env bash
++# Usage: run.sh <name>  - greets a user by name.
++name=$1
++eval "echo Hello $name"

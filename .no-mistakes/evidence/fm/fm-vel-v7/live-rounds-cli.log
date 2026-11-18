@@ -1,0 +1,76 @@
+LAB=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.8KxRxp
+
+### run at 1eba72fec2ba7d2dc224ee1503ec59a3c697d39d (round 1: two NEW blockers, one security)
+merge-review: blocked head=1eba72fec2ba7d2dc224ee1503ec59a3c697d39d approvals=none blocks=anthropic.claude.claude-test-1,google.agy.gemini-test-high round=1 open=F1,F2 url=https://github.com/example/lab/pull/2
+exit=1
+--- findings
+round=1 head=1eba72fec2ba7d2dc224ee1503ec59a3c697d39d previous=none
+F1	open	none	feature.txt:1	Reader crashes on an empty line.	followup=none
+F2	open	security	feature.txt:1	Line is passed to eval.	followup=none
+
+### run at 1f8eae666162ffd6de2f1d80c2b378f28994fd5c (round 2: both hold F1, F2)
+merge-review: blocked head=1f8eae666162ffd6de2f1d80c2b378f28994fd5c approvals=none blocks=anthropic.claude.claude-test-1,google.agy.gemini-test-high round=2 open=F1,F2 url=https://github.com/example/lab/pull/2
+exit=1
+--- findings
+round=2 head=1f8eae666162ffd6de2f1d80c2b378f28994fd5c previous=1eba72fec2ba7d2dc224ee1503ec59a3c697d39d
+F1	open	none	feature.txt:1	Reader crashes on an empty line.	followup=none
+F2	open	security	feature.txt:1	Line is passed to eval.	followup=none
+--- round 2 reviewer was given: prior=yes delta=yes 
+--- prior-findings.md given to claude:
+F1 | open | none | feature.txt:1 | Reader crashes on an empty line.
+F2 | open | security | feature.txt:1 | Line is passed to eval.
+--- delta.patch given to claude:
+diff --git a/feature.txt b/feature.txt
+index 5626abf0f72e58d7a153368ba57db4c673c0e171..814f4a422927b82f5f8a43f8fab6d3839e3983f2 100644
+--- a/feature.txt
++++ b/feature.txt
+@@ -1 +1,2 @@
+ one
++two
+
+### run at e13fd8087f0ac298ab8577a1830ff68b8ebf0760 (round 3: F1 EDGE-CASE+UNSUPPORTED (no agreement); F2 security, both EDGE-CASE)
+merge-review: blocked head=e13fd8087f0ac298ab8577a1830ff68b8ebf0760 approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none round=3 open=F1,F2 reason="a finding is open at this head" url=https://github.com/example/lab/pull/2
+exit=1
+--- findings
+round=3 head=e13fd8087f0ac298ab8577a1830ff68b8ebf0760 previous=1f8eae666162ffd6de2f1d80c2b378f28994fd5c
+F1	open	none	feature.txt:1	Reader crashes on an empty line.	followup=none
+F2	open	security	feature.txt:1	Line is passed to eval.	followup=none
+
+### run at 668cf982453344eb9732909a9528f225a1bffb37 (round 4: both EDGE-CASE on F1, both RESOLVED on F2)
+merge-review: incomplete head=668cf982453344eb9732909a9528f225a1bffb37 approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none round=4 deferred=F1 reason="deferred finding F1 has no recorded follow-up" url=https://github.com/example/lab/pull/2
+exit=1
+--- findings
+round=4 head=668cf982453344eb9732909a9528f225a1bffb37 previous=e13fd8087f0ac298ab8577a1830ff68b8ebf0760
+F1	deferred	none	feature.txt:1	Reader crashes on an empty line.	followup=none
+F2	resolved	security	feature.txt:1	Line is passed to eval.	followup=none
+
+### followup with a blank ref
+error: --ref requires one line of text that names where the follow-up was filed
+exit=2
+### check before followup
+merge-review: incomplete head=668cf982453344eb9732909a9528f225a1bffb37 approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none round=4 deferred=F1 reason="deferred finding F1 has no recorded follow-up" url=https://github.com/example/lab/pull/2
+exit=1
+### followup with a ref
+merge-review: follow-up recorded finding=F1 ref="backlog item V7-followup-1" url=https://github.com/example/lab/pull/2
+exit=0
+### check after followup
+merge-review: approved head=668cf982453344eb9732909a9528f225a1bffb37 approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none round=4 deferred=F1 url=https://github.com/example/lab/pull/2
+exit=0
+### a second followup record for F1 (never replaced)
+error: finding F1 already has the follow-up "backlog item V7-followup-1"; a record is never replaced
+exit=2
+
+### rounds and ids ledgers
+1eba72fec2ba7d2dc224ee1503ec59a3c697d39d	1794975236
+1f8eae666162ffd6de2f1d80c2b378f28994fd5c	1794975266
+e13fd8087f0ac298ab8577a1830ff68b8ebf0760	1794975281
+668cf982453344eb9732909a9528f225a1bffb37	1794975296
+F1	1eba72fec2ba7d2dc224ee1503ec59a3c697d39d	anthropic.claude.claude-test-1	a95cbff084adbe709cf4839cc2b1a8cc35e61db146ee78e08dfd96fad0713e46	1
+F2	1eba72fec2ba7d2dc224ee1503ec59a3c697d39d	google.agy.gemini-test-high	80a35e9e699153475b5c246694aa8a8a1034ec5b34a93231b1eb1116e50403c1	1
+
+### config with a .council model name
+error: config/merge-review line 1: the model name cannot hold the part ".council", which names council files
+exit=2
+error: config/merge-review line 1: the model name cannot hold the part ".council", which names council files
+exit=2
+lab removed
