@@ -15,7 +15,12 @@
 # unreachable from publishing remote-tracking refs, matching task, backlog row,
 # open PR lookup, and still-open status decisions. No-mistakes proxy refs do
 # not prove publication. Remote refs are local evidence, not a live remote
-# inventory; startup's fleet refresh owns fetching them.
+# inventory; startup's fleet refresh owns fetching them. A head whose content
+# already sits in origin's copy of its base branch (the task's recorded
+# base_branch, else the default) has landed, as in fm-teardown.sh's
+# content-in-default proof, which covers squash and rebase merges after the
+# remote task branch is deleted. Newer local commits, a conflict, or an
+# unavailable proof keep the branch flagged.
 #
 # PR lookups use gh-axi for GitHub publication targets. Other forges, missing
 # tools, malformed responses, and failed reads are explicit unknowns. A PR
@@ -79,9 +84,18 @@ pr_evidence() { # <project> <branch> <forge>
   esac
 }
 
+content_landed() { # <project> <head> <base-branch>
+  local base tree merged
+  base=$(git -C "$1" rev-parse --quiet --verify "refs/remotes/origin/$3^{tree}" 2>/dev/null) || return 1
+  merged=$(git -C "$1" merge-tree --write-tree "refs/remotes/origin/$3" "$2" 2>/dev/null) || return 1
+  tree=$(printf '%s\n' "$merged" | head -1)
+  [ "$tree" = "$base" ]
+}
+
 scan_project() { # <project>
   local project=$1 name common prefix posture forge branch head task owner meta
   local matched count refs ref default mode meta_branch candidate_mode branches
+  local base candidate_base
   git -C "$project" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
   common=$(git -C "$project" rev-parse --git-common-dir 2>/dev/null) || return 0
   common=$(cd "$project" && cd "$common" && pwd -P) || return 0
@@ -107,8 +121,8 @@ scan_project() { # <project>
     [ -n "$branch" ] || continue
     branch=${branch#refs/heads/}
     [ "$branch" != "$default" ] || continue
-    task='' owner=missing matched='' mode=''
-    while IFS=$'\t' read -r meta matched meta_branch candidate_mode; do
+    task='' owner=missing matched='' mode='' base=$default
+    while IFS=$'\t' read -r meta matched meta_branch candidate_mode candidate_base; do
       [ "$meta_branch" = "$branch" ] || continue
       # Bind metadata to this Git repository, not just the branch name.
       ref=$(git -C "$matched" rev-parse --git-common-dir 2>/dev/null) || continue
@@ -117,6 +131,7 @@ scan_project() { # <project>
       task=${meta##*/}; task=${task%.meta}
       owner=recorded
       mode=$candidate_mode
+      [ "$candidate_base" = - ] || base=$candidate_base
       break
     done <<EOF
 $META_ROWS
@@ -139,6 +154,7 @@ EOF
       printf 'UNPUSHED: project=%s branch=%s incomplete: reachability unreadable\n' "$project" "$branch"; continue
     }
     [ "$count" != 0 ] || continue
+    [ -z "$base" ] || ! content_landed "$project" "$head" "$base" || continue
     # Emit the branch before any external read so an aggregate timeout cannot
     # swallow the branch identity that prompted recovery.
     printf 'UNPUSHED: project=%s branch=%s head=%s commits=%s task=%s owner=%s; flag for supervisor recovery\n' \
@@ -192,20 +208,21 @@ case "${1:-}" in
     META_ROWS=$(awk -F= '
       function emit() {
         if (project != "" && kind != "secondmate")
-          printf "%s\t%s\t%s\t%s\n", file, project, (branch == "" ? "-" : branch), (mode == "" ? "-" : mode)
+          printf "%s\t%s\t%s\t%s\t%s\n", file, project, (branch == "" ? "-" : branch), (mode == "" ? "-" : mode), (base == "" ? "-" : base)
       }
-      FNR == 1 { emit(); file=FILENAME; project=branch=mode=kind="" }
+      FNR == 1 { emit(); file=FILENAME; project=branch=mode=kind=base="" }
       $1 == "project" { project=substr($0,9) }
       $1 == "branch" { branch=substr($0,8) }
       $1 == "mode" { mode=substr($0,6) }
       $1 == "kind" { kind=substr($0,6) }
+      $1 == "base_branch" { base=substr($0,13) }
       END { emit() }
     ' "$@") || { printf 'UNPUSHED: incomplete scan: task metadata unreadable\n'; exit 0; }
     for project in "$PROJECTS"/*; do
       [ -d "$project" ] || continue
       scan_project "$project"
     done
-    while IFS=$'\t' read -r meta project _branch _mode; do
+    while IFS=$'\t' read -r meta project _branch _mode _base; do
       [ -n "$project" ] || continue
       scan_project "$project"
     done <<EOF

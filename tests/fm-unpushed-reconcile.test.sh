@@ -47,7 +47,9 @@ new_world() {
   git -C "$PROJECT" update-ref refs/remotes/origin/main HEAD
   git -C "$PROJECT" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
   git -C "$PROJECT" checkout -qb fm/task
-  git -C "$PROJECT" -c user.name=Test -c user.email=test@example.com commit -qm change --allow-empty
+  printf 'change\n' > "$PROJECT/change.txt"
+  git -C "$PROJECT" add change.txt
+  git -C "$PROJECT" -c user.name=Test -c user.email=test@example.com commit -qm change
   cat > "$FM_HOME/state/task.meta" <<EOF
 project=$PROJECT
 branch=fm/task
@@ -99,6 +101,40 @@ git -C "$PROJECT" update-ref -d refs/remotes/origin/task
 git -C "$PROJECT" update-ref refs/remotes/backup/task HEAD
 assert_equals '' "$(scan)" 'backup remote coverage was ignored'
 pass 'commits reachable from any publishing remote need no recovery finding'
+
+squash_merge_into_origin_main() {
+  local tree squash
+  tree=$(git -C "$PROJECT" rev-parse "$1^{tree}")
+  squash=$(printf 'squash\n' | git -C "$PROJECT" -c user.name=Test -c user.email=test@example.com \
+    commit-tree "$tree" -p refs/remotes/origin/main)
+  git -C "$PROJECT" update-ref refs/remotes/origin/main "$squash"
+}
+
+new_world squash-merged
+git -C "$PROJECT" -c user.name=Test -c user.email=test@example.com commit -qm second --allow-empty
+squash_merge_into_origin_main HEAD
+assert_equals '' "$(scan)" 'squash-merged task head without a remote task branch was flagged'
+assert_equals '' "$(cat "$FM_GH_LOG")" 'landed task made an unnecessary forge read'
+pass 'a squash-merged task head whose remote task branch is gone is not flagged'
+
+new_world follow-up
+squash_merge_into_origin_main HEAD
+printf 'follow-up\n' > "$PROJECT/follow-up.txt"
+git -C "$PROJECT" add follow-up.txt
+git -C "$PROJECT" -c user.name=Test -c user.email=test@example.com commit -qm follow-up
+out=$(scan)
+assert_contains "$out" 'branch=fm/task' 'a prior merge hid newer local commits'
+assert_contains "$out" 'commits=2' 'wrong follow-up reachability count'
+pass 'local commits newer than a merged head stay flagged'
+
+new_world base-branch
+git -C "$PROJECT" update-ref refs/remotes/origin/release refs/remotes/origin/main
+printf 'base_branch=release\n' >> "$FM_HOME/state/task.meta"
+squash_merge_into_origin_main HEAD
+assert_contains "$(scan)" 'branch=fm/task' 'default branch content hid work owed to the recorded base branch'
+git -C "$PROJECT" update-ref refs/remotes/origin/release refs/remotes/origin/main
+assert_equals '' "$(scan)" 'work landed on the recorded base branch was flagged'
+pass 'the landed proof uses the recorded base branch'
 
 new_world proxy
 git -C "$PROJECT" update-ref refs/remotes/no-mistakes/task HEAD
