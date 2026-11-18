@@ -1,0 +1,6 @@
+$ FM_HOME=<lab> bin/fm-unpushed-reconcile.sh scan   # fm/unpushed (meta), fm/published (origin), fm/proxy-only (no-mistakes ref only), fm/landed (net-empty)
+UNPUSHED: project=<lab>/projects/demo branch=fm/proxy-only head=0e5a2739d1213e766445e96ac9225d16f72cf19a commits=1 task=proxy-only owner=missing; flag for supervisor recovery
+UNPUSHED: branch=fm/proxy-only ledger=unknown pr=unknown (no GitHub target) merged=unknown (no GitHub target); reconcile the ledger and resume the owning task or escalate its blocker
+UNPUSHED: project=<lab>/projects/demo branch=fm/unpushed head=20da21bc56fa21f2adf4444fabea84ec1b7bc765 commits=1 task=unp owner=recorded; flag for supervisor recovery
+UNPUSHED: branch=fm/unpushed ledger=unknown pr=unknown (no GitHub target) merged=unknown (no GitHub target); reconcile the ledger and resume the owning task or escalate its blocker
+exit=

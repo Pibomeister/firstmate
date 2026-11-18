@@ -1,0 +1,6 @@
+base run 1: load averages: 72.60 67.06 59.93
+head run 1: load averages: 65.40 82.85 69.63
+not ok - a timed-out run discarded the partial timings its sweeps had already recorded (missing: 'secondmate-liveness mate-a@host-one')
+base run 2: load averages: 46.07 71.52 66.42
+not ok - a timed-out run discarded the partial timings its sweeps had already recorded (missing: 'secondmate-liveness mate-a@host-one')
+head run 2: load averages: 53.11 67.37 65.49

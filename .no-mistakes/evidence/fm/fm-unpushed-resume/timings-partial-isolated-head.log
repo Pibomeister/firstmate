@@ -1,0 +1,1 @@
+not ok - a timed-out run discarded the partial timings its sweeps had already recorded (missing: 'secondmate-liveness mate-a@host-one')

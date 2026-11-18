@@ -1,11 +1,17 @@
-FM_TEST_BEGIN 2026-11-18T03:28:15Z tests/fm-startup-network.test.sh family=session-bootstrap expected_gate_skip=none
-FM_TEST_BEGIN 2026-11-18T03:28:15Z tests/fm-unpushed-reconcile.test.sh family=session-bootstrap expected_gate_skip=none
+FM_TEST_BEGIN 2026-11-18T07:31:32Z tests/fm-startup-network.test.sh family=session-bootstrap expected_gate_skip=none
+FM_TEST_BEGIN 2026-11-18T07:31:32Z tests/fm-unpushed-reconcile.test.sh family=session-bootstrap expected_gate_skip=none
+ok - inventory survives a delayed first content proof before comparison starts
+ok - nested non-repository directories cannot hide a recorded checkout root
 ok - unpublished blocked task is flagged on every startup without changing refs or its blocker
 ok - branch survives missing task metadata and ledger intake
 ok - an open PR does not hide unpublished local follow-up commits
 ok - commits reachable from any publishing remote need no recovery finding
 ok - a squash-merged task head whose remote task branch is gone is not flagged
 ok - local commits newer than a merged head stay flagged
+ok - a merged PR at the exact local head proves landing when the content proof conflicts
+ok - local commits beyond a merged PR head stay flagged
+ok - a failed merged-proof lookup keeps the branch flagged as unknown
+ok - a fork PR head is looked up in origin and still binds to the exact local head
 ok - the landed proof uses the recorded base branch
 ok - a local no-mistakes proxy ref is not publication evidence
 ok - registered task branch prefixes are respected
@@ -16,8 +22,11 @@ ok - forge failure cannot masquerade as an absent PR
 ok - a slow forge read retains all discovered branches and an incomplete scan
 ok - resolved blockers are folded by the existing status owner
 # fm-unpushed-reconcile.test.sh: all assertions passed
-FM_TEST_END 2026-11-18T03:30:01Z tests/fm-unpushed-reconcile.test.sh exit=0 duration_ms=106107 gate_skip=false
+FM_TEST_END 2026-11-18T07:33:31Z tests/fm-unpushed-reconcile.test.sh exit=0 duration_ms=118470 gate_skip=false
+ok - fm-startup-network: an outer deadline retains discovered branch identities
+ok - fm-startup-network: refresh preserves unpublished gone-upstream branches for recovery
 ok - fm-startup-network: wait fails when no deferred stage publishes before its deadline
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.f5VxrP/w1/tmp/fm-startup-network-tests.Z2OpvM/start-nonblocking/root/bin/fm-startup-network.sh: child setpgid (79082 to 79082): Operation not permitted
 ok - fm-startup-network: start returns immediately and never holds the caller's stdout open
 ok - fm-startup-network: exactly one of the digest and the wake reports each actionable result
 ok - fm-startup-network: a claimant crash after publication still surfaces the result
@@ -32,14 +41,21 @@ ok - fm-startup-network: locked requests supersede in-flight probe-only workers
 ok - fm-startup-network: a second start never launches a competing worker
 ok - fm-startup-network: start atomically reserves the generation harvest observes
 ok - fm-startup-network: a new lock owner gets a distinct worker generation
-not ok - lock takeover blocked 7s behind deferred network work
-rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.twCiZR/w1/tmp/fm-startup-network-tests.v62SV2/lock-changed/home/state: Directory not empty
-rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.twCiZR/w1/tmp/fm-startup-network-tests.v62SV2/lock-changed/home: Directory not empty
-rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.twCiZR/w1/tmp/fm-startup-network-tests.v62SV2/lock-changed: Directory not empty
-rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.twCiZR/w1/tmp/fm-startup-network-tests.v62SV2: Directory not empty
-FM_TEST_END 2026-11-18T03:33:08Z tests/fm-startup-network.test.sh exit=1 duration_ms=293325 gate_skip=false
-FM_TEST_SUMMARY total=2 failed=1 skipped_gate=0 duration_ms=294100
-FM_TEST_SUMMARY_FAMILY family=session-bootstrap count=2 duration_ms=399432 failed=1
-FM_TEST_SLOWEST rank=1 script=tests/fm-startup-network.test.sh duration_ms=293325
-FM_TEST_SLOWEST rank=2 script=tests/fm-unpushed-reconcile.test.sh duration_ms=106107
-EXIT=1
+ok - fm-startup-network: fleet-lock takeover cannot overlap a mutating sweep
+ok - fm-startup-network: timing records share one origin so their offsets form a timeline
+ok - fm-startup-network: timings are durable and printed only on demand
+not ok - a timed-out run discarded the partial timings its sweeps had already recorded (missing: 'secondmate-liveness mate-a@host-one')
+--- output ---
+completed off the startup path in 5s: GitHub authentication, dead-secondmate relaunch, secondmate convergence, home code drift, pending handoff delivery, project clone refresh with its drift reporting, inactive terminal-outcome reconciliation, and unpublished task-branch reconciliation.
+The stage itself did not finish cleanly (timeout) - the NETWORK_CHECKS line below names what to rerun.
+NETWORK_CHECKS: hit the 1s bound before finishing, so GitHub authentication, dead-secondmate relaunch, secondmate convergence, home code drift, pending handoff delivery, project clone refresh with its drift reporting, inactive terminal-outcome reconciliation, and unpublished task-branch reconciliation may be incomplete; rerun /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.f5VxrP/w1/tmp/fm-startup-network-tests.Z2OpvM/timings-partial/root/bin/fm-startup-network.sh run --locked 1
+These ran AFTER the sections above were composed, so re-read any record a line here names.
+TIMINGS - where the deferred network checks spent their time (ms):
+  stage       network-checks probe_sweeps                start=+2000    elapsed=2000
+  slowest: stage network-checks probe_sweeps 2000ms
+FM_TEST_END 2026-11-18T07:37:19Z tests/fm-startup-network.test.sh exit=1 duration_ms=346097 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=1 skipped_gate=0 duration_ms=346687
+FM_TEST_SUMMARY_FAMILY family=session-bootstrap count=2 duration_ms=464567 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-startup-network.test.sh duration_ms=346097
+FM_TEST_SLOWEST rank=2 script=tests/fm-unpushed-reconcile.test.sh duration_ms=118470
+exit=1
