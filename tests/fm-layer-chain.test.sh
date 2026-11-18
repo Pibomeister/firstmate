@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # tests/fm-layer-chain.test.sh - the layer check chain (docs/watchdog.md):
 # each watchdog pass reads every watched home's monitor unit and writes
-# <home>/state/monitor-status, and a session start with no enabled watchdog
-# runs the same read once.
+# <home>/state/monitor-status, refreshes <home>/state/health-verdict, and a
+# session start with no enabled watchdog runs the same monitor read once.
 #
 # The service manager is a PATH fake for both launchctl and systemctl, so each
 # case runs on macOS and Linux alike. HOME and XDG_CONFIG_HOME point into the
@@ -142,6 +142,45 @@ test_pass_records_unreadable_without_manager_line() {
   pass "a monitor read with no manager line records unreadable over the old record"
 }
 
+test_pass_refreshes_health_verdict() {
+  local base="$TMP_ROOT/pass-verdict" owner other stale line
+  owner=$(new_home "$base/owner")
+  other=$(new_home "$base/other")
+  printf 'homes=%s,%s\nquota-guard=off\n' "$owner" "$other" > "$owner/config/watchdog"
+  stale='verdict=stale reason=old at=1'
+  printf '%s\n' "$stale" > "$owner/state/health-verdict"
+  printf '%s\n' "$stale" > "$other/state/health-verdict"
+  clear_units
+  wd_pass "$owner" || fail "the watchdog pass failed"
+  line=$(cat "$owner/state/health-verdict" 2>/dev/null)
+  assert_not_equals "$stale" "$line" \
+    "a watchdog once pass should replace the owner's stale health verdict"
+  case "$line" in
+    verdict=*) ;;
+    *) fail "the refreshed owner verdict should start with verdict=, got: $line" ;;
+  esac
+  line=$(cat "$other/state/health-verdict" 2>/dev/null)
+  assert_not_equals "$stale" "$line" \
+    "a watchdog once pass should replace every watched home's stale health verdict"
+  case "$line" in
+    verdict=*) ;;
+    *) fail "the refreshed other-home verdict should start with verdict=, got: $line" ;;
+  esac
+  pass "each watchdog pass refreshes every watched home's health verdict"
+}
+
+test_pass_survives_health_verdict_failure() {
+  local base="$TMP_ROOT/pass-verdict-fail" owner
+  owner=$(new_home "$base/owner")
+  printf 'quota-guard=off\n' > "$owner/config/watchdog"
+  printf 'verdict=stale reason=old at=1\n' > "$owner/state/health-verdict"
+  clear_units
+  wd_pass "$owner" FM_HEALTH_VERDICT_BIN=false || fail "a failing health-verdict write should not fail the pass"
+  assert_equals "verdict=stale reason=old at=1" "$(cat "$owner/state/health-verdict")" \
+    "a failing health-verdict write should leave the previous record in place"
+  pass "a failing health-verdict write does not fail the watchdog pass"
+}
+
 test_monitor_read_reports_unwritten_record() {
   local base="$TMP_ROOT/read-exit" owner rc
   owner=$(new_home "$base/owner")
@@ -277,6 +316,8 @@ fm_test_run \
   test_pass_records_every_watched_home \
   test_pass_records_disabled_unit \
   test_pass_records_unreadable_without_manager_line \
+  test_pass_refreshes_health_verdict \
+  test_pass_survives_health_verdict_failure \
   test_monitor_read_reports_unwritten_record \
   test_session_start_reads_once_without_watchdog \
   test_session_start_reads_when_watchdog_disabled \

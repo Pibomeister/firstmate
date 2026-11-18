@@ -81,6 +81,8 @@ Each `once` pass runs `FM_HOME=<home> bin/fm-monitor-watchdog.sh manager-status`
 It rewrites `<home>/state/monitor-status` atomically as `status=<enabled|disabled|uncovered|unreadable> at=<epoch>`.
 `unreadable` means the read printed no `manager:` line, for example because it failed or timed out.
 The record hands the monitor unit's status on; the pass takes no action on it.
+Each `once` pass also runs `bin/fm-health-verdict.sh --write` for every watched home and its registered second mates and rewrites `<home>/state/health-verdict`.
+A verdict error never fails the pass.
 When `FM_HOME=<home> bin/fm-watchdog.sh manager-status` does not print `manager: enabled`, a full locked session start runs the same read once, through `monitor-read`, and writes the same record.
 A lock-refused session start and a context re-emit write nothing.
 

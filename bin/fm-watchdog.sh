@@ -53,10 +53,13 @@
 #                                captain, rewritten each pass and by pickup.
 #   <watched home>/state/monitor-status  one-line record of that home's monitor
 #                                unit status, rewritten atomically each pass and by monitor-read.
+#   <watched home>/state/health-verdict  one-line health verdict, rewritten each
+#                                pass by bin/fm-health-verdict.sh --write.
 #
 # Test seams, honoured only with FM_TEST_SEAM=1: FM_WD_NOW fixes the clock,
-# FM_WD_TEST_COMPOSER replaces the composer verdict for a plain test pane, and
-# FM_WD_TEST_CONTROL replaces bin/fm-control.sh for the trust-dialog relaunch.
+# FM_WD_TEST_COMPOSER replaces the composer verdict for a plain test pane,
+# FM_WD_TEST_CONTROL replaces bin/fm-control.sh for the trust-dialog relaunch,
+# and FM_HEALTH_VERDICT_BIN replaces bin/fm-health-verdict.sh.
 #
 # Exit status: 0 on success, 2 on a usage error, 1 on any other failure.
 set -u
@@ -2811,6 +2814,13 @@ wd_write_status() {  # <health-file> <gaps-file>
 
 # --- commands ----------------------------------------------------------------------
 
+# Rewrite <home>/state/health-verdict. A verdict error never fails the pass.
+wd_health_verdict_write() {  # <home>
+  local bin=$SCRIPT_DIR/fm-health-verdict.sh
+  [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_HEALTH_VERDICT_BIN:-}" ] && bin=$FM_HEALTH_VERDICT_BIN
+  fm_run_timed 10 env FM_HOME="$1" "$bin" --home "$1" --write >/dev/null 2>&1 || true
+}
+
 # One home's monitor unit status, from bin/fm-monitor-watchdog.sh manager-status.
 # A read that prints no `manager:` line, including one that times out, is unreadable.
 wd_monitor_read() {  # <home>
@@ -2876,6 +2886,7 @@ wd_once() {  # [home-filter]
     fi
     wd_visit_worker_dialogs page
     wd_health_line >> "$health"
+    wd_health_verdict_write "$home"
   done
   wd_memory_guard_pass
   [ -n "$(wd_models)" ] || printf -- '- no model configured; judged symptoms are reported only\n' >> "$WD_GAPS"
