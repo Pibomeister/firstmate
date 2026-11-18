@@ -1,0 +1,32 @@
+8c8
+< . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+---
+> . "{run-worktree}/tests/lib.sh"
+629c629
+< [ "$elapsed" -lt 4 ] || fail "best-effort refresh waited $elapsed seconds on validation"
+---
+> [ "$elapsed" -lt 20 ] || fail "best-effort refresh waited $elapsed seconds on validation"
+642c642
+<   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
+---
+>   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=15 \
+645c645
+< grep -F 'refresh exceeded its 3-second deadline in stage validate' \
+---
+> grep -F 'refresh exceeded its 15-second deadline in stage validate' \
+656c656
+<   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
+---
+>   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=15 \
+659c659
+< grep -F 'refresh exceeded its 3-second deadline in stage validate' \
+---
+> grep -F 'refresh exceeded its 15-second deadline in stage validate' \
+680c680
+<   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
+---
+>   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=15 \
+683c683
+< grep -F 'refresh exceeded its 3-second deadline in stage publish' \
+---
+> grep -F 'refresh exceeded its 15-second deadline in stage publish' \

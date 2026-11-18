@@ -1,0 +1,27 @@
+== lab home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.e8CF5u with 60 tasks
+== S1 head refresh timing (default 60s deadline)
+head rc=0 elapsed=44s
+{"schema":"fm-secondmate-home-summary.v1","valid":false,"state":"unknown","generated":"2026-11-18T08:26:58Z","generated_epoch":1794990418,"counts":{"active_children":0,"decisions_open":0,"holds":0,"queued":0,"landed":0,"endpoints":60}}
+fm-home-summary-refresh: refresh exceeded its 60-second deadline
+base rc=124 elapsed=60s
+head conc=1 elapsed=61s
+last good: generated=2026-11-18T08:29:43Z epoch=1794990583
+== S2 deadline hit in a slow producer stage (no-mistakes probe stalls 30s, deadline 4s, --best-effort)
+rc=0 elapsed=5s
+log:
+[2026-11-18T08:30:35Z] refresh exceeded its 4-second deadline in stage task-observation (stages: lock-wait@0 producer@0 backlog@0 task-observation@1)
+ledger unchanged: generated=2026-11-18T08:29:43Z epoch=1794990583
+stage files left: 0
+== S3 worker-handled failure (producer refuses invalid FM_SNAPSHOT_BUDGET), direct caller
+fm-home-summary-refresh: summary producer failed with exit 2: fm-fleet-snapshot: FM_SNAPSHOT_BUDGET must be a positive integer  in stage producer (stages: lock-wait@0 producer@1)
+rc=1
+ledger unchanged
+== S4 deadline hit while queued on the refresh lock
+fm-home-summary-refresh: refresh exceeded its 2-second deadline in stage lock-wait (stages: lock-wait@0)
+rc=124 elapsed=2s
+holder rc=124
+after holder: generated_epoch=1794990583 (was 1794990583)
+stage files left: 0
+== S5 deadline 1s before/at first stage via stalled refresh hitting publish? (atomic: ledger valid json)
+ledger parses
+lab removed: yes
