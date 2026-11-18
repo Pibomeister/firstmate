@@ -834,6 +834,18 @@
       "audience": "maintainer-verification"
     },
     {
+      "path": "tests/fixtures/permission-prompt/claude-2.1.325-after-escape.txt",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "tests/fixtures/permission-prompt/claude-2.1.325-bash-prompt.txt",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "tests/fixtures/permission-prompt/claude-2.1.325-trust.txt",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": "tests/captures/kimi-code-2.3.0/README.md",
       "audience": "maintainer-verification"
     },

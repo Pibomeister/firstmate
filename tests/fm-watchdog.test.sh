@@ -4140,6 +4140,43 @@ page_subjects() {  # <phase>
   awk -F'\t' -v p="$1" '$5 == "dialog" && $6 == "page" && $7 == p { print $4 }' "$H/state/watchdog/actions.tsv" 2>/dev/null | sort
 }
 
+# A credential stop on an approval picker can show a value that the secret
+# detector does not recognize, so its away page records no pane text at all.
+test_worker_credential_page_withholds_typed_values() {
+  local cookie=$'Bash command\n\n  curl -H "Cookie: session=rvw7731cookie" https://api.example.com/me\n  Fetch the profile\n\nDo you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently\n\nEsc to cancel'
+  local mode key
+  for mode in act dry-run locked; do
+    if [ "$mode" = dry-run ]; then make_home $'Captain session\n> ' 'mode=dry-run'; else make_home $'Captain session\n> '; fi
+    transcript 100 "Working."
+    worker_pane cookie ship "$cookie"
+    if [ "$mode" = locked ]; then
+      # Another pass holds the worker's lock, so this pass writes no marker.
+      key="$(basename "$H")-$(printf '%s' "$H" | cksum | cut -d ' ' -f 1)"
+      mkdir -p "$H/state/watchdog/permission/$key-cookie.lock"
+      printf '%s\n' "$$" > "$H/state/watchdog/permission/$key-cookie.lock/pid"
+    fi
+    sleep 0.5
+    printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+    printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+    : > "$H/state/.afk"
+    run_wd 0 once >/dev/null 2>&1 || fail "the $mode away pass failed"
+    if [ "$mode" = locked ]; then
+      assert_equals 1 "$(grep -c 'another watchdog pass is acting on worker cookie' "$H/state/watchdog/actions.tsv")" "the busy lock is recorded: $(ledger | cut -f4-8)"
+    fi
+    if [ "$mode" != dry-run ]; then
+      assert_equals 1 "$(ledger_rows dialog page pending)" "the credential stop pages the owner: $(ledger | cut -f4-8)"
+    else
+      assert_equals 1 "$(ledger_rows dialog page dry-run)" "dry-run records the page it would send: $(ledger | cut -f4-8)"
+    fi
+    assert_no_grep "rvw7731cookie" "$H/state/watchdog/actions.tsv" "a session cookie in a credential picker stays out of the $mode ledger"
+    assert_equals 1 "$(grep -c 'withheld: a credential or sign-in prompt' "$H/state/watchdog/actions.tsv")" "the $mode ledger names the withheld prompt"
+    if [ -e "$H/paged.log" ]; then
+      assert_no_grep "rvw7731cookie" "$H/paged.log" "the page carries no session cookie"
+    fi
+  done
+  pass "a credential stop on an approval picker pages the owner without recording its pane text, even while another pass holds the worker lock"
+}
+
 test_worker_permission_dialog_pages_the_owner() {
   local dialog=$'Do you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently\n\nEsc to cancel'
   local question=$'Which plan should I follow?\n ❯ 1. Plan A (Recommended)\n   2. Plan B\n\nEnter to select · ↑/↓ to navigate · Esc to cancel'
@@ -6415,6 +6452,7 @@ fm_test_run \
   test_dialog_kind_ignores_conversation_rows \
   test_away_permission_dialog_pages_the_owner \
   test_worker_permission_dialog_pages_the_owner \
+  test_worker_credential_page_withholds_typed_values \
   test_low_context_undeliverable_nudge_leaves_frozen_recovery \
   test_homes_with_one_basename_keep_their_own_state \
   test_dialog_reserved_check_reads_only_dialog_rows \

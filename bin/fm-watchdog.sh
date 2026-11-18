@@ -32,6 +32,9 @@
 #   state/watchdog/subjects/<home-basename>-<path-cksum>   the previous observation of each subject.
 #   state/watchdog/near-loop/<home-basename>-<path-cksum>  epoch, evidence cksum, and answer of the last near-loop judgment.
 #   state/watchdog/escalated/<home-basename>-<path-cksum>  present after a restart loop; remove it to clear.
+#   state/watchdog/permission/<home-basename>-<path-cksum>-<task>.open      key and prompt checksum of the
+#                                worker prompt this watchdog reported as blocked and has not yet resolved.
+#   state/watchdog/permission/<home-basename>-<path-cksum>-<task>.declined  checksums of the worker prompts it declined.
 #   state/watchdog/last-read     epoch of the last ack-read.
 #   state/night-score/supervisor-gap.tsv  append-only supervisor-gap record of every watched home; docs/watchdog.md owns its rows.
 #   state/night-score/supervisor-activity.tsv  append-only activity-source record of every watched home; docs/watchdog.md owns its rows.
@@ -51,8 +54,9 @@
 #   <watched home>/state/monitor-status  one-line record of that home's monitor
 #                                unit status, rewritten atomically each pass and by monitor-read.
 #
-# Test seams, honoured only with FM_TEST_SEAM=1: FM_WD_NOW fixes the clock and
-# FM_WD_TEST_COMPOSER replaces the composer verdict for a plain test pane.
+# Test seams, honoured only with FM_TEST_SEAM=1: FM_WD_NOW fixes the clock,
+# FM_WD_TEST_COMPOSER replaces the composer verdict for a plain test pane, and
+# FM_WD_TEST_CONTROL replaces bin/fm-control.sh for the trust-dialog relaunch.
 #
 # Exit status: 0 on success, 2 on a usage error, 1 on any other failure.
 set -u
@@ -78,6 +82,8 @@ WD_COUNCIL_MAX_CHARS=2000
 # in an interactive Firstmate shell.
 PATH=$(fm_wd_user_bin_path "$PATH" "${HOME:-}")
 export PATH
+# shellcheck source=bin/fm-permission-prompt.sh
+. "$SCRIPT_DIR/fm-permission-prompt.sh"
 # shellcheck source=bin/fm-composer-lib.sh
 . "$SCRIPT_DIR/fm-composer-lib.sh"
 # shellcheck source=bin/fm-secret-lib.sh
@@ -135,6 +141,23 @@ wd_decisions_mode() {
     *) printf 'dry-run\n' ;;
   esac
 }
+
+# Worker permission prompts have their own switch. An unset `permission-route`
+# follows `mode`, `off` runs no classifier and keeps the report-only gap and
+# page for the dialogs fm_wd_pane_dialog reads, `act` acts even when `mode` is
+# dry-run, and any other value is a dry run.
+wd_permission_mode() {
+  case "${WD_FORCE_DRY:-}:$(cfg permission-route '')" in
+    *:off) printf 'off\n' ;;
+    1:*) printf 'dry-run\n' ;;
+    *:) wd_mode ;;
+    *:act) printf 'act\n' ;;
+    *) printf 'dry-run\n' ;;
+  esac
+}
+
+WD_CONTROL=$SCRIPT_DIR/fm-control.sh
+if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_WD_TEST_CONTROL:-}" ]; then WD_CONTROL=$FM_WD_TEST_CONTROL; fi
 
 # The mode one nudge runs under: the decision path sets WD_NUDGE_MODE for its own.
 wd_nudge_mode() { printf '%s\n' "${WD_NUDGE_MODE:-$(wd_mode)}"; }
@@ -880,7 +903,9 @@ wd_judge() {
 
 # 0 when a decision is the owner's: never nudged, put to council, or answered.
 wd_decision_reserved() {  # <task> <key> <summary>
-  case "$2" in captain-hold-*) return 0 ;; esac
+  # A permission-prompt hard stop is a credential, sign-in, spend, or
+  # destructive prompt, so it is the owner's whatever its summary says.
+  case "$2" in captain-hold-*|permission-prompt-hardstop) return 0 ;; esac
   fm_wd_reserved "$1 $2 $3" || fm_secret_like "$1 $2 $3" ||
     printf ',%s,' "$(cfg reserved-keys '')" | grep -Fq ",$2,"
 }
@@ -1594,7 +1619,7 @@ Pick the option that keeps work going on another model or account without buying
 # O_REC_SUBJECT, when set, is the worker this page belongs to, and that subject
 # has its own window so one pane does not consume another's or the home's.
 # The page carries no dialog text; the ledger row records which dialog fired,
-# withheld when it looks like a secret. Quiet mode is not paged: the owner is
+# withheld for a credential or sign-in prompt or when it looks like a secret. Quiet mode is not paged: the owner is
 # watching the session there.
 wd_page_permission() {
   local text id summary out rc subject who
@@ -1602,7 +1627,11 @@ wd_page_permission() {
   subject=${O_REC_SUBJECT:-$O_TAG}
   fm_wd_rate_ok "$LEDGER" "$O_HOME" dialog page "$(cfgi nudge-secs 900)" "$(wd_now)" "$subject" || return 0
   text=$(fm_wd_dialog_text "$O_PANE")
-  if fm_secret_like "$text"; then text='[withheld: the dialog text looks like a secret]'; fi
+  # A credential or sign-in stop may already hold a typed value the secret
+  # detector cannot recognize, so its text is never recorded.
+  if case "${WD_PP_REASON:-}" in credential|sign-in) true ;; *) false ;; esac; then
+    text='[withheld: a credential or sign-in prompt]'
+  elif fm_secret_like "$text"; then text='[withheld: the dialog text looks like a secret]'; fi
   text=${text:0:300}
   id=$(wd_id)
   if [ "$(wd_mode)" != act ]; then wd_rec "$id" dialog page dry-run "would page the owner; permission: $text"; return 0; fi
@@ -1624,6 +1653,328 @@ wd_page_permission() {
       wd_rec "$id" dialog page failed "no alert channel delivered the page (exit $rc)"
       wd_gap "permission dialog page failed on every alert channel" ;;
   esac
+}
+
+# --- worker permission prompts ------------------------------------------------
+# bin/fm-permission-prompt.sh owns the verdicts; docs/watchdog.md owns the
+# contract. A worker runs unattended, so a prompt on its pane has nobody to
+# answer it. These functions never select a Yes option and never press Enter.
+
+wd_pp_mark() { printf '%s/permission/%s-%s' "$WD" "$O_KEY" "$1"; }
+
+# wd_pp_status <id> <state> <key> <text>: one keyed line in the worker's own
+# status file, with the same best-effort fleet-ledger hook a worker uses.
+wd_pp_status() {
+  local f=$O_HOME/state/$1.status
+  printf '%s [at=%s] [key=%s]: %s\n' "$2" "$(wd_now)" "$3" "$4" >> "$f" 2>/dev/null || return 1
+  if [ -e "$O_HOME/config/fleet-ledger" ]; then
+    "$SCRIPT_DIR/fm-fleet-ledger.sh" appended "$O_HOME/config" "$f" >/dev/null 2>&1 || true
+  fi
+}
+
+# wd_pp_stop <id> <key> <prompt-hash> <text>: report a prompt nothing will
+# answer as blocked, once per key while that line stays open, so a prompt whose
+# rows keep changing (a spinner or a clock) does not append a line every pass.
+wd_pp_stop() {
+  local id=$1 key=$2 hash=$3 text=$4 mark prev
+  WD_PP_STOPPED=1
+  mark=$(wd_pp_mark "$id")
+  prev=$(cat "$mark.open" 2>/dev/null) || prev=
+  # A key another writer resolved, such as an fm-send --resolve-key answer, is
+  # no longer open, so the marker no longer de-duplicates it.
+  if [ -n "$prev" ] && ! status_open_decisions "$O_HOME/state/$id.status" 2>/dev/null \
+    | awk -F'\t' -v k="${prev%% *}" '$1 == k { f = 1 } END { exit !f }'; then
+    rm -f "$mark.open"
+    prev=
+  fi
+  [ "${prev%% *}" != "$key" ] || return 0
+  if [ "$(wd_permission_mode)" != act ]; then
+    wd_rate_open permission-prompt report "$(cfgi nudge-secs 900)" "$O_REC_SUBJECT" \
+      && wd_rec "$(wd_id)" permission-prompt report dry-run "would write blocked [key=$key]: $text"
+    return 0
+  fi
+  if [ -n "$prev" ] && [ "${prev%% *}" != "$key" ]; then
+    wd_pp_status "$id" resolved "${prev%% *}" "worker $id shows a different prompt now" || true
+  fi
+  mkdir -p "$WD/permission"
+  if ! wd_pp_status "$id" blocked "$key" "$text"; then
+    wd_rec "$(wd_id)" permission-prompt report failed "the blocked line could not be appended"
+    return 0
+  fi
+  if ! printf '%s %s\n' "$key" "$hash" 2>/dev/null > "$mark.open"; then
+    wd_rec "$(wd_id)" permission-prompt report failed "the blocked line was appended but its marker could not be written"
+    return 0
+  fi
+  wd_rec "$(wd_id)" permission-prompt report "done" "blocked [key=$key]: $text"
+}
+
+# wd_pp_clear <id>: the worker's pane shows no reported prompt any more.
+wd_pp_clear() {
+  local id=$1 mark prev
+  mark=$(wd_pp_mark "$id")
+  prev=$(cat "$mark.open" 2>/dev/null) || return 0
+  [ "$(wd_permission_mode)" = act ] || return 0
+  wd_pp_status "$id" resolved "${prev%% *}" "worker $id no longer shows the prompt" || return 0
+  rm -f "$mark.open"
+  wd_rec "$(wd_id)" permission-prompt report "done" "resolved [key=${prev%% *}]"
+}
+
+# wd_pp_steer <id> <prompt-hash>: the declined worker reads why, durably.
+wd_pp_steer() {
+  local id=$1 hash=$2 text rid
+  text="Watchdog (automated, not the owner): a permission prompt on your pane was declined automatically, because no person can approve prompts during unattended work. Do not repeat the same call. If it was a Bash command the harness could not check, rewrite it in a form it can check: quote heredoc delimiters (<<'EOF'), avoid unescaped backticks, or write the file with the Write or Edit tool. If the action is truly needed and no other form works, append a blocked: status line that names it instead of waiting for approval."
+  rid=$(wd_id)
+  # The watched home's own state, data, and config are bound explicitly, so an
+  # owner override exported to this pass never resolves the id in another home.
+  if FM_HOME=$O_HOME FM_STATE_OVERRIDE=$O_HOME/state FM_DATA_OVERRIDE=$O_HOME/data FM_CONFIG_OVERRIDE=$O_HOME/config \
+    fm_run_timed 60 "$SCRIPT_DIR/fm-send.sh" "$id" "$text" </dev/null >/dev/null 2>&1; then
+    wd_rec "$rid" permission-prompt steer "done" "rewrite instruction recorded in the worker's inbox"
+    return 0
+  fi
+  wd_rec "$rid" permission-prompt steer failed "the rewrite instruction could not be recorded"
+  wd_pp_stop "$id" permission-prompt-held "steer-$hash" "worker $id had a tool-approval prompt declined, but the rewrite instruction could not be recorded, so it may wait at its composer"
+  return 1
+}
+
+# wd_pp_decline <id> <harness> <prompt-hash>: Escape on a proven Claude
+# tool-approval prompt, verified gone, then the rewrite instruction. A repeated
+# prompt, the hourly cap, or a do-not-touch endpoint holds instead.
+wd_pp_decline() {
+  local id=$1 harness=$2 hash=$3 mark cap n rid live after after_dialog verdict tries=0
+  mark=$(wd_pp_mark "$id")
+  if grep -Fxq -- "$hash" "$mark.declined" 2>/dev/null; then
+    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows a tool-approval prompt that already had its one Escape attempt; nothing more is pressed"
+    return 1
+  fi
+  cap=$(cfgi permission-decline-cap 3)
+  # Every attempt counts, so a failed or unconfirmed Escape uses the cap too.
+  n=$(fm_wd_count_since "$LEDGER" "$O_HOME" permission-prompt decline '^pending$' "$(( $(wd_now) - 3600 ))" "$O_REC_SUBJECT")
+  if [ "$n" -ge "$cap" ]; then
+    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id had $n permission prompts declined within an hour, the cap; nothing more is answered"
+    return 1
+  fi
+  if wd_do_not_touch "$O_HOME" "$O_TARGET"; then
+    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows a tool-approval prompt, and its endpoint is on do-not-touch; nothing was answered"
+    return 1
+  fi
+  wd_rate_open permission-prompt decline "$(cfgi key-secs 120)" "$O_REC_SUBJECT" || return 1
+  rid=$(wd_id)
+  if [ "$(wd_permission_mode)" != act ]; then
+    wd_rec "$rid" permission-prompt decline dry-run "would press Escape on a claude tool-approval prompt and send the rewrite instruction"
+    return 1
+  fi
+  live=$(wd_capture "$O_BACKEND" "$O_TARGET" 60) || live=
+  verdict=$(fm_pp_classify "$live" "$harness") || verdict=
+  if [ "$verdict" != "$(printf 'route\ttool-approval')" ] || [ "$(fm_pp_hash "$live")" != "$hash" ]; then
+    wd_rec "$rid" permission-prompt decline refused "the prompt changed before the key; nothing was pressed"
+    return 1
+  fi
+  # The checksum and the attempt are kept before the key, so one prompt gets at
+  # most one Escape even when delivery or the check after it fails. A record
+  # that cannot be kept presses nothing.
+  # The attempt is recorded first, so a checksum on file always means the
+  # Escape was about to be sent.
+  if ! wd_rec "$rid" permission-prompt decline pending "press Escape on a claude tool-approval prompt"; then
+    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows a tool-approval prompt, and the attempt could not be recorded; nothing was answered"
+    return 1
+  fi
+  if ! { mkdir -p "$WD/permission" && printf '%s\n' "$hash" >> "$mark.declined"; } 2>/dev/null; then
+    wd_rec "$rid" permission-prompt decline failed "the prompt checksum could not be saved; nothing was pressed"
+    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows a tool-approval prompt, and its checksum could not be saved; nothing was answered"
+    return 1
+  fi
+  if ! fm_run_timed_fn 10 fm_control_send_feedback_dismiss "$O_BACKEND" "$O_TARGET" Escape "fm-$id" >/dev/null 2>&1; then
+    wd_rec "$rid" permission-prompt decline failed "key delivery failed"
+    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows a tool-approval prompt, and the Escape key could not be delivered; nothing was answered"
+    return 1
+  fi
+  # A slow redraw gets three looks before the decline counts as failed; no
+  # second key is pressed.
+  sleep "$(cfgi key-settle-secs 2)"
+  while :; do
+    after=$(wd_capture "$O_BACKEND" "$O_TARGET" 60) || after=
+    if [ -n "$after" ] && ! { fm_pp_classify "$after" "$harness" >/dev/null && [ "$(fm_pp_hash "$after")" = "$hash" ]; }; then
+      break
+    fi
+    tries=$((tries + 1))
+    [ "$tries" -lt 3 ] || break
+    sleep 1
+  done
+  if [ -z "$after" ] || { fm_pp_classify "$after" "$harness" >/dev/null && [ "$(fm_pp_hash "$after")" = "$hash" ]; }; then
+    wd_rec "$rid" permission-prompt decline failed "the prompt still shows after Escape"
+    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id still shows a tool-approval prompt after one Escape; nothing more is pressed"
+    return 1
+  fi
+  wd_rec "$rid" permission-prompt decline "done" "the prompt left the pane"
+  # The steer's doorbell types a line and Enter, so it rings only when the
+  # screen after Escape shows no dialog and no prompt of any kind.
+  after_dialog=$(fm_wd_pane_dialog "$after" "$harness") || after_dialog=
+  if verdict=$(fm_pp_classify "$after" "$harness" "${after_dialog:-none}"); then
+    case "$verdict" in
+      hardstop*) wd_pp_reason "${verdict#*$'\t'}"; wd_pp_stop "$id" permission-prompt-hardstop "after-$hash" "worker $id shows a ${verdict#*$'\t'} prompt after a declined tool call; nothing was answered, and no instruction was sent" ;;
+      *) wd_pp_stop "$id" permission-prompt-held "after-$hash" "worker $id shows another permission prompt after a declined tool call (${verdict#*$'\t'}); nothing was answered, and no instruction was sent" ;;
+    esac
+    return 1
+  fi
+  if [ -n "$after_dialog" ]; then
+    wd_pp_stop "$id" permission-prompt-held "after-$hash" "worker $id shows a $after_dialog dialog after a declined tool call; nothing was answered, and no instruction was sent"
+    return 1
+  fi
+  # The doorbell types into the composer, so the instruction goes only when
+  # the composer after Escape is proven empty, never on an unread screen.
+  # The read runs in a subshell so the pass's own composer reading stays.
+  local composer
+  composer=$(wd_read_composer; printf '%s' "$O_COMPOSER")
+  if [ "$composer" != empty ]; then
+    wd_pp_stop "$id" permission-prompt-held "after-$hash" "worker $id shows no proven empty composer after a declined tool call (it reads $composer); nothing was answered, and no instruction was sent"
+    return 1
+  fi
+  wd_pp_steer "$id" "$hash" || return 1
+  # The prompt is handled once the instruction is recorded, so a ledger write
+  # that fails after it never turns the decline into a waiting prompt.
+  wd_pp_clear "$id" || true
+  return 0
+}
+
+# wd_pp_relaunch <id> <prompt-hash>: a workspace-trust dialog gets no key.
+# bin/fm-control.sh relaunches the worker, and its spawn pre-registers the
+# worktree's trust entry. Only an Orca worker is relaunched: there fm-control
+# closes the recorded terminal without a key (orca_relaunch_close), while on
+# any other backend its stop can press the harness's interrupt key into a
+# worker still recorded as busy, so that dialog is held. fm-control refuses
+# rather than typing into a dialog it cannot close, and that refusal holds.
+wd_pp_relaunch() {
+  local id=$1 hash=$2 rid err note
+  if wd_do_not_touch "$O_HOME" "$O_TARGET"; then
+    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows the workspace-trust dialog, and its endpoint is on do-not-touch; nothing was answered"
+    return 1
+  fi
+  if [ "$O_BACKEND" != orca ]; then
+    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows the workspace-trust dialog, and a relaunch on the $O_BACKEND backend can press a key into it first; nothing was relaunched"
+    return 1
+  fi
+  if ! wd_rate_open permission-prompt relaunch "$(cfgi permission-relaunch-secs 3600)" "$O_REC_SUBJECT"; then
+    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows the workspace-trust dialog again after a relaunch inside the window; nothing was answered"
+    return 1
+  fi
+  rid=$(wd_id)
+  if [ "$(wd_permission_mode)" != act ]; then
+    wd_rec "$rid" permission-prompt relaunch dry-run "would relaunch the worker so its launch pre-registers workspace trust"
+    return 1
+  fi
+  # The pending row is what keeps the next relaunch outside its window, so a
+  # relaunch that cannot be recorded is never started.
+  if ! wd_rec "$rid" permission-prompt relaunch pending "workspace-trust dialog: controlled relaunch"; then
+    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows the workspace-trust dialog, and the relaunch could not be recorded; nothing was relaunched"
+    return 1
+  fi
+  note="The previous launch stopped on the workspace-trust dialog before it could work. The watchdog relaunched this worker so its launch pre-registers the worktree's trust entry; no key was typed into the dialog. Continue the task from these instructions."
+  # Bound to the watched home, as the instruction in wd_pp_steer is.
+  if err=$(FM_HOME=$O_HOME FM_STATE_OVERRIDE=$O_HOME/state FM_DATA_OVERRIDE=$O_HOME/data FM_CONFIG_OVERRIDE=$O_HOME/config \
+    fm_run_timed "$(cfgi relaunch-timeout-secs 900)" "$WD_CONTROL" "$id" relaunch --note "$note" </dev/null 2>&1 >/dev/null); then
+    wd_rec "$rid" permission-prompt relaunch "done" "worker relaunched"
+    wd_pp_clear "$id"
+    return 0
+  fi
+  err=$(printf '%s\n' "$err" | sed '/^[[:space:]]*$/d' | tail -n 1 | cut -c1-200)
+  wd_rec "$rid" permission-prompt relaunch failed "relaunch refused: ${err:-no reason given}"
+  wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows the workspace-trust dialog, and a controlled relaunch was refused; nothing was answered"
+  return 1
+}
+
+# wd_pp_lock <id>: one pass at a time may press a key on, relaunch, or write
+# the open marker of one worker, so overlapping run and once passes never both
+# send an Escape or both write a blocked line. It is the shared pid lock
+# (fm_lock_try_acquire in bin/fm-wake-lib.sh): a lock whose holder process is
+# gone is reclaimed under its steal mutex, so two passes reclaiming one stale
+# lock never both hold it, and a release never removes another pass's lock.
+wd_pp_lock() {
+  mkdir -p "$WD/permission" 2>/dev/null || return 1
+  fm_lock_try_acquire "$(wd_pp_mark "$1").lock"
+}
+
+wd_pp_unlock() {
+  fm_lock_release "$(wd_pp_mark "$1").lock" || true
+}
+
+# wd_pp_reason <reason>: the stop reason the page reads. A credential or
+# sign-in reason already set by an earlier read of this pass is never
+# replaced, because the page still carries that read's pane.
+wd_pp_reason() {
+  case "${WD_PP_REASON:-}" in credential|sign-in) return 0 ;; esac
+  WD_PP_REASON=$1
+}
+
+# wd_permission_prompt <id> <harness> <screen> <dialog>: the unattended route
+# for one worker pane. 0 = the prompt left the pane; 1 = a prompt still waits;
+# 2 = no prompt verdict, or `permission-route=off`.
+wd_permission_prompt() {
+  local id=$1 harness=$2 screen=$3 dialog=$4 verdict kind reason hash rc live live_dialog
+  # Every read below, including the checks before and after a key, must see
+  # the pane as it is now, never a shared Orca reply cached a moment earlier.
+  local -x FM_ORCA_CLI_CACHE=0
+  WD_PP_STOPPED=
+  WD_PP_REASON=
+  [ "$(wd_permission_mode)" != off ] || return 2
+  if ! verdict=$(fm_pp_classify "$screen" "$harness" "$dialog"); then
+    # No verdict and no reported prompt leaves nothing to write.
+    [ -e "$(wd_pp_mark "$id").open" ] || return 2
+    kind=none
+  else
+    kind=${verdict%%$'\t'*}
+    reason=${verdict#*$'\t'}
+    case "$kind" in hardstop|hold|trust|route) ;; *) return 2 ;; esac
+    # The reason is set before the lock, so a busy lock never lets a
+    # credential or sign-in page record the pane text.
+    [ "$kind" != hardstop ] || wd_pp_reason "$reason"
+  fi
+  # Every marker write for one worker runs under its lock, so overlapping run
+  # and once passes never both write a blocked line or both send an Escape.
+  if ! wd_pp_lock "$id"; then
+    [ "$kind" != none ] || return 2
+    wd_rec "$(wd_id)" permission-prompt report refused "another watchdog pass is acting on worker $id; nothing was pressed"
+    # A held prompt or hard stop still gets its waiting gap and away page;
+    # only the marker write waits for the lock.
+    case "$kind" in hardstop|hold) WD_PP_STOPPED=1 ;; esac
+    return 1
+  fi
+  # This pass's screen can predate a prompt another pass reported, so the
+  # pane is read again under the lock and only that fresh verdict is acted
+  # on: an older screen never resolves or replaces a newer report. A failed
+  # read, including a dialog read that returns `unknown`, writes nothing.
+  live=$(wd_capture "$O_BACKEND" "$O_TARGET" 60) || live=
+  live_dialog=$(wd_observe_dialog "$O_BACKEND" "$O_TARGET" "fm-$id" "${harness:-unknown}") || live_dialog=
+  if [ -z "$live" ] || [ "$live_dialog" = unknown ]; then
+    wd_pp_unlock "$id"
+    [ "$kind" != none ] || return 2
+    wd_rec "$(wd_id)" permission-prompt report refused "worker $id could not be read again under its lock; nothing was pressed or written"
+    case "$kind" in hardstop|hold) WD_PP_STOPPED=1 ;; esac
+    return 1
+  fi
+  if ! verdict=$(fm_pp_classify "$live" "$harness" "${live_dialog:-none}"); then
+    wd_pp_clear "$id"
+    wd_pp_unlock "$id"
+    return 2
+  fi
+  kind=${verdict%%$'\t'*}
+  reason=${verdict#*$'\t'}
+  case "$kind" in hardstop|hold|trust|route) ;; *) wd_pp_unlock "$id"; return 2 ;; esac
+  # A credential or sign-in reason from either read is kept, so neither
+  # read's pane text is recorded on the page.
+  [ "$kind" != hardstop ] || wd_pp_reason "$reason"
+  hash=$(fm_pp_hash "$live")
+  case "$kind" in
+    hardstop)
+      wd_pp_stop "$id" permission-prompt-hardstop "$hash" "worker $id shows a $reason prompt; nothing was answered, and the watchdog never answers credential, sign-in, spend, destructive, or reserved prompts"
+      rc=1 ;;
+    hold)
+      wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id waits on a permission prompt the watchdog does not answer ($reason); nothing was answered"
+      rc=1 ;;
+    trust) wd_pp_relaunch "$id" "$hash"; rc=$? ;;
+    route) wd_pp_decline "$id" "$harness" "$hash"; rc=$? ;;
+  esac
+  wd_pp_unlock "$id"
+  return "$rc"
 }
 
 # A primary on Claude's usage-limit auto-wait takes no turn until the reset,
@@ -2165,12 +2516,14 @@ wd_worker_metas() {  # <home>
 }
 
 # Read each recorded worker pane with the home dialog detector.
-# mode=page dismisses a known feedback or bug-report dialog, pages a permission
-# dialog through wd_page_permission, and names a usage-limit pick. It sends no
+# mode=page dismisses a known feedback or bug-report dialog, routes a
+# permission, trust, or sign-in prompt through wd_permission_prompt, pages a
+# permission dialog that still waits through wd_page_permission, and
+# names a usage-limit pick. Escape on a proven tool-approval prompt is its only
 # other key. mode=print reports the read and does not act. A gone endpoint is
 # not a dialog.
 wd_visit_worker_dialogs() {
-  local mode=$1 id meta backend target harness screen dialog mismatch
+  local mode=$1 id meta backend target harness screen dialog mismatch prompt
   local saved_pane saved_dialog_pane saved_backend saved_target saved_harness saved_dialog saved_id
   local saved_composer saved_composer_text saved_composer_above saved_draft
   saved_pane=$O_PANE
@@ -2186,6 +2539,9 @@ wd_visit_worker_dialogs() {
   saved_draft=${O_DRAFT:-}
   while IFS=$'\t' read -r id meta; do
     [ -n "$id" ] || continue
+    # A stop reason belongs to one worker's pass, including its page, never
+    # to the next pane.
+    WD_PP_REASON=
     backend=$(fm_backend_of_meta "$meta")
     target=$(fm_backend_target_of_meta "$meta")
     harness=$(fm_meta_get "$meta" harness 2>/dev/null) || harness=
@@ -2229,6 +2585,34 @@ wd_visit_worker_dialogs() {
       wd_quota_guard_warning "$id"
       unset O_REC_SUBJECT
     fi
+    prompt=2
+    case "$dialog" in
+      permission|question|usage-limit|model-switch|'')
+        if [ -n "$screen" ]; then
+          O_BACKEND=$backend
+          O_TARGET=$target
+          O_REC_SUBJECT="worker:$id"
+          wd_permission_prompt "$id" "$harness" "$screen" "${dialog:-none}"
+          prompt=$?
+          unset O_REC_SUBJECT
+        fi
+        ;;
+    esac
+    # A held prompt or hard stop on a screen the dialog reader did not label
+    # permission, such as a Codex dialog or a declining picker, still gets
+    # the waiting gap and the away page. A decline that only waits for its
+    # next pass, with no blocked line, does not.
+    if [ "$prompt" = 1 ] && [ "$dialog" != permission ] && [ -n "${WD_PP_STOPPED:-}" ]; then
+      O_BACKEND=$backend
+      O_TARGET=$target
+      O_PANE=$screen
+      O_DIALOG=permission
+      O_REC_SUBJECT="worker:$id"
+      wd_gap "permission prompt waiting on worker $id; the watchdog does not answer it"
+      wd_page_permission
+      O_DIALOG=$saved_dialog
+      unset O_REC_SUBJECT
+    fi
     case "$dialog" in
       feedback)
         O_BACKEND=$backend
@@ -2250,8 +2634,10 @@ wd_visit_worker_dialogs() {
         O_PANE=$screen
         O_DIALOG=$dialog
         O_REC_SUBJECT="worker:$id"
-        wd_gap "permission dialog waiting on worker $id; the watchdog never answers permission prompts"
-        wd_page_permission
+        if [ "$prompt" != 0 ]; then
+          wd_gap "permission dialog waiting on worker $id; the watchdog does not select an answer, and this one was neither declined nor relaunched"
+          wd_page_permission
+        fi
         unset O_REC_SUBJECT
         ;;
       usage-limit)
@@ -2276,7 +2662,7 @@ wd_visit_worker_dialogs() {
   O_COMPOSER_TEXT=$saved_composer_text
   O_COMPOSER_ABOVE=$saved_composer_above
   O_DRAFT=$saved_draft
-  unset O_REC_SUBJECT
+  unset O_REC_SUBJECT WD_PP_REASON
 }
 
 # wd_home_awaits_restart <home>: a restart of that home is still pending pickup.
