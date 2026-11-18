@@ -26,8 +26,8 @@
 # an older merged head under the same branch name, or a failed proof read keep
 # the branch flagged, and the finding names the merged-proof result.
 #
-# Open PR lookups use gh-axi and merged-head lookups use gh's authenticated
-# API for GitHub publication targets. Other forges, missing
+# PR lookups use gh-axi, including its authenticated API for merged heads, for
+# GitHub publication targets. Other forges, missing
 # tools, malformed responses, and failed reads are explicit unknowns. A PR
 # never hides local follow-up commits. Findings request supervisor action,
 # including escalation of a blocked pipeline start; retry authority and all
@@ -96,24 +96,32 @@ pr_evidence() { # <project> <branch> <forge>
 }
 
 # Prints landed when a merged PR's head is exactly <head>, as fm-teardown.sh's
-# merged-PR proof requires; otherwise none or an explicit unknown.
+# merged-PR proof requires; otherwise none or an explicit unknown. The PR head
+# lives in origin, which in a fork workflow differs from the destination.
 merged_evidence() { # <project> <branch> <head> <forge>
-  local out sha url
+  local source owner out shas sha
   github_target "$1" "$4" || return 0
-  command -v gh >/dev/null 2>&1 || { printf 'unknown (gh absent)'; return; }
-  out=$(gh api --hostname "$HOST" --method GET "repos/$REPO/pulls" \
-    -f state=closed -f head="${REPO%%/*}:$2" -F per_page=100 \
-    --jq '.[] | select(.merged_at != null) | .head.sha + "\t" + .html_url' 2>/dev/null) || {
+  source=$(fm_role_remote_identity "$(git -C "$1" remote get-url origin 2>/dev/null)" "$1")
+  owner=${source#*/}; owner=${owner%%/*}
+  case "$source" in
+    "$HOST"/?*/?*) ;;
+    *) printf 'unknown (no GitHub origin)'; return ;;
+  esac
+  case "$2" in *[!A-Za-z0-9._/-]*) printf 'unknown (branch name not queryable)'; return ;; esac
+  command -v gh-axi >/dev/null 2>&1 || { printf 'unknown (gh-axi absent)'; return; }
+  out=$(gh-axi api --hostname "$HOST" "/repos/$REPO/pulls?state=closed&head=$owner:$2&per_page=100" \
+    --jq '[.[] | select(.merged_at != null) | .head.sha] | join(" ")' --full 2>/dev/null) || {
     printf 'unknown (forge read failed)'; return
   }
-  while IFS=$'\t' read -r sha url; do
-    [ -n "$sha$url" ] || continue
-    case "$sha" in *[!0-9a-f]*|'') printf 'unknown (invalid forge response)'; return ;; esac
+  printf '%s\n' "$out" | grep -qx '  truncated: false' || { printf 'unknown (invalid forge response)'; return; }
+  [ "$(printf '%s\n' "$out" | grep -c '^  body: ')" = 1 ] || { printf 'unknown (invalid forge response)'; return; }
+  shas=$(printf '%s\n' "$out" | sed -n 's/^  body: //p')
+  case "$shas" in \"*\") shas=${shas#\"}; shas=${shas%\"} ;; esac
+  case "$shas" in *[!0-9a-f\ ]*) printf 'unknown (invalid forge response)'; return ;; esac
+  for sha in $shas; do
     [ "${#sha}" = 40 ] || { printf 'unknown (invalid forge response)'; return; }
     [ "$sha" != "$3" ] || { printf landed; return; }
-  done <<EOF
-$out
-EOF
+  done
   printf none
 }
 

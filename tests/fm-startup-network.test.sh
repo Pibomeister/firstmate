@@ -887,8 +887,7 @@ EOF
   # Deliberately no working forge client: its unknown verdict must not hide the
   # unpublished branch or turn a partial read into a clean startup report.
   printf '#!/usr/bin/env bash\nexit 1\n' > "$root/bin/gh-axi"
-  printf '#!/usr/bin/env bash\nexit 1\n' > "$root/bin/gh"
-  chmod +x "$root/bin/gh-axi" "$root/bin/gh"
+  chmod +x "$root/bin/gh-axi"
   printf '%s\n' $$ > "$home/state/.lock"
   FM_FAKE_BOOTSTRAP_LOG="$log" run_stage "$home" "$root" run --locked 0
   report=$(run_stage "$home" "$root" report)

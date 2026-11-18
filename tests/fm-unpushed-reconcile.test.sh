@@ -14,7 +14,16 @@ cat > "$TMP_ROOT/fakebin/gh-axi" <<'SH'
 printf '%s\n' "$*" >> "$FM_GH_LOG"
 [ "${FM_GH_FAIL:-0}" = 0 ] || exit 1
 [ -z "${FM_GH_SLEEP:-}" ] || sleep "$FM_GH_SLEEP"
-if [ "${FM_GH_OPEN:-0}" = 1 ]; then
+if [ "$1" = api ]; then
+  # GitHub's head filter selects PRs whose head branch lives in that owner.
+  [ "${FM_GH_API_FAIL:-0}" = 0 ] || exit 1
+  case "$*" in
+    *"head=${FM_GH_MERGED_OWNER:-example}:"*) shas=${FM_GH_MERGED_HEAD:-} ;;
+    *) shas='' ;;
+  esac
+  if [ -n "$shas" ]; then printf 'api_response:\n  body: %s\n  truncated: false\n' "$shas"
+  else printf 'api_response:\n  body: ""\n  truncated: false\n'; fi
+elif [ "${FM_GH_OPEN:-0}" = 1 ]; then
   printf 'count: 1\npull_requests[1]{url}:\n  "https://github.com/example/demo/pull/12"\n'
 else
   printf 'count: 0\npull_requests: []\n'
@@ -30,14 +39,7 @@ else
   exit 1
 fi
 SH
-cat > "$TMP_ROOT/fakebin/gh" <<'SH'
-#!/usr/bin/env bash
-printf 'gh %s\n' "$*" >> "$FM_GH_LOG"
-[ "${FM_GH_FAIL:-0}" = 0 ] && [ "${FM_GH_API_FAIL:-0}" = 0 ] || exit 1
-[ -z "${FM_GH_SLEEP:-}" ] || sleep "$FM_GH_SLEEP"
-[ -z "${FM_GH_MERGED_HEAD:-}" ] || printf '%s\thttps://github.com/example/demo/pull/9\n' "$FM_GH_MERGED_HEAD"
-SH
-chmod +x "$TMP_ROOT/fakebin/gh-axi" "$TMP_ROOT/fakebin/gh" "$TMP_ROOT/fakebin/tasks-axi"
+chmod +x "$TMP_ROOT/fakebin/gh-axi" "$TMP_ROOT/fakebin/tasks-axi"
 export PATH="$TMP_ROOT/fakebin:$PATH"
 export FM_GH_LOG="$TMP_ROOT/gh.log"
 
@@ -189,6 +191,21 @@ out=$(FM_GH_API_FAIL=1 FM_GH_MERGED_HEAD="$(git -C "$PROJECT" rev-parse HEAD)" s
 assert_contains "$out" 'branch=fm/task' 'a failed merged-proof read hid the branch'
 assert_contains "$out" 'merged=unknown' 'a failed merged-proof read became a definite answer'
 pass 'a failed merged-proof lookup keeps the branch flagged as unknown'
+
+new_world merged-fork-head
+git -C "$PROJECT" remote set-url origin https://github.com/forker/demo.git
+git -C "$PROJECT" remote add upstream https://github.com/example/demo.git
+squash_then_edit_same_hunk
+merged_head=$(git -C "$PROJECT" rev-parse HEAD)
+assert_equals '' "$(FM_GH_MERGED_OWNER=forker FM_GH_MERGED_HEAD=$merged_head scan)" \
+  'a merged PR from the origin fork at the exact local head was flagged'
+printf 'follow-up\n' > "$PROJECT/follow-up.txt"
+git -C "$PROJECT" add follow-up.txt
+git -C "$PROJECT" -c user.name=Test -c user.email=test@example.com commit -qm follow-up
+out=$(FM_GH_MERGED_OWNER=forker FM_GH_MERGED_HEAD=$merged_head scan)
+assert_contains "$out" 'branch=fm/task' 'a merged fork PR hid newer local commits'
+assert_contains "$out" 'merged=none' 'an older merged fork head was treated as this head'
+pass 'a fork PR head is looked up in origin and still binds to the exact local head'
 
 new_world base-branch
 git -C "$PROJECT" update-ref refs/remotes/origin/release refs/remotes/origin/main
