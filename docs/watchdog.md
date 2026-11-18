@@ -428,6 +428,17 @@ An old age is not a stall by itself: an idle second mate is healthy, and the fro
 `config/watchdog` is local and gitignored, with one `key=value` per line.
 The last line for a key wins, and `#` lines are comments.
 An absent file means dry-run on the owner home alone.
+A home that opts in copies these two lines into `config/watchdog`:
+
+```
+mode=act
+restart=on
+```
+
+Any `mode` other than `act` stays dry-run.
+`restart=on` without `mode=act` does not restart.
+The next `once` pass reads `mode` and `restart`.
+Those two keys need no process restart.
 
 | Key | Default | Meaning |
 | --- | --- | --- |

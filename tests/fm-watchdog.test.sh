@@ -1938,6 +1938,89 @@ wait_pickup() {
   return 1
 }
 
+restart_pending_rows() {
+  awk -F'\t' '$6 == "restart" && $7 == "pending"' "$H/state/watchdog/actions.tsv" 2>/dev/null | wc -l | tr -d ' '
+}
+
+test_absent_config_stays_dry_run() {
+  make_home $'Captain session\n> '
+  rm -f "$H/config/watchdog"
+  printf '%s\n' "$H/claude" > "$H/config/claude-account"
+  transcript 3000 "Working." "Testing." "Green."
+  owe_input 3000
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+  assert_grep "mode dry-run" "$H/data/watchdog/status.md" "an absent file reports dry-run"
+  assert_equals 1 "$(ledger_rows frozen nudge dry-run)" "the stall is recorded as dry-run: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows frozen nudge pending)" "dry-run never records pending"
+  assert_equals 0 "$(restart_pending_rows)" "no restart pending: $(ledger | cut -f5-8)"
+  [ ! -s "$H/typed.log" ] || fail "dry-run typed into the pane: $(cat "$H/typed.log")"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "dry-run stopped the lock holder"
+  pass "absent config/watchdog: a proven stall stays dry-run and does not restart"
+}
+
+test_opt_in_act_and_restart_on() {
+  make_home $'Captain session\n> ' "restart=on
+max-nudges=0
+pickup-secs=600
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working." "Testing." "Green."
+  owe_input 3000
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+  assert_grep "mode act" "$H/data/watchdog/status.md" "opt-in reports act"
+  assert_grep "restart on" "$H/data/watchdog/status.md" "opt-in reports restart on"
+  assert_equals 1 "$(ledger_rows frozen restart pending)" "a proven stall restarts: $(ledger | cut -f5-8)"
+  wait_pickup || fail "the restart-command never ran: $(ledger | cut -f5-8)"
+  kill -0 "$LOCKPID" 2>/dev/null && fail "the old session still runs"
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  pass "mode=act and restart=on: a proven stall acts and restarts"
+}
+
+test_act_without_restart_does_not_restart() {
+  make_home $'Captain session\n> ' 'max-nudges=0'
+  transcript 3000 "Working." "Testing." "Green."
+  owe_input 3000
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+  assert_grep "mode act" "$H/data/watchdog/status.md" "act without restart=on still reports act"
+  assert_equals 1 "$(ledger_rows frozen restart refused)" "restart off refuses at the gate: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(restart_pending_rows)" "no restart pending"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "restart off stopped the lock holder"
+
+  make_home $'Captain session\n> '
+  transcript 3000 "Working." "Testing." "Green."
+  owe_input 3000
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows frozen nudge pending)" "act still delivers a nudge: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(restart_pending_rows)" "default restart off starts no restart"
+  wait_typed ": fm-op " || wait_typed "operational-inbox" || fail "the doorbell never reached the pane: $(cat "$H/typed.log")"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "a nudge stopped the lock holder"
+  pass "mode=act without restart=on: a stall acts and does not restart"
+}
+
+test_malformed_mode_stays_dry_run() {
+  local mode
+  for mode in yes ACT; do
+    make_home $'Captain session\n> ' "mode=$mode
+restart=on
+max-nudges=0
+restart-command=/bin/true"
+    transcript 3000 "Working." "Testing." "Green."
+    owe_input 3000
+    run_wd 0 once >/dev/null 2>&1
+    run_wd 1000 once >/dev/null 2>&1
+    assert_grep "mode dry-run" "$H/data/watchdog/status.md" "mode=$mode reports dry-run"
+    assert_equals 1 "$(ledger_rows frozen restart dry-run)" "mode=$mode records would restart: $(ledger | cut -f5-8)"
+    assert_equals 0 "$(restart_pending_rows)" "mode=$mode starts no restart"
+    [ ! -s "$H/typed.log" ] || fail "mode=$mode typed into the pane: $(cat "$H/typed.log")"
+    kill -0 "$LOCKPID" 2>/dev/null || fail "mode=$mode stopped the lock holder"
+  done
+  pass "a mode other than act stays dry-run even with restart=on"
+}
+
 # End the lock holder, then stamp the anchor a real bin/fm-lock.sh writes for it.
 kill_holder_with_anchor() {
   printf '%s\nanchor_pid=%s\nanchor_start=Sat Nov  1 02:00:00 2026\nbackend=tmux\nterminal=%s\nworktree=%s\n' "$SID" "$LOCKPID" "$T" "$H" > "$H/state/.lock-session"
@@ -6427,6 +6510,10 @@ fm_test_run \
   test_primary_without_lock_identity_never_trusts_heartbeat_endpoint \
   test_restart_vetoed_by_running_turn \
   test_restart_verified_pickup_and_loop_stop \
+  test_absent_config_stays_dry_run \
+  test_opt_in_act_and_restart_on \
+  test_act_without_restart_does_not_restart \
+  test_malformed_mode_stays_dry_run \
   test_captain_record_follows_the_lock_owner \
   test_captain_record_ignores_a_heartbeat_written_outside_the_owner \
   test_no_action_while_restart_awaits_pickup \
