@@ -454,9 +454,9 @@ watch_lock_age() {  # <path>; retain fm_path_age's future-mtime semantics
   echo $(( now - m ))
 }
 # The liveness beacon is touched at the start of each cycle, when a
-# pane-staleness record begins after the previous record has returned, and
-# when that scan returns. A subordinate that has not returned does not refresh
-# it, so a stuck capture still ages past grace. After the scan, the beacon can
+# pane-staleness record has returned, and when that scan returns. A subordinate
+# that has not returned does not refresh it, so a stuck capture still ages
+# past grace. After the scan, the beacon can
 # still age through the rest of the cycle and the terminal wait, up to one
 # in-flight record plus POLL seconds. fm_poll_derived_grace
 # (bin/fm-wake-lib.sh, already sourced transitively above) is the single owner
@@ -5616,7 +5616,6 @@ EOF
   watch_stage pane-staleness
   parked_gate_scan_begin
   while IFS= read -r w; do
-    watch_record_progress_beat
     kind=$(window_kind "$w")
     task=$(window_to_task "$w" "$STATE")
     # Steering-inbox loss detection runs before the secondmate stale
@@ -5638,9 +5637,13 @@ EOF
     # this guard: reaching it would require backlog reads for windows this gate
     # deliberately skips, putting that read on the ordinary poll hot path.
     if [ "$kind" = secondmate ] && ! status_is_paused_or_captain_held "$last"; then
+      watch_record_progress_beat
       continue
     fi
-    watcher_capture "$(window_backend "$w")" "$w" 40 "$(window_label "$w")" || continue
+    watcher_capture "$(window_backend "$w")" "$w" 40 "$(window_label "$w")" || {
+      watch_record_progress_beat
+      continue
+    }
     tail40=$WATCHER_CAPTURE
     # The matcher is already defined in this shell. It reads the capture this
     # poll already takes, and a miss drops a name the away daemon saved.
@@ -5664,6 +5667,7 @@ EOF
     if [ "$busy_now" -ne 0 ] && dismiss_pane_feedback_dialog "$w" "$tail40"; then
       echo "$h" > "$hf"
       echo 1 > "$cf"
+      watch_record_progress_beat
       continue
     fi
     if [ "$h" = "$prev" ]; then
@@ -5919,6 +5923,7 @@ EOF
         clear_pause_tracking "$key"
       fi
     fi
+    watch_record_progress_beat
   done < <(recorded_windows)
   hung_ladder_prune
   watch_record_progress_beat
