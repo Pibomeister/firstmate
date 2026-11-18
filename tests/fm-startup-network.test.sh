@@ -37,6 +37,8 @@ trap fm_test_cleanup EXIT
 # and how its result is published; bin/fm-bootstrap.sh's own behavior is owned by
 # tests/fm-bootstrap.test.sh, so pinning it here would duplicate that owner and
 # make these assertions depend on unrelated tool detection.
+# The gone-upstream case asks that stand-in to run the real fleet refresh,
+# exercising its pruning behavior across the deferred stage's environment.
 new_world() {
   local name=$1 w home root
   w="$TMP_ROOT/$name"
@@ -66,6 +68,9 @@ if [ -n "${FM_TIMING_LOG:-}" ]; then
 fi
 [ -z "${FM_FAKE_BOOTSTRAP_SLEEP:-}" ] || sleep "$FM_FAKE_BOOTSTRAP_SLEEP"
 [ -z "${FM_FAKE_BOOTSTRAP_OUT:-}" ] || printf '%s\n' "$FM_FAKE_BOOTSTRAP_OUT"
+if [ -n "${FM_FAKE_FLEET_PROJECT:-}" ]; then
+  "$(dirname "$0")/fm-fleet-sync.sh" "$FM_FAKE_FLEET_PROJECT"
+fi
 exit "${FM_FAKE_BOOTSTRAP_RC:-0}"
 SH
   chmod +x "$root/bin/fm-bootstrap.sh"
@@ -859,6 +864,135 @@ EOF
   pass "fm-startup-network: a held publish lock ends the worker inside its budget with a failed-rerun record"
 }
 
+test_unpublished_branch_recovery_is_durable_and_requires_the_lock() {
+  local rec home root log project report
+  rec=$(new_world unpublished-branch)
+  IFS='|' read -r home root log <<EOF
+$rec
+EOF
+  project="$home/projects/demo"
+  mkdir -p "$project" "$home/data"
+  printf '%s\n' '- demo [no-mistakes] - fixture' > "$home/data/projects.md"
+  printf '%s\n' '- [ ] task - example' > "$home/data/backlog.md"
+  git -C "$project" init -q -b main
+  git -C "$project" -c user.name=Test -c user.email=test@example.com commit -qm base --allow-empty
+  git -C "$project" remote add origin https://github.com/example/demo.git
+  git -C "$project" update-ref refs/remotes/origin/main HEAD
+  git -C "$project" checkout -qb fm/task
+  printf 'change\n' > "$project/change.txt"
+  git -C "$project" add change.txt
+  git -C "$project" -c user.name=Test -c user.email=test@example.com commit -qm change
+  printf 'project=%s\nbranch=fm/task\nkind=ship\nmode=no-mistakes\n' "$project" > "$home/state/task.meta"
+  printf 'blocked [at=100] [key=nm-start]: run startup timed out\n' > "$home/state/task.status"
+  # Deliberately no working forge client: its unknown verdict must not hide the
+  # unpublished branch or turn a partial read into a clean startup report.
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$root/bin/gh-axi"
+  chmod +x "$root/bin/gh-axi"
+  printf '%s\n' $$ > "$home/state/.lock"
+  FM_FAKE_BOOTSTRAP_LOG="$log" run_stage "$home" "$root" run --locked 0
+  report=$(run_stage "$home" "$root" report)
+  assert_not_contains "$report" 'UNPUSHED:' 'a lock-refused startup inspected task branches'
+
+  FM_FAKE_BOOTSTRAP_LOG="$log" run_stage "$home" "$root" run --locked 1 --lock-pid $$
+  report=$(run_stage "$home" "$root" report)
+  assert_contains "$report" 'branch=fm/task' 'the deferred startup lost the unpublished branch'
+  assert_contains "$report" '[key=nm-start]' 'the deferred startup lost its open startup blocker'
+  wait_for_startup_network_wake "$home" || fail 'the unpublished branch never produced a durable startup wake'
+  pass 'fm-startup-network: unpublished branches and startup blockers survive in a durable locked-start report'
+}
+
+test_refresh_preserves_unpublished_gone_upstream_before_scanning() {
+  local rec home root log project remote report
+  rec=$(new_world unpublished-gone-upstream)
+  IFS='|' read -r home root log <<EOF
+$rec
+EOF
+  project="$home/projects/demo"
+  remote="$home/origin.git"
+  mkdir -p "$project" "$home/data"
+  printf '%s\n' '- demo [no-mistakes] - fixture' > "$home/data/projects.md"
+  printf '%s\n' '- [ ] task - example' > "$home/data/backlog.md"
+  git init -q --bare -b main "$remote"
+  git -C "$project" init -q -b main
+  git -C "$project" -c user.name=Test -c user.email=test@example.com commit -qm base --allow-empty
+  git -C "$project" remote add origin "$remote"
+  git -C "$project" push -qu origin main
+  git -C "$project" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+  git -C "$project" checkout -qb fm/task
+  printf 'published\n' > "$project/change.txt"
+  git -C "$project" add change.txt
+  git -C "$project" -c user.name=Test -c user.email=test@example.com commit -qm published
+  git -C "$project" push -qu origin fm/task
+  printf 'unpublished follow-up\n' >> "$project/change.txt"
+  git -C "$project" add change.txt
+  git -C "$project" -c user.name=Test -c user.email=test@example.com commit -qm unpublished
+  git -C "$project" checkout -q main
+  git -C "$project" push -q origin --delete fm/task
+  printf 'project=%s\nbranch=fm/task\nkind=ship\nmode=no-mistakes\n' "$project" > "$home/state/task.meta"
+  printf '%s\n' $$ > "$home/state/.lock"
+
+  FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_FLEET_PROJECT="$project" \
+    run_stage "$home" "$root" run --locked 1 --lock-pid $$
+  git -C "$project" show-ref --verify --quiet refs/heads/fm/task \
+    || fail 'the startup refresh deleted unpublished follow-up commits before recovery'
+  report=$(run_stage "$home" "$root" report)
+  assert_contains "$report" 'branch=fm/task' 'the refreshed branch was not surfaced for recovery'
+  wait_for_startup_network_wake "$home" || fail 'the preserved branch did not produce a durable wake'
+  pass 'fm-startup-network: refresh preserves unpublished gone-upstream branches for recovery'
+}
+
+test_outer_timeout_keeps_discovered_branch_names() {
+  local rec home root log project report
+  rec=$(new_world outer-unpublished-timeout)
+  IFS='|' read -r home root log <<EOF
+$rec
+EOF
+  project="$home/projects/demo"
+  mkdir -p "$project" "$home/data"
+  printf '%s\n' '- demo [no-mistakes] - fixture' > "$home/data/projects.md"
+  printf '%s\n' '- [ ] task - example' > "$home/data/backlog.md"
+  git -C "$project" init -q -b main
+  git -C "$project" -c user.name=Test -c user.email=test@example.com commit -qm base --allow-empty
+  git -C "$project" remote add origin https://github.com/example/demo.git
+  git -C "$project" update-ref refs/remotes/origin/main HEAD
+  git -C "$project" checkout -qb fm/task
+  printf 'unpublished\n' > "$project/change.txt"
+  git -C "$project" add change.txt
+  git -C "$project" -c user.name=Test -c user.email=test@example.com commit -qm change
+  git -C "$project" branch fm/another
+  printf 'project=%s\nbranch=fm/task\nkind=ship\nmode=no-mistakes\n' "$project" > "$home/state/task.meta"
+  cat > "$root/bin/gh-axi" <<'SH'
+#!/usr/bin/env bash
+printf 'entered\n' > "$FM_OUTER_PROOF_MARK"
+sleep 60
+SH
+  chmod +x "$root/bin/gh-axi"
+  printf '%s\n' $$ > "$home/state/.lock"
+  FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=2 \
+    FM_OUTER_PROOF_MARK="$home/proof-entered" FM_STARTUP_NETWORK_TIMEOUT=12 FM_UNPUSHED_TIMEOUT_SECS=60 \
+    run_stage "$home" "$root" run --locked 1 --lock-pid $$
+  [ -f "$home/proof-entered" ] || fail 'the scan never reached the delayed forge read'
+  report=$(run_stage "$home" "$root" report)
+  assert_contains "$report" 'branch=fm/task' 'the outer deadline lost a discovered task branch'
+  assert_contains "$report" 'branch=fm/another' 'the outer deadline lost the later discovered branch'
+  assert_contains "$report" 'hit the 12s bound' 'the outer deadline was not exercised'
+  wait_for_startup_network_wake "$home" || fail 'the outer deadline did not deliver its branch evidence durably'
+  # Discovery also precedes refresh itself: a refresh that never returns must
+  # not prevent already local branch identities from reaching the report.
+  rm "$home/proof-entered"
+  FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=60 \
+    FM_OUTER_PROOF_MARK="$home/proof-entered" FM_STARTUP_NETWORK_TIMEOUT=8 FM_UNPUSHED_TIMEOUT_SECS=60 \
+    run_stage "$home" "$root" run --locked 1 --lock-pid $$
+  [ ! -f "$home/proof-entered" ] || fail 'the stalled refresh unexpectedly reached publication proofs'
+  report=$(run_stage "$home" "$root" report)
+  assert_contains "$report" 'branch=fm/task' 'a stalled refresh hid the task inventory'
+  assert_contains "$report" 'branch=fm/another' 'a stalled refresh hid the other branch inventory'
+  assert_contains "$report" 'hit the 8s bound' 'the refresh deadline was not exercised'
+  pass 'fm-startup-network: an outer deadline retains discovered branch identities'
+}
+
+test_outer_timeout_keeps_discovered_branch_names
+test_refresh_preserves_unpublished_gone_upstream_before_scanning
 test_wait_fails_without_a_published_stage
 test_start_returns_without_holding_the_callers_stdout
 test_harvest_acknowledgement_suppresses_the_wake_and_no_claim_produces_it
@@ -880,4 +1014,5 @@ test_timings_are_published_and_only_the_on_demand_report_prints_them
 test_a_bounded_run_still_publishes_the_timings_it_managed_to_record
 test_the_timing_artifact_cannot_carry_a_command_line_or_forge_records
 test_a_held_publish_lock_cannot_keep_the_worker_alive_past_its_budget
+test_unpublished_branch_recovery_is_durable_and_requires_the_lock
 echo "# fm-startup-network.test.sh: all assertions passed"

@@ -248,6 +248,61 @@ test_quoted_gt_in_echo_is_not_a_test_write() {
   pass "echo of a quoted > tests/foo.test.sh does not inject"
 }
 
+test_here_string_gt_follows_quote_blanking() {
+  run_hook "$PRIMARY" \
+    "$(jq -n --arg c 'cat <<< "echo x > tests/foo.test.sh"' '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
+    --claude
+  expect_silent "quoted greater-than inside a here-string"
+  run_hook "$PRIMARY" \
+    "$(jq -n --arg c 'cat <<< foo > tests/foo.test.sh' '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
+    --claude
+  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
+    "here-string then a command-line redirect to a test path"
+  pass "a quoted > in a here-string is silent; a redirect after <<< still injects"
+}
+
+test_interpreter_fed_quoted_heredoc_body_injects() {
+  local cmd
+  cmd=$(printf "bash <<'EOF'\necho hi > tests/foo.test.sh\nEOF")
+  run_hook "$PRIMARY" \
+    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
+    --claude
+  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
+    "bash <<'EOF' body test write"
+  pass "bash <<'EOF' with a body test-file write injects"
+}
+
+test_quoted_heredoc_body_gt_is_accepted_false_positive() {
+  local cmd
+  cmd=$(printf "cat > /tmp/setup.sh <<'EOF'\necho x > tests/foo.test.sh\nEOF")
+  run_hook "$PRIMARY" \
+    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
+    --claude
+  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
+    "quoted heredoc body greater-than is an accepted false positive"
+  pass "cat > /tmp/setup.sh <<'EOF' with a body > tests/foo.test.sh injects"
+}
+
+test_backup_test_path_is_silent() {
+  local path
+  for path in foo.test.sh.bak foo.test.sh.orig foo.test.sh.swp tests/foo.test.sh.bak; do
+    run_hook "$PRIMARY" \
+      "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":$(printf '%s' "$path" | jq -Rs .),\"content\":\"pass x\n\"}}" \
+      --claude
+    expect_silent "Write of $path"
+  done
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat > foo.test.sh.bak <<EOF\npass x\nEOF"}}' \
+    --claude
+  expect_silent "Shell redirect to foo.test.sh.bak"
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"foo.test.sh","content":"pass x\n"}}' \
+    --claude
+  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
+    "foo.test.sh still injects after backup paths stay silent"
+  pass "backup suffixes on test paths do not inject principle-test-behavior-not-implementation"
+}
+
 test_its_faster_injects_explain_the_number() {
   run_hook "$PRIMARY" \
     "{\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"it's faster\"}" \
@@ -1082,6 +1137,77 @@ test_two_pending_principles_are_delivered_in_order() {
   pass "two pending principles in one conversation are delivered in order"
 }
 
+test_cursor_post_tool_use_then_after_agent_response_injects_once() {
+  local home
+  home="$TMP_ROOT/pending-post-then-after"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Shell","tool_input":{"command":"echo the export is faster now"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  expect_cursor_inject "principle-explain-the-number" "postToolUse emits the speed claim"
+  run_hook "$home" \
+    '{"hook_event_name":"afterAgentResponse","text":"the export is faster now","cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  expect_silent "afterAgentResponse must not re-queue a principle this generation already emitted"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g2"}' \
+    --cursor
+  expect_silent "a later postToolUse must not deliver the same principle again"
+  pass "postToolUse then afterAgentResponse delivers a speed claim once"
+}
+
+test_missing_generation_id_reinjects_on_later_post_tool_use() {
+  local home
+  home="$TMP_ROOT/pending-nogen"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Shell","tool_input":{"command":"echo the export is faster now"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1"}' \
+    --cursor
+  expect_cursor_inject "principle-explain-the-number" "postToolUse emits without generation_id"
+  run_hook "$home" \
+    '{"hook_event_name":"afterAgentResponse","text":"the export is faster now","cursor_version":"x","conversation_id":"c1"}' \
+    --cursor
+  expect_silent "afterAgentResponse defers without generation_id"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1"}' \
+    --cursor
+  expect_cursor_inject "principle-explain-the-number" "later postToolUse delivers the deferred claim"
+  pass "missing generation_id on Cursor postToolUse then afterAgentResponse then postToolUse injects twice"
+}
+
+test_second_recurring_red_same_generation_still_injects() {
+  local home
+  home="$TMP_ROOT/reds-second-id"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/export.test.sh","cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  run_hook "$home" \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh does the thing\n","duration":1100,"cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  run_hook "$home" \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh does the thing\n","duration":1100,"cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  expect_cursor_inject "principle-attack-the-premise" "first test id delivered"
+  run_hook "$home" \
+    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/other.test.sh","cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  run_hook "$home" \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/other.test.sh","output":"not ok - tests/other.test.sh does the thing\n","duration":1100,"cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  run_hook "$home" \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/other.test.sh","output":"not ok - tests/other.test.sh does the thing\n","duration":1100,"cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/other.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  expect_cursor_inject "principle-attack-the-premise" "second test id in the same generation"
+  pass "a second recurring-red test id in the same generation still injects principle-attack-the-premise"
+}
+
 test_cursor_and_claude_registrations_name_the_helper() {
   command -v jq >/dev/null 2>&1 || fail "jq is required to pin hook JSON"
   jq -e '.hooks.postToolUse[] | select(.command | contains("fm-pstack-verify-hook.sh --cursor"))' \
@@ -1179,6 +1305,10 @@ test_cp_into_test_path_injects
 test_redirect_elsewhere_then_grep_test_path_is_silent
 test_redirect_elsewhere_then_cat_test_path_is_silent
 test_quoted_gt_in_echo_is_not_a_test_write
+test_here_string_gt_follows_quote_blanking
+test_interpreter_fed_quoted_heredoc_body_injects
+test_quoted_heredoc_body_gt_is_accepted_false_positive
+test_backup_test_path_is_silent
 test_claude_write_of_test_file_emits_once_across_pre_and_post
 test_contest_path_is_not_a_test_write
 test_write_of_docs_testing_notes_is_not_a_test_change
@@ -1235,5 +1365,8 @@ test_command_comment_tap_is_not_a_claude_red
 test_got_faster_to_write_is_not_a_speed_claim
 test_dotdot_conversation_id_is_not_stored
 test_two_pending_principles_are_delivered_in_order
+test_cursor_post_tool_use_then_after_agent_response_injects_once
+test_missing_generation_id_reinjects_on_later_post_tool_use
+test_second_recurring_red_same_generation_still_injects
 test_cursor_and_claude_registrations_name_the_helper
 test_vendored_skills_are_present
