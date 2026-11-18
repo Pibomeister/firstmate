@@ -54,7 +54,9 @@
 #                       git and database snapshots both succeed updates the
 #                       baseline; system git config and per-clone .git/config
 #                       files are not watched, although the brief rule forbids
-#                       all four git config locations. Bootstrap's seven
+#                       all four git config locations. Without python3 on
+#                       PATH it prints a SHARED_STATE line saying so and
+#                       leaves the baseline unchanged. Bootstrap's seven
 #                       MUTATING sweeps
 #                       (same-home backlog reconciliation, home code drift,
 #                       secondmate convergence, secondmate liveness, pending remote
@@ -1011,28 +1013,13 @@ hash_file_sha256() {
 # Called only when [ ! -e "$path" ] && [ ! -L "$path" ].
 # Distinguishes confirmed absence (ENOENT -> 0) from permission or traversal blocks
 # (EACCES/EPERM/ENOTDIR/ELOOP -> 2, non-recordable unreadable) and transient or
-# unclassified lookup errors (any other errno, or missing perl/python3 without a
-# proven ancestor block -> 1, skip without alarming or updating baseline).
+# unclassified lookup errors (any other errno, timeout, or missing python3 -> 1,
+# skip without alarming or updating baseline).
 classify_missing_path() {
-  local path=$1 verdict='' cur parent
-  if command -v perl >/dev/null 2>&1; then
-    # shellcheck disable=SC2016  # Perl code uses its own @ARGV/$!, not shell expansion.
-    verdict=$(perl -MErrno=ENOENT,EACCES,EPERM,ENOTDIR,ELOOP -e '
-      my @s = lstat($ARGV[0]);
-      if (@s) { print "transient\n"; exit 0; }
-      if ($!{ENOENT}) { print "absent\n"; exit 0; }
-      if ($!{EACCES} || $!{EPERM} || $!{ENOTDIR} || $!{ELOOP}) { print "unreadable\n"; exit 0; }
-      print "transient\n";
-    ' "$path" 2>/dev/null) || verdict=''
-    case "$verdict" in
-      absent) return 0 ;;
-      unreadable) return 2 ;;
-      transient) return 1 ;;
-    esac
-  fi
-  if command -v python3 >/dev/null 2>&1; then
-    # shellcheck disable=SC2016  # Python code uses its own sys.argv, not shell expansion.
-    verdict=$(python3 -c '
+  local path=$1 verdict=''
+  command -v python3 >/dev/null 2>&1 || return 1
+  # shellcheck disable=SC2016  # Python code uses its own sys.argv, not shell expansion.
+  verdict=$(fm_run_timed 5 python3 -c '
 import errno, os, sys
 try:
     os.lstat(sys.argv[1])
@@ -1044,24 +1031,11 @@ except PermissionError:
 except OSError as exc:
     print("unreadable" if exc.errno in (errno.ENOTDIR, errno.ELOOP) else "transient")
 ' "$path" 2>/dev/null) || verdict=''
-    case "$verdict" in
-      absent) return 0 ;;
-      unreadable) return 2 ;;
-      transient) return 1 ;;
-    esac
-  fi
-  cur=$path
-  while :; do
-    parent=$(dirname "$cur" 2>/dev/null) || return 1
-    [ -n "$parent" ] && [ "$parent" != "$cur" ] || return 1
-    if [ -L "$parent" ] || [ -e "$parent" ]; then
-      if [ -d "$parent" ] && [ -x "$parent" ]; then
-        return 1
-      fi
-      return 2
-    fi
-    cur=$parent
-  done
+  case "$verdict" in
+    absent) return 0 ;;
+    unreadable) return 2 ;;
+  esac
+  return 1
 }
 
 git_config_slot_state() {  # <path> -> absent | sha256:<hex> (rc 0), unreadable (rc 2), or lookup/hash failure (rc 1)
@@ -1196,6 +1170,9 @@ check_shared_state_since_last_start() {
   local nm_snap='' nm_rc=0 nm_ok=0 curr_nm_path='' curr_nm_schema=''
   local git_alarm=0 nm_alarm=0
   local report_label xdg_path home_path xdg_label home_label prev_xdg prev_home curr_xdg curr_home xdg_bad home_bad nm_detail tmp
+  if ! command -v python3 >/dev/null 2>&1; then
+    printf 'SHARED_STATE: python3 not found on PATH - the shared-state check cannot inspect the shared no-mistakes database schema or classify missing git config files, so the baseline was left unchanged; install python3 or fix PATH\n'
+  fi
   if [ ! -e "$SHARED_BASELINE_FILE" ] && [ ! -L "$SHARED_BASELINE_FILE" ]; then
     classify_missing_path "$SHARED_BASELINE_FILE" || baseline_miss_rc=$?
     [ "$baseline_miss_rc" -eq 0 ] && baseline_ok=1

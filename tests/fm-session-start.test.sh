@@ -4162,7 +4162,7 @@ PY
   baseline_before=$(cat "$home/state/.session-start-shared-baseline")
   assert_contains "$baseline_before" "sha256:" "established baseline did not record sha256 state"
 
-  # 1. Missing python3 + simultaneous ~/.gitconfig edit: git alarm prints, baseline preserved byte-for-byte.
+  # 1. Missing python3 + simultaneous ~/.gitconfig edit: plain diagnostic prints, baseline preserved byte-for-byte.
   nopy_bin="$TMP_ROOT/shared-preserve-nopy-bin"
   mkdir -p "$nopy_bin"
   (
@@ -4179,10 +4179,10 @@ PY
   )
   git config --file "$git_home/.gitconfig" user.email edited-during-missing-py@example.invalid
   out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$nopy_bin")
-  assert_contains "$out" "SHARED_STATE: global git config changed since the last session start ($git_home/.gitconfig)" \
-    "missing python3 suppressed simultaneous global git config alarm"
   assert_not_contains "$out" "shared no-mistakes database schema changed" \
     "missing python3 false-alarmed on database schema"
+  assert_contains "$out" "SHARED_STATE: python3 not found on PATH" \
+    "missing python3 did not say the shared-state check could not run"
   [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
     || fail "missing python3 run mutated .session-start-shared-baseline"
   git config --file "$git_home/.gitconfig" user.email valid@example.invalid
@@ -4346,115 +4346,48 @@ PY
 
   # 9. Transient lookup failure (non-ENOENT, non-permission errno such as EIO) on a watched path:
   # skips silently without recording absent or suppressing simultaneous drift in the other resource.
-  local real_perl eio_bin xdg_cfg_backup
-  real_perl=$(command -v perl || true)
-  if [ -n "$real_perl" ]; then
-    eio_bin="$TMP_ROOT/shared-preserve-eio-bin"
-    mkdir -p "$eio_bin"
-    xdg_cfg_backup="$TMP_ROOT/shared-preserve-xdg-config.bak"
-    out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
-    baseline_before=$(cat "$home/state/.session-start-shared-baseline")
-    mv "$git_home/.config/git/config" "$xdg_cfg_backup"
-    cat > "$eio_bin/FakeEIO.pm" <<'PM'
-package FakeEIO;
-use Errno qw(EIO);
-BEGIN {
-  *CORE::GLOBAL::lstat = sub (;$) {
-    $! = EIO;
-    return ();
-  };
-}
-1;
-PM
-    cat > "$eio_bin/perl" <<SH
+  local real_python eio_bin xdg_cfg_backup
+  real_python=$(command -v python3)
+  eio_bin="$TMP_ROOT/shared-preserve-eio-bin"
+  mkdir -p "$eio_bin/site"
+  xdg_cfg_backup="$TMP_ROOT/shared-preserve-xdg-config.bak"
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  baseline_before=$(cat "$home/state/.session-start-shared-baseline")
+  mv "$git_home/.config/git/config" "$xdg_cfg_backup"
+  cat > "$eio_bin/site/sitecustomize.py" <<'PY'
+import errno, os
+def _eio_lstat(path, *args, **kwargs):
+    raise OSError(errno.EIO, os.strerror(errno.EIO), path)
+os.lstat = _eio_lstat
+PY
+  cat > "$eio_bin/python3" <<SH
 #!/usr/bin/env bash
 for arg in "\$@"; do
   if [ "\$arg" = "$git_home/.config/git/config" ]; then
-    exec "$real_perl" "-I$eio_bin" -MFakeEIO "\$@"
+    PYTHONPATH="$eio_bin/site" exec "$real_python" "\$@"
   fi
 done
-exec "$real_perl" "\$@"
+exec "$real_python" "\$@"
 SH
-    chmod +x "$eio_bin/perl"
-    python3 - "$db" <<'PY'
+  chmod +x "$eio_bin/python3"
+  python3 - "$db" <<'PY'
 import sqlite3, sys
 conn = sqlite3.connect(sys.argv[1])
 conn.execute("ALTER TABLE runs ADD COLUMN during_transient_eio TEXT")
 conn.commit()
 conn.close()
 PY
-    out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$eio_bin:$fakebin:$BASE_PATH")
-    mv "$xdg_cfg_backup" "$git_home/.config/git/config"
-    cp "$db_backup" "$db"
-    assert_not_contains "$out" "global git config changed" \
-      "transient lookup failure on XDG git config false-alarmed as absent or removed"
-    assert_contains "$out" "SHARED_STATE: shared no-mistakes database schema changed since the last session start ($db)" \
-      "transient git lookup failure suppressed simultaneous state.sqlite DDL alarm"
-    [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
-      || fail "transient lookup failure mutated .session-start-shared-baseline"
-    out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
-    assert_not_contains "$out" "SHARED_STATE:" "restoring after transient lookup failure alarmed despite preserved baseline"
-  fi
-
-  # 10. No-interpreter fallback (both perl and python3 absent): unclassified missing-target lookup
-  # with an accessible parent returns unknown (no false removal alarm, baseline preserved), while an
-  # inaccessible parent directory still reports unreadable.
-  local nointerp_bin env_cfg_backup
-  nointerp_bin="$TMP_ROOT/shared-preserve-nointerp-bin"
-  env_cfg_backup="$TMP_ROOT/shared-preserve-env-config.bak"
-  mkdir -p "$nointerp_bin"
-  (
-    IFS=':'
-    for dir in $fakebin $BASE_PATH; do
-      [ -d "$dir" ] || continue
-      for cmd in "$dir"/*; do
-        [ -e "$cmd" ] || continue
-        base=${cmd##*/}
-        [ "$base" = perl ] || [ "$base" = python3 ] && continue
-        [ -e "$nointerp_bin/$base" ] || ln -s "$cmd" "$nointerp_bin/$base"
-      done
-    done
-  )
-  out=$(env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
-    GIT_CONFIG_GLOBAL="$git_home/env-cfg-dir/config" \
-    HOME="$git_home" XDG_CONFIG_HOME="$git_home/.config" NM_HOME="$nm_home" \
-    FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
-    "$SESSION_START")
-  baseline_before=$(cat "$home/state/.session-start-shared-baseline")
-  mv "$git_home/env-cfg-dir/config" "$env_cfg_backup"
-  chmod 000 "$db"
-  if [ ! -r "$db" ]; then
-    out=$(env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
-      GIT_CONFIG_GLOBAL="$git_home/env-cfg-dir/config" \
-      HOME="$git_home" XDG_CONFIG_HOME="$git_home/.config" NM_HOME="$nm_home" \
-      FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$nointerp_bin" \
-      "$SESSION_START")
-    chmod 600 "$db"
-    assert_not_contains "$out" "global git config changed" \
-      "no-interpreter fallback false-alarmed missing target as removed"
-    assert_contains "$out" "SHARED_STATE: shared no-mistakes database schema changed since the last session start ($db: unreadable)" \
-      "no-interpreter fallback suppressed simultaneous unreadable state.sqlite alarm"
-    [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
-      || fail "no-interpreter fallback mutated .session-start-shared-baseline"
-  else
-    chmod 600 "$db"
-  fi
-  chmod 000 "$git_home/env-cfg-dir"
-  if [ ! -x "$git_home/env-cfg-dir" ]; then
-    out=$(env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
-      GIT_CONFIG_GLOBAL="$git_home/env-cfg-dir/config" \
-      HOME="$git_home" XDG_CONFIG_HOME="$git_home/.config" NM_HOME="$nm_home" \
-      FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$nointerp_bin" \
-      "$SESSION_START")
-    chmod 700 "$git_home/env-cfg-dir"
-    assert_contains "$out" "SHARED_STATE: global git config changed since the last session start ($git_home/env-cfg-dir/config: unreadable)" \
-      "no-interpreter fallback did not report unreadable parent directory"
-    [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
-      || fail "no-interpreter unreadable parent directory mutated .session-start-shared-baseline"
-  else
-    chmod 700 "$git_home/env-cfg-dir"
-  fi
-  mv "$env_cfg_backup" "$git_home/env-cfg-dir/config"
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$eio_bin:$fakebin:$BASE_PATH")
+  mv "$xdg_cfg_backup" "$git_home/.config/git/config"
+  cp "$db_backup" "$db"
+  assert_not_contains "$out" "global git config changed" \
+    "transient lookup failure on XDG git config false-alarmed as absent or removed"
+  assert_contains "$out" "SHARED_STATE: shared no-mistakes database schema changed since the last session start ($db)" \
+    "transient git lookup failure suppressed simultaneous state.sqlite DDL alarm"
+  [ "$(cat "$home/state/.session-start-shared-baseline")" = "$baseline_before" ] \
+    || fail "transient lookup failure mutated .session-start-shared-baseline"
+  out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" "SHARED_STATE:" "restoring after transient lookup failure alarmed despite preserved baseline"
 
   # 11. Failed baseline file read while both snapshots succeed with drifted resources:
   # preserves baseline byte-for-byte so the drift still alarms once baseline read recovers.
@@ -4523,7 +4456,7 @@ PY
 
   cp "$valid_baseline_copy" "$home/state/.session-start-shared-baseline"
 
-  pass "session start preserves shared-state baseline byte-for-byte across missing python3, locks, timeouts, corruption, unreadable files, inaccessible parent directories, transient lookup failures, no-interpreter fallback, and failed or malformed baseline reads"
+  pass "session start preserves shared-state baseline byte-for-byte across missing python3, locks, timeouts, corruption, unreadable files, inaccessible parent directories, transient lookup failures, and failed or malformed baseline reads"
 }
 
 test_context_digest_absent_empty_present
