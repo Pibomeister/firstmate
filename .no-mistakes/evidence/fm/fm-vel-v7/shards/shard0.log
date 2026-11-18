@@ -1,0 +1,5 @@
+1..5
+ok - reviews are posted only with post=on, and then count only with the comment URL
+ok - stale-lock reclamation is serialized, and recovery proceeds once its owner releases
+ok - snapshot refuses file or directory aliases only when the filesystem cannot represent distinct Git paths
+ok - the stated intent is part of the stored prompt each receipt is bound to

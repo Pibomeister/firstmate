@@ -1,0 +1,5 @@
+1..6
+ok - two reviews from one model family count as one
+ok - a dangling merge-review configuration symlink refuses instead of disabling the gate
+ok - local replacement refs cannot substitute the review diff or snapshot for the named head
+ok - interrupted cleanup skips children whose live identity no longer matches the ledger

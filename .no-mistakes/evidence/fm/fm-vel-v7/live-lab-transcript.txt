@@ -1,0 +1,212 @@
+Live lab for bin/fm-merge-review.sh at e606dc280d0b4009f7a25c6cf688b2ef1794af87
+script sha256: e5dd060cb5b2a4e82c14ab81565ab24c2d09bec43667b5ba294005d12a996b2a
+started: 2026-11-18T12:35:50Z  host load: 99.00 94.21 103.72
+lab: temporary home and repository, stand-in reviewer tools (claude, agy) on PATH, no model call, no post
+pull request under review in the lab: https://github.com/example/repo/pull/7
+
+== Scenario 1: the round counter spans heads
+-- head 1 (2c6eda548d8c99279bfb147221d6ad103c72394f), both seats approve
+$ bin/fm-merge-review.sh run https://github.com/example/repo/pull/7 --head 2c6eda548d8c99279bfb147221d6ad103c72394f --repo <lab>/repo   [as worker]
+  exit=0 (expected 0)
+  out: seat anthropic.claude.claude-test-1: APPROVE
+  out: seat google.agy.gemini-test-high: APPROVE
+  out: merge-review: approved head=2c6eda548d8c99279bfb147221d6ad103c72394f approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none round=1 url=https://github.com/example/repo/pull/7
+  CHECK ok: the first reviewed head is round 1
+-- the same head again
+$ bin/fm-merge-review.sh run https://github.com/example/repo/pull/7 --head 2c6eda548d8c99279bfb147221d6ad103c72394f --repo <lab>/repo   [as worker]
+  exit=0 (expected 0)
+  out: seat anthropic.claude.claude-test-1: kept the review already recorded at this head
+  out: seat google.agy.gemini-test-high: kept the review already recorded at this head
+  out: merge-review: approved head=2c6eda548d8c99279bfb147221d6ad103c72394f approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none round=1 url=https://github.com/example/repo/pull/7
+  CHECK ok: a rerun at one head keeps its round
+  CHECK ok: the rerun called no seat again (1)
+-- head 2 (abf265ad0c6f0f18a69edac1ad99c3f85bb3efa5)
+$ bin/fm-merge-review.sh run https://github.com/example/repo/pull/7 --head abf265ad0c6f0f18a69edac1ad99c3f85bb3efa5 --repo <lab>/repo   [as worker]
+  exit=0 (expected 0)
+  out: seat anthropic.claude.claude-test-1: APPROVE
+  out: seat google.agy.gemini-test-high: APPROVE
+  out: merge-review: approved head=abf265ad0c6f0f18a69edac1ad99c3f85bb3efa5 approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none round=2 url=https://github.com/example/repo/pull/7
+  CHECK ok: the second reviewed head is round 2
+  round-record: round=2
+  round-record: previous=2c6eda548d8c99279bfb147221d6ad103c72394f
+  CHECK ok: round 2 names head 1 as the previous head
+  CHECK ok: the receipt carries its round
+$ bin/fm-merge-review.sh findings https://github.com/example/repo/pull/7 --head abf265ad0c6f0f18a69edac1ad99c3f85bb3efa5   [as supervisor]
+  exit=0 (expected 0)
+  out: round=2 head=abf265ad0c6f0f18a69edac1ad99c3f85bb3efa5 previous=2c6eda548d8c99279bfb147221d6ad103c72394f
+  CHECK ok: findings prints the round and the previous head
+-- head 3 (cbd42f92059e6206686b05f91a85d5f8e3335ff5), every seat call fails
+$ bin/fm-merge-review.sh run https://github.com/example/repo/pull/7 --head cbd42f92059e6206686b05f91a85d5f8e3335ff5 --repo <lab>/repo   [as worker]
+  exit=1 (expected 1)
+  out: seat anthropic.claude.claude-test-1: no valid review (the claude call exited 3)
+  out: seat google.agy.gemini-test-high: no valid review (the agy call exited 3)
+  out: merge-review: incomplete head=cbd42f92059e6206686b05f91a85d5f8e3335ff5 approvals=none blocks=none round=3 reason="no valid approving review at this head" url=https://github.com/example/repo/pull/7
+-- head 4 (f6780782a11e5415d3bfa1df6b7a3ce585c907e1)
+$ bin/fm-merge-review.sh run https://github.com/example/repo/pull/7 --head f6780782a11e5415d3bfa1df6b7a3ce585c907e1 --repo <lab>/repo   [as worker]
+  exit=0 (expected 0)
+  out: seat anthropic.claude.claude-test-1: APPROVE
+  out: seat google.agy.gemini-test-high: APPROVE
+  out: merge-review: approved head=f6780782a11e5415d3bfa1df6b7a3ce585c907e1 approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none round=3 url=https://github.com/example/repo/pull/7
+  CHECK ok: a head with no review did not take a round
+  CHECK ok: round 3 names head 2 as the previous head
+-- head 1 again, after the later rounds
+$ bin/fm-merge-review.sh check https://github.com/example/repo/pull/7 --head 2c6eda548d8c99279bfb147221d6ad103c72394f   [as supervisor]
+  exit=0 (expected 0)
+  out: merge-review: approved head=2c6eda548d8c99279bfb147221d6ad103c72394f approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none round=1 url=https://github.com/example/repo/pull/7
+  CHECK ok: later rounds left head 1 at round 1
+
+== Scenario 2: finding ids carry to the next round with the prior findings and the delta
+-- round 1 (3faa125207e3e5cfc24e4f34a88b436b32760467): seat A gives a blocking finding, seat B a note
+$ bin/fm-merge-review.sh run https://github.com/example/repo/pull/7 --head 3faa125207e3e5cfc24e4f34a88b436b32760467 --repo <lab>/repo   [as worker]
+  exit=1 (expected 1)
+  out: seat anthropic.claude.claude-test-1: BLOCK
+  out: seat google.agy.gemini-test-high: APPROVE-WITH-NONBLOCKING
+  out: merge-review: blocked head=3faa125207e3e5cfc24e4f34a88b436b32760467 approvals=google.agy.gemini-test-high:APPROVE-WITH-NONBLOCKING blocks=anthropic.claude.claude-test-1 round=1 open=F1 url=https://github.com/example/repo/pull/7
+  CHECK ok: round 1 is blocked
+  CHECK ok: the blocking finding has the id F1
+  CHECK ok: round 1 got no prior findings and no delta (prior=no delta=no)
+$ bin/fm-merge-review.sh findings https://github.com/example/repo/pull/7 --head 3faa125207e3e5cfc24e4f34a88b436b32760467   [as supervisor]
+  exit=0 (expected 0)
+  out: round=1 head=3faa125207e3e5cfc24e4f34a88b436b32760467 previous=none
+  out: F1	open	none	feature.txt:1	The reader breaks on the first line; guard it.	followup=none
+  out: F2	noted	none	README.md:1	The heading has a typo.	followup=none
+  CHECK ok: F1 is listed as open
+  CHECK ok: the note is listed as F2
+-- round 2 (fb43846468f50f500228f4430efb09d136a88a25): seat A says F1 is resolved, seat B approves and says nothing on F1
+$ bin/fm-merge-review.sh run https://github.com/example/repo/pull/7 --head fb43846468f50f500228f4430efb09d136a88a25 --repo <lab>/repo   [as worker]
+  exit=1 (expected 1)
+  out: seat google.agy.gemini-test-high: no valid review (the finding lines do not count: open finding F1 has no status line)
+  out: seat anthropic.claude.claude-test-1: APPROVE
+  out: merge-review: incomplete head=fb43846468f50f500228f4430efb09d136a88a25 approvals=anthropic.claude.claude-test-1:APPROVE blocks=none round=2 reason="approving reviews come from one model family; two are required" url=https://github.com/example/repo/pull/7
+  CHECK ok: an approval that skips an open finding does not count
+  CHECK ok: one counted review is incomplete
+  CHECK ok: round 2 got the prior findings and the delta (prior=yes delta=yes)
+  what the reviewer was given as prior findings:
+  prior: F1 | open | none | feature.txt:1 | The reader breaks on the first line; guard it.
+  prior: F2 | noted | none | README.md:1 | The heading has a typo.
+  CHECK ok: F1 reached round 2 with its id and state
+  CHECK ok: F2 reached round 2 with its id
+  what the reviewer was given as the delta since the reviewed head:
+  delta: diff --git a/feature.txt b/feature.txt
+  delta: index c5185a026dd51e05c56e638e8cb5cb78a36c8a63..50cf60d12badf9bb86a3bd693d7d99d3b41901c7 100644
+  delta: --- a/feature.txt
+  delta: +++ b/feature.txt
+  delta: @@ -1 +1,2 @@
+  delta:  the feature
+  delta: +guarded reader
+  CHECK ok: the delta holds the change since the reviewed head
+  CHECK ok: the delta does not repeat the change already reviewed
+  CHECK ok: the reviewed diff still holds the whole change
+  CHECK ok: round 2 still had the whole diff and the snapshot (diff=yes snapshot=yes repo=no)
+  CHECK ok: the prompt names the open finding
+-- round 2 again: seat B now rules on F1
+$ bin/fm-merge-review.sh run https://github.com/example/repo/pull/7 --head fb43846468f50f500228f4430efb09d136a88a25 --repo <lab>/repo   [as worker]
+  exit=0 (expected 0)
+  out: seat anthropic.claude.claude-test-1: kept the review already recorded at this head
+  out: seat google.agy.gemini-test-high: APPROVE
+  out: merge-review: approved head=fb43846468f50f500228f4430efb09d136a88a25 approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none round=2 url=https://github.com/example/repo/pull/7
+  CHECK ok: the approved head is round 2
+  CHECK ok: no finding is open
+  CHECK ok: the seat that already answered round 2 was not called again (2)
+$ bin/fm-merge-review.sh findings https://github.com/example/repo/pull/7 --head fb43846468f50f500228f4430efb09d136a88a25   [as supervisor]
+  exit=0 (expected 0)
+  out: round=2 head=fb43846468f50f500228f4430efb09d136a88a25 previous=3faa125207e3e5cfc24e4f34a88b436b32760467
+  out: F1	resolved	none	feature.txt:1	The reader breaks on the first line; guard it.	followup=none
+  out: F2	noted	none	README.md:1	The heading has a typo.	followup=none
+  CHECK ok: F1 is listed as resolved
+-- round 3 (d7f946044a70bd6d115b414917afe7854a150084): a new note
+$ bin/fm-merge-review.sh run https://github.com/example/repo/pull/7 --head d7f946044a70bd6d115b414917afe7854a150084 --repo <lab>/repo   [as worker]
+  exit=0 (expected 0)
+  out: seat anthropic.claude.claude-test-1: APPROVE-WITH-NONBLOCKING
+  out: seat google.agy.gemini-test-high: APPROVE
+  out: merge-review: approved head=d7f946044a70bd6d115b414917afe7854a150084 approvals=anthropic.claude.claude-test-1:APPROVE-WITH-NONBLOCKING,google.agy.gemini-test-high:APPROVE blocks=none round=3 url=https://github.com/example/repo/pull/7
+$ bin/fm-merge-review.sh findings https://github.com/example/repo/pull/7 --head d7f946044a70bd6d115b414917afe7854a150084   [as supervisor]
+  exit=0 (expected 0)
+  out: round=3 head=d7f946044a70bd6d115b414917afe7854a150084 previous=fb43846468f50f500228f4430efb09d136a88a25
+  out: F1	resolved	none	feature.txt:1	The reader breaks on the first line; guard it.	followup=none
+  out: F2	noted	none	README.md:1	The heading has a typo.	followup=none
+  out: F3	noted	none	feature.txt:3	The new line lacks a comment.	followup=none
+  CHECK ok: F1 keeps its state in a later round
+  CHECK ok: the new finding takes the next id, F3
+-- the first head again
+$ bin/fm-merge-review.sh findings https://github.com/example/repo/pull/7 --head 3faa125207e3e5cfc24e4f34a88b436b32760467   [as supervisor]
+  exit=0 (expected 0)
+  out: round=1 head=3faa125207e3e5cfc24e4f34a88b436b32760467 previous=none
+  out: F1	open	none	feature.txt:1	The reader breaks on the first line; guard it.	followup=none
+  out: F2	noted	none	README.md:1	The heading has a typo.	followup=none
+  CHECK ok: later rounds did not rewrite the first head's findings
+
+== Scenario 3: from round three a regression blocks
+-- round 1 (b1975a6f5e6f4e75f64ef97ebe68898fcbd5b9f1): seat A blocks on a new finding
+$ bin/fm-merge-review.sh run https://github.com/example/repo/pull/7 --head b1975a6f5e6f4e75f64ef97ebe68898fcbd5b9f1 --repo <lab>/repo   [as worker]
+  exit=1 (expected 1)
+  out: seat google.agy.gemini-test-high: APPROVE
+  out: seat anthropic.claude.claude-test-1: BLOCK
+  out: merge-review: blocked head=b1975a6f5e6f4e75f64ef97ebe68898fcbd5b9f1 approvals=google.agy.gemini-test-high:APPROVE blocks=anthropic.claude.claude-test-1 round=1 open=F1 url=https://github.com/example/repo/pull/7
+  CHECK ok: the finding is F1 and open
+-- round 2 (5b2c85c5e950757d769f1d15a1d33caa05e9a272): both seats call F1 an edge case
+$ bin/fm-merge-review.sh run https://github.com/example/repo/pull/7 --head 5b2c85c5e950757d769f1d15a1d33caa05e9a272 --repo <lab>/repo   [as worker]
+  exit=1 (expected 1)
+  out: seat anthropic.claude.claude-test-1: APPROVE-WITH-NONBLOCKING
+  out: seat google.agy.gemini-test-high: APPROVE
+  out: merge-review: blocked head=5b2c85c5e950757d769f1d15a1d33caa05e9a272 approvals=anthropic.claude.claude-test-1:APPROVE-WITH-NONBLOCKING,google.agy.gemini-test-high:APPROVE blocks=none round=2 open=F1 reason="a finding is open at this head" url=https://github.com/example/repo/pull/7
+  CHECK ok: before round three an edge case still blocks
+  CHECK ok: F1 stays open in round 2
+-- round 3 (c5fbdb208dcf3803ea97ddb50a8bc40d2f445c00): seat A says edge case, seat B says regression, and neither verdict is BLOCK
+$ bin/fm-merge-review.sh run https://github.com/example/repo/pull/7 --head c5fbdb208dcf3803ea97ddb50a8bc40d2f445c00 --repo <lab>/repo   [as worker]
+  exit=1 (expected 1)
+  out: seat google.agy.gemini-test-high: APPROVE-WITH-NONBLOCKING
+  out: seat anthropic.claude.claude-test-1: APPROVE-WITH-NONBLOCKING
+  out: merge-review: blocked head=c5fbdb208dcf3803ea97ddb50a8bc40d2f445c00 approvals=anthropic.claude.claude-test-1:APPROVE-WITH-NONBLOCKING,google.agy.gemini-test-high:APPROVE-WITH-NONBLOCKING blocks=none round=3 open=F1 reason="a finding is open at this head" url=https://github.com/example/repo/pull/7
+  CHECK ok: this head is round 3
+  CHECK ok: a regression blocks in round three
+  CHECK ok: F1 is open, not deferred
+  CHECK ok: the block comes from the finding, with no BLOCK verdict
+$ bin/fm-merge-review.sh followup https://github.com/example/repo/pull/7 --head c5fbdb208dcf3803ea97ddb50a8bc40d2f445c00 --finding F1 --ref backlog item 3   [as supervisor]
+  exit=2 (expected 2)
+  err: error: finding F1 is open at c5fbdb208dcf3803ea97ddb50a8bc40d2f445c00; only a deferred finding takes a follow-up
+  CHECK ok: an open finding takes no follow-up
+$ bin/fm-merge-review.sh findings https://github.com/example/repo/pull/7 --head c5fbdb208dcf3803ea97ddb50a8bc40d2f445c00   [as supervisor]
+  exit=0 (expected 0)
+  out: round=3 head=c5fbdb208dcf3803ea97ddb50a8bc40d2f445c00 previous=5b2c85c5e950757d769f1d15a1d33caa05e9a272
+  out: F1	open	none	feature.txt:1	An empty file makes the reader loop.	followup=none
+  CHECK ok: findings lists F1 as open
+
+== Scenario 4: an edge case is deferred only when both seats agree, and needs a recorded follow-up
+(continues the pull request of scenario 3)
+-- round 4 (4eec78d1ffb28a4b5a11f6cfb594449f001e303b): both seats call F1 an edge case
+$ bin/fm-merge-review.sh run https://github.com/example/repo/pull/7 --head 4eec78d1ffb28a4b5a11f6cfb594449f001e303b --repo <lab>/repo   [as worker]
+  exit=1 (expected 1)
+  out: seat google.agy.gemini-test-high: APPROVE
+  out: seat anthropic.claude.claude-test-1: APPROVE-WITH-NONBLOCKING
+  out: merge-review: incomplete head=4eec78d1ffb28a4b5a11f6cfb594449f001e303b approvals=anthropic.claude.claude-test-1:APPROVE-WITH-NONBLOCKING,google.agy.gemini-test-high:APPROVE blocks=none round=4 deferred=F1 reason="deferred finding F1 has no recorded follow-up" url=https://github.com/example/repo/pull/7
+  CHECK ok: this head is round 4
+  CHECK ok: a deferred finding does not approve with no follow-up
+  CHECK ok: F1 is deferred
+  CHECK ok: the missing follow-up is reported
+  CHECK ok: seats that both ruled in their reviews were not asked again (0)
+$ bin/fm-merge-review.sh followup https://github.com/example/repo/pull/7 --head 4eec78d1ffb28a4b5a11f6cfb594449f001e303b --finding F2 --ref backlog item 12   [as supervisor]
+  exit=2 (expected 2)
+  err: error: finding F2 is not recorded at 4eec78d1ffb28a4b5a11f6cfb594449f001e303b; only a deferred finding takes a follow-up
+  note: a follow-up for a finding that does not exist is refused
+$ bin/fm-merge-review.sh followup https://github.com/example/repo/pull/7 --head 4eec78d1ffb28a4b5a11f6cfb594449f001e303b --finding F1 --ref backlog item 12   [as supervisor]
+  exit=0 (expected 0)
+  out: merge-review: follow-up recorded finding=F1 ref="backlog item 12" url=https://github.com/example/repo/pull/7
+$ bin/fm-merge-review.sh followup https://github.com/example/repo/pull/7 --head 4eec78d1ffb28a4b5a11f6cfb594449f001e303b --finding F1 --ref backlog item 99   [as supervisor]
+  exit=2 (expected 2)
+  err: error: finding F1 already has the follow-up "backlog item 12"; a record is never replaced
+  note: a recorded follow-up cannot be replaced
+$ bin/fm-merge-review.sh check https://github.com/example/repo/pull/7 --head 4eec78d1ffb28a4b5a11f6cfb594449f001e303b   [as supervisor]
+  exit=0 (expected 0)
+  out: merge-review: approved head=4eec78d1ffb28a4b5a11f6cfb594449f001e303b approvals=anthropic.claude.claude-test-1:APPROVE-WITH-NONBLOCKING,google.agy.gemini-test-high:APPROVE blocks=none round=4 deferred=F1 url=https://github.com/example/repo/pull/7
+  CHECK ok: two agreeing seats and a recorded follow-up approve
+  CHECK ok: the approved line still names the deferred finding
+$ bin/fm-merge-review.sh findings https://github.com/example/repo/pull/7 --head 4eec78d1ffb28a4b5a11f6cfb594449f001e303b   [as supervisor]
+  exit=0 (expected 0)
+  out: round=4 head=4eec78d1ffb28a4b5a11f6cfb594449f001e303b previous=c5fbdb208dcf3803ea97ddb50a8bc40d2f445c00
+  out: F1	deferred	none	feature.txt:1	An empty file makes the reader loop.	followup=backlog item 12
+  CHECK ok: findings lists F1 as deferred
+  CHECK ok: findings shows where the follow-up was filed
+
+finished: 2026-11-18T12:40:36Z  host load: 105.02 94.14 100.15
+checks=76 failed=0

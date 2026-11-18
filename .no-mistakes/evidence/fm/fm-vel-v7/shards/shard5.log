@@ -1,0 +1,5 @@
+1..6
+ok - a changed head is incomplete, and receipts copied from the old head do not count
+ok - GitHub URL case aliases share the same dissent and cannot reroll it
+ok - review snapshot ignores export-ignore and export-subst while preserving committed bytes
+ok - run refuses a missing or abbreviated head, an empty change, and a non-PR URL before any call

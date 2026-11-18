@@ -1,0 +1,4 @@
+1..5
+ok - a flipped verdict, an edited review, and a missing diff each void the receipt
+ok - a model call cannot overwrite a valid dissent recorded while it was running
+ok - GitLab URL case aliases retain the same recorded dissent

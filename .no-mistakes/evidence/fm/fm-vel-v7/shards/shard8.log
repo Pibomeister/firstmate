@@ -1,0 +1,5 @@
+1..6
+ok - a bare verdict, another commit's verdict, a missing verdict, and a failed call leave no receipt
+ok - config lookup works without directory-listing permission
+ok - repository subdirectories and diff.relative cannot filter changes out of a review
+ok - timeout values with leading zeros still launch each seat

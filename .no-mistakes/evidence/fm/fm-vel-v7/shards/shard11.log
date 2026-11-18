@@ -1,0 +1,5 @@
+1..5
+ok - a receipt stops counting when config/merge-review no longer declares its seat
+ok - a replaced generation cannot complete the batch or remove its successor's lock
+ok - Forgejo URL case aliases retain the same recorded dissent
+ok - a BLOCK at another merge base is kept on disk and cannot be rolled forward

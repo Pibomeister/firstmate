@@ -1,0 +1,5 @@
+1..6
+ok - an approval with non-blocking findings approves and stays visible in the verdict line
+ok - interrupted runs stop reviewer writers before releasing their lock, and recovery can finish
+ok - normalizing review input paths keeps bare source repositories supported
+ok - stale approval receipts are replaced when the live merge base changes

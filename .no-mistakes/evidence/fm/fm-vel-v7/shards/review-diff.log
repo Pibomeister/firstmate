@@ -1,0 +1,12 @@
+ok - fm-review-diff --since shows only the change after a reviewed head, and the default stays the whole change
+ok - fm-review-diff --since reports a rewritten branch and refuses an unknown or short commit
+ok - fm-review-diff falls back to recorded pr_head when pull head cannot be fetched
+ok - fm-review-diff fetches refs/pull/<n>/head when pr_head= is absent
+ok - fm-review-diff prefers freshly fetched PR head over a stale recorded pr_head=
+ok - fm-review-diff without pr= keeps the worktree-branch diff
+ok - fm-review-diff falls back to local branch with a warning when PR head is unreachable
+ok - fm-review-diff reviews the meta-recorded ship branch even when the worktree HEAD moved off it
+ok - fm-review-diff refuses a corrupt recorded ship branch instead of reviewing the wrong content
+ok - fm-review-diff compares a task against its recorded base branch
+ok - fm-review-diff fetches refs/pull/<n>/head for a Forgejo /pulls/<n> pr= URL
+ok - fm-review-diff resolves a Forgejo repo literally named pulls by the last /pulls/ segment

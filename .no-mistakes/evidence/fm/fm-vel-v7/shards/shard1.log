@@ -1,0 +1,3 @@
+1..6
+ok - two approving reviews from two model families approve, and check prints one line
+ok - an unposted block defeats two posted approval families and survives publication retry

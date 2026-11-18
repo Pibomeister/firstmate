@@ -1,0 +1,5 @@
+1..6
+ok - each reviewer gets the diff and head snapshot in a temporary directory with read-only flags
+ok - check cannot approve while a third seat in the active batch has not answered
+ok - review diff includes submodule changes despite diff.ignoreSubmodules=all
+ok - snapshot accepts distinct regular files and symlinks even when their bytes or targets match

@@ -1,0 +1,5 @@
+1..6
+ok - one BLOCK blocks despite an approval, the spare stays out, and a rerun cannot replace it
+ok - lock cleanup alone cannot approve an unfinished batch, and recovery retains valid reviews
+ok - review diff bypasses external diff and text conversion without hiding file content
+Terminated: 15

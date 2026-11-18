@@ -1,0 +1,65 @@
+Live lab for bin/fm-merge-review.sh at e606dc280d0b4009f7a25c6cf688b2ef1794af87
+script sha256: e5dd060cb5b2a4e82c14ab81565ab24c2d09bec43667b5ba294005d12a996b2a
+started: 2026-11-18T12:47:45Z  host load: 187.82 128.07 113.02
+lab: temporary home and repository, stand-in reviewer tools (claude, agy) on PATH, no model call, no post
+pull request under review in the lab: https://github.com/example/repo/pull/7
+
+== Scenario 5: a classed RESOLVED line before an EDGE-CASE line keeps F1 open with its class
+-- round 1: seat A blocks
+$ bin/fm-merge-review.sh run https://github.com/example/repo/pull/7 --head 080da6a618111ed4991b2dba8fd9c9aba83bbc28 --repo <lab>/repo   [as worker]
+  exit=1 (expected 1)
+  out: seat anthropic.claude.claude-test-1: BLOCK
+  out: seat google.agy.gemini-test-high: APPROVE
+  out: merge-review: blocked head=080da6a618111ed4991b2dba8fd9c9aba83bbc28 approvals=google.agy.gemini-test-high:APPROVE blocks=anthropic.claude.claude-test-1 round=1 open=F1 url=https://github.com/example/repo/pull/7
+  CHECK ok: F1 opens
+-- round 2: seat A writes RESOLVED+security then EDGE-CASE (BLOCK); seat B RESOLVED
+$ bin/fm-merge-review.sh run https://github.com/example/repo/pull/7 --head c485a114f5340caaf92ed5e528c5bb38666d5f28 --repo <lab>/repo   [as worker]
+  exit=1 (expected 1)
+  out: seat anthropic.claude.claude-test-1: BLOCK
+  out: seat google.agy.gemini-test-high: APPROVE
+  out: merge-review: blocked head=c485a114f5340caaf92ed5e528c5bb38666d5f28 approvals=google.agy.gemini-test-high:APPROVE blocks=anthropic.claude.claude-test-1 round=2 open=F1 url=https://github.com/example/repo/pull/7
+$ bin/fm-merge-review.sh findings https://github.com/example/repo/pull/7 --head c485a114f5340caaf92ed5e528c5bb38666d5f28   [as supervisor]
+  exit=0 (expected 0)
+  out: round=2 head=c485a114f5340caaf92ed5e528c5bb38666d5f28 previous=080da6a618111ed4991b2dba8fd9c9aba83bbc28
+  out: F1	open	security	feature.txt:1	Unchecked path joins.	followup=none
+  CHECK ok: F1 stays open with class security at round 2
+-- round 3: both seats call F1 an edge case, but F1 carries class security
+$ bin/fm-merge-review.sh run https://github.com/example/repo/pull/7 --head 2245992e9a7c732ad5ed6cd999254f9175b93f4c --repo <lab>/repo   [as worker]
+  exit=1 (expected 1)
+  out: seat google.agy.gemini-test-high: APPROVE
+  out: seat anthropic.claude.claude-test-1: APPROVE
+  out: merge-review: blocked head=2245992e9a7c732ad5ed6cd999254f9175b93f4c approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none round=3 open=F1 reason="a finding is open at this head" url=https://github.com/example/repo/pull/7
+  CHECK ok: this head is round 3
+  prior: F1 | open | security | feature.txt:1 | Unchecked path joins.
+  CHECK ok: F1 reached round 3 as open with class security
+  CHECK ok: a security finding blocks even when both seats say edge case
+  CHECK ok: F1 is not deferred
+
+== Scenario 6: round 3, both seats UNSUPPORTED drops the finding; one EDGE-CASE beside UNSUPPORTED stays open
+$ bin/fm-merge-review.sh run https://github.com/example/repo/pull/7 --head 5a82e5837e23fc2f76b04b8cf7776761205c52f5 --repo <lab>/repo   [as worker]
+  exit=1 (expected 1)
+  out: seat anthropic.claude.claude-test-1: BLOCK
+  out: seat google.agy.gemini-test-high: APPROVE
+  out: merge-review: blocked head=5a82e5837e23fc2f76b04b8cf7776761205c52f5 approvals=google.agy.gemini-test-high:APPROVE blocks=anthropic.claude.claude-test-1 round=1 open=F1,F2 url=https://github.com/example/repo/pull/7
+  CHECK ok: F1 and F2 open
+$ bin/fm-merge-review.sh run https://github.com/example/repo/pull/7 --head f6c3a6d245ff44e7ecf2cce32ce285b64e5a4255 --repo <lab>/repo   [as worker]
+  exit=1 (expected 1)
+  out: seat google.agy.gemini-test-high: no valid review (the finding lines do not count: open finding F1 has no status line)
+  out: seat anthropic.claude.claude-test-1: BLOCK
+  out: merge-review: blocked head=f6c3a6d245ff44e7ecf2cce32ce285b64e5a4255 approvals=none blocks=anthropic.claude.claude-test-1 round=2 open=F1,F2 url=https://github.com/example/repo/pull/7
+-- round 3: F1 both UNSUPPORTED, F2 EDGE-CASE + UNSUPPORTED
+$ bin/fm-merge-review.sh run https://github.com/example/repo/pull/7 --head bdf7a900cde8aacf79f39c84bcf55b24fb6fc560 --repo <lab>/repo   [as worker]
+  exit=1 (expected 1)
+  out: seat anthropic.claude.claude-test-1: APPROVE
+  out: seat google.agy.gemini-test-high: APPROVE
+  out: merge-review: blocked head=bdf7a900cde8aacf79f39c84bcf55b24fb6fc560 approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none round=3 open=F2 dropped=F1 reason="a finding is open at this head" url=https://github.com/example/repo/pull/7
+  CHECK ok: round 3
+$ bin/fm-merge-review.sh findings https://github.com/example/repo/pull/7 --head bdf7a900cde8aacf79f39c84bcf55b24fb6fc560   [as supervisor]
+  exit=0 (expected 0)
+  out: round=3 head=bdf7a900cde8aacf79f39c84bcf55b24fb6fc560 previous=f6c3a6d245ff44e7ecf2cce32ce285b64e5a4255
+  out: F1	dropped	none	feature.txt:1	A.	followup=none
+  out: F2	open	none	feature.txt:2	B.	followup=none
+  CHECK ok: F1 is dropped
+  CHECK ok: F2 stays open: deferral needs every seat to say edge case
+
+checks=18 failed=0

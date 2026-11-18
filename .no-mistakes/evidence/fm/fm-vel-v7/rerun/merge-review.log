@@ -1,0 +1,72 @@
+1..69
+ok - two approving reviews from two model families approve, and check prints one line
+ok - run refuses outside a spawned worker and calls no reviewer
+ok - each reviewer gets the diff and head snapshot in a temporary directory with read-only flags
+ok - one BLOCK blocks despite an approval, the spare stays out, and a rerun cannot replace it
+ok - a changed head is incomplete, and receipts copied from the old head do not count
+ok - two reviews from one model family count as one
+ok - a tool that reports another model leaves no receipt, and the spare supplies the second family
+ok - a bare verdict, another commit's verdict, a missing verdict, and a failed call leave no receipt
+ok - an approval with non-blocking findings approves and stays visible in the verdict line
+ok - a flipped verdict, an edited review, and a missing diff each void the receipt
+ok - a receipt stops counting when config/merge-review no longer declares its seat
+ok - reviews are posted only with post=on, and then count only with the comment URL
+ok - an unposted block defeats two posted approval families and survives publication retry
+ok - corrupt, missing, and unreadable dissent never approves or gets rerolled
+ok - check cannot approve while a third seat in the active batch has not answered
+ok - lock cleanup alone cannot approve an unfinished batch, and recovery retains valid reviews
+ok - GitHub URL case aliases share the same dissent and cannot reroll it
+ok - a dangling merge-review configuration symlink refuses instead of disabling the gate
+ok - an invalid configuration parent refuses instead of hiding the gate
+ok - config lookup works without directory-listing permission
+ok - interrupted runs stop reviewer writers before releasing their lock, and recovery can finish
+ok - a model call cannot overwrite a valid dissent recorded while it was running
+ok - a replaced generation cannot complete the batch or remove its successor's lock
+ok - stale-lock reclamation is serialized, and recovery proceeds once its owner releases
+ok - check cannot approve when publication changes the completed batch after receipt enumeration
+ok - stale-lock reclamation is serialized, and recovery proceeds once its owner releases
+ok - review diff includes submodule changes despite diff.ignoreSubmodules=all
+ok - review diff bypasses external diff and text conversion without hiding file content
+ok - review snapshot ignores export-ignore and export-subst while preserving committed bytes
+ok - local replacement refs cannot substitute the review diff or snapshot for the named head
+ok - canonical snapshot reads SHA-256 source repositories without changing object format
+ok - repository subdirectories and diff.relative cannot filter changes out of a review
+ok - normalizing review input paths keeps bare source repositories supported
+ok - GitLab URL case aliases retain the same recorded dissent
+ok - Forgejo URL case aliases retain the same recorded dissent
+ok - snapshot refuses file or directory aliases only when the filesystem cannot represent distinct Git paths
+ok - TMPDIR cannot place reviewers under a checkout, a symlinked checkout path, or a bare repository
+ok - inherited Git location variables neither alter the declared source nor enter reviewer context
+ok - snapshot accepts distinct regular files and symlinks even when their bytes or targets match
+ok - covers answers from the require lines and a malformed config is an error, not a pass
+ok - run refuses a missing or abbreviated head, an empty change, and a non-PR URL before any call
+ok - interrupted cleanup skips children whose live identity no longer matches the ledger
+ok - a seat that exits before identity is recorded does not abort the run
+ok - timeout values with leading zeros still launch each seat
+ok - stale approval receipts are replaced when the live merge base changes
+ok - a stale spare approval is dropped before seats run so a rerun can finish
+ok - a BLOCK at another merge base is kept on disk and cannot be rolled forward
+ok - the stated intent is part of the stored prompt each receipt is bound to
+ok - the round counter spans heads, holds on a rerun, skips a head with no review, and waits for the previous round
+ok - a head reviewed before rounds counts as a round, and its BLOCK receipt keeps blocking
+ok - findings keep their ids, later rounds get the open ones with the delta, and the whole change stays under review
+ok - a BLOCK is recorded whatever its finding lines look like, and an approval with a malformed line is not
+ok - from round three an edge case is deferred only when both seats agree, and approves only with a recorded follow-up
+ok - in round three the other seat rules on a new edge case, and the finding waits until it does
+ok - a seat that calls a new edge case a regression keeps it blocking, and an open finding takes no follow-up
+ok - a finding every seat calls unsupported, with evidence, is dropped; one seat alone cannot drop it
+ok - a security, destructive, or data-loss finding is never deferred or noted, and keeps its class
+ok - one seat alone never defers, drops, or resolves a finding, and no follow-up is recorded before a second model family rules
+ok - a rerun after the merge base moved keeps a review that holds a finding, so the finding is never lost
+ok - from round three an edge case is deferred only when every seat calls it one; any other ruling beside it keeps it open
+ok - a follow-up counts only when it names where the finding was filed
+ok - a model name that would share a seat's council file names is refused before any seat runs
+ok - a finding held by a seat that left config/merge-review still reaches the next round as open
+ok - a run stopped between its two round records can run again, and only over the same prior findings
+ok - a round waits for a running head that has no receipt yet, and changes nothing while it waits
+ok - seats whose reviews name different merge bases settle no finding, at that head or the next
+ok - when a review gives a finding two status lines, the line that holds it stands with either line's class
+ok - a round waits for a running head that has not joined the ledger yet
+ok - a rerun keeps a stored delta that matches its hash, and replaces a short one whole
+FM_TEST_COMPLETE
+merge-review exit=0

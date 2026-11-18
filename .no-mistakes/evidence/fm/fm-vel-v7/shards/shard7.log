@@ -1,0 +1,5 @@
+1..6
+ok - a tool that reports another model leaves no receipt, and the spare supplies the second family
+ok - an invalid configuration parent refuses instead of hiding the gate
+ok - canonical snapshot reads SHA-256 source repositories without changing object format
+ok - a seat that exits before identity is recorded does not abort the run
