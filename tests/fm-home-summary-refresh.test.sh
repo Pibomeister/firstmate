@@ -557,24 +557,63 @@ ls "$HOME_DIR/state"/.home-summary-stage.* >/dev/null 2>&1 \
   && fail "a signalled parent leaked its stage file"
 pass "a signalled parent removes its stage file"
 
-# The producer reports stages only to a log its caller still owns: a log that
-# was deleted (a signalled parent already cleaned it up) must not be recreated.
+# The producer reports stages only through a descriptor its caller opened, never
+# by path: a stage file the caller already removed (a signalled parent cleaned it
+# up) is not recreated, and a descriptor that is not open is ignored.
 GONE_LOG="$TMP_ROOT/gone-stage.log"
+: > "$GONE_LOG"
+exec 9>>"$GONE_LOG"
 rm -f "$GONE_LOG"
 PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   FM_SNAPSHOT_NOW="$NOW_THREE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_THREE" \
-  FM_SNAPSHOT_STAGE_LOG="$GONE_LOG" "$SNAPSHOT" --secondmate-home-summary >/dev/null 2>&1 \
-  || fail "the producer failed with an absent stage log"
-[ ! -e "$GONE_LOG" ] || fail "the producer recreated a deleted stage log"
+  FM_SNAPSHOT_STAGE_FD=9 "$SNAPSHOT" --secondmate-home-summary >/dev/null 2>&1 \
+  || fail "the producer failed with a removed stage file"
+exec 9>&-
+[ ! -e "$GONE_LOG" ] || fail "the producer recreated a removed stage file"
 LIVE_LOG="$TMP_ROOT/live-stage.log"
 : > "$LIVE_LOG"
+exec 9>>"$LIVE_LOG"
 PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   FM_SNAPSHOT_NOW="$NOW_THREE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_THREE" \
-  FM_SNAPSHOT_STAGE_LOG="$LIVE_LOG" "$SNAPSHOT" --secondmate-home-summary >/dev/null 2>&1 \
-  || fail "the producer failed with a live stage log"
+  FM_SNAPSHOT_STAGE_FD=9 "$SNAPSHOT" --secondmate-home-summary >/dev/null 2>&1 \
+  || fail "the producer failed with a live stage descriptor"
+exec 9>&-
 grep -E '^summary	[0-9]+$' "$LIVE_LOG" >/dev/null \
-  || fail "the producer did not report its stages to an existing stage log"
+  || fail "the producer did not report its stages to the open descriptor"
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  FM_SNAPSHOT_NOW="$NOW_THREE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_THREE" \
+  FM_SNAPSHOT_STAGE_FD=7 "$SNAPSHOT" --secondmate-home-summary >/dev/null 2>&1 \
+  || fail "the producer failed with a stage descriptor that is not open"
 pass "the producer never recreates a deleted stage log"
+
+# Creating the stage file is bounded by the refresh deadline: a filesystem that
+# stalls there must not hold the caller past it. The stub stalls far beyond the
+# deadline, so only a bounded refresh returns in time.
+STALLBIN="$TMP_ROOT/stall-mktemp-bin"
+REAL_MKTEMP=$(command -v mktemp)
+mkdir -p "$STALLBIN"
+cat > "$STALLBIN/mktemp" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    */.home-summary-stage.*) sleep 60 ;;
+  esac
+done
+exec "$FM_TEST_REAL_MKTEMP" "$@"
+SH
+chmod +x "$STALLBIN/mktemp"
+: > "$HOME_DIR/state/.home-summary-refresh.log"
+started=$(date +%s)
+PATH="$STALLBIN:$FAKEBIN:$PATH" FM_TEST_REAL_MKTEMP="$REAL_MKTEMP" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=2 \
+  "$WRITER" --best-effort \
+  || fail "a stalled stage-file creation changed the best-effort caller result"
+elapsed=$(( $(date +%s) - started ))
+[ "$elapsed" -lt 20 ] || fail "a stalled stage-file creation held the refresh for $elapsed seconds"
+grep -F 'refresh exceeded its 2-second deadline while preparing the stage file' \
+  "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "a stalled stage-file creation was not logged: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+pass "stage-file creation is bounded by the refresh deadline"
 
 HANGBIN="$TMP_ROOT/hangbin"
 REAL_JQ=$(command -v jq)
@@ -767,6 +806,38 @@ jq -e '(.invalidity.ids | sort) == ["slide-1","slide-2","slide-3","slide-4","sli
   "$TMP_ROOT/slide-window.json" >/dev/null \
   || fail "the window summary lost a task row: $(jq -c '[.invalidity, .counts]' "$TMP_ROOT/slide-window.json")"
 pass "current-state reads refill a free slot and never change the summary"
+
+# Task ids may contain dots, so a task named like another task's row file ("ship"
+# and "ship.row") must not share files with it: both rows survive the snapshot.
+DOT_HOME="$TMP_ROOT/dot-home"
+mkdir -p "$DOT_HOME/state" "$DOT_HOME/data" "$DOT_HOME/config" "$DOT_HOME/projects"
+DOT_HOME=$(cd "$DOT_HOME" && pwd -P)
+printf '# Seeded Firstmate home\n' > "$DOT_HOME/AGENTS.md"
+printf 'mate\n' > "$DOT_HOME/.fm-secondmate-home"
+{
+  printf '## In flight\n'
+  for dot_id in ship ship.row; do
+    printf -- '- [ ] %s - Dotted task %s (repo: firstmate) (kind: ship) (since 2026-08-28)\n' "$dot_id" "$dot_id"
+    fm_git_init_commit "$DOT_HOME/projects/$dot_id"
+    git -C "$DOT_HOME/projects/$dot_id" checkout -q -b "fm/$dot_id"
+    fm_write_meta "$DOT_HOME/state/$dot_id.meta" \
+      "window=fmtest:fm-$dot_id" "worktree=$DOT_HOME/projects/$dot_id" \
+      "project=firstmate" "harness=claude" "kind=ship" "mode=no-mistakes" \
+      "spawn_gen=fm.dot$dot_id"
+    printf 'working: dotted fixture\n' > "$DOT_HOME/state/$dot_id.status"
+  done
+  printf '\n## Queued\n\n## Done\n'
+} > "$DOT_HOME/data/backlog.md"
+for dot_conc in 1 16; do
+  PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$DOT_HOME" \
+    FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
+    FM_SNAPSHOT_LOCAL_READ_CONCURRENCY="$dot_conc" \
+    "$SNAPSHOT" --json > "$TMP_ROOT/dot-snapshot-$dot_conc.json" 2> "$TMP_ROOT/dot-snapshot-$dot_conc.err" \
+    || fail "a snapshot of tasks named ship and ship.row failed at concurrency $dot_conc: $(cat "$TMP_ROOT/dot-snapshot-$dot_conc.err")"
+  jq -e '([.tasks[].id] | sort) == ["ship","ship.row"]' "$TMP_ROOT/dot-snapshot-$dot_conc.json" >/dev/null \
+    || fail "a dotted task id lost or swapped its row at concurrency $dot_conc: $(jq -c '[.tasks[].id]' "$TMP_ROOT/dot-snapshot-$dot_conc.json")"
+done
+pass "task ids that extend another task's row file name keep separate rows"
 
 MKBIN="$TMP_ROOT/mkdir-hangbin"
 REAL_MKDIR=$(command -v mkdir)

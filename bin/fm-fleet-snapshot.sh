@@ -281,8 +281,9 @@ that home.
 Each local per-task current-state read is bounded by FM_SNAPSHOT_CREW_STATE_TIMEOUT
 (default 10 seconds); a read that hits the bound reports state unknown. Local task
 observations and task rows run concurrently, up to FM_SNAPSHOT_LOCAL_READ_CONCURRENCY
-(default 16), and a finished task frees its slot at once. FM_SNAPSHOT_STAGE_LOG, when set,
-receives one stage-name and seconds-since-start line per stage boundary.
+(default 16), and a finished task frees its slot at once. FM_SNAPSHOT_STAGE_FD, when set,
+names an open append descriptor that receives one stage-name and seconds-since-start
+line per stage boundary.
 Remote secondmate endpoint liveness is not probed by this command.
 Each local per-task endpoint probe is bounded by FM_SNAPSHOT_ENDPOINT_TIMEOUT
 (default 2 seconds); a probe that hits the bound reports endpoint unknown.
@@ -315,19 +316,21 @@ esac
 
 command -v jq >/dev/null 2>&1 || { echo "fm-fleet-snapshot: jq not found" >&2; exit 1; }
 
-# Stage timing: with FM_SNAPSHOT_STAGE_LOG set, each stage boundary appends one
-# "<stage>\t<seconds since start>" line to that existing file, so a caller that
-# kills a slow run can name the stage it was in. FM_SNAPSHOT_STAGE_BASE, when set,
-# is the caller's own elapsed seconds at launch and is added to every offset, so
-# the caller's stages and these share one timeline.
-# The log never changes the snapshot output.
+# Stage timing: with FM_SNAPSHOT_STAGE_FD set to an open append descriptor, each
+# stage boundary writes one "<stage>\t<seconds since start>" line to it, so a
+# caller that kills a slow run can name the stage it was in. The caller owns the
+# descriptor, so a stage file it already removed is never recreated, and a
+# descriptor that is not open is ignored. FM_SNAPSHOT_STAGE_BASE, when set, is the
+# caller's own elapsed seconds at launch and is added to every offset, so the
+# caller's stages and these share one timeline.
+# The stage report never changes the snapshot output.
 SNAPSHOT_STAGE_START=$SECONDS
 snapshot_stage() {  # <stage-name>
-  [ -n "${FM_SNAPSHOT_STAGE_LOG:-}" ] || return 0
-  # Append only to a log the caller still owns: a deleted log is never recreated.
-  [ -f "$FM_SNAPSHOT_STAGE_LOG" ] || return 0
-  printf '%s\t%s\n' "$1" "$((SECONDS - SNAPSHOT_STAGE_START + ${FM_SNAPSHOT_STAGE_BASE:-0}))" \
-    >> "$FM_SNAPSHOT_STAGE_LOG" 2>/dev/null || true
+  case "${FM_SNAPSHOT_STAGE_FD:-}" in
+    ''|*[!0-9]*) return 0 ;;
+  esac
+  { printf '%s\t%s\n' "$1" "$((SECONDS - SNAPSHOT_STAGE_START + ${FM_SNAPSHOT_STAGE_BASE:-0}))" \
+      >&"$FM_SNAPSHOT_STAGE_FD"; } 2>/dev/null || true
 }
 
 bool_json() {
@@ -1015,18 +1018,21 @@ task_row_json() {  # <captured-meta>
 
 # Rows are composed concurrently, up to FM_SNAPSHOT_LOCAL_READ_CONCURRENCY, as the
 # serial per-task composition dominated refresh time on a loaded host. Each row
-# lands in its own file and the sort by id keeps the output order deterministic.
+# lands in its own file under rows/, apart from the per-task observation files
+# that share the task id as a prefix, and the sort by id keeps the output order
+# deterministic.
 task_json_lines() {
   local meta id index=0 rc=0
   local -a row_files=()
+  mkdir -p "$SNAPSHOT_TASK_DIR/rows" || { snapshot_task_cleanup; return 1; }
   snapshot_window_reset
   while [ "$index" -lt "$SNAPSHOT_TASK_META_COUNT" ]; do
     meta=${SNAPSHOT_TASK_METAS[index]}
     index=$((index + 1))
     id=$(basename "$meta" .meta)
-    row_files[${#row_files[@]}]="$SNAPSHOT_TASK_DIR/$id.row.json"
+    row_files[${#row_files[@]}]="$SNAPSHOT_TASK_DIR/rows/$id.json"
     snapshot_window_reap "$FM_SNAPSHOT_LOCAL_READ_CONCURRENCY"
-    task_row_json "$meta" > "$SNAPSHOT_TASK_DIR/$id.row.json" &
+    task_row_json "$meta" > "$SNAPSHOT_TASK_DIR/rows/$id.json" &
     snapshot_window_add $!
   done
   snapshot_window_drain || rc=1

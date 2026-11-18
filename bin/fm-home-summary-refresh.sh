@@ -22,7 +22,7 @@
 # A failed refresh never rewrites the ledger, so the last good summary keeps its
 # own generated and generated_epoch values: readers see its true age, never the
 # time of the failed attempt. The producer reports each stage it enters to a
-# per-attempt stage file (FM_SNAPSHOT_STAGE_LOG), and a failed attempt, whether
+# per-attempt stage file (FM_SNAPSHOT_STAGE_FD), and a failed attempt, whether
 # it hit the deadline or the worker handled the failure itself, logs the stage it
 # was in plus the stage start offsets, so a slow or failing stage is named in
 # state/.home-summary-refresh.log instead of a bare deadline.
@@ -105,11 +105,14 @@ home_summary_cleanup() {
 }
 
 # Record that the worker entered <stage>, at its seconds since the worker
-# started, in the parent's stage file. Like the producer's own stage reports,
-# it appends only to a file that still exists.
+# started, on the stage descriptor the parent opened. Like the producer's own
+# stage reports, it writes through that descriptor and never by path, so a stage
+# file the parent already removed is not recreated.
 home_summary_stage() {  # <stage-name>
-  [ -n "${FM_SNAPSHOT_STAGE_LOG:-}" ] && [ -f "$FM_SNAPSHOT_STAGE_LOG" ] || return 0
-  printf '%s\t%s\n' "$1" "$SECONDS" >> "$FM_SNAPSHOT_STAGE_LOG" 2>/dev/null || true
+  case "${FM_SNAPSHOT_STAGE_FD:-}" in
+    ''|*[!0-9]*) return 0 ;;
+  esac
+  { printf '%s\t%s\n' "$1" "$SECONDS" >&"$FM_SNAPSHOT_STAGE_FD"; } 2>/dev/null || true
 }
 
 home_summary_fail() {
@@ -263,23 +266,46 @@ if [ "$HOME_SUMMARY_MODE" = parent ]; then
   trap 'exit 129' HUP
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  # No mkdir here: the parent must never block outside the deadline, so a home
-  # whose state directory is missing simply runs without stage reporting.
+  # No mkdir here: a home whose state directory is missing simply runs without
+  # stage reporting. Creating the stage file is bounded by the same deadline as
+  # the worker, and the time it takes comes out of the worker's share, so a
+  # stalled filesystem cannot hold the caller past the deadline.
+  stage_fd=
+  prepare_rc=0
+  worker_timeout=$HOME_SUMMARY_TIMEOUT
   if [ -d "$STATE" ]; then
-    stage_file=$(umask 077; mktemp "$STATE/.home-summary-stage.XXXXXX" 2>/dev/null) || stage_file=
+    prepare_started=$SECONDS
+    stage_file=$(umask 077; fm_run_timed "$HOME_SUMMARY_TIMEOUT" \
+      mktemp "$STATE/.home-summary-stage.XXXXXX" 2>/dev/null) || prepare_rc=$?
+    [ "$prepare_rc" -eq 0 ] || stage_file=
+    worker_timeout=$((HOME_SUMMARY_TIMEOUT - (SECONDS - prepare_started)))
+    [ "$worker_timeout" -ge 1 ] || worker_timeout=1
   fi
-  if fm_run_timed "$HOME_SUMMARY_TIMEOUT" env \
+  if [ -n "$stage_file" ]; then
+    # The descriptor stays open in the parent so the worker can append after the
+    # parent removes the file; nothing then reopens the path.
+    if { exec 9>>"$stage_file"; } 2>/dev/null; then
+      stage_fd=9
+    fi
+  fi
+  stage_note=
+  if [ "$prepare_rc" -eq 124 ]; then
+    refresh_rc=124
+    stage_note=" while preparing the stage file"
+  elif fm_run_timed "$worker_timeout" env \
     FM_HOME_SUMMARY_WORKER_BEST_EFFORT="$BEST_EFFORT" \
     FM_HOME_SUMMARY_IF_IDLE="$HOME_SUMMARY_IF_IDLE" \
-    FM_SNAPSHOT_STAGE_LOG="$stage_file" \
+    FM_HOME_SUMMARY_STAGE_FILE="$stage_file" \
+    FM_SNAPSHOT_STAGE_FD="$stage_fd" \
     "$SCRIPT_DIR/fm-home-summary-refresh.sh" --_worker; then
     [ -z "$stage_file" ] || rm -f -- "$stage_file"
     exit 0
   else
     refresh_rc=$?
   fi
-  stage_note=
-  [ -z "$stage_file" ] || stage_note=$(home_summary_stage_note "$stage_file")
+  if [ -z "$stage_note" ] && [ -n "$stage_file" ]; then
+    stage_note=$(home_summary_stage_note "$stage_file")
+  fi
   [ -z "$stage_file" ] || rm -f -- "$stage_file"
   if [ "$BEST_EFFORT" -eq 1 ]; then
     if [ "$refresh_rc" -eq 124 ]; then
@@ -307,8 +333,8 @@ else
 fi
 # A failure the worker handled itself names its stage too, like a deadline the
 # parent reports, so every failed refresh says where it stopped.
-if [ -n "${FM_SNAPSHOT_STAGE_LOG:-}" ]; then
-  HOME_SUMMARY_ERROR="$HOME_SUMMARY_ERROR$(home_summary_stage_note "$FM_SNAPSHOT_STAGE_LOG")"
+if [ -n "${FM_HOME_SUMMARY_STAGE_FILE:-}" ]; then
+  HOME_SUMMARY_ERROR="$HOME_SUMMARY_ERROR$(home_summary_stage_note "$FM_HOME_SUMMARY_STAGE_FILE")"
 fi
 if [ "$BEST_EFFORT" -eq 1 ]; then
   home_summary_log_failure
