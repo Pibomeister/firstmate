@@ -15,6 +15,8 @@
 # time, or as a durable wake when it does not. The locked startup's bounded
 # inactive-outcome scan also runs here because its local current-state reads can
 # be just as slow; that scan publishes its own findings to the durable wake queue.
+# After the bootstrap refresh, fm-unpushed-reconcile.sh flags unpublished task
+# branches in this same report, including blocked pipeline starts without a run.
 #
 # WHAT IS PRESERVED. Nothing is dropped. bin/fm-bootstrap.sh remains the single
 # owner of every network sweep and still runs all of them, unchanged, via its
@@ -224,7 +226,7 @@ worker_alive() {
 phase_label() {  # <phases>
   case "$1" in
     probe) printf 'GitHub authentication' ;;
-    probe,sweeps) printf 'GitHub authentication, dead-secondmate relaunch, secondmate convergence, home code drift, pending handoff delivery, project clone refresh with its drift reporting, and inactive terminal-outcome reconciliation' ;;
+    probe,sweeps) printf 'GitHub authentication, dead-secondmate relaunch, secondmate convergence, home code drift, pending handoff delivery, project clone refresh with its drift reporting, inactive terminal-outcome reconciliation, and unpublished task-branch reconciliation' ;;
     *) printf 'the deferred network checks' ;;
   esac
 }
@@ -580,7 +582,10 @@ EOF
       bash -c '
         script_dir=$1
         "$script_dir/fm-inactive-reconcile.sh" scan --startup >/dev/null 2>&1 || true
-        exec "$script_dir/fm-bootstrap.sh"
+        bootstrap_rc=0
+        "$script_dir/fm-bootstrap.sh" || bootstrap_rc=$?
+        "$script_dir/fm-unpushed-reconcile.sh" scan || printf "UNPUSHED: incomplete scan; rerun %s/fm-unpushed-reconcile.sh scan\n" "$script_dir"
+        exit "$bootstrap_rc"
       ' _ "$SCRIPT_DIR" >"$out" 2>&1 || rc=$?
   else
     fm_run_timed "$budget" env FM_BOOTSTRAP_NETWORK=only FM_BOOTSTRAP_DETECT_ONLY=1 \

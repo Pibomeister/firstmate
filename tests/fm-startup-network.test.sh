@@ -859,6 +859,41 @@ EOF
   pass "fm-startup-network: a held publish lock ends the worker inside its budget with a failed-rerun record"
 }
 
+test_unpublished_branch_recovery_is_durable_and_requires_the_lock() {
+  local rec home root log project report
+  rec=$(new_world unpublished-branch)
+  IFS='|' read -r home root log <<EOF
+$rec
+EOF
+  project="$home/projects/demo"
+  mkdir -p "$project" "$home/data"
+  printf '%s\n' '- demo [no-mistakes] - fixture' > "$home/data/projects.md"
+  printf '%s\n' '- [ ] task - example' > "$home/data/backlog.md"
+  git -C "$project" init -q -b main
+  git -C "$project" -c user.name=Test -c user.email=test@example.com commit -qm base --allow-empty
+  git -C "$project" remote add origin https://github.com/example/demo.git
+  git -C "$project" update-ref refs/remotes/origin/main HEAD
+  git -C "$project" checkout -qb fm/task
+  git -C "$project" -c user.name=Test -c user.email=test@example.com commit -qm change --allow-empty
+  printf 'project=%s\nbranch=fm/task\nkind=ship\nmode=no-mistakes\n' "$project" > "$home/state/task.meta"
+  printf 'blocked [at=100] [key=nm-start]: run startup timed out\n' > "$home/state/task.status"
+  # Deliberately no working forge client: its unknown verdict must not hide the
+  # unpublished branch or turn a partial read into a clean startup report.
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$root/bin/gh-axi"
+  chmod +x "$root/bin/gh-axi"
+  printf '%s\n' $$ > "$home/state/.lock"
+  FM_FAKE_BOOTSTRAP_LOG="$log" run_stage "$home" "$root" run --locked 0
+  report=$(run_stage "$home" "$root" report)
+  assert_not_contains "$report" 'UNPUSHED:' 'a lock-refused startup inspected task branches'
+
+  FM_FAKE_BOOTSTRAP_LOG="$log" run_stage "$home" "$root" run --locked 1 --lock-pid $$
+  report=$(run_stage "$home" "$root" report)
+  assert_contains "$report" 'branch=fm/task' 'the deferred startup lost the unpublished branch'
+  assert_contains "$report" '[key=nm-start]' 'the deferred startup lost its open startup blocker'
+  wait_for_startup_network_wake "$home" || fail 'the unpublished branch never produced a durable startup wake'
+  pass 'fm-startup-network: unpublished branches and startup blockers survive in a durable locked-start report'
+}
+
 test_wait_fails_without_a_published_stage
 test_start_returns_without_holding_the_callers_stdout
 test_harvest_acknowledgement_suppresses_the_wake_and_no_claim_produces_it
@@ -880,4 +915,5 @@ test_timings_are_published_and_only_the_on_demand_report_prints_them
 test_a_bounded_run_still_publishes_the_timings_it_managed_to_record
 test_the_timing_artifact_cannot_carry_a_command_line_or_forge_records
 test_a_held_publish_lock_cannot_keep_the_worker_alive_past_its_budget
+test_unpublished_branch_recovery_is_durable_and_requires_the_lock
 echo "# fm-startup-network.test.sh: all assertions passed"
