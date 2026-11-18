@@ -341,6 +341,7 @@ reason=$(posture_reason)
 # WITHHELD and reports failure; TYPED records that the line was typed.
 WITHHELD="$LOCK/withheld.$$"
 TYPED="$LOCK/typed.$$"
+# shellcheck disable=SC2329 # Invoked from the eval wrapper in guard_keystroke.
 keystroke_allowed() {
   local why
   why=$(posture_reason)
@@ -348,6 +349,7 @@ keystroke_allowed() {
   [ -e "$WITHHELD" ] || printf '%s\n' "$why" > "$WITHHELD" 2>/dev/null || true
   return 1
 }
+# shellcheck disable=SC2329 # Invoked from the eval wrapper in guard_keystroke.
 keystroke_kind() {  # <function> <args...>: prints text, key, or nothing for a read
   local fn=$1
   shift
