@@ -87,10 +87,26 @@ test_cursor_post_tool_use_status_append_injects() {
 
 test_write_contents_done_line_injects_prove_it_works() {
   run_hook "$PRIMARY" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Write","tool_input":{"path":"state/t.status","contents":"done [at=1731880000]: shipped\n"}}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Write","tool_input":{"file_path":"state/t.status","content":"done [at=1731880000]: shipped\n"}}' \
     --claude
-  expect_claude_inject "principle-prove-it-works" "PostToolUse" "Write contents with a done line"
-  pass "Write contents holding a done line injects principle-prove-it-works"
+  expect_claude_inject "principle-prove-it-works" "PostToolUse" "Write content with a done line"
+  pass "Write content holding a done line injects principle-prove-it-works"
+}
+
+test_captain_prompt_done_merge_is_not_completion() {
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"beforeSubmitPrompt","prompt":"done: merge it","cursor_version":"x"}' \
+    --cursor
+  expect_cursor_continue_only "captain prompt done: merge it"
+  pass "done: merge it on a captain prompt does not inject principle-prove-it-works"
+}
+
+test_this_is_faster_than_main_is_a_speed_claim() {
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"UserPromptSubmit","prompt":"this is faster than main"}' \
+    --claude
+  expect_claude_inject "principle-explain-the-number" "UserPromptSubmit" "X is faster than Y"
+  pass "this is faster than main injects principle-explain-the-number"
 }
 
 test_working_status_is_not_a_completion_report() {
@@ -151,10 +167,18 @@ test_needs_decision_line_is_not_a_completion() {
 
 test_write_of_test_file_injects_test_behavior() {
   run_hook "$PRIMARY" \
-    '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"path":"tests/fm-export.test.sh","contents":"pass x\n"}}' \
+    '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"tests/fm-export.test.sh","content":"pass x\n"}}' \
     --claude
   expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" "Write of a test file"
   pass "writing a test file injects principle-test-behavior-not-implementation"
+}
+
+test_cwd_relative_test_file_write_injects() {
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"foo.test.sh","content":"pass x\n"}}' \
+    --claude
+  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" "cwd-relative foo.test.sh"
+  pass "a cwd-relative foo.test.sh Write injects principle-test-behavior-not-implementation"
 }
 
 test_cursor_post_tool_write_of_test_file_injects() {
@@ -171,6 +195,22 @@ test_shell_redirect_to_test_file_injects() {
     --claude
   expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" "heredoc into a test path"
   pass "a Shell heredoc into a test path injects principle-test-behavior-not-implementation"
+}
+
+test_tee_with_flags_into_test_path_injects() {
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"echo pass | tee -a tests/fm-export.test.sh"}}' \
+    --claude
+  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" "tee -a into a test path"
+  pass "tee -a tests/... injects principle-test-behavior-not-implementation"
+}
+
+test_cp_into_test_path_injects() {
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cp scratch.sh tests/fm-export.test.sh"}}' \
+    --claude
+  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" "cp into a test path"
+  pass "cp into tests/... injects principle-test-behavior-not-implementation"
 }
 
 test_contest_path_is_not_a_test_write() {
@@ -332,37 +372,60 @@ test_same_red_twice_after_claimed_fix_injects_attack_the_premise() {
   home="$TMP_ROOT/reds"
   mkdir -p "$home/state"
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"true"},"tool_response":{"stdout":"fixed tests/export.test.sh\n"}}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"true"},"tool_response":{"stdout":"fixed tests/export.test.sh\n"},"session_id":"s1"}' \
     --claude
   expect_silent "a claimed fix alone is not a recurring red"
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh does the thing\n"},"tool_use_id":"r1"}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh does the thing\n"},"tool_use_id":"r1","session_id":"s1"}' \
     --claude
   expect_silent "the first TAP red after a claimed fix is not yet recurring"
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh does the thing\n"},"tool_use_id":"r2"}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh does the thing\n"},"tool_use_id":"r2","session_id":"s1"}' \
     --claude
   expect_claude_inject "principle-attack-the-premise" "PostToolUse" "the same TAP red twice after a claimed fix"
   pass "the same TAP red twice after a claimed fix injects principle-attack-the-premise"
 }
 
-test_cursor_post_tool_use_stderr_from_tool_output_json() {
+test_cursor_tap_only_after_shell_execution() {
   local home
-  home="$TMP_ROOT/reds-cursor-stderr"
+  home="$TMP_ROOT/reds-cursor-tap"
   mkdir -p "$home/state"
   run_hook "$home" \
     '{"hook_event_name":"afterAgentResponse","text":"fixed tests/export.test.sh","cursor_version":"x","conversation_id":"c1"}' \
     --cursor
   expect_silent "claim alone"
   run_hook "$home" \
-    '{"hook_event_name":"postToolUse","tool_name":"Shell","tool_input":{"command":"bash tests/export.test.sh"},"tool_output":"{\"exitCode\":1,\"stdout\":\"\",\"stderr\":\"not ok - tests/export.test.sh does the thing\\n\"}","cursor_version":"x","tool_use_id":"s1","conversation_id":"c1"}' \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh does the thing\n","cursor_version":"x","generation_id":"g1","conversation_id":"c1"}' \
     --cursor
-  expect_silent "first Cursor tool_output stderr red"
+  expect_silent "first TAP-only afterShellExecution"
   run_hook "$home" \
-    '{"hook_event_name":"postToolUse","tool_name":"Shell","tool_input":{"command":"bash tests/export.test.sh"},"tool_output":"{\"exitCode\":1,\"stdout\":\"\",\"stderr\":\"not ok - tests/export.test.sh does the thing\\n\"}","cursor_version":"x","tool_use_id":"s2","conversation_id":"c1"}' \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh does the thing\n","cursor_version":"x","generation_id":"g2","conversation_id":"c1"}' \
     --cursor
-  expect_cursor_inject "principle-attack-the-premise" "Cursor postToolUse tool_output.stderr TAP"
-  pass "Cursor postToolUse JSON tool_output stderr injects principle-attack-the-premise on the second red"
+  expect_silent "second TAP-only afterShellExecution is pending, no stdout"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1"}' \
+    --cursor
+  expect_cursor_inject "principle-attack-the-premise" "pending TAP red delivered on postToolUse"
+  pass "TAP-only afterShellExecution counts once per call and delivers attack-the-premise on the next postToolUse"
+}
+
+test_cursor_post_tool_use_failure_payload() {
+  local home
+  home="$TMP_ROOT/reds-cursor-failure"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/export.test.sh","cursor_version":"x","conversation_id":"c1"}' \
+    --cursor
+  expect_silent "claim alone"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUseFailure","tool_name":"Shell","command":"bash tests/export.test.sh","error_message":"not ok - tests/export.test.sh does the thing\n","failure_type":"error","cursor_version":"x","tool_use_id":"f1","conversation_id":"c1"}' \
+    --cursor
+  expect_silent "first documented postToolUseFailure"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUseFailure","tool_name":"Shell","command":"bash tests/export.test.sh retry","error_message":"not ok - tests/export.test.sh does the thing\n","failure_type":"error","cursor_version":"x","tool_use_id":"f2","conversation_id":"c1"}' \
+    --cursor
+  expect_cursor_inject "principle-attack-the-premise" "Cursor postToolUseFailure TAP in error_message"
+  pass "a documented postToolUseFailure payload with error_message and failure_type injects on the second red"
 }
 
 test_one_failed_shell_is_not_counted_twice() {
@@ -373,14 +436,32 @@ test_one_failed_shell_is_not_counted_twice() {
     '{"hook_event_name":"afterAgentResponse","text":"fixed tests/export.test.sh","cursor_version":"x","conversation_id":"c1"}' \
     --cursor
   run_hook "$home" \
-    '{"hook_event_name":"postToolUse","tool_name":"Shell","tool_input":{"command":"bash tests/export.test.sh"},"tool_output":"{\"exitCode\":1,\"stdout\":\"\",\"stderr\":\"not ok - tests/export.test.sh does the thing\\n\"}","cursor_version":"x","tool_use_id":"t1","conversation_id":"c1"}' \
-    --cursor
-  expect_silent "postToolUse first red"
-  run_hook "$home" \
     '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh does the thing\n","cursor_version":"x","generation_id":"g1","conversation_id":"c1"}' \
     --cursor
-  expect_silent "afterShellExecution must not count a second red or print JSON"
-  pass "one failed Shell on postToolUse and afterShellExecution stays at streak 1"
+  expect_silent "afterShellExecution first red"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUseFailure","tool_name":"Shell","command":"bash tests/export.test.sh","error_message":"Command failed","failure_type":"error","cursor_version":"x","tool_use_id":"t1","conversation_id":"c1"}' \
+    --cursor
+  expect_silent "postToolUseFailure of the same command must not be a second red"
+  pass "one failed Shell on afterShellExecution and postToolUseFailure stays at streak 1"
+}
+
+test_cursor_post_tool_use_success_does_not_count_tap() {
+  local home
+  home="$TMP_ROOT/reds-success-tap"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/export.test.sh","cursor_version":"x","conversation_id":"c1"}' \
+    --cursor
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Shell","tool_input":{"command":"bash tests/export.test.sh"},"tool_output":"{\"exitCode\":0,\"stdout\":\"\",\"stderr\":\"not ok - tests/export.test.sh does the thing\\n\"}","cursor_version":"x","tool_use_id":"s1","conversation_id":"c1"}' \
+    --cursor
+  expect_silent "successful postToolUse must not count TAP"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Shell","tool_input":{"command":"bash tests/export.test.sh"},"tool_output":"{\"exitCode\":0,\"stdout\":\"\",\"stderr\":\"not ok - tests/export.test.sh does the thing\\n\"}","cursor_version":"x","tool_use_id":"s2","conversation_id":"c1"}' \
+    --cursor
+  expect_silent "a second successful postToolUse still must not count TAP"
+  pass "Cursor postToolUse is a successful tool use and does not count TAP as a red"
 }
 
 test_fail_style_stderr_on_claude_post_tool_use() {
@@ -388,19 +469,19 @@ test_fail_style_stderr_on_claude_post_tool_use() {
   home="$TMP_ROOT/reds-stderr"
   mkdir -p "$home/state"
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"bash tests/export.test.sh"},"tool_response":{"stdout":"1..1\n","stderr":"not ok - tests/export.test.sh does the thing\n"},"tool_use_id":"c1"}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"bash tests/export.test.sh"},"tool_response":{"stdout":"1..1\n","stderr":"not ok - tests/export.test.sh does the thing\n"},"tool_use_id":"c1","session_id":"s1"}' \
     --claude
   expect_silent "first stderr TAP red with no prior claim should not inject attack"
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed tests/export.test.sh\n"}}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed tests/export.test.sh\n"},"session_id":"s1"}' \
     --claude
   expect_silent "claim after first red is not yet a streak of two"
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"","stderr":"not ok - tests/export.test.sh does the thing\n"},"tool_use_id":"r1"}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"","stderr":"not ok - tests/export.test.sh does the thing\n"},"tool_use_id":"r1","session_id":"s1"}' \
     --claude
   expect_silent "first red after the claim"
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"","stderr":"not ok - tests/export.test.sh does the thing\n"},"tool_use_id":"r2"}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"","stderr":"not ok - tests/export.test.sh does the thing\n"},"tool_use_id":"r2","session_id":"s1"}' \
     --claude
   expect_claude_inject "principle-attack-the-premise" "PostToolUse" "fail()-style stderr TAP"
   pass "fail()-style not ok - stderr injects principle-attack-the-premise on the second red"
@@ -411,13 +492,13 @@ test_tap_description_is_not_keyed_as_a() {
   home="$TMP_ROOT/reds-tap-a"
   mkdir -p "$home/state"
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed tests/export.test.sh\n"}}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed tests/export.test.sh\n"},"session_id":"s1"}' \
     --claude
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - a done: completion report injects principle-prove-it-works\n"},"tool_use_id":"t1"}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - a done: completion report injects principle-prove-it-works\n"},"tool_use_id":"t1","session_id":"s1"}' \
     --claude
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - a working: line does not inject\n"},"tool_use_id":"t2"}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - a working: line does not inject\n"},"tool_use_id":"t2","session_id":"s1"}' \
     --claude
   expect_silent "two different TAP descriptions must not share id a"
   pass "a TAP line not ok - a done: does not key the id as a"
@@ -428,14 +509,14 @@ test_pytest_node_id_matches_file_claim() {
   home="$TMP_ROOT/reds-pytest"
   mkdir -p "$home/state"
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed tests/test_export.py\n"}}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed tests/test_export.py\n"},"session_id":"s1"}' \
     --claude
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"FAILED tests/test_export.py::test_it\n"},"tool_use_id":"p1"}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"FAILED tests/test_export.py::test_it\n"},"tool_use_id":"p1","session_id":"s1"}' \
     --claude
   expect_silent "first pytest node red"
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"FAILED tests/test_export.py::test_it\n"},"tool_use_id":"p2"}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"FAILED tests/test_export.py::test_it\n"},"tool_use_id":"p2","session_id":"s1"}' \
     --claude
   expect_claude_inject "principle-attack-the-premise" "PostToolUse" "pytest node id vs file claim"
   pass "a pytest node id tests/test_export.py::test_it matches a file claim"
@@ -446,14 +527,14 @@ test_jest_fail_line_is_extracted() {
   home="$TMP_ROOT/reds-jest"
   mkdir -p "$home/state"
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed src/foo.test.ts\n"}}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed src/foo.test.ts\n"},"session_id":"s1"}' \
     --claude
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"FAIL src/foo.test.ts\n"},"tool_use_id":"j1"}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"FAIL src/foo.test.ts\n"},"tool_use_id":"j1","session_id":"s1"}' \
     --claude
   expect_silent "first Jest FAIL red"
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"FAIL src/foo.test.ts\n"},"tool_use_id":"j2"}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"FAIL src/foo.test.ts\n"},"tool_use_id":"j2","session_id":"s1"}' \
     --claude
   expect_claude_inject "principle-attack-the-premise" "PostToolUse" "Jest FAIL line"
   pass "Jest FAIL src/foo.test.ts injects principle-attack-the-premise on the second red"
@@ -466,17 +547,17 @@ test_glob_in_tap_line_does_not_expand() {
   printf 'x\n' > "$home/work/tests/assets"
   printf 'x\n' > "$home/work/tests/export.test.sh"
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed tests/assets\n"}}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed tests/assets\n"},"session_id":"s1"}' \
     --claude
   (
     cd "$home/work" || exit 1
     RUN_STATUS=0
-    RUN_OUT=$(printf '%s' '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/*\n"},"tool_use_id":"g1"}' \
+    RUN_OUT=$(printf '%s' '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/*\n"},"tool_use_id":"g1","session_id":"s1"}' \
       | env -u FM_HOME FM_ROOT_OVERRIDE="$home" FM_STATE_OVERRIDE="$home/state" \
         bash "$HOOK" --claude) || RUN_STATUS=$?
     expect_code 0 "$RUN_STATUS" "glob red 1"
     [ -z "$RUN_OUT" ] || fail "glob red 1 injected: $RUN_OUT"
-    RUN_OUT=$(printf '%s' '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/*\n"},"tool_use_id":"g2"}' \
+    RUN_OUT=$(printf '%s' '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/*\n"},"tool_use_id":"g2","session_id":"s1"}' \
       | env -u FM_HOME FM_ROOT_OVERRIDE="$home" FM_STATE_OVERRIDE="$home/state" \
         bash "$HOOK" --claude) || RUN_STATUS=$?
     expect_code 0 "$RUN_STATUS" "glob red 2"
@@ -490,13 +571,13 @@ test_same_red_payload_is_idempotent() {
   home="$TMP_ROOT/reds-idem"
   mkdir -p "$home/state"
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed tests/export.test.sh\n"},"prompt_id":"c1"}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed tests/export.test.sh\n"},"prompt_id":"c1","session_id":"s1"}' \
     --claude
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh\n"},"tool_use_id":"r1"}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh\n"},"tool_use_id":"r1","session_id":"s1"}' \
     --claude
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh\n"},"tool_use_id":"r1"}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh\n"},"tool_use_id":"r1","session_id":"s1"}' \
     --claude
   expect_silent "the same tool_use_id must not count as a second red"
   pass "a repeated red payload with the same token does not inject"
@@ -507,10 +588,10 @@ test_two_reds_without_a_claimed_fix_do_not_inject() {
   home="$TMP_ROOT/reds-noclaim"
   mkdir -p "$home/state"
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh\n"},"tool_use_id":"a"}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh\n"},"tool_use_id":"a","session_id":"s1"}' \
     --claude
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh\n"},"tool_use_id":"b"}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh\n"},"tool_use_id":"b","session_id":"s1"}' \
     --claude
   expect_silent "two reds with no claimed fix"
   pass "the same red twice with no claimed fix does not inject"
@@ -521,13 +602,13 @@ test_different_check_ids_do_not_share_a_streak() {
   home="$TMP_ROOT/reds-other"
   mkdir -p "$home/state"
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed tests/export.test.sh\n"}}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed tests/export.test.sh\n"},"session_id":"s1"}' \
     --claude
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh\n"},"tool_use_id":"r1"}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh\n"},"tool_use_id":"r1","session_id":"s1"}' \
     --claude
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/other.test.sh\n"},"tool_use_id":"r2"}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/other.test.sh\n"},"tool_use_id":"r2","session_id":"s1"}' \
     --claude
   expect_silent "a different check id is not the same red"
   pass "a different check id does not inject principle-attack-the-premise"
@@ -542,17 +623,135 @@ test_stale_lock_is_broken() {
   python3 -c 'import os, sys; t = int(sys.argv[2]); os.utime(sys.argv[1], (t, t))' \
     "$home/state/pstack-verify-reds.tsv.lock" "$((now - 60))"
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed tests/export.test.sh\n"}}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed tests/export.test.sh\n"},"session_id":"s1"}' \
     --claude
   expect_silent "claim through a stale lock"
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh\n"},"tool_use_id":"r1"}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh\n"},"tool_use_id":"r1","session_id":"s1"}' \
     --claude
   run_hook "$home" \
-    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh\n"},"tool_use_id":"r2"}' \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh\n"},"tool_use_id":"r2","session_id":"s1"}' \
     --claude
   expect_claude_inject "principle-attack-the-premise" "PostToolUse" "stale lock must not disable recurring-red"
   pass "a stale mkdir lock is broken so recurring-red still fires"
+}
+
+test_pending_without_conversation_id_is_not_stored() {
+  local home
+  home="$TMP_ROOT/pending-noconv"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    '{"hook_event_name":"afterAgentResponse","text":"the export is faster now","cursor_version":"x"}' \
+    --cursor
+  expect_silent "speed claim with no conversation_id"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"cursor_version":"x","conversation_id":"other"}' \
+    --cursor
+  expect_silent "no conversation_id must not leak pending to another conversation"
+  pass "a pending marker is not stored without conversation_id"
+}
+
+test_pending_does_not_cross_conversations() {
+  local home
+  home="$TMP_ROOT/pending-cross"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    '{"hook_event_name":"afterAgentResponse","text":"the export is faster now","cursor_version":"x","conversation_id":"a"}' \
+    --cursor
+  expect_silent "claim on conversation a"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"cursor_version":"x","conversation_id":"b"}' \
+    --cursor
+  expect_silent "conversation b must not receive a's pending"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"cursor_version":"x","conversation_id":"a"}' \
+    --cursor
+  expect_cursor_inject "principle-explain-the-number" "conversation a still delivers its own pending"
+  pass "pending markers are keyed per conversation_id"
+}
+
+test_reds_do_not_cross_conversations() {
+  local home
+  home="$TMP_ROOT/reds-cross"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/export.test.sh","cursor_version":"x","conversation_id":"a"}' \
+    --cursor
+  run_hook "$home" \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh\n","cursor_version":"x","generation_id":"g1","conversation_id":"b"}' \
+    --cursor
+  run_hook "$home" \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh\n","cursor_version":"x","generation_id":"g2","conversation_id":"b"}' \
+    --cursor
+  expect_silent "conversation B reds must not use conversation A's claim"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"cursor_version":"x","conversation_id":"b"}' \
+    --cursor
+  expect_silent "no pending attack on conversation B"
+  pass "reds TSV is keyed by conversation_id plus test id"
+}
+
+test_reds_without_conversation_id_are_not_recorded() {
+  local home
+  home="$TMP_ROOT/reds-noconv"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/export.test.sh","cursor_version":"x"}' \
+    --cursor
+  run_hook "$home" \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh\n","cursor_version":"x","generation_id":"g1"}' \
+    --cursor
+  run_hook "$home" \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh\n","cursor_version":"x","generation_id":"g2"}' \
+    --cursor
+  expect_silent "reds with no conversation_id"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"cursor_version":"x","conversation_id":"later"}' \
+    --cursor
+  expect_silent "unkeyed reds must not later inject"
+  pass "reds without conversation_id are not recorded"
+}
+
+test_lock_aged_five_seconds_breaks_once_stale() {
+  local home now
+  home="$TMP_ROOT/reds-aging-lock"
+  mkdir -p "$home/state"
+  mkdir "$home/state/pstack-verify-reds.tsv.lock"
+  now=$(date +%s)
+  python3 -c 'import os, sys; t = int(sys.argv[2]); os.utime(sys.argv[1], (t, t))' \
+    "$home/state/pstack-verify-reds.tsv.lock" "$((now - 5))"
+  run_hook "$home" \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed tests/export.test.sh\n"},"session_id":"s1"}' \
+    --claude
+  expect_silent "claim through a lock that ages past stale"
+  [ ! -d "$home/state/pstack-verify-reds.tsv.lock" ] \
+    || fail "aging lock must be released after the claim"
+  pass "a lock aged about 5s is broken once it goes stale"
+}
+
+test_missing_jq_before_submit_still_continues() {
+  local fake status out
+  fake="$TMP_ROOT/nojq-continue"
+  mkdir -p "$fake"
+  printf '#!/bin/sh\nexit 127\n' > "$fake/jq"
+  chmod +x "$fake/jq"
+  status=0
+  out=$(printf '%s' '{"hook_event_name":"beforeSubmitPrompt","prompt":"hi","cursor_version":"x"}' \
+    | env -u FM_HOME PATH="$fake:$PATH" \
+      FM_ROOT_OVERRIDE="$PRIMARY" FM_STATE_OVERRIDE="$PRIMARY/state" \
+      bash "$HOOK" --cursor) || status=$?
+  expect_code 0 "$status" "missing jq beforeSubmitPrompt must exit 0"
+  [ "$out" = '{"continue":true}' ] \
+    || fail "missing jq beforeSubmitPrompt must print continue, got: $out"
+  pass "missing jq still prints {\"continue\":true} on beforeSubmitPrompt"
+}
+
+test_claude_mode_stands_down_on_cursor_before_submit() {
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"beforeSubmitPrompt","prompt":"the export is faster now","cursor_version":"x"}' \
+    --claude
+  expect_cursor_continue_only "Claude stand-down on Cursor beforeSubmitPrompt"
+  pass "--claude on a Cursor beforeSubmitPrompt still prints continue:true"
 }
 
 test_claude_mode_stands_down_on_cursor_post_tool_use() {
@@ -668,6 +867,8 @@ test_vendored_skills_are_present() {
 test_status_append_command_injects_prove_it_works
 test_cursor_post_tool_use_status_append_injects
 test_write_contents_done_line_injects_prove_it_works
+test_captain_prompt_done_merge_is_not_completion
+test_this_is_faster_than_main_is_a_speed_claim
 test_working_status_is_not_a_completion_report
 test_checks_green_question_is_not_completion
 test_working_checks_green_so_far_is_not_completion
@@ -676,8 +877,11 @@ test_pr_ready_for_review_sentence_is_not_completion
 test_blocked_line_is_not_a_completion
 test_needs_decision_line_is_not_a_completion
 test_write_of_test_file_injects_test_behavior
+test_cwd_relative_test_file_write_injects
 test_cursor_post_tool_write_of_test_file_injects
 test_shell_redirect_to_test_file_injects
+test_tee_with_flags_into_test_path_injects
+test_cp_into_test_path_injects
 test_contest_path_is_not_a_test_write
 test_write_of_docs_testing_notes_is_not_a_test_change
 test_docs_test_plan_is_not_a_test_file
@@ -696,8 +900,10 @@ test_fast_forward_is_not_a_speed_claim
 test_faster_path_is_not_a_speed_claim
 test_fast_forward_does_not_hide_a_real_speed_claim
 test_same_red_twice_after_claimed_fix_injects_attack_the_premise
-test_cursor_post_tool_use_stderr_from_tool_output_json
+test_cursor_tap_only_after_shell_execution
+test_cursor_post_tool_use_failure_payload
 test_one_failed_shell_is_not_counted_twice
+test_cursor_post_tool_use_success_does_not_count_tap
 test_fail_style_stderr_on_claude_post_tool_use
 test_tap_description_is_not_keyed_as_a
 test_pytest_node_id_matches_file_claim
@@ -707,6 +913,13 @@ test_same_red_payload_is_idempotent
 test_two_reds_without_a_claimed_fix_do_not_inject
 test_different_check_ids_do_not_share_a_streak
 test_stale_lock_is_broken
+test_pending_without_conversation_id_is_not_stored
+test_pending_does_not_cross_conversations
+test_reds_do_not_cross_conversations
+test_reds_without_conversation_id_are_not_recorded
+test_lock_aged_five_seconds_breaks_once_stale
+test_missing_jq_before_submit_still_continues
+test_claude_mode_stands_down_on_cursor_before_submit
 test_claude_mode_stands_down_on_cursor_post_tool_use
 test_claude_mode_is_silent_on_cursor_pre_tool_use
 test_malformed_payload_fails_open

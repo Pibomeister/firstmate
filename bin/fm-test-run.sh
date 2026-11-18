@@ -980,7 +980,7 @@ tests/fm-procevent.test.sh 339254
 tests/fm-project-capacity.test.sh 74931
 tests/fm-project-mode.test.sh 651
 tests/fm-project-origin.test.sh 220
-tests/fm-pstack-verify-hook.test.sh 4500
+tests/fm-pstack-verify-hook.test.sh 12000
 tests/fm-public-followup.test.sh 465889
 tests/fm-quota-array-dispatch-live-e2e.test.sh 52
 tests/fm-quota-choose.test.sh 4619
