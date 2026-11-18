@@ -1701,7 +1701,10 @@ wd_pp_stop() {
     wd_rec "$(wd_id)" permission-prompt report failed "the blocked line could not be appended"
     return 0
   fi
-  printf '%s %s\n' "$key" "$hash" > "$mark.open"
+  if ! printf '%s %s\n' "$key" "$hash" 2>/dev/null > "$mark.open"; then
+    wd_rec "$(wd_id)" permission-prompt report failed "the blocked line was appended but its marker could not be written"
+    return 0
+  fi
   wd_rec "$(wd_id)" permission-prompt report "done" "blocked [key=$key]: $text"
 }
 

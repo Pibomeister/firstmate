@@ -292,6 +292,15 @@ test_hardstop_categories() {
     && fail "conversation above a usage-limit picker named its hard-stop category"
   assert_equals $'hardstop\tspend' "$(printf '⏺ I merged the deploy notes.\n\n You have hit your limit\n ❯ 1. Wait for reset\n   2. Add funds to keep going\n\n Enter to confirm · Esc to cancel\n' | classify claude usage-limit)" \
     "a usage-limit picker whose own rows offer paid usage stays a spend stop under conversation"
+  # Unnumbered pickers, which main's detector also accepts, read their own
+  # paragraph too.
+  local kind
+  for kind in question model-switch usage-limit; do
+    printf 'The API token was rotated yesterday.\n\n Pick one?\n ❯ Opus\n   Sonnet\n\n Enter to confirm · Esc to cancel\n' | classify claude "$kind" >/dev/null \
+      && fail "conversation above an unnumbered $kind picker named its hard-stop category"
+  done
+  assert_equals $'hardstop\tspend' "$(printf 'Done.\n\n You have hit your limit\n ❯ Add funds\n   Wait for reset\n\n Enter to confirm · Esc to cancel\n' | classify claude usage-limit)" \
+    "an unnumbered usage-limit picker whose own rows offer paid usage stays a spend stop"
   printf ' Which plan should I follow?\n ❯ 1. Plan A\n   2. Plan B\n\n Enter to select · ↑/↓ to navigate · Esc to cancel\n' | classify claude >/dev/null \
     && fail "an ordinary question picker is not a permission prompt"
   pass "hard stops: credential, sign-in, spend, destructive, and release prompts are named and never routed"

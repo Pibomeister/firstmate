@@ -12,7 +12,8 @@
 # --dialog passes the fm_wd_pane_dialog verdict the caller already has, or
 # `none` when the caller saw no dialog; it is computed from the screen when absent.
 #
-# Verdicts, checked in this order. Only a proven structure leads to an action:
+# Verdicts. A proven trust dialog is checked first, then the other dialogs.
+# Only a proven structure leads to an action:
 #   route tool-approval
 #       A Claude tool-approval prompt whose structure is proven on a worker with
 #       a recorded claude harness: a question row `Do you want to proceed?` (or
@@ -265,17 +266,27 @@ _fm_pp_codex_dialog() {  # <screen>
   printf '%s\n' "$rows"
 }
 
-# The screen rows of a question picker from the top of the paragraph that
-# holds its last `1.` option row down to the last row, read from the screen
-# because the prompt rows drop blank rows. When the option rows open their own
+# The screen rows of a picker from the top of the paragraph that holds its
+# first option row down to the last row, read from the screen because the
+# prompt rows drop blank rows. The option rows are found the way main's
+# `_fm_wd_dialog_rows` finds them: the last cursor row within the last 14
+# non-blank rows, then the last `1.` or `1)` row at or above it, or the cursor
+# row itself for an unnumbered picker. When the option rows open their own
 # paragraph, the paragraph above them is the picker's title and is included.
 # Empty when no option row is found.
 _fm_pp_question_paragraph() {  # <screen>
   printf '%s\n' "${1-}" | fm_wd_strip_ansi | awk '
     { r[NR] = $0 }
     END {
+      last = NR
+      while (last > 0 && r[last] !~ /[^ \t]/) last--
+      seen = 0; floor = 1
+      for (i = last; i > 0; i--) if (r[i] ~ /[^ \t]/ && ++seen == 14) { floor = i; break }
+      sel = 0
+      for (i = last; i >= floor; i--) if (r[i] ~ /(❯|›)[ \t]*[^ \t]/ || r[i] ~ />[ \t]*[0-9]+[.)][ \t]/) { sel = i; break }
       first = 0
-      for (i = NR; i >= 1; i--) if (r[i] ~ /^[^0-9A-Za-z]*1[.)][ \t]/) { first = i; break }
+      for (i = (sel ? sel : last); i >= floor; i--) if (r[i] ~ /^[^0-9A-Za-z]*1[.)][ \t]/) { first = i; break }
+      if (!first) first = sel
       if (!first) exit 0
       top = first
       while (top > 1 && r[top - 1] ~ /[^ \t]/) top--
