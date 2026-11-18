@@ -182,6 +182,7 @@ The worktree and the task's records are unaffected either way.
 - A launch failure **after** the agent is stopped restores the prior durable record, keeps the progress note so a later recovery still has it, marks the journal `failed:launching`, and reports plainly that no agent is running and where the work is preserved.
 - If the launch owner already published the new record but no running agent can be confirmed, the new record is kept: the task is recorded on the new harness with no agent confirmed, which is exactly what recovery reconciles.
   Rewriting it back to the old harness would be a second, worse inaccuracy.
+- The journal's `rollback=` value names the record that is on disk, read back after the rollback, so a record that went missing is restored from the prior record rather than reported as kept, and a restore that cannot complete is journaled `prior-record-restore-failed`.
 
 ## Fail-closed boundaries
 

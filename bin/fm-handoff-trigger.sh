@@ -11,7 +11,8 @@
 # it never asks for a successor and never gates a stop. A cycle ends in a
 # planned FRESH START (a handoff written from the mission ledger with
 # bin/fm-ledger.sh handoff, to a live successor the session launches with
-# bin/fm-handoff-launch.sh; a second mate asks its parent to relaunch it) only
+# bin/fm-handoff-launch.sh; a second mate asks its parent to relaunch it with
+# bin/fm-handoff-relaunch.sh request) only
 # at the drift cap: once the transcript holds fresh-start-after compaction
 # boundaries, or when the first context reading after the latest compaction is
 # at or above fresh-start-context-tokens. fresh-start-after=0 restores a handoff
@@ -114,8 +115,10 @@
 # restart gate is released for the cycle: the session survived, keeps the lock,
 # and keeps supervising, so it is no longer handing off. A later launch in the
 # same cycle removes that record and the gate applies again. A second mate never launches its own
-# successor and is not gated: its trigger instruction has it append one
-# relaunch request to its parent channel and stop.
+# successor: its trigger instruction has it run `bin/fm-handoff-relaunch.sh
+# request <handoff file>`, which owns the durable request to its parent, and
+# its stop is blocked until that script reports a request recorded at or after
+# this cycle's firing.
 # An ordinary stop is never gated.
 # A stop that already follows a block (stop_hook_active) is allowed, so the
 # gate blocks at most once per turn and never wedges the session. It cannot
@@ -259,9 +262,16 @@ if [ "$EVENT" = Stop ]; then
     exit 2
   fi
   # Successor gate: only a fresh-start firing in this cycle owes a successor;
-  # a capture firing or a handoff recorded for stow does not, and a second
-  # mate asks its parent for a relaunch instead.
-  if [ -n "$HANDOFF_MARKER" ] && ! fm_root_is_secondmate_home "$FM_ROOT"; then
+  # a capture firing or a handoff recorded for stow does not. A second mate
+  # owes its parent a recorded relaunch request instead.
+  if [ -n "$HANDOFF_MARKER" ] && fm_root_is_secondmate_home "$FM_ROOT"; then
+    FIRED_AT=$(marker_epoch) || exit 0
+    if ! FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-handoff-relaunch.sh" requested "$FIRED_AT" 2>/dev/null; then
+      fm_stop_policy_allows_stop "$PAYLOAD" charge && exit 0
+      printf '%s\n' 'Firstmate restart gate: this second mate fired a planned fresh start, but no relaunch request is recorded for it. Run bin/fm-handoff-relaunch.sh request <handoff document path>; it asks the parent once, on the parent channel, to relaunch this second mate. Then end this turn and wait.' >&2
+      exit 2
+    fi
+  elif [ -n "$HANDOFF_MARKER" ]; then
     LAUNCH="$STATE/.handoff-successor"
     # shellcheck source=bin/fm-session-lock-lib.sh
     . "$SCRIPT_DIR/fm-session-lock-lib.sh"
@@ -355,7 +365,7 @@ if [ "$MODE" = capture ]; then
 else
   MESSAGE="Firstmate planned fresh start, from this home's tracked Claude hook: about ${LEFT}% of context is left before auto-compact (${TOKENS} of ${COMPACT_AT} tokens), and ${REASON}, so this cycle ends in a handoff to a fresh session instead of another compaction. Capture first, because the limit can land at any point: file every open ask, approved proposal, and captain order that has no backlog item yet as its own item with bin/fm-ledger.sh intake, bring each item's note current, and persist every decision and piece of durable knowledge this session holds (the stow skill covers this). Then write a new handoff with bin/fm-ledger.sh handoff --doc <new handoff file> --note-file <short note of what is in flight right now>: it adds that note to the ledger plan, never continues an earlier handoff, and records the document with bin/fm-order.sh handoff --doc. If bin/fm-ledger.sh cannot read the backlog, do not skip the handoff: write a new handoff document yourself with the in-flight note, the open work, and bin/fm-dispatch-log.sh open, record it with bin/fm-order.sh handoff --doc <that file>, and say in it that the ledger was unreadable. A fact that arrives after you record the document goes into its durable record, never an addendum file, because the successor reads only the hashed document and re-checks live records at pickup."
   if fm_root_is_secondmate_home "$FM_ROOT"; then
-    MESSAGE="$MESSAGE This is a second mate, so never launch your own successor: append to your parent channel that your handoff is written, name the handoff document, and ask the parent to relaunch you, once, then end this turn."
+    MESSAGE="$MESSAGE This is a second mate, so never launch your own successor: run bin/fm-handoff-relaunch.sh request <handoff file>, which asks your parent once, on the parent channel, to relaunch you from that document and keeps the request open there until the relaunch is done. A relaunch request written as ordinary status text is not that record. Then end this turn and wait."
   else
     MESSAGE="$MESSAGE Launch your successor with bin/fm-handoff-launch.sh <handoff file>. Run it with the Bash tool's run_in_background=true, because a foreground tool timeout cannot cover its setup plus the ten-minute protocol deadline, and collect the launcher's exit status and output before reporting readiness. It requires the successor to read the document, write its nonce-bound acknowledgement with bin/fm-handoff-ack.sh, and take the session lock before state/.handoff-successor clears this turn's gate. The successor confirms the handoff sha256 and stops on a mismatch. The lock transfers while this session is still alive, so do not wait for an external exit. The successor then runs bin/fm-session-start.sh. After verified transfer, end this turn and retire the predecessor session. If both attempts fail within ten minutes, the launcher emits handoff_failed; report that failure instead of claiming readiness. A failure with reason=unresolved is not final: a later handoff_ack with reason=lock_transferred for the same nonce means the transfer committed."
   fi

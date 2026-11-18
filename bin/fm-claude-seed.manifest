@@ -40,7 +40,7 @@ b73bb8d9eb5c0cbb0cf17040e56664cac01eb4aa	.agents/skills/harness-adapters/referen
 3a84c2f8b441117b531af599808f45f03a48a80a	.agents/skills/harness-adapters/references/harness/pi.md
 a7bfed42381539fe59ce8ad2b5b2b45878578025	.agents/skills/harness-adapters/references/harness/polytoken.md
 58602fc3d31146859c96acc94eb9faa3a02d6e26	.agents/skills/harness-adapters/references/harness/rovo.md
-59419895ddf59dcc9f560d807e52dde21991e372	.agents/skills/operational-home-layout/SKILL.md
+990ff2fe4a5de053c7f2aef22ff9853b277085c2	.agents/skills/operational-home-layout/SKILL.md
 5ee25b02e701ca3e304122248a412d2372ab097c	.agents/skills/principle-attack-the-premise/SKILL.md
 0e1d6fb3ac98844227eec3e4d9ca1b33c26a7997	.agents/skills/principle-explain-the-number/SKILL.md
 1c293b3c3ad0f7cb021858b17e7588d30a0a1acb	.agents/skills/principle-prove-it-works/SKILL.md
@@ -50,7 +50,7 @@ ab511115bc1e399b46bb8ab8c799694deeb53ecd	.agents/skills/process-event-sources/SK
 eff603d0d9c96f56a66cea717c80e7df1e4b88e5	.agents/skills/quiet/SKILL.md
 7bae87a8ee47d4d48ec6d35065de9eee0de45930	.agents/skills/quota-array-dispatch/SKILL.md
 de7759e6c1df2c4d45b8441b61e7f8927a8af380	.agents/skills/scout-completion/SKILL.md
-87d3935954e33d2780d97119375f5f3f92fddac7	.agents/skills/secondmate-provisioning/SKILL.md
+06e4e18b776430ab60ed66287f4cbb36c5d448a1	.agents/skills/secondmate-provisioning/SKILL.md
 4b0de674a204d3aa15bd38e3bd559fef74f4033b	.agents/skills/session-start-recovery/SKILL.md
 962f1eedf9c6f702ce2452f23a85f9701456749e	.agents/skills/ship-landing/SKILL.md
 35a171734e393ef9a9ccf434e37f90f5629a1706	.agents/skills/stow/SKILL.md

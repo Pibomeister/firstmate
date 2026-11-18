@@ -97,7 +97,7 @@ case "$SUCC_REASON" in *[!A-Za-z0-9_.:-]*) die '--reason must be one token of le
 case "$SUCC_ACCOUNT" in *[[:cntrl:]]*) die '--account must name one config/claude-accounts entry exactly' ;; esac
 # shellcheck source=bin/fm-primary-scope-lib.sh
 . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
-fm_root_is_secondmate_home "$FM_HOME" && die 'a second mate asks its parent to relaunch it'
+fm_root_is_secondmate_home "$FM_HOME" && die 'a second mate asks its parent to relaunch it: run bin/fm-handoff-relaunch.sh request <handoff-file>'
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-session-lock-lib.sh

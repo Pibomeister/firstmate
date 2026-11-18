@@ -50,6 +50,14 @@
 # A separate per-home lock serializes relaunches of different mates, since each
 # fresh spawn owns the same task-set lock. The watcher uses its spawn timeout
 # as the lock-wait bound; an untimed sweep defaults to 600 seconds.
+# A relaunch also holds the mate's lifecycle lock (state/.control-<id>.lock,
+# the one bin/fm-control.sh holds through every lifecycle action) from a
+# re-read of the endpoint to the end of the respawn, so automatic recovery and
+# a lifecycle action never act on one mate at once. That lock is only tried,
+# never waited on: a busy lock or a re-read that is no longer relaunchable
+# defers the relaunch with nothing closed, and the next check decides again.
+# Lock order is liveness, per-home relaunch, lifecycle; bin/fm-teardown.sh
+# takes lifecycle before liveness, and both sides only try the second lock.
 # The attempt ledger (.secondmate-relaunch-<id>, one line per attempt plus one
 # per outcome) is both the durable relaunch record and the input to the
 # watcher's relaunch bound; teardown removes it.
@@ -121,7 +129,8 @@ fm_secondmate_liveness_recent_attempts() {  # <id> <window-secs>
 #
 # Read-only probe of one registered secondmate's recorded endpoint. Populates:
 #
-#   FM_SM_LIVE_STATUS  silent | alive | relaunchable | skipped
+#   FM_SM_LIVE_STATUS  silent | alive | relaunchable | skipped; the relaunch
+#                      below also sets deferred
 #   FM_SM_LIVE_STATE   the raw classifier/state word
 #   FM_SM_LIVE_KILL    1 when relaunch must first kill a confirmed-dead local
 #                      endpoint (its shell husk occupies the name)
@@ -284,8 +293,15 @@ fm_secondmate_liveness_probe() {  # <meta> <id> <full|poll>
 # fm_secondmate_liveness_relaunch <meta> <id> [timeout-secs]
 #
 # Acts on a `relaunchable` probe verdict for <id>: takes the per-home relaunch
-# lock, records the attempt, kills a confirmed-dead local endpoint if required
+# lock and the mate's lifecycle lock, re-reads the endpoint under them, records
+# the attempt, kills a confirmed-dead local endpoint if required
 # (FM_SM_LIVE_KILL), runs the guarded spawn, then records its outcome.
+# The kill and the spawn act only on that re-read, never on the caller's
+# earlier probe. A busy lifecycle lock or a re-read that is not relaunchable
+# is FM_SM_LIVE_STATUS=deferred with FM_SM_LIVE_REASON set and a return of 1:
+# nothing is killed or spawned, no attempt is recorded, FM_SM_LIVE_STATE holds
+# the re-read state when one was taken, and the caller treats it as a quiet
+# wait for the next check, not as a failure.
 # On t3code a close that cannot be proven stops there: the thread and its
 # metadata stay as recorded, the verdict becomes skipped, and nothing is
 # spawned, because a second thread beside a live one is the duplicate
@@ -301,7 +317,7 @@ fm_secondmate_liveness_probe() {  # <meta> <id> <full|poll>
 # FM_SM_LIVE_STATUS=skipped with FM_SM_LIVE_REASON set and this returns 1.
 # Caller holds the liveness lock and owns reporting.
 fm_secondmate_liveness_relaunch() {  # <meta> <id> [timeout-secs]
-  local meta=$1 id=$2 timeout=${3:-} relaunch_lock wait_seconds rc=0
+  local meta=$1 id=$2 timeout=${3:-} relaunch_lock control_lock wait_seconds recheck_reason rc=0
   FM_SM_LIVE_OUT='' FM_SM_LIVE_RC=0
   if ! fm_secondmate_liveness_recent_attempts "$id" 0 >/dev/null; then
     FM_SM_LIVE_STATUS=skipped
@@ -318,7 +334,26 @@ fm_secondmate_liveness_relaunch() {  # <meta> <id> [timeout-secs]
     FM_SM_LIVE_RC=1
     return 1
   fi
+  control_lock="$STATE/.control-$id.lock"
+  if ! fm_lock_try_acquire "$control_lock"; then
+    fm_lock_release "$relaunch_lock" || true
+    FM_SM_LIVE_STATUS=deferred
+    FM_SM_LIVE_REASON="another lifecycle action is running for $id; endpoint left $FM_SM_LIVE_STATE and nothing was closed"
+    FM_SM_LIVE_RC=1
+    return 1
+  fi
+  fm_secondmate_liveness_probe "$meta" "$id" poll
+  if [ "$FM_SM_LIVE_STATUS" != relaunchable ]; then
+    recheck_reason=$FM_SM_LIVE_REASON
+    fm_lock_release "$control_lock" || true
+    fm_lock_release "$relaunch_lock" || true
+    FM_SM_LIVE_STATUS=deferred
+    FM_SM_LIVE_REASON="endpoint read '$FM_SM_LIVE_STATE' when re-read under its lifecycle lock${recheck_reason:+ ($recheck_reason)}; nothing was closed or relaunched"
+    FM_SM_LIVE_RC=1
+    return 1
+  fi
   if ! fm_secondmate_liveness_ledger_add "$id" attempt; then
+    fm_lock_release "$control_lock" || true
     fm_lock_release "$relaunch_lock" || true
     FM_SM_LIVE_STATUS=skipped
     FM_SM_LIVE_REASON="relaunch ledger $STATE/.secondmate-relaunch-$id is unwritable; endpoint left $FM_SM_LIVE_STATE"
@@ -347,6 +382,7 @@ fm_secondmate_liveness_relaunch() {  # <meta> <id> [timeout-secs]
     elif [ -n "$target" ] && ! fm_backend_kill "$backend" "$target" 2>/dev/null; then
       fm_secondmate_liveness_ledger_add "$id" failed || true
       FM_SM_LIVE_STATUS=skipped
+      fm_lock_release "$control_lock" || true
       fm_lock_release "$relaunch_lock" || true
       FM_SM_LIVE_REASON="could not prove the old $backend endpoint $target closed; it and its record are left in place, not replaced"
       FM_SM_LIVE_RC=1
@@ -363,6 +399,7 @@ fm_secondmate_liveness_relaunch() {  # <meta> <id> [timeout-secs]
       FM_SM_LIVE_RC=$rc
       fm_secondmate_liveness_ledger_add "$id" failed || true
     fi
+    fm_lock_release "$control_lock" || true
     fm_lock_release "$relaunch_lock" || true
     return "$rc"
   fi
@@ -383,6 +420,7 @@ fm_secondmate_liveness_relaunch() {  # <meta> <id> [timeout-secs]
   else
     fm_secondmate_liveness_ledger_add "$id" failed || true
   fi
+  fm_lock_release "$control_lock" || true
   fm_lock_release "$relaunch_lock" || true
   return "$rc"
 }

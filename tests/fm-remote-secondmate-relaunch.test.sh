@@ -150,6 +150,25 @@ cmp -s "$TMP/ios-before-refusal.meta" "$HOME_DIR/state/ios.meta" \
   || fail "a refused relaunch must not touch the parent's record"
 pass "a refused remote relaunch leaves the parent's record untouched"
 
+# --- only a confirmed relaunch closes the mate's open relaunch request ------
+reset_meta
+printf '%s\n' 'blocked [key=handoff-relaunch]: second mate ios wrote its handoff for a planned fresh start and waits to be relaunched once; handoff=/srv/fm-home/data/handoff.md sha256=ab' \
+  > "$HOME_DIR/state/ios.status"
+FM_FAKE_RELAUNCH_MODE=refuse
+OUT=$(run_relaunch ios notaharness - -); RC=$?
+unset FM_FAKE_RELAUNCH_MODE
+[ "$RC" -ne 0 ] || fail "a refused host relaunch must not be reported as successful"
+assert_no_grep 'resolved [key=handoff-relaunch]' "$HOME_DIR/state/ios.status" \
+  "a refused relaunch must leave the mate's relaunch request open"
+OUT=$(run_relaunch ios claude claude-opus-5-5 medium); RC=$?
+expect_code 0 "$RC" "a confirmed remote relaunch should succeed"$'\n'"$OUT"
+OUT=$(run_relaunch ios claude claude-opus-5-5 medium); RC=$?
+expect_code 0 "$RC" "a second confirmed remote relaunch should succeed"$'\n'"$OUT"
+assert_equals 1 "$(grep -cF 'resolved [key=handoff-relaunch]' "$HOME_DIR/state/ios.status")" \
+  "a confirmed relaunch should close the open relaunch request exactly once"
+rm -f "$HOME_DIR/state/ios.status"
+pass "only a confirmed remote relaunch closes the mate's open relaunch request"
+
 # --- a local (non-remote) secondmate is refused, not silently mishandled ----
 fm_write_meta "$HOME_DIR/state/local1.meta" \
   "window=firstmate:fm-local1" "endpoint_task_id=local1" \

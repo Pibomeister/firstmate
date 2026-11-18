@@ -53,6 +53,10 @@ RELAUNCH_OUT=$("$SCRIPT_DIR/fm-on.sh" "$ID" fm-remote-secondmate-control.sh \
   exit "$rc"
 }
 printf '%s\n' "$RELAUNCH_OUT"
+# The host relaunched the mate, which is what an open handoff relaunch request
+# asked for; the host-local verb cannot reach this parent's status stream, so
+# the close is made here (bin/fm-handoff-relaunch.sh owns it).
+FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-handoff-relaunch.sh" close "$ID" 'bin/fm-remote-secondmate-relaunch.sh' || true
 
 # The confirmed identity comes from the route block the host prints after a
 # successful relaunch, never from the human-readable "relaunched ..." summary

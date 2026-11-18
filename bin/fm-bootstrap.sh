@@ -890,6 +890,8 @@ secondmate_liveness_one() {  # <meta> <id>
         report_relaunch "$id" "$FM_SM_LIVE_CAUSE" "$FM_SM_LIVE_WHERE"
       elif [ "$FM_SM_LIVE_STATUS" = skipped ]; then
         echo "SECONDMATE_LIVENESS: secondmate $id: skipped: $FM_SM_LIVE_REASON"
+      elif [ "$FM_SM_LIVE_STATUS" = deferred ]; then
+        [ "$FM_SM_LIVE_STATE" = alive ] || echo "SECONDMATE_LIVENESS: secondmate $id: deferred: $FM_SM_LIVE_REASON"
       else
         echo "SECONDMATE_LIVENESS: secondmate $id: respawn failed after $FM_SM_LIVE_CAUSE: $(first_line "$FM_SM_LIVE_OUT")"
       fi

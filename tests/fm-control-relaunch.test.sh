@@ -424,6 +424,7 @@ for arg in "$@"; do
         : > "$FM_FAKE_MKTEMP_SPAWN_PAUSE_READY"
         while [ ! -e "$FM_FAKE_MKTEMP_SPAWN_PAUSE_RELEASE" ]; do /bin/sleep 0.01; done
       fi
+      [ -z "${FM_FAKE_MKTEMP_SPAWN_RECORD_LOSS:-}" ] || /bin/rm -f "$FM_FAKE_MKTEMP_SPAWN_RECORD_LOSS"
       [ -n "${FM_FAKE_MKTEMP_SPAWN_CONTINUE:-}" ] || exit 1
       ;;
   esac
@@ -454,6 +455,13 @@ make_rm_failure_stub() {  # <case-dir>
   cat > "$1/fakebin/rm" <<'SH'
 #!/usr/bin/env bash
 for arg in "$@"; do
+  # Removing the captured spawn output is the last step before the transaction
+  # reads the record back, so a record lost here is lost after publication.
+  case "$arg" in
+    *fm-control-spawn*)
+      [ -z "${FM_FAKE_RM_SPAWN_OUTPUT_RECORD_LOSS:-}" ] || "$FM_REAL_RM" -f "$FM_FAKE_RM_SPAWN_OUTPUT_RECORD_LOSS"
+      ;;
+  esac
   if [ -n "${FM_FAKE_RM_FAIL_PATH:-}" ] && [ "$arg" = "$FM_FAKE_RM_FAIL_PATH" ]; then
     exit 1
   fi
@@ -2111,6 +2119,59 @@ test_secondmate_relaunch_picks_up_the_configured_harness_pin() {
   pass "fm-control relaunch: a secondmate relaunch re-resolves its durable configured harness pin"
 }
 
+# A second mate's handoff relaunch request (bin/fm-handoff-relaunch.sh) stays
+# open with its parent until a relaunch is confirmed, and a relaunch that fails
+# leaves it open for the parent to act on again.
+test_secondmate_relaunch_closes_its_open_handoff_relaunch_request() {
+  local dir home id out rc status open
+  for id in smrq1 smrq2; do
+    dir=$(new_case "handoff-request-$id" "$id")
+    home="$dir/home"
+    status="$home/state/$id.status"
+    mkdir -p "$home/config" "$home/data/$id"
+    printf 'codex some-model high\n' > "$home/config/secondmate-harness"
+    printf '# secondmate brief\n' > "$home/data/$id/brief.md"
+    fm_git_worktree "$dir/proj" "$dir/smhome" "sm-branch-$id"
+    mkdir -p "$dir/smhome/state" "$dir/smhome/data" "$dir/smhome/bin"
+    printf '%s\n' "$id" > "$dir/smhome/.fm-secondmate-home"
+    printf '# agents\n' > "$dir/smhome/AGENTS.md"
+    {
+      echo "window=fmses:fm-$id"
+      echo "endpoint_task_id=$id"
+      echo "worktree=$dir/smhome"
+      echo "project=$dir/smhome"
+      echo "harness=claude"
+      echo "kind=secondmate"
+      echo "mode=secondmate"
+      echo "yolo=off"
+      echo "model=default"
+      echo "effort=default"
+      echo "home=$dir/smhome"
+    } > "$home/state/$id.meta"
+    printf '%s\n' "fm-$id" > "$dir/fake/windows"
+    printf '%s' "$dir/smhome" > "$dir/fake/cwd"
+    printf 'codex' > "$dir/fake/becomes"
+    printf 'blocked [key=handoff-relaunch] [at=1]: second mate %s wrote its handoff for a planned fresh start and waits to be relaunched once; handoff=/h.md sha256=0\n' "$id" > "$status"
+    printf 'done [at=2]: corr=abc reply delivered\n' >> "$status"
+    if [ "$id" = smrq1 ]; then
+      out=$(run_control "$dir" "$id" relaunch); rc=$?
+      expect_code 0 "$rc" "the second mate should relaunch"$'\n'"$out"
+    else
+      out=$(FM_FAKE_LAUNCH_TRANSPORT_FAIL_AFTER_START=1 run_control "$dir" "$id" relaunch); rc=$?
+      [ "$rc" -ne 0 ] || fail "the fixture relaunch should fail"$'\n'"$out"
+    fi
+    open=$(bash -c '. "$1/bin/fm-classify-lib.sh"; status_open_decisions "$2" secondmate' _ "$ROOT" "$status")
+    if [ "$id" = smrq1 ]; then
+      assert_not_contains "$open" handoff-relaunch "a confirmed relaunch closes the open relaunch request"
+      assert_equals 1 "$(grep -c '^resolved \[key=handoff-relaunch\]' "$status")" "one resolved line records the close"
+    else
+      assert_contains "$open" handoff-relaunch "a failed relaunch leaves the relaunch request open"
+      assert_equals 0 "$(grep -c '^resolved \[key=handoff-relaunch\]' "$status")" "a failed relaunch records no close"
+    fi
+  done
+  pass "fm-control relaunch: a confirmed second-mate relaunch closes its open handoff relaunch request, and a failed one leaves it open"
+}
+
 # The relaunch half of the opt-in scope: a pin file that declares no
 # "mate <id>:" line is read exactly as it was before that grammar existed, so a
 # second default line and a fourth token must not stop the relaunch. The mate
@@ -3259,6 +3320,51 @@ test_stamp_die_before_spawn_restores_the_prior_record() {
   [ "$(journal_field "$dir" rl89 rollback)" = prior-record-kept ] \
     || fail "the journal should record the unpublished replacement rollback"
   pass "fm-control relaunch: a die after the stamp and before spawn restores the prior record"
+}
+
+test_rollback_restores_a_record_that_went_missing_before_publication() {
+  local dir out rc real_mktemp prior
+  dir=$(new_case missing-record rl92)
+  add_ship_task "$dir" rl92 claude
+  real_mktemp=$(command -v mktemp)
+  make_mktemp_spawn_err_failure_stub "$dir"
+  out=$(FM_REAL_MKTEMP="$real_mktemp" \
+    FM_FAKE_MKTEMP_SPAWN_RECORD_LOSS="$dir/home/state/rl92.meta" \
+    run_control "$dir" rl92 relaunch --note "the record disappears"); rc=$?
+  expect_code 1 "$rc" "a relaunch whose record disappeared should fail closed"$'\n'"$out"
+  prior="$dir/home/state/rl92.control-relaunch.meta-prior"
+  [ -f "$dir/home/state/rl92.meta" ] \
+    || fail "a missing record is not a concurrent edit: rollback must put the prior record back"
+  cmp -s "$prior" "$dir/home/state/rl92.meta" \
+    || fail "the restored record should be the checkpoint copy of the prior record"
+  [ "$(journal_field "$dir" rl92 rollback)" = prior-record-kept ] \
+    || fail "the journal should record that the prior record is in place"
+  pass "fm-control relaunch: rollback restores a record that went missing before publication"
+}
+
+test_rollback_never_claims_a_published_record_that_is_gone() {
+  local dir out rc real_rm prior
+  dir=$(new_case published-gone rl93)
+  add_ship_task "$dir" rl93 claude
+  printf 'codex' > "$dir/fake/becomes"
+  real_rm=$(command -v rm)
+  make_rm_failure_stub "$dir"
+  out=$(FM_REAL_RM="$real_rm" FM_FAKE_LAUNCH_TRANSPORT_FAIL_AFTER_START=1 \
+    FM_FAKE_RM_SPAWN_OUTPUT_RECORD_LOSS="$dir/home/state/rl93.meta" \
+    run_control "$dir" rl93 relaunch --harness codex --note "the published record disappears"); rc=$?
+  expect_code 1 "$rc" "a relaunch whose published record disappeared should fail closed"$'\n'"$out"
+  [ "$(journal_field "$dir" rl93 rollback)" != none-new-record-kept ] \
+    || fail "the journal must not claim a kept record that is not on disk"
+  prior="$dir/home/state/rl93.control-relaunch.meta-prior"
+  [ -f "$dir/home/state/rl93.meta" ] \
+    || fail "rollback must leave the task a durable record to recover from"
+  cmp -s "$prior" "$dir/home/state/rl93.meta" \
+    || fail "the recovered record should be the checkpoint copy of the prior record"
+  [ "$(journal_field "$dir" rl93 rollback)" = prior-record-restored-new-record-missing ] \
+    || fail "the journal should record that the prior record replaced the missing one"
+  assert_contains "$out" "prior record was restored" \
+    "the failure should say which record the task now has"
+  pass "fm-control relaunch: rollback reads the published record back before claiming it"
 }
 
 test_stamp_mv_failure_removes_the_staging_file() {
@@ -4960,6 +5066,7 @@ test_prior_harness_turnend_registry_entry_is_cleared
 test_wiring_removal_failure_refuses_before_replacement_arm
 test_turnend_auth_paths_are_owned_by_the_control_adapter
 test_secondmate_relaunch_picks_up_the_configured_harness_pin
+test_secondmate_relaunch_closes_its_open_handoff_relaunch_request
 test_secondmate_claude_relaunch_keeps_local_settings
 test_secondmate_relaunch_lands_on_the_per_mate_pin
 test_secondmate_relaunch_uses_the_default_for_an_unpinned_mate
@@ -5000,6 +5107,8 @@ test_unpublished_spawn_lock_failure_is_not_published
 test_stamp_die_before_spawn_restores_the_prior_record
 test_stamp_mv_failure_removes_the_staging_file
 test_restore_failure_is_journaled_as_restore_failed
+test_rollback_restores_a_record_that_went_missing_before_publication
+test_rollback_never_claims_a_published_record_that_is_gone
 test_stamp_serializes_a_cooperating_metadata_writer
 test_restore_preserves_a_cooperating_metadata_update
 test_journal_records_the_checkpoint_it_proved

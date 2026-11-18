@@ -1872,6 +1872,8 @@ spawn_remote_secondmate() {
     return 1
   fi
   [ ! -e "$CONFIG/fleet-ledger" ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-fleet-ledger.sh" dispatched "$id" secondmate "" "$harness" "${model#-}" || true
+  # The local launch below closes an open handoff relaunch request the same way.
+  FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE "$SCRIPT_DIR/fm-handoff-relaunch.sh" close "$id" 'bin/fm-spawn.sh --secondmate' || true
   echo "spawned $id harness=$harness kind=secondmate mode=secondmate yolo=off window=remote:$id worktree=$home remote=$host backend=$remote_backend"
   return 0
 }
@@ -1907,6 +1909,7 @@ SPAWN_META_LOCK=
 SPAWN_META_LOCK_HELD=0
 SPAWN_META_PUBLISH_STARTED=0
 SPAWN_FRESH_COMMIT_PENDING=0
+SPAWN_PRIOR_META=
 SPAWN_TASK_SET_LOCK=
 SPAWN_TASK_SET_LOCK_HELD=0
 SPAWN_TREEHOUSE_PROJECT_LOCK=
@@ -1930,6 +1933,39 @@ SPAWN_LAUNCH_SENT=0
 SPAWN_ENDPOINT_CLOSED=0
 SPAWN_STAGED_LAUNCH_FILE=
 
+# A second mate's record is its only recovery identity: liveness recovery and
+# `bin/fm-control.sh relaunch` both start from it. A fresh respawn therefore
+# saves the record it replaces (SPAWN_PRIOR_META, taken under the meta lock
+# where the fresh commit begins), and a failed respawn puts that record back
+# instead of leaving the mate with none. The saved record is restored only
+# over this spawn's own record or over no record; a record this spawn did not
+# write, including the prior one still in place, is left exactly as found.
+# The busy generation this spawn armed is retired either way.
+spawn_prior_record_restore() {
+  local meta="$STATE/$ID.meta" current_gen='' failed=0
+  if [ -e "$meta" ] || [ -L "$meta" ]; then
+    current_gen=$(fm_meta_get "$meta" spawn_gen 2>/dev/null || true)
+  fi
+  if { [ ! -e "$meta" ] && [ ! -L "$meta" ]; } ||
+    { [ -n "${SPAWN_GEN:-}" ] && [ "$current_gen" = "$SPAWN_GEN" ]; }; then
+    mv -f "$SPAWN_PRIOR_META" "$meta" 2>/dev/null || failed=1
+  else
+    rm -f "$SPAWN_PRIOR_META" 2>/dev/null || true
+  fi
+  if [ -n "${BUSY_GEN:-}" ]; then
+    "$FM_ROOT/bin/fm-busy-event.sh" retire "$STATE" "$ID" --gen "$BUSY_GEN" >/dev/null 2>&1 || true
+  fi
+  if [ "$failed" -ne 0 ]; then
+    echo "error: second mate $ID's prior record could not be restored after the failed respawn; it is saved at $SPAWN_PRIOR_META - move it back to $meta before recovering the mate" >&2
+    SPAWN_PRIOR_META=
+    return 1
+  fi
+  SPAWN_PRIOR_META=
+  SPAWN_FRESH_COMMIT_PENDING=0
+  echo "warning: the respawn of second mate $ID failed; its prior record is kept at $meta so recovery can retry" >&2
+  return 0
+}
+
 spawn_fresh_commit_rollback() {
   if [ "${HARNESS:-}" = agy ] && [ -f "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ]; then
     SPAWN_FRESH_COMMIT_PENDING=0
@@ -1938,6 +1974,10 @@ spawn_fresh_commit_rollback() {
     fi
     echo "warning: keeping task $ID's published AGY record and worktree for relaunch or teardown" >&2
     return 0
+  fi
+  if [ -n "$SPAWN_PRIOR_META" ]; then
+    spawn_prior_record_restore
+    return
   fi
   if fm_backlog_atomic_transition rollback "$STATE/$ID.meta" \
     "$FM_ROOT/bin/fm-busy-event.sh" "$STATE" "$ID" "${BUSY_GEN:-}"; then
@@ -2135,6 +2175,12 @@ spawn_abort_cleanup() {
     if ! spawn_fresh_commit_rollback; then
       status=1
     fi
+  fi
+  # Every other exit - success, or a failure that deliberately keeps this
+  # spawn's own record - has no use for the saved prior record.
+  if [ -n "$SPAWN_PRIOR_META" ]; then
+    rm -f "$SPAWN_PRIOR_META" 2>/dev/null || true
+    SPAWN_PRIOR_META=
   fi
   if [ "$SPAWN_META_LOCK_HELD" = 1 ]; then
     SPAWN_META_LOCK_HELD=0
@@ -8623,6 +8669,16 @@ if [ "$RELAUNCH" -eq 1 ]; then
   SPAWN_META_TMP="$STATE/.$ID.meta.relaunch.${BASHPID:-$$}"
 else
   SPAWN_META_TMP="$STATE/.$ID.meta.spawn.${BASHPID:-$$}"
+  if [ "$KIND" = secondmate ] && [ -f "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ]; then
+    # Contract: spawn_prior_record_restore.
+    SPAWN_PRIOR_META="$STATE/.$ID.meta.prior.${BASHPID:-$$}"
+    if ! cp -p "$STATE/$ID.meta" "$SPAWN_PRIOR_META" 2>/dev/null; then
+      rm -f "$SPAWN_PRIOR_META" 2>/dev/null || true
+      SPAWN_PRIOR_META=
+      echo "error: second mate $ID's existing record could not be saved before its respawn; the record is left as it was" >&2
+      exit 1
+    fi
+  fi
   SPAWN_FRESH_COMMIT_PENDING=1
 fi
 SPAWN_META_PATH=$SPAWN_META_TMP
@@ -9740,4 +9796,10 @@ SPAWN_ACCOUNT=
 # Opt-in Herdr project groups (docs/herdr-backend.md "Project groups") tag the
 # new endpoint now rather than at the next watcher poll; off costs one file test.
 [ ! -e "$CONFIG/herdr-project-groups" ] || [ "$BACKEND" != herdr ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-herdr-groups.sh" sync "$ID" || true
+# A fresh second-mate launch is the relaunch an open handoff relaunch request
+# asked for (bin/fm-handoff-relaunch.sh owns the request and its close);
+# bin/fm-control.sh closes it for a --relaunch once the agent is confirmed.
+[ "$KIND" != secondmate ] || [ "$RELAUNCH" -eq 1 ] \
+  || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE "$SCRIPT_DIR/fm-handoff-relaunch.sh" close "$ID" 'bin/fm-spawn.sh --secondmate' \
+  || true
 echo "spawned $ID harness=$HARNESS kind=$KIND$SPAWN_DELIVERY window=$META_WINDOW worktree=$WT$SPAWN_ACCOUNT"
