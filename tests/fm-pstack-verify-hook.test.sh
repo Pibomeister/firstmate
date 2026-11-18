@@ -79,7 +79,7 @@ test_status_append_command_injects_prove_it_works() {
 
 test_cursor_post_tool_use_status_append_injects() {
   run_hook "$PRIMARY" \
-    "{\"hook_event_name\":\"postToolUse\",\"tool_name\":\"Shell\",\"tool_input\":{\"command\":$(printf '%s' "$STATUS_APPEND" | jq -Rs .)},\"tool_output\":\"{\\\"exitCode\\\":0}\",\"cursor_version\":\"x\",\"conversation_id\":\"c1\"}" \
+    "{\"hook_event_name\":\"postToolUse\",\"tool_name\":\"Shell\",\"tool_input\":{\"command\":$(printf '%s' "$STATUS_APPEND" | jq -Rs .)},\"tool_output\":\"{\\\"exitCode\\\":0}\",\"cursor_version\":\"x\",\"conversation_id\":\"c1\",\"generation_id\":\"g\"}" \
     --cursor
   expect_cursor_inject "principle-prove-it-works" "Cursor postToolUse STATUS_APPEND"
   pass "Cursor postToolUse Shell STATUS_APPEND injects principle-prove-it-works"
@@ -95,7 +95,7 @@ test_write_contents_done_line_injects_prove_it_works() {
 
 test_captain_prompt_done_merge_is_not_completion() {
   run_hook "$PRIMARY" \
-    '{"hook_event_name":"beforeSubmitPrompt","prompt":"done: merge it","cursor_version":"x"}' \
+    '{"hook_event_name":"beforeSubmitPrompt","prompt":"done: merge it","cursor_version":"x","generation_id":"g"}' \
     --cursor
   expect_cursor_continue_only "captain prompt done: merge it"
   pass "done: merge it on a captain prompt does not inject principle-prove-it-works"
@@ -111,7 +111,7 @@ test_this_is_faster_than_main_is_a_speed_claim() {
 
 test_working_status_is_not_a_completion_report() {
   run_hook "$PRIMARY" \
-    '{"hook_event_name":"afterAgentResponse","text":"working: still implementing the export","cursor_version":"x"}' \
+    '{"hook_event_name":"afterAgentResponse","text":"working: still implementing the export","cursor_version":"x","generation_id":"g"}' \
     --cursor
   expect_silent "working: is not a completion report"
   pass "a working: line does not inject principle-prove-it-works"
@@ -127,7 +127,7 @@ test_checks_green_question_is_not_completion() {
 
 test_working_checks_green_so_far_is_not_completion() {
   run_hook "$PRIMARY" \
-    '{"hook_event_name":"afterAgentResponse","text":"working: checks green so far","cursor_version":"x"}' \
+    '{"hook_event_name":"afterAgentResponse","text":"working: checks green so far","cursor_version":"x","generation_id":"g"}' \
     --cursor
   expect_silent "working: checks green so far"
   pass "working: checks green so far does not inject principle-prove-it-works"
@@ -183,7 +183,7 @@ test_cwd_relative_test_file_write_injects() {
 
 test_cursor_post_tool_write_of_test_file_injects() {
   run_hook "$PRIMARY" \
-    '{"hook_event_name":"postToolUse","tool_name":"Write","tool_input":{"path":"tests/fm-export.test.sh","contents":"pass x\n"},"tool_output":"{\"exitCode\":0}","cursor_version":"x"}' \
+    '{"hook_event_name":"postToolUse","tool_name":"Write","tool_input":{"path":"tests/fm-export.test.sh","contents":"pass x\n"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
     --cursor
   expect_cursor_inject "principle-test-behavior-not-implementation" "Cursor postToolUse Write of a test file"
   pass "Cursor postToolUse writing a test file injects principle-test-behavior-not-implementation"
@@ -195,6 +195,14 @@ test_shell_redirect_to_test_file_injects() {
     --claude
   expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" "heredoc into a test path"
   pass "a Shell heredoc into a test path injects principle-test-behavior-not-implementation"
+}
+
+test_cwd_relative_shell_redirect_injects() {
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat > foo.test.sh <<EOF\npass x\nEOF"}}' \
+    --claude
+  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" "cwd-relative cat > foo.test.sh"
+  pass "a cwd-relative cat > foo.test.sh injects principle-test-behavior-not-implementation"
 }
 
 test_tee_with_flags_into_test_path_injects() {
@@ -242,7 +250,17 @@ test_speed_claim_injects_explain_the_number() {
     '{"hook_event_name":"UserPromptSubmit","prompt":"the export is faster now"}' \
     --claude
   expect_claude_inject "principle-explain-the-number" "UserPromptSubmit" "an is-faster claim"
+  printf '%s' "$RUN_OUT" | grep -Fq 'benchmark-checklist' \
+    && fail "injected text must not name unvendored benchmark-checklist"
   pass "a speed claim injects principle-explain-the-number"
+}
+
+test_trailing_question_on_speed_claim_still_injects() {
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"UserPromptSubmit","prompt":"the export is 2x as fast?"}' \
+    --claude
+  expect_claude_inject "principle-explain-the-number" "UserPromptSubmit" "2x as fast with trailing ?"
+  pass "the export is 2x as fast? injects principle-explain-the-number"
 }
 
 test_cursor_speed_claim_is_pending_then_delivered() {
@@ -250,15 +268,15 @@ test_cursor_speed_claim_is_pending_then_delivered() {
   home="$TMP_ROOT/pending-speed"
   mkdir -p "$home/state"
   run_hook "$home" \
-    '{"hook_event_name":"afterAgentResponse","text":"the export is faster now","cursor_version":"x","conversation_id":"c1"}' \
+    '{"hook_event_name":"afterAgentResponse","text":"the export is faster now","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
     --cursor
   expect_silent "afterAgentResponse must print nothing"
   run_hook "$home" \
-    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1"}' \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
     --cursor
   expect_cursor_inject "principle-explain-the-number" "pending speed claim delivered on postToolUse"
   run_hook "$home" \
-    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1"}' \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
     --cursor
   expect_silent "pending marker must be cleared after one delivery"
   pass "a Cursor afterAgentResponse speed claim is delivered once on the next postToolUse"
@@ -269,11 +287,11 @@ test_cursor_before_submit_speed_prints_continue_only() {
   home="$TMP_ROOT/pending-prompt"
   mkdir -p "$home/state"
   run_hook "$home" \
-    '{"hook_event_name":"beforeSubmitPrompt","prompt":"the export is faster now","cursor_version":"x","conversation_id":"c2"}' \
+    '{"hook_event_name":"beforeSubmitPrompt","prompt":"the export is faster now","cursor_version":"x","conversation_id":"c2","generation_id":"g"}' \
     --cursor
   expect_cursor_continue_only "beforeSubmitPrompt speed claim"
   run_hook "$home" \
-    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"cursor_version":"x","conversation_id":"c2"}' \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"cursor_version":"x","conversation_id":"c2","generation_id":"g"}' \
     --cursor
   expect_cursor_inject "principle-explain-the-number" "pending prompt speed claim"
   pass "Cursor beforeSubmitPrompt prints continue:true and delivers the claim on postToolUse"
@@ -337,7 +355,7 @@ test_speedup_noun_is_not_a_speed_claim() {
 
 test_cursor_before_submit_miss_still_continues() {
   run_hook "$PRIMARY" \
-    '{"hook_event_name":"beforeSubmitPrompt","prompt":"please speed up the CI","cursor_version":"x"}' \
+    '{"hook_event_name":"beforeSubmitPrompt","prompt":"please speed up the CI","cursor_version":"x","generation_id":"g"}' \
     --cursor
   expect_cursor_continue_only "beforeSubmitPrompt miss"
   pass "a Cursor beforeSubmitPrompt miss emits continue:true without a principle"
@@ -386,64 +404,90 @@ test_same_red_twice_after_claimed_fix_injects_attack_the_premise() {
   pass "the same TAP red twice after a claimed fix injects principle-attack-the-premise"
 }
 
-test_cursor_tap_only_after_shell_execution() {
+test_claim_plus_two_after_shell_same_generation() {
   local home
   home="$TMP_ROOT/reds-cursor-tap"
   mkdir -p "$home/state"
   run_hook "$home" \
-    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/export.test.sh","cursor_version":"x","conversation_id":"c1"}' \
+    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/export.test.sh","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
     --cursor
   expect_silent "claim alone"
   run_hook "$home" \
-    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh does the thing\n","cursor_version":"x","generation_id":"g1","conversation_id":"c1"}' \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh does the thing\n","duration":1.1,"cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
     --cursor
-  expect_silent "first TAP-only afterShellExecution"
+  expect_silent "first afterShellExecution rerun"
   run_hook "$home" \
-    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh does the thing\n","cursor_version":"x","generation_id":"g2","conversation_id":"c1"}' \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh does the thing\n","duration":1.4,"cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
     --cursor
-  expect_silent "second TAP-only afterShellExecution is pending, no stdout"
+  expect_silent "second afterShellExecution rerun is pending, no stdout"
   run_hook "$home" \
-    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1"}' \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
     --cursor
   expect_cursor_inject "principle-attack-the-premise" "pending TAP red delivered on postToolUse"
-  pass "TAP-only afterShellExecution counts once per call and delivers attack-the-premise on the next postToolUse"
+  pass "two afterShellExecution reruns with the same conversation, command, and generation reach streak 2"
 }
 
-test_cursor_post_tool_use_failure_payload() {
+test_after_shell_then_failure_stays_at_streak_one() {
   local home
-  home="$TMP_ROOT/reds-cursor-failure"
+  home="$TMP_ROOT/reds-shell-then-fail"
   mkdir -p "$home/state"
   run_hook "$home" \
-    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/export.test.sh","cursor_version":"x","conversation_id":"c1"}' \
-    --cursor
-  expect_silent "claim alone"
-  run_hook "$home" \
-    '{"hook_event_name":"postToolUseFailure","tool_name":"Shell","command":"bash tests/export.test.sh","error_message":"not ok - tests/export.test.sh does the thing\n","failure_type":"error","cursor_version":"x","tool_use_id":"f1","conversation_id":"c1"}' \
-    --cursor
-  expect_silent "first documented postToolUseFailure"
-  run_hook "$home" \
-    '{"hook_event_name":"postToolUseFailure","tool_name":"Shell","command":"bash tests/export.test.sh retry","error_message":"not ok - tests/export.test.sh does the thing\n","failure_type":"error","cursor_version":"x","tool_use_id":"f2","conversation_id":"c1"}' \
-    --cursor
-  expect_cursor_inject "principle-attack-the-premise" "Cursor postToolUseFailure TAP in error_message"
-  pass "a documented postToolUseFailure payload with error_message and failure_type injects on the second red"
-}
-
-test_one_failed_shell_is_not_counted_twice() {
-  local home
-  home="$TMP_ROOT/reds-dedupe"
-  mkdir -p "$home/state"
-  run_hook "$home" \
-    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/export.test.sh","cursor_version":"x","conversation_id":"c1"}' \
+    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/export.test.sh","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
     --cursor
   run_hook "$home" \
-    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh does the thing\n","cursor_version":"x","generation_id":"g1","conversation_id":"c1"}' \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh does the thing\n","duration":1.1,"cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
     --cursor
   expect_silent "afterShellExecution first red"
   run_hook "$home" \
-    '{"hook_event_name":"postToolUseFailure","tool_name":"Shell","command":"bash tests/export.test.sh","error_message":"Command failed","failure_type":"error","cursor_version":"x","tool_use_id":"t1","conversation_id":"c1"}' \
+    '{"hook_event_name":"postToolUseFailure","tool_name":"Shell","command":"bash tests/export.test.sh","error_message":"Command failed","failure_type":"error","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
     --cursor
-  expect_silent "postToolUseFailure of the same command must not be a second red"
-  pass "one failed Shell on afterShellExecution and postToolUseFailure stays at streak 1"
+  expect_silent "postToolUseFailure must not count a second red"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
+    --cursor
+  expect_silent "streak 1 must not deliver attack-the-premise"
+  pass "afterShellExecution then postToolUseFailure of one physical command stays at streak 1"
+}
+
+test_failure_then_after_shell_stays_at_streak_one() {
+  local home
+  home="$TMP_ROOT/reds-fail-then-shell"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/export.test.sh","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
+    --cursor
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUseFailure","tool_name":"Shell","command":"bash tests/export.test.sh","error_message":"not ok - tests/export.test.sh does the thing\n","failure_type":"error","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
+    --cursor
+  expect_silent "postToolUseFailure does not count Cursor reds"
+  run_hook "$home" \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh does the thing\n","duration":1.1,"cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
+    --cursor
+  expect_silent "one afterShellExecution is streak 1"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
+    --cursor
+  expect_silent "failure then afterShellExecution stays at streak 1"
+  pass "postToolUseFailure then afterShellExecution of one physical command stays at streak 1"
+}
+
+test_claude_post_tool_use_failure_error_injects() {
+  local home
+  home="$TMP_ROOT/reds-claude-failure"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed tests/export.test.sh\n"},"session_id":"s1"}' \
+    --claude
+  expect_silent "claim alone"
+  run_hook "$home" \
+    '{"hook_event_name":"PostToolUseFailure","tool_name":"Bash","error":"not ok - tests/export.test.sh does the thing\n","tool_use_id":"r1","session_id":"s1"}' \
+    --claude
+  expect_silent "first PostToolUseFailure .error TAP"
+  run_hook "$home" \
+    '{"hook_event_name":"PostToolUseFailure","tool_name":"Bash","error":"not ok - tests/export.test.sh does the thing\n","tool_use_id":"r2","session_id":"s1"}' \
+    --claude
+  expect_claude_inject "principle-attack-the-premise" "PostToolUseFailure" "Claude PostToolUseFailure .error TAP"
+  pass "a Claude PostToolUseFailure with TAP in .error, twice after a claim, injects"
 }
 
 test_cursor_post_tool_use_success_does_not_count_tap() {
@@ -451,14 +495,14 @@ test_cursor_post_tool_use_success_does_not_count_tap() {
   home="$TMP_ROOT/reds-success-tap"
   mkdir -p "$home/state"
   run_hook "$home" \
-    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/export.test.sh","cursor_version":"x","conversation_id":"c1"}' \
+    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/export.test.sh","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
     --cursor
   run_hook "$home" \
-    '{"hook_event_name":"postToolUse","tool_name":"Shell","tool_input":{"command":"bash tests/export.test.sh"},"tool_output":"{\"exitCode\":0,\"stdout\":\"\",\"stderr\":\"not ok - tests/export.test.sh does the thing\\n\"}","cursor_version":"x","tool_use_id":"s1","conversation_id":"c1"}' \
+    '{"hook_event_name":"postToolUse","tool_name":"Shell","tool_input":{"command":"bash tests/export.test.sh"},"tool_output":"{\"exitCode\":0,\"stdout\":\"\",\"stderr\":\"not ok - tests/export.test.sh does the thing\\n\"}","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
     --cursor
   expect_silent "successful postToolUse must not count TAP"
   run_hook "$home" \
-    '{"hook_event_name":"postToolUse","tool_name":"Shell","tool_input":{"command":"bash tests/export.test.sh"},"tool_output":"{\"exitCode\":0,\"stdout\":\"\",\"stderr\":\"not ok - tests/export.test.sh does the thing\\n\"}","cursor_version":"x","tool_use_id":"s2","conversation_id":"c1"}' \
+    '{"hook_event_name":"postToolUse","tool_name":"Shell","tool_input":{"command":"bash tests/export.test.sh"},"tool_output":"{\"exitCode\":0,\"stdout\":\"\",\"stderr\":\"not ok - tests/export.test.sh does the thing\\n\"}","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
     --cursor
   expect_silent "a second successful postToolUse still must not count TAP"
   pass "Cursor postToolUse is a successful tool use and does not count TAP as a red"
@@ -641,11 +685,11 @@ test_pending_without_conversation_id_is_not_stored() {
   home="$TMP_ROOT/pending-noconv"
   mkdir -p "$home/state"
   run_hook "$home" \
-    '{"hook_event_name":"afterAgentResponse","text":"the export is faster now","cursor_version":"x"}' \
+    '{"hook_event_name":"afterAgentResponse","text":"the export is faster now","cursor_version":"x","generation_id":"g"}' \
     --cursor
   expect_silent "speed claim with no conversation_id"
   run_hook "$home" \
-    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"cursor_version":"x","conversation_id":"other"}' \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"cursor_version":"x","conversation_id":"other","generation_id":"g"}' \
     --cursor
   expect_silent "no conversation_id must not leak pending to another conversation"
   pass "a pending marker is not stored without conversation_id"
@@ -656,15 +700,15 @@ test_pending_does_not_cross_conversations() {
   home="$TMP_ROOT/pending-cross"
   mkdir -p "$home/state"
   run_hook "$home" \
-    '{"hook_event_name":"afterAgentResponse","text":"the export is faster now","cursor_version":"x","conversation_id":"a"}' \
+    '{"hook_event_name":"afterAgentResponse","text":"the export is faster now","cursor_version":"x","conversation_id":"a","generation_id":"g"}' \
     --cursor
   expect_silent "claim on conversation a"
   run_hook "$home" \
-    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"cursor_version":"x","conversation_id":"b"}' \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"cursor_version":"x","conversation_id":"b","generation_id":"g"}' \
     --cursor
   expect_silent "conversation b must not receive a's pending"
   run_hook "$home" \
-    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"cursor_version":"x","conversation_id":"a"}' \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"cursor_version":"x","conversation_id":"a","generation_id":"g"}' \
     --cursor
   expect_cursor_inject "principle-explain-the-number" "conversation a still delivers its own pending"
   pass "pending markers are keyed per conversation_id"
@@ -675,17 +719,17 @@ test_reds_do_not_cross_conversations() {
   home="$TMP_ROOT/reds-cross"
   mkdir -p "$home/state"
   run_hook "$home" \
-    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/export.test.sh","cursor_version":"x","conversation_id":"a"}' \
+    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/export.test.sh","cursor_version":"x","conversation_id":"a","generation_id":"g"}' \
     --cursor
   run_hook "$home" \
-    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh\n","cursor_version":"x","generation_id":"g1","conversation_id":"b"}' \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh\n","duration":1.1,"cursor_version":"x","conversation_id":"b","generation_id":"g"}' \
     --cursor
   run_hook "$home" \
-    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh\n","cursor_version":"x","generation_id":"g2","conversation_id":"b"}' \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh\n","duration":1.4,"cursor_version":"x","conversation_id":"b","generation_id":"g"}' \
     --cursor
   expect_silent "conversation B reds must not use conversation A's claim"
   run_hook "$home" \
-    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"cursor_version":"x","conversation_id":"b"}' \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"cursor_version":"x","conversation_id":"b","generation_id":"g"}' \
     --cursor
   expect_silent "no pending attack on conversation B"
   pass "reds TSV is keyed by conversation_id plus test id"
@@ -696,17 +740,17 @@ test_reds_without_conversation_id_are_not_recorded() {
   home="$TMP_ROOT/reds-noconv"
   mkdir -p "$home/state"
   run_hook "$home" \
-    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/export.test.sh","cursor_version":"x"}' \
+    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/export.test.sh","cursor_version":"x","generation_id":"g"}' \
     --cursor
   run_hook "$home" \
-    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh\n","cursor_version":"x","generation_id":"g1"}' \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh\n","duration":1.1,"cursor_version":"x","generation_id":"g"}' \
     --cursor
   run_hook "$home" \
-    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh\n","cursor_version":"x","generation_id":"g2"}' \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh\n","duration":1.4,"cursor_version":"x","generation_id":"g"}' \
     --cursor
   expect_silent "reds with no conversation_id"
   run_hook "$home" \
-    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"cursor_version":"x","conversation_id":"later"}' \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"cursor_version":"x","conversation_id":"later","generation_id":"g"}' \
     --cursor
   expect_silent "unkeyed reds must not later inject"
   pass "reds without conversation_id are not recorded"
@@ -719,14 +763,14 @@ test_lock_aged_five_seconds_breaks_once_stale() {
   mkdir "$home/state/pstack-verify-reds.tsv.lock"
   now=$(date +%s)
   python3 -c 'import os, sys; t = int(sys.argv[2]); os.utime(sys.argv[1], (t, t))' \
-    "$home/state/pstack-verify-reds.tsv.lock" "$((now - 5))"
+    "$home/state/pstack-verify-reds.tsv.lock" "$((now - 2))"
   run_hook "$home" \
     '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed tests/export.test.sh\n"},"session_id":"s1"}' \
     --claude
   expect_silent "claim through a lock that ages past stale"
   [ ! -d "$home/state/pstack-verify-reds.tsv.lock" ] \
     || fail "aging lock must be released after the claim"
-  pass "a lock aged about 5s is broken once it goes stale"
+  pass "a lock aged about 2s is broken once it goes stale"
 }
 
 test_missing_jq_before_submit_still_continues() {
@@ -736,7 +780,7 @@ test_missing_jq_before_submit_still_continues() {
   printf '#!/bin/sh\nexit 127\n' > "$fake/jq"
   chmod +x "$fake/jq"
   status=0
-  out=$(printf '%s' '{"hook_event_name":"beforeSubmitPrompt","prompt":"hi","cursor_version":"x"}' \
+  out=$(printf '%s' '{"hook_event_name":"beforeSubmitPrompt","prompt":"hi","cursor_version":"x","generation_id":"g"}' \
     | env -u FM_HOME PATH="$fake:$PATH" \
       FM_ROOT_OVERRIDE="$PRIMARY" FM_STATE_OVERRIDE="$PRIMARY/state" \
       bash "$HOOK" --cursor) || status=$?
@@ -748,7 +792,7 @@ test_missing_jq_before_submit_still_continues() {
 
 test_claude_mode_stands_down_on_cursor_before_submit() {
   run_hook "$PRIMARY" \
-    '{"hook_event_name":"beforeSubmitPrompt","prompt":"the export is faster now","cursor_version":"x"}' \
+    '{"hook_event_name":"beforeSubmitPrompt","prompt":"the export is faster now","cursor_version":"x","generation_id":"g"}' \
     --claude
   expect_cursor_continue_only "Claude stand-down on Cursor beforeSubmitPrompt"
   pass "--claude on a Cursor beforeSubmitPrompt still prints continue:true"
@@ -756,7 +800,7 @@ test_claude_mode_stands_down_on_cursor_before_submit() {
 
 test_claude_mode_stands_down_on_cursor_post_tool_use() {
   run_hook "$PRIMARY" \
-    '{"hook_event_name":"postToolUse","tool_name":"Write","tool_input":{"path":"tests/fm-export.test.sh","contents":"x"},"cursor_version":"x"}' \
+    '{"hook_event_name":"postToolUse","tool_name":"Write","tool_input":{"path":"tests/fm-export.test.sh","contents":"x"},"cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
     --claude
   expect_silent "Claude registration must stand down on a Cursor postToolUse payload"
   pass "--claude is silent on a Cursor-delivered postToolUse payload"
@@ -764,7 +808,7 @@ test_claude_mode_stands_down_on_cursor_post_tool_use() {
 
 test_claude_mode_is_silent_on_cursor_pre_tool_use() {
   run_hook "$PRIMARY" \
-    '{"hook_event_name":"preToolUse","tool_name":"Shell","tool_input":{"command":"true"},"cursor_version":"x"}' \
+    '{"hook_event_name":"preToolUse","tool_name":"Shell","tool_input":{"command":"true"},"cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
     --claude
   expect_silent "Claude registration must not emit permission on Cursor preToolUse"
   pass "--claude is silent on a Cursor-delivered preToolUse payload"
@@ -818,6 +862,9 @@ test_cursor_and_claude_registrations_name_the_helper() {
   jq -e '.hooks.PostToolUse[].hooks[] | select(.command | contains("fm-pstack-verify-hook.sh --claude"))' \
     "$ROOT/.claude/settings.json" >/dev/null \
     || fail "Claude PostToolUse must register --claude"
+  jq -e '.hooks.PostToolUseFailure[].hooks[] | select(.command | contains("fm-pstack-verify-hook.sh --claude"))' \
+    "$ROOT/.claude/settings.json" >/dev/null \
+    || fail "Claude PostToolUseFailure must register --claude"
   jq -e '
       [.hooks.PreToolUse[].hooks[]
         | select(.command | contains("fm-pstack-verify-hook.sh --claude"))
@@ -849,8 +896,6 @@ test_vendored_skills_are_present() {
     cmp -s "$ROOT/.cursor/skills/$id/SKILL.md" "$ROOT/.agents/skills/$id/SKILL.md" \
       || fail "$id Cursor and Claude copies drifted"
   done
-  grep -Fq 'benchmark-checklist' "$ROOT/.cursor/skills/principle-explain-the-number/SKILL.md" \
-    && fail "principle-explain-the-number still names unvendored benchmark-checklist"
   [ -f "$ROOT/.cursor/licenses/provenance/adaptations.yaml" ] \
     || fail "missing provenance/adaptations.yaml"
   [ ! -e "$ROOT/.cursor/licenses/provenance/licenses/pstack.LICENSE" ] \
@@ -880,12 +925,14 @@ test_write_of_test_file_injects_test_behavior
 test_cwd_relative_test_file_write_injects
 test_cursor_post_tool_write_of_test_file_injects
 test_shell_redirect_to_test_file_injects
+test_cwd_relative_shell_redirect_injects
 test_tee_with_flags_into_test_path_injects
 test_cp_into_test_path_injects
 test_contest_path_is_not_a_test_write
 test_write_of_docs_testing_notes_is_not_a_test_change
 test_docs_test_plan_is_not_a_test_file
 test_speed_claim_injects_explain_the_number
+test_trailing_question_on_speed_claim_still_injects
 test_cursor_speed_claim_is_pending_then_delivered
 test_cursor_before_submit_speed_prints_continue_only
 test_two_x_as_fast_injects_explain_the_number
@@ -900,9 +947,10 @@ test_fast_forward_is_not_a_speed_claim
 test_faster_path_is_not_a_speed_claim
 test_fast_forward_does_not_hide_a_real_speed_claim
 test_same_red_twice_after_claimed_fix_injects_attack_the_premise
-test_cursor_tap_only_after_shell_execution
-test_cursor_post_tool_use_failure_payload
-test_one_failed_shell_is_not_counted_twice
+test_claim_plus_two_after_shell_same_generation
+test_after_shell_then_failure_stays_at_streak_one
+test_failure_then_after_shell_stays_at_streak_one
+test_claude_post_tool_use_failure_error_injects
 test_cursor_post_tool_use_success_does_not_count_tap
 test_fail_style_stderr_on_claude_post_tool_use
 test_tap_description_is_not_keyed_as_a

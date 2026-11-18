@@ -24,7 +24,8 @@
 #     stdout through. This helper still prints continue so a miss cannot
 #     depend on that default.
 #   Cursor afterAgentResponse / afterShellExecution -> no output
-#   Claude UserPromptSubmit / PreToolUse / PostToolUse -> additionalContext
+#   Claude UserPromptSubmit / PreToolUse / PostToolUse / PostToolUseFailure
+#     -> additionalContext
 # A Cursor speed claim, done-line, or recurring-red seen on
 # beforeSubmitPrompt, afterAgentResponse, or afterShellExecution is stored
 # as a pending marker keyed by conversation_id and delivered once on the
@@ -42,25 +43,34 @@
 #     Claude PreToolUse Write/Edit of a code test path (file_path/content or
 #     path/contents), Cursor postToolUse of the same, or a Shell
 #     redirect/heredoc/tee/cp/mv into a code test path. A cwd-relative
-#     foo.test.sh Write injects. In-place editors (sed -i) are not covered.
+#     foo.test.sh Write or `cat > foo.test.sh` injects. In-place editors
+#     (sed -i) are not covered.
 #   speed or perf claim -> principle-explain-the-number
 #     An assertion such as "much faster", "got a lot faster", "2x as fast",
-#     "the export is faster now", or "X is faster than Y". Questions,
-#     "as fast as", and a noun mention of "speedup" stay out.
-#     "fast-forward" and "faster path" are dropped locally before matching.
-#     "this is faster than main" is kept: a comparison is a claim and is
-#     hard to separate from "the export is faster now".
+#     "the export is faster now", "the export is 2x as fast?", or
+#     "X is faster than Y". Questions about whether something is faster
+#     ("which is faster", "is it faster?"), "as fast as", and a noun
+#     mention of "speedup" stay out. "fast-forward" and "faster path" are
+#     dropped locally before matching. "this is faster than main" is kept:
+#     a comparison is a claim and is hard to separate from "the export is
+#     faster now".
 #   same red twice after a claimed fix -> principle-attack-the-premise
 #     keyed on conversation_id plus test id in $STATE/pstack-verify-reds.tsv
 #     (Claude uses session_id). A missing conversation/session id is not
 #     recorded. Claims match the phrases "fixed " and "should now pass ".
-#     Cursor TAP is counted from afterShellExecution.output only, once per
-#     shell call (conversation + command hash). postToolUse is a successful
-#     tool use and is not counted. postToolUseFailure is deduped against
-#     that hash so the same failed Shell is not a second red. Recurring-red
-#     on Cursor is pending-delivered on the next postToolUse(/Failure).
+#     Dropped premise: one physical shell failure can be uniquely identified
+#     across Cursor events using generation_id, tool_use_id, or a
+#     conversation+command hash. One red source per host instead. Cursor
+#     counts TAP only from afterShellExecution.output; each event is one
+#     call. postToolUse and postToolUseFailure never count Cursor reds;
+#     they only deliver pending. Claude counts from PostToolUse and
+#     PostToolUseFailure, which are mutually exclusive per call. A claim
+#     never sets the last token. Tokens dedupe exact duplicate deliveries
+#     of a red only: Cursor uses a digest of the whole payload (including
+#     output and duration); Claude uses tool_use_id. Recurring-red on
+#     Cursor is pending-delivered on the next postToolUse(/Failure).
 #     A pytest node id matches the file prefix before ::. Jest FAIL <path>
-#     is extracted. A repeated payload token does not increment the streak.
+#     is extracted.
 #
 # Usage:
 #   <hook JSON on stdin> | bin/fm-pstack-verify-hook.sh [--claude|--cursor]
@@ -74,9 +84,11 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 REDS_MAX_AGE_SECS=1209600
-LOCK_STALE_SECS=8
-LOCK_RETRIES=12
-SHELL_CALL_MAX_AGE_SECS=5
+# Hook timeout is 10s. LOCK_RETRIES sleeps of 1s plus the critical section
+# must finish well inside that. A leftover younger than LOCK_STALE_SECS
+# becomes breakable inside this window.
+LOCK_STALE_SECS=4
+LOCK_RETRIES=6
 
 CLAUDE_MODE=0
 CURSOR_MODE=0
@@ -187,8 +199,8 @@ is_speed_claim_text() {  # <text>
   [ -n "$text" ] || return 1
   lower=$(printf '%s' "$text" | tr '[:upper:]' '[:lower:]')
   case "$lower" in
-    *\?*) return 1 ;;
     which\ *faster*|what\ *faster*|what\'s\ faster*) return 1 ;;
+    is\ *faster\?*|are\ *faster\?*) return 1 ;;
   esac
   cleaned=$lower
   while :; do
@@ -239,6 +251,7 @@ shell_writes_test_path() {  # <command>
     *'>'tests/*|*'>'[[:space:]]tests/*|*'>'*/tests/*) return 0 ;;
     *'>'__tests__/*|*'>'[[:space:]]__tests__/*|*'>'*/__tests__/*) return 0 ;;
     *'>'*/*.test.*|*'>'*/*_test.*|*'>'*/*.spec.*|*'>'*/*_spec.*) return 0 ;;
+    *'>'*.test.*|*'>'*_test.*|*'>'*.spec.*|*'>'*_spec.*) return 0 ;;
     *tee[[:space:]]*test/*|*tee[[:space:]]*[[:space:]]*/test/*) return 0 ;;
     *tee[[:space:]]*tests/*|*tee[[:space:]]*[[:space:]]*/tests/*) return 0 ;;
     *tee[[:space:]]*__tests__/*|*tee[[:space:]]*[[:space:]]*/__tests__/*) return 0 ;;
@@ -396,10 +409,6 @@ reds_file() {
   printf '%s' "$STATE/pstack-verify-reds.tsv"
 }
 
-calls_file() {
-  printf '%s' "$STATE/pstack-verify-calls.tsv"
-}
-
 pending_dir() {
   printf '%s' "$STATE/pstack-verify-pending"
 }
@@ -416,9 +425,6 @@ file_mtime() {  # <path>
   stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || printf ''
 }
 
-# mkdir lock. LOCK_RETRIES is longer than LOCK_STALE_SECS so a leftover
-# younger than the stale threshold becomes breakable inside this window.
-# The holder must finish the critical section before LOCK_STALE_SECS.
 acquire_reds_lock() {
   local lock=$1 i=0 m now age
   while [ "$i" -lt "$LOCK_RETRIES" ]; do
@@ -478,56 +484,10 @@ take_pending() {  # <conversation-id> -> principle on stdout
   printf '%s' "$principle"
 }
 
-shell_call_hash() {  # <conv> <command>
-  printf '%s\t%s' "$1" "$2" | cksum 2>/dev/null | awk '{print $1}'
-}
-
-# Record conversation+command so a later postToolUseFailure of the same
-# shell call is not a second red. afterShellExecution always records.
-# 0 if the hash was already present (skip the fallback); 1 if newly noted.
-note_shell_call() {  # <conv> <command>
-  local conv=$1 command=$2 file tmp lock hash now cutoff chash cepoch
-  local found=0
-  conv=$(sanitize_field "$conv")
-  [ -n "$conv" ] || return 0
-  hash=$(shell_call_hash "$conv" "$command")
-  [ -n "$hash" ] || return 0
-  mkdir -p "$STATE" 2>/dev/null || return 0
-  file=$(calls_file)
-  lock="$(reds_file).lock"
-  acquire_reds_lock "$lock" || return 0
-  tmp="${file}.tmp.$$"
-  [ -f "$file" ] || : > "$file"
-  now=$(now_epoch)
-  cutoff=0
-  case "$now" in
-    ''|*[!0-9]*) now=0 ;;
-    *) cutoff=$((now - SHELL_CALL_MAX_AGE_SECS)) ;;
-  esac
-  while IFS="$(printf '\t')" read -r cconv chash cepoch || [ -n "${cconv:-}" ]; do
-    [ -n "$cconv" ] || continue
-    case "${cepoch:-0}" in
-      ''|*[!0-9]*) continue ;;
-    esac
-    if [ "$cutoff" -gt 0 ] && [ "$cepoch" -lt "$cutoff" ]; then
-      continue
-    fi
-    if [ "$cconv" = "$conv" ] && [ "$chash" = "$hash" ]; then
-      found=1
-    fi
-    printf '%s\t%s\t%s\n' "$cconv" "$chash" "$cepoch"
-  done < "$file" > "$tmp" || { rm -f "$tmp"; release_reds_lock "$lock"; return 1; }
-  if [ "$found" -eq 0 ]; then
-    printf '%s\t%s\t%s\n' "$conv" "$hash" "$now" >> "$tmp"
-  fi
-  mv "$tmp" "$file" 2>/dev/null || rm -f "$tmp"
-  release_reds_lock "$lock"
-  [ "$found" -eq 1 ]
-}
-
 # Record a claimed fix or a red for <conv,id>. Prints the id when streak
-# reaches 2 after a claim. A matching token is a no-op. Missing conv is not
-# recorded. The holder of the lock must finish before LOCK_STALE_SECS.
+# reaches 2 after a claim. A matching red token is a no-op (exact duplicate
+# delivery). A claim never writes last. Missing conv is not recorded.
+# The holder of the lock must finish before LOCK_STALE_SECS.
 record_red_event() {  # <conv> <id> <kind:claim|red> <token>
   local conv=$1 id kind=$3 token=$4 file tmp lock claimed=0 streak=0 last='' epoch=0 found=0
   local cconv cid cclaimed cstreak ctoken cepoch now cutoff
@@ -581,11 +541,11 @@ record_red_event() {  # <conv> <id> <kind:claim|red> <token>
     claim)
       claimed=1
       streak=0
-      last=$token
+      last="-"
       epoch=$now
       ;;
     red)
-      if [ "$found" -eq 1 ] && [ "$last" = "$token" ]; then
+      if [ "$found" -eq 1 ] && [ -n "$last" ] && [ "$last" != "-" ] && [ "$last" = "$token" ]; then
         printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$conv" "$id" "$claimed" "$streak" "$last" "$epoch" >> "$tmp"
         mv "$tmp" "$file" 2>/dev/null || rm -f "$tmp"
         release_reds_lock "$lock"
@@ -627,7 +587,7 @@ emit_context() {  # <event> <instruction>
     esac
   else
     case "$event" in
-      UserPromptSubmit|PreToolUse|PostToolUse)
+      UserPromptSubmit|PreToolUse|PostToolUse|PostToolUseFailure)
         out=$(jq -n --arg c "$instruction" --arg e "$event" \
           '{hookSpecificOutput:{hookEventName:$e, additionalContext:$c}}' 2>/dev/null) || return 0
         ;;
@@ -640,18 +600,26 @@ emit_context() {  # <event> <instruction>
   printf '%s\n' "$out"
 }
 
-# Cursor: TAP from afterShellExecution.output; postToolUseFailure as fallback
-# after the same-call hash. postToolUse is a successful tool use.
-cursor_counts_reds() {
-  [ "$CURSOR_MODE" = 1 ] || [ "$CURSOR_OUT" = 1 ] || return 0
+is_cursor_host() {
+  [ "$CURSOR_MODE" = 1 ] || [ "$CURSOR_OUT" = 1 ]
+}
+
+# Cursor: afterShellExecution only. Claude: PostToolUse and PostToolUseFailure.
+is_red_counting_event() {
+  if is_cursor_host; then
+    case "$EVENT" in
+      afterShellExecution) return 0 ;;
+    esac
+    return 1
+  fi
   case "$EVENT" in
-    afterShellExecution|postToolUseFailure) return 0 ;;
+    PostToolUse|PostToolUseFailure) return 0 ;;
   esac
   return 1
 }
 
 cursor_defers_inject() {
-  [ "$CURSOR_MODE" = 1 ] || [ "$CURSOR_OUT" = 1 ] || return 1
+  is_cursor_host || return 1
   case "$EVENT" in
     beforeSubmitPrompt|afterAgentResponse|afterShellExecution) return 0 ;;
   esac
@@ -659,7 +627,7 @@ cursor_defers_inject() {
 }
 
 cursor_delivers_pending() {
-  [ "$CURSOR_MODE" = 1 ] || [ "$CURSOR_OUT" = 1 ] || return 1
+  is_cursor_host || return 1
   case "$EVENT" in
     postToolUse|postToolUseFailure) return 0 ;;
   esac
@@ -688,7 +656,7 @@ fi
 
 if [ "$CLAUDE_MODE" -eq 1 ] && fm_hook_payload_is_foreign_host "$PAYLOAD"; then
   case "$EVENT" in
-    postToolUse|PostToolUse|postToolUseFailure|afterShellExecution|afterAgentResponse|beforeSubmitPrompt|UserPromptSubmit|preToolUse|PreToolUse)
+    postToolUse|PostToolUse|postToolUseFailure|PostToolUseFailure|afterShellExecution|afterAgentResponse|beforeSubmitPrompt|UserPromptSubmit|preToolUse|PreToolUse)
       fail_open
       ;;
   esac
@@ -720,7 +688,8 @@ FIELDS=$(printf '%s' "$PAYLOAD" | jq -c '
       stderr: str($to.stderr // $tr.stderr // .stderr // .error_message // ""),
       stdout: str($to.stdout // $tr.stdout // .stdout // ""),
       output: str(.output // $to.output // $tr.output // ""),
-      token: str(.tool_use_id // .toolUseId // .generation_id // .prompt_id // ""),
+      error: str(.error // ""),
+      token: str(.tool_use_id // .toolUseId // ""),
       conv: str(.conversation_id // .conversationId // .session_id // "")
     }
 ' 2>/dev/null) || fail_open
@@ -735,8 +704,12 @@ CONTENTS=$(printf '%s' "$FIELDS" | jq -r '.contents' 2>/dev/null) || fail_open
 STDERR=$(printf '%s' "$FIELDS" | jq -r '.stderr' 2>/dev/null) || fail_open
 STDOUT=$(printf '%s' "$FIELDS" | jq -r '.stdout' 2>/dev/null) || fail_open
 OUTPUT=$(printf '%s' "$FIELDS" | jq -r '.output' 2>/dev/null) || fail_open
+ERROR=$(printf '%s' "$FIELDS" | jq -r '.error' 2>/dev/null) || fail_open
 TOKEN=$(printf '%s' "$FIELDS" | jq -r '.token' 2>/dev/null) || fail_open
 CONV=$(printf '%s' "$FIELDS" | jq -r '.conv' 2>/dev/null) || fail_open
+if is_cursor_host; then
+  TOKEN=$(printf '%s' "$PAYLOAD" | cksum 2>/dev/null | awk '{print $1}')
+fi
 [ -n "$TOKEN" ] || TOKEN=$(printf '%s' "$PAYLOAD" | cksum 2>/dev/null | awk '{print $1}')
 
 QUOTED=
@@ -768,7 +741,8 @@ esac
 
 STREAMS="$STDERR
 $STDOUT
-$OUTPUT"
+$OUTPUT
+$ERROR"
 OBSERVED="$VISIBLE
 $STREAMS"
 PRINCIPLE=
@@ -788,30 +762,9 @@ if [ -n "$CONV" ]; then
   CLAIM_IDS=$(extract_claim_ids "$OBSERVED")
 fi
 RED_IDS=
-if [ -n "$CONV" ] && cursor_counts_reds; then
-  cursor_red_source=
-  if [ "$CURSOR_MODE" = 1 ] || [ "$CURSOR_OUT" = 1 ]; then
-    case "$EVENT" in
-      afterShellExecution) cursor_red_source=$OUTPUT ;;
-      postToolUseFailure) cursor_red_source=$STDERR
-        [ -n "$cursor_red_source" ] || cursor_red_source=$OUTPUT
-        ;;
-    esac
-    if [ -n "$cursor_red_source" ]; then
-      case "$EVENT" in
-        afterShellExecution)
-          note_shell_call "$CONV" "$COMMAND" || true
-          RED_IDS=$(extract_red_ids "$cursor_red_source")
-          ;;
-        postToolUseFailure)
-          if note_shell_call "$CONV" "$COMMAND"; then
-            :
-          else
-            RED_IDS=$(extract_red_ids "$cursor_red_source")
-          fi
-          ;;
-      esac
-    fi
+if [ -n "$CONV" ] && is_red_counting_event; then
+  if is_cursor_host; then
+    RED_IDS=$(extract_red_ids "$OUTPUT")
   else
     RED_IDS=$(extract_red_ids "$STREAMS")
     [ -n "$RED_IDS" ] || RED_IDS=$(extract_red_ids "$VISIBLE")
