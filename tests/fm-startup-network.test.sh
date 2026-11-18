@@ -941,6 +941,57 @@ EOF
   pass 'fm-startup-network: refresh preserves unpublished gone-upstream branches for recovery'
 }
 
+test_outer_timeout_keeps_discovered_branch_names() {
+  local rec home root log project report
+  rec=$(new_world outer-unpublished-timeout)
+  IFS='|' read -r home root log <<EOF
+$rec
+EOF
+  project="$home/projects/demo"
+  mkdir -p "$project" "$home/data"
+  printf '%s\n' '- demo [no-mistakes] - fixture' > "$home/data/projects.md"
+  printf '%s\n' '- [ ] task - example' > "$home/data/backlog.md"
+  git -C "$project" init -q -b main
+  git -C "$project" -c user.name=Test -c user.email=test@example.com commit -qm base --allow-empty
+  git -C "$project" remote add origin https://github.com/example/demo.git
+  git -C "$project" update-ref refs/remotes/origin/main HEAD
+  git -C "$project" checkout -qb fm/task
+  printf 'unpublished\n' > "$project/change.txt"
+  git -C "$project" add change.txt
+  git -C "$project" -c user.name=Test -c user.email=test@example.com commit -qm change
+  git -C "$project" branch fm/another
+  printf 'project=%s\nbranch=fm/task\nkind=ship\nmode=no-mistakes\n' "$project" > "$home/state/task.meta"
+  cat > "$root/bin/gh-axi" <<'SH'
+#!/usr/bin/env bash
+printf 'entered\n' > "$FM_OUTER_PROOF_MARK"
+sleep 60
+SH
+  chmod +x "$root/bin/gh-axi"
+  printf '%s\n' $$ > "$home/state/.lock"
+  FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=2 \
+    FM_OUTER_PROOF_MARK="$home/proof-entered" FM_STARTUP_NETWORK_TIMEOUT=12 FM_UNPUSHED_TIMEOUT_SECS=60 \
+    run_stage "$home" "$root" run --locked 1 --lock-pid $$
+  [ -f "$home/proof-entered" ] || fail 'the scan never reached the delayed forge read'
+  report=$(run_stage "$home" "$root" report)
+  assert_contains "$report" 'branch=fm/task' 'the outer deadline lost a discovered task branch'
+  assert_contains "$report" 'branch=fm/another' 'the outer deadline lost the later discovered branch'
+  assert_contains "$report" 'hit the 12s bound' 'the outer deadline was not exercised'
+  wait_for_startup_network_wake "$home" || fail 'the outer deadline did not deliver its branch evidence durably'
+  # Discovery also precedes refresh itself: a refresh that never returns must
+  # not prevent already local branch identities from reaching the report.
+  rm "$home/proof-entered"
+  FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=60 \
+    FM_OUTER_PROOF_MARK="$home/proof-entered" FM_STARTUP_NETWORK_TIMEOUT=8 FM_UNPUSHED_TIMEOUT_SECS=60 \
+    run_stage "$home" "$root" run --locked 1 --lock-pid $$
+  [ ! -f "$home/proof-entered" ] || fail 'the stalled refresh unexpectedly reached publication proofs'
+  report=$(run_stage "$home" "$root" report)
+  assert_contains "$report" 'branch=fm/task' 'a stalled refresh hid the task inventory'
+  assert_contains "$report" 'branch=fm/another' 'a stalled refresh hid the other branch inventory'
+  assert_contains "$report" 'hit the 8s bound' 'the refresh deadline was not exercised'
+  pass 'fm-startup-network: an outer deadline retains discovered branch identities'
+}
+
+test_outer_timeout_keeps_discovered_branch_names
 test_refresh_preserves_unpublished_gone_upstream_before_scanning
 test_wait_fails_without_a_published_stage
 test_start_returns_without_holding_the_callers_stdout

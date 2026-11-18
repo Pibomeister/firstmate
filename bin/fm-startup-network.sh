@@ -19,6 +19,9 @@
 # branches in this same report, including blocked pipeline starts without a run.
 # This refresh disables fleet branch pruning so a gone upstream cannot remove
 # unpublished local commits before the recovery scan reads them.
+# The stage worker owns the scan journal outside its timed child. Inventory is
+# collected before bootstrap, and pending identities are replayed if the outer
+# deadline stops discovery, refresh, or proofs (fm-unpushed-reconcile.sh).
 #
 # WHAT IS PRESERVED. Nothing is dropped. bin/fm-bootstrap.sh remains the single
 # owner of every network sweep and still runs all of them, unchanged, via its
@@ -484,7 +487,7 @@ publish_lock_held() {  # <generation> <phases> <locked> <started> <lockdir> <out
 }
 
 cmd_run() {  # <locked> <lock-pid> <generation>
-  local locked=$1 lock_pid=$2 generation=$3 phases started budget out rc sweep_locked=0 downgraded=0 internal=0 lease_held=0 timings stage_started stage_deadline
+  local locked=$1 lock_pid=$2 generation=$3 phases started budget out rc sweep_locked=0 downgraded=0 internal=0 lease_held=0 timings stage_started stage_deadline unpushed_work=''
   mkdir -p "$STATE" 2>/dev/null || return 1
   started=$(now)
   budget=$(stage_budget)
@@ -570,28 +573,43 @@ EOF
       downgraded=1
     fi
   fi
-  # One aggregate deadline covers both deferred operations. The inactive scan
+  # One aggregate deadline covers all deferred work. The inactive scan
   # retains its own tighter per-scan bound inside this outer bound. Findings
   # need no report translation: the scan writes its ordinary durable
-  # inactive-outcome wakes directly. A child shell composes the two executable
+  # inactive-outcome wakes directly. A child shell composes the executable
   # owners only so fm_run_timed can govern them as one process group.
   # The sweeps get whatever the lock waits above left of the stage budget.
   budget=$(seconds_until "$stage_deadline")
   if [ "$sweep_locked" -eq 1 ]; then
+    unpushed_work=$(mktemp -d "${TMPDIR:-/tmp}/fm-startup-unpushed.XXXXXX") || {
+      printf 'UNPUSHED: cannot retain startup inventory; recovery may be incomplete\n' >> "$out"
+      unpushed_work=''
+    }
     # shellcheck disable=SC2016  # Child-shell variables expand inside the bound.
     fm_run_timed "$budget" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
       FM_BOOTSTRAP_NETWORK=only FM_BOOTSTRAP_NETWORK_LOCK_PID="$lock_pid" \
       bash -c '
         script_dir=$1
+        work=$2
+        if [ -n "$work" ]; then
+          "$script_dir/fm-unpushed-reconcile.sh" discover --work-dir "$work" || true
+        fi
         "$script_dir/fm-inactive-reconcile.sh" scan --startup >/dev/null 2>&1 || true
         bootstrap_rc=0
         FM_FLEET_PRUNE=0 "$script_dir/fm-bootstrap.sh" || bootstrap_rc=$?
-        "$script_dir/fm-unpushed-reconcile.sh" scan || printf "UNPUSHED: incomplete scan; rerun %s/fm-unpushed-reconcile.sh scan\n" "$script_dir"
+        if [ -n "$work" ]; then
+          "$script_dir/fm-unpushed-reconcile.sh" scan --work-dir "$work"
+        else
+          "$script_dir/fm-unpushed-reconcile.sh" scan
+        fi || printf "UNPUSHED: incomplete scan; rerun %s/fm-unpushed-reconcile.sh scan\n" "$script_dir"
         exit "$bootstrap_rc"
-      ' _ "$SCRIPT_DIR" >"$out" 2>&1 || rc=$?
+      ' _ "$SCRIPT_DIR" "$unpushed_work" >>"$out" 2>&1 || rc=$?
   else
     fm_run_timed "$budget" env FM_BOOTSTRAP_NETWORK=only FM_BOOTSTRAP_DETECT_ONLY=1 \
       "$SCRIPT_DIR/fm-bootstrap.sh" >"$out" 2>&1 || rc=$?
+  fi
+  if [ "$rc" -ne 0 ] && [ -n "$unpushed_work" ]; then
+    "$SCRIPT_DIR/fm-unpushed-reconcile.sh" pending --work-dir "$unpushed_work" >> "$out" 2>&1 || true
   fi
   [ "$lease_held" -eq 0 ] || fm_lock_release "$STATE/.lock.acquire"
   # The bounded run as a whole, so the per-phase records can be read against the
@@ -615,13 +633,14 @@ EOF
       ;;
   esac
   rc=$?
-  run_cleanup "$out" "$timings"
+  run_cleanup "$out" "$timings" "$unpushed_work"
   return "$rc"
 }
 
-run_cleanup() {  # <output-file> <timing-file>
+run_cleanup() {  # <output-file> <timing-file> [owned-inventory-directory]
   rm -f "$1" 2>/dev/null || true
   [ -z "${2:-}" ] || rm -f "$2" 2>/dev/null || true
+  [ -z "${3:-}" ] || rm -rf "$3" 2>/dev/null || true
 }
 
 # --- harvest / report --------------------------------------------------------

@@ -71,6 +71,29 @@ EOF
 
 scan() { bash "$ROOT/bin/fm-unpushed-reconcile.sh" scan; }
 
+new_world slow-content-proof
+git -C "$PROJECT" branch fm/another
+REAL_GIT=$(command -v git)
+cat > "$TMP_ROOT/fakebin/git" <<'SH'
+#!/usr/bin/env bash
+case " $* " in
+  *' merge-tree '*)
+    printf 'entered\n' > "$FM_CONTENT_PROOF_MARK"
+    sleep 20
+    ;;
+esac
+exec "$FM_CONTENT_PROOF_GIT" "$@"
+SH
+chmod +x "$TMP_ROOT/fakebin/git"
+out=$(FM_UNPUSHED_TIMEOUT_SECS=5 FM_CONTENT_PROOF_GIT="$REAL_GIT" \
+  FM_CONTENT_PROOF_MARK="$FM_HOME/proof-entered" scan)
+rm "$TMP_ROOT/fakebin/git"
+[ -f "$FM_HOME/proof-entered" ] || fail 'the delayed content proof was never entered'
+assert_contains "$out" 'branch=fm/task' 'a content-proof timeout lost a known branch'
+assert_contains "$out" 'branch=fm/another' 'a content-proof timeout lost the later known branch'
+assert_contains "$out" 'incomplete' 'a content-proof timeout became success'
+pass 'inventory survives a delayed first content proof before comparison starts'
+
 new_world nested-directory
 git -C "$FM_HOME" init -q -b main
 git -C "$FM_HOME" -c user.name=Test -c user.email=test@example.com commit -qm base --allow-empty
@@ -128,6 +151,13 @@ assert_equals '' "$(cat "$FM_GH_LOG")" 'published task made an unnecessary forge
 git -C "$PROJECT" update-ref -d refs/remotes/origin/task
 git -C "$PROJECT" update-ref refs/remotes/backup/task HEAD
 assert_equals '' "$(scan)" 'backup remote coverage was ignored'
+borrowed_work="$TMP_ROOT/borrowed-inventory"
+mkdir "$borrowed_work"
+assert_equals '' "$(bash "$ROOT/bin/fm-unpushed-reconcile.sh" discover --work-dir "$borrowed_work")" 'inventory discovery printed an unverified publication claim'
+assert_contains "$(bash "$ROOT/bin/fm-unpushed-reconcile.sh" pending --work-dir "$borrowed_work")" 'branch=fm/task' 'discovery did not retain the local identity'
+assert_equals '' "$(bash "$ROOT/bin/fm-unpushed-reconcile.sh" scan --work-dir "$borrowed_work")" 'a published branch was reported during borrowed-work scanning'
+assert_equals '' "$(bash "$ROOT/bin/fm-unpushed-reconcile.sh" pending --work-dir "$borrowed_work")" 'a verified published branch remained pending'
+[ -d "$borrowed_work" ] || fail 'the scanner removed its caller-owned journal directory'
 pass 'commits reachable from any publishing remote need no recovery finding'
 
 squash_merge_into_origin_main() {

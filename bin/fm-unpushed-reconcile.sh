@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
 # Flag local task branches with commits absent from publishing remote refs.
 #
-# Usage: fm-unpushed-reconcile.sh scan
+# Usage: fm-unpushed-reconcile.sh scan [--work-dir <private-directory>]
+#        fm-unpushed-reconcile.sh discover --work-dir <private-directory>
+#        fm-unpushed-reconcile.sh pending --work-dir <private-directory>
+# discover records local inventory without running publication/landing proofs.
+# A caller supplying --work-dir owns its lifetime and can replay pending after
+# killing the entire scanner process group. Standalone scan owns its temp dir.
+# The private journal is append-only TSV: P|S, project, branch, full head.
+# P records inventory before any per-branch proof; S settles that exact head
+# when it is excluded, proven published/landed, or its identity is printed.
+# pending prints the latest unsettled identity per project/branch. Its task
+# eligibility and publication state remain explicitly unverified on timeout.
 # Read-only: never fetches, pushes, steers a worker, answers a gate, changes a
 # ledger row, or resolves a blocker. The locked session start's deferred stage
 # captures these findings in its report and delivers its ordinary durable wake.
@@ -62,6 +72,27 @@ export FM_HOME
 . "$SCRIPT_DIR/fm-tangle-lib.sh"
 
 field() { printf '%s' "$1" | tr '\t\r\n' '   '; }
+
+journal_settled() { printf 'S\t%s\t%s\t%s\n' "$1" "$2" "$3" >> "$FM_UNPUSHED_WORK/journal"; }
+
+pending_inventory() { # <caller-owned work directory>; no network or Git reads
+  [ -f "$1/journal" ] && [ ! -L "$1/journal" ] || return 0
+  awk -F '\t' '
+    NF == 4 && ($1 == "P" || $1 == "S") {
+      key=$2 SUBSEP $3
+      if ($1 == "P") {
+        if (!(key in seen)) { order[++n]=key; seen[key]=1 }
+        project[key]=$2; branch[key]=$3; head[key]=$4; pending[key]=1
+      } else if (head[key] == $4) pending[key]=0
+    }
+    END {
+      for (i=1; i<=n; i++) {
+        key=order[i]
+        if (pending[key]) printf "UNPUSHED: project=%s branch=%s head=%s; inspection incomplete, task eligibility and publication unverified\n", project[key], branch[key], head[key]
+      }
+    }
+  ' "$1/journal"
+}
 
 github_target() { # <project> <forge>; sets HOST and REPO or prints the unknown reason
   local target
@@ -153,11 +184,22 @@ scan_project() { # <project>
   default=$(fm_default_branch "$project" || true)
   # Resolve immutable object IDs, not branch names, so a concurrent branch move
   # cannot change which commit the count in this finding describes.
-  refs=$(git -C "$project" for-each-ref --format='%(objectname) %(refname)' refs/remotes/) || {
-    printf 'UNPUSHED: project=%s incomplete: remote refs unreadable\n' "$project"; return
-  }
   branches=$(git -C "$project" for-each-ref --format='%(objectname) %(refname)' refs/heads/) || {
     printf 'UNPUSHED: project=%s incomplete: local branches unreadable\n' "$project"; return
+  }
+  # Retain every returned non-default identity before metadata, reachability,
+  # landing proofs, or network reads can consume either timeout budget.
+  while IFS=' ' read -r head branch; do
+    [ -n "$branch" ] || continue
+    branch=${branch#refs/heads/}
+    [ "$branch" != "$default" ] || continue
+    printf 'P\t%s\t%s\t%s\n' "$project" "$branch" "$head" >> "$FM_UNPUSHED_WORK/journal" || return 1
+  done <<EOF
+$branches
+EOF
+  [ "$DISCOVER_ONLY" = 0 ] || return 0
+  refs=$(git -C "$project" for-each-ref --format='%(objectname) %(refname)' refs/remotes/) || {
+    printf 'UNPUSHED: project=%s incomplete: remote refs unreadable\n' "$project"; return
   }
   while IFS=' ' read -r head branch; do
     [ -n "$branch" ] || continue
@@ -178,9 +220,12 @@ scan_project() { # <project>
     done <<EOF
 $META_ROWS
 EOF
-    [ "$mode" != local-only ] || continue
+    if [ "$mode" = local-only ]; then journal_settled "$project" "$branch" "$head"; continue; fi
     if [ -z "$task" ]; then
-      case "$branch" in "$prefix"*) task=${branch#"$prefix"} ;; *) continue ;; esac
+      case "$branch" in
+        "$prefix"*) task=${branch#"$prefix"} ;;
+        *) journal_settled "$project" "$branch" "$head"; continue ;;
+      esac
     fi
     # Exclude every publishing remote, not just the task's upstream. The
     # no-mistakes remote is a local validation proxy, not a publishing remote.
@@ -195,10 +240,11 @@ EOF
     count=$(git -C "$project" rev-list --count "$@" 2>/dev/null) || {
       printf 'UNPUSHED: project=%s branch=%s incomplete: reachability unreadable\n' "$project" "$branch"; continue
     }
-    [ "$count" != 0 ] || continue
-    [ -z "$base" ] || ! content_landed "$project" "$head" "$base" || continue
+    if [ "$count" = 0 ] || { [ -n "$base" ] && content_landed "$project" "$head" "$base"; }; then
+      journal_settled "$project" "$branch" "$head"; continue
+    fi
     printf '%s\t%s\t%s\t%s\t%s\tUNPUSHED: project=%s branch=%s head=%s commits=%s task=%s owner=%s; flag for supervisor recovery\n' \
-      "$project" "$branch" "$head" "${task:--}" "$forge" \
+      "$project" "$branch" "$head" "${task:--}" "${forge:--}" \
       "$project" "$branch" "$head" "$count" "$task" "$owner" >> "$CANDIDATES"
   done <<EOF
 $branches
@@ -227,20 +273,41 @@ EOF
 
 case "${1:-}" in
   -h|--help) sed -n '2,/^set -u$/s/^# \{0,1\}//p' "$0"; exit 0 ;;
-  scan)
+  scan|discover|pending)
+    mode=$1; shift
+    own_work=0
+    if [ "$#" = 0 ] && [ "$mode" = scan ]; then
+      work=$(mktemp -d "${TMPDIR:-/tmp}/fm-unpushed.XXXXXX") || exit 1
+      own_work=1
+    elif [ "$#" = 2 ] && [ "$1" = --work-dir ]; then
+      work=$2
+    else
+      printf 'usage: fm-unpushed-reconcile.sh scan|discover|pending [--work-dir <private-directory>]\n' >&2; exit 2
+    fi
+    case "$work" in /*) ;; *) exit 2 ;; esac
+    [ -d "$work" ] && [ ! -L "$work" ] && [ -O "$work" ] || exit 2
+    for record in journal candidates; do
+      [ ! -L "$work/$record" ] || exit 2
+      { [ ! -e "$work/$record" ] || [ -f "$work/$record" ]; } || exit 2
+    done
+    [ "$own_work" = 0 ] || trap 'rm -rf "$work"' EXIT
+    if [ "$mode" = pending ]; then pending_inventory "$work"; exit; fi
+    : >> "$work/journal" || exit 1
+    : > "$work/candidates" || exit 1
     secs=${FM_UNPUSHED_TIMEOUT_SECS:-20}
     case "$secs" in ''|*[!0-9]*) exit 2 ;; esac
     [ "$secs" -gt 0 ] && [ "$secs" -le 120 ] || exit 2
-    work=$(mktemp -d "${TMPDIR:-/tmp}/fm-unpushed.XXXXXX") || exit 1
-    trap 'rm -rf "$work"' EXIT
-    : > "$work/candidates"; : > "$work/resolved"
+    child_mode=--scan
+    [ "$mode" != discover ] || child_mode=--discover
     # A timeout still names every discovered branch the scan had not resolved.
-    FM_UNPUSHED_WORK=$work fm_run_timed "$secs" bash "$SCRIPT_DIR/fm-unpushed-reconcile.sh" --scan || {
-      tail -n +"$(( $(wc -l < "$work/resolved") + 1 ))" "$work/candidates" | cut -f6-
+    FM_UNPUSHED_WORK=$work fm_run_timed "$secs" bash "$SCRIPT_DIR/fm-unpushed-reconcile.sh" "$child_mode" || {
+      pending_inventory "$work"
       printf 'UNPUSHED: incomplete scan (failed or exceeded %ss); rerun %s scan\n' "$secs" "$SCRIPT_DIR/fm-unpushed-reconcile.sh"
     }
     ;;
-  --scan)
+  --scan|--discover)
+    DISCOVER_ONLY=0
+    [ "$1" != --discover ] || DISCOVER_ONLY=1
     NL=$'\n'; SEEN=$NL
     [ -n "${FM_UNPUSHED_WORK:-}" ] || exit 2
     CANDIDATES=$FM_UNPUSHED_WORK/candidates
@@ -274,15 +341,16 @@ case "${1:-}" in
     done <<EOF
 $META_ROWS
 EOF
+    [ "$DISCOVER_ONLY" = 0 ] || exit 0
     # Comparison may be partial, visibility is not: the parent prints every
     # candidate not yet resolved here when the scan budget runs out.
     while IFS=$'\t' read -r project branch head task forge identity; do
       merged=$(merged_evidence "$project" "$branch" "$head" "$forge")
       if [ "$merged" = landed ]; then
-        echo >> "$FM_UNPUSHED_WORK/resolved"; continue
+        journal_settled "$project" "$branch" "$head"; continue
       fi
       printf '%s\n' "$identity"
-      echo >> "$FM_UNPUSHED_WORK/resolved"
+      journal_settled "$project" "$branch" "$head"
       compare_branch "$project" "$branch" "$task" "$forge" "$merged"
     done < "$CANDIDATES"
     ;;
