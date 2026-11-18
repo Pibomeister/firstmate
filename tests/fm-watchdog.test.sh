@@ -6422,6 +6422,7 @@ hs_base() {
   while [ $(( (d + 4) % 7 )) -ne 3 ]; do d=$((d + 1)); done
   case "$1" in
     day) printf '%s\n' $((d * 86400 + 18 * 3600)) ;;
+    weekend) printf '%s\n' $(((d + 3) * 86400 + 18 * 3600)) ;;
     *) printf '%s\n' $((d * 86400 + 29 * 3600 + 1800)) ;;
   esac
 }
@@ -6511,6 +6512,18 @@ test_human_step_overnight_goes_to_the_morning_handoff() {
   run_wd 2800 once >/dev/null 2>&1
   assert_equals 2 "$(ledger_rows human-step handoff "done")" "a new episode is escalated again: $(ledger | cut -f4-8)"
 
+  # Saturday noon is inside the weekend quiet window, so it is overnight too.
+  BASE=$(hs_base weekend)
+  make_home "$HS_CODE"
+  transcript 100 "Working."
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 600 once >/dev/null 2>&1
+  [ ! -e "$H/paged.log" ] || fail "a weekend step paged the owner: $(cat "$H/paged.log")"
+  assert_equals 1 "$(ledger_rows human-step handoff "done")" "a weekend step went into the morning handoff: $(ledger | cut -f4-8)"
+
+  # Away or quiet mode by day is not overnight: the step is still paged.
   local mode
   for mode in away quiet; do
     BASE=$(hs_base day)
@@ -6521,29 +6534,48 @@ test_human_step_overnight_goes_to_the_morning_handoff() {
     if [ "$mode" = quiet ]; then printf 'quiet\n' > "$H/state/.afk"; else : > "$H/state/.afk"; fi
     run_wd 0 once >/dev/null 2>&1
     run_wd 600 once >/dev/null 2>&1
-    [ ! -e "$H/paged.log" ] || fail "a step in $mode mode paged the owner: $(cat "$H/paged.log")"
-    assert_equals 1 "$(ledger_rows human-step handoff "done")" "a step in $mode mode went into the morning handoff: $(ledger | cut -f4-8)"
+    assert_grep "human-only verification-code step" "$H/paged.log" "a daytime step in $mode mode paged the owner"
+    assert_equals 1 "$(ledger_rows human-step page "done")" "a daytime step in $mode mode was paged once: $(ledger | cut -f4-8)"
+    assert_equals 0 "$(ledger_rows human-step handoff "done")" "a daytime step in $mode mode was held for the morning: $(ledger | cut -f4-8)"
     [ ! -s "$H/typed.log" ] || fail "the watchdog typed into a step in $mode mode: $(cat "$H/typed.log")"
   done
-  pass "human-only step: overnight, away, and quiet are recorded for the morning handoff and never paged"
+  pass "human-only step: overnight and weekend steps are recorded for the morning handoff and never paged; daytime away and quiet still page"
 }
 
 test_human_step_undelivered_page_falls_back_to_the_record() {
-  local BASE
+  local BASE subject
   BASE=$(hs_base day)
   make_home "$HS_CODE"
+  subject=$(basename "$H")
   transcript 100 "Working."
   printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
   printf 'off\n' > "$H/config/wedge-alarm"
   run_wd 0 once >/dev/null 2>&1
   run_wd 600 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows human-step page failed)" "the undelivered page is recorded: $(ledger | cut -f4-8)"
-  assert_equals 1 "$(ledger_rows human-step handoff "done")" "the undelivered page falls back to the morning handoff: $(ledger | cut -f4-8)"
-  assert_equals 1 "$(hs_rows "$(basename "$H")" morning-handoff)" "the fallback row was written"
+  assert_equals 0 "$(( $(ledger_rows human-step page "done") + $(ledger_rows human-step handoff "done") ))" "an undelivered page counted as an escalation: $(ledger | cut -f4-8)"
+  assert_equals 1 "$(hs_rows "$subject" morning-handoff)" "the step was recorded so it stays visible"
   assert_grep "not paged" "$H/data/watchdog/status.md" "the unpaged step is a reported gap"
   run_wd 700 once >/dev/null 2>&1
-  assert_equals 1 "$(ledger_rows human-step page pending)" "a recorded fallback is not retried: $(ledger | cut -f4-8)"
-  pass "human-only step: a page no channel delivers still reaches the morning handoff"
+  assert_equals 1 "$(ledger_rows human-step page pending)" "the page was retried inside nudge-secs: $(ledger | cut -f4-8)"
+  run_wd 1500 once >/dev/null 2>&1
+  assert_equals 2 "$(ledger_rows human-step page failed)" "the page was not retried after nudge-secs: $(ledger | cut -f4-8)"
+  assert_equals 1 "$(hs_rows "$subject" morning-handoff)" "a retry duplicated the record"
+
+  # The channel recovers: the next retry delivers the page, and the record
+  # stays open until the step leaves the pane.
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  run_wd 2500 once >/dev/null 2>&1
+  assert_grep "human-only verification-code step" "$H/paged.log" "the recovered channel was never used"
+  assert_equals 1 "$(ledger_rows human-step page "done")" "the delivered page was not recorded: $(ledger | cut -f4-8)"
+  run_wd 3500 once >/dev/null 2>&1
+  assert_equals 3 "$(ledger_rows human-step page pending)" "a delivered page was sent again: $(ledger | cut -f4-8)"
+  assert_equals 0 "$(hs_rows "$subject" cleared)" "the record closed while the step still showed"
+  hs_screen $'Captain session\n❯ \n  ? for shortcuts'
+  run_wd 3600 once >/dev/null 2>&1
+  assert_equals 1 "$(hs_rows "$subject" cleared)" "the record stayed open after the step left the pane"
+  [ ! -s "$H/typed.log" ] || fail "the watchdog typed into the step: $(cat "$H/typed.log")"
+  pass "human-only step: an undelivered page stays pending and visible, is retried after nudge-secs, and reaches a recovered channel"
 }
 
 test_worker_human_step_keeps_other_work_moving() {
@@ -6565,13 +6597,13 @@ test_worker_human_step_keeps_other_work_moving() {
   assert_equals 1 "$(ledger_rows decisions nudge pending)" "the home's decision nudge still goes out: $(ledger | cut -f4-8)"
   assert_grep "human-only otp step on $(basename "$H") worker auth" "$H/data/watchdog/status.md" "the worker step is a reported gap"
   run_wd 600 once >/dev/null 2>&1 || fail "the ten-minute worker pass failed"
-  assert_equals 1 "$(hs_rows worker:auth morning-handoff)" "the away worker step went into the morning handoff: $(cat "$H/state/watchdog/human-steps.tsv" 2>/dev/null)"
-  assert_no_grep "worker auth" "$H/paged.log" "the away worker step was paged"
+  assert_grep "human-only otp step has waited 10 minutes on $(basename "$H") worker auth" "$H/paged.log" "a daytime away worker step was not paged"
+  assert_equals 0 "$(hs_rows worker:auth morning-handoff)" "a daytime away worker step was held for the morning: $(cat "$H/state/watchdog/human-steps.tsv" 2>/dev/null)"
   sleep 1
   [ ! -s "$H/worker-auth.typed" ] || fail "the watchdog typed into the worker step: $(cat "$H/worker-auth.typed")"
   [ ! -s "$H/worker-plain.typed" ] || fail "the watchdog typed into a plain worker pane: $(cat "$H/worker-plain.typed")"
   [ ! -e "$H/state/auth.status" ] || fail "the watchdog wrote a status that could hold the worker's PR: $(cat "$H/state/auth.status")"
-  assert_equals 0 "$(ledger | awk -F'\t' '$4 == "worker:auth" && $6 != "handoff"' | wc -l | tr -d ' ')" "the worker step got an action other than its handoff: $(ledger | cut -f4-8)"
+  assert_equals 0 "$(ledger | awk -F'\t' '$4 == "worker:auth" && $6 != "page"' | wc -l | tr -d ' ')" "the worker step got an action other than its page: $(ledger | cut -f4-8)"
   assert_no_grep "merge\|deploy\|hold" "$H/state/watchdog/human-steps.tsv" "the record names no merge, deploy, or hold"
 
   rm -f "$H/state/.afk"

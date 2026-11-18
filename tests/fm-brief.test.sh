@@ -1957,6 +1957,7 @@ test_crewmate_scaffolds_escalate_human_only_steps() {
     assert_contains "$rule" '[key=human-step-<slug>]' "$mode brief does not key the step's blocker"
     assert_contains "$rule" "never hold a PR, a deploy, or other work on it" "$mode brief lets the step hold a PR or deploy"
     assert_contains "$rule" "Never enter a credential or code yourself" "$mode brief lets the worker answer the step"
+    assert_contains "$rule" "only once a person has completed the step or it is no longer needed, never just to clear it" "$mode brief lets the worker resolve an unfinished step"
     if [ -z "$ship_rule" ]; then ship_rule=$rule
     else [ "$rule" = "$ship_rule" ] || fail "the $mode human-only-step rule drifted from the ship rule"
     fi

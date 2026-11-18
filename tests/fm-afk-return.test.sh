@@ -499,30 +499,61 @@ test_return_brief_composes_from_record_store_and_held_set() {
 # listing them, and leaves the cursor alone. On Pi the brief lists them as
 # before.
 test_return_brief_lists_open_human_only_steps() {
-  local dir out now waiting
+  local dir out now waiting fri rc
   dir="$TMP_ROOT/brief-human-steps"
   install_runner "$dir"
   contract_in "$dir" enter --words 'keep the fleet moving' >/dev/null 2>&1 || fail "could not confirm the away-posture record"
   now=$(date +%s)
+  # Friday 17:10 to Monday 08:00 is the weekend quiet window of
+  # bin/fm-quiet-hours-lib.sh: a step handed off at its start is ~63h old by
+  # the Monday return.
+  fri=$((now - 63 * 3600))
   mkdir -p "$dir/home/state/watchdog"
-  # The watchdog's overnight record: one step still showing, one that cleared,
-  # and one older than a day.
+  # The watchdog's record: one step still showing, one that cleared, a step
+  # handed off at the start of the weekend and never cleared, and a weekend
+  # step that cleared on Sunday.
   {
     printf '%s\tworker:auth\totp\t%s\tmorning-handoff\n' "$((now - 600))" "$((now - 1200))"
     printf '%s\tworker:done\tsign-in\t%s\tmorning-handoff\n' "$((now - 900))" "$((now - 1500))"
     printf '%s\tworker:done\tsign-in\t%s\tcleared\n' "$((now - 300))" "$((now - 1500))"
-    printf '%s\tworker:old\tcaptcha\t%s\tmorning-handoff\n' "$((now - 90000))" "$((now - 91000))"
+    printf '%s\tworker:weekend\tcaptcha\t%s\tmorning-handoff\n' "$fri" "$((fri - 600))"
+    printf '%s\tworker:sunday\tapproval\t%s\tmorning-handoff\n' "$((fri + 60))" "$((fri - 540))"
+    printf '%s\tworker:sunday\tapproval\t%s\tcleared\n' "$((now - 20 * 3600))" "$((fri - 540))"
   } > "$dir/home/state/watchdog/human-steps.tsv"
+  # A worker reported its own human-only step and kept working; it never holds
+  # the catch-up gate. A real blocker on another task still does.
+  printf 'window=synthetic:fm-auth-task\nbackend=tmux\nkind=ship\n' > "$dir/home/state/auth-task.meta"
+  {
+    printf 'blocked [key=human-step-gh-login] [at=%s]: human-only step: sign in to gh on the build host\n' "$((now - 700))"
+    printf 'working [at=%s]: the docs change continues while the sign-in waits\n' "$((now - 100))"
+  } > "$dir/home/state/auth-task.status"
   touch "$dir/home/state/.last-watcher-beat"
   : > "$dir/home/state/.fake-drain"
-  out=$(run_return "$dir" begin) || true
+  out=$(run_return "$dir" begin) || fail "a worker's human-only step held the return gate: $out"
+  [ ! -e "$dir/home/state/.afk-return-catchup" ] || fail "a worker's human-only step opened the catch-up gate"
+  assert_not_contains "$out" 'firstmate-actionable blocker: auth-task' "a worker's human-only step was treated as a firstmate blocker"
   waiting=$(printf '%s\n' "$out" | awk '/^Waiting on you:/{show=1} /^Tried and failed, or could not be fixed:/{show=0} show')
-  assert_contains "$waiting" 'human-only steps recorded overnight' "the open human-only step was not listed under waiting on you: $out"
+  assert_contains "$waiting" 'human-only steps recorded by the watchdog' "the open human-only step was not listed under waiting on you: $out"
   assert_contains "$waiting" '    - worker:auth: otp step waiting since' "the open step does not name its subject and kind: $waiting"
+  assert_contains "$waiting" '    - worker:weekend: captcha step waiting since' "a step handed off on Friday evening vanished by Monday: $waiting"
   assert_not_contains "$waiting" 'worker:done' "a cleared step was still listed"
-  assert_not_contains "$waiting" 'worker:old' "a step older than a day was still listed"
+  assert_not_contains "$waiting" 'worker:sunday' "a weekend step that cleared was still listed"
+  assert_contains "$waiting" 'auth-task [key=human-step-gh-login] human-only step, other work continues: human-only step: sign in to gh on the build host' "the worker's open human-only step was not listed: $waiting"
   assert_not_contains "$waiting" '(nothing)' "an open human-only step left waiting on you empty"
-  pass "the return brief lists open overnight human-only steps under waiting on you, and drops cleared and day-old ones"
+
+  # Once a person completes it, the worker resolves the key and it is gone.
+  printf 'resolved [key=human-step-gh-login]: signed in\n' >> "$dir/home/state/auth-task.status"
+  # An ordinary blocker on another task still gates the return.
+  printf 'window=synthetic:fm-dep-task\nbackend=tmux\nkind=ship\n' > "$dir/home/state/dep-task.meta"
+  printf 'blocked [key=dep]: firstmate can refresh the synthetic token\n' > "$dir/home/state/dep-task.status"
+  set +e
+  out=$(run_return "$dir" check)
+  rc=$?
+  set -e
+  [ "$rc" -eq 3 ] || fail "an ordinary blocker no longer gated the return (rc=$rc): $out"
+  assert_contains "$out" 'firstmate-actionable blocker: dep-task [key=dep]' "the ordinary blocker was not assigned to firstmate"
+  assert_not_contains "$out" 'human-step-gh-login' "a resolved human-only step was still listed"
+  pass "the return brief lists open human-only steps until cleared, across a Friday-to-Monday weekend, and a worker's human-only step never holds the gate"
 }
 
 test_return_brief_points_at_the_drain_on_a_host_home_only() {
