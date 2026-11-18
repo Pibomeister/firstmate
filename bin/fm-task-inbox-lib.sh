@@ -57,19 +57,6 @@
 #    "outcome":"<done|failed|blocked|needs-decision|paused>"}
 # where <line> is "state":"<the status line's verb>","text":"<the line after its
 # first colon, at most 2000 characters>","status_at":<its [at=] epoch, or null>.
-# accepted is written with the record, under .seq.lock, so a record that exists
-# always has it. picked_up is written when the watcher first sees the record in
-# handled/, so its ts trails the worker's mv by up to one poll; the mv itself
-# stays the acknowledgement. After pickup, the status lines the task appended
-# after the record was accepted are read in order: the first working or settled
-# line gives started, each later working line gives progress, and the first
-# settled line gives result (a settled first line gives started and then
-# result). Other lines, such as resolved, give none. The correlation is
-# positional, not causal: workers do not name the message a status line is
-# about, so a line written for earlier work after the enqueue counts, and
-# several records picked up together share their lines. A record removed before
-# pickup gets no further receipt, and no receipt is ever a delivery proof
-# beyond the handled/ move. Readers ignore members they do not recognize.
 #
 # Record format (fm_task_inbox_write / fm_task_inbox_body):
 #   schema=fm-task-inbox.v1

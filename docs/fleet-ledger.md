@@ -26,7 +26,7 @@ Every record carries these members:
 | `seq`   | This home's record number: 1 for the first record, then one more for each record |
 | `task_rev` | The task's own record number, restarting at 1 when the task is dispatched |
 | `source` | Who wrote the record: machine, home, actor, and session ([producer identity](supervision-events.md#producer-identity)) |
-| `binding` | The task's spawn generation, runtime, endpoint, and native terminal session, kept apart |
+| `binding` | [Ledger envelope](supervision-events.md#ledger-envelope) |
 
 `source` and `binding` follow [Producer identity](supervision-events.md#producer-identity) and [Ledger envelope](supervision-events.md#ledger-envelope).
 A record whose producer identity cannot be loaded is not written.

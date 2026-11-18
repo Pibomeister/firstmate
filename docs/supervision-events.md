@@ -96,12 +96,12 @@ An external send guard showed the failure: an 18-row scan missed the opening pro
 An 80-row scan fixed it.
 That guard is `steer.sh` (SHA-256 `79ce723d9d52963ab5d738d60eecdeccfa0eece6cb98d7a2f4ef8847a08c3728`) with its retry loop `sendloop.sh` (SHA-256 `6fd39bd0f6541f1c7dc822165ee04617e05a494776eb23cf325c89d91262667a`).
 It counts a send as delivered only after a read-back shows an empty input line and a started turn.
-Firstmate reads a 20-row window (`FM_COMPOSER_CAPTURE_LINES`), so `tests/fm-composer-lib.test.sh` proves that a bare, a rule-bounded, and a boxed composer cut by that window never read `empty`, while the same shapes with nothing typed still do.
+Firstmate reads a 20-row window (`FM_COMPOSER_CAPTURE_LINES`), so `tests/fm-composer-lib.test.sh` proves that a bare, a rule-bounded, and a boxed composer cut by that window never read `empty`, while the same bare and rule-bounded shapes with nothing typed still do.
 
 ## Task snapshot
 
 `bin/fm-task-snapshot.sh <task>...` or `--all` prints one JSON object per task on one line.
-It is read-only, makes no network call, and with `--probe-composer` takes one fresh read of each input line.
+It writes nothing except `state/producer-identity.json` when it is absent, makes no network call, and with `--probe-composer` takes one fresh read of each input line.
 
 | Member | Meaning |
 | ------ | ------- |
