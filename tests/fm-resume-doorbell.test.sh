@@ -414,8 +414,16 @@ test_dropped_enter_is_resubmitted_only_while_ours() {
 }
 
 wait_for_doorbell_lock() {  # <dir>
-  local i=0
-  while [ ! -s "$1/state/.resume-doorbell.lock/pid" ] && [ "$i" -lt 50 ]; do
+  local i=0 pid
+  while [ "$i" -lt 50 ]; do
+    pid=$(cat "$1/state/.resume-doorbell.lock/pid" 2>/dev/null || true)
+    if [ -n "$pid" ] && [ -e "$1/state/.resume-doorbell.lock/context-epoch.$pid" ]; then
+      return 0
+    fi
+    # A doorbell that started with no context epoch never writes the pin.
+    if [ -n "$pid" ] && [ ! -e "$1/state/.context-epoch" ]; then
+      return 0
+    fi
     sleep 0.05
     i=$((i + 1))
   done

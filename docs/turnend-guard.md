@@ -401,10 +401,13 @@ A claim is open while all of these hold:
 - Its owner is still reachable by its session: it descends from the numeric pid in `state/.lock`, or, for a tagged Windows holder outside the local process table, its recorded `owner_session_id` matches the trusted session id in `state/.lock-session` while the session-lock identity recorded on entry line 3 still recomputes from that lock's holder.
 - It is not stuck.
 - It is younger than the Stop hook's registered timeout (`FM_AUTOARM_HOOK_TIMEOUT`, default 28800 seconds), past which the harness no longer delivers its exit 2.
-- It is not older than `state/.context-epoch`, which `bin/fm-sessionstart-run.sh` writes when the completed lock owner opens a `clear` or `compact` context.
 
 Stuck means the entry and the watcher beacon are both older than the guard grace, which proves the owner hung mid-arm.
-The last two conditions hold whatever the beacon says, because the watchdog's managed-hold watcher keeps the beacon fresh indefinitely; without them a hook parked on an arm that never returned kept every later Stop deferring to it.
+A claim is closed when `state/.context-epoch` exists and is younger than the claim file.
+That is `fm_path_age` of `.context-epoch` less than `fm_path_age` of `.claude-autoarm-epoch`.
+A missing `.context-epoch` does not close the claim.
+`bin/fm-sessionstart-run.sh` writes `.context-epoch` when the completed lock owner opens a `clear` or `compact` context.
+The hook-timeout bound and this close rule hold whatever the beacon says, because the watchdog's managed-hold watcher keeps the beacon fresh indefinitely; without them a hook parked on an arm that never returned kept every later Stop deferring to it.
 A claim parked on an arm that never returns is retired by the next `clear` or `compact`, or by the next Stop once it is past the hook timeout; ending that orphaned hook process sooner is an optional operator step, and nothing in Firstmate signals it.
 A healthy hours-long foregrounded cycle keeps the beacon beating, and every arming phase with no watcher is bounded in seconds.
 A missing or unusable lock means no session can receive a rewake, so such a claim is never open.
