@@ -8,7 +8,8 @@
 # Re-running converges on the same findings until the underlying work changes.
 #
 # Scope: this home's project clones and projects named by its ordinary task
-# metadata, deduplicated by Git common directory. Never traverse secondmate
+# metadata, accepting only checkout roots and deduplicating by Git common
+# directory. Never traverse secondmate
 # homes or backend endpoint inventories. Branches match the registered prefix
 # (default fm/) or an exact ordinary task metadata branch. Local-only projects
 # and tasks are excluded. Each finding names the branch/head, count of commits
@@ -95,8 +96,9 @@ content_landed() { # <project> <head> <base-branch>
 scan_project() { # <project>
   local project=$1 name common prefix posture forge branch head task owner meta
   local matched count refs ref default mode meta_branch candidate_mode branches
-  local base candidate_base
-  git -C "$project" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+  local base candidate_base top
+  top=$(git -C "$project" rev-parse --show-toplevel 2>/dev/null) || return 0
+  [ "$project" -ef "$top" ] || return 0
   common=$(git -C "$project" rev-parse --git-common-dir 2>/dev/null) || return 0
   common=$(cd "$project" && cd "$common" && pwd -P) || return 0
   case "$SEEN" in *"$NL$common$NL"*) return 0 ;; esac

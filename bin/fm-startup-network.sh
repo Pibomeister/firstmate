@@ -17,6 +17,8 @@
 # be just as slow; that scan publishes its own findings to the durable wake queue.
 # After the bootstrap refresh, fm-unpushed-reconcile.sh flags unpublished task
 # branches in this same report, including blocked pipeline starts without a run.
+# This refresh disables fleet branch pruning so a gone upstream cannot remove
+# unpublished local commits before the recovery scan reads them.
 #
 # WHAT IS PRESERVED. Nothing is dropped. bin/fm-bootstrap.sh remains the single
 # owner of every network sweep and still runs all of them, unchanged, via its
@@ -583,7 +585,7 @@ EOF
         script_dir=$1
         "$script_dir/fm-inactive-reconcile.sh" scan --startup >/dev/null 2>&1 || true
         bootstrap_rc=0
-        "$script_dir/fm-bootstrap.sh" || bootstrap_rc=$?
+        FM_FLEET_PRUNE=0 "$script_dir/fm-bootstrap.sh" || bootstrap_rc=$?
         "$script_dir/fm-unpushed-reconcile.sh" scan || printf "UNPUSHED: incomplete scan; rerun %s/fm-unpushed-reconcile.sh scan\n" "$script_dir"
         exit "$bootstrap_rc"
       ' _ "$SCRIPT_DIR" >"$out" 2>&1 || rc=$?

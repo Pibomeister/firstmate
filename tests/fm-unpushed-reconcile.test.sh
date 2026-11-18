@@ -62,6 +62,25 @@ EOF
 
 scan() { bash "$ROOT/bin/fm-unpushed-reconcile.sh" scan; }
 
+new_world nested-directory
+git -C "$FM_HOME" init -q -b main
+git -C "$FM_HOME" -c user.name=Test -c user.email=test@example.com commit -qm base --allow-empty
+git -C "$FM_HOME" remote add origin https://github.com/example/home.git
+git -C "$FM_HOME" update-ref refs/remotes/origin/main HEAD
+git -C "$FM_HOME" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+git -C "$FM_HOME" checkout -qb fm/home-task
+printf 'unpublished home task\n' > "$FM_HOME/change.txt"
+git -C "$FM_HOME" add change.txt
+git -C "$FM_HOME" -c user.name=Test -c user.email=test@example.com commit -qm change
+mkdir -p "$FM_HOME/projects/container"
+printf '%s\n' '- container [local-only] - nested directory' >> "$FM_HOME/data/projects.md"
+printf 'project=%s\nbranch=fm/home-task\nkind=ship\nmode=no-mistakes\n' "$FM_HOME" > "$FM_HOME/state/home-task.meta"
+out=$(scan)
+assert_contains "$out" 'branch=fm/home-task' 'a nested directory consumed the home repository identity'
+assert_contains "$out" 'task=home-task owner=recorded' 'the checkout root lost its recorded owner'
+assert_not_contains "$out" 'project='"$FM_HOME/projects/container" 'a non-root directory was treated as a project checkout'
+pass 'nested non-repository directories cannot hide a recorded checkout root'
+
 new_world owned
 before=$(git -C "$PROJECT" for-each-ref)
 out=$(scan)

@@ -37,6 +37,8 @@ trap fm_test_cleanup EXIT
 # and how its result is published; bin/fm-bootstrap.sh's own behavior is owned by
 # tests/fm-bootstrap.test.sh, so pinning it here would duplicate that owner and
 # make these assertions depend on unrelated tool detection.
+# The gone-upstream case asks that stand-in to run the real fleet refresh,
+# exercising its pruning behavior across the deferred stage's environment.
 new_world() {
   local name=$1 w home root
   w="$TMP_ROOT/$name"
@@ -66,6 +68,9 @@ if [ -n "${FM_TIMING_LOG:-}" ]; then
 fi
 [ -z "${FM_FAKE_BOOTSTRAP_SLEEP:-}" ] || sleep "$FM_FAKE_BOOTSTRAP_SLEEP"
 [ -z "${FM_FAKE_BOOTSTRAP_OUT:-}" ] || printf '%s\n' "$FM_FAKE_BOOTSTRAP_OUT"
+if [ -n "${FM_FAKE_FLEET_PROJECT:-}" ]; then
+  "$(dirname "$0")/fm-fleet-sync.sh" "$FM_FAKE_FLEET_PROJECT"
+fi
 exit "${FM_FAKE_BOOTSTRAP_RC:-0}"
 SH
   chmod +x "$root/bin/fm-bootstrap.sh"
@@ -896,6 +901,47 @@ EOF
   pass 'fm-startup-network: unpublished branches and startup blockers survive in a durable locked-start report'
 }
 
+test_refresh_preserves_unpublished_gone_upstream_before_scanning() {
+  local rec home root log project remote report
+  rec=$(new_world unpublished-gone-upstream)
+  IFS='|' read -r home root log <<EOF
+$rec
+EOF
+  project="$home/projects/demo"
+  remote="$home/origin.git"
+  mkdir -p "$project" "$home/data"
+  printf '%s\n' '- demo [no-mistakes] - fixture' > "$home/data/projects.md"
+  printf '%s\n' '- [ ] task - example' > "$home/data/backlog.md"
+  git init -q --bare -b main "$remote"
+  git -C "$project" init -q -b main
+  git -C "$project" -c user.name=Test -c user.email=test@example.com commit -qm base --allow-empty
+  git -C "$project" remote add origin "$remote"
+  git -C "$project" push -qu origin main
+  git -C "$project" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+  git -C "$project" checkout -qb fm/task
+  printf 'published\n' > "$project/change.txt"
+  git -C "$project" add change.txt
+  git -C "$project" -c user.name=Test -c user.email=test@example.com commit -qm published
+  git -C "$project" push -qu origin fm/task
+  printf 'unpublished follow-up\n' >> "$project/change.txt"
+  git -C "$project" add change.txt
+  git -C "$project" -c user.name=Test -c user.email=test@example.com commit -qm unpublished
+  git -C "$project" checkout -q main
+  git -C "$project" push -q origin --delete fm/task
+  printf 'project=%s\nbranch=fm/task\nkind=ship\nmode=no-mistakes\n' "$project" > "$home/state/task.meta"
+  printf '%s\n' $$ > "$home/state/.lock"
+
+  FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_FLEET_PROJECT="$project" \
+    run_stage "$home" "$root" run --locked 1 --lock-pid $$
+  git -C "$project" show-ref --verify --quiet refs/heads/fm/task \
+    || fail 'the startup refresh deleted unpublished follow-up commits before recovery'
+  report=$(run_stage "$home" "$root" report)
+  assert_contains "$report" 'branch=fm/task' 'the refreshed branch was not surfaced for recovery'
+  wait_for_startup_network_wake "$home" || fail 'the preserved branch did not produce a durable wake'
+  pass 'fm-startup-network: refresh preserves unpublished gone-upstream branches for recovery'
+}
+
+test_refresh_preserves_unpublished_gone_upstream_before_scanning
 test_wait_fails_without_a_published_stage
 test_start_returns_without_holding_the_callers_stdout
 test_harvest_acknowledgement_suppresses_the_wake_and_no_claim_produces_it
