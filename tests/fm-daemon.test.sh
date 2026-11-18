@@ -3979,6 +3979,31 @@ test_inject_msg_herdr_submits_through_backend_dispatch() {
   pass "inject_msg: dispatches busy-guard/composer-guard/submit through the herdr backend and succeeds on a confirmed empty composer"
 }
 
+# A capture that fails after printing part of the pane is not an observation:
+# a survey heading without its choices would read as no dialog, and the digest
+# and Enter would land in the survey. The oracle is that nothing is submitted.
+test_inject_msg_defers_when_capture_fails_with_partial_output() {
+  local dir state
+  dir=$(make_supercase inject-partial-capture)
+  state="$dir/state"
+  afk_enter "$state"
+  (
+    fm_backend_target_exists() { return 0; }
+    pane_is_busy() { return 1; }
+    fm_backend_composer_state() { printf 'empty'; }
+    fm_backend_visible_capture() { printf '%s\n' 'some work' '● How is Claude doing this session? (optional)'; return 124; }
+    fm_backend_send_text_submit() { fail "send_text_submit must not run after a failed pane capture"; }
+    if FM_SUPERVISOR_BACKEND=herdr FM_SUPERVISOR_TARGET="default:w1:p2" inject_msg "hello" "$state"; then
+      fail "inject_msg should defer when the pane capture failed"
+    fi
+    case "${INJECT_LAST_FAILURE:-}" in
+      *"could not be observed"*) ;;
+      *) fail "inject_msg deferred for the wrong reason: ${INJECT_LAST_FAILURE:-unset}" ;;
+    esac
+  ) || fail "partial-capture inject_msg subshell failed"
+  pass "inject_msg: a failed pane capture with partial output defers the digest instead of reading it as no dialog"
+}
+
 # Safety-critical (task fm-composer-shellglyph-safety): the away-mode injector
 # must NEVER type an escalation into a dead-shell pane. A bare shell prompt
 # classifies `unknown` (not `pending`), and inject_msg now defers on anything
@@ -4280,6 +4305,7 @@ test_inject_msg_herdr_busy_guard_defers
 test_inject_msg_herdr_composer_guard_defers
 test_inject_msg_herdr_pane_gone_defers
 test_inject_msg_herdr_submits_through_backend_dispatch
+test_inject_msg_defers_when_capture_fails_with_partial_output
 test_inject_msg_orca_submits_into_idle_captain_terminal
 test_inject_msg_orca_busy_guard_defers
 test_inject_msg_orca_defers_mid_turn_without_spinner

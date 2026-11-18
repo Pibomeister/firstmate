@@ -240,8 +240,9 @@ wd_current_test() {
 # shared with every other terminal on the machine, so a busy host ran out
 # mid-suite: tmux printed "fork failed: Device not configured" and a later case
 # failed on an empty ledger. The first home of each test therefore ends every
-# session the earlier tests left; no test creates a session before its first
-# home, and no test reads another test's panes.
+# session the earlier tests left. Only the release regression test creates a
+# session before its first home, on purpose, and no test reads another test's
+# panes.
 WD_HOMES_TEST=''
 wd_release_earlier_tests_sessions() {
   local current
@@ -4585,13 +4586,6 @@ test_dialog_keys_stop_after_two_failures() {
   pass "dialog keys stop after two failures in an hour, so a misread screen is never typed into repeatedly"
 }
 
-# A ticking status percentage under the dialog's input box is not part of the
-# dialog. One dismiss key, then a changed percentage, must not send another.
-# A changed row above the footer still may.
-# The launchd watchdog runs with only FM_HOME and PATH, so no UTF-8 locale.
-# A C-locale awk reads a bracket of box glyphs as bytes; `─` then matches a
-# bottom-border bracket and the survey reads as stale. Detection and the
-# watchdog's own dismissal must hold with every locale variable unset.
 # Orca delivers a raw Escape byte only to a recorded Droid terminal
 # (fm_control_backend_supports_key; bin/backends/orca.sh refuses it elsewhere,
 # because it interrupts a Claude turn). The feedback dismiss path must honor
@@ -4654,6 +4648,10 @@ test_earlier_tests_sessions_are_released() {
   pass "harness: earlier tests' tmux sessions end at the next test's first home, so a full run does not exhaust the host's terminals"
 }
 
+# The launchd watchdog runs with only FM_HOME and PATH, so no UTF-8 locale.
+# A C-locale awk reads a bracket of box glyphs as bytes; `─` then matches a
+# bottom-border bracket and the survey reads as stale. Detection and the
+# watchdog's own dismissal must hold with every locale variable unset.
 test_feedback_dialog_detection_without_a_locale() {
   local survey_rule survey_box boxed_stale near screen
   nolocale_lib() {
@@ -4685,6 +4683,9 @@ test_feedback_dialog_detection_without_a_locale() {
   pass "feedback dialogs: detection and the watchdog's dismissal hold with no locale set"
 }
 
+# A ticking status percentage under the dialog's input box is not part of the
+# dialog. One dismiss key, then a changed percentage, must not send another.
+# A changed row above the footer still may.
 test_statusline_percentage_does_not_rearm_feedback_dismiss() {
   local dir state fake keys pane rc screen
   dir="$TMP_ROOT/statusline-dismiss-$CASE_N"

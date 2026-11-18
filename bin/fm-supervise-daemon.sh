@@ -1690,10 +1690,12 @@ inject_msg() {  # <message> [state] [exact] [request-id]
   if [ "$backend" != t3code ]; then
     local sup_screen dismiss_rc=0
     if fm_backend_visible_capture_supported "$backend" 2>/dev/null; then
-      sup_screen=$(fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_visible_capture "$backend" "$target" 2>/dev/null || true)
+      sup_screen=$(fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_visible_capture "$backend" "$target" 2>/dev/null) || sup_screen=
     else
-      sup_screen=$(fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_capture "$backend" "$target" 40 2>/dev/null || true)
+      sup_screen=$(fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_capture "$backend" "$target" 40 2>/dev/null) || sup_screen=
     fi
+    # A failed or timed-out read is unobserved even when it printed part of
+    # the pane: a survey heading without its choices reads as no dialog.
     if [ -z "$sup_screen" ]; then
       INJECT_LAST_FAILURE="deferred: supervisor pane could not be observed for a feedback dialog"
       log "inject $INJECT_LAST_FAILURE"
