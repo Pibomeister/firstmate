@@ -3665,7 +3665,7 @@ test_concurrent_relaunch_is_refused() {
   out=$(run_control "$dir" rl19 relaunch --note "concurrent"); rc=$?
   kill "$holder" 2>/dev/null || true
   wait "$holder" 2>/dev/null || true
-  expect_code 1 "$rc" "a second concurrent control action should refuse"
+  expect_code 5 "$rc" "a second concurrent control action should refuse"
   assert_contains "$out" "another lifecycle action is already running" \
     "the refusal should name the concurrent action"
   [ "$(cat "$dir/fake/command")" = claude ] \
