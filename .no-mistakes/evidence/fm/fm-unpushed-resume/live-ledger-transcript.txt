@@ -1,0 +1,18 @@
+### filing ledger rows through the real tasks-axi (fm-tasks-axi.sh wrapper)
+fm-tasks-axi: add --start would place a row In flight with no dispatch record; add it Queued and let bin/fm-spawn.sh start it
+error: "Task \"supevents\" not found in this backlog"
+code: NOT_FOUND
+help[1]: Run `tasks-axi list` to see existing tasks
+
+### scan
+UNPUSHED: project=$LAB/projects/demo branch=fm/supevents head=8ec46fc0e5fb8e067da7365dc88dd7e2709bc96b commits=1 task=supevents owner=recorded; flag for supervisor recovery
+UNPUSHED: task=supevents [key=nm-start] blocked: classify gate execution context: daemon gate_context did not reply within 30s; escalate before retrying publication
+UNPUSHED: branch=fm/supevents ledger=unknown pr=unknown (no GitHub target) merged=unknown (no GitHub target); reconcile the ledger and resume the owning task or escalate its blocker
+exit=0
+
+### after the blocker is resolved by the status owner
+UNPUSHED: project=$LAB/projects/demo branch=fm/supevents head=8ec46fc0e5fb8e067da7365dc88dd7e2709bc96b commits=1 task=supevents owner=recorded; flag for supervisor recovery
+UNPUSHED: branch=fm/supevents ledger=unknown pr=unknown (no GitHub target) merged=unknown (no GitHub target); reconcile the ledger and resume the owning task or escalate its blocker
+
+### after the branch is pushed
+scan output: '' (empty = no finding)

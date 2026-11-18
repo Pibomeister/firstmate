@@ -1,0 +1,54 @@
+Squash commit -- not updating HEAD
+### fleet refresh: FM_FLEET_PRUNE=0 fm-fleet-sync.sh demo (startup's setting)
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 0s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+demo: already current
+local branches after refresh:
+  fm/goneup upstream=origin/fm/goneup [gone]
+  fm/landed upstream=origin/fm/landed [gone]
+  fm/orphan upstream= 
+  fm/proxyonly upstream= 
+  fm/pushed upstream=origin/fm/pushed 
+  fm/supevents upstream= 
+  main upstream=origin/main 
+
+### fm-unpushed-reconcile.sh scan
+UNPUSHED: project=$LAB/projects/demo branch=fm/goneup head=463c613c82bf092e07b229e4570ecdbd44f4fb5e commits=2 task=goneup owner=missing; flag for supervisor recovery
+UNPUSHED: branch=fm/goneup ledger=missing pr=unknown (no GitHub target) merged=unknown (no GitHub target); reconcile the ledger and resume the owning task or escalate its blocker
+UNPUSHED: project=$LAB/projects/demo branch=fm/orphan head=387bd4da908633ba8ea30df190a28f4fcc79456d commits=1 task=orphan owner=missing; flag for supervisor recovery
+UNPUSHED: branch=fm/orphan ledger=missing pr=unknown (no GitHub target) merged=unknown (no GitHub target); reconcile the ledger and resume the owning task or escalate its blocker
+UNPUSHED: project=$LAB/projects/demo branch=fm/proxyonly head=b35feb44a5ce401680d9d7651f5dd65c1f19a1f1 commits=1 task=proxyonly owner=missing; flag for supervisor recovery
+UNPUSHED: branch=fm/proxyonly ledger=missing pr=unknown (no GitHub target) merged=unknown (no GitHub target); reconcile the ledger and resume the owning task or escalate its blocker
+UNPUSHED: project=$LAB/projects/demo branch=fm/supevents head=02c2605526a81581e2419d4cd4da5d6242b532f2 commits=1 task=supevents owner=recorded; flag for supervisor recovery
+UNPUSHED: task=supevents [key=nm-start] blocked: classify gate execution context: daemon gate_context did not reply within 30s; escalate before retrying publication
+UNPUSHED: branch=fm/supevents ledger=missing pr=unknown (no GitHub target) merged=unknown (no GitHub target); reconcile the ledger and resume the owning task or escalate its blocker
+exit=0
+
+### rerun converges (idempotent, read-only)
+identical output across reruns
+refs, status and backlog unchanged
+
+### adversarial: slow GitHub forge read with a 2s bound
+UNPUSHED: project=$LAB/projects/demo branch=fm/goneup head=463c613c82bf092e07b229e4570ecdbd44f4fb5e commits=2 task=goneup owner=missing; flag for supervisor recovery
+UNPUSHED: project=$LAB/projects/demo branch=fm/orphan head=387bd4da908633ba8ea30df190a28f4fcc79456d commits=1 task=orphan owner=missing; flag for supervisor recovery
+UNPUSHED: project=$LAB/projects/demo branch=fm/proxyonly head=b35feb44a5ce401680d9d7651f5dd65c1f19a1f1 commits=1 task=proxyonly owner=missing; flag for supervisor recovery
+UNPUSHED: project=$LAB/projects/demo branch=fm/supevents head=02c2605526a81581e2419d4cd4da5d6242b532f2 commits=1 task=supevents owner=recorded; flag for supervisor recovery
+UNPUSHED: incomplete scan (failed or exceeded 2s); rerun {run-worktree}/bin/fm-unpushed-reconcile.sh scan
+exit=0 elapsed=2s
+
+### adversarial: forge read failure is unknown, not none
+UNPUSHED: branch=fm/supevents ledger=missing pr=unknown (forge read failed) merged=unknown (forge read failed); reconcile the ledger and resume the owning task or escalate its blocker
+
+### adversarial: open PR cannot hide unpublished commits
+UNPUSHED: project=$LAB/projects/demo branch=fm/supevents head=02c2605526a81581e2419d4cd4da5d6242b532f2 commits=1 task=supevents owner=recorded; flag for supervisor recovery
+UNPUSHED: branch=fm/supevents ledger=missing pr=open https://github.com/example/demo/pull/7  merged=unknown (forge read failed); reconcile the ledger and resume the owning task or escalate its blocker
+
+### bad bound
+exit=2
+lab removed: yes

@@ -1,1 +1,4 @@
-strict_hits=0
+$ git diff 1b99b549..eca0b734 | grep -Eic "regulis|will|hyrum|transit solutions|roadone|lawrence|regulis-dev-team"
+hits (names other than Will): 0
+case-sensitive "Will" as a name:
+0

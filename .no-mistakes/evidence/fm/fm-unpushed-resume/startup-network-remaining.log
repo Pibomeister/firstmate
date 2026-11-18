@@ -1,0 +1,7 @@
+ok - fm-startup-network: timing records share one origin so their offsets form a timeline
+ok - fm-startup-network: timings are durable and printed only on demand
+ok - fm-startup-network: a timed-out run still publishes the partial timings it recorded
+ok - fm-startup-network: the timing artifact cannot carry a command line or forge records
+ok - fm-startup-network: a held publish lock ends the worker inside its budget with a failed-rerun record
+ok - fm-startup-network: unpublished branches and startup blockers survive in a durable locked-start report
+# fm-startup-network.test.sh: all assertions passed

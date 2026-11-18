@@ -1,0 +1,10 @@
+### filing the ledger row through the real tasks-axi
+help[2]:
+  - Run `tasks-axi start supevents` to move it to in flight
+  - Run `tasks-axi block supevents --by <other>` to record a dependency
+
+### scan
+UNPUSHED: project=$LAB/projects/demo branch=fm/supevents head=7eb011d668c99831d5f4a7a81e58fbddf1b0fd87 commits=1 task=supevents owner=recorded; flag for supervisor recovery
+UNPUSHED: task=supevents [key=nm-start] blocked: classify gate execution context: daemon gate_context did not reply within 30s; escalate before retrying publication
+UNPUSHED: branch=fm/supevents ledger=queued pr=unknown (no GitHub target) merged=unknown (no GitHub target); reconcile the ledger and resume the owning task or escalate its blocker
+exit=0
