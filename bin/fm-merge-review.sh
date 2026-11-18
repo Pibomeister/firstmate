@@ -28,9 +28,10 @@
 #         again, so a rerun cannot replace a BLOCK with a new roll. When the
 #         merge base moved and the head did not, a rerun replaces a seat's
 #         approval, but never a review that says BLOCK, holds a finding as
-#         blocking, or raises a new edge case: that review stays, check at the
-#         new merge base is incomplete, and only a new head clears it. Interrupted
-#         runs stop their reviewers before releasing the lock; stale writers
+#         blocking, raises a new edge case, or whose council answer holds a
+#         finding as a regression or gives it a class: that review stays, check
+#         at the new merge base is incomplete, and only a new head clears it.
+#         Interrupted runs stop their reviewers before releasing the lock; stale writers
 #         are fenced by run identity, and publication never replaces evidence.
 # check   Deterministic and safe for a supervisor: it recomputes every digest,
 #         re-reads each verdict from the stored review text, and prints one
