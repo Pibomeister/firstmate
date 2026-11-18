@@ -236,7 +236,7 @@ This rule moves routed and approved work forward; it never creates work, so the 
 ### Grants
 
 Self-landing stays off until the lane owner's own home holds `config/self-land` naming the repository (schema pending ticket V11) and `config/merge-review` requiring the review for it ([`docs/configuration.md`](../../../docs/configuration.md#merge-review-configmerge-review)).
-The grant never replaces merge authority: a self-landing also needs the task's own merge authority under `AGENTS.md` hard rule 2, meaning the repository's registered `yolo` posture is on or the captain gave the word for that merge, and without it the lane owner parks the pull request for the captain.
+The grant never replaces merge authority: a self-landing also needs the task's own merge authority under `AGENTS.md` hard rule 2, meaning the task's resolved `yolo` posture under `AGENTS.md` section 7 is on or the captain gave the word for that merge, and without it the lane owner parks the pull request for the captain.
 Neither file is inherited, so the main firstmate writes both in the lane owner's home, and only after the captain explicitly approves self-landing for that repository; a lane owner never writes its own grant.
 Name each repository in at most one home's `config/self-land`, the main home included: the wrapper's lock, pending, and breaker records are local to one home, so one lane owner per repository is what lets them guard the repository.
 Before granting, read `config/self-land` in the main home and every registered secondmate home, and refuse a second owner for the same repository.

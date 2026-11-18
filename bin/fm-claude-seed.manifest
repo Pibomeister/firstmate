@@ -46,7 +46,7 @@ ab511115bc1e399b46bb8ab8c799694deeb53ecd	.agents/skills/process-event-sources/SK
 eff603d0d9c96f56a66cea717c80e7df1e4b88e5	.agents/skills/quiet/SKILL.md
 7bae87a8ee47d4d48ec6d35065de9eee0de45930	.agents/skills/quota-array-dispatch/SKILL.md
 de7759e6c1df2c4d45b8441b61e7f8927a8af380	.agents/skills/scout-completion/SKILL.md
-cecb80ef98d4d1323efdc24072c7138f1bd891dc	.agents/skills/secondmate-provisioning/SKILL.md
+87d3935954e33d2780d97119375f5f3f92fddac7	.agents/skills/secondmate-provisioning/SKILL.md
 3342a54d138d0332740fbf1d1e564fcad5dfea47	.agents/skills/session-start-recovery/SKILL.md
 962f1eedf9c6f702ce2452f23a85f9701456749e	.agents/skills/ship-landing/SKILL.md
 35a171734e393ef9a9ccf434e37f90f5629a1706	.agents/skills/stow/SKILL.md
