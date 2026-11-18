@@ -1004,6 +1004,50 @@ test_failed_secondmate_respawn_keeps_its_recovery_record() {
   pass "respawn: a failed fresh second-mate spawn keeps the prior recovery record"
 }
 
+# drive_spawn <world> <fakebin-path> <call-log>: a fresh second-mate spawn run
+# directly, the way an operator recovers a mate whose endpoint is gone.
+drive_spawn() {
+  PATH="$2:$BASE_PATH" TMUX='' FM_BACKEND=tmux FM_HOME="$1/home" \
+    FM_TEST_PANE_CMD=missing FM_TMUX_CALL_LOG="$3" FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" sm1 --secondmate --backend tmux 2>&1
+}
+
+# A fresh second-mate spawn replaces the mate's endpoint, so it must not start
+# under a lifecycle action that is already working on that mate.
+test_fresh_spawn_refuses_while_a_lifecycle_action_holds_the_mate() {
+  local w fb tmuxfb log out rc=0 holder owner lock before
+  w=$(new_world fresh-spawn-lifecycle-lock)
+  add_sm_home "$w" sm1 firstmate:fm-sm1
+  fb=$(make_toolchain "$w"); tmuxfb=$(make_liveness_tmux "$w")
+  log="$w/calls.log"; : > "$log"
+  lock="$w/home/state/.control-sm1.lock"
+  before=$(cat "$w/home/state/sm1.meta")
+
+  hold_lock "$lock" 30 &
+  holder=$!
+  wait_for_lock "$lock"
+  owner=$(cat "$lock/pid")
+  out=$(drive_spawn "$w" "$tmuxfb:$fb" "$log") || rc=$?
+  # The lock's owner is the fixture's own child, so end that process itself.
+  kill "$owner" "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+
+  [ "$rc" -ne 0 ] || fail "a fresh spawn ran under another lifecycle action: $out"
+  assert_contains "$out" "another lifecycle action is already running" \
+    "the refusal must name the lifecycle action it stood aside for"
+  [ ! -s "$log" ] || fail "a refused fresh spawn opened or closed an endpoint: $(cat "$log")"
+  [ "$(cat "$w/home/state/sm1.meta")" = "$before" ] \
+    || fail "a refused fresh spawn changed the mate's record: $(cat "$w/home/state/sm1.meta")"
+
+  rc=0
+  out=$(drive_spawn "$w" "$tmuxfb:$fb" "$log") || rc=$?
+  [ "$rc" -eq 0 ] || fail "a fresh spawn with the mate free should succeed: $out"
+  assert_contains "$(cat "$log")" "new-window" \
+    "a fresh spawn with the mate free should open the endpoint: $out"
+  [ ! -e "$lock" ] || fail "a finished fresh spawn kept the mate's lifecycle lock"
+  pass "fresh spawn: a second mate's lifecycle lock is taken, refused when busy, and released"
+}
+
 # The incident shape: a second mate that wrote its handoff and stopped is still
 # a live process, so liveness recovery never acts on it. Its relaunch request
 # (bin/fm-handoff-relaunch.sh) is what stays actionable, through a later
@@ -1059,6 +1103,7 @@ test_sweep_refuses_relaunch_on_ledger_errors
 test_relaunch_defers_to_a_running_lifecycle_action
 test_relaunch_rechecks_the_endpoint_under_the_lifecycle_lock
 test_relaunch_holds_the_lifecycle_lock_through_the_respawn
+test_fresh_spawn_refuses_while_a_lifecycle_action_holds_the_mate
 test_failed_secondmate_respawn_keeps_its_recovery_record
 test_handoff_relaunch_request_stays_open_until_the_mate_is_relaunched
 test_remote_poll_probe_maps_states

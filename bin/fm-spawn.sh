@@ -265,6 +265,10 @@
 #   owns it. The refusal names another spawn or forced teardown when the recorded
 #   holder role is known, otherwise another operation. --relaunch is exempt
 #   because the existing task's control lock covers it.
+#   A fresh --secondmate spawn also holds that mate's control lock
+#   (state/.control-<id>.lock) until it exits, and refuses while another
+#   lifecycle action holds it; a hold by the process that started this spawn
+#   (automatic liveness recovery) stays with that caller.
 #   A fresh Treehouse-backed spawn also takes the project-identity lock in the local
 #   root Firstmate home's state directory before slot allocation and holds it through
 #   task metadata publication. Teardown holds that same lock while proving and
@@ -2649,6 +2653,26 @@ if [ "$RELAUNCH" -eq 0 ]; then
   SPAWN_TASK_SET_LOCK_HELD=1
   spawn_refuse_if_away_spend_cap
   spawn_require_relocated_queued_work
+  # A fresh second-mate spawn replaces or creates that mate's endpoint, so it
+  # is a lifecycle action on the mate and holds the mate's lifecycle lock (the
+  # one bin/fm-control.sh holds through every lifecycle action) until it exits.
+  # Automatic liveness recovery already holds that lock when it respawns a mate
+  # (bin/fm-secondmate-liveness-lib.sh), so a live holder this process descends
+  # from is that caller's own hold and stays with it. Any other holder refuses
+  # the spawn before an endpoint or record is touched.
+  if [ "$KIND" = secondmate ]; then
+    SPAWN_CONTROL_LOCK="$STATE/.control-$ID.lock"
+    control_owner=$(cat "$SPAWN_CONTROL_LOCK/pid" 2>/dev/null || true)
+    if [ -n "$control_owner" ] && fm_pid_alive "$control_owner" \
+      && fm_pid_descends_from "$PPID" "$control_owner"; then
+      :
+    elif fm_lock_try_acquire "$SPAWN_CONTROL_LOCK"; then
+      SPAWN_CONTROL_LOCK_HELD=1
+    else
+      echo "error: another lifecycle action is already running for task $ID" >&2
+      exit 1
+    fi
+  fi
 fi
 if [ "$KIND" = secondmate ]; then
   if spawn_remote_secondmate "$ID"; then

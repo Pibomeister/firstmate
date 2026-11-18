@@ -51,11 +51,14 @@
 # fresh spawn owns the same task-set lock. The watcher uses its spawn timeout
 # as the lock-wait bound; an untimed sweep defaults to 600 seconds.
 # A relaunch also holds the mate's lifecycle lock (state/.control-<id>.lock,
-# the one bin/fm-control.sh holds through every lifecycle action) from a
-# re-read of the endpoint to the end of the respawn, so automatic recovery and
-# a lifecycle action never act on one mate at once. That lock is only tried,
-# never waited on: a busy lock or a re-read that is no longer relaunchable
-# defers the relaunch with nothing closed, and the next check decides again.
+# the one bin/fm-control.sh holds through every lifecycle action, and
+# bin/fm-remote-secondmate-relaunch.sh and a fresh bin/fm-spawn.sh
+# --secondmate spawn hold for theirs) from a re-read of the endpoint to the end
+# of the respawn, so automatic recovery and a lifecycle action never act on one
+# mate at once. The respawn it starts runs under this hold rather than taking
+# the lock again. That lock is only tried, never waited on: a busy lock or a
+# re-read that is no longer relaunchable defers the relaunch with nothing
+# closed, and the next check decides again.
 # Lock order is liveness, per-home relaunch, lifecycle; bin/fm-teardown.sh
 # takes lifecycle before liveness, and both sides only try the second lock.
 # The attempt ledger (.secondmate-relaunch-<id>, one line per attempt plus one

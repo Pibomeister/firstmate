@@ -18,6 +18,15 @@
 # already uses when it first records a remote route - and republishes this
 # home's own metadata to match. A failed or refused relaunch leaves this
 # parent's record untouched.
+#
+# The whole relaunch, from before the host is asked until this home's record is
+# republished, holds the mate's lifecycle lock in this home
+# (state/.control-<id>.lock, the one bin/fm-control.sh holds through every
+# lifecycle action), so automatic liveness recovery and a fresh
+# bin/fm-spawn.sh --secondmate spawn cannot close or replace the remote
+# endpoint while the host is still relaunching into it. A lock another
+# lifecycle action holds is exit 5, as in bin/fm-control.sh, with nothing sent
+# to the host and this home's record untouched.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -45,6 +54,11 @@ META="$STATE/$ID.meta"
 REMOTE_HOST=$(fm_meta_get "$META" remote_host)
 [ -n "$REMOTE_HOST" ] \
   || die "task $ID is not a remotely placed secondmate; use bin/fm-control.sh $ID relaunch instead"
+
+CONTROL_LOCK="$STATE/.control-$ID.lock"
+fm_lock_try_acquire "$CONTROL_LOCK" \
+  || { echo "error: another lifecycle action is already running for task $ID" >&2; exit 5; }
+trap 'fm_lock_release "$CONTROL_LOCK" || true' EXIT
 
 RELAUNCH_OUT=$("$SCRIPT_DIR/fm-on.sh" "$ID" fm-remote-secondmate-control.sh \
   relaunch "$ID" "$HARNESS" "$MODEL" "$EFFORT" </dev/null 2>&1) || {

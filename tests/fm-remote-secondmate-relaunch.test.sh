@@ -72,6 +72,17 @@ $command_fields
 EOF
 [ "$cmd" = fm-remote-secondmate-control.sh ] || exit 93
 [ "$action" = relaunch ] || exit 94
+[ -z "${FM_FAKE_SSH_LOG:-}" ] || printf '%s\n' "$action $id" >> "$FM_FAKE_SSH_LOG"
+case "$FM_FAKE_RELAUNCH_MODE" in
+  concurrent)
+    # A second relaunch of the same mate starts while the host is still
+    # relaunching it.
+    rc=0
+    FM_FAKE_RELAUNCH_MODE='' "$FM_FAKE_RELAUNCH_TOOL" "$id" claude - - \
+      > "$FM_FAKE_CONCURRENT_OUT" 2>&1 || rc=$?
+    printf '%s\n' "$rc" >> "$FM_FAKE_CONCURRENT_OUT"
+    ;;
+esac
 case "$FM_FAKE_RELAUNCH_MODE" in
   refuse)
     printf 'error: unverified remote secondmate harness: %s\n' "$harness" >&2
@@ -98,6 +109,8 @@ chmod +x "$FAKEBIN/fake-ssh"
 run_relaunch() {  # <args...>
   env FM_HOME="$HOME_DIR" FM_SSH_BIN="$FAKEBIN/fake-ssh" \
     FM_FAKE_RELAUNCH_MODE="${FM_FAKE_RELAUNCH_MODE:-}" \
+    FM_FAKE_SSH_LOG="$TMP/ssh.log" FM_FAKE_CONCURRENT_OUT="$TMP/concurrent.out" \
+    FM_FAKE_RELAUNCH_TOOL="$ROOT/bin/fm-remote-secondmate-relaunch.sh" \
     "$ROOT/bin/fm-remote-secondmate-relaunch.sh" "$@" 2>&1
 }
 
@@ -168,6 +181,56 @@ assert_equals 1 "$(grep -cF 'resolved [key=handoff-relaunch]' "$HOME_DIR/state/i
   "a confirmed relaunch should close the open relaunch request exactly once"
 rm -f "$HOME_DIR/state/ios.status"
 pass "only a confirmed remote relaunch closes the mate's open relaunch request"
+
+# --- a relaunch is one lifecycle action on the mate at a time ----------------
+# The mate's lifecycle lock in this home is what bin/fm-control.sh, automatic
+# liveness recovery, and a fresh second-mate spawn all take, so a relaunch that
+# skipped it could have its remote endpoint closed mid-relaunch.
+reset_meta
+cp "$HOME_DIR/state/ios.meta" "$TMP/ios-before-busy.meta"
+: > "$TMP/ssh.log"
+LOCK="$HOME_DIR/state/.control-ios.lock"
+(
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$ROOT/bin/fm-wake-lib.sh"
+  fm_lock_try_acquire "$LOCK" || exit 1
+  sleep 30
+) &
+HOLDER=$!
+i=0
+while [ ! -e "$LOCK" ] && [ "$i" -lt 100 ]; do
+  sleep 0.1
+  i=$((i + 1))
+done
+[ -e "$LOCK" ] || { kill "$HOLDER" 2>/dev/null; fail "could not stage a held lifecycle lock"; }
+OUT=$(run_relaunch ios claude claude-opus-5-5 medium); RC=$?
+kill "$HOLDER" 2>/dev/null || true
+wait "$HOLDER" 2>/dev/null || true
+expect_code 5 "$RC" "a relaunch under another lifecycle action should refuse as busy"$'\n'"$OUT"
+assert_contains "$OUT" "another lifecycle action is already running" \
+  "the refusal should name the concurrent lifecycle action"
+[ ! -s "$TMP/ssh.log" ] \
+  || fail "a relaunch refused as busy must not reach the host: $(cat "$TMP/ssh.log")"
+cmp -s "$TMP/ios-before-busy.meta" "$HOME_DIR/state/ios.meta" \
+  || fail "a relaunch refused as busy must not touch the parent's record"
+pass "a remote relaunch refuses while another lifecycle action holds the mate"
+
+reset_meta
+: > "$TMP/ssh.log"
+rm -f "$TMP/concurrent.out"
+FM_FAKE_RELAUNCH_MODE=concurrent
+OUT=$(run_relaunch ios claude claude-opus-5-5 medium); RC=$?
+unset FM_FAKE_RELAUNCH_MODE
+expect_code 0 "$RC" "the relaunch that owns the mate should still succeed"$'\n'"$OUT"
+assert_equals 5 "$(tail -1 "$TMP/concurrent.out")" \
+  "a relaunch started while the host is still relaunching the mate should refuse as busy: $(cat "$TMP/concurrent.out")"
+assert_equals 1 "$(wc -l < "$TMP/ssh.log" | tr -d ' ')" \
+  "only the relaunch that owns the mate should reach the host"
+assert_grep 'harness=claude' "$HOME_DIR/state/ios.meta" \
+  "the relaunch that owns the mate did not republish the parent record"
+OUT=$(run_relaunch ios claude claude-opus-5-5 medium); RC=$?
+expect_code 0 "$RC" "a finished relaunch must leave the mate free for the next lifecycle action"$'\n'"$OUT"
+pass "a remote relaunch owns the mate from the host call through the record update"
 
 # --- a local (non-remote) secondmate is refused, not silently mishandled ----
 fm_write_meta "$HOME_DIR/state/local1.meta" \
