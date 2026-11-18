@@ -1,0 +1,16 @@
+=== Scenario 4b: Security/data-loss class stickiness and single-family pending gating ===
+
+--- 4e. data-loss class stays open even when both seats later relabel as EDGE-CASE / none ---
+merge-review: blocked head=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee approvals=anthropic.claude.claude-sonnet-5-5:APPROVE-WITH-NONBLOCKING,google.agy.gemini-3.8-flash-low:APPROVE blocks=none round=3 open=F1 reason="a finding is open at this head" url=https://github.com/example/v7-s4b/pull/5
+check classed EDGE-CASE exit=1
+round=3 head=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee previous=1111111111111111111111111111111111111111
+F1	open	data-loss	storage.sh:5	Crash mid-write truncates state.	followup=none
+
+--- 4g. Single-family round-3 EDGE-CASE & RESOLVED stay pending (not deferred/resolved) ---
+merge-review: incomplete head=ffffffffffffffffffffffffffffffffffffffff approvals=anthropic.claude.claude-sonnet-5-5:APPROVE-WITH-NONBLOCKING blocks=none round=3 reason="approving reviews come from one model family; two are required" url=https://github.com/example/v7-s4b/pull/5
+check single-family exit=1
+round=3 head=ffffffffffffffffffffffffffffffffffffffff previous=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+F1	pending	none	app.sh:10	Earlier blocker.	followup=none
+F2	pending	none	app.sh:20	New edge case.	followup=none
+error: finding F2 is pending at ffffffffffffffffffffffffffffffffffffffff; only a deferred finding takes a follow-up
+followup on pending F2 exit=2

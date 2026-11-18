@@ -1,0 +1,28 @@
+=== Scenario 4: Live bin/fm-merge-review.sh check / findings / followup on Round-3 Dispositions & Rules ===
+
+--- 4a. Round 3 agreed EDGE-CASE -> deferred -> blank --ref refused -> valid --ref approves ---
+merge-review: incomplete head=cccccccccccccccccccccccccccccccccccccccc approvals=anthropic.claude.claude-sonnet-5-5:APPROVE-WITH-NONBLOCKING,google.agy.gemini-3.8-flash-low:APPROVE blocks=none round=3 deferred=F1 reason="deferred finding F1 has no recorded follow-up" url=https://github.com/example/v7-s4/pull/4
+check before followup exit=1
+error: --ref requires one line of text that names where the follow-up was filed
+followup blank ref exit=2
+merge-review: incomplete head=cccccccccccccccccccccccccccccccccccccccc approvals=anthropic.claude.claude-sonnet-5-5:APPROVE-WITH-NONBLOCKING,google.agy.gemini-3.8-flash-low:APPROVE blocks=none round=3 deferred=F1 reason="deferred finding F1 has no recorded follow-up" url=https://github.com/example/v7-s4/pull/4
+check with blank ref file on disk exit=1
+merge-review: follow-up recorded finding=F1 ref="backlog item 42" url=https://github.com/example/v7-s4/pull/4
+merge-review: approved head=cccccccccccccccccccccccccccccccccccccccc approvals=anthropic.claude.claude-sonnet-5-5:APPROVE-WITH-NONBLOCKING,google.agy.gemini-3.8-flash-low:APPROVE blocks=none round=3 deferred=F1 url=https://github.com/example/v7-s4/pull/4
+check after valid followup exit=0
+round=3 head=cccccccccccccccccccccccccccccccccccccccc previous=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+F1	deferred	none	app.sh:10	Rare empty-file edge case.	followup=backlog item 42
+
+--- 4b. Round 3 mixed rulings (EDGE-CASE + UNSUPPORTED) stays open & blocks ---
+merge-review: blocked head=dddddddddddddddddddddddddddddddddddddddd approvals=anthropic.claude.claude-sonnet-5-5:APPROVE-WITH-NONBLOCKING,google.agy.gemini-3.8-flash-low:APPROVE blocks=none round=3 open=F2 deferred=F1 reason="a finding is open at this head" url=https://github.com/example/v7-s4/pull/4
+check mixed EDGE-CASE+UNSUPPORTED exit=1
+error: finding F2 is open at dddddddddddddddddddddddddddddddddddddddd; only a deferred finding takes a follow-up
+followup on open mixed finding exit=2
+
+--- 4c. Moved merge base check rejects old base receipts ---
+merge-review: incomplete head=cccccccccccccccccccccccccccccccccccccccc approvals=none blocks=none round=3 reason="stored review evidence is invalid" invalid="anthropic.claude.claude-sonnet-5-5 (the review merge base is not the live merge base); google.agy.gemini-3.8-flash-low (the review merge base is not the live merge base)" url=https://github.com/example/v7-s4/pull/4
+check H3 at moved base exit=1
+
+--- 4d. Removed seat invalidates old head check ---
+merge-review: incomplete head=cccccccccccccccccccccccccccccccccccccccc approvals=google.agy.gemini-3.8-flash-low:APPROVE blocks=none round=3 reason="stored review evidence is invalid" invalid="anthropic.claude.claude-sonnet-5-5 (the seat is not declared in config/merge-review)" url=https://github.com/example/v7-s4/pull/4
+check H3 after removing claude seat exit=1

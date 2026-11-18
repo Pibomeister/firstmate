@@ -1,0 +1,79 @@
+=== Scenario 2: Live bin/fm-review-diff.sh --since ===
+FIRST_SHA=ff98a27d190b4b930494e0f724fe28780e18aa69
+SECOND_SHA=c97f60a48d628e6a26e9256abd965f140202bcc1
+
+--- 1. --since FIRST_SHA (full delta) ---
+diff base: origin/main
+delta since: ff98a27d190b4b930494e0f724fe28780e18aa69
+ round2.txt | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/round2.txt b/round2.txt
+new file mode 100644
+index 0000000..a637dce
+--- /dev/null
++++ b/round2.txt
+@@ -0,0 +1 @@
++round 2 fix
+exit=0
+
+--- 2. --stat --since FIRST_SHA ---
+diff base: origin/main
+delta since: ff98a27d190b4b930494e0f724fe28780e18aa69
+ round2.txt | 1 +
+ 1 file changed, 1 insertion(+)
+exit=0
+
+--- 3. Default call (full diff from origin/main) ---
+diff base: origin/main
+ round1.txt | 1 +
+ round2.txt | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/round1.txt b/round1.txt
+new file mode 100644
+index 0000000..502a123
+--- /dev/null
++++ b/round1.txt
+@@ -0,0 +1 @@
++round 1 change
+diff --git a/round2.txt b/round2.txt
+new file mode 100644
+index 0000000..a637dce
+--- /dev/null
++++ b/round2.txt
+@@ -0,0 +1 @@
++round 2 fix
+exit=0
+
+--- 4. Rewritten branch (reset --hard main + new commit) with --since FIRST_SHA ---
+diff base: origin/main
+delta since: ff98a27d190b4b930494e0f724fe28780e18aa69
+note: fm/task-v7-live does not descend from ff98a27d190b4b930494e0f724fe28780e18aa69, so this delta also shows changes that came from the base branch
+ rewritten.txt | 1 +
+ round1.txt    | 1 -
+ 2 files changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/rewritten.txt b/rewritten.txt
+new file mode 100644
+index 0000000..623342e
+--- /dev/null
++++ b/rewritten.txt
+@@ -0,0 +1 @@
++rewritten commit
+diff --git a/round1.txt b/round1.txt
+deleted file mode 100644
+index 502a123..0000000
+--- a/round1.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-round 1 change
+exit=0
+
+--- 5. Invalid short SHA refusal ---
+error: --since requires a full lowercase commit sha
+exit=1
+
+--- 6. Absent 40-hex SHA refusal ---
+error: --since commit deadbeefdeadbeefdeadbeefdeadbeefdeadbeef does not exist in /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s2.UfuXb8/wt
+exit=1

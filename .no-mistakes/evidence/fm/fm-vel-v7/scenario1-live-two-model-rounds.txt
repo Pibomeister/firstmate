@@ -1,0 +1,137 @@
+=== Scenario 1: Live Two-Model Multi-Round Merge Review (claude + agy) ===
+PR_URL=https://github.com/example/v7-live/pull/1
+HEAD1=15ac9996a7cdd19fb6efaa85e00eea9148bb4c76
+
+=== ROUND 1 (HEAD1) ===
+seat anthropic.claude.claude-sonnet-5-5: BLOCK
+seat google.agy.gemini-3.8-flash-low: BLOCK
+merge-review: blocked head=15ac9996a7cdd19fb6efaa85e00eea9148bb4c76 approvals=none blocks=anthropic.claude.claude-sonnet-5-5,google.agy.gemini-3.8-flash-low round=1 open=F1,F2,F3,F5 url=https://github.com/example/v7-live/pull/1
+round1 run exit=1
+--- round1 supervisor check ---
+merge-review: blocked head=15ac9996a7cdd19fb6efaa85e00eea9148bb4c76 approvals=none blocks=anthropic.claude.claude-sonnet-5-5,google.agy.gemini-3.8-flash-low round=1 open=F1,F2,F3,F5 url=https://github.com/example/v7-live/pull/1
+check exit=1
+--- round1 supervisor findings ---
+round=1 head=15ac9996a7cdd19fb6efaa85e00eea9148bb4c76 previous=none
+F1	open	none	check_pos.sh:2	`-ge 0` accepts 0, but the script must exit 0 only for values greater than 0; use `-gt 0`.	followup=none
+F2	open	none	check_pos.sh:2	The false branch has no explicit `exit 1` and prints nothing to stderr, so negatives exit silently; add an `else` that prints an error and exits 1.	followup=none
+F3	open	none	check_pos.sh:2	Missing and non-integer arguments return status 2, and extra arguments are ignored and exit 0; validate `$# -eq 1` and a digits-only pattern, and exit 1 with a stderr message on failure.	followup=none
+F4	noted	none	README.md:1	The README does not document the new script's usage or exit codes; add a short section.	followup=none
+F5	open	none	check_pos.sh:2	The script accepts 0, does not validate argument count or integer format, does not emit error messages on stderr, and fails to reject non-positive inputs; validate input count and format strictly, emit an error on stderr, and exit 1 on invalid input.	followup=none
+F6	noted	none	README.md:1	README.md was not updated with documentation for check_pos.sh; document the script usage in README.md.	followup=none
+--- round1 receipts summary ---
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/15ac9996a7cdd19fb6efaa85e00eea9148bb4c76/anthropic.claude.claude-sonnet-5-5.receipt:seat=anthropic.claude.claude-sonnet-5-5
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/15ac9996a7cdd19fb6efaa85e00eea9148bb4c76/anthropic.claude.claude-sonnet-5-5.receipt:family=anthropic
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/15ac9996a7cdd19fb6efaa85e00eea9148bb4c76/anthropic.claude.claude-sonnet-5-5.receipt:harness=claude
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/15ac9996a7cdd19fb6efaa85e00eea9148bb4c76/anthropic.claude.claude-sonnet-5-5.receipt:requested_model=claude-sonnet-5-5
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/15ac9996a7cdd19fb6efaa85e00eea9148bb4c76/anthropic.claude.claude-sonnet-5-5.receipt:reported_model=claude-sonnet-5-5
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/15ac9996a7cdd19fb6efaa85e00eea9148bb4c76/anthropic.claude.claude-sonnet-5-5.receipt:identity=reported
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/15ac9996a7cdd19fb6efaa85e00eea9148bb4c76/anthropic.claude.claude-sonnet-5-5.receipt:verdict=BLOCK
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/15ac9996a7cdd19fb6efaa85e00eea9148bb4c76/anthropic.claude.claude-sonnet-5-5.receipt:round=1
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/15ac9996a7cdd19fb6efaa85e00eea9148bb4c76/anthropic.claude.claude-sonnet-5-5.receipt:prior_sha256=
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/15ac9996a7cdd19fb6efaa85e00eea9148bb4c76/anthropic.claude.claude-sonnet-5-5.receipt:delta_sha256=
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/15ac9996a7cdd19fb6efaa85e00eea9148bb4c76/google.agy.gemini-3.8-flash-low.receipt:seat=google.agy.gemini-3.8-flash-low
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/15ac9996a7cdd19fb6efaa85e00eea9148bb4c76/google.agy.gemini-3.8-flash-low.receipt:family=google
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/15ac9996a7cdd19fb6efaa85e00eea9148bb4c76/google.agy.gemini-3.8-flash-low.receipt:harness=agy
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/15ac9996a7cdd19fb6efaa85e00eea9148bb4c76/google.agy.gemini-3.8-flash-low.receipt:requested_model=gemini-3.8-flash-low
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/15ac9996a7cdd19fb6efaa85e00eea9148bb4c76/google.agy.gemini-3.8-flash-low.receipt:reported_model=
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/15ac9996a7cdd19fb6efaa85e00eea9148bb4c76/google.agy.gemini-3.8-flash-low.receipt:identity=requested-accepted
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/15ac9996a7cdd19fb6efaa85e00eea9148bb4c76/google.agy.gemini-3.8-flash-low.receipt:verdict=BLOCK
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/15ac9996a7cdd19fb6efaa85e00eea9148bb4c76/google.agy.gemini-3.8-flash-low.receipt:round=1
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/15ac9996a7cdd19fb6efaa85e00eea9148bb4c76/google.agy.gemini-3.8-flash-low.receipt:prior_sha256=
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/15ac9996a7cdd19fb6efaa85e00eea9148bb4c76/google.agy.gemini-3.8-flash-low.receipt:delta_sha256=
+--- rounds ledger ---
+15ac9996a7cdd19fb6efaa85e00eea9148bb4c76	1794961177
+--- ids ledger ---
+F1	15ac9996a7cdd19fb6efaa85e00eea9148bb4c76	anthropic.claude.claude-sonnet-5-5	51ddc9cdade694b092bb295b07edd604b9a8f4f679c1ec37ebd0c660c7865203	1
+F2	15ac9996a7cdd19fb6efaa85e00eea9148bb4c76	anthropic.claude.claude-sonnet-5-5	51ddc9cdade694b092bb295b07edd604b9a8f4f679c1ec37ebd0c660c7865203	2
+F3	15ac9996a7cdd19fb6efaa85e00eea9148bb4c76	anthropic.claude.claude-sonnet-5-5	51ddc9cdade694b092bb295b07edd604b9a8f4f679c1ec37ebd0c660c7865203	3
+F4	15ac9996a7cdd19fb6efaa85e00eea9148bb4c76	anthropic.claude.claude-sonnet-5-5	51ddc9cdade694b092bb295b07edd604b9a8f4f679c1ec37ebd0c660c7865203	4
+F5	15ac9996a7cdd19fb6efaa85e00eea9148bb4c76	google.agy.gemini-3.8-flash-low	f7262a0f933e46d4680ea7d8b4bb796076ac45703de1d91f32c46d920ff4f304	1
+F6	15ac9996a7cdd19fb6efaa85e00eea9148bb4c76	google.agy.gemini-3.8-flash-low	f7262a0f933e46d4680ea7d8b4bb796076ac45703de1d91f32c46d920ff4f304	2
+
+=== ROUND 2 (HEAD2=43b739234a3252e5d1f0f746b78f1eb696f09c9c) ===
+seat anthropic.claude.claude-sonnet-5-5: APPROVE
+seat google.agy.gemini-3.8-flash-low: APPROVE
+merge-review: approved head=43b739234a3252e5d1f0f746b78f1eb696f09c9c approvals=anthropic.claude.claude-sonnet-5-5:APPROVE,google.agy.gemini-3.8-flash-low:APPROVE blocks=none round=2 url=https://github.com/example/v7-live/pull/1
+round2 run exit=0
+--- round2 supervisor check ---
+merge-review: approved head=43b739234a3252e5d1f0f746b78f1eb696f09c9c approvals=anthropic.claude.claude-sonnet-5-5:APPROVE,google.agy.gemini-3.8-flash-low:APPROVE blocks=none round=2 url=https://github.com/example/v7-live/pull/1
+check exit=0
+--- round2 supervisor findings ---
+round=2 head=43b739234a3252e5d1f0f746b78f1eb696f09c9c previous=15ac9996a7cdd19fb6efaa85e00eea9148bb4c76
+F1	resolved	none	check_pos.sh:2	`-ge 0` accepts 0, but the script must exit 0 only for values greater than 0; use `-gt 0`.	followup=none
+F2	resolved	none	check_pos.sh:2	The false branch has no explicit `exit 1` and prints nothing to stderr, so negatives exit silently; add an `else` that prints an error and exits 1.	followup=none
+F3	resolved	none	check_pos.sh:2	Missing and non-integer arguments return status 2, and extra arguments are ignored and exit 0; validate `$# -eq 1` and a digits-only pattern, and exit 1 with a stderr message on failure.	followup=none
+F4	noted	none	README.md:1	The README does not document the new script's usage or exit codes; add a short section.	followup=none
+F5	resolved	none	check_pos.sh:2	The script accepts 0, does not validate argument count or integer format, does not emit error messages on stderr, and fails to reject non-positive inputs; validate input count and format strictly, emit an error on stderr, and exit 1 on invalid input.	followup=none
+F6	noted	none	README.md:1	README.md was not updated with documentation for check_pos.sh; document the script usage in README.md.	followup=none
+--- round2 round file ---
+round=2
+previous=15ac9996a7cdd19fb6efaa85e00eea9148bb4c76
+--- round2 prior.md ---
+F1 | open | none | check_pos.sh:2 | `-ge 0` accepts 0, but the script must exit 0 only for values greater than 0; use `-gt 0`.
+F2 | open | none | check_pos.sh:2 | The false branch has no explicit `exit 1` and prints nothing to stderr, so negatives exit silently; add an `else` that prints an error and exits 1.
+F3 | open | none | check_pos.sh:2 | Missing and non-integer arguments return status 2, and extra arguments are ignored and exit 0; validate `$# -eq 1` and a digits-only pattern, and exit 1 with a stderr message on failure.
+F4 | noted | none | README.md:1 | The README does not document the new script's usage or exit codes; add a short section.
+F5 | open | none | check_pos.sh:2 | The script accepts 0, does not validate argument count or integer format, does not emit error messages on stderr, and fails to reject non-positive inputs; validate input count and format strictly, emit an error on stderr, and exit 1 on invalid input.
+F6 | noted | none | README.md:1 | README.md was not updated with documentation for check_pos.sh; document the script usage in README.md.
+--- round2 delta.patch present & contents ---
+-rw-r--r--@ 1 eduardopicazo  staff  388 Nov 17 18:20 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/43b739234a3252e5d1f0f746b78f1eb696f09c9c/delta.ee32daad85db5200066baa315ddf6d0ad86cd39fe268062ce9b54803de85ccea.patch
+diff --git a/check_pos.sh b/check_pos.sh
+index f1e81046313c118ad18ba9a563f1d066db644c40..44667512690379c429a7fde100113c88f02f2b9a 100755
+--- a/check_pos.sh
++++ b/check_pos.sh
+@@ -1,4 +1,6 @@
+ #!/usr/bin/env bash
+-if [ "$1" -ge 0 ]; then
+-  exit 0
++set -eu
++if [ "$#" -ne 1 ] || ! [[ "$1" =~ ^[1-9][0-9]*$ ]]; then
++  echo "error: expected one strictly positive integer" >&2
++  exit 1
+ fi
+--- round2 receipts summary ---
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/43b739234a3252e5d1f0f746b78f1eb696f09c9c/anthropic.claude.claude-sonnet-5-5.receipt:seat=anthropic.claude.claude-sonnet-5-5
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/43b739234a3252e5d1f0f746b78f1eb696f09c9c/anthropic.claude.claude-sonnet-5-5.receipt:reported_model=claude-sonnet-5-5
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/43b739234a3252e5d1f0f746b78f1eb696f09c9c/anthropic.claude.claude-sonnet-5-5.receipt:identity=reported
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/43b739234a3252e5d1f0f746b78f1eb696f09c9c/anthropic.claude.claude-sonnet-5-5.receipt:verdict=APPROVE
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/43b739234a3252e5d1f0f746b78f1eb696f09c9c/anthropic.claude.claude-sonnet-5-5.receipt:round=2
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/43b739234a3252e5d1f0f746b78f1eb696f09c9c/anthropic.claude.claude-sonnet-5-5.receipt:prior_sha256=7a878abaa6b26c43f6a30c8143a56fe65bcdd5fba0be323878a52f7e56efe19c
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/43b739234a3252e5d1f0f746b78f1eb696f09c9c/anthropic.claude.claude-sonnet-5-5.receipt:delta_sha256=ee32daad85db5200066baa315ddf6d0ad86cd39fe268062ce9b54803de85ccea
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/43b739234a3252e5d1f0f746b78f1eb696f09c9c/google.agy.gemini-3.8-flash-low.receipt:seat=google.agy.gemini-3.8-flash-low
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/43b739234a3252e5d1f0f746b78f1eb696f09c9c/google.agy.gemini-3.8-flash-low.receipt:reported_model=
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/43b739234a3252e5d1f0f746b78f1eb696f09c9c/google.agy.gemini-3.8-flash-low.receipt:identity=requested-accepted
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/43b739234a3252e5d1f0f746b78f1eb696f09c9c/google.agy.gemini-3.8-flash-low.receipt:verdict=APPROVE
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/43b739234a3252e5d1f0f746b78f1eb696f09c9c/google.agy.gemini-3.8-flash-low.receipt:round=2
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/43b739234a3252e5d1f0f746b78f1eb696f09c9c/google.agy.gemini-3.8-flash-low.receipt:prior_sha256=7a878abaa6b26c43f6a30c8143a56fe65bcdd5fba0be323878a52f7e56efe19c
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v7-s1.Hbg4MQ/home/data/merge-review/github/github.com/example/v7-live/1/43b739234a3252e5d1f0f746b78f1eb696f09c9c/google.agy.gemini-3.8-flash-low.receipt:delta_sha256=ee32daad85db5200066baa315ddf6d0ad86cd39fe268062ce9b54803de85ccea
+
+=== ROUND 3 (HEAD3=69f997e265c19abc2bd9ce6882c3c5814d32f82d) ===
+seat google.agy.gemini-3.8-flash-low: no valid review (the review does not end with a verdict line for this head)
+seat anthropic.claude.claude-sonnet-5-5: APPROVE-WITH-NONBLOCKING
+merge-review: incomplete head=69f997e265c19abc2bd9ce6882c3c5814d32f82d approvals=anthropic.claude.claude-sonnet-5-5:APPROVE-WITH-NONBLOCKING blocks=none round=3 reason="approving reviews come from one model family; two are required" url=https://github.com/example/v7-live/pull/1
+round3 run exit=1
+--- round3 supervisor check ---
+merge-review: incomplete head=69f997e265c19abc2bd9ce6882c3c5814d32f82d approvals=anthropic.claude.claude-sonnet-5-5:APPROVE-WITH-NONBLOCKING blocks=none round=3 reason="approving reviews come from one model family; two are required" url=https://github.com/example/v7-live/pull/1
+check exit=1
+--- round3 supervisor findings ---
+round=3 head=69f997e265c19abc2bd9ce6882c3c5814d32f82d previous=43b739234a3252e5d1f0f746b78f1eb696f09c9c
+F1	resolved	none	check_pos.sh:2	`-ge 0` accepts 0, but the script must exit 0 only for values greater than 0; use `-gt 0`.	followup=none
+F2	resolved	none	check_pos.sh:2	The false branch has no explicit `exit 1` and prints nothing to stderr, so negatives exit silently; add an `else` that prints an error and exits 1.	followup=none
+F3	resolved	none	check_pos.sh:2	Missing and non-integer arguments return status 2, and extra arguments are ignored and exit 0; validate `$# -eq 1` and a digits-only pattern, and exit 1 with a stderr message on failure.	followup=none
+F4	noted	none	README.md:1	The README does not document the new script's usage or exit codes; add a short section.	followup=none
+F5	resolved	none	check_pos.sh:2	The script accepts 0, does not validate argument count or integer format, does not emit error messages on stderr, and fails to reject non-positive inputs; validate input count and format strictly, emit an error on stderr, and exit 1 on invalid input.	followup=none
+F6	noted	none	README.md:1	README.md was not updated with documentation for check_pos.sh; document the script usage in README.md.	followup=none
+F7	noted	none	check_pos.sh:3	Inputs with leading zeros such as `007` (or an explicit `+5`) are rejected although they are positive base-10 integers; this is acceptable strictness, but document it in the README or allow `0*[1-9][0-9]*`.	followup=none
+--- round3 round file ---
+round=3
+previous=43b739234a3252e5d1f0f746b78f1eb696f09c9c
+--- round3 prompt mentions round 3 disposition rule ---
+31:This is round 3, so every finding that could block now gets one disposition as its <STATUS>:
+32:- REGRESSION: in ordinary use the change breaks behavior that works at the merge base, or does not do what its stated intent says. It blocks.
+33:- EDGE-CASE: a real defect outside ordinary use, where the merge base is no better. It becomes a filed follow-up and stops blocking only when every reviewer calls it an EDGE-CASE.
+34:- UNSUPPORTED: no concrete evidence shows a defect. Say what you checked. It is dropped only when every reviewer calls it UNSUPPORTED or RESOLVED.
+--- final rounds ledger ---
+15ac9996a7cdd19fb6efaa85e00eea9148bb4c76	1794961177
+43b739234a3252e5d1f0f746b78f1eb696f09c9c	1794961240
+69f997e265c19abc2bd9ce6882c3c5814d32f82d	1794961349

@@ -1,0 +1,43 @@
+=== Scenario 3: Live guards (.council name refusal, concurrent-round lock refusal, single-family pending gate) ===
+
+--- 3a. .council model-name refusal ---
+error: config/merge-review line 2: the model name cannot hold the part ".council", which names council files
+covers (gemini.council) exit=2
+error: config/merge-review line 2: the model name cannot hold the part ".council", which names council files
+check (gemini.council) exit=2
+error: config/merge-review line 2: the model name cannot hold the part ".council", which names council files
+run (gemini.council) exit=2
+error: config/merge-review line 2: the model name cannot hold the part ".council", which names council files
+covers (gemini.council.2) exit=2
+error: config/merge-review line 2: the model name cannot hold the part ".council", which names council files
+check (gemini.council.2) exit=2
+error: config/merge-review line 2: the model name cannot hold the part ".council", which names council files
+run (gemini.council.2) exit=2
+covers (gemini.councils-2) exit=0
+
+--- 3b. Concurrent-round lock refusal (head in ledger with no receipt yet) ---
+error: the review round at 0972c116dac8b9b937eea141bf3f8f5beca492ee is still running
+run on HEAD2 while HEAD1 lock live exit=2
+rounds ledger after refusal: 0972c116dac8b9b937eea141bf3f8f5beca492ee	1700000000
+HEAD2/round absent=yes
+
+--- 3c. Single-family pending gate (real claude succeeds, real agy fails on nonexistent model) ---
+seat google.agy.nonexistent-model-v7: no valid review (the agy call exited 1)
+seat anthropic.claude.claude-sonnet-5-5: BLOCK
+merge-review: blocked head=0972c116dac8b9b937eea141bf3f8f5beca492ee approvals=none blocks=anthropic.claude.claude-sonnet-5-5 round=1 open=F1,F2,F3 url=https://github.com/example/v7-guards/pull/1
+run single-family exit=1
+
+check output:
+merge-review: blocked head=0972c116dac8b9b937eea141bf3f8f5beca492ee approvals=none blocks=anthropic.claude.claude-sonnet-5-5 round=1 open=F1,F2,F3 url=https://github.com/example/v7-guards/pull/1
+check exit=1
+
+findings output:
+round=1 head=0972c116dac8b9b937eea141bf3f8f5beca492ee previous=none
+F1	open	none	check_pos.sh:1	`-ge 0` accepts 0 with exit 0, contradicting the strictly-positive intent; use `-gt 0`.	followup=none
+F2	open	none	check_pos.sh:1	No else path, so negatives exit 0 silently with no stderr message; add an error message to stderr and `exit 1` after the `if`.	followup=none
+F3	open	none	check_pos.sh:1	Non-integer or missing input makes `[` fail with status 2 and the script then falls through to exit 0; validate the input with a `case` pattern and exit 1 with a stderr message.	followup=none
+F4	noted	none	check_pos.sh:1	No tests cover the exit-code contract; add cases for positive, 0, negative, non-integer and empty input.	followup=none
+
+followup attempt on F1 (if any) before second family rules:
+error: finding F1 is open at 0972c116dac8b9b937eea141bf3f8f5beca492ee; only a deferred finding takes a follow-up
+followup exit=2
