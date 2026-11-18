@@ -435,10 +435,8 @@ mode=act
 restart=on
 ```
 
-Any `mode` other than `act` stays dry-run.
-`restart=on` without `mode=act` does not restart.
-The next `once` pass reads `mode` and `restart`.
-Those two keys need no process restart.
+`run` snapshots `interval-secs` when it starts.
+Each `once` pass reads `config/watchdog` again.
 
 | Key | Default | Meaning |
 | --- | --- | --- |

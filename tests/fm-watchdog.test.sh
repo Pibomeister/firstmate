@@ -1973,11 +1973,12 @@ test_absent_config_stays_dry_run() {
 }
 
 test_opt_in_act_and_restart_on() {
-  make_home $'Captain session\n> ' "restart=on
+  write_fake_captain
+  make_home $'Captain session\n> ' "mode=act
+restart=on
 max-nudges=0
 pickup-secs=600
 restart-command=$TMP_ROOT/fake-captain.sh"
-  write_fake_captain
   transcript 3000 "Working." "Testing." "Green."
   owe_input 3000
   run_wd 0 once >/dev/null 2>&1
@@ -1988,11 +1989,11 @@ restart-command=$TMP_ROOT/fake-captain.sh"
   wait_pickup || fail "the restart-command never ran: $(ledger | cut -f5-8)"
   kill -0 "$LOCKPID" 2>/dev/null && fail "the old session still runs"
   LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
-  pass "mode=act and restart=on: a proven stall acts and restarts"
-}
 
-test_act_without_restart_does_not_restart() {
-  make_home $'Captain session\n> ' 'max-nudges=0'
+  make_home $'Captain session\n> ' "mode=act
+max-nudges=0
+pickup-secs=600
+restart-command=$TMP_ROOT/fake-captain.sh"
   transcript 3000 "Working." "Testing." "Green."
   owe_input 3000
   run_wd 0 once >/dev/null 2>&1
@@ -2000,6 +2001,23 @@ test_act_without_restart_does_not_restart() {
   assert_grep "mode act" "$H/data/watchdog/status.md" "act without restart=on still reports act"
   assert_equals 1 "$(ledger_rows frozen restart refused)" "restart off refuses at the gate: $(ledger | cut -f5-8)"
   assert_equals 0 "$(restart_pending_rows)" "no restart pending"
+  [ ! -s "$H/pickup.out" ] || fail "restart-command ran with restart off: $(cat "$H/pickup.out")"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "restart off stopped the lock holder"
+  pass "mode=act and restart=on: a proven stall restarts; without restart=on it does not"
+}
+
+test_act_without_restart_does_not_restart() {
+  write_fake_captain
+  make_home $'Captain session\n> ' "max-nudges=0
+restart-command=$TMP_ROOT/fake-captain.sh"
+  transcript 3000 "Working." "Testing." "Green."
+  owe_input 3000
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+  assert_grep "mode act" "$H/data/watchdog/status.md" "act without restart=on still reports act"
+  assert_equals 1 "$(ledger_rows frozen restart refused)" "restart off refuses at the gate: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(restart_pending_rows)" "no restart pending"
+  [ ! -s "$H/pickup.out" ] || fail "restart-command ran with restart off: $(cat "$H/pickup.out")"
   kill -0 "$LOCKPID" 2>/dev/null || fail "restart off stopped the lock holder"
 
   make_home $'Captain session\n> '
