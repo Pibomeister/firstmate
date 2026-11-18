@@ -4024,7 +4024,7 @@ fm_backend_herdr_list_live() {  # <session>
 # herdr homes: instead of a blind sleep, it blocks on herdr's native event
 # stream and returns the instant a subscribed pane transitions to `blocked`, so
 # a crew waiting on the human wakes its supervisor sub-second instead of after
-# the ~240s stale-pane wedge timer. Everything not `blocked` is streamed too
+# the ~300s stale-pane wedge timer. Everything not `blocked` is streamed too
 # (the policy, not the subscription, makes `blocked` the sole immediate action)
 # so `working` edges clear the per-pane dedupe marker. Polling stays the
 # permanent fail-closed backstop: below-capability, a connect/subscribe failure,
