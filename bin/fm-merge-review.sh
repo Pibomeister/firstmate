@@ -81,8 +81,8 @@
 # counted across heads in <pull request>/rounds; a rerun at one head stays in
 # its round, and a head whose every call failed adds no round. Heads reviewed
 # before the ledger existed are counted from their receipts. A round does not
-# start while a run at another head in the ledger is still alive, whether or
-# not that run has written a receipt yet.
+# start while a run at another head of the pull request is still alive,
+# whether or not that run has joined the ledger or written a receipt yet.
 #
 # Findings. A reviewer reports each finding on one line:
 #   FINDING <NEW|id> | <STATUS> | <CLASS> | <where> | <text>
@@ -98,6 +98,10 @@
 # A finding's state at a head comes from the seats that hold a valid receipt.
 # One seat alone never settles a finding: it is deferred, dropped, or resolved
 # only while seats from at least two model families hold a valid receipt.
+# Seats whose receipts name different merge bases reviewed different diffs, so
+# together they settle nothing either: the finding stays open.
+# A seat that gives one finding two status lines holds it when either line
+# does, and a class on either line stays with the finding.
 #   open      a seat holds it: BLOCKING, or from round three REGRESSION. It
 #             blocks, and the next round must rule on it again.
 #             From round three it is also open while one seat calls it an
@@ -647,34 +651,56 @@ mr_parse_lines() {  # <file> <FINDING|DISPOSITION>
 # Read parsed FINDING rows on stdin and check them against the review round
 # and the prior findings. Prints the rows that stand, one "E <reason>" row for
 # each defect, and one "B" row when a standing row holds a finding as blocking.
+# When an open finding has two status lines, the line that holds it stands,
+# and a class on either line stays with it.
 mr_findings_filter() {  # <round> <prior-file-or-empty>
   LC_ALL=C awk -F'\t' -v round="$1" -v prior="$2" '
+    function rank(status, class) {
+      if (status == "BLOCKING" || status == "REGRESSION") return 2
+      if (status == "EDGE-CASE" || class != "none") return 1
+      return 0
+    }
     BEGIN {
       if (prior != "") while ((getline line < prior) > 0) {
         n = split(line, p, " [|] ")
         if (n == 5 && p[2] == "open") { open[p[1]] = 1; ids[++count] = p[1] }
       }
     }
-    $1 == "bad" { print "E\tFINDING line " $2 " does not fit the form"; next }
+    $1 == "bad" { out[++m] = "E\tFINDING line " $2 " does not fit the form"; next }
     $1 != "ok" { next }
     {
       ref = $3; status = $4; class = $5
+      rest = $6
+      for (i = 7; i <= NF; i++) rest = rest "\t" $i
       if (ref == "NEW") {
         if (status == "RESOLVED" || status == "UNSUPPORTED") {
-          print "E\ta NEW finding cannot be " status; next
+          out[++m] = "E\ta NEW finding cannot be " status; next
         }
       } else {
-        if (!(ref in open)) { print "E\t" ref " is not an open finding of this pull request"; next }
-        if (ref in seen) { print "E\t" ref " has two status lines"; next }
-        if (status == "NON-BLOCKING") { print "E\t" ref " is open and cannot be NON-BLOCKING"; next }
-        seen[ref] = 1
+        if (!(ref in open)) { out[++m] = "E\t" ref " is not an open finding of this pull request"; next }
+        if (ref in seen) {
+          out[++m] = "E\t" ref " has two status lines"
+          i = seen[ref]
+          if (status != "NON-BLOCKING" && rank(status, class) > rank(st[i], cl[i])) {
+            if (class == "none") class = cl[i]
+            ord[i] = $2; st[i] = status; cl[i] = class; tail[i] = rest
+          } else if (cl[i] == "none" && class != "none") cl[i] = class
+          next
+        }
+        if (status == "NON-BLOCKING") { out[++m] = "E\t" ref " is open and cannot be NON-BLOCKING"; next }
+        seen[ref] = m + 1
       }
-      print
-      if (status == "BLOCKING" || status == "REGRESSION") dissent = 1
-      else if (status == "EDGE-CASE" && (round < 3 || class != "none")) dissent = 1
-      else if (status == "NON-BLOCKING" && class != "none") dissent = 1
+      out[++m] = ""
+      ord[m] = $2; rf[m] = ref; st[m] = status; cl[m] = class; tail[m] = rest
     }
     END {
+      for (i = 1; i <= m; i++) {
+        if (out[i] != "") { print out[i]; continue }
+        print "ok\t" ord[i] "\t" rf[i] "\t" st[i] "\t" cl[i] "\t" tail[i]
+        if (st[i] == "BLOCKING" || st[i] == "REGRESSION") dissent = 1
+        else if (st[i] == "EDGE-CASE" && (round < 3 || cl[i] != "none")) dissent = 1
+        else if (st[i] == "NON-BLOCKING" && cl[i] != "none") dissent = 1
+      }
       for (i = 1; i <= count; i++) if (!(ids[i] in seen)) print "E\topen finding " ids[i] " has no status line"
       if (dissent) print "B"
     }'
@@ -735,7 +761,8 @@ mr_findings_state() {  # <head-store> <seats> [need]
     ' "$store/prior.md"
     for seat in $2; do
       if mr_seat_index "$seat" >/dev/null; then
-        printf 'S\t%s\t%s\n' "$seat" "$(mr_receipt_get "$store/$seat.receipt" family)"
+        printf 'S\t%s\t%s\t%s\n' "$seat" "$(mr_receipt_get "$store/$seat.receipt" family)" \
+          "$(mr_receipt_get "$store/$seat.receipt" base)"
       else
         printf 'X\t%s\n' "$seat"
       fi
@@ -782,7 +809,12 @@ mr_findings_state() {  # <head-store> <seats> [need]
     }
     $1 == "R" { round = $2 + 0; next }
     $1 == "P" { order[++n] = $2; st[$2] = $3; cls[$2] = $4; wh[$2] = $5; tx[$2] = $6; prior[$2] = 1; next }
-    $1 == "S" { seats[++ns] = $2; isseat[$2] = 1; if (!($3 in fam)) { fam[$3] = 1; nf++ } next }
+    $1 == "S" {
+      seats[++ns] = $2; isseat[$2] = 1
+      if (!($3 in fam)) { fam[$3] = 1; nf++ }
+      if (!($4 in bases)) { bases[$4] = 1; nb++ }
+      next
+    }
     $1 == "X" { former[$2] = 1; next }
     $1 == "I" { idof[$3, $4] = $2; next }
     $1 == "V" {
@@ -819,6 +851,8 @@ mr_findings_state() {  # <head-store> <seats> [need]
           block = ((id, "block") in has) || (((id, "note") in has) && cls[id] != "none")
           if (id in prior) for (s = 1; s <= ns; s++) if (!((id, seats[s]) in by)) block = 1
           if (block) state = "open"
+          # Seats that reviewed different diffs settle nothing together.
+          else if (nb > 1 && (((id, "edge") in has) || ((id, "drop") in has) || ((id, "fixed") in has))) state = "open"
           else if ((id, "edge") in has) {
             # Deferral needs an EDGE-CASE from every seat: any other ruling
             # beside it leaves the finding open.
@@ -1414,14 +1448,19 @@ mr_round_begin() {  # <repo>
   if ! mr_dir_has_receipt "$MR_STORE" || [ ! -f "$MR_STORE/round" ]; then
     # This head is about to begin a round. A round begun while another head's
     # run is still going would miss the findings that run is about to leave.
-    while IFS="$tab" read -r head started; do
+    # Every head store is read, not only the ledger: a first run takes its
+    # run lock before it joins the ledger.
+    for dir in "$pr"/*/; do
+      dir=${dir%/}
+      head=${dir##*/}
+      fm_pr_head_valid "$head" || continue
       [ "$head" != "$MR_HEAD" ] || continue
-      holder=$(cat "$pr/$head/.run.lock/pid" 2>/dev/null || true)
+      holder=$(cat "$dir/.run.lock/pid" 2>/dev/null || true)
       case "$holder" in
         '' | *[!0-9]*) ;;
         *) ! kill -0 "$holder" 2>/dev/null || mr_die "the review round at $head is still running" ;;
       esac
-    done < "$ledger"
+    done
   fi
   if ! mr_dir_has_receipt "$MR_STORE"; then
     # No review counts at this head yet, so it takes the next round now.
@@ -1473,7 +1512,13 @@ mr_round_begin() {  # <repo>
       || mr_die "cannot build the delta from $MR_PREVIOUS to $MR_HEAD"
     if [ -s "$MR_WORK/delta.patch" ]; then
       MR_DELTA_SHA=$(mr_sha256 "$MR_WORK/delta.patch") || mr_die 'cannot hash the delta'
-      cp "$MR_WORK/delta.patch" "$MR_STORE/delta.$MR_DELTA_SHA.patch" || mr_die 'cannot store the delta'
+      # Receipts bind this file by its hash, so it is never written in place:
+      # a stored copy with the same bytes stays, and any other is replaced whole.
+      if [ ! -f "$MR_STORE/delta.$MR_DELTA_SHA.patch" ] ||
+        [ "$(mr_sha256 "$MR_STORE/delta.$MR_DELTA_SHA.patch")" != "$MR_DELTA_SHA" ]; then
+        cp "$MR_WORK/delta.patch" "$MR_RECORDS/delta.new" || mr_die 'cannot store the delta'
+        mv -f "$MR_RECORDS/delta.new" "$MR_STORE/delta.$MR_DELTA_SHA.patch" || mr_die 'cannot store the delta'
+      fi
     else
       rm -f "$MR_WORK/delta.patch"
     fi

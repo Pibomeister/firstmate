@@ -2230,6 +2230,180 @@ test_a_run_stopped_between_its_round_records_can_run_again() {
   pass "a run stopped between its two round records can run again, and only over the same prior findings"
 }
 
+test_seats_at_different_merge_bases_settle_no_finding() {
+  local rc=0
+  make_case mixed-base "${TWO_SEATS[@]}"
+  set_review claude \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | An empty file makes the reader loop.' \
+    'VERDICT: BLOCK @HEAD@'
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "mixed-base: round 1"
+  next_head 'second head'
+  set_review claude \
+    'FINDING F1 | BLOCKING | none | feature.txt:1 | The empty file still loops.' \
+    'VERDICT: BLOCK @HEAD@'
+  set_review agy \
+    'FINDING F1 | BLOCKING | none | feature.txt:1 | The empty file still loops.' \
+    'VERDICT: BLOCK @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "mixed-base: round 2"
+  next_head 'third head'
+  set_review claude \
+    'FINDING F1 | EDGE-CASE | none | feature.txt:1 | Only an empty file triggers it.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  set_review agy \
+    'FINDING F1 | UNSUPPORTED | none | feature.txt:1 | The loop has a bound on line 4, so it ends.' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "mixed-base: round 3"
+  assert_grep " open=F1 " "$CASE/stdout" "mixed-base: the finding the seats disagree on is not open"
+
+  # The merge base moves under the same head. The review that holds the
+  # finding is kept, and the other seat reviews the new diff and now agrees.
+  move_receipt_base "$CLAUDE_SEAT"
+  move_receipt_base "$AGY_SEAT"
+  set_review agy \
+    'FINDING F1 | EDGE-CASE | none | feature.txt:1 | Only an empty file triggers it.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "mixed-base: rerun after the merge base moved"
+  assert_equals 3 "$(calls claude)" "mixed-base: the seat that holds the finding was called again"
+  assert_equals 4 "$(calls agy)" "mixed-base: the plain approval was not refreshed"
+  assert_no_grep "merge-review: approved" "$CASE/stdout" "mixed-base: the rerun approved the head"
+  findings_at_head || fail "mixed-base: findings failed"
+  assert_match "^F1	open	" "$CASE/stdout" "mixed-base: votes on two merge bases settled the finding"
+  rc=0
+  run_supervisor followup "$PR_URL" --head "$HEAD_SHA" --finding F1 --ref 'backlog item 12' || rc=$?
+  expect_code 2 "$rc" "mixed-base: a follow-up for a finding that votes on two merge bases agreed on"
+
+  # The next head gets it as open, not as deferred.
+  next_head 'fourth head'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "mixed-base: round 4 with reviews that skip the open finding"
+  assert_match "^F1 | open | none | " "$STUB/agy.prior" "mixed-base: the next round got the finding as settled"
+  pass "seats whose reviews name different merge bases settle no finding, at that head or the next"
+}
+
+test_two_status_lines_keep_the_one_that_holds_the_finding() {
+  local rc=0
+  make_case two-lines "${TWO_SEATS[@]}"
+  set_review claude \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | A crash mid-write truncates the file.' \
+    'VERDICT: BLOCK @HEAD@'
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "two-lines: round 1"
+
+  next_head 'second head'
+  # One review rules on F1 twice: resolved first, then blocking with a class.
+  set_review claude \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The write is now atomic.' \
+    'FINDING F1 | BLOCKING | data-loss | feature.txt:1 | The rename still runs before the sync.' \
+    'VERDICT: BLOCK @HEAD@'
+  set_review agy \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The write is now atomic.' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "two-lines: round 2"
+  assert_grep "blocks=$CLAUDE_SEAT" "$CASE/stdout" "two-lines: the BLOCK was not recorded"
+  assert_grep " open=F1 " "$CASE/stdout" "two-lines: the resolved line won over the blocking line"
+  findings_at_head || fail "two-lines: findings failed"
+  assert_match "^F1	open	data-loss	" "$CASE/stdout" "two-lines: the finding lost the class of the line that holds it"
+
+  # The same two lines the other way round.
+  next_head 'third head'
+  set_review claude \
+    'FINDING F1 | BLOCKING | none | feature.txt:1 | The rename still runs before the sync.' \
+    'FINDING F1 | RESOLVED | data-loss | feature.txt:1 | It was a data-loss defect and it is fixed.' \
+    'VERDICT: BLOCK @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "two-lines: round 3"
+  assert_match "^F1 | open | data-loss | " "$STUB/agy.prior" "two-lines: the next round got the finding as resolved"
+  findings_at_head || fail "two-lines: findings failed"
+  assert_match "^F1	open	data-loss	" "$CASE/stdout" "two-lines: a later resolved line replaced the blocking line"
+
+  # An approval with two status lines still does not count.
+  next_head 'fourth head'
+  set_review claude \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | Fixed.' \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | Fixed.' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "two-lines: round 4"
+  assert_absent "$(store_dir)/$CLAUDE_SEAT.receipt" "two-lines: an approval with two status lines left a receipt"
+  assert_grep "F1 has two status lines" "$CASE/stdout" "two-lines: the defect was not named"
+  pass "when a review gives a finding two status lines, the line that holds it stands with either line's class"
+}
+
+test_a_round_waits_for_a_running_head_that_is_not_in_the_ledger_yet() {
+  local rc=0 first pr ledger_before calls_before
+  make_case unlisted-head "${TWO_SEATS[@]}"
+  first=$HEAD_SHA
+  pr=$(dirname "$(store_dir)")
+  run_at_head || fail "unlisted-head: the first head did not approve"
+
+  # A first run at another head holds its run lock and has not joined the ledger.
+  mkdir -p "$pr/$OTHER_HEAD/.run.lock"
+  printf '%s\n' "$$" > "$pr/$OTHER_HEAD/.run.lock/pid"
+  assert_no_grep "$OTHER_HEAD" "$pr/rounds" "unlisted-head: the running head is in the ledger"
+  ledger_before=$(cat "$pr/rounds")
+  calls_before=$(calls claude)
+
+  next_head 'second head'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 2 "$rc" "unlisted-head: a round started while a head outside the ledger was running"
+  assert_grep "the review round at $OTHER_HEAD is still running" "$CASE/stderr" "unlisted-head: the refusal did not name the running head"
+  assert_equals "$ledger_before" "$(cat "$pr/rounds")" "unlisted-head: the refused run changed the round ledger"
+  [ ! -e "$(store_dir)/round" ] || fail "unlisted-head: the refused run recorded a round"
+  assert_equals "$calls_before" "$(calls claude)" "unlisted-head: a reviewer was called while another head was running"
+
+  mv "$pr/$OTHER_HEAD/.run.lock" "$CASE/released-run-lock"
+  run_at_head || fail "unlisted-head: the second head did not approve once the other run ended"
+  assert_grep " round=2 " "$CASE/stdout" "unlisted-head: the second head is not round 2"
+  assert_grep "previous=$first" "$(store_dir)/round" "unlisted-head: round 2 does not name the first head as previous"
+  pass "a round waits for a running head that has not joined the ledger yet"
+}
+
+test_a_rerun_never_writes_the_stored_delta_in_place() {
+  local rc=0 store delta sha calls_before
+  make_case delta-store "${TWO_SEATS[@]}"
+  run_at_head || fail "delta-store: round 1 did not approve"
+  next_head 'second head'
+  run_at_head || fail "delta-store: round 2 did not approve"
+  store=$(store_dir)
+  sha=$(sed -n 's/^delta_sha256=//p' "$store/$CLAUDE_SEAT.receipt")
+  delta="$store/delta.$sha.patch"
+  assert_present "$delta" "delta-store: round 2 stored no delta"
+  calls_before=$(calls claude)
+
+  # A rerun at the same head keeps the stored delta and calls no seat again.
+  cp "$delta" "$CASE/delta-before"
+  run_at_head || fail "delta-store: the rerun did not approve"
+  cmp -s "$delta" "$CASE/delta-before" || fail "delta-store: a rerun changed the stored delta"
+  assert_equals "$calls_before" "$(calls claude)" "delta-store: a seat with a valid receipt was called again"
+
+  # A stored delta that a stopped write left short is replaced whole: a second
+  # name for the short file still shows the short file, so nothing wrote into it.
+  printf 'short\n' > "$delta"
+  ln "$delta" "$CASE/short-delta"
+  rc=0
+  run_at_head || rc=$?
+  expect_code 0 "$rc" "delta-store: rerun over a short stored delta ($(cat "$CASE/stdout" "$CASE/stderr"))"
+  cmp -s "$delta" "$CASE/delta-before" || fail "delta-store: the short delta was not replaced"
+  assert_equals short "$(cat "$CASE/short-delta")" "delta-store: the rerun wrote into the stored delta in place"
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 0 "$rc" "delta-store: check after the delta was replaced"
+  pass "a rerun keeps a stored delta that matches its hash, and replaces a short one whole"
+}
+
 fm_test_run \
   test_two_families_approve_and_a_supervisor_reads_one_line \
   test_run_refuses_in_a_supervisor_session \
@@ -2295,4 +2469,8 @@ fm_test_run \
   test_a_model_name_cannot_take_the_council_file_names \
   test_a_finding_of_a_seat_that_left_the_config_reaches_the_next_round \
   test_a_run_stopped_between_its_round_records_can_run_again \
-  test_a_round_waits_for_a_running_head_that_has_no_receipt_yet
+  test_a_round_waits_for_a_running_head_that_has_no_receipt_yet \
+  test_seats_at_different_merge_bases_settle_no_finding \
+  test_two_status_lines_keep_the_one_that_holds_the_finding \
+  test_a_round_waits_for_a_running_head_that_is_not_in_the_ledger_yet \
+  test_a_rerun_never_writes_the_stored_delta_in_place
