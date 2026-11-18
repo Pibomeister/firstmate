@@ -30,7 +30,14 @@ else
   exit 1
 fi
 SH
-chmod +x "$TMP_ROOT/fakebin/gh-axi" "$TMP_ROOT/fakebin/tasks-axi"
+cat > "$TMP_ROOT/fakebin/gh" <<'SH'
+#!/usr/bin/env bash
+printf 'gh %s\n' "$*" >> "$FM_GH_LOG"
+[ "${FM_GH_FAIL:-0}" = 0 ] && [ "${FM_GH_API_FAIL:-0}" = 0 ] || exit 1
+[ -z "${FM_GH_SLEEP:-}" ] || sleep "$FM_GH_SLEEP"
+[ -z "${FM_GH_MERGED_HEAD:-}" ] || printf '%s\thttps://github.com/example/demo/pull/9\n' "$FM_GH_MERGED_HEAD"
+SH
+chmod +x "$TMP_ROOT/fakebin/gh-axi" "$TMP_ROOT/fakebin/gh" "$TMP_ROOT/fakebin/tasks-axi"
 export PATH="$TMP_ROOT/fakebin:$PATH"
 export FM_GH_LOG="$TMP_ROOT/gh.log"
 
@@ -145,6 +152,43 @@ out=$(scan)
 assert_contains "$out" 'branch=fm/task' 'a prior merge hid newer local commits'
 assert_contains "$out" 'commits=2' 'wrong follow-up reachability count'
 pass 'local commits newer than a merged head stay flagged'
+
+squash_then_edit_same_hunk() {
+  local tree commit
+  squash_merge_into_origin_main HEAD
+  git -C "$PROJECT" checkout -q refs/remotes/origin/main
+  printf 'main edit\n' > "$PROJECT/change.txt"
+  tree=$(git -C "$PROJECT" add change.txt && git -C "$PROJECT" write-tree)
+  commit=$(printf 'main edit\n' | git -C "$PROJECT" -c user.name=Test -c user.email=test@example.com \
+    commit-tree "$tree" -p refs/remotes/origin/main)
+  git -C "$PROJECT" update-ref refs/remotes/origin/main "$commit"
+  git -C "$PROJECT" checkout -qf fm/task
+}
+
+new_world merged-head-conflict
+squash_then_edit_same_hunk
+assert_contains "$(scan)" 'merged=none' 'a conflicting content proof without a merged head was not flagged'
+assert_equals '' "$(FM_GH_MERGED_HEAD="$(git -C "$PROJECT" rev-parse HEAD)" scan)" \
+  'a merged PR at the exact local head was flagged after main edited the same hunk'
+pass 'a merged PR at the exact local head proves landing when the content proof conflicts'
+
+new_world merged-older-head
+squash_then_edit_same_hunk
+merged_head=$(git -C "$PROJECT" rev-parse HEAD)
+printf 'follow-up\n' > "$PROJECT/follow-up.txt"
+git -C "$PROJECT" add follow-up.txt
+git -C "$PROJECT" -c user.name=Test -c user.email=test@example.com commit -qm follow-up
+out=$(FM_GH_MERGED_HEAD=$merged_head scan)
+assert_contains "$out" 'branch=fm/task' 'an older merged head under the branch name hid newer local commits'
+assert_contains "$out" 'merged=none' 'an older merged head was treated as this head'
+pass 'local commits beyond a merged PR head stay flagged'
+
+new_world merged-lookup-failure
+squash_then_edit_same_hunk
+out=$(FM_GH_API_FAIL=1 FM_GH_MERGED_HEAD="$(git -C "$PROJECT" rev-parse HEAD)" scan)
+assert_contains "$out" 'branch=fm/task' 'a failed merged-proof read hid the branch'
+assert_contains "$out" 'merged=unknown' 'a failed merged-proof read became a definite answer'
+pass 'a failed merged-proof lookup keeps the branch flagged as unknown'
 
 new_world base-branch
 git -C "$PROJECT" update-ref refs/remotes/origin/release refs/remotes/origin/main
