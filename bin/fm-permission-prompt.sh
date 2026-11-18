@@ -267,7 +267,7 @@ _fm_pp_codex_dialog() {  # <screen>
 }
 
 # The screen rows of a picker from the top of the paragraph that holds its
-# first option row down to the last row, read from the screen because the
+# first option row through the end of the screen, read from it because the
 # prompt rows drop blank rows. The option rows are found the way main's
 # `_fm_wd_dialog_rows` finds them: the last cursor row within the last 14
 # non-blank rows, then the last `1.` or `1)` row at or above it, or the cursor
@@ -450,8 +450,9 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
     printf 'hold\t%s\n' "${fixed%%$'\n'*}"; return 0
   fi
   # A question picker's rows can reach conversation above it, so its hard
-  # stops and holds read only the picker's own paragraph: the unbroken rows
-  # that end at its last `1.` option row. A screen labelled permission is
+  # stops and holds read only the picker's own rows (_fm_pp_question_paragraph),
+  # from the paragraph that holds its first option row through the end of the
+  # screen. A screen labelled permission is
   # labelled again from that paragraph, so words in the conversation, such as
   # a quoted `Do you want to proceed?`, never make an ordinary question picker
   # a permission prompt; a paragraph that still reads as a permission prompt

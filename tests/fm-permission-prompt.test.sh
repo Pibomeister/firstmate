@@ -637,6 +637,18 @@ test_hardstop_prompts_are_never_answered() {
     wd_permission_prompt rm claude "$3" permission
     printf "%s:%s\n" "$?" "$WD_PP_REASON"' _ "$WD" "$rm_pane" "$cookie_screen" 2>/dev/null)
   assert_equals 1:credential "$stale_rc" "a credential first read keeps its reason when the fresh read is destructive"
+  # The reads under the lock bypass Orca's shared reply cache even when the
+  # cache is forced on, so a cached safe screen never stands in for a newer one.
+  local cache_log="$TMP_ROOT/pp-cache.log"
+  : > "$cache_log"
+  FM_TEST_SEAM=1 FM_ORCA_CLI_CACHE=1 FM_WD_NOW=$((BASE + 490)) FM_HOME="$H" bash -c '
+    . "$1" || exit 9
+    O_HOME=$FM_HOME O_TAG=$(wd_tag "$FM_HOME") O_KEY=$(wd_state_key "$FM_HOME") O_BACKEND=orca O_TARGET=stub O_REC_SUBJECT=worker:rm
+    screen=$2 log=$3
+    wd_capture() { printf "%s\n" "${FM_ORCA_CLI_CACHE:-unset}" >> "$log"; printf "%s\n" "$screen"; }
+    wd_observe_dialog() { printf "%s\n" permission; }
+    wd_permission_prompt rm claude "$screen" permission' _ "$WD" "$cookie_screen" "$cache_log" >/dev/null 2>&1 || true
+  assert_equals 0 "$(sort -u "$cache_log" | tr -d '\n')" "every read under the lock runs with the Orca reply cache off: $(cat "$cache_log")"
   assert_equals 0 "$(status_rows cred resolved permission-prompt-hardstop)" "an older empty screen does not resolve a hard stop still on the pane"
   assert_equals 1 "$(find "$H/state/watchdog/permission" -name '*-cred.open' | wc -l | tr -d ' ')" "the hard stop's marker stays while the prompt is on the pane"
 

@@ -1898,6 +1898,9 @@ wd_pp_reason() {
 # 2 = no prompt verdict, or `permission-route=off`.
 wd_permission_prompt() {
   local id=$1 harness=$2 screen=$3 dialog=$4 verdict kind reason hash rc live live_dialog
+  # Every read below, including the checks before and after a key, must see
+  # the pane as it is now, never a shared Orca reply cached a moment earlier.
+  local -x FM_ORCA_CLI_CACHE=0
   WD_PP_STOPPED=
   WD_PP_REASON=
   [ "$(wd_permission_mode)" != off ] || return 2
