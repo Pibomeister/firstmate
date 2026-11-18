@@ -1876,7 +1876,7 @@ test_housekeeping_stale_outage_waits_300s() {
   # between those two reads, so freeze the sourced clock the way the watcher
   # case freezes FM_WATCH_NOW.
   _now_restore=$(declare -f _now)
-  FM_TEST_DAEMON_NOW=$(_now)
+  FM_TEST_DAEMON_NOW=$(date +%s)
   _now() { printf '%s\n' "$FM_TEST_DAEMON_NOW"; }
   trap 'eval "$_now_restore"; unset FM_TEST_DAEMON_NOW; trap - RETURN' RETURN
 
