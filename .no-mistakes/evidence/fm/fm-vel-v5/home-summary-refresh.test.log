@@ -8,11 +8,15 @@ ok - writer kill and replacement preserve an atomic JSON ledger
 ok - best-effort publication logs and continues
 Terminated: 15
 Terminated: 15
+Terminated: 15
 ok - best-effort refresh bounds publication lock acquisition
 Terminated: 15
 ok - a deadline failure names the slow stage and keeps the last good summary
 ok - a signalled parent removes its stage file
 ok - the producer never recreates a deleted stage log
 ok - stage-file open is bounded by the refresh deadline
-not ok - best-effort refresh waited 4 seconds on validation
-exit=1
+Terminated: 15
+ok - best-effort refresh bounds validation and publication
+Terminated: 15
+not ok - the worker did not write to the stage file the parent named: [2026-11-18T13:26:16Z] refresh exceeded its 3-second deadline in stage task-observation (stages: lock-wait@0 producer@0 backlog@0 task-observation@0)
+EXIT=1

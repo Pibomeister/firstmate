@@ -1,0 +1,7 @@
+== refresh with FM_HOME_SUMMARY_STAGE_PATH=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.3q6Q6C/precious.txt
+rc=0
+== refresh with FM_HOME_SUMMARY_STAGE_PATH=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.3q6Q6C/state/notes.txt
+rc=0
+== victims:
+keep me
+keep me too

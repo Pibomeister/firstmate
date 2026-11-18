@@ -1,0 +1,12 @@
+== before: last good ledger
+2026-11-18T13:21:29Z 1795008089
+held
+== refresh with 5s deadline while lock is held (--best-effort)
+Terminated: 15
+rc=0 secs=6
+== failure log
+[2026-11-18T13:22:35Z] refresh exceeded its 5-second deadline in stage lock-wait (stages: lock-wait@0)
+== after: ledger unchanged?
+ledger byte-identical; true timestamp kept
+== stray stage files:
+none
