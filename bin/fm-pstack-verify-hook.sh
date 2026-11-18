@@ -54,8 +54,8 @@
 #     own command line still counts. `<<-` and `<<-'EOF'` strip leading tabs
 #     on the closer before matching. A trailing CR on the closer is ignored.
 #     `<<<` is a here-string, not a heredoc, so quote blanking still applies.
-#     An unclosed `<<` is not a heredoc. Arithmetic shifts and `#` comments
-#     that never reach a closer therefore keep later redirects.
+#     `<<` inside `$((...))` or `((...))`, or in a `#` comment that starts at
+#     a word boundary outside quotes, is not a heredoc opener.
 #     Nested or escaped quotes are not parsed. Paths whose final extension is
 #     .bak, .orig, or .swp stay silent. In-place editors (sed -i) are not covered.
 #   speed or perf claim -> principle-explain-the-number
@@ -283,11 +283,12 @@ _heredoc_line_is_closer() {  # <line> <delim> <dash>
 # Blank `<` there too so a quoted `<<` is not treated as a heredoc opener.
 # Blank `>` on heredoc body lines only; the opener line is kept so a
 # redirect on that line still counts. `<<<` is a here-string and stays in
-# the quote scanner. If no closer line matches, the opener is not a
-# heredoc and the original command is kept. Nested and escaped quotes
-# are not parsed.
+# the quote scanner. `<<` inside `$((...))` or `((...))`, or in a `#`
+# comment that starts at a word boundary, is not an opener. Nested and
+# escaped quotes are not parsed.
 _blank_gt_inside_quotes() {  # <command>
   local s=$1 out='' i=0 n c q='' heredoc=0 delim='' line='' dash=0
+  local comment=0 arith=0 depth=0 word_start=1
   n=${#s}
   while [ "$i" -lt "$n" ]; do
     c=${s:$i:1}
@@ -297,6 +298,7 @@ _blank_gt_inside_quotes() {  # <command>
           heredoc=0
           delim=
           dash=0
+          word_start=1
           out=$out$line$c
         else
           out=$out${line//>/ }$c
@@ -320,12 +322,61 @@ _blank_gt_inside_quotes() {  # <command>
       i=$((i + 1))
       continue
     fi
+    if [ "$comment" = 1 ]; then
+      out=$out$c
+      if [ "$c" = $'\n' ]; then
+        comment=0
+        word_start=1
+      fi
+      i=$((i + 1))
+      continue
+    fi
+    if [ "$arith" = 1 ]; then
+      out=$out$c
+      case "$c" in
+        '(') depth=$((depth + 1)) ;;
+        ')')
+          depth=$((depth - 1))
+          if [ "$depth" -le 0 ]; then
+            arith=0
+            depth=0
+            word_start=1
+          fi
+          ;;
+      esac
+      i=$((i + 1))
+      continue
+    fi
+    if [ "$word_start" = 1 ] && [ "$c" = '#' ]; then
+      comment=1
+      out=$out$c
+      i=$((i + 1))
+      continue
+    fi
+    if [ "$c" = '$' ] && [ $((i + 2)) -lt "$n" ] && [ "${s:$((i + 1)):2}" = '((' ]; then
+      arith=1
+      depth=2
+      word_start=0
+      out=$out'$'
+      out=$out'(('
+      i=$((i + 3))
+      continue
+    fi
+    if [ "$word_start" = 1 ] && [ "$c" = '(' ] && [ $((i + 1)) -lt "$n" ] && [ "${s:$((i + 1)):1}" = '(' ]; then
+      arith=1
+      depth=2
+      word_start=0
+      out=$out'(('
+      i=$((i + 2))
+      continue
+    fi
     if [ "$c" = '<' ] && [ $((i + 1)) -lt "$n" ] && [ "${s:$((i + 1)):1}" = '<' ]; then
       out=$out'<<'
       i=$((i + 2))
       if [ "$i" -lt "$n" ] && [ "${s:$i:1}" = '<' ]; then
         out=$out'<'
         i=$((i + 1))
+        word_start=0
         continue
       fi
       dash=0
@@ -383,11 +434,18 @@ _blank_gt_inside_quotes() {  # <command>
         heredoc=1
         line=
       fi
+      word_start=1
       continue
     fi
     case "$c" in
-      \'|\") q=$c; out=$out$c ;;
-      *) out=$out$c ;;
+      \'|\") q=$c; out=$out$c; word_start=0 ;;
+      *)
+        out=$out$c
+        case "$c" in
+          [[:space:]]|';'|'|'|'&'|'('|')') word_start=1 ;;
+          *) word_start=0 ;;
+        esac
+        ;;
     esac
     i=$((i + 1))
   done
@@ -395,8 +453,7 @@ _blank_gt_inside_quotes() {  # <command>
     if _heredoc_line_is_closer "$line" "$delim" "$dash"; then
       out=$out$line
     else
-      printf '%s' "$s"
-      return 0
+      out=$out${line//>/ }
     fi
   fi
   printf '%s' "$out"

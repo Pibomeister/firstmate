@@ -308,30 +308,56 @@ test_heredoc_closer_cr_still_sees_later_test_redirect() {
 
 test_arithmetic_shift_does_not_hide_a_later_test_redirect() {
   local cmd
-  cmd=$(printf 'n=$%s\ncat > tests/foo.test.sh <<EOF\npass\nEOF' '((1<<2))')
+  cmd=$(printf 'n=$%s\ncat > tests/foo.test.sh <<END\npass\nEND\nEOF' '((1<<EOF))')
   run_hook "$PRIMARY" \
     "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
     --claude
   expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "arithmetic 1<<2 then a later test redirect"
-  cmd=$(printf 'n=$%s\ncat > tests/foo.test.sh <<EOF\npass\nEOF' '((1 << 2))')
+    "arithmetic 1<<EOF then a later test redirect with closer EOF"
+  cmd=$(printf 'n=$%s\ncat > tests/foo.test.sh <<EOF\npass\nEOF\n2' '((1<<2))')
   run_hook "$PRIMARY" \
     "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
     --claude
   expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "arithmetic 1 << 2 then a later test redirect"
+    "arithmetic 1<<2 then a later test redirect with closer 2"
+  cmd=$(printf 'n=$%s\ncat > tests/foo.test.sh <<EOF\npass\nEOF\n2' '((1 << 2))')
+  run_hook "$PRIMARY" \
+    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
+    --claude
+  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
+    "arithmetic 1 << 2 then a later test redirect with closer 2"
   pass "an arithmetic << does not hide a later test-path redirect"
 }
 
 test_comment_heredoc_opener_does_not_hide_a_later_test_redirect() {
   local cmd
-  cmd=$(printf 'echo hi # cat <<EOF\ncat > tests/foo.test.sh <<END\npass\nEND')
+  cmd=$(printf '# cat <<EOF\ncat > tests/foo.test.sh <<EOF\npass\nEOF')
   run_hook "$PRIMARY" \
     "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
     --claude
   expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "comment <<EOF then a later test redirect"
+    "comment <<EOF then a later test redirect with closer EOF"
   pass "a # comment << opener does not hide a later test-path redirect"
+}
+
+test_false_opener_does_not_unblank_a_closed_heredoc_body() {
+  local cmd
+  cmd=$(printf 'n=$%s\ncat > /tmp/setup.sh <<EOF\necho x > tests/foo.test.sh\nEOF' '((1<<2))')
+  run_hook "$PRIMARY" \
+    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
+    --claude
+  expect_silent "arithmetic << then a closed heredoc body greater-than"
+  cmd=$(printf 'cat > /tmp/setup.sh <<EOF\necho x > tests/foo.test.sh\nEOF\nn=$%s' '((1<<2))')
+  run_hook "$PRIMARY" \
+    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
+    --claude
+  expect_silent "closed heredoc body greater-than then arithmetic <<"
+  cmd=$(printf '# cat <<EOF\ncat > /tmp/s.sh <<END\necho x > tests/foo.test.sh\nEND')
+  run_hook "$PRIMARY" \
+    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
+    --claude
+  expect_silent "comment << then a closed heredoc body greater-than"
+  pass "a false << opener does not unblank > in a closed heredoc body"
 }
 
 test_backup_test_path_is_silent() {
@@ -1362,6 +1388,7 @@ test_here_string_gt_follows_quote_blanking
 test_heredoc_closer_cr_still_sees_later_test_redirect
 test_arithmetic_shift_does_not_hide_a_later_test_redirect
 test_comment_heredoc_opener_does_not_hide_a_later_test_redirect
+test_false_opener_does_not_unblank_a_closed_heredoc_body
 test_backup_test_path_is_silent
 test_claude_write_of_test_file_emits_once_across_pre_and_post
 test_contest_path_is_not_a_test_write
