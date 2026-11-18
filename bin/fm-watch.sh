@@ -490,10 +490,31 @@ HEARTBEAT=${FM_HEARTBEAT:-600}        # base seconds between heartbeat scans
 HEARTBEAT_MAX=${FM_HEARTBEAT_MAX:-7200}  # heartbeat backoff cap
 CHECK_INTERVAL=${FM_CHECK_INTERVAL:-300}  # seconds between *.check.sh sweeps
 CHECK_TIMEOUT=${FM_CHECK_TIMEOUT:-30}     # seconds allowed per *.check.sh
-HOME_SUMMARY_INTERVAL=${FM_HOME_SUMMARY_INTERVAL:-300}
-case "$HOME_SUMMARY_INTERVAL" in
-  ''|*[!0-9]*|0) HOME_SUMMARY_INTERVAL=300 ;;
-esac
+# Expensive idle collection (the home summary and the heartbeat ledger) runs on
+# a relevant change and otherwise once per idle interval. Each idle due is drawn
+# from [interval - jitter, interval], so homes started together drift apart and
+# the interval stays the longest gap. Cheap liveness (the watcher beat) and
+# event delivery keep the poll period.
+watch_secs_or() {  # <output-variable> <value> <default>: a whole positive count, else the default
+  case "$2" in
+    ''|*[!0-9]*) printf -v "$1" '%s' "$3" ;;
+    *) if [ $((10#$2)) -gt 0 ]; then printf -v "$1" '%s' $((10#$2)); else printf -v "$1" '%s' "$3"; fi ;;
+  esac
+}
+watch_jitter_or() {  # <output-variable> <value> <default> <interval>: 0..interval-1
+  case "$2" in
+    ''|*[!0-9]*) printf -v "$1" '%s' "$3" ;;
+    *) printf -v "$1" '%s' $((10#$2)) ;;
+  esac
+  [ "${!1}" -lt "$4" ] || printf -v "$1" '%s' $(($4 - 1))
+}
+watch_idle_due() {  # <output-variable> <from-epoch> <interval> <jitter>
+  printf -v "$1" '%s' $(($2 + $3 - RANDOM % ($4 + 1)))
+}
+watch_secs_or HOME_SUMMARY_INTERVAL "${FM_HOME_SUMMARY_INTERVAL:-}" 300
+watch_jitter_or HOME_SUMMARY_JITTER "${FM_HOME_SUMMARY_JITTER:-}" 60 "$HOME_SUMMARY_INTERVAL"
+watch_secs_or HEARTBEAT_LEDGER_IDLE "${FM_HEARTBEAT_LEDGER_IDLE_SECS:-}" 300
+watch_jitter_or HEARTBEAT_LEDGER_JITTER "${FM_HEARTBEAT_LEDGER_JITTER:-}" 120 "$HEARTBEAT_LEDGER_IDLE"
 SIGNAL_GRACE=${FM_SIGNAL_GRACE:-30}   # seconds to linger after a signal so trailing
                                       # signals (a status write, then the same turn's
                                       # turn-end hook) coalesce into one wake
@@ -5263,7 +5284,14 @@ fi
 # first. Publication is eventually consistent by design and every reader
 # re-derives current state from the owning home anyway, while beacon freshness
 # is what the whole supervision chain rests on.
+#
+# A status signal starts a refresh at once. Without one, a refresh starts only
+# when both the ledger and this watcher's last launch are older than the idle
+# gap drawn at that launch, so a home whose publication keeps failing retries
+# once per idle gap rather than on every poll.
 HOME_SUMMARY_PID=
+HOME_SUMMARY_LAST=0
+HOME_SUMMARY_GAP=$HOME_SUMMARY_INTERVAL
 home_summary_refresh_detached() {
   if [ -n "$HOME_SUMMARY_PID" ]; then
     if kill -0 "$HOME_SUMMARY_PID" 2>/dev/null; then
@@ -5275,6 +5303,14 @@ home_summary_refresh_detached() {
   FM_HOME_SUMMARY_IF_IDLE=1 \
     "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort </dev/null >/dev/null 2>&1 &
   HOME_SUMMARY_PID=$!
+  fm_watch_now HOME_SUMMARY_LAST
+  watch_idle_due HOME_SUMMARY_GAP 0 "$HOME_SUMMARY_INTERVAL" "$HOME_SUMMARY_JITTER"
+}
+home_summary_idle_due() {
+  local now
+  fm_watch_now now
+  [ $((now - HOME_SUMMARY_LAST)) -ge "$HOME_SUMMARY_GAP" ] \
+    && [ "$(age_of "$STATE/home-summary.json")" -ge "$HOME_SUMMARY_GAP" ]
 }
 
 # Opt-in lane capacity facts (docs/configuration.md "Lane capacity"): publish
@@ -5330,30 +5366,64 @@ load_relief_check_detached() {
 
 # Self-watching heartbeat ledger: publish state/heartbeat.json detached and
 # single-flight so no read can hold a poll. bin/fm-heartbeat.sh's header owns the
-# document and its bounds. An independent single-flight ticker launches one
-# detached publication every POLL seconds,
-# apart from this loop's own work, so POLL is the true launch interval that the
-# heartbeat's stale bound counts (stale_after_secs, HB-3). The first launch is
+# document and its bounds. An independent single-flight ticker, apart from this
+# loop's own work, checks every POLL seconds and launches one detached
+# publication when a relevant change has landed since its last launch - a new
+# wake-queue sequence from any producer, or this loop's status-signal mark - and
+# otherwise once its idle due arrives, drawn from [HEARTBEAT_LEDGER_IDLE -
+# HEARTBEAT_LEDGER_JITTER, HEARTBEAT_LEDGER_IDLE] after each launch. The larger
+# of POLL and HEARTBEAT_LEDGER_IDLE is therefore the longest launch interval
+# that the heartbeat's stale bound counts (stale_after_secs, HB-3). Event
+# delivery and the watcher beat never wait on this ledger. The first launch is
 # immediate; the ticker stops when this watcher exits or no longer holds the
 # singleton lock, and a publication already under way still completes.
 FLEET_HEARTBEAT_PID=
 FLEET_HEARTBEAT_TICKER_PID=
+FLEET_HEARTBEAT_SEEN=
+FLEET_HEARTBEAT_CHANGE_FILE=$STATE/.heartbeat-ledger-change
+FLEET_HEARTBEAT_CHANGE_GEN=0
+FLEET_HEARTBEAT_CYCLE=$HEARTBEAT_LEDGER_IDLE
+[ "$FLEET_HEARTBEAT_CYCLE" -ge "$POLL" ] 2>/dev/null || FLEET_HEARTBEAT_CYCLE=$POLL
 fleet_heartbeat_launch() {
-  # The heartbeat's stale bound starts from this watcher's cycle period, never
-  # the wake heartbeat cadence (bin/fm-heartbeat.sh stale_after_secs).
+  # The heartbeat's stale bound starts from this watcher's longest launch
+  # interval, never the wake heartbeat cadence (bin/fm-heartbeat.sh stale_after_secs).
   FM_HOME=$FM_HOME FM_ROOT_OVERRIDE=$FM_ROOT FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
-    FM_HEARTBEAT_CYCLE_SECS=$POLL \
+    FM_HEARTBEAT_CYCLE_SECS=$FLEET_HEARTBEAT_CYCLE \
     "${FM_HEARTBEAT_BIN:-$SCRIPT_DIR/fm-heartbeat.sh}" --write </dev/null >/dev/null 2>&1 &
   FLEET_HEARTBEAT_PID=$!
 }
 
-fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in flight
-  local nap
-  FLEET_HEARTBEAT_PID=$1
+# fleet_heartbeat_change_token <output-variable>: the change evidence the ticker
+# compares between launches, read with builtins only: the wake-queue sequence
+# (bin/fm-wake-lib.sh fm_wake_append) and this loop's status-signal mark.
+fleet_heartbeat_change_token() {
+  local seq='' mark=''
+  read -r seq 2>/dev/null < "$STATE/.wake-queue.seq" || true
+  read -r mark 2>/dev/null < "$FLEET_HEARTBEAT_CHANGE_FILE" || true
+  printf -v "$1" '%s/%s' "$seq" "$mark"
+}
+
+# fleet_heartbeat_mark_change: the loop's coalesced status-signal set is a
+# relevant change for the ledger even when triage absorbs it without a wake.
+fleet_heartbeat_mark_change() {
+  FLEET_HEARTBEAT_CHANGE_GEN=$((FLEET_HEARTBEAT_CHANGE_GEN + 1))
+  printf '%s:%s\n' "$WATCHER_PID" "$FLEET_HEARTBEAT_CHANGE_GEN" > "$FLEET_HEARTBEAT_CHANGE_FILE" 2>/dev/null || true
+}
+
+fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in flight, $2 the token it saw
+  local nap now due token
+  FLEET_HEARTBEAT_PID=$1 FLEET_HEARTBEAT_SEEN=$2
   trap - EXIT
   trap 'exit 0' HUP INT TERM
+  fm_watch_now now
+  watch_idle_due due "$now" "$HEARTBEAT_LEDGER_IDLE" "$HEARTBEAT_LEDGER_JITTER"
   while :; do
-    sleep "$POLL" &
+    # Sleep one poll, or only until a nearer idle due, so the idle interval is
+    # the launch interval rather than the next poll after it.
+    nap=$POLL
+    fm_watch_now now
+    [ "$due" -le "$now" ] || [ $((due - now)) -ge "$nap" ] || nap=$((due - now))
+    sleep "$nap" &
     nap=$!
     wait "$nap" 2>/dev/null || true
     kill -0 "$WATCHER_PID" 2>/dev/null || exit 0
@@ -5361,8 +5431,13 @@ fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in
     if [ -n "$FLEET_HEARTBEAT_PID" ] && kill -0 "$FLEET_HEARTBEAT_PID" 2>/dev/null; then
       continue
     fi
+    fleet_heartbeat_change_token token
+    fm_watch_now now
+    [ "$token" != "$FLEET_HEARTBEAT_SEEN" ] || [ "$now" -ge "$due" ] || continue
     [ -z "$FLEET_HEARTBEAT_PID" ] || wait "$FLEET_HEARTBEAT_PID" 2>/dev/null || true
+    FLEET_HEARTBEAT_SEEN=$token
     fleet_heartbeat_launch
+    watch_idle_due due "$now" "$HEARTBEAT_LEDGER_IDLE" "$HEARTBEAT_LEDGER_JITTER"
   done
 }
 
@@ -5374,9 +5449,10 @@ fleet_heartbeat_publish_detached() {
   FLEET_HEARTBEAT_TICKER_PID=
   if [ -z "$FLEET_HEARTBEAT_PID" ] || ! kill -0 "$FLEET_HEARTBEAT_PID" 2>/dev/null; then
     [ -z "$FLEET_HEARTBEAT_PID" ] || wait "$FLEET_HEARTBEAT_PID" 2>/dev/null || true
+    fleet_heartbeat_change_token FLEET_HEARTBEAT_SEEN
     fleet_heartbeat_launch
   fi
-  ( fleet_heartbeat_ticker "$FLEET_HEARTBEAT_PID" ) </dev/null >/dev/null 2>&1 &
+  ( fleet_heartbeat_ticker "$FLEET_HEARTBEAT_PID" "$FLEET_HEARTBEAT_SEEN" ) </dev/null >/dev/null 2>&1 &
   FLEET_HEARTBEAT_TICKER_PID=$!
 }
 
@@ -5665,7 +5741,7 @@ while :; do
     FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-rex-marks.sh" sync >/dev/null 2>&1 || true
   fi
 
-  if [ "$(age_of "$STATE/home-summary.json")" -ge "$HOME_SUMMARY_INTERVAL" ]; then
+  if home_summary_idle_due; then
     home_summary_refresh_detached
   fi
   # Opt-in lane capacity facts: off costs one file test.
@@ -5948,15 +6024,19 @@ EOF
   watch_stage status-signals
   pending=$(scan_signals)
   if [ -n "$pending" ]; then
+    # Mark the change for the heartbeat ledger at once, so its refresh does not
+    # wait out the grace; the coalesced set marks it again below.
+    fleet_heartbeat_mark_change
     sleep "$SIGNAL_GRACE"
     reconcile_overdue_pauses
     pending=$(printf '%s\n%s' "$pending" "$(scan_signals)")
     # The final coalesced signal set is the watcher-carried status-change
-    # trigger for this home's published summary. Start it before either
-    # surfacing or absorbing the signal, but never wait on it: see
-    # home_summary_refresh_detached for why publication stays off the beacon's
-    # path. Publication failure stays side-band.
+    # trigger for this home's published summary and its heartbeat ledger.
+    # Start the summary before either surfacing or absorbing the signal, but
+    # never wait on it: see home_summary_refresh_detached for why publication
+    # stays off the beacon's path. Publication failure stays side-band.
     home_summary_refresh_detached
+    fleet_heartbeat_mark_change
     files=""
     while IFS=$(printf '\t') read -r sf sig f; do
       [ -n "$sf" ] || continue

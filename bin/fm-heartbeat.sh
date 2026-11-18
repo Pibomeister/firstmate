@@ -27,8 +27,9 @@
 #   published_epoch   Unix seconds stamped at the successful publication; the
 #                     health verdict measures heartbeat age from this stamp
 #   fm_home           resolved operational home
-#   stale_after_secs  the stale bound: the watcher cycle period it passed as
-#                     FM_HEARTBEAT_CYCLE_SECS, never the wake heartbeat cadence,
+#   stale_after_secs  the stale bound: the watcher's longest launch interval
+#                     (its cycle period), passed as FM_HEARTBEAT_CYCLE_SECS,
+#                     never the wake heartbeat cadence,
 #                     plus the stale-grace-secs key of config/heartbeat
 #                     (docs/configuration.md), plus one whole-run cap; null while
 #                     the cycle period or the grace is missing. The whole-run
@@ -46,14 +47,16 @@
 #                     reads and the state database lookup of an incomplete
 #                     run table); and that slack on the snapshot, discovery
 #                     and quota bounds. The watcher's independent ticker
-#                     launches a run every cycle, whatever the watcher loop is
-#                     doing, and a run cannot outlast the cap, so a healthy
-#                     home's age stays within cycle + run cap. A dead
+#                     launches a run on a relevant change and at least once
+#                     per cycle, whatever the watcher loop is doing, and a run
+#                     cannot outlast the cap, so a healthy home's age stays
+#                     within cycle + run cap. A dead
 #                     publisher stamps nothing more and reads past the bound
 #                     stale_after_secs after its last publication: that is the
 #                     detection delay, plus the verdict reader's own cadence.
 #                     With the defaults (DEADLINE 240, READ 3) the cap is 411 s,
-#                     so a 15 s cycle and a 60 s grace give a 486 s delay.
+#                     so the watcher's default 300 s idle cycle and a 60 s
+#                     grace give a 771 s delay.
 #   snapshot          {ok, schema, generated, failure} for the fleet snapshot read
 #   primary           supervising firstmate session (not a ship/scout task row)
 #     terminal          {backend, target, present} from this writer's environment
@@ -120,8 +123,9 @@
 # use it to simulate slow reads without touching the real fleet snapshot.
 #
 # bin/fm-watch.sh runs --write detached and single-flight from an independent
-# ticker every watcher cycle, so no read here can hold a watcher poll and no
-# watcher loop work can delay a launch.
+# ticker on a relevant change and otherwise once per idle interval (its header
+# owns that cadence), so no read here can hold a watcher poll and no watcher
+# loop work can delay a launch.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
