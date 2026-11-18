@@ -218,7 +218,12 @@ case "${1:-} ${2:-}" in
       jq -c '.isInMergeQueue = true' "$d/pull-$number.json" > "$d/pull-$number.json.new" \
         && mv "$d/pull-$number.json.new" "$d/pull-$number.json"
       printf '%s\n' 'state=OPEN' 'merged=false' 'queued=true' 'base=main' > "$d/github-outcome"
+    elif [ "$effect" = auto ]; then
+      # The forge accepted the request and merges later by itself.
+      jq -c '.autoMergeRequest = {enabledAt: "2026-11-18T00:00:00Z"}' "$d/pull-$number.json" \
+        > "$d/pull-$number.json.new" && mv "$d/pull-$number.json.new" "$d/pull-$number.json"
     fi
+    hook merge-done
     [ ! -e "$d/pull-read-fail-after-merge" ] || : > "$d/pull-read-fail"
     if [ "$rc" -eq 0 ]; then
       printf 'merged:\n  number: %s\n  status: ok\n' "$number"
@@ -232,6 +237,7 @@ case "${1:-} ${2:-}" in
       *changedFiles*)
         # The one-answer pull request read of bin/fm-self-land.sh.
         [ ! -e "$d/pull-read-fail" ] || exit 1
+        hook pull-read
         number=
         for arg in "$@"; do
           case "$arg" in number=*) number=${arg#number=} ;; esac
@@ -249,7 +255,47 @@ case "${1:-} ${2:-}" in
   api\ *)
     case " $* " in
       *" repos/"*"/compare/"*)
-        git -C "$d/wt" rev-parse origin/main
+        # The merge gate asks for the merge base of two commits.
+        case " $* " in
+          *" --jq "*)
+            git -C "$d/wt" rev-parse origin/main
+            exit 0
+            ;;
+        esac
+        # bin/fm-self-land.sh asks for the files that differ between two
+        # commits. A case can pin the list of one commit pair; otherwise the
+        # list is the one of the pull request that sits on that pair now.
+        [ ! -e "$d/files-read-fail" ] || exit 1
+        pair=
+        for arg in "$@"; do
+          case "$arg" in
+            repos/*/compare/*)
+              pair=${arg#*/compare/}
+              pair=${pair%%\?*}
+              ;;
+          esac
+        done
+        base=${pair%%...*}
+        head=${pair#*...}
+        list=
+        if [ -f "$d/compare-$base-$head.json" ]; then
+          list=$d/compare-$base-$head.json
+        else
+          for pull in "$d"/pull-*.json; do
+            [ -f "$pull" ] || continue
+            if [ "$(jq -r '.baseRefOid + " " + .headRefOid' "$pull")" = "$base $head" ]; then
+              number=${pull##*/pull-}
+              list=$d/files-${number%.json}.json
+            fi
+          done
+        fi
+        if [ -z "$list" ] || [ ! -f "$list" ]; then
+          printf 'gh: Not Found (HTTP 404)\n' >&2
+          exit 1
+        fi
+        [ ! -f "$d/compare-answers-base" ] || base=$(cat "$d/compare-answers-base")
+        jq -c --arg base "$base" '{base_commit: {sha: $base}, files: .}' "$list" || exit 1
+        hook files-read
         exit 0
         ;;
       *" repos/"*"/pulls/"*"/files"*)
@@ -382,13 +428,32 @@ assert_gate_stopped() {  # <case_dir> <reason> <label>
   assert_absent "$(repo_dir "$case_dir")/landed.tsv" "$label: a stopped merge was logged as landed"
 }
 
-# The pending record an earlier run left behind. Args: case_dir url head state
+# The pending record an earlier run left behind. With a process id, the record
+# names that process as the sender of its merge command.
+# Args: case_dir url head state [sender process id]
 seed_pending() {
   FM_HOME="$1/home" FM_STATE_OVERRIDE="$1/state" bash -c '
     . "$1/bin/fm-merge-authority-lib.sh" && . "$1/bin/fm-wake-lib.sh" || exit 1
     fm_self_land_pending_write "$2" task-x1 "$3" "$4" attended earlier-run || exit 1
-    [ "$5" = armed ] || fm_self_land_pending_change "$2" earlier-run armed "$5"' \
-    _ "$ROOT" "$(repo_dir "$1")" "$2" "$3" "$4"
+    [ "$5" != armed ] || exit 0
+    if [ -n "$6" ]; then
+      fm_self_land_pending_change "$2" earlier-run armed "$5" "$(fm_self_land_sender_of "$6")"
+    else
+      fm_self_land_pending_change "$2" earlier-run armed "$5"
+    fi' \
+    _ "$ROOT" "$(repo_dir "$1")" "$2" "$3" "$4" "${5:-}"
+}
+
+# Add task <task-id> to the backlog of a case and hold it for the captain.
+hold_task() {  # <case_dir> <task-id>
+  FM_HOME="$1/home" FM_STATE_OVERRIDE="$1/state" \
+    "$ROOT/bin/fm-tasks-axi.sh" add "$2" "Held merge" --kind ship --repo example \
+    > "$1/hold-add.out" 2> "$1/hold-add.err" \
+    || fail "could not add task $2: $(cat "$1/hold-add.err")"
+  FM_HOME="$1/home" FM_STATE_OVERRIDE="$1/state" \
+    "$ROOT/bin/fm-captain-hold.sh" hold "$2" --reason "captain merge approval pending" \
+    > "$1/hold.out" 2> "$1/hold.err" \
+    || fail "could not hold task $2: $(cat "$1/hold.err")"
 }
 
 # A case that is ready to land: allowlisted, approved at its head, green.
@@ -574,6 +639,36 @@ test_refuses_a_diff_that_touches_a_protected_path() {
   pass "refuses a diff that touches the merge gates or the workflows"
 }
 
+test_file_list_is_read_for_the_commits_that_merge() {
+  local case_dir head url
+
+  # The forge's list for the pull request number shows ordinary files only: the
+  # pull request pointed at another base for a moment. The diff between the
+  # base commit and the head, which is what merges, changes a workflow.
+  url=$REPO_URL/pull/325
+  read -r case_dir head <<< "$(ready_case scan-bound 325)"
+  write_pull "$case_dir" 325 "$head" 2
+  write_files "$case_dir" 325 '[{filename: "change.txt"}, {filename: "notes.md"}]'
+  jq -c -n '[{filename: "change.txt"}, {filename: ".github/workflows/ci.yml"}]' \
+    > "$case_dir/compare-$BASE_SHA-$head.json"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  assert_refused "$case_dir" protected-path "scan-bound"
+  assert_grep '.github/workflows/ci.yml' "$case_dir/stderr" \
+    "scan-bound: the workflow of the diff that merges was not named: $(cat "$case_dir/stderr")"
+
+  # An answer for another base commit than the one asked is not a file list of
+  # this diff.
+  url=$REPO_URL/pull/326
+  read -r case_dir head <<< "$(ready_case scan-other-base 326)"
+  printf '%s\n' "$OTHER_SHA" > "$case_dir/compare-answers-base"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  assert_refused "$case_dir" forge-read "scan-other-base"
+  rm -f "$case_dir/compare-answers-base"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  expect_code 0 "$(cat "$case_dir/rc")" "scan-other-base: the list of the asked commits must land: $(cat "$case_dir/stderr")"
+  pass "reads the file list of the base commit and the head that merge"
+}
+
 test_stop_file_refuses_every_landing() {
   local case_dir head url=$REPO_URL/pull/331
   read -r case_dir head <<< "$(ready_case stop-file 331)"
@@ -591,17 +686,42 @@ test_stop_file_refuses_every_landing() {
 test_captain_hold_refuses_the_landing() {
   local case_dir head url=$REPO_URL/pull/341
   read -r case_dir head <<< "$(ready_case hold 341)"
-  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
-    "$ROOT/bin/fm-tasks-axi.sh" add task-x1 "Held merge" --kind ship --repo example \
-    > "$case_dir/hold-add.out" 2> "$case_dir/hold-add.err" \
-    || fail "hold: could not add the task: $(cat "$case_dir/hold-add.err")"
-  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
-    "$ROOT/bin/fm-captain-hold.sh" hold task-x1 --reason "captain merge approval pending" \
-    > "$case_dir/hold.out" 2> "$case_dir/hold.err" \
-    || fail "hold: could not hold the task: $(cat "$case_dir/hold.err")"
+  hold_task "$case_dir" task-x1
   land "$case_dir" task-x1 "$url" --head "$head"
   assert_refused "$case_dir" hold "hold"
-  pass "refuses a task that is held for the captain"
+
+  # The pull request belongs to a held task, and the caller names another task
+  # that is free and records no pull request. Letter case does not hide it.
+  url=$REPO_URL/pull/342
+  read -r case_dir head <<< "$(ready_case hold-other-task 342)"
+  fm_write_meta "$case_dir/state/task-a1.meta" \
+    "window=fm-task-a1" \
+    "worktree=$case_dir/wt" \
+    "project=$case_dir/project" \
+    "kind=ship" \
+    "mode=no-mistakes" \
+    "pr=https://github.com/Example/Repo/pull/342"
+  hold_task "$case_dir" task-a1
+  land "$case_dir" task-x1 "$url" --head "$head"
+  assert_refused "$case_dir" hold "hold-other-task"
+  assert_grep 'task task-a1' "$case_dir/stderr" \
+    "hold-other-task: the refusal did not name the held task: $(cat "$case_dir/stderr")"
+  [ ! -s "$case_dir/gh.log" ] || fail "hold-other-task: the forge was read for a held pull request"
+
+  # A held task that names another pull request holds nothing back here.
+  url=$REPO_URL/pull/343
+  read -r case_dir head <<< "$(ready_case hold-unrelated 343)"
+  fm_write_meta "$case_dir/state/task-b1.meta" \
+    "window=fm-task-b1" \
+    "worktree=$case_dir/wt" \
+    "project=$case_dir/project" \
+    "kind=ship" \
+    "mode=no-mistakes" \
+    "pr=$REPO_URL/pull/1343"
+  hold_task "$case_dir" task-b1
+  land "$case_dir" task-x1 "$url" --head "$head"
+  expect_code 0 "$(cat "$case_dir/rc")" "hold-unrelated: a hold on another pull request must not refuse: $(cat "$case_dir/stderr")"
+  pass "refuses a pull request that is held for the captain, under any task id"
 }
 
 test_second_merge_in_flight_is_refused() {
@@ -719,9 +839,11 @@ test_red_base_trips_the_breaker_and_it_stays_tripped() {
   # A base branch whose name has a slash is read as one URL path segment.
   url=$REPO_URL/pull/364
   read -r case_dir head <<< "$(ready_case breaker-slashed-base 364)"
-  write_pull "$case_dir" 364 "$head" 1 release/v1
+  write_pull "$case_dir" 364 "$head" 1 release/v1 "$RELEASE_SHA"
+  printf '{"name":"release/v1","commit":{"sha":"%s"}}\n' "$RELEASE_SHA" > "$case_dir/branch-release%2Fv1.json"
   printf '{"total_count":1,"check_runs":[{"name":"ci","status":"completed","conclusion":"failure"}]}\n' \
-    > "$case_dir/base-check-runs.json"
+    > "$case_dir/check-runs-$RELEASE_SHA.json"
+  printf '{"state":"success","statuses":[]}\n' > "$case_dir/status-$RELEASE_SHA.json"
   land "$case_dir" task-x1 "$url" --head "$head"
   assert_grep 'self-land: refused (red-base)' "$case_dir/stderr" \
     "breaker-slashed-base: the base branch release/v1 must be read, got: $(cat "$case_dir/stderr")"
@@ -918,7 +1040,16 @@ test_queued_merge_holds_the_repository_until_it_leaves_the_queue() {
   expect_code 1 "$(cat "$case_dir/rc")" "queued: a repeat must refuse while the merge is queued"
   assert_grep 'self-land: refused (in-flight)' "$case_dir/stderr" \
     "queued: expected an in-flight refusal, got: $(cat "$case_dir/stderr")"
-  assert_grep 'merge queue' "$case_dir/stderr" "queued: the refusal did not name the merge queue"
+  assert_grep "waits in the forge's merge queue" "$case_dir/stderr" \
+    "queued: the refusal did not say that the merge waits in the merge queue: $(cat "$case_dir/stderr")"
+  assert_equals queued "$(pending_state "$case_dir")" "queued: a repeat must leave the record queued"
+  # The hold has no time limit: a second repeat, long after the first, and a
+  # landing of another pull request both still refuse.
+  age_pending "$case_dir" 100000
+  land "$case_dir" task-x1 "$url" --head "$head"
+  expect_code 1 "$(cat "$case_dir/rc")" "queued: a later repeat must refuse while the merge is queued"
+  assert_equals queued "$(pending_state "$case_dir")" "queued: a later repeat must leave the record queued"
+  age_pending "$case_dir" 100000
   write_pull "$case_dir" 412 "$head"
   write_files "$case_dir" 412 '[{filename: "change.txt", status: "added"}]'
   land "$case_dir" task-x1 "$REPO_URL/pull/412" --head "$head"
@@ -926,7 +1057,7 @@ test_queued_merge_holds_the_repository_until_it_leaves_the_queue() {
   assert_grep 'self-land: refused (in-flight)' "$case_dir/stderr" \
     "queued: expected an in-flight refusal for the second landing, got: $(cat "$case_dir/stderr")"
   [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "queued: a merge command was sent while one was queued"
-  assert_present "$(repo_dir "$case_dir")/pending" "queued: the record of a queued merge was dropped"
+  assert_equals queued "$(pending_state "$case_dir")" "queued: the record of a queued merge must stay queued"
 
   # The queue merged it: the next run records the landing once.
   edit_pull "$case_dir" 411 \
@@ -964,7 +1095,104 @@ test_queued_merge_holds_the_repository_until_it_leaves_the_queue() {
   land "$case_dir" task-x1 "$url" --head "$head"
   expect_code 0 "$(cat "$case_dir/rc")" "dequeued: after the grace the landing must run afresh: $(cat "$case_dir/stderr")"
   [ "$(merge_calls "$case_dir")" -eq 2 ] || fail "dequeued: expected the queued merge command and one new one"
+
+  # The response to the merge command was lost and the pull request could not
+  # be read back: the next run finds it in the queue and holds, with no time
+  # limit, as it does for a merge it saw enter the queue.
+  url=$REPO_URL/pull/414
+  read -r case_dir head <<< "$(ready_case queued-lost 414)"
+  printf '1\n' > "$case_dir/merge-rc"
+  printf 'queued\n' > "$case_dir/merge-effect"
+  : > "$case_dir/pull-read-fail-after-merge"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  [ "$(cat "$case_dir/rc")" -ne 0 ] || fail "queued-lost: a lost response must not report success"
+  assert_equals sent "$(pending_state "$case_dir")" "queued-lost: the record must say the merge was sent"
+  rm -f "$case_dir/pull-read-fail" "$case_dir/pull-read-fail-after-merge" "$case_dir/merge-rc" "$case_dir/merge-effect"
+  age_pending "$case_dir" 100000
+  land "$case_dir" task-x1 "$url" --head "$head"
+  expect_code 1 "$(cat "$case_dir/rc")" "queued-lost: the run that finds the merge in the queue must refuse"
+  assert_grep 'self-land: refused (in-flight)' "$case_dir/stderr" \
+    "queued-lost: expected an in-flight refusal, got: $(cat "$case_dir/stderr")"
+  assert_equals queued "$(pending_state "$case_dir")" "queued-lost: the record must say the merge is queued"
+  age_pending "$case_dir" 100000
+  land "$case_dir" task-x1 "$url" --head "$head"
+  expect_code 1 "$(cat "$case_dir/rc")" "queued-lost: a later repeat must still refuse"
+  [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "queued-lost: a second merge command was sent while the first was queued"
   pass "holds the repository while a merge waits in the forge's merge queue"
+}
+
+test_armed_auto_merge_holds_the_repository_until_the_forge_lets_go() {
+  local case_dir head url sender
+
+  # The forge accepted the merge command by arming auto-merge: it merges by
+  # itself later, and the pull request is neither merged nor in the queue.
+  url=$REPO_URL/pull/415
+  read -r case_dir head <<< "$(ready_case auto-merge 415)"
+  printf 'auto\n' > "$case_dir/merge-effect"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  assert_grep "self-land: queued $url head=$head" "$case_dir/stdout" \
+    "auto-merge: the held merge was not reported: $(cat "$case_dir/stdout") $(cat "$case_dir/stderr")"
+  expect_code 0 "$(cat "$case_dir/rc")" "auto-merge: a merge the forge holds is not a failure: $(cat "$case_dir/stderr")"
+  assert_grep 'auto-merge armed' "$case_dir/stdout" "auto-merge: the report did not name the armed auto-merge"
+  assert_equals queued "$(pending_state "$case_dir")" "auto-merge: the record must say the forge holds the merge"
+  assert_absent "$(repo_dir "$case_dir")/landed.tsv" "auto-merge: an unmerged pull request was logged as landed"
+
+  # However long the forge takes, the record stays and nothing else is sent.
+  rm -f "$case_dir/merge-effect"
+  age_pending "$case_dir" 100000
+  land "$case_dir" task-x1 "$url" --head "$head"
+  expect_code 1 "$(cat "$case_dir/rc")" "auto-merge: a repeat must refuse while auto-merge is armed"
+  assert_grep 'self-land: refused (in-flight)' "$case_dir/stderr" \
+    "auto-merge: expected an in-flight refusal, got: $(cat "$case_dir/stderr")"
+  assert_grep 'auto-merge armed' "$case_dir/stderr" "auto-merge: the refusal did not name the armed auto-merge"
+  assert_equals queued "$(pending_state "$case_dir")" "auto-merge: a repeat must leave the record held"
+  age_pending "$case_dir" 100000
+  write_pull "$case_dir" 416 "$head"
+  write_files "$case_dir" 416 '[{filename: "change.txt", status: "added"}]'
+  land "$case_dir" task-x1 "$REPO_URL/pull/416" --head "$head"
+  expect_code 1 "$(cat "$case_dir/rc")" "auto-merge: a second landing must refuse while auto-merge is armed"
+  [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "auto-merge: a merge command was sent while auto-merge was armed"
+
+  # Auto-merge is disarmed, unmerged: the clock of an unmerged merge starts
+  # when that is first seen.
+  edit_pull "$case_dir" 415 '.autoMergeRequest = null'
+  age_pending "$case_dir" 100000
+  land "$case_dir" task-x1 "$url" --head "$head"
+  expect_code 1 "$(cat "$case_dir/rc")" "auto-merge: the run that sees auto-merge disarmed must refuse"
+  assert_equals sent "$(pending_state "$case_dir")" "auto-merge: the record must fall back to a sent merge"
+  [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "auto-merge: a merge command was sent inside the new grace"
+
+  # The forge merged it by itself: the next run records the landing once.
+  edit_pull "$case_dir" 415 ".state = \"MERGED\" | .merged = true | .mergeCommit = {oid: \"$MERGE_SHA\"}"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  expect_code 0 "$(cat "$case_dir/rc")" "auto-merged: the merge must reconcile: $(cat "$case_dir/stderr")"
+  [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "auto-merged: the reconciliation sent a second merge command"
+  [ "$(wc -l < "$(repo_dir "$case_dir")/landed.tsv" | tr -d ' ')" -eq 1 ] || fail "auto-merged: expected one landed line"
+
+  # The run was stopped, but the merge command it sent still runs: its record
+  # is not dropped for its age, because the command can still reach the forge.
+  url=$REPO_URL/pull/417
+  read -r case_dir head <<< "$(ready_case sender-alive 417)"
+  sleep 600 &
+  sender=$!
+  seed_pending "$case_dir" "$url" "$head" sent "$sender" \
+    || { kill "$sender" 2>/dev/null; fail "sender-alive: could not write the pending record"; }
+  age_pending "$case_dir" 100000
+  land "$case_dir" task-x1 "$url" --head "$head"
+  kill "$sender" 2>/dev/null
+  wait "$sender" 2>/dev/null
+  expect_code 1 "$(cat "$case_dir/rc")" "sender-alive: a merge command that still runs must refuse: $(cat "$case_dir/stderr")"
+  assert_grep 'self-land: refused (in-flight)' "$case_dir/stderr" \
+    "sender-alive: expected an in-flight refusal, got: $(cat "$case_dir/stderr")"
+  assert_grep 'still runs' "$case_dir/stderr" "sender-alive: the refusal did not name the running merge command"
+  [ "$(merge_calls "$case_dir")" -eq 0 ] || fail "sender-alive: a merge was sent while an earlier merge command still ran"
+  assert_present "$(repo_dir "$case_dir")/pending" "sender-alive: the record of a running merge command was dropped"
+
+  # The merge command ended with no merge: the old record is dropped now.
+  land "$case_dir" task-x1 "$url" --head "$head"
+  expect_code 0 "$(cat "$case_dir/rc")" "sender-ended: an expired record of an ended command must not block: $(cat "$case_dir/stderr")"
+  [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "sender-ended: expected exactly one merge command"
+  pass "holds the repository while auto-merge is armed or a merge command still runs"
 }
 
 test_inherited_forge_host_does_not_redirect_the_landing() {
@@ -1039,7 +1267,71 @@ test_changes_while_the_merge_gate_waits_stop_the_merge_command() {
   assert_grep 'changed after its diff was checked' "$case_dir/stderr" \
     "scan-retarget: the refusal did not name the changed base: $(cat "$case_dir/stderr")"
   assert_no_grep 'statusCheckRollup' "$case_dir/gh.log" "scan-retarget: the merge gate started on a retargeted pull request"
+
+  # The stop file appears while the check in front of the merge command reads
+  # the pull request, which is its last forge read.
+  url=$REPO_URL/pull/437
+  read -r case_dir head <<< "$(ready_case gate-stop-late 437)"
+  printf '%s\n' '! grep -q statusCheckRollup "$d/gh.log" || : > "$d/state/.self-land-off"' \
+    > "$case_dir/hook-pull-read"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  assert_gate_stopped "$case_dir" stop-file "gate-stop-late"
+
+  # The review requirement is removed after the wrapper's own review check, so
+  # the merge gate no longer asks for a review.
+  url=$REPO_URL/pull/438
+  read -r case_dir head <<< "$(ready_case gate-review 438)"
+  printf '%s\n' 'rm -f "$d/home/config/merge-review"' > "$case_dir/hook-files-read"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  assert_gate_stopped "$case_dir" evidence "gate-review"
+
+  # Another task whose record names the pull request is held for the captain
+  # in that window. A hold of the landing task itself waits for the merge gate.
+  url=$REPO_URL/pull/439
+  read -r case_dir head <<< "$(ready_case gate-hold 439)"
+  fm_write_meta "$case_dir/state/task-a1.meta" \
+    "window=fm-task-a1" \
+    "worktree=$case_dir/wt" \
+    "project=$case_dir/project" \
+    "kind=ship" \
+    "mode=no-mistakes" \
+    "pr=$url"
+  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+    "$ROOT/bin/fm-tasks-axi.sh" add task-a1 "Late hold" --kind ship --repo example \
+    > "$case_dir/hold-add.out" 2> "$case_dir/hold-add.err" \
+    || fail "gate-hold: could not add the task: $(cat "$case_dir/hold-add.err")"
+  printf 'FM_HOME="$d/home" FM_STATE_OVERRIDE="$d/state" %q hold task-a1 --reason "captain merge approval pending" > "$d/hold.out" 2> "$d/hold.err"\n' \
+    "$ROOT/bin/fm-captain-hold.sh" > "$case_dir/hook-gate-read"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  assert_gate_stopped "$case_dir" hold "gate-hold"
   pass "reads the switches and the pull request again in front of the merge command"
+}
+
+# shellcheck disable=SC2016 # Hook text expands when the stand-in forge runs it, not here.
+test_branch_health_is_read_again_in_front_of_the_merge_command() {
+  local case_dir head url
+
+  # A check on the base head fails while the merge gate works.
+  url=$REPO_URL/pull/471
+  read -r case_dir head <<< "$(ready_case gate-red 471)"
+  printf '%s\n' \
+    'printf "%s\n" "{\"total_count\":1,\"check_runs\":[{\"name\":\"ci\",\"status\":\"completed\",\"conclusion\":\"failure\"}]}" > "$d/base-check-runs.json"' \
+    > "$case_dir/hook-gate-read"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  assert_gate_stopped "$case_dir" red-base "gate-red"
+  grep -Fxq 'red=ci' "$(repo_dir "$case_dir")/breaker" \
+    || fail "gate-red: the breaker must name the check that failed in that window: $(cat "$(repo_dir "$case_dir")/breaker" 2>&1)"
+
+  # A check starts on the base head in that window.
+  url=$REPO_URL/pull/472
+  read -r case_dir head <<< "$(ready_case gate-running 472)"
+  printf '%s\n' \
+    'printf "%s\n" "{\"total_count\":1,\"check_runs\":[{\"name\":\"ci\",\"status\":\"in_progress\",\"conclusion\":null}]}" > "$d/base-check-runs.json"' \
+    > "$case_dir/hook-gate-read"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  assert_gate_stopped "$case_dir" pending-base "gate-running"
+  assert_absent "$(repo_dir "$case_dir")/breaker" "gate-running: an unfinished check tripped the breaker"
+  pass "reads the health of the branches again in front of the merge command"
 }
 
 test_breaker_reads_every_status_and_the_default_branch() {
@@ -1084,6 +1376,39 @@ test_breaker_reads_every_status_and_the_default_branch() {
     || fail "default-red: the record must name the default branch: $(cat "$(repo_dir "$case_dir")/breaker" 2>&1)"
   grep -Fxq "sha=$BASE_SHA" "$(repo_dir "$case_dir")/breaker" \
     || fail "default-red: the record must name the red commit of the default branch"
+
+  # A release branch whose checks still run does not hide a red default
+  # branch: the breaker trips in the same run.
+  url=$REPO_URL/pull/444
+  read -r case_dir head <<< "$(ready_case default-red-base-running 444)"
+  write_pull "$case_dir" 444 "$head" 1 release/v1 "$RELEASE_SHA"
+  printf '{"name":"release/v1","commit":{"sha":"%s"}}\n' "$RELEASE_SHA" > "$case_dir/branch-release%2Fv1.json"
+  printf '{"total_count":1,"check_runs":[{"name":"ci","status":"in_progress","conclusion":null}]}\n' \
+    > "$case_dir/check-runs-$RELEASE_SHA.json"
+  printf '{"state":"success","statuses":[]}\n' > "$case_dir/status-$RELEASE_SHA.json"
+  printf '{"total_count":1,"check_runs":[{"name":"ci","status":"completed","conclusion":"failure"}]}\n' \
+    > "$case_dir/base-check-runs.json"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  assert_refused "$case_dir" red-base "default-red-base-running"
+  assert_grep 'default branch main is red' "$case_dir/stderr" \
+    "default-red-base-running: the refusal did not name the default branch: $(cat "$case_dir/stderr")"
+  grep -Fxq 'branch=main' "$(repo_dir "$case_dir")/breaker" \
+    || fail "default-red-base-running: the breaker must name the default branch: $(cat "$(repo_dir "$case_dir")/breaker" 2>&1)"
+
+  # A check that still runs on the default branch does not hold a landing
+  # into a green release branch.
+  url=$REPO_URL/pull/445
+  read -r case_dir head <<< "$(ready_case default-running 445)"
+  write_pull "$case_dir" 445 "$head" 1 release/v1 "$RELEASE_SHA"
+  printf '{"name":"release/v1","commit":{"sha":"%s"}}\n' "$RELEASE_SHA" > "$case_dir/branch-release%2Fv1.json"
+  printf '{"total_count":1,"check_runs":[{"name":"ci","status":"completed","conclusion":"success"}]}\n' \
+    > "$case_dir/check-runs-$RELEASE_SHA.json"
+  printf '{"state":"success","statuses":[]}\n' > "$case_dir/status-$RELEASE_SHA.json"
+  printf '{"total_count":1,"check_runs":[{"name":"ci","status":"in_progress","conclusion":null}]}\n' \
+    > "$case_dir/base-check-runs.json"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  expect_code 0 "$(cat "$case_dir/rc")" "default-running: a running check on the default branch must not hold the landing: $(cat "$case_dir/stderr")"
+  assert_absent "$(repo_dir "$case_dir")/breaker" "default-running: a running check tripped the breaker"
   pass "reads every status page, the combined status, and the default branch"
 }
 
@@ -1175,6 +1500,53 @@ test_landing_whose_record_fails_is_completed_by_the_next_run() {
   pass "completes the record of a landing on the next run when it could not be written"
 }
 
+# shellcheck disable=SC2016 # Hook text expands when the stand-in forge runs it, not here.
+test_landing_whose_outcome_is_not_reported_is_completed_by_the_next_run() {
+  local case_dir head url=$REPO_URL/pull/452
+  read -r case_dir head <<< "$(ready_case outcome-fail 452)"
+  # Supervision's queue cannot be written, so the merge gate cannot report the
+  # merge it sent. It warns and still exits 0.
+  mkdir -p "$case_dir/state/.wake-queue"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  [ "$(merge_calls "$case_dir")" -eq 1 ] \
+    || fail "outcome-fail: expected exactly one merge command: $(cat "$case_dir/stderr")"
+  expect_code 3 "$(cat "$case_dir/rc")" "outcome-fail: a landing supervision did not hear of has an incomplete record: $(cat "$case_dir/stderr")"
+  assert_grep 'its record is not complete' "$case_dir/stderr" \
+    "outcome-fail: the incomplete record was not reported: $(cat "$case_dir/stderr")"
+  assert_no_grep 'self-land: landed' "$case_dir/stdout" "outcome-fail: an unreported landing was reported as a clean landing"
+  assert_present "$(repo_dir "$case_dir")/pending" "outcome-fail: the pending record was dropped with the outcome unreported"
+  assert_absent "$(repo_dir "$case_dir")/landed.tsv" "outcome-fail: an unreported landing was logged"
+
+  # The queue works again: the same command reports the outcome once.
+  rmdir "$case_dir/state/.wake-queue"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  expect_code 0 "$(cat "$case_dir/rc")" "outcome-fail: the rerun must complete the record: $(cat "$case_dir/stderr")"
+  assert_grep "self-land: landed $url head=$head merge=$MERGE_SHA (reconciled)" "$case_dir/stdout" \
+    "outcome-fail: the completed record was not reported: $(cat "$case_dir/stdout")"
+  [ "$(outcome_count "$case_dir" "$url")" -eq 1 ] \
+    || fail "outcome-fail: supervision did not receive exactly one outcome"
+  [ "$(wc -l < "$(repo_dir "$case_dir")/landed.tsv" | tr -d ' ')" -eq 1 ] || fail "outcome-fail: expected one landed line"
+  assert_absent "$(repo_dir "$case_dir")/pending" "outcome-fail: the pending record outlived the completed record"
+  [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "outcome-fail: completing the record sent a second merge command"
+
+  # A merge that landed on another base than the one its diff was checked
+  # against trips the breaker even when its record cannot be completed.
+  url=$REPO_URL/pull/453
+  read -r case_dir head <<< "$(ready_case other-base 453)"
+  printf '%s\n' \
+    'jq -c ".baseRefName = \"release/v1\"" "$d/pull-453.json" > "$d/pull-453.json.new" && mv "$d/pull-453.json.new" "$d/pull-453.json"' \
+    > "$case_dir/hook-merge-done"
+  mkdir -p "$(repo_dir "$case_dir")/landed.tsv"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  expect_code 3 "$(cat "$case_dir/rc")" "other-base: the record could not be completed: $(cat "$case_dir/stderr")"
+  assert_present "$(repo_dir "$case_dir")/breaker" "other-base: a merge into an unchecked base did not trip the breaker"
+  grep -Fxq 'branch=release/v1' "$(repo_dir "$case_dir")/breaker" \
+    || fail "other-base: the breaker must name the base the merge landed on: $(cat "$(repo_dir "$case_dir")/breaker" 2>&1)"
+  assert_grep 'merged into release/v1' "$case_dir/stderr" \
+    "other-base: the changed base was not reported: $(cat "$case_dir/stderr")"
+  pass "completes the record of a landing on the next run when its outcome could not be reported"
+}
+
 test_merge_accepted_without_the_forge_gate_stops_every_later_landing() {
   local case_dir head url=$REPO_URL/pull/461 copy
   read -r case_dir head <<< "$(ready_case unguarded 461)"
@@ -1248,6 +1620,7 @@ fm_test_run \
   test_refuses_a_repository_the_grant_does_not_name \
   test_refuses_without_an_approved_review_at_the_head \
   test_refuses_a_diff_that_touches_a_protected_path \
+  test_file_list_is_read_for_the_commits_that_merge \
   test_stop_file_refuses_every_landing \
   test_captain_hold_refuses_the_landing \
   test_second_merge_in_flight_is_refused \
@@ -1255,11 +1628,14 @@ fm_test_run \
   test_lost_forge_response_reconciles_without_a_second_merge \
   test_failed_merge_command_holds_the_repository_until_its_outcome_is_known \
   test_queued_merge_holds_the_repository_until_it_leaves_the_queue \
+  test_armed_auto_merge_holds_the_repository_until_the_forge_lets_go \
   test_inherited_forge_host_does_not_redirect_the_landing \
   test_changes_while_the_merge_gate_waits_stop_the_merge_command \
+  test_branch_health_is_read_again_in_front_of_the_merge_command \
   test_breaker_reads_every_status_and_the_default_branch \
   test_unfinished_base_checks_refuse_until_they_finish \
   test_landing_whose_record_fails_is_completed_by_the_next_run \
+  test_landing_whose_outcome_is_not_reported_is_completed_by_the_next_run \
   test_merge_accepted_without_the_forge_gate_stops_every_later_landing \
   test_takes_no_waiver_or_forge_option \
   test_merge_gate_refusal_stays_a_refusal
