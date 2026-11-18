@@ -1,0 +1,46 @@
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Im0q1f
+=== SCENARIO 1: Live 16-task refresh under 60s ===
+refresh_rc=0 elapsed_s=14.49
+{
+  "schema": "fm-secondmate-home-summary.v1",
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.Im0q1f",
+  "generated": "2026-11-17T23:29:14Z",
+  "generated_epoch": 1794958154,
+  "valid": false,
+  "state": "unknown",
+  "counts": {
+    "active_children": 6,
+    "decisions_open": 2,
+    "holds": 0,
+    "queued": 1,
+    "landed": 0,
+    "endpoints": 16
+  },
+  "decisions_open_keys": [
+    "live-pick",
+    "live-dep"
+  ],
+  "holds_count": 0,
+  "queued_ids": [
+    "queued-live"
+  ],
+  "endpoints_count": 16
+}
+=== SCENARIO 2: Sliding-window concurrency equivalence & speedup on real 16-task lab home ===
+serial_s=41.37 conc4_s=22.13 conc16_s=12.54
+=== SCENARIO 3: Stage-named deadline & worker-handled failures, true timestamp preservation ===
+[2026-11-17T23:30:45Z] refresh exceeded its 2-second deadline in stage lock-wait (stages: lock-wait@1)
+[2026-11-17T23:30:48Z] refresh exceeded its 40-second deadline in stage validate (stages: lock-wait@0 producer@1 backlog@1 task-observation@2 task-rows@13 contributions@15 summary@17 validate@17)
+[2026-11-17T23:31:30Z] refresh exceeded its 40-second deadline in stage publish (stages: lock-wait@1 producer@2 backlog@2 task-observation@3 task-rows@8 contributions@9 summary@10 validate@11 publish@11)
+[2026-11-17T23:32:32Z] summary producer returned a malformed ledger document in stage validate (stages: lock-wait@0 producer@1 backlog@1 task-observation@1 task-rows@15 contributions@21 summary@22 validate@22)
+[2026-11-17T23:32:46Z] atomic ledger replacement failed: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.Im0q1f/state/home-summary.json in stage publish (stages: lock-wait@0 producer@1 backlog@1 task-observation@1 task-rows@11 contributions@13 summary@13 validate@14 publish@14)
+direct_err=fm-home-summary-refresh: atomic ledger replacement failed: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.Im0q1f/state/home-summary.json in stage publish (stages: lock-wait@0 producer@0 backlog@0 task-observation@0 task-rows@11 contributions@13 summary@13 validate@13 publish@13)
+=== SCENARIO 4: Signalled parent cleanup + absent stage log non-recreation ===
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.Im0q1f/state/.home-summary-stage.z89u7X
+stage_files_after_sigterm=none
+absent_stage_log_recreated=false
+=== SCENARIO 5: Live watcher + bootstrap integration ===
+bootstrap_before_refresh:
+HOME_SUMMARY: state/home-summary.json has not been republished since 2026-11-17T23:29:14Z; 5 failed attempt(s) recorded in state/.home-summary-refresh.log, last: atomic ledger replacement failed: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.Im0q1f/state/home-summary.json in stage publish (stages: lock-wait@0 producer@1 backlog@1 task-observa
+watcher_refreshed_generated: 2026-11-17T23:29:14Z -> 2026-11-17T23:29:14Z
+FAIL s5 watcher did not refresh

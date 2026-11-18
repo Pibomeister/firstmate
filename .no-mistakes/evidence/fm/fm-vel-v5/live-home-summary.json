@@ -1,0 +1,358 @@
+{
+  "schema": "fm-secondmate-home-summary.v1",
+  "hold_classifier_schema": "fm-captain-hold-buckets.v1",
+  "contributions": {
+    "known": 0,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 0,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "unmeasured": 0,
+    "complete": true,
+    "proven_clear": true,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "unreadable_records": 0,
+    "valid_until": 900,
+    "captain": [],
+    "captain_omitted": 0
+  },
+  "generated": "2026-11-17T23:29:14Z",
+  "generated_epoch": 1794958154,
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.Im0q1f",
+  "valid": false,
+  "reason": "in-flight backlog item has no child metadata: live-task-01, live-task-02, live-task-03, live-task-04, live-task-05, live-task-06, live-task-07, live-task-08, live-task-09",
+  "invalidity": {
+    "kind": "orphan_in_flight",
+    "ids": [
+      "live-task-01",
+      "live-task-02",
+      "live-task-03",
+      "live-task-04",
+      "live-task-05",
+      "live-task-06",
+      "live-task-07",
+      "live-task-08",
+      "live-task-09"
+    ]
+  },
+  "state": "unknown",
+  "active_children": [
+    {
+      "id": "live-task-10",
+      "kind": "ship",
+      "state": "working",
+      "repo": "firstmate",
+      "name": "Live task 10",
+      "source": "status-log",
+      "doing": "step 149 verifying live home summary latency (10)"
+    },
+    {
+      "id": "live-task-11",
+      "kind": "ship",
+      "state": "working",
+      "repo": "firstmate",
+      "name": "Live task 11",
+      "source": "status-log",
+      "doing": "step 149 verifying live home summary latency (11)"
+    },
+    {
+      "id": "live-task-12",
+      "kind": "scout",
+      "state": "working",
+      "repo": "firstmate",
+      "name": "Live task 12",
+      "source": "status-log",
+      "doing": "step 149 verifying live home summary latency (12)"
+    },
+    {
+      "id": "live-task-13",
+      "kind": "ship",
+      "state": "working",
+      "repo": "firstmate",
+      "name": "Live task 13",
+      "source": "status-log",
+      "doing": "step 149 verifying live home summary latency (13)"
+    },
+    {
+      "id": "live-task-14",
+      "kind": "ship",
+      "state": "working",
+      "repo": "firstmate",
+      "name": "Live task 14",
+      "source": "status-log",
+      "doing": "step 149 verifying live home summary latency (14)"
+    },
+    {
+      "id": "live-task-16",
+      "kind": "scout",
+      "state": "working",
+      "repo": "firstmate",
+      "name": "Live task 16",
+      "source": "status-log",
+      "doing": "step 149 verifying live home summary latency (16)"
+    }
+  ],
+  "decisions_open": [
+    {
+      "id": "live-task-3",
+      "key": "live-pick",
+      "verb": "needs-decision",
+      "summary": "choose live branch strategy",
+      "reason": null,
+      "source": "status"
+    },
+    {
+      "id": "live-task-7",
+      "key": "live-dep",
+      "verb": "blocked",
+      "summary": "waiting on external fixture",
+      "reason": null,
+      "source": "status"
+    }
+  ],
+  "holds": [],
+  "queued": [
+    {
+      "id": "queued-live",
+      "title": "Queued item",
+      "question": null,
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": null,
+      "captain_actionable": false,
+      "repo": "firstmate",
+      "kind": "ship",
+      "since": null
+    }
+  ],
+  "landed": [],
+  "endpoints": [
+    {
+      "id": "live-task-1",
+      "state": "working",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fmlab:fm-live-task-1",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-17T23:29:14Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "live-task-10",
+      "state": "working",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fmlab:fm-live-task-10",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-17T23:29:14Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "live-task-11",
+      "state": "working",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fmlab:fm-live-task-11",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-17T23:29:14Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "live-task-12",
+      "state": "working",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fmlab:fm-live-task-12",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-17T23:29:14Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "live-task-13",
+      "state": "working",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fmlab:fm-live-task-13",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-17T23:29:14Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "live-task-14",
+      "state": "working",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fmlab:fm-live-task-14",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-17T23:29:14Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "live-task-15",
+      "state": "unknown",
+      "source": "none",
+      "endpoint": {
+        "target": "fmlab:fm-live-task-15",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-17T23:29:14Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "live-task-16",
+      "state": "working",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fmlab:fm-live-task-16",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-17T23:29:14Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "live-task-2",
+      "state": "working",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fmlab:fm-live-task-2",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-17T23:29:14Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "live-task-3",
+      "state": "parked",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fmlab:fm-live-task-3",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-17T23:29:14Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "live-task-4",
+      "state": "working",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fmlab:fm-live-task-4",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-17T23:29:14Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "live-task-5",
+      "state": "working",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fmlab:fm-live-task-5",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-17T23:29:14Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "live-task-6",
+      "state": "working",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fmlab:fm-live-task-6",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-17T23:29:14Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "live-task-7",
+      "state": "blocked",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fmlab:fm-live-task-7",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-17T23:29:14Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "live-task-8",
+      "state": "working",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fmlab:fm-live-task-8",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-17T23:29:14Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "live-task-9",
+      "state": "working",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fmlab:fm-live-task-9",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-17T23:29:14Z",
+        "freshness": "fresh"
+      }
+    }
+  ],
+  "counts": {
+    "active_children": 6,
+    "decisions_open": 2,
+    "holds": 0,
+    "queued": 1,
+    "landed": 0,
+    "endpoints": 16
+  },
+  "omitted": []
+}

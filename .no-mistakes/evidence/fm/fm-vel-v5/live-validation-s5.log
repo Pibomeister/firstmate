@@ -1,0 +1,7 @@
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab-s5.5U4FKL
+=== SCENARIO 5A: Real watcher cadence + status-signal refresh + bootstrap clearing ===
+bootstrap_before:
+HOME_SUMMARY: state/home-summary.json has not been republished since 2026-11-17T10:00:00Z; 2 failed attempt(s) recorded in state/.home-summary-refresh.log, last: refresh exceeded its 60-second deadline in stage validate (stages: lock-wait@0 producer@0 backlog@0 task-observation@2 task-rows@10 contributions@12 summary@13 validate@13)
+watcher_refreshed_generated: 2026-11-17T10:00:00Z -> 2026-11-17T23:36:13Z
+bootstrap_after_cleared=true
+SCENARIO_5_PASSED
