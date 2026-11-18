@@ -1,0 +1,8 @@
+== head run 1
+not ok - a timed-out run discarded the partial timings its sweeps had already recorded (missing: 'secondmate-liveness mate-a@host-one')
+== base run 1
+not ok - a timed-out run discarded the partial timings its sweeps had already recorded (missing: 'secondmate-liveness mate-a@host-one')
+== head run 2
+not ok - a timed-out run discarded the partial timings its sweeps had already recorded (missing: 'secondmate-liveness mate-a@host-one')
+== base run 2
+not ok - a timed-out run discarded the partial timings its sweeps had already recorded (missing: 'secondmate-liveness mate-a@host-one')

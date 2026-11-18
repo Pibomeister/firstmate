@@ -1,0 +1,23 @@
+FM_TEST_BEGIN 2026-11-18T04:16:30Z tests/fm-unpushed-reconcile.test.sh family=session-bootstrap expected_gate_skip=none
+bin/fm-test-run.sh: child setpgid (99777 to 99777): Operation not permitted
+ok - unpublished blocked task is flagged on every startup without changing refs or its blocker
+ok - branch survives missing task metadata and ledger intake
+ok - an open PR does not hide unpublished local follow-up commits
+ok - commits reachable from any publishing remote need no recovery finding
+ok - a squash-merged task head whose remote task branch is gone is not flagged
+ok - local commits newer than a merged head stay flagged
+ok - the landed proof uses the recorded base branch
+ok - a local no-mistakes proxy ref is not publication evidence
+ok - registered task branch prefixes are respected
+ok - recorded branches remain discoverable after a prefix change
+ok - identical branch names in distinct repositories cannot claim or suppress each other
+ok - local-only projects and per-task delivery choices are not asked to publish
+ok - forge failure cannot masquerade as an absent PR
+ok - a slow forge read retains all discovered branches and an incomplete scan
+ok - resolved blockers are folded by the existing status owner
+# fm-unpushed-reconcile.test.sh: all assertions passed
+FM_TEST_END 2026-11-18T04:20:09Z tests/fm-unpushed-reconcile.test.sh exit=0 duration_ms=219744 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=219860
+FM_TEST_SUMMARY_FAMILY family=session-bootstrap count=1 duration_ms=219744 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-unpushed-reconcile.test.sh duration_ms=219744
+exit=0

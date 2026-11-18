@@ -1,0 +1,35 @@
+# lab fixture branches:
+refs/heads/fm/landed
+refs/heads/fm/proxyonly
+refs/heads/fm/published
+refs/heads/fm/stuck
+refs/heads/main
+refs/remotes/no-mistakes/fm/proxyonly
+refs/remotes/origin/HEAD
+refs/remotes/origin/fm/published
+refs/remotes/origin/main
+
+# fm-unpushed-reconcile.sh scan (run 1)
+UNPUSHED: project=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.PhgjAe/projects/demo branch=fm/proxyonly head=09eab2dfe1a7664f2ff3bd752eb659e7f79697bd commits=1 task=proxyonly owner=missing; flag for supervisor recovery
+UNPUSHED: project=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.PhgjAe/projects/demo branch=fm/stuck head=39497ece398296633adc27678e47f1ce10cbfebe commits=1 task=stuck owner=recorded; flag for supervisor recovery
+UNPUSHED: branch=fm/proxyonly ledger=missing pr=unknown (no GitHub target); reconcile the ledger and resume the owning task or escalate its blocker
+UNPUSHED: task=stuck [key=nm-start] blocked: pipeline start failed: daemon gate_context did not reply; escalate before retrying publication
+UNPUSHED: branch=fm/stuck ledger=missing pr=unknown (no GitHub target); reconcile the ledger and resume the owning task or escalate its blocker
+exit=0
+# run 2 (idempotence)
+UNPUSHED: project=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.PhgjAe/projects/demo branch=fm/proxyonly head=09eab2dfe1a7664f2ff3bd752eb659e7f79697bd commits=1 task=proxyonly owner=missing; flag for supervisor recovery
+UNPUSHED: project=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.PhgjAe/projects/demo branch=fm/stuck head=39497ece398296633adc27678e47f1ce10cbfebe commits=1 task=stuck owner=recorded; flag for supervisor recovery
+UNPUSHED: branch=fm/proxyonly ledger=missing pr=unknown (no GitHub target); reconcile the ledger and resume the owning task or escalate its blocker
+UNPUSHED: task=stuck [key=nm-start] blocked: pipeline start failed: daemon gate_context did not reply; escalate before retrying publication
+UNPUSHED: branch=fm/stuck ledger=missing pr=unknown (no GitHub target); reconcile the ledger and resume the owning task or escalate its blocker
+exit=0
+refs unchanged by scan: yes
+blocked [at=100] [key=nm-start]: pipeline start failed: daemon gate_context did not reply
+
+# after filing 'stuck' in the real tasks-axi backlog and starting it:
+UNPUSHED: project=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.PhgjAe/projects/demo branch=fm/proxyonly head=09eab2dfe1a7664f2ff3bd752eb659e7f79697bd commits=1 task=proxyonly owner=missing; flag for supervisor recovery
+UNPUSHED: project=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.PhgjAe/projects/demo branch=fm/stuck head=39497ece398296633adc27678e47f1ce10cbfebe commits=1 task=stuck owner=recorded; flag for supervisor recovery
+UNPUSHED: branch=fm/proxyonly ledger=missing pr=unknown (no GitHub target); reconcile the ledger and resume the owning task or escalate its blocker
+UNPUSHED: task=stuck [key=nm-start] blocked: pipeline start failed: daemon gate_context did not reply; escalate before retrying publication
+UNPUSHED: branch=fm/stuck ledger=in_flight pr=unknown (no GitHub target); reconcile the ledger and resume the owning task or escalate its blocker
+exit=0

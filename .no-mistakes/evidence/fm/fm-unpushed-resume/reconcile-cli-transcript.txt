@@ -1,0 +1,10 @@
+$ FM_HOME=<lab> fm-unpushed-reconcile.sh scan   (branches: supevents=unpushed+blocked, orphan=no metadata, pushed=on origin, landed=squash-merged into origin/main, proxied=only no-mistakes proxy ref; forge client unavailable)
+UNPUSHED: project=<lab>/projects/demo branch=fm/orphan head=45ca57efacd0de0d78a81a831932f5850194b0f7 commits=1 task=orphan owner=missing; flag for supervisor recovery
+UNPUSHED: project=<lab>/projects/demo branch=fm/proxied head=af8a7f1d64d1ad6e92f0b478e05f6ac4d7ffd181 commits=1 task=proxied owner=missing; flag for supervisor recovery
+UNPUSHED: project=<lab>/projects/demo branch=fm/supevents head=b7bd0abbe1eda49922d9ff0be88429174506fe14 commits=1 task=supevents owner=recorded; flag for supervisor recovery
+UNPUSHED: branch=fm/orphan ledger=missing pr=unknown (forge read failed); reconcile the ledger and resume the owning task or escalate its blocker
+UNPUSHED: branch=fm/proxied ledger=missing pr=unknown (forge read failed); reconcile the ledger and resume the owning task or escalate its blocker
+UNPUSHED: task=supevents [key=nm-daemon-gate-context] blocked: startup timed out twice; escalate before retrying publication
+UNPUSHED: branch=fm/supevents ledger=missing pr=unknown (forge read failed); reconcile the ledger and resume the owning task or escalate its blocker
+exit=0
+refs unchanged: yes

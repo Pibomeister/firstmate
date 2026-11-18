@@ -1,0 +1,3 @@
+ok - fm-startup-network: unpublished branches and startup blockers survive in a durable locked-start report
+# subset passed
+EXIT=0
