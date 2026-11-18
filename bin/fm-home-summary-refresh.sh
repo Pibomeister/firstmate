@@ -28,6 +28,8 @@
 # state/.home-summary-refresh.log instead of a bare deadline.
 # The worker adds its own stages to that file: lock-wait, producer, validate and
 # publish, with the producer's stages between producer and validate.
+# The parent only names the file and removes it on every exit path; the worker
+# creates and opens it, so opening it counts against the deadline too.
 #
 # With --best-effort, a failure is appended to the bounded home-local
 # state/.home-summary-refresh.log when available, with stderr as the bounded
@@ -105,7 +107,7 @@ home_summary_cleanup() {
 }
 
 # Record that the worker entered <stage>, at its seconds since the worker
-# started, on the stage descriptor the parent opened. Like the producer's own
+# started, on the stage descriptor the worker opened itself. Like the producer's own
 # stage reports, it writes through that descriptor and never by path, so a stage
 # file the parent already removed is not recreated.
 home_summary_stage() {  # <stage-name>
@@ -266,45 +268,25 @@ if [ "$HOME_SUMMARY_MODE" = parent ]; then
   trap 'exit 129' HUP
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  # No mkdir here: a home whose state directory is missing simply runs without
-  # stage reporting. Creating the stage file is bounded by the same deadline as
-  # the worker, and the time it takes comes out of the worker's share, so a
-  # stalled filesystem cannot hold the caller past the deadline.
-  stage_fd=
-  prepare_rc=0
-  worker_timeout=$HOME_SUMMARY_TIMEOUT
-  if [ -d "$STATE" ]; then
-    prepare_started=$SECONDS
-    stage_file=$(umask 077; fm_run_timed "$HOME_SUMMARY_TIMEOUT" \
-      mktemp "$STATE/.home-summary-stage.XXXXXX" 2>/dev/null) || prepare_rc=$?
-    [ "$prepare_rc" -eq 0 ] || stage_file=
-    worker_timeout=$((HOME_SUMMARY_TIMEOUT - (SECONDS - prepare_started)))
-    [ "$worker_timeout" -ge 1 ] || worker_timeout=1
-  fi
-  if [ -n "$stage_file" ]; then
-    # The descriptor stays open in the parent so the worker can append after the
-    # parent removes the file; nothing then reopens the path.
-    if { exec 9>>"$stage_file"; } 2>/dev/null; then
-      stage_fd=9
-    fi
-  fi
-  stage_note=
-  if [ "$prepare_rc" -eq 124 ]; then
-    refresh_rc=124
-    stage_note=" while preparing the stage file"
-  elif fm_run_timed "$worker_timeout" env \
+  # The parent only names the stage file; the worker creates and opens it, so the
+  # directory check and the open both run inside the deadline and a stalled
+  # filesystem cannot hold the caller past it. The parent removes that name on
+  # every exit path, including a worker killed right after it created the file.
+  # FM_HOME_SUMMARY_STAGE_PATH is a test seam that names the file instead.
+  stage_file=${FM_HOME_SUMMARY_STAGE_PATH:-$STATE/.home-summary-stage.$$.$RANDOM}
+  if fm_run_timed "$HOME_SUMMARY_TIMEOUT" env \
     FM_HOME_SUMMARY_WORKER_BEST_EFFORT="$BEST_EFFORT" \
     FM_HOME_SUMMARY_IF_IDLE="$HOME_SUMMARY_IF_IDLE" \
     FM_HOME_SUMMARY_STAGE_FILE="$stage_file" \
-    FM_SNAPSHOT_STAGE_FD="$stage_fd" \
     "$SCRIPT_DIR/fm-home-summary-refresh.sh" --_worker; then
-    [ -z "$stage_file" ] || rm -f -- "$stage_file"
+    rm -f -- "$stage_file"
     exit 0
   else
     refresh_rc=$?
   fi
-  if [ -z "$stage_note" ] && [ -n "$stage_file" ]; then
-    stage_note=$(home_summary_stage_note "$stage_file")
+  stage_note=$(home_summary_stage_note "$stage_file")
+  if [ -z "$stage_note" ] && [ "$refresh_rc" -eq 124 ]; then
+    stage_note=" before its first stage"
   fi
   [ -z "$stage_file" ] || rm -f -- "$stage_file"
   if [ "$BEST_EFFORT" -eq 1 ]; then
@@ -325,6 +307,21 @@ if [ "$HOME_SUMMARY_MODE" = parent ]; then
   fi
   exit "$refresh_rc"
 fi
+
+# The worker opens the parent's stage file itself, inside the deadline, and keeps
+# the descriptor so a stage file the parent already removed is never recreated by
+# a later append. A home without a state directory runs without stage reporting.
+FM_SNAPSHOT_STAGE_FD=
+if [ "$HOME_SUMMARY_MODE" = worker ] && [ -n "${FM_HOME_SUMMARY_STAGE_FILE:-}" ] \
+    && [ -d "$STATE" ]; then
+  stage_umask=$(umask)
+  umask 077
+  if { exec 9>>"$FM_HOME_SUMMARY_STAGE_FILE"; } 2>/dev/null; then
+    FM_SNAPSHOT_STAGE_FD=9
+  fi
+  umask "$stage_umask"
+fi
+export FM_SNAPSHOT_STAGE_FD
 
 if home_summary_refresh_once; then
   exit 0

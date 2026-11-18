@@ -586,34 +586,26 @@ PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   || fail "the producer failed with a stage descriptor that is not open"
 pass "the producer never recreates a deleted stage log"
 
-# Creating the stage file is bounded by the refresh deadline: a filesystem that
-# stalls there must not hold the caller past it. The stub stalls far beyond the
-# deadline, so only a bounded refresh returns in time.
-STALLBIN="$TMP_ROOT/stall-mktemp-bin"
-REAL_MKTEMP=$(command -v mktemp)
-mkdir -p "$STALLBIN"
-cat > "$STALLBIN/mktemp" <<'SH'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  case "$arg" in
-    */.home-summary-stage.*) sleep 60 ;;
-  esac
-done
-exec "$FM_TEST_REAL_MKTEMP" "$@"
-SH
-chmod +x "$STALLBIN/mktemp"
+# Opening the stage file is bounded by the refresh deadline: the worker, not the
+# parent, creates and opens it. A stage path that blocks on open (a named pipe
+# with no reader) stands in for a stalled filesystem, and only a refresh whose
+# parent never touches that path inside its own process returns in time.
+STALL_PATH="$HOME_DIR/state/.home-summary-stage.stalled"
+rm -f "$STALL_PATH"
+mkfifo "$STALL_PATH"
 : > "$HOME_DIR/state/.home-summary-refresh.log"
 started=$(date +%s)
-PATH="$STALLBIN:$FAKEBIN:$PATH" FM_TEST_REAL_MKTEMP="$REAL_MKTEMP" \
+PATH="$FAKEBIN:$PATH" FM_HOME_SUMMARY_STAGE_PATH="$STALL_PATH" \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=2 \
   "$WRITER" --best-effort \
-  || fail "a stalled stage-file creation changed the best-effort caller result"
+  || fail "a stalled stage-file open changed the best-effort caller result"
 elapsed=$(( $(date +%s) - started ))
-[ "$elapsed" -lt 20 ] || fail "a stalled stage-file creation held the refresh for $elapsed seconds"
-grep -F 'refresh exceeded its 2-second deadline while preparing the stage file' \
+[ "$elapsed" -lt 20 ] || fail "a stalled stage-file open held the refresh for $elapsed seconds"
+grep -F 'refresh exceeded its 2-second deadline before its first stage' \
   "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
-  || fail "a stalled stage-file creation was not logged: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
-pass "stage-file creation is bounded by the refresh deadline"
+  || fail "a stalled stage-file open was not logged: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+[ ! -e "$STALL_PATH" ] || fail "a stalled stage-file open left its stage path behind"
+pass "stage-file open is bounded by the refresh deadline"
 
 HANGBIN="$TMP_ROOT/hangbin"
 REAL_JQ=$(command -v jq)
@@ -639,6 +631,22 @@ grep -F 'refresh exceeded its 1-second deadline' \
   "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
   || fail "publication validation timeout was not logged"
 pass "best-effort refresh bounds validation and publication"
+
+# A worker killed at the deadline right after it created the stage file must not
+# leave that file behind: the parent removes the name it handed out.
+ORPHAN_PATH="$HOME_DIR/state/.home-summary-stage.orphan"
+rm -f "$ORPHAN_PATH"
+: > "$HOME_DIR/state/.home-summary-refresh.log"
+PATH="$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
+  FM_HOME_SUMMARY_STAGE_PATH="$ORPHAN_PATH" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
+  "$WRITER" --best-effort \
+  || fail "a deadline hit after stage-file creation changed the best-effort caller result"
+grep -F 'refresh exceeded its 3-second deadline in stage validate' \
+  "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "the worker did not write to the stage file the parent named: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+[ ! -e "$ORPHAN_PATH" ] || fail "a worker killed after creating the stage file left it behind"
+pass "a stage file created before a deadline kill is removed"
 
 # A deadline hit while validating, or while publishing, must name that stage
 # rather than blaming the producer's last stage, and the offsets must share one
@@ -806,6 +814,73 @@ jq -e '(.invalidity.ids | sort) == ["slide-1","slide-2","slide-3","slide-4","sli
   "$TMP_ROOT/slide-window.json" >/dev/null \
   || fail "the window summary lost a task row: $(jq -c '[.invalidity, .counts]' "$TMP_ROOT/slide-window.json")"
 pass "current-state reads refill a free slot and never change the summary"
+
+# Row composition goes through the same window. The fake jq stands in for the
+# row builder's final compose step (the only jq call that carries both the task
+# id and the observation time): slide-1's compose cannot end until the other four
+# composes have, so a serial row builder strands it and the event order fails.
+# Reads here are instant, so only row composition can overlap. The comparison is
+# on complete task rows from --json, because the summary projection drops fields.
+ROWBIN="$TMP_ROOT/row-bin"
+mkdir -p "$ROWBIN"
+cat > "$ROWBIN/jq" <<'SH'
+#!/usr/bin/env bash
+id=
+saw_observed=0
+prev=
+for arg in "$@"; do
+  [ "$prev" = id ] && [ -z "$id" ] && id=$arg
+  [ "$arg" = observed_at ] && saw_observed=1
+  prev=$arg
+done
+case "$id" in slide-*) ;; *) id= ;; esac
+if [ -n "${FM_TEST_ROW_LOG:-}" ] && [ -n "$id" ] && [ "$saw_observed" -eq 1 ]; then
+  printf 'start %s\n' "$id" >> "$FM_TEST_ROW_LOG"
+  if [ "$id" = slide-1 ]; then
+    n=0
+    while [ "$(grep -c '^end ' "$FM_TEST_ROW_LOG")" -lt 4 ] && [ "$n" -lt 600 ]; do
+      sleep 0.05
+      n=$((n + 1))
+    done
+  fi
+  "$FM_TEST_REAL_JQ" "$@"
+  rc=$?
+  printf 'end %s\n' "$id" >> "$FM_TEST_ROW_LOG"
+  exit "$rc"
+fi
+exec "$FM_TEST_REAL_JQ" "$@"
+SH
+chmod +x "$ROWBIN/jq"
+run_rows() {  # <concurrency> [log]
+  PATH="$ROWBIN:$SLIDEBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" FM_TEST_ROW_LOG="${2:-}" \
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$SLIDE_HOME" \
+    FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
+    FM_SNAPSHOT_LOCAL_READ_CONCURRENCY="$1" \
+    "$SNAPSHOT" --json
+}
+ROW_LOG="$TMP_ROOT/row-events.log"
+: > "$ROW_LOG"
+run_rows 2 "$ROW_LOG" > "$TMP_ROOT/rows-window.json" \
+  || fail "the windowed row-composition run failed"
+[ "$(grep -c '^start ' "$ROW_LOG")" -eq 5 ] \
+  || fail "row composition did not run once per task: $(tr '\n' ' ' < "$ROW_LOG")"
+[ "$(tail -n 1 "$ROW_LOG")" = "end slide-1" ] \
+  || fail "row composition did not overlap behind the window (serial rows): $(tr '\n' ' ' < "$ROW_LOG")"
+max_rows=$(awk '/^start /{n++; if (n>m) m=n} /^end /{n--} END{print m+0}' "$ROW_LOG")
+[ "$max_rows" -eq 2 ] \
+  || fail "row composition ran $max_rows at once instead of the window limit of 2: $(tr '\n' ' ' < "$ROW_LOG")"
+run_rows 1 > "$TMP_ROOT/rows-serial.json" || fail "the serial row run failed"
+run_rows 16 > "$TMP_ROOT/rows-wide.json" || fail "the wide row run failed"
+jq -S '.tasks' "$TMP_ROOT/rows-serial.json" > "$TMP_ROOT/rows-serial.norm"
+jq -S '.tasks' "$TMP_ROOT/rows-window.json" > "$TMP_ROOT/rows-window.norm"
+jq -S '.tasks' "$TMP_ROOT/rows-wide.json" > "$TMP_ROOT/rows-wide.norm"
+[ "$(jq 'length' "$TMP_ROOT/rows-serial.norm")" -eq 5 ] \
+  || fail "the serial run did not produce five task rows"
+cmp -s "$TMP_ROOT/rows-serial.norm" "$TMP_ROOT/rows-window.norm" \
+  || fail "overlapping row composition changed a task row: $(diff "$TMP_ROOT/rows-serial.norm" "$TMP_ROOT/rows-window.norm" | head -5)"
+cmp -s "$TMP_ROOT/rows-serial.norm" "$TMP_ROOT/rows-wide.norm" \
+  || fail "a wide window changed a task row"
+pass "row composition overlaps behind the window and keeps every task row identical"
 
 # Task ids may contain dots, so a task named like another task's row file ("ship"
 # and "ship.row") must not share files with it: both rows survive the snapshot.
