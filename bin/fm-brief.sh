@@ -833,6 +833,7 @@ IFS= read -r -d '' HUMAN_STEP_RULE <<'EOF' || true
 11. A human-only step - a sign-in, verification code, OTP, approval, or captcha - is the one blocker you report without stopping.
    Within 10 minutes of meeting one, close or cancel the interactive prompt rather than leave it open, and append
    `blocked [key=human-step-<slug>] [at=<epoch>]: human-only step: {what a person must do, and where}`.
+   That key keeps the step visible to firstmate and the captain but never holds the away return; append `resolved [key=human-step-<slug>] [at=<epoch>]: {how}` only once a person has completed the step or it is no longer needed, never just to clear it.
    Never enter a credential or code yourself, and never hold a PR, a deploy, or other work on it.
    Keep working on everything that does not depend on it; firstmate escalates it, and overnight it goes into the morning handoff.
 EOF

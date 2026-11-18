@@ -56,7 +56,8 @@
 #   <watched home>/state/watchdog/human-steps.tsv  append-only escalation record of
 #                                human-only steps: epoch subject kind since channel, where
 #                                channel is page, morning-handoff, or cleared.
-#                                bin/fm-afk-return.sh lists its open morning-handoff rows.
+#                                A morning-handoff row stays open until a later cleared row;
+#                                bin/fm-afk-return.sh lists the open ones.
 #   <watched home>/state/monitor-status  one-line record of that home's monitor
 #                                unit status, rewritten atomically each pass and by monitor-read.
 #
@@ -2027,7 +2028,9 @@ wd_handle_captain_autowait() {
 # Nothing is typed into that pane, so the prompt is never answered or held by the
 # watchdog. Once it has shown on every pass for human-step-secs, it is escalated
 # once per episode: paged by day, or written to the home's human-steps.tsv for
-# the morning handoff overnight, never paged then. O_REC_SUBJECT names a worker.
+# the morning handoff overnight, never paged then. A page no channel delivered
+# is recorded there too and stays pending, retried once per nudge-secs while the
+# step still shows. O_REC_SUBJECT names a worker.
 
 wd_human_step_file() {
   local w=''
@@ -2041,25 +2044,32 @@ wd_human_step_record() {  # <kind> <since> <channel>
   printf '%s\t%s\t%s\t%s\t%s\n' "$(wd_now)" "${O_REC_SUBJECT:-$O_TAG}" "$1" "$2" "$3" >> "$rec"
 }
 
-# Overnight: the home is away or quiet, or the quiet-hours clock of that home's
-# config/escalation is inside a window. An unreadable clock is daytime, so the
-# step is still paged.
+# Whether the human-steps record already holds a <channel> row for this
+# subject's episode that began at <since>.
+wd_human_step_recorded() {  # <since> <channel>
+  local rec=$O_HOME/state/watchdog/human-steps.tsv
+  [ -r "$rec" ] || return 1
+  awk -F '\t' -v s="${O_REC_SUBJECT:-$O_TAG}" -v since="$1" -v ch="$2" \
+    '$2 == s && $4 == since && $5 == ch { found = 1 } END { exit !found }' "$rec"
+}
+
+# Overnight: the quiet-hours clock of the home's config/escalation is inside a
+# window. Away or quiet mode by day is still daytime, so the step is paged. An
+# unreadable clock is daytime too.
 wd_human_step_overnight() {
   local r
-  [ "$O_AFK" = 1 ] && return 0
   r=$(FM_CONFIG_OVERRIDE=$O_HOME/config fm_quiet_hours_at "$(wd_now)" 2>/dev/null) || return 1
   case "$r" in quiet=1*) return 0 ;; esac
   return 1
 }
 
-# The step left the pane: end the episode, and close any open morning-handoff row.
+# The step left the pane: end the episode, and close its morning-handoff row.
 wd_human_step_clear() {
-  local f kind since last
+  local f kind since
   f=$(wd_human_step_file)
   [ -f "$f" ] || return 0
   IFS=$'\t' read -r since kind < "$f" || true
-  last=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" human-step handoff '^done$' "${O_REC_SUBJECT:-$O_TAG}")
-  if [ -n "$last" ] && [ "$last" -ge "${since:-0}" ] 2>/dev/null; then
+  if wd_human_step_recorded "${since:-0}" morning-handoff; then
     wd_human_step_record "${kind:-unknown}" "${since:-0}" cleared
   fi
   rm -f "$f"
@@ -2117,12 +2127,11 @@ wd_handle_human_step() {  # <kind>
       wd_rec "$id" human-step page "done" "owner paged"
       wd_gap "human-only $kind step on $who for $((age / 60))m; the owner was paged, nothing is typed into it" ;;
     *)
-      # With no page delivered, the record carries the step to the morning handoff.
-      wd_rec "$id" human-step page failed "no alert channel delivered the page (exit $rc)"
-      if wd_human_step_record "$kind" "$since" morning-handoff; then
-        wd_rec "$(wd_id)" human-step handoff "done" "page not delivered; recorded for the morning handoff"
-      fi
-      wd_gap "human-only $kind step on $who not paged (exit $rc); recorded for the morning handoff" ;;
+      # An undelivered page is not an escalation: it stays pending and is retried
+      # after nudge-secs, and the record keeps the step visible meanwhile.
+      wd_rec "$id" human-step page failed "no alert channel delivered the page (exit $rc); retried after nudge-secs"
+      wd_human_step_recorded "$since" morning-handoff || wd_human_step_record "$kind" "$since" morning-handoff || true
+      wd_gap "human-only $kind step on $who not paged (exit $rc); recorded, and the page is retried after nudge-secs" ;;
   esac
 }
 
