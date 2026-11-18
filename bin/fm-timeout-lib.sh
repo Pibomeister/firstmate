@@ -138,11 +138,15 @@ fm_timeout_background() {
   fi
 }
 
+# The command runs in its own subshell: stock macOS Bash 3.2 execs a function's
+# `command <program>` without a fork in an asynchronous context, which would
+# replace this child, skip the rest of the function, and lose its status. The
+# subshell stays in this child's process group, so the watchdog still ends it.
 fm_bash_timeout_child() {
   local status_file=$1 command_rc
   shift
   set +m
-  "$@"
+  ( "$@" )
   command_rc=$?
   printf '%s\n' "$command_rc" > "$status_file"
   exit "$command_rc"
