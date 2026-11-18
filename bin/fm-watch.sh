@@ -174,6 +174,11 @@
 #                          re-dispatch, a task to dispatch by hand, or a held
 #                          or blocked item it skipped; bin/fm-disk-retry.sh's
 #                          header owns the result parts
+#   check: gate council ruled: <task> key=<key> outcome=<outcome> choice=<choice> record=<path>|log=<path>
+#                          opt-in config/gate-council away trigger: an
+#                          `ak council run` started for an hour-old ask-user
+#                          gate finished (or stayed unfinished); the record is
+#                          evidence only, and away_gate_council_tick owns it
 #   check: process-event result captured: <keys>
 #                          a durably captured process-to-event result is queued
 #                          and has not been surfaced yet; reported once per
@@ -3685,6 +3690,231 @@ EOF
     "$due_task" "$due_key" "$due_opened" "$confirmed" "$page_state" "$now" >> "$claim_file"
 }
 
+# Away gate council trigger. While an away record exists and the home-local
+# config/gate-council file is present, a no-mistakes ask-user gate (status key
+# nm-<run>-<step>, verb needs-decision, note `ask-user findings=<ids>
+# file=<path>`) that stays open at least after-secs (default 3600) for a task
+# whose recorded project directory name is on the config's projects= list is
+# handed to AgentKit's `ak council run` with the configured roster. This is a
+# trigger only: the card, roster, seats, outbound gate and record belong to
+# AgentKit. The council runs detached; a later poll surfaces its record as one
+# `check: gate council ruled:` wake. The ruling is evidence for firstmate, which
+# applies it through the normal gate response; this code never answers the
+# gate, waives a check, or merges. docs/configuration.md "Away gate council"
+# owns the config keys and the run-directory layout.
+# STATE/.away-gate-council-claims rows are <task> TAB <key> TAB <opened> TAB
+# <state> TAB <epoch> TAB <run-dir>; the newest row for one task, key and
+# opening epoch wins, so one gate episode gets at most one council.
+GATE_COUNCIL_WAKE=
+
+gate_council_config_value() {  # <file> <key>
+  awk -v key="$2" '
+    /^[[:space:]]*(#|$)/ { next }
+    { line=$0; sub(/\r$/, "", line); eq=index(line, "="); if (!eq) next
+      name=substr(line, 1, eq - 1); gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
+      if (name != key) next
+      value=substr(line, eq + 1); gsub(/^[[:space:]]+|[[:space:]]+$/, "", value); found=value }
+    END { if (found != "") print found }
+  ' "$1"
+}
+
+# 0 when <project-dir>'s final component is on the comma-separated <list>.
+gate_council_project_allowed() {  # <list> <project-dir>
+  local list=",$1," name=${2%/}
+  name=${name##*/}
+  [ -n "$name" ] || return 1
+  list=$(printf '%s' "$list" | tr -d ' \t')
+  case "$list" in *",$name,"*) return 0 ;; esac
+  return 1
+}
+
+# The newest claim state for one gate episode, or nothing.
+gate_council_claim_state() {  # <claims-file> <task> <key> <opened>
+  [ -f "$1" ] || return 0
+  awk -F '\t' -v t="$2" -v k="$3" -v o="$4" \
+    '($1 "") == (t "") && ($2 "") == (k "") && ($3 "") == (o "") { s=$4 } END { if (s != "") print s }' "$1"
+}
+
+# 0 while <task>'s <key> is still the same open needs-decision episode.
+gate_council_still_open() {  # <task> <key> <opened>
+  local open key verb opened
+  open=$(status_open_decisions_incremental "$STATE/$1.status" '' timed) || return 1
+  while IFS=$'\t' read -r key verb opened _; do
+    [ "$key" = "$2" ] && [ "$opened" = "$3" ] && [ "$verb" = needs-decision ] && return 0
+  done <<EOT
+$open
+EOT
+  return 1
+}
+
+# The findings path an ask-user gate note names, when it is a regular file
+# under this home's data directory for <task>.
+gate_council_findings_path() {  # <task> <note>
+  local task=$1 note=$2 path
+  case "$note" in 'ask-user findings='*' file='*) ;; *) return 1 ;; esac
+  path=${note##* file=}
+  path=${path%% *}
+  case "$path" in "$FM_HOME/data/$task/"*) ;; *) return 1 ;; esac
+  case "/$path/" in */../*|*/./*) return 1 ;; esac
+  [ -f "$path" ] && [ -r "$path" ] && [ ! -L "$path" ] || return 1
+  printf '%s\n' "$path"
+}
+
+gate_council_record_field() {  # <record> <top-level-field>
+  sed -n "s/^  \"$2\": \"\\([a-z0-9-]*\\)\",*\$/\\1/p" "$1" 2>/dev/null | head -n 1
+}
+
+# Surface the oldest finished council run as one wake. A run whose gate has
+# since closed is recorded and dropped; a run still unfinished after
+# FM_GATE_COUNCIL_UNFINISHED_SECS (default 7200) surfaces as unfinished.
+gate_council_surface() {  # <claims-file> <now>
+  local file=$1 now=$2 rows task key opened state stamp dir outcome choice reason
+  local limit=${FM_GATE_COUNCIL_UNFINISHED_SECS:-7200} code
+  [ -f "$file" ] || return 0
+  rows=$(awk -F '\t' '{ k=$1 FS $2 FS $3; row[k]=$0; if (!(k in seen)) { seen[k]=1; order[++n]=k } }
+    END { for (i = 1; i <= n; i++) { split(row[order[i]], f, FS); if (f[4] == "running") print row[order[i]] } }' "$file") || return 1
+  while IFS=$'\t' read -r task key opened state stamp dir; do
+    [ -n "$task" ] && [ -n "$dir" ] || continue
+    case "$stamp" in ''|*[!0-9]*) stamp=0 ;; esac
+    if [ -f "$dir/exit" ]; then
+      code=$(head -n 1 "$dir/exit" 2>/dev/null | tr -cd '0-9')
+      outcome=$(gate_council_record_field "$dir/record.json" outcome)
+      choice=$(gate_council_record_field "$dir/record.json" choice)
+      [ -n "$outcome" ] || outcome="error exit=${code:-?}"
+      reason="check: gate council ruled: $task key=$key outcome=$outcome choice=${choice:--}"
+      if [ -f "$dir/record.json" ]; then reason="$reason record=$dir/record.json"; else reason="$reason log=$dir/log"; fi
+    elif [ "$now" -ge "$stamp" ] && [ "$((now - stamp))" -ge "$limit" ]; then
+      reason="check: gate council ruled: $task key=$key outcome=unfinished choice=- log=$dir/log"
+    else
+      continue
+    fi
+    if ! gate_council_still_open "$task" "$key" "$opened"; then
+      printf '%s\t%s\t%s\tgate-closed\t%s\t%s\n' "$task" "$key" "$opened" "$now" "$dir" >> "$file" || return 1
+      continue
+    fi
+    fm_wake_append check "gate-council:$task:$key" "$reason" || return 1
+    printf '%s\t%s\t%s\tsurfaced\t%s\t%s\n' "$task" "$key" "$opened" "$now" "$dir" >> "$file" || return 1
+    GATE_COUNCIL_WAKE=$reason
+    return 0
+  done <<EOT
+$rows
+EOT
+}
+
+# Start `ak council run` in its own session so it outlives this watcher cycle.
+# The exit file is written last, so its presence means the run finished.
+gate_council_launch() {  # <ak> <run-dir> <roster> <findings> <intent-or-empty>
+  local ak=$1 dir=$2 roster=$3 findings=$4 intent=$5
+  # shellcheck disable=SC2016 # Expanded by the detached bash, not here.
+  local runner='"$@" >>"$0/log" 2>&1; s=$?; printf "%s\n" "$s" > "$0/exit.tmp" && mv -f "$0/exit.tmp" "$0/exit"'
+  set -- council run --card "$dir/card.json" --council-config "$roster" --context "$findings"
+  [ -z "$intent" ] || set -- "$@" --context "$intent"
+  set -- "$@" --out "$dir/record.json"
+  if command -v setsid >/dev/null 2>&1; then
+    ( setsid nohup bash -c "$runner" "$dir" "$ak" "$@" </dev/null >/dev/null 2>&1 & )
+  else
+    ( nohup bash -c "$runner" "$dir" "$ak" "$@" </dev/null >/dev/null 2>&1 & )
+  fi
+}
+
+away_gate_council_tick() {  # [now-epoch]
+  local now=${1:-} config="$CONFIG/gate-council" roster projects after ak
+  local record="$STATE/.afk-contract" confirmed exclude f task open key verb opened note
+  local claim_file="$STATE/.away-gate-council-claims" claim_lock meta project findings
+  local due_task='' due_key='' due_opened='' due_findings='' dir id intent='' record_error
+  GATE_COUNCIL_WAKE=
+  [ -e "$config" ] || [ -L "$config" ] || return 0
+  [ -f "$config" ] && [ -r "$config" ] && [ ! -L "$config" ] \
+    || { echo 'watcher: gate council config is not a readable regular file' >&2; return 1; }
+  if [ -e "$claim_file" ] || [ -L "$claim_file" ]; then
+    [ -f "$claim_file" ] && [ -r "$claim_file" ] && [ ! -L "$claim_file" ] || return 1
+  fi
+  [ -n "$now" ] || fm_watch_now now
+  gate_council_surface "$claim_file" "$now" || return 1
+  [ -z "$GATE_COUNCIL_WAKE" ] || return 0
+  away_record_present || return 0
+  if ! record_error=$(fm_afk_contract_validate "$record" 2>&1); then
+    away_record_present || return 0
+    printf '%s\n' "$record_error" >&2
+    return 1
+  fi
+  roster=$(gate_council_config_value "$config" roster)
+  projects=$(gate_council_config_value "$config" projects)
+  after=$(gate_council_config_value "$config" after-secs)
+  ak=$(gate_council_config_value "$config" ak)
+  [ -n "$after" ] || after=3600
+  case "$after" in 0*|*[!0-9]*) echo 'watcher: invalid gate council after-secs' >&2; return 1 ;; esac
+  [ "${#after}" -le 9 ] || { echo 'watcher: invalid gate council after-secs' >&2; return 1; }
+  [ -n "$roster" ] && [ -f "$roster" ] && [ -r "$roster" ] \
+    || { echo 'watcher: gate council roster is missing or unreadable' >&2; return 1; }
+  [ -n "$ak" ] || ak=$(command -v ak 2>/dev/null) || ak=
+  [ -n "$ak" ] && [ -x "$ak" ] || { echo 'watcher: gate council needs an executable ak' >&2; return 1; }
+  [ -n "$projects" ] || return 0
+  confirmed=$(fm_afk_contract_read_field "$record" confirmed_epoch)
+  exclude=$(status_scan_parent_channel_exclude "$STATE")
+  for f in "$STATE"/*.status; do
+    [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || continue
+    [ "$f" != "$exclude" ] || continue
+    task=${f##*/}; task=${task%.status}
+    case "$task" in ''|*[!A-Za-z0-9._-]*) continue ;; esac
+    meta="$STATE/$task.meta"
+    [ -f "$meta" ] && [ ! -L "$meta" ] || continue
+    project=$(sed -n 's/^project=//p' "$meta" | head -n 1)
+    gate_council_project_allowed "$projects" "$project" || continue
+    status_is_paused_or_captain_held "$(status_declared_wait_line "$f")" && continue
+    task_captain_call_open "$task" && continue
+    open=$(status_open_decisions_incremental "$f" '' timed) || return 1
+    while IFS=$'\t' read -r key verb opened _ note; do
+      [ "$verb" = needs-decision ] || continue
+      case "$key" in nm-?*-?*) ;; *) continue ;; esac
+      case "$key" in *[!A-Za-z0-9._-]*) continue ;; esac
+      case "$opened" in ''|unknown|*[!0-9]*) continue ;; esac
+      [ "$now" -ge "$opened" ] && [ "$((now - opened))" -ge "$after" ] || continue
+      [ -z "$(gate_council_claim_state "$claim_file" "$task" "$key" "$opened")" ] || continue
+      findings=$(gate_council_findings_path "$task" "$note") || continue
+      if [ -z "$due_opened" ] || [ "$opened" -lt "$due_opened" ]; then
+        due_task=$task; due_key=$key; due_opened=$opened; due_findings=$findings
+      fi
+    done <<EOT
+$open
+EOT
+  done
+  [ -n "$due_task" ] || return 0
+  claim_lock="$STATE/.away-gate-council-claims.lock"
+  fm_lock_try_acquire "$claim_lock" || return 0
+  if [ -n "$(gate_council_claim_state "$claim_file" "$due_task" "$due_key" "$due_opened")" ] \
+    || ! away_record_present || ! fm_afk_contract_validate "$record" >/dev/null 2>&1 \
+    || [ "$(fm_afk_contract_read_field "$record" confirmed_epoch)" != "$confirmed" ] \
+    || ! gate_council_still_open "$due_task" "$due_key" "$due_opened"; then
+    fm_lock_release "$claim_lock"
+    return 0
+  fi
+  dir="$FM_HOME/data/$due_task/gate-council-$due_key-$due_opened"
+  id=$(printf 'gate-%s-%s-%s' "$due_task" "$due_key" "$due_opened" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C tr -c 'a-z0-9' '-')
+  if ! mkdir -p -- "$dir" || [ -L "$dir" ] || ! chmod 700 "$dir" \
+    || ! printf '{"id":"%s","question":"%s","options":["fix","decline"],"approve":"fix"}\n' "$id" \
+      "A Firstmate worker's no-mistakes validation gate ($due_task, $due_key) has waited over an hour on ask-user findings. Using the findings file and the task's intent in the context, should the worker fix the findings or decline them?" \
+      > "$dir/card.json"; then
+    printf '%s\t%s\t%s\tlaunch-failed\t%s\t%s\n' "$due_task" "$due_key" "$due_opened" "$now" "$dir" >> "$claim_file"
+    fm_lock_release "$claim_lock"
+    echo "watcher: gate council could not prepare $dir" >&2
+    return 0
+  fi
+  if [ -f "$FM_HOME/data/$due_task/brief.md" ]; then
+    # shellcheck source=bin/fm-brief-heading-lib.sh
+    declare -F fm_brief_task_heading_body >/dev/null || . "$SCRIPT_DIR/fm-brief-heading-lib.sh"
+    if fm_brief_task_heading_body "$FM_HOME/data/$due_task/brief.md" "## Captain's intent" > "$dir/task-intent.md" \
+      && [ -s "$dir/task-intent.md" ]; then
+      intent="$dir/task-intent.md"
+    fi
+  fi
+  printf '%s\t%s\t%s\trunning\t%s\t%s\n' "$due_task" "$due_key" "$due_opened" "$now" "$dir" >> "$claim_file" || {
+    fm_lock_release "$claim_lock"; return 1;
+  }
+  fm_lock_release "$claim_lock"
+  gate_council_launch "$ak" "$dir" "$roster" "$due_findings" "$intent"
+}
+
 # The identity a re-surface throttle is bound to: the task's whole status-log
 # signature. Any new status event - a replacement wait, a fresh delivery, a
 # blocker - changes it and so starts its own window instead of inheriting the
@@ -5296,6 +5526,11 @@ while :; do
     echo 'watcher: away decision age check failed' >&2
     exit 1
   }
+  away_gate_council_tick || {
+    echo 'watcher: away gate council check failed' >&2
+    exit 1
+  }
+  [ -z "$GATE_COUNCIL_WAKE" ] || wake "$GATE_COUNCIL_WAKE"
   # Endpoint liveness runs before queue observation: a positively dead or
   # missing secondmate endpoint is relaunched here on a bounded cadence, which
   # is also what unsticks that mate's foreign wake queue. The tick's single

@@ -1450,8 +1450,40 @@ unclaimed for a later scan.
 
 This route does not call the watchdog's decision council ([`docs/watchdog.md`](watchdog.md)): every overdue decision stays open and
 enters the configured captain page path; this route decides nothing unattended.
+An hour-old no-mistakes ask-user gate can also reach an AgentKit council through the separate opt-in trigger below; that trigger never replaces or delays this page.
 The claim records `page-sent`, `page-failed`, or `page-pending` from the notifier's actual result.
 Pending or failed pages, and claims interrupted before their page result, retry after 60 seconds while that decision remains open.
+
+## Away gate council (config/gate-council)
+
+This home-local, private file turns on the watcher's away gate council trigger.
+Absent, the trigger is off.
+While `state/.afk-contract` validates as away, the watcher hands one no-mistakes ask-user gate at a time to AgentKit's `ak council run`.
+Present and quiet postures never start a council.
+The file holds `key=value` lines; blank lines and `#` comments are ignored:
+
+| Key | Meaning |
+| --- | --- |
+| `roster` | Required. The private council roster passed as `--council-config`; AgentKit owns its format and its owner-only permission check. |
+| `projects` | Comma-separated project directory names, matched against the final component of the task's recorded `project=`. Empty means nothing routes. |
+| `after-secs` | Optional gate age in seconds before the council starts; a canonical positive integer of at most nine digits, default `3600`. |
+| `ak` | Optional path to the `ak` executable; default `ak` on `PATH`. |
+
+A missing roster, an invalid `after-secs`, or no executable `ak` fails the watcher check rather than routing nothing silently.
+
+A gate qualifies when its open status record has verb `needs-decision`, key `nm-<run>-<step>`, a valid `[at=<epoch>]` at least `after-secs` old, and the note `ask-user findings=<ids> file=<path>` with `<path>` a regular file under `data/<task>/`.
+Deferred waits, captain-held tasks, open captain calls, and the parent channel are excluded.
+`state/.away-gate-council-claims` binds one council to each task, key and opening epoch; the away confirmation and the open gate are checked again under its lock before the council starts.
+
+Each council runs detached in `data/<task>/gate-council-<key>-<opened>/`, which holds `card.json`, `task-intent.md` (the brief's `## Captain's intent` body, when present), `record.json`, `log`, and `exit`.
+The card asks whether the worker should `fix` or `decline` the findings, with `fix` as the approving option, so the blind veto seat reviews any fix ruling.
+The context is the findings file and the task intent; AgentKit's outbound gate decides whether they may leave the host.
+When `exit` appears, the next poll queues one `check: gate council ruled:` wake naming the outcome, the choice, and the record or log path.
+A run with no `exit` after `FM_GATE_COUNCIL_UNFINISHED_SECS` (default `7200`) surfaces as `outcome=unfinished`.
+A ruling for a gate that has since closed is recorded as `gate-closed` and not surfaced.
+
+The record is evidence, never captain approval: the trigger never answers the gate, waives a check, merges, or lifts a hold.
+Firstmate applies a ruling only through the normal gate response that `ask-user-authority` owns.
 
 ## Validating-run deferral (config/wedge-defer-validating)
 
