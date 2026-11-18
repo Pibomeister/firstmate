@@ -969,9 +969,11 @@ SH
   chmod +x "$root/bin/gh-axi"
   printf '%s\n' $$ > "$home/state/.lock"
   # A per-scan bound longer than the stage budget must still end inside it:
-  # nothing the scan started may outlive the stage that reports it.
+  # nothing the scan started may outlive the stage that reports it. The stage
+  # budget leaves room for the scan to reach the forge read on a loaded host,
+  # while staying well under the 60 s scan bound the stage must override.
   FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=2 \
-    FM_OUTER_PROOF_MARK="$home/proof-entered" FM_STARTUP_NETWORK_TIMEOUT=12 FM_UNPUSHED_TIMEOUT_SECS=60 \
+    FM_OUTER_PROOF_MARK="$home/proof-entered" FM_STARTUP_NETWORK_TIMEOUT=30 FM_UNPUSHED_TIMEOUT_SECS=60 \
     run_stage "$home" "$root" run --locked 1 --lock-pid $$
   [ -f "$home/proof-entered" ] || fail 'the scan never reached the delayed forge read'
   forge_pid=$(cat "$home/proof-entered")
