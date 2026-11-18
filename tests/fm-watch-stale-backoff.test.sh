@@ -31,9 +31,8 @@ wait_for_exit() {  # <pid> [polls]
   fm_backoff_base_wait_for_exit "$1" "$(load_tolerant_polls "${2:-50}")"
 }
 
-# Cumulative attempt times for base 2, double, cap 32, budget 300, plus a
-# 299s probe just under the floor. 254 and 286 are the attempts that fired
-# under the old 240s default.
+# Idle ages below the 300s floor. 254 and 286 fired under the old 240s default.
+# 299s is the probe just under the floor.
 STALE_BACKOFF_SILENT_ELAPSED='0 2 6 14 30 62 94 126 158 190 222 254 286 299'
 
 run_backoff_cycle() {  # <state> <fakebin> <out> <capture> <window> <key> <t0> <elapsed>
