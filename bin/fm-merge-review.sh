@@ -651,8 +651,11 @@ mr_parse_lines() {  # <file> <FINDING|DISPOSITION>
 # Read parsed FINDING rows on stdin and check them against the review round
 # and the prior findings. Prints the rows that stand, one "E <reason>" row for
 # each defect, and one "B" row when a standing row holds a finding as blocking.
-# When an open finding has two status lines, the line that holds it stands,
-# and a class on either line stays with it.
+# When an open finding has several status lines, the line of highest rank
+# stands (blocking or regression, then an edge case or a line with a class,
+# then any other; the earliest wins a tie), and a class on any line stays
+# with it. A NON-BLOCKING line for an open finding stays a form defect and
+# never sets "B".
 mr_findings_filter() {  # <round> <prior-file-or-empty>
   LC_ALL=C awk -F'\t' -v round="$1" -v prior="$2" '
     function rank(status, class) {
@@ -678,20 +681,16 @@ mr_findings_filter() {  # <round> <prior-file-or-empty>
         }
       } else {
         if (!(ref in open)) { out[++m] = "E\t" ref " is not an open finding of this pull request"; next }
-        if (ref in seen) {
-          out[++m] = "E\t" ref " has two status lines"
-          i = seen[ref]
-          if (status != "NON-BLOCKING" && rank(status, class) > rank(st[i], cl[i])) {
-            if (class == "none") class = cl[i]
-            ord[i] = $2; st[i] = status; cl[i] = class; tail[i] = rest
-          } else if (cl[i] == "none" && class != "none") cl[i] = class
-          next
+        if (ref in lines) out[++m] = "E\t" ref " has two status lines"
+        lines[ref] = 1
+        if (status == "NON-BLOCKING") out[++m] = "E\t" ref " is open and cannot be NON-BLOCKING"
+        else stated[ref] = 1
+        if (class != "none" && !(ref in fcl)) fcl[ref] = class
+        if (status == "NON-BLOCKING" && class == "none") next
+        if (!(ref in bst) || rank(status, class) > rank(bst[ref], bcl[ref])) {
+          bord[ref] = $2; bst[ref] = status; bcl[ref] = class; btail[ref] = rest
         }
-        if (status == "NON-BLOCKING") {
-          if (class != "none" && !(ref in pcls)) { pcls[ref] = class; pord[ref] = $2; ptail[ref] = rest }
-          out[++m] = "E\t" ref " is open and cannot be NON-BLOCKING"; next
-        }
-        seen[ref] = m + 1
+        next
       }
       out[++m] = ""
       ord[m] = $2; rf[m] = ref; st[m] = status; cl[m] = class; tail[m] = rest
@@ -699,15 +698,20 @@ mr_findings_filter() {  # <round> <prior-file-or-empty>
     END {
       for (i = 1; i <= m; i++) {
         if (out[i] != "") { print out[i]; continue }
-        if (cl[i] == "none" && (rf[i] in pcls)) cl[i] = pcls[rf[i]]
         print "ok\t" ord[i] "\t" rf[i] "\t" st[i] "\t" cl[i] "\t" tail[i]
         if (st[i] == "BLOCKING" || st[i] == "REGRESSION") dissent = 1
         else if (st[i] == "EDGE-CASE" && (round < 3 || cl[i] != "none")) dissent = 1
         else if (st[i] == "NON-BLOCKING" && cl[i] != "none") dissent = 1
       }
-      for (i = 1; i <= count; i++) if (!(ids[i] in seen)) {
-        print "E\topen finding " ids[i] " has no status line"
-        if (ids[i] in pcls) print "ok\t" pord[ids[i]] "\t" ids[i] "\tNON-BLOCKING\t" pcls[ids[i]] "\t" ptail[ids[i]]
+      for (i = 1; i <= count; i++) {
+        id = ids[i]
+        if (!(id in stated)) print "E\topen finding " id " has no status line"
+        if (!(id in bst)) continue
+        c = bcl[id]
+        if (c == "none" && (id in fcl)) c = fcl[id]
+        print "ok\t" bord[id] "\t" id "\t" bst[id] "\t" c "\t" btail[id]
+        if (bst[id] == "BLOCKING" || bst[id] == "REGRESSION") dissent = 1
+        else if (bst[id] == "EDGE-CASE" && (round < 3 || c != "none")) dissent = 1
       }
       if (dissent) print "B"
     }'

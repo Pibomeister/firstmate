@@ -2363,6 +2363,43 @@ test_two_status_lines_keep_the_one_that_holds_the_finding() {
   run_at_head || rc=$?
   assert_match "^F1 | open | data-loss | " "$STUB/agy.prior" "two-lines-nb: the next head lost the class of the NON-BLOCKING line"
 
+  # With the other seat saying RESOLVED, a classed NON-BLOCKING line before or
+  # after a RESOLVED line still keeps the finding open with its class.
+  local order
+  for order in before after; do
+    make_case "nb-$order-resolved" "${TWO_SEATS[@]}"
+    set_review claude \
+      'FINDING NEW | BLOCKING | none | feature.txt:1 | A crash mid-write truncates the file.' \
+      'VERDICT: BLOCK @HEAD@'
+    rc=0
+    run_at_head || rc=$?
+    expect_code 1 "$rc" "nb-$order-resolved: round 1"
+    next_head 'second head'
+    if [ "$order" = before ]; then
+      set_review claude \
+        'FINDING F1 | NON-BLOCKING | data-loss | feature.txt:1 | The rename still runs before the sync.' \
+        'FINDING F1 | RESOLVED | none | feature.txt:1 | The write is now atomic.' \
+        'VERDICT: BLOCK @HEAD@'
+    else
+      set_review claude \
+        'FINDING F1 | RESOLVED | none | feature.txt:1 | The write is now atomic.' \
+        'FINDING F1 | NON-BLOCKING | data-loss | feature.txt:1 | The rename still runs before the sync.' \
+        'VERDICT: BLOCK @HEAD@'
+    fi
+    set_review agy \
+      'FINDING F1 | RESOLVED | none | feature.txt:1 | The write is now atomic.' \
+      'VERDICT: APPROVE @HEAD@'
+    rc=0
+    run_at_head || rc=$?
+    expect_code 1 "$rc" "nb-$order-resolved: round 2"
+    findings_at_head || fail "nb-$order-resolved: findings failed"
+    assert_match "^F1	open	data-loss	" "$CASE/stdout" "nb-$order-resolved: a RESOLVED line settled a finding held with a class"
+    next_head 'third head'
+    rc=0
+    run_at_head || rc=$?
+    assert_match "^F1 | open | data-loss | " "$STUB/agy.prior" "nb-$order-resolved: the next head did not get the finding as open with its class"
+  done
+
   # The same class on a review's only line for the finding also reaches the next head.
   make_case one-line-nb "${TWO_SEATS[@]}"
   set_review claude \
