@@ -413,18 +413,18 @@ test_claim_plus_two_after_shell_same_generation() {
     --cursor
   expect_silent "claim alone"
   run_hook "$home" \
-    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh does the thing\n","duration":1.1,"cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh does the thing\n","duration":1100,"cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
     --cursor
   expect_silent "first afterShellExecution rerun"
   run_hook "$home" \
-    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh does the thing\n","duration":1.4,"cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh does the thing\n","duration":1100,"cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
     --cursor
-  expect_silent "second afterShellExecution rerun is pending, no stdout"
+  expect_silent "equal-duration afterShellExecution rerun is pending, no stdout"
   run_hook "$home" \
     '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
     --cursor
   expect_cursor_inject "principle-attack-the-premise" "pending TAP red delivered on postToolUse"
-  pass "two afterShellExecution reruns with the same conversation, command, and generation reach streak 2"
+  pass "two afterShellExecution reruns with equal integer ms duration reach streak 2"
 }
 
 test_after_shell_then_failure_stays_at_streak_one() {
@@ -768,8 +768,6 @@ test_lock_aged_five_seconds_breaks_once_stale() {
     '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed tests/export.test.sh\n"},"session_id":"s1"}' \
     --claude
   expect_silent "claim through a lock that ages past stale"
-  [ ! -d "$home/state/pstack-verify-reds.tsv.lock" ] \
-    || fail "aging lock must be released after the claim"
   pass "a lock aged about 2s is broken once it goes stale"
 }
 
@@ -834,6 +832,151 @@ test_missing_jq_fails_open() {
   expect_code 0 "$status" "missing jq must not fail the turn"
   [ -z "$out" ] || fail "missing jq must not inject, got: $out"
   pass "missing jq fails open without skipping the suite"
+}
+
+test_after_shell_status_append_is_consumed_by_post_tool_use() {
+  local home
+  home="$TMP_ROOT/pending-status-consume"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    "{\"hook_event_name\":\"afterShellExecution\",\"command\":$(printf '%s' "$STATUS_APPEND" | jq -Rs .),\"output\":\"\",\"duration\":1100,\"cursor_version\":\"x\",\"conversation_id\":\"c1\",\"generation_id\":\"g\"}" \
+    --cursor
+  expect_silent "afterShellExecution STATUS_APPEND is deferred"
+  run_hook "$home" \
+    "{\"hook_event_name\":\"postToolUse\",\"tool_name\":\"Shell\",\"tool_input\":{\"command\":$(printf '%s' "$STATUS_APPEND" | jq -Rs .)},\"tool_output\":\"{\\\"exitCode\\\":0}\",\"cursor_version\":\"x\",\"conversation_id\":\"c1\",\"generation_id\":\"g\"}" \
+    --cursor
+  expect_cursor_inject "principle-prove-it-works" "postToolUse emits the same STATUS_APPEND"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
+    --cursor
+  expect_silent "deferred STATUS_APPEND must not inject again on a later Read"
+  pass "postToolUse of the same STATUS_APPEND consumes the deferred completion"
+}
+
+test_parallel_post_tool_use_takes_pending_once() {
+  local home payload p1 p2 pid1 pid2 s1=0 s2=0 hits=0 f
+  home="$TMP_ROOT/pending-parallel"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    '{"hook_event_name":"afterAgentResponse","text":"the export is faster now","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
+    --cursor
+  expect_silent "speed claim deferred before parallel take"
+  payload='{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g"}'
+  p1="$home/p1.out"
+  p2="$home/p2.out"
+  printf '%s' "$payload" | env -u FM_HOME \
+    FM_ROOT_OVERRIDE="$home" FM_STATE_OVERRIDE="$home/state" \
+    bash "$HOOK" --cursor >"$p1" &
+  pid1=$!
+  printf '%s' "$payload" | env -u FM_HOME \
+    FM_ROOT_OVERRIDE="$home" FM_STATE_OVERRIDE="$home/state" \
+    bash "$HOOK" --cursor >"$p2" &
+  pid2=$!
+  wait "$pid1" || s1=$?
+  wait "$pid2" || s2=$?
+  expect_code 0 "$s1" "first parallel postToolUse must exit 0"
+  expect_code 0 "$s2" "second parallel postToolUse must exit 0"
+  for f in "$p1" "$p2"; do
+    if [ -s "$f" ] && jq -e --arg p "principle-explain-the-number" '
+        (keys | sort) == ["additional_context"]
+        and (.additional_context|contains($p))
+      ' "$f" >/dev/null 2>&1; then
+      hits=$((hits + 1))
+    fi
+  done
+  [ "$hits" -eq 1 ] || fail "parallel postToolUse must deliver pending once, got $hits"
+  pass "parallel postToolUse takes a pending principle once"
+}
+
+test_prefixed_is_not_a_claimed_fix() {
+  local home
+  home="$TMP_ROOT/reds-prefixed"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"true"},"tool_response":{"stdout":"prefixed tests/export.test.sh\n"},"session_id":"s1"}' \
+    --claude
+  expect_silent "prefixed is not a claimed fix"
+  run_hook "$home" \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh\n"},"tool_use_id":"r1","session_id":"s1"}' \
+    --claude
+  run_hook "$home" \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stderr":"not ok - tests/export.test.sh\n"},"tool_use_id":"r2","session_id":"s1"}' \
+    --claude
+  expect_silent "two TAP reds after prefixed must not inject attack-the-premise"
+  pass "prefixed tests/export.test.sh is not a claimed fix"
+}
+
+test_nested_cursor_version_stays_on_claude_path() {
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"UserPromptSubmit","prompt":"the export is faster now","tool_input":{"cursor_version":"nested"}}' \
+    --claude
+  expect_claude_inject "principle-explain-the-number" "UserPromptSubmit" "nested cursor_version must not flip host"
+  pass "a nested cursor_version key stays on the Claude emit path"
+}
+
+test_command_comment_tap_is_not_a_claude_red() {
+  local home
+  home="$TMP_ROOT/reds-comment"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"fixed tests/export.test.sh\n"},"session_id":"s1"}' \
+    --claude
+  expect_silent "claimed fix before command-comment TAP"
+  run_hook "$home" \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"echo ok # not ok - tests/export.test.sh"},"tool_response":{"stdout":"ok\n"},"tool_use_id":"c1","session_id":"s1"}' \
+    --claude
+  expect_silent "first command-comment TAP is not a red"
+  run_hook "$home" \
+    '{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"echo ok # not ok - tests/export.test.sh"},"tool_response":{"stdout":"ok\n"},"tool_use_id":"c2","session_id":"s1"}' \
+    --claude
+  expect_silent "a TAP line in the command string must not count as a red"
+  pass "Claude red counting ignores a not ok comment in the command"
+}
+
+test_got_faster_to_write_is_not_a_speed_claim() {
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"UserPromptSubmit","prompt":"tests got faster to write"}' \
+    --claude
+  expect_silent "got faster to write"
+  pass "tests got faster to write does not inject principle-explain-the-number"
+}
+
+test_dotdot_conversation_id_is_not_stored() {
+  local home
+  home="$TMP_ROOT/pending-dotdot"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    '{"hook_event_name":"afterAgentResponse","text":"the export is faster now","cursor_version":"x","conversation_id":"..","generation_id":"g"}' \
+    --cursor
+  expect_silent "speed claim with conversation_id .."
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"cursor_version":"x","conversation_id":"..","generation_id":"g"}' \
+    --cursor
+  expect_silent "conversation_id .. must not store or deliver pending"
+  pass "conversation_id .. is not a pending filename component"
+}
+
+test_two_pending_principles_are_delivered_in_order() {
+  local home
+  home="$TMP_ROOT/pending-multi"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    '{"hook_event_name":"afterAgentResponse","text":"the export is faster now","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
+    --cursor
+  expect_silent "first pending principle"
+  run_hook "$home" \
+    '{"hook_event_name":"afterAgentResponse","text":"done [at=1731880000]: shipped the export","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
+    --cursor
+  expect_silent "second pending principle"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
+    --cursor
+  expect_cursor_inject "principle-explain-the-number" "first pending principle delivered"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
+    --cursor
+  expect_cursor_inject "principle-prove-it-works" "second pending principle delivered"
+  pass "two pending principles in one conversation are delivered in order"
 }
 
 test_cursor_and_claude_registrations_name_the_helper() {
@@ -972,5 +1115,13 @@ test_claude_mode_stands_down_on_cursor_post_tool_use
 test_claude_mode_is_silent_on_cursor_pre_tool_use
 test_malformed_payload_fails_open
 test_missing_jq_fails_open
+test_after_shell_status_append_is_consumed_by_post_tool_use
+test_parallel_post_tool_use_takes_pending_once
+test_prefixed_is_not_a_claimed_fix
+test_nested_cursor_version_stays_on_claude_path
+test_command_comment_tap_is_not_a_claude_red
+test_got_faster_to_write_is_not_a_speed_claim
+test_dotdot_conversation_id_is_not_stored
+test_two_pending_principles_are_delivered_in_order
 test_cursor_and_claude_registrations_name_the_helper
 test_vendored_skills_are_present

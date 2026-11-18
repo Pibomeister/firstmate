@@ -65,12 +65,13 @@
 #     call. postToolUse and postToolUseFailure never count Cursor reds;
 #     they only deliver pending. Claude counts from PostToolUse and
 #     PostToolUseFailure, which are mutually exclusive per call. A claim
-#     never sets the last token. Tokens dedupe exact duplicate deliveries
-#     of a red only: Cursor uses a digest of the whole payload (including
-#     output and duration); Claude uses tool_use_id. Recurring-red on
-#     Cursor is pending-delivered on the next postToolUse(/Failure).
-#     A pytest node id matches the file prefix before ::. Jest FAIL <path>
-#     is extracted.
+#     never sets the last token. Cursor counts every afterShellExecution
+#     (no payload digest). Claude tokens are tool_use_id, so a repeated
+#     delivery of the same tool use is one red. Recurring-red on Cursor
+#     is pending-delivered on the next postToolUse(/Failure). A pytest
+#     node id matches the file prefix before ::. Jest FAIL <path> is
+#     extracted. Pending markers are a per-conversation list; a delivering
+#     event that already emits consumes a matching deferred principle.
 #
 # Usage:
 #   <hook JSON on stdin> | bin/fm-pstack-verify-hook.sh [--claude|--cursor]
@@ -215,7 +216,7 @@ is_speed_claim_text() {  # <text>
     *as\ fast\ as*) return 1 ;;
   esac
   case "$cleaned" in
-    *it\'s\ faster*|*it\ is\ faster*|*got\ faster*|*now\ faster*|*is\ faster*) return 0 ;;
+    *it\'s\ faster*|*it\ is\ faster*|*now\ faster*|*is\ faster*) return 0 ;;
     *much\ faster*|*a\ lot\ faster*|*lot\ faster*) return 0 ;;
     *[0-9]x\ faster*|[0-9]\ times\ faster*|*[0-9]\ times\ faster*|*%\ faster*) return 0 ;;
   esac
@@ -305,8 +306,17 @@ sanitize_id() {  # <raw> -> stdout
   printf '%s' "$s"
 }
 
+# One filename component. Paths, '..', and empty keys are not stored.
 sanitize_conv_key() {  # <raw> -> filename-safe key
-  printf '%s' "$1" | tr -cd 'a-zA-Z0-9._-'
+  local s=$1
+  case "$s" in
+    ''|'.'|'..'|*'..'*|/*|*/*|*\\*) printf ''; return 0 ;;
+  esac
+  s=$(printf '%s' "$s" | tr -cd 'a-zA-Z0-9._-')
+  case "$s" in
+    ''|'.'|'..'|*'..'*) printf ''; return 0 ;;
+  esac
+  printf '%s' "$s"
 }
 
 _split_words() {  # <text> -> words on stdout, noglob
@@ -375,7 +385,8 @@ extract_claim_ids() {  # <text>
     lower=$(printf '%s' "$line" | tr '[:upper:]' '[:lower:]')
     rest=
     case "$lower" in
-      *fixed\ *) rest=${lower#*fixed } ;;
+      fixed\ *) rest=${lower#fixed } ;;
+      *" fixed "*) rest=${lower#*" fixed "} ;;
       *"should now pass "*) rest=${lower#*should now pass } ;;
       *) continue ;;
     esac
@@ -453,35 +464,100 @@ release_reds_lock() {  # <lock>
 }
 
 # Pending marker for Cursor events that cannot emit additional_context.
-# One file per conversation_id. Missing conversation_id is not stored.
+# One file per conversation_id; unique principle lines, FIFO. Missing
+# conversation_id is not stored. Take and write share the reds lock.
 write_pending() {  # <conversation-id> <principle>
-  local conv=$1 principle=$2 file tmp dir
+  local conv=$1 principle=$2 file lock line
   conv=$(sanitize_conv_key "$conv")
   [ -n "$conv" ] || return 0
   case "$principle" in
     principle-prove-it-works|principle-explain-the-number|principle-attack-the-premise) ;;
     *) return 0 ;;
   esac
-  mkdir -p "$(pending_dir)" 2>/dev/null || return 0
+  mkdir -p "$STATE" "$(pending_dir)" 2>/dev/null || return 0
+  lock="$(reds_file).lock"
+  acquire_reds_lock "$lock" || return 0
   file=$(pending_file_for "$conv")
-  tmp="${file}.tmp.$$"
-  printf '%s\n' "$principle" > "$tmp" 2>/dev/null || return 0
-  mv "$tmp" "$file" 2>/dev/null || rm -f "$tmp"
+  if [ -f "$file" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      if [ "$line" = "$principle" ]; then
+        release_reds_lock "$lock"
+        return 0
+      fi
+    done < "$file"
+  fi
+  printf '%s\n' "$principle" >> "$file"
+  release_reds_lock "$lock"
 }
 
 take_pending() {  # <conversation-id> -> principle on stdout
-  local conv=$1 file principle
+  local conv=$1 file lock tmp principle line kept=0
   conv=$(sanitize_conv_key "$conv")
   [ -n "$conv" ] || return 0
+  mkdir -p "$STATE" "$(pending_dir)" 2>/dev/null || return 0
+  lock="$(reds_file).lock"
+  acquire_reds_lock "$lock" || return 0
   file=$(pending_file_for "$conv")
-  [ -f "$file" ] || return 0
-  IFS= read -r principle < "$file" || return 0
-  case "$principle" in
-    principle-prove-it-works|principle-explain-the-number|principle-attack-the-premise) ;;
-    *) rm -f "$file"; return 0 ;;
-  esac
-  rm -f "$file"
+  if [ ! -f "$file" ]; then
+    release_reds_lock "$lock"
+    return 0
+  fi
+  tmp="${file}.tmp.$$"
+  principle=
+  : > "$tmp"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      principle-prove-it-works|principle-explain-the-number|principle-attack-the-premise)
+        if [ -z "$principle" ]; then
+          principle=$line
+        else
+          printf '%s\n' "$line" >> "$tmp"
+          kept=1
+        fi
+        ;;
+    esac
+  done < "$file"
+  if [ "$kept" -eq 1 ]; then
+    mv "$tmp" "$file" 2>/dev/null || rm -f "$tmp"
+  else
+    rm -f "$file" "$tmp"
+  fi
+  release_reds_lock "$lock"
   printf '%s' "$principle"
+}
+
+drop_pending() {  # <conversation-id> <principle>
+  local conv=$1 principle=$2 file lock tmp line kept=0 dropped=0
+  conv=$(sanitize_conv_key "$conv")
+  [ -n "$conv" ] || return 0
+  mkdir -p "$STATE" "$(pending_dir)" 2>/dev/null || return 0
+  lock="$(reds_file).lock"
+  acquire_reds_lock "$lock" || return 0
+  file=$(pending_file_for "$conv")
+  if [ ! -f "$file" ]; then
+    release_reds_lock "$lock"
+    return 0
+  fi
+  tmp="${file}.tmp.$$"
+  : > "$tmp"
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ "$dropped" -eq 0 ] && [ "$line" = "$principle" ]; then
+      dropped=1
+      continue
+    fi
+    case "$line" in
+      principle-prove-it-works|principle-explain-the-number|principle-attack-the-premise)
+        printf '%s\n' "$line" >> "$tmp"
+        kept=1
+        ;;
+    esac
+  done < "$file"
+  if [ "$kept" -eq 1 ]; then
+    mv "$tmp" "$file" 2>/dev/null || rm -f "$tmp"
+  else
+    rm -f "$file" "$tmp"
+  fi
+  release_reds_lock "$lock"
 }
 
 # Record a claimed fix or a red for <conv,id>. Prints the id when streak
@@ -637,9 +713,6 @@ cursor_delivers_pending() {
 PAYLOAD=$(cat 2>/dev/null || true)
 [ -n "$PAYLOAD" ] || fail_open
 EVENT=$(event_from_payload "$PAYLOAD")
-if printf '%s' "$PAYLOAD" | grep -q '"cursor_version"'; then
-  CURSOR_OUT=1
-fi
 command -v jq >/dev/null 2>&1 || fail_open
 
 # shellcheck source=bin/fm-hook-host-lib.sh
@@ -708,9 +781,11 @@ ERROR=$(printf '%s' "$FIELDS" | jq -r '.error' 2>/dev/null) || fail_open
 TOKEN=$(printf '%s' "$FIELDS" | jq -r '.token' 2>/dev/null) || fail_open
 CONV=$(printf '%s' "$FIELDS" | jq -r '.conv' 2>/dev/null) || fail_open
 if is_cursor_host; then
+  TOKEN="-"
+elif [ -z "$TOKEN" ]; then
   TOKEN=$(printf '%s' "$PAYLOAD" | cksum 2>/dev/null | awk '{print $1}')
 fi
-[ -n "$TOKEN" ] || TOKEN=$(printf '%s' "$PAYLOAD" | cksum 2>/dev/null | awk '{print $1}')
+[ -n "$TOKEN" ] || TOKEN="-"
 
 QUOTED=
 if is_shell_tool "$TOOL" || [ -n "$COMMAND" ]; then
@@ -767,7 +842,6 @@ if [ -n "$CONV" ] && is_red_counting_event; then
     RED_IDS=$(extract_red_ids "$OUTPUT")
   else
     RED_IDS=$(extract_red_ids "$STREAMS")
-    [ -n "$RED_IDS" ] || RED_IDS=$(extract_red_ids "$VISIBLE")
   fi
 fi
 
@@ -813,6 +887,9 @@ if [ -n "$PRINCIPLE" ]; then
   [ -n "$INSTR" ] || fail_open
   [ -n "$EVENT" ] || EVENT=unknown
   emit_context "$EVENT" "$INSTR" || fail_open
+  if cursor_delivers_pending; then
+    drop_pending "$CONV" "$PRINCIPLE"
+  fi
 fi
 emit_before_submit_continue
 exit 0
