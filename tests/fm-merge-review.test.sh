@@ -2338,6 +2338,30 @@ test_two_status_lines_keep_the_one_that_holds_the_finding() {
   expect_code 1 "$rc" "two-lines: round 4"
   assert_absent "$(store_dir)/$CLAUDE_SEAT.receipt" "two-lines: an approval with two status lines left a receipt"
   assert_grep "F1 has two status lines" "$CASE/stdout" "two-lines: the defect was not named"
+
+  # A class given on a NON-BLOCKING line for an open finding stays with it.
+  make_case two-lines-nb "${TWO_SEATS[@]}"
+  set_review claude \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | A crash mid-write truncates the file.' \
+    'VERDICT: BLOCK @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "two-lines-nb: round 1"
+  next_head 'second head'
+  set_review claude \
+    'FINDING F1 | NON-BLOCKING | data-loss | feature.txt:1 | The rename still runs before the sync.' \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The write is now atomic.' \
+    'VERDICT: BLOCK @HEAD@'
+  set_review agy \
+    'FINDING F1 | BLOCKING | none | feature.txt:1 | The rename still runs before the sync.' \
+    'VERDICT: BLOCK @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "two-lines-nb: round 2"
+  next_head 'third head'
+  rc=0
+  run_at_head || rc=$?
+  assert_match "^F1 | open | data-loss | " "$STUB/agy.prior" "two-lines-nb: the next head lost the class of the NON-BLOCKING line"
   pass "when a review gives a finding two status lines, the line that holds it stands with either line's class"
 }
 

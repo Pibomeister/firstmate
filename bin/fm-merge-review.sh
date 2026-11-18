@@ -687,7 +687,10 @@ mr_findings_filter() {  # <round> <prior-file-or-empty>
           } else if (cl[i] == "none" && class != "none") cl[i] = class
           next
         }
-        if (status == "NON-BLOCKING") { out[++m] = "E\t" ref " is open and cannot be NON-BLOCKING"; next }
+        if (status == "NON-BLOCKING") {
+          if (class != "none" && !(ref in pcls)) pcls[ref] = class
+          out[++m] = "E\t" ref " is open and cannot be NON-BLOCKING"; next
+        }
         seen[ref] = m + 1
       }
       out[++m] = ""
@@ -696,6 +699,7 @@ mr_findings_filter() {  # <round> <prior-file-or-empty>
     END {
       for (i = 1; i <= m; i++) {
         if (out[i] != "") { print out[i]; continue }
+        if (cl[i] == "none" && (rf[i] in pcls)) cl[i] = pcls[rf[i]]
         print "ok\t" ord[i] "\t" rf[i] "\t" st[i] "\t" cl[i] "\t" tail[i]
         if (st[i] == "BLOCKING" || st[i] == "REGRESSION") dissent = 1
         else if (st[i] == "EDGE-CASE" && (round < 3 || cl[i] != "none")) dissent = 1
