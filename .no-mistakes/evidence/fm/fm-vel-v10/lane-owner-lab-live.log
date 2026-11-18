@@ -1,0 +1,42 @@
+=== 1. Create disposable primary lab home ===
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v10-lab.a8APzZ/primary
+=== 2. Seed lane-owner secondmate home (firstmate-plan-mate) ===
+scaffolded: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-v10-lab.a8APzZ/primary/data/firstmate-plan-mate/brief.md (secondmate charter)
+home=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-v10-lab.a8APzZ/lane-home
+=== 3. Validate seeded registry + charter change & adversarial suffix check ===
+Updated data/secondmates.md:
+- firstmate-plan-mate - Firstmate fork delivery owner (home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-v10-lab.a8APzZ/lane-home; scope: Delivery and self-landing for the Firstmate fork; projects: ; added 2026-11-17)
+Adversarial corrupted secondmates.md exit=1 output=error: malformed secondmate registry entry: - firstmate-plan-mate - broken entry without home suffix
+=== 4. Verify bin/fm-claude-seed.manifest via bin/fm-quota-reroute.sh on seeded lane-home ===
+Unchanged seeded lane-home claude-tooling exit=1 output=''
+Adversarial edited skill in lane-home exit=0 output='worktree .agents/skills/secondmate-provisioning/SKILL.md'
+=== 5. Verify firstmate-self-repo role separation on lane-home ===
+User/operator lane-home report: fm-role: user (default)
+User/operator lane-home check on fork exit=1 output='refused: this home runs as firstmate user/operator and holds no publication authority for github.com/example-fork/firstmate'
+crew-dispatch.json	unchanged	
+dispatch-never-send	unchanged	
+crew-harness	unchanged	
+backlog-backend	unchanged	
+backend	unchanged	
+herdr-presentation-spaces	unchanged	
+herdr-project-groups	unchanged	
+startup-memory-budget	unchanged	
+trace-context	unchanged	
+launch-env-allowlist	unchanged	
+claude-permission-mode	unchanged	
+codex-approval-mode	unchanged	
+lavish-axi-host	unchanged	
+t3code-instances	unchanged	
+keep-ai-trailers	unchanged	
+supervision-host-off	unchanged	
+firstmate-role	pushed	
+goal-integrity	unchanged	
+data/captain-shared.md	unchanged	
+Inherited maintainer lane-home report: fm-role: maintainer github.com/example-fork/firstmate (inherited)
+Inherited maintainer lane-home check on fork: authorized: maintainer scope github.com/example-fork/firstmate
+Adversarial check on parent upstream with fork maintainer scope exit=1 output='refused: this home runs as firstmate user/operator and holds no publication authority for github.com/pborenstein/firstmate'
+One-task consent check on parent upstream: authorized: task consent for github.com/pborenstein/firstmate
+=== 6. Verify bin/fm-health-verdict.sh on lane-home (idle vs fresh) ===
+Stopped/idle lane-home verdict: verdict=ok reason=idle heartbeat_age=1001 lock=none watcher_age=unknown monitor=enabled at=1794963199
+Live lane-home verdict: verdict=ok reason=fresh heartbeat_age=2 lock=live watcher_age=0 monitor=enabled at=1794963200
+=== ALL LIVE DISPOSABLE LAB CHECKS PASSED ===
