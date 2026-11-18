@@ -248,6 +248,43 @@ test_quoted_gt_in_echo_is_not_a_test_write() {
   pass "echo of a quoted > tests/foo.test.sh does not inject"
 }
 
+test_heredoc_body_gt_is_not_a_test_write() {
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat > /tmp/setup.sh <<EOF\necho x > tests/foo.test.sh\nEOF"}}' \
+    --claude
+  expect_silent "unquoted heredoc body greater-than"
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat > /tmp/setup.sh <<'\''EOF'\''\necho x > tests/foo.test.sh\nEOF"}}' \
+    --claude
+  expect_silent "quoted heredoc body greater-than"
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat > tests/foo.test.sh <<EOF\necho x > /tmp/out\nEOF"}}' \
+    --claude
+  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
+    "heredoc command-line redirect to a test path"
+  pass "a > in a heredoc body does not inject; the heredoc command-line redirect still does"
+}
+
+test_backup_test_path_is_silent() {
+  local path
+  for path in foo.test.sh.bak foo.test.sh.orig foo.test.sh.swp tests/foo.test.sh.bak; do
+    run_hook "$PRIMARY" \
+      "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":$(printf '%s' "$path" | jq -Rs .),\"content\":\"pass x\n\"}}" \
+      --claude
+    expect_silent "Write of $path"
+  done
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat > foo.test.sh.bak <<EOF\npass x\nEOF"}}' \
+    --claude
+  expect_silent "Shell redirect to foo.test.sh.bak"
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"foo.test.sh","content":"pass x\n"}}' \
+    --claude
+  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
+    "foo.test.sh still injects after backup paths stay silent"
+  pass "backup suffixes on test paths do not inject principle-test-behavior-not-implementation"
+}
+
 test_its_faster_injects_explain_the_number() {
   run_hook "$PRIMARY" \
     "{\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"it's faster\"}" \
@@ -1082,6 +1119,25 @@ test_two_pending_principles_are_delivered_in_order() {
   pass "two pending principles in one conversation are delivered in order"
 }
 
+test_cursor_post_tool_use_then_after_agent_response_injects_once() {
+  local home
+  home="$TMP_ROOT/pending-post-then-after"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Shell","tool_input":{"command":"echo the export is faster now"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  expect_cursor_inject "principle-explain-the-number" "postToolUse emits the speed claim"
+  run_hook "$home" \
+    '{"hook_event_name":"afterAgentResponse","text":"the export is faster now","cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  expect_silent "afterAgentResponse must not re-queue a principle this generation already emitted"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g2"}' \
+    --cursor
+  expect_silent "a later postToolUse must not deliver the same principle again"
+  pass "postToolUse then afterAgentResponse delivers a speed claim once"
+}
+
 test_cursor_and_claude_registrations_name_the_helper() {
   command -v jq >/dev/null 2>&1 || fail "jq is required to pin hook JSON"
   jq -e '.hooks.postToolUse[] | select(.command | contains("fm-pstack-verify-hook.sh --cursor"))' \
@@ -1150,6 +1206,8 @@ test_vendored_skills_are_present() {
     || fail "fork catalog entries must live in catalog.d/pstack-verify.yaml"
   grep -Fq 'principle-prove-it-works' "$ROOT/.cursor/catalog.yaml" \
     && fail "fork catalog entries must not remain in catalog.yaml"
+  grep -Fq 'this repository carries none' "$ROOT/.cursor/catalog.yaml" \
+    && fail "catalog.yaml must not claim this repository carries no catalog.d fragments"
   grep -Fq 'principle-prove-it-works' "$ROOT/.cursor/references/shared/policies/invocation.yaml" \
     || fail "invocation.yaml model_invoked must name the four skills"
   pass "the four principle skills are vendored in both skill dirs"
@@ -1179,6 +1237,8 @@ test_cp_into_test_path_injects
 test_redirect_elsewhere_then_grep_test_path_is_silent
 test_redirect_elsewhere_then_cat_test_path_is_silent
 test_quoted_gt_in_echo_is_not_a_test_write
+test_heredoc_body_gt_is_not_a_test_write
+test_backup_test_path_is_silent
 test_claude_write_of_test_file_emits_once_across_pre_and_post
 test_contest_path_is_not_a_test_write
 test_write_of_docs_testing_notes_is_not_a_test_change
@@ -1235,5 +1295,6 @@ test_command_comment_tap_is_not_a_claude_red
 test_got_faster_to_write_is_not_a_speed_claim
 test_dotdot_conversation_id_is_not_stored
 test_two_pending_principles_are_delivered_in_order
+test_cursor_post_tool_use_then_after_agent_response_injects_once
 test_cursor_and_claude_registrations_name_the_helper
 test_vendored_skills_are_present
