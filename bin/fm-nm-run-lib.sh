@@ -177,9 +177,24 @@ fm_nm_state_db() {  # <worktree>
   printf '%s/state.sqlite\n' "$root"
 }
 
-# Scalar value of a TOON key in captured `axi status` output $1.
+# Scalar value of a TOON key in captured `axi status` output $1: the rest of
+# the first line whose first word, after leading whitespace, is `<key>:`, with
+# whitespace after the colon dropped. Parsed in this shell, with no child
+# process, because status readers call it many times per observation.
 fm_nm_field() {  # <toon-output> <key>
-  printf '%s\n' "$1" | sed -n "s/^[[:space:]]*$2:[[:space:]]*\(.*\)/\1/p" | head -1
+  local line rest
+  while IFS= read -r line || [ -n "$line" ]; do
+    rest=${line#"${line%%[![:space:]]*}"}
+    case "$rest" in
+      "$2:"*)
+        rest=${rest#"$2:"}
+        printf '%s\n' "${rest#"${rest%%[![:space:]]*}"}"
+        return 0
+        ;;
+    esac
+  done <<EOF_NM_FIELD
+$1
+EOF_NM_FIELD
 }
 
 # Full commit sha for sha-ish $2 as seen from worktree $1's own object store;

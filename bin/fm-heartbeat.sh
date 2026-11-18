@@ -569,16 +569,13 @@ heartbeat_task_row() {  # <snapshot-task-json>
   local turn_json context_json output_json
   local pane_backend='' pane_target='' pane_label=''
   local session composer=unknown last_commit last_push nm_json sha
-  id=$(printf '%s' "$task_json" | jq -r '.id')
-  wt=$(printf '%s' "$task_json" | jq -r '.paths.worktree.path // ""')
-  branch=$(printf '%s' "$task_json" | jq -r '.branch // ""')
-  backend=$(printf '%s' "$task_json" | jq -r '.backend // ""')
-  target=$(printf '%s' "$task_json" | jq -r '.endpoint.target // ""')
-  exists=$(printf '%s' "$task_json" | jq -r '.endpoint.exists // ""')
-  remote=$(printf '%s' "$task_json" | jq -r '.remote.host // ""')
-  harness=$(printf '%s' "$task_json" | jq -r '.harness // ""')
-  spawn_gen=$(printf '%s' "$task_json" | jq -r '.spawn_gen // ""')
-  kind=$(printf '%s' "$task_json" | jq -r '.kind // ""')
+  # One jq reads every scalar this row needs, joined by the ASCII unit
+  # separator, which no snapshot scalar holds.
+  IFS=$'\037' read -r id wt branch backend target exists remote harness spawn_gen kind <<EOF_TASK_FIELDS
+$(printf '%s' "$task_json" | jq -r '[.id, (.paths.worktree.path // ""), (.branch // ""), (.backend // ""),
+    (.endpoint.target // ""), (.endpoint.exists // ""), (.remote.host // ""), (.harness // ""),
+    (.spawn_gen // ""), (.kind // "")] | map(tostring) | join("\u001f")')
+EOF_TASK_FIELDS
   if [ -n "$remote" ]; then
     wt=
     no_worktree='worktree is on remote host'

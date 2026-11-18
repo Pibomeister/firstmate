@@ -942,6 +942,66 @@ test_open_decision_clears_on_keyed_resolution() {
   pass "durable fold clears a decision only on a keyed resolution"
 }
 
+# Repeated snapshots reuse the persisted open-decision fold: an unchanged log
+# folds no bytes, a grown log folds only its appended bytes, and the published
+# decisions match a whole-log fold at every step. A capture ending mid-line is
+# never folded through the persisted cursor.
+test_repeated_snapshots_fold_only_new_status_bytes() {
+  local home fakebin out probe status before appended full folded
+  home=$(make_home fold-reuse)
+  mkdir -p "$home/secondmate-home"
+  fm_write_meta "$home/state/fold-reuse.meta" \
+    "window=firstmate:fm-fold-reuse" \
+    "worktree=$home/secondmate-home" \
+    "project=$home/secondmate-home" \
+    "harness=codex" \
+    "kind=secondmate" \
+    "mode=secondmate" \
+    "home=$home/secondmate-home" \
+    "projects=alpha"
+  status="$home/state/fold-reuse.status"
+  probe="$home/probe.tsv"
+  : > "$probe"
+  printf 'needs-decision [key=route]: choose a sample route\n' > "$status"
+  printf 'working: routine line %s\n' 1 2 3 4 5 6 7 8 >> "$status"
+  fakebin=$(make_fakebin "$home")
+
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_OPEN_DECISIONS_READ_PROBE="$probe" "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e '.tasks[] | select(.id == "fold-reuse")
+    | (.hints.open_decisions | map(.key)) == ["route"] and .hints.pending_decision == true' >/dev/null \
+    || fail "first snapshot must publish the open decision: $out"
+  folded=$(grep -cF "$(printf '%s\t' "$status")" "$probe")
+  [ "$folded" = 1 ] || fail "first snapshot must fold the log exactly once, folded $folded times"
+
+  : > "$probe"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_OPEN_DECISIONS_READ_PROBE="$probe" "$SNAPSHOT" --json)
+  [ ! -s "$probe" ] || fail "an unchanged log must fold no bytes on a repeated snapshot: $(cat "$probe")"
+  printf '%s' "$out" | jq -e '.tasks[] | select(.id == "fold-reuse")
+    | (.hints.open_decisions | map(.key)) == ["route"]' >/dev/null \
+    || fail "the reused fold must still publish the open decision: $out"
+
+  before=$(LC_ALL=C wc -c < "$status" | tr -d '[:space:]')
+  printf 'resolved [key=route]: route chosen\n' >> "$status"
+  appended=$(( $(LC_ALL=C wc -c < "$status" | tr -d '[:space:]') - before ))
+  : > "$probe"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_OPEN_DECISIONS_READ_PROBE="$probe" "$SNAPSHOT" --json)
+  assert_equals "$(cut -f2 "$probe")" "$appended" "a grown log folds only its appended bytes"
+  full=$(bash -c '. "$1"; status_open_decisions "$2"' _ "$ROOT/bin/fm-classify-lib.sh" "$status")
+  assert_equals "$full" "" "the whole-log fold has no open decision after the resolution"
+  printf '%s' "$out" | jq -e '.tasks[] | select(.id == "fold-reuse")
+    | (.hints.open_decisions | length) == 0 and .hints.pending_decision == false' >/dev/null \
+    || fail "the incremental fold must publish the resolution: $out"
+
+  printf 'needs-decision [key=next]: choose the next step' >> "$status"
+  : > "$probe"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_OPEN_DECISIONS_READ_PROBE="$probe" "$SNAPSHOT" --json)
+  [ ! -s "$probe" ] || fail "a capture ending mid-line must not advance the persisted cursor: $(cat "$probe")"
+  printf '%s' "$out" | jq -e '.tasks[] | select(.id == "fold-reuse")
+    | (.hints.open_decisions | map(.key)) == ["next"]' >/dev/null \
+    || fail "a capture ending mid-line must still publish its whole-capture fold: $out"
+  pass "repeated snapshots fold only new status bytes and match the whole-log fold"
+}
+
 # A COMPLETED scout report must never be read as a pending decision. A scout that
 # raised a needs-decision and then finished (done) - its report delivered, its
 # decision either answered or captured in the report for the captain - must surface
@@ -1197,6 +1257,7 @@ fm_test_run \
   test_secondmate_open_decision_survives_live_endpoint \
   test_open_decision_transfers_to_captain_hold \
   test_open_decision_clears_on_keyed_resolution \
+  test_repeated_snapshots_fold_only_new_status_bytes \
   test_completed_scout_report_is_pointer_not_pending \
   test_parked_scout_decision_stays_pending \
   test_scout_reports_include_teardown_reports \
