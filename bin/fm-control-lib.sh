@@ -1233,9 +1233,11 @@ fm_control_feedback_dialog_dismiss() {  # <harness> <screen> [mode]
 # Delivers the dismiss choice resolved by fm_control_feedback_dialog_dismiss to
 # <backend>:<target> without ever pressing Enter or typing feedback text.
 # Only `0` (literal single-key skip/dismiss) and `Escape` are permitted.
+# The watchdog's tool-approval decline also sends its Escape here.
 # Escape goes only through fm_backend_send_key, and only where
 # fm_control_backend_supports_key allows it for <harness>; otherwise this
-# returns 5 and sends nothing.
+# returns 5 and sends nothing. Callers check that gate first, because a
+# timed wrapper can report 5 as an ordinary failure.
 fm_control_send_feedback_dismiss() {  # <backend> <target> <dismiss-key> [<expected-label>] [<harness>]
   local backend=${1-} target=${2-} key=${3-} label=${4-} harness=${5-} fn
   [ -n "$backend" ] && [ -n "$target" ] && [ -n "$key" ] || return 1
@@ -1364,7 +1366,8 @@ fm_control_acquire_feedback_claim() {  # <claim-dir>
 # Returns:
 #   0 - claimed, sent key, re-captured, and verified the dialog is gone
 #   1 - <screen> does not match a known feedback/bug-report dialog for <harness>
-#   2 - already claimed, live capture empty/failed/cleared, or unchanged sticky dialog; no key sent
+#   2 - already claimed, live capture empty/failed/cleared, unchanged sticky dialog,
+#       or a live dialog <screen> did not show; no key sent
 #   3 - claimed, but key delivery failed
 #   4 - claimed and key sent, but re-capture did not prove the dialog gone
 #   5 - the dialog needs a key <backend> cannot deliver for <harness>
@@ -1409,9 +1412,11 @@ fm_control_dismiss_feedback_dialog() {
     [ -n "$dialog_id" ] || return 1
     return 2
   fi
+  # The caller's screen showed no dialog, but the live pane does: it opened
+  # between the two reads. Hold, so no caller types into it.
   if [ -z "$dialog_id" ]; then
     fm_control_release_feedback_claim "$claim"
-    return 1
+    return 2
   fi
   dialog_id=${spec%%$'\t'*}
   dismiss_key=${spec#*$'\t'}

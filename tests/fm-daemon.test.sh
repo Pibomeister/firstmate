@@ -3979,6 +3979,33 @@ test_inject_msg_herdr_submits_through_backend_dispatch() {
   pass "inject_msg: dispatches busy-guard/composer-guard/submit through the herdr backend and succeeds on a confirmed empty composer"
 }
 
+# A survey can open between the daemon's capture and the helper's own. With a
+# marker left from an earlier dismissal, the helper reads the live pane; a
+# dialog there must hold the inject even though the first capture was idle.
+test_inject_msg_defers_when_dialog_opens_after_first_capture() {
+  local dir state
+  dir=$(make_supercase inject-dialog-race)
+  state="$dir/state"
+  afk_enter "$state"
+  (
+    : > "$state/.feedback-dismissed-$(fm_control_feedback_window_key herdr "default:w1:p2")"
+    fm_backend_target_exists() { return 0; }
+    pane_is_busy() { return 1; }
+    fm_backend_composer_state() { printf 'empty'; }
+    fm_backend_visible_capture() { printf '%s\n' 'some work' '────────────────' '❯ ' '────────────────'; }
+    fm_control_capture_feedback_pane() { printf '%s\n' 'some work' '● How is Claude doing this session? (optional)' '  1: Bad    2: Fine   3: Good   0: Dismiss' '────────────────' '❯ ' '────────────────'; }
+    fm_backend_send_text_submit() { fail "send_text_submit must not run while the live pane shows a feedback dialog"; }
+    if FM_SUPERVISOR_BACKEND=herdr FM_SUPERVISOR_TARGET="default:w1:p2" inject_msg "hello" "$state"; then
+      fail "inject_msg should defer when the live pane shows a feedback dialog"
+    fi
+    case "${INJECT_LAST_FAILURE:-}" in
+      *"not proven clear (rc=2)"*) ;;
+      *) fail "inject_msg deferred for the wrong reason: ${INJECT_LAST_FAILURE:-unset}" ;;
+    esac
+  ) || fail "dialog-race inject_msg subshell failed"
+  pass "inject_msg: a feedback dialog that opens after the first capture defers the digest"
+}
+
 # A capture that fails after printing part of the pane is not an observation:
 # a survey heading without its choices would read as no dialog, and the digest
 # and Enter would land in the survey. The oracle is that nothing is submitted.
@@ -4306,6 +4333,7 @@ test_inject_msg_herdr_composer_guard_defers
 test_inject_msg_herdr_pane_gone_defers
 test_inject_msg_herdr_submits_through_backend_dispatch
 test_inject_msg_defers_when_capture_fails_with_partial_output
+test_inject_msg_defers_when_dialog_opens_after_first_capture
 test_inject_msg_orca_submits_into_idle_captain_terminal
 test_inject_msg_orca_busy_guard_defers
 test_inject_msg_orca_defers_mid_turn_without_spinner
