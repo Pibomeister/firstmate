@@ -36,6 +36,11 @@
 #   red-base        the head of the pull request's base branch, or of the
 #                   repository's default branch, has a failed check or status.
 #                   This run also writes the breaker record.
+#   pending-base    the head of the pull request's base branch has a check run
+#                   that has not completed or a commit status in state pending,
+#                   and no failed check. This keeps landings from stacking ahead
+#                   of the branch's checks. The run writes no record, and the
+#                   same command can be run again when the checks finish.
 #   hold            the task is held for the captain, or the hold cannot be
 #                   read.
 #   evidence        config/merge-review does not require a review for the
@@ -75,8 +80,10 @@
 # runs must report a whole-second UTC start time. A check run with no name is
 # never replaced by another. A commit status is never replaced, every page of
 # statuses is read, and a combined status of failure is red even when no
-# listed status explains it. A check that still runs is not red. A branch with
-# no checks is not red.
+# listed status explains it. A check that still runs is not red: on the base
+# branch it refuses the landing (pending-base) without tripping the breaker, and
+# on the default branch it is ignored. A branch with no checks and no statuses
+# is not red and does not refuse.
 #
 # Records, under state/self-land/<provider>/<host>/<owner>/<repository>/:
 #   lock        one self-landing run per repository at a time. A second run
@@ -514,7 +521,7 @@ trip_breaker() {  # <branch> <commit> <reason>
 # refusal and trips nothing. A branch name holds no character but / that needs
 # encoding as one URL path segment (sl_branch_name_valid).
 require_green_branch() {  # <branch> <base branch|default branch>
-  local branch=$1 kind=$2 sha runs statuses red
+  local branch=$1 kind=$2 sha runs statuses red running
   sha=$("$SL_GH" api "repos/$PR_OWNER/$PR_REPO/branches/${branch//\//%2F}" 2>/dev/null \
     | jq -r '.commit.sha | strings' 2>/dev/null) \
     || refuse forge-read "could not read the head of $kind $branch"
@@ -524,7 +531,11 @@ require_green_branch() {  # <branch> <base branch|default branch>
       def settled_at:
         if type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
         then . else null end;
-      [ .[] | .check_runs | if type == "array" then .[] else error("shape") end ]
+      [ .[] | .check_runs | if type == "array" then .[] else error("shape") end ] as $all
+      | ( [ $all[] | select(.status != "completed")
+            | if (.name | type) == "string" and (.name | length) > 0 then .name else "(unnamed check)" end ]
+          | unique | .[] | "P " + . ),
+        ( $all
       | [ to_entries[]
           | .key as $i
           | .value
@@ -541,7 +552,7 @@ require_green_branch() {  # <branch> <base branch|default branch>
           | ([.[] | select(.green) | .at | select(. != null)] | max) as $newest_green
           | select(any(.[]; .red and ($newest_green == null or .at == null or .at >= $newest_green)))
           | if .[0].name == "" then "(unnamed check)" else .[0].name end ]
-      | unique | .[]' 2>/dev/null) \
+      | unique | .[] | "R " + . )' 2>/dev/null) \
     || refuse forge-read "could not read the checks of $kind $branch at $sha"
   # Every page repeats the combined state and carries its own slice of the
   # statuses, so the pages are read together.
@@ -550,15 +561,24 @@ require_green_branch() {  # <branch> <base branch|default branch>
       if length == 0 then error("shape") else . end
       | map(if type == "object" and (.state | type) == "string" and ((.statuses // []) | type) == "array"
             then . else error("shape") end)
-      | ( [ .[] | (.statuses // [])[] | select(.state == "failure" or .state == "error")
+      | ( [ .[] | (.statuses // [])[] | select(.state == "pending")
             | if (.context | type) == "string" and (.context | length) > 0 then .context else "(unnamed status)" end ]
-          | unique ) as $named
-      | if ($named | length) > 0 then $named[]
-        elif any(.[]; .state == "failure" or .state == "error") then "(combined status)"
-        else empty end' 2>/dev/null) \
+          | unique | .[] | "P " + . ),
+        ( ( [ .[] | (.statuses // [])[] | select(.state == "failure" or .state == "error")
+              | if (.context | type) == "string" and (.context | length) > 0 then .context else "(unnamed status)" end ]
+            | unique ) as $named
+          | if ($named | length) > 0 then $named[]
+            elif any(.[]; .state == "failure" or .state == "error") then "(combined status)"
+            else empty end
+          | "R " + . )' 2>/dev/null) \
     || refuse forge-read "could not read the statuses of $kind $branch at $sha"
-  red=$(printf '%s\n%s\n' "$runs" "$statuses" | sed '/^$/d' | tr '\n' ',' | sed 's/,$//; s/,/, /g')
-  [ -n "$red" ] || return 0
+  red=$(printf '%s\n%s\n' "$runs" "$statuses" | sed -n 's/^R //p' | tr '\n' ',' | sed 's/,$//; s/,/, /g')
+  if [ -z "$red" ]; then
+    [ "$kind" = "base branch" ] || return 0
+    running=$(printf '%s\n%s\n' "$runs" "$statuses" | sed -n 's/^P //p' | tr '\n' ',' | sed 's/,$//; s/,/, /g')
+    [ -n "$running" ] || return 0
+    refuse pending-base "$kind $branch at $sha has checks that have not finished ($running); no merge was sent, and the same command can be run again when they finish"
+  fi
   trip_breaker "$branch" "$sha" "$red" \
     || refuse red-base "$kind $branch is red at $sha ($red) and the breaker record could not be written"
   refuse red-base "$kind $branch is red at $sha ($red); the circuit breaker is now tripped at $SL_REPO_DIR/breaker"

@@ -1087,6 +1087,61 @@ test_breaker_reads_every_status_and_the_default_branch() {
   pass "reads every status page, the combined status, and the default branch"
 }
 
+test_unfinished_base_checks_refuse_until_they_finish() {
+  local case_dir head url=$REPO_URL/pull/461
+  read -r case_dir head <<< "$(ready_case pending-run 461)"
+  # A check run that is still in progress on the base head holds the landing
+  # without tripping the breaker.
+  jq -c -n '{total_count: 2, check_runs: [
+    {name: "ci", status: "in_progress", conclusion: null},
+    {name: "lint", status: "completed", conclusion: "success"}]}' > "$case_dir/base-check-runs.json"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  assert_refused "$case_dir" pending-base "pending-run"
+  assert_grep 'have not finished (ci)' "$case_dir/stderr" \
+    "pending-run: the refusal must name the unfinished check: $(cat "$case_dir/stderr")"
+  assert_absent "$(repo_dir "$case_dir")/breaker" "pending-run: an unfinished check tripped the breaker"
+
+  # The same command lands once the run completes green.
+  printf '{"total_count":2,"check_runs":[{"name":"ci","status":"completed","conclusion":"success"},{"name":"lint","status":"completed","conclusion":"success"}]}\n' \
+    > "$case_dir/base-check-runs.json"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  expect_code 0 "$(cat "$case_dir/rc")" "pending-run-finished: the landing must go through once the check finished green: $(cat "$case_dir/stderr")"
+  [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "pending-run-finished: expected exactly one merge"
+
+  # A listed commit status in state pending holds the landing too.
+  url=$REPO_URL/pull/462
+  read -r case_dir head <<< "$(ready_case pending-status 462)"
+  printf '{"state":"pending","statuses":[{"context":"deploy/preview","state":"pending"}]}\n' \
+    > "$case_dir/base-status.json"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  assert_refused "$case_dir" pending-base "pending-status"
+  assert_grep 'have not finished (deploy/preview)' "$case_dir/stderr" \
+    "pending-status: the refusal must name the pending status: $(cat "$case_dir/stderr")"
+  assert_absent "$(repo_dir "$case_dir")/breaker" "pending-status: a pending status tripped the breaker"
+
+  # A failed check wins over one that still runs.
+  url=$REPO_URL/pull/463
+  read -r case_dir head <<< "$(ready_case pending-and-red 463)"
+  jq -c -n '{total_count: 2, check_runs: [
+    {name: "ci", status: "queued", conclusion: null},
+    {name: "lint", status: "completed", conclusion: "failure"}]}' > "$case_dir/base-check-runs.json"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  assert_refused "$case_dir" red-base "pending-and-red"
+  grep -Fxq 'red=lint' "$(repo_dir "$case_dir")/breaker" \
+    || fail "pending-and-red: the record must name only the failed check: $(cat "$(repo_dir "$case_dir")/breaker" 2>&1)"
+
+  # A base head with no checks and no statuses still lands; the forge reports
+  # a combined state of pending for it.
+  url=$REPO_URL/pull/464
+  read -r case_dir head <<< "$(ready_case no-checks 464)"
+  printf '{"total_count":0,"check_runs":[]}\n' > "$case_dir/base-check-runs.json"
+  printf '{"state":"pending","statuses":[]}\n' > "$case_dir/base-status.json"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  expect_code 0 "$(cat "$case_dir/rc")" "no-checks: a base with no checks must land: $(cat "$case_dir/stderr")"
+  [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "no-checks: expected exactly one merge"
+  pass "refuses while the base head has unfinished checks, and lands once they finish"
+}
+
 test_landing_whose_record_fails_is_completed_by_the_next_run() {
   local case_dir head url=$REPO_URL/pull/451
   read -r case_dir head <<< "$(ready_case record-fail 451)"
@@ -1203,6 +1258,7 @@ fm_test_run \
   test_inherited_forge_host_does_not_redirect_the_landing \
   test_changes_while_the_merge_gate_waits_stop_the_merge_command \
   test_breaker_reads_every_status_and_the_default_branch \
+  test_unfinished_base_checks_refuse_until_they_finish \
   test_landing_whose_record_fails_is_completed_by_the_next_run \
   test_merge_accepted_without_the_forge_gate_stops_every_later_landing \
   test_takes_no_waiver_or_forge_option \
