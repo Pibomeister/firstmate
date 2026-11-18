@@ -874,7 +874,9 @@ EOF
   git -C "$project" remote add origin https://github.com/example/demo.git
   git -C "$project" update-ref refs/remotes/origin/main HEAD
   git -C "$project" checkout -qb fm/task
-  git -C "$project" -c user.name=Test -c user.email=test@example.com commit -qm change --allow-empty
+  printf 'change\n' > "$project/change.txt"
+  git -C "$project" add change.txt
+  git -C "$project" -c user.name=Test -c user.email=test@example.com commit -qm change
   printf 'project=%s\nbranch=fm/task\nkind=ship\nmode=no-mistakes\n' "$project" > "$home/state/task.meta"
   printf 'blocked [at=100] [key=nm-start]: run startup timed out\n' > "$home/state/task.status"
   # Deliberately no working forge client: its unknown verdict must not hide the

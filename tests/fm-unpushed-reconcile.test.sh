@@ -184,7 +184,7 @@ pass 'forge failure cannot masquerade as an absent PR'
 
 new_world bounded
 git -C "$PROJECT" branch fm/another
-out=$(FM_UNPUSHED_TIMEOUT_SECS=2 FM_GH_SLEEP=5 scan)
+out=$(FM_UNPUSHED_TIMEOUT_SECS=20 FM_GH_SLEEP=60 scan)
 assert_contains "$out" 'branch=fm/task' 'timeout hid the branch'
 assert_contains "$out" 'branch=fm/another' 'slow comparison hid another local branch'
 assert_contains "$out" 'incomplete' 'timeout became success'
