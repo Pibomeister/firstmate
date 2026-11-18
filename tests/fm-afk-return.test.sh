@@ -498,6 +498,33 @@ test_return_brief_composes_from_record_store_and_held_set() {
 # the return brief counts the window's outcomes and points there instead of
 # listing them, and leaves the cursor alone. On Pi the brief lists them as
 # before.
+test_return_brief_lists_open_human_only_steps() {
+  local dir out now waiting
+  dir="$TMP_ROOT/brief-human-steps"
+  install_runner "$dir"
+  contract_in "$dir" enter --words 'keep the fleet moving' >/dev/null 2>&1 || fail "could not confirm the away-posture record"
+  now=$(date +%s)
+  mkdir -p "$dir/home/state/watchdog"
+  # The watchdog's overnight record: one step still showing, one that cleared,
+  # and one older than a day.
+  {
+    printf '%s\tworker:auth\totp\t%s\tmorning-handoff\n' "$((now - 600))" "$((now - 1200))"
+    printf '%s\tworker:done\tsign-in\t%s\tmorning-handoff\n' "$((now - 900))" "$((now - 1500))"
+    printf '%s\tworker:done\tsign-in\t%s\tcleared\n' "$((now - 300))" "$((now - 1500))"
+    printf '%s\tworker:old\tcaptcha\t%s\tmorning-handoff\n' "$((now - 90000))" "$((now - 91000))"
+  } > "$dir/home/state/watchdog/human-steps.tsv"
+  touch "$dir/home/state/.last-watcher-beat"
+  : > "$dir/home/state/.fake-drain"
+  out=$(run_return "$dir" begin) || true
+  waiting=$(printf '%s\n' "$out" | awk '/^Waiting on you:/{show=1} /^Tried and failed, or could not be fixed:/{show=0} show')
+  assert_contains "$waiting" 'human-only steps recorded overnight' "the open human-only step was not listed under waiting on you: $out"
+  assert_contains "$waiting" '    - worker:auth: otp step waiting since' "the open step does not name its subject and kind: $waiting"
+  assert_not_contains "$waiting" 'worker:done' "a cleared step was still listed"
+  assert_not_contains "$waiting" 'worker:old' "a step older than a day was still listed"
+  assert_not_contains "$waiting" '(nothing)' "an open human-only step left waiting on you empty"
+  pass "the return brief lists open overnight human-only steps under waiting on you, and drops cleared and day-old ones"
+}
+
 test_return_brief_points_at_the_drain_on_a_host_home_only() {
   local dir harness fakebin out n
   for harness in claude pi; do
@@ -1550,6 +1577,7 @@ test_unreadable_superseded_archive_keeps_return_gated
 test_missing_final_archive_keeps_retained_contract_gated
 test_return_brief_composes_from_record_store_and_held_set
 test_return_brief_lists_landed_work_awaiting_cleanup
+test_return_brief_lists_open_human_only_steps
 test_return_brief_points_at_the_drain_on_a_host_home_only
 test_return_brief_all_silent_window_does_not_point_at_drain
 test_return_keeps_catchup_gated_when_the_drain_cannot_record_outcomes

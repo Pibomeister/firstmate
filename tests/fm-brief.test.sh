@@ -1935,6 +1935,40 @@ test_crewmate_scaffolds_route_heavy_tests_through_the_queue() {
   pass "fm-brief.sh: every crewmate scaffold routes heavy test suites through the test queue"
 }
 
+# A human-only step never stalls a worker: every crewmate scaffold tells it to
+# close the prompt, report the step, and keep unrelated work moving.
+test_crewmate_scaffolds_escalate_human_only_steps() {
+  local home mode brief rule ship_rule=''
+  home="$TMP_ROOT/human-step-home"
+  mkdir -p "$home/data"
+  for mode in no-mistakes direct-PR local-only scout; do
+    if [ "$mode" = scout ]; then
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "human-step-$mode" alpha --scout >/dev/null 2>&1 \
+        || fail "fm-brief.sh --scout exited non-zero"
+    else
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "human-step-$mode" alpha --mode "$mode" >/dev/null 2>&1 \
+        || fail "fm-brief.sh --mode $mode exited non-zero"
+    fi
+    brief="$home/data/human-step-$mode/brief.md"
+    rule=$(awk '/^11\. A human-only step/,/^$/' "$brief")
+    [ -n "$rule" ] || fail "$mode brief has no human-only-step rule"
+    assert_contains "$rule" "Within 10 minutes" "$mode brief does not bound the escalation to 10 minutes"
+    assert_contains "$rule" "close or cancel the interactive prompt" "$mode brief lets the worker hold the prompt open"
+    assert_contains "$rule" '[key=human-step-<slug>]' "$mode brief does not key the step's blocker"
+    assert_contains "$rule" "never hold a PR, a deploy, or other work on it" "$mode brief lets the step hold a PR or deploy"
+    assert_contains "$rule" "Never enter a credential or code yourself" "$mode brief lets the worker answer the step"
+    if [ -z "$ship_rule" ]; then ship_rule=$rule
+    else [ "$rule" = "$ship_rule" ] || fail "the $mode human-only-step rule drifted from the ship rule"
+    fi
+  done
+  FM_SECONDMATE_CHARTER='Supervise the alpha domain.' \
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" human-step-mate --secondmate alpha >/dev/null 2>&1 \
+    || fail "fm-brief.sh --secondmate exited non-zero"
+  assert_no_grep "A human-only step" "$home/data/human-step-mate/brief.md" \
+    "secondmate charter must not carry the crewmate human-only-step rule"
+  pass "fm-brief.sh: every crewmate scaffold escalates a human-only step within 10 minutes and keeps work moving"
+}
+
 test_crewmate_scaffolds_name_a_runnable_ledger_next() {
   local home brief mode rule command out rc
   if ! command -v tasks-axi >/dev/null 2>&1; then
@@ -2112,3 +2146,4 @@ test_crewmate_scaffolds_route_heavy_tests_through_the_queue
 test_queue_command_quotes_foreign_firstmate_path
 test_crewmate_scaffolds_name_a_runnable_ledger_next
 test_crewmate_scaffolds_forbid_shared_git_config_and_database_changes
+test_crewmate_scaffolds_escalate_human_only_steps
