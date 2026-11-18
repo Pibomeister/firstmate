@@ -1,0 +1,3 @@
+$ bin/fm-health-verdict.sh --home <lab>
+verdict=unknown reason=heartbeat-missing,lock-unknown,monitor-missing heartbeat_age=unknown lock=unknown watcher_age=unknown monitor=missing at=1794970664
+exit=0
