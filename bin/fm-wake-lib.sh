@@ -298,17 +298,24 @@ fm_watcher_healthy() {
 # FM_SUPERVISION_MODEL overrides detection (tests, and callers that already know
 # the harness). Otherwise bin/fm-harness.sh is the single detection owner, so this
 # stays consistent with the harness-specific repair line the guards already emit.
+# fm_supervision_model_for_harness is the one harness-to-model table; a caller
+# that already knows the home's harness, such as the watchdog after observe,
+# must pass that model rather than inherit this process's harness.
+fm_supervision_model_for_harness() {  # <harness>
+  case "$1" in
+    claude|cursor|agy) printf 'autoarm\n' ;;
+    pi|pi-signed|omp) printf 'extension\n' ;;
+    *) printf 'persistent\n' ;;
+  esac
+}
+
 fm_supervision_model() {
   local harness
   case "${FM_SUPERVISION_MODEL:-}" in
     autoarm|extension|persistent) printf '%s\n' "$FM_SUPERVISION_MODEL"; return 0 ;;
   esac
   harness=$("$FM_WAKE_LIB_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
-  case "$harness" in
-    claude|cursor|agy) printf 'autoarm\n' ;;
-    pi|pi-signed|omp) printf 'extension\n' ;;
-    *) printf 'persistent\n' ;;
-  esac
+  fm_supervision_model_for_harness "$harness"
 }
 
 # Pi primary supervision evidence. The Pi extensions record, in their state

@@ -54,7 +54,7 @@
 #   <watched home>/state/monitor-status  one-line record of that home's monitor
 #                                unit status, rewritten atomically each pass and by monitor-read.
 #   <watched home>/state/health-verdict  one-line health verdict, rewritten each
-#                                pass by bin/fm-health-verdict.sh --write.
+#                                `once` pass by bin/fm-health-verdict.sh --write.
 #
 # Test seams, honoured only with FM_TEST_SEAM=1: FM_WD_NOW fixes the clock,
 # FM_WD_TEST_COMPOSER replaces the composer verdict for a plain test pane,
@@ -2815,9 +2815,10 @@ wd_write_status() {  # <health-file> <gaps-file>
 # --- commands ----------------------------------------------------------------------
 
 wd_try_health_verdict_write() {  # <home>
-  local bin=$SCRIPT_DIR/fm-health-verdict.sh
+  local bin=$SCRIPT_DIR/fm-health-verdict.sh model
   [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_HEALTH_VERDICT_BIN:-}" ] && bin=$FM_HEALTH_VERDICT_BIN
-  fm_run_timed 10 env FM_HOME="$1" "$bin" --home "$1" --write >/dev/null 2>&1 || true
+  model=$(fm_supervision_model_for_harness "$O_HARNESS")
+  fm_run_timed 10 env FM_HOME="$1" FM_SUPERVISION_MODEL="$model" "$bin" --home "$1" --write >/dev/null 2>&1 || true
 }
 
 # One home's monitor unit status, from bin/fm-monitor-watchdog.sh manager-status.

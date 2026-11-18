@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # tests/fm-layer-chain.test.sh - the layer check chain (docs/watchdog.md):
-# each watchdog pass reads every watched home's monitor unit and writes
-# <home>/state/monitor-status, and a session start with no enabled watchdog
-# runs the same read once.
+# each watchdog once pass reads every watched home's monitor unit and writes
+# <home>/state/monitor-status, refreshes <home>/state/health-verdict, and a
+# session start with no enabled watchdog runs the same monitor read once.
 #
 # The service manager is a PATH fake for both launchctl and systemctl, so each
 # case runs on macOS and Linux alike. HOME and XDG_CONFIG_HOME point into the
@@ -60,6 +60,19 @@ chmod +x "$FAKEBIN/launchctl" "$FAKEBIN/systemctl"
 
 FAKE_HOME="$TMP_ROOT/user-home"
 mkdir -p "$FAKE_HOME/Library/LaunchAgents" "$FAKE_HOME/.config/systemd/user"
+# A lock holder whose comm is a harness name, so wd_observe fills O_HARNESS
+# from the live pid. exec -a does not change ps -o comm= on Linux.
+HARNESS_BIN="$TMP_ROOT/harness-bin"
+mkdir -p "$HARNESS_BIN"
+ln -sf "$(command -v sleep)" "$HARNESS_BIN/claude"
+
+LAYER_LOCK_PIDS=''
+cleanup_layer_chain() {
+  local p
+  for p in $LAYER_LOCK_PIDS; do kill "$p" 2>/dev/null || true; done
+  fm_test_cleanup
+}
+trap cleanup_layer_chain EXIT
 
 new_home() {  # <dir>
   mkdir -p "$1/state" "$1/config" "$1/data"
@@ -95,6 +108,42 @@ no_temp_left() {  # <home> <msg>
   local left
   left=$(find "$1/state" -maxdepth 1 -name '.monitor-status.*' -print)
   [ -z "$left" ] || fail "$2: $left"
+}
+
+field() {  # <line> <key>
+  printf '%s\n' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p"
+}
+
+# start_lock <home> [claude|sleep]: a live lock holder. claude is a sleep
+# binary whose comm is the harness name, so observe derives autoarm.
+start_lock() {
+  local home=$1 kind=${2:-sleep} pid
+  mkdir -p "$home/state" "$home/config" "$home/data"
+  if [ "$kind" = claude ]; then
+    "$HARNESS_BIN/claude" 100000 >/dev/null 2>&1 &
+  else
+    sleep 100000 >/dev/null 2>&1 &
+  fi
+  pid=$!
+  printf '%s\n' "$pid" > "$home/lockpid"
+  LAYER_LOCK_PIDS="$LAYER_LOCK_PIDS $pid"
+  printf '%s\n' "$pid" > "$home/state/.lock"
+}
+
+# The same mid-turn records the health-verdict suite uses: heartbeat older
+# than its bound, watcher beat inside grace, Claude rewake after that beat.
+# Ages are wall-clock because health-verdict.sh uses date +%s, not FM_WD_NOW.
+stamp_mid_turn() {  # <home> <clock>
+  local home=$1 clock=$2 pid
+  pid=$(cat "$home/lockpid")
+  printf 'epoch=7 owner_pid=1 outcome=rewake updated_at=1 session_pid=%s recovery_generation=hv-gen\n' "$pid" \
+    > "$home/state/.claude-autoarm-epoch"
+  printf 'acked:handling:hv-gen\n' > "$home/state/.watcher-down"
+  : > "$home/state/.last-watcher-beat"
+  fm_touch_epoch "$((clock - 100))" "$home/state/.last-watcher-beat"
+  fm_touch_epoch "$((clock - 50))" "$home/state/.claude-autoarm-epoch"
+  printf '{"schema":"fm-heartbeat.v1","generated_epoch":%s,"published_epoch":%s,"stale_after_secs":60}\n' \
+    "$((clock - 100100))" "$((clock - 100))" > "$home/state/heartbeat.json"
 }
 
 test_pass_records_every_watched_home() {
@@ -143,13 +192,16 @@ test_pass_records_unreadable_without_manager_line() {
 }
 
 test_pass_refreshes_health_verdict() {
-  local base="$TMP_ROOT/pass-verdict" owner other stale line
+  local base="$TMP_ROOT/pass-verdict" owner other mate stale line
   owner=$(new_home "$base/owner")
   other=$(new_home "$base/other")
+  mate=$(new_home "$base/mate")
   printf 'homes=%s,%s\nquota-guard=off\n' "$owner" "$other" > "$owner/config/watchdog"
+  printf -- '- verdict-mate - test mate (home: %s)\n' "$mate" > "$owner/data/secondmates.md"
   stale='verdict=stale reason=old at=1'
   printf '%s\n' "$stale" > "$owner/state/health-verdict"
   printf '%s\n' "$stale" > "$other/state/health-verdict"
+  printf '%s\n' "$stale" > "$mate/state/health-verdict"
   clear_units
   wd_pass "$owner" || fail "the watchdog pass failed"
   line=$(cat "$owner/state/health-verdict" 2>/dev/null)
@@ -166,16 +218,64 @@ test_pass_refreshes_health_verdict() {
     verdict=*) ;;
     *) fail "the refreshed other-home verdict should start with verdict=, got: $line" ;;
   esac
-  pass "each watchdog pass refreshes every watched home's health verdict"
+  line=$(cat "$mate/state/health-verdict" 2>/dev/null)
+  assert_not_equals "$stale" "$line" \
+    "a watchdog once pass should replace a registered second mate's stale health verdict"
+  case "$line" in
+    verdict=*) ;;
+    *) fail "the refreshed second-mate verdict should start with verdict=, got: $line" ;;
+  esac
+  pass "each watchdog once pass refreshes every watched home's health verdict"
+}
+
+test_pass_derives_health_verdict_model_per_home() {
+  local base="$TMP_ROOT/pass-verdict-model" owner auto persist clock line
+  owner=$(new_home "$base/owner")
+  auto=$(new_home "$base/auto")
+  persist=$(new_home "$base/persist")
+  start_lock "$auto" claude
+  start_lock "$persist" sleep
+  clock=$(date +%s)
+  stamp_mid_turn "$auto" "$clock"
+  stamp_mid_turn "$persist" "$clock"
+  printf 'homes=%s,%s\nquota-guard=off\nmemory-guard=off\n' "$auto" "$persist" \
+    > "$owner/config/watchdog"
+  clear_units
+  install_unit monitor "$auto"
+  install_unit monitor "$persist"
+  wd_pass "$owner" FAKE_MON_STATE=enabled || fail "the watchdog pass failed"
+  line=$(cat "$auto/state/health-verdict" 2>/dev/null)
+  assert_equals unknown "$(field "$line" verdict)" \
+    "an autoarm home mid-turn should read unknown, got: $line"
+  assert_contains "$(field "$line" reason)" mid-turn \
+    "an autoarm home mid-turn should name mid-turn, got: $line"
+  line=$(cat "$persist/state/health-verdict" 2>/dev/null)
+  assert_equals stale "$(field "$line" verdict)" \
+    "a persistent home with the same mid-turn records should read stale, got: $line"
+  assert_contains "$(field "$line" reason)" heartbeat-stale \
+    "a persistent home should name heartbeat-stale, got: $line"
+  assert_not_contains "$(field "$line" reason)" mid-turn \
+    "a persistent home should not inherit the autoarm mid-turn exemption, got: $line"
+  pass "a watchdog once pass derives the health-verdict model per home"
 }
 
 test_pass_survives_health_verdict_failure() {
-  local base="$TMP_ROOT/pass-verdict-fail" owner
+  local base="$TMP_ROOT/pass-verdict-fail" owner wrapper log
   owner=$(new_home "$base/owner")
+  wrapper="$base/fail-write"
+  log="$base/fail-write.log"
+  cat > "$wrapper" <<SH
+#!/usr/bin/env bash
+printf 'called\\n' >> '$log'
+exit 1
+SH
+  chmod +x "$wrapper"
   printf 'quota-guard=off\n' > "$owner/config/watchdog"
   printf 'verdict=stale reason=old at=1\n' > "$owner/state/health-verdict"
   clear_units
-  wd_pass "$owner" FM_HEALTH_VERDICT_BIN=false || fail "a failing health-verdict write should not fail the pass"
+  wd_pass "$owner" FM_HEALTH_VERDICT_BIN="$wrapper" || fail "a failing health-verdict write should not fail the pass"
+  assert_equals "called" "$(cat "$log" 2>/dev/null)" \
+    "the pass should still invoke the health-verdict write"
   assert_equals "verdict=stale reason=old at=1" "$(cat "$owner/state/health-verdict")" \
     "a failing health-verdict write should leave the previous record in place"
   pass "a failing health-verdict write does not fail the watchdog pass"
@@ -317,6 +417,7 @@ fm_test_run \
   test_pass_records_disabled_unit \
   test_pass_records_unreadable_without_manager_line \
   test_pass_refreshes_health_verdict \
+  test_pass_derives_health_verdict_model_per_home \
   test_pass_survives_health_verdict_failure \
   test_monitor_read_reports_unwritten_record \
   test_session_start_reads_once_without_watchdog \

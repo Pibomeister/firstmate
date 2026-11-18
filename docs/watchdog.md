@@ -81,10 +81,10 @@ Each `once` pass runs `FM_HOME=<home> bin/fm-monitor-watchdog.sh manager-status`
 It rewrites `<home>/state/monitor-status` atomically as `status=<enabled|disabled|uncovered|unreadable> at=<epoch>`.
 `unreadable` means the read printed no `manager:` line, for example because it failed or timed out.
 The record hands the monitor unit's status on; the pass takes no action on it.
-Each `once` pass also runs `bin/fm-health-verdict.sh --write` for every watched home and its registered second mates and rewrites `<home>/state/health-verdict`.
-A verdict error never fails the pass.
 When `FM_HOME=<home> bin/fm-watchdog.sh manager-status` does not print `manager: enabled`, a full locked session start runs the same read once, through `monitor-read`, and writes the same record.
 A lock-refused session start and a context re-emit write nothing.
+Each `once` pass also runs `bin/fm-health-verdict.sh --write` for every watched home and its registered second mates and rewrites `<home>/state/health-verdict`.
+A verdict error never fails the pass.
 
 ## Symptoms and the action ladder
 
@@ -491,5 +491,5 @@ An absent file means dry-run on the owner home alone.
 
 `tests/fm-watchdog.test.sh` drives every symptom, ladder step, and boundary against real tmux panes on a private socket, real lock holders, and real records, with fake model CLIs.
 `tests/fm-permission-prompt.test.sh` classifies real Claude Code 2.1.325 prompt captures in `tests/fixtures/permission-prompt/` and drives the worker route against real tmux panes that react to Escape as Claude did.
-`tests/fm-layer-chain.test.sh` proves the monitor read on each pass and at session start, with a fake service manager.
+`tests/fm-layer-chain.test.sh` proves the monitor read on each pass and at session start, with a fake service manager, and the health-verdict refresh.
 `tests/fm-watchdog-live.test.sh` reads real installed Claude Code panes without spending tokens; [`verification/runtime-backends.md`](verification/runtime-backends.md) records its dated results.
