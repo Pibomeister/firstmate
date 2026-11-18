@@ -26,8 +26,10 @@
 # THE AWAY RETURN BRIEF (stdout, on begin and every away check) uses durable
 # records, never from conversation memory: the archived away-posture record
 # (bin/fm-afk-contract.sh), the supervision outcome store
-# (bin/fm-branch-outcome.sh), the held set in the backlog (tasks-axi), and the
-# status logs. Its order is fixed: supervisor health across the away window
+# (bin/fm-branch-outcome.sh), the held set in the backlog (tasks-axi), the
+# status logs, and the watchdog's human-only-step record
+# (state/watchdog/human-steps.tsv, written by bin/fm-watchdog.sh). Its order
+# is fixed: supervisor health across the away window
 # first, then the captain's away instructions - their words verbatim, including
 # superseded in-session mandates - followed by the away session's account of
 # every visible action it took under them (each non-silent outcome-store row
@@ -618,6 +620,27 @@ scan_landed_awaiting_cleanup() {  # -> <task>\t<url> rows
   done
 }
 
+# A morning-handoff row from bin/fm-watchdog.sh is open while it is under a day
+# old and no later `cleared` row names the same subject.
+open_human_steps() {  # <human-steps.tsv> <now-epoch>
+  [ -r "$1" ] || return 0
+  awk -F '\t' -v now="$2" '
+    $1 !~ /^[0-9]+$/ { next }
+    $5 == "cleared" { delete open_at[$2]; next }
+    $5 == "morning-handoff" && now - $1 < 86400 { open_at[$2] = $1; kind[$2] = $3; since[$2] = $4; order[++n] = $2 }
+    END {
+      for (i = 1; i <= n; i++) {
+        s = order[i]
+        if (!(s in open_at) || (s in shown)) continue
+        shown[s] = 1
+        printf "%s\t%s\t%s\n", s, kind[s], since[s]
+      }
+    }' "$1" | while IFS="$(printf '\t')" read -r subject kind since; do
+      printf '    - %s: %s step waiting since %s; only a person can complete it\n' \
+        "$subject" "$kind" "$(epoch_to_iso "$since")"
+    done
+}
+
 render_return_brief() {  # <evidence-file> <blockers-file> <since-epoch> <drain-ok>
   local evidence=$1 blockers=$2 since=$3 drain_ok=$4 now record superseded superseded_at archive_dir stamp
   local tag task key summary count routine routine_visible captain visible_outcomes live held_err last verb rows status url drained=0 pointer
@@ -711,6 +734,13 @@ EOF
     count=$((count + 1))
     printf '  escalated by the away session:\n'
     printf '%s\n' "$rows" | sed 's/^/  /'
+  fi
+  # Human-only steps the watchdog held for the morning handoff, still showing.
+  rows=$(open_human_steps "$STATE/watchdog/human-steps.tsv" "$now")
+  if [ -n "$rows" ]; then
+    count=$((count + 1))
+    printf '  human-only steps recorded overnight (nothing was typed into them):\n'
+    printf '%s\n' "$rows"
   fi
   [ "$count" -gt 0 ] || printf '  (nothing)\n'
 
