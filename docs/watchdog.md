@@ -476,7 +476,7 @@ An absent file means dry-run on the owner home alone.
 | `quota-secs` | `600` | Quota park age before a reroute nudge |
 | `restart-secs` | `7200` | Minimum time between restarts of one home |
 | `watcher-stale-secs` | `900` | Heartbeat age reported as a stale watcher |
-| `heartbeat-frozen-secs` | `600` | Heartbeat age with a live lock owner that enables heartbeat recovery; `0` disables it |
+| `heartbeat-frozen-secs` | `600` | Heartbeat age with a live lock owner that enables heartbeat recovery; `0` disables it; keep it above `FM_HEARTBEAT_LEDGER_IDLE_SECS` plus one collection run, because an unchanged home refreshes the heartbeat only once per idle interval |
 | `heartbeat-restart-secs` | `240` | Wait after a delivered heartbeat recovery nudge before considering a restart |
 | `relaunch-timeout-secs` | `900` | Bound on a second mate relaunch and on a worker trust-dialog relaunch |
 | `permission-route` | the `mode` value | `act` lets the watchdog decline, relaunch, and write status lines for worker permission prompts; `off` runs no classifier and keeps the report-only gap for the dialogs the watchdog's own detector reads; any other value records them as `dry-run`. An explicit `act` acts even when `mode` is `dry-run` |
