@@ -28,9 +28,8 @@ Every record carries these members:
 | `source` | Who wrote the record: machine, home, actor, and session ([producer identity](supervision-events.md#producer-identity)) |
 | `binding` | The task's spawn generation, runtime, endpoint, and native terminal session, kept apart |
 
-`binding` has the members `spawn_gen`, `backend`, `endpoint` (the recorded window or label), and `native`, which is `{"terminal": ..., "worktree_id": ...}` for a runtime with its own terminal sessions, or `null`.
-Each is `null` when the task records none.
-[`supervision-events.md`](supervision-events.md) owns the meaning of `source` and `binding`; a record whose producer identity cannot be loaded is not written.
+`source` and `binding` follow [Producer identity](supervision-events.md#producer-identity) and [Ledger envelope](supervision-events.md#ledger-envelope).
+A record whose producer identity cannot be loaded is not written.
 
 Readers must ignore members and events they do not recognize, so later versions can add them without breaking existing readers.
 

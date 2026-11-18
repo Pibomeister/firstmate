@@ -2,37 +2,8 @@
 # fm-producer-identity-lib.sh - who produced a supervision event: the machine,
 # the firstmate home, and the actor and session inside it.
 #
-# Sourced by bin/fm-fleet-ledger.sh (every ledger record's source envelope) and
-# bin/fm-task-snapshot.sh. docs/supervision-events.md owns the contract.
-#
-# IDENTITY FILE. <state>/producer-identity.json is written once per home and
-# never rewritten:
-#   {"v":1,"scope_id":"<uuid>","host_digest":"<sha256 hex>"|null,"created_at":<epoch>}
-# scope_id names this home. host_digest is the SHA-256 of the operating
-# system's host id when the file was created: IOPlatformUUID on macOS, or
-# /etc/machine-id (then /var/lib/dbus/machine-id) elsewhere. The host name is
-# never used. Creation is exclusive (temp file plus ln), so concurrent first
-# writers agree on one file.
-#
-# MACHINE ID. machine_id is derived, not stored: the first 128 bits of
-# SHA-256("firstmate-machine-v1:" + host id), formatted as a UUID. Every home on
-# one host therefore reports the same machine_id, and the raw host id never
-# leaves the host. With no readable host id, machine_id is null.
-#
-# ASSURANCE. fm_producer_identity_load sets FM_PRODUCER_ASSURANCE to:
-#   host-match     the current host digest equals the recorded one
-#   host-mismatch  it differs: the home was copied or moved to another host
-#   host-unknown   no host id is readable now, or none was recorded
-# This is a cooperative, same-user binding, never authentication: any process
-# running as the home's user can read or replace these files, so readers must
-# give the source envelope exactly the trust they give the home's state/.
-# host-match is deliberately not called bound: it proves only that the home
-# still sits on the host that created it, not who wrote a record.
-#
-# SESSION. FM_PRODUCER_ACTOR is $FM_SUPERVISION_ACTOR (main or branch, as in
-# bin/fm-lease-lib.sh), or main; a caller writing on a worker's behalf sets
-# it to worker after loading. FM_PRODUCER_SESSION_PID is the pid recorded in
-# <state>/.lock, the home's session lock, or empty.
+# Sourced by bin/fm-fleet-ledger.sh and bin/fm-task-snapshot.sh.
+# docs/supervision-events.md "Producer identity" owns the contract.
 #
 # Environment: FM_HOST_ID_OVERRIDE replaces the operating system's host id (a
 # value of "none" means unreadable); tests use it.
@@ -136,12 +107,8 @@ fm_producer_source_json() {
       session_pid: ($pid | tonumber? // null), producer: $producer}'
 }
 
-# fm_producer_binding_json <state-dir> <task>: the binding member, from the
-# task's meta. spawn_gen is the process anchor generation firstmate minted at
-# launch; endpoint is the recorded window or label; native is the runtime's own
-# terminal-session incarnation (for Orca, the terminal handle and Orca worktree
-# id), or null. The two are kept apart: a native session can outlive or be
-# replaced under one spawn generation, and neither proves the other.
+# fm_producer_binding_json <state-dir> <task>: the binding member from the
+# task's meta. docs/supervision-events.md "Ledger envelope" owns the fields.
 fm_producer_binding_json() {  # <state-dir> <task>
   local line spawn_gen='' backend='' window='' terminal='' worktree_id=''
   if [ -f "$1/$2.meta" ]; then

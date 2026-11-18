@@ -46,7 +46,8 @@
 #   <task>.inbox/.composer     the composer verdict that attempt read:
 #                              "<empty|pending|pending-unproven|unknown>\t<epoch>"
 #
-# Typed receipts (receipts.jsonl): one JSON object per line, only appended,
+# Typed receipts (receipts.jsonl): docs/supervision-events.md "Typed receipts"
+# owns the contract. JSON field bytes: one JSON object per line, only appended,
 # in this order for one message:
 #   {"v":1,"ts":<epoch>,"msg":"<NNN.msg>","receipt":"accepted"}
 #   {"v":1,"ts":<epoch>,"msg":"<NNN.msg>","receipt":"picked_up"}

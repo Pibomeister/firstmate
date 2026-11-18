@@ -25,7 +25,8 @@ Every record names its producer in a `source` member:
 This is a cooperative binding for processes that run as the same user, never authentication.
 Any process running as the home's user can read or replace these files, so give `source` exactly the trust you give the home's `state/`.
 `host-match` is deliberately not called `bound`: it proves only where the home lives, not who wrote a record.
-`bin/fm-producer-identity-lib.sh` owns the identity file and these values.
+This page owns that trust bound.
+`bin/fm-producer-identity-lib.sh` writes `state/producer-identity.json` and derives these values.
 
 ## Ledger envelope
 
@@ -38,9 +39,13 @@ When the [fleet activity ledger](fleet-ledger.md) is on, every record also carri
 ```
 
 `spawn_gen` is the generation firstmate minted at launch, and a relaunch mints a new one.
-`native` is the runtime's terminal handle and worktree id, or `null` for a runtime that has none.
-Neither proves the other: a native session can be replaced under one generation, and a handle means something only inside the runtime that issued it.
-[`fleet-ledger.md`](fleet-ledger.md) owns the envelope's members and gap detection.
+`backend` is the recorded runtime, or `null`.
+`endpoint` is the recorded window or label, or `null`.
+`native` is `{"terminal": ..., "worktree_id": ...}` for a runtime with its own terminal sessions, or `null`.
+Neither `spawn_gen` nor `native` proves the other.
+A native session can be replaced under one generation, and a handle means something only inside the runtime that issued it.
+This page owns `source` and `binding`.
+[`fleet-ledger.md`](fleet-ledger.md) owns the event names, `seq`, `task_rev`, `event_id`, and gap detection.
 
 ## Steering inbox
 
@@ -51,18 +56,20 @@ The worker's terminal receives only a constant doorbell line, never the message 
 
 `state/<task>.inbox/receipts.jsonl` holds one JSON object per line, only appended, in this order for one message:
 
-| `receipt` | Written when |
-| --------- | ------------ |
-| `accepted` | The record is written, under the inbox lock, so a record that exists always has it. |
-| `picked_up` | The monitor first sees the record in `handled/`. It trails the worker's move by up to one poll. |
-| `started` | The first `working` or settled status line the task appended after acceptance. |
-| `progress` | Each later `working` line. |
-| `result` | The first settled line, with `outcome` set to `done`, `failed`, `blocked`, `needs-decision`, or `paused`. |
+| `receipt` | Writer | Written when |
+| --------- | ------ | ------------ |
+| `accepted` | The enqueue (`fm_task_inbox_write`), under the inbox lock | The record is written, so a record that exists always has it. |
+| `picked_up` | The monitor's receipt catch-up (`fm_task_inbox_receipts_sync`), once per poll per recorded task | The monitor first sees the record in `handled/`. It trails the worker's move by up to one poll. |
+| `started` | That same catch-up | The first `working` or settled status line the task appended after acceptance. |
+| `progress` | That same catch-up | Each later `working` line. |
+| `result` | That same catch-up | The first settled line, with `outcome` set to `done`, `failed`, `blocked`, `needs-decision`, or `paused`. |
 
 `started`, `progress`, and `result` carry the line's `state`, `text`, and `status_at`.
 The correlation is positional, not causal: a worker does not name the message a line is about.
-No receipt proves delivery beyond the move into `handled/`.
-The `bin/fm-task-inbox-lib.sh` header owns the exact schema.
+The worker's acknowledgement is the move into `handled/`.
+No receipt proves delivery beyond that move.
+This page owns that receipt contract.
+The `bin/fm-task-inbox-lib.sh` header owns the JSON field bytes.
 
 ### Input-line guard
 
@@ -71,11 +78,15 @@ A `pending` line holds someone's draft, so the doorbell is skipped and the draft
 The draft guard decides what happens on `pending-unproven` and `unknown`:
 
 - `advisory`, the default, rings anyway, as firstmate always has.
-  It can submit a draft: a draft taller than the rows the classifier reads loses its opening prompt glyph, reads `pending-unproven` or `unknown`, and is submitted with the doorbell's Enter.
-- `strict` is the opt-in. It skips the ring and records `composer-unproven` as the last delivery, so nothing is typed into a line that could not be proved free.
-  The cost is friction: a steer to a worker whose input line cannot be read waits for escalation instead of ringing.
+- A draft taller than the rows the classifier reads loses its opening prompt glyph, reads `pending-unproven` or `unknown`, and is submitted with the doorbell's Enter.
+- `strict` is the opt-in.
+- It skips the ring and records `composer-unproven` as the last delivery, so nothing is typed into a line that could not be proved free.
+- The cost is friction: a steer to a worker whose input line cannot be read waits for escalation instead of ringing.
 
-Set it with the first line of `config/inbox-draft-guard`, or for one process with `FM_TASK_INBOX_DRAFT_GUARD`.
+Set it with the first line of `config/inbox-draft-guard`.
+`FM_TASK_INBOX_DRAFT_GUARD` set to `strict` or `advisory` overrides the file for one process.
+When both the env and the file are unset, the guard is `advisory`.
+An input line that visibly holds other text is skipped under either setting.
 One race remains under either setting: text typed between the read and the doorbell's Enter is submitted with the doorbell.
 `tests/fm-task-inbox-receipts.test.sh` reproduces that race and records it as the known residual, while proving `strict` never types into an unproven line.
 
@@ -111,25 +122,56 @@ It is a command, not a daemon, and in this version it runs only in dry run.
 
 | Command | Effect |
 | ------- | ------ |
-| `plan` | Print one decision per stall. Write nothing. |
+| `plan` | Print one decision per stall, writing nothing except `state/producer-identity.json` when it is absent. |
 | `observe` | Also claim each new candidate and record it in `state/unblock.jsonl`. Needs `observe` as the first line of `config/auto-unblock`. |
 | `enforce` | Always refused. No setting enables it. |
 
+`FM_UNBLOCK_STALL_SECS` (default 900) is how long the oldest ordinary steering message must wait before its task counts as stalled.
+`FM_UNBLOCK_COMPOSER_MAX_AGE` (default 120) is the oldest input-line reading a resume may rely on.
+`config/auto-unblock` is `observe` to allow `observe`.
+`off`, absence, or any other value refuses `observe`.
+`plan` needs no flag.
+No value enables enforcement.
+
 It can name only two actions:
 
-- `resume`: ring the doorbell again, under the strict draft guard, for a task's oldest unacknowledged message that is not fire-and-forget, once it has waited at least `FM_UNBLOCK_STALL_SECS` (default 900). A fire-and-forget message queued ahead of it does not hide it.
+- `resume`: ring the doorbell again, under the strict draft guard, for a task's oldest unacknowledged message that is not fire-and-forget, once it has waited at least `FM_UNBLOCK_STALL_SECS`.
+- A fire-and-forget message queued ahead of it does not hide it.
 - `dispatch`: start the ready backlog item that `bin/fm-ledger.sh next` names, which is already filed and so already authorized.
 
 It never names an approval, merge, deploy, spend, account, authentication, permission, restart, kill, or shell command.
 
-A resume is a candidate only when the task has reported no final state, has no open human gate or declared wait, shows no dialog that needs an answer, records a spawn generation, and its input line read `empty` within `FM_UNBLOCK_COMPOSER_MAX_AGE` seconds (default 120).
-A delivery whose outcome is unknown is never repeated blindly: if the last delivery attempt was for the same message, or came at or after that message was accepted, and it rang without pickup, failed to send, met an unreadable input line, or found its endpoint gone, the stall is held. The doorbell line is the same for every message, so a later message's ring is also a ring for the stalled one.
-Every hold names its reason.
+A resume is a candidate only when the task has reported no final state, has no open human gate or declared wait, shows no dialog that needs an answer, records a spawn generation, and its input line read `empty` within `FM_UNBLOCK_COMPOSER_MAX_AGE` seconds.
+A delivery whose outcome is unknown is never repeated blindly.
+If the last delivery attempt was for the same message, or came at or after that message was accepted, and it rang without pickup, failed to send, met an unreadable input line, or found its endpoint gone, the stall is held.
+The doorbell line is the same for every message, so a later message's ring is also a ring for the stalled one.
+Every hold names its reason:
+
+| Reason | When |
+| ------ | ---- |
+| `worker-reported-final-state` | The task's current state is `done` or `failed`. |
+| `open-human-gate` | An open decision or blocker remains. |
+| `declared-wait` | The task declares a wait. |
+| `dialog-needs-answer` | The last screen read shows a permission, question, feedback, usage-limit, or model-switch dialog. |
+| `no-spawn-generation` | The task records no spawn generation. |
+| `ambiguous-delivery:rang-without-pickup` | The covering delivery rang and was not picked up. |
+| `ambiguous-delivery:send-failed` | The covering delivery failed to send. |
+| `ambiguous-delivery:input-line-unreadable` | The covering delivery met an unproven input line. |
+| `endpoint-gone` | The covering delivery found its endpoint gone. |
+| `input-line-not-proven-empty` | The input line is missing or is not `empty`. |
+| `input-line-reading-stale` | The empty reading is older than `FM_UNBLOCK_COMPOSER_MAX_AGE` and was not probed. |
+| `already-claimed-this-epoch` | `observe` already claimed this stall key. |
+| `task-already-live` | The ready backlog item already has a live task. |
+| `backlog-unreadable` | The ledger's next item could not be read. |
+
+A candidate resume uses reason `stalled-on-unacknowledged-message`.
+A candidate dispatch uses reason `ready-backlog-item`.
 
 Each stall has one key bound to its epoch: `resume:<task>:<msg>@<spawn_gen>` or `dispatch:<item>`.
 `observe` claims a candidate by creating `state/unblock/<key>.claim` exclusively.
 The first claimer owns that stall for that epoch, and later runs report it as `claimed` and record nothing.
 A relaunch mints a new generation and so a new epoch.
+Claims of resume stalls whose task meta is gone are removed.
 
 The unblocker never reads heartbeat age, a runtime's visibility or orphaned-layout flag, or any other guess about whether a worker is alive.
 A quiet worker is not a stalled one, so heartbeat expiry never leads to a takeover, and an orphaned terminal is never treated as dead.
@@ -147,7 +189,8 @@ Each decision is one JSON object:
 
 `verdict` is `candidate`, `hold`, or `claimed`; `would` is `null` unless the verdict is `candidate`.
 A recorded line in `state/unblock.jsonl` has `event` `unblock.candidate`.
-The `bin/fm-unblock.sh` header owns the full list of hold reasons.
+This page owns the hold rules, claim keys, and actions.
+The `bin/fm-unblock.sh` header owns usage, exits, and environment.
 
 ## Relation to the identity design
 

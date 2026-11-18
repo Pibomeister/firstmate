@@ -1057,26 +1057,16 @@ The composer reading comes from delivery attempts only, so the monitor takes no 
 The dialog is classified from the screen the monitor already reads each poll, and only again when that screen changed.
 Readers must ignore members they do not recognize.
 
-Typed steering receipts live beside the messages in `state/<id>.inbox/receipts.jsonl`: one JSON object per line, appended as each message is `accepted`, `picked_up` by the worker, `started`, given `progress`, and given its `result` from the status lines the worker wrote after acceptance.
-The `bin/fm-task-inbox-lib.sh` header owns that schema, and [`supervision-events.md`](supervision-events.md#typed-receipts) summarizes it; the worker's acknowledgement is still its move of the message into `handled/`.
+[Typed receipts](supervision-events.md#typed-receipts) owns the contract.
 `bin/fm-task-snapshot.sh` prints these facts with the task's binding, ownership, state, and waits as one JSON object per task ([Task snapshot](supervision-events.md#task-snapshot)).
 
 ## Inbox draft guard (config/inbox-draft-guard)
 
-The first line selects what a steering doorbell does when the worker's input line reads `pending-unproven` or `unknown`.
-`advisory`, the default when the file is absent or holds anything else, rings anyway.
-`strict` skips the ring and records `composer-unproven`, so the doorbell is never typed into a line that could not be proved free.
-`FM_TASK_INBOX_DRAFT_GUARD` (`strict` or `advisory`) overrides the file for one process.
-An input line that visibly holds other text is skipped under either setting.
-[`supervision-events.md`](supervision-events.md#input-line-guard) owns the guard's contract and its one remaining race.
+[Input-line guard](supervision-events.md#input-line-guard) owns the contract.
 
 ## Auto-unblock (config/auto-unblock)
 
-The first line enables `bin/fm-unblock.sh observe`, which records each new stall candidate once in `state/unblock.jsonl`.
-`observe` is the only accepted value; `off`, absence, or anything else refuses `observe`.
-`bin/fm-unblock.sh plan` needs no flag and writes nothing, and no value enables enforcement.
-`FM_UNBLOCK_STALL_SECS` (default 900) is how long the oldest ordinary steering message must wait before its task counts as stalled, and `FM_UNBLOCK_COMPOSER_MAX_AGE` (default 120) is the oldest input-line reading a resume may rely on.
-[`supervision-events.md`](supervision-events.md#unblocker) owns the decision contract.
+[Unblocker](supervision-events.md#unblocker) owns the contract.
 
 ## Claim verifier AgentKit gate (config/agentkit-gate)
 
