@@ -29,10 +29,12 @@
 #   Claude PostToolUse / PostToolUseFailure -> additionalContext for
 #     recurring-red only. One Claude tool call is PreToolUse then PostToolUse;
 #     non-red principles emit on PreToolUse so they are not printed twice.
-# A Cursor speed claim, done-line, or recurring-red seen on
-# beforeSubmitPrompt, afterAgentResponse, or afterShellExecution is stored
-# as a pending marker keyed by conversation_id and delivered once on the
-# next postToolUse or postToolUseFailure in that conversation. No
+# A Cursor speed claim or done-line on beforeSubmitPrompt or
+# afterAgentResponse is stored as a pending marker keyed by conversation_id
+# and delivered once on the next postToolUse or postToolUseFailure in that
+# conversation. afterShellExecution does not defer completions or speed
+# claims: postToolUse of the same Shell already sees the command.
+# Recurring-red on afterShellExecution is still pending-delivered. No
 # conversation_id means no pending store and no delivery.
 #
 # Triggers, each owned here:
@@ -47,7 +49,9 @@
 #     path/contents), Cursor postToolUse of the same, or a Shell
 #     redirect/heredoc/tee/cp/mv whose TARGET is a code test path. A cwd-relative
 #     foo.test.sh Write or `cat > foo.test.sh` injects. A redirect to /tmp that
-#     later names a test path does not. In-place editors (sed -i) are not covered.
+#     later names a test path does not. A `>` inside single or double quotes is
+#     not a redirect; nested or escaped quotes are not parsed. In-place editors
+#     (sed -i) are not covered.
 #   speed or perf claim -> principle-explain-the-number
 #     An assertion such as "much faster", "got a lot faster", "2x as fast",
 #     "the export is faster now", "the export is 2x as fast?", or
@@ -245,12 +249,40 @@ is_test_path() {  # <path>
   return 1
 }
 
+# Blank `>` inside simple single or double quotes so it is not a redirect.
+# Nested and escaped quotes are not parsed.
+_blank_gt_inside_quotes() {  # <command>
+  local s=$1 out='' i=0 n c q=
+  n=${#s}
+  while [ "$i" -lt "$n" ]; do
+    c=${s:$i:1}
+    if [ -n "$q" ]; then
+      if [ "$c" = "$q" ]; then
+        q=
+        out=$out$c
+      elif [ "$c" = '>' ]; then
+        out=$out' '
+      else
+        out=$out$c
+      fi
+    else
+      case "$c" in
+        \'|\") q=$c; out=$out$c ;;
+        *) out=$out$c ;;
+      esac
+    fi
+    i=$((i + 1))
+  done
+  printf '%s' "$out"
+}
+
 # Redirects, tees (including flags), and cp/mv destinations into a code test
 # path segment, not contest/. Only the redirect/tee/cp/mv TARGET is matched.
 # In-place editors (sed -i) are not covered.
 shell_writes_test_path() {  # <command>
   local cmd=$1 word prev='' mode='' last_cp=''
   [ -n "$cmd" ] || return 1
+  cmd=$(_blank_gt_inside_quotes "$cmd")
   cmd=$(printf '%s' "$cmd" | sed 's/>>/ __RA__ /g; s/>/ __R__ /g')
   while IFS= read -r word || [ -n "$word" ]; do
     [ -n "$word" ] || continue
@@ -741,7 +773,13 @@ is_red_counting_event() {
 cursor_defers_inject() {
   is_cursor_host || return 1
   case "$EVENT" in
-    beforeSubmitPrompt|afterAgentResponse|afterShellExecution) return 0 ;;
+    beforeSubmitPrompt|afterAgentResponse) return 0 ;;
+    afterShellExecution)
+      case "$PRINCIPLE" in
+        principle-attack-the-premise) return 0 ;;
+      esac
+      return 1
+      ;;
   esac
   return 1
 }

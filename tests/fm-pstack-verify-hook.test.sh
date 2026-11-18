@@ -240,6 +240,14 @@ test_redirect_elsewhere_then_cat_test_path_is_silent() {
   pass "echo redirected to /tmp then cat of a test path does not inject"
 }
 
+test_quoted_gt_in_echo_is_not_a_test_write() {
+  run_hook "$PRIMARY" \
+    '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"echo '\''a > tests/foo.test.sh'\''"}}' \
+    --claude
+  expect_silent "quoted greater-than in echo"
+  pass "echo of a quoted > tests/foo.test.sh does not inject"
+}
+
 test_its_faster_injects_explain_the_number() {
   run_hook "$PRIMARY" \
     "{\"hook_event_name\":\"UserPromptSubmit\",\"prompt\":\"it's faster\"}" \
@@ -917,7 +925,7 @@ test_after_shell_status_append_is_consumed_by_post_tool_use() {
   run_hook "$home" \
     "{\"hook_event_name\":\"afterShellExecution\",\"command\":$(printf '%s' "$STATUS_APPEND" | jq -Rs .),\"output\":\"\",\"duration\":1100,\"cursor_version\":\"x\",\"conversation_id\":\"c1\",\"generation_id\":\"g\"}" \
     --cursor
-  expect_silent "afterShellExecution STATUS_APPEND is deferred"
+  expect_silent "afterShellExecution STATUS_APPEND does not emit or defer"
   run_hook "$home" \
     "{\"hook_event_name\":\"postToolUse\",\"tool_name\":\"Shell\",\"tool_input\":{\"command\":$(printf '%s' "$STATUS_APPEND" | jq -Rs .)},\"tool_output\":\"{\\\"exitCode\\\":0}\",\"cursor_version\":\"x\",\"conversation_id\":\"c1\",\"generation_id\":\"g\"}" \
     --cursor
@@ -925,8 +933,27 @@ test_after_shell_status_append_is_consumed_by_post_tool_use() {
   run_hook "$home" \
     '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
     --cursor
-  expect_silent "deferred STATUS_APPEND must not inject again on a later Read"
-  pass "postToolUse of the same STATUS_APPEND consumes the deferred completion"
+  expect_silent "STATUS_APPEND must not inject again on a later Read"
+  pass "afterShellExecution then postToolUse of STATUS_APPEND injects once"
+}
+
+test_post_tool_then_after_shell_status_append_injects_once() {
+  local home
+  home="$TMP_ROOT/pending-status-reverse"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    "{\"hook_event_name\":\"postToolUse\",\"tool_name\":\"Shell\",\"tool_input\":{\"command\":$(printf '%s' "$STATUS_APPEND" | jq -Rs .)},\"tool_output\":\"{\\\"exitCode\\\":0}\",\"cursor_version\":\"x\",\"conversation_id\":\"c1\",\"generation_id\":\"g\"}" \
+    --cursor
+  expect_cursor_inject "principle-prove-it-works" "postToolUse STATUS_APPEND first"
+  run_hook "$home" \
+    "{\"hook_event_name\":\"afterShellExecution\",\"command\":$(printf '%s' "$STATUS_APPEND" | jq -Rs .),\"output\":\"\",\"duration\":1100,\"cursor_version\":\"x\",\"conversation_id\":\"c1\",\"generation_id\":\"g\"}" \
+    --cursor
+  expect_silent "afterShellExecution STATUS_APPEND after postToolUse"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g"}' \
+    --cursor
+  expect_silent "reverse-order STATUS_APPEND must not inject again on a later Read"
+  pass "postToolUse then afterShellExecution of STATUS_APPEND injects once"
 }
 
 test_parallel_post_tool_use_takes_pending_once() {
@@ -1151,6 +1178,7 @@ test_tee_with_flags_into_test_path_injects
 test_cp_into_test_path_injects
 test_redirect_elsewhere_then_grep_test_path_is_silent
 test_redirect_elsewhere_then_cat_test_path_is_silent
+test_quoted_gt_in_echo_is_not_a_test_write
 test_claude_write_of_test_file_emits_once_across_pre_and_post
 test_contest_path_is_not_a_test_write
 test_write_of_docs_testing_notes_is_not_a_test_change
@@ -1199,6 +1227,7 @@ test_empty_stdin_fails_open
 test_malformed_payload_fails_open
 test_missing_jq_fails_open
 test_after_shell_status_append_is_consumed_by_post_tool_use
+test_post_tool_then_after_shell_status_append_injects_once
 test_parallel_post_tool_use_takes_pending_once
 test_prefixed_is_not_a_claimed_fix
 test_nested_cursor_version_stays_on_claude_path
