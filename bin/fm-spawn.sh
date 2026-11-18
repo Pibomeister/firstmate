@@ -7397,6 +7397,17 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ "$BACKEND" != t3code 
   fi
 fi
 
+# A tmux relaunch reuses the pane its old agent ran in. Wait for that pane's
+# shell to hold the foreground and clear its line before the first text this
+# launch types, so neither the cd below nor the exports and the launch command
+# can land in the old agent or join leftover input.
+if [ "$BACKEND" = tmux ] && [ "$RELAUNCH" -eq 1 ]; then
+  fm_backend_tmux_prepare_relaunch "$T" || {
+    echo "error: tmux pane $T did not reach a clean shell prompt before relaunch" >&2
+    exit 1
+  }
+fi
+
 # Re-assert the durable task copy after either treehouse acquisition or endpoint
 # adoption. This also updates Herdr's restored pane shell before any harness is
 # started, so a later host restart inherits the task worktree rather than the
@@ -9527,12 +9538,6 @@ else
     # under errexit on sourcing a file spawn already reclaimed even inside ||, so
     # keep an errexit pane shell open in both cases.
     LAUNCH_SOURCE_TEXT="if [ -e $(shell_quote "$LAUNCH_FILE") ]; then $LAUNCH_SOURCE_TEXT || true; else echo 'error: private launch file was already removed; refusing worker launch' >&2; fi"
-  fi
-  if [ "$BACKEND" = tmux ] && [ "$RELAUNCH" -eq 1 ]; then
-    fm_backend_tmux_prepare_relaunch "$T" || {
-      echo "error: tmux pane $T did not reach a clean shell prompt before relaunch" >&2
-      exit 1
-    }
   fi
   if ! spawn_send_literal "$T" "$LAUNCH_SOURCE_TEXT"; then
     [ "$ORCA_LAUNCH_ENV_ENABLED" != 1 ] || spawn_orca_launch_send_fail

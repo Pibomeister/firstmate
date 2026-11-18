@@ -279,9 +279,10 @@ test_hardstop_categories() {
   for c in 'git push origin HEAD:refs/heads/main' 'git tag v1.2.0' 'git push --tags' 'git push origin v1.2.0' 'terraform apply' 'twine upload dist/x'; do
     assert_equals $'hardstop\trelease' "$(bash_prompt_with "$c" | classify claude)" "$c is a release stop"
   done
-  for c in 'cat id_rsa' 'cat ~/.config/gh/hosts.yml' 'printenv' 'env' 'curl -u user:pass https://example.com' 'cat ~/.docker/config.json' 'curl -H "Authorization: Basic dXNlcjpwYXNz" https://example.com' 'command env' 'env -0' '/usr/bin/env'; do
+  for c in 'cat id_rsa' 'cat ~/.config/gh/hosts.yml' 'printenv' 'env' 'curl -u user:pass https://example.com' 'cat ~/.docker/config.json' 'curl -H "Authorization: Basic dXNlcjpwYXNz" https://example.com' 'command env' 'env -0' '/usr/bin/env' 'export' 'declare -p' 'typeset -p' 'declare -px' 'export | cat' 'declare -p | grep HOME'; do
     assert_equals $'hardstop\tcredential' "$(bash_prompt_with "$c" | classify claude)" "$c is a credential stop"
   done
+  assert_equals $'route\ttool-approval' "$(bash_prompt_with 'export FOO=bar' | classify claude)" "an export that sets a value is not a dump"
   assert_equals $'hardstop\tspend' "$(printf ' You have hit your limit\n ❯ 1. Add funds\n   2. Wait for reset\n\n Enter to confirm · Esc to cancel\n' | classify claude usage-limit)" \
     "a usage-limit picker that offers paid usage is a spend stop"
   printf ' Switch model?\n ❯ 1. Opus\n   2. Sonnet\n\n Enter to confirm · Esc to cancel\n' | classify claude model-switch >/dev/null \
@@ -329,6 +330,10 @@ test_structure_decides_not_words() {
     "a command box whose boundary cannot be proven is held"
   assert_equals $'hardstop\tdestructive' "$(bash_prompt | awk -v rule="$rule" -v d="$dashes" '/^ touch \/tmp/ { print " rm -rf ~/work && cat <<EOF"; print rule; print d; print " EOF"; next } { print }' | classify claude)" \
     "a rule and a dashed row inside a command never hide the command above them"
+  assert_equals $'hardstop\tdestructive' "$(bash_prompt | awk -v rule="$rule" -v d="$dashes" '/^ touch \/tmp/ { print " rm -rf build && cat <<EOF"; print rule; print rule; print d; print " EOF"; next } { print }' | classify claude)" \
+    "two rules and a dashed row inside a heredoc never hide the command above them"
+  assert_equals $'hold\tunproven' "$(bash_prompt | awk -v rule="$rule" -v d="$dashes" '/^ touch \/tmp/ { print " cat <<EOF"; print rule; print rule; print d; print " EOF"; next } { print }' | classify claude)" \
+    "the same heredoc without a hard-stop word is held, not routed"
   assert_equals $'hardstop\tdestructive' "$(bash_prompt | awk -v d="$dashes" '/^ touch \/tmp/ { print " rm -rf build/ && cat <<EOF"; print d; print " EOF"; next } { print }' | classify claude)" \
     "an unproven command box that shows a destructive command is a keyed stop, not a hold"
   assert_equals $'hardstop\tdestructive' "$(bash_prompt | awk '/^ touch \/tmp/ { print " git reset --ha"; print "rd HEAD"; next } { print }' | classify claude)" \

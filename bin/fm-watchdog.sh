@@ -745,7 +745,10 @@ wd_nudge() {
     wd_rec "$id" "$symptom" nudge failed "operational input record failed"; return 0; }
   verdict=$(fm_run_timed_fn 30 fm_backend_send_text_submit "$O_BACKEND" "$O_TARGET" "$doorbell" 2 0.5 1 2>/dev/null) || {
     wd_rec "$id" "$symptom" nudge failed "doorbell submit failed (${verdict:-no verdict})"; return 0; }
-  if [ "$symptom" = heartbeat-frozen ] && wd_same_live_owner "$O_HOME/state" \
+  # An adapter reports send-failed with exit status 0 when nothing reached the
+  # pane, so that verdict is never a delivery receipt.
+  if [ "$symptom" = heartbeat-frozen ] && [ -n "$verdict" ] && [ "$verdict" != send-failed ] \
+    && wd_same_live_owner "$O_HOME/state" \
     && [ "$(wd_heartbeat_owner)" = "$heartbeat_owner" ]; then
     wd_rec "$id" "$symptom" nudge "done" "$heartbeat_owner" || wd_gap "heartbeat delivery receipt could not be written"
   fi

@@ -811,6 +811,27 @@ test_cleanup_resolves_open_episodes() {
   pass 'cleanup resolves every pending row once, and a refused mode writes nothing'
 }
 
+test_prune_reclaims_a_crashed_lock() {
+  local h
+  h=$(new_home prune-lock)
+  new_task "$h" p1
+  ticks "$h" p1 "$B" $((B + 600))
+  rm -f "$h/state/p1.meta"
+  # A fresh lock belongs to a live run, so this prune pass changes nothing.
+  mkdir "$h/state/hung-ladder/.lock"
+  env -u FM_TASK_ID FM_HOME="$h" FM_HUNG_LADDER_NOW=$((B + 700)) "$TEST_BASH" "$LADDER" prune \
+    || fail 'a prune behind a live lock exits cleanly'
+  [ -e "$h/state/hung-ladder/episodes/p1.ep" ] || fail 'a prune behind a live lock keeps the episode'
+  [ -d "$h/state/hung-ladder/.lock" ] || fail 'a prune behind a live lock leaves that lock alone'
+  # A lock older than five minutes is a crashed run's, so prune reclaims it.
+  touch -t 202001010000 "$h/state/hung-ladder/.lock"
+  env -u FM_TASK_ID FM_HOME="$h" FM_HUNG_LADDER_NOW=$((B + 700)) "$TEST_BASH" "$LADDER" prune \
+    || fail 'a prune behind a crashed lock runs'
+  [ ! -e "$h/state/hung-ladder/episodes/p1.ep" ] || fail 'a prune that reclaims a crashed lock removes the cleaned-up episode'
+  [ ! -e "$h/state/hung-ladder/.lock" ] || fail 'prune releases the lock it reclaimed'
+  pass 'prune skips a live lock and reclaims a crashed one'
+}
+
 test_validation_read_never_waits_on_a_lock() {
   local h
   h=$(new_home lockfree)
@@ -1183,6 +1204,7 @@ fm_test_run \
   test_unverified_wait_cap_cannot_be_renewed \
   test_failed_reads_never_count_as_progress \
   test_cleanup_resolves_open_episodes \
+  test_prune_reclaims_a_crashed_lock \
   test_validation_read_never_waits_on_a_lock \
   test_content_progress_covers_untracked_and_skips_secrets \
   test_orca_draft_read_loads_its_adapter \

@@ -554,6 +554,8 @@ test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint() {
     || fail "the transaction journal should end complete"
   assert_grep "/exit" "$dir/fake/literal" "the previous agent should have been exited"
   assert_grep "cd -- '$dir/wt'" "$dir/fake/keys" "the replacement launch must enter the recorded worktree"
+  awk -v cd="cd -- '$dir/wt'" '$0 == "C-u" { cleared = 1 } $0 == cd { exit !cleared } END { exit !cleared }' "$dir/fake/keys" \
+    || fail "the relaunch must clear the pane's input before it types the cd: $(cat "$dir/fake/keys")"
   assert_grep "Firstmate operational input waiting: read" "$dir/fake/literal" "the replacement should have been launched"
   cat > "$dir/fakebin/claude" <<'SH'
 #!/bin/sh
