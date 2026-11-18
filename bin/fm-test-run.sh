@@ -367,7 +367,7 @@ family_for_basename_var() {
     fm-mail.test.sh|fm-mail-check.test.sh|\
     fm-turnend-foreign-owner-arm-fix.test.sh|\
     fm-wake-queue.test.sh|fm-wake-ledger.test.sh|fm-watch-arm.test.sh|fm-watch-checkpoint.test.sh|fm-watch-recovery-loop.test.sh|\
-    fm-watch-inbox-meta.test.sh|fm-watch-open-decisions.test.sh|\
+    fm-watch-inbox-meta.test.sh|fm-watch-open-decisions.test.sh|fm-watch-stale-backoff.test.sh|\
     fm-watch-triage.test.sh|fm-watch-triage-pause.test.sh|fm-watch-triage-wedge-defer.test.sh|fm-watch-triage-fork.test.sh|fm-task-inbox.test.sh|fm-watch-inbox-recovery.test.sh|\
     fm-watcher-lock.test.sh|fm-inactive-reconcile.test.sh|fm-watch-wedge-cap.test.sh|\
     fm-watch-wedge-cap-unconfigured-parity.test.sh|fm-supervision-bounds.test.sh|fm-watcher-replacement.test.sh)
@@ -1105,6 +1105,7 @@ tests/fm-watch-inbox-meta.test.sh 468
 tests/fm-watch-inbox-recovery.test.sh 55825
 tests/fm-watch-open-decisions.test.sh 81501
 tests/fm-watch-recovery-loop.test.sh 62091
+tests/fm-watch-stale-backoff.test.sh 25267
 tests/fm-watch-triage-fork.test.sh 120141
 tests/fm-watch-triage-pause.test.sh 568429
 tests/fm-watch-triage-wedge-defer.test.sh 661765

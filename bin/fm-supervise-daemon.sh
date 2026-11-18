@@ -116,7 +116,7 @@
 #                                   captain-relevant escalation for matching
 #                                   kinds.
 #          FM_STALE_ESCALATE_SECS   idle seconds before a stale pane escalates
-#                                   as a possible wedge (default 240)
+#                                   as a possible wedge (default 300)
 #          FM_PAUSE_RESURFACE_SECS  seconds a declared wait stays declared,
 #                                   idle or busy, before it re-surfaces as a
 #                                   recheck (default 14400, four hours); an
@@ -254,7 +254,7 @@ fi
 # thread status table as the busy verdict.
 FM_SUPERVISOR_SUPPORTED_BACKENDS="tmux herdr rex t3code orca"
 INJECT_SKIP_DEFAULT="heartbeat"
-STALE_ESCALATE_SECS_DEFAULT=240
+STALE_ESCALATE_SECS_DEFAULT=300
 ESCALATE_BATCH_SECS_DEFAULT=90
 HEARTBEAT_SCAN_SECS_DEFAULT=300
 HOUSEKEEPING_TICK_DEFAULT=15
