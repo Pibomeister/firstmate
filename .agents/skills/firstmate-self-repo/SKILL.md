@@ -70,3 +70,12 @@ The boundary covers only traffic that writes to the upstream repository.
 
 Follow the [role inheritance and receipt limits](../../../docs/configuration.md#firstmate-role-configfirstmate-role); supported propagation must never grant a child a role the primary does not resolve.
 Deliberately forged local records are outside this accidental-publication safeguard, not a provenance guarantee.
+
+### A lane owner for the firstmate repository
+
+A secondmate chartered as the firstmate repository's lane owner (`secondmate-provisioning` "Lane owner") publishes under its home's inherited role, so its pull requests reach only the target that role names, or a target one task's consent names.
+Publication and landing are separate grants: the role answers whether a task may publish to its target, and `config/self-land` (pending ticket V11) answers whether the lane owner may merge there without the main firstmate.
+Neither implies the other.
+A lane owner whose home resolves user/operator has no maintainer scope, so its `config/self-land` can name nothing; a pull request it opens under one-task consent still lands only by the captain's word.
+Name in `config/self-land` only a repository the inherited maintainer scope already covers, normally the operator's own fork.
+Never name a fork's parent repository there: a contribution to the parent is one-task consent, and its merge is never this home's call.
