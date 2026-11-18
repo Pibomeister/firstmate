@@ -30,10 +30,36 @@
         "timeout": 10
       }
     ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "command": "\"$CURSOR_PROJECT_DIR\"/bin/fm-pstack-verify-hook.sh --cursor",
+        "timeout": 10
+      }
+    ],
+    "postToolUseFailure": [
+      {
+        "type": "command",
+        "command": "\"$CURSOR_PROJECT_DIR\"/bin/fm-pstack-verify-hook.sh --cursor",
+        "timeout": 10
+      }
+    ],
+    "afterShellExecution": [
+      {
+        "type": "command",
+        "command": "\"$CURSOR_PROJECT_DIR\"/bin/fm-pstack-verify-hook.sh --cursor",
+        "timeout": 10
+      }
+    ],
     "beforeSubmitPrompt": [
       {
         "type": "command",
         "command": "\"$CURSOR_PROJECT_DIR\"/bin/fm-host-mirror.sh hook cursor",
+        "timeout": 10
+      },
+      {
+        "type": "command",
+        "command": "\"$CURSOR_PROJECT_DIR\"/bin/fm-pstack-verify-hook.sh --cursor",
         "timeout": 10
       }
     ],
@@ -41,6 +67,11 @@
       {
         "type": "command",
         "command": "\"$CURSOR_PROJECT_DIR\"/bin/fm-host-mirror.sh hook cursor",
+        "timeout": 10
+      },
+      {
+        "type": "command",
+        "command": "\"$CURSOR_PROJECT_DIR\"/bin/fm-pstack-verify-hook.sh --cursor",
         "timeout": 10
       }
     ]

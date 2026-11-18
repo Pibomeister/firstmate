@@ -25,6 +25,21 @@
           {
             "type": "command",
             "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-cd-pretool-check.sh --claude"
+          },
+          {
+            "type": "command",
+            "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-pstack-verify-hook.sh --claude",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|StrReplace|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-pstack-verify-hook.sh --claude",
+            "timeout": 10
           }
         ]
       },
@@ -46,6 +61,23 @@
             "type": "command",
             "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-handoff-trigger.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-pstack-verify-hook.sh --claude",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-pstack-verify-hook.sh --claude",
+            "timeout": 10
           }
         ]
       }
@@ -61,6 +93,11 @@
           {
             "type": "command",
             "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-handoff-trigger.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-pstack-verify-hook.sh --claude",
             "timeout": 10
           }
         ]

@@ -4,8 +4,10 @@ Copyright (c) 2026 Eduardo Picazo
 The installable catalog adapts material from eleven catalog donors: ten under
 the MIT License and one, claude-mem, under the Apache License 2.0. Each adapted
 file is recorded in provenance/adaptations.yaml with its exact donor@commit:path
-source and a note of what was changed. Full license texts that accompany this copy
-are:
+source and a note of what was changed. This Firstmate overlay's
+provenance/adaptations.yaml records the pstack 0.15.43 skill copies vendored
+here and does not replace agent-kit's other donor rows. Full license texts that
+accompany this copy are:
 
 provenance/licenses/BayramAnnakov_claude-reflect.LICENSE
 provenance/licenses/BuilderIO_skills.LICENSE
