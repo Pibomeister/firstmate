@@ -1,0 +1,5 @@
+### m1: steer 1, then steer 2 (both ring an empty box; worker never picks up)
+m1 .last-ring: 002.msg rang 1794974801
+### c1: steer behind a draft
+fm-send: doorbell skipped (composer visibly holds pending text); the steer is durably recorded at /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.2CwwMV/state/c1.inbox/001.msg and the watcher will re-ring
+c1 .last-ring: 001.msg composer-pending 1794974805

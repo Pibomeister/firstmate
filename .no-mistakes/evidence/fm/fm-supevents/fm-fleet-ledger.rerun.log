@@ -1,0 +1,14 @@
+ok - flag on: dispatch, polled status lines with their derived start, heartbeat, wait, and finish, the verified local merge, and cleanup are recorded in order
+ok - envelope: a moved home reads host-mismatch, a missing host id reads host-unknown, the native incarnation stays apart from the spawn generation, and a lost sequence file resumes after the last record
+ok - flag on: screen activity starts an incarnation once and then beats, a stall records its reason after pending status lines, and a relaunch starts again
+ok - flag on: a scout's done line records its report path and digest as a verified outcome, and only when the report exists
+ok - watcher: screen heartbeats are throttled across watcher processes, and a queued stale notice records the stall
+ok - flag on: a PR merge is recorded once with its verified outcome, after the task's pending status lines and their derived start and finish
+ok - flag on: registering a PR records task.pr_ready with its full URL and a verified outcome naming the unread head, after the task's pending status lines, and the merge-time re-record adds nothing
+ok - flag on: a worker's status command records its line at once, and the watcher backstop does not record it again
+ok - flag on, state override outside the home: the worker's status command records its line at once
+ok - flag on, relative config override: a worker running elsewhere still records its line at once
+ok - append failing: the worker's status command exits nonzero and records nothing
+ok - ledger failing: the worker's status line still lands exactly, quietly, and the backstop records it later
+ok - flag off: the worker's status command is a plain append and leaves no ledger file, offset, or lock
+ok - flag off: the whole lifecycle leaves no ledger file, offset, or lock

@@ -1,0 +1,9 @@
+ok - unblock: a stale heartbeat, old status line, and old live file alone name no action
+ok - unblock: a stalled ordinary message on a freshly proven empty input line is one strict resume candidate, and plan writes nothing
+ok - unblock: ambiguous deliveries, unproven input lines, gates, waits, final states, dialogs, and unbound epochs are all held
+ok - unblock: a fire-and-forget message queued ahead never hides a stalled ordinary steer
+ok - unblock: a later message's ring without pickup holds the older stalled steer, and a ring from before it was accepted does not
+ok - unblock: observe is opt-in, claims each stall once per epoch for one owner, never repeats it, and starts a new epoch on relaunch
+ok - unblock: dispatch names only the ledger's next ready item, once, and holds when it is live or the backlog is unreadable
+ok - unblock: enforce is refused under every configuration and writes nothing
+ok - snapshot: binding keeps the native incarnation apart from the spawn generation, with ownership, state, gates, queue, and progress

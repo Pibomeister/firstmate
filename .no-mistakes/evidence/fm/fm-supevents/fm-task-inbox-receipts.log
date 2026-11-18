@@ -1,0 +1,5 @@
+ok - receipts: a message is accepted, picked up, started, progressed, and given a result from the status lines after it; a removed record gets no more
+ok - delivery: each attempt records its result and the input-line verdict it read
+ok - draft guard: strict never types or submits on an unproven input line, advisory still rings, and the read-to-Enter race is the pinned residual
+ok - live status: input-line reading, queued steering, last delivery, and an open approval prompt are readable outside the pane
+ok - watcher: an ordinary poll refreshes the task's live status file

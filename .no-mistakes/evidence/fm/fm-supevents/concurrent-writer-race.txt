@@ -1,0 +1,10 @@
+run 1: failed=4 msgs=2 accepted=2 open=2
+run 2: failed=0 msgs=6 accepted=6 open=6
+run 3: failed=0 msgs=6 accepted=6 open=6
+run 4: failed=0 msgs=6 accepted=6 open=6
+run 5: failed=0 msgs=6 accepted=6 open=6
+run 6: failed=0 msgs=6 accepted=6 open=6
+run 7: failed=0 msgs=6 accepted=6 open=6
+run 8: failed=0 msgs=6 accepted=6 open=6
+run 9: failed=0 msgs=6 accepted=6 open=6
+run 10: failed=0 msgs=6 accepted=6 open=6
