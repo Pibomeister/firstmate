@@ -1,0 +1,18 @@
+### before: parent open decisions: [handoff-relaunch	blocked]
+### pane command before: zsh
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/tmp/fmL.sgSz/p
+warning: config/secondmate-harness effort token 'default' is not one of low, medium, high, xhigh, max, ultra; ignoring
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/tmp/fmL.sgSz/p
+warning: secondmate smlive sync skipped before launch: primary default-branch commit cannot be resolved
+relaunched smlive harness=claude from=claude model=default effort=default backend=tmux endpoint=fmses:fm-smlive worktree=/private/tmp/fmL.sgSz/sm
+### fm-control relaunch exit=0 elapsed=23s
+### pane command after: 2.1.327
+### after: parent open decisions: []
+### parent status file
+blocked [key=handoff-relaunch] [at=1]: second mate smlive wrote its handoff for a planned fresh start and waits to be relaunched once; handoff=/private/tmp/fmL.sgSz/sm/data/handoff.md sha256=0
+done [at=2]: corr=abc reply delivered
+resolved [key=handoff-relaunch] [at=1794998750]: second mate smlive was relaunched (bin/fm-control.sh relaunch)
+### record after
+window=fmses:fm-smlive
+harness=claude
+kind=secondmate

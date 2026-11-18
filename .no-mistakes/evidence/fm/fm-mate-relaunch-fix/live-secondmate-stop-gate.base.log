@@ -1,0 +1,17 @@
+### 1. 90k of 100k tokens: PostToolUse fires a planned fresh start for the second mate
+This is a second mate, so never launch your own successor: append to your parent channel that your handoff is written, name the handoff document, and ask the parent to relaunch you, once, then end this turn. Do not run /compact instead. This instruction fires once per context cycle.
+### 2. incident shape: mate writes relaunch ask as ordinary status prose, then tries to stop
+parent open decisions: []
+Stop exit=0 (2 = blocked)
+stderr: 
+### 3. same turn, stop_hook_active (already blocked once): stop allowed, never wedges
+Stop exit=0
+### 4. adversarial: a stale request record from before this firing does not clear the gate
+Stop exit=0 (2 = still blocked)
+### 5. mate runs the request command
+env: /private/tmp/fmB-base/bin/fm-handoff-relaunch.sh: No such file or directory
+request exit=127
+parent open decisions: []
+Stop exit=0 (0 = released)
+### parent status file
+working [at=1]: handoff written to /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.sOmFRL/data/handoff.md; please relaunch me once

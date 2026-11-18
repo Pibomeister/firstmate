@@ -1,0 +1,3 @@
+fm-test-queue: ticket 2140, position 6: waiting behind 5 earlier ticket(s)
+Terminated: 15
+exit=143

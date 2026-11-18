@@ -7,3 +7,4 @@ ok - a remote relaunch owns the mate from the host call through the record updat
 ok - a local secondmate is refused by the remote relaunch tool
 ok - a remote relaunch keeps an already-armed PR poll authenticating
 ALL TESTS PASSED
+exit=0

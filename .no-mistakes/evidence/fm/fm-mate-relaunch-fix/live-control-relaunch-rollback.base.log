@@ -1,0 +1,19 @@
+### before: parent open decisions: [handoff-relaunch	blocked]
+### pane command before: zsh
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/tmp/fmL.0qRN/p
+warning: config/secondmate-harness effort token 'default' is not one of low, medium, high, xhigh, max, ultra; ignoring
+cp: /private/tmp/fmL.0qRN/p/state/smlive.meta: No such file or directory
+error: could not stage relaunch token 67487.20261118T105139Z.28398 for task smlive
+### fault injected at phase=launching after 25s: record removed, endpoint closed
+error: smlive's agent was stopped but the replacement did not launch; no agent is running, and its work plus the recorded progress note are preserved at /private/tmp/fmL.0qRN/sm
+### fm-control relaunch exit=1 elapsed=26s
+### pane command after: no server running on /tmp/fml.PvAChF/tmux-501/default
+### after: parent open decisions: [handoff-relaunch	blocked]
+### parent status file
+blocked [key=handoff-relaunch] [at=1]: second mate smlive wrote its handoff for a planned fresh start and waits to be relaunched once; handoff=/private/tmp/fmL.0qRN/sm/data/handoff.md sha256=0
+done [at=2]: corr=abc reply delivered
+### record present after rollback: NO
+### restored record equals the checkpoint copy of the prior record: no
+### journal:
+phase=failed:launching
+rollback=prior-record-kept

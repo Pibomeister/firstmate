@@ -1,0 +1,7 @@
+fm-test-queue: ticket 2104, position 3: waiting behind 2 earlier ticket(s)
+fm-test-queue: ticket 2104, position 2: waiting behind 1 earlier ticket(s)
+fm-test-queue: ticket 2104, position 1: all 4 slot(s) busy
+fm-test-queue: ticket 2104 served
+ok - live-guard fixture isolates the account and reports the JSON API failure
+ok - a firing rejects stale, dead, request-only and unacknowledged live successor records
+Terminated: 15

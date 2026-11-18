@@ -1,0 +1,7 @@
+1..4
+ok - fm-control relaunch: a confirmed second-mate relaunch closes its open handoff relaunch request, and a failed one leaves it open
+ok - fm-control relaunch: rollback restores a record that went missing before publication
+ok - fm-control relaunch: rollback reads the published record back before claiming it
+ok - automatic relaunch rechecks intervening stop, replacement, and clean exit under the lifecycle lock
+FM_TEST_COMPLETE
+exit=0

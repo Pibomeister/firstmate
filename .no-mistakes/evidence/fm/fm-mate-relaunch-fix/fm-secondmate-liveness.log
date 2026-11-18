@@ -28,3 +28,4 @@ ok - handoff relaunch request: stays open while the mate is merely alive and clo
 ok - poll probe: remote states map to the same contract as local, one call each
 ok - poll probe: unreachable or inconclusive remote reads preserve the route
 # all fm-secondmate-liveness tests passed
+exit=0

@@ -1,0 +1,2 @@
+ok - a failed fresh-start launch releases the cycle's Stop gate and falls back to auto-compaction
+exit=0

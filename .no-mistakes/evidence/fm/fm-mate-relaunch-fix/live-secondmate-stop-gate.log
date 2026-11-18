@@ -1,0 +1,18 @@
+### 1. 90k of 100k tokens: PostToolUse fires a planned fresh start for the second mate
+This is a second mate, so never launch your own successor: run bin/fm-handoff-relaunch.sh request <handoff file>, which asks your parent once, on the parent channel, to relaunch you from that document and keeps the request open there until the relaunch is done. A relaunch request written as ordinary status text is not that record. Then end this turn and wait. Do not run /compact instead. This instruction fires once per context cycle.
+### 2. incident shape: mate writes relaunch ask as ordinary status prose, then tries to stop
+parent open decisions: []
+Stop exit=2 (2 = blocked)
+stderr: Firstmate restart gate: this second mate fired a planned fresh start, but no relaunch request is recorded for it. Run bin/fm-handoff-relaunch.sh request <handoff document path>; it asks the parent once, on the parent channel, to relaunch this second mate. Then end this turn and wait.
+### 3. same turn, stop_hook_active (already blocked once): stop allowed, never wedges
+Stop exit=0
+### 4. adversarial: a stale request record from before this firing does not clear the gate
+Stop exit=2 (2 = still blocked)
+### 5. mate runs the request command
+relaunch requested: the parent is asked to relaunch second mate sm-lab once from /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4qBeUh/data/handoff.md; end this turn and wait
+request exit=0
+parent open decisions: [handoff-relaunch	blocked]
+Stop exit=0 (0 = released)
+### parent status file
+working [at=1]: handoff written to /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4qBeUh/data/handoff.md; please relaunch me once
+blocked [key=handoff-relaunch] [at=1794998246]: second mate sm-lab wrote its handoff for a planned fresh start and waits to be relaunched once; handoff=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.4qBeUh/data/handoff.md sha256=c2361b29358beeaa33bcce5bce1f831191b58c8484daa4a168505d012004e05a

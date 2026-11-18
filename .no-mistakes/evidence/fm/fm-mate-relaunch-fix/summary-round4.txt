@@ -1,0 +1,20 @@
+Round 4 test evidence (target d3a36876)
+
+Live scenarios, real firstmate scripts in disposable lab homes (bin/fm-lab-home.sh):
+- live-secondmate-stop-gate.sh/.log: real Claude hook bin/fm-handoff-trigger.sh in a second-mate lab
+  home. Planned fresh start fires; Stop is blocked (exit 2) after status-prose ask; stop_hook_active
+  lets it through once; a request record older than the firing keeps it blocked; after
+  bin/fm-handoff-relaunch.sh request the parent holds one open handoff-relaunch decision and Stop exits 0.
+  .base.log: same drive on base 1b99b549 - Stop never blocked, no request command exists.
+- live-control-relaunch-close.sh/.log: real bin/fm-control.sh relaunch of a second mate on a private
+  lab tmux server, real Claude CLI (throwaway HOME) as the replacement. exit 0, pane runs Claude,
+  the parent's open handoff-relaunch request is closed by exactly one resolved line.
+- live-control-relaunch-rollback.sh/.log: same, but while the relaunch is in phase=launching a
+  concurrent actor removes the task record and kills the endpoint. exit 1, request stays open,
+  record is restored and equals the checkpoint copy, journal rollback=prior-record-kept.
+  .base.log: on base 1b99b549 the record is left missing while the journal still says prior-record-kept.
+
+Queued tests (bin/fm-test-queue.sh, private TMPDIR because the shared temp dir holds ~471k entries
+and the test library's orphan sweep over it stalled the first attempt):
+- fm-handoff-trigger.r6.log
+- fm-control-relaunch.r6.log
