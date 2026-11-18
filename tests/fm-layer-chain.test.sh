@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # tests/fm-layer-chain.test.sh - the layer check chain (docs/watchdog.md):
 # each watchdog pass reads every watched home's monitor unit and writes
-# <home>/state/monitor-status, refreshes <home>/state/health-verdict, and a
-# session start with no enabled watchdog runs the same monitor read once.
+# <home>/state/monitor-status, and a session start with no enabled watchdog
+# runs the same read once.
 #
 # The service manager is a PATH fake for both launchctl and systemctl, so each
 # case runs on macOS and Linux alike. HOME and XDG_CONFIG_HOME point into the

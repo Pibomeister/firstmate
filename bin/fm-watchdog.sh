@@ -2814,8 +2814,7 @@ wd_write_status() {  # <health-file> <gaps-file>
 
 # --- commands ----------------------------------------------------------------------
 
-# Rewrite <home>/state/health-verdict. A verdict error never fails the pass.
-wd_health_verdict_write() {  # <home>
+wd_try_health_verdict_write() {  # <home>
   local bin=$SCRIPT_DIR/fm-health-verdict.sh
   [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_HEALTH_VERDICT_BIN:-}" ] && bin=$FM_HEALTH_VERDICT_BIN
   fm_run_timed 10 env FM_HOME="$1" "$bin" --home "$1" --write >/dev/null 2>&1 || true
@@ -2886,7 +2885,7 @@ wd_once() {  # [home-filter]
     fi
     wd_visit_worker_dialogs page
     wd_health_line >> "$health"
-    wd_health_verdict_write "$home"
+    wd_try_health_verdict_write "$home"
   done
   wd_memory_guard_pass
   [ -n "$(wd_models)" ] || printf -- '- no model configured; judged symptoms are reported only\n' >> "$WD_GAPS"
