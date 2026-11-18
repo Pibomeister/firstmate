@@ -295,6 +295,21 @@ test_receipt_catchup_is_bounded_and_releases_the_inbox_lock() {
   pass "watcher: receipt catch-up is bounded and does not keep the inbox lock past a steer"
 }
 
+test_catchup_does_not_replay_a_written_pickup() {
+  local dir state rec name
+  dir="$TMP_ROOT/replay-pickup"
+  state="$dir/state"
+  mkdir -p "$state"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please rebase")
+  name=${rec##*/}
+  mv "$rec" "$state/t1.inbox/handled/"
+  printf '{"v":1,"ts":1,"msg":"%s","receipt":"picked_up"}\n' "$name" >> "$state/t1.inbox/receipts.jsonl"
+  receipts_sync "$state" || fail "sync after a torn pickup append failed"
+  assert_equals 1 "$(jq -s '[.[] | select(.receipt == "picked_up")] | length' "$state/t1.inbox/receipts.jsonl")" \
+    "catch-up replayed a pickup already in receipts.jsonl"
+  pass "receipts: a pickup already in receipts.jsonl is not written again"
+}
+
 test_receipts_follow_a_message_to_its_outcome
 test_delivery_attempts_record_their_result_and_input_line
 test_strict_draft_guard_never_submits_an_unproven_input_line
@@ -303,3 +318,4 @@ test_live_status_reports_what_holds_up_steering
 test_watcher_poll_writes_live_status
 test_watcher_poll_writes_pickup_and_result_receipts
 test_receipt_catchup_is_bounded_and_releases_the_inbox_lock
+test_catchup_does_not_replay_a_written_pickup

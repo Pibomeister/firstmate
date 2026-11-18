@@ -2,7 +2,7 @@
 # fm-producer-identity-lib.sh - who produced a supervision event: the machine,
 # the firstmate home, and the actor and session inside it.
 #
-# Sourced by bin/fm-fleet-ledger.sh and bin/fm-task-snapshot.sh.
+# Sourced by bin/fm-fleet-ledger.sh, bin/fm-task-snapshot.sh, and bin/fm-unblock.sh.
 # docs/supervision-events.md "Producer identity" owns the contract.
 #
 # Environment: FM_HOST_ID_OVERRIDE replaces the operating system's host id (a

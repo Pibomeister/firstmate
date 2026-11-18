@@ -33,18 +33,10 @@
 #   fm-fleet-ledger.sh activity <task>
 #   fm-fleet-ledger.sh stalled <task> <reason>
 #
-# Derived events. Each captured status line is recorded as task.status and
-# then projected: the first line or screen activity of a worker incarnation
-# (its meta spawn_gen) adds task.started, a working line adds task.heartbeat,
-# a paused, blocked, or needs-decision line adds task.blocked, and a done or
-# failed line adds task.finished. A done line from a scout whose
-# data/<task>/report.md exists adds task.verified_outcome naming the report and
-# its sha256; pr_ready and merged add task.verified_outcome with their evidence.
+# Derived events live in docs/fleet-ledger.md "Derived events".
 # state/.<task>.fleet-ledger-started holds the spawn_gen already announced;
-# dispatched and cleaned_up delete it. activity records task.started when the
-# incarnation has none yet, and task.heartbeat otherwise; the watcher owns its
-# throttle. Workers gain no new duty: every derived event comes from a status
-# line, a screen change, a stale wake, or a producer above.
+# dispatched and cleaned_up delete it. activity uses that file to decide
+# started vs heartbeat; the watcher owns its throttle.
 #
 # Envelope. Every record carries the source envelope docs/fleet-ledger.md
 # documents: event_id and seq from state/.fleet-ledger.seq, the home-wide last

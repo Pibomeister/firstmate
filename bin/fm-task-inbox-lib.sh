@@ -283,6 +283,15 @@ fm_task_inbox_lock_acquire() {  # <lock-path>
 # changes the steer's own result. Caller holds .seq.lock.
 _fm_task_inbox_receipt_append() {  # <inbox-dir> <msg> <receipt> [<extra>]
   local now
+  case "$3" in
+    accepted|picked_up|started|result)
+      if [ -f "$1/receipts.jsonl" ] \
+        && jq -e --arg m "$2" --arg r "$3" \
+          'select(.msg == $m and .receipt == $r)' "$1/receipts.jsonl" >/dev/null 2>&1; then
+        return 0
+      fi
+      ;;
+  esac
   fm_epoch_seconds_to now
   { printf '{"v":1,"ts":%s,"msg":"%s","receipt":"%s"%s}\n' \
       "$now" "$2" "$3" "${4:-}" >> "$1/receipts.jsonl"; } 2>/dev/null

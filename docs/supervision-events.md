@@ -2,7 +2,8 @@
 
 This page is the contract for the records a tool outside the worker's terminal can use to find a stalled task and to decide whether one safe action may unblock it.
 It covers who produced a record, the fleet ledger envelope, the typed steering receipts, the input-line guard, the task snapshot, and the dry-run unblocker.
-Each script's header owns its mechanics; this page owns the shared schema and the safety rules.
+Each script's header owns its mechanics.
+This page owns the shared schema and the safety rules.
 
 ## Producer identity
 
@@ -58,7 +59,7 @@ The worker's terminal receives only a constant doorbell line, never the message 
 
 | `receipt` | Writer | Written when |
 | --------- | ------ | ------------ |
-| `accepted` | The enqueue (`fm_task_inbox_write`), under the inbox lock | The record is written, so a record that exists always has it. |
+| `accepted` | The enqueue (`fm_task_inbox_write`), under the inbox lock, best effort | The enqueue writes it when the record is created, so a record can exist without it. |
 | `picked_up` | The monitor's receipt catch-up (`fm_task_inbox_receipts_sync`), once per poll per recorded task | The monitor first sees the record in `handled/`. It trails the worker's move by up to one poll. |
 | `started` | That same catch-up | The first `working` or settled status line the task appended after acceptance. |
 | `progress` | That same catch-up | Each later `working` line. |
@@ -78,7 +79,7 @@ A `pending` line holds someone's draft, so the doorbell is skipped and the draft
 The draft guard decides what happens on `pending-unproven` and `unknown`:
 
 - `advisory`, the default, rings anyway, as firstmate always has.
-- A draft taller than the rows the classifier reads loses its opening prompt glyph, reads `pending-unproven` or `unknown`, and is submitted with the doorbell's Enter.
+- Under advisory, a draft taller than the rows the classifier reads loses its opening prompt glyph, reads `pending-unproven` or `unknown`, and is submitted with the doorbell's Enter.
 - `strict` is the opt-in.
 - It skips the ring and records `composer-unproven` as the last delivery, so nothing is typed into a line that could not be proved free.
 - The cost is friction: a steer to a worker whose input line cannot be read waits for escalation instead of ringing.
@@ -91,7 +92,8 @@ One race remains under either setting: text typed between the read and the doorb
 `tests/fm-task-inbox-receipts.test.sh` reproduces that race and records it as the known residual, while proving `strict` never types into an unproven line.
 
 The classifier must also refuse a composer taller than the rows it reads.
-An external send guard showed the failure: an 18-row scan missed the opening prompt glyph of a 34-row pasted composer, read the composer as empty, and safely reported the send as not delivered; an 80-row scan fixed it.
+An external send guard showed the failure: an 18-row scan missed the opening prompt glyph of a 34-row pasted composer, read the composer as empty, and safely reported the send as not delivered.
+An 80-row scan fixed it.
 That guard is `steer.sh` (SHA-256 `79ce723d9d52963ab5d738d60eecdeccfa0eece6cb98d7a2f4ef8847a08c3728`) with its retry loop `sendloop.sh` (SHA-256 `6fd39bd0f6541f1c7dc822165ee04617e05a494776eb23cf325c89d91262667a`).
 It counts a send as delivered only after a read-back shows an empty input line and a started turn.
 Firstmate reads a 20-row window (`FM_COMPOSER_CAPTURE_LINES`), so `tests/fm-composer-lib.test.sh` proves that a bare, a rule-bounded, and a boxed composer cut by that window never read `empty`, while the same shapes with nothing typed still do.
@@ -117,7 +119,8 @@ Readers must ignore members they do not recognize.
 
 ## Unblocker
 
-`bin/fm-unblock.sh` decides; it never acts.
+`bin/fm-unblock.sh` decides.
+It never acts.
 It is a command, not a daemon, and in this version it runs only in dry run.
 
 | Command | Effect |
@@ -168,7 +171,7 @@ A candidate resume uses reason `stalled-on-unacknowledged-message`.
 A candidate dispatch uses reason `ready-backlog-item`.
 
 Each stall has one key bound to its epoch: `resume:<task>:<msg>@<spawn_gen>` or `dispatch:<item>`.
-`observe` claims a candidate by creating `state/unblock/<key>.claim` exclusively.
+`observe` claims a candidate by creating `state/unblock/<claim>.claim` exclusively, where the file name is the stall key with `:`, `@`, and other bytes mapped to `_`.
 The first claimer owns that stall for that epoch, and later runs report it as `claimed` and record nothing.
 A relaunch mints a new generation and so a new epoch.
 Claims of resume stalls whose task meta is gone are removed.
@@ -187,7 +190,8 @@ Each decision is one JSON object:
  "would":{"ring":"004.msg","draft_guard":"strict"}}
 ```
 
-`verdict` is `candidate`, `hold`, or `claimed`; `would` is `null` unless the verdict is `candidate`.
+`verdict` is `candidate`, `hold`, or `claimed`.
+`would` is `null` unless the verdict is `candidate`.
 A recorded line in `state/unblock.jsonl` has `event` `unblock.candidate`.
 This page owns the hold rules, claim keys, and actions.
 The `bin/fm-unblock.sh` header owns usage, exits, and environment.

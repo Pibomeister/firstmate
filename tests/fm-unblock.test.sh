@@ -321,6 +321,39 @@ SH
   pass "unblock: --probe-composer takes a fresh input-line reading and can clear a stale pending hold"
 }
 
+test_probe_composer_holds_a_half_typed_draft() {
+  make_home probe-draft
+  add_task t1 s9.9.9
+  sed -i.bak 's/^backend=.*/backend=tmux/' "$HOME_DIR/state/t1.meta"
+  queue_msg t1 004.msg 2027-01-15T07:00:00Z
+  composer t1 pending $((NOW - 30))
+  mkdir -p "$HOME_DIR/fakebin"
+  cat > "$HOME_DIR/fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  send-keys) exit 0 ;;
+  display-message)
+    case "$*" in *cursor_y*) printf '2\n'; exit 0 ;; esac
+    printf 'fakepane\n'; exit 0 ;;
+  capture-pane)
+    rule=$(printf '─%.0s' $(seq 64))
+    printf '● done\n%s\n❯ a half-typed draft\n%s\n  ? for shortcuts\n' "$rule" "$rule"
+    exit 0 ;;
+  list-windows) printf 'fm-t1\n'; exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$HOME_DIR/fakebin/tmux"
+  PATH="$HOME_DIR/fakebin:$PATH" unblock plan --probe-composer
+  assert_equals 0 "$RC" "plan exit with a draft probe"
+  assert_equals 'resume hold input-line-not-proven-empty' "$(verdicts)" "fresh pending probe"
+  snap=$(PATH="$HOME_DIR/fakebin:$PATH" FM_HOME="$HOME_DIR" FM_HOST_ID_OVERRIDE=test-host \
+    "$ROOT/bin/fm-task-snapshot.sh" t1 --probe-composer) || fail "probed snapshot failed"
+  assert_equals '["pending",true]' "$(jq -c '[.queue.composer.state, .queue.composer.probed]' <<< "$snap")" "snapshot probe of a draft"
+  pass "unblock: --probe-composer holds when the input line still holds a draft"
+}
+
 test_snapshot_keeps_the_native_incarnation_apart_from_the_spawn_generation() {
   local snap
   make_home snapshot
@@ -353,4 +386,5 @@ test_observe_claims_one_epoch_bound_action_per_stall
 test_dispatch_names_only_the_next_ready_item
 test_enforce_is_always_refused
 test_probe_composer_reads_the_input_line_now
+test_probe_composer_holds_a_half_typed_draft
 test_snapshot_keeps_the_native_incarnation_apart_from_the_spawn_generation
