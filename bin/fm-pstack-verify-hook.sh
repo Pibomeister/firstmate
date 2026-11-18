@@ -51,9 +51,11 @@
 #     foo.test.sh Write or `cat > foo.test.sh` injects. A redirect to /tmp that
 #     later names a test path does not. A `>` inside single or double quotes, or
 #     inside a heredoc body, is not a redirect; the redirect on the heredoc's
-#     own command line still counts. Nested or escaped quotes are not parsed.
-#     Paths whose final extension is .bak, .orig, or .swp stay silent.
-#     In-place editors (sed -i) are not covered.
+#     own command line still counts. `<<-` and `<<-'EOF'` strip leading tabs
+#     on the closer before matching. A trailing CR on the closer is ignored.
+#     `<<<` is a here-string, not a heredoc, so quote blanking still applies.
+#     Nested or escaped quotes are not parsed. Paths whose final extension is
+#     .bak, .orig, or .swp stay silent. In-place editors (sed -i) are not covered.
 #   speed or perf claim -> principle-explain-the-number
 #     An assertion such as "much faster", "got a lot faster", "2x as fast",
 #     "the export is faster now", "the export is 2x as fast?", or
@@ -81,9 +83,13 @@
 #     node id matches the file prefix before ::. Jest FAIL <path> is
 #     extracted. Pending markers are a per-conversation list; a delivering
 #     event that already emits consumes a matching deferred principle.
-#     A principle already emitted on postToolUse or postToolUseFailure in
-#     this generation is not stored again, so afterAgentResponse cannot
-#     re-queue it. afterAgentResponse then postToolUse still delivers once.
+#     A prove-it-works or explain-the-number principle already emitted on
+#     postToolUse or postToolUseFailure in this generation is not stored
+#     again, so afterAgentResponse cannot re-queue it. afterAgentResponse
+#     then postToolUse still delivers once. Recurring-red
+#     (attack-the-premise) is keyed by test id and is not recorded in that
+#     emit-once set, so a second test id in the same generation still
+#     delivers. A missing generation_id leaves record_emitted a no-op.
 #
 # Usage:
 #   <hook JSON on stdin> | bin/fm-pstack-verify-hook.sh [--claude|--cursor]
@@ -255,20 +261,38 @@ is_test_path() {  # <path>
   return 1
 }
 
+# True when <line> closes a heredoc named <delim>. `<<-` strips leading
+# tabs; a trailing CR is ignored. Spaces are not stripped.
+_heredoc_line_is_closer() {  # <line> <delim> <dash>
+  local line=$1 delim=$2 dash=$3
+  line=${line%$'\r'}
+  if [ "$dash" = 1 ]; then
+    while :; do
+      case "$line" in
+        $'\t'*) line=${line#$'\t'} ;;
+        *) break ;;
+      esac
+    done
+  fi
+  [ "$line" = "$delim" ]
+}
+
 # Blank `>` inside simple single or double quotes so it is not a redirect.
 # Blank `<` there too so a quoted `<<` is not treated as a heredoc opener.
 # Blank `>` on heredoc body lines only; the opener line is kept so a
-# redirect on that line still counts. Nested and escaped quotes are not parsed.
+# redirect on that line still counts. `<<<` is a here-string and stays in
+# the quote scanner. Nested and escaped quotes are not parsed.
 _blank_gt_inside_quotes() {  # <command>
-  local s=$1 out='' i=0 n c q='' heredoc=0 delim='' line=''
+  local s=$1 out='' i=0 n c q='' heredoc=0 delim='' line='' dash=0
   n=${#s}
   while [ "$i" -lt "$n" ]; do
     c=${s:$i:1}
     if [ "$heredoc" = 1 ]; then
       if [ "$c" = $'\n' ]; then
-        if [ "$line" = "$delim" ]; then
+        if _heredoc_line_is_closer "$line" "$delim" "$dash"; then
           heredoc=0
           delim=
+          dash=0
           out=$out$line$c
         else
           out=$out${line//>/ }$c
@@ -295,8 +319,15 @@ _blank_gt_inside_quotes() {  # <command>
     if [ "$c" = '<' ] && [ $((i + 1)) -lt "$n" ] && [ "${s:$((i + 1)):1}" = '<' ]; then
       out=$out'<<'
       i=$((i + 2))
+      if [ "$i" -lt "$n" ] && [ "${s:$i:1}" = '<' ]; then
+        out=$out'<'
+        i=$((i + 1))
+        continue
+      fi
+      dash=0
       if [ "$i" -lt "$n" ] && [ "${s:$i:1}" = '-' ]; then
         out=$out'-'
+        dash=1
         i=$((i + 1))
       fi
       while [ "$i" -lt "$n" ]; do
@@ -357,7 +388,7 @@ _blank_gt_inside_quotes() {  # <command>
     i=$((i + 1))
   done
   if [ "$heredoc" = 1 ]; then
-    if [ "$line" = "$delim" ]; then
+    if _heredoc_line_is_closer "$line" "$delim" "$dash"; then
       out=$out$line
     else
       out=$out${line//>/ }
@@ -749,7 +780,8 @@ drop_pending() {  # <conversation-id> <principle>
 
 # Record that this generation already emitted <principle> for <conv>.
 # Later write_pending of the same pair is a no-op. Other generations
-# are dropped so the file cannot grow across turns.
+# are dropped so the file cannot grow across turns. Recurring-red is
+# not recorded here; it is keyed by test id, not by principle name.
 record_emitted() {  # <conversation-id> <principle>
   local conv=$1 principle=$2 file lock tmp line gen kept_gen kept_prin
   conv=$(sanitize_conv_key "$conv")
@@ -757,7 +789,7 @@ record_emitted() {  # <conversation-id> <principle>
   gen=$(sanitize_field "${GEN:-}")
   [ -n "$gen" ] || return 0
   case "$principle" in
-    principle-prove-it-works|principle-explain-the-number|principle-attack-the-premise) ;;
+    principle-prove-it-works|principle-explain-the-number) ;;
     *) return 0 ;;
   esac
   mkdir -p "$STATE" "$(emitted_dir)" 2>/dev/null || return 0

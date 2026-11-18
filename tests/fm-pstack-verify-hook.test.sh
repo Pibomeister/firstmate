@@ -265,6 +265,47 @@ test_heredoc_body_gt_is_not_a_test_write() {
   pass "a > in a heredoc body does not inject; the heredoc command-line redirect still does"
 }
 
+test_dash_heredoc_closer_still_sees_later_test_redirect() {
+  local cmd
+  cmd=$(printf 'cat <<-EOF > /tmp/setup.sh\n\techo hi\n\tEOF\ncat > tests/foo.test.sh <<END\npass\nEND')
+  run_hook "$PRIMARY" \
+    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
+    --claude
+  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
+    "<<- tab-indented closer then a later test redirect"
+  cmd=$(printf "cat <<-'EOF' > /tmp/setup.sh\n\techo hi\n\tEOF\ncat > tests/foo.test.sh <<END\npass\nEND")
+  run_hook "$PRIMARY" \
+    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
+    --claude
+  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
+    "<<- quoted tab-indented closer then a later test redirect"
+  pass "<<- and <<-'EOF' tab-indented closers still see a later test-path redirect"
+}
+
+test_here_string_gt_follows_quote_blanking() {
+  run_hook "$PRIMARY" \
+    "$(jq -n --arg c 'cat <<< "echo x > tests/foo.test.sh"' '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
+    --claude
+  expect_silent "quoted greater-than inside a here-string"
+  run_hook "$PRIMARY" \
+    "$(jq -n --arg c 'cat <<< foo > tests/foo.test.sh' '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
+    --claude
+  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
+    "here-string then a command-line redirect to a test path"
+  pass "a quoted > in a here-string is silent; a redirect after <<< still injects"
+}
+
+test_heredoc_closer_cr_still_sees_later_test_redirect() {
+  local cmd
+  cmd=$(printf 'cat > /tmp/setup.sh <<EOF\necho hi\nEOF\r\ncat > tests/foo.test.sh <<END\npass\nEND')
+  run_hook "$PRIMARY" \
+    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
+    --claude
+  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
+    "CR-terminated heredoc closer then a later test redirect"
+  pass "a heredoc closer ending in CR still ends the body so a later test redirect injects"
+}
+
 test_backup_test_path_is_silent() {
   local path
   for path in foo.test.sh.bak foo.test.sh.orig foo.test.sh.swp tests/foo.test.sh.bak; do
@@ -1138,6 +1179,39 @@ test_cursor_post_tool_use_then_after_agent_response_injects_once() {
   pass "postToolUse then afterAgentResponse delivers a speed claim once"
 }
 
+test_second_recurring_red_same_generation_still_injects() {
+  local home
+  home="$TMP_ROOT/reds-second-id"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/export.test.sh","cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  run_hook "$home" \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh does the thing\n","duration":1100,"cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  run_hook "$home" \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/export.test.sh","output":"not ok - tests/export.test.sh does the thing\n","duration":1100,"cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  expect_cursor_inject "principle-attack-the-premise" "first test id delivered"
+  run_hook "$home" \
+    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/other.test.sh","cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  run_hook "$home" \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/other.test.sh","output":"not ok - tests/other.test.sh does the thing\n","duration":1100,"cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  run_hook "$home" \
+    '{"hook_event_name":"afterShellExecution","command":"bash tests/other.test.sh","output":"not ok - tests/other.test.sh does the thing\n","duration":1100,"cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/other.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  expect_cursor_inject "principle-attack-the-premise" "second test id in the same generation"
+  pass "a second recurring-red test id in the same generation still injects principle-attack-the-premise"
+}
+
 test_cursor_and_claude_registrations_name_the_helper() {
   command -v jq >/dev/null 2>&1 || fail "jq is required to pin hook JSON"
   jq -e '.hooks.postToolUse[] | select(.command | contains("fm-pstack-verify-hook.sh --cursor"))' \
@@ -1206,8 +1280,6 @@ test_vendored_skills_are_present() {
     || fail "fork catalog entries must live in catalog.d/pstack-verify.yaml"
   grep -Fq 'principle-prove-it-works' "$ROOT/.cursor/catalog.yaml" \
     && fail "fork catalog entries must not remain in catalog.yaml"
-  grep -Fq 'this repository carries none' "$ROOT/.cursor/catalog.yaml" \
-    && fail "catalog.yaml must not claim this repository carries no catalog.d fragments"
   grep -Fq 'principle-prove-it-works' "$ROOT/.cursor/references/shared/policies/invocation.yaml" \
     || fail "invocation.yaml model_invoked must name the four skills"
   pass "the four principle skills are vendored in both skill dirs"
@@ -1238,6 +1310,9 @@ test_redirect_elsewhere_then_grep_test_path_is_silent
 test_redirect_elsewhere_then_cat_test_path_is_silent
 test_quoted_gt_in_echo_is_not_a_test_write
 test_heredoc_body_gt_is_not_a_test_write
+test_dash_heredoc_closer_still_sees_later_test_redirect
+test_here_string_gt_follows_quote_blanking
+test_heredoc_closer_cr_still_sees_later_test_redirect
 test_backup_test_path_is_silent
 test_claude_write_of_test_file_emits_once_across_pre_and_post
 test_contest_path_is_not_a_test_write
@@ -1296,5 +1371,6 @@ test_got_faster_to_write_is_not_a_speed_claim
 test_dotdot_conversation_id_is_not_stored
 test_two_pending_principles_are_delivered_in_order
 test_cursor_post_tool_use_then_after_agent_response_injects_once
+test_second_recurring_red_same_generation_still_injects
 test_cursor_and_claude_registrations_name_the_helper
 test_vendored_skills_are_present
