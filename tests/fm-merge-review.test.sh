@@ -2400,6 +2400,32 @@ test_two_status_lines_keep_the_one_that_holds_the_finding() {
     assert_match "^F1 | open | data-loss | " "$STUB/agy.prior" "nb-$order-resolved: the next head did not get the finding as open with its class"
   done
 
+  # A classed RESOLVED line before an EDGE-CASE line does not settle the finding.
+  make_case resolved-class-edge "${TWO_SEATS[@]}"
+  set_review claude \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | A crash mid-write truncates the file.' \
+    'VERDICT: BLOCK @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "resolved-class-edge: round 1"
+  next_head 'second head'
+  set_review claude \
+    'FINDING F1 | RESOLVED | security | feature.txt:1 | The write is now atomic.' \
+    'FINDING F1 | EDGE-CASE | none | feature.txt:1 | A power loss mid-rename still truncates.' \
+    'VERDICT: BLOCK @HEAD@'
+  set_review agy \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The write is now atomic.' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "resolved-class-edge: round 2"
+  findings_at_head || fail "resolved-class-edge: findings failed"
+  assert_match "^F1	open	security	" "$CASE/stdout" "resolved-class-edge: a classed RESOLVED line stood over an EDGE-CASE line"
+  next_head 'third head'
+  rc=0
+  run_at_head || rc=$?
+  assert_match "^F1 | open | security | " "$STUB/agy.prior" "resolved-class-edge: the next head did not get the finding as open with its class"
+
   # The same class on a review's only line for the finding also reaches the next head.
   make_case one-line-nb "${TWO_SEATS[@]}"
   set_review claude \

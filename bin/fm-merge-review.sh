@@ -652,15 +652,15 @@ mr_parse_lines() {  # <file> <FINDING|DISPOSITION>
 # and the prior findings. Prints the rows that stand, one "E <reason>" row for
 # each defect, and one "B" row when a standing row holds a finding as blocking.
 # When an open finding has several status lines, the line of highest rank
-# stands (blocking or regression, then an edge case or a line with a class,
-# then any other; the earliest wins a tie), and a class on any line stays
+# stands (blocking or regression, then an edge case or a NON-BLOCKING line
+# with a class, then any other; the earliest wins a tie), and a class on any line stays
 # with it. A NON-BLOCKING line for an open finding stays a form defect and
 # never sets "B".
 mr_findings_filter() {  # <round> <prior-file-or-empty>
   LC_ALL=C awk -F'\t' -v round="$1" -v prior="$2" '
     function rank(status, class) {
       if (status == "BLOCKING" || status == "REGRESSION") return 2
-      if (status == "EDGE-CASE" || class != "none") return 1
+      if (status == "EDGE-CASE" || (status == "NON-BLOCKING" && class != "none")) return 1
       return 0
     }
     BEGIN {
