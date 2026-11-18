@@ -569,12 +569,13 @@ EOF
   if [ -n "$meta" ] && [ -f "$meta" ]; then
     O_HARNESS=$(fm_meta_get "$meta" harness 2>/dev/null) || O_HARNESS=''
   fi
-  if [ -z "$O_HARNESS" ] && [ -n "${FM_SESSION_LOCK_OWNER_HARNESS:-}" ]; then
-    O_HARNESS=$FM_SESSION_LOCK_OWNER_HARNESS
-  fi
   if [ -z "$O_HARNESS" ] && [ -n "$O_LOCK_PID" ] && declare -F fm_ps_comm >/dev/null 2>&1 && declare -F fm_harness_path_name >/dev/null 2>&1; then
     O_HARNESS=$(fm_harness_path_name "$(fm_ps_comm "$O_LOCK_PID" 2>/dev/null)" 2>/dev/null) || O_HARNESS=''
   fi
+  if [ -z "$O_HARNESS" ] && [ -n "${FM_SESSION_LOCK_OWNER_HARNESS:-}" ]; then
+    O_HARNESS=$FM_SESSION_LOCK_OWNER_HARNESS
+  fi
+  FM_SESSION_LOCK_OWNER_HARNESS=
   if [ -n "$meta" ] && [ -f "$meta" ] && { [ -z "$O_TARGET" ] || [ -z "$O_SESSION" ] || [ "$hb_sid" != "$O_SESSION" ]; }; then
     O_BACKEND=$(fm_backend_of_meta "$meta" 2>/dev/null)
     O_TARGET=$(fm_backend_target_of_meta "$meta" 2>/dev/null)

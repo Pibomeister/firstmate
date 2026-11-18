@@ -65,6 +65,7 @@ mkdir -p "$FAKE_HOME/Library/LaunchAgents" "$FAKE_HOME/.config/systemd/user"
 HARNESS_BIN="$TMP_ROOT/harness-bin"
 mkdir -p "$HARNESS_BIN"
 ln -sf "$(command -v sleep)" "$HARNESS_BIN/claude"
+ln -sf "$(command -v sleep)" "$HARNESS_BIN/codex"
 
 LAYER_LOCK_PIDS=''
 cleanup_layer_chain() {
@@ -114,24 +115,19 @@ field() {  # <line> <key>
   printf '%s\n' "$1" | tr ' ' '\n' | sed -n "s/^$2=//p"
 }
 
-# start_lock <home> [claude|sleep]: a live lock holder. claude is a sleep
-# binary whose comm is the harness name, so observe derives autoarm.
-start_lock() {
+start_lock() {  # <home> [claude|codex|sleep]
   local home=$1 kind=${2:-sleep} pid
   mkdir -p "$home/state" "$home/config" "$home/data"
-  if [ "$kind" = claude ]; then
-    "$HARNESS_BIN/claude" 100000 >/dev/null 2>&1 &
-  else
-    sleep 100000 >/dev/null 2>&1 &
-  fi
+  case "$kind" in
+    claude|codex) "$HARNESS_BIN/$kind" 100000 >/dev/null 2>&1 & ;;
+    *) sleep 100000 >/dev/null 2>&1 & ;;
+  esac
   pid=$!
   printf '%s\n' "$pid" > "$home/lockpid"
   LAYER_LOCK_PIDS="$LAYER_LOCK_PIDS $pid"
   printf '%s\n' "$pid" > "$home/state/.lock"
 }
 
-# The same mid-turn records the health-verdict suite uses: heartbeat older
-# than its bound, watcher beat inside grace, Claude rewake after that beat.
 # Ages are wall-clock because health-verdict.sh uses date +%s, not FM_WD_NOW.
 stamp_mid_turn() {  # <home> <clock>
   local home=$1 clock=$2 pid
@@ -229,24 +225,34 @@ test_pass_refreshes_health_verdict() {
 }
 
 test_pass_derives_health_verdict_model_per_home() {
-  local base="$TMP_ROOT/pass-verdict-model" owner auto persist clock line
+  local base="$TMP_ROOT/pass-verdict-model" owner codex auto persist clock line
   owner=$(new_home "$base/owner")
+  codex=$(new_home "$base/codex")
   auto=$(new_home "$base/auto")
   persist=$(new_home "$base/persist")
+  start_lock "$codex" codex
   start_lock "$auto" claude
   start_lock "$persist" sleep
   clock=$(date +%s)
+  stamp_mid_turn "$codex" "$clock"
   stamp_mid_turn "$auto" "$clock"
   stamp_mid_turn "$persist" "$clock"
-  printf 'homes=%s,%s\nquota-guard=off\nmemory-guard=off\n' "$auto" "$persist" \
+  printf 'homes=%s,%s,%s\nquota-guard=off\nmemory-guard=off\n' "$codex" "$auto" "$persist" \
     > "$owner/config/watchdog"
   clear_units
+  install_unit monitor "$codex"
   install_unit monitor "$auto"
   install_unit monitor "$persist"
-  wd_pass "$owner" FAKE_MON_STATE=enabled || fail "the watchdog pass failed"
+  wd_pass "$owner" FAKE_MON_STATE=enabled FM_SESSION_LOCK_OWNER_HARNESS=codex \
+    || fail "the watchdog pass failed"
+  line=$(cat "$codex/state/health-verdict" 2>/dev/null)
+  assert_equals stale "$(field "$line" verdict)" \
+    "a Codex home with the same mid-turn records should read stale, got: $line"
+  assert_contains "$(field "$line" reason)" heartbeat-stale \
+    "a Codex home should name heartbeat-stale, got: $line"
   line=$(cat "$auto/state/health-verdict" 2>/dev/null)
   assert_equals unknown "$(field "$line" verdict)" \
-    "an autoarm home mid-turn should read unknown, got: $line"
+    "an autoarm home mid-turn after a Codex home should read unknown, got: $line"
   assert_contains "$(field "$line" reason)" mid-turn \
     "an autoarm home mid-turn should name mid-turn, got: $line"
   line=$(cat "$persist/state/health-verdict" 2>/dev/null)

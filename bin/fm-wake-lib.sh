@@ -298,9 +298,6 @@ fm_watcher_healthy() {
 # FM_SUPERVISION_MODEL overrides detection (tests, and callers that already know
 # the harness). Otherwise bin/fm-harness.sh is the single detection owner, so this
 # stays consistent with the harness-specific repair line the guards already emit.
-# fm_supervision_model_for_harness is the one harness-to-model table; a caller
-# that already knows the home's harness, such as the watchdog after observe,
-# must pass that model rather than inherit this process's harness.
 fm_supervision_model_for_harness() {  # <harness>
   case "$1" in
     claude|cursor|agy) printf 'autoarm\n' ;;
