@@ -28,8 +28,8 @@
 #         again, so a rerun cannot replace a BLOCK with a new roll. When the
 #         merge base moved and the head did not, a rerun replaces a seat's
 #         approval, but never a review that says BLOCK, holds a finding as
-#         blocking, raises a new edge case, or whose council answer holds a
-#         finding as a regression or gives it a class: that review stays, check
+#         blocking, calls a finding an edge case, or whose council answer holds
+#         a finding as a regression or gives it a class: that review stays, check
 #         at the new merge base is incomplete, and only a new head clears it.
 #         Interrupted runs stop their reviewers before releasing the lock; stale writers
 #         are fenced by run identity, and publication never replaces evidence.
@@ -164,7 +164,8 @@
 # declares that seat. A seat that is no longer declared settles nothing, but
 # when the next head starts its round, a finding that its review of the
 # previous head held as blocking, as a regression, or as an edge case is
-# carried as open. A receipt with no round key
+# carried as open, and a class it gave a finding stays with that finding. A
+# receipt with no round key
 # was written before review rounds existed: it counts exactly as it did, a
 # BLOCK in it still blocks, and it carries no finding into a later round.
 #
@@ -388,10 +389,10 @@ mr_receipt_live_base() {  # <receipt>
 }
 
 # True when a valid receipt must outlive a moved merge base: its verdict is
-# BLOCK, its review holds a finding as blocking or raises a new edge case, or
-# the seat's council answer holds a finding as a regression or gives it a
-# class. A rerun that replaced such a review would lose the finding, or what
-# keeps it blocking, with it.
+# BLOCK, its review holds a finding as blocking or calls one an edge case, new
+# or earlier, or the seat's council answer holds a finding as a regression or
+# gives it a class. A rerun that replaced such a review would lose the
+# finding, or what keeps it open, with it.
 mr_receipt_holds_finding() {  # <receipt>
   local receipt=$1 dir rows ruling
   [ "$(mr_receipt_get "$receipt" verdict)" != BLOCK ] || return 0
@@ -399,7 +400,7 @@ mr_receipt_holds_finding() {  # <receipt>
   dir=$(dirname "$receipt")
   rows=$(mr_review_rows "$dir" "${receipt%.receipt}.review.md") || true
   if printf '%s\n' "$rows" | LC_ALL=C awk -F'\t' '
-    $1 == "B" || ($1 == "ok" && $3 == "NEW" && $4 == "EDGE-CASE") { found = 1 }
+    $1 == "B" || ($1 == "ok" && $4 == "EDGE-CASE") { found = 1 }
     END { exit !found }'; then
     return 0
   fi
@@ -767,7 +768,8 @@ mr_findings_state() {  # <head-store> <seats> [need]
       voted[id] = 1
     }
     # A seat that is no longer declared settles nothing. A line of its review
-    # or ruling that held a finding keeps that finding open.
+    # or ruling that held a finding keeps that finding open, and a class on
+    # any of its lines stays with the finding.
     function held(status, class) {
       return status == "BLOCKING" || status == "REGRESSION" || status == "EDGE-CASE" ||
         (status == "NON-BLOCKING" && class != "none")
@@ -784,7 +786,10 @@ mr_findings_state() {  # <head-store> <seats> [need]
     $1 == "I" { idof[$3, $4] = $2; next }
     $1 == "V" {
       id = $4
-      if (($2 in former) && !held($5, $6)) next
+      if (($2 in former) && !held($5, $6)) {
+        if (id != "NEW" && $6 != "none" && !(id in fcls)) fcls[id] = $6
+        next
+      }
       if (id == "NEW") {
         if (!(($2, $3) in idof)) { print "E\ta finding of " $2 " has no recorded id"; next }
         id = idof[$2, $3]
@@ -796,13 +801,17 @@ mr_findings_state() {  # <head-store> <seats> [need]
     }
     $1 == "C" {
       if (!($3 in raiser) || raiser[$3] == $2) next
-      if ($2 in former) { if (held($4, $5)) hold($3, $5) }
+      if ($2 in former) {
+        if (held($4, $5)) hold($3, $5)
+        else if ($5 != "none" && !($3 in fcls)) fcls[$3] = $5
+      }
       else if ($2 in isseat) vote($3, $2, $4, $5)
       next
     }
     END {
       for (i = 1; i <= n; i++) {
         id = order[i]
+        if (cls[id] == "none" && (id in fcls)) cls[id] = fcls[id]
         if ((id in prior) && st[id] != "open") state = st[id]
         else if (!(id in voted)) state = (ns > 0) ? "open" : "unruled"
         else {
@@ -1436,7 +1445,11 @@ mr_round_begin() {  # <repo>
           if (state == "pending" || state == "unruled") state = "open"
           print $1 " | " state " | " $3 " | " $4 " | " $5
         }' > "$MR_RECORDS/prior.new" || mr_die 'cannot read the findings of the previous round'
-      ln "$MR_RECORDS/prior.new" "$MR_STORE/prior.md" || mr_die 'cannot record the prior findings'
+      if ! ln "$MR_RECORDS/prior.new" "$MR_STORE/prior.md" 2>/dev/null; then
+        # A run that stopped before it stored the round record left these same
+        # prior findings here. Any other content is not this round's.
+        cmp -s "$MR_RECORDS/prior.new" "$MR_STORE/prior.md" || mr_die 'cannot record the prior findings'
+      fi
     fi
     printf 'round=%s\nprevious=%s\n' "$round" "$previous" > "$MR_RECORDS/round.new"
     ln "$MR_RECORDS/round.new" "$MR_STORE/round" || mr_die 'cannot record the review round'

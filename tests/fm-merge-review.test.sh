@@ -1883,6 +1883,55 @@ test_a_moved_merge_base_never_replaces_a_review_that_holds_a_finding() {
   run_at_head || rc=$?
   expect_code 1 "$rc" "stale-council: round 4 with reviews that skip the open finding"
   assert_match "^F1 | open | security | " "$STUB/agy.prior" "stale-council: the next round lost the finding's class"
+
+  # An edge-case ruling on an earlier finding is held the same way: the seats
+  # disagree, so the finding is open, and a rerun must not settle it.
+  make_case stale-inherited "${TWO_SEATS[@]}"
+  set_review claude \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | An empty file makes the reader loop.' \
+    'VERDICT: BLOCK @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "stale-inherited: round 1"
+  next_head 'second head'
+  set_review claude \
+    'FINDING F1 | BLOCKING | none | feature.txt:1 | The empty file still loops.' \
+    'VERDICT: BLOCK @HEAD@'
+  set_review agy \
+    'FINDING F1 | BLOCKING | none | feature.txt:1 | The empty file still loops.' \
+    'VERDICT: BLOCK @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "stale-inherited: round 2"
+  next_head 'third head'
+  set_review claude \
+    'FINDING F1 | EDGE-CASE | none | feature.txt:1 | Only an empty file triggers it.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  set_review agy \
+    'FINDING F1 | UNSUPPORTED | none | feature.txt:1 | The loop has a bound on line 4, so it ends.' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "stale-inherited: round 3"
+  assert_grep " open=F1 " "$CASE/stdout" "stale-inherited: the finding the seats disagree on is not open"
+  live_base=$(sed -n 's/^base=//p' "$(store_dir)/$CLAUDE_SEAT.receipt")
+  move_receipt_base "$CLAUDE_SEAT"
+  move_receipt_base "$AGY_SEAT"
+  # Both reviewers would now call the finding unsupported.
+  set_review claude \
+    'FINDING F1 | UNSUPPORTED | none | feature.txt:1 | The loop has a bound on line 4, so it ends.' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "stale-inherited: rerun after the merge base moved"
+  assert_no_grep "merge-review: approved" "$CASE/stdout" "stale-inherited: the rerun approved a head with an open finding"
+  assert_equals 3 "$(calls claude)" "stale-inherited: the seat that calls the finding an edge case was called again"
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" --base "$live_base" || rc=$?
+  expect_code 1 "$rc" "stale-inherited: check at the live merge base"
+  assert_no_grep "merge-review: approved" "$CASE/stdout" "stale-inherited: check approved a head whose open finding a rerun settled"
+  findings_at_head || fail "stale-inherited: findings failed"
+  assert_match "^F1	open	" "$CASE/stdout" "stale-inherited: a rerun settled the open finding"
   pass "a rerun after the merge base moved keeps a review that holds a finding, so the finding is never lost"
 }
 
@@ -2059,7 +2108,91 @@ test_a_finding_of_a_seat_that_left_the_config_reaches_the_next_round() {
   run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
   expect_code 1 "$rc" "rotated-approval: check after the seat left the config"
   assert_grep "the seat is not declared in config/merge-review" "$CASE/stdout" "rotated-approval: a seat that left still counted"
+
+  # A class the seat that left gave a finding stays with the finding, even on
+  # a line that does not hold it.
+  make_case rotated-class "${TWO_SEATS[@]}"
+  set_review agy \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | A crafted name escapes the output directory.' \
+    'VERDICT: BLOCK @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "rotated-class: round 1"
+  next_head 'second head'
+  set_review claude \
+    'FINDING F1 | RESOLVED | security | feature.txt:1 | The name is now checked, and it was a security defect.' \
+    'VERDICT: APPROVE @HEAD@'
+  set_review agy \
+    'FINDING F1 | BLOCKING | none | feature.txt:1 | A name with a symlink part still escapes.' \
+    'VERDICT: BLOCK @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "rotated-class: round 2"
+  findings_at_head || fail "rotated-class: findings failed"
+  assert_match "^F1	open	security	" "$CASE/stdout" "rotated-class: the finding is not open with its class"
+  printf '%s\n' 'seat=google:agy:gemini-test-high' 'seat=xai:grok:grok-test' > "$HOME_DIR/config/merge-review"
+  next_head 'third head'
+  set_review agy \
+    'FINDING F1 | EDGE-CASE | none | feature.txt:1 | Only a symlink in the name triggers it.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  set_review grok \
+    'FINDING F1 | EDGE-CASE | none | feature.txt:1 | Only a symlink in the name triggers it.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "rotated-class: round 3 with the new seats"
+  assert_match "^F1 | open | security | " "$STUB/grok.prior" "rotated-class: the class left with the seat that gave it"
+  assert_grep " open=F1 " "$CASE/stdout" "rotated-class: a security finding is no longer open"
+  assert_no_grep " deferred=" "$CASE/stdout" "rotated-class: a security finding was deferred"
   pass "a finding held by a seat that left config/merge-review still reaches the next round as open"
+}
+
+test_a_run_stopped_between_its_round_records_can_run_again() {
+  local rc=0 store receipt
+  make_case half-round "${TWO_SEATS[@]}"
+  set_review claude \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | An empty file makes the reader loop.' \
+    'VERDICT: BLOCK @HEAD@'
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "half-round: round 1"
+  next_head 'second head'
+  set_review claude \
+    'FINDING F1 | BLOCKING | none | feature.txt:1 | The empty file still loops.' \
+    'VERDICT: BLOCK @HEAD@'
+  set_review agy \
+    'FINDING F1 | BLOCKING | none | feature.txt:1 | The empty file still loops.' \
+    'VERDICT: BLOCK @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "half-round: round 2"
+  # Rewrite the head as one reviewed before review rounds, whose next run
+  # stopped after it stored the prior findings and before the round record.
+  store=$(store_dir)
+  for receipt in "$store"/*.receipt; do
+    grep -v -e '^round=' -e '^prior_sha256=' -e '^delta_sha256=' "$receipt" > "$receipt.tmp"
+    mv "$receipt.tmp" "$receipt"
+  done
+  mkdir "$CASE/after-stop"
+  mv "$store/round" "$CASE/after-stop/"
+  cp "$store/prior.md" "$CASE/after-stop/prior.md"
+
+  rc=0
+  run_at_head || rc=$?
+  assert_no_grep "cannot record the prior findings" "$CASE/stderr" "half-round: the stopped run cannot be run again"
+  expect_code 1 "$rc" "half-round: rerun of the stopped run"
+  assert_grep "merge-review: blocked" "$CASE/stdout" "half-round: the rerun did not report the blocked head"
+  assert_grep "round=2" "$store/round" "half-round: the rerun left no round record"
+  cmp -s "$store/prior.md" "$CASE/after-stop/prior.md" || fail "half-round: the rerun changed the stored prior findings"
+
+  # Prior findings that differ from what the previous head left are still refused.
+  mv "$store/round" "$CASE/after-stop/round.again"
+  printf '%s\n' 'F9 | open | none | other.txt:1 | A finding no head left.' >> "$store/prior.md"
+  rc=0
+  run_at_head || rc=$?
+  expect_code 2 "$rc" "half-round: rerun over prior findings no head left"
+  assert_grep "cannot record the prior findings" "$CASE/stderr" "half-round: foreign prior findings were accepted"
+  assert_absent "$store/round" "half-round: a round was recorded over foreign prior findings"
+  pass "a run stopped between its two round records can run again, and only over the same prior findings"
 }
 
 fm_test_run \
@@ -2126,4 +2259,5 @@ fm_test_run \
   test_a_follow_up_must_name_where_it_was_filed \
   test_a_model_name_cannot_take_the_council_file_names \
   test_a_finding_of_a_seat_that_left_the_config_reaches_the_next_round \
+  test_a_run_stopped_between_its_round_records_can_run_again \
   test_a_round_waits_for_a_running_head_that_has_no_receipt_yet
