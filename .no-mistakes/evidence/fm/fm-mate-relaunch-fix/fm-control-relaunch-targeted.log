@@ -1,0 +1,5 @@
+1..5
+ok - fm-control relaunch: a confirmed second-mate relaunch closes its open handoff relaunch request, and a failed one leaves it open
+ok - fm-control relaunch: rollback restores a record that went missing before publication
+ok - fm-control relaunch: rollback reads the published record back before claiming it
+not ok - a second concurrent control action should refuse: expected exit 1, got 5

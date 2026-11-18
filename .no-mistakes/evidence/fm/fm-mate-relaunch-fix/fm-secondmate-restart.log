@@ -1,0 +1,4 @@
+ok - T1 persist is a gate, and asks for open records and task status only
+not ok - a confirmed persist should restart the mate
+unreached: sm1: the restart outcome is unknown: the replacement agent for sm1 could not be launched on claude: warning: secondmate sm1 sync skipped before launch: primary default-branch commit cannot be resolved warning: the tmux server identity for fmses:fm-sm1 could not be read; the record omits it, so a later loss of that server cannot be proven error: tmux pane fmses:fm-sm1 did not reach a clean shell prompt before relaunch 
+summary: 0 of 1 restarted, 0 nudged, 1 unreached: expected exit 0, got 3

@@ -1,0 +1,4 @@
+fm-remote-secondmate-relaunch exit=0
+fm-secondmate-restart exit=1
+fm-handoff-trigger exit=0
+fm-secondmate-liveness exit=0
