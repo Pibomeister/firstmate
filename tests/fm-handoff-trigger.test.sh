@@ -931,7 +931,7 @@ test_a_failed_fresh_start_launch_releases_the_stop() {
   rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.handoff-successor" "$record"
   printf 'compact-at-tokens=100000\nfresh-start-after=0\n' > "$PRIMARY/config/handoff-trigger"
   transcript "$t" 90000
-  sleep 60 &
+  sleep 3600 &
   holder=$!
   printf '%s\n' "$holder" > "$PRIMARY/state/.lock"
   FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --from test "order during a failed launch" >/dev/null \
