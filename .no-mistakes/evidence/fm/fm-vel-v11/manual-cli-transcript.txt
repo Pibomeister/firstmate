@@ -1,0 +1,13 @@
+$ fm-self-land.sh covers https://github.com/example/repo/pull/7   # no config/self-land
+exit=1
+$ (config/self-land: allow=github.com/example/repo) covers .../example/repo/pull/7
+exit=0
+$ covers https://github.com/other/repo/pull/7
+exit=1
+$ land with a waiver flag --allow-red
+error: a landing needs exactly <task-id> <pr-url> --head <full-sha>; there is no other option and no waiver flag
+usage: fm-self-land.sh <task-id> <pr-url> --head <full-sha>
+exit=2
+$ touch state/.self-land-off; land
+self-land: refused (stop-file): state/.self-land-off exists; remove it to resume self-landing
+exit=1
