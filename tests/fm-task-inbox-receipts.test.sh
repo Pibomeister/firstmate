@@ -166,6 +166,27 @@ PYEOF
   pass "draft guard: strict never types or submits on an unproven input line, advisory still rings, and the read-to-Enter race is the pinned residual"
 }
 
+test_draft_guard_defaults_to_advisory() {
+  local dir state rec log composer screen rc name
+  dir="$TMP_ROOT/advisory-default"
+  state="$dir/state"
+  mkdir -p "$state"
+  make_composer_stub "$dir"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  name=${rec##*/}
+  log="$dir/send.log"; composer="$dir/composer"; screen="$dir/screen"
+  : > "$log"; : > "$composer"
+  printf 'Thinking about it\nsome tool output\n' > "$screen"
+  rc=0
+  unset FM_TASK_INBOX_DRAFT_GUARD FM_CONFIG_OVERRIDE
+  PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_COMPOSER="$composer" \
+    FM_FAKE_SCREEN="$screen" FM_FAKE_DROP_ENTERS="$dir/drops" \
+    inbox_lib "$state" fm_task_inbox_ring tmux sess:fm-t1 "$rec" fm-t1 || rc=$?
+  assert_equals 0 "$rc" "default ring on an unreadable input line"
+  assert_contains "$(cat "$log")" "Firstmate instruction waiting" "the default guard should ring"
+  pass "draft guard: with env and config unset, an unproven input line still rings"
+}
+
 test_live_status_reports_what_holds_up_steering() {
   local dir state rec name screen expected live_json
   dir="$TMP_ROOT/live"
@@ -227,8 +248,58 @@ test_watcher_poll_writes_live_status() {
   pass "watcher: an ordinary poll refreshes the task's live status file"
 }
 
+test_watcher_poll_writes_pickup_and_result_receipts() {
+  local dir state rec
+  dir=$(setup_watch_case poll-receipts)
+  state="$dir/state"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please rebase")
+  mv "$rec" "$state/t1.inbox/handled/"
+  printf 'done [at=1790000123]: rebased\n' > "$state/t1.status"
+  PATH="$dir/fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_SEND_LOG="$dir/send.log" \
+    FM_FAKE_TMUX_CAPTURE="$(idle_capture "$dir")" FM_TASK_INBOX_GRACE_SECS=0 \
+    bash -c '. "$1" && inbox_steer_check sess:fm-t1 t1' _ "$WATCH" \
+    >"$dir/check.out" 2>"$dir/check.err" \
+    || fail "steer check failed: $(cat "$dir/check.err")"
+  assert_contains "$(cat "$state/t1.inbox/receipts.jsonl")" '"receipt":"picked_up"' \
+    "watcher poll wrote no pickup receipt"
+  assert_contains "$(cat "$state/t1.inbox/receipts.jsonl")" '"receipt":"result"' \
+    "watcher poll wrote no result receipt"
+  pass "watcher: an ordinary steer check writes pickup and result receipts"
+}
+
+test_receipt_catchup_is_bounded_and_releases_the_inbox_lock() {
+  local dir state rec fifo rc rec2
+  dir="$TMP_ROOT/hung-receipts"
+  state="$dir/state"
+  mkdir -p "$state"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please rebase")
+  mv "$rec" "$state/t1.inbox/handled/"
+  fifo="$state/t1.inbox/receipts.jsonl"
+  rm -f "$fifo"
+  mkfifo "$fifo"
+  make_watch_stubs "$dir" >/dev/null
+  fm_write_meta "$state/t1.meta" "window=sess:fm-t1" "kind=ship" "harness=grok"
+  command -v fm_run_timed >/dev/null 2>&1 || . "$ROOT/bin/fm-timeout-lib.sh"
+  rc=0
+  # shellcheck disable=SC2016 # The inner shell expands its own arguments.
+  PATH="$dir/fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_SEND_LOG="$dir/send.log" \
+    FM_WATCH_HELPER_BUDGET=1 FM_TASK_INBOX_GRACE_SECS=0 \
+    fm_run_timed 8 bash -c '. "$1" && inbox_steer_check sess:fm-t1 t1' _ "$WATCH" \
+    >"$dir/check.out" 2>"$dir/check.err" || rc=$?
+  rm -f "$fifo"
+  [ "$rc" -ne 124 ] || fail "receipt catch-up hung the steer check (exit $rc)"
+  rec2=$(FM_STATE_OVERRIDE="$state" FM_TASK_INBOX_LOCK_WAIT_SECS=2 \
+    inbox_lib "$state" fm_task_inbox_write "$state" t1 "another") \
+    || fail "enqueue after a timed-out catch-up could not take the inbox lock"
+  [ -n "$rec2" ] || fail "enqueue after a timed-out catch-up wrote no record"
+  pass "watcher: receipt catch-up is bounded and does not keep the inbox lock past a steer"
+}
+
 test_receipts_follow_a_message_to_its_outcome
 test_delivery_attempts_record_their_result_and_input_line
 test_strict_draft_guard_never_submits_an_unproven_input_line
+test_draft_guard_defaults_to_advisory
 test_live_status_reports_what_holds_up_steering
 test_watcher_poll_writes_live_status
+test_watcher_poll_writes_pickup_and_result_receipts
+test_receipt_catchup_is_bounded_and_releases_the_inbox_lock

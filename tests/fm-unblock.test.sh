@@ -106,6 +106,7 @@ test_every_unsafe_or_ambiguous_stall_is_held() {
     'decision|resume hold open-human-gate' \
     'paused|resume hold declared-wait' \
     'done|resume hold worker-reported-final-state' \
+    'failed|resume hold worker-reported-final-state' \
     'dialog|resume hold dialog-needs-answer' \
     'nogen|resume hold no-spawn-generation'; do
     task=${spec%%|*}
@@ -123,6 +124,7 @@ test_every_unsafe_or_ambiguous_stall_is_held() {
   printf 'needs-decision [key=shape] [at=1799990000]: pick one\n' >> "$HOME_DIR/state/decision.status"
   printf 'paused [at=1799990000]: waiting on the upstream release\n' >> "$HOME_DIR/state/paused.status"
   printf 'done [at=1799990000]: finished\n' >> "$HOME_DIR/state/done.status"
+  printf 'failed [at=1799990000]: crashed\n' >> "$HOME_DIR/state/failed.status"
   printf '{"v":1,"ts":%s,"task":"dialog","kind":"ship","dialog":{"state":"permission","at":%s}}\n' "$NOW" "$NOW" \
     > "$HOME_DIR/state/dialog.live.json"
   sed -i.bak '/^spawn_gen=/d' "$HOME_DIR/state/nogen.meta"
@@ -146,6 +148,7 @@ test_every_unsafe_or_ambiguous_stall_is_held() {
     'decision|resume hold open-human-gate' \
     'paused|resume hold declared-wait' \
     'done|resume hold worker-reported-final-state' \
+    'failed|resume hold worker-reported-final-state' \
     'dialog|resume hold dialog-needs-answer' \
     'nogen|resume hold no-spawn-generation'; do
     task=${spec%%|*}
@@ -153,7 +156,7 @@ test_every_unsafe_or_ambiguous_stall_is_held() {
     # shellcheck disable=SC2016 # $t is a jq variable.
     assert_equals "$want" "$(printf '%s\n' "$OUT" | jq -r --arg t "$task" 'select(.task == $t) | "\(.action) \(.verdict) \(.reason)"')" "decision for $task"
   done
-  assert_equals 12 "$(printf '%s\n' "$OUT" | grep -c .)" "decision count (young and fire-and-forget messages are not stalls)"
+  assert_equals 13 "$(printf '%s\n' "$OUT" | grep -c .)" "decision count (young and fire-and-forget messages are not stalls)"
   assert_equals '[]' "$(printf '%s\n' "$OUT" | jq -sc '[.[] | select(.would != null)]')" "held decisions name no action"
   pass "unblock: ambiguous deliveries, unproven input lines, gates, waits, final states, dialogs, and unbound epochs are all held"
 }
@@ -282,6 +285,42 @@ test_enforce_is_always_refused() {
   pass "unblock: enforce is refused under every configuration and writes nothing"
 }
 
+test_probe_composer_reads_the_input_line_now() {
+  make_home probe-composer
+  add_task t1 s9.9.9
+  sed -i.bak 's/^backend=.*/backend=tmux/' "$HOME_DIR/state/t1.meta"
+  queue_msg t1 004.msg 2027-01-15T07:00:00Z
+  composer t1 pending $((NOW - 30))
+  mkdir -p "$HOME_DIR/fakebin"
+  cat > "$HOME_DIR/fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  send-keys) exit 0 ;;
+  display-message)
+    case "$*" in *cursor_y*) printf '2\n'; exit 0 ;; esac
+    printf 'fakepane\n'; exit 0 ;;
+  capture-pane)
+    rule=$(printf '─%.0s' $(seq 64))
+    printf '● done\n%s\n❯ \n%s\n  ? for shortcuts\n' "$rule" "$rule"
+    exit 0 ;;
+  list-windows) printf 'fm-t1\n'; exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$HOME_DIR/fakebin/tmux"
+  PATH="$HOME_DIR/fakebin:$PATH" unblock plan
+  assert_equals 0 "$RC" "plan exit without probe"
+  assert_equals 'resume hold input-line-not-proven-empty' "$(verdicts)" "stale pending reading without probe"
+  PATH="$HOME_DIR/fakebin:$PATH" unblock plan --probe-composer
+  assert_equals 0 "$RC" "plan exit with probe"
+  assert_equals 'resume candidate stalled-on-unacknowledged-message' "$(verdicts)" "fresh empty probe"
+  snap=$(PATH="$HOME_DIR/fakebin:$PATH" FM_HOME="$HOME_DIR" FM_HOST_ID_OVERRIDE=test-host \
+    "$ROOT/bin/fm-task-snapshot.sh" t1 --probe-composer) || fail "probed snapshot failed"
+  assert_equals '["empty",true]' "$(jq -c '[.queue.composer.state, .queue.composer.probed]' <<< "$snap")" "snapshot probe"
+  pass "unblock: --probe-composer takes a fresh input-line reading and can clear a stale pending hold"
+}
+
 test_snapshot_keeps_the_native_incarnation_apart_from_the_spawn_generation() {
   local snap
   make_home snapshot
@@ -313,4 +352,5 @@ test_a_later_ring_of_another_message_still_holds_the_stall
 test_observe_claims_one_epoch_bound_action_per_stall
 test_dispatch_names_only_the_next_ready_item
 test_enforce_is_always_refused
+test_probe_composer_reads_the_input_line_now
 test_snapshot_keeps_the_native_incarnation_apart_from_the_spawn_generation
