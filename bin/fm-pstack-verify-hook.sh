@@ -41,9 +41,10 @@
 #   completion report  -> principle-prove-it-works
 #     status_is_done_verb (bin/fm-classify-lib.sh): status_is_terminal_verb
 #     and then the verb is done. blocked:, failed:, and needs-decision: stay
-#     out. Lines come from STATUS_APPEND quoted Shell payloads, Write of a
-#     *.status file, and assistant or tool text. User prompts are not
-#     classified as completions.
+#     out. Lines come from a Shell command that names a status path (the
+#     STATUS_APPEND shape), Write of a *.status file, and assistant or tool
+#     text. A loop's closing done line or a quoted done in any other command
+#     is not a completion. User prompts are not classified as completions.
 #   tests added/changed -> principle-test-behavior-not-implementation
 #     Claude PreToolUse Write/Edit of a code test path (file_path/content or
 #     path/contents), Cursor postToolUse of the same, or a Shell
@@ -948,14 +949,20 @@ $QUOTED
 $COMMAND"
 
 # Completion from STATUS_APPEND, status-file Write, and assistant/tool text.
-# User prompts are not classified as completions.
+# User prompts are not classified as completions. A command's lines count only
+# when the command names a status path, so a loop's closing done line or an
+# unrelated quoted done is not a completion report.
 COMPLETION=
 if is_write_tool "$TOOL" && is_status_path "$PATH_VAL"; then
   COMPLETION=$CONTENTS
 fi
-COMPLETION="$COMPLETION
+case "$COMMAND" in
+  *.status*|*state/*)
+    COMPLETION="$COMPLETION
 $QUOTED
 $COMMAND"
+    ;;
+esac
 case "$EVENT" in
   UserPromptSubmit|beforeSubmitPrompt) ;;
   *)
@@ -993,6 +1000,9 @@ if [ -n "$CONV" ] && is_red_counting_event; then
   else
     RED_IDS=$(extract_red_ids "$STREAMS")
   fi
+  # One event is one call: several failing lines that name the same check
+  # count as one red.
+  RED_IDS=$(printf '%s\n' "$RED_IDS" | awk 'NF && !seen[$0]++')
 fi
 
 if [ -n "$CLAIM_IDS" ]; then

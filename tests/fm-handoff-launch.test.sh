@@ -279,7 +279,10 @@ if [ "$FM_HANDOFF_LAB_MODE" = slow-claim ]; then
     date +%s > "$STATE/claim-released") &
   while [ ! -e "$FM_HOME/state/claim-busy" ]; do sleep 0.1; done
 fi
-bash "$ROOT/bin/fm-handoff-launch.sh" "$FM_HOME/data/handoff ) '.md" > "$FM_HOME/launch.out" 2>&1 &
+launch_path=$PATH
+# Interrupt the launcher while it removes the earlier failure record.
+[ "$FM_HANDOFF_LAB_MODE" != interrupt-at-record-clear ] || launch_path="$FM_HOME/record-clear-bin:$PATH"
+PATH="$launch_path" bash "$ROOT/bin/fm-handoff-launch.sh" "$FM_HOME/data/handoff ) '.md" > "$FM_HOME/launch.out" 2>&1 &
 launcher=$!
 echo "$launcher" > "$FM_HOME/launcher.pid"
 echo "$launcher" >> "$FM_HANDOFF_TEST_PIDS"
@@ -312,7 +315,9 @@ run_case() {
     FM_HOME="$LAB" bash "$ROOT/bin/fm-order.sh" send --from test 'order the handoff omits' >/dev/null
     printf 'at=1 pid=1 nonce=none attempt=0 reason=error\n' > "$LAB/state/.handoff-launch-failed"
   fi
-  [ "$mode" != interrupt-before-attempt ] || printf 'at=1 pid=1 nonce=none attempt=0 reason=error\n' > "$LAB/state/.handoff-launch-failed"
+  case "$mode" in interrupt-before-attempt|interrupt-at-record-clear)
+    printf 'at=1 pid=1 nonce=none attempt=0 reason=error\n' > "$LAB/state/.handoff-launch-failed" ;;
+  esac
   # `arm` fires the real hook's planned fresh start first, so a failing mode
   # exercises the gate that firing sets.
   if [ "$mode" = success ] || [ "${3:-}" = arm ]; then
@@ -472,6 +477,34 @@ printf '%s\n' "$failed" | grep -Eq "^at=[0-9]+ pid=$(cat "$LAB/pred.pid") nonce=
 [ "$(cat "$LAB/state/.lock")" = "$(cat "$LAB/pred.pid")" ] || fail 'the interrupted launch must not move the lock'
 run_hook_fixture Stop >/dev/null 2>&1 || fail 'an interrupted fresh-start launch must release the Stop gate for the surviving session'
 pass 'a launch interrupted before any attempt still records its failure for the surviving session'
+
+# A signal that lands while the launch is removing the earlier failure record
+# still leaves a failure record for the surviving session.
+mkdir -p "$LAB/record-clear-bin"
+cat > "$LAB/record-clear-bin/rm" <<'EOF'
+#!/usr/bin/env bash
+for arg; do
+  case "$arg" in
+    */.handoff-launch-failed)
+      if [ ! -e "$FM_HOME/state/.record-clear-signalled" ]; then
+        : > "$FM_HOME/state/.record-clear-signalled"
+        kill -TERM "$PPID"
+      fi ;;
+  esac
+done
+exec /bin/rm "$@"
+EOF
+chmod +x "$LAB/record-clear-bin/rm"
+run_case interrupt-at-record-clear orca arm
+[ -e "$LAB/state/.record-clear-signalled" ] || fail 'the signal must arrive while the launch removes the earlier record'
+[ "$(cat "$LAB/rc")" != 0 ] || fail 'the launch interrupted at record removal must fail'
+[ ! -e "$LAB/state/attempts" ] || fail 'the launch interrupted at record removal must start no attempt'
+failed=$(cat "$LAB/state/.handoff-launch-failed" 2>/dev/null) \
+  || fail 'a launch interrupted while removing the earlier record must record its own failure'
+printf '%s\n' "$failed" | grep -Eq "^at=[0-9]+ pid=$(cat "$LAB/pred.pid") nonce=none attempt=0 reason=interrupted\$" \
+  || fail "the interrupted launch must replace the earlier record with its own: $failed"
+run_hook_fixture Stop >/dev/null 2>&1 || fail 'a launch interrupted at record removal must release the Stop gate for the surviving session'
+pass 'a launch interrupted while removing the earlier failure record still records its failure'
 
 # Existing supervisor endpoint metadata outranks an inherited terminal variable.
 META_HOME="$TMP_ROOT/meta-home"

@@ -92,20 +92,51 @@ write_kern_procargs2() { # <pid>
   [ "${FM_HERDR_LAB_DARWIN_ENV_HIDE:-}" = 1 ] && return 0
   dest=$FM_HERDR_LAB_KERN_PROCARGS2_OVERRIDE/$pid
   /usr/bin/python3 - "$pid" "$dest" ${extra:+"$extra"} <<'PY' || fail "could not write a KERN_PROCARGS2 buffer"
+import ctypes
+import ctypes.util
+import os
 import struct
 import sys
 
 pid = sys.argv[1]
 dest = sys.argv[2]
 extra = sys.argv[3:]
-with open("/proc/%s/cmdline" % pid, "rb") as fh:
-    argv = [part for part in fh.read().split(b"\0") if part]
+
+
+def kernel_args(pid):
+    """argv and the NUL-joined environ from the host's real KERN_PROCARGS2."""
+    libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.dylib", use_errno=True)
+    mib = (ctypes.c_int * 3)(1, 49, int(pid))
+    size = ctypes.c_size_t(0)
+    if libc.sysctl(mib, 3, None, ctypes.byref(size), None, 0) != 0 or size.value == 0:
+        sys.exit(1)
+    raw = ctypes.create_string_buffer(size.value)
+    if libc.sysctl(mib, 3, raw, ctypes.byref(size), None, 0) != 0:
+        sys.exit(1)
+    buf = raw.raw[: size.value]
+    argc = struct.unpack_from("<i", buf, 0)[0]
+    fields = buf[4:].split(b"\0")
+    i = 1
+    while i < len(fields) and not fields[i]:
+        i += 1
+    argv = fields[i : i + argc]
+    i += argc
+    env = [field for field in fields[i:] if field]
+    return argv, b"\0".join(env) + b"\0" if env else b""
+
+
+# Linux hosts read /proc; macOS has none, so read the kernel's own buffer.
+if os.path.exists("/proc/%s/cmdline" % pid):
+    with open("/proc/%s/cmdline" % pid, "rb") as fh:
+        argv = [part for part in fh.read().split(b"\0") if part]
+    with open("/proc/%s/environ" % pid, "rb") as fh:
+        env = fh.read()
+else:
+    argv, env = kernel_args(pid)
 for token in extra:
     argv.append(token.encode())
 if not argv:
     sys.exit(1)
-with open("/proc/%s/environ" % pid, "rb") as fh:
-    env = fh.read()
 buf = struct.pack("<i", len(argv)) + argv[0] + b"\0\0"
 for part in argv:
     buf += part + b"\0"
@@ -598,6 +629,52 @@ SH
   pass "fm-herdr-lab fixture: a second start on an already-started fixture returns 0 with the pid unchanged"
 }
 
+# An unprovable live server must keep its ownership record, or a later cleanup
+# deletes the fixture directory and leaves that server running.
+test_start_keeps_a_live_recorded_pid_it_cannot_prove() {
+  local root fakebin pid pidfile start token status=0
+  root=$(herdr_fixture_create) || fail "create failed"
+  remember_owned "$root"
+  token=$(cat "$root/.fm-herdr-owned")
+  push_darwin_env argv-only
+  pidfile=$(fm_test_tmproot herdr-named-sleep)/unprovable.pid
+  start_herdr_named_sleep "$pidfile" 30 "XDG_CONFIG_HOME=$root/c"
+  pid=$(cat "$pidfile")
+  kill -0 "$pid" 2>/dev/null || fail "the herdr-named server stand-in did not start"
+  start=$(LC_ALL=C ps -p "$pid" -o lstart= | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  [ -n "$start" ] || fail "could not read the server stand-in start time"
+  printf 'schema=fm-herdr-owned-xdg.v1\nxdg_root=%s\nmarker_token=%s\npid=%s\npid_start=%s\n' \
+    "$root" "$token" "$pid" "$start" > "$root/owned.record"
+  fakebin=$(fm_fakebin "$(fm_test_tmproot fm-herdr-owned-xdg-unprovable)/bin")
+  cat > "$fakebin/herdr" <<SH
+#!/usr/bin/env bash
+if [ "\$1" = session ]; then
+  printf '%s\\n' '{"sessions":[]}'
+  exit 0
+fi
+if [ "\$1" = server ]; then
+  printf 'invoked\\n' > $(printf '%q' "$root/server.invoked")
+  exit 0
+fi
+exit 90
+SH
+  chmod +x "$fakebin/herdr"
+  PATH="$fakebin:$PATH" "$LAB" fixture start "$root" >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "start must refuse while its recorded server runs unproven"
+  [ "$(sed -n 's/^pid=//p' "$root/owned.record")" = "$pid" ] \
+    || fail "start forgot a recorded server that is still running"
+  [ ! -e "$root/server.invoked" ] || fail "start forked a second server beside an unproven one"
+  status=0
+  herdr_fixture_cleanup "$root" >/dev/null 2>&1 || status=$?
+  expect_code 1 "$status" "cleanup must refuse while the recorded server still runs"
+  [ -d "$root" ] || fail "cleanup removed the fixture while its recorded server still runs"
+  kill -TERM "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  pop_darwin_env
+  herdr_fixture_cleanup "$root" || fail "cleanup after the recorded server exited failed"
+  pass "fm-herdr-lab fixture: start keeps the record of a live server it cannot prove"
+}
+
 test_start_failure_signals_the_forked_process_group() {
   local root fakebin leader child status=0
   root=$(herdr_fixture_create) || fail "create failed"
@@ -777,6 +854,7 @@ test_lab_tripwire_still_refuses_zero_and_multiple_defaults
 test_fixture_stays_on_default_when_a_custom_fleet_session_is_exported
 test_start_refuses_a_running_default_it_did_not_start
 test_second_start_on_a_started_fixture_is_idempotent
+test_start_keeps_a_live_recorded_pid_it_cannot_prove
 test_start_failure_signals_the_forked_process_group
 test_start_write_record_failure_signals_the_forked_process
 test_start_fails_fast_when_the_forked_pid_has_no_start_time

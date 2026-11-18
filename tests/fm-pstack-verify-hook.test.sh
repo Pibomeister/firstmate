@@ -80,6 +80,18 @@ test_status_append_command_injects_prove_it_works() {
   pass "a STATUS_APPEND command injects principle-prove-it-works"
 }
 
+test_loop_done_line_is_not_a_completion() {
+  local cmd
+  # shellcheck disable=SC2016 # The commands are literal hook payloads.
+  for cmd in "$(printf 'for a in 1 2; do\n  echo "$a"\ndone')" 'echo "done"' "$(printf 'cat > /tmp/x <<EOF\nfor a in 1; do\n:\ndone\nEOF')"; do
+    run_hook "$PRIMARY" \
+      "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":$(printf '%s' "$cmd" | jq -Rs .)}}" \
+      --claude
+    expect_silent "a command that writes no status file: $cmd"
+  done
+  pass "a loop's closing done line or a quoted done outside a status write is not a completion"
+}
+
 test_cursor_post_tool_use_status_append_injects() {
   run_hook "$PRIMARY" \
     "{\"hook_event_name\":\"postToolUse\",\"tool_name\":\"Shell\",\"tool_input\":{\"command\":$(printf '%s' "$STATUS_APPEND" | jq -Rs .)},\"tool_output\":\"{\\\"exitCode\\\":0}\",\"cursor_version\":\"x\",\"conversation_id\":\"c1\",\"generation_id\":\"g\"}" \
@@ -670,6 +682,31 @@ test_tap_description_is_not_keyed_as_a() {
     --claude
   expect_silent "two different TAP descriptions must not share id a"
   pass "a TAP line not ok - a done: does not key the id as a"
+}
+
+test_cursor_one_event_with_two_failing_nodes_is_one_red() {
+  local home out
+  home="$TMP_ROOT/reds-cursor-nodes"
+  mkdir -p "$home/state"
+  out='FAILED tests/a_test.py::test_one - assert\nFAILED tests/a_test.py::test_two - assert\n'
+  run_hook "$home" \
+    '{"hook_event_name":"afterAgentResponse","text":"fixed tests/a_test.py","cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  run_hook "$home" \
+    "{\"hook_event_name\":\"afterShellExecution\",\"command\":\"pytest tests/a_test.py\",\"output\":\"$out\",\"duration\":900,\"cursor_version\":\"x\",\"conversation_id\":\"c1\",\"generation_id\":\"g1\"}" \
+    --cursor
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/a.py"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g1"}' \
+    --cursor
+  expect_silent "one run with two failing tests in one file is one red"
+  run_hook "$home" \
+    "{\"hook_event_name\":\"afterShellExecution\",\"command\":\"pytest tests/a_test.py\",\"output\":\"$out\",\"duration\":900,\"cursor_version\":\"x\",\"conversation_id\":\"c1\",\"generation_id\":\"g2\"}" \
+    --cursor
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/a.py"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1","generation_id":"g2"}' \
+    --cursor
+  expect_cursor_inject "principle-attack-the-premise" "the second run with the same red"
+  pass "Cursor counts one red per run, not one per failing test in the same file"
 }
 
 test_pytest_node_id_matches_file_claim() {
@@ -1282,6 +1319,7 @@ test_vendored_skills_are_present() {
 }
 
 test_status_append_command_injects_prove_it_works
+test_loop_done_line_is_not_a_completion
 test_cursor_post_tool_use_status_append_injects
 test_write_contents_done_line_injects_prove_it_works
 test_captain_prompt_done_merge_is_not_completion
@@ -1338,6 +1376,7 @@ test_cursor_post_tool_use_success_does_not_count_tap
 test_fail_style_stderr_on_claude_post_tool_use
 test_tap_description_is_not_keyed_as_a
 test_pytest_node_id_matches_file_claim
+test_cursor_one_event_with_two_failing_nodes_is_one_red
 test_jest_fail_line_is_extracted
 test_glob_in_tap_line_does_not_expand
 test_same_red_payload_is_idempotent

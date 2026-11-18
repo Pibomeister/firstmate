@@ -70,6 +70,21 @@ SH
   chmod +x "$FAKEBIN/tmux"
 }
 
+# wrap_tmux_literal_send_fails: a literal text send fails as tmux reports a
+# command it cannot send, while every other tmux call reaches the real server.
+wrap_tmux_literal_send_fails() {
+  cat > "$FAKEBIN/tmux" <<SH
+#!/usr/bin/env bash
+if [ "\$1" = send-keys ]; then
+  for a in "\$@"; do
+    [ "\$a" != -l ] || { echo "command too long" >&2; exit 1; }
+  done
+fi
+exec "$REAL_TMUX" -f /dev/null -L "$SOCKET" "\$@"
+SH
+  chmod +x "$FAKEBIN/tmux"
+}
+
 # Every long-lived fixture process ends its argv with this marked duration, so
 # this suite can find all of its own fixtures, including ones whose pid no case
 # recorded, while another suite's fixtures carry a different marker.
@@ -6314,6 +6329,23 @@ restart-command=$TMP_ROOT/fake-captain.sh"
   pass "dry-run history cannot satisfy the active heartbeat delivery prerequisite"
 }
 
+test_heartbeat_failed_send_never_counts_as_delivery() {
+  make_home $'Captain session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=600
+restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  wrap_tmux_literal_send_fails
+  run_wd 700 once >/dev/null 2>&1
+  restore_fake_tmux
+  assert_equals 1 "$(ledger_rows heartbeat-frozen nudge pending)" "the stale heartbeat was not nudged"
+  assert_equals 0 "$(ledger_rows heartbeat-frozen nudge "done")" "a failed send was recorded as a delivery"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "a nudge that never reached the session authorized a restart"
+  pass "a heartbeat nudge whose send failed never counts as delivery"
+}
+
 test_heartbeat_ignores_orphan_and_previous_owner_receipts() {
   local history
   for history in orphan previous-owner; do
@@ -6577,6 +6609,7 @@ fm_test_run \
   test_heartbeat_response_cannot_suppress_recovery_forever \
   test_heartbeat_recovery_preserves_the_running_turn_veto \
   test_heartbeat_dryrun_never_counts_as_delivery \
+  test_heartbeat_failed_send_never_counts_as_delivery \
   test_heartbeat_ignores_orphan_and_previous_owner_receipts \
   test_heartbeat_recovery_serializes_with_handoff_launch \
   test_heartbeat_recovery_respects_recent_wake_activity \

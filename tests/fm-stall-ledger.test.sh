@@ -348,6 +348,81 @@ test_observe_watchdog_closes_only_on_done() {
   pass "watchdog dry-run and held stay open until a restart done closes them"
 }
 
+# observe_fresh <home> <from> <until> <step>: observe at each step with a fresh
+# primary heartbeat, as the supervision poll publishes it.
+observe_fresh() {
+  local home=$1 t=$2 until=$3 step=$4
+  while [ "$t" -le "$until" ]; do
+    write_hb "$home/state/heartbeat.json" "$((t - 5))"
+    observe_ok "$home" "$t"
+    t=$((t + step))
+  done
+}
+
+# A dry-run watchdog never writes a done row, so a primary's episode must lapse
+# once the watchdog stops evidencing it, while repeated rows keep it open.
+test_watchdog_primary_evidence_lapses() {
+  local home ledger actions tag t
+  home=$(new_home wd-lapse)
+  ledger=$(ledger_of "$home")
+  actions=$home/state/watchdog/actions.tsv
+  tag=${home##*/}
+  mkdir -p "$home/state/watchdog"
+  observe_fresh "$home" "$((T0 - 100))" "$((T0 - 100))" 600
+  printf '%s\twd1\t%s\t%s\tfrozen\tnudge\tdry-run\tWatchdog (automated): frozen 12 minutes\n' "$T0" "$home" "$tag" > "$actions"
+  printf '%s\twd2\t%s\t%s\tfrozen\tnudge\tdry-run\tWatchdog (automated): frozen 27 minutes\n' "$((T0 + 900))" "$home" "$tag" >> "$actions"
+  printf '%s\twd3\t%s\t%s\tfrozen\trestart\trefused\trestart is off\n' "$((T0 + 1800))" "$home" "$tag" >> "$actions"
+  observe_fresh "$home" "$T0" "$((T0 + 7200))" 600
+  assert_equals 1 "$(count_rows "$ledger" stall-open -)" "the frozen primary did not open one stall"
+  awk -F '\t' -v end="$((T0 + 3600))" '
+    $2 == "stall-close" && $3 == "primary" && $4 == "-" && $7 == "-" && $8 == end { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "the primary episode did not lapse 30 minutes after its last watchdog row: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+  OUT=$(cli "$home" "$((T0 + 7200))" score --since "$((T0 + 4200))" --until "$((T0 + 7200))") && RC=0 || RC=$?
+  assert_equals 0 "$RC" "a later healthy window still failed: $OUT"
+
+  home=$(new_home wd-repeat)
+  ledger=$(ledger_of "$home")
+  actions=$home/state/watchdog/actions.tsv
+  tag=${home##*/}
+  mkdir -p "$home/state/watchdog"
+  observe_fresh "$home" "$((T0 - 100))" "$((T0 - 100))" 600
+  : > "$actions"
+  t=$T0
+  while [ "$t" -le "$((T0 + 7200))" ]; do
+    printf '%s\twd%s\t%s\t%s\tfrozen\tnudge\tdry-run\tWatchdog (automated): frozen 12 minutes\n' "$t" "$t" "$home" "$tag" >> "$actions"
+    observe_fresh "$home" "$t" "$t" 600
+    t=$((t + 900))
+  done
+  assert_equals 1 "$(count_rows "$ledger" stall-open -)" "repeated watchdog rows did not keep one stall"
+  assert_equals 0 "$(count_rows "$ledger" stall-close -)" "a primary still evidenced by the watchdog was closed"
+  pass "a primary's watchdog episode lapses after its last row and stays open while rows continue"
+}
+
+# A nudge the watchdog finished without confirming progress is delivery only.
+test_unconfirmed_nudge_is_not_recovery() {
+  local home ledger actions tag
+  home=$(new_home wd-unconfirmed)
+  ledger=$(ledger_of "$home")
+  actions=$home/state/watchdog/actions.tsv
+  tag=${home##*/}
+  mkdir -p "$home/state/watchdog"
+  observe_fresh "$home" "$((T0 - 100))" "$((T0 - 100))" 600
+  printf '%s\twd1\t%s\t%s\tfrozen\tnudge\tpending\tWatchdog (automated): frozen 12 minutes\n' "$T0" "$home" "$tag" > "$actions"
+  observe_fresh "$home" "$T0" "$T0" 600
+  printf '%s\twd1\t%s\t%s\tfrozen\tnudge\tdone\tdelivered; no transcript to confirm\n' "$((T0 + 600))" "$home" "$tag" >> "$actions"
+  observe_fresh "$home" "$((T0 + 600))" "$((T0 + 600))" 600
+  assert_equals 1 "$(count_rows "$ledger" stall-open -)" "the frozen primary did not open a stall"
+  assert_equals 0 "$(count_rows "$ledger" stall-close -)" "an unconfirmed nudge closed the stall as recovered"
+  printf '%s\twd2\t%s\t%s\tfrozen\tnudge\tdone\ttranscript advanced\n' "$((T0 + 900))" "$home" "$tag" >> "$actions"
+  observe_fresh "$home" "$((T0 + 900))" "$((T0 + 900))" 600
+  awk -F '\t' -v end="$((T0 + 900))" '
+    $2 == "stall-close" && $3 == "primary" && $7 == "watchdog" && $8 == end { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "a confirmed nudge did not close the stall as watchdog: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+  pass "an unconfirmed nudge keeps the stall open and a confirmed one closes it"
+}
+
 test_observe_secondmate_progress_closes_as_agentkit() {
   local home mate other ledger start
   home=$(new_home progress)
@@ -988,6 +1063,8 @@ fm_test_run \
   test_observe_records_one_fresh_heartbeat \
   test_observe_opens_and_closes_a_stale_heartbeat \
   test_observe_watchdog_closes_only_on_done \
+  test_watchdog_primary_evidence_lapses \
+  test_unconfirmed_nudge_is_not_recovery \
   test_observe_secondmate_progress_closes_as_agentkit \
   test_observe_stale_wake_closes_as_firstmate \
   test_window_maps_chicago_kickoff \

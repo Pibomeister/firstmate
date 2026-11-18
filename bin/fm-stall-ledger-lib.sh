@@ -41,8 +41,11 @@
 # then a watchdog row, and the earliest start wins a tie. The recorded start
 # and detect are the earliest values in that set, so a later source cannot
 # move them forward.
-# A watchdog row that is not a finished restart, nudge, or key is not recovery.
-# The episode stays open while that condition is still evidenced. A later task
+# A watchdog row that is not a finished restart, nudge, or key is not recovery,
+# and neither is a nudge the watchdog finished without confirming progress.
+# The episode stays open while that condition is still evidenced. A primary's
+# episode is evidenced for FM_STALL_WD_EVIDENCE_SECS (1800) after its last
+# watchdog row, because no status line can show that the primary resumed. A later task
 # status line that shows the task working, or a captain record whose
 # usage-limit auto-wait has ended, ends it with recoverer -. A missing epoch
 # stays unverified. A fresh heartbeat does not end a usage-limit auto-wait,
@@ -54,6 +57,7 @@
 # is the stall start. A marker without it keeps the first field, and no earlier
 # start is invented.
 
+FM_STALL_WD_EVIDENCE_SECS=1800
 FM_STALL_LEDGER_LIB_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)"
 # shellcheck source=bin/fm-clock-lib.sh
 . "$FM_STALL_LEDGER_LIB_DIR/fm-clock-lib.sh"
@@ -533,12 +537,15 @@ _fm_stall_wd_symptom() {
   return 1
 }
 
-_fm_stall_wd_terminates() {
+_fm_stall_wd_terminates() { # <phase> <action> <detail>
   [ "$1" = "done" ] || return 1
   case "$2" in
-    restart|nudge|key) return 0 ;;
+    # The watchdog finishes a nudge it could not confirm with this detail, so
+    # that row shows delivery only, not recovery.
+    nudge) [ "${3-}" != "delivered; no transcript to confirm" ] ;;
+    restart|key) return 0 ;;
+    *) return 1 ;;
   esac
-  return 1
 }
 
 # actions.tsv has an empty home on a primary row. A tab is IFS whitespace, so a
@@ -663,7 +670,7 @@ _fm_stall_watchdog() {
     task=$sub
     case "$subject" in worker:*) task=$(_fm_stall_subject "${subject#worker:}") ;; esac
     key=$FM_STALL_WORK/ep/${cls}__${sub}
-    if _fm_stall_wd_terminates "$phase" "$action"; then
+    if _fm_stall_wd_terminates "$phase" "$action" "$detail"; then
       if [ -f "$key" ]; then
         IFS=$(printf '\t') read -r estart edetect esymptom elast ehome etask < "$key" || true
         rm -f -- "$key"
@@ -713,6 +720,14 @@ _fm_stall_watchdog() {
       if [ $((res - estart)) -gt 600 ]; then
         printf '%s\t%s\t%s\t%s\t%s\t-\n' "$cls" "$sub" "$estart" "$edetect" "$res" >> "$FM_STALL_WORK/done.tsv" || return 1
       fi
+      continue
+    fi
+    # A primary has no status line to show it resumed, so its episode lapses
+    # FM_STALL_WD_EVIDENCE_SECS after the last watchdog row. The close still
+    # needs a current heartbeat, which the reconcile checks.
+    if [ "$etask" = - ] && _fm_stall_is_num "$elast" \
+      && [ $((FM_STALL_NOW - elast)) -gt "$FM_STALL_WD_EVIDENCE_SECS" ]; then
+      printf '%s\t%s\t%s\t%s\t%s\t-\n' "$cls" "$sub" "$estart" "$edetect" "$((elast + FM_STALL_WD_EVIDENCE_SECS))" >> "$FM_STALL_WORK/done.tsv" || return 1
       continue
     fi
     [ $((FM_STALL_NOW - estart)) -gt 600 ] || continue
