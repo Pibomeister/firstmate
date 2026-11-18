@@ -28,11 +28,14 @@
 #   not-allowlisted no allow line names the repository. Only GitHub
 #                   repositories can be named.
 #   in-flight       another self-landing run holds this repository, or a
-#                   merge it sent has no outcome yet.
-#   pending         a pending record exists that cannot be read or settled.
+#                   merge it sent has no outcome yet, or that merge waits in
+#                   the forge's merge queue.
+#   pending         a pending record exists that cannot be read, settled, or
+#                   written.
 #   breaker         the circuit breaker record for the repository exists.
-#   red-base        the head of the pull request's base branch has a failed
-#                   check or status. This run also writes the breaker record.
+#   red-base        the head of the pull request's base branch, or of the
+#                   repository's default branch, has a failed check or status.
+#                   This run also writes the breaker record.
 #   hold            the task is held for the captain, or the hold cannot be
 #                   read.
 #   evidence        config/merge-review does not require a review for the
@@ -40,9 +43,10 @@
 #                   --head (bin/fm-merge-review.sh owns that verdict).
 #   task            the task has no record in this home, or its away-posture
 #                   record cannot be read.
-#   forge-read      the pull request, its file list, or its base branch could
-#                   not be read completely, or the pull request is not open at
-#                   --head.
+#   forge-read      the pull request, its file list, or a branch could not be
+#                   read completely, the pull request is not open at --head,
+#                   or its base, head, or file count changed after its diff
+#                   was checked.
 #   protected-path  the diff adds, changes, renames, or removes a protected
 #                   path: .github/workflows/, a merge gate script, a library a
 #                   gate loads directly or through another library, or the
@@ -50,45 +54,82 @@
 #                   fixed in this script. Such a change needs the supervisor's
 #                   merge.
 #
+# The forge gate. bin/fm-pr-merge.sh can wait a long time before it sends the
+# merge: for the task's lock, and for the forge to compute mergeability. The
+# wrapper therefore runs that script with a private `gh` in front of the real
+# one. Every call passes through unchanged except the merge command. In front
+# of it the stop file, the breaker, and config/self-land are read again, the
+# pull request is read again and must still be open at --head with the base
+# and the file count the diff check saw, and the pending record is marked as
+# sent. A refusal there stops the merge command itself, so no merge is sent.
+#
+# The forge host. Every forge read, and the merge command, addresses the host
+# the pull request URL names. A GH_HOST value from the caller's environment is
+# replaced, so it cannot point the run at another host that has a repository
+# of the same name.
+#
 # A failed check is a completed check run that concluded failure, timed_out,
 # startup_failure, or action_required, or a commit status in state failure or
 # error. A failed check run does not count when a run of the same name on the
 # same commit concluded success, neutral, or skipped and started later; both
 # runs must report a whole-second UTC start time. A check run with no name is
-# never replaced by another. A commit status is never replaced. A base branch
-# with no checks is not red.
+# never replaced by another. A commit status is never replaced, every page of
+# statuses is read, and a combined status of failure is red even when no
+# listed status explains it. A check that still runs is not red. A branch with
+# no checks is not red.
 #
 # Records, under state/self-land/<provider>/<host>/<owner>/<repository>/:
 #   lock        one self-landing run per repository at a time. A second run
 #               refuses at once instead of waiting.
-#   pending     written before the merge is sent and removed when its outcome
-#               is known (bin/fm-merge-authority-lib.sh owns the format).
-#   breaker     written when the base branch head is red. This wrapper never
-#               removes it. After the base branch is green again, the
-#               supervisor or the owner removes the file by hand.
-#   landed.tsv  one appended line per landed merge: epoch, task id, URL, head,
-#               merge commit, and `landed` or `reconciled`.
+#   pending     written before bin/fm-pr-merge.sh starts and removed when the
+#               outcome of its merge is known and recorded
+#               (bin/fm-merge-authority-lib.sh owns the format and states).
+#   breaker     written when a checked branch head is red, when a merge
+#               landed on another base than the one its diff was checked
+#               against, or when a merge was accepted that did not pass the
+#               forge gate. This wrapper never removes it. After the branch is
+#               green again, the supervisor or the owner removes the file by
+#               hand.
+#   landed.tsv  one line per landed merge: epoch, task id, URL, head, merge
+#               commit, and `landed` or `reconciled`.
+#   .gate.*     the private directory of one run that holds the forge gate. The
+#               run removes it when it ends. A run that was killed can leave
+#               one behind; remove it by hand only when no merge gate of that
+#               run is still alive.
 #
 # Lost forge response. After the merge attempt, and at the start of every later
 # run that finds a pending record, the wrapper reads the pull request back.
-# When it is merged at the recorded head, the wrapper records the outcome for
-# supervision (bin/fm-merge-outcome-lib.sh, which records one outcome only
-# once), appends the landed line, removes the pending record, and sends no
-# merge. When the read fails, the pending record stays and the same command
-# settles it later. A pending record whose pull request is still unmerged is
-# treated as in flight for FM_SELF_LAND_PENDING_GRACE seconds (default 120, 0
-# to 3600), then dropped, because the run that wrote it no longer holds the
-# lock.
+#   - Merged at the recorded head: the wrapper records the outcome for
+#     supervision (bin/fm-merge-outcome-lib.sh, which records one outcome only
+#     once), writes the landed line once, removes the pending record, and sends
+#     no merge. When the outcome or the line cannot be written, the pending
+#     record stays and the same command completes the record later.
+#   - Unreadable: the pending record stays and the same command settles it.
+#   - In the forge's merge queue: the pending record stays, with no time
+#     limit, and every landing in the repository refuses until the pull
+#     request merges or leaves the queue.
+#   - Unmerged and not queued after a merge command was sent: the forge may
+#     still apply it, so the pending record stays for 120 seconds after the
+#     command was sent, or after the pull request was last seen in the queue.
+#     After that the forge did not accept the merge and a later run drops the
+#     record.
+#   - No merge command was sent (the merge gate or the forge gate refused):
+#     the pending record is removed at once.
 #
 # Limits. Every record is local to this home, so the guards cover one home.
 # One lane owner per repository is what makes them cover the repository. The
-# file list is read from the forge at --head and read again after, so a head
-# that moves away and back between two reads is not seen; the merge itself
-# stays bound to --head.
+# forge gate reads the pull request one forge round trip before the merge
+# command, and the forge binds a merge only to the head commit. A change of the
+# base branch inside that round trip is therefore not prevented; the wrapper
+# detects it after the merge, trips the breaker, and reports it. The breaker
+# reads branch heads only when a landing is attempted, and a branch that is
+# neither the pull request's base nor the default branch is not read.
 #
 # Exit status: 0 when the pull request landed, was reconciled as landed, or
-# entered the forge's merge queue; 1 on a refusal; 2 on an invalid request. A
-# merge that bin/fm-pr-merge.sh refuses exits with that script's status.
+# entered the forge's merge queue; 1 on a refusal or an unknown outcome; 2 on
+# an invalid request; 3 when the pull request landed but its record could not
+# be completed. A merge that bin/fm-pr-merge.sh refuses exits with that
+# script's status.
 set -u
 set -o pipefail
 
@@ -109,6 +150,9 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 SL_CONFIG="$FM_HOME/config/self-land"
 SL_STOP_FILE="$STATE/.self-land-off"
+# Seconds an unmerged, unqueued pull request keeps its pending record after a
+# merge command was sent for it.
+SL_GRACE=120
 
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
@@ -159,6 +203,12 @@ bin/fm-wake-lib.sh'
 
 SL_LOCK=
 SL_REPO_DIR=
+SL_GATE_DIR=
+# The forge client. The forge gate runs behind the private `gh`, so it names
+# the real one by its path.
+SL_GH=gh
+# Appended to a refusal that the forge gate prints.
+SL_WHERE=
 
 invalid() {  # <message>
   printf 'error: %s\n' "$1" >&2
@@ -167,7 +217,7 @@ invalid() {  # <message>
 }
 
 refuse() {  # <reason> <message>
-  printf 'self-land: refused (%s): %s\n' "$1" "$2" >&2
+  printf 'self-land: refused (%s): %s%s\n' "$1" "$2" "$SL_WHERE" >&2
   exit 1
 }
 
@@ -175,8 +225,16 @@ note() {  # <message>
   printf 'self-land: %s\n' "$1" >&2
 }
 
+remove_gate() {
+  case "$SL_GATE_DIR" in
+    "$SL_REPO_DIR"/.gate.*) rm -rf -- "$SL_GATE_DIR" ;;
+  esac
+  SL_GATE_DIR=
+}
+
 # shellcheck disable=SC2329 # Invoked by the EXIT trap.
 release_lock() {
+  [ -z "$SL_GATE_DIR" ] || remove_gate
   [ -z "$SL_LOCK" ] || fm_lock_release "$SL_LOCK" || true
   SL_LOCK=
 }
@@ -216,10 +274,31 @@ case "${1:-}" in
     ;;
 esac
 
-[ "$#" -eq 4 ] && [ "$3" = --head ] \
-  || invalid "a landing needs exactly <task-id> <pr-url> --head <full-sha>; there is no other option and no waiver flag"
-ID=$1
-HEAD=$4
+# The landing form, or the forge gate this script runs in front of its own
+# merge command (see prepare_forge_gate; it is not a form for a caller).
+SL_MODE=land
+SL_RUN=
+SL_SCAN_BASE=
+SL_SCAN_BASE_SHA=
+SL_SCAN_FILES=
+if [ "${1:-}" = __forge-gate ]; then
+  [ "$#" -eq 9 ] || invalid "the forge gate is run by a landing, not by a caller"
+  SL_MODE=gate
+  ID=$2
+  HEAD=$4
+  SL_RUN=$5
+  SL_SCAN_BASE=$6
+  SL_SCAN_BASE_SHA=$7
+  SL_SCAN_FILES=$8
+  SL_GH=$9
+  SL_WHERE=' (read again just before the merge command; no merge was sent)'
+  set -- "$ID" "$3"
+else
+  [ "$#" -eq 4 ] && [ "$3" = --head ] \
+    || invalid "a landing needs exactly <task-id> <pr-url> --head <full-sha>; there is no other option and no waiver flag"
+  ID=$1
+  HEAD=$4
+fi
 fm_pr_task_id_valid "$ID" || invalid "invalid task id"
 fm_pr_url_parse "$2" || invalid "invalid pull request URL"
 fm_pr_head_valid "$HEAD" || invalid "--head needs the full lowercase commit id"
@@ -232,22 +311,24 @@ PR_REPO=$FM_PR_REPO
 PR_NUMBER=$FM_PR_NUMBER
 META="$STATE/$ID.meta"
 
-SL_GRACE=${FM_SELF_LAND_PENDING_GRACE:-120}
-case "$SL_GRACE" in
-  '' | *[!0-9]*) SL_GRACE=120 ;;
-esac
-[ "$SL_GRACE" -le 3600 ] || SL_GRACE=120
-
-# The two switches a person can throw without editing anything else. They are
-# read at the start and again just before the merge is sent.
+# The switches a person can throw without editing anything else. They are read
+# at the start, before the merge gate starts, and in the forge gate.
 require_switches_on() {
   if [ -e "$SL_STOP_FILE" ] || [ -L "$SL_STOP_FILE" ]; then
     refuse stop-file "state/.self-land-off exists; remove it to resume self-landing"
   fi
   if [ -n "$SL_REPO_DIR" ] && { [ -e "$SL_REPO_DIR/breaker" ] || [ -L "$SL_REPO_DIR/breaker" ]; }; then
     [ ! -f "$SL_REPO_DIR/breaker" ] || sed 's/^/self-land: breaker: /' "$SL_REPO_DIR/breaker" >&2 || true
-    refuse breaker "the circuit breaker for $PR_HOST/$PR_PATH is tripped; after the base branch is green again, remove $SL_REPO_DIR/breaker by hand"
+    refuse breaker "the circuit breaker for $PR_HOST/$PR_PATH is tripped; after the branch is green again, remove $SL_REPO_DIR/breaker by hand"
   fi
+}
+
+require_allowlisted() {
+  [ "$PROVIDER" = github ] \
+    || refuse not-allowlisted "self-landing supports GitHub pull requests only"
+  load_grant
+  fm_self_land_repo_allowed "$PR_HOST" "$PR_PATH" \
+    || refuse not-allowlisted "config/self-land has no allow line for $PR_HOST/$PR_PATH"
 }
 
 require_released_hold() {
@@ -285,61 +366,105 @@ require_review_evidence() {
   esac
 }
 
+sl_branch_name_valid() {  # <name>
+  [[ "$1" =~ ^[A-Za-z0-9._/-]+$ ]] || return 1
+  case "$1" in *..* | /* | */) return 1 ;; esac
+  return 0
+}
+
 SL_PR_STATE=
 SL_PR_MERGED=
+SL_PR_QUEUED=
 SL_PR_HEAD=
 SL_PR_BASE=
+SL_PR_BASE_SHA=
 SL_PR_FILES=
 SL_PR_MERGE_COMMIT=
-# Read one pull request of this repository from the forge. Returns 1 when the
-# read fails or its answer does not have the expected shape.
+SL_PR_DEFAULT=
+# Read one pull request of this repository from the forge, in one answer, so
+# its merged state and its merge queue state belong to the same moment.
+# Returns 1 when the read fails or its answer does not have the expected shape.
 read_pull() {  # <number>
   local json fields line named=0 total=0
-  local state='' merged='' head='' base='' files='' merge_commit=''
+  local state='' merged='' queued='' head='' base='' base_sha='' files='' merge_commit='' default=''
   SL_PR_STATE=
   SL_PR_MERGED=
+  SL_PR_QUEUED=
   SL_PR_HEAD=
   SL_PR_BASE=
+  SL_PR_BASE_SHA=
   SL_PR_FILES=
   SL_PR_MERGE_COMMIT=
-  json=$(gh api "repos/$PR_OWNER/$PR_REPO/pulls/$1" 2>/dev/null) || return 1
+  SL_PR_DEFAULT=
+  # shellcheck disable=SC2016  # GraphQL variables are literal query syntax.
+  json=$("$SL_GH" api graphql \
+    -f query='query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){defaultBranchRef{name} pullRequest(number:$number){state merged isInMergeQueue headRefOid baseRefName baseRefOid changedFiles mergeCommit{oid}}}}' \
+    -F "owner=$PR_OWNER" -F "repo=$PR_REPO" -F "number=$1" 2>/dev/null) || return 1
   fields=$(printf '%s' "$json" | jq -r '
-    "state=" + (.state | strings),
-    "merged=" + (.merged | booleans | tostring),
-    "head=" + (.head.sha | strings),
-    "base=" + (.base.ref | strings),
-    "files=" + (.changed_files | numbers | tostring),
-    "merge_commit=" + (.merge_commit_sha // "" | strings)
+    .data.repository as $repo | $repo.pullRequest as $pull
+    | "state=" + ($pull.state | strings),
+      "merged=" + ($pull.merged | booleans | tostring),
+      "queued=" + ($pull.isInMergeQueue | booleans | tostring),
+      "head=" + ($pull.headRefOid | strings),
+      "base=" + ($pull.baseRefName | strings),
+      "base_sha=" + ($pull.baseRefOid | strings),
+      "files=" + ($pull.changedFiles | numbers | tostring),
+      "merge_commit=" + ($pull.mergeCommit.oid // "" | strings),
+      "default=" + ($repo.defaultBranchRef.name | strings)
   ' 2>/dev/null) || return 1
   while IFS= read -r line; do
     total=$((total + 1))
     case "$line" in
       state=*) state=${line#state=} ;;
       merged=*) merged=${line#merged=} ;;
+      queued=*) queued=${line#queued=} ;;
       head=*) head=${line#head=} ;;
       base=*) base=${line#base=} ;;
+      base_sha=*) base_sha=${line#base_sha=} ;;
       files=*) files=${line#files=} ;;
       merge_commit=*) merge_commit=${line#merge_commit=} ;;
+      default=*) default=${line#default=} ;;
       *) continue ;;
     esac
     named=$((named + 1))
   done <<FIELDS
 $fields
 FIELDS
-  [ "$named" -eq 6 ] && [ "$total" -eq 6 ] || return 1
-  case "$state" in open | closed) ;; *) return 1 ;; esac
+  [ "$named" -eq 9 ] && [ "$total" -eq 9 ] || return 1
+  case "$state" in OPEN | CLOSED | MERGED) ;; *) return 1 ;; esac
   case "$merged" in true | false) ;; *) return 1 ;; esac
+  case "$queued" in true | false) ;; *) return 1 ;; esac
   fm_pr_head_valid "$head" || return 1
-  [[ "$base" =~ ^[A-Za-z0-9._/-]+$ ]] || return 1
-  case "$base" in *..* | /* | */) return 1 ;; esac
+  fm_pr_head_valid "$base_sha" || return 1
+  sl_branch_name_valid "$base" || return 1
+  sl_branch_name_valid "$default" || return 1
   case "$files" in '' | *[!0-9]*) return 1 ;; esac
   [ -z "$merge_commit" ] || fm_pr_head_valid "$merge_commit" || return 1
   SL_PR_STATE=$state
   SL_PR_MERGED=$merged
+  SL_PR_QUEUED=$queued
   SL_PR_HEAD=$head
   SL_PR_BASE=$base
+  SL_PR_BASE_SHA=$base_sha
   SL_PR_FILES=$files
   SL_PR_MERGE_COMMIT=$merge_commit
+  SL_PR_DEFAULT=$default
+}
+
+# Read the pull request again and refuse unless it is still the one whose diff
+# was checked: open, at the approved head, on the same base, with the same
+# number of changed files. The head and the base commit name the diff.
+require_checked_pull() {
+  read_pull "$PR_NUMBER" || refuse forge-read "could not read $URL again after its diff was checked"
+  if [ "$SL_PR_MERGED" = true ] || [ "$SL_PR_STATE" != OPEN ]; then
+    refuse forge-read "$URL is no longer open (state=$SL_PR_STATE, merged=$SL_PR_MERGED)"
+  fi
+  [ "$SL_PR_HEAD" = "$HEAD" ] \
+    || refuse forge-read "$URL moved to head $SL_PR_HEAD, away from the approved head $HEAD"
+  if [ "$SL_PR_BASE" != "$SL_SCAN_BASE" ] || [ "$SL_PR_BASE_SHA" != "$SL_SCAN_BASE_SHA" ] \
+    || [ "$SL_PR_FILES" != "$SL_SCAN_FILES" ]; then
+    refuse forge-read "$URL changed after its diff was checked (base $SL_SCAN_BASE at $SL_SCAN_BASE_SHA with $SL_SCAN_FILES changed files, now $SL_PR_BASE at $SL_PR_BASE_SHA with $SL_PR_FILES); run again so the new diff is checked"
+  fi
 }
 
 # Refuse a diff that touches a protected path. The whole file list must be
@@ -348,7 +473,7 @@ require_unprotected_diff() {
   local raw protect result count='' hits=''
   protect=$(printf '%s\n' "$SL_PROTECT" | jq -R . | jq -s -c .) \
     || refuse forge-read "could not prepare the protected path list"
-  raw=$(gh api --paginate "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER/files?per_page=100" 2>/dev/null) \
+  raw=$("$SL_GH" api --paginate "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER/files?per_page=100" 2>/dev/null) \
     || refuse forge-read "could not read the file list of $URL"
   result=$(printf '%s' "$raw" | jq -s -r --argjson protect "$protect" '
     [ .[] | if type == "array" then .[] else error("shape") end ]
@@ -371,16 +496,30 @@ require_unprotected_diff() {
   fi
 }
 
-# Trip the breaker when the base branch head is red. An unreadable base is a
-# refusal and trips nothing. read_pull limits the branch name to characters of
-# which only / needs encoding as one URL path segment.
-require_green_base() {
-  local sha runs statuses red epoch tmp
-  sha=$(gh api "repos/$PR_OWNER/$PR_REPO/branches/${SL_PR_BASE//\//%2F}" 2>/dev/null \
+# Write the breaker record. Returns 1 when it could not be written.
+trip_breaker() {  # <branch> <commit> <reason>
+  local epoch tmp=''
+  epoch=$(date +%s)
+  if tmp=$(umask 077 && mktemp "$SL_REPO_DIR/.breaker.XXXXXX") \
+    && printf '%s\ntripped=%s\nbranch=%s\nsha=%s\nred=%s\n' \
+      fm-self-land-breaker-v1 "$epoch" "$1" "$2" "$3" > "$tmp" \
+    && mv -f -- "$tmp" "$SL_REPO_DIR/breaker"; then
+    return 0
+  fi
+  [ -z "$tmp" ] || rm -f -- "$tmp"
+  return 1
+}
+
+# Trip the breaker when the head of <branch> is red. An unreadable branch is a
+# refusal and trips nothing. A branch name holds no character but / that needs
+# encoding as one URL path segment (sl_branch_name_valid).
+require_green_branch() {  # <branch> <base branch|default branch>
+  local branch=$1 kind=$2 sha runs statuses red
+  sha=$("$SL_GH" api "repos/$PR_OWNER/$PR_REPO/branches/${branch//\//%2F}" 2>/dev/null \
     | jq -r '.commit.sha | strings' 2>/dev/null) \
-    || refuse forge-read "could not read the head of base branch $SL_PR_BASE"
-  fm_pr_head_valid "$sha" || refuse forge-read "could not read the head of base branch $SL_PR_BASE"
-  runs=$(gh api --paginate "repos/$PR_OWNER/$PR_REPO/commits/$sha/check-runs?per_page=100" 2>/dev/null \
+    || refuse forge-read "could not read the head of $kind $branch"
+  fm_pr_head_valid "$sha" || refuse forge-read "could not read the head of $kind $branch"
+  runs=$("$SL_GH" api --paginate "repos/$PR_OWNER/$PR_REPO/commits/$sha/check-runs?per_page=100" 2>/dev/null \
     | jq -s -r '
       def settled_at:
         if type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
@@ -403,50 +542,68 @@ require_green_base() {
           | select(any(.[]; .red and ($newest_green == null or .at == null or .at >= $newest_green)))
           | if .[0].name == "" then "(unnamed check)" else .[0].name end ]
       | unique | .[]' 2>/dev/null) \
-    || refuse forge-read "could not read the checks of base branch $SL_PR_BASE at $sha"
-  statuses=$(gh api "repos/$PR_OWNER/$PR_REPO/commits/$sha/status" 2>/dev/null \
-    | jq -r '
-      if (.state | type) == "string" then . else error("shape") end
-      | [ (.statuses // [])[] | select(.state == "failure" or .state == "error")
-          | if (.context | type) == "string" and (.context | length) > 0 then .context else "(unnamed status)" end ]
-      | unique | .[]' 2>/dev/null) \
-    || refuse forge-read "could not read the statuses of base branch $SL_PR_BASE at $sha"
+    || refuse forge-read "could not read the checks of $kind $branch at $sha"
+  # Every page repeats the combined state and carries its own slice of the
+  # statuses, so the pages are read together.
+  statuses=$("$SL_GH" api --paginate "repos/$PR_OWNER/$PR_REPO/commits/$sha/status?per_page=100" 2>/dev/null \
+    | jq -s -r '
+      if length == 0 then error("shape") else . end
+      | map(if type == "object" and (.state | type) == "string" and ((.statuses // []) | type) == "array"
+            then . else error("shape") end)
+      | ( [ .[] | (.statuses // [])[] | select(.state == "failure" or .state == "error")
+            | if (.context | type) == "string" and (.context | length) > 0 then .context else "(unnamed status)" end ]
+          | unique ) as $named
+      | if ($named | length) > 0 then $named[]
+        elif any(.[]; .state == "failure" or .state == "error") then "(combined status)"
+        else empty end' 2>/dev/null) \
+    || refuse forge-read "could not read the statuses of $kind $branch at $sha"
   red=$(printf '%s\n%s\n' "$runs" "$statuses" | sed '/^$/d' | tr '\n' ',' | sed 's/,$//; s/,/, /g')
   [ -n "$red" ] || return 0
-  epoch=$(date +%s)
-  if tmp=$(umask 077 && mktemp "$SL_REPO_DIR/.breaker.XXXXXX") \
-    && printf '%s\ntripped=%s\nbase=%s\nsha=%s\nred=%s\n' \
-      fm-self-land-breaker-v1 "$epoch" "$SL_PR_BASE" "$sha" "$red" > "$tmp" \
-    && mv -f -- "$tmp" "$SL_REPO_DIR/breaker"; then
-    :
-  else
-    [ -z "${tmp:-}" ] || rm -f -- "$tmp"
-    refuse red-base "base branch $SL_PR_BASE is red at $sha ($red) and the breaker record could not be written"
-  fi
-  refuse red-base "base branch $SL_PR_BASE is red at $sha ($red); the circuit breaker is now tripped at $SL_REPO_DIR/breaker"
+  trip_breaker "$branch" "$sha" "$red" \
+    || refuse red-base "$kind $branch is red at $sha ($red) and the breaker record could not be written"
+  refuse red-base "$kind $branch is red at $sha ($red); the circuit breaker is now tripped at $SL_REPO_DIR/breaker"
 }
 
-# Record a merge this home sent whose outcome bin/fm-pr-merge.sh did not
-# record, then log it. The outcome owner records one merge only once.
+# Record a merge this home sent, then log it once. The outcome owner records
+# one merge only once, and bin/fm-pr-merge.sh already recorded a merge whose
+# command succeeded. Returns 1 when the record is not complete, so the caller
+# keeps the pending record and a later run completes it.
 record_landed() {  # <task-id> <pr-url> <head> <merge-commit> <authority> <landed|reconciled>
-  local outcome_rc=0
+  local outcome_rc=0 log="$SL_REPO_DIR/landed.tsv"
   if [ "$6" = reconciled ]; then
     fm_merge_outcome_report "$FM_HOME" "$STATE" "$1" "$2" self "$5" || outcome_rc=$?
     case "$outcome_rc" in
       0) ;;
       3) printf 'actionable: merged %s but could not report it upward: this home has no readable secondmate identity or parent binding\n' "$2" >&2 ;;
-      *) printf 'actionable: merged %s but could not record the outcome for supervision\n' "$2" >&2 ;;
+      *)
+        printf 'actionable: merged %s but could not record the outcome for supervision\n' "$2" >&2
+        return 1
+        ;;
     esac
   fi
-  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(date +%s)" "$1" "$2" "$3" "${4:--}" "$6" \
-    >> "$SL_REPO_DIR/landed.tsv" \
-    || printf 'actionable: merged %s but could not append to %s\n' "$2" "$SL_REPO_DIR/landed.tsv" >&2
+  if [ -f "$log" ] && awk -F '\t' -v url="$2" -v head="$3" \
+    '$3 == url && $4 == head { found = 1 } END { exit found ? 0 : 1 }' "$log" 2>/dev/null; then
+    return 0
+  fi
+  if (umask 077 && printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(date +%s)" "$1" "$2" "$3" "${4:--}" "$6" >> "$log"); then
+    return 0
+  fi
+  printf 'actionable: merged %s but could not append to %s\n' "$2" "$log" >&2
+  return 1
+}
+
+# Stop after a merge landed whose record is not complete. The pending record
+# stays, so the same command completes the record and sends no merge.
+stop_unrecorded() {  # <pr-url> <head> <merge-commit>
+  printf 'self-land: landed %s head=%s merge=%s, but its record is not complete; the pending record is kept, and running the same command again completes it without a second merge\n' \
+    "$1" "$2" "${3:--}" >&2
+  exit 3
 }
 
 # Settle a pending record left by an earlier run before anything new starts.
 # Returns only when no pending record remains and this run may continue.
 settle_pending() {
-  local rc=0 p_id p_url p_head p_authority p_epoch p_number now age
+  local rc=0 p_id p_url p_head p_authority p_epoch p_state p_run p_number now age
   fm_self_land_pending_read "$SL_REPO_DIR" || rc=$?
   case "$rc" in
     0) ;;
@@ -458,6 +615,23 @@ settle_pending() {
   p_head=$FM_SELF_LAND_PENDING_HEAD
   p_authority=$FM_SELF_LAND_PENDING_AUTHORITY
   p_epoch=$FM_SELF_LAND_PENDING_EPOCH
+  p_state=$FM_SELF_LAND_PENDING_STATE
+  p_run=$FM_SELF_LAND_PENDING_RUN
+  if [ "$p_state" = armed ]; then
+    # The run that wrote it no longer holds the repository, and it sent no
+    # merge. Its merge gate may still be alive: the forge gate of that run
+    # then finds no armed record of its own and refuses.
+    rc=0
+    fm_self_land_pending_change "$SL_REPO_DIR" "$p_run" armed none || rc=$?
+    case "$rc" in
+      0)
+        note "dropped the pending record for $p_url: its run ended before a merge was sent"
+        return 0
+        ;;
+      1) refuse in-flight "the pending record for $p_url changed while it was settled: an earlier run is sending its merge; retry shortly" ;;
+      *) refuse pending "could not lock or remove $SL_REPO_DIR/pending" ;;
+    esac
+  fi
   if ! fm_pr_url_parse "$p_url" || [ "$FM_PR_PROVIDER" != "$PROVIDER" ] \
     || [ "$(_fm_self_land_lower "$FM_PR_HOST/$FM_PR_PATH")" != "$(_fm_self_land_lower "$PR_HOST/$PR_PATH")" ]; then
     refuse pending "$SL_REPO_DIR/pending names another repository; confirm it, then remove it by hand"
@@ -468,10 +642,11 @@ settle_pending() {
     || refuse forge-read "could not read $p_url to settle its pending merge; the pending record is kept and no merge was sent"
   if [ "$SL_PR_MERGED" = true ]; then
     if [ "$SL_PR_HEAD" = "$p_head" ]; then
-      record_landed "$p_id" "$p_url" "$p_head" "$SL_PR_MERGE_COMMIT" "$p_authority" reconciled
+      record_landed "$p_id" "$p_url" "$p_head" "$SL_PR_MERGE_COMMIT" "$p_authority" reconciled \
+        || stop_unrecorded "$p_url" "$p_head" "$SL_PR_MERGE_COMMIT"
       fm_self_land_pending_clear "$SL_REPO_DIR"
       note "reconciled $p_url as landed at head $p_head; no second merge was sent"
-      if [ "$p_url" = "$URL" ]; then
+      if [ "$p_number" = "$PR_NUMBER" ]; then
         if [ "$p_head" = "$HEAD" ]; then
           printf 'self-land: landed %s head=%s merge=%s (reconciled)\n' "$URL" "$HEAD" "${SL_PR_MERGE_COMMIT:--}"
           exit 0
@@ -484,34 +659,90 @@ settle_pending() {
     note "dropped the pending record for $p_url: it merged at head $SL_PR_HEAD, not the recorded $p_head"
     return 0
   fi
+  if [ "$SL_PR_QUEUED" = true ]; then
+    if [ "$p_state" != queued ]; then
+      fm_self_land_pending_change "$SL_REPO_DIR" "$p_run" "$p_state" queued \
+        || refuse pending "could not mark $SL_REPO_DIR/pending as queued"
+    fi
+    refuse in-flight "the merge for $p_url waits in the forge's merge queue; nothing else lands in $PR_HOST/$PR_PATH until it merges or leaves the queue"
+  fi
+  if [ "$p_state" = queued ]; then
+    # It left the queue unmerged in this read. The forge may still be closing
+    # the merge, so the clock of the unmerged case starts now.
+    fm_self_land_pending_change "$SL_REPO_DIR" "$p_run" queued sent \
+      || refuse pending "could not update $SL_REPO_DIR/pending"
+    refuse in-flight "the merge for $p_url left the forge's merge queue and is not merged yet; retry after ${SL_GRACE}s"
+  fi
   now=$(date +%s)
   age=$((now - p_epoch))
   if [ "$age" -lt "$SL_GRACE" ]; then
     refuse in-flight "a merge for $p_url was sent ${age}s ago and has no outcome yet; retry after ${SL_GRACE}s"
   fi
   fm_self_land_pending_clear "$SL_REPO_DIR"
-  note "dropped the pending record for $p_url: it is still unmerged after ${age}s"
+  note "dropped the pending record for $p_url: the forge did not accept the merge sent ${age}s ago"
 }
+
+# Build the private `gh` that bin/fm-pr-merge.sh finds first on its PATH. It
+# runs this script's forge gate in front of the merge command and passes every
+# other call to the real gh unchanged. The directory lives for one run.
+prepare_forge_gate() {
+  local real gate_cmd='' part
+  real=$(command -v gh) || return 1
+  case "$real" in /*) ;; *) return 1 ;; esac
+  # The directory goes on a PATH, where a colon would split it.
+  case "$SL_REPO_DIR" in *:*) return 1 ;; esac
+  SL_GATE_DIR=$(umask 077 && mktemp -d "$SL_REPO_DIR/.gate.XXXXXX") || return 1
+  for part in "$SCRIPT_DIR/fm-self-land.sh" __forge-gate "$ID" "$URL" "$HEAD" "$SL_RUN" \
+    "$SL_SCAN_BASE" "$SL_SCAN_BASE_SHA" "$SL_SCAN_FILES" "$real"; do
+    gate_cmd="$gate_cmd $(printf '%q' "$part")"
+  done
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf '# Written by bin/fm-self-land.sh for one landing run.\n'
+    # shellcheck disable=SC2016 # The private gh expands these when it runs.
+    printf 'if [ "${1-}" = pr ] && [ "${2-}" = merge ]; then\n'
+    printf '  FM_HOME=%q FM_STATE_OVERRIDE=%q%s || { : > %q; exit 1; }\n' \
+      "$FM_HOME" "$STATE" "$gate_cmd" "$SL_GATE_DIR/refused"
+    printf 'fi\n'
+    # shellcheck disable=SC2016 # The private gh expands this when it runs.
+    printf 'exec %q "$@"\n' "$real"
+  } > "$SL_GATE_DIR/gh" || return 1
+  chmod 0700 "$SL_GATE_DIR/gh"
+}
+
+SL_REPO_DIR=$(fm_self_land_repo_dir "$STATE" "$PROVIDER" "$PR_HOST" "$PR_PATH") \
+  || refuse config "could not name the record directory for $PR_HOST/$PR_PATH"
+# The run addresses the host the URL names, whatever the caller exported.
+GH_HOST=$PR_HOST
+export GH_HOST
+
+# --- The forge gate: the last checks, in front of the merge command ----------
+
+if [ "$SL_MODE" = gate ]; then
+  case "$SL_GH" in /*) ;; *) invalid "the forge gate needs the path of the real gh" ;; esac
+  if ! fm_pr_head_valid "$SL_SCAN_BASE_SHA" || ! sl_branch_name_valid "$SL_SCAN_BASE"; then
+    invalid "the forge gate needs the base its landing checked"
+  fi
+  case "$SL_SCAN_FILES" in '' | *[!0-9]*) invalid "the forge gate needs the file count its landing checked" ;; esac
+  require_switches_on
+  require_allowlisted
+  require_checked_pull
+  # Last, so the record says sent only when the merge command follows.
+  fm_self_land_pending_change "$SL_REPO_DIR" "$SL_RUN" armed sent \
+    || refuse pending "the pending record of this run is gone or changed, so its merge is not sent"
+  exit 0
+fi
 
 # --- Gates that need no forge and no lock ------------------------------------
 
 require_switches_on
-[ "$PROVIDER" = github ] \
-  || refuse not-allowlisted "self-landing supports GitHub pull requests only"
-load_grant
-fm_self_land_repo_allowed "$PR_HOST" "$PR_PATH" \
-  || refuse not-allowlisted "config/self-land has no allow line for $PR_HOST/$PR_PATH"
+require_allowlisted
 [ -f "$META" ] || refuse task "task $ID has no record in this home"
 if ! command -v gh >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
   refuse forge-read "self-landing needs gh and jq"
 fi
-fm_pr_github_host_export "$PR_HOST"
-
-SL_REPO_DIR=$(fm_self_land_repo_dir "$STATE" "$PROVIDER" "$PR_HOST" "$PR_PATH") \
-  || refuse config "could not name the record directory for $PR_HOST/$PR_PATH"
 (umask 077 && mkdir -p -- "$SL_REPO_DIR") \
   || refuse config "could not create $SL_REPO_DIR"
-require_switches_on
 
 # --- One self-landing run per repository -------------------------------------
 
@@ -535,28 +766,73 @@ AUTHORITY=$FM_MERGE_AUTHORITY
 # --- Gates read from the forge -----------------------------------------------
 
 read_pull "$PR_NUMBER" || refuse forge-read "could not read $URL"
-if [ "$SL_PR_MERGED" = true ] || [ "$SL_PR_STATE" != open ]; then
+if [ "$SL_PR_MERGED" = true ] || [ "$SL_PR_STATE" != OPEN ]; then
   refuse forge-read "$URL is not open (state=$SL_PR_STATE, merged=$SL_PR_MERGED); nothing to land"
 fi
 [ "$SL_PR_HEAD" = "$HEAD" ] \
   || refuse forge-read "$URL is at head $SL_PR_HEAD, not the approved head $HEAD"
-FILES_BEFORE=$SL_PR_FILES
+SL_SCAN_BASE=$SL_PR_BASE
+SL_SCAN_BASE_SHA=$SL_PR_BASE_SHA
+SL_SCAN_FILES=$SL_PR_FILES
+SL_DEFAULT_BRANCH=$SL_PR_DEFAULT
 require_unprotected_diff
-read_pull "$PR_NUMBER" || refuse forge-read "could not read $URL again after its file list"
-if [ "$SL_PR_HEAD" != "$HEAD" ] || [ "$SL_PR_FILES" != "$FILES_BEFORE" ] || [ "$SL_PR_STATE" != open ]; then
-  refuse forge-read "$URL changed while its file list was read; run again at the head the review approved"
-fi
-require_green_base
+require_green_branch "$SL_SCAN_BASE" "base branch"
+[ "$SL_DEFAULT_BRANCH" = "$SL_SCAN_BASE" ] || require_green_branch "$SL_DEFAULT_BRANCH" "default branch"
+require_checked_pull
 require_switches_on
 
 # --- The merge, bracketed by the pending record ------------------------------
 
-fm_self_land_pending_write "$SL_REPO_DIR" "$ID" "$URL" "$HEAD" "$AUTHORITY" \
+SL_RUN="$$.$(date +%s).$RANDOM"
+fm_self_land_pending_write "$SL_REPO_DIR" "$ID" "$URL" "$HEAD" "$AUTHORITY" "$SL_RUN" \
   || refuse pending "could not write the pending record; no merge was sent"
+if ! prepare_forge_gate; then
+  fm_self_land_pending_clear "$SL_REPO_DIR"
+  refuse pending "could not prepare the forge gate; no merge was sent"
+fi
 
 merge_rc=0
-FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+PATH="$SL_GATE_DIR:$PATH" FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
   "$SCRIPT_DIR/fm-pr-merge.sh" "$ID" "$URL" --expected-head "$HEAD" || merge_rc=$?
+gate_refused=false
+[ ! -e "$SL_GATE_DIR/refused" ] || gate_refused=true
+remove_gate
+
+# The state of this run's record says whether a merge command was sent.
+sent_state=
+if fm_self_land_pending_read "$SL_REPO_DIR" && [ "$FM_SELF_LAND_PENDING_RUN" = "$SL_RUN" ]; then
+  sent_state=$FM_SELF_LAND_PENDING_STATE
+fi
+if [ "$sent_state" = armed ] && [ "$merge_rc" -eq 0 ]; then
+  # The merge gate reports an accepted merge that did not pass the forge gate.
+  # That must not happen. The record is kept as a sent merge, so the outcome
+  # below is still settled, and the breaker stops every later landing.
+  fm_self_land_pending_change "$SL_REPO_DIR" "$SL_RUN" armed sent || true
+  sent_state=sent
+  trip_breaker "$SL_SCAN_BASE" "$HEAD" "a merge of $URL was accepted without the check in front of the merge command" \
+    || printf 'actionable: could not write the breaker record at %s\n' "$SL_REPO_DIR/breaker" >&2
+  printf 'actionable: bin/fm-pr-merge.sh reported an accepted merge of %s that did not pass the check in front of the merge command; the circuit breaker is tripped, and the merge needs a review by hand\n' \
+    "$URL" >&2
+fi
+case "$sent_state" in
+  armed)
+    fm_self_land_pending_clear "$SL_REPO_DIR"
+    if [ "$gate_refused" = true ]; then
+      note "the forge gate stopped the merge command for $URL; no merge was sent"
+    else
+      note "bin/fm-pr-merge.sh refused $URL (exit $merge_rc); no merge was sent"
+    fi
+    [ "$merge_rc" -ne 0 ] || merge_rc=1
+    exit "$merge_rc"
+    ;;
+  sent) ;;
+  *)
+    printf 'self-land: outcome unknown: the pending record of this run is gone or changed (merge exit %s); confirm %s by hand\n' \
+      "$merge_rc" "$URL" >&2
+    [ "$merge_rc" -ne 0 ] || merge_rc=1
+    exit "$merge_rc"
+    ;;
+esac
 
 if ! read_pull "$PR_NUMBER"; then
   printf 'self-land: outcome unknown: could not read %s after the merge attempt (merge exit %s); the pending record is kept, and running the same command again settles it without a second merge\n' \
@@ -566,16 +842,25 @@ if ! read_pull "$PR_NUMBER"; then
 fi
 
 if [ "$SL_PR_MERGED" = true ] && [ "$SL_PR_HEAD" = "$HEAD" ]; then
-  if [ "$merge_rc" -eq 0 ]; then
-    record_landed "$ID" "$URL" "$HEAD" "$SL_PR_MERGE_COMMIT" "$AUTHORITY" landed
-    fm_self_land_pending_clear "$SL_REPO_DIR"
-    printf 'self-land: landed %s head=%s merge=%s\n' "$URL" "$HEAD" "${SL_PR_MERGE_COMMIT:--}"
-  else
-    record_landed "$ID" "$URL" "$HEAD" "$SL_PR_MERGE_COMMIT" "$AUTHORITY" reconciled
-    fm_self_land_pending_clear "$SL_REPO_DIR"
-    note "the merge command failed (exit $merge_rc) but $URL reads back merged at head $HEAD; no second merge was sent"
-    printf 'self-land: landed %s head=%s merge=%s (reconciled)\n' "$URL" "$HEAD" "${SL_PR_MERGE_COMMIT:--}"
+  kind=landed
+  suffix=
+  if [ "$merge_rc" -ne 0 ]; then
+    kind=reconciled
+    suffix=' (reconciled)'
   fi
+  record_landed "$ID" "$URL" "$HEAD" "$SL_PR_MERGE_COMMIT" "$AUTHORITY" "$kind" \
+    || stop_unrecorded "$URL" "$HEAD" "$SL_PR_MERGE_COMMIT"
+  fm_self_land_pending_clear "$SL_REPO_DIR"
+  [ "$merge_rc" -eq 0 ] \
+    || note "the merge command failed (exit $merge_rc) but $URL reads back merged at head $HEAD; no second merge was sent"
+  if [ "$SL_PR_BASE" != "$SL_SCAN_BASE" ]; then
+    trip_breaker "$SL_PR_BASE" "${SL_PR_MERGE_COMMIT:--}" \
+      "merged into $SL_PR_BASE, but its diff was checked against $SL_SCAN_BASE" \
+      || printf 'actionable: could not write the breaker record at %s\n' "$SL_REPO_DIR/breaker" >&2
+    printf 'actionable: %s merged into %s, but its diff was checked against %s; the base changed between the last read and the merge, the circuit breaker is tripped, and the merge needs a review by hand\n' \
+      "$URL" "$SL_PR_BASE" "$SL_SCAN_BASE" >&2
+  fi
+  printf 'self-land: landed %s head=%s merge=%s%s\n' "$URL" "$HEAD" "${SL_PR_MERGE_COMMIT:--}" "$suffix"
   exit 0
 fi
 
@@ -584,12 +869,21 @@ if [ "$SL_PR_MERGED" = true ]; then
   refuse forge-read "$URL merged at head $SL_PR_HEAD, not the approved head $HEAD; this run did not land it"
 fi
 
-if [ "$merge_rc" -eq 0 ]; then
-  printf 'self-land: queued %s head=%s; the forge has not merged it yet, and the pending record is kept until it does\n' \
+if [ "$SL_PR_QUEUED" = true ]; then
+  if ! fm_self_land_pending_change "$SL_REPO_DIR" "$SL_RUN" sent queued; then
+    printf 'actionable: could not mark %s as queued; a later run marks it\n' "$SL_REPO_DIR/pending" >&2
+  fi
+  printf 'self-land: queued %s head=%s; it waits in the forge'"'"'s merge queue, and the pending record is kept until it merges or leaves the queue\n' \
     "$URL" "$HEAD"
   exit 0
 fi
 
-fm_self_land_pending_clear "$SL_REPO_DIR"
-note "bin/fm-pr-merge.sh refused $URL (exit $merge_rc); nothing was merged"
+# A merge command was sent, and the pull request reads back unmerged and not
+# queued. The forge may still apply it, so the pending record stays.
+if [ "$merge_rc" -eq 0 ]; then
+  printf 'self-land: outcome unknown: the merge command succeeded, but %s reads back unmerged and not queued; the pending record is kept, and running the same command again settles it\n' \
+    "$URL" >&2
+  exit 1
+fi
+note "the merge command for $URL failed (exit $merge_rc) and it reads back unmerged; the pending record is kept for ${SL_GRACE}s in case the forge still applies the merge, and no other self-landing starts in $PR_HOST/$PR_PATH until then"
 exit "$merge_rc"

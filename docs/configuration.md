@@ -1187,7 +1187,8 @@ The paths a self-landed diff must not touch are fixed in the script: the workflo
 No setting adds to or removes from that list.
 Create `state/.self-land-off` to stop every self-landing in this home, and remove it to resume.
 
-`bin/fm-self-land.sh` owns every refusal, the records under `state/self-land/`, the circuit breaker and how to reset it, and the rule that settles a merge whose forge response was lost.
+`bin/fm-self-land.sh` owns every refusal, its exit statuses, the checks it repeats in front of the merge command, the records under `state/self-land/`, the circuit breaker and how to reset it, and the rule that settles a merge whose forge response was lost or that waits in the forge's merge queue.
+No setting changes how long that script waits for a merge it sent.
 The `ship-landing` skill owns when a lane owner uses it.
 The file is a home-local setting and is not inherited by secondmate homes.
 
@@ -3896,7 +3897,6 @@ FM_SEND_RETRIES=3       # fm-send typed-plane Enter-retry attempts after typing 
 FM_SEND_SLEEP=0.4       # seconds between fm-send typed-plane submit checks
 FM_SEND_SETTLE=1        # seconds fm-send waits after a successful typed-plane submit; 0 disables
 FM_PENDING_REPLY_GRACE_SECS=120   # seconds after the request turn completes without a correlated parent report before its one recovery repost is eligible, and after the recovery turn completes before the missed-report escalation is eligible; never counted from delivery
-FM_SELF_LAND_PENDING_GRACE=120   # seconds (0 to 3600) an unmerged state/self-land/.../pending record is treated as in flight before a later bin/fm-self-land.sh run drops it; out-of-range or invalid values fall back to 120
 # sub-supervisor (bin/fm-supervise-daemon.sh); presence-gated via /afk
 FM_SUPERVISOR_BACKEND=             # optional supervisor endpoint backend override; see "Away-mode supervisor backend" for supported backends and detection
 FM_SUPERVISOR_TARGET=              # optional supervisor endpoint target override; tmux uses the exact forms owned by fm_backend_target_exists in bin/fm-backend.sh, herdr uses <session>:<pane-id>, t3code uses the thread id, otherwise auto-detected
