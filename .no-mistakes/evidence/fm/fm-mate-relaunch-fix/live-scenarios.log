@@ -1,0 +1,30 @@
+=== S1: second mate fresh-start firing, then Stop is blocked until a durable relaunch request exists
+firing instruction (excerpt): This is a second mate, so never launch your own successor: run bin/fm-handoff-relaunch.sh request <handoff file>, which asks your parent once, on the parent channel, to relaunch you from that document and keeps the request open there until the relaunch is done. A relaunch request written as ordinary status text is not that record. Then end this turn and wait. Do not run /compact instead. This instruction fires once per context cycle.
+-- incident shape: mate asks in ordinary status prose
+parent open relaunch request after prose: ''
+Stop rc=2 (expect 2) msg: Firstmate restart gate: this second mate fired a planned fresh start, but no relaunch request is recorded for it. Run bin/fm-handoff-relaunch.sh request <handoff document path>; it asks the parent once, on the parent channel, to relaunch this second mate. Then end this turn and wait.
+-- mate runs the request command
+relaunch requested: the parent is asked to relaunch second mate sm-lab once from /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.8X394L/mate/data/handoff.md; end this turn and wait
+request rc=0
+repeat request rc=0
+parent status file:
+working [at=1]: handoff written; please relaunch me once
+blocked [key=handoff-relaunch] [at=1795041185]: second mate sm-lab wrote its handoff for a planned fresh start and waits to be relaunched once; handoff=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.8X394L/mate/data/handoff.md sha256=c56c3edf5061e16a16be45b07b2db175552313653e0148703b4b284aad0d495d
+parent open relaunch request: handoff-relaunch	blocked	second mate sm-lab wrote its handoff for a planned fresh start and waits to be relaunched once; handoff=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.8X394L/mate/data/handoff.md sha256=c56c3edf5061e16a16be45b07b2db175552313653e0148703b4b284aad0d495d
+Stop rc=0 (expect 0)
+=== S2: unrelated later report leaves request open; lifecycle close resolves it once
+after done line, open: 'handoff-relaunch	blocked	second mate sm-'
+close rc=0
+second close rc=0
+open after close: ''; resolved lines: 1
+=== S3: another lifecycle action holds the mate's control lock -> fresh --secondmate spawn and remote relaunch refuse
+held
+holder pid=53575 lock pid=53575
+error: another lifecycle action is already running for task sm-lab
+remote relaunch rc=5 (expect 5)
+parent record untouched: yes
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.8X394L/parent
+error: another lifecycle action is already running for task sm-lab
+fresh secondmate spawn rc=1 (expect refusal)
+records for sm-lab after refusal: 0
+=== done
