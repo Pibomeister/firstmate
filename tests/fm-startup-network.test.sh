@@ -942,7 +942,7 @@ EOF
 }
 
 test_outer_timeout_keeps_discovered_branch_names() {
-  local rec home root log project report
+  local rec home root log project report forge_pid
   rec=$(new_world outer-unpublished-timeout)
   IFS='|' read -r home root log <<EOF
 $rec
@@ -963,20 +963,31 @@ EOF
   printf 'project=%s\nbranch=fm/task\nkind=ship\nmode=no-mistakes\n' "$project" > "$home/state/task.meta"
   cat > "$root/bin/gh-axi" <<'SH'
 #!/usr/bin/env bash
-printf 'entered\n' > "$FM_OUTER_PROOF_MARK"
-sleep 60
+printf '%s\n' "$$" > "$FM_OUTER_PROOF_MARK"
+exec sleep 60
 SH
   chmod +x "$root/bin/gh-axi"
   printf '%s\n' $$ > "$home/state/.lock"
+  # A per-scan bound longer than the stage budget must still end inside it:
+  # nothing the scan started may outlive the stage that reports it.
   FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=2 \
     FM_OUTER_PROOF_MARK="$home/proof-entered" FM_STARTUP_NETWORK_TIMEOUT=12 FM_UNPUSHED_TIMEOUT_SECS=60 \
     run_stage "$home" "$root" run --locked 1 --lock-pid $$
   [ -f "$home/proof-entered" ] || fail 'the scan never reached the delayed forge read'
+  forge_pid=$(cat "$home/proof-entered")
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    kill -0 "$forge_pid" 2>/dev/null || break
+    sleep 0.3
+  done
+  if kill -0 "$forge_pid" 2>/dev/null; then
+    kill "$forge_pid" 2>/dev/null || true
+    fail 'the scan kept running after the startup stage that bounds it had finished'
+  fi
   report=$(run_stage "$home" "$root" report)
-  assert_contains "$report" 'branch=fm/task' 'the outer deadline lost a discovered task branch'
-  assert_contains "$report" 'branch=fm/another' 'the outer deadline lost the later discovered branch'
-  assert_contains "$report" 'hit the 12s bound' 'the outer deadline was not exercised'
-  wait_for_startup_network_wake "$home" || fail 'the outer deadline did not deliver its branch evidence durably'
+  assert_contains "$report" 'branch=fm/task' 'the stage deadline lost a discovered task branch'
+  assert_contains "$report" 'branch=fm/another' 'the stage deadline lost the later discovered branch'
+  assert_contains "$report" 'incomplete scan' 'the cut-short scan was not reported as incomplete'
+  wait_for_startup_network_wake "$home" || fail 'the stage deadline did not deliver its branch evidence durably'
   # Discovery also precedes refresh itself: a refresh that never returns must
   # not prevent already local branch identities from reaching the report.
   rm "$home/proof-entered"
@@ -988,7 +999,7 @@ SH
   assert_contains "$report" 'branch=fm/task' 'a stalled refresh hid the task inventory'
   assert_contains "$report" 'branch=fm/another' 'a stalled refresh hid the other branch inventory'
   assert_contains "$report" 'hit the 8s bound' 'the refresh deadline was not exercised'
-  pass 'fm-startup-network: an outer deadline retains discovered branch identities'
+  pass 'fm-startup-network: a stage deadline retains discovered branch identities and leaves no scan running'
 }
 
 test_outer_timeout_keeps_discovered_branch_names
