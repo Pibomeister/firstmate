@@ -73,6 +73,9 @@
 #       a row below the last prompt row. Above it, the phrase matches only on a
 #       row that opens by stating the usage limit (fm_wd_usage_limit_text), so
 #       conversation output that quotes the phrase is not a match.
+#   fm_wd_handoff_in_progress <claim-file> <lock-pid> <now> <max-secs>
+#       Returns 0 for a bounded pending handoff claim for that lock owner;
+#       bin/fm-handoff-lib.sh owns the claim format.
 #   fm_wd_dialog_options <screen>
 #       Prints `<number>\t<text>` for each numbered option of the dialog.
 #   fm_wd_dialog_text <screen>
@@ -141,6 +144,15 @@
 #       the away daemon named in its daemon-acks file
 #       (bin/fm-supervise-daemon.sh). Prints nothing and returns 1 when there is
 #       none.
+#   fm_wd_user_bin_path <path> <home>
+#       Prints <path> with <home>/.local/bin ahead of /opt/homebrew/bin and
+#       /usr/local/bin, where a self-updated tool such as `herdr update` installs,
+#       so a launchd or systemd PATH resolves the same binaries as an interactive
+#       Firstmate shell. It is inserted just before the first of those two, or
+#       appended when neither is present; a later copy is dropped, and a
+#       directory already ahead of them keeps its place. Empty entries, which
+#       name the current directory, keep their places too. An empty home or a
+#       home with no such directory prints <path> unchanged.
 
 FM_WD_REFUSED_TEXT_RE='(^|[^be])merg|[rd]emerg|deploy|releas|publish|(^|[^a-z])force.?push|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
 FM_WD_RESERVED_RE="$FM_WD_REFUSED_TEXT_RE"'|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|delet|destroy|wipe)'
@@ -151,6 +163,35 @@ FM_WD_TIMER_BASH_RE='(^|[^a-z])(sleep|fm-watch|fm-wake|wake|timer|until)([^a-z]|
 FM_WD_USAGE_LIMIT_RE='^[^a-z]*(you( have|.{1,3}ve)? hit your ([a-z0-9-]+ ){0,2}limit|([a-z0-9-]+ )?(usage|rate)[- ]?limit (hit|reached|reset)|(you( are|.{1,3}re) )?out of credits|waiting on a rate[- ]limit)'
 FM_WD_MODEL_SWITCH_RE='^[^a-z]*(switch (to )?((a|another) )?model|switch to another account)'
 FM_WD_QUOTA_STATUS_RE='quota (floor|exhausted|is exhausted|at 0|limit|wall)|(hit|reached|at) (the |a |its )?quota|rate.?limited|rate limit (hit|reached)|usage limit (hit|reached)|out of (credits|quota)|credits (are )?(exhausted|at 0|empty)'
+
+fm_wd_user_bin_path() {  # <path> <home>
+  local rest=$1 user_bin dir out='' sep='' placed=0 more=1
+  user_bin=${2:+$2/.local/bin}
+  if [ -z "$user_bin" ] || [ ! -d "$user_bin" ]; then
+    printf '%s\n' "$1"
+    return 0
+  fi
+  if [ -z "$rest" ]; then
+    printf ':%s\n' "$user_bin"
+    return 0
+  fi
+  # Split by hand: read -a would drop a trailing empty entry.
+  while [ "$more" = 1 ]; do
+    case "$rest" in
+      *:*) dir=${rest%%:*}; rest=${rest#*:} ;;
+      *) dir=$rest; more=0 ;;
+    esac
+    case "$dir" in
+      "$user_bin") [ "$placed" = 0 ] || continue; placed=1 ;;
+      /opt/homebrew/bin|/usr/local/bin)
+        [ "$placed" = 1 ] || { out="$out$sep$user_bin"; sep=:; placed=1; } ;;
+    esac
+    out="$out$sep$dir"
+    sep=:
+  done
+  [ "$placed" = 1 ] || out="$out$sep$user_bin"
+  printf '%s\n' "$out"
+}
 
 fm_wd_conf_get() {  # <file> <key> <default>
   local file=$1 key=$2 def=${3-} v
@@ -297,6 +338,13 @@ fm_wd_usage_limit_autowait() {  # <screen>
       }
     }')
   return 1
+}
+
+fm_wd_handoff_in_progress() {  # <claim-file> <lock-pid> <now> <max-secs>
+  local claim=$1 pid=$2 now=$3 max=$4 deadline
+  [ -n "$pid" ] && [ -f "$claim" ] && [ ! -L "$claim" ] || return 1
+  deadline=$(jq -er --arg p "$pid" 'select(.version == 1 and (.predecessor_pid | tostring) == $p) | .deadline | numbers | floor' "$claim" 2>/dev/null) || return 1
+  [ "$deadline" -gt "$now" ] && [ $((deadline - now)) -le "$max" ]
 }
 
 fm_wd_quota_status_line() {  # <line>

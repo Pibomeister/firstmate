@@ -285,6 +285,11 @@ test_captain_relevance_and_pause_are_unchanged_without_a_token() {
 
   status_is_terminal_verb 'done: shipped' || fail "terminal verb regressed"
   status_is_terminal_verb 'working: rebased onto merged #76' && fail "nonterminal terminal-verb regressed"
+  status_is_done_verb 'done: shipped' || fail "done: is not a completion"
+  status_is_done_verb 'done [at=1]: shipped' || fail "stamped done: is not a completion"
+  status_is_done_verb 'blocked: wait for my review' && fail "blocked: became a completion"
+  status_is_done_verb 'needs-decision: pick a design' && fail "needs-decision: became a completion"
+  status_is_done_verb 'failed: tests red' && fail "failed: became a completion"
   status_is_paused_or_captain_held 'captain-held [key=r]: tracked' || fail "captain-held regressed"
   status_is_paused_or_captain_held 'resolved [key=r]: answered' && fail "resolved regressed"
 

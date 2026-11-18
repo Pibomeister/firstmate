@@ -325,3 +325,5 @@ The exclusion binds the pass as a writer: proposing an offload and letting the m
 Every Firstmate-home skill that migration produces is user-owned and local under the destinations hard rule, while an approved project-level destination is produced and shipped through that project's registered delivery path, never by stow.
 Changing firstmate's tracked `.agents/skills/` or public `skills/` remains a deliberately scoped Firstmate repository task through its pipeline, gated by this home's firstmate-repository publication authority, never a stow product.
 Outside a captain-approved offload, generalizable knowledge still routes to shared tracked material through its pipeline where that authority exists and to `data/` otherwise, and fleet-local knowledge to `data/` or to the declared memory tier that owns its class.
+
+When `config/goal-integrity` is present, stow never edits `state/goals/<task-id>.md`; only the goal owner may change that file (`docs/configuration.md`, Goal line enforcement).

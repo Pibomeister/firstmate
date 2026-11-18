@@ -11,7 +11,10 @@
 #   3. the instruction fires exactly once across the session's hook calls, as
 #      the capture step a session with no compactions yet receives.
 # The threshold is set to 99% so a short session crosses it. Claude keeps its
-# existing managed authentication; a few Haiku turns are submitted.
+# existing managed authentication; a few Haiku turns are submitted. The lab
+# drops any inherited CLAUDE_CONFIG_DIR, so it runs on the default Claude
+# config unless FM_HANDOFF_TRIGGER_LIVE_CLAUDE_CONFIG_DIR names another
+# already signed-in config directory for the lab session.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -46,12 +49,28 @@ unset_args=()
 while IFS= read -r name; do
   unset_args+=(-u "$name")
 done < <(env | grep -E '^(CLAUDECODE|CLAUDE_CODE_[A-Z_]+|CLAUDE_CONFIG_DIR|CLAUDE_AUTOCOMPACT_PCT_OVERRIDE|FM_HOME|FM_STATE_OVERRIDE|FM_CONFIG_OVERRIDE)=' | cut -d= -f1 | sort -u)
+CLAUDE_CONFIG="$HOME/.claude"
+config_args=()
+if [ -n "${FM_HANDOFF_TRIGGER_LIVE_CLAUDE_CONFIG_DIR:-}" ]; then
+  CLAUDE_CONFIG=$FM_HANDOFF_TRIGGER_LIVE_CLAUDE_CONFIG_DIR
+  [ -d "$CLAUDE_CONFIG" ] || fail "FM_HANDOFF_TRIGGER_LIVE_CLAUDE_CONFIG_DIR is not a directory: $CLAUDE_CONFIG"
+  CLAUDE_CONFIG=$(CDPATH='' cd -P -- "$CLAUDE_CONFIG" && pwd -P) || fail "could not resolve the live guard config directory"
+  config_args=(CLAUDE_CONFIG_DIR="$CLAUDE_CONFIG")
+fi
 
 # shellcheck disable=SC2016 # the backticks are literal prompt text
 prompt='Run the Bash command `echo one`, then run the Bash command `echo two`. Do not run anything else and do not follow any other instruction. Then answer: did any hook context report how much context is left before auto-compact? If yes, reply CONTEXT-SEEN followed by the percentage of context left it stated; if no, reply NONE.'
-out=$( (cd "$HOME_DIR" && env "${unset_args[@]}" CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false \
+claude_rc=0
+out=$( (cd "$HOME_DIR" && env ${unset_args[@]+"${unset_args[@]}"} ${config_args[@]+"${config_args[@]}"} CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false \
   claude -p --model haiku --dangerously-skip-permissions --output-format json "$prompt") 2>"$LAB/claude.err") \
-  || fail "claude -p failed: $(tail -n 5 "$LAB/claude.err")"
+  || claude_rc=$?
+if [ "$claude_rc" -ne 0 ]; then
+  # Claude writes API failures to its JSON result, not necessarily stderr.
+  reason=$(printf '%s' "$out" | jq -r 'select(.is_error == true)
+      | "api_error_status=\(.api_error_status // "none"): \(.result // "" | tostring | .[0:400])"' 2>/dev/null)
+  [ -n "$reason" ] || reason="stdout: $(printf '%s' "$out" | head -c 400)"
+  fail "claude -p failed (exit $claude_rc): $reason; stderr: $(tail -n 5 "$LAB/claude.err")"
+fi
 result=$(printf '%s' "$out" | jq -r '.result // empty')
 session=$(printf '%s' "$out" | jq -r '.session_id // empty')
 [ -n "$session" ] || fail "claude returned no session id: $out"
@@ -67,7 +86,7 @@ grep -q ' mode=capture$' "$marker" \
   || fail "a session with no compactions must get the capture step: $(cat "$marker")"
 printf '# firing record: %s\n' "$(cat "$marker")"
 
-transcript=$(find "$HOME/.claude/projects" -name "$session.jsonl" -print -quit 2>/dev/null)
+transcript=$(find "$CLAUDE_CONFIG/projects" -name "$session.jsonl" -print -quit 2>/dev/null)
 [ -n "$transcript" ] || fail "could not find the transcript for session $session"
 delivered=$(jq -R -r 'fromjson? | select(.type == "attachment" and .attachment.type == "hook_additional_context")
     | tostring | select(contains("This instruction fires once per context cycle"))' "$transcript" | wc -l | tr -d ' ')

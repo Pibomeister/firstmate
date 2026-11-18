@@ -537,10 +537,15 @@ case "$PARKED_GATE_READ_TIMEOUT" in ''|*[!0-9]*|0) PARKED_GATE_READ_TIMEOUT=10 ;
 WATCH_LOCK_WAIT=${FM_WATCH_LOCK_WAIT:-}
 case "$WATCH_LOCK_WAIT" in ''|*[!0-9]*|0) WATCH_LOCK_WAIT=10 ;; esac
 # Bound for a helper script the poll loop runs synchronously (fleet ledger,
-# Herdr groups, process-event reconcile, inactive-outcome scan); each already
-# tolerates failure, so a helper stopped at the bound is skipped for the cycle.
+# stall ledger, Herdr groups, process-event reconcile, inactive-outcome scan);
+# each already tolerates failure, so a helper stopped at the bound is skipped
+# for the cycle.
 WATCH_HELPER_BUDGET=${FM_WATCH_HELPER_BUDGET:-}
 case "$WATCH_HELPER_BUDGET" in ''|*[!0-9]*|0) WATCH_HELPER_BUDGET=120 ;; esac
+HUNG_LADDER_SAMPLE_SECS=${FM_HUNG_LADDER_SAMPLE_SECS:-}
+case "$HUNG_LADDER_SAMPLE_SECS" in ''|*[!0-9]*|0) HUNG_LADDER_SAMPLE_SECS=60 ;; esac
+HUNG_LADDER_BUDGET=${FM_HUNG_LADDER_BUDGET:-}
+case "$HUNG_LADDER_BUDGET" in ''|*[!0-9]*|0) HUNG_LADDER_BUDGET=30 ;; esac
 # A busy pane is unconditional proof of liveness with no built-in duration bound,
 # so a hung foreground call can remain hidden even while its rendered busy
 # footer changes every poll. BUSY_TURN_MAX_SECS bounds how long any busy pane
@@ -3357,6 +3362,42 @@ STALE_WAIT_DECLARATION=
 
 CAPTAIN_CALL_IDENTITY=
 
+# The hung-worker ladder's observe pass (bin/fm-hung-ladder.sh owns every
+# rule). It runs inside this pass, never as its own loop: an absent
+# config/hung-ladder costs one file test, each task is sampled at most once
+# per FM_HUNG_LADDER_SAMPLE_SECS (an in-memory stamp, so the bound holds in
+# every mode, including off and refused), the helper is time-bounded, and its
+# result never changes what this pass does next. It is called before the
+# busy-turn bound can defer the pane, so a pane that renders busy is still
+# observed.
+hung_ladder_observe() {  # <task> <kind> <1 when the pane reads busy> <dialog> <pane-text>
+  local task=$1 kind=$2 stamp last now
+  [ -e "$CONFIG/hung-ladder" ] || return 0
+  [ -n "$task" ] || return 0
+  case "$kind" in ship|scout) ;; *) return 0 ;; esac
+  # Escape `_` first, then `-` and `.`, so every task slug gets its own stamp.
+  stamp=${task//_/_5f}; stamp=${stamp//-/_2d}; stamp=${stamp//./_2e}
+  stamp="HUNG_LADDER_AT_${stamp//[!A-Za-z0-9_]/_}"
+  last=${!stamp:-0}
+  now=$(date +%s)
+  [ $((now - last)) -ge "$HUNG_LADDER_SAMPLE_SECS" ] || return 0
+  printf -v "$stamp" '%s' "$now"
+  printf '%s\n' "$5" | fm_run_timed "$HUNG_LADDER_BUDGET" "$BASH" "$SCRIPT_DIR/fm-hung-ladder.sh" \
+    tick --task "$task" --kind "$kind" --busy "$3" --dialog "$4" >/dev/null 2>"$STATE/.hung-ladder.err" || true
+}
+
+# Ladder records of tasks that are gone are resolved and pruned once an hour
+# from the pass itself, so cleanup never depends on another worker being
+# observed.
+hung_ladder_prune() {
+  local now
+  [ -d "$STATE/hung-ladder" ] || return 0
+  now=$(date +%s)
+  [ $((now - ${HUNG_LADDER_PRUNED_AT:-0})) -ge 3600 ] || return 0
+  HUNG_LADDER_PRUNED_AT=$now
+  fm_run_timed "$HUNG_LADDER_BUDGET" "$BASH" "$SCRIPT_DIR/fm-hung-ladder.sh" prune >/dev/null 2>&1 || true
+}
+
 task_captain_call_open() {  # <task>
   local task=$1
   CAPTAIN_CALL_IDENTITY=
@@ -5060,6 +5101,36 @@ resurface_after_downtime() {
   wake "check: rearm-resurface"
 }
 
+# Stall ledger: at most one observe per minute. The stamp check skips the
+# helper on the polls in between. A ledger failure never stops supervision.
+stall_ledger_tick() {
+  local min stamp now age
+  min=${FM_STALL_LEDGER_MIN_SECS:-60}
+  case "$min" in
+    ''|*[!0-9]*) min=60 ;;
+  esac
+  stamp=$STATE/.stall-ledger-observed
+  if [ "$min" -gt 0 ] && [ -f "$stamp" ] && [ ! -L "$stamp" ]; then
+    now=$(fm_watch_now)
+    age=$(cat "$stamp" 2>/dev/null || true)
+    case "$now" in
+      ''|*[!0-9]*) ;;
+      *)
+        case "$age" in
+          ''|*[!0-9]*) ;;
+          *)
+            if [ "$now" -ge "$age" ] && [ $((now - age)) -lt "$min" ]; then
+              return 0
+            fi
+            ;;
+        esac
+        ;;
+    esac
+  fi
+  fm_run_timed "$WATCH_HELPER_BUDGET" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+    "$SCRIPT_DIR/fm-stall-ledger.sh" observe >/dev/null 2>&1 || true
+}
+
 while :; do
   if [ "${FM_WATCH_SECONDMATE_HOLD:-}" = 1 ]; then
     if fm_secondmate_watch_binding_valid; then
@@ -5132,6 +5203,7 @@ while :; do
   # Opt-in fleet activity ledger (docs/fleet-ledger.md): pick up newly appended
   # status lines before this cycle can exit on a wake. Off costs one file test.
   [ ! -e "$CONFIG/fleet-ledger" ] || fm_run_timed "$WATCH_HELPER_BUDGET" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-fleet-ledger.sh" capture || true
+  stall_ledger_tick || true
   # Opt-in Herdr project groups (docs/herdr-backend.md "Project groups"):
   # display-only tags and agents view, never a wake. Off costs one file test.
   [ ! -e "$CONFIG/herdr-project-groups" ] || fm_run_timed "$WATCH_HELPER_BUDGET" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-herdr-groups.sh" sync || true
@@ -5588,6 +5660,7 @@ EOF
     # content cannot suppress stale detection. Read once per window per poll and
     # reused below so a busy verdict is consistent within one cycle.
     if window_is_busy "$w" "$tail40"; then busy_now=0; else busy_now=1; fi
+    hung_ladder_observe "$task" "$kind" "$((1 - busy_now))" "$dialog" "$tail40"
     if [ "$busy_now" -ne 0 ] && dismiss_pane_feedback_dialog "$w" "$tail40"; then
       echo "$h" > "$hf"
       echo 1 > "$cf"
@@ -5847,6 +5920,7 @@ EOF
       fi
     fi
   done < <(recorded_windows)
+  hung_ladder_prune
   watch_record_progress_beat
   parked_gate_scan_end
 

@@ -125,6 +125,8 @@ FM_HANDOFF_TRIGGER_LIVE_E2E=1 bash tests/fm-handoff-trigger-live-e2e.test.sh
 ```
 
 It runs one headless Haiku session with the hook on PostToolUse and UserPromptSubmit, `autoCompactWindow` 120000, and `percent-left=99`, and makes two tool calls.
+The lab drops an inherited `CLAUDE_CONFIG_DIR` and uses the default config unless `FM_HANDOFF_TRIGGER_LIVE_CLAUDE_CONFIG_DIR` selects another already signed-in directory.
+If the command fails, the guard includes the API status and message from its JSON result in the diagnostic.
 Selected output from the successful guard:
 
 ```text
@@ -4152,6 +4154,30 @@ The M4 captain was also validated live on Orca on 2026-11-01, 14:58-15:00Z, on c
 The watchdog ran a real Orca restart, the new session's pickup was verified, that session re-armed the away daemon, and act mode was then restored to off.
 Act mode stays off on every other machine until rollout.
 A repeat live test is owed, because later fixes change the restart paths.
+
+### 2026-11-14 worker permission prompts
+
+Verified on 2026-11-14 on macOS (Darwin 25.6.0, arm64) with Claude Code 2.1.325 and tmux 3.6a.
+The behavior contract is owned by [the watchdog page](../watchdog.md#worker-permission-prompts).
+A real Claude Code session on a private tmux socket, started with `--permission-mode default`, raised a Bash tool-approval prompt for a `touch` command.
+Its rows are a `Do you want to proceed?` question under a rule, `❯ 1. Yes` as the only cursor row, a `No` option, and the footer `Esc to cancel · Tab to amend`.
+Pressing Escape cancelled the tool call without running it: the file was not created, and the pane showed `Interrupted · What should Claude do instead?` above an empty composer.
+The folder-trust picker in a new folder rendered with the cursor on `❯ No, exit`.
+The heredoc-with-backtick command that raised a prompt in the original incident raised none in bypass mode on this version.
+Sanitized copies of those three screens are the fixtures in `tests/fixtures/permission-prompt/`, and `tests/fm-permission-prompt.test.sh` classifies them and drives the watchdog route against tmux panes that react to Escape the same way.
+
+```sh
+bash bin/fm-test-run.sh tests/fm-permission-prompt.test.sh
+ok - real Claude 2.1.325 prompts: tool approval routes only on claude, trust relaunches, and the cancelled screen is clear
+ok - tool approval: one Escape, verified gone, then a durable rewrite instruction, one pass at a time per worker, and no key without a saved checksum
+ok - hard stops: credential, destructive, and spend prompts get no key and one keyed blocked line
+```
+
+The output above is an excerpt of the 2026-11-17 rerun after the scope was narrowed to exact known dialogs; the generic terminal and external-CLI prompt detectors moved to an observe-only follow-up under [issue #264](https://github.com/Pibomeister/firstmate/issues/264).
+
+`tests/fm-watchdog-live.test.sh` now also asserts that `bin/fm-permission-prompt.sh` names the real folder-trust picker a trust dialog, and that assertion passed against Claude Code 2.1.325.
+That same run failed its later check that the home's waiting permission dialog is reported as a gap, and an unmodified copy of the prior commit fails the same check: the guard's heartbeat no longer gives the watchdog a home terminal endpoint, so the home pane is not read.
+No Codex or Antigravity tool-approval prompt was captured, so those prompts are held rather than declined.
 
 ## Merge review reviewer tools
 

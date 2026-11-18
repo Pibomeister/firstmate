@@ -186,9 +186,16 @@ case "${1:-}" in
   display-message)
     [ "${FM_FAKE_TMUX_PANE_ALIVE:-1}" = "1" ] || exit 1
     _print=0
-    # Return cursor_y when the format asks for it (pane_input_pending).
+    # Return cursor_y when the format asks for it (pane_input_pending), and the
+    # pane's foreground command when FM_FAKE_TMUX_CURRENT_COMMAND sets one (an
+    # agent name reads alive, a shell reads dead to fm_backend_agent_state).
     for _a in "$@"; do
       case "$_a" in *cursor_y*) printf '%s\n' "${FM_FAKE_TMUX_CURSOR_Y:-0}"; exit 0 ;; esac
+      case "$_a" in
+        *pane_current_command*)
+          [ -z "${FM_FAKE_TMUX_CURRENT_COMMAND:-}" ] \
+            || { printf '%s\n' "$FM_FAKE_TMUX_CURRENT_COMMAND"; exit 0; } ;;
+      esac
       [ "$_a" = "-p" ] && _print=1
     done
     [ "$_print" = 1 ] && printf 'fakepane\n'

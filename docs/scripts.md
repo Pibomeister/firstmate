@@ -13,6 +13,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-operational-input.sh` | Construct and parse the canonical cross-language operational-input protocol |
 | `fm-bootstrap.sh`        | Detect toolchain and fleet problems, run the locked session-start sweeps, and install approved tools |
 | `fm-startup-network.sh`  | Run session start's network checks and inactive-outcome scan off its blocking path, retaining reports and durable findings |
+| `fm-unpushed-reconcile.sh` | Flag unpublished task branches with ledger, PR and blocker evidence during deferred startup recovery, skipping heads proven landed |
 | `fm-fleet-sync.sh`       | Refresh project clones with safe fast-forwards, self-heals, `STUCK:` reports, branch pruning, and bounded recovery from an orphaned `.git/packed-refs.lock` |
 | `fm-fleet-snapshot.sh`   | Print structured fleet snapshot JSON and refresh only its parent-side remote-ledger cache (schema `fm-fleet-snapshot.v1`) |
 | `fm-heartbeat.sh`        | Atomically publish the bounded self-watching ledger `state/heartbeat.json` (schema `fm-heartbeat.v1`); unread fields report unknown, including weekly model allowance when quota-axi cannot be read |
@@ -161,6 +162,8 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-escalate.sh`         | The escalation gate: append incident transitions to the ledger, send one escalation, delta or closure record per rules, and enqueue one incident wake per transition |
 | `fm-escalation-class-map.tsv` | The one table that gives each signal state its exception class, or routine |
 | `fm-notify-lib.sh`       | Configurable active-alert channels and the bounded sender `wedge_alarm_notify`, shared by the supervise daemon and the escalation gate |
+| `fm-stall-ledger-lib.sh` | Append-only stall ledger: one row per heartbeat sample, stall open, stall close, verified handoff, or human intervention, written under the ledger lock |
+| `fm-stall-ledger.sh`     | Record stall-ledger rows from supervision state, and score a window PASS or FAIL |
 | `fm-quiet-hours-lib.sh`  | Quiet-hours clock: whether a moment is inside the nightly or weekend quiet-hours window and when that window ends, in the config/escalation zone |
 | `fm-quiet-hours.sh`      | Print the quiet-hours reading for an epoch or for now |
 | `fm-path-lib.sh`         | Fork-free `dirname`/`basename` equivalents with no source-time side effects             |
@@ -184,11 +187,13 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-usage-warner.sh`     | Opt-in macOS threshold warner that notifies once when a configured Claude usage window crosses its percentage |
 | `fm-watchdog.sh`         | Opt-in per-machine assistant outside every session that detects stalled firstmates and second mates and nudges, settles, or restarts them within hard boundaries ([behavior](watchdog.md)) |
 | `fm-watchdog-lib.sh`     | Pure watchdog detectors for dialogs, timer loops, stall proof, guarded text, and the action ledger |
+| `fm-permission-prompt.sh` | Classify a worker permission prompt as held, hard stop, trust relaunch, or a declinable tool approval for the watchdog ([behavior](watchdog.md#worker-permission-prompts)) |
 | `fm-captain-nudge.sh`    | No-AI host-local typer that sends one fixed prompt when a configured captain is idle with open work ([behavior](captain-nudge.md), [formats](captain-nudge-spec.md)) |
 | `fm-captain-nudge-lib.sh` | Decision procedure, JSONL, `NUDGE v1` beacon line, and read-only open-work probes for the captain self-nudge |
 | `fm-relay-guard.sh`      | Single owner of a host's network-daemon-bound relays: restart relays that predate a daemon restart, are missing, or keep failing their required probe, with backoff and a cap; renders its launchd or systemd unit ([example config](examples/relay-guard)) |
 | `fm-host-health.sh`      | Read-only host probes (identity, directory service, GitHub auth/TLS, optional SSH, uptime/load) that append one `HOSTHEALTH v1` beacon line for an external watchdog; renders its LaunchAgent plist |
 | `fm-compact-point-lib.sh` | Compute a Claude session's percent left before auto-compact, shared by the handoff trigger and the context-burn recorder |
+| `fm-pstack-verify-hook.sh` | Inject four pstack verification principles; the script header owns the triggers and host emit schema |
 | `fm-handoff-trigger.sh` | Claude hook that tells a primary session once per context cycle, when context left before auto-compact reaches the threshold, to capture its open work before auto-compaction or, at the drift cap, to hand off to a fresh session, and enforces the captain-order and successor restart gates when that session stops |
 | `fm-handoff-launch.sh` | Launch a handing-off primary's successor in a fresh terminal on the home's Orca or tmux backend, optionally on Codex, agy, or another signed-in Claude account, after checking the successor's quota; wait for its verified acknowledgement and lock transfer, and record the completed successor for the restart gate |
 | `fm-supervisor-failover.sh` | Replace a primary or secondmate supervisor whose pool ran out with another signed-in Claude account, or a declared comparable model on another verified runtime, that still has quota headroom, and report the replacement and reason |

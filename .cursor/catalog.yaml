@@ -3,8 +3,8 @@
 # `ak validate` fails on an entry with no directory and on a directory with no entry.
 # Nothing is installable, packageable or referenceable unless it is declared here or in a
 # catalog.d/<name>.yaml fragment. A fragment only adds entries: it never overrides one declared
-# here and never carries package:, and this repository carries none. It is how a fork declares
-# its own entries without editing this file (docs/decisions/0010-catalog-fragments.md).
+# here and never carries package:. It is how a fork declares its own entries without editing
+# this file (docs/decisions/0010-catalog-fragments.md).
 #
 # Field notes
 #   invocation        U = user-invoked, human-started save the standing exceptions (held by the
@@ -43,7 +43,7 @@ package:
   license: MIT
 
 # ---------------------------------------------------------------------------
-# Skills — 36 public entrypoints
+# Skills — 40 public entrypoints
 # ---------------------------------------------------------------------------
 skills:
 
