@@ -1932,6 +1932,41 @@ test_a_moved_merge_base_never_replaces_a_review_that_holds_a_finding() {
   assert_no_grep "merge-review: approved" "$CASE/stdout" "stale-inherited: check approved a head whose open finding a rerun settled"
   findings_at_head || fail "stale-inherited: findings failed"
   assert_match "^F1	open	" "$CASE/stdout" "stale-inherited: a rerun settled the open finding"
+
+  # A review that gives an earlier finding a class on a resolved line is held
+  # the same way, so the class stays with the finding.
+  make_case stale-class "${TWO_SEATS[@]}"
+  set_review claude \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | A crafted name reaches the shell.' \
+    'VERDICT: BLOCK @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "stale-class: round 1"
+  next_head 'second head'
+  set_review claude \
+    'FINDING F1 | RESOLVED | security | feature.txt:1 | The name is now quoted, and it was a shell injection.' \
+    'VERDICT: APPROVE @HEAD@'
+  set_review agy \
+    'FINDING F1 | BLOCKING | none | feature.txt:1 | A crafted name still reaches the shell.' \
+    'VERDICT: BLOCK @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "stale-class: round 2"
+  assert_grep " open=F1 " "$CASE/stdout" "stale-class: the finding the seats disagree on is not open"
+  move_receipt_base "$CLAUDE_SEAT"
+  move_receipt_base "$AGY_SEAT"
+  set_review claude \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The name is now quoted.' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "stale-class: rerun after the merge base moved"
+  assert_equals 2 "$(calls claude)" "stale-class: the seat that gives the finding its class was called again"
+  next_head 'third head'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "stale-class: round 3 with reviews that skip the open finding"
+  assert_match "^F1 | open | security | " "$STUB/agy.prior" "stale-class: the next round lost the finding's class"
   pass "a rerun after the merge base moved keeps a review that holds a finding, so the finding is never lost"
 }
 

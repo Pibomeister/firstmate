@@ -28,8 +28,9 @@
 #         again, so a rerun cannot replace a BLOCK with a new roll. When the
 #         merge base moved and the head did not, a rerun replaces a seat's
 #         approval, but never a review that says BLOCK, holds a finding as
-#         blocking, calls a finding an edge case, or whose council answer holds
-#         a finding as a regression or gives it a class: that review stays, check
+#         blocking, calls a finding an edge case, gives a finding a class, or
+#         whose council answer holds a finding as a regression or gives it a
+#         class: that review stays, check
 #         at the new merge base is incomplete, and only a new head clears it.
 #         Interrupted runs stop their reviewers before releasing the lock; stale writers
 #         are fenced by run identity, and publication never replaces evidence.
@@ -389,9 +390,9 @@ mr_receipt_live_base() {  # <receipt>
 }
 
 # True when a valid receipt must outlive a moved merge base: its verdict is
-# BLOCK, its review holds a finding as blocking or calls one an edge case, new
-# or earlier, or the seat's council answer holds a finding as a regression or
-# gives it a class. A rerun that replaced such a review would lose the
+# BLOCK, its review holds a finding as blocking, calls one an edge case, new
+# or earlier, or gives one a class, or the seat's council answer holds a
+# finding as a regression or gives it a class. A rerun that replaced such a review would lose the
 # finding, or what keeps it open, with it.
 mr_receipt_holds_finding() {  # <receipt>
   local receipt=$1 dir rows ruling
@@ -400,7 +401,7 @@ mr_receipt_holds_finding() {  # <receipt>
   dir=$(dirname "$receipt")
   rows=$(mr_review_rows "$dir" "${receipt%.receipt}.review.md") || true
   if printf '%s\n' "$rows" | LC_ALL=C awk -F'\t' '
-    $1 == "B" || ($1 == "ok" && $4 == "EDGE-CASE") { found = 1 }
+    $1 == "B" || ($1 == "ok" && ($4 == "EDGE-CASE" || $5 != "none")) { found = 1 }
     END { exit !found }'; then
     return 0
   fi
