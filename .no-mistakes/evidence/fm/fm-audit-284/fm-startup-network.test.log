@@ -1,0 +1,9 @@
+ok - fm-startup-network: a stage deadline retains discovered branch identities and leaves no scan running
+ok - fm-startup-network: refresh preserves unpublished gone-upstream branches for recovery
+ok - fm-startup-network: wait fails when no deferred stage publishes before its deadline
+ok - fm-startup-network: start returns immediately and never holds the caller's stdout open
+ok - fm-startup-network: exactly one of the digest and the wake reports each actionable result
+not ok - the claimant died before the worker published
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-startup-network-tests.vNNU7v/start-nonblocking: Directory not empty
+rm: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-startup-network-tests.vNNU7v: Directory not empty
+exit=1

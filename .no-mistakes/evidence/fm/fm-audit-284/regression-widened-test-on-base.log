@@ -1,0 +1,3 @@
+not ok - the scan kept running after the startup stage that bounds it had finished
+bash tests/y.test.sh  2.00s user 9.90s system 5% cpu 3:34.86 total
+exit=1

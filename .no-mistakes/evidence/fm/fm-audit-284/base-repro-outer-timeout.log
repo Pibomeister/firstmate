@@ -1,0 +1,2 @@
+not ok - the scan kept running after the startup stage that bounds it had finished
+exit=1

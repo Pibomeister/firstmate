@@ -1,0 +1,11 @@
+16:35  up 2 days,  6:48, 119 users, load averages: 73.56 78.64 76.58
+ok - fm-startup-network: a claimant crash after publication still surfaces the result
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-startup-network-tests.Kd9hPN/sweep-lease/root/bin/fm-startup-network.sh: child setpgid (8607 to 8607): Operation not permitted
+ok - fm-startup-network: fleet-lock takeover cannot overlap a mutating sweep
+ISO_DONE
+exit=
+16:38  up 2 days,  6:50, 119 users, load averages: 68.81 77.13 76.44
+ok - fm-startup-network: a claimant crash after publication still surfaces the result
+ok - fm-startup-network: fleet-lock takeover cannot overlap a mutating sweep
+ISO_DONE
+exit=
