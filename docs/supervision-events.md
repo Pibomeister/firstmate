@@ -123,7 +123,7 @@ It can name only two actions:
 It never names an approval, merge, deploy, spend, account, authentication, permission, restart, kill, or shell command.
 
 A resume is a candidate only when the task has reported no final state, has no open human gate or declared wait, shows no dialog that needs an answer, records a spawn generation, and its input line read `empty` within `FM_UNBLOCK_COMPOSER_MAX_AGE` seconds (default 120).
-A delivery whose outcome is unknown is never repeated blindly: if the same message last rang without pickup, failed to send, met an unreadable input line, or found its endpoint gone, the stall is held.
+A delivery whose outcome is unknown is never repeated blindly: if the last delivery attempt was for the same message, or came at or after that message was accepted, and it rang without pickup, failed to send, met an unreadable input line, or found its endpoint gone, the stall is held. The doorbell line is the same for every message, so a later message's ring is also a ring for the stalled one.
 Every hold names its reason.
 
 Each stall has one key bound to its epoch: `resume:<task>:<msg>@<spawn_gen>` or `dispatch:<item>`.

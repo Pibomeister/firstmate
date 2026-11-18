@@ -34,9 +34,10 @@
 #     blocker, and declares no wait;
 #   - the last screen read shows no dialog that needs an answer;
 #   - the task records a spawn generation, which bounds the action's epoch;
-#   - the last delivery of that same message is not ambiguous: a doorbell that
-#     rang without pickup, a send that failed, an input line that could not be
-#     read, or a gone endpoint is never repeated blindly;
+#   - the last delivery of that message, or any later one (the doorbell is the
+#     same line for every message), is not ambiguous: a doorbell that rang
+#     without pickup, a send that failed, an input line that could not be read,
+#     or a gone endpoint is never repeated blindly;
 #   - the input line reads empty, from a reading no older than
 #     FM_UNBLOCK_COMPOSER_MAX_AGE seconds (default 120) or taken by
 #     --probe-composer.
@@ -126,15 +127,16 @@ resume_decisions() {
     | . as $s
     | $s.queue.oldest_ordinary as $msg
     | ($s.queue.last_delivery // {}) as $ld
+    | ($ld.msg == $msg or ($ld.at != null and $ld.at >= $s.queue.oldest_ordinary_queued_at)) as $ld_covers
     | (if ($s.state.state // "") == "done" or ($s.state.state // "") == "failed" then "worker-reported-final-state"
        elif ($s.waits.human_gates | length) > 0 then "open-human-gate"
        elif $s.waits.dependency != null then "declared-wait"
        elif ($s.waits.dialog as $d | ["permission","question","feedback","usage-limit","model-switch"] | any(. == $d)) then "dialog-needs-answer"
        elif $s.binding.spawn_gen == null then "no-spawn-generation"
-       elif $ld.msg == $msg and ($ld.result // "") == "rang" then "ambiguous-delivery:rang-without-pickup"
-       elif $ld.msg == $msg and ($ld.result // "") == "send-failed" then "ambiguous-delivery:send-failed"
-       elif $ld.msg == $msg and ($ld.result // "") == "composer-unproven" then "ambiguous-delivery:input-line-unreadable"
-       elif $ld.msg == $msg and ($ld.result // "") == "endpoint-gone" then "endpoint-gone"
+       elif $ld_covers and ($ld.result // "") == "rang" then "ambiguous-delivery:rang-without-pickup"
+       elif $ld_covers and ($ld.result // "") == "send-failed" then "ambiguous-delivery:send-failed"
+       elif $ld_covers and ($ld.result // "") == "composer-unproven" then "ambiguous-delivery:input-line-unreadable"
+       elif $ld_covers and ($ld.result // "") == "endpoint-gone" then "endpoint-gone"
        elif $s.queue.composer == null or $s.queue.composer.state != "empty" then "input-line-not-proven-empty"
        elif ($s.queue.composer.probed | not) and (($s.queue.composer.at // 0) < ($now - $cmax)) then "input-line-reading-stale"
        else null end) as $hold

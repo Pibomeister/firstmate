@@ -177,6 +177,33 @@ test_a_fire_and_forget_message_ahead_never_hides_an_ordinary_stall() {
   pass "unblock: a fire-and-forget message queued ahead never hides a stalled ordinary steer"
 }
 
+test_a_later_ring_of_another_message_still_holds_the_stall() {
+  make_home later-ring
+  # later: ordinary 001 is stalled, then 002 is queued and its doorbell rings
+  # without pickup. The doorbell is one line for the whole inbox, so that ring
+  # was also a ring for 001.
+  add_task later s4.4.4
+  queue_msg later 001.msg 2027-01-15T07:00:00Z
+  queue_msg later 002.msg 2027-01-15T07:30:00Z
+  last_ring later 002.msg rang $((NOW - 1800))
+  composer later empty $((NOW - 30))
+  # earlier: the last ring came before 001 was accepted, so it says nothing
+  # about 001.
+  add_task earlier s5.5.5
+  queue_msg earlier 001.msg 2027-01-15T07:00:00Z
+  last_ring earlier 000.msg rang $((NOW - 7200))
+  composer earlier empty $((NOW - 30))
+  unblock plan
+  assert_equals 0 "$RC" "plan exit"
+  # shellcheck disable=SC2016 # $t is a jq variable.
+  assert_equals 'resume hold ambiguous-delivery:rang-without-pickup 001.msg' \
+    "$(printf '%s\n' "$OUT" | jq -r --arg t later 'select(.task == $t) | "\(.action) \(.verdict) \(.reason) \(.msg)"')" "decision for the stall behind a later ring"
+  # shellcheck disable=SC2016 # $t is a jq variable.
+  assert_equals 'resume candidate stalled-on-unacknowledged-message' \
+    "$(printf '%s\n' "$OUT" | jq -r --arg t earlier 'select(.task == $t) | "\(.action) \(.verdict) \(.reason)"')" "decision for the stall after an older ring"
+  pass "unblock: a later message's ring without pickup holds the older stalled steer, and a ring from before it was accepted does not"
+}
+
 test_observe_claims_one_epoch_bound_action_per_stall() {
   make_home observe
   add_task t1 s1.1.1
@@ -282,6 +309,7 @@ test_a_stale_heartbeat_alone_names_no_action
 test_a_stalled_message_on_a_proven_empty_input_line_is_a_resume_candidate
 test_every_unsafe_or_ambiguous_stall_is_held
 test_a_fire_and_forget_message_ahead_never_hides_an_ordinary_stall
+test_a_later_ring_of_another_message_still_holds_the_stall
 test_observe_claims_one_epoch_bound_action_per_stall
 test_dispatch_names_only_the_next_ready_item
 test_enforce_is_always_refused
