@@ -51,13 +51,17 @@
 #     foo.test.sh Write or `cat > foo.test.sh` injects. A redirect to /tmp that
 #     later names a test path does not. A `>` inside single or double quotes, or
 #     inside a heredoc body, is not a redirect; the redirect on the heredoc's
-#     own command line still counts. `<<-` and `<<-'EOF'` strip leading tabs
-#     on the closer before matching. A trailing CR on the closer is ignored.
-#     `<<<` is a here-string, not a heredoc, so quote blanking still applies.
-#     `<<` inside `$((...))` or `((...))`, or in a `#` comment that starts at
-#     a word boundary outside quotes, is not a heredoc opener.
-#     Nested or escaped quotes are not parsed. Paths whose final extension is
-#     .bak, .orig, or .swp stay silent. In-place editors (sed -i) are not covered.
+#     own command line still counts. `<<` or `<<-` is a heredoc opener only when
+#     it is preceded by start of line, whitespace, or one of `;|&(` outside
+#     quotes, not by `\`, `$`, `[`, `{`, `#`, a digit, or a word character; the
+#     delimiter is a bare [A-Za-z_][A-Za-z0-9_]* word or that word in single or
+#     double quotes, with optional spaces before it; it is not inside `$((`,
+#     `((`, `$[`, `${`, or a `#` comment; and a matching closer line exists
+#     (`<<-` strips leading tabs, a trailing CR is ignored). `<<<` is a
+#     here-string, not a heredoc, so quote blanking still applies. Anything
+#     else is not a heredoc. Nested or escaped quotes are not parsed. Paths
+#     whose final extension is .bak, .orig, or .swp stay silent. In-place
+#     editors (sed -i) are not covered.
 #   speed or perf claim -> principle-explain-the-number
 #     An assertion such as "much faster", "got a lot faster", "2x as fast",
 #     "the export is faster now", "the export is 2x as fast?", or
@@ -279,16 +283,46 @@ _heredoc_line_is_closer() {  # <line> <delim> <dash>
   [ "$line" = "$delim" ]
 }
 
+# True when <s> is a bare heredoc delimiter word [A-Za-z_][A-Za-z0-9_]*.
+_is_heredoc_word() {  # <s>
+  case "$1" in
+    ''|*[!A-Za-z0-9_]*) return 1 ;;
+  esac
+  case "$1" in
+    [A-Za-z_]*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# True when a closer for <delim> exists in <s> at or after <start>.
+_heredoc_has_closer() {  # <s> <start> <delim> <dash>
+  local s=$1 i=$2 delim=$3 dash=$4 n line c
+  n=${#s}
+  line=
+  while [ "$i" -lt "$n" ]; do
+    c=${s:$i:1}
+    if [ "$c" = $'\n' ]; then
+      _heredoc_line_is_closer "$line" "$delim" "$dash" && return 0
+      line=
+    else
+      line=$line$c
+    fi
+    i=$((i + 1))
+  done
+  _heredoc_line_is_closer "$line" "$delim" "$dash"
+}
+
 # Blank `>` inside simple single or double quotes so it is not a redirect.
 # Blank `<` there too so a quoted `<<` is not treated as a heredoc opener.
 # Blank `>` on heredoc body lines only; the opener line is kept so a
 # redirect on that line still counts. `<<<` is a here-string and stays in
-# the quote scanner. `<<` inside `$((...))` or `((...))`, or in a `#`
-# comment that starts at a word boundary, is not an opener. Nested and
-# escaped quotes are not parsed.
+# the quote scanner. `<<` or `<<-` is an opener only with an allowed
+# predecessor, a bare or wholly quoted delimiter word, not inside
+# `$((` / `((` / `$[` / `${` or a `#` comment, and a matching closer.
+# Anything else is not a heredoc. Nested and escaped quotes are not parsed.
 _blank_gt_inside_quotes() {  # <command>
   local s=$1 out='' i=0 n c q='' heredoc=0 delim='' line='' dash=0
-  local comment=0 arith=0 depth=0 word_start=1
+  local comment=0 ctx='' depth=0 word_start=1 j k prev
   n=${#s}
   while [ "$i" -lt "$n" ]; do
     c=${s:$i:1}
@@ -331,14 +365,39 @@ _blank_gt_inside_quotes() {  # <command>
       i=$((i + 1))
       continue
     fi
-    if [ "$arith" = 1 ]; then
+    if [ "$ctx" = paren ]; then
       out=$out$c
       case "$c" in
         '(') depth=$((depth + 1)) ;;
         ')')
           depth=$((depth - 1))
           if [ "$depth" -le 0 ]; then
-            arith=0
+            ctx=
+            depth=0
+            word_start=1
+          fi
+          ;;
+      esac
+      i=$((i + 1))
+      continue
+    fi
+    if [ "$ctx" = bracket ]; then
+      out=$out$c
+      if [ "$c" = ']' ]; then
+        ctx=
+        word_start=1
+      fi
+      i=$((i + 1))
+      continue
+    fi
+    if [ "$ctx" = brace ]; then
+      out=$out$c
+      case "$c" in
+        '{') depth=$((depth + 1)) ;;
+        '}')
+          depth=$((depth - 1))
+          if [ "$depth" -le 0 ]; then
+            ctx=
             depth=0
             word_start=1
           fi
@@ -354,7 +413,7 @@ _blank_gt_inside_quotes() {  # <command>
       continue
     fi
     if [ "$c" = '$' ] && [ $((i + 2)) -lt "$n" ] && [ "${s:$((i + 1)):2}" = '((' ]; then
-      arith=1
+      ctx=paren
       depth=2
       word_start=0
       out=$out'$'
@@ -362,8 +421,24 @@ _blank_gt_inside_quotes() {  # <command>
       i=$((i + 3))
       continue
     fi
+    if [ "$c" = '$' ] && [ $((i + 1)) -lt "$n" ] && [ "${s:$((i + 1)):1}" = '[' ]; then
+      ctx=bracket
+      word_start=0
+      out=$out'$['
+      i=$((i + 2))
+      continue
+    fi
+    if [ "$c" = '$' ] && [ $((i + 1)) -lt "$n" ] && [ "${s:$((i + 1)):1}" = '{' ]; then
+      ctx=brace
+      depth=1
+      word_start=0
+      out=$out'$'
+      out=$out'{'
+      i=$((i + 2))
+      continue
+    fi
     if [ "$word_start" = 1 ] && [ "$c" = '(' ] && [ $((i + 1)) -lt "$n" ] && [ "${s:$((i + 1)):1}" = '(' ]; then
-      arith=1
+      ctx=paren
       depth=2
       word_start=0
       out=$out'(('
@@ -371,70 +446,91 @@ _blank_gt_inside_quotes() {  # <command>
       continue
     fi
     if [ "$c" = '<' ] && [ $((i + 1)) -lt "$n" ] && [ "${s:$((i + 1)):1}" = '<' ]; then
-      out=$out'<<'
-      i=$((i + 2))
-      if [ "$i" -lt "$n" ] && [ "${s:$i:1}" = '<' ]; then
-        out=$out'<'
-        i=$((i + 1))
+      if [ $((i + 2)) -lt "$n" ] && [ "${s:$((i + 2)):1}" = '<' ]; then
+        out=$out'<<<'
+        i=$((i + 3))
         word_start=0
         continue
       fi
       dash=0
-      if [ "$i" -lt "$n" ] && [ "${s:$i:1}" = '-' ]; then
-        out=$out'-'
-        dash=1
-        i=$((i + 1))
-      fi
-      while [ "$i" -lt "$n" ]; do
-        c=${s:$i:1}
-        case "$c" in
-          [[:space:]]) out=$out$c; i=$((i + 1)) ;;
-          *) break ;;
-        esac
-      done
       delim=
-      if [ "$i" -lt "$n" ]; then
-        c=${s:$i:1}
-        case "$c" in
-          \'|\")
-            q=$c
-            out=$out$c
-            i=$((i + 1))
-            while [ "$i" -lt "$n" ]; do
-              c=${s:$i:1}
-              out=$out$c
-              i=$((i + 1))
-              if [ "$c" = "$q" ]; then
-                break
-              fi
-              delim=$delim$c
-            done
-            q=
-            ;;
-          *)
-            while [ "$i" -lt "$n" ]; do
-              c=${s:$i:1}
-              case "$c" in
-                [[:space:]]|'|'|'&'|';'|')'|'>'|'<') break ;;
-                *) delim=$delim$c; out=$out$c; i=$((i + 1)) ;;
-              esac
-            done
-            ;;
-        esac
+      j=0
+      k=0
+      prev=
+      if [ "$i" -eq 0 ]; then
+        prev=' '
+      else
+        prev=${s:$((i - 1)):1}
       fi
-      while [ "$i" -lt "$n" ]; do
-        c=${s:$i:1}
-        out=$out$c
-        i=$((i + 1))
-        if [ "$c" = $'\n' ]; then
-          break
-        fi
-      done
-      if [ -n "$delim" ]; then
-        heredoc=1
-        line=
-      fi
-      word_start=1
+      case "$prev" in
+        [[:space:]]|';'|'|'|'&'|'(')
+          j=$((i + 2))
+          if [ "$j" -lt "$n" ] && [ "${s:$j:1}" = '-' ]; then
+            dash=1
+            j=$((j + 1))
+          fi
+          while [ "$j" -lt "$n" ]; do
+            c=${s:$j:1}
+            case "$c" in
+              [[:space:]]) j=$((j + 1)) ;;
+              *) break ;;
+            esac
+          done
+          if [ "$j" -lt "$n" ]; then
+            c=${s:$j:1}
+            case "$c" in
+              \'|\")
+                q=$c
+                j=$((j + 1))
+                k=0
+                while [ "$j" -lt "$n" ]; do
+                  c=${s:$j:1}
+                  j=$((j + 1))
+                  if [ "$c" = "$q" ]; then
+                    k=1
+                    break
+                  fi
+                  delim=$delim$c
+                done
+                q=
+                if [ "$k" = 1 ] && _is_heredoc_word "$delim"; then
+                  k=$j
+                else
+                  k=0
+                fi
+                ;;
+              [A-Za-z_])
+                delim=$c
+                j=$((j + 1))
+                while [ "$j" -lt "$n" ]; do
+                  c=${s:$j:1}
+                  case "$c" in
+                    [A-Za-z0-9_]) delim=$delim$c; j=$((j + 1)) ;;
+                    *) break ;;
+                  esac
+                done
+                k=$j
+                ;;
+            esac
+          fi
+          if [ "$k" -gt 0 ]; then
+            while [ "$k" -lt "$n" ] && [ "${s:$k:1}" != $'\n' ]; do
+              k=$((k + 1))
+            done
+            if [ "$k" -lt "$n" ] && _heredoc_has_closer "$s" $((k + 1)) "$delim" "$dash"; then
+              out=$out${s:$i:$((k - i + 1))}
+              i=$((k + 1))
+              heredoc=1
+              line=
+              word_start=1
+              continue
+            fi
+          fi
+          ;;
+      esac
+      out=$out'<<'
+      i=$((i + 2))
+      word_start=0
       continue
     fi
     case "$c" in
