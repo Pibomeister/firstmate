@@ -306,6 +306,34 @@ test_heredoc_closer_cr_still_sees_later_test_redirect() {
   pass "a heredoc closer ending in CR still ends the body so a later test redirect injects"
 }
 
+test_arithmetic_shift_does_not_hide_a_later_test_redirect() {
+  local cmd
+  cmd=$(printf 'n=$%s\ncat > tests/foo.test.sh <<EOF\npass\nEOF' '((1<<2))')
+  run_hook "$PRIMARY" \
+    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
+    --claude
+  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
+    "arithmetic 1<<2 then a later test redirect"
+  cmd=$(printf 'n=$%s\ncat > tests/foo.test.sh <<EOF\npass\nEOF' '((1 << 2))')
+  run_hook "$PRIMARY" \
+    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
+    --claude
+  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
+    "arithmetic 1 << 2 then a later test redirect"
+  pass "an arithmetic << does not hide a later test-path redirect"
+}
+
+test_comment_heredoc_opener_does_not_hide_a_later_test_redirect() {
+  local cmd
+  cmd=$(printf 'echo hi # cat <<EOF\ncat > tests/foo.test.sh <<END\npass\nEND')
+  run_hook "$PRIMARY" \
+    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
+    --claude
+  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
+    "comment <<EOF then a later test redirect"
+  pass "a # comment << opener does not hide a later test-path redirect"
+}
+
 test_backup_test_path_is_silent() {
   local path
   for path in foo.test.sh.bak foo.test.sh.orig foo.test.sh.swp tests/foo.test.sh.bak; do
@@ -1179,6 +1207,25 @@ test_cursor_post_tool_use_then_after_agent_response_injects_once() {
   pass "postToolUse then afterAgentResponse delivers a speed claim once"
 }
 
+test_missing_generation_id_reinjects_on_later_post_tool_use() {
+  local home
+  home="$TMP_ROOT/pending-nogen"
+  mkdir -p "$home/state"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Shell","tool_input":{"command":"echo the export is faster now"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1"}' \
+    --cursor
+  expect_cursor_inject "principle-explain-the-number" "postToolUse emits without generation_id"
+  run_hook "$home" \
+    '{"hook_event_name":"afterAgentResponse","text":"the export is faster now","cursor_version":"x","conversation_id":"c1"}' \
+    --cursor
+  expect_silent "afterAgentResponse defers without generation_id"
+  run_hook "$home" \
+    '{"hook_event_name":"postToolUse","tool_name":"Read","tool_input":{"path":"src/export.c"},"tool_output":"{\"exitCode\":0}","cursor_version":"x","conversation_id":"c1"}' \
+    --cursor
+  expect_cursor_inject "principle-explain-the-number" "later postToolUse delivers the deferred claim"
+  pass "missing generation_id on Cursor postToolUse then afterAgentResponse then postToolUse injects twice"
+}
+
 test_second_recurring_red_same_generation_still_injects() {
   local home
   home="$TMP_ROOT/reds-second-id"
@@ -1313,6 +1360,8 @@ test_heredoc_body_gt_is_not_a_test_write
 test_dash_heredoc_closer_still_sees_later_test_redirect
 test_here_string_gt_follows_quote_blanking
 test_heredoc_closer_cr_still_sees_later_test_redirect
+test_arithmetic_shift_does_not_hide_a_later_test_redirect
+test_comment_heredoc_opener_does_not_hide_a_later_test_redirect
 test_backup_test_path_is_silent
 test_claude_write_of_test_file_emits_once_across_pre_and_post
 test_contest_path_is_not_a_test_write
@@ -1371,6 +1420,7 @@ test_got_faster_to_write_is_not_a_speed_claim
 test_dotdot_conversation_id_is_not_stored
 test_two_pending_principles_are_delivered_in_order
 test_cursor_post_tool_use_then_after_agent_response_injects_once
+test_missing_generation_id_reinjects_on_later_post_tool_use
 test_second_recurring_red_same_generation_still_injects
 test_cursor_and_claude_registrations_name_the_helper
 test_vendored_skills_are_present

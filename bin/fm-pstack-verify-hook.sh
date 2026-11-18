@@ -54,6 +54,8 @@
 #     own command line still counts. `<<-` and `<<-'EOF'` strip leading tabs
 #     on the closer before matching. A trailing CR on the closer is ignored.
 #     `<<<` is a here-string, not a heredoc, so quote blanking still applies.
+#     An unclosed `<<` is not a heredoc. Arithmetic shifts and `#` comments
+#     that never reach a closer therefore keep later redirects.
 #     Nested or escaped quotes are not parsed. Paths whose final extension is
 #     .bak, .orig, or .swp stay silent. In-place editors (sed -i) are not covered.
 #   speed or perf claim -> principle-explain-the-number
@@ -281,7 +283,9 @@ _heredoc_line_is_closer() {  # <line> <delim> <dash>
 # Blank `<` there too so a quoted `<<` is not treated as a heredoc opener.
 # Blank `>` on heredoc body lines only; the opener line is kept so a
 # redirect on that line still counts. `<<<` is a here-string and stays in
-# the quote scanner. Nested and escaped quotes are not parsed.
+# the quote scanner. If no closer line matches, the opener is not a
+# heredoc and the original command is kept. Nested and escaped quotes
+# are not parsed.
 _blank_gt_inside_quotes() {  # <command>
   local s=$1 out='' i=0 n c q='' heredoc=0 delim='' line='' dash=0
   n=${#s}
@@ -391,7 +395,8 @@ _blank_gt_inside_quotes() {  # <command>
     if _heredoc_line_is_closer "$line" "$delim" "$dash"; then
       out=$out$line
     else
-      out=$out${line//>/ }
+      printf '%s' "$s"
+      return 0
     fi
   fi
   printf '%s' "$out"
