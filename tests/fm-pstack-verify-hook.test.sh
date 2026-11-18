@@ -248,41 +248,6 @@ test_quoted_gt_in_echo_is_not_a_test_write() {
   pass "echo of a quoted > tests/foo.test.sh does not inject"
 }
 
-test_heredoc_body_gt_is_not_a_test_write() {
-  run_hook "$PRIMARY" \
-    '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat > /tmp/setup.sh <<EOF\necho x > tests/foo.test.sh\nEOF"}}' \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "unquoted heredoc body greater-than"
-  run_hook "$PRIMARY" \
-    '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat > /tmp/setup.sh <<'\''EOF'\''\necho x > tests/foo.test.sh\nEOF"}}' \
-    --claude
-  expect_silent "quoted heredoc body greater-than"
-  run_hook "$PRIMARY" \
-    '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat > tests/foo.test.sh <<EOF\necho x > /tmp/out\nEOF"}}' \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "heredoc command-line redirect to a test path"
-  pass "an unquoted heredoc body > injects; a quoted-delimiter body > does not; the command-line redirect still does"
-}
-
-test_dash_heredoc_closer_still_sees_later_test_redirect() {
-  local cmd
-  cmd=$(printf 'cat <<-EOF > /tmp/setup.sh\n\techo hi\n\tEOF\ncat > tests/foo.test.sh <<END\npass\nEND')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "<<- tab-indented closer then a later test redirect"
-  cmd=$(printf "cat <<-'EOF' > /tmp/setup.sh\n\techo hi\n\tEOF\ncat > tests/foo.test.sh <<END\npass\nEND")
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "<<- quoted tab-indented closer then a later test redirect"
-  pass "<<- and <<-'EOF' tab-indented closers still see a later test-path redirect"
-}
-
 test_here_string_gt_follows_quote_blanking() {
   run_hook "$PRIMARY" \
     "$(jq -n --arg c 'cat <<< "echo x > tests/foo.test.sh"' '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
@@ -296,218 +261,26 @@ test_here_string_gt_follows_quote_blanking() {
   pass "a quoted > in a here-string is silent; a redirect after <<< still injects"
 }
 
-test_heredoc_closer_cr_still_sees_later_test_redirect() {
+test_interpreter_fed_quoted_heredoc_body_injects() {
   local cmd
-  cmd=$(printf 'cat > /tmp/setup.sh <<EOF\necho hi\nEOF\r\ncat > tests/foo.test.sh <<END\npass\nEND')
+  cmd=$(printf "bash <<'EOF'\necho hi > tests/foo.test.sh\nEOF")
   run_hook "$PRIMARY" \
     "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
     --claude
   expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "CR-terminated heredoc closer then a later test redirect"
-  pass "a heredoc closer ending in CR still ends the body so a later test redirect injects"
+    "bash <<'EOF' body test write"
+  pass "bash <<'EOF' with a body test-file write injects"
 }
 
-test_arithmetic_shift_does_not_hide_a_later_test_redirect() {
+test_quoted_heredoc_body_gt_is_accepted_false_positive() {
   local cmd
-  cmd=$(printf 'n=$%s\ncat > tests/foo.test.sh <<END\npass\nEND\nEOF' '((1<<EOF))')
+  cmd=$(printf "cat > /tmp/setup.sh <<'EOF'\necho x > tests/foo.test.sh\nEOF")
   run_hook "$PRIMARY" \
     "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
     --claude
   expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "arithmetic 1<<EOF then a later test redirect with closer EOF"
-  cmd=$(printf 'n=$%s\ncat > tests/foo.test.sh <<EOF\npass\nEOF\n2' '((1<<2))')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "arithmetic 1<<2 then a later test redirect with closer 2"
-  cmd=$(printf 'n=$%s\ncat > tests/foo.test.sh <<EOF\npass\nEOF\n2' '((1 << 2))')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "arithmetic 1 << 2 then a later test redirect with closer 2"
-  pass "an arithmetic << does not hide a later test-path redirect"
-}
-
-test_comment_heredoc_opener_does_not_hide_a_later_test_redirect() {
-  local cmd
-  cmd=$(printf '# cat <<EOF\ncat > tests/foo.test.sh <<EOF\npass\nEOF')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "comment <<EOF then a later test redirect with closer EOF"
-  pass "a # comment << opener does not hide a later test-path redirect"
-}
-
-test_false_opener_does_not_unblank_a_closed_heredoc_body() {
-  local cmd
-  cmd=$(printf 'n=$%s\ncat > /tmp/setup.sh <<EOF\necho x > tests/foo.test.sh\nEOF' '((1<<2))')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "arithmetic << then an unquoted heredoc body greater-than"
-  cmd=$(printf 'cat > /tmp/setup.sh <<EOF\necho x > tests/foo.test.sh\nEOF\nn=$%s' '((1<<2))')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "unquoted heredoc body greater-than then arithmetic <<"
-  cmd=$(printf '# cat <<EOF\ncat > /tmp/s.sh <<END\necho x > tests/foo.test.sh\nEND')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "comment << then an unquoted heredoc body greater-than"
-  pass "an unquoted heredoc body > injects even after a false <<"
-}
-
-test_backslash_dollar_delim_does_not_hide_a_later_test_redirect() {
-  local cmd
-  cmd=$(printf 'echo <<\\EOF\ncat > tests/foo.test.sh <<END\npass\nEND')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "<<\\EOF then a later test redirect"
-  cmd=$(printf 'echo <<\\EOF\ncat > tests/foo.test.sh <<END\npass\nEND\nEOF')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "<<\\EOF then a later test redirect with closer EOF"
-  cmd=$(printf 'echo << \\EOF\ncat > tests/foo.test.sh <<END\npass\nEND')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "<< \\EOF then a later test redirect"
-  cmd=$(printf 'echo << \\EOF\ncat > tests/foo.test.sh <<END\npass\nEND\nEOF')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "<< \\EOF then a later test redirect with closer EOF"
-  cmd=$(printf 'echo <<$%s\ncat > tests/foo.test.sh <<END\npass\nEND' "'EOF'")
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "<<\$'EOF' then a later test redirect"
-  cmd=$(printf 'echo <<$%s\ncat > tests/foo.test.sh <<END\npass\nEND\nEOF' "'EOF'")
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "<<\$'EOF' then a later test redirect with closer EOF"
-  pass "a backslash or \$' delimiter does not hide a later test-path redirect"
-}
-
-test_escaped_double_lt_does_not_hide_a_later_test_redirect() {
-  local cmd
-  cmd=$(printf 'echo \\<<EOF\ncat > tests/foo.test.sh <<END\npass\nEND')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "escaped <<EOF then a later test redirect"
-  cmd=$(printf 'echo \\<<EOF\ncat > tests/foo.test.sh <<END\npass\nEND\nEOF')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "escaped <<EOF then a later test redirect with closer EOF"
-  pass "an escaped << is not a heredoc opener and does not hide a later test-path redirect"
-}
-
-test_bracket_arithmetic_shift_does_not_hide_a_later_test_redirect() {
-  local cmd
-  cmd=$(printf 'n=$%s\ncat > tests/foo.test.sh <<END\npass\nEND' '[1<<2]')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "\$[1<<2] then a later test redirect"
-  cmd=$(printf 'n=$%s\ncat > tests/foo.test.sh <<END\npass\nEND\n2' '[1<<2]')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "\$[1<<2] then a later test redirect with closer 2"
-  pass "\$[ arithmetic << does not hide a later test-path redirect"
-}
-
-test_param_prefix_strip_does_not_hide_a_later_test_redirect() {
-  local cmd
-  cmd=$(printf 'x=hello; echo $%s\ncat > tests/foo.test.sh <<END\npass\nEND' '{x#<<}')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "\${x#<<} then a later test redirect"
-  cmd=$(printf 'x=hello; echo $%s\ncat > tests/foo.test.sh <<END\npass\nEND\nEOF' '{x#<<}')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "\${x#<<} then a later test redirect with closer EOF"
-  pass "\${x#<<} does not hide a later test-path redirect"
-}
-
-test_unquoted_heredoc_command_subst_body_injects() {
-  local cmd
-  cmd=$(printf 'cat <<EOF\n$%s\nEOF' '(echo hi > tests/foo.test.sh)')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "unquoted heredoc body command substitution redirect"
-  cmd=$(printf 'cat <<EOF\n%secho hi > tests/foo.test.sh%s\nEOF' '`' '`')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "unquoted heredoc body backtick redirect"
-  cmd=$(printf 'cat <<EOF\n$%s\nEOF' "$(printf '(cat > tests/foo.test.sh <<END\npass\nEND)')")
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "unquoted heredoc body nested heredoc redirect"
-  pass "an unquoted heredoc body with \$() or backticks injects"
-}
-
-test_heredoc_opener_line_continuation_injects() {
-  local cmd
-  cmd=$(printf 'cat <<EOF \\\n> tests/foo.test.sh\nhello\nEOF')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_claude_inject "principle-test-behavior-not-implementation" "PreToolUse" \
-    "heredoc opener line continuation redirect"
-  pass "an opener line that ends in a continuation backslash does not start body mode"
-}
-
-test_unbalanced_arith_still_blanks_quoted_gt() {
-  local cmd
-  cmd=$(printf 'n=$%s\necho %s' '((1' "'x > tests/foo.test.sh'")
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_silent "unbalanced \$(( still quote-blanks"
-  pass "an unbalanced \$(( does not stop quote blanking"
-}
-
-test_double_quoted_heredoc_body_gt_is_silent() {
-  local cmd
-  cmd=$(printf 'cat > /tmp/setup.sh <<"EOF"\necho x > tests/foo.test.sh\nEOF')
-  run_hook "$PRIMARY" \
-    "$(jq -n --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}')" \
-    --claude
-  expect_silent "double-quoted heredoc body greater-than"
-  pass "a <<\"EOF\" body > is silent"
+    "quoted heredoc body greater-than is an accepted false positive"
+  pass "cat > /tmp/setup.sh <<'EOF' with a body > tests/foo.test.sh injects"
 }
 
 test_backup_test_path_is_silent() {
@@ -1532,21 +1305,9 @@ test_cp_into_test_path_injects
 test_redirect_elsewhere_then_grep_test_path_is_silent
 test_redirect_elsewhere_then_cat_test_path_is_silent
 test_quoted_gt_in_echo_is_not_a_test_write
-test_heredoc_body_gt_is_not_a_test_write
-test_dash_heredoc_closer_still_sees_later_test_redirect
 test_here_string_gt_follows_quote_blanking
-test_heredoc_closer_cr_still_sees_later_test_redirect
-test_arithmetic_shift_does_not_hide_a_later_test_redirect
-test_comment_heredoc_opener_does_not_hide_a_later_test_redirect
-test_false_opener_does_not_unblank_a_closed_heredoc_body
-test_backslash_dollar_delim_does_not_hide_a_later_test_redirect
-test_escaped_double_lt_does_not_hide_a_later_test_redirect
-test_bracket_arithmetic_shift_does_not_hide_a_later_test_redirect
-test_param_prefix_strip_does_not_hide_a_later_test_redirect
-test_unquoted_heredoc_command_subst_body_injects
-test_heredoc_opener_line_continuation_injects
-test_unbalanced_arith_still_blanks_quoted_gt
-test_double_quoted_heredoc_body_gt_is_silent
+test_interpreter_fed_quoted_heredoc_body_injects
+test_quoted_heredoc_body_gt_is_accepted_false_positive
 test_backup_test_path_is_silent
 test_claude_write_of_test_file_emits_once_across_pre_and_post
 test_contest_path_is_not_a_test_write
