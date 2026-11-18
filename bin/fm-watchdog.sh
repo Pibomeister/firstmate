@@ -1833,14 +1833,21 @@ wd_pp_decline() {
   return 0
 }
 
-# wd_pp_relaunch <id> <prompt-hash>: a workspace-trust dialog, whose cursor
-# sits on `No, exit`, gets no key. bin/fm-control.sh relaunches the worker,
-# and its spawn pre-registers the worktree's trust entry. fm-control refuses
+# wd_pp_relaunch <id> <prompt-hash>: a workspace-trust dialog gets no key.
+# bin/fm-control.sh relaunches the worker, and its spawn pre-registers the
+# worktree's trust entry. Only an Orca worker is relaunched: there fm-control
+# closes the recorded terminal without a key (orca_relaunch_close), while on
+# any other backend its stop can press the harness's interrupt key into a
+# worker still recorded as busy, so that dialog is held. fm-control refuses
 # rather than typing into a dialog it cannot close, and that refusal holds.
 wd_pp_relaunch() {
   local id=$1 hash=$2 rid err note
   if wd_do_not_touch "$O_HOME" "$O_TARGET"; then
     wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows the workspace-trust dialog, and its endpoint is on do-not-touch; nothing was answered"
+    return 1
+  fi
+  if [ "$O_BACKEND" != orca ]; then
+    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows the workspace-trust dialog, and a relaunch on the $O_BACKEND backend can press a key into it first; nothing was relaunched"
     return 1
   fi
   if ! wd_rate_open permission-prompt relaunch "$(cfgi permission-relaunch-secs 3600)" "$O_REC_SUBJECT"; then

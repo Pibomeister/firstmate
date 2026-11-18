@@ -510,26 +510,43 @@ test_repeated_or_capped_prompts_hold() {
   pass "decline guard: a repeated prompt, a prompt past the cap, and a prompt that stays after Escape are held, each reported once"
 }
 
+# orca_trust <id> <now>: one sourced route call for an Orca worker whose pane
+# shows the real trust dialog; Orca panes are not reachable from these tests,
+# so the capture and the dialog read are replaced by that screen. Prints rc.
+orca_trust() {
+  FM_TEST_SEAM=1 FM_WD_TEST_CONTROL="$H/control.sh" FM_WD_NOW=$2 FM_HOME="$H" bash -c '
+    . "$1" || exit 9
+    O_HOME=$FM_HOME O_TAG=$(wd_tag "$FM_HOME") O_KEY=$(wd_state_key "$FM_HOME") O_BACKEND=orca O_TARGET=orca-$2 O_REC_SUBJECT=worker:$2
+    screen=$(cat "$3")
+    wd_capture() { printf "%s\n" "$screen"; }
+    wd_observe_dialog() { fm_wd_pane_dialog "$screen" claude 2>/dev/null || true; }
+    wd_permission_prompt "$2" claude "$screen" "$(wd_observe_dialog)"
+    printf "%s\n" "$?"' _ "$WD" "$1" "$FIX/claude-2.1.325-trust.txt" 2>/dev/null
+}
+
 test_trust_dialog_relaunches_without_a_key() {
   make_home
   worker tr claude "$FIX/claude-2.1.325-trust.txt"
   run_wd 0 once >/dev/null 2>&1
-  assert_equals '' "$(typed tr)" "no key reaches a trust dialog whose cursor sits on No, exit"
-  assert_equals 1 "$(grep -c '^tr relaunch --note ' "$H/control.log" 2>/dev/null || true)" "the worker is relaunched through fm-control: $(ledger | cut -f4-8)"
-  assert_equals 1 "$(ledger_rows relaunch "done" worker:tr)" "the relaunch is recorded: $(ledger | cut -f4-8)"
-  run_wd 300 once >/dev/null 2>&1
+  assert_equals '' "$(typed tr)" "no key reaches a trust dialog"
+  assert_equals 0 "$({ cat "$H/control.log" 2>/dev/null || true; } | grep -c '^tr relaunch' || true)" "a tmux worker is not relaunched, because its stop can press a key into the dialog: $(ledger | cut -f4-8)"
+  assert_equals 1 "$(status_rows tr blocked permission-prompt-held)" "the tmux trust dialog is reported as held"
+  assert_grep "on the tmux backend can press a key" "$H/state/tr.status" "the held line names why"
+
+  make_home
+  assert_equals 0 "$(orca_trust or "$BASE")" "an Orca trust dialog is relaunched: $(ledger | cut -f4-8)"
+  assert_equals 1 "$(grep -c '^or relaunch --note ' "$H/control.log" 2>/dev/null || true)" "the Orca worker is relaunched through fm-control: $(ledger | cut -f4-8)"
+  assert_equals 1 "$(ledger_rows relaunch "done" worker:or)" "the relaunch is recorded: $(ledger | cut -f4-8)"
+  assert_equals 1 "$(orca_trust or "$((BASE + 300))")" "a trust dialog still showing inside the window is held"
   assert_equals 1 "$(grep -c . "$H/control.log")" "a trust dialog still showing inside the window is not relaunched again"
-  assert_equals 1 "$(status_rows tr blocked permission-prompt-held)" "it is reported as held instead"
-  assert_equals '' "$(typed tr)" "still no key"
+  assert_equals 1 "$(status_rows or blocked permission-prompt-held)" "it is reported as held instead"
 
   make_home
   : > "$H/control.refuse"
-  worker tq claude "$FIX/claude-2.1.325-trust.txt"
-  run_wd 0 once >/dev/null 2>&1
-  assert_equals 1 "$(ledger_rows relaunch failed worker:tq)" "a refused relaunch is recorded: $(ledger | cut -f4-8)"
+  assert_equals 1 "$(orca_trust oq "$BASE")" "a refused relaunch still waits"
+  assert_equals 1 "$(ledger_rows relaunch failed worker:oq)" "a refused relaunch is recorded: $(ledger | cut -f4-8)"
   assert_contains "$(ledger | awk -F'\t' '$6 == "relaunch" && $7 == "failed" { print $8 }')" "blocked on a prompt" "the refusal reason is kept"
-  assert_equals 1 "$(status_rows tq blocked permission-prompt-held)" "a refused relaunch is reported as held"
-  assert_equals '' "$(typed tq)" "a refused relaunch types nothing"
+  assert_equals 1 "$(status_rows oq blocked permission-prompt-held)" "a refused relaunch is reported as held"
 
   make_home
   printf 'Accessing workspace:\n\n/work/project\n\nDo you trust the contents of this project?\n\nAntigravity CLI requires permission to read, edit, and execute files here.\n\n> Yes, I trust this folder\n  No, exit\n' > "$H/agy-trust.txt"
@@ -541,15 +558,13 @@ test_trust_dialog_relaunches_without_a_key() {
   assert_grep "trust-relaunch-answers" "$H/state/ag.status" "the held line names why"
   assert_grep "waiting on worker ag" "$H/data/watchdog/status.md" "a held Antigravity trust picker still gets the waiting gap"
   make_home
-  worker tw claude "$FIX/claude-2.1.325-trust.txt"
   rm -f "$H/state/watchdog/actions.tsv"
   mkdir -p "$H/state/watchdog/actions.tsv"
-  run_wd 0 once >/dev/null 2>&1
-  assert_equals 0 "$({ cat "$H/control.log" 2>/dev/null || true; } | grep -c '^tw relaunch' || true)" "a relaunch that cannot be recorded is never started"
-  assert_equals 1 "$(status_rows tw blocked permission-prompt-held)" "the unrecorded relaunch is reported as held"
-  assert_equals '' "$(typed tw)" "an unrecorded relaunch types nothing"
+  orca_trust ow "$BASE" >/dev/null
+  assert_equals 0 "$({ cat "$H/control.log" 2>/dev/null || true; } | grep -c '^ow relaunch' || true)" "a relaunch that cannot be recorded is never started"
+  assert_equals 1 "$(status_rows ow blocked permission-prompt-held)" "the unrecorded relaunch is reported as held"
   rmdir "$H/state/watchdog/actions.tsv"
-  pass "trust dialog: no key, a controlled relaunch once per window, and a refusal is reported"
+  pass "trust dialog: no key, a controlled relaunch only on Orca once per window, and a refusal is reported"
 }
 
 test_failed_declines_count_toward_cap() {
@@ -646,7 +661,7 @@ test_hardstop_prompts_are_never_answered() {
     O_HOME=$FM_HOME O_TAG=$(wd_tag "$FM_HOME") O_KEY=$(wd_state_key "$FM_HOME") O_BACKEND=orca O_TARGET=stub O_REC_SUBJECT=worker:rm
     screen=$2 log=$3
     wd_capture() { printf "%s\n" "${FM_ORCA_CLI_CACHE:-unset}" >> "$log"; printf "%s\n" "$screen"; }
-    wd_observe_dialog() { printf "%s\n" permission; }
+    wd_observe_dialog() { printf "%s\n" "${FM_ORCA_CLI_CACHE:-unset}" >> "$log"; printf "%s\n" permission; }
     wd_permission_prompt rm claude "$screen" permission' _ "$WD" "$cookie_screen" "$cache_log" >/dev/null 2>&1 || true
   assert_equals 0 "$(sort -u "$cache_log" | tr -d '\n')" "every read under the lock runs with the Orca reply cache off: $(cat "$cache_log")"
   assert_equals 0 "$(status_rows cred resolved permission-prompt-hardstop)" "an older empty screen does not resolve a hard stop still on the pane"
