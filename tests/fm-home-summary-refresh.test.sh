@@ -686,6 +686,32 @@ fi
 "$REAL_RM" -f "$HOME_DIR/state"/.home-summary-stage.*
 pass "parent-side stage-file reads and removals are bounded"
 
+# A stage file that cannot be read at all (not stalled, failing at once) is
+# reported as unreadable, never as a worker that recorded no stage.
+FAILTAIL="$TMP_ROOT/fail-tail-bin"
+mkdir -p "$FAILTAIL"
+cat > "$FAILTAIL/tail" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    */.home-summary-stage.*) echo "tail: read error" >&2; exit 1 ;;
+  esac
+done
+exec "$FM_TEST_REAL_TAIL" "$@"
+SH
+chmod +x "$FAILTAIL/tail"
+: > "$HOME_DIR/state/.home-summary-refresh.log"
+PATH="$FAILTAIL:$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" FM_TEST_REAL_TAIL="$(command -v tail)" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
+  "$WRITER" --best-effort \
+  || fail "an unreadable stage file changed the best-effort caller result"
+grep -F 'refresh exceeded its 3-second deadline (stage unreadable)' "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "an immediately failing stage read was not reported as unreadable: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+if grep -F 'before its first stage' "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null; then
+  fail "an immediately failing stage read was reported as a deadline before the first stage"
+fi
+pass "an unreadable stage file is reported as unreadable"
+
 # A worker whose parent is killed right before the worker opens the stage file
 # creates it after the parent's cleanup ran. The worker removes its own file when
 # its parent is gone. mkdir stalls once inside the worker, before the open, so the

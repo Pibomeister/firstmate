@@ -276,19 +276,23 @@ fi
 # "in stage <last stage> (stages: <stage>@<seconds> ...)", or nothing when the
 # producer never reported one.
 home_summary_stage_note() {  # <stage-file>
-  local file=$1 last
+  local file=$1 last all
   [ -s "$file" ] || return 0
-  last=$(tail -n 1 "$file" 2>/dev/null | cut -f1)
+  # A read that fails is not an empty file: report it as unreadable (status 1),
+  # never as a worker that recorded no stage.
+  last=$(tail -n 1 "$file" 2>/dev/null) || return 1
+  last=${last%%$'\t'*}
   [ -n "$last" ] || return 0
-  printf ' in stage %s (stages: %s)' "$last" \
-    "$(cut -f1,2 "$file" 2>/dev/null | tr '\t' '@' | tr '\n' ' ' | sed 's/ $//' | cut -c1-300)"
+  all=$(cut -f1,2 "$file" 2>/dev/null) || return 1
+  all=$(printf '%s\n' "$all" | tr '\t' '@' | tr '\n' ' ' | sed 's/ $//' | cut -c1-300)
+  printf ' in stage %s (stages: %s)' "$last" "$all"
 }
 
 if [ "$HOME_SUMMARY_MODE" = stage-note ]; then
   # Run by the parent under its own short limit, so reading the stage file on a
   # stalled filesystem cannot hold the caller.
   if home_summary_stage_path_ok "${2:-}"; then
-    home_summary_stage_note "$2"
+    home_summary_stage_note "$2" || exit 1
   fi
   exit 0
 fi
