@@ -1,0 +1,15 @@
+## live run 1: normal refresh (60s default deadline), lab home
+exit=0 elapsed=3s
+{
+  "schema": "fm-secondmate-home-summary.v1",
+  "generated": "2026-11-18T04:31:30Z",
+  "generated_epoch": 1794976290
+}
+## live run 2: forced 1-second deadline with a hanging jq (validate)
+Terminated: 15
+exit=0 elapsed=21s
+--- failure log:
+[2026-11-18T04:31:34Z] refresh exceeded its 20-second deadline in stage validate (stages: lock-wait@0 producer@0 backlog@0 task-observation@0 task-rows@0 contributions@0 summary@0 validate@1)
+ledger generated_epoch before=1794976290 after=1794976290 (unchanged => last good kept)
+--- leftover stage files:
+none
