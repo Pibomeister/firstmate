@@ -157,8 +157,6 @@ snapshot() {  # <task>
     fi
     oldest_at=$(fm_utc_iso_to_epoch "$oldest_at" 2>/dev/null) || oldest_at=''
   fi
-  # The oldest ordinary record, chosen as the escalation ladder chooses it, so a
-  # fire-and-forget record queued ahead of it cannot hide an ordinary stall.
   if ordinary=$(fm_task_inbox_oldest_unhandled "$STATE" "$task" 2>/dev/null); then
     ordinary_at=$(sed -n 's/^at=//p; /^--$/q' "$ordinary" 2>/dev/null | head -n 1)
     ordinary_at=$(fm_utc_iso_to_epoch "$ordinary_at" 2>/dev/null) || ordinary_at=''
@@ -187,7 +185,6 @@ snapshot() {  # <task>
     fi
   fi
   binding=$(fm_producer_binding_json "$STATE" "$task") || return 1
-  # The meta records the project as a local path; only its name is reported.
   project=$(meta_value "$task" project)
   project=${project%/}
   project=${project##*/}

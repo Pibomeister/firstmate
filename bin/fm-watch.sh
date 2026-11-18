@@ -890,9 +890,12 @@ inbox_steer_busy() {  # <window> <backend> <task> <tail40>
 # being healthy, while an unacknowledged instruction can still be a stuck steer.
 inbox_steer_check() {  # <window> <task>
   local w=$1 task=$2 action verb rec count tail40 reason='' ring_rc backend agent_state recover_rc=1 stuck_busy=0 age dismiss_rc=0
-  # Result receipts (bin/fm-task-inbox-lib.sh) advance before delivery work;
-  # one file test when no receipt is owed.
-  fm_task_inbox_receipts_sync "$STATE" "$task" 2>/dev/null || true
+  # shellcheck source=bin/fm-timeout-lib.sh
+  command -v fm_run_timed >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-timeout-lib.sh"
+  # shellcheck disable=SC2016 # The inner shell expands its own arguments.
+  fm_run_timed "$WATCH_HELPER_BUDGET" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+    bash -c '. "$1/fm-classify-lib.sh" && . "$1/fm-task-inbox-lib.sh" && fm_task_inbox_receipts_sync "$2" "$3"' \
+    _ "$SCRIPT_DIR" "$STATE" "$task" 2>/dev/null || true
   action=$(fm_task_inbox_due_action "$STATE" "$task") || return 0
   verb=${action%% *}
   [ "$verb" != quiet ] || return 0
@@ -3398,9 +3401,9 @@ hung_ladder_observe() {  # <task> <kind> <1 when the pane reads busy> <dialog> <
 # One shell-variable name per task slug, so per-task throttles need no file
 # read on the poll path. `_` is escaped first, then `-` and `.`.
 task_stamp_var() {  # <prefix> <task> <out-var>
-  local stamp=${2//_/_5f}
-  stamp=${stamp//-/_2d}; stamp=${stamp//./_2e}
-  printf -v "$3" '%s_%s' "$1" "${stamp//[!A-Za-z0-9_]/_}"
+  local slug=${2//_/_5f}
+  slug=${slug//-/_2d}; slug=${slug//./_2e}
+  printf -v "$3" '%s_%s' "$1" "${slug//[!A-Za-z0-9_]/_}"
 }
 
 # Opt-in fleet activity ledger (docs/fleet-ledger.md): a busy worker whose

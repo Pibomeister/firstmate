@@ -3,57 +3,14 @@
 #
 # Usage:
 #   fm-unblock.sh plan [--probe-composer]      decide and print; write nothing
+#                                              except state/producer-identity.json
+#                                              when it is absent
 #   fm-unblock.sh observe [--probe-composer]   decide, claim each new candidate
 #                                              once, and record it
 #   fm-unblock.sh enforce                      always refused in this version
 #
-# It is a command firstmate runs, never a daemon, and it acts on nothing: no
-# message is rung, no worker is started, and nothing is dispatched. It reads
-# each task through bin/fm-task-snapshot.sh and the backlog through
-# `bin/fm-ledger.sh next`, and prints one JSON decision per stall, one per line,
-# in the schema docs/supervision-events.md "Unblocker" owns.
-#
-# The only actions it can name are:
-#   resume    ring the doorbell again, under the strict draft guard, for the
-#             oldest unacknowledged ordinary steering message of a task that is
-#             stalled on it
-#   dispatch  start the highest-priority ready backlog item, which is already
-#             filed and therefore already authorized
-# It never names an approval, merge, deploy, spend, account, authentication,
-# permission, restart, kill, or shell command. It never reads heartbeat age, a
-# runtime's visibility or orphaned-layout flags, or any other liveness guess:
-# a quiet worker is not a stalled one, and a stale heartbeat alone is no reason
-# to act.
-#
-# A resume stall is a task whose oldest ordinary message (the snapshot's
-# queue.oldest_ordinary, which skips fire-and-forget records) has waited at least
-# FM_UNBLOCK_STALL_SECS (default 900) since it was accepted. It is a candidate
-# only when every one of these holds; otherwise it is a hold with the first
-# failing reason:
-#   - the task has not reported done or failed, has no open decision or
-#     blocker, and declares no wait;
-#   - the last screen read shows no dialog that needs an answer;
-#   - the task records a spawn generation, which bounds the action's epoch;
-#   - the last delivery of that message, or any later one (the doorbell is the
-#     same line for every message), is not ambiguous: a doorbell that rang
-#     without pickup, a send that failed, an input line that could not be read,
-#     or a gone endpoint is never repeated blindly;
-#   - the input line reads empty, from a reading no older than
-#     FM_UNBLOCK_COMPOSER_MAX_AGE seconds (default 120) or taken by
-#     --probe-composer.
-#
-# ONE OWNER, ONE EPOCH. Every stall has a key bound to its epoch:
-#   resume:<task>:<msg>@<spawn-gen>   a relaunch starts a new epoch
-#   dispatch:<item>
-# `observe` claims a candidate by creating state/unblock/<key>.claim
-# exclusively; the first claimer owns the stall for that epoch, records one
-# `unblock.candidate` line in state/unblock.jsonl, and later runs report it as
-# claimed and record nothing. A claim is never retried or released by this
-# command. Claims of resume stalls whose task meta is gone are removed.
-#
-# config/auto-unblock, first line: `observe` allows `observe`; `off`, absence,
-# or any other value refuses it. `plan` needs no flag. No value enables
-# enforcement.
+# Hold rules, claim keys, and the actions it may name live in
+# docs/supervision-events.md "Unblocker".
 #
 # Environment: FM_UNBLOCK_STALL_SECS, FM_UNBLOCK_COMPOSER_MAX_AGE,
 # FM_UNBLOCK_LEDGER (the ledger command, default bin/fm-ledger.sh; tests use
