@@ -648,6 +648,125 @@ grep -F 'refresh exceeded its 3-second deadline in stage validate' \
 [ ! -e "$ORPHAN_PATH" ] || fail "a worker killed after creating the stage file left it behind"
 pass "a stage file created before a deadline kill is removed"
 
+# After the worker ends, the parent reads the stage file and removes it under its
+# own short limit, so a state filesystem that stalls on those operations cannot
+# hold the caller past the deadline. The shims stall tail and rm on the stage
+# path only; a FIFO could not show this, because stat and unlink never block on one.
+STALLFS="$TMP_ROOT/stall-fs-bin"
+REAL_RM=$(command -v rm)
+mkdir -p "$STALLFS"
+for shim in tail rm; do
+  real=$(command -v "$shim")
+  cat > "$STALLFS/$shim" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  case "\$arg" in
+    */.home-summary-stage.*) sleep 30 ;;
+  esac
+done
+exec "$real" "\$@"
+SH
+  chmod +x "$STALLFS/$shim"
+done
+: > "$HOME_DIR/state/.home-summary-refresh.log"
+started=$(date +%s)
+PATH="$STALLFS:$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
+  "$WRITER" --best-effort \
+  || fail "a stalled stage-file read changed the best-effort caller result"
+elapsed=$(( $(date +%s) - started ))
+[ "$elapsed" -lt 20 ] || fail "stalled parent-side stage-file operations held the refresh for $elapsed seconds"
+grep -F 'refresh exceeded its 3-second deadline' "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "the deadline was not logged when parent-side stage operations stalled: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+"$REAL_RM" -f "$HOME_DIR/state"/.home-summary-stage.*
+pass "parent-side stage-file reads and removals are bounded"
+
+# A worker whose parent is killed right before the worker opens the stage file
+# creates it after the parent's cleanup ran. The worker removes its own file when
+# its parent is gone. mkdir stalls once inside the worker, before the open, so the
+# kill lands in that window, and a slow validation keeps the worker alive long
+# enough to see the file exist before it must vanish.
+SLOWBIN="$TMP_ROOT/slow-orphan-bin"
+REAL_MKDIR=$(command -v mkdir)
+mkdir -p "$SLOWBIN"
+cat > "$SLOWBIN/mkdir" <<'SH'
+#!/usr/bin/env bash
+if [ -n "${FM_HOME_SUMMARY_STAGE_FILE:-}" ] && [ -n "${FM_TEST_MKDIR_MARK:-}" ] \
+    && [ ! -e "$FM_TEST_MKDIR_MARK" ]; then
+  : > "$FM_TEST_MKDIR_MARK"
+  sleep 3
+fi
+exec "$FM_TEST_REAL_MKDIR" "$@"
+SH
+cat > "$SLOWBIN/jq" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    */.home-summary.json.*) sleep 4 ;;
+  esac
+done
+exec "$FM_TEST_REAL_JQ" "$@"
+SH
+chmod +x "$SLOWBIN/mkdir" "$SLOWBIN/jq"
+ORPHAN_MARK="$TMP_ROOT/orphan-mkdir.mark"
+rm -f "$ORPHAN_MARK" "$HOME_DIR/state"/.home-summary-stage.*
+printf 'working: a status change forces a recompute\n' >> "$HOME_DIR/state/ledger-task.status"
+PATH="$SLOWBIN:$FAKEBIN:$PATH" FM_TEST_REAL_MKDIR="$REAL_MKDIR" FM_TEST_REAL_JQ="$REAL_JQ" \
+  FM_TEST_MKDIR_MARK="$ORPHAN_MARK" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  "$WRITER" --best-effort > /dev/null 2>&1 &
+ORPHAN_PARENT=$!
+i=0
+while [ ! -e "$ORPHAN_MARK" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
+[ -e "$ORPHAN_MARK" ] || fail "the worker never reached its state-directory step"
+kill -KILL "$ORPHAN_PARENT" >/dev/null 2>&1 || true
+wait "$ORPHAN_PARENT" >/dev/null 2>&1 || true
+i=0
+until ls "$HOME_DIR/state"/.home-summary-stage.* >/dev/null 2>&1; do
+  [ "$i" -lt 150 ] || fail "the worker never created its stage file after its parent was killed"
+  sleep 0.1
+  i=$((i + 1))
+done
+i=0
+while ls "$HOME_DIR/state"/.home-summary-stage.* >/dev/null 2>&1; do
+  [ "$i" -lt 300 ] || fail "a worker outliving its parent left its stage file behind"
+  sleep 0.1
+  i=$((i + 1))
+done
+pass "a worker whose parent is gone removes its own stage file"
+
+# A fresh home has no state directory when the refresh starts. The wake library
+# creates it in the worker before the stage file is opened, so a deadline hit on a
+# first refresh still names its stage rather than claiming it never started.
+FRESH_HOME="$TMP_ROOT/fresh-home"
+rm -rf "${FRESH_HOME:?}"
+cp -R "$HOME_DIR" "$FRESH_HOME"
+rm -rf "${FRESH_HOME:?}/state"
+PATH="$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$FRESH_HOME" FM_HOME_SUMMARY_TIMEOUT=3 \
+  "$WRITER" --best-effort \
+  || fail "a first refresh on a home without a state directory changed the best-effort caller result"
+grep -F 'refresh exceeded its 3-second deadline in stage validate' \
+  "$FRESH_HOME/state/.home-summary-refresh.log" >/dev/null \
+  || fail "a first refresh with no state directory did not name its stage: $(cat "$FRESH_HOME/state/.home-summary-refresh.log" 2>&1)"
+pass "a first refresh on a home without a state directory names its stage"
+
+# The stage path override is honored only for a path under the state directory
+# named like the default. A stray value pointing elsewhere must not make the
+# refresh append to or delete an unrelated file.
+DECOY="$TMP_ROOT/decoy-not-a-stage-file"
+printf 'keep me\n' > "$DECOY"
+PATH="$FAKEBIN:$PATH" FM_HOME_SUMMARY_STAGE_PATH="$DECOY" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  "$WRITER" || fail "a stray stage path override broke a normal refresh"
+[ "$(cat "$DECOY")" = "keep me" ] || fail "a stray stage path override let the refresh modify or delete an unrelated file"
+printf 'working: status change\n' >> "$HOME_DIR/state/ledger-task.status"
+PATH="$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" FM_HOME_SUMMARY_STAGE_PATH="$DECOY" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
+  "$WRITER" --best-effort || fail "a stray stage path override changed a failing best-effort refresh"
+[ "$(cat "$DECOY")" = "keep me" ] || fail "a failing refresh touched an unrelated file named by a stray override"
+pass "a stray stage path override never touches an unrelated file"
+
 # A deadline hit while validating, or while publishing, must name that stage
 # rather than blaming the producer's last stage, and the offsets must share one
 # timeline that includes the worker's own stages.

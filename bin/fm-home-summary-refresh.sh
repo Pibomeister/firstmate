@@ -28,8 +28,11 @@
 # state/.home-summary-refresh.log instead of a bare deadline.
 # The worker adds its own stages to that file: lock-wait, producer, validate and
 # publish, with the producer's stages between producer and validate.
-# The parent only names the file and removes it on every exit path; the worker
-# creates and opens it, so opening it counts against the deadline too.
+# The parent only names the file; the worker creates and opens it, so opening it
+# counts against the deadline too. Every later parent-side read or removal of the
+# file runs under its own 2-second limit, and a worker whose parent is gone
+# removes the file itself. Only a path under the state directory named like the
+# default is ever used, so a stray FM_HOME_SUMMARY_STAGE_PATH is ignored.
 #
 # With --best-effort, a failure is appended to the bounded home-local
 # state/.home-summary-refresh.log when available, with stderr as the bounded
@@ -76,6 +79,7 @@ case "${1:-}" in
     BEST_EFFORT=${FM_HOME_SUMMARY_WORKER_BEST_EFFORT:-0}
     ;;
   --_log-failure) HOME_SUMMARY_MODE=log-failure ;;
+  --_stage-note) HOME_SUMMARY_MODE=stage-note ;;
   -h|--help) usage; exit 0 ;;
   *) usage >&2; exit 2 ;;
 esac
@@ -98,12 +102,37 @@ fi
 
 # shellcheck disable=SC2329 # Invoked by the signal and EXIT traps below.
 home_summary_cleanup() {
+  home_summary_stage_orphan_cleanup
   [ -z "$HOME_SUMMARY_TMP" ] || rm -f -- "$HOME_SUMMARY_TMP" 2>/dev/null || true
   [ -z "$HOME_SUMMARY_ERR_TMP" ] || rm -f -- "$HOME_SUMMARY_ERR_TMP" 2>/dev/null || true
   if [ "$HOME_SUMMARY_LOCK_HELD" -eq 1 ]; then
     fm_lock_release "$REFRESH_LOCK" || true
     HOME_SUMMARY_LOCK_HELD=0
   fi
+}
+
+# Only a stage file under this home's state directory, named like the parent's
+# own, is ever read, appended to or removed: a stray environment value must not
+# point the refresh at an unrelated file.
+home_summary_stage_path_ok() {  # <path>
+  case "$1" in
+    "$STATE"/.home-summary-stage.*) return 0 ;;
+  esac
+  return 1
+}
+
+# A worker whose parent is gone (killed, or signalled before the worker opened
+# the file) would leave the stage file behind, because the parent's cleanup ran
+# before the file existed. The worker removes it itself in that case.
+home_summary_stage_orphan_cleanup() {
+  [ "$HOME_SUMMARY_MODE" = worker ] || return 0
+  [ -n "${FM_HOME_SUMMARY_STAGE_FILE:-}" ] || return 0
+  case "${FM_HOME_SUMMARY_PARENT_PID:-}" in
+    ''|*[!0-9]*) return 0 ;;
+  esac
+  home_summary_stage_path_ok "$FM_HOME_SUMMARY_STAGE_FILE" || return 0
+  kill -0 "$FM_HOME_SUMMARY_PARENT_PID" 2>/dev/null && return 0
+  rm -f -- "$FM_HOME_SUMMARY_STAGE_FILE" 2>/dev/null || true
 }
 
 # Record that the worker entered <stage>, at its seconds since the worker
@@ -255,6 +284,21 @@ home_summary_stage_note() {  # <stage-file>
     "$(cut -f1,2 "$file" 2>/dev/null | tr '\t' '@' | tr '\n' ' ' | sed 's/ $//' | cut -c1-300)"
 }
 
+if [ "$HOME_SUMMARY_MODE" = stage-note ]; then
+  # Run by the parent under its own short limit, so reading the stage file on a
+  # stalled filesystem cannot hold the caller.
+  if home_summary_stage_path_ok "${2:-}"; then
+    home_summary_stage_note "$2"
+  fi
+  exit 0
+fi
+
+# Remove a stage file without letting a stalled filesystem hold the caller.
+home_summary_stage_remove() {  # <path>
+  [ -n "$1" ] || return 0
+  fm_run_timed 2 rm -f -- "$1" >/dev/null 2>&1 || true
+}
+
 if [ "$HOME_SUMMARY_MODE" = parent ]; then
   attempt_stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) || attempt_stamp=
   stage_file=
@@ -262,33 +306,41 @@ if [ "$HOME_SUMMARY_MODE" = parent ]; then
   # traps are registered before the file can exist.
   # shellcheck disable=SC2329 # Invoked by the signal and EXIT traps below.
   home_summary_parent_cleanup() {
-    [ -z "$stage_file" ] || rm -f -- "$stage_file" 2>/dev/null || true
+    home_summary_stage_remove "$stage_file"
   }
   trap home_summary_parent_cleanup EXIT
   trap 'exit 129' HUP
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  # The parent only names the stage file; the worker creates and opens it, so the
-  # directory check and the open both run inside the deadline and a stalled
-  # filesystem cannot hold the caller past it. The parent removes that name on
-  # every exit path, including a worker killed right after it created the file.
-  # FM_HOME_SUMMARY_STAGE_PATH is a test seam that names the file instead.
-  stage_file=${FM_HOME_SUMMARY_STAGE_PATH:-$STATE/.home-summary-stage.$$.$RANDOM}
+  # The parent only names the stage file; the worker creates and opens it inside
+  # the deadline. Every later parent-side touch of that path (reading the stage,
+  # removing the file) runs under its own short limit, so a stalled state
+  # filesystem cannot hold the caller past the deadline. A worker that outlives
+  # its parent removes the file itself.
+  # FM_HOME_SUMMARY_STAGE_PATH is a test seam, honored only for a path under the
+  # state directory named like the default.
+  stage_file="$STATE/.home-summary-stage.$$.$RANDOM"
+  if [ -n "${FM_HOME_SUMMARY_STAGE_PATH:-}" ] \
+      && home_summary_stage_path_ok "$FM_HOME_SUMMARY_STAGE_PATH"; then
+    stage_file=$FM_HOME_SUMMARY_STAGE_PATH
+  fi
   if fm_run_timed "$HOME_SUMMARY_TIMEOUT" env \
     FM_HOME_SUMMARY_WORKER_BEST_EFFORT="$BEST_EFFORT" \
     FM_HOME_SUMMARY_IF_IDLE="$HOME_SUMMARY_IF_IDLE" \
     FM_HOME_SUMMARY_STAGE_FILE="$stage_file" \
+    FM_HOME_SUMMARY_PARENT_PID="$$" \
     "$SCRIPT_DIR/fm-home-summary-refresh.sh" --_worker; then
-    rm -f -- "$stage_file"
+    home_summary_stage_remove "$stage_file"
     exit 0
   else
     refresh_rc=$?
   fi
-  stage_note=$(home_summary_stage_note "$stage_file")
+  stage_note=$(fm_run_timed 2 "$SCRIPT_DIR/fm-home-summary-refresh.sh" \
+    --_stage-note "$stage_file" 2>/dev/null) || stage_note=
   if [ -z "$stage_note" ] && [ "$refresh_rc" -eq 124 ]; then
     stage_note=" before its first stage"
   fi
-  [ -z "$stage_file" ] || rm -f -- "$stage_file"
+  home_summary_stage_remove "$stage_file"
   if [ "$BEST_EFFORT" -eq 1 ]; then
     if [ "$refresh_rc" -eq 124 ]; then
       parent_error="refresh exceeded its ${HOME_SUMMARY_TIMEOUT}-second deadline${stage_note}"
@@ -310,9 +362,11 @@ fi
 
 # The worker opens the parent's stage file itself, inside the deadline, and keeps
 # the descriptor so a stage file the parent already removed is never recreated by
-# a later append. A home without a state directory runs without stage reporting.
+# a later append. The wake library, sourced before this point, already creates
+# the state directory, so a fresh home reports its stages too.
 FM_SNAPSHOT_STAGE_FD=
 if [ "$HOME_SUMMARY_MODE" = worker ] && [ -n "${FM_HOME_SUMMARY_STAGE_FILE:-}" ] \
+    && home_summary_stage_path_ok "$FM_HOME_SUMMARY_STAGE_FILE" \
     && [ -d "$STATE" ]; then
   stage_umask=$(umask)
   umask 077
@@ -324,13 +378,15 @@ fi
 export FM_SNAPSHOT_STAGE_FD
 
 if home_summary_refresh_once; then
+  home_summary_stage_orphan_cleanup
   exit 0
 else
   refresh_rc=$?
 fi
 # A failure the worker handled itself names its stage too, like a deadline the
 # parent reports, so every failed refresh says where it stopped.
-if [ -n "${FM_HOME_SUMMARY_STAGE_FILE:-}" ]; then
+if [ -n "${FM_HOME_SUMMARY_STAGE_FILE:-}" ] \
+    && home_summary_stage_path_ok "$FM_HOME_SUMMARY_STAGE_FILE"; then
   HOME_SUMMARY_ERROR="$HOME_SUMMARY_ERROR$(home_summary_stage_note "$FM_HOME_SUMMARY_STAGE_FILE")"
 fi
 if [ "$BEST_EFFORT" -eq 1 ]; then
