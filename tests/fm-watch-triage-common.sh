@@ -3272,7 +3272,7 @@ test_live_paused_until_controls_recheck_time() {
 # Run one watcher round against a lane whose pane is already stably stale at the
 # recorded hash - the population wedge_timer_check owns. FM_STALE_ESCALATE_SECS=1
 # puts every round at the threshold, so a round either escalates or is deferred;
-# the real 240s default only changes how long that takes.
+# the real 300s default only changes how long that takes.
 # <mode> `exit` requires a queued wake; `absorb` requires three complete cycles
 # without one at the threshold. Returns 1 when it does the other.
 # The endpoint this lane's window resolves to is a live grok agent unless a case

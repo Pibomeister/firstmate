@@ -1859,6 +1859,49 @@ test_housekeeping_persistent_stale_escalates() {
   pass "persistent stale escalates after threshold and clears its marker"
 }
 
+# Production default is 300s. 240s is the old default: a probe at that age must
+# stay silent, or this case would still pass if the fallback were left at 240.
+test_housekeeping_stale_outage_waits_300s() {
+  local dir state fakebin win pane key elapsed _now_restore
+  unset FM_STALE_ESCALATE_SECS
+  dir=$(make_supercase stale-floor-300)
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  win="sess:fm-floor-w1"
+  pane="$dir/pane.txt"
+  printf 'working\n' > "$state/floor-w1.status"
+  printf 'idle prompt $\n' > "$pane"
+  key=$(printf '%s' "floor-w1" | tr ':/.' '___')
+  # housekeeping snapshots `_now` once. A live stamp can tick from 299 to 300
+  # between those two reads, so freeze the sourced clock the way the watcher
+  # case freezes FM_WATCH_NOW.
+  _now_restore=$(declare -f _now)
+  FM_TEST_DAEMON_NOW=$(date +%s)
+  _now() { printf '%s\n' "$FM_TEST_DAEMON_NOW"; }
+  trap 'eval "$_now_restore"; unset FM_TEST_DAEMON_NOW; trap - RETURN' RETURN
+
+  for elapsed in 240 299; do
+    : > "$state/.subsuper-escalations"
+    echo $(( FM_TEST_DAEMON_NOW - elapsed )) > "$state/.subsuper-stale-$key"
+    PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+      FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999999 housekeeping "$state"
+    [ ! -s "$state/.subsuper-escalations" ] \
+      || fail "elapsed ${elapsed}s queued a stale wake under the production default: $(cat "$state/.subsuper-escalations")"
+    [ -e "$state/.subsuper-stale-$key" ] \
+      || fail "elapsed ${elapsed}s cleared the stale marker under the production default"
+  done
+
+  : > "$state/.subsuper-escalations"
+  echo $(( FM_TEST_DAEMON_NOW - 300 )) > "$state/.subsuper-stale-$key"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+    FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999999 housekeeping "$state"
+  [ -s "$state/.subsuper-escalations" ] || fail "elapsed 300s did not queue a stale wake"
+  grep -F "possible wedge" "$state/.subsuper-escalations" >/dev/null \
+    || fail "elapsed 300s did not escalate as a possible wedge: $(cat "$state/.subsuper-escalations")"
+  [ ! -e "$state/.subsuper-stale-$key" ] || fail "stale marker not cleared after the 300s escalation"
+  pass "a persistent stale pane is silent through 299s and queued as a possible wedge at 300s"
+}
+
 test_housekeeping_resumed_stale_cleared() {
   local dir state fakebin win pane key
   dir=$(make_supercase stale-resumed)
@@ -3979,6 +4022,7 @@ test_housekeeping_migrates_watcher_pause_marker
 test_housekeeping_migrates_watcher_unpaused_marker_to_clear
 test_housekeeping_seeds_pause_marker_from_status
 test_housekeeping_persistent_stale_escalates
+test_housekeeping_stale_outage_waits_300s
 test_housekeeping_resumed_stale_cleared
 test_housekeeping_paused_resurfaces_and_resets
 test_housekeeping_captain_held_resurfaces_and_resets

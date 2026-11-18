@@ -206,7 +206,7 @@ Classify each wake this way, applying the steering-inbox and parked-run exceptio
 - `check` -> always escalate. Check scripts print only when firstmate should wake.
 - `stale` with a terminal status, a bare legacy captain-relevant line, or an unrecognized status prefix such as `parked:` -> escalate.
   Nonterminal progress remains transient even when its prose contains a legacy free-text token or its seen-status marker already matches, so record a marker and self-handle.
-  If the pane is still idle past `FM_STALE_ESCALATE_SECS` (default 240s), housekeeping escalates it as a possible wedge.
+  If the pane is still idle past `FM_STALE_ESCALATE_SECS` (default 300s), housekeeping escalates it as a possible wedge.
   For T3 native uncertainty, follow the [stale-alert retention contract](../../../docs/t3code-backend.md#away-mode).
   This bounds wedge-detection latency to the threshold plus a tick: a delay, never a loss.
   A stale detail that ends with `blocked-on-prompt:` and a dialog name means the pane shows that dialog, so the worker cannot continue until someone answers it.

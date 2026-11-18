@@ -527,7 +527,7 @@ TURNEND_CHURN_ABSORB_SECS=${FM_TURNEND_CHURN_ABSORB_SECS:-900}  # longest a task
 # daemon owns triage, so this watcher reverts to one-shot (enqueue + exit on every
 # wake) and never double-triages - and never runs the costly provably-working read,
 # except the bounded one parked_gate_away_read spends on an idle `paused:` pane.
-STALE_ESCALATE_SECS=${FM_STALE_ESCALATE_SECS:-240}  # idle secs before a provably-working stale escalates as a possible wedge
+STALE_ESCALATE_SECS=${FM_STALE_ESCALATE_SECS:-300}  # idle secs before a provably-working stale escalates as a possible wedge
 # Hard wall-clock bound on that away-posture parked-gate read, so a no-mistakes
 # that stops answering costs a poll at most this long (parked_gate_away_read).
 PARKED_GATE_READ_TIMEOUT=${FM_PARKED_GATE_READ_TIMEOUT:-}
