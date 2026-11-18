@@ -688,7 +688,7 @@ mr_findings_filter() {  # <round> <prior-file-or-empty>
           next
         }
         if (status == "NON-BLOCKING") {
-          if (class != "none" && !(ref in pcls)) pcls[ref] = class
+          if (class != "none" && !(ref in pcls)) { pcls[ref] = class; pord[ref] = $2; ptail[ref] = rest }
           out[++m] = "E\t" ref " is open and cannot be NON-BLOCKING"; next
         }
         seen[ref] = m + 1
@@ -705,7 +705,10 @@ mr_findings_filter() {  # <round> <prior-file-or-empty>
         else if (st[i] == "EDGE-CASE" && (round < 3 || cl[i] != "none")) dissent = 1
         else if (st[i] == "NON-BLOCKING" && cl[i] != "none") dissent = 1
       }
-      for (i = 1; i <= count; i++) if (!(ids[i] in seen)) print "E\topen finding " ids[i] " has no status line"
+      for (i = 1; i <= count; i++) if (!(ids[i] in seen)) {
+        print "E\topen finding " ids[i] " has no status line"
+        if (ids[i] in pcls) print "ok\t" pord[ids[i]] "\t" ids[i] "\tNON-BLOCKING\t" pcls[ids[i]] "\t" ptail[ids[i]]
+      }
       if (dissent) print "B"
     }'
 }

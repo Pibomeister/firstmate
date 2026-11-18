@@ -2362,6 +2362,47 @@ test_two_status_lines_keep_the_one_that_holds_the_finding() {
   rc=0
   run_at_head || rc=$?
   assert_match "^F1 | open | data-loss | " "$STUB/agy.prior" "two-lines-nb: the next head lost the class of the NON-BLOCKING line"
+
+  # The same class on a review's only line for the finding also reaches the next head.
+  make_case one-line-nb "${TWO_SEATS[@]}"
+  set_review claude \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | A crash mid-write truncates the file.' \
+    'VERDICT: BLOCK @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "one-line-nb: round 1"
+  next_head 'second head'
+  set_review claude \
+    'FINDING F1 | NON-BLOCKING | data-loss | feature.txt:1 | The rename still runs before the sync.' \
+    'VERDICT: BLOCK @HEAD@'
+  set_review agy \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The write is now atomic.' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "one-line-nb: round 2"
+  assert_grep "blocks=$CLAUDE_SEAT" "$CASE/stdout" "one-line-nb: the BLOCK was not recorded"
+  next_head 'third head'
+  rc=0
+  run_at_head || rc=$?
+  assert_match "^F1 | open | data-loss | " "$STUB/agy.prior" "one-line-nb: the next head lost the class of the only NON-BLOCKING line"
+
+  # An approval whose only line for an open finding is NON-BLOCKING with a class still does not count.
+  make_case one-line-nb-approve "${TWO_SEATS[@]}"
+  set_review claude \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | A crash mid-write truncates the file.' \
+    'VERDICT: BLOCK @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "one-line-nb-approve: round 1"
+  next_head 'second head'
+  set_review claude \
+    'FINDING F1 | NON-BLOCKING | data-loss | feature.txt:1 | Minor now.' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "one-line-nb-approve: round 2"
+  assert_absent "$(store_dir)/$CLAUDE_SEAT.receipt" "one-line-nb-approve: an approval with a NON-BLOCKING line for an open finding left a receipt"
   pass "when a review gives a finding two status lines, the line that holds it stands with either line's class"
 }
 
