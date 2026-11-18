@@ -1,0 +1,40 @@
+ok - context digest distinguishes ABSENT, empty-but-present, and populated files
+ok - a full-digest clear or compact keeps the automatic-away activity stamp; a session start records it
+ok - large context files print indexed pointers and bounded outlines; small files still print whole
+ok - a multibyte context outline stays within its byte bound and valid UTF-8, under a UTF-8 or a C locale
+ok - each in-flight row prints once, every omission is named by id, and long rows are cut visibly at their group's width
+ok - a large wake presentation saves to a file, then bounds annotation and open-decision lines inline while every record prints
+ok - the wake presentation bound counts bytes, so multibyte text cannot slip past it
+ok - a large wake presentation prints whole when the save path is a directory
+not ok - the large presentation was not saved: 
+================================================================================
+SESSION START - /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-session-start-tests.NFFJmC/wake-spill-follower/home
+================================================================================
+
+LOCK
+--------------------------------------------------------------------------------
+lock acquired: harness pid 79900
+
+HOME ROLE
+--------------------------------------------------------------------------------
+fm-role: user (default)
+
+BOOTSTRAP
+--------------------------------------------------------------------------------
+MISSING: tasks-axi (install: npm install -g tasks-axi)
+MISSING: quota-axi (install: npm install -g quota-axi)
+
+WAKE QUEUE
+--------------------------------------------------------------------------------
+
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  STARTUP TRUNCATED - SESSION START HIT ITS 120s RUNTIME BOUND
+●  It stopped during the "wake-queue" stage, so everything above is COMPLETE
+●  only up to that point.
+●  RECONCILE these stages before acting on anything they would have shown:
+●    wake-queue supervision-instructions read-once fleet-state network-checks context next-step
+●  Rerun bin/fm-session-start.sh now to finish taking the helm. If it truncates
+●  again, raise FM_SESSION_START_TIMEOUT and report the slow stage - a stage that
+●  cannot finish inside the bound is a fleet problem, not a reporting detail.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EXIT=1

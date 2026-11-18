@@ -1,0 +1,13 @@
+Sandbox lab home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/fm; GIT_CONFIG_GLOBAL=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/gitconfig
+baseline before: ba91641e19f1ca9b
+>>> edited GIT_CONFIG_GLOBAL: core.editor=vi
+>>> sandbox state/.lock names another live claude harness pid (3029), no .lock-session
+=== read-only start rc=0
+●  READ-ONLY SESSION - FLEET LOCK OWNERSHIP WAS NOT VERIFIED
+SHARED_STATE: global git config changed since the last session start (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/gitconfig) - workers must never edit shared git config; inspect recent changes and restore any unintended setting
+baseline after read-only: ba91641e19f1ca9b
+>>> released lock
+=== full locked start rc=0
+lock acquired: harness pid 55920
+SHARED_STATE: global git config changed since the last session start (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/gitconfig) - workers must never edit shared git config; inspect recent changes and restore any unintended setting
+baseline after full start: f106333fa65eceda

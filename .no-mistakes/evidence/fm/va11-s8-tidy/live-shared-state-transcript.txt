@@ -1,0 +1,108 @@
+Sandbox: HOME, XDG_CONFIG_HOME, GIT_CONFIG_GLOBAL, FM_HOME (lab home), NM_HOME all under /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU
+(run 1 already established baseline with gitconfig user.name=sandbox and NM DB absent)
+
+=== STEP: A0 full locked start, unchanged config (expect silent)  (args: )  rc=0
+lock acquired: harness pid 55920
+data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)
+SHARED_STATE lines: 0
+baseline sha before=306082de4555898e after=306082de4555898e UNCHANGED
+baseline contents:
+   env:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/gitconfig
+   sha256:b3e0c66b5a437b4962efc88bc4bca07dbf0f09709d30833b2492c23a5fc15089
+   /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/nm-home/state.sqlite
+   absent
+
+>>> edited GIT_CONFIG_GLOBAL: core.autocrlf=input
+=== STEP: A1 --reemit after edit (expect SHARED_STATE, baseline UNCHANGED)  (args: --reemit)  rc=0
+lock acquired: harness pid 55920
+data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)
+SHARED_STATE lines: 1
+SHARED_STATE: global git config changed since the last session start (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/gitconfig) - workers must never edit shared git config; inspect recent changes and restore any unintended setting
+baseline sha before=306082de4555898e after=306082de4555898e UNCHANGED
+baseline contents:
+   env:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/gitconfig
+   sha256:b3e0c66b5a437b4962efc88bc4bca07dbf0f09709d30833b2492c23a5fc15089
+   /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/nm-home/state.sqlite
+   absent
+
+>>> live foreign pid 93119 holds state/.lock
+=== STEP: A2 lock-refused read-only start (expect SHARED_STATE, baseline UNCHANGED)  (args: )  rc=0
+lock acquired: harness pid 55920
+data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)
+SHARED_STATE lines: 1
+SHARED_STATE: global git config changed since the last session start (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/gitconfig) - workers must never edit shared git config; inspect recent changes and restore any unintended setting
+baseline sha before=306082de4555898e after=f329d2cf8d3b448d UPDATED
+baseline contents:
+   env:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/gitconfig
+   sha256:bba0bc89c37f0d498fc877e8d10333df376925651b5bd92bdf622b6953ce34d6
+   /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/nm-home/state.sqlite
+   absent
+
+>>> released foreign lock
+=== STEP: A3 full locked start (expect SHARED_STATE once, baseline UPDATED)  (args: )  rc=0
+lock acquired: harness pid 55920
+data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)
+SHARED_STATE lines: 0
+baseline sha before=f329d2cf8d3b448d after=f329d2cf8d3b448d UNCHANGED
+baseline contents:
+   env:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/gitconfig
+   sha256:bba0bc89c37f0d498fc877e8d10333df376925651b5bd92bdf622b6953ce34d6
+   /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/nm-home/state.sqlite
+   absent
+
+=== STEP: A4 next full locked start (expect silent)  (args: )  rc=0
+lock acquired: harness pid 55920
+data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)
+SHARED_STATE lines: 0
+baseline sha before=f329d2cf8d3b448d after=f329d2cf8d3b448d UNCHANGED
+baseline contents:
+   env:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/gitconfig
+   sha256:bba0bc89c37f0d498fc877e8d10333df376925651b5bd92bdf622b6953ce34d6
+   /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/nm-home/state.sqlite
+   absent
+
+>>> created NM_HOME/state.sqlite with CREATE TABLE runs
+=== STEP: B1 first DB creation absent->schema (expect silent, baseline UPDATED)  (args: )  rc=0
+lock acquired: harness pid 55920
+data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)
+SHARED_STATE lines: 0
+baseline sha before=f329d2cf8d3b448d after=63b375ac7d7261d6 UPDATED
+baseline contents:
+   env:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/gitconfig
+   sha256:bba0bc89c37f0d498fc877e8d10333df376925651b5bd92bdf622b6953ce34d6
+   /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/nm-home/state.sqlite
+   sha256:927c77a8a036b510dfb76e337f5f8adba61685e00600577c66749088b923f094
+
+>>> inserted 2 rows (DML)
+=== STEP: B2 after row inserts (expect silent, baseline UNCHANGED)  (args: )  rc=0
+lock acquired: harness pid 55920
+SHARED_STATE lines: 0
+baseline sha before=63b375ac7d7261d6 after=63b375ac7d7261d6 UNCHANGED
+baseline contents:
+   env:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/gitconfig
+   sha256:bba0bc89c37f0d498fc877e8d10333df376925651b5bd92bdf622b6953ce34d6
+   /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/nm-home/state.sqlite
+   sha256:927c77a8a036b510dfb76e337f5f8adba61685e00600577c66749088b923f094
+
+>>> DDL: ALTER TABLE runs ADD COLUMN branch TEXT
+=== STEP: B3 after DDL (expect SHARED_STATE db schema once, baseline UPDATED)  (args: )  rc=0
+lock acquired: harness pid 55920
+SHARED_STATE lines: 0
+baseline sha before=63b375ac7d7261d6 after=63b375ac7d7261d6 UNCHANGED
+baseline contents:
+   env:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/gitconfig
+   sha256:bba0bc89c37f0d498fc877e8d10333df376925651b5bd92bdf622b6953ce34d6
+   /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/nm-home/state.sqlite
+   sha256:927c77a8a036b510dfb76e337f5f8adba61685e00600577c66749088b923f094
+
+=== STEP: B4 next full locked start (expect silent)  (args: )  rc=0
+lock acquired: harness pid 55920
+SHARED_STATE lines: 0
+baseline sha before=63b375ac7d7261d6 after=63b375ac7d7261d6 UNCHANGED
+baseline contents:
+   env:/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/gitconfig
+   sha256:bba0bc89c37f0d498fc877e8d10333df376925651b5bd92bdf622b6953ce34d6
+   /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.5cN0OU/nm-home/state.sqlite
+   sha256:927c77a8a036b510dfb76e337f5f8adba61685e00600577c66749088b923f094
+
+DONE

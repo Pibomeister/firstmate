@@ -1,0 +1,14 @@
+fm-test-queue: ticket 2094, position 1: load 191.97 is not below 150
+fm-test-queue: ticket 2094, position 1: load 184.12 is not below 150
+fm-test-queue: ticket 2094, position 1: load 173.78 is not below 150
+fm-test-queue: ticket 2094, position 1: load 166.91 is not below 150
+fm-test-queue: ticket 2094, position 1: load 154.55 is not below 150
+fm-test-queue: ticket 2094 served
+ok - digest prints tracked fleet learnings from the code root
+ok - missing fleet learnings digest exits 0
+ok - AFK preflight prints fleet learnings
+ok - /afk enter runs AFK preflight with fleet learnings
+ok - session start CONTEXT points at fleet learnings when the code root ships them
+ok - session start stays exit 0 when fleet learnings are absent
+# fm-fleet-learnings.test.sh: all assertions passed
+EXIT=0
