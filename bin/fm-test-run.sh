@@ -954,6 +954,7 @@ tests/fm-parent-channel-scan-exclusion.test.sh 4265
 tests/fm-park.test.sh 2189
 tests/fm-peek-remote.test.sh 1093
 tests/fm-pending-reply.test.sh 65326
+tests/fm-permission-prompt.test.sh 160717
 tests/fm-pi-branch-extension.test.sh 117091
 tests/fm-pi-branch-live-e2e.test.sh 83
 tests/fm-pi-branch-responsiveness-live-e2e.test.sh 13146
@@ -1832,8 +1833,9 @@ families_for_changed_path() {
     bin/fm-captain-nudge.sh|bin/fm-captain-nudge-lib.sh)
       printf '%s\n' '__script__:fm-captain-nudge.test.sh'
       ;;
-    bin/fm-watchdog.sh|bin/fm-watchdog-lib.sh)
+    bin/fm-watchdog.sh|bin/fm-watchdog-lib.sh|bin/fm-permission-prompt.sh)
       printf '%s\n' watcher-wake-lock
+      printf '%s\n' "__script__:fm-permission-prompt.test.sh"
       printf '%s\n' "__script__:fm-backend-t3code.test.sh"
       printf '%s\n' "__script__:fm-watchdog.test.sh"
       printf '%s\n' "__script__:fm-watchdog-herdr-path.test.sh"
@@ -2079,6 +2081,7 @@ families_for_changed_path() {
       printf '%s\n' backend-dispatch
       printf '%s\n' pure-contract-unit
       printf '%s\n' live-harness-optin
+      printf '%s\n' "__script__:fm-permission-prompt.test.sh"
       ;;
     bin/fm-spawn.sh|bin/fm-send.sh|bin/fm-harness.sh|\
     bin/fm-peek.sh|bin/fm-composer*)
