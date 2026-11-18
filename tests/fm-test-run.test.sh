@@ -2545,7 +2545,176 @@ EOF
   pass "runner invoked under bash 3.2 re-execs into bash 5+ candidate unless suppressed"
 }
 
+# A fixture repository whose runner sits beside the real machine-wide queue,
+# with six pure-contract-unit scripts that record the served ticket they saw
+# and how many of them were running at once.
+init_queue_admission_fixture_repo() {
+  local repo=$1 probe=$2 script
+  mkdir -p "$repo/bin" "$repo/tests" "$probe/active"
+  cp "$RUNNER" "$repo/bin/fm-test-run.sh"
+  cp "$ROOT/bin/fm-test-queue.sh" "$ROOT/bin/fm-test-queue-remote.sh" "$repo/bin/"
+  cp "$ROOT/tests/git-config-helpers.sh" "$repo/tests/"
+  chmod +x "$repo/bin/fm-test-run.sh" "$repo/bin/fm-test-queue.sh"
+  for script in fm-kimi-harness.test.sh fm-muse-harness.test.sh fm-brief.test.sh \
+    fm-captain-hold-lifecycle.test.sh fm-lint.test.sh fm-operational-input.test.sh; do
+    cat >"$repo/tests/$script" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\${FM_TEST_QUEUE_HELD:-}" >"$probe/held.$script"
+: >"$probe/active/\$\$"
+ls "$probe/active" | wc -l | tr -d ' ' >>"$probe/concurrency"
+sleep 0.4
+rm -f "$probe/active/\$\$"
+echo "ok - queue admission fixture"
+SH
+    chmod +x "$repo/tests/$script"
+  done
+  git -C "$repo" init -q
+  git -C "$repo" add .
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
+}
+
+# Run the fixture runner with only the admission inputs a case names; the outer
+# suite's own ticket, inner-runner marker, and CI marker never leak in.
+queue_fixture_run() {
+  env -u FM_TEST_QUEUE_HELD -u FM_TEST_RUN_INNER -u FM_TEST_RUN_ADMITTED -u GITHUB_ACTIONS \
+    -u FM_TEST_RUN_QUEUE FM_TEST_SEAM=1 FM_TEST_QUEUE_POLL=0.1 "$@"
+}
+
+queue_fixture_selection() {
+  python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["selection"])' "$1"
+}
+
+# Wait up to 15 seconds for a background run; a run still going is killed and
+# reported, so a wrongly queued targeted run fails instead of hanging the suite.
+queue_fixture_wait() {
+  local pid=$1 what=$2 i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    i=$((i + 1))
+    if [ "$i" -ge 150 ]; then
+      kill -TERM "$pid" 2>/dev/null
+      wait "$pid" 2>/dev/null
+      fail "$what did not finish within 15 seconds"
+    fi
+    sleep 0.1
+  done
+  wait "$pid"
+}
+
+test_broad_selections_wait_in_the_machine_wide_queue() {
+  local tmp repo probe spool qenv pid rc held f max status_out i=0
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-queue.XXXXXX")
+  repo="$tmp/repo"
+  probe="$tmp/probe"
+  spool="$tmp/spool"
+  init_queue_admission_fixture_repo "$repo" "$probe"
+  mkdir -p "$spool"
+  printf 'slots=1\nload_ceiling=2\n' >"$spool/config"
+  echo 5 >"$tmp/load"
+  qenv=(FM_TEST_QUEUE_DIR="$spool" FM_TEST_QUEUE_LOAD_FILE="$tmp/load")
+
+  # Broad selection under a load above the ceiling: it takes a ticket and waits.
+  queue_fixture_run "${qenv[@]}" "$repo/bin/fm-test-run.sh" --family pure-contract-unit --jobs 4 \
+    --json "$tmp/broad.json" >"$tmp/broad.out" 2>"$tmp/broad.err" &
+  pid=$!
+  until status_out=$(queue_fixture_run "${qenv[@]}" "$repo/bin/fm-test-queue.sh" status 2>&1) \
+    && printf '%s\n' "$status_out" | grep -q '^waiting .*label=fm-test-run family=pure-contract-unit;jobs=4$'; do
+    i=$((i + 1))
+    [ "$i" -lt 150 ] || { kill -TERM "$pid" 2>/dev/null; fail "broad selection never joined the queue: $status_out"; }
+    sleep 0.1
+  done
+  for f in "$probe"/held.*; do
+    [ ! -e "$f" ] || { kill -TERM "$pid" 2>/dev/null; fail "a queued broad selection ran a script before it was served"; }
+  done
+
+  # A targeted selection under the same load runs at once, holding no ticket.
+  queue_fixture_run "${qenv[@]}" "$repo/bin/fm-test-run.sh" tests/fm-brief.test.sh tests/fm-lint.test.sh \
+    >"$tmp/targeted.out" 2>"$tmp/targeted.err" &
+  queue_fixture_wait $! "a targeted selection behind a waiting broad suite" \
+    || fail "targeted fixture run failed: $(cat "$tmp/targeted.err")"
+  [ -z "$(cat "$probe/held.fm-brief.test.sh")" ] || fail "a targeted selection must not hold a queue ticket"
+  rm -f "$probe"/held.* "$probe/concurrency"
+
+  # Lowering the load serves the ticket; the slot runs at most two scripts.
+  echo 0.5 >"$tmp/load"
+  queue_fixture_wait "$pid" "the served broad selection" \
+    || fail "served broad selection failed: $(cat "$tmp/broad.err")"
+  for f in "$probe"/held.*; do
+    held=$(cat "$f")
+    case "$held" in
+      "$spool"/*) ;;
+      *) fail "a served broad script saw no ticket from the private queue: '$held'" ;;
+    esac
+  done
+  [ "$(find "$probe" -maxdepth 1 -name 'held.*' | wc -l | tr -d ' ')" -eq 6 ] || fail "served broad selection did not run all six scripts"
+  max=$(sort -n "$probe/concurrency" | tail -n 1)
+  [ "$max" -le 2 ] || fail "a served slot ran $max inner scripts at once (cap is 2)"
+  [ "$(queue_fixture_selection "$tmp/broad.json")" = "family=pure-contract-unit;jobs=2" ] \
+    || fail "served timing artifact must record the lowered worker count: $(queue_fixture_selection "$tmp/broad.json")"
+  assert_contains "$(cat "$tmp/broad.err")" "lowering --jobs 4 to 2" "the per-slot cap was not reported"
+
+  # Wrapping the runner in the queue itself takes one ticket and never waits on it.
+  rm -f "$probe"/held.* "$probe/concurrency"
+  queue_fixture_run "${qenv[@]}" "$repo/bin/fm-test-queue.sh" run -- \
+    "$repo/bin/fm-test-run.sh" --family pure-contract-unit >"$tmp/nested.out" 2>"$tmp/nested.err" &
+  queue_fixture_wait $! "a broad selection wrapped in the queue" \
+    || fail "wrapped broad selection failed: $(cat "$tmp/nested.err")"
+  [ "$(cat "$probe"/held.* | LC_ALL=C sort -u | wc -l | tr -d ' ')" -eq 1 ] \
+    || fail "a wrapped broad selection must run under exactly one ticket"
+
+  # off and a GitHub Actions runner under auto run at once with the full count.
+  echo 5 >"$tmp/load"
+  for mode in off actions; do
+    rm -f "$probe"/held.*
+    if [ "$mode" = off ]; then
+      queue_fixture_run "${qenv[@]}" FM_TEST_RUN_QUEUE=off "$repo/bin/fm-test-run.sh" \
+        --family pure-contract-unit --jobs 4 --json "$tmp/$mode.json" >"$tmp/$mode.out" 2>"$tmp/$mode.err" &
+    else
+      queue_fixture_run "${qenv[@]}" GITHUB_ACTIONS=true "$repo/bin/fm-test-run.sh" \
+        --family pure-contract-unit --jobs 4 --json "$tmp/$mode.json" >"$tmp/$mode.out" 2>"$tmp/$mode.err" &
+    fi
+    queue_fixture_wait $! "broad selection with admission $mode" \
+      || fail "broad selection with admission $mode failed: $(cat "$tmp/$mode.err")"
+    [ -z "$(cat "$probe/held.fm-brief.test.sh")" ] || fail "admission $mode must not take a ticket"
+    [ "$(queue_fixture_selection "$tmp/$mode.json")" = "family=pure-contract-unit;jobs=4" ] \
+      || fail "admission $mode must keep the requested worker count"
+  done
+
+  # A runner started by another runner's script leaves the slot cap to the outer run.
+  queue_fixture_run "${qenv[@]}" FM_TEST_QUEUE_HELD="$spool/tickets/outer" FM_TEST_RUN_INNER=1 \
+    "$repo/bin/fm-test-run.sh" tests/fm-brief.test.sh tests/fm-lint.test.sh tests/fm-kimi-harness.test.sh \
+    --jobs 4 --json "$tmp/inner.json" >/dev/null 2>"$tmp/inner.err" \
+    || fail "inner runner failed: $(cat "$tmp/inner.err")"
+  [ "$(queue_fixture_selection "$tmp/inner.json")" = "scripts;jobs=4" ] \
+    || fail "an inner runner must not apply the slot cap: $(queue_fixture_selection "$tmp/inner.json")"
+  queue_fixture_run "${qenv[@]}" FM_TEST_QUEUE_HELD="$spool/tickets/outer" \
+    "$repo/bin/fm-test-run.sh" tests/fm-brief.test.sh tests/fm-lint.test.sh tests/fm-kimi-harness.test.sh \
+    --jobs 4 --json "$tmp/held.json" >/dev/null 2>"$tmp/held.err" \
+    || fail "held targeted runner failed: $(cat "$tmp/held.err")"
+  [ "$(queue_fixture_selection "$tmp/held.json")" = "scripts;jobs=2" ] \
+    || fail "a targeted run inside a served slot must also use at most two scripts"
+
+  # An unknown admission value is a usage error; a missing queue refuses rather than bypassing.
+  rc=0
+  queue_fixture_run "${qenv[@]}" FM_TEST_RUN_QUEUE=bogus "$repo/bin/fm-test-run.sh" \
+    --family pure-contract-unit >/dev/null 2>"$tmp/bogus.err" || rc=$?
+  [ "$rc" -eq 2 ] || fail "FM_TEST_RUN_QUEUE=bogus must exit 2, got $rc"
+  rm "$repo/bin/fm-test-queue.sh"
+  rm -f "$probe"/held.*
+  rc=0
+  queue_fixture_run "${qenv[@]}" "$repo/bin/fm-test-run.sh" --family pure-contract-unit \
+    >/dev/null 2>"$tmp/missing.err" || rc=$?
+  [ "$rc" -ne 0 ] || fail "a broad selection must refuse when the queue is missing"
+  assert_contains "$(cat "$tmp/missing.err")" "fm-test-queue.sh is missing" "missing-queue refusal did not name the queue"
+  for f in "$probe"/held.*; do
+    [ ! -e "$f" ] || fail "a refused broad selection still ran a script"
+  done
+
+  rm -rf "$tmp"
+  pass "broad selections wait in the machine-wide queue with at most two inner scripts; targeted runs stay prompt"
+}
+
 test_list_all_exact_suite_coverage
+test_broad_selections_wait_in_the_machine_wide_queue
 test_family_selection
 test_single_script_selection
 test_changed_file_selection_is_conservative
