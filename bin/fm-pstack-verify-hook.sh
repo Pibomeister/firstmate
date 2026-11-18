@@ -49,9 +49,11 @@
 #     path/contents), Cursor postToolUse of the same, or a Shell
 #     redirect/heredoc/tee/cp/mv whose TARGET is a code test path. A cwd-relative
 #     foo.test.sh Write or `cat > foo.test.sh` injects. A redirect to /tmp that
-#     later names a test path does not. A `>` inside single or double quotes is
-#     not a redirect; nested or escaped quotes are not parsed. In-place editors
-#     (sed -i) are not covered.
+#     later names a test path does not. A `>` inside single or double quotes, or
+#     inside a heredoc body, is not a redirect; the redirect on the heredoc's
+#     own command line still counts. Nested or escaped quotes are not parsed.
+#     Paths whose final extension is .bak, .orig, or .swp stay silent.
+#     In-place editors (sed -i) are not covered.
 #   speed or perf claim -> principle-explain-the-number
 #     An assertion such as "much faster", "got a lot faster", "2x as fast",
 #     "the export is faster now", "the export is 2x as fast?", or
@@ -79,6 +81,9 @@
 #     node id matches the file prefix before ::. Jest FAIL <path> is
 #     extracted. Pending markers are a per-conversation list; a delivering
 #     event that already emits consumes a matching deferred principle.
+#     A principle already emitted on postToolUse or postToolUseFailure in
+#     this generation is not stored again, so afterAgentResponse cannot
+#     re-queue it. afterAgentResponse then postToolUse still delivers once.
 #
 # Usage:
 #   <hook JSON on stdin> | bin/fm-pstack-verify-hook.sh [--claude|--cursor]
@@ -235,6 +240,7 @@ is_test_path() {  # <path>
   [ -n "$path" ] || return 1
   path=${path//\\//}
   case "$path" in
+    *.bak|*.orig|*.swp) return 1 ;;
     *.md|*.txt|*.rst|*.markdown) return 1 ;;
   esac
   case "$path" in
@@ -250,29 +256,113 @@ is_test_path() {  # <path>
 }
 
 # Blank `>` inside simple single or double quotes so it is not a redirect.
-# Nested and escaped quotes are not parsed.
+# Blank `<` there too so a quoted `<<` is not treated as a heredoc opener.
+# Blank `>` on heredoc body lines only; the opener line is kept so a
+# redirect on that line still counts. Nested and escaped quotes are not parsed.
 _blank_gt_inside_quotes() {  # <command>
-  local s=$1 out='' i=0 n c q=
+  local s=$1 out='' i=0 n c q='' heredoc=0 delim='' line=''
   n=${#s}
   while [ "$i" -lt "$n" ]; do
     c=${s:$i:1}
+    if [ "$heredoc" = 1 ]; then
+      if [ "$c" = $'\n' ]; then
+        if [ "$line" = "$delim" ]; then
+          heredoc=0
+          delim=
+          out=$out$line$c
+        else
+          out=$out${line//>/ }$c
+        fi
+        line=
+      else
+        line=$line$c
+      fi
+      i=$((i + 1))
+      continue
+    fi
     if [ -n "$q" ]; then
       if [ "$c" = "$q" ]; then
         q=
         out=$out$c
-      elif [ "$c" = '>' ]; then
+      elif [ "$c" = '>' ] || [ "$c" = '<' ]; then
         out=$out' '
       else
         out=$out$c
       fi
-    else
-      case "$c" in
-        \'|\") q=$c; out=$out$c ;;
-        *) out=$out$c ;;
-      esac
+      i=$((i + 1))
+      continue
     fi
+    if [ "$c" = '<' ] && [ $((i + 1)) -lt "$n" ] && [ "${s:$((i + 1)):1}" = '<' ]; then
+      out=$out'<<'
+      i=$((i + 2))
+      if [ "$i" -lt "$n" ] && [ "${s:$i:1}" = '-' ]; then
+        out=$out'-'
+        i=$((i + 1))
+      fi
+      while [ "$i" -lt "$n" ]; do
+        c=${s:$i:1}
+        case "$c" in
+          [[:space:]]) out=$out$c; i=$((i + 1)) ;;
+          *) break ;;
+        esac
+      done
+      delim=
+      if [ "$i" -lt "$n" ]; then
+        c=${s:$i:1}
+        case "$c" in
+          \'|\")
+            q=$c
+            out=$out$c
+            i=$((i + 1))
+            while [ "$i" -lt "$n" ]; do
+              c=${s:$i:1}
+              out=$out$c
+              i=$((i + 1))
+              if [ "$c" = "$q" ]; then
+                break
+              fi
+              delim=$delim$c
+            done
+            q=
+            ;;
+          *)
+            while [ "$i" -lt "$n" ]; do
+              c=${s:$i:1}
+              case "$c" in
+                [[:space:]]|'|'|'&'|';'|')'|'>'|'<') break ;;
+                *) delim=$delim$c; out=$out$c; i=$((i + 1)) ;;
+              esac
+            done
+            ;;
+        esac
+      fi
+      while [ "$i" -lt "$n" ]; do
+        c=${s:$i:1}
+        out=$out$c
+        i=$((i + 1))
+        if [ "$c" = $'\n' ]; then
+          break
+        fi
+      done
+      if [ -n "$delim" ]; then
+        heredoc=1
+        line=
+      fi
+      continue
+    fi
+    case "$c" in
+      \'|\") q=$c; out=$out$c ;;
+      *) out=$out$c ;;
+    esac
     i=$((i + 1))
   done
+  if [ "$heredoc" = 1 ]; then
+    if [ "$line" = "$delim" ]; then
+      out=$out$line
+    else
+      out=$out${line//>/ }
+    fi
+  fi
   printf '%s' "$out"
 }
 
@@ -504,6 +594,14 @@ pending_file_for() {  # <conv>
   printf '%s/%s' "$(pending_dir)" "$1"
 }
 
+emitted_dir() {
+  printf '%s' "$STATE/pstack-verify-emitted"
+}
+
+emitted_file_for() {  # <conv>
+  printf '%s/%s' "$(emitted_dir)" "$1"
+}
+
 now_epoch() {
   date +%s 2>/dev/null || printf '0'
 }
@@ -542,17 +640,30 @@ release_reds_lock() {  # <lock>
 # Pending marker for Cursor events that cannot emit additional_context.
 # One file per conversation_id; unique principle lines, FIFO. Missing
 # conversation_id is not stored. Take and write share the reds lock.
+# A principle already emitted in this generation is not stored.
 write_pending() {  # <conversation-id> <principle>
-  local conv=$1 principle=$2 file lock line
+  local conv=$1 principle=$2 file lock line gen efile
   conv=$(sanitize_conv_key "$conv")
   [ -n "$conv" ] || return 0
   case "$principle" in
     principle-prove-it-works|principle-explain-the-number|principle-attack-the-premise) ;;
     *) return 0 ;;
   esac
-  mkdir -p "$STATE" "$(pending_dir)" 2>/dev/null || return 0
+  mkdir -p "$STATE" "$(pending_dir)" "$(emitted_dir)" 2>/dev/null || return 0
   lock="$(reds_file).lock"
   acquire_reds_lock "$lock" || return 0
+  gen=$(sanitize_field "${GEN:-}")
+  if [ -n "$gen" ]; then
+    efile=$(emitted_file_for "$conv")
+    if [ -f "$efile" ]; then
+      while IFS= read -r line || [ -n "$line" ]; do
+        if [ "$line" = "$gen	$principle" ]; then
+          release_reds_lock "$lock"
+          return 0
+        fi
+      done < "$efile"
+    fi
+  fi
   file=$(pending_file_for "$conv")
   if [ -f "$file" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
@@ -633,6 +744,39 @@ drop_pending() {  # <conversation-id> <principle>
   else
     rm -f "$file" "$tmp"
   fi
+  release_reds_lock "$lock"
+}
+
+# Record that this generation already emitted <principle> for <conv>.
+# Later write_pending of the same pair is a no-op. Other generations
+# are dropped so the file cannot grow across turns.
+record_emitted() {  # <conversation-id> <principle>
+  local conv=$1 principle=$2 file lock tmp line gen kept_gen kept_prin
+  conv=$(sanitize_conv_key "$conv")
+  [ -n "$conv" ] || return 0
+  gen=$(sanitize_field "${GEN:-}")
+  [ -n "$gen" ] || return 0
+  case "$principle" in
+    principle-prove-it-works|principle-explain-the-number|principle-attack-the-premise) ;;
+    *) return 0 ;;
+  esac
+  mkdir -p "$STATE" "$(emitted_dir)" 2>/dev/null || return 0
+  lock="$(reds_file).lock"
+  acquire_reds_lock "$lock" || return 0
+  file=$(emitted_file_for "$conv")
+  tmp="${file}.tmp.$$"
+  : > "$tmp"
+  if [ -f "$file" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      kept_gen=${line%%	*}
+      kept_prin=${line#*	}
+      [ "$kept_gen" = "$gen" ] || continue
+      [ "$kept_prin" = "$principle" ] && continue
+      printf '%s\n' "$line" >> "$tmp"
+    done < "$file"
+  fi
+  printf '%s\t%s\n' "$gen" "$principle" >> "$tmp"
+  mv "$tmp" "$file" 2>/dev/null || rm -f "$tmp"
   release_reds_lock "$lock"
 }
 
@@ -845,7 +989,8 @@ FIELDS=$(printf '%s' "$PAYLOAD" | jq -c '
       output: str(.output // $to.output // $tr.output // ""),
       error: str(.error // ""),
       token: str(.tool_use_id // .toolUseId // ""),
-      conv: str(.conversation_id // .conversationId // .session_id // "")
+      conv: str(.conversation_id // .conversationId // .session_id // ""),
+      gen: str(.generation_id // .generationId // "")
     }
 ' 2>/dev/null) || fail_open
 [ -n "$FIELDS" ] || fail_open
@@ -862,6 +1007,7 @@ OUTPUT=$(printf '%s' "$FIELDS" | jq -r '.output' 2>/dev/null) || fail_open
 ERROR=$(printf '%s' "$FIELDS" | jq -r '.error' 2>/dev/null) || fail_open
 TOKEN=$(printf '%s' "$FIELDS" | jq -r '.token' 2>/dev/null) || fail_open
 CONV=$(printf '%s' "$FIELDS" | jq -r '.conv' 2>/dev/null) || fail_open
+GEN=$(printf '%s' "$FIELDS" | jq -r '.gen' 2>/dev/null) || fail_open
 if is_cursor_host; then
   TOKEN="-"
 elif [ -z "$TOKEN" ]; then
@@ -986,10 +1132,11 @@ if [ -n "$PRINCIPLE" ]; then
   INSTR=$(instruction_for "$PRINCIPLE") || fail_open
   [ -n "$INSTR" ] || fail_open
   [ -n "$EVENT" ] || EVENT=unknown
-  emit_context "$EVENT" "$INSTR" || fail_open
   if cursor_delivers_pending; then
+    record_emitted "$CONV" "$PRINCIPLE"
     drop_pending "$CONV" "$PRINCIPLE"
   fi
+  emit_context "$EVENT" "$INSTR" || fail_open
 fi
 emit_before_submit_continue
 exit 0
