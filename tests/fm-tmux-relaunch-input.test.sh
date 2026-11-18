@@ -23,6 +23,7 @@ export PATH
 . "$ROOT/bin/fm-backend.sh"
 fm_backend_source tmux || exit 1
 mkdir "$TMP/zdot" || exit 1
+: > "$TMP/zdot/.zshrc"
 ZDOTDIR="$TMP/zdot" SHELL=$(command -v zsh) "$REAL_TMUX" -L "$SOCKET" -f /dev/null new-session -d -s repro -x 180 -y 40 || exit 1
 TARGET=repro:0
 PANE_PID=$("$REAL_TMUX" -L "$SOCKET" display-message -p -t "$TARGET" '#{pane_pid}')
@@ -175,20 +176,160 @@ grep -q 'did not clear relaunch input' "$TMP/rebound-guard.out" || fail 'custom 
 printf 'ok - custom ^U binding refuses replacement input\n'
 
 # A ^U binding that submits the line must not execute old input. Interrupt
-# the shell directly before sending line-editor keys.
+# the shell directly before sending line-editor keys. The guard must refuse:
+# accepting the probe with accept-line is not proof that the editor is clear.
 "$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n submit || fail 'submit-binding window did not start'
 TARGET=repro:submit
 "$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l "bindkey '^U' accept-line"
 "$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
 sleep 0.2
 "$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l ": > '$TMP/stale-executed'"
-fm_backend_tmux_prepare_relaunch "$TARGET" > "$TMP/submit-guard.out" 2>&1 || true
+if fm_backend_tmux_prepare_relaunch "$TARGET" > "$TMP/submit-guard.out" 2>&1; then
+  fail 'guard accepted a ^U accept-line binding that submits instead of clearing'
+fi
 [ ! -e "$TMP/stale-executed" ] || fail 'custom ^U submitted stale input before guard refusal'
 printf 'ok - custom ^U accept-line binding cannot submit stale input\n'
+
+# wait-only must not type, so leftover editor text is a refusal.
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n waitonly || fail 'wait-only window did not start'
+TARGET=repro:waitonly
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l 'leftover-wait-only'
+if fm_backend_tmux_prepare_relaunch "$TARGET" wait-only > "$TMP/waitonly-guard.out" 2>&1; then
+  fail 'wait-only accepted leftover typed input'
+fi
+printf 'ok - wait-only refuses leftover typed input\n'
+
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n waitclean || fail 'clean wait-only window did not start'
+TARGET=repro:waitclean
+fm_backend_tmux_prepare_relaunch "$TARGET" wait-only || fail 'wait-only refused a clean prompt'
+printf 'ok - wait-only accepts a clean prompt without typing\n'
+
+# An 80-column pane with a long prompt wraps the SIGINT probe with real
+# newlines. capture-pane -p -J does not join those, so probe detection must
+# still see the marker.
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n wrap80 || fail 'wrap window did not start'
+TARGET=repro:wrap80
+"$REAL_TMUX" -L "$SOCKET" resize-window -t "$TARGET" -x 80 -y 24 || fail 'wrap window could not be resized to 80 columns'
+WRAP_WIDTH=$("$REAL_TMUX" -L "$SOCKET" display-message -p -t "$TARGET" '#{pane_width}')
+[ "$WRAP_WIDTH" = 80 ] || fail "wrap pane width is ${WRAP_WIDTH}, not 80"
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l "PROMPT='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 %# '"
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
+sleep 0.3
+fm_backend_tmux_prepare_relaunch "$TARGET" || fail 'wrapped SIGINT probe was treated as missing'
+fm_backend_tmux_send_text_line "$TARGET" "printf 'result:%s\\n' wrap-ok"
+wait_for 'result:wrap-ok' || fail 'wrapped-prompt pane did not accept replacement input'
+printf 'ok - wrapped SIGINT probe is still detected in an 80-column pane\n'
+
+# A non-shell sibling listed before the child zsh must not stop the walk.
+cat > "$TMP/sibling-wrapper" <<SH
+#!/bin/bash
+sleep 60 &
+"$REAL_ZSH" -f
+wait
+SH
+chmod +x "$TMP/sibling-wrapper"
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n sibling "/bin/bash -e $TMP/sibling-wrapper" || fail 'sibling-wrapper window did not start'
+TARGET=repro:sibling
+WRAPPER_PID=$("$REAL_TMUX" -L "$SOCKET" display-message -p -t "$TARGET" '#{pane_pid}')
+wait_child_zsh "$WRAPPER_PID" >/dev/null || fail 'sibling-wrapper child shell did not start'
+SIBLING_SLEEP=$(pgrep -P "$WRAPPER_PID" -x sleep | head -1)
+[ -n "$SIBLING_SLEEP" ] || fail 'sibling-wrapper sleep child did not start'
+[ "$SIBLING_SLEEP" -lt "$(pgrep -P "$WRAPPER_PID" -x zsh | head -1)" ] || fail 'fixture sleep was not listed before zsh'
+( unset SHELL; fm_backend_tmux_prepare_relaunch "$TARGET" ) || fail 'non-shell sibling prevented finding the child zsh'
+fm_backend_tmux_send_text_line "$TARGET" "printf 'result:%s\\n' sibling-ok"
+wait_for 'result:sibling-ok' || fail 'replacement was not delivered past a non-shell sibling'
+printf 'ok - non-shell sibling does not stop the wrapper child walk\n'
+
+# Linux ps truncates comm to 15 characters, so the advertised wrapper name
+# never matches. The truncated form must still be a wrapper.
+(
+  ps() {
+    case "$*" in
+      '-p 129 -o comm=') printf 'reattach-to-use\n' ;;
+      '-ww -p 129 -o args=') printf 'reattach-to-user-namespace\n' ;;
+      *) return 1 ;;
+    esac
+  }
+  fm_backend_tmux_interactive_shell 129
+  [ "$?" -eq 1 ]
+) || fail 'truncated reattach-to-user-namespace comm was not treated as a wrapper'
+printf 'ok - truncated reattach-to-user-namespace comm is a wrapper\n'
+
+# Bash's Terminated notice must refuse when C-l cannot redraw it away.
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n bashterm '/bin/bash --norc --noprofile -i' || fail 'bash terminated-notice window did not start'
+TARGET=repro:bashterm
+BASH_TERM_PID=$("$REAL_TMUX" -L "$SOCKET" display-message -p -t "$TARGET" '#{pane_pid}')
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l "bind '\"\\C-l\":'"
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
+sleep 0.2
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l "env -u CURSOR_AGENT /bin/sh -c 'sleep 60'"
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
+BASH_CHILD=$(wait_child "$BASH_TERM_PID")
+[ -n "$BASH_CHILD" ] || fail 'bash fixture agent did not start'
+kill -TERM "$BASH_CHILD" 2>/dev/null || fail 'could not stop bash fixture agent'
+wait_for 'Terminated' || fail 'bash fixture did not reproduce the Terminated notice'
+if fm_backend_tmux_prepare_relaunch "$TARGET" > "$TMP/bash-term-guard.out" 2>&1; then
+  fail 'guard accepted a bash pane that still shows Terminated'
+fi
+printf 'ok - bash Terminated notice refuses when C-l is a no-op\n'
+
+# A stalled ps/tmux/pgrep call must be killed by the 10s bound, and a stuck
+# wall clock must not make the wait unbounded.
+mkdir -p "$TMP/hangbin"
+cat > "$TMP/hangbin/ps" <<'SH'
+#!/usr/bin/env bash
+sleep 20
+printf '1\n'
+SH
+chmod +x "$TMP/hangbin/ps"
+run_stalled_ps_probe() {
+  PATH="$TMP/hangbin:$PATH"
+  start=$SECONDS
+  fm_backend_tmux_shell_is_foreground 1 1 &
+  probe=$!
+  while kill -0 "$probe" 2>/dev/null && [ $((SECONDS - start)) -lt 15 ]; do sleep 0.1; done
+  if kill -0 "$probe" 2>/dev/null; then
+    kill "$probe" 2>/dev/null || true
+    wait "$probe" 2>/dev/null || true
+    return 1
+  fi
+  wait "$probe"
+  elapsed=$((SECONDS - start))
+  [ "$elapsed" -ge 9 ] && [ "$elapsed" -le 12 ]
+}
+( run_stalled_ps_probe ) || fail 'stalled ps was not killed by the relaunch 10s bound'
+printf 'ok - stalled process-group probe is killed within 10s\n'
+
+mkdir -p "$TMP/zerops"
+cat > "$TMP/zerops/ps" <<'SH'
+#!/usr/bin/env bash
+printf '0\n'
+SH
+chmod +x "$TMP/zerops/ps"
+run_monotonic_wait() {
+  PATH="$TMP/zerops:$PATH"
+  date() { echo 1; }
+  date +%s >/dev/null
+  start=$SECONDS
+  fm_backend_tmux_wait_for_foreground 1 1 $((SECONDS + 10)) &
+  probe=$!
+  while kill -0 "$probe" 2>/dev/null && [ $((SECONDS - start)) -lt 15 ]; do sleep 0.1; done
+  if kill -0 "$probe" 2>/dev/null; then
+    kill "$probe" 2>/dev/null || true
+    wait "$probe" 2>/dev/null || true
+    return 1
+  fi
+  wait "$probe"
+  elapsed=$((SECONDS - start))
+  [ "$elapsed" -ge 9 ] && [ "$elapsed" -le 12 ]
+}
+( run_monotonic_wait ) || fail 'backward date +%s made the foreground wait unbounded'
+printf 'ok - foreground wait uses monotonic elapsed time\n'
 
 # Input to the right of the cursor must also be removed before launch text.
 "$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n cursorleft || fail 'cursor-left window did not start'
 TARGET=repro:cursorleft
+sleep 0.2
 "$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l 'stale-input'
 "$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" C-b C-b C-b
 fm_backend_tmux_prepare_relaunch "$TARGET" || fail 'cursor-left input could not be cleaned'
@@ -292,5 +433,5 @@ printf 'ok - ambiguous shell argv refuses instead of selecting a child\n'
 ) || fail 'flattened shell argv was not treated as ambiguous'
 printf 'ok - ambiguous shell argv[0] and option values refuse child selection\n'
 
-bash "$ROOT/tests/fm-control-relaunch.test.sh" test_tmux_guard_refusal_preserves_relaunch_record test_tmux_late_guard_refusal_restores_relaunch_record \
+bash "$ROOT/tests/fm-control-relaunch.test.sh" test_tmux_guard_refusal_preserves_relaunch_record test_tmux_late_guard_refusal_restores_relaunch_record test_tmux_late_guard_signal_keeps_stop_marker \
   || fail 'guard refusal changed the relaunch record'

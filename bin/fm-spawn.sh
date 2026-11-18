@@ -9530,23 +9530,28 @@ else
     LAUNCH_SOURCE_TEXT="if [ -e $(shell_quote "$LAUNCH_FILE") ]; then $LAUNCH_SOURCE_TEXT || true; else echo 'error: private launch file was already removed; refusing worker launch' >&2; fi"
   fi
   if [ "$BACKEND" = tmux ] && [ "$RELAUNCH" -eq 1 ]; then
-    tmux_guard_mode=no-wait
-    [ "$RELAUNCH_REBIND" -eq 0 ] || tmux_guard_mode=wait-only
+    tmux_guard_mode='no-wait'
+    [ "$RELAUNCH_REBIND" -eq 0 ] || tmux_guard_mode='wait-only'
     if ! fm_backend_tmux_prepare_relaunch "$T" "$tmux_guard_mode"; then
+      # pending and the stop marker must be restored before abort cleanup can
+      # delete the snapshot. Preserve the snapshot until those copies land.
+      RELAUNCH_REPLACEMENT_PENDING=1
+      TMUX_RELAUNCH_PRESERVE_SNAPSHOT=1
+      tmux_stop_restored=0
+      if [ -z "$TMUX_RELAUNCH_PRIOR_STOP_TMP" ]; then
+        tmux_stop_restored=1
+      elif cp -p -- "$TMUX_RELAUNCH_PRIOR_STOP_TMP" "$STATE/.crew-stopped-$ID"; then
+        tmux_stop_restored=1
+      else
+        echo "warning: could not restore the prior intentional-stop marker for $ID; inspect $TMUX_RELAUNCH_PRIOR_STOP_TMP" >&2
+      fi
       if ! fm_backlog_atomic_transition publish "$TMUX_RELAUNCH_PRIOR_META_TMP" "$STATE/$ID.meta" "task record" "$STATE"; then
-        TMUX_RELAUNCH_PRESERVE_SNAPSHOT=1
         echo "error: tmux relaunch refused and prior task record could not be restored ($FM_BACKLOG_TRANSITION_ERROR); inspect $TMUX_RELAUNCH_PRIOR_META_TMP" >&2
       else
         rm -f -- "$TMUX_RELAUNCH_PRIOR_META_TMP"
         TMUX_RELAUNCH_PRIOR_META_TMP=
+        [ "$tmux_stop_restored" = 1 ] && TMUX_RELAUNCH_PRESERVE_SNAPSHOT=0
       fi
-      if [ -n "$TMUX_RELAUNCH_PRIOR_STOP_TMP" ]; then
-        if ! cp -p -- "$TMUX_RELAUNCH_PRIOR_STOP_TMP" "$STATE/.crew-stopped-$ID"; then
-          TMUX_RELAUNCH_PRESERVE_SNAPSHOT=1
-          echo "warning: could not restore the prior intentional-stop marker for $ID; inspect $TMUX_RELAUNCH_PRIOR_STOP_TMP" >&2
-        fi
-      fi
-      RELAUNCH_REPLACEMENT_PENDING=1
       echo "error: tmux pane $T left its clean shell prompt before launch delivery" >&2
       exit 1
     fi

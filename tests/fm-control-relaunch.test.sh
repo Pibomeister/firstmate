@@ -134,7 +134,13 @@ case "${1:-}" in
           printf '%s\t%s\n' "$FM_FAKE_TMUX_SOCKET" "$FM_FAKE_TMUX_SERVER_PID"; exit 0 ;;
         '#{window_id}') printf '@9\n'; exit 0 ;;
         # The pane's login shell, which the relaunch waits on (fakebin ps).
-        '#{pane_pid}') printf '4242426\n'; exit 0 ;;
+        '#{pane_pid}')
+          if [ -e "$D/guard-refuse-after-wait" ]; then
+            count=$(cat "$D/guard-prepare-count" 2>/dev/null || printf '0')
+            count=$((count + 1))
+            printf '%s\n' "$count" > "$D/guard-prepare-count"
+          fi
+          printf '4242426\n'; exit 0 ;;
         '#{pid}')
           if [ -f "$D/server-dead" ]; then echo "no server running on ${FM_FAKE_TMUX_SOCKET:-/tmp/tmux-1000/default}" >&2; exit 1; fi
           printf '%s\n' "${FM_FAKE_TMUX_SERVER_PID:-1}"; exit 0 ;;
@@ -240,10 +246,8 @@ case "$*" in
   '-p 4242426 -o tpgid=')
     [ ! -e "$FM_FAKE_DIR/guard-refuse" ] || exit 1
     if [ -e "$FM_FAKE_DIR/guard-refuse-after-wait" ]; then
-      count=$(cat "$FM_FAKE_DIR/guard-tpgid-count" 2>/dev/null || printf '0')
-      count=$((count + 1))
-      printf '%s\n' "$count" > "$FM_FAKE_DIR/guard-tpgid-count"
-      [ "$count" -le 2 ] || exit 1
+      count=$(cat "$FM_FAKE_DIR/guard-prepare-count" 2>/dev/null || printf '0')
+      [ "$count" -lt 2 ] || exit 1
     fi
     printf '4242426\n' ;;
   *) exec /bin/ps "$@" ;;
@@ -4961,6 +4965,45 @@ test_tmux_late_guard_refusal_restores_relaunch_record() {
   pass 'late tmux guard refusal restores the task record and does not launch'
 }
 
+test_tmux_late_guard_signal_keeps_stop_marker() {
+  local dir control_pid spawn_pid rc i=0 ready release
+  dir=$(new_case late-guard-signal rlsig)
+  add_ship_task "$dir" rlsig claude
+  printf 'intentional stop\n' > "$dir/home/state/.crew-stopped-rlsig"
+  : > "$dir/fake/guard-refuse-after-wait"
+  make_cp_restore_failure_stub "$dir"
+  ready="$dir/stop-restore-ready"
+  release="$dir/stop-restore-release"
+  FM_REAL_CP=$(command -v cp) \
+    FM_FAKE_RESTORE_PAUSE_READY="$ready" \
+    FM_FAKE_RESTORE_PAUSE_RELEASE="$release" \
+    FM_FAKE_RESTORE_PAUSE="$dir/home/state/.crew-stopped-rlsig" \
+    run_control "$dir" rlsig relaunch --note 'late guard signal' > "$dir/control.out" 2>&1 &
+  # shellcheck disable=SC2031
+  control_pid=$!
+  while [ ! -e "$ready" ] && [ "$i" -lt 500 ]; do
+    /bin/sleep 0.01
+    i=$((i + 1))
+  done
+  [ -e "$ready" ] || {
+    kill "$control_pid" 2>/dev/null || true
+    wait "$control_pid" 2>/dev/null || true
+    fail "late guard did not reach stop-marker restore"$'\n'"$(cat "$dir/control.out" 2>/dev/null || true)"
+  }
+  spawn_pid=$(pgrep -P "$control_pid" -f 'fm-spawn.sh' | head -1)
+  [ -n "$spawn_pid" ] || spawn_pid=$control_pid
+  kill -TERM "$spawn_pid" 2>/dev/null || true
+  : > "$release"
+  wait "$control_pid" >/dev/null 2>&1
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "signalled late guard relaunch reported success"$'\n'"$(cat "$dir/control.out" 2>/dev/null || true)"
+  if [ ! -e "$dir/home/state/.crew-stopped-rlsig" ] &&
+    ! ls "$dir/home/state/".rlsig.stopped.pre-tmux-guard.* >/dev/null 2>&1; then
+    fail 'a signal during late restore deleted the stop snapshot without copying the marker back'
+  fi
+  pass 'late tmux guard keeps the stop marker or its snapshot if a signal arrives mid-restore'
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -4971,6 +5014,7 @@ test_exit_removes_the_dialog_file_before_releasing_the_lock
 test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint
 test_tmux_guard_refusal_preserves_relaunch_record
 test_tmux_late_guard_refusal_restores_relaunch_record
+test_tmux_late_guard_signal_keeps_stop_marker
 test_pooled_relaunch_custody_is_agy_only
 test_agy_relaunch_requires_treehouse_capabilities_before_stopping
 test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text
