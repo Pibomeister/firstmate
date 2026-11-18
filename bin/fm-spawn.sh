@@ -9533,8 +9533,6 @@ else
     tmux_guard_mode='no-wait'
     [ "$RELAUNCH_REBIND" -eq 0 ] || tmux_guard_mode='wait-only'
     if ! fm_backend_tmux_prepare_relaunch "$T" "$tmux_guard_mode"; then
-      # pending and the stop marker must be restored before abort cleanup can
-      # delete the snapshot. Preserve the snapshot until those copies land.
       RELAUNCH_REPLACEMENT_PENDING=1
       TMUX_RELAUNCH_PRESERVE_SNAPSHOT=1
       tmux_stop_restored=0

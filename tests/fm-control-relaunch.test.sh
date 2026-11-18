@@ -84,14 +84,20 @@ case "${1:-}" in
       esac
     done
     payload=${1:-}
-    case "$payload" in C-u) rm -f "$D/relaunch-probe" ;; esac
+    case "$payload" in C-u|Enter) rm -f "$D/relaunch-probe" ;; esac
     if [ -s "$D/capture" ]; then
       printf '%s\n' "$payload" >> "$D/picker-keys"
     fi
     if [ "$literal" = 1 ]; then
-      case "$payload" in ': #__fm_relaunch_clear_'*) printf '%s\n' "$payload" > "$D/relaunch-probe" ;; esac
+      printf '%s\n' "$payload" > "$D/relaunch-probe"
       case "$payload" in
-        ". '"*"'") staged=${payload#". '"}; staged=${staged%"'"}; [ ! -f "$staged" ] || payload=$(cat "$staged") ;;
+        ". '"*"'")
+          staged=${payload#". '"}; staged=${staged%"'"}
+          if [ -f "$staged" ]; then
+            payload=$(cat "$staged")
+            printf '%s\n' "$payload" > "$D/launch"
+          fi
+          ;;
       esac
       printf '%s\n' "$payload" >> "$D/literal-raw"
       printf '%s\n' "$payload" >> "$D/literal"
@@ -165,7 +171,23 @@ case "${1:-}" in
     [ -z "${FM_FAKE_COMPOSER_READ_FAIL:-}" ] || exit 1
     if [ -s "$D/capture" ]; then
       cat "$D/capture"
-    elif [ -s "$D/composer" ]; then
+      exit 0
+    fi
+    end=
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -E) end=${2:-}; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    case "$end" in
+      ''|*[!0-9]*) ;;
+      *)
+        printf '%s\n' '% '
+        exit 0
+        ;;
+    esac
+    if [ -s "$D/composer" ]; then
       printf '╭────╮\n│ %s  │\n╰────╯\n' "$(cat "$D/composer")"
     else
       printf '╭────╮\n│    │\n╰────╯\n'
@@ -597,7 +619,8 @@ SH
   chmod +x "$dir/fakebin/claude"
   # The staged launch is one multi-line payload (env scrub, agent command,
   # then the OSC 7501 disarm), so take every line typed after the /exit.
-  launch=$(awk 'seen && $0 !~ /^: #__fm_relaunch_clear_/ { print } $0 == "/exit" { seen = 1 }' "$dir/fake/literal-raw")
+  [ -s "$dir/fake/launch" ] || fail "the replacement launch was not staged"
+  launch=$(cat "$dir/fake/launch")
   worker_env=$(env -i HOME="$dir/user-home" PATH="$dir/fakebin:$PATH" SHELL=/bin/sh \
     FM_HOME=/synthetic/foreign FM_CREW_STATE_META_OVERRIDE=/synthetic/foreign.meta \
     FM_CREW_STATE_STATUS_OVERRIDE=/synthetic/foreign.status FM_SEND_RETRIES=7 \

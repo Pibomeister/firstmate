@@ -42,6 +42,17 @@ wait_for() {
   done
   return 1
 }
+wait_for_line() {
+  local wanted=$1 i output
+  for ((i = 0; i < 60; i++)); do
+    output=$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$TARGET" -S -0)
+    case "$output" in
+      "$wanted"*|*$'\n'"$wanted"*) return 0 ;;
+    esac
+    sleep 0.1
+  done
+  return 1
+}
 wait_child() {
   local parent=$1 i child
   for ((i = 0; i < 60; i++)); do
@@ -193,16 +204,51 @@ printf 'ok - custom ^U accept-line binding cannot submit stale input\n'
 # wait-only must not type, so leftover editor text is a refusal.
 "$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n waitonly || fail 'wait-only window did not start'
 TARGET=repro:waitonly
+sleep 0.2
 "$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l 'leftover-wait-only'
+sleep 0.1
+WAITONLY_BEFORE=$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$TARGET" -S -0)
 if fm_backend_tmux_prepare_relaunch "$TARGET" wait-only > "$TMP/waitonly-guard.out" 2>&1; then
   fail 'wait-only accepted leftover typed input'
 fi
+WAITONLY_AFTER=$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$TARGET" -S -0)
+[ "$WAITONLY_BEFORE" = "$WAITONLY_AFTER" ] || fail 'wait-only leftover refusal typed into the pane'
 printf 'ok - wait-only refuses leftover typed input\n'
 
 "$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n waitclean || fail 'clean wait-only window did not start'
 TARGET=repro:waitclean
 fm_backend_tmux_prepare_relaunch "$TARGET" wait-only || fail 'wait-only refused a clean prompt'
 printf 'ok - wait-only accepts a clean prompt without typing\n'
+
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n customleft || fail 'custom-prompt leftover window did not start'
+TARGET=repro:customleft
+sleep 0.2
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l "PROMPT='XYZPROMPT '"
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
+wait_for_line 'XYZPROMPT' || fail 'custom leftover prompt did not appear'
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l 'stale-custom-prompt'
+sleep 0.1
+CUSTOM_LEFT_BEFORE=$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$TARGET" -S -0)
+if fm_backend_tmux_prepare_relaunch "$TARGET" wait-only > "$TMP/customleft-guard.out" 2>&1; then
+  fail 'wait-only accepted leftover input on an unrecognized prompt'
+fi
+CUSTOM_LEFT_AFTER=$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$TARGET" -S -0)
+[ "$CUSTOM_LEFT_BEFORE" = "$CUSTOM_LEFT_AFTER" ] || fail 'custom-prompt leftover refusal typed into the pane'
+printf 'ok - wait-only refuses leftover input on an unrecognized prompt\n'
+
+"$REAL_TMUX" -L "$SOCKET" new-window -d -t repro: -n customempty || fail 'custom-prompt empty window did not start'
+TARGET=repro:customempty
+sleep 0.2
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" -l "PROMPT='XYZPROMPT '"
+"$REAL_TMUX" -L "$SOCKET" send-keys -t "$TARGET" Enter
+wait_for_line 'XYZPROMPT' || fail 'custom empty prompt did not appear'
+CUSTOM_EMPTY_BEFORE=$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$TARGET" -S -0)
+if fm_backend_tmux_prepare_relaunch "$TARGET" wait-only > "$TMP/customempty-guard.out" 2>&1; then
+  fail 'wait-only accepted an unrecognized empty prompt'
+fi
+CUSTOM_EMPTY_AFTER=$("$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$TARGET" -S -0)
+[ "$CUSTOM_EMPTY_BEFORE" = "$CUSTOM_EMPTY_AFTER" ] || fail 'unrecognized empty-prompt refusal typed into the pane'
+printf 'ok - wait-only refuses an unrecognized empty prompt\n'
 
 # An 80-column pane with a long prompt wraps the SIGINT probe with real
 # newlines. capture-pane -p -J does not join those, so probe detection must

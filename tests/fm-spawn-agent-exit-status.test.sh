@@ -131,9 +131,9 @@ case "${1:-}" in
       esac
     done
     payload=${1:-}
-    case "$payload" in C-u) rm -f "$D/relaunch-probe" ;; esac
+    case "$payload" in C-u|Enter) rm -f "$D/relaunch-probe" ;; esac
     if [ "$literal" = 1 ]; then
-      case "$payload" in ': #__fm_relaunch_clear_'*) printf '%s\n' "$payload" > "$D/relaunch-probe" ;; esac
+      printf '%s\n' "$payload" > "$D/relaunch-probe"
       case "$payload" in
         ". '"*"'")
           staged=${payload#". '"}
@@ -159,7 +159,22 @@ case "${1:-}" in
     done
     printf 'fakepane\n'; exit 0 ;;
   capture-pane)
-    if [ -f "$D/relaunch-probe" ]; then cat "$D/relaunch-probe"; else printf '╭────╮\n│    │\n╰────╯\n'; fi
+    if [ -f "$D/relaunch-probe" ]; then cat "$D/relaunch-probe"; exit 0; fi
+    end=
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -E) end=${2:-}; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    case "$end" in
+      ''|*[!0-9]*) ;;
+      *)
+        printf '%s\n' '% '
+        exit 0
+        ;;
+    esac
+    printf '╭────╮\n│    │\n╰────╯\n'
     exit 0 ;;
   list-windows) [ -f "$D/windows" ] && cat "$D/windows"; exit 0 ;;
 esac

@@ -300,7 +300,7 @@ fm_backend_tmux_interactive_shell() {  # <pid>
 # relaunch types into it. The pane pid can be a shell wrapper, so find its
 # shell descendant and compare process groups rather than executable names.
 fm_backend_tmux_prepare_relaunch() {  # <target> [wait-only|no-wait]
-  local target=$1 mode=${2:-prepare} pane_pid shell_pid candidates next child depth deadline probe probe_id visible cursor_y current_line input_start clean_x clean_y current_x shell_state after_y
+  local target=$1 mode=${2:-prepare} pane_pid shell_pid candidates next child depth deadline probe probe_id visible cursor_y current_line input_start clean_x clean_y current_x shell_state after_y leftover
   case "$mode" in prepare|wait-only|no-wait) ;; *) return 1 ;; esac
   deadline=$((SECONDS + 10))
   pane_pid=$(fm_backend_tmux_run "$deadline" tmux display-message -p -t "$target" '#{pane_pid}') || return 1
@@ -355,7 +355,10 @@ fm_backend_tmux_prepare_relaunch() {  # <target> [wait-only|no-wait]
             *'$ '*) leftover=${current_line##*'$ '} ;;
             *'# '*) leftover=${current_line##*'# '} ;;
             *'> '*) leftover=${current_line##*'> '} ;;
-            *) leftover= ;;
+            *)
+              echo "error: tmux pane $target still has typed input" >&2
+              return 1
+              ;;
           esac
           case "$leftover" in
             *[![:space:]]*)
@@ -391,7 +394,6 @@ fm_backend_tmux_prepare_relaunch() {  # <target> [wait-only|no-wait]
         current_line=${current_line//$'\n'/}
         case "$current_line" in *"$probe_id"*) echo "error: tmux pane $target did not discard relaunch input after SIGINT" >&2; return 1 ;; esac
         fm_backend_tmux_wait_for_foreground "$pane_pid" "$shell_pid" "$deadline" || return 1
-        # C-u clears pending input and C-l redraws away termination notices.
         fm_backend_tmux_run "$deadline" tmux send-keys -t "$target" C-e C-u C-l || return 1
         sleep 0.1
         clean_x=$(fm_backend_tmux_run "$deadline" tmux display-message -p -t "$target" '#{cursor_x}') || return 1
