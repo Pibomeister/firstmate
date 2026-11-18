@@ -678,6 +678,11 @@ elapsed=$(( $(date +%s) - started ))
 [ "$elapsed" -lt 20 ] || fail "stalled parent-side stage-file operations held the refresh for $elapsed seconds"
 grep -F 'refresh exceeded its 3-second deadline' "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
   || fail "the deadline was not logged when parent-side stage operations stalled: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+grep -F 'refresh exceeded its 3-second deadline (stage unreadable)' "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "an unreadable stage file was not reported as unreadable: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+if grep -F 'before its first stage' "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null; then
+  fail "an unreadable stage file was reported as a deadline before the first stage"
+fi
 "$REAL_RM" -f "$HOME_DIR/state"/.home-summary-stage.*
 pass "parent-side stage-file reads and removals are bounded"
 

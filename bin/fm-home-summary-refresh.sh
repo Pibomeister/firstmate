@@ -94,7 +94,7 @@ case "$HOME_SUMMARY_IF_IDLE" in
   *) HOME_SUMMARY_IF_IDLE=0 ;;
 esac
 
-if [ "$HOME_SUMMARY_MODE" != parent ]; then
+if [ "$HOME_SUMMARY_MODE" != parent ] && [ "$HOME_SUMMARY_MODE" != stage-note ]; then
   # shellcheck source=bin/fm-wake-lib.sh
   # shellcheck disable=SC1091
   . "$SCRIPT_DIR/fm-wake-lib.sh"
@@ -331,16 +331,21 @@ if [ "$HOME_SUMMARY_MODE" = parent ]; then
     FM_HOME_SUMMARY_PARENT_PID="$$" \
     "$SCRIPT_DIR/fm-home-summary-refresh.sh" --_worker; then
     home_summary_stage_remove "$stage_file"
+    stage_file=
     exit 0
   else
     refresh_rc=$?
   fi
-  stage_note=$(fm_run_timed 2 "$SCRIPT_DIR/fm-home-summary-refresh.sh" \
-    --_stage-note "$stage_file" 2>/dev/null) || stage_note=
-  if [ -z "$stage_note" ] && [ "$refresh_rc" -eq 124 ]; then
-    stage_note=" before its first stage"
+  if stage_note=$(fm_run_timed 2 "$SCRIPT_DIR/fm-home-summary-refresh.sh" \
+      --_stage-note "$stage_file" 2>/dev/null); then
+    if [ -z "$stage_note" ] && [ "$refresh_rc" -eq 124 ]; then
+      stage_note=" before its first stage"
+    fi
+  else
+    stage_note=" (stage unreadable)"
   fi
   home_summary_stage_remove "$stage_file"
+  stage_file=
   if [ "$BEST_EFFORT" -eq 1 ]; then
     if [ "$refresh_rc" -eq 124 ]; then
       parent_error="refresh exceeded its ${HOME_SUMMARY_TIMEOUT}-second deadline${stage_note}"
