@@ -564,6 +564,22 @@ test_trust_dialog_relaunches_without_a_key() {
   assert_equals 0 "$({ cat "$H/control.log" 2>/dev/null || true; } | grep -c '^ow relaunch' || true)" "a relaunch that cannot be recorded is never started"
   assert_equals 1 "$(status_rows ow blocked permission-prompt-held)" "the unrecorded relaunch is reported as held"
   rmdir "$H/state/watchdog/actions.tsv"
+
+  # The instruction and the relaunch children resolve the worker in the
+  # watched home, even when the pass carries another home's overrides.
+  make_home
+  local bind_log="$TMP_ROOT/pp-bind.log" other="$TMP_ROOT/other-home"
+  : > "$bind_log"
+  mkdir -p "$other/state" "$other/data" "$other/config"
+  FM_TEST_SEAM=1 FM_HOME="$H" FM_STATE_OVERRIDE="$other/state" FM_DATA_OVERRIDE="$other/data" FM_CONFIG_OVERRIDE="$other/config" bash -c '
+    . "$1" || exit 9
+    O_HOME=$2 O_TAG=$(wd_tag "$2") O_KEY=$(wd_state_key "$2") O_BACKEND=orca O_TARGET=orca-ob O_REC_SUBJECT=worker:ob
+    log=$3
+    fm_run_timed() { printf "%s %s %s %s %s\n" "${2##*/}" "$FM_HOME" "$FM_STATE_OVERRIDE" "$FM_DATA_OVERRIDE" "$FM_CONFIG_OVERRIDE" >> "$log"; return 0; }
+    wd_pp_steer ob h1 >/dev/null 2>&1
+    wd_pp_relaunch ob h2 >/dev/null 2>&1' _ "$WD" "$H" "$bind_log" 2>/dev/null || true
+  assert_equals "fm-send.sh $H $H/state $H/data $H/config" "$(grep '^fm-send.sh ' "$bind_log")" "the instruction is sent with the watched home's own paths: $(cat "$bind_log")"
+  assert_equals "control.sh $H $H/state $H/data $H/config" "$(grep -v '^fm-send.sh ' "$bind_log" | sed 's/^fm-control.sh /control.sh /')" "the relaunch runs with the watched home's own paths: $(cat "$bind_log")"
   pass "trust dialog: no key, a controlled relaunch only on Orca once per window, and a refusal is reported"
 }
 

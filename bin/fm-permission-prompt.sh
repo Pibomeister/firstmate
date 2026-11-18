@@ -26,10 +26,11 @@
 #       prompt on another harness is `hold unknown-harness`.
 #   trust workspace
 #       Claude's workspace-trust dialog, proven by its heading and answer
-#       rows. Its cursor sits on the declining `No, exit`, so Enter would
-#       exit; no key: the watchdog asks bin/fm-control.sh for a controlled
-#       relaunch, whose spawn pre-registers the worktree's trust entry and
-#       refuses to launch when it cannot. Antigravity's dialog is
+#       rows; the cursor is not read, because no key is pressed. On an Orca
+#       worker the watchdog asks bin/fm-control.sh for a controlled relaunch,
+#       which closes the recorded terminal without a key and whose spawn
+#       pre-registers the worktree's trust entry and refuses to launch when it
+#       cannot; on any other backend the dialog is held. Antigravity's dialog is
 #       `hold trust-relaunch-answers`, because its spawn answers the dialog
 #       with Enter when pre-registration fails. Other harnesses get
 #       `hold trust-unregistered`. A hard-stop word in its

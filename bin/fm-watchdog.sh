@@ -1724,7 +1724,10 @@ wd_pp_steer() {
   local id=$1 hash=$2 text rid
   text="Watchdog (automated, not the owner): a permission prompt on your pane was declined automatically, because no person can approve prompts during unattended work. Do not repeat the same call. If it was a Bash command the harness could not check, rewrite it in a form it can check: quote heredoc delimiters (<<'EOF'), avoid unescaped backticks, or write the file with the Write or Edit tool. If the action is truly needed and no other form works, append a blocked: status line that names it instead of waiting for approval."
   rid=$(wd_id)
-  if FM_HOME=$O_HOME fm_run_timed 60 "$SCRIPT_DIR/fm-send.sh" "$id" "$text" </dev/null >/dev/null 2>&1; then
+  # The watched home's own state, data, and config are bound explicitly, so an
+  # owner override exported to this pass never resolves the id in another home.
+  if FM_HOME=$O_HOME FM_STATE_OVERRIDE=$O_HOME/state FM_DATA_OVERRIDE=$O_HOME/data FM_CONFIG_OVERRIDE=$O_HOME/config \
+    fm_run_timed 60 "$SCRIPT_DIR/fm-send.sh" "$id" "$text" </dev/null >/dev/null 2>&1; then
     wd_rec "$rid" permission-prompt steer "done" "rewrite instruction recorded in the worker's inbox"
     return 0
   fi
@@ -1866,7 +1869,9 @@ wd_pp_relaunch() {
     return 1
   fi
   note="The previous launch stopped on the workspace-trust dialog before it could work. The watchdog relaunched this worker so its launch pre-registers the worktree's trust entry; no key was typed into the dialog. Continue the task from these instructions."
-  if err=$(FM_HOME=$O_HOME fm_run_timed "$(cfgi relaunch-timeout-secs 900)" "$WD_CONTROL" "$id" relaunch --note "$note" </dev/null 2>&1 >/dev/null); then
+  # Bound to the watched home, as the instruction in wd_pp_steer is.
+  if err=$(FM_HOME=$O_HOME FM_STATE_OVERRIDE=$O_HOME/state FM_DATA_OVERRIDE=$O_HOME/data FM_CONFIG_OVERRIDE=$O_HOME/config \
+    fm_run_timed "$(cfgi relaunch-timeout-secs 900)" "$WD_CONTROL" "$id" relaunch --note "$note" </dev/null 2>&1 >/dev/null); then
     wd_rec "$rid" permission-prompt relaunch "done" "worker relaunched"
     wd_pp_clear "$id"
     return 0
