@@ -46,9 +46,9 @@ Read the result with `bin/fm-merge-review.sh findings <PR url> --head <full-sha>
 - `deferred`: every seat called it an edge case, or the tie-break council ruled it one.
   File the follow-up as its own backlog item first, then record it with `bin/fm-merge-review.sh followup`; the review does not approve before that record exists.
 - `dropped` or `resolved`: every seat found it unsupported or already fixed, and nothing more is owed.
-- `open`: a seat holds it as a regression or the seats do not all call it an edge case, and no tie-break council deferred it, or it is a security, destructive, or data-loss finding, which never defers.
+- `open`: a seat holds it as a regression or the seats do not all call it an edge case, and no tie-break council deferred it or it is a security, destructive, or data-loss finding, which never defers.
   Send the worker one fix round that names the open finding ids.
-- `pending` or `unruled`: a seat or the tie-break council has not ruled, so dispatch the review again at that head.
+- `pending` or `unruled`: a seat or the tie-break council has not ruled, and no receipt at that head says BLOCK, so dispatch the review again at that head.
 
 A watchdog ruling, a follow-up record, or a rerun never clears an open finding or a BLOCK receipt; only a new head that every seat rules on does.
 The steps below are for every other review.

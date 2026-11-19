@@ -122,7 +122,7 @@
 #   pending   a seat has not ruled on it yet: an edge case another seat must
 #             answer, a finding no seat holds while fewer than two model
 #             families hold a valid review at the head, or a tie the tie-break
-#             council has not answered.
+#             council has not answered while no receipt here says BLOCK.
 #   unruled   open before this head, and no seat holds a valid review here.
 # A pending or unruled finding keeps check incomplete until run is called
 # again at the head and the seats answer.
@@ -147,7 +147,7 @@
 # pending and a "tie.<id>.failed.<epoch>" record, and the next run asks again.
 # The council gets the seats' reviews, not the diff, and a call is stopped
 # after twice the configured timeout. It is not asked while a receipt says
-# BLOCK, and its answer changes one finding's state and nothing else. With no
+# BLOCK, and such a tie stays open. Its answer changes one finding's state and nothing else. With no
 # council-config key a tie stays open. AgentKit owns the council rule, the
 # roster, and the record.
 #
@@ -989,16 +989,21 @@ mr_tie_outcome() {  # <head-store> <finding-id> <votes> <finding rows>
 
 # Print the finding rows of one head store: the rows of mr_findings_votes,
 # with each tie in the state the tie-break gives it. A tie the council deferred
-# is deferred. With a council-config key, a tie the council has not answered is
-# pending, and with <need> its "K" row stays. Any other tie stays open.
+# is deferred. With a council-config key and no valid receipt here that says
+# BLOCK, a tie the council has not answered is pending, and with <need> its "K"
+# row stays. Any other tie stays open.
 mr_findings_state() {  # <head-store> <seats> [need]
-  local store=$1 rows tab kind id votes outcome ties=''
+  local store=$1 rows tab kind id votes outcome ties='' block=unread
   tab=$(printf '\t')
   rows=$(mr_findings_votes "$store" "$2" "${3:-}")
   while IFS="$tab" read -r kind id votes; do
     [ "$kind" = K ] || continue
     outcome=$(mr_tie_outcome "$store" "$id" "$votes" "$rows") || outcome=none
     [ "$outcome" != none ] || [ -n "$MR_COUNCIL_CONFIG" ] || outcome=off
+    if [ "$outcome" = none ]; then
+      [ "$block" != unread ] || block=$(mr_store_block_seat "$store")
+      [ -z "$block" ] || outcome=off
+    fi
     ties="$ties$id=$outcome,"
   done <<EOF
 $rows
@@ -1010,6 +1015,19 @@ EOF
     ($1 in tie) && tie[$1] == "approve" { $2 = "deferred" }
     ($1 in tie) && tie[$1] == "none" { $2 = "pending" }
     { print }'
+}
+
+# Print the seat of the first valid receipt in <head-store> that says BLOCK,
+# or nothing when no valid receipt there says BLOCK.
+mr_store_block_seat() {  # <head-store>
+  local receipt
+  for receipt in "$1"/*.receipt; do
+    [ -f "$receipt" ] || continue
+    if mr_receipt_valid "$receipt" && [ "$MR_R_VERDICT" = BLOCK ]; then
+      printf '%s\n' "$MR_R_SEAT"
+      return 0
+    fi
+  done
 }
 
 # Validate one stored receipt against the pull request, the head, the stored
@@ -1735,9 +1753,9 @@ mr_council_call() {  # <seat-index> <ids> <prompt-file>
 
 # From round three, put each tie to the AgentKit council, one call at a time:
 # see "Tie-break" in the header. A receipt that says BLOCK blocks whatever the
-# council answers, so the council is not asked then.
+# council answers, so mr_findings_state gives no tie to ask about then.
 mr_tiebreak() {
-  local seats rows ties receipt tab kind id votes pid
+  local seats rows ties tab kind id votes pid
   [ "$MR_ROUND" -ge 3 ] || return 0
   [ -n "$MR_COUNCIL_CONFIG" ] || return 0
   tab=$(printf '\t')
@@ -1745,13 +1763,6 @@ mr_tiebreak() {
   rows=$(mr_findings_state "$MR_STORE" "$seats" need)
   ties=$(printf '%s\n' "$rows" | awk -F'\t' '$1 == "K"')
   [ -n "$ties" ] || return 0
-  for receipt in "$MR_STORE"/*.receipt; do
-    [ -f "$receipt" ] || continue
-    if mr_receipt_valid "$receipt" && [ "$MR_R_VERDICT" = BLOCK ]; then
-      printf 'tie-break: the council is not asked, because %s says BLOCK\n' "$MR_R_SEAT"
-      return 0
-    fi
-  done
   if ! command -v ak >/dev/null 2>&1; then
     printf 'tie-break: the council is not asked, because the ak tool is not installed\n'
     return 0

@@ -2771,6 +2771,20 @@ test_the_council_is_not_asked_past_a_class_a_block_verdict_or_a_single_ruling() 
   assert_grep "merge-review: blocked" "$CASE/stdout" "tie-block: a BLOCK verdict does not block ($(cat "$CASE/stdout"))"
   assert_grep " blocks=$AGY_SEAT " "$CASE/stdout" "tie-block: the blocking seat is not named"
   assert_equals 0 "$(council_calls)" "tie-block: the council was asked past a BLOCK verdict"
+  assert_grep " open=F1 " "$CASE/stdout" "tie-block: the tie past a BLOCK verdict is not open"
+  rc=0
+  run_supervisor findings "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 0 "$rc" "tie-block: findings"
+  assert_match "^F1	open	" "$CASE/stdout" "tie-block: findings does not print the tie as open ($(cat "$CASE/stdout"))"
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 1 "$rc" "tie-block: check"
+  assert_grep "merge-review: blocked" "$CASE/stdout" "tie-block: check is not blocked ($(cat "$CASE/stdout"))"
+  assert_grep " open=F1 " "$CASE/stdout" "tie-block: check does not name the tie as open"
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "tie-block: a rerun at the head"
+  assert_equals 0 "$(council_calls)" "tie-block: a rerun asked the council past a BLOCK verdict"
 
   # A regression only its reporter ruled on is not a tie.
   make_case tie-single "${TWO_SEATS[@]}" "council-config=$TMP_ROOT/tie-single/roster.json"
