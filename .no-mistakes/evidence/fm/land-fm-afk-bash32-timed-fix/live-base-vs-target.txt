@@ -1,0 +1,14 @@
+=== base (467c1bd9) ===
+bash=3.2.57(1)-release mechanism-for-fn=bash(fm_run_timed_fn)
+S1 command-builtin: out='' rc=0 fake.out='fake-ran'  (expect out=after rc=5)
+S2 bound: out='' rc=124 elapsed=4s leftover-sleep=0  (expect rc=124 elapsed~2-3 leftover=0)
+S3a success: out='ok' rc=0
+S3b failure: rc=3 (expect 3)
+S3d fm_run_timed bash-mech plain cmd: rc=7 (expect 7)
+=== target (d71d3629) ===
+bash=3.2.57(1)-release mechanism-for-fn=bash(fm_run_timed_fn)
+S1 command-builtin: out='after' rc=5 fake.out='fake-ran'  (expect out=after rc=5)
+S2 bound: out='' rc=124 elapsed=6s leftover-sleep=0  (expect rc=124 elapsed~2-3 leftover=0)
+S3a success: out='ok' rc=0
+S3b failure: rc=3 (expect 3)
+S3d fm_run_timed bash-mech plain cmd: rc=7 (expect 7)
