@@ -507,6 +507,7 @@ family_for_basename_var() {
     fm-claude-stop-autoarm.test.sh|fm-cursor-harness.test.sh|\
     fm-dispatch-resolve.test.sh|\
     fm-extension-binding.test.sh|fm-gitignore-config.test.sh|fm-health-verdict.test.sh|\
+    fm-host-cleanup.test.sh|fm-host-ledger.test.sh|\
     fm-no-mistakes-required.test.sh|fm-peek-remote.test.sh|\
     fm-pending-reply.test.sh|fm-pi-branch-extension.test.sh|\
     fm-procevent-extension-errors.test.sh|fm-procevent-factory.test.sh|fm-procevent-no-mistakes.test.sh|fm-procevent-quota.test.sh|fm-procevent-when.test.sh|fm-procevent.test.sh|\
@@ -915,6 +916,8 @@ tests/fm-herdr-session-cleanup.test.sh 10131
 tests/fm-herdr-submit-confirm-live-e2e.test.sh 84
 tests/fm-herdr-version-floor-live-e2e.test.sh 74
 tests/fm-home-summary-refresh.test.sh 48737
+tests/fm-host-cleanup.test.sh 5000
+tests/fm-host-ledger.test.sh 5000
 tests/fm-host-mirror-live-e2e.test.sh 70
 tests/fm-host-mirror.test.sh 14895
 tests/fm-hung-ladder.test.sh 45000
@@ -2112,6 +2115,12 @@ families_for_changed_path() {
     bin/fm-bearings-snapshot.sh|bin/fm-fleet-snapshot.sh|bin/fm-fleet-view.sh|bin/fm-contributions.sh|bin/fm-contributions.jq|\
     bin/fm-home-summary-refresh.sh)
       printf '%s\n' snapshot-bearings
+      ;;
+    bin/fm-host-cleanup.sh)
+      printf '%s\n' "__script__:fm-host-cleanup.test.sh"
+      ;;
+    bin/fm-host-ledger.sh)
+      printf '%s\n' "__script__:fm-host-ledger.test.sh"
       ;;
     bin/fm-ci-select.sh)
       printf '%s\n' "__script__:fm-ci-select.test.sh"
