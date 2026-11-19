@@ -129,6 +129,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-afk-preflight.sh`    | Print the AFK preflight section, with tracked fleet learnings, during away/quiet entry |
 | `fm-afk-launch.sh`       | Own away/quiet entry (same-turn record write, then read-back and AFK preflight), exit, rollback, and any backend terminal lifecycle |
 | `fm-afk-return.sh`       | Own receipted quiet exit and deterministic away return shutdown, brief, catch-up evidence, and blocker gate |
+| `fm-afk-preallow.sh`     | Own the away-mode pre-allow list: derive candidate Bash entries from recorded permission dialogs, write the owner's review page, record the approval bound to that exact list, and print approved entries |
 | `fm-supervisor-target-lib.sh` | Resolve the shared supervisor target and backend for the daemon and launcher       |
 | `fm-supervise-daemon.sh` | Presence-gated away-mode sub-supervisor: self-handle routine wakes, guard injection by the detected primary harness, escalate batched digests, alert on failed delivery |
 | `fm-agent-kit-pin.sh`    | Prove the vendored Cursor agent-kit bin files match the sha256 pin in `.cursor/agent-kit.md` |
