@@ -29,7 +29,7 @@
       "backend": "orca",
       "title": "m4ops",
       "handle": "",
-      "fm_home": "~/orca/projects/firstmate",
+      "fm_home": "",
       "open_work": {
         "repos": ["Pibomeister/firstmate"],
         "queue_file": "~/orca/projects/firstmate/data/backlog.md"

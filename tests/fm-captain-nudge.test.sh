@@ -612,6 +612,100 @@ test_once_stalled_lane_wakes_with_the_lane_table() {
   [ ! -s "$home/send.log" ] || fail "a young lane stall must not type: $(cat "$home/send.log")"
   pass "fm-captain-nudge: a lane with no progress for 20m wakes the captain with the lane table"
 }
+write_fake_orca() {  # <dir> <last-output-ms>
+  mkdir -p "$1"
+  cat > "$1/orca" <<SH
+#!/bin/sh
+case "\$1 \$2" in
+  "terminal list")
+    printf '%s\n' '{"result":{"terminals":[{"id":"term_stale","title":"captain-a","lastOutputAt":$2},{"id":"term_live","title":"captain-a","lastOutputAt":$2},{"id":"term_new","title":"captain-a","lastOutputAt":$2}]}}'
+    ;;
+  "terminal read")
+    t=''
+    while [ "\$#" -gt 0 ]; do [ "\$1" = --terminal ] && t=\$2; shift; done
+    printf '%s\n' "\$t" >> "\$FAKE_ORCA_LOG"
+    printf '%s\n' '{"result":{"terminal":{"tail":"❯ ","draft":""}}}'
+    ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$1/orca"
+}
+
+write_locate_bin() {  # <dir> -> fake fm-captain-locate printing one line per call from $FAKE_LOCATE_LINES
+  mkdir -p "$1"
+  cat > "$1/locate" <<'SH'
+#!/bin/sh
+[ -n "${FM_HOME:-}" ] || exit 3
+n=$(cat "$FAKE_LOCATE_COUNT" 2>/dev/null || echo 0)
+n=$((n + 1))
+printf '%s\n' "$n" > "$FAKE_LOCATE_COUNT"
+line=$(sed -n "${n}p" "$FAKE_LOCATE_LINES")
+[ -n "$line" ] || line=$(tail -n 1 "$FAKE_LOCATE_LINES")
+printf '%s\n' "$line"
+case "$line" in *state=held*) exit 0 ;; *) exit 1 ;; esac
+SH
+  chmod +x "$1/locate"
+}
+
+orca_captain_home() {  # <name> -> config home for an Orca captain configured on the stale pane
+  local fm="$TMP_ROOT/$1-fm" cap
+  mkdir -p "$fm/state"
+  printf -- '- [ ] do the thing\n' > "$TMP_ROOT/$1-queue.md"
+  cap=$(jq -nc --arg fm "$fm" --arg q "$TMP_ROOT/$1-queue.md" \
+    '[{id:"alpha", owner:"firstmate", backend:"orca", handle:"term_stale", title:"captain-a", fm_home:$fm,
+       idle_min:15, open_work:{repos:[], queue_file:$q}}]')
+  write_home "$1" "$cap"
+}
+
+orca_once() {  # <home> <now> <locate-lines...>
+  local home=$1 now=$2 bin="$TMP_ROOT/f11-bin"
+  shift 2
+  write_fake_orca "$bin" "$(( (now - 30 * 60) * 1000 ))"
+  write_locate_bin "$bin"
+  printf '%s\n' "$@" > "$home/locate.lines"
+  : > "$home/locate.count"
+  PATH="$bin:$PATH" FM_NUDGE_LOCATE_BIN="$bin/locate" FM_NUDGE_READY_PR_BIN=/nonexistent \
+    FAKE_LOCATE_LINES="$home/locate.lines" FAKE_LOCATE_COUNT="$home/locate.count" FAKE_ORCA_LOG="$home/orca.log" \
+    FM_NUDGE_NOW=$now run_once "$home"
+}
+
+test_once_targets_the_lock_owner_not_the_configured_pane() {
+  local home now=2000000000
+  home=$(orca_captain_home lock-owner)
+  orca_once "$home" "$now" 'CAPTAIN v1 pid=4242 handle=term_live state=held'
+  assert_equals nudge "$(last_event "$home")" "the live lock owner idle 30m with open work gets the wake"
+  [ "$(sort -u "$home/orca.log")" = term_live ] || fail "only the lock owner's pane may be read: $(cat "$home/orca.log")"
+  [ "$(cut -f2 "$home/send.log")" = term_live ] || fail "the wake must go to the lock owner: $(cat "$home/send.log")"
+  tail -n 1 "$home/state/nudge.jsonl" | jq -e '.target == "term_live"' >/dev/null \
+    || fail "the JSONL row must name the lock owner's terminal"
+  pass "fm-captain-nudge: an Orca captain with a home is reached at its lock owner's terminal, not the configured pane"
+}
+
+test_once_reports_an_unknown_captain_without_typing() {
+  local home now=2000000000 state
+  for state in unknown free stale unreadable; do
+    home=$(orca_captain_home "lock-$state")
+    orca_once "$home" "$now" "CAPTAIN v1 pid=0 handle=none state=$state"
+    assert_equals captain_unknown "$(last_event "$home")" "a $state lock reports an unknown captain"
+    tail -n 1 "$home/state/nudge.jsonl" | jq -e --arg s "$state" '.severity == "medium" and .lock_state == $s' >/dev/null \
+      || fail "the $state row must be medium and name the lock state: $(tail -n 1 "$home/state/nudge.jsonl")"
+    [ ! -s "$home/orca.log" ] || fail "a $state lock must not read the configured pane: $(cat "$home/orca.log")"
+    [ ! -s "$home/send.log" ] || fail "a $state lock must not type: $(cat "$home/send.log")"
+  done
+  pass "fm-captain-nudge: a captain home without a held lock is reported unknown and never typed into"
+}
+
+test_once_refuses_a_send_after_the_lock_moves() {
+  local home now=2000000000
+  home=$(orca_captain_home lock-moved)
+  orca_once "$home" "$now" 'CAPTAIN v1 pid=4242 handle=term_live state=held' 'CAPTAIN v1 pid=5151 handle=term_new state=held'
+  [ "$(sort -u "$home/orca.log")" = term_live ] || fail "the pass observed the first owner: $(cat "$home/orca.log")"
+  [ ! -s "$home/send.log" ] || fail "a send after the lock moved must be refused: $(cat "$home/send.log")"
+  jq -e 'select(.event == "blocker" and .reason == "send failed")' "$home/state/nudge.jsonl" >/dev/null \
+    || fail "the refused send must be recorded as a blocker: $(cat "$home/state/nudge.jsonl")"
+  pass "fm-captain-nudge: a lock handoff between read and send stops the send"
+}
 fm_test_run \
   test_help_and_usage \
   test_decide_nudge_happy_path \
@@ -643,4 +737,7 @@ fm_test_run \
   test_once_ladder_wakes_escalates_councils_and_records_ack \
   test_once_merge_ready_nudges_once_after_15_minutes \
   test_once_records_the_captain_home_stall_ledger \
-  test_once_stalled_lane_wakes_with_the_lane_table
+  test_once_stalled_lane_wakes_with_the_lane_table \
+  test_once_targets_the_lock_owner_not_the_configured_pane \
+  test_once_reports_an_unknown_captain_without_typing \
+  test_once_refuses_a_send_after_the_lock_moves

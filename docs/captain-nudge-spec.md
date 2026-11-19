@@ -26,7 +26,7 @@ Required keys:
 | `idle_min` | number | Observed idle minutes at decision time |
 | `open_work` | string | Open-work summary (`none`, `2 open PR(s) (org/repo:2)`, `unreadable: ...`) |
 
-Optional keys the current writer also sets: `epoch` (unix seconds), `should_send` (bool), `prompt` (the prompt kind typed, or empty), `dry_run` (bool), `target` (pane/terminal handle), `backend` (`orca`/`herdr`/`fixture`), `lanes` (the lane table), and on merge-ready rows `pr` (PR URL, comma-separated when several) and `run` (`<run_id>@<head>`).
+Optional keys the current writer also sets: `epoch` (unix seconds), `should_send` (bool), `prompt` (the prompt kind typed, or empty), `dry_run` (bool), `target` (pane/terminal handle), `backend` (`orca`/`herdr`/`fixture`), `lanes` (the lane table), `lock_state` (on `captain_unknown`, the home lock state that `fm-captain-locate.sh` reported), and on merge-ready rows `pr` (PR URL, comma-separated when several) and `run` (`<run_id>@<head>`).
 Readers must ignore unknown keys.
 
 ### Events
@@ -38,7 +38,8 @@ Readers must ignore unknown keys.
 | `skip_no_open_work` | `info` | No proven open PRs or queue items |
 | `skip_cooldown` | `info` | Per-captain cooldown still running |
 | `skipped_input_not_empty` | `info` | Composer or Orca `draft` holds text |
-| `blocker` | `medium` | Modal/picker/permission visible, composer unknown, pane send failed, or composer unproven |
+| `blocker` | `medium` | Modal/picker/permission visible, composer unknown, pane send failed (including a captain lock that moved between read and send), or composer unproven |
+| `captain_unknown` | `medium` | An Orca captain's `fm_home` lock is not held by a live endpoint; nothing read or typed |
 | `skip_pane_missing` | `medium` | Configured terminal or pane not found |
 | `skip_read_failed` | `medium` | Pane read failed |
 | `nudge_no_progress` | `high` | Two consecutive nudges with no output/commit/heartbeat advance; nudging this captain stops until progress resumes |

@@ -28,6 +28,14 @@ Unknown or unproven composer state is a `blocker`: the tool never overwrites or 
 
 The typed payloads, each followed by Enter, are the fixed prompts that [`captain-nudge-spec.md`](captain-nudge-spec.md#fixed-prompts) lists.
 
+## Who it types to
+
+An Orca captain with `fm_home` set is whoever holds that home's session lock right now, as [`bin/fm-captain-locate.sh`](../bin/fm-captain-locate.sh) reports it, not the configured `handle` or `title`.
+The tool reads the lock owner's terminal at the start of each pass and reads it again just before it types, so a handoff in between stops the send with a `blocker`.
+When the lock is free, stale, mid-handoff, or unreadable, the row is `captain_unknown`: the captain is unknown, not down, and nothing is typed.
+A Herdr captain, or an Orca captain without `fm_home`, still uses its configured pane or handle.
+Give each Orca captain its own `fm_home`: two captains that name one home both reach that home's single lock owner.
+
 ## Stall ladder
 
 A stall runs on the older of two clocks: the captain's idle time and the age of its oldest stalled lane.
@@ -116,7 +124,8 @@ Fill `handle` or `title` (Orca) / `pane` or `title` (Herdr), `fm_home`, `open_wo
 
 Host notes:
 
-- Prefer an Orca terminal `handle` over `title`: successor captains often reuse a title, and `title` picks the first match. Update the handle when a captain is replaced.
-- macOS launchd jobs cannot read `~/Documents` without Full Disk Access, so keep the firstmate checkout that runs this tool outside `~/Documents`; a `fm_home` or `queue_file` there reads as absent under launchd, and open work then has to come from `open_work.repos`.
+- Set `fm_home` for every Orca captain so the tool follows the lock owner; a configured `handle` or `title` then only names the captain until a successor takes the lock.
+- Without `fm_home`, prefer an Orca terminal `handle` over `title`: successor captains often reuse a title, and `title` picks the first match. Update the handle when a captain is replaced.
+- macOS launchd jobs cannot read `~/Documents` without Full Disk Access, so keep the firstmate checkout that runs this tool outside `~/Documents`; a `queue_file` there reads as absent under launchd, and an Orca captain whose `fm_home` is there reads as `captain_unknown` on every pass.
 - Herdr refuses a client whose protocol is newer than the running server. Install with `PATH` putting the herdr binary that matches the server first (for example `PATH="$HOME/.local/bin:$PATH" bin/fm-captain-nudge.sh install ...`); the unit records that `PATH`.
 - Herdr has no last-output time, so a Herdr captain's idle time is how long its visible screen has been unchanged (tracked in `state_dir/captains/<id>.screen`). The first pass after install starts that clock.
