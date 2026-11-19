@@ -941,7 +941,11 @@ See [`captain-nudge.md`](captain-nudge.md) for behaviour, install, and hard limi
 | `host` | required | Short host token written on every event (`m4`, `dev01`, ...). |
 | `interval_secs` | `300` | `run` loop sleep. |
 | `guard_stale_secs` | `660` | Outer guard restarts the loop when `loop.heartbeat` is older than this. |
-| `idle_min` | `20` | Default idle minutes before a nudge. A captain may override. |
+| `idle_min` | `15` | Default idle minutes before the first wake. A captain may override. |
+| `lane_stall_min` | `20` | Minutes a lane stall stays open in the captain home's stall ledger before it starts the ladder; `0` turns the lane signal off. |
+| `escalate_min` | `40` | Stall minutes before the second wake (relaunch or replace); `0` turns it off. |
+| `council_min` | `60` | Stall minutes before the `stall_council` row; `0` turns it off. |
+| `merge_ready_min` | `15` | Minutes a PR head stays merge-ready before the merge prompt; `0` turns the merge-ready wake off. |
 | `cooldown_min` | `30` | Default minutes between nudges for one captain. |
 | `max_no_progress` | `2` | Consecutive no-progress nudges before `nudge_no_progress` and stop. |
 | `mode` | `act` | `dry-run` logs decisions and never types. |
@@ -961,8 +965,8 @@ Each `captains[]` object:
 | `handle` | Orca terminal handle, when known. |
 | `pane` | Herdr pane id (`w1:pG`), when known. |
 | `session` | Optional Herdr session name. |
-| `fm_home` | That captain's firstmate home, for `heartbeat.json` idle and commit progress. |
-| `idle_min` / `cooldown_min` / `max_no_progress` | Optional per-captain overrides. |
+| `fm_home` | That captain's firstmate home, for `heartbeat.json` idle and commit progress, its stall ledger and stalled lanes, and merge-ready discovery. |
+| `idle_min` / `cooldown_min` / `max_no_progress` / `lane_stall_min` / `escalate_min` / `council_min` / `merge_ready_min` | Optional per-captain overrides. |
 | `open_work.repos` | `owner/name` repos probed with read-only `gh pr list --state open`. |
 | `open_work.queue_file` | Local queue; a `- [ ]` item, an `In flight`/`queued` line, or any non-comment body counts as open work. |
 | `open_work.command` | Optional extra probe; only `gh pr list...` or `gh api graphql` without `mutation` is allowed. |
