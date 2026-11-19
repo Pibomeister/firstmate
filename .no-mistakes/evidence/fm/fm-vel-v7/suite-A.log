@@ -1,0 +1,7 @@
+1..4
+ok - a review a stopped run left with no receipt is read by the next round, and what it holds stays open
+ok - a finding held by a seat that left config/merge-review still reaches the next round as open
+ok - a run stopped between its two round records can run again, and only over the same prior findings
+ok - a finding a stopped run left without an id gets one, and the next round rules on it
+FM_TEST_COMPLETE
+exit=0

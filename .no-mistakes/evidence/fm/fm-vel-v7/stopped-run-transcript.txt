@@ -1,0 +1,42 @@
+### Head 1 (ee977456f97e4b571c45d5cc36ea5e2107320671): claude seat BLOCKs on a new finding, agy seat approves
+$ fm-merge-review.sh run head1 (exit 1)
+  seat anthropic.claude.claude-test-1: BLOCK
+  seat google.agy.gemini-test-high: APPROVE
+  merge-review: blocked head=ee977456f97e4b571c45d5cc36ea5e2107320671 approvals=google.agy.gemini-test-high:APPROVE blocks=anthropic.claude.claude-test-1 round=1 open=F1 url=https://github.com/example/repo/pull/7
+
+$ fm-merge-review.sh findings head1 (exit 0)
+  round=1 head=ee977456f97e4b571c45d5cc36ea5e2107320671 previous=none
+  F1	open	none	feature.txt:1	The reader breaks on the first line.	followup=none
+
+### Simulate a run that stopped after storing the claude review, before its receipt and ids
+remaining: anthropic.claude.claude-test-1.raw.json anthropic.claude.claude-test-1.review.md diff.488fa36b782a7be43073927666640fd19f0ce05de1c7250ba7bdb4208e840b92.patch google.agy.gemini-test-high.raw.json google.agy.gemini-test-high.receipt google.agy.gemini-test-high.review.md prompt.412497c383cb4837794da11a28de30217e31287d3735aba85b56904275d49278.md round 
+
+$ fm-merge-review.sh check head1 after stop (exit 1)
+  merge-review: incomplete head=ee977456f97e4b571c45d5cc36ea5e2107320671 approvals=google.agy.gemini-test-high:APPROVE blocks=none round=1 reason="stored review evidence is invalid" invalid="anthropic.claude.claude-test-1 (the review receipt is missing)" url=https://github.com/example/repo/pull/7
+
+### Head 2 (23820742664cf11373e2c0a75dcc8199529afd7b): both seats call F1 RESOLVED and approve
+$ fm-merge-review.sh run head2 (exit 0)
+  seat google.agy.gemini-test-high: APPROVE
+  seat anthropic.claude.claude-test-1: APPROVE
+  merge-review: approved head=23820742664cf11373e2c0a75dcc8199529afd7b approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none round=2 url=https://github.com/example/repo/pull/7
+
+prior findings the head-2 reviewer received:
+  F1 | open | none | feature.txt:1 | The reader breaks on the first line.
+
+round record of head 2:
+  round=2
+  previous=<head1>
+
+$ fm-merge-review.sh check head2 (exit 0)
+  merge-review: approved head=23820742664cf11373e2c0a75dcc8199529afd7b approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none round=2 url=https://github.com/example/repo/pull/7
+
+### Adversarial: same stopped head 1, but at head 2 both seats approve without ruling on F1
+$ fm-merge-review.sh run head2 (no ruling on F1) (exit 1)
+  seat google.agy.gemini-test-high: no valid review (the finding lines do not count: open finding F1 has no status line)
+  seat anthropic.claude.claude-test-1: no valid review (the finding lines do not count: open finding F1 has no status line)
+  merge-review: incomplete head=4fe3d4a8b232f7b11a79f327c6a95ac38a264a5e approvals=none blocks=none round=2 reason="no valid approving review at this head" url=https://github.com/example/repo/pull/7
+
+$ fm-merge-review.sh findings head2 (exit 0)
+  round=2 head=4fe3d4a8b232f7b11a79f327c6a95ac38a264a5e previous=ea9a30a4a4948b3e0c4bd925808bcaeda3d5acb8
+  F1	unruled	none	feature.txt:1	The reader breaks on the first line.	followup=none
+

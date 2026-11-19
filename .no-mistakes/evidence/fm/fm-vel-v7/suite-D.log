@@ -1,0 +1,9 @@
+1..6
+ok - a tie goes once to the AgentKit council, and its edge-case ruling defers the finding
+ok - a tie the council holds as a regression, splits on, or vetoes stays open, and the council is asked once
+ok - the council is not asked about a classed finding, past a BLOCK verdict, or about a finding one seat ruled on
+ok - a review that counts only for its dissent settles no earlier finding
+ok - a new finding of a review that counts only for its dissent stays open and goes to no vote
+ok - one BLOCK blocks despite an approval, the spare stays out, and a rerun cannot replace it
+FM_TEST_COMPLETE
+exit=0

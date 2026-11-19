@@ -1,0 +1,8 @@
+1..5
+ok - from round three an edge case is deferred only when both seats agree, and approves only with a recorded follow-up
+ok - a finding every seat calls unsupported, with evidence, is dropped; one seat alone cannot drop it
+ok - a security, destructive, or data-loss finding is never deferred or noted, and keeps its class
+ok - one seat alone never defers, drops, or resolves a finding, and no follow-up is recorded before a second model family rules
+ok - from round three an edge case is deferred only when every seat calls it one; any other ruling beside it keeps it open
+FM_TEST_COMPLETE
+exit=0
