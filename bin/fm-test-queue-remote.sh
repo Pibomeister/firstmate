@@ -45,7 +45,7 @@ remote_project_listed() {
 # Build file lists, queue copy, and local SHA-256 manifest in one pass directly
 # from the source tree, emitting repo metadata for remote_prepare.
 remote_stage_local() {
-  python3 - "$1" "$2" "$3" "$4" "$5" <<'PYSTAGE'
+  python3 - "$1" "$2" "$3" "$4" <<'PYSTAGE'
 import concurrent.futures
 import hashlib
 import json
@@ -57,7 +57,7 @@ import subprocess
 import sys
 import time
 
-pwd, local_dir, script_dir, spool, head_only = sys.argv[1:6]
+pwd, local_dir, script_dir, spool = sys.argv[1:5]
 
 try:
     root = subprocess.check_output(
@@ -263,7 +263,7 @@ remote_prepare() {
   command -v ssh >/dev/null 2>&1 && command -v git >/dev/null 2>&1 &&
     command -v rsync >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1 || return 1
   REMOTE_LOCAL=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-offload.XXXXXXXX") || return 1
-  if ! remote_stage_local "$PWD" "$REMOTE_LOCAL" "$SCRIPT_DIR" "$SPOOL" 0; then
+  if ! remote_stage_local "$PWD" "$REMOTE_LOCAL" "$SCRIPT_DIR" "$SPOOL"; then
     remote_cleanup
     return 1
   fi
