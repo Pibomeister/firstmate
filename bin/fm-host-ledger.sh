@@ -55,6 +55,23 @@ usage() {
   sed -n '2,/^set -u/p' "$0" | sed '$d; s/^# \{0,1\}//'
 }
 
+STAT_FMT=
+if stat -f %m / >/dev/null 2>&1; then
+  STAT_FMT=bsd
+elif stat -c %Y / >/dev/null 2>&1; then
+  STAT_FMT=gnu
+fi
+
+mtime_epoch() {  # <path>: print its mtime in epoch seconds, or nothing
+  local m=
+  case "$STAT_FMT" in
+    bsd) m=$(stat -f %m "$1" 2>/dev/null) ;;
+    gnu) m=$(stat -c %Y "$1" 2>/dev/null) ;;
+  esac
+  case "$m" in ''|*[!0-9]*) return 0 ;; esac
+  printf '%s\n' "$m"
+}
+
 die_usage() {
   echo "usage: fm-host-ledger.sh sample|report [--hours N]|microbench [--n N]|limits|--help" >&2
   exit 2
@@ -169,7 +186,7 @@ $(new_pids_calc "$prev" "$cur_tmp")
 EOF
   [ -n "$new_pids" ] || new_pids=unknown
   [ -n "$parents" ] || parents=unknown
-  prev_ts=$(stat -f %m "$prev" 2>/dev/null || stat -c %Y "$prev" 2>/dev/null || printf '')
+  prev_ts=$(mtime_epoch "$prev")
   interval=unknown
   new_per_s=unknown
   if [ -n "$prev_ts" ] && [ "$new_pids" != unknown ]; then
