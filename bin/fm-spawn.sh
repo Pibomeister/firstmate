@@ -306,7 +306,8 @@
 #   caller's explicit intake authority and is not presented as row-verified.
 #   Every explicit priority 0-4 preempts; this is not restricted to P0 or P1.
 #   A prioritized fresh worker is admitted past an exhausted project-capacity
-#   declaration or away spend cap without stopping an existing lane, and
+#   declaration, the lane-cap and load-ceiling deferral, or away spend cap
+#   without stopping an existing lane, and
 #   priority= is recorded in task metadata so supervision can apply its
 #   priority-specific contract.
 #   Relaunch preserves that recorded priority and refuses --priority overrides.
@@ -325,7 +326,8 @@
 #   exactly as queued as it was, unless this fresh spawn carries an explicit
 #   priority; an unreadable declaration refuses with exit 1.
 #   Lane capacity admission runs bin/fm-capacity.sh's --spawn-gate verdict at
-#   the lane-capacity gate below, with the same exit-75 deferral.
+#   the lane-capacity gate below, with the same exit-75 deferral, except an
+#   explicit priority, which is admitted past that deferral too.
 #   A batch reports such a pair as `batch: DEFERRED` and exits 75 when nothing
 #   else failed. A relaunch and a --secondmate spawn are never counted against
 #   capacity.
@@ -4976,13 +4978,16 @@ fi
 # task stays queued; exit 75 is that deferral and exit 1 its unreadable-config
 # refusal. With config/lane-capacity absent the verdict admits and nothing
 # changes. A relaunch and a secondmate spawn are never gated here.
+# An explicit --priority is admitted past the exit-75 deferral, as it is past
+# project capacity, and stops no live lane; it still refuses on exit 1, because
+# an unreadable limit is not permission.
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
   lane_admit_rc=0
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
     "$SCRIPT_DIR/fm-capacity.sh" --spawn-gate "$ID" || lane_admit_rc=$?
   case "$lane_admit_rc" in
     0) ;;
-    75) exit 75 ;;
+    75) [ "$PRIORITY_SET" -eq 1 ] || exit 75 ;;
     *)
       echo "error: spawn refused: lane capacity admission failed (fm-capacity.sh --spawn-gate exited $lane_admit_rc); fix config/lane-capacity or config/load-relief, as its message above names, so the captain's worker limits are known" >&2
       exit 1
