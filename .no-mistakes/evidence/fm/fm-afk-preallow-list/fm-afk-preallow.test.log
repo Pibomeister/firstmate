@@ -1,0 +1,6 @@
+ok - derive keeps exact Bash commands and reports every left-off dialog with its reason
+ok - the reader prints entries only for a valid list whose checksum the approval record names
+ok - an empty candidate cannot be approved and its page asks for no decision
+ok - the page shows each entry with its count and source, and the checksum approval binds to
+ok - fm-spawn pre-allows only an approved, unchanged list, and only for a worker launched while away
+all fm-afk-preallow tests passed

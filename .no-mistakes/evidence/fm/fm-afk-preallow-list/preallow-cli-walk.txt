@@ -1,0 +1,41 @@
+--- recorded row text (row 1) ---
+permission:  Bash command  Tip: auto mode handles these prompts for you — choose "switch to auto mode" below  Create the probe file with touch ╌╌╌  touch /tmp/probe/fm-perm-probe2.txt ╌╌╌  Do you want to proceed?  ❯ 1. Yes  2. Yes, and always allow access to /tmp/probe from this project  3. Yes, and switch to a
+$ approved (before any approval)
+rc=1
+$ derive
+sha256=988ebcdcde4ef8cbe45da46d1a26320b33ecfe1b11032d1a5d9327c9c2293caf entries=1 excluded=3
+rc=0
+$ cat candidate.list
+Bash(touch /tmp/probe/fm-perm-probe2.txt)
+$ cut -f1,2,6 excluded.tsv
+the command holds a shell operator or another character outside the plain set	1	[not shown]
+the command names a hard-stop category: destructive	1	[not shown]
+the command names a hard-stop category: release	1	[not shown]
+$ page --out preallow-review-page.html
+page=~/.no-mistakes/evidence/01M7TH4V16EKT75CM2AYTZZM62/preallow-review-page.html sha256=988ebcdcde4ef8cbe45da46d1a26320b33ecfe1b11032d1a5d9327c9c2293caf entries=1
+rc=0
+$ approve --sha256 <wrong>
+fm-afk-preallow: the candidate list is 988ebcdcde4ef8cbe45da46d1a26320b33ecfe1b11032d1a5d9327c9c2293caf, not the approved 0000000000000000000000000000000000000000000000000000000000000000; nothing recorded
+rc=3
+candidate sha256=988ebcdcde4ef8cbe45da46d1a26320b33ecfe1b11032d1a5d9327c9c2293caf
+$ approve --sha256 <shown hash>
+approved sha256=988ebcdcde4ef8cbe45da46d1a26320b33ecfe1b11032d1a5d9327c9c2293caf entries=1
+rc=0
+$ approved
+Bash(touch /tmp/probe/fm-perm-probe2.txt)
+rc=0
+$ (hand-edit approved list: append Bash(rm -rf /))
+$ approved
+fm-afk-preallow: the approval record does not match the list on disk; nothing is pre-allowed
+rc=3
+$ (restore list) approved
+Bash(touch /tmp/probe/fm-perm-probe2.txt)
+rc=0
+$ revoke
+approval removed; nothing is pre-allowed
+rc=0
+$ approved
+rc=1
+$ status
+candidate: sha256=988ebcdcde4ef8cbe45da46d1a26320b33ecfe1b11032d1a5d9327c9c2293caf entries=1
+approval: none; nothing is pre-allowed

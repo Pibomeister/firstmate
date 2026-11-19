@@ -1,0 +1,5 @@
+1..3
+ok - away permission dialog: the owner is paged once per window, the dialog is recorded, and no key is sent
+ok - an away Bash prompt with a pane-wide rule records its whole command for the pre-allow list
+ok - a credential stop on an approval picker pages the owner without recording its pane text, even while another pass holds the worker lock
+FM_TEST_COMPLETE

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Away-mode pre-allow list</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@400&family=Source+Serif+4:wght@600&display=swap" rel="stylesheet">
+<style>
+:root { --page: #FAF9F5; --surface: #F0EEE6; --border: #E8E6DC; --text: #141413; --muted: #5E5D59; --accent: #D97757; }
+@media (prefers-color-scheme: dark) {
+  :root { --page: #1F1E1D; --surface: #262624; --border: #3D3D3A; --text: #FAF9F5; --muted: #B7B5A9; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--text); font: 16px/1.6 Inter, system-ui, sans-serif; }
+main { max-width: 960px; margin: 0 auto; padding: 48px 16px 64px; }
+h1, h2 { font-family: "Source Serif 4", Georgia, serif; font-weight: 600; line-height: 1.25; margin: 0 0 16px; text-wrap: balance; }
+h1 { font-size: 34px; }
+h2 { font-size: 24px; margin-top: 56px; }
+p, li { max-width: 68ch; }
+p { margin: 0 0 16px; }
+.eyebrow { color: var(--muted); font-size: 14px; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 8px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin: 24px 0; }
+.card.key { border-left: 4px solid var(--accent); }
+.card p:last-child { margin-bottom: 0; }
+.muted { color: var(--muted); }
+code { font: 14px/1.5 "JetBrains Mono", ui-monospace, monospace; overflow-wrap: anywhere; }
+pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.5 "JetBrains Mono", ui-monospace, monospace; }
+.scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+th, td { text-align: left; vertical-align: top; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+th { background: var(--surface); font-weight: 600; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+.num { font-variant-numeric: tabular-nums; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin: 24px 0; }
+.fact { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 24px; }
+.fact b { display: block; font: 600 28px/1.2 "Source Serif 4", Georgia, serif; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<main>
+<div class="eyebrow">Firstmate - decision page</div>
+<h1>Away-mode pre-allow list</h1>
+<div class="card key"><p><b>TL;DR.</b> You chose to build the away-mode pre-allow list from past permission dialogs and to approve it once. This page is that list, built from the recorded dialogs. It holds 1 exact command(s). <b>Decision requested:</b> approve this exact list, or reject it. Nothing is pre-allowed until you approve, and your approval covers only the list with the checksum shown below.</p></div>
+<div class="facts"><div class="fact"><b>1</b>entries on the list</div><div class="fact"><b>4</b>recorded permission dialogs read</div><div class="fact"><b>3</b>dialogs left off the list</div></div>
+<h2>What approval does</h2>
+<ul>
+<li>Each entry is one exact command. A worker may run that command, and only that command, without a prompt.</li>
+<li>It applies to Claude ship and scout workers started while you are away. It does not change a session that is already running, and it does not change your own session.</li>
+<li>Commands that delete, release, spend, sign in, or touch credentials are never put on the list, and are refused even if someone adds one by hand.</li>
+<li>If the list changes by one byte after you approve, the approval stops counting and nothing is pre-allowed.</li>
+</ul>
+<h2>The list</h2>
+<div class="scroll"><table><thead><tr><th>Entry</th><th>Count</th><th>First seen</th><th>Last seen</th><th>Source</th></tr></thead><tbody>
+<tr><td><code>Bash(touch /tmp/probe/fm-perm-probe2.txt)</code></td><td class="num">1</td><td>1970-01-01</td><td>1970-01-01</td><td>fm-lab.BW4dQl/main</td></tr>
+</tbody></table></div>
+<h2>Left off the list</h2>
+<p>These recorded dialogs gave no entry. Each row shows the reason.</p>
+<div class="scroll"><table><thead><tr><th>Reason</th><th>Count</th><th>First seen</th><th>Last seen</th><th>Source</th><th>Sample</th></tr></thead><tbody>
+<tr><td><code>the command holds a shell operator or another character outside the plain set</code></td><td class="num">1</td><td>1970-01-01</td><td>1970-01-01</td><td>fm-lab.BW4dQl/main</td><td><code>[not shown]</code></td></tr>
+<tr><td><code>the command names a hard-stop category: destructive</code></td><td class="num">1</td><td>1970-01-01</td><td>1970-01-01</td><td>fm-lab.BW4dQl/main</td><td><code>[not shown]</code></td></tr>
+<tr><td><code>the command names a hard-stop category: release</code></td><td class="num">1</td><td>1970-01-01</td><td>1970-01-01</td><td>fm-lab.BW4dQl/main</td><td><code>[not shown]</code></td></tr>
+</tbody></table></div>
+<h2>Record</h2>
+<div class="card"><p class="muted">Source ledger</p><pre>/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.BW4dQl/state/watchdog/actions.tsv</pre></div>
+<div class="card"><p class="muted">List checksum (sha256)</p><pre>988ebcdcde4ef8cbe45da46d1a26320b33ecfe1b11032d1a5d9327c9c2293caf</pre></div>
+<div class="card"><p class="muted">Command that records your approval, run only after you approve</p><pre>bin/fm-afk-preallow.sh approve --sha256 988ebcdcde4ef8cbe45da46d1a26320b33ecfe1b11032d1a5d9327c9c2293caf --ref "&lt;where the approval is recorded&gt;"</pre></div>
+</main>
+</body>
+</html>
