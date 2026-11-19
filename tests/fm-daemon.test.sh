@@ -1050,9 +1050,10 @@ test_stale_diagnostic_wedge_survives_busy_housekeeping() {
       kill() { printf 'kill %s\n' "$*" >> "$action_log"; }
       fm_backend_send_text_submit() { printf 'interrupt %s\n' "$*" >> "$action_log"; }
       # A live agent holds the endpoint, so the paused case is a wait, not a dead worker.
-      export PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CURRENT_COMMAND=claude
-      LOG="$dir/daemon.log" FM_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
-      FM_FAKE_TMUX_CAPTURE="$pane" \
+      PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CURRENT_COMMAND=claude \
+        LOG="$dir/daemon.log" FM_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
+      PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CURRENT_COMMAND=claude \
+        FM_FAKE_TMUX_CAPTURE="$pane" \
         FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999999 housekeeping "$state"
     )
     case "$case_name" in
