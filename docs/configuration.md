@@ -1396,6 +1396,27 @@ The ceiling is `max-load1` above unless the optional `config/load-relief` file s
 [`bin/fm-load-relief.sh`](../bin/fm-load-relief.sh) owns that file's format, the priority order, and the pause records.
 The script's header owns the report line, the published document's fields, the verdict, the beat freshness rules, the host-constraint thresholds, and the probe fallbacks.
 
+## Goal digest (config/goal-digest)
+
+The optional local, gitignored `config/goal-digest` file configures [`bin/fm-goal-digest.sh`](../bin/fm-goal-digest.sh), a read-only recurring digest.
+Each line is `repo = <owner>/<name>`, `status = <label> | <local path or ssh location>`, or `review = <label> | <local path or ssh location>`, with optional `interval_seconds`, `stall_hours`, `summarize_cmd` and `output_dir` keys.
+A neutral example is:
+
+```text
+repo = example-org/example-repo
+status = Example status | /path/to/status.txt
+review = Example review | /path/to/review.status
+interval_seconds = 1200
+```
+
+The script header owns the exact format and output schema.
+`fm-goal-digest.sh install` installs a macOS LaunchAgent at the configured interval, which defaults to every 20 minutes.
+Each run writes `latest.md` and `latest.json` plus a timestamped copy under `history/` in the output directory, which defaults to `data/goal-digest/` under the effective home.
+The digest records new merges since the previous run, open pull requests waiting for review with their age, missed ETAs, stalled status sources, review-convergence records and unreachable sources, plus a `changed` flag.
+A configured summarizer runs only when the digest changed, and a summarizer naming an Opus model is refused.
+The job never merges, deploys, tags, pushes or messages anyone.
+Repository, host and person names belong only in the gitignored config and the private digest output, never in tracked code.
+
 ## Disk alarm
 
 `bin/fm-disk-alarm.sh` owns the free-space reading on `/System/Volumes/Data` and the launch gates that reading drives.
