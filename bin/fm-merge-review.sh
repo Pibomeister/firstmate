@@ -83,6 +83,11 @@
 # before the ledger existed are counted from their receipts. A round does not
 # start while a run at another head of the pull request is still alive,
 # whether or not that run has joined the ledger or written a receipt yet.
+# A run that stops between storing a review and storing its receipt leaves a
+# review with no receipt. It never counts at its head, and that head stays
+# incomplete. Its head is still a round, and the next round reads the review
+# as it reads the review of a seat that is no longer declared: a finding it
+# holds is carried as open, and it settles nothing.
 #
 # Findings. A reviewer reports each finding on one line:
 #   FINDING <NEW|id> | <STATUS> | <CLASS> | <where> | <text>
@@ -823,7 +828,9 @@ mr_findings_votes() {  # <head-store> <seats> [need]
       { n = split($0, p, " [|] "); if (n == 5) print "P\t" p[1] "\t" p[2] "\t" p[3] "\t" p[4] "\t" p[5] }
     ' "$store/prior.md"
     for seat in $2; do
-      if mr_seat_index "$seat" >/dev/null; then
+      if mr_seat_has_no_receipt "$store" "$seat"; then
+        printf 'X\t%s\n' "$seat"
+      elif mr_seat_index "$seat" >/dev/null; then
         printf 'S\t%s\t%s\t%s\n' "$seat" "$(mr_receipt_get "$store/$seat.receipt" family)" \
           "$(mr_receipt_get "$store/$seat.receipt" base)"
       else
@@ -831,7 +838,7 @@ mr_findings_votes() {  # <head-store> <seats> [need]
       fi
     done
     for seat in $2; do
-      sha=$(mr_receipt_get "$store/$seat.receipt" review_sha256)
+      sha=$(mr_seat_review_sha "$store" "$seat")
       [ ! -f "$ids" ] || LC_ALL=C awk -F'\t' -v h="$head" -v s="$seat" -v r="$sha" '
         $2 == h && $3 == s && $4 == r { print "I\t" $1 "\t" s "\t" $5 }
       ' "$ids"
@@ -1593,9 +1600,11 @@ mr_seat_has_receipt() {  # <seat-index>
 }
 
 # Print the seats that hold a valid receipt with a review round for the head
-# in MR_HEAD. Posting is not part of what a finding needs to count.
+# in MR_HEAD. Posting is not part of what a finding needs to count. While a
+# new round reads the head before it, also print each seat whose review a
+# stopped run stored there with no receipt.
 mr_round_seats() {
-  local store receipt saved_post=$MR_POST
+  local store receipt review seat saved_post=$MR_POST
   store=$(mr_store_dir)
   MR_POST=off
   for receipt in "$store"/*.receipt; do
@@ -1605,6 +1614,40 @@ mr_round_seats() {
     printf '%s\n' "$MR_R_SEAT"
   done
   MR_POST=$saved_post
+  [ -n "$MR_FORMER_SEATS" ] || return 0
+  for review in "$store"/*.review.md; do
+    [ -f "$review" ] || continue
+    seat=${review##*/}
+    seat=${seat%.review.md}
+    case "$seat" in '' | *[!A-Za-z0-9._-]*) continue ;; esac
+    ! mr_seat_has_no_receipt "$store" "$seat" || printf '%s\n' "$seat"
+  done
+}
+
+# True for a seat with no receipt in the head store. Its stored review is one
+# a stopped run left: see "Review rounds" in the header.
+mr_seat_has_no_receipt() {  # <head-store> <seat-id>
+  [ ! -e "$1/$2.receipt" ] && [ ! -L "$1/$2.receipt" ]
+}
+
+# True when the head store holds a review with no receipt.
+mr_dir_has_unbound_review() {  # <head-store>
+  local review
+  for review in "$1"/*.review.md; do
+    [ -f "$review" ] || continue
+    review=${review%.review.md}
+    ! mr_seat_has_no_receipt "$1" "${review##*/}" || return 0
+  done
+  return 1
+}
+
+# Print the hash that names a seat's review in the ids ledger.
+mr_seat_review_sha() {  # <head-store> <seat-id>
+  if mr_seat_has_no_receipt "$1" "$2"; then
+    mr_sha256 "$1/$2.review.md"
+  else
+    mr_receipt_get "$1/$2.receipt" review_sha256
+  fi
 }
 
 # Print the finding rows for the head in MR_HEAD: see mr_findings_state.
@@ -1631,7 +1674,7 @@ mr_assign_ids() {
   store=$(mr_store_dir)
   ledger="${store%/*}/ids"
   for seat in $(mr_round_seats); do
-    sha=$(mr_receipt_get "$store/$seat.receipt" review_sha256)
+    sha=$(mr_seat_review_sha "$store" "$seat")
     : > "$MR_RECORDS/ids.old" || mr_die 'cannot record finding ids'
     [ ! -f "$ledger" ] || awk -F'\t' 'NF == 5' "$ledger" > "$MR_RECORDS/ids.old" || mr_die 'cannot read the finding ids'
     mr_review_rows "$store" "$store/$seat.review.md" |
@@ -1746,7 +1789,7 @@ mr_round_begin() {  # <repo>
   if [ ! -f "$MR_STORE/round" ]; then
     while IFS="$tab" read -r head started; do
       [ "$head" != "$MR_HEAD" ] || break
-      mr_dir_has_receipt "$pr/$head" || continue
+      mr_dir_has_receipt "$pr/$head" || mr_dir_has_unbound_review "$pr/$head" || continue
       round=$((round + 1))
       previous=$head
     done < "$ledger"

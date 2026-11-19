@@ -3134,6 +3134,65 @@ test_a_review_with_a_form_defect_puts_no_new_finding_to_a_vote() {
   pass "a new finding of a review that counts only for its dissent stays open and goes to no vote"
 }
 
+
+test_a_review_a_stopped_run_left_with_no_receipt_reaches_the_next_round() {
+  local rc name store first
+  for name in orphan-beside-receipt orphan-alone; do
+    rc=0
+    make_case "$name" "${TWO_SEATS[@]}"
+    set_review claude \
+      'FINDING NEW | BLOCKING | none | feature.txt:1 | The reader breaks on the first line.' \
+      'VERDICT: BLOCK @HEAD@'
+    run_at_head || rc=$?
+    expect_code 1 "$rc" "$name: round 1"
+    first=$HEAD_SHA
+    # Rewrite the store as a run left it that stopped after it stored the
+    # review and before it stored the receipt and the finding ids. In the
+    # second case no other seat had stored anything yet.
+    store=$(store_dir)
+    rm "$store/$CLAUDE_SEAT.receipt" "$(dirname "$store")/ids"
+    [ "$name" != orphan-alone ] || rm "$store/$AGY_SEAT".*
+    rc=0
+    run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+    expect_code 1 "$rc" "$name: check of the head the stopped run left"
+    assert_grep "the review receipt is missing" "$CASE/stdout" "$name: the review with no receipt is not reported"
+
+    next_head 'second head'
+    set_review claude \
+      'FINDING F1 | RESOLVED | none | feature.txt:1 | The reader is fixed.' \
+      'VERDICT: APPROVE @HEAD@'
+    set_review agy \
+      'FINDING F1 | RESOLVED | none | feature.txt:1 | The reader is fixed.' \
+      'VERDICT: APPROVE @HEAD@'
+    rc=0
+    run_at_head || rc=$?
+    expect_code 0 "$rc" "$name: round 2 with both seats ruling on the finding ($(cat "$CASE/stdout" "$CASE/stderr"))"
+    assert_match "^F1 | open | none | feature.txt:1 | The reader breaks on the first line.$" "$STUB/agy.prior" \
+      "$name: the next round did not get the finding of the review with no receipt"
+    assert_grep " round=2 " "$CASE/stdout" "$name: the head that holds only that review is not a round"
+    assert_grep "previous=$first" "$(store_dir)/round" "$name: round 2 does not name the head of that review"
+  done
+
+  # A second head whose seats do not rule on that finding does not approve.
+  rc=0
+  make_case orphan-unruled "${TWO_SEATS[@]}"
+  set_review claude \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | The reader breaks on the first line.' \
+    'VERDICT: BLOCK @HEAD@'
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "orphan-unruled: round 1"
+  store=$(store_dir)
+  rm "$store/$CLAUDE_SEAT.receipt" "$(dirname "$store")/ids"
+  next_head 'second head'
+  rm "$STUB/claude.review"
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "orphan-unruled: round 2 with two approvals that name no finding ($(cat "$CASE/stdout"))"
+  assert_no_grep "merge-review: approved" "$CASE/stdout" "orphan-unruled: two approvals cleared a finding no receipt binds"
+  pass "a review a stopped run left with no receipt is read by the next round, and what it holds stays open"
+}
+
+
 test_a_run_lock_with_no_owner_yet_is_read_as_held() {
   local rc=0 pr calls_before
   make_case ownerless-lock "${TWO_SEATS[@]}"
@@ -3385,6 +3444,7 @@ fm_test_run \
   test_a_review_with_a_form_defect_defers_no_earlier_finding \
   test_an_edge_case_line_keeps_a_review_with_a_form_defect \
   test_a_review_with_a_form_defect_puts_no_new_finding_to_a_vote \
+  test_a_review_a_stopped_run_left_with_no_receipt_reaches_the_next_round \
   test_a_run_lock_with_no_owner_yet_is_read_as_held \
   test_a_finding_a_stopped_run_left_without_an_id_reaches_the_next_round \
   test_a_council_answer_counts_only_while_the_roster_is_configured \
