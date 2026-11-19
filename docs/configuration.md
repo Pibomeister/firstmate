@@ -1469,7 +1469,7 @@ The file holds `key=value` lines; blank lines and `#` comments are ignored:
 | `after-secs` | Optional gate age in seconds before the council starts; a canonical positive integer of at most nine digits, default `3600`. |
 | `ak` | Optional path to the `ak` executable; default `ak` on `PATH`. |
 
-A missing roster, an invalid `after-secs`, or no executable `ak` fails the watcher check rather than routing nothing silently.
+A non-regular config file, a missing roster, an invalid `after-secs`, or no executable `ak` logs a watcher diagnostic and skips the council for that poll; the rest of the watcher cycle still runs.
 
 A gate qualifies when its open status record has verb `needs-decision`, key `nm-<run>-<step>`, a valid `[at=<epoch>]` at least `after-secs` old, and the note `ask-user findings=<ids> file=<path>` with `<path>` a regular file under `data/<task>/`.
 Deferred waits, captain-held tasks, open captain calls, and the parent channel are excluded.

@@ -3735,10 +3735,11 @@ gate_council_claim_state() {  # <claims-file> <task> <key> <opened>
     '($1 "") == (t "") && ($2 "") == (k "") && ($3 "") == (o "") { s=$4 } END { if (s != "") print s }' "$1"
 }
 
-# 0 while <task>'s <key> is still the same open needs-decision episode.
+# 0 while <task>'s <key> is still the same open needs-decision episode, 1 when
+# it has closed, and 2 when the status log could not be read.
 gate_council_still_open() {  # <task> <key> <opened>
   local open key verb opened
-  open=$(status_open_decisions_incremental "$STATE/$1.status" '' timed) || return 1
+  open=$(status_open_decisions_incremental "$STATE/$1.status" '' timed) || return 2
   while IFS=$'\t' read -r key verb opened _; do
     [ "$key" = "$2" ] && [ "$opened" = "$3" ] && [ "$verb" = needs-decision ] && return 0
   done <<EOT
@@ -3788,10 +3789,11 @@ gate_council_surface() {  # <claims-file> <now>
     else
       continue
     fi
-    if ! gate_council_still_open "$task" "$key" "$opened"; then
+    gate_council_still_open "$task" "$key" "$opened" || {
+      [ "$?" = 1 ] || continue
       printf '%s\t%s\t%s\tgate-closed\t%s\t%s\n' "$task" "$key" "$opened" "$now" "$dir" >> "$file" || return 1
       continue
-    fi
+    }
     fm_wake_append check "gate-council:$task:$key" "$reason" || return 1
     printf '%s\t%s\t%s\tsurfaced\t%s\t%s\n' "$task" "$key" "$opened" "$now" "$dir" >> "$file" || return 1
     GATE_COUNCIL_WAKE=$reason
@@ -3893,7 +3895,7 @@ EOT
   id=$(printf 'gate-%s-%s-%s' "$due_task" "$due_key" "$due_opened" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C tr -c 'a-z0-9' '-')
   if ! mkdir -p -- "$dir" || [ -L "$dir" ] || ! chmod 700 "$dir" \
     || ! printf '{"id":"%s","question":"%s","options":["fix","decline"],"approve":"fix"}\n' "$id" \
-      "A Firstmate worker's no-mistakes validation gate ($due_task, $due_key) has waited over an hour on ask-user findings. Using the findings file and the task's intent in the context, should the worker fix the findings or decline them?" \
+      "A Firstmate worker's no-mistakes validation gate ($due_task, $due_key) has waited at least $after seconds on ask-user findings. Using the findings file and the task's intent in the context, should the worker fix the findings or decline them?" \
       > "$dir/card.json"; then
     printf '%s\t%s\t%s\tlaunch-failed\t%s\t%s\n' "$due_task" "$due_key" "$due_opened" "$now" "$dir" >> "$claim_file"
     fm_lock_release "$claim_lock"
@@ -5526,10 +5528,8 @@ while :; do
     echo 'watcher: away decision age check failed' >&2
     exit 1
   }
-  away_gate_council_tick || {
-    echo 'watcher: away gate council check failed' >&2
-    exit 1
-  }
+  away_gate_council_tick \
+    || echo 'watcher: away gate council check failed; the council is skipped this cycle' >&2
   [ -z "$GATE_COUNCIL_WAKE" ] || wake "$GATE_COUNCIL_WAKE"
   # Endpoint liveness runs before queue observation: a positively dead or
   # missing secondmate endpoint is relaunched here on a bounded cadence, which

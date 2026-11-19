@@ -477,6 +477,19 @@ test_gate_council_closed_gate_and_failure() {
   grep -q $'\tgate-closed\t' "$STATE/.away-gate-council-claims" || fail 'closed gate was not recorded'
   gate_council_setup
   FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  away_gate_council_tick 4600
+  gate_council_wait_exit "$dir"
+  eval "gate_council_saved_$(declare -f status_open_decisions_incremental)"
+  status_open_decisions_incremental() { return 1; }
+  away_gate_council_tick 4700 2>/dev/null || true
+  eval "$(declare -f gate_council_saved_status_open_decisions_incremental | sed '1s/^gate_council_saved_//')"
+  [ -z "$GATE_COUNCIL_WAKE" ] || fail 'ruling surfaced while the status log was unreadable'
+  ! grep -q $'\tgate-closed\t' "$STATE/.away-gate-council-claims" || fail 'status read failure recorded a closed gate'
+  away_gate_council_tick 4800
+  [ "$GATE_COUNCIL_WAKE" = "check: gate council ruled: worker key=nm-r1-review outcome=decline choice=decline record=$dir/record.json" ] \
+    || fail "ruling was dropped after a status read failure: $GATE_COUNCIL_WAKE"
+  gate_council_setup
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
   GATE_STUB_OUTCOME=escalate GATE_STUB_CHOICE=fix away_gate_council_tick 4600
   gate_council_wait_exit "$dir"
   [ "$(cat "$dir/exit")" = 1 ] || fail 'escalation exit status was not recorded'
@@ -490,7 +503,7 @@ test_gate_council_closed_gate_and_failure() {
   away_gate_council_tick 4700
   [ "$GATE_COUNCIL_WAKE" = "check: gate council ruled: worker key=nm-r1-review outcome=error exit=2 choice=- log=$dir/log" ] \
     || fail "usage failure surfaced wrong: $GATE_COUNCIL_WAKE"
-  pass 'closed gates drop their ruling, escalations and failed runs surface as evidence'
+  pass 'closed gates drop their ruling, read failures keep it, escalations and failed runs surface as evidence'
 }
 
 test_gate_council_unfinished_and_bad_config() {
@@ -515,7 +528,29 @@ test_gate_council_unfinished_and_bad_config() {
   printf 'roster=%s\nprojects=allowed-proj\nafter-secs=60\nak=%s\n' "$TMP_ROOT/roster.json" "$GATE_STUB" > "$CONFIG/gate-council"
   away_gate_council_tick 1060
   grep -q $'\trunning\t' "$STATE/.away-gate-council-claims" || fail 'after-secs did not set the gate age'
+  grep -q 'has waited at least 60 seconds' "$FM_HOME/data/worker/gate-council-nm-r1-review-1000/card.json" \
+    || fail "card did not state the configured gate age: $(cat "$FM_HOME/data/worker/gate-council-nm-r1-review-1000/card.json")"
   pass 'an unfinished council surfaces after its bound and invalid config fails the check'
+}
+
+test_invalid_gate_council_config_keeps_watcher_running() {
+  local dir="$TMP_ROOT/invalid-gate-council"
+  mkdir -p "$dir/state" "$dir/config"
+  fm_test_track_watcher_state "$dir/state"
+  printf 'needs-decision [at=1000] [key=api]: choose\n' > "$dir/state/worker.status"
+  printf 'projects=allowed-proj\n' > "$dir/config/gate-council"
+  FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_WATCH_NOW=2800 FM_WATCH_ONCE=1 FM_WEDGE_ALARM_CHANNEL=off \
+    bash "$ROOT/bin/fm-watch.sh" > "$dir/out" 2> "$dir/err" \
+    || fail "real watcher stopped on an invalid gate council config: $(cat "$dir/err")"
+  grep -F 'gate council roster is missing or unreadable' "$dir/err" >/dev/null \
+    || fail "invalid gate council config left no diagnostic: $(cat "$dir/err")"
+  [ ! -e "$dir/state/.away-gate-council-claims" ] || fail 'invalid gate council config started a council'
+  grep -F $'worker\tapi\t1000\t' "$dir/state/.away-decision-age-claims" | grep -F $'page-pending\t' >/dev/null \
+    || fail 'invalid gate council config stopped the captain page'
+  pass 'real watcher logs an invalid gate council config, skips the council, and keeps running'
 }
 
 fm_test_run test_disabled test_oldest_and_backoff test_numeric_keys_are_distinct \
@@ -527,4 +562,5 @@ fm_test_run test_disabled test_oldest_and_backoff test_numeric_keys_are_distinct
   test_missing_council_entrypoint_pages test_invalid_authority_config_still_pages \
   test_away_page_retries_after_channel_configured \
   test_gate_council_off_and_filters test_gate_council_runs_once_and_surfaces \
-  test_gate_council_closed_gate_and_failure test_gate_council_unfinished_and_bad_config
+  test_gate_council_closed_gate_and_failure test_gate_council_unfinished_and_bad_config \
+  test_invalid_gate_council_config_keeps_watcher_running
