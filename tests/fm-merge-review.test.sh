@@ -2896,35 +2896,43 @@ test_a_council_roster_must_be_an_absolute_path() {
 }
 
 test_a_classed_note_on_an_open_finding_is_a_dissent_that_leaves_a_receipt() {
-  local rc=0
-  make_case classed-note "${THREE_SEATS[@]}"
-  set_review claude \
-    'FINDING NEW | BLOCKING | none | feature.txt:1 | A crash mid-write truncates the file.' \
-    'VERDICT: BLOCK @HEAD@'
-  run_at_head || rc=$?
-  expect_code 1 "$rc" "classed-note: round 1"
+  local rc name second
+  # Each approval calls F1 resolved and then gives it a class on a second
+  # line: once on a note, once on a second RESOLVED line.
+  for name in classed-note classed-resolved; do
+    case "$name" in
+      classed-note) second='FINDING F1 | NON-BLOCKING | data-loss | feature.txt:1 | The rename still runs before the sync.' ;;
+      *) second='FINDING F1 | RESOLVED | data-loss | feature.txt:1 | The rename still runs before the sync.' ;;
+    esac
+    make_case "$name" "${THREE_SEATS[@]}"
+    set_review claude \
+      'FINDING NEW | BLOCKING | none | feature.txt:1 | A crash mid-write truncates the file.' \
+      'VERDICT: BLOCK @HEAD@'
+    rc=0
+    run_at_head || rc=$?
+    expect_code 1 "$rc" "$name: round 1"
 
-  next_head 'second head'
-  # An approval that calls F1 resolved and then gives it a class on a note.
-  set_review claude \
-    'FINDING F1 | RESOLVED | none | feature.txt:1 | The write is now atomic.' \
-    'FINDING F1 | NON-BLOCKING | data-loss | feature.txt:1 | The rename still runs before the sync.' \
-    'VERDICT: APPROVE @HEAD@'
-  set_review agy \
-    'FINDING F1 | RESOLVED | none | feature.txt:1 | The write is now atomic.' \
-    'VERDICT: APPROVE @HEAD@'
-  set_review grok \
-    'FINDING F1 | RESOLVED | none | feature.txt:1 | The write is now atomic.' \
-    'VERDICT: APPROVE @HEAD@'
-  rc=0
-  run_at_head || rc=$?
-  expect_code 1 "$rc" "classed-note: round 2"
-  assert_present "$(store_dir)/$CLAUDE_SEAT.receipt" "classed-note: the review that gave the class left no receipt"
-  assert_equals 0 "$(calls grok)" "classed-note: a spare replaced the review that gave the class"
-  assert_grep "merge-review: blocked" "$CASE/stdout" "classed-note: the head is not blocked ($(cat "$CASE/stdout"))"
-  findings_at_head || fail "classed-note: findings failed"
-  assert_match "^F1	open	data-loss	" "$CASE/stdout" "classed-note: the finding is not open with its class ($(cat "$CASE/stdout"))"
-  pass "a class given on a note for an open finding is a dissent: the review counts and the finding stays open"
+    next_head 'second head'
+    set_review claude \
+      'FINDING F1 | RESOLVED | none | feature.txt:1 | The write is now atomic.' \
+      "$second" \
+      'VERDICT: APPROVE @HEAD@'
+    set_review agy \
+      'FINDING F1 | RESOLVED | none | feature.txt:1 | The write is now atomic.' \
+      'VERDICT: APPROVE @HEAD@'
+    set_review grok \
+      'FINDING F1 | RESOLVED | none | feature.txt:1 | The write is now atomic.' \
+      'VERDICT: APPROVE @HEAD@'
+    rc=0
+    run_at_head || rc=$?
+    expect_code 1 "$rc" "$name: round 2"
+    assert_present "$(store_dir)/$CLAUDE_SEAT.receipt" "$name: the review that gave the class left no receipt"
+    assert_equals 0 "$(calls grok)" "$name: a spare replaced the review that gave the class"
+    assert_grep "merge-review: blocked" "$CASE/stdout" "$name: the head is not blocked ($(cat "$CASE/stdout"))"
+    findings_at_head || fail "$name: findings failed"
+    assert_match "^F1	open	data-loss	" "$CASE/stdout" "$name: the finding is not open with its class ($(cat "$CASE/stdout"))"
+  done
+  pass "a class given on a second line for an open finding is a dissent: the review counts and the finding stays open"
 }
 
 test_a_review_with_a_form_defect_settles_no_earlier_finding() {
@@ -2967,6 +2975,62 @@ test_a_review_with_a_form_defect_settles_no_earlier_finding() {
   expect_code 0 "$rc" "defect-settles: round 3 ($(cat "$CASE/stdout" "$CASE/stderr"))"
   assert_match "^F2 | open | " "$STUB/agy.prior" "defect-settles: the next round did not get F2 as open"
   pass "a review that counts only for its dissent settles no earlier finding"
+}
+
+test_a_review_with_a_form_defect_defers_no_earlier_finding() {
+  local rc=0
+  make_case defect-defers "${TWO_SEATS[@]}"
+  set_review claude \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | The reader breaks on the first line.' \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | The writer drops the last line.' \
+    'VERDICT: BLOCK @HEAD@'
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "defect-defers: round 1"
+  next_head 'second head'
+  set_review claude \
+    'FINDING F1 | BLOCKING | none | feature.txt:1 | The reader still breaks.' \
+    'FINDING F2 | BLOCKING | none | feature.txt:1 | The writer still drops it.' \
+    'VERDICT: BLOCK @HEAD@'
+  set_review agy \
+    'FINDING F1 | BLOCKING | none | feature.txt:1 | The reader still breaks.' \
+    'FINDING F2 | BLOCKING | none | feature.txt:1 | The writer still drops it.' \
+    'VERDICT: BLOCK @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "defect-defers: round 2"
+
+  next_head 'third head'
+  # Round three. One review rules on F1 twice, so it counts only because one
+  # of those lines holds F1. Both reviews call F2 an edge case.
+  set_review claude \
+    'FINDING F1 | REGRESSION | none | feature.txt:1 | The reader still breaks.' \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The reader is fixed.' \
+    'FINDING F2 | EDGE-CASE | none | feature.txt:1 | Only a file with no newline loses a line.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  set_review agy \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The reader is fixed.' \
+    'FINDING F2 | EDGE-CASE | none | feature.txt:1 | Only a file with no newline loses a line.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "defect-defers: round 3"
+  assert_present "$(store_dir)/$CLAUDE_SEAT.receipt" "defect-defers: the dissent was discarded for its form"
+  findings_at_head || fail "defect-defers: findings failed"
+  assert_match "^F1	open	" "$CASE/stdout" "defect-defers: the held finding is not open"
+  assert_match "^F2	open	" "$CASE/stdout" "defect-defers: a review with a form defect deferred another finding ($(cat "$CASE/stdout"))"
+
+  # The next round must rule on F2 again, and two reviews with no form defect defer it.
+  next_head 'fourth head'
+  set_review claude \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The reader is fixed.' \
+    'FINDING F2 | EDGE-CASE | none | feature.txt:1 | Only a file with no newline loses a line.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  assert_match "^F2 | open | " "$STUB/agy.prior" "defect-defers: the next round did not get F2 as open"
+  findings_at_head || fail "defect-defers: findings failed at the next head"
+  assert_match "^F2	deferred	" "$CASE/stdout" "defect-defers: two well-formed reviews did not defer the finding ($(cat "$CASE/stdout"))"
+  pass "a review that counts only for its dissent defers no earlier finding"
 }
 
 test_a_run_lock_with_no_owner_yet_is_read_as_held() {
@@ -3046,7 +3110,50 @@ test_a_council_answer_counts_only_while_the_roster_is_configured() {
   expect_code 1 "$rc" "tie-unset: check after the roster was removed"
   assert_grep "merge-review: blocked" "$CASE/stdout" "tie-unset: the head is not blocked ($(cat "$CASE/stdout"))"
   assert_grep " open=F1 " "$CASE/stdout" "tie-unset: a stored council answer still deferred the finding"
-  pass "with the council roster removed, a stored council answer no longer defers a tie"
+
+  # With the roster back, the next head starts from the council's deferral.
+  printf '%s\n' "${TWO_SEATS[@]}" "council-config=$CASE/roster.json" > "$HOME_DIR/config/merge-review"
+  next_head 'fourth head'
+  set_review claude 'VERDICT: APPROVE @HEAD@'
+  set_review agy 'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 0 "$rc" "tie-unset: round 4 with the roster ($(cat "$CASE/stdout" "$CASE/stderr"))"
+  assert_match "^F1 | deferred | " "$STUB/agy.prior" "tie-unset: round 4 did not start from the deferral"
+  assert_equals 1 "$(wc -l < "$STUB/ak.calls" | tr -d ' ')" "tie-unset: the council was asked again for a deferred finding"
+
+  # The home removes the roster again: the deferral this head carries rests on
+  # the council's answer, so it no longer counts here either.
+  printf '%s\n' "${TWO_SEATS[@]}" > "$HOME_DIR/config/merge-review"
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 1 "$rc" "tie-unset: check at round 4 after the roster was removed ($(cat "$CASE/stdout"))"
+  assert_grep " open=F1 " "$CASE/stdout" "tie-unset: a carried council deferral still counted ($(cat "$CASE/stdout"))"
+
+  # The next head gets the finding as open, and the seats settle it themselves.
+  next_head 'fifth head'
+  set_review claude \
+    'FINDING F1 | EDGE-CASE | none | feature.txt:1 | Only an empty file triggers it.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  set_review agy \
+    'FINDING F1 | EDGE-CASE | none | feature.txt:1 | Only an empty file triggers it.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  assert_match "^F1 | open | " "$STUB/agy.prior" "tie-unset: round 5 did not get the finding as open"
+  findings_at_head || fail "tie-unset: findings failed at round 5"
+  assert_match "^F1	deferred	" "$CASE/stdout" "tie-unset: the seats did not defer the finding ($(cat "$CASE/stdout"))"
+
+  # A deferral the seats agreed on does not rest on the council: it is carried.
+  next_head 'sixth head'
+  set_review claude 'VERDICT: APPROVE @HEAD@'
+  set_review agy 'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  findings_at_head || fail "tie-unset: findings failed at round 6"
+  assert_match "^F1	deferred	" "$CASE/stdout" "tie-unset: a deferral by the seats was reopened ($(cat "$CASE/stdout"))"
+  assert_equals 1 "$(wc -l < "$STUB/ak.calls" | tr -d ' ')" "tie-unset: the council was asked with no roster"
+  pass "with the council roster removed, a stored council answer defers no tie, at its head or a later one"
 }
 
 test_the_council_answer_is_stored_from_a_relative_home() {
@@ -3143,6 +3250,7 @@ fm_test_run \
   test_a_council_roster_must_be_an_absolute_path \
   test_a_classed_note_on_an_open_finding_is_a_dissent_that_leaves_a_receipt \
   test_a_review_with_a_form_defect_settles_no_earlier_finding \
+  test_a_review_with_a_form_defect_defers_no_earlier_finding \
   test_a_run_lock_with_no_owner_yet_is_read_as_held \
   test_a_finding_a_stopped_run_left_without_an_id_reaches_the_next_round \
   test_a_council_answer_counts_only_while_the_roster_is_configured \
