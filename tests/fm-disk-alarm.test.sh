@@ -316,7 +316,7 @@ seed_root() {
 seed_at_level() {  # <home> <volume> <avail> <id> <requested-home>
   local home=$1 volume=$2 avail=$3 id=$4 requested=$5 root
   root=$(seed_root)
-  run_bounded 60 env \
+  run_bounded 180 env \
     FM_ROOT_OVERRIDE="$root" \
     FM_HOME="$home" \
     FM_TEST_SEAM=1 \
@@ -454,6 +454,140 @@ test_nm_driving_block_names_the_lane_gate() {
   pass "a no-mistakes worker is told to read the lane gate before starting a run"
 }
 
+RETRY="$ROOT/bin/fm-disk-retry.sh"
+
+spawn_at_level() {  # <home> <volume> <avail> <spawn args...>
+  local home=$1 volume=$2 avail=$3
+  shift 3
+  run_bounded 120 env \
+    FM_SPAWN_NO_GUARD=1 \
+    FM_HOME="$home" \
+    FM_TEST_SEAM=1 \
+    FM_DISK_ALARM_VOLUME="$volume" \
+    FM_DF_FIXTURE_VOLUME="$volume" \
+    FM_DF_FIXTURE_MODE=number \
+    FM_DF_FIXTURE_AVAIL="$avail" \
+    PATH="$FAKE:$BASE_PATH" \
+    "$ROOT/bin/fm-spawn.sh" "$@"
+}
+
+retry_at_level() {  # <home> <volume> <avail> <retry args...>
+  local home=$1 volume=$2 avail=$3
+  shift 3
+  env \
+    FM_HOME="$home" \
+    FM_TEST_SEAM=1 \
+    FM_DISK_ALARM_VOLUME="$volume" \
+    FM_DF_FIXTURE_VOLUME="$volume" \
+    FM_DF_FIXTURE_MODE=number \
+    FM_DF_FIXTURE_AVAIL="$avail" \
+    PATH="$FAKE:$BASE_PATH" \
+    "$RETRY" "$@"
+}
+
+wake_rows() {  # <home>
+  if [ -f "$1/state/.wake-queue" ]; then wc -l < "$1/state/.wake-queue" | tr -d ' '; else printf 0; fi
+}
+
+test_refused_spawn_is_recorded_for_retry() {
+  local home volume out rc
+  home="$TMP_ROOT/retry-record-home"
+  volume="$TMP_ROOT/retry-record-volume"
+  mkdir -p "$home/state" "$volume"
+  rc=0
+  out=$(spawn_at_level "$home" "$volume" 9437184 ship-a --mode no-mistakes --yolo off 2>&1) || rc=$?
+  [ "$rc" = 1 ] || fail "pause spawn: expected exit 1, got $rc"$'\n'"$out"
+  rc=0
+  out=$(spawn_at_level "$home" "$volume" 4194304 scout-b --scout 2>&1) || rc=$?
+  [ "$rc" = 1 ] || fail "stop scout: expected exit 1, got $rc"$'\n'"$out"
+  rc=0
+  out=$(spawn_at_level "$home" "$volume" 9437184 relaunch-c --relaunch 2>&1) || rc=$?
+  [ "$rc" != 0 ] || fail "relaunch of a missing task should still fail"$'\n'"$out"
+  out=$(FM_HOME="$home" "$RETRY" list | cut -f1 | sort | tr '\n' ' ')
+  assert_equals "scout-b ship-a " "$out" "each disk-refused fresh launch, and no relaunch, must be recorded"
+  assert_equals 0 "$(wake_rows "$home")" "a refusal alone must not notify"
+  pass "a disk-refused fresh launch is recorded durably, and a relaunch is not"
+}
+
+test_retry_notifies_once_when_the_alarm_clears() {
+  local home volume marker out rc
+  home="$TMP_ROOT/retry-scan-home"
+  volume="$TMP_ROOT/retry-scan-volume"
+  marker="$TMP_ROOT/retry-scan-df"
+  mkdir -p "$home/state" "$volume"
+  out=$(FM_DF_MARKER="$marker" retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "an empty scan must exit 0"
+  assert_equals "" "$out" "an empty scan prints nothing"
+  assert_absent "$marker" "a scan with no record must not read the disk"
+  spawn_at_level "$home" "$volume" 9437184 ship-a --mode no-mistakes --yolo off >/dev/null 2>&1 || true
+  spawn_at_level "$home" "$volume" 9437184 scout-b --scout >/dev/null 2>&1 || true
+  out=$(retry_at_level "$home" "$volume" 9437184 scan 2>&1) || fail "a scan under a standing alarm must exit 0"
+  assert_equals "" "$out" "a scan under a standing alarm prints nothing"
+  assert_equals 0 "$(wake_rows "$home")" "a standing alarm must not notify"
+  assert_equals 2 "$(FM_HOME="$home" "$RETRY" list | wc -l | tr -d ' ')" "a standing alarm keeps every record"
+  rc=0
+  out=$(retry_at_level "$home" "$volume" 20971520 scan 2>&1) || rc=$?
+  [ "$rc" = 0 ] || fail "a clearing scan must exit 0, got $rc"$'\n'"$out"
+  assert_contains "$out" "check: disk alarm cleared (level=ok free_kib=20971520): dispatch again with bin/fm-spawn.sh:" "the clearing scan names the reading and the action"
+  assert_contains "$out" " ship-a" "the notification names the refused ship"
+  assert_contains "$out" " scout-b" "the notification names the refused scout"
+  assert_equals 1 "$(wake_rows "$home")" "a cleared alarm queues exactly one notification"
+  assert_contains "$(cat "$home/state/.wake-queue")" "$out" "the queued notification is the printed line"
+  assert_equals "" "$(FM_HOME="$home" "$RETRY" list)" "a notified record is removed"
+  out=$(retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "a repeat scan must exit 0"
+  assert_equals "" "$out" "a repeat scan prints nothing"
+  assert_equals 1 "$(wake_rows "$home")" "a cleared alarm must not notify twice"
+  pass "a cleared alarm raises one notification naming every disk-refused task"
+}
+
+test_admitted_spawn_clears_its_retry_record() {
+  local home volume
+  home="$TMP_ROOT/retry-clear-home"
+  volume="$TMP_ROOT/retry-clear-volume"
+  mkdir -p "$home/state" "$volume"
+  spawn_at_level "$home" "$volume" 9437184 ship-a --mode no-mistakes --yolo off >/dev/null 2>&1 || true
+  assert_present "$home/state/disk-refused/ship-a" "the refusal must leave a record"
+  spawn_at_level "$home" "$volume" 20971520 ship-a --mode no-mistakes --yolo off >/dev/null 2>&1 || true
+  assert_absent "$home/state/disk-refused/ship-a" "a launch the alarm admits must not be notified again"
+  pass "a launch the alarm admits removes its own retry record"
+}
+
+test_watcher_reports_the_cleared_alarm() {
+  local home volume out
+  home="$TMP_ROOT/retry-watch-home"
+  volume="$TMP_ROOT/retry-watch-volume"
+  mkdir -p "$home/state" "$home/config" "$volume"
+  spawn_at_level "$home" "$volume" 9437184 ship-a --mode no-mistakes --yolo off >/dev/null 2>&1 || true
+  # shellcheck disable=SC2016
+  out=$(env FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_TEST_SEAM=1 FM_DISK_ALARM_VOLUME="$volume" FM_DF_FIXTURE_VOLUME="$volume" \
+    FM_DF_FIXTURE_MODE=number PATH="$FAKE:$BASE_PATH" WATCH="$ROOT/bin/fm-watch.sh" \
+    bash -c '. "$WATCH"
+      FM_DF_FIXTURE_AVAIL=9437184 disk_retry_tick || exit 1
+      printf "standing=[%s]\n" "$DISK_RETRY_REASON"
+      FM_DF_FIXTURE_AVAIL=20971520 disk_retry_tick || exit 1
+      printf "cleared=[%s]\n" "$DISK_RETRY_REASON"
+      FM_DF_FIXTURE_AVAIL=20971520 disk_retry_tick || exit 1
+      printf "repeat=[%s]\n" "$DISK_RETRY_REASON"' 2>&1) || fail "the watcher tick failed"$'\n'"$out"
+  assert_contains "$out" "standing=[]" "the watcher stays silent under a standing alarm"
+  assert_contains "$out" "cleared=[check: disk alarm cleared (level=ok free_kib=20971520): dispatch again with bin/fm-spawn.sh: ship-a]" "the watcher reports the cleared alarm"
+  assert_contains "$out" "repeat=[]" "the watcher reports the cleared alarm once"
+  assert_equals 1 "$(wake_rows "$home")" "the watcher path queues exactly one notification"
+  assert_absent "$home/state/meta/ship-a" "the watcher must not launch the task itself"
+  pass "the watcher raises the one notification and launches nothing"
+}
+
+test_retry_usage_errors() {
+  local rc
+  rc=0; "$RETRY" record >/dev/null 2>&1 || rc=$?
+  assert_equals 2 "$rc" "record without a task id is a usage error"
+  rc=0; "$RETRY" record '../x' >/dev/null 2>&1 || rc=$?
+  assert_equals 2 "$rc" "a task id with a path character is a usage error"
+  rc=0; "$RETRY" bogus >/dev/null 2>&1 || rc=$?
+  assert_equals 2 "$rc" "an unknown subcommand is a usage error"
+  assert_contains "$("$RETRY" --help)" "fm-disk-retry.sh scan" "help prints the usage"
+  pass "the retry record refuses malformed input"
+}
+
 fm_test_run \
   test_help_and_usage_do_not_probe \
   test_levels_and_boundaries \
@@ -468,4 +602,9 @@ fm_test_run \
   test_remote_provision_stop_gates_only_a_new_home \
   test_suite_default_does_not_read_the_host_volume \
   test_dispatch_resolve_prints_the_alarm_and_stays_off \
-  test_nm_driving_block_names_the_lane_gate
+  test_nm_driving_block_names_the_lane_gate \
+  test_refused_spawn_is_recorded_for_retry \
+  test_retry_notifies_once_when_the_alarm_clears \
+  test_admitted_spawn_clears_its_retry_record \
+  test_watcher_reports_the_cleared_alarm \
+  test_retry_usage_errors

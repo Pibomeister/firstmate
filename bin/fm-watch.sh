@@ -167,6 +167,11 @@
 #                          opt-in config/open-decision-reminders record-age
 #                          backstop, independent of pane and branch state;
 #                          open_decision_reminder_tick owns its bounded repeats
+#   check: disk alarm cleared (...): dispatch again with bin/fm-spawn.sh: <tasks>
+#                          the disk alarm refused these fresh launches and now
+#                          admits a launch; bin/fm-disk-retry.sh owns the
+#                          record and reports it once, and nothing is launched
+#                          from here
 #   check: process-event result captured: <keys>
 #                          a durably captured process-to-event result is queued
 #                          and has not been surfaced yet; reported once per
@@ -3514,6 +3519,24 @@ EOF
   fi
 }
 
+# One notification when the disk alarm admits launches it refused earlier.
+# bin/fm-disk-retry.sh owns the records and the queued wake; with no record this
+# costs one glob and never reads the disk. A failed or timed-out scan keeps the
+# records, so a later poll reports them.
+disk_retry_tick() {
+  local f
+  DISK_RETRY_REASON=
+  for f in "$STATE/disk-refused"/*; do
+    [ -f "$f" ] || continue
+    DISK_RETRY_REASON=$(fm_run_timed "$WATCH_HELPER_BUDGET" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+      "$SCRIPT_DIR/fm-disk-retry.sh" scan 2>/dev/null) || {
+      DISK_RETRY_REASON=
+      triage_log "disk-retry scan unavailable"
+    }
+    return 0
+  done
+}
+
 # Away decisions use the timed status fold. Without a council entrypoint every
 # overdue decision is a captain page; nothing authorizes an unattended decision.
 # The claim covers task, key and opening epoch, so a repeat scan or a new away
@@ -5254,6 +5277,10 @@ while :; do
     exit 1
   }
   [ -z "$OPEN_DECISION_REMINDER" ] || wake "$OPEN_DECISION_REMINDER"
+
+  watch_stage disk-retry
+  disk_retry_tick
+  [ -z "$DISK_RETRY_REASON" ] || wake "$DISK_RETRY_REASON"
 
   away_decision_age_tick || {
     echo 'watcher: away decision age check failed' >&2
