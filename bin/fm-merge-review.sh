@@ -147,9 +147,9 @@
 # pending and a "tie.<id>.failed.<epoch>" record, and the next run asks again.
 # The council gets the seats' reviews, not the diff, and a call is stopped
 # after twice the configured timeout. It is not asked while a receipt says
-# BLOCK, and such a tie stays open. Its answer changes one finding's state and nothing else. With no
-# council-config key a tie stays open. AgentKit owns the council rule, the
-# roster, and the record.
+# BLOCK, and such a tie stays open. Its answer changes one finding's state
+# and nothing else. With no council-config key a tie stays open. AgentKit
+# owns the council rule, the roster, and the record.
 #
 # A review whose finding lines are malformed leaves no receipt, like a bad
 # verdict line, unless it dissents: a BLOCK verdict or a well-formed blocking
