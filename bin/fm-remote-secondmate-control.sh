@@ -55,6 +55,11 @@
 # the default-off path. print_route echoes the carrier the endpoint actually
 # holds, including for an already-alive endpoint that was not relaunched, so the
 # parent records the identity the agent really received rather than an intent.
+#
+# Launch ends its route block with one more line, `launch=started` when this
+# call started a new agent or `launch=reused` when the endpoint already had a
+# live agent and nothing was launched. Both are exit 0, so that line is the
+# only way a caller can tell a launch from a reuse.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -293,6 +298,7 @@ EOF
     case "$current" in
       alive)
         print_route "$id"
+        printf 'launch=reused\n'
         return 0
         ;;
       dead)
@@ -329,6 +335,7 @@ EOF
   # local unix:// server endpoint.
   remote_endpoint_require "$id"
   print_route "$id"
+  printf 'launch=started\n'
 }
 
 # Restart the second-mate agent this host runs, by executing the ORDINARY local

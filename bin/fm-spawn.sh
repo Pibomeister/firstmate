@@ -1534,7 +1534,7 @@ fi
 spawn_remote_secondmate() {
   local id=$1 remote host root home harness positional model effort backend out rc meta tmp
   local remote_backend remote_target remote_harness remote_herdr_session registry_lock remote_lock remote_generation
-  local remote_rex_session_id remote_rex_server remote_rex_ok
+  local remote_rex_session_id remote_rex_server remote_rex_ok remote_launch
   local remote_traceparent remote_recorded_traceparent sm_primary_head sync_out sync_rc account_config
   local -a launch_args
   id=${POS[0]:-}
@@ -1824,6 +1824,7 @@ spawn_remote_secondmate() {
   # reports it here so the parent does not deny the agent's actual identity.
   remote_recorded_traceparent=$(printf '%s\n' "$out" | sed -n 's/^traceparent=//p' | tail -1)
   fm_trace_context_valid "$remote_recorded_traceparent" || remote_recorded_traceparent=
+  remote_launch=$(printf '%s\n' "$out" | sed -n 's/^launch=//p' | tail -1)
   tmp="$meta.tmp.$$"
   {
     echo "window=remote:$id"
@@ -1876,8 +1877,16 @@ spawn_remote_secondmate() {
     return 1
   fi
   [ ! -e "$CONFIG/fleet-ledger" ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-fleet-ledger.sh" dispatched "$id" secondmate "" "$harness" "${model#-}" || true
-  # The local launch below closes an open handoff relaunch request the same way.
-  FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE "$SCRIPT_DIR/fm-handoff-relaunch.sh" close "$id" 'bin/fm-spawn.sh --secondmate' || true
+  # The local launch below closes an open handoff relaunch request the same
+  # way. Here the host also answers exit 0 when it only reused an agent that
+  # was already live (bin/fm-remote-secondmate-control.sh owns that report), and
+  # a mate that is merely alive was not relaunched, so only a launch the host
+  # reports as started closes the request.
+  if [ "$remote_launch" = started ]; then
+    FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE "$SCRIPT_DIR/fm-handoff-relaunch.sh" close "$id" 'bin/fm-spawn.sh --secondmate' || true
+  else
+    echo "note: the remote host did not start a new agent for $id (launch=${remote_launch:-unreported}), so an open handoff relaunch request stays open; relaunch a live mate with bin/fm-remote-secondmate-relaunch.sh" >&2
+  fi
   echo "spawned $id harness=$harness kind=secondmate mode=secondmate yolo=off window=remote:$id worktree=$home remote=$host backend=$remote_backend"
   return 0
 }

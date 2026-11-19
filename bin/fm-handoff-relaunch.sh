@@ -38,8 +38,10 @@
 #       Run in the parent home by the lifecycle owners only, after a relaunch
 #       of <mate-id> is done: bin/fm-control.sh relaunch once the replacement
 #       agent is confirmed, bin/fm-spawn.sh after a successful fresh
-#       --secondmate spawn, and bin/fm-remote-secondmate-relaunch.sh after the
-#       host confirmed a remote relaunch. When the request is open in
+#       --secondmate spawn that started a new agent (a remote spawn whose host
+#       only reused an already live agent closes nothing), and
+#       bin/fm-remote-secondmate-relaunch.sh after the host confirmed a remote
+#       relaunch. When the request is open in
 #       state/<mate-id>.status it appends
 #       `resolved [key=handoff-relaunch]: second mate <mate-id> was relaunched
 #       (<how>)`; with no open request it does nothing. Exit 1 only when that

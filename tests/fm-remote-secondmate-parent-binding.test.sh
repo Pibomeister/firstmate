@@ -216,8 +216,45 @@ cmp -s "$REMOTE_HOME/.fm-secondmate-parent" <(
   printf 'schema=fm-secondmate-parent.v1\nroute=remote\nparent_host=remote-mac\n'
 ) || fail "real remote provisioning must write the exact durable remote parent record"
 
+# --- a handoff relaunch request closes only for an agent the host started ----
+# The mate's open request (bin/fm-handoff-relaunch.sh) is on the parent's
+# record before the launch. The first spawn starts a new agent on the host and
+# closes it. The second spawn finds that agent live, the host reuses it, and a
+# mate that is merely alive was not relaunched: the request stays open.
+RELAUNCH_REQUEST='blocked [key=handoff-relaunch]: second mate ios wrote its handoff for a planned fresh start and waits to be relaunched once; handoff=/srv/fm-home/data/handoff.md sha256=ab'
+open_relaunch_request() {
+  bash -c '. "$1/bin/fm-classify-lib.sh"; status_open_decisions "$2" secondmate' _ "$ROOT" "$PARENT/state/ios.status" \
+    | grep "^handoff-relaunch$(printf '\t')" || true
+}
+host_launches() {
+  local count=0
+  [ ! -f "$HERDR_LOG" ] || count=$(grep -c '^tab create' "$HERDR_LOG" || true)
+  printf '%s\n' "$count"
+}
+printf '%s\n' "$RELAUNCH_REQUEST" > "$PARENT/state/ios.status"
+[ -n "$(open_relaunch_request)" ] || fail "test setup drifted: the relaunch request did not open"
+
 remote_env "$ROOT/bin/fm-spawn.sh" ios --secondmate >/dev/null \
   || fail "real remote secondmate launch failed"
+assert_equals 1 "$(host_launches)" "the first remote spawn should start one agent on the host"
+assert_equals '' "$(open_relaunch_request)" \
+  "a remote spawn that started a new agent should close the open relaunch request"
+assert_equals 1 "$(grep -cF 'resolved [key=handoff-relaunch]' "$PARENT/state/ios.status")" \
+  "a started remote spawn should close the relaunch request exactly once"
+
+printf '%s\n' "$RELAUNCH_REQUEST" >> "$PARENT/state/ios.status"
+REUSE_ERR="$TMP_ROOT/spawn-reuse.err"
+remote_env "$ROOT/bin/fm-spawn.sh" ios --secondmate >/dev/null 2>"$REUSE_ERR" \
+  || fail "a remote spawn onto a live agent should still succeed: $(cat "$REUSE_ERR")"
+assert_equals 1 "$(host_launches)" "the host must reuse its live agent rather than start a second one"
+[ -n "$(open_relaunch_request)" ] \
+  || fail "a remote spawn that only reused a live agent must leave the relaunch request open"
+assert_equals 1 "$(grep -cF 'resolved [key=handoff-relaunch]' "$PARENT/state/ios.status")" \
+  "a reused live agent must not be recorded as a relaunch"
+assert_grep 'did not start a new agent for ios' "$REUSE_ERR" \
+  "a spawn that reused a live agent should say the relaunch request stays open"
+rm -f "$PARENT/state/ios.status"
+pass "a remote spawn closes the mate's relaunch request only when the host started a new agent"
 
 STAGED_LAUNCH=$(sed -n "s/^pane send-text [^ ]* \\. '\([^']*\)' --session [^ ]*\$/\1/p" "$HERDR_LOG" | tail -1)
 [ -n "$STAGED_LAUNCH" ] && [ -f "$STAGED_LAUNCH" ] \
