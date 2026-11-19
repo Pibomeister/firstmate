@@ -473,6 +473,8 @@ spawn_at_level() {  # <home> <volume> <avail> <spawn args...>
 
 # A code root whose fm-spawn.sh only logs its arguments, one per line, then a
 # blank line, and exits with FM_STUB_SPAWN_RC; it stands in for the real launch.
+# Its fm-dispatch-resolve.sh writes the task's resolution record: clear with the
+# profile codex/gpt-x/high, or the status named in <brief-dir>/stub-status.
 stub_root() {
   local root="$TMP_ROOT/retry-stub-root"
   if [ ! -d "$root/bin" ]; then
@@ -484,7 +486,19 @@ stub_root() {
 echo "stub spawn output"
 exit "${FM_STUB_SPAWN_RC:-0}"
 SH
-    chmod +x "$root/bin/fm-spawn.sh"
+    cat > "$root/bin/fm-dispatch-resolve.sh" <<'SH'
+#!/usr/bin/env bash
+dir=$(dirname "$1")
+status=clear
+[ ! -f "$dir/stub-status" ] || status=$(cat "$dir/stub-status")
+if [ "$status" = clear ]; then
+  jq -n --arg t "${dir##*/}" '{task: $t, status: "clear", profile: {harness: "codex", model: "gpt-x", effort: "high"}}'
+else
+  jq -n --arg t "${dir##*/}" --arg s "$status" '{task: $t, status: $s, profile: null}'
+fi > "$dir/dispatch-resolution.json"
+printf 'dispatch-resolve:\n  status: %s\n' "$status"
+SH
+    chmod +x "$root/bin/fm-spawn.sh" "$root/bin/fm-dispatch-resolve.sh"
   fi
   printf '%s\n' "$root"
 }
@@ -530,6 +544,18 @@ set_epoch() {  # <home> <id> <epoch>
   perl -0777 -pi -e "s/\\A[0-9]+\\n/$3\\n/" "$1/state/disk-refused/$2"
 }
 
+# The fresh routing the stub resolver hands back, as stub spawn argument lines.
+FRESH=$'\n'"--harness"$'\n'"codex"$'\n'"--model"$'\n'"gpt-x"$'\n'"--effort"$'\n'"high"
+
+write_brief() {  # <home> <id>...
+  local home=$1 id
+  shift
+  for id in "$@"; do
+    mkdir -p "$home/data/$id"
+    printf '# Task\n## Captain'"'"'s intent\nRetry %s.\n' "$id" > "$home/data/$id/brief.md"
+  done
+}
+
 stub_calls() {  # <home>
   cat "$1/stub-spawn.log" 2>/dev/null || true
 }
@@ -564,8 +590,9 @@ test_retry_redispatches_when_the_alarm_clears() {
   out=$(FM_DF_MARKER="$marker" retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "an empty scan must exit 0"
   assert_equals "" "$out" "an empty scan prints nothing"
   assert_absent "$marker" "a scan with no record must not read the disk"
-  retry_at_level "$home" "$volume" 9437184 record ship-a ship-a --mode no-mistakes --yolo off --dispatch-override 'two words' || fail "record ship-a"
-  retry_at_level "$home" "$volume" 9437184 record scout-b scout-b --scout || fail "record scout-b"
+  write_brief "$home" ship-a scout-b
+  retry_at_level "$home" "$volume" 9437184 record ship-a ship-a /p/a --mode no-mistakes --yolo off --harness claude --model opus --effort max --dispatch-override 'two words' || fail "record ship-a"
+  retry_at_level "$home" "$volume" 9437184 record scout-b scout-b /p/b claude --scout --account seat-1 || fail "record scout-b"
   set_epoch "$home" ship-a 100
   set_epoch "$home" scout-b 200
   out=$(retry_at_level "$home" "$volume" 9437184 scan 2>&1) || fail "a scan under a standing alarm must exit 0"
@@ -576,7 +603,7 @@ test_retry_redispatches_when_the_alarm_clears() {
   rc=0
   out=$(retry_at_level "$home" "$volume" 20971520 scan 2>&1) || rc=$?
   [ "$rc" = 0 ] || fail "a clearing scan must exit 0, got $rc"$'\n'"$out"
-  assert_equals "ship-a"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off"$'\n'"--dispatch-override"$'\n'"two words"$'\n\n'"scout-b"$'\n'"--scout" "$(stub_calls "$home")" "the cleared alarm dispatches each record again, oldest first, with its exact arguments"
+  assert_equals "ship-a"$'\n'"/p/a"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off$FRESH"$'\n\n'"scout-b"$'\n'"/p/b"$'\n'"--scout$FRESH" "$(stub_calls "$home")" "the cleared alarm dispatches each record again, oldest first, with its arguments and freshly resolved routing in place of the recorded routing"
   assert_contains "$out" "check: disk alarm cleared (level=ok free_kib=20971520): re-dispatched by bin/fm-spawn.sh:" "the result names the reading and the re-dispatch"
   assert_contains "$out" " ship-a" "the result names the re-dispatched ship"
   assert_contains "$out" " scout-b" "the result names the re-dispatched scout"
@@ -600,11 +627,12 @@ test_retry_drops_work_already_placed_elsewhere() {
   retry_at_level "$home" "$volume" 9437184 record ship-moved ship-moved --mode no-mistakes --yolo off || fail "record ship-moved"
   retry_at_level "$home" "$volume" 9437184 record ship-old ship-old --mode no-mistakes --yolo off || fail "record ship-old"
   retry_at_level "$home" "$volume" 9437184 record ship-c ship-c --mode no-mistakes --yolo off || fail "record ship-c"
+  write_brief "$home" ship-c ship-old
   printf 'kind=ship\n' > "$home/state/ship-live.meta"
   printf '2026-11-19T00:00:00Z\t%s\tdispatched\tgoal-1\ttask=ship-moved note=placed on another host\n' "$(( $(date +%s) + 5 ))" > "$home/state/dispatch-log.tsv"
   printf '2026-01-01T00:00:00Z\t1\tdispatched\tgoal-0\ttask=ship-old\n' >> "$home/state/dispatch-log.tsv"
   out=$(retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "the scan must exit 0"$'\n'"$out"
-  assert_equals "ship-c"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off"$'\n\n'"ship-old"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off" "$(stub_calls "$home")" "only tasks with no live record and no newer dispatch are launched again"
+  assert_equals "ship-c"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off$FRESH"$'\n\n'"ship-old"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off$FRESH" "$(stub_calls "$home")" "only tasks with no live record and no newer dispatch are launched again"
   assert_contains "$out" "re-dispatched by bin/fm-spawn.sh: ship-c ship-old" "a dispatch older than the refusal does not stop the re-dispatch"
   assert_contains "$out" "dropped, already launched or placed elsewhere: ship-live ship-moved" "the result names the dropped records"
   assert_equals "" "$(recorded_ids "$home")" "a stale record is removed"
@@ -617,6 +645,7 @@ test_retry_keeps_deferred_and_reports_failed() {
   volume="$TMP_ROOT/retry-defer-volume"
   mkdir -p "$home/state" "$volume"
   retry_at_level "$home" "$volume" 9437184 record ship-d ship-d --mode no-mistakes --yolo off || fail "record ship-d"
+  write_brief "$home" ship-d
   out=$(FM_STUB_SPAWN_RC=75 retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "a deferred scan must exit 0"
   assert_equals "" "$out" "a capacity deferral is not a result to report"
   assert_equals 0 "$(wake_rows "$home")" "a capacity deferral must not notify"
@@ -646,6 +675,7 @@ test_watcher_reports_the_redispatch() {
   home="$TMP_ROOT/retry-watch-home"
   volume="$TMP_ROOT/retry-watch-volume"
   mkdir -p "$home/state" "$home/config" "$volume"
+  write_brief "$home" ship-a
   retry_at_level "$home" "$volume" 9437184 record ship-a ship-a --mode no-mistakes --yolo off || fail "record ship-a"
   # shellcheck disable=SC2016
   out=$(env FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config" \
@@ -669,9 +699,86 @@ test_watcher_reports_the_redispatch() {
   assert_contains "$out" "launch=[]" "the tick that starts the scan does not wait for it"
   assert_contains "$out" "cleared=[check: disk alarm cleared (level=ok free_kib=20971520): re-dispatched by bin/fm-spawn.sh: ship-a]" "the watcher reports the re-dispatch"
   assert_contains "$out" "repeat=[]" "the watcher reports the re-dispatch once"
-  assert_equals "ship-a"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off" "$(stub_calls "$home")" "the watcher's scan dispatches the task again exactly once"
+  assert_equals "ship-a"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off$FRESH" "$(stub_calls "$home")" "the watcher's scan dispatches the task again exactly once"
   assert_equals 1 "$(wake_rows "$home")" "the watcher path queues exactly one notification"
   pass "the watcher dispatches the refused task again in the background and reports it once"
+}
+
+test_retry_hands_unclear_routing_to_the_supervisor() {
+  local home volume out
+  home="$TMP_ROOT/retry-unclear-home"
+  volume="$TMP_ROOT/retry-unclear-volume"
+  mkdir -p "$home/state" "$volume"
+  write_brief "$home" ship-e
+  printf 'ambiguous\n' > "$home/data/ship-e/stub-status"
+  retry_at_level "$home" "$volume" 9437184 record ship-e ship-e --mode no-mistakes --yolo off --harness claude || fail "record ship-e"
+  retry_at_level "$home" "$volume" 9437184 record ship-f ship-f --mode no-mistakes --yolo off --harness claude || fail "record ship-f"
+  set_epoch "$home" ship-e 100
+  set_epoch "$home" ship-f 200
+  out=$(retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "the scan must exit 0"$'\n'"$out"
+  assert_equals "" "$(stub_calls "$home")" "a task whose routing does not resolve clear is never launched with its recorded routing"
+  assert_contains "$out" "not re-dispatched, dispatch resolution was not clear, dispatch by hand: ship-e (ambiguous) ship-f (no brief)" "the result hands each task to the supervisor with its resolution"
+  assert_equals 1 "$(wake_rows "$home")" "the hand-off queues one notification"
+  assert_equals "" "$(recorded_ids "$home")" "a handed-off record is not scanned again"
+  pass "a re-dispatch whose fresh routing is not clear launches nothing and asks for dispatch by hand"
+}
+
+test_retry_skips_held_or_blocked_backlog_items() {
+  local home volume out backlog axi_dir
+  command -v tasks-axi >/dev/null 2>&1 || { pass "skipped: tasks-axi is not installed"; return 0; }
+  axi_dir=$(dirname "$(command -v tasks-axi)")
+  home="$TMP_ROOT/retry-held-home"
+  volume="$TMP_ROOT/retry-held-volume"
+  backlog="$home/data/backlog.md"
+  mkdir -p "$home/state" "$home/config" "$home/data" "$volume"
+  printf '%s\n' '# Backlog' '' '## In flight' '' '## Queued' '' '## Done' > "$backlog"
+  printf '%s\n' 'backend = "markdown"' '' '[markdown]' 'path = "data/backlog.md"' > "$home/.tasks.toml"
+  (
+    cd "$home" || exit 1
+    for id in ship-held ship-blocked ship-q; do
+      TASKS_AXI_BACKEND=markdown tasks-axi add "$id" "item $id" --kind ship --file "$backlog" >/dev/null || exit 1
+    done
+    TASKS_AXI_BACKEND=markdown tasks-axi hold ship-held --reason "captain call" --kind captain --file "$backlog" >/dev/null || exit 1
+    TASKS_AXI_BACKEND=markdown tasks-axi block ship-blocked --by ship-held --file "$backlog" >/dev/null || exit 1
+  ) || fail "the backlog fixture could not be built"
+  write_brief "$home" ship-held ship-blocked ship-q
+  for id in ship-held ship-blocked ship-q; do
+    retry_at_level "$home" "$volume" 9437184 record "$id" "$id" --mode no-mistakes --yolo off || fail "record $id"
+  done
+  set_epoch "$home" ship-held 100
+  set_epoch "$home" ship-blocked 200
+  set_epoch "$home" ship-q 300
+  out=$(cd "$home" && TASKS_AXI_BACKEND=markdown FAKE="$FAKE:$axi_dir" retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "the scan must exit 0"$'\n'"$out"
+  assert_equals "ship-q"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off$FRESH" "$(stub_calls "$home")" "only the unheld, unblocked Queued item is launched again"
+  assert_contains "$out" "skipped, backlog item held or blocked, record kept: ship-held ship-blocked" "the result names the held and the blocked item"
+  assert_equals "ship-blocked ship-held " "$(recorded_ids "$home")" "a held or blocked item keeps its record"
+  assert_equals 1 "$(wake_rows "$home")" "the first scan notifies once"
+  out=$(cd "$home" && TASKS_AXI_BACKEND=markdown FAKE="$FAKE:$axi_dir" retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "the repeat scan must exit 0"$'\n'"$out"
+  assert_equals "" "$out" "a repeat scan does not report the same skip again"
+  assert_equals 1 "$(wake_rows "$home")" "a repeat scan does not notify again"
+  assert_equals "ship-blocked ship-held " "$(recorded_ids "$home")" "a repeat scan still keeps the records"
+  pass "a held or blocked backlog item is skipped once, keeps its record, and is never launched"
+}
+
+test_retry_report_is_renamed_into_place() {
+  local home volume out wrap
+  home="$TMP_ROOT/retry-report-home"
+  volume="$TMP_ROOT/retry-report-volume"
+  wrap="$TMP_ROOT/retry-report-mv"
+  mkdir -p "$home/state" "$volume" "$wrap"
+  cat > "$wrap/mv" <<'SH'
+#!/usr/bin/env bash
+for last in "$@"; do :; done
+case "${last##*/}" in .report.*) printf '%s\n' "$(cat "${@: -2:1}")" >> "$MV_LOG" ;; esac
+exec /bin/mv "$@"
+SH
+  chmod +x "$wrap/mv"
+  write_brief "$home" ship-r
+  retry_at_level "$home" "$volume" 9437184 record ship-r ship-r --mode no-mistakes --yolo off || fail "record ship-r"
+  out=$(MV_LOG="$home/mv.log" FAKE="$wrap:$FAKE" retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "the scan must exit 0"$'\n'"$out"
+  assert_equals "$out" "$(cat "$home/mv.log" 2>/dev/null)" "the report file appears only by a rename of the complete line"
+  assert_equals "$out" "$(cat "$home/state/disk-refused"/.report.*)" "the report file holds the complete line"
+  pass "the scan report is written in full before it becomes visible"
 }
 
 test_retry_usage_errors() {
@@ -711,4 +818,7 @@ fm_test_run \
   test_retry_keeps_deferred_and_reports_failed \
   test_admitted_spawn_clears_its_retry_record \
   test_watcher_reports_the_redispatch \
+  test_retry_hands_unclear_routing_to_the_supervisor \
+  test_retry_skips_held_or_blocked_backlog_items \
+  test_retry_report_is_renamed_into_place \
   test_retry_usage_errors

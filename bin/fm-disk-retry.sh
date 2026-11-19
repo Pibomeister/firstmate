@@ -22,21 +22,30 @@
 #           refusal, or when this home's backlog item is missing or no longer
 #           Queued (placed elsewhere, cancelled, or done);
 #         - keep it, launching nothing, when the backlog item cannot be read;
-#         - otherwise run bin/fm-spawn.sh again with the recorded arguments,
-#           so every spawn gate (disk alarm, capacity, backlog, spend) applies
-#           again. A spawn the disk alarm refuses again records itself again;
-#           a spawn a capacity gate defers (exit 75) keeps its record for a
-#           later scan; any other failure drops the record and keeps the
-#           spawn's output in <state>/disk-refused/.log.<task-id>.
-#       When a task was dispatched, dropped, or failed, append one `check` wake
-#       to this home's wake queue (bin/fm-wake-lib.sh), key `disk-retry`, write
-#       the same line to <state>/disk-refused/.report.<epoch>.<pid>, and print
-#       it on stdout:
+#         - keep it, launching nothing, when the backlog item is Queued but
+#           held or blocked, and report it once until its record changes;
+#         - otherwise run bin/fm-dispatch-resolve.sh on <data>/<task-id>/brief.md.
+#           When the resolution is not clear, or the brief is missing, drop the
+#           record, launching nothing, and report the task for dispatch by hand.
+#           On clear, scan itself runs bin/fm-spawn.sh with the recorded
+#           arguments, minus --harness, --model, --effort, --dispatch-override,
+#           --hermes-profile, --account, and a positional harness, plus the
+#           fresh profile. Every spawn gate (disk alarm, capacity, backlog,
+#           spend) applies again. A spawn the disk alarm refuses again records
+#           itself again; a spawn a capacity gate defers (exit 75) keeps its
+#           record for a later scan; any other failure drops the record and
+#           keeps the spawn's output in <state>/disk-refused/.log.<task-id>.
+#       When there is a result to report, append one `check` wake to this
+#       home's wake queue (bin/fm-wake-lib.sh), key `disk-retry`, write the same
+#       line to <state>/disk-refused/.report.<epoch>.<pid> through a temporary
+#       file and a rename, and print it on stdout:
 #         check: disk alarm cleared (level=<level> free_kib=<n|unknown>): <part>[; <part>...]
 #       where each part is one of
 #         re-dispatched by bin/fm-spawn.sh: <task-id>...
 #         dropped, already launched or placed elsewhere: <task-id>...
 #         re-dispatch failed, see state/disk-refused/.log.<task-id>: <task-id>...
+#         not re-dispatched, dispatch resolution was not clear, dispatch by hand: <task-id> (<status>)...
+#         skipped, backlog item held or blocked, record kept: <task-id>...
 #       The wake reports the result; record each re-dispatch in the dispatch
 #       ledger (bin/fm-dispatch-log.sh dispatched).
 #   fm-disk-retry.sh --help
@@ -131,8 +140,8 @@ dispatched_since() {  # <task-id> <epoch>
   ' "$STATE/dispatch-log.tsv"
 }
 
-# Exit 0 when the backlog allows a re-dispatch, 1 when the record is stale, and
-# 2 when the backlog cannot be read now.
+# Exit 0 when the backlog allows a re-dispatch, 1 when the record is stale, 2
+# when the backlog cannot be read now, and 3 when the item is held or blocked.
 backlog_queued() {  # <task-id>
   (
     # shellcheck source=bin/fm-tasks-axi-lib.sh disable=SC1091
@@ -144,17 +153,55 @@ backlog_queued() {  # <task-id>
     [ "$rc" -ne 1 ] || exit 0
     [ "$rc" -eq 0 ] || exit 2
     if fm_backlog_row_probe "$DATA" "$1"; then
-      case "$FM_BACKLOG_ROW_STATE" in queued\ *) exit 0 ;; *) exit 1 ;; esac
+      case "$FM_BACKLOG_ROW_STATE" in queued\ *) ;; *) exit 1 ;; esac
+      fm_backlog_row_dispatchable "$FM_BACKLOG_ROW_STATE" && exit 0
+      exit 3
     fi
     [ "$FM_BACKLOG_ROW_RESULT" = not_found ] && exit 1
     exit 2
   ) >/dev/null 2>&1
 }
 
+# Resolve the task's routing again from its brief. On clear, set ROUTED to the
+# recorded arguments without their routing flags, followed by the fresh
+# profile, and return 0. Otherwise set RESOLVED to the resolution status and
+# return 1.
+resolve_routing() {  # <task-id> <spawn-arg>...
+  local id=$1 rec="$DATA/$1/dispatch-resolution.json" harness model effort
+  shift
+  ROUTED=()
+  RESOLVED=error
+  [ -f "$DATA/$id/brief.md" ] || { RESOLVED='no brief'; return 1; }
+  env FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
+    "$SCRIPT_DIR/fm-dispatch-resolve.sh" "$DATA/$id/brief.md" </dev/null >/dev/null 2>&1 || return 1
+  RESOLVED=$(jq -r '.status // "error"' "$rec" 2>/dev/null) || RESOLVED=
+  [ -n "$RESOLVED" ] || RESOLVED=off
+  [ "$RESOLVED" = clear ] || return 1
+  harness=$(jq -r '.profile.harness // empty' "$rec" 2>/dev/null) || harness=
+  model=$(jq -r '.profile.model // empty' "$rec" 2>/dev/null) || model=
+  effort=$(jq -r '.profile.effort // empty' "$rec" 2>/dev/null) || effort=
+  [ -n "$harness" ] || { RESOLVED=error; return 1; }
+  ROUTED=("$1")
+  shift
+  case "${1--}" in -*) ;; *) ROUTED+=("$1"); shift ;; esac
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --harness | --model | --effort | --dispatch-override | --hermes-profile | --account) shift ;;
+      --mode | --yolo | --branch-prefix | --base-branch | --backend) ROUTED+=("$1" "${2-}"); shift ;;
+      -*) ROUTED+=("$1") ;;
+    esac
+    [ $# -eq 0 ] || shift
+  done
+  ROUTED+=(--harness "$harness")
+  [ -z "$model" ] || ROUTED+=(--model "$model")
+  [ -z "$effort" ] || ROUTED+=(--effort "$effort")
+}
+
 scan() {
-  local rows id epoch line level free reason a rc stale
-  local dispatched='' dropped='' failed='' parts=''
-  local -a args
+  local rows id epoch line level free reason a rc stale tmp
+  local dispatched='' dropped='' failed='' skipped='' manual='' parts=''
+  local -a args ROUTED
+  local RESOLVED
   rows=$(records)
   [ -n "$rows" ] || return 0
   scan_lock || return 0
@@ -182,17 +229,30 @@ scan() {
       rc=0
       backlog_queued "$id" </dev/null || rc=$?
       [ "$rc" -ne 2 ] || continue
+      if [ "$rc" -eq 3 ]; then
+        if [ ! -e "$DIR/.skipped.$id" ]; then
+          : > "$DIR/.skipped.$id" || return 1
+          skipped="$skipped $id"
+        fi
+        continue
+      fi
       [ "$rc" -eq 0 ] || stale=1
     fi
+    rm -f -- "$DIR/.skipped.$id"
     if [ "$stale" -eq 1 ] || [ "${#args[@]}" -eq 0 ]; then
       rm -f -- "$DIR/$id" || return 1
       dropped="$dropped $id"
       continue
     fi
+    if ! resolve_routing "$id" "${args[@]}"; then
+      rm -f -- "$DIR/$id" || return 1
+      manual="$manual $id ($RESOLVED)"
+      continue
+    fi
     rm -f -- "$DIR/$id" || return 1
     rc=0
     env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_SPAWN_NO_GUARD=1 \
-      "$SCRIPT_DIR/fm-spawn.sh" "${args[@]}" </dev/null > "$DIR/.log.$id" 2>&1 || rc=$?
+      "$SCRIPT_DIR/fm-spawn.sh" "${ROUTED[@]}" </dev/null > "$DIR/.log.$id" 2>&1 || rc=$?
     if [ "$rc" -eq 0 ]; then
       rm -f -- "$DIR/.log.$id"
       dispatched="$dispatched $id"
@@ -210,6 +270,8 @@ EOF
   [ -z "$dispatched" ] || parts="re-dispatched by bin/fm-spawn.sh:$dispatched"
   [ -z "$dropped" ] || parts="${parts:+$parts; }dropped, already launched or placed elsewhere:$dropped"
   [ -z "$failed" ] || parts="${parts:+$parts; }re-dispatch failed, see state/disk-refused/.log.<task-id>:$failed"
+  [ -z "$manual" ] || parts="${parts:+$parts; }not re-dispatched, dispatch resolution was not clear, dispatch by hand:$manual"
+  [ -z "$skipped" ] || parts="${parts:+$parts; }skipped, backlog item held or blocked, record kept:$skipped"
   [ -n "$parts" ] || return 0
   reason="check: disk alarm cleared (level=$level free_kib=$free): $parts"
   (
@@ -222,7 +284,11 @@ EOF
     echo "fm-disk-retry: could not queue the notification: $reason" >&2
     return 1
   }
-  printf '%s\n' "$reason" > "$DIR/.report.$(date +%s).$$" || return 1
+  tmp=$(mktemp "$DIR/.tmp-report.XXXXXX") || return 1
+  if ! printf '%s\n' "$reason" > "$tmp" || ! mv -f "$tmp" "$DIR/.report.$(date +%s).$$"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
   printf '%s\n' "$reason"
 }
 
@@ -242,7 +308,7 @@ case "${1:-}" in
     ;;
   clear)
     [ $# -eq 2 ] && valid_id "$2" || usage_error
-    rm -f -- "$DIR/$2" || exit 1
+    rm -f -- "$DIR/$2" "$DIR/.skipped.$2" || exit 1
     ;;
   scan)
     [ $# -eq 1 ] || usage_error
