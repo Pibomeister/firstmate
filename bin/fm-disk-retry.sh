@@ -29,8 +29,9 @@
 #           record, launching nothing, and report the task for dispatch by hand.
 #           On clear, scan itself runs bin/fm-spawn.sh with the recorded
 #           arguments, minus --harness, --model, --effort, --dispatch-override,
-#           --hermes-profile, --account, and a positional harness, plus the
-#           fresh profile. Every spawn gate (disk alarm, capacity, backlog,
+#           --hermes-profile, and --account (with a separate or `=` value) and
+#           any positional after the task id and project, plus the fresh
+#           profile. Every spawn gate (disk alarm, capacity, backlog,
 #           spend) applies again. A spawn the disk alarm refuses again records
 #           itself again; a spawn a capacity gate defers (exit 75) keeps its
 #           record for a later scan; any other failure drops the record and
@@ -167,7 +168,7 @@ backlog_queued() {  # <task-id>
 # profile, and return 0. Otherwise set RESOLVED to the resolution status and
 # return 1.
 resolve_routing() {  # <task-id> <spawn-arg>...
-  local id=$1 rec="$DATA/$1/dispatch-resolution.json" harness model effort
+  local id=$1 rec="$DATA/$1/dispatch-resolution.json" harness model effort pos
   shift
   ROUTED=()
   RESOLVED=error
@@ -181,14 +182,24 @@ resolve_routing() {  # <task-id> <spawn-arg>...
   model=$(jq -r '.profile.model // empty' "$rec" 2>/dev/null) || model=
   effort=$(jq -r '.profile.effort // empty' "$rec" 2>/dev/null) || effort=
   [ -n "$harness" ] || { RESOLVED=error; return 1; }
-  ROUTED=("$1")
-  shift
-  case "${1--}" in -*) ;; *) ROUTED+=("$1"); shift ;; esac
+  ROUTED=()
+  pos=0
   while [ $# -gt 0 ]; do
     case "$1" in
-      --harness | --model | --effort | --dispatch-override | --hermes-profile | --account) shift ;;
-      --mode | --yolo | --branch-prefix | --base-branch | --backend) ROUTED+=("$1" "${2-}"); shift ;;
+      --harness | --model | --effort | --dispatch-override | --hermes-profile | --account)
+        shift ;;
+      --harness=* | --model=* | --effort=* | --dispatch-override=* | --hermes-profile=* | --account=*) ;;
+      --mode | --yolo | --branch-prefix | --base-branch | --backend | --pr-branch | --from-branch | \
+        --upstream-consent | --traceparent | --budget-inclusive-hard | --budget-inclusive-stop | \
+        --budget-fresh-hard | --budget-fresh-stop)
+        ROUTED+=("$1")
+        [ $# -lt 2 ] || { shift; ROUTED+=("$1"); }
+        ;;
       -*) ROUTED+=("$1") ;;
+      *)
+        pos=$((pos + 1))
+        [ "$pos" -gt 2 ] || ROUTED+=("$1")
+        ;;
     esac
     [ $# -eq 0 ] || shift
   done
