@@ -84,6 +84,13 @@ if [ -f "$stub/$tool.tokens" ]; then
   usage=$(jq -n --argjson i "$t_in" --argjson o "$t_out" --argjson c "$t_cache" \
     '{inputTokens: $i, outputTokens: $o, cacheReadInputTokens: $c}')
 fi
+# <stub>/<tool>.usage holds a top-level snake_case usage object, reported
+# beside a model entry that carries no token counts.
+if [ -f "$stub/$tool.usage" ]; then
+  jq -n --arg t "$text" --arg m "$reported" --slurpfile u "$stub/$tool.usage" \
+    '{result: $t, is_error: false, modelUsage: {($m): {}}, usage: $u[0]}'
+  exit 0
+fi
 case "$tool" in
   claude) jq -n --arg t "$text" --arg m "$reported" --argjson u "$usage" '{result: $t, is_error: false, modelUsage: {($m): $u}}' ;;
   grok) jq -n --arg t "$text" --arg m "$reported" --argjson u "$usage" '{text: ("I will read the diff first." + $t), modelUsage: {($m): $u}}' ;;
@@ -1619,6 +1626,17 @@ test_receipts_record_round_scope_and_tokens() {
   pass "receipts record the review round across heads, the full scope, and the tokens the tool reported"
 }
 
+test_receipts_read_tokens_from_top_level_usage() {  # a model entry without counts
+  local receipt
+  make_case usage-only "${TWO_SEATS[@]}"
+  echo '{"input_tokens": 5, "cache_read_input_tokens": 2, "output_tokens": 9}' > "$STUB/claude.usage"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || fail "usage-only: the head did not approve"
+  receipt="$(store_dir)/anthropic.claude.claude-test-1.receipt"
+  assert_line 'tokens_in=7' "$receipt" "usage-only: input and cache-read tokens in top-level usage were not summed"
+  assert_line 'tokens_out=9' "$receipt" "usage-only: output tokens in top-level usage were not recorded"
+  pass "receipts read token counts a tool reports only in top-level usage"
+}
+
 test_metrics_count_rounds_calls_and_tokens_per_pull_request() {
   local rc=0 line
   make_case metrics "${TWO_SEATS[@]}"
@@ -1662,6 +1680,7 @@ test_metrics_count_rounds_calls_and_tokens_per_pull_request() {
 
 fm_test_run \
   test_receipts_record_round_scope_and_tokens \
+  test_receipts_read_tokens_from_top_level_usage \
   test_metrics_count_rounds_calls_and_tokens_per_pull_request \
   test_two_families_approve_and_a_supervisor_reads_one_line \
   test_run_refuses_in_a_supervisor_session \

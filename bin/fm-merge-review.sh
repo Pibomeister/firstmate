@@ -766,15 +766,16 @@ mr_seat_call() {  # <seat-index>
 # cache tokens, <out> is output tokens. Prints nothing when none are reported.
 mr_tokens() {  # <raw.json> <in|out>
   local filter
+  # shellcheck disable=SC2016 # $o is a jq variable, bound so each fallback reads the tool's object
   case "$2" in
     in)
-      filter='[(.modelUsage // {})[]? | objects | [.inputTokens, .cacheReadInputTokens, .cacheCreationInputTokens] | map(numbers) | add // empty] | add
-        // ((.usage // {}) | [.input_tokens, .cache_read_input_tokens, .cache_creation_input_tokens] | map(numbers) | add)
+      filter='. as $o | ([($o.modelUsage // {})[]? | objects | [.inputTokens, .cacheReadInputTokens, .cacheCreationInputTokens] | map(numbers) | add // empty] | add)
+        // (($o.usage // {}) | [.input_tokens, .cache_read_input_tokens, .cache_creation_input_tokens] | map(numbers) | add)
         // empty'
       ;;
     *)
-      filter='[(.modelUsage // {})[]? | objects | [.outputTokens] | map(numbers) | add // empty] | add
-        // ((.usage // {}) | [.output_tokens] | map(numbers) | add)
+      filter='. as $o | ([($o.modelUsage // {})[]? | objects | [.outputTokens] | map(numbers) | add // empty] | add)
+        // (($o.usage // {}) | [.output_tokens] | map(numbers) | add)
         // empty'
       ;;
   esac
