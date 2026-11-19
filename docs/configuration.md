@@ -965,7 +965,7 @@ Each `captains[]` object:
 | `handle` | Orca terminal handle, when known. |
 | `pane` | Herdr pane id (`w1:pG`), when known. |
 | `session` | Optional Herdr session name. |
-| `fm_home` | That captain's firstmate home, for `heartbeat.json` idle and commit progress, its stall ledger and stalled lanes, and merge-ready discovery. |
+| `fm_home` | That captain's firstmate home, for `heartbeat.json` idle and commit progress, its stall ledger and stalled lanes, and merge-ready discovery; for an Orca captain it also names the home whose lock owner is the terminal typed to, overriding `handle` and `title`. |
 | `idle_min` / `cooldown_min` / `max_no_progress` / `lane_stall_min` / `escalate_min` / `council_min` / `merge_ready_min` | Optional per-captain overrides. |
 | `open_work.repos` | `owner/name` repos probed with read-only `gh pr list --state open`. |
 | `open_work.queue_file` | Local queue; a `- [ ]` item, an `In flight`/`queued` line, or any non-comment body counts as open work. |

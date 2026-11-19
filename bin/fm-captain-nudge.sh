@@ -36,7 +36,10 @@
 #                       escalated, stall_tier, and merge_ready (first-seen epoch
 #                       and nudged flag per <run_id>@<head>)
 # Each pass also runs fm-stall-ledger.sh observe for a captain's fm_home and
-# reads fm-ready-pr-discovery.sh --json for it.
+# reads fm-ready-pr-discovery.sh --json for it. An Orca captain with fm_home is
+# the terminal fm-captain-locate.sh names as that home's lock owner, read at
+# pass start and again before each send; without a held lock the pass records
+# captain_unknown and types nothing.
 # The JSONL log and beacon log paths are config keys (defaults under state_dir
 # and, when set, the existing host beacon log).
 #
@@ -45,7 +48,8 @@
 #
 # Test seams, honoured only with FM_TEST_SEAM=1: FM_NUDGE_NOW, FM_NUDGE_SEND_LOG
 # (send writes the payload instead of calling orca/herdr), FM_NUDGE_READY_PR_BIN
-# (replaces fm-ready-pr-discovery.sh), FM_NUDGE_LAUNCHD_DIR,
+# (replaces fm-ready-pr-discovery.sh), FM_NUDGE_LOCATE_BIN (replaces
+# fm-captain-locate.sh), FM_NUDGE_LAUNCHD_DIR,
 # FM_NUDGE_SYSTEMD_DIR, FM_NUDGE_CRON_FILE, and a captain backend of `fixture`.
 #
 # Exit status: 0 on success, 2 on a usage error, 1 on any other failure.
@@ -301,6 +305,7 @@ send_fixed_prompt() {  # <prompt-kind> <backend> <target> [session] [lane-table]
   text=$(fm_nudge_prompt_text "$kind" "${5:-}") || die "unknown prompt kind: $kind"
   text=${text%$'\n'}
   fm_nudge_send_allowed_text "$text" || die "refusing to send anything but a fixed prompt"
+  target_is_live_owner "$target" || return 1
   if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_NUDGE_SEND_LOG:-}" ]; then
     printf '%s\t%s\t%s\n' "$backend" "$target" "$text" >> "$FM_NUDGE_SEND_LOG"
     return 0
@@ -334,6 +339,7 @@ send_fixed_prompt() {  # <prompt-kind> <backend> <target> [session] [lane-table]
 # when a previous pass left it unsent in the composer.
 send_enter_only() {  # <backend> <target> [session]
   local backend=$1 target=$2 session=${3:-}
+  target_is_live_owner "$target" || return 1
   if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_NUDGE_SEND_LOG:-}" ]; then
     printf '%s\t%s\t%s\n' "$backend" "$target" "<Enter>" >> "$FM_NUDGE_SEND_LOG"
     return 0
@@ -389,6 +395,41 @@ record_stall_ledger() {  # <fm_home>
   [ -d "$home/state" ] || return 0
   while IFS= read -r -d '' arg; do argv+=("$arg"); done < <(home_env "$home")
   fm_run_timed 60 "${argv[@]}" /bin/bash "$SCRIPT_DIR/fm-stall-ledger.sh" observe >/dev/null 2>&1 || true
+}
+
+# Lock owner of <fm_home>, read at call time through fm-captain-locate.sh.
+# Prints `<state><TAB><handle>`: state is held, free, stale, unknown, or
+# unreadable, and handle is none unless the lock names a live endpoint.
+locate_captain() {  # <fm_home>
+  local home bin out line state handle arg argv=()
+  home=$(fm_nudge_expand_path "$1")
+  bin=$SCRIPT_DIR/fm-captain-locate.sh
+  if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_NUDGE_LOCATE_BIN:-}" ]; then
+    bin=$FM_NUDGE_LOCATE_BIN
+  fi
+  if [ ! -d "$home/state" ] || [ ! -x "$bin" ]; then
+    printf 'unreadable\tnone\n'
+    return 0
+  fi
+  while IFS= read -r -d '' arg; do argv+=("$arg"); done < <(home_env "$home")
+  # Exit 1 is the ordinary not-held answer; the CAPTAIN line still says why.
+  out=$(fm_run_timed 20 "${argv[@]}" "$bin" 2>/dev/null) || true
+  line=$(printf '%s\n' "$out" | grep '^CAPTAIN v1 ' | tail -n 1)
+  state=$(printf '%s\n' "$line" | sed -n 's/.* state=\([a-z]*\).*/\1/p')
+  handle=$(printf '%s\n' "$line" | sed -n 's/.* handle=\([^ ]*\).*/\1/p')
+  case "$state" in held|free|stale|unknown|unreadable) ;; *) state=unreadable ;; esac
+  case "$handle" in ''|*[!A-Za-z0-9_.:%-]*) handle=none ;; esac
+  printf '%s\t%s\n' "$state" "$handle"
+}
+
+# True when <target> is still the lock owner's endpoint for the captain this
+# pass resolved through its home, so a handoff between read and send never
+# sends to the old pane. A captain resolved from config alone always passes.
+target_is_live_owner() {  # <target>
+  local row
+  [ -n "${PASS_OWNER_HOME:-}" ] || return 0
+  row=$(locate_captain "$PASS_OWNER_HOME")
+  [ "${row%%$'\t'*}" = held ] && [ "${row#*$'\t'}" = "$1" ]
 }
 
 # bin/fm-ready-pr-discovery.sh --json for the captain home. Fails when the
@@ -557,6 +598,21 @@ process_captain() {  # <captain-json> [force]
 
   OBS_SCREEN=''; OBS_LAST_AT=''; OBS_TARGET=''; OBS_DRAFT=''
   OBS_DIALOG=''; OBS_COMPOSER=''; OBS_HB=''; OBS_COMMIT=''
+  # An Orca captain with a home is whoever holds that home's lock now, never
+  # the configured handle or title: a successor often leaves the old pane open.
+  PASS_OWNER_HOME=''
+  if [ "$backend" = orca ] && [ -n "$fmhome" ]; then
+    row=$(locate_captain "$fmhome")
+    if [ "${row%%$'\t'*}" = held ] && [ "${row#*$'\t'}" != none ]; then
+      cap=$(printf '%s' "$cap" | jq -c --arg h "${row#*$'\t'}" '.handle = $h | del(.title)')
+      PASS_OWNER_HOME=$fmhome
+    else
+      decision=$(jq -nc --arg s "${row%%$'\t'*}" \
+        '{event:"captain_unknown",severity:"medium",reason:("captain home lock is " + $s + "; endpoint unknown, nothing typed"),should_send:false}')
+      emit_event "$id" "$owner" "$decision" 0 'none' "$(jq -nc --arg s "${row%%$'\t'*}" '{lock_state:$s, backend:"orca"}')" >/dev/null
+      return 0
+    fi
+  fi
   if [ "$backend" = fixture ]; then
     observe_fixture "$cap"
   else
