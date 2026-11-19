@@ -87,13 +87,18 @@ under_target() {  # <free_kib>: true when a known reading is under the target
 }
 
 old_entries() {  # <root> <days>: print NUL-separated old entries of root
-  local root=$1 days=$2 entry fresh
+  local root=$1 days=$2 entry scratch
   [ -d "$root" ] || return 0
+  scratch=$(mktemp) || return 0
   find "$root" -mindepth 1 -maxdepth 1 -print0 2>/dev/null \
     | while IFS= read -r -d '' entry; do
-        fresh=$(find "$entry" ! -mtime +"$days" -print -quit 2>/dev/null) || continue
-        [ -z "$fresh" ] && printf '%s\0' "$entry"
+        # No -quit: it is not in every find. A failed read keeps the entry.
+        if find "$entry" ! -mtime +"$days" -print > "$scratch" 2>/dev/null \
+          && [ ! -s "$scratch" ]; then
+          printf '%s\0' "$entry"
+        fi
       done
+  rm -f "$scratch"
 }
 
 # Prints "<entries> <kib>" for the old entries under root $1 (age $2 days).
