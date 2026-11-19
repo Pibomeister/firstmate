@@ -212,7 +212,7 @@ Treat file or subsystem overlap as a risk signal rather than an automatic reason
 A project's declared machine capacity (`config/project-capacity`) still bounds that dispatch: a spawn beyond it exits 75 without launching, and its item stays queued rather than blocked.
 `bin/fm-spawn.sh` reads `bin/fm-disk-alarm.sh` before every fresh crewmate or scout launch, including when crew-dispatch resolution runs first.
 Tell the captain when that reading warns.
-A refusal is not retried on this host while the alarm stands, so place the work on another host or cloud, or dispatch it again when the `check: disk alarm cleared` notification names it (`bin/fm-disk-retry.sh`).
+A refusal is not retried on this host while the alarm stands; place the work on another host or cloud, or let `bin/fm-disk-retry.sh` dispatch it again by itself when the alarm clears, and record each re-dispatch its `check: disk alarm cleared` notification names.
 Serialize only for a true semantic dependency, shared mutable external state, incompatible concurrent migration, or another concrete condition that makes independent progress or reconciliation unsafe; same-file editing alone is insufficient, and genuine blockers remain durable.
 Write the task-specific brief under section 11 before spawning.
 Fill the task subsections according to section 11.

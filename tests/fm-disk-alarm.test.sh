@@ -471,9 +471,28 @@ spawn_at_level() {  # <home> <volume> <avail> <spawn args...>
     "$ROOT/bin/fm-spawn.sh" "$@"
 }
 
+# A code root whose fm-spawn.sh only logs its arguments, one per line, then a
+# blank line, and exits with FM_STUB_SPAWN_RC; it stands in for the real launch.
+stub_root() {
+  local root="$TMP_ROOT/retry-stub-root"
+  if [ ! -d "$root/bin" ]; then
+    mkdir -p "$root"
+    cp -R "$ROOT/bin" "$root/bin"
+    cat > "$root/bin/fm-spawn.sh" <<'SH'
+#!/usr/bin/env bash
+{ printf '%s\n' "$@"; printf '\n'; } >> "$FM_STUB_SPAWN_LOG"
+echo "stub spawn output"
+exit "${FM_STUB_SPAWN_RC:-0}"
+SH
+    chmod +x "$root/bin/fm-spawn.sh"
+  fi
+  printf '%s\n' "$root"
+}
+
 retry_at_level() {  # <home> <volume> <avail> <retry args...>
   local home=$1 volume=$2 avail=$3
   shift 3
+  mkdir -p "$home/data"
   env \
     FM_HOME="$home" \
     FM_TEST_SEAM=1 \
@@ -481,12 +500,38 @@ retry_at_level() {  # <home> <volume> <avail> <retry args...>
     FM_DF_FIXTURE_VOLUME="$volume" \
     FM_DF_FIXTURE_MODE=number \
     FM_DF_FIXTURE_AVAIL="$avail" \
+    FM_STUB_SPAWN_LOG="$home/stub-spawn.log" \
     PATH="$FAKE:$BASE_PATH" \
-    "$RETRY" "$@"
+    "$(stub_root)/bin/fm-disk-retry.sh" "$@"
 }
 
 wake_rows() {  # <home>
   if [ -f "$1/state/.wake-queue" ]; then wc -l < "$1/state/.wake-queue" | tr -d ' '; else printf 0; fi
+}
+
+# Recorded task ids, sorted, space-separated: the record directory is this
+# script's persisted state contract.
+recorded_ids() {  # <home>
+  local f out=''
+  for f in "$1/state/disk-refused"/*; do
+    [ -f "$f" ] || continue
+    out="$out${f##*/} "
+  done
+  printf '%s' "$out"
+}
+
+# The spawn arguments stored in a record, one per line.
+recorded_args() {  # <home> <id>
+  tail -n +2 "$1/state/disk-refused/$2" | tr '\0' '\n'
+}
+
+# Rewrite a record's refusal epoch, keeping its stored arguments.
+set_epoch() {  # <home> <id> <epoch>
+  perl -0777 -pi -e "s/\\A[0-9]+\\n/$3\\n/" "$1/state/disk-refused/$2"
+}
+
+stub_calls() {  # <home>
+  cat "$1/stub-spawn.log" 2>/dev/null || true
 }
 
 test_refused_spawn_is_recorded_for_retry() {
@@ -503,13 +548,14 @@ test_refused_spawn_is_recorded_for_retry() {
   rc=0
   out=$(spawn_at_level "$home" "$volume" 9437184 relaunch-c --relaunch 2>&1) || rc=$?
   [ "$rc" != 0 ] || fail "relaunch of a missing task should still fail"$'\n'"$out"
-  out=$(FM_HOME="$home" "$RETRY" list | cut -f1 | sort | tr '\n' ' ')
-  assert_equals "scout-b ship-a " "$out" "each disk-refused fresh launch, and no relaunch, must be recorded"
+  assert_equals "scout-b ship-a " "$(recorded_ids "$home")" "each disk-refused fresh launch, and no relaunch, must be recorded"
+  assert_equals "ship-a"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off" "$(recorded_args "$home" ship-a)" "the record keeps the refused launch's exact arguments"
+  assert_equals "scout-b"$'\n'"--scout" "$(recorded_args "$home" scout-b)" "the scout record keeps its exact arguments"
   assert_equals 0 "$(wake_rows "$home")" "a refusal alone must not notify"
-  pass "a disk-refused fresh launch is recorded durably, and a relaunch is not"
+  pass "a disk-refused fresh launch is recorded with its arguments, and a relaunch is not"
 }
 
-test_retry_notifies_once_when_the_alarm_clears() {
+test_retry_redispatches_when_the_alarm_clears() {
   local home volume marker out rc
   home="$TMP_ROOT/retry-scan-home"
   volume="$TMP_ROOT/retry-scan-volume"
@@ -518,25 +564,69 @@ test_retry_notifies_once_when_the_alarm_clears() {
   out=$(FM_DF_MARKER="$marker" retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "an empty scan must exit 0"
   assert_equals "" "$out" "an empty scan prints nothing"
   assert_absent "$marker" "a scan with no record must not read the disk"
-  spawn_at_level "$home" "$volume" 9437184 ship-a --mode no-mistakes --yolo off >/dev/null 2>&1 || true
-  spawn_at_level "$home" "$volume" 9437184 scout-b --scout >/dev/null 2>&1 || true
+  retry_at_level "$home" "$volume" 9437184 record ship-a ship-a --mode no-mistakes --yolo off --dispatch-override 'two words' || fail "record ship-a"
+  retry_at_level "$home" "$volume" 9437184 record scout-b scout-b --scout || fail "record scout-b"
+  set_epoch "$home" ship-a 100
+  set_epoch "$home" scout-b 200
   out=$(retry_at_level "$home" "$volume" 9437184 scan 2>&1) || fail "a scan under a standing alarm must exit 0"
   assert_equals "" "$out" "a scan under a standing alarm prints nothing"
+  assert_equals "" "$(stub_calls "$home")" "a standing alarm launches nothing"
   assert_equals 0 "$(wake_rows "$home")" "a standing alarm must not notify"
-  assert_equals 2 "$(FM_HOME="$home" "$RETRY" list | wc -l | tr -d ' ')" "a standing alarm keeps every record"
+  assert_equals "scout-b ship-a " "$(recorded_ids "$home")" "a standing alarm keeps every record"
   rc=0
   out=$(retry_at_level "$home" "$volume" 20971520 scan 2>&1) || rc=$?
   [ "$rc" = 0 ] || fail "a clearing scan must exit 0, got $rc"$'\n'"$out"
-  assert_contains "$out" "check: disk alarm cleared (level=ok free_kib=20971520): dispatch again with bin/fm-spawn.sh:" "the clearing scan names the reading and the action"
-  assert_contains "$out" " ship-a" "the notification names the refused ship"
-  assert_contains "$out" " scout-b" "the notification names the refused scout"
+  assert_equals "ship-a"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off"$'\n'"--dispatch-override"$'\n'"two words"$'\n\n'"scout-b"$'\n'"--scout" "$(stub_calls "$home")" "the cleared alarm dispatches each record again, oldest first, with its exact arguments"
+  assert_contains "$out" "check: disk alarm cleared (level=ok free_kib=20971520): re-dispatched by bin/fm-spawn.sh:" "the result names the reading and the re-dispatch"
+  assert_contains "$out" " ship-a" "the result names the re-dispatched ship"
+  assert_contains "$out" " scout-b" "the result names the re-dispatched scout"
   assert_equals 1 "$(wake_rows "$home")" "a cleared alarm queues exactly one notification"
   assert_contains "$(cat "$home/state/.wake-queue")" "$out" "the queued notification is the printed line"
-  assert_equals "" "$(FM_HOME="$home" "$RETRY" list)" "a notified record is removed"
+  assert_equals "" "$(recorded_ids "$home")" "a re-dispatched record is removed"
+  : > "$home/stub-spawn.log"
   out=$(retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "a repeat scan must exit 0"
   assert_equals "" "$out" "a repeat scan prints nothing"
+  assert_equals "" "$(stub_calls "$home")" "a repeat scan launches nothing"
   assert_equals 1 "$(wake_rows "$home")" "a cleared alarm must not notify twice"
-  pass "a cleared alarm raises one notification naming every disk-refused task"
+  pass "a cleared alarm dispatches every disk-refused task again by itself and reports it once"
+}
+
+test_retry_drops_work_already_placed_elsewhere() {
+  local home volume out
+  home="$TMP_ROOT/retry-elsewhere-home"
+  volume="$TMP_ROOT/retry-elsewhere-volume"
+  mkdir -p "$home/state" "$volume"
+  retry_at_level "$home" "$volume" 9437184 record ship-live ship-live --mode no-mistakes --yolo off || fail "record ship-live"
+  retry_at_level "$home" "$volume" 9437184 record ship-moved ship-moved --mode no-mistakes --yolo off || fail "record ship-moved"
+  retry_at_level "$home" "$volume" 9437184 record ship-old ship-old --mode no-mistakes --yolo off || fail "record ship-old"
+  retry_at_level "$home" "$volume" 9437184 record ship-c ship-c --mode no-mistakes --yolo off || fail "record ship-c"
+  printf 'kind=ship\n' > "$home/state/ship-live.meta"
+  printf '2026-11-19T00:00:00Z\t%s\tdispatched\tgoal-1\ttask=ship-moved note=placed on another host\n' "$(( $(date +%s) + 5 ))" > "$home/state/dispatch-log.tsv"
+  printf '2026-01-01T00:00:00Z\t1\tdispatched\tgoal-0\ttask=ship-old\n' >> "$home/state/dispatch-log.tsv"
+  out=$(retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "the scan must exit 0"$'\n'"$out"
+  assert_equals "ship-c"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off"$'\n\n'"ship-old"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off" "$(stub_calls "$home")" "only tasks with no live record and no newer dispatch are launched again"
+  assert_contains "$out" "re-dispatched by bin/fm-spawn.sh: ship-c ship-old" "a dispatch older than the refusal does not stop the re-dispatch"
+  assert_contains "$out" "dropped, already launched or placed elsewhere: ship-live ship-moved" "the result names the dropped records"
+  assert_equals "" "$(recorded_ids "$home")" "a stale record is removed"
+  pass "a record of work already launched or placed elsewhere is dropped without a second launch"
+}
+
+test_retry_keeps_deferred_and_reports_failed() {
+  local home volume out
+  home="$TMP_ROOT/retry-defer-home"
+  volume="$TMP_ROOT/retry-defer-volume"
+  mkdir -p "$home/state" "$volume"
+  retry_at_level "$home" "$volume" 9437184 record ship-d ship-d --mode no-mistakes --yolo off || fail "record ship-d"
+  out=$(FM_STUB_SPAWN_RC=75 retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "a deferred scan must exit 0"
+  assert_equals "" "$out" "a capacity deferral is not a result to report"
+  assert_equals 0 "$(wake_rows "$home")" "a capacity deferral must not notify"
+  assert_equals "ship-d"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off" "$(recorded_args "$home" ship-d)" "a capacity deferral keeps the record for a later scan"
+  out=$(FM_STUB_SPAWN_RC=1 retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "a failed scan must exit 0"
+  assert_contains "$out" "re-dispatch failed, see state/disk-refused/.log.<task-id>: ship-d" "a failed re-dispatch is reported"
+  assert_equals "stub spawn output" "$(cat "$home/state/disk-refused/.log.ship-d")" "the failed spawn's output is kept"
+  assert_equals "" "$(recorded_ids "$home")" "a failed re-dispatch is not retried again"
+  assert_equals 1 "$(wake_rows "$home")" "a failed re-dispatch notifies once"
+  pass "a capacity deferral keeps its record and a failed re-dispatch is reported once"
 }
 
 test_admitted_spawn_clears_its_retry_record() {
@@ -547,41 +637,53 @@ test_admitted_spawn_clears_its_retry_record() {
   spawn_at_level "$home" "$volume" 9437184 ship-a --mode no-mistakes --yolo off >/dev/null 2>&1 || true
   assert_present "$home/state/disk-refused/ship-a" "the refusal must leave a record"
   spawn_at_level "$home" "$volume" 20971520 ship-a --mode no-mistakes --yolo off >/dev/null 2>&1 || true
-  assert_absent "$home/state/disk-refused/ship-a" "a launch the alarm admits must not be notified again"
+  assert_absent "$home/state/disk-refused/ship-a" "a launch the alarm admits must not be dispatched again"
   pass "a launch the alarm admits removes its own retry record"
 }
 
-test_watcher_reports_the_cleared_alarm() {
+test_watcher_reports_the_redispatch() {
   local home volume out
   home="$TMP_ROOT/retry-watch-home"
   volume="$TMP_ROOT/retry-watch-volume"
   mkdir -p "$home/state" "$home/config" "$volume"
-  spawn_at_level "$home" "$volume" 9437184 ship-a --mode no-mistakes --yolo off >/dev/null 2>&1 || true
+  retry_at_level "$home" "$volume" 9437184 record ship-a ship-a --mode no-mistakes --yolo off || fail "record ship-a"
   # shellcheck disable=SC2016
   out=$(env FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config" \
     FM_TEST_SEAM=1 FM_DISK_ALARM_VOLUME="$volume" FM_DF_FIXTURE_VOLUME="$volume" \
-    FM_DF_FIXTURE_MODE=number PATH="$FAKE:$BASE_PATH" WATCH="$ROOT/bin/fm-watch.sh" \
+    FM_DF_FIXTURE_MODE=number FM_STUB_SPAWN_LOG="$home/stub-spawn.log" PATH="$FAKE:$BASE_PATH" \
+    WATCH="$(stub_root)/bin/fm-watch.sh" STATE_DIR="$home/state" \
     bash -c '. "$WATCH"
-      FM_DF_FIXTURE_AVAIL=9437184 disk_retry_tick || exit 1
-      printf "standing=[%s]\n" "$DISK_RETRY_REASON"
-      FM_DF_FIXTURE_AVAIL=20971520 disk_retry_tick || exit 1
+      wait_scan() { local pid=$1 i=0; while kill -0 "$pid" 2>/dev/null; do i=$((i + 1)); [ "$i" -lt 600 ] || return 1; sleep 0.1; done; }
+      export FM_DF_FIXTURE_AVAIL=9437184
+      disk_retry_tick || exit 1
+      wait_scan "$!" || exit 1
+      ls "$STATE_DIR/disk-refused"/.report.* >/dev/null 2>&1 && exit 1
+      export FM_DF_FIXTURE_AVAIL=20971520
+      disk_retry_tick || exit 1
+      printf "launch=[%s]\n" "$DISK_RETRY_REASON"
+      wait_scan "$!" || exit 1
+      disk_retry_tick || exit 1
       printf "cleared=[%s]\n" "$DISK_RETRY_REASON"
-      FM_DF_FIXTURE_AVAIL=20971520 disk_retry_tick || exit 1
+      disk_retry_tick || exit 1
       printf "repeat=[%s]\n" "$DISK_RETRY_REASON"' 2>&1) || fail "the watcher tick failed"$'\n'"$out"
-  assert_contains "$out" "standing=[]" "the watcher stays silent under a standing alarm"
-  assert_contains "$out" "cleared=[check: disk alarm cleared (level=ok free_kib=20971520): dispatch again with bin/fm-spawn.sh: ship-a]" "the watcher reports the cleared alarm"
-  assert_contains "$out" "repeat=[]" "the watcher reports the cleared alarm once"
+  assert_contains "$out" "launch=[]" "the tick that starts the scan does not wait for it"
+  assert_contains "$out" "cleared=[check: disk alarm cleared (level=ok free_kib=20971520): re-dispatched by bin/fm-spawn.sh: ship-a]" "the watcher reports the re-dispatch"
+  assert_contains "$out" "repeat=[]" "the watcher reports the re-dispatch once"
+  assert_equals "ship-a"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off" "$(stub_calls "$home")" "the watcher's scan dispatches the task again exactly once"
   assert_equals 1 "$(wake_rows "$home")" "the watcher path queues exactly one notification"
-  assert_absent "$home/state/meta/ship-a" "the watcher must not launch the task itself"
-  pass "the watcher raises the one notification and launches nothing"
+  pass "the watcher dispatches the refused task again in the background and reports it once"
 }
 
 test_retry_usage_errors() {
   local rc
   rc=0; "$RETRY" record >/dev/null 2>&1 || rc=$?
   assert_equals 2 "$rc" "record without a task id is a usage error"
-  rc=0; "$RETRY" record '../x' >/dev/null 2>&1 || rc=$?
+  rc=0; "$RETRY" record ship-a >/dev/null 2>&1 || rc=$?
+  assert_equals 2 "$rc" "record without spawn arguments is a usage error"
+  rc=0; "$RETRY" record '../x' '../x' >/dev/null 2>&1 || rc=$?
   assert_equals 2 "$rc" "a task id with a path character is a usage error"
+  rc=0; "$RETRY" list >/dev/null 2>&1 || rc=$?
+  assert_equals 2 "$rc" "list is not a subcommand"
   rc=0; "$RETRY" bogus >/dev/null 2>&1 || rc=$?
   assert_equals 2 "$rc" "an unknown subcommand is a usage error"
   assert_contains "$("$RETRY" --help)" "fm-disk-retry.sh scan" "help prints the usage"
@@ -604,7 +706,9 @@ fm_test_run \
   test_dispatch_resolve_prints_the_alarm_and_stays_off \
   test_nm_driving_block_names_the_lane_gate \
   test_refused_spawn_is_recorded_for_retry \
-  test_retry_notifies_once_when_the_alarm_clears \
+  test_retry_redispatches_when_the_alarm_clears \
+  test_retry_drops_work_already_placed_elsewhere \
+  test_retry_keeps_deferred_and_reports_failed \
   test_admitted_spawn_clears_its_retry_record \
-  test_watcher_reports_the_cleared_alarm \
+  test_watcher_reports_the_redispatch \
   test_retry_usage_errors

@@ -50,8 +50,8 @@
 # This script does not notify a leash. A separate host check does that.
 # "tell the captain" is an instruction to whoever reads a warn line.
 # A refusal is not a retry on this host. Place the work on another host or cloud.
-# bin/fm-disk-retry.sh records a refused crew launch and reports once when this
-# gate admits a launch again.
+# bin/fm-disk-retry.sh records a refused crew launch and dispatches it again
+# when this gate admits a launch again.
 set -u
 
 WARN_KIB=15728640

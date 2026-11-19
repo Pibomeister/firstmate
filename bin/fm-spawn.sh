@@ -317,11 +317,12 @@
 #   Disk alarm: before any lock, brief, endpoint, worktree, record, or backlog
 #   move, a fresh ship or scout runs bin/fm-disk-alarm.sh --gate crew. The human
 #   line stays on stderr and the machine line is discarded. A refusal exits 1
-#   and does not stay queued; it leaves one bin/fm-disk-retry.sh record, which
-#   an admitted launch of the same task removes. A relaunch and a --secondmate
-#   spawn are not new crewmate launches. A refused batch pair is FAILED.
-#   bin/fm-disk-alarm.sh owns the reading and the levels, and
-#   bin/fm-disk-retry.sh owns the record and its one notification.
+#   and does not stay queued; it leaves one bin/fm-disk-retry.sh record of
+#   this invocation's arguments, which an admitted launch of the same task
+#   removes and which the watcher replays through this script once the alarm
+#   clears. A relaunch and a --secondmate spawn are not new crewmate launches.
+#   A refused batch pair is FAILED. bin/fm-disk-alarm.sh owns the reading and
+#   the levels, and bin/fm-disk-retry.sh owns the record and its re-dispatch.
 #   With no harness arg, a crewmate/scout spawn resolves the CREW harness only when
 #   config/crew-dispatch.json is absent. When that file exists, crewmate/scout
 #   spawns require an explicit harness so firstmate cannot silently skip dispatch
@@ -2456,8 +2457,8 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
   disk_gate_rc=0
   "$SCRIPT_DIR/fm-disk-alarm.sh" --gate crew >/dev/null || disk_gate_rc=$?
   if [ "$disk_gate_rc" -ne 0 ]; then
-    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-disk-retry.sh" record "$ID" \
-      || echo "warning: the disk-alarm refusal of $ID was not recorded; no notification will follow when the alarm clears" >&2
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-disk-retry.sh" record "$ID" "$@" \
+      || echo "warning: the disk-alarm refusal of $ID was not recorded; it will not be dispatched again by itself when the alarm clears" >&2
     exit "$disk_gate_rc"
   fi
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-disk-retry.sh" clear "$ID" || true

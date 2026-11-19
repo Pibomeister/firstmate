@@ -167,11 +167,11 @@
 #                          opt-in config/open-decision-reminders record-age
 #                          backstop, independent of pane and branch state;
 #                          open_decision_reminder_tick owns its bounded repeats
-#   check: disk alarm cleared (...): dispatch again with bin/fm-spawn.sh: <tasks>
+#   check: disk alarm cleared (...): <result>
 #                          the disk alarm refused these fresh launches and now
-#                          admits a launch; bin/fm-disk-retry.sh owns the
-#                          record and reports it once, and nothing is launched
-#                          from here
+#                          admits a launch; bin/fm-disk-retry.sh dispatched
+#                          them again, dropped stale ones, or names a failed
+#                          re-dispatch, and reports each result once
 #   check: process-event result captured: <keys>
 #                          a durably captured process-to-event result is queued
 #                          and has not been surfaced yet; reported once per
@@ -3519,20 +3519,28 @@ EOF
   fi
 }
 
-# One notification when the disk alarm admits launches it refused earlier.
-# bin/fm-disk-retry.sh owns the records and the queued wake; with no record this
-# costs one glob and never reads the disk. A failed or timed-out scan keeps the
-# records, so a later poll reports them.
+# Disk-refused launches are dispatched again by bin/fm-disk-retry.sh once the
+# alarm admits a launch. A spawn can outlast a poll, so the scan runs in the
+# background in its own process group, and this tick wakes with each report
+# file the scan leaves. With no record and no report this costs two globs and
+# never reads the disk.
 disk_retry_tick() {
-  local f
+  local f monitor=0
   DISK_RETRY_REASON=
+  for f in "$STATE/disk-refused"/.report.*; do
+    [ -f "$f" ] || continue
+    DISK_RETRY_REASON=$(cat "$f" 2>/dev/null) || DISK_RETRY_REASON=
+    rm -f -- "$f" 2>/dev/null || true
+    [ -z "$DISK_RETRY_REASON" ] || return 0
+  done
   for f in "$STATE/disk-refused"/*; do
     [ -f "$f" ] || continue
-    DISK_RETRY_REASON=$(fm_run_timed "$WATCH_HELPER_BUDGET" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
-      "$SCRIPT_DIR/fm-disk-retry.sh" scan 2>/dev/null) || {
-      DISK_RETRY_REASON=
-      triage_log "disk-retry scan unavailable"
-    }
+    case $- in *m*) monitor=1 ;; esac
+    set -m 2>/dev/null || true
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+      nohup "$SCRIPT_DIR/fm-disk-retry.sh" scan >/dev/null 2>&1 </dev/null &
+    disown "$!" 2>/dev/null || true
+    [ "$monitor" -eq 1 ] || set +m 2>/dev/null || true
     return 0
   done
 }

@@ -1260,7 +1260,7 @@ The no-mistakes brief tells a crewmate to run the lane gate before it starts a r
 `bin/fm-remote-home-provision.sh` refuses a new home on the receiving host the same way, and an existing home is not gated.
 A remote code root older than this gate provisions without it until that root is updated.
 A refusal places the work on another host or cloud.
-`bin/fm-disk-retry.sh` records each refused ship or scout launch and raises one notification through the watcher when the alarm admits a launch again, so the supervisor dispatches the named work again; nothing is launched automatically.
+`bin/fm-disk-retry.sh` records each refused ship or scout launch with its spawn arguments; when the alarm admits a launch again, the watcher has it run `bin/fm-spawn.sh` again with those arguments, under every spawn gate, and raise one notification with the result. A record whose task already has a task record, a newer dispatch in the ledger, or a backlog item that is no longer Queued is dropped without a launch.
 
 ## Host memory guard (config/memory-guard)
 
