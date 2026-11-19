@@ -802,6 +802,37 @@ test_target_exists_reads_one_line_when_cache_is_off() {
   pass "fm_backend_target_exists: a disabled cache keeps the one-line terminal read"
 }
 
+run_listed() {
+  PATH="$CASE/fakebin:$PATH" \
+    FM_ORCA_CLI_CACHE="${CACHE_SWITCH:-1}" \
+    FM_ORCA_CLI_CACHE_TTL="${CACHE_TTL:-3}" \
+    FM_ORCA_CLI_CACHE_DIR="$FM_ORCA_CLI_CACHE_DIR" \
+    FM_ORCA_LOG="$LOG" \
+    FM_ORCA_COUNT="$COUNT" \
+    FM_ORCA_LIST="$LIST" \
+    FM_ORCA_LIST_EXIT="${FM_ORCA_LIST_EXIT:-0}" \
+    bash -c '. "$1"; shift; fm_orca_terminals_listed "$@"' _ "$ROOT/bin/fm-orca-cli-cache.sh" "$@"
+}
+
+test_terminals_listed_answers_many_ids_from_one_list() {
+  local out rc
+  setup_case listed
+  rc=0
+  out=$(run_listed term-a id-a term-missing term-b) || rc=$?
+  assert_equals 0 "$rc" "a complete list did not answer"
+  assert_equals "term-a present
+id-a present
+term-missing absent
+term-b present" "$out" "each id was not answered by handle or id"
+  assert_equals 1 "$(calls)" "several ids booted the CLI more than once"
+  setup_case listed-truncated
+  printf '%s\n' '{"ok":true,"result":{"truncated":true,"terminals":[{"handle":"term-a"}]}}' > "$LIST"
+  rc=0
+  out=$(run_listed term-a term-missing) || rc=$?
+  assert_equals 2 "$rc" "a truncated list was trusted"
+  assert_equals '' "$out" "a truncated list still answered an id"
+  pass "fm_orca_terminals_listed: one complete list answers many ids, and an untrusted one answers none"
+}
 # Optional arguments select existing case functions for focused regressions.
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
@@ -839,6 +870,7 @@ fm_test_run \
   test_terminal_exists_shares_one_list \
   test_terminal_exists_absent_on_a_complete_list \
   test_truncated_list_is_not_absence \
+  test_terminals_listed_answers_many_ids_from_one_list \
   test_disabled_cache_skips_list_and_invalidate \
   test_test_seam_keeps_cache_off_until_forced \
   test_single_flight_shares_one_inflight_read \

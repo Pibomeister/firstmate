@@ -21,7 +21,7 @@
 # list in this fixed order:
 #   capacity: free_lanes=<N|unknown> reason=<reason> lanes=<N> target=<N|none|invalid>
 #     secondmates=<N> load1=<X|unknown> cores=<N|unknown>
-#     mem_free_pct=<N|unknown> disk_free_mb=<N|unknown>
+#     mem_free_pct=<N|unknown> disk_free_mb=<N|unknown> not_live=<N>
 # (one physical line). A short human summary follows it. load1, cores,
 # mem_free_pct and disk_free_mb are always this host's own probes.
 #
@@ -38,7 +38,9 @@
 # (never below 0): a lane whose record carries a pr= line has recorded its
 # ready PR, waits on review or merge, and frees its place exactly as the
 # project-capacity gate releases one (bin/fm-project-capacity-lib.sh). It is
-# still counted in lanes and in lanes.pr_ready. That holds unless a
+# still counted in lanes and in lanes.pr_ready. A lane that is not live
+# (idle two hours, or its terminal gone; the lanes section below owns the
+# rule) also frees its place and is counted in not_live. That holds unless a
 # constraint holds, in which case free_lanes=0 and reason names every
 # constraint, comma-separated, in this order:
 #   cpu       probe basis: 1-minute load average >= logical cores
@@ -80,7 +82,8 @@
 #   schema, generated_epoch (this host's clock), home ("main", or the id in
 #   .fm-secondmate-home), machine (the first readable beat's host, else the
 #   short host name),
-#   lanes {count, pr_ready (records with a pr= line), ids},
+#   lanes {count, pr_ready (records with a pr= line), ids, not_live,
+#     not_live_ids[{id, why idle|gone}]},
 #   cap {target (number or null), status ok|none|invalid},
 #   projects (clone directory names under projects/),
 #   pressure {level ok|warn|critical|unknown, why[], basis beat|probe|none,
@@ -100,7 +103,7 @@
 #   limits {min_avail_gb, min_disk_gb, max_load1} (null when unset),
 #   verdict {admit, free_lanes, reasons[]}.
 # verdict.admit is true only with a valid cap, the lanes holding a place
-# (lanes minus pr_ready) under it, and no constraint; its reasons are the constraints in words. The document carries
+# (lanes minus pr_ready and not_live) under it, and no constraint; its reasons are the constraints in words. The document carries
 # labels and derived states only, never paths, addresses, commands, or tokens:
 # a beat's own why and error text is published as counts (pressure_why=N,
 # beat_errors=N), and an invalid config line by its line number and a fixed
@@ -147,6 +150,13 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 LANE_CONFIG="$CONFIG/lane-capacity"
 PUBLISHED="$STATE/lane-capacity.json"
+
+# shellcheck source=bin/fm-backend.sh
+. "$SCRIPT_DIR/fm-backend.sh"
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$SCRIPT_DIR/fm-timeout-lib.sh"
+# shellcheck source=bin/fm-watch-key-lib.sh
+. "$SCRIPT_DIR/fm-watch-key-lib.sh"
 
 MEM_FREE_MIN_PCT=10
 DISK_FREE_MIN_MB=5120
@@ -208,25 +218,151 @@ if [ "$have_jq" -eq 0 ]; then
 fi
 
 # --- lanes ------------------------------------------------------------------
+# A lane holds a place only while it is live: active within the last two hours
+# and its terminal not gone. A record a finished or abandoned worker left
+# behind must not hold a place, or a cap freezes every spawn until someone
+# archives it. Activity is any change within LIVE_LANE_MIN to the task's
+# record, status, busy state, steering inbox, or the watcher's terminal marker.
+# A record changed within LIVE_LANE_GRACE_MIN keeps its place without a probe,
+# so a spawn that has not recorded its terminal yet still counts. Otherwise the
+# recorded endpoint is probed through fm_backend_target_exists, every lane in
+# one pass bounded to LIVE_LANE_PROBE_SECS; a record with no endpoint, a remote
+# one, or a lane the pass did not answer for keeps its place.
+LIVE_LANE_MIN=120
+LIVE_LANE_GRACE_MIN=10
+LIVE_LANE_PROBE_SECS=20
+
+# lane_read_meta <meta>: one fork-free pass over a task record, setting
+# LM_SECONDMATE, LM_PR, LM_BACKEND, LM_TARGET, and LM_REMOTE. The target
+# follows fm_backend_target_of_meta, which owns that rule; the rest keep the
+# last value of each key, as fm_meta_get does.
+lane_read_meta() {
+  local line terminal='' thread='' window=''
+  LM_SECONDMATE=0; LM_PR=0; LM_BACKEND=''; LM_TARGET=''; LM_REMOTE=''
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      kind=secondmate) LM_SECONDMATE=1 ;;
+      pr=?*) LM_PR=1 ;;
+      backend=*) LM_BACKEND=${line#*=} ;;
+      terminal=*) terminal=${line#*=} ;;
+      t3_thread_id=*) thread=${line#*=} ;;
+      window=*) window=${line#*=} ;;
+      remote_host=*) LM_REMOTE=${line#*=} ;;
+    esac
+  done < "$1" 2>/dev/null || true
+  LM_BACKEND=${LM_BACKEND:-tmux}
+  LM_TARGET=$window
+  if [ "$LM_BACKEND" = orca ] && [ -n "$terminal" ]; then
+    LM_TARGET=$terminal
+  elif [ "$LM_BACKEND" = t3code ] && [ -n "$thread" ]; then
+    LM_TARGET=$thread
+  fi
+}
+
+# shellcheck disable=SC2329 # Invoked through fm_run_timed_fn.
+lane_terminal_batch() {  # <rows>: one `<id> <backend> <target>` per line
+  local id backend target orca_ids='' orca_rows='' handle verdict
+  while read -r id backend target; do
+    [ -n "$target" ] || continue
+    if [ "$backend" = orca ]; then
+      orca_ids="$orca_ids $target"
+      orca_rows="$orca_rows$target $id
+"
+    elif fm_backend_target_exists "$backend" "$target" "fm-$id" >/dev/null 2>&1; then
+      echo "$id exists"
+    else
+      echo "$id gone"
+    fi
+  done <<EOF_ROWS
+$1
+EOF_ROWS
+  # Orca lanes share one terminal list; an untrusted list answers for none.
+  [ -n "$orca_ids" ] && fm_backend_source orca || return 0
+  # shellcheck disable=SC2086 # Terminal handles hold no whitespace.
+  fm_orca_terminals_listed $orca_ids 2>/dev/null | while read -r handle verdict; do
+    printf '%s' "$orca_rows" | while read -r target id; do
+      [ "$target" = "$handle" ] || continue
+      case "$verdict" in present) echo "$id exists" ;; absent) echo "$id gone" ;; esac
+    done
+  done
+}
+# Every file this pass reads activity from, listed once by age instead of one
+# stat per file, so the publish the watcher runs every 30 seconds stays cheap.
+recent_files() {  # <minutes>
+  find "$STATE" -maxdepth 1 \( -name '*.meta' -o -name '*.status' -o -name '*.busy-state' \
+    -o -name '*.inbox' -o -name '.hash-*' \) -mmin "-$1" 2>/dev/null
+}
+recent_active="
+$(recent_files "$LIVE_LANE_MIN")
+"
+recent_grace="
+$(recent_files "$LIVE_LANE_GRACE_MIN")
+"
+is_listed() {  # <list> <path>
+  case "$1" in *"
+$2
+"*) return 0 ;; esac
+  return 1
+}
+
 lanes=0
 secondmates=0
 pr_ready=0
+not_live=0
 lane_ids=
+not_live_ids=
+probe_rows=
 for meta in "$STATE"/*.meta; do
   [ -f "$meta" ] || continue
-  if [ "$mode" = spawn-gate ] && [ -n "$SPAWN_GATE_ID" ] && [ "$(basename "$meta" .meta)" = "$SPAWN_GATE_ID" ]; then
+  id=${meta##*/}
+  id=${id%.meta}
+  if [ "$mode" = spawn-gate ] && [ -n "$SPAWN_GATE_ID" ] && [ "$id" = "$SPAWN_GATE_ID" ]; then
     continue
   fi
-  if grep -qx 'kind=secondmate' "$meta" 2>/dev/null; then
+  lane_read_meta "$meta"
+  if [ "$LM_SECONDMATE" = 1 ]; then
     secondmates=$((secondmates + 1))
-  else
-    lanes=$((lanes + 1))
-    lane_ids="$lane_ids$(basename "$meta" .meta)
-"
-    grep -q '^pr=..*' "$meta" 2>/dev/null && pr_ready=$((pr_ready + 1))
+    continue
   fi
+  lanes=$((lanes + 1))
+  lane_ids="$lane_ids$id
+"
+  if [ "$LM_PR" = 1 ]; then
+    pr_ready=$((pr_ready + 1))
+    continue
+  fi
+  active=0
+  for f in "$meta" "$STATE/$id.status" "$STATE/$id.busy-state" "$STATE/$id.inbox" \
+    ${LM_TARGET:+"$STATE/.hash-$(window_key "$LM_TARGET")"}; do
+    is_listed "$recent_active" "$f" && { active=1; break; }
+  done
+  if [ "$active" = 0 ]; then
+    not_live=$((not_live + 1))
+    not_live_ids="$not_live_ids$id idle
+"
+    continue
+  fi
+  is_listed "$recent_grace" "$meta" && continue
+  [ -z "$LM_REMOTE" ] || continue
+  case "$LM_TARGET" in ''|*[[:space:]]*) continue ;; esac
+  probe_rows="$probe_rows$id $LM_BACKEND $LM_TARGET
+"
 done
-
+if [ -n "$probe_rows" ]; then
+  probe_out=$(fm_run_timed_fn "$LIVE_LANE_PROBE_SECS" lane_terminal_batch "$probe_rows" 2>/dev/null) || true
+  while read -r id verdict; do
+    [ "$verdict" = gone ] || continue
+    case "
+$probe_rows" in *"
+$id "*) ;; *) continue ;; esac
+    not_live=$((not_live + 1))
+    not_live_ids="$not_live_ids$id gone
+"
+  done <<EOF_PROBED
+$probe_out
+EOF_PROBED
+fi
+holding=$((lanes - pr_ready - not_live))
 # --- config/lane-capacity ---------------------------------------------------
 target=none
 target_error=
@@ -340,7 +476,6 @@ is_uint "$cores" && [ "$cores" -gt 0 ] || cores=unknown
 if [ "$mode" = spawn-gate ]; then
   [ "$target" != invalid ] || { echo "fm-capacity: $target_error" >&2; exit 1; }
   gate_reasons=
-  holding=$((lanes - pr_ready))
   [ "$holding" -lt "$target" ] || gate_reasons="full: $holding of $target lanes hold a place"
   levels=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-load-relief.sh" levels) || { echo "fm-capacity: the load-relief levels are unreadable; refusing to guess the load ceiling" >&2; exit 1; }
   gate_ceiling=$(printf '%s\n' "$levels" | sed -n 's/^ceiling=//p')
@@ -582,7 +717,7 @@ case "$target" in
   none) reason=no-target ;;
   invalid) reason=invalid-target ;;
   *)
-    free_lanes=$((target - lanes + pr_ready))
+    free_lanes=$((target - holding))
     [ "$free_lanes" -ge 0 ] || free_lanes=0
     if [ -n "$constraints" ]; then
       free_lanes=0
@@ -592,7 +727,7 @@ case "$target" in
       admit=true
     else
       reason=full
-      reasons="full: $((lanes - pr_ready)) of $target lanes
+      reasons="full: $holding of $target lanes
 "
       pub_reasons=$reasons
     fi
@@ -612,14 +747,15 @@ fi
 
 # --- report -----------------------------------------------------------------
 if [ "$mode" = report ]; then
-  printf 'capacity: free_lanes=%s reason=%s lanes=%s target=%s secondmates=%s load1=%s cores=%s mem_free_pct=%s disk_free_mb=%s\n' \
-    "$free_lanes" "$reason" "$lanes" "$target" "$secondmates" "$load1" "$cores" "$mem_free_pct" "$disk_free_mb"
+  printf 'capacity: free_lanes=%s reason=%s lanes=%s target=%s secondmates=%s load1=%s cores=%s mem_free_pct=%s disk_free_mb=%s not_live=%s\n' \
+    "$free_lanes" "$reason" "$lanes" "$target" "$secondmates" "$load1" "$cores" "$mem_free_pct" "$disk_free_mb" "$not_live"
 
   case "$target" in
     none) echo "Lanes: $lanes running, no target set (config/lane-capacity absent)." ;;
     invalid) echo "Lanes: $lanes running, target unreadable ($target_error)." ;;
     *) echo "Lanes: $lanes running of $target target$([ "$pr_ready" -eq 0 ] || printf ' (%s with a ready PR, holding no place)' "$pr_ready"), $free_lanes open." ;;
   esac
+  [ "$not_live" -eq 0 ] || echo "Not live: $not_live lane record(s) idle for 2h or with a gone terminal, holding no place: $(printf '%s' "$not_live_ids" | paste -sd ',' - | sed 's/,/, /g')."
   [ "$secondmates" -eq 0 ] || echo "Secondmates: $secondmates (hold no lane)."
   mem_text="${mem_free_pct}%"; [ "$mem_free_pct" != unknown ] || mem_text=unknown
   disk_text="$disk_free_mb MB"; [ "$disk_free_mb" != unknown ] || disk_text=unknown
@@ -728,6 +864,7 @@ verdict_reasons=$pub_reasons
 doc=$(jq -n \
   --argjson now "$now" --arg home "$home" --arg machine "$machine" \
   --arg lanes "$lanes" --arg pr_ready "$pr_ready" --arg lane_ids "$lane_ids" \
+  --arg not_live "$not_live" --arg not_live_ids "$not_live_ids" \
   --arg target "$target" --arg cap_status "$cap_status" --arg projects "$project_names" \
   --arg level "$level" --arg why "$pub_why" --arg basis "$basis" --arg beat_age "$beat_age_s" \
   --arg avail "$avail_gb" --arg total "$total_gb" --arg runq "$runq_per_core" \
@@ -742,7 +879,8 @@ doc=$(jq -n \
   def num: if . == "" then null else tonumber + 0 end;
   def lines: split("\n") | map(select(. != ""));
   {schema: "fm-lane-capacity.v1", generated_epoch: $now, home: $home, machine: $machine,
-   lanes: {count: ($lanes | tonumber), pr_ready: ($pr_ready | tonumber), ids: ($lane_ids | lines)},
+   lanes: {count: ($lanes | tonumber), pr_ready: ($pr_ready | tonumber), ids: ($lane_ids | lines),
+     not_live: ($not_live | tonumber), not_live_ids: [$not_live_ids | lines[] | split(" ") | {id: .[0], why: .[1]}]},
    cap: {target: (if $cap_status == "ok" then ($target | tonumber) else null end), status: $cap_status},
    projects: ($projects | lines),
    pressure: {level: $level, why: ($why | lines), basis: $basis, beat_age_s: ($beat_age | num),

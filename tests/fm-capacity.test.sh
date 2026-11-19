@@ -619,6 +619,89 @@ test_watcher_publishes_only_when_opted_in() {
   pass "the watcher publishes lane facts only for an opted-in home"
 }
 
+# make_tmux <fakebin> [pane...]: a tmux that lists exactly those panes; with
+# FAKE_TMUX_HANG set it hangs instead, as a stuck server would.
+make_tmux() {
+  local fakebin=$1
+  shift
+  cat > "$fakebin/tmux" <<SH
+#!/usr/bin/env bash
+[ -z "\${FAKE_TMUX_HANG:-}" ] || sleep 60
+case "\$1" in
+  list-panes) printf '%s\n' $* ;;
+esac
+SH
+  chmod +x "$fakebin/tmux"
+}
+
+# write_lane <home> <id> <meta-age-secs> <status-age-secs> [meta lines...]
+write_lane() {
+  local home=$1 id=$2 meta_age=$3 status_age=$4 now
+  shift 4
+  now=$(date +%s)
+  fm_write_meta "$home/state/$id.meta" "kind=ship" "mode=no-mistakes" "$@"
+  printf 'working [at=%s]: started\n' "$((now - status_age))" > "$home/state/$id.status"
+  fm_touch_epoch "$((now - meta_age))" "$home/state/$id.meta"
+  fm_touch_epoch "$((now - status_age))" "$home/state/$id.status"
+}
+
+# A cap counts live lanes, not task records: a record idle for two hours or
+# whose terminal is gone holds no place, so stale records never freeze spawning.
+test_idle_and_gone_lanes_hold_no_place() {
+  local home fakebin out rc
+  home=$(make_home livelanes 0 0)
+  fakebin=$(make_probes "$TMP_ROOT/p-livelanes" 0.50 60 8 20971520)
+  make_tmux "$fakebin" %1 %3
+  write_lane "$home" ship-idle 10800 10800 'window=%1'
+  write_lane "$home" ship-gone 1800 60 'window=%2'
+  write_lane "$home" ship-alive 1800 60 'window=%3'
+  printf '2\n' > "$home/config/lane-capacity"
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 0 "$rc" "one live lane under a cap of 2 must admit a spawn: $out"
+  out=$(run_capacity_jq "$home" "$fakebin")
+  assert_contains "$out" 'capacity: free_lanes=1 reason=ok lanes=3 target=2 ' "every record still counts as a lane, but only the live one holds a place"
+  assert_contains "$out" ' not_live=2' "the report line must count the lanes that hold no place"
+  assert_contains "$out" 'holding no place: ship-idle idle, ship-gone gone.' "the summary must name each lane that holds no place and why"
+  assert_equals '2|ship-gone:gone,ship-idle:idle|1' \
+    "$(run_capacity_jq "$home" "$fakebin" --json 2>/dev/null | jq -r '[.lanes.not_live, ([.lanes.not_live_ids[] | "\(.id):\(.why)"] | sort | join(",")), .verdict.free_lanes] | map(tostring) | join("|")')" \
+    "the document must carry the lanes that hold no place"
+  printf '1\n' > "$home/config/lane-capacity"
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 75 "$rc" "the live lane must still fill a cap of 1"
+  assert_contains "$out" 'full: 1 of 1 lanes hold a place' "the deferral must count only the live lane"
+  fm_touch_epoch "$(($(date +%s) - 60))" "$home/state/.hash-%1"
+  out=$(run_capacity_jq "$home" "$fakebin")
+  assert_contains "$out" ' not_live=1' "terminal output the watcher saw within two hours must keep a lane live"
+  make_tmux "$fakebin"
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 0 "$rc" "with every terminal gone no lane holds a place: $out"
+  pass "a lane idle for two hours or with a gone terminal holds no place under the cap"
+}
+
+# A lane is freed only on evidence: a just-written record, a remote endpoint,
+# or a terminal probe that never answers all keep their place.
+test_new_remote_or_unanswered_lanes_keep_their_place() {
+  local home fakebin out rc start elapsed
+  home=$(make_home keeplanes 0 0)
+  fakebin=$(make_probes "$TMP_ROOT/p-keeplanes" 0.50 60 8 20971520)
+  make_tmux "$fakebin"
+  printf '1\n' > "$home/config/lane-capacity"
+  write_lane "$home" ship-new 60 60 'window=%5'
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 75 "$rc" "a record written minutes ago must hold its place before its terminal is recorded"
+  rm "$home/state/ship-new.meta" "$home/state/ship-new.status"
+  write_lane "$home" ship-remote 1800 60 'window=%6' 'remote_host=builder'
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 75 "$rc" "a remote lane must keep its place, since its terminal is not probed here"
+  rm "$home/state/ship-remote.meta" "$home/state/ship-remote.status"
+  write_lane "$home" ship-hung 1800 60 'window=%7'
+  start=$(date +%s)
+  out=$(FAKE_TMUX_HANG=1 run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  elapsed=$(($(date +%s) - start))
+  expect_code 75 "$rc" "a lane whose probe never answers must keep its place"
+  [ "$elapsed" -lt 50 ] || fail "a hung terminal probe was not bounded: ${elapsed}s"
+  pass "a new, remote, or unanswered lane keeps its place"
+}
 test_no_target_prints_counts_only
 test_no_target_never_prints_constrained_line
 test_target_yields_open_lanes_and_full
@@ -633,6 +716,8 @@ test_beat_with_missing_fields
 test_cap_only_memory_rule_unchanged
 test_limits_and_admit
 test_pr_ready_lanes_free_their_place
+test_idle_and_gone_lanes_hold_no_place
+test_new_remote_or_unanswered_lanes_keep_their_place
 test_spawn_gate_uses_one_load_ceiling
 test_spawn_gate_follows_load_relief_levels
 test_publish_document

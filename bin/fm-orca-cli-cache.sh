@@ -45,6 +45,8 @@
 # means the list cannot be trusted (truncated, unreadable, failed, or the
 # cache is disabled). A disabled cache returns 2 without calling the CLI,
 # so the caller keeps its one-line terminal read.
+#
+# fm_orca_terminals_listed <id>... answers many ids from one such list.
 
 if [ -n "${FM_ORCA_CLI_CACHE_SOURCED:-}" ]; then
   return 0
@@ -498,5 +500,42 @@ for (let i = 0; i < terms.length; i++) {
   if (t.handle === want || t.id === want) process.exit(0);
 }
 process.exit(1);
+'
+}
+
+# fm_orca_terminals_listed <id>... prints `<id> present` or `<id> absent` for
+# every id from one complete terminal list, under fm_orca_terminal_exists's
+# trust rule, so a caller checking many ids pays for one list and one parse.
+# Exit 2 with nothing printed means that list cannot be trusted.
+fm_orca_terminals_listed() { # <terminal-id>...
+  local out rc want
+  [ "$#" -gt 0 ] || return 0
+  fm_orca_cli_cache_enabled || return 2
+  command -v orca >/dev/null 2>&1 || return 2
+  command -v node >/dev/null 2>&1 || return 2
+  rc=0
+  out=$(fm_orca_cli terminal list --json --limit 5000 2>/dev/null) || rc=$?
+  [ "$rc" -eq 0 ] || return 2
+  [ -n "$out" ] || return 2
+  want=$(printf '%s\n' "$@")
+  printf '%s' "$out" | FM_ORCA_WANT_LIST=$want node -e '
+const fs = require("fs");
+let data;
+try { data = JSON.parse(fs.readFileSync(0, "utf8")); }
+catch (err) { process.exit(2); }
+if (!data || data.ok === false) process.exit(2);
+const result = data.result || {};
+const terms = result.terminals;
+if (!Array.isArray(terms)) process.exit(2);
+if (result.truncated !== false) process.exit(2);
+const seen = new Set();
+for (let i = 0; i < terms.length; i++) {
+  const t = terms[i] || {};
+  if (t.handle) seen.add(t.handle);
+  if (t.id) seen.add(t.id);
+}
+const lines = process.env.FM_ORCA_WANT_LIST.split("\n").filter(Boolean)
+  .map((w) => w + (seen.has(w) ? " present" : " absent"));
+process.stdout.write(lines.join("\n") + "\n");
 '
 }
