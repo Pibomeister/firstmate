@@ -1145,7 +1145,127 @@ test_intent_reaches_the_prompt_the_receipt_binds() {
   pass "the stated intent is part of the stored prompt each receipt is bound to"
 }
 
+# Write a reproduction script for verify-finding to <CASE>/<name>.
+write_repro() {  # <name> <body>
+  printf '#!/usr/bin/env bash\n%s\n' "$2" > "$CASE/$1"
+}
+
+# Run verify-finding as a worker against the case repository.
+run_verify() {  # <repro-name> <path> [extra args...]
+  local repro=$1 path=$2
+  shift 2
+  run_review verify-finding --repo "$REPO" --head "$HEAD_SHA" --repro "$CASE/$repro" --path "$path" "$@"
+}
+
+verify_line() {
+  grep '^verify-finding: ' "$CASE/stdout"
+}
+
+expect_verify_field() {  # <field> <label>
+  case " $(verify_line) " in
+    *" $1 "*) ;;
+    *) fail "$2: expected $1 in: $(verify_line) $(cat "$CASE/stderr")" ;;
+  esac
+}
+
+test_verify_finding_red_at_head_and_green_at_base_is_introduced_evidence() {
+  local rc=0 base
+  make_case verify-introduced
+  base=$(git -C "$REPO" rev-parse HEAD~1)
+  write_repro repro.sh 'if [ -f feature.txt ]; then echo "defect reproduced"; exit 1; fi'
+  run_verify repro.sh tests/repro-defect.test.sh --out "$CASE/evidence" || rc=$?
+  expect_code 0 "$rc" "verify introduced"
+  expect_verify_field 'introduced' "verify introduced"
+  expect_verify_field "head=$HEAD_SHA" "verify introduced"
+  expect_verify_field 'head_result=red' "verify introduced"
+  expect_verify_field "base=$base" "verify introduced"
+  expect_verify_field 'base_result=green' "verify introduced"
+  expect_verify_field "repro_sha256=$(shasum -a 256 "$CASE/repro.sh" | awk '{print $1}')" "verify introduced"
+  assert_grep 'defect reproduced' "$CASE/evidence/head.log" "verify introduced: the head log is not kept as evidence"
+  assert_equals "$(verify_line)" "$(cat "$CASE/evidence/result")" "verify introduced: the result line is not recorded with the logs"
+  assert_equals 0 "$(git -C "$REPO" status --porcelain | grep -c .)" "verify introduced: the reproduction touched the source repository"
+  pass "verify-finding: red at the head and green at the merge base is introduced evidence"
+}
+
+test_verify_finding_red_at_both_is_pre_existing() {
+  local rc=0
+  make_case verify-pre-existing
+  write_repro repro.sh 'echo "always broken"; exit 1'
+  run_verify repro.sh tests/repro-defect.test.sh --out "$CASE/evidence" || rc=$?
+  expect_code 0 "$rc" "verify pre-existing"
+  expect_verify_field 'pre-existing' "verify pre-existing"
+  expect_verify_field 'head_result=red' "verify pre-existing"
+  expect_verify_field 'base_result=red' "verify pre-existing"
+  pass "verify-finding: red at both the head and the merge base is pre-existing"
+}
+
+test_verify_finding_green_at_head_gives_no_evidence() {
+  local rc=0
+  make_case verify-green
+  write_repro repro.sh 'echo "passes"; exit 0'
+  run_verify repro.sh tests/repro-defect.test.sh --out "$CASE/evidence" || rc=$?
+  expect_code 0 "$rc" "verify green"
+  expect_verify_field 'no-evidence' "verify green"
+  expect_verify_field 'head_result=green' "verify green"
+  expect_verify_field 'base_result=skipped' "verify green"
+  pass "verify-finding: a reproduction that passes at the head gives no evidence"
+}
+
+test_verify_finding_timeout_and_outside_writes_give_no_evidence() {
+  local rc=0
+  make_case verify-timeout
+  write_repro slow.sh 'sleep 30; exit 1'
+  run_verify slow.sh tests/repro-slow.test.sh --out "$CASE/slow" --timeout 1 || rc=$?
+  expect_code 0 "$rc" "verify timeout"
+  expect_verify_field 'no-evidence' "verify timeout"
+  expect_verify_field 'head_result=timeout' "verify timeout"
+
+  rc=0
+  write_repro writer.sh 'echo changed > feature.txt; exit 1'
+  run_verify writer.sh tests/repro-writer.test.sh --out "$CASE/writer" || rc=$?
+  expect_code 0 "$rc" "verify outside write"
+  expect_verify_field 'no-evidence' "verify outside write"
+  expect_verify_field 'head_result=wrote-outside' "verify outside write"
+  assert_equals 'the feature' "$(cat "$REPO/feature.txt")" "verify outside write: the source repository changed"
+  pass "verify-finding: a timeout or a write outside the test directory leaves no evidence"
+}
+
+test_verify_finding_refuses_paths_outside_new_test_files_and_supervisors() {
+  local rc path
+  make_case verify-refuse
+  write_repro repro.sh 'exit 1'
+  mkdir -p "$REPO/tests"
+  printf 'exit 0\n' > "$REPO/tests/kept.test.sh"
+  git -C "$REPO" add tests/kept.test.sh
+  git -C "$REPO" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm 'add a test'
+  HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
+  for path in bin/repro.test.sh tests/../bin/repro.test.sh /tmp/repro.test.sh tests/sub/repro.test.sh \
+    tests/repro.sh tests/kept.test.sh; do
+    rc=0
+    run_verify repro.sh "$path" --out "$CASE/out-${path//\//_}" || rc=$?
+    expect_code 2 "$rc" "verify refuses $path"
+    [ ! -e "$CASE/out-${path//\//_}/head.log" ] || fail "verify refuses $path: it ran the reproduction"
+  done
+  rc=0
+  run_supervisor verify-finding --repo "$REPO" --head "$HEAD_SHA" --repro "$CASE/repro.sh" \
+    --path tests/repro.test.sh --out "$CASE/supervisor" || rc=$?
+  expect_code 2 "$rc" "verify refuses a supervisor"
+  [ ! -e "$CASE/supervisor/head.log" ] || fail "verify refuses a supervisor: it ran the reproduction"
+  rc=0
+  run_verify repro.sh tests/repro.test.sh --out "$CASE/once" || rc=$?
+  expect_code 0 "$rc" "verify first run"
+  rc=0
+  run_verify repro.sh tests/repro.test.sh --out "$CASE/once" || rc=$?
+  expect_code 2 "$rc" "verify refuses to replace recorded evidence"
+  pass "verify-finding refuses paths outside a new tests/*.test.sh file, supervisor sessions, and replaced evidence"
+}
+
 fm_test_run \
+  test_verify_finding_red_at_head_and_green_at_base_is_introduced_evidence \
+  test_verify_finding_red_at_both_is_pre_existing \
+  test_verify_finding_green_at_head_gives_no_evidence \
+  test_verify_finding_timeout_and_outside_writes_give_no_evidence \
+  test_verify_finding_refuses_paths_outside_new_test_files_and_supervisors \
   test_two_families_approve_and_a_supervisor_reads_one_line \
   test_run_refuses_in_a_supervisor_session \
   test_reviewers_work_read_only_outside_every_repository \
