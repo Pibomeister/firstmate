@@ -35,6 +35,10 @@
 #     network result surfaces exactly once (inline or as a wake, never both), a
 #     read-only session declares the checks it skipped, and the tasks-axi
 #     compatibility verdict is paid for once per session start
+#   - the shared-state drift check: a global git config or shared no-mistakes
+#     database schema change prints SHARED_STATE once at the next full locked
+#     start, and read-only, --reemit, and failed-inspection starts keep the
+#     baseline
 set -u
 
 # shellcheck source=tests/lib.sh
