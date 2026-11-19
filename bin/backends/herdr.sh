@@ -403,11 +403,18 @@ fm_backend_herdr_cli() {  # <session> <herdr-subcommand-and-args...>
   if [ "$rc" -ne 0 ]; then
     case "$err" in
       *protocol_mismatch*)
-        fm_backend_herdr_client_select "$session" force
-        selected_bin=$(fm_backend_herdr_bin)
-        if [ "$selected_bin" != "$failed_bin" ]; then
-          HERDR_SESSION="$session" "$selected_bin" "$@" --session "$session"
-          return $?
+        if [ -z "${fm_backend_herdr_cli_retrying:-}" ]; then
+          fm_backend_herdr_client_select "$session" force
+          selected_bin=$(fm_backend_herdr_bin)
+          if [ "$selected_bin" != "$failed_bin" ]; then
+            # The retry re-enters by name, so a caller's wrapper around this
+            # function re-runs its checks after the selection reads. The
+            # selection is scoped to this session, so the re-entry runs the
+            # selected client; the dynamic local caps it at one retry.
+            local fm_backend_herdr_cli_retrying=1
+            fm_backend_herdr_cli "$session" "$@"
+            return $?
+          fi
         fi
         ;;
     esac
@@ -436,7 +443,9 @@ fm_backend_herdr_cli() {  # <session> <herdr-subcommand-and-args...>
 # running server reports it incompatible (.server.compatible when the client
 # emits it, equal .client/.server protocol otherwise), from each other
 # distinct herdr on PATH in order, adopting the first one that positively
-# proves compatible and retrying the command on it once. The choice is scoped
+# proves compatible and retrying the command on it once, through
+# fm_backend_herdr_cli itself so a wrapper around it (bin/fm-resume-doorbell.sh
+# guards every keystroke) sees the retry as a call of its own. The choice is scoped
 # to that session and exported as FM_BACKEND_HERDR_BIN so children inherit it.
 # A later mismatch forces reselection, while another session starts from the
 # PATH-first client. An unknown verdict (status supplies neither

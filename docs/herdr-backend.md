@@ -80,7 +80,7 @@ On a `protocol_mismatch` refusal, the adapter:
 
 1. Reads `status --json --session <name>` from each distinct `herdr` on `PATH`, in order.
 2. Adopts the first one the running server reports compatible.
-3. Retries the command on it once.
+3. Retries the command on it once, through the same session-scoped CLI helper, so a caller's wrapper around that helper re-runs its checks on the retry.
 
 The choice is reused only for later calls to the same session in that process.
 Another session starts with the `PATH` default.
