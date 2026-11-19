@@ -3,7 +3,7 @@
   "host": "studio",
   "interval_secs": 300,
   "guard_stale_secs": 660,
-  "idle_min": 20,
+  "idle_min": 15,
   "cooldown_min": 30,
   "max_no_progress": 2,
   "mode": "act",

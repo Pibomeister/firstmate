@@ -9,8 +9,9 @@
 # docs/captain-nudge-spec.md. This file implements that contract.
 #
 # Public functions:
-#   fm_nudge_text
-#       Prints the one allowed prompt. Send paths must compare against this.
+#   fm_nudge_text [continue|escalate|merge]
+#       Prints one of the allowed prompts (default continue). Send paths must
+#       compare against these.
 #   fm_nudge_iso_ts [epoch]
 #       ISO-8601 local timestamp with numeric offset (`2026-11-09T20:56:00-06:00`).
 #   fm_nudge_decide <observation-json>
@@ -22,21 +23,41 @@
 #       Prints one NUDGE v1 compact line (no pane text, no secrets).
 #   fm_nudge_open_work_summary_flag <summary>
 #       Prints 1 when the summary names open work, else 0.
+#   fm_nudge_merge_ready_rows <discovery-json>
+#       Prints one key<TAB>pr line per merge-ready (ci-ready) run.
+#   fm_nudge_lane_stalls <ledger> <now> <min>
+#       Prints open worker/secondmate stalls from a home's stall ledger.
+#   fm_nudge_lane_table <lane-stalls> / fm_nudge_prompt_text <kind> [table]
+#       Build the lane table suffix and the exact text to type.
 #
 # Observation JSON keys (all required unless noted):
 #   idle_min, idle_threshold_min, open_work (bool), open_work_summary,
 #   dialog (empty or a kind), composer (empty|pending|pending-unproven|unknown),
 #   cooldown_remaining_min, consecutive_no_progress, progress_since_nudge (bool),
-#   escalated (bool), max_no_progress (optional, default 2).
+#   escalated (bool), max_no_progress (optional, default 2),
+#   escalate_min, council_min, stall_tier, lane_age_min, lane_stall_min
+#   (optional, default 0; 0 disables a tier or the lane signal). stall_tier is the highest tier already reached in this stall:
+#   1 first wake, 2 second wake, 3 council row.
+#
+# Decision JSON: {event, severity, reason, should_send, prompt}. prompt is the
+# fm_nudge_text kind to type when should_send is true, else empty.
 #
 # Test seam: FM_NUDGE_NOW (epoch) and FM_TEST_SEAM=1 pin the clock.
 
-# The only string this tool is allowed to type. Changing it here is a contract
-# change: update docs/captain-nudge-spec.md in the same commit.
+# The only strings this tool is allowed to type, one per prompt kind. Changing
+# one here is a contract change: update docs/captain-nudge-spec.md in the same
+# commit.
 FM_NUDGE_TEXT_FIXED='Continue open work: pick next item, reroute quota if exhausted, never park self-servable work'
+FM_NUDGE_TEXT_ESCALATE='Still stalled with open work: relaunch or replace the stalled worker, then continue open work'
+FM_NUDGE_TEXT_MERGE='A PR is merge-ready and unmerged: dispatch the merge or record why'
 
-fm_nudge_text() {
-  printf '%s\n' "$FM_NUDGE_TEXT_FIXED"
+fm_nudge_text() {  # [continue|escalate|merge]
+  case "${1:-continue}" in
+    continue) printf '%s\n' "$FM_NUDGE_TEXT_FIXED" ;;
+    escalate) printf '%s\n' "$FM_NUDGE_TEXT_ESCALATE" ;;
+    merge) printf '%s\n' "$FM_NUDGE_TEXT_MERGE" ;;
+    *) return 1 ;;
+  esac
 }
 
 # Epoch seconds. FM_NUDGE_NOW wins only under the test seam.
@@ -59,6 +80,7 @@ fm_nudge_mtime() {
 
 # Expand a leading ~/ to $HOME. Other paths pass through.
 fm_nudge_expand_path() {
+  # shellcheck disable=SC2088 # The patterns match a literal "~/" config value.
   case "$1" in
     # Quoted: bash tilde-expands unquoted case patterns, so ~/* would never
     # match a literal "~/..." config value.
@@ -118,10 +140,12 @@ fm_nudge_open_work_summary_flag() {
 }
 
 # Decision procedure. Prints compact JSON:
-#   {event, severity, reason, should_send}
-# should_send is true only for a live nudge that may type the fixed prompt.
+#   {event, severity, reason, should_send, prompt}
+# should_send is true only for a decision that may type the prompt kind named
+# by prompt.
 fm_nudge_decide() {
   local obs=${1-} idle idle_th open_sum dialog composer cool consec maxn
+  local esc_min council_min tier lane_age lane_min stall lane_hit=false
   local open_work=false progress=false escalated=false
   [ -n "$obs" ] || { printf 'fm-captain-nudge-lib: decide needs observation JSON\n' >&2; return 2; }
   printf '%s' "$obs" | jq -e . >/dev/null 2>&1 || {
@@ -130,32 +154,65 @@ fm_nudge_decide() {
   }
 
   idle=$(fm_nudge_json_get "$obs" '.idle_min' '') || true
-  idle_th=$(fm_nudge_json_get "$obs" '.idle_threshold_min' '20') || true
+  idle_th=$(fm_nudge_json_get "$obs" '.idle_threshold_min' '15') || true
   open_sum=$(fm_nudge_json_get "$obs" '.open_work_summary' 'none') || true
   dialog=$(fm_nudge_json_get "$obs" '.dialog' '') || true
   composer=$(fm_nudge_json_get "$obs" '.composer' 'unknown') || true
   cool=$(fm_nudge_json_get "$obs" '.cooldown_remaining_min' '0') || true
   consec=$(fm_nudge_json_get "$obs" '.consecutive_no_progress' '0') || true
   maxn=$(fm_nudge_json_get "$obs" '.max_no_progress' '2') || true
+  esc_min=$(fm_nudge_json_get "$obs" '.escalate_min' '0') || true
+  council_min=$(fm_nudge_json_get "$obs" '.council_min' '0') || true
+  tier=$(fm_nudge_json_get "$obs" '.stall_tier' '0') || true
+  lane_age=$(fm_nudge_json_get "$obs" '.lane_age_min' '0') || true
+  lane_min=$(fm_nudge_json_get "$obs" '.lane_stall_min' '0') || true
   fm_nudge_json_bool "$obs" '.open_work' && open_work=true
   fm_nudge_json_bool "$obs" '.progress_since_nudge' && progress=true
   fm_nudge_json_bool "$obs" '.escalated' && escalated=true
 
   case "$idle" in ''|*[!0-9]*) idle=0 ;; esac
-  case "$idle_th" in ''|*[!0-9]*) idle_th=20 ;; esac
+  case "$idle_th" in ''|*[!0-9]*) idle_th=15 ;; esac
   case "$cool" in ''|*[!0-9]*) cool=0 ;; esac
   case "$consec" in ''|*[!0-9]*) consec=0 ;; esac
   case "$maxn" in ''|*[!0-9]*) maxn=2 ;; esac
+  case "$esc_min" in ''|*[!0-9]*) esc_min=0 ;; esac
+  case "$council_min" in ''|*[!0-9]*) council_min=0 ;; esac
+  case "$tier" in ''|*[!0-9]*) tier=0 ;; esac
+  case "$lane_age" in ''|*[!0-9]*) lane_age=0 ;; esac
+  case "$lane_min" in ''|*[!0-9]*) lane_min=0 ;; esac
 
-  _fm_nudge_decision() {  # <event> <severity> <reason> <should_send>
-    jq -nc --arg e "$1" --arg s "$2" --arg r "$3" --argjson send "$4" \
-      '{event:$e, severity:$s, reason:$r, should_send:$send}'
+  # A lane with no progress for lane_stall_min is open work and starts the
+  # ladder on its own; the ladder then runs on the older of the two clocks.
+  stall=$idle
+  if [ "$lane_min" -gt 0 ] && [ "$lane_age" -ge "$lane_min" ]; then
+    lane_hit=true
+    open_work=true
+    [ "$lane_age" -le "$stall" ] || stall=$lane_age
+  fi
+
+  _fm_nudge_decision() {  # <event> <severity> <reason> <should_send> [prompt]
+    local prompt=${5-}
+    if [ "$4" = true ] && [ -z "$prompt" ]; then
+      prompt='continue'
+    fi
+    jq -nc --arg e "$1" --arg s "$2" --arg r "$3" --argjson send "$4" --arg p "$prompt" \
+      '{event:$e, severity:$s, reason:$r, should_send:$send, prompt:$p}'
   }
 
   # Progress since the last nudge clears escalation before any other gate.
   if [ "$progress" = true ]; then
     consec=0
     escalated=false
+    tier=0
+  fi
+
+  # The council row types nothing, so a modal or typed text cannot block it:
+  # a captain that died behind an API error is exactly the case it exists for.
+  if [ "$council_min" -gt 0 ] && [ "$stall" -ge "$council_min" ] && [ "$open_work" = true ] \
+     && [ "$tier" -lt 3 ]; then
+    _fm_nudge_decision stall_council high \
+      "stalled ${stall}m with open work past ${council_min}m; council row raised, nothing typed" false
+    return 0
   fi
 
   if [ -n "$dialog" ]; then
@@ -183,13 +240,21 @@ fm_nudge_decide() {
       ;;
   esac
 
-  if [ "$idle" -lt "$idle_th" ]; then
+  if [ "$idle" -lt "$idle_th" ] && [ "$lane_hit" != true ]; then
     _fm_nudge_decision skip_not_idle info "idle ${idle}m below threshold ${idle_th}m" false
     return 0
   fi
 
   if [ "$open_work" != true ]; then
     _fm_nudge_decision skip_no_open_work info "no open work (${open_sum:-none})" false
+    return 0
+  fi
+
+  # The second wake fires once per stall, after a first wake, and ignores the
+  # first wake's cooldown so it lands at escalate_min rather than later.
+  if [ "$esc_min" -gt 0 ] && [ "$stall" -ge "$esc_min" ] && [ "$tier" -eq 1 ]; then
+    _fm_nudge_decision stall_escalate medium \
+      "still stalled ${stall}m after a wake; asking to relaunch or replace the stalled worker" true escalate
     return 0
   fi
 
@@ -431,10 +496,92 @@ fm_nudge_cmd_allowed() {
   return 1
 }
 
-# Refuse any send whose text is not the one fixed prompt.
+# Refuse any send whose text is not one of the fixed prompts, or a continue or
+# escalate prompt followed by exactly one lane table.
 fm_nudge_send_allowed_text() {
-  local got=$1
-  [ "$got" = "$FM_NUDGE_TEXT_FIXED" ]
+  local got=$1 base rest re entry='[A-Za-z0-9._-]{1,64} [0-9]+m'
+  re="^${entry}(, ${entry}){0,4}( \\(\\+[0-9]+ more\\))?\\.\$"
+  [ "$got" = "$FM_NUDGE_TEXT_FIXED" ] || [ "$got" = "$FM_NUDGE_TEXT_ESCALATE" ] \
+    || [ "$got" = "$FM_NUDGE_TEXT_MERGE" ] && return 0
+  for base in "$FM_NUDGE_TEXT_FIXED" "$FM_NUDGE_TEXT_ESCALATE"; do
+    case "$got" in
+      "$base Stalled lanes: "*)
+        rest=${got#"$base Stalled lanes: "}
+        [[ "$rest" =~ $re ]] && return 0
+        ;;
+    esac
+  done
+  return 1
+}
+# Open lane stalls from a home's stall ledger (bin/fm-stall-ledger-lib.sh owns
+# the row schema): one `<age-min><TAB><subject>` line per worker or secondmate
+# stall-open row with no stall-close for the same ref, at least <min> minutes
+# old, oldest first.
+fm_nudge_lane_stalls() {  # <ledger> <now> <min>
+  local ledger=$1 now=$2 min=$3
+  [ -f "$ledger" ] && [ ! -L "$ledger" ] || return 0
+  LC_ALL=C awk -F '\t' -v now="$now" -v min="$min" '
+    NF == 10 && $2 == "stall-open" && ($3 == "worker" || $3 == "secondmate") && $5 ~ /^[0-9]+$/ {
+      subj[$10] = $4; start[$10] = $5
+    }
+    NF == 10 && $2 == "stall-close" { delete subj[$10]; delete start[$10] }
+    END {
+      for (r in subj) {
+        age = int((now - start[r]) / 60)
+        if (age >= min) printf "%d\t%s\n", age, subj[r]
+      }
+    }
+  ' "$ledger" | sort -t "$(printf '\t')" -k1,1nr
+}
+
+# The lane table suffix for a wake: at most five `<subject> <age>m` entries
+# from fm_nudge_lane_stalls output. Subjects outside [A-Za-z0-9._-] or over 64
+# characters are dropped, so the typed text stays inside the send contract.
+fm_nudge_lane_table() {  # <lane-stalls>
+  local age subj shown=0 more=0 out=''
+  while IFS=$'\t' read -r age subj; do
+    case "$age" in ''|*[!0-9]*) continue ;; esac
+    case "$subj" in ''|*[!A-Za-z0-9._-]*) continue ;; esac
+    [ "${#subj}" -le 64 ] || continue
+    if [ "$shown" -lt 5 ]; then
+      out="${out:+$out, }$subj ${age}m"
+      shown=$((shown + 1))
+    else
+      more=$((more + 1))
+    fi
+  done <<< "${1-}"
+  [ -n "$out" ] || return 0
+  if [ "$more" -gt 0 ]; then
+    out="$out (+$more more)"
+  fi
+  printf 'Stalled lanes: %s.\n' "$out"
+}
+
+# The exact text for <kind>, with the lane table appended to a continue or
+# escalate wake when there is one.
+fm_nudge_prompt_text() {  # <kind> [lane-table]
+  local base table=${2-}
+  base=$(fm_nudge_text "$1") || return 1
+  case "$1" in
+    continue|escalate)
+      if [ -n "$table" ]; then
+        printf '%s %s\n' "$base" "$table"
+        return 0
+      fi
+      ;;
+  esac
+  printf '%s\n' "$base"
+}
+
+# Merge-ready rows from bin/fm-ready-pr-discovery.sh --json output: one
+# `<run_id>@<head><TAB><pr>` line per run parked at the ci step with its PR
+# ready. A run parked at an approval gate is a decision, not merge-ready.
+fm_nudge_merge_ready_rows() {  # <discovery-json>
+  printf '%s' "${1-}" | jq -r '
+    (.runs // [])[]
+    | select(.kind == "ci-ready" and (.run_id // "") != "")
+    | [((.run_id) + "@" + (.head // "-")), (.pr // "-")] | @tsv
+  ' 2>/dev/null
 }
 
 # Progress fingerprint: output signature, heartbeat epoch, commit sha.
