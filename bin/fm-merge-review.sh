@@ -97,9 +97,10 @@
 # config/merge-review still declares that seat.
 # round, scope, scope_sha256, tokens_in and tokens_out are measurements that
 # check never reads. round is 1 plus the number of other heads of the pull
-# request whose first receipt is older than this head's first receipt, so a
-# rerun at one head keeps its round. scope is full: the seat reviewed the
-# whole diff, and scope_sha256 is that diff's digest. tokens_in sums the
+# request that hold a receipt; at a head that already holds one, it counts
+# only heads whose first receipt is older, so a rerun keeps its round. scope
+# is full: the seat reviewed the whole diff, and scope_sha256 is that diff's
+# digest. tokens_in sums the
 # input and cache tokens the tool reported, tokens_out its output tokens;
 # both are empty when the tool reports no usage (agy).
 #
