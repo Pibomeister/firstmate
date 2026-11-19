@@ -77,9 +77,16 @@ VERDICT: APPROVE aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ;;
 I approve this change." ;;
   fail) echo "stand-in $tool failure" >&2; exit 3 ;;
 esac
+# <stub>/<tool>.tokens holds "<input> <output> <cache-read>" to report usage.
+usage='{}'
+if [ -f "$stub/$tool.tokens" ]; then
+  read -r t_in t_out t_cache < "$stub/$tool.tokens"
+  usage=$(jq -n --argjson i "$t_in" --argjson o "$t_out" --argjson c "$t_cache" \
+    '{inputTokens: $i, outputTokens: $o, cacheReadInputTokens: $c}')
+fi
 case "$tool" in
-  claude) jq -n --arg t "$text" --arg m "$reported" '{result: $t, is_error: false, modelUsage: {($m): {}}}' ;;
-  grok) jq -n --arg t "$text" --arg m "$reported" '{text: ("I will read the diff first." + $t), modelUsage: {($m): {}}}' ;;
+  claude) jq -n --arg t "$text" --arg m "$reported" --argjson u "$usage" '{result: $t, is_error: false, modelUsage: {($m): $u}}' ;;
+  grok) jq -n --arg t "$text" --arg m "$reported" --argjson u "$usage" '{text: ("I will read the diff first." + $t), modelUsage: {($m): $u}}' ;;
   agy) jq -n --arg t "$text" '{status: "SUCCESS", response: $t, num_turns: 1}' ;;
 esac
 SH
@@ -1572,17 +1579,90 @@ test_verify_finding_runs_the_reproduction_without_firstmate_home_or_task_scope()
   pass "verify-finding runs the reproduction without the caller's Firstmate home, task or lifecycle scope"
 }
 
+# assert_line <line> <file> <msg>: <file> holds exactly <line> as a whole line.
+assert_line() {
+  grep -Fx -- "$1" "$2" >/dev/null || fail "$3"
+}
+
+# Commit a follow-up change on the case repository and make it the head.
+next_head() {  # <text>
+  printf '%s\n' "$1" >> "$REPO/feature.txt"
+  git -C "$REPO" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qam "fix: $1"
+  HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
+}
+
+test_receipts_record_round_scope_and_tokens() {
+  local first second store receipt
+  make_case rounds "${TWO_SEATS[@]}"
+  echo '1200 80 300' > "$STUB/claude.tokens"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || fail "rounds: the first head did not approve"
+  first=$(store_dir)
+  receipt="$first/anthropic.claude.claude-test-1.receipt"
+  assert_line 'round=1' "$receipt" "rounds: the first reviewed head is not round 1"
+  assert_line 'scope=full' "$receipt" "rounds: the receipt does not name a full review scope"
+  assert_equals "$(sed -n 's/^diff_sha256=//p' "$receipt")" "$(sed -n 's/^scope_sha256=//p' "$receipt")" \
+    "rounds: a full scope must hash the reviewed diff"
+  assert_line 'tokens_in=1500' "$receipt" "rounds: input and cache-read tokens were not summed"
+  assert_line 'tokens_out=80' "$receipt" "rounds: output tokens were not recorded"
+  assert_line 'tokens_in=' "$first/google.agy.gemini-test-high.receipt" \
+    "rounds: a tool that reports no usage must leave the token fields empty"
+
+  next_head 'second round'
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || fail "rounds: the second head did not approve"
+  second=$(store_dir)
+  assert_line 'round=2' "$second/anthropic.claude.claude-test-1.receipt" "rounds: the next reviewed head is not round 2"
+  assert_line 'round=2' "$second/google.agy.gemini-test-high.receipt" "rounds: seats at one head disagree on the round"
+
+  rm -f "$second/google.agy.gemini-test-high."*
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || fail "rounds: the rerun did not approve"
+  assert_line 'round=2' "$second/google.agy.gemini-test-high.receipt" "rounds: a rerun at the same head moved the round"
+  pass "receipts record the review round across heads, the full scope, and the tokens the tool reported"
+}
+
+test_metrics_count_rounds_calls_and_tokens_per_pull_request() {
+  local rc=0 line
+  make_case metrics "${TWO_SEATS[@]}"
+  run_supervisor metrics || rc=$?
+  expect_code 0 "$rc" "metrics: an empty home"
+  assert_grep 'merge-review-metrics: summary prs=0 ' "$CASE/stdout" "metrics: an empty home must still print the summary"
+
+  echo '1000 50 0' > "$STUB/claude.tokens"
+  echo block > "$STUB/agy.mode"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || true
+  next_head 'fixed'
+  echo approve > "$STUB/agy.mode"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || fail "metrics: the second head did not approve"
+
+  rc=0
+  run_supervisor metrics || rc=$?
+  expect_code 0 "$rc" "metrics: a supervisor reads the metrics"
+  line=$(grep '^merge-review-metrics: pr ' "$CASE/stdout")
+  assert_equals 1 "$(printf '%s\n' "$line" | grep -c .)" "metrics: one line per pull request"
+  case "$line" in
+    *" url=$PR_URL "*) ;;
+    *) fail "metrics: the line does not name the pull request: $line" ;;
+  esac
+  for field in rounds=2 seat_calls=4 blocks=1 tokens_in=2000 tokens_out=100 tokens_unreported=2; do
+    case " $line " in
+      *" $field "*) ;;
+      *) fail "metrics: expected $field in: $line" ;;
+    esac
+  done
+  assert_grep 'merge-review-metrics: summary prs=1 rounds_median=2 rounds_max=2 seat_calls=4 ' "$CASE/stdout" \
+    "metrics: the summary does not total the pull requests"
+  assert_equals 4 "$(( $(calls claude) + $(calls agy) ))" "metrics: reading metrics called a reviewer"
+
+  run_supervisor metrics --since "$(( $(date +%s) + 3600 ))" || fail "metrics: --since failed"
+  assert_grep 'merge-review-metrics: summary prs=0 ' "$CASE/stdout" "metrics: --since kept older review activity"
+  rc=0
+  run_supervisor metrics --since soon || rc=$?
+  expect_code 2 "$rc" "metrics: a malformed --since"
+  pass "metrics count rounds, seat calls, blocks, and tokens per pull request and in one summary"
+}
+
 fm_test_run \
-  test_verify_finding_red_at_head_and_green_at_base_is_introduced_evidence \
-  test_verify_finding_red_at_both_keeps_the_finding_blocking \
-  test_verify_finding_red_at_both_on_a_script_the_head_adds \
-  test_verify_finding_red_at_both_on_a_function_the_head_adds_to_an_existing_file \
-  test_verify_finding_a_wrong_helper_path_at_the_head_is_introduced \
-  test_verify_finding_green_at_head_gives_no_evidence \
-  test_verify_finding_timeout_and_outside_writes_give_no_evidence \
-  test_verify_finding_reaps_background_children_before_returning \
-  test_verify_finding_reaps_children_before_the_final_manifest \
-  test_verify_finding_refuses_paths_outside_new_test_files_and_supervisors \
+  test_receipts_record_round_scope_and_tokens \
+  test_metrics_count_rounds_calls_and_tokens_per_pull_request \
   test_two_families_approve_and_a_supervisor_reads_one_line \
   test_run_refuses_in_a_supervisor_session \
   test_reviewers_work_read_only_outside_every_repository \
@@ -1639,4 +1719,14 @@ fm_test_run \
   test_verify_finding_runs_the_reproduction_without_firstmate_home_or_task_scope \
   test_verify_finding_stops_the_reproduction_on_a_process_group_signal \
   test_verify_finding_refuses_a_head_already_in_the_base \
-  test_verify_finding_refuses_when_the_tree_manifest_cannot_read_permissions
+  test_verify_finding_refuses_when_the_tree_manifest_cannot_read_permissions \
+  test_verify_finding_red_at_head_and_green_at_base_is_introduced_evidence \
+  test_verify_finding_red_at_both_keeps_the_finding_blocking \
+  test_verify_finding_red_at_both_on_a_script_the_head_adds \
+  test_verify_finding_red_at_both_on_a_function_the_head_adds_to_an_existing_file \
+  test_verify_finding_a_wrong_helper_path_at_the_head_is_introduced \
+  test_verify_finding_green_at_head_gives_no_evidence \
+  test_verify_finding_timeout_and_outside_writes_give_no_evidence \
+  test_verify_finding_reaps_background_children_before_returning \
+  test_verify_finding_reaps_children_before_the_final_manifest \
+  test_verify_finding_refuses_paths_outside_new_test_files_and_supervisors
