@@ -157,7 +157,7 @@ fm_preallow_derive() {
   [ -f "$ledger" ] || fm_preallow_die "no ledger at $ledger"
   mkdir -p "$FM_PREALLOW_WORK" || fm_preallow_die "cannot create $FM_PREALLOW_WORK"
   tmp=$(mktemp -d "$FM_PREALLOW_WORK/.derive.XXXXXX") || fm_preallow_die "cannot create a work directory"
-  : > "$tmp/ok" && : > "$tmp/skip" || { rm -rf "$tmp"; fm_preallow_die "cannot write under $FM_PREALLOW_WORK"; }
+  if ! { : > "$tmp/ok" && : > "$tmp/skip"; }; then rm -rf "$tmp"; fm_preallow_die "cannot write under $FM_PREALLOW_WORK"; fi
   while IFS=$'\t' read -r kind epoch src text sample; do
     if [ "$kind" = bash ]; then
       if reason=$(fm_preallow_command_reason "$text"); then
@@ -218,11 +218,11 @@ fm_preallow_approve() {
   # The record is removed first, so no moment pairs the new list with the old record.
   rm -f "$FM_PREALLOW_APPROVAL" || fm_preallow_die "cannot replace $FM_PREALLOW_APPROVAL"
   tmp=$(mktemp "$FM_PREALLOW_CONFIG/.afk-preallow.XXXXXX") || fm_preallow_die "cannot write under $FM_PREALLOW_CONFIG"
-  cat "$FM_PREALLOW_WORK/candidate.list" > "$tmp" && mv "$tmp" "$FM_PREALLOW_LIST" || { rm -f "$tmp"; fm_preallow_die "cannot write $FM_PREALLOW_LIST"; }
+  if ! { cat "$FM_PREALLOW_WORK/candidate.list" > "$tmp" && mv "$tmp" "$FM_PREALLOW_LIST"; }; then rm -f "$tmp"; fm_preallow_die "cannot write $FM_PREALLOW_LIST"; fi
   [ "$(fm_preallow_sha256 "$FM_PREALLOW_LIST")" = "$want" ] || fm_preallow_die "the written list does not match $want; nothing recorded"
   tmp=$(mktemp "$FM_PREALLOW_CONFIG/.afk-preallow.XXXXXX") || fm_preallow_die "cannot write under $FM_PREALLOW_CONFIG"
-  printf 'version: 1\nsha256: %s\napproved_epoch: %s\nref: %s\n' "$want" "$(date +%s)" "$ref" > "$tmp" \
-    && mv "$tmp" "$FM_PREALLOW_APPROVAL" || { rm -f "$tmp"; fm_preallow_die "cannot write $FM_PREALLOW_APPROVAL"; }
+  if ! { printf 'version: 1\nsha256: %s\napproved_epoch: %s\nref: %s\n' "$want" "$(date +%s)" "$ref" > "$tmp" \
+    && mv "$tmp" "$FM_PREALLOW_APPROVAL"; }; then rm -f "$tmp"; fm_preallow_die "cannot write $FM_PREALLOW_APPROVAL"; fi
   printf 'approved sha256=%s entries=%s\n' "$want" "$(wc -l < "$FM_PREALLOW_LIST" | tr -d ' ')"
 }
 
@@ -371,7 +371,8 @@ HTML
       printf '<div class="card"><p class="muted">Command that records your approval, run only after you approve</p><pre>bin/fm-afk-preallow.sh approve --sha256 %s --ref "&lt;where the approval is recorded&gt;"</pre></div>\n' "$sha"
     fi
     printf '</main>\n</body>\n</html>\n'
-  } > "$tmp" && mv "$tmp" "$out" || { rm -f "$tmp"; fm_preallow_die "cannot write $out"; }
+  } > "$tmp" || { rm -f "$tmp"; fm_preallow_die "cannot write $out"; }
+  mv "$tmp" "$out" || { rm -f "$tmp"; fm_preallow_die "cannot write $out"; }
   printf 'page=%s sha256=%s entries=%s\n' "$out" "$sha" "$entries"
 }
 
