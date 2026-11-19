@@ -1,0 +1,7 @@
+1..4
+ok - mode reads the raw first line, honors the config override, and defaults to legacy
+ok - defer requires fmd mode plus a usable binary; shadow never defers
+ok - fm_fmd_bin never picks an fmd from PATH
+ok - fm-fmd-check parity passes
+FM_TEST_COMPLETE
+exit=0

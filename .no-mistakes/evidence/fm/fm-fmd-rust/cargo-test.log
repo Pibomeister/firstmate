@@ -1,0 +1,35 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.77s
+     Running unittests src/main.rs (fmd/target/debug/deps/fmd-5aaa182ff3d67c35)
+
+running 13 tests
+test status::tests::epoch_rules ... ok
+test status::tests::fold_colonless_needs_complete_key_token ... ok
+test status::tests::fold_keyless_uses_default ... ok
+test state::tests::meta_last_duplicate_wins ... ok
+test status::tests::fold_open_replace_resolve ... ok
+test status::tests::fold_reserved_key_needs_own_vocabulary ... ok
+test status::tests::fold_terminal_ship_clears_secondmate_does_not ... ok
+test status::tests::key_and_note_positions_agree ... ok
+test status::tests::last_event_skips_continuation_prose ... ok
+test status::tests::unstamped_strips_readable_time ... ok
+test status::tests::verb_drops_only_exact_corr_tokens ... ok
+test state::tests::kind_empty_is_ship_and_symlink_is_unknown ... ok
+test state::tests::mode_defaults_to_legacy ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+     Running tests/cli.rs (fmd/target/debug/deps/cli-17134832acdfd2c3)
+
+running 8 tests
+test mode_defaults_legacy ... ok
+test mode_honors_config_override ... ok
+test parity_edges_fixture ... ok
+test open_decisions_fixture ... ok
+test meta_and_last_event ... ok
+test classify_overrides_are_honored ... ok
+test terminal_ship_clears_open ... ok
+test kind_and_symlink_rules ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.70s
+
+exit=0

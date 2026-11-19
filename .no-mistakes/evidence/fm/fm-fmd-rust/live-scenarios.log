@@ -1,0 +1,44 @@
+== S1 adversarial parity: bash fold vs fmd on hand-written status lines
+bash:
+api-1	blocked	need token
+cr-4	blocked	crlf note^M
+fmd:
+api-1	blocked	need token
+cr-4	blocked	crlf note^M
+PARITY(defaults)=match
+overrides bash:
+api-1	blocked	need token
+db-2	blocked	migrate?
+cr-4	blocked	crlf note
+overrides fmd:
+api-1	blocked	need token
+db-2	blocked	migrate?
+cr-4	blocked	crlf note
+PARITY(overrides)=match
+== S1b symlinked status file
+bash=[] fmd=[]
+PARITY(symlink)=match
+== S2 mode readers agree (seam vs fmd mode)
+'fmd\n'      seam=fmd     fmd=fmd     agree
+'fmd \n'     seam=legacy  fmd=legacy  agree
+'fmd\r\n'    seam=legacy  fmd=legacy  agree
+'shadow\n'   seam=shadow  fmd=shadow  agree
+'bogus\n'    seam=legacy  fmd=legacy  agree
+'fmd'        seam=fmd     fmd=fmd     agree
+FM_CONFIG_OVERRIDE: seam=shadow fmd=shadow agree
+== S3 read-only: snapshot/check leave state untouched
+adv	kind=ship	last_verb=blocked	last_at=-	branch=-	open=2
+adv	open	api-1	blocked	need token
+adv	open	cr-4	blocked	crlf note
+fmd-check: mode=fmd tasks=1 open_decisions=2 beat_age_seconds=unknown
+check exit=0
+STATE_UNCHANGED=yes
+== S4 no cargo, no binary: legacy skips, fmd-mode refuses
+legacy home: rc=0 fm-fmd-check: skip mode=legacy (no fmd binary; bash is the supported posture)
+fmd home: rc=1 fm-fmd-check: FAIL mode=fmd but no fmd binary is usable
+== S5 defer gating
+mode=fmd + binary -> defer rc=0
+mode=fmd + no binary -> defer rc=1
+mode=legacy + binary -> defer rc=1
+== S6 upstream scripts untouched
+upstream-owned scripts and bash classify lib: unchanged vs base
