@@ -1142,7 +1142,7 @@ Any other malformed line is an error that refuses both a review run and a covere
 | `require` | `<host>/<repository path>` or `*` | A repository whose merges through `bin/fm-pr-merge.sh` need `--expected-head` and an approved review at that head. Repeatable, and matched without regard to letter case. |
 | `post` | `on` or `off` (default `off`) | With `on`, each review is also posted as a pull request comment; approvals count only with that comment's URL, while a valid BLOCK still blocks if posting fails. Posting works on GitHub only. |
 | `timeout` | 60 to 14400 seconds (default 1800) | The bound on one reviewer call. |
-| `council-config` | an absolute path to an AgentKit council roster | From review round three, a finding the seats disagree on goes once to that council through `ak council run`, and stays open unless the council defers it. With the key absent no council is asked and such a finding stays open. |
+| `council-config` | an absolute path to an AgentKit council roster | From review round three, a finding the seats disagree on goes to that council through `ak council run`, and stays open unless the council defers it. One answer stands for a head; a call that gives no answer leaves the finding waiting, and the next run asks again. With the key absent no council is asked, no stored council answer counts, and such a finding stays open. |
 
 `<family>` is this home's own name for a model family, such as `anthropic` or `google`.
 Two reviews from one family count as one, so a run needs seats from at least two families.

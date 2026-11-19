@@ -141,19 +141,24 @@
 # edge-case and regression. edge-case is its approving option, so the finding
 # is deferred only when both council seats and the blind veto choose it; it
 # then needs a follow-up record like any deferred finding. When the council
-# seats choose regression, disagree, or the veto does not agree, the finding
-# stays open, and the council is not asked again at this head. A refused or
-# failed call, or one where a council seat gave no answer, leaves the tie
-# pending and a "tie.<id>.failed.<epoch>" record, and the next run asks again.
+# seats choose regression or disagree, or the veto does not agree or gives no
+# answer, the finding stays open, and the council is not asked again at this
+# head. A refused or failed call, one of the two council seats giving no
+# answer, or a record from a call that did not exit as AgentKit does for that
+# outcome, leaves the tie pending and a "tie.<id>.failed.<epoch>" record, and
+# the next run asks again.
 # The council gets the seats' reviews, not the diff, and a call is stopped
 # after twice the configured timeout. It is not asked while a receipt says
 # BLOCK, and such a tie stays open. Its answer changes one finding's state
-# and nothing else. With no council-config key a tie stays open. AgentKit
-# owns the council rule, the roster, and the record.
+# and nothing else. With no council-config key a tie stays open, and a stored
+# council record is not read. AgentKit owns the council rule, the roster, and
+# the record.
 #
 # A review whose finding lines are malformed leaves no receipt, like a bad
-# verdict line, unless it dissents: a BLOCK verdict or a well-formed blocking
-# line is always recorded, so a format error never discards a dissent.
+# verdict line, unless it dissents: a BLOCK verdict or a well-formed line that
+# holds a finding or gives one a class is always recorded, so a format error
+# never discards a dissent. Such a review holds what it holds and settles no
+# earlier finding: its other status lines for prior findings do not count.
 #
 # Model identity: a receipt records the model the seat requested and the model
 # the tool reported. claude and grok report the model they ran; a report that
@@ -688,8 +693,8 @@ mr_parse_lines() {  # <file> <FINDING|DISPOSITION>
 # When an open finding has several status lines, the line of highest rank
 # stands (blocking or regression, then an edge case or a NON-BLOCKING line
 # with a class, then any other; the earliest wins a tie), and a class on any line stays
-# with it. A NON-BLOCKING line for an open finding stays a form defect and
-# never sets "B".
+# with it. A NON-BLOCKING line for an open finding stays a form defect, and
+# sets "B" only when it gives the finding a class.
 mr_findings_filter() {  # <round> <prior-file-or-empty>
   LC_ALL=C awk -F'\t' -v round="$1" -v prior="$2" '
     function rank(status, class) {
@@ -746,6 +751,7 @@ mr_findings_filter() {  # <round> <prior-file-or-empty>
         print "ok\t" bord[id] "\t" id "\t" bst[id] "\t" c "\t" btail[id]
         if (bst[id] == "BLOCKING" || bst[id] == "REGRESSION") dissent = 1
         else if (bst[id] == "EDGE-CASE" && (round < 3 || c != "none")) dissent = 1
+        else if (bst[id] == "NON-BLOCKING" && c != "none") dissent = 1
       }
       if (dissent) print "B"
     }'
@@ -798,7 +804,8 @@ mr_council_rows() {  # <answer-file> <asked ids, comma-separated>
 # "K <id> <seat>=<STATUS>; ..." rows name each open finding the seats disagree
 # on: see "Tie-break" in the header. mr_findings_state reads them.
 mr_findings_votes() {  # <head-store> <seats> [need]
-  local store=$1 seat head ruling sha ids
+  local store=$1 seat head ruling sha ids tab
+  tab=$(printf '\t')
   head=${store##*/}
   ids="${store%/*}/ids"
   {
@@ -820,8 +827,9 @@ mr_findings_votes() {  # <head-store> <seats> [need]
         $2 == h && $3 == s && $4 == r { print "I\t" $1 "\t" s "\t" $5 }
       ' "$ids"
       mr_review_rows "$store" "$store/$seat.review.md" | LC_ALL=C awk -F'\t' -v s="$seat" '
+        $1 == "E" && !defect++ { print "D\t" s }
         $1 == "ok" { print "V\t" s "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6 "\t" $7 }
-      '
+      ' | LC_ALL=C sort -s -t "$tab" -k1,1
     done
     for ruling in "$store"/*.ruling; do
       [ -f "$ruling" ] || continue
@@ -866,11 +874,18 @@ mr_findings_votes() {  # <head-store> <seats> [need]
       next
     }
     $1 == "X" { former[$2] = 1; next }
+    $1 == "D" { defect[$2] = 1; next }
     $1 == "I" { idof[$3, $4] = $2; next }
     $1 == "V" {
       id = $4
       if (($2 in former) && !held($5, $6)) {
         if (id != "NEW" && $6 != "none" && !(id in fcls)) fcls[id] = $6
+        next
+      }
+      # A review with a form defect counts only because it dissents. It holds
+      # what it holds and settles no earlier finding.
+      if (($2 in defect) && id != "NEW" && !held($5, $6)) {
+        if ($6 != "none" && !(id in fcls)) fcls[id] = $6
         next
       }
       if (id == "NEW") {
@@ -943,12 +958,13 @@ mr_findings_votes() {  # <head-store> <seats> [need]
 # pull request, the head, the round, the finding, and each seat's ruling, so a
 # stored council record answers only the evidence it was asked about.
 mr_tie_card() {  # <head-store> <finding-id> <votes> <finding rows>
-  local store=$1 id=$2 where text base
+  local store=$1 id=$2 where text base url=$FM_PR_URL
+  case "$FM_PR_PROVIDER" in github | gitlab | forgejo) url=$(mr_lower "$url") ;; esac
   base=$(mr_receipt_get "$store/${3%%=*}.receipt" base)
   where=$(printf '%s\n' "$4" | awk -F'\t' -v id="$id" '$1 == id { print $4; exit }')
   text=$(printf '%s\n' "$4" | awk -F'\t' -v id="$id" '$1 == id { print $5; exit }')
   jq -n -c --arg card "merge-review-$FM_PR_NUMBER-${store##*/}-$(mr_lower "$id")" \
-    --arg url "$FM_PR_URL" --arg head "${store##*/}" --arg round "$(mr_receipt_get "$store/round" round)" \
+    --arg url "$url" --arg head "${store##*/}" --arg round "$(mr_receipt_get "$store/round" round)" \
     --arg finding "$id" --arg where "$where" --arg text "$text" --arg votes "$3" --arg base "$base" '
     {
       id: $card,
@@ -963,14 +979,17 @@ mr_tie_card() {  # <head-store> <finding-id> <votes> <finding rows>
 }
 
 # Print the outcome (approve, decline, or escalate) of a council record that
-# answers <card>, or fail when the file is no such record. An escalation with
-# a council seat that gave no choice is a call that failed, not an answer.
+# answers <card>, or fail when the file is no such record. An escalation is an
+# answer when both primary seats chose: they disagreed, or the blind veto did
+# not agree or gave no answer. With a primary seat that gave no choice, the
+# call failed.
 mr_tie_record_outcome() {  # <record-file> <card-json>
   jq -er --argjson card "$2" '
     select(.schema == "council-record" and .schema_version == 1 and .card == $card) |
     if .outcome == "approve" and .choice == "edge-case" then "approve"
     elif .outcome == "decline" and .choice == "regression" then "decline"
-    elif .outcome == "escalate" and (.seats | type == "array" and length >= 2 and all(.[]; .choice != null))
+    elif .outcome == "escalate" and
+      ([.seats[]? | select(.role == "primary")] | length == 2 and all(.[]; .choice != null))
     then "escalate"
     else empty end' "$1" 2>/dev/null
 }
@@ -988,18 +1007,22 @@ mr_tie_outcome() {  # <head-store> <finding-id> <votes> <finding rows>
 }
 
 # Print the finding rows of one head store: the rows of mr_findings_votes,
-# with each tie in the state the tie-break gives it. A tie the council deferred
-# is deferred. With a council-config key and no valid receipt here that says
-# BLOCK, a tie the council has not answered is pending, and with <need> its "K"
-# row stays. Any other tie stays open.
+# with each tie in the state the tie-break gives it. With no council-config
+# key every tie stays open, and no council record is read. With the key, a tie
+# the council deferred is deferred; a tie it has not answered is pending when
+# no valid receipt here says BLOCK, and with <need> its "K" row stays. Any
+# other tie stays open.
 mr_findings_state() {  # <head-store> <seats> [need]
   local store=$1 rows tab kind id votes outcome ties='' block=unread
   tab=$(printf '\t')
   rows=$(mr_findings_votes "$store" "$2" "${3:-}")
   while IFS="$tab" read -r kind id votes; do
     [ "$kind" = K ] || continue
-    outcome=$(mr_tie_outcome "$store" "$id" "$votes" "$rows") || outcome=none
-    [ "$outcome" != none ] || [ -n "$MR_COUNCIL_CONFIG" ] || outcome=off
+    if [ -z "$MR_COUNCIL_CONFIG" ]; then
+      outcome=off
+    else
+      outcome=$(mr_tie_outcome "$store" "$id" "$votes" "$rows") || outcome=none
+    fi
     if [ "$outcome" = none ]; then
       [ "$block" != unread ] || block=$(mr_store_block_seat "$store")
       [ -z "$block" ] || outcome=off
@@ -1544,23 +1567,35 @@ mr_ids_in_state() {  # <state>
 }
 
 # Give an id to every NEW finding of the valid reviews at the head in MR_HEAD
-# that has none yet. The caller holds the pull request ledger lock.
+# that has none yet. Each finding line is looked up on its own, so a review
+# that a stopped run left with only some ids gets the rest. The ledger is
+# replaced whole, never appended in place. The caller holds the pull request
+# ledger lock.
 mr_assign_ids() {
-  local store ledger seat sha next
+  local store ledger seat sha
   store=$(mr_store_dir)
   ledger="${store%/*}/ids"
   for seat in $(mr_round_seats); do
     sha=$(mr_receipt_get "$store/$seat.receipt" review_sha256)
-    if [ -f "$ledger" ] && awk -F'\t' -v h="$MR_HEAD" -v s="$seat" -v r="$sha" '
-      $2 == h && $3 == s && $4 == r { found = 1 } END { exit !found }' "$ledger"; then
-      continue
+    : > "$MR_RECORDS/ids.old" || mr_die 'cannot record finding ids'
+    [ ! -f "$ledger" ] || awk -F'\t' 'NF == 5' "$ledger" > "$MR_RECORDS/ids.old" || mr_die 'cannot read the finding ids'
+    mr_review_rows "$store" "$store/$seat.review.md" |
+      awk -F'\t' -v ledger="$MR_RECORDS/ids.old" -v h="$MR_HEAD" -v s="$seat" -v r="$sha" '
+        BEGIN {
+          while ((getline line < ledger) > 0) {
+            split(line, f, "\t")
+            n = substr(f[1], 2) + 0
+            if (n > max) max = n
+            if (f[2] == h && f[3] == s && f[4] == r) have[f[5]] = 1
+          }
+        }
+        $1 == "ok" && $3 == "NEW" && !($2 in have) { printf "F%d\t%s\t%s\t%s\t%s\n", ++max, h, s, r, $2 }
+      ' > "$MR_RECORDS/ids.add" || mr_die 'cannot record finding ids'
+    [ -s "$MR_RECORDS/ids.add" ] || continue
+    if ! cat "$MR_RECORDS/ids.old" "$MR_RECORDS/ids.add" > "$MR_RECORDS/ids.new" ||
+      ! mv -f "$MR_RECORDS/ids.new" "$ledger"; then
+      mr_die 'cannot record finding ids'
     fi
-    next=1
-    [ ! -f "$ledger" ] || next=$(awk -F'\t' '
-      { n = substr($1, 2) + 0; if (n > max) max = n } END { print max + 1 }' "$ledger")
-    mr_review_rows "$store" "$store/$seat.review.md" | awk -F'\t' -v n="$next" -v h="$MR_HEAD" -v s="$seat" -v r="$sha" '
-      $1 == "ok" && $3 == "NEW" { printf "F%d\t%s\t%s\t%s\t%s\n", n++, h, s, r, $2 }' >> "$ledger" \
-      || mr_die 'cannot record finding ids'
   done
 }
 
@@ -1573,6 +1608,17 @@ mr_findings_left_at() {  # <head>
   mr_head_findings
 }
 
+# Store <file> in the head store under the name that carries its hash.
+# Receipts bind such a file by that hash, so it is never written in place: a
+# stored copy with the same bytes stays, and any other is replaced whole.
+mr_store_bound() {  # <file> <prefix> <sha256> <suffix>
+  local dest="$MR_STORE/$2.$3.$4"
+  if [ -f "$dest" ] && [ "$(mr_sha256 "$dest")" = "$3" ]; then
+    return 0
+  fi
+  cp "$1" "$MR_RECORDS/bound.new" && mv -f "$MR_RECORDS/bound.new" "$dest"
+}
+
 # Give this head its review round and freeze what the round starts from: the
 # findings the previous round left, and the change since that round's head.
 MR_ROUND=1
@@ -1580,7 +1626,7 @@ MR_PREVIOUS=none
 MR_PRIOR_SHA=
 MR_DELTA_SHA=
 mr_round_begin() {  # <repo>
-  local repo=$1 pr ledger dir head receipt started holder round=1 previous=none tab
+  local repo=$1 pr ledger dir head receipt started holder tries round=1 previous=none tab
   tab=$(printf '\t')
   pr=$(mr_pr_dir)
   ledger="$pr/rounds"
@@ -1608,7 +1654,18 @@ mr_round_begin() {  # <repo>
       head=${dir##*/}
       fm_pr_head_valid "$head" || continue
       [ "$head" != "$MR_HEAD" ] || continue
-      holder=$(cat "$dir/.run.lock/pid" 2>/dev/null || true)
+      [ -d "$dir/.run.lock" ] || continue
+      # A run writes its pid just after it takes its lock, so a lock with no
+      # pid gets a moment, and is then read as held rather than as free.
+      tries=0
+      while :; do
+        holder=$(cat "$dir/.run.lock/pid" 2>/dev/null || true)
+        case "$holder" in '' | *[!0-9]*) ;; *) break ;; esac
+        [ -d "$dir/.run.lock" ] || break
+        [ "$tries" -lt 3 ] || mr_die "the review round at $head holds a run lock with no owner: $dir/.run.lock"
+        tries=$((tries + 1))
+        sleep 1
+      done
       case "$holder" in
         '' | *[!0-9]*) ;;
         *) ! kill -0 "$holder" 2>/dev/null || mr_die "the review round at $head is still running" ;;
@@ -1632,12 +1689,15 @@ mr_round_begin() {  # <repo>
       previous=$head
     done < "$ledger"
     if [ "$previous" != none ]; then
+      # A finding the previous head cannot name would be missing from this round.
       mr_findings_left_at "$previous" | awk -F'\t' '
+        $1 == "E" { bad = 1 }
         $1 ~ /^F[0-9]+$/ {
           state = $2
           if (state == "pending" || state == "unruled") state = "open"
           print $1 " | " state " | " $3 " | " $4 " | " $5
-        }' > "$MR_RECORDS/prior.new" || mr_die 'cannot read the findings of the previous round'
+        }
+        END { exit bad }' > "$MR_RECORDS/prior.new" || mr_die "cannot read every finding of the previous round at $previous"
       if ! ln "$MR_RECORDS/prior.new" "$MR_STORE/prior.md" 2>/dev/null; then
         # A run that stopped before it stored the round record left these same
         # prior findings here. Any other content is not this round's.
@@ -1665,13 +1725,7 @@ mr_round_begin() {  # <repo>
       || mr_die "cannot build the delta from $MR_PREVIOUS to $MR_HEAD"
     if [ -s "$MR_WORK/delta.patch" ]; then
       MR_DELTA_SHA=$(mr_sha256 "$MR_WORK/delta.patch") || mr_die 'cannot hash the delta'
-      # Receipts bind this file by its hash, so it is never written in place:
-      # a stored copy with the same bytes stays, and any other is replaced whole.
-      if [ ! -f "$MR_STORE/delta.$MR_DELTA_SHA.patch" ] ||
-        [ "$(mr_sha256 "$MR_STORE/delta.$MR_DELTA_SHA.patch")" != "$MR_DELTA_SHA" ]; then
-        cp "$MR_WORK/delta.patch" "$MR_RECORDS/delta.new" || mr_die 'cannot store the delta'
-        mv -f "$MR_RECORDS/delta.new" "$MR_STORE/delta.$MR_DELTA_SHA.patch" || mr_die 'cannot store the delta'
-      fi
+      mr_store_bound "$MR_WORK/delta.patch" delta "$MR_DELTA_SHA" patch || mr_die 'cannot store the delta'
     else
       rm -f "$MR_WORK/delta.patch"
     fi
@@ -1704,7 +1758,7 @@ mr_council() {
     i=$(mr_seat_index "$seat") || continue
     prompt="$MR_WORK/council.$seat.md"
     mr_write_council_prompt "$prompt" "$ids"
-    cp "$prompt" "$MR_STORE/prompt.$(mr_sha256 "$prompt").md" || mr_die 'cannot store the council prompt'
+    mr_store_bound "$prompt" prompt "$(mr_sha256 "$prompt")" md || mr_die 'cannot store the council prompt'
     mr_council_call "$i" "$ids" "$prompt" &
     pid=$!
     mr_record_reviewer_child "$pid"
@@ -1789,6 +1843,8 @@ mr_tie_call() {  # <finding-id> <votes> <finding rows> <seats>
   card="$MR_WORK/$name.card.json"
   out="$MR_RECORDS/$name.record.json.new"
   log="$MR_RECORDS/$name.log.new"
+  # The council runs in the review work directory, so it gets a full path.
+  case "$out" in /*) ;; *) out="$PWD/$out" ;; esac
   at=$(date +%s)
   mr_tie_card "$MR_STORE" "$id" "$2" "$3" > "$card" || { printf 'finding %s: cannot write the council card\n' "$id"; return 1; }
   cmd=(ak council run --card "$card" --council-config "$MR_COUNCIL_CONFIG" --out "$out")
@@ -1809,15 +1865,21 @@ mr_tie_call() {  # <finding-id> <votes> <finding rows> <seats>
     printf 'finding %s: the owning review run has ended\n' "$id"
     return 1
   fi
-  if outcome=$(mr_tie_record_outcome "$out" "$(cat "$card")"); then
-    while [ -e "$MR_STORE/$name.$n.record.json" ]; do
-      n=$((n + 1))
-    done
-    if ln "$out" "$MR_STORE/$name.$n.record.json"; then
-      printf 'finding %s: the council answered %s\n' "$id" "$outcome"
-      return 0
-    fi
-  fi
+  outcome=$(mr_tie_record_outcome "$out" "$(cat "$card")") || outcome=none
+  # AgentKit exits 0 with an approve or decline record and 1 with an
+  # escalation. A record beside any other exit status is from a call that did
+  # not end well, such as one stopped at the time limit, and is no answer.
+  case "$outcome:$rc" in
+    approve:0 | decline:0 | escalate:1)
+      while [ -e "$MR_STORE/$name.$n.record.json" ]; do
+        n=$((n + 1))
+      done
+      if ln "$out" "$MR_STORE/$name.$n.record.json"; then
+        printf 'finding %s: the council answered %s\n' "$id" "$outcome"
+        return 0
+      fi
+      ;;
+  esac
   [ ! -f "$out" ] || mv -f "$out" "$MR_STORE/$name.failed.$at.json"
   [ ! -f "$log" ] || mv -f "$log" "$MR_STORE/$name.failed.$at.log"
   printf 'finding %s: no council answer (ak council run exited %s)\n' "$id" "$rc"
@@ -2161,8 +2223,8 @@ mr_run() {  # <repo> <base-ref> <intent-file>
   mr_write_prompt "$MR_WORK/prompt.md" "$intent"
   MR_DIFF_SHA=$(mr_sha256 "$MR_WORK/diff.patch")
   MR_PROMPT_SHA=$(mr_sha256 "$MR_WORK/prompt.md")
-  cp "$MR_WORK/diff.patch" "$MR_STORE/diff.$MR_DIFF_SHA.patch"
-  cp "$MR_WORK/prompt.md" "$MR_STORE/prompt.$MR_PROMPT_SHA.md"
+  mr_store_bound "$MR_WORK/diff.patch" diff "$MR_DIFF_SHA" patch || mr_die 'cannot store the diff'
+  mr_store_bound "$MR_WORK/prompt.md" prompt "$MR_PROMPT_SHA" md || mr_die 'cannot store the prompt'
 
   i=0
   while [ "$i" -lt "$MR_SEAT_N" ]; do

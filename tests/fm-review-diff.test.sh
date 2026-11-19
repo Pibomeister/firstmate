@@ -210,6 +210,10 @@ test_since_shows_only_the_change_after_a_reviewed_head() {
 
   out=$(run_review_diff "$case_dir" task-x1 2> "$case_dir/stderr")
   assert_contains "$out" '+first round' "since-delta: the default review lost the first commit"
+
+  # A caller that passes an option it left empty gets the default review.
+  assert_equals "$out" "$(run_review_diff "$case_dir" task-x1 '' 2> "$case_dir/stderr")" \
+    "since-delta: an empty second argument did not give the default review"
   assert_contains "$out" '+fix round' "since-delta: the default review lost the fix commit"
   pass "fm-review-diff --since shows only the change after a reviewed head, and the default stays the whole change"
 }

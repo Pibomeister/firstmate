@@ -141,14 +141,18 @@ SH
 
 # A stand-in for AgentKit's `ak council run --card <card> --council-config
 # <roster> [--context <file>]... --out <record>`. It keeps AgentKit's contract:
-# a card needs an id, two or more options and an approving option among them;
-# a record is written to --out for every outcome; the exit status is 0 for
-# approve and decline, 1 for escalate and refused, and 2 for a usage error.
+# a card needs an id, two or more options and an approving option among them,
+# and the roster must be a readable file; a record is written to --out for
+# every outcome; the exit status is 0 for approve and decline, 1 for escalate
+# and refused, and 2 for a usage error. A record lists the two primary seats,
+# and the veto seat only when it was asked, as AgentKit does.
 # Each call appends "<cwd>|<roster>" to <stub>/ak.calls and leaves the card in
 # <stub>/ak.card and the context arguments in <stub>/ak.context. The outcome is
 # read from <stub>/ak.outcome (default approve): approve, decline, escalate
-# (the council seats disagree), unavailable (an escalation because a seat gave
-# no answer), refused, or usage. No model is called.
+# (the primary seats disagree), veto (the veto seat chose the other option),
+# veto-unavailable (the veto seat gave no answer), unavailable (a primary seat
+# gave no answer), late (an approving record, then the exit status of a call
+# stopped at its time limit), refused, or usage. No model is called.
 write_ak_stub() {  # <fakebin>
   cat > "$1/ak" <<'SH'
 #!/usr/bin/env bash
@@ -173,25 +177,33 @@ for arg in "$@"; do
   prev=$arg
 done
 printf '%s|%s\n' "$PWD" "$roster" >> "$stub/ak.calls"
+[ -f "$roster" ] || { echo "stand-in ak: cannot read the roster $roster" >&2; exit 2; }
 jq -e '(.id | test("^[a-z0-9][a-z0-9-]*$")) and (.question | length > 0) and
   (.options | length >= 2 and (unique | length) == length) and (.approve as $a | .options | index($a) != null)' \
   "$card" >/dev/null || { echo "stand-in ak: the card is not valid" >&2; exit 2; }
 cp "$card" "$stub/ak.card"
-record() {  # <outcome> <choice-json> <card-json> [seat-choices-json]
-  jq -n --arg outcome "$1" --argjson choice "$2" --argjson card "$3" --argjson seats "${4:-null}" '
+record() {  # <outcome> <choice-json> <card-json> <primary-choices-json> [veto-choice-json]
+  jq -n --arg outcome "$1" --argjson choice "$2" --argjson card "$3" --argjson primary "$4" \
+    --argjson veto "${5:-false}" --arg asked "${5+yes}" '
     {schema: "council-record", schema_version: 1, at: "2026-01-01T00:00:00.000Z", card: $card,
      payload: {sha256: "0", bytes: 0, context: []},
-     seats: (($seats // [$choice, $choice, $choice]) | map({role: "seat", choice: .})),
+     seats: (($primary | map({role: "primary", choice: .})) +
+       (if $asked == "yes" then [{role: "veto", choice: $veto}] else [] end)),
      outcome: $outcome, choice: $choice,
      causes: [], grants: [], note: "This record grants no authority."}' > "$out"
   printf 'council %s: %s\n' "$1" "$out"
 }
+yes=$(jq '.approve' "$card")
+no=$(jq '(.options - [.approve])[0]' "$card")
 case "$(cat "$stub/ak.outcome" 2>/dev/null || echo approve)" in
-  approve) record approve "$(jq '.approve' "$card")" "$(cat "$card")" ;;
-  decline) record decline "$(jq '(.options - [.approve])[0]' "$card")" "$(cat "$card")" "$(jq '[(.options - [.approve])[0]] | . + .' "$card")" ;;
-  escalate) record escalate null "$(cat "$card")" "$(jq '.options[0:2]' "$card")"; exit 1 ;;
-  unavailable) record escalate null "$(cat "$card")" "$(jq '[.approve, null]' "$card")"; exit 1 ;;
-  refused) record refused null "$(jq '{id}' "$card")"; exit 1 ;;
+  approve) record approve "$yes" "$(cat "$card")" "[$yes, $yes]" "$yes" ;;
+  decline) record decline "$no" "$(cat "$card")" "[$no, $no]" ;;
+  escalate) record escalate null "$(cat "$card")" "[$yes, $no]"; exit 1 ;;
+  veto) record escalate null "$(cat "$card")" "[$yes, $yes]" "$no"; exit 1 ;;
+  veto-unavailable) record escalate null "$(cat "$card")" "[$yes, $yes]" null; exit 1 ;;
+  unavailable) record escalate null "$(cat "$card")" "[$yes, null]"; exit 1 ;;
+  late) record approve "$yes" "$(cat "$card")" "[$yes, $yes]" "$yes"; exit 124 ;;
+  refused) record refused null "$(jq '{id}' "$card")" '[]'; exit 1 ;;
   *) echo "stand-in ak: usage" >&2; exit 2 ;;
 esac
 SH
@@ -2514,7 +2526,8 @@ test_two_status_lines_keep_the_one_that_holds_the_finding() {
   run_at_head || rc=$?
   assert_match "^F1 | open | data-loss | " "$STUB/agy.prior" "one-line-nb: the next head lost the class of the only NON-BLOCKING line"
 
-  # An approval whose only line for an open finding is NON-BLOCKING with a class still does not count.
+  # An approval whose only line for an open finding is NON-BLOCKING with a
+  # class is a dissent: it is recorded, and the finding stays open with the class.
   make_case one-line-nb-approve "${TWO_SEATS[@]}"
   set_review claude \
     'FINDING NEW | BLOCKING | none | feature.txt:1 | A crash mid-write truncates the file.' \
@@ -2529,7 +2542,27 @@ test_two_status_lines_keep_the_one_that_holds_the_finding() {
   rc=0
   run_at_head || rc=$?
   expect_code 1 "$rc" "one-line-nb-approve: round 2"
-  assert_absent "$(store_dir)/$CLAUDE_SEAT.receipt" "one-line-nb-approve: an approval with a NON-BLOCKING line for an open finding left a receipt"
+  assert_present "$(store_dir)/$CLAUDE_SEAT.receipt" "one-line-nb-approve: an approval that gave an open finding a class left no receipt"
+  assert_grep "merge-review: blocked" "$CASE/stdout" "one-line-nb-approve: the head is not blocked ($(cat "$CASE/stdout"))"
+  findings_at_head || fail "one-line-nb-approve: findings failed"
+  assert_match "^F1	open	data-loss	" "$CASE/stdout" "one-line-nb-approve: the finding is not open with its class"
+
+  # The same line with no class gives the finding nothing, and the approval does not count.
+  make_case one-line-nb-plain "${TWO_SEATS[@]}"
+  set_review claude \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | A crash mid-write truncates the file.' \
+    'VERDICT: BLOCK @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "one-line-nb-plain: round 1"
+  next_head 'second head'
+  set_review claude \
+    'FINDING F1 | NON-BLOCKING | none | feature.txt:1 | Minor now.' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "one-line-nb-plain: round 2"
+  assert_absent "$(store_dir)/$CLAUDE_SEAT.receipt" "one-line-nb-plain: an approval with a plain NON-BLOCKING line for an open finding left a receipt"
   pass "when a review gives a finding two status lines, the line that holds it stands with either line's class"
 }
 
@@ -2593,7 +2626,29 @@ test_a_rerun_never_writes_the_stored_delta_in_place() {
   rc=0
   run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
   expect_code 0 "$rc" "delta-store: check after the delta was replaced"
-  pass "a rerun keeps a stored delta that matches its hash, and replaces a short one whole"
+
+  # The stored full diff and the stored prompt are bound the same way.
+  local kind suffix bound
+  for kind in diff prompt; do
+    suffix='patch'
+    [ "$kind" = diff ] || suffix='md'
+    sha=$(sed -n "s/^${kind}_sha256=//p" "$store/$CLAUDE_SEAT.receipt")
+    bound="$store/$kind.$sha.$suffix"
+    assert_present "$bound" "delta-store: the stored $kind is missing"
+    cp "$bound" "$CASE/$kind-before"
+    printf 'short\n' > "$bound"
+    ln "$bound" "$CASE/short-$kind"
+    rc=0
+    run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+    expect_code 1 "$rc" "delta-store: check with a short stored $kind"
+    rc=0
+    run_at_head || rc=$?
+    expect_code 0 "$rc" "delta-store: rerun over a short stored $kind ($(cat "$CASE/stdout" "$CASE/stderr"))"
+    cmp -s "$bound" "$CASE/$kind-before" || fail "delta-store: the short $kind was not replaced"
+    assert_equals short "$(cat "$CASE/short-$kind")" "delta-store: the rerun wrote into the stored $kind in place"
+    assert_equals "$calls_before" "$(calls claude)" "delta-store: a seat was called again after the $kind was restored"
+  done
+  pass "a rerun keeps a stored delta, diff and prompt that match their hash, and replaces a short one whole"
 }
 
 # Take a case with a council roster to its third head, with one finding, F1,
@@ -2695,7 +2750,7 @@ test_a_tie_goes_to_the_agentkit_council_and_its_edge_case_ruling_defers() {
 
 test_a_council_that_does_not_defer_a_tie_leaves_it_open_and_is_not_asked_again() {
   local rc outcome
-  for outcome in decline escalate; do
+  for outcome in decline escalate veto veto-unavailable; do
     tie_rounds "tie-$outcome"
     split_reviews
     printf '%s\n' "$outcome" > "$STUB/ak.outcome"
@@ -2715,13 +2770,20 @@ test_a_council_that_does_not_defer_a_tie_leaves_it_open_and_is_not_asked_again()
     expect_code 1 "$rc" "tie-$outcome: a rerun at the head"
     assert_equals 1 "$(council_calls)" "tie-$outcome: a rerun asked the council again"
     assert_grep " open=F1 " "$CASE/stdout" "tie-$outcome: a rerun changed the finding"
+
+    # The same pull request named in another letter case is the same tie.
+    rc=0
+    run_review run 'https://github.com/Example/Repo/pull/7' --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+    expect_code 1 "$rc" "tie-$outcome: a rerun with the URL in another letter case"
+    assert_equals 1 "$(council_calls)" "tie-$outcome: another letter case of the URL asked the council again"
+    assert_grep " open=F1 " "$CASE/stdout" "tie-$outcome: another letter case of the URL changed the finding"
   done
-  pass "a tie the council holds as a regression, or escalates, stays open, and the council is asked once"
+  pass "a tie the council holds as a regression, splits on, or vetoes stays open, and the council is asked once"
 }
 
 test_a_council_call_with_no_answer_leaves_the_tie_waiting_and_a_rerun_asks_again() {
   local rc outcome
-  for outcome in refused unavailable usage; do
+  for outcome in refused unavailable usage late; do
     tie_rounds "tie-$outcome"
     split_reviews
     printf '%s\n' "$outcome" > "$STUB/ak.outcome"
@@ -2788,6 +2850,7 @@ test_the_council_is_not_asked_past_a_class_a_block_verdict_or_a_single_ruling() 
 
   # A regression only its reporter ruled on is not a tie.
   make_case tie-single "${TWO_SEATS[@]}" "council-config=$TMP_ROOT/tie-single/roster.json"
+  printf '{}\n' > "$CASE/roster.json"
   two_approved_rounds tie-single
   set_review claude \
     'FINDING NEW | REGRESSION | none | feature.txt:3 | The third line breaks the reader.' \
@@ -2803,6 +2866,7 @@ test_the_council_is_not_asked_past_a_class_a_block_verdict_or_a_single_ruling() 
 test_a_new_edge_case_the_other_seat_rejects_goes_to_the_agentkit_council() {
   local rc=0 want
   make_case tie-new "${TWO_SEATS[@]}" "council-config=$TMP_ROOT/tie-new/roster.json"
+  printf '{}\n' > "$CASE/roster.json"
   two_approved_rounds tie-new
   set_review claude \
     'FINDING NEW | EDGE-CASE | none | feature.txt:3 | A file over 2 GB overflows the counter.' \
@@ -2829,6 +2893,176 @@ test_a_council_roster_must_be_an_absolute_path() {
   expect_code 2 "$rc" "tie-config: a relative council roster"
   assert_grep 'council-config needs an absolute path' "$CASE/stderr" "tie-config: the refusal did not name the key"
   pass "a council roster that is not an absolute path is a config error"
+}
+
+test_a_classed_note_on_an_open_finding_is_a_dissent_that_leaves_a_receipt() {
+  local rc=0
+  make_case classed-note "${THREE_SEATS[@]}"
+  set_review claude \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | A crash mid-write truncates the file.' \
+    'VERDICT: BLOCK @HEAD@'
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "classed-note: round 1"
+
+  next_head 'second head'
+  # An approval that calls F1 resolved and then gives it a class on a note.
+  set_review claude \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The write is now atomic.' \
+    'FINDING F1 | NON-BLOCKING | data-loss | feature.txt:1 | The rename still runs before the sync.' \
+    'VERDICT: APPROVE @HEAD@'
+  set_review agy \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The write is now atomic.' \
+    'VERDICT: APPROVE @HEAD@'
+  set_review grok \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The write is now atomic.' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "classed-note: round 2"
+  assert_present "$(store_dir)/$CLAUDE_SEAT.receipt" "classed-note: the review that gave the class left no receipt"
+  assert_equals 0 "$(calls grok)" "classed-note: a spare replaced the review that gave the class"
+  assert_grep "merge-review: blocked" "$CASE/stdout" "classed-note: the head is not blocked ($(cat "$CASE/stdout"))"
+  findings_at_head || fail "classed-note: findings failed"
+  assert_match "^F1	open	data-loss	" "$CASE/stdout" "classed-note: the finding is not open with its class ($(cat "$CASE/stdout"))"
+  pass "a class given on a note for an open finding is a dissent: the review counts and the finding stays open"
+}
+
+test_a_review_with_a_form_defect_settles_no_earlier_finding() {
+  local rc=0
+  make_case defect-settles "${TWO_SEATS[@]}"
+  set_review claude \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | The reader breaks on the first line.' \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | The writer drops the last line.' \
+    'VERDICT: BLOCK @HEAD@'
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "defect-settles: round 1"
+
+  next_head 'second head'
+  # An approval that rules on F1 twice. It counts because one line holds F1.
+  set_review claude \
+    'FINDING F1 | BLOCKING | none | feature.txt:1 | The reader still breaks.' \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The reader is fixed.' \
+    'FINDING F2 | RESOLVED | none | feature.txt:1 | The writer is fixed.' \
+    'VERDICT: APPROVE @HEAD@'
+  set_review agy \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The reader is fixed.' \
+    'FINDING F2 | RESOLVED | none | feature.txt:1 | The writer is fixed.' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "defect-settles: round 2"
+  assert_present "$(store_dir)/$CLAUDE_SEAT.receipt" "defect-settles: the dissent was discarded for its form"
+  findings_at_head || fail "defect-settles: findings failed"
+  assert_match "^F1	open	" "$CASE/stdout" "defect-settles: the held finding is not open"
+  assert_match "^F2	open	" "$CASE/stdout" "defect-settles: a review with a form defect resolved another finding ($(cat "$CASE/stdout"))"
+
+  # The next round must rule on F2 again.
+  next_head 'third head'
+  set_review claude \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The reader is fixed.' \
+    'FINDING F2 | RESOLVED | none | feature.txt:1 | The writer is fixed.' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 0 "$rc" "defect-settles: round 3 ($(cat "$CASE/stdout" "$CASE/stderr"))"
+  assert_match "^F2 | open | " "$STUB/agy.prior" "defect-settles: the next round did not get F2 as open"
+  pass "a review that counts only for its dissent settles no earlier finding"
+}
+
+test_a_run_lock_with_no_owner_yet_is_read_as_held() {
+  local rc=0 pr calls_before
+  make_case ownerless-lock "${TWO_SEATS[@]}"
+  pr=$(dirname "$(store_dir)")
+  run_at_head || fail "ownerless-lock: the first head did not approve"
+
+  # A run at another head has taken its run lock and has not written its pid.
+  mkdir -p "$pr/$OTHER_HEAD/.run.lock"
+  calls_before=$(calls claude)
+  next_head 'second head'
+  run_at_head || rc=$?
+  expect_code 2 "$rc" "ownerless-lock: a round started beside a run lock with no owner"
+  assert_grep "the review round at $OTHER_HEAD holds a run lock with no owner" "$CASE/stderr" \
+    "ownerless-lock: the refusal did not name the head ($(cat "$CASE/stderr"))"
+  [ ! -e "$(store_dir)/round" ] || fail "ownerless-lock: the refused run recorded a round"
+  assert_equals "$calls_before" "$(calls claude)" "ownerless-lock: a reviewer was called beside a run lock with no owner"
+
+  # The owner shows up while the round waits: a dead owner is a stale lock.
+  printf '%s\n' 2147483646 > "$pr/$OTHER_HEAD/.run.lock/pid"
+  run_at_head || fail "ownerless-lock: the second head did not approve beside a stale lock ($(cat "$CASE/stderr"))"
+  assert_grep " round=2 " "$CASE/stdout" "ownerless-lock: the second head is not round 2"
+  pass "a run lock at another head that has no owner yet keeps a round from starting"
+}
+
+test_a_finding_a_stopped_run_left_without_an_id_reaches_the_next_round() {
+  local rc=0 pr first
+  make_case partial-ids "${TWO_SEATS[@]}"
+  set_review claude \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | The reader breaks on the first line.' \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | The writer drops the last line.' \
+    'VERDICT: BLOCK @HEAD@'
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "partial-ids: round 1"
+  first=$HEAD_SHA
+  pr=$(dirname "$(store_dir)")
+  assert_equals 2 "$(wc -l < "$pr/ids" | tr -d ' ')" "partial-ids: round 1 did not record two finding ids"
+
+  # A run that stopped while it recorded the ids left only the first.
+  sed -n 1p "$pr/ids" > "$CASE/ids.first"
+  cp "$CASE/ids.first" "$pr/ids"
+  next_head 'second head'
+  set_review claude \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The reader is fixed.' \
+    'FINDING F2 | RESOLVED | none | feature.txt:1 | The writer is fixed.' \
+    'VERDICT: APPROVE @HEAD@'
+  set_review agy \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The reader is fixed.' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "partial-ids: round 2 with a review that skips the second finding"
+  assert_match "^F2 | open | none | feature.txt:1 | The writer drops the last line." "$STUB/agy.prior" \
+    "partial-ids: the next round did not get the finding that had no id ($(cat "$STUB/agy.prior"))"
+  assert_absent "$(store_dir)/$AGY_SEAT.receipt" "partial-ids: an approval that skipped the second finding left a receipt"
+  assert_equals 2 "$(grep -c "	$first	" "$pr/ids")" "partial-ids: the first head does not have two finding ids again"
+  pass "a finding a stopped run left without an id gets one, and the next round rules on it"
+}
+
+test_a_council_answer_counts_only_while_the_roster_is_configured() {
+  local rc=0
+  tie_rounds tie-unset
+  split_reviews
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "tie-unset: round 3"
+  run_supervisor followup "$PR_URL" --head "$HEAD_SHA" --finding F1 --ref 'https://example.invalid/issues/9' \
+    || fail "tie-unset: the follow-up was refused ($(cat "$CASE/stderr"))"
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 0 "$rc" "tie-unset: check with the council ruling and the follow-up"
+
+  # The home removes the roster: a tie stays open again.
+  printf '%s\n' "${TWO_SEATS[@]}" > "$HOME_DIR/config/merge-review"
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 1 "$rc" "tie-unset: check after the roster was removed"
+  assert_grep "merge-review: blocked" "$CASE/stdout" "tie-unset: the head is not blocked ($(cat "$CASE/stdout"))"
+  assert_grep " open=F1 " "$CASE/stdout" "tie-unset: a stored council answer still deferred the finding"
+  pass "with the council roster removed, a stored council answer no longer defers a tie"
+}
+
+test_the_council_answer_is_stored_from_a_relative_home() {
+  local rc=0
+  tie_rounds tie-relative
+  split_reviews
+  (
+    cd "$CASE" && FM_HOME=home FM_ROOT_OVERRIDE="$ROOT" FM_TASK_ID=review-w1 \
+      FM_TEST_REVIEW_STUB="$STUB" PATH="$FAKEBIN:$PATH" \
+      "$MERGE_REVIEW" run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" > "$CASE/stdout" 2> "$CASE/stderr"
+  ) || rc=$?
+  expect_code 1 "$rc" "tie-relative: round 3 from a relative home ($(cat "$CASE/stderr"))"
+  assert_equals 1 "$(council_calls)" "tie-relative: the council was not asked once"
+  assert_grep " deferred=F1 " "$CASE/stdout" "tie-relative: the council's answer did not reach the head store ($(cat "$CASE/stdout"))"
+  assert_present "$(store_dir)/tie.F1.1.record.json" "tie-relative: the council record is not in the head store"
+  pass "a home named by a relative path still stores the council's answer"
 }
 
 fm_test_run \
@@ -2906,4 +3140,10 @@ fm_test_run \
   test_a_council_call_with_no_answer_leaves_the_tie_waiting_and_a_rerun_asks_again \
   test_the_council_is_not_asked_past_a_class_a_block_verdict_or_a_single_ruling \
   test_a_new_edge_case_the_other_seat_rejects_goes_to_the_agentkit_council \
-  test_a_council_roster_must_be_an_absolute_path
+  test_a_council_roster_must_be_an_absolute_path \
+  test_a_classed_note_on_an_open_finding_is_a_dissent_that_leaves_a_receipt \
+  test_a_review_with_a_form_defect_settles_no_earlier_finding \
+  test_a_run_lock_with_no_owner_yet_is_read_as_held \
+  test_a_finding_a_stopped_run_left_without_an_id_reaches_the_next_round \
+  test_a_council_answer_counts_only_while_the_roster_is_configured \
+  test_the_council_answer_is_stored_from_a_relative_home
