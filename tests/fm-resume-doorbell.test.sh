@@ -18,6 +18,10 @@ LINE=': Firstmate resume after context compaction: re-read state and open goals 
 FAKE_LIB="$TMP_ROOT/fake-backend.sh"
 cat > "$FAKE_LIB" <<'SH'
 # File-backed fake backend for the resume doorbell (sourced under FM_TEST_SEAM).
+# real-cli loads the real herdr adapter first; the fakes below then replace
+# everything but its CLI helper and client selection.
+# shellcheck source=bin/backends/herdr.sh
+[ ! -e "$FAKE_DIR/real-cli" ] || . "$SCRIPT_DIR/backends/herdr.sh"
 fake_get() { cat "$FAKE_DIR/$1" 2>/dev/null || printf '%s' "$2"; }
 fake_posture_change() {  # <none|away|away-contract|lock-moved|cleared>
   case "$1" in
@@ -71,9 +75,11 @@ fake_posture_once() {  # <switch-file>: apply that posture change once
 }
 # Like the real herdr adapter: each keystroke function first reads the
 # endpoint (target_ready), then issues the keystroke through the herdr CLI,
-# which the doorbell guards. The real adapter is never loaded.
+# which the doorbell guards. By default the real adapter is never loaded;
+# real-cli keeps the real fm_backend_herdr_cli, and its client selection,
+# driving the fake herdr clients the fixture puts on PATH.
 _FM_BACKEND_HERDR_SOURCED=1
-fm_backend_herdr_cli() {  # <session> pane send-text|send-keys <pane> <arg>; anything else is a read
+[ -e "$FAKE_DIR/real-cli" ] || fm_backend_herdr_cli() {  # <session> pane send-text|send-keys <pane> <arg>; anything else is a read
   [ "${2:-}" = pane ] || return 0
   case "${3:-}" in
     send-text)
@@ -599,6 +605,75 @@ test_replacement_session_is_not_the_target() {
   pass "resume doorbell: a session other than the one that recorded the context gets nothing"
 }
 
+# Two fake herdr clients on PATH: the first is older than the running server,
+# refuses every operational command with protocol_mismatch and applies the
+# fixture's posture change while client selection reads its status; the second
+# is compatible and types into the file-backed composer.
+make_herdr_client_pair() {  # <dir>
+  mkdir -p "$1/clients/stale" "$1/clients/current"
+  cat > "$1/clients/stale/herdr" <<'CLIENT'
+#!/usr/bin/env bash
+if [ "${1:-} ${2:-}" = "status --json" ]; then
+  if [ -e "$FAKE_DIR/posture-during-select" ]; then
+    case "$(cat "$FAKE_DIR/posture-during-select")" in
+      away) : > "$FAKE_DIR/../state/.afk" ;;
+      lock-moved) printf '1\n' > "$FAKE_DIR/../state/.lock" ;;
+      cleared) printf 'source=clear\n' > "$FAKE_DIR/../state/.context-epoch.new" \
+        && mv -f "$FAKE_DIR/../state/.context-epoch.new" "$FAKE_DIR/../state/.context-epoch" ;;
+    esac
+    rm -f "$FAKE_DIR/posture-during-select"
+  fi
+  printf '{"client":{"protocol":20},"server":{"running":true,"protocol":22,"compatible":false}}\n'
+  exit 0
+fi
+printf '{"error":{"code":"protocol_mismatch"}}\n' >&2
+exit 1
+CLIENT
+  cat > "$1/clients/current/herdr" <<'CLIENT'
+#!/usr/bin/env bash
+case "${1:-} ${2:-}" in
+  'status --json') printf '{"client":{"protocol":22},"server":{"running":true,"protocol":22,"compatible":true}}\n' ;;
+  'pane send-text')
+    printf 'text\t%s\t%s\n' "$3" "$4" >> "$FAKE_DIR/keys"
+    printf '%s' "$4" > "$FAKE_DIR/composer"
+    ;;
+  'pane send-keys')
+    [ -n "${FAKE_HELPER_ENTER:-}" ] || printf 'key\t%s\t%s\n' "$3" "$4" >> "$FAKE_DIR/keys"
+    : > "$FAKE_DIR/composer"
+    ;;
+esac
+CLIENT
+  chmod +x "$1/clients/stale/herdr" "$1/clients/current/herdr"
+  : > "$1/fake/real-cli"
+}
+
+test_protocol_mismatch_retry_rechecks_posture() {
+  local dir case_name reason
+  # No change during selection: the retry on the compatible client delivers.
+  dir=$(make_home mismatch-retry)
+  make_herdr_client_pair "$dir"
+  PATH="$dir/clients/stale:$dir/clients/current:$PATH" run_doorbell "$dir" --source compact
+  [ "$(typed_count "$dir")" = 1 ] || fail "a protocol_mismatch send must still deliver once on the compatible client: $(cat "$dir/fake/keys" 2>/dev/null)"
+  [ "$(last_outcome "$dir")" = submitted ] || fail "outcome must be submitted after the retry, got: $(cat "$dir/state/.resume-doorbell.log")"
+  for case_name in away lock-moved cleared; do
+    case "$case_name" in
+      away) reason='an away or quiet record exists' ;;
+      lock-moved) reason='the session lock changed owner' ;;
+      cleared) reason='a new context began after the compaction' ;;
+    esac
+    dir=$(make_home "mismatch-select-$case_name")
+    printf 'source=compact\nlock_pid=%s\nat=1\n' "$(sed -n 1p "$dir/state/.lock")" > "$dir/state/.context-epoch"
+    make_herdr_client_pair "$dir"
+    printf '%s' "$case_name" > "$dir/fake/posture-during-select"
+    PATH="$dir/clients/stale:$dir/clients/current:$PATH" run_doorbell "$dir" --source compact
+    [ ! -e "$dir/fake/posture-during-select" ] || fail "$case_name: the fixture never reached client selection"
+    [ "$(typed_count "$dir")" = 0 ] || fail "$case_name: a posture change during client selection must withhold the retried send: $(cat "$dir/fake/keys")"
+    [ "$(last_outcome "$dir")" = stood-down ] || fail "$case_name: outcome must be stood-down, got: $(cat "$dir/state/.resume-doorbell.log")"
+    assert_contains "$(last_detail "$dir")" "the send was withheld before typing: $reason" "$case_name: the stand-down must name the withheld send"
+  done
+  pass "resume doorbell: a protocol_mismatch retry re-checks posture after client selection; an unchanged posture still delivers"
+}
+
 test_second_doorbell_types_nothing_while_one_runs() {
   local dir
   dir=$(make_home single-flight)
@@ -625,4 +700,5 @@ test_newer_context_waits_out_an_older_doorbell
 test_posture_change_during_idle_reads_withholds_the_first_send
 test_posture_change_inside_the_send_withholds_the_keystroke
 test_replacement_session_is_not_the_target
+test_protocol_mismatch_retry_rechecks_posture
 test_second_doorbell_types_nothing_while_one_runs
