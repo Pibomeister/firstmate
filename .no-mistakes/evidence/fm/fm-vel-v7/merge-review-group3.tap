@@ -1,0 +1,6 @@
+1..3
+ok - from round three an edge case is deferred only when both seats agree, and approves only with a recorded follow-up
+ok - in round three the other seat rules on a new edge case, and the finding waits until it does
+ok - a seat that calls a new edge case a regression keeps it blocking, and an open finding takes no follow-up
+FM_TEST_COMPLETE
+exit=0

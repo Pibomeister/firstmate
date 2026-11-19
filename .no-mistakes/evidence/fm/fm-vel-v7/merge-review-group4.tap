@@ -1,0 +1,6 @@
+1..3
+ok - a finding every seat calls unsupported, with evidence, is dropped; one seat alone cannot drop it
+ok - a security, destructive, or data-loss finding is never deferred or noted, and keeps its class
+ok - one BLOCK blocks despite an approval, the spare stays out, and a rerun cannot replace it
+FM_TEST_COMPLETE
+exit=0

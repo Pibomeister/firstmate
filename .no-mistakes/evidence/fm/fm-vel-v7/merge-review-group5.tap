@@ -1,0 +1,6 @@
+1..3
+ok - the round counter spans heads, holds on a rerun, skips a head with no review, and waits for the previous round
+ok - findings keep their ids, later rounds get the open ones with the delta, and the whole change stays under review
+ok - a head reviewed before rounds counts as a round, and its BLOCK receipt keeps blocking
+FM_TEST_COMPLETE
+exit=0

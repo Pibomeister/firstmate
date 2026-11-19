@@ -1,0 +1,6 @@
+1..3
+ok - a tie goes once to the AgentKit council, and its edge-case ruling defers the finding
+ok - a tie the council holds as a regression, or escalates, stays open, and the council is asked once
+ok - a council call that gives no answer leaves the tie waiting, and a rerun asks again
+FM_TEST_COMPLETE
+exit=0

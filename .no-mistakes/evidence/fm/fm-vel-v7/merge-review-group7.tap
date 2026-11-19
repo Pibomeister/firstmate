@@ -1,0 +1,6 @@
+1..3
+ok - two approving reviews from two model families approve, and check prints one line
+ok - a rerun after the merge base moved keeps a review that holds a finding, so the finding is never lost
+ok - seats whose reviews name different merge bases settle no finding, at that head or the next
+FM_TEST_COMPLETE
+exit=0

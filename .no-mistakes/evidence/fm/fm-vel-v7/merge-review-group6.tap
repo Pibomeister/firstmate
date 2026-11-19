@@ -1,0 +1,3 @@
+1..3
+ok - when a review gives a finding two status lines, the line that holds it stands with either line's class
+ok - from round three an edge case is deferred only when every seat calls it one; any other ruling beside it keeps it open

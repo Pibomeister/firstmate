@@ -1,0 +1,6 @@
+1..3
+ok - the council is not asked about a classed finding, past a BLOCK verdict, or about a finding one seat ruled on
+ok - a new edge case the other seat calls unsupported goes to the AgentKit council with that answer
+ok - a council roster that is not an absolute path is a config error
+FM_TEST_COMPLETE
+exit=0
