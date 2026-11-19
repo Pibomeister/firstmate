@@ -2382,15 +2382,16 @@ wd_stall_scan() {
       done
       continue
     fi
-    S_FLIGHT=$((S_FLIGHT + 1))
+    last='' verb=''
+    if [ -f "$sf" ] && last=$(last_status_line "$sf" 2>/dev/null); then
+      verb=$(status_line_verb "$last" 2>/dev/null) || verb=''
+    fi
+    case "$verb" in done|failed) ;; *) S_FLIGHT=$((S_FLIGHT + 1)) ;; esac
     # Only a ship PR firstmate may land on its own standing authority can stall here;
     # one that waits on the owner's merge word is the owner's wait.
-    [ "$(fm_meta_get "$meta" kind 2>/dev/null)" = ship ] \
-      && [ "$(fm_meta_get "$meta" yolo 2>/dev/null)" = on ] \
-      && [ -f "$sf" ] || continue
-    last=$(last_status_line "$sf" 2>/dev/null) || continue
-    verb=$(status_line_verb "$last" 2>/dev/null) || continue
-    [ "$verb" = "done" ] || continue
+    [ "$verb" = "done" ] \
+      && [ "$(fm_meta_get "$meta" kind 2>/dev/null)" = ship ] \
+      && [ "$(fm_meta_get "$meta" yolo 2>/dev/null)" = on ] || continue
     wd_stall_parse_pr_url "$O_HOME" "$last" || continue
     url=$FM_PR_URL
     at=$(status_line_at_epoch "$last" 2>/dev/null) || at=$(wd_mtime "$sf")

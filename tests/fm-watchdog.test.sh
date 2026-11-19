@@ -5364,6 +5364,27 @@ test_stall_page_declared_waits_stay_quiet() {
   pass "stall page: rows about declared waits and homes with only declared waits stay quiet"
 }
 
+test_stall_page_finished_tasks_are_not_in_flight() {
+  local url=https://github.com/o/r/pull/7
+  stall_home
+  stall_task fm-d off "done [at=$((BASE - 2000))]: PR $url checks green"
+  owe_input 1000
+  run_wd 0 once >/dev/null 2>&1 || fail "finished-only pass failed"
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 ~ /^stall-/' | wc -l | tr -d ' ')" "a home whose only task is done has no work in flight: $(ledger | cut -f5-8)"
+  assert_no_grep "inputs unhandled" "$H/data/watchdog/status.md" "a finished task leaves no stall gap"
+  [ ! -e "$H/paged.log" ] || fail "a home with only finished work was paged: $(cat "$H/paged.log")"
+
+  stall_home
+  stall_task fm-d off "done [at=$((BASE - 2000))]: PR $url checks green"
+  stall_task fm-a off "working [at=$((BASE - 100))]: implementing"
+  owe_input 1000
+  run_wd 0 once >/dev/null 2>&1 || fail "mixed pass failed"
+  assert_equals 1 "$(ledger_rows stall-input page "done")" "a working task beside a finished one still pages once: $(ledger | cut -f5-8)"
+  assert_grep "while 1 tasks are in flight" "$H/paged.log" "only the working task counts as in flight"
+  assert_no_restart_or_lock_theft "finished tasks"
+  pass "stall page: a task whose latest status is done is not in flight"
+}
+
 test_stall_page_ready_pr_unlanded() {
   local url=https://github.com/o/r/pull/7 forgejo_url=https://git.example.com/o/r/pulls/9
   stall_home
@@ -8430,6 +8451,7 @@ fm_test_run \
   test_manager_units \
   test_stall_page_unhandled_input_pages_once_per_window \
   test_stall_page_declared_waits_stay_quiet \
+  test_stall_page_finished_tasks_are_not_in_flight \
   test_stall_page_ready_pr_unlanded \
   test_stall_page_ignores_a_live_holder_and_fresh_heartbeat \
   test_never_merges_deploys_or_messages_owner \
