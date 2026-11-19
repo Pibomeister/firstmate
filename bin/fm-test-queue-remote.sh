@@ -23,7 +23,7 @@ remote_cleanup() {
     fi
   fi
   if [ -n "$REMOTE_HOST" ] && [ -n "$REMOTE_CACHE" ]; then
-    remote_ssh "$REMOTE_HOST" "rmdir -- $(remote_quote "$REMOTE_CACHE/lock")" </dev/null >/dev/null 2>&1 || true
+    remote_ssh "$REMOTE_HOST" "rm -f -- $(remote_quote "$REMOTE_CACHE/lock/owner"); rmdir -- $(remote_quote "$REMOTE_CACHE/lock")" </dev/null >/dev/null 2>&1 || true
   fi
   REMOTE_CACHE=""
   [ -z "$REMOTE_LOCAL" ] || rm -rf "$REMOTE_LOCAL"
@@ -124,22 +124,36 @@ to_hash = []
 new_cache = {}
 tree = {b"queue": {}, b"repo": {}}
 
-for rel in raw.split(b"\0"):
+gitlinks = set()
+staged = subprocess.check_output(["git", "-C", root, "ls-files", "-s", "-z"])
+for entry in staged.split(b"\0"):
+    if entry.startswith(b"160000 "):
+        gitlinks.add(entry.split(b"\t", 1)[1])
+
+def add_entry(rel, full):
+    rel = rel.rstrip(b"/")
     if not rel:
-        continue
-    full = os.path.join(root_b, rel)
+        return
     try:
         st = os.lstat(full)
     except FileNotFoundError:
-        continue
+        return
     mode = st.st_mode
-    if stat.S_ISDIR(mode):
-        sys.exit(1)
     parts = rel.split(b"/")
     cur = tree[b"repo"]
     for part in parts[:-1]:
         cur = cur.setdefault(part, {})
-    if stat.S_ISLNK(mode):
+    if stat.S_ISDIR(mode):
+        if rel in gitlinks:
+            return
+        node = cur.setdefault(parts[-1], {})
+        if not isinstance(node, dict):
+            sys.exit(1)
+        for name in sorted(os.listdir(full)):
+            if name == b".git":
+                continue
+            add_entry(rel + b"/" + name, os.path.join(full, name))
+    elif stat.S_ISLNK(mode):
         recent.append(rel)
         cur[parts[-1]] = ["link", os.fsdecode(os.readlink(full))]
     elif stat.S_ISREG(mode):
@@ -159,6 +173,11 @@ for rel in raw.split(b"\0"):
             to_hash.append((full, key_f, sig, slot))
     else:
         sys.exit(1)
+
+for rel in raw.split(b"\0"):
+    if not rel:
+        continue
+    add_entry(rel, os.path.join(root_b, rel))
 
 def hash_file(path):
     digest = hashlib.sha256()
@@ -258,12 +277,13 @@ PYDELTA
 # A per-repository mirror is locked only for sync/copy, never for test execution.
 # Refuse a busy or abandoned lock rather than overwriting another preparation.
 remote_prepare() {
-  local root host rel hosts key reply dir cache rhead transport
-  local local_head local_tree git_mode finalize
+  local root host rel hosts key reply dir cache rhead transport note
+  local local_head local_tree git_mode finalize heal_marker heal_c=""
   command -v ssh >/dev/null 2>&1 && command -v git >/dev/null 2>&1 &&
     command -v rsync >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1 || return 1
   REMOTE_LOCAL=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-offload.XXXXXXXX") || return 1
   if ! remote_stage_local "$PWD" "$REMOTE_LOCAL" "$SCRIPT_DIR" "$SPOOL"; then
+    echo "fm-test-queue: remote staging failed; using local admission" >&2
     remote_cleanup
     return 1
   fi
@@ -274,6 +294,8 @@ remote_prepare() {
     IFS= read -r local_head
     IFS= read -r local_tree
   } < "$REMOTE_LOCAL/meta"
+  heal_marker="$SPOOL/offload-checksum-$key"
+  [ ! -e "$heal_marker" ] || heal_c=c
   hosts=${REMOTE_HOSTS:-}
   hosts=${hosts//,/ }
   transport="ssh -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=15 -o ServerAliveCountMax=2"
@@ -330,8 +352,15 @@ elif git_mode == "delta":
     pack_dst = os.path.join(repo_git, "objects", "pack", f"pack-{lhead}-{os.getpid()}.pack")
     shutil.move(delta_pack, pack_dst)
     subprocess.check_call(["git", "-C", repo, "index-pack", pack_dst], stdout=subprocess.DEVNULL)
-    with open(os.path.join(repo_git, "shallow"), "w", encoding="utf-8") as fh:
-        fh.write(lhead + "\n")
+    shallow_path = os.path.join(repo_git, "shallow")
+    shallow = []
+    if os.path.isfile(shallow_path):
+        with open(shallow_path, "r", encoding="utf-8") as fh:
+            shallow = [line.strip() for line in fh if line.strip()]
+    if lhead not in shallow:
+        shallow.append(lhead)
+    with open(shallow_path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(shallow) + "\n")
     subprocess.check_call(["git", "-C", repo, "update-ref", "HEAD", lhead])
     subprocess.check_call(["git", "-C", repo, "read-tree", "HEAD"])
 if os.path.exists(delta_pack):
@@ -419,7 +448,7 @@ PYFINAL
   for host in $hosts; do
     # HOME is resolved on the remote host. Only this user's private cache and
     # a newly minted run directory are used; no project checkout is modified.
-    reply=$(remote_ssh "$host" "bash -s -- $key" 2>/dev/null <<'SHREMOTE'
+    reply=$(remote_ssh "$host" "bash -s -- $key $(hostname 2>/dev/null || echo unknown) $$" 2>/dev/null <<'SHREMOTE'
 set -e
 umask 077
 command -v bash >/dev/null
@@ -430,9 +459,24 @@ cache="$HOME/.cache/firstmate/test-mirrors/$1"
 mkdir -p "$cache"
 if [ -L "$cache" ] || [ ! -O "$cache" ]; then exit 1; fi
 chmod 700 "$cache"
-mkdir "$cache/lock"
+note=none
+if ! mkdir "$cache/lock" 2>/dev/null; then
+  epoch=0
+  if [ -f "$cache/lock/owner" ]; then
+    epoch=$(awk -F= '$1=="epoch"{print $2}' "$cache/lock/owner" 2>/dev/null || true)
+  fi
+  if [ -z "$epoch" ] || [ -n "$(printf %s "$epoch" | tr -d 0-9)" ]; then epoch=$(stat -c %Y "$cache/lock" 2>/dev/null || stat -f %m "$cache/lock" 2>/dev/null || echo 0); fi
+  if [ -z "$epoch" ] || [ -n "$(printf %s "$epoch" | tr -d 0-9)" ]; then epoch=0; fi
+  now=$(date +%s)
+  if [ "$epoch" -le 0 ] || [ $((now - epoch)) -le 1800 ]; then exit 1; fi
+  mv "$cache/lock" "$cache/lock.stale.$$" || exit 1
+  rm -rf "$cache/lock.stale.$$"
+  mkdir "$cache/lock" || exit 1
+  note="reclaimed stale test-mirror lock older than 30m"
+fi
+printf 'host=%s\npid=%s\nepoch=%s\n' "${2:-unknown}" "${3:-0}" "$(date +%s)" > "$cache/lock/owner"
 mkdir -p "$cache/snapshot/repo"
-dir=$(mktemp -d /tmp/fm-test-offload.XXXXXXXX) || { rmdir "$cache/lock"; exit 1; }
+dir=$(mktemp -d /tmp/fm-test-offload.XXXXXXXX) || { rm -f "$cache/lock/owner"; rmdir "$cache/lock"; exit 1; }
 rhead=""
 if [ -d "$cache/snapshot/repo/.git" ] && [ -f "$cache/snapshot/repo/.git/shallow" ]; then
   packs=0
@@ -443,18 +487,26 @@ if [ -d "$cache/snapshot/repo/.git" ] && [ -f "$cache/snapshot/repo/.git/shallow
     rhead=$(git -C "$cache/snapshot/repo" rev-parse --verify HEAD 2>/dev/null || true)
   fi
 fi
-printf '%s\n%s\n%s\n' "$dir" "$cache" "${rhead:-none}"
+printf '%s\n%s\n%s\n%s\n' "$dir" "$cache" "${rhead:-none}" "$note"
 SHREMOTE
     ) || continue
     dir=${reply%%$'\n'*}
     reply=${reply#*$'\n'}
     cache=${reply%%$'\n'*}
-    rhead=${reply#*$'\n'}
+    reply=${reply#*$'\n'}
+    rhead=${reply%%$'\n'*}
+    note=${reply#*$'\n'}
+    [ "$note" != "$rhead" ] || note=none
     [ "$rhead" != none ] || rhead=""
+    case "$note" in *[!a-zA-Z0-9\ ._-]*) note=none ;; esac
+    [ "$note" = none ] || echo "fm-test-queue: $note on $host" >&2
     # Only a private directory minted by this protocol may ever be removed.
-    case "$dir" in /tmp/fm-test-offload.*) ;; *) continue ;; esac
-    case "$dir" in *[!a-zA-Z0-9/._-]*) continue ;; esac
-    case "$cache" in /*/.cache/firstmate/test-mirrors/"$key") ;; *) continue ;; esac
+    # A validation failure still holds this attempt's mirror lock: release it
+    # through the deterministic remote cache path before trying another host.
+    case "$dir" in /tmp/fm-test-offload.*) ;; *) remote_ssh "$host" "rm -f -- \"\$HOME/.cache/firstmate/test-mirrors/$key/lock/owner\"; rmdir -- \"\$HOME/.cache/firstmate/test-mirrors/$key/lock\"" </dev/null >/dev/null 2>&1 || true; continue ;; esac
+    case "$dir" in *[!a-zA-Z0-9/._-]*) remote_ssh "$host" "rm -f -- \"\$HOME/.cache/firstmate/test-mirrors/$key/lock/owner\"; rmdir -- \"\$HOME/.cache/firstmate/test-mirrors/$key/lock\"" </dev/null >/dev/null 2>&1 || true; continue ;; esac
+    case "$cache" in /*/.cache/firstmate/test-mirrors/"$key") ;; *) remote_ssh "$host" "rm -f -- \"\$HOME/.cache/firstmate/test-mirrors/$key/lock/owner\"; rmdir -- \"\$HOME/.cache/firstmate/test-mirrors/$key/lock\"" </dev/null >/dev/null 2>&1 || true; continue ;; esac
+    case "$cache" in *[!a-zA-Z0-9/._-]*) remote_ssh "$host" "rm -f -- \"\$HOME/.cache/firstmate/test-mirrors/$key/lock/owner\"; rmdir -- \"\$HOME/.cache/firstmate/test-mirrors/$key/lock\"" </dev/null >/dev/null 2>&1 || true; continue ;; esac
     REMOTE_HOST=$host REMOTE_DIR=$dir REMOTE_CACHE=$cache
     rm -rf "$REMOTE_LOCAL/stage/delta.pack" "$REMOTE_LOCAL/stage/cold.git" "$REMOTE_LOCAL/cold-repo"
     git_mode=""
@@ -473,18 +525,20 @@ SHREMOTE
       rm -rf "$REMOTE_LOCAL/cold-repo"
     fi
     echo "fm-test-queue: syncing snapshot delta to $host" >&2
-    if { [ ! -s "$REMOTE_LOCAL/files" ] || rsync -a --force --files-from="$REMOTE_LOCAL/files" --from0 --no-whole-file -z -e "$transport" "$root/" "$host:$(remote_quote "$cache/snapshot/repo/")" >/dev/null 2>&1; } &&
-      { [ ! -s "$REMOTE_LOCAL/recent_files" ] || rsync -ac --force --files-from="$REMOTE_LOCAL/recent_files" --from0 --no-whole-file -z -e "$transport" "$root/" "$host:$(remote_quote "$cache/snapshot/repo/")" >/dev/null 2>&1; } &&
-      rsync -a --no-whole-file -z -e "$transport" "$REMOTE_LOCAL/stage/" "$host:$(remote_quote "$cache/snapshot/")" >/dev/null 2>&1 &&
-      remote_ssh "$host" "python3 -c $(remote_quote "$finalize") $(remote_quote "$cache") $(remote_quote "$dir") $(remote_quote "$git_mode") $(remote_quote "$local_head") $(remote_quote "$local_tree") && cd $(remote_quote "$dir/repo$rel") && rmdir $(remote_quote "$cache/lock")" </dev/null >/dev/null 2>&1; then
+    if { [ ! -s "$REMOTE_LOCAL/files" ] || rsync "-a$heal_c" --force --files-from="$REMOTE_LOCAL/files" --from0 --no-whole-file -z -e "$transport" "$root/" "$host:$cache/snapshot/repo/" >/dev/null 2>&1; } &&
+      { [ ! -s "$REMOTE_LOCAL/recent_files" ] || rsync -ac --force --files-from="$REMOTE_LOCAL/recent_files" --from0 --no-whole-file -z -e "$transport" "$root/" "$host:$cache/snapshot/repo/" >/dev/null 2>&1; } &&
+      rsync -a --no-whole-file -z -e "$transport" "$REMOTE_LOCAL/stage/" "$host:$cache/snapshot/" >/dev/null 2>&1 &&
+      remote_ssh "$host" "python3 -c $(remote_quote "$finalize") $(remote_quote "$cache") $(remote_quote "$dir") $(remote_quote "$git_mode") $(remote_quote "$local_head") $(remote_quote "$local_tree") && cd $(remote_quote "$dir/repo$rel") && rm -f -- $(remote_quote "$cache/lock/owner") && rmdir $(remote_quote "$cache/lock")" </dev/null >/dev/null 2>&1; then
       REMOTE_CACHE=""
+      rm -f "$heal_marker"
       REMOTE_ROOT="$dir/repo"
       REMOTE_CWD="$REMOTE_ROOT$rel"
       LOCAL_ROOT=$root
       echo "fm-test-queue: offloading to $host (verified snapshot of $root)" >&2
       return 0
     fi
-    remote_ssh "$host" "rm -rf -- $(remote_quote "$dir"); rmdir -- $(remote_quote "$cache/lock")" </dev/null >/dev/null 2>&1 || true
+    : > "$heal_marker" 2>/dev/null || true
+    remote_ssh "$host" "rm -rf -- $(remote_quote "$dir"); rm -f -- $(remote_quote "$cache/lock/owner"); rmdir -- $(remote_quote "$cache/lock")" </dev/null >/dev/null 2>&1 || true
     REMOTE_HOST="" REMOTE_DIR="" REMOTE_CACHE=""
   done
   remote_cleanup

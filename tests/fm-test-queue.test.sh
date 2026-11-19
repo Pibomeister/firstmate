@@ -1119,8 +1119,6 @@ while [ "$#" -gt 1 ]; do
   if [ "$1" = -e ]; then shift 2; else args+=("$1"); shift; fi
 done
 dest=${1#*:}
-# Production quotes the remote path for the remote shell.
-dest=${dest#\'}; dest=${dest%\'}
 "$REAL_RSYNC" "${args[@]}" --stats "$dest" >> "$SSH_LOG.rsync" || exit
 if [ "${CORRUPT_SNAPSHOT:-}" = 1 ] && [ -d "$dest/repo" ]; then printf stale > "$dest/repo/source"; fi
 SH
@@ -1312,7 +1310,62 @@ PYTEST
   pass "fm-test-queue.sh: warm delta verified in ${elapsed}s; mismatch falls back and uncertain execution does not"
 }
 
+test_remote_offload_hardening() {
+  local saved_path=$PATH out mirror old_epoch sha
+  new_case offload-hardening
+  mkdir -p "$CASE/fakebin"
+  offload_fixture_repo "$CASE/repo" https://example.invalid/owner/firstmate.git
+  printf 'original-content\n' > "$CASE/repo/source"
+  git -C "$CASE/repo" add .
+  git -C "$CASE/repo" -c user.name=Tests -c user.email=tests@example.invalid commit -qm fixture
+  printf 'slots=1\nload_ceiling=150\nremote_hosts=m3\n' > "$FM_TEST_QUEUE_DIR/config"
+  echo 9 > "$CASE/load"
+  echo 1 > "$CASE/remote-load"
+  fake_remote_ssh "$CASE/fakebin/ssh"
+  export SSH_LOG="$CASE/ssh.log"
+  PATH="$CASE/fakebin:$PATH"
+  ( cd "$CASE/repo" && q run -- true ) 2>"$CASE/cold.err" || fail 'hardening cold offload'
+  assert_grep 'offloading to m3' "$CASE/cold.err" 'hardening cold run was not offloaded (rsync path semantics)'
+  printf advance > "$CASE/repo/committed"
+  git -C "$CASE/repo" add committed
+  git -C "$CASE/repo" -c user.name=Tests -c user.email=tests@example.invalid commit -qm advance
+  out=$( ( cd "$CASE/repo" && q run -- sh -c 'git rev-list --all >/dev/null || exit 9; echo revlist-ok' ) 2>"$CASE/delta.err") || fail 'hardening delta offload'
+  assert_equals revlist-ok "$out" 'delta shallow history does not traverse (rev-list --all)'
+  assert_grep 'offloading to m3' "$CASE/delta.err" 'hardening delta run was not offloaded'
+  mkdir -p "$CASE/repo/nested"
+  git -C "$CASE/repo/nested" init -q 2>/dev/null || fail 'nested fixture init'
+  printf 'inner\n' > "$CASE/repo/nested/inner.txt"
+  sha=$(git -C "$CASE/repo" rev-parse HEAD)
+  mkdir -p "$CASE/repo/sub"
+  printf 'gitlink-content\n' > "$CASE/repo/sub/file.txt"
+  git -C "$CASE/repo" update-index --add --cacheinfo "160000,$sha,sub" || fail 'gitlink fixture'
+  out=$( ( cd "$CASE/repo" && q run -- sh -c 'printf "%s|%s" "$(cat nested/inner.txt)" "$([ -e sub/file.txt ] && echo present || echo absent)"' ) 2>"$CASE/nested.err") || fail 'nested repo offload'
+  assert_equals 'inner|absent' "$out" 'nested repo was not staged recursively or gitlink was staged'
+  assert_grep 'offloading to m3' "$CASE/nested.err" 'nested repo disabled offload instead of staging recursively'
+  git -C "$CASE/repo" rm -q --cached sub 2>/dev/null || true
+  rm -rf "$CASE/repo/sub" "$CASE/repo/nested"
+  mirror=$(printf '%s\n' "$CASE/remote-home/.cache/firstmate/test-mirrors/"*)
+  mkdir -p "$mirror/lock"
+  old_epoch=$(python3 -c 'import time; print(int(time.time()) - 7200)')
+  printf 'host=old\npid=1\nepoch=%s\n' "$old_epoch" > "$mirror/lock/owner"
+  out=$( ( cd "$CASE/repo" && q run -- echo stale-ok ) 2>"$CASE/stale.err") || fail 'stale lock reclaim run'
+  assert_equals stale-ok "$out" 'stale lock was not reclaimed'
+  assert_grep 'reclaimed stale test-mirror lock' "$CASE/stale.err" 'stale lock reclaim printed no diagnostic'
+  assert_grep 'offloading to m3' "$CASE/stale.err" 'run after stale lock reclaim was not offloaded'
+  touch -t 202001010000 "$CASE/repo/source"
+  printf 'XXXXXXXX-content\n' > "$mirror/snapshot/repo/source"
+  touch -r "$CASE/repo/source" "$mirror/snapshot/repo/source"
+  out=$( ( cd "$CASE/repo" && q run -- pwd ) 2>"$CASE/heal1.err") || fail 'quick-check mismatch run'
+  assert_equals "$(cd "$CASE/repo" && pwd -P)" "$out" 'quick-check mismatch did not fall back locally first'
+  out=$( ( cd "$CASE/repo" && q run -- cat source ) 2>"$CASE/heal2.err") || fail 'quick-check self-heal run'
+  assert_equals 'original-content' "$out" 'quick-check self-heal did not repair the mirror'
+  assert_grep 'offloading to m3' "$CASE/heal2.err" 'self-heal run was not offloaded'
+  PATH=$saved_path
+  pass 'fm-test-queue.sh: rsync paths, delta shallow, stale lock, nested staging, and quick-check self-heal hold'
+}
+
 test_remote_incremental_manifest_and_uncertain_run
+test_remote_offload_hardening
 test_help_and_usage
 test_remote_offload_snapshot_and_failure
 test_unreachable_remote_waits_locally_and_threshold_is_configurable
