@@ -1620,10 +1620,32 @@ test_receipts_record_round_scope_and_tokens() {
   assert_line 'round=2' "$second/anthropic.claude.claude-test-1.receipt" "rounds: the next reviewed head is not round 2"
   assert_line 'round=2' "$second/google.agy.gemini-test-high.receipt" "rounds: seats at one head disagree on the round"
 
+  set_started "$first" $(( $(date +%s) - 60 ))
   rm -f "$second/google.agy.gemini-test-high."*
   run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || fail "rounds: the rerun did not approve"
   assert_line 'round=2' "$second/google.agy.gemini-test-high.receipt" "rounds: a rerun at the same head moved the round"
   pass "receipts record the review round across heads, the full scope, and the tokens the tool reported"
+}
+
+# Rewrite the started= line of every receipt in one head directory.
+set_started() {  # <head-dir> <epoch>
+  local receipt
+  for receipt in "$1"/*.receipt; do
+    sed "s/^started=.*/started=$2/" "$receipt" > "$receipt.tmp" && mv "$receipt.tmp" "$receipt"
+  done
+}
+
+test_a_new_head_started_in_the_same_second_is_the_next_round() {
+  local first
+  make_case same-second "${TWO_SEATS[@]}"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || fail "same-second: the first head did not approve"
+  first=$(store_dir)
+  set_started "$first" $(( $(date +%s) + 3600 ))
+  next_head 'same second'
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || fail "same-second: the second head did not approve"
+  assert_line 'round=2' "$(store_dir)/anthropic.claude.claude-test-1.receipt" \
+    "same-second: a new head whose predecessor started in the same second is not round 2"
+  pass "a new head counts every earlier reviewed head even when their start times tie"
 }
 
 test_receipts_read_tokens_from_top_level_usage() {  # a model entry without counts
@@ -1680,6 +1702,7 @@ test_metrics_count_rounds_calls_and_tokens_per_pull_request() {
 
 fm_test_run \
   test_receipts_record_round_scope_and_tokens \
+  test_a_new_head_started_in_the_same_second_is_the_next_round \
   test_receipts_read_tokens_from_top_level_usage \
   test_metrics_count_rounds_calls_and_tokens_per_pull_request \
   test_two_families_approve_and_a_supervisor_reads_one_line \
