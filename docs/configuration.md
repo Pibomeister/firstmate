@@ -1918,6 +1918,34 @@ Each relaunch installs a fresh worker extension with the home's current list, so
 
 [`bin/fm-exclude-tools-lib.sh`](../bin/fm-exclude-tools-lib.sh) implements parsing and pre-launch validation for this contract; [`bin/fm-spawn.sh`](../bin/fm-spawn.sh)'s header owns the launch-flag mechanics.
 
+## Launch quota floor
+
+Firstmate never launches a Claude or Codex worker on an account whose weekly or 5-hour window has less than 15% left.
+The floor is always on and has no setting.
+It applies to fresh ship and scout spawns, relaunches, and secondmate launches, including accounts named by `--account`, `config/claude-account`, or a per-secondmate pin.
+A spawn refuses before any worker endpoint, local copy, or task record exists, and `bin/fm-control.sh <id> relaunch` refuses before it stops the running worker.
+
+The floor reads only the account that launch would spend, through one bounded `quota-axi --json` read.
+A listed or pinned Claude root is read on its own with `--profile-only`, `ordinary` reads the default login, an unpinned Claude launch reads firstmate's own account, and Codex reads its `codex-home` lane.
+Exactly 15% passes.
+A read that fails or reports no weekly or 5-hour window is unknown quota, which keeps the account eligible under `AGENTS.md` section 4: the launch proceeds and prints a notice.
+Without `quota-axi` installed the floor does nothing.
+Other runners have no account Firstmate selects, so the floor does not read them; `backend=t3code` is skipped because its provider instance owns the account.
+
+Refusing Codex below the floor also keeps a new launch from reaching the paid credits a Codex plan falls back to once its windows run out.
+
+A refusal prints a `quota-floor: refused` line naming the window and its percentage, then `reroute:` lines:
+
+- Under `config/claude-accounts`, each other declared entry at or above the floor, and each one whose quota could not be measured, as `--account <entry>`.
+  Pass it to the spawn, or run `bin/fm-control.sh <id> relaunch --account <entry>`.
+- For a secondmate, `bin/fm-supervisor-failover.sh secondmate <id>`.
+- Otherwise, another runtime or account, which `bin/fm-quota-reroute.sh suggest` can name.
+
+A Claude worker whose local copy or account has Claude-specific tooling, such as hooks or MCP servers, cannot be relaunched onto another runner ([agent control](agent-control.md)).
+Moving it to another declared Claude account is not a runner change, so `--account` is how the floor reroutes it.
+When no declared account is at or above the floor, keep the work queued until a window resets.
+
+[`bin/fm-quota-floor-lib.sh`](../bin/fm-quota-floor-lib.sh) owns the rule, the read, and the reroute lines.
 ## Worker account pin (config/claude-account, config/pi-account)
 
 A home that mixes accounts for one runner, such as a work login and a personal one, can pin the account its own Claude and Pi workers launch on.

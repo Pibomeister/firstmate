@@ -1829,6 +1829,52 @@ test_account_list_relaunch_moves_only_on_explicit_account() {
   pass "fm-control relaunch: only an explicit --account moves a task to another declared account"
 }
 
+# make_floor_quota_fake <case-dir>: a quota-axi whose --profile-only read
+# answers from $CLAUDE_CONFIG_DIR/quota.json, the account's own reading.
+make_floor_quota_fake() {
+  cat > "$1/fakebin/quota-axi" <<'SH'
+#!/usr/bin/env bash
+case " $* " in *" --profile-only "*) cat "$CLAUDE_CONFIG_DIR/quota.json" 2>/dev/null || exit 1 ;; *) exit 1 ;; esac
+SH
+  chmod +x "$1/fakebin/quota-axi"
+}
+
+# floor_quota <root> <weekly-percent>: that account's quota-axi --json reading.
+floor_quota() {
+  jq -n --argjson w "$2" '{schemaVersion: 5, providers: [{provider: "claude",
+    windows: [{id: "seven_day", kind: "weekly", percentRemaining: $w}],
+    quotaSemantics: {status: "known", effectiveAvailability: []}}]}' > "$1/quota.json"
+}
+
+test_quota_floor_refuses_the_recorded_account_before_stop_and_reroutes_by_account() {
+  local dir out rc id=rl-floor
+  dir=$(new_case floor "$id")
+  add_listed_task "$dir" "$id" "$dir/first"
+  make_floor_quota_fake "$dir"
+  floor_quota "$dir/first" 4
+  floor_quota "$dir/second" 70
+  # Claude-specific tooling in the local copy refuses a move off Claude, which
+  # is why another declared Claude account is the reroute.
+  printf '{"mcpServers":{"x":{"command":"x"}}}\n' > "$dir/wt/.mcp.json"
+  cp "$dir/home/state/$id.meta" "$dir/meta-before"
+  out=$(FM_QUOTA_FLOOR_BIN="$dir/fakebin/quota-axi" run_control "$dir" "$id" relaunch --note "stalled on an exhausted account"); rc=$?
+  expect_code 1 "$rc" "a relaunch onto a recorded account with 4% weekly left must refuse"$'\n'"$out"
+  assert_contains "$out" "quota-floor: refused claude account $dir/first: seven_day at 4% (under 15%)" "the refusal should name the window"
+  assert_contains "$out" "reroute: --account $dir/second (lowest weekly or 5-hour window 70%)" "the refusal should name the declared account to move to"
+  [ "$(cat "$dir/fake/command")" = claude ] || fail "the floor refusal must happen before the running agent stops"
+  [ ! -s "$dir/fake/literal" ] || fail "the floor refusal must send no lifecycle input"
+  cmp -s "$dir/meta-before" "$dir/home/state/$id.meta" || fail "the floor refusal must leave the task record untouched"
+
+  out=$(FM_QUOTA_FLOOR_BIN="$dir/fakebin/quota-axi" run_control "$dir" "$id" relaunch --harness codex --account "$dir/second" --note "off claude"); rc=$?
+  expect_code 1 "$rc" "moving the tooled Claude task off Claude must still refuse"$'\n'"$out"
+
+  out=$(FM_QUOTA_FLOOR_BIN="$dir/fakebin/quota-axi" run_control "$dir" "$id" relaunch --account "$dir/second" --note "rerouted by the quota floor"); rc=$?
+  expect_code 0 "$rc" "the reroute the floor named should relaunch the task"$'\n'"$out"
+  [ "$(meta_field "$dir" "$id" account)" = "$dir/second" ] || fail "the rerouted record should name the new account"
+  assert_contains "$(cat "$dir/fake/literal")" "CLAUDE_CONFIG_DIR='$dir/second'" "the replacement should launch under the rerouted account"
+  pass "fm-control relaunch: the quota floor refuses an exhausted recorded account before stop, and --account reroutes a tooled Claude task"
+}
+
 test_account_list_relaunch_refusals_happen_before_stop() {
   local dir out rc id=rl-list-refuse case_name recorded flag needle
   for case_name in undeclared newline signed-out unrecorded removed wrong-harness; do
@@ -4951,6 +4997,7 @@ test_worker_account_pin_follows_the_relaunch
 test_account_list_relaunch_reuses_the_recorded_account
 test_account_list_relaunch_moves_only_on_explicit_account
 test_account_list_relaunch_refusals_happen_before_stop
+test_quota_floor_refuses_the_recorded_account_before_stop_and_reroutes_by_account
 test_secondmate_account_pin_follows_relaunch_and_refuses_before_stop
 test_pi_exclude_tools_follow_the_relaunch
 test_exclude_tools_refusals_happen_before_the_agent_stops
