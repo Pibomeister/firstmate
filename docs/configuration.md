@@ -1209,6 +1209,8 @@ The optional local, gitignored `config/lane-capacity` file says how many ship an
 With the file absent nothing changes: the report prints counts and host figures only, never invents a target, never advises holding dispatch, and nothing is published; a malformed value is reported as invalid rather than guessed.
 Persistent secondmates hold no lane.
 A lane whose task has recorded its ready PR frees its place, as project capacity does, while it still counts among the running lanes.
+A lane that is not live frees its place the same way: nothing about it changed in two hours (its task record, status, busy state, steering inbox, or the watcher's terminal marker), or its recorded terminal is gone.
+Only evidence frees a place: a record changed in the last ten minutes, a remote lane, and a lane whose terminal check did not answer in 20 seconds all keep theirs.
 The file is a per-machine choice and is not inherited by secondmate homes, so each home owns its own numbers.
 
 The first non-comment line is the cap, one non-negative integer, so a file holding only that integer keeps its earlier meaning.
