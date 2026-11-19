@@ -1,0 +1,19 @@
+Away posture recorded at 2026-11-19T22:35:15Z: hold-for-return only. No phone channel is configured; anything that needs you waits for your return. Your away instructions are recorded verbatim; the away session will carry them out where it can, and anything it is unsure of, or that needs you, waits for your return. Destructive, irreversible, and security-sensitive actions are never pre-authorizable, whatever the words say. Expected return: not given. Spend cap: 4 concurrent workers.
+Away posture (recorded):
+  entered: 2026-11-19T22:35:15Z
+  expected return: not given
+  spend cap: 4 concurrent workers
+  reach: hold-for-return only. No phone channel is configured; anything that needs you waits for your return.
+  your words (verbatim):
+    away lab
+afk=0
+== real watcher one cycle at now=4599
+signal: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.OcpeHr/state/worker.status
+watcher exit=0
+-- claims file:
+(none)
+== real watcher one cycle at now=4600
+check: rearm-resurface
+watcher exit=0
+-- claims file:
+worker	nm-r1-review	1000	running	4600	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.OcpeHr/data/worker/gate-council-nm-r1-review-1000

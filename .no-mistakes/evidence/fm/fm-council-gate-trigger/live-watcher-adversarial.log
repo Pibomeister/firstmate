@@ -1,0 +1,20 @@
+### A: task on Goodword (not in projects=Firstmate,other), gate 2h old, away
+watcher exit=0
+0
+no claim for opt -> no council (expected)
+### B: broken config (roster missing) with eligible task, away
+watcher: gate council roster is missing or unreadable
+watcher: away gate council check failed; the council is skipped this cycle
+watcher exit=0
+0
+no claim for elig -> skipped, watcher kept running (expected)
+### C: present posture (away contract exited), eligible task
+afk exit=2; contract present: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.OcpeHr/state/.afk-contract
+watcher exit=0
+1
+### C (retry): present posture - away record archived, fresh eligible Firstmate task, gate 2h old
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.OcpeHr/state/afk-contracts/1795127715.afk-contract
+archive exit=0; contract: none
+watcher exit=0
+0
+no claim for pres in present posture (expected)

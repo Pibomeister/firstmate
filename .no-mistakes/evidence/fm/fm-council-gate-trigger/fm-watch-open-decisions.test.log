@@ -1,0 +1,33 @@
+1..23
+ok - absent flag emits nothing and does not fold status
+ok - oldest key surfaces once, and independent per-key backoff doubles up to its cap
+ok - keys 1 and 01 receive separate reminders and retain independent bounded backoff
+ok - tasks 1 and 01 receive separate reminders and retain independent bounded backoff
+ok - resolution stops reminders immediately and a later episode starts fresh
+ok - paused waits, verified transfers, and backlog captain holds are exempt
+ok - only explicitly keyed records with valid source timestamps are aged
+ok - quiet polls reuse the timed fold and only new status bytes are folded
+watcher: invalid open-decision reminder settings
+watcher: open-decision backoff cap is below threshold
+ok - invalid settings refuse the tick without queueing reminders
+ok - task retirement removes the timed cursor and ends reminders
+ok - the actual watcher wakes and exits on an overdue key without any recorded pane
+fm-afk-contract: quiet mode became the away posture; the quiet record is archived at /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-watch-open-decisions.4DuTmr/state/afk-contracts/1795127486-superseded-1795127489.afk-contract
+ok - only away posture routes one decision at the default age
+ok - overdue decision pages and stale generation refuses route
+ok - changed away confirmation leaves the open decision to page later
+ok - claim interrupted before its page retries after the bound
+ok - real watcher pages the captain when council entrypoint is absent
+ok - real watcher still pages the captain with an invalid authority file
+ok - pending page retries when a channel becomes available
+ok - gate council stays off without config, away posture, allowlist, age, gate key, or task findings
+ok - one council per gate episode, ruling surfaced once as evidence, gate left unanswered
+ok - closed gates drop their ruling, read failures keep it, escalations and failed runs surface as evidence
+ok - an unfinished council surfaces after its bound and invalid config fails the check
+ok - real watcher logs an invalid gate council config, skips the council, and keeps running
+FM_TEST_COMPLETE
+bash tests/fm-watch-open-decisions.test.sh  18.98s user 48.57s system 7% cpu 15:19.99 total
+~/.local/bin/ak
+usage: ak council run --card <card.json> --council-config <private roster> [--context <file>]... [--out <record.json>]
+
+[exited with code 0]
