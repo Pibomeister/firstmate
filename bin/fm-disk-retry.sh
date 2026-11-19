@@ -31,7 +31,12 @@
 #           arguments, minus --harness, --model, --effort, --dispatch-override,
 #           --hermes-profile, and --account (with a separate or `=` value) and
 #           any positional after the task id and project, plus the fresh
-#           profile. Every spawn gate (disk alarm, capacity, backlog,
+#           profile. A recorded --account is passed again only when the fresh
+#           harness is the recorded one. When the harness changed under a
+#           recorded --account, or the fresh harness is claude,
+#           config/claude-accounts exists, and no --account was recorded, the
+#           record is handed over for dispatch by hand like an unclear
+#           resolution. Every spawn gate (disk alarm, capacity, backlog,
 #           spend) applies again. A spawn the disk alarm refuses again records
 #           itself again; a spawn a capacity gate defers (exit 75) keeps its
 #           record for a later scan; any other failure drops the record and
@@ -45,7 +50,7 @@
 #         re-dispatched by bin/fm-spawn.sh: <task-id>...
 #         dropped, already launched or placed elsewhere: <task-id>...
 #         re-dispatch failed, see state/disk-refused/.log.<task-id>: <task-id>...
-#         not re-dispatched, dispatch resolution was not clear, dispatch by hand: <task-id> (<status>)...
+#         not re-dispatched, routing needs a decision, dispatch by hand: <task-id> (<reason>)...
 #         skipped, backlog item held or blocked, record kept: <task-id>...
 #       The wake reports the result; record each re-dispatch in the dispatch
 #       ledger (bin/fm-dispatch-log.sh dispatched).
@@ -165,10 +170,10 @@ backlog_queued() {  # <task-id>
 
 # Resolve the task's routing again from its brief. On clear, set ROUTED to the
 # recorded arguments without their routing flags, followed by the fresh
-# profile, and return 0. Otherwise set RESOLVED to the resolution status and
+# profile and any recorded --account, and return 0. Otherwise set RESOLVED to the resolution status and
 # return 1.
 resolve_routing() {  # <task-id> <spawn-arg>...
-  local id=$1 rec="$DATA/$1/dispatch-resolution.json" harness model effort pos
+  local id=$1 rec="$DATA/$1/dispatch-resolution.json" harness model effort pos was= account= account_set=0
   shift
   ROUTED=()
   RESOLVED=error
@@ -186,9 +191,12 @@ resolve_routing() {  # <task-id> <spawn-arg>...
   pos=0
   while [ $# -gt 0 ]; do
     case "$1" in
-      --harness | --model | --effort | --dispatch-override | --hermes-profile | --account)
-        shift ;;
-      --harness=* | --model=* | --effort=* | --dispatch-override=* | --hermes-profile=* | --account=*) ;;
+      --harness) [ $# -lt 2 ] || was=$2; shift ;;
+      --harness=*) was=${1#--harness=} ;;
+      --account) account_set=1; [ $# -lt 2 ] || account=$2; shift ;;
+      --account=*) account_set=1; account=${1#--account=} ;;
+      --model | --effort | --dispatch-override | --hermes-profile) shift ;;
+      --model=* | --effort=* | --dispatch-override=* | --hermes-profile=*) ;;
       --mode | --yolo | --branch-prefix | --base-branch | --backend | --pr-branch | --from-branch | \
         --upstream-consent | --traceparent | --budget-inclusive-hard | --budget-inclusive-stop | \
         --budget-fresh-hard | --budget-fresh-stop)
@@ -198,14 +206,27 @@ resolve_routing() {  # <task-id> <spawn-arg>...
       -*) ROUTED+=("$1") ;;
       *)
         pos=$((pos + 1))
-        [ "$pos" -gt 2 ] || ROUTED+=("$1")
+        if [ "$pos" -le 2 ]; then
+          ROUTED+=("$1")
+        elif [ "$pos" -eq 3 ]; then
+          was=$1
+        fi
         ;;
     esac
     [ $# -eq 0 ] || shift
   done
+  if [ "$account_set" -eq 1 ] && [ "$was" != "$harness" ]; then
+    RESOLVED="clear on $harness, but --account was recorded for ${was:-the default harness}"
+    return 1
+  fi
+  if [ "$account_set" -eq 0 ] && [ "$harness" = claude ] && { [ -e "$CONFIG/claude-accounts" ] || [ -L "$CONFIG/claude-accounts" ]; }; then
+    RESOLVED="clear on claude, but no --account was recorded and config/claude-accounts needs one"
+    return 1
+  fi
   ROUTED+=(--harness "$harness")
   [ -z "$model" ] || ROUTED+=(--model "$model")
   [ -z "$effort" ] || ROUTED+=(--effort "$effort")
+  [ "$account_set" -eq 0 ] || ROUTED+=(--account "$account")
 }
 
 scan() {
@@ -281,7 +302,7 @@ EOF
   [ -z "$dispatched" ] || parts="re-dispatched by bin/fm-spawn.sh:$dispatched"
   [ -z "$dropped" ] || parts="${parts:+$parts; }dropped, already launched or placed elsewhere:$dropped"
   [ -z "$failed" ] || parts="${parts:+$parts; }re-dispatch failed, see state/disk-refused/.log.<task-id>:$failed"
-  [ -z "$manual" ] || parts="${parts:+$parts; }not re-dispatched, dispatch resolution was not clear, dispatch by hand:$manual"
+  [ -z "$manual" ] || parts="${parts:+$parts; }not re-dispatched, routing needs a decision, dispatch by hand:$manual"
   [ -z "$skipped" ] || parts="${parts:+$parts; }skipped, backlog item held or blocked, record kept:$skipped"
   [ -n "$parts" ] || return 0
   reason="check: disk alarm cleared (level=$level free_kib=$free): $parts"

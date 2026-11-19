@@ -474,7 +474,8 @@ spawn_at_level() {  # <home> <volume> <avail> <spawn args...>
 # A code root whose fm-spawn.sh only logs its arguments, one per line, then a
 # blank line, and exits with FM_STUB_SPAWN_RC; it stands in for the real launch.
 # Its fm-dispatch-resolve.sh writes the task's resolution record: clear with the
-# profile codex/gpt-x/high, or the status named in <brief-dir>/stub-status.
+# profile <harness>/gpt-x/high, where <harness> is <brief-dir>/stub-harness or
+# codex, or the status named in <brief-dir>/stub-status.
 stub_root() {
   local root="$TMP_ROOT/retry-stub-root"
   if [ ! -d "$root/bin" ]; then
@@ -490,9 +491,11 @@ SH
 #!/usr/bin/env bash
 dir=$(dirname "$1")
 status=clear
+harness=codex
 [ ! -f "$dir/stub-status" ] || status=$(cat "$dir/stub-status")
+[ ! -f "$dir/stub-harness" ] || harness=$(cat "$dir/stub-harness")
 if [ "$status" = clear ]; then
-  jq -n --arg t "${dir##*/}" '{task: $t, status: "clear", profile: {harness: "codex", model: "gpt-x", effort: "high"}}'
+  jq -n --arg t "${dir##*/}" --arg h "$harness" '{task: $t, status: "clear", profile: {harness: $h, model: "gpt-x", effort: "high"}}'
 else
   jq -n --arg t "${dir##*/}" --arg s "$status" '{task: $t, status: $s, profile: null}'
 fi > "$dir/dispatch-resolution.json"
@@ -592,7 +595,7 @@ test_retry_redispatches_when_the_alarm_clears() {
   assert_absent "$marker" "a scan with no record must not read the disk"
   write_brief "$home" ship-a scout-b
   retry_at_level "$home" "$volume" 9437184 record ship-a ship-a /p/a --mode no-mistakes --yolo off --harness claude --model opus --effort max --dispatch-override 'two words' || fail "record ship-a"
-  retry_at_level "$home" "$volume" 9437184 record scout-b scout-b /p/b claude --scout --account seat-1 || fail "record scout-b"
+  retry_at_level "$home" "$volume" 9437184 record scout-b scout-b /p/b claude --scout || fail "record scout-b"
   set_epoch "$home" ship-a 100
   set_epoch "$home" scout-b 200
   out=$(retry_at_level "$home" "$volume" 9437184 scan 2>&1) || fail "a scan under a standing alarm must exit 0"
@@ -628,6 +631,8 @@ test_retry_drops_work_already_placed_elsewhere() {
   retry_at_level "$home" "$volume" 9437184 record ship-old ship-old --mode no-mistakes --yolo off || fail "record ship-old"
   retry_at_level "$home" "$volume" 9437184 record ship-c ship-c --mode no-mistakes --yolo off || fail "record ship-c"
   write_brief "$home" ship-c ship-old
+  set_epoch "$home" ship-c 100
+  set_epoch "$home" ship-old 200
   printf 'kind=ship\n' > "$home/state/ship-live.meta"
   printf '2026-11-19T00:00:00Z\t%s\tdispatched\tgoal-1\ttask=ship-moved note=placed on another host\n' "$(( $(date +%s) + 5 ))" > "$home/state/dispatch-log.tsv"
   printf '2026-01-01T00:00:00Z\t1\tdispatched\tgoal-0\ttask=ship-old\n' >> "$home/state/dispatch-log.tsv"
@@ -712,11 +717,38 @@ test_retry_keeps_launch_flags_and_strips_every_routing_form() {
   write_brief "$home" ship-g
   retry_at_level "$home" "$volume" 9437184 record ship-g ship-g /p/g claude --mode no-mistakes --yolo off \
     --upstream-consent github.com/o/r --pr-branch fm/g --from-branch fm/f --traceparent 00-abc-def-01 \
-    --budget-fresh-hard 9 --harness=claude --model=opus --effort=max --account=seat-1 \
+    --budget-fresh-hard 9 --harness=claude --model=opus --effort=max \
     --dispatch-override=why --hermes-profile=hp || fail "record ship-g"
   out=$(retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "the scan must exit 0"$'\n'"$out"
   assert_equals "ship-g"$'\n'"/p/g"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off"$'\n'"--upstream-consent"$'\n'"github.com/o/r"$'\n'"--pr-branch"$'\n'"fm/g"$'\n'"--from-branch"$'\n'"fm/f"$'\n'"--traceparent"$'\n'"00-abc-def-01"$'\n'"--budget-fresh-hard"$'\n'"9$FRESH" "$(stub_calls "$home")" "every non-routing flag keeps its value and no recorded routing survives in either form"
   pass "a re-dispatch keeps each launch flag's value and drops the recorded routing in every form"
+}
+
+test_retry_keeps_the_account_only_on_the_same_harness() {
+  local home volume out
+  home="$TMP_ROOT/retry-account-home"
+  volume="$TMP_ROOT/retry-account-volume"
+  mkdir -p "$home/state" "$home/config" "$volume"
+  printf '%s\n' seat-1 seat-2 > "$home/config/claude-accounts"
+  write_brief "$home" ship-same ship-eq ship-moved ship-none
+  printf 'claude\n' > "$home/data/ship-same/stub-harness"
+  printf 'claude\n' > "$home/data/ship-eq/stub-harness"
+  printf 'claude\n' > "$home/data/ship-none/stub-harness"
+  retry_at_level "$home" "$volume" 9437184 record ship-same ship-same /p --mode no-mistakes --yolo off --harness claude --account seat-2 || fail "record ship-same"
+  retry_at_level "$home" "$volume" 9437184 record ship-eq ship-eq /p claude --mode no-mistakes --yolo off --account=seat-1 || fail "record ship-eq"
+  retry_at_level "$home" "$volume" 9437184 record ship-moved ship-moved /p --mode no-mistakes --yolo off --harness claude --account seat-2 || fail "record ship-moved"
+  retry_at_level "$home" "$volume" 9437184 record ship-none ship-none /p --mode no-mistakes --yolo off --harness claude || fail "record ship-none"
+  set_epoch "$home" ship-same 100
+  set_epoch "$home" ship-eq 200
+  set_epoch "$home" ship-moved 300
+  set_epoch "$home" ship-none 400
+  out=$(retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "the scan must exit 0"$'\n'"$out"
+  assert_equals "ship-same"$'\n'"/p"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off"$'\n'"--harness"$'\n'"claude"$'\n'"--model"$'\n'"gpt-x"$'\n'"--effort"$'\n'"high"$'\n'"--account"$'\n'"seat-2"$'\n\n'"ship-eq"$'\n'"/p"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off"$'\n'"--harness"$'\n'"claude"$'\n'"--model"$'\n'"gpt-x"$'\n'"--effort"$'\n'"high"$'\n'"--account"$'\n'"seat-1" "$(stub_calls "$home")" "only a task whose fresh harness is its recorded harness launches again, with its recorded account"
+  assert_contains "$out" "re-dispatched by bin/fm-spawn.sh: ship-same ship-eq" "the same-harness tasks are re-dispatched"
+  assert_contains "$out" "dispatch by hand: ship-moved (" "a harness change under a recorded account is handed to the supervisor"
+  assert_contains "$out" " ship-none (" "a fresh Claude route with no recorded account in a multi-account home is handed to the supervisor"
+  assert_equals "" "$(recorded_ids "$home")" "each handled record is removed"
+  pass "a recorded account is kept on the same harness, and a route it cannot satisfy is dispatched by hand"
 }
 
 test_retry_hands_unclear_routing_to_the_supervisor() {
@@ -732,7 +764,7 @@ test_retry_hands_unclear_routing_to_the_supervisor() {
   set_epoch "$home" ship-f 200
   out=$(retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "the scan must exit 0"$'\n'"$out"
   assert_equals "" "$(stub_calls "$home")" "a task whose routing does not resolve clear is never launched with its recorded routing"
-  assert_contains "$out" "not re-dispatched, dispatch resolution was not clear, dispatch by hand: ship-e (ambiguous) ship-f (no brief)" "the result hands each task to the supervisor with its resolution"
+  assert_contains "$out" "not re-dispatched, routing needs a decision, dispatch by hand: ship-e (ambiguous) ship-f (no brief)" "the result hands each task to the supervisor with its resolution"
   assert_equals 1 "$(wake_rows "$home")" "the hand-off queues one notification"
   assert_equals "" "$(recorded_ids "$home")" "a handed-off record is not scanned again"
   pass "a re-dispatch whose fresh routing is not clear launches nothing and asks for dispatch by hand"
@@ -834,6 +866,7 @@ fm_test_run \
   test_admitted_spawn_clears_its_retry_record \
   test_watcher_reports_the_redispatch \
   test_retry_keeps_launch_flags_and_strips_every_routing_form \
+  test_retry_keeps_the_account_only_on_the_same_harness \
   test_retry_hands_unclear_routing_to_the_supervisor \
   test_retry_skips_held_or_blocked_backlog_items \
   test_retry_report_is_renamed_into_place \
