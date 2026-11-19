@@ -6,15 +6,17 @@
 #   1. Each upstream-owned script (fm-watch.sh, fm-crew-state.sh,
 #      fm-spawn.sh) carries at most one fmd seam line.
 #   2. fmd's open-decisions output matches bin/fm-classify-lib.sh's
-#      status_open_decisions on every fixture under fmd/fixtures/.
+#      status_open_decisions on every fixture under fmd/fixtures/, once
+#      with the default verbs and once with the FM_CLASSIFY_* overrides.
 #   3. `fmd check` passes on a fixture home built from those fixtures.
 #
 # Usage: bin/fm-fmd-check.sh [--home <FM_HOME>] [--build]
 #   --home   Home whose config/supervision mode is reported.
 #            Defaults to $FM_HOME, then this checkout.
-#   --build  Build fmd with cargo first (debug profile).
+#   --build  Build fmd with cargo first (debug profile) when cargo exists.
 #
 # Without --build the check uses the binary fm_fmd_bin resolves.
+# Without cargo, --build is a no-op and the resolved binary is used.
 # When no binary and no cargo exist, a legacy-mode home reports a skip
 # and exits 0, because bash alone is a complete supported posture.
 # A shadow or fmd home with no usable binary fails, because that home
@@ -55,7 +57,7 @@ done
 
 # Resolve or build the binary.
 bin_path=$(fm_fmd_bin)
-if [ "$BUILD" = 1 ] || { [ -z "$bin_path" ] && command -v cargo >/dev/null 2>&1; }; then
+if command -v cargo >/dev/null 2>&1 && { [ "$BUILD" = 1 ] || [ -z "$bin_path" ]; }; then
   if ! cargo build --manifest-path "$ROOT/fmd/Cargo.toml" >/dev/null 2>&1; then
     printf 'fm-fmd-check: FAIL cargo build of fmd/\n' >&2
     exit 1
@@ -78,17 +80,26 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-fmd-check.XXXXXX") || exit 1
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/home/state" "$tmp/home/config"
 printf '%s\n' "$mode" > "$tmp/home/config/supervision"
+parity() { # <status-file> <label> -> 0 when bash and fmd agree
+  local bash_out fmd_out
+  bash_out=$(status_open_decisions "$1")
+  fmd_out=$("$bin_path" open-decisions "$1") || fmd_out='__fmd_failed__'
+  [ "$bash_out" = "$fmd_out" ] && return 0
+  printf 'fm-fmd-check: FAIL parity %s (%s)\n  bash: %s\n  fmd:  %s\n' "$1" "$2" "$bash_out" "$fmd_out" >&2
+  return 1
+}
 for status_file in "$ROOT"/fmd/fixtures/*.status; do
-  bash_out=$(status_open_decisions "$status_file")
-  fmd_out=$("$bin_path" open-decisions "$status_file") || fmd_out='__fmd_failed__'
-  if [ "$bash_out" != "$fmd_out" ]; then
-    printf 'fm-fmd-check: FAIL parity %s\n  bash: %s\n  fmd:  %s\n' "$status_file" "$bash_out" "$fmd_out" >&2
-    fail=1
-  fi
+  parity "$status_file" defaults || fail=1
+  (
+    export FM_CLASSIFY_RESOLVE_VERB=answered FM_CLASSIFY_CAPTAIN_HELD_VERB=parked \
+      FM_CLASSIFY_RESERVED_KEY_PREFIXES=own-
+    parity "$status_file" overrides
+  ) || fail=1
+  [ -L "$status_file" ] && continue
   base=${status_file##*/}
   cp "$status_file" "$tmp/home/state/$base"
   meta_file=${status_file%.status}.meta
-  [ -f "$meta_file" ] && cp "$meta_file" "$tmp/home/state/${base%.status}.meta"
+  [ -f "$meta_file" ] && [ ! -L "$meta_file" ] && cp "$meta_file" "$tmp/home/state/${base%.status}.meta"
 done
 
 # 3. Fixture-home check.

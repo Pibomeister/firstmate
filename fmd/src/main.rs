@@ -10,7 +10,6 @@ mod status;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::Duration;
 
 fn usage() -> &'static str {
     "fmd - opt-in Firstmate supervision sidecar\n\
@@ -23,25 +22,21 @@ fn usage() -> &'static str {
      \x20 fmd snapshot --home <FM_HOME> [--state <dir>]\n\
      \x20 fmd check --home <FM_HOME> [--state <dir>]\n\
      \x20 fmd beat --home <FM_HOME> [--state <dir>]\n\
-     \x20 fmd watch --home <FM_HOME> [--state <dir>] [--once] [--interval-secs N]\n\
      \n\
      Home resolves from --home, then $FM_HOME, then the current directory.\n\
-     State resolves from --state, then $FM_STATE_OVERRIDE, then <home>/state.\n"
+     State resolves from --state, then $FM_STATE_OVERRIDE, then <home>/state.\n\
+     Config resolves from $FM_CONFIG_OVERRIDE, then <home>/config.\n"
 }
 
 struct Args {
     rest: Vec<String>,
     home: PathBuf,
     state: PathBuf,
-    once: bool,
-    interval_secs: u64,
 }
 
 fn parse_args(argv: &[String]) -> Result<Args, String> {
     let mut home: Option<PathBuf> = None;
     let mut state: Option<PathBuf> = None;
-    let mut once = false;
-    let mut interval_secs: u64 = 15;
     let mut rest: Vec<String> = Vec::new();
     let mut i = 0;
     while i < argv.len() {
@@ -54,15 +49,6 @@ fn parse_args(argv: &[String]) -> Result<Args, String> {
                 i += 1;
                 state = Some(PathBuf::from(argv.get(i).ok_or("--state needs a value")?));
             }
-            "--interval-secs" => {
-                i += 1;
-                let v = argv.get(i).ok_or("--interval-secs needs a value")?;
-                interval_secs = v.parse().map_err(|_| "bad --interval-secs")?;
-                if interval_secs == 0 {
-                    return Err("--interval-secs must be positive".into());
-                }
-            }
-            "--once" => once = true,
             other => rest.push(other.to_string()),
         }
         i += 1;
@@ -73,13 +59,7 @@ fn parse_args(argv: &[String]) -> Result<Args, String> {
     let state = state
         .or_else(|| std::env::var_os("FM_STATE_OVERRIDE").map(PathBuf::from))
         .unwrap_or_else(|| home.join("state"));
-    Ok(Args {
-        rest,
-        home,
-        state,
-        once,
-        interval_secs,
-    })
+    Ok(Args { rest, home, state })
 }
 
 fn print_snapshot(state_dir: &Path) {
@@ -126,21 +106,6 @@ fn cmd_check(args: &Args) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn cmd_watch(args: &Args) -> ExitCode {
-    // Polling watch for this slice. It touches only fmd's own beat file,
-    // never the bash watcher's `.last-watcher-beat`, so running it beside
-    // legacy supervision cannot fake bash liveness.
-    loop {
-        print_snapshot(&args.state);
-        let beat = args.state.join(".fmd-beat");
-        let _ = std::fs::write(&beat, format!("{}\n", state::now_epoch()));
-        if args.once {
-            return ExitCode::SUCCESS;
-        }
-        std::thread::sleep(Duration::from_secs(args.interval_secs));
-    }
-}
-
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     if argv.is_empty() || matches!(argv[0].as_str(), "--help" | "-h" | "help") {
@@ -166,15 +131,12 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             };
             let path = Path::new(file);
-            let meta = state::read_meta(&path.with_extension("meta"));
-            let kind = match args.rest.get(1) {
-                Some(k) => match k.as_str() {
-                    "ship" | "scout" | "secondmate" => k.clone(),
-                    _ => "unknown".to_string(),
-                },
-                None => state::kind_for(path, &meta),
+            let kind = match args.rest.get(1).map(String::as_str) {
+                Some("ship" | "scout" | "secondmate") => args.rest[1].clone(),
+                Some(k) if !k.is_empty() => "unknown".to_string(),
+                _ => state::kind_for(path),
             };
-            for d in status::open_decisions(&state::read_lines(path), &kind) {
+            for d in status::open_decisions(&state::read_status_lines(path), &kind) {
                 println!("{}\t{}\t{}", d.key, d.verb, d.note);
             }
             ExitCode::SUCCESS
@@ -212,7 +174,6 @@ fn main() -> ExitCode {
             }
             ExitCode::SUCCESS
         }
-        "watch" => cmd_watch(&args),
         other => {
             eprintln!("fmd: unknown command {other}\n{}", usage());
             ExitCode::FAILURE

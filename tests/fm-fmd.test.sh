@@ -23,8 +23,18 @@ test_mode_defaults_to_legacy() {
   printf 'bogus\n' > "$home/config/supervision"
   mode=$(fm_fmd_mode "$home")
   [ "$mode" = legacy ] || fail "bogus config: mode=$mode, want legacy"
+  printf 'fmd \n' > "$home/config/supervision"
+  mode=$(fm_fmd_mode "$home")
+  [ "$mode" = legacy ] || fail "trailing space: mode=$mode, want legacy"
+  printf 'fmd' > "$home/config/supervision"
+  mode=$(fm_fmd_mode "$home")
+  [ "$mode" = fmd ] || fail "unterminated first line: mode=$mode, want fmd"
+  mkdir -p "$home/override"
+  printf 'shadow\n' > "$home/override/supervision"
+  mode=$(FM_CONFIG_OVERRIDE="$home/override" fm_fmd_mode "$home")
+  [ "$mode" = shadow ] || fail "config override: mode=$mode, want shadow"
   rm -rf "$home"
-  pass "mode defaults to legacy when config is absent or invalid"
+  pass "mode reads the raw first line, honors the config override, and defaults to legacy"
 }
 
 test_defer_requires_fmd_mode_and_binary() {
@@ -48,6 +58,17 @@ test_defer_requires_fmd_mode_and_binary() {
   pass "defer requires fmd mode plus a usable binary; shadow never defers"
 }
 
+test_bin_ignores_path() {
+  local dir got
+  dir=$(mktemp -d "${TMPDIR:-/tmp}/fm-fmd-test.XXXXXX") || fail "mktemp"
+  printf '#!/bin/sh\nexit 0\n' > "$dir/fmd"
+  chmod +x "$dir/fmd"
+  got=$(FM_FMD_BIN='' PATH="$dir:$PATH" fm_fmd_bin)
+  [ "$got" != "$dir/fmd" ] || fail "an fmd on PATH must not count as the sidecar"
+  rm -rf "$dir"
+  pass "fm_fmd_bin never picks an fmd from PATH"
+}
+
 test_fmd_check_parity_or_documented_skip() {
   local out rc
   out=$("$ROOT/bin/fm-fmd-check.sh" --build 2>&1) && rc=0 || rc=$?
@@ -66,4 +87,5 @@ test_fmd_check_parity_or_documented_skip() {
 fm_test_run \
   test_mode_defaults_to_legacy \
   test_defer_requires_fmd_mode_and_binary \
+  test_bin_ignores_path \
   test_fmd_check_parity_or_documented_skip

@@ -5,9 +5,57 @@
 //! location, verb extraction, the well-formed `[at=...]` epoch, decision
 //! keys, notes, and the whole-file open-decisions fold.
 
-pub const RESOLVE_VERB: &str = "resolved";
-pub const HELD_VERB: &str = "captain-held";
-pub const RESERVED_PREFIXES: [&str; 2] = ["pending-reply-", "claim-refuted-"];
+fn env_or(name: &str, default: &str) -> String {
+    match std::env::var(name) {
+        Ok(v) if !v.is_empty() => v,
+        _ => default.to_string(),
+    }
+}
+
+/// Resolution verb. Mirrors `${FM_CLASSIFY_RESOLVE_VERB:-resolved}`.
+pub fn resolve_verb() -> String {
+    env_or("FM_CLASSIFY_RESOLVE_VERB", "resolved")
+}
+
+/// Captain-held verb. Mirrors `${FM_CLASSIFY_CAPTAIN_HELD_VERB:-captain-held}`.
+pub fn held_verb() -> String {
+    env_or("FM_CLASSIFY_CAPTAIN_HELD_VERB", "captain-held")
+}
+
+fn paused_verb() -> String {
+    env_or("FM_CLASSIFY_PAUSED_VERB", "paused")
+}
+
+/// Reserved key prefixes, split on whitespace like the unquoted bash list.
+fn reserved_prefixes() -> Vec<String> {
+    env_or(
+        "FM_CLASSIFY_RESERVED_KEY_PREFIXES",
+        "pending-reply- claim-refuted-",
+    )
+    .split(is_space)
+    .filter(|w| !w.is_empty())
+    .map(str::to_string)
+    .collect()
+}
+
+/// POSIX `[:space:]` in the C locale.
+fn is_space(c: char) -> bool {
+    matches!(c, ' ' | '\t' | '\n' | '\x0b' | '\x0c' | '\r')
+}
+
+/// A complete `[key=...]` token: `[key=` followed later by `]`.
+fn has_key_token(s: &str) -> bool {
+    match s.find("[key=") {
+        Some(i) => s[i..].contains(']'),
+        None => false,
+    }
+}
+
+/// Mirrors `_fm_classify_is_corr_token`: exactly `corr=` plus 16 hex digits.
+fn is_corr_token(word: &str) -> bool {
+    word.strip_prefix("corr=")
+        .is_some_and(|h| h.len() == 16 && h.bytes().all(|b| b.is_ascii_hexdigit()))
+}
 
 /// Strip every `[at=...]` run that sits before the first colon.
 /// Mirrors `_fm_status_unstamped`.
@@ -29,8 +77,8 @@ pub fn unstamped(line: &str) -> String {
     keep
 }
 
-/// Leading verb word. Mirrors `status_line_verb` for lines without a
-/// correlation token, and drops `corr=...` words when one is present.
+/// Leading verb word. Mirrors `status_line_verb`: past the first word,
+/// only exact correlation tokens are dropped, so prose keeps matching no verb.
 pub fn verb(line: &str) -> String {
     let head = match line.split(':').next() {
         Some(h) => h,
@@ -40,15 +88,15 @@ pub fn verb(line: &str) -> String {
         Some(h) => h,
         None => head,
     };
-    let trimmed = head.trim();
+    let trimmed = head.trim_matches(is_space);
     if !trimmed.contains("corr=") {
         return trimmed.to_string();
     }
-    let mut words = trimmed.split_whitespace();
+    let mut words = trimmed.split(is_space).filter(|w| !w.is_empty());
     let first = words.next().unwrap_or("");
     let mut out = first.to_string();
     for w in words {
-        if w == "corr" || w.starts_with("corr=") {
+        if is_corr_token(w) {
             continue;
         }
         out.push(' ');
@@ -96,14 +144,14 @@ fn key_before_colon(unstamped_line: &str) -> bool {
     } else {
         unstamped_line
     };
-    match target.find("[key=") {
-        Some(i) => target[i..].contains(']'),
-        None => false,
-    }
+    has_key_token(target)
 }
 
 fn key_at_note_head(unstamped_line: &str) -> Option<String> {
-    let rest = unstamped_line.split_once(':')?.1.trim_start();
+    let rest = unstamped_line
+        .split_once(':')?
+        .1
+        .trim_start_matches(is_space);
     let inner = rest.strip_prefix("[key=")?;
     let end = inner.find(']')?;
     Some(inner[..end].to_string())
@@ -144,13 +192,13 @@ pub fn note(line: &str) -> String {
     let Some((_, rest)) = u.split_once(':') else {
         return u;
     };
-    let mut n = rest.trim_start().to_string();
+    let mut n = rest.trim_start_matches(is_space).to_string();
     if !key_before_colon(&u) {
         if let Some(k) = key_at_note_head(&u) {
             if slug_ok(&k) {
                 let token = format!("[key={k}]");
                 if let Some(stripped) = n.strip_prefix(&token) {
-                    n = stripped.trim_start().to_string();
+                    n = stripped.trim_start_matches(is_space).to_string();
                 }
             }
         }
@@ -158,8 +206,9 @@ pub fn note(line: &str) -> String {
     n
 }
 
-fn transition_allowed(key: &str, note_text: &str) -> bool {
-    for prefix in RESERVED_PREFIXES {
+fn transition_allowed(key: &str, note_text: &str, reserved: &[String]) -> bool {
+    for prefix in reserved {
+        let prefix = prefix.as_str();
         if key.starts_with(prefix) {
             return note_text.starts_with(prefix) && note_text[prefix.len()..].contains(':');
         }
@@ -178,33 +227,37 @@ pub struct OpenDecision {
 /// `_fm_decision_fold_line`: needs-decision/blocked open or replace,
 /// resolved/captain-held close, and a ship/scout done/failed clears all.
 pub fn open_decisions(lines: &[String], kind: &str) -> Vec<OpenDecision> {
+    let resolve = resolve_verb();
+    let held = held_verb();
+    let reserved = reserved_prefixes();
     let mut open: Vec<OpenDecision> = Vec::new();
     for line in lines {
         let v = verb(line);
-        match v.as_str() {
-            "needs-decision" | "blocked" | "done" | "failed" | RESOLVE_VERB | HELD_VERB => {}
-            _ => continue,
+        let opens = v == "needs-decision" || v == "blocked";
+        let closes = v == resolve || v == held;
+        if !opens && !closes && v != "done" && v != "failed" {
+            continue;
         }
         let u = unstamped(line);
-        if !u.contains(':') && !u.contains("[key=") {
+        if !u.contains(':') && !has_key_token(&u) {
             continue;
         }
         if u.contains(':') && matches!((v.as_str(), kind), ("done" | "failed", "ship" | "scout")) {
             open.clear();
             continue;
         }
-        if v != "needs-decision" && v != "blocked" && v != RESOLVE_VERB && v != HELD_VERB {
+        if !opens && !closes {
             continue;
         }
         let Some(key) = decision_key(line, "default") else {
             continue;
         };
         let note_text = note(line);
-        if !transition_allowed(&key, &note_text) {
+        if !transition_allowed(&key, &note_text, &reserved) {
             continue;
         }
         open.retain(|d| d.key != key);
-        if v == "needs-decision" || v == "blocked" {
+        if opens {
             open.push(OpenDecision {
                 key,
                 verb: v.clone(),
@@ -221,24 +274,22 @@ pub fn open_decisions(lines: &[String], kind: &str) -> Vec<OpenDecision> {
 /// Bash `last_status_line` also surfaces unrecognized declaration
 /// prefixes as events; fmd's readers only need recognized events.
 pub fn last_event(lines: &[String]) -> Option<String> {
-    const RECOGNIZED: [&str; 9] = [
-        "working",
-        "needs-decision",
-        "blocked",
-        "done",
-        "failed",
-        "note",
-        "paused",
-        RESOLVE_VERB,
-        HELD_VERB,
+    let recognized = [
+        "working".to_string(),
+        "needs-decision".to_string(),
+        "blocked".to_string(),
+        "done".to_string(),
+        "failed".to_string(),
+        "note".to_string(),
+        paused_verb(),
+        resolve_verb(),
+        held_verb(),
     ];
     lines
         .iter()
         .rev()
         .find(|l| {
-            !l.trim().is_empty()
-                && unstamped(l).contains(':')
-                && RECOGNIZED.contains(&verb(l).as_str())
+            !l.trim().is_empty() && unstamped(l).contains(':') && recognized.contains(&verb(l))
         })
         .cloned()
 }
@@ -315,6 +366,23 @@ mod tests {
             last_event(&lines(src)).as_deref(),
             Some("paused [at=1]: waiting on ci")
         );
+    }
+
+    #[test]
+    fn verb_drops_only_exact_corr_tokens() {
+        assert_eq!(verb("resolved corr=x [key=a]: done"), "resolved corr=x");
+        assert_eq!(verb("resolved corr [key=a]: done"), "resolved corr");
+        assert_eq!(
+            verb("resolved corr=0123456789abcdef [key=a]: done"),
+            "resolved"
+        );
+    }
+
+    #[test]
+    fn fold_colonless_needs_complete_key_token() {
+        assert!(open_decisions(&lines("blocked [key=abc\n"), "ship").is_empty());
+        let open = open_decisions(&lines("blocked [key=abc]\n"), "ship");
+        assert_eq!(open[0].key, "abc");
     }
 
     #[test]

@@ -18,6 +18,7 @@ The home-local file `config/supervision` holds one line: `legacy`, `shadow`, or 
 A missing file or any other value means `legacy`.
 `bin/fm-fmd-seam.sh` is the single reader of that file for bash callers.
 `fmd mode --home <FM_HOME>` prints the same verdict from the Rust side.
+Both readers take the raw first line with no trimming and honor `$FM_CONFIG_OVERRIDE`.
 
 In `legacy`, the bash watcher is the only supervision path.
 In `shadow`, bash stays authoritative and fmd output may be compared against it.
@@ -27,9 +28,10 @@ When the binary is absent, callers stay on bash.
 ## What this slice provides
 
 `fmd open-decisions`, `fmd last-event`, `fmd meta`, `fmd snapshot`, `fmd beat`, and `fmd check` read `state/<id>.status`, `state/<id>.meta`, and `state/.last-watcher-beat`.
-`fmd watch --once` prints one snapshot pass and touches only `state/.fmd-beat`.
-The polling watch loop never touches the bash watcher's beat file.
+This slice is read-only: no command writes to a home.
+The binary counts for the seam only through `$FM_FMD_BIN` or this repo's `fmd/target/` builds, never through `PATH`.
 Parity fixtures live under `fmd/fixtures/`.
+They cover each rule where a looser reader would disagree with bash: exact correlation tokens, complete key tokens, empty `kind=`, symlinked status and meta files, CR bytes, and the `FM_CLASSIFY_*` verb and prefix overrides.
 
 ## Upstream sync
 
