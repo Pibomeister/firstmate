@@ -1,0 +1,4 @@
+Thu Nov 19 13:34:21 CST 2026
+not ok - away: a posture change during client selection must withhold the retried send: text	fixture:w1:p1	: Firstmate resume after context compaction: re-read state and open goals (run bin/fm-wake-drain.sh and bin/fm-order.sh pickup), then continue the open work.
+exit=1
+Thu Nov 19 13:43:41 CST 2026

@@ -1,0 +1,2 @@
+ok - resume doorbell: a protocol_mismatch retry re-checks posture after client selection; an unchanged posture still delivers
+exit=0

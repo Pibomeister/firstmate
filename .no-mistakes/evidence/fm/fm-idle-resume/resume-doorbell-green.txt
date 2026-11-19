@@ -1,0 +1,16 @@
+ok - resume doorbell: an idle session with an empty composer gets one line and the submit is confirmed
+ok - resume doorbell: a running turn (native or rendered), a draft, a dead agent, an unproven busy state, no handle, a handle older than the session lock, an away record, or a turn that already ran types nothing
+ok - resume doorbell: typing needs a native idle plus a quiet transcript; an unproven busy state stands down
+ok - resume doorbell: an assistant record after the newest compact boundary stands it down; an idle compaction still delivers
+ok - resume doorbell: a session lock that changed owner during the settle stands it down
+ok - resume doorbell: a lock another doorbell took over stands it down and is left to its new holder
+ok - resume doorbell: a dropped Enter is resubmitted, bounded, and only a confirmed submit logs submitted
+ok - resume doorbell: a /clear or a new context epoch before the start or during the settle stands it down; an unchanged epoch still delivers
+ok - resume doorbell: an away record, a moved session lock, or a new context after a pending first send withholds every resubmit Enter
+ok - resume doorbell: a doorbell for a newer context waits out an older one and delivers once; a same-context one stands down
+ok - resume doorbell: an away record, a moved session lock, or a new context during the idle reads withholds the first send
+ok - resume doorbell: a posture change inside the send helper, the adapter, or the resubmit composer read withholds the next keystroke
+ok - resume doorbell: a session other than the one that recorded the context gets nothing
+ok - resume doorbell: a protocol_mismatch retry re-checks posture after client selection; an unchanged posture still delivers
+ok - resume doorbell: a second doorbell while one is live types nothing
+exit=0
