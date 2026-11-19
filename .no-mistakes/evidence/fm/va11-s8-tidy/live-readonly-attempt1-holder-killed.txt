@@ -1,0 +1,27 @@
+sandbox=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s8-ro.8nUeAl
+=== R1 full locked start (seed baseline): bin/fm-session-start.sh  ===
+rc=0
+(no SHARED_STATE line)
+baseline sha=5fa3dbe2750a
+--- edited sandbox GIT_CONFIG_GLOBAL
+/tmp/fm-s8-driver/readonly.sh: line 11: 50790 Killed: 9               "$SB/holderbin/claude" 600
+--- lock held by live process pid=50790 comm=
+=== R2 start while another session holds the lock: bin/fm-session-start.sh  ===
+rc=0
+SHARED_STATE: global git config changed since the last session start (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s8-ro.8nUeAl/gitconfig) - workers must never edit shared git config; inspect recent changes and restore any unintended setting
+baseline sha=0217f7a373a4
+=== R2b --reemit while lock held: bin/fm-session-start.sh --reemit ===
+rc=0
+(no SHARED_STATE line)
+baseline sha=0217f7a373a4
+/tmp/fm-s8-driver/readonly.sh: line 23: kill: (50790) - No such process
+=== R3 full locked start after holder exits: bin/fm-session-start.sh  ===
+rc=0
+(no SHARED_STATE line)
+baseline sha=0217f7a373a4
+=== R4 next full locked start: bin/fm-session-start.sh  ===
+rc=0
+(no SHARED_STATE line)
+baseline sha=0217f7a373a4
+sandbox removed
+driver-exit=0

@@ -1,0 +1,74 @@
+sandbox=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s8-sb.DJCijw
+=== S1 first full locked start (baseline seed): bin/fm-session-start.sh  ===
+rc=0 elapsed=25s
+(no SHARED_STATE line)
+git-alarm-count=0
+db-alarm-count=0
+baseline sha=7234354478f7
+=== S1b second full locked start (unchanged): bin/fm-session-start.sh  ===
+rc=0 elapsed=23s
+(no SHARED_STATE line)
+git-alarm-count=0
+db-alarm-count=0
+baseline sha=7234354478f7
+--- worker-style edit: git config --global core.autocrlf input (sandbox GIT_CONFIG_GLOBAL)
+=== S2 --reemit after edit: bin/fm-session-start.sh --reemit ===
+rc=0 elapsed=16s
+SHARED_STATE: global git config changed since the last session start (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s8-sb.DJCijw/gitconfig) - workers must never edit shared git config; inspect recent changes and restore any unintended setting
+git-alarm-count=1
+db-alarm-count=0
+baseline sha=7234354478f7
+=== S3 read-only (lock held by pid 175): bin/fm-session-start.sh  ===
+rc=0 elapsed=26s
+SHARED_STATE: global git config changed since the last session start (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s8-sb.DJCijw/gitconfig) - workers must never edit shared git config; inspect recent changes and restore any unintended setting
+git-alarm-count=1
+db-alarm-count=0
+baseline sha=a9e0e41fd407
+=== S4 full locked start after edit: bin/fm-session-start.sh  ===
+rc=0 elapsed=29s
+(no SHARED_STATE line)
+git-alarm-count=0
+db-alarm-count=0
+baseline sha=a9e0e41fd407
+=== S5 next full locked start (should be silent): bin/fm-session-start.sh  ===
+rc=0 elapsed=22s
+(no SHARED_STATE line)
+git-alarm-count=0
+db-alarm-count=0
+baseline sha=a9e0e41fd407
+--- create NM DB with initial table
+=== D1 after DB first creation (absent->schema; silent expected): bin/fm-session-start.sh  ===
+rc=0 elapsed=35s
+(no SHARED_STATE line)
+git-alarm-count=0
+db-alarm-count=0
+baseline sha=b97554f4a78c
+--- DML: INSERT rows
+=== D2 after row inserts (silent expected): bin/fm-session-start.sh  ===
+rc=0 elapsed=46s
+(no SHARED_STATE line)
+git-alarm-count=0
+db-alarm-count=0
+baseline sha=b97554f4a78c
+--- DDL: ALTER TABLE runs ADD COLUMN branch TEXT
+=== D3 after DDL (alarm expected once): bin/fm-session-start.sh  ===
+rc=0 elapsed=36s
+SHARED_STATE: shared no-mistakes database schema changed since the last session start (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-s8-sb.DJCijw/nm/state.sqlite) - workers must never alter shared databases; inspect no-mistakes version and state database before dispatching pipeline runs
+git-alarm-count=0
+db-alarm-count=1
+baseline sha=f30b65efa7c2
+=== D4 next start (silent expected): bin/fm-session-start.sh  ===
+rc=0 elapsed=52s
+(no SHARED_STATE line)
+git-alarm-count=0
+db-alarm-count=0
+baseline sha=f30b65efa7c2
+--- adversarial: ignore a worker-style edit to a per-clone .git/config (documented as not watched)
+=== A1 after per-clone .git/config edit (documented: not watched, silent): bin/fm-session-start.sh  ===
+rc=0 elapsed=82s
+(no SHARED_STATE line)
+git-alarm-count=0
+db-alarm-count=0
+baseline sha=f30b65efa7c2
+sandbox removed: yes
+driver-exit=0

@@ -1,0 +1,3 @@
+67:### 1. Setup and install changes passed only in a warm worktree
+68:- Failure: a setup or install change passed in the worker's existing warm worktree, where cached dependencies, generated files, and prior initialization hid a broken cold-start path on a fresh clone.
+69-- Rule: before reporting a setup, bootstrap, or install change done, verify the documented setup flow end-to-end in a fresh clone (or clean temporary directory with no pre-seeded caches or local state), not only in the warm task worktree, and record the fresh-clone verification output.
