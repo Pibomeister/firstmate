@@ -750,12 +750,12 @@ mr_head_first_started() {  # <head-dir>
 mr_round_compute() {
   local pr_dir head_dir own other count=0
   pr_dir=$(dirname "$MR_STORE")
-  own=$(mr_head_first_started "$MR_STORE") || own=$(date +%s)
+  own=$(mr_head_first_started "$MR_STORE") || own=''
   for head_dir in "$pr_dir"/*; do
     [ -d "$head_dir" ] && [ "$head_dir" != "$MR_STORE" ] || continue
     fm_pr_head_valid "$(basename "$head_dir")" || continue
     other=$(mr_head_first_started "$head_dir") || continue
-    [ "$other" -ge "$own" ] || count=$((count + 1))
+    [ -n "$own" ] && [ "$other" -ge "$own" ] || count=$((count + 1))
   done
   MR_ROUND=$((count + 1))
 }
