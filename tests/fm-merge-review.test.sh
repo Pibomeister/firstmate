@@ -1199,6 +1199,49 @@ test_verify_finding_red_at_both_is_pre_existing() {
   pass "verify-finding: red at both the head and the merge base is pre-existing"
 }
 
+test_verify_finding_red_at_both_on_a_file_the_head_adds_gives_no_evidence() {
+  local rc=0
+  make_case verify-new-file
+  mkdir -p "$REPO/bin"
+  printf 'echo "tool is broken"; exit 1\n' > "$REPO/bin/new-tool.sh"
+  git -C "$REPO" add bin/new-tool.sh
+  git -C "$REPO" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm 'add a tool'
+  HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
+  write_repro quiet.sh 'bash bin/new-tool.sh > /dev/null 2>&1; echo "the tool fails"; exit 1'
+  run_verify quiet.sh tests/repro-quiet.test.sh --out "$CASE/quiet" || rc=$?
+  expect_code 0 "$rc" "verify new file"
+  expect_verify_field 'no-evidence' "verify new file"
+  expect_verify_field 'head_result=red' "verify new file"
+  expect_verify_field 'base_result=red' "verify new file"
+
+  rc=0
+  write_repro direct.sh 'bash bin/new-tool.sh || exit 1'
+  run_verify direct.sh tests/repro-direct.test.sh --out "$CASE/direct" || rc=$?
+  expect_code 0 "$rc" "verify new file direct"
+  expect_verify_field 'no-evidence' "verify new file direct"
+  expect_verify_field 'head_result=red' "verify new file direct"
+  pass "verify-finding: red at both on a file the head adds is not pre-existing"
+}
+
+test_verify_finding_a_reproduction_that_cannot_run_reports_error() {
+  local rc=0
+  make_case verify-cannot-run
+  write_repro history.sh 'git rev-parse HEAD'
+  run_verify history.sh tests/repro-history.test.sh --out "$CASE/history" || rc=$?
+  expect_code 0 "$rc" "verify git history"
+  expect_verify_field 'no-evidence' "verify git history"
+  expect_verify_field 'head_result=error' "verify git history"
+  expect_verify_field 'base_result=skipped' "verify git history"
+
+  rc=0
+  write_repro dependency.sh '. node_modules/helper.sh || exit 1'
+  run_verify dependency.sh tests/repro-dependency.test.sh --out "$CASE/dependency" || rc=$?
+  expect_code 0 "$rc" "verify missing dependency"
+  expect_verify_field 'no-evidence' "verify missing dependency"
+  expect_verify_field 'head_result=error' "verify missing dependency"
+  pass "verify-finding: a reproduction that cannot run in the snapshot reports error, not red"
+}
+
 test_verify_finding_green_at_head_gives_no_evidence() {
   local rc=0
   make_case verify-green
@@ -1263,6 +1306,8 @@ test_verify_finding_refuses_paths_outside_new_test_files_and_supervisors() {
 fm_test_run \
   test_verify_finding_red_at_head_and_green_at_base_is_introduced_evidence \
   test_verify_finding_red_at_both_is_pre_existing \
+  test_verify_finding_red_at_both_on_a_file_the_head_adds_gives_no_evidence \
+  test_verify_finding_a_reproduction_that_cannot_run_reports_error \
   test_verify_finding_green_at_head_gives_no_evidence \
   test_verify_finding_timeout_and_outside_writes_give_no_evidence \
   test_verify_finding_refuses_paths_outside_new_test_files_and_supervisors \
