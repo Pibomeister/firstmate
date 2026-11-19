@@ -114,6 +114,45 @@ test_clean_apply_deletes_only_old_cache_and_logs() {
   pass "clean --apply removes only whole old cache and log entries and logs the run"
 }
 
+npm_home() {  # <home> <index-age: old|fresh>: build a default-root npm cache
+  local home=$1
+  mkdir -p "$home/.npm/_cacache/content-v2/sha512/ab" "$home/.npm/_cacache/index-v5/cd" "$home/vol"
+  printf 'blob\n' > "$home/.npm/_cacache/content-v2/sha512/ab/blob"
+  printf 'index\n' > "$home/.npm/_cacache/index-v5/cd/entry"
+  touch -t 202501010000 "$home/.npm/_cacache/content-v2/sha512/ab/blob" \
+    "$home/.npm/_cacache/content-v2/sha512/ab" "$home/.npm/_cacache/content-v2/sha512" \
+    "$home/.npm/_cacache/content-v2"
+  if [ "$2" = old ]; then
+    touch -t 202501010000 "$home/.npm/_cacache/index-v5/cd/entry" \
+      "$home/.npm/_cacache/index-v5/cd" "$home/.npm/_cacache/index-v5" "$home/.npm/_cacache"
+  fi
+}
+
+run_default_roots() {  # <home> [args...]: run with the default roots under home
+  local home=$1
+  shift
+  RC=0
+  OUT=$(env -u FM_CLEANUP_CACHE_ROOTS -u FM_CLEANUP_LOG_ROOTS -u FM_CLEANUP_WORKTREE_ROOTS \
+    -u FM_CLEANUP_DIR -u XDG_STATE_HOME HOME="$home" \
+    FM_TEST_SEAM=1 FM_CLEANUP_VOLUME="$home/vol" FM_FAKE_VOLUME="$home/vol" \
+    FM_FAKE_DF_AVAIL=209715200 FM_CLEANUP_TARGET_GIB=100 \
+    PATH="$FAKE:$BASE_PATH" bash "$CLEANUP" "$@" 2>&1) || RC=$?
+}
+
+test_npm_cacache_is_one_entry_under_default_roots() {
+  local fresh="$TMP_ROOT/home-fresh" old="$TMP_ROOT/home-old"
+  npm_home "$fresh" fresh
+  run_default_roots "$fresh" clean --apply
+  [ "$RC" = 0 ] || fail "npm fresh index: expected exit 0, got $RC"$'\n'"$OUT"
+  assert_present "$fresh/.npm/_cacache/content-v2/sha512/ab/blob" "old npm content survives while its index is fresh"
+  assert_present "$fresh/.npm/_cacache/index-v5/cd/entry" "the fresh npm index survives"
+  npm_home "$old" old
+  run_default_roots "$old" clean --apply
+  [ "$RC" = 0 ] || fail "npm fully old: expected exit 0, got $RC"$'\n'"$OUT"
+  assert_absent "$old/.npm/_cacache" "a fully old npm cache is removed whole"
+  pass "npm's _cacache is judged and removed as one whole entry under the default roots"
+}
+
 test_usage_errors_exit_2() {
   run_cleanup 209715200 frobnicate
   assert_equals "2" "$RC" "an unknown mode is a usage error"
@@ -130,4 +169,5 @@ fm_test_run \
   test_report_under_target_exits_3 \
   test_clean_dry_run_deletes_nothing \
   test_clean_apply_deletes_only_old_cache_and_logs \
+  test_npm_cacache_is_one_entry_under_default_roots \
   test_usage_errors_exit_2

@@ -27,7 +27,7 @@
 # half-deleted. An entry that cannot be fully read is never treated as old.
 # report and clean count entries by this same rule.
 # Default cache roots: $HOME/Library/Caches, $HOME/.cache, and
-# $HOME/.npm/_cacache.
+# $HOME/.npm, so npm's _cacache (content-v2 with its index-v5) is one entry.
 # Default log roots: $HOME/Library/Logs.
 # FM_CLEANUP_CACHE_ROOTS and FM_CLEANUP_LOG_ROOTS replace them (colon list).
 # Worktree roots (default $HOME/orca/workspaces, FM_CLEANUP_WORKTREE_ROOTS)
@@ -53,7 +53,7 @@ STATE_DIR=${FM_CLEANUP_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/firstmate/host
 AGE_DAYS=${FM_CLEANUP_AGE_DAYS:-7}
 LOG_AGE_DAYS=${FM_CLEANUP_LOG_AGE_DAYS:-14}
 TARGET_GIB=${FM_CLEANUP_TARGET_GIB:-100}
-CACHE_ROOTS=${FM_CLEANUP_CACHE_ROOTS:-$HOME/Library/Caches:$HOME/.cache:$HOME/.npm/_cacache}
+CACHE_ROOTS=${FM_CLEANUP_CACHE_ROOTS:-$HOME/Library/Caches:$HOME/.cache:$HOME/.npm}
 LOG_ROOTS=${FM_CLEANUP_LOG_ROOTS:-$HOME/Library/Logs}
 WORKTREE_ROOTS=${FM_CLEANUP_WORKTREE_ROOTS:-$HOME/orca/workspaces}
 
