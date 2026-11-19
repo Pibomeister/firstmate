@@ -4193,6 +4193,23 @@ test_worker_credential_page_withholds_typed_values() {
   pass "a credential stop on an approval picker pages the owner without recording its pane text, even while another pass holds the worker lock"
 }
 
+test_away_bash_prompt_row_keeps_the_command() {
+  local out
+  make_home "$(cat "$ROOT/tests/fixtures/permission-prompt/claude-2.1.325-bash-prompt.txt")"
+  transcript 100 "Working."
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  : > "$H/state/.afk"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows dialog page pending)" "the real Bash prompt pages the owner: $(ledger | cut -f5-8)"
+  out=$(FM_HOME="$H" FM_STATE_OVERRIDE="$H/state" FM_CONFIG_OVERRIDE="$H/config" "$ROOT/bin/fm-afk-preallow.sh" derive) \
+    || fail "derive on the recorded row failed: $out"
+  assert_contains "$out" "entries=1 excluded=0" "the recorded row of a real Bash prompt gives one entry: $out"
+  assert_equals "Bash(touch /tmp/probe/fm-perm-probe2.txt)" "$(cat "$H/state/afk-preallow/candidate.list")" \
+    "the entry is the exact command shown in the prompt"
+  pass "an away Bash prompt with a pane-wide rule records its whole command for the pre-allow list"
+}
+
 test_worker_permission_dialog_pages_the_owner() {
   local dialog=$'Do you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently\n\nEsc to cancel'
   local question=$'Which plan should I follow?\n ❯ 1. Plan A (Recommended)\n   2. Plan B\n\nEnter to select · ↑/↓ to navigate · Esc to cancel'
@@ -6467,6 +6484,7 @@ fm_test_run \
   test_context_burn_file_is_not_a_context_source \
   test_dialog_kind_ignores_conversation_rows \
   test_away_permission_dialog_pages_the_owner \
+  test_away_bash_prompt_row_keeps_the_command \
   test_worker_permission_dialog_pages_the_owner \
   test_worker_credential_page_withholds_typed_values \
   test_low_context_undeliverable_nudge_leaves_frozen_recovery \

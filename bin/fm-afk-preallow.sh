@@ -39,7 +39,8 @@
 # SOURCE ROWS. A ledger row counts when its symptom is `dialog`, its action is
 # `page`, its phase is `pending` or `dry-run`, and its detail carries
 # `permission: <dialog text>`. The watchdog writes that row for a permission
-# dialog on an away session, and cuts the text at 300 characters.
+# dialog on an away session, shortens each dashed rule, and cuts the text at
+# 300 characters.
 #
 # ENTRIES. An entry is `Bash(<command>)`: the exact command of a recorded
 # Claude Bash prompt, which Claude Code matches as that command only. There
