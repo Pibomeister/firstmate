@@ -1450,7 +1450,7 @@ unclaimed for a later scan.
 
 This route does not call the watchdog's decision council ([`docs/watchdog.md`](watchdog.md)): every overdue decision stays open and
 enters the configured captain page path; this route decides nothing unattended.
-An hour-old no-mistakes ask-user gate can also reach an AgentKit council through the separate opt-in trigger below; that trigger never replaces or delays this page.
+A no-mistakes ask-user gate open past a configured age (default one hour) can also reach an AgentKit council through the separate opt-in trigger below; that trigger never replaces or delays this page.
 The claim records `page-sent`, `page-failed`, or `page-pending` from the notifier's actual result.
 Pending or failed pages, and claims interrupted before their page result, retry after 60 seconds while that decision remains open.
 

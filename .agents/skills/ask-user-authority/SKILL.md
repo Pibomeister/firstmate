@@ -58,7 +58,7 @@ A council ruling is evidence, never the captain's approval, and it never waives 
 
 ## Away gate council ruling
 
-A `check: gate council ruled:` wake carries an AgentKit council record for an ask-user gate that waited an hour while away ([`docs/configuration.md`](../../../docs/configuration.md) "Away gate council" owns the trigger).
+A `check: gate council ruled:` wake carries an AgentKit council record for an ask-user gate that stayed open past the configured age (default one hour) while away ([`docs/configuration.md`](../../../docs/configuration.md) "Away gate council" owns the trigger).
 Read the record and the findings, then decide the gate here as for any other ask-user finding, with the record as evidence.
 An `approve` or `decline` outcome may be applied as the ruled `fix` or `decline` through the normal steer that answers the gate, unless a finding is destructive, irreversible, or genuinely security-sensitive under "Decide" step 4, which still escalates.
 Any other outcome - `escalate`, `refused`, `error`, or `unfinished` - holds the gate for the captain once, with the record or log as the evidence.

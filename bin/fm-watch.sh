@@ -176,8 +176,8 @@
 #                          header owns the result parts
 #   check: gate council ruled: <task> key=<key> outcome=<outcome> choice=<choice> record=<path>|log=<path>
 #                          opt-in config/gate-council away trigger: an
-#                          `ak council run` started for an hour-old ask-user
-#                          gate finished (or stayed unfinished); the record is
+#                          `ak council run` started for an ask-user gate open
+#                          past after-secs finished (or stayed unfinished); the record is
 #                          evidence only, and away_gate_council_tick owns it
 #   check: process-event result captured: <keys>
 #                          a durably captured process-to-event result is queued
