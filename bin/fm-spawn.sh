@@ -4577,6 +4577,24 @@ json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
+# spawn_claude_away_preallow_json - the `"permissions":{"allow":[...]},` member
+# for a Claude ship or scout worker launched while a valid away record is in
+# force, built from the owner-approved list. bin/fm-afk-preallow.sh owns the
+# list and its approval; any failed read there prints nothing here, so the
+# worker's settings stay as they are without an approval.
+spawn_claude_away_preallow_json() {
+  local entries entry items=
+  [ -f "$STATE/.afk-contract" ] || return 0
+  FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-afk-contract.sh" validate >/dev/null 2>&1 || return 0
+  [ "$(FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-afk-contract.sh" mode 2>/dev/null)" = away ] || return 0
+  entries=$(FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-afk-preallow.sh" approved 2>/dev/null) || return 0
+  [ -n "$entries" ] || return 0
+  while IFS= read -r entry; do
+    items="$items${items:+,}\"$(json_escape "$entry")\""
+  done <<<"$entries"
+  printf '"permissions":{"allow":[%s]},' "$items"
+}
+
 # rovo confines every file-tool operation (open_files, create_file, grep, ...)
 # to its worktree by default; toolPermissions.allowedExternalPaths
 # (~/.rovo/config.yml) is the only lift, and it must be granted at launch
@@ -7769,7 +7787,7 @@ BUSY_GEN=
       printf '{%s%s}\n' "$session_keys" "$hooks_json" >"$STATE_REAL/$ID.claude-settings.json"
     else
       mkdir -p "$WT/.claude"
-      printf '{%s}\n' "$hooks_json" >"$WT/.claude/settings.local.json"
+      printf '{%s%s}\n' "$(spawn_claude_away_preallow_json)" "$hooks_json" >"$WT/.claude/settings.local.json"
       exclude_path '.claude/settings.local.json'
     fi
     ;;
