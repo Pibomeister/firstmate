@@ -3033,6 +3033,107 @@ test_a_review_with_a_form_defect_defers_no_earlier_finding() {
   pass "a review that counts only for its dissent defers no earlier finding"
 }
 
+test_an_edge_case_line_keeps_a_review_with_a_form_defect() {
+  local rc name
+  # Round three. One approval has a line that does not fit the form and calls
+  # a finding an edge case with no class: once the prior F1, once a NEW one.
+  for name in defect-edge-prior defect-edge-new; do
+    make_case "$name" "${THREE_SEATS[@]}"
+    set_review claude \
+      'FINDING NEW | BLOCKING | none | feature.txt:1 | The reader breaks on the first line.' \
+      'VERDICT: BLOCK @HEAD@'
+    rc=0
+    run_at_head || rc=$?
+    expect_code 1 "$rc" "$name: round 1"
+    next_head 'second head'
+    set_review claude \
+      'FINDING F1 | BLOCKING | none | feature.txt:1 | The reader still breaks.' \
+      'VERDICT: BLOCK @HEAD@'
+    set_review agy \
+      'FINDING F1 | BLOCKING | none | feature.txt:1 | The reader still breaks.' \
+      'VERDICT: BLOCK @HEAD@'
+    rc=0
+    run_at_head || rc=$?
+    expect_code 1 "$rc" "$name: round 2"
+
+    next_head 'third head'
+    case "$name" in
+      defect-edge-prior)
+        set_review claude \
+          'FINDING F1 | EDGE-CASE | none | feature.txt:1 | Only an empty file still breaks it.' \
+          'FINDING NEW | NON-BLOCKING | feature.txt:2' \
+          'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+        ;;
+      *)
+        set_review claude \
+          'FINDING F1 | RESOLVED | none | feature.txt:1 | The reader is fixed.' \
+          'FINDING NEW | EDGE-CASE | none | feature.txt:2 | Only a file with no newline loses a line.' \
+          'FINDING NEW | NON-BLOCKING | feature.txt:2' \
+          'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+        ;;
+    esac
+    set_review agy \
+      'FINDING F1 | RESOLVED | none | feature.txt:1 | The reader is fixed.' \
+      'VERDICT: APPROVE @HEAD@'
+    set_review grok \
+      'FINDING F1 | RESOLVED | none | feature.txt:1 | The reader is fixed.' \
+      'VERDICT: APPROVE @HEAD@'
+    rc=0
+    run_at_head || rc=$?
+    expect_code 1 "$rc" "$name: round 3 ($(cat "$CASE/stdout"))"
+    assert_present "$(store_dir)/$CLAUDE_SEAT.receipt" "$name: the review that called a finding an edge case left no receipt"
+    assert_equals 0 "$(calls grok)" "$name: a spare replaced the review that called a finding an edge case"
+    assert_absent "$STUB/agy.council-calls" "$name: a finding of a review with a form defect was put to the other seat"
+    findings_at_head || fail "$name: findings failed"
+    case "$name" in
+      defect-edge-prior) assert_match "^F1	open	" "$CASE/stdout" "$name: the finding is not open ($(cat "$CASE/stdout"))" ;;
+      *) assert_match "^F2	open	" "$CASE/stdout" "$name: the new finding is not open ($(cat "$CASE/stdout"))" ;;
+    esac
+  done
+  pass "an edge case in a review with a form defect is a dissent: the review counts and the finding stays open"
+}
+
+test_a_review_with_a_form_defect_puts_no_new_finding_to_a_vote() {
+  local rc=0
+  tie_rounds defect-new-vote
+  # Round three. One review rules on F1 twice, so it counts only because one
+  # of those lines holds F1. It also reports a NEW edge case.
+  set_review claude \
+    'FINDING F1 | REGRESSION | none | feature.txt:1 | The empty file still loops.' \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The empty file returns.' \
+    'FINDING NEW | EDGE-CASE | none | feature.txt:2 | Only a file with no newline loses a line.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  set_review agy \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The empty file returns.' \
+    'VERDICT: APPROVE @HEAD@'
+  set_council agy \
+    'DISPOSITION F2 | REGRESSION | none | The merge base keeps the last line.' \
+    'COUNCIL: DONE @HEAD@'
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "defect-new-vote: round 3"
+  assert_present "$(store_dir)/$CLAUDE_SEAT.receipt" "defect-new-vote: the dissent was discarded for its form"
+  assert_absent "$STUB/agy.council-calls" "defect-new-vote: the new finding of a review with a form defect was put to the other seat"
+  assert_equals 0 "$(council_calls)" "defect-new-vote: a finding of a review with a form defect went to the tie-break council"
+  findings_at_head || fail "defect-new-vote: findings failed"
+  assert_match "^F2	open	" "$CASE/stdout" "defect-new-vote: the new finding is not open ($(cat "$CASE/stdout"))"
+
+  # The next round gets it as open, so every seat must rule on it.
+  next_head 'fourth head'
+  set_review claude \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The empty file returns.' \
+    'FINDING F2 | RESOLVED | none | feature.txt:2 | The last line is kept.' \
+    'VERDICT: APPROVE @HEAD@'
+  set_review agy \
+    'FINDING F1 | RESOLVED | none | feature.txt:1 | The empty file returns.' \
+    'FINDING F2 | RESOLVED | none | feature.txt:2 | The last line is kept.' \
+    'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 0 "$rc" "defect-new-vote: round 4 ($(cat "$CASE/stdout" "$CASE/stderr"))"
+  assert_match "^F2 | open | " "$STUB/agy.prior" "defect-new-vote: the next round did not get the new finding as open"
+  pass "a new finding of a review that counts only for its dissent stays open and goes to no vote"
+}
+
 test_a_run_lock_with_no_owner_yet_is_read_as_held() {
   local rc=0 pr calls_before
   make_case ownerless-lock "${TWO_SEATS[@]}"
@@ -3156,6 +3257,37 @@ test_a_council_answer_counts_only_while_the_roster_is_configured() {
   pass "with the council roster removed, a stored council answer defers no tie, at its head or a later one"
 }
 
+test_a_carried_council_deferral_does_not_outlast_the_roster_and_a_seat() {
+  local rc=0
+  tie_rounds tie-seat-left
+  split_reviews
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "tie-seat-left: round 3"
+  run_supervisor followup "$PR_URL" --head "$HEAD_SHA" --finding F1 --ref 'https://example.invalid/issues/9' \
+    || fail "tie-seat-left: the follow-up was refused ($(cat "$CASE/stderr"))"
+
+  # Round four: another seat reviews in place of one that ruled on the tie,
+  # and that one stays declared as a spare. The head starts from the deferral.
+  printf '%s\n' 'seat=anthropic:claude:claude-test-1' 'seat=xai:grok:grok-test' 'spare=google:agy:gemini-test-high' \
+    "council-config=$CASE/roster.json" > "$HOME_DIR/config/merge-review"
+  next_head 'fourth head'
+  set_review claude 'VERDICT: APPROVE @HEAD@'
+  set_review grok 'VERDICT: APPROVE @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 0 "$rc" "tie-seat-left: round 4 with the roster ($(cat "$CASE/stdout" "$CASE/stderr"))"
+  assert_match "^F1 | deferred | " "$STUB/grok.prior" "tie-seat-left: round 4 did not start from the deferral"
+
+  # The home removes that spare and the roster. The head before no longer
+  # shows a deferral by its seats, so the carried one does not count.
+  printf '%s\n' 'seat=anthropic:claude:claude-test-1' 'seat=xai:grok:grok-test' > "$HOME_DIR/config/merge-review"
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 1 "$rc" "tie-seat-left: check after the roster and the seat were removed ($(cat "$CASE/stdout"))"
+  assert_grep " open=F1 " "$CASE/stdout" "tie-seat-left: a carried council deferral still counted ($(cat "$CASE/stdout"))"
+  pass "with the council roster removed, a carried council deferral counts at no later head, whatever seats are declared"
+}
+
 test_the_council_answer_is_stored_from_a_relative_home() {
   local rc=0
   tie_rounds tie-relative
@@ -3251,7 +3383,10 @@ fm_test_run \
   test_a_classed_note_on_an_open_finding_is_a_dissent_that_leaves_a_receipt \
   test_a_review_with_a_form_defect_settles_no_earlier_finding \
   test_a_review_with_a_form_defect_defers_no_earlier_finding \
+  test_an_edge_case_line_keeps_a_review_with_a_form_defect \
+  test_a_review_with_a_form_defect_puts_no_new_finding_to_a_vote \
   test_a_run_lock_with_no_owner_yet_is_read_as_held \
   test_a_finding_a_stopped_run_left_without_an_id_reaches_the_next_round \
   test_a_council_answer_counts_only_while_the_roster_is_configured \
+  test_a_carried_council_deferral_does_not_outlast_the_roster_and_a_seat \
   test_the_council_answer_is_stored_from_a_relative_home

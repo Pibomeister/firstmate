@@ -152,16 +152,18 @@
 # BLOCK, and such a tie stays open. Its answer changes one finding's state
 # and nothing else. With no council-config key a tie stays open, a stored
 # council record is not read, and a finding that a later head carries as
-# deferred on a council answer is open there. AgentKit owns the council rule,
+# deferred is open there unless the seats of the head before deferred it, as
+# this home's present seats read that head. AgentKit owns the council rule,
 # the roster, and the record.
 #
 # A review whose finding lines are malformed leaves no receipt, like a bad
 # verdict line, unless it dissents: a BLOCK verdict or a well-formed line that
 # holds a finding or gives one a class is always recorded, so a format error
-# never discards a dissent. Such a review holds what it holds and settles no
-# earlier finding: its other status lines for prior findings do not count,
-# and a line of its that holds a finding is no ruling toward a deferral or a
-# tie.
+# never discards a dissent. In such a review an EDGE-CASE line holds its
+# finding in every round, so it is a dissent too. Such a review holds what it
+# holds and settles no finding: its other status lines for prior findings do
+# not count, and a line of its that holds a finding, a prior one or a NEW
+# one, keeps it open and is no ruling toward a deferral or a tie.
 #
 # Model identity: a receipt records the model the seat requested and the model
 # the tool reported. claude and grok report the model they ran; a report that
@@ -698,7 +700,8 @@ mr_parse_lines() {  # <file> <FINDING|DISPOSITION>
 # with a class, then any other; the earliest wins a tie), and a class on any line stays
 # with it. A NON-BLOCKING line for an open finding stays a form defect. In a
 # review with a form defect, a line that gives an open finding a class sets
-# "B", whatever its status, so the class is not lost with the review.
+# "B", whatever its status, so the class is not lost with the review, and so
+# does an EDGE-CASE line in any round, so the finding is not lost with it.
 mr_findings_filter() {  # <round> <prior-file-or-empty>
   LC_ALL=C awk -F'\t' -v round="$1" -v prior="$2" '
     function rank(status, class) {
@@ -745,7 +748,7 @@ mr_findings_filter() {  # <round> <prior-file-or-empty>
         if (out[i] != "") { print out[i]; continue }
         print "ok\t" ord[i] "\t" rf[i] "\t" st[i] "\t" cl[i] "\t" tail[i]
         if (st[i] == "BLOCKING" || st[i] == "REGRESSION") dissent = 1
-        else if (st[i] == "EDGE-CASE" && (round < 3 || cl[i] != "none")) dissent = 1
+        else if (st[i] == "EDGE-CASE" && (round < 3 || cl[i] != "none" || defect)) dissent = 1
         else if (st[i] == "NON-BLOCKING" && cl[i] != "none") dissent = 1
       }
       for (i = 1; i <= count; i++) {
@@ -756,7 +759,7 @@ mr_findings_filter() {  # <round> <prior-file-or-empty>
         if (c == "none" && (id in fcl)) c = fcl[id]
         print "ok\t" bord[id] "\t" id "\t" bst[id] "\t" c "\t" btail[id]
         if (bst[id] == "BLOCKING" || bst[id] == "REGRESSION") dissent = 1
-        else if (bst[id] == "EDGE-CASE" && (round < 3 || c != "none")) dissent = 1
+        else if (bst[id] == "EDGE-CASE" && (round < 3 || c != "none" || defect)) dissent = 1
         else if (defect && c != "none") dissent = 1
       }
       if (dissent) print "B"
@@ -889,8 +892,9 @@ mr_findings_votes() {  # <head-store> <seats> [need]
         next
       }
       # A review with a form defect counts only because it dissents. It holds
-      # what it holds, as a former seat does, and settles no earlier finding:
-      # none of its lines is a ruling toward a deferral or a tie.
+      # what it holds, as a former seat does, and settles no finding: none of
+      # its lines, for a prior finding or a NEW one, is a ruling toward a
+      # deferral or a tie.
       if (($2 in defect) && id != "NEW") {
         if (held($5, $6)) hold(id, $6)
         else if ($6 != "none" && !(id in fcls)) fcls[id] = $6
@@ -901,7 +905,7 @@ mr_findings_votes() {  # <head-store> <seats> [need]
         id = idof[$2, $3]
         if (!(id in st)) { order[++n] = id; st[id] = "new"; cls[id] = "none"; wh[id] = $7; tx[id] = $8; raiser[id] = $2 }
       }
-      if ($2 in former) hold(id, $6)
+      if (($2 in former) || (($2 in defect) && held($5, $6))) hold(id, $6)
       else vote(id, $2, $5, $6)
       next
     }
@@ -1017,10 +1021,11 @@ mr_tie_outcome() {  # <head-store> <finding-id> <votes> <finding rows>
 # Print the finding rows of one head store: the rows of mr_findings_votes,
 # with each tie in the state the tie-break gives it. With no council-config
 # key every tie stays open, no council record is read, and a prior finding
-# whose deferral rests on a council answer at an earlier head is open (see
-# mr_council_carried). With the key, a tie the council deferred is deferred; a
-# tie it has not answered is pending when no valid receipt here says BLOCK,
-# and with <need> its "K" row stays. Any other tie stays open.
+# whose deferral does not stand without a council answer at an earlier head
+# is open (see mr_council_carried). With the key, a tie the council deferred
+# is deferred; a tie it has not answered is pending when no valid receipt
+# here says BLOCK, and with <need> its "K" row stays. Any other tie stays
+# open.
 mr_findings_state() {  # <head-store> <seats> [need]
   local store=$1 rows tab kind id votes outcome ties='' block=unread carried=''
   tab=$(printf '\t')
@@ -1054,16 +1059,18 @@ EOF
     { print }'
 }
 
-# Print "a,b,c" for the prior findings of <head-store> whose deferral rests on
-# a council answer: the head before left them deferred when council answers
-# count, and not deferred when they do not. A deferral the seats agreed on is
-# the same either way, so it is never printed. The head before is read as a
-# new round reads it, and reads its own prior findings by this same rule, so a
-# deferral carried across several heads is traced to the head that made it.
+# Print "a,b,c" for the prior findings of <head-store> whose deferral does not
+# stand without a council answer: the head before, read with no council answer
+# counted, does not leave them deferred. A deferral the seats of that head
+# agreed on stands, so it is never printed. The head before is read as a new
+# round reads it, under the seats this home declares now, and reads its own
+# prior findings by this same rule, so a deferral carried across several
+# heads is traced to the head that made it. A head before that cannot be read
+# shows no deferral by its seats, so every deferred prior finding is printed.
 # MR_CARRIED_FROM names the heads this trace has left, so it reads none twice.
 MR_CARRIED_FROM=
 mr_council_carried() {  # <head-store>
-  local store=$1 pr previous record found='' with without
+  local store=$1 pr previous record found='' stands=''
   pr=${store%/*}
   [ -f "$store/prior.md" ] || return 0
   awk '{ if (split($0, p, " [|] ") == 5 && p[2] == "deferred") found = 1 } END { exit !found }' "$store/prior.md" || return 0
@@ -1073,17 +1080,18 @@ mr_council_carried() {  # <head-store>
   done
   [ -n "$found" ] || return 0
   previous=$(mr_receipt_get "$store/round" previous)
-  fm_pr_head_valid "$previous" || return 0
-  case " $MR_CARRIED_FROM " in *" $previous "*) return 0 ;; esac
-  local MR_CARRIED_FROM="$MR_CARRIED_FROM ${store##*/}"
-  with=$(mr_deferred_at "$previous" read)
-  without=$(mr_deferred_at "$previous" '')
-  LC_ALL=C awk -v with="$with" -v without="$without" '
-    BEGIN {
-      n = split(with, a, ","); for (i = 1; i <= n; i++) if (a[i] != "") w[a[i]] = 1
-      n = split(without, a, ","); for (i = 1; i <= n; i++) delete w[a[i]]
-    }
-    { if (split($0, p, " [|] ") == 5 && p[2] == "deferred" && (p[1] in w)) { printf "%s%s", sep, p[1]; sep = "," } }
+  if fm_pr_head_valid "$previous"; then
+    case " $MR_CARRIED_FROM " in
+      *" $previous "*) ;;
+      *)
+        local MR_CARRIED_FROM="$MR_CARRIED_FROM ${store##*/}"
+        stands=$(mr_deferred_at "$previous")
+        ;;
+    esac
+  fi
+  LC_ALL=C awk -v stands="$stands" '
+    BEGIN { n = split(stands, a, ","); for (i = 1; i <= n; i++) if (a[i] != "") keep[a[i]] = 1 }
+    { if (split($0, p, " [|] ") == 5 && p[2] == "deferred" && !(p[1] in keep)) { printf "%s%s", sep, p[1]; sep = "," } }
   ' "$store/prior.md"
 }
 
@@ -1647,11 +1655,9 @@ mr_assign_ids() {
 }
 
 # Print "a,b,c" for the findings another head of this pull request left
-# deferred, as a new round reads that head. Council answers stored there count
-# when <council> is not empty, whatever this home's roster key says: reading
-# a stored answer needs no roster.
-mr_deferred_at() {  # <head> <council>
-  local MR_HEAD=$1 MR_COUNCIL_CONFIG=$2 MR_EXPECTED_BASE='' MR_FORMER_SEATS=1
+# deferred, as a new round reads that head with no council answer counted.
+mr_deferred_at() {  # <head>
+  local MR_HEAD=$1 MR_COUNCIL_CONFIG='' MR_EXPECTED_BASE='' MR_FORMER_SEATS=1
   mr_head_findings | mr_ids_in_state deferred
 }
 
