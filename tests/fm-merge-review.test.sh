@@ -139,6 +139,65 @@ SH
   chmod +x "$1/gh"
 }
 
+# A stand-in for AgentKit's `ak council run --card <card> --council-config
+# <roster> [--context <file>]... --out <record>`. It keeps AgentKit's contract:
+# a card needs an id, two or more options and an approving option among them;
+# a record is written to --out for every outcome; the exit status is 0 for
+# approve and decline, 1 for escalate and refused, and 2 for a usage error.
+# Each call appends "<cwd>|<roster>" to <stub>/ak.calls and leaves the card in
+# <stub>/ak.card and the context arguments in <stub>/ak.context. The outcome is
+# read from <stub>/ak.outcome (default approve): approve, decline, escalate
+# (the council seats disagree), unavailable (an escalation because a seat gave
+# no answer), refused, or usage. No model is called.
+write_ak_stub() {  # <fakebin>
+  cat > "$1/ak" <<'SH'
+#!/usr/bin/env bash
+stub=$FM_TEST_REVIEW_STUB
+if [ "${1:-}" != council ] || [ "${2:-}" != run ]; then
+  echo "stand-in ak: unexpected command: $*" >&2
+  exit 2
+fi
+shift 2
+card='' out='' roster='' prev=''
+: > "$stub/ak.context"
+for arg in "$@"; do
+  case "$prev" in
+    --card) card=$arg ;;
+    --out) out=$arg ;;
+    --council-config) roster=$arg ;;
+    --context)
+      printf '%s\n' "$arg" >> "$stub/ak.context"
+      [ -f "$arg" ] || { echo "stand-in ak: cannot read context $arg" >&2; exit 2; }
+      ;;
+  esac
+  prev=$arg
+done
+printf '%s|%s\n' "$PWD" "$roster" >> "$stub/ak.calls"
+jq -e '(.id | test("^[a-z0-9][a-z0-9-]*$")) and (.question | length > 0) and
+  (.options | length >= 2 and (unique | length) == length) and (.approve as $a | .options | index($a) != null)' \
+  "$card" >/dev/null || { echo "stand-in ak: the card is not valid" >&2; exit 2; }
+cp "$card" "$stub/ak.card"
+record() {  # <outcome> <choice-json> <card-json> [seat-choices-json]
+  jq -n --arg outcome "$1" --argjson choice "$2" --argjson card "$3" --argjson seats "${4:-null}" '
+    {schema: "council-record", schema_version: 1, at: "2026-01-01T00:00:00.000Z", card: $card,
+     payload: {sha256: "0", bytes: 0, context: []},
+     seats: (($seats // [$choice, $choice, $choice]) | map({role: "seat", choice: .})),
+     outcome: $outcome, choice: $choice,
+     causes: [], grants: [], note: "This record grants no authority."}' > "$out"
+  printf 'council %s: %s\n' "$1" "$out"
+}
+case "$(cat "$stub/ak.outcome" 2>/dev/null || echo approve)" in
+  approve) record approve "$(jq '.approve' "$card")" "$(cat "$card")" ;;
+  decline) record decline "$(jq '(.options - [.approve])[0]' "$card")" "$(cat "$card")" "$(jq '[(.options - [.approve])[0]] | . + .' "$card")" ;;
+  escalate) record escalate null "$(cat "$card")" "$(jq '.options[0:2]' "$card")"; exit 1 ;;
+  unavailable) record escalate null "$(cat "$card")" "$(jq '[.approve, null]' "$card")"; exit 1 ;;
+  refused) record refused null "$(jq '{id}' "$card")"; exit 1 ;;
+  *) echo "stand-in ak: usage" >&2; exit 2 ;;
+esac
+SH
+  chmod +x "$1/ak"
+}
+
 # Build one case: a home, a repository with a base commit on origin/main and a
 # head commit that adds feature.txt, and the stand-in tools.
 # Sets CASE, HOME_DIR, REPO, HEAD_SHA, STUB, FAKEBIN.
@@ -162,6 +221,8 @@ make_case() {  # <name> [config-line]...
   write_reviewer_stub "$FAKEBIN" agy
   write_reviewer_stub "$FAKEBIN" grok
   write_gh_stub "$FAKEBIN"
+  # Every case has the stand-in, so no test can reach an installed ak.
+  write_ak_stub "$FAKEBIN"
   if [ "$#" -gt 0 ]; then
     printf '%s\n' "$@" > "$HOME_DIR/config/merge-review"
   fi
@@ -2008,6 +2069,9 @@ test_an_edge_case_is_deferred_only_when_every_seat_calls_it_one() {
   run_supervisor followup "$PR_URL" --head "$HEAD_SHA" --finding F1 --ref 'backlog item 12' || rc=$?
   expect_code 2 "$rc" "mixed: a follow-up for a finding only one seat defers"
   assert_grep "only a deferred finding takes a follow-up" "$CASE/stderr" "mixed: the refusal did not say why"
+  assert_absent "$STUB/ak.calls" "mixed: a home with no council roster asked a council"
+  assert_grep "Choose BLOCK only when a REGRESSION, or" "$STUB/claude.prompt" \
+    "mixed: with no council roster the round-three prompt changed"
 
   next_head 'fourth head'
   # A seat that calls it fixed does not agree to defer it either.
@@ -2532,6 +2596,227 @@ test_a_rerun_never_writes_the_stored_delta_in_place() {
   pass "a rerun keeps a stored delta that matches its hash, and replaces a short one whole"
 }
 
+# Take a case with a council roster to its third head, with one finding, F1,
+# that both seats held in round two.
+tie_rounds() {  # <case-name>
+  local rc=0
+  make_case "$1" "${TWO_SEATS[@]}" "council-config=$TMP_ROOT/$1/roster.json"
+  printf '{}\n' > "$CASE/roster.json"
+  set_review claude \
+    'FINDING NEW | BLOCKING | none | feature.txt:1 | An empty file makes the reader loop.' \
+    'VERDICT: BLOCK @HEAD@'
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "$1: round 1"
+  next_head 'second head'
+  set_review claude \
+    'FINDING F1 | BLOCKING | none | feature.txt:1 | The empty file still loops.' \
+    'VERDICT: BLOCK @HEAD@'
+  set_review agy \
+    'FINDING F1 | BLOCKING | none | feature.txt:1 | The empty file still loops.' \
+    'VERDICT: BLOCK @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "$1: round 2"
+  next_head 'third head'
+}
+
+# The seats disagree on F1: one calls it an edge case, the other a regression.
+split_reviews() {
+  set_review claude \
+    'FINDING F1 | EDGE-CASE | none | feature.txt:1 | Only an empty file triggers it.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  set_review agy \
+    'FINDING F1 | REGRESSION | none | feature.txt:1 | The merge base returns on an empty file.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+}
+
+council_calls() {
+  if [ -f "$STUB/ak.calls" ]; then
+    wc -l < "$STUB/ak.calls" | tr -d ' '
+  else
+    echo 0
+  fi
+}
+
+test_a_tie_goes_to_the_agentkit_council_and_its_edge_case_ruling_defers() {
+  local rc=0 store want
+  tie_rounds tie-defer
+  split_reviews
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "tie-defer: round 3 with a deferred finding and no follow-up"
+  assert_grep "merge-review: incomplete" "$CASE/stdout" "tie-defer: the head is not waiting for a follow-up ($(cat "$CASE/stdout"))"
+  assert_grep " deferred=F1 " "$CASE/stdout" "tie-defer: the council's edge-case ruling did not defer the finding"
+  assert_no_grep " open=" "$CASE/stdout" "tie-defer: the deferred finding is still open"
+  assert_equals 1 "$(council_calls)" "tie-defer: the council was not asked once"
+  assert_grep "|$CASE/roster.json" "$STUB/ak.calls" "tie-defer: the council did not get the configured roster"
+
+  # The card is what AgentKit reads: one question, two options, and the
+  # deferring option as the one that needs the blind veto.
+  jq -e --arg id "merge-review-7-$HEAD_SHA-f1" \
+    '.id == $id and .options == ["edge-case", "regression"] and .approve == "edge-case"' "$STUB/ak.card" >/dev/null \
+    || fail "tie-defer: the card does not offer edge-case, with the veto, against regression ($(cat "$STUB/ak.card"))"
+  for want in "$PR_URL" "$HEAD_SHA" "finding F1" "An empty file makes the reader loop." \
+    "$CLAUDE_SEAT=EDGE-CASE" "$AGY_SEAT=REGRESSION"; do
+    jq -e --arg want "$want" '.question | contains($want)' "$STUB/ak.card" >/dev/null \
+      || fail "tie-defer: the card question does not name: $want"
+  done
+  assert_equals 2 "$(wc -l < "$STUB/ak.context" | tr -d ' ')" "tie-defer: the council did not get exactly the two reviews"
+  assert_match "^reviews/$CLAUDE_SEAT.review.md$" "$STUB/ak.context" "tie-defer: the council did not get the first review"
+  assert_match "^reviews/$AGY_SEAT.review.md$" "$STUB/ak.context" "tie-defer: the council did not get the second review"
+
+  # A seat is told that a plain regression needs no BLOCK verdict, because a
+  # BLOCK verdict would block past the council.
+  assert_grep "without a BLOCK verdict" "$STUB/agy.prompt" "tie-defer: the prompt does not say a regression line blocks alone"
+  assert_no_grep "Choose BLOCK only when a REGRESSION, or" "$STUB/agy.prompt" \
+    "tie-defer: the prompt still asks for a BLOCK verdict on a plain regression"
+
+  run_supervisor followup "$PR_URL" --head "$HEAD_SHA" --finding F1 --ref 'https://example.invalid/issues/9' \
+    || fail "tie-defer: the follow-up was refused ($(cat "$CASE/stderr"))"
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 0 "$rc" "tie-defer: check with the council ruling and the follow-up ($(cat "$CASE/stdout"))"
+  rc=0
+  run_at_head || rc=$?
+  expect_code 0 "$rc" "tie-defer: a rerun at the head"
+  assert_equals 1 "$(council_calls)" "tie-defer: a rerun asked the council about an answered tie"
+
+  # A record for another card does not answer this tie.
+  store=$(store_dir)
+  jq '.card.question += " edited"' "$store/tie.F1.1.record.json" > "$CASE/record.edited" \
+    || fail "tie-defer: the council record is not stored"
+  cp "$CASE/record.edited" "$store/tie.F1.1.record.json"
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 1 "$rc" "tie-defer: check after the council record changed"
+  assert_no_grep " deferred=" "$CASE/stdout" "tie-defer: a record for another card still deferred the finding"
+  assert_grep "waits for a seat or the tie-break council" "$CASE/stdout" "tie-defer: the wait was not reported"
+  pass "a tie goes once to the AgentKit council, and its edge-case ruling defers the finding"
+}
+
+test_a_council_that_does_not_defer_a_tie_leaves_it_open_and_is_not_asked_again() {
+  local rc outcome
+  for outcome in decline escalate; do
+    tie_rounds "tie-$outcome"
+    split_reviews
+    printf '%s\n' "$outcome" > "$STUB/ak.outcome"
+    rc=0
+    run_at_head || rc=$?
+    expect_code 1 "$rc" "tie-$outcome: round 3"
+    assert_grep "merge-review: blocked" "$CASE/stdout" "tie-$outcome: the head is not blocked ($(cat "$CASE/stdout"))"
+    assert_grep " open=F1 " "$CASE/stdout" "tie-$outcome: the finding is not open"
+    rc=0
+    run_supervisor followup "$PR_URL" --head "$HEAD_SHA" --finding F1 --ref 'backlog item 12' || rc=$?
+    expect_code 2 "$rc" "tie-$outcome: a follow-up for a finding the council did not defer"
+
+    # One answer per head: a rerun does not look for a kinder one.
+    printf 'approve\n' > "$STUB/ak.outcome"
+    rc=0
+    run_at_head || rc=$?
+    expect_code 1 "$rc" "tie-$outcome: a rerun at the head"
+    assert_equals 1 "$(council_calls)" "tie-$outcome: a rerun asked the council again"
+    assert_grep " open=F1 " "$CASE/stdout" "tie-$outcome: a rerun changed the finding"
+  done
+  pass "a tie the council holds as a regression, or escalates, stays open, and the council is asked once"
+}
+
+test_a_council_call_with_no_answer_leaves_the_tie_waiting_and_a_rerun_asks_again() {
+  local rc outcome
+  for outcome in refused unavailable usage; do
+    tie_rounds "tie-$outcome"
+    split_reviews
+    printf '%s\n' "$outcome" > "$STUB/ak.outcome"
+    rc=0
+    run_at_head || rc=$?
+    expect_code 1 "$rc" "tie-$outcome: round 3"
+    assert_grep "merge-review: incomplete" "$CASE/stdout" "tie-$outcome: the head is not waiting ($(cat "$CASE/stdout"))"
+    assert_grep "waits for a seat or the tie-break council" "$CASE/stdout" "tie-$outcome: the wait was not reported"
+    assert_no_grep " deferred=" "$CASE/stdout" "tie-$outcome: a call with no answer deferred the finding"
+    rc=0
+    run_supervisor followup "$PR_URL" --head "$HEAD_SHA" --finding F1 --ref 'backlog item 12' || rc=$?
+    expect_code 2 "$rc" "tie-$outcome: a follow-up for a finding the council has not ruled on"
+
+    printf 'approve\n' > "$STUB/ak.outcome"
+    rc=0
+    run_at_head || rc=$?
+    expect_code 1 "$rc" "tie-$outcome: a rerun at the head"
+    assert_equals 2 "$(council_calls)" "tie-$outcome: a rerun did not ask the council again"
+    assert_grep " deferred=F1 " "$CASE/stdout" "tie-$outcome: the answer on the rerun did not count"
+  done
+  pass "a council call that gives no answer leaves the tie waiting, and a rerun asks again"
+}
+
+test_the_council_is_not_asked_past_a_class_a_block_verdict_or_a_single_ruling() {
+  local rc=0
+  # A security, destructive, or data-loss finding never goes to the council.
+  tie_rounds tie-class
+  split_reviews
+  set_review agy \
+    'FINDING F1 | REGRESSION | data-loss | feature.txt:1 | The loop truncates the output file.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "tie-class: round 3"
+  assert_grep "merge-review: blocked" "$CASE/stdout" "tie-class: a data-loss finding does not block ($(cat "$CASE/stdout"))"
+  assert_grep " open=F1 " "$CASE/stdout" "tie-class: a data-loss finding is not open"
+  assert_equals 0 "$(council_calls)" "tie-class: the council was asked about a data-loss finding"
+
+  # A BLOCK verdict blocks the head whatever a council would say.
+  tie_rounds tie-block
+  split_reviews
+  set_review agy \
+    'FINDING F1 | REGRESSION | none | feature.txt:1 | The merge base returns on an empty file.' \
+    'VERDICT: BLOCK @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "tie-block: round 3"
+  assert_grep "merge-review: blocked" "$CASE/stdout" "tie-block: a BLOCK verdict does not block ($(cat "$CASE/stdout"))"
+  assert_grep " blocks=$AGY_SEAT " "$CASE/stdout" "tie-block: the blocking seat is not named"
+  assert_equals 0 "$(council_calls)" "tie-block: the council was asked past a BLOCK verdict"
+
+  # A regression only its reporter ruled on is not a tie.
+  make_case tie-single "${TWO_SEATS[@]}" "council-config=$TMP_ROOT/tie-single/roster.json"
+  two_approved_rounds tie-single
+  set_review claude \
+    'FINDING NEW | REGRESSION | none | feature.txt:3 | The third line breaks the reader.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  rc=0
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "tie-single: round 3"
+  assert_grep " open=F1 " "$CASE/stdout" "tie-single: a new regression is not open ($(cat "$CASE/stdout"))"
+  assert_equals 0 "$(council_calls)" "tie-single: the council was asked about a finding one seat ruled on"
+  pass "the council is not asked about a classed finding, past a BLOCK verdict, or about a finding one seat ruled on"
+}
+
+test_a_new_edge_case_the_other_seat_rejects_goes_to_the_agentkit_council() {
+  local rc=0 want
+  make_case tie-new "${TWO_SEATS[@]}" "council-config=$TMP_ROOT/tie-new/roster.json"
+  two_approved_rounds tie-new
+  set_review claude \
+    'FINDING NEW | EDGE-CASE | none | feature.txt:3 | A file over 2 GB overflows the counter.' \
+    'VERDICT: APPROVE-WITH-NONBLOCKING @HEAD@'
+  set_council agy \
+    'DISPOSITION F1 | UNSUPPORTED | none | The counter is 64 bits wide on line 2.' \
+    'COUNCIL: DONE @HEAD@'
+  run_at_head || rc=$?
+  expect_code 1 "$rc" "tie-new: round 3"
+  assert_equals 1 "$(council_calls)" "tie-new: the council was not asked once ($(cat "$CASE/stdout"))"
+  assert_grep " deferred=F1 " "$CASE/stdout" "tie-new: the council's ruling did not defer the finding"
+  for want in "$CLAUDE_SEAT=EDGE-CASE" "$AGY_SEAT=UNSUPPORTED"; do
+    jq -e --arg want "$want" '.question | contains($want)' "$STUB/ak.card" >/dev/null \
+      || fail "tie-new: the card question does not name: $want"
+  done
+  assert_match "^reviews/$AGY_SEAT.council.1.md$" "$STUB/ak.context" "tie-new: the council did not get the other seat's answer"
+  pass "a new edge case the other seat calls unsupported goes to the AgentKit council with that answer"
+}
+
+test_a_council_roster_must_be_an_absolute_path() {
+  local rc=0
+  make_case tie-config "${TWO_SEATS[@]}" 'council-config=roster.json'
+  run_supervisor covers "$PR_URL" || rc=$?
+  expect_code 2 "$rc" "tie-config: a relative council roster"
+  assert_grep 'council-config needs an absolute path' "$CASE/stderr" "tie-config: the refusal did not name the key"
+  pass "a council roster that is not an absolute path is a config error"
+}
+
 fm_test_run \
   test_two_families_approve_and_a_supervisor_reads_one_line \
   test_run_refuses_in_a_supervisor_session \
@@ -2601,4 +2886,10 @@ fm_test_run \
   test_seats_at_different_merge_bases_settle_no_finding \
   test_two_status_lines_keep_the_one_that_holds_the_finding \
   test_a_round_waits_for_a_running_head_that_is_not_in_the_ledger_yet \
-  test_a_rerun_never_writes_the_stored_delta_in_place
+  test_a_rerun_never_writes_the_stored_delta_in_place \
+  test_a_tie_goes_to_the_agentkit_council_and_its_edge_case_ruling_defers \
+  test_a_council_that_does_not_defer_a_tie_leaves_it_open_and_is_not_asked_again \
+  test_a_council_call_with_no_answer_leaves_the_tie_waiting_and_a_rerun_asks_again \
+  test_the_council_is_not_asked_past_a_class_a_block_verdict_or_a_single_ruling \
+  test_a_new_edge_case_the_other_seat_rejects_goes_to_the_agentkit_council \
+  test_a_council_roster_must_be_an_absolute_path

@@ -1142,12 +1142,14 @@ Any other malformed line is an error that refuses both a review run and a covere
 | `require` | `<host>/<repository path>` or `*` | A repository whose merges through `bin/fm-pr-merge.sh` need `--expected-head` and an approved review at that head. Repeatable, and matched without regard to letter case. |
 | `post` | `on` or `off` (default `off`) | With `on`, each review is also posted as a pull request comment; approvals count only with that comment's URL, while a valid BLOCK still blocks if posting fails. Posting works on GitHub only. |
 | `timeout` | 60 to 14400 seconds (default 1800) | The bound on one reviewer call. |
+| `council-config` | an absolute path to an AgentKit council roster | From review round three, a finding the seats disagree on goes once to that council through `ak council run`, and stays open unless the council defers it. With the key absent no council is asked and such a finding stays open. |
 
 `<family>` is this home's own name for a model family, such as `anthropic` or `google`.
 Two reviews from one family count as one, so a run needs seats from at least two families.
 `<harness>` is `claude`, `agy`, or `grok`, the tools whose read-only one-shot call `tests/fm-merge-review-live.test.sh` checks.
 Leave `<effort>` out for a model whose name already carries its effort.
 A `<model>` name that holds the part `.council` is refused, because that part names a seat's stored council files.
+AgentKit owns the roster that `council-config` names and the council that reads it; the review worker needs the `ak` tool on its `PATH`, and a council call sends the seats' reviews, not the diff, to the roster's models.
 
 ```text
 seat=anthropic:claude:<model>
@@ -1155,9 +1157,10 @@ seat=google:agy:<model>
 spare=xai:grok:<model>
 require=github.com/<owner>/<repository>
 post=on
+council-config=<absolute path to the roster>
 ```
 
-`bin/fm-merge-review.sh` owns the verdict rule, the review rounds and the findings that carry across them, the receipt format under `data/merge-review/`, the model identity evidence, and the limits of a local receipt.
+`bin/fm-merge-review.sh` owns the verdict rule, the review rounds and the findings that carry across them, the tie-break, the receipt format under `data/merge-review/`, the model identity evidence, and the limits of a local receipt.
 The `ship-landing` skill owns when a supervisor dispatches the review worker.
 This file holds only merges that go through `bin/fm-pr-merge.sh` for a repository a `require` line names; a merge made any other way, or in an unlisted repository, is not checked.
 The file is a home-local setting and is not inherited by secondmate homes.
