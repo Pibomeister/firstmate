@@ -60,6 +60,7 @@ It also covers the registration-time ready line and its withholding until checks
 `tests/fm-brief.test.sh` pins the charter's channel rule.
 `tests/fm-handoff-trigger.test.sh` covers the relaunch request: ordinary status text opening nothing, the stop blocked until the request is recorded, one line across repeated requests, the request surviving a later correlated reply, and its refusals.
 `tests/fm-control-relaunch.test.sh`, `tests/fm-secondmate-liveness.test.sh`, and `tests/fm-remote-secondmate-relaunch.test.sh` cover the request closing on a confirmed local or remote relaunch or a completed fresh spawn and staying open across a failed or refused relaunch and a merely live mate.
+`tests/fm-remote-secondmate-parent-binding.test.sh` covers a remote fresh spawn closing the request only when the host reports it started a new agent, and leaving it open when the host only reused a live one.
 `tests/fm-pending-reply.test.sh` covers helper-selected local routing, remote-channel classification, same-basename restatement before false escalation, readable wrong-home diagnostics, and the rule that arbitrary mate-home sightings never acknowledge a reply.
 `tests/fm-parent-channel-scan-exclusion.test.sh` covers the home-shape-aware scan exclusion against real remote, main-home, and local-mate fixtures: the watcher signal scan, both heartbeat backstops, the fleet-wide folds, and the real `fm-wake-drain.sh` end to end.
 
