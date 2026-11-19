@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Behavioral coverage for bin/fm-host-cleanup.sh: report measures without
-# deleting, clean without --apply is a dry run, clean --apply deletes only
-# files past the age limit under the configured roots (never worktree
-# files), and a free-space reading under the target exits 3.
+# deleting, clean without --apply is a dry run, clean --apply removes only
+# whole entries whose newest content is past the age limit under the
+# configured roots (never a partly fresh entry, never worktree files), and a
+# free-space reading under the target exits 3.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -28,16 +29,31 @@ exec /bin/df "$@"
 SH
 chmod +x "$FAKE/df"
 
-# Fixture layout under $TMP_ROOT/world:
-#   cache/old.bin (old), cache/sub/new.bin (new), logs/old.log (old),
-#   workspaces/proj/tracked.txt (old but never in scope)
+# Fixture layout under $TMP_ROOT/world (old means mtime in 2025):
+#   cache/old.bin                 old file entry: removed whole
+#   cache/sub/new.bin             fresh entry: kept
+#   cache/pre-commit/repo1/hook.py + repo1/  old, pre-commit/db.db fresh:
+#                                 a structured cache that must stay intact
+#   cache/stale/a/b.bin + a/ + stale/  fully old directory entry: removed whole
+#   logs/old.log                  old log entry: removed
+#   workspaces/proj/tracked.txt   old but never in scope
 WORLD="$TMP_ROOT/world"
-mkdir -p "$WORLD/cache/sub" "$WORLD/logs" "$WORLD/workspaces/proj" "$WORLD/state" "$WORLD/vol"
+mkdir -p "$WORLD/cache/sub" "$WORLD/cache/pre-commit/repo1" "$WORLD/cache/stale/a" \
+  "$WORLD/logs" "$WORLD/workspaces/proj" "$WORLD/state" "$WORLD/vol"
 printf 'old cache bytes\n' > "$WORLD/cache/old.bin"
 printf 'new cache bytes\n' > "$WORLD/cache/sub/new.bin"
+printf 'old hook env\n' > "$WORLD/cache/pre-commit/repo1/hook.py"
+printf 'fresh index\n' > "$WORLD/cache/pre-commit/db.db"
+printf 'stale bytes\n' > "$WORLD/cache/stale/a/b.bin"
 printf 'old log bytes\n' > "$WORLD/logs/old.log"
 printf 'project bytes\n' > "$WORLD/workspaces/proj/tracked.txt"
-touch -t 202501010000 "$WORLD/cache/old.bin" "$WORLD/logs/old.log" "$WORLD/workspaces/proj/tracked.txt"
+touch -t 202501010000 "$WORLD/cache/old.bin" "$WORLD/logs/old.log" "$WORLD/workspaces/proj/tracked.txt" \
+  "$WORLD/cache/pre-commit/repo1/hook.py" "$WORLD/cache/pre-commit/repo1" \
+  "$WORLD/cache/stale/a/b.bin" "$WORLD/cache/stale/a" "$WORLD/cache/stale"
+
+line_for() {  # <prefix>: print the first output line starting with prefix
+  printf '%s\n' "$OUT" | grep -F -- "$1" | head -n 1
+}
 
 run_cleanup() {  # <df-avail-kib> [args...]
   local avail=$1
@@ -56,7 +72,8 @@ test_report_measures_and_deletes_nothing() {
   [ "$RC" = 0 ] || fail "report: expected exit 0 over target, got $RC"$'\n'"$OUT"
   assert_contains "$OUT" "host-cleanup report: free_kib=209715200" "report prints the free reading"
   assert_contains "$OUT" "host-cleanup cache: root=$WORLD/cache" "report names the cache root"
-  assert_contains "$OUT" "old_files=1" "report counts exactly the one old cache file"
+  assert_contains "$(line_for "host-cleanup cache: root=$WORLD/cache ")" "old_entries=2" "report counts exactly the two fully old cache entries"
+  assert_contains "$(line_for "host-cleanup logs: root=$WORLD/logs ")" "old_entries=1" "report counts the one old log entry"
   assert_contains "$OUT" "host-cleanup worktrees: root=$WORLD/workspaces/proj" "report sizes the worktree"
   assert_present "$WORLD/cache/old.bin" "report deletes nothing"
   pass "report measures free space, old files, and worktrees without deleting"
@@ -73,7 +90,9 @@ test_clean_dry_run_deletes_nothing() {
   run_cleanup 209715200 clean
   [ "$RC" = 0 ] || fail "dry run: expected exit 0, got $RC"$'\n'"$OUT"
   assert_contains "$OUT" "mode=dry-run" "clean without --apply is a dry run"
-  assert_contains "$OUT" "remaining_old_files=1" "dry run leaves the old files counted"
+  assert_contains "$(line_for "host-cleanup clean: root=$WORLD/cache ")" "old_entries=2 " "dry run counts the same two old cache entries as report"
+  assert_contains "$(line_for "host-cleanup clean: root=$WORLD/cache ")" "remaining_old_entries=2" "dry run leaves the old entries counted"
+  assert_present "$WORLD/cache/stale/a/b.bin" "dry run keeps the fully old entry"
   assert_present "$WORLD/cache/old.bin" "dry run keeps the old cache file"
   assert_present "$WORLD/logs/old.log" "dry run keeps the old log file"
   pass "clean without --apply deletes nothing"
@@ -86,9 +105,13 @@ test_clean_apply_deletes_only_old_cache_and_logs() {
   assert_absent "$WORLD/cache/old.bin" "the old cache file is deleted"
   assert_absent "$WORLD/logs/old.log" "the old log file is deleted"
   assert_present "$WORLD/cache/sub/new.bin" "a fresh cache file survives"
+  assert_absent "$WORLD/cache/stale" "a fully old entry is removed whole"
+  assert_present "$WORLD/cache/pre-commit/repo1/hook.py" "an old file inside a partly fresh entry survives"
+  assert_present "$WORLD/cache/pre-commit/db.db" "the fresh index of that entry survives"
+  assert_contains "$(line_for "host-cleanup clean: root=$WORLD/cache ")" "remaining_old_entries=0" "apply leaves no old cache entry behind"
   assert_present "$WORLD/workspaces/proj/tracked.txt" "an old worktree file is never in scope"
   assert_grep "clean free_before_kib=209715200 free_after_kib=209715200" "$WORLD/state/cleanup.log" "apply appends the before/after line"
-  pass "clean --apply deletes only old cache and log files and logs the run"
+  pass "clean --apply removes only whole old cache and log entries and logs the run"
 }
 
 test_usage_errors_exit_2() {
