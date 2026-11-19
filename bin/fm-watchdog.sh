@@ -825,12 +825,19 @@ wd_judge_one() {  # <model> <purpose> <answer-ere> <prompt>  -> prints the answe
   secs=${WD_CALL_TIMEOUT:-$(cfgi judge-timeout-secs 120)}
   usd=${WD_CALL_MAX_USD:-$(cfg judge-call-max-usd 0.05)}
   h=${model%%:*} m=${model#*:}
-  spent=$(fm_wd_spent_since "$CALLS" "$(( $(wd_now) - 86400 ))")
-  cap=$(cfg daily-max-usd 1.00)
-  if awk -v s="$spent" -v c="$cap" 'BEGIN { exit !(s >= c) }'; then
-    printf '%s\t%s\t%s\tcap-reached\t\t\t\t\n' "$(wd_now)" "$purpose" "$model" >> "$CALLS"
-    return 3
-  fi
+  # The daily cap gates only models that spend money; an unmetered host (agy,
+  # whose calls log cost=unmetered) still answers once the cap is spent, so a
+  # daily-max-usd of 0 runs only unmetered models.
+  case "$h" in
+    agy) ;;
+    *)
+      spent=$(fm_wd_spent_since "$CALLS" "$(( $(wd_now) - 86400 ))")
+      cap=$(cfg daily-max-usd 1.00)
+      if awk -v s="$spent" -v c="$cap" 'BEGIN { exit !(s >= c) }'; then
+        printf '%s\t%s\t%s\tcap-reached\t\t\t\t\n' "$(wd_now)" "$purpose" "$model" >> "$CALLS"
+        return 3
+      fi ;;
+  esac
   scratch=$WD/judge-scratch
   mkdir -p "$scratch"
   if [ "$purpose" = council ]; then
@@ -889,14 +896,16 @@ wd_judge_one() {  # <model> <purpose> <answer-ere> <prompt>  -> prints the answe
 wd_models() { cfg models "claude:haiku,agy:gemini-3.8-flash-low" | tr ',' '\n' | sed '/^$/d'; }
 
 # wd_judge <purpose> <answer-ere> <prompt>: the first model in order that answers.
+# A model stopped by the daily cap does not end the attempt, because a later
+# model may be unmetered and still answer; the last failure is the return code.
 wd_judge() {
-  local model
+  local model rc=1
   mkdir -p "$WD"
   for model in $(wd_models); do
     wd_judge_one "$model" "$1" "$2" "$3" && return 0
-    [ $? -ne 3 ] || return 3
+    rc=$?
   done
-  return 1
+  return "$rc"
 }
 
 # --- council -------------------------------------------------------------------
@@ -1187,6 +1196,10 @@ wd_restart_gate() {  # <symptom> <kind>...  -> 0 to proceed; records the refusal
   wd_rate_open "$symptom" restart "$(cfgi restart-secs 7200)" || return 1
   if [ -f "$WD/escalated/$O_KEY" ]; then wd_gap "RESTART LOOP escalated; clear $WD/escalated/$O_KEY after review"; return 1; fi
   if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_rec "$id" "$symptom" restart refused "endpoint is on do-not-touch"; return 1; fi
+  if [ "$O_PARENT" = - ] && [ "$(cfg restart-scope all)" = second-mates ]; then
+    wd_rec "$id" "$symptom" restart refused "restart-scope is second-mates; a primary is never restarted"
+    return 1
+  fi
   if ! fm_wd_stall_proof "$O_TURN" "$O_CPU_BUSY" "$@"; then
     wd_gap "$symptom: restart not proven (turn_running=$O_TURN cpu_busy=$O_CPU_BUSY signals=$*)"
     return 1
@@ -1212,6 +1225,7 @@ wd_restart_gate() {  # <symptom> <kind>...  -> 0 to proceed; records the refusal
 wd_restart_available() {
   local last
   if [ "$(cfg restart off)" != on ]; then wd_gap "restart requested or context low, but restart is off; no handoff is asked for"; return 1; fi
+  if [ "$O_PARENT" = - ] && [ "$(cfg restart-scope all)" = second-mates ]; then wd_gap "restart requested or context low, but restart-scope is second-mates; no handoff is asked for"; return 1; fi
   if [ -f "$WD/escalated/$O_KEY" ]; then wd_gap "restart requested or context low, but restarts are escalated; no handoff is asked for"; return 1; fi
   if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_gap "restart requested or context low, but this endpoint is on do-not-touch; no handoff is asked for"; return 1; fi
   if [ "$O_ACT_AGE" = unknown ]; then wd_gap "restart requested or context low, but no activity source can prove quiet; no handoff is asked for"; return 1; fi
@@ -2780,9 +2794,11 @@ wd_health_line() {
 }
 
 wd_write_status() {  # <health-file> <gaps-file>
-  local now interval read_at host tmp spent cap models m ok
+  local now interval read_at host tmp spent cap models m ok restart_word
   now=$(wd_now)
   interval=$(cfgi interval-secs 120)
+  restart_word=$(cfg restart off)
+  [ "$restart_word" = on ] && [ "$(cfg restart-scope all)" = second-mates ] && restart_word='on (second mates only)'
   read_at=$(head -n 1 "$WD/last-read" 2>/dev/null | tr -cd '0-9')
   [ -n "$read_at" ] || read_at=$((now - 3600))
   host=$(hostname -s 2>/dev/null || hostname)
@@ -2797,7 +2813,7 @@ wd_write_status() {  # <health-file> <gaps-file>
   tmp=$(mktemp "$OUT/.status.XXXXXX") || return 1
   {
     printf '# Firstmate watchdog - %s\n' "$host"
-    printf 'updated %s, scan every %ss, mode %s, restart %s\n' "$(fm_wd_iso "$now")" "$interval" "$(wd_mode)" "$(cfg restart off)"
+    printf 'updated %s, scan every %ss, mode %s, restart %s\n' "$(fm_wd_iso "$now")" "$interval" "$(wd_mode)" "$restart_word"
     printf 'STALE IF NOT UPDATED BY %s (watchdog may be down)\n' "$(fm_wd_iso $((now + interval * 3 + 300)))"
     printf 'models: %s; spent 24h $%s of $%s\n\n' "${models:-none}" "$spent" "$cap"
     printf '## Homes\n'
